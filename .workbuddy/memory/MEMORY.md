@@ -3,6 +3,15 @@
 ## 项目身份
 「青春幻想引擎」小说创作管理应用。Electron 31 + React 18.3 + TS 5.5 + Vite 5.3 + Tailwind（ink/amber 护眼主题）。三存储后端（IndexedDB/便携/桌面）经 `StoreOps`。dev http://localhost:5199/，managed node `C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.exe`（勿用全局）。
 
+## git 基线（2026-08-28 起）
+- 本地仓库已 init（main，无远程），.gitignore 排除 node_modules/dist/release/build。基线提交 5e385dc。
+- **每轮审计/封装完成后 `git add -A && git commit`**，提交信息写清本轮修复要点。
+
+## 数据安全测试（tests/）
+- `node tests/build-roundtrip.mjs`：esbuild 打包真 db.ts+seedData，内存 StoreOps 桩替换 portable/desktop，跑 6 用例（导出非空/往返语义一致/迁移幂等×3/编号正确），输出仅 PASS/FAIL。改动 db.ts 存储或迁移逻辑后必跑。
+- 已修复的数据丢失级 bug：migrateChapterLedger 迁移后误删台账行（movedIds 修复）；importProject 未重映射卷台账 tabId（已修）。**凡新增导出/导入/迁移逻辑，先补 round-trip 用例再上线。**
+- 坑：'chapter-vol-' 是 **12** 字符；slice(11) 是 off-by-one。
+
 ## 封装红线（无 git 仓库，最高优先级）
 - 封装前必确认：① `tsc --noEmit` 0 错 ② `vite build` 0 错 ③ 改动落盘。**切勿直接打包未验证**。
 - 封装标准流程（顺序不可乱）：① 全面代码审查（修 bug/剔除冗余）② 升 `package.json` 的 `version` ③ 启动封装。未审查完、未升版本，禁止封装。

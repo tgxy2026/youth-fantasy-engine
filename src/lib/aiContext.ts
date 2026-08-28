@@ -165,7 +165,10 @@ export async function buildChapterDigest(maxChapters = 200): Promise<string> {
   const lines: string[] = []
   // 必须按 (卷序, 章序) 展平：order 是卷内序号，直接全局按 order 排会把各卷同序号的章
   // 交错在一起，超过 maxChapters 截断时砍掉的子集也是错的（与 getChapterTexts 同源问题）。
-  const sorted = flattenChapters(vols, chs)
+  // 孤儿章（volumeId 指向不存在的卷）追加在叙事序末尾参与截断，否则会被 maxChapters 静默吞掉。
+  const flat = flattenChapters(vols, chs)
+  const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
+  const sorted = [...flat, ...orphans]
   const listed = sorted.slice(0, maxChapters)
   const byVol = new Map<string, Chapter[]>()
   for (const c of listed) {

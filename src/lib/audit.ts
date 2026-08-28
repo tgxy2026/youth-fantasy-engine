@@ -28,8 +28,9 @@ export const SEVERITY_LABEL: Record<IssueSeverity, string> = {
 /** 把 "F01, F02"、"F01、F02"、"F01 F02" 统一拆成大写编码数组 */
 export function splitCodes(raw: string | undefined): string[] {
   if (!raw) return []
+  // 与 splitNames 同口径：分号也是常见手打分隔符
   return raw
-    .split(/[,，、\s]+/)
+    .split(/[,，、;；\s]+/)
     .map(s => s.trim().toUpperCase())
     .filter(Boolean)
 }
