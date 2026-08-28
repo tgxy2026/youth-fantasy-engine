@@ -1,0 +1,722 @@
+// AI 模型接入抽象层
+//
+// 设计目标（v1）：
+// - 本地 Ollama：免密钥，调用 /api/chat，适合离线、隐私优先的辅助创作。
+// - 联网 OpenAI 兼容接口：Bearer 密钥，调用 /chat/completions；
+//   国内主流平台（DeepSeek / 通义千问 / 智谱 GLM / 豆包 / Kimi / MiniMax 等）
+//   均提供 OpenAI 兼容端点，用「预设」一键填好 baseUrl 即可。
+// - 配置走现有 db.settingsKV（web/便携/桌面三端通用），不另起存储。
+//
+// 注意：浏览器 / Electron 渲染进程直接 fetch 外部地址可能受 CORS 限制，
+// 这是平台侧策略，本层只负责把错误翻译成可读中文提示。
+
+import * as db from './db'
+
+export type AIProviderType = 'ollama' | 'openai'
+
+export interface AIProvider {
+  id: string
+  /** 用户自定义显示名 */
+  name: string
+  type: AIProviderType
+  /** Ollama 默认 http://localhost:11434；OpenAI 兼容填到 …/v1 之类前缀 */
+  baseUrl: string
+  apiKey: string
+  /** Ollama 用 /api/tags 拉到的本地模型名；OpenAI 兼容自由填写（如 deepseek-chat） */
+  model: string
+  /**
+   * 是否为本机 / 局域网 OpenAI 兼容服务（LM Studio / LocalAI / GPT4All / Jan 等）。
+   * true 时 precheck 不强制要求 apiKey（本地服务大多免密钥）；并与 ollama 一并标记为「本地」。
+   */
+  local?: boolean
+  /** 用户自定义系统提示词：追加到各功能自带系统提示词之后，不覆盖、不影响原指令与格式约束 */
+  systemPrompt?: string
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export const OLLAMA_DEFAULT_URL = 'http://localhost:11434'
+
+/** 正文生成默认超时：本地大参数模型首字延迟可能很久，给足时间 */
+export const CHAT_TIMEOUT_MS = 180_000
+/** 连通性测试超时：只让模型回两个字，但本地模型可能要先加载进显存 */
+export const TEST_TIMEOUT_MS = 90_000
+
+/** 国内 / 国际 OpenAI 兼容平台预设（baseUrl 为 chat/completions 的前缀） */
+export interface PlatformPreset {
+  label: string
+  baseUrl: string
+  /** 是否为本机 / 局域网服务（免密钥） */
+  local?: boolean
+  /** 该预设对应的 provider 类型：'ollama' 走原生 /api/chat；'openai'（默认）走 OpenAI 兼容 */
+  type?: AIProviderType
+}
+
+/** Ollama 本地预设：原生 API，单独用 type:'ollama' 走 /api/chat 路径 */
+export const OLLAMA_PRESET: PlatformPreset = { label: 'Ollama（本地）', baseUrl: OLLAMA_DEFAULT_URL, local: true, type: 'ollama' }
+
+/** 本地 OpenAI 兼容服务预设（baseUrl 为本机端口，一般无需密钥，type 默认 openai）。
+ *  这些服务都暴露 OpenAI 兼容的 /v1 接口，走与「联网模型」完全相同的调用路径，
+ *  仅用 local 标记免除密钥要求并归类为「本地」。 */
+export const LOCAL_OPENAI_PRESETS: PlatformPreset[] = [
+  { label: 'LM Studio（本地）', baseUrl: 'http://localhost:1234/v1', local: true },
+  { label: 'LocalAI（本地）', baseUrl: 'http://localhost:8080/v1', local: true },
+  { label: 'GPT4All（本地）', baseUrl: 'http://localhost:4891/v1', local: true },
+  { label: 'Jan（本地）', baseUrl: 'http://localhost:1337/v1', local: true },
+  { label: 'TextGen WebUI（本地）', baseUrl: 'http://localhost:5000/v1', local: true },
+]
+
+/** 全部本地平台预设（Ollama + 本地 OpenAI 兼容），用于绿色「添加本地模型」按钮 */
+export const LOCAL_PRESETS: PlatformPreset[] = [OLLAMA_PRESET, ...LOCAL_OPENAI_PRESETS]
+
+/** 联网 OpenAI 兼容平台预设（需 API 密钥，baseUrl 为 chat/completions 前缀） */
+export const ONLINE_PRESETS: PlatformPreset[] = [
+  { label: '硅基流动 SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1' },
+  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+  { label: '通义千问 Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  { label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+  { label: '豆包 Doubao', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+  { label: 'Kimi 月之暗面', baseUrl: 'https://api.moonshot.cn/v1' },
+  { label: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1' },
+  { label: '腾讯混元', baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1' },
+  { label: '百川智能', baseUrl: 'https://api.baichuan-ai.com/v1' },
+  { label: '零一万物', baseUrl: 'https://api.lingyiwanwu.com/v1' },
+  { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
+  { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
+  { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+  { label: '自定义', baseUrl: '' },
+]
+
+/** 由平台预设生成一条未保存的 provider 草稿（类型 / 本地标记自动带好） */
+export function providerFromPreset(p: PlatformPreset): AIProvider {
+  const id = 'p_' + Math.random().toString(36).slice(2, 9)
+  const isOllama = p.type === 'ollama'
+  const name = (p.label.replace(/（本地）|（联网）|\(local\)/gi, '').trim()) || (isOllama ? '本地 Ollama' : '联网模型')
+  return {
+    id,
+    name,
+    type: isOllama ? 'ollama' : 'openai',
+    baseUrl: p.baseUrl,
+    apiKey: '',
+    model: '',
+    local: p.local ?? isOllama,
+  }
+}
+
+/**
+ * 组合系统提示词：把「用户自定义系统提示词」追加到「功能自带的系统提示词」之后。
+ * 设计要点（用户要求）：
+ * - 用户没填 → 仅用功能预设，行为与原先完全一致；
+ * - 用户填了 → 附加在原本指令之后，作为「总体补充」，不覆盖、不破坏各功能的格式约束与铁律；
+ * - 因此无论用户写什么，校对 / 补全 / 整理 / 对话等原有功能都不会受影响。
+ */
+export function composeSystemPrompt(featureSys: string, provider?: AIProvider | null): string {
+  const base = featureSys || ''
+  const custom = provider?.systemPrompt?.trim()
+  if (!custom) return base
+  return `${base}\n\n【作者自定义系统提示词（请在遵循以上全部规则的前提下一并考虑）】\n${custom}`
+}
+
+function stripSlash(u: string) {
+  return u.replace(/\/+$/, '')
+}
+
+/**
+ * 剥离思考型模型（deepseek-r1 / qwen3-thinking / gemma-thinking 等）的思维链标签。
+ * 这类模型会把内心独白裹在 <think>…</think> 里，对作者是纯噪音。
+ * 若剥离后为空（模型只输出了思考没给结论），则回退返回原文，避免误判为「无返回」。
+ */
+export function stripThink(raw: string): string {
+  const cleaned = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    // 未闭合的情况（被超时/截断）：从 <think> 起全部丢弃
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim()
+  return cleaned || raw.trim()
+}
+
+function isAbortError(e: unknown): boolean {
+  return e instanceof Error && (e.name === 'AbortError' || /abort/i.test(e.message))
+}
+
+/** 作者主动点「停止」时抛出的哨兵错误：UI 不该把它当失败弹红字 */
+export class AICancelled extends Error {
+  constructor() {
+    super('已取消')
+    this.name = 'AICancelled'
+  }
+}
+export function isCancelled(e: unknown): boolean {
+  return e instanceof Error && e.name === 'AICancelled'
+}
+
+/**
+ * 带超时的 fetch：
+ * - 超时 → 内部 ctrl.abort()，调用方把 AbortError 翻译成友好超时提示；
+ * - 外部 signal 触发 → 视为用户主动取消（抛 AICancelled）；
+ * - 流式场景（onResponse 提供）把「清总超时定时器」交出去，由 readSSE 在收到首个 token 时调用，
+ *   这样慢模型边出边显时不会被总超时一刀切中断（首字出来即代表模型活着）。
+ */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, external?: AbortSignal, onResponse?: (clearTimer: () => void) => void): Promise<Response> {
+  if (external?.aborted) throw new AICancelled()
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  const onAbort = () => ctrl.abort()
+  external?.addEventListener('abort', onAbort)
+  try {
+    const res = await fetch(url, { ...init, signal: ctrl.signal })
+    if (onResponse) onResponse(() => clearTimeout(timer))
+    else clearTimeout(timer)
+    return res
+  } catch (e) {
+    clearTimeout(timer)
+    if (external?.aborted) throw new AICancelled()
+    throw e
+  } finally {
+    external?.removeEventListener('abort', onAbort)
+  }
+}
+
+function secs(ms: number) {
+  return Math.round(ms / 1000)
+}
+
+/** 拉取 Ollama 本机已拉取的模型列表 */
+export async function listOllamaModels(baseUrl: string): Promise<string[]> {
+  const base = stripSlash(baseUrl || OLLAMA_DEFAULT_URL)
+  let res: Response
+  try {
+    res = await fetchWithTimeout(`${base}/api/tags`, {}, 10_000)
+  } catch (e) {
+    if (isAbortError(e)) throw new Error('连接 Ollama 超时（10 秒）：请确认服务已启动且地址可达。')
+    throw new Error('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址可达（默认 http://localhost:11434）。')
+  }
+  if (!res.ok) throw new Error(`Ollama 返回错误（HTTP ${res.status}），请确认服务正常。`)
+  const data = await res.json().catch(() => ({}))
+  return (data.models ?? []).map((m: { name?: string; model?: string }) => m.name ?? m.model ?? '').filter(Boolean)
+}
+
+export interface ChatOptions {
+  /** 超时毫秒，默认 CHAT_TIMEOUT_MS */
+  timeoutMs?: number
+  /**
+   * 是否关闭思考型模型的思维链输出：
+   * - false：关闭（仅用于连通性测试等需要极速反馈的场景）
+   * - true / undefined：不传该字段，交给模型/平台默认
+   * 关键约定：think:false 只允许在 testProvider 等明确场景使用；正文生成、设定补全
+   * 等需要推理深度的地方必须保持默认（undefined），切勿全局关闭——否则 deepseek-r1 /
+   * gemma4 / qwen3.5 等会失去思考过程，补全质量直线下降。
+   */
+  think?: boolean
+  /** 外部取消信号（对话面板的「停止」按钮） */
+  signal?: AbortSignal
+  /** 流式输出回调：提供时开启 SSE 流式，逐块收到模型输出（已剥离思考块）。不提供则走普通一次性返回。 */
+  onToken?: (delta: string) => void
+}
+
+interface ChatRaw {
+  content: string
+  /** Ollama 把模型加载进显存的耗时（毫秒）；联网接口无此概念，恒为 0 */
+  loadMs: number
+}
+
+/** 内部调用参数：统一成对象，避免位置参数越加越乱 */
+interface CallOpts {
+  timeoutMs: number
+  think?: boolean
+  signal?: AbortSignal
+  /** 流式回调：提供时开启 SSE 流式 */
+  onToken?: (delta: string) => void
+}
+
+/** 内部统一分发：带元信息，供测试面板展示「其中加载耗时」 */
+async function chatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {
+  if (config.type === 'ollama') return ollamaChatRaw(config, messages, o)
+  return { content: await openaiChat(config, messages, o), loadMs: 0 }
+}
+
+// ---- 流式 SSE 解析 ----
+//
+// OpenAI 兼容接口：每行 `data: {json}\n`，结束发 `data: [DONE]`。
+// Ollama /api/chat：每行是裸 JSON 对象（无 data: 前缀），结束对象 done:true。
+// 这里写一套统一的行解析器，两种格式都吃：遇到 `data:` 前缀则剥掉；其余按裸 JSON 解析。
+async function readSSE(res: Response, onJson: (obj: unknown) => void, onFirstByte?: () => void): Promise<void> {
+  if (!res.body) throw new Error('当前环境不支持流式读取响应体。')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  let firedFirst = false
+  const flushLine = (raw: string) => {
+    const line = raw.trim()
+    if (!line) return
+    let payload = line
+    if (line.startsWith('data:')) payload = line.slice(5).trim()
+    if (!payload || payload === '[DONE]') return
+    try {
+      onJson(JSON.parse(payload))
+      if (!firedFirst) { firedFirst = true; onFirstByte?.() }
+    } catch { /* 跳过无法解析的增量行，不致命 */ }
+  }
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let idx: number
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      flushLine(buf.slice(0, idx))
+      buf = buf.slice(idx + 1)
+    }
+  }
+  if (buf.trim()) flushLine(buf)
+}
+
+/** 统一对话入口：按 provider.type 分发 */
+export async function chat(config: AIProvider, messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+  // 注意：opts.think 默认 undefined → ollamaChatRaw 不传 think 字段，思考型模型保持思考。
+  return (await chatRaw(config, messages, {
+    timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
+    think: opts.think,
+    signal: opts.signal,
+    onToken: opts.onToken,
+  })).content
+}
+
+async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {
+  const { timeoutMs, think } = o
+  const base = stripSlash(config.baseUrl || OLLAMA_DEFAULT_URL)
+  if (!config.model) throw new Error('未选择 Ollama 模型，请先在「模型设置」中拉取并选择本地模型。')
+  // 构建请求体：仅在显式要求关闭思考时传 think:false（连通性测试等极速反馈场景）。
+  // 正常创作生成不传该字段，由模型/平台默认——思考型模型（deepseek-r1 / gemma4 / qwen3.5）保持思考，利于深度设定补全。
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages,
+    stream: !!o.onToken,
+    options: { temperature: 0.85 },
+  }
+  if (think === false) body.think = false
+  let res: Response
+  let clearTimer: (() => void) | null = null
+  try {
+    res = await fetchWithTimeout(
+      `${base}/api/chat`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      timeoutMs,
+      o.signal,
+      // 流式：把清总超时交出去，由 readSSE 在首 token 时调用，避免慢模型被一刀切
+      o.onToken ? (ct) => { clearTimer = ct } : undefined,
+    )
+  } catch (e) {
+    if (isCancelled(e)) throw e
+    if (isAbortError(e)) {
+      throw new Error(
+        `Ollama 响应超时（超过 ${secs(timeoutMs)} 秒）。大参数模型首次调用需加载进显存，可稍后重试；` +
+        '若长期超时，建议换用更小的模型或确认显存是否足够。',
+      )
+    }
+    throw new Error('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址正确（默认 http://localhost:11434）。')
+  }
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '')
+    if (res.status === 404) throw new Error(`模型「${config.model}」不存在（HTTP 404），请确认已执行 ollama pull ${config.model}。`)
+    throw new Error(`Ollama 调用失败（HTTP ${res.status}）：${txt.slice(0, 200)}`)
+  }
+  // 流式：边读边回调，本地大参数模型首字出来就不转圈
+  if (o.onToken) {
+    let content = ''
+    try {
+      await readSSE(res, (obj: any) => {
+        const delta = obj?.message?.content
+        if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
+      }, () => clearTimer?.())
+    } catch (e) {
+      if (o.signal?.aborted) throw new AICancelled()
+      if (isAbortError(e)) throw new Error(`Ollama 响应超时（超过 ${secs(timeoutMs)} 秒）。大参数模型首次调用需加载进显存，可稍后重试；若长期超时建议换用更小的模型。`)
+      throw e
+    }
+    if (!content.trim()) throw new Error('Ollama 未返回内容，请确认模型名称正确且已拉取（ollama pull <模型名>）。')
+    return { content: stripThink(content), loadMs: 0 }
+  }
+  const data = await res.json().catch(() => ({}))
+  const msg = data?.message ?? {}
+  let content: string = typeof msg.content === 'string' ? msg.content : ''
+  // 新版 Ollama 把思维链单独放在 message.thinking，content 已是干净结论；
+  // 极少数情况下模型只产出思考未给结论，此时退用思考内容，避免整轮等待白费。
+  if (!content.trim() && typeof msg.thinking === 'string' && msg.thinking.trim()) {
+    content = msg.thinking
+  }
+  if (!content.trim()) throw new Error('Ollama 未返回内容，请确认模型名称正确且已拉取（ollama pull <模型名>）。')
+  // load_duration 单位为纳秒，转成毫秒
+  const loadMs = Math.round(Number(data?.load_duration ?? 0) / 1e6)
+  return { content: stripThink(content), loadMs: Number.isFinite(loadMs) ? loadMs : 0 }
+}
+
+async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<string> {
+  const { timeoutMs } = o
+  const base = stripSlash(config.baseUrl || '')
+  if (!base) throw new Error('未填写 API 接口地址（baseUrl）。')
+  if (!config.model) throw new Error('未填写模型名称。')
+  let res: Response
+  let clearTimer: (() => void) | null = null
+  try {
+    res = await fetchWithTimeout(
+      `${base}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+        },
+        body: JSON.stringify({ model: config.model, messages, temperature: 0.85, stream: !!o.onToken }),
+      },
+      timeoutMs,
+      o.signal,
+      o.onToken ? (ct) => { clearTimer = ct } : undefined,
+    )
+  } catch (e) {
+    if (isCancelled(e)) throw e
+    if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒），请检查网络或稍后重试。`)
+    throw new Error('无法连接该 API 地址，请检查网络与接口地址（浏览器/桌面端可能因 CORS 拦截跨域请求）。')
+  }
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '')
+    if (res.status === 401) throw new Error('API 密钥无效或缺失（HTTP 401）。')
+    if (res.status === 402) throw new Error('账户余额不足（HTTP 402），请前往平台充值后重试。')
+    if (res.status === 404) throw new Error('接口地址或路径不正确（HTTP 404），请确认 baseUrl 指向 …/v1 之类的 chat/completions 前缀。')
+    if (res.status === 429) throw new Error('请求过于频繁或已达配额上限（HTTP 429），请稍后重试。')
+    throw new Error(`API 调用失败（HTTP ${res.status}）：${txt.slice(0, 200)}`)
+  }
+  // 流式：边收边回调（联网模型首字出来即可见，本地慢模型不再整轮转圈）
+  if (o.onToken) {
+    let content = ''
+    try {
+      await readSSE(res, (obj: any) => {
+        const delta = obj?.choices?.[0]?.delta?.content
+        if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
+      }, () => clearTimer?.())
+    } catch (e) {
+      if (o.signal?.aborted) throw new AICancelled()
+      if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒），请检查网络或稍后重试。`)
+      throw e
+    }
+    if (!content.trim()) throw new Error('API 未返回内容，请确认模型名称正确且账户有额度。')
+    return stripThink(content)
+  }
+  const data = await res.json().catch(() => ({}))
+  const content = data?.choices?.[0]?.message?.content
+  if (!content) throw new Error('API 未返回内容，请确认模型名称正确且账户有额度。')
+  return stripThink(content)
+}
+
+// ---- 连通性测试 ----
+
+export interface AITestResult {
+  ok: boolean
+  /** 往返总耗时（毫秒） */
+  latencyMs: number
+  /** 其中「模型加载进显存」的耗时（毫秒，仅本地 Ollama 有值） */
+  loadMs: number
+  /** 成功时模型的实际回文（已剥离思考块） */
+  reply: string
+  /** 失败时的中文可读原因 */
+  error: string
+}
+
+/** 测试前的本地校验：缺字段就别浪费一次网络往返 */
+function precheck(config: AIProvider): string {
+  if (config.type === 'ollama') {
+    if (!config.model.trim()) return '未选择模型：请先「获取本地模型」并选择一个，或手动填写模型名。'
+    return ''
+  }
+  if (!config.baseUrl.trim()) return '未填写 API 接口地址（baseUrl）。'
+  if (!config.model.trim()) return '未填写模型名称。'
+  // 本地 OpenAI 兼容服务（LM Studio / LocalAI 等）大多免密钥，故仅联网模型强制要求密钥
+  if (!config.local && !config.apiKey.trim()) return '未填写 API 密钥（本地兼容服务可留空）。'
+  return ''
+}
+
+/**
+ * 真实发一次最小对话，验证「配置能否正常拉起该模型并交互」。
+ * 不抛异常——统一返回结构化结果，便于 UI 直接渲染成功 / 失败反馈。
+ */
+export async function testProvider(config: AIProvider): Promise<AITestResult> {
+  const pre = precheck(config)
+  if (pre) return { ok: false, latencyMs: 0, loadMs: 0, reply: '', error: pre }
+  const t0 = Date.now()
+  try {
+    const raw = await chatRaw(config, [{ role: 'user', content: '请只回复两个字：ok' }], { timeoutMs: TEST_TIMEOUT_MS, think: false })
+    const text = raw.content.trim()
+    const latencyMs = Date.now() - t0
+    if (!text) return { ok: false, latencyMs, loadMs: raw.loadMs, reply: '', error: '模型返回了空内容，可能未正确加载，建议重试或更换模型。' }
+    return { ok: true, latencyMs, loadMs: raw.loadMs, reply: text, error: '' }
+  } catch (e) {
+    return { ok: false, latencyMs: Date.now() - t0, loadMs: 0, reply: '', error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+// ---- 设定模板 AI 补全 ----
+
+export interface TemplateField {
+  /** 内部字段 key（卡片/表单型为 `模块名::字段名`，表格型为列名） */
+  key: string
+  /** 展示名（中文） */
+  label: string
+  desc?: string
+  example?: string
+  /** 锁定字段：不发给模型、不随补全写入（如自动编号），仅在预览中展示 */
+  locked?: boolean
+}
+
+export interface TemplateFillResult {
+  /** key -> 模型补全的值（仅非锁定、且模型实际产出的字段） */
+  values: Record<string, string>
+  /** 由 AI 补全的字段 key 列表（前端高亮「AI补全」徽标用） */
+  aiFilled: string[]
+}
+
+/**
+ * 构建世界观上下文摘要，供补全时保证一致性。
+ * v1：抽取表单型「世界设定 / 力量体系 / 作品定位」的关键字段，作为模型补全的约束。
+ */
+export async function buildWorldContext(): Promise<string> {
+  const pick = (data: Record<string, string> | undefined, names: string[]): string[] => {
+    if (!data) return []
+    const out: string[] = []
+    for (const n of names) {
+      const v = Object.entries(data)
+        .map(([k, val]) => (k.endsWith(`::${n}`) || k === n ? val : ''))
+        .find(Boolean)
+      if (v && v.trim()) out.push(`${n}：${v.trim()}`)
+    }
+    return out
+  }
+  const [world, power, pos] = await Promise.all([
+    db.getFormData('worldbase').catch(() => undefined),
+    db.getFormData('power').catch(() => undefined),
+    db.getFormData('positioning').catch(() => undefined),
+  ])
+  const lines: string[] = []
+  lines.push(...pick(world, ['世界名称', '一句话世界观', '文明程度', '当前时代背景', '世界核心规则']))
+  lines.push(...pick(power, ['体系名称', '体系类型', '力量来源与路线', '力量的限制规则']))
+  lines.push(...pick(pos, ['书名', '类型赛道', '核心卖点', '一句话简介']))
+  return lines.join('\n')
+}
+
+/**
+ * 设定模板补全：把字段清单 + 草图（+可选世界观上下文）发给当前 AI 模型，返回结构化结果。
+ * 内部自取当前模型配置（loadProviders + loadActiveId），调用方无需关心 provider。
+ */
+export async function aiCompleteTemplate(
+  fields: TemplateField[],
+  sketch: string,
+  worldContext?: string,
+  onToken?: (delta: string) => void,
+): Promise<TemplateFillResult> {
+  const cfg = await requireActiveProvider()
+  const send = fields.filter(f => !f.locked)
+
+  const fieldList = send
+    .map((f, i) => {
+      const bits = [`${i + 1}. [${f.label}]`]
+      if (f.desc) bits.push(`说明：${f.desc}`)
+      if (f.example) bits.push(`示例：${f.example}`)
+      return bits.join(' ')
+    })
+    .join('\n')
+
+  const sys = `你是「青春幻想引擎」的小说设定辅助助手。作者会给你一份设定模板的字段清单和一段粗略草图，请把草图整理成一份完整、合理的设定，逐项填入模板字段。规则：
+1. 严格按字段清单返回，使用给定的编号作为 JSON key（如 {"1":"...","2":"..."}）。
+2. 只补全"设定/世界观/人物/道具"等元信息，绝不写剧情正文、不写章节内容。
+3. 草图中作者已明确说出的信息（名字、身份、定位等），保留原意，不要篡改或擅加矛盾设定。
+4. 草图未提及的字段，基于【世界观上下文】（若有）与网文设定常识合理补全，确保与上下文及字段间内部一致。
+5. 对需要作者特别注意/确认的地方，可在该字段值末尾用「（建议确认：…）」提示，但不要滥用。
+6. 只输出一个 JSON 对象，不要任何解释、不要 Markdown 代码块标记、不要多余文字。
+7. 若某字段确实无从补全，给一个合理的占位或留空字符串 ""，不要编造明显荒谬的内容。`
+
+  const user = `【字段清单】
+${fieldList}
+
+【世界观上下文】
+${worldContext && worldContext.trim() ? worldContext.trim() : '（无）'}
+
+【作者草图】
+${sketch && sketch.trim() ? sketch.trim() : '（作者未提供草图，请基于世界观上下文合理补全一份）'}
+
+请返回补全后的 JSON。`
+
+  const text = await chat(
+    cfg,
+    [
+      { role: 'system', content: composeSystemPrompt(sys, cfg) },
+      { role: 'user', content: user },
+    ],
+    { timeoutMs: CHAT_TIMEOUT_MS, onToken },
+  )
+
+  const parsed = parseTemplateJSON(text, send)
+  const values: Record<string, string> = {}
+  const aiFilled: string[] = []
+  parsed.forEach((val, i) => {
+    const key = send[i].key
+    const v = (val ?? '').trim()
+    if (v) { values[key] = v; aiFilled.push(key) }
+  })
+  return { values, aiFilled }
+}
+
+/** 从模型回复中剥离代码块标记并解析为按编号索引的值数组 */
+function parseTemplateJSON(raw: string, fields: TemplateField[]): string[] {
+  let s = raw.trim()
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+  const start = s.indexOf('{')
+  const end = s.lastIndexOf('}')
+  if (start >= 0 && end > start) s = s.slice(start, end + 1)
+  let obj: Record<string, unknown> = {}
+  try { obj = JSON.parse(s) } catch { obj = {} }
+  const out: string[] = []
+  for (let i = 0; i < fields.length; i++) {
+    const v = obj[String(i + 1)] ?? obj[i + 1] ?? ''
+    out.push(typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '')
+  }
+  return out
+}
+
+// ---- 设置持久化（走 db.meta，全局共享）----
+//
+// 1.5.0 起模型配置改为「全局」：模型是这台机器的能力，不该随小说项目切换而丢失。
+// 旧版本曾写在项目级 settingsKV 里，首次读取时按项目自动迁移到全局，作者无感。
+
+const K_PROVIDERS = 'aiProviders'
+const K_ACTIVE = 'aiActiveProviderId'
+const K_MIGRATED = 'aiConfigMigratedToGlobal'
+
+/** 已完成旧配置迁移的项目 id（进程内缓存，避免每次读配置都多打两次库） */
+let migratedFor: string | null = null
+
+async function ensureMigrated(): Promise<void> {
+  const pid = db.getCurrentProjectId()
+  if (migratedFor === pid) return
+  migratedFor = pid
+  try {
+    if (await db.getSetting<boolean>(K_MIGRATED, false)) return
+    const legacy = await db.getSetting<AIProvider[]>(K_PROVIDERS, [])
+    if (legacy.length > 0) {
+      const cur = await db.getMeta<AIProvider[]>(K_PROVIDERS, [])
+      const merged = [...cur]
+      for (const p of legacy) if (!merged.some(x => x.id === p.id)) merged.push(p)
+      await db.setMeta(K_PROVIDERS, merged)
+      if (!(await db.getMeta<string | null>(K_ACTIVE, null))) {
+        const la = await db.getSetting<string | null>(K_ACTIVE, null)
+        if (la) await db.setMeta(K_ACTIVE, la)
+      }
+    }
+    await db.setSetting(K_MIGRATED, true)
+  } catch {
+    // 迁移失败不影响主流程：最坏情况就是作者重新添加一次模型
+    migratedFor = null
+  }
+}
+
+export async function loadProviders(): Promise<AIProvider[]> {
+  await ensureMigrated()
+  return (await db.getMeta<AIProvider[]>(K_PROVIDERS, [])) ?? []
+}
+export async function saveProviders(list: AIProvider[]): Promise<void> {
+  await db.setMeta(K_PROVIDERS, list)
+  await refreshAIReady()
+}
+export async function loadActiveId(): Promise<string | null> {
+  await ensureMigrated()
+  return (await db.getMeta<string | null>(K_ACTIVE, null)) ?? null
+}
+export async function saveActiveId(id: string | null): Promise<void> {
+  await db.setMeta(K_ACTIVE, id)
+  await refreshAIReady()
+}
+
+export function typeLabel(p: AIProvider): string {
+  return p.type === 'ollama' || p.local ? '本地' : '联网'
+}
+
+// ---- AI 就绪状态（全局订阅）----
+//
+// 存在意义：所有 AI 入口按钮都要能在「未配置模型」时自动禁用并给出说明。
+// 各组件若各自去 loadProviders() 判断，既重复又容易漏掉「刚配好模型但按钮还是灰的」。
+// 这里做一个极小的发布订阅：配置变更 → 广播 → 所有按钮同步刷新。
+
+export interface AIReadyInfo {
+  /** 是否存在「配置完整、可直接调用」的模型 */
+  ready: boolean
+  /** 当前模型的简短标识，如「本地 Ollama · qwen3:8b」；未就绪为空串 */
+  label: string
+}
+
+const AI_NOT_READY: AIReadyInfo = { ready: false, label: '' }
+let readyInfo: AIReadyInfo = AI_NOT_READY
+let readyLoaded = false
+const readyListeners = new Set<() => void>()
+
+/** 配置是否填全（能真正发起调用），复用测试前的本地校验 */
+export function isProviderUsable(p: AIProvider): boolean {
+  return precheck(p) === ''
+}
+
+function resolveActive(list: AIProvider[], activeId: string | null): AIProvider | null {
+  const byId = activeId ? list.find(p => p.id === activeId) : undefined
+  const cand = byId ?? list[0]
+  if (cand && isProviderUsable(cand)) return cand
+  // 当前选中的那个没填全时，退而取第一个填全的，
+  // 免得作者明明配好了另一个模型，按钮却告诉他「未配置」。
+  return list.find(isProviderUsable) ?? null
+}
+
+/** 取当前生效的模型配置；未配置或配置不全时返回 null（调用方自行决定是否降级） */
+export async function getActiveProvider(): Promise<AIProvider | null> {
+  const [list, activeId] = await Promise.all([loadProviders(), loadActiveId()])
+  return resolveActive(list, activeId)
+}
+
+/** 取当前模型；没有就抛出统一的中文提示（供必须依赖 AI 的功能使用） */
+export async function requireActiveProvider(): Promise<AIProvider> {
+  const cfg = await getActiveProvider()
+  if (!cfg) throw new Error('尚未配置可用的 AI 模型，请先到「灵感启发 → AI 辅助规划 → 模型设置」添加并设为当前。')
+  return cfg
+}
+
+/** 同步读取当前快照（useSyncExternalStore 用，返回引用稳定的对象） */
+export function aiReadySnapshot(): AIReadyInfo {
+  return readyInfo
+}
+
+/** 重新计算就绪状态，有变化才广播 */
+export async function refreshAIReady(): Promise<AIReadyInfo> {
+  readyLoaded = true
+  let next: AIReadyInfo = AI_NOT_READY
+  try {
+    const cfg = await getActiveProvider()
+    if (cfg) next = { ready: true, label: `${cfg.name || typeLabel(cfg)} · ${cfg.model}` }
+  } catch {
+    next = AI_NOT_READY
+  }
+  if (next.ready !== readyInfo.ready || next.label !== readyInfo.label) {
+    readyInfo = next
+    readyListeners.forEach(fn => {
+      try { fn() } catch { /* 单个监听者出错不影响其他 */ }
+    })
+  }
+  return readyInfo
+}
+
+/** 订阅就绪状态变化；首次订阅时惰性加载一次配置 */
+export function subscribeAIReady(fn: () => void): () => void {
+  readyListeners.add(fn)
+  if (!readyLoaded) void refreshAIReady()
+  return () => { readyListeners.delete(fn) }
+}

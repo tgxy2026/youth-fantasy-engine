@@ -1,0 +1,209 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   主题变量
+   每个主题为 ink 调色板（950 最深 → 50 最浅）与强调色 amber 提供 RGB 三元组。
+   切换 <html data-theme> 即可整体换肤，组件无需改动（颜色全部走 Tailwind 的 ink/amber）。
+   ============================================================ */
+:root,
+[data-theme='dark'] {
+  --ink-950: 12 12 15;
+  --ink-900: 18 18 24;
+  --ink-850: 23 23 34;
+  --ink-800: 29 29 41;
+  --ink-700: 40 40 56;
+  --ink-600: 52 52 74;
+  --ink-500: 74 74 102;
+  --ink-400: 102 102 138;
+  --ink-300: 142 142 181;
+  --ink-200: 181 181 212;
+  --ink-100: 216 216 234;
+  --ink-50: 238 238 248;
+  --amber: 217 160 74;
+  --amber-soft: 232 184 109;
+  color-scheme: dark;
+}
+
+/* 护眼：浅绿柔光，低对比、不刺眼 */
+[data-theme='eye-care'] {
+  --ink-950: 230 240 224;
+  --ink-900: 241 246 236;
+  --ink-850: 233 241 226;
+  --ink-800: 238 244 233;
+  --ink-700: 205 217 196;
+  --ink-600: 188 203 177;
+  --ink-500: 155 181 140;
+  --ink-400: 111 138 95;
+  --ink-300: 86 112 73;
+  --ink-200: 60 82 48;
+  --ink-100: 43 58 34;
+  --ink-50: 28 39 22;
+  --amber: 79 138 91;
+  --amber-soft: 120 170 110;
+  color-scheme: light;
+}
+
+/* 午夜蓝：冷色调深色，与默认暖暗形成区分 */
+[data-theme='midnight'] {
+  --ink-950: 10 14 26;
+  --ink-900: 15 22 38;
+  --ink-850: 20 29 48;
+  --ink-800: 26 39 64;
+  --ink-700: 36 51 82;
+  --ink-600: 50 68 104;
+  --ink-500: 74 96 136;
+  --ink-400: 125 151 194;
+  --ink-300: 169 192 224;
+  --ink-200: 206 221 242;
+  --ink-100: 230 238 251;
+  --ink-50: 243 247 255;
+  --amber: 90 169 214;
+  --amber-soft: 140 200 235;
+  color-scheme: dark;
+}
+
+/* 羊皮卷：暖棕浅色，适合长时间阅读 */
+[data-theme='sepia'] {
+  --ink-950: 239 230 214;
+  --ink-900: 246 239 226;
+  --ink-850: 240 231 214;
+  --ink-800: 243 236 222;
+  --ink-700: 216 201 175;
+  --ink-600: 200 182 151;
+  --ink-500: 168 146 111;
+  --ink-400: 138 114 80;
+  --ink-300: 111 90 60;
+  --ink-200: 79 63 40;
+  --ink-100: 58 46 28;
+  --ink-50: 39 29 16;
+  --amber: 184 121 63;
+  --amber-soft: 205 156 104;
+  color-scheme: light;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  @apply bg-ink-950 text-ink-100 font-sans antialiased;
+  font-size: 14px;
+}
+
+/* ---------- 全局选中 / 光标 ---------- */
+::selection {
+  background: rgb(var(--amber) / 0.30);
+}
+.novel-textarea {
+  caret-color: rgb(var(--amber));
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-ink-600 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-ink-500; }
+
+/* ---------- 通用输入 ---------- */
+input, textarea, select {
+  @apply bg-ink-800 border border-ink-600 rounded-md px-3 py-1.5 text-ink-100 outline-none
+         transition-colors duration-150 placeholder:text-ink-400;
+}
+input:focus, textarea:focus, select:focus {
+  @apply border-amber/60 ring-1 ring-amber/30;
+}
+textarea::placeholder {
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+}
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+/* ---------- 表单页字段说明气泡 ---------- */
+.field-desc {
+  @apply text-[11px] leading-relaxed text-ink-300;
+}
+.field-example {
+  @apply text-[11px] leading-relaxed text-amber/70 mt-0.5;
+}
+
+/* ---------- 编辑器打字机模式 ---------- */
+.novel-textarea {
+  @apply w-full bg-transparent border-0 outline-none resize-none font-serif;
+  font-size: 17px;
+  line-height: 2;
+  letter-spacing: 0.02em;
+  color: rgb(var(--ink-100));
+  /* 注意：本类不声明任何 overflow —— 滚动权只归编辑区 textarea 自身（overflow-y-auto），
+     高亮叠层/测量层必须保持 overflow:hidden（inline 压制），否则会冒出第二个不可操作的滚动条。 */
+}
+.novel-textarea:focus { border: 0; ring: 0; }
+
+/* ---------- 正文引用名高亮（v1.3） ---------- */
+/* 叠层透出文字，mark 仅加底色；文字色 inherit 自上层 ink-100，确保随主题变化 */
+.ref-mark {
+  background: rgb(var(--amber) / 0.28);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* ---------- 动画 ---------- */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes jwj-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes jwj-bounce {
+  0% { transform: translateY(0); }
+  30% { transform: translateY(-10px); }
+  60% { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+.page-enter {
+  animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pulseSoft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pulse-soft { animation: pulseSoft 2s ease-in-out infinite; }
+
+/* ---------- 状态徽章 ---------- */
+.badge {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium;
+}
+.badge-green { @apply bg-emerald-500/15 text-emerald-400 border border-emerald-500/30; }
+.badge-amber { @apply bg-amber/15 text-amber border border-amber/30; }
+.badge-red { @apply bg-red-500/15 text-red-400 border border-red-500/30; }
+.badge-blue { @apply bg-sky-500/15 text-sky-400 border border-sky-500/30; }
+.badge-gray { @apply bg-ink-700 text-ink-300 border border-ink-500; }
+
+/* ---------- 卡片悬浮 ---------- */
+.card-hover {
+  @apply transition-all duration-200;
+}
+.card-hover:hover {
+  @apply border-amber/40 -translate-y-0.5;
+  box-shadow: 0 4px 24px rgba(217, 160, 74, 0.08);
+}
+
+/* ---------- 图标按钮（项目管理页 / 通用） ---------- */
+.icon-btn {
+  @apply inline-flex items-center justify-center w-9 h-9 rounded-lg border border-ink-600 text-ink-400
+         hover:text-ink-100 hover:border-ink-500 hover:bg-ink-800 transition-colors;
+}
+.icon-btn-primary {
+  @apply inline-flex items-center justify-center w-9 h-9 rounded-lg bg-amber/15 text-amber border border-amber/30
+         hover:bg-amber/25 transition-colors;
+}
+.icon-btn-danger {
+  @apply inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-600
+         hover:text-red-400 hover:bg-red-500/10 transition-colors;
+}

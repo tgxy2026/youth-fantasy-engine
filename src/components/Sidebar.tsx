@@ -1,0 +1,291 @@
+import { BookOpen, ChevronDown, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, Feather, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2 } from 'lucide-react'
+import HelpPopover from './HelpPopover'
+import { confirmDialog } from './dialogs'
+import { useState, useEffect } from 'react'
+import { GROUPS, TABS, EDITOR_TAB, tabVisible, getVolumeTabs, getVolumeLedgerTabId, getVolumeIdFromLedgerTab, refreshVolumeTabs, type VisCtx } from '../lib/schema'
+import type { TabDef } from '../lib/types'
+import * as db from '../lib/db'
+import { uid } from '../lib/id'
+import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom } from '../lib/theme'
+import { DESKTOP } from '../lib/desktop'
+import { DesktopDataBar } from './Desktop'
+import { useResizable } from '../lib/useResizable'
+import { APP_VERSION } from '../lib/portable'
+
+const GROUP_ICONS: Record<string, React.ReactNode> = {
+  '工作面板': <LayoutDashboard size={15} />,
+  '正文写作': <PenTool size={15} />,
+  '灵感工具': <Sparkles size={15} />,
+  '开书定位': <BookOpen size={15} />,
+  '角色管理': <Users size={15} />,
+  '世界构建': <Globe size={15} />,
+  '大纲规划': <Map size={15} />,
+  '创作管理': <Activity size={15} />,
+  '运营维护': <Wrench size={15} />,
+}
+
+interface Props {
+  activeTab: string
+  onNavigate: (id: string) => void
+  collapsed: boolean
+  projectName: string
+  onExitProject: () => void
+  onExport: () => void
+  /** 可见性上下文：项目形态 + 自定义项目启用的功能全集，驱动页签显隐与基础设施开关 */
+  ctx: VisCtx
+}
+
+export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx }: Props) {
+  const [openGroups, setOpenGroups] = useState<Set<string>>(
+    new Set(['工作面板', '正文写作', '灵感工具', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护'])
+  )
+  // 主题与界面缩放（与 <html data-theme> / zoom 同步）
+  const [theme, setTheme] = useState(getStoredTheme())
+  const [zoom, setZoom] = useState(getStoredZoom())
+  const changeTheme = (id: typeof theme) => setTheme(applyTheme(id))
+  const changeZoom = (d: number) => setZoom(applyZoom(zoom + d))
+  // 侧栏宽度可拖拽调整
+  const sidebar = useResizable({ key: 'yfe-sidebar-w', initial: 224, initialWide: 300, min: 200, max: 560, side: 'right' })
+
+  // 卷台账子项：从运行期缓存读取（编辑器增删改卷后会刷新缓存并广播事件）
+  const [volumeTabs, setVolumeTabs] = useState(getVolumeTabs())
+  const [volOpen, setVolOpen] = useState(true)
+  useEffect(() => {
+    let alive = true
+    const refresh = () => { if (alive) setVolumeTabs(getVolumeTabs()) }
+    void refreshVolumeTabs().then(refresh)
+    const onVol = () => refresh()
+    window.addEventListener('yfe:volumes-changed', onVol)
+    return () => { alive = false; window.removeEventListener('yfe:volumes-changed', onVol) }
+  }, [])
+
+  /** 在「章节总表」下新建一卷（= 一张新的章节台账表），建完直接跳进该卷 */
+  const createVolume = async () => {
+    const n = volumeTabs.length + 1
+    const vol = { id: uid(), projectId: db.getCurrentProjectId(), order: volumeTabs.length, title: `第${n}卷`, description: '', createdAt: Date.now() }
+    await db.saveVolume(vol)
+    await refreshVolumeTabs()
+    setVolumeTabs(getVolumeTabs())
+    window.dispatchEvent(new Event('yfe:volumes-changed'))
+    onNavigate(getVolumeLedgerTabId(vol.id))
+  }
+
+  /** 在「章节总表」下删除一卷（= 删掉该卷的章节台账表 + 卷记录，章节移入回收站可恢复） */
+  const removeVolume = async (vol: TabDef) => {
+    // vol.id 是卷台账 tabId（chapter-vol-<真实卷id>），须反解出真实卷库 id 再删，否则按 tabId 查 volumes 库会查无此键、静默失败
+    const volumeId = getVolumeIdFromLedgerTab(vol.id)
+    if (!await confirmDialog({ title: '删除分卷', message: `此操作会同时删除【章节总表】与【正文编辑·章节管理】两处的分卷「${vol.name}」及其全部章节，数据将移入回收站（可恢复）。确定要删除吗？`, danger: true })) return
+    await db.deleteVolume(volumeId)
+    await refreshVolumeTabs()
+    setVolumeTabs(getVolumeTabs())
+    window.dispatchEvent(new Event('yfe:volumes-changed'))
+    if (activeTab === vol.id) onNavigate('chapter-master')
+  }
+
+  const toggleGroup = (g: string) => {
+    const next = new Set(openGroups)
+    if (next.has(g)) next.delete(g)
+    else next.add(g)
+    setOpenGroups(next)
+  }
+
+  return (
+    <aside
+      className="relative h-full flex flex-col border-r border-ink-700 bg-ink-900/95 shrink-0"
+      style={{ width: sidebar.size, minWidth: sidebar.size }}
+    >
+      {/* 拖拽调整侧栏宽度 */}
+      <div
+        onMouseDown={sidebar.onDragStart}
+        className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors z-20"
+        title="拖拽调整侧栏宽度"
+      />
+      {/* Logo */}
+      <div className="px-4 h-14 border-b border-ink-700 shrink-0 flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-lg bg-amber/15 border border-amber/30 flex items-center justify-center shrink-0">
+          <Feather size={16} className="text-amber" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[14px] font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-[10px] font-normal text-ink-400 ml-1">{APP_VERSION === '开发版' ? '开发版' : `v${APP_VERSION}`}</span></div>
+          <div className="text-[10px] text-ink-400 -mt-0.5 truncate">小说创作工作台</div>
+        </div>
+      </div>
+
+      {/* 当前项目条 */}
+      <div className="px-3 py-2.5 border-b border-ink-700 shrink-0">
+        <div className="rounded-lg bg-ink-800/70 border border-ink-700 px-2.5 py-2">
+          <div className="text-[9px] text-ink-500 mb-0.5">当前项目</div>
+          <div className="text-[13px] font-semibold text-amber truncate leading-tight" title={projectName}>{projectName}</div>
+          <div className="flex gap-1 mt-2">
+            <button
+              onClick={onExitProject}
+              className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] text-ink-300 bg-ink-700/60 rounded hover:bg-ink-700 hover:text-ink-100 transition-colors"
+              title="返回项目列表"
+            >
+              <ArrowLeft size={10} /> 切换项目
+            </button>
+            <button
+              onClick={onExport}
+              className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] text-ink-300 bg-ink-700/60 rounded hover:bg-ink-700 hover:text-ink-100 transition-colors"
+              title="导出当前项目 JSON 备份"
+            >
+              <Upload size={10} /> 备份
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+        {GROUPS.map(group => {
+          const isOpen = openGroups.has(group)
+          const tabs = group === '正文写作'
+            ? [EDITOR_TAB as any, ...TABS.filter(t => t.group === group && tabVisible(t.id, ctx))]
+            : TABS.filter(t => t.group === group && tabVisible(t.id, ctx))
+          if (tabs.length === 0 && group !== '正文写作') return null
+          return (
+            <div key={group}>
+              <button
+                onClick={() => toggleGroup(group)}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] font-medium text-ink-400 hover:text-ink-200 transition-colors uppercase tracking-wider"
+              >
+                {GROUP_ICONS[group]}
+                <span>{group}</span>
+                <ChevronDown
+                  size={12}
+                  className={`ml-auto transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
+                />
+              </button>
+              {isOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  {tabs.map(tab => {
+                    const active = activeTab === tab.id
+                    // 「章节总表」展开为各卷子表（按卷建表）：每卷一张独立台账表
+                    if (tab.id === 'chapter-master') {
+                      const volActive = volumeTabs.some(v => v.id === activeTab)
+                      return (
+                        <div key={tab.id}>
+                          <button
+                            onClick={() => { setVolOpen(o => !o); onNavigate(tab.id) }}
+                            className={`w-full text-left px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
+                              ${active
+                                ? 'bg-amber/10 text-amber font-medium border border-amber/25'
+                                : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
+                          >
+                            {tab.name}
+                            <ChevronDown size={11} className={`ml-auto transition-transform duration-200 ${volOpen ? '' : '-rotate-90'}`} />
+                          </button>
+                          {volOpen && (
+                            <div className="mt-0.5 space-y-0.5">
+                              {volumeTabs.length === 0 && (
+                                <button
+                                  onClick={createVolume}
+                                  className="w-full text-left px-2.5 py-1 pl-12 rounded-md text-[12px] text-ink-400 hover:text-amber hover:bg-ink-800/60 transition-colors flex items-center gap-1"
+                                >
+                                  <FolderPlus size={11} /> 新建第一卷
+                                </button>
+                              )}
+                              {volumeTabs.map(v => (
+                                <div key={v.id} className="group flex items-center gap-0.5">
+                                  <button
+                                    onClick={() => onNavigate(v.id)}
+                                    className={`flex-1 text-left px-2.5 py-1 pl-12 rounded-md text-[13px] transition-all duration-150
+                                      ${v.id === activeTab
+                                        ? 'bg-amber/10 text-amber font-medium border border-amber/25'
+                                        : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
+                                  >
+                                    {v.name}
+                                  </button>
+                                  <button
+                                    onClick={() => removeVolume(v)}
+                                    title="删除该卷"
+                                    className="shrink-0 px-1.5 py-1 rounded-md text-ink-500 hover:text-red-400 hover:bg-ink-800 transition-colors"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              ))}
+                              {volumeTabs.length > 0 && (
+                                <button
+                                  onClick={createVolume}
+                                  className="w-full text-left px-2.5 py-1 pl-12 rounded-md text-[12px] text-ink-400 hover:text-amber hover:bg-ink-800/60 transition-colors flex items-center gap-1"
+                                >
+                                  <FolderPlus size={11} /> 新建卷
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => onNavigate(tab.id)}
+                        className={`w-full text-left px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150
+                          ${active
+                            ? 'bg-amber/10 text-amber font-medium border border-amber/25'
+                            : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
+                      >
+                        {tab.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="px-4 py-3 border-t border-ink-700 shrink-0 space-y-2.5">
+        {/* 主题切换 */}
+        <div>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Palette size={11} />
+            <span>主题</span>
+          </div>
+          <div className="flex gap-1.5">
+            {THEMES.map(t => (
+              <button
+                key={t.id}
+                title={`${t.name}（${t.desc}）`}
+                onClick={() => changeTheme(t.id)}
+                className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${theme === t.id ? 'border-amber ring-1 ring-amber/50' : 'border-ink-600'}`}
+                style={{ background: t.swatch }}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* 界面缩放 */}
+        <div className="flex items-center gap-2 pt-1">
+          <span className="flex items-center gap-1">界面缩放
+            <HelpPopover title="界面缩放怎么用" width="20rem" size={11}>
+              {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 设置会自动保存到本地，下次打开沿用；\n· 首次运行会按窗口宽度给一个舒适默认值，大屏不再卡在 100%；\n· 桌面端窗口较大时字号偏小，把缩放调大即可更清晰；\n· 缩放与主题切换相互独立，互不影响。'}
+            </HelpPopover>
+          </span>
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={() => changeZoom(-10)}
+              className="p-0.5 text-ink-400 hover:text-amber transition-colors"
+              title="缩小界面"
+            >
+              <ZoomOut size={12} />
+            </button>
+            <span className="w-9 text-center text-ink-300 tabular-nums">{zoom}%</span>
+            <button
+              onClick={() => changeZoom(10)}
+              className="p-0.5 text-ink-400 hover:text-amber transition-colors"
+              title="放大界面"
+            >
+              <ZoomIn size={12} />
+            </button>
+          </div>
+        </div>
+        {DESKTOP && <DesktopDataBar embedded />}
+      </div>
+    </aside>
+  )
+}

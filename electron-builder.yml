@@ -1,0 +1,33 @@
+# 桌面（Windows 安装版）打包配置 —— 用法：npm run build:desktop
+# 产物：release/desktop/青春幻想引擎-Setup-1.0.0.exe（NSIS 安装包）
+appId: cn.novelstudio.yfe
+productName: 青春幻想引擎
+copyright: Copyright © 2026
+
+directories:
+  output: release/desktop
+  buildResources: build
+
+# 只打包运行所需文件：渲染产物 + Electron 主进程（依赖已全部内联进 dist，无需 node_modules）
+files:
+  - electron/**/*
+  - dist/**/*
+  - package.json
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false                # 非一键安装：可自选安装目录
+  perMachine: false              # 按用户安装，无需管理员权限
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: 青春幻想引擎
+  artifactName: 青春幻想引擎-Setup-${version}.exe
