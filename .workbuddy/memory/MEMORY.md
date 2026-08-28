@@ -30,7 +30,7 @@
 ## 版本现状
 - 1.8.0 手绘地图+地理联动；1.9.0 灵感工具拆分+检查工具+ErrorBoundary；1.9.1 表头筛选/按卷建表/补登模式/示范项目卷二。
 - **1.9.2（2026-08-28）**：章节名与顺序解耦——`src/lib/chapterSeq.ts` 为顺序唯一权威（全派生不落库）；`Chapter.excludeFromNumbering` + Hash 开关；continuityCheck 不再解析标题；`migrateChapterLedger`/`migrateChapterNumbering` 已接入 openProject。同日四轮审计（日常/联动/AI喂数/数据安全）修复：doAddChapter stale state、migrateChapterLedger 迁移后误删台账行、importProject 未重映射卷台账 tabId 等。
-- **1.9.5（已封装，2026-08-28，提交 f49c2b9）**：= 1.9.2 全部 + 两条节奏预警（爽点断档/存稿缓冲告急，continuityCheck 第 9/10 类）。产物：`release/novel-studio-1.9.5/`（便携 7.09MB）+ `release/桌面安装版/青春幻想引擎-Setup-1.9.5.exe`（80MB）。便携版已真机启动，待用户手工验证。
+- **1.9.5（已封装，2026-08-28，提交 f49c2b9 + b448115）**：= 1.9.2 全部 + 两条节奏预警（爽点断档/存稿缓冲告急，continuityCheck 第 9/10 类）+ 打赏页真实素材落地（铁骨咸鱼/收款码×2/头像/友链三项）。产物：`release/novel-studio-1.9.5/`（便携 7.62MB）+ `release/桌面安装版/青春幻想引擎-Setup-1.9.5.exe`（81MB）。⚠️ 重打包便携版前必须手动清空 `release/novel-studio-<ver>/`（vite emptyOutDir 撞 safe-delete）。
 - **规划 2.0**：源码加固（javascript-obfuscator 混淆/可选 asarIntegrity+bytenode）+ 功能讲稿。触发词「开工2.0」。
 
 ## 1.9.1 自定义项目架构

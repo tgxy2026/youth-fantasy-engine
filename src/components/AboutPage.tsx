@@ -29,7 +29,7 @@ const THANKS: { name: string; work: string }[] = [
 
 // 友情链接
 const LINKS = [
-  { label: '读者交流群', value: '青春幻想引擎交流群：1106815480' },
+  { label: '青春幻想引擎交流群', value: '1106815480' },
   { label: 'QQ', value: '1822304733' },
   { label: '公众号', value: '咸鱼哥的双线人生' },
 ]
@@ -56,8 +56,9 @@ export default function AboutPage() {
           关于「青春幻想引擎」与它的作者，以及支持作者的方式。
         </p>
 
-        {/* 主体：左列（作者信息 + 友情链接） / 右列（打赏支持，拉长对齐） */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+        {/* 主体：左列（作者信息 + 友情链接） / 右列（打赏支持，拉长对齐）。
+            lg 下给定最小高度，两列 items-stretch 等高，多出的空间由 flex-1 区块自然留白 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch lg:min-h-[620px]">
           {/* 左列：作者信息 + 友情链接 */}
           <div className="lg:col-span-1 flex flex-col gap-6">
             {/* 作者信息 */}
@@ -71,8 +72,7 @@ export default function AboutPage() {
                 />
                 <div className="text-lg font-semibold text-ink-50">铁骨咸鱼</div>
                 <p className="text-ink-400 text-xs mt-2 leading-relaxed">
-                  在你的世界中讲述你的故事。
-                  B 站主页有软件使用的视频教程，欢迎加群交流分享、反馈 Bug。
+                  在你的世界中讲述你的故事（B站主页有软件使用的视频教程，欢迎加强交流分享或反馈Bug）
                 </p>
                 <a
                   href={BILI_URL}
@@ -85,8 +85,8 @@ export default function AboutPage() {
               </div>
             </section>
 
-            {/* 友情链接 */}
-            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+            {/* 友情链接（flex-1 撑满左列剩余高度） */}
+            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6 flex-1">
               <SectionTitle icon={<Globe size={15} className="text-amber" />}>友情链接</SectionTitle>
               <ul className="space-y-3">
                 {LINKS.map(l => (
@@ -105,26 +105,24 @@ export default function AboutPage() {
             <p className="text-ink-500 text-xs mb-5">
               如果本软件对你有帮助，欢迎扫码支持作者。
             </p>
-            <div className="grid grid-cols-2 gap-4">
+            {/* 码图区：flex-1 撑满剩余高度，图片锁定纵横比上下贴边（object-contain），多出宽度居中留白 */}
+            <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
               {[
-                { label: '微信', img: payWechat, color: 'text-emerald-400' },
-                { label: '支付宝', img: payAlipay, color: 'text-sky-400' },
+                { key: 'wechat', img: payWechat },
+                { key: 'alipay', img: payAlipay },
               ].map(p => (
-                <div key={p.label} className="rounded-lg bg-ink-900/60 border border-ink-700 p-4 text-center">
-                  <div className={`text-sm font-medium mb-3 ${p.color}`}>{p.label}</div>
-                  {/* 收款码为 3:4 竖版截图：宽度固定、高度自适应，保持原始比例不变形 */}
+                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex items-center justify-center overflow-hidden min-h-0">
                   <img
                     src={p.img}
-                    alt={`${p.label}收款码`}
-                    className="w-40 max-w-full mx-auto rounded-md"
+                    alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
+                    className="max-w-full max-h-full object-contain rounded-md"
                   />
-                  <div className="text-[10px] text-ink-600 mt-3">扫码时请先放大窗口看清二维码</div>
                 </div>
               ))}
             </div>
 
-            {/* 致谢名单（flex-1 撑满右列剩余高度，预留更多空位） */}
-            <div className="mt-6 pt-5 border-t border-ink-700 flex-1">
+            {/* 致谢名单 */}
+            <div className="mt-6 pt-5 border-t border-ink-700">
               <h3 className="text-xs font-semibold text-ink-200 mb-1 flex items-center gap-2">
                 <Users size={14} className="text-amber" /> 致谢名单
               </h3>

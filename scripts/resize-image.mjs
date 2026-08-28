@@ -29,10 +29,10 @@ for (let y = 0; y < dh; y++) {
       }
     }
     const o = (y * dw + x) * 4
-    const av = a / 255 || 1
-    out.data[o] = Math.round(r / av / n)
-    out.data[o + 1] = Math.round(g / av / n)
-    out.data[o + 2] = Math.round(b / av / n)
+    // alpha 加权平均：先按预乘色求和，再统一除回 alpha 与采样数（除一次！）
+    out.data[o] = a > 0 ? Math.round(r / (a / 255)) : 0
+    out.data[o + 1] = a > 0 ? Math.round(g / (a / 255)) : 0
+    out.data[o + 2] = a > 0 ? Math.round(b / (a / 255)) : 0
     out.data[o + 3] = Math.round(a / n)
   }
 }
