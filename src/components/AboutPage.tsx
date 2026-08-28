@@ -1,6 +1,6 @@
 import { ExternalLink, Heart, BookOpen, Users, Globe } from 'lucide-react'
 import payWechat from '../assets/pay-wechat.png'
-import payAlipay from '../assets/pay-alipay.jpg'
+import payAlipay from '../assets/pay-alipay-crop.png'
 import authorAvatar from '../assets/author-avatar.png'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
@@ -105,7 +105,8 @@ export default function AboutPage() {
             <p className="text-ink-500 text-xs mb-5">
               如果本软件对你有帮助，欢迎扫码支持作者。
             </p>
-            {/* 码图区：flex-1 撑满剩余高度，图片锁定纵横比上下贴边（object-contain），多出宽度居中留白 */}
+            {/* 码图区：flex-1 撑满剩余高度，图片锁定纵横比上下贴边（object-contain）。
+                两张码已统一裁成白底卡片（裁掉原营销底色），深色框上呈现一致的白色卡片观感 */}
             <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
               {[
                 { key: 'wechat', img: payWechat },
@@ -115,7 +116,7 @@ export default function AboutPage() {
                   <img
                     src={p.img}
                     alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
-                    className="max-w-full max-h-full object-contain rounded-md"
+                    className="max-w-full max-h-full object-contain rounded-md bg-white"
                   />
                 </div>
               ))}
