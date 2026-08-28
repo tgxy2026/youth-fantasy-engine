@@ -1,6 +1,6 @@
 import { ExternalLink, Heart, BookOpen, Users, Globe } from 'lucide-react'
 import payWechat from '../assets/pay-wechat.png'
-import payAlipay from '../assets/pay-alipay-crop.png'
+import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
@@ -27,10 +27,10 @@ const THANKS: { name: string; work: string }[] = [
   { name: '宁毅', work: '赘婿' },
 ]
 
-// 友情链接
+// 联系方式
 const LINKS = [
   { label: '青春幻想引擎交流群', value: '1106815480' },
-  { label: 'QQ', value: '1822304733' },
+  { label: '作者 QQ', value: '1822304733' },
   { label: '公众号', value: '咸鱼哥的双线人生' },
 ]
 
@@ -85,9 +85,9 @@ export default function AboutPage() {
               </div>
             </section>
 
-            {/* 友情链接（flex-1 撑满左列剩余高度） */}
+            {/* 联系方式（flex-1 撑满左列剩余高度） */}
             <section className="rounded-xl bg-ink-850 border border-ink-700 p-6 flex-1">
-              <SectionTitle icon={<Globe size={15} className="text-amber" />}>友情链接</SectionTitle>
+              <SectionTitle icon={<Globe size={15} className="text-amber" />}>联系方式</SectionTitle>
               <ul className="space-y-3">
                 {LINKS.map(l => (
                   <li key={l.label} className="flex flex-col">
@@ -105,19 +105,21 @@ export default function AboutPage() {
             <p className="text-ink-500 text-xs mb-5">
               如果本软件对你有帮助，欢迎扫码支持作者。
             </p>
-            {/* 码图区：flex-1 撑满剩余高度，图片锁定纵横比上下贴边（object-contain）。
-                两张码已统一裁成白底卡片（裁掉原营销底色），深色框上呈现一致的白色卡片观感 */}
+            {/* 码图区：flex-1 撑满剩余高度，图片锁定纵横比（object-contain）上下贴边 */}
             <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
               {[
-                { key: 'wechat', img: payWechat },
-                { key: 'alipay', img: payAlipay },
+                { key: 'wechat', label: '微信', img: payWechat, color: 'text-emerald-400' },
+                { key: 'alipay', label: '支付宝', img: payAlipay, color: 'text-sky-400' },
               ].map(p => (
-                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex items-center justify-center overflow-hidden min-h-0">
-                  <img
-                    src={p.img}
-                    alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
-                    className="max-w-full max-h-full object-contain rounded-md bg-white"
-                  />
+                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex flex-col items-center overflow-hidden min-h-0">
+                  <span className={`text-sm font-medium mb-2 shrink-0 ${p.color}`}>{p.label}</span>
+                  <div className="flex-1 min-h-0 flex items-center justify-center w-full overflow-hidden">
+                    <img
+                      src={p.img}
+                      alt={`${p.label}收款码`}
+                      className="max-w-full max-h-full object-contain rounded-md"
+                    />
+                  </div>
                 </div>
               ))}
             </div>
