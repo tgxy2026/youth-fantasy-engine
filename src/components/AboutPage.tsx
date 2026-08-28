@@ -72,7 +72,7 @@ export default function AboutPage() {
                 />
                 <div className="text-lg font-semibold text-ink-50">铁骨咸鱼</div>
                 <p className="text-ink-400 text-xs mt-2 leading-relaxed">
-                  在你的世界中讲述你的故事（B站主页有软件使用的视频教程，欢迎加强交流分享或反馈Bug）
+                  在你的世界中讲述你的故事（B站主页有软件使用的视频教程，欢迎加群交流分享或反馈Bug）
                 </p>
                 <a
                   href={BILI_URL}
@@ -105,21 +105,19 @@ export default function AboutPage() {
             <p className="text-ink-500 text-xs mb-5">
               如果本软件对你有帮助，欢迎扫码支持作者。
             </p>
-            {/* 码图区：flex-1 撑满剩余高度，图片锁定纵横比（object-contain）上下贴边 */}
+            {/* 码图区：flex-1 撑满剩余高度，图片锁定纵横比（object-contain）上下贴边。
+                完整收款图自带品牌底色，可一眼分辨归属，无需文字标注 */}
             <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
               {[
-                { key: 'wechat', label: '微信', img: payWechat, color: 'text-emerald-400' },
-                { key: 'alipay', label: '支付宝', img: payAlipay, color: 'text-sky-400' },
+                { key: 'wechat', img: payWechat },
+                { key: 'alipay', img: payAlipay },
               ].map(p => (
-                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex flex-col items-center overflow-hidden min-h-0">
-                  <span className={`text-sm font-medium mb-2 shrink-0 ${p.color}`}>{p.label}</span>
-                  <div className="flex-1 min-h-0 flex items-center justify-center w-full overflow-hidden">
-                    <img
-                      src={p.img}
-                      alt={`${p.label}收款码`}
-                      className="max-w-full max-h-full object-contain rounded-md"
-                    />
-                  </div>
+                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex items-center justify-center overflow-hidden min-h-0">
+                  <img
+                    src={p.img}
+                    alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
+                    className="max-w-full max-h-full object-contain rounded-md"
+                  />
                 </div>
               ))}
             </div>
