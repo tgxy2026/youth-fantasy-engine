@@ -1,14 +1,13 @@
 import { ExternalLink, Heart, BookOpen, Users, Globe } from 'lucide-react'
 import payWechat from '../assets/pay-wechat.png'
-import payAlipay from '../assets/pay-alipay.png'
+import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
 
-// 关于 / 打赏页（v1.6.3 草稿）：这是「青春幻想引擎」软件自身的关于页，作者 = 咸鱼哥（AI 不占版面）。
-// 当前为占位内容，资料后续由作者替换（真实收款码、头像、简介、真实 B 站 ID、友链等）。
+// 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
 const BILI_URL = 'https://b23.tv/zl4vqyw'
 const BILI_NAME = '铁骨咸鱼'
 
-// 致谢名单（支持者墙）—— 示例占位：借用知名网络小说主角的名号，后续由作者替换为真实读者 / 金主 / 贡献者记录
+// 致谢名单（支持者墙）—— 示例占位：借用知名网络小说主角的名号排排站，后续由作者替换为真实读者 / 金主 / 贡献者记录
 const THANKS: { name: string; work: string }[] = [
   { name: '萧炎', work: '斗破苍穹' },
   { name: '唐三', work: '斗罗大陆' },
@@ -28,11 +27,11 @@ const THANKS: { name: string; work: string }[] = [
   { name: '宁毅', work: '赘婿' },
 ]
 
-// 友情链接（占位，待作者填充真实外链）
+// 友情链接
 const LINKS = [
-  { label: '读者交流群', value: '【占位】群号 / 邀请链接' },
-  { label: '微博', value: '【占位】@作者微博' },
-  { label: '公众号', value: '【占位】公众号名' },
+  { label: '读者交流群', value: '青春幻想引擎交流群：1106815480' },
+  { label: 'QQ', value: '1822304733' },
+  { label: '公众号', value: '咸鱼哥的双线人生' },
 ]
 
 function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
@@ -52,12 +51,9 @@ export default function AboutPage() {
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
-          <span className="rounded-full bg-amber/10 text-amber text-[11px] px-2 py-0.5 border border-amber/25">
-            草稿 · 占位待替换
-          </span>
         </div>
         <p className="text-ink-400 text-sm mb-8">
-          关于「青春幻想引擎」与它的作者，以及支持作者的方式。下列资料为占位内容，后续由作者替换为真实信息。
+          关于「青春幻想引擎」与它的作者，以及支持作者的方式。
         </p>
 
         {/* 主体：左列（作者信息 + 友情链接） / 右列（打赏支持，拉长对齐） */}
@@ -70,12 +66,13 @@ export default function AboutPage() {
               <div className="flex flex-col items-center text-center">
                 <img
                   src={authorAvatar}
-                  alt="作者头像占位"
+                  alt="铁骨咸鱼"
                   className="w-24 h-24 rounded-full border border-ink-700 object-cover mb-3"
                 />
-                <div className="text-lg font-semibold text-ink-50">【占位】作者笔名</div>
+                <div className="text-lg font-semibold text-ink-50">铁骨咸鱼</div>
                 <p className="text-ink-400 text-xs mt-2 leading-relaxed">
-                  【占位】一句话介绍你自己与「青春幻想引擎」的由来、更新节奏、想对支持者说的话……待作者填写。
+                  在你的世界中讲述你的故事。
+                  B 站主页有软件使用的视频教程，欢迎加群交流分享、反馈 Bug。
                 </p>
                 <a
                   href={BILI_URL}
@@ -115,12 +112,13 @@ export default function AboutPage() {
               ].map(p => (
                 <div key={p.label} className="rounded-lg bg-ink-900/60 border border-ink-700 p-4 text-center">
                   <div className={`text-sm font-medium mb-3 ${p.color}`}>{p.label}</div>
+                  {/* 收款码为 3:4 竖版截图：宽度固定、高度自适应，保持原始比例不变形 */}
                   <img
                     src={p.img}
-                    alt={`${p.label}收款码占位`}
-                    className="w-40 h-40 mx-auto rounded-md"
+                    alt={`${p.label}收款码`}
+                    className="w-40 max-w-full mx-auto rounded-md"
                   />
-                  <div className="text-[10px] text-ink-600 mt-3">（占位图，待替换为真实收款码）</div>
+                  <div className="text-[10px] text-ink-600 mt-3">扫码时请先放大窗口看清二维码</div>
                 </div>
               ))}
             </div>

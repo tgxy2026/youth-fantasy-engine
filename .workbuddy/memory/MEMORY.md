@@ -29,10 +29,8 @@
 
 ## 版本现状
 - 1.8.0 手绘地图+地理联动；1.9.0 灵感工具拆分+检查工具+ErrorBoundary；1.9.1 表头筛选/按卷建表/补登模式/示范项目卷二。
-- **1.9.2（进行中，2026-08-28）**：章节名与顺序解耦已落地——`src/lib/chapterSeq.ts` 为顺序唯一权威（flattenChapters/chapterSeqMap/chapterSeqOf/sortChapters，全派生不落库）；`Chapter.excludeFromNumbering` + 章节行 Hash 图标开关；continuityCheck 不再解析标题；aiContext.getChapterTexts 跨卷排序 bug 已修；`migrateChapterLedger`/`migrateChapterNumbering` 均已在 App.tsx openProject 接入。esbuild 11 用例验证通过。
-- **1.9.2 日常审查轮（2026-08-28 晚）**：修复 doAddChapter stale state bug（新章序号恒 0 → 台账章节号留空，改现读库）；去重 4 处下载（→`zip.downloadBlob`）与 4 处日期 key（→`date.todayKey`）；aiContext 改调 `sortChapters`；删 `chapterNumberLabel`；移除零引用依赖 png-to-ico；删 dist.oldbak* 与空 generated-images。审查后 tsc/build 双 0 错。
-- **表单联动专项审计（2026-08-28 晚）**：主链路列名/schema 全对齐、resolveOptions 红线无绕过；修复 seedData 6 处下拉口径/列名断裂（secrets S0006-S0008 整行错列重写、S0004 知情程度、subplots 状态/类别、第5章细纲状态、hookpoints 爽点类型/强度）。~~已登记未实现~~ **两条预警已于当日兑现**（爽点断档/存稿缓冲告急，见 9391987）。示范项目需重建才吃到修复。
-- **AI 喂数据审计（2026-08-28 晚）**：修复 buildChapterDigest 跨卷排序（flattenChapters）、AI 深度审计改喂最近 6 章（新 `getRecentChapterTexts`）、**移除校对简略模式**（喂摘要会致 replaceOne 误替换真文本，数据破坏隐患）、诊断简略模式加 textKind 诚实标注、AIOrganize 章节列表改 flattenChapters + 卷页签排除 chapter-master 聚合段。优化：getChapterTexts 正文头带派生章号；buildProjectContext 文末声明 dropped 段落。教训：**凡新增「全局按 order 排」都是跨卷 bug 温床**。
+- **1.9.2（2026-08-28）**：章节名与顺序解耦——`src/lib/chapterSeq.ts` 为顺序唯一权威（全派生不落库）；`Chapter.excludeFromNumbering` + Hash 开关；continuityCheck 不再解析标题；`migrateChapterLedger`/`migrateChapterNumbering` 已接入 openProject。同日四轮审计（日常/联动/AI喂数/数据安全）修复：doAddChapter stale state、migrateChapterLedger 迁移后误删台账行、importProject 未重映射卷台账 tabId 等。
+- **1.9.5（已封装，2026-08-28，提交 f49c2b9）**：= 1.9.2 全部 + 两条节奏预警（爽点断档/存稿缓冲告急，continuityCheck 第 9/10 类）。产物：`release/novel-studio-1.9.5/`（便携 7.09MB）+ `release/桌面安装版/青春幻想引擎-Setup-1.9.5.exe`（80MB）。便携版已真机启动，待用户手工验证。
 - **规划 2.0**：源码加固（javascript-obfuscator 混淆/可选 asarIntegrity+bytenode）+ 功能讲稿。触发词「开工2.0」。
 
 ## 1.9.1 自定义项目架构
