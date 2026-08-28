@@ -8,8 +8,9 @@
 - **每轮审计/封装完成后 `git add -A && git commit`**，提交信息写清本轮修复要点。
 
 ## 数据安全测试（tests/）
-- `node tests/build-roundtrip.mjs`：esbuild 打包真 db.ts+seedData，内存 StoreOps 桩替换 portable/desktop，跑 6 用例（导出非空/往返语义一致/迁移幂等×3/编号正确），输出仅 PASS/FAIL。改动 db.ts 存储或迁移逻辑后必跑。
+- `node tests/build-test.mjs adversarial|roundtrip`：esbuild 打包真 db.ts+seedData，内存 StoreOps 桩替换 portable/desktop。roundtrip 6 用例（导出/导入往返语义一致、迁移幂等×3、编号正确）；adversarial 24 用例（chapterSeq 边角、audit 纯函数、autoCode、AI 上下文截断/跨卷、章节清单截断与孤儿章、continuityCheck+dataHealth 喂畸形数据）。**改动 db.ts / audit.ts / chapterSeq / aiContext / 迁移逻辑后必跑两条。**
 - 已修复的数据丢失级 bug：migrateChapterLedger 迁移后误删台账行（movedIds 修复）；importProject 未重映射卷台账 tabId（已修）。**凡新增导出/导入/迁移逻辑，先补 round-trip 用例再上线。**
+- AI 输出渲染已审计安全：markdown 报告走 React 文本节点转义、高亮叠层 escapeHtml 全程覆盖。
 - 坑：'chapter-vol-' 是 **12** 字符；slice(11) 是 off-by-one。
 
 ## 封装红线（无 git 仓库，最高优先级）

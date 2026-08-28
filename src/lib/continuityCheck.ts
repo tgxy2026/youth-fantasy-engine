@@ -1,7 +1,8 @@
 // ============ 连续性校验器 ============
 // 基于「章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡」做确定性静态判定，
-// 产出 8 类常见吃书冲突：时间倒流、境界回退、死者复活、人名未登记、
-// 伏笔编号孤儿、伏笔状态不一致、术语重复、章节缺时间线登记。
+// 产出 10 类常见问题：8 类吃书冲突（时间倒流、境界回退、死者复活、人名未登记、
+// 伏笔编号孤儿、伏笔状态不一致、术语重复、章节缺时间线登记）
+// + 2 类连载节奏预警（爽点断档、存稿缓冲告急）。
 import * as db from './db'
 import type { Chapter, CardRecord } from './types'
 import { AuditIssue, splitCodes, splitNames, parseStoryDate, extractChapterNo, cnNumToArabic } from './audit'
@@ -11,7 +12,7 @@ import { flattenChapters, chapterSeqMap } from './chapterSeq'
 const DEATH_KEYWORDS = ['死', '亡', '陨', '卒', '退场', '兵解', '逝', '诛', '殁']
 
 export async function auditContinuity(): Promise<AuditIssue[]> {
-  const [vols, chs, master, timeline, fores, terms, allData] = await Promise.all([
+  const [vols, chs, master, timeline, fores, terms, allData, progress, hookpoints] = await Promise.all([
     db.getAllVolumes(),
     db.getAllChapters(),
     db.getAllChapterLedgerRows(),
@@ -19,6 +20,8 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
     db.getTableRows('foreshadow'),
     db.getTableRows('terms'),
     db.loadAllData(),
+    db.getTableRows('progress'),
+    db.getTableRows('hookpoints'),
   ])
   const cardRecs: CardRecord[] = allData.cardRecords
 
@@ -212,6 +215,45 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
         title: `第${no}章未登记时间脉络`,
         detail: `「${c.title}」没有对应的《时间脉络》登记，时间对账将跳过本章。建议每写完一章登记一行，防时间线崩坏。`,
         location: { kind: 'chapter', chapterId: c.id, hint: c.title },
+      })
+    }
+  }
+
+  // ---------- 9) 爽点断档（相邻爽点间隔超 3 章，schema 承诺的预警） ----------
+  // 章号认法与时间脉络同口径：先按「章节标题」认章取派生序号，回退解析「章节号」文本。
+  {
+    const hpSorted = [...hookpoints]
+      .map(r => ({ r, no: seqByTlTitle(r.data['章节标题']) || extractChapterNo(r.data['章节号']) || 0 }))
+      .filter(x => x.no > 0)
+      .sort((a, b) => a.no - b.no)
+    for (let i = 1; i < hpSorted.length; i++) {
+      const prev = hpSorted[i - 1], cur = hpSorted[i]
+      const gap = cur.no - prev.no
+      if (gap > 3) {
+        issues.push({
+          id: nid(), severity: 'warn', category: '节奏',
+          title: `爽点断档：第${prev.no}章到第${cur.no}章间隔 ${gap} 章`,
+          detail: `《爽点节奏》里第${prev.no}章与第${cur.no}章之间间隔 ${gap} 章（超过 3 章预警线），中间 ${gap - 1} 章未登记任何爽点。连载读者耐心有限，建议回头补排小爽点，或确认该段有强钩子撑住。`,
+          location: { kind: 'tab', tabId: 'hookpoints', hint: '爽点节奏' },
+        })
+      }
+    }
+  }
+
+  // ---------- 10) 存稿缓冲告急（低于 3 章，schema 承诺的预警） ----------
+  // 取「日期」最新且缓冲可解析的一行；整表没填过缓冲就不打扰。
+  {
+    const dated = progress
+      .map(r => ({ date: (r.data['日期'] ?? '').trim(), buf: parseInt((r.data['存稿缓冲（章）'] ?? '').trim(), 10) }))
+      .filter(x => x.date && !Number.isNaN(x.buf))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    const last = dated[dated.length - 1]
+    if (last && last.buf < 3) {
+      issues.push({
+        id: nid(), severity: 'warn', category: '节奏',
+        title: `存稿缓冲告急：仅剩 ${last.buf} 章`,
+        detail: `《写作进度》最近一天（${last.date}）登记的存稿缓冲为 ${last.buf} 章，低于 3 章预警线。缓冲见底容易被迫断更或赶稿降质，建议先补存 1-2 章再恢复日常更新。`,
+        location: { kind: 'tab', tabId: 'progress', hint: '写作进度' },
       })
     }
   }

@@ -177,10 +177,10 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
     <Modal title="连续性校验器" icon={<Link2 size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-[11px] text-ink-500">
-          基于章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡，做 8 类确定性"吃书"冲突检测。
+          基于章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡 / 爽点节奏 / 写作进度，做 10 类确定性冲突与节奏检测。
         </span>
         <HelpPopover title="连续性校验怎么用" width="22rem">
-          {'全书级静态体检，覆盖 8 类常见冲突：\n\n1. 时间倒流（时间线日期前后矛盾）\n2. 境界回退（主角境界不升反降）\n3. 死者复活（已死亡角色仍出场）\n4. 人名未登记（出场人物不在角色卡）\n5. 伏笔编号孤儿（章节引用了不存在的伏笔）\n6. 伏笔状态不一致（已回收但表未同步）\n7. 术语重复（同一名词定义了两次）\n8. 章节缺时间脉络登记\n\n点击问题可跳转到对应章节或设定表修正。'}
+          {'全书级静态体检，覆盖 10 类常见问题：\n\n1. 时间倒流（时间线日期前后矛盾）\n2. 境界回退（主角境界不升反降）\n3. 死者复活（已死亡角色仍出场）\n4. 人名未登记（出场人物不在角色卡）\n5. 伏笔编号孤儿（章节引用了不存在的伏笔）\n6. 伏笔状态不一致（已回收但表未同步）\n7. 术语重复（同一名词定义了两次）\n8. 章节缺时间脉络登记\n9. 爽点断档（相邻爽点间隔超 3 章）\n10. 存稿缓冲告急（低于 3 章预警线）\n\n点击问题可跳转到对应章节或设定表修正。'}
         </HelpPopover>
       </div>
       {loading ? <div className="text-[12px] text-ink-400 py-8 text-center">逐表对账中…</div> : (

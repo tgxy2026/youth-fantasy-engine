@@ -20,16 +20,14 @@ function ok(name: string, cond: boolean, extra = '') {
   else { fail++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`) }
 }
 const J = (v: unknown) => JSON.stringify(v)
+/** 异步软断言：返回的 promise 收集进 pending，主流程结尾统一 await，避免 exit 竞态漏跑用例 */
+const pending: Promise<void>[] = []
 function soft(name: string, fn: () => unknown | Promise<unknown>, check?: (r: unknown) => boolean) {
-  try {
-    const r = fn()
-    Promise.resolve(r).then(res => {
-      if (!check || check(res)) { pass++; console.log(`PASS ${name}`) }
-      else { fail++; console.log(`FAIL ${name} :: 返回 ${J(res)?.slice(0, 120)}`) }
-    }).catch(e => { fail++; console.log(`FAIL ${name} :: 抛错 ${(e as Error).message?.slice(0, 100)}`) })
-  } catch (e) {
-    fail++; console.log(`FAIL ${name} :: 抛错 ${(e as Error).message?.slice(0, 100)}`)
-  }
+  const run = Promise.resolve().then(fn).then(res => {
+    if (!check || check(res)) { pass++; console.log(`PASS ${name}`) }
+    else { fail++; console.log(`FAIL ${name} :: 返回 ${J(res)?.slice(0, 120)}`) }
+  }).catch(e => { fail++; console.log(`FAIL ${name} :: 抛错 ${(e as Error).message?.slice(0, 100)}`) })
+  pending.push(run)
 }
 const mkVol = (id: string, order: number, title: string): Volume => ({ id, projectId: 'p1', order, title, description: '', createdAt: 0 })
 const mkCh = (id: string, volId: string, order: number, title: string, extra?: Partial<Chapter>): Chapter =>
@@ -130,13 +128,20 @@ __resetMockStores()
   await memoryOps.put('tableRows', { id: 'tl2', projectId: pid, tabId: 'timeline', order: 1, data: { '章节号': '第2章', '章节标题': '修炼后续与" quoted"｜竖线', '故事内时间': '3024年3月1日', '主角当前境界/年龄': '淬体三重/15岁' } })
   await memoryOps.put('tableRows', { id: 'fs1', projectId: pid, tabId: 'foreshadow', order: 0, data: { '编号': 'F0001', '状态': '未回收', '伏笔内容': '测试｜含竖线' } })
   await memoryOps.put('tableRows', { id: 'ms1', projectId: pid, tabId: 'chapter-master', order: 0, data: { '章节号': '第1章', '章节标题': '标题含｜竖线与"引号', '出场人物': '陈渊、无名氏', '埋设伏笔编号': 'F0001, F9999', '回收伏笔编号': '' } })
+  // 节奏预警用例：爽点 第1章→第5章 间隔 4（超 3 预警线）；存稿缓冲最新一天为 2（低于 3）
+  await memoryOps.put('tableRows', { id: 'hp1', projectId: pid, tabId: 'hookpoints', order: 0, data: { '章节号': '第1章', '章节标题': '修炼', '爽点内容': '开局小爽' } })
+  await memoryOps.put('tableRows', { id: 'hp2', projectId: pid, tabId: 'hookpoints', order: 1, data: { '章节号': '第5章', '章节标题': '', '爽点内容': '间隔测试' } })
+  await memoryOps.put('tableRows', { id: 'pg1', projectId: pid, tabId: 'progress', order: 0, data: { '日期': '2026-01-01', '存稿缓冲（章）': '5' } })
+  await memoryOps.put('tableRows', { id: 'pg2', projectId: pid, tabId: 'progress', order: 1, data: { '日期': '2026-01-02', '存稿缓冲（章）': '2' } })
   soft('连续性检查：标题互含/竖线/引号/日期倒流全喂进去不炸', () => auditContinuity(), r => Array.isArray(r) && r.some(i => i.title.includes('时间倒流')))
+  soft('节奏预警：爽点断档 + 存稿缓冲告急均被检出', () => auditContinuity(), r => Array.isArray(r) && r.some(i => i.title.includes('爽点断档')) && r.some(i => i.title.includes('存稿缓冲')))
   soft('数据体检：悬空引用/重复编号/孤儿行全喂进去不炸', async () => {
     await memoryOps.put('tableRows', { id: 'dup1', projectId: pid, tabId: 'foreshadow', order: 1, data: { '编号': 'F0001', '状态': '已回收' } })
     await memoryOps.put('tableRows', { id: 'dang1', projectId: pid, tabId: 'chapter-vol-不存在卷', order: 0, data: { '章节标题': '悬空行' } })
-    return runDataHealthCheck()
-  }, r => Array.isArray(r) && r.length > 0)
+    return runDataHealthCheck() as unknown as { issues: unknown[] }
+  }, r => Array.isArray(r?.issues) && r.issues.length > 0)
 
+  await Promise.all(pending)
   console.log(`\n===== 结果：${pass} PASS / ${fail} FAIL =====`)
   process.exit(fail > 0 ? 1 : 0)
 })()
