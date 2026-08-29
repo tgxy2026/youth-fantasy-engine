@@ -70,7 +70,8 @@
   - **部署路径**：`scp -r server dist-web ubuntu@IP:~/yfe-deploy/` → `sudo bash ~/yfe-deploy/server/deploy.sh`。站点 `/var/www/yfe`；反馈服务 `/opt/yfe-server/feedback-server.mjs` 以 **`www-data`** 跑、端口 **3000**、数据 `/var/lib/yfe`。
   - **⚠️ 必坑（已修，commit 78dae14）**：反馈服务以 www-data 运行，启动 `mkdir /var/lib/yfe` 因 /var/lib 属 root 而 **EACCES 失败** → 在 deploy.sh 加 `mkdir -p /var/lib/yfe && chown -R www-data:www-data /var/lib/yfe` 修复；并给 nginx 补 `location = /healthz` 反代 3000/healthz（原配置只有 SPA 兜底，/healthz 会回 HTML）。
   - **验证通过**：首页 200、/healthz=ok、邀请码错 403/对 `YFE-D49E-6MPG` 200、nginx+feedback 均 active。现状 `http://154.8.178.240` 已可访问（**HTTP 无 HTTPS**；防火墙 80/443 已开）。
-  - **待办**：① HTTPS 需绑域名+`sudo certbot --nginx -d 域名`（yfe.conf server_name _ 已留位）② AI 反代待真实 key 实测 ③ 反馈 POST 未实测（路由正确、服务 active）。
+  - **待办**：② AI 反代待真实 key 实测 ③ 反馈 POST 未实测（路由正确、服务 active）。
+  - **HTTPS 已上（2026-08-29 晚·自签证书）**：老大选「先用自签证书」。已在服务器 `openssl` 生成自签证书 `/etc/ssl/yfe/yfe.crt`+`yfe.key`（有效期 365 天，CN=154.8.178.240）；`yfe.conf` 加 `listen 443 ssl` 同 server 块复用全部 location。`https://154.8.178.240/` 已 200、`/api/sync` 鉴权正常、http 仍兼容。浏览器会报证书不受信任→高级继续访问。自签 HTTPS 下 `crypto.subtle` 可用→前端 `serverStore` 走真 **AES-GCM**（`a1:` 前缀），旧 XOR(`x1:`)数据按前缀向后兼容解密。**待域名到位后改 `sudo certbot --nginx -d 域名` 换真证书**。
   - **安全**：部署时老大把 SSH 私钥贴在对话里 → 建议腾讯云控制台**重新生成密钥对**作废该 key；HTTP 下 AI key 在"浏览器→服务器"段明文，邀请制内测可接受，上域名后补齐 HTTPS。
 - **#003 云端同步特权 · 已上线（2026-08-29）**：serverStore:StoreOps(fetch→/api/sync) 已落地；上行加密(HTTPS走Web Crypto AES-GCM，HTTP降级XOR混淆，rev明文)；排除 AI 配置(meta::aiProviders/aiActiveProviderId/aiConfigMigratedToGlobal)不同步；冲突 409 last-write-wins。同步码 `SYNC_CODES`(20个)在 yfe-feedback.service，每个码独立云端槽位 `sync-<sha256>.json`，避免多人共用一码互相覆盖。入门码 `INVITE_CODES`(20个)列表校验；分发文档 `docs/邀请码分发记录.md`。
 
