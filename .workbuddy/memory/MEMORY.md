@@ -64,5 +64,5 @@
 - 已确认 `src/lib/db.ts` 存在纯浏览器 IndexedDB 后端 `idbOps`（路由：`PORTABLE?portableStore:DESKTOP?desktopStore:idbOps`），故**纯静态网页版零后端即可跑**，数据存各浏览器本地 IndexedDB（per-origin，不跨设备）。
 - 真正"任意设备登录同数据"需加轻后端+账号：新增 `serverStore: StoreOps` 实现（所有 db.ts 函数已走 `ops` 抽象，切后端组件层零改动）；MVP 可每用户存一份 `PortableData` JSON（复用 `normalizePortableData`）全量 load/save，后期再优化增量。
 - 与 #001 关系：Level2 服务端托管**涵盖** #001 跨设备同步诉求，且额外获得"不装软件、输网址即用"。**已定：邀请制静态网页体验版**（数据全留浏览器+反馈通道），非 Level2 服务端托管；跨设备同步仍由 #001 方案A 负责。
-- 风险/待办：① AI 直连硅基流动浏览器端 CORS（代理须不落 key/内容日志）② 验证无 Electron-only 依赖漏入 web 构建 ③ 邀请码轻量门禁控量/防滥用 ④ 隐私告知明确“仅反馈提交时发数据”。
-- 已记 #002（优化/待处理）入清单，方向：邀请制静态网页体验版（数据+AI key 全留浏览器，仅反馈提交时发数据）。
+- 风险/待办（均已落地）：① AI CORS → ai.ts 改走同源 /api/ai 反代 + nginx yfe_proxy_params(access_log off 不落 key) ② 已验证 web 包无 electron 真调用（仅 window.electronStore 运行时探测死代码）③ 邀请码门禁 WebGate（码仅服务端比，server/feedback-server.mjs）④ 隐私告知 PrivacyNotice。
+- **#002 已实现（代码+部署包，git 2ee65ec）**：build:web(vite.config.web.ts) 走 IndexedDB；WebGate/FeedbackButton/PrivacyNotice 接入 App.tsx；server/(nginx 站点+零依赖反馈服务+systemd+deploy.sh+README)。待老大租腾讯云服务器→改 INVITE_CODE→`sudo bash server/deploy.sh` 即上线。

@@ -3,8 +3,8 @@ Description=YFE Web Feedback Service
 After=network.target
 
 [Service]
-# 部署前请把 INVITE_CODE 改成你实际要发放的邀请码
-Environment=INVITE_CODE=CHANGE_ME
+# 部署前可改 INVITE_CODE；当前为生成值，随时可替换，重启服务即生效
+Environment=INVITE_CODE=YFE-D49E-6MPG
 Environment=FEEDBACK_DIR=/var/lib/yfe
 Environment=FEEDBACK_PORT=3000
 WorkingDirectory=/opt/yfe-server
