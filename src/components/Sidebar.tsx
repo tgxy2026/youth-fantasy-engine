@@ -170,7 +170,6 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                     const active = activeTab === tab.id
                     // 「章节总表」展开为各卷子表（按卷建表）：每卷一张独立台账表
                     if (tab.id === 'chapter-master') {
-                      const volActive = volumeTabs.some(v => v.id === activeTab)
                       return (
                         <div key={tab.id}>
                           <button

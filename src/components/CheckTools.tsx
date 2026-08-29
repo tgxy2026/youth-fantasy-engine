@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import * as db from '../lib/db'
 import { scanText, BUILTIN_WORDS, getCustomSensitiveWords, setCustomSensitiveWords } from '../lib/sensitiveWords'
 import {
-  Sparkles, ShieldAlert, ScanSearch, RefreshCw, Check, FileDown, Upload, Loader2, Stethoscope, EyeOff, RotateCcw, Trash2
+  Sparkles, ShieldAlert, ScanSearch, RefreshCw, FileDown, Upload, Loader2, Stethoscope, EyeOff, RotateCcw, Trash2
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import AutoTextarea from './AutoTextarea'

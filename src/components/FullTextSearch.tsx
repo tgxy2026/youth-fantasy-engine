@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 import { Search, FileText, Users, BookMarked, CornerDownLeft, Hash, X } from 'lucide-react'
 import { SearchEngine, SEARCH_TYPE_LABEL, type SearchDocType, type SearchResult } from '../lib/search'
 import HelpPopover from './HelpPopover'
-import { tabVisible, type VisCtx } from '../lib/schema'
+import { type VisCtx } from '../lib/schema'
 
 interface Props {
   onClose: () => void

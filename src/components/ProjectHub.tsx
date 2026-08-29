@@ -4,7 +4,7 @@ import type { ProjectBundle } from '../lib/db'
 import type { Project } from '../lib/types'
 import { createDemoProject } from '../lib/seedData'
 import {
-  Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, Wand2, ImageIcon, Pencil, Check, BookText, History, ListChecks,
+  Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks,
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import Tooltip from './Tooltip'

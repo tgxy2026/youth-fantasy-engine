@@ -40,6 +40,10 @@ function getDB() {
         // ---- v1 → v2 迁移：旧数据全部归入「default」项目 ----
         else if (oldVersion < 2) {
           db.createObjectStore('projects', { keyPath: 'id' })
+          // v1→v2 补建 meta（v0 在上方 oldVersion===0 分支已建；此处补齐避免旧版升级后缺 meta 库导致 put('meta') 抛错）
+          if (!db.objectStoreNames.contains('meta')) {
+            db.createObjectStore('meta', { keyPath: 'key' })
+          }
           const now = Date.now()
           await tx.objectStore('projects').put({
             id: 'default', name: '我的小说（旧数据迁移）', genre: '', intro: '', createdAt: now, updatedAt: now,
@@ -1071,7 +1075,13 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   for (const r of bundle.tableRows) {
     const m = r.id.match(/^ch-(.+)$/)
     const nid = m && chMap.has(m[1]) ? `ch-${chMap.get(m[1])}` : uid()
-    await ops.put('tableRows', { ...r, id: nid, projectId: targetPid })
+    // 卷台账行的 tabId 内嵌卷 id（chapter-vol-<volumeId>），须随新卷 id 重映射，
+    // 否则恢复后台账行指向不存在的卷，卷台账数据全部丢失（与 importProject 的写法一致）
+    const rawTab = String(r.tabId)
+    const tabId = rawTab.startsWith(VOL_LEDGER_PREFIX)
+      ? `${VOL_LEDGER_PREFIX}${volMap.get(rawTab.slice(VOL_LEDGER_PREFIX.length)) ?? rawTab.slice(VOL_LEDGER_PREFIX.length)}`
+      : r.tabId
+    await ops.put('tableRows', { ...r, id: nid, tabId, projectId: targetPid })
   }
   for (const r of bundle.cardRecords) {
     await ops.put('cardRecords', { ...r, id: uid(), projectId: targetPid })

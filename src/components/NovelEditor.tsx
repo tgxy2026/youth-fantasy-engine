@@ -1091,7 +1091,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                           // 每章一个文件——使用循环 setTimeout 避免浏览器拦截多个下载
                           const m = await import('../lib/exporter')
                           let i = 0
-                          const all = [...chapters].sort((a, b) => a.order - b.order)
+                          const all = flattenChapters(volumes, chapters)
                           const tick = () => {
                             if (i >= all.length) return
                             m.exportChapter(projectName, all[i++])
@@ -1105,7 +1105,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                         <Upload size={11} /> 全部章节逐一导出（{chapters.length} 个文件）
                       </button>
                       <div className="max-h-40 overflow-y-auto">
-                        {[...chapters].sort((a, b) => a.order - b.order).map(ch => (
+                        {flattenChapters(volumes, chapters).map(ch => (
                           <button
                             key={ch.id}
                             onClick={() => runExport(m => m.exportChapter(projectName, ch))}
@@ -1232,8 +1232,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   ref={taRef}
                   value={draftContent}
                   onChange={e => onContentChange(e.target.value)}
-                  onKeyUp={e => { syncTypewriter(draftContent); syncSel() }}
-                  onClick={e => { syncTypewriter(draftContent); syncSel() }}
+                  onKeyUp={() => { syncTypewriter(draftContent); syncSel() }}
+                  onClick={() => { syncTypewriter(draftContent); syncSel() }}
                   onSelect={syncSel}
                   onMouseUp={syncSel}
                   onScroll={syncHighlightScroll}

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Lock, Check, X } from 'lucide-react'
 import {
   TABS, GROUPS, EDITOR_TAB, EDITOR_ID,
-  tierOf, STRONG_DEPS, LOCKED_IDS, resolveFeatures, forcedByDeps,
+  tierOf, STRONG_DEPS, resolveFeatures, forcedByDeps,
 } from '../lib/schema'
 
 interface FeatureEntry {

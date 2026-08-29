@@ -305,7 +305,6 @@ export default function RelationGraph({ rows }: Props) {
             const active = hover === n.name
             const dim = hover && !active
             const col = active ? '#fbbf24' : '#d6c7a1'
-            const labelW = n.name.length * 10 + 10
             return (
               <g
                 key={n.name}

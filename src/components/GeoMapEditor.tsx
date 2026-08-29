@@ -870,9 +870,8 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
         <div className="w-80 shrink-0 border-l border-ink-700 bg-ink-850/60 overflow-y-auto">
           <div className="p-4">
             {addPos ? (
-              <AddMarkerForm
-                pos={addPos}
-                categories={categoryNames}
+            <AddMarkerForm
+              categories={categoryNames}
                 parentOptions={markers.map(m => m.name)}
                 onCancel={() => setAddPos(null)}
                 onCreate={createMarker}
@@ -985,8 +984,8 @@ function DrawDialog({ rows, drawnCells, onPick, onClose }: {
   )
 }
 
-function AddMarkerForm({ pos, categories, parentOptions, onCancel, onCreate }: {
-  pos: { x: number; y: number }; categories: string[]; parentOptions: string[];
+function AddMarkerForm({ categories, parentOptions, onCancel, onCreate }: {
+  categories: string[]; parentOptions: string[];
   onCancel: () => void; onCreate: (name: string, category: string, parent: string) => void
 }) {
   const [name, setName] = useState('')

@@ -63,6 +63,7 @@ export default function CharacterSheet({ tab }: Props) {
   const draftRef = useRef(draft)
   const dirtyRef = useRef(false)
   const tabIdRef = useRef(tab.id)
+  const prevActiveRef = useRef<string | null>(null)
   useEffect(() => { draftRef.current = draft }, [draft])
 
   useEffect(() => {
@@ -84,12 +85,18 @@ export default function CharacterSheet({ tab }: Props) {
     })
   }, [tab.id])
 
-  // 切换 active 时刷新 draft
+  // 切换 active（同一页签内不同角色卡）时刷新 draft；切换前先落盘上一卡未保存的修改，避免静默丢稿
   useEffect(() => {
+    const prev = prevActiveRef.current
+    // 仅当「确实切到了另一张仍存在的卡」才存旧卡草稿；因删除导致的切换不存档（避免复活已删卡）
+    if (prev && prev !== activeId && dirtyRef.current && draftRef.current && records.some(r => r.id === prev)) {
+      void saveCardRecord(draftRef.current)
+    }
+    prevActiveRef.current = activeId
     if (!activeId) { setDraft(null); return }
     const rec = records.find(r => r.id === activeId)
     setDraft(rec ? { ...rec, data: { ...rec.data } } : null)
-  }, [activeId]) // eslint-disable-line
+  }, [activeId, records])
 
   // v1.6：新增/改名走应用内 PromptModal（浏览器 prompt 在 Electron 桌面端无实现、点击无反应）
   const [namePrompt, setNamePrompt] = useState<null | { kind: 'add' | 'rename'; def?: string }>(null)

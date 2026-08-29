@@ -123,13 +123,11 @@ async function encryptObj(obj: unknown): Promise<string> {
   return xorObfuscate(obj)
 }
 async function decryptObj(s: string): Promise<any> {
-  try {
-    if (s.startsWith('a1:')) return await aesDecrypt(s)
-    if (s.startsWith('x1:')) return xorDeobfuscate(s)
-    return JSON.parse(s) // 兼容极老明文（正常不会出现）
-  } catch {
-    return {}
-  }
+  // 注意：解密失败必须 throw，绝不能吞掉返回 {} —— 否则 cache 变空却保留真实 rev，
+  // 下次 push 会用空库覆盖服务端，导致整库数据丢失。
+  if (s.startsWith('a1:')) return await aesDecrypt(s)
+  if (s.startsWith('x1:')) return xorDeobfuscate(s)
+  return JSON.parse(s) // 兼容极老明文（正常不会出现）
 }
 
 // ============ 通信 ============

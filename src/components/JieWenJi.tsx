@@ -148,16 +148,18 @@ export default function JieWenJi({
     if (!aiReady || diag.loading) return
     const useBrief = diagMode === 'brief'
     const diagText = useBrief ? (summary?.trim() || '') : content
+    let brief = useBrief
     if (useBrief && !diagText) {
       showToast('本章还没填「章节压缩摘要」，已自动改用完整正文诊断', 'info')
       setDiagMode('full')
+      brief = false // 已回退到完整正文，后续按 full 处理，不能用已被异步改掉的 useBrief
     }
     showToast('AI 综合诊断已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
     setDiag({ loading: true })
     try {
       const ctx = await buildProjectContext({ budget: 8000 })
-      const text = useBrief && diagText ? diagText : content
-      const r = await withCtrl(signal => aiEditorDiagnosis(ctx.text, text, { signal, textKind: useBrief ? 'summary' : 'full' }))
+      const text = brief ? diagText : content
+      const r = await withCtrl(signal => aiEditorDiagnosis(ctx.text, text, { signal, textKind: brief ? 'summary' : 'full' }))
       setDiag({ loading: false, data: r })
     } catch (e) {
       setDiag({ loading: false, error: e instanceof Error ? e.message : String(e) })
@@ -487,7 +489,7 @@ export default function JieWenJi({
                 {proof.issues.map((iss, i) => (
                   <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <SevBadge s={iss.type} />
+                      <span className="inline-block px-1.5 py-px rounded text-[9.5px] border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
                       <span className="text-[11px] text-red-300 line-through">{iss.quote}</span>
                       <span className="text-[10px] text-ink-500">→</span>
                       <span className="text-[11px] text-emerald-300">{iss.fix}</span>

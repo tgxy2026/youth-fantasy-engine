@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as db from '../lib/db'
-import { Flag, Zap, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
+import { Flag, Zap, AlertTriangle, Loader2 } from 'lucide-react'
 
 /**
  * 剧情线视图（v1.6.1）
