@@ -43,6 +43,11 @@ let initPromise: Promise<void> | null = null
 
 export function configureServerStore(c: string) {
   code = c
+  // 每次（重新）设码都重置 init 状态：否则模块级 initPromise 已 resolved 后会用旧码
+  // 的拉取结果短路，导致"重新连接"换码后拉到的不是新码的数据（#003 可靠性修复）。
+  cache = {}
+  rev = 0
+  initPromise = null
 }
 
 // ============ 加密（载荷级，rev 保持明文） ============
