@@ -66,3 +66,4 @@
 - 与 #001 关系：Level2 服务端托管**涵盖** #001 跨设备同步诉求，且额外获得"不装软件、输网址即用"。**已定：邀请制静态网页体验版**（数据全留浏览器+反馈通道），非 Level2 服务端托管；跨设备同步仍由 #001 方案A 负责。
 - 风险/待办（均已落地）：① AI CORS → ai.ts 改走同源 /api/ai 反代 + nginx yfe_proxy_params(access_log off 不落 key) ② 已验证 web 包无 electron 真调用（仅 window.electronStore 运行时探测死代码）③ 邀请码门禁 WebGate（码仅服务端比，server/feedback-server.mjs）④ 隐私告知 PrivacyNotice。
 - **#002 已实现（代码+部署包，git 2ee65ec）**：build:web(vite.config.web.ts) 走 IndexedDB；WebGate/FeedbackButton/PrivacyNotice 接入 App.tsx；server/(nginx 站点+零依赖反馈服务+systemd+deploy.sh+README)。待老大租腾讯云服务器→改 INVITE_CODE→`sudo bash server/deploy.sh` 即上线。
+- **#003 已记录（待处理，排期延后）**：给老大自己的「云端同步特权」= #001 的单用户门控版。最小方案：serverStore:StoreOps(fetch)+db.ts 第4分支+管理令牌登录切换+/api/sync 持久化 PortableData 到 SQLite+版本守卫。估 3–5 开发日。**待 #002 网页体验版部署跑通后再立项开工**。

@@ -11,9 +11,14 @@ APP_DIR=/var/www/yfe
 SRV_DIR=/opt/yfe-server
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-echo "== 安装 nginx / nodejs =="
+echo "== 安装 nginx =="
 apt-get update
-apt-get install -y nginx nodejs
+apt-get install -y nginx curl
+
+echo "== 安装 Node.js 20 LTS（反馈服务用到 top-level await / randomUUID，系统 apt 的 nodejs 为 v12 过旧不可用）=="
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+node --version
 
 echo "== 放置网页静态文件 =="
 rm -rf "$APP_DIR"
