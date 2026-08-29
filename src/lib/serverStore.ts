@@ -8,6 +8,11 @@
 //  - 各 store 主键字段不同：formData/meta/settingsKV/dailyStats 用 tabId/key，其余用 id，
 //    须按 store 映射键字段，否则会写串记录。
 //  - 仅网页版（WEB）使用；桌面/便携版仍走各自的本地存储。
+//  - 加密：上传前用同步邀请码派生密钥加密载荷（rev 保持明文以便服务端做版本守卫）。
+//    安全上下文(HTTPS/localhost)走 Web Crypto AES-GCM（真加密）；非安全上下文(HTTP 公网)
+//    降级为 XOR 混淆（仅防服务器磁盘明文泄露，非密码学强度，需上 HTTPS 才真加密）。
+//  - 敏感 meta（AI 配置/密钥：aiProviders / aiActiveProviderId / aiConfigMigratedToGlobal）
+//    不上云：既不进缓存、也不上传、更不会被拉取覆盖（由 db.ts 的 cloudStore 回退到本地）。
 import type { StoreOps } from './portable'
 
 // 参与同步的全部 store（与 db.ts 中对象库一致）
@@ -23,6 +28,11 @@ const KEY_FIELD: Record<string, string> = {
   formData: 'tabId', meta: 'key', settingsKV: 'key', dailyStats: 'key',
 }
 
+// 不同步的敏感 meta（AI 模型配置含 apiKey；UI 已承诺「仅本地保存，不上传」）
+export const EXCLUDED_META_KEYS = new Set<string>([
+  'aiProviders', 'aiActiveProviderId', 'aiConfigMigratedToGlobal',
+])
+
 let code = ''
 let cache: Record<string, any[]> = {}
 let rev = 0
@@ -33,6 +43,96 @@ export function configureServerStore(c: string) {
   code = c
 }
 
+// ============ 加密（载荷级，rev 保持明文） ============
+const hasSubtle = typeof globalThis !== 'undefined' && !!((globalThis as any).crypto && (globalThis as any).crypto.subtle)
+const SYNC_SALT = 'yfe-cloud-sync-v1'
+
+function bytesToB64(bytes: Uint8Array): string {
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any)
+  }
+  return btoa(bin)
+}
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+async function deriveKey(c: string): Promise<CryptoKey> {
+  const enc = new TextEncoder()
+  const material = await (globalThis as any).crypto.subtle.importKey('raw', enc.encode(c), 'PBKDF2', false, ['deriveKey'])
+  return (globalThis as any).crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode(SYNC_SALT), iterations: 100000, hash: 'SHA-256' },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  ) as Promise<CryptoKey>
+}
+
+async function aesEncrypt(obj: unknown): Promise<string> {
+  const iv = (globalThis as any).crypto.getRandomValues(new Uint8Array(12))
+  const data = new TextEncoder().encode(JSON.stringify(obj))
+  const buf = await (globalThis as any).crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await deriveKey(code), data)
+  const ct = new Uint8Array(buf)
+  const combined = new Uint8Array(iv.length + ct.length)
+  combined.set(iv, 0)
+  combined.set(ct, iv.length)
+  return 'a1:' + bytesToB64(combined)
+}
+async function aesDecrypt(s: string): Promise<any> {
+  const combined = b64ToBytes(s.slice(3))
+  const iv = combined.subarray(0, 12)
+  const data = combined.subarray(12)
+  const buf = await (globalThis as any).crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await deriveKey(code), data)
+  return JSON.parse(new TextDecoder().decode(buf))
+}
+
+// HTTP 公网降级：XOR 混淆（非密码学强度，仅防服务器磁盘明文）
+function xorKeystream(c: string): Uint8Array {
+  const seed = new TextEncoder().encode(c + '::yfe-sync')
+  const key = new Uint8Array(256)
+  for (let i = 0; i < 256; i++) {
+    let b = seed[i % seed.length]
+    b = (b ^ ((i * 167) & 0xff) ^ ((i >>> 3) & 0xff)) & 0xff
+    key[i] = b
+  }
+  return key
+}
+function xorObfuscate(obj: unknown): string {
+  const data = new TextEncoder().encode(JSON.stringify(obj))
+  const key = xorKeystream(code)
+  const out = new Uint8Array(data.length)
+  for (let i = 0; i < data.length; i++) out[i] = data[i] ^ key[i & 255]
+  return 'x1:' + bytesToB64(out)
+}
+function xorDeobfuscate(s: string): any {
+  const data = b64ToBytes(s.slice(3))
+  const key = xorKeystream(code)
+  const out = new Uint8Array(data.length)
+  for (let i = 0; i < data.length; i++) out[i] = data[i] ^ key[i & 255]
+  return JSON.parse(new TextDecoder().decode(out))
+}
+
+async function encryptObj(obj: unknown): Promise<string> {
+  if (hasSubtle) return aesEncrypt(obj)
+  return xorObfuscate(obj)
+}
+async function decryptObj(s: string): Promise<any> {
+  try {
+    if (s.startsWith('a1:')) return await aesDecrypt(s)
+    if (s.startsWith('x1:')) return xorDeobfuscate(s)
+    return JSON.parse(s) // 兼容极老明文（正常不会出现）
+  } catch {
+    return {}
+  }
+}
+
+// ============ 通信 ============
 function authHeader(): Record<string, string> {
   return { Authorization: `Bearer ${code}`, 'Content-Type': 'application/json' }
 }
@@ -43,9 +143,13 @@ async function ensureInit() {
       try {
         const r = await fetch('/api/sync', { headers: { Authorization: `Bearer ${code}` } })
         if (r.ok) {
-          const data = await r.json().catch(() => ({ rev: 0, stores: {} }))
-          rev = data.rev || 0
-          cache = data.stores || {}
+          const data = await r.json().catch(() => null)
+          rev = Number(data?.rev) || 0
+          if (data && typeof data.enc === 'string' && data.enc) {
+            cache = await decryptObj(data.enc)
+          } else {
+            cache = {}
+          }
           return
         }
       } catch { /* 网络异常：退回空缓存，后续写操作会重试上传 */ }
@@ -71,20 +175,25 @@ export async function seedFromLocal(getAll: (store: string) => Promise<any[]>) {
       cache[s] = []
     }
   }
+  // 排除敏感 meta（AI 配置/密钥），不进云端缓存、不上传
+  if (cache['meta']) {
+    cache['meta'] = cache['meta'].filter((r: any) => !EXCLUDED_META_KEYS.has(r.key))
+  }
   await pushNow(0)
 }
 
 async function pushNow(baseRev: number): Promise<{ conflict?: boolean }> {
+  const enc = await encryptObj(cache)
   const r = await fetch('/api/sync', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ rev: baseRev, stores: cache }),
+    body: JSON.stringify({ rev: baseRev, enc }),
   })
   if (r.status === 409) {
     // 远端已有更新，拉取并采用云端版本
-    const data = await r.json().catch(() => ({ rev, stores: cache }))
+    const data = await r.json().catch(() => ({ rev, enc: '' }))
     rev = data.rev ?? rev
-    cache = data.stores || cache
+    cache = data.enc ? await decryptObj(data.enc) : cache
     return { conflict: true }
   }
   if (r.ok) {

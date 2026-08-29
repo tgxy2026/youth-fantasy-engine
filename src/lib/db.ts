@@ -2,7 +2,7 @@ import { openDB, type IDBPDatabase } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
 import { PORTABLE, portableStore, type StoreOps } from './portable'
 import { DESKTOP, desktopStore } from './desktop'
-import { serverStore, configureServerStore, pullSnapshot, seedFromLocal } from './serverStore'
+import { serverStore, configureServerStore, pullSnapshot, seedFromLocal, EXCLUDED_META_KEYS } from './serverStore'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
@@ -241,20 +241,67 @@ const idbOps: StoreOps = {
 
 let ops: StoreOps = PORTABLE ? portableStore : (DESKTOP ? desktopStore : idbOps)
 
+// 云端同步特权（#003）：敏感 meta（AI 配置/密钥）仅留本地 IndexedDB，不进云端缓存、
+// 不同步、也不会被拉取覆盖。cloudStore 在 serverStore 之上对这类 key 做本地回退。
+const cloudStore: StoreOps = {
+  getAll: async <T,>(store: string): Promise<T[]> => {
+    if (store === 'meta') {
+      const local = (await idbOps.getAll<T>('meta')).filter((r: any) => EXCLUDED_META_KEYS.has(r.key))
+      const cloud = await serverStore.getAll<T>('meta')
+      return [...local, ...cloud] as T[]
+    }
+    return serverStore.getAll<T>(store)
+  },
+  get: async <T,>(store: string, key: string): Promise<T | undefined> => {
+    if (store === 'meta' && EXCLUDED_META_KEYS.has(key)) return idbOps.get<T>('meta', key)
+    return serverStore.get<T>(store, key)
+  },
+  put: async (store: string, value: any) => {
+    if (store === 'meta' && EXCLUDED_META_KEYS.has(value?.key)) return idbOps.put('meta', value)
+    return serverStore.put(store, value)
+  },
+  del: async (store: string, key: string) => {
+    if (store === 'meta' && EXCLUDED_META_KEYS.has(key)) return idbOps.del('meta', key)
+    return serverStore.del(store, key)
+  },
+  getAllByIndex: async <T,>(store: string, indexName: string, value: unknown): Promise<T[]> =>
+    serverStore.getAllByIndex<T>(store, indexName, value),
+  bulkPut: async (store: string, values: any[]) => {
+    if (store === 'meta') {
+      const excl = values.filter((v) => EXCLUDED_META_KEYS.has(v?.key))
+      const rest = values.filter((v) => !EXCLUDED_META_KEYS.has(v?.key))
+      if (excl.length) await idbOps.bulkPut('meta', excl)
+      if (rest.length) await serverStore.bulkPut('meta', rest)
+      return
+    }
+    return serverStore.bulkPut(store, values)
+  },
+  bulkDel: async (store: string, keys: string[]) => {
+    if (store === 'meta') {
+      const excl = keys.filter((k) => EXCLUDED_META_KEYS.has(k))
+      const rest = keys.filter((k) => !EXCLUDED_META_KEYS.has(k))
+      if (excl.length) await idbOps.bulkDel('meta', excl)
+      if (rest.length) await serverStore.bulkDel('meta', rest)
+      return
+    }
+    return serverStore.bulkDel(store, keys)
+  },
+}
+
 // 网页版云端同步特权（#003）：启动时若本地存有同步邀请码，则自动切换到云端存储。
 if (!PORTABLE && !DESKTOP) {
   try {
     const sc = localStorage.getItem('yfe-sync-code')
     if (sc) {
       configureServerStore(sc)
-      ops = serverStore
+      ops = cloudStore
     }
   } catch {
     /* localStorage 不可用时退化为本地 IndexedDB */
   }
 }
 
-/** 运行时切换底层存储（云端同步特权开启时切到 serverStore） */
+/** 运行时切换底层存储（云端同步特权开启时切到 cloudStore） */
 export function setStoreOps(o: StoreOps) {
   ops = o
 }
@@ -272,7 +319,7 @@ export async function enableCloudSync(code: string) {
     // 此刻 ops 仍为默认本地存储（网页版即 idbOps），用其数据播种
     await seedFromLocal((s) => ops.getAll(s))
   }
-  setStoreOps(serverStore)
+  setStoreOps(cloudStore)
   try {
     localStorage.setItem('yfe-sync-code', code)
   } catch {

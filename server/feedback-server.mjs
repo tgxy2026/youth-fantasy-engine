@@ -20,18 +20,18 @@ await mkdir(DATA_DIR, { recursive: true })
 const FEEDBACK_FILE = DATA_DIR + '/feedback.jsonl'
 const SYNC_FILE = DATA_DIR + '/sync.json'
 
-// 读取云端快照（不存在返回空）
+// 读取云端快照（不存在返回空）。enc 为客户端加密后的载荷（服务端不可读）。
 async function readSync() {
   try {
     const raw = await readFile(SYNC_FILE, 'utf8')
     const data = JSON.parse(raw)
-    if (data && typeof data === 'object' && data.stores && typeof data.stores === 'object' && !Array.isArray(data.stores)) {
-      return { rev: Number(data.rev) || 0, stores: data.stores }
+    if (data && typeof data === 'object' && typeof data.enc === 'string' && data.enc.length) {
+      return { rev: Number(data.rev) || 0, enc: data.enc }
     }
   } catch {
     /* 文件不存在或损坏 → 视为空 */
   }
-  return { rev: 0, stores: {} }
+  return { rev: 0, enc: undefined }
 }
 
 function syncAuth(req) {
@@ -64,16 +64,19 @@ const server = http.createServer(async (req, res) => {
     return res.end('{"ok":false,"error":"invalid"}')
   }
 
-  // 反馈提交：原样落盘（含可选附件），元数据追加到 jsonl 便于检索
+  // 反馈提交：原样落盘（含可选附件），元数据+文本内容追加到 jsonl 便于检索
   if (req.method === 'POST' && req.url === '/api/feedback') {
     const buf = await readRaw(req, 8 * 1024 * 1024).catch(() => null)
     const id = randomUUID()
+    const text = extractField(buf, 'text')
     const meta = {
       id,
       ts: new Date().toISOString(),
       ua: req.headers['user-agent'] || '',
       ip: req.socket.remoteAddress,
       bytes: buf ? buf.length : 0,
+      text,
+      hasFile: !!(buf && extractField(buf, 'file')),
     }
     if (buf) await writeFile(`${DATA_DIR}/fb-${id}.bin`, buf).catch(() => {})
     await appendFile(FEEDBACK_FILE, JSON.stringify(meta) + '\n').catch(() => {})
@@ -89,7 +92,7 @@ const server = http.createServer(async (req, res) => {
     }
     const snap = await readSync()
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    return res.end(JSON.stringify(snap))
+    return res.end(JSON.stringify({ rev: snap.rev, enc: snap.enc ?? null }))
   }
 
   if (req.method === 'POST' && req.url === '/api/sync') {
@@ -98,7 +101,7 @@ const server = http.createServer(async (req, res) => {
       return res.end('{"ok":false,"error":"unauthorized"}')
     }
     const body = await readJson(req)
-    if (!body || typeof body !== 'object' || !body.stores || typeof body.stores !== 'object' || Array.isArray(body.stores)) {
+    if (!body || typeof body !== 'object' || typeof body.enc !== 'string' || !body.enc) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"bad_body"}')
     }
@@ -107,9 +110,9 @@ const server = http.createServer(async (req, res) => {
     if (cur.rev !== baseRev) {
       // 版本不一致：返回当前云端快照，让客户端采用云端版本（last-write-wins）
       res.writeHead(409, { 'Content-Type': 'application/json' })
-      return res.end(JSON.stringify({ ok: false, conflict: true, ...cur }))
+      return res.end(JSON.stringify({ ok: false, conflict: true, rev: cur.rev, enc: cur.enc ?? null }))
     }
-    const next = { rev: cur.rev + 1, stores: body.stores }
+    const next = { rev: cur.rev + 1, enc: body.enc }
     await writeFile(SYNC_FILE, JSON.stringify(next), 'utf8').catch(() => {})
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, rev: next.rev }))
@@ -118,6 +121,14 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404)
   res.end()
 })
+
+// 从 multipart 表单体中抽取某个字段的文本值（用于把反馈正文写入 jsonl，便于直读）
+function extractField(buf, name) {
+  if (!buf) return ''
+  const s = buf.toString('utf8')
+  const m = s.match(new RegExp(`name="${name}"[^]*?\\r\\n\\r\\n(.*?)\\r\\n--`, 's'))
+  return m ? m[1].trim() : ''
+}
 
 function readJson(req) {
   return readRaw(req, 1 * 1024 * 1024)

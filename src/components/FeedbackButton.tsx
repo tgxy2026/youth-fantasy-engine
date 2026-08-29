@@ -43,7 +43,7 @@ export default function FeedbackButton() {
       <button
         onClick={() => setOpen(true)}
         title="提交反馈 / 优化建议"
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-amber/40 bg-ink-900/90 px-4 py-2 text-sm text-amber shadow-lg backdrop-blur hover:bg-ink-800"
+        className="flex items-center gap-2 rounded-full border border-amber/40 bg-ink-900/90 px-4 py-2 text-sm text-amber shadow-lg backdrop-blur hover:bg-ink-800"
       >
         <MessageSquareWarning size={16} />
         反馈

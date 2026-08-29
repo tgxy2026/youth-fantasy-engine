@@ -4,7 +4,7 @@ import PromptModal from './PromptModal'
 import { showToast } from './dialogs'
 import { enableCloudSync } from '../lib/db'
 
-// 网页体验版专属工具条（左下角常驻）：
+// 网页体验版专属工具条（项目管理主页左下角常驻，由 App 统一包容器定位）：
 //  - 云端同步：输入专属同步邀请码开启（#003），开启后项目数据实时存云端、可跨设备访问
 //  - 退出体验：清除「已通过邀请」标记并重载，回到邀请码填写页（便于重新验证/换设备）
 export default function WebTools() {
@@ -34,7 +34,7 @@ export default function WebTools() {
 
   return (
     <>
-      <div className="fixed bottom-4 left-4 z-40 flex flex-col items-start gap-2">
+      <div className="flex flex-col items-start gap-2">
         <button
           onClick={() => setSyncOpen(true)}
           disabled={busy}

@@ -237,6 +237,14 @@ export default function App() {
         <ProjectHub onOpen={openProject} />
         {/* 桌面版在项目列表页（无侧栏）也需要展示数据文件保存状态徽标 */}
         {DESKTOP && <DesktopBadge />}
+        {/* 网页体验版工具条：反馈 / 云端同步 / 退出体验，统一收在项目管理主页左下角，
+            避免浮层压住侧栏主题切换与编辑器字号调整等控件 */}
+        {WEB && (
+          <div className="fixed bottom-4 left-4 z-40 flex flex-col items-start gap-2">
+            <FeedbackButton />
+            <WebTools />
+          </div>
+        )}
       </>
     )
   }
@@ -322,8 +330,6 @@ export default function App() {
           ctx={visCtx}
         />
       )}
-      {WEB && <FeedbackButton />}
-      {WEB && <WebTools />}
       {WEB && <PrivacyNotice />}
     </div>
   )
