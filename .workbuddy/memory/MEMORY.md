@@ -10,7 +10,7 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 封装前必：tsc 0错 + vite build 0错 + 改动落盘。流程：审查→升 package.json version→封装。G盘 safe-delete 拦截 rmSync：build 前先 `mv dist dist.oldbak`；禁删 release/eb-cache/。Edit 工具偶发静默失败→改完必 tsc+抽查。
 
 ## 项目硬规则
-根目录 `你需要的图片我放在这里/` 禁删。禁用 window.prompt/confirm/alert（用 PromptModal/confirmDialog/showToast）。
+根目录 `你需要的文件在这里/`（原 `你需要的图片我放在这里/`，2026-08-29 老大重命名）禁删。禁用 window.prompt/confirm/alert（用 PromptModal/confirmDialog/showToast）。
 
 ## 架构速查（红线）
 - 按卷建表：卷表 tabId `chapter-vol-<vid>`；聚合走 db.getAllChapterLedgerRows()。
