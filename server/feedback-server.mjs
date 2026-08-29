@@ -9,7 +9,7 @@
 // 云端同步数据以「每同步码一个文件」落盘（sync-<sha256>.json），rev 做乐观并发守卫；
 // 每个同步邀请码对应一个独立云端槽位，避免多人共用一码互相覆盖。
 import http from 'node:http'
-import { appendFile, mkdir, writeFile, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, writeFile, readFile, rename, unlink } from 'node:fs/promises'
 import { randomUUID, createHash } from 'node:crypto'
 
 const PORT = Number(process.env.FEEDBACK_PORT || 3000)
@@ -49,6 +49,21 @@ async function readSync(code) {
   return { rev: 0, enc: undefined }
 }
 
+// 同步槽位串行写锁：同一槽位的 push 排队执行。
+// 不加锁时两个并发 POST 会交错成 read(rev=5) → read(rev=5) → write(rev=6) → write(rev=6)，
+// 后写的静默覆盖先写的，且 rev 不递增 —— 即「假成功 + 真丢数据」。
+const slotLocks = new Map()
+function withSlotLock(key, fn) {
+  const prev = slotLocks.get(key) || Promise.resolve()
+  let release = () => {}
+  const done = new Promise((resolve) => { release = resolve })
+  slotLocks.set(key, prev.then(() => done))
+  return prev
+    .catch(() => {})
+    .then(fn)
+    .finally(() => release())
+}
+
 // 校验同步码：返回码本身（用于定位槽位）或 null
 function syncAuth(req) {
   const h = req.headers['authorization'] || ''
@@ -56,6 +71,16 @@ function syncAuth(req) {
   if (!m) return null
   const code = m[1].trim()
   return SYNC_CODES.has(code) ? code : null
+}
+
+// 鉴权失败时记录「客户端实际提交的码」的短哈希（不可逆，不泄露码本身），
+// 用于诊断用户是把入门码当同步码、还是手滑打错字。
+function providedCodeHash(req) {
+  const h = req.headers['authorization'] || ''
+  const m = h.match(/^Bearer\s+(.*)$/i)
+  if (!m) return null
+  const c = m[1].trim()
+  return c ? createHash('sha256').update(c).digest('hex').slice(0, 12) : null
 }
 
 const server = http.createServer(async (req, res) => {
@@ -111,7 +136,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/api/sync') {
     const code = syncAuth(req)
     if (!code) {
-      await logAccess(req, { type: 'sync', ok: false, act: 'authfail', method: 'GET' })
+      await logAccess(req, { type: 'sync', ok: false, act: 'authfail', method: 'GET', bad: providedCodeHash(req) })
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"unauthorized"}')
     }
@@ -124,7 +149,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/sync') {
     const code = syncAuth(req)
     if (!code) {
-      await logAccess(req, { type: 'sync', ok: false, act: 'authfail', method: 'POST' })
+      await logAccess(req, { type: 'sync', ok: false, act: 'authfail', method: 'POST', bad: providedCodeHash(req) })
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"unauthorized"}')
     }
@@ -133,19 +158,34 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"bad_body"}')
     }
-    const cur = await readSync(code)
-    const baseRev = Number(body.rev) || 0
-    if (cur.rev !== baseRev) {
-      // 版本不一致：返回当前云端快照，让客户端采用云端版本（last-write-wins）
-      await logAccess(req, { type: 'sync', ok: false, act: 'conflict', code: slotOf(code), rev: cur.rev })
-      res.writeHead(409, { 'Content-Type': 'application/json' })
-      return res.end(JSON.stringify({ ok: false, conflict: true, rev: cur.rev, enc: cur.enc ?? null }))
-    }
-    const next = { rev: cur.rev + 1, enc: body.enc }
-    await writeFile(syncFileFor(code), JSON.stringify(next), 'utf8').catch(() => {})
-    await logAccess(req, { type: 'sync', ok: true, act: 'push', code: slotOf(code), rev: next.rev })
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    return res.end(JSON.stringify({ ok: true, rev: next.rev }))
+    // 串行化：同一槽位的「读 rev → 比对 → 写盘」必须原子完成，否则并发 push 会互相覆盖
+    const outcome = await withSlotLock(slotOf(code), async () => {
+      const cur = await readSync(code)
+      const baseRev = Number(body.rev) || 0
+      if (cur.rev !== baseRev) {
+        // 版本不一致：返回当前云端快照，由客户端做本地优先合并后重推
+        await logAccess(req, { type: 'sync', ok: false, act: 'conflict', code: slotOf(code), rev: cur.rev })
+        return { status: 409, payload: { ok: false, conflict: true, rev: cur.rev, enc: cur.enc ?? null } }
+      }
+      const next = { rev: cur.rev + 1, enc: body.enc }
+      const file = syncFileFor(code)
+      const tmp = file + '.tmp'
+      try {
+        // 先写临时文件再 rename：避免写入中途失败留下半截快照
+        await writeFile(tmp, JSON.stringify(next), 'utf8')
+        await rename(tmp, file)
+      } catch (err) {
+        // 写盘失败必须如实上报。历史上这里曾 .catch(() => {}) 静默吞掉 EACCES，
+        // 导致服务端返回「成功」而文件纹丝不动，故障被伪装了一整天。
+        console.error('[yfe-sync] write failed', slotOf(code), err)
+        await logAccess(req, { type: 'sync', ok: false, act: 'pushfail', code: slotOf(code), err: String((err && err.code) || err) })
+        return { status: 500, payload: { ok: false, error: 'write_failed' } }
+      }
+      await logAccess(req, { type: 'sync', ok: true, act: 'push', code: slotOf(code), rev: next.rev })
+      return { status: 200, payload: { ok: true, rev: next.rev } }
+    })
+    res.writeHead(outcome.status, { 'Content-Type': 'application/json' })
+    return res.end(JSON.stringify(outcome.payload))
   }
 
   res.writeHead(404)
@@ -206,6 +246,19 @@ function readRaw(req, max) {
     req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
   })
+}
+
+// 启动自检：确认数据目录可写。
+// 历史上槽位文件属主被误设为 root，www-data 无写权限，而 push 又把 EACCES 静默吞掉，
+// 结果「日志显示推送成功、文件纹丝不动」，故障潜伏一整天无人察觉。
+const probe = `${DATA_DIR}/.write-probe`
+try {
+  await writeFile(probe, String(Date.now()), 'utf8')
+  await readFile(probe, 'utf8')
+  await unlink(probe)
+  console.log(`[yfe-feedback] write-probe OK: ${DATA_DIR} 可写`)
+} catch (err) {
+  console.error(`[yfe-feedback] FATAL: 数据目录不可写 ${DATA_DIR} —— 同步推送将全部失败`, err)
 }
 
 server.listen(PORT, () => console.log(`[yfe-feedback] listening on :${PORT}, data=${DATA_DIR}, inviteCodes=${INVITE_CODES.size}, syncCodes=${SYNC_CODES.size}`))
