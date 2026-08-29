@@ -24,6 +24,8 @@ const SYNC_CODES = parseList(process.env.SYNC_CODES || process.env.SYNC_CODE)
 
 await mkdir(DATA_DIR, { recursive: true })
 const FEEDBACK_FILE = DATA_DIR + '/feedback.jsonl'
+// 访问/登录事件流水（每次邀请校验、每次云端同步调用都追加一行，供每日巡检汇总）
+const ACCESS_FILE = DATA_DIR + '/access.jsonl'
 
 // 同步码 → 独立云端槽位文件名（只存 hash，不暴露码本身）
 function slotOf(code) {
@@ -73,10 +75,13 @@ const server = http.createServer(async (req, res) => {
   // 邀请码校验：码只在服务端比较，不出现于客户端包；支持多个入门邀请码。
   if (req.method === 'POST' && req.url === '/api/invite/check') {
     const body = await readJson(req)
-    if (body && typeof body.code === 'string' && INVITE_CODES.has(body.code)) {
+    const code = body && typeof body.code === 'string' ? body.code : ''
+    if (INVITE_CODES.has(code)) {
+      await logAccess(req, { type: 'invite', ok: true, act: 'enter', code })
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return res.end('{"ok":true}')
     }
+    await logAccess(req, { type: 'invite', ok: false, act: 'reject', code })
     res.writeHead(403, { 'Content-Type': 'application/json' })
     return res.end('{"ok":false,"error":"invalid"}')
   }
@@ -106,9 +111,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/api/sync') {
     const code = syncAuth(req)
     if (!code) {
+      await logAccess(req, { type: 'sync', ok: false, act: 'authfail', method: 'GET' })
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"unauthorized"}')
     }
+    await logAccess(req, { type: 'sync', ok: true, act: 'pull', code: slotOf(code) })
     const snap = await readSync(code)
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ rev: snap.rev, enc: snap.enc ?? null }))
@@ -117,6 +124,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/sync') {
     const code = syncAuth(req)
     if (!code) {
+      await logAccess(req, { type: 'sync', ok: false, act: 'authfail', method: 'POST' })
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"unauthorized"}')
     }
@@ -129,11 +137,13 @@ const server = http.createServer(async (req, res) => {
     const baseRev = Number(body.rev) || 0
     if (cur.rev !== baseRev) {
       // 版本不一致：返回当前云端快照，让客户端采用云端版本（last-write-wins）
+      await logAccess(req, { type: 'sync', ok: false, act: 'conflict', code: slotOf(code), rev: cur.rev })
       res.writeHead(409, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({ ok: false, conflict: true, rev: cur.rev, enc: cur.enc ?? null }))
     }
     const next = { rev: cur.rev + 1, enc: body.enc }
     await writeFile(syncFileFor(code), JSON.stringify(next), 'utf8').catch(() => {})
+    await logAccess(req, { type: 'sync', ok: true, act: 'push', code: slotOf(code), rev: next.rev })
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, rev: next.rev }))
   }
@@ -141,6 +151,24 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404)
   res.end()
 })
+
+// 取真实客户端 IP（nginx 经 X-Real-IP 透传；否则回退到 socket 地址）
+function clientIp(req) {
+  const x = req.headers['x-real-ip']
+  return (x && x.trim()) || req.socket.remoteAddress || ''
+}
+
+// 访问/登录事件流水：每次邀请校验与云端同步调用都追加一行（id 便于每日巡检增量收录）
+async function logAccess(req, extra) {
+  const line = JSON.stringify({
+    id: randomUUID(),
+    ts: new Date().toISOString(),
+    ip: clientIp(req),
+    ua: req.headers['user-agent'] || '',
+    ...extra,
+  })
+  await appendFile(ACCESS_FILE, line + '\n').catch(() => {})
+}
 
 // 从 multipart 表单体中抽取某个字段的文本值（用于把反馈正文写入 jsonl，便于直读）
 function extractField(buf, name) {
