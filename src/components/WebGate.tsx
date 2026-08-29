@@ -55,7 +55,7 @@ export default function WebGate() {
   }
 
   return (
-    <div className="h-screen w-screen flex items-center justify-center bg-ink-950 p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-950 p-4">
       <div className="w-full max-w-sm rounded-2xl border border-ink-700 bg-ink-900 p-6 shadow-xl">
         <div className="mb-4 flex items-center gap-2 text-amber">
           <Lock size={18} />
