@@ -65,5 +65,11 @@
 - 真正"任意设备登录同数据"需加轻后端+账号：新增 `serverStore: StoreOps` 实现（所有 db.ts 函数已走 `ops` 抽象，切后端组件层零改动）；MVP 可每用户存一份 `PortableData` JSON（复用 `normalizePortableData`）全量 load/save，后期再优化增量。
 - 与 #001 关系：Level2 服务端托管**涵盖** #001 跨设备同步诉求，且额外获得"不装软件、输网址即用"。**已定：邀请制静态网页体验版**（数据全留浏览器+反馈通道），非 Level2 服务端托管；跨设备同步仍由 #001 方案A 负责。
 - 风险/待办（均已落地）：① AI CORS → ai.ts 改走同源 /api/ai 反代 + nginx yfe_proxy_params(access_log off 不落 key) ② 已验证 web 包无 electron 真调用（仅 window.electronStore 运行时探测死代码）③ 邀请码门禁 WebGate（码仅服务端比，server/feedback-server.mjs）④ 隐私告知 PrivacyNotice。
-- **#002 已实现（代码+部署包，git 2ee65ec）**：build:web(vite.config.web.ts) 走 IndexedDB；WebGate/FeedbackButton/PrivacyNotice 接入 App.tsx；server/(nginx 站点+零依赖反馈服务+systemd+deploy.sh+README)。待老大租腾讯云服务器→改 INVITE_CODE→`sudo bash server/deploy.sh` 即上线。
+- **#002 已上线（2026-08-29 实战部署成功）**：腾讯云轻量应用服务器 `154.8.178.240`，**实际系统 Ubuntu 24.04(nobles，脚本兼容)**。部署包 commit `2ee65ec`/`fea07c2`/`78dae14`。关键事实与坑：
+  - **登录**：默认用户 `ubuntu`（root 登录禁用），`ubuntu` 有**免密 sudo(NOPASSWD)**；部署用 `ubuntu`+`sudo -n` 一把梭。本机沙箱可直连公网(22端口+出网均 OPEN)，故老巴迪可直接代部署。
+  - **部署路径**：`scp -r server dist-web ubuntu@IP:~/yfe-deploy/` → `sudo bash ~/yfe-deploy/server/deploy.sh`。站点 `/var/www/yfe`；反馈服务 `/opt/yfe-server/feedback-server.mjs` 以 **`www-data`** 跑、端口 **3000**、数据 `/var/lib/yfe`。
+  - **⚠️ 必坑（已修，commit 78dae14）**：反馈服务以 www-data 运行，启动 `mkdir /var/lib/yfe` 因 /var/lib 属 root 而 **EACCES 失败** → 在 deploy.sh 加 `mkdir -p /var/lib/yfe && chown -R www-data:www-data /var/lib/yfe` 修复；并给 nginx 补 `location = /healthz` 反代 3000/healthz（原配置只有 SPA 兜底，/healthz 会回 HTML）。
+  - **验证通过**：首页 200、/healthz=ok、邀请码错 403/对 `YFE-D49E-6MPG` 200、nginx+feedback 均 active。现状 `http://154.8.178.240` 已可访问（**HTTP 无 HTTPS**；防火墙 80/443 已开）。
+  - **待办**：① HTTPS 需绑域名+`sudo certbot --nginx -d 域名`（yfe.conf server_name _ 已留位）② AI 反代待真实 key 实测 ③ 反馈 POST 未实测（路由正确、服务 active）。
+  - **安全**：部署时老大把 SSH 私钥贴在对话里 → 建议腾讯云控制台**重新生成密钥对**作废该 key；HTTP 下 AI key 在"浏览器→服务器"段明文，邀请制内测可接受，上域名后补齐 HTTPS。
 - **#003 已记录（待处理，排期延后）**：给老大自己的「云端同步特权」= #001 的单用户门控版。最小方案：serverStore:StoreOps(fetch)+db.ts 第4分支+管理令牌登录切换+/api/sync 持久化 PortableData 到 SQLite+版本守卫。估 3–5 开发日。**待 #002 网页体验版部署跑通后再立项开工**。

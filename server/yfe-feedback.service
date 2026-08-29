@@ -5,6 +5,8 @@ After=network.target
 [Service]
 # 部署前可改 INVITE_CODE；当前为生成值，随时可替换，重启服务即生效
 Environment=INVITE_CODE=YFE-D49E-6MPG
+# 云端同步特权专属邀请码（#003）：与 INVITE_CODE 独立，仅持有者能开启跨设备云端同步
+Environment=SYNC_CODE=YFE-SYNC-7Q3K-2X9M
 Environment=FEEDBACK_DIR=/var/lib/yfe
 Environment=FEEDBACK_PORT=3000
 WorkingDirectory=/opt/yfe-server

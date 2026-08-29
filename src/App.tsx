@@ -18,6 +18,7 @@ import { DesktopBadge } from './components/Desktop'
 import { WEB } from './lib/env'
 import WebGate, { checkInvited } from './components/WebGate'
 import FeedbackButton from './components/FeedbackButton'
+import WebTools from './components/WebTools'
 import PrivacyNotice from './components/PrivacyNotice'
 import FullTextSearch from './components/FullTextSearch'
 import JieWenJiSprite from './components/JieWenJiSprite'
@@ -322,6 +323,7 @@ export default function App() {
         />
       )}
       {WEB && <FeedbackButton />}
+      {WEB && <WebTools />}
       {WEB && <PrivacyNotice />}
     </div>
   )

@@ -2,6 +2,7 @@ import { openDB, type IDBPDatabase } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
 import { PORTABLE, portableStore, type StoreOps } from './portable'
 import { DESKTOP, desktopStore } from './desktop'
+import { serverStore, configureServerStore, pullSnapshot, seedFromLocal } from './serverStore'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
@@ -238,7 +239,46 @@ const idbOps: StoreOps = {
   },
 }
 
-const ops: StoreOps = PORTABLE ? portableStore : (DESKTOP ? desktopStore : idbOps)
+let ops: StoreOps = PORTABLE ? portableStore : (DESKTOP ? desktopStore : idbOps)
+
+// 网页版云端同步特权（#003）：启动时若本地存有同步邀请码，则自动切换到云端存储。
+if (!PORTABLE && !DESKTOP) {
+  try {
+    const sc = localStorage.getItem('yfe-sync-code')
+    if (sc) {
+      configureServerStore(sc)
+      ops = serverStore
+    }
+  } catch {
+    /* localStorage 不可用时退化为本地 IndexedDB */
+  }
+}
+
+/** 运行时切换底层存储（云端同步特权开启时切到 serverStore） */
+export function setStoreOps(o: StoreOps) {
+  ops = o
+}
+
+/**
+ * 开启云端同步（#003 云端同步特权）：用专属同步邀请码登录。
+ * 1) 拉取远端快照；2) 若远端为空，用当前本地数据播种上传；
+ * 3) 切换到云端存储并持久化邀请码。调用方应随后刷新页面以载入云端数据。
+ */
+export async function enableCloudSync(code: string) {
+  configureServerStore(code)
+  const snap = await pullSnapshot()
+  const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
+  if (empty) {
+    // 此刻 ops 仍为默认本地存储（网页版即 idbOps），用其数据播种
+    await seedFromLocal((s) => ops.getAll(s))
+  }
+  setStoreOps(serverStore)
+  try {
+    localStorage.setItem('yfe-sync-code', code)
+  } catch {
+    /* 忽略 */
+  }
+}
 
 // ============ 项目 ============
 export async function getAllProjects(): Promise<Project[]> {
