@@ -72,4 +72,7 @@
   - **验证通过**：首页 200、/healthz=ok、邀请码错 403/对 `YFE-D49E-6MPG` 200、nginx+feedback 均 active。现状 `http://154.8.178.240` 已可访问（**HTTP 无 HTTPS**；防火墙 80/443 已开）。
   - **待办**：① HTTPS 需绑域名+`sudo certbot --nginx -d 域名`（yfe.conf server_name _ 已留位）② AI 反代待真实 key 实测 ③ 反馈 POST 未实测（路由正确、服务 active）。
   - **安全**：部署时老大把 SSH 私钥贴在对话里 → 建议腾讯云控制台**重新生成密钥对**作废该 key；HTTP 下 AI key 在"浏览器→服务器"段明文，邀请制内测可接受，上域名后补齐 HTTPS。
-- **#003 已记录（待处理，排期延后）**：给老大自己的「云端同步特权」= #001 的单用户门控版。最小方案：serverStore:StoreOps(fetch)+db.ts 第4分支+管理令牌登录切换+/api/sync 持久化 PortableData 到 SQLite+版本守卫。估 3–5 开发日。**待 #002 网页体验版部署跑通后再立项开工**。
+- **#003 云端同步特权 · 已上线（2026-08-29）**：serverStore:StoreOps(fetch→/api/sync) 已落地；上行加密(HTTPS走Web Crypto AES-GCM，HTTP降级XOR混淆，rev明文)；排除 AI 配置(meta::aiProviders/aiActiveProviderId/aiConfigMigratedToGlobal)不同步；冲突 409 last-write-wins。同步码 `SYNC_CODES`(20个)在 yfe-feedback.service，每个码独立云端槽位 `sync-<sha256>.json`，避免多人共用一码互相覆盖。入门码 `INVITE_CODES`(20个)列表校验；分发文档 `docs/邀请码分发记录.md`。
+
+## 会话窗口分工约定（2026-08-29）
+- 本会话窗口**专用于「网页体验版」的升级维护**（部署/配置/邀请码/HTTPS/反馈通道等）；**新功能开发或优化另开窗口**进行，互不混用，便于各自 git 提交与上下文隔离。

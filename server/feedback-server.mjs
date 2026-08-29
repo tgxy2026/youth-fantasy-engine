@@ -1,29 +1,42 @@
 // 青春幻想引擎 · 网页体验版 反馈 / 邀请校验 / 云端同步 服务（零依赖，仅用 Node 内置模块）
 // 职责：
-//   POST /api/invite/check  { code }            -> 比对 INVITE_CODE，200/403
+//   POST /api/invite/check  { code }            -> 比对 INVITE_CODES 列表，200/403
 //   POST /api/feedback      (multipart/JSON)    -> 落盘到 FEEDBACK_DIR，返回 200
-//   GET  /api/sync                             -> 拉取云端快照（Bearer SYNC_CODE 鉴权）
-//   POST /api/sync          { rev, stores }     -> 上传云端快照（rev 守卫，冲突 409）
+//   GET  /api/sync                             -> 拉取云端快照（Bearer SYNC_CODES 之一鉴权）
+//   POST /api/sync          { rev, enc }        -> 上传云端快照（rev 守卫，冲突 409）
 //   GET  /healthz                            -> 200 ok
 // 设计：仅收「用户主动提交的反馈」与「开启同步者的整库快照」，不建公开用户库。
-// 云端同步数据以单文件（sync.json）落盘，rev 做乐观并发守卫；多设备并发以最后写入为准。
+// 云端同步数据以「每同步码一个文件」落盘（sync-<sha256>.json），rev 做乐观并发守卫；
+// 每个同步邀请码对应一个独立云端槽位，避免多人共用一码互相覆盖。
 import http from 'node:http'
 import { appendFile, mkdir, writeFile, readFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 
 const PORT = Number(process.env.FEEDBACK_PORT || 3000)
 const DATA_DIR = process.env.FEEDBACK_DIR || '/var/lib/yfe'
-const INVITE_CODE = process.env.INVITE_CODE || ''
-const SYNC_CODE = process.env.SYNC_CODE || ''
+
+// 邀请码 / 同步码均支持「列表」（逗号或空白分隔），兼容旧的单值环境变量名。
+function parseList(s) {
+  return new Set(String(s || '').split(/[\s,]+/).map((x) => x.trim()).filter(Boolean))
+}
+const INVITE_CODES = parseList(process.env.INVITE_CODES || process.env.INVITE_CODE)
+const SYNC_CODES = parseList(process.env.SYNC_CODES || process.env.SYNC_CODE)
 
 await mkdir(DATA_DIR, { recursive: true })
 const FEEDBACK_FILE = DATA_DIR + '/feedback.jsonl'
-const SYNC_FILE = DATA_DIR + '/sync.json'
 
-// 读取云端快照（不存在返回空）。enc 为客户端加密后的载荷（服务端不可读）。
-async function readSync() {
+// 同步码 → 独立云端槽位文件名（只存 hash，不暴露码本身）
+function slotOf(code) {
+  return createHash('sha256').update(String(code)).digest('hex')
+}
+function syncFileFor(code) {
+  return `${DATA_DIR}/sync-${slotOf(code)}.json`
+}
+
+// 读取某同步码的云端快照（不存在返回空）。enc 为客户端加密后的载荷（服务端不可读）。
+async function readSync(code) {
   try {
-    const raw = await readFile(SYNC_FILE, 'utf8')
+    const raw = await readFile(syncFileFor(code), 'utf8')
     const data = JSON.parse(raw)
     if (data && typeof data === 'object' && typeof data.enc === 'string' && data.enc.length) {
       return { rev: Number(data.rev) || 0, enc: data.enc }
@@ -34,9 +47,13 @@ async function readSync() {
   return { rev: 0, enc: undefined }
 }
 
+// 校验同步码：返回码本身（用于定位槽位）或 null
 function syncAuth(req) {
   const h = req.headers['authorization'] || ''
-  return SYNC_CODE !== '' && h === `Bearer ${SYNC_CODE}`
+  const m = h.match(/^Bearer\s+(.+)$/i)
+  if (!m) return null
+  const code = m[1].trim()
+  return SYNC_CODES.has(code) ? code : null
 }
 
 const server = http.createServer(async (req, res) => {
@@ -53,10 +70,10 @@ const server = http.createServer(async (req, res) => {
     return res.end('ok')
   }
 
-  // 邀请码校验：码只在服务端比较，不出现于客户端包
+  // 邀请码校验：码只在服务端比较，不出现于客户端包；支持多个入门邀请码。
   if (req.method === 'POST' && req.url === '/api/invite/check') {
     const body = await readJson(req)
-    if (body && typeof body.code === 'string' && INVITE_CODE && body.code === INVITE_CODE) {
+    if (body && typeof body.code === 'string' && INVITE_CODES.has(body.code)) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return res.end('{"ok":true}')
     }
@@ -85,18 +102,21 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ===== 云端同步（#003 同步特权）=====
+  // 每个同步码对应独立云端槽位；enc 为客户端加密后的载荷。
   if (req.method === 'GET' && req.url === '/api/sync') {
-    if (!syncAuth(req)) {
+    const code = syncAuth(req)
+    if (!code) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"unauthorized"}')
     }
-    const snap = await readSync()
+    const snap = await readSync(code)
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ rev: snap.rev, enc: snap.enc ?? null }))
   }
 
   if (req.method === 'POST' && req.url === '/api/sync') {
-    if (!syncAuth(req)) {
+    const code = syncAuth(req)
+    if (!code) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"unauthorized"}')
     }
@@ -105,7 +125,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"bad_body"}')
     }
-    const cur = await readSync()
+    const cur = await readSync(code)
     const baseRev = Number(body.rev) || 0
     if (cur.rev !== baseRev) {
       // 版本不一致：返回当前云端快照，让客户端采用云端版本（last-write-wins）
@@ -113,7 +133,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ ok: false, conflict: true, rev: cur.rev, enc: cur.enc ?? null }))
     }
     const next = { rev: cur.rev + 1, enc: body.enc }
-    await writeFile(SYNC_FILE, JSON.stringify(next), 'utf8').catch(() => {})
+    await writeFile(syncFileFor(code), JSON.stringify(next), 'utf8').catch(() => {})
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, rev: next.rev }))
   }
@@ -160,4 +180,4 @@ function readRaw(req, max) {
   })
 }
 
-server.listen(PORT, () => console.log(`[yfe-feedback] listening on :${PORT}, data=${DATA_DIR}`))
+server.listen(PORT, () => console.log(`[yfe-feedback] listening on :${PORT}, data=${DATA_DIR}, inviteCodes=${INVITE_CODES.size}, syncCodes=${SYNC_CODES.size}`))

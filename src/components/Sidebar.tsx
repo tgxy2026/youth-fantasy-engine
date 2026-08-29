@@ -44,6 +44,14 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   const [zoom, setZoom] = useState(getStoredZoom())
   const changeTheme = (id: typeof theme) => setTheme(applyTheme(id))
   const changeZoom = (d: number) => setZoom(applyZoom(zoom + d))
+  // 界面缩放：支持手动输入百分比（80% ~ 160%），回车或失焦生效
+  const [zoomText, setZoomText] = useState(String(zoom))
+  useEffect(() => { setZoomText(String(zoom)) }, [zoom])
+  const commitZoom = () => {
+    const v = Number(zoomText)
+    if (Number.isFinite(v) && v > 0) setZoom(applyZoom(v))
+    else setZoomText(String(zoom))
+  }
   // 侧栏宽度可拖拽调整
   const sidebar = useResizable({ key: 'yfe-sidebar-w', initial: 224, initialWide: 300, min: 200, max: 560, side: 'right' })
 
@@ -274,7 +282,20 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             >
               <ZoomOut size={12} />
             </button>
-            <span className="w-9 text-center text-ink-300 tabular-nums">{zoom}%</span>
+            <span className="flex items-center gap-0.5">
+              <input
+                type="number"
+                min={80}
+                max={160}
+                value={zoomText}
+                onChange={(e) => setZoomText(e.target.value)}
+                onBlur={commitZoom}
+                onKeyDown={(e) => { if (e.key === 'Enter') { commitZoom(); (e.target as HTMLInputElement).blur() } }}
+                title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
+                className="w-12 rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-center text-ink-200 tabular-nums outline-none focus:border-amber"
+              />
+              <span className="text-ink-400 text-xs">%</span>
+            </span>
             <button
               onClick={() => changeZoom(10)}
               className="p-0.5 text-ink-400 hover:text-amber transition-colors"
