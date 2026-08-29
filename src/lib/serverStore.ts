@@ -37,6 +37,8 @@ let code = ''
 let cache: Record<string, any[]> = {}
 let rev = 0
 let pushTimer: ReturnType<typeof setTimeout> | null = null
+let pushing = false
+let pendingPush = false
 let initPromise: Promise<void> | null = null
 
 export function configureServerStore(c: string) {
@@ -180,18 +182,52 @@ export async function seedFromLocal(getAll: (store: string) => Promise<any[]>) {
   await pushNow(0)
 }
 
-async function pushNow(baseRev: number): Promise<{ conflict?: boolean }> {
+// 冲突合并：本地改动优先（按 store+主键覆盖），保证多标签/多设备并发时不静默丢数据
+function mergeCaches(server: Record<string, any[]>, local: Record<string, any[]>): Record<string, any[]> {
+  const out: Record<string, any[]> = {}
+  const stores = new Set([...Object.keys(server || {}), ...Object.keys(local || {})])
+  for (const s of stores) {
+    const sArr = (server && server[s]) || []
+    const lArr = (local && local[s]) || []
+    const kf = KEY_FIELD[s] ?? 'id'
+    const map = new Map<any, any>()
+    for (const r of sArr) if (r && r[kf] !== undefined) map.set(r[kf], r)
+    for (const r of lArr) if (r && r[kf] !== undefined) map.set(r[kf], r) // 本地优先
+    out[s] = [...map.values()]
+  }
+  return out
+}
+
+const MAX_CONFLICT_RETRY = 5
+
+// 推送（带 rev 守卫）。冲突(409)时：合并云端版本（本地优先）后用最新 rev 重试，
+// 绝不把本地未保存改动直接丢弃——这是修复「保存的数据被系统自动刷新掉」的核心。
+async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean }> {
   const enc = await encryptObj(cache)
-  const r = await fetch('/api/sync', {
-    method: 'POST',
-    headers: authHeader(),
-    body: JSON.stringify({ rev: baseRev, enc }),
-  })
+  let r: Response
+  try {
+    r = await fetch('/api/sync', {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify({ rev: baseRev, enc }),
+    })
+  } catch {
+    throw new Error('sync push network error')
+  }
   if (r.status === 409) {
-    // 远端已有更新，拉取并采用云端版本
-    const data = await r.json().catch(() => ({ rev, enc: '' }))
-    rev = data.rev ?? rev
-    cache = data.enc ? await decryptObj(data.enc) : cache
+    const data = await r.json().catch(() => ({ rev: baseRev, enc: null }))
+    const serverRev = data.rev ?? baseRev
+    let serverCache: Record<string, any[]> | null = null
+    if (data.enc) {
+      try { serverCache = await decryptObj(data.enc) } catch { serverCache = null }
+    }
+    // 关键：本地改动优先合并，绝不直接用云端版本覆盖掉未保存的本地编辑
+    if (serverCache) cache = mergeCaches(serverCache, cache)
+    rev = serverRev
+    if (depth < MAX_CONFLICT_RETRY) {
+      return pushNow(serverRev, depth + 1) // 用云端最新 rev 重新推送，保留本地改动
+    }
+    // 极罕见：仍冲突则保留本地改动、接受云端 rev，不再重试（本地编辑已留在 cache）
     return { conflict: true }
   }
   if (r.ok) {
@@ -202,11 +238,27 @@ async function pushNow(baseRev: number): Promise<{ conflict?: boolean }> {
   throw new Error('sync push failed ' + r.status)
 }
 
+// 串行化推送：同一时刻只允许一个在途请求；在途期间的新写入标记 pending，结束后补推一次，
+// 避免两个标签/设备的推送互相 409 打架导致本地改动被覆盖。
+async function flushNow(): Promise<void> {
+  if (pushTimer) { clearTimeout(pushTimer); pushTimer = null }
+  if (pushing) { pendingPush = true; return }
+  pushing = true
+  try {
+    await pushNow(rev)
+  } catch {
+    /* 失败保留本地改动，下次写操作/页面卸载时会重试 */
+  } finally {
+    pushing = false
+    if (pendingPush) { pendingPush = false; schedulePush() }
+  }
+}
+
 function schedulePush() {
   if (pushTimer) clearTimeout(pushTimer)
   pushTimer = setTimeout(() => {
     pushTimer = null
-    pushNow(rev).catch(() => { /* 失败静默，下次写操作会继续尝试 */ })
+    void flushNow()
   }, 800)
 }
 
@@ -264,4 +316,12 @@ export const serverStore: StoreOps = {
     cache[store] = (cache[store] || []).filter((x: any) => !set.has(x[kf]))
     schedulePush()
   },
+}
+
+// 页面隐藏/卸载前尽力把待推送改动刷到云端，避免 800ms 防抖窗口内关闭导致丢数据
+if (typeof window !== 'undefined') {
+  const onHide = () => { if (document.visibilityState === 'hidden') void flushNow() }
+  window.addEventListener('pagehide', () => void flushNow())
+  window.addEventListener('beforeunload', () => void flushNow())
+  document.addEventListener('visibilitychange', onHide)
 }
