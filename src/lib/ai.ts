@@ -11,6 +11,7 @@
 // 这是平台侧策略，本层只负责把错误翻译成可读中文提示。
 
 import * as db from './db'
+import { WEB } from './env'
 
 export type AIProviderType = 'ollama' | 'openai'
 
@@ -122,6 +123,22 @@ export function composeSystemPrompt(featureSys: string, provider?: AIProvider | 
 
 function stripSlash(u: string) {
   return u.replace(/\/+$/, '')
+}
+
+// 网页体验版：浏览器直连外部 AI 接口会撞 CORS，统一改走同源 /api/ai/<host> 由服务器反代转发。
+// 服务器仅做转发、不存储 key / 请求内容（部署包 nginx 配置对 /api/ai/ 关闭 access_log）。
+// 桌面 / 便携版（WEB=false）原样直连，不受影响。
+const AI_PROXY_PREFIX = '/api/ai'
+function toProxyUrl(base: string): string {
+  if (!WEB) return base
+  try {
+    const u = new URL(base)
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return base
+    // https://api.siliconflow.cn/v1 -> /api/ai/api.siliconflow.cn/v1
+    return `${AI_PROXY_PREFIX}/${u.host}${u.pathname}${u.search}`
+  } catch {
+    return base
+  }
 }
 
 /**
@@ -360,8 +377,9 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
 
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<string> {
   const { timeoutMs } = o
-  const base = stripSlash(config.baseUrl || '')
-  if (!base) throw new Error('未填写 API 接口地址（baseUrl）。')
+  const rawBase = stripSlash(config.baseUrl || '')
+  if (!rawBase) throw new Error('未填写 API 接口地址（baseUrl）。')
+  const base = toProxyUrl(rawBase)
   if (!config.model) throw new Error('未填写模型名称。')
   let res: Response
   let clearTimer: (() => void) | null = null

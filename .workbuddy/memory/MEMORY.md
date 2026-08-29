@@ -30,8 +30,10 @@
 ## 版本现状
 - 1.8.0 手绘地图+地理联动；1.9.0 灵感工具拆分+检查工具+ErrorBoundary；1.9.1 表头筛选/按卷建表/补登模式/示范项目卷二。
 - **1.9.2（2026-08-28）**：章节名与顺序解耦——`src/lib/chapterSeq.ts` 为顺序唯一权威（全派生不落库）；`Chapter.excludeFromNumbering` + Hash 开关；continuityCheck 不再解析标题；`migrateChapterLedger`/`migrateChapterNumbering` 已接入 openProject。同日四轮审计（日常/联动/AI喂数/数据安全）修复：doAddChapter stale state、migrateChapterLedger 迁移后误删台账行、importProject 未重映射卷台账 tabId 等。
-- **1.9.5（已封装，2026-08-28，提交 f49c2b9 + b448115）**：= 1.9.2 全部 + 两条节奏预警（爽点断档/存稿缓冲告急，continuityCheck 第 9/10 类）+ 打赏页真实素材落地（铁骨咸鱼/收款码×2/头像/友链三项）。产物：`release/novel-studio-1.9.5/`（便携 7.62MB）+ `release/桌面安装版/青春幻想引擎-Setup-1.9.5.exe`（81MB）。⚠️ 重打包便携版前必须手动清空 `release/novel-studio-<ver>/`（vite emptyOutDir 撞 safe-delete）。
-- **规划 2.0**：源码加固（javascript-obfuscator 混淆/可选 asarIntegrity+bytenode）+ 功能讲稿。触发词「开工2.0」。
+- **1.9.5 / 1.9.6（已封装，2026-08-28）**：1.9.5 = 解耦 + 四轮审计修复 + 两条节奏预警 + 打赏页素材落地（f49c2b9/b448115）；1.9.6（206588b）= 打赏页终稿（简介勘误「加群」、码图去文字标注）。产物：`release/novel-studio-1.9.6/`（便携 8.22MB）+ `release/桌面安装版/青春幻想引擎-Setup-1.9.6.exe`（81MB）。⚠️ 同版本重打包前必须手动清空 `release/novel-studio-<ver>/`（vite emptyOutDir 撞 safe-delete）。
+- **版本路线图（作者定档，2026-08-28）**：1.9.6 试用 1~2 周收集问题/bug → 2.0 发布前统一批量处理 → 启动 2.0 最终工程（源码加固 javascript-obfuscator/asarIntegrity/bytenode + 功能讲稿，触发词「开工2.0」）。**试用期内不动源码，等作者问题清单。**
+- **1.9.6→2.0.0 问题清单约定（2026-08-29 起）**：专用文件 `docs/1.9.6-2.0.0_Bug与待优化清单.md`。老大反馈 Bug/待优化 → 老巴迪**仅做单独记录（编号/类型/模块/描述/严重度/状态）**，绝不擅自改源码；只有当老大明确说"处理/修一下/批量处理"时才动手，处理动作回填「处理结果」列并同步统计。状态：`待处理/已处理/已拒绝`；严重度：`P0 阻断/P1 高/P2 中/P3 低`。
+- **#001 跨设备同步 已定方向（2026-08-29）**：方案A先上——桌面版数据文件路径改可配置（默认 AppData，可指向 OneDrive/坚果云同步目录），便携版直接指同步文件夹，零后端零账号；2.0 补方案B冲突备份（StoreOps 同步层+按记录增量+version/deviceId+双向冲突存 .conflict）。设计须兼顾图片外置纳管、settingsKV 明文 AI key 排除/加密、旧版开新版 JSON 向后兼容。
 
 ## 1.9.1 自定义项目架构
 - 创建入口「完整项目/自定义项目」二选一；精简/极简仅保留旧项目打开。
@@ -57,3 +59,10 @@
 ## AI 接入（1.5.0+）
 - **颉文姬 5 模式**：`clinic` 诊室 / `edit` 编辑(选区改稿→建议段) / `review` 审读 / `brief` 简报 / `ledger` 补登(抽实体→比对→三档→勾选写入)。
 - 本地 Ollama + 联网 OpenAI 兼容（`src/lib/ai.ts` / `AIAssist.tsx`），统一 `testProvider()` + `chatRaw()`。**硅基流动**：`https://api.siliconflow.cn/v1`，模型 `deepseek-ai/DeepSeek-V3.2`。⚠️ 明文本地记忆，勿提交公开仓库。
+
+## Web 部署 / 网页体验版（2026-08-29 定案）
+- 已确认 `src/lib/db.ts` 存在纯浏览器 IndexedDB 后端 `idbOps`（路由：`PORTABLE?portableStore:DESKTOP?desktopStore:idbOps`），故**纯静态网页版零后端即可跑**，数据存各浏览器本地 IndexedDB（per-origin，不跨设备）。
+- 真正"任意设备登录同数据"需加轻后端+账号：新增 `serverStore: StoreOps` 实现（所有 db.ts 函数已走 `ops` 抽象，切后端组件层零改动）；MVP 可每用户存一份 `PortableData` JSON（复用 `normalizePortableData`）全量 load/save，后期再优化增量。
+- 与 #001 关系：Level2 服务端托管**涵盖** #001 跨设备同步诉求，且额外获得"不装软件、输网址即用"。**已定：邀请制静态网页体验版**（数据全留浏览器+反馈通道），非 Level2 服务端托管；跨设备同步仍由 #001 方案A 负责。
+- 风险/待办：① AI 直连硅基流动浏览器端 CORS（代理须不落 key/内容日志）② 验证无 Electron-only 依赖漏入 web 构建 ③ 邀请码轻量门禁控量/防滥用 ④ 隐私告知明确“仅反馈提交时发数据”。
+- 已记 #002（优化/待处理）入清单，方向：邀请制静态网页体验版（数据+AI key 全留浏览器，仅反馈提交时发数据）。

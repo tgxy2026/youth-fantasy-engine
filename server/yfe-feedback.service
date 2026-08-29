@@ -1,0 +1,16 @@
+[Unit]
+Description=YFE Web Feedback Service
+After=network.target
+
+[Service]
+# 部署前请把 INVITE_CODE 改成你实际要发放的邀请码
+Environment=INVITE_CODE=CHANGE_ME
+Environment=FEEDBACK_DIR=/var/lib/yfe
+Environment=FEEDBACK_PORT=3000
+WorkingDirectory=/opt/yfe-server
+ExecStart=/usr/bin/node /opt/yfe-server/feedback-server.mjs
+Restart=on-failure
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

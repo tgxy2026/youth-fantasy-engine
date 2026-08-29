@@ -15,6 +15,10 @@ import { PORTABLE, getState, subscribe, flush } from './lib/portable'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop } from './lib/desktop'
 import { PortableGate, PortableBadge } from './components/Portable'
 import { DesktopBadge } from './components/Desktop'
+import { WEB } from './lib/env'
+import WebGate, { checkInvited } from './components/WebGate'
+import FeedbackButton from './components/FeedbackButton'
+import PrivacyNotice from './components/PrivacyNotice'
 import FullTextSearch from './components/FullTextSearch'
 import JieWenJiSprite from './components/JieWenJiSprite'
 import GeoMapEditor from './components/GeoMapEditor'
@@ -220,6 +224,8 @@ export default function App() {
 
   // 便携模式且数据文件未连接 → 启动选择页
   if (PORTABLE && !fileReady) return <PortableGate />
+  // 网页体验版（邀请制）→ 未通过邀请码前拦截
+  if (WEB && !checkInvited()) return <WebGate />
 
   if (!booted) return <div className="h-screen bg-ink-950" />
 
@@ -315,6 +321,8 @@ export default function App() {
           ctx={visCtx}
         />
       )}
+      {WEB && <FeedbackButton />}
+      {WEB && <PrivacyNotice />}
     </div>
   )
 }

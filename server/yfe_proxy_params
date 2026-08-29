@@ -1,0 +1,15 @@
+# 青春幻想引擎 AI 反代公共参数（被 yfe.conf 的 /api/ai/ 各 location include）
+# 转发到上游时携带原 Authorization（用户的 AI key），但关闭访问日志，避免 key / 内容落盘。
+proxy_http_version 1.1;
+proxy_set_header Connection "";
+proxy_set_header Authorization $http_authorization;
+proxy_set_header Content-Type $content_type;
+proxy_set_header Accept-Encoding "";
+proxy_ssl_server_name on;
+# SSE 流式：关闭缓冲、放宽读超时
+proxy_buffering off;
+proxy_cache off;
+proxy_read_timeout 300s;
+proxy_send_timeout 300s;
+# 不记录请求体，降低 key / 内容泄露风险
+access_log off;
