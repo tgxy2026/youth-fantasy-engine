@@ -38,7 +38,8 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 
 ## 服务器反馈巡检约定（2026-08-29）
 - 反馈落盘 `/var/lib/yfe/feedback.jsonl`(每行JSON: id/ts/ua/ip/text/hasFile)，原始附件 `fb-<id>.bin`。老巴迪可直接读，无需用户下载。
-- **老巴迪职责**：持续搜集反馈→收录 `docs/服务器反馈记录.md`→与老大共判如何处理。已建每日巡检 automation。
+- **访问/登录流水**：`/var/lib/yfe/access.jsonl`(每行 id/ts/ip/ua/type/ok/act, act∈enter/reject/pull/push/authfail/conflict；sync 含 code=槽位hash 或 rev)。每次邀请校验/同步调用均落盘，IP 经 nginx X-Real-IP 取真实访客。查看渠道 `docs/服务器访问记录.md`（每日概览表+明细）。
+- **老巴迪职责**：每日巡检 automation(automation-1787973377664) ssh 拉 feedback.jsonl+access.jsonl，分别归档到 `docs/服务器反馈记录.md` 与 `docs/服务器访问记录.md`，与老大共判如何处理/谁来了。
 
 ## 会话窗口分工（2026-08-29）
 本窗口专做网页体验版维护（部署/配置/邀请码/HTTPS/反馈通道）；新功能开发另开窗口，git 与上下文隔离。
