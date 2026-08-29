@@ -30,6 +30,9 @@ mkdir -p "$SRV_DIR"
 cp "$HERE/feedback-server.mjs" "$SRV_DIR/"
 cp "$HERE/yfe_proxy_params" /etc/nginx/yfe_proxy_params
 cp "$HERE/yfe-feedback.service" /etc/systemd/system/
+# 反馈服务以 www-data 运行，需预建数据目录并赋权，否则启动 mkdir /var/lib/yfe 会因权限失败
+mkdir -p /var/lib/yfe
+chown -R www-data:www-data /var/lib/yfe
 systemctl daemon-reload
 systemctl enable --now yfe-feedback
 
