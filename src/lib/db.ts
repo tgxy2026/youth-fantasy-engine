@@ -2,7 +2,11 @@ import { openDB, type IDBPDatabase } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
 import { PORTABLE, portableStore, type StoreOps } from './portable'
 import { DESKTOP, desktopStore } from './desktop'
-import { serverStore, configureServerStore, pullSnapshot, seedFromLocal, EXCLUDED_META_KEYS, isCloudAuthFailed, CloudAuthError } from './serverStore'
+import {
+  serverStore, configureServerStore, pullSnapshot, seedFromLocal, isExcludedMetaKey,
+  isCloudAuthFailed, CloudAuthError, onSyncConflict, CONFLICT_KEY_PREFIX,
+  type SyncConflictInfo,
+} from './serverStore'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
@@ -245,6 +249,38 @@ const idbOps: StoreOps = {
 
 let ops: StoreOps = PORTABLE ? portableStore : (DESKTOP ? desktopStore : idbOps)
 
+// #005 冲突备份（网页版专用）：云端与本地都改过同一条记录时，本地优先采用，
+// 但云端那版不再无声丢弃——另存本地副本供用户比对恢复。副本只落本地 IndexedDB，
+// key 以 syncConflict: 开头，由 isExcludedMetaKey 保证不上传云端。
+onSyncConflict((info: SyncConflictInfo) => {
+  void saveConflictCopy(info)
+})
+
+async function saveConflictCopy(info: SyncConflictInfo) {
+  try {
+    await idbOps.put('meta', {
+      key: `${CONFLICT_KEY_PREFIX}${info.at}:${info.store}:${String(info.key)}`,
+      value: {
+        store: info.store,
+        key: info.key,
+        at: info.at,
+        local: info.local,
+        server: info.server,
+      },
+    })
+    try {
+      // 让用户知道「发生了冲突、云端那版已留副本」——否则存了副本也没人看得见
+      window.dispatchEvent(
+        new CustomEvent('yfe:sync-conflict', { detail: { store: info.store, key: info.key } }),
+      )
+    } catch {
+      /* 忽略 */
+    }
+  } catch {
+    /* 副本保存失败绝不影响主同步流程 */
+  }
+}
+
 // 云端同步特权（#003）：敏感 meta（AI 配置/密钥）仅留本地 IndexedDB，不进云端缓存、
 // 不同步、也不会被拉取覆盖。cloudStore 在 serverStore 之上对这类 key 做本地回退。
 // #008：云端鉴权失效（401）时透明回退本地 IndexedDB。
@@ -261,29 +297,29 @@ const cloudStore: StoreOps = {
   getAll: async <T,>(store: string): Promise<T[]> => {
     if (store !== 'meta') return cloudOrLocal('getAll', store)
     if (isCloudAuthFailed()) return idbOps.getAll<T>('meta')
-    const local = (await idbOps.getAll<T>('meta')).filter((r: any) => EXCLUDED_META_KEYS.has(r.key))
+    const local = (await idbOps.getAll<T>('meta')).filter((r: any) => isExcludedMetaKey(r.key))
     const cloud = await serverStore.getAll<T>('meta')
     if (isCloudAuthFailed()) return idbOps.getAll<T>('meta')
     return [...local, ...cloud] as T[]
   },
   get: async <T,>(store: string, key: string): Promise<T | undefined> => {
-    if (store === 'meta' && EXCLUDED_META_KEYS.has(key)) return idbOps.get<T>('meta', key)
+    if (store === 'meta' && isExcludedMetaKey(key)) return idbOps.get<T>('meta', key)
     return cloudOrLocal('get', store, key)
   },
   put: async (store: string, value: any) => {
-    if (store === 'meta' && EXCLUDED_META_KEYS.has(value?.key)) return idbOps.put('meta', value)
+    if (store === 'meta' && isExcludedMetaKey(value?.key)) return idbOps.put('meta', value)
     return cloudOrLocal('put', store, value)
   },
   del: async (store: string, key: string) => {
-    if (store === 'meta' && EXCLUDED_META_KEYS.has(key)) return idbOps.del('meta', key)
+    if (store === 'meta' && isExcludedMetaKey(key)) return idbOps.del('meta', key)
     return cloudOrLocal('del', store, key)
   },
   getAllByIndex: async <T,>(store: string, indexName: string, value: unknown): Promise<T[]> =>
     cloudOrLocal('getAllByIndex', store, indexName, value),
   bulkPut: async (store: string, values: any[]) => {
     if (store === 'meta') {
-      const excl = values.filter((v) => EXCLUDED_META_KEYS.has(v?.key))
-      const rest = values.filter((v) => !EXCLUDED_META_KEYS.has(v?.key))
+      const excl = values.filter((v) => isExcludedMetaKey(v?.key))
+      const rest = values.filter((v) => !isExcludedMetaKey(v?.key))
       if (excl.length) await idbOps.bulkPut('meta', excl)
       if (rest.length) {
         if (isCloudAuthFailed()) return idbOps.bulkPut('meta', rest)
@@ -296,8 +332,8 @@ const cloudStore: StoreOps = {
   },
   bulkDel: async (store: string, keys: string[]) => {
     if (store === 'meta') {
-      const excl = keys.filter((k) => EXCLUDED_META_KEYS.has(k))
-      const rest = keys.filter((k) => !EXCLUDED_META_KEYS.has(k))
+      const excl = keys.filter((k) => isExcludedMetaKey(k))
+      const rest = keys.filter((k) => !isExcludedMetaKey(k))
       if (excl.length) await idbOps.bulkDel('meta', excl)
       if (rest.length) {
         if (isCloudAuthFailed()) return idbOps.bulkDel('meta', rest)

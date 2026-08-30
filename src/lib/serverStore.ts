@@ -85,6 +85,7 @@ export function configureServerStore(c: string) {
   rev = 0
   initPromise = null
   authFailed = false
+  baseCache = {}
   setStatus('idle')
 }
 
@@ -203,6 +204,8 @@ async function ensureInit() {
             cache = {}
           }
           authFailed = false
+          // 拉取成功即确立基线：之后的本地改动才有参照，才能判断「谁改了」
+          baseCache = snapshotOf(cache)
           return
         }
         throw new Error('sync pull failed ' + r.status)
@@ -232,25 +235,134 @@ export async function seedFromLocal(getAll: (store: string) => Promise<any[]>) {
       cache[s] = []
     }
   }
-  // 排除敏感 meta（AI 配置/密钥），不进云端缓存、不上传
+  // 排除敏感 meta（AI 配置/密钥）与本地专属的冲突副本，不进云端缓存
   if (cache['meta']) {
-    cache['meta'] = cache['meta'].filter((r: any) => !EXCLUDED_META_KEYS.has(r.key))
+    cache['meta'] = cache['meta'].filter((r: any) => !isExcludedMetaKey(r.key))
   }
   await pushNow(0)
 }
 
-// 冲突合并：本地改动优先（按 store+主键覆盖），保证多标签/多设备并发时不静默丢数据
-function mergeCaches(server: Record<string, any[]>, local: Record<string, any[]>): Record<string, any[]> {
+// ============ #005 冲突备份（网页版专用）============
+// 上次成功同步时的基线快照。没有基线就无法区分「只有本地改」和「两端都改」，
+// 只能一律本地覆盖——那会把云端的改动无声吞掉。三路合并必须有它。
+let baseCache: Record<string, any[]> = {}
+
+export type SyncConflictInfo = {
+  store: string
+  key: unknown
+  local: any
+  server: any
+  at: number
+}
+let conflictHandler: ((info: SyncConflictInfo) => void) | null = null
+/** 注册冲突处理器：两端都改过同一条记录时，把云端那版交给上层另存副本 */
+export function onSyncConflict(h: (info: SyncConflictInfo) => void) {
+  conflictHandler = h
+}
+
+export const CONFLICT_KEY_PREFIX = 'syncConflict:'
+/** 敏感/本地专属 meta：AI 配置不上云；冲突副本只落本地、不上传 */
+export function isExcludedMetaKey(key: unknown): boolean {
+  if (typeof key !== 'string') return false
+  return EXCLUDED_META_KEYS.has(key) || key.startsWith(CONFLICT_KEY_PREFIX)
+}
+
+function eqRecord(a: any, b: any): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  try {
+    return JSON.stringify(a) === JSON.stringify(b)
+  } catch {
+    return false
+  }
+}
+function snapshotOf(c: Record<string, any[]>): Record<string, any[]> {
   const out: Record<string, any[]> = {}
-  const stores = new Set([...Object.keys(server || {}), ...Object.keys(local || {})])
+  for (const k of Object.keys(c || {})) out[k] = (c[k] || []).slice()
+  return out
+}
+
+/**
+ * 三路合并（base 基线 / server 云端 / local 本地）。
+ * 与旧版「一律本地覆盖」的区别：只有云端改时采用云端；两端都改时才以本地为准，
+ * 并把云端那版交给 conflictHandler 另存副本，用户可比对照恢复（#005）。
+ */
+function mergeCaches(
+  base: Record<string, any[]>,
+  server: Record<string, any[]>,
+  local: Record<string, any[]>,
+): Record<string, any[]> {
+  const out: Record<string, any[]> = {}
+  const stores = new Set([
+    ...Object.keys(base || {}),
+    ...Object.keys(server || {}),
+    ...Object.keys(local || {}),
+  ])
   for (const s of stores) {
-    const sArr = (server && server[s]) || []
-    const lArr = (local && local[s]) || []
     const kf = KEY_FIELD[s] ?? 'id'
-    const map = new Map<any, any>()
-    for (const r of sArr) if (r && r[kf] !== undefined) map.set(r[kf], r)
-    for (const r of lArr) if (r && r[kf] !== undefined) map.set(r[kf], r) // 本地优先
-    out[s] = [...map.values()]
+    const bMap = new Map<any, any>()
+    const sMap = new Map<any, any>()
+    const lMap = new Map<any, any>()
+    for (const r of (base && base[s]) || []) if (r && r[kf] !== undefined) bMap.set(r[kf], r)
+    for (const r of (server && server[s]) || []) if (r && r[kf] !== undefined) sMap.set(r[kf], r)
+    for (const r of (local && local[s]) || []) if (r && r[kf] !== undefined) lMap.set(r[kf], r)
+
+    const arr: any[] = []
+    for (const k of new Set([...bMap.keys(), ...sMap.keys(), ...lMap.keys()])) {
+      const b = bMap.get(k)
+      const sv = sMap.get(k)
+      const lo = lMap.get(k)
+      const note = (localV: any, serverV: any) => {
+        try {
+          conflictHandler?.({ store: s, key: k, local: localV, server: serverV, at: Date.now() })
+        } catch {
+          /* 冲突处理失败绝不影响主同步流程 */
+        }
+      }
+
+      // —— 本地没有这条记录 ——
+      // 注意：不能一律 continue，否则「另一端新建的记录」会被直接丢弃（丢数据）。
+      if (lo === undefined) {
+        if (sv === undefined) continue // 两端皆无
+        if (b === undefined) {
+          arr.push(sv) // 基线无、云端有 → 另一端新增（或本地尚未拉取），采用云端
+          continue
+        }
+        // 基线有、本地删了：若云端同期还改过，删除不可逆，宁可多留一份并记冲突
+        if (!eqRecord(sv, b)) {
+          arr.push(sv)
+          note(null, sv)
+        }
+        continue // 云端未改 → 尊重本地删除
+      }
+
+      // —— 云端没有这条记录 ——
+      if (sv === undefined) {
+        // 云端删了且本地未改 → 尊重删除；否则保留本地（本地新增或改过）
+        if (b !== undefined && eqRecord(lo, b)) continue
+        arr.push(lo)
+        continue
+      }
+
+      if (eqRecord(lo, sv)) {
+        arr.push(lo) // 两端一致
+        continue
+      }
+      const localChanged = !eqRecord(lo, b)
+      const serverChanged = !eqRecord(sv, b)
+      if (!localChanged) {
+        arr.push(sv) // 只有云端改 → 采用云端（旧版会错误地用本地覆盖）
+        continue
+      }
+      if (!serverChanged) {
+        arr.push(lo) // 只有本地改 → 采用本地
+        continue
+      }
+      // 两端都改且不同 → 本地优先，云端那版另存副本供比对恢复
+      arr.push(lo)
+      note(lo, sv)
+    }
+    out[s] = arr
   }
   return out
 }
@@ -279,7 +391,7 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
       try { serverCache = await decryptObj(data.enc) } catch { serverCache = null }
     }
     // 关键：本地改动优先合并，绝不直接用云端版本覆盖掉未保存的本地编辑
-    if (serverCache) cache = mergeCaches(serverCache, cache)
+    if (serverCache) cache = mergeCaches(baseCache, serverCache, cache)
     rev = serverRev
     if (depth < MAX_CONFLICT_RETRY) {
       return pushNow(serverRev, depth + 1) // 用云端最新 rev 重新推送，保留本地改动
@@ -296,6 +408,8 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
   if (r.ok) {
     const data = await r.json().catch(() => ({ rev: baseRev + 1 }))
     rev = data.rev ?? baseRev + 1
+    // 推送成功：当前 cache 即为双方一致的最新状态，确立为新基线
+    baseCache = snapshotOf(cache)
     setStatus('ok')
     return { conflict: false }
   }

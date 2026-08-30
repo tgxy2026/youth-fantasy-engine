@@ -31,6 +31,8 @@ export default function WebTools() {
 
   useEffect(() => {
     const onStatus = () => setStatus(getSyncStatus())
+    const onConflict = () =>
+      showToast('检测到云端与本地改过同一处：已保留你的版本，并在本地另存云端副本', 'info', 5000)
     const onAuthFailed = () => {
       setSynced(false)
       showToast('云端同步码已失效，已切回本地数据（数据仍在本地，不会丢失）', 'error')
@@ -42,9 +44,11 @@ export default function WebTools() {
     }
     window.addEventListener('yfe:sync-status', onStatus)
     window.addEventListener('yfe:cloud-auth-failed', onAuthFailed)
+    window.addEventListener('yfe:sync-conflict', onConflict)
     return () => {
       window.removeEventListener('yfe:sync-status', onStatus)
       window.removeEventListener('yfe:cloud-auth-failed', onAuthFailed)
+      window.removeEventListener('yfe:sync-conflict', onConflict)
     }
   }, [])
 
