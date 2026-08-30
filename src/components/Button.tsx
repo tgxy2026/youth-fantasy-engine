@@ -90,6 +90,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     solid = false,
     iconOnly = false,
     selected = false,
+    type = 'button',
     className = '',
     children,
     ...rest
@@ -115,7 +116,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ].join(' ')
 
   return (
-    <button ref={ref} className={cls} {...rest}>
+    <button type={type} ref={ref} className={cls} {...rest}>
       {children}
     </button>
   )
