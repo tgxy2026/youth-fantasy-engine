@@ -5,6 +5,7 @@
 import { createRoot } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react'
+import { Modal, Z } from './Modal'
 
 // ============ 确认弹窗（Promise 化，await 即可） ============
 
@@ -33,25 +34,25 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
 }
 
 function ConfirmView({ title, message, confirmText = '确定', cancelText = '取消', danger = false, onResult }: ConfirmOptions & { onResult: (r: boolean) => void }) {
+  const icon = danger ? (
+    <span className="text-red-400">
+      <AlertTriangle size={18} />
+    </span>
+  ) : (
+    <span className="text-amber">
+      <AlertCircle size={18} />
+    </span>
+  )
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/45 backdrop-blur-[2px]"
-      onMouseDown={e => { if (e.target === e.currentTarget) onResult(false) }}
-    >
-      <div
-        className="w-[420px] max-w-[90vw] bg-ink-850 border border-ink-600 rounded-2xl shadow-2xl p-5"
-        onMouseDown={e => e.stopPropagation()}
-      >
-        <div className="flex items-start gap-3">
-          <span className={`mt-0.5 shrink-0 ${danger ? 'text-red-400' : 'text-amber'}`}>
-            {danger ? <AlertTriangle size={18} /> : <AlertCircle size={18} />}
-          </span>
-          <div className="min-w-0">
-            <div className="text-[14px] font-semibold text-ink-100">{title}</div>
-            <div className="text-[12px] text-ink-400 leading-relaxed mt-1.5 whitespace-pre-line">{message}</div>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 mt-4">
+    <Modal
+      open
+      onClose={() => onResult(false)}
+      title={title}
+      icon={icon}
+      width={420}
+      layer={Z.prompt}
+      footer={
+        <>
           <button
             onClick={() => onResult(false)}
             className="px-3 py-1.5 rounded-lg text-[12px] text-ink-300 border border-ink-600 hover:border-ink-500 transition-colors"
@@ -68,9 +69,11 @@ function ConfirmView({ title, message, confirmText = '确定', cancelText = '取
           >
             {confirmText}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <div className="text-[12px] text-ink-400 leading-relaxed whitespace-pre-line">{message}</div>
+    </Modal>
   )
 }
 

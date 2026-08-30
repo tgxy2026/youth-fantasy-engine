@@ -14,6 +14,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { buildProjectContext } from '../lib/aiContext'
 import { aiDiagnoseProject, type ProjectDiagnosis } from '../lib/aiTasks'
+import { Button } from './Button'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -362,15 +363,13 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-[13px] font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Clock size={14} className="text-amber" /> 创作健康提醒
-            <button
-              onClick={runDiag}
+            <Button onClick={runDiag}
               disabled={!aiReady || diagLoading}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px] text-ink-300 hover:bg-ink-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'}
-            >
+              
+              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded text-[11px]">
               {diagLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 诊断
-            </button>
+            </Button>
             <HelpPopover title="创作健康提醒" width="20rem" className="ml-auto">
               {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品定位与全书总纲再动笔。\n\n全部指标健康时会显示"保持节奏继续写"。'}
             </HelpPopover>

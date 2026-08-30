@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Sparkles, Settings2, Send, Copy, Check, Trash2, Pencil, Plus,
-  Cpu, Globe, Loader2, AlertCircle, CheckCircle2, X, FlaskConical,
+  Cpu, Globe, Loader2, AlertCircle, CheckCircle2, FlaskConical,
   MessageSquarePlus, FolderOpen,
 } from 'lucide-react'
+import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
@@ -20,6 +21,8 @@ import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { buildProjectContext } from '../lib/aiContext'
 import { getSetting, setSetting } from '../lib/db'
 import { uid } from '../lib/id'
+import { Button } from './Button'
+
 
 // ============ 多轮对话会话模型（按项目持久化在 settingsKV） ============
 interface ChatMsg {
@@ -237,12 +240,9 @@ export default function AIAssist() {
         {/* 左：历史会话 */}
         <div className="w-44 shrink-0 flex flex-col bg-ink-900/40 border border-ink-700 rounded-lg overflow-hidden">
           <div className="p-2 border-b border-ink-700">
-            <button
-              onClick={newSession}
-              className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors"
-            >
+            <Button onClick={newSession} variant="primary" size="md" className="w-full flex items-center justify-center text-[12px]">
               <Plus size={12} /> 新建对话
-            </button>
+            </Button>
           </div>
           <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
             {sessions.length === 0 ? (
@@ -323,12 +323,9 @@ export default function AIAssist() {
                 className="!px-3 !py-2 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 focus:border-amber/40 outline-none placeholder:text-ink-600 flex-1"
               />
               {loading ? (
-                <button
-                  onClick={stop}
-                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-red-500/10 text-red-300 border border-red-500/30 rounded-lg text-[12px] hover:bg-red-500/20 transition-colors"
-                >
+                <Button onClick={stop} variant="danger" size="md" className="shrink-0 flex items-center text-[12px]">
                   <AlertCircle size={13} /> 停止
-                </button>
+                </Button>
               ) : (
                 <button
                   onClick={() => void send()}
@@ -516,21 +513,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       : ONLINE_PRESETS
 
   return (
-    <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-xl bg-ink-850 border border-ink-700 rounded-xl p-5 max-h-[85vh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <Settings2 size={15} className="text-amber" />
-          <h3 className="text-[14px] font-semibold text-ink-100">模型设置</h3>
-          <button onClick={onClose} className="ml-auto p-1 text-ink-400 hover:text-ink-200">
-            <X size={16} />
-          </button>
-        </div>
+    <Modal open onClose={onClose} icon={<Settings2 size={15} />} title="模型设置" width="lg" maxHeight="85vh">
 
         {editing === null ? (
           <>
@@ -712,23 +695,19 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             {!testing && editResult && <TestResultBar r={editResult} />}
 
             <div className="flex items-center gap-2 pt-1">
-              <button onClick={saveEdit} disabled={saving || testing} className="flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 disabled:opacity-50">
+              <Button onClick={saveEdit} disabled={saving || testing} variant="primary" size="md" className="flex items-center text-[12px]">
                 <Check size={12} /> 保存
-              </button>
-              <button
-                onClick={runTest}
+              </Button>
+              <Button onClick={runTest}
                 disabled={testing}
-                title="不必先保存，直接用当前填写的配置发起一次最小对话"
-                className="flex items-center gap-1.5 px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600 disabled:opacity-50"
-              >
+                title="不必先保存，直接用当前填写的配置发起一次最小对话" variant="secondary" size="md" className="flex items-center text-[12px]">
                 {testing ? <Loader2 size={12} className="animate-spin" /> : <FlaskConical size={12} />}
                 {testing ? '测试中…' : '测试此配置'}
-              </button>
+              </Button>
               <button onClick={() => { setEditing(null); setEditResult(null); setPickMode('none') }} className="ml-auto px-3 py-2 bg-ink-700 text-ink-300 border border-ink-600 rounded-lg text-[12px] hover:text-ink-100">取消</button>
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }

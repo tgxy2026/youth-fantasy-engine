@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Sparkles, X, Check, Loader2, AlertCircle, RefreshCw, CircleStop,
+  Sparkles, Check, Loader2, AlertCircle, RefreshCw, CircleStop,
   CheckSquare, Square, BookOpen, ClipboardPaste, Database,
 } from 'lucide-react'
+import { Modal } from './Modal'
 import type { CalendarDef, Chapter, TabDef, TableColumn } from '../lib/types'
 import { getAllChapters, getAllVolumes, getCustomOptions } from '../lib/db'
 import { resolveOptions } from './CustomSelect'
@@ -13,6 +14,7 @@ import { aiOrganizeRows, keyRowToLine, type OrganizeColumn, type OrganizeResult 
 import { isCancelled } from '../lib/ai'
 import { isUnorderedPairTab, organizeHint, organizeKeyColumns } from '../lib/aiScope'
 import AutoTextarea from './AutoTextarea'
+import { Button } from './Button'
 
 interface Props {
   tab: TabDef
@@ -201,20 +203,9 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   )
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-3xl max-h-[90vh] flex flex-col bg-ink-850 border border-ink-700 rounded-xl"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 px-5 py-3 border-b border-ink-700 shrink-0">
-          <Sparkles size={14} className="text-amber" />
-          <h3 className="text-[14px] font-semibold text-ink-100">AI 整理 · {tab.name}</h3>
-          <button onClick={onClose} className="ml-auto p-1 text-ink-500 hover:text-ink-100" title="关闭">
-            <X size={16} />
-          </button>
-        </div>
+    <Modal open onClose={onClose} icon={<Sparkles size={14} />} title={`AI 整理 · ${tab.name}`} width="2xl" maxHeight="90vh">
 
-        <div className="p-5 space-y-4 overflow-y-auto">
+        <div className="space-y-4">
           <p className="text-[12px] text-ink-400 leading-relaxed">
             {organizeHint(tab.id)}
             <br />
@@ -303,21 +294,15 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
 
           {!result && (
             <div className="flex items-center gap-2">
-              <button
-                onClick={run}
-                disabled={loading}
-                className="flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 disabled:opacity-50"
-              >
+              <Button onClick={run}
+                disabled={loading} variant="primary" size="md" className="flex items-center text-[13px]">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? (phase || '正在整理…') : '开始整理'}
-              </button>
+              </Button>
               {loading && (
-                <button
-                  onClick={stop}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600"
-                >
+                <Button onClick={stop} variant="secondary" size="md" className="flex items-center text-[12px]">
                   <CircleStop size={12} /> 停止
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -396,21 +381,19 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
 
               <div className="flex items-center gap-2 pt-1">
                 {result.rows.length > 0 && (
-                  <button
-                    onClick={apply}
-                    disabled={adding || checked.size === 0}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 disabled:opacity-50"
-                  >
+                  <Button onClick={apply}
+                    disabled={adding || checked.size === 0} variant="primary" size="md" className="flex items-center text-[13px]">
                     {adding ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                     添加选中 {checked.size} 条
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   onClick={() => { setResult(null); setChecked(new Set()) }}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600"
+                  variant="secondary" size="md"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] hover:bg-ink-600"
                 >
                   <RefreshCw size={12} /> 重新整理
-                </button>
+                </Button>
                 <button onClick={onClose} className="ml-auto px-3 py-2 text-ink-400 hover:text-ink-100 text-[12px]">
                   取消
                 </button>
@@ -418,7 +401,6 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

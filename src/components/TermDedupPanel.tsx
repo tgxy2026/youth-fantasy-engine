@@ -4,6 +4,8 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiDedupTerms } from '../lib/aiTasks'
 import { Modal } from './EditorModals'
+import { Button } from './Button'
+
 
 interface Props {
   /** 名词术语当前所有行（含未保存草稿） */
@@ -60,15 +62,13 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
       )}
 
       {terms.length > 0 && !done && (
-        <button
-          onClick={run}
+        <Button onClick={run}
           disabled={!aiReady || loading}
-          className="flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 disabled:opacity-40 disabled:cursor-not-allowed"
-          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的术语做 AI 查重'}
-        >
+          
+          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的术语做 AI 查重'} variant="primary" size="md" className="flex items-center text-[13px]">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '查重中…' : `开始查重（${terms.length} 个术语）`}
-        </button>
+        </Button>
       )}
 
       {error && (

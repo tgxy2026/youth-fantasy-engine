@@ -3,32 +3,23 @@ import * as db from '../lib/db'
 import { countWords } from '../lib/textStats'
 import type { Chapter, Volume } from '../lib/types'
 import { scanText, replaceHits } from '../lib/sensitiveWords'
-import { X, ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
+import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiProofread, type ProofreadIssue } from '../lib/aiTasks'
 import { isCancelled } from '../lib/ai'
 import { buildProjectContext } from '../lib/aiContext'
 import { confirmDialog } from './dialogs'
+import { Modal as BaseModal } from './Modal'
 
-// ============ 通用外壳 ============
+// ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
 export function Modal({ title, icon, onClose, children, wide }: {
   title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        onClick={e => e.stopPropagation()}
-        className={`bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col ${wide ? 'w-[720px]' : 'w-[560px]'} max-w-[92vw] max-h-[82vh]`}
-      >
-        <div className="flex items-center gap-2 px-5 h-12 border-b border-ink-700 shrink-0">
-          <span className="text-amber">{icon}</span>
-          <span className="text-[14px] font-semibold text-ink-50 flex-1">{title}</span>
-          <button onClick={onClose} className="p-1 text-ink-400 hover:text-ink-100 transition-colors"><X size={16} /></button>
-        </div>
-        <div className="overflow-y-auto p-5">{children}</div>
-      </div>
-    </div>
+    <BaseModal open onClose={onClose} title={title} icon={icon} width={wide ? 768 : 560}>
+      {children}
+    </BaseModal>
   )
 }
 
@@ -78,6 +69,7 @@ export function SensitiveCheck({ content, onApply, onClose }: {
 // ============ 校对（本章）：本地错别字词库 + AI 深度校对 ============
 import { scanTypos, replaceTypos } from '../lib/typoWords'
 import HelpPopover from './HelpPopover'
+import { Button } from './Button'
 
 /** 各类型对应的色标签 */
 const PTF_BADGE: Record<string, string> = {
@@ -197,12 +189,9 @@ export function ProofreadCheck({ content, onApply, onClose }: {
               ))}
             </div>
             <div className="flex gap-2 justify-end">
-              <button
-                onClick={replaceTypoAll}
-                className="px-3.5 py-1.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors"
-              >
+              <Button onClick={replaceTypoAll} variant="primary" size="md" className="text-[12px]">
                 一键替换错别字（{typoTotal} 处）
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -217,27 +206,19 @@ export function ProofreadCheck({ content, onApply, onClose }: {
 
         <div className="flex items-center gap-2 mb-3">
           {!aiReady ? (
-            <button
-              disabled
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-ink-800 text-ink-500 border border-ink-700 rounded-lg text-[12px] cursor-not-allowed"
-              title={AI_DISABLED_HINT}
-            >
+            <Button disabled
+              
+              title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-[12px] cursor-not-allowed">
               <Sparkles size={13} /> AI 校对本章
-            </button>
+            </Button>
           ) : aiLoading ? (
-            <button
-              onClick={stopAI}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-red-500/10 text-red-300 border border-red-500/30 rounded-lg text-[12px] hover:bg-red-500/20 transition-colors"
-            >
+            <Button onClick={stopAI} variant="danger" size="md" className="flex items-center text-[12px]">
               <AlertCircle size={13} /> 停止（{progress.done}/{progress.total}）
-            </button>
+            </Button>
           ) : (
-            <button
-              onClick={runAI}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors"
-            >
+            <Button onClick={runAI} variant="primary" size="md" className="flex items-center text-[12px]">
               <Sparkles size={13} /> {aiDone ? '重新 AI 校对' : 'AI 校对本章'}
-            </button>
+            </Button>
           )}
           {!aiReady && (
             <span className="text-[11px] text-ink-500">未接入 AI 模型——语病 / 逻辑 / 设定矛盾暂无法自动检测。</span>
@@ -454,7 +435,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
           className="flex-1 !py-1.5 text-[13px]"
           autoFocus
         />
-        <button onClick={doSearch} className="px-4 py-1.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors">搜索</button>
+        <Button onClick={doSearch} variant="primary" size="md" className="text-[12px]">搜索</Button>
       </div>
       <div className="flex gap-2 items-center mb-4">
         <input
@@ -463,11 +444,8 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
           placeholder="替换为…（留空即删除）"
           className="flex-1 !py-1.5 text-[12px]"
         />
-        <button
-          onClick={replaceAll}
-          disabled={!searched || results.length === 0}
-          className="px-4 py-1.5 bg-ink-700 text-ink-100 rounded-lg text-[12px] hover:bg-ink-600 transition-colors disabled:opacity-40"
-        >全部替换</button>
+        <Button onClick={replaceAll}
+          disabled={!searched || results.length === 0} variant="secondary" size="md" className="text-[12px]">全部替换</Button>
       </div>
       {searched && (
         results.length === 0 ? (
@@ -596,23 +574,26 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
         autoFocus
         spellCheck={false}
       />
-      {/* 退出确认遮罩 */}
-      {showPwd && (
-        <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center" onClick={() => setShowPwd(false)}>
-          <div className="w-[360px] bg-ink-850 border border-ink-700 rounded-xl p-6 text-center" onClick={e => e.stopPropagation()}>
-            <div className="text-[14px] font-bold text-ink-50 mb-2">目标还没完成哦</div>
-            <div className="text-[12px] text-ink-400 mb-5">
-              {mode === 'words' ? `还差 ${Math.max(0, goalWords - written)} 字` : `还剩 ${Math.max(0, goalMinutes * 60 - elapsed)} 秒`}
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowPwd(false)} className="flex-1 py-2.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors">继续写</button>
-              <button onClick={() => { setShowPwd(false); tryExit(true) }} className="flex-1 py-2.5 bg-ink-800 text-ink-400 border border-ink-700 rounded-lg text-[13px] hover:text-ink-200 transition-colors flex items-center justify-center gap-1">
-                <EyeOff size={12} /> 放弃目标
-              </button>
-            </div>
+      {/* 退出确认遮罩（统一 Modal：修复原 z-[60] 与父层冲突、缺 max-w 小屏溢出） */}
+      <BaseModal
+        open={showPwd}
+        onClose={() => setShowPwd(false)}
+        width={360}
+        hideHeader
+        footer={
+          <div className="flex gap-2">
+            <button onClick={() => setShowPwd(false)} className="flex-1 py-2.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors">继续写</button>
+            <button onClick={() => { setShowPwd(false); tryExit(true) }} className="flex-1 py-2.5 bg-ink-800 text-ink-400 border border-ink-700 rounded-lg text-[13px] hover:text-ink-200 transition-colors flex items-center justify-center gap-1">
+              <EyeOff size={12} /> 放弃目标
+            </button>
           </div>
+        }
+      >
+        <div className="text-[14px] font-bold text-ink-50 mb-2">目标还没完成哦</div>
+        <div className="text-[12px] text-ink-400">
+          {mode === 'words' ? `还差 ${Math.max(0, goalWords - written)} 字` : `还剩 ${Math.max(0, goalMinutes * 60 - elapsed)} 秒`}
         </div>
-      )}
+      </BaseModal>
     </div>
   )
 }

@@ -13,6 +13,7 @@ import { confirmDialog } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
+import { Button } from './Button'
 
 /** 角色卡中以「下拉」形式填写的字段（与设定检索 CARD_SELECT_FIELDS 对应）：value 为存储值，label 为展示文案 */
 const CARD_SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -228,12 +229,9 @@ export default function CharacterSheet({ tab }: Props) {
           >
             <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
           </button>
-          <button
-            onClick={addCard}
-            className="flex items-center gap-1.5 px-3.5 h-9 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 transition-colors"
-          >
+          <Button onClick={addCard} variant="primary" size="md" className="flex items-center text-[13px]">
             <Plus size={14} /> 新建角色
-          </button>
+          </Button>
           {aiCap !== 'none' && (
             <button
               onClick={() => setShowFill(true)}
@@ -391,12 +389,9 @@ export default function CharacterSheet({ tab }: Props) {
       {/* 浮动保存按钮 */}
       {dirty && (
         <div className="fixed bottom-6 right-6 z-20">
-          <button
-            onClick={save}
-            className="flex items-center gap-2 text-[13px] font-medium px-4 py-2.5 bg-amber text-ink-900 rounded-full shadow-2xl shadow-amber/30 hover:bg-amber/90 transition-all animate-pulse"
-          >
+          <Button onClick={save} variant="primary" solid size="md" className="flex items-center text-[13px] text-ink-900 transition-all animate-pulse">
             <Save size={14} /> 保存「{draft?.name}」修改
-          </button>
+          </Button>
         </div>
       )}
 

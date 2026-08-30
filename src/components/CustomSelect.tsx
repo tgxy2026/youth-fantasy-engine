@@ -11,6 +11,8 @@ import {
 } from '../lib/db'
 import { Plus, Check, ChevronDown, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
 import { confirmDialog } from './dialogs'
+import { Button } from './Button'
+
 
 /** 自定义下拉选项变更广播：任意下拉增删改选项后派发，同列其它下拉与地图图例据此刷新 */
 export const CUSTOM_OPTIONS_EVENT = 'yfe:custom-options'
@@ -314,7 +316,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                     }}
                     className="flex-1 !py-0.5 text-[12px] min-w-0"
                   />
-                  <button type="button" onClick={submitRenameBuiltin} className="text-[11px] px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30 hover:bg-amber/25">保存</button>
+                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="md" className="text-[11px] rounded">保存</Button>
                 </div>
                 <div className="mt-1 text-[10px] text-ink-500">原名：{item?.display}</div>
               </div>
@@ -335,7 +337,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   }}
                   className="flex-1 !py-0.5 text-[12px] min-w-0"
                 />
-                <button type="button" onClick={submitEditUser} className="text-[11px] px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30 hover:bg-amber/25">保存</button>
+                <Button type="button" onClick={submitEditUser} variant="primary" size="md" className="text-[11px] rounded">保存</Button>
               </div>
             </div>
           )}
@@ -434,11 +436,8 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 placeholder="输入新选项"
                 className="flex-1 !py-0.5 text-[12px] min-w-0"
               />
-              <button
-                type="button"
-                onClick={submitDraft}
-                className="text-[11px] px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30 hover:bg-amber/25"
-              >保存</button>
+              <Button type="button"
+                onClick={submitDraft} variant="primary" size="md" className="text-[11px] rounded">保存</Button>
             </div>
           ) : (
             <button

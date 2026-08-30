@@ -25,6 +25,7 @@ import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import FeedbackAIPanel from './FeedbackAIPanel'
 import TermDedupPanel from './TermDedupPanel'
 import { confirmDialog } from './dialogs'
+import { Button } from './Button'
 
 interface Props {
   tab: TabDef
@@ -804,12 +805,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               </button>
             </div>
           )}
-          <button
-            onClick={addRow}
-            className="flex items-center gap-1.5 px-3.5 h-9 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 transition-colors shrink-0"
-          >
+          <Button onClick={addRow} variant="primary" size="md" className="flex items-center text-[13px] shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
-          </button>
+          </Button>
           {aiCap !== 'none' && (
             <button
               onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))}
@@ -1291,12 +1289,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 
       {dirtyKeys.length > 0 && (
         <div className="fixed bottom-6 right-6 z-20">
-          <button
-            onClick={saveAll}
-            className="flex items-center gap-2 px-4 py-2.5 bg-amber text-ink-900 rounded-full shadow-2xl shadow-amber/30 hover:bg-amber/90 transition-all animate-pulse"
-          >
+          <Button onClick={saveAll} variant="primary" solid size="md" className="flex items-center text-ink-900 transition-all animate-pulse">
             <Save size={14} /> 保存 {dirtyKeys.length} 行修改
-          </button>
+          </Button>
         </div>
       )}
 

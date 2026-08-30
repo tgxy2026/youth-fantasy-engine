@@ -10,6 +10,8 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiSuggestNames } from '../lib/aiTasks'
 import { buildProjectContext } from '../lib/aiContext'
+import { Button } from './Button'
+
 
 const NAME_TYPES: NameType[] = ['人名', '门派', '功法', '地名', '法宝', '技能', '组织', '怪物']
 
@@ -115,29 +117,21 @@ export default function InspireTools() {
                 >{s}</button>
               ))}
             </div>
-            <button
-              onClick={rollNames}
-              className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors"
-            >
+            <Button onClick={rollNames} variant="primary" size="md" className="ml-auto flex items-center text-[12px]">
               <RefreshCw size={12} /> 换一批
-            </button>
+            </Button>
             {aiReady ? (
-              <button
-                onClick={aiName}
+              <Button onClick={aiName}
                 disabled={aiNameLoading}
-                className="flex items-center gap-1.5 px-4 py-2 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-700 transition-colors disabled:opacity-50"
-                title="让 AI 结合你的世界观设定生成更贴设定的候选名"
-              >
+                
+                title="让 AI 结合你的世界观设定生成更贴设定的候选名" variant="secondary" size="md" className="flex items-center text-[12px]">
                 <Sparkles size={12} /> {aiNameLoading ? 'AI 取名中…' : 'AI 取名'}
-              </button>
+              </Button>
             ) : (
-              <button
-                disabled
-                title={AI_DISABLED_HINT}
-                className="flex items-center gap-1.5 px-4 py-2 bg-ink-800 text-ink-500 border border-ink-700 rounded-lg text-[12px] cursor-not-allowed"
-              >
+              <Button disabled
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-[12px] cursor-not-allowed">
                 <Sparkles size={12} /> AI 取名
-              </button>
+              </Button>
             )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 2xl:grid-cols-10 gap-2">

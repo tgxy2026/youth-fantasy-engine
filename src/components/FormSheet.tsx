@@ -9,6 +9,7 @@ import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { confirmDialog } from './dialogs'
+import { Button } from './Button'
 
 // 力量体系是升级流的"宪法"：下面这些字段是境界/数值类，绝不能让 AI 凭空编造，
 // AI 补全时锁定它们，只补全文本型字段（体系名称/来源/限制规则等）。
@@ -145,12 +146,9 @@ export default function FormSheet({ tab }: Props) {
             <span className={`text-[11px] transition-opacity duration-300 ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
-            <button
-              onClick={clearAll}
-              className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] text-red-400 border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 transition-colors"
-            >
+            <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-[13px] text-red-400">
               <RotateCcw size={12} /> 清空
-            </button>
+            </Button>
           <button
             onClick={save}
             disabled={!dirty || saving}
@@ -245,12 +243,9 @@ export default function FormSheet({ tab }: Props) {
       {/* 底部浮动保存按钮（页面很长时方便） */}
       {dirty && (
         <div className="fixed bottom-6 right-6 z-20">
-          <button
-            onClick={save}
-            className="flex items-center gap-2 text-[13px] font-medium px-4 py-2.5 bg-amber text-ink-900 rounded-full shadow-2xl shadow-amber/30 hover:bg-amber/90 transition-all animate-pulse"
-          >
+          <Button onClick={save} variant="primary" solid size="md" className="flex items-center text-[13px] text-ink-900 transition-all animate-pulse">
             <Save size={14} /> 保存修改
-          </button>
+          </Button>
         </div>
       )}
 

@@ -1,9 +1,12 @@
 import { useState, useMemo } from 'react'
-import { Lock, Check, X } from 'lucide-react'
+import { Lock, Check } from 'lucide-react'
+import { Modal } from './Modal'
 import {
+
   TABS, GROUPS, EDITOR_TAB, EDITOR_ID,
   tierOf, STRONG_DEPS, resolveFeatures, forcedByDeps,
 } from '../lib/schema'
+import { Button } from './Button'
 
 interface FeatureEntry {
   id: string
@@ -72,21 +75,35 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
   const reset = () => setSelected(new Set(initialSelected))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
-      <div
-        className="w-full max-w-3xl max-h-[88vh] flex flex-col rounded-2xl border border-amber/30 bg-ink-850 shadow-2xl overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-ink-700">
-          <h3 className="text-[14px] font-semibold text-ink-50">{title}</h3>
-          <button onClick={onClose} className="text-ink-500 hover:text-ink-200"><X size={16} /></button>
-        </div>
-        <div className="px-5 py-3 text-[12px] text-ink-400 border-b border-ink-700 leading-relaxed">
+    <Modal
+      open
+      onClose={onClose}
+      title={title}
+      accent="amber"
+      width="2xl"
+      maxHeight="88vh"
+      subheader={
+        <div className="px-5 py-3 text-[12px] text-ink-400 leading-relaxed">
           勾选本项目要启用的功能。<span className="text-amber/90">锁</span> 标记的是必选（不可取消）；
           <span className="text-emerald-300/80">默认</span> 标记的项会预先勾选，可手动取消。
           勾选依赖其他表的功能会自动连带开启对应基础表，取消依赖项前无法单独关掉基础表。
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+      }
+      footerAlign="between"
+      footer={
+        <>
+          <div className="flex gap-2">
+            <Button onClick={selectAll} variant="secondary" size="sm" className="text-[12px]">全选可选</Button>
+            <Button onClick={reset} variant="secondary" size="sm" className="text-[12px]">重置</Button>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={onClose} variant="secondary" size="md" className="text-[13px]">取消</Button>
+            <button onClick={() => onConfirm(resolveFeatures(selected))} className="px-4 h-9 text-[13px] font-medium bg-amber/20 text-amber border border-amber/40 rounded-lg hover:bg-amber/30 transition-colors">确认</button>
+          </div>
+        </>
+      }
+    >
+        <div className="space-y-5">
           {ALL_GROUPS.map(group => {
             const items = ENTRIES_BY_GROUP[group]
             if (!items) return null
@@ -132,17 +149,6 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
             )
           })}
         </div>
-        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-ink-700">
-          <div className="flex gap-2">
-            <button onClick={selectAll} className="px-3 h-8 text-[12px] text-ink-300 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors">全选可选</button>
-            <button onClick={reset} className="px-3 h-8 text-[12px] text-ink-300 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors">重置</button>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-3.5 h-9 text-[13px] text-ink-300 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors">取消</button>
-            <button onClick={() => onConfirm(resolveFeatures(selected))} className="px-4 h-9 text-[13px] font-medium bg-amber/20 text-amber border border-amber/40 rounded-lg hover:bg-amber/30 transition-colors">确认</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

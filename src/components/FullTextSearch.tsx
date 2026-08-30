@@ -4,8 +4,8 @@
  * 结果按类型分组，键盘上下选择、回车跳转；章节跳正文，角色/设定跳对应页签。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Search, FileText, Users, BookMarked, CornerDownLeft, Hash, X } from 'lucide-react'
+import { Modal } from './Modal'
 import { SearchEngine, SEARCH_TYPE_LABEL, type SearchDocType, type SearchResult } from '../lib/search'
 import HelpPopover from './HelpPopover'
 import { type VisCtx } from '../lib/schema'
@@ -74,16 +74,9 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
 
   let runningIdx = -1
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/60 pt-[12vh] px-4"
-      onMouseDown={onClose}
-    >
-      <div
-        className="w-full max-w-2xl bg-ink-850 border border-ink-700 rounded-xl shadow-2xl overflow-hidden"
-        onMouseDown={e => e.stopPropagation()}
-        onKeyDown={onKey}
-      >
+  return (
+    <Modal open onClose={onClose} hideHeader align="top" topOffset="12vh" width="xl" bodyClassName="!p-0">
+      <div onKeyDown={onKey}>
         {/* 搜索框 */}
         <div className="flex items-center gap-2 px-4 h-12 border-b border-ink-700">
           <Search size={15} className="text-amber shrink-0" />
@@ -160,7 +153,6 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
           <span>↑↓ 选择 · 回车打开 · Esc 关闭</span>
         </div>
       </div>
-    </div>,
-    document.body
+    </Modal>
   )
 }

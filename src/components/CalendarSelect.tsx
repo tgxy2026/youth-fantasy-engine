@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import type { CalendarDef } from '../lib/types'
 import { Plus, Check, ChevronDown, Pencil, Trash2 } from 'lucide-react'
 import { confirmDialog } from './dialogs'
+import { Modal } from './Modal'
+import { Button } from './Button'
 
 interface Props {
   /** 当前选中的历法名称 */
@@ -165,10 +167,8 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
         </div>,
         document.body
       )}
-      {editing && createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50" onMouseDown={closeEditor}>
-          <div className="bg-ink-850 border border-ink-600 rounded-xl p-4 w-[20rem] shadow-2xl" onMouseDown={e => e.stopPropagation()}>
-            <div className="text-[13px] font-semibold text-ink-100 mb-3">{editing.name ? '编辑历法' : '新增历法'}</div>
+      {editing && (
+        <Modal open onClose={closeEditor} width={320} bodyClassName="p-4" title={editing.name ? '编辑历法' : '新增历法'}>
             <label className="block text-[11px] text-ink-500 mb-1">历法名称</label>
             <input
               value={draftName}
@@ -187,18 +187,10 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
               用于跨历法先后顺序与延续性判断：时间轴先按数值排序，再按故事内时间。
             </div>
             <div className="flex gap-2 justify-end">
-              <button
-                onClick={closeEditor}
-                className="px-3 py-1.5 text-[12px] text-ink-400 border border-ink-700 rounded-lg hover:text-ink-200"
-              >取消</button>
-              <button
-                onClick={saveEditor}
-                className="px-3 py-1.5 text-[12px] bg-amber/15 text-amber border border-amber/30 rounded-lg hover:bg-amber/25"
-              >保存</button>
+              <Button onClick={closeEditor} variant="secondary" size="md" className="text-[12px]">取消</Button>
+              <Button onClick={saveEditor} variant="primary" size="md" className="text-[12px]">保存</Button>
             </div>
-          </div>
-        </div>,
-        document.body
+        </Modal>
       )}
     </div>
   )

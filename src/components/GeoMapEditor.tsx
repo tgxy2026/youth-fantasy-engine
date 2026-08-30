@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as RPointerEvent } from 'react'
-import { Layers, Maximize2, Plus, Trash2, ZoomIn, ZoomOut, ExternalLink, MapPin, Eraser, Pencil, X } from 'lucide-react'
+import { Layers, Maximize2, Plus, Trash2, ZoomIn, ZoomOut, ExternalLink, MapPin, Eraser, Pencil } from 'lucide-react'
 import * as db from '../lib/db'
 import type { CardRecord, TableRow, TabDef } from '../lib/types'
 import { TABS } from '../lib/schema'
@@ -8,6 +8,8 @@ import { uid } from '../lib/id'
 import { showToast, confirmDialog } from './dialogs'
 import CustomSelect, { CUSTOM_OPTIONS_EVENT, resolveOptions, type ResolvedOption } from './CustomSelect'
 import HelpPopover from './HelpPopover'
+import { Modal } from './Modal'
+import { Button } from './Button'
 
 /** 内置类别：必须与 schema.ts 中 geography 表「类别」列的内置选项保持一致 */
 const BUILTIN_CATEGORIES = ['大陆', '区域', '国家', '城市', '秘境', '禁地', '遗迹', '山脉']
@@ -742,7 +744,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
           <span className="flex items-center gap-1">
             <button onClick={() => stepCellKm(-1)} disabled={cellKm === CELL_KM_STEPS[0]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="提高精度：每格边长 ÷10（1 公里格，画小范围用）"><ZoomIn size={11} />精</button>
             <button onClick={() => stepCellKm(1)} disabled={cellKm === CELL_KM_STEPS[CELL_KM_STEPS.length - 1]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="降低精度：每格边长 ×10（10 公里格，画大范围快速铺格子）"><ZoomOut size={11} />粗</button>
-            <button onClick={fitView} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors" title="重置视图（内容居中）"><Maximize2 size={11} />重置</button>
+            <Button onClick={fitView}  title="重置视图（内容居中）" variant="secondary" size="md" className="items-center text-[11px]"><Maximize2 size={11} />重置</Button>
           </span>
         </div>
       </div>
@@ -953,18 +955,21 @@ function DrawDialog({ rows, drawnCells, onPick, onClose }: {
     return { id: r.id, name: r.data['名称'] || '(未命名)', category: r.data['类别'] || '区域', depth }
   }).sort((a, b) => a.depth - b.depth)
   return (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-96 max-w-[92vw] max-h-[80vh] flex flex-col bg-ink-850 border border-ink-600 rounded-xl shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="px-4 py-3 border-b border-ink-700 flex items-center gap-2">
-          <Pencil size={16} className="text-amber shrink-0" />
-          <span className="font-semibold text-ink-100 text-sm">绘制地图 · 选择一个地理范围</span>
-          <button onClick={onClose} className="ml-auto text-ink-400 hover:text-ink-100"><X size={16} /></button>
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      title="绘制地图 · 选择一个地理范围"
+      icon={<Pencil size={16} />}
+      width={384}
+      maxHeight="80vh"
+      subheader={
         <div className="px-4 py-2.5 text-[11px] text-ink-300 bg-amber/5 border-b border-ink-700 leading-relaxed">
           建议<strong className="text-amber">从最大的范围开始绘制</strong>（如大陆 → 区域 → 城市），后画的范围会叠在先画的之上。
           绘制时形状与格子数不限，唯一规则：<strong className="text-amber">子范围必须完全画在父范围之内</strong>。
         </div>
-        <div className="overflow-y-auto p-2">
+      }
+      bodyClassName="p-2"
+    >
           {items.length === 0 && <div className="text-center text-ink-500 text-[12px] py-6">《地理风物》还没有条目，请先去登记。</div>}
           {items.map(it => (
             <button key={it.id} onClick={() => onPick(it.id)}
@@ -978,9 +983,7 @@ function DrawDialog({ rows, drawnCells, onPick, onClose }: {
               )}
             </button>
           ))}
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1006,7 +1009,7 @@ function AddMarkerForm({ categories, parentOptions, onCancel, onCreate }: {
       </Field>
       <div className="flex gap-2 pt-1">
         <button disabled={!name.trim()} onClick={() => onCreate(name, category, parent)} className="flex-1 px-3 py-1.5 rounded-md bg-amber/20 text-amber border border-amber/40 text-[12px] hover:bg-amber/30 disabled:opacity-40 transition-colors">新增地点</button>
-        <button onClick={onCancel} className="px-3 py-1.5 rounded-md border border-ink-700 text-ink-300 text-[12px] hover:text-ink-100 transition-colors">取消</button>
+        <Button onClick={onCancel} variant="secondary" size="md" className="text-[12px]">取消</Button>
       </div>
       <p className="text-[10px] text-ink-500 leading-relaxed">新增后会同时出现在《地理风物》里，其余字段（地貌、势力归属、行程时间等）可到表格补全。</p>
     </div>
@@ -1027,13 +1030,10 @@ function DetailPanel({ marker, linked, cells, categories, parentOptions, paintin
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-ink-100 font-medium"><MapPin size={14} className="text-amber" /> {marker.name}</div>
       <div className="text-[11px] text-ink-400">当前形状：<span className="text-amber">{cells} 格</span>{painting && <span className="text-ink-500">（绘制中：左键涂/擦 · 右键退出）</span>}</div>
-      <button
-        onClick={onPaint}
-        disabled={painting}
-        className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-amber/40 bg-amber/10 text-[12px] text-amber hover:bg-amber/20 disabled:opacity-40 transition-colors"
-      >
+      <Button onClick={onPaint}
+        disabled={painting} variant="primary" size="md" className="w-full flex items-center justify-center text-[12px]">
         <Pencil size={12} /> {cells > 0 ? '继续绘制此范围' : '绘制此范围'}
-      </button>
+      </Button>
       <Field label="名称"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => name.trim() && name !== marker.name && commit({ '名称': name.trim() })} className="w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50" /></Field>
       <Field label="类别（可在下拉里新增自定义类别）">
         <CustomSelect
@@ -1048,7 +1048,7 @@ function DetailPanel({ marker, linked, cells, categories, parentOptions, paintin
         </select>
       </Field>
       <button onClick={() => commit({ '地图格子': '' })} title="清掉这个范围画好的所有格子，《地理风物》档案保留" className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-ink-700 text-[12px] text-ink-200 hover:text-amber hover:border-amber/40 transition-colors"><Eraser size={12} /> 清空此范围的绘制</button>
-      <button onClick={onGotoTable} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-ink-700 text-[12px] text-ink-200 hover:text-amber hover:border-amber/40 transition-colors"><ExternalLink size={12} /> 在《地理风物》中编辑</button>
+      <Button onClick={onGotoTable} variant="secondary" size="md" className="w-full flex items-center justify-center text-[12px]"><ExternalLink size={12} /> 在《地理风物》中编辑</Button>
 
       {/* 关联列表 */}
       {linked && (linked.foreshadow.length > 0 || linked.character.length > 0 || linked.timeline.length > 0) && (
@@ -1061,8 +1061,8 @@ function DetailPanel({ marker, linked, cells, categories, parentOptions, paintin
       )}
 
       <div className="flex gap-2 pt-2 border-t border-ink-700">
-        <button onClick={onClearPainted} title="清掉这个范围画好的所有格子，《地理风物》档案保留" className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-ink-100 transition-colors"><Eraser size={11} /> 清空绘制</button>
-        <button onClick={onDelete} title="连《地理风物》档案一起删除，不可撤销" className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md border border-red-500/40 text-[11px] text-red-300 hover:bg-red-500/10 transition-colors"><Trash2 size={11} /> 删除地点</button>
+        <Button onClick={onClearPainted} title="清掉这个范围画好的所有格子，《地理风物》档案保留" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[11px]"><Eraser size={11} /> 清空绘制</Button>
+        <Button onClick={onDelete} title="连《地理风物》档案一起删除，不可撤销" variant="danger" size="md" className="flex-1 flex items-center justify-center text-[11px]"><Trash2 size={11} /> 删除地点</Button>
       </div>
       <p className="text-[10px] text-ink-500 leading-relaxed">「清空绘制」= 只擦掉画好的格子，档案保留；「删除地点」= 《地理风物》条目连档案一起删除，不可撤销。</p>
     </div>

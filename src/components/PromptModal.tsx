@@ -1,4 +1,7 @@
+
 import { useEffect, useRef, useState } from 'react'
+import { Modal, Z } from './Modal'
+import { Button } from './Button'
 
 interface Props {
   open: boolean
@@ -52,45 +55,38 @@ export default function PromptModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/45 backdrop-blur-[2px]"
-      onMouseDown={e => { if (e.target === e.currentTarget) onCancel() }}
-    >
-      <div
-        className="w-[380px] max-w-[90vw] bg-ink-850 border border-ink-600 rounded-2xl shadow-2xl p-5"
-        onMouseDown={e => e.stopPropagation()}
-      >
-        <div className="text-[14px] font-semibold text-ink-100 mb-3">{title}</div>
-        {label && <div className="text-[11px] text-ink-400 leading-relaxed mb-1.5">{label}</div>}
-        <input
-          ref={inputRef}
-          autoFocus
-          type={password ? 'password' : 'text'}
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') submit()
-            if (e.key === 'Escape') onCancel()
-          }}
-          placeholder={placeholder}
-          className="w-full bg-ink-900 border border-ink-600 rounded-lg px-3 py-2 text-[13px] text-ink-100 outline-none focus:border-amber/60 placeholder:text-ink-500 mb-4"
-        />
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="px-3 py-1.5 rounded-lg text-[12px] text-ink-300 border border-ink-600 hover:border-ink-500 transition-colors"
-          >
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title={title}
+      width={380}
+      layer={Z.prompt}
+      footer={
+        <>
+          <Button onClick={onCancel} variant="secondary" size="md" className="text-[12px]">
             {cancelText}
-          </button>
-          <button
-            onClick={submit}
-            disabled={!allowEmpty && !val.trim()}
-            className="px-3 py-1.5 rounded-lg text-[12px] bg-amber/15 text-amber border border-amber/30 hover:bg-amber/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          </Button>
+          <Button onClick={submit}
+            disabled={!allowEmpty && !val.trim()} variant="primary" size="md" className="text-[12px]">
             {confirmText}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      {label && <div className="text-[11px] text-ink-400 leading-relaxed mb-1.5">{label}</div>}
+      <input
+        ref={inputRef}
+        autoFocus
+        type={password ? 'password' : 'text'}
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') submit()
+          if (e.key === 'Escape') onCancel()
+        }}
+        placeholder={placeholder}
+        className="w-full bg-ink-900 border border-ink-600 rounded-lg px-3 py-2 text-[13px] text-ink-100 outline-none focus:border-amber/60 placeholder:text-ink-500 mb-4"
+      />
+    </Modal>
   )
 }

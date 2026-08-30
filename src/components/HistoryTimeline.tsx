@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef } from '../lib/types'
 import { storyDateKey } from './StoryDateInput'
-import { createPortal } from 'react-dom'
 import { Calendar, Users, X } from 'lucide-react'
+import { Modal } from './Modal'
 
 const COLORS = [
   { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber' },
@@ -243,13 +243,8 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
       </div>
 
       {/* 事件详情弹窗 */}
-      {selected && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4" onMouseDown={() => setSelected(null)}>
-          <div
-            className="bg-ink-850 border border-ink-600 rounded-2xl w-[30rem] max-w-full max-h-[85vh] overflow-y-auto shadow-2xl"
-            onMouseDown={e => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-2 p-4 border-b border-ink-700 sticky top-0 bg-ink-850">
+      {selected && (
+        <Modal open onClose={() => setSelected(null)} hideHeader width={480} maxHeight="85vh" bodyClassName="!p-0">
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-amber font-semibold mb-0.5">
                   {selected.time ? dateLabel(selected.time, selected.calName) : '时间未定'}
@@ -261,7 +256,6 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
                 onClick={() => setSelected(null)}
                 className="p-1.5 text-ink-500 hover:text-ink-200 hover:bg-ink-700 rounded-lg transition-colors shrink-0"
               ><X size={16} /></button>
-            </div>
             <div className="p-4 space-y-2.5">
               {detail(selected).map(([label, value]) => (
                 <div key={label} className="text-[12.5px] leading-relaxed">
@@ -270,9 +264,7 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
                 </div>
               ))}
             </div>
-          </div>
-        </div>,
-        document.body
+        </Modal>
       )}
     </div>
   )

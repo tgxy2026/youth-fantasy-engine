@@ -14,6 +14,7 @@ import { aiReviewSensitive, aiContinuityAudit, type SensitiveReview, type Contin
 import { buildProjectContext } from '../lib/aiContext'
 import { runDataHealthCheck } from '../lib/dataHealth'
 import { SEVERITY_LABEL, type AuditIssue, type AuditLocation } from '../lib/audit'
+import { Button } from './Button'
 
 // 风险 / 严重度色标签
 const riskBadge = (r: string) =>
@@ -216,7 +217,7 @@ export default function CheckTools() {
               placeholder="输入自定义敏感词，支持用逗号/换行分隔批量添加…"
               className="flex-1 min-w-[200px] !py-1.5 text-[12px]"
             />
-            <button onClick={addWord} className="px-3 py-1.5 bg-ink-700 text-ink-100 rounded-lg text-[12px] hover:bg-ink-600 transition-colors">添加</button>
+            <Button onClick={addWord} variant="secondary" size="md" className="text-[12px]">添加</Button>
             <input
               ref={fileInputRef}
               type="file"
@@ -237,19 +238,14 @@ export default function CheckTools() {
             </button>
             {customWords.length > 0 && (
               <>
-                <button
-                  onClick={exportWords}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600 transition-colors"
-                  title="导出为 .txt"
-                >
+                <Button onClick={exportWords}
+                  
+                  title="导出为 .txt" variant="secondary" size="md" className="flex items-center text-[12px]">
                   <Upload size={12} /> 导出
-                </button>
-                <button
-                  onClick={clearCustom}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-ink-700 text-ink-300 border border-ink-600 rounded-lg text-[12px] hover:text-red-400 transition-colors"
-                >
+                </Button>
+                <Button onClick={clearCustom} variant="secondary" size="md" className="flex items-center text-[12px]">
                   <Trash2 size={12} /> 清空
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -274,22 +270,16 @@ export default function CheckTools() {
               <ScanSearch size={13} /> {scanning ? '扫描中…' : '系统扫描全书'}
             </button>
             {aiReady ? (
-              <button
-                onClick={aiDetect}
+              <Button onClick={aiDetect}
                 disabled={reviewLoading}
-                title="AI 结合上下文判断每个命中词是误报还是真有风险"
-                className="flex items-center gap-1.5 px-4 py-2 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-700 transition-colors disabled:opacity-50"
-              >
+                title="AI 结合上下文判断每个命中词是误报还是真有风险" variant="secondary" size="md" className="flex items-center text-[12px]">
                 <Sparkles size={13} /> {reviewLoading ? 'AI 检测中…' : 'AI 检测'}
-              </button>
+              </Button>
             ) : (
-              <button
-                disabled
-                title={AI_DISABLED_HINT}
-                className="flex items-center gap-1.5 px-4 py-2 bg-ink-800 text-ink-500 border border-ink-700 rounded-lg text-[12px] cursor-not-allowed"
-              >
+              <Button disabled
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-[12px] cursor-not-allowed">
                 <Sparkles size={13} /> AI 检测
-              </button>
+              </Button>
             )}
           </div>
 
@@ -372,13 +362,10 @@ export default function CheckTools() {
                 <Sparkles size={13} /> {auditLoading ? '自查中…' : 'AI 深度自查'}
               </button>
             ) : (
-              <button
-                disabled
-                title={AI_DISABLED_HINT}
-                className="flex items-center gap-1.5 px-4 py-2 bg-ink-800 text-ink-500 border border-ink-700 rounded-lg text-[12px] cursor-not-allowed"
-              >
+              <Button disabled
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-[12px] cursor-not-allowed">
                 <Sparkles size={13} /> AI 深度自查
-              </button>
+              </Button>
             )}
             {auditLoading && (
               <span className="text-[11px] text-ink-400 flex items-center gap-1.5">
@@ -436,14 +423,11 @@ export default function CheckTools() {
             >
               <RefreshCw size={13} className={healthScanning ? 'animate-spin' : ''} /> {healthScanning ? '体检中…' : '重新体检'}
             </button>
-            <button
-              onClick={clearIgnored}
+            <Button onClick={clearIgnored}
               disabled={ignoredIds.length === 0}
-              title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'}
-              className="flex items-center gap-1.5 px-3 py-2 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
+              title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'} variant="secondary" size="md" className="flex items-center text-[12px]">
               <RotateCcw size={12} /> 清除忽略{ignoredIds.length > 0 ? `（${ignoredIds.length}）` : ''}
-            </button>
+            </Button>
             {healthScanning && (
               <span className="text-[11px] text-ink-400 flex items-center gap-1.5">
                 <Loader2 size={12} className="animate-spin" /> 正在扫描所有设定表…

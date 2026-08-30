@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as db from '../lib/db'
 import { encryptJSON, decryptJSON, isEncrypted } from '../lib/crypto'
-import { X, Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle } from 'lucide-react'
+import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle } from 'lucide-react'
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
 import HelpPopover from './HelpPopover'
+import { Modal } from './Modal'
+import { Button } from './Button'
 
 interface Props {
   projectId: string
@@ -249,11 +251,14 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
   )
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-ink-900 border border-ink-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-ink-700">
-          <ShieldCheck size={16} className="text-amber" />
-          <h3 className="text-[15px] font-bold text-ink-50">备份与恢复 · {projectName}</h3>
+    <>
+      <Modal
+        open
+        onClose={onClose}
+        title={`备份与恢复 · ${projectName}`}
+        icon={<ShieldCheck size={16} />}
+        width={672}
+        headerExtra={
           <button
             onClick={backupNow}
             disabled={busy}
@@ -262,9 +267,9 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
           >
             <Clock size={11} /> 立即备份
           </button>
-          <button onClick={onClose} className="ml-auto text-ink-500 hover:text-ink-200 transition-colors" title="关闭" aria-label="关闭"><X size={16} /></button>
-        </div>
-        <div className="p-5 space-y-5 overflow-y-auto">
+        }
+      >
+        <div className="space-y-5">
           <div className="text-[11px] text-ink-400 leading-relaxed bg-ink-850 border border-ink-700 rounded-lg px-3 py-2">
             打开项目时每 5 分钟自动滚动备份（最多 {db.MAX_AUTO_BACKUPS} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.MAX_DAILY_BACKUPS} 份）；
             <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
@@ -332,14 +337,12 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
                 ? <>检测到 <span className="text-red-300 font-semibold">{orphans.length} 份</span> 属于已删除项目的备份（约 {orphansMB.toFixed(1)} MB），点击下方按钮一键清理。</>
                 : '没有孤儿备份——当前全部备份都属于现存项目，无需清理。'}
             </div>
-            <button
-              onClick={cleanOrphans}
+            <Button onClick={cleanOrphans}
               disabled={busy || orphans.length === 0}
-              className="flex items-center gap-1 px-3 py-1.5 text-[12px] text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="删除所有属于已删除项目的备份"
-            >
+              
+              title="删除所有属于已删除项目的备份" variant="danger" size="md" className="flex items-center text-[12px] text-red-400">
               <Trash2 size={12} /> 清理孤儿备份
-            </button>
+            </Button>
           </div>
 
           {!loaded && <div className="text-center text-ink-500 text-[12px]">加载中…</div>}
@@ -348,7 +351,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
           )}
         </div>
         <input ref={fileInput} type="file" accept=".json,application/json" className="hidden" onChange={onFile} />
-      </div>
+      </Modal>
 
       {/* v1.6：应用内输入弹窗（替代浏览器 prompt，桌面端可用） */}
       <PromptModal
@@ -363,6 +366,6 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
         onSubmit={pwdPrompt?.kind === 'export' ? submitExportPwd : submitImportPwd}
         onCancel={() => setPwdPrompt(null)}
       />
-    </div>
+    </>
   )
 }

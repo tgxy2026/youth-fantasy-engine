@@ -21,6 +21,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { showToast } from './dialogs'
 import HelpPopover from './HelpPopover'
+import { Button } from './Button'
 
 // ============ 颉文姬 · 编辑器 AI 助手（v1.6 收官功能） ============
 // 四模式：诊室（AI 深度校对 + AI 综合诊断）/ 编辑（选区改稿 → 建议段）/
@@ -452,10 +453,7 @@ export default function JieWenJi({
             <div className="flex items-center gap-1.5 text-[10.5px] text-ink-500">
               <span>校对范围</span>
               <div className="flex rounded-md overflow-hidden border border-ink-700">
-                <button
-                  className="px-2 py-0.5 bg-amber/20 text-amber"
-                  title="校对结果需在正文中精确定位替换，故恒校对全文；诊断支持用压缩摘要的简略模式"
-                >完整（正文）</button>
+                <Button title="校对结果需在正文中精确定位替换，故恒校对全文；诊断支持用压缩摘要的简略模式" variant="primary" solid size="md">完整（正文）</Button>
               </div>
             </div>
             <button
@@ -472,9 +470,9 @@ export default function JieWenJi({
                 <div className="h-1 rounded bg-ink-700 overflow-hidden flex-1">
                   <div className="h-full bg-amber transition-all" style={{ width: `${proof.progress.total ? (proof.progress.done / proof.progress.total) * 100 : 0}%` }} />
                 </div>
-                <button onClick={stopProofread} className="px-2 py-1 rounded-md text-[11px] text-ink-300 border border-ink-600 hover:border-ink-500 transition-colors shrink-0">
+                <Button onClick={stopProofread} variant="secondary" size="md" className="text-[11px] shrink-0">
                   停止
-                </button>
+                </Button>
               </div>
             )}
             {proof.error && <div className="text-[11px] text-red-300 px-1">{proof.error}</div>}
@@ -596,12 +594,9 @@ export default function JieWenJi({
                   <CheckCircle2 size={12} /> 改稿完成{rewrite.data.notes ? `：${rewrite.data.notes}` : ''}
                 </div>
                 <div className="text-[11.5px] text-ink-100 leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">{rewrite.data.rewritten}</div>
-                <button
-                  onClick={applyAdvice}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] bg-amber/15 border border-amber/30 text-amber hover:bg-amber/25 transition-colors"
-                >
+                <Button onClick={applyAdvice} variant="primary" size="md" className="w-full flex items-center justify-center text-[12px]">
                   <PenLine size={12} /> 写入原文下方（建议段）
-                </button>
+                </Button>
                 <div className="text-[10.5px] text-ink-500 leading-relaxed">
                   建议段以「{ADVICE_START}」标记写入原文下方，不会改动你的原文。请自行取舍：保留的直接并入，不用的删除；下方按钮可一键清除全部建议段。
                 </div>
@@ -817,15 +812,12 @@ export default function JieWenJi({
                   从本章正文抽出有专名的设定实体，与已有设定比对后分三档。
                   <span className="text-ink-500">「是否已登记」由程序按名称与别称精确比对，AI 只负责抽取，不会凭空编造。</span>
                 </div>
-                <button
-                  onClick={runLedger}
+                <Button onClick={runLedger}
                   disabled={!aiReady || ledger.loading || !content.trim()}
-                  title={!aiReady ? AI_DISABLED_HINT : ledger.scannedAt ? '重新扫描本章正文' : '扫描本章正文'}
-                  className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded bg-amber/15 text-amber border border-amber/30 text-[11px] hover:bg-amber/25 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
+                  title={!aiReady ? AI_DISABLED_HINT : ledger.scannedAt ? '重新扫描本章正文' : '扫描本章正文'} variant="primary" size="md" className="shrink-0 flex items-center rounded text-[11px]">
                   {ledger.loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                   {ledger.loading ? '扫描中' : ledger.scannedAt ? '重新扫描' : '扫描本章'}
-                </button>
+                </Button>
               </div>
               {!aiReady && <div className="mt-1.5 text-[10.5px] text-ink-500">{AI_DISABLED_HINT}</div>}
             </div>
@@ -923,14 +915,11 @@ export default function JieWenJi({
             })}
 
             {ledger.items.length > 0 && (
-              <button
-                onClick={commitLedger}
-                disabled={ledgerSaving || ledgerPicked.size === 0}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11.5px] bg-amber/15 text-amber border border-amber/30 hover:bg-amber/25 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
+              <Button onClick={commitLedger}
+                disabled={ledgerSaving || ledgerPicked.size === 0} variant="primary" size="md" className="w-full flex items-center justify-center text-[11.5px]">
                 {ledgerSaving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
                 {ledgerSaving ? '写入中' : `补登选中的 ${ledgerPicked.size} 项`}
-              </button>
+              </Button>
             )}
           </div>
         )}

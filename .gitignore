@@ -9,10 +9,14 @@ dist.oldbak*/
 release/
 build/
 
-# 测试打包产物
+# 测试打包产物（esbuild 转译后的运行包，非源码）
 tests/.roundtrip.mjs
+tests/.*.mjs
 
 # 系统杂项
 Thumbs.db
 Desktop.ini
 *.log
+
+# 本地工具状态（记忆 / 自动化配置，不进版本库）
+.workbuddy/

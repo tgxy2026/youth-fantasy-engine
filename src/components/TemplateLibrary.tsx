@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { saveCardRecord, getCurrentProjectId } from '../lib/db'
 import { uid } from '../lib/id'
-import { X, Layers, Plus } from 'lucide-react'
+import { Layers, Plus } from 'lucide-react'
 import { confirmDialog, showToast } from './dialogs'
+import { Modal } from './Modal'
 
 interface Props {
   tabId: string
@@ -114,15 +115,15 @@ export default function TemplateLibrary({ tabId, isVolume, onApplied, onClose }:
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-ink-900 border border-ink-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-ink-700">
-          <Layers size={16} className="text-amber" />
-          <h3 className="text-[15px] font-bold text-ink-50">结构模板库</h3>
-          <span className="text-[11px] text-ink-500">套用到「{isVolume ? '分卷大纲' : '章节细纲'}」</span>
-          <button onClick={onClose} className="ml-auto text-ink-500 hover:text-ink-200"><X size={16} /></button>
-        </div>
-        <div className="p-5 space-y-3 overflow-y-auto">
+    <Modal
+      open
+      onClose={onClose}
+      title="结构模板库"
+      icon={<Layers size={16} />}
+      width={672}
+      headerExtra={<span className="text-[11px] text-ink-500">套用到「{isVolume ? '分卷大纲' : '章节细纲'}」</span>}
+    >
+      <div className="space-y-3">
           {list.map(tpl => (
             <div key={tpl.id} className="rounded-xl border border-ink-700 bg-ink-850 p-4">
               <div className="flex items-start justify-between gap-3">
@@ -149,7 +150,6 @@ export default function TemplateLibrary({ tabId, isVolume, onApplied, onClose }:
             <div className="text-center text-ink-500 text-[12px] py-8">当前大纲类型暂无可套用模板。</div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

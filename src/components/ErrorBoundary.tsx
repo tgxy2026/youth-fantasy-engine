@@ -1,4 +1,6 @@
+
 import React from 'react'
+import { Button } from './Button'
 
 /**
  * 生产级错误边界：渲染期任何组件抛错都会被这里兜住，
@@ -44,12 +46,9 @@ export default class ErrorBoundary extends React.Component<
 {stack}
             </pre>
             <div className="mt-4 flex gap-2">
-              <button
-                onClick={this.handleReload}
-                className="px-3 py-1.5 rounded-md bg-amber/20 text-amber border border-amber/40 text-[12px] hover:bg-amber/30 transition-colors"
-              >
+              <Button onClick={this.handleReload} variant="primary" solid size="md" className="text-[12px]">
                 重新加载页面
-              </button>
+              </Button>
               <button
                 onClick={() => this.setState({ error: null })}
                 className="px-3 py-1.5 rounded-md border border-ink-700 text-ink-300 text-[12px] hover:text-ink-100 hover:border-ink-500 transition-colors"

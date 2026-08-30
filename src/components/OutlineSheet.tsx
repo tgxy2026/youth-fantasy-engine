@@ -10,6 +10,7 @@ import AutoTextarea from './AutoTextarea'
 import PromptModal from './PromptModal'
 import { confirmDialog } from './dialogs'
 import TemplateLibrary from './TemplateLibrary'
+import { Button } from './Button'
 
 interface Props {
   tab: TabDef
@@ -224,12 +225,9 @@ export default function OutlineSheet({ tab }: Props) {
             >
               <Layers size={14} /> 模板库
             </button>
-            <button
-              onClick={addRecord}
-              className="flex items-center gap-1.5 px-3.5 h-9 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 transition-colors"
-            >
+            <Button onClick={addRecord} variant="primary" size="md" className="flex items-center text-[13px]">
               <Plus size={14} /> 新建{noun}
-            </button>
+            </Button>
           </div>
         </div>
         {draft && (
@@ -322,13 +320,11 @@ export default function OutlineSheet({ tab }: Props) {
                 </h2>
                 <span className="text-[10px] text-ink-500">点击名称可改名 · 修改后点「保存」</span>
                 <span className="flex-1" />
-                <button
-                  onClick={duplicateRecord}
-                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-ink-400 hover:text-amber border border-ink-600 hover:border-amber/40 rounded-md transition-colors"
-                  title={`复制当前${noun}大纲为新${noun}`}
-                >
+                <Button onClick={duplicateRecord}
+                  
+                  title={`复制当前${noun}大纲为新${noun}`} variant="secondary" size="md" className="flex items-center text-[11px]">
                   <Copy size={11} /> 复制
-                </button>
+                </Button>
               </div>
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
                 {tab.modules!.map(mod => (
@@ -393,12 +389,9 @@ export default function OutlineSheet({ tab }: Props) {
       {/* 浮动保存按钮 */}
       {dirty && (
         <div className="fixed bottom-6 right-6 z-20">
-          <button
-            onClick={save}
-            className="flex items-center gap-2 text-[13px] font-medium px-4 py-2.5 bg-amber text-ink-900 rounded-full shadow-2xl shadow-amber/30 hover:bg-amber/90 transition-all animate-pulse"
-          >
+          <Button onClick={save} variant="primary" solid size="md" className="flex items-center text-[13px] text-ink-900 transition-all animate-pulse">
             <Save size={14} /> 保存「{draft?.name}」修改
-          </button>
+          </Button>
         </div>
       )}
 

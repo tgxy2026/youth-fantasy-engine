@@ -13,6 +13,7 @@ import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { buildProjectContext, getRecentChapterTexts } from '../lib/aiContext'
 import { aiForeshadowReview, aiContinuityAudit, aiStyleCheck } from '../lib/aiTasks'
 import { getFormData } from '../lib/db'
+import { Button } from './Button'
 
 // ============ 伏笔闭环看板 ============
 export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (tabId: string) => void; onClose: () => void }) {
@@ -99,15 +100,13 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
           <div className="mt-4 pt-3 border-t border-ink-700">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[12px] font-semibold text-ink-200">可定位问题（点击跳转修正）</span>
-              <button
-                onClick={runAiReview}
+              <Button onClick={runAiReview}
                 disabled={!aiReady || aiLoading}
-                className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px] text-ink-300 hover:bg-ink-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                title={!aiReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'}
-              >
+                
+                title={!aiReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-[11px]">
                 {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                 AI 深度分析
-              </button>
+              </Button>
             </div>
             <AuditPanel issues={issues} emptyText="伏笔网络健康 ✓ 无跨度/孤儿/状态异常" onNavigateTab={onNavigateTab} />
             {aiError && (
@@ -187,15 +186,13 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
         <>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[12px] font-semibold text-ink-200">本地确定性冲突</span>
-            <button
-              onClick={runAiAudit}
+            <Button onClick={runAiAudit}
               disabled={!aiReady || aiLoading}
-              className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px] text-ink-300 hover:bg-ink-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              title={!aiReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'}
-            >
+              
+              title={!aiReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-[11px]">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 深度审计
-            </button>
+            </Button>
           </div>
           <AuditPanel
             issues={issues}
@@ -277,15 +274,13 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
         <>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[12px] font-semibold text-ink-200">本地文风体检</span>
-            <button
-              onClick={runAiStyle}
+            <Button onClick={runAiStyle}
               disabled={!aiReady || aiLoading}
-              className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px] text-ink-300 hover:bg-ink-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              title={!aiReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'}
-            >
+              
+              title={!aiReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-[11px]">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 文风体检
-            </button>
+            </Button>
           </div>
           <AuditPanel issues={issues} emptyText="本章文风体检通过 ✓" />
           {aiError && (

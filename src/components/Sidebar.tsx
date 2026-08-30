@@ -11,6 +11,7 @@ import { DESKTOP } from '../lib/desktop'
 import { DesktopDataBar } from './Desktop'
 import { useResizable } from '../lib/useResizable'
 import { APP_VERSION } from '../lib/portable'
+import { Button } from './Button'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
   '工作面板': <LayoutDashboard size={15} />,
@@ -125,20 +126,16 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           <div className="text-[9px] text-ink-500 mb-0.5">当前项目</div>
           <div className="text-[13px] font-semibold text-amber truncate leading-tight" title={projectName}>{projectName}</div>
           <div className="flex gap-1 mt-2">
-            <button
-              onClick={onExitProject}
-              className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] text-ink-300 bg-ink-700/60 rounded hover:bg-ink-700 hover:text-ink-100 transition-colors"
-              title="返回项目列表"
-            >
+            <Button onClick={onExitProject}
+              
+              title="返回项目列表" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[10px] rounded">
               <ArrowLeft size={10} /> 切换项目
-            </button>
-            <button
-              onClick={onExport}
-              className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] text-ink-300 bg-ink-700/60 rounded hover:bg-ink-700 hover:text-ink-100 transition-colors"
-              title="导出当前项目 JSON 备份"
-            >
+            </Button>
+            <Button onClick={onExport}
+              
+              title="导出当前项目 JSON 备份" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[10px] rounded">
               <Upload size={10} /> 备份
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -185,12 +182,9 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                           {volOpen && (
                             <div className="mt-0.5 space-y-0.5">
                               {volumeTabs.length === 0 && (
-                                <button
-                                  onClick={createVolume}
-                                  className="w-full text-left px-2.5 py-1 pl-12 rounded-md text-[12px] text-ink-400 hover:text-amber hover:bg-ink-800/60 transition-colors flex items-center gap-1"
-                                >
+                                <Button onClick={createVolume} variant="ghost" size="md" className="w-full text-left text-[12px] flex items-center">
                                   <FolderPlus size={11} /> 新建第一卷
-                                </button>
+                                </Button>
                               )}
                               {volumeTabs.map(v => (
                                 <div key={v.id} className="group flex items-center gap-0.5">
@@ -213,12 +207,9 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                                 </div>
                               ))}
                               {volumeTabs.length > 0 && (
-                                <button
-                                  onClick={createVolume}
-                                  className="w-full text-left px-2.5 py-1 pl-12 rounded-md text-[12px] text-ink-400 hover:text-amber hover:bg-ink-800/60 transition-colors flex items-center gap-1"
-                                >
+                                <Button onClick={createVolume} variant="ghost" size="md" className="w-full text-left text-[12px] flex items-center">
                                   <FolderPlus size={11} /> 新建卷
-                                </button>
+                                </Button>
                               )}
                             </div>
                           )}

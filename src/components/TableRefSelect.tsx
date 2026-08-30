@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getTableRows } from '../lib/db'
 import { ChevronDown, Check, Plus } from 'lucide-react'
+import { Button } from './Button'
 
 interface Props {
   value: string
@@ -129,13 +130,10 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
             />
           </div>
           {q.trim() && !exact && (
-            <button
-              type="button"
-              onClick={useManual}
-              className="w-full text-left px-2.5 py-1.5 text-[11.5px] text-amber/90 border-b border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
-            >
+            <Button type="button"
+              onClick={useManual} variant="secondary" size="md" className="w-full text-left text-[11.5px] border-b flex items-center">
               <Plus size={11} /> 使用「{q.trim()}」
-            </button>
+            </Button>
           )}
           {filtered.length === 0 && !q.trim() && (
             <div className="px-2.5 py-2 text-[11px] text-ink-500">暂无可选数据，可直接在上方输入</div>

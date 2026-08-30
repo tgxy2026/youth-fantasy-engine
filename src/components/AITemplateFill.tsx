@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Sparkles, X, Check, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import { Sparkles, Check, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
 import { aiCompleteTemplate, buildWorldContext, type TemplateField } from '../lib/ai'
+import { Button } from './Button'
 
 interface Props {
   /** 该实体的全部字段（key 约定见 TemplateField） */
@@ -72,20 +74,9 @@ export default function AITemplateFill({
   const setVal = (key: string, v: string) => setResult(prev => ({ ...(prev ?? {}), [key]: v }))
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-2xl max-h-[88vh] flex flex-col bg-ink-850 border border-ink-700 rounded-xl"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 px-5 py-3 border-b border-ink-700 shrink-0">
-          <Sparkles size={14} className="text-amber" />
-          <h3 className="text-[14px] font-semibold text-ink-100">{title}</h3>
-          <button onClick={onClose} className="ml-auto p-1 text-ink-500 hover:text-ink-100" title="关闭">
-            <X size={16} />
-          </button>
-        </div>
+    <Modal open onClose={onClose} icon={<Sparkles size={14} />} title={title} width="xl" maxHeight="88vh">
 
-        <div className="p-5 space-y-4 overflow-y-auto">
+        <div className="space-y-4">
           <div>
             <label className="block text-[12px] text-ink-300 mb-1">
               你的粗略设定（名字 / 身份 / 定位等，越具体补全越准）
@@ -108,14 +99,11 @@ export default function AITemplateFill({
           )}
 
           {!result && (
-            <button
-              onClick={run}
-              disabled={loading}
-              className="flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 disabled:opacity-50"
-            >
+            <Button onClick={run}
+              disabled={loading} variant="primary" size="md" className="flex items-center text-[13px]">
               {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
               {loading ? '正在生成补全…' : '生成补全'}
-            </button>
+            </Button>
           )}
 
           {error && (
@@ -166,18 +154,16 @@ export default function AITemplateFill({
                 })}
               </div>
               <div className="flex items-center gap-2 pt-1">
-                <button
-                  onClick={apply}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25"
-                >
+                <Button onClick={apply} variant="primary" size="md" className="flex items-center text-[13px]">
                   <Check size={13} /> 采用并创建
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => { setResult(null); setAiFilled([]) }}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600"
+                  variant="secondary" size="md"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] hover:bg-ink-600"
                 >
                   <RefreshCw size={12} /> 重新生成
-                </button>
+                </Button>
                 <button onClick={onClose} className="ml-auto px-3 py-2 text-ink-400 hover:text-ink-100 text-[12px]">
                   取消
                 </button>
@@ -185,7 +171,6 @@ export default function AITemplateFill({
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

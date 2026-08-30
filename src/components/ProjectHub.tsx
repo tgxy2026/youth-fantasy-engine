@@ -16,6 +16,7 @@ import { APP_VERSION } from '../lib/portable'
 import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
 import workbenchBg from '../assets/workbench-bg.png'
 import jiewenjiGufeng from '../assets/jiewenji-gufeng.png'
+import { Button } from './Button'
 
 interface Props {
   onOpen: (projectId: string) => void
@@ -176,14 +177,12 @@ export default function ProjectHub({ onOpen }: Props) {
             </HelpPopover>
           </h2>
           <div className="flex gap-2 items-stretch shrink-0">
-            <button
-              onClick={createDemo}
+            <Button onClick={createDemo}
               disabled={busy}
-              className="flex items-center gap-1.5 px-3.5 h-9 text-[13px] text-ink-200 bg-ink-800 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors disabled:opacity-50"
-              title="一键创建含完整示例数据的测试项目"
-            >
+              
+              title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center text-[13px]">
               <BookPlus size={13} /> 创建示范项目
-            </button>
+            </Button>
             <button
               onClick={() => fileRef.current?.click()}
               className="flex items-center gap-1.5 px-3.5 h-9 text-[13px] text-ink-200 bg-ink-800 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors"
@@ -319,13 +318,10 @@ export default function ProjectHub({ onOpen }: Props) {
                     className="w-full text-[13px]"
                   />
                 </div>
-                <button
-                  onClick={create}
-                  disabled={busy}
-                  className="w-full py-2.5 bg-amber/20 text-amber border border-amber/40 rounded-lg text-[13px] font-medium hover:bg-amber/30 transition-colors disabled:opacity-50"
-                >
+                <Button onClick={create}
+                  disabled={busy} variant="primary" solid size="md" className="w-full text-[13px]">
                   {busy ? '创建中…' : '创建并进入项目'}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -421,13 +417,10 @@ export default function ProjectHub({ onOpen }: Props) {
                       </div>
                     )}
                     <div className="mt-4 flex items-center gap-2">
-                      <button
-                        onClick={saveEdit}
-                        disabled={busy}
-                        className="flex items-center gap-1.5 px-3.5 h-9 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] font-medium hover:bg-amber/25 transition-colors disabled:opacity-50"
-                      >
+                      <Button onClick={saveEdit}
+                        disabled={busy} variant="primary" size="md" className="flex items-center text-[12px]">
                         <Check size={13} /> 保存修改
-                      </button>
+                      </Button>
                       <button
                         onClick={() => setEditingId(null)}
                         className="px-3 py-1.5 text-[12px] text-ink-400 border border-ink-600 rounded-lg hover:text-ink-100 hover:border-ink-500 transition-colors"

@@ -1,8 +1,11 @@
+
 import { useEffect, useState } from 'react'
 import { Feather, FolderOpen, FilePlus2, HardDriveDownload, Loader2, Save } from 'lucide-react'
 import {
+
   isFSASupported, openDataFile, createDataFile, getState, subscribe, flush, APP_VERSION,
 } from '../lib/portable'
+import { Button } from './Button'
 
 /**
  * 便携版启动页：每次启动需要用户授权一次 U 盘数据文件
@@ -45,11 +48,8 @@ export function PortableGate() {
 
         {/* 主操作 */}
         <div className="space-y-3">
-          <button
-            onClick={doOpen}
-            disabled={!!busy || !fsa}
-            className="w-full flex items-center gap-3 rounded-xl border border-amber/40 bg-amber/10 px-5 py-4 text-left transition-colors hover:bg-amber/20 disabled:opacity-50"
-          >
+          <Button onClick={doOpen}
+            disabled={!!busy || !fsa} variant="primary" size="md" className="w-full flex items-center text-left">
             {busy === 'open'
               ? <Loader2 size={22} className="text-amber animate-spin shrink-0" />
               : <FolderOpen size={22} className="text-amber shrink-0" />}
@@ -57,13 +57,10 @@ export function PortableGate() {
               <span className="block text-[15px] font-semibold text-ink-50">打开数据文件（继续创作）</span>
               <span className="block mt-0.5 text-[12px] text-ink-400">选择 U 盘里已有的「我的小说库」数据文件</span>
             </span>
-          </button>
+          </Button>
 
-          <button
-            onClick={doCreate}
-            disabled={!!busy || !fsa}
-            className="w-full flex items-center gap-3 rounded-xl border border-ink-600 bg-ink-850 px-5 py-4 text-left transition-colors hover:border-amber/40 disabled:opacity-50"
-          >
+          <Button onClick={doCreate}
+            disabled={!!busy || !fsa} variant="secondary" size="md" className="w-full flex items-center bg-ink-850 text-left">
             {busy === 'create'
               ? <Loader2 size={22} className="text-ink-300 animate-spin shrink-0" />
               : <FilePlus2 size={22} className="text-ink-300 shrink-0" />}
@@ -71,7 +68,7 @@ export function PortableGate() {
               <span className="block text-[15px] font-semibold text-ink-100">新建数据文件（第一次使用）</span>
               <span className="block mt-0.5 text-[12px] text-ink-400">在 U 盘上创建一个新的数据文件，所有作品都存在里面</span>
             </span>
-          </button>
+          </Button>
         </div>
 
         {/* 错误提示 */}

@@ -4,6 +4,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiAnalyzeFeedback, type FeedbackEntry } from '../lib/aiTasks'
 import { Modal } from './EditorModals'
+import { Button } from './Button'
 
 interface Props {
   /** 读者反馈表当前所有行（含未保存草稿） */
@@ -64,15 +65,13 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
       )}
 
       {entries.length > 0 && !result && (
-        <button
-          onClick={run}
+        <Button onClick={run}
           disabled={!aiReady || loading}
-          className="flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 disabled:opacity-40 disabled:cursor-not-allowed"
-          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'}
-        >
+          
+          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center text-[13px]">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '分析中…' : `开始分析（${entries.length} 条记录）`}
-        </button>
+        </Button>
       )}
 
       {error && (

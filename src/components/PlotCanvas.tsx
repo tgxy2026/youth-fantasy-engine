@@ -8,6 +8,8 @@ import { buildProjectContext } from '../lib/aiContext'
 import { useAIReady } from '../lib/useAIReady'
 import { showToast } from './dialogs'
 import HelpPopover from './HelpPopover'
+import { Button } from './Button'
+
 
 type CardType = 'foreshadow' | 'hook' | 'character' | 'next'
 interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number }
@@ -330,7 +332,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
             >
               {generating ? <><Loader2 size={12} className="animate-spin" /> 生成中 {generating.i}/{generating.total}</> : <><Sparkles size={12} /> 生成推演</>}
             </button>
-            <button onClick={clearCanvas} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] border border-ink-700 text-ink-300 hover:text-ink-100 transition-colors"><Eraser size={11} /> 清空推演本</button>
+            <Button onClick={clearCanvas} variant="secondary" size="md" className="w-full flex items-center justify-center text-[11px]"><Eraser size={11} /> 清空推演本</Button>
             {!ai.ready && <div className="text-[10px] text-ink-500 text-center">未配置 AI 模型，生成按钮已禁用</div>}
           </div>
         </div>

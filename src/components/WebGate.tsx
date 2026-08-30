@@ -1,6 +1,9 @@
+
 import { useState } from 'react'
 import { Lock } from 'lucide-react'
 import { showToast } from './dialogs'
+import { Modal } from './Modal'
+import { Button } from './Button'
 
 // 网页体验版邀请门禁：未通过邀请码前拦截整个应用。
 // 邀请码不在客户端明文保存（避免被扒），由服务器 /api/invite/check 比对，
@@ -62,32 +65,38 @@ export default function WebGate() {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-950 p-4">
-      <div className="w-full max-w-sm rounded-2xl border border-ink-700 bg-ink-900 p-6 shadow-xl">
-        <div className="mb-4 flex items-center gap-2 text-amber">
+    <Modal
+      open
+      onClose={() => {}}
+      variant="opaque"
+      showCloseButton={false}
+      dismissible={false}
+      width="sm"
+      className="bg-ink-900"
+      bodyClassName="p-6"
+      titleSlot={
+        <div className="flex items-center gap-2 text-amber">
           <Lock size={18} />
           <span className="font-semibold">青春幻想引擎 · 网页体验版</span>
         </div>
-        <p className="mb-4 text-sm text-ink-300 leading-relaxed">
-          当前为<strong>邀请制</strong>体验。你的项目数据与 AI 密钥仅保存在
-          <strong>本机浏览器</strong>，我们不会上传任何创作内容；仅当你主动提交反馈时才会向我们发送信息。
-        </p>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-          placeholder="请输入邀请码"
-          autoFocus
-          className="w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 text-ink-100 outline-none focus:border-amber"
-        />
-        <button
-          onClick={submit}
-          disabled={busy}
-          className="mt-3 w-full rounded-lg bg-amber px-3 py-2 font-medium text-ink-950 disabled:opacity-60"
-        >
+      }
+    >
+      <p className="mb-4 text-sm text-ink-300 leading-relaxed">
+        当前为<strong>邀请制</strong>体验。你的项目数据与 AI 密钥仅保存在
+        <strong>本机浏览器</strong>，我们不会上传任何创作内容；仅当你主动提交反馈时才会向我们发送信息。
+      </p>
+      <input
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && submit()}
+        placeholder="请输入邀请码"
+        autoFocus
+        className="w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 text-ink-100 outline-none focus:border-amber"
+      />
+      <Button onClick={submit}
+          disabled={busy} variant="primary" solid size="md" className="w-full text-ink-950">
           {busy ? '校验中…' : '进入'}
-        </button>
-      </div>
-    </div>
+        </Button>
+    </Modal>
   )
 }
