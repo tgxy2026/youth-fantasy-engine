@@ -41,6 +41,42 @@ let pushing = false
 let pendingPush = false
 let initPromise: Promise<void> | null = null
 
+// #007/#008：必须区分「同步码无效/已失效(401)」与「网络异常」。
+// 二者旧代码都落到 cache={}, rev=0，于是鉴权失效时用户看到的是空白项目列表
+// （本地 IndexedDB 被空缓存遮蔽而非丢失），且之后每次编辑都静默 401 丢弃。
+// authFailed 为真时，db.ts 的 cloudStore 会整体回退本地 idbOps。
+let authFailed = false
+
+// 同步状态（#008：失败必须有可见指示，不能让用户零感知）
+export type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error' | 'auth-failed'
+let syncStatus: SyncStatus = 'idle'
+const STATUS_EVENT = 'yfe:sync-status'
+
+function setStatus(s: SyncStatus) {
+  if (syncStatus === s) return
+  syncStatus = s
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent(STATUS_EVENT, { detail: s }))
+    } catch { /* 忽略事件派发失败 */ }
+  }
+}
+export function getSyncStatus(): SyncStatus {
+  return syncStatus
+}
+/** 云端鉴权是否已失效（收到过 401）。为 true 时上层应回退本地存储。 */
+export function isCloudAuthFailed(): boolean {
+  return authFailed
+}
+
+/** 同步码无效/已失效（服务端 401）——与网络异常明确区分，便于上层给出准确提示 */
+export class CloudAuthError extends Error {
+  constructor(msg = '同步码无效或已失效') {
+    super(msg)
+    this.name = 'CloudAuthError'
+  }
+}
+
 export function configureServerStore(c: string) {
   code = c
   // 每次（重新）设码都重置 init 状态：否则模块级 initPromise 已 resolved 后会用旧码
@@ -48,6 +84,8 @@ export function configureServerStore(c: string) {
   cache = {}
   rev = 0
   initPromise = null
+  authFailed = false
+  setStatus('idle')
 }
 
 // ============ 加密（载荷级，rev 保持明文） ============
@@ -147,6 +185,15 @@ async function ensureInit() {
     initPromise = (async () => {
       try {
         const r = await fetch('/api/sync', { headers: { Authorization: `Bearer ${code}` } })
+        if (r.status === 401) {
+          // 鉴权失败＝码无效/已失效。绝不落到「空缓存接管存储」，否则用户会看到
+          // 空白项目列表并在此后静默丢弃所有编辑（#008 数据丢失级隐患）。
+          authFailed = true
+          setStatus('auth-failed')
+          cache = {}
+          rev = 0
+          return
+        }
         if (r.ok) {
           const data = await r.json().catch(() => null)
           rev = Number(data?.rev) || 0
@@ -155,9 +202,13 @@ async function ensureInit() {
           } else {
             cache = {}
           }
+          authFailed = false
           return
         }
-      } catch { /* 网络异常：退回空缓存，后续写操作会重试上传 */ }
+        throw new Error('sync pull failed ' + r.status)
+      } catch {
+        /* 网络异常：暂不判定码失效，保留空缓存，后续写操作会重试上传 */
+      }
       cache = {}
       rev = 0
     })()
@@ -165,9 +216,10 @@ async function ensureInit() {
   return initPromise
 }
 
-/** 拉取当前快照（init 之后） */
+/** 拉取当前快照（init 之后）。码无效时抛 CloudAuthError，而非返回空快照。 */
 export async function pullSnapshot(): Promise<{ rev: number; stores: Record<string, any[]> }> {
   await ensureInit()
+  if (authFailed) throw new CloudAuthError()
   return { rev, stores: cache }
 }
 
@@ -235,11 +287,19 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
     // 极罕见：仍冲突则保留本地改动、接受云端 rev，不再重试（本地编辑已留在 cache）
     return { conflict: true }
   }
+  if (r.status === 401) {
+    // 码失效（服务端轮换白名单、槽位被清理等）：标记后交由上层回退本地并提示用户
+    authFailed = true
+    setStatus('auth-failed')
+    throw new CloudAuthError()
+  }
   if (r.ok) {
     const data = await r.json().catch(() => ({ rev: baseRev + 1 }))
     rev = data.rev ?? baseRev + 1
+    setStatus('ok')
     return { conflict: false }
   }
+  setStatus('error')
   throw new Error('sync push failed ' + r.status)
 }
 
@@ -249,10 +309,13 @@ async function flushNow(): Promise<void> {
   if (pushTimer) { clearTimeout(pushTimer); pushTimer = null }
   if (pushing) { pendingPush = true; return }
   pushing = true
+  setStatus('syncing')
   try {
     await pushNow(rev)
-  } catch {
-    /* 失败保留本地改动，下次写操作/页面卸载时会重试 */
+  } catch (e) {
+    // 失败保留本地改动，下次写操作/页面卸载时会重试。
+    // 401 已由 pushNow 置为 auth-failed，其余（网络/5xx）标 error——状态必须可见（#008）。
+    if (!(e instanceof CloudAuthError)) setStatus('error')
   } finally {
     pushing = false
     if (pendingPush) { pendingPush = false; schedulePush() }

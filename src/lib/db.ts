@@ -2,7 +2,7 @@ import { openDB, type IDBPDatabase } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
 import { PORTABLE, portableStore, type StoreOps } from './portable'
 import { DESKTOP, desktopStore } from './desktop'
-import { serverStore, configureServerStore, pullSnapshot, seedFromLocal, EXCLUDED_META_KEYS } from './serverStore'
+import { serverStore, configureServerStore, pullSnapshot, seedFromLocal, EXCLUDED_META_KEYS, isCloudAuthFailed, CloudAuthError } from './serverStore'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
@@ -247,48 +247,66 @@ let ops: StoreOps = PORTABLE ? portableStore : (DESKTOP ? desktopStore : idbOps)
 
 // 云端同步特权（#003）：敏感 meta（AI 配置/密钥）仅留本地 IndexedDB，不进云端缓存、
 // 不同步、也不会被拉取覆盖。cloudStore 在 serverStore 之上对这类 key 做本地回退。
+// #008：云端鉴权失效（401）时透明回退本地 IndexedDB。
+// 旧行为是让空缓存接管存储——用户看到空白项目列表（本地数据被遮蔽而非丢失），
+// 之后每次编辑都静默 401 丢弃，全程零提示。这里改为双判：调用前已失效直接走本地，
+// 调用后才失效（本次才触发握手）同样回退，保证用户看到的始终是自己的本地数据。
+async function cloudOrLocal(op: keyof StoreOps, ...args: any[]): Promise<any> {
+  if (isCloudAuthFailed()) return (idbOps as any)[op](...args)
+  const r = await (serverStore as any)[op](...args)
+  return isCloudAuthFailed() ? (idbOps as any)[op](...args) : r
+}
+
 const cloudStore: StoreOps = {
   getAll: async <T,>(store: string): Promise<T[]> => {
-    if (store === 'meta') {
-      const local = (await idbOps.getAll<T>('meta')).filter((r: any) => EXCLUDED_META_KEYS.has(r.key))
-      const cloud = await serverStore.getAll<T>('meta')
-      return [...local, ...cloud] as T[]
-    }
-    return serverStore.getAll<T>(store)
+    if (store !== 'meta') return cloudOrLocal('getAll', store)
+    if (isCloudAuthFailed()) return idbOps.getAll<T>('meta')
+    const local = (await idbOps.getAll<T>('meta')).filter((r: any) => EXCLUDED_META_KEYS.has(r.key))
+    const cloud = await serverStore.getAll<T>('meta')
+    if (isCloudAuthFailed()) return idbOps.getAll<T>('meta')
+    return [...local, ...cloud] as T[]
   },
   get: async <T,>(store: string, key: string): Promise<T | undefined> => {
     if (store === 'meta' && EXCLUDED_META_KEYS.has(key)) return idbOps.get<T>('meta', key)
-    return serverStore.get<T>(store, key)
+    return cloudOrLocal('get', store, key)
   },
   put: async (store: string, value: any) => {
     if (store === 'meta' && EXCLUDED_META_KEYS.has(value?.key)) return idbOps.put('meta', value)
-    return serverStore.put(store, value)
+    return cloudOrLocal('put', store, value)
   },
   del: async (store: string, key: string) => {
     if (store === 'meta' && EXCLUDED_META_KEYS.has(key)) return idbOps.del('meta', key)
-    return serverStore.del(store, key)
+    return cloudOrLocal('del', store, key)
   },
   getAllByIndex: async <T,>(store: string, indexName: string, value: unknown): Promise<T[]> =>
-    serverStore.getAllByIndex<T>(store, indexName, value),
+    cloudOrLocal('getAllByIndex', store, indexName, value),
   bulkPut: async (store: string, values: any[]) => {
     if (store === 'meta') {
       const excl = values.filter((v) => EXCLUDED_META_KEYS.has(v?.key))
       const rest = values.filter((v) => !EXCLUDED_META_KEYS.has(v?.key))
       if (excl.length) await idbOps.bulkPut('meta', excl)
-      if (rest.length) await serverStore.bulkPut('meta', rest)
+      if (rest.length) {
+        if (isCloudAuthFailed()) return idbOps.bulkPut('meta', rest)
+        await serverStore.bulkPut('meta', rest)
+        if (isCloudAuthFailed()) await idbOps.bulkPut('meta', rest)
+      }
       return
     }
-    return serverStore.bulkPut(store, values)
+    return cloudOrLocal('bulkPut', store, values)
   },
   bulkDel: async (store: string, keys: string[]) => {
     if (store === 'meta') {
       const excl = keys.filter((k) => EXCLUDED_META_KEYS.has(k))
       const rest = keys.filter((k) => !EXCLUDED_META_KEYS.has(k))
       if (excl.length) await idbOps.bulkDel('meta', excl)
-      if (rest.length) await serverStore.bulkDel('meta', rest)
+      if (rest.length) {
+        if (isCloudAuthFailed()) return idbOps.bulkDel('meta', rest)
+        await serverStore.bulkDel('meta', rest)
+        if (isCloudAuthFailed()) await idbOps.bulkDel('meta', rest)
+      }
       return
     }
-    return serverStore.bulkDel(store, keys)
+    return cloudOrLocal('bulkDel', store, keys)
   },
 }
 
@@ -299,6 +317,22 @@ if (!PORTABLE && !DESKTOP) {
     if (sc) {
       configureServerStore(sc)
       ops = cloudStore
+      // 主动握手一次：码若已失效（服务端轮换白名单、槽位被清理等）立刻发现，
+      // 清掉失效码并通知 UI。数据侧由 cloudStore 自动回退本地，用户不会看到空白（#008）。
+      void pullSnapshot().catch((err: unknown) => {
+        if (err instanceof CloudAuthError) {
+          try {
+            localStorage.removeItem('yfe-sync-code')
+          } catch {
+            /* 忽略 */
+          }
+          try {
+            window.dispatchEvent(new CustomEvent('yfe:cloud-auth-failed'))
+          } catch {
+            /* 忽略 */
+          }
+        }
+      })
     }
   } catch {
     /* localStorage 不可用时退化为本地 IndexedDB */
