@@ -31,8 +31,6 @@ const chs = (name: string) => ({ name, type: 'characters' as const, options: und
 const ca = (name: string) => ({ name, type: 'select' as const, options: undefined, calendar: true })
 /** 跨表引用列：选项来自另一张设定表的指定列（禁止手动输入，根治"同名异写"导致的归属错乱）。refTab=来源表，refCol=取名列 */
 const cr = (name: string, refTab: string, refCol: string) => ({ name, type: 'tableRef' as const, options: undefined, refTab, refCol })
-/** 数字列：表格内渲染为数字输入框（如地图测量字段 东西跨度/南北跨度/面积） */
-const cn = (name: string, width?: string) => ({ name, type: 'number' as const, options: undefined, width })
 /** 隐藏列：表格视图不显示，但数据保留（如 地图格子 仅由地图编辑绘制维护） */
 const cH = (name: string, opts?: string[], width?: string) => ({ name, type: opts ? ('select' as const) : ('text' as const), options: opts, width, hidden: true })
 

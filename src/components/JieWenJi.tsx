@@ -54,6 +54,8 @@ interface Props {
   chapterTitle?: string
   /** 补登完成后回调（用于提示数据已更新、需要刷新设定表） */
   onLedgerCommitted?: (created: number) => void
+  /** #015：当前章节 id，用于 AI 上下文「相关章节召回」（取代从头截断） */
+  focusChapterId?: string
 }
 
 type Mode = 'clinic' | 'edit' | 'review' | 'brief' | 'ledger'
@@ -123,7 +125,7 @@ function SevBadge({ s }: { s: string }) {
 export default function JieWenJi({
   content, openingText, onClose,
   getSelectionText, getSelectionRange, onApplyAdvice, onClearAdvice, onApplyContent, summary,
-  chapterTitle, onLedgerCommitted,
+  chapterTitle, onLedgerCommitted, focusChapterId,
 }: Props) {
   const { ready: aiReady } = useAIReady()
   // 右侧 Q 版精灵开关（全局，localStorage 持久化 + 事件通知 App）
@@ -157,7 +159,7 @@ export default function JieWenJi({
     showToast('AI 综合诊断已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
     setDiag({ loading: true })
     try {
-      const ctx = await buildProjectContext({ budget: 8000 })
+      const ctx = await buildProjectContext({ budget: 8000, focusChapterId })
       const text = brief ? diagText : content
       const r = await withCtrl(signal => aiEditorDiagnosis(ctx.text, text, { signal, textKind: brief ? 'summary' : 'full' }))
       setDiag({ loading: false, data: r })
@@ -255,7 +257,7 @@ export default function JieWenJi({
     setProof({ loading: true, issues: [], scanned: 0, skipped: 0, progress: { done: 0, total: 0 }, done: false, error: '', cancelled: false })
     try {
       let ctxText = ''
-      try { ctxText = (await buildProjectContext({ budget: 6000 })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
+      try { ctxText = (await buildProjectContext({ budget: 6000, focusChapterId })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
       const res = await withCtrl(signal => aiProofread(text, {
         context: ctxText,
         signal,
@@ -339,7 +341,7 @@ export default function JieWenJi({
     showToast('AI 审读已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
     setRev({ loading: true })
     try {
-      const ctx = await buildProjectContext({ budget: 8000 })
+      const ctx = await buildProjectContext({ budget: 8000, focusChapterId })
       const r = await withCtrl(signal => aiChapterReview(ctx.text, content, { signal }))
       setRev({ loading: false, data: r })
     } catch (e) {
@@ -350,7 +352,7 @@ export default function JieWenJi({
     if (!aiReady || ooc.loading) return
     setOoc({ loading: true })
     try {
-      const ctx = await buildProjectContext({ budget: 10000 })
+      const ctx = await buildProjectContext({ budget: 10000, focusChapterId })
       const r = await withCtrl(signal => aiOocCheck(ctx.text, content, { signal }))
       setOoc({ loading: false, data: r })
     } catch (e) {
@@ -361,7 +363,7 @@ export default function JieWenJi({
     if (!aiReady || adv.loading) return
     setAdv({ loading: true })
     try {
-      const ctx = await buildProjectContext({ budget: 8000 })
+      const ctx = await buildProjectContext({ budget: 8000, focusChapterId })
       const r = await withCtrl(signal => aiContinuationAdvice(ctx.text, content, { signal }))
       setAdv({ loading: false, data: r })
     } catch (e) {
@@ -372,7 +374,7 @@ export default function JieWenJi({
     if (!aiReady || plea.loading) return
     setPlea({ loading: true })
     try {
-      const ctx = await buildProjectContext({ budget: 8000 })
+      const ctx = await buildProjectContext({ budget: 8000, focusChapterId })
       const r = await withCtrl(signal => aiPleasureCheck(ctx.text, content, { signal }))
       setPlea({ loading: false, data: r })
     } catch (e) {
@@ -383,7 +385,7 @@ export default function JieWenJi({
     if (!aiReady || open.loading) return
     setOpen({ loading: true })
     try {
-      const ctx = await buildProjectContext({ budget: 8000 })
+      const ctx = await buildProjectContext({ budget: 8000, focusChapterId })
       const r = await withCtrl(signal => aiOpeningCheck(ctx.text, openingText ?? content, { signal }))
       setOpen({ loading: false, data: r })
     } catch (e) {
@@ -398,7 +400,7 @@ export default function JieWenJi({
     showToast('AI 简报已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
     setBrief({ loading: true })
     try {
-      const ctx = await buildProjectContext({ budget: 8000 })
+      const ctx = await buildProjectContext({ budget: 8000, focusChapterId })
       const r = await withCtrl(signal => aiBriefing(ctx.text, content, { signal }))
       setBrief({ loading: false, data: r })
     } catch (e) {

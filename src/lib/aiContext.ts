@@ -24,6 +24,13 @@ export interface ProjectContextOptions {
   excludeTabIds?: string[]
   /** 是否附带章节清单（卷 / 章标题 / 字数 / 摘要），默认 true */
   includeChapterList?: boolean
+  /**
+   * #015：焦点章节 id。指定后，上下文会优先带入与它**相关**的章节（人物共现 + 叙事邻接），
+   * 而不是把章节清单从头截断 —— 长篇时后者喂给模型的往往只有开头几章，越写到后面越失准。
+   */
+  focusChapterId?: string
+  /** 相关章节召回条数上限，默认 8 */
+  relatedChapterLimit?: number
 }
 
 export interface ProjectContextResult {
@@ -261,6 +268,87 @@ export async function getRecentChapterTexts(n = 6, charCap = 16000): Promise<str
   }
 }
 
+/** 拆「出场人物」类字段为名字集合（支持 、，,；;/| 分隔） */
+function splitNames(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  return raw.split(/[、,，;；/|]/).map(s => s.trim()).filter(s => s.length > 0)
+}
+
+/**
+ * #015 相关章节召回：找出与指定章节最相关的若干章（按真实叙事序返回）。
+ *
+ * 为什么需要：AI 上下文有长度预算，长篇时章节清单往往只能塞进开头一部分，
+ * 于是写到第 300 章时，模型看到的「前文」还是第 1～20 章 —— 诊断自然失准。
+ * 与其平铺截断，不如优先带与「当前这章」真正相关的章节。
+ *
+ * 打分规则：
+ *   · 人物共现 ×2 —— 取自章节台账的「出场人物」字段（数据驱动，比解析章节标题可靠）
+ *   · 叙事邻接加成 —— 紧邻的前后章 +2，隔一章 +1（连续性校验最吃这一档）
+ * 台账未登记时退化为「正文中出现过的角色名」共现，仍好过纯截断。
+ */
+export async function findRelatedChapters(focusChapterId: string, limit = 8): Promise<Chapter[]> {
+  let vols: Volume[] = []
+  let chs: Chapter[] = []
+  try {
+    ;[vols, chs] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
+  } catch {
+    return []
+  }
+  const flat = flattenChapters(vols, chs)
+  const idx = flat.findIndex(c => c.id === focusChapterId)
+  if (idx < 0 || flat.length <= 1) return []
+
+  // 台账只读一次：既取焦点章的实体，也建好各章实体表
+  let rows: { id: string; data?: Record<string, string> }[] = []
+  try {
+    rows = (await db.getAllChapterLedgerRows()) as unknown as { id: string; data?: Record<string, string> }[]
+  } catch {
+    rows = []
+  }
+  const entityOf = new Map<string, Set<string>>()
+  for (const r of rows) entityOf.set(String(r.id), new Set(splitNames(r?.data?.['出场人物'])))
+
+  let focusEntities = entityOf.get(`ch-${focusChapterId}`) ?? new Set<string>()
+  // 台账没登记 → 退化为焦点章正文里出现过的角色名
+  if (focusEntities.size === 0) {
+    try {
+      const names = await loadCharacterNames()
+      const text = `${flat[idx].title} ${flat[idx].summary ?? ''} ${flat[idx].content ?? ''}`
+      for (const n of names) if (n.length >= 2 && text.includes(n)) focusEntities.add(n)
+    } catch {
+      /* 拿不到角色名就只按邻接排序 */
+    }
+  }
+
+  const scored = flat
+    .map((c, i) => {
+      if (c.id === focusChapterId) return { c, i, score: -1 }
+      let score = 0
+      if (focusEntities.size > 0) {
+        const ents = entityOf.get(`ch-${c.id}`)
+        if (ents && ents.size > 0) {
+          let hit = 0
+          for (const e of focusEntities) if (ents.has(e)) hit++
+          score += hit * 2
+        } else {
+          // 台账缺登记时按正文共现补分
+          const text = `${c.title} ${c.summary ?? ''} ${c.content ?? ''}`
+          let hit = 0
+          for (const e of focusEntities) if (text.includes(e)) hit++
+          score += hit
+        }
+      }
+      const d = Math.abs(i - idx)
+      if (d === 1) score += 2
+      else if (d === 2) score += 1
+      return { c, i, score }
+    })
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+
+  return scored.slice(0, limit).map(x => x.c)
+}
+
 /**
  * 打包当前项目的全部设定资料。
  * 按 PRIORITY 顺序累加，超预算的段落被丢弃并记录在 dropped 里（UI 可提示作者）。
@@ -325,6 +413,28 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
       ? renderTable(tab, await db.getAllChapterLedgerRows())
       : await sectionOf(tab)
     push(tab.name, body)
+  }
+
+  // #015：若指定焦点章节，优先召回与之相关的章节（人物共现 + 叙事邻接），
+  // 取代"从头截断"——长篇时模型看到的"前文"不再只有开头几章，诊断更准。
+  // 该段在「章节清单」之前注入，预算紧张时优先于通用清单占位。
+  if (opts.focusChapterId) {
+    try {
+      const related = await findRelatedChapters(opts.focusChapterId, opts.relatedChapterLimit ?? 8)
+      if (related.length > 0) {
+        const relLines: string[] = [
+          `（与当前章节关联度最高的 ${related.length} 章，含人物共现与叙事邻接，供判断前后文一致性）`,
+        ]
+        for (const c of related) {
+          const sum = c.summary?.trim() ? ` — ${clip(c.summary, 120)}` : ''
+          const snippet = c.content?.trim() ? '\n' + clip(c.content, 500) : ''
+          relLines.push(`◆ ${c.title || '未命名章节'}（${c.wordCount || 0}字·${c.status}）${sum}${snippet}`)
+        }
+        push('相关章节召回', relLines.join('\n'))
+      }
+    } catch {
+      /* 召回失败不阻断主流程，少带一段即可 */
+    }
   }
 
   if (opts.includeChapterList !== false) {

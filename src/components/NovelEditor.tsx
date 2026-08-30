@@ -1405,6 +1405,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           <JieWenJi
             content={draftContent}
             openingText={openingText}
+            focusChapterId={active.id}
           summary={active?.summary ?? ''}
           chapterTitle={active?.title ?? ''}
           onClose={() => setJieWenJiOpen(false)}

@@ -68,8 +68,7 @@ function semCompare(b1: AnyRec, b2: AnyRec): string | null {
   // 5) 表单
   const fd = (b: AnyRec) => J([...((b.formData ?? []) as AnyRec[])].sort((a, z) => String(a.tabId).localeCompare(String(z.tabId))).map(f => [f.tabId, f.data]))
   if (fd(b1) !== fd(b2)) return '表单数据不一致'
-  // 6) 卡片
-  const cr = (b: AnyRec) => J([...((b.cardRecords ?? []) as AnyRec[])].sort((a, z) => `${a.tabId}|${a.name}`.localeCompare(`${z.tabId}|${z.name}`))).map ? '' : ''
+  // 6) 卡片（原有一行 `const cr = ...` 是死代码且类型错误，strict 模式暴露后删除；实际比对用下方 crSem）
   const crSem = (b: AnyRec) => J([...((b.cardRecords ?? []) as AnyRec[])].map(r => [r.tabId, r.name, r.data]).sort((a, z) => J(a).localeCompare(J(z))))
   if (crSem(b1) !== crSem(b2)) return '卡片数据不一致'
   // 7) 码字统计

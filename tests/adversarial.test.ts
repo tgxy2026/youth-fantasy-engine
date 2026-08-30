@@ -30,8 +30,12 @@ function soft(name: string, fn: () => unknown | Promise<unknown>, check?: (r: un
   pending.push(run)
 }
 const mkVol = (id: string, order: number, title: string): Volume => ({ id, projectId: 'p1', order, title, description: '', createdAt: 0 })
-const mkCh = (id: string, volId: string, order: number, title: string, extra?: Partial<Chapter>): Chapter =>
-  ({ id, projectId: 'p1', volumeId: volId, order, title, content: '', summary: '', status: '构思', wordCount: 0, createdAt: 0, updatedAt: 0, ...extra })
+// 注意：此处必须用块体 return，不能写成 `=> ({...})`。
+// tsc 会把「箭头 + 换行后的括号对象」误解析成箭头函数的参数列表，
+// 导致对象字面量被当成解构模式、报出一串 TS1003/TS1005 语法错误（esbuild 不受影响，但 tsc 会挂）。
+const mkCh = (id: string, volId: string, order: number, title: string, extra?: Partial<Chapter>): Chapter => {
+  return { id, projectId: 'p1', volumeId: volId, order, title, content: '', summary: '', status: '构思', wordCount: 0, createdAt: 0, updatedAt: 0, ...extra }
+}
 
 // ---------- A. chapterSeq 边角 ----------
 {
@@ -139,7 +143,11 @@ __resetMockStores()
     await memoryOps.put('tableRows', { id: 'dup1', projectId: pid, tabId: 'foreshadow', order: 1, data: { '编号': 'F0001', '状态': '已回收' } })
     await memoryOps.put('tableRows', { id: 'dang1', projectId: pid, tabId: 'chapter-vol-不存在卷', order: 0, data: { '章节标题': '悬空行' } })
     return runDataHealthCheck() as unknown as { issues: unknown[] }
-  }, r => Array.isArray(r?.issues) && r.issues.length > 0)
+  }, r => {
+    // soft 的 check 形参是 unknown，需先收窄再访问 issues
+    const rr = r as { issues?: unknown[] }
+    return Array.isArray(rr?.issues) && (rr.issues?.length ?? 0) > 0
+  })
 
   await Promise.all(pending)
   console.log(`\n===== 结果：${pass} PASS / ${fail} FAIL =====`)

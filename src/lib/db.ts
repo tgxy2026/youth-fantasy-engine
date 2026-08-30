@@ -14,7 +14,7 @@ import { todayKey } from './date'
 import { chapterSeqMap, flattenChapters } from './chapterSeq'
 
 const DB_NAME = 'novel-studio'
-const DB_VERSION = 8
+const DB_VERSION = 9
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 /** 当前打开的项目 id（App 切换项目时设置） */
@@ -38,7 +38,9 @@ function getDB() {
           db.createObjectStore('volumes', { keyPath: 'id' })
           db.createObjectStore('chapters', { keyPath: 'id' })
           db.createObjectStore('formData', { keyPath: 'tabId' })
-          db.createObjectStore('tableRows', { keyPath: 'id' })
+          const tableRowsStore = db.createObjectStore('tableRows', { keyPath: 'id' })
+          // #020：按 tabId 建索引，getTableRows 改走索引查询，避免每开一张表就全表扫
+          tableRowsStore.createIndex('tabId', 'tabId', { unique: false })
           db.createObjectStore('cardRecords', { keyPath: 'id' })
           db.createObjectStore('meta', { keyPath: 'key' })
         }
@@ -207,6 +209,11 @@ function getDB() {
           const snapStore = tx.objectStore('snapshots')
           if (!snapStore.indexNames.contains('projectId')) snapStore.createIndex('projectId', 'projectId', { unique: false })
           if (!snapStore.indexNames.contains('chapterId')) snapStore.createIndex('chapterId', 'chapterId', { unique: false })
+        }
+        // ---- v8 → v9 迁移：tableRows 加 tabId 索引（#020 索引查询取代每表全扫） ----
+        if (oldVersion < 9) {
+          const trStore = tx.objectStore('tableRows')
+          if (!trStore.indexNames.contains('tabId')) trStore.createIndex('tabId', 'tabId', { unique: false })
         }
       },
     }).catch(err => {
@@ -540,9 +547,11 @@ export async function saveFormData(tabId: string, data: Record<string, string>) 
 
 // ============ 表格行 ============
 export async function getTableRows(tabId: string): Promise<TableRow[]> {
-  const all = await ops.getAll<TableRow>('tableRows')
-  return all
-    .filter(r => r.projectId === currentProjectId && r.tabId === tabId)
+  // #020：走 tabId 索引只取本表行，避免每开一张表就全表扫（portable/desktop/cloud 三端
+  // 的 getAllByIndex 均按字段过滤，等价于索引查询；仅 idb 端真正用 IndexedDB 索引）。
+  const rows = await ops.getAllByIndex<TableRow>('tableRows', 'tabId', tabId)
+  return rows
+    .filter(r => r.projectId === currentProjectId)
     .sort((a, b) => a.order - b.order)
 }
 export async function saveTableRow(row: TableRow) {
@@ -1019,9 +1028,11 @@ export async function removeCustomItem(tabId: string, colName: string, value: st
 
 // ============ 自动备份（v1.3 备份策略加固） ============
 // 每个项目一份独立「备份夹」（逻辑上按 projectId 归组），删除项目不掉备份；
-// 两类：'auto5min'（打开项目时每 5 分钟滚动，最多保留 60 份）与
-//       'daily'（每天首次打开自动 1 份，保留数量不设上限）。
-export type BackupKind = 'auto5min' | 'daily'
+// 三类：'auto5min'（打开项目时每 5 分钟滚动，最多保留 MAX_AUTO_BACKUPS 份）、
+//       'daily'（每天首次打开自动 1 份，最多保留 MAX_DAILY_BACKUPS 份）、
+//       'manual'（用户手动「立即备份」，不设上限 —— 主动留档不该被系统删掉）。
+// #012：每日备份此前不限量，写一年即 365 份全量快照，便携版（单 JSON 全量写盘）会持续膨胀。
+export type BackupKind = 'auto5min' | 'daily' | 'manual'
 
 export interface BackupRecord {
   id: string
@@ -1032,8 +1043,16 @@ export interface BackupRecord {
   bundle: ProjectBundle
 }
 
-/** 5 分钟自动备份滚动保留上限 */
-export const MAX_AUTO_BACKUPS = 60
+/** 5 分钟自动备份滚动保留上限（#012：60 → 30） */
+export const MAX_AUTO_BACKUPS = 30
+/** 每日自动备份保留上限（#012：原先不限量 → 30，约一个月） */
+export const MAX_DAILY_BACKUPS = 30
+/** 保留上限查表：手动备份为 0，表示不限制 */
+function backupLimit(kind: BackupKind): number {
+  if (kind === 'auto5min') return MAX_AUTO_BACKUPS
+  if (kind === 'daily') return MAX_DAILY_BACKUPS
+  return 0 // manual：用户主动留档，永不自动删
+}
 
 /** 创建一次全量自动备份（默认上限由调用方保证） */
 export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string): Promise<BackupRecord> {
@@ -1048,13 +1067,14 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
     bundle,
   }
   await ops.put('backups', rec)
-  // 5 分钟类型滚动淘汰：超过上限删除最早（最旧）的
-  if (kind === 'auto5min') {
+  // 滚动淘汰：超过该类型上限则删除最早的。手动备份（limit=0）不淘汰。
+  const limit = backupLimit(kind)
+  if (limit > 0) {
     const all = (await ops.getAll<BackupRecord>('backups'))
-      .filter(b => b.projectId === projectId && b.kind === 'auto5min')
+      .filter(b => b.projectId === projectId && b.kind === kind)
       .sort((a, b) => b.createdAt - a.createdAt)
-    if (all.length > MAX_AUTO_BACKUPS) {
-      for (const drop of all.slice(MAX_AUTO_BACKUPS)) await ops.del('backups', drop.id)
+    if (all.length > limit) {
+      for (const drop of all.slice(limit)) await ops.del('backups', drop.id)
     }
   }
   return rec

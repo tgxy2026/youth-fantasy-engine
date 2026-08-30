@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as db from '../lib/db'
 import { encryptJSON, decryptJSON, isEncrypted } from '../lib/crypto'
-import { X, Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock } from 'lucide-react'
+import { X, Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle } from 'lucide-react'
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
@@ -17,10 +17,11 @@ interface Props {
 }
 
 /**
- * 备份与恢复（v1.3 备份策略加固）
- * - 列出该项目的全部自动备份（每日自动 / 5 分钟自动）。
+ * 备份与恢复（v1.3 备份策略加固；#012 备份体积治理）
+ * - 列出该项目的全部备份：手动 / 每日自动 / 5 分钟自动。
  * - 一键恢复历史版本（覆盖回写，保留项目 id）。
- * - 5 分钟类型滚动保留最多 60 份；每日类型不限量。
+ * - 5 分钟自动滚动保留最多 30 份；每日自动保留最多 30 份；**手动备份不设上限**
+ *   （用户主动留档不该被系统删掉），份数过多时给出体验提示。
  */
 export default function BackupManager({ projectId, projectName, onClose, onRestored, onImported }: Props) {
   const [backups, setBackups] = useState<db.BackupRecord[]>([])
@@ -40,7 +41,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
   useEffect(() => {
     void db.listOrphanBackups().then(setOrphans).catch(() => {})
   }, [])
-  const orphansMB = orphans.reduce((s, b) => s + JSON.stringify(b.bundle).length, 0) / 1024 / 1024
+  const orphansMB = useMemo(() => orphans.reduce((s, b) => s + JSON.stringify(b.bundle).length, 0) / 1024 / 1024, [orphans])
   const cleanOrphans = async () => {
     if (busy || orphans.length === 0) return
     if (!await confirmDialog({
@@ -89,7 +90,8 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     if (busy) return
     setBusy(true)
     try {
-      await db.createAutoBackup(projectId, 'auto5min', `手动备份 ${new Date().toLocaleString()}`)
+      // #012：手动备份用独立类型，不参与自动滚动淘汰（用户主动留档不该被系统删掉）
+      await db.createAutoBackup(projectId, 'manual', `手动备份 ${new Date().toLocaleString()}`)
       await load()
     } finally {
       setBusy(false)
@@ -188,11 +190,23 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
 
   const daily = backups.filter(b => b.kind === 'daily')
   const auto = backups.filter(b => b.kind === 'auto5min')
+  const manual = backups.filter(b => b.kind === 'manual')
 
+  // #020：备份 bundle 体积较大，每次渲染都对每份 backup 做 JSON.stringify 很浪费。
+  // 用 useMemo 缓存「id → bundle 字节数」映射，仅在备份列表变化时重算。
+  const sizeMap = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const b of backups) m.set(b.id, JSON.stringify(b.bundle).length)
+    return m
+  }, [backups])
   const sizeOf = (b: db.BackupRecord) => {
-    const kb = JSON.stringify(b.bundle).length / 1024
+    const kb = (sizeMap.get(b.id) ?? 0) / 1024
     return kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(0)} KB`
   }
+  // #012：份数过多会让数据文件变大、开关与保存变慢（便携版单 JSON 全量写盘尤其明显）
+  const totalMB = [...sizeMap.values()].reduce((s, n) => s + n, 0) / 1024 / 1024
+  const MANY_BACKUPS = 40
+  const tooMany = backups.length > MANY_BACKUPS
 
   const Group = ({ title, icon, items, hint }: { title: string; icon: ReactNode; items: db.BackupRecord[]; hint: string }) => (
     <div>
@@ -244,7 +258,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
             onClick={backupNow}
             disabled={busy}
             className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] text-amber border border-amber/30 rounded-lg hover:bg-amber/10 disabled:opacity-50"
-            title="立即生成一份 5 分钟自动备份"
+            title="立即生成一份手动备份（不参与自动淘汰，不会被系统删除）"
           >
             <Clock size={11} /> 立即备份
           </button>
@@ -252,10 +266,25 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
         </div>
         <div className="p-5 space-y-5 overflow-y-auto">
           <div className="text-[11px] text-ink-400 leading-relaxed bg-ink-850 border border-ink-700 rounded-lg px-3 py-2">
-            打开项目时每 5 分钟自动滚动备份（最多保留 60 份）；每天首次打开额外生成 1 份每日备份（不限量）。删除项目不会删除这些备份。
+            打开项目时每 5 分钟自动滚动备份（最多 {db.MAX_AUTO_BACKUPS} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.MAX_DAILY_BACKUPS} 份）；
+            <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
           </div>
-          <Group title="每日自动备份" icon={<CalendarDays size={13} className="text-amber" />} items={daily} hint="不限量" />
-          <Group title="5 分钟自动备份" icon={<Clock size={13} className="text-amber" />} items={auto} hint="滚动保留最多 60 份" />
+
+          {/* #012：份数过多时的体验提示 —— 便携版是单 JSON 全量写盘，膨胀会直接拖慢保存 */}
+          {tooMany && (
+            <div className="flex items-start gap-2 text-[11px] leading-relaxed bg-amber/10 border border-amber/30 rounded-lg px-3 py-2">
+              <AlertTriangle size={13} className="text-amber shrink-0 mt-px" />
+              <span className="text-amber-200">
+                当前共 <span className="font-semibold">{backups.length} 份</span>备份，约 {totalMB.toFixed(1)} MB。
+                <span className="font-semibold">备份过多可能影响使用体验</span>——数据文件会持续变大，打开项目、自动保存都会变慢（便携版尤其明显）。
+                建议保留真正需要的节点，删除其余旧备份。
+              </span>
+            </div>
+          )}
+
+          <Group title="手动备份" icon={<ShieldCheck size={13} className="text-amber" />} items={manual} hint="不设上限，不会自动删除" />
+          <Group title="每日自动备份" icon={<CalendarDays size={13} className="text-amber" />} items={daily} hint={`最多 ${db.MAX_DAILY_BACKUPS} 份`} />
+          <Group title="5 分钟自动备份" icon={<Clock size={13} className="text-amber" />} items={auto} hint={`滚动保留最多 ${db.MAX_AUTO_BACKUPS} 份`} />
 
           {/* v1.3 迁移 / 换机：加密迁移包导出导入 */}
           <div className="rounded-lg border border-ink-700 bg-ink-850 px-3 py-3">

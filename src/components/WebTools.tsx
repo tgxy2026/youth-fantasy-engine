@@ -13,6 +13,8 @@ const STATUS_META: Record<SyncStatus, { dot: string; text: string; title: string
   error: { dot: 'bg-rose-400', text: '同步失败', title: '上传失败，编辑已保留在本地，稍后自动重试' },
   'auth-failed': { dot: 'bg-rose-500', text: '码已失效', title: '同步码已失效，已切回本地数据' },
   'rate-limited': { dot: 'bg-orange-400', text: '已限流', title: '操作过于频繁，已暂时暂停同步，稍后自动恢复' },
+  // #011：断网/服务不可达 —— 关键是让用户知道编辑留在本地、没丢，恢复后会自动接管
+  offline: { dot: 'bg-ink-400', text: '离线', title: '网络不可用，已切回本地保存（编辑不会丢）；网络恢复后自动重新同步' },
 }
 
 // 网页体验版专属工具条（项目管理主页左下角常驻，由 App 统一包容器定位）：

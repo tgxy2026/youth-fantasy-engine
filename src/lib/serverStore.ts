@@ -48,12 +48,19 @@ let initPromise: Promise<void> | null = null
 // authFailed 为真时，db.ts 的 cloudStore 会整体回退本地 idbOps。
 let authFailed = false
 
+// #011：网络异常（断网 / DNS 失败 / 服务重启 / 超时）同样必须让出存储控制权。
+// 旧代码把它与 401 一样落到 cache={}, rev=0，但 authFailed 仍为 false，
+// 于是 cloudStore 照常用空缓存接管 —— 用户看到空白项目列表，之后每次编辑都被静默丢弃。
+// 与「码失效」的关键区别：网络异常是**暂时的**，必须允许后续自动重试，网络恢复后接管回来。
+let transientUnavailable = false
+
 // 被服务端限流（429）的截止时间。限流是暂时的，与「码失效」不同：
 // 不清本地码、不提示失效，只需暂停接管存储并如实展示状态。
 let rateLimitedUntil = 0
 
 // 同步状态（#008：失败必须有可见指示，不能让用户零感知）
-export type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error' | 'auth-failed' | 'rate-limited'
+// #011 新增 'offline'：网络异常（断网/服务不可达）与 401/429 并列，同样不接管存储
+export type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error' | 'auth-failed' | 'rate-limited' | 'offline'
 let syncStatus: SyncStatus = 'idle'
 const STATUS_EVENT = 'yfe:sync-status'
 
@@ -73,9 +80,16 @@ export function getSyncStatus(): SyncStatus {
 export function isCloudAuthFailed(): boolean {
   return authFailed
 }
-/** 云端当前是否不可用（鉴权失效 或 被限流）——两者都不该接管存储，否则用户会看到空白数据 */
+/**
+ * 云端当前是否不可用（鉴权失效 401 / 被限流 429 / 网络异常）——三者都不该接管存储，
+ * 否则用户会看到空白数据。#011 把「网络异常」也纳入，此前它会被当成可用而用空缓存接管。
+ */
 export function isCloudUnavailable(): boolean {
-  return authFailed || Date.now() < rateLimitedUntil
+  return authFailed || transientUnavailable || Date.now() < rateLimitedUntil
+}
+/** 是否因网络异常暂时离线（#011）。与码失效不同，网络恢复后会自动重试接管。 */
+export function isCloudOffline(): boolean {
+  return transientUnavailable
 }
 
 /** 被服务端限流（429）——与网络异常区分，避免被当成「可以重试的普通失败」反复打 */
@@ -102,6 +116,7 @@ export function configureServerStore(c: string) {
   rev = 0
   initPromise = null
   authFailed = false
+  transientUnavailable = false
   rateLimitedUntil = 0
   baseCache = {}
   setStatus('idle')
@@ -230,13 +245,20 @@ async function ensureInit() {
             cache = {}
           }
           authFailed = false
+          transientUnavailable = false
           // 拉取成功即确立基线：之后的本地改动才有参照，才能判断「谁改了」
           baseCache = snapshotOf(cache)
           return
         }
         throw new Error('sync pull failed ' + r.status)
       } catch {
-        /* 网络异常：暂不判定码失效，保留空缓存，后续写操作会重试上传 */
+        /* 网络异常（断网 / DNS / 服务重启 / 超时）：#011 起与 401/429 一样绝不让空缓存接管存储。
+           置 transientUnavailable 让 cloudStore 回退本地 idbOps，用户看到的始终是自己的数据；
+           同时清掉 initPromise，使下一次操作能重新握手 —— 网络恢复后自动接管回来，
+           不像鉴权失效那样需要用户重新输码。 */
+        transientUnavailable = true
+        setStatus('offline')
+        initPromise = null
       }
       cache = {}
       rev = 0
@@ -407,6 +429,9 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
       body: JSON.stringify({ rev: baseRev, enc }),
     })
   } catch {
+    // #011：推送时的网络异常同样置位，让上层回退本地；网络恢复后下一次写操作会重新握手。
+    transientUnavailable = true
+    setStatus('offline')
     throw new Error('sync push network error')
   }
   if (r.status === 409) {
@@ -462,8 +487,9 @@ async function flushNow(): Promise<void> {
     await pushNow(rev)
   } catch (e) {
     // 失败保留本地改动，下次写操作/页面卸载时会重试。
-    // 401 已由 pushNow 置为 auth-failed，其余（网络/5xx）标 error——状态必须可见（#008）。
-    if (!(e instanceof CloudAuthError)) setStatus('error')
+    // 401 → auth-failed、网络异常 → offline，二者已由 pushNow 置好状态，此处不要覆盖；
+    // 其余（5xx 等）标 error —— 状态必须可见（#008）。
+    if (!(e instanceof CloudAuthError) && !transientUnavailable) setStatus('error')
   } finally {
     pushing = false
     if (pendingPush) { pendingPush = false; schedulePush() }
