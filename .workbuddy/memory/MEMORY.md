@@ -8,7 +8,7 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 ⚠️ 提交信息里含 `!` 时**必须用 `git commit -F <文件>`**，不能用 `-m`：bash 历史展开会吃掉 `!XXX`（报 `!XXX: command not found` 并把信息写坏）。
 
 ## 封装红线（最高优先级）
-封装前必：tsc 0错 + vite build 0错 + 改动落盘。流程：审查→升 package.json version→封装。G盘 safe-delete 拦截 rmSync：build 前先 `mv dist dist.oldbak`；禁删 release/eb-cache/。**dev 启动同样会中招**：报 `[safe-delete] ... node_modules/.vite/deps` 时，先 `mv node_modules/.vite node_modules/.vite.bak-<时间戳>` 再重启即可（vite 会重建缓存）。Edit 工具偶发静默失败→改完必 tsc+抽查。
+封装前必：tsc 0错 + vite build 0错 + 改动落盘。流程：审查→升 package.json version→封装。G盘 safe-delete 拦截 rmSync：build 前先 `mv dist dist.oldbak`；**网页构建同理，`dist-web` 也要先移开**（vite.config.web.ts 有 emptyOutDir）；禁删 release/eb-cache/。**dev 启动同样会中招**：报 `[safe-delete] ... node_modules/.vite/deps` 时，先 `mv node_modules/.vite node_modules/.vite.bak-<时间戳>` 再重启即可（vite 会重建缓存）。Edit 工具偶发静默失败→改完必 tsc+抽查。
 
 ## 项目硬规则
 根目录 `你需要的文件在这里/`（原 `你需要的图片我放在这里/`，2026-08-29 老大重命名）禁删。禁用 window.prompt/confirm/alert（用 PromptModal/confirmDialog/showToast）。
@@ -20,7 +20,8 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 - `!tabVisible` 只可用于守卫 return/构造隐页签集合，赋给 showXxx 即 bug。
 - AI抽取+代码判重分层：存在性用 normName/rowFingerprint.norm 确定性比对，AI只抽候选。
 - 角色卡 char-main/char-secondary vs char-npc 字段不同，用 settingLedger.cardFieldPath() 探测勿硬编码。
-- ⚠️ **三端环境识别必须靠显式构建期标志，禁止取反推导**：`WEB` 由 `__WEB__` define 决定（仅 vite.config.web.ts 为 true），绝不可写 `!PORTABLE && !DESKTOP` —— dev 在纯浏览器跑时二者同为 false 会被误判成网页版（2026-08-30 血案：dev 被邀请码门禁拦住，且 AI 走 /api/ai 反代失效、云端同步误初始化）。新增任何"仅网页版"逻辑一律以 `WEB` 为准，别再造取反式。
+- ⚠️ **模块顶层副作用必须加 WEB 守卫**：serverStore 顶层的 pagehide/beforeunload 监听曾泄漏进桌面/便携版（db.ts 是静态 import），导致关窗口白跑 PBKDF2 + file:// 下注定失败的 fetch，且使整模块无法 tree-shake。加 `if (WEB && ...)` 后主包 675KB→658KB。新增任何"仅网页版"的顶层代码同理。
+- ⚠️ **"从源数据重建本地草稿"的 effect 必须防脏覆盖**：依赖数组里含源数据（如 records）时，源数据因"其它项增删改"而变化、而当前项未切换，就会用库里的旧值静默覆盖未保存编辑。重建前先判断 `草稿id===当前id && dirty`，脏则直接 return。：`WEB` 由 `__WEB__` define 决定（仅 vite.config.web.ts 为 true），绝不可写 `!PORTABLE && !DESKTOP` —— dev 在纯浏览器跑时二者同为 false 会被误判成网页版（2026-08-30 血案：dev 被邀请码门禁拦住，且 AI 走 /api/ai 反代失效、云端同步误初始化）。新增任何"仅网页版"逻辑一律以 `WEB` 为准，别再造取反式。
 
 ## 主题系统（2026-08-30）
 - 换肤机制：`<html data-theme>` + index.css 变量，组件零改动。每套主题 = 12 档 ink(950~50) + amber/amber-soft + color-scheme。
@@ -34,7 +35,8 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 颉文姬5模式(clinic/edit/review/brief/ledger)。硅基流动 deepseek-ai/DeepSeek-V3.2；明文本地记忆勿公开。
 
 ## 版本与清单
-- 1.9.6 已封装(便携8.22MB+桌面81MB)。路线图：1.9.6试用1~2周收集问题/bug→2.0批量处理。
+- **1.9.7 已封装（2026-08-30）**：便携 8.22MB（release/novel-studio-1.9.7/）+ 桌面 80.6MB（release/桌面安装版/青春幻想引擎-Setup-1.9.7.exe），网页版已同步上线 154.8.178.240。含：四套新主题、开发版邀请门禁误拦修复、1.9.7 终审三项修复。**1.9.7 是桌面/便携版首次把网页体验版代码（serverStore 等）编译进产物**。
+- 1.9.6 已封装（2026-08-28）：便携 8.22MB + 桌面 80.6MB。
 - **2.0 Web 部署计划（已定·A 方案，本轮测试期不做）**：网页体验版在 2.0 阶段绑定域名 `qchxengine.cn`（建议小写），走 Let's Encrypt 真证书替换当前自签 HTTPS；大陆节点需先 ICP 备案（非经营性，免费，1-15 工作日；前提服务器包月≥3月且剩余≥30天、域名境内注册商实名）。**本轮测试期维持 `https://154.8.178.240` 自签 HTTPS + IP 访问，不买域名、不备案、不动证书**，等测试问题/bug 修复完、2.0 启动再执行（届时老巴迪装 certbot、改 yfe.conf server_name、签发真证书）。
 - 问题清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录不处理，明确说"处理"才动手(状态待处理/已处理/已拒绝；严重度P0~P3)。
 - ~~#001 跨设备同步：方案A(云盘同步文件夹)先上，2.0补方案B冲突备份。待处理。~~ → **已拒绝（2026-08-30 老大决策）**
