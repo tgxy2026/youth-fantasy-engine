@@ -8,8 +8,8 @@ import HelpPopover from './HelpPopover'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import {
-  runAutoContinue, WORD_TOLERANCE,
-  type ContinueStrategy, type ChapterDraft, type DraftDecision,
+  runAutoContinue, WORD_TOLERANCE, DEAI_TEMPLATES,
+  type ContinueStrategy, type ChapterDraft, type DraftDecision, type DeAiTemplate,
 } from '../lib/autoContinue'
 import { countWords } from '../lib/textStats'
 import type { LedgerItem } from '../lib/settingLedger'
@@ -42,6 +42,11 @@ export default function AutoContinue() {
   const [targetWords, setTargetWords] = useState(4000)
   const [strategy, setStrategy] = useState<ContinueStrategy>('confirm')
   const [intent, setIntent] = useState('')
+  // 去 AI 味儿：默认开启，内置提示词库可切换，自定义时可粘贴自己的去味儿提示词
+  const [deAiOn, setDeAiOn] = useState(true)
+  const [deAiTpl, setDeAiTpl] = useState<DeAiTemplate['id']>('natural')
+  const [deAiCustom, setDeAiCustom] = useState('')
+  const deAiPrompt = deAiTpl === 'custom' ? deAiCustom.trim() : (DEAI_TEMPLATES.find(t => t.id === deAiTpl)?.prompt ?? '')
 
   const [running, setRunning] = useState(false)
   const [phase, setPhase] = useState('')
@@ -61,7 +66,10 @@ export default function AutoContinue() {
     setRunning(true); setPreview(''); setLogs([]); setPhase('准备中')
     const ac = new AbortController(); abortRef.current = ac
     const res = await runAutoContinue(
-      { chapters, targetWords, strategy, intent: intent.trim() || undefined },
+      {
+        chapters, targetWords, strategy, intent: intent.trim() || undefined,
+        deAi: { enabled: deAiOn, prompt: deAiPrompt },
+      },
       {
         signal: ac.signal,
         onPhase: setPhase,
@@ -80,7 +88,7 @@ export default function AutoContinue() {
     abortRef.current = null
     if (res.created.length) showToast(`续写完成，新增 ${res.created.length} 章`, 'success')
     else if (!wasStopped) showToast('未生成章节，请检查模型配置或日志', 'error')
-  }, [running, aiReady, chapters, targetWords, strategy, intent])
+  }, [running, aiReady, chapters, targetWords, strategy, intent, deAiOn, deAiPrompt])
 
   const stop = () => {
     abortRef.current?.abort()
@@ -120,7 +128,7 @@ export default function AutoContinue() {
         <h2 className="text-[13px] font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <BookOpen size={14} className="text-amber" /> AI 一键续写 + 设定补完
           <HelpPopover title="AI 一键续写怎么用" width="24rem" className="ml-auto">
-            {`基于项目已有设定与最新一章正文，AI 续写新章节并抽取补登设定。\n\n每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 → 你确认采纳/重写 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取补登设定 → 进入下一章。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计，容差 ±${WORD_TOLERANCE}）。\n· 不填情节概要时，AI 会严格承接上一章结尾往下写，并参考最近 3 章的章节摘要把握整体走向，不另起新线。\n· 续写时会参考：上一章结尾（约 1200 字）+ 最近 3 章摘要 + 项目全部设定资料。\n· 已有设定更新策略：仅限新增（最稳）/ 候选确认（默认）/ 自动更新。\n· 每章初稿会弹窗让你决定「采纳」或「重写」，重写不会留下垃圾章节。\n· 章节顺序由系统自动派生，与标题无关，不会串行。`}
+            {`基于项目已有设定与最新一章正文，AI 续写新章节并抽取补登设定。\n\n每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 →（开启时）去 AI 味儿润色 → 你确认采纳/重写 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取补登设定 → 进入下一章。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计，容差 ±${WORD_TOLERANCE}）。\n· 不填情节概要时，AI 会严格承接上一章结尾往下写，并参考最近 3 章的章节摘要把握整体走向，不另起新线。\n· 续写时会参考：上一章结尾（约 1200 字）+ 最近 3 章摘要 + 项目全部设定资料。\n· 去 AI 味儿：内置 3 套润色提示词（自然口语 / 网文节奏 / 文学化去套路，可自定义），生成初稿后自动润色再去弹窗，去掉 AI 套话。\n· 已有设定更新策略：仅限新增（最稳）/ 候选确认（默认）/ 自动更新。\n· 每章初稿会弹窗让你决定「采纳」或「重写」，重写不会留下垃圾章节。\n· 章节顺序由系统自动派生，与标题无关，不会串行。`}
           </HelpPopover>
         </h2>
 
@@ -147,6 +155,36 @@ export default function AutoContinue() {
             <p className="mt-1.5 text-[11px] text-ink-500 leading-relaxed">
               小提示：续写前，若先对前几章正文通读梳理一遍（或在编辑器里重生成章节压缩摘要），能让 AI 更好地承接剧情、衔接更流畅自然。
             </p>
+          </div>
+
+          {/* 去 AI 味儿：内置提示词库可切换，生成初稿后自动润色再去弹窗 */}
+          <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[13px] text-ink-200">生成后自动「去 AI 味儿」</div>
+              <Button variant="toggle" selected={deAiOn} onClick={() => setDeAiOn(v => !v)}
+                className="shrink-0 !flex items-center gap-1 !justify-start" title="开启后，AI 每章初稿会先按所选提示词润色一遍，再去弹窗交你裁决">
+                {deAiOn ? '已开启' : '已关闭'}
+              </Button>
+            </div>
+            {deAiOn && (
+              <div className="mt-2.5 space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {DEAI_TEMPLATES.map(t => (
+                    <Button key={t.id} variant="toggle" selected={deAiTpl === t.id}
+                      className="flex-1" onClick={() => setDeAiTpl(t.id)} title={t.desc}>
+                      {t.label}
+                    </Button>
+                  ))}
+                </div>
+                {deAiTpl === 'custom' && (
+                  <AutoTextarea value={deAiCustom} onChange={setDeAiCustom} minHeight={50} maxHeight={140}
+                    placeholder="粘贴你自己的去 AI 味儿提示词（例如：去掉说教感，多用短句……）" />
+                )}
+                <p className="text-[11px] text-ink-500 leading-relaxed">
+                  内置 3 套去味儿提示词（即网络上常见「去 AI 味儿 skill」的本地化版本），可切换或自定义。润色异常时自动保留原稿。
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 pt-1">
@@ -212,9 +250,10 @@ export default function AutoContinue() {
                 {draft.d.words} 汉字 {dOk ? '· 已达标' : '· 超出容差'}
               </span>
               <span className="text-ink-500">目标 {draft.d.target} ± {WORD_TOLERANCE}（{dLo}~{dHi}）</span>
+              {deAiOn && <span className="text-ink-300 border border-ink-700 rounded px-1.5 py-0.5">已去 AI 味儿</span>}
             </div>
             <p className="text-[12px] text-ink-400 mb-3">
-              采纳后 AI 才会继续做编辑自检、修正与设定补登；点「重写本章」会丢弃本稿重新生成（不会留下垃圾章节，也不会写入数据库）。
+              你看到的已是「去 AI 味儿」润色后的稿子。采纳后 AI 才会继续做编辑自检、修正与设定补登；点「重写本章」会丢弃本稿重新生成（含重新润色，不会留下垃圾章节，也不会写入数据库）。
             </p>
             <div className="max-h-[52vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3.5 text-[13.5px] leading-[1.9] text-ink-100">
               {draft.d.body}

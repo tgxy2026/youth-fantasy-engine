@@ -38,6 +38,28 @@ function minValidWords(target: number): number {
   return Math.min(600, Math.max(200, Math.round(target * 0.2)))
 }
 
+/**
+ * 去 AI 味儿：内置的润色提示词库（即"网络上常见的去味儿 skill"的内置化版本）。
+ * 每条都是纯提示词模板，运行时由 AI 接口执行；用户可在续写面板选择其一，或粘贴自定义提示词。
+ * 这样就把外网的"去 AI 味儿 skill"以「提示词库」的形式内置进程序，随版本发布、可切换、可扩展。
+ */
+export interface DeAiTemplate { id: string; label: string; desc: string; prompt: string }
+export const DEAI_TEMPLATES: DeAiTemplate[] = [
+  {
+    id: 'natural', label: '自然口语化', desc: '去套路、加生活感，像人写的',
+    prompt: '把正文改得更自然、更口语、更像活人写的网文：\n1. 删掉「首先/其次/最后」「值得注意的是」「在……之前」「总而言之」「毋庸置疑」这类说明性套话。\n2. 减少对称对仗的排比句与成语堆砌，让句子长短错落。\n3. 破折号、省略号不要滥用。\n4. 少做空泛的升华与总结，多给具体画面、动作、感官细节。\n5. 心理活动写得更像真实念头，而非工整的议论。\n保持情节、人设、视角、章末钩子完全不变。',
+  },
+  {
+    id: 'webnovel', label: '网文节奏', desc: '明快、对话推动、钩子更勾',
+    prompt: '把正文改得更像成熟网文：\n1. 节奏明快，多用短句和对话推进，减少大段说明性叙述。\n2. 砍掉冗长的环境铺陈与心理独白注水。\n3. 强化冲突与信息差，让每屏都有「接下来会怎样」的悬念。\n4. 章末钩子更利落、更勾人。\n5. 去除 AI 常见的平衡工整表达，让文字带点作者个人脾气。\n保持人设与情节结构不变。',
+  },
+  {
+    id: 'literary', label: '文学化去套路', desc: '保留文采但去陈词滥调',
+    prompt: '在保留原有文采的前提下去除 AI 套路：\n1. 替换陈词滥调与网络烂梗，用更精准新鲜的意象。\n2. 减少「仿佛」「似乎」「宛如」等廉价比况的堆叠。\n3. 避免每段都用相同的递进结构。\n4. 让叙述视角更稳、语气更统一。\n5. 删去空泛的哲理性感慨，把情绪藏进动作与细节里。\n保持情节结构不变。',
+  },
+  { id: 'custom', label: '自定义', desc: '粘贴你自己的去味儿提示词', prompt: '' },
+]
+
 /** 每章初稿快照，交作者裁决 */
 export interface ChapterDraft {
   index: number
@@ -170,6 +192,30 @@ async function enforceWordRange(o: {
     o.onBodyReplace?.(body)
   }
   return body
+}
+
+// ============ 去 AI 味儿（生成初稿后的语言润色） ============
+
+const DEAI_SYS = [
+  '你是资深文字润色编辑，专门把 AI 生成的小说正文改得更自然、更有人味、更像职业网文作者手笔。',
+  '原则（必须严格遵守）：',
+  '1. 保持原文的人物、情节、对话、结构、视角、人称、章末钩子完全不变，只做语言层面的润色，绝不增删情节、不改结局。',
+  '2. 保持原文字数规模基本不变（允许 ±10% 浮动），不要注水也不要过度压缩。',
+  '3. 只输出润色后的正文本身，不要任何解释、不要小标题、不要开场白。',
+].join('\n')
+
+async function deAiFlavor(o: {
+  cfg: Cfg
+  body: string
+  instruction: string
+  signal?: AbortSignal
+  onToken?: (d: string) => void
+  onBodyReplace?: (s: string) => void
+}): Promise<string> {
+  return askSoft(o.cfg,
+    `${DEAI_SYS}\n\n【本次润色侧重点】\n${o.instruction}`,
+    ['【待润色正文】', o.body].join('\n'),
+    { signal: o.signal, onToken: o.onToken })
 }
 
 // ============ 单章生成 ============
@@ -386,7 +432,11 @@ async function applySettingUpdates(body: string, title: string, signal?: AbortSi
 // ============ 顶层编排（L2 多章循环） ============
 
 export async function runAutoContinue(
-  opts: { chapters: number; targetWords: number; strategy: ContinueStrategy; intent?: string },
+  opts: {
+    chapters: number; targetWords: number; strategy: ContinueStrategy; intent?: string;
+    /** 去 AI 味儿：生成初稿后自动润色一遍再去弹窗交作者裁决；enabled=false 或 prompt 为空则跳过 */
+    deAi?: { enabled: boolean; prompt: string }
+  },
   cb: ContinueCallbacks = {},
 ): Promise<{ created: { id: string; title: string; no: number }[] }> {
   await requireActiveProvider() // 提前校验，无模型直接抛中文提示
@@ -445,11 +495,36 @@ export async function runAutoContinue(
           if (attempt >= MAX_DRAFT_ATTEMPTS) throw new Error('模型连续返回异常内容，已中止本章')
           continue
         }
+
+        // 去 AI 味儿（可选）：初稿生成并校准后，再润色一遍，然后才去弹窗交作者裁决。
+        // 写在弹窗之前 → 作者看到的就是润色后的稿子；重写时整稿重生成会重新走本环节。
+        let shownBody = body
+        let shownWords = w
+        if (opts.deAi?.enabled && opts.deAi.prompt.trim()) {
+          cb.onPhase?.(`${tag}：去除 AI 味儿`)
+          cb.onBodyReplace?.('')
+          const def = await deAiFlavor({
+            cfg: await requireActiveProvider(), body, instruction: opts.deAi.prompt,
+            signal: cb.signal, onToken: cb.onBodyToken, onBodyReplace: cb.onBodyReplace,
+          }).catch(() => '')
+          const dw = countWords(def)
+          // 安全阀：润色结果显著缩水（不足原文 60%）视为模型偷懒/截断，保留原稿
+          if (def && dw >= w * 0.6) {
+            shownBody = def.trim()
+            shownWords = dw
+            cb.onBodyReplace?.(shownBody)
+            cb.onLog?.(`${tag}已去除 AI 味儿（${w} → ${dw} 汉字）`)
+          } else {
+            cb.onLog?.(`${tag}去 AI 味儿结果异常（${dw} 字），已保留原稿`)
+          }
+        }
+        body = shownBody // 进入后续采纳/自检/落库的，是润色后的稿子（或异常时退回原稿）
+
         if (!cb.onChapterDraft) break
-        cb.onPhase?.(`${tag}：等待作者确认初稿（${w} 汉字）`)
+        cb.onPhase?.(`${tag}：等待作者确认初稿（${shownWords} 汉字）`)
         decision = await cb.onChapterDraft({
           index: i + 1, total: opts.chapters, attempt,
-          body, words: w, target: opts.targetWords,
+          body: shownBody, words: shownWords, target: opts.targetWords,
         })
         if (decision !== 'rewrite') break
         cb.onLog?.(`${tag}第 ${attempt} 稿已弃用，重新生成`)
