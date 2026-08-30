@@ -541,7 +541,7 @@ export async function runAutoContinue(
         cfg: await requireActiveProvider(), body, target: opts.targetWords,
         sys: buildSysPrompt(opts.targetWords), signal: cb.signal,
         onPhase: p => cb.onPhase?.(`${tag}：${p}`), onBodyReplace: cb.onBodyReplace,
-        maxExpand: 1, maxShrink: 1,
+        maxExpand: 2, maxShrink: 2,
       })
       cb.onBodyReplace?.(body)
 
