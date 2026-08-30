@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => ({
   define: {
     // 便携（U 盘单文件）版本标记：网页/开发模式恒为 false，便携构建在 vite.config.portable.ts 中注入 true
     __PORTABLE__: 'false',
+    // 网页体验版标记：仅 vite.config.web.ts 注入 true。
+    // dev（本机浏览器）与桌面（Electron）均为 false —— 二者都不走邀请制、不走 AI 反代、不自动连云端。
+    __WEB__: 'false',
     // 版本号：开发模式显示「开发版」（避免反复改号）；构建（桌面/网页封装）时注入 package.json 真实版本号
     __APP_VERSION__: JSON.stringify(mode === 'development' ? '开发版' : appVersion),
   },

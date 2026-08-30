@@ -2,6 +2,7 @@ import { openDB, type IDBPDatabase } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
 import { PORTABLE, portableStore, type StoreOps } from './portable'
 import { DESKTOP, desktopStore } from './desktop'
+import { WEB } from './env'
 import {
   serverStore, configureServerStore, pullSnapshot, seedFromLocal, isExcludedMetaKey,
   isCloudUnavailable, CloudAuthError, onSyncConflict, CONFLICT_KEY_PREFIX,
@@ -347,7 +348,8 @@ const cloudStore: StoreOps = {
 }
 
 // 网页版云端同步特权（#003）：启动时若本地存有同步邀请码，则自动切换到云端存储。
-if (!PORTABLE && !DESKTOP) {
+// 仅网页体验版生效（WEB 由构建期 __WEB__ 决定），dev / 桌面 / 便携 恒不触发。
+if (WEB) {
   try {
     const sc = localStorage.getItem('yfe-sync-code')
     if (sc) {

@@ -14,6 +14,10 @@ export default defineConfig({
   base: './',
   define: {
     __PORTABLE__: 'false',
+    // 网页体验版专属标记：仅此构建为 true。
+    // 邀请门禁 / AI 反代 / 云端同步 / 网页工具条一律以此为准，
+    // 不再靠 `!PORTABLE && !DESKTOP` 反推 —— 否则纯浏览器 dev 会被误判成网页版而被邀请码拦下。
+    __WEB__: 'true',
     __APP_VERSION__: JSON.stringify(appVersion),
   },
   build: {

@@ -29,6 +29,8 @@ export default defineConfig({
   plugins: [react(), viteSingleFile(), stripExternalFonts()],
   define: {
     __PORTABLE__: 'true',
+    // 便携版为纯本地单文件，非网页体验版：不弹邀请门禁、不走 AI 反代、不连云端
+    __WEB__: 'false',
     __APP_VERSION__: JSON.stringify(version),
   },
   build: {
