@@ -399,19 +399,21 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                   <div key={doc.key} className="rounded-lg bg-ink-850/70 border border-ink-700/70 hover:border-ink-600 transition-colors">
                     <Button variant="bare"
                       onClick={() => toggle(doc.key)}
-                      className="w-full text-left px-2.5 py-2"
+                      className="w-full text-left justify-start px-2.5 py-2"
                     >
-                      <div className="flex items-center gap-1.5">
-                        {open ? <ChevronDown size={11} className="text-ink-500 shrink-0" /> : <ChevronRight size={11} className="text-ink-500 shrink-0" />}
-                        <span className="text-[12.5px] font-medium text-ink-100 truncate flex-1">{doc.title}</span>
-                        <span className="px-1.5 py-px text-[9px] rounded bg-ink-800 text-ink-400 border border-ink-700 shrink-0">{doc.source}</span>
+                      <div className="w-full flex flex-col items-start text-left">
+                        <div className="flex items-center gap-1.5 w-full">
+                          {open ? <ChevronDown size={11} className="text-ink-500 shrink-0" /> : <ChevronRight size={11} className="text-ink-500 shrink-0" />}
+                          <span className="text-[12.5px] font-medium text-ink-100 truncate flex-1">{doc.title}</span>
+                          <span className="px-1.5 py-px text-[9px] rounded bg-ink-800 text-ink-400 border border-ink-700 shrink-0">{doc.source}</span>
+                        </div>
+                        {!open && doc.subtitle && (
+                          <div className="text-[10px] text-amber/70 mt-0.5 pl-4 truncate w-full">{doc.subtitle}</div>
+                        )}
+                        {!open && !doc.subtitle && snippet && (
+                          <div className="text-[10.5px] text-ink-500 mt-1 truncate pl-4 w-full">{snippet}</div>
+                        )}
                       </div>
-                      {!open && doc.subtitle && (
-                        <div className="text-[10px] text-amber/70 mt-0.5 pl-4 truncate">{doc.subtitle}</div>
-                      )}
-                      {!open && !doc.subtitle && snippet && (
-                        <div className="text-[10.5px] text-ink-500 mt-1 truncate pl-4">{snippet}</div>
-                      )}
                     </Button>
                     {open && (
                       <div className="px-3 pb-2.5 pt-0.5 space-y-1.5">
