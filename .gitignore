@@ -3,6 +3,10 @@ node_modules/
 dist/
 dist-web/
 dist.oldbak*/
+# 构建时临时移开/另开的输出目录（safe-delete 环境下 emptyOutDir 需绕行）
+dist-web-*/
+dist-web.bak-*/
+dist_bak_*/
 *.tsbuildinfo
 
 # 封装输出
