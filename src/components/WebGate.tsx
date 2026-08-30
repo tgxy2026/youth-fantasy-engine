@@ -40,6 +40,13 @@ export default function WebGate() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: v }),
       })
+      if (r.status === 429) {
+        // 服务端限流：连续输错已达上限，明确告知要等多久，别让用户干瞪眼
+        const d = await r.json().catch(() => null)
+        const sec = Number(d?.retryAfter) || 600
+        showToast(`尝试次数过多，请 ${Math.ceil(sec / 60)} 分钟后再试`, 'error', 5000)
+        return
+      }
       if (r.ok) {
         markInvited()
         // 重新加载，让下方 boot 流程以「已邀请」状态执行

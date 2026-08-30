@@ -4,7 +4,7 @@ import { PORTABLE, portableStore, type StoreOps } from './portable'
 import { DESKTOP, desktopStore } from './desktop'
 import {
   serverStore, configureServerStore, pullSnapshot, seedFromLocal, isExcludedMetaKey,
-  isCloudAuthFailed, CloudAuthError, onSyncConflict, CONFLICT_KEY_PREFIX,
+  isCloudUnavailable, CloudAuthError, onSyncConflict, CONFLICT_KEY_PREFIX,
   type SyncConflictInfo,
 } from './serverStore'
 import { uid } from './id'
@@ -288,18 +288,18 @@ async function saveConflictCopy(info: SyncConflictInfo) {
 // 之后每次编辑都静默 401 丢弃，全程零提示。这里改为双判：调用前已失效直接走本地，
 // 调用后才失效（本次才触发握手）同样回退，保证用户看到的始终是自己的本地数据。
 async function cloudOrLocal(op: keyof StoreOps, ...args: any[]): Promise<any> {
-  if (isCloudAuthFailed()) return (idbOps as any)[op](...args)
+  if (isCloudUnavailable()) return (idbOps as any)[op](...args)
   const r = await (serverStore as any)[op](...args)
-  return isCloudAuthFailed() ? (idbOps as any)[op](...args) : r
+  return isCloudUnavailable() ? (idbOps as any)[op](...args) : r
 }
 
 const cloudStore: StoreOps = {
   getAll: async <T,>(store: string): Promise<T[]> => {
     if (store !== 'meta') return cloudOrLocal('getAll', store)
-    if (isCloudAuthFailed()) return idbOps.getAll<T>('meta')
+    if (isCloudUnavailable()) return idbOps.getAll<T>('meta')
     const local = (await idbOps.getAll<T>('meta')).filter((r: any) => isExcludedMetaKey(r.key))
     const cloud = await serverStore.getAll<T>('meta')
-    if (isCloudAuthFailed()) return idbOps.getAll<T>('meta')
+    if (isCloudUnavailable()) return idbOps.getAll<T>('meta')
     return [...local, ...cloud] as T[]
   },
   get: async <T,>(store: string, key: string): Promise<T | undefined> => {
@@ -322,9 +322,9 @@ const cloudStore: StoreOps = {
       const rest = values.filter((v) => !isExcludedMetaKey(v?.key))
       if (excl.length) await idbOps.bulkPut('meta', excl)
       if (rest.length) {
-        if (isCloudAuthFailed()) return idbOps.bulkPut('meta', rest)
+        if (isCloudUnavailable()) return idbOps.bulkPut('meta', rest)
         await serverStore.bulkPut('meta', rest)
-        if (isCloudAuthFailed()) await idbOps.bulkPut('meta', rest)
+        if (isCloudUnavailable()) await idbOps.bulkPut('meta', rest)
       }
       return
     }
@@ -336,9 +336,9 @@ const cloudStore: StoreOps = {
       const rest = keys.filter((k) => !isExcludedMetaKey(k))
       if (excl.length) await idbOps.bulkDel('meta', excl)
       if (rest.length) {
-        if (isCloudAuthFailed()) return idbOps.bulkDel('meta', rest)
+        if (isCloudUnavailable()) return idbOps.bulkDel('meta', rest)
         await serverStore.bulkDel('meta', rest)
-        if (isCloudAuthFailed()) await idbOps.bulkDel('meta', rest)
+        if (isCloudUnavailable()) await idbOps.bulkDel('meta', rest)
       }
       return
     }

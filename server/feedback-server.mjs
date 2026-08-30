@@ -99,13 +99,21 @@ const server = http.createServer(async (req, res) => {
 
   // 邀请码校验：码只在服务端比较，不出现于客户端包；支持多个入门邀请码。
   if (req.method === 'POST' && req.url === '/api/invite/check') {
+    const limited = rateGuard(req, 'invite', true)
+    if (limited) {
+      await logAccess(req, { type: 'invite', ok: false, act: 'rate-limited', retry: limited.retryAfter })
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(limited.retryAfter) })
+      return res.end(JSON.stringify({ ok: false, error: 'too_many_attempts', retryAfter: limited.retryAfter }))
+    }
     const body = await readJson(req)
     const code = body && typeof body.code === 'string' ? body.code : ''
     if (INVITE_CODES.has(code)) {
+      rateReset(req, 'invite')
       await logAccess(req, { type: 'invite', ok: true, act: 'enter', code })
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return res.end('{"ok":true}')
     }
+    rateFail(req, 'invite')
     await logAccess(req, { type: 'invite', ok: false, act: 'reject', code })
     res.writeHead(403, { 'Content-Type': 'application/json' })
     return res.end('{"ok":false,"error":"invalid"}')
@@ -134,8 +142,15 @@ const server = http.createServer(async (req, res) => {
   // ===== 云端同步（#003 同步特权）=====
   // 每个同步码对应独立云端槽位；enc 为客户端加密后的载荷。
   if (req.method === 'GET' && req.url === '/api/sync') {
+    const limitedG = rateGuard(req, 'sync')
+    if (limitedG) {
+      await logAccess(req, { type: 'sync', ok: false, act: 'rate-limited', retry: limitedG.retryAfter })
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(limitedG.retryAfter) })
+      return res.end(JSON.stringify({ ok: false, error: 'too_many_attempts', retryAfter: limitedG.retryAfter }))
+    }
     const code = syncAuth(req)
     if (!code) {
+      rateFail(req, 'sync')
       await logAccess(req, { type: 'sync', ok: false, act: 'authfail', method: 'GET', bad: providedCodeHash(req) })
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"unauthorized"}')
@@ -147,8 +162,15 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && req.url === '/api/sync') {
+    const limitedP = rateGuard(req, 'sync')
+    if (limitedP) {
+      await logAccess(req, { type: 'sync', ok: false, act: 'rate-limited', retry: limitedP.retryAfter })
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(limitedP.retryAfter) })
+      return res.end(JSON.stringify({ ok: false, error: 'too_many_attempts', retryAfter: limitedP.retryAfter }))
+    }
     const code = syncAuth(req)
     if (!code) {
+      rateFail(req, 'sync')
       await logAccess(req, { type: 'sync', ok: false, act: 'authfail', method: 'POST', bad: providedCodeHash(req) })
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"unauthorized"}')
@@ -197,6 +219,82 @@ function clientIp(req) {
   const x = req.headers['x-real-ip']
   return (x && x.trim()) || req.socket.remoteAddress || ''
 }
+
+// ============ 限流（零依赖，内存态）============
+// 目的不是防暴力破解——邀请码空间 32^8 ≈ 1.1e12，穷举不可行。
+// 真正要防的是：无限重试把 access.jsonl 刷爆（每次失败都落盘一行，
+// 高频下一天可写满磁盘），以及脚本式骚扰占住事件循环。
+const RATE_WINDOW_MS = 5 * 60 * 1000 // 失败计数窗口：5 分钟
+const RATE_MAX_FAILS = 5 // 窗口内最多失败 5 次
+const RATE_BLOCK_MS = 10 * 60 * 1000 // 触发后封锁 10 分钟
+const RATE_BURST_WINDOW_MS = 60 * 1000 // 总频率窗口：1 分钟
+const RATE_BURST_MAX = 60 // invite 校验每 IP 每分钟上限（sync 不适用：正常编辑本就高频）
+
+// key = `ip:type`，invite 与 sync 分开计数，避免一边输错把另一边也锁死
+const rateBuckets = new Map()
+
+function rateState(req, type) {
+  const now = Date.now()
+  const k = `${clientIp(req)}:${type}`
+  let b = rateBuckets.get(k)
+  if (!b) {
+    b = { fails: [], hits: [], blockedUntil: 0 }
+    rateBuckets.set(k, b)
+  }
+  b.fails = b.fails.filter((t) => now - t < RATE_WINDOW_MS)
+  b.hits = b.hits.filter((t) => now - t < RATE_BURST_WINDOW_MS)
+  return b
+}
+
+/** 放行返回 null；被限流返回剩余封锁秒数。burst=true 时才统计总频率 */
+function rateGuard(req, type, burst = false) {
+  const now = Date.now()
+  const b = rateState(req, type)
+  if (b.blockedUntil > now) {
+    return { retryAfter: Math.ceil((b.blockedUntil - now) / 1000) }
+  }
+  if (burst) {
+    b.hits.push(now)
+    if (b.hits.length > RATE_BURST_MAX) {
+      b.blockedUntil = now + RATE_BLOCK_MS
+      b.hits = []
+      return { retryAfter: Math.ceil(RATE_BLOCK_MS / 1000) }
+    }
+  }
+  return null
+}
+
+/** 记一次失败，达到阈值则封锁。返回是否刚触发封锁 */
+function rateFail(req, type) {
+  const now = Date.now()
+  const b = rateState(req, type)
+  b.fails.push(now)
+  if (b.fails.length >= RATE_MAX_FAILS) {
+    b.blockedUntil = now + RATE_BLOCK_MS
+    b.fails = []
+    return true
+  }
+  return false
+}
+
+/** 成功后清零失败计数，避免正常用户被历史误输拖累 */
+function rateReset(req, type) {
+  const b = rateBuckets.get(`${clientIp(req)}:${type}`)
+  if (b) {
+    b.fails = []
+    b.blockedUntil = 0
+  }
+}
+
+// 定期清理过期桶，防止 Map 随访问 IP 无限增长
+setInterval(() => {
+  const now = Date.now()
+  for (const [k, b] of rateBuckets) {
+    const idleFail = !b.fails.length || now - b.fails[b.fails.length - 1] > RATE_WINDOW_MS
+    const idleHit = !b.hits.length || now - b.hits[b.hits.length - 1] > RATE_BURST_WINDOW_MS
+    if (b.blockedUntil < now && idleFail && idleHit) rateBuckets.delete(k)
+  }
+}, 10 * 60 * 1000).unref?.()
 
 // 访问/登录事件流水：每次邀请校验与云端同步调用都追加一行（id 便于每日巡检增量收录）
 async function logAccess(req, extra) {

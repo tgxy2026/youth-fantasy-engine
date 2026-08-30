@@ -12,6 +12,7 @@ const STATUS_META: Record<SyncStatus, { dot: string; text: string; title: string
   ok: { dot: 'bg-emerald-400', text: '已同步', title: '数据已保存到云端' },
   error: { dot: 'bg-rose-400', text: '同步失败', title: '上传失败，编辑已保留在本地，稍后自动重试' },
   'auth-failed': { dot: 'bg-rose-500', text: '码已失效', title: '同步码已失效，已切回本地数据' },
+  'rate-limited': { dot: 'bg-orange-400', text: '已限流', title: '操作过于频繁，已暂时暂停同步，稍后自动恢复' },
 }
 
 // 网页体验版专属工具条（项目管理主页左下角常驻，由 App 统一包容器定位）：

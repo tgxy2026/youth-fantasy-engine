@@ -47,8 +47,12 @@ let initPromise: Promise<void> | null = null
 // authFailed 为真时，db.ts 的 cloudStore 会整体回退本地 idbOps。
 let authFailed = false
 
+// 被服务端限流（429）的截止时间。限流是暂时的，与「码失效」不同：
+// 不清本地码、不提示失效，只需暂停接管存储并如实展示状态。
+let rateLimitedUntil = 0
+
 // 同步状态（#008：失败必须有可见指示，不能让用户零感知）
-export type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error' | 'auth-failed'
+export type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error' | 'auth-failed' | 'rate-limited'
 let syncStatus: SyncStatus = 'idle'
 const STATUS_EVENT = 'yfe:sync-status'
 
@@ -68,6 +72,18 @@ export function getSyncStatus(): SyncStatus {
 export function isCloudAuthFailed(): boolean {
   return authFailed
 }
+/** 云端当前是否不可用（鉴权失效 或 被限流）——两者都不该接管存储，否则用户会看到空白数据 */
+export function isCloudUnavailable(): boolean {
+  return authFailed || Date.now() < rateLimitedUntil
+}
+
+/** 被服务端限流（429）——与网络异常区分，避免被当成「可以重试的普通失败」反复打 */
+export class RateLimitError extends Error {
+  constructor(public retryAfter = 600) {
+    super(`尝试过于频繁，请 ${Math.ceil(retryAfter / 60)} 分钟后再试`)
+    this.name = 'RateLimitError'
+  }
+}
 
 /** 同步码无效/已失效（服务端 401）——与网络异常明确区分，便于上层给出准确提示 */
 export class CloudAuthError extends Error {
@@ -85,6 +101,7 @@ export function configureServerStore(c: string) {
   rev = 0
   initPromise = null
   authFailed = false
+  rateLimitedUntil = 0
   baseCache = {}
   setStatus('idle')
 }
@@ -193,6 +210,14 @@ async function ensureInit() {
           setStatus('auth-failed')
           cache = {}
           rev = 0
+          return
+        }
+        if (r.status === 429) {
+          // 限流：绝不落到空缓存接管存储，否则被限流的用户会看到空白数据
+          const d = await r.json().catch(() => null)
+          const sec = Number(d?.retryAfter) || 600
+          rateLimitedUntil = Date.now() + sec * 1000
+          setStatus('rate-limited')
           return
         }
         if (r.ok) {
@@ -404,6 +429,14 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
     authFailed = true
     setStatus('auth-failed')
     throw new CloudAuthError()
+  }
+  if (r.status === 429) {
+    // 被限流：标记暂停时间，交由上层回退本地，避免用户看到空白数据
+    const d = await r.json().catch(() => null)
+    const sec = Number(d?.retryAfter) || 600
+    rateLimitedUntil = Date.now() + sec * 1000
+    setStatus('rate-limited')
+    throw new RateLimitError(sec)
   }
   if (r.ok) {
     const data = await r.json().catch(() => ({ rev: baseRev + 1 }))
