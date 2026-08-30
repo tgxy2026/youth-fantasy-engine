@@ -218,13 +218,10 @@ export default function CharacterSheet({ tab }: Props) {
           <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
-          <Button variant="bare"
+          <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
-            className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
-              ${dirty
-                ? 'bg-amber/15 text-amber border-amber/40 hover:bg-amber/25'
-                : 'bg-ink-800 text-ink-500 border-ink-700 cursor-not-allowed'}`}
+            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium hover:bg-amber/25"
             title={dirty ? '保存（Ctrl+S）' : '无未保存修改'}
           >
             <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
@@ -237,12 +234,9 @@ export default function CharacterSheet({ tab }: Props) {
               <Sparkles size={14} /> AI 补全
             </Button>
           )}
-          <Button variant="bare"
+          <Button variant="toggle" selected={hideRetired}
             onClick={() => setHideRetired(v => !v)}
-            className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
-              ${hideRetired
-                ? 'bg-amber/15 text-amber border-amber/40 hover:bg-amber/25'
-                : 'bg-ink-800 text-ink-200 border-ink-600 hover:bg-ink-700'}`}
+            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium hover:bg-amber/25"
             title="隐藏「人物状态 = 已退场」的角色，避免列表过长"
           >
             <EyeOff size={14} /> 隐藏已退场

@@ -264,7 +264,7 @@ export default function ProjectHub({ onOpen }: Props) {
                     ]).map(opt => {
                       const active = form.projectType === opt.v
                       return (
-                        <Button variant="bare"
+                        <Button variant="toggle" selected={active}
                           key={opt.v}
                           type="button"
                           onClick={() => {
@@ -275,9 +275,7 @@ export default function ProjectHub({ onOpen }: Props) {
                               setForm(f => ({ ...f, projectType: opt.v }))
                             }
                           }}
-                          className={`flex-1 text-left px-3 py-2 rounded-lg border transition-colors ${active
-                            ? 'bg-amber/15 border-amber/40 text-amber'
-                            : 'bg-ink-800/60 border-ink-700 text-ink-300 hover:border-ink-500'}`}
+                          className="flex-1 text-left px-3 py-2 rounded-lg border hover:border-ink-500"
                           title={opt.desc}
                         >
                           <div className="text-[12.5px] font-medium">{opt.label}</div>

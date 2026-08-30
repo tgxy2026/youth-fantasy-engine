@@ -97,14 +97,14 @@ export default function InspireTools() {
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <div className="flex gap-1 flex-wrap">
               {NAME_TYPES.map(t => (
-                <Button variant="bare"
+                <Button variant="toggle" selected={nameType === t}
                   key={t}
                   onClick={() => {
                     setNameType(t)
                     setStyle(DEFAULT_STYLE[t])
                     setNames([])
                   }}
-                  className={`px-3 py-1 rounded-full text-[12px] transition-colors ${nameType === t ? 'bg-amber/15 text-amber border border-amber/30' : 'bg-ink-800 text-ink-300 border border-ink-700 hover:text-ink-100'}`}
+                  className="px-3 py-1 rounded-full text-[12px] hover:text-ink-100"
                 >{t}</Button>
               ))}
             </div>

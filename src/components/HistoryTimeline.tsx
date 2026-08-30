@@ -157,13 +157,10 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-[11px] text-ink-500 mr-1">状态筛选：</span>
           {(['all', '已定稿', '待补充', '已变更'] as const).map(s => (
-            <Button variant="bare"
+            <Button variant="toggle" selected={filterStatus === s}
               key={s}
               onClick={() => setFilterStatus(s)}
-              className={`px-2.5 py-0.5 rounded-md text-[11px] border transition-colors
-                ${filterStatus === s
-                  ? 'bg-amber/15 text-amber border-amber/30'
-                  : 'bg-ink-800 text-ink-400 border-ink-700 hover:text-ink-200'}`}
+              className="px-2.5 py-0.5 rounded-md text-[11px] border hover:text-ink-200"
             >
               {s === 'all' ? '全部' : s}
             </Button>

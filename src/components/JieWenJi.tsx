@@ -564,12 +564,10 @@ export default function JieWenJi({
 
             <div className="flex flex-wrap gap-1.5">
               {INSTRUCTIONS.map(ins => (
-                <Button variant="bare"
+                <Button variant="toggle" selected={instruction === ins}
                   key={ins}
                   onClick={() => setInstruction(ins)}
-                  className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors ${
-                    instruction === ins ? 'bg-amber/15 text-amber border-amber/40' : 'bg-ink-800 text-ink-300 border-ink-600 hover:border-ink-500'
-                  }`}
+                  className="px-2.5 py-1 rounded-full border text-[11px] hover:border-ink-500"
                 >
                   {ins}
                 </Button>

@@ -149,13 +149,10 @@ export default function FormSheet({ tab }: Props) {
             <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-[13px] text-red-400">
               <RotateCcw size={12} /> 清空
             </Button>
-          <Button variant="bare"
+          <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
-            className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
-              ${dirty
-                ? 'bg-amber/15 text-amber border-amber/40 hover:bg-amber/25'
-                : 'bg-ink-800 text-ink-500 border-ink-700 cursor-not-allowed'}`}
+            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium hover:bg-amber/25"
             title={dirty ? '保存（Ctrl+S）' : '无未保存修改'}
           >
             <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}

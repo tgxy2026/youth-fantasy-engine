@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 // 共享按钮：统一高度 / 圆角 / 内边距 / 字号，收敛全站 352 个手写 button 的字面量漂移。
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare' | 'icon-amber' | 'icon-danger' | 'icon-muted' | 'icon-ghost'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare' | 'icon-amber' | 'icon-danger' | 'icon-muted' | 'icon-ghost' | 'toggle' | 'toggle-text'
 type Size = 'sm' | 'md' | 'lg'
 type Shape = 'rect' | 'pill' | 'round'
 
@@ -13,6 +13,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   solid?: boolean
   /** 仅图标内容（自动收成正圆/方形图标键） */
   iconOnly?: boolean
+  /** 仅 toggle / toggle-text：选中态开关（统一琥珀选中令牌，替代手写三元表达式） */
+  selected?: boolean
   children?: ReactNode
 }
 
@@ -34,8 +36,16 @@ const ROUND_ICON_SIZE: Record<Size, string> = {
   lg: 'h-10 w-10 rounded-full',
 }
 
-function variantClass(v: Variant, solid: boolean): string {
+function variantClass(v: Variant, solid: boolean, selected: boolean): string {
   switch (v) {
+    case 'toggle':
+      // 分段式选中：选中=琥珀描边底色，未选中=ink 中性底色（令牌唯一真源，抹平 /10·/15·/20 漂移）
+      return selected
+        ? 'bg-amber/15 text-amber border border-amber/30'
+        : 'bg-ink-800 text-ink-400 border border-ink-700'
+    case 'toggle-text':
+      // 纯文字/图标选中：仅选中态染琥珀，未选中态颜色由调用方 className 决定（零损迁移原有 text-ink-*）
+      return selected ? 'text-amber' : ''
     case 'primary':
       return solid
         ? 'bg-amber text-ink-900 border border-amber hover:bg-amber/90 shadow-lg shadow-amber/20'
@@ -79,6 +89,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     shape = 'rect',
     solid = false,
     iconOnly = false,
+    selected = false,
     className = '',
     children,
     ...rest
@@ -86,13 +97,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref
 ) {
   let sizeCls: string
-  if (variant === 'bare' || variant === 'icon-amber' || variant === 'icon-danger' || variant === 'icon-muted') sizeCls = ''
+  if (variant === 'bare' || variant === 'icon-amber' || variant === 'icon-danger' || variant === 'icon-muted' || variant === 'toggle' || variant === 'toggle-text') sizeCls = ''
   else if (iconOnly) sizeCls = shape === 'round' ? ROUND_ICON_SIZE[size] : ICON_SIZE[size]
   else if (shape === 'round') sizeCls = ROUND_ICON_SIZE[size]
   else sizeCls = SIZE[size]
 
   const shapeCls = shape === 'pill' ? 'rounded-full' : ''
-  const vCls = variantClass(variant, solid)
+  const vCls = variantClass(variant, solid, selected)
 
   const cls = [
     'inline-flex items-center justify-center gap-1.5 select-none whitespace-nowrap',
