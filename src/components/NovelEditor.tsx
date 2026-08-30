@@ -15,7 +15,7 @@ import {
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
   ShieldAlert, History, Search, Lock, AlignLeft, Upload, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
-  Command, Highlighter, BookOpen, Users, X, GripVertical, Sparkles, Loader2, Wand2
+  Command, Highlighter, BookOpen, Users, X, GripVertical, Sparkles, Loader2, Wand2, Layers
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
@@ -472,6 +472,36 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       showToast('摘要生成失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
       setSummarizing(false)
+    }
+  }
+
+  /** 批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要），用于把旧的一句式摘要刷新为内容摘要 */
+  const [regenAll, setRegenAll] = useState(false)
+  const regenAllSummaries = async () => {
+    if (!aiReady || regenAll) return
+    const ok = await confirmDialog({
+      title: '批量重生成章节摘要',
+      message: '将对全书所有「有正文」的章节，用 AI 重新生成约 1/10 长度的压缩摘要（覆盖现有摘要）。章节较多时耗时较长、会消耗较多调用，确定继续吗？',
+    })
+    if (!ok) return
+    setRegenAll(true)
+    try {
+      const all = await db.getAllChapters()
+      const targets = all.filter(c => (c.content || '').trim().length > 0)
+      let done = 0
+      for (const c of targets) {
+        try {
+          const s = await aiChapterSummary(c.content)
+          if (s) await db.saveChapter({ ...c, summary: s })
+        } catch { /* 单章失败跳过，继续其余 */ }
+        done++
+        if (done % 8 === 0) showToast(`已重生成摘要 ${done}/${targets.length}`, 'info')
+      }
+      showToast(`全书摘要重生成完成（共 ${targets.length} 章）`, 'success')
+    } catch (e) {
+      showToast('批量重生成失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setRegenAll(false)
     }
   }
 
@@ -1142,6 +1172,11 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 disabled={!aiReady || summarizing || !active}
                 title={!aiReady ? '未配置 AI 模型' : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="secondary" size="md" className="shrink-0">
                 {summarizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              </Button>
+              <Button onClick={regenAllSummaries}
+                disabled={!aiReady || regenAll || !active}
+                title={!aiReady ? '未配置 AI 模型' : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
+                {regenAll ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
               </Button>
               <HelpPopover title="章节压缩摘要" width="22rem" size={12} className="shrink-0 mt-0.5">
                 {'用 AI 把本章正文压缩成约 1/10 长度的连贯摘要（保留关键情节/人物/伏笔/转折/设定），例如"陈渊借雷劫破境，引动青铜小塔吞噬雷池，被苍澜宗执法长老察觉，妹妹陈瑶以桂花糖安抚其经脉反噬"。\n\n· 输入即自动同步到「章节总表」的一句话事件列；\n· 它是「深度校对 / 综合诊断 / 情节推演」的【简略模式】数据源——用它能大幅加快 AI 调用、省 token；想让 AI 看完整正文时，在这些功能的「完整（正文）」模式里切换即可；\n· 连续性校验与伏笔看板也会读取它来做提示。'}

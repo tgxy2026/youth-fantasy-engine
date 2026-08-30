@@ -178,6 +178,8 @@ async function generateOneChapter(opts: {
   ctx: ProjectContextResult
   prevTail: string
   intent?: string
+  /** 最近 3 章的章节摘要（title+字数+summary 拼接），供 AI 把握整体剧情走向 */
+  recentSummaries?: string
   targetWords: number
   signal?: AbortSignal
   onToken?: (d: string) => void
@@ -195,6 +197,9 @@ async function generateOneChapter(opts: {
     '',
     '【上一章结尾】（必须从这里紧接着往下写）',
     opts.prevTail || '（本项目还没有正文，这是开篇第一章）',
+    '',
+    '【近期章节概要】（最近 3 章，供把握整体剧情走向，非续写对象）',
+    opts.recentSummaries || '（暂无）',
     '',
     '【续写意图】',
     opts.intent?.trim() || '（作者未指定：请严格沿着上一章结尾的既有走向自然延续，聚焦当前尚未解决的冲突与悬念，不要开新线）',
@@ -253,7 +258,7 @@ async function suggestTitle(body: string, signal?: AbortSignal): Promise<string>
 
 // ============ 建章（顺序/台账同步，绝不手填卷章号） ============
 
-async function createChapterAfter(anchorId: string | null, title: string, content: string): Promise<Chapter> {
+async function createChapterAfter(anchorId: string | null, title: string, content: string, summary = ''): Promise<Chapter> {
   const pid = db.getCurrentProjectId()
   const vols = await db.getAllVolumes()
   const chs = await db.getAllChapters()
@@ -264,10 +269,15 @@ async function createChapterAfter(anchorId: string | null, title: string, conten
   const order = volChs.length
   const ch: Chapter = {
     id: uid(), projectId: pid, volumeId: targetVolId, order,
-    title: title || '未命名章节', content, summary: '',
+    title: title || '未命名章节', content, summary,
     status: '草稿', wordCount: countWords(content),
     createdAt: Date.now(), updatedAt: Date.now(),
   }
+  // 派生本章序号并写入标题，使 AI 取的章名自动延续编号（如「第12章 风云突变」）；
+  // 防御：先剥离 AI 可能自带的前导「第X章」，避免双重编号
+  const no = chapterSeqOf(vols, [...chs, ch], ch.id)
+  const cleanTitle = (title || '未命名章节').replace(/^第\s*\d+\s*章\s*/, '')
+  ch.title = `第${no}章 ${cleanTitle}`
   await db.saveChapter(ch) // upsert by id，绝不覆盖别的章
   const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
   await syncChapterMaster(ch, chapterSeqOf(lv, lc, ch.id))
@@ -392,6 +402,15 @@ export async function runAutoContinue(
   let memory = ''
   let aborted = false
 
+  // 最近 3 章的章节摘要（title+字数+summary 裁剪），作为续写时的整体剧情走向参考
+  const recentSummaries = ordered.length
+    ? ordered.slice(-3).map(c => {
+        const w = c.wordCount || countWords(c.content || '')
+        const s = (c.summary || '').trim().slice(0, 400)
+        return `· 《${c.title || '未命名章节'}》(${w}字)${s ? '：' + s : ''}`
+      }).join('\n')
+    : ''
+
   for (let i = 0; i < opts.chapters; i++) {
     if (cb.signal?.aborted) break
     const tag = `第 ${i + 1}/${opts.chapters} 章`
@@ -413,7 +432,7 @@ export async function runAutoContinue(
         cb.onBodyReplace?.('')
         cb.onPhase?.(`${tag}：AI 续写正文${attempt > 1 ? `（第 ${attempt} 稿）` : ''}`)
         body = await generateOneChapter({
-          ctx, prevTail, intent: opts.intent, targetWords: opts.targetWords,
+          ctx, prevTail, intent: opts.intent, recentSummaries, targetWords: opts.targetWords,
           signal: cb.signal, onToken: cb.onBodyToken,
           onPhase: p => cb.onPhase?.(`${tag}：${p}`),
           onBodyReplace: cb.onBodyReplace,
@@ -460,7 +479,9 @@ export async function runAutoContinue(
 
       cb.onPhase?.(`${tag}：生成标题并保存`)
       const title = await suggestTitle(body, cb.signal)
-      const ch = await createChapterAfter(anchorId, title, body)
+      // 生成约 1/10 的章节压缩摘要：存入本章 summary（供后续续写参考），并复用于滚动 memory
+      const sum = await aiChapterSummary(body, { signal: cb.signal }).catch(() => '')
+      const ch = await createChapterAfter(anchorId, title, body, sum)
       const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
       const no = chapterSeqOf(lv, lc, ch.id)
       cb.onChapterSaved?.({ id: ch.id, title: ch.title, no })
@@ -476,8 +497,7 @@ export async function runAutoContinue(
         `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；设定新增 ${r.created} 条`
         + (r.failed.length ? `，失败：${r.failed.join('、')}` : ''),
       )
-      // 滚动摘要回灌（应对多章记忆滚雪球）
-      const sum = await aiChapterSummary(body, { signal: cb.signal }).catch(() => '')
+      // 滚动摘要回灌（应对多章记忆滚雪球），复用刚刚生成的 1/10 摘要
       if (sum) memory = (memory ? memory + '\n' : '') + `· 第${no}章《${ch.title}》：${sum.replace(/\s+/g, ' ').slice(0, 200)}`
     } catch (e) {
       if (isCancelled(e) || cb.signal?.aborted) {

@@ -120,7 +120,7 @@ export default function AutoContinue() {
         <h2 className="text-[13px] font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <BookOpen size={14} className="text-amber" /> AI 一键续写 + 设定补完
           <HelpPopover title="AI 一键续写怎么用" width="24rem" className="ml-auto">
-            {`基于项目已有设定与最新一章正文，AI 续写新章节并抽取补登设定。\n\n每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 → 你确认采纳/重写 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取补登设定 → 进入下一章。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计，容差 ±${WORD_TOLERANCE}）。\n· 不填情节概要时，AI 会严格承接上一章结尾往下写，不另起新线。\n· 已有设定更新策略：仅限新增（最稳）/ 候选确认（默认）/ 自动更新。\n· 每章初稿会弹窗让你决定「采纳」或「重写」，重写不会留下垃圾章节。\n· 章节顺序由系统自动派生，与标题无关，不会串行。`}
+            {`基于项目已有设定与最新一章正文，AI 续写新章节并抽取补登设定。\n\n每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 → 你确认采纳/重写 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取补登设定 → 进入下一章。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计，容差 ±${WORD_TOLERANCE}）。\n· 不填情节概要时，AI 会严格承接上一章结尾往下写，并参考最近 3 章的章节摘要把握整体走向，不另起新线。\n· 续写时会参考：上一章结尾（约 1200 字）+ 最近 3 章摘要 + 项目全部设定资料。\n· 已有设定更新策略：仅限新增（最稳）/ 候选确认（默认）/ 自动更新。\n· 每章初稿会弹窗让你决定「采纳」或「重写」，重写不会留下垃圾章节。\n· 章节顺序由系统自动派生，与标题无关，不会串行。`}
           </HelpPopover>
         </h2>
 
@@ -144,6 +144,9 @@ export default function AutoContinue() {
             <div className="text-[13px] text-ink-200 mb-1.5">情节概要（可选，不填则承接上一章自然延续）</div>
             <AutoTextarea value={intent} onChange={setIntent} minHeight={60} maxHeight={160}
               placeholder="例如：陈渊在秘境深处发现上古遗迹，意外获得一卷残破功法……" />
+            <p className="mt-1.5 text-[11px] text-ink-500 leading-relaxed">
+              小提示：续写前，若先对前几章正文通读梳理一遍（或在编辑器里重生成章节压缩摘要），能让 AI 更好地承接剧情、衔接更流畅自然。
+            </p>
           </div>
 
           <div className="flex items-center gap-2 pt-1">
