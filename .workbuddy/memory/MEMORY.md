@@ -7,7 +7,7 @@
 main 无远程；每轮审计/封装后 commit，信息写清要点。
 
 ## 封装红线（最高优先级）
-封装前必：tsc 0错 + vite build 0错 + 改动落盘。流程：审查→升 package.json version→封装。G盘 safe-delete 拦截 rmSync：build 前先 `mv dist dist.oldbak`；禁删 release/eb-cache/。Edit 工具偶发静默失败→改完必 tsc+抽查。
+封装前必：tsc 0错 + vite build 0错 + 改动落盘。流程：审查→升 package.json version→封装。G盘 safe-delete 拦截 rmSync：build 前先 `mv dist dist.oldbak`；禁删 release/eb-cache/。**dev 启动同样会中招**：报 `[safe-delete] ... node_modules/.vite/deps` 时，先 `mv node_modules/.vite node_modules/.vite.bak-<时间戳>` 再重启即可（vite 会重建缓存）。Edit 工具偶发静默失败→改完必 tsc+抽查。
 
 ## 项目硬规则
 根目录 `你需要的文件在这里/`（原 `你需要的图片我放在这里/`，2026-08-29 老大重命名）禁删。禁用 window.prompt/confirm/alert（用 PromptModal/confirmDialog/showToast）。
@@ -19,6 +19,14 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 - `!tabVisible` 只可用于守卫 return/构造隐页签集合，赋给 showXxx 即 bug。
 - AI抽取+代码判重分层：存在性用 normName/rowFingerprint.norm 确定性比对，AI只抽候选。
 - 角色卡 char-main/char-secondary vs char-npc 字段不同，用 settingLedger.cardFieldPath() 探测勿硬编码。
+
+## 主题系统（2026-08-30）
+- 换肤机制：`<html data-theme>` + index.css 变量，组件零改动。每套主题 = 12 档 ink(950~50) + amber/amber-soft + color-scheme。
+- ⚠️ **浅色主题 ink 刻度反向**：ink-950=页底(最浅)、ink-100=正文(深)、ink-50 最深；深色主题反之(950 最深→50 最亮)。新增主题极易搞反。
+- ⚠️ 既有浅色刻度 850(分隔线) 比 800(输入框底) 略深一档，属既定设计语言非 bug；新增浅色主题须复刻该结构保持一致。
+- 新增主题三件套：theme.ts(ThemeId 联合类型 + THEMES 表) + index.css(变量块) + Sidebar 色块行(须 flex-wrap，8 个 20px 色块约 202px 会挤爆 224px 侧栏)。
+- ⚠️ CSS 压缩器会去掉属性选择器引号：产物里是 `[data-theme=x]` 而非 `[data-theme='x']`，grep 验证产物时注意。
+- 当前 8 套：暗夜/护眼/午夜蓝/羊皮卷/暮山紫(深紫)/青花(浅青白)/松烟墨(深墨绿)/桃笺(浅暖粉)，深浅各 4 套。
 
 ## AI 接入
 颉文姬5模式(clinic/edit/review/brief/ledger)。硅基流动 deepseek-ai/DeepSeek-V3.2；明文本地记忆勿公开。
