@@ -103,7 +103,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 w-full text-left px-1.5 py-1 text-[12px] bg-ink-800/60 border border-ink-700 rounded text-ink-100 hover:border-amber/50 transition-colors"
+        className="flex items-center gap-1.5 !justify-start w-full text-left px-1.5 py-1 text-[12px] bg-ink-800/60 border border-ink-700 rounded text-ink-100 hover:border-amber/50 transition-colors"
       >
         <Calendar size={12} className="text-amber/80 shrink-0" />
         <span className={value ? '' : 'text-ink-500'}>{value || '选择日期'}</span>

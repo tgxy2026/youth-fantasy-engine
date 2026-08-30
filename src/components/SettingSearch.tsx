@@ -399,7 +399,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                   <div key={doc.key} className="rounded-lg bg-ink-850/70 border border-ink-700/70 hover:border-ink-600 transition-colors">
                     <Button variant="bare"
                       onClick={() => toggle(doc.key)}
-                      className="w-full text-left justify-start px-2.5 py-2"
+                      className="w-full text-left !justify-start px-2.5 py-2"
                     >
                       <div className="w-full flex flex-col items-start text-left">
                         <div className="flex items-center gap-1.5 w-full">

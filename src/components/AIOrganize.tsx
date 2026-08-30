@@ -347,7 +347,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
                       <Button variant="bare"
                         key={i}
                         onClick={() => toggleRow(i)}
-                        className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
+                        className={`w-full text-left !justify-start rounded-lg border px-3 py-2 transition-colors ${
                           checked.has(i) ? 'border-amber/30 bg-amber/5' : 'border-ink-700 bg-ink-900/40 opacity-60'
                         }`}
                       >

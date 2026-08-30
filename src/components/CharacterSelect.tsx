@@ -149,7 +149,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
               key={n}
               type="button"
               onClick={() => toggle(n)}
-              className={`flex items-center gap-1.5 w-full text-left px-2.5 py-1 text-[12px] hover:bg-ink-700 ${isSel(n) ? 'text-amber' : 'text-ink-200'}`}
+              className={`flex items-center gap-1.5 !justify-start w-full text-left px-2.5 py-1 text-[12px] hover:bg-ink-700 ${isSel(n) ? 'text-amber' : 'text-ink-200'}`}
             >
               {multi && (isSel(n) ? <Check size={10} className="shrink-0" /> : <span className="w-[10px] shrink-0" />)}
               <span className="truncate flex-1">{n}</span>

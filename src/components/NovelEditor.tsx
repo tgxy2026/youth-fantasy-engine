@@ -1304,7 +1304,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                             <Button variant="bare"
                               key={r.name + (r.aliasOf ?? '')}
                               onClick={() => onNavigate?.(r.tabId)}
-                              className="w-full text-left px-2 py-1.5 rounded hover:bg-ink-800 flex items-center gap-2 text-ink-100 text-[12px] transition-colors"
+                              className="w-full text-left !justify-start px-2 py-1.5 rounded hover:bg-ink-800 flex items-center gap-2 text-ink-100 text-[12px] transition-colors"
                               title={`直达「${r.tabId}」`}
                             >
                               <span className="truncate flex-1">

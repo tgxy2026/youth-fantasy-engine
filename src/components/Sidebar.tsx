@@ -171,7 +171,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                         <div key={tab.id}>
                           <Button variant="bare"
                             onClick={() => { setVolOpen(o => !o); onNavigate(tab.id) }}
-                            className={`w-full text-left px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
+                            className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
                               ${active
                                 ? 'bg-amber/10 text-amber font-medium border border-amber/25'
                                 : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
@@ -190,7 +190,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                                 <div key={v.id} className="group flex items-center gap-0.5">
                                   <Button variant="bare"
                                     onClick={() => onNavigate(v.id)}
-                                    className={`flex-1 text-left px-2.5 py-1 pl-12 rounded-md text-[13px] transition-all duration-150
+                                    className={`flex-1 text-left !justify-start px-2.5 py-1 pl-12 rounded-md text-[13px] transition-all duration-150
                                       ${v.id === activeTab
                                         ? 'bg-amber/10 text-amber font-medium border border-amber/25'
                                         : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
@@ -220,7 +220,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                       <Button variant="bare"
                         key={tab.id}
                         onClick={() => onNavigate(tab.id)}
-                        className={`w-full text-left px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150
+                        className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150
                           ${active
                             ? 'bg-amber/10 text-amber font-medium border border-amber/25'
                             : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}

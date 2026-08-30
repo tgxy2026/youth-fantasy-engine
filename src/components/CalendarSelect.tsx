@@ -154,7 +154,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
           <Button variant="bare"
             type="button"
             onClick={() => openEditor()}
-            className="w-full text-left px-2.5 py-1.5 text-[11.5px] text-amber/90 border-t border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
+            className="w-full text-left !justify-start px-2.5 py-1.5 text-[11.5px] text-amber/90 border-t border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
           >
             <Plus size={11} /> 新增历法…
           </Button>

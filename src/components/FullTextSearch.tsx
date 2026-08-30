@@ -127,7 +127,7 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
                       data-idx={idx}
                       onMouseEnter={() => setSel(idx)}
                       onClick={() => open(r)}
-                      className={`w-full text-left px-4 py-2 flex items-start gap-2.5 transition-colors
+                      className={`w-full text-left !justify-start px-4 py-2 flex items-start gap-2.5 transition-colors
                         ${active ? 'bg-amber/10' : 'hover:bg-ink-800/60'}`}
                     >
                       <span className={`mt-0.5 text-[10px] px-1.5 py-px rounded shrink-0 border

@@ -308,7 +308,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                 <Button variant="bare"
                   key={id}
                   onClick={() => toggleChapter(id)}
-                  className={`w-full text-left px-2 py-1.5 rounded-md border text-[12px] flex items-center gap-2 transition-colors ${on ? 'bg-amber/10 border-amber/30 text-amber' : 'border-ink-700 text-ink-300 hover:text-ink-100 hover:bg-ink-800'}`}
+                  className={`w-full text-left !justify-start px-2 py-1.5 rounded-md border text-[12px] flex items-center gap-2 transition-colors ${on ? 'bg-amber/10 border-amber/30 text-amber' : 'border-ink-700 text-ink-300 hover:text-ink-100 hover:bg-ink-800'}`}
                 >
                   <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${on ? 'bg-amber border-amber text-ink-900' : 'border-ink-600'}`}>{on && <Check size={10} />}</span>
                   <span className="truncate"><span className="text-ink-500">{ch.data['章节号'] || ''} </span>{ch.data['章节标题'] || '（未命名）'}</span>
