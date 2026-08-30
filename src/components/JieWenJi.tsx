@@ -453,7 +453,7 @@ export default function JieWenJi({
             <div className="flex items-center gap-1.5 text-[10.5px] text-ink-500">
               <span>校对范围</span>
               <div className="flex rounded-md overflow-hidden border border-ink-700">
-                <Button title="校对结果需在正文中精确定位替换，故恒校对全文；诊断支持用压缩摘要的简略模式" variant="primary" solid size="md">完整（正文）</Button>
+                <Button title="校对结果需在正文中精确定位替换，故恒校对全文" variant="bare" className="px-2 py-0.5 transition-colors bg-amber/20 text-amber cursor-default">完整（正文）</Button>
               </div>
             </div>
             <Button variant="bare"

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { BookOpen, RefreshCw, Square, Sparkles } from 'lucide-react'
+import { BookOpen, CheckCircle2, RefreshCw, Square, Sparkles } from 'lucide-react'
 import { Button } from './Button'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
@@ -8,12 +8,13 @@ import HelpPopover from './HelpPopover'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { runAutoContinue, type ContinueStrategy } from '../lib/autoContinue'
+import { countWords } from '../lib/textStats'
 import type { LedgerItem } from '../lib/settingLedger'
 
 const STRATEGY_META: Record<ContinueStrategy, { label: string; hint: string }> = {
-  'add-only': { label: 'A 仅新增', hint: '只补登新设定，已登记的设定一律不动' },
-  'confirm': { label: 'B 候选确认', hint: '新设定与疑似重复项列出供你勾选，已登记项不改动' },
-  'auto-update': { label: 'C 自动更新', hint: '新设定自动补登，已登记实体的变化追加到备注（不覆盖属性列）' },
+  'add-only': { label: '仅新增', hint: '只补登新设定，已登记的设定一律不动' },
+  'confirm': { label: '候选确认', hint: '新设定与疑似重复项列出供你勾选，已登记项不改动' },
+  'auto-update': { label: '自动更新', hint: '新设定自动补登，已登记实体的变化追加到备注（不覆盖属性列）' },
 }
 const STRATEGIES: ContinueStrategy[] = ['add-only', 'confirm', 'auto-update']
 
@@ -72,7 +73,12 @@ export default function AutoContinue() {
     else if (!abortRef.current) showToast('未生成章节，请检查模型配置或日志', 'error')
   }, [running, aiReady, chapters, targetWords, strategy, intent])
 
-  const stop = () => { abortRef.current?.abort(); setPhase('已停止') }
+  const stop = () => {
+    abortRef.current?.abort()
+    // 若正卡在「设定补登确认」弹窗，直接跳过以解除挂起（否则 runAutoContinue 永远 await）
+    if (confirm) { confirm.resolve(null); setConfirm(null); setSelected(new Set()) }
+    setPhase('已停止（正在收尾…）')
+  }
 
   const confirmApply = () => {
     if (!confirm) return
@@ -92,7 +98,7 @@ export default function AutoContinue() {
         <h2 className="text-[13px] font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <BookOpen size={14} className="text-amber" /> AI 一键续写 + 设定补完
           <HelpPopover title="AI 一键续写怎么用" width="24rem" className="ml-auto">
-            {'基于项目已有设定与正文，AI 自动续写新章节并抽取补登设定。\n\n流程：读上下文 → 续写一章 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取并补登设定 → 重复直到完成。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计）。\n· 已有设定更新策略：A 仅新增（最稳）/ B 候选确认（默认）/ C 自动更新。\n· 选 B 时，每章抽取到的待补登项会弹窗让你勾选。\n· 章节顺序由系统自动派生，与标题无关，不会串行。'}
+            {'基于项目已有设定与正文，AI 自动续写新章节并抽取补登设定。\n\n流程：读上下文 → 续写一章 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取并补登设定 → 重复直到完成。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计）。\n· 已有设定更新策略：仅新增（最稳）/ 候选确认（默认）/ 自动更新。\n· 选「候选确认」时，每章抽取到的待补登项会弹窗让你勾选。\n· 章节顺序由系统自动派生，与标题无关，不会串行。'}
           </HelpPopover>
         </h2>
 
@@ -102,15 +108,14 @@ export default function AutoContinue() {
 
           <div>
             <div className="text-[13px] text-ink-200 mb-1.5">已有设定更新策略</div>
-            <div className="flex gap-1.5 flex-wrap">
+            <div className="flex gap-1.5">
               {STRATEGIES.map(s => (
-                <Button key={s} variant="toggle" selected={strategy === s}
+                <Button key={s} variant="toggle" selected={strategy === s} className="flex-1"
                   onClick={() => setStrategy(s)} title={STRATEGY_META[s].hint}>
                   {STRATEGY_META[s].label}
                 </Button>
               ))}
             </div>
-            <p className="mt-1 text-[11px] text-ink-400">{STRATEGY_META[strategy].hint}</p>
           </div>
 
           <div>
@@ -134,13 +139,17 @@ export default function AutoContinue() {
 
           {phase && (
             <div className="flex items-center gap-2 text-[12px] text-ink-300">
-              <RefreshCw size={12} className={running ? 'animate-spin' : ''} /> {phase}
+              {!running ? (
+                phase.startsWith('✓') ? <CheckCircle2 size={13} className="text-emerald-400 shrink-0" /> : <CheckCircle2 size={13} className="text-ink-500 shrink-0" />
+              ) : (
+                <RefreshCw size={12} className="animate-spin shrink-0" />
+              )} {phase}
             </div>
           )}
 
           {preview && (
             <div className="mt-2">
-              <div className="text-[12px] text-ink-400 mb-1">实时正文预览（{preview.length} 字符）</div>
+              <div className="text-[12px] text-ink-400 mb-1">实时正文预览（{countWords(preview)} 字 · 汉字计）</div>
               <div className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3 text-[13px] leading-relaxed text-ink-100">
                 {preview}
               </div>

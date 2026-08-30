@@ -46,6 +46,7 @@ async function generateOneChapter(opts: {
   targetWords: number
   signal?: AbortSignal
   onToken?: (d: string) => void
+  onPhase?: (p: string) => void
 }): Promise<string> {
   const cfg = await requireActiveProvider()
   const sys = [
@@ -74,14 +75,14 @@ async function generateOneChapter(opts: {
     { role: 'user', content: user },
   ], { onToken: opts.onToken, signal: opts.signal }))
 
-  // 字数卡法：不足目标 90% 时分幕续写补足（上限 3 幕，防弱模型无限凑）
+  // 字数卡法：不足目标 85% 时分幕续写补足（上限 5 幕，防弱模型无限凑）
   let pass = 1
-  while (countWords(body) < opts.targetWords * 0.9 && pass < 3) {
+  while (countWords(body) < opts.targetWords * 0.85 && pass < 5) {
     const cont = await chat(cfg, [
       { role: 'system', content: sys },
       {
         role: 'user',
-        content: `【已写部分】\n${body}\n\n请继续往下写，补足到约 ${opts.targetWords} 个汉字，保持剧情连贯，不要重复已写内容，不要提前收尾（除非已自然到达目标篇幅）。`,
+        content: `【已写部分】\n${body}\n\n请继续往下写，务必把篇幅写到接近 ${opts.targetWords} 个汉字（可略少，但不得明显注水凑字、不得提前收尾，除非已自然到达目标篇幅），保持剧情连贯，不要重复已写内容。`,
       },
     ], { onToken: opts.onToken, signal: opts.signal }).catch(() => '')
     body += cont
@@ -89,19 +90,21 @@ async function generateOneChapter(opts: {
     pass++
   }
 
-  body = await selfRefine(body, opts.ctx, opts.signal)
+  body = await selfRefine(body, opts.ctx, opts.signal, opts.onPhase)
   return body.trim()
 }
 
 /** 编辑自检：连续性 / 人设崩坏 / 伏笔 三类检查，命中严重/中等则单轮改写后接受不完美退出 */
-async function selfRefine(body: string, ctx: ProjectContextResult, signal?: AbortSignal): Promise<string> {
+async function selfRefine(body: string, ctx: ProjectContextResult, signal?: AbortSignal, onPhase?: (p: string) => void): Promise<string> {
   if (!ctx.text.trim() || countWords(body) < 200) return body
+  onPhase?.('AI 编辑自检（连续性 / 人设 / 伏笔）')
   const findings: Array<{ level?: string; title?: string; detail?: string }> = []
   const push = (arr: any[]) => { for (const f of arr) if (f && (f.level === '严重' || f.level === '中等')) findings.push(f) }
   push(await aiContinuityAudit(ctx.text, body, { signal }).catch(() => [] as any[]))
   push(await aiOocCheck(ctx.text, body, { signal }).catch(() => [] as any[]))
   push(await aiForeshadowReview(ctx.text, { signal }).catch(() => [] as any[]))
   if (!findings.length) return body
+  onPhase?.('根据审读问题改写修正')
   const instr = findings.map(f => `- ${f.title || '问题'}：${f.detail || ''}`).join('\n')
   const res = await aiRewritePassage(body, `修正以下审读问题，保持剧情与文风一致，不要改变原意：\n${instr}`, '', { signal }).catch(() => null)
   return res?.rewritten ? stripThink(res.rewritten) : body
@@ -271,6 +274,7 @@ export async function runAutoContinue(
       const body = await generateOneChapter({
         ctx, prevTail, intent: opts.intent, targetWords: opts.targetWords,
         signal: cb.signal, onToken: cb.onBodyToken,
+        onPhase: (p) => cb.onPhase?.(`第 ${i + 1}/${opts.chapters} 章：${p}`),
       })
       cb.onPhase?.(`第 ${i + 1}/${opts.chapters} 章：生成标题并保存`)
       const title = await suggestTitle(body, cb.signal)
@@ -292,5 +296,6 @@ export async function runAutoContinue(
       break
     }
   }
+  cb.onPhase?.(created.length ? `✓ 续写完成，共新增 ${created.length} 章` : '未生成章节（请检查模型配置或查看日志）')
   return { created }
 }
