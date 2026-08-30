@@ -8,7 +8,9 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 ⚠️ 提交信息里含 `!` 时**必须用 `git commit -F <文件>`**，不能用 `-m`：bash 历史展开会吃掉 `!XXX`（报 `!XXX: command not found` 并把信息写坏）。
 
 ## 封装红线（最高优先级）
-封装前必：tsc 0错 + vite build 0错 + 改动落盘。流程：审查→升 package.json version→封装。G盘 safe-delete 拦截 rmSync：build 前先 `mv dist dist.oldbak`；**网页构建同理，`dist-web` 也要先移开**（vite.config.web.ts 有 emptyOutDir）；禁删 release/eb-cache/。**dev 启动同样会中招**：报 `[safe-delete] ... node_modules/.vite/deps` 时，先 `mv node_modules/.vite node_modules/.vite.bak-<时间戳>` 再重启即可（vite 会重建缓存）。Edit 工具偶发静默失败→改完必 tsc+抽查。
+封装前必：tsc 0错 + vite build 0错 + 改动落盘。流程：审查→升 package.json version→封装。G盘 safe-delete 拦截 rmSync：build 前先 `mv dist dist.oldbak`；**网页构建同理，`dist-web` 也要先移开**（vite.config.web.ts 有 emptyOutDir）；禁删 release/eb-cache/。
+- ⚠️ **同版本号重打包（不升版本）额外三个坑（2026-08-30）**：① 便携 outDir `release/novel-studio-<ver>` 与 `dist-web` 此时**已存在上一轮产物**，`emptyOutDir:true` 会触发 safe-delete → 必须先用 Node `renameSync` 移开（shell `mv` 不可靠）。② `dist-web` 可能被进程持有句柄导致 rename 报 **EPERM**；别硬碰，改用 `vite build --config vite.config.web.ts --outDir dist-web-<后缀>` **另开全新目录**再推送，这是最稳的通用绕行。③ electron-builder 日志出现 `rcedit ... Unable to commit changes` **不代表失败**（防病毒锁新解包 exe，重试第 3 次成功且不打成功日志）——判定法：node 读 exe buffer 搜 utf16le 的 `青春幻想引擎开发组`/`Copyright © 2026`，命中即版本资源已写入，别盲目重跑。
+- ✅ **产物内容验证法（封装后必做）**：别只看体积。用 node 读产物 buffer 双向校验「应存在的新字符串」+「应消失的旧字符串」；便携查单文件 HTML、桌面查 `dist/assets/<对应chunk>.js`、线上用 `grep -rlF` 查 `/var/www/yfe/assets/*.js`。三处一致才算真上线。**dev 启动同样会中招**：报 `[safe-delete] ... node_modules/.vite/deps` 时，先 `mv node_modules/.vite node_modules/.vite.bak-<时间戳>` 再重启即可（vite 会重建缓存）。Edit 工具偶发静默失败→改完必 tsc+抽查。
 
 ## 项目硬规则
 根目录 `你需要的文件在这里/`（原 `你需要的图片我放在这里/`，2026-08-29 老大重命名）禁删。禁用 window.prompt/confirm/alert（用 PromptModal/confirmDialog/showToast）。
@@ -38,6 +40,7 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 
 ## 版本与清单
 - **1.9.8 已封装（2026-08-30）**：便携 8.65MB（release/novel-studio-1.9.8/）+ 桌面 84.5MB（release/桌面安装版/青春幻想引擎-Setup-1.9.8.exe），网页版已同步上线 154.8.178.240（线上确认 1.9.8）。含：AI 续写去 AI 味儿环节（内置提示词库+面板开关）、去味偏好永久保存（db.meta）、续写上下文补最近3章摘要、章节名自动延续编号、章节摘要升级 1/10（种子已烤入）、UI 长条按钮统一为短圆角、去味开关前置到策略下、代码审查加固。
+  - **同版本号重封一次（2026-08-30 16:5x，三端已刷新）**：追加固化两处修复——去味模板改名（口语化/网文化/去套路）、使用指南「全部功能页签」名称竖排错乱根治（`GuidePage.tsx` 外层 `variant="bare"` 按钮改 `flex-col items-stretch w-full`；根因是 Button 基类 `inline-flex items-center justify-center` 把名称行与描述横排、CJK 被挤到逐字断行——**只改内层 span 的 `flex-1 min-w-0` 无效，必须改外层按钮排版方向**）。三端产物已 buffer 校验含新标签且旧标签为 0。
 - **1.9.7 已封装（2026-08-30）**：便携 8.22MB（release/novel-studio-1.9.7/）+ 桌面 80.6MB（release/桌面安装版/青春幻想引擎-Setup-1.9.7.exe），网页版已同步上线 154.8.178.240。含：四套新主题、开发版邀请门禁误拦修复、1.9.7 终审三项修复。**1.9.7 是桌面/便携版首次把网页体验版代码（serverStore 等）编译进产物**。
 - 1.9.6 已封装（2026-08-28）：便携 8.22MB + 桌面 80.6MB。
 - **2.0 Web 部署计划（已定·A 方案，本轮测试期不做）**：网页体验版在 2.0 阶段绑定域名 `qchxengine.cn`（建议小写），走 Let's Encrypt 真证书替换当前自签 HTTPS；大陆节点需先 ICP 备案（非经营性，免费，1-15 工作日；前提服务器包月≥3月且剩余≥30天、域名境内注册商实名）。**本轮测试期维持 `https://154.8.178.240` 自签 HTTPS + IP 访问，不买域名、不备案、不动证书**，等测试问题/bug 修复完、2.0 启动再执行（届时老巴迪装 certbot、改 yfe.conf server_name、签发真证书）。
