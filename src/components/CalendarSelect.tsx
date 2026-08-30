@@ -115,7 +115,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
         <div
           ref={dropRef}
           style={{ left: pos.left, top: pos.top, minWidth: pos.minWidth, transform: pos.flip ? 'translateY(-100%)' : undefined }}
-          className="fixed z-[9999] overflow-y-auto rounded-md bg-ink-800 border border-ink-600 shadow-xl py-1 max-h-72"
+          className="fixed z-[10001] overflow-y-auto rounded-md bg-ink-800 border border-ink-600 shadow-xl py-1 max-h-72"
         >
           {calendars.length === 0 && (
             <div className="px-2.5 py-2 text-[11px] text-ink-500">暂无历法，点击下方新增</div>

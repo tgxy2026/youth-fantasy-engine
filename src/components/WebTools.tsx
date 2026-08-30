@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Cloud, LogOut } from 'lucide-react'
 import PromptModal from './PromptModal'
+import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
 import { enableCloudSync } from '../lib/db'
 import { getSyncStatus, type SyncStatus, CloudAuthError, isCloudAuthFailed } from '../lib/serverStore'
@@ -8,10 +9,10 @@ import { getSyncStatus, type SyncStatus, CloudAuthError, isCloudAuthFailed } fro
 // 同步状态徽标（#008）：推送失败必须可见，不能让用户零感知地"写了一整晚白工"
 const STATUS_META: Record<SyncStatus, { dot: string; text: string; title: string }> = {
   idle: { dot: 'bg-ink-500', text: '', title: '云端同步待命' },
-  syncing: { dot: 'bg-amber-400 animate-pulse', text: '同步中', title: '正在上传到云端…' },
+  syncing: { dot: 'bg-amber animate-pulse', text: '同步中', title: '正在上传到云端…' },
   ok: { dot: 'bg-emerald-400', text: '已同步', title: '数据已保存到云端' },
   error: { dot: 'bg-rose-400', text: '同步失败', title: '上传失败，编辑已保留在本地，稍后自动重试' },
-  'auth-failed': { dot: 'bg-rose-500', text: '码已失效', title: '同步码已失效，已切回本地数据' },
+  'auth-failed': { dot: 'bg-rose-500', text: '码已失效', title: '同步邀请码已失效，已切回本地数据' },
   'rate-limited': { dot: 'bg-orange-400', text: '已限流', title: '操作过于频繁，已暂时暂停同步，稍后自动恢复' },
   // #011：断网/服务不可达 —— 关键是让用户知道编辑留在本地、没丢，恢复后会自动接管
   offline: { dot: 'bg-ink-400', text: '离线', title: '网络不可用，已切回本地保存（编辑不会丢）；网络恢复后自动重新同步' },
@@ -38,7 +39,7 @@ export default function WebTools() {
       showToast('检测到云端与本地改过同一处：已保留你的版本，并在本地另存云端副本', 'info', 5000)
     const onAuthFailed = () => {
       setSynced(false)
-      showToast('云端同步码已失效，已切回本地数据（数据仍在本地，不会丢失）', 'error')
+      showToast('云端同步邀请码已失效，已切回本地数据（数据仍在本地，不会丢失）', 'error')
     }
     // 兜底：启动时（db.ts）的失效事件可能早于本组件挂载而被漏听，这里补查一次当前状态
     if (isCloudAuthFailed()) {
@@ -66,7 +67,7 @@ export default function WebTools() {
     } catch (e) {
       // #007：明确区分「码无效」与「网络异常」，不再一律提示含糊的"无效或连接失败"
       showToast(
-        e instanceof CloudAuthError ? '同步码无效或已失效，请核对后重试' : '连接失败，请检查网络后重试',
+        e instanceof CloudAuthError ? '同步邀请码无效或已失效，请核对后重试' : '连接失败，请检查网络后重试',
         'error',
       )
       setBusy(false)
@@ -79,21 +80,32 @@ export default function WebTools() {
   return (
     <>
       <div className="flex flex-col items-start gap-2">
-        <button
-          onClick={() => setSyncOpen(true)}
-          disabled={busy}
-          title={synced ? `${meta.title}（点击可重新连接）` : '开启云端同步（需专属同步邀请码）'}
-          className="flex items-center gap-2 rounded-full border border-sky-400/40 bg-ink-900/90 px-4 py-2 text-sm text-sky-300 shadow-lg backdrop-blur hover:bg-ink-800 disabled:opacity-60"
-        >
-          <Cloud size={16} />
-          {synced ? '云端同步·已开' : '云端同步'}
-          {synced && (
-            <span className="flex items-center gap-1.5 text-xs text-ink-300">
-              <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
-              {meta.text}
-            </span>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSyncOpen(true)}
+            disabled={busy}
+            title={synced ? `${meta.title}（点击可重新连接）` : '开启云端同步（需专属同步邀请码）'}
+            className="flex items-center gap-2 rounded-full border border-sky-400/40 bg-ink-900/90 px-4 py-2 text-sm text-sky-300 shadow-lg backdrop-blur hover:bg-ink-800 disabled:opacity-60"
+          >
+            <Cloud size={16} />
+            {synced ? '云端同步·已开' : '云端同步'}
+            {synced && (
+              <span className="flex items-center gap-1.5 text-xs text-ink-300">
+                <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                {meta.text}
+              </span>
+            )}
+          </button>
+          <HelpPopover
+            title="云端同步说明"
+            side="right"
+            width="22rem"
+          >
+            {`云端同步把项目数据实时保存到云端，可在其它设备登录同一同步邀请码继续创作。
+断网或服务不可达时会自动回退本地保存、编辑不丢；恢复后自动重新同步。
+注意：同步邀请码（YFE-SYNC- 开头）与进门的网页邀请码不是同一个。`}
+          </HelpPopover>
+        </div>
         <button
           onClick={() => {
             try {
@@ -103,11 +115,11 @@ export default function WebTools() {
             }
             location.reload()
           }}
-          title="退出邀请（重新输入邀请码）"
+          title="退出网页体验（回到邀请码输入页，已开启的云端同步将保留）"
           className="flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900/90 px-4 py-2 text-sm text-ink-300 shadow-lg backdrop-blur hover:bg-ink-800"
         >
           <LogOut size={16} />
-          退出体验
+          退出网页体验
         </button>
       </div>
       <PromptModal

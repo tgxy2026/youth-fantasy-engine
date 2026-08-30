@@ -992,7 +992,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                         type={col.type === 'number' ? 'number' : 'text'}
                                         value={val}
                                         onChange={e => setCellDraft(row.id, col.name, e.target.value)}
-                                        placeholder=""
+                                        placeholder={col.name}
                                         className="!py-1 text-[12px] w-full"
                                       />
                                     )}

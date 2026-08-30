@@ -216,7 +216,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
         <span className="text-[11px] text-ink-500">{items.length} 份 · {hint}</span>
       </div>
       {items.length === 0 ? (
-        <div className="text-[11px] text-ink-600 px-2 py-2">暂无</div>
+        <div className="text-[11px] text-ink-600 px-2 py-2">暂无备份</div>
       ) : (
         <div className="space-y-1.5">
           {items.map(b => (
@@ -274,7 +274,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
           {tooMany && (
             <div className="flex items-start gap-2 text-[11px] leading-relaxed bg-amber/10 border border-amber/30 rounded-lg px-3 py-2">
               <AlertTriangle size={13} className="text-amber shrink-0 mt-px" />
-              <span className="text-amber-200">
+              <span className="text-amber">
                 当前共 <span className="font-semibold">{backups.length} 份</span>备份，约 {totalMB.toFixed(1)} MB。
                 <span className="font-semibold">备份过多可能影响使用体验</span>——数据文件会持续变大，打开项目、自动保存都会变慢（便携版尤其明显）。
                 建议保留真正需要的节点，删除其余旧备份。

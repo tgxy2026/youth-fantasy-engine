@@ -393,7 +393,7 @@ export default function CharacterSheet({ tab }: Props) {
         <div className="fixed bottom-6 right-6 z-20">
           <button
             onClick={save}
-            className="flex items-center gap-2 px-4 py-2.5 bg-amber text-ink-900 rounded-full shadow-2xl shadow-amber/30 hover:bg-amber/90 transition-all animate-pulse"
+            className="flex items-center gap-2 text-[13px] font-medium px-4 py-2.5 bg-amber text-ink-900 rounded-full shadow-2xl shadow-amber/30 hover:bg-amber/90 transition-all animate-pulse"
           >
             <Save size={14} /> 保存「{draft?.name}」修改
           </button>
