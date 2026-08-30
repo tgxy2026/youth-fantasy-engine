@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Check, CheckCircle2, RefreshCw, RotateCcw, Square, Sparkles } from 'lucide-react'
 import { Button } from './Button'
 import { Modal } from './Modal'
@@ -7,6 +7,7 @@ import { showToast } from './dialogs'
 import HelpPopover from './HelpPopover'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
+import * as db from '../lib/db'
 import {
   runAutoContinue, WORD_TOLERANCE, DEAI_TEMPLATES,
   type ContinueStrategy, type ChapterDraft, type DraftDecision, type DeAiTemplate,
@@ -47,6 +48,22 @@ export default function AutoContinue() {
   const [deAiTpl, setDeAiTpl] = useState<DeAiTemplate['id']>('natural')
   const [deAiCustom, setDeAiCustom] = useState('')
   const deAiPrompt = deAiTpl === 'custom' ? deAiCustom.trim() : (DEAI_TEMPLATES.find(t => t.id === deAiTpl)?.prompt ?? '')
+
+  // 永久保存：去味偏好（含自定义提示词）写入 db.meta，跨会话/跨项目保留
+  const deAiLoaded = useRef(false)
+  useEffect(() => {
+    (async () => {
+      const saved = await db.getMeta<{ enabled?: boolean; template?: DeAiTemplate['id']; custom?: string }>('deAiPrefs', {})
+      if (typeof saved.enabled === 'boolean') setDeAiOn(saved.enabled)
+      if (saved.template) setDeAiTpl(saved.template)
+      if (typeof saved.custom === 'string') setDeAiCustom(saved.custom)
+      deAiLoaded.current = true
+    })()
+  }, [])
+  useEffect(() => {
+    if (!deAiLoaded.current) return
+    db.setMeta('deAiPrefs', { enabled: deAiOn, template: deAiTpl, custom: deAiCustom })
+  }, [deAiOn, deAiTpl, deAiCustom])
 
   const [running, setRunning] = useState(false)
   const [phase, setPhase] = useState('')
