@@ -2,7 +2,15 @@
 // 主题通过给 <html> 设置 data-theme，配合 index.css 中按 [data-theme] 重定义的 CSS 变量生效；
 // 由于全项目颜色都走 Tailwind 的 ink/amber 调色板（已改为 CSS 变量驱动），切换主题无需改动任何组件。
 
-export type ThemeId = 'dark' | 'eye-care' | 'midnight' | 'sepia'
+export type ThemeId =
+  | 'dark'
+  | 'eye-care'
+  | 'midnight'
+  | 'sepia'
+  | 'dusk-violet'
+  | 'porcelain'
+  | 'pine-ink'
+  | 'peach-note'
 
 export interface ThemeDef {
   id: ThemeId
@@ -17,6 +25,10 @@ export const THEMES: ThemeDef[] = [
   { id: 'eye-care', name: '护眼', desc: '浅绿·默认·护眼', swatch: '#cfe3c4' },
   { id: 'midnight', name: '午夜蓝', desc: '冷蓝·深色', swatch: '#1a2740' },
   { id: 'sepia', name: '羊皮卷', desc: '暖棕·浅色', swatch: '#e3d4b8' },
+  { id: 'dusk-violet', name: '暮山紫', desc: '紫罗兰·深色', swatch: '#100d1a' },
+  { id: 'porcelain', name: '青花', desc: '青白瓷·浅色', swatch: '#e4ecf4' },
+  { id: 'pine-ink', name: '松烟墨', desc: '墨绿松烟·深色', swatch: '#0a1212' },
+  { id: 'peach-note', name: '桃笺', desc: '暖粉胭脂·浅色', swatch: '#faecee' },
 ]
 
 const THEME_KEY = 'yfe-theme'

@@ -253,7 +253,8 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             <Palette size={11} />
             <span>主题</span>
           </div>
-          <div className="flex gap-1.5">
+          {/* 允许换行：主题增至 8 套后单行会挤压色块，侧栏偏窄时自动折行 */}
+          <div className="flex flex-wrap gap-1.5">
             {THEMES.map(t => (
               <button
                 key={t.id}
