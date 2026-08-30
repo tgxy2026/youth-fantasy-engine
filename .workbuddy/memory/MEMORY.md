@@ -12,6 +12,8 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 
 ## 项目硬规则
 根目录 `你需要的文件在这里/`（原 `你需要的图片我放在这里/`，2026-08-29 老大重命名）禁删。禁用 window.prompt/confirm/alert（用 PromptModal/confirmDialog/showToast）。
+- **清理工作区的固定打法**：先只扫描出报告（路径+体积），由老大圈定范围后才动手；绝不自作主张删。构建备份目录（dist.bak-* / dist_bak_* / dist-web*.bak* / web-build-*）是主要垃圾源，均 git 未跟踪、可安全清理。`release/eb-cache`(106M) 为 electron-builder 缓存，红线禁删。
+- ⚠️ **本环境无法走真回收站**：`Add-Type`（编译 .NET）与 `New-Object -ComObject Shell.Application`（COM 实例化）双双被安全策略拦截。清理一律改用 `Move-Item` 移出到 `%TEMP%` 隔离区，效果相同且完全可逆；确认无误后再由老大自行清空。
 
 ## 架构速查（红线）
 - 按卷建表：卷表 tabId `chapter-vol-<vid>`；聚合走 db.getAllChapterLedgerRows()。
