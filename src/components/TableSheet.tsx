@@ -809,40 +809,19 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="bare"
-              onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))}
-              disabled={!aiReady}
-              className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
-              title={
-                !aiReady
-                  ? AI_DISABLED_HINT
-                  : aiCap === 'organize'
-                    ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）'
-                    : '新建一行，并提供粗略设定由 AI 补全（不影响已有行 / 其他表）'
-              }
-            >
+            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : '新建一行，并提供粗略设定由 AI 补全（不影响已有行 / 其他表）' }>
               <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 补全'}
             </Button>
           )}
           {/* 读者反馈：AI 分析（运营维护组，不接补全/整理，单独开分析入口） */}
           {tab.id === 'feedback' && (
-            <Button variant="bare"
-              onClick={() => setShowFeedbackAI(true)}
-              disabled={!aiReady}
-              className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
-              title={!aiReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}
-            >
+            <Button variant="secondary" onClick={() => setShowFeedbackAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}>
               <Sparkles size={14} /> AI 分析反馈
             </Button>
           )}
           {/* 名词术语：AI 查重（在「AI 补全」之外，额外提供同义/重复归一入口） */}
           {tab.id === 'terms' && (
-            <Button variant="bare"
-              onClick={() => setShowDedupAI(true)}
-              disabled={!aiReady}
-              className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
-              title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}
-            >
+            <Button variant="secondary" onClick={() => setShowDedupAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}>
               <Sparkles size={14} /> AI 查重
             </Button>
           )}

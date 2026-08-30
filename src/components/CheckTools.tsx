@@ -229,11 +229,7 @@ export default function CheckTools() {
                 if (fileInputRef.current) fileInputRef.current.value = ''
               }}
             />
-            <Button variant="bare"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 text-red-300 border border-red-500/25 rounded-lg text-[12px] hover:bg-red-500/20 transition-colors"
-              title="支持 .txt（一行一词）/ .csv / .json 数组 / .tsv"
-            >
+            <Button variant="danger" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 border-red-500/25 rounded-lg text-[12px] transition-colors" title="支持 .txt（一行一词）/ .csv / .json 数组 / .tsv">
               <FileDown size={12} /> 一键导入文件
             </Button>
             {customWords.length > 0 && (
@@ -262,11 +258,7 @@ export default function CheckTools() {
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="bare"
-              onClick={() => scanBook()}
-              disabled={scanning}
-              className="flex items-center gap-1.5 px-4 py-2 bg-red-500/10 text-red-300 border border-red-500/25 rounded-lg text-[12px] hover:bg-red-500/20 transition-colors disabled:opacity-50"
-            >
+            <Button variant="danger" onClick={() => scanBook()} disabled={scanning} className="flex items-center gap-1.5 px-4 py-2 border-red-500/25 rounded-lg text-[12px] transition-colors disabled:opacity-50">
               <ScanSearch size={13} /> {scanning ? '扫描中…' : '系统扫描全书'}
             </Button>
             {aiReady ? (
@@ -354,11 +346,7 @@ export default function CheckTools() {
           />
           <div className="flex items-center gap-2">
             {aiReady ? (
-              <Button variant="bare"
-                onClick={aiAudit}
-                disabled={auditLoading}
-                className="flex items-center gap-1.5 px-4 py-2 bg-sky-500/15 text-sky-300 border border-sky-500/30 rounded-lg text-[12px] hover:bg-sky-500/20 transition-colors disabled:opacity-50"
-              >
+              <Button variant="info" onClick={aiAudit} disabled={auditLoading} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] transition-colors disabled:opacity-50">
                 <Sparkles size={13} /> {auditLoading ? '自查中…' : 'AI 深度自查'}
               </Button>
             ) : (
@@ -416,11 +404,7 @@ export default function CheckTools() {
             对照全项目设定，扫描引用断链 / 编号重复 / 必填空（确定性检查，不靠 AI 推理）。
           </p>
           <div className="flex items-center gap-2">
-            <Button variant="bare"
-              onClick={runHealth}
-              disabled={healthScanning}
-              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-lg text-[12px] hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
-            >
+            <Button variant="success" onClick={runHealth} disabled={healthScanning} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] transition-colors disabled:opacity-50">
               <RefreshCw size={13} className={healthScanning ? 'animate-spin' : ''} /> {healthScanning ? '体检中…' : '重新体检'}
             </Button>
             <Button onClick={clearIgnored}

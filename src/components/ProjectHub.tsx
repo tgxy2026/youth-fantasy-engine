@@ -183,10 +183,7 @@ export default function ProjectHub({ onOpen }: Props) {
               title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center text-[13px]">
               <BookPlus size={13} /> 创建示范项目
             </Button>
-            <Button variant="bare"
-              onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-1.5 px-3.5 h-9 text-[13px] text-ink-200 bg-ink-800 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors"
-            >
+            <Button variant="secondary" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3.5 h-9 text-[13px] rounded-lg transition-colors">
               <FileDown size={13} /> 导入项目
             </Button>
             <input
@@ -200,10 +197,7 @@ export default function ProjectHub({ onOpen }: Props) {
                 e.target.value = ''
               }}
             />
-            <Button variant="bare"
-              onClick={() => setCreating(true)}
-              className="flex items-center gap-1.5 px-3.5 h-9 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 transition-colors"
-            >
+            <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors">
               <BookPlus size={14} /> 新建小说项目
             </Button>
           </div>
@@ -294,11 +288,7 @@ export default function ProjectHub({ onOpen }: Props) {
                   </div>
                   {form.projectType === 'custom' && (
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <Button variant="bare"
-                        type="button"
-                        onClick={() => setFeatureModal({ mode: 'create', initial: form.features.length ? form.features.filter(id => !LOCKED_IDS.includes(id)) : DEFAULT_IDS })}
-                        className="flex items-center gap-1.5 px-3 h-9 text-[12px] text-ink-200 bg-ink-800 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors"
-                      >
+                      <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'create', initial: form.features.length ? form.features.filter(id => !LOCKED_IDS.includes(id)) : DEFAULT_IDS })} className="flex items-center gap-1.5 px-3 h-9 text-[12px] rounded-lg transition-colors">
                         <ListChecks size={13} /> {form.features.length ? `已选 ${form.features.length} 个功能 · 重新选择` : '选择功能模块'}
                       </Button>
                       {form.features.length > 0 && (
@@ -407,11 +397,7 @@ export default function ProjectHub({ onOpen }: Props) {
                             {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作、灵感工具）与依赖自动带入的模块不可取消；其余模块自由调整。修改后点击「保存修改」生效。'}
                           </HelpPopover>
                         </div>
-                        <Button variant="bare"
-                          type="button"
-                          onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })}
-                          className="flex items-center gap-1.5 px-3 h-9 text-[12px] text-ink-200 bg-ink-800 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors"
-                        >
+                        <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })} className="flex items-center gap-1.5 px-3 h-9 text-[12px] rounded-lg transition-colors">
                           <ListChecks size={13} /> 已启用 {editForm.features.length} 个功能 · 编辑功能
                         </Button>
                       </div>
@@ -421,10 +407,7 @@ export default function ProjectHub({ onOpen }: Props) {
                         disabled={busy} variant="primary" size="md" className="flex items-center text-[12px]">
                         <Check size={13} /> 保存修改
                       </Button>
-                      <Button variant="bare"
-                        onClick={() => setEditingId(null)}
-                        className="px-3 py-1.5 text-[12px] text-ink-400 border border-ink-600 rounded-lg hover:text-ink-100 hover:border-ink-500 transition-colors"
-                      >
+                      <Button variant="ghost" onClick={() => setEditingId(null)} className="px-3 py-1.5 text-[12px] border-ink-600 rounded-lg hover:border-ink-500 transition-colors">
                         取消
                       </Button>
                     </div>

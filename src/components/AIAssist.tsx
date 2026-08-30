@@ -327,12 +327,7 @@ export default function AIAssist() {
                   <AlertCircle size={13} /> 停止
                 </Button>
               ) : (
-                <Button variant="bare"
-                  onClick={() => void send()}
-                  disabled={!aiReady || !prompt.trim()}
-                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={!aiReady ? AI_DISABLED_HINT : '发送'}
-                >
+                <Button variant="primary" onClick={() => void send()} disabled={!aiReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!aiReady ? AI_DISABLED_HINT : '发送'}>
                   <Send size={13} /> 发送
                 </Button>
               )}
@@ -578,15 +573,11 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                   <span className="text-[12px] font-medium text-ink-200">
                     {pickMode === 'local' ? '选择本地平台' : '选择联网平台'}
                   </span>
-                  <Button variant="bare" onClick={() => setPickMode('none')} className="ml-auto text-[11px] text-ink-400 hover:text-ink-100">返回</Button>
+                  <Button variant="ghost" onClick={() => setPickMode('none')} className="ml-auto text-[11px]">返回</Button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {(pickMode === 'local' ? LOCAL_PRESETS : ONLINE_PRESETS).map(p => (
-                    <Button variant="bare"
-                      key={p.label}
-                      onClick={() => startAddPreset(p)}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-ink-800 border border-ink-700 text-[12px] text-ink-200 hover:text-emerald-300 hover:border-emerald-400/40 transition-colors text-left"
-                    >
+                    <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 text-[12px] hover:text-emerald-300 hover:border-emerald-400/40 transition-colors text-left">
                       {pickMode === 'local'
                         ? <Cpu size={12} className="text-emerald-400 shrink-0" />
                         : <Globe size={12} className="text-sky-400 shrink-0" />}

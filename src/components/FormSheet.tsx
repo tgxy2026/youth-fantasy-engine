@@ -161,12 +161,7 @@ export default function FormSheet({ tab }: Props) {
             <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="bare"
-              onClick={() => setShowFill(true)}
-              disabled={!aiReady}
-              className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
-              title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}
-            >
+            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}>
               <Sparkles size={12} /> AI 补全
             </Button>
           )}

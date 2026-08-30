@@ -948,12 +948,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             {/* 工具栏 */}
             <div className="flex items-center gap-3 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50">
               <div className="flex items-center gap-1">
-                <Button variant="bare"
-                  disabled={activeIdx <= 0}
-                  onClick={() => openChapter(flat[activeIdx - 1].id)}
-                  className="p-1 text-ink-400 hover:text-ink-100 disabled:opacity-30 transition-colors shrink-0"
-                  title="上一章"
-                >
+                <Button variant="ghost" disabled={activeIdx <= 0} onClick={() => openChapter(flat[activeIdx - 1].id)} className="p-1 disabled:opacity-30 transition-colors shrink-0" title="上一章">
                   <ArrowLeft size={14} />
                 </Button>
                 <Button variant="bare"
@@ -1345,10 +1340,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             <PenLine size={32} className="text-ink-700" />
             <div className="text-sm">选择左侧章节，或新建一卷开始创作</div>
             {volumes.length === 0 && (
-              <Button variant="bare"
-                onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })}
-                className="px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors"
-              >
+              <Button variant="primary" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} className="px-4 py-2 rounded-lg text-[13px] transition-colors">
                 <FolderPlus size={14} className="inline mr-1.5" />新建第一卷
               </Button>
             )}

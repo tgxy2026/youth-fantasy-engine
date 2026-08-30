@@ -62,10 +62,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
               if (!tab || !tabVisible(tab.id, ctx)) return null
               return (
                 <div key={id} className="flex items-center gap-1.5">
-                  <Button variant="bare"
-                    onClick={() => onNavigate(id)}
-                    className="px-3 py-1.5 rounded-lg bg-ink-800 border border-ink-600 text-[12px] text-ink-200 hover:border-amber/50 hover:text-amber transition-colors"
-                  >
+                  <Button variant="secondary" onClick={() => onNavigate(id)} className="px-3 py-1.5 rounded-lg text-[12px] hover:border-amber/50 hover:text-amber transition-colors">
                     {i + 1}. {tab.name}
                   </Button>
                   {i < FILL_ORDER.length - 1 && <span className="text-ink-600 text-[10px]">→</span>}

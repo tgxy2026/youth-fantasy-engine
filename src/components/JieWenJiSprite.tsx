@@ -113,10 +113,7 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
           <div className="text-[11px] text-ink-300 leading-relaxed mb-2">
             本地校对、AI 深度校对、选区润色、审读建议、爽点毒点、续写方向、写作简报、本章设定补登……都在正文编辑器里。
           </div>
-          <Button variant="bare"
-            onClick={() => { onNavigate?.('editor'); setMini(false) }}
-            className="w-full px-2 py-1.5 rounded-lg text-[11.5px] bg-amber/15 border border-amber/30 text-amber hover:bg-amber/25 transition-colors"
-          >
+          <Button variant="primary" onClick={() => { onNavigate?.('editor'); setMini(false) }} className="w-full px-2 py-1.5 rounded-lg text-[11.5px] transition-colors">
             前往正文编辑器
           </Button>
         </div>

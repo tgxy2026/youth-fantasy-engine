@@ -233,12 +233,7 @@ export default function CharacterSheet({ tab }: Props) {
             <Plus size={14} /> 新建角色
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="bare"
-              onClick={() => setShowFill(true)}
-              disabled={!aiReady}
-              className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
-              title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全角色卡其余字段'}
-            >
+            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全角色卡其余字段'}>
               <Sparkles size={14} /> AI 补全
             </Button>
           )}

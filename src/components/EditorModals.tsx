@@ -53,10 +53,7 @@ export function SensitiveCheck({ content, onApply, onClose }: {
             ))}
           </div>
           <div className="flex gap-2 justify-end">
-            <Button variant="bare"
-              onClick={() => { onApply(replaceHits(content, hits)); setReplaced(true); onClose() }}
-              className="px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors"
-            >
+            <Button variant="primary" onClick={() => { onApply(replaceHits(content, hits)); setReplaced(true); onClose() }} className="px-4 py-2 rounded-lg text-[12px] transition-colors">
               一键替换为 ■■（{replaced ? '已' : '未'}替换）
             </Button>
           </div>
@@ -305,10 +302,7 @@ export function VersionHistory({ chapterId, onRestore, onClose }: {
               <>
                 <div className="text-[11px] text-ink-400 mb-2">{fmt(preview.createdAt)} · {preview.wordCount} 字</div>
                 <pre className="flex-1 overflow-y-auto text-[12px] text-ink-200 whitespace-pre-wrap font-serif max-h-64">{preview.content.slice(0, 2000)}{preview.content.length > 2000 ? '…' : ''}</pre>
-                <Button variant="bare"
-                  onClick={() => { onRestore(preview.content); onClose() }}
-                  className="mt-3 px-3 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors"
-                >
+                <Button variant="primary" onClick={() => { onRestore(preview.content); onClose() }} className="mt-3 px-3 py-2 rounded-lg text-[12px] transition-colors">
                   恢复到此版本（当前内容会先自动快照）
                 </Button>
               </>
@@ -531,7 +525,7 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <input type="number" value={goalWords} min={100} step={500} onChange={e => setGoalWords(parseInt(e.target.value, 10) || 1000)} className="!py-2 text-[13px] w-32" />
-              <Button variant="bare" onClick={() => start('words')} className="flex-1 py-2.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors">按字数锁定</Button>
+              <Button variant="primary" onClick={() => start('words')} className="flex-1 py-2.5 rounded-lg text-[13px] transition-colors">按字数锁定</Button>
             </div>
             <div className="flex items-center gap-2">
               <input type="number" value={goalMinutes} min={5} step={5} onChange={e => setGoalMinutes(parseInt(e.target.value, 10) || 30)} className="!py-2 text-[13px] w-32" />
@@ -561,7 +555,7 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
         ) : (
           <span className="text-[11px] text-ink-500">未达成前退出需确认</span>
         )}
-        <Button variant="bare" onClick={() => tryExit()} className="flex items-center gap-1 px-3 py-1.5 bg-ink-800 border border-ink-700 rounded-lg text-[12px] text-ink-200 hover:border-amber/40 hover:text-amber transition-colors">
+        <Button variant="secondary" onClick={() => tryExit()} className="flex items-center gap-1 px-3 py-1.5 border-ink-700 rounded-lg text-[12px] hover:border-amber/40 hover:text-amber transition-colors">
           {goalMet ? '保存并退出' : <><Eye size={12} /> 退出</>}
         </Button>
       </div>
@@ -582,8 +576,8 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
         hideHeader
         footer={
           <div className="flex gap-2">
-            <Button variant="bare" onClick={() => setShowPwd(false)} className="flex-1 py-2.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors">继续写</Button>
-            <Button variant="bare" onClick={() => { setShowPwd(false); tryExit(true) }} className="flex-1 py-2.5 bg-ink-800 text-ink-400 border border-ink-700 rounded-lg text-[13px] hover:text-ink-200 transition-colors flex items-center justify-center gap-1">
+            <Button variant="primary" onClick={() => setShowPwd(false)} className="flex-1 py-2.5 rounded-lg text-[13px] transition-colors">继续写</Button>
+            <Button variant="secondary" onClick={() => { setShowPwd(false); tryExit(true) }} className="flex-1 py-2.5 text-ink-400 border-ink-700 rounded-lg text-[13px] hover:text-ink-200 transition-colors flex items-center justify-center gap-1">
               <EyeOff size={12} /> 放弃目标
             </Button>
           </div>

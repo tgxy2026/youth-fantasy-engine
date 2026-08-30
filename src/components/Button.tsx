@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 // 共享按钮：统一高度 / 圆角 / 内边距 / 字号，收敛全站 352 个手写 button 的字面量漂移。
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'icon' | 'bare'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare'
 type Size = 'sm' | 'md' | 'lg'
 type Shape = 'rect' | 'pill' | 'round'
 
@@ -48,6 +48,14 @@ function variantClass(v: Variant, solid: boolean): string {
       return solid
         ? 'bg-red-500 text-white border border-red-500 hover:bg-red-600 shadow-lg'
         : 'bg-red-500/10 text-red-300 border border-red-500/30 hover:bg-red-500/20'
+    case 'success':
+      return solid
+        ? 'bg-emerald-500 text-ink-950 border border-emerald-500 hover:bg-emerald-400'
+        : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20'
+    case 'info':
+      return solid
+        ? 'bg-sky-500 text-white border border-sky-500 hover:bg-sky-600'
+        : 'bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/20'
     case 'icon':
       return 'text-ink-400 hover:text-ink-100 hover:bg-ink-800/60 rounded-md border border-transparent'
     case 'bare':
