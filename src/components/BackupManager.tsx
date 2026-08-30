@@ -227,22 +227,22 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
                 <div className="text-[12px] text-ink-100">{b.label}</div>
                 <div className="text-[10px] text-ink-500">{new Date(b.createdAt).toLocaleString()} · {sizeOf(b)}</div>
               </div>
-              <button
+              <Button variant="bare"
                 onClick={() => restore(b)}
                 disabled={busy}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] text-emerald-400 border border-emerald-500/30 rounded-md hover:bg-emerald-500/10 disabled:opacity-50"
                 title="用此版本覆盖当前项目"
               >
                 <RotateCcw size={11} /> 恢复
-              </button>
-              <button
+              </Button>
+              <Button variant="bare"
                 onClick={() => remove(b.id)}
                 disabled={busy}
                 className="p-1.5 text-ink-500 hover:text-red-400 disabled:opacity-50"
                 title="删除备份"
               >
                 <Trash2 size={12} />
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -259,14 +259,14 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
         icon={<ShieldCheck size={16} />}
         width={672}
         headerExtra={
-          <button
+          <Button variant="bare"
             onClick={backupNow}
             disabled={busy}
             className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] text-amber border border-amber/30 rounded-lg hover:bg-amber/10 disabled:opacity-50"
             title="立即生成一份手动备份（不参与自动淘汰，不会被系统删除）"
           >
             <Clock size={11} /> 立即备份
-          </button>
+          </Button>
         }
       >
         <div className="space-y-5">
@@ -303,22 +303,22 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               在另一台设备的同款软件里导入即可完整恢复。自动备份（上方）仅在本机滚动保留，迁移包用于跨设备搬运。
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <button
+              <Button variant="bare"
                 onClick={exportMigration}
                 disabled={busy}
                 className="flex items-center gap-1 px-3 py-1.5 text-[12px] text-amber border border-amber/30 rounded-lg hover:bg-amber/10 disabled:opacity-50"
                 title="导出整个项目为迁移包（可加密）"
               >
                 <Upload size={12} /> 导出迁移包（可选加密）
-              </button>
-              <button
+              </Button>
+              <Button variant="bare"
                 onClick={() => fileInput.current?.click()}
                 disabled={busy}
                 className="flex items-center gap-1 px-3 py-1.5 text-[12px] text-ink-100 border border-ink-600 rounded-lg hover:bg-ink-800 disabled:opacity-50"
                 title="从迁移包文件恢复项目"
               >
                 <FileDown size={12} /> 导入迁移包
-              </button>
+              </Button>
             </div>
           </div>
 

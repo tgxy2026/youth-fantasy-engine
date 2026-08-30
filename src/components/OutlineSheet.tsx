@@ -207,7 +207,7 @@ export default function OutlineSheet({ tab }: Props) {
             <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
-            <button
+            <Button variant="bare"
               onClick={save}
               disabled={!dirty || saving}
               className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
@@ -217,14 +217,14 @@ export default function OutlineSheet({ tab }: Props) {
               title={dirty ? '保存（Ctrl+S）' : '无未保存修改'}
             >
               <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
-            </button>
-            <button
+            </Button>
+            <Button variant="bare"
               onClick={() => setTplOpen(true)}
               className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors"
               title="套用经典结构模板快速搭建大纲"
             >
               <Layers size={14} /> 模板库
-            </button>
+            </Button>
             <Button onClick={addRecord} variant="primary" size="md" className="flex items-center text-[13px]">
               <Plus size={14} /> 新建{noun}
             </Button>
@@ -270,30 +270,30 @@ export default function OutlineSheet({ tab }: Props) {
                 </div>
                 {/* 悬停操作：排序 / 删除 */}
                 <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
+                  <Button variant="bare"
                     disabled={i === 0}
                     onClick={e => { e.stopPropagation(); moveRecord(rec.id, -1) }}
                     className="p-0.5 text-ink-500 hover:text-amber disabled:opacity-30 disabled:cursor-not-allowed"
                     title="上移"
                   >
                     <ChevronUp size={12} />
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="bare"
                     disabled={i === records.length - 1}
                     onClick={e => { e.stopPropagation(); moveRecord(rec.id, 1) }}
                     className="p-0.5 text-ink-500 hover:text-amber disabled:opacity-30 disabled:cursor-not-allowed"
                     title="下移"
                   >
                     <ChevronDown size={12} />
-                  </button>
+                  </Button>
                   <span className="flex-1" />
-                  <button
+                  <Button variant="bare"
                     onClick={e => { e.stopPropagation(); removeRecord(rec.id) }}
                     className="p-0.5 text-ink-500 hover:text-red-400"
                     title={`删除该${noun}`}
                   >
                     <Trash2 size={12} />
-                  </button>
+                  </Button>
                 </div>
               </div>
             )

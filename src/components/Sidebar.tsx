@@ -150,7 +150,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           if (tabs.length === 0 && group !== '正文写作') return null
           return (
             <div key={group}>
-              <button
+              <Button variant="bare"
                 onClick={() => toggleGroup(group)}
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] font-medium text-ink-400 hover:text-ink-200 transition-colors uppercase tracking-wider"
               >
@@ -160,7 +160,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                   size={12}
                   className={`ml-auto transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
                 />
-              </button>
+              </Button>
               {isOpen && (
                 <div className="mt-0.5 space-y-0.5">
                   {tabs.map(tab => {
@@ -169,7 +169,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                     if (tab.id === 'chapter-master') {
                       return (
                         <div key={tab.id}>
-                          <button
+                          <Button variant="bare"
                             onClick={() => { setVolOpen(o => !o); onNavigate(tab.id) }}
                             className={`w-full text-left px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
                               ${active
@@ -178,7 +178,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                           >
                             {tab.name}
                             <ChevronDown size={11} className={`ml-auto transition-transform duration-200 ${volOpen ? '' : '-rotate-90'}`} />
-                          </button>
+                          </Button>
                           {volOpen && (
                             <div className="mt-0.5 space-y-0.5">
                               {volumeTabs.length === 0 && (
@@ -188,7 +188,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                               )}
                               {volumeTabs.map(v => (
                                 <div key={v.id} className="group flex items-center gap-0.5">
-                                  <button
+                                  <Button variant="bare"
                                     onClick={() => onNavigate(v.id)}
                                     className={`flex-1 text-left px-2.5 py-1 pl-12 rounded-md text-[13px] transition-all duration-150
                                       ${v.id === activeTab
@@ -196,14 +196,14 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                                         : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
                                   >
                                     {v.name}
-                                  </button>
-                                  <button
+                                  </Button>
+                                  <Button variant="bare"
                                     onClick={() => removeVolume(v)}
                                     title="删除该卷"
                                     className="shrink-0 px-1.5 py-1 rounded-md text-ink-500 hover:text-red-400 hover:bg-ink-800 transition-colors"
                                   >
                                     <Trash2 size={13} />
-                                  </button>
+                                  </Button>
                                 </div>
                               ))}
                               {volumeTabs.length > 0 && (
@@ -217,7 +217,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                       )
                     }
                     return (
-                      <button
+                      <Button variant="bare"
                         key={tab.id}
                         onClick={() => onNavigate(tab.id)}
                         className={`w-full text-left px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150
@@ -226,7 +226,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                             : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
                       >
                         {tab.name}
-                      </button>
+                      </Button>
                     )
                   })}
                 </div>
@@ -247,7 +247,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           {/* 允许换行：主题增至 8 套后单行会挤压色块，侧栏偏窄时自动折行 */}
           <div className="flex flex-wrap gap-1.5">
             {THEMES.map(t => (
-              <button
+              <Button variant="bare"
                 key={t.id}
                 title={`${t.name}（${t.desc}）`}
                 onClick={() => changeTheme(t.id)}
@@ -266,13 +266,13 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             </HelpPopover>
           </span>
           <div className="flex items-center gap-1 ml-auto">
-            <button
+            <Button variant="bare"
               onClick={() => changeZoom(-10)}
               className="p-0.5 text-ink-400 hover:text-amber transition-colors"
               title="缩小界面"
             >
               <ZoomOut size={12} />
-            </button>
+            </Button>
             <span className="flex items-center gap-0.5">
               <input
                 type="number"
@@ -287,13 +287,13 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
               />
               <span className="text-ink-400 text-xs">%</span>
             </span>
-            <button
+            <Button variant="bare"
               onClick={() => changeZoom(10)}
               className="p-0.5 text-ink-400 hover:text-amber transition-colors"
               title="放大界面"
             >
               <ZoomIn size={12} />
-            </button>
+            </Button>
           </div>
         </div>
         {DESKTOP && <DesktopDataBar embedded />}

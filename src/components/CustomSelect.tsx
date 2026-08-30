@@ -263,7 +263,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
 
   return (
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
-      <button
+      <Button variant="bare"
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -271,7 +271,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
       >
         <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? (labelMap?.[value] ?? value) : '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
-      </button>
+      </Button>
       {open && pos && createPortal(
         <div
           ref={dropRef}
@@ -352,7 +352,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 className={`group flex items-center px-1 py-0.5 text-[12px] hover:bg-ink-700
                   ${selected ? 'text-amber' : 'text-ink-200'}`}
               >
-                <button
+                <Button variant="bare"
                   type="button"
                   onClick={() => choose(item.original)}
                   className="flex-1 text-left px-1.5 py-0.5 flex items-center gap-1.5 min-w-0"
@@ -362,41 +362,41 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   {item.kind === 'user' && (
                     <span className="ml-auto text-[9px] text-ink-500 bg-ink-900 px-1 rounded">自定义</span>
                   )}
-                </button>
+                </Button>
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 pr-1">
                   {item.kind === 'builtin' ? (
                     <>
-                      <button
+                      <Button variant="bare"
                         type="button"
                         title="重命名"
                         onMouseDown={e => e.preventDefault()}
                         onClick={() => onStartRename(item.original, item.display)}
                         className="p-0.5 text-ink-500 hover:text-amber"
-                      ><Pencil size={10} /></button>
-                      <button
+                      ><Pencil size={10} /></Button>
+                      <Button variant="bare"
                         type="button"
                         title="从下拉移除"
                         onMouseDown={e => e.preventDefault()}
                         onClick={() => onHideBuiltin(item.original)}
                         className="p-0.5 text-ink-500 hover:text-red-400"
-                      ><EyeOff size={10} /></button>
+                      ><EyeOff size={10} /></Button>
                     </>
                   ) : (
                     <>
-                      <button
+                      <Button variant="bare"
                         type="button"
                         title="编辑"
                         onMouseDown={e => e.preventDefault()}
                         onClick={() => onStartEditUser(item.original)}
                         className="p-0.5 text-ink-500 hover:text-amber"
-                      ><Pencil size={10} /></button>
-                      <button
+                      ><Pencil size={10} /></Button>
+                      <Button variant="bare"
                         type="button"
                         title="删除"
                         onMouseDown={e => e.preventDefault()}
                         onClick={() => onDeleteUser(item.original)}
                         className="p-0.5 text-ink-500 hover:text-red-400"
-                      ><Trash2 size={10} /></button>
+                      ><Trash2 size={10} /></Button>
                     </>
                   )}
                 </div>
@@ -411,12 +411,12 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
               {payload.hidden.map(h => (
                 <div key={`h-${h}`} className="group flex items-center px-1 py-0.5 text-[12px] text-ink-500 hover:bg-ink-700">
                   <span className="flex-1 px-1.5 py-0.5 line-through truncate">{h}</span>
-                  <button
+                  <Button variant="bare"
                     type="button"
                     onClick={() => onRestoreBuiltin(h)}
                     className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-amber"
                     title="还原"
-                  ><RotateCcw size={10} /></button>
+                  ><RotateCcw size={10} /></Button>
                 </div>
               ))}
             </div>
@@ -440,13 +440,13 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 onClick={submitDraft} variant="primary" size="md" className="text-[11px] rounded">保存</Button>
             </div>
           ) : (
-            <button
+            <Button variant="bare"
               type="button"
               onClick={() => { setAdding(true); setTimeout(() => inputRef.current?.focus(), 0) }}
               className="w-full text-left px-2.5 py-1.5 text-[11.5px] text-amber/90 border-t border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
             >
               <Plus size={11} /> 添加新值…
-            </button>
+            </Button>
           )}
         </div>,
         document.body

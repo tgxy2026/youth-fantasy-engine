@@ -293,12 +293,12 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               ))}
             </div>
           )}
-          <button
+          <Button variant="bare"
             onClick={() => onNavigate('progress')}
             className="mt-4 flex items-center gap-1 text-[11px] text-ink-400 hover:text-amber transition-colors"
           >
             去登记今日字数 <ChevronRight size={11} />
-          </button>
+          </Button>
         </section>
 
         {/* 快捷入口 */}
@@ -311,14 +311,14 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           </h2>
           <div className="grid grid-cols-3 gap-2">
             {quickLinks.filter(q => !hiddenTabIds.has(q.id)).map(q => (
-              <button
+              <Button variant="bare"
                 key={q.id}
                 onClick={() => onNavigate(q.id)}
                 className="flex flex-col items-center gap-2 py-4 rounded-lg bg-ink-800 border border-ink-700 text-ink-300 hover:border-amber/40 hover:text-amber transition-all card-hover"
               >
                 {q.icon}
                 <span className="text-[11px]">{q.name}</span>
-              </button>
+              </Button>
             ))}
           </div>
         </section>
@@ -350,12 +350,12 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
                 )
               })}
             </div>
-            <button
+            <Button variant="bare"
               onClick={() => onNavigate('editor')}
               className="mt-4 flex items-center gap-1 text-[11px] text-ink-400 hover:text-amber transition-colors"
             >
               去写作 <ChevronRight size={11} />
-            </button>
+            </Button>
           </section>
         )}
 
@@ -448,7 +448,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
                   ))}
                 </div>
               )}
-              <button onClick={() => setDiag(null)} className="text-[11px] text-ink-500 hover:text-ink-300">收起诊断</button>
+              <Button variant="bare" onClick={() => setDiag(null)} className="text-[11px] text-ink-500 hover:text-ink-300">收起诊断</Button>
             </div>
           )}
         </section>

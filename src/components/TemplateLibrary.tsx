@@ -4,6 +4,7 @@ import { uid } from '../lib/id'
 import { Layers, Plus } from 'lucide-react'
 import { confirmDialog, showToast } from './dialogs'
 import { Modal } from './Modal'
+import { Button } from './Button'
 
 interface Props {
   tabId: string
@@ -131,13 +132,13 @@ export default function TemplateLibrary({ tabId, isVolume, onApplied, onClose }:
                   <div className="text-[13px] font-semibold text-ink-100">{tpl.name}</div>
                   <div className="text-[11px] text-ink-400 mt-1 leading-relaxed">{tpl.desc}</div>
                 </div>
-                <button
+                <Button variant="bare"
                   disabled={busy}
                   onClick={() => apply(tpl)}
                   className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] font-medium hover:bg-amber/25 disabled:opacity-50"
                 >
                   <Plus size={12} /> 套用（{tpl.items.length}）
-                </button>
+                </Button>
               </div>
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 {tpl.items.map((it, i) => (

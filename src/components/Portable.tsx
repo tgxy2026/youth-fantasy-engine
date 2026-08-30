@@ -111,7 +111,7 @@ export function PortableBadge() {
       : 'bg-emerald-500'
 
   return (
-    <button
+    <Button variant="bare"
       onClick={() => void flush()}
       title="点击立即保存到 U 盘数据文件"
       className="fixed bottom-3 left-3 z-50 flex items-center gap-2 rounded-full border border-ink-600/80 bg-ink-900/90 px-3.5 py-1.5 text-[12px] text-ink-300 shadow-lg backdrop-blur transition-colors hover:border-amber/50 hover:text-ink-100"
@@ -119,6 +119,6 @@ export function PortableBadge() {
       <Save size={12} className="text-amber/80" />
       <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
       {text}
-    </button>
+    </Button>
   )
 }

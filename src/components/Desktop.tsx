@@ -5,6 +5,7 @@ import {
   exportDesktopData, importDesktopData, revealDesktopDataFile,
 } from '../lib/desktop'
 import { confirmDialog, showToast } from './dialogs'
+import { Button } from './Button'
 
 /**
  * 桌面（安装）版数据管理栏：
@@ -83,7 +84,7 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className={embedded ? 'flex items-center gap-2 pt-1' : 'fixed bottom-3 left-3 z-50 flex items-center gap-2'}>
-      <button
+      <Button variant="bare"
         onClick={() => void flushDesktop()}
         title={
           state.lastError
@@ -102,16 +103,16 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
         <Save size={12} className="text-amber/80" />
         <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
         <span className="whitespace-nowrap">{text}</span>
-      </button>
-      <button onClick={doExport} disabled={!!busy} title="导出数据文件：把本机全部数据存到 U 盘等位置，便携版可直接打开使用" className={iconBtn}>
+      </Button>
+      <Button variant="bare" onClick={doExport} disabled={!!busy} title="导出数据文件：把本机全部数据存到 U 盘等位置，便携版可直接打开使用" className={iconBtn}>
         <HardDriveUpload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
-      </button>
-      <button onClick={doImport} disabled={!!busy} title="导入数据文件：选择便携版（U 盘）的数据文件，替换本机全部数据" className={iconBtn}>
+      </Button>
+      <Button variant="bare" onClick={doImport} disabled={!!busy} title="导入数据文件：选择便携版（U 盘）的数据文件，替换本机全部数据" className={iconBtn}>
         <FileInput size={14} className={busy === 'import' ? 'animate-pulse' : ''} />
-      </button>
-      <button onClick={() => void revealDesktopDataFile()} title="打开数据文件夹（手动备份本地数据文件）" className={iconBtn}>
+      </Button>
+      <Button variant="bare" onClick={() => void revealDesktopDataFile()} title="打开数据文件夹（手动备份本地数据文件）" className={iconBtn}>
         <FolderSearch size={14} />
-      </button>
+      </Button>
     </div>
   )
 }

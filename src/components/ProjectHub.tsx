@@ -183,12 +183,12 @@ export default function ProjectHub({ onOpen }: Props) {
               title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center text-[13px]">
               <BookPlus size={13} /> 创建示范项目
             </Button>
-            <button
+            <Button variant="bare"
               onClick={() => fileRef.current?.click()}
               className="flex items-center gap-1.5 px-3.5 h-9 text-[13px] text-ink-200 bg-ink-800 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors"
             >
               <FileDown size={13} /> 导入项目
-            </button>
+            </Button>
             <input
               ref={fileRef}
               type="file"
@@ -200,12 +200,12 @@ export default function ProjectHub({ onOpen }: Props) {
                 e.target.value = ''
               }}
             />
-            <button
+            <Button variant="bare"
               onClick={() => setCreating(true)}
               className="flex items-center gap-1.5 px-3.5 h-9 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] font-medium hover:bg-amber/25 transition-colors"
             >
               <BookPlus size={14} /> 新建小说项目
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -214,12 +214,12 @@ export default function ProjectHub({ onOpen }: Props) {
           <div className="mb-6 rounded-xl border border-amber/25 bg-ink-850 p-5 page-enter">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[13px] font-semibold text-ink-100">新建小说项目</h3>
-              <button onClick={() => setCreating(false)} className="text-ink-500 hover:text-ink-200"><X size={16} /></button>
+              <Button variant="bare" onClick={() => setCreating(false)} className="text-ink-500 hover:text-ink-200"><X size={16} /></Button>
             </div>
             <div className="flex gap-5">
               {/* 封面上传 */}
               <div className="shrink-0">
-                <button
+                <Button variant="bare"
                   onClick={() => coverRef.current?.click()}
                   className="group relative w-[88px] h-[123px] rounded-lg border border-dashed border-ink-600 hover:border-amber/50 overflow-hidden transition-colors flex items-center justify-center"
                   title="上传封面（可选，2MB 以内）"
@@ -241,7 +241,7 @@ export default function ProjectHub({ onOpen }: Props) {
                       <span className="text-[10px]">上传封面</span>
                     </div>
                   )}
-                </button>
+                </Button>
                 <input
                   ref={coverRef}
                   type="file"
@@ -270,7 +270,7 @@ export default function ProjectHub({ onOpen }: Props) {
                     ]).map(opt => {
                       const active = form.projectType === opt.v
                       return (
-                        <button
+                        <Button variant="bare"
                           key={opt.v}
                           type="button"
                           onClick={() => {
@@ -288,19 +288,19 @@ export default function ProjectHub({ onOpen }: Props) {
                         >
                           <div className="text-[12.5px] font-medium">{opt.label}</div>
                           <div className="text-[10px] text-ink-500 mt-0.5">{opt.desc}</div>
-                        </button>
+                        </Button>
                       )
                     })}
                   </div>
                   {form.projectType === 'custom' && (
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <button
+                      <Button variant="bare"
                         type="button"
                         onClick={() => setFeatureModal({ mode: 'create', initial: form.features.length ? form.features.filter(id => !LOCKED_IDS.includes(id)) : DEFAULT_IDS })}
                         className="flex items-center gap-1.5 px-3 h-9 text-[12px] text-ink-200 bg-ink-800 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors"
                       >
                         <ListChecks size={13} /> {form.features.length ? `已选 ${form.features.length} 个功能 · 重新选择` : '选择功能模块'}
-                      </button>
+                      </Button>
                       {form.features.length > 0 && (
                         <span className="text-[11px] text-ink-500">含必选模块与依赖自动带入项，共 {form.features.length} 项</span>
                       )}
@@ -359,7 +359,7 @@ export default function ProjectHub({ onOpen }: Props) {
                   /* 编辑模式：修改书名与封面 */
                   <div>
                     <div className="flex items-start gap-4">
-                      <button
+                      <Button variant="bare"
                         onClick={() => editCoverRef.current?.click()}
                         className="group/cover relative w-[92px] h-[128px] rounded-md border border-dashed border-ink-600 hover:border-amber/50 overflow-hidden transition-colors flex items-center justify-center shrink-0"
                         title="上传封面（可选，2MB 以内）"
@@ -381,7 +381,7 @@ export default function ProjectHub({ onOpen }: Props) {
                             <span className="text-[10px]">上传封面</span>
                           </div>
                         )}
-                      </button>
+                      </Button>
                       <input
                         ref={editCoverRef}
                         type="file"
@@ -407,13 +407,13 @@ export default function ProjectHub({ onOpen }: Props) {
                             {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作、灵感工具）与依赖自动带入的模块不可取消；其余模块自由调整。修改后点击「保存修改」生效。'}
                           </HelpPopover>
                         </div>
-                        <button
+                        <Button variant="bare"
                           type="button"
                           onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })}
                           className="flex items-center gap-1.5 px-3 h-9 text-[12px] text-ink-200 bg-ink-800 border border-ink-600 rounded-lg hover:bg-ink-700 transition-colors"
                         >
                           <ListChecks size={13} /> 已启用 {editForm.features.length} 个功能 · 编辑功能
-                        </button>
+                        </Button>
                       </div>
                     )}
                     <div className="mt-4 flex items-center gap-2">
@@ -421,12 +421,12 @@ export default function ProjectHub({ onOpen }: Props) {
                         disabled={busy} variant="primary" size="md" className="flex items-center text-[12px]">
                         <Check size={13} /> 保存修改
                       </Button>
-                      <button
+                      <Button variant="bare"
                         onClick={() => setEditingId(null)}
                         className="px-3 py-1.5 text-[12px] text-ink-400 border border-ink-600 rounded-lg hover:text-ink-100 hover:border-ink-500 transition-colors"
                       >
                         取消
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : (
@@ -458,64 +458,64 @@ export default function ProjectHub({ onOpen }: Props) {
                         </div>
                         <div className="mt-auto pt-3 flex items-center gap-1.5">
                           <Tooltip label="打开项目">
-                            <button
+                            <Button variant="bare"
                               onClick={() => onOpen(p.id)}
                               className="icon-btn-primary"
                               title="打开项目"
                               aria-label="打开项目"
                             >
                               <FolderOpen size={15} />
-                            </button>
+                            </Button>
                           </Tooltip>
                           <Tooltip label="导出 JSON 备份">
-                            <button
+                            <Button variant="bare"
                               onClick={() => exportProject(p)}
                               className="icon-btn"
                               title="导出 JSON 备份"
                               aria-label="导出 JSON 备份"
                             >
                               <Upload size={14} />
-                            </button>
+                            </Button>
                           </Tooltip>
                           <Tooltip label="导出设定集">
-                            <button
+                            <Button variant="bare"
                               onClick={async () => { db.setCurrentProject(p.id); const { exportSettingCompendium } = await import('../lib/exporter'); void exportSettingCompendium(p.name) }}
                               className="icon-btn"
                               title="导出设定集（汇总全部世界观 / 人物 / 设定表）"
                               aria-label="导出设定集"
                             >
                               <BookText size={14} />
-                            </button>
+                            </Button>
                           </Tooltip>
                           <Tooltip label="备份与恢复">
-                            <button
+                            <Button variant="bare"
                               onClick={() => { setBackupName(p.name); setBackupPid(p.id) }}
                               className="icon-btn"
                               title="备份与恢复：查看 / 一键恢复历史版本"
                               aria-label="备份与恢复"
                             >
                               <History size={14} />
-                            </button>
+                            </Button>
                           </Tooltip>
                           <Tooltip label="编辑项目">
-                            <button
+                            <Button variant="bare"
                               onClick={() => startEdit(p)}
                               className="icon-btn"
                               title="编辑项目"
                               aria-label="编辑项目"
                             >
                               <Pencil size={14} />
-                            </button>
+                            </Button>
                           </Tooltip>
                           <Tooltip label="删除项目" side="bottom">
-                            <button
+                            <Button variant="bare"
                               onClick={() => removeProject(p)}
                               className="icon-btn-danger"
                               title="删除项目"
                               aria-label="删除项目"
                             >
                               <Trash2 size={15} />
-                            </button>
+                            </Button>
                           </Tooltip>
                         </div>
                       </div>

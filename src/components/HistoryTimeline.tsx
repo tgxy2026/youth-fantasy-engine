@@ -3,6 +3,7 @@ import type { TableRow, TabDef, CalendarDef } from '../lib/types'
 import { storyDateKey } from './StoryDateInput'
 import { Calendar, Users, X } from 'lucide-react'
 import { Modal } from './Modal'
+import { Button } from './Button'
 
 const COLORS = [
   { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber' },
@@ -156,7 +157,7 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-[11px] text-ink-500 mr-1">状态筛选：</span>
           {(['all', '已定稿', '待补充', '已变更'] as const).map(s => (
-            <button
+            <Button variant="bare"
               key={s}
               onClick={() => setFilterStatus(s)}
               className={`px-2.5 py-0.5 rounded-md text-[11px] border transition-colors
@@ -165,7 +166,7 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
                   : 'bg-ink-800 text-ink-400 border-ink-700 hover:text-ink-200'}`}
             >
               {s === 'all' ? '全部' : s}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -252,10 +253,10 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
                 </div>
                 <h3 className="text-[16px] font-semibold text-ink-50 leading-snug">{selected.title || '（未命名事件）'}</h3>
               </div>
-              <button
+              <Button variant="bare"
                 onClick={() => setSelected(null)}
                 className="p-1.5 text-ink-500 hover:text-ink-200 hover:bg-ink-700 rounded-lg transition-colors shrink-0"
-              ><X size={16} /></button>
+              ><X size={16} /></Button>
             <div className="p-4 space-y-2.5">
               {detail(selected).map(([label, value]) => (
                 <div key={label} className="text-[12.5px] leading-relaxed">

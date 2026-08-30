@@ -764,16 +764,16 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </HelpPopover>
             </span>
             <div className="flex gap-1">
-              <button
+              <Button variant="bare"
                 onClick={() => runExport(m => m.exportWholeBook(projectName, volumes, chapters))}
                 className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0"
                 title="导出全书 TXT"
               >
                 <Upload size={14} />
-              </button>
-              <button onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} title="新建卷" className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0">
+              </Button>
+              <Button variant="bare" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} title="新建卷" className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0">
                 <FolderPlus size={13} />
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -810,7 +810,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     >
                       <GripVertical size={12} />
                     </span>
-                    <button
+                    <Button variant="bare"
                       onClick={() => {
                         const next = new Set(expanded)
                         if (next.has(vol.id)) next.delete(vol.id); else next.add(vol.id)
@@ -819,7 +819,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                       className="text-ink-500 hover:text-ink-200"
                     >
                       {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    </button>
+                    </Button>
                     <span
                       onClick={() => setNamePrompt({ kind: 'renVol', title: '修改卷名', def: vol.title, payload: vol })}
                       className="text-[12.5px] font-semibold text-ink-100 cursor-pointer hover:text-amber transition-colors flex-1 truncate"
@@ -828,19 +828,19 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                       {vol.title}
                     </span>
                     <span className="text-[9px] text-ink-600">{chs.length}章·{(volWords / 10000).toFixed(1)}万</span>
-                    <button
+                    <Button variant="bare"
                       onClick={() => setNamePrompt({ kind: 'addCh', title: '新建章节', def: `第${nextChapterNo}章`, payload: vol.id })}
                       className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-amber transition-all"
                       title="新建章"
                     >
                       <FilePlus2 size={12} />
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="bare"
                       onClick={() => removeVolume(vol)}
                       className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-red-400 transition-all"
                     >
                       <Trash2 size={12} />
-                    </button>
+                    </Button>
                   </div>
                   {open && (
                     <div className="ml-3 border-l border-ink-700 pl-1 mt-0.5 space-y-0.5">
@@ -883,7 +883,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                                 {ch.title}
                               </span>
                               <span className="text-[9px] text-ink-600 group-hover:hidden">{ch.wordCount > 0 ? `${ch.wordCount}字` : ''}</span>
-                              <button
+                              <Button variant="bare"
                                 onClick={e => { e.stopPropagation(); toggleExcludeNumbering(ch) }}
                                 className={`p-0.5 transition-colors ${
                                   ch.excludeFromNumbering
@@ -895,18 +895,18 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                                   : '设为「不计入序号」：序章 / 番外 / 后记不占正文号'}
                               >
                                 <Hash size={12} />
-                              </button>
-                              <button
+                              </Button>
+                              <Button variant="bare"
                                 onClick={e => { e.stopPropagation(); removeChapter(ch) }}
                                 className="hidden group-hover:block p-0.5 text-ink-500 hover:text-red-400"
                               >
                                 <Trash2 size={12} />
-                              </button>
+                              </Button>
                           </div>
                         )
                       })}
                       {chs.length === 0 && (
-                        <button
+                        <Button variant="bare"
                           onClick={() => setNamePrompt({ kind: 'addCh', title: '新建章节', def: `第${nextChapterNo}章`, payload: vol.id })}
                           onDragOver={e => { if (dragKind !== 'ch') return; e.preventDefault(); e.stopPropagation(); setOverKey({ kind: 'vol', id: vol.id, pos: 'after' }) }}
                           onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop() }}
@@ -914,7 +914,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                           title="拖动章节到此可加入本卷"
                         >
                           + 新建第一章
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )}
@@ -948,22 +948,22 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             {/* 工具栏 */}
             <div className="flex items-center gap-3 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50">
               <div className="flex items-center gap-1">
-                <button
+                <Button variant="bare"
                   disabled={activeIdx <= 0}
                   onClick={() => openChapter(flat[activeIdx - 1].id)}
                   className="p-1 text-ink-400 hover:text-ink-100 disabled:opacity-30 transition-colors shrink-0"
                   title="上一章"
                 >
                   <ArrowLeft size={14} />
-                </button>
-                <button
+                </Button>
+                <Button variant="bare"
                   disabled={activeIdx >= flat.length - 1}
                   onClick={() => openChapter(flat[activeIdx + 1].id)}
                   className="p-1 text-ink-400 hover:text-ink-100 disabled:opacity-30 transition-colors shrink-0"
                   title="下一章"
                 >
                   <ArrowRight size={14} />
-                </button>
+                </Button>
               </div>
               <input
                 value={active.title}
@@ -980,114 +980,114 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </select>
               <div className="w-px h-4 bg-ink-700" />
               {/* 工具组：敏感词 / 排版 / 导出 / 时光机 / 回收站 / 全文搜索 / 小黑屋 */}
-              <button onClick={() => setModal('sensitive')} className="p-1 text-ink-400 hover:text-red-400 transition-colors shrink-0" title="敏感词检测（本章）">
+              <Button variant="bare" onClick={() => setModal('sensitive')} className="p-1 text-ink-400 hover:text-red-400 transition-colors shrink-0" title="敏感词检测（本章）">
                 <ShieldAlert size={14} />
-              </button>
-              <button
+              </Button>
+              <Button variant="bare"
                 onClick={async () => { if (await confirmDialog({ title: '一键排版', message: '统一段落首行缩进（两个全角空格）并规范空行？' })) updateContent(formatNovelText(draftContent)) }}
                 className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0"
                 title="一键排版（首行缩进+空行规范）"
               >
                 <AlignLeft size={14} />
-              </button>
+              </Button>
               <div className="w-px h-4 bg-ink-700" />
               {/* 审计工具组：伏笔闭环 / 连续性校验 / 错别字 / 文风体检 */}
               {!isLite && (
-              <button onClick={() => setModal('foreshadow')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="伏笔闭环看板（全局）">
+              <Button variant="bare" onClick={() => setModal('foreshadow')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="伏笔闭环看板（全局）">
                 <GitBranch size={14} />
-              </button>
+              </Button>
               )}
               {!isLite && (
-              <button onClick={() => setModal('continuity')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="连续性校验器（全局）">
+              <Button variant="bare" onClick={() => setModal('continuity')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="连续性校验器（全局）">
                 <Link2 size={14} />
-              </button>
+              </Button>
               )}
-              <button onClick={() => setModal('typo')} className="p-1 text-ink-400 hover:text-red-400 transition-colors shrink-0" title="校对（本章）：本地错别字直接查；语病 / 逻辑 / 设定矛盾需接入 AI 模型">
+              <Button variant="bare" onClick={() => setModal('typo')} className="p-1 text-ink-400 hover:text-red-400 transition-colors shrink-0" title="校对（本章）：本地错别字直接查；语病 / 逻辑 / 设定矛盾需接入 AI 模型">
                 <SpellCheck size={14} />
-              </button>
+              </Button>
               {!isLite && (
-              <button onClick={() => setModal('style')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="文风体检（本章）">
+              <Button variant="bare" onClick={() => setModal('style')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="文风体检（本章）">
                 <Feather size={14} />
-              </button>
+              </Button>
               )}
               <div className="w-px h-4 bg-ink-700" />
-              <button
+              <Button variant="bare"
                 onClick={() => setJieWenJiOpen(o => !o)}
                 className={`p-1 transition-colors shrink-0 ${jieWenJiOpen ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
                 title="颉文姬 · AI 编辑：深度校对 / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配置模型）"
               >
                 <Wand2 size={14} />
-              </button>
+              </Button>
               {/* 导出菜单：本章 / 按卷 / 按章节 / 全本（图标化，节省工具栏空间） */}
               <div className="relative shrink-0">
-                <button
+                <Button variant="bare"
                   onClick={() => setExportOpen(o => !o)}
                   className={`flex items-center p-1 rounded transition-colors ${exportOpen ? 'text-amber bg-amber/10' : 'text-ink-400 hover:text-amber'}`}
                   title="导出 TXT（本章 / 按卷 / 按章 / 全本）"
                 >
                   <Upload size={14} />
                   <ChevronDown size={9} className="ml-0.5 opacity-70" />
-                </button>
+                </Button>
                 {exportOpen && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
                     <div className="absolute right-0 top-full mt-1 z-40 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 max-h-[60vh] overflow-y-auto">
-                      <button
+                      <Button variant="bare"
                         onClick={() => runExport(m => m.exportChapter(projectName, active))}
                         className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出本章（{active.title}）
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="bare"
                         onClick={() => runExport(m => m.exportWholeBook(projectName, volumes, chapters))}
                         className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全本（一卷一章）
-                      </button>
+                      </Button>
                       <div className="my-1 mx-2 border-t border-ink-700" />
                       <div className="px-3 py-1 text-[10px] text-ink-500">导出全文（多格式）</div>
-                      <button
+                      <Button variant="bare"
                         onClick={() => runExport(m => m.exportBookMD(projectName, volumes, chapters))}
                         className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（Markdown）
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="bare"
                         onClick={() => runExport(m => m.exportEPUB(projectName, volumes, chapters))}
                         className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（EPUB）
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="bare"
                         onClick={() => runExport(m => m.exportDOCX(projectName, volumes, chapters))}
                         className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（DOCX）
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="bare"
                         onClick={() => runExport(m => m.exportBookPlatformText(projectName, volumes, chapters))}
                         className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                         title="干净纯文本，适配起点 / 番茄等网文平台粘贴"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（平台粘贴版）
-                      </button>
+                      </Button>
                       <div className="my-1 mx-2 border-t border-ink-700" />
                       <div className="px-3 py-1 text-[10px] text-ink-500">按卷导出</div>
                       {volumes.length === 0 ? (
                         <div className="px-3 py-1.5 text-[11px] text-ink-500">暂无分卷</div>
                       ) : volumes.map(vol => (
-                        <button
+                        <Button variant="bare"
                           key={vol.id}
                           onClick={() => runExport(m => m.exportVolume(projectName, vol, chapters))}
                           className="w-full text-left pl-5 pr-3 py-1 text-[12px] text-ink-200 hover:bg-ink-700 truncate"
                           title={`导出「${vol.title}」`}
                         >
                           {vol.title}（{chapters.filter(c => c.volumeId === vol.id).length} 章）
-                        </button>
+                        </Button>
                       ))}
                       <div className="my-1 mx-2 border-t border-ink-700" />
                       <div className="px-3 py-1 text-[10px] text-ink-500">按章节导出</div>
-                      <button
+                      <Button variant="bare"
                         onClick={async () => {
                           // 每章一个文件——使用循环 setTimeout 避免浏览器拦截多个下载
                           const m = await import('../lib/exporter')
@@ -1104,17 +1104,17 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                         className="w-full text-left px-3 py-1.5 text-[12px] text-ink-200 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} /> 全部章节逐一导出（{chapters.length} 个文件）
-                      </button>
+                      </Button>
                       <div className="max-h-40 overflow-y-auto">
                         {flattenChapters(volumes, chapters).map(ch => (
-                          <button
+                          <Button variant="bare"
                             key={ch.id}
                             onClick={() => runExport(m => m.exportChapter(projectName, ch))}
                             className="w-full text-left pl-5 pr-3 py-0.5 text-[11px] text-ink-300 hover:bg-ink-700 truncate"
                             title={ch.title}
                           >
                             {ch.title}
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     </div>
@@ -1123,7 +1123,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </div>
               <div className="w-px h-4 bg-ink-700" />
               {/* 保存：图标化，有未保存修改时琥珀高亮+圆点 */}
-              <button
+              <Button variant="bare"
                 onClick={() => commitContent()}
                 disabled={saving || draftContent === active.content}
                 className={`relative p-1 rounded transition-colors shrink-0
@@ -1136,46 +1136,46 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 {draftContent !== active.content && !saving && (
                   <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
                 )}
-              </button>
-              <button onClick={() => setModal('history')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="时光机 · 版本历史">
+              </Button>
+              <Button variant="bare" onClick={() => setModal('history')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="时光机 · 版本历史">
                 <History size={14} />
-              </button>
-              <button onClick={() => setModal('trash')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="回收站（恢复误删章节）">
+              </Button>
+              <Button variant="bare" onClick={() => setModal('trash')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="回收站（恢复误删章节）">
                 <Trash2 size={14} />
-              </button>
-              <button onClick={() => onOpenSearch?.()} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="全文检索（Ctrl/Cmd+K）：搜章节正文 / 角色 / 设定">
+              </Button>
+              <Button variant="bare" onClick={() => onOpenSearch?.()} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="全文检索（Ctrl/Cmd+K）：搜章节正文 / 角色 / 设定">
                 <Command size={14} />
-              </button>
-              <button onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章引用侧栏：列出本章提到的角色 / 设定条目（可点击直达）">
+              </Button>
+              <Button variant="bare" onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章引用侧栏：列出本章提到的角色 / 设定条目（可点击直达）">
                 <Users size={14} />
-              </button>
-              <button onClick={() => setHighlightOn(o => !o)} className={`p-1 transition-colors shrink-0 ${highlightOn ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="引用名内联高亮：正文中标记已登记的角色 / 设定条目名称（开 / 关）">
+              </Button>
+              <Button variant="bare" onClick={() => setHighlightOn(o => !o)} className={`p-1 transition-colors shrink-0 ${highlightOn ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="引用名内联高亮：正文中标记已登记的角色 / 设定条目名称（开 / 关）">
                 <Highlighter size={14} />
-              </button>
-              <button onClick={() => onNavigate?.('chapter-outline')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="前往本章大纲（章节细纲）">
+              </Button>
+              <Button variant="bare" onClick={() => onNavigate?.('chapter-outline')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="前往本章大纲（章节细纲）">
                 <BookOpen size={14} />
-              </button>
-              <button onClick={() => setModal('search')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="全文搜索替换（本书）">
+              </Button>
+              <Button variant="bare" onClick={() => setModal('search')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="全文搜索替换（本书）">
                 <Search size={14} />
-              </button>
-              <button onClick={() => setModal('lock')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="小黑屋 · 强制码字">
+              </Button>
+              <Button variant="bare" onClick={() => setModal('lock')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="小黑屋 · 强制码字">
                 <Lock size={14} />
-              </button>
+              </Button>
               <div className="w-px h-4 bg-ink-700" />
-              <button
+              <Button variant="bare"
                 onClick={() => setShowSearch(!showSearch)}
                 className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0"
                 title={showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}
               >
                 {showSearch ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
-              </button>
-              <button
+              </Button>
+              <Button variant="bare"
                 onClick={() => setFocusMode(!focusMode)}
                 className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0"
                 title={focusMode ? '退出专注模式' : '专注模式'}
               >
                 {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              </button>
+              </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="26rem" size={14} className="shrink-0">
                 {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 左对齐图标：一键排版，统一段落首行缩进两个全角空格并规范空行。\n\n【审计工具】\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账与超期未回收预警；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 拼写图标：错别字检测（本章），易混词与常见笔误；\n· 羽毛图标：文风体检（本章），长句率、口头禅、对话占比、爽点节奏。\n\n【文件】\n· 下载：导出 TXT（本章 / 全本 / 按卷 / 按章逐一导出）；\n· 保存：手动保存（Ctrl+S），有未保存修改时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· 放大镜：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
@@ -1255,38 +1255,38 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 <Save size={10} />{saving ? '保存中…' : savedFlash ? '已保存' : '自动保存已开启'}
               </span>
               <div className="flex-1" />
-              <button
+              <Button variant="bare"
                 onClick={() => { const v = !pageWide; setPageWide(v); localStorage.setItem('novel-page-wide', v ? '1' : '0') }}
                 className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors
                   ${pageWide ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
                 title={pageWide ? '当前：码字区铺满窗口（点击改为限宽阅读）' : '当前：限宽阅读（点击改为铺满窗口）'}
               >
                 <PanelsTopLeft size={11} /> {pageWide ? '铺满' : '限宽'}
-              </button>
-              <button
+              </Button>
+              <Button variant="bare"
                 onClick={() => { const v = !typewriter; setTypewriter(v); localStorage.setItem('novel-typewriter', v ? '1' : '0') }}
                 className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors
                   ${typewriter ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
                 title="打字机模式：输入行自动保持在屏幕中部"
               >
                 <AlignCenter size={11} /> 打字机
-              </button>
+              </Button>
               <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md border border-ink-700 bg-ink-800/60">
-                <button
+                <Button variant="bare"
                   onClick={() => changeFontSize(-1)}
                   className="w-5 h-5 flex items-center justify-center text-ink-400 hover:text-amber transition-colors"
                   title="减小字号"
                 >
                   −
-                </button>
+                </Button>
                 <span className="w-6 text-center text-ink-300 tabular-nums text-[11px]">{fontSize}</span>
-                <button
+                <Button variant="bare"
                   onClick={() => changeFontSize(1)}
                   className="w-5 h-5 flex items-center justify-center text-ink-400 hover:text-amber transition-colors"
                   title="增大字号"
                 >
                   +
-                </button>
+                </Button>
               </div>
               <HelpPopover title="状态栏 · 码字体验设置" width="23rem" size={12} className="shrink-0">
                 {'左侧三项是实时状态：\n· 字数：本章当前字数（中文按字计，不含空格换行）；\n· 今日 xx 字：今天的总产出，自动累计，写作面板的码字日历用的就是它；\n· 自动保存已开启：停止输入 2 秒自动保存，也可 Ctrl+S 立即保存。\n\n右侧三项是可调设置（本机记忆，换章不重置）：\n· 铺满 / 限宽：铺满 = 码字区宽度跟随窗口铺满；限宽 = 回到舒适阅读宽度居中显示；\n· 打字机：开启后当前输入行始终保持在屏幕中部，眼睛不用一直往下追；\n· 字号 −/＋：正文字号 14–28px。'}
@@ -1300,7 +1300,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   <Users size={13} className="text-amber" />
                   <span className="text-[12px] font-semibold text-ink-200 flex-1">本章引用</span>
                   <span className="text-[10px] text-ink-500">{referenced.length} 处</span>
-                  <button onClick={() => setShowRefs(false)} className="p-1 text-ink-500 hover:text-ink-200 transition-colors" title="收起"><X size={16} /></button>
+                  <Button variant="bare" onClick={() => setShowRefs(false)} className="p-1 text-ink-500 hover:text-ink-200 transition-colors" title="收起"><X size={16} /></Button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2">
                   {referenced.length === 0 ? (
@@ -1316,7 +1316,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                         <div key={t}>
                           <div className="text-[10px] text-ink-500 px-1 py-1">{t === 'character' ? '角色' : '设定'} · {items.length}</div>
                           {items.map(r => (
-                            <button
+                            <Button variant="bare"
                               key={r.name + (r.aliasOf ?? '')}
                               onClick={() => onNavigate?.(r.tabId)}
                               className="w-full text-left px-2 py-1.5 rounded hover:bg-ink-800 flex items-center gap-2 text-ink-100 text-[12px] transition-colors"
@@ -1327,7 +1327,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                                 {r.aliasOf && <span className="text-ink-500 text-[10px] ml-1.5">（{r.aliasOf} 的别称）</span>}
                               </span>
                               <span className="text-[9px] text-ink-500">→</span>
-                            </button>
+                            </Button>
                           ))}
                         </div>
                       )
@@ -1345,12 +1345,12 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             <PenLine size={32} className="text-ink-700" />
             <div className="text-sm">选择左侧章节，或新建一卷开始创作</div>
             {volumes.length === 0 && (
-              <button
+              <Button variant="bare"
                 onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })}
                 className="px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors"
               >
                 <FolderPlus size={14} className="inline mr-1.5" />新建第一卷
-              </button>
+              </Button>
             )}
           </div>
         )}

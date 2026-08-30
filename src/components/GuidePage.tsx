@@ -1,6 +1,7 @@
 import { BookOpen, Lightbulb, ListOrdered } from 'lucide-react'
 import { TABS, tabVisible, type VisCtx } from '../lib/schema'
 import HelpPopover from './HelpPopover'
+import { Button } from './Button'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -61,12 +62,12 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
               if (!tab || !tabVisible(tab.id, ctx)) return null
               return (
                 <div key={id} className="flex items-center gap-1.5">
-                  <button
+                  <Button variant="bare"
                     onClick={() => onNavigate(id)}
                     className="px-3 py-1.5 rounded-lg bg-ink-800 border border-ink-600 text-[12px] text-ink-200 hover:border-amber/50 hover:text-amber transition-colors"
                   >
                     {i + 1}. {tab.name}
-                  </button>
+                  </Button>
                   {i < FILL_ORDER.length - 1 && <span className="text-ink-600 text-[10px]">→</span>}
                 </div>
               )
@@ -100,7 +101,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
                   {tabs.map(tab => {
                     const enabled = tabVisible(tab.id, ctx)
                     return (
-                      <button
+                      <Button variant="bare"
                         key={tab.id}
                         disabled={!enabled}
                         onClick={() => enabled && onNavigate(tab.id)}
@@ -111,7 +112,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
                           {!enabled && <span className="text-[9px] px-1 py-0.5 rounded bg-ink-700 text-ink-400">未启用</span>}
                         </div>
                         <div className={`text-[11px] mt-0.5 line-clamp-1 ${enabled ? 'text-ink-400' : 'text-ink-600'}`}>{tab.description}</div>
-                      </button>
+                      </Button>
                     )
                   })}
                 </div>

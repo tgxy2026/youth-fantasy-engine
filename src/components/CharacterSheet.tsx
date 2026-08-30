@@ -218,7 +218,7 @@ export default function CharacterSheet({ tab }: Props) {
           <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
-          <button
+          <Button variant="bare"
             onClick={save}
             disabled={!dirty || saving}
             className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
@@ -228,21 +228,21 @@ export default function CharacterSheet({ tab }: Props) {
             title={dirty ? '保存（Ctrl+S）' : '无未保存修改'}
           >
             <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
-          </button>
+          </Button>
           <Button onClick={addCard} variant="primary" size="md" className="flex items-center text-[13px]">
             <Plus size={14} /> 新建角色
           </Button>
           {aiCap !== 'none' && (
-            <button
+            <Button variant="bare"
               onClick={() => setShowFill(true)}
               disabled={!aiReady}
               className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
               title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全角色卡其余字段'}
             >
               <Sparkles size={14} /> AI 补全
-            </button>
+            </Button>
           )}
-          <button
+          <Button variant="bare"
             onClick={() => setHideRetired(v => !v)}
             className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
               ${hideRetired
@@ -251,7 +251,7 @@ export default function CharacterSheet({ tab }: Props) {
             title="隐藏「人物状态 = 已退场」的角色，避免列表过长"
           >
             <EyeOff size={14} /> 隐藏已退场
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -274,12 +274,12 @@ export default function CharacterSheet({ tab }: Props) {
                   <UserRound size={13} className="shrink-0" />
                   <span className="text-[13px] font-medium truncate flex-1">{rec.name}</span>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存修改" />}
-                  <button
+                  <Button variant="bare"
                     onClick={e => { e.stopPropagation(); removeCard(rec.id) }}
                     className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-red-400 transition-all"
                   >
                     <Trash2 size={12} />
-                  </button>
+                  </Button>
                 </div>
                 <div className="text-[10px] text-ink-500 mt-0.5 truncate">
                   {Object.values(rec.data).find(v => v) || '未填写'}

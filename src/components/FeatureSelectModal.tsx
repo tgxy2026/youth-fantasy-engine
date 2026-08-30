@@ -98,7 +98,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
           </div>
           <div className="flex gap-2">
             <Button onClick={onClose} variant="secondary" size="md" className="text-[13px]">取消</Button>
-            <button onClick={() => onConfirm(resolveFeatures(selected))} className="px-4 h-9 text-[13px] font-medium bg-amber/20 text-amber border border-amber/40 rounded-lg hover:bg-amber/30 transition-colors">确认</button>
+            <Button variant="bare" onClick={() => onConfirm(resolveFeatures(selected))} className="px-4 h-9 text-[13px] font-medium bg-amber/20 text-amber border border-amber/40 rounded-lg hover:bg-amber/30 transition-colors">确认</Button>
           </div>
         </>
       }
@@ -115,7 +115,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                     const locked = e.tier === 'locked' || (forced.has(e.id) && !selected.has(e.id))
                     const checked = enabled.has(e.id)
                     return (
-                      <button
+                      <Button variant="bare"
                         key={e.id}
                         type="button"
                         onClick={() => toggle(e)}
@@ -141,7 +141,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                         {locked && e.tier !== 'locked' && (
                           <div className="mt-1 text-[10.5px] text-amber/70">已因依赖自动开启，不可单独取消</div>
                         )}
-                      </button>
+                      </Button>
                     )
                   })}
                 </div>

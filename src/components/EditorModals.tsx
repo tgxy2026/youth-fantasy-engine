@@ -53,12 +53,12 @@ export function SensitiveCheck({ content, onApply, onClose }: {
             ))}
           </div>
           <div className="flex gap-2 justify-end">
-            <button
+            <Button variant="bare"
               onClick={() => { onApply(replaceHits(content, hits)); setReplaced(true); onClose() }}
               className="px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors"
             >
               一键替换为 ■■（{replaced ? '已' : '未'}替换）
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -253,13 +253,13 @@ export function ProofreadCheck({ content, onApply, onClose }: {
                   </div>
                   {iss.why && <div className="text-ink-500 mt-0.5">{iss.why}</div>}
                 </div>
-                <button
+                <Button variant="bare"
                   onClick={() => replaceIssue(iss)}
                   className="shrink-0 px-2 py-1 bg-ink-700 text-ink-200 border border-ink-600 rounded text-[11px] hover:bg-ink-600 transition-colors"
                   title="在正文中替换这一处"
                 >
                   替换此条
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -290,14 +290,14 @@ export function VersionHistory({ chapterId, onRestore, onClose }: {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             {snaps.map(s => (
-              <button
+              <Button variant="bare"
                 key={s.id}
                 onClick={() => setPreview(s)}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/10' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
               >
                 <span className="text-[12px] text-ink-200">{fmt(s.createdAt)}</span>
                 <span className="text-[11px] text-ink-500">{s.wordCount} 字</span>
-              </button>
+              </Button>
             ))}
           </div>
           <div className="bg-ink-800 border border-ink-700 rounded-lg p-3 flex flex-col">
@@ -305,12 +305,12 @@ export function VersionHistory({ chapterId, onRestore, onClose }: {
               <>
                 <div className="text-[11px] text-ink-400 mb-2">{fmt(preview.createdAt)} · {preview.wordCount} 字</div>
                 <pre className="flex-1 overflow-y-auto text-[12px] text-ink-200 whitespace-pre-wrap font-serif max-h-64">{preview.content.slice(0, 2000)}{preview.content.length > 2000 ? '…' : ''}</pre>
-                <button
+                <Button variant="bare"
                   onClick={() => { onRestore(preview.content); onClose() }}
                   className="mt-3 px-3 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors"
                 >
                   恢复到此版本（当前内容会先自动快照）
-                </button>
+                </Button>
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center text-[12px] text-ink-600">点击左侧版本预览</div>
@@ -358,17 +358,17 @@ export function TrashBin({ onChanged, onClose }: { onChanged: () => void; onClos
                     {!volumes.some(v => v.id === t.volumeId) && <span className="text-amber ml-1">（原卷已删，恢复后放入「已恢复章节」卷）</span>}
                   </div>
                 </div>
-                <button onClick={() => restore(t.id)} className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-md text-[11px] hover:bg-emerald-500/20 transition-colors">恢复</button>
-                <button onClick={() => purge(t.id)} className="px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/25 rounded-md text-[11px] hover:bg-red-500/20 transition-colors">彻底删除</button>
+                <Button variant="bare" onClick={() => restore(t.id)} className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-md text-[11px] hover:bg-emerald-500/20 transition-colors">恢复</Button>
+                <Button variant="bare" onClick={() => purge(t.id)} className="px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/25 rounded-md text-[11px] hover:bg-red-500/20 transition-colors">彻底删除</Button>
               </div>
             ))}
           </div>
           {items.length > 1 && (
             <div className="mt-4 text-right">
-              <button
+              <Button variant="bare"
                 onClick={async () => { if (await confirmDialog({ title: '清空回收站', message: `彻底清空 ${items.length} 个章节？不可恢复！`, danger: true })) { await db.emptyTrash(); setItems([]); } }}
                 className="px-3 py-1.5 text-[11px] text-red-400 hover:text-red-300 transition-colors"
-              >清空回收站</button>
+              >清空回收站</Button>
             </div>
           )}
         </>
@@ -454,9 +454,9 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
           <div className="space-y-2">
             {results.map(r => (
               <div key={r.ch.id} className="bg-ink-800 border border-ink-700 rounded-lg p-3">
-                <button onClick={() => { onOpenChapter(r.ch.id); onClose() }} className="text-[12.5px] font-semibold text-amber hover:underline text-left">
+                <Button variant="bare" onClick={() => { onOpenChapter(r.ch.id); onClose() }} className="text-[12.5px] font-semibold text-amber hover:underline text-left">
                   {r.ch.title}（{r.count} 处）→ 点击跳转
-                </button>
+                </Button>
                 <div className="mt-1.5 space-y-0.5">
                   {r.contexts.map((c, i) => <div key={i} className="text-[11px] text-ink-400">{c}</div>)}
                 </div>
@@ -531,13 +531,13 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <input type="number" value={goalWords} min={100} step={500} onChange={e => setGoalWords(parseInt(e.target.value, 10) || 1000)} className="!py-2 text-[13px] w-32" />
-              <button onClick={() => start('words')} className="flex-1 py-2.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors">按字数锁定</button>
+              <Button variant="bare" onClick={() => start('words')} className="flex-1 py-2.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors">按字数锁定</Button>
             </div>
             <div className="flex items-center gap-2">
               <input type="number" value={goalMinutes} min={5} step={5} onChange={e => setGoalMinutes(parseInt(e.target.value, 10) || 30)} className="!py-2 text-[13px] w-32" />
-              <button onClick={() => start('minutes')} className="flex-1 py-2.5 bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded-lg text-[13px] hover:bg-sky-500/25 transition-colors">按时长锁定（分钟）</button>
+              <Button variant="bare" onClick={() => start('minutes')} className="flex-1 py-2.5 bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded-lg text-[13px] hover:bg-sky-500/25 transition-colors">按时长锁定（分钟）</Button>
             </div>
-            <button onClick={() => tryExit()} className="w-full py-2 text-[12px] text-ink-500 hover:text-ink-300 transition-colors">不设目标，直接退出</button>
+            <Button variant="bare" onClick={() => tryExit()} className="w-full py-2 text-[12px] text-ink-500 hover:text-ink-300 transition-colors">不设目标，直接退出</Button>
           </div>
         </div>
       </div>
@@ -561,9 +561,9 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
         ) : (
           <span className="text-[11px] text-ink-500">未达成前退出需确认</span>
         )}
-        <button onClick={() => tryExit()} className="flex items-center gap-1 px-3 py-1.5 bg-ink-800 border border-ink-700 rounded-lg text-[12px] text-ink-200 hover:border-amber/40 hover:text-amber transition-colors">
+        <Button variant="bare" onClick={() => tryExit()} className="flex items-center gap-1 px-3 py-1.5 bg-ink-800 border border-ink-700 rounded-lg text-[12px] text-ink-200 hover:border-amber/40 hover:text-amber transition-colors">
           {goalMet ? '保存并退出' : <><Eye size={12} /> 退出</>}
-        </button>
+        </Button>
       </div>
       {/* 编辑区 */}
       <textarea
@@ -582,10 +582,10 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
         hideHeader
         footer={
           <div className="flex gap-2">
-            <button onClick={() => setShowPwd(false)} className="flex-1 py-2.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors">继续写</button>
-            <button onClick={() => { setShowPwd(false); tryExit(true) }} className="flex-1 py-2.5 bg-ink-800 text-ink-400 border border-ink-700 rounded-lg text-[13px] hover:text-ink-200 transition-colors flex items-center justify-center gap-1">
+            <Button variant="bare" onClick={() => setShowPwd(false)} className="flex-1 py-2.5 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[13px] hover:bg-amber/25 transition-colors">继续写</Button>
+            <Button variant="bare" onClick={() => { setShowPwd(false); tryExit(true) }} className="flex-1 py-2.5 bg-ink-800 text-ink-400 border border-ink-700 rounded-lg text-[13px] hover:text-ink-200 transition-colors flex items-center justify-center gap-1">
               <EyeOff size={12} /> 放弃目标
-            </button>
+            </Button>
           </div>
         }
       >

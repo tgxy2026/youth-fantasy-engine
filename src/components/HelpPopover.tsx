@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { HelpCircle } from 'lucide-react'
+import { Button } from './Button'
 
 interface Props {
   title: string
@@ -92,7 +93,7 @@ export default function HelpPopover({
       onMouseEnter={cancelClose}
       onMouseLeave={scheduleClose}
     >
-      <button
+      <Button variant="bare"
         ref={btnRef}
         type="button"
         onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
@@ -101,7 +102,7 @@ export default function HelpPopover({
         aria-label={title}
       >
         <HelpCircle size={size} />
-      </button>
+      </Button>
       {open && createPortal(
         <div
           ref={popRef}

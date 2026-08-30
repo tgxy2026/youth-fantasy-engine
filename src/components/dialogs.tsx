@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react'
 import { Modal, Z } from './Modal'
+import { Button } from './Button'
 
 // ============ 确认弹窗（Promise 化，await 即可） ============
 
@@ -53,13 +54,13 @@ function ConfirmView({ title, message, confirmText = '确定', cancelText = '取
       layer={Z.prompt}
       footer={
         <>
-          <button
+          <Button variant="bare"
             onClick={() => onResult(false)}
             className="px-3 py-1.5 rounded-lg text-[12px] text-ink-300 border border-ink-600 hover:border-ink-500 transition-colors"
           >
             {cancelText}
-          </button>
-          <button
+          </Button>
+          <Button variant="bare"
             onClick={() => onResult(true)}
             className={`px-3 py-1.5 rounded-lg text-[12px] border transition-colors ${
               danger
@@ -68,7 +69,7 @@ function ConfirmView({ title, message, confirmText = '确定', cancelText = '取
             }`}
           >
             {confirmText}
-          </button>
+          </Button>
         </>
       }
     >

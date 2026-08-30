@@ -101,12 +101,12 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
                 </div>
               </div>
             ))}
-            <button
+            <Button variant="bare"
               onClick={() => setDone(false)}
               className="px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600"
             >
               重新查重
-            </button>
+            </Button>
           </div>
         )
       )}

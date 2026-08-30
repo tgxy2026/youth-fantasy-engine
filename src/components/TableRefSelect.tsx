@@ -99,7 +99,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
 
   return (
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
-      <button
+      <Button variant="bare"
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -107,7 +107,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
       >
         <span className={value ? 'text-ink-100 truncate' : 'text-ink-500 truncate'}>{value || placeholder}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
-      </button>
+      </Button>
       {open && pos && createPortal(
         <div
           ref={dropRef}
@@ -139,7 +139,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
             <div className="px-2.5 py-2 text-[11px] text-ink-500">暂无可选数据，可直接在上方输入</div>
           )}
           {filtered.map(n => (
-            <button
+            <Button variant="bare"
               key={n}
               type="button"
               onClick={() => toggle(n)}
@@ -147,7 +147,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
             >
               {isSel(n) ? <Check size={10} className="shrink-0" /> : <span className="w-[10px] shrink-0" />}
               <span className="truncate flex-1">{n}</span>
-            </button>
+            </Button>
           ))}
         </div>,
         document.body

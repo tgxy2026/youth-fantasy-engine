@@ -229,13 +229,13 @@ export default function CheckTools() {
                 if (fileInputRef.current) fileInputRef.current.value = ''
               }}
             />
-            <button
+            <Button variant="bare"
               onClick={() => fileInputRef.current?.click()}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 text-red-300 border border-red-500/25 rounded-lg text-[12px] hover:bg-red-500/20 transition-colors"
               title="支持 .txt（一行一词）/ .csv / .json 数组 / .tsv"
             >
               <FileDown size={12} /> 一键导入文件
-            </button>
+            </Button>
             {customWords.length > 0 && (
               <>
                 <Button onClick={exportWords}
@@ -255,20 +255,20 @@ export default function CheckTools() {
               {customWords.map(w => (
                 <span key={w} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded-md text-[11px] text-red-300">
                   {w}
-                  <button onClick={() => removeWord(w)} className="hover:text-red-400"><Trash2 size={9} /></button>
+                  <Button variant="bare" onClick={() => removeWord(w)} className="hover:text-red-400"><Trash2 size={9} /></Button>
                 </span>
               ))}
             </div>
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <Button variant="bare"
               onClick={() => scanBook()}
               disabled={scanning}
               className="flex items-center gap-1.5 px-4 py-2 bg-red-500/10 text-red-300 border border-red-500/25 rounded-lg text-[12px] hover:bg-red-500/20 transition-colors disabled:opacity-50"
             >
               <ScanSearch size={13} /> {scanning ? '扫描中…' : '系统扫描全书'}
-            </button>
+            </Button>
             {aiReady ? (
               <Button onClick={aiDetect}
                 disabled={reviewLoading}
@@ -354,13 +354,13 @@ export default function CheckTools() {
           />
           <div className="flex items-center gap-2">
             {aiReady ? (
-              <button
+              <Button variant="bare"
                 onClick={aiAudit}
                 disabled={auditLoading}
                 className="flex items-center gap-1.5 px-4 py-2 bg-sky-500/15 text-sky-300 border border-sky-500/30 rounded-lg text-[12px] hover:bg-sky-500/20 transition-colors disabled:opacity-50"
               >
                 <Sparkles size={13} /> {auditLoading ? '自查中…' : 'AI 深度自查'}
-              </button>
+              </Button>
             ) : (
               <Button disabled
                 title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-[12px] cursor-not-allowed">
@@ -416,13 +416,13 @@ export default function CheckTools() {
             对照全项目设定，扫描引用断链 / 编号重复 / 必填空（确定性检查，不靠 AI 推理）。
           </p>
           <div className="flex items-center gap-2">
-            <button
+            <Button variant="bare"
               onClick={runHealth}
               disabled={healthScanning}
               className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-lg text-[12px] hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
             >
               <RefreshCw size={13} className={healthScanning ? 'animate-spin' : ''} /> {healthScanning ? '体检中…' : '重新体检'}
-            </button>
+            </Button>
             <Button onClick={clearIgnored}
               disabled={ignoredIds.length === 0}
               title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'} variant="secondary" size="md" className="flex items-center text-[12px]">
@@ -450,21 +450,21 @@ export default function CheckTools() {
                     <span className={`px-1.5 py-0.5 rounded border text-[10px] ${sevBadge(issue.severity)}`}>{SEVERITY_LABEL[issue.severity]}</span>
                     <span className="text-[12px] font-semibold text-ink-100">{issue.title}</span>
                     <div className="ml-auto flex items-center gap-1">
-                      <button
+                      <Button variant="bare"
                         onClick={() => ignoreIssue(issue.id)}
                         className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md bg-ink-700 text-ink-300 border border-ink-600 hover:text-ink-100 transition-colors"
                         title="忽略此条冲突（之后不再汇报）"
                       >
                         <EyeOff size={11} /> 忽略
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="bare"
                         onClick={() => jumpToRow(issue.location)}
                         disabled={issue.location?.kind !== 'row'}
                         className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md bg-ink-700 text-ink-200 border border-ink-600 hover:bg-ink-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         title="跳到该设定行"
                       >
                         跳转 ↗
-                      </button>
+                      </Button>
                     </div>
                   </div>
                   {issue.detail && <div className="text-[11px] text-ink-400 leading-relaxed">{issue.detail}</div>}

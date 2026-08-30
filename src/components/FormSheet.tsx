@@ -149,7 +149,7 @@ export default function FormSheet({ tab }: Props) {
             <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-[13px] text-red-400">
               <RotateCcw size={12} /> 清空
             </Button>
-          <button
+          <Button variant="bare"
             onClick={save}
             disabled={!dirty || saving}
             className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
@@ -159,16 +159,16 @@ export default function FormSheet({ tab }: Props) {
             title={dirty ? '保存（Ctrl+S）' : '无未保存修改'}
           >
             <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
-          </button>
+          </Button>
           {aiCap !== 'none' && (
-            <button
+            <Button variant="bare"
               onClick={() => setShowFill(true)}
               disabled={!aiReady}
               className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
               title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}
             >
               <Sparkles size={12} /> AI 补全
-            </button>
+            </Button>
           )}
           </div>
         </div>

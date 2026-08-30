@@ -5,6 +5,7 @@ import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
 import { enableCloudSync } from '../lib/db'
 import { getSyncStatus, type SyncStatus, CloudAuthError, isCloudAuthFailed } from '../lib/serverStore'
+import { Button } from './Button'
 
 // 同步状态徽标（#008）：推送失败必须可见，不能让用户零感知地"写了一整晚白工"
 const STATUS_META: Record<SyncStatus, { dot: string; text: string; title: string }> = {
@@ -81,7 +82,7 @@ export default function WebTools() {
     <>
       <div className="flex flex-col items-start gap-2">
         <div className="flex items-center gap-2">
-          <button
+          <Button variant="bare"
             onClick={() => setSyncOpen(true)}
             disabled={busy}
             title={synced ? `${meta.title}（点击可重新连接）` : '开启云端同步（需专属同步邀请码）'}
@@ -95,7 +96,7 @@ export default function WebTools() {
                 {meta.text}
               </span>
             )}
-          </button>
+          </Button>
           <HelpPopover
             title="云端同步说明"
             side="right"
@@ -106,7 +107,7 @@ export default function WebTools() {
 注意：同步邀请码（YFE-SYNC- 开头）与进门的网页邀请码不是同一个。`}
           </HelpPopover>
         </div>
-        <button
+        <Button variant="bare"
           onClick={() => {
             try {
               localStorage.removeItem('yfe-invite-ok')
@@ -120,7 +121,7 @@ export default function WebTools() {
         >
           <LogOut size={16} />
           退出网页体验
-        </button>
+        </Button>
       </div>
       <PromptModal
         open={syncOpen}

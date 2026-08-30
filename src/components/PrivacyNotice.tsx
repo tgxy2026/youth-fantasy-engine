@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { Modal } from './Modal'
+import { Button } from './Button'
 
 // 网页体验版首次进入的隐私告知：明确「数据 + AI 密钥仅留本地浏览器，仅反馈时出向」。
 // 见过后记 localStorage 标记，不再打扰。
@@ -52,12 +53,12 @@ export default function PrivacyNotice() {
         <li>• 仅当你主动点击「反馈」并提交时，才会向我们发送你填写的文本（及你选择附带的文件）。</li>
         <li>• 我们不会读取你的创作内容；在浏览器中清除站点数据即可彻底删除本地副本。</li>
       </ul>
-      <button
+      <Button variant="bare"
         onClick={ok}
         className="mt-4 w-full rounded-lg bg-emerald-500 px-3 py-2 font-medium text-ink-950 hover:bg-emerald-400"
       >
         我已知晓
-      </button>
+      </Button>
     </Modal>
   )
 }

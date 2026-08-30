@@ -717,7 +717,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
         </div>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
           {(['foreshadow', 'character', 'timeline'] as const).map(key => (
-            <button
+            <Button variant="bare"
               key={key}
               onClick={() => setLayers(l => ({ ...l, [key]: !l[key] }))}
               className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md border text-[11px] transition-colors ${layers[key] ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
@@ -725,25 +725,25 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
             >
               <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS[key] }} />
               {key === 'foreshadow' ? '伏笔' : key === 'character' ? '角色' : '时间脉络'}
-            </button>
+            </Button>
           ))}
           {painting && (
             <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-amber/50 bg-amber/10 text-[11px] text-amber">
               <Pencil size={11} /> 正在绘制：{byId.get(painting)?.name}
-              <button onClick={exitPaint} className="ml-0.5 text-ink-300 hover:text-ink-100" title="右键画布也可取消">完成</button>
+              <Button variant="bare" onClick={exitPaint} className="ml-0.5 text-ink-300 hover:text-ink-100" title="右键画布也可取消">完成</Button>
             </span>
           )}
-          <button onClick={() => setDrawDialogOpen(true)} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors" title="选择一个地理范围，用格子画出它的形状">
+          <Button variant="bare" onClick={() => setDrawDialogOpen(true)} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors" title="选择一个地理范围，用格子画出它的形状">
             <Pencil size={11} /> 绘制地图
-          </button>
+          </Button>
           <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-400 select-none" title="当前格子档位：每个格子的边长所代表的真实公里数（1 = 精细 / 10 = 粗略）。用旁边的「精 / 粗」按钮切换。">
             <span className="text-ink-500">每格</span>
             <span className="text-amber font-medium">1:{cellKm}</span>
             <span className="text-ink-500">公里</span>
           </span>
           <span className="flex items-center gap-1">
-            <button onClick={() => stepCellKm(-1)} disabled={cellKm === CELL_KM_STEPS[0]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="提高精度：每格边长 ÷10（1 公里格，画小范围用）"><ZoomIn size={11} />精</button>
-            <button onClick={() => stepCellKm(1)} disabled={cellKm === CELL_KM_STEPS[CELL_KM_STEPS.length - 1]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="降低精度：每格边长 ×10（10 公里格，画大范围快速铺格子）"><ZoomOut size={11} />粗</button>
+            <Button variant="bare" onClick={() => stepCellKm(-1)} disabled={cellKm === CELL_KM_STEPS[0]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="提高精度：每格边长 ÷10（1 公里格，画小范围用）"><ZoomIn size={11} />精</Button>
+            <Button variant="bare" onClick={() => stepCellKm(1)} disabled={cellKm === CELL_KM_STEPS[CELL_KM_STEPS.length - 1]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="降低精度：每格边长 ×10（10 公里格，画大范围快速铺格子）"><ZoomOut size={11} />粗</Button>
             <Button onClick={fitView}  title="重置视图（内容居中）" variant="secondary" size="md" className="items-center text-[11px]"><Maximize2 size={11} />重置</Button>
           </span>
         </div>
@@ -972,7 +972,7 @@ function DrawDialog({ rows, drawnCells, onPick, onClose }: {
     >
           {items.length === 0 && <div className="text-center text-ink-500 text-[12px] py-6">《地理风物》还没有条目，请先去登记。</div>}
           {items.map(it => (
-            <button key={it.id} onClick={() => onPick(it.id)}
+            <Button variant="bare" key={it.id} onClick={() => onPick(it.id)}
               className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-ink-800 transition-colors text-left"
               style={{ paddingLeft: 12 + it.depth * 18 }}>
               {it.depth > 0 && <span className="text-ink-500 text-[10px]">└</span>}
@@ -981,7 +981,7 @@ function DrawDialog({ rows, drawnCells, onPick, onClose }: {
               {(drawnCells.get(it.id) ?? 0) > 0 && (
                 <span className="ml-auto text-[10px] text-emerald-400/90">已画 {drawnCells.get(it.id)} 格</span>
               )}
-            </button>
+            </Button>
           ))}
     </Modal>
   )
@@ -1008,7 +1008,7 @@ function AddMarkerForm({ categories, parentOptions, onCancel, onCreate }: {
         </select>
       </Field>
       <div className="flex gap-2 pt-1">
-        <button disabled={!name.trim()} onClick={() => onCreate(name, category, parent)} className="flex-1 px-3 py-1.5 rounded-md bg-amber/20 text-amber border border-amber/40 text-[12px] hover:bg-amber/30 disabled:opacity-40 transition-colors">新增地点</button>
+        <Button variant="bare" disabled={!name.trim()} onClick={() => onCreate(name, category, parent)} className="flex-1 px-3 py-1.5 rounded-md bg-amber/20 text-amber border border-amber/40 text-[12px] hover:bg-amber/30 disabled:opacity-40 transition-colors">新增地点</Button>
         <Button onClick={onCancel} variant="secondary" size="md" className="text-[12px]">取消</Button>
       </div>
       <p className="text-[10px] text-ink-500 leading-relaxed">新增后会同时出现在《地理风物》里，其余字段（地貌、势力归属、行程时间等）可到表格补全。</p>
@@ -1047,7 +1047,7 @@ function DetailPanel({ marker, linked, cells, categories, parentOptions, paintin
           {parentOptions.map(n => <option key={n} value={n}>{n}</option>)}
         </select>
       </Field>
-      <button onClick={() => commit({ '地图格子': '' })} title="清掉这个范围画好的所有格子，《地理风物》档案保留" className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-ink-700 text-[12px] text-ink-200 hover:text-amber hover:border-amber/40 transition-colors"><Eraser size={12} /> 清空此范围的绘制</button>
+      <Button variant="bare" onClick={() => commit({ '地图格子': '' })} title="清掉这个范围画好的所有格子，《地理风物》档案保留" className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-ink-700 text-[12px] text-ink-200 hover:text-amber hover:border-amber/40 transition-colors"><Eraser size={12} /> 清空此范围的绘制</Button>
       <Button onClick={onGotoTable} variant="secondary" size="md" className="w-full flex items-center justify-center text-[12px]"><ExternalLink size={12} /> 在《地理风物》中编辑</Button>
 
       {/* 关联列表 */}

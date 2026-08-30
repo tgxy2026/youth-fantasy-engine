@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import jiewenjiPng from '../assets/jiewenji.png'
+import { Button } from './Button'
 
 interface Props {
   /** 当前是否在正文编辑器页面：编辑器内点击唤起完整面板；其他页面弹出引导 */
@@ -112,12 +113,12 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
           <div className="text-[11px] text-ink-300 leading-relaxed mb-2">
             本地校对、AI 深度校对、选区润色、审读建议、爽点毒点、续写方向、写作简报、本章设定补登……都在正文编辑器里。
           </div>
-          <button
+          <Button variant="bare"
             onClick={() => { onNavigate?.('editor'); setMini(false) }}
             className="w-full px-2 py-1.5 rounded-lg text-[11.5px] bg-amber/15 border border-amber/30 text-amber hover:bg-amber/25 transition-colors"
           >
             前往正文编辑器
-          </button>
+          </Button>
         </div>
       )}
 

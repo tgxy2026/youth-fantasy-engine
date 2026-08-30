@@ -86,12 +86,12 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
           <Section title="① 总体诊断" body={result.summary} />
           <Section title="② 流失归因" body={result.churnAttribution} />
           <Section title="③ 应对建议" body={result.suggestions} />
-          <button
+          <Button variant="bare"
             onClick={() => setResult(null)}
             className="px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600"
           >
             重新分析
-          </button>
+          </Button>
         </div>
       )}
     </Modal>

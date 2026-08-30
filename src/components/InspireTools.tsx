@@ -97,7 +97,7 @@ export default function InspireTools() {
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <div className="flex gap-1 flex-wrap">
               {NAME_TYPES.map(t => (
-                <button
+                <Button variant="bare"
                   key={t}
                   onClick={() => {
                     setNameType(t)
@@ -105,16 +105,16 @@ export default function InspireTools() {
                     setNames([])
                   }}
                   className={`px-3 py-1 rounded-full text-[12px] transition-colors ${nameType === t ? 'bg-amber/15 text-amber border border-amber/30' : 'bg-ink-800 text-ink-300 border border-ink-700 hover:text-ink-100'}`}
-                >{t}</button>
+                >{t}</Button>
               ))}
             </div>
             <div className="flex gap-1 flex-wrap ml-2">
               {NAME_STYLES.map(s => (
-                <button
+                <Button variant="bare"
                   key={s}
                   onClick={() => setStyle(s)}
                   className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${style === s ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30' : 'bg-ink-800 text-ink-400 border border-ink-700'}`}
-                >{s}</button>
+                >{s}</Button>
               ))}
             </div>
             <Button onClick={rollNames} variant="primary" size="md" className="ml-auto flex items-center text-[12px]">
@@ -144,9 +144,9 @@ export default function InspireTools() {
                 >
                   {copied === n ? <span className="text-emerald-400 flex items-center gap-1"><Check size={11} />已复制</span> : n}
                 </span>
-                <button onClick={() => toggleFavorite(n)} className={`p-0.5 transition-colors ${favorites.includes(n) ? 'text-amber' : 'text-ink-600 hover:text-amber'}`} title="收藏">
+                <Button variant="bare" onClick={() => toggleFavorite(n)} className={`p-0.5 transition-colors ${favorites.includes(n) ? 'text-amber' : 'text-ink-600 hover:text-amber'}`} title="收藏">
                   <Star size={12} fill={favorites.includes(n) ? 'currentColor' : 'none'} />
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -163,7 +163,7 @@ export default function InspireTools() {
                 {favorites.map(f => (
                   <span key={f} className="inline-flex items-center gap-1 px-2 py-1 bg-ink-800 border border-ink-700 rounded-md text-[12px] text-ink-200">
                     {f}
-                    <button onClick={() => toggleFavorite(f)} className="text-ink-500 hover:text-red-400"><Trash2 size={10} /></button>
+                    <Button variant="bare" onClick={() => toggleFavorite(f)} className="text-ink-500 hover:text-red-400"><Trash2 size={10} /></Button>
                   </span>
                 ))}
               </div>
@@ -180,12 +180,12 @@ export default function InspireTools() {
               <div className="text-[11px] text-ink-500 mb-1.5">AI 取名结果（{aiNames.length}，点名字复制）</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {aiNames.map((n, i) => (
-                  <button key={i} onClick={() => copy(n.name)} className="text-left flex items-start justify-between gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded-lg hover:border-amber/40 transition-colors">
+                  <Button variant="bare" key={i} onClick={() => copy(n.name)} className="text-left flex items-start justify-between gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded-lg hover:border-amber/40 transition-colors">
                     <span>
                       <span className="text-[13px] text-ink-100">{copied === n.name ? <span className="text-emerald-400 flex items-center gap-1"><Check size={11} />已复制</span> : n.name}</span>
                       {n.meaning && <span className="block text-[10.5px] text-ink-500 mt-0.5">{n.meaning}</span>}
                     </span>
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>

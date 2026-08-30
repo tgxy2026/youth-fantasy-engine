@@ -724,7 +724,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                 ? `共 ${filteredRows.length} 行 · 按编号排序`
                 : `共 ${filteredRows.length} 行 · 按编辑时间排序`}
           </span>
-          <button
+          <Button variant="bare"
             onClick={saveAll}
             disabled={dirtyKeys.length === 0 || saving}
             className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
@@ -734,10 +734,10 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             title={dirtyKeys.length > 0 ? '保存全部（Ctrl+S）' : '无未保存修改'}
           >
             <Save size={13} /> {saving ? '保存中…' : '保存'}
-          </button>
+          </Button>
           {/* 多行批量删除按钮（人物关系 / 历史事件支持） */}
           {['relations', 'history'].includes(tab.id) && rows.length > 0 && (
-            <button
+            <Button variant="bare"
               onClick={async () => {
                 if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
                 retireCodes(rows).then(() => {  // 全部编号登记进退役池，防止复用
@@ -749,67 +749,67 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               className="flex items-center gap-1.5 px-3.5 h-9 bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg text-[13px] font-medium hover:bg-red-500/20 transition-colors"
             >
               <Trash2 size={14} /> 清空全部
-            </button>
+            </Button>
           )}
           {isTimelineCapable && (
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
-              <button
+              <Button variant="bare"
                 onClick={() => setViewMode('table')}
                 className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
-              </button>
-              <button
+              </Button>
+              <Button variant="bare"
                 onClick={() => setViewMode('timeline')}
                 className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
                   ${viewMode === 'timeline' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Calendar size={11} /> 时间轴
-              </button>
+              </Button>
             </div>
           )}
           {isGraphCapable && (
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
-              <button
+              <Button variant="bare"
                 onClick={() => setViewMode('table')}
                 className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
-              </button>
-              <button
+              </Button>
+              <Button variant="bare"
                 onClick={() => setViewMode('graph')}
                 className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
                   ${viewMode === 'graph' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Network size={11} /> 关系图
-              </button>
+              </Button>
             </div>
           )}
           {isStorylineCapable && (
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
-              <button
+              <Button variant="bare"
                 onClick={() => setViewMode('table')}
                 className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
-              </button>
-              <button
+              </Button>
+              <Button variant="bare"
                 onClick={() => setViewMode('storyline')}
                 className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
                   ${viewMode === 'storyline' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <GitBranch size={11} /> 剧情线
-              </button>
+              </Button>
             </div>
           )}
           <Button onClick={addRow} variant="primary" size="md" className="flex items-center text-[13px] shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
           </Button>
           {aiCap !== 'none' && (
-            <button
+            <Button variant="bare"
               onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))}
               disabled={!aiReady}
               className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
@@ -822,29 +822,29 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               }
             >
               <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 补全'}
-            </button>
+            </Button>
           )}
           {/* 读者反馈：AI 分析（运营维护组，不接补全/整理，单独开分析入口） */}
           {tab.id === 'feedback' && (
-            <button
+            <Button variant="bare"
               onClick={() => setShowFeedbackAI(true)}
               disabled={!aiReady}
               className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
               title={!aiReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}
             >
               <Sparkles size={14} /> AI 分析反馈
-            </button>
+            </Button>
           )}
           {/* 名词术语：AI 查重（在「AI 补全」之外，额外提供同义/重复归一入口） */}
           {tab.id === 'terms' && (
-            <button
+            <Button variant="bare"
               onClick={() => setShowDedupAI(true)}
               disabled={!aiReady}
               className="flex items-center gap-1.5 px-3.5 h-9 bg-ink-800 text-ink-200 border border-ink-600 rounded-lg text-[13px] font-medium hover:bg-ink-700 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800"
               title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}
             >
               <Sparkles size={14} /> AI 查重
-            </button>
+            </Button>
           )}
         </div>
       </header>
@@ -891,7 +891,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             const gOpen = relGroupOpen.has(g.key)
             return (
               <div key={g.key} className={`rounded-xl border overflow-hidden ${g.unnamed ? 'border-dashed border-ink-600 bg-ink-850/50' : 'border-ink-700 bg-ink-850'}`}>
-                <button
+                <Button variant="bare"
                   onClick={() => {
                     const next = new Set(relGroupOpen)
                     if (next.has(g.key)) next.delete(g.key); else next.add(g.key)
@@ -903,7 +903,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                   <Users size={12} className="text-amber/80 shrink-0" />
                   <span className="text-[13px] font-semibold text-ink-100 truncate">{g.name}</span>
                   <span className="text-[10px] text-ink-500 shrink-0">{g.rows.length} 条关系</span>
-                </button>
+                </Button>
                 {gOpen && (
                   <div className="border-t border-ink-700/60 px-3 py-2.5 space-y-2">
                     {g.rows.map(row => {
@@ -917,7 +917,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                       return (
                         <div key={row.id} className={`group rounded-lg border ${bg ?? ''} ${dirty ? 'border-amber/40' : 'border-ink-700/70'} hover:border-ink-600 transition-colors`}>
                           <div className="flex items-center gap-2 px-3 py-2">
-                            <button
+                            <Button variant="bare"
                               onClick={() => {
                                 const next = new Set(relRowOpen)
                                 if (next.has(row.id)) next.delete(row.id); else next.add(row.id)
@@ -932,23 +932,23 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                               )}
                               {!rOpen && status && <span className="text-[11px] text-ink-500 truncate">{status}</span>}
                               {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存修改" />}
-                            </button>
-                            <button
+                            </Button>
+                            <Button variant="bare"
                               onClick={() => removeRow(row.id)}
                               className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-red-400 transition-all p-1 shrink-0"
                               title="删除此条关系"
                             >
                               <Trash2 size={12} />
-                            </button>
+                            </Button>
                             {aiCap !== 'none' && (
-                              <button
+                              <Button variant="bare"
                                 onClick={() => setFillRow(row)}
                                 disabled={!aiReady}
                                 className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all p-1 shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
                                 title="AI 补全本行空白：只填这一行未填写的字段，不影响其他行 / 表"
                               >
                                 <Sparkles size={12} />
-                              </button>
+                              </Button>
                             )}
                           </div>
                           {rOpen && (
@@ -1084,39 +1084,39 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                     <td className="w-7 px-1 py-1 align-middle">
                       <div className="flex flex-col items-center justify-center gap-0.5 h-full">
                       {chapterLink && (
-                        <button
+                        <Button variant="bare"
                           onClick={() => onNavigate?.('editor', chapterLink)}
                           className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all p-1"
                           title="打开本章正文编辑"
                         >
                           <PenLine size={12} />
-                        </button>
+                        </Button>
                       )}
-                      <button
+                      <Button variant="bare"
                         onClick={() => removeRow(row.id)}
                         className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-red-400 transition-all p-1"
                         title="删除此行"
                       >
                         <Trash2 size={12} />
-                      </button>
+                      </Button>
                       {aiCap !== 'none' && (
-                        <button
+                        <Button variant="bare"
                           onClick={() => setFillRow(row)}
                           disabled={!aiReady}
                           className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all p-1 disabled:opacity-30 disabled:cursor-not-allowed"
                           title="AI 补全本行空白：只填这一行未填写的字段，不影响其他行 / 表"
                         >
                           <Sparkles size={12} />
-                        </button>
+                        </Button>
                       )}
                       {parentCol && tree && (
-                        <button
+                        <Button variant="bare"
                           onClick={() => addChild(tree.nameOf(row))}
                           className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all p-1"
                           title={`在「${tree.nameOf(row) || '该项'}」下新增子条目`}
                         >
                           <GitBranch size={12} />
-                        </button>
+                        </Button>
                       )}
                       </div>
                     </td>
@@ -1201,14 +1201,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                             col.name === tab.displayCol && parentCol ? (
                               <div className="flex items-start gap-1" style={{ paddingLeft: depth * 14 }}>
                                 {hasChildren ? (
-                                  <button
+                                  <Button variant="bare"
                                     type="button"
                                     onClick={() => toggleCollapse(row.id)}
                                     className="mt-1 text-ink-400 hover:text-amber transition-colors shrink-0"
                                     title={collapsed.has(row.id) ? '展开子条目' : '折叠子条目'}
                                   >
                                     {collapsed.has(row.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                                  </button>
+                                  </Button>
                                 ) : (
                                   <span className="mt-1 w-[11px] shrink-0" />
                                 )}
@@ -1223,14 +1223,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                   {tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/) && (
                                     <div className="flex flex-wrap gap-1 mt-0.5">
                                       {val.match(/[FH]\d+/g)!.map(code => (
-                                        <button
+                                        <Button variant="bare"
                                           key={code}
                                           onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
                                           className="inline-flex items-center gap-0.5 px-1.5 py-px text-[10px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
                                           title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                                         >
                                           <Link2 size={9} />{code}
-                                        </button>
+                                        </Button>
                                       ))}
                                     </div>
                                   )}
@@ -1248,14 +1248,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                               {tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/) && (
                                 <div className="flex flex-wrap gap-1 mt-0.5">
                                   {val.match(/[FH]\d+/g)!.map(code => (
-                                    <button
+                                    <Button variant="bare"
                                       key={code}
                                       onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
                                       className="inline-flex items-center gap-0.5 px-1.5 py-px text-[10px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
                                       title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                                     >
                                       <Link2 size={9} />{code}
-                                    </button>
+                                    </Button>
                                   ))}
                                 </div>
                               )}

@@ -9,6 +9,7 @@ import CharacterSelect from './CharacterSelect'
 import TableRefSelect from './TableRefSelect'
 import StoryDateInput from './StoryDateInput'
 import CalendarSelect from './CalendarSelect'
+import { Button } from './Button'
 
 type DocKind = 'card' | 'table' | 'relation'
 
@@ -322,13 +323,13 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
           <HelpPopover title="设定检索与联动编辑" width="23rem" side="right">
             {'左侧是全书设定的实时速查索引，按角色 / 世界 / 创作三大类组织。\n\n· 输入关键词检索本组设定（角色名、伏笔、境界、地名…）；\n· 展开任意一条可查看全部字段，点字段右侧的 ✎ 就地修改，自动同步回对应角色卡 / 设定表，不必跳页重填；\n· 原表单里是下拉选择的字段（人物状态、伏笔状态、重要程度…），在这里同样是下拉，选项可增删改，选中即保存；\n· 角色类的多选字段（如《知情权限》的「知情者」）在这里同样从已创建角色卡中多选、不可手填，与设定表完全一致；\n· 真实日期字段（写作进度、读者反馈等）点开弹出月历选择；故事内时间（某年某月某日）用结构化下拉填写，避免时间轴排序错乱；\n· 纯文本字段改完点「保存」生效；\n· "→ 跳转到" 直达该设定所在页签做大改；\n· 右上旋转箭头可重建索引（在别处新填的内容没出现时点一下）。\n\n注：已回收的伏笔、未登场的角色不进入索引，避免刷屏。'}
           </HelpPopover>
-          <button
+          <Button variant="bare"
             onClick={() => setReloadKey(k => k + 1)}
             className="p-1 text-ink-500 hover:text-amber transition-colors"
             title="重新加载设定数据"
           >
             <RefreshCw size={12} className={loaded ? '' : 'animate-spin'} />
-          </button>
+          </Button>
         </div>
         <div className="relative mt-2">
           <input
@@ -343,7 +344,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
         {/* 一级页签：角色管理 / 世界构建 / 创作管理（无可见子项的自动隐藏） */}
         <div className="flex gap-1 mt-2">
           {visibleTopGroups.map(g => (
-            <button
+            <Button variant="bare"
               key={g}
               onClick={() => setTopGroup(g)}
               className={`flex-1 px-2 py-1 rounded-md text-[11px] border transition-colors
@@ -353,13 +354,13 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
             >
               {g}
               <span className="ml-1 text-[9px] text-ink-500">{totalForGroup[g] ?? 0}</span>
-            </button>
+            </Button>
           ))}
         </div>
         {/* 二级子项筛选 */}
         <div className="flex flex-wrap gap-1 mt-1.5">
           {subOptions.map(s => (
-            <button
+            <Button variant="bare"
               key={s.id}
               onClick={() => setActiveSub(s.id)}
               className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors
@@ -368,7 +369,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                   : 'text-ink-500 border-ink-800 hover:text-ink-300'}`}
             >
               {s.name}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -396,7 +397,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                 const snippet = doc.matchField?.value ?? doc.subtitle ?? doc.fields[0]?.value ?? ''
                 return (
                   <div key={doc.key} className="rounded-lg bg-ink-850/70 border border-ink-700/70 hover:border-ink-600 transition-colors">
-                    <button
+                    <Button variant="bare"
                       onClick={() => toggle(doc.key)}
                       className="w-full text-left px-2.5 py-2"
                     >
@@ -411,7 +412,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                       {!open && !doc.subtitle && snippet && (
                         <div className="text-[10.5px] text-ink-500 mt-1 truncate pl-4">{snippet}</div>
                       )}
-                    </button>
+                    </Button>
                     {open && (
                       <div className="px-3 pb-2.5 pt-0.5 space-y-1.5">
                         {doc.subtitle && (
@@ -424,13 +425,13 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                               <div className="flex items-center gap-1">
                                 {f.label && <div className="text-[10px] text-amber/70">{f.label}</div>}
                                 {doc.kind !== 'relation' && !isEditing && (
-                                  <button
+                                  <Button variant="bare"
                                     onClick={() => { setEditing({ key: doc.key, idx: i }); setDraft(f.value) }}
                                     className="ml-auto p-0.5 text-ink-600 hover:text-amber transition-colors shrink-0"
                                     title="在此直接修改并同步到设定表"
                                   >
                                     <Pencil size={10} />
-                                  </button>
+                                  </Button>
                                 )}
                               </div>
                                   {isEditing ? (
@@ -470,11 +471,11 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                           </select>
                                         )}
                                       </div>
-                                      <button
+                                      <Button variant="bare"
                                         onClick={() => setEditing(null)}
                                         className="p-1 text-ink-500 hover:text-ink-200 transition-colors shrink-0"
                                         title="收起（选中选项即已保存）"
-                                      ><X size={11} /></button>
+                                      ><X size={11} /></Button>
                                     </div>
                                   ) : f.type === 'characters' ? (
                                     /* 多选角色：从已创建角色卡中选择，禁止手动输入，与原表一致 */
@@ -517,15 +518,15 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                     <div className="mt-1 text-[10px] text-ink-500">改动即自动同步到「{doc.source}」</div>
                                   ) : (
                                     <div className="flex gap-1.5 mt-1">
-                                      <button
+                                      <Button variant="bare"
                                         disabled={savingField}
                                         onClick={() => saveField(doc, f, draft)}
                                         className="px-2 py-0.5 text-[10.5px] bg-amber/15 text-amber border border-amber/30 rounded hover:bg-amber/25 transition-colors disabled:opacity-50"
-                                      >保存</button>
-                                      <button
+                                      >保存</Button>
+                                      <Button variant="bare"
                                         onClick={() => setEditing(null)}
                                         className="px-2 py-0.5 text-[10.5px] text-ink-400 border border-ink-700 rounded hover:text-ink-200 transition-colors"
-                                      >取消</button>
+                                      >取消</Button>
                                     </div>
                                   )}
                                 </div>
@@ -537,12 +538,12 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                         })}
                         {doc.fields.length === 0 && <div className="text-[11px] text-ink-500">（暂无内容）</div>}
                         {onNavigate && (
-                          <button
+                          <Button variant="bare"
                             onClick={() => onNavigate(doc.tabId)}
                             className="text-[10px] text-ink-500 hover:text-amber transition-colors mt-1"
                           >
                             → 跳转到「{doc.source}」
-                          </button>
+                          </Button>
                         )}
                       </div>
                     )}
@@ -556,12 +557,12 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
 
       {/* 底部：去填写 */}
       <div className="px-3 py-2 border-t border-ink-700 shrink-0">
-        <button
+        <Button variant="bare"
           onClick={() => onNavigate?.('guide')}
           className="flex items-center gap-1.5 text-[10px] text-ink-500 hover:text-amber transition-colors"
         >
           <BookMarked size={10} /> 设定不齐？查看填写指南
-        </button>
+        </Button>
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 import { AlertTriangle, AlertCircle, Info, ArrowRight } from 'lucide-react'
 import type { AuditIssue, IssueSeverity } from '../lib/audit'
 import { SEVERITY_ORDER, SEVERITY_LABEL } from '../lib/audit'
+import { Button } from './Button'
 
 interface Props {
   issues: AuditIssue[]
@@ -51,12 +52,12 @@ export default function AuditPanel({ issues, emptyText, onNavigateTab, onOpenCha
                   <div className="text-[12.5px] font-medium text-ink-100">{issue.title}</div>
                   <div className="text-[11.5px] text-ink-300 leading-relaxed whitespace-pre-wrap mt-0.5">{issue.detail}</div>
                   {loc && onJump && (
-                    <button
+                    <Button variant="bare"
                       onClick={onJump}
                       className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] text-ink-400 hover:text-amber transition-colors"
                     >
                       <ArrowRight size={10} /> 跳转{loc.hint ? `「${loc.hint}」` : ''}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <span className="shrink-0 text-[9px] px-1.5 py-px rounded bg-ink-800 text-ink-500 border border-ink-700">{SEVERITY_LABEL[issue.severity]}</span>

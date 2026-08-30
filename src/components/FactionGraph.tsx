@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { getCardRecords } from '../lib/db'
 import type { TableRow } from '../lib/types'
 import { Network, Users, X, ArrowUpRight } from 'lucide-react'
+import { Button } from './Button'
 
 interface Props {
   rows: TableRow[]
@@ -300,16 +301,16 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
         <div className="absolute right-3 top-12 bottom-3 w-64 bg-ink-850/95 backdrop-blur rounded-xl border border-ink-700 p-3 overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="text-[13px] font-semibold text-amber">{selected}</div>
-            <button onClick={() => setSelected(null)} className="text-ink-500 hover:text-ink-200">
+            <Button variant="bare" onClick={() => setSelected(null)} className="text-ink-500 hover:text-ink-200">
               <X size={16} />
-            </button>
+            </Button>
           </div>
-          <button
+          <Button variant="bare"
             onClick={() => onNavigate?.('nations')}
             className="text-[11px] text-sky-400 hover:text-sky-300 mb-3 inline-flex items-center gap-1"
           >
             <ArrowUpRight size={11} /> 在《国家势力》查看
-          </button>
+          </Button>
           <div className="text-[11px] text-ink-400 mb-1.5 flex items-center gap-1">
             <Users size={11} /> 所属成员（{members.length}）
           </div>

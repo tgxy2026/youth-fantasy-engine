@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Calendar } from 'lucide-react'
 import { todayKey } from '../lib/date'
+import { Button } from './Button'
 
 /** 视图年月 + 日号 → YYYY-MM-DD（统一走 lib/date，与写作统计同口径） */
 const dayKey = (y: number, m: number, d: number) => todayKey(new Date(y, m - 1, d))
@@ -98,7 +99,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
 
   return (
     <div className="relative inline-block w-full" ref={wrapRef}>
-      <button
+      <Button variant="bare"
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -106,7 +107,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
       >
         <Calendar size={12} className="text-amber/80 shrink-0" />
         <span className={value ? '' : 'text-ink-500'}>{value || '选择日期'}</span>
-      </button>
+      </Button>
       {open && pos && createPortal(
         <div
           ref={dropRef}
@@ -120,25 +121,25 @@ export default function CalendarPicker({ value, onChange }: Props) {
           className="fixed z-[9999] overflow-y-auto rounded-lg bg-ink-850 border border-ink-700 shadow-xl p-2.5"
         >
           <div className="flex items-center justify-between mb-2">
-            <button type="button" onClick={() => shiftMonth(-1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-[14px]">‹</button>
+            <Button variant="bare" type="button" onClick={() => shiftMonth(-1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-[14px]">‹</Button>
             <span className="text-[12px] text-ink-100 font-medium">{view.y} 年 {view.m} 月</span>
-            <button type="button" onClick={() => shiftMonth(1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-[14px]">›</button>
+            <Button variant="bare" type="button" onClick={() => shiftMonth(1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-[14px]">›</Button>
           </div>
           <div className="grid grid-cols-7 gap-0.5 text-[10px] text-ink-500 text-center mb-1">
             {WEEK.map(w => <div key={w}>{w}</div>)}
           </div>
           <div className="grid grid-cols-7 gap-0.5">
             {cells.map((d, i) => d === null ? <div key={i} /> : (
-              <button
+              <Button variant="bare"
                 key={i}
                 type="button"
                 onClick={() => pick(d)}
                 className={`py-1 rounded text-[11px] transition-colors
                   ${value === dayKey(view.y, view.m, d) ? 'bg-amber/20 text-amber' : 'text-ink-200 hover:bg-ink-700'}`}
-              >{d}</button>
+              >{d}</Button>
             ))}
           </div>
-          <button type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-[10px] text-ink-500 hover:text-ink-200">清除日期</button>
+          <Button variant="bare" type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-[10px] text-ink-500 hover:text-ink-200">清除日期</Button>
         </div>,
         document.body,
       )}

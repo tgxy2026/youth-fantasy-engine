@@ -104,7 +104,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
 
   return (
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
-      <button
+      <Button variant="bare"
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -112,7 +112,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
       >
         <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value || '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
-      </button>
+      </Button>
       {open && pos && createPortal(
         <div
           ref={dropRef}
@@ -129,7 +129,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
                 key={cal.name}
                 className={`group flex items-center px-1 py-0.5 text-[12px] hover:bg-ink-700 ${selected ? 'text-amber' : 'text-ink-200'}`}
               >
-                <button
+                <Button variant="bare"
                   type="button"
                   onClick={() => choose(cal.name)}
                   className="flex-1 text-left px-1.5 py-0.5 flex items-center gap-1.5 min-w-0"
@@ -137,33 +137,33 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
                   {selected ? <Check size={10} /> : <span className="w-[10px]" />}
                   <span className="truncate flex-1">{cal.name}</span>
                   <span className="text-[10px] text-ink-500">({cal.value})</span>
-                </button>
+                </Button>
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 pr-1">
-                  <button
+                  <Button variant="bare"
                     type="button"
                     title="编辑名称/数值"
                     onMouseDown={e => e.preventDefault()}
                     onClick={() => openEditor(cal)}
                     className="p-0.5 text-ink-500 hover:text-amber"
-                  ><Pencil size={10} /></button>
-                  <button
+                  ><Pencil size={10} /></Button>
+                  <Button variant="bare"
                     type="button"
                     title="删除"
                     onMouseDown={e => e.preventDefault()}
                     onClick={() => onDelete(cal)}
                     className="p-0.5 text-ink-500 hover:text-red-400"
-                  ><Trash2 size={10} /></button>
+                  ><Trash2 size={10} /></Button>
                 </div>
               </div>
             )
           })}
-          <button
+          <Button variant="bare"
             type="button"
             onClick={() => openEditor()}
             className="w-full text-left px-2.5 py-1.5 text-[11.5px] text-amber/90 border-t border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
           >
             <Plus size={11} /> 新增历法…
-          </button>
+          </Button>
         </div>,
         document.body
       )}

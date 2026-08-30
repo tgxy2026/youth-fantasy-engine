@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { RotateCcw, EyeOff, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
 import type { TableRow } from '../lib/types'
+import { Button } from './Button'
 
 interface Props {
   rows: TableRow[]
@@ -232,25 +233,25 @@ export default function RelationGraph({ rows }: Props) {
         <span>节点越大 = 关系越多；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开</span>
         <span className="flex items-center gap-2">
           {collapsed.size > 0 && (
-            <button
+            <Button variant="bare"
               onClick={() => setCollapsed(new Set())}
               className="flex items-center gap-1 px-2 py-0.5 rounded-md border border-ink-600 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors"
               title="恢复所有被收起的人物"
             >
               <RotateCcw size={11} /> 展开全部（{collapsed.size}）
-            </button>
+            </Button>
           )}
           <span>{visibleNodes.length} 位人物 · {visibleEdges.length} 条关系</span>
           <span className="flex items-center gap-0.5 border border-ink-700 rounded-md px-1 py-0.5">
-            <button onClick={() => zoomBy(1.25)} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="放大">
+            <Button variant="bare" onClick={() => zoomBy(1.25)} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="放大">
               <ZoomIn size={11} />
-            </button>
-            <button onClick={() => zoomBy(0.8)} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="缩小">
+            </Button>
+            <Button variant="bare" onClick={() => zoomBy(0.8)} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="缩小">
               <ZoomOut size={11} />
-            </button>
-            <button onClick={resetView} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="重置视图">
+            </Button>
+            <Button variant="bare" onClick={resetView} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="重置视图">
               <Maximize2 size={11} />
-            </button>
+            </Button>
           </span>
         </span>
       </div>
@@ -340,14 +341,14 @@ export default function RelationGraph({ rows }: Props) {
         <div className="px-4 py-2 border-t border-ink-700 flex items-center gap-2 flex-wrap">
           <span className="text-[10px] text-ink-500 shrink-0">已收起：</span>
           {[...collapsed].map(name => (
-            <button
+            <Button variant="bare"
               key={name}
               onClick={() => toggleCollapse(name)}
               className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-ink-800 border border-ink-600 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors"
               title="重新展开该人物"
             >
               <EyeOff size={10} className="opacity-70" /> {name}
-            </button>
+            </Button>
           ))}
         </div>
       )}

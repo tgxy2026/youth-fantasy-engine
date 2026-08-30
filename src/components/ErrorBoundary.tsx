@@ -49,12 +49,12 @@ export default class ErrorBoundary extends React.Component<
               <Button onClick={this.handleReload} variant="primary" solid size="md" className="text-[12px]">
                 重新加载页面
               </Button>
-              <button
+              <Button variant="bare"
                 onClick={() => this.setState({ error: null })}
                 className="px-3 py-1.5 rounded-md border border-ink-700 text-ink-300 text-[12px] hover:text-ink-100 hover:border-ink-500 transition-colors"
               >
                 尝试原地恢复
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@ import type { TableRow, TabDef, CalendarDef } from '../lib/types'
 import { storyDateKey } from './StoryDateInput'
 import { Calendar, X, AlertTriangle, Layers } from 'lucide-react'
 import { Modal } from './Modal'
+import { Button } from './Button'
 
 const COLORS = [
   { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber' },
@@ -200,7 +201,7 @@ export default function StoryTimeline({ rows, calendars }: Props) {
             const color = COLORS[idx % COLORS.length]
             const hidden = hiddenTracks.has(t)
             return (
-              <button
+              <Button variant="bare"
                 key={t}
                 onClick={() => setHiddenTracks(prev => {
                   const next = new Set(prev)
@@ -212,14 +213,14 @@ export default function StoryTimeline({ rows, calendars }: Props) {
                     : `bg-ink-800 ${color.text} border-ink-700 hover:border-ink-600`}`}
               >
                 <span className={`w-2 h-2 rounded-full ${color.dot}`} /> {t}
-              </button>
+              </Button>
             )
           })}
         </div>
         <div className="flex items-center gap-1">
           <span className="text-[11px] text-ink-500 mr-1">核对状态：</span>
           {(['all', '正常', '已修正', '待核对'] as const).map(s => (
-            <button
+            <Button variant="bare"
               key={s}
               onClick={() => setFilterStatus(s)}
               className={`px-2.5 py-0.5 rounded-md text-[11px] border transition-colors
@@ -228,7 +229,7 @@ export default function StoryTimeline({ rows, calendars }: Props) {
                   : 'bg-ink-800 text-ink-400 border-ink-700 hover:text-ink-200'}`}
             >
               {s === 'all' ? '全部' : s}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -352,10 +353,10 @@ export default function StoryTimeline({ rows, calendars }: Props) {
                   {selected.chapter ? `${selected.chapter} ` : ''}{selected.title || '（未命名章节）'}
                 </h3>
               </div>
-              <button
+              <Button variant="bare"
                 onClick={() => setSelected(null)}
                 className="p-1.5 text-ink-500 hover:text-ink-200 hover:bg-ink-700 rounded-lg transition-colors shrink-0"
-              ><X size={16} /></button>
+              ><X size={16} /></Button>
             <div className="p-4 space-y-2.5">
               {regressed.includes(selected.id) && (
                 <div className="flex items-center gap-1.5 text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-md px-2 py-1.5">

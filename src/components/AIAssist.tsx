@@ -211,12 +211,12 @@ export default function AIAssist() {
         <HelpPopover title="AI 辅助规划怎么用" width="23rem" className="ml-0.5">
           {'多轮对话式辅助：左侧可新建 / 切换 / 重命名 / 删除多个规划会话；右侧与模型连续对话。\n\n· 勾选「带入项目资料」可让模型参考你的世界观与角色设定，给出的建议更贴设定；\n· 灵感激发 / 剧情人物世界观规划 / 一致性自查（不生成正文）；\n· 首次使用点右上角「模型设置」添加并选择模型，未接入时对话按钮禁用。'}
         </HelpPopover>
-        <button
+        <Button variant="bare"
           onClick={() => setShowSettings(true)}
           className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] bg-ink-800 text-ink-300 border border-ink-600 hover:text-ink-100 hover:border-amber/30 transition-colors"
         >
           <Settings2 size={12} /> 模型设置
-        </button>
+        </Button>
       </div>
 
       {/* 当前模型状态条 */}
@@ -256,8 +256,8 @@ export default function AIAssist() {
                 >
                   <MessageSquarePlus size={12} className={`shrink-0 ${s.id === activeSessionId ? 'text-amber' : 'text-ink-500'}`} />
                   <span className={`flex-1 text-[11.5px] truncate ${s.id === activeSessionId ? 'text-amber' : 'text-ink-300'}`}>{s.title}</span>
-                  <button onClick={e => { e.stopPropagation(); renameSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-ink-200" title="重命名"><Pencil size={11} /></button>
-                  <button onClick={e => { e.stopPropagation(); deleteSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-red-400" title="删除"><Trash2 size={11} /></button>
+                  <Button variant="bare" onClick={e => { e.stopPropagation(); renameSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-ink-200" title="重命名"><Pencil size={11} /></Button>
+                  <Button variant="bare" onClick={e => { e.stopPropagation(); deleteSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-red-400" title="删除"><Trash2 size={11} /></Button>
                 </div>
               ))
             )}
@@ -278,9 +278,9 @@ export default function AIAssist() {
                   <div className={`max-w-[85%] rounded-xl px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-amber/15 text-amber border border-amber/25' : 'bg-ink-800 text-ink-200 border border-ink-700'}`}>
                     {m.content}
                     {m.role === 'assistant' && (
-                      <button onClick={() => copyMsg(m.id, m.content)} className="ml-2 align-middle text-ink-500 hover:text-ink-200" title="复制">
+                      <Button variant="bare" onClick={() => copyMsg(m.id, m.content)} className="ml-2 align-middle text-ink-500 hover:text-ink-200" title="复制">
                         {copied === m.id ? <Check size={11} className="text-emerald-400 inline" /> : <Copy size={11} className="inline" />}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -302,14 +302,14 @@ export default function AIAssist() {
               </label>
               <div className="flex flex-wrap gap-1 ml-1">
                 {TEMPLATES.map(t => (
-                  <button
+                  <Button variant="bare"
                     key={t.label}
                     onClick={() => setPrompt(t.prompt)}
                     className="px-2 py-0.5 rounded-full text-[10.5px] bg-ink-800 text-ink-300 border border-ink-700 hover:text-amber hover:border-amber/30 transition-colors"
                     title={t.prompt}
                   >
                     {t.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -327,14 +327,14 @@ export default function AIAssist() {
                   <AlertCircle size={13} /> 停止
                 </Button>
               ) : (
-                <button
+                <Button variant="bare"
                   onClick={() => void send()}
                   disabled={!aiReady || !prompt.trim()}
                   className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-amber/15 text-amber border border-amber/30 rounded-lg text-[12px] hover:bg-amber/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title={!aiReady ? AI_DISABLED_HINT : '发送'}
                 >
                   <Send size={13} /> 发送
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -539,9 +539,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                     {activeId === p.id ? (
                       <span className="shrink-0 flex items-center gap-1 text-[11px] text-emerald-400"><CheckCircle2 size={12} /> 当前</span>
                     ) : (
-                      <button onClick={() => setActive(p.id)} className="shrink-0 text-[11px] px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</button>
+                      <Button variant="bare" onClick={() => setActive(p.id)} className="shrink-0 text-[11px] px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</Button>
                     )}
-                    <button
+                    <Button variant="bare"
                       onClick={() => runRowTest(p)}
                       disabled={testingId !== null}
                       title={testingId !== null ? '有测试正在进行中，请稍候' : '发起一次最小对话，验证该模型能否正常调用'}
@@ -549,9 +549,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                     >
                       {testingId === p.id ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
                       {testingId === p.id ? '测试中…' : '测试'}
-                    </button>
-                    <button onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 p-1 text-ink-500 hover:text-amber"><Pencil size={12} /></button>
-                    <button onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1 text-ink-500 hover:text-red-400"><Trash2 size={12} /></button>
+                    </Button>
+                    <Button variant="bare" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 p-1 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
+                    <Button variant="bare" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1 text-ink-500 hover:text-red-400"><Trash2 size={12} /></Button>
                   </div>
                   {testingId === p.id && (
                     <div className="px-3 pb-2 text-[11px] text-ink-400 flex items-center gap-1.5">
@@ -565,12 +565,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               ))}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 rounded-lg text-[12px] hover:bg-emerald-500/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），运行在本机，一般免密钥、无需联网">
+              <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 rounded-lg text-[12px] hover:bg-emerald-500/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），运行在本机，一般免密钥、无需联网">
                 <Cpu size={13} /> 添加本地模型
-              </button>
-              <button onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-sky-500/10 text-sky-300 border border-sky-500/25 rounded-lg text-[12px] hover:bg-sky-500/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
+              </Button>
+              <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-sky-500/10 text-sky-300 border border-sky-500/25 rounded-lg text-[12px] hover:bg-sky-500/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
                 <Globe size={13} /> 添加联网模型
-              </button>
+              </Button>
             </div>
             {pickMode !== 'none' && (
               <div className="rounded-lg border border-ink-700 bg-ink-800/40 p-3">
@@ -578,11 +578,11 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                   <span className="text-[12px] font-medium text-ink-200">
                     {pickMode === 'local' ? '选择本地平台' : '选择联网平台'}
                   </span>
-                  <button onClick={() => setPickMode('none')} className="ml-auto text-[11px] text-ink-400 hover:text-ink-100">返回</button>
+                  <Button variant="bare" onClick={() => setPickMode('none')} className="ml-auto text-[11px] text-ink-400 hover:text-ink-100">返回</Button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {(pickMode === 'local' ? LOCAL_PRESETS : ONLINE_PRESETS).map(p => (
-                    <button
+                    <Button variant="bare"
                       key={p.label}
                       onClick={() => startAddPreset(p)}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-ink-800 border border-ink-700 text-[12px] text-ink-200 hover:text-emerald-300 hover:border-emerald-400/40 transition-colors text-left"
@@ -591,7 +591,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                         ? <Cpu size={12} className="text-emerald-400 shrink-0" />
                         : <Globe size={12} className="text-sky-400 shrink-0" />}
                       <span className="truncate">{p.label}</span>
-                    </button>
+                    </Button>
                   ))}
                 </div>
                 <p className="text-[10px] text-ink-500 mt-2 leading-relaxed">
@@ -637,7 +637,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                   <label className="block text-[11px] text-ink-500 mb-1">Ollama 地址</label>
                   <div className="flex gap-2">
                     <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="http://localhost:11434" />
-                    <button onClick={() => fetchModels(editing.baseUrl)} className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600">获取本地模型</button>
+                    <Button variant="bare" onClick={() => fetchModels(editing.baseUrl)} className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600">获取本地模型</Button>
                   </div>
                 </div>
                 {ollamaModels.length > 0 && (
@@ -704,7 +704,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 {testing ? <Loader2 size={12} className="animate-spin" /> : <FlaskConical size={12} />}
                 {testing ? '测试中…' : '测试此配置'}
               </Button>
-              <button onClick={() => { setEditing(null); setEditResult(null); setPickMode('none') }} className="ml-auto px-3 py-2 bg-ink-700 text-ink-300 border border-ink-600 rounded-lg text-[12px] hover:text-ink-100">取消</button>
+              <Button variant="bare" onClick={() => { setEditing(null); setEditResult(null); setPickMode('none') }} className="ml-auto px-3 py-2 bg-ink-700 text-ink-300 border border-ink-600 rounded-lg text-[12px] hover:text-ink-100">取消</Button>
             </div>
           </div>
         )}

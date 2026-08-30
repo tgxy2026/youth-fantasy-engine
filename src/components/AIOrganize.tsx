@@ -190,7 +190,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   }
 
   const modeBtn = (m: SourceMode, icon: React.ReactNode, label: string) => (
-    <button
+    <Button variant="bare"
       onClick={() => setMode(m)}
       className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-[12px] border transition-colors ${
         mode === m
@@ -199,7 +199,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
       }`}
     >
       {icon} {label}
-    </button>
+    </Button>
   )
 
   return (
@@ -226,31 +226,31 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
               <div className="rounded-lg border border-ink-700 bg-ink-900/40">
                 <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800 text-[11.5px] text-ink-400">
                   <span>已选 {picked.size} / {written.length} 章（有正文的章节）</span>
-                  <button
+                  <Button variant="bare"
                     onClick={() => setPicked(new Set(written.slice(-3).map(c => c.id)))}
                     className="ml-auto px-2 py-0.5 rounded bg-ink-800 border border-ink-700 hover:bg-ink-700"
                   >
                     最近 3 章
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="bare"
                     onClick={() => setPicked(new Set(written.map(c => c.id)))}
                     className="px-2 py-0.5 rounded bg-ink-800 border border-ink-700 hover:bg-ink-700"
                   >
                     全选
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="bare"
                     onClick={() => setPicked(new Set())}
                     className="px-2 py-0.5 rounded bg-ink-800 border border-ink-700 hover:bg-ink-700"
                   >
                     清空
-                  </button>
+                  </Button>
                 </div>
                 <div className="max-h-[26vh] overflow-y-auto p-1.5">
                   {written.length === 0 && (
                     <div className="px-2 py-3 text-[12px] text-ink-500">还没有写好正文的章节，可改用「仅依据已有设定」。</div>
                   )}
                   {written.map(c => (
-                    <button
+                    <Button variant="bare"
                       key={c.id}
                       onClick={() => toggleChapter(c.id)}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-left hover:bg-ink-800/60"
@@ -260,7 +260,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
                         : <Square size={13} className="text-ink-600 shrink-0" />}
                       <span className="text-[12px] text-ink-200 truncate">{c.title || '未命名章节'}</span>
                       <span className="ml-auto text-[11px] text-ink-500 shrink-0">{c.wordCount || 0} 字</span>
-                    </button>
+                    </Button>
                   ))}
                 </div>
                 <div className="px-3 py-1.5 border-t border-ink-800 text-[11px] text-ink-500">
@@ -331,24 +331,24 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
               ) : (
                 <>
                   <div className="flex items-center gap-2">
-                    <button
+                    <Button variant="bare"
                       onClick={() => setChecked(new Set(result.rows.map((_, i) => i)))}
                       className="px-2 py-1 rounded bg-ink-800 border border-ink-700 text-[11.5px] text-ink-300 hover:bg-ink-700"
                     >
                       全选
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="bare"
                       onClick={() => setChecked(new Set())}
                       className="px-2 py-1 rounded bg-ink-800 border border-ink-700 text-[11.5px] text-ink-300 hover:bg-ink-700"
                     >
                       全不选
-                    </button>
+                    </Button>
                     <span className="text-[11.5px] text-ink-500">取消勾选即不写入；写入后仍可在表格里继续编辑。</span>
                   </div>
 
                   <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
                     {result.rows.map((row, i) => (
-                      <button
+                      <Button variant="bare"
                         key={i}
                         onClick={() => toggleRow(i)}
                         className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
@@ -373,7 +373,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
                             ),
                           )}
                         </div>
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 </>
@@ -394,9 +394,9 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
                 >
                   <RefreshCw size={12} /> 重新整理
                 </Button>
-                <button onClick={onClose} className="ml-auto px-3 py-2 text-ink-400 hover:text-ink-100 text-[12px]">
+                <Button variant="bare" onClick={onClose} className="ml-auto px-3 py-2 text-ink-400 hover:text-ink-100 text-[12px]">
                   取消
-                </button>
+                </Button>
               </div>
             </>
           )}

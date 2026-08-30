@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import { Button } from './Button'
 
 // 全站唯一 z 轴真源，替换散落在各处的魔数（z-50 / z-[60] / z-[9998] / z-[9999] …）
 export const Z = {
@@ -219,7 +220,7 @@ export function Modal({
             )}
             {headerExtra}
             {showCloseButton && (
-              <button
+              <Button variant="bare"
                 type="button"
                 onClick={() => onCloseRef.current()}
                 title="关闭"
@@ -227,7 +228,7 @@ export function Modal({
                 className="p-1 text-ink-400 hover:text-ink-100 transition-colors"
               >
                 <X size={16} />
-              </button>
+              </Button>
             )}
           </div>
         )}

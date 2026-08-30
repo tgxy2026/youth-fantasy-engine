@@ -421,7 +421,7 @@ export default function JieWenJi({
         <HelpPopover title="颉文姬 · AI 编辑" width="24rem" size={12} className="shrink-0">
           {'· 诊室：AI 深度校对（错别字 / 语病 / 逻辑 / 设定矛盾，可逐条「替换此条」）；AI 综合诊断（主编视角：优先级 / 隐藏风险 / 批量建议）。\n· 编辑：先在正文选中一段，选润色 / 扩写 / 精简 / 改语气 / 换视角。改稿以「建议段」标记写入原文下方，你的原文一字不动，取舍后可用「清除全部建议段」一键清理。\n· 审读：章节编辑意见（六维打分）/ OOC 人设检查 / 续写方向（只给思路不生成正文）/ 爽点毒点 / 黄金三章。\n· 简报（v1.6.1）：开写前一键生成「本章写作简报」——未回收伏笔 / 钩子爽点方向 / 角色状态提醒 / 下一章衔接，只给方向不代写正文。\n· 补登（v1.9.1）：扫本章正文，抽出有专名的人物 / 势力 / 地点 / 种族 / 物品 / 术语，与已有设定比对后分「已登记 / 疑似重复 / 待补登」三档；勾选即可一键写入对应设定表或角色卡，只填名称与一句话，其余留空自己补。「是否已登记」由程序按名称与别称精确比对，AI 只负责抽取。\n· 所有 AI 入口需先配置模型；未配置时按钮禁用，原有本地功能不受影响。\n· 底部开关可控制屏幕右侧的 Q 版精灵是否显示。'}
         </HelpPopover>
-        <button onClick={onClose} className="p-1 text-ink-500 hover:text-ink-200 transition-colors" title="收起"><X size={16} /></button>
+        <Button variant="bare" onClick={onClose} className="p-1 text-ink-500 hover:text-ink-200 transition-colors" title="收起"><X size={16} /></Button>
       </div>
 
       {/* 模式切换 */}
@@ -433,7 +433,7 @@ export default function JieWenJi({
           ['brief', '简报', Sparkles],
           ['ledger', '补登', ClipboardList],
         ] as [Mode, string, typeof PenLine][]).map(([m, label, Icon]) => (
-          <button
+          <Button variant="bare"
             key={m}
             onClick={() => setMode(m)}
             className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11.5px] border transition-colors ${
@@ -441,7 +441,7 @@ export default function JieWenJi({
             }`}
           >
             <Icon size={12} /> {label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -456,7 +456,7 @@ export default function JieWenJi({
                 <Button title="校对结果需在正文中精确定位替换，故恒校对全文；诊断支持用压缩摘要的简略模式" variant="primary" solid size="md">完整（正文）</Button>
               </div>
             </div>
-            <button
+            <Button variant="bare"
               onClick={() => void runProofread()}
               disabled={!aiReady || proof.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -464,7 +464,7 @@ export default function JieWenJi({
             >
               {proof.loading ? <Loader2 size={12} className="animate-spin" /> : <SpellCheck size={12} />}
               {proof.loading ? '校对中…' : 'AI 深度校对（错别字 / 语病 / 逻辑 / 设定矛盾）'}
-            </button>
+            </Button>
             {proof.loading && (
               <div className="flex items-center gap-2">
                 <div className="h-1 rounded bg-ink-700 overflow-hidden flex-1">
@@ -495,12 +495,12 @@ export default function JieWenJi({
                       <span className="text-[11px] text-emerald-300">{iss.fix}</span>
                     </div>
                     {iss.why && <div className="text-[10.5px] text-ink-400 mt-0.5">{iss.why}</div>}
-                    <button
+                    <Button variant="bare"
                       onClick={() => replaceOne(iss)}
                       className="mt-1 px-2 py-0.5 rounded-md text-[10.5px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
                     >
                       替换此条
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -515,19 +515,19 @@ export default function JieWenJi({
             <div className="flex items-center gap-1.5 text-[10.5px] text-ink-500">
               <span>诊断范围</span>
               <div className="flex rounded-md overflow-hidden border border-ink-700">
-                <button
+                <Button variant="bare"
                   onClick={() => setDiagMode('full')}
                   className={`px-2 py-0.5 transition-colors ${diagMode === 'full' ? 'bg-amber/20 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
                   title="喂入本章全文：诊断最准，但耗时长、费 token"
-                >完整（正文）</button>
-                <button
+                >完整（正文）</Button>
+                <Button variant="bare"
                   onClick={() => setDiagMode('brief')}
                   className={`px-2 py-0.5 transition-colors ${diagMode === 'brief' ? 'bg-amber/20 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
                   title="只喂「章节压缩摘要」（约原文 1/10）：速度快、省 token"
-                >简略（压缩摘要）</button>
+                >简略（压缩摘要）</Button>
               </div>
             </div>
-            <button
+            <Button variant="bare"
               onClick={() => void runDiag()}
               disabled={!aiReady || diag.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -535,7 +535,7 @@ export default function JieWenJi({
             >
               {diag.loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {diag.loading ? '诊断中…' : 'AI 综合诊断（优先级 / 隐藏风险 / 批量建议）'}
-            </button>
+            </Button>
             {!aiReady && <div className="text-[10.5px] text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
 
             {diag.error && <div className="text-[11px] text-red-300 px-1">{diag.error}</div>}
@@ -564,7 +564,7 @@ export default function JieWenJi({
 
             <div className="flex flex-wrap gap-1.5">
               {INSTRUCTIONS.map(ins => (
-                <button
+                <Button variant="bare"
                   key={ins}
                   onClick={() => setInstruction(ins)}
                   className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors ${
@@ -572,11 +572,11 @@ export default function JieWenJi({
                   }`}
                 >
                   {ins}
-                </button>
+                </Button>
               ))}
             </div>
 
-            <button
+            <Button variant="bare"
               onClick={() => void runRewrite()}
               disabled={!aiReady || !selText || rewrite.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -584,7 +584,7 @@ export default function JieWenJi({
             >
               {rewrite.loading ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
               {rewrite.loading ? '改稿中…' : `让颉文姬${instruction}选区`}
-            </button>
+            </Button>
 
             {rewrite.error && <div className="text-[11px] text-red-300 px-1">{rewrite.error}</div>}
 
@@ -603,19 +603,19 @@ export default function JieWenJi({
               </div>
             )}
 
-            <button
+            <Button variant="bare"
               onClick={() => onClearAdvice?.()}
               className={`${aiBtnCls} bg-ink-800 border-ink-600 text-ink-300 hover:border-red-400/40 hover:text-red-300`}
             >
               <Trash2 size={12} /> 清除全部建议段
-            </button>
+            </Button>
           </>
         )}
 
         {/* ================= 审读 ================= */}
         {mode === 'review' && (
           <>
-            <button
+            <Button variant="bare"
               onClick={() => void runReview()}
               disabled={!aiReady || rev.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -623,7 +623,7 @@ export default function JieWenJi({
             >
               {rev.loading ? <Loader2 size={12} className="animate-spin" /> : <BookOpen size={12} />}
               {rev.loading ? '审读中…' : '章节编辑意见（节奏 / 钩子 / 水文 / 对话）'}
-            </button>
+            </Button>
 
             {rev.error && <div className="text-[11px] text-red-300 px-1">{rev.error}</div>}
             {rev.data && (
@@ -664,7 +664,7 @@ export default function JieWenJi({
               </div>
             )}
 
-            <button
+            <Button variant="bare"
               onClick={() => void runOoc()}
               disabled={!aiReady || ooc.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -672,7 +672,7 @@ export default function JieWenJi({
             >
               {ooc.loading ? <Loader2 size={12} className="animate-spin" /> : <AlertTriangle size={12} />}
               {ooc.loading ? '检查中…' : 'OOC 人设偏离检查'}
-            </button>
+            </Button>
 
             {ooc.error && <div className="text-[11px] text-red-300 px-1">{ooc.error}</div>}
             {ooc.data && (
@@ -697,7 +697,7 @@ export default function JieWenJi({
               </div>
             )}
 
-            <button
+            <Button variant="bare"
               onClick={() => void runAdvice()}
               disabled={!aiReady || adv.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -705,7 +705,7 @@ export default function JieWenJi({
             >
               {adv.loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {adv.loading ? '思考中…' : '续写方向（只给思路，不生成正文）'}
-            </button>
+            </Button>
 
             {adv.error && <div className="text-[11px] text-red-300 px-1">{adv.error}</div>}
             {adv.data && (
@@ -739,7 +739,7 @@ export default function JieWenJi({
               </div>
             )}
 
-            <button
+            <Button variant="bare"
               onClick={() => void runPleasure()}
               disabled={!aiReady || plea.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -747,7 +747,7 @@ export default function JieWenJi({
             >
               {plea.loading ? <Loader2 size={12} className="animate-spin" /> : <Flame size={12} />}
               {plea.loading ? '检查中…' : '爽点 / 毒点检查（YY·代入感·金手指）'}
-            </button>
+            </Button>
 
             {plea.error && <div className="text-[11px] text-red-300 px-1">{plea.error}</div>}
             {plea.data && (
@@ -756,7 +756,7 @@ export default function JieWenJi({
               </div>
             )}
 
-            <button
+            <Button variant="bare"
               onClick={() => void runOpening()}
               disabled={!aiReady || open.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -764,7 +764,7 @@ export default function JieWenJi({
             >
               {open.loading ? <Loader2 size={12} className="animate-spin" /> : <BookOpenCheck size={12} />}
               {open.loading ? '检查中…' : '黄金三章检查（开篇定生死）'}
-            </button>
+            </Button>
 
             {open.error && <div className="text-[11px] text-red-300 px-1">{open.error}</div>}
             {open.data && (
@@ -780,7 +780,7 @@ export default function JieWenJi({
         {/* ================= 简报：开写前本章待办（v1.6.1） ================= */}
         {mode === 'brief' && (
           <>
-            <button
+            <Button variant="bare"
               onClick={() => void runBrief()}
               disabled={!aiReady || brief.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
@@ -788,7 +788,7 @@ export default function JieWenJi({
             >
               {brief.loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {brief.loading ? '生成中…' : '生成本章写作简报（开写前）'}
-            </button>
+            </Button>
             <div className="text-[10.5px] text-ink-500 leading-relaxed px-1">
               写下一章之前点一下：AI 汇总未回收伏笔、可安排的钩子爽点、出场角色状态提醒与上一章衔接建议——只给方向，不代写正文。
             </div>
@@ -896,13 +896,13 @@ export default function JieWenJi({
                               )}
 
                               {it.status !== 'new' && it.matchedTabId && (
-                                <button
+                                <Button variant="bare"
                                   type="button"
                                   onClick={() => jumpToEntry(it.matchedTabId!, it.matchedId)}
                                   className="mt-1 flex items-center gap-0.5 text-[10px] text-amber/80 hover:text-amber"
                                 >
                                   去核对 <ExternalLink size={9} />
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </div>
@@ -928,13 +928,13 @@ export default function JieWenJi({
       {/* 精灵开关 */}
       <div className="px-3 py-1.5 border-t border-ink-700 flex items-center justify-between gap-2 shrink-0">
         <span className="text-[10px] text-ink-500">屏幕右侧 Q 版精灵</span>
-        <button
+        <Button variant="bare"
           onClick={toggleSprite}
           className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${spriteOn ? 'bg-amber' : 'bg-ink-600'}`}
           title={spriteOn ? '点击隐藏右侧精灵' : '点击显示右侧精灵'}
         >
           <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-ink-50 shadow transition-all ${spriteOn ? 'left-[18px]' : 'left-0.5'}`} />
-        </button>
+        </Button>
       </div>
       {/* 底部状态 */}
       <div className="px-3 py-2 border-t border-ink-700 text-[10px] text-ink-500 flex items-center justify-between gap-2 shrink-0">

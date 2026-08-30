@@ -43,14 +43,14 @@ export default function FeedbackButton() {
 
   return (
     <>
-      <button
+      <Button variant="bare"
         onClick={() => setOpen(true)}
         title="提交反馈 / 优化建议"
         className="flex items-center gap-2 rounded-full border border-amber/40 bg-ink-900/90 px-4 py-2 text-sm text-amber shadow-lg backdrop-blur hover:bg-ink-800"
       >
         <MessageSquareWarning size={16} />
         反馈
-      </button>
+      </Button>
       <Modal
         open={open}
         onClose={() => setOpen(false)}
@@ -59,12 +59,12 @@ export default function FeedbackButton() {
         surface="900"
         footer={
           <>
-            <button
+            <Button variant="bare"
               onClick={() => setOpen(false)}
               className="rounded-lg px-3 py-2 text-sm text-ink-300 hover:bg-ink-800"
             >
               取消
-            </button>
+            </Button>
             <Button onClick={submit}
                 disabled={busy} variant="primary" solid size="md" className="text-ink-950">
                 {busy ? '提交中…' : '提交'}

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import * as db from '../lib/db'
 import type { Chapter, CardRecord } from '../lib/types'
+import { Button } from './Button'
 
 interface Props {
   onNavigate: (id: string, chapterId?: string) => void
@@ -92,7 +93,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
                   const c = r.counts[ch.id] ?? 0
                   return (
                     <td key={ch.id} className="p-0.5">
-                      <button
+                      <Button variant="bare"
                         onClick={() => onNavigate('editor', ch.id)}
                         title={`${r.name} 在《${ch.title}》出场 ${c} 次 · 点击直达`}
                         className={`w-[20px] h-[20px] rounded-[3px] ${cellColor(c)} hover:ring-1 hover:ring-amber transition-all`}
