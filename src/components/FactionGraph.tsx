@@ -301,7 +301,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
         <div className="absolute right-3 top-12 bottom-3 w-64 bg-ink-850/95 backdrop-blur rounded-xl border border-ink-700 p-3 overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="text-[13px] font-semibold text-amber">{selected}</div>
-            <Button variant="bare" onClick={() => setSelected(null)} className="text-ink-500 hover:text-ink-200">
+            <Button variant="icon-muted" onClick={() => setSelected(null)}>
               <X size={16} />
             </Button>
           </div>

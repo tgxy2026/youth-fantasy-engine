@@ -293,10 +293,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               ))}
             </div>
           )}
-          <Button variant="bare"
-            onClick={() => onNavigate('progress')}
-            className="mt-4 flex items-center gap-1 text-[11px] text-ink-400 hover:text-amber transition-colors"
-          >
+          <Button variant="icon-amber" onClick={() => onNavigate('progress')} className="mt-4 flex items-center gap-1 text-[11px]">
             去登记今日字数 <ChevronRight size={11} />
           </Button>
         </section>
@@ -350,10 +347,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
                 )
               })}
             </div>
-            <Button variant="bare"
-              onClick={() => onNavigate('editor')}
-              className="mt-4 flex items-center gap-1 text-[11px] text-ink-400 hover:text-amber transition-colors"
-            >
+            <Button variant="icon-amber" onClick={() => onNavigate('editor')} className="mt-4 flex items-center gap-1 text-[11px]">
               去写作 <ChevronRight size={11} />
             </Button>
           </section>

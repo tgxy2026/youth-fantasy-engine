@@ -52,10 +52,7 @@ export default function AuditPanel({ issues, emptyText, onNavigateTab, onOpenCha
                   <div className="text-[12.5px] font-medium text-ink-100">{issue.title}</div>
                   <div className="text-[11.5px] text-ink-300 leading-relaxed whitespace-pre-wrap mt-0.5">{issue.detail}</div>
                   {loc && onJump && (
-                    <Button variant="bare"
-                      onClick={onJump}
-                      className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] text-ink-400 hover:text-amber transition-colors"
-                    >
+                    <Button variant="icon-amber" onClick={onJump} className="mt-1.5 inline-flex items-center gap-1 text-[10.5px]">
                       <ArrowRight size={10} /> 跳转{loc.hint ? `「${loc.hint}」` : ''}
                     </Button>
                   )}

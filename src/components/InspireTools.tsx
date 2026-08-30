@@ -163,7 +163,7 @@ export default function InspireTools() {
                 {favorites.map(f => (
                   <span key={f} className="inline-flex items-center gap-1 px-2 py-1 bg-ink-800 border border-ink-700 rounded-md text-[12px] text-ink-200">
                     {f}
-                    <Button variant="bare" onClick={() => toggleFavorite(f)} className="text-ink-500 hover:text-red-400"><Trash2 size={10} /></Button>
+                    <Button variant="icon-danger" onClick={() => toggleFavorite(f)}><Trash2 size={10} /></Button>
                   </span>
                 ))}
               </div>

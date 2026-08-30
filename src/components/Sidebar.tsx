@@ -266,11 +266,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             </HelpPopover>
           </span>
           <div className="flex items-center gap-1 ml-auto">
-            <Button variant="bare"
-              onClick={() => changeZoom(-10)}
-              className="p-0.5 text-ink-400 hover:text-amber transition-colors"
-              title="缩小界面"
-            >
+            <Button variant="icon-amber" onClick={() => changeZoom(-10)} className="p-0.5" title="缩小界面">
               <ZoomOut size={12} />
             </Button>
             <span className="flex items-center gap-0.5">
@@ -287,11 +283,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
               />
               <span className="text-ink-400 text-xs">%</span>
             </span>
-            <Button variant="bare"
-              onClick={() => changeZoom(10)}
-              className="p-0.5 text-ink-400 hover:text-amber transition-colors"
-              title="放大界面"
-            >
+            <Button variant="icon-amber" onClick={() => changeZoom(10)} className="p-0.5" title="放大界面">
               <ZoomIn size={12} />
             </Button>
           </div>

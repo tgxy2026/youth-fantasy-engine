@@ -92,7 +92,7 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
           <HelpPopover title="全文检索怎么用" width="24rem" size={13} className="shrink-0">
             {'全书级检索：章节正文、角色卡、全部设定表（国家/地理/术语/伏笔/关系…）一次搜尽。\n\n· Ctrl/Cmd + K 随时唤起；\n· 输入即出结果，按 章节 / 角色 / 设定 分组；\n· ↑ ↓ 选择，回车跳转：章节直达正文编辑，角色/设定直达所在页签；\n· Esc 关闭。\n\n中文按词/字切分，英文按单词；标题命中优先置顶。'}
           </HelpPopover>
-          <Button variant="bare" onClick={onClose} className="p-1 text-ink-500 hover:text-ink-200 transition-colors shrink-0" title="关闭"><X size={16} /></Button>
+          <Button variant="icon-muted" onClick={onClose} className="p-1 shrink-0" title="关闭"><X size={16} /></Button>
         </div>
 
         {/* 结果 */}

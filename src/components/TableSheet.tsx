@@ -912,11 +912,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                               {!rOpen && status && <span className="text-[11px] text-ink-500 truncate">{status}</span>}
                               {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存修改" />}
                             </Button>
-                            <Button variant="bare"
-                              onClick={() => removeRow(row.id)}
-                              className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-red-400 transition-all p-1 shrink-0"
-                              title="删除此条关系"
-                            >
+                            <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-0 group-hover:opacity-100 transition-all p-1 shrink-0" title="删除此条关系">
                               <Trash2 size={12} />
                             </Button>
                             {aiCap !== 'none' && (
@@ -1071,11 +1067,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                           <PenLine size={12} />
                         </Button>
                       )}
-                      <Button variant="bare"
-                        onClick={() => removeRow(row.id)}
-                        className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-red-400 transition-all p-1"
-                        title="删除此行"
-                      >
+                      <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-0 group-hover:opacity-100 transition-all p-1" title="删除此行">
                         <Trash2 size={12} />
                       </Button>
                       {aiCap !== 'none' && (
@@ -1180,12 +1172,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                             col.name === tab.displayCol && parentCol ? (
                               <div className="flex items-start gap-1" style={{ paddingLeft: depth * 14 }}>
                                 {hasChildren ? (
-                                  <Button variant="bare"
-                                    type="button"
-                                    onClick={() => toggleCollapse(row.id)}
-                                    className="mt-1 text-ink-400 hover:text-amber transition-colors shrink-0"
-                                    title={collapsed.has(row.id) ? '展开子条目' : '折叠子条目'}
-                                  >
+                                  <Button variant="icon-amber" type="button" onClick={() => toggleCollapse(row.id)} className="mt-1 shrink-0" title={collapsed.has(row.id) ? '展开子条目' : '折叠子条目'}>
                                     {collapsed.has(row.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                                   </Button>
                                 ) : (

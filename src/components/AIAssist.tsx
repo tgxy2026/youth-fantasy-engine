@@ -256,8 +256,8 @@ export default function AIAssist() {
                 >
                   <MessageSquarePlus size={12} className={`shrink-0 ${s.id === activeSessionId ? 'text-amber' : 'text-ink-500'}`} />
                   <span className={`flex-1 text-[11.5px] truncate ${s.id === activeSessionId ? 'text-amber' : 'text-ink-300'}`}>{s.title}</span>
-                  <Button variant="bare" onClick={e => { e.stopPropagation(); renameSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-ink-200" title="重命名"><Pencil size={11} /></Button>
-                  <Button variant="bare" onClick={e => { e.stopPropagation(); deleteSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-red-400" title="删除"><Trash2 size={11} /></Button>
+                  <Button variant="icon-muted" onClick={e => { e.stopPropagation(); renameSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5" title="重命名"><Pencil size={11} /></Button>
+                  <Button variant="icon-danger" onClick={e => { e.stopPropagation(); deleteSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5" title="删除"><Trash2 size={11} /></Button>
                 </div>
               ))
             )}
@@ -278,7 +278,7 @@ export default function AIAssist() {
                   <div className={`max-w-[85%] rounded-xl px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-amber/15 text-amber border border-amber/25' : 'bg-ink-800 text-ink-200 border border-ink-700'}`}>
                     {m.content}
                     {m.role === 'assistant' && (
-                      <Button variant="bare" onClick={() => copyMsg(m.id, m.content)} className="ml-2 align-middle text-ink-500 hover:text-ink-200" title="复制">
+                      <Button variant="icon-muted" onClick={() => copyMsg(m.id, m.content)} className="ml-2 align-middle" title="复制">
                         {copied === m.id ? <Check size={11} className="text-emerald-400 inline" /> : <Copy size={11} className="inline" />}
                       </Button>
                     )}
@@ -546,7 +546,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                       {testingId === p.id ? '测试中…' : '测试'}
                     </Button>
                     <Button variant="bare" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 p-1 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
-                    <Button variant="bare" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1 text-ink-500 hover:text-red-400"><Trash2 size={12} /></Button>
+                    <Button variant="icon-danger" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1"><Trash2 size={12} /></Button>
                   </div>
                   {testingId === p.id && (
                     <div className="px-3 pb-2 text-[11px] text-ink-400 flex items-center gap-1.5">

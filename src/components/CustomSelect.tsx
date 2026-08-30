@@ -373,13 +373,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                         onClick={() => onStartRename(item.original, item.display)}
                         className="p-0.5 text-ink-500 hover:text-amber"
                       ><Pencil size={10} /></Button>
-                      <Button variant="bare"
-                        type="button"
-                        title="从下拉移除"
-                        onMouseDown={e => e.preventDefault()}
-                        onClick={() => onHideBuiltin(item.original)}
-                        className="p-0.5 text-ink-500 hover:text-red-400"
-                      ><EyeOff size={10} /></Button>
+                      <Button variant="icon-danger" type="button" title="从下拉移除" onMouseDown={e => e.preventDefault()} onClick={() => onHideBuiltin(item.original)} className="p-0.5"><EyeOff size={10} /></Button>
                     </>
                   ) : (
                     <>
@@ -390,13 +384,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                         onClick={() => onStartEditUser(item.original)}
                         className="p-0.5 text-ink-500 hover:text-amber"
                       ><Pencil size={10} /></Button>
-                      <Button variant="bare"
-                        type="button"
-                        title="删除"
-                        onMouseDown={e => e.preventDefault()}
-                        onClick={() => onDeleteUser(item.original)}
-                        className="p-0.5 text-ink-500 hover:text-red-400"
-                      ><Trash2 size={10} /></Button>
+                      <Button variant="icon-danger" type="button" title="删除" onMouseDown={e => e.preventDefault()} onClick={() => onDeleteUser(item.original)} className="p-0.5"><Trash2 size={10} /></Button>
                     </>
                   )}
                 </div>

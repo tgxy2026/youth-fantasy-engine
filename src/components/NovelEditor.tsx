@@ -764,14 +764,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </HelpPopover>
             </span>
             <div className="flex gap-1">
-              <Button variant="bare"
+              <Button variant="icon-amber"
                 onClick={() => runExport(m => m.exportWholeBook(projectName, volumes, chapters))}
-                className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0"
-                title="导出全书 TXT"
-              >
+                className="p-1 shrink-0"
+                title="导出全书 TXT">
                 <Upload size={14} />
               </Button>
-              <Button variant="bare" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} title="新建卷" className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0">
+              <Button variant="icon-amber" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} title="新建卷" className="p-1 shrink-0">
                 <FolderPlus size={13} />
               </Button>
             </div>
@@ -810,14 +809,12 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     >
                       <GripVertical size={12} />
                     </span>
-                    <Button variant="bare"
+                    <Button variant="icon-muted"
                       onClick={() => {
                         const next = new Set(expanded)
                         if (next.has(vol.id)) next.delete(vol.id); else next.add(vol.id)
                         setExpanded(next)
-                      }}
-                      className="text-ink-500 hover:text-ink-200"
-                    >
+                      }}>
                       {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     </Button>
                     <span
@@ -835,10 +832,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     >
                       <FilePlus2 size={12} />
                     </Button>
-                    <Button variant="bare"
+                    <Button variant="icon-danger"
                       onClick={() => removeVolume(vol)}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-red-400 transition-all"
-                    >
+                      className="opacity-0 group-hover:opacity-100 p-0.5 transition-all">
                       <Trash2 size={12} />
                     </Button>
                   </div>
@@ -896,10 +892,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                               >
                                 <Hash size={12} />
                               </Button>
-                              <Button variant="bare"
+                              <Button variant="icon-danger"
                                 onClick={e => { e.stopPropagation(); removeChapter(ch) }}
-                                className="hidden group-hover:block p-0.5 text-ink-500 hover:text-red-400"
-                              >
+                                className="hidden group-hover:block p-0.5">
                                 <Trash2 size={12} />
                               </Button>
                           </div>
@@ -978,22 +973,21 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               <Button variant="bare" onClick={() => setModal('sensitive')} className="p-1 text-ink-400 hover:text-red-400 transition-colors shrink-0" title="敏感词检测（本章）">
                 <ShieldAlert size={14} />
               </Button>
-              <Button variant="bare"
+              <Button variant="icon-amber"
                 onClick={async () => { if (await confirmDialog({ title: '一键排版', message: '统一段落首行缩进（两个全角空格）并规范空行？' })) updateContent(formatNovelText(draftContent)) }}
-                className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0"
-                title="一键排版（首行缩进+空行规范）"
-              >
+                className="p-1 shrink-0"
+                title="一键排版（首行缩进+空行规范）">
                 <AlignLeft size={14} />
               </Button>
               <div className="w-px h-4 bg-ink-700" />
               {/* 审计工具组：伏笔闭环 / 连续性校验 / 错别字 / 文风体检 */}
               {!isLite && (
-              <Button variant="bare" onClick={() => setModal('foreshadow')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="伏笔闭环看板（全局）">
+              <Button variant="icon-amber" onClick={() => setModal('foreshadow')} className="p-1 shrink-0" title="伏笔闭环看板（全局）">
                 <GitBranch size={14} />
               </Button>
               )}
               {!isLite && (
-              <Button variant="bare" onClick={() => setModal('continuity')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="连续性校验器（全局）">
+              <Button variant="icon-amber" onClick={() => setModal('continuity')} className="p-1 shrink-0" title="连续性校验器（全局）">
                 <Link2 size={14} />
               </Button>
               )}
@@ -1001,7 +995,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 <SpellCheck size={14} />
               </Button>
               {!isLite && (
-              <Button variant="bare" onClick={() => setModal('style')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="文风体检（本章）">
+              <Button variant="icon-amber" onClick={() => setModal('style')} className="p-1 shrink-0" title="文风体检（本章）">
                 <Feather size={14} />
               </Button>
               )}
@@ -1132,13 +1126,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
                 )}
               </Button>
-              <Button variant="bare" onClick={() => setModal('history')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="时光机 · 版本历史">
+              <Button variant="icon-amber" onClick={() => setModal('history')} className="p-1 shrink-0" title="时光机 · 版本历史">
                 <History size={14} />
               </Button>
-              <Button variant="bare" onClick={() => setModal('trash')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="回收站（恢复误删章节）">
+              <Button variant="icon-amber" onClick={() => setModal('trash')} className="p-1 shrink-0" title="回收站（恢复误删章节）">
                 <Trash2 size={14} />
               </Button>
-              <Button variant="bare" onClick={() => onOpenSearch?.()} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="全文检索（Ctrl/Cmd+K）：搜章节正文 / 角色 / 设定">
+              <Button variant="icon-amber" onClick={() => onOpenSearch?.()} className="p-1 shrink-0" title="全文检索（Ctrl/Cmd+K）：搜章节正文 / 角色 / 设定">
                 <Command size={14} />
               </Button>
               <Button variant="bare" onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章引用侧栏：列出本章提到的角色 / 设定条目（可点击直达）">
@@ -1147,28 +1141,26 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               <Button variant="bare" onClick={() => setHighlightOn(o => !o)} className={`p-1 transition-colors shrink-0 ${highlightOn ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="引用名内联高亮：正文中标记已登记的角色 / 设定条目名称（开 / 关）">
                 <Highlighter size={14} />
               </Button>
-              <Button variant="bare" onClick={() => onNavigate?.('chapter-outline')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="前往本章大纲（章节细纲）">
+              <Button variant="icon-amber" onClick={() => onNavigate?.('chapter-outline')} className="p-1 shrink-0" title="前往本章大纲（章节细纲）">
                 <BookOpen size={14} />
               </Button>
-              <Button variant="bare" onClick={() => setModal('search')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="全文搜索替换（本书）">
+              <Button variant="icon-amber" onClick={() => setModal('search')} className="p-1 shrink-0" title="全文搜索替换（本书）">
                 <Search size={14} />
               </Button>
-              <Button variant="bare" onClick={() => setModal('lock')} className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0" title="小黑屋 · 强制码字">
+              <Button variant="icon-amber" onClick={() => setModal('lock')} className="p-1 shrink-0" title="小黑屋 · 强制码字">
                 <Lock size={14} />
               </Button>
               <div className="w-px h-4 bg-ink-700" />
-              <Button variant="bare"
+              <Button variant="icon-amber"
                 onClick={() => setShowSearch(!showSearch)}
-                className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0"
-                title={showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}
-              >
+                className="p-1 shrink-0"
+                title={showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
                 {showSearch ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
               </Button>
-              <Button variant="bare"
+              <Button variant="icon-amber"
                 onClick={() => setFocusMode(!focusMode)}
-                className="p-1 text-ink-400 hover:text-amber transition-colors shrink-0"
-                title={focusMode ? '退出专注模式' : '专注模式'}
-              >
+                className="p-1 shrink-0"
+                title={focusMode ? '退出专注模式' : '专注模式'}>
                 {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
@@ -1267,19 +1259,17 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 <AlignCenter size={11} /> 打字机
               </Button>
               <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md border border-ink-700 bg-ink-800/60">
-                <Button variant="bare"
+                <Button variant="icon-amber"
                   onClick={() => changeFontSize(-1)}
-                  className="w-5 h-5 flex items-center justify-center text-ink-400 hover:text-amber transition-colors"
-                  title="减小字号"
-                >
+                  className="w-5 h-5 flex items-center justify-center"
+                  title="减小字号">
                   −
                 </Button>
                 <span className="w-6 text-center text-ink-300 tabular-nums text-[11px]">{fontSize}</span>
-                <Button variant="bare"
+                <Button variant="icon-amber"
                   onClick={() => changeFontSize(1)}
-                  className="w-5 h-5 flex items-center justify-center text-ink-400 hover:text-amber transition-colors"
-                  title="增大字号"
-                >
+                  className="w-5 h-5 flex items-center justify-center"
+                  title="增大字号">
                   +
                 </Button>
               </div>
@@ -1295,7 +1285,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   <Users size={13} className="text-amber" />
                   <span className="text-[12px] font-semibold text-ink-200 flex-1">本章引用</span>
                   <span className="text-[10px] text-ink-500">{referenced.length} 处</span>
-                  <Button variant="bare" onClick={() => setShowRefs(false)} className="p-1 text-ink-500 hover:text-ink-200 transition-colors" title="收起"><X size={16} /></Button>
+                  <Button variant="icon-muted" onClick={() => setShowRefs(false)} className="p-1" title="收起"><X size={16} /></Button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2">
                   {referenced.length === 0 ? (

@@ -471,11 +471,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                           </select>
                                         )}
                                       </div>
-                                      <Button variant="bare"
-                                        onClick={() => setEditing(null)}
-                                        className="p-1 text-ink-500 hover:text-ink-200 transition-colors shrink-0"
-                                        title="收起（选中选项即已保存）"
-                                      ><X size={11} /></Button>
+                                      <Button variant="icon-muted" onClick={() => setEditing(null)} className="p-1 shrink-0" title="收起（选中选项即已保存）"><X size={11} /></Button>
                                     </div>
                                   ) : f.type === 'characters' ? (
                                     /* 多选角色：从已创建角色卡中选择，禁止手动输入，与原表一致 */

@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 // 共享按钮：统一高度 / 圆角 / 内边距 / 字号，收敛全站 352 个手写 button 的字面量漂移。
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare' | 'icon-amber' | 'icon-danger' | 'icon-muted'
 type Size = 'sm' | 'md' | 'lg'
 type Shape = 'rect' | 'pill' | 'round'
 
@@ -58,6 +58,12 @@ function variantClass(v: Variant, solid: boolean): string {
         : 'bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/20'
     case 'icon':
       return 'text-ink-400 hover:text-ink-100 hover:bg-ink-800/60 rounded-md border border-transparent'
+    case 'icon-amber':
+      return 'text-ink-400 hover:text-amber'
+    case 'icon-danger':
+      return 'text-ink-500 hover:text-red-400'
+    case 'icon-muted':
+      return 'text-ink-500 hover:text-ink-200'
     case 'bare':
       return ''
   }
@@ -77,7 +83,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref
 ) {
   let sizeCls: string
-  if (variant === 'bare') sizeCls = ''
+  if (variant === 'bare' || variant === 'icon-amber' || variant === 'icon-danger' || variant === 'icon-muted') sizeCls = ''
   else if (iconOnly) sizeCls = shape === 'round' ? ROUND_ICON_SIZE[size] : ICON_SIZE[size]
   else if (shape === 'round') sizeCls = ROUND_ICON_SIZE[size]
   else sizeCls = SIZE[size]

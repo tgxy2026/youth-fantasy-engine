@@ -146,13 +146,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
                     onClick={() => openEditor(cal)}
                     className="p-0.5 text-ink-500 hover:text-amber"
                   ><Pencil size={10} /></Button>
-                  <Button variant="bare"
-                    type="button"
-                    title="删除"
-                    onMouseDown={e => e.preventDefault()}
-                    onClick={() => onDelete(cal)}
-                    className="p-0.5 text-ink-500 hover:text-red-400"
-                  ><Trash2 size={10} /></Button>
+                  <Button variant="icon-danger" type="button" title="删除" onMouseDown={e => e.preventDefault()} onClick={() => onDelete(cal)} className="p-0.5"><Trash2 size={10} /></Button>
                 </div>
               </div>
             )

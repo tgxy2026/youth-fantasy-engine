@@ -235,12 +235,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               >
                 <RotateCcw size={11} /> 恢复
               </Button>
-              <Button variant="bare"
-                onClick={() => remove(b.id)}
-                disabled={busy}
-                className="p-1.5 text-ink-500 hover:text-red-400 disabled:opacity-50"
-                title="删除备份"
-              >
+              <Button variant="icon-danger" onClick={() => remove(b.id)} disabled={busy} className="p-1.5" title="删除备份">
                 <Trash2 size={12} />
               </Button>
             </div>

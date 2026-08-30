@@ -208,7 +208,7 @@ export default function ProjectHub({ onOpen }: Props) {
           <div className="mb-6 rounded-xl border border-amber/25 bg-ink-850 p-5 page-enter">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[13px] font-semibold text-ink-100">新建小说项目</h3>
-              <Button variant="bare" onClick={() => setCreating(false)} className="text-ink-500 hover:text-ink-200"><X size={16} /></Button>
+              <Button variant="icon-muted" onClick={() => setCreating(false)}><X size={16} /></Button>
             </div>
             <div className="flex gap-5">
               {/* 封面上传 */}

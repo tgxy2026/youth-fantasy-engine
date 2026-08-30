@@ -243,13 +243,13 @@ export default function RelationGraph({ rows }: Props) {
           )}
           <span>{visibleNodes.length} 位人物 · {visibleEdges.length} 条关系</span>
           <span className="flex items-center gap-0.5 border border-ink-700 rounded-md px-1 py-0.5">
-            <Button variant="bare" onClick={() => zoomBy(1.25)} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="放大">
+            <Button variant="icon-amber" onClick={() => zoomBy(1.25)} className="p-0.5" title="放大">
               <ZoomIn size={11} />
             </Button>
-            <Button variant="bare" onClick={() => zoomBy(0.8)} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="缩小">
+            <Button variant="icon-amber" onClick={() => zoomBy(0.8)} className="p-0.5" title="缩小">
               <ZoomOut size={11} />
             </Button>
-            <Button variant="bare" onClick={resetView} className="p-0.5 text-ink-400 hover:text-amber transition-colors" title="重置视图">
+            <Button variant="icon-amber" onClick={resetView} className="p-0.5" title="重置视图">
               <Maximize2 size={11} />
             </Button>
           </span>

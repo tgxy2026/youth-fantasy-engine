@@ -283,11 +283,7 @@ export default function OutlineSheet({ tab }: Props) {
                     <ChevronDown size={12} />
                   </Button>
                   <span className="flex-1" />
-                  <Button variant="bare"
-                    onClick={e => { e.stopPropagation(); removeRecord(rec.id) }}
-                    className="p-0.5 text-ink-500 hover:text-red-400"
-                    title={`删除该${noun}`}
-                  >
+                  <Button variant="icon-danger" onClick={e => { e.stopPropagation(); removeRecord(rec.id) }} className="p-0.5" title={`删除该${noun}`}>
                     <Trash2 size={12} />
                   </Button>
                 </div>
