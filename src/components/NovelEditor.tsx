@@ -1023,13 +1023,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     <div className="absolute right-0 top-full mt-1 z-40 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 max-h-[60vh] overflow-y-auto">
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportChapter(projectName, active))}
-                        className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出本章（{active.title}）
                       </Button>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportWholeBook(projectName, volumes, chapters))}
-                        className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全本（一卷一章）
                       </Button>
@@ -1037,25 +1037,25 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                       <div className="px-3 py-1 text-[10px] text-ink-500">导出全文（多格式）</div>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportBookMD(projectName, volumes, chapters))}
-                        className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（Markdown）
                       </Button>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportEPUB(projectName, volumes, chapters))}
-                        className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（EPUB）
                       </Button>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportDOCX(projectName, volumes, chapters))}
-                        className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（DOCX）
                       </Button>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportBookPlatformText(projectName, volumes, chapters))}
-                        className="w-full text-left px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                         title="干净纯文本，适配起点 / 番茄等网文平台粘贴"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（平台粘贴版）
@@ -1068,7 +1068,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                         <Button variant="bare"
                           key={vol.id}
                           onClick={() => runExport(m => m.exportVolume(projectName, vol, chapters))}
-                          className="w-full text-left pl-5 pr-3 py-1 text-[12px] text-ink-200 hover:bg-ink-700 truncate"
+                          className="w-full text-left !justify-start pl-5 pr-3 py-1 text-[12px] text-ink-200 hover:bg-ink-700 truncate"
                           title={`导出「${vol.title}」`}
                         >
                           {vol.title}（{chapters.filter(c => c.volumeId === vol.id).length} 章）
@@ -1090,7 +1090,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                           tick()
                           setExportOpen(false)
                         }}
-                        className="w-full text-left px-3 py-1.5 text-[12px] text-ink-200 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-200 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} /> 全部章节逐一导出（{chapters.length} 个文件）
                       </Button>
@@ -1099,7 +1099,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                           <Button variant="bare"
                             key={ch.id}
                             onClick={() => runExport(m => m.exportChapter(projectName, ch))}
-                            className="w-full text-left pl-5 pr-3 py-0.5 text-[11px] text-ink-300 hover:bg-ink-700 truncate"
+                            className="w-full text-left !justify-start pl-5 pr-3 py-0.5 text-[11px] text-ink-300 hover:bg-ink-700 truncate"
                             title={ch.title}
                           >
                             {ch.title}

@@ -107,7 +107,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   const vCls = variantClass(variant, solid, selected)
 
   const cls = [
-    'inline-flex items-center justify-center gap-1.5 select-none whitespace-nowrap',
+    'inline-flex items-center justify-center gap-1.5 select-none whitespace-normal',
     'transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
     sizeCls,
     shapeCls,
