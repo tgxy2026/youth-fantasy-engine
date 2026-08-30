@@ -46,15 +46,15 @@ function minValidWords(target: number): number {
 export interface DeAiTemplate { id: string; label: string; desc: string; prompt: string }
 export const DEAI_TEMPLATES: DeAiTemplate[] = [
   {
-    id: 'natural', label: '自然口语化', desc: '去套路、加生活感，像人写的',
+    id: 'natural', label: '口语化', desc: '去套路、加生活感，像人写的',
     prompt: '把正文改得更自然、更口语、更像活人写的网文：\n1. 删掉「首先/其次/最后」「值得注意的是」「在……之前」「总而言之」「毋庸置疑」这类说明性套话。\n2. 减少对称对仗的排比句与成语堆砌，让句子长短错落。\n3. 破折号、省略号不要滥用。\n4. 少做空泛的升华与总结，多给具体画面、动作、感官细节。\n5. 心理活动写得更像真实念头，而非工整的议论。\n保持情节、人设、视角、章末钩子完全不变。',
   },
   {
-    id: 'webnovel', label: '网文节奏', desc: '明快、对话推动、钩子更勾',
+    id: 'webnovel', label: '网文化', desc: '明快、对话推动、钩子更勾',
     prompt: '把正文改得更像成熟网文：\n1. 节奏明快，多用短句和对话推进，减少大段说明性叙述。\n2. 砍掉冗长的环境铺陈与心理独白注水。\n3. 强化冲突与信息差，让每屏都有「接下来会怎样」的悬念。\n4. 章末钩子更利落、更勾人。\n5. 去除 AI 常见的平衡工整表达，让文字带点作者个人脾气。\n保持人设与情节结构不变。',
   },
   {
-    id: 'literary', label: '文学化去套路', desc: '保留文采但去陈词滥调',
+    id: 'literary', label: '去套路', desc: '保留文采但去陈词滥调',
     prompt: '在保留原有文采的前提下去除 AI 套路：\n1. 替换陈词滥调与网络烂梗，用更精准新鲜的意象。\n2. 减少「仿佛」「似乎」「宛如」等廉价比况的堆叠。\n3. 避免每段都用相同的递进结构。\n4. 让叙述视角更稳、语气更统一。\n5. 删去空泛的哲理性感慨，把情绪藏进动作与细节里。\n保持情节结构不变。',
   },
   { id: 'custom', label: '自定义', desc: '粘贴你自己的去味儿提示词', prompt: '' },

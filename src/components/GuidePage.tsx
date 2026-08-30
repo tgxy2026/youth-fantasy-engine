@@ -105,8 +105,8 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
                         className={`group text-left py-2 border-b border-ink-700/50 transition-colors ${enabled ? 'hover:border-amber/30 cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}
                       >
                         <div className="flex items-center gap-2">
-                          <span className={`text-[13px] font-medium transition-colors ${enabled ? 'text-ink-100 group-hover:text-amber' : 'text-ink-500'}`}>{tab.name}</span>
-                          {!enabled && <span className="text-[9px] px-1 py-0.5 rounded bg-ink-700 text-ink-400">未启用</span>}
+                          <span className={`flex-1 min-w-0 text-[13px] font-medium transition-colors ${enabled ? 'text-ink-100 group-hover:text-amber' : 'text-ink-500'}`}>{tab.name}</span>
+                          {!enabled && <span className="shrink-0 text-[9px] px-1 py-0.5 rounded bg-ink-700 text-ink-400">未启用</span>}
                         </div>
                         <div className={`text-[11px] mt-0.5 line-clamp-1 ${enabled ? 'text-ink-400' : 'text-ink-600'}`}>{tab.description}</div>
                       </Button>
