@@ -441,9 +441,8 @@ export default function ProjectHub({ onOpen }: Props) {
                         </div>
                         <div className="mt-auto pt-3 flex items-center gap-1.5">
                           <Tooltip label="打开项目">
-                            <Button variant="bare"
+                            <Button variant="primary" iconOnly
                               onClick={() => onOpen(p.id)}
-                              className="icon-btn-primary"
                               title="打开项目"
                               aria-label="打开项目"
                             >
@@ -451,9 +450,8 @@ export default function ProjectHub({ onOpen }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出 JSON 备份">
-                            <Button variant="bare"
+                            <Button variant="icon-ghost" iconOnly
                               onClick={() => exportProject(p)}
-                              className="icon-btn"
                               title="导出 JSON 备份"
                               aria-label="导出 JSON 备份"
                             >
@@ -461,9 +459,8 @@ export default function ProjectHub({ onOpen }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出设定集">
-                            <Button variant="bare"
+                            <Button variant="icon-ghost" iconOnly
                               onClick={async () => { db.setCurrentProject(p.id); const { exportSettingCompendium } = await import('../lib/exporter'); void exportSettingCompendium(p.name) }}
-                              className="icon-btn"
                               title="导出设定集（汇总全部世界观 / 人物 / 设定表）"
                               aria-label="导出设定集"
                             >
@@ -471,9 +468,8 @@ export default function ProjectHub({ onOpen }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="备份与恢复">
-                            <Button variant="bare"
+                            <Button variant="icon-ghost" iconOnly
                               onClick={() => { setBackupName(p.name); setBackupPid(p.id) }}
-                              className="icon-btn"
                               title="备份与恢复：查看 / 一键恢复历史版本"
                               aria-label="备份与恢复"
                             >
@@ -481,9 +477,8 @@ export default function ProjectHub({ onOpen }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="编辑项目">
-                            <Button variant="bare"
+                            <Button variant="icon-ghost" iconOnly
                               onClick={() => startEdit(p)}
-                              className="icon-btn"
                               title="编辑项目"
                               aria-label="编辑项目"
                             >
@@ -491,9 +486,9 @@ export default function ProjectHub({ onOpen }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="删除项目" side="bottom">
-                            <Button variant="bare"
+                            <Button variant="icon-danger" iconOnly
                               onClick={() => removeProject(p)}
-                              className="icon-btn-danger"
+                              className="hover:bg-red-500/10"
                               title="删除项目"
                               aria-label="删除项目"
                             >

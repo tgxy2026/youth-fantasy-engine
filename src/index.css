@@ -270,16 +270,3 @@ button:disabled { cursor: not-allowed; }
   box-shadow: 0 4px 24px rgba(217, 160, 74, 0.08);
 }
 
-/* ---------- 图标按钮（项目管理页 / 通用） ---------- */
-.icon-btn {
-  @apply inline-flex items-center justify-center w-9 h-9 rounded-lg border border-ink-600 text-ink-400
-         hover:text-ink-100 hover:border-ink-500 hover:bg-ink-800 transition-colors;
-}
-.icon-btn-primary {
-  @apply inline-flex items-center justify-center w-9 h-9 rounded-lg bg-amber/15 text-amber border border-amber/30
-         hover:bg-amber/25 transition-colors;
-}
-.icon-btn-danger {
-  @apply inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-600
-         hover:text-red-400 hover:bg-red-500/10 transition-colors;
-}

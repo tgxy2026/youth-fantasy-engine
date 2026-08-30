@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 // 共享按钮：统一高度 / 圆角 / 内边距 / 字号，收敛全站 352 个手写 button 的字面量漂移。
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare' | 'icon-amber' | 'icon-danger' | 'icon-muted'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare' | 'icon-amber' | 'icon-danger' | 'icon-muted' | 'icon-ghost'
 type Size = 'sm' | 'md' | 'lg'
 type Shape = 'rect' | 'pill' | 'round'
 
@@ -64,6 +64,9 @@ function variantClass(v: Variant, solid: boolean): string {
       return 'text-ink-500 hover:text-red-400'
     case 'icon-muted':
       return 'text-ink-500 hover:text-ink-200'
+    case 'icon-ghost':
+      // 等价原 .icon-btn：带可见边框的方框图标键（项目管理卡片操作键）
+      return 'border border-ink-600 text-ink-400 hover:text-ink-100 hover:border-ink-500 hover:bg-ink-800'
     case 'bare':
       return ''
   }
