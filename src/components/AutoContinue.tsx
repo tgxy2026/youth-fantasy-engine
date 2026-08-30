@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { BookOpen, CheckCircle2, RefreshCw, Square, Sparkles } from 'lucide-react'
+import { BookOpen, Check, CheckCircle2, RefreshCw, RotateCcw, Square, Sparkles } from 'lucide-react'
 import { Button } from './Button'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
@@ -7,12 +7,15 @@ import { showToast } from './dialogs'
 import HelpPopover from './HelpPopover'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { runAutoContinue, type ContinueStrategy } from '../lib/autoContinue'
+import {
+  runAutoContinue, WORD_TOLERANCE,
+  type ContinueStrategy, type ChapterDraft, type DraftDecision,
+} from '../lib/autoContinue'
 import { countWords } from '../lib/textStats'
 import type { LedgerItem } from '../lib/settingLedger'
 
 const STRATEGY_META: Record<ContinueStrategy, { label: string; hint: string }> = {
-  'add-only': { label: '仅新增', hint: '只补登新设定，已登记的设定一律不动' },
+  'add-only': { label: '仅限新增', hint: '只补登新设定，已登记的设定一律不动' },
   'confirm': { label: '候选确认', hint: '新设定与疑似重复项列出供你勾选，已登记项不改动' },
   'auto-update': { label: '自动更新', hint: '新设定自动补登，已登记实体的变化追加到备注（不覆盖属性列）' },
 }
@@ -46,6 +49,9 @@ export default function AutoContinue() {
   const [logs, setLogs] = useState<string[]>([])
   const abortRef = useRef<AbortController | null>(null)
 
+  // 每章初稿裁决弹窗
+  const [draft, setDraft] = useState<{ d: ChapterDraft; resolve: (v: DraftDecision) => void } | null>(null)
+  // 设定补登确认弹窗（B 策略）
   const [confirm, setConfirm] = useState<{ cands: LedgerItem[]; resolve: (v: LedgerItem[] | null) => void } | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -60,24 +66,36 @@ export default function AutoContinue() {
         signal: ac.signal,
         onPhase: setPhase,
         onBodyToken: (d) => setPreview(p => p + d),
+        onBodyReplace: (full) => setPreview(full),
         onLog: (m) => setLogs(l => [...l, m]),
+        onChapterDraft: (d) => new Promise<DraftDecision>((resolve) => setDraft({ d, resolve })),
         onSettingsCandidates: (cands) => new Promise<LedgerItem[] | null>((resolve) => {
           setSelected(new Set(cands.filter(c => c.status === 'new').map(c => c.key)))
           setConfirm({ cands, resolve })
         }),
       },
     ).catch((e) => { showToast(e instanceof Error ? e.message : String(e), 'error'); return { created: [] } })
+    const wasStopped = ac.signal.aborted
     setRunning(false)
     abortRef.current = null
     if (res.created.length) showToast(`续写完成，新增 ${res.created.length} 章`, 'success')
-    else if (!abortRef.current) showToast('未生成章节，请检查模型配置或日志', 'error')
+    else if (!wasStopped) showToast('未生成章节，请检查模型配置或日志', 'error')
   }, [running, aiReady, chapters, targetWords, strategy, intent])
 
   const stop = () => {
     abortRef.current?.abort()
-    // 若正卡在「设定补登确认」弹窗，直接跳过以解除挂起（否则 runAutoContinue 永远 await）
+    // 解除所有挂起的弹窗 Promise，否则 runAutoContinue 会永远 await、按钮一直转圈
+    if (draft) { draft.resolve('abort'); setDraft(null) }
     if (confirm) { confirm.resolve(null); setConfirm(null); setSelected(new Set()) }
     setPhase('已停止（正在收尾…）')
+  }
+
+  const decide = (v: DraftDecision) => {
+    if (!draft) return
+    draft.resolve(v)
+    setDraft(null)
+    if (v === 'accept') setPhase('已采纳，进入审查与设定补登…')
+    else if (v === 'rewrite') setPhase('已弃用本稿，重新生成…')
   }
 
   const confirmApply = () => {
@@ -92,19 +110,23 @@ export default function AutoContinue() {
     setConfirm(null); setSelected(new Set())
   }
 
+  const dLo = draft ? draft.d.target - WORD_TOLERANCE : 0
+  const dHi = draft ? draft.d.target + WORD_TOLERANCE : 0
+  const dOk = draft ? draft.d.words >= dLo && draft.d.words <= dHi : false
+
   return (
     <>
       <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
         <h2 className="text-[13px] font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <BookOpen size={14} className="text-amber" /> AI 一键续写 + 设定补完
           <HelpPopover title="AI 一键续写怎么用" width="24rem" className="ml-auto">
-            {'基于项目已有设定与正文，AI 自动续写新章节并抽取补登设定。\n\n流程：读上下文 → 续写一章 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取并补登设定 → 重复直到完成。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计）。\n· 已有设定更新策略：仅新增（最稳）/ 候选确认（默认）/ 自动更新。\n· 选「候选确认」时，每章抽取到的待补登项会弹窗让你勾选。\n· 章节顺序由系统自动派生，与标题无关，不会串行。'}
+            {`基于项目已有设定与最新一章正文，AI 续写新章节并抽取补登设定。\n\n每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 → 你确认采纳/重写 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取补登设定 → 进入下一章。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计，容差 ±${WORD_TOLERANCE}）。\n· 不填情节概要时，AI 会严格承接上一章结尾往下写，不另起新线。\n· 已有设定更新策略：仅限新增（最稳）/ 候选确认（默认）/ 自动更新。\n· 每章初稿会弹窗让你决定「采纳」或「重写」，重写不会留下垃圾章节。\n· 章节顺序由系统自动派生，与标题无关，不会串行。`}
           </HelpPopover>
         </h2>
 
         <div className="space-y-3">
           <Stepper label="续写章节数" value={chapters} min={1} max={5} step={1} onChange={setChapters} />
-          <Stepper label="每章字数（汉字）" value={targetWords} min={2000} max={8000} step={500} onChange={setTargetWords} />
+          <Stepper label={`每章字数（汉字，±${WORD_TOLERANCE}）`} value={targetWords} min={2000} max={8000} step={500} onChange={setTargetWords} />
 
           <div>
             <div className="text-[13px] text-ink-200 mb-1.5">已有设定更新策略</div>
@@ -119,7 +141,7 @@ export default function AutoContinue() {
           </div>
 
           <div>
-            <div className="text-[13px] text-ink-200 mb-1.5">情节概要（可选，不填则 AI 自由发挥）</div>
+            <div className="text-[13px] text-ink-200 mb-1.5">情节概要（可选，不填则承接上一章自然延续）</div>
             <AutoTextarea value={intent} onChange={setIntent} minHeight={60} maxHeight={160}
               placeholder="例如：陈渊在秘境深处发现上古遗迹，意外获得一卷残破功法……" />
           </div>
@@ -140,7 +162,7 @@ export default function AutoContinue() {
           {phase && (
             <div className="flex items-center gap-2 text-[12px] text-ink-300">
               {!running ? (
-                phase.startsWith('✓') ? <CheckCircle2 size={13} className="text-emerald-400 shrink-0" /> : <CheckCircle2 size={13} className="text-ink-500 shrink-0" />
+                <CheckCircle2 size={13} className={`shrink-0 ${phase.startsWith('✓') ? 'text-emerald-400' : 'text-ink-500'}`} />
               ) : (
                 <RefreshCw size={12} className="animate-spin shrink-0" />
               )} {phase}
@@ -166,6 +188,39 @@ export default function AutoContinue() {
         </div>
       </section>
 
+      {/* ============ 每章初稿裁决 ============ */}
+      <Modal open={!!draft} onClose={() => decide('abort')} width="2xl"
+        title={draft ? `第 ${draft.d.index}/${draft.d.total} 章初稿${draft.d.attempt > 1 ? `（第 ${draft.d.attempt} 稿）` : ''}` : '本章初稿'}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => decide('abort')}>停止任务</Button>
+            <Button variant="secondary" onClick={() => decide('rewrite')}>
+              <RotateCcw size={13} className="mr-1" /> 重写本章
+            </Button>
+            <Button variant="primary" solid onClick={() => decide('accept')}>
+              <Check size={14} className="mr-1" /> 采纳本章
+            </Button>
+          </>
+        }>
+        {draft && (
+          <>
+            <div className="mb-3 flex items-center gap-3 text-[12px]">
+              <span className={dOk ? 'text-emerald-400' : 'text-amber'}>
+                {draft.d.words} 汉字 {dOk ? '· 已达标' : '· 超出容差'}
+              </span>
+              <span className="text-ink-500">目标 {draft.d.target} ± {WORD_TOLERANCE}（{dLo}~{dHi}）</span>
+            </div>
+            <p className="text-[12px] text-ink-400 mb-3">
+              采纳后 AI 才会继续做编辑自检、修正与设定补登；点「重写本章」会丢弃本稿重新生成（不会留下垃圾章节，也不会写入数据库）。
+            </p>
+            <div className="max-h-[52vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3.5 text-[13.5px] leading-[1.9] text-ink-100">
+              {draft.d.body}
+            </div>
+          </>
+        )}
+      </Modal>
+
+      {/* ============ 设定补登确认（候选确认策略） ============ */}
       <Modal open={!!confirm} onClose={confirmSkip} title="设定补登确认" width="lg"
         footer={
           <>

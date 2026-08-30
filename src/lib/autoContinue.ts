@@ -6,12 +6,16 @@
  * - 每章独立 uid()，saveChapter 按 id upsert，绝不写到别的章；顺序由 chapterSeq 派生，永不解析标题。
  * - 设定补登：classify 三档判重 + commitEntities 只写安全字段（名称/描述/首现章/编号），其余留空。
  * - 编辑自检单轮改写（≤2 轮约束内），接受不完美退出，杜绝 self-refine 死循环。
- * - 章节数 1–5、字数 2000–8000 汉字（countWords 校验）。
+ * - 章节数 1–5、字数 2000–8000 汉字；成品必须落在「目标 ± WORD_TOLERANCE」区间（既补也压）。
+ * - ⚠️ 落库硬闸门：正文汉字数不达 minValidWords 一律丢弃重生成，绝不落库
+ *   （历史 bug：stripThink 对未闭合 <think> 会「从标签起全部丢弃」，若对累加文本反复剥离，
+ *    先前攒的正文会被整段砍掉只剩残余标点 —— 故 ① 只对单次返回剥离 ② 落库前必校验字数）。
+ * - 每章初稿先交作者裁决（采纳/重写/中止），采纳后才进入审查修正与设定补登。
  */
 import * as db from './db'
 import { uid } from './id'
 import { countWords } from './textStats'
-import { chat, requireActiveProvider, stripThink } from './ai'
+import { chat, requireActiveProvider, stripThink, isCancelled } from './ai'
 import { buildProjectContext, type ProjectContextResult } from './aiContext'
 import {
   aiExtractSettingEntities, aiContinuityAudit, aiOocCheck, aiForeshadowReview,
@@ -25,10 +29,34 @@ import type { Chapter } from './types'
 /** 已有设定更新策略（创建任务时由用户选择） */
 export type ContinueStrategy = 'add-only' | 'confirm' | 'auto-update'
 
+/** 成品字数容差（汉字）：落在 目标±300 视为达标 */
+export const WORD_TOLERANCE = 300
+/** 同一章初稿最多尝试次数（作者重写 + 异常重生成共用此上限） */
+const MAX_DRAFT_ATTEMPTS = 8
+/** 落库硬闸门：低于此汉字数视为模型异常返回，丢弃重生成 */
+function minValidWords(target: number): number {
+  return Math.min(600, Math.max(200, Math.round(target * 0.2)))
+}
+
+/** 每章初稿快照，交作者裁决 */
+export interface ChapterDraft {
+  index: number
+  total: number
+  attempt: number
+  body: string
+  words: number
+  target: number
+}
+export type DraftDecision = 'accept' | 'rewrite' | 'abort'
+
 export interface ContinueCallbacks {
   onPhase?: (p: string) => void
   onBodyToken?: (delta: string) => void
+  /** 正文经字数校准/改写后整体替换预览（流式增量已失真时用它纠正） */
+  onBodyReplace?: (full: string) => void
   onChapterSaved?: (ch: { id: string; title: string; no: number }) => void
+  /** 每章初稿完成后征询作者：采纳 / 重写 / 中止。不提供则自动采纳 */
+  onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
   /** B 策略：返回用户勾选的待补登项；返回 null 表示跳过本次补登 */
   onSettingsCandidates?: (cands: LedgerItem[]) => Promise<LedgerItem[] | null>
   onLog?: (msg: string) => void
@@ -36,6 +64,113 @@ export interface ContinueCallbacks {
 }
 
 interface SettingUpdate { name: string; note: string }
+type Cfg = Awaited<ReturnType<typeof requireActiveProvider>>
+
+// ============ 单次问答（剥思维链只作用于本次返回，绝不重复剥累加体） ============
+
+async function ask(
+  cfg: Cfg, sys: string, user: string,
+  opts: { signal?: AbortSignal; onToken?: (d: string) => void } = {},
+): Promise<string> {
+  const raw = await chat(cfg, [
+    { role: 'system', content: sys },
+    { role: 'user', content: user },
+  ], opts)
+  return stripThink(raw).trim()
+}
+
+/** 非致命问答：取消向上抛，其它异常吞成空串由调用方按字数判定 */
+async function askSoft(
+  cfg: Cfg, sys: string, user: string,
+  opts: { signal?: AbortSignal; onToken?: (d: string) => void } = {},
+): Promise<string> {
+  try {
+    return await ask(cfg, sys, user, opts)
+  } catch (e) {
+    if (isCancelled(e)) throw e
+    return ''
+  }
+}
+
+// ============ 提示词 ============
+
+function buildSysPrompt(target: number): string {
+  const lo = target - WORD_TOLERANCE
+  const hi = target + WORD_TOLERANCE
+  return [
+    '你是长篇网络小说的续写助手。请基于作者已有的世界观、角色与剧情，续写下一章正文。',
+    '硬性约束：',
+    `1. 篇幅必须落在 ${lo}~${hi} 个汉字之间（按汉字个数计，不含标点与英文单词）。写得过长与过短同样视为不合格，请自行规划详略与场景数量：先估算要写几个场景，再分配篇幅。`,
+    '2. 必须严格承接【上一章结尾】的场景、时间、地点、人物位置与情绪，从紧接着的下一刻写起。不得跳场景、不得另起新线、不得重述前情、不得写"数日后/数月后"这类大跨度跳跃（除非作者在续写意图中明确要求）。',
+    '3. 严格贴合已写章节的叙事视角、人称、文风与人设，保持既有爽文节奏，章末留一个能勾住读者点下一章的钩子。',
+    '4. 只输出正文本身。不要任何解说、不要小标题、不要章节号、不要"以下是续写"之类的开场白，也不要输出思考过程。',
+    '5. 若作者给了【续写意图】则优先沿其推进；未给则严格沿着上一章结尾的既有走向自然延续，聚焦当前尚未解决的冲突与悬念，不要凭空引入与前文无关的新地图、新势力或新金手指。',
+  ].join('\n')
+}
+
+// ============ 字数区间校准（既补也压） ============
+
+async function enforceWordRange(o: {
+  cfg: Cfg
+  body: string
+  target: number
+  sys: string
+  signal?: AbortSignal
+  onToken?: (d: string) => void
+  onPhase?: (p: string) => void
+  onBodyReplace?: (s: string) => void
+  maxExpand?: number
+  maxShrink?: number
+}): Promise<string> {
+  const lo = o.target - WORD_TOLERANCE
+  const hi = o.target + WORD_TOLERANCE
+  let body = o.body
+  let words = countWords(body)
+
+  // ① 偏短：紧接上文分幕补写（增量单独剥思维链后再拼，避免砍掉已写正文）
+  const maxExpand = o.maxExpand ?? 4
+  for (let r = 0; r < maxExpand && words < lo; r++) {
+    o.onPhase?.(`补足篇幅（${words} → ${lo}~${hi} 汉字）`)
+    const gap = Math.max(0, o.target - words)
+    const add = await askSoft(o.cfg, o.sys, [
+      '【本章已写部分】',
+      body,
+      '',
+      `当前已写 ${words} 个汉字，距目标还差约 ${gap} 个汉字。请紧接着上文继续往下写，使全章总量落在 ${lo}~${hi} 汉字之间。`,
+      '要求：不要重复或重述已写内容、不要重新开头、不要用形容词与心理独白注水；情节要实质推进；若剧情已近章末，则收束到章末钩子。只输出新增的正文片段。',
+    ].join('\n'), { signal: o.signal, onToken: o.onToken })
+    if (countWords(add) < 30) break // 无效增量：停止空转，接受偏短
+    body = body.trimEnd() + '\n\n' + add
+    words = countWords(body)
+    o.onBodyReplace?.(body)
+  }
+
+  // ② 偏长：精简压缩到区间。安全阀：压出来过短视为模型偷懒/截断，保留原文（宁可超字也不丢情节）
+  const maxShrink = o.maxShrink ?? 2
+  for (let r = 0; r < maxShrink && words > hi; r++) {
+    o.onPhase?.(`压缩篇幅（${words} → ${lo}~${hi} 汉字）`)
+    const out = await askSoft(o.cfg,
+      '你是资深网文编辑，擅长在不损失任何情节的前提下精简文字。只输出精简后的正文本身。',
+      [
+        `请把下面这一章正文精简到 ${lo}~${hi} 个汉字（按汉字个数计，不含标点）。`,
+        '要求：',
+        '1. 保留全部关键情节、转折、对话要点与章末钩子，不得删除任何情节线，不得删掉结尾。',
+        '2. 只删冗余环境描写、重复铺陈、可有可无的心理独白与形容词堆砌。',
+        '3. 保持原有叙事视角、人称与文风，不得改写成摘要、大纲或提要。',
+        '4. 只输出精简后的完整正文，不要任何说明文字。',
+        '',
+        `【原文（${words} 汉字）】`,
+        body,
+      ].join('\n'),
+      { signal: o.signal })
+    const ow = countWords(out)
+    if (!out || ow < lo * 0.85) break
+    body = out
+    words = ow
+    o.onBodyReplace?.(body)
+  }
+  return body
+}
 
 // ============ 单章生成 ============
 
@@ -47,51 +182,41 @@ async function generateOneChapter(opts: {
   signal?: AbortSignal
   onToken?: (d: string) => void
   onPhase?: (p: string) => void
+  onBodyReplace?: (s: string) => void
+  onLog?: (s: string) => void
 }): Promise<string> {
   const cfg = await requireActiveProvider()
-  const sys = [
-    '你是长篇网络小说的续写助手。请基于作者已有的世界观、角色与剧情，续写下一章正文。',
-    '硬性约束：',
-    `1. 目标篇幅约 ${opts.targetWords} 个汉字（按汉字个数计，不含标点与英文单词；允许 ±10% 浮动，宁缺毋滥，不得明显注水凑字数）。`,
-    '2. 严格贴合已写章节的叙事视角、文风与人设，保持爽文节奏，章末留一个能勾住读者点下一章的钩子。',
-    '3. 只输出正文本身，不要任何解说、不要小标题、不要"以下是续写"之类的开场白。',
-    '4. 若用户给了情节概要，优先沿概要推进；没给则在前文基础上自然延续。',
-  ].join('\n')
+  const sys = buildSysPrompt(opts.targetWords)
+  const lo = opts.targetWords - WORD_TOLERANCE
+  const hi = opts.targetWords + WORD_TOLERANCE
   const user = [
     '【作品设定资料】',
     opts.ctx.text || '（暂无设定资料，按通用网文逻辑续写）',
     '',
-    '【上一章结尾】',
-    opts.prevTail || '（这是开篇第一章）',
+    '【上一章结尾】（必须从这里紧接着往下写）',
+    opts.prevTail || '（本项目还没有正文，这是开篇第一章）',
     '',
     '【续写意图】',
-    opts.intent?.trim() || '（自由发挥，在前文基础上自然延续）',
+    opts.intent?.trim() || '（作者未指定：请严格沿着上一章结尾的既有走向自然延续，聚焦当前尚未解决的冲突与悬念，不要开新线）',
     '',
-    '请续写下一章正文。',
+    `请续写下一章正文，篇幅 ${lo}~${hi} 汉字。`,
   ].join('\n')
 
-  let body = stripThink(await chat(cfg, [
-    { role: 'system', content: sys },
-    { role: 'user', content: user },
-  ], { onToken: opts.onToken, signal: opts.signal }))
+  let body = await ask(cfg, sys, user, { signal: opts.signal, onToken: opts.onToken })
 
-  // 字数卡法：不足目标 85% 时分幕续写补足（上限 5 幕，防弱模型无限凑）
-  let pass = 1
-  while (countWords(body) < opts.targetWords * 0.85 && pass < 5) {
-    const cont = await chat(cfg, [
-      { role: 'system', content: sys },
-      {
-        role: 'user',
-        content: `【已写部分】\n${body}\n\n请继续往下写，务必把篇幅写到接近 ${opts.targetWords} 个汉字（可略少，但不得明显注水凑字、不得提前收尾，除非已自然到达目标篇幅），保持剧情连贯，不要重复已写内容。`,
-      },
-    ], { onToken: opts.onToken, signal: opts.signal }).catch(() => '')
-    body += cont
-    body = stripThink(body)
-    pass++
+  // 异常返回（模型抽风 / 思维链剥离后只剩残片）→ 静默重试一次，不再流式以免污染预览
+  if (countWords(body) < 50) {
+    opts.onLog?.(`模型返回异常（仅 ${countWords(body)} 汉字），正在重试`)
+    opts.onBodyReplace?.('')
+    body = await askSoft(cfg, sys, user, { signal: opts.signal })
+    opts.onBodyReplace?.(body)
   }
 
-  body = await selfRefine(body, opts.ctx, opts.signal, opts.onPhase)
-  return body.trim()
+  return (await enforceWordRange({
+    cfg, body, target: opts.targetWords, sys,
+    signal: opts.signal, onToken: opts.onToken,
+    onPhase: opts.onPhase, onBodyReplace: opts.onBodyReplace,
+  })).trim()
 }
 
 /** 编辑自检：连续性 / 人设崩坏 / 伏笔 三类检查，命中严重/中等则单轮改写后接受不完美退出 */
@@ -103,11 +228,17 @@ async function selfRefine(body: string, ctx: ProjectContextResult, signal?: Abor
   push(await aiContinuityAudit(ctx.text, body, { signal }).catch(() => [] as any[]))
   push(await aiOocCheck(ctx.text, body, { signal }).catch(() => [] as any[]))
   push(await aiForeshadowReview(ctx.text, { signal }).catch(() => [] as any[]))
-  if (!findings.length) return body
-  onPhase?.('根据审读问题改写修正')
+  if (!findings.length) {
+    onPhase?.('编辑自检通过，未发现严重问题')
+    return body
+  }
+  onPhase?.(`根据 ${findings.length} 条审读问题改写修正`)
   const instr = findings.map(f => `- ${f.title || '问题'}：${f.detail || ''}`).join('\n')
   const res = await aiRewritePassage(body, `修正以下审读问题，保持剧情与文风一致，不要改变原意：\n${instr}`, '', { signal }).catch(() => null)
-  return res?.rewritten ? stripThink(res.rewritten) : body
+  const rw = res?.rewritten ? stripThink(res.rewritten).trim() : ''
+  // 安全阀：改写结果显著缩水（不足原文 60%）视为模型偷懒或被截断，保留原文
+  if (!rw || countWords(rw) < countWords(body) * 0.6) return body
+  return rw
 }
 
 async function suggestTitle(body: string, signal?: AbortSignal): Promise<string> {
@@ -115,11 +246,8 @@ async function suggestTitle(body: string, signal?: AbortSignal): Promise<string>
   if (!cfg) return '未命名章节'
   const snippet = body.slice(0, 1500)
   const sys = '你是网文编辑。请给这一章起一个简洁、有吸引力、不剧透的章节标题。要求：不含"第N章"前缀，不超过 15 个汉字，只输出标题本身，不要标点、不要引号、不要解释。'
-  const t = await chat(cfg, [
-    { role: 'system', content: sys },
-    { role: 'user', content: `【本章正文（节选）】\n${snippet}` },
-  ], { signal }).catch(() => '')
-  const clean = stripThink(t).replace(/[「」"'》>、。！？\s]/g, '').slice(0, 15)
+  const t = await askSoft(cfg, sys, `【本章正文（节选）】\n${snippet}`, { signal })
+  const clean = t.replace(/[「」"'》>、。！？\s]/g, '').slice(0, 15)
   return clean || '未命名章节'
 }
 
@@ -161,7 +289,7 @@ async function extractAndCommitSettings(
   const empty = { created: 0, failed: [] as string[] }
 
   if (strategy === 'add-only') {
-    // 仅新增：只补登新实体，绝不碰已登记设定
+    // 仅限新增：只补登新实体，绝不碰已登记设定
     const news = items.filter(i => i.status === 'new')
     const r = await commitEntities(news, title).catch(() => empty)
     return { created: r.created, failed: r.failed }
@@ -191,13 +319,9 @@ async function extractSettingUpdates(body: string, title: string, signal?: Abort
   const sys = `你是设定更新侦探。对比本章正文与已有设定，找出"对已有设定实体的新信息/状态变化"（如角色修为提升、关系变化、物品被获得或损毁、地点状态改变等）。
 返回 JSON 数组，元素形如 {"name":"实体名(必须与已登记名完全一致)","note":"一句话描述变化，如 修为提升至凝气四层"}。
 只报确有文本依据的，最多 10 条，没有则返回 []。只输出 JSON 数组，不要解释、不要 markdown 代码块。`
-  const user = `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`
-  const text = await chat(cfg, [
-    { role: 'system', content: sys },
-    { role: 'user', content: user },
-  ], { signal })
+  const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, { signal })
   try {
-    const arr = JSON.parse(stripThink(text).trim())
+    const arr = JSON.parse(text)
     return Array.isArray(arr) ? arr.filter((x: any) => x && x.name).map((x: any) => ({ name: String(x.name), note: String(x.note || '') })) : []
   } catch { return [] }
 }
@@ -258,25 +382,83 @@ export async function runAutoContinue(
   await requireActiveProvider() // 提前校验，无模型直接抛中文提示
   const vols = await db.getAllVolumes()
   const ordered = sortChapters(vols, await db.getAllChapters())
-  let anchorId: string | null = ordered.length ? ordered[ordered.length - 1].id : null
+  const last = ordered.length ? ordered[ordered.length - 1] : null
+  // ⚠️ 必须以库里真实的最后一章为起点，否则第一章会失去衔接、一上来就跑偏
+  let anchorId: string | null = last?.id ?? null
+  let lastBody = last?.content ?? ''
+  let lastTitle = last?.title ?? ''
   const created: { id: string; title: string; no: number }[] = []
+  const minWords = minValidWords(opts.targetWords)
   let memory = ''
-  let lastBody = ''
+  let aborted = false
 
   for (let i = 0; i < opts.chapters; i++) {
     if (cb.signal?.aborted) break
+    const tag = `第 ${i + 1}/${opts.chapters} 章`
     try {
-      cb.onPhase?.(`第 ${i + 1}/${opts.chapters} 章：组装上下文`)
+      cb.onPhase?.(`${tag}：组装上下文`)
       const ctx = await buildProjectContext({ focusChapterId: anchorId ?? undefined, budget: 12000 })
         .catch(() => ({ text: '', sections: [], dropped: [], chars: 0 }) as ProjectContextResult)
-      const prevTail = (lastBody.slice(-300) + (memory ? `\n【本轮已写前序章节摘要（供衔接）】\n${memory}\n` : ''))
-      cb.onPhase?.(`第 ${i + 1}/${opts.chapters} 章：AI 续写正文`)
-      const body = await generateOneChapter({
-        ctx, prevTail, intent: opts.intent, targetWords: opts.targetWords,
-        signal: cb.signal, onToken: cb.onBodyToken,
-        onPhase: (p) => cb.onPhase?.(`第 ${i + 1}/${opts.chapters} 章：${p}`),
+      const prevTail = [
+        lastTitle ? `（上一章标题：《${lastTitle}》）` : '',
+        lastBody.slice(-1200) || '（本项目还没有正文，这是开篇第一章）',
+        memory ? `\n【本轮已写前序章节摘要（供衔接）】\n${memory}` : '',
+      ].filter(Boolean).join('\n')
+
+      // ---- 初稿：生成 →（可选）作者裁决采纳 / 重写 / 中止 ----
+      let body = ''
+      let decision: DraftDecision = 'accept'
+      for (let attempt = 1; attempt <= MAX_DRAFT_ATTEMPTS; attempt++) {
+        if (cb.signal?.aborted) { decision = 'abort'; break }
+        cb.onBodyReplace?.('')
+        cb.onPhase?.(`${tag}：AI 续写正文${attempt > 1 ? `（第 ${attempt} 稿）` : ''}`)
+        body = await generateOneChapter({
+          ctx, prevTail, intent: opts.intent, targetWords: opts.targetWords,
+          signal: cb.signal, onToken: cb.onBodyToken,
+          onPhase: p => cb.onPhase?.(`${tag}：${p}`),
+          onBodyReplace: cb.onBodyReplace,
+          onLog: cb.onLog,
+        })
+        const w = countWords(body)
+        // 落库硬闸门：内容异常（只剩残片/标点）一律丢弃重生成，绝不落库
+        if (w < minWords) {
+          cb.onLog?.(`${tag}第 ${attempt} 稿内容异常（仅 ${w} 汉字，低于 ${minWords} 下限），已丢弃`)
+          if (attempt >= MAX_DRAFT_ATTEMPTS) throw new Error('模型连续返回异常内容，已中止本章')
+          continue
+        }
+        if (!cb.onChapterDraft) break
+        cb.onPhase?.(`${tag}：等待作者确认初稿（${w} 汉字）`)
+        decision = await cb.onChapterDraft({
+          index: i + 1, total: opts.chapters, attempt,
+          body, words: w, target: opts.targetWords,
+        })
+        if (decision !== 'rewrite') break
+        cb.onLog?.(`${tag}第 ${attempt} 稿已弃用，重新生成`)
+      }
+      if (decision === 'abort') {
+        cb.onLog?.(`${tag}已由作者中止，任务结束`)
+        aborted = true
+        break
+      }
+
+      // ---- 采纳后：编辑自检 → 修正 → 二次字数校准 ----
+      body = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`))
+      body = await enforceWordRange({
+        cfg: await requireActiveProvider(), body, target: opts.targetWords,
+        sys: buildSysPrompt(opts.targetWords), signal: cb.signal,
+        onPhase: p => cb.onPhase?.(`${tag}：${p}`), onBodyReplace: cb.onBodyReplace,
+        maxExpand: 1, maxShrink: 1,
       })
-      cb.onPhase?.(`第 ${i + 1}/${opts.chapters} 章：生成标题并保存`)
+      cb.onBodyReplace?.(body)
+
+      // 二次闸门：改写/压缩后再校验一次，异常则本章不落库
+      const finalWords = countWords(body)
+      if (finalWords < minWords) {
+        cb.onLog?.(`${tag}修正后内容异常（仅 ${finalWords} 汉字），本章未保存`)
+        continue
+      }
+
+      cb.onPhase?.(`${tag}：生成标题并保存`)
       const title = await suggestTitle(body, cb.signal)
       const ch = await createChapterAfter(anchorId, title, body)
       const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
@@ -285,17 +467,32 @@ export async function runAutoContinue(
       created.push({ id: ch.id, title: ch.title, no })
       anchorId = ch.id
       lastBody = body
-      cb.onPhase?.(`第 ${i + 1}/${opts.chapters} 章：抽取并补登设定`)
+      lastTitle = ch.title
+
+      cb.onPhase?.(`${tag}：抽取并补登设定`)
       const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal)
-      cb.onLog?.(`第 ${i + 1} 章《${ch.title}》已保存（${countWords(body)} 字）；设定新增 ${r.created} 条` + (r.failed.length ? `，失败：${r.failed.join('、')}` : ''))
-      // 滚动摘要回灌（应对多章记忆滚雪球，#4）
+      const dev = finalWords - opts.targetWords
+      cb.onLog?.(
+        `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；设定新增 ${r.created} 条`
+        + (r.failed.length ? `，失败：${r.failed.join('、')}` : ''),
+      )
+      // 滚动摘要回灌（应对多章记忆滚雪球）
       const sum = await aiChapterSummary(body, { signal: cb.signal }).catch(() => '')
       if (sum) memory = (memory ? memory + '\n' : '') + `· 第${no}章《${ch.title}》：${sum.replace(/\s+/g, ' ').slice(0, 200)}`
     } catch (e) {
-      cb.onLog?.(`第 ${i + 1} 章失败：${e instanceof Error ? e.message : String(e)}`)
+      if (isCancelled(e) || cb.signal?.aborted) {
+        cb.onLog?.(`${tag}已停止`)
+        aborted = true
+        break
+      }
+      cb.onLog?.(`${tag}失败：${e instanceof Error ? e.message : String(e)}`)
       break
     }
   }
-  cb.onPhase?.(created.length ? `✓ 续写完成，共新增 ${created.length} 章` : '未生成章节（请检查模型配置或查看日志）')
+  cb.onPhase?.(
+    created.length
+      ? `✓ ${aborted ? '已停止' : '续写完成'}，共新增 ${created.length} 章`
+      : (aborted ? '已停止，未生成章节' : '未生成章节（请检查模型配置或查看日志）'),
+  )
   return { created }
 }

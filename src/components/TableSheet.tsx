@@ -876,7 +876,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                     if (next.has(g.key)) next.delete(g.key); else next.add(g.key)
                     setRelGroupOpen(next)
                   }}
-                  className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-ink-800/60 transition-colors text-left justify-start"
+                  className="w-full !flex items-center gap-2 px-3.5 py-2.5 hover:bg-ink-800/60 transition-colors text-left !justify-start"
                 >
                   <span className="text-ink-500">{gOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
                   <Users size={12} className="text-amber/80 shrink-0" />
@@ -902,7 +902,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                 if (next.has(row.id)) next.delete(row.id); else next.add(row.id)
                                 setRelRowOpen(next)
                               }}
-                              className="flex-1 flex items-center gap-2 min-w-0 text-left justify-start"
+                              className="flex-1 !flex items-center gap-2 min-w-0 text-left !justify-start"
                             >
                               <span className="text-ink-500 shrink-0">{rOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
                               <span className="text-[12.5px] text-ink-100 font-medium truncate">↔ {other || '（未填写对方人物）'}</span>
