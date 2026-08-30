@@ -14,6 +14,7 @@
 //  - 敏感 meta（AI 配置/密钥：aiProviders / aiActiveProviderId / aiConfigMigratedToGlobal）
 //    不上云：既不进缓存、也不上传、更不会被拉取覆盖（由 db.ts 的 cloudStore 回退到本地）。
 import type { StoreOps } from './portable'
+import { WEB } from './env'
 
 // 参与同步的全部 store（与 db.ts 中对象库一致）
 const SYNC_STORES = [
@@ -533,8 +534,11 @@ export const serverStore: StoreOps = {
   },
 }
 
-// 页面隐藏/卸载前尽力把待推送改动刷到云端，避免 800ms 防抖窗口内关闭导致丢数据
-if (typeof window !== 'undefined') {
+// 页面隐藏/卸载前尽力把待推送改动刷到云端，避免 800ms 防抖窗口内关闭导致丢数据。
+// 仅网页版注册：桌面/便携版 WEB=false，此段被常量折叠后整块消失。
+// 否则模块顶层副作用会让 serverStore 无法被 tree-shake，且桌面/便携版每次切后台/关窗口
+// 都会白跑一次 PBKDF2 密钥派生与一次注定失败（file:// 无 /api/sync）的请求，拖慢退出。
+if (WEB && typeof window !== 'undefined') {
   const onHide = () => { if (document.visibilityState === 'hidden') void flushNow() }
   window.addEventListener('pagehide', () => void flushNow())
   window.addEventListener('beforeunload', () => void flushNow())

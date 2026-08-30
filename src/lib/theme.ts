@@ -34,8 +34,18 @@ export const THEMES: ThemeDef[] = [
 const THEME_KEY = 'yfe-theme'
 const ZOOM_KEY = 'yfe-ui-zoom'
 
+/**
+ * 安全读取 localStorage。
+ * 便携版是双击打开的 file:// 单文件，某些浏览器/隐私模式下 localStorage 被禁用会直接抛
+ * SecurityError —— 读取发生在首帧（App 挂载时），一抛就是整屏白屏，故必须兜住。
+ * 写入侧同理（见 applyTheme / applyZoom 的 try-catch）。
+ */
+function safeGet(key: string): string | null {
+  try { return localStorage.getItem(key) } catch { return null }
+}
+
 export function getStoredTheme(): ThemeId {
-  const v = localStorage.getItem(THEME_KEY)
+  const v = safeGet(THEME_KEY)
   return THEMES.some(t => t.id === v) ? (v as ThemeId) : 'eye-care'
 }
 
@@ -49,7 +59,7 @@ export function applyTheme(id: ThemeId): ThemeId {
 
 /** 界面缩放范围：80% ~ 160% */
 export function getStoredZoom(): number {
-  const raw = localStorage.getItem(ZOOM_KEY)
+  const raw = safeGet(ZOOM_KEY)
   if (raw != null) {
     const v = Number(raw)
     if (Number.isFinite(v) && v >= 80 && v <= 160) return v

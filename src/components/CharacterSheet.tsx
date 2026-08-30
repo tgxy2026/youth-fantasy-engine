@@ -94,6 +94,10 @@ export default function CharacterSheet({ tab }: Props) {
     }
     prevActiveRef.current = activeId
     if (!activeId) { setDraft(null); return }
+    // 关键守卫：activeId 未变、但 records 因「其它卡增删改」而变化时，若当前草稿有未保存编辑，
+    // 绝不能用库里的旧记录回灌覆盖 —— 否则用户改了半天、去删另一张卡，编辑内容就静默蒸发了。
+    // （draftRef/dirtyRef 的同步 effect 声明在下方，此处读到的是上一轮渲染的值，正是我们想要的「切换前」状态）
+    if (draftRef.current?.id === activeId && dirtyRef.current) return
     const rec = records.find(r => r.id === activeId)
     setDraft(rec ? { ...rec, data: { ...rec.data } } : null)
   }, [activeId, records])
