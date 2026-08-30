@@ -28,9 +28,9 @@ function Stepper({ label, value, min, max, step, onChange }: {
     <div className="flex items-center gap-2">
       <span className="text-[13px] text-ink-200">{label}</span>
       <div className="flex items-center gap-1 ml-auto">
-        <Button variant="toggle" onClick={() => onChange(Math.max(min, value - step))} aria-label="减少">−</Button>
+        <Button variant="toggle" onClick={() => onChange(Math.max(min, value - step))} aria-label="减少" className="h-7 w-7 rounded-lg text-[15px] leading-none">−</Button>
         <span className="w-14 text-center text-ink-100 tabular-nums">{value}</span>
-        <Button variant="toggle" onClick={() => onChange(Math.min(max, value + step))} aria-label="增加">+</Button>
+        <Button variant="toggle" onClick={() => onChange(Math.min(max, value + step))} aria-label="增加" className="h-7 w-7 rounded-lg text-[15px] leading-none">+</Button>
       </div>
     </div>
   )
@@ -138,31 +138,23 @@ export default function AutoContinue() {
 
           <div>
             <div className="text-[13px] text-ink-200 mb-1.5">已有设定更新策略</div>
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {STRATEGIES.map(s => (
-                <Button key={s} variant="toggle" selected={strategy === s} className="flex-1"
-                  onClick={() => setStrategy(s)} title={STRATEGY_META[s].hint}>
+                <Button key={s} variant="toggle" selected={strategy === s}
+                  onClick={() => setStrategy(s)} title={STRATEGY_META[s].hint}
+                  className="px-3 h-8 rounded-lg text-[12px]">
                   {STRATEGY_META[s].label}
                 </Button>
               ))}
             </div>
           </div>
 
-          <div>
-            <div className="text-[13px] text-ink-200 mb-1.5">情节概要（可选，不填则承接上一章自然延续）</div>
-            <AutoTextarea value={intent} onChange={setIntent} minHeight={60} maxHeight={160}
-              placeholder="例如：陈渊在秘境深处发现上古遗迹，意外获得一卷残破功法……" />
-            <p className="mt-1.5 text-[11px] text-ink-500 leading-relaxed">
-              小提示：续写前，若先对前几章正文通读梳理一遍（或在编辑器里重生成章节压缩摘要），能让 AI 更好地承接剧情、衔接更流畅自然。
-            </p>
-          </div>
-
-          {/* 去 AI 味儿：内置提示词库可切换，生成初稿后自动润色再去弹窗 */}
+          {/* 去 AI 味儿：生成前的前置选项，放在策略下边，点「开始续写」前可手动调整 */}
           <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
             <div className="flex items-center justify-between">
               <div className="text-[13px] text-ink-200">生成后自动「去 AI 味儿」</div>
               <Button variant="toggle" selected={deAiOn} onClick={() => setDeAiOn(v => !v)}
-                className="shrink-0 !flex items-center gap-1 !justify-start" title="开启后，AI 每章初稿会先按所选提示词润色一遍，再去弹窗交你裁决">
+                className="px-3 h-8 rounded-lg text-[12px]" title="开启后，AI 每章初稿会先按所选提示词润色一遍，再去弹窗交你裁决">
                 {deAiOn ? '已开启' : '已关闭'}
               </Button>
             </div>
@@ -171,7 +163,8 @@ export default function AutoContinue() {
                 <div className="flex flex-wrap gap-1.5">
                   {DEAI_TEMPLATES.map(t => (
                     <Button key={t.id} variant="toggle" selected={deAiTpl === t.id}
-                      className="flex-1" onClick={() => setDeAiTpl(t.id)} title={t.desc}>
+                      onClick={() => setDeAiTpl(t.id)} title={t.desc}
+                      className="px-3 h-8 rounded-lg text-[12px]">
                       {t.label}
                     </Button>
                   ))}
@@ -185,6 +178,15 @@ export default function AutoContinue() {
                 </p>
               </div>
             )}
+          </div>
+
+          <div>
+            <div className="text-[13px] text-ink-200 mb-1.5">情节概要（可选，不填则承接上一章自然延续）</div>
+            <AutoTextarea value={intent} onChange={setIntent} minHeight={60} maxHeight={160}
+              placeholder="例如：陈渊在秘境深处发现上古遗迹，意外获得一卷残破功法……" />
+            <p className="mt-1.5 text-[11px] text-ink-500 leading-relaxed">
+              小提示：续写前，若先对前几章正文通读梳理一遍（或在编辑器里重生成章节压缩摘要），能让 AI 更好地承接剧情、衔接更流畅自然。
+            </p>
           </div>
 
           <div className="flex items-center gap-2 pt-1">
