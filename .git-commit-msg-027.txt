@@ -1,8 +1,0 @@
-fix(#027): 邀请码/同步码校验归一化（去空格+升大写），修复真用户被大小写/空格挡在门外
-
-- 服务端 feedback-server.mjs: 新增 normCode()，parseList 建集合与 syncAuth/邀请校验取码后均先归一化再比对（Set 与请求两侧同款归一化）
-- 前端 WebGate.tsx: 进门邀请码 submit 归一化 + 输入框 text-transform:uppercase 即时显示大写
-- WebTools.tsx: 同步码 doSync 归一化（落库即规范大写），并主动识别"进门邀请码误填进同步框"给专属提示
-- PromptModal.tsx: 新增 transformUppercase 属性供同步框即时转大写
-- 槽位哈希风险：现有码全大写无空格、归一化幂等，哈希不变（部署后用 4edd6fb4 槽位 pull 验证）
-- 清单 #027 状态 待处理→已处理；tsc 0 错、服务端 node --check 通过
