@@ -1,11 +1,18 @@
-import { ExternalLink, Heart, BookOpen, Users, Globe } from 'lucide-react'
+import { ExternalLink, Heart, BookOpen, Users, Globe, Download } from 'lucide-react'
 import payWechat from '../assets/pay-wechat.png'
 import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
+import { APP_VERSION } from '../lib/portable'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
 const BILI_URL = 'https://b23.tv/zl4vqyw'
 const BILI_NAME = '铁骨咸鱼'
+
+// 最新版本安装包下载地址（网盘分享链接）。
+// 发新版流程：上传安装包到网盘 → 把新的分享链接填到这里 → 重新打包发版。
+// 刻意不做联网版本检测：不依赖任何服务器，更新公告由作者在 B站/公众号/QQ群发布。
+// 留空则不渲染「获取最新版本」区块，避免出现点了没反应的死链。
+const LATEST_VERSION_URL = ''
 
 // 致谢名单（支持者墙）—— 示例占位：借用知名网络小说主角的名号排排站，后续由作者替换为真实读者 / 金主 / 贡献者记录
 const THANKS: { name: string; work: string }[] = [
@@ -84,6 +91,26 @@ export default function AboutPage() {
                 </a>
               </div>
             </section>
+
+            {/* 获取最新版本：只给网盘链接 + 版本号，不联网检测 */}
+            {LATEST_VERSION_URL && (
+              <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+                <SectionTitle icon={<Download size={15} className="text-amber" />}>获取最新版本</SectionTitle>
+                <p className="text-ink-400 text-xs leading-relaxed mb-4">
+                  当前版本 <span className="text-ink-100 font-medium">v{APP_VERSION}</span>
+                  。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、公众号与 QQ 交流群——
+                  若社交平台看到更新公告，可来此获取最新版。
+                </p>
+                <a
+                  href={LATEST_VERSION_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber px-3 py-2 text-sm font-medium text-ink-950 hover:opacity-90 transition-opacity"
+                >
+                  <ExternalLink size={16} /> 打开网盘下载页
+                </a>
+              </section>
+            )}
 
             {/* 联系方式（flex-1 撑满左列剩余高度） */}
             <section className="rounded-xl bg-ink-850 border border-ink-700 p-6 flex-1">

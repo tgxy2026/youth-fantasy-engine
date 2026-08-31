@@ -100,6 +100,14 @@ app.whenReady().then(() => {
     },
   })
 
+  // 所有 target="_blank" 的外链一律交给系统浏览器打开。
+  // 未配置时 Electron 会在应用内再开一个无地址栏、无法登录/下载的 BrowserWindow，
+  // 用户根本意识不到那是网页（B 站主页、网盘下载页都会踩这个坑）。
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url).catch(() => {})
+    return { action: 'deny' }
+  })
+
   const devUrl = process.env.ELECTRON_START_URL
   if (devUrl) {
     win.loadURL(devUrl)
