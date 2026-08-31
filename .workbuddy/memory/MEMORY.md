@@ -46,6 +46,13 @@ managed node：`C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.ex
 - ⚠️ **统计条数两坑**：① `grep -c "row('progress'"` 只数到 1——该表在 `for (... of days)` 循环里生成（实为 20 条）。② `grep -c "tabId: 'volume-outline'"` 会漏掉用 `card()` 助手创建的记录。**先确认是字面量还是循环生成。**
 - 写作进度/热力图日期已改为**「距今 N 天前」动态生成**（`todayKey()`），不会过期。
 
+## 按钮体系（Button.tsx）
+- **哪些 variant 套尺寸**：`primary/secondary/ghost/danger/success/info/icon/icon-ghost` 与 `toggle`、`icon-amber/icon-danger/icon-muted` 都走 size 体系；**`bare` 与 `toggle-text` 不套**（bare 用途驳杂，从大卡片到菜单项，加固定高度会撑坏布局；toggle-text 是页签/侧栏的纯文字选中态）。
+- **尺寸档位**：`xs`(图标 h-6 w-6 / 文字 h-6 px-2 text-[11px] rounded-md，用于表格行内悬停操作键) → `sm`(h-8) → `md`(h-9，默认) → `lg`(h-10)。图标态 variant 默认 sm，其余默认 md。
+- **纯图标的 bare 按钮务必传 `iconOnly`**，否则拿不到定宽定高会与相邻按钮高低不齐。
+- ⚠️ **改动按钮尺寸后必须检查容器溢出**：把图标键从 ~22px 提到 32px 后，编辑器工具栏 22 个按钮需求宽 1068px 而可视仅 450px，末按钮跑到屏幕外 618px 点不到（`overflowX: visible` 直接被窗口裁掉）。修法是工具栏加 `overflow-x-auto` + 收紧 gap。
+- ⚠️ **审计 JSX 时不要用 `indexOf('>')` 找标签结尾**——箭头函数 `=>` 里的 `>` 会把标签截断，导致统计严重失真（我据此误报过 226 处）。判据应为「`>` 的前一个字符不是 `=`」。
+
 ## 主题系统
 换肤：`<html data-theme>` + index.css 变量，组件零改动。每套 = 12 档 ink(950~50) + amber/amber-soft + color-scheme。
 - ⚠️ **浅色 ink 刻度反向**：ink-950=页底(最浅)、ink-100=正文(深)、ink-50 最深；深色反之。新增主题极易搞反。
@@ -78,7 +85,7 @@ managed node：`C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.ex
 - 每日巡检 automation `automation-1787973377664` → 归档到 `docs/服务器反馈记录.md`、`docs/服务器访问记录.md`。
 - **实操**：① `ssh > 临时jsonl` 后用 node 脚本重建 md，用完删临时目录。② ts 是 UTC，按本地日期分组须 +8h。③ **概览表必须全量重算**（独立 IP 跨批次有重叠，不能累加或 `Math.max`）。④ **第 2 次起脚本要「追加」而非「重建」**。⑤ 开跑前先枚举本期 act 值（`grep -o '"act":"[a-z-]*"' | sort -u`），漏映射会渲染成「未知动作」。⑥ 脚本推测结论**必须人工复核后改写**。
 - 🔑 **`bad` 字段是鉴权故障判官**（服务端 `providedCodeHash`）：`bad=null` ⇒ 请求**根本没带 Authorization**，不是"用户输错码"。排查 authfail 先看 bad 分布。⚠️ 反例：「全 POST 无 GET」不能推断 initPromise 未重置——无码空请求同样是全 POST。
-- **#023（P1 待处理）**：`flushNow()` 缺"是否启用同步"守卫，未开同步的访客每次切标签/关页面都发无码 POST 白收 401，耗尽限流额度后真输对码反被 429 拦（症状酷似 #007，易误诊）。修复：`if (!code) return;`。
+- ~~**#023（P1）**~~ → **已于 2026-08-31 09:07 修复（`c0275f3`）**：`flushNow()` / `schedulePush()` 均加 `if (!code) return;`。⚠️ 曾在本文件被误标为"待处理"——**引用待办状态前必须先 `git log -S` 核实**，别照抄旧记录。
 - ~~#007/#008~~ 已于 08-30 修复（`7fbdb79` + `ce01b94`）。conflict 呈 push→conflict→push 成功属**正常守卫**，呈 rev 死循环才是 bug。
 
 ## 会话窗口分工
