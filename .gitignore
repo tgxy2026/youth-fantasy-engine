@@ -7,6 +7,7 @@ dist.oldbak*/
 dist-web-*/
 dist-web.bak-*/
 dist_bak_*/
+web-build-*/
 *.tsbuildinfo
 
 # 封装输出
