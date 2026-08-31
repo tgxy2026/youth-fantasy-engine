@@ -50,8 +50,8 @@
 2.0 测试期 `https://154.8.178.240` 自签HTTPS+IP访问；绑域名 qchxengine.cn+备案 等测试后。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
 
 ## 网页版与服务器
-网页版零后端可跑(idbOps)。邀请制。服务器 `154.8.178.240`(腾讯云轻量Ubuntu24.04)；SSH `C:\Users/18223\.ssh\yfe_test_server`(600)，ubuntu+免密sudo。站点 `/var/www/yfe`；反馈服务 `/opt/yfe-server/feedback-server.mjs`(www-data:3000，数据 `/var/lib/yfe`)。
-改 feedback-server.mjs 须 `sudo cp ~/yfe-deploy/feedback-server.mjs /opt/yfe-server/` + `systemctl restart yfe-feedback`；nginx 改后 `nginx -s reload`。
+网页版零后端可跑(idbOps)。邀请制。服务器 `154.8.178.240`(腾讯云轻量Ubuntu24.04)；SSH `C:\Users/18223\.ssh\yfe_test_server`(**22**；2026-09-01 实测 600 超时，改 22 通)。ubuntu+免密sudo。站点 `/var/www/yfe`；反馈服务 `/opt/yfe-server/feedback-server.mjs`(www-data:3000，数据 `/var/lib/yfe`)。
+改 feedback-server.mjs：本地构建后 `scp` 到服务器 `/tmp/yfe-feedback.mjs` → `sudo cp /tmp/yfe-feedback.mjs /opt/yfe-server/` + `sudo chown www-data:www-data` + `systemctl restart yfe-feedback`；网页静态文件 `scp` 到 `/tmp/yfe-web-<日期>` → `sudo cp -r` 到 `/var/www/yfe` + `chown -R www-data:www-data`。nginx 改后 `nginx -s reload`。
 serverStore走StoreOps `fetch /api/sync`，800ms防抖，rev守卫，排除meta的AI配置；20同步码独立槽位 `sync-<sha256>.json`。入门码 `YFE-D49E-6MPG`、已分发 `YFE-SYNC-N6SV-2YZJ`(田馨)。
 HTTPS 自签 `/etc/ssl/yfe`；安全上下文 AES-GCM(`a1:`) / HTTP降级 XOR(`x1:`)。
 
@@ -60,4 +60,4 @@ HTTPS 自签 `/etc/ssl/yfe`；安全上下文 AES-GCM(`a1:`) / HTTP降级 XOR(`x
 实操：ts=UTC按本地+8h分组；概览表全量重算(独立IP重叠不可累加/Math.max)；追加非重建；先枚举 act 值防「未知动作」；脚本结论人工复核。
 `bad` 字段判官：`bad=null`⇒请求无 Authorization(非输错码)；`bad` **有值可反算身份**——本地 sha256(候选码) 取前12位比对即知填了啥(已据此认出「入门码当同步码」)。排障：日志 `push ok`≠落盘，须核槽位 rev/mtime。
 要点段是手写的，时间同样须 +8h(极易抄成 UTC)；概览 08-29 基准行 21/1/8/21/20 可作全量重算的自校验。
-门禁码校验(#027 待处理)：服务端 `INVITE_CODES/SYNC_CODES.has(code)` 与前端 `WebGate.tsx:34` 均无归一化 → 小写码、码内空格一律被拒(已有真实访客中招)。修时两侧同时 `replace(/\s+/g,'').toUpperCase()`；⚠️ 同步槽位名＝`sha256(码)`，归一化若改变字面会让老槽位失联(现有全大写码为幂等，安全)。
+门禁码校验(#027 已处理·2026-09-01 部署上线)：服务端 `feedback-server.mjs` 新增 `normCode()`(`replace(/\s+/g,'').toUpperCase()`)，`parseList` 建集合与 `syncAuth`/邀请校验取码后均归一化再比对；前端 `WebGate`/`WebTools`(doSync+`PromptModal.transformUppercase`+`YFE-D` 误填识别)同款归一化。⚠️ 槽位名＝`sha256(码)` 幂等(全大写码不变)，线上 pull 验证小写/空格变体命中同一 `4edd6fb4…` 槽位。commit `bf4f704`+`3f1c082`。
