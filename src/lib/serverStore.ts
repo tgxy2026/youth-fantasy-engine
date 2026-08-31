@@ -120,6 +120,9 @@ export function configureServerStore(c: string) {
   rateLimitedUntil = 0
   baseCache = {}
   setStatus('idle')
+  // 至此才算「已启用云端同步」，此时才注册卸载兜底 flush。
+  // 早于此处注册会让未开同步的访客发出无码 POST（#023）。
+  if (c) armUnloadFlush()
 }
 
 // ============ 加密（载荷级，rev 保持明文） ============
@@ -479,6 +482,11 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
 // 串行化推送：同一时刻只允许一个在途请求；在途期间的新写入标记 pending，结束后补推一次，
 // 避免两个标签/设备的推送互相 409 打架导致本地改动被覆盖。
 async function flushNow(): Promise<void> {
+  // 未启用云端同步（尚无同步码）时绝不能发请求。
+  // 否则每次切标签/隐藏页面/关页面都会发出一个「无码 POST」被 401：
+  // 既把 access.jsonl 灌满，又会让访客把自家 IP 的限流额度耗光，
+  // 等他真正输入正确同步码时反而卡在封锁期里（#023）。
+  if (!code) return
   if (pushTimer) { clearTimeout(pushTimer); pushTimer = null }
   if (pushing) { pendingPush = true; return }
   pushing = true
@@ -497,6 +505,7 @@ async function flushNow(): Promise<void> {
 }
 
 function schedulePush() {
+  if (!code) return // 同理：未启用同步就不排推送（#023）
   if (pushTimer) clearTimeout(pushTimer)
   pushTimer = setTimeout(() => {
     pushTimer = null
@@ -561,10 +570,15 @@ export const serverStore: StoreOps = {
 }
 
 // 页面隐藏/卸载前尽力把待推送改动刷到云端，避免 800ms 防抖窗口内关闭导致丢数据。
-// 仅网页版注册：桌面/便携版 WEB=false，此段被常量折叠后整块消失。
-// 否则模块顶层副作用会让 serverStore 无法被 tree-shake，且桌面/便携版每次切后台/关窗口
-// 都会白跑一次 PBKDF2 密钥派生与一次注定失败（file:// 无 /api/sync）的请求，拖慢退出。
-if (WEB && typeof window !== 'undefined') {
+// 必须「延迟到真正启用同步时」才注册，不能在模块顶层无条件注册：
+//  - 桌面/便携版 WEB=false：顶层副作用会让 serverStore 无法被 tree-shake，且每次切后台/
+//    关窗口都白跑一次 PBKDF2 密钥派生与一次注定失败（file:// 无 /api/sync）的请求；
+//  - 网页版未开同步的访客：顶层注册会让其每次切标签/关页面发出「无码 POST」被 401，
+//    灌满日志并耗尽自家 IP 的限流额度，等真输正确码时反被 429 拦下（#023）。
+let unloadHooked = false
+export function armUnloadFlush() {
+  if (unloadHooked || !WEB || typeof window === 'undefined') return
+  unloadHooked = true
   const onHide = () => { if (document.visibilityState === 'hidden') void flushNow() }
   window.addEventListener('pagehide', () => void flushNow())
   window.addEventListener('beforeunload', () => void flushNow())
