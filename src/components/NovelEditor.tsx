@@ -814,16 +814,16 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                       {vol.title}
                     </span>
                     <span className="text-[9px] text-ink-600">{chs.length}章·{(volWords / 10000).toFixed(1)}万</span>
-                    <Button variant="bare"
+                    <Button variant="bare" iconOnly size="xs"
                       onClick={() => setNamePrompt({ kind: 'addCh', title: '新建章节', def: `第${nextChapterNo}章`, payload: vol.id })}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-500 hover:text-amber transition-all"
+                      className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
                       title="新建章"
                     >
                       <FilePlus2 size={12} />
                     </Button>
                     <Button variant="icon-danger"
                       onClick={() => removeVolume(vol)}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 transition-all">
+                      className="opacity-40 group-hover:opacity-100 p-0.5 transition-all">
                       <Trash2 size={12} />
                     </Button>
                   </div>
@@ -929,8 +929,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       <div className="flex-1 flex flex-col min-w-0 bg-ink-950/92 relative">
         {active ? (
           <>
-            {/* 工具栏 */}
-            <div className="flex items-center gap-3 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50">
+            {/* 工具栏：按钮较多（22 个），窄窗口下原本会溢出到屏幕外点不到（实测溢出 618px）。
+                改为横向可滚动 + 收紧间距，保证任何窗口宽度下按钮都可达 */}
+            <div className="flex items-center gap-1.5 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50 overflow-x-auto overflow-y-hidden">
               <div className="flex items-center gap-1">
                 <Button variant="ghost" disabled={activeIdx <= 0} onClick={() => openChapter(flat[activeIdx - 1].id)} className="p-1 disabled:opacity-30 transition-colors shrink-0" title="上一章">
                   <ArrowLeft size={14} />
@@ -959,7 +960,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </select>
               <div className="w-px h-4 bg-ink-700" />
               {/* 工具组：敏感词 / 排版 / 导出 / 时光机 / 回收站 / 全文搜索 / 小黑屋 */}
-              <Button variant="bare" onClick={() => setModal('sensitive')} className="p-1 text-ink-400 hover:text-red-400 transition-colors shrink-0" title="敏感词检测（本章）">
+              <Button variant="bare" iconOnly size="xs" onClick={() => setModal('sensitive')} className="text-ink-400 hover:text-red-400 transition-colors shrink-0" title="敏感词检测（本章）">
                 <ShieldAlert size={14} />
               </Button>
               <Button variant="icon-amber"
@@ -980,7 +981,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 <Link2 size={14} />
               </Button>
               )}
-              <Button variant="bare" onClick={() => setModal('typo')} className="p-1 text-ink-400 hover:text-red-400 transition-colors shrink-0" title="校对（本章）：本地错别字直接查；语病 / 逻辑 / 设定矛盾需接入 AI 模型">
+              <Button variant="bare" iconOnly size="xs" onClick={() => setModal('typo')} className="text-ink-400 hover:text-red-400 transition-colors shrink-0" title="校对（本章）：本地错别字直接查；语病 / 逻辑 / 设定矛盾需接入 AI 模型">
                 <SpellCheck size={14} />
               </Button>
               {!isLite && (

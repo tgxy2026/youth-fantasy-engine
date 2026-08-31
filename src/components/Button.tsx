@@ -2,7 +2,8 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 // 共享按钮：统一高度 / 圆角 / 内边距 / 字号，收敛全站 352 个手写 button 的字面量漂移。
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare' | 'icon-amber' | 'icon-danger' | 'icon-muted' | 'icon-ghost' | 'toggle' | 'toggle-text'
-type Size = 'sm' | 'md' | 'lg'
+// xs = 行内紧凑档（表格行内悬停操作键、行内图标键），不撑高所在行
+type Size = 'xs' | 'sm' | 'md' | 'lg'
 type Shape = 'rect' | 'pill' | 'round'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -20,17 +21,20 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 // size 基线（高度 / 圆角 / 内边距 / 字号 / 字重）—— 直接字面量出现，Tailwind 可扫描
 const SIZE: Record<Size, string> = {
+  xs: 'h-6 px-2 text-[11px] rounded-md',
   sm: 'h-8 px-3 text-[12px] rounded-lg',
   md: 'h-9 px-4 text-[13px] rounded-lg',
   lg: 'h-10 px-5 text-[14px] rounded-lg',
 }
 // 图标专用：去掉横向 padding，定宽定高
 const ICON_SIZE: Record<Size, string> = {
+  xs: 'h-6 w-6 rounded-md',
   sm: 'h-8 w-8 rounded-lg',
   md: 'h-9 w-9 rounded-lg',
   lg: 'h-10 w-10 rounded-lg',
 }
 const ROUND_ICON_SIZE: Record<Size, string> = {
+  xs: 'h-6 w-6 rounded-full',
   sm: 'h-8 w-8 rounded-full',
   md: 'h-9 w-9 rounded-full',
   lg: 'h-10 w-10 rounded-full',
@@ -85,7 +89,8 @@ function variantClass(v: Variant, solid: boolean, selected: boolean): string {
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
     variant = 'secondary',
-    size = 'md',
+    // 不在此处给默认值：未显式传 size 时，由下方按 variant 分档（图标态 sm / 其余 md）
+    size,
     shape = 'rect',
     solid = false,
     iconOnly = false,
@@ -97,11 +102,24 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref
 ) {
+  // 图标态 variant 默认用 sm（h-8 w-8）：工具栏图标键原本约 22px，套 md(h-9/36px) 会明显撑高工具栏
+  const isIconVariant = variant === 'icon-amber' || variant === 'icon-danger' || variant === 'icon-muted'
+  const sizeKey: Size = size ?? (isIconVariant ? 'sm' : 'md')
+
   let sizeCls: string
-  if (variant === 'bare' || variant === 'icon-amber' || variant === 'icon-danger' || variant === 'icon-muted' || variant === 'toggle' || variant === 'toggle-text') sizeCls = ''
-  else if (iconOnly) sizeCls = shape === 'round' ? ROUND_ICON_SIZE[size] : ICON_SIZE[size]
-  else if (shape === 'round') sizeCls = ROUND_ICON_SIZE[size]
-  else sizeCls = SIZE[size]
+  // v2.0 按钮统一化：bare / toggle / icon-* 原先不套尺寸基线，导致大量按钮高度靠内容撑开、
+  // 与标准按钮并排时高低不齐。现在统一走 size 体系：
+  //   · icon-amber / icon-danger / icon-muted → 定宽定高图标键（默认 h-8 w-8 rounded-lg）
+  //   · toggle → 标准文字按钮基线（默认 h-8 px-3 text-[12px] rounded-lg）
+  //   · bare 用途驳杂（从大卡片到菜单项），一刀切加固定高度会撑坏卡片类布局，故仅保留无尺寸；
+  //     纯图标的 bare 按钮请传 iconOnly，即可自动套 ICON_SIZE
+  //   · toggle-text 为纯文字/图标选中态（页签、侧栏），不套尺寸以免破坏既有排版
+  if (iconOnly) sizeCls = shape === 'round' ? ROUND_ICON_SIZE[sizeKey] : ICON_SIZE[sizeKey]
+  else if (shape === 'round') sizeCls = ROUND_ICON_SIZE[sizeKey]
+  else if (isIconVariant) sizeCls = ICON_SIZE[sizeKey]
+  else if (variant === 'toggle-text') sizeCls = ''
+  else if (variant === 'bare') sizeCls = ''
+  else sizeCls = SIZE[sizeKey]
 
   const shapeCls = shape === 'pill' ? 'rounded-full' : ''
   const vCls = variantClass(variant, solid, selected)

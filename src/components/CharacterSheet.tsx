@@ -263,7 +263,7 @@ export default function CharacterSheet({ tab }: Props) {
                   <UserRound size={13} className="shrink-0" />
                   <span className="text-[13px] font-medium truncate flex-1">{rec.name}</span>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存修改" />}
-                  <Button variant="icon-danger" onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-0 group-hover:opacity-100 transition-all">
+                  <Button variant="icon-danger" onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-40 group-hover:opacity-100 transition-all">
                     <Trash2 size={12} />
                   </Button>
                 </div>

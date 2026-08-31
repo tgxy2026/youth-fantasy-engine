@@ -128,12 +128,12 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           <div className="flex gap-1 mt-2">
             <Button onClick={onExitProject}
               
-              title="返回项目列表" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[10px] rounded">
+              title="返回项目列表" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[11px] rounded">
               <ArrowLeft size={10} /> 切换项目
             </Button>
             <Button onClick={onExport}
               
-              title="导出当前项目 JSON 备份" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[10px] rounded">
+              title="导出当前项目 JSON 备份" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[11px] rounded">
               <Upload size={10} /> 备份
             </Button>
           </div>

@@ -897,7 +897,7 @@ export default function JieWenJi({
                                 <Button variant="bare"
                                   type="button"
                                   onClick={() => jumpToEntry(it.matchedTabId!, it.matchedId)}
-                                  className="mt-1 flex items-center gap-0.5 text-[10px] text-amber/80 hover:text-amber"
+                                  className="mt-1 flex items-center gap-0.5 text-[11px] text-amber/80 hover:text-amber"
                                 >
                                   去核对 <ExternalLink size={9} />
                                 </Button>

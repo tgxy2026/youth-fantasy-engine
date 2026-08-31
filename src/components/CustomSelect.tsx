@@ -366,23 +366,23 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 pr-1">
                   {item.kind === 'builtin' ? (
                     <>
-                      <Button variant="bare"
+                      <Button variant="bare" iconOnly size="xs"
                         type="button"
                         title="重命名"
                         onMouseDown={e => e.preventDefault()}
                         onClick={() => onStartRename(item.original, item.display)}
-                        className="p-0.5 text-ink-500 hover:text-amber"
+                        className="text-ink-500 hover:text-amber"
                       ><Pencil size={10} /></Button>
                       <Button variant="icon-danger" type="button" title="从下拉移除" onMouseDown={e => e.preventDefault()} onClick={() => onHideBuiltin(item.original)} className="p-0.5"><EyeOff size={10} /></Button>
                     </>
                   ) : (
                     <>
-                      <Button variant="bare"
+                      <Button variant="bare" iconOnly size="xs"
                         type="button"
                         title="编辑"
                         onMouseDown={e => e.preventDefault()}
                         onClick={() => onStartEditUser(item.original)}
-                        className="p-0.5 text-ink-500 hover:text-amber"
+                        className="text-ink-500 hover:text-amber"
                       ><Pencil size={10} /></Button>
                       <Button variant="icon-danger" type="button" title="删除" onMouseDown={e => e.preventDefault()} onClick={() => onDeleteUser(item.original)} className="p-0.5"><Trash2 size={10} /></Button>
                     </>
@@ -399,10 +399,10 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
               {payload.hidden.map(h => (
                 <div key={`h-${h}`} className="group flex items-center px-1 py-0.5 text-[12px] text-ink-500 hover:bg-ink-700">
                   <span className="flex-1 px-1.5 py-0.5 line-through truncate">{h}</span>
-                  <Button variant="bare"
+                  <Button variant="bare" iconOnly size="xs"
                     type="button"
                     onClick={() => onRestoreBuiltin(h)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-amber"
+                    className="opacity-40 group-hover:opacity-100 hover:text-amber"
                     title="还原"
                   ><RotateCcw size={10} /></Button>
                 </div>

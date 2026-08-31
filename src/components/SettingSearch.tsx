@@ -323,9 +323,9 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
           <HelpPopover title="设定检索与联动编辑" width="23rem" side="right">
             {'左侧是全书设定的实时速查索引，按角色 / 世界 / 创作三大类组织。\n\n· 输入关键词检索本组设定（角色名、伏笔、境界、地名…）；\n· 展开任意一条可查看全部字段，点字段右侧的 ✎ 就地修改，自动同步回对应角色卡 / 设定表，不必跳页重填；\n· 原表单里是下拉选择的字段（人物状态、伏笔状态、重要程度…），在这里同样是下拉，选项可增删改，选中即保存；\n· 角色类的多选字段（如《知情权限》的「知情者」）在这里同样从已创建角色卡中多选、不可手填，与设定表完全一致；\n· 真实日期字段（写作进度、读者反馈等）点开弹出月历选择；故事内时间（某年某月某日）用结构化下拉填写，避免时间轴排序错乱；\n· 纯文本字段改完点「保存」生效；\n· "→ 跳转到" 直达该设定所在页签做大改；\n· 右上旋转箭头可重建索引（在别处新填的内容没出现时点一下）。\n\n注：已回收的伏笔、未登场的角色不进入索引，避免刷屏。'}
           </HelpPopover>
-          <Button variant="bare"
+          <Button variant="bare" iconOnly size="xs"
             onClick={() => setReloadKey(k => k + 1)}
-            className="p-1 text-ink-500 hover:text-amber transition-colors"
+            className="text-ink-500 hover:text-amber transition-colors"
             title="重新加载设定数据"
           >
             <RefreshCw size={12} className={loaded ? '' : 'animate-spin'} />
@@ -427,9 +427,9 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                               <div className="flex items-center gap-1">
                                 {f.label && <div className="text-[10px] text-amber/70">{f.label}</div>}
                                 {doc.kind !== 'relation' && !isEditing && (
-                                  <Button variant="bare"
+                                  <Button variant="bare" iconOnly size="xs"
                                     onClick={() => { setEditing({ key: doc.key, idx: i }); setDraft(f.value) }}
-                                    className="ml-auto p-0.5 text-ink-600 hover:text-amber transition-colors shrink-0"
+                                    className="ml-auto text-ink-600 hover:text-amber transition-colors shrink-0"
                                     title="在此直接修改并同步到设定表"
                                   >
                                     <Pencil size={10} />
@@ -534,7 +534,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                         {onNavigate && (
                           <Button variant="bare"
                             onClick={() => onNavigate(doc.tabId)}
-                            className="text-[10px] text-ink-500 hover:text-amber transition-colors mt-1"
+                            className="text-[11px] text-ink-500 hover:text-amber transition-colors mt-1"
                           >
                             → 跳转到「{doc.source}」
                           </Button>
@@ -553,7 +553,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       <div className="px-3 py-2 border-t border-ink-700 shrink-0">
         <Button variant="bare"
           onClick={() => onNavigate?.('guide')}
-          className="flex items-center gap-1.5 text-[10px] text-ink-500 hover:text-amber transition-colors"
+          className="flex items-center gap-1.5 text-[11px] text-ink-500 hover:text-amber transition-colors"
         >
           <BookMarked size={10} /> 设定不齐？查看填写指南
         </Button>

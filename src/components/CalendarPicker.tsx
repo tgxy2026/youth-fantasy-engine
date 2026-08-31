@@ -139,7 +139,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
               >{d}</Button>
             ))}
           </div>
-          <Button variant="icon-muted" type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-[10px]">清除日期</Button>
+          <Button variant="icon-muted" type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-[11px]">清除日期</Button>
         </div>,
         document.body,
       )}

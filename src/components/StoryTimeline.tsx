@@ -350,9 +350,9 @@ export default function StoryTimeline({ rows, calendars }: Props) {
                   {selected.chapter ? `${selected.chapter} ` : ''}{selected.title || '（未命名章节）'}
                 </h3>
               </div>
-              <Button variant="bare"
+              <Button variant="bare" iconOnly size="xs"
                 onClick={() => setSelected(null)}
-                className="p-1.5 text-ink-500 hover:text-ink-200 hover:bg-ink-700 rounded-lg transition-colors shrink-0"
+                className=".5 text-ink-500 hover:text-ink-200 hover:bg-ink-700 rounded-lg transition-colors shrink-0"
               ><X size={16} /></Button>
             <div className="p-4 space-y-2.5">
               {regressed.includes(selected.id) && (

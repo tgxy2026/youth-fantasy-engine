@@ -139,12 +139,12 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
                   <span className="text-[10px] text-ink-500">({cal.value})</span>
                 </Button>
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 pr-1">
-                  <Button variant="bare"
+                  <Button variant="bare" iconOnly size="xs"
                     type="button"
                     title="编辑名称/数值"
                     onMouseDown={e => e.preventDefault()}
                     onClick={() => openEditor(cal)}
-                    className="p-0.5 text-ink-500 hover:text-amber"
+                    className="text-ink-500 hover:text-amber"
                   ><Pencil size={10} /></Button>
                   <Button variant="icon-danger" type="button" title="删除" onMouseDown={e => e.preventDefault()} onClick={() => onDelete(cal)} className="p-0.5"><Trash2 size={10} /></Button>
                 </div>

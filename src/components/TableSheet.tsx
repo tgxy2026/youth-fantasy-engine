@@ -912,14 +912,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                               {!rOpen && status && <span className="text-[11px] text-ink-500 truncate">{status}</span>}
                               {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存修改" />}
                             </Button>
-                            <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-0 group-hover:opacity-100 transition-all p-1 shrink-0" title="删除此条关系">
+                            <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1 shrink-0" title="删除此条关系">
                               <Trash2 size={12} />
                             </Button>
                             {aiCap !== 'none' && (
-                              <Button variant="bare"
+                              <Button variant="bare" iconOnly size="xs"
                                 onClick={() => setFillRow(row)}
                                 disabled={!aiReady}
-                                className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all p-1 shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+                                className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
                                 title="AI 补全本行空白：只填这一行未填写的字段，不影响其他行 / 表"
                               >
                                 <Sparkles size={12} />
@@ -1059,31 +1059,31 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                     <td className="w-7 px-1 py-1 align-middle">
                       <div className="flex flex-col items-center justify-center gap-0.5 h-full">
                       {chapterLink && (
-                        <Button variant="bare"
+                        <Button variant="bare" iconOnly size="xs"
                           onClick={() => onNavigate?.('editor', chapterLink)}
-                          className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all p-1"
+                          className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
                           title="打开本章正文编辑"
                         >
                           <PenLine size={12} />
                         </Button>
                       )}
-                      <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-0 group-hover:opacity-100 transition-all p-1" title="删除此行">
+                      <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1" title="删除此行">
                         <Trash2 size={12} />
                       </Button>
                       {aiCap !== 'none' && (
-                        <Button variant="bare"
+                        <Button variant="bare" iconOnly size="xs"
                           onClick={() => setFillRow(row)}
                           disabled={!aiReady}
-                          className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all p-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                           title="AI 补全本行空白：只填这一行未填写的字段，不影响其他行 / 表"
                         >
                           <Sparkles size={12} />
                         </Button>
                       )}
                       {parentCol && tree && (
-                        <Button variant="bare"
+                        <Button variant="bare" iconOnly size="xs"
                           onClick={() => addChild(tree.nameOf(row))}
-                          className="opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all p-1"
+                          className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
                           title={`在「${tree.nameOf(row) || '该项'}」下新增子条目`}
                         >
                           <GitBranch size={12} />
@@ -1192,7 +1192,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                         <Button variant="bare"
                                           key={code}
                                           onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
-                                          className="inline-flex items-center gap-0.5 px-1.5 py-px text-[10px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                                          className="inline-flex items-center gap-0.5 px-1.5 py-px text-[11px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
                                           title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                                         >
                                           <Link2 size={9} />{code}
@@ -1217,7 +1217,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                     <Button variant="bare"
                                       key={code}
                                       onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
-                                      className="inline-flex items-center gap-0.5 px-1.5 py-px text-[10px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-px text-[11px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
                                       title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                                     >
                                       <Link2 size={9} />{code}

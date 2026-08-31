@@ -263,18 +263,18 @@ export default function OutlineSheet({ tab }: Props) {
                 </div>
                 {/* 悬停操作：排序 / 删除 */}
                 <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button variant="bare"
+                  <Button variant="bare" iconOnly size="xs"
                     disabled={i === 0}
                     onClick={e => { e.stopPropagation(); moveRecord(rec.id, -1) }}
-                    className="p-0.5 text-ink-500 hover:text-amber disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="text-ink-500 hover:text-amber disabled:opacity-30 disabled:cursor-not-allowed"
                     title="上移"
                   >
                     <ChevronUp size={12} />
                   </Button>
-                  <Button variant="bare"
+                  <Button variant="bare" iconOnly size="xs"
                     disabled={i === records.length - 1}
                     onClick={e => { e.stopPropagation(); moveRecord(rec.id, 1) }}
-                    className="p-0.5 text-ink-500 hover:text-amber disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="text-ink-500 hover:text-amber disabled:opacity-30 disabled:cursor-not-allowed"
                     title="下移"
                   >
                     <ChevronDown size={12} />

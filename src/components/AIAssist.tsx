@@ -256,8 +256,8 @@ export default function AIAssist() {
                 >
                   <MessageSquarePlus size={12} className={`shrink-0 ${s.id === activeSessionId ? 'text-amber' : 'text-ink-500'}`} />
                   <span className={`flex-1 text-[11.5px] truncate ${s.id === activeSessionId ? 'text-amber' : 'text-ink-300'}`}>{s.title}</span>
-                  <Button variant="icon-muted" onClick={e => { e.stopPropagation(); renameSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5" title="重命名"><Pencil size={11} /></Button>
-                  <Button variant="icon-danger" onClick={e => { e.stopPropagation(); deleteSession(s.id) }} className="opacity-0 group-hover:opacity-100 p-0.5" title="删除"><Trash2 size={11} /></Button>
+                  <Button variant="icon-muted" onClick={e => { e.stopPropagation(); renameSession(s.id) }} className="opacity-40 group-hover:opacity-100 p-0.5" title="重命名"><Pencil size={11} /></Button>
+                  <Button variant="icon-danger" onClick={e => { e.stopPropagation(); deleteSession(s.id) }} className="opacity-40 group-hover:opacity-100 p-0.5" title="删除"><Trash2 size={11} /></Button>
                 </div>
               ))
             )}
@@ -545,7 +545,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                       {testingId === p.id ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
                       {testingId === p.id ? '测试中…' : '测试'}
                     </Button>
-                    <Button variant="bare" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 p-1 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
+                    <Button variant="bare" iconOnly size="xs" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
                     <Button variant="icon-danger" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1"><Trash2 size={12} /></Button>
                   </div>
                   {testingId === p.id && (
