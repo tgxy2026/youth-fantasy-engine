@@ -60,7 +60,15 @@ let rateLimitedUntil = 0
 
 // 同步状态（#008：失败必须有可见指示，不能让用户零感知）
 // #011 新增 'offline'：网络异常（断网/服务不可达）与 401/429 并列，同样不接管存储
-export type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error' | 'auth-failed' | 'rate-limited' | 'offline'
+export type SyncStatus =
+  | 'idle'
+  | 'syncing'
+  | 'ok'
+  | 'error'
+  | 'auth-failed'
+  | 'rate-limited'
+  | 'too-large'
+  | 'offline'
 let syncStatus: SyncStatus = 'idle'
 const STATUS_EVENT = 'yfe:sync-status'
 
@@ -466,6 +474,12 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
     rateLimitedUntil = Date.now() + sec * 1000
     setStatus('rate-limited')
     throw new RateLimitError(sec)
+  }
+  if (r.status === 413) {
+    // 推送体积超过服务端上限（nginx client_max_body_size / readRaw 上限）：这是硬限制，
+    // 不能像网络异常那样静默重试——必须明确告知用户，否则会一直"同步失败"且数据永远推不上去。
+    setStatus('too-large')
+    throw new Error('sync payload too large')
   }
   if (r.ok) {
     const data = await r.json().catch(() => ({ rev: baseRev + 1 }))

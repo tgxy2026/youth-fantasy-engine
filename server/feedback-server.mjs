@@ -317,7 +317,9 @@ function extractField(buf, name) {
 }
 
 function readJson(req) {
-  return readRaw(req, 1 * 1024 * 1024)
+  // 放宽到 20MB：nginx 已在 /api/sync 放开 client_max_body_size，此处不能再用 1MB 截断，
+  // 否则大项目推送会在 1MB 处被截、JSON.parse 失败返回 400（且 400 分支未记日志，难排查）。
+  return readRaw(req, 20 * 1024 * 1024)
     .then((b) => {
       try {
         return JSON.parse(b.toString('utf8'))

@@ -15,6 +15,8 @@ const STATUS_META: Record<SyncStatus, { dot: string; text: string; title: string
   error: { dot: 'bg-rose-400', text: '同步失败', title: '上传失败，编辑已保留在本地，稍后自动重试' },
   'auth-failed': { dot: 'bg-rose-500', text: '码已失效', title: '同步邀请码已失效，已切回本地数据' },
   'rate-limited': { dot: 'bg-orange-400', text: '已限流', title: '操作过于频繁，已暂时暂停同步，稍后自动恢复' },
+  // #025：推送体积超限（413）——必须让用户知道是"数据太大"而非网络/鉴权问题，否则会一直误报"同步失败"
+  'too-large': { dot: 'bg-rose-500', text: '数据过大', title: '云端同步数据体积过大，已暂停上传；请精简项目内容或联系作者扩容后重试' },
   // #011：断网/服务不可达 —— 关键是让用户知道编辑留在本地、没丢，恢复后会自动接管
   offline: { dot: 'bg-ink-400', text: '离线', title: '网络不可用，已切回本地保存（编辑不会丢）；网络恢复后自动重新同步' },
 }
