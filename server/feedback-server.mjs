@@ -27,6 +27,15 @@ function parseList(s) {
 const INVITE_CODES = parseList(process.env.INVITE_CODES || process.env.INVITE_CODE)
 const SYNC_CODES = parseList(process.env.SYNC_CODES || process.env.SYNC_CODE)
 
+// #026：单文件闸按码配额。普通同步码默认 SYNC_LIMIT_MB(50)，
+// 高配额名单 ADMIN_SYNC_CODES 走 ADMIN_SYNC_LIMIT_MB(450)。
+const SYNC_LIMIT = (Number(process.env.SYNC_LIMIT_MB) || 50) * 1024 * 1024
+const ADMIN_SYNC_CODES = parseList(process.env.ADMIN_SYNC_CODES || '')
+const ADMIN_SYNC_LIMIT = (Number(process.env.ADMIN_SYNC_LIMIT_MB) || 450) * 1024 * 1024
+function limitFor(code) {
+  return ADMIN_SYNC_CODES.has(code) ? ADMIN_SYNC_LIMIT : SYNC_LIMIT
+}
+
 await mkdir(DATA_DIR, { recursive: true })
 const FEEDBACK_FILE = DATA_DIR + '/feedback.jsonl'
 // 访问/登录事件流水（每次邀请校验、每次云端同步调用都追加一行，供每日巡检汇总）
@@ -185,6 +194,16 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       return res.end('{"ok":false,"error":"bad_body"}')
     }
+    // #026：按同步码配额检查上传体积。enc 为 base64，解码后字节 ≈ length * 3 / 4。
+    // 先按 Content-Length 粗筛（避免读满超大 body 占内存），再按 enc 精确判定。
+    const limit = limitFor(code)
+    const cl = Number(req.headers['content-length']) || 0
+    const encBytes = Math.floor((body.enc.length * 3) / 4)
+    if (cl > limit + 2 * 1024 * 1024 || encBytes > limit) {
+      await logAccess(req, { type: 'sync', ok: false, act: 'too_large', code: slotOf(code), bytes: encBytes, limit })
+      res.writeHead(413, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ ok: false, error: 'too_large', limit: Math.floor(limit / (1024 * 1024)) }))
+    }
     // 串行化：同一槽位的「读 rev → 比对 → 写盘」必须原子完成，否则并发 push 会互相覆盖
     const outcome = await withSlotLock(slotOf(code), async () => {
       const cur = await readSync(code)
@@ -324,7 +343,7 @@ function extractField(buf, name) {
 function readJson(req) {
   // 放宽到 20MB：nginx 已在 /api/sync 放开 client_max_body_size，此处不能再用 1MB 截断，
   // 否则大项目推送会在 1MB 处被截、JSON.parse 失败返回 400（且 400 分支未记日志，难排查）。
-  return readRaw(req, 20 * 1024 * 1024)
+  return readRaw(req, 450 * 1024 * 1024)
     .then((b) => {
       try {
         return JSON.parse(b.toString('utf8'))

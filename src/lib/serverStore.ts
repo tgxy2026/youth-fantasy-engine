@@ -358,6 +358,12 @@ function mergeCaches(
     ...Object.keys(local || {}),
   ])
   for (const s of stores) {
+    // #026：backups 是本地专属保险，云端永不参与其增删，
+    // 否则 pull 时云端缺失会被当成「云端删除」而吞掉本地备份。
+    if (s === 'backups') {
+      out[s] = (local && local[s]) || []
+      continue
+    }
     const kf = KEY_FIELD[s] ?? 'id'
     const bMap = new Map<any, any>()
     const sMap = new Map<any, any>()
@@ -431,7 +437,10 @@ const MAX_CONFLICT_RETRY = 5
 // 推送（带 rev 守卫）。冲突(409)时：合并云端版本（本地优先）后用最新 rev 重试，
 // 绝不把本地未保存改动直接丢弃——这是修复「保存的数据被系统自动刷新掉」的核心。
 async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean }> {
-  const enc = await encryptObj(cache)
+  // #026：云端同步排除 backups store（本地防误删保险，不应占用云同步体积）
+  const uploadCache = { ...cache }
+  delete uploadCache.backups
+  const enc = await encryptObj(uploadCache)
   let r: Response
   try {
     r = await fetch('/api/sync', {
