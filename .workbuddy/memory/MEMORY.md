@@ -36,6 +36,9 @@ managed node：`C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.ex
 - **`WEB` 由 `__WEB__` define 决定**（仅 vite.config.web.ts 为 true）。绝不可写 `!PORTABLE && !DESKTOP`（dev 纯浏览器跑时二者同为 false 会误判成网页版）。
 - **顶层副作用须双重守卫**：① 平台守卫——`serverStore` 顶层监听曾泄漏进桌面/便携版（db.ts 静态 import），关窗口白跑 PBKDF2 + file:// 下注定失败的 fetch，且无法 tree-shake；加 `if (WEB && ...)` 后主包 675KB→658KB。② **只加平台守卫不够**（#023）：未开同步的访客 `code=''`，监听器照样 `flushNow()` → 空 `Bearer` POST → 401，耗尽自家 IP 限流额度，真输对码时反被 429 拦。**正解：延迟注册 `armUnloadFlush()`（由 `configureServerStore(c)` 在 c 非空时调用 + `unloadHooked` 防重复），且被调函数自身也加 `if (!code) return`。**
 - **「从源数据重建草稿」的 effect 要防脏覆盖**：依赖数组含源数据时，源数据因"其它项增删改"变化就会用库里旧值静默覆盖未保存编辑。重建前判断 `草稿id===当前id && dirty`，脏则 return。
+- ⚠️ **验证元素是否真渲染出来，必须测 `offsetHeight` / `getBoundingClientRect()`，别读 `el.style.height`**：后者只是内联样式字符串（即便浏览器把它算成 0 也照常返回 `'93%'`），极具欺骗性。实例：近 7 日柱状图柱子宽度正常(55px)但 `offsetHeight` 全是 0，我却先误判成配色对比度问题，改完颜色仍无效才定位到真因。
+  - 根因：**百分比高度的父容器必须有确定高度**，否则子元素百分比高度会被解析为 0。修法：列容器加 `h-full` 撑满，再插一层 `flex-1` 的图表区作为确定高度的参照父级。
+  - 排查同类问题用 agent-browser `eval` 直接读 `offsetHeight`，比读代码可靠。
 
 ## 示范项目种子数据
 - 🔴 **卡片 data 键名须严格等于 schema 的「模块名::字段名」，表格行键名须等于 schema 列名**。`OutlineSheet`/`TableSheet` 按 `${mod.name}::${f.name}` 取值——**写错不报错、能编译、却整组字段静默空白**。实例：第二卷分卷大纲误用「三、本卷主线/四、伏笔与回收」（schema 实为「三、事件链/四、伏笔管理」）。
