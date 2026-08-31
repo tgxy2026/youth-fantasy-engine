@@ -1,92 +1,63 @@
 # novel-studio 长期记忆（MEMORY.md）
-
-> 只留**长期有效的规则、红线、决策与凭据路径**；事件经过与逐条数据留在 `YYYY-MM-DD.md` 日志。
+> 只留长期有效的规则/红线/决策/凭据；事件经过留 `YYYY-MM-DD.md`。
 
 ## 项目身份
-「青春幻想引擎」小说创作管理应用。Electron31 + React18.3 + TS5.5 + Vite5.3 + Tailwind(ink/amber)。三存储后端（IndexedDB/便携/桌面）经 StoreOps。dev `http://localhost:5199/`。
-managed node：`C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.exe`
+「青春幻想引擎」小说创作应用。Electron31+React18.3+TS5.5+Vite5.3+Tailwind(ink/amber)。三存储后端(IDB/便携/桌面)经 StoreOps。dev `http://localhost:5199/`。managed node：`C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.exe`
 
 ## 最高红线
-1. **封装/重打包必须由老大明说「封装」「重打包」**；改完最多 tsc+build 验证 + commit。
-2. **提交信息含 `!` 必须用 `git commit -F <文件>`**（-m 会被 bash 历史展开吃掉 `!XXX`）。main 无远程。
-3. **禁删**：根目录 `你需要的文件在这里/`、`release/eb-cache/`（electron-builder 缓存 106M）。
-4. **禁用** `window.prompt/confirm/alert` → 用 PromptModal / confirmDialog / showToast。
-5. **服务器属主红线**：`/var/lib/yfe` 属主须为 `www-data`。任何 sudo 写操作都会把属主变 root → www-data 只读 → 云端 push 静默失败。sudo 后必补 `sudo chown www-data:www-data /var/lib/yfe/<file>` + `sudo -u www-data test -w <file>` 实测。
+1. 封装/重打包须老大明说「封装」；改完最多 tsc+build+commit。
+2. 提交信息含 `!` 用 `git commit -F <文件>`（-m 被 bash 历史吃 `!XXX`）。main 无远程。
+3. 禁删：`你需要的文件在这里/`、`release/eb-cache/`(106M)。
+4. 禁 `window.prompt/confirm/alert` → PromptModal/confirmDialog/showToast。
+5. 服务器属主红线：`/var/lib/yfe` 须 www-data；sudo 写后必 `chown www-data:www-data` + `sudo -u www-data test -w` 实测，否则 push 静默失败。
 
 ## 封装流程
-封装前必：**tsc 0 错 + vite build 0 错 + 改动落盘**。顺序：审查 → 升 `package.json` version → 封装。
-- **G 盘 safe-delete 拦截 rmSync / emptyOutDir**：build 前先用 Node `renameSync` 移开 `dist`、`dist-web`（shell `mv` 不可靠）。
-- **同版本号重打包三坑**：① 便携 outDir `release/novel-studio-<ver>` 与 `dist-web` 已有上轮产物，必先移开。② `dist-web` 可能被句柄占用致 rename 报 EPERM —— 别硬碰，改用 `vite build --config vite.config.web.ts --outDir dist-web-<后缀>` 另开新目录再推送。③ electron-builder 日志 `rcedit ... Unable to commit changes` **不代表失败**（防病毒锁新解包 exe，重试第 3 次成功且不打成功日志）；判定：node 读 exe buffer 搜 utf16le 的 `青春幻想引擎开发组`/`Copyright © 2026`，命中即已写入。
-- **产物验证（封装后必做）**：别只看体积。用 node 读 buffer **双向校验**「应存在的新字符串」+「应消失的旧字符串」；便携查单文件 HTML、桌面查 `dist/assets/<chunk>.js`、线上 `grep -rlF /var/www/yfe/assets/*.js`。三处一致才算真上线。
-- dev 报 `[safe-delete] ... node_modules/.vite/deps` 时，先移开 `node_modules/.vite` 再重启（vite 会重建）。
-- Edit 工具偶发静默失败 → 改完必 tsc + 抽查。
+- 必备：tsc0错+vite build0错+改动落盘 → 升 version → 封装。
+- G盘 safe-delete 拦截 rmSync/emptyOutDir：build 前 Node `renameSync` 移开 `dist`/`dist-web`。
+- 同版本重打包：①先移开 `release/novel-studio-<ver>` 与 `dist-web`；②`dist-web` 句柄占用 rename EPERM → 改用 `--outDir dist-web-<后缀>`；③ electron-builder `rcedit Unable to commit changes` 非失败（重试第3次成功不打日志），node 读 exe buffer 搜 utf16le `青春幻想引擎开发组`/`Copyright © 2026` 判定。
+- 产物验证：node 读 buffer 双向校验新/旧字符串；便携查单文件HTML、桌面查 `dist/assets/<chunk>.js`、线上 grep `/var/www/yfe/assets/*.js`，三处一致才真上线。
+- dev 报 `[safe-delete] node_modules/.vite/deps`：移开 `node_modules/.vite` 重启。Edit 偶发静默失败→改完必 tsc+抽查。
 
 ## 工作区清理
-1. **先只扫描出报告（路径+体积），老大圈定后才动手**，绝不自作主张删。
-2. 主要垃圾源：`dist.bak-*` / `dist_bak_*` / `dist-web*.bak*` / `web-build-*`（git 未跟踪）。
-3. **本环境无法走真回收站**（`Add-Type` 与 COM 实例化均被安全策略拦截）。一律**移到同盘隔离区**（`G:\AI软件\.cleanup-quarantine\<日期>\`），可逆不删，确认后由老大清空。bash `mv` 报 EPERM 时换 PowerShell `Move-Item`。
+- 先只扫报告(路径+体积)，老大圈定才动手。垃圾源：`dist.bak-*`/`dist_bak_*`/`dist-web*.bak*`/`web-build-*`。
+- 本环境无真回收站 → 移到 `G:\AI软件\.cleanup-quarantine\<日期>\`（可逆不删）；bash mv EPERM 换 PowerShell Move-Item。
 
 ## 架构红线
-- **按卷建表**：tabId `chapter-vol-<vid>`；聚合走 `db.getAllChapterLedgerRows()`；章节号全局连续（`migrateChapterNumbering`）。
-- 章节顺序以 `chapterSeq.ts` 为唯一权威（全派生不落库）。
-- 下拉选项一律用 `resolveOptions(col.options, getCustomOptions())`，禁直接用 `col.options`。
-- `!tabVisible` 只用于守卫 return / 构造隐页签集合，赋给 `showXxx` 即 bug。
-- AI 抽取 + 代码判重分层：存在性用 `normName`/`rowFingerprint.norm` 确定性比对，AI 只抽候选。
-- 角色卡 `char-main`/`char-secondary` vs `char-npc` 字段不同，用 `settingLedger.cardFieldPath()` 探测，勿硬编码。
-- **`WEB` 由 `__WEB__` define 决定**（仅 vite.config.web.ts 为 true）。绝不可写 `!PORTABLE && !DESKTOP`（dev 纯浏览器跑时二者同为 false 会误判成网页版）。
-- **顶层副作用须双重守卫**：① 平台守卫——`serverStore` 顶层监听曾泄漏进桌面/便携版（db.ts 静态 import），关窗口白跑 PBKDF2 + file:// 下注定失败的 fetch，且无法 tree-shake；加 `if (WEB && ...)` 后主包 675KB→658KB。② **只加平台守卫不够**（#023）：未开同步的访客 `code=''`，监听器照样 `flushNow()` → 空 `Bearer` POST → 401，耗尽自家 IP 限流额度，真输对码时反被 429 拦。**正解：延迟注册 `armUnloadFlush()`（由 `configureServerStore(c)` 在 c 非空时调用 + `unloadHooked` 防重复），且被调函数自身也加 `if (!code) return`。**
-- **「从源数据重建草稿」的 effect 要防脏覆盖**：依赖数组含源数据时，源数据因"其它项增删改"变化就会用库里旧值静默覆盖未保存编辑。重建前判断 `草稿id===当前id && dirty`，脏则 return。
-- ⚠️ **验证元素是否真渲染出来，必须测 `offsetHeight` / `getBoundingClientRect()`，别读 `el.style.height`**：后者只是内联样式字符串（即便浏览器把它算成 0 也照常返回 `'93%'`），极具欺骗性。实例：近 7 日柱状图柱子宽度正常(55px)但 `offsetHeight` 全是 0，我却先误判成配色对比度问题，改完颜色仍无效才定位到真因。
-  - 根因：**百分比高度的父容器必须有确定高度**，否则子元素百分比高度会被解析为 0。修法：列容器加 `h-full` 撑满，再插一层 `flex-1` 的图表区作为确定高度的参照父级。
-  - 排查同类问题用 agent-browser `eval` 直接读 `offsetHeight`，比读代码可靠。
+- 按卷建表 `chapter-vol-<vid>`；聚合 `db.getAllChapterLedgerRows()`；章节号全局连续 `migrateChapterNumbering`。顺序以 `chapterSeq.ts` 为唯一权威（派生不落库）。
+- 下拉选项用 `resolveOptions(col.options, getCustomOptions())`，禁直接 `col.options`。`!tabVisible` 只守卫 return/隐页签，赋 `showXxx` 即 bug。
+- `WEB` 由 `__WEB__` define 决定（仅 vite.config.web.ts 为 true），禁写 `!PORTABLE && !DESKTOP`。
+- 顶层副作用双守卫：①平台 `if(WEB&&...)`；②功能 `if(!code)return`（#023 已修 c0275f3：armUnloadFlush 延迟注册 + flushNow/schedulePush 加 `if(!code)return`）。
+- 「从源数据重建草稿」effect 防脏覆盖：重建前 `草稿id===当前id && dirty` 才 return。
 
-## 示范项目种子数据
-- 🔴 **卡片 data 键名须严格等于 schema 的「模块名::字段名」，表格行键名须等于 schema 列名**。`OutlineSheet`/`TableSheet` 按 `${mod.name}::${f.name}` 取值——**写错不报错、能编译、却整组字段静默空白**。实例：第二卷分卷大纲误用「三、本卷主线/四、伏笔与回收」（schema 实为「三、事件链/四、伏笔管理」）。
-- ✅ 常驻回归检查：**`node tests/seed-schema-check.mjs`**（esbuild 单独打包 schema.ts、./db 打桩，逐键对账，产物写 os.tmpdir 后清理）。改种子必跑。
-- ⚠️ **统计条数两坑**：① `grep -c "row('progress'"` 只数到 1——该表在 `for (... of days)` 循环里生成（实为 20 条）。② `grep -c "tabId: 'volume-outline'"` 会漏掉用 `card()` 助手创建的记录。**先确认是字面量还是循环生成。**
-- 写作进度/热力图日期已改为**「距今 N 天前」动态生成**（`todayKey()`），不会过期。
+## 种子数据
+- 卡片 data 键=`模块名::字段名`、表格行键=schema 列名，写错不报错整组静默空白。
+- 改种子必跑 `node tests/seed-schema-check.mjs`（esbuild 打包 schema+db 打桩，逐键对账）。
+- 统计条数先确认字面量还是循环生成（`grep -c` 会漏循环/助手创建）。进度/热力图日期用 `todayKey()` 动态「距今N天前」。
 
-## 按钮体系（Button.tsx）
-- **哪些 variant 套尺寸**：`primary/secondary/ghost/danger/success/info/icon/icon-ghost` 与 `toggle`、`icon-amber/icon-danger/icon-muted` 都走 size 体系；**`bare` 与 `toggle-text` 不套**（bare 用途驳杂，从大卡片到菜单项，加固定高度会撑坏布局；toggle-text 是页签/侧栏的纯文字选中态）。
-- **尺寸档位**：`xs`(图标 h-6 w-6 / 文字 h-6 px-2 text-[11px] rounded-md，用于表格行内悬停操作键) → `sm`(h-8) → `md`(h-9，默认) → `lg`(h-10)。图标态 variant 默认 sm，其余默认 md。
-- **纯图标的 bare 按钮务必传 `iconOnly`**，否则拿不到定宽定高会与相邻按钮高低不齐。
-- ⚠️ **改动按钮尺寸后必须检查容器溢出**：把图标键从 ~22px 提到 32px 后，编辑器工具栏 22 个按钮需求宽 1068px 而可视仅 450px，末按钮跑到屏幕外 618px 点不到（`overflowX: visible` 直接被窗口裁掉）。修法是工具栏加 `overflow-x-auto` + 收紧 gap。
-- ⚠️ **审计 JSX 时不要用 `indexOf('>')` 找标签结尾**——箭头函数 `=>` 里的 `>` 会把标签截断，导致统计严重失真（我据此误报过 226 处）。判据应为「`>` 的前一个字符不是 `=`」。
+## 按钮体系(Button.tsx)
+套尺寸：primary/secondary/ghost/danger/success/info/icon/icon-ghost/toggle/icon-*；不套：bare/toggle-text。档位 xs(h-6)→sm(h-8)→md(h-9默认)→lg(h-10)。裸图标传 `iconOnly`。改尺寸后查容器溢出(加 overflow-x-auto)。审计 JSX 不用 indexOf('>')（箭头 `=>` 误截断），判据「>前字符≠=」。
 
 ## 主题系统
-换肤：`<html data-theme>` + index.css 变量，组件零改动。每套 = 12 档 ink(950~50) + amber/amber-soft + color-scheme。
-- ⚠️ **浅色 ink 刻度反向**：ink-950=页底(最浅)、ink-100=正文(深)、ink-50 最深；深色反之。新增主题极易搞反。
-- ⚠️ 浅色 850(分隔线) 比 800(输入框底) 深一档，属既定设计语言，新增浅色主题须复刻。
-- 新增主题三件套：`theme.ts`(ThemeId + THEMES) + `index.css`(变量块) + Sidebar 色块行（须 flex-wrap，8 个 20px 色块约 202px 会挤爆 224px 侧栏）。
-- ⚠️ CSS 压缩器会去掉属性选择器引号：产物是 `[data-theme=x]` 而非 `[data-theme='x']`，grep 时注意。
-- ⚠️ **浅色主题禁用低透明度 amber 表达"数据可见性"**：`bg-amber/40` 压在 `bg-ink-850` 上，护眼仅 **1.57:1**、羊皮卷 **1.48:1**（图形元素需 ≥3:1），柱子/热力图会直接"隐形"（用户报"柱状图没数据"，实为渲染了但看不见）。**靠颜色传达数据的元素必须用实色 `bg-amber`；色阶最低档不要低于 `/40`**。
-  - 排查法：**agent-browser `eval` 取 `getComputedStyle` 真实 rgba → 把 alpha 混入背景色 → 算 WCAG 对比度**，别靠肉眼猜。实色后：护眼 3.54 / 青花 5.30 / 桃笺 5.00 / 暗夜 7.68 / 午夜蓝 6.47 / 羊皮卷 2.93（略欠）。
-- 8 套：暗夜/护眼/午夜蓝/羊皮卷/暮山紫/青花/松烟墨/桃笺（深浅各 4）。其中**浅色 4 套 = 护眼/羊皮卷/青花/桃笺**（ink-850 为 233~250 的近白值）。
+换肤 `<html data-theme>`+index.css 变量，组件零改。8套(深浅各4)：暗夜/护眼/午夜蓝/羊皮卷/暮山紫/青花/松烟墨/桃笺；浅色4=护眼/羊皮卷/青花/桃笺。
+浅色 ink 刻度反向(950最浅/50最深)；850分隔线比800深一档。CSS 压缩去引号 `[data-theme=x]`。
+⚠️ 浅色禁低透明度 amber 表数据(护眼1.57/羊皮卷1.48 远低于3:1会隐形)；靠色传达数据用实色 `bg-amber`，最低 `/40`。排查用 agent-browser eval 取 getComputedStyle 算 WCAG。
 
 ## AI 接入
-颉文姬 5 模式：`clinic`诊断 / `edit`编辑 / `review`校对 / `brief`简报 / `ledger`补登。模型走硅基流动 `deepseek-ai/DeepSeek-V3.2`。明文本地记忆勿公开。
+颉文姬5模式 clinic/edit/review/brief/ledger；模型硅基流动 deepseek-ai/DeepSeek-V3.2。明文本地记忆勿公开。
 
-## 版本与产品方向
-- 当前 **1.9.8**（便携 8.65MB / 桌面 84.5MB / 网页版已上线）。1.9.7、1.9.6 详见日志。
-- **产品方向（勿再反复）**：**桌面/便携版 = 纯本地**，数据由用户自管，**不做跨设备自动同步**；跨设备需求**统一收敛到网页版云同步**做深做稳。#001 已拒绝；#005（冲突备份）建议转网页版专用（存 `.conflict` 副本，勿静默丢云端改动）。
-- **2.0 部署（已定 A 方案，测试期不做）**：绑域名 `qchxengine.cn` + Let's Encrypt 真证书；大陆节点需 ICP 备案（非经营性免费 1-15 工作日；前提服务器包月≥3月且剩余≥30天、域名境内注册商实名）。**测试期维持 `https://154.8.178.240` 自签 HTTPS + IP 访问**。
-- 清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：**老大反馈只记录不处理，明说「处理」才动手**（状态待处理/已处理/已拒绝；P0~P3）。
+## 版本与方向
+当前 1.9.8(便携8.65MB/桌面84.5MB/网页版上线)。桌面/便携=纯本地不做跨设备同步；跨设备收敛网页版云同步(#001已拒绝)。
+2.0 测试期 `https://154.8.178.240` 自签HTTPS+IP访问；绑域名 qchxengine.cn+备案 等测试后。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
 
 ## 网页版与服务器
-- 纯静态网页版零后端可跑（idbOps，数据留浏览器）。邀请制。
-- 服务器 `154.8.178.240`（腾讯云轻量 Ubuntu 24.04）。SSH 私钥 `C:\Users/18223\.ssh\yfe_test_server`（600，仓库外），ubuntu + 免密 sudo。站点 `/var/www/yfe`；反馈服务 `/opt/yfe-server/feedback-server.mjs`（www-data，端口 3000，数据 `/var/lib/yfe`）。
-- ⚠️ `feedback-server.mjs` 改后必须 `sudo cp ~/yfe-deploy/feedback-server.mjs /opt/yfe-server/` 再 `sudo systemctl restart yfe-feedback`（漏拷 JS → 路由 404）。nginx 改后 `sudo nginx -s reload`。
-- HTTPS 自签 `/etc/ssl/yfe/yfe.crt+key`（365 天）。安全上下文下 serverStore 走真 AES-GCM(`a1:`)，HTTP 降级 XOR(`x1:`)，旧数据兼容。
-- 云端同步：serverStore 走 StoreOps，`fetch /api/sync`，800ms 防抖，rev 守卫，排除 meta 的 AI 配置；20 个同步码各独立槽位 `sync-<sha256>.json`。入门码 `YFE-D49E-6MPG`。
-- **排障信条**：日志记 `push ok` ≠ 落盘，必须核对槽位文件的 `rev` 与 `mtime`。
+网页版零后端可跑(idbOps)。邀请制。服务器 `154.8.178.240`(腾讯云轻量Ubuntu24.04)；SSH `C:\Users/18223\.ssh\yfe_test_server`(600)，ubuntu+免密sudo。站点 `/var/www/yfe`；反馈服务 `/opt/yfe-server/feedback-server.mjs`(www-data:3000，数据 `/var/lib/yfe`)。
+改 feedback-server.mjs 须 `sudo cp ~/yfe-deploy/feedback-server.mjs /opt/yfe-server/` + `systemctl restart yfe-feedback`；nginx 改后 `nginx -s reload`。
+serverStore走StoreOps `fetch /api/sync`，800ms防抖，rev守卫，排除meta的AI配置；20同步码独立槽位 `sync-<sha256>.json`。入门码 `YFE-D49E-6MPG`、已分发 `YFE-SYNC-N6SV-2YZJ`(田馨)。
+HTTPS 自签 `/etc/ssl/yfe`；安全上下文 AES-GCM(`a1:`) / HTTP降级 XOR(`x1:`)。
 
 ## 服务器巡检
-- 日志：`/var/lib/yfe/feedback.jsonl`（附件 `fb-<id>.bin`）、`access.jsonl`（`act` ∈ enter/reject/pull/push/authfail/conflict/rate-limited）。
-- 每日巡检 automation `automation-1787973377664` → 归档到 `docs/服务器反馈记录.md`、`docs/服务器访问记录.md`。
-- **实操**：① `ssh > 临时jsonl` 后用 node 脚本重建 md，用完删临时目录。② ts 是 UTC，按本地日期分组须 +8h。③ **概览表必须全量重算**（独立 IP 跨批次有重叠，不能累加或 `Math.max`）。④ **第 2 次起脚本要「追加」而非「重建」**。⑤ 开跑前先枚举本期 act 值（`grep -o '"act":"[a-z-]*"' | sort -u`），漏映射会渲染成「未知动作」。⑥ 脚本推测结论**必须人工复核后改写**。
-- 🔑 **`bad` 字段是鉴权故障判官**（服务端 `providedCodeHash`）：`bad=null` ⇒ 请求**根本没带 Authorization**，不是"用户输错码"。排查 authfail 先看 bad 分布。⚠️ 反例：「全 POST 无 GET」不能推断 initPromise 未重置——无码空请求同样是全 POST。
-- ~~**#023（P1）**~~ → **已于 2026-08-31 09:07 修复（`c0275f3`）**：`flushNow()` / `schedulePush()` 均加 `if (!code) return;`。⚠️ 曾在本文件被误标为"待处理"——**引用待办状态前必须先 `git log -S` 核实**，别照抄旧记录。
-- ~~#007/#008~~ 已于 08-30 修复（`7fbdb79` + `ce01b94`）。conflict 呈 push→conflict→push 成功属**正常守卫**，呈 rev 死循环才是 bug。
-
-## 会话窗口分工
-本窗口专做项目本体开发；服务器运维与巡检走 automation / 另开窗口，git 与上下文隔离。
+日志 `/var/lib/yfe/access.jsonl`(act: enter/reject/pull/push/authfail/conflict/rate-limited)、`feedback.jsonl`(附件 fb-<id>.bin)。每日 automation `automation-1787973377664` → `docs/服务器访问记录.md`/`docs/服务器反馈记录.md`。
+实操：ts=UTC按本地+8h分组；概览表全量重算(独立IP重叠不可累加/Math.max)；追加非重建；先枚举 act 值防「未知动作」；脚本结论人工复核。
+`bad` 字段判官：`bad=null`⇒请求无 Authorization(非输错码)；`bad` **有值可反算身份**——本地 sha256(候选码) 取前12位比对即知填了啥(已据此认出「入门码当同步码」)。排障：日志 `push ok`≠落盘，须核槽位 rev/mtime。
+要点段是手写的，时间同样须 +8h(极易抄成 UTC)；概览 08-29 基准行 21/1/8/21/20 可作全量重算的自校验。
+门禁码校验(#027 待处理)：服务端 `INVITE_CODES/SYNC_CODES.has(code)` 与前端 `WebGate.tsx:34` 均无归一化 → 小写码、码内空格一律被拒(已有真实访客中招)。修时两侧同时 `replace(/\s+/g,'').toUpperCase()`；⚠️ 同步槽位名＝`sha256(码)`，归一化若改变字面会让老槽位失联(现有全大写码为幂等，安全)。
