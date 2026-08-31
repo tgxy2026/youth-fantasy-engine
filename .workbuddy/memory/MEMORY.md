@@ -24,7 +24,7 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 - `!tabVisible` 只可用于守卫 return/构造隐页签集合，赋给 showXxx 即 bug。
 - AI抽取+代码判重分层：存在性用 normName/rowFingerprint.norm 确定性比对，AI只抽候选。
 - 角色卡 char-main/char-secondary vs char-npc 字段不同，用 settingLedger.cardFieldPath() 探测勿硬编码。
-- ⚠️ **模块顶层副作用必须加 WEB 守卫**：serverStore 顶层的 pagehide/beforeunload 监听曾泄漏进桌面/便携版（db.ts 是静态 import），导致关窗口白跑 PBKDF2 + file:// 下注定失败的 fetch，且使整模块无法 tree-shake。加 `if (WEB && ...)` 后主包 675KB→658KB。新增任何"仅网页版"的顶层代码同理。
+- ⚠️ **模块顶层副作用必须加「平台守卫 + 功能已启用守卫」双重保险**：①平台守卫——serverStore 顶层的 pagehide/beforeunload 监听曾泄漏进桌面/便携版（db.ts 是静态 import），导致关窗口白跑 PBKDF2 + file:// 下注定失败的 fetch，且整模块无法 tree-shake；加 `if (WEB && ...)` 后主包 675KB→658KB。②**只加平台守卫仍不够**（2026-08-31 #023 血案）：网页版未开同步的访客 `code=''`，同一批监听器照样无条件 `flushNow()` → 发出空 `Bearer` 的 POST → 401，灌满日志、耗尽自家 IP 限流额度，用户真输正确码时反被 429 拦下（症状酷似 #007 但根因不同，极易误诊）。**正解：监听器延迟注册（`armUnloadFlush()`，由 `configureServerStore(c)` 在 `c` 非空时调用 + `unloadHooked` 防重复），且被调用的函数自身也加 `if (!code) return`。** 新增任何顶层副作用同理。
 - ⚠️ **"从源数据重建本地草稿"的 effect 必须防脏覆盖**：依赖数组里含源数据（如 records）时，源数据因"其它项增删改"而变化、而当前项未切换，就会用库里的旧值静默覆盖未保存编辑。重建前先判断 `草稿id===当前id && dirty`，脏则直接 return。：`WEB` 由 `__WEB__` define 决定（仅 vite.config.web.ts 为 true），绝不可写 `!PORTABLE && !DESKTOP` —— dev 在纯浏览器跑时二者同为 false 会被误判成网页版（2026-08-30 血案：dev 被邀请码门禁拦住，且 AI 走 /api/ai 反代失效、云端同步误初始化）。新增任何"仅网页版"逻辑一律以 `WEB` 为准，别再造取反式。
 
 ## 主题系统（2026-08-30）
@@ -61,10 +61,15 @@ main 无远程；每轮审计/封装后 commit，信息写清要点。
 - 反馈落盘 `/var/lib/yfe/feedback.jsonl`(每行JSON: id/ts/ua/ip/text/hasFile)，原始附件 `fb-<id>.bin`。老巴迪可直接读，无需用户下载。
 - **访问/登录流水**：`/var/lib/yfe/access.jsonl`(每行 id/ts/ip/ua/type/ok/act, act∈enter/reject/pull/push/authfail/conflict；sync 含 code=槽位hash 或 rev)。每次邀请校验/同步调用均落盘，IP 经 nginx X-Real-IP 取真实访客。查看渠道 `docs/服务器访问记录.md`（每日概览表+明细）。
 - **老巴迪职责**：每日巡检 automation(automation-1787973377664) ssh 拉 feedback.jsonl+access.jsonl，分别归档到 `docs/服务器反馈记录.md` 与 `docs/服务器访问记录.md`，与老大共判如何处理/谁来了。
-- **巡检实操（2026-08-30 首跑定型）**：日志上百行别肉眼数——`ssh > 临时jsonl` 后写 node 脚本重建整份 md（明细+概览表**累加**+last_id），用完删临时目录。ts 是 UTC，概览按本地日期分组必须 +8h。脚本产出的推测结论**必须人工复核后改写**再落盘。
+- **巡检实操（2026-08-30 首跑定型，08-31 修订）**：日志上百行别肉眼数——`ssh > 临时jsonl` 后写 node 脚本重建整份 md，用完删临时目录。ts 是 UTC，概览按本地日期分组必须 +8h。脚本产出的推测结论**必须人工复核后改写**再落盘。
+  - ⚠️ **概览表必须全量重算**，不能按日累加/`Math.max`——独立 IP 跨批次有重叠。拿全量日志重新分组，并用历史行（如 08-29 的 20）自校验。
+  - ⚠️ **第 2 次起脚本要"追加"而非"重建"**：保留已有「已收录访问」正文再追加新明细（首版 `doc.split('最近巡检：')[0]` 会冲掉历史）；抽取旧正文时别把注释行一起带进来。
+  - ⚠️ **开跑前先枚举本期 act 值**（`grep -o '"act":"[a-z-]*"' | sort -u`），服务端新增动作（如 08-30 的 `rate-limited`）漏映射会渲染成「未知动作」。
 - **同步码白名单**：服务端 `SYNC_CODES`(systemd yfe-feedback.service) 共 20 个，旧码 `YFE-SYNC-7Q3K-2X9M` 仍有效；每码独立槽位 `sync-<sha256>.json`。排查 401 前先 grep 确认白名单，别急着假设"换码致失效"。
-- **访问日志判读指纹**：authfail 全 POST 无 GET ⇒ 前端 `ensureInit` 的 initPromise 未重置(#007)；conflict 呈 push→conflict→push 成功属正常守卫，呈 rev 死循环才是 bug。
-- **#007/#008（2026-08-30 立案，P1 待处理）**：serverStore 同步码输错一次后再输对也开不起来 + 401 与网络异常混同致空白项目/编辑静默丢弃。详见清单。
+- **`bad` 字段是鉴权故障的判官**（服务端 `providedCodeHash`，失败码短哈希）：`bad=null` ⇒ 请求**根本没带 Authorization**，不是"用户输错码"。排查 authfail 第一件事看 bad 分布——08-31 靠它推翻了两处误判（我的 #007、老大的"拿入门码当同步码"）。
+- **访问日志判读指纹**：conflict 呈 push→conflict→push 成功属正常守卫，呈 rev 死循环才是 bug。⚠️ 但「全 POST 无 GET」**不能**推断为 initPromise 未重置——未开同步者的无码空请求同样是全 POST（见 #023），判据必须用 `bad`。
+- **#023（2026-08-31 立案，P1 待处理）**：`flushNow()` 缺"是否已启用同步"守卫，未开同步的访客每次切标签/关页面都发一个无码 POST，白收 401，还可能把自家 IP 的限流额度耗光，导致真输对码时反被 429 拦（症状酷似 #007，极易误诊）。修复：`if (!code) return;`。
+- ~~#007/#008（08-30 立案）~~ → **均已于 2026-08-30 修复上线**（#007 主根因 8/29 `7fbdb79` + 8/30 `ce01b94` 收尾）。我 8/30 据「全 POST 无 GET」推断 #007 未修复是**误判**，8/31 已更正。
 
 ## 会话窗口分工（2026-08-29）
 本窗口专做网页体验版维护（部署/配置/邀请码/HTTPS/反馈通道）；新功能开发另开窗口，git 与上下文隔离。
