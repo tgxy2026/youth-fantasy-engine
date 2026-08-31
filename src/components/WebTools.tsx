@@ -59,10 +59,18 @@ export default function WebTools() {
     }
   }, [])
 
-  const doSync = async (code: string) => {
+  const doSync = async (raw: string) => {
+    // #027：归一化——去空白、升大写，大小写 / 码内空格差异不再被拒。
+    const code = String(raw || '').replace(/\s+/g, '').toUpperCase()
     setBusy(true)
     try {
-      await enableCloudSync(code.trim())
+      // 主动识别：把进门邀请码误填进同步框（本期日志已实锤发生）
+      if (code.startsWith('YFE-D')) {
+        showToast('这看起来是进门用的网页邀请码，不是云同步码（云同步码以 YFE-SYNC 开头）', 'error', 5000)
+        setBusy(false)
+        return
+      }
+      await enableCloudSync(code)
       setSynced(true)
       showToast('云端同步已开启，正在载入云端数据…', 'success')
       // 重载以让 boot 以云端存储状态重新拉取数据
@@ -130,6 +138,7 @@ export default function WebTools() {
         title="开启云端同步"
         label="输入你专属的同步邀请码（YFE-SYNC- 开头，与进门用的邀请码不是同一个）。开启后项目数据将实时保存在云端，可在其它设备登录同一邀请码继续创作。"
         placeholder="同步邀请码"
+        transformUppercase
         confirmText={busy ? '连接中…' : '开启同步'}
         onSubmit={doSync}
         onCancel={() => setSyncOpen(false)}

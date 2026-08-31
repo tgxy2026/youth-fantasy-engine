@@ -16,8 +16,13 @@ const PORT = Number(process.env.FEEDBACK_PORT || 3000)
 const DATA_DIR = process.env.FEEDBACK_DIR || '/var/lib/yfe'
 
 // 邀请码 / 同步码均支持「列表」（逗号或空白分隔），兼容旧的单值环境变量名。
+// #027：归一化——去掉所有空白并升大写，使大小写 / 码内空格差异不影响匹配。
+// 注意：现有码本就是 YFE-XXXX-XXXX 全大写无空格格式，归一化对其幂等，槽位哈希不变。
+function normCode(s) {
+  return String(s || '').replace(/\s+/g, '').toUpperCase()
+}
 function parseList(s) {
-  return new Set(String(s || '').split(/[\s,]+/).map((x) => x.trim()).filter(Boolean))
+  return new Set(String(s || '').split(/[\s,]+/).map((x) => normCode(x)).filter(Boolean))
 }
 const INVITE_CODES = parseList(process.env.INVITE_CODES || process.env.INVITE_CODE)
 const SYNC_CODES = parseList(process.env.SYNC_CODES || process.env.SYNC_CODE)
@@ -69,7 +74,7 @@ function syncAuth(req) {
   const h = req.headers['authorization'] || ''
   const m = h.match(/^Bearer\s+(.+)$/i)
   if (!m) return null
-  const code = m[1].trim()
+  const code = normCode(m[1])
   return SYNC_CODES.has(code) ? code : null
 }
 
@@ -106,7 +111,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ ok: false, error: 'too_many_attempts', retryAfter: limited.retryAfter }))
     }
     const body = await readJson(req)
-    const code = body && typeof body.code === 'string' ? body.code : ''
+    const code = body && typeof body.code === 'string' ? normCode(body.code) : ''
     if (INVITE_CODES.has(code)) {
       rateReset(req, 'invite')
       await logAccess(req, { type: 'invite', ok: true, act: 'enter', code })

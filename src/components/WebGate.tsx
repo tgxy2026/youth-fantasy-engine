@@ -31,7 +31,7 @@ export default function WebGate() {
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
-    const v = code.trim()
+    const v = code.trim().replace(/\s+/g, '').toUpperCase()
     if (!v) {
       showToast('请输入邀请码', 'error')
       return
@@ -91,6 +91,7 @@ export default function WebGate() {
         onKeyDown={(e) => e.key === 'Enter' && submit()}
         placeholder="请输入邀请码"
         autoFocus
+        style={{ textTransform: 'uppercase' }}
         className="w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 text-ink-100 outline-none focus:border-amber"
       />
       <Button onClick={submit}
