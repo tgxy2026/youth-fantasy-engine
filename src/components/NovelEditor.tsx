@@ -1253,17 +1253,17 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               >
                 <AlignCenter size={11} /> 打字机
               </Button>
-              <div className="flex items-center gap-0.5 px-1 rounded-md border border-ink-700 bg-ink-800/60">
+              <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md border border-ink-700 bg-ink-800/60">
                 <Button variant="bare"
                   onClick={() => changeFontSize(-1)}
-                  className="w-5 h-5 flex items-center justify-center rounded text-ink-400 hover:text-amber transition-colors"
+                  className="w-5 flex items-center justify-center rounded text-ink-400 hover:text-amber transition-colors"
                   title="减小字号">
                   −
                 </Button>
                 <span className="w-6 text-center text-ink-300 tabular-nums text-[11px]">{fontSize}</span>
                 <Button variant="bare"
                   onClick={() => changeFontSize(1)}
-                  className="w-5 h-5 flex items-center justify-center rounded text-ink-400 hover:text-amber transition-colors"
+                  className="w-5 flex items-center justify-center rounded text-ink-400 hover:text-amber transition-colors"
                   title="增大字号">
                   +
                 </Button>
