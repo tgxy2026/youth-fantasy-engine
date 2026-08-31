@@ -19,19 +19,22 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children?: ReactNode
 }
 
-// size 基线（高度 / 圆角 / 内边距 / 字号 / 字重）—— 直接字面量出现，Tailwind 可扫描
+// size 基线（高度 / 内边距 / 字号）—— 直接字面量出现，Tailwind 可扫描
+// ⚠️ 这里**不要写 rounded-***：圆角一律由 shape 决定（见下方 shapeCls）。
+// 否则「SIZE 的 rounded-lg」与「shape 的 rounded-full」会同时出现在 class 里，
+// 谁生效取决于 Tailwind 的生成顺序，结果不可控 —— 实测 pill 形会被 rounded-lg 顶掉。
 const SIZE: Record<Size, string> = {
-  xs: 'h-6 px-2 text-[11px] rounded-md',
-  sm: 'h-8 px-3 text-[12px] rounded-lg',
-  md: 'h-9 px-4 text-[13px] rounded-lg',
-  lg: 'h-10 px-5 text-[14px] rounded-lg',
+  xs: 'h-6 px-2 text-[11px]',
+  sm: 'h-8 px-3 text-[12px]',
+  md: 'h-9 px-4 text-[13px]',
+  lg: 'h-10 px-5 text-[14px]',
 }
 // 图标专用：去掉横向 padding，定宽定高
 const ICON_SIZE: Record<Size, string> = {
-  xs: 'h-6 w-6 rounded-md',
-  sm: 'h-8 w-8 rounded-lg',
-  md: 'h-9 w-9 rounded-lg',
-  lg: 'h-10 w-10 rounded-lg',
+  xs: 'h-6 w-6',
+  sm: 'h-8 w-8',
+  md: 'h-9 w-9',
+  lg: 'h-10 w-10',
 }
 const ROUND_ICON_SIZE: Record<Size, string> = {
   xs: 'h-6 w-6 rounded-full',
@@ -121,7 +124,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   else if (variant === 'bare') sizeCls = ''
   else sizeCls = SIZE[sizeKey]
 
-  const shapeCls = shape === 'pill' ? 'rounded-full' : ''
+  // 圆角唯一真源：矩形 = rounded-lg，胶囊 / 圆形 = rounded-full
+  // （尺寸表里已不含 rounded-*，避免两处打架、结果取决于 Tailwind 生成顺序）
+  const shapeCls = shape === 'rect' ? 'rounded-lg' : 'rounded-full'
   const vCls = variantClass(variant, solid, selected)
 
   const cls = [

@@ -96,16 +96,21 @@ export default function InspireTools() {
             </HelpPopover>
           </h2>
           <div className="flex flex-wrap items-center gap-2 mb-4">
+            {/* 分类（人名/门派…）与风格（仙侠/古风…）为两级筛选：
+                尺寸统一为 h-8 / px-3 / text-[12px]，靠「形状 + 选中色」区分层级——
+                分类 = 胶囊形 + 琥珀选中（主层级），风格 = 圆角矩形 + 天蓝选中（次层级）。 */}
             <div className="flex gap-1 flex-wrap">
               {NAME_TYPES.map(t => (
                 <Button variant="toggle" selected={nameType === t}
                   key={t}
+                  size="sm" shape="pill"
                   onClick={() => {
                     setNameType(t)
                     setStyle(DEFAULT_STYLE[t])
                     setNames([])
                   }}
-                  className="px-3 py-1 rounded-full text-[12px] hover:text-ink-100"
+                  className="hover:text-ink-100"
+                  title={`取名类型：${t}`}
                 >{t}</Button>
               ))}
             </div>
@@ -114,7 +119,8 @@ export default function InspireTools() {
                 <Button variant="bare"
                   key={s}
                   onClick={() => setStyle(s)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${style === s ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30' : 'bg-ink-800 text-ink-400 border border-ink-700'}`}
+                  className={`h-8 px-3 text-[12px] rounded-lg transition-colors ${style === s ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30' : 'bg-ink-800 text-ink-400 border border-ink-700'}`}
+                  title={`题材风格：${s}`}
                 >{s}</Button>
               ))}
             </div>
