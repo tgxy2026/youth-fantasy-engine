@@ -284,14 +284,18 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           ) : (
             <div className="flex items-end gap-2 h-32">
               {days.map(d => (
-                <div key={d.date} className="flex-1 flex flex-col items-center gap-1.5 group">
-                  {/* 字数常显：原先 opacity-0 要悬停才出现，浅色主题下柱子对比度低时会误以为"没数据" */}
+                // 整列撑满 h-32：列本身若靠内容撑高，柱子的百分比高度就没有可参照的确定高度 → 塌成 0
+                <div key={d.date} className="flex-1 h-full flex flex-col items-center gap-1.5 group">
+                  {/* 字数常显：原先 opacity-0 要悬停才出现，配合柱子塌陷会被误判为"没数据" */}
                   <span className="text-[9px] text-ink-400 group-hover:text-amber transition-colors">{d.words}</span>
-                  {/* 柱子用实心 amber：amber/40 在浅色主题（护眼/羊皮卷）下对比度仅约 1.5:1，几乎与背景融为一体 */}
-                  <div
-                    className="w-full rounded-t bg-amber group-hover:bg-amber-soft transition-all duration-300"
-                    style={{ height: `${Math.max((d.words / maxDay) * 100, 2)}%` }}
-                  />
+                  {/* 图表区撑满剩余高度，给柱子的百分比高度一个确定的参照父级 */}
+                  <div className="w-full flex-1 flex items-end">
+                    {/* 柱子用实心 amber：amber/40 在浅色主题（护眼/羊皮卷）下对比度仅约 1.5:1 */}
+                    <div
+                      className="w-full rounded-t bg-amber group-hover:bg-amber-soft transition-all duration-300"
+                      style={{ height: `${Math.max((d.words / maxDay) * 100, 2)}%` }}
+                    />
+                  </div>
                   <span className="text-[9px] text-ink-500">{d.date.slice(5)}</span>
                 </div>
               ))}
