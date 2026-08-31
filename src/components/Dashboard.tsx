@@ -131,11 +131,13 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       heatDays.push({ date: key, words: statMap.get(key) ?? 0 })
     }
   }
+  // 色阶最低档从 /20 提到 /40：浅色主题（护眼/羊皮卷）下 amber 低透明度与近白背景对比度不足 1.6:1，
+  // 有产出的格子看起来和空格子一样，热力图等于失效。四档仍保留递进关系。
   const heatColor = (w: number) =>
     w === 0 ? 'bg-ink-800'
-    : w < 500 ? 'bg-amber/20'
-    : w < 1500 ? 'bg-amber/40'
-    : w < 3000 ? 'bg-amber/60'
+    : w < 500 ? 'bg-amber/40'
+    : w < 1500 ? 'bg-amber/60'
+    : w < 3000 ? 'bg-amber/80'
     : 'bg-amber'
 
   const statCards = [
@@ -283,9 +285,11 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             <div className="flex items-end gap-2 h-32">
               {days.map(d => (
                 <div key={d.date} className="flex-1 flex flex-col items-center gap-1.5 group">
-                  <span className="text-[9px] text-ink-400 opacity-0 group-hover:opacity-100 transition-opacity">{d.words}</span>
+                  {/* 字数常显：原先 opacity-0 要悬停才出现，浅色主题下柱子对比度低时会误以为"没数据" */}
+                  <span className="text-[9px] text-ink-400 group-hover:text-amber transition-colors">{d.words}</span>
+                  {/* 柱子用实心 amber：amber/40 在浅色主题（护眼/羊皮卷）下对比度仅约 1.5:1，几乎与背景融为一体 */}
                   <div
-                    className="w-full rounded-t bg-amber/40 group-hover:bg-amber/70 transition-all duration-300"
+                    className="w-full rounded-t bg-amber group-hover:bg-amber-soft transition-all duration-300"
                     style={{ height: `${Math.max((d.words / maxDay) * 100, 2)}%` }}
                   />
                   <span className="text-[9px] text-ink-500">{d.date.slice(5)}</span>
