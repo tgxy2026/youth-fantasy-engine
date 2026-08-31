@@ -1247,23 +1247,23 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </Button>
               <Button variant="bare"
                 onClick={() => { const v = !typewriter; setTypewriter(v); localStorage.setItem('novel-typewriter', v ? '1' : '0') }}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors
+                className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors whitespace-nowrap
                   ${typewriter ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
                 title="打字机模式：输入行自动保持在屏幕中部"
               >
                 <AlignCenter size={11} /> 打字机
               </Button>
-              <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md border border-ink-700 bg-ink-800/60">
-                <Button variant="icon-amber"
+              <div className="flex items-center gap-0.5 px-1 rounded-md border border-ink-700 bg-ink-800/60">
+                <Button variant="bare"
                   onClick={() => changeFontSize(-1)}
-                  className="w-5 h-5 flex items-center justify-center"
+                  className="w-5 h-5 flex items-center justify-center rounded text-ink-400 hover:text-amber transition-colors"
                   title="减小字号">
                   −
                 </Button>
                 <span className="w-6 text-center text-ink-300 tabular-nums text-[11px]">{fontSize}</span>
-                <Button variant="icon-amber"
+                <Button variant="bare"
                   onClick={() => changeFontSize(1)}
-                  className="w-5 h-5 flex items-center justify-center"
+                  className="w-5 h-5 flex items-center justify-center rounded text-ink-400 hover:text-amber transition-colors"
                   title="增大字号">
                   +
                 </Button>
