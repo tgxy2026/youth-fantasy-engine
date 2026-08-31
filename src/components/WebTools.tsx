@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { Cloud, LogOut } from 'lucide-react'
 import PromptModal from './PromptModal'
 import HelpPopover from './HelpPopover'
-import { showToast } from './dialogs'
+import { showToast, confirmDialog } from './dialogs'
 import { enableCloudSync } from '../lib/db'
-import { getSyncStatus, type SyncStatus, CloudAuthError, isCloudAuthFailed } from '../lib/serverStore'
+import { getSyncStatus, type SyncStatus, CloudAuthError, isCloudAuthFailed, getCloudBackupMeta, restoreFromCloudBackup } from '../lib/serverStore'
 import { Button } from './Button'
 
 // 同步状态徽标（#008）：推送失败必须可见，不能让用户零感知地"写了一整晚白工"
@@ -35,6 +35,7 @@ export default function WebTools() {
     }
   })
   const [status, setStatus] = useState<SyncStatus>(getSyncStatus())
+  const [backupDay, setBackupDay] = useState<string | null>(null)
 
   useEffect(() => {
     const onStatus = () => setStatus(getSyncStatus())
@@ -52,12 +53,41 @@ export default function WebTools() {
     window.addEventListener('yfe:sync-status', onStatus)
     window.addEventListener('yfe:cloud-auth-failed', onAuthFailed)
     window.addEventListener('yfe:sync-conflict', onConflict)
+    // 轮询云端备份日期（拉取成功后才有值，init 为异步）
+    const tick = () => setBackupDay(getCloudBackupMeta()?.day ?? null)
+    tick()
+    const id = setInterval(tick, 3000)
     return () => {
       window.removeEventListener('yfe:sync-status', onStatus)
       window.removeEventListener('yfe:cloud-auth-failed', onAuthFailed)
       window.removeEventListener('yfe:sync-conflict', onConflict)
+      clearInterval(id)
     }
   }, [])
+
+  const onRestore = async () => {
+    const ok = await confirmDialog({
+      title: '从云端备份恢复',
+      message: `将把当前数据回滚到云端每日备份（${backupDay || '未知日期'}）并重新同步。\n此操作会丢弃该备份时间点之后的本地改动，确定继续吗？`,
+      confirmText: '恢复',
+      danger: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const done = await restoreFromCloudBackup()
+      if (done) {
+        showToast('已从云端备份恢复，正在重新同步…', 'success')
+        setTimeout(() => location.reload(), 600)
+      } else {
+        showToast('暂无可用的云端备份', 'error')
+        setBusy(false)
+      }
+    } catch {
+      showToast('恢复失败，请稍后重试', 'error')
+      setBusy(false)
+    }
+  }
 
   const doSync = async (raw: string) => {
     // #027：归一化——去空白、升大写，大小写 / 码内空格差异不再被拒。
@@ -114,9 +144,22 @@ export default function WebTools() {
           >
             {`云端同步把项目数据实时保存到云端，可在其它设备登录同一同步邀请码继续创作。
 断网或服务不可达时会自动回退本地保存、编辑不丢；恢复后自动重新同步。
+云端每日保留一份滚动备份（最新一份、按天滚动）：若当天手滑推了坏数据，可点下方「从云端备份恢复」回退到当天/昨日的检查点。
 注意：同步邀请码（YFE-SYNC- 开头）与进门的网页邀请码不是同一个。`}
           </HelpPopover>
         </div>
+        {synced && backupDay && (
+          <Button
+            variant="bare"
+            onClick={onRestore}
+            disabled={busy}
+            title={`云端每日备份（${backupDay}）· 点击回滚到该检查点`}
+            className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-ink-900/90 px-3 py-1.5 text-xs text-emerald-300 shadow-lg backdrop-blur hover:bg-ink-800 disabled:opacity-60"
+          >
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            从云端备份恢复（{backupDay}）
+          </Button>
+        )}
         <Button variant="bare"
           onClick={() => {
             try {

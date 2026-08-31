@@ -42,6 +42,39 @@ let pushing = false
 let pendingPush = false
 let initPromise: Promise<void> | null = null
 
+// #026/A+：云端每日滚动备份（最新一份，按自然日滚动）。
+// 它是一份「活数据快照」副本，随同步载荷一并加密上传；本地 backups 仍只在设备端、永不进云。
+// 设计：当天仅首推写入备份（避免同日后续推送的坏数据覆盖掉当天的检查点），跨天后滚动刷新。
+export type CloudBackupMeta = { day: string; ts: number }
+type CloudBackup = { day: string; ts: number; data: Record<string, any[]> }
+let cloudBackup: CloudBackup | null = null
+
+function todayKey(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+// 仅含活数据（排除本地专属的 backups 与敏感 meta），用于上传载荷与云端备份，二者保持一致。
+// 注意：用 Object.keys 遍历而非 SYNC_STORES，确保任何被写入 cache 的活 store 都不漏传。
+function liveStores(src: Record<string, any[]>): Record<string, any[]> {
+  const out: Record<string, any[]> = {}
+  for (const s of Object.keys(src || {})) {
+    if (s === 'backups') continue
+    out[s] = (src[s] || []).slice()
+  }
+  if (out.meta) out.meta = out.meta.filter((r: any) => !isExcludedMetaKey(r.key))
+  return out
+}
+
+// 从解密后的载荷中剥离 __cloudBackup，存入独立变量（避免它混进 cache 被当成 store 合并）
+function adoptCloudBackup(obj: any) {
+  if (obj && obj.__cloudBackup) {
+    cloudBackup = obj.__cloudBackup
+    delete obj.__cloudBackup
+  }
+}
+
 // #007/#008：必须区分「同步码无效/已失效(401)」与「网络异常」。
 // 二者旧代码都落到 cache={}, rev=0，于是鉴权失效时用户看到的是空白项目列表
 // （本地 IndexedDB 被空缓存遮蔽而非丢失），且之后每次编辑都静默 401 丢弃。
@@ -252,6 +285,7 @@ async function ensureInit() {
           rev = Number(data?.rev) || 0
           if (data && typeof data.enc === 'string' && data.enc) {
             cache = await decryptObj(data.enc)
+            adoptCloudBackup(cache)
           } else {
             cache = {}
           }
@@ -283,6 +317,24 @@ export async function pullSnapshot(): Promise<{ rev: number; stores: Record<stri
   await ensureInit()
   if (authFailed) throw new CloudAuthError()
   return { rev, stores: cache }
+}
+
+/** 云端每日备份元信息（用于 UI 展示「最近一份备份日期」）。无则返回 null。 */
+export function getCloudBackupMeta(): CloudBackupMeta | null {
+  return cloudBackup ? { day: cloudBackup.day, ts: cloudBackup.ts } : null
+}
+
+/**
+ * 从云端每日备份恢复：把当前内存数据回滚到该检查点，并重新上传同步。
+ * 用于「今日手滑推了坏数据」时回退到当天/昨日的安全快照。
+ * 注意：这会丢弃自备份时间点之后的本地改动（回滚语义），调用方须先确认。
+ */
+export async function restoreFromCloudBackup(): Promise<boolean> {
+  if (!cloudBackup) return false
+  cache = liveStores(cloudBackup.data)
+  baseCache = snapshotOf(cache)
+  await pushNow(rev)
+  return true
 }
 
 /** 用本地数据播种（仅当服务端为空时调用；getAll 取自当前默认本地存储） */
@@ -437,9 +489,14 @@ const MAX_CONFLICT_RETRY = 5
 // 推送（带 rev 守卫）。冲突(409)时：合并云端版本（本地优先）后用最新 rev 重试，
 // 绝不把本地未保存改动直接丢弃——这是修复「保存的数据被系统自动刷新掉」的核心。
 async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean }> {
-  // #026：云端同步排除 backups store（本地防误删保险，不应占用云同步体积）
-  const uploadCache = { ...cache }
-  delete uploadCache.backups
+  // #026/A+：上传载荷只含活数据（排除本地 backups 与敏感 meta）；
+  // 同时附带「每日滚动备份」——云端保留最新一份、按自然日滚动，当天仅首推写入，
+  // 避免同日后续推送的坏数据覆盖掉当天的检查点。本地 IDB 的 backups 仍永不进云。
+  const uploadCache: Record<string, any> = liveStores(cache)
+  if (!cloudBackup || cloudBackup.day !== todayKey()) {
+    cloudBackup = { day: todayKey(), ts: Date.now(), data: liveStores(cache) }
+  }
+  uploadCache.__cloudBackup = cloudBackup
   const enc = await encryptObj(uploadCache)
   let r: Response
   try {
@@ -459,7 +516,10 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
     const serverRev = data.rev ?? baseRev
     let serverCache: Record<string, any[]> | null = null
     if (data.enc) {
-      try { serverCache = await decryptObj(data.enc) } catch { serverCache = null }
+      try {
+        serverCache = await decryptObj(data.enc)
+        adoptCloudBackup(serverCache)
+      } catch { serverCache = null }
     }
     // 关键：本地改动优先合并，绝不直接用云端版本覆盖掉未保存的本地编辑
     if (serverCache) cache = mergeCaches(baseCache, serverCache, cache)
