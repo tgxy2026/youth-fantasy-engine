@@ -29,6 +29,7 @@
 - `WEB` 由 `__WEB__` define 决定（仅 vite.config.web.ts 为 true），禁写 `!PORTABLE && !DESKTOP`。
 - 顶层副作用双守卫：①平台 `if(WEB&&...)`；②功能 `if(!code)return`（#023 已修 c0275f3：armUnloadFlush 延迟注册 + flushNow/schedulePush 加 `if(!code)return`）。
 - 「从源数据重建草稿」effect 防脏覆盖：重建前 `草稿id===当前id && dirty` 才 return。
+- ⚠️ **UI 模块渲染门控会误杀整模块（tree-shake 陷阱）**：若某组件（如 WebTools）只在某个平台门控分支（如 `{WEB && <X/>}`）里被引用，其余平台构建（WEB=false）会因为「整模块只有一个死代码引用」而**把该组件连同其内部所有 UI（含门控外的字符串）一起 tree-shake 掉**——与组件内部的 `&&` 门控无关。正确做法：渲染门控必须是「所有需要该模块的平台之并集」（如 `{WEB || CLOUD_FILE_SYNC && ...}`）。曾因此导致桌面/便携版「云盘文件同步」整段消失（2026-09-01 已修 App.tsx）。
 
 ## 种子数据
 - 卡片 data 键=`模块名::字段名`、表格行键=schema 列名，写错不报错整组静默空白。
@@ -48,6 +49,7 @@
 
 ## 版本与方向
 当前 1.9.9(便携8.40MB/桌面84.6MB/网页版上线)。跨设备同步新方向(2026-09-01 晚)：因服务器不永久维护，确定走「云盘中转同步(方案1)」——复用 serverStore 加密载荷(`a1:`AES-GCM)+rev合并，传输层由 HTTP 换成云盘同步目录里的 `.yfe` 文件；手动导入导出老大确认已完成(不再列入方案)。WPS 云盘经核实支持任意文件夹实时双向同步可接入(免费档限1文件夹/1GB/单文件≤10MB、路径不固定须用户自选目录，不可硬编码)。复用时须沿用 #030 的「空推拒绝 + 原子写.bak」防护。
+桌面端接入约束(2026-09-01 晚确认)：Electron `main.cjs` 为 `contextIsolation:true`+`nodeIntegration:false`，渲染进程**不能** `require('fs')`；`FileTransport` 的 node 分支(`globalThis.require('fs')`)在桌面端会静默失效。桌面端要做云盘中转，必须：①`preload.cjs`+`main.cjs` 加 `sync:read`/`sync:write` IPC 桥(主进程已有 fs/fsp/dialog 现成可用)；②`FileTransport` 检测 Electron 走 `window.electronStore` IPC 而非 require；③解除 serverStore 的 WEB 门控让桌面启用；④桌面 UI 加同步设置入口(同步码+选目录，无进门邀请码)。即**桌面端才是真·零服务器方案**(无需托管/无进门码/FSA沙箱限制全无)，但需改 Electron 主/preload + 重新封装。网页版进门(托管+`/api/invite/check`)仍依赖我们的服务器，所以纯网页版做不到完全不养服务器——云盘中转只去中心化了「数据同步」，没去中心化「进门」。
 2.0 测试期 `https://154.8.178.240` 自签HTTPS+IP访问；绑域名 qchxengine.cn+备案 等测试后。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
 
 ## 网页版与服务器

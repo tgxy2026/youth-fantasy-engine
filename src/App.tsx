@@ -19,6 +19,7 @@ import { WEB } from './lib/env'
 import WebGate, { checkInvited } from './components/WebGate'
 import FeedbackButton from './components/FeedbackButton'
 import WebTools from './components/WebTools'
+import { CLOUD_FILE_SYNC } from './lib/desktopCloudSync'
 import PrivacyNotice from './components/PrivacyNotice'
 import LocalDataNotice from './components/LocalDataNotice'
 import FullTextSearch from './components/FullTextSearch'
@@ -239,11 +240,11 @@ export default function App() {
         <ProjectHub onOpen={openProject} />
         {/* 桌面版在项目列表页（无侧栏）也需要展示数据文件保存状态徽标 */}
         {DESKTOP && <DesktopBadge />}
-        {/* 网页体验版工具条：反馈 / 云端同步 / 退出体验，统一收在项目管理主页左下角，
-            避免浮层压住侧栏主题切换与编辑器字号调整等控件 */}
-        {WEB && (
+        {/* 云同步工具条：网页版用 serverStore（服务器），桌面/便携版用独立 CLOUD_FILE_SYNC（云盘文件，无需服务器）。
+            二者门控互斥、互不耦合；FeedbackButton 仅网页版需要，桌面/便携不展示。 */}
+        {(WEB || CLOUD_FILE_SYNC) && (
           <div className="fixed bottom-4 left-4 z-40 flex flex-col items-start gap-2">
-            <FeedbackButton />
+            {WEB && <FeedbackButton />}
             <WebTools />
           </div>
         )}
