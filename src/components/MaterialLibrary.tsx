@@ -13,27 +13,10 @@ import {
 } from '../lib/materialRef'
 
 export default function MaterialLibrary() {
-  // 两级手风琴：分类可独立展开/收起，板块可独立展开/收起；不再用按钮切换页签
-  const [openCats, setOpenCats] = useState<Set<string>>(
-    () => new Set([MATERIAL_CATEGORIES[0].id]),
-  )
-  const [openBlocks, setOpenBlocks] = useState<Set<string>>(
-    () => new Set([`${MATERIAL_CATEGORIES[0].id}::${MATERIAL_CATEGORIES[0].blocks[0].id}`]),
-  )
-
-  const toggleCat = (id: string) =>
-    setOpenCats(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-
-  const toggleBlock = (key: string) =>
-    setOpenBlocks(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
+  const [catId, setCatId] = useState(MATERIAL_CATEGORIES[0].id)
+  const cat = MATERIAL_CATEGORIES.find(c => c.id === catId) ?? MATERIAL_CATEGORIES[0]
+  const [blockId, setBlockId] = useState(cat.blocks[0].id)
+  const activeBlock = cat.blocks.find(b => b.id === blockId) ?? cat.blocks[0]
 
   return (
     <div className="w-full page-enter">
@@ -43,59 +26,43 @@ export default function MaterialLibrary() {
           <span className="text-[12px] text-ink-400">内置写作参考素材库 · 只读</span>
         </div>
         <p className="mt-1 text-[13px] text-ink-300">
-          收录可直接借鉴的写作参考（人物设计 / 故事结构）；内容仅供阅读，不支持编辑。点击分类或板块标题可展开/收起。
+          收录可直接借鉴的写作参考（人物设计 / 故事结构）；内容仅供阅读，不支持编辑。
         </p>
       </header>
 
-      {/* 分类手风琴：点击标题原地展开其下板块，不再切换页签 */}
-      <div className="space-y-3">
-        {MATERIAL_CATEGORIES.map(c => {
-          const catOpen = openCats.has(c.id)
-          return (
-            <div key={c.id} className="bg-ink-850 border border-ink-700 rounded-xl overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleCat(c.id)}
-                className="w-full text-left px-4 py-3 flex items-center justify-between gap-2 hover:bg-ink-800/50 transition-colors"
-              >
-                <span className="text-[14px] font-semibold text-ink-50">{c.name}</span>
-                <ChevronDown
-                  size={16}
-                  className={`shrink-0 text-ink-400 transition-transform duration-200 ${catOpen ? '' : '-rotate-90'}`}
-                />
-              </button>
+      {/* 分类子页签：点开素材资料后出现，类似灵感工具下的子页签（灵感启发 / 检查工具 / 素材资料） */}
+      <div className="flex gap-1 flex-wrap mb-3">
+        {MATERIAL_CATEGORIES.map(c => (
+          <Button
+            key={c.id}
+            variant="toggle"
+            shape="pill"
+            size="sm"
+            selected={c.id === catId}
+            onClick={() => { setCatId(c.id); setBlockId(c.blocks[0].id) }}
+          >
+            {c.name}
+          </Button>
+        ))}
+      </div>
 
-              {catOpen && (
-                <div className="px-3 pb-3 space-y-2">
-                  {c.blocks.map(b => {
-                    const key = `${c.id}::${b.id}`
-                    const bOpen = openBlocks.has(key)
-                    return (
-                      <div key={b.id} className="bg-ink-900 border border-ink-700 rounded-lg overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => toggleBlock(key)}
-                          className="w-full text-left px-3.5 py-2.5 flex items-center justify-between gap-2 hover:bg-ink-800/40 transition-colors"
-                        >
-                          <span className="text-[13px] font-medium text-ink-100">{b.title}</span>
-                          <ChevronDown
-                            size={14}
-                            className={`shrink-0 text-ink-500 transition-transform duration-200 ${bOpen ? '' : '-rotate-90'}`}
-                          />
-                        </button>
-                        {bOpen && (
-                          <div className="px-3.5 pb-3.5 pt-1 border-t border-ink-700">
-                            <BlockView block={b} />
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )
-        })}
+      {/* 板块页签（分类内） */}
+      <div className="flex gap-1 flex-wrap mb-4">
+        {cat.blocks.map(b => (
+          <Button
+            key={b.id}
+            variant="toggle"
+            size="sm"
+            selected={b.id === activeBlock.id}
+            onClick={() => setBlockId(b.id)}
+          >
+            {b.title}
+          </Button>
+        ))}
+      </div>
+
+      <div className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+        <BlockView block={activeBlock} />
       </div>
     </div>
   )
