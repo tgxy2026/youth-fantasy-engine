@@ -23,6 +23,7 @@
 - 本环境无真回收站 → 移到 `G:\AI软件\.cleanup-quarantine\<日期>\`（可逆不删）；bash mv EPERM 换 PowerShell Move-Item。
 
 ## 架构红线
+- **无 i18n 基建**（package.json 零 i18n 依赖，全中文硬编码）。若做本地化，三大前置坑：①**schema 列名即数据存储键**（`c('章节号')` 兼显示标签与表格行键，卡片键=`模块名::字段名`）→ 翻译会毁存量数据，必须先 key/label 分离+迁移；②约 **380 处中文参与逻辑判断**（`=== '大纲规划'` 导航组 id、`!== '已退场'`、`=== '严重'` 等）；③用户自定义选项(`resolveOptions`/`getCustomOptions`)不可译。中文文案基线：9108 条/13 万字，其中 UI 组件 1452 + 逻辑层 470 = 1922 条为可直译；内容数据(seedData/nameGen/typoWords) 5535 条不该译。评估全量 20-30 人日、仅 UI 外壳 12-18 人日。
 - 按卷建表 `chapter-vol-<vid>`；聚合 `db.getAllChapterLedgerRows()`；章节号全局连续 `migrateChapterNumbering`。顺序以 `chapterSeq.ts` 为唯一权威（派生不落库）。
 - 下拉选项用 `resolveOptions(col.options, getCustomOptions())`，禁直接 `col.options`。`!tabVisible` 只守卫 return/隐页签，赋 `showXxx` 即 bug。
 - `WEB` 由 `__WEB__` define 决定（仅 vite.config.web.ts 为 true），禁写 `!PORTABLE && !DESKTOP`。

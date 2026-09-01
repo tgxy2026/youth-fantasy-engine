@@ -35,6 +35,7 @@ import workbenchBg from './assets/workbench-bg.png'
 const GuidePage = lazy(() => import('./components/GuidePage'))
 const InspireTools = lazy(() => import('./components/InspireTools'))
 const CheckTools = lazy(() => import('./components/CheckTools'))
+const MaterialLibrary = lazy(() => import('./components/MaterialLibrary'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -266,6 +267,9 @@ export default function App() {
     }
     if (activeTab === 'check-tools') {
       return <CheckTools />
+    }
+    if (activeTab === 'material-library') {
+      return <MaterialLibrary />
     }
     if (activeTab === 'guide') {
       return <GuidePage onNavigate={navigate} ctx={visCtx} />

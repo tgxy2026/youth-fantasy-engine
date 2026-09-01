@@ -48,6 +48,7 @@ export type TabType =
   | 'canvas'       // 画布型（情节推演画布，结构化卡片 + 连线）
   | 'inspire'      // 灵感启发（随机取名生成器 + AI 辅助规划）
   | 'check'        // 检查工具（敏感词检测 + AI 一致性深度自查 + 数据体检）
+  | 'material'     // 素材资料（内置只读写作参考库）
 
 /** 页签定义 */
 export interface TabDef {

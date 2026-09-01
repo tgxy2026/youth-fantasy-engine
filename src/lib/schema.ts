@@ -825,6 +825,10 @@ export const TABS: TabDef[] = [
     id: 'check-tools', name: '检查工具', group: '灵感工具', type: 'check',
     description: '敏感词检测、AI 一致性深度自查与数据体检。',
   },
+  {
+    id: 'material-library', name: '素材资料', group: '灵感工具', type: 'material',
+    description: '内置只读的写作参考素材库（人物设计等），供阅读与借鉴，不支持编辑。',
+  },
 ]
 
 // 编辑器页签（特殊，由 App 直接路由）
@@ -882,6 +886,7 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   dashboard: 'locked',
   guide: 'locked',
   'inspire-tools': 'locked',
+  'material-library': 'locked',
   'check-tools': 'locked',
   // 默认勾选（可取消）
   about: 'default',
