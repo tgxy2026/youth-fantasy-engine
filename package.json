@@ -13,7 +13,8 @@
     "build:portable": "node scripts/make-portable.mjs",
     "build:desktop": "node scripts/build-desktop.mjs",
     "electron:dev": "vite --port 5199 & ELECTRON_START_URL=http://localhost:5199 electron .",
-    "preview": "vite preview --port 5199"
+    "preview": "vite preview --port 5199",
+    "cleanup": "node scripts/cleanup-residual.mjs"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
