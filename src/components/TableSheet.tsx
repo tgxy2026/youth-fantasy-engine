@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo, type MouseEvent as ReactMouseEvent } from 'react'
 import type { TabDef, TableRow, CalendarDef } from '../lib/types'
-import { getTableRows, saveTableRow, deleteTableRow, getCurrentProjectId, getSetting, setSetting, getCustomOptions, type CustomOptionPayload } from '../lib/db'
+import { getTableRows, saveTableRow, deleteTableRow, getCurrentProjectId, getSetting, setSetting, getCustomOptions, getAllChapterLedgerRows, type CustomOptionPayload } from '../lib/db'
 import { SABC_LABELS, isVolumeLedgerTab, type VisCtx } from '../lib/schema'
 import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
 import { uid } from '../lib/id'
@@ -164,6 +164,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const isGraphCapable = tab.id === 'relations' || tab.id === 'faction-rels'
   // 伏笔追踪提供"剧情线"视图（聚合伏笔 + 爽点 + 时间脉络，v1.6.1）
   const isStorylineCapable = tab.id === 'foreshadow'
+  // 章节总表：只读汇总视图（聚合所有卷台账），不可直接编辑，编辑请到各卷子表
+  const isMaster = tab.id === 'chapter-master'
   const [viewMode, setViewMode] = useState<'table' | 'timeline' | 'graph' | 'storyline'>('table')
   // 历法配置（项目级多历法数值体系），时间轴按数值判定跨历法先后顺序
   const [calendars, setCalendars] = useState<CalendarDef[]>([{ name: '灵历', value: 0 }])
@@ -279,7 +281,10 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       }
     }
     tabIdRef.current = tab.id
-    getTableRows(tab.id).then(r => {
+    const loadRows = tab.id === 'chapter-master'
+      ? getAllChapterLedgerRows()
+      : getTableRows(tab.id)
+    loadRows.then(r => {
       setRows(r)
       setLoaded(true)
     })
@@ -720,10 +725,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           <span className="text-[10px] text-ink-500">
             {tab.id === 'relations'
               ? `共 ${rows.length} 条关系 · ${relationGroups.filter(g => !g.unnamed).length} 位人物`
-              : tab.columns?.some(c => c.name === '编号' || c.name === '章节号')
-                ? `共 ${filteredRows.length} 行 · 按编号排序`
-                : `共 ${filteredRows.length} 行 · 按编辑时间排序`}
+              : tab.newestFirst
+                ? `共 ${filteredRows.length} 行 · 按创建时间倒序`
+                : tab.columns?.some(c => c.name === '编号' || c.name === '章节号')
+                  ? `共 ${filteredRows.length} 行 · 按编号排序`
+                  : `共 ${filteredRows.length} 行 · 按编辑时间排序`}
           </span>
+          {!isMaster && (
           <Button variant="bare"
             onClick={saveAll}
             disabled={dirtyKeys.length === 0 || saving}
@@ -735,6 +743,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           >
             <Save size={13} /> {saving ? '保存中…' : '保存'}
           </Button>
+          )}
           {/* 多行批量删除按钮（人物关系 / 历史事件支持） */}
           {['relations', 'history'].includes(tab.id) && rows.length > 0 && (
             <Button variant="bare"
@@ -805,10 +814,12 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               </Button>
             </div>
           )}
+          {!isMaster && (
           <Button onClick={addRow} variant="primary" size="md" className="flex items-center text-[13px] shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
           </Button>
-          {aiCap !== 'none' && (
+          )}
+          {aiCap !== 'none' && !isMaster && (
             <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : '新建一行，并提供粗略设定由 AI 补全（不影响已有行 / 其他表）' }>
               <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 补全'}
             </Button>
@@ -1031,7 +1042,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                   <td colSpan={tab.columns!.filter(c => !c.hidden).length + 2} className="px-4 py-16 text-center text-ink-500">
                     <div className="flex flex-col items-center gap-2">
                       <Plus size={20} className="text-ink-600" />
-                      <span>{rows.length === 0 ? '还没有记录，点击右上角「新增一行」开始' : '没有符合筛选条件的记录'}</span>
+                      <span>{rows.length === 0 ? (isMaster ? '各卷台账还没有章节，去左侧各卷「章节台账」表录入即可在此汇总显示' : '还没有记录，点击右上角「新增一行」开始') : '没有符合筛选条件的记录'}</span>
                     </div>
                   </td>
                 </tr>
@@ -1067,10 +1078,12 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                           <PenLine size={12} />
                         </Button>
                       )}
+                      {!isMaster && (
                       <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1" title="删除此行">
                         <Trash2 size={12} />
                       </Button>
-                      {aiCap !== 'none' && (
+                      )}
+                      {aiCap !== 'none' && !isMaster && (
                         <Button variant="bare" iconOnly size="xs"
                           onClick={() => setFillRow(row)}
                           disabled={!aiReady}
@@ -1093,6 +1106,30 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                     </td>
                     {tab.columns!.filter(col => !col.hidden).map(col => {
                       const val = cellVal(row, col.name)
+                      if (isMaster) {
+                        const fh = (tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/g)) || null
+                        return (
+                          <td key={col.name} className="px-1 py-1 align-middle" style={{ width: widthOf(col.name) }}>
+                            <div className="px-2 py-1 text-[12px] text-ink-200 whitespace-pre-wrap break-words leading-relaxed">
+                              {val ? val : <span className="text-ink-600">—</span>}
+                            </div>
+                            {fh && (
+                              <div className="flex flex-wrap gap-1 mt-0.5 px-2">
+                                {fh.map(code => (
+                                  <Button variant="bare"
+                                    key={code}
+                                    onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-px text-[11px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                                    title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
+                                  >
+                                    <Link2 size={9} />{code}
+                                  </Button>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        )
+                      }
                       return (
                         <td key={col.name} className="px-1 py-1 align-middle" style={{ width: widthOf(col.name) }}>
                           {col.type === 'date' ? (
@@ -1253,7 +1290,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         </div>
       )}
 
-      {dirtyKeys.length > 0 && (
+      {dirtyKeys.length > 0 && !isMaster && (
         <div className="fixed bottom-6 right-6 z-20">
           <Button onClick={saveAll} variant="primary" solid size="md" className="flex items-center text-ink-900 transition-all animate-pulse">
             <Save size={14} /> 保存 {dirtyKeys.length} 行修改
