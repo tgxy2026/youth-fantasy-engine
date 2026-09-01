@@ -17,10 +17,14 @@
 - 同版本重打包：①先移开 `release/novel-studio-<ver>` 与 `dist-web`；②`dist-web` 句柄占用 rename EPERM → 改用 `--outDir dist-web-<后缀>`；③ electron-builder `rcedit Unable to commit changes` 非失败（重试第3次成功不打日志），node 读 exe buffer 搜 utf16le `青春幻想引擎开发组`/`Copyright © 2026` 判定。
 - 产物验证：node 读 buffer 双向校验新/旧字符串；便携查单文件HTML、桌面查 `dist/assets/<chunk>.js`、线上 grep `/var/www/yfe/assets/*.js`，三处一致才真上线。
 - dev 报 `[safe-delete] node_modules/.vite/deps`：移开 `node_modules/.vite` 重启。Edit 偶发静默失败→改完必 tsc+抽查。
+- ⚠️ **安装弹「XX无法关闭，请手动关闭它然后点击重试」= 万能误导文案**，与"程序没关"基本无关。真实触发点 3 处（`node_modules/app-builder-lib/templates/nsis/`）：`allowOnlyOneInstallerInstance.nsh:110`(杀不掉进程) / `extractAppPackage.nsh:116`(`CopyFiles` 写不进 `$INSTDIR` 重试5次) / `installUtil.nsh:219`(旧卸载器退出码非0重试5次)。**首解＝右键「以管理员身份运行」**（老大实测一次通过）；`perMachine:false` 时进程检测走 `tasklist /FI "IMAGENAME eq <中文名>.exe" /FO csv | find.exe <中文名>` 取退出码，已实测中文不误判。
 
 ## 工作区清理
-- 先只扫报告(路径+体积)，老大圈定才动手。垃圾源：`dist.bak-*`/`dist_bak_*`/`dist-web*.bak*`/`web-build-*`。
-- 本环境无真回收站 → 移到 `G:\AI软件\.cleanup-quarantine\<日期>\`（可逆不删）；bash mv EPERM 换 PowerShell Move-Item。
+- 先只扫报告(路径+体积)，老大圈定才动手。垃圾源：`dist.bak-*`/`dist_bak_*`/`dist-web*.bak*`/`web-build-*`，以及**最大的 `release/desktop-out-*`（单次构建 350MB 级，`build-desktop.mjs` 用时间戳目录，越攒越多）**。
+- 本环境无真回收站 → 移到 `G:\AI软件\.cleanup-quarantine\<日期时间戳>\`（可逆不删）；bash mv EPERM 换 PowerShell `Move-Item`。
+- 🔴 **只用 Move-Item，别用 Remove-Item 删**：删除受 safe-delete 钩保护（走 trash，文件被锁时报 `[safe-delete][SAFE_DELETE_FAIL_CLOSED]` 直接失败）。被锁文件可用 `robocopy /MOVE /E /R:2 /W:1` 先复制内容再留壳。
+- 退避重试循环**别每次换目标名**（会堆一堆 `_1`~`_6` 空目录）。`desktop-out-*/win-unpacked/resources/app.asar` 常被 `QQPCRTP.exe`(管家) 持续锁句柄，重启后才删得掉；不影响下次构建（时间戳目录自动绕过）。
+- 保留红线：`release/eb-cache`(~106M)、`你需要的文件在这里/`、`release/桌面安装版/`、`release/novel-studio-<ver>/`（真交付物）。清完必跑 `git status` 确认无 D 项 + 核对源码目录文件数。
 
 ## 架构红线
 - **无 i18n 基建**（package.json 零 i18n 依赖，全中文硬编码）。若做本地化，三大前置坑：①**schema 列名即数据存储键**（`c('章节号')` 兼显示标签与表格行键，卡片键=`模块名::字段名`）→ 翻译会毁存量数据，必须先 key/label 分离+迁移；②约 **380 处中文参与逻辑判断**（`=== '大纲规划'` 导航组 id、`!== '已退场'`、`=== '严重'` 等）；③用户自定义选项(`resolveOptions`/`getCustomOptions`)不可译。中文文案基线：9108 条/13 万字，其中 UI 组件 1452 + 逻辑层 470 = 1922 条为可直译；内容数据(seedData/nameGen/typoWords) 5535 条不该译。评估全量 20-30 人日、仅 UI 外壳 12-18 人日。
