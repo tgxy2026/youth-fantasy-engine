@@ -9,6 +9,11 @@ import {
   applyTransportFromPersisted,
   type SyncConflictInfo,
 } from './serverStore'
+import {
+  CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
+  pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
+  seedDesktopFromLocal,
+} from './desktopCloudSync'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
@@ -290,70 +295,78 @@ async function saveConflictCopy(info: SyncConflictInfo) {
   }
 }
 
-// 云端同步特权（#003）：敏感 meta（AI 配置/密钥）仅留本地 IndexedDB，不进云端缓存、
-// 不同步、也不会被拉取覆盖。cloudStore 在 serverStore 之上对这类 key 做本地回退。
-// #008：云端鉴权失效（401）时透明回退本地 IndexedDB。
-// 旧行为是让空缓存接管存储——用户看到空白项目列表（本地数据被遮蔽而非丢失），
-// 之后每次编辑都静默 401 丢弃，全程零提示。这里改为双判：调用前已失效直接走本地，
-// 调用后才失效（本次才触发握手）同样回退，保证用户看到的始终是自己的本地数据。
-async function cloudOrLocal(op: keyof StoreOps, ...args: any[]): Promise<any> {
-  if (isCloudUnavailable()) return (idbOps as any)[op](...args)
-  const r = await (serverStore as any)[op](...args)
-  return isCloudUnavailable() ? (idbOps as any)[op](...args) : r
+// 云端同步包装层工厂（#003）：在云端 StoreOps 之上叠加「本地回退」与「敏感 meta 不上云」特权。
+// 网页版（serverStore / idbOps）与 桌面/便携版（desktopCloudStore / desktopStore·portableStore）
+// 共用同一套包装逻辑，仅传入各自的云端实例、本地实例与「不可用判定」。
+// #008：云端不可用时透明回退本地，保证用户看到的始终是自己的数据，而非空白缓存。
+function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavailable: () => boolean): StoreOps {
+  async function cloudOrLocal(op: keyof StoreOps, ...args: any[]): Promise<any> {
+    if (isUnavailable()) return (local as any)[op](...args)
+    const r = await (cloud as any)[op](...args)
+    return isUnavailable() ? (local as any)[op](...args) : r
+  }
+  return {
+    getAll: async <T,>(store: string): Promise<T[]> => {
+      if (store !== 'meta') return cloudOrLocal('getAll', store)
+      if (isUnavailable()) return local.getAll<T>('meta')
+      const localMeta = (await local.getAll<T>('meta')).filter((r: any) => isExcludedMetaKey(r.key))
+      const cloudMeta = await cloud.getAll<T>('meta')
+      if (isUnavailable()) return local.getAll<T>('meta')
+      return [...localMeta, ...cloudMeta] as T[]
+    },
+    get: async <T,>(store: string, key: string): Promise<T | undefined> => {
+      if (store === 'meta' && isExcludedMetaKey(key)) return local.get<T>('meta', key)
+      return cloudOrLocal('get', store, key)
+    },
+    put: async (store: string, value: any) => {
+      if (store === 'meta' && isExcludedMetaKey(value?.key)) return local.put('meta', value)
+      return cloudOrLocal('put', store, value)
+    },
+    del: async (store: string, key: string) => {
+      if (store === 'meta' && isExcludedMetaKey(key)) return local.del('meta', key)
+      return cloudOrLocal('del', store, key)
+    },
+    getAllByIndex: async <T,>(store: string, indexName: string, value: unknown): Promise<T[]> =>
+      cloudOrLocal('getAllByIndex', store, indexName, value),
+    bulkPut: async (store: string, values: any[]) => {
+      if (store === 'meta') {
+        const excl = values.filter((v) => isExcludedMetaKey(v?.key))
+        const rest = values.filter((v) => !isExcludedMetaKey(v?.key))
+        if (excl.length) await local.bulkPut('meta', excl)
+        if (rest.length) {
+          if (isUnavailable()) return local.bulkPut('meta', rest)
+          await cloud.bulkPut('meta', rest)
+          if (isUnavailable()) await local.bulkPut('meta', rest)
+        }
+        return
+      }
+      return cloudOrLocal('bulkPut', store, values)
+    },
+    bulkDel: async (store: string, keys: string[]) => {
+      if (store === 'meta') {
+        const excl = keys.filter((k) => isExcludedMetaKey(k))
+        const rest = keys.filter((k) => !isExcludedMetaKey(k))
+        if (excl.length) await local.bulkDel('meta', excl)
+        if (rest.length) {
+          if (isUnavailable()) return local.bulkDel('meta', rest)
+          await cloud.bulkDel('meta', rest)
+          if (isUnavailable()) await local.bulkDel('meta', rest)
+        }
+        return
+      }
+      return cloudOrLocal('bulkDel', store, keys)
+    },
+  }
 }
 
-const cloudStore: StoreOps = {
-  getAll: async <T,>(store: string): Promise<T[]> => {
-    if (store !== 'meta') return cloudOrLocal('getAll', store)
-    if (isCloudUnavailable()) return idbOps.getAll<T>('meta')
-    const local = (await idbOps.getAll<T>('meta')).filter((r: any) => isExcludedMetaKey(r.key))
-    const cloud = await serverStore.getAll<T>('meta')
-    if (isCloudUnavailable()) return idbOps.getAll<T>('meta')
-    return [...local, ...cloud] as T[]
-  },
-  get: async <T,>(store: string, key: string): Promise<T | undefined> => {
-    if (store === 'meta' && isExcludedMetaKey(key)) return idbOps.get<T>('meta', key)
-    return cloudOrLocal('get', store, key)
-  },
-  put: async (store: string, value: any) => {
-    if (store === 'meta' && isExcludedMetaKey(value?.key)) return idbOps.put('meta', value)
-    return cloudOrLocal('put', store, value)
-  },
-  del: async (store: string, key: string) => {
-    if (store === 'meta' && isExcludedMetaKey(key)) return idbOps.del('meta', key)
-    return cloudOrLocal('del', store, key)
-  },
-  getAllByIndex: async <T,>(store: string, indexName: string, value: unknown): Promise<T[]> =>
-    cloudOrLocal('getAllByIndex', store, indexName, value),
-  bulkPut: async (store: string, values: any[]) => {
-    if (store === 'meta') {
-      const excl = values.filter((v) => isExcludedMetaKey(v?.key))
-      const rest = values.filter((v) => !isExcludedMetaKey(v?.key))
-      if (excl.length) await idbOps.bulkPut('meta', excl)
-      if (rest.length) {
-        if (isCloudUnavailable()) return idbOps.bulkPut('meta', rest)
-        await serverStore.bulkPut('meta', rest)
-        if (isCloudUnavailable()) await idbOps.bulkPut('meta', rest)
-      }
-      return
-    }
-    return cloudOrLocal('bulkPut', store, values)
-  },
-  bulkDel: async (store: string, keys: string[]) => {
-    if (store === 'meta') {
-      const excl = keys.filter((k) => isExcludedMetaKey(k))
-      const rest = keys.filter((k) => !isExcludedMetaKey(k))
-      if (excl.length) await idbOps.bulkDel('meta', excl)
-      if (rest.length) {
-        if (isCloudUnavailable()) return idbOps.bulkDel('meta', rest)
-        await serverStore.bulkDel('meta', rest)
-        if (isCloudUnavailable()) await idbOps.bulkDel('meta', rest)
-      }
-      return
-    }
-    return cloudOrLocal('bulkDel', store, keys)
-  },
-}
+// 网页版云端同步包装层（serverStore 之上叠加本地回退）。仅 WEB 激活。
+const cloudStore: StoreOps = makeCloudStoreWrapper(serverStore, idbOps, isCloudUnavailable)
+
+// 桌面/便携版云盘文件同步包装层（desktopCloudStore 之上叠加本地回退）。
+// 本地回退目标为当前平台的基础本地存储（桌面=desktopStore，便携=portableStore）。
+// 仅 DESKTOP || PORTABLE 激活；与网页版互不耦合。
+const desktopLocalStore: StoreOps = DESKTOP ? desktopStore : PORTABLE ? portableStore : idbOps
+const desktopCloudFileStore: StoreOps = makeCloudStoreWrapper(desktopCloudStore, desktopLocalStore, isDesktopCloudUnavailable)
 
 // 网页版云端同步特权（#003）：启动时若本地存有同步邀请码，则自动切换到云端存储。
 // 仅网页体验版生效（WEB 由构建期 __WEB__ 决定），dev / 桌面 / 便携 恒不触发。
@@ -387,9 +400,24 @@ if (WEB) {
       /* localStorage 不可用时退化为本地 IndexedDB */
     }
   })()
+} else if (CLOUD_FILE_SYNC) {
+  // 桌面/便携版云盘文件同步：启动时若持久化过同步码与目录，则自动切到云端文件存储。
+  // 与网页版 WEB 引导互不干扰：本分支只在该平台激活，且完全不依赖服务器。
+  void (async () => {
+    try {
+      const ok = await applyDesktopCloudFromPersisted()
+      if (ok) {
+        ops = desktopCloudFileStore
+        // 主动握手一次：拉取远端快照（云端文件可能来自其它设备），失败（如文件损坏）回退本地。
+        void pullDesktopSnapshot().catch(() => {})
+      }
+    } catch {
+      /* 持久化读取失败 → 保持本地存储 */
+    }
+  })()
 }
 
-/** 运行时切换底层存储（云端同步特权开启时切到 cloudStore） */
+/** 运行时切换底层存储（云端同步特权开启时切到 cloudStore / desktopCloudFileStore） */
 export function setStoreOps(o: StoreOps) {
   ops = o
 }
@@ -415,6 +443,31 @@ export async function enableCloudSync(code: string) {
   } catch {
     /* 忽略 */
   }
+}
+
+/**
+ * 开启桌面/便携版云盘文件同步（#031 桌面延伸）。
+ * 与 enableCloudSync 平行但走独立门控：数据以加密文件落在用户选定的云盘同步目录，不依赖服务器。
+ * @param code 同步码（兼加密密钥）
+ * @param handle 同步目录句柄：桌面为目录路径字符串，便携为 FileSystemDirectoryHandle
+ */
+export async function enableDesktopCloudSync(code: string, handle: any) {
+  // 归一化：去空白、升大写（与网页版一致，避免大小写/空格差异被拒）
+  const norm = String(code || '').replace(/\s+/g, '').toUpperCase()
+  await enableDesktopCloud(norm, handle)
+  const snap = await pullDesktopSnapshot()
+  const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
+  if (empty) {
+    // 此刻 ops 仍为平台默认本地存储（桌面=desktopStore / 便携=portableStore），用其数据播种
+    await seedDesktopFromLocal((s) => ops.getAll(s))
+  }
+  setStoreOps(desktopCloudFileStore)
+}
+
+/** 关闭桌面/便携版云盘文件同步，并切回平台默认本地存储。调用方应随后刷新页面。 */
+export function disableDesktopCloudSync() {
+  disableDesktopCloud()
+  setStoreOps(desktopLocalStore)
 }
 
 // ============ 项目 ============

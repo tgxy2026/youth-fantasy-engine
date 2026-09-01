@@ -82,6 +82,41 @@ app.whenReady().then(() => {
 
   ipcMain.handle('store:path', () => dataFile())
 
+  // ---- 云盘文件同步（#031 桌面版）：经主进程 fs 读写用户选定的同步目录 ----
+  // 渲染进程 nodeIntegration=false，无法直接 require('fs')；所有文件 IO 必须走 IPC 到主进程。
+  // 桌面版云同步把加密后的 .yfe 文件写在用户选定的云盘同步目录里，由 OneDrive/WPS 云盘 等客户端搬运。
+  ipcMain.handle('sync:chooseDir', async () => {
+    const r = await dialog.showOpenDialog({
+      title: '选择云盘同步文件夹（建议放进 OneDrive / WPS 云盘 等同步目录，即可跨设备同步）',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (r.canceled || !r.filePaths.length) return null
+    return r.filePaths[0]
+  })
+  ipcMain.handle('sync:readFile', async (_e, p) => {
+    try {
+      return await fsp.readFile(p, 'utf-8')
+    } catch {
+      return null // 文件不存在（首次）或读取失败，视为空
+    }
+  })
+  ipcMain.handle('sync:writeFile', async (_e, p, text) => {
+    try {
+      // 原子写：先写 tmp，再把旧文件改名 .bak（回退用），最后 rename tmp 为正文件，避免写崩损坏。
+      const tmp = p + '.tmp'
+      await fsp.writeFile(tmp, String(text), 'utf-8')
+      try {
+        await fsp.rename(p, p + '.bak')
+      } catch {
+        /* 首次写入无旧文件，忽略 */
+      }
+      await fsp.rename(tmp, p)
+      return { ok: true, error: null }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
   // ---- 主窗口 ----
   const win = new BrowserWindow({
     width: 1280,

@@ -16,4 +16,10 @@ contextBridge.exposeInMainWorld('electronStore', {
   revealDataFile: () => ipcRenderer.invoke('store:reveal'),
   /** 本地数据文件完整路径（提示用） */
   dataPath: () => ipcRenderer.invoke('store:path'),
+  /** 云盘文件同步：弹出原生目录选择对话框，返回目录路径或 null（取消） */
+  chooseSyncDir: () => ipcRenderer.invoke('sync:chooseDir'),
+  /** 云盘文件同步：读取同步目录下的文件（经主进程 fs，渲染进程 nodeIntegration=false 不可用 require） */
+  syncRead: (p) => ipcRenderer.invoke('sync:readFile', p),
+  /** 云盘文件同步：原子写文件（tmp + .bak 回退），避免写崩导致 .yfe 损坏 */
+  syncWrite: (p, text) => ipcRenderer.invoke('sync:writeFile', p, text),
 })

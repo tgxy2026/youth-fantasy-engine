@@ -112,7 +112,20 @@ export function createFileTransport(handle: any): SyncTransport {
     await w.close()
   }
 
-  // ---- 桌面 node fs 读写（Electron 渲染进程带 nodeIntegration 时可用，best-effort）----
+  // ---- 桌面文件读写 ----
+  // 优先走 Electron 主进程 IPC（preload 注入 window.electronStore.syncRead/syncWrite）：
+  //   桌面版渲染进程 nodeIntegration=false，globalThis.require('fs') 不可用，必须经 IPC 桥。
+  // 其次回退到渲染进程内 require('fs')（极旧打包/特殊配置下），再其次失败。
+  let electronBackend: any = null
+  function getElectronBackend(): any {
+    if (electronBackend !== null) return electronBackend
+    try {
+      electronBackend = (typeof window !== 'undefined' && (window as any).electronStore) || null
+    } catch {
+      electronBackend = null
+    }
+    return electronBackend
+  }
   let nodeFs: any = null
   function getNodeFs(): any {
     if (nodeFs !== null) return nodeFs
@@ -124,6 +137,14 @@ export function createFileTransport(handle: any): SyncTransport {
     return nodeFs
   }
   async function nodeRead(p: string): Promise<string | null> {
+    const eb = getElectronBackend()
+    if (eb && typeof eb.syncRead === 'function') {
+      try {
+        return await eb.syncRead(p)
+      } catch {
+        return null
+      }
+    }
     const fs = getNodeFs()
     if (!fs) return null
     try {
@@ -133,6 +154,11 @@ export function createFileTransport(handle: any): SyncTransport {
     }
   }
   async function nodeWrite(p: string, text: string): Promise<void> {
+    const eb = getElectronBackend()
+    if (eb && typeof eb.syncWrite === 'function') {
+      await eb.syncWrite(p, text)
+      return
+    }
     const fs = getNodeFs()
     if (!fs) return
     const tmp = p + '.tmp'
