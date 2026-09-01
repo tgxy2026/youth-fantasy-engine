@@ -87,8 +87,13 @@ export function PortableGate() {
   )
 }
 
-/** 左下角保存状态徽标：显示数据文件的实时保存状态，点击立即写盘 */
-export function PortableBadge() {
+/**
+ * 便携版保存状态徽标：显示数据文件的实时保存状态，点击立即写盘。
+ * - embedded=false（默认）：固定浮层（左下角），用于无侧栏场景。
+ * - embedded=true：内嵌形态，供左下角「数据坞」DataDock 承载，不再自己画 fixed 浮层
+ *   （此前两处各自 fixed 定位，尺寸/间距/层级不统一，桌面版会直接叠在一起）。
+ */
+export function PortableBadge({ embedded = false }: { embedded?: boolean }) {
   const [state, setState] = useState(getState())
   useEffect(() => subscribe(() => setState(getState())), [])
 
@@ -114,11 +119,15 @@ export function PortableBadge() {
     <Button variant="bare"
       onClick={() => void flush()}
       title="点击立即保存到 U 盘数据文件"
-      className="fixed bottom-3 left-3 z-50 flex items-center gap-2 rounded-full border border-ink-600/80 bg-ink-900/90 px-3.5 py-1.5 text-[12px] text-ink-300 shadow-lg backdrop-blur transition-colors hover:border-amber/50 hover:text-ink-100"
+      className={
+        embedded
+          ? 'flex h-8 w-full items-center gap-2 rounded-lg border border-ink-700 bg-ink-800/60 px-2.5 text-[12px] text-ink-300 transition-colors hover:border-amber/50 hover:text-ink-100'
+          : 'fixed bottom-3 left-3 z-50 flex items-center gap-2 rounded-full border border-ink-600/80 bg-ink-900/90 px-3.5 py-1.5 text-[12px] text-ink-300 shadow-lg backdrop-blur transition-colors hover:border-amber/50 hover:text-ink-100'
+      }
     >
-      <Save size={12} className="text-amber/80" />
-      <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
-      {text}
+      <Save size={12} className="shrink-0 text-amber/80" />
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+      <span className="truncate">{text}</span>
     </Button>
   )
 }

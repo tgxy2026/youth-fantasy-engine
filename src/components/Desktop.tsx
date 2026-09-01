@@ -15,9 +15,11 @@ import { Button } from './Button'
  * - 打开数据文件夹（手动备份本地数据文件）
  *
  * 两种形态：
- * - embedded=false（默认）：固定浮层，用于「项目列表页」等没有侧栏的场景（左下角）。
- * - embedded=true：内嵌形态，去掉浮层阴影/毛玻璃，供 Sidebar 底部 Footer 直接承载，
- *   避免在桌面端用全局 fixed 浮层压住左侧栏的「界面缩放 / 主题」等控件。
+ * - embedded=false（默认）：独立固定浮层（左下角）。当前版本已不直接使用——
+ *   #032 起统一由 DataDock（项目管理页）与 Sidebar Footer（项目内）以 embedded 形态承载，
+ *   避免多个浮层各定各位、互相遮挡。
+ * - embedded=true：内嵌形态，去掉浮层阴影/毛玻璃，供 DataDock / Sidebar 底部直接承载。
+ *   在桌面端尤其必要：全局 fixed 浮层会压住左侧栏的「界面缩放 / 主题」等控件。
  */
 export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
   const [state, setState] = useState(getDesktopState())
@@ -115,9 +117,4 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
       </Button>
     </div>
   )
-}
-
-/** 项目列表页（无侧栏）使用的固定浮层版 */
-export function DesktopBadge() {
-  return <DesktopDataBar />
 }

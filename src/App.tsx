@@ -13,13 +13,10 @@ import * as db from './lib/db'
 import { ensureDailyBackup, startAutoBackup } from './lib/backup'
 import { PORTABLE, getState, subscribe, flush } from './lib/portable'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop } from './lib/desktop'
-import { PortableGate, PortableBadge } from './components/Portable'
-import { DesktopBadge } from './components/Desktop'
+import { PortableGate } from './components/Portable'
 import { WEB } from './lib/env'
 import WebGate, { checkInvited } from './components/WebGate'
-import FeedbackButton from './components/FeedbackButton'
-import WebTools from './components/WebTools'
-import { CLOUD_FILE_SYNC } from './lib/desktopCloudSync'
+import DataDock from './components/DataDock'
 import PrivacyNotice from './components/PrivacyNotice'
 import LocalDataNotice from './components/LocalDataNotice'
 import FullTextSearch from './components/FullTextSearch'
@@ -238,16 +235,9 @@ export default function App() {
     return (
       <>
         <ProjectHub onOpen={openProject} />
-        {/* 桌面版在项目列表页（无侧栏）也需要展示数据文件保存状态徽标 */}
-        {DESKTOP && <DesktopBadge />}
-        {/* 云同步工具条：网页版用 serverStore（服务器），桌面/便携版用独立 CLOUD_FILE_SYNC（云盘文件，无需服务器）。
-            二者门控互斥、互不耦合；FeedbackButton 仅网页版需要，桌面/便携不展示。 */}
-        {(WEB || CLOUD_FILE_SYNC) && (
-          <div className="fixed bottom-4 left-4 z-40 flex flex-col items-start gap-2">
-            {WEB && <FeedbackButton />}
-            <WebTools />
-          </div>
-        )}
+        {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。
+            此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
+        <DataDock />
       </>
     )
   }
@@ -325,7 +315,8 @@ export default function App() {
           {renderContent()}
         </Suspense>
       </main>
-      {PORTABLE && <PortableBadge />}
+      {/* 本机存储 / 云盘同步状态在「项目内」由 Sidebar Footer 内嵌承载，
+          不再使用全局 fixed 浮层——避免压住侧栏底部的「界面缩放 / 主题」等控件。 */}
       {/* 颉文姬桌面精灵：全局右缘驻留（可在 AI 编辑面板底部开关关闭） */}
       {spriteEnabled && <JieWenJiSprite isEditor={activeTab === 'editor'} onNavigate={navigate} />}
       {searchOpen && (

@@ -27,6 +27,7 @@ import {
   createHttpTransport,
   loadSyncFolderHandle,
   saveSyncFolderHandle,
+  clearSyncFolderHandle,
 } from './syncTransport'
 import { DESKTOP, PORTABLE } from './env'
 
@@ -34,7 +35,22 @@ import { DESKTOP, PORTABLE } from './env'
 export const CLOUD_FILE_SYNC = DESKTOP || PORTABLE
 
 const DIR_KEY = 'yfe-desktop-cloud-dir' // 桌面：目录路径字符串
-const CODE_KEY = 'yfe-desktop-cloud-code' // 同步码（兼加密密钥）
+const ENABLED_KEY = 'yfe-desktop-cloud-on' // 是否已开启云盘同步（布尔标记）
+
+/**
+ * 内置默认加密密钥（#032：桌面 / 便携版砍掉「同步码」）。
+ *
+ * 为什么可以砍：同步码在网页版身兼两职——①HTTP 鉴权（换服务器槽位）、②AES 密钥。
+ * 云盘文件中转走的是用户自己的网盘，没有我们的服务器，①根本不存在；
+ * ②只需要两端一致即可，故改用内置常量：所有设备同一密钥 → 指向同一目录就能互通。
+ *
+ * 安全边界（必须如实告知用户）：此密钥是公开的源码常量，加密强度等同于「混淆」，
+ * 仅防云盘明文扫描与误看，**不足以对抗蓄意破解**。机密稿件请放在私人目录、不要共享。
+ */
+export const DEFAULT_CLOUD_KEY = 'YFE-CLOUD-FILE-SYNC-V1'
+
+/** 云盘同步文件名（固定，便于用户在云盘目录里认出它）。 */
+export const CLOUD_FILE_NAME = '青春幻想引擎-同步数据.yfe'
 
 // 用一个占位 transport 创建实例，真正的 FileTransport 在用户选目录后通过 setTransport 替换。
 const cloud: CloudStoreInstance = createCloudStore(createHttpTransport())
@@ -77,10 +93,10 @@ function isStringHandle(h: unknown): h is string {
   return typeof h === 'string'
 }
 
-/** 是否已启用（持久化过同步码与目录）。 */
+/** 是否已启用（持久化过开启标记）。#032 起不再需要同步码，只认开启标记 + 目录。 */
 export function isDesktopCloudEnabled(): boolean {
   try {
-    return !!localStorage.getItem(CODE_KEY)
+    return localStorage.getItem(ENABLED_KEY) === '1'
   } catch {
     return false
   }
@@ -123,17 +139,20 @@ export async function chooseDesktopCloudDir(): Promise<{ handle: any; name: stri
   return { handle: h, name: h.name }
 }
 
-/** 开启云盘文件同步：设置传输层 + 同步码 + 持久化。 */
-export async function enableDesktopCloud(code: string, handle: any) {
-  cloud.setTransport(createFileTransport(handle))
-  cloud.configure(code)
+/**
+ * 开启云盘文件同步（#032：无需同步码，选目录即开）。
+ * 传输层指向所选目录，加密走内置默认密钥（DEFAULT_CLOUD_KEY），两端一致即可互通。
+ */
+export async function enableDesktopCloud(handle: any) {
+  cloud.setTransport(createFileTransport(handle, CLOUD_FILE_NAME))
+  cloud.configure(DEFAULT_CLOUD_KEY)
   try {
     if (DESKTOP && isStringHandle(handle)) {
       localStorage.setItem(DIR_KEY, handle)
     } else if (PORTABLE && !isStringHandle(handle)) {
       await saveSyncFolderHandle(handle)
     }
-    localStorage.setItem(CODE_KEY, code)
+    localStorage.setItem(ENABLED_KEY, '1')
   } catch {
     /* 持久化失败不阻断启用，仅下次启动需重选 */
   }
@@ -142,27 +161,21 @@ export async function enableDesktopCloud(code: string, handle: any) {
 /** 关闭云盘文件同步：清持久化 + 复位传输层。 */
 export function disableDesktopCloud() {
   try {
-    localStorage.removeItem(CODE_KEY)
+    localStorage.removeItem(ENABLED_KEY)
     localStorage.removeItem(DIR_KEY)
   } catch {
     /* 忽略 */
   }
+  if (PORTABLE) void clearSyncFolderHandle().catch(() => {})
   cloud.setTransport(createHttpTransport())
   cloud.configure('')
 }
 
 /**
- * 启动时按持久化恢复传输层与同步码。成功返回 true（db.ts 据此切到云端存储）。
- * 桌面读目录路径字符串；便携读 IndexedDB 句柄。
+ * 启动时按持久化恢复传输层（#032：不再需要同步码，内置默认密钥即可）。
+ * 成功返回 true（db.ts 据此切到云端存储）。桌面读目录路径字符串；便携读 IndexedDB 句柄。
  */
 export async function applyDesktopCloudFromPersisted(): Promise<boolean> {
-  const code = (() => {
-    try {
-      return localStorage.getItem(CODE_KEY)
-    } catch {
-      return null
-    }
-  })()
   let handle: any = null
   if (DESKTOP) {
     try {
@@ -178,9 +191,10 @@ export async function applyDesktopCloudFromPersisted(): Promise<boolean> {
       /* 忽略 */
     }
   }
-  if (!code || !handle) return false
-  cloud.setTransport(createFileTransport(handle))
-  cloud.configure(code)
+  if (!handle) return false
+  if (!isDesktopCloudEnabled()) return false
+  cloud.setTransport(createFileTransport(handle, CLOUD_FILE_NAME))
+  cloud.configure(DEFAULT_CLOUD_KEY)
   return true
 }
 

@@ -71,10 +71,12 @@ export function createHttpTransport(): SyncTransport {
 
 // ============ 文件传输（云盘中转方案）============
 // handle 可为 FileSystemDirectoryHandle（浏览器 FSA）或文件夹路径字符串（桌面 Electron 渲染进程 node fs 兜底）。
-export function createFileTransport(handle: any): SyncTransport {
+// fixedName：指定固定文件名（桌面/便携版云盘同步用，便于用户在云盘目录里认出它）；
+// 不传则回退到 sha256(code) 命名（网页版云盘中转按码分槽，避免多码互相覆盖）。
+export function createFileTransport(handle: any, fixedName?: string): SyncTransport {
   const isFsa = typeof handle !== 'string'
   let code = ''
-  let slot: string | null = null
+  let slot: string | null = fixedName || null
   let watchTimer: ReturnType<typeof setInterval> | null = null
   let lastSeenRev = -1
 
@@ -192,7 +194,7 @@ export function createFileTransport(handle: any): SyncTransport {
     mode: 'file',
     setCode(c: string) {
       code = c
-      slot = null
+      slot = fixedName || null // 固定文件名模式下不因换码而改变槽位
     },
     async pull() {
       const name = await slotName()

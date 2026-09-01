@@ -446,15 +446,13 @@ export async function enableCloudSync(code: string) {
 }
 
 /**
- * 开启桌面/便携版云盘文件同步（#031 桌面延伸）。
+ * 开启桌面/便携版云盘文件同步（#031 桌面延伸，#032 去掉同步码）。
  * 与 enableCloudSync 平行但走独立门控：数据以加密文件落在用户选定的云盘同步目录，不依赖服务器。
- * @param code 同步码（兼加密密钥）
+ * 加密使用内置默认密钥（DEFAULT_CLOUD_KEY），所有设备一致 → 指向同一目录即可互通，无需输入任何码。
  * @param handle 同步目录句柄：桌面为目录路径字符串，便携为 FileSystemDirectoryHandle
  */
-export async function enableDesktopCloudSync(code: string, handle: any) {
-  // 归一化：去空白、升大写（与网页版一致，避免大小写/空格差异被拒）
-  const norm = String(code || '').replace(/\s+/g, '').toUpperCase()
-  await enableDesktopCloud(norm, handle)
+export async function enableDesktopCloudSync(handle: any) {
+  await enableDesktopCloud(handle)
   const snap = await pullDesktopSnapshot()
   const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
   if (empty) {
