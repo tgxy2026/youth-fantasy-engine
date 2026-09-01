@@ -69,6 +69,10 @@ export default function MaterialLibrary() {
 }
 
 function BlockView({ block }: { block: Block }) {
+  return renderBlock(block)
+}
+
+function renderBlock(block: Block) {
   switch (block.kind) {
     case 'charGrid': return <CharGrid types={block.data as CharType[]} />
     case 'list': return <NumberedList items={block.data as string[]} />
@@ -79,8 +83,23 @@ function BlockView({ block }: { block: Block }) {
     case 'roles': return <RoleList items={block.data as RoleItem[]} />
     case 'groupedList': return <GroupedList data={block.data as { groups: { title: string; items: { name: string; text: string }[] }[] }} />
     case 'toolbox': return <Toolbox sections={block.data as ToolboxSection[]} />
+    case 'mixed': return <MixedView blocks={block.data as Block[]} />
     default: return <div className="text-ink-400 text-[13px]">未知板块类型</div>
   }
+}
+
+/* ---------- 复合页签：内部多个子区块，各自保留原生排版 ---------- */
+function MixedView({ blocks }: { blocks: Block[] }) {
+  return (
+    <div className="space-y-6">
+      {blocks.map((b, i) => (
+        <div key={b.id ?? i}>
+          <div className="text-[13px] font-semibold text-ink-100 mb-3 pb-1.5 border-b border-ink-700">{b.title}</div>
+          {renderBlock(b)}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /* ---------- 性格类型卡片网格 ---------- */
@@ -219,15 +238,26 @@ function ComboList({ items }: { items: ComboItem[] }) {
   )
 }
 
-/* ---------- 表格 ---------- */
+/* ---------- 表格 ----------
+ * 列式标准（素材资料全局统一）：
+ *  - 采用 table-fixed 布局，列宽由首行/colgroup 决定，不再随内容浮动；
+ *  - 首列（键/标签列）统一锁定 160px 定宽，保证所有表格首列视觉对齐、不再参差；
+ *  - 其余列均分剩余宽度（table-fixed 下未指定宽度的列等分剩余空间）。 */
 function TableView({ data }: { data: { head: string[]; rows: string[][] } }) {
+  const restCols = Math.max(data.head.length - 1, 0)
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-[12px]">
+      <table className="w-full table-fixed border-collapse text-[12px]">
+        <colgroup>
+          <col style={{ width: '160px' }} />
+          {Array.from({ length: restCols }).map((_, i) => (
+            <col key={i} />
+          ))}
+        </colgroup>
         <thead>
           <tr className="bg-ink-800">
             {data.head.map((h, i) => (
-              <th key={i} className="text-left font-medium text-ink-200 px-3 py-2 border-b border-ink-700 whitespace-nowrap">
+              <th key={i} className={`text-left font-medium text-ink-200 px-3 py-2 border-b border-ink-700 ${i === 0 ? 'whitespace-nowrap' : ''}`}>
                 {h}
               </th>
             ))}
@@ -235,9 +265,9 @@ function TableView({ data }: { data: { head: string[]; rows: string[][] } }) {
         </thead>
         <tbody>
           {data.rows.map((r, ri) => (
-            <tr key={ri} className="hover:bg-ink-800/50">
+            <tr key={ri} className={`hover:bg-ink-800/60 ${ri % 2 === 1 ? 'bg-ink-800/30' : ''}`}>
               {r.map((c, ci) => (
-                <td key={ci} className={`px-3 py-2 border-b border-ink-700/60 ${ci === 0 ? 'text-ink-100 font-medium' : 'text-ink-300'} align-top`}>
+                <td key={ci} className={`px-3 py-2 border-b border-ink-700/60 align-top break-words ${ci === 0 ? 'text-ink-100 font-medium' : 'text-ink-300'}`}>
                   {c}
                 </td>
               ))}
