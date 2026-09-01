@@ -26,7 +26,8 @@
 - 先只扫报告(路径+体积)，老大圈定才动手。垃圾源：`dist.bak-*`/`dist_bak_*`/`dist-web*.bak*`/`web-build-*`，以及**最大的 `release/desktop-out-*`（单次构建 350MB 级，`build-desktop.mjs` 用时间戳目录，越攒越多）**。
 - 本环境无真回收站 → 移到 `G:\AI软件\.cleanup-quarantine\<日期时间戳>\`（可逆不删）；bash mv EPERM 换 PowerShell `Move-Item`。老大明说「直接清理删除」时才真删（`Remove-Item -Recurse -Force`）。
 - 清理后 `release/` 正常水位 ≈ 223MB（`eb-cache` 106M + 桌面交付 81M + 便携 8.5M + 4 个 asar 残留 28M）。`desktop-out-*` 的 win-unpacked 是纯中间产物，可放心删。
-- ⚠️ **`app.asar` 删不掉**：`attrib -R -S -H` + `Remove-Item -Force` + `[System.IO.File]::Delete` + `robocopy /MIR` 四法全败，统一报「正由另一进程使用」（电脑管家实时防护在扫）。**重启电脑后可删**，不影响新构建。Windows 终端工具本环境**不回显 stdout** → 要输出就写文件再 Read。
+- ⚠️ **`app.asar` 删不掉**：`attrib -R -S -H` + `Remove-Item -Force` + `[System.IO.File]::Delete` + `robocopy /MIR` + `Rename-Item` 五法全败，统一报「正由另一进程使用」（电脑管家实时防护在扫）。**重启电脑后可删**，不影响新构建（新打包用带时间戳独立目录）。已备 `npm run cleanup`（`scripts/cleanup-residual.mjs`，白名单只删 `desktop-out-*`，被占用时如实报错+退出码1）。⚠️ 该脚本在**老巴迪环境内**跑会被 safe-delete 钩拦截（rmSync 走回收站失败），须由老大在**系统终端**里跑。
+- Windows 终端工具本环境**不回显 stdout** → 要输出就写文件再 Read；从 bash 反向调用终端宿主会被安全策略拦截。
 - 🔴 **只用 Move-Item，别用 Remove-Item 删**：删除受 safe-delete 钩保护（走 trash，文件被锁时报 `[safe-delete][SAFE_DELETE_FAIL_CLOSED]` 直接失败）。被锁文件可用 `robocopy /MOVE /E /R:2 /W:1` 先复制内容再留壳。
 - 退避重试循环**别每次换目标名**（会堆一堆 `_1`~`_6` 空目录）。`desktop-out-*/win-unpacked/resources/app.asar` 常被 `QQPCRTP.exe`(管家) 持续锁句柄，重启后才删得掉；不影响下次构建（时间戳目录自动绕过）。
 - 保留红线：`release/eb-cache`(~106M)、`你需要的文件在这里/`、`release/桌面安装版/`、`release/novel-studio-<ver>/`（真交付物）。清完必跑 `git status` 确认无 D 项 + 核对源码目录文件数。
