@@ -26,7 +26,7 @@ export default function MaterialLibrary() {
           <span className="text-[12px] text-ink-400">内置写作参考素材库 · 只读</span>
         </div>
         <p className="mt-1 text-[13px] text-ink-300">
-          收录可直接借鉴的写作参考（人物设计 / 故事结构）；内容仅供阅读，不支持编辑。
+          收录可直接借鉴的写作参考（人物设计 / 故事结构 / 世界框架 / 情绪爽点）；内容仅供阅读，不支持编辑。
         </p>
       </header>
 
