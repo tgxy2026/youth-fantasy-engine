@@ -124,23 +124,25 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                           : checked ? 'border-amber/40 bg-amber/10 cursor-pointer'
                           : 'border-ink-700 bg-ink-800/40 hover:border-ink-500 cursor-pointer'}`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-amber border-amber text-ink-900' : 'border-ink-500'}`}>
-                            {checked && <Check size={12} strokeWidth={3} />}
-                          </span>
-                          <span className="text-[13px] text-ink-100 flex items-center gap-1.5 whitespace-nowrap">
-                            {e.name}
-                            {e.tier === 'locked' && <Lock size={11} className="text-amber/70" />}
-                            {e.tier === 'default' && <span className="text-[10px] text-emerald-300/80">默认</span>}
-                          </span>
+                        <div className="w-full text-left">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-amber border-amber text-ink-900' : 'border-ink-500'}`}>
+                              {checked && <Check size={12} strokeWidth={3} />}
+                            </span>
+                            <span className="text-[13px] text-ink-100 flex items-center gap-1.5 whitespace-nowrap">
+                              {e.name}
+                              {e.tier === 'locked' && <Lock size={11} className="text-amber/70" />}
+                              {e.tier === 'default' && <span className="text-[10px] text-emerald-300/80">默认</span>}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-[11px] text-ink-400 leading-snug line-clamp-2">{e.desc}</div>
+                          {e.requires.length > 0 && (
+                            <div className="mt-1 text-[10px] text-rose-300/80">依赖：{e.requires.map(nameOf).join('、')}（自动开启）</div>
+                          )}
+                          {locked && e.tier !== 'locked' && (
+                            <div className="mt-1 text-[10px] text-amber/70">已因依赖自动开启，不可单独取消</div>
+                          )}
                         </div>
-                        <div className="mt-1 text-[11px] text-ink-400 leading-snug line-clamp-2">{e.desc}</div>
-                        {e.requires.length > 0 && (
-                          <div className="mt-1 text-[10px] text-rose-300/80">依赖：{e.requires.map(nameOf).join('、')}（自动开启）</div>
-                        )}
-                        {locked && e.tier !== 'locked' && (
-                          <div className="mt-1 text-[10px] text-amber/70">已因依赖自动开启，不可单独取消</div>
-                        )}
                       </Button>
                     )
                   })}
