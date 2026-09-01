@@ -6,6 +6,7 @@ import { WEB } from './env'
 import {
   serverStore, configureServerStore, pullSnapshot, seedFromLocal, isExcludedMetaKey,
   isCloudUnavailable, CloudAuthError, onSyncConflict, CONFLICT_KEY_PREFIX,
+  applyTransportFromPersisted,
   type SyncConflictInfo,
 } from './serverStore'
 import { uid } from './id'
@@ -357,31 +358,35 @@ const cloudStore: StoreOps = {
 // 网页版云端同步特权（#003）：启动时若本地存有同步邀请码，则自动切换到云端存储。
 // 仅网页体验版生效（WEB 由构建期 __WEB__ 决定），dev / 桌面 / 便携 恒不触发。
 if (WEB) {
-  try {
-    const sc = localStorage.getItem('yfe-sync-code')
-    if (sc) {
-      configureServerStore(sc)
-      ops = cloudStore
-      // 主动握手一次：码若已失效（服务端轮换白名单、槽位被清理等）立刻发现，
-      // 清掉失效码并通知 UI。数据侧由 cloudStore 自动回退本地，用户不会看到空白（#008）。
-      void pullSnapshot().catch((err: unknown) => {
-        if (err instanceof CloudAuthError) {
-          try {
-            localStorage.removeItem('yfe-sync-code')
-          } catch {
-            /* 忽略 */
+  void (async () => {
+    try {
+      const sc = localStorage.getItem('yfe-sync-code')
+      if (sc) {
+        // #031：先按持久化方式恢复传输层（云盘文件中转 / 服务器），再设码握手
+        await applyTransportFromPersisted()
+        configureServerStore(sc)
+        ops = cloudStore
+        // 主动握手一次：码若已失效（服务端轮换白名单、槽位被清理等）立刻发现，
+        // 清掉失效码并通知 UI。数据侧由 cloudStore 自动回退本地，用户不会看到空白（#008）。
+        void pullSnapshot().catch((err: unknown) => {
+          if (err instanceof CloudAuthError) {
+            try {
+              localStorage.removeItem('yfe-sync-code')
+            } catch {
+              /* 忽略 */
+            }
+            try {
+              window.dispatchEvent(new CustomEvent('yfe:cloud-auth-failed'))
+            } catch {
+              /* 忽略 */
+            }
           }
-          try {
-            window.dispatchEvent(new CustomEvent('yfe:cloud-auth-failed'))
-          } catch {
-            /* 忽略 */
-          }
-        }
-      })
+        })
+      }
+    } catch {
+      /* localStorage 不可用时退化为本地 IndexedDB */
     }
-  } catch {
-    /* localStorage 不可用时退化为本地 IndexedDB */
-  }
+  })()
 }
 
 /** 运行时切换底层存储（云端同步特权开启时切到 cloudStore） */
@@ -395,6 +400,8 @@ export function setStoreOps(o: StoreOps) {
  * 3) 切换到云端存储并持久化邀请码。调用方应随后刷新页面以载入云端数据。
  */
 export async function enableCloudSync(code: string) {
+  // #031：先按持久化方式恢复传输层（云盘文件中转 / 服务器），再设码
+  await applyTransportFromPersisted()
   configureServerStore(code)
   const snap = await pullSnapshot()
   const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0

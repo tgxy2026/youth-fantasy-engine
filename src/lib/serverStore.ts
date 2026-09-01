@@ -15,6 +15,14 @@
 //    不上云：既不进缓存、也不上传、更不会被拉取覆盖（由 db.ts 的 cloudStore 回退到本地）。
 import type { StoreOps } from './portable'
 import { WEB } from './env'
+import {
+  createHttpTransport,
+  createFileTransport,
+  getSyncMode,
+  loadSyncFolderHandle,
+  type SyncTransport,
+  type RawSyncResponse,
+} from './syncTransport'
 
 // 参与同步的全部 store（与 db.ts 中对象库一致）
 const SYNC_STORES = [
@@ -41,6 +49,54 @@ let pushTimer: ReturnType<typeof setTimeout> | null = null
 let pushing = false
 let pendingPush = false
 let initPromise: Promise<void> | null = null
+
+// ============ 传输层（#031 云盘中转同步）============
+// 默认走现有 HTTP 服务器；用户可在「云盘文件中转」模式下切换为 FileTransport。
+// 加密 / 载荷结构 / rev 合并 / #030 空推防护全部保留在本文件，传输层只负责「字节怎么落地」。
+let transport: SyncTransport = createHttpTransport()
+
+export function setSyncTransport(t: SyncTransport) {
+  if (transport) transport.stopWatch()
+  transport = t
+  if (code) transport.setCode(code)
+}
+
+/** 按持久化的同步方式恢复传输层：云盘模式且存在已选目录句柄 → FileTransport，否则 HTTP。 */
+export async function applyTransportFromPersisted() {
+  if (getSyncMode() === 'file') {
+    try {
+      const handle: any = await loadSyncFolderHandle()
+      if (handle) {
+        setSyncTransport(createFileTransport(handle))
+        return
+      }
+    } catch {
+      /* 句柄读取失败 → 回退服务器 */
+    }
+  }
+  setSyncTransport(createHttpTransport())
+}
+
+/** 轮询发现远端更新时主动拉取并三路合并（文件模式跨设备同步的核心）。 */
+export async function backgroundPull() {
+  if (!code || authFailed || transientUnavailable) return
+  try {
+    const resp: RawSyncResponse = await transport.pull()
+    if (resp.status !== 200) return
+    const remoteRev = resp.rev ?? 0
+    if (remoteRev <= rev) return // 没有更新的远端
+    if (resp.enc) {
+      const serverCache = await decryptObj(resp.enc)
+      adoptCloudBackup(serverCache)
+      cache = mergeCaches(baseCache, serverCache, cache)
+      rev = remoteRev
+      baseCache = snapshotOf(cache)
+      setStatus('ok')
+    }
+  } catch {
+    /* 忽略，下次轮询重试 */
+  }
+}
 
 // #026/A+：云端每日滚动备份（最新一份，按自然日滚动）。
 // 它是一份「活数据快照」副本，随同步载荷一并加密上传；本地 backups 仍只在设备端、永不进云。
@@ -157,6 +213,10 @@ export function configureServerStore(c: string) {
   rateLimitedUntil = 0
   baseCache = {}
   setStatus('idle')
+  // 传输层：切换同步码时同步设置槽位名，并在文件模式下启动远端变更轮询监听
+  transport.setCode(c)
+  if (c) transport.startWatch(() => void backgroundPull())
+  else transport.stopWatch()
   // 至此才算「已启用云端同步」，此时才注册卸载兜底 flush。
   // 早于此处注册会让未开同步的访客发出无码 POST（#023）。
   if (c) armUnloadFlush()
@@ -249,17 +309,14 @@ async function decryptObj(s: string): Promise<any> {
   return JSON.parse(s) // 兼容极老明文（正常不会出现）
 }
 
-// ============ 通信 ============
-function authHeader(): Record<string, string> {
-  return { Authorization: `Bearer ${code}`, 'Content-Type': 'application/json' }
-}
-
+// ============ 通信（经传输层抽象，#031）============
 async function ensureInit() {
   if (!initPromise) {
     initPromise = (async () => {
       try {
-        const r = await fetch('/api/sync', { headers: { Authorization: `Bearer ${code}` } })
-        if (r.status === 401) {
+        const resp: RawSyncResponse = await transport.pull()
+        const r = resp.status
+        if (r === 401) {
           // 鉴权失败＝码无效/已失效。绝不落到「空缓存接管存储」，否则用户会看到
           // 空白项目列表并在此后静默丢弃所有编辑（#008 数据丢失级隐患）。
           authFailed = true
@@ -268,19 +325,17 @@ async function ensureInit() {
           rev = 0
           return
         }
-        if (r.status === 429) {
+        if (r === 429) {
           // 限流：绝不落到空缓存接管存储，否则被限流的用户会看到空白数据
-          const d = await r.json().catch(() => null)
-          const sec = Number(d?.retryAfter) || 600
+          const sec = 600
           rateLimitedUntil = Date.now() + sec * 1000
           setStatus('rate-limited')
           return
         }
-        if (r.ok) {
-          const data = await r.json().catch(() => null)
-          rev = Number(data?.rev) || 0
-          if (data && typeof data.enc === 'string' && data.enc) {
-            cache = await decryptObj(data.enc)
+        if (r === 200) {
+          rev = Number(resp.rev) || 0
+          if (resp.enc) {
+            cache = await decryptObj(resp.enc)
             adoptCloudBackup(cache)
           } else {
             cache = {}
@@ -291,7 +346,8 @@ async function ensureInit() {
           baseCache = snapshotOf(cache)
           return
         }
-        throw new Error('sync pull failed ' + r.status)
+        if (r === 0) throw new Error('sync pull network error') // 网络异常（仅 http 传输会返回 0）
+        throw new Error('sync pull failed ' + r)
       } catch {
         /* 网络异常（断网 / DNS / 服务重启 / 超时）：#011 起与 401/429 一样绝不让空缓存接管存储。
            置 transientUnavailable 让 cloudStore 回退本地 idbOps，用户看到的始终是自己的数据；
@@ -503,28 +559,26 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
   }
   uploadCache.__cloudBackup = cloudBackup
   const enc = await encryptObj(uploadCache)
-  let r: Response
+  let resp: RawSyncResponse
   try {
-    r = await fetch('/api/sync', {
-      method: 'POST',
-      headers: authHeader(),
-      body: JSON.stringify({ rev: baseRev, enc }),
-    })
+    resp = await transport.push(baseRev, enc)
   } catch {
     // #011：推送时的网络异常同样置位，让上层回退本地；网络恢复后下一次写操作会重新握手。
     transientUnavailable = true
     setStatus('offline')
     throw new Error('sync push network error')
   }
-  if (r.status === 409) {
-    const data = await r.json().catch(() => ({ rev: baseRev, enc: null }))
-    const serverRev = data.rev ?? baseRev
+  const r = resp.status
+  if (r === 409) {
+    const serverRev = resp.rev ?? baseRev
     let serverCache: Record<string, any[]> | null = null
-    if (data.enc) {
+    if (resp.enc) {
       try {
-        serverCache = await decryptObj(data.enc)
+        serverCache = await decryptObj(resp.enc)
         adoptCloudBackup(serverCache)
-      } catch { serverCache = null }
+      } catch {
+        serverCache = null
+      }
     }
     // 关键：本地改动优先合并，绝不直接用云端版本覆盖掉未保存的本地编辑
     if (serverCache) cache = mergeCaches(baseCache, serverCache, cache)
@@ -535,41 +589,45 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
     // 极罕见：仍冲突则保留本地改动、接受云端 rev，不再重试（本地编辑已留在 cache）
     return { conflict: true }
   }
-  if (r.status === 401) {
+  if (r === 401) {
     // 码失效（服务端轮换白名单、槽位被清理等）：标记后交由上层回退本地并提示用户
     authFailed = true
     setStatus('auth-failed')
     throw new CloudAuthError()
   }
-  if (r.status === 429) {
+  if (r === 429) {
     // 被限流：标记暂停时间，交由上层回退本地，避免用户看到空白数据
-    const d = await r.json().catch(() => null)
-    const sec = Number(d?.retryAfter) || 600
+    const sec = 600
     rateLimitedUntil = Date.now() + sec * 1000
     setStatus('rate-limited')
     throw new RateLimitError(sec)
   }
-  if (r.status === 413) {
-    // 推送体积超过服务端上限（nginx client_max_body_size / readRaw 上限）：这是硬限制，
+  if (r === 413) {
+    // 推送体积超过服务端上限（仅 HTTP 传输会出现）：这是硬限制，
     // 不能像网络异常那样静默重试——必须明确告知用户，否则会一直"同步失败"且数据永远推不上去。
     setStatus('too-large')
     throw new Error('sync payload too large')
   }
-  if (r.status === 422) {
+  if (r === 422) {
     // 服务端拒绝空推（防御兜底）：本地缓存为空却试图覆盖有数据的槽位，绝不静默吞掉
     setStatus('error')
     throw new Error('server refused empty push')
   }
-  if (r.ok) {
-    const data = await r.json().catch(() => ({ rev: baseRev + 1 }))
-    rev = data.rev ?? baseRev + 1
+  if (r === 0) {
+    // 网络异常（仅 HTTP 传输返回 0）：与拉取侧同样置位，让上层回退本地
+    transientUnavailable = true
+    setStatus('offline')
+    throw new Error('sync push network error')
+  }
+  if (r === 200) {
+    rev = resp.rev ?? baseRev + 1
     // 推送成功：当前 cache 即为双方一致的最新状态，确立为新基线
     baseCache = snapshotOf(cache)
     setStatus('ok')
     return { conflict: false }
   }
   setStatus('error')
-  throw new Error('sync push failed ' + r.status)
+  throw new Error('sync push failed ' + r)
 }
 
 // 串行化推送：同一时刻只允许一个在途请求；在途期间的新写入标记 pending，结束后补推一次，
