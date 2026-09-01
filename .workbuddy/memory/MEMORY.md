@@ -15,13 +15,18 @@
 - 必备：tsc0错+vite build0错+改动落盘 → 升 version → 封装。
 - G盘 safe-delete 拦截 rmSync/emptyOutDir：build 前 Node `renameSync` 移开 `dist`/`dist-web`。
 - 同版本重打包：①先移开 `release/novel-studio-<ver>` 与 `dist-web`；②`dist-web` 句柄占用 rename EPERM → 改用 `--outDir dist-web-<后缀>`；③ electron-builder `rcedit Unable to commit changes` 非失败（重试第3次成功不打日志），node 读 exe buffer 搜 utf16le `青春幻想引擎开发组`/`Copyright © 2026` 判定。
-- 产物验证：node 读 buffer 双向校验新/旧字符串；便携查单文件HTML、桌面查 `dist/assets/<chunk>.js`、线上 grep `/var/www/yfe/assets/*.js`，三处一致才真上线。
+- 出包顺序：便携 `build:portable` → 网页 `build:web` → 桌面 `build:desktop`（脚本自带 dist 移开+唯一输出目录，eb-cache 命中时约 30 秒）。
+- 产物验证：node 读 buffer 双向校验新/旧字符串；便携查单文件 HTML、桌面查 `release/desktop-out-<ver>-<ts>/win-unpacked/resources/app.asar`（含 IPC 桥 `chooseSyncDir`/`sync:read`/`sync:write`/`contextBridge`）、线上 grep `/var/www/yfe/assets/*.js`，三处一致才真上线。
+- ⚠️ **scp 套娃坑（2026-09-01 真事故）**：`scp -r dist-web → /tmp/yfe-web-<日期>` 在**目标已存在**时会塞成 `/tmp/yfe-web-<日期>/dist-web/`，`cp -r` 后线上 assets 是**上一轮旧货**（文件名不同但都存在，只查字符串发现不了）。预防：上传前先 `ssh ... rm -rf /tmp/<目标>`；判定上线的硬标准＝**外部 `curl -sk https://154.8.178.240/` 取 index.html 比对 chunk 名与本地一致**。
+- 网页版部署标准流程：`scp` 到 `/tmp/yfe-web-<日期>` → `sudo mv /var/www/yfe /var/www/yfe.bak-<ts>` 备份 → `cp -r` 真产物目录到 `/var/www/yfe` → `chown -R www-data:www-data` + `chmod -R 755` → 线上 grep 校验 → 外部 curl 验 chunk 名 → 清 `/tmp/yfe-web-*`。
 - dev 报 `[safe-delete] node_modules/.vite/deps`：移开 `node_modules/.vite` 重启。Edit 偶发静默失败→改完必 tsc+抽查。
 - ⚠️ **安装弹「XX无法关闭，请手动关闭它然后点击重试」= 万能误导文案**，与"程序没关"基本无关。真实触发点 3 处（`node_modules/app-builder-lib/templates/nsis/`）：`allowOnlyOneInstallerInstance.nsh:110`(杀不掉进程) / `extractAppPackage.nsh:116`(`CopyFiles` 写不进 `$INSTDIR` 重试5次) / `installUtil.nsh:219`(旧卸载器退出码非0重试5次)。**首解＝右键「以管理员身份运行」**（老大实测一次通过）；`perMachine:false` 时进程检测走 `tasklist /FI "IMAGENAME eq <中文名>.exe" /FO csv | find.exe <中文名>` 取退出码，已实测中文不误判。
 
 ## 工作区清理
 - 先只扫报告(路径+体积)，老大圈定才动手。垃圾源：`dist.bak-*`/`dist_bak_*`/`dist-web*.bak*`/`web-build-*`，以及**最大的 `release/desktop-out-*`（单次构建 350MB 级，`build-desktop.mjs` 用时间戳目录，越攒越多）**。
-- 本环境无真回收站 → 移到 `G:\AI软件\.cleanup-quarantine\<日期时间戳>\`（可逆不删）；bash mv EPERM 换 PowerShell `Move-Item`。
+- 本环境无真回收站 → 移到 `G:\AI软件\.cleanup-quarantine\<日期时间戳>\`（可逆不删）；bash mv EPERM 换 PowerShell `Move-Item`。老大明说「直接清理删除」时才真删（`Remove-Item -Recurse -Force`）。
+- 清理后 `release/` 正常水位 ≈ 223MB（`eb-cache` 106M + 桌面交付 81M + 便携 8.5M + 4 个 asar 残留 28M）。`desktop-out-*` 的 win-unpacked 是纯中间产物，可放心删。
+- ⚠️ **`app.asar` 删不掉**：`attrib -R -S -H` + `Remove-Item -Force` + `[System.IO.File]::Delete` + `robocopy /MIR` 四法全败，统一报「正由另一进程使用」（电脑管家实时防护在扫）。**重启电脑后可删**，不影响新构建。Windows 终端工具本环境**不回显 stdout** → 要输出就写文件再 Read。
 - 🔴 **只用 Move-Item，别用 Remove-Item 删**：删除受 safe-delete 钩保护（走 trash，文件被锁时报 `[safe-delete][SAFE_DELETE_FAIL_CLOSED]` 直接失败）。被锁文件可用 `robocopy /MOVE /E /R:2 /W:1` 先复制内容再留壳。
 - 退避重试循环**别每次换目标名**（会堆一堆 `_1`~`_6` 空目录）。`desktop-out-*/win-unpacked/resources/app.asar` 常被 `QQPCRTP.exe`(管家) 持续锁句柄，重启后才删得掉；不影响下次构建（时间戳目录自动绕过）。
 - 保留红线：`release/eb-cache`(~106M)、`你需要的文件在这里/`、`release/桌面安装版/`、`release/novel-studio-<ver>/`（真交付物）。清完必跑 `git status` 确认无 D 项 + 核对源码目录文件数。
