@@ -7,6 +7,7 @@ import {
   serverStore, configureServerStore, pullSnapshot, seedFromLocal, isExcludedMetaKey,
   isCloudUnavailable, CloudAuthError, onSyncConflict, CONFLICT_KEY_PREFIX,
   applyTransportFromPersisted,
+  enableWebFileCloud, disableWebFileCloud, applyWebFileSyncFromPersisted, isWebFileSyncOn,
   type SyncConflictInfo,
 } from './serverStore'
 import {
@@ -368,11 +369,21 @@ const cloudStore: StoreOps = makeCloudStoreWrapper(serverStore, idbOps, isCloudU
 const desktopLocalStore: StoreOps = DESKTOP ? desktopStore : PORTABLE ? portableStore : idbOps
 const desktopCloudFileStore: StoreOps = makeCloudStoreWrapper(desktopCloudStore, desktopLocalStore, isDesktopCloudUnavailable)
 
-// 网页版云端同步特权（#003）：启动时若本地存有同步邀请码，则自动切换到云端存储。
+// 网页版云端同步特权（#003）：启动时按持久化方式自动切换到云端存储。
 // 仅网页体验版生效（WEB 由构建期 __WEB__ 决定），dev / 桌面 / 便携 恒不触发。
+// #032 起分两条互斥路径：
+//   ① 云盘文件模式 —— 无需同步码，认「已选目录 + 开启标记」，密钥为内置常量；
+//   ② 服务器模式   —— 需专属同步邀请码（YFE-SYNC- 开头），既做 HTTP 鉴权又做 AES 密钥。
 if (WEB) {
   void (async () => {
     try {
+      // ① 云盘文件模式：恢复成功即用，不碰任何码
+      if (await applyWebFileSyncFromPersisted()) {
+        ops = cloudStore
+        void pullSnapshot().catch(() => {})
+        return
+      }
+      // ② 服务器模式：凭同步邀请码登录
       const sc = localStorage.getItem('yfe-sync-code')
       if (sc) {
         // #031：先按持久化方式恢复传输层（云盘文件中转 / 服务器），再设码握手
@@ -401,7 +412,7 @@ if (WEB) {
     }
   })()
 } else if (CLOUD_FILE_SYNC) {
-  // 桌面/便携版云盘文件同步：启动时若持久化过同步码与目录，则自动切到云端文件存储。
+  // 桌面/便携版云盘文件同步：启动时若持久化过同步目录，则自动切到云端文件存储（#032 起无需同步码）。
   // 与网页版 WEB 引导互不干扰：本分支只在该平台激活，且完全不依赖服务器。
   void (async () => {
     try {
@@ -444,6 +455,32 @@ export async function enableCloudSync(code: string) {
     /* 忽略 */
   }
 }
+
+/**
+ * 开启网页版「云盘文件中转」同步（#032：无需同步码，选目录即开）。
+ * 与 enableCloudSync（服务器模式，需同步邀请码）平行：两者共用同一套加密/合并逻辑，
+ * 差别只在传输层（本地文件 vs HTTP）与密钥来源（内置常量 vs 用户输入的码）。
+ * @param handle 同步目录句柄（FileSystemDirectoryHandle）
+ */
+export async function enableWebCloudFileSync(handle: any) {
+  await enableWebFileCloud(handle)
+  const snap = await pullSnapshot()
+  const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
+  if (empty) {
+    // 此刻 ops 仍为默认本地存储（网页版即 idbOps），用其数据播种
+    await seedFromLocal((s) => ops.getAll(s))
+  }
+  setStoreOps(cloudStore)
+}
+
+/** 关闭网页版云盘文件同步：清持久化并切回本地 IndexedDB 存储（调用方应随后刷新页面）。 */
+export function disableWebCloudFileSync() {
+  disableWebFileCloud()
+  setStoreOps(idbOps)
+}
+
+/** 网页版云盘文件同步是否已开启（供 UI 判定初始状态）。 */
+export { isWebFileSyncOn }
 
 /**
  * 开启桌面/便携版云盘文件同步（#031 桌面延伸，#032 去掉同步码）。

@@ -28,29 +28,19 @@ import {
   loadSyncFolderHandle,
   saveSyncFolderHandle,
   clearSyncFolderHandle,
+  DEFAULT_CLOUD_KEY,
+  CLOUD_FILE_NAME,
 } from './syncTransport'
 import { DESKTOP, PORTABLE } from './env'
+
+// #032：常量已下沉到 syncTransport（网页版云盘模式也要用），此处 re-export 保持调用方不变。
+export { DEFAULT_CLOUD_KEY, CLOUD_FILE_NAME }
 
 /** 桌面 / 便携版独立的云同步门控开关（与 serverStore 的 WEB 门控互不干扰）。 */
 export const CLOUD_FILE_SYNC = DESKTOP || PORTABLE
 
 const DIR_KEY = 'yfe-desktop-cloud-dir' // 桌面：目录路径字符串
 const ENABLED_KEY = 'yfe-desktop-cloud-on' // 是否已开启云盘同步（布尔标记）
-
-/**
- * 内置默认加密密钥（#032：桌面 / 便携版砍掉「同步码」）。
- *
- * 为什么可以砍：同步码在网页版身兼两职——①HTTP 鉴权（换服务器槽位）、②AES 密钥。
- * 云盘文件中转走的是用户自己的网盘，没有我们的服务器，①根本不存在；
- * ②只需要两端一致即可，故改用内置常量：所有设备同一密钥 → 指向同一目录就能互通。
- *
- * 安全边界（必须如实告知用户）：此密钥是公开的源码常量，加密强度等同于「混淆」，
- * 仅防云盘明文扫描与误看，**不足以对抗蓄意破解**。机密稿件请放在私人目录、不要共享。
- */
-export const DEFAULT_CLOUD_KEY = 'YFE-CLOUD-FILE-SYNC-V1'
-
-/** 云盘同步文件名（固定，便于用户在云盘目录里认出它）。 */
-export const CLOUD_FILE_NAME = '青春幻想引擎-同步数据.yfe'
 
 // 用一个占位 transport 创建实例，真正的 FileTransport 在用户选目录后通过 setTransport 替换。
 const cloud: CloudStoreInstance = createCloudStore(createHttpTransport())

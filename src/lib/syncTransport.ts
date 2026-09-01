@@ -24,6 +24,22 @@ export interface SyncTransport {
   stopWatch(): void
 }
 
+// ============ 云盘文件中转 · 共享常量（#032）============
+/**
+ * 内置默认加密密钥（网页版云盘模式 / 桌面 / 便携版共用）。
+ *
+ * 为什么不需要同步码：同步码在「服务器模式」身兼两职——①HTTP 鉴权（换服务器槽位）、②AES 密钥。
+ * 云盘文件中转走的是用户自己的网盘，不过我们的服务器，①根本不存在；
+ * ②只需要两端一致即可，故用内置常量：所有设备同一密钥 → 指向同一目录就能互通。
+ *
+ * 安全边界（必须在 UI 如实告知用户）：此密钥是公开的源码常量，加密强度等同于「混淆」，
+ * 仅防云盘明文扫描与误看，**不足以对抗蓄意破解**。机密稿件请放在私人目录、不要共享。
+ */
+export const DEFAULT_CLOUD_KEY = 'YFE-CLOUD-FILE-SYNC-V1'
+
+/** 云盘同步文件名（固定，便于用户在云盘目录里认出它）。 */
+export const CLOUD_FILE_NAME = '青春幻想引擎-同步数据.yfe'
+
 // ============ 工具 ============
 async function sha256Hex(s: string): Promise<string> {
   const data = new TextEncoder().encode(s)

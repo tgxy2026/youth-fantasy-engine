@@ -25,6 +25,10 @@ import {
   createFileTransport,
   getSyncMode,
   loadSyncFolderHandle,
+  saveSyncFolderHandle,
+  clearSyncFolderHandle,
+  DEFAULT_CLOUD_KEY,
+  CLOUD_FILE_NAME,
   type SyncTransport,
   type RawSyncResponse,
 } from './syncTransport'
@@ -94,13 +98,14 @@ export async function backgroundPull() {
 /**
  * 按持久化的同步方式恢复传输层：云盘模式且存在已选目录句柄 → FileTransport，否则 HTTP。
  * #031：网页版「云盘文件中转」与「服务器」共用同一套加密/合并逻辑，仅传输层不同。
+ * #032：文件模式统一用固定文件名 CLOUD_FILE_NAME（不再按码派生哈希名），用户在网盘里能认出。
  */
 export async function applyTransportFromPersisted() {
   if (getSyncMode() === 'file') {
     try {
       const handle: any = await loadSyncFolderHandle()
       if (handle) {
-        cloud.setTransport(createFileTransport(handle))
+        cloud.setTransport(createFileTransport(handle, CLOUD_FILE_NAME))
         return
       }
     } catch {
@@ -108,6 +113,65 @@ export async function applyTransportFromPersisted() {
     }
   }
   cloud.setTransport(createHttpTransport())
+}
+
+// ============ 网页版 · 云盘文件模式（#032：无需同步码）============
+// 与「服务器模式」的区别只有两点：①传输层是本地文件而非 HTTP；②密钥用内置常量而非用户输入的码。
+// 因此这里不需要任何鉴权，选目录即开启。
+const WEB_FILE_ON_KEY = 'yfe-web-file-sync-on'
+
+/** 网页版云盘文件同步是否已开启。 */
+export function isWebFileSyncOn(): boolean {
+  try {
+    return localStorage.getItem(WEB_FILE_ON_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 开启网页版云盘文件同步（选目录即开，无需同步码）。
+ * 仅装配传输层与密钥；拉取/播种由 db.ts 的 enableWebCloudFileSync 负责。
+ */
+export async function enableWebFileCloud(handle: any) {
+  cloud.setTransport(createFileTransport(handle, CLOUD_FILE_NAME))
+  cloud.configure(DEFAULT_CLOUD_KEY)
+  try {
+    await saveSyncFolderHandle(handle)
+    localStorage.setItem(WEB_FILE_ON_KEY, '1')
+  } catch {
+    /* 持久化失败不阻断启用，仅下次启动需重选 */
+  }
+}
+
+/** 关闭网页版云盘文件同步：清持久化 + 复位为 HTTP 传输层。 */
+export function disableWebFileCloud() {
+  try {
+    localStorage.removeItem(WEB_FILE_ON_KEY)
+  } catch {
+    /* 忽略 */
+  }
+  void clearSyncFolderHandle().catch(() => {})
+  cloud.setTransport(createHttpTransport())
+  cloud.configure('')
+}
+
+/**
+ * 启动时恢复网页版云盘文件同步（#032：不再需要同步码）。
+ * 成功返回 true（db.ts 据此切到云端存储）。
+ */
+export async function applyWebFileSyncFromPersisted(): Promise<boolean> {
+  if (!isWebFileSyncOn()) return false
+  if (getSyncMode() !== 'file') return false
+  try {
+    const handle = await loadSyncFolderHandle()
+    if (!handle) return false
+    cloud.setTransport(createFileTransport(handle, CLOUD_FILE_NAME))
+    cloud.configure(DEFAULT_CLOUD_KEY)
+    return true
+  } catch {
+    return false
+  }
 }
 
 // —— 以下为共享符号，原样 re-export，保证 db.ts / WebTools 等下游 import 不变 ——

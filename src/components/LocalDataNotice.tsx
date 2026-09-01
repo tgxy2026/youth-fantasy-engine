@@ -3,11 +3,12 @@ import { AlertTriangle } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import { WEB } from '../lib/env'
+import { isWebFileSyncOn } from '../lib/serverStore'
 import { CONTACT_LINKS } from './AboutPage'
 
-// 网页体验版本地数据提醒：每次打开网页（App 挂载）且未配置同步码时弹出。
-// 仅未开启云端同步时提醒——一旦有同步码，数据已有云端兜底，不再每次打扰。
-// 按需求每次打开都弹，故不做 localStorage 「已读」抑制。
+// 网页体验版本地数据提醒：每次打开网页（App 挂载）且未开启任何云端同步时弹出。
+// #032：云端同步有两条路径——①服务器模式（凭同步邀请码）、②云盘文件模式（选目录即开，无需码）。
+// 任一开启，数据即有云端兜底，不再每次打扰。按需求每次打开都弹，故不做 localStorage 「已读」抑制。
 const SYNC_KEY = 'yfe-sync-code'
 
 export default function LocalDataNotice() {
@@ -17,9 +18,9 @@ export default function LocalDataNotice() {
     if (!WEB) return
     let hasSync = false
     try {
-      hasSync = !!localStorage.getItem(SYNC_KEY)
+      hasSync = !!localStorage.getItem(SYNC_KEY) || isWebFileSyncOn()
     } catch {
-      /* localStorage 不可用时按无同步码处理，照常提醒 */
+      /* localStorage 不可用时按未开启同步处理，照常提醒 */
     }
     if (!hasSync) setShow(true)
   }, [])
@@ -74,9 +75,17 @@ export default function LocalDataNotice() {
 
         <div className="rounded-lg bg-ink-850 border border-ink-700 p-3">
           <p className="text-ink-200 font-medium mb-2">想要云端同步与自动备份？</p>
-          <p className="text-ink-400 mb-3">
-            可在「关于打赏」页的联系方式中加入交流群，或联系作者获取同步邀请码。开启同步后，数据会自动备份到云端，不再受本机风险影响。
-          </p>
+          <div className="mb-3 space-y-1.5 text-ink-400">
+            <p>任选其一即可（左下角「云端同步」面板里切换）：</p>
+            <p className="text-ink-300">
+              <strong className="text-emerald-300">① 云盘文件方式 · 不用任何码</strong>
+              ：选一个文件夹（建议放在 OneDrive / WPS 云盘 / 百度网盘 / 坚果云 等同步目录内），数据加密后存成「青春幻想引擎-同步数据.yfe」，由网盘客户端负责跨设备搬运。
+            </p>
+            <p className="text-ink-300">
+              <strong className="text-amber">② 服务器方式 · 需要同步邀请码</strong>
+              ：在「关于打赏」页的联系方式中加入交流群，或联系作者获取（YFE-SYNC- 开头）。开启后数据自动备份到云端，不再受本机风险影响。
+            </p>
+          </div>
           <ul className="space-y-1.5 text-ink-300">
             {CONTACT_LINKS.map(l => (
               <li key={l.label} className="flex gap-2">

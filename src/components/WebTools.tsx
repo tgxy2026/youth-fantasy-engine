@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react'
-import { Cloud, LogOut, FolderOpen } from 'lucide-react'
+import { Cloud, LogOut, FolderOpen, CloudOff } from 'lucide-react'
 import PromptModal from './PromptModal'
 import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
 import { WEB } from '../lib/env'
-import { enableCloudSync } from '../lib/db'
-import { getSyncStatus, type SyncStatus, CloudAuthError, isCloudAuthFailed, getCloudBackupMeta, restoreFromCloudBackup } from '../lib/serverStore'
-import { setSyncTransport } from '../lib/serverStore'
+import { enableCloudSync, enableWebCloudFileSync, disableWebCloudFileSync } from '../lib/db'
+import {
+  getSyncStatus,
+  type SyncStatus,
+  CloudAuthError,
+  isCloudAuthFailed,
+  getCloudBackupMeta,
+  restoreFromCloudBackup,
+  setSyncTransport,
+  configureServerStore,
+  isWebFileSyncOn,
+} from '../lib/serverStore'
 import {
   getSyncMode,
   setSyncMode,
-  saveSyncFolderHandle,
   loadSyncFolderHandle,
   createFileTransport,
   createHttpTransport,
+  DEFAULT_CLOUD_KEY,
+  CLOUD_FILE_NAME,
   type SyncMode,
 } from '../lib/syncTransport'
 import { STATUS_META } from '../lib/syncStatusMeta'
@@ -23,20 +33,18 @@ import { Button } from './Button'
 /**
  * 网页体验版工具条（#032 收编）。
  *
- * 仅负责 WEB 平台的云端同步（服务器 / 云盘文件中转，含进门邀请码与「退出网页体验」）。
- * 桌面 / 便携版的「云盘文件同步」已独立为 CloudFileSyncBar（无服务器、无同步码），
- * 两者由 DataDock / Sidebar 统一排版承载，本组件不再画自己的 fixed 浮层。
+ * 仅负责 WEB 平台的云端同步，内含**两条互斥路径**：
+ *   ① 服务器模式（http）—— 走我们的 /api/sync，需要专属同步邀请码（YFE-SYNC- 开头）。
+ *      码身兼两职：HTTP 鉴权（换服务器槽位）+ AES 加密密钥。
+ *   ② 云盘文件模式（file）—— 数据加密后落成用户自选目录里的 .yfe 文件，由网盘客户端搬运。
+ *      **无需任何码**：不过我们的服务器，鉴权一环不存在；加密密钥用内置常量，两端一致即可互通。
+ *
+ * 桌面 / 便携版的「云盘文件同步」已独立为 CloudFileSyncBar（同样无服务器、无同步码）。
+ * 三者由 DataDock / Sidebar 统一排版承载，本组件不再画自己的 fixed 浮层。
  */
 export default function WebTools() {
   const [syncOpen, setSyncOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [synced, setSynced] = useState(() => {
-    try {
-      return !!localStorage.getItem('yfe-sync-code')
-    } catch {
-      return false
-    }
-  })
   const [status, setStatus] = useState<SyncStatus>(getSyncStatus())
   const [backupDay, setBackupDay] = useState<string | null>(null)
 
@@ -49,6 +57,16 @@ export default function WebTools() {
     }
   })
   const [folderName, setFolderName] = useState<string | null>(null)
+  // 已开启状态分模式判定：http 看有没有同步码，file 看有没有开启标记 + 目录
+  const [hasCode, setHasCode] = useState(() => {
+    try {
+      return !!localStorage.getItem('yfe-sync-code')
+    } catch {
+      return false
+    }
+  })
+  const [fileOn, setFileOn] = useState(() => isWebFileSyncOn())
+  const synced = mode === 'file' ? fileOn : hasCode
 
   useEffect(() => {
     if (!WEB) return
@@ -56,11 +74,11 @@ export default function WebTools() {
     const onConflict = () =>
       showToast('检测到云端与本地改过同一处：已保留你的版本，并在本地另存云端副本', 'info', 5000)
     const onAuthFailed = () => {
-      setSynced(false)
+      setHasCode(false)
       showToast('云端同步邀请码已失效，已切回本地数据（数据仍在本地，不会丢失）', 'error')
     }
     if (isCloudAuthFailed()) {
-      setSynced(false)
+      setHasCode(false)
       onAuthFailed()
     }
     window.addEventListener('yfe:sync-status', onStatus)
@@ -84,41 +102,77 @@ export default function WebTools() {
     }
   }, [])
 
-  const switchMode = (m: SyncMode) => {
+  /** 切换同步方式：立即装配对应传输层，已开启的一侧回到本模式时自动恢复密钥。 */
+  const switchMode = async (m: SyncMode) => {
     setMode(m)
     setSyncMode(m)
     if (m === 'file') {
-      loadSyncFolderHandle()
-        .then((h) => {
-          if (h) {
-            setSyncTransport(createFileTransport(h))
-            if (h.name) setFolderName(h.name)
-          }
-        })
-        .catch(() => {})
+      const h = await loadSyncFolderHandle().catch(() => null)
+      if (h) {
+        setSyncTransport(createFileTransport(h, CLOUD_FILE_NAME))
+        setFolderName(h.name || null)
+        // 已开启过云盘同步 → 立刻接上内置密钥，避免状态栏显示旧模式的残留状态
+        if (isWebFileSyncOn()) configureServerStore(DEFAULT_CLOUD_KEY)
+      } else {
+        setFolderName(null)
+      }
     } else {
       setSyncTransport(createHttpTransport())
+      const code = (() => {
+        try {
+          return localStorage.getItem('yfe-sync-code') || ''
+        } catch {
+          return ''
+        }
+      })()
+      if (code) configureServerStore(code)
     }
   }
 
+  /** 云盘文件模式：选目录即开启（无需同步码）。已开启时再次选择＝更换目录。 */
   const pickFolder = async () => {
     try {
       const picker = (window as any).showDirectoryPicker
       if (typeof picker !== 'function') {
-        showToast('当前浏览器不支持选择同步文件夹，请改用 Chrome / Edge，或使用手动导入导出', 'error', 6000)
+        showToast('当前浏览器不支持选择同步文件夹，请改用 Chrome / Edge，或切换到「服务器」方式', 'error', 6000)
         return
       }
       const h = await picker({ mode: 'readwrite' })
-      setSyncTransport(createFileTransport(h))
-      await saveSyncFolderHandle(h)
+      setBusy(true)
+      await enableWebCloudFileSync(h)
       setSyncMode('file')
       setMode('file')
       setFolderName(h.name)
-      showToast('已选定同步文件夹：' + h.name + '（建议把它放进 OneDrive / Dropbox / 百度网盘 / WPS 云盘 等同步目录，即可跨设备同步）', 'success', 7000)
+      setFileOn(true)
+      showToast(
+        `已开启云盘同步：${h.name}\n数据加密存为「${CLOUD_FILE_NAME}」，把它放进网盘同步目录即可跨设备`,
+        'success',
+        7000,
+      )
+      setTimeout(() => location.reload(), 800)
     } catch (e: any) {
       if (e && e.name === 'AbortError') return
       showToast('选择文件夹失败：' + (e?.message || e), 'error')
+      setBusy(false)
     }
+  }
+
+  /** 云盘文件模式：关闭并切回本机浏览器存储。 */
+  const closeFileSync = async () => {
+    const ok = await confirmDialog({
+      title: '关闭云盘文件同步',
+      message:
+        '关闭后本设备将改用浏览器本地存储（IndexedDB），不再读写网盘里的同步文件。\n' +
+        `网盘目录里的「${CLOUD_FILE_NAME}」不会被删除，其它设备仍可继续同步。\n\n确定关闭吗？`,
+      confirmText: '关闭同步',
+      danger: true,
+    })
+    if (!ok) return
+    disableWebCloudFileSync()
+    setFileOn(false)
+    setFolderName(null)
+    showToast('已关闭云盘文件同步，切回本机浏览器存储', 'success')
+    setTimeout(() => location.reload(), 600)
   }
 
   const onRestore = async () => {
@@ -145,12 +199,10 @@ export default function WebTools() {
     }
   }
 
+  /** 服务器模式：用同步邀请码登录。 */
   const doSync = async (raw: string) => {
     const code = String(raw || '').replace(/\s+/g, '').toUpperCase()
-    if (mode === 'file' && !folderName) {
-      showToast('云盘文件中转模式需要先「选择同步文件夹」', 'error', 5000)
-      return
-    }
+    if (!code) return
     setBusy(true)
     try {
       if (code.startsWith('YFE-D')) {
@@ -159,7 +211,7 @@ export default function WebTools() {
         return
       }
       await enableCloudSync(code)
-      setSynced(true)
+      setHasCode(true)
       showToast('云端同步已开启，正在载入云端数据…', 'success')
       setTimeout(() => location.reload(), 600)
     } catch (e) {
@@ -172,11 +224,13 @@ export default function WebTools() {
     }
   }
 
-  // 网页版沿用「同步邀请码」语义，状态徽标文案保持与码相关
+  // 状态徽标文案：仅在服务器模式下才可能出现「码失效」语义
   const meta =
     status === 'auth-failed'
       ? { ...STATUS_META['auth-failed'], title: '同步邀请码已失效，已切回本地数据' }
       : STATUS_META[status]
+
+  const isFile = mode === 'file'
 
   const segCls = (m: SyncMode) =>
     'rounded px-2 py-1 text-xs border transition-colors ' +
@@ -186,6 +240,19 @@ export default function WebTools() {
 
   const rowBtn =
     'flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border px-2 text-[12px] transition-colors disabled:opacity-60 '
+
+  const helpText = isFile
+    ? `【云盘文件方式】无需任何同步码，也不需要我们的服务器。
+选一个文件夹后，你的创作数据会加密存成「${CLOUD_FILE_NAME}」落在其中；把它放进 OneDrive / WPS 云盘 / 百度网盘 / 坚果云 等同步目录，各设备打开同一个文件即可自动同步。
+跨设备条件：所有设备都选择同一个网盘文件夹。
+
+⚠️ 安全边界：此方式不使用同步码，加密密钥是软件内置的统一密钥，强度等同于「混淆」——能防云盘明文扫描和他人误看，但不足以对抗蓄意破解。请勿把同步目录设成公开共享文件夹，涉密稿件请用「导出备份」自行保管。`
+    : `【服务器方式】需要专属同步邀请码（YFE-SYNC- 开头，与进门用的网页邀请码不是同一个）。
+码同时承担两个作用：①向服务器证明你的身份、换取独立存储空间；②作为加密密钥，数据在上传前就已加密，服务器只存密文。
+跨设备条件：各设备填入同一个同步邀请码。
+
+断网或服务不可达时会自动回退本地保存、编辑不丢；恢复后自动重新同步。
+云端每日保留一份滚动备份（最新一份、按天滚动）：若当天手滑推了坏数据，可点「从云端备份恢复」回退到当天/昨日的检查点。`
 
   if (!WEB) return null
 
@@ -201,69 +268,94 @@ export default function WebTools() {
             {meta.text || '待命'}
           </span>
         )}
-        <HelpPopover title="云端同步说明" side="right" width="22rem">
-          {`云端同步把项目数据实时保存到${mode === 'file' ? '你选定的云盘同步文件夹' : '云端服务器'}，可在其它设备登录同一同步邀请码继续创作。
-断网或服务不可达时会自动回退本地保存、编辑不丢；恢复后自动重新同步。
-云端每日保留一份滚动备份（最新一份、按天滚动）：若当天手滑推了坏数据，可点「从云端备份恢复」回退到当天/昨日的检查点。
-注意：同步邀请码（YFE-SYNC- 开头）与进门的网页邀请码不是同一个。${
-            mode === 'file'
-              ? '\n当前为「云盘文件中转」模式：数据以加密文件落在你选的同步文件夹里，由 OneDrive / WPS 云盘 等客户端负责跨设备同步。'
-              : ''
-          }`}
+        <HelpPopover title="云端同步说明" side="right" width="24rem">
+          {helpText}
         </HelpPopover>
       </div>
 
       {/* 同步方式切换 */}
       <div className="flex items-center gap-1.5 text-[11px] text-ink-400">
         <span className="shrink-0 opacity-70">方式</span>
-        <button type="button" className={segCls('http') + ' flex-1'} onClick={() => switchMode('http')}>
+        <button type="button" className={segCls('http') + ' flex-1'} onClick={() => void switchMode('http')}>
           服务器
         </button>
-        <button type="button" className={segCls('file') + ' flex-1'} onClick={() => switchMode('file')}>
+        <button type="button" className={segCls('file') + ' flex-1'} onClick={() => void switchMode('file')}>
           云盘文件
         </button>
       </div>
 
-      {mode === 'file' && (
-        <Button
-          variant="bare"
-          onClick={pickFolder}
-          disabled={busy}
-          title="选择用于跨设备同步的本地文件夹（建议放进 OneDrive / WPS 云盘 等同步目录）"
-          className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50 hover:text-ink-100'}
-        >
-          <FolderOpen size={13} />
-          <span className="truncate">{folderName ? '更换：' + folderName : '选择同步文件夹'}</span>
-        </Button>
-      )}
+      {/* 当前方式的一句话说明：把「要不要码」讲清楚 */}
+      <p className="rounded-md bg-ink-850/70 px-2 py-1 text-[11px] leading-relaxed text-ink-400">
+        {isFile ? (
+          <>
+            走你自己的网盘目录，<span className="text-emerald-300">不需要同步码</span>
+            {folderName ? ` · 当前：${folderName}` : ' · 尚未选择文件夹'}
+          </>
+        ) : (
+          <>
+            走我们的服务器，需要<span className="text-amber">专属同步邀请码</span>（YFE-SYNC- 开头）
+          </>
+        )}
+      </p>
 
-      <Button
-        variant="bare"
-        onClick={() => setSyncOpen(true)}
-        disabled={busy}
-        title={synced ? `${meta.title}（点击可重新连接）` : '开启云端同步（需专属同步邀请码）'}
-        className={
-          rowBtn +
-          (synced
-            ? 'border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20'
-            : 'border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20')
-        }
-      >
-        <Cloud size={13} />
-        {synced ? '已开启·重新连接' : '开启云端同步'}
-      </Button>
+      {isFile ? (
+        <>
+          {/* 云盘文件模式：选目录即开启，无码 */}
+          <Button
+            variant="bare"
+            onClick={pickFolder}
+            disabled={busy}
+            title={
+              folderName
+                ? `更换同步文件夹（当前：${folderName}）`
+                : '选择一个文件夹存放加密同步文件，建议放在网盘同步目录内'
+            }
+            className={rowBtn + 'border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20'}
+          >
+            <FolderOpen size={13} />
+            <span className="truncate">{folderName ? '更换：' + folderName : '选择同步文件夹'}</span>
+          </Button>
 
-      {synced && backupDay && (
-        <Button
-          variant="bare"
-          onClick={onRestore}
-          disabled={busy}
-          title={`云端每日备份（${backupDay}）· 点击回滚到该检查点`}
-          className={rowBtn + 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'}
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          从云端备份恢复（{backupDay}）
-        </Button>
+          {fileOn && (
+            <Button
+              variant="bare"
+              onClick={closeFileSync}
+              disabled={busy}
+              title="关闭云盘文件同步，改回浏览器本地存储（不会删除网盘里的同步文件）"
+              className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-red-400/50 hover:text-red-300'}
+            >
+              <CloudOff size={13} />
+              关闭云盘同步
+            </Button>
+          )}
+        </>
+      ) : (
+        <>
+          {/* 服务器模式：凭同步邀请码登录 */}
+          <Button
+            variant="bare"
+            onClick={() => setSyncOpen(true)}
+            disabled={busy}
+            title={synced ? `${meta.title}（点击可重新连接）` : '开启云端同步（需专属同步邀请码）'}
+            className={rowBtn + 'border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20'}
+          >
+            <Cloud size={13} />
+            {synced ? '已开启·重新连接' : '开启云端同步'}
+          </Button>
+
+          {synced && backupDay && (
+            <Button
+              variant="bare"
+              onClick={onRestore}
+              disabled={busy}
+              title={`云端每日备份（${backupDay}）· 点击回滚到该检查点`}
+              className={rowBtn + 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              从云端备份恢复（{backupDay}）
+            </Button>
+          )}
+        </>
       )}
 
       <Button
@@ -285,8 +377,8 @@ export default function WebTools() {
 
       <PromptModal
         open={syncOpen}
-        title="开启云端同步"
-        label="输入你专属的同步邀请码（YFE-SYNC- 开头，与进门用的邀请码不是同一个）。开启后项目数据将实时保存并跨设备同步。"
+        title="开启云端同步（服务器方式）"
+        label="输入你专属的同步邀请码（YFE-SYNC- 开头，与进门用的网页邀请码不是同一个）。开启后项目数据将实时保存并跨设备同步。"
         placeholder="同步邀请码"
         transformUppercase
         confirmText={busy ? '连接中…' : '开启同步'}
