@@ -18,6 +18,14 @@ export interface ElectronStoreAPI {
   importFile(): Promise<string | null>
   revealDataFile(): Promise<void>
   dataPath(): Promise<string>
+  /** 数据文件是否已被改到自定义位置 */
+  isCustomPath(): Promise<boolean>
+  /** 选择数据文件的新存放位置，返回完整文件路径或 null（取消） */
+  chooseDataDir(): Promise<string | null>
+  /** 迁移数据文件到新位置；adopted=目标已有数据文件、改用那份 */
+  setDataPath(target: string, text: string): Promise<{ ok: boolean; path: string; adopted: boolean; error: string | null }>
+  /** 恢复默认存放位置 */
+  resetDataPath(text: string): Promise<{ ok: boolean; path: string; adopted: boolean; error: string | null }>
 }
 
 declare global {
@@ -49,6 +57,8 @@ export interface DesktopState {
   lastSavedAt: number
   lastError: string
   dataPath: string
+  /** 数据文件是否已改到自定义位置（区别于默认的 userData 目录） */
+  isCustomPath: boolean
 }
 
 let data: PortableData = { app: 'novel-studio', kind: 'portable-data', fileVersion: 1, savedAt: 0, stores: {} }
@@ -59,6 +69,7 @@ let dirty = false
 let lastSavedAt = 0
 let lastError = ''
 let dataFilePath = ''
+let isCustomPath = false
 
 const listeners = new Set<() => void>()
 
@@ -71,7 +82,10 @@ export function subscribeDesktop(fn: () => void): () => void {
 function emit() { listeners.forEach(fn => fn()) }
 
 export function getDesktopState(): DesktopState {
-  return { connected: inited, fileName: '本地数据文件', dirty, saving, lastSavedAt, lastError, dataPath: dataFilePath }
+  return {
+    connected: inited, fileName: '本地数据文件', dirty, saving,
+    lastSavedAt, lastError, dataPath: dataFilePath, isCustomPath,
+  }
 }
 
 /** 应用启动时调用：从本地用户数据目录读取数据文件（首次使用时文件不存在，视作空库） */
@@ -80,6 +94,11 @@ export async function initDesktopStore(): Promise<void> {
   try {
     const r = await api().load()
     dataFilePath = r.path
+    try {
+      isCustomPath = (await api().isCustomPath()) === true
+    } catch {
+      isCustomPath = false
+    }
     if (r.error) {
       lastError = '读取本地数据文件失败：' + r.error
     } else if (r.text && r.text.trim()) {
@@ -184,6 +203,49 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
 /** 在资源管理器中显示本地数据文件（手动备份用） */
 export async function revealDesktopDataFile(): Promise<void> {
   if (DESKTOP) await api().revealDataFile()
+}
+
+/** 选择数据文件的新存放位置（返回完整文件路径，取消返回 null） */
+export async function chooseDesktopDataDir(): Promise<string | null> {
+  if (!DESKTOP) return null
+  try {
+    return await api().chooseDataDir()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 把数据文件迁到新位置并立即生效。
+ *
+ * 目标已存在数据文件时「改用那份」（adopted=true）——这正是第二台设备的标准用法：
+ * 把位置指到同一个云盘目录，直接接管另一台设备同步过来的数据，而不是覆盖它。
+ *
+ * 调用方在成功后应重新加载应用（location.reload()）让新路径生效。
+ */
+export async function relocateDesktopDataFile(
+  target: string,
+): Promise<{ ok: boolean; path: string; adopted: boolean; error?: string }> {
+  if (!DESKTOP || !inited) return { ok: false, path: '', adopted: false, error: '桌面存储未就绪' }
+  await flushDesktop() // 先把内存数据落盘，避免带着未保存改动换位置
+  data.savedAt = Date.now()
+  const r = await api().setDataPath(target, JSON.stringify(data))
+  if (!r.ok) return { ok: false, path: '', adopted: false, error: r.error ?? '未知错误' }
+  dataFilePath = r.path
+  isCustomPath = true
+  return { ok: true, path: r.path, adopted: r.adopted }
+}
+
+/** 恢复默认存放位置（userData 目录）。原位置的数据文件不会被删除。 */
+export async function resetDesktopDataPath(): Promise<{ ok: boolean; path: string; adopted: boolean; error?: string }> {
+  if (!DESKTOP || !inited) return { ok: false, path: '', adopted: false, error: '桌面存储未就绪' }
+  await flushDesktop()
+  data.savedAt = Date.now()
+  const r = await api().resetDataPath(JSON.stringify(data))
+  if (!r.ok) return { ok: false, path: '', adopted: false, error: r.error ?? '未知错误' }
+  dataFilePath = r.path
+  isCustomPath = false
+  return { ok: true, path: r.path, adopted: r.adopted }
 }
 
 /** 桌面模式下的存储原语实现（内存数据 + 防抖写回本地数据文件） */

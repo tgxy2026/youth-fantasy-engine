@@ -16,6 +16,14 @@ contextBridge.exposeInMainWorld('electronStore', {
   revealDataFile: () => ipcRenderer.invoke('store:reveal'),
   /** 本地数据文件完整路径（提示用） */
   dataPath: () => ipcRenderer.invoke('store:path'),
+  /** 数据文件是否已被改到自定义位置（决定要不要显示「恢复默认」） */
+  isCustomPath: () => ipcRenderer.invoke('store:isCustomPath'),
+  /** 选择数据文件的新存放位置，返回完整文件路径或 null（取消） */
+  chooseDataDir: () => ipcRenderer.invoke('store:chooseDataDir'),
+  /** 迁移数据文件到新位置，返回 { ok, path, adopted, error }；adopted=目标已有数据文件，改用那份 */
+  setDataPath: (target, text) => ipcRenderer.invoke('store:setDataPath', target, text),
+  /** 恢复默认存放位置，返回 { ok, path, adopted, error } */
+  resetDataPath: (text) => ipcRenderer.invoke('store:resetDataPath', text),
   /** 云盘文件同步：弹出原生目录选择对话框，返回目录路径或 null（取消） */
   chooseSyncDir: () => ipcRenderer.invoke('sync:chooseDir'),
   /** 云盘文件同步：读取同步目录下的文件（经主进程 fs，渲染进程 nodeIntegration=false 不可用 require） */
