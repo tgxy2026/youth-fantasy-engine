@@ -64,21 +64,28 @@ if (!existsSync(path.join(zipDir, 'electron-v31.7.7-win32-x64.zip')) && existsSy
 
 // 构建前把旧的 desktop-out 改名移走（rename 非破坏性，避开 safe-delete 对 rm 的拦截，也避免复用陈旧产物）
 // 注意：历史打包（如 1.2.0）的 electron-builder 可能因 safe-delete 拦截收尾文件清理而残留为僵尸进程，
-// 持续占用 release/desktop-out 目录句柄，导致后续构建 renameSync 抛 EBUSY 异常崩溃。
+// 持续占用 release/desktop-out 目录句柄，导致后续构建 renameSync 抛 EBUSY/EPERM 异常崩溃。
 // 故按版本号隔离输出目录（desktop-out-<version>），彻底绕开被锁死的旧目录，避免再次卡死，且各版本产物互不污染。
-const desktopOut = path.join(root, 'release', `desktop-out-${pkg.version}`)
-if (existsSync(desktopOut)) {
-  renameSync(desktopOut, path.join(root, `release/desktop-out-bak_${Date.now()}`))
+// 额外保险：当旧目录被残留进程锁死（rename 失败）时，不再阻塞本次构建——改用带时间戳的唯一输出目录，
+// 完全避开被占用的旧目录，保证打包可重复成功。
+const desktopOutBase = path.join(root, 'release', `desktop-out-${pkg.version}`)
+const desktopOut = path.join(root, 'release', `desktop-out-${pkg.version}-${Date.now()}`)
+if (existsSync(desktopOutBase)) {
+  try {
+    renameSync(desktopOutBase, path.join(root, `release/desktop-out-bak_${Date.now()}`))
+  } catch (e) {
+    console.warn('[build:desktop] 提示：旧 desktop-out 目录被占用，跳过清理（改用唯一输出目录，不阻塞本次构建）：', e.message)
+  }
 }
 
 // electron-builder 打包 NSIS 安装包。
 // 已知坑：本环境 safe-delete 会把末尾清理中间文件（.nsis.7z）的 unlink 拦截成"移入回收站"，
 // 回收站操作异常导致 electron-builder 以非零码退出——但安装包 exe 已正常产出。
 // 故此处不立即失败：若 exe 已存在则视为成功并继续交付，否则才真正报错。
-const buildResult = spawnSync(process.execPath, [builder, '--win', '--x64', `-c.directories.output=release/desktop-out-${pkg.version}`], {
+const buildResult = spawnSync(process.execPath, [builder, '--win', '--x64', `-c.directories.output=${desktopOut}`], {
   cwd: root, stdio: 'inherit', shell: false, env: { ...process.env, ...env },
 })
-const src = path.join(root, 'release', `desktop-out-${pkg.version}`, setupName)
+const src = path.join(desktopOut, setupName)
 if (buildResult.status !== 0) {
   if (!existsSync(src)) {
     console.error(`[build:desktop] electron-builder 失败：${builder} --win --x64`)
