@@ -3,7 +3,7 @@ import { Sparkles, Loader2, AlertCircle, BarChart3 } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiAnalyzeFeedback, type FeedbackEntry } from '../lib/aiTasks'
-import { Modal } from './EditorModals'
+import { ToolModal } from './EditorModals'
 import { Button } from './Button'
 
 interface Props {
@@ -51,7 +51,7 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
   }
 
   return (
-    <Modal title="读者反馈 AI 分析" icon={<BarChart3 size={16} />} onClose={onClose} wide>
+    <ToolModal title="读者反馈 AI 分析" icon={<BarChart3 size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-[11px] text-ink-500">
           把已登记的读者反馈 / 运营数据交给 AI，做流失归因与应对建议分析。未配置模型不影响本表手动填写。
@@ -94,7 +94,7 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
           </Button>
         </div>
       )}
-    </Modal>
+    </ToolModal>
   )
 }
 

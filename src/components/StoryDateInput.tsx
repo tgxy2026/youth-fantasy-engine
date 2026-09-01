@@ -9,7 +9,7 @@ interface Props {
 const STRICT_RE = /^(\d+)年(\d{1,2})月(\d{1,2})日$/
 
 /** 解析严格格式的故事内日期；解析失败返回 null */
-export function parseStoryDate(s: string | undefined | null): { y: number; m: number; d: number } | null {
+export function parseStoryDateParts(s: string | undefined | null): { y: number; m: number; d: number } | null {
   if (!s) return null
   const m = s.trim().match(STRICT_RE)
   if (!m) return null
@@ -18,7 +18,7 @@ export function parseStoryDate(s: string | undefined | null): { y: number; m: nu
 
 /** 解析为可比较的排序键：年*10000 + 月*100 + 日（兼容旧自由文本格式） */
 export function storyDateKey(s: string | undefined | null): number {
-  const p = parseStoryDate(s)
+  const p = parseStoryDateParts(s)
   if (p) return p.y * 10000 + p.m * 100 + p.d
   if (!s) return Number.POSITIVE_INFINITY
   const raw = s.trim()
@@ -50,7 +50,7 @@ function daysInMonth(y: number, m: number): number {
  * 三者齐全时才写入值，杜绝"三月末""灵历3024年春"这类导致时间轴排序错误的自由文本。
  */
 export default function StoryDateInput({ value, onChange }: Props) {
-  const parsed = parseStoryDate(value)
+  const parsed = parseStoryDateParts(value)
   const y = parsed?.y
   const m = parsed?.m
   const d = parsed?.d

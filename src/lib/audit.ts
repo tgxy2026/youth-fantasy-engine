@@ -59,7 +59,7 @@ export function cnNumToArabic(s: string): number {
 }
 
 /** 解析严格故事内日期 "3024年3月9日" / "4年1月1日" → 可比较整数；无法解析返回 null */
-export function parseStoryDate(s: string | undefined): number | null {
+export function parseStoryDateKey(s: string | undefined): number | null {
   if (!s) return null
   const m = s.trim().match(/(\d+)\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/)
   if (!m) return null

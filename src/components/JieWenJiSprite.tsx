@@ -32,12 +32,13 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
   const dragRef = useRef<null | { startY: number; origTop: number; moved: boolean }>(null)
   const lastClick = useRef(0)
   const clickTimer = useRef(0)
+  const bounceTimer = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
     try { localStorage.setItem('yfe-sprite-y', String(topPct)) } catch { /* ignore */ }
   }, [topPct])
-  // 卸载时清理点击延迟定时器
-  useEffect(() => () => clearTimeout(clickTimer.current), [])
+  // 卸载时清理延迟定时器（点击延迟 / 弹跳动画）
+  useEffect(() => () => { clearTimeout(clickTimer.current); clearTimeout(bounceTimer.current) }, [])
 
   const visible = tucked ? TUCK_VISIBLE : hover ? HOVER_VISIBLE : IDLE_VISIBLE
   const translateX = SPRITE - visible
@@ -47,7 +48,7 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
     if (isEditor) {
       window.dispatchEvent(new Event('jiewenji:open'))
       setBounce(true)
-      setTimeout(() => setBounce(false), 500)
+      bounceTimer.current = setTimeout(() => setBounce(false), 500)
     } else {
       setMini(m => !m)
     }

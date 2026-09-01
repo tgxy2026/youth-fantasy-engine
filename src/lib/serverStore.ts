@@ -128,10 +128,6 @@ export function isCloudAuthFailed(): boolean {
 export function isCloudUnavailable(): boolean {
   return authFailed || transientUnavailable || Date.now() < rateLimitedUntil
 }
-/** 是否因网络异常暂时离线（#011）。与码失效不同，网络恢复后会自动重试接管。 */
-export function isCloudOffline(): boolean {
-  return transientUnavailable
-}
 
 /** 被服务端限流（429）——与网络异常区分，避免被当成「可以重试的普通失败」反复打 */
 export class RateLimitError extends Error {

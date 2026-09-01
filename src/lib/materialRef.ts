@@ -71,8 +71,6 @@ export interface MaterialCategory {
   blocks: Block[]
 }
 
-// 性格类型 9 维模板（顺序固定，适配定位单列 fit，故 dims 取前 8 维）
-export const CHAR_DIM_ORDER = ['核心气质', '造型符号', '动作微表情', '语言习惯', '行为逻辑', '情感表达', '反差矛盾点', '避雷']
 
 // ============ 人物设计分类 ============
 export const MATERIAL_CATEGORIES: MaterialCategory[] = [

@@ -13,7 +13,7 @@ import { confirmDialog } from './dialogs'
 import { Modal as BaseModal } from './Modal'
 
 // ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
-export function Modal({ title, icon, onClose, children, wide }: {
+export function ToolModal({ title, icon, onClose, children, wide }: {
   title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean
 }) {
   return (
@@ -36,7 +36,7 @@ export function SensitiveCheck({ content, onApply, onClose }: {
   const [replaced, setReplaced] = useState(false)
 
   return (
-    <Modal title="敏感词检测（本章）" icon={<ShieldAlert size={16} />} onClose={onClose}>
+    <ToolModal title="敏感词检测（本章）" icon={<ShieldAlert size={16} />} onClose={onClose}>
       {!checked ? <div className="text-[12px] text-ink-400">检测中…</div> : hits.length === 0 ? (
         <div className="py-8 text-center text-[13px] text-emerald-400">本章未检出敏感词 ✓（词库可在「检查工具」页扩充）</div>
       ) : (
@@ -59,7 +59,7 @@ export function SensitiveCheck({ content, onApply, onClose }: {
           </div>
         </>
       )}
-    </Modal>
+    </ToolModal>
   )
 }
 
@@ -156,7 +156,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
   const typoTotal = typoHits.reduce((s, h) => s + h.count, 0)
 
   return (
-    <Modal title="校对（本章）" icon={<span className="text-amber">校</span>} onClose={onClose} wide>
+    <ToolModal title="校对（本章）" icon={<span className="text-amber">校</span>} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-[11px] text-ink-500">
           错别字由内置词库本地直接查（无需模型）；语病 / 逻辑 / 设定矛盾需接入 AI 模型后由 AI 深度校对。
@@ -262,7 +262,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
           </div>
         )}
       </div>
-    </Modal>
+    </ToolModal>
   )
 }
 
@@ -280,7 +280,7 @@ export function VersionHistory({ chapterId, onRestore, onClose }: {
   }
 
   return (
-    <Modal title="时光机 · 本章版本历史（自动快照，保留最近 12 版）" icon={<History size={16} />} onClose={onClose} wide>
+    <ToolModal title="时光机 · 本章版本历史（自动快照，保留最近 12 版）" icon={<History size={16} />} onClose={onClose} wide>
       {snaps.length === 0 ? (
         <div className="py-8 text-center text-[12px] text-ink-500">暂无历史版本——写作过程中每 5 分钟或每变化 200 字自动存一版</div>
       ) : (
@@ -312,7 +312,7 @@ export function VersionHistory({ chapterId, onRestore, onClose }: {
           </div>
         </div>
       )}
-    </Modal>
+    </ToolModal>
   )
 }
 
@@ -337,7 +337,7 @@ export function TrashBin({ onChanged, onClose }: { onChanged: () => void; onClos
   }
 
   return (
-    <Modal title={`回收站（${items.length}）`} icon={<Trash2 size={16} />} onClose={onClose}>
+    <ToolModal title={`回收站（${items.length}）`} icon={<Trash2 size={16} />} onClose={onClose}>
       {items.length === 0 ? (
         <div className="py-8 text-center text-[12px] text-ink-500">回收站是空的——删除的章节会先放到这里，随时可恢复</div>
       ) : (
@@ -367,7 +367,7 @@ export function TrashBin({ onChanged, onClose }: { onChanged: () => void; onClos
           )}
         </>
       )}
-    </Modal>
+    </ToolModal>
   )
 }
 
@@ -419,7 +419,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
   }
 
   return (
-    <Modal title="全文搜索替换（全书范围）" icon={<Search size={16} />} onClose={onClose} wide>
+    <ToolModal title="全文搜索替换（全书范围）" icon={<Search size={16} />} onClose={onClose} wide>
       <div className="flex gap-2 mb-2">
         <input
           value={q}
@@ -459,7 +459,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
           </div>
         )
       )}
-    </Modal>
+    </ToolModal>
   )
 }
 

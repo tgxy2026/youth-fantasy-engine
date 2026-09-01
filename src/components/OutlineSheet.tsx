@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import type { TabDef, CardRecord } from '../lib/types'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '../lib/db'
 import { uid } from '../lib/id'
@@ -33,6 +33,8 @@ export default function OutlineSheet({ tab }: Props) {
   const [draft, setDraft] = useState<CardRecord | null>(null)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const savedTimer = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => () => clearTimeout(savedTimer.current), [])
   const [tplOpen, setTplOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -165,7 +167,7 @@ export default function OutlineSheet({ tab }: Props) {
     setRecords(records.map(r => (r.id === draft.id ? draft : r)))
     setSaving(false)
     setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+    savedTimer.current = setTimeout(() => setSaved(false), 1500)
   }, [draft, dirty, records])
 
   // Ctrl/Cmd+S

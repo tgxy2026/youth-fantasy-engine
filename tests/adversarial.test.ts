@@ -5,7 +5,7 @@ import * as db from '../src/lib/db'
 import { auditContinuity } from '../src/lib/continuityCheck'
 import { runDataHealthCheck } from '../src/lib/dataHealth'
 import { flattenChapters, chapterSeqMap, chapterSeqOf } from '../src/lib/chapterSeq'
-import { splitCodes, splitNames, cnNumToArabic, parseStoryDate, extractChapterNo } from '../src/lib/audit'
+import { splitCodes, splitNames, cnNumToArabic, parseStoryDateKey, extractChapterNo } from '../src/lib/audit'
 import { nextAutoCode } from '../src/lib/autoCode'
 import { normName } from '../src/lib/settingLedger'
 import { scanText } from '../src/lib/sensitiveWords'
@@ -62,7 +62,7 @@ ok('cnNumToArabic 超纲输入返回 NaN 不炸（一百零八在文档外）', 
 ok('extractChapterNo 常规', extractChapterNo('第12章 废脉') === 12 && extractChapterNo('第 5 章') === 5 && extractChapterNo('序章') === null && extractChapterNo('番外·铁柱传') === null)
 ok('splitNames 去括号注释', J(splitNames('陈渊、陈瑶（昏迷） 执事；黑风，洛清欢')) === J(['陈渊', '陈瑶', '执事', '黑风', '洛清欢']), J(splitNames('陈渊、陈瑶（昏迷） 执事；黑风，洛清欢')))
 ok('splitCodes 大小写归一', J(splitCodes('f0001，f0002 F0003;、')) === J(['F0001', 'F0002', 'F0003']))
-ok('parseStoryDate 边界', parseStoryDate('3024年3月9日') === 30240309 && parseStoryDate('3024年13月1日') === null && parseStoryDate('3024-03-09') === null && parseStoryDate(undefined) === null)
+ok('parseStoryDateKey 边界', parseStoryDateKey('3024年3月9日') === 30240309 && parseStoryDateKey('3024年13月1日') === null && parseStoryDateKey('3024-03-09') === null && parseStoryDateKey(undefined) === null)
 
 // ---------- C. autoCode ----------
 ok('自动编号：空表续 0001', nextAutoCode('secrets', []) === 'S0001')

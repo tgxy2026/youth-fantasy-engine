@@ -26,6 +26,8 @@ export default function FormSheet({ tab }: Props) {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const savedTimer = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => () => clearTimeout(savedTimer.current), [])
   // AI 补全设定弹窗
   const [showFill, setShowFill] = useState(false)
   const formFields = useMemo<TemplateField[]>(
@@ -77,7 +79,7 @@ export default function FormSheet({ tab }: Props) {
     setSaving(false)
     setDirty(false)
     setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+    savedTimer.current = setTimeout(() => setSaved(false), 1500)
   }, [tab.id, data])
 
   // 离开页签前若有未保存，提示

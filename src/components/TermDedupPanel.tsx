@@ -3,7 +3,7 @@ import { Sparkles, Loader2, AlertCircle, Layers } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiDedupTerms } from '../lib/aiTasks'
-import { Modal } from './EditorModals'
+import { ToolModal } from './EditorModals'
 import { Button } from './Button'
 
 
@@ -50,7 +50,7 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
   }
 
   return (
-    <Modal title="名词术语 AI 查重" icon={<Layers size={16} />} onClose={onClose} wide>
+    <ToolModal title="名词术语 AI 查重" icon={<Layers size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-[11px] text-ink-500">
           让 AI 扫描术语表，找出同义 / 重复的概念并建议合并归一，避免"同一事物两个名字"的前后矛盾。未配置模型不影响手动录入。
@@ -110,6 +110,6 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
           </div>
         )
       )}
-    </Modal>
+    </ToolModal>
   )
 }

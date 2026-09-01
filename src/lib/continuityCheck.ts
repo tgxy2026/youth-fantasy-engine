@@ -5,7 +5,7 @@
 // + 2 类连载节奏预警（爽点断档、存稿缓冲告急）。
 import * as db from './db'
 import type { Chapter, CardRecord } from './types'
-import { AuditIssue, splitCodes, splitNames, parseStoryDate, extractChapterNo, cnNumToArabic } from './audit'
+import { AuditIssue, splitCodes, splitNames, parseStoryDateKey, extractChapterNo, cnNumToArabic } from './audit'
 import { readAliases } from './aliases'
 import { flattenChapters, chapterSeqMap } from './chapterSeq'
 
@@ -72,7 +72,7 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
 
   // ---------- 1) 时间倒流 ----------
   const tlSorted = [...timeline]
-    .map(r => ({ r, no: seqByTlTitle(r.data['章节标题']) || extractChapterNo(r.data['章节号']) || 0, date: parseStoryDate(r.data['故事内时间']) }))
+    .map(r => ({ r, no: seqByTlTitle(r.data['章节标题']) || extractChapterNo(r.data['章节号']) || 0, date: parseStoryDateKey(r.data['故事内时间']) }))
     .filter(x => x.no > 0)
     .sort((a, b) => a.no - b.no)
   for (let i = 1; i < tlSorted.length; i++) {

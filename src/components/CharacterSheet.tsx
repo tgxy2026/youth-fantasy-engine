@@ -37,6 +37,8 @@ export default function CharacterSheet({ tab }: Props) {
   const [draft, setDraft] = useState<CardRecord | null>(null)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const savedTimer = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => () => clearTimeout(savedTimer.current), [])
   // AI 补全设定弹窗
   const [showFill, setShowFill] = useState(false)
   // 筛选：开启后隐藏「人物状态 = 已退场」的角色，避免角色过多时难以定位
@@ -181,7 +183,7 @@ export default function CharacterSheet({ tab }: Props) {
     setRecords(records.map(r => (r.id === draft.id ? draft : r)))
     setSaving(false)
     setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+    savedTimer.current = setTimeout(() => setSaved(false), 1500)
   }, [draft, dirty, records])
 
   // Ctrl/Cmd+S

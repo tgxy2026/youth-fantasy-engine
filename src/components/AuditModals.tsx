@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Modal } from './EditorModals'
+import { ToolModal } from './EditorModals'
 import AuditPanel from './AuditPanel'
 import HelpPopover from './HelpPopover'
 import { GitBranch, Link2, Feather, Sparkles, Loader2, AlertCircle } from 'lucide-react'
@@ -55,7 +55,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
   const countBy = (s: ForeshadowStatus) => board.filter(b => b.status === s).length
 
   return (
-    <Modal title="伏笔闭环看板" icon={<GitBranch size={16} />} onClose={onClose} wide>
+    <ToolModal title="伏笔闭环看板" icon={<GitBranch size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-[11px] text-ink-500">
           从「章节总表」反推每条伏笔的生命周期，对照「伏笔追踪」状态，自动发现跨度过大、孤儿、前置未铺就、状态未同步等问题。
@@ -133,7 +133,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
           </div>
         </>
       )}
-    </Modal>
+    </ToolModal>
   )
 }
 
@@ -173,7 +173,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
   }, [])
 
   return (
-    <Modal title="连续性校验器" icon={<Link2 size={16} />} onClose={onClose} wide>
+    <ToolModal title="连续性校验器" icon={<Link2 size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-[11px] text-ink-500">
           基于章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡 / 爽点节奏 / 写作进度，做 10 类确定性冲突与节奏检测。
@@ -223,7 +223,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
           )}
         </>
       )}
-    </Modal>
+    </ToolModal>
   )
 }
 
@@ -261,7 +261,7 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
   }, [content])
 
   return (
-    <Modal title="文风体检（本章）" icon={<Feather size={16} />} onClose={onClose}>
+    <ToolModal title="文风体检（本章）" icon={<Feather size={16} />} onClose={onClose}>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-[11px] text-ink-500">
           读取《写作规范》表的"个人坏习惯清单"与"标点规范"，对本章正文做静态体检。
@@ -307,6 +307,6 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
           )}
         </>
       )}
-    </Modal>
+    </ToolModal>
   )
 }

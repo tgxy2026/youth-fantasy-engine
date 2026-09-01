@@ -193,10 +193,13 @@ export default function AIAssist() {
 
   const stop = () => abortRef.current?.abort()
 
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => () => clearTimeout(copiedTimer.current), [])
+
   const copyMsg = (id: string, content: string) => {
     navigator.clipboard?.writeText(content)
     setCopied(id)
-    setTimeout(() => setCopied(prev => (prev === id ? null : prev)), 1200)
+    copiedTimer.current = setTimeout(() => setCopied(prev => (prev === id ? null : prev)), 1200)
   }
 
   // 新消息 / 思考中 / 流式输出时滚动到底部
