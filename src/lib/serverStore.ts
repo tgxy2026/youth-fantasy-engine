@@ -327,7 +327,10 @@ export function getCloudBackupMeta(): CloudBackupMeta | null {
  */
 export async function restoreFromCloudBackup(): Promise<boolean> {
   if (!cloudBackup) return false
-  cache = liveStores(cloudBackup.data)
+  const restored = liveStores(cloudBackup.data)
+  // #027：备份为空时拒绝回滚——否则会把空备份当最新状态推上去，反而清空整库（已发生过的事故）。
+  if (Object.keys(restored).length === 0) return false
+  cache = restored
   baseCache = snapshotOf(cache)
   await pushNow(rev)
   return true
@@ -489,6 +492,12 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
   // 同时附带「每日滚动备份」——云端保留最新一份、按自然日滚动，当天仅首推写入，
   // 避免同日后续推送的坏数据覆盖掉当天的检查点。本地 IDB 的 backups 仍永不进云。
   const uploadCache: Record<string, any> = liveStores(cache)
+  // #027：防整库清空——本地缓存为空但存在已知良好基线时，绝不能用空库覆盖云端。
+  // 这类空推送一旦成功（且 rev 匹配），服务端会忠实清空槽位且无历史可回滚（已发生过的事故）。
+  if (Object.keys(uploadCache).length === 0 && Object.keys(liveStores(baseCache)).length > 0) {
+    setStatus('error')
+    throw new Error('refuse empty push: 本地缓存为空但基线非空，已阻止空推覆盖云端')
+  }
   if (!cloudBackup || cloudBackup.day !== todayKey()) {
     cloudBackup = { day: todayKey(), ts: Date.now(), data: liveStores(cache) }
   }
@@ -546,6 +555,11 @@ async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean
     setStatus('too-large')
     throw new Error('sync payload too large')
   }
+  if (r.status === 422) {
+    // 服务端拒绝空推（防御兜底）：本地缓存为空却试图覆盖有数据的槽位，绝不静默吞掉
+    setStatus('error')
+    throw new Error('server refused empty push')
+  }
   if (r.ok) {
     const data = await r.json().catch(() => ({ rev: baseRev + 1 }))
     rev = data.rev ?? baseRev + 1
@@ -566,6 +580,10 @@ async function flushNow(): Promise<void> {
   // 既把 access.jsonl 灌满，又会让访客把自家 IP 的限流额度耗光，
   // 等他真正输入正确同步码时反而卡在封锁期里（#023）。
   if (!code) return
+  // #027：推送前必须确保已完成首次拉取（ensureInit）。否则 cache 仍是 configureServerStore 重置后的空壳，
+  // 会把空库当成本地最新状态推上去覆盖云端。鉴权失效/网络异常时存储已回退本地，同样不应推送。
+  await ensureInit()
+  if (authFailed || transientUnavailable) return
   if (pushTimer) { clearTimeout(pushTimer); pushTimer = null }
   if (pushing) { pendingPush = true; return }
   pushing = true

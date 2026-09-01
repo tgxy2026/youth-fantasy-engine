@@ -9,7 +9,7 @@
 // 云端同步数据以「每同步码一个文件」落盘（sync-<sha256>.json），rev 做乐观并发守卫；
 // 每个同步邀请码对应一个独立云端槽位，避免多人共用一码互相覆盖。
 import http from 'node:http'
-import { appendFile, mkdir, writeFile, readFile, rename, unlink } from 'node:fs/promises'
+import { appendFile, mkdir, writeFile, readFile, rename, unlink, copyFile } from 'node:fs/promises'
 import { randomUUID, createHash } from 'node:crypto'
 
 const PORT = Number(process.env.FEEDBACK_PORT || 3000)
@@ -214,10 +214,18 @@ const server = http.createServer(async (req, res) => {
         await logAccess(req, { type: 'sync', ok: false, act: 'conflict', code: slotOf(code), rev: cur.rev })
         return { status: 409, payload: { ok: false, conflict: true, rev: cur.rev, enc: cur.enc ?? null } }
       }
+      // #027：防整库清空兜底——当前槽位有实质数据、而本次推送体异常小（空库），
+      // 拒绝覆盖。客户端已有守卫，这里作为服务端最后防线（空推成功会无历史可回滚）。
+      if (cur.enc && cur.enc.length > 50000 && encBytes < 1024) {
+        await logAccess(req, { type: 'sync', ok: false, act: 'refuse_empty', code: slotOf(code) })
+        return { status: 422, payload: { ok: false, error: 'refuse_empty' } }
+      }
       const next = { rev: cur.rev + 1, enc: body.enc }
       const file = syncFileFor(code)
       const tmp = file + '.tmp'
       try {
+        // 落盘前先把当前（即将被覆盖的）快照备份为 .bak，极端情况下可回滚
+        await copyFile(file, file + '.bak').catch(() => {})
         // 先写临时文件再 rename：避免写入中途失败留下半截快照
         await writeFile(tmp, JSON.stringify(next), 'utf8')
         await rename(tmp, file)
