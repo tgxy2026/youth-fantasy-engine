@@ -35,8 +35,8 @@ const THANKS: { name: string; work: string }[] = [
   { name: '宁毅', work: '赘婿' },
 ]
 
-// 联系方式
-const LINKS = [
+// 联系方式（导出供本地数据提醒弹窗复用，避免两处各写一份导致不同步）
+export const CONTACT_LINKS = [
   { label: '青春幻想引擎交流群', value: '1106815480' },
   { label: '作者 QQ', value: '1822304733' },
   { label: '公众号', value: '咸鱼哥的双线人生' },
@@ -117,7 +117,7 @@ export default function AboutPage() {
             <section className="rounded-xl bg-ink-850 border border-ink-700 p-6 flex-1">
               <SectionTitle icon={<Globe size={15} className="text-amber" />}>联系方式</SectionTitle>
               <ul className="space-y-3">
-                {LINKS.map(l => (
+                {CONTACT_LINKS.map(l => (
                   <li key={l.label} className="flex flex-col">
                     <span className="text-[11px] text-ink-500">{l.label}</span>
                     <span className="text-sm text-ink-200">{l.value}</span>

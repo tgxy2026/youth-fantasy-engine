@@ -20,6 +20,7 @@ import WebGate, { checkInvited } from './components/WebGate'
 import FeedbackButton from './components/FeedbackButton'
 import WebTools from './components/WebTools'
 import PrivacyNotice from './components/PrivacyNotice'
+import LocalDataNotice from './components/LocalDataNotice'
 import FullTextSearch from './components/FullTextSearch'
 import JieWenJiSprite from './components/JieWenJiSprite'
 import GeoMapEditor from './components/GeoMapEditor'
@@ -331,6 +332,8 @@ export default function App() {
         />
       )}
       {WEB && <PrivacyNotice />}
+      {/* 网页体验版本地数据保存提醒：未配置同步码时每次打开网页弹出（详见组件内注释） */}
+      {WEB && <LocalDataNotice />}
     </div>
   )
 }
