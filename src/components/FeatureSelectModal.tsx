@@ -134,10 +134,10 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                               {e.tier === 'locked' && <Lock size={11} className="text-amber/70" />}
                               {e.tier === 'default' && <span className="text-[10px] text-emerald-300/80">默认</span>}
                             </span>
+                            {e.requires.length > 0 && (
+                              <span className="text-[10px] text-rose-300/80 shrink-0">依赖：{e.requires.map(nameOf).join('、')}（自动开启）</span>
+                            )}
                           </div>
-                          {e.requires.length > 0 && (
-                            <div className="mt-1 text-[10px] text-rose-300/80">依赖：{e.requires.map(nameOf).join('、')}（自动开启）</div>
-                          )}
                           <div className="mt-1 text-[11px] text-ink-400 leading-snug line-clamp-2">{e.desc}</div>
                           {locked && e.tier !== 'locked' && (
                             <div className="mt-1 text-[10px] text-amber/70">已因依赖自动开启，不可单独取消</div>
