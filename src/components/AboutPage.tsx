@@ -1,19 +1,27 @@
-import { ExternalLink, Heart, BookOpen, Users, Globe, Download } from 'lucide-react'
+import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy } from 'lucide-react'
 import payWechat from '../assets/pay-wechat.png'
 import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
 import { APP_VERSION } from '../lib/portable'
+import { showToast } from './dialogs'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
 const BILI_URL = 'https://b23.tv/zl4vqyw'
 const BILI_NAME = '铁骨咸鱼'
 
-// 最新版本安装包下载地址（网盘分享链接）。
-// 发新版流程：上传安装包到网盘 → 把新的分享链接填到这里 → 重新打包发版。
+// 最新版本安装包下载地址（夸克网盘分享）。
+// 发新版流程：上传安装包到网盘 → 把新的链接/提取码/口令填到这里 → 重新打包发版。
 // 刻意不做联网版本检测：不依赖任何服务器，更新公告由作者在 B站/公众号/QQ群发布。
 // 留空则不渲染「获取最新版本」区块，避免出现点了没反应的死链。
-// TODO: 老大上传网盘后填入正式分享链接（建议用文件夹链接，换版本不必改地址）
-const LATEST_VERSION_URL = ''
+//
+// ⚠️ 换版本时若网盘仍是同一个「文件夹分享」，只传新安装包即可，链接与提取码不变、不必改代码。
+//    只有当分享链接本身失效/重建时，才需要同步改下面三个常量并重新发版。
+const LATEST_VERSION_URL = 'https://pan.quark.cn/s/8ae0eb718cf5?pwd=QfAm'
+/** 网盘提取码（网页端 URL 已带 pwd 参数会自动填；手机端/客户端常需手填，故在此明示） */
+const LATEST_VERSION_CODE = 'QfAm'
+/** 夸克 APP 口令：复制整段文本后打开夸克 APP 会自动识别跳转（手机端最省事的路径） */
+const LATEST_VERSION_TOKEN =
+  '我用夸克网盘给你分享了「青春幻想引擎」，点击链接或复制整段内容，打开「夸克APP」即可获取。\n/~bb863abBGY~:/'
 
 // 致谢名单（支持者墙）—— 示例占位：借用知名网络小说主角的名号排排站，后续由作者替换为真实读者 / 金主 / 贡献者记录
 const THANKS: { name: string; work: string }[] = [
@@ -41,6 +49,31 @@ export const CONTACT_LINKS = [
   { label: '作者 QQ', value: '1822304733' },
   { label: '公众号', value: '咸鱼哥的双线人生' },
 ]
+
+/**
+ * 复制文本并提示。剪贴板 API 在非安全上下文（如 http 局域网直连）下不可用，
+ * 故保留 execCommand 兜底；两者都失败时提示用户手动复制，绝不静默失败。
+ */
+async function copyText(text: string, okMsg: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      showToast(okMsg)
+      return
+    }
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    showToast(ok ? okMsg : '复制失败，请手动选中复制', ok ? 'success' : 'error')
+  } catch {
+    showToast('复制失败，请手动选中复制', 'error')
+  }
+}
 
 function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -102,14 +135,40 @@ export default function AboutPage() {
                   。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、公众号与 QQ 交流群——
                   若社交平台看到更新公告，可来此获取最新版。
                 </p>
-                <a
-                  href={LATEST_VERSION_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-lg bg-amber px-3 py-2 text-sm font-medium text-ink-950 hover:opacity-90 transition-opacity"
-                >
-                  <ExternalLink size={16} /> 打开网盘下载页
-                </a>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={LATEST_VERSION_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-lg bg-amber px-3 py-2 text-sm font-medium text-ink-950 hover:opacity-90 transition-opacity"
+                  >
+                    <ExternalLink size={16} /> 打开网盘下载页
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => copyText(LATEST_VERSION_TOKEN, '已复制 APP 口令，打开夸克 APP 即可识别')}
+                    className="inline-flex items-center gap-2 rounded-lg bg-ink-800 border border-ink-700 px-3 py-2 text-sm text-ink-200 hover:border-amber/40 hover:text-amber transition-colors"
+                  >
+                    <Copy size={15} /> 复制 APP 口令
+                  </button>
+                </div>
+                {/* 提取码：网页端 URL 已带 pwd 可自动填，但手机端 / 客户端常需手填，故单独明示 */}
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-[11px] text-ink-500">提取码</span>
+                  <code className="rounded bg-ink-900/60 border border-ink-700 px-2 py-0.5 text-xs text-ink-100 tracking-wider">
+                    {LATEST_VERSION_CODE}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copyText(LATEST_VERSION_CODE, '提取码已复制')}
+                    className="inline-flex items-center gap-1 text-[11px] text-ink-400 hover:text-amber transition-colors"
+                  >
+                    <Copy size={12} /> 复制
+                  </button>
+                </div>
+                <p className="mt-3 text-[11px] text-ink-500 leading-relaxed">
+                  若链接失效或提取码有误，请加 <span className="text-ink-300">QQ 交流群</span> 或关注公众号获取最新地址。
+                </p>
               </section>
             )}
 
