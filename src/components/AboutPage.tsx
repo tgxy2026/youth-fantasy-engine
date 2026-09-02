@@ -2,7 +2,7 @@ import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy } from 'luc
 import payWechat from '../assets/pay-wechat.png'
 import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
-import { APP_VERSION } from '../lib/portable'
+import { APP_VERSION_LABEL } from '../lib/portable'
 import { showToast } from './dialogs'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
@@ -131,7 +131,7 @@ export default function AboutPage() {
               <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
                 <SectionTitle icon={<Download size={15} className="text-amber" />}>获取最新版本</SectionTitle>
                 <p className="text-ink-400 text-xs leading-relaxed mb-4">
-                  当前版本 <span className="text-ink-100 font-medium">v{APP_VERSION}</span>
+                  当前版本 <span className="text-ink-100 font-medium">{APP_VERSION_LABEL}</span>
                   。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、公众号与 QQ 交流群——
                   若社交平台看到更新公告，可来此获取最新版。
                 </p>

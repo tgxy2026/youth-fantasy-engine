@@ -14,7 +14,7 @@ import CloudFileSyncBar from './CloudFileSyncBar'
 import { PORTABLE } from '../lib/env'
 import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
 import { useResizable } from '../lib/useResizable'
-import { APP_VERSION } from '../lib/portable'
+import { APP_VERSION_LABEL } from '../lib/portable'
 import { Button } from './Button'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
@@ -119,7 +119,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           <Feather size={16} className="text-amber" />
         </div>
         <div className="min-w-0">
-          <div className="text-[14px] font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-[10px] font-normal text-ink-400 ml-1">{APP_VERSION === '开发版' ? '开发版' : `v${APP_VERSION}`}</span></div>
+          <div className="text-[14px] font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-[10px] font-normal text-ink-400 ml-1">{APP_VERSION_LABEL}</span></div>
           <div className="text-[10px] text-ink-400 -mt-0.5 truncate">小说创作工作台</div>
         </div>
       </div>

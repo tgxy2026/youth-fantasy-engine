@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Feather, FolderOpen, FilePlus2, HardDriveDownload, Loader2, Save } from 'lucide-react'
 import {
 
-  isFSASupported, openDataFile, createDataFile, getState, subscribe, flush, APP_VERSION,
+  isFSASupported, openDataFile, createDataFile, getState, subscribe, flush, APP_VERSION_LABEL,
 } from '../lib/portable'
 import { Button } from './Button'
 
@@ -35,7 +35,7 @@ export function PortableGate() {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber/15 border border-amber/30 mb-4">
             <Feather size={26} className="text-amber" />
           </div>
-          <h1 className="text-xl font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-amber text-sm font-normal">便携版 {APP_VERSION === '开发版' ? '开发版' : `v${APP_VERSION}`}</span></h1>
+          <h1 className="text-xl font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-amber text-sm font-normal">便携版 {APP_VERSION_LABEL}</span></h1>
           <p className="mt-2 text-[13px] text-ink-400">数据保存在 U 盘的数据文件里 · 插上任意电脑即可继续创作</p>
         </header>
 

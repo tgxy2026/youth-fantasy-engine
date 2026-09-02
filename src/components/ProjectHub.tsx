@@ -12,7 +12,7 @@ import BackupManager from './BackupManager'
 import FeatureSelectModal from './FeatureSelectModal'
 import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
-import { APP_VERSION } from '../lib/portable'
+import { APP_VERSION_LABEL } from '../lib/portable'
 import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
 import workbenchBg from '../assets/workbench-bg.png'
 import jiewenjiGufeng from '../assets/jiewenji-gufeng.png'
@@ -162,7 +162,7 @@ export default function ProjectHub({ onOpen }: Props) {
           </div>
           <h1 className="text-2xl font-bold text-ink-50 tracking-wide flex items-baseline justify-center gap-2">
             青春幻想引擎
-            <span className="text-base font-normal text-ink-400">{APP_VERSION === '开发版' ? '开发版' : `v${APP_VERSION}`}</span>
+            <span className="text-base font-normal text-ink-400">{APP_VERSION_LABEL}</span>
           </h1>
           <p className="mt-2 text-[13px] text-ink-400">在你的世界中讲述你的故事</p>
         </header>
