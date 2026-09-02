@@ -2,7 +2,7 @@
 > 只留长期有效的规则/红线/决策/凭据；事件经过留 `YYYY-MM-DD.md`。
 
 ## 项目身份
-「青春幻想引擎」小说创作应用。Electron31+React18.3+TS5.5+Vite5.3+Tailwind(ink/amber)。三存储后端(IDB/便携/桌面)经 StoreOps。dev `http://localhost:5199/`。managed node `C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.exe`。当前 1.9.9。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
+「青春幻想引擎」小说创作应用。Electron31+React18.3+TS5.5+Vite5.3+Tailwind(ink/amber)。三存储后端(IDB/便携/桌面)经 StoreOps。dev `http://localhost:5199/`。managed node `C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.exe`。**当前 2.0.0**（2026-09-02 由 1.9.9 升起，老大定为 2.0 正式版发布号）。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
 
 ## 最高红线
 1. 封装/重打包须老大明说「封装」；改完最多 tsc+build+commit。
@@ -10,6 +10,14 @@
 3. 禁删：`你需要的文件在这里/`、`release/eb-cache/`(106M)。
 4. 禁 `window.prompt/confirm/alert` → PromptModal/confirmDialog/showToast。
 5. 服务器属主：`/var/lib/yfe` 须 www-data；sudo 写后必 `chown www-data:www-data` + `sudo -u www-data test -w` 实测，否则 push 静默失败。
+
+## 版本号机制与 dev 显示坑（2026-09-02 实测）
+- **唯一版本源＝`package.json` 的 `version`**（全项目唯一硬编码处）。三份 config 均从它读：桌面 `vite.config.ts`、便携 `vite.config.portable.ts`（还决定输出目录 `release/novel-studio-<ver>`）、网页 `vite.config.web.ts`；electron-builder 产物名亦随之。升版本**只改这一处**。
+- 🔴 **vite dev 下 `define` 不会替换源码里的 `__APP_VERSION__`**（实测：curl `localhost:5199/src/lib/portable.ts` 返回模块中该标识符**原样保留**，`__PORTABLE__` 同样不换），于是版本恒走 `typeof __APP_VERSION__ === 'undefined'` 兜底 → 界面显示「**开发版**」。`vite build` 则正常替换并把兜底常量折叠掉。
+  - 后果：对外文案（关于页「当前版本 vX.Y.Z」）**在 dev 下核对不了**，只能封装后才发现不对。
+  - 已在 `vite.config.ts` 加极小插件 `injectAppVersion()` 补上 dev 的替换（只对 `src/lib/portable.ts` 做文本替换），使 dev 与构建一致；build 时无论 vite:define 先跑后跑都不受影响。
+  - 附带发现：原 config 写的 `mode === 'development' ? '开发版' : appVersion` **在 dev 下等于白写**（define 根本没替换），真正生效的一直是 `portable.ts` 的兜底值。
+- 版本展示一律用 `APP_VERSION_LABEL`（`portable.ts` 导出：正式版 `v2.0.0`／兜底「开发版」**不带 v 前缀**）。四处 UI（关于页/侧栏/项目中心/便携版标题）共用的三元判断已收口到该常量——此前 AboutPage 直接拼 `v{APP_VERSION}`，兜底时会显示「v开发版」怪文本。`env.ts` 也转出此常量。
 
 ## 封装与部署
 - 前置：tsc0错+build0错+改动落盘 → 封装。G盘 safe-delete 拦 rmSync/emptyOutDir → build 前 Node `renameSync` 移开 `dist`/`dist-web`。
