@@ -193,7 +193,20 @@ export function scheduleSave() {
   saveTimer = setTimeout(() => { saveTimer = null; void flush() }, 800)
 }
 
-/** 立即写盘（手动保存 / beforeunload 时调用） */
+/**
+ * 立即写盘（手动保存时调用）。
+ *
+ * ⚠️ 关于「原子写」：这里**不需要**自己实现 tmp + rename，别照桌面版的
+ * writeAtomic 再来一遍。File System Access API 的 `createWritable()` 本身
+ * 就是 swap file 语义——写入期间目标文件纹丝不动，只有 `close()` 时才用
+ * 临时文件整体替换（MDN：only replacing the file represented by file handle
+ * with the temporary file when the writable file stream is closed）。
+ * 所以写到一半拔 U 盘，最坏结果是留下一个 .crswap 临时文件 + 数据退回上一次
+ * 成功写入的版本，**不会**产生半截 JSON 导致「数据文件已损坏（JSON 解析失败）」。
+ * 便携版只支持 Chrome / Edge（见 isFSASupported），两者均按此实现。
+ *
+ * 真正的薄弱环节不是原子性，而是「最后一次编辑可能来不及落盘」——见 flushNow()。
+ */
 export async function flush(): Promise<boolean> {
   if (!handle || saving) return false
   saving = true
@@ -216,6 +229,26 @@ export async function flush(): Promise<boolean> {
     // 写盘期间又有新变更 → 补一次保存
     if (dirty) scheduleSave()
   }
+}
+
+/**
+ * 取消防抖等待、立刻写盘（页面即将隐藏 / 卸载时调用）。
+ *
+ * 与 flush() 的区别：flush() 只管「现在就写这一次」，若此刻正好挂着一个
+ * 800ms 防抖定时器，它稍后还会再触发一次重复写盘；flushNow() 先清掉待触发的
+ * 定时器，避免卸载前白白多写一遍 U 盘。
+ *
+ * ⚠️ 仍然无法保证落盘——FSA 只提供异步 API，页面一旦真正卸载，未完成的 await
+ * 会被直接中断（桌面版有 flushDesktopSync() 同步阻塞写，便携版做不到）。
+ * 所以这里做的是**尽力而为**：配合 visibilitychange / pagehide 提前触发，
+ * 把丢失窗口压到最小，而不是假装能像桌面版那样保证写入。
+ */
+export function flushNow(): void {
+  if (saveTimer != null) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  void flush()
 }
 
 /** 便携模式下的存储原语实现（内存数据 + 防抖写回 U 盘文件） */

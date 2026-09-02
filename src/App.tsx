@@ -11,7 +11,7 @@ import AboutPage from './components/AboutPage'
 import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
 import * as db from './lib/db'
 import { ensureDailyBackup, startAutoBackup } from './lib/backup'
-import { PORTABLE, getState, subscribe, flush } from './lib/portable'
+import { PORTABLE, getState, subscribe, flushNow } from './lib/portable'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop } from './lib/desktop'
 import { PortableGate } from './components/Portable'
 import { WEB } from './lib/env'
@@ -79,11 +79,21 @@ export default function App() {
   // 便携 / 桌面模式：关闭页面前确保未保存的修改写盘
   useEffect(() => {
     if (!PORTABLE && !DESKTOP) return
+
+    // 便携版：FSA 只有异步 API，页面真卸载后未完成的写入会被直接中断，
+    // 所以不能只守 beforeunload——那是最后一道闸，往往已经来不及。
+    // visibilitychange(hidden) 与 pagehide 在关闭、刷新、切标签、最小化前
+    // 都会先触发，此刻页面仍存活，提前 flush 能争取到完成写入的时间窗。
+    const flushPending = () => {
+      if (PORTABLE && getState().dirty) flushNow()
+    }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flushPending() }
+
     const onLeave = (e: BeforeUnloadEvent) => {
       if (PORTABLE) {
         const s = getState()
         if (s.dirty || s.saving) {
-          void flush()
+          flushNow()
           e.preventDefault()
         }
       } else {
@@ -91,8 +101,19 @@ export default function App() {
         flushDesktopSync()
       }
     }
+
+    if (PORTABLE) {
+      document.addEventListener('visibilitychange', onVisibility)
+      window.addEventListener('pagehide', flushPending)
+    }
     window.addEventListener('beforeunload', onLeave)
-    return () => window.removeEventListener('beforeunload', onLeave)
+    return () => {
+      if (PORTABLE) {
+        document.removeEventListener('visibilitychange', onVisibility)
+        window.removeEventListener('pagehide', flushPending)
+      }
+      window.removeEventListener('beforeunload', onLeave)
+    }
   }, [])
 
   // 便携 / 桌面模式：磁盘写盘失败时把原本静默吞掉的错误暴露给用户，避免无提示丢稿
