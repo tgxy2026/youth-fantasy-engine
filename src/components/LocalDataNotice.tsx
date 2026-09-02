@@ -11,18 +11,25 @@ import { CONTACT_LINKS } from './AboutPage'
 // 任一开启，数据即有云端兜底，不再每次打扰。按需求每次打开都弹，故不做 localStorage 「已读」抑制。
 const SYNC_KEY = 'yfe-sync-code'
 
+/**
+ * 本组件本次启动是否会弹出（网页版且未开启任何云端同步时恒为 true）。
+ * 供 BackupReminder 让位：本提醒每次打开都弹、且正文已含导出备份指引，
+ * 两者同时弹出会叠成两层弹窗，用户得关两次。
+ */
+export function isLocalDataNoticeActive(): boolean {
+  if (!WEB) return false
+  try {
+    return !(localStorage.getItem(SYNC_KEY) || isWebFileSyncOn())
+  } catch {
+    return true // 存储不可用时按未开启同步处理，照常提醒
+  }
+}
+
 export default function LocalDataNotice() {
   const [show, setShow] = useState(false)
 
   useEffect(() => {
-    if (!WEB) return
-    let hasSync = false
-    try {
-      hasSync = !!localStorage.getItem(SYNC_KEY) || isWebFileSyncOn()
-    } catch {
-      /* localStorage 不可用时按未开启同步处理，照常提醒 */
-    }
-    if (!hasSync) setShow(true)
+    if (isLocalDataNoticeActive()) setShow(true)
   }, [])
 
   const close = () => setShow(false)

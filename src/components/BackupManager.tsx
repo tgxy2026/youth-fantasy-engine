@@ -5,6 +5,7 @@ import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, 
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
+import { markExported } from '../lib/backupReminder'
 import HelpPopover from './HelpPopover'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -135,6 +136,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
         `青春幻想引擎-迁移包-${projectName}-${new Date().toISOString().slice(0, 10)}${tag}.json`,
         new Blob([content], { type: 'application/json' }),
       )
+      markExported() // #031：迁移包也是导出到外部文件，同样算一次备份
     } catch (e) {
       showToast('导出迁移包失败：' + (e as Error).message, 'error')
     } finally {

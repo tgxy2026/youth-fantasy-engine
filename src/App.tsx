@@ -19,6 +19,8 @@ import WebGate, { checkInvited } from './components/WebGate'
 import DataDock from './components/DataDock'
 import PrivacyNotice from './components/PrivacyNotice'
 import LocalDataNotice from './components/LocalDataNotice'
+import BackupReminder from './components/BackupReminder'
+import { markExported } from './lib/backupReminder'
 import FullTextSearch from './components/FullTextSearch'
 import JieWenJiSprite from './components/JieWenJiSprite'
 import GeoMapEditor from './components/GeoMapEditor'
@@ -212,6 +214,7 @@ export default function App() {
       `青春幻想引擎备份-${projectName}-${new Date().toISOString().slice(0, 10)}.json`,
       new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }),
     )
+    markExported() // 记录「已导出到外部文件」，#031 提醒据此重新计时
   }, [projectId, projectName])
 
   const navigate = useCallback((id: string, chapterId?: string) => {
@@ -352,6 +355,9 @@ export default function App() {
       {/* 网页体验版本地数据保存提醒：未开启任何云端同步时每次打开网页弹出
           （#032：服务器模式无同步码 / 云盘文件模式未选目录，均视为未开启） */}
       {WEB && <LocalDataNotice />}
+      {/* #031 定期提醒把数据导出到外部文件（三端通用）。
+          网页版未开启云端同步时 LocalDataNotice 每次都会弹且已含导出指引，BackupReminder 会主动让位。 */}
+      <BackupReminder hasProject={!!projectId} onExport={exportCurrent} />
     </div>
   )
 }

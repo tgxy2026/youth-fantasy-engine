@@ -12,6 +12,7 @@ import BackupManager from './BackupManager'
 import FeatureSelectModal from './FeatureSelectModal'
 import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
+import { markExported } from '../lib/backupReminder'
 import { APP_VERSION_LABEL } from '../lib/portable'
 import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
 import workbenchBg from '../assets/workbench-bg.png'
@@ -127,6 +128,7 @@ export default function ProjectHub({ onOpen }: Props) {
       `青春幻想引擎备份-${p.name}-${new Date().toISOString().slice(0, 10)}.json`,
       new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }),
     )
+    markExported() // #031：记录「已导出到外部文件」，提醒据此重新计时
   }
 
   const importProject = async (file: File) => {
