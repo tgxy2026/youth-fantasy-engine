@@ -1,100 +1,74 @@
 # novel-studio 长期记忆（MEMORY.md）
-> 只留长期有效的规则/红线/决策/凭据；事件经过留 `YYYY-MM-DD.md`。
+> 只留长期有效的规则/红线/决策；事件经过留 `YYYY-MM-DD.md`。
 
-## 项目身份
-「青春幻想引擎」小说创作应用。Electron31+React18.3+TS5.5+Vite5.3+Tailwind(ink/amber)。三存储后端(IDB/便携/桌面)经 StoreOps。dev `http://localhost:5199/`。managed node `C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2/node.exe`。**当前 2.0.0**（2026-09-02 由 1.9.9 升起，老大定为 2.0 正式版发布号）。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
-
-## 最高红线
-1. 封装/重打包须老大明说「封装」；改完最多 tsc+build+commit。
+## 项目身份与最高红线
+「青春幻想引擎」小说创作应用。Electron31+React18.3+TS5.5+Vite5.3+Tailwind(ink/amber)。三存储后端(IDB/便携/桌面)经 StoreOps。dev `http://localhost:5199/`。managed node `C:/Users/18223/.workbuddy/binaries/node/versions/22.22.2-2/node.exe`。**当前 2.0.0**（2026-09-02 由 1.9.9 升起）。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
+1. 封装/重打包须老大明说「封装」；改完最多 tsc+build+commit。**2026-09-02：不封装，版本号先停在 2.0.0，后续还有小修小补。**
 2. 提交信息含 `!` 用 `git commit -F <文件>`（-m 被 bash 历史吃 `!XXX`）。main 无远程。
 3. 禁删：`你需要的文件在这里/`、`release/eb-cache/`(106M)。
 4. 禁 `window.prompt/confirm/alert` → PromptModal/confirmDialog/showToast。
-5. 服务器属主：`/var/lib/yfe` 须 www-data；sudo 写后必 `chown www-data:www-data` + `sudo -u www-data test -w` 实测，否则 push 静默失败。
+5. 服务器属主 `/var/lib/yfe` 须 www-data；sudo 写后必 `chown` + `sudo -u www-data test -w` 实测。
 
-## 版本号机制与 dev 显示坑（2026-09-02 实测）
-- **唯一版本源＝`package.json` 的 `version`**（全项目唯一硬编码处）。三份 config 均从它读：桌面 `vite.config.ts`、便携 `vite.config.portable.ts`（还决定输出目录 `release/novel-studio-<ver>`）、网页 `vite.config.web.ts`；electron-builder 产物名亦随之。升版本**只改这一处**。
-- 🔴 **vite dev 下 `define` 不会替换源码里的 `__APP_VERSION__`**（实测：curl `localhost:5199/src/lib/portable.ts` 返回模块中该标识符**原样保留**，`__PORTABLE__` 同样不换），于是版本恒走 `typeof __APP_VERSION__ === 'undefined'` 兜底 → 界面显示「**开发版**」。`vite build` 则正常替换并把兜底常量折叠掉。
-  - 后果：对外文案（关于页「当前版本 vX.Y.Z」）**在 dev 下核对不了**，只能封装后才发现不对。
-  - 已在 `vite.config.ts` 加极小插件 `injectAppVersion()` 补上 dev 的替换（只对 `src/lib/portable.ts` 做文本替换），使 dev 与构建一致；build 时无论 vite:define 先跑后跑都不受影响。
-  - 附带发现：原 config 写的 `mode === 'development' ? '开发版' : appVersion` **在 dev 下等于白写**（define 根本没替换），真正生效的一直是 `portable.ts` 的兜底值。
-- 版本展示一律用 `APP_VERSION_LABEL`（`portable.ts` 导出：正式版 `v2.0.0`／兜底「开发版」**不带 v 前缀**）。四处 UI（关于页/侧栏/项目中心/便携版标题）共用的三元判断已收口到该常量——此前 AboutPage 直接拼 `v{APP_VERSION}`，兜底时会显示「v开发版」怪文本。`env.ts` 也转出此常量。
+## 版本号机制
+- 唯一版本源＝`package.json` 的 `version`。三份 vite config + electron-builder 均从它读（便携输出目录 `release/novel-studio-<ver>` 亦随之）。
+- 🔴 **vite dev 下 `define` 不替换 `__APP_VERSION__`**（`__PORTABLE__` 同样）→ 恒走兜底显示「开发版」，对外文案在 dev 下核对不了。已加 `vite.config.ts` 插件 `injectAppVersion()` 补 dev 替换；build 正常替换并折叠兜底。原 `mode==='development'?'开发版':appVersion` 形同白写。
+- 版本展示一律用 `APP_VERSION_LABEL`（正式版 `v2.0.0`／兜底「开发版」不带 v），四处 UI 已收口，`env.ts` 转出。
+- 📌 老大口径：**不加 dev 角标**；「开发版」＝跑在开发服务器上的这一版。
 
 ## 封装与部署
-- 前置：tsc0错+build0错+改动落盘 → 封装。G盘 safe-delete 拦 rmSync/emptyOutDir → build 前 Node `renameSync` 移开 `dist`/`dist-web`。
-- 顺序：便携 `build:portable` → 网页 `build:web` → 桌面 `build:desktop`（脚本自带 dist 移开+唯一输出目录，eb-cache 命中约 30 秒）。
-- 验证三处一致：便携查单文件 HTML；桌面查 `release/desktop-out-<ver>-<ts>/win-unpacked/resources/app.asar`（须含 IPC 桥 `chooseSyncDir`/`sync:read`/`sync:write`/`contextBridge`）；线上 grep `/var/www/yfe/assets/*.js`。exe 元数据用 node 读 buffer 搜 utf16le `青春幻想引擎开发组`/`Copyright © 2026`（`rcedit Unable to commit changes` 非真失败）。
-- ⚠️ **scp 套娃坑**：`scp -r dist-web → /tmp/yfe-web-<日期>` 目标已存在时会塞成子目录，外层仍是旧货。预防：上传前 `ssh rm -rf /tmp/<目标>`。**判定上线硬标准＝外部 `curl -sk https://154.8.178.240/` 取 index.html 比对 chunk 名**。
-- 网页部署：`scp`→`/tmp/yfe-web-<日期>` → `sudo mv /var/www/yfe /var/www/yfe.bak-<ts>` → `cp -r <真目录> /var/www/yfe` → `chown -R www-data:www-data`+`chmod 755` → 验 chunk → 清 `/tmp/yfe-web-*`。
+- 前置：tsc0错+build0错 → 升 version → 封装。G盘 safe-delete 拦 rmSync/emptyOutDir → build 前 Node `renameSync` 移开 `dist`/`dist-web`。顺序：便携 → 网页 → 桌面（eb-cache 命中约 30 秒）。
+- 验证三处一致：便携查单文件 HTML；桌面查 `release/desktop-out-<ver>-<ts>/win-unpacked/resources/app.asar`（须含 IPC 桥 `chooseSyncDir`/`sync:read`/`sync:write`/`contextBridge`）；线上 grep `/var/www/yfe/assets/*.js`。exe 元数据用 node 读 buffer 搜 utf16le `青春幻想引擎开发组`（`rcedit Unable to commit changes` 非真失败）。
+- 网页部署：`scp`→`/tmp/yfe-web-<日期>` → `sudo mv /var/www/yfe /var/www/yfe.bak-<ts>` → `cp -r <真目录> /var/www/yfe` → `chown -R www-data:www-data`+`chmod 755` → 验 chunk → 清 `/tmp/yfe-web-*`。⚠️ **scp 套娃**：目标已存在会塞成子目录、外层仍是旧货，上传前先 `ssh rm -rf /tmp/<目标>`。**判定上线硬标准＝外部 `curl -sk https://154.8.178.240/` 比对 chunk 名**。
+- ⚠️ dev 看不到桌面端 UI：`__PORTABLE__/__WEB__` 皆 false，`DESKTOP` 靠运行时探测 `window.electronStore` 恒 false。**验收须封装或用便携版 HTML**。
 - 验证构建别污染交付：`npx vite build --config vite.config.<web|portable>.ts --outDir dist-<名字>-check --emptyOutDir`，验完移入 `G:\AI软件\.cleanup-quarantine\<日期>-<名字>`。
-- ⚠️ dev 看不到桌面端 UI：vite.config.ts 的 `__PORTABLE__/__WEB__` 皆 false，`DESKTOP` 靠运行时探测 `window.electronStore`，浏览器恒 false → `CLOUD_FILE_SYNC=false`。验收须封装或用便携版 HTML。
-- ⚠️ 安装弹「XX无法关闭，请手动关闭它然后点击重试」= NSIS 万能误导文案，与"程序没关"无关。**首解＝右键管理员身份运行**。
-- dev 报 `[safe-delete] node_modules/.vite/deps`：移开 `node_modules/.vite` 重启。Edit 偶发静默失败→改完必 tsc+抽查。
+- ⚠️ 安装弹「XX无法关闭…」= NSIS 万能误导文案，**首解＝右键管理员身份运行**。dev 报 `[safe-delete] node_modules/.vite/deps`：移开 `node_modules/.vite` 重启。Edit 偶发静默失败→改完必 tsc+抽查。
 
 ## 工作区清理
 - 先只扫报告(路径+体积)，老大圈定才动手。垃圾源：`dist*` 临时构建、`release/desktop-out-*`（单次 350MB 级）。
-- 🔴 **只用 Move-Item，别用 Remove-Item**：删除受 safe-delete 钩保护（走 trash，被锁报 `[SAFE_DELETE_FAIL_CLOSED]` 直接失败）。隔离区 `G:\AI软件\.cleanup-quarantine\<日期时间戳>\`。老大明说「删除」才真删。
-- ⚠️ `desktop-out-*/.../app.asar` 常被 `QQPCRTP.exe`(管家) 锁句柄，五法全败（attrib/Remove-Item/IO.File.Delete/robocopy/Rename-Item），重启或等管家自清。已备 `npm run cleanup`（`scripts/cleanup-residual.mjs`，白名单只删 `desktop-out-*`，**须在系统终端跑**）。
-- Windows 终端工具本环境**不回显 stdout** → 要输出就写文件再 Read；从 bash 反向调终端宿主被安全策略拦。
-- 清理后 `release/` 水位 ≈ 195MB（eb-cache 106M+桌面 81M+便携 8.5M）。保留：`eb-cache`、`你需要的文件在这里/`、`桌面安装版/`、`novel-studio-<ver>/`。清完必 `git status` 确认无 D 项。
+- 🔴 **只用 Move-Item，别用 Remove-Item**（走 trash，被锁报 `[SAFE_DELETE_FAIL_CLOSED]`）。隔离区 `G:\AI软件\.cleanup-quarantine\<日期>\`。老大明说「删除」才真删。⚠️ `mv` 整个目录常被拒：**逐个移动文件再 rmdir 空目录**即可。
+- ⚠️ `desktop-out-*/.../app.asar` 常被 `QQPCRTP.exe`(管家) 锁句柄，五法全败，重启或等管家自清。已备 `npm run cleanup`（`scripts/cleanup-residual.mjs`，**须在系统终端跑**）。
+- Windows 终端**不回显 stdout** → 要输出就写文件再 Read；从 bash 反向调终端宿主被安全策略拦。
+- 清理后 `release/` 水位 ≈ 195MB。保留：`eb-cache`、`你需要的文件在这里/`、`桌面安装版/`、`novel-studio-<ver>/`。清完必 `git status` 确认无 D 项。
 
 ## 架构红线
 - **无 i18n 基建**（全中文硬编码）。三大坑：①schema 列名即存储键（卡片键=`模块名::字段名`）②约 380 处中文参与逻辑判断③用户自定义选项不可译。全量 20-30 人日、仅 UI 12-18 人日。
-- 按卷建表 `chapter-vol-<vid>`；聚合 `db.getAllChapterLedgerRows()`；章节号全局连续 `migrateChapterNumbering`。顺序以 `chapterSeq.ts` 唯一权威（派生不落库）。
+- 按卷建表 `chapter-vol-<vid>`；聚合 `db.getAllChapterLedgerRows()`；章节号全局连续。顺序以 `chapterSeq.ts` 唯一权威（派生不落库）。
 - 下拉选项用 `resolveOptions(col.options, getCustomOptions())`，禁直接 `col.options`。`!tabVisible` 只守卫 return/隐页签。
-- `WEB` 由 `__WEB__` 决定（仅 vite.config.web.ts 为 true），禁写 `!PORTABLE && !DESKTOP`。顶层副作用双守卫：①平台 `if(WEB&&...)` ②功能 `if(!code)return`（#023 c0275f3）。
-- ⚠️ **tree-shake 陷阱**：组件若只在某平台门控分支（如 `{WEB && <X/>}`）被引用，其余平台会把整模块连内部 UI 一起摇掉。渲染门控必须是「需要该模块的平台之并集」（如 `WEB || CLOUD_FILE_SYNC`）。曾致桌面/便携云同步整段消失（已修 077d097）。
-- **左下角只准一个浮层**（#032）：现统一 `DataDock`（项目管理页，等宽 15rem、控件 h-8、分隔线分区、单一 z-40）；**项目内禁用全局 fixed 浮层**（会压住侧栏「界面缩放/主题」），一律内嵌 `Sidebar Footer`。
+- `WEB` 由 `__WEB__` 决定，**禁写 `!PORTABLE && !DESKTOP`**。顶层副作用双守卫：①平台 `if(WEB&&...)` ②功能 `if(!code)return`。
+- ⚠️ **tree-shake 陷阱**：组件若只在某平台门控分支（如 `{WEB && <X/>}`）被引用，其余平台会把整模块连内部 UI 一起摇掉。渲染门控必须是「需要该模块的平台之并集」。
+- **左下角只准一个浮层**：统一 `DataDock`（项目管理页，等宽 15rem、单一 z-40）；**项目内禁用全局 fixed 浮层**（压住侧栏「界面缩放/主题」），一律内嵌 `Sidebar Footer`。
+- 种子：卡片 data 键=`模块名::字段名`、表格行键=schema 列名，写错不报错整组静默空白。改种子必跑 `node tests/seed-schema-check.mjs`。
 
-## 桌面版数据存储
-- 路径 `C:\Users\<用户>\AppData\Roaming\novel-studio\novel-studio-data.json`（目录名取 package.json `name`，**非** productName）。**整库一个 JSON**，防抖 800ms，每次 put/del/bulk 全量重写。
-- 该目录**混装 Electron 运行时文件**：Cache/GPUCache 等约 15M，以及 `Local Storage/leveldb`（含 LOCK/CURRENT/MANIFEST，Chromium 独占锁）。真数据仅约 756K。
-- ⚠️ **「让 WPS 云盘直接同步整个目录」不可取**：①leveldb 锁跨设备覆盖会损坏（丢主题/缩放/同步设置）②15M 缓存白同步③数据非原子写，云盘抓半截 JSON → 另一台解析失败→**空库启动**④文件级覆盖无合并，双机同时改＝**整库级**丢失。
-- #033 已实施（da27a18）：`electron/main.cjs` 的 `dataFile()` 读 `data-location.json`（存 userData）支持自定义路径；写盘改 `writeAtomicSync`/`writeAtomic` 原子写（刻意不留 .bak，避免云盘流量翻倍）；IPC 新增 `store:chooseDataDir`/`setDataPath`（目标存在则「改用那份」，供第二台接管）/`resetDataPath`/`isCustomPath`。`src/lib/desktop.ts` 扩展 `chooseDesktopDataDir`/`relocateDesktopDataFile`/`resetDesktopDataPath`。
+## 三端存储（写盘与丢失风险）
+- 桌面：`C:\Users\<用户>\AppData\Roaming\novel-studio\novel-studio-data.json`（目录名取 package.json `name` 非 productName）。**整库一个 JSON**，防抖 800ms 全量重写。该目录混装 Electron 运行时约 15M + `Local Storage/leveldb`(独占锁)，真数据仅约 756K。⚠️ **让 WPS 云盘同步整个目录不可取**：leveldb 锁跨设备覆盖损坏、非原子写抓半截 JSON → 空库启动、文件级覆盖无合并＝整库级丢失。
+- #033 已实施（da27a18）：`electron/main.cjs` 的 `dataFile()` 读 `data-location.json` 支持自定义路径；写盘改 `writeAtomicSync`/`writeAtomic`（**刻意不留 .bak**，避免云盘流量翻倍）；IPC `store:chooseDataDir`/`setDataPath`/`resetDataPath`/`isCustomPath`。`src/lib/desktop.ts` 扩展 `chooseDesktopDataDir`/`relocateDesktopDataFile`/`resetDesktopDataPath`。
+- 便携（FSA）⚠️ 别再误判原子性：`flush()` 用 `createWritable()→write()→close()`，**本身就是 swap file 语义**（落地 `.crswap`），**不要重复实现 tmp+rename**。真正薄弱点＝最后一批编辑来不及落盘（FSA 只有异步 API）：已修（#034/315d472）`flushNow()` + `App.tsx` 监听 `visibilitychange(hidden)`/`pagehide`，**属尽力而为非保证**。
 
-## 便携版写盘（FSA）— ⚠️ 别再误判原子性
-- `src/lib/portable.ts` 的 `flush()` 用 FSA `createWritable()` → `write()` → `close()`。**这本身就是 swap file 语义**（MDN：写入期间目标文件不动，仅 `close()` 时用临时文件整体替换；Chrome/Edge 落地为 `.crswap`）。写到一半拔 U 盘，最坏＝留一个 `.crswap` + 数据退回上一次成功写入的版本，**不会**产生半截 JSON 导致「数据文件已损坏」。
-- 🔴 **不要在便携版重复实现 tmp+rename 原子写**——那是桌面版 IPC `writeAtomic` 的做法，便携版不需要。2026-09-02 关服前审计曾据此误判为 P0「会损坏数据文件」，查 MDN 后推翻；结论已写进 `flush()` 上方注释。
-- 真正薄弱点＝**最后一批编辑来不及落盘**：FSA 只有异步 API，页面真卸载后未完成的 `await` 被直接中断（桌面版有 `flushDesktopSync()` 同步阻塞写，便携版做不到）。已修（#034 / 提交 315d472）：新增 `flushNow()`（先清防抖定时器再立即写）+ `App.tsx` 增 `visibilitychange(hidden)` / `pagehide` 监听（二者在关闭·刷新·切标签前触发且页面仍存活）。**属尽力而为、非保证**——`saving=true` 时关页面仍会丢该批，UI 显示「保存出错，点击重试」+ toast，不静默失败。
+## 同步方案
+- **判据：过我们的服务器→要码；走用户自己的网盘→不要码。** 服务器码身兼两职（鉴权换槽位 + AES 密钥）；云盘方式用内置常量 `DEFAULT_CLOUD_KEY`（`syncTransport.ts`），文件名 `青春幻想引擎-同步数据.yfe`。无码代价必须写进 UI：等同「混淆」，不抗蓄意破解。
+- 桌面/便携=只有云盘模式、选目录即开启、无码；网页版 `WebTools` 可切「服务器(码 `yfe-sync-code`) / 云盘文件(`yfe-web-file-sync-on`+目录句柄)」。桌面 IPC 全走 `window.electronStore`。网页版进门 `/api/invite/check` 仍依赖我们服务器。WPS 免费档 1 文件夹/1GB/单文件≤10MB。老大：**内置云盘同步继续保留开发**。
+- 🔴 **两条路径二选一，绝不同时指向同一目录**（`.yfe` 与 `novel-studio-data.json` 会打架）：①内置云盘同步（推荐，加密+rev 合并+8 秒轮询三路合并）②#033 更改数据文件位置（文件级整库覆盖、**无合并**）。
+- ⚠️ **「架空」陷阱（最易被误判为丢数据）**：`enableDesktopCloudSync` 只在 `rev===0 && stores 空` 时播种本地数据。云盘已有数据则第二台原稿不被播种 → 用户以为稿子没了，但**本地 JSON 仍在磁盘**——**救法＝关闭云盘同步即切回本机存储**。面向用户的说明必须写这句。
+- ⚠️ **轮询盲区＝真 kill scenario**：A 写完关机但云盘未传完 → B 读旧 rev → 编辑后不触 409 → **直接覆盖 A 且不报冲突**。「换设备前先关软件 + 等网盘同步完成」是硬纪律。
+- 状态灯 `syncStatusMeta.ts`：ok/syncing/offline/error/too-large。三忌：多设备同时编辑；同步目录放公开共享；网盘套娃。
 
-## 关服与 2.0 只发桌面/便携版（2026-09-02 老大决策）
-- 方向：**2.0 正式版只对外发布桌面版 + 便携版，网页版后续关闭**。桌面/便携**零联网**（三个 API 全被 `WEB &&` 门控，tree-shake 掉；Electron 主进程无 electron-updater/无遥测），关服对两版功能零影响。
-- 混淆是最后一道不是唯一一道。老大裁定结果：P0-1 便携版写盘→**已修**（见上）；P0-2 网页版存量用户导出公告→**待办 #031**；P0-3 `AboutPage` 的 `LATEST_VERSION_URL` 填网盘链接→**已完成 #032**（7a25438，见下）；P0-4 代码签名证书→**忽略**（成本太高）；P1-5 打赏致谢名单→**继续占位**（无人打赏）；P1-6 桌面/便携反馈入口→**忽略**（走关于页联系方式）；P1-7 docs 清理→**忽略**（发视频时服务器还在）；P1-8 服务器资产处置→**待办 #033**（等服务器到期再处理，须在 #031 宽限期之后）。
-- ⏰ **提醒义务**：老大做功能介绍视频时，老巴迪要主动提醒一次「网页版关服前得上导出公告弹窗」（#031 的触发条件）。
-- 2026-09-02 老大复核归档（A 组三项→**已拒绝**）：#004 域名+真证书+ICP 备案（备案硬要求服务器包月≥3 月、与关服冲突；域名未注册省一步）、#014 网页版 PWA 离线（与 #031 方向相反）、#028 i18n（**长期备案项非废弃项**，体量实测 20–30 人日与三大技术坑评估数据全部有效可复用）。清单待处理由 6 降为 **3**，仅剩关服过渡三件套。
-- 🔗 **三件套顺序不可颠倒**：**#032 网盘链接（✅ 已完结） → #031 导出公告弹窗 → #033 服务器资产处置**。#031 公告里要放桌面/便携版获取方式故依赖 #032；#033 必须在 #031 宽限期走完后再执行，否则用户未导出就清数据＝"跑路"既视感。
-- 📦 **分发网盘（2026-09-02 老大提供，长期有效）**：**夸克网盘** https://pan.quark.cn/s/8ae0eb718cf5?pwd=QfAm ｜提取码 `QfAm`｜APP 口令 `/~bb863abBGY~:/`。已写入 `AboutPage.tsx` 三个常量（`LATEST_VERSION_URL`/`LATEST_VERSION_CODE`/`LATEST_VERSION_TOKEN`）。**换版本时只要网盘还是同一个文件夹分享，只传新安装包即可、不必改代码**；只有链接失效重建才需改常量并重新发版。
-- ⚠️ 复制交互统一用 `AboutPage.tsx` 的 `copyText()`：`navigator.clipboard` 优先→非安全上下文降级 `execCommand('copy')`→全失败则 toast 报错，**绝不静默失败**（红线：禁 alert/prompt/confirm）。
-- ⚠️ 桌面版外链走 `main.cjs:250` 的 `setWindowOpenHandler` + `shell.openExternal`（**在 electron/ 不在 src/**，别再 grep 错地方）。本次为守「未明说封装即不封装」红线，该分支未实点，待下次封装时一并验收。
-- ⚠️ **清单统计区维护坑**：`docs/1.9.6-2.0.0_Bug与待优化清单.md` 新增条目时**只改「总数」必漏**——必须同步改对应状态的计数与编号列表（2026-09-02 查出 #034 漏计：实际已处理 26 而统计写 25）。校验须用 python 按 `(?<!\\)\|` 切分列，**不可用 awk/shell 裸切**：#027 描述含 `\|\|` 转义竖线，裸切会列错位导致误判状态。
+## 关服与 2.0 只发桌面/便携版（2026-09-02 决策）
+- **2.0 只发桌面版 + 便携版，网页版后续关闭**。桌面/便携**零联网**（三个 API 全被 `WEB &&` 门控 tree-shake 掉），关服对两版零影响。
+- 裁定：P0-1 便携写盘→已修；P0-2 导出公告→**#031 已实施**(4b38bd8)；P0-3 网盘链接→**#032 已完成**(7a25438)；P0-4 代码签名→忽略；P1-5 致谢名单→占位；P1-6 反馈入口→忽略（走关于页联系方式）；P1-7 docs 清理→忽略；P1-8 资产处置→**#033**（须在 #031 宽限期后）。
+- 🔗 **三件套顺序不可颠倒：#032 网盘链接 ✅ → #031 导出公告 ✅（部分） → #033 资产处置**。
+- 🔴 **#031 关键认知（写数据保全文案前必读）**：自动备份（每 5 分钟 `auto5min`、每日 `daily`，各 30 份）经 `ops.put('backups',...)` 写在**同一个存储**里（网页版同一 IndexedDB、桌面/便携同一 JSON）。**容器没了，30 份备份跟着一起消失**——只防「改坏了想回退」，防不了「整个容器没了」，后者只能靠**导出到外部文件**。
+- **#031 落地**（老大「具体内容你自己写」）：`BackupReminder.tsx`+`lib/backupReminder.ts`，**三端通用**而非仅网页版关服公告。触发＝距上次导出 >7 天 且 「稍后再说」静默期（**同为 7 天，每周最多打扰一次，勿调成 3 天会变骚扰**）已过 且 确有数据（已开项目或 `db.getAllProjects()` 非空）。三处导出成功处（`App.exportCurrent`/`ProjectHub.exportProject`/`BackupManager` 迁移包）调 `markExported()` 重新计时。网页版未开云端同步时**让位**给 `LocalDataNotice`，判据统一走其导出的 `isLocalDataNoticeActive()`。
+  - ⚠️ **关服公告文本仍未写**：预留 `SHUTDOWN_NOTICE` 空常量，确定关服时间后填入文案即自动置顶高亮——**那时 #031 才算全部完成、#033 才可执行**。
+- 📦 **分发网盘（长期有效）**：夸克 https://pan.quark.cn/s/8ae0eb718cf5?pwd=QfAm ｜提取码 `QfAm`｜口令 `/~bb863abBGY~:/`。写在 `AboutPage.tsx` 三常量。换版本只要仍同一文件夹分享，只传新安装包即可。
+- 复制交互统一用 `copyText()`：`navigator.clipboard`→`execCommand`→toast 报错，**绝不静默失败**。桌面版外链走 `main.cjs:250` `setWindowOpenHandler`+`shell.openExternal`（**在 electron/ 不在 src/**），该分支未实点。
+- ⚠️ **清单统计区维护坑**：新增条目只改「总数」必漏——须同步改对应状态计数与编号列表；**括号内勿写其他条目编号**（校验脚本会把 `#0XX` 全抓成条目）。校验用 python 按 `(?<!\\)\|` 切列，**不可用 awk/shell 裸切**（#027 描述含 `\|\|` 转义竖线会列错位）。
 
-## 同步方案与同步码（#032 定案）
-- **判据：过我们的服务器→要码；走用户自己的网盘→不要码。** 服务器码身兼两职（HTTP 鉴权换槽位 + AES 密钥）；云盘方式不过服务器，改用内置常量 `DEFAULT_CLOUD_KEY='YFE-CLOUD-FILE-SYNC-V1'`（`syncTransport.ts`）。固定文件名 `CLOUD_FILE_NAME='青春幻想引擎-同步数据.yfe'`。
-- 三端：桌面/便携=只有云盘模式、选目录即开启、无码；网页版 `WebTools` 可切「服务器(要码 `yfe-sync-code`) / 云盘文件(不要码 `yfe-web-file-sync-on`+目录句柄)」。
-- 无码代价必须写进 UI：密钥是公开源码常量，等同「混淆」，防明文扫描与误看、不抗蓄意破解，勿放公开共享目录。
-- 桌面端 IPC：`contextIsolation:true`+`nodeIntegration:false`，渲染进程不能 `require('fs')`，文件 IO 全走 `window.electronStore`（`sync:readFile`/`sync:writeFile`/`sync:chooseDir`）。桌面端是**真·零服务器方案**；网页版进门（`/api/invite/check`）仍依赖我们的服务器。
-- WPS 云盘：支持任意文件夹实时双向同步（免费档限 1 文件夹/1GB/单文件≤10MB，路径须用户自选）。沿用 #030「空推拒绝 + 原子写 .bak」防护。老大判断：其他云盘功能不明，**内置云盘同步继续保留开发**。
-
-## 🔴 跨设备同步两条路径 + 「架空」陷阱（必读）
-- **两条路径二选一，绝对不要同时指向同一目录**（`.yfe` 与 `novel-studio-data.json` 两套机制会打架）：
-  1. **内置云盘同步**（推荐，多设备/有并发）：数据坞→云盘文件同步→选目录。加密 + rev 合并 + 原子写，8 秒轮询三路合并（本地优先）。
-  2. **#033 更改数据文件位置**（单机轮流/图省事）：数据坞→本机存储→更改位置，把单个 JSON 挪进网盘目录，由网盘做**文件级整库覆盖、无合并**。
-- ⚠️ **「架空」陷阱（最易被误判为丢数据）**：`db.ts` 的 `enableDesktopCloudSync` 只在 `rev===0 && stores 空` 时才 `seedDesktopFromLocal` 播种本地数据。云盘已有数据则第二台本地原稿**不被播种**，UI 读云盘那份 → 用户以为稿子没了。但**本地 JSON 仍在磁盘没被删**——**救法＝关闭云盘同步即切回本机存储**。任何面向用户的说明都必须写这句。
-- ⚠️ **轮询盲区＝真 kill scenario**：A 写完关机但云盘未传完 → B 读到**旧 rev** → B 编辑后 `cur.rev === baseRev` 不触 409 → **直接覆盖 A 的改动且不报冲突**。故「换设备前先关软件 + 等网盘显示同步完成」是硬纪律。接入第二台前**必须先导出本地备份**。
-- 状态灯 `syncStatusMeta.ts`：ok(绿)/syncing(黄闪)/offline(灰，编辑留本机、恢复后自动接管)/error(红)/too-large(过大)。
-- 三忌：多设备同时编辑；同步目录放公开共享；网盘套娃。便携版每次打开需重新授权目录（灰色离线点一下）。
-
-## 种子/按钮/主题
-- 卡片 data 键=`模块名::字段名`、表格行键=schema 列名，写错不报错整组静默空白。改种子必跑 `node tests/seed-schema-check.mjs`。统计条数先确认字面量还是循环生成。进度/热力图日期用 `todayKey()` 动态「距今N天前」。
+## UI 规范
 - Button.tsx 套尺寸：primary/secondary/ghost/danger/success/info/icon/icon-ghost/toggle/icon-*；不套：bare/toggle-text。档位 xs(h-6)→sm(h-8)→md(h-9默认)→lg(h-10)。裸图标传 `iconOnly`。审计 JSX 不用 indexOf('>')（箭头 `=>` 误截断），判据「>前字符≠=」。
-- 换肤 `<html data-theme>`+index.css 变量。8套：暗夜/护眼/午夜蓝/羊皮卷/暮山紫/青花/松烟墨/桃笺；浅色4=护眼/羊皮卷/青花/桃笺。浅色 ink 刻度反向(950最浅/50最深)；850分隔线比800深一档。⚠️ 浅色禁低透明度 amber 表数据（护眼1.57/羊皮卷1.48 远低于3:1会隐形），用实色 `bg-amber`，最低 `/40`。排查用 agent-browser eval 取 getComputedStyle 算 WCAG。
+- 换肤 `<html data-theme>`+index.css 变量。8 套：暗夜/护眼/午夜蓝/羊皮卷/暮山紫/青花/松烟墨/桃笺；浅色4=护眼/羊皮卷/青花/桃笺。浅色 ink 刻度反向(950最浅/50最深)。⚠️ 浅色禁低透明度 amber 表数据（护眼1.57/羊皮卷1.48 远低于3:1），用实色 `bg-amber`，最低 `/40`。
 
 ## AI / 网页版 / 服务器
 - AI：颉文姬5模式 clinic/edit/review/brief/ledger；模型硅基流动 deepseek-ai/DeepSeek-V3.2。明文本地记忆勿公开。
-- 网页版零后端可跑(idbOps)、邀请制。服务器 `154.8.178.240`(腾讯云轻量 Ubuntu24.04)；SSH `C:\Users/18223\.ssh\yfe_test_server`(端口 **22**)；ubuntu+免密sudo。站点 `/var/www/yfe`；反馈服务 `/opt/yfe-server/feedback-server.mjs`(www-data:3000，数据 `/var/lib/yfe`)。改服务端：`scp`→`/tmp`→`sudo cp`→`chown www-data:www-data`→`systemctl restart yfe-feedback`；nginx 改后 `nginx -s reload`。HTTPS 自签 `/etc/ssl/yfe`；安全上下文 AES-GCM(`a1:`) / HTTP 降级 XOR(`x1:`)。2.0 测试期自签 HTTPS+IP 访问，绑域名 qchxengine.cn+备案等测试后。
-- serverStore 走 StoreOps `fetch /api/sync`，800ms 防抖，rev 守卫，排除 meta 的 AI 配置；同步码独立槽位 `sync-<sha256>.json`。入门码 `YFE-D49E-6MPG`、田馨 `YFE-SYNC-N6SV-2YZJ`、老大 `YFE-SYNC-7Q3K-2X9M`(ADMIN)。
-
-## 服务器巡检
-- 日志 `/var/lib/yfe/access.jsonl`(act: enter/reject/pull/push/authfail/conflict/rate-limited)、`feedback.jsonl`(附件 fb-<id>.bin)。每日 automation `automation-1787973377664` → `docs/服务器访问记录.md`/`docs/服务器反馈记录.md`。
-- 实操：ts=UTC 按本地+8h 分组；概览表全量重算(独立IP重叠不可累加/Math.max)；追加非重建；先枚举 act 值防「未知动作」；脚本结论人工复核。要点段手写，时间同样 +8h(极易抄成 UTC)；08-29 基准行 21/1/8/21/20 可自校验。
-- `bad` 字段判官：`bad=null`⇒请求无 Authorization(非输错码)；`bad` 有值可反算身份——本地 sha256(候选码) 取前12位比对。排障：日志 `push ok`≠落盘，须核槽位 rev/mtime。
-- 已部署：#027 门禁码归一化（服务端 `normCode()`+前端 `WebGate`/`WebTools` 同款，槽位=sha256(码) 幂等，commit `bf4f704`/`3f1c082`）；#026 同步瘦身+按码配额(普通 50MB/ADMIN 450MB，超限 413)+每日滚动备份 `__cloudBackup`+「从云端备份恢复」。
+- 服务器 `154.8.178.240`(腾讯云轻量 Ubuntu24.04)；SSH `C:\Users/18223\.ssh\yfe_test_server`(端口 **22**)，ubuntu+免密sudo。站点 `/var/www/yfe`；反馈服务 `/opt/yfe-server/feedback-server.mjs`(www-data:3000，数据 `/var/lib/yfe`)。改服务端：`scp`→`/tmp`→`sudo cp`→`chown`→`systemctl restart yfe-feedback`；nginx 改后 `nginx -s reload`。HTTPS 自签；安全上下文 AES-GCM(`a1:`) / HTTP 降级 XOR(`x1:`)。绑域名 qchxengine.cn+备案等测试后。
+- serverStore 走 StoreOps `fetch /api/sync`，800ms 防抖，rev 守卫，排除 meta 的 AI 配置；槽位 `sync-<sha256>.json`。入门码 `YFE-D49E-6MPG`、田馨 `YFE-SYNC-N6SV-2YZJ`、老大 `YFE-SYNC-7Q3K-2X9M`(ADMIN)。
+- 巡检：日志 `/var/lib/yfe/access.jsonl`(act: enter/reject/pull/push/authfail/conflict/rate-limited)、`feedback.jsonl`。每日 automation → `docs/服务器访问记录.md`/`docs/服务器反馈记录.md`。ts=UTC 按本地+8h 分组；概览表全量重算（独立IP不可累加）；追加非重建。`bad=null`⇒请求无 Authorization。日志 `push ok`≠落盘，须核槽位 rev/mtime。已部署 #027 门禁码归一化、#026 同步瘦身+按码配额(普通50MB/ADMIN 450MB)+每日滚动备份。
