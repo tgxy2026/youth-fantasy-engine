@@ -1,4 +1,5 @@
-import { BookOpen, ChevronDown, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, Feather, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2 } from 'lucide-react'
+import { BookOpen, ChevronDown, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2 } from 'lucide-react'
+import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
 import { confirmDialog } from './dialogs'
 import { useState, useEffect } from 'react'
@@ -116,7 +117,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
       {/* Logo */}
       <div className="px-4 h-14 border-b border-ink-700 shrink-0 flex items-center gap-2.5">
         <div className="w-8 h-8 rounded-lg bg-amber/15 border border-amber/30 flex items-center justify-center shrink-0">
-          <Feather size={16} className="text-amber" />
+          <BrandMark size={16} className="text-amber" />
         </div>
         <div className="min-w-0">
           <div className="text-[14px] font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-[10px] font-normal text-ink-400 ml-1">{APP_VERSION_LABEL}</span></div>

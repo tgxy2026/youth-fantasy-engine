@@ -11,6 +11,7 @@ import Tooltip from './Tooltip'
 import BackupManager from './BackupManager'
 import FeatureSelectModal from './FeatureSelectModal'
 import { confirmDialog, showToast } from './dialogs'
+import BrandMark from './BrandMark'
 import { downloadBlob } from '../lib/zip'
 import { markExported } from '../lib/backupReminder'
 import { APP_VERSION_LABEL } from '../lib/portable'
@@ -160,7 +161,7 @@ export default function ProjectHub({ onOpen }: Props) {
         {/* 品牌区 */}
         <header className="mb-10 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber/15 border border-amber/30 mb-4">
-            <Feather size={26} className="text-amber" />
+            <BrandMark size={26} className="text-amber" />
           </div>
           <h1 className="text-2xl font-bold text-ink-50 tracking-wide flex items-baseline justify-center gap-2">
             青春幻想引擎
