@@ -4,6 +4,7 @@ import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
 import { APP_VERSION_LABEL } from '../lib/portable'
 import { showToast } from './dialogs'
+import { Button } from './Button'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
 const BILI_URL = 'https://b23.tv/zl4vqyw'
@@ -144,13 +145,13 @@ export default function AboutPage() {
                   >
                     <ExternalLink size={16} /> 打开网盘下载页
                   </a>
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
                     onClick={() => copyText(LATEST_VERSION_TOKEN, '已复制 APP 口令，打开夸克 APP 即可识别')}
-                    className="inline-flex items-center gap-2 rounded-lg bg-ink-800 border border-ink-700 px-3 py-2 text-sm text-ink-200 hover:border-amber/40 hover:text-amber transition-colors"
+                    className="gap-2"
                   >
                     <Copy size={15} /> 复制 APP 口令
-                  </button>
+                  </Button>
                 </div>
                 {/* 提取码：网页端 URL 已带 pwd 可自动填，但手机端 / 客户端常需手填，故单独明示 */}
                 <div className="mt-3 flex items-center gap-2">
@@ -158,13 +159,14 @@ export default function AboutPage() {
                   <code className="rounded bg-ink-900/60 border border-ink-700 px-2 py-0.5 text-xs text-ink-100 tracking-wider">
                     {LATEST_VERSION_CODE}
                   </code>
-                  <button
-                    type="button"
+                  <Button
+                    variant="bare"
+                    size="xs"
                     onClick={() => copyText(LATEST_VERSION_CODE, '提取码已复制')}
-                    className="inline-flex items-center gap-1 text-[11px] text-ink-400 hover:text-amber transition-colors"
+                    className="gap-1 text-[11px] text-ink-400 hover:text-amber"
                   >
                     <Copy size={12} /> 复制
-                  </button>
+                  </Button>
                 </div>
                 <p className="mt-3 text-[11px] text-ink-500 leading-relaxed">
                   若链接失效或提取码有误，请加 <span className="text-ink-300">QQ 交流群</span> 或关注公众号获取最新地址。

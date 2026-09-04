@@ -21,6 +21,7 @@ import PrivacyNotice from './components/PrivacyNotice'
 import LocalDataNotice from './components/LocalDataNotice'
 import BackupReminder from './components/BackupReminder'
 import { markExported } from './lib/backupReminder'
+import { createDemoProject } from './lib/seedData'
 import FullTextSearch from './components/FullTextSearch'
 import JieWenJiSprite from './components/JieWenJiSprite'
 import GeoMapEditor from './components/GeoMapEditor'
@@ -141,6 +142,14 @@ export default function App() {
     if (!fileReady) return
     ;(async () => {
       const last = await db.getMeta('lastProject', '')
+      await db.migrateProjectTypes() // 清理历史遗留的 lite/minimal 项目形态
+      // 首次启动且存储为空：自动创建示范项目「吞天神脉（示范）」，引导新用户了解全模块功能
+      if (!last) {
+        const existing = await db.getAllProjects().catch(() => [])
+        if (existing.length === 0) {
+          try { await createDemoProject() } catch (e) { console.warn('[boot] 自动创建示范项目失败：', e) }
+        }
+      }
       if (last) {
         const p = await db.getProject(last)
         if (p) {
@@ -185,6 +194,8 @@ export default function App() {
     await db.migrateChapterLedger()
     // 1.9.2：章节号改为全局连续（幂等，已是正确的就不写库）
     await db.migrateChapterNumbering()
+    // 清理历史遗留的 lite/minimal 项目形态（归一化为 full，幂等）
+    await db.migrateProjectTypes()
     await refreshVolumeTabs()
     db.setMeta('lastProject', id)
     setProjectId(id)

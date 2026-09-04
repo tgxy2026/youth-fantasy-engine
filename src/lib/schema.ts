@@ -100,7 +100,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'positioning', name: '作品定位', group: '开书定位', type: 'form',
-    minimal: true, // 极简项目隐藏：开书商业档案属长篇专属
   description: '开书商业档案：动笔前第一个填——赛道、平台、读者、卖点没想清楚就动笔，多半会切书。',
   modules: [
     { name: '一、基本信息', fields: [
@@ -182,7 +181,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'power', name: '力量体系', group: '开书定位', type: 'form',
-  lite: true, // 精简项目隐藏：升级流等级表属长篇玄幻专属
   description: '升级流网文的"物理法则"：力量来源、境界阶梯、能力门槛、克制关系、金手指接口。等级表是宪法，正文发布后尽量不改。',
   modules: [
     { name: '一、体系总览', fields: [
@@ -234,7 +232,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'master', name: '全书总纲', group: '大纲规划', type: 'form',
-    minimal: true, // 极简项目隐藏：长篇母表
   description: '从设定到大纲的桥梁：主线一句话、大结局、反派序列、分卷规划——它是所有分卷大纲的母表，改子表先改母表。',
   modules: [
     { name: '一、故事内核', fields: [
@@ -271,7 +268,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'style', name: '写作规范', group: '运营维护', type: 'form',
-    minimal: true, // 极简项目隐藏：文风宪法属长篇连载用
   description: '文风宪法：人称视角、句式偏好、标点格式、个人坏习惯清单——百万字连载文风漂移是大概率事件，先立法后写作。',
   modules: [
     { name: '一、叙事规范', fields: [
@@ -394,7 +390,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'char-npc', name: 'NPC角色', group: '角色管理', type: 'card',
-  minimal: true, // 极简项目隐藏：短篇/轻小说无需记录 NPC 角色
   description: '功能型角色简明档案：重点写"功能定位"——导师型/打脸对象/情报源/伏笔承载者/氛围组，写清功能就不会写崩。',
   modules: [
     { name: 'NPC档案', fields: [
@@ -419,7 +414,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'relations', name: '人物关系', group: '角色管理', type: 'table',
-  lite: true, // 精简项目隐藏：关系力导向图/知情权限对短篇过重
   description: '人物两两关系台账：关系现状、知情度、按卷演变——防"关系失忆"与"泄密穿帮"。关系质变新增一行而非覆盖。',
   columns: [
     ch('人物A'), ch('人物B'),
@@ -435,7 +429,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'nations', name: '国家势力', group: '世界构建', type: 'table',
-  lite: true, // 精简项目隐藏：世界构建百科
   description: '王朝/宗门/世家/商会档案：一势力一列，含实力构成、内部派系与剧情作用。支持「上级」隶属（如宗门下的分坛、世家分支），表格内按上下级渲染成可折叠的树。',
   columns: [
     c('编号'), c('名称'), cr('上级', 'nations', '名称'), c('别称'), c('保密等级', ['S','A','B','C']), c('类别', ['王朝','宗门','世家','商会','魔道','隐秘组织','神族']),
@@ -452,7 +445,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'faction-rels', name: '势力关系', group: '世界构建', type: 'table',
-  lite: true, // 精简项目隐藏：世界构建百科
   description: '王朝/宗门/世家/商会之间的同盟·敌对·贸易·从属关系台账，驱动「势力关系」（力导向可视化）。节点可跳转《国家势力》，并挂接所属成员角色（联动角色卡"所属势力"）。',
   columns: [
     cr('势力A', 'nations', '名称'), cr('势力B', 'nations', '名称'),
@@ -466,7 +458,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'geography', name: '地理风物', group: '世界构建', type: 'table',
-  lite: true, // 精简项目隐藏：世界构建百科
   description: '大陆/区域/城市/秘境/禁地档案，含层级归属、距离行程与危险等级。距离务必写死——很多时间bug其实是路没算。「层级归属」为结构化父级（指向本表其它地名，如城市归属某区域），表格内按地理层级渲染成可折叠的树。',
   columns: [
     c('编号'), c('名称'), c('别称'), c('保密等级', ['S','A','B','C']),
@@ -490,7 +481,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'geography-map', name: '地图编辑', group: '世界构建', type: 'map',
-  lite: true, // 精简项目隐藏：世界构建百科
   description: '在《地理风物》之上叠一层手绘格子地图：点「绘制地图」选择一个范围后，左键涂格、右键退出，形状与格子数完全由你自由设计；按「层级归属」分层叠色，只要求子范围完全画在父范围之内（无飞地）。可叠加伏笔/角色/时间线关联（按「地理位置」字段精确联动）。',
   tips: ['格子档位右上角切换（每格边长 1 公里精细 / 10 公里粗略）：画大陆切粗档快速铺满，画城池切回精档。',
     '滚轮缩放画面、拖空白平移；绘制模式下左键涂/擦格子，右键取消退出。',
@@ -499,7 +489,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'races', name: '种族生物', group: '世界构建', type: 'table',
-  lite: true, // 精简项目隐藏：世界构建百科
   description: '种族、魔兽、灵兽档案，含威胁等级与契约关系。支持「上级」隶属（填本表其它条目名称即形成上下级树，可折叠 / 新增子条目）。',
   columns: [
     c('编号'), c('名称'), cr('上级', 'races', '名称'), c('别称'), c('保密等级', ['S','A','B','C']), c('类别', ['人族','神族','魔族','魔兽','灵兽','古族','异种']),
@@ -515,7 +504,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'items', name: '物品资源', group: '世界构建', type: 'table',
-  lite: true, // 精简项目隐藏：世界构建百科
   description: '功法、法宝、丹药、材料、货币档案，品级体系一目了然。与力量体系的品级标准对齐。支持「上级」隶属（填本表其它条目名称即形成上下级树，可折叠 / 新增子条目）。',
   columns: [
     c('编号'), c('名称'), cr('上级', 'items', '名称'), c('别称'), c('保密等级', ['S','A','B','C']),
@@ -532,7 +520,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'history', name: '历史事件', group: '世界构建', type: 'table',
-  lite: true, // 精简项目隐藏：编年史/历法体系属长篇专属
   description: '编年史台账：倒推法填写（从大结局倒推到开篇），含"民间流传版本vs真相"双版本。支持「上级」隶属（填本表其它事件名称即形成上下级树，可折叠 / 新增子条目）。',
   columns: [
     c('编号'), c('事件名称'), cr('上级', 'history', '事件名称'), c('别称'), c('保密等级', ['S','A','B','C']), ca('历法'), cd('故事内时间', 'w-40'), c('距今时长'),
@@ -563,7 +550,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'chapter-master', name: '章节总表', group: '大纲规划', type: 'table',
-    minimal: true, // 极简项目隐藏：长篇主台账
     newestFirst: true, // 按创建时间倒序：后写的章节在最前，贴合"从第一章往后写"的工作流
   description: '全书章节主台账的只读汇总视图。自「按卷建表」后，每卷各自一张「章节台账」表（见左侧「章节总表」下的各卷子项），此处聚合所有卷的章节供全局核对。每章一行，串联伏笔/时间脉络/爽点三张表的对齐主轴。',
   columns: CHAPTER_LEDGER_COLUMNS,
@@ -578,7 +564,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'foreshadow', name: '伏笔追踪', group: '创作管理', type: 'table',
-  lite: true, // 精简项目隐藏：伏笔闭环追踪属长篇刚需
   description: '埋一条登记一条。含"重要度"与"回收前置条件"，防止前置没铺就强行回收。全书级伏笔每卷末必点检一次，防烂尾。',
   columns: [
     c('编号'), c('伏笔内容'),
@@ -595,7 +580,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'timeline', name: '时间脉络', group: '创作管理', type: 'table',
-  lite: true, // 精简项目隐藏：无环校验/历法属长篇专属
   description: '正文实际流逝时间的追踪台账：每章一行，防时间线崩坏。写完一章立刻登记，发现冲突立刻改。',
   columns: [
     c('章节号'), c('章节标题'), c('线/轨道', ['主线','支线','暗线','感情线','身世线','成长线','复仇线','其他']),
@@ -613,14 +597,12 @@ export const TABS: TabDef[] = [
 
 {
   id: 'plot-canvas', name: '情节推演', group: '创作管理', type: 'canvas',
-  lite: true, // 精简项目隐藏：长篇推演工具
   description: '演进简报的可视化升级：多选章节 → 复用「颉文姬·灵感简报」同一套 aiBriefing 管线生成结构化卡片（待办伏笔 / 钩子爽点 / 角色状态 / 下一章衔接）→ 卡片可拖拽、可连成推演链。与简报共享同一 AI 管线，不另起平行孤岛。',
   tips: ['先选左侧若干章节，点「生成推演」；卡片可拖动排布，连接模式下点两张卡连成推演链。需先配置 AI 模型。']
 },
 
 {
   id: 'hookpoints', name: '爽点节奏', group: '创作管理', type: 'table',
-    minimal: true, // 极简项目隐藏：连载节奏管控属长篇
   description: '每章爽点/钩子/间隔的节奏管控表。写章节细纲时就排好爽点节奏，间隔超3章必须插爽点。',
   columns: [
     c('章节号'), c('章节标题'),
@@ -636,7 +618,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'progress', name: '写作进度', group: '创作管理', type: 'table',
-    minimal: true, // 极简项目隐藏：日更流水属长篇
   description: '每日字数流水账。无论写了多少字都记录，底部自动统计产量。',
   columns: [
     cc('日期'), c('章节'), c('实际字数'), c('计划字数'),
@@ -650,7 +631,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'subplots', name: '支线剧情', group: '创作管理', type: 'table',
-    minimal: true, // 极简项目隐藏：多线长篇用
   description: '感情线/身世线/暗线等多线并行的进度台账：起点、关键节点、与主线汇合点。哪条线断了进度一眼看出。',
   columns: [
     c('编号'), c('支线名称'), c('类别', ['感情线','身世线','暗线','复仇线','成长线','其他']),
@@ -666,7 +646,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'secrets', name: '知情权限', group: '创作管理', type: 'table',
-  lite: true, // 精简项目隐藏：随关系网一起砍
   description: '谁知道主角的秘密、谁知道哪个真相——防"泄密穿帮"这一吃书重灾区的专用台账。读者对"谁知道什么"记得比你牢。',
   columns: [
     c('编号'), c('秘密内容'), chs('知情者'), c('知情程度', ['完全知情','知道部分','隐约察觉','已遗忘/被抹除']),
@@ -681,7 +660,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'changelog', name: '设定变更', group: '运营维护', type: 'table',
-  lite: true, // 精简项目隐藏：heavy，长篇防吃书用
   description: '改设定先登记：影响范围、已发布章节冲突、补丁方案——连载防吃书的最后一道闸。红色冲突未处理前不发布后续章节。',
   columns: [
     c('编号'), cc('变更日期'), c('变更内容'), c('旧值'), c('新值'),
@@ -697,7 +675,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'ideas', name: '灵感素材', group: '运营维护', type: 'table',
-    minimal: true, // 极简项目隐藏：攒点子库非码字必需（用户确认）
   description: '平时攒点子/桥段/金句/场景描写，写细纲卡壳时先翻这里再硬编。灵感出现的当天就登记，过了当晚会忘。',
   columns: [
     c('编号'), c('内容'),
@@ -713,7 +690,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'feedback', name: '读者反馈', group: '运营维护', type: 'table',
-  lite: true, // 精简项目隐藏：连载运营复盘台账，短篇/中篇通常无此需求
   description: '连载运营侧：追读/留存/均订数据与章评吐槽的复盘台账。差评是最便宜的编辑意见。',
   columns: [
     cc('日期'), c('数据周期'), c('追读'), c('均订'), c('留存'),
@@ -734,7 +710,6 @@ export const TABS: TabDef[] = [
 
 {
   id: 'volume-outline', name: '分卷大纲', group: '大纲规划', type: 'card',
-  lite: true, // 精简项目隐藏：「卷」是长篇概念，短篇无卷
   description: '每卷一份：本卷定位、起止点、事件链、爽点节奏、伏笔管理。左侧目录可新增/改名/删除/排序分卷；填写时从全书总纲的"分卷规划一览"取方向。',
   modules: [
     { name: '一、本卷定位', fields: [
@@ -804,14 +779,12 @@ export const TABS: TabDef[] = [
 
 {
   id: 'dashboard', name: '写作面板', group: '工作面板', type: 'dashboard',
-    minimal: true, // 极简项目隐藏：总览面板意义不大
   description: '创作全景：今日写作、章节进度、伏笔清点、快捷入口。',
   modules: [], columns: [],
 },
 
 {
   id: 'guide', name: '使用指南', group: '工作面板', type: 'guide',
-    minimal: true, // 极简项目隐藏：地图/导航面板意义不大
   description: '页签导航与使用建议。',
   modules: [], columns: [],
 },
@@ -843,17 +816,7 @@ export function getTab(id: string): TabDef | undefined {
   return undefined
 }
 
-/** 页签在指定项目形态下是否隐藏
- * - full / undefined：全部显示
- * - lite：仅隐藏 lite 标记的页签
- * - minimal：隐藏 lite 标记 或 minimal 标记的页签（在精简基础上再做减法，纯码字工具）
- */
-export function isTabHidden(t: TabDef, type: 'full' | 'lite' | 'minimal' | undefined): boolean {
-  if (!type || type === 'full') return false
-  if (type === 'lite') return !!t.lite
-  if (type === 'minimal') return !!t.lite || !!t.minimal
-  return false
-}
+// 历史遗留的 lite / minimal 项目类型已废弃移除；页签可见性统一由 tabVisible 按 features 集合判定（见下方）。
 
 /** 设定检索栏使用：三个一级页签各自展开后的子项（按页签 id 引用 TABS） */
 export const SETTING_SUBTABS: Record<string, string[]> = {
@@ -865,9 +828,9 @@ export const SETTING_SUBTABS: Record<string, string[]> = {
 export const RELATION_PAIR_TAB_IDS = new Set(['relations'])
 
 // ==================== 自定义项目：功能分类与依赖（v1.9.1） ====================
-export type ProjectType = 'full' | 'lite' | 'minimal' | 'custom'
+export type ProjectType = 'full' | 'custom'
 
-/** 可见性上下文：完整 / 精简 / 极简沿用旧标记；自定义项目携带启用的功能集合 */
+/** 可见性上下文：完整项目全功能可见；自定义项目携带启用的功能集合（features 为已启用 tab id 列表） */
 export interface VisCtx {
   type: ProjectType
   features: string[]
@@ -935,10 +898,7 @@ export function forcedByDeps(enabled: Set<string>): Set<string> {
 export function tabVisible(tabId: string, ctx: VisCtx): boolean {
   // 卷台账（chapter-vol-*）跟随「章节总表」的可见性：自定义项目里启用了章节总表即显示各卷子表
   if (isVolumeLedgerTab(tabId)) tabId = 'chapter-master'
+  // 自定义项目按启用功能集合过滤；完整项目全功能可见（旧版精简/极简类型已移除）
   if (ctx.type === 'custom') return ctx.features.includes(tabId)
-  if (ctx.type === 'full') return true
-  // lite / minimal：沿用旧标记（编辑器始终在）
-  if (tabId === EDITOR_ID) return true
-  const t = getTab(tabId)
-  return t ? !isTabHidden(t, ctx.type) : true
+  return true
 }

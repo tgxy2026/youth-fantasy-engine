@@ -506,14 +506,36 @@ export function disableDesktopCloudSync() {
 }
 
 // ============ 项目 ============
+// 旧版项目形态 'lite'(精简) / 'minimal'(极简) 已移除；把存储中残留的旧值归一化为 'full'
+// （等同旧版"全功能可见"回退行为，避免神秘降级）。读取即归一化，写回迁移见 migrateProjectTypes。
+function isLegacyProjectType(t: unknown): t is 'lite' | 'minimal' {
+  return t === 'lite' || t === 'minimal'
+}
+function normalizeProject(p: Project): Project {
+  if (isLegacyProjectType(p.projectType)) return { ...p, projectType: 'full' }
+  return p
+}
 export async function getAllProjects(): Promise<Project[]> {
-  const all = await ops.getAll<Project>('projects')
+  const all = (await ops.getAll<Project>('projects')).map(normalizeProject)
   return all.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 export async function getProject(id: string): Promise<Project | undefined> {
-  return ops.get<Project>('projects', id)
+  const p = await ops.get<Project>('projects', id)
+  return p ? normalizeProject(p) : undefined
 }
-export async function createProject(name: string, genre = '', intro = '', cover = '', projectType: 'full' | 'lite' | 'minimal' | 'custom' = 'full', features?: string[]): Promise<Project> {
+/** 一次性迁移：把存储中所有残留的 lite/minimal 项目形态写回为 'full'，真正清理历史数据（幂等，无旧值则不写库） */
+export async function migrateProjectTypes(): Promise<number> {
+  const all = await ops.getAll<Project>('projects')
+  let changed = 0
+  for (const p of all) {
+    if (isLegacyProjectType(p.projectType)) {
+      await ops.put('projects', { ...p, projectType: 'full' })
+      changed++
+    }
+  }
+  return changed
+}
+export async function createProject(name: string, genre = '', intro = '', cover = '', projectType: 'full' | 'custom' = 'full', features?: string[]): Promise<Project> {
   const now = Date.now()
   const p: Project = { id: uid(), name, genre, intro, ...(cover ? { cover } : {}), projectType, ...(features ? { features } : {}), createdAt: now, updatedAt: now }
   await ops.put('projects', p)

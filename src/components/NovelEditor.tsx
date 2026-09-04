@@ -35,7 +35,7 @@ interface Props {
   /** v1.3：唤起全文检索命令面板 */
   onOpenSearch?: () => void
   projectName?: string
-  /** 可见性上下文：精简/极简项目隐藏伏笔闭环 / 连续性校验入口，自定义项目按启用功能集过滤 */
+  /** 可见性上下文：自定义项目（未启用相应功能时）隐藏伏笔闭环 / 连续性校验入口，按启用功能集过滤 */
   ctx: VisCtx
   /** 从其他页签（如章节总表）跳转进来时，要直接打开的章节 id */
   openChapterId?: string | null
@@ -299,6 +299,11 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
 
   const active = useMemo(() => chapters.find(c => c.id === activeId) ?? null, [chapters, activeId])
   const { ready: aiReady } = useAIReady()
+  // P0-2：用 ref 镜像最新 state，供卸载/切章冲刷（useEffect 闭包拿不到最新 state）
+  const chaptersRef = useRef(chapters); chaptersRef.current = chapters
+  const activeRef = useRef<Chapter | null>(null); activeRef.current = active
+  const onStatsChangeRef = useRef(onStatsChange); onStatsChangeRef.current = onStatsChange
+  const prevActiveIdRef = useRef<string | null>(null)
   const [summarizing, setSummarizing] = useState(false)
 
   /** 计算章节的全局序号与所属卷名（用于总表同步） */
@@ -333,9 +338,23 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     )
   }
 
-  // 切到某章节时，初始化草稿
+  // 切到某章节时，先冲刷"正在离开那一章"在 2 秒防抖窗口内尚未落库的正文，再初始化新章草稿
   useEffect(() => {
-    const ch = chapters.find(c => c.id === activeId)
+    const prevId = prevActiveIdRef.current
+    if (prevId && prevId !== activeId) {
+      // 取消离开章挂起的防抖保存，改由下方立即冲刷，避免旧的 setTimeout 后用新章内容错写
+      clearTimeout(autosaveTimer.current)
+      const leaving = chaptersRef.current.find(c => c.id === prevId)
+      if (leaving && draftRef.current !== leaving.content) {
+        const text = draftRef.current
+        const next: Chapter = { ...leaving, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+        void db.saveChapter(next).then(() => onStatsChangeRef.current?.())
+        // 同步内存态，避免快速切回时读到陈旧内容把刚落库的稿子覆盖掉
+        setChapters(prev => prev.map(c => (c.id === leaving.id ? next : c)))
+      }
+    }
+    prevActiveIdRef.current = activeId
+    const ch = chaptersRef.current.find(c => c.id === activeId)
     if (ch) {
       draftRef.current = ch.content ?? ''
       setDraftContent(ch.content ?? '')
@@ -349,6 +368,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     clearTimeout(metaTimer.current)
     // 冲刷未落库的标题/摘要修改
     metaFlush.current?.()
+    // P0-2：卸载前冲刷尚未落库的正文（2 秒防抖窗口内输入），防止切走 / 关项目丢稿
+    const ch = activeRef.current
+    if (ch && draftRef.current !== ch.content) {
+      const text = draftRef.current
+      const next: Chapter = { ...ch, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+      void db.saveChapter(next)
+    }
   }, [])
 
   // Ctrl/Cmd+S 保存

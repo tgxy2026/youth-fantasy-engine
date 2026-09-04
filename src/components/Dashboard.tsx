@@ -19,7 +19,7 @@ import { Button } from './Button'
 interface Props {
   onNavigate: (id: string) => void
   refreshKey: number
-  /** 项目形态：精简/极简项目隐藏「未回收伏笔」卡、「角色出场分布」、「伏笔告警」 */
+  /** 项目形态：自定义项目（未启用「伏笔追踪」时）隐藏「未回收伏笔」卡与「伏笔告警」；「角色出场分布」对自定义项目同样隐藏 */
   ctx: VisCtx
 }
 
@@ -32,6 +32,8 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   const [dailyStats, setDailyStats] = useState<db.DailyStat[]>([])
   const [loaded, setLoaded] = useState(false)
   const isLite = ctx.type !== 'full'
+  // 完整项目始终展示「未回收伏笔」卡；自定义项目仅在启用了「伏笔追踪」功能时展示
+  const showForeshadowCard = ctx.type === 'full' || ctx.features.includes('foreshadow')
   const hiddenTabIds = useMemo(
     () => new Set(TABS.filter(t => !tabVisible(t.id, ctx)).map(t => t.id)),
     [ctx]
@@ -163,7 +165,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       help: '来自「伏笔追踪」中状态为「未回收」的条目。超过 5 条会转红提醒——挖坑速度快于填坑速度是烂尾的头号信号，可到编辑器的伏笔闭环看板逐条点检。',
     },
     {
-      label: '近7日产量',
+      label: '近 7 日产量',
       value: `${(weekTotal / 10000).toFixed(2)} 万`,
       sub: `日均 ${Math.round(weekTotal / 7)} 字`,
       icon: <TrendingUp size={16} />, color: 'text-amber',
@@ -186,7 +188,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">写作面板</h1>
           <HelpPopover title="写作面板怎么用" width="22rem" size={14}>
-            {'全书健康度总览，所有数字都是从各页签实时汇总的，不需要手动维护。\n\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（精简 / 自定义项目不显示「未回收伏笔」，仅三张）；\n· 码字日历：在正文编辑器写作时自动打卡，热力图看近 26 周节奏；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作健康提醒：完稿率与风险点（伏笔堆积、断更、素材闲置）。\n\n每个区块标题旁的 ? 都有更细的说明。'}
+            {'全书健康度总览，所有数字都是从各页签实时汇总的，不需要手动维护。\n\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 码字日历：在正文编辑器写作时自动打卡，热力图看近 26 周节奏；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作健康提醒：完稿率与风险点（伏笔堆积、断更、素材闲置）。\n\n每个区块标题旁的 ? 都有更细的说明。'}
           </HelpPopover>
         </div>
         <p className="mt-1 text-[13px] text-ink-300">创作全景一览 · 数据实时同步自各页签</p>
@@ -194,7 +196,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
 
       {/* 统计卡 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        {statCards.filter(c => !(isLite && c.label === '未回收伏笔')).map(card => (
+        {statCards.filter(c => !(c.label === '未回收伏笔' && !showForeshadowCard)).map(card => (
           <div key={card.label} className="bg-ink-850 border border-ink-700 rounded-xl p-4 card-hover">
             <div className={`flex items-center gap-2 ${card.color}`}>
               {card.icon}
@@ -377,13 +379,13 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             </HelpPopover>
           </h2>
           <div className="space-y-2.5 text-[12px]">
-            {!isLite && unf.length > 5 && (
+            {showForeshadowCard && unf.length > 5 && (
               <div className="flex items-start gap-2 text-red-400">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
                 <span>未回收伏笔 {unf.length} 条，超过 5 条建议点检一次防烂尾</span>
               </div>
             )}
-            {!isLite && unf.length > 0 && unf.length <= 5 && (
+            {showForeshadowCard && unf.length > 0 && unf.length <= 5 && (
               <div className="flex items-start gap-2 text-sky-400">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
                 <span>未回收伏笔 {unf.length} 条，处于健康范围</span>

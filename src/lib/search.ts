@@ -74,7 +74,7 @@ function makeSnippet(body: string, query: string): string {
 }
 
 /** 采集当前项目的全部可搜索文档
- * @param projectType 项目形态；精简 / 极简项目下被隐藏的页签数据不纳入检索，避免搜出本该看不见的设定
+ * @param ctx 可见性上下文；自定义项目下未启用功能对应的页签数据不纳入检索，避免搜出本该看不见的设定
  */
 async function buildDocs(ctx: VisCtx = { type: 'full', features: [] }): Promise<SearchDoc[]> {
   const docs: SearchDoc[] = []

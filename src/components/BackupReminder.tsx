@@ -22,7 +22,8 @@ import { isLocalDataNoticeActive } from './LocalDataNotice'
 
 // #031 预留：网页版关服公告。待老大确定关服时间后，把公告文本填进这里，该段会自动出现在弹窗顶部高亮显示。
 // 留空则不渲染——不把还没定下来的日期写进产品里。
-const SHUTDOWN_NOTICE: string = ''
+const SHUTDOWN_NOTICE: string =
+  '网页版将于 2026-09-29 08:49:53 停止服务，届时网页端的云端同步功能将失效。桌面版与便携版为零联网、完全本地运行，不受影响。若你曾在网页版使用过云端同步，请在关服前将数据导出到本地文件妥善保存。'
 
 /** 数据存在哪（三端各异，文案随之变化） */
 const STORAGE_DESC = WEB

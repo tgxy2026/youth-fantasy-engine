@@ -66,10 +66,7 @@ export interface TabDef {
   subtitleCol?: string
   /** 编号规则说明（有「编号」列的表格页签在顶部展示，防止编号混乱） */
   codeRule?: string
-  /** 精简项目（短篇/中篇）是否隐藏该页签：true = 仅在完整项目中显示 */
-  lite?: boolean
-  /** 极简项目（纯码字工具）是否隐藏该页签：true = 完整/精简项目显示，极简隐藏 */
-  minimal?: boolean
+  /** 自定义项目（projectType==='custom'）按 features 集合控制页签可见性，详见 schema.ts 的 tabVisible */
   /** 是否按创建时间倒序排列（越新创建的行越靠上）：true = 启用。用于章节总表等"后写的在最前面"的场景 */
   newestFirst?: boolean
 }
@@ -85,8 +82,8 @@ export interface Project {
   cover?: string       // 封面（dataURL）
   createdAt: number
   updatedAt: number
-  /** 项目形态：'full' 完整项目（长篇，全功能）/ 'lite' 精简项目（短篇·中篇，隐藏重型结构页签）/ 'minimal' 极简项目（纯码字工具）/ 'custom' 自定义项目（仅启用用户勾选的功能，见 features）。缺省按 'full' 兼容旧项目。 */
-  projectType?: 'full' | 'lite' | 'minimal' | 'custom'
+  /** 项目形态：'full' 完整项目（长篇，全功能）/ 'custom' 自定义项目（仅启用用户勾选的功能，见 features）。新建项目只提供「完整 / 自定义」两类，旧版精简/极简类型已移除。 */
+  projectType?: 'full' | 'custom'
   /** 自定义项目启用的功能全集（tab id + 编辑器/基础设施伪 id）。仅 projectType==='custom' 时使用；其余形态忽略。 */
   features?: string[]
 }

@@ -75,9 +75,9 @@ export async function auditStyle(content: string): Promise<AuditIssue[]> {
   if (issues.length === 0) {
     issues.push({ id: 's-ok', severity: 'info', category: '文风', title: '本章文风体检通过 ✓', detail: styleMissing ? '当前项目未登记《写作规范》，本次仅检查了省略号误用，未发现问题。' : '未命中《写作规范》里的坏习惯词，也未发现省略号误用。继续保持。' })
   }
-  // 极简项目不提供《写作规范》页签，文风体检的坏习惯词 / 标点规范 / 视角规则检查无数据源，给出诚实说明而非假装"全部通过"
+  // 未登记《写作规范》时，文风体检的坏习惯词 / 标点规范 / 视角规则检查无数据源，给出诚实说明而非假装"全部通过"（旧版极简/精简项目也不提供该页签，逻辑等同）
   if (styleMissing) {
-    issues.push({ id: 's-style-missing', severity: 'info', category: '文风', title: '《写作规范》未登记', detail: '未找到《写作规范》内容，坏习惯词 / 标点规范 / 视角规则检查暂不生效。极简项目不提供该页签；如需这些检查，请在完整或精简项目中填写《写作规范》。本节已对正文做了省略号（……）误用检查。' })
+    issues.push({ id: 's-style-missing', severity: 'info', category: '文风', title: '《写作规范》未登记', detail: '未找到《写作规范》内容，坏习惯词 / 标点规范 / 视角规则检查暂不生效。如需这些检查，请在「写作规范」页签填写内容。本节已对正文做了省略号（……）误用检查。' })
   }
 
   return issues

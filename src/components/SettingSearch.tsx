@@ -66,16 +66,16 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   const [savingField, setSavingField] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 精简/极简项目：被 lite / minimal 标记的页签不进入设定检索索引；自定义项目按启用功能集过滤
-  const liteTabs = useMemo(
+  // 自定义项目按启用功能集过滤页签可见性；完整项目全量可搜（历史遗留的精简/极简类型已废弃移除）
+  const hiddenTabs = useMemo(
     () => new Set(TABS.filter(t => !tabVisible(t.id, ctx)).map(t => t.id)),
     [ctx]
   )
 
-  // 一级页签：若某分组下已无任何可见子页签（如极简项目「创作管理」全部被砍），则隐藏该分组
+  // 一级页签：若某分组下已无任何已启用子页签，则隐藏该分组
   const visibleTopGroups = useMemo(
-    () => TOP_GROUPS.filter(g => (SETTING_SUBTABS[g] ?? []).some(id => !liteTabs.has(id))),
-    [liteTabs]
+    () => TOP_GROUPS.filter(g => (SETTING_SUBTABS[g] ?? []).some(id => !hiddenTabs.has(id))),
+    [hiddenTabs]
   )
   // 当前选中的一级页签若已不可见（如项目形态切换导致），回退到第一个可见分组
   const activeTop = visibleTopGroups.includes(topGroup) ? topGroup : (visibleTopGroups[0] ?? '角色管理')
@@ -96,7 +96,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       // 表格型 + 卡片型：人物关系按人物汇总（见下方分组逻辑）
       // 卡片型（角色卡）：每张卡一条
       for (const tab of TABS) {
-        if (liteTabs.has(tab.id)) continue
+        if (hiddenTabs.has(tab.id)) continue
         if (tab.type === 'card' && (tab.group === '角色管理' || tab.group === '世界构建' || tab.group === '创作管理')) {
           const recs: CardRecord[] = cardRecords.filter(r => r.tabId === tab.id)
           for (const rec of recs) {
@@ -132,7 +132,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       }
       // 表格型
       for (const tab of TABS) {
-        if (liteTabs.has(tab.id)) continue
+        if (hiddenTabs.has(tab.id)) continue
         if (tab.type !== 'table') continue
         if (tab.group !== '角色管理' && tab.group !== '世界构建' && tab.group !== '创作管理') continue
         if (tab.id === 'relations') continue // 人物关系走下方"按人物汇总"逻辑
@@ -192,7 +192,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       // 每位人物一条记录（标题=人物名），展开后二级列表显示其全部人物关系；
       // 人物A 与人物B 各自汇总，某人物不存在时（仅出现在关系表中）也会自动生成条目。
       // 精简/极简项目隐藏「人物关系」页签时，其数据也不进入检索索引
-      if (!liteTabs.has('relations')) {
+      if (!hiddenTabs.has('relations')) {
         const relRows = tableRows.filter(r => r.tabId === 'relations')
         const byChar = new Map<string, { other: string; type: string; detail: string }[]>()
         for (const r of relRows) {
@@ -240,10 +240,10 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
 
   // 当前一级页签下的二级子项
   const subOptions = useMemo(() => {
-    const subs = (SETTING_SUBTABS[activeTop] ?? []).filter(id => !liteTabs.has(id))
+    const subs = (SETTING_SUBTABS[activeTop] ?? []).filter(id => !hiddenTabs.has(id))
     const labels = subs.map(id => TABS.find(t => t.id === id)?.name ?? id)
     return [{ id: 'all', name: '全部' }, ...subs.map((id, i) => ({ id, name: labels[i] }))]
-  }, [topGroup, liteTabs])
+  }, [topGroup, hiddenTabs])
 
   // 当前可见的 docs
   const visibleDocs = useMemo(() => {

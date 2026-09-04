@@ -4,7 +4,7 @@ import { Button } from './Button'
 
 /**
  * 生产级错误边界：渲染期任何组件抛错都会被这里兜住，
- * 显示可读错误堆栈而不是整页白屏。暗色护眼主题样式。
+ * 显示可读错误堆栈而不是整页白屏。配色走主题令牌（ink 刻度随主题反转），深浅主题自适应。
  */
 export default class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -32,8 +32,8 @@ export default class ErrorBoundary extends React.Component<
 
     const stack = String(error.stack || error.message || error)
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-[#161310] p-6">
-        <div className="w-full max-w-2xl rounded-xl border border-red-500/30 bg-[#1d1a16] shadow-2xl overflow-hidden">
+      <div className="min-h-screen w-full flex items-center justify-center bg-ink-950 p-6">
+        <div className="w-full max-w-2xl rounded-xl border border-red-500/30 bg-ink-900 shadow-2xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-red-500/20 bg-red-500/10">
             <span className="text-red-300 font-semibold text-sm">⚠ 页面渲染出错</span>
           </div>

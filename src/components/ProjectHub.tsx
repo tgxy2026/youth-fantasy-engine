@@ -332,8 +332,6 @@ export default function ProjectHub({ onOpen }: Props) {
             {([
               { key: 'full', label: '完整项目' },
               { key: 'custom', label: '自定义项目' },
-              { key: 'lite', label: '精简项目' },
-              { key: 'minimal', label: '极简项目' },
             ] as const).map(g => {
               const items = projects.filter(p => (p.projectType ?? 'full') === g.key)
               if (items.length === 0) return null
@@ -429,8 +427,6 @@ export default function ProjectHub({ onOpen }: Props) {
                           <div className="flex items-center gap-2 mt-1.5">
                             {p.genre && <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber/10 text-amber/90 border border-amber/25">{p.genre}</span>}
                             {p.projectType === 'custom' && <span className="px-2 py-0.5 text-[10px] rounded-full bg-purple-500/10 text-purple-300/90 border border-purple-500/25">自定义</span>}
-                            {p.projectType === 'lite' && <span className="px-2 py-0.5 text-[10px] rounded-full bg-sky-500/10 text-sky-300/90 border border-sky-500/25">精简</span>}
-                            {p.projectType === 'minimal' && <span className="px-2 py-0.5 text-[10px] rounded-full bg-emerald-500/10 text-emerald-300/90 border border-emerald-500/25">极简</span>}
                             <span className="text-[10px] text-ink-500">
                               {p.stats?.volumes ?? 0} 卷 · {p.stats?.chapters ?? 0} 章 · {((p.stats?.words ?? 0) / 10000).toFixed(1)} 万字
                             </span>

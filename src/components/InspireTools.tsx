@@ -83,7 +83,7 @@ export default function InspireTools() {
             {'随机取名生成器：按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 风格批量出名字，点名字即复制，星标收藏；\n\nAI 辅助规划：多轮对话式脑暴，可结合你的世界观设定给建议，需接入 AI 模型（未接入时 AI 取名按钮禁用，本地取名不受影响）。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-[13px] text-ink-300">随机取名生成器 · AI 一键续写 · AI 辅助规划</p>
+        <p className="mt-1 text-[13px] text-ink-300">随机取名生成器 · AI 辅助规划</p>
       </header>
 
       <div className="space-y-4">

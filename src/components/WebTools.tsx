@@ -232,12 +232,6 @@ export default function WebTools() {
 
   const isFile = mode === 'file'
 
-  const segCls = (m: SyncMode) =>
-    'rounded px-2 py-1 text-xs border transition-colors ' +
-    (mode === m
-      ? 'border-sky-400/60 bg-sky-400/15 text-sky-200'
-      : 'border-ink-700 text-ink-400 hover:text-ink-200')
-
   const rowBtn =
     'flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border px-2 text-[12px] transition-colors disabled:opacity-60 '
 
@@ -276,12 +270,12 @@ export default function WebTools() {
       {/* 同步方式切换 */}
       <div className="flex items-center gap-1.5 text-[11px] text-ink-400">
         <span className="shrink-0 opacity-70">方式</span>
-        <button type="button" className={segCls('http') + ' flex-1'} onClick={() => void switchMode('http')}>
+        <Button variant="toggle" size="xs" selected={mode === 'http'} className="flex-1" onClick={() => void switchMode('http')}>
           服务器
-        </button>
-        <button type="button" className={segCls('file') + ' flex-1'} onClick={() => void switchMode('file')}>
+        </Button>
+        <Button variant="toggle" size="xs" selected={mode === 'file'} className="flex-1" onClick={() => void switchMode('file')}>
           云盘文件
-        </button>
+        </Button>
       </div>
 
       {/* 当前方式的一句话说明：把「要不要码」讲清楚 */}
