@@ -26,7 +26,7 @@ win:
 nsis:
   oneClick: false                # 非一键安装：可自选安装目录
   perMachine: false              # 按用户安装，无需管理员权限
-  allowToChangeInstallationDirectory: true
+  allowToChangeInstallationDirectory: false   # 锁定到当前用户目录，杜绝误装 Program Files 再次引入管理员需求
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: 青春幻想引擎

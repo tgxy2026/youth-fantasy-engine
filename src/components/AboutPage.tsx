@@ -136,6 +136,11 @@ export default function AboutPage() {
                   。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、公众号与 QQ 交流群——
                   若社交平台看到更新公告，可来此获取最新版。
                 </p>
+                {/* 安装权限提示：旧版按机器安装(Program Files)需先管理员升级一次，迁移为当前用户安装后重装免管理员 */}
+                <div className="mt-4 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2.5 text-[11px] text-ink-200 leading-relaxed">
+                  <span className="font-medium text-amber">安装提示：</span>
+                  若你电脑上已安装过旧版（装在 C 盘「Program Files」目录下），请先用「右键 → 以管理员身份运行」打开本安装包完成一次升级；升级后会迁移为「当前用户安装」，之后重装都不再需要管理员权限。
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <a
                     href={LATEST_VERSION_URL}
