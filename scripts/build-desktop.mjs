@@ -48,11 +48,15 @@ console.log('[3/3] electron-builder 打包 NSIS 安装包 ...')
 const env = {
   ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/',
   ELECTRON_BUILDER_BINARIES_MIRROR: 'https://npmmirror.com/mirrors/electron-builder-binaries/',
-  // 复用系统默认 electron-builder 缓存（已含 1.0 成功解压的 winCodeSign-2.6.0 等工具）。
+  // 复用系统默认 electron-builder 缓存（已含 1.0 成功解压的 winCodeSign-2.6.0、nsis 等工具）。
   // 注意：项目内的 release/eb-cache 在本环境会因 7-Zip 无法创建 darwin 符号链接而解压失败，
   // 故指向默认缓存目录，避免重复下载与解压。
   ELECTRON_BUILDER_CACHE: path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.cache', 'electron-builder'), 'electron-builder', 'Cache'),
-  ELECTRON_CACHE: path.join(root, 'release', 'eb-cache', 'electron-zip'),
+  // electron 运行时缓存：同样指向系统默认缓存（C:\Users\<用户>\AppData\Local\electron\Cache），
+  // 其中已含 @electron/get 可识别的 electron-v31.7.7-win32-x64.zip。
+  // ⚠️ 切勿指向 release/eb-cache/electron-zip —— 那里只有扁平 zip、缺少 @electron/get 的
+  //    hash 子目录结构，离线时 electron-builder 找不到运行时，只会打出空壳安装包（约 500KB、无法运行）。
+  ELECTRON_CACHE: path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.cache'), 'electron', 'Cache'),
 }
 // electron 运行时 zip 缓存：若此前下载过（旧位置 _tmp_tools），复用之
 const legacyZip = path.join(root, '_tmp_tools', 'electron-cache', 'electron-v31.7.7-win32-x64.zip')
