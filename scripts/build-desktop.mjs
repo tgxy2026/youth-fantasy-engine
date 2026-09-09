@@ -2,7 +2,7 @@
 // 封装了国内镜像 + 项目本地缓存，保证在任何网络/受限环境下可重复打包。
 // 产物：release/桌面安装版/青春幻想引擎-Setup-<版本号>.exe（版本取自 package.json）
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, copyFileSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, copyFileSync, renameSync, statSync } from 'node:fs'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -89,17 +89,35 @@ if (existsSync(desktopOutBase)) {
 const buildResult = spawnSync(process.execPath, [builder, '--win', '--x64', `-c.directories.output=${desktopOut}`], {
   cwd: root, stdio: 'inherit', shell: false, env: { ...process.env, ...env },
 })
+/**
+ * ⚠️ 体积闸门（防「空壳安装包」再发事故）：
+ * 2.0.0 曾因 ELECTRON_CACHE 指向扁平 zip 目录，离线时 electron 运行时没打进包，
+ * 产出仅 513KB 的 NSIS 空壳（双击无任何反应）；而旧脚本「exe 存在即成功」的兜底
+ * 把它误判为 OK，坏包一路躺进交付目录。正常含 electron 运行时的安装包约 85MB，
+ * 故此处强制 >= 50MB 才算有效产物。
+ */
+const MIN_SETUP_BYTES = 50 * 1024 * 1024
+
 const src = path.join(desktopOut, setupName)
+if (!existsSync(src)) {
+  console.error(`[build:desktop] 未找到安装包产物：${src}`)
+  process.exit(buildResult.status ?? 1)
+}
+const setupSize = statSync(src).size
+if (setupSize < MIN_SETUP_BYTES) {
+  console.error(
+    `[build:desktop] 安装包体积异常：${(setupSize / 1024 / 1024).toFixed(2)} MB，低于阈值 ${MIN_SETUP_BYTES / 1024 / 1024} MB。`,
+  )
+  console.error('[build:desktop] 判定为 NSIS 空壳（electron 运行时未打进包），已中止交付。')
+  console.error('[build:desktop] 请检查 ELECTRON_CACHE 是否指向含 hash 子目录结构的系统默认缓存。')
+  process.exit(1)
+}
 if (buildResult.status !== 0) {
-  if (!existsSync(src)) {
-    console.error(`[build:desktop] electron-builder 失败：${builder} --win --x64`)
-    process.exit(buildResult.status ?? 1)
-  }
-  console.warn('[build:desktop] 提示：electron-builder 退出码非 0，但安装包已正常产出（safe-delete 清理中间文件被拦截，可忽略），继续交付。')
+  console.warn('[build:desktop] 提示：electron-builder 退出码非 0，但安装包体积正常（多为 safe-delete 清理中间文件被拦截，可忽略），继续交付。')
 }
 
 // 把安装包复制到固定交付目录
 const destDir = path.join(root, 'release', '桌面安装版')
 mkdirSync(destDir, { recursive: true })
 copyFileSync(src, path.join(destDir, setupName))
-console.log(`\n打包完成：${path.join(destDir, setupName)}`)
+console.log(`\n打包完成：${path.join(destDir, setupName)}（${(setupSize / 1024 / 1024).toFixed(2)} MB，体积闸门已通过）`)
