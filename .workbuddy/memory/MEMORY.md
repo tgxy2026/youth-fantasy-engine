@@ -2,8 +2,8 @@
 > 只留长期有效规则/红线/决策；事件经过留 `YYYY-MM-DD.md`。
 
 ## 项目身份与红线
-「青春幻想引擎」Electron31+React18.3+TS5.5+Vite5.3+Tailwind(ink/amber)。三存储(IDB/便携/桌面)经 StoreOps。dev `http://localhost:5199/`。当前 **2.0.0**。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
-- 封装/重打包须老大明说「封装」；改完最多 tsc+build+commit。**不封装，版本号停在 2.0.0**。
+「青春幻想引擎」Electron31+React18.3+TS5.5+Vite5.3+Tailwind(ink/amber)。三存储(IDB/便携/桌面)经 StoreOps。dev `http://localhost:5199/`。**当前 2.0.0（2026-09-04 收官发布：桌面84.6MB+便携8.85MB，仅发桌面/便携，网页版已关服待处置）**。清单 `docs/1.9.6-2.0.0_Bug与待优化清单.md`：老大反馈只记录，明说「处理」才动手。
+- 封装/重打包须老大明说「封装」；改完最多 tsc+build+commit。**2.0.0 已收官（2026-09-04）**；后续版本节奏＝约每月更新一次（老大同日定），重大改动再单独封装，平时以内容创作与小幅优化为主。
 - 提交含 `!` 用 `git commit -F <文件>`。main 无远程。
 - 禁删：`你需要的文件在这里/`、`release/eb-cache/`(106M)。
 - 禁 `window.prompt/confirm/alert` → PromptModal/confirmDialog/showToast。
@@ -18,6 +18,7 @@
 - 🔴 桌面 `build-desktop.mjs` 的 `ELECTRON_CACHE` 须指向系统默认缓存 `C:/Users/<用户>/AppData/Local/electron/Cache`，**切勿**指向 `release/eb-cache/electron-zip`（仅扁平 zip、缺 @electron/get hash 结构）→ 离线打不出 electron 运行时，只产 ~500KB NSIS 空壳、双击无法运行（b3e5c4f 曾误判成功，2026-09-04 修正 f085dc9）。
 - 桌面/便携正常产物体积：桌面安装包 ~84MB、便携单文件 ~8.4MB；发现 <1MB 即空壳失败，不能靠「exe 存在」兜底判成功。
 - rcedit `Unable to commit changes` 是 cosmetic 报错，非真失败（exe 已含 metadata）。
+- 🔴 NSIS 安装权限（2026-09-04 决策 ae08e7d）：`nsis.perMachine:false` + `allowToChangeInstallationDirectory:false` → 强制按**当前用户**装到 `%LOCALAPPDATA%\Programs`，重装永不需管理员。`perMachine:true`（装 Program Files）或用户自选 Program Files 会在重装时被旧 per-machine 卸载拦住、必须管理员——这是系统级限制改不了。**升级提示已写进 AboutPage**：旧版在 Program Files 的用户需「右键→以管理员身份运行」一次新版安装包完成迁移，之后即可免管理员重装。切勿为"免提权"把 `allowElevation` 设 false（遇 per-machine 旧版会直接升级失败而非弹管理员）。
 
 ## 架构红线
 - 无 i18n 基建（全中文硬编码）；schema 列名即存储键；约 380 处中文参与判断。
@@ -25,6 +26,7 @@
 - 左下角只准一个浮层 `DataDock`（项目管理页）；项目内禁用全局 fixed 浮层，一律内嵌 Sidebar Footer。
 - 种子：卡片 data 键=`模块名::字段名`、表格行键=schema 列名；改种子必跑 `node tests/seed-schema-check.mjs`。
 - `WEB` 由 `__WEB__` 决定，禁写 `!PORTABLE && !DESKTOP`；顶层副作用双守卫（平台 `if(WEB&&...)`+功能 `if(!code)return`）。
+- 🔴 编辑器双图层（NovelEditor.tsx）：`highlightOn` 开启时 textarea 设 `color:transparent`，**肉眼所见文字全来自同级 `highlightRef` 叠层**（dangerouslySetInnerHTML）。改编辑器必守三条——① 叠层与 textarea 盒模型**逐项一致**（同为 `inset-0` + `px-6/8` + `pt-6` + `pb-[40vh]`，任一侧改 padding 必须同步改另一侧）；② 叠层重建会把 scrollTop 归零，凡 highlightHTML/切章/字号/页宽/专注/检索栏变化**必须**用 `useLayoutEffect` 回填同步（2.0.1 修的"滑动不显示文本"即漏此条）；③ 高亮扫描只走 `scanRefHighlight` 单次正则，**禁止再写 `filter(x=>text.includes)` 双扫**（长章卡顿根因），超 `HIGHLIGHT_MAX_LEN` 自动降级。切章需同步 `setDeferredContent`，勿等防抖。
 
 ## 三端存储（数据丢失风险）
 - 桌面：`AppData\Roaming\novel-studio\novel-studio-data.json`（目录名取 package.json `name`），整库一 JSON，防抖 800ms 重写。⚠️ 勿让 WPS 云盘同步整个目录（leveldb 锁+非原子写→空库/整库丢失）。
@@ -49,4 +51,5 @@
 
 ## AI / 服务器
 - AI：颉文姬5模式 clinic/edit/review/brief/ledger；硅基流动 DeepSeek-V3.2。明文本地记忆勿公开。
+- AI 返回解析：统一走 `parseObjectArray`（已支持数组 / 单对象 / `{list:[…]}` 三形态归一化）。🔴 勿退回"先按 `[` 切片"的老写法——单对象会被解析成非数组对象后在 `Array.isArray` 处判失败返回空，导致内容全丢、退 `humanText` 兜底（2.0.1 修的"改稿只剩标点"）。JSON 类任务统一传 `JSON_TASK_TEMPERATURE`(0.3)，创意类维持 `DEFAULT_TEMPERATURE`(0.85)；失败时用 `hasSubstance` 拦垃圾，别把残骸塞给作者。
 - 服务器 `154.8.178.240`(腾讯云 Ubuntu24.04)；SSH `C:\Users/18223\.ssh\yfe_test_server`(端口22) ubuntu+免密sudo。站点 `/var/www/yfe`；反馈 `/opt/yfe-server/feedback-server.mjs`。码/详情见 `docs/服务器访问记录.md`。
