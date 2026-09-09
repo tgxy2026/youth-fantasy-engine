@@ -9,7 +9,7 @@
 // 铁律：本文件所有函数都是「可选增强」。调用方必须保证——
 //   未配置模型 → 按钮禁用，绝不调用；调用失败 → 只提示，绝不破坏已有数据。
 
-import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from './ai'
+import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt, JSON_TASK_TEMPERATURE } from './ai'
 
 // ---------- 通用 JSON 解析 ----------
 
@@ -23,22 +23,45 @@ function sliceJSON(raw: string, open: '[' | '{'): string {
   return s
 }
 
-/** 解析「对象数组」。模型偶尔返回单个对象或 {list:[…]}，一并兼容 */
+/** 归一化一次解析结果：数组→过滤出对象；单个对象→包成单元素数组（兼容 {list:[…]}）；其余→null */
+function normalizeParsed(v: unknown): Record<string, unknown>[] | null {
+  const onlyObjects = (arr: unknown[]) =>
+    arr.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x))
+  if (Array.isArray(v)) return onlyObjects(v)
+  if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    // {list:[…]} / {data:[…]}：优先取内部数组
+    const inner = Object.values(o).find(x => Array.isArray(x))
+    if (Array.isArray(inner)) return onlyObjects(inner)
+    return [o]
+  }
+  return null
+}
+
+/**
+ * 解析「对象数组」。模型偶尔返回单个对象或 {list:[…]}，一并兼容。
+ *
+ * ⚠️ 修复（2.0.1）：原实现先按 '[' 切片，若 raw 本身就是**单个 JSON 对象**，
+ *    sliceJSON 找不到 '[' 会原样返回，JSON.parse 于是成功解析出一个**非数组对象**；
+ *    此时 `v` 为真值 → 跳过兜底分支 → 末尾 `Array.isArray(v)` 为 false → **return []**。
+ *    结果是所有「单对象」返回的内容全部丢失，调用方只能退到 humanText 兜底，
+ *    表现为「润色/扩写只输出个别标点符号」。现改为：数组与单对象两种形态都归一化后再取。
+ */
 function parseObjectArray(raw: string): Record<string, unknown>[] {
   const tryParse = (s: string): unknown => {
     try { return JSON.parse(s) } catch { return null }
   }
-  let v = tryParse(sliceJSON(raw, '['))
-  if (!v) {
-    const obj = tryParse(sliceJSON(raw, '{'))
-    if (obj && typeof obj === 'object') {
-      const o = obj as Record<string, unknown>
-      const inner = Object.values(o).find(x => Array.isArray(x))
-      v = Array.isArray(inner) ? inner : [o]
-    }
-  }
-  if (!Array.isArray(v)) return []
-  return v.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x))
+  const arr = normalizeParsed(tryParse(sliceJSON(raw, '[')))
+  if (arr && arr.length > 0) return arr
+  const obj = normalizeParsed(tryParse(sliceJSON(raw, '{')))
+  if (obj && obj.length > 0) return obj
+  return []
+}
+
+/** 兜底文本是否还有实质内容：排除「只剩标点/符号」的残骸，避免把垃圾塞给作者 */
+function hasSubstance(s: string): boolean {
+  const stripped = s.replace(/[\s\d\p{P}\p{S}]/gu, '')
+  return stripped.length >= 4
 }
 
 function asText(v: unknown): string {
@@ -1105,11 +1128,16 @@ ${passage.trim() || '（空）'}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    // JSON 任务走低温：0.85 会让模型在 JSON 外夹带寒暄/解释，直接抬高解析失败率
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, temperature: JSON_TASK_TEMPERATURE },
   )
   const obj = parseObjectArray(text)[0] ?? {}
+  // 兜底：JSON 解析失败时才走 humanText 抽取，但抽取结果可能只剩标点残骸
+  // （旧版单对象恒解析为空 → 长期依赖此兜底，故表现为"仅输出个别标点符号"）。
+  // 这里用 hasSubstance 拦掉无实质内容的抽取结果，宁可交给 UI 提示重试，也不把垃圾塞给作者。
+  const fallback = humanText(text)
   return {
-    rewritten: asText(obj.rewritten) || humanText(text),
+    rewritten: asText(obj.rewritten) || (hasSubstance(fallback) ? fallback : ''),
     notes: asText(obj.notes ?? obj['说明']),
   }
 }

@@ -46,6 +46,11 @@ export const CHAT_TIMEOUT_MS = 180_000
 /** 连通性测试超时：只让模型回两个字，但本地模型可能要先加载进显存 */
 export const TEST_TIMEOUT_MS = 90_000
 
+/** 创意类生成（续写 / 取名 / 灵感）默认温度 */
+export const DEFAULT_TEMPERATURE = 0.85
+/** 结构化 JSON 任务（校对 / 审读 / 改稿 / 抽取）专用：低温换取格式稳定 */
+export const JSON_TASK_TEMPERATURE = 0.3
+
 /** 国内 / 国际 OpenAI 兼容平台预设（baseUrl 为 chat/completions 的前缀） */
 export interface PlatformPreset {
   label: string
@@ -221,6 +226,12 @@ export interface ChatOptions {
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */
   timeoutMs?: number
   /**
+   * 采样温度，默认 DEFAULT_TEMPERATURE（0.85，偏创意）。
+   * 结构化 JSON 任务（校对 / 审读 / 改稿 / 结构化抽取）必须显式传低值，否则模型容易
+   * 夹带解释文字或格式漂移，导致解析失败退到文本兜底（2.0.1 修复的"只剩标点"问题即由此放大）。
+   */
+  temperature?: number
+  /**
    * 是否关闭思考型模型的思维链输出：
    * - false：关闭（仅用于连通性测试等需要极速反馈的场景）
    * - true / undefined：不传该字段，交给模型/平台默认
@@ -248,6 +259,8 @@ interface CallOpts {
   signal?: AbortSignal
   /** 流式回调：提供时开启 SSE 流式 */
   onToken?: (delta: string) => void
+  /** 采样温度，缺省用 DEFAULT_TEMPERATURE */
+  temperature?: number
 }
 
 /** 内部统一分发：带元信息，供测试面板展示「其中加载耗时」 */
@@ -299,6 +312,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
     think: opts.think,
     signal: opts.signal,
     onToken: opts.onToken,
+    temperature: opts.temperature,
   })).content
 }
 
@@ -312,7 +326,7 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
     model: config.model,
     messages,
     stream: !!o.onToken,
-    options: { temperature: 0.85 },
+    options: { temperature: o.temperature ?? DEFAULT_TEMPERATURE },
   }
   if (think === false) body.think = false
   let res: Response
@@ -392,7 +406,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
           'Content-Type': 'application/json',
           ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
         },
-        body: JSON.stringify({ model: config.model, messages, temperature: 0.85, stream: !!o.onToken }),
+        body: JSON.stringify({ model: config.model, messages, temperature: o.temperature ?? DEFAULT_TEMPERATURE, stream: !!o.onToken }),
       },
       timeoutMs,
       o.signal,

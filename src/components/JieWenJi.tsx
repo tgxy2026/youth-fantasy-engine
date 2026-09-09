@@ -320,7 +320,7 @@ export default function JieWenJi({
   }
 
   const applyAdvice = () => {
-    if (!rewrite.data?.rewritten) return
+    if (!rewrite.data?.rewritten) { showToast('暂无有效建议可写入，请重新生成', 'info'); return }
     // 选区过期校验：AI 请求期间正文可能已改，写入前比对快照，避免建议段插错位置
     const nowSel = getSelectionText?.() ?? null
     if (rewrite.selText != null && nowSel !== rewrite.selText) {
@@ -586,7 +586,7 @@ export default function JieWenJi({
 
             {rewrite.error && <div className="text-[11px] text-red-300 px-1">{rewrite.error}</div>}
 
-            {rewrite.data && (
+            {rewrite.data && (rewrite.data.rewritten ? (
               <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2.5 space-y-2">
                 <div className="flex items-center gap-1.5 text-[11px] text-amber">
                   <CheckCircle2 size={12} /> 改稿完成{rewrite.data.notes ? `：${rewrite.data.notes}` : ''}
@@ -599,7 +599,17 @@ export default function JieWenJi({
                   建议段以「{ADVICE_START}」标记写入原文下方，不会改动你的原文。请自行取舍：保留的直接并入，不用的删除；下方按钮可一键清除全部建议段。
                 </div>
               </div>
-            )}
+            ) : (
+              <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-red-300">
+                  <AlertTriangle size={12} /> 本次未取到有效内容
+                </div>
+                <div className="text-[10.5px] text-ink-400 leading-relaxed">
+                  模型返回的内容无法解析为有效段落（多为返回格式不规范，或选区过长被截断）。
+                  建议缩短选区后重试；连续失败可更换模型。你的原文未被改动。
+                </div>
+              </div>
+            ))}
 
             <Button variant="bare"
               onClick={() => onClearAdvice?.()}

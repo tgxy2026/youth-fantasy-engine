@@ -61,24 +61,50 @@ const STATUS_DOT: Record<ChapterStatus, string> = {
   '已发布': 'bg-emerald-500',
 }
 
-/** HTML 转义（防止引用名高亮注入） */
+/** HTML 转义（防止引用名高亮注入）。先探测再替换：绝大多数正文片段不含 <>&，可省掉多次全量 replace */
+const HTML_ESCAPE_RE = /[&<>]/g
+const HTML_ESCAPE_MAP: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  HTML_ESCAPE_RE.lastIndex = 0
+  return HTML_ESCAPE_RE.test(s) ? s.replace(HTML_ESCAPE_RE, c => HTML_ESCAPE_MAP[c]) : s
 }
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/** 超长正文降级阈值：超过则只读纯文本（仍转义），避免逐千字 + 数百引用名的扫描拖垮输入 */
+const HIGHLIGHT_MAX_LEN = 60_000
+
+interface RefScan { html: string; hits: Set<string> }
+
 /**
- * 把正文里命中的引用名用 <mark> 包裹，生成高亮叠层 HTML。
+ * 一次正则扫描同时产出「命中的引用名」与「高亮 HTML」。
+ *
+ * ⚠️ 性能修复（2.0.1）：旧实现是两趟全量扫描——先在别处做
+ *   `refNames.filter(r => text.includes(r.name))`（O(引用数 × 正文长度)），
+ *   再用 `text.split(re)` 把所有片段摊成数组、逐段 escapeHtml 后 join。
+ *   上百个引用名 + 上万字章节时，每 120ms 防抖就要跑几万次字符串操作，直接卡住输入，
+ *   表现为「打开/切换到长章节明显变慢」。现改为一次 exec 循环流式拼接，命中集合用 Set。
+ *
  * 引用名按长度降序拼接，避免「陈渊」抢在「陈渊清欢」之前匹配导致截断。
  */
-function buildHighlightHTML(text: string, names: string[]): string {
-  const safe = [...new Set(names)].filter(n => n && n.length >= 2).sort((a, b) => b.length - a.length)
-  if (safe.length === 0) return escapeHtml(text)
-  const re = new RegExp(`(${safe.map(escapeRe).join('|')})`, 'g')
-  const parts = text.split(re)
-  return parts.map((p, i) => (i % 2 === 1 ? `<mark class="ref-mark">${escapeHtml(p)}</mark>` : escapeHtml(p))).join('')
+function scanRefHighlight(text: string, names: string[]): RefScan {
+  const dict = [...new Set(names)].filter(n => n && n.length >= 2).sort((a, b) => b.length - a.length)
+  if (dict.length === 0 || text.length > HIGHLIGHT_MAX_LEN) return { html: escapeHtml(text), hits: new Set() }
+  const re = new RegExp(`(${dict.map(escapeRe).join('|')})`, 'g')
+  const hits = new Set<string>()
+  let html = ''
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m[0].length === 0) { re.lastIndex++; continue } // 防御零宽匹配导致死循环
+    if (m.index > last) html += escapeHtml(text.slice(last, m.index))
+    html += `<mark class="ref-mark">${escapeHtml(m[0])}</mark>`
+    hits.add(m[0])
+    last = m.index + m[0].length
+  }
+  if (last < text.length) html += escapeHtml(text.slice(last))
+  return { html, hits }
 }
 
 /** 工作区可用的引用名（角色卡 + 世界构建设定表条目），用于本章引用侧栏与内联高亮。
@@ -275,21 +301,56 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     return () => { cancelled = true }
   }, [])
 
-  // 当前章节正文里命中的引用名（用于侧栏与高亮）——基于防抖镜像，避免逐键重算
-  const referenced = useMemo(() => {
-    if (!deferredContent) return [] as RefName[]
-    return refNames.filter(r => deferredContent.includes(r.name))
-  }, [deferredContent, refNames])
-
-  const highlightHTML = useMemo(
-    () => buildHighlightHTML(deferredContent, referenced.map(r => r.name)),
-    [deferredContent, referenced]
+  /**
+   * 高亮扫描：一次联动同时产出「叠层 HTML」与「命中集合」，基于 120ms 防抖镜像避免逐键重算。
+   * （旧实现这里先 filter/include 全扫一遍、再拼 HTML 又扫一遍，长章节卡顿的根因）
+   */
+  const refScan = useMemo(
+    () => scanRefHighlight(deferredContent, refNames.map(r => r.name)),
+    [deferredContent, refNames]
+  )
+  const highlightHTML = refScan.html
+  /** 当前章节正文里命中的引用名（用于侧栏）——直接取扫描结果，不再做第二次全文 includes */
+  const referenced = useMemo(
+    () => refNames.filter(r => refScan.hits.has(r.name)),
+    [refNames, refScan]
   )
 
   /** 高亮叠层跟随 textarea 滚动 */
   const syncHighlightScroll = () => {
     if (highlightRef.current && taRef.current) highlightRef.current.scrollTop = taRef.current.scrollTop
   }
+  /** scroll 事件频率极高：用 rAF 合并同帧的多次同步，避免滚动时每个像素都写一次布局 */
+  const scrollSyncRafRef = useRef(0)
+  const scheduleHighlightSync = () => {
+    if (scrollSyncRafRef.current) return
+    scrollSyncRafRef.current = requestAnimationFrame(() => {
+      scrollSyncRafRef.current = 0
+      syncHighlightScroll()
+    })
+  }
+  /**
+   * ⚠️ 关键修复（2.0.1）：叠层是 dangerouslySetInnerHTML 整块重建的，DOM 一换 scrollTop 就被浏览器
+   * 重置为 0，而 textarea 停在原位 → 画面与稿件错位，滚到中后段时可视区一片空白（老大反馈的
+   * 「上下滑动查看时经常不显示文本」）。凡是会让叠层重排/重建的因素都要在绘制前回填一次。
+   */
+  useLayoutEffect(() => {
+    syncHighlightScroll()
+  }, [highlightHTML, activeId, fontSize, pageWide, focusMode, showSearch])
+
+  /** 编辑区尺寸变化（窗口缩放、检索栏开合）时同样需要对齐叠层 */
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => syncHighlightScroll())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  /** 卸载时清理尚未执行的同步帧，避免在已卸载的 ref 上写值 */
+  useEffect(() => () => {
+    if (scrollSyncRafRef.current) cancelAnimationFrame(scrollSyncRafRef.current)
+  }, [])
   // 从其他页签跳转进来时，直接打开目标章节
   useEffect(() => {
     if (openChapterId && chapters.some(c => c.id === openChapterId)) {
@@ -358,6 +419,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     if (ch) {
       draftRef.current = ch.content ?? ''
       setDraftContent(ch.content ?? '')
+      // ⚠️ 必须与上面同步、不走防抖（2.0.1）：若在 120ms 后才更新镜像，切章瞬间叠层渲染的仍是
+      // 上一章正文，视觉上就是「切换/加载缓慢且内容显示异常」。这里直接同帧对齐。
+      setDeferredContent(ch.content ?? '')
     }
   }, [activeId]) // eslint-disable-line
 
@@ -1224,17 +1288,21 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 />
                 {/* v1.3 引用名高亮叠层：与 textarea 内容区完全对齐（top-6/bottom-3 + px-6/8，无纵向 padding）；
                     overflow 必须 hidden（inline 压制），否则会冒出一条不可操作的幽灵滚动条 */}
+                {/* 引用名高亮叠层：盒模型必须与 textarea 逐项一致（inset-0 + 同一套 px/pt/pb），否则两图层错位 */}
                 {highlightOn && active && (
                   <div
                     ref={highlightRef}
                     aria-hidden
-                  className="novel-textarea absolute left-0 right-0 top-6 bottom-3 px-6 md:px-8 border border-transparent pointer-events-none overflow-hidden z-0"
-                  style={{ overflow: 'hidden', fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgb(var(--ink-100))' }}
+                  className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent px-6 md:px-8 pt-6 pb-[40vh]"
+                  style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgb(var(--ink-100))' }}
                     dangerouslySetInnerHTML={{ __html: highlightHTML }}
                   />
                 )}
                 {/* textarea 绝对铺满编辑区（inset-0）：滚动条天然贴最外缘（铺满=窗口右缘 / 限宽=文本块右缘），
-                    自身 padding（pt-6 pb-3 px-6/8）撑出死区，滚动条落在 padding 里不压文字；全编辑区唯一滚动元素 */}
+                    自身 padding（pt-6 pb-[40vh] px-6/8）撑出死区，滚动条落在 padding 里不压文字；全编辑区唯一滚动元素。
+                    ⚠️ pb-[40vh] 是「滚过结尾」留白（2.0.1）：末尾留出约四成视口的可滚动空间，写最后一行时能把它
+                    推到屏幕中上部，不再被底边压掉半截——即老大反馈的「编辑页面不会自动延展」。
+                    高亮叠层必须用同一套 padding，否则两图层内容总高不一致，滚动同步必然错位。 */}
                 <textarea
                   ref={taRef}
                   value={draftContent}
@@ -1243,9 +1311,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   onClick={() => { syncTypewriter(draftContent); syncSel() }}
                   onSelect={syncSel}
                   onMouseUp={syncSel}
-                  onScroll={syncHighlightScroll}
+                  onScroll={scheduleHighlightSync}
                   placeholder="落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）"
-                  className="novel-textarea absolute inset-0 z-10 overflow-y-auto px-6 md:px-8 pt-6 pb-3"
+                  className="novel-textarea absolute inset-0 z-10 overflow-y-auto px-6 md:px-8 pt-6 pb-[40vh]"
                   style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, color: highlightOn ? 'transparent' : undefined, caretColor: highlightOn ? 'rgb(var(--amber))' : undefined }}
                   spellCheck={false}
                 />
