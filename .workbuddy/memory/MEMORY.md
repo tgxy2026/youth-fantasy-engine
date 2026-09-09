@@ -16,7 +16,8 @@
 
 ## 封装/构建坑
 - 🔴 桌面 `build-desktop.mjs` 的 `ELECTRON_CACHE` 须指向系统默认缓存 `C:/Users/<用户>/AppData/Local/electron/Cache`，**切勿**指向 `release/eb-cache/electron-zip`（仅扁平 zip、缺 @electron/get hash 结构）→ 离线打不出 electron 运行时，只产 ~500KB NSIS 空壳、双击无法运行（b3e5c4f 曾误判成功，2026-09-04 修正 f085dc9）。
-- 桌面/便携正常产物体积：桌面安装包 ~84MB、便携单文件 ~8.4MB；发现 <1MB 即空壳失败，不能靠「exe 存在」兜底判成功。
+- 桌面/便携正常产物体积：桌面安装包 **80.68 MiB**（Windows 资源管理器显示「80.6M」；十进制记作 84.6MB——三者是同一个文件，别误判成两个包）、便携单文件 **8.44 MiB**。🔴 两个构建脚本已内置体积闸门（`MIN_SETUP_BYTES=50MB` / `MIN_PORTABLE_MB=5MB`），**无论 builder 退出码是否为 0，体积不达标即 abort**——别再退化回「exe 存在即成功」的兜底（2.0.0 曾因此放行 513KB 空壳）。
+- ⚠️ Edit 工具会「假成功」：2.0.1 给 build-desktop.mjs 补 `statSync` 导入时回执 Success 但文件未落盘，首跑直接崩在 `statSync is not defined`。**改完必须 sed/grep 复查真实文件内容。**
 - rcedit `Unable to commit changes` 是 cosmetic 报错，非真失败（exe 已含 metadata）。
 - 🔴 NSIS 安装权限（2026-09-04 决策 ae08e7d）：`nsis.perMachine:false` + `allowToChangeInstallationDirectory:false` → 强制按**当前用户**装到 `%LOCALAPPDATA%\Programs`，重装永不需管理员。`perMachine:true`（装 Program Files）或用户自选 Program Files 会在重装时被旧 per-machine 卸载拦住、必须管理员——这是系统级限制改不了。**升级提示已写进 AboutPage**：旧版在 Program Files 的用户需「右键→以管理员身份运行」一次新版安装包完成迁移，之后即可免管理员重装。切勿为"免提权"把 `allowElevation` 设 false（遇 per-machine 旧版会直接升级失败而非弹管理员）。
 
@@ -53,3 +54,5 @@
 - AI：颉文姬5模式 clinic/edit/review/brief/ledger；硅基流动 DeepSeek-V3.2。明文本地记忆勿公开。
 - AI 返回解析：统一走 `parseObjectArray`（已支持数组 / 单对象 / `{list:[…]}` 三形态归一化）。🔴 勿退回"先按 `[` 切片"的老写法——单对象会被解析成非数组对象后在 `Array.isArray` 处判失败返回空，导致内容全丢、退 `humanText` 兜底（2.0.1 修的"改稿只剩标点"）。JSON 类任务统一传 `JSON_TASK_TEMPERATURE`(0.3)，创意类维持 `DEFAULT_TEMPERATURE`(0.85)；失败时用 `hasSubstance` 拦垃圾，别把残骸塞给作者。
 - 服务器 `154.8.178.240`(腾讯云 Ubuntu24.04)；SSH `C:\Users/18223\.ssh\yfe_test_server`(端口22) ubuntu+免密sudo。站点 `/var/www/yfe`；反馈 `/opt/yfe-server/feedback-server.mjs`。码/详情见 `docs/服务器访问记录.md`。
+- 网页部署流程：本地 `vite build --config vite.config.web.ts`(→`dist-web`) → tar 打成单包 → scp 到服务器 `/tmp`（**走 /tmp 中转，避免 scp 套娃）→ `sudo cp -a` 备份旧版 → 清旧 assets/index.html → 解包 → `chown -R www-data:www-data` → `sudo -u www-data test -w` 验收。
+- 🔴 部署校验陷阱：Nginx 配了 SPA 回退，**任意不存在的路径都返回 200 + index.html**——旧 chunk 名照样 200，**绝不能用 HTTP 200 判断资源是否上线**。必须核对 `Content-Length` / `Content-Type` / `Last-Modified` 与首字节内容（新 chunk 首字节应含 `__vite__mapDeps` 及新依赖名）。
