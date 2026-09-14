@@ -28,11 +28,11 @@ import { resolveTavernProvider } from './engine'
 import { memoryToText, emptyMemory } from './memory'
 import type { ChatFn } from './engine'
 import {
-  DAILY_ADVANCE_MS, type DailyState, type FreeCharacter, type FreeMemory,
+  DAILY_ADVANCE_MS, DAILY_LOG_KEEP, type DailyState, type FreeCharacter, type FreeMemory,
 } from './types'
 
-/** 生活日志保留条数（按天一条，与日记的「最近五天」对齐） */
-export const DAILY_LOG_KEEP = 5
+/** 生活日志保留条数的内置默认（真源已上移到 ./types，这里只做转发，保持既有调用点不变） */
+export { DAILY_LOG_KEEP }
 
 export function emptyDaily(charId: string, now = Date.now()): DailyState {
   return { charId, lastActiveAt: now, log: [], mood: undefined }
@@ -64,7 +64,7 @@ function mmdd(ts: number): string {
  * 日常推进的系统提示词。
  * 与总结引擎同一个教训：**必须给当前日期**，否则日志会写成「XX月XX日」这类占位符。
  */
-export function buildDailySystem(charName: string, now = Date.now()): string {
+export function buildDailySystem(charName: string, now = Date.now(), logKeep = DAILY_LOG_KEEP): string {
   const d = new Date(now)
   const today = `${d.getFullYear()}-${mmdd(now)}`
   return `你在为「${charName}」补写她**没见面这段日子里的生活**。
@@ -74,7 +74,7 @@ export function buildDailySystem(charName: string, now = Date.now()): string {
 【你要输出三段，标题一字不差】
 【这几天的生活】
 - MM-DD：一句话（只写她自己的日常，具体、生活化、有一两个细节）
-（一天一条，最多 ${DAILY_LOG_KEEP} 条，**倒序，最新的在最上面**；日期用上面那个今天往前推算）
+（一天一条，最多 ${logKeep} 条，**倒序，最新的在最上面**；日期用上面那个今天往前推算）
 
 【她的心情】
 用两到四个字概括她此时的心情（例：平静 / 有点烦 / 隐隐期待）。不要写句子。
@@ -92,6 +92,8 @@ export function buildDailySystem(charName: string, now = Date.now()): string {
 }
 
 export type AdvanceArgs = {
+  /** 日志保留条数（控制面板）；不传即内置默认 */
+  logKeep?: number
   char: FreeCharacter
   prev: DailyState | null
   memory: FreeMemory | null
@@ -129,7 +131,7 @@ export type DailyParsed = {
  * 解析模型输出（容错：标题宽松匹配；缺段不报错而是留空）。
  * 「（无）」视为没有留言 —— 这是提示词里约定的表达方式，不是内容。
  */
-export function parseDailyReply(text: string): DailyParsed {
+export function parseDailyReply(text: string, logKeep = DAILY_LOG_KEEP): DailyParsed {
   const raw = String(text ?? '').replace(/\r\n/g, '\n')
   let section: 'log' | 'mood' | 'say' | null = null
   const logLines: string[] = []
@@ -186,7 +188,7 @@ export function parseDailyReply(text: string): DailyParsed {
       return t ? { date: '', text: t } : null
     })
     .filter((x): x is { date: string; text: string } => !!x && !!x.text)
-    .slice(0, DAILY_LOG_KEEP)
+    .slice(0, logKeep)
 
   const cleanSay = say.trim()
   const isNone = /^[（(]?\s*(无|没有|暂无)\s*[）)]?$/.test(cleanSay.replace(/\s/g, ''))
@@ -197,7 +199,7 @@ export function parseDailyReply(text: string): DailyParsed {
  * 失败会抛出（调用方保留旧状态即可，下次打开还会再试）。
  */
 export async function advanceDaily(args: AdvanceArgs): Promise<AdvanceResult> {
-  const { char, prev, memory, providerId, chatFn, signal, now = Date.now() } = args
+  const { char, prev, memory, providerId, chatFn, signal, now = Date.now(), logKeep = DAILY_LOG_KEEP } = args
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = chatFn ?? chat
 
@@ -223,7 +225,7 @@ export async function advanceDaily(args: AdvanceArgs): Promise<AdvanceResult> {
   ].filter(Boolean).join('\n')
 
   const msgs: ChatMessage[] = [
-    { role: 'system', content: buildDailySystem(char.name, now) },
+    { role: 'system', content: buildDailySystem(char.name, now, logKeep) },
     { role: 'user', content: user },
   ]
 
@@ -234,14 +236,14 @@ export async function advanceDaily(args: AdvanceArgs): Promise<AdvanceResult> {
     think: false,
   })
 
-  const parsed = parseDailyReply(reply)
+  const parsed = parseDailyReply(reply, logKeep)
 
   // 日志按天累加：新的在前，旧的接在后面，只留最近 N 条
   const fresh = parsed.log.map(l => ({ date: l.date || mmdd(now), text: l.text }))
   const merged = [...fresh, ...base.log]
   // 同日去重（同一天重复推进时不叠加）
   const seen = new Set<string>()
-  const log = merged.filter(l => (seen.has(l.date) ? false : (seen.add(l.date), true))).slice(0, DAILY_LOG_KEEP)
+  const log = merged.filter(l => (seen.has(l.date) ? false : (seen.add(l.date), true))).slice(0, logKeep)
 
   return {
     state: {

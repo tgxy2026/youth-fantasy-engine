@@ -23,10 +23,13 @@
 import * as db from '../db'
 import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
-  MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, DAILY_ADVANCE_MS,
+  MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
+  DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
   type TavernParams,
 } from './types'
 import { TONE_HINT } from './prompt'
+import { PROTOCOL_CORE } from './protocol'
+import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
 
 /** 设置存储键（全局 meta） */
 export const K_TAVERN_SETTINGS = 'tavern.settings'
@@ -37,10 +40,14 @@ export type TavernCommonSettings = {
   defaultProviderId: string
   /** 上下文预算（字）：一轮请求里「设定 + 记忆 + 历史」的总字数上限 */
   contextBudget: number
+  /** 固定开销预留（字）：给 system 骨架与协议留的位置，不计入可分配给历史的额度 */
+  fixedOverheadChars: number
   /** 请求超时（秒）—— 本地模型慢时可调大 */
   timeoutSec: number
-  /** 上下文窗口：显式传给 Ollama，避免它按全局值（可能 128K）加载而爆显存 */
+  /** 上下文窗口：显式传给模型，避免它按全局值（可能 128K）加载而爆显存 */
   numCtx: number
+  /** 关闭思考链：角色扮演要「像人说话」，不要分析腔，所以默认关 */
+  disableThink: boolean
   /** 通用补充要求：拼进两种模式的 system（放在协议之前）。默认含「标点适用范围」那条 */
   extraPrompt: string
 }
@@ -52,6 +59,8 @@ export type TavernPlotSettings = {
   topK: number
   repeatPenalty: number
   presencePenalty: number
+  /** 设定层占上下文预算的比例：剩下的留给对话历史与长期记忆 */
+  settingRatio: number
   /** 叙事向风格追加（默认空 = 不追加，就走协议默认 —— 方案 §5.2 的原意） */
   styleHint: string
   /** 剧情推演专属补充要求 */
@@ -65,6 +74,8 @@ export type TavernFreeSettings = {
   topK: number
   repeatPenalty: number
   presencePenalty: number
+  /** 总结模型：整理记忆用，越快越省越好。留空 = 跟随上面的默认模型 */
+  summaryProviderId: string
   /** 聊天向风格提示（默认沿用原 TONE_HINT.chat） */
   styleHint: string
   /** 自由对话专属补充要求 */
@@ -81,14 +92,20 @@ export type TavernFreeSettings = {
   diaryDays: number
   /** 两次自动整理之间的最小间隔（分钟） */
   summaryMinIntervalMin: number
+  /** 整理锁的有效期（分钟）：上次跑到一半崩了，超过它可被接管 */
+  summaryLockTtlMin: number
   /** 日常状态推进间隔（小时）—— 距上次活跃超过它才补写「这几天的生活」 */
   dailyAdvanceHours: number
+  /** 日常「这几天的生活」保留条数 */
+  dailyLogKeep: number
 }
 
 export type TavernSettings = {
   common: TavernCommonSettings
   plot: TavernPlotSettings
   free: TavernFreeSettings
+  /** 扮演协议全文（两种模式共用，钉在 system 末尾）。默认 = 内置常量 */
+  protocol: string
 }
 
 /**
@@ -105,13 +122,18 @@ export const DEFAULT_COMMON_EXTRA = [
   '  不要把整段写成没有标点的空格流。',
 ].join('\n')
 
+/** 出厂协议（= 内置常量）。面板上的「恢复出厂协议」还原到这里 */
+export const DEFAULT_PROTOCOL = PROTOCOL_CORE
+
 /** 出厂默认：**与原硬编码值逐一对应**（不存在"顺手改过"的数） */
 export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
   common: {
     defaultProviderId: '',
     contextBudget: TAVERN_DEFAULTS.free.contextBudget,
+    fixedOverheadChars: FIXED_OVERHEAD_CHARS,
     timeoutSec: 180, // = ai.ts 的 CHAT_TIMEOUT_MS / 1000
     numCtx: TAVERN_DEFAULTS.free.numCtx,
+    disableThink: true, // engine 原本恒传 think:false
     extraPrompt: DEFAULT_COMMON_EXTRA,
   },
   plot: {
@@ -120,6 +142,7 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     topK: TAVERN_DEFAULTS.plot.topK,
     repeatPenalty: TAVERN_DEFAULTS.plot.repeatPenalty,
     presencePenalty: TAVERN_DEFAULTS.plot.presencePenalty,
+    settingRatio: 0.6, // engine 原本写死 Math.round(total * 0.6)
     styleHint: TONE_HINT.narrative,
     extraPrompt: '',
   },
@@ -129,6 +152,7 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     topK: TAVERN_DEFAULTS.free.topK,
     repeatPenalty: TAVERN_DEFAULTS.free.repeatPenalty,
     presencePenalty: TAVERN_DEFAULTS.free.presencePenalty,
+    summaryProviderId: '',
     styleHint: TONE_HINT.chat,
     extraPrompt: '',
     triggerMessages: SUMMARY_TRIGGER_MESSAGES,
@@ -137,8 +161,11 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     longTermLimit: MEMORY_LONGTERM_LIMIT,
     diaryDays: MEMORY_DIARY_DAYS,
     summaryMinIntervalMin: Math.round(SUMMARY_MIN_INTERVAL_MS / 60000),
+    summaryLockTtlMin: Math.round(SUMMARY_LOCK_TTL_MS / 60000),
     dailyAdvanceHours: Math.round(DAILY_ADVANCE_MS / 3600000),
+    dailyLogKeep: DAILY_LOG_KEEP,
   },
+  protocol: DEFAULT_PROTOCOL,
 }
 
 /** 深合并（只对普通对象递归，数组与标量直接覆盖） */
@@ -206,6 +233,10 @@ export type TavernMemoryLimits = {
   diaryDays: number
   minIntervalMs: number
   dailyAdvanceMs: number
+  /** 整理锁有效期（毫秒） */
+  lockTtlMs: number
+  /** 日常「这几天的生活」保留条数 */
+  dailyLogKeep: number
 }
 
 export function memoryLimitsOf(s: TavernSettings): TavernMemoryLimits {
@@ -218,10 +249,22 @@ export function memoryLimitsOf(s: TavernSettings): TavernMemoryLimits {
     diaryDays: f.diaryDays,
     minIntervalMs: Math.max(0, f.summaryMinIntervalMin) * 60000,
     dailyAdvanceMs: Math.max(0, f.dailyAdvanceHours) * 3600000,
+    lockTtlMs: Math.max(1, f.summaryLockTtlMin) * 60000,
+    dailyLogKeep: Math.max(1, f.dailyLogKeep),
   }
 }
 
 /** 请求超时（毫秒） */
 export function timeoutMsOf(s: TavernSettings): number {
   return Math.max(5, s.common.timeoutSec) * 1000
+}
+
+/** 整理锁有效期（毫秒） */
+export function summaryLockTtlOf(s: TavernSettings): number {
+  return Math.max(1, s.free.summaryLockTtlMin) * 60000
+}
+
+/** think 字段：关闭思考链时传 false，否则传 undefined（= 不下发该字段，让模型保持思考） */
+export function thinkOptOf(s: TavernSettings): boolean | undefined {
+  return s.common.disableThink ? false : undefined
 }

@@ -23,7 +23,7 @@ import * as store from './store'
 import { trimHistory, historyBudget } from './budget'
 import { resolveParams, toOllamaOptions } from './params'
 import {
-  getTavernSettings, commonParamsLayer, modeParamsLayer, timeoutMsOf,
+  getTavernSettings, commonParamsLayer, modeParamsLayer, timeoutMsOf, thinkOptOf,
   type TavernSettings,
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
@@ -88,7 +88,7 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
 
   // ② 设定层：给上下文留出约 60% 的额度，其余留给对话历史与记忆
   const ctx = await buildProjectContext({
-    budget: Math.round(total * 0.6),
+    budget: Math.round(total * st.plot.settingRatio),
     viewMode: session.mode === 'immersive' ? 'character-view' : 'director-view',
     anchorChapterId: session.anchorChapterId,
     // 知情者过滤：多个 AI 角色时传入全部名字（aiContext 侧按「任一命中」匹配）
@@ -125,6 +125,7 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
     styleHint: st.plot.styleHint,
     commonExtra: st.common.extraPrompt,
     modeExtra: st.plot.extraPrompt,
+    protocol: st.protocol,
   })
 
   return { system, settingChars: ctx.chars, dropped: ctx.dropped }
@@ -215,7 +216,8 @@ export async function runPlotTurn(
     { id: uid(), role: 'user', content: userText, at: Date.now() },
   ]
 
-  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, session.memory ?? '')
+  const historyBudgetChars = historyBudget(
+    totalBudget(p.contextBudget), system, session.memory ?? '', st.common.fixedOverheadChars)
   const { messages } = buildPlotMessages({ ...session, messages: withUser }, historyBudgetChars)
 
   cb.onPhase?.('生成中')
@@ -234,8 +236,8 @@ export async function runPlotTurn(
         extraOptions,
         signal: cb.signal,
         onToken: cb.onToken,
-        // 见文件头：角色扮演全程关闭思考（对 ai.ts 全局政策的有意例外）
-        think: false,
+        // 见文件头：角色扮演默认关闭思考（对 ai.ts 全局政策的有意例外）—— 控制面板可开回来
+        think: thinkOptOf(st),
       },
     )
   } catch (e) {
@@ -356,6 +358,7 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     styleHint: st.free.styleHint,
     commonExtra: st.common.extraPrompt,
     modeExtra: st.free.extraPrompt,
+    protocol: st.protocol,
   })
 
   return { system, settingChars: setting.length, memoryChars: memory.length, missing }
@@ -403,7 +406,7 @@ export async function runFreeTurn(
 
   const p = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st), session.params)
   const { temperature, ...extraOptions } = toOllamaOptions(p)
-  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, '')
+  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, '', st.common.fixedOverheadChars)
   const { messages } = buildFreeMessages(withUser, session, chars, historyBudgetChars, cb.speakerId)
 
   cb.onPhase?.('生成中')
@@ -419,7 +422,7 @@ export async function runFreeTurn(
         extraOptions,
         signal: cb.signal,
         onToken: cb.onToken,
-        think: false, // 同剧情模式：陪伴要「像人说话」，不要分析腔
+        think: thinkOptOf(st), // 同剧情模式：陪伴要「像人说话」，不要分析腔（控制面板可开回来）
       },
     )
   } catch (e) {

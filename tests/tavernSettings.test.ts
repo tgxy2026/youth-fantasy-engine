@@ -9,13 +9,17 @@ import {
   DEFAULT_TAVERN_SETTINGS, K_TAVERN_SETTINGS, DEFAULT_COMMON_EXTRA,
   getTavernSettings, saveTavernSettings, resetTavernSettings,
   commonParamsLayer, modeParamsLayer, memoryLimitsOf, timeoutMsOf,
+  DEFAULT_PROTOCOL, thinkOptOf, summaryLockTtlOf,
 } from '../src/lib/tavern/settings'
+import { FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
+import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { resolveParams } from '../src/lib/tavern/params'
 import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
-  MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, DAILY_ADVANCE_MS,
+  MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
+  DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
 } from '../src/lib/tavern/types'
-import { TONE_HINT } from '../src/lib/tavern/prompt'
+import { TONE_HINT, buildSystemPrompt } from '../src/lib/tavern/prompt'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -109,6 +113,43 @@ async function main() {
 
     const plotBase = resolveParams('plot', commonParamsLayer(st.common), modeParamsLayer('plot', st))
     ok('两种模式的模式层互不串台（剧情仍是 0.85）', plotBase.temperature === 0.85, String(plotBase.temperature))
+  }
+
+  // ---------- 5) 本轮新增的项：逐条等于原硬编码值 ----------
+  {
+    const d = DEFAULT_TAVERN_SETTINGS
+    ok('通用：固定开销预留 = budget.ts 的常量',
+      d.common.fixedOverheadChars === FIXED_OVERHEAD_CHARS, String(d.common.fixedOverheadChars))
+    ok('通用：默认关闭思考链（engine 原本恒传 think:false）', d.common.disableThink === true)
+    ok('剧情：设定层占比 = 原写死的 0.6', d.plot.settingRatio === 0.6, String(d.plot.settingRatio))
+    ok('自由：整理模型默认为空（跟随默认模型）', d.free.summaryProviderId === '')
+    ok('自由：整理锁有效期 = 原 1800 秒换算成 30 分钟',
+      d.free.summaryLockTtlMin === SUMMARY_LOCK_TTL_MS / 60000, String(d.free.summaryLockTtlMin))
+    ok('自由：日常生活记录条数 = 原 DAILY_LOG_KEEP',
+      d.free.dailyLogKeep === DAILY_LOG_KEEP, String(d.free.dailyLogKeep))
+    ok('协议：默认就是内置常量', d.protocol === PROTOCOL_CORE && d.protocol === DEFAULT_PROTOCOL)
+  }
+
+  // ---------- 6) 派生量：本轮新增两项 ----------
+  {
+    const lim = memoryLimitsOf(DEFAULT_TAVERN_SETTINGS)
+    ok('memoryLimitsOf：整理锁有效期（分钟 → 毫秒）', lim.lockTtlMs === SUMMARY_LOCK_TTL_MS, String(lim.lockTtlMs))
+    ok('memoryLimitsOf：日常记录条数', lim.dailyLogKeep === DAILY_LOG_KEEP, String(lim.dailyLogKeep))
+    ok('summaryLockTtlOf 与 memoryLimitsOf 口径一致',
+      summaryLockTtlOf(DEFAULT_TAVERN_SETTINGS) === lim.lockTtlMs)
+    ok('thinkOptOf：默认关闭 → 传 false', thinkOptOf(DEFAULT_TAVERN_SETTINGS) === false)
+    ok('thinkOptOf：开回来后 → undefined（不下发该字段，模型保持思考）',
+      thinkOptOf({ ...DEFAULT_TAVERN_SETTINGS, common: { ...DEFAULT_TAVERN_SETTINGS.common, disableThink: false } }) === undefined)
+  }
+
+  // ---------- 7) 协议可被设置覆盖（控制面板的编辑口子） ----------
+  {
+    ok('不传 protocol 时仍是内置常量（既有调用零变化）',
+      buildSystemPrompt({ tone: 'narrative' }) === PROTOCOL_CORE)
+    const custom = buildSystemPrompt({ tone: 'narrative', protocol: '【我的协议】只此一句' })
+    ok('传了 protocol 就整体替换', custom === '【我的协议】只此一句', custom.slice(0, 30))
+    ok('清空 protocol 时回退内置常量（不让 system 尾部空掉）',
+      buildSystemPrompt({ tone: 'narrative', protocol: '   ' }) === PROTOCOL_CORE)
   }
 
   console.log(`\ntavernSettings: ${pass} passed, ${fail} failed`)

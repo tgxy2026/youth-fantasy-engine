@@ -306,6 +306,12 @@ export const SUMMARY_TRIGGER_MESSAGES = 6
 /** 日常状态推进阈值：间隔 ≥ 8 小时才生成「这几天的生活」（方案 4.7） */
 export const DAILY_ADVANCE_MS = 8 * 60 * 60 * 1000
 /**
+ * 日常「这几天的生活」保留条数（按天一条，与记忆里「最近日记」的天数对齐）。
+ * 📌 放在 types 而不是 daily.ts：settings.ts 要用它当默认值，而 daily.ts 反向依赖 engine.ts，
+ *    settings 若从 daily 取常量就会形成 settings → daily → engine → settings 的循环。
+ */
+export const DAILY_LOG_KEEP = 5
+/**
  * 记忆总结防重复（三层保险，数值照搬手册「记忆引擎」的实测默认值）：
  *   ① 时间节流 —— 两次自动总结至少间隔这么久（手册 auto_interval = 600 秒）
  *   ② 跨实例锁 —— 避免同时开两个窗口跑两遍

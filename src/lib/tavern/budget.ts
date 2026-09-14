@@ -67,6 +67,12 @@ export function budgetState(used: number, total: number): BudgetState {
  * 算出「留给对话历史」的额度 = 总预算 − 固定开销 − ②层设定 − ③层记忆。
  * 结果下限为 0（额度不足时只保留开场）。
  */
-export function historyBudget(total: number, setting: string, memory: string): number {
-  return Math.max(0, total - FIXED_OVERHEAD_CHARS - textLen(setting) - textLen(memory))
+export function historyBudget(
+  total: number,
+  setting: string,
+  memory: string,
+  /** 固定开销预留（控制面板可调）；不传即内置默认 */
+  fixedOverhead = FIXED_OVERHEAD_CHARS,
+): number {
+  return Math.max(0, total - fixedOverhead - textLen(setting) - textLen(memory))
 }

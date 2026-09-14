@@ -44,6 +44,8 @@ export type PromptLayers = {
   commonExtra?: string
   /** 本模式专属补充要求（控制面板「剧情推演 / 自由对话」各自的那栏） */
   modeExtra?: string
+  /** 扮演协议全文（控制面板可编辑）。不传则用内置常量 PROTOCOL_CORE —— 保证既有调用零变化 */
+  protocol?: string
   /**
    * 被预算丢弃的段落名。必须如实声明：
    * 否则模型会把自己没看到的资料当成不存在（沿用 buildProjectContext 的既有设计）。
@@ -96,8 +98,9 @@ export function buildSystemPrompt(layers: PromptLayers): string {
     )
   }
 
-  // ⑥ 协议（格式与禁令收尾）—— 钉在绝对末尾
-  parts.push(PROTOCOL_CORE)
+  // ⑥ 协议（格式与禁令收尾）—— 钉在绝对末尾。
+  //    内容可由控制面板覆盖；为空（用户清空了）则回退内置常量，避免整条 system 尾部空掉。
+  parts.push(layers.protocol?.trim() || PROTOCOL_CORE)
 
   return parts.join('\n\n')
 }

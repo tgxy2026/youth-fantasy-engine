@@ -226,12 +226,12 @@ export function shouldSummarize(session: Pick<FreeSession, 'messages' | 'waterma
 const LOCK_KEY = 'yfe-tavern-summary-lock'
 
 /** ② 尝试取锁；③ 陈旧锁（超过 TTL）可被接管 */
-export function acquireSummaryLock(now = Date.now()): boolean {
+export function acquireSummaryLock(now = Date.now(), ttlMs = SUMMARY_LOCK_TTL_MS): boolean {
   try {
     const raw = localStorage.getItem(LOCK_KEY)
     if (raw) {
       const at = Number(raw)
-      if (Number.isFinite(at) && now - at < SUMMARY_LOCK_TTL_MS) return false // 别的窗口正在跑
+      if (Number.isFinite(at) && now - at < ttlMs) return false // 别的窗口正在跑
       // 超过 TTL → 上次可能跑到一半崩了，接管
     }
     localStorage.setItem(LOCK_KEY, String(now))
