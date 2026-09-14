@@ -27,6 +27,7 @@ import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import TavernFreeSetup, { type FreeDraft } from './TavernFreeSetup'
+import TavernCastDirector from './TavernCastDirector'
 import TavernMessageBody from './TavernMessageBody'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import { renderTavernMessage } from './TavernMessage'
@@ -96,6 +97,8 @@ export default function TavernFree() {
   const [castCards, setCastCards] = useState<FreeCharacter[]>([])
   /** 手动指定下一位接话的角色（空 = 按轮转） */
   const [speakNext, setSpeakNext] = useState('')
+  /** 「在场调度」弹窗（静音 / 健谈度，A6） */
+  const [directorOpen, setDirectorOpen] = useState(false)
   /** 控制面板设置（记忆与日常阈值都从这儿来）—— 读不到时用出厂默认，不含糊 */
   const [tavernSettings, setTavernSettings] = useState<TavernSettings | null>(null)
   /** 会话名内联编辑：列表里只显示标题，改不了就只能删了重开，所以给个直接改的入口 */
@@ -517,6 +520,15 @@ export default function TavernFree() {
     () => castCards.filter(c => c.id !== session?.userCharId),
     [castCards, session],
   )
+  /** 在场调度（A6）：改的是这一场，落库即生效（下一轮组装就用新值） */
+  const applyDirection = async (next: FreeSession) => {
+    await store.saveFreeSession(next)
+    setSession(cur => (cur && cur.id === next.id ? next : cur))
+  }
+  const directorRows = useMemo(
+    () => aiCards.map(c => ({ id: c.id, name: c.name || '（未命名）', tag: 'AI 演', speakable: true })),
+    [aiCards],
+  )
   /** 右栏页签当前指向的那份记忆 */
   const activeMem = memTabId ? mems[memTabId] ?? null : null
   const memChars = activeMem ? memoryChars(activeMem) : 0
@@ -670,7 +682,7 @@ export default function TavernFree() {
                 {/* 多角色：在场者一览，点头像 = 指定下一位接话（§7.3）。
                     只列 **AI 演的**角色 —— 用户扮演的那个不是 AI 的位子，指定他接话没有意义。 */}
                 {aiCards.length > 1 && (
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className="text-[10.5px] text-ink-500 shrink-0">在场（点头像指定下一位）</span>
                     {aiCards.map(c => (
                       <button
@@ -688,6 +700,14 @@ export default function TavernFree() {
                         <span className="text-[11px] text-ink-200">{c.name}</span>
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      onClick={() => setDirectorOpen(true)}
+                      className="ml-auto shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-amber"
+                      title="静音（在场但不发言）与健谈度"
+                    >
+                      在场调度
+                    </button>
                   </div>
                 )}
 
@@ -863,6 +883,24 @@ export default function TavernFree() {
       </div>
 
       <TavernFreeSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
+
+      <TavernCastDirector
+        open={directorOpen}
+        rows={directorRows}
+        muted={session?.muted ?? []}
+        talkativity={session?.talkativity ?? {}}
+        showNext={aiCards.length > 1}
+        nextId={speakNext}
+        onPickNext={id => {
+          setSpeakNext(speakNext === id ? '' : id)
+          const hit = aiCards.find(c => c.id === id)
+          showToast(speakNext === id ? '已取消指定' : '下一位由 ' + (hit?.name ?? '该角色') + ' 接话', 'info')
+        }}
+        onToggleMute={(id, next) => { if (session) void applyDirection(store.setMuted(session, id, next)) }}
+        onSetTalkativity={(id, v) => { if (session) void applyDirection(store.setTalkativity(session, id, v)) }}
+        onClose={() => setDirectorOpen(false)}
+        note="只影响这一场的发言安排：不改角色卡，也不删记忆 —— 静音的人依然算在场，只是这一轮不发言。"
+      />
     </div>
   )
 }

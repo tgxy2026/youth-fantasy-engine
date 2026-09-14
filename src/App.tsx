@@ -44,6 +44,7 @@ const TavernReport = lazy(() => import('./components/TavernReport'))
 const TavernCard = lazy(() => import('./components/TavernCard'))
 const TavernFree = lazy(() => import('./components/TavernFree'))
 const TavernControl = lazy(() => import('./components/TavernControl'))
+const TavernScript = lazy(() => import('./components/TavernScript'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -322,6 +323,9 @@ export default function App() {
     }
     if (activeTab === 'tavern-card') {
       return <TavernCard />
+    }
+    if (activeTab === 'tavern-script') {
+      return <TavernScript />
     }
     if (activeTab === 'tavern-free') {
       return <TavernFree />

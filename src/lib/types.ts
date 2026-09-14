@@ -54,6 +54,7 @@ export type TabType =
   | 'tavern-card'   // 酒馆模式 · 角色卡（自由模式角色卡管理）
   | 'tavern-free'   // 酒馆模式 · 自由对话（自由模式会话）
   | 'tavern-control' // 酒馆模式 · 控制面板（AI 参数与提示词集中调节）
+  | 'tavern-script'  // 酒馆模式 · 剧本编辑（**占位，尚未开发**：先立页签避免遗忘）
 
 /** 页签定义 */
 export interface TabDef {

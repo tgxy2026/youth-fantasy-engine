@@ -14,6 +14,7 @@ import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
 import TavernCastSetting from './TavernCastSetting'
+import TavernCastDirector from './TavernCastDirector'
 import TavernMessageBody from './TavernMessageBody'
 import PromptModal from './PromptModal'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
@@ -24,7 +25,7 @@ import { runPlotTurn, splitCast } from '../lib/tavern/engine'
 import { generateReport } from '../lib/tavern/report'
 import { buildOpeningMessage } from '../lib/tavern/prompt'
 import { uid } from '../lib/id'
-import { MEMORY_SOFT_LIMIT, hasCastSetting } from '../lib/tavern/types'
+import { MEMORY_SOFT_LIMIT, hasCastSetting, talkBandOf, talkativityOf } from '../lib/tavern/types'
 import type { TavernSession, TavernSessionIndexItem, TavernMessage } from '../lib/tavern/types'
 
 
@@ -45,6 +46,8 @@ export default function TavernPlot() {
   const [busyReport, setBusyReport] = useState(false)
   /** 「存检查点」的命名弹窗（null = 关着） */
   const [cpNaming, setCpNaming] = useState(false)
+  /** 「在场调度」弹窗（静音 / 健谈度，A6） */
+  const [directorOpen, setDirectorOpen] = useState(false)
   // 扮演设定编辑：正在编辑的角色（null = 未打开）
   const [castEdit, setCastEdit] = useState<{ cardId: string; name: string; kind: 'ai' | 'user' } | null>(null)
   // 哪些角色已填过扮演设定（左栏显示「已设定 / 设定」）
@@ -97,6 +100,16 @@ export default function TavernPlot() {
   }, [session?.messages.length, streamText])
 
   const casts = useMemo(() => (session ? splitCast(session.cast) : { user: [], ai: [], silent: [] }), [session])
+
+  /** 在场调度（A6）：改的是**这一场**的安排，落库即生效 —— 下一轮组装就用新值 */
+  const applyDirection = async (next: TavernSession) => {
+    await store.saveSession(next)
+    setSession(next)
+  }
+  const directorRows = useMemo(
+    () => casts.ai.map(c => ({ id: c.cardId, name: c.name, tag: 'AI 演', speakable: true })),
+    [casts],
+  )
 
   const createFromDraft = async (d: TavernDraft) => {
     try {
@@ -498,9 +511,17 @@ export default function TavernPlot() {
                       </button>
                     </li>
                   ))}
-                  {casts.ai.map(c => (
+                  {casts.ai.map(c => {
+                    const mutedNow = (session.muted ?? []).includes(c.cardId)
+                    const band = talkBandOf(talkativityOf(session, c.cardId))
+                    return (
                     <li key={c.cardId} className="flex items-center gap-1.5">
-                      <span className="flex-1 min-w-0 truncate text-[12px] text-ink-200">AI 演 · {c.name}</span>
+                      <span className={"flex-1 min-w-0 truncate text-[12px] " + (mutedNow ? "text-ink-500" : "text-ink-200")}>
+                        AI 演 · {c.name}
+                        {mutedNow
+                          ? <span className="ml-1 text-[10.5px] text-ink-600">已静音</span>
+                          : band.name !== '均衡' && <span className="ml-1 text-[10.5px] text-ink-500">{band.name}</span>}
+                      </span>
                       <button
                         type="button"
                         onClick={() => setCastEdit({ cardId: c.cardId, name: c.name, kind: 'ai' })}
@@ -509,9 +530,20 @@ export default function TavernPlot() {
                         {castFilled[c.cardId] ? '已设定' : '设定'}
                       </button>
                     </li>
-                  ))}
+                    )
+                  })}
                   {casts.silent.map(c => <li key={c.cardId} className="text-[12px] text-ink-500">在场 · {c.name}</li>)}
                 </ul>
+                {casts.ai.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setDirectorOpen(true)}
+                    className="mt-1.5 w-full rounded-md border border-ink-700 py-1 text-[11px] text-ink-400 hover:text-amber"
+                    title="静音（在场但不发言）与健谈度：只影响提示词怎么写，不改角色卡"
+                  >
+                    在场调度（静音 / 健谈度）
+                  </button>
+                )}
                 <p className="mt-1.5 text-[10.5px] text-ink-500 leading-relaxed">
                   AI 演的角色建议填一填「扮演设定」—— 它管的是口吻与底线，比堆设定更能演得像。
                 </p>
@@ -660,6 +692,17 @@ export default function TavernPlot() {
       </div>
 
       <TavernPlotSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
+
+      <TavernCastDirector
+        open={directorOpen}
+        rows={directorRows}
+        muted={session?.muted ?? []}
+        talkativity={session?.talkativity ?? {}}
+        onToggleMute={(id, next) => { if (session) void applyDirection(store.setMuted(session, id, next)) }}
+        onSetTalkativity={(id, v) => { if (session) void applyDirection(store.setTalkativity(session, id, v)) }}
+        onClose={() => setDirectorOpen(false)}
+        note="只影响这一场的发言安排：不改角色卡，也不删记忆 —— 静音的人依然算在场，只是这一轮不发言。「下一位」点名在自由对话里。"
+      />
 
       {/* 检查点命名：留空就用「第 N 条」（allowEmpty 让它能直接回车） */}
       <PromptModal

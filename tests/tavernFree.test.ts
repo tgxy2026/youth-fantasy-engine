@@ -12,7 +12,7 @@ import {
 } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'
-import type { FreeCharacter, FreeSession, TavernMessage } from '../src/lib/tavern/types'
+import { DEFAULT_TALKATIVITY, type FreeCharacter, type FreeSession, type TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -451,6 +451,45 @@ async function main() {
     let refused = false
     try { await runFreeTurn(onlyUser, [ch], null, {}, { chatFn }) } catch { refused = true }
     ok('没有可重说的回复时：明确报错，而不是凭空造一轮', refused)
+  }
+
+  // ---------- A6：在场调度（静音 / 健谈度） ----------
+  {
+    __resetMockStores()
+    await saveProviders([STUB_PROVIDER])
+    await saveActiveId(STUB_PROVIDER.id)
+    const jia = await mkChar('甲')
+    const yi = await mkChar('乙')
+    const bing = await mkChar('丙')
+    const base = await store.createFreeSession([jia.id, yi.id, bing.id], '调度测试', { providerId: STUB_PROVIDER.id }, {})
+
+    const muted = store.setMuted(base, yi.id, true)
+    ok('静音写进会话', (muted.muted ?? []).includes(yi.id))
+    const { system } = await buildFreeSystem(muted, [jia, yi, bing])
+    ok('🔴 静音角色不进「你是下列角色」名单', !system.includes('你是下列角色：甲、乙、丙'))
+    ok('静音角色写进「在场但这一场不出声」', system.includes('在场但这一场不出声：乙'))
+    // 剩下 >1 人时才追加发言规则；静音声明必须**同时**出现在规则层（否则模型不知道谁不出声）
+    ok('剩下 >1 人时：发言规则里也声明静音（在场但不开口）', system.includes('这一场不开口'))
+    ok('静音声明措辞要求「不写成已经离开」', system.includes('不要写成 Ta 们已经离开'))
+    ok('取消静音后字段被清掉（不留空数组）', store.setMuted(muted, yi.id, false).muted === undefined)
+
+    const talked = store.setTalkativity(base, jia.id, 90)
+    ok('健谈度写进会话', talked.talkativity?.[jia.id] === 90)
+    const sys2 = (await buildFreeSystem(talked, [jia, yi])).system
+    ok('健谈度进发言规则（发言分量 + 档名）', sys2.includes('发言分量') && sys2.includes('话很多'))
+    ok('回到默认就删键（不留一堆 50）', store.setTalkativity(talked, jia.id, DEFAULT_TALKATIVITY).talkativity === undefined)
+
+    // 轮转必须跳过被静音的角色：连跑两轮，说话人始终是没被静音的那个
+    // （单独用两角色会话：三人的话轮转会轮到「丙」，断言就不成立了）
+    const duo = await store.createFreeSession([jia.id, yi.id], '轮转测试', { providerId: STUB_PROVIDER.id }, {})
+    let cur = store.setMuted(duo, yi.id, true)
+    const { chatFn } = makeFakeChat('好。')
+    for (let i = 0; i < 2; i++) {
+      cur = (await runFreeTurn(cur, [jia, yi], '嗯。', {}, { chatFn })).session
+    }
+    const said = cur.messages.filter(m => m.role === 'assistant')
+    ok('🔴 轮转不轮到被静音的角色', said.length === 2 && said.every(m => m.speakerId === jia.id),
+      said.map(m => m.speakerId).join(','))
   }
 
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)

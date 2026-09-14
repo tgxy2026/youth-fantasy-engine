@@ -137,6 +137,19 @@ function main() {
     ok('没有你演的角色时：不写「用户扮演」', !noUser.includes('用户扮演'))
     ok('没有你演的角色时：改写成「本场没有你演的角色，全部由你推进」', noUser.includes('全部由你推进'))
     ok('没有你演的角色时：角色名与发言约束照旧', noUser.includes('苏念') && noUser.includes('一次只让一个角色说话'))
+
+    // A6（2026-09-14）：静音与健谈度 —— 只在多角色时才进规则
+    const withSilent = buildMultiCharRule(['苏念', '陆青梧'], { silentNames: ['洛汐'] })
+    ok('静音：声明「这一场不开口」并点名', withSilent.includes('这一场不开口') && withSilent.includes('洛汐'))
+    ok('静音：要求不写成已经离开', withSilent.includes('不要写成 Ta 们已经离开'))
+    ok('静音名单为空时：整句不出现', !buildMultiCharRule(['苏念']).includes('这一场不开口'))
+
+    const withTalk = buildMultiCharRule(['苏念', '陆青梧'], { talkativity: [{ name: '苏念', value: 90 }, { name: '陆青梧', value: 10 }] })
+    ok('健谈度：写成「发言分量」而不是硬性轮流', withTalk.includes('发言分量') && withTalk.includes('不是硬性轮流'))
+    ok('健谈度：带档名与影响（与界面共用 TALK_BANDS）', withTalk.includes('话很多') && withTalk.includes('很安静'))
+    const talkSeg = withTalk.slice(withTalk.indexOf('发言分量'))
+    ok('健谈度：按值降序（话多的排在前面）', talkSeg.indexOf('苏念') < talkSeg.indexOf('陆青梧'))
+    ok('健谈度：空数组时整句不出现', !buildMultiCharRule(['苏念'], { talkativity: [] }).includes('发言分量'))
   }
 
   // ---------- 7) 消息转换 ----------

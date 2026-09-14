@@ -6,7 +6,7 @@
  * `prompt.ts` 的 TONE_HINT、`memory.ts` 的记忆阈值、`engine.ts` 的超时…），
  * 想调一个数就得改代码 + 重新构建。这个页签把它们全部搬到前台，改完点保存即生效。
  *
- * 【五段的划分依据】
+ * 【六段的划分依据】
  *   · 通用设置 —— 不管哪种模式都要用的：模型、上下文预算、超时、上下文窗口、通用补充要求
  *   · 我的档案 —— **用户本人是谁**（全局、跨项目）。自由对话里「我演」留空时，
  *     它就是 AI 眼中「屏幕后面那个人」；详见 settings.ts 的 TavernProfile。
@@ -38,9 +38,12 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
+import PromptModal from './PromptModal'
 import { LoadingState } from './LoadingState'
 import AutoTextarea from './AutoTextarea'
 import { PROTOCOL_VERSION } from '../lib/tavern/protocol'
+import * as presets from '../lib/tavern/presets'
+import type { TavernPreset } from '../lib/tavern/presets'
 import { PARAM_GUIDES, GUIDE_SAMPLING, bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
@@ -263,6 +266,10 @@ export default function TavernControl() {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [protocolEditing, setProtocolEditing] = useState(false)
+  /** 预设方案（A4）：整套设置（含协议全文）的命名快照，全局存放 */
+  const [presetList, setPresetList] = useState<TavernPreset[]>([])
+  const [presetNaming, setPresetNaming] = useState(false)
+  const presetFileRef = useRef<HTMLInputElement>(null)
 
   /**
    * 协议窗高度同步。
@@ -334,6 +341,126 @@ export default function TavernControl() {
     })()
   }, [])
 
+  // ---------- 预设方案（A4）：整套设置（含协议）的命名快照 ----------
+  useEffect(() => {
+    void presets.listPresets().then(setPresetList).catch(() => setPresetList([]))
+  }, [])
+
+  const storePresetAs = async (name: string) => {
+    if (!s) return
+    const n = name.trim()
+    if (!n) return
+    const exist = presetList.find(p => p.name === n)
+    if (exist) {
+      const okGo = await confirmDialog({
+        title: '已有同名预设',
+        message: '「' + n + '」已存在，要用当前设置覆盖它吗？',
+        confirmText: '覆盖',
+        danger: true,
+      })
+      if (!okGo) return
+    }
+    try {
+      setPresetList(await presets.savePreset({ id: exist?.id, name: n, data: s }))
+      showToast(exist ? '已覆盖预设「' + n + '」' : '已存为预设「' + n + '」')
+    } catch (e) {
+      showToast('保存预设失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
+  const applyPreset = async (p: TavernPreset) => {
+    const okGo = await confirmDialog({
+      title: '应用预设「' + p.name + '」？',
+      message: [
+        '当前所有设置（通用 / 我的档案 / 协议 / 剧情推演 / 自由对话）都会被这套预设替换 ——',
+        '**包括协议全文**。未保存的改动会丢失。',
+      ].join('\n'),
+      confirmText: '应用',
+    })
+    if (!okGo) return
+    try {
+      // 一律走 saveTavernSettings：它内部与默认值深合并，老预设缺的新字段会自动补上
+      const merged = await saveTavernSettings(p.data)
+      setS(merged)
+      setDirty(false)
+      showToast('已应用预设，下一轮对话即生效')
+    } catch (e) {
+      showToast('应用失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
+  const overwritePreset = async (p: TavernPreset) => {
+    if (!s) return
+    const okGo = await confirmDialog({
+      title: '用当前设置覆盖「' + p.name + '」？',
+      message: '这份预设里原来的参数与协议会被替换掉，预设本身保留。',
+      confirmText: '覆盖',
+      danger: true,
+    })
+    if (!okGo) return
+    try {
+      setPresetList(await presets.savePreset({ id: p.id, name: p.name, data: s }))
+      showToast('已覆盖')
+    } catch (e) {
+      showToast('覆盖失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
+  const dropPreset = async (p: TavernPreset) => {
+    const okGo = await confirmDialog({
+      title: '删除预设「' + p.name + '」？',
+      message: '只删掉这份快照，当前正在用的设置不受影响。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!okGo) return
+    try {
+      setPresetList(await presets.deletePreset(p.id))
+      showToast('已删除预设')
+    } catch (e) {
+      showToast('删除失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
+  const exportPreset = (p: TavernPreset) => {
+    try {
+      const blob = new Blob([presets.presetFileText(p)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = presets.presetFileName(p.name)
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('已导出预设文件')
+    } catch (e) {
+      showToast('导出失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
+  const importPresetFile = async (file: File) => {
+    try {
+      const r = presets.parsePresetFile(await file.text())
+      if (r.error || !r.preset) {
+        showToast('导入失败：' + (r.error ?? '文件内容无法识别'), 'error')
+        return
+      }
+      const p = r.preset
+      const okGo = await confirmDialog({
+        title: '导入预设「' + p.name + '」？',
+        message: '导入会立刻把当前所有设置替换成这份文件里的内容（含协议），并把它存进预设列表。',
+        confirmText: '导入并应用',
+      })
+      if (!okGo) return
+      const merged = await saveTavernSettings(p.data)
+      setS(merged)
+      setDirty(false)
+      setPresetList(await presets.savePreset({ name: p.name, data: p.data }))
+      showToast('已导入并应用预设')
+    } catch (e) {
+      showToast('导入失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
   const edit = (fn: (prev: TavernSettings) => TavernSettings) => {
     setS(prev => (prev ? fn(prev) : prev))
     setDirty(true)
@@ -366,7 +493,11 @@ export default function TavernControl() {
   const reset = async () => {
     const okGo = await confirmDialog({
       title: '恢复出厂设置？',
-      message: '五段（通用设置 / 我的档案 / 扮演协议 / 剧情推演 / 自由对话）里的所有参数与提示词，都会回到内置默认值。\n保存后不可撤销。',
+      message: [
+        '五段设置（通用设置 / 我的档案 / 扮演协议 / 剧情推演 / 自由对话）里的所有参数与提示词，都会回到内置默认值。',
+        '已存的**预设方案不受影响** —— 那是独立的快照，要用它随时点「应用」即可。',
+        '保存后不可撤销。',
+      ].join('\n'),
       confirmText: '恢复默认',
       danger: true,
     })
@@ -778,9 +909,89 @@ export default function TavernControl() {
               </div>
             </div>
           </Section>
+
+          {/* ---------- 六、预设方案（A4） ---------- */}
+          <Section
+            title="六、预设方案"
+            desc="把整套设置存成命名快照，一键切换。预设**包含协议全文**，所以换预设等于把参数与格式契约一起换掉 —— 只换一半的话，格式规则还是上一套的。"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="primary" size="md" onClick={() => setPresetNaming(true)}>＋ 存为预设</Button>
+              <Button variant="secondary" size="md" onClick={() => presetFileRef.current?.click()}>从文件导入</Button>
+              <input
+                ref={presetFileRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) void importPresetFile(f)
+                  e.target.value = '' // 允许连续导入同一个文件
+                }}
+              />
+            </div>
+            <p className="text-[11px] text-ink-500 leading-relaxed">
+              建议按工作模式分：例如「快速脑暴」（温度高、篇幅短、脑洞优先）与「精修成稿」（温度低、
+              篇幅长、一致性优先）。应用预设会**整体替换**当前设置，未保存的改动会被覆盖。
+            </p>
+
+            {presetList.length === 0 ? (
+              <p className="text-[11.5px] text-ink-600 leading-relaxed">
+                还没有预设。把当前这套存一个，以后切回来只要点一下 —— 也能导出去分享给别人。
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {presetList.map(p => (
+                  <li key={p.id} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12.5px] text-ink-100">{p.name}</div>
+                      <div className="text-[10.5px] text-ink-500">
+                        {new Date(p.updatedAt).toLocaleString()}
+                        {' · 叙事温度 '}{p.data.plot.temperature}{' · 聊天温度 '}{p.data.free.temperature}
+                      </div>
+                    </div>
+                    <button
+                      type="button" onClick={() => void applyPreset(p)}
+                      className="shrink-0 rounded border border-amber/40 px-1.5 py-0.5 text-[10.5px] text-amber hover:bg-amber/10"
+                      title="把当前设置整体换成这套预设（含协议）"
+                    >应用</button>
+                    <button
+                      type="button" onClick={() => void overwritePreset(p)}
+                      className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-amber"
+                      title="用当前设置覆盖这份预设"
+                    >覆盖</button>
+                    <button
+                      type="button" onClick={() => exportPreset(p)}
+                      className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-amber"
+                      title="导出成文件，可备份或分享"
+                    >导出</button>
+                    <button
+                      type="button" onClick={() => void dropPreset(p)}
+                      className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-red-400"
+                      title="只删这份快照，当前设置不受影响"
+                    >删除</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
         </div>
       </div>
       </ShowBands.Provider>
+
+      <PromptModal
+        open={presetNaming}
+        title="存为预设"
+        label="预设名"
+        placeholder="例：快速脑暴 / 精修成稿 / 慢节奏日常"
+        onSubmit={n => {
+          // ⚠️ 必须在这里关弹窗：PromptModal 自己不关，全靠调用方 ——
+          //    漏掉这一步的表现是「点了确定，弹窗不走、还把后面的点击全挡住」（实机抓到）
+          setPresetNaming(false)
+          void storePresetAs(n)
+        }}
+        onCancel={() => setPresetNaming(false)}
+      />
     </div>
   )
 }

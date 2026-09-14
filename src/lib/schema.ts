@@ -827,6 +827,11 @@ export const TABS: TabDef[] = [
     id: 'tavern-card', name: '角色卡片', group: '酒馆模式', type: 'tavern-card',
     description: '自由模式的角色卡片管理（四章模板），可新建 / 导入 / 从小说角色转换。',
   },
+  {
+    // 占位页签（2026-09-14 立，避免遗忘）：先占位置，功能后续开发。
+    id: 'tavern-script', name: '剧本编辑', group: '酒馆模式', type: 'tavern-script',
+    description: '把一个场景拆成若干场，安排好谁在哪、先后做什么（尚未开发，先占位置）。',
+  },
 ]
 
 // 编辑器页签（特殊，由 App 直接路由）

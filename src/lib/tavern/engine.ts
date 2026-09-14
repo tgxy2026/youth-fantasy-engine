@@ -31,6 +31,7 @@ import {
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
 import {
+  talkativityRowsOf,
   hasCastSetting, charTag,
   type TavernSession, type TavernMessage, type TavernCast,
   type FreeSession, type FreeCharacter, type FreeMemory,
@@ -86,8 +87,16 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
   const p = resolveParams('plot', commonParamsLayer(st.common), modeParamsLayer('plot', st), session.params)
   const total = p.contextBudget
   const casts = splitCast(session.cast)
-  const aiNames = casts.ai.map(c => c.name)
+  // 在场调度（A6）：被静音的 AI 角色移到「在场不出声」名单。
+  // 两者本来就是同一件事，不合并会出现「既在发言名单里、又被标为静音」的自相矛盾提示词。
+  const mutedSet = new Set(session.muted ?? [])
+  const speakingAi = casts.ai.filter(c => !mutedSet.has(c.cardId))
+  const aiNames = speakingAi.map(c => c.name)
   const userNames = casts.user.map(c => c.name)
+  const silentNames = [
+    ...casts.silent.map(c => c.name),
+    ...casts.ai.filter(c => mutedSet.has(c.cardId)).map(c => c.name),
+  ]
 
   // ② 设定层：给上下文留出约 60% 的额度，其余留给对话历史与记忆
   const ctx = await buildProjectContext({
@@ -104,14 +113,21 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
 
   // 多角色时才追加发言规则；没有「你演」角色时（整场 AI）不再写「用户扮演用户自己的角色」
   const setting = aiNames.length > 1
-    ? `${ctx.text}\n\n${buildMultiCharRule(aiNames, { hasUser: userNames.length > 0 })}`
+    ? `${ctx.text}\n\n${buildMultiCharRule(aiNames, {
+        hasUser: userNames.length > 0,
+        silentNames,
+        talkativity: talkativityRowsOf(
+          speakingAi.map(c => ({ id: c.cardId, name: c.name })),
+          session,
+        ),
+      })}`
     : ctx.text
 
   // ④ 身份与知识边界
   const selfLines = [
     `你扮演：${aiNames.length ? aiNames.join('、') : '（未指定，按设定中最主要的角色演）'}`,
     userNames.length ? `用户扮演：${userNames.join('、')}（其言行归用户自己掌控，你不要代写）` : '',
-    casts.silent.length ? `在场但这一场不出声：${casts.silent.map(c => c.name).join('、')}` : '',
+    silentNames.length ? `在场但这一场不出声：${silentNames.join('、')}` : '',
   ].filter(Boolean)
   if (casts.ai.length > 1) {
     selfLines.push('⚠️ 你负责多个角色：一次只让其中一个说话，轮到谁由语境决定，不要替没开口的角色发言。')
@@ -365,7 +381,13 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
    * `session.userCharId` 未设 = 用户演他自己（旧行为），此时 aiChars === found。
    */
   const userChar = found.find(c => c.id === session.userCharId) ?? null
-  const aiChars = found.filter(c => c.id !== userChar?.id)
+  // 在场调度（A6）：静音的角色**仍在场，但这一轮不发言**。它的角色卡与记忆**都不进上下文**——
+  // 不出声的角色不必占篇幅，模型只要知道「Ta 在、但这句不是 Ta 说的」（由 self 层的
+  // 「在场但这一场不出声」与发言规则里的静音声明交代）。
+  // ⚠️ 代价：想让某个角色对场面有反应，就别把 Ta 静音。
+  const mutedSet = new Set(session.muted ?? [])
+  const aiChars = found.filter(c => c.id !== userChar?.id && !mutedSet.has(c.id))
+  const silentChars = found.filter(c => c.id !== userChar?.id && mutedSet.has(c.id))
 
   /**
    * 同名消歧（2026-09-14）。
@@ -405,7 +427,11 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     if (aiChars.length > 1) {
       // 用户没演角色时，档案里的称呼/名字就是「用户是谁」的唯一来源
       const who = userChar?.name || st.profile.address.trim() || st.profile.name.trim()
-      parts.push(buildMultiCharRule(aiChars.map(c => c.name), who ? { userName: who } : {}))
+      parts.push(buildMultiCharRule(aiChars.map(c => c.name), {
+        ...(who ? { userName: who } : {}),
+        silentNames: silentChars.map(c => c.name),
+        talkativity: talkativityRowsOf(aiChars.map(c => ({ id: c.id, name: c.name })), session),
+      }))
     }
     // 「我的档案」：描述**屏幕后面那个人**（用户本人）。空档案返回空串，不占位置。
     parts.push(buildUserProfileBlock(st.profile, userChar?.name))
@@ -427,12 +453,15 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   const memory = blocks.filter(Boolean).join('\n\n')
 
   const aiNames = aiChars.map(c => c.name)
-  const self = userChar
+  const silentLine = silentChars.length
+    ? `\n在场但这一场不出声：${silentChars.map(c => c.name).join('、')}`
+    : ''
+  const self = (userChar
     ? `你扮演：${aiNames.length ? aiNames.join('、') : '（未指定角色）'}\n` +
       `用户扮演：${userChar.name}（其言行归用户自己掌控，你不要代写，也不要替 Ta 做决定）`
     : aiNames.length > 1
       ? `你同时扮演：${aiNames.join('、')}。用户扮演用户自己。`
-      : `你扮演：${aiNames[0] ?? '（未指定角色）'}`
+      : `你扮演：${aiNames[0] ?? '（未指定角色）'}`) + silentLine
 
   const system = buildSystemPrompt({
     tone: FREE_TONE,
@@ -530,7 +559,7 @@ export async function runFreeTurn(
 
   // 归属角色：指定优先，否则按历史里已有的 assistant 条数轮转。
   // ⚠️ 轮转名单要**排除用户扮演的角色** —— Ta 不是 AI 的位子，轮到 Ta 就会出现「AI 替你回答你」。
-  const aiIds = session.charIds.filter(id => id !== session.userCharId)
+  const aiIds = session.charIds.filter(id => id !== session.userCharId && !(session.muted ?? []).includes(id))
   // 轮转按**基座**数（重说时已丢掉被打回的那条）——否则重说会顺延到下一位说话人，观感很怪
   const said = baseMsgs.filter(m => m.role === 'assistant').length
   const autoSpeaker = aiIds.length > 0 ? aiIds[said % aiIds.length] : undefined

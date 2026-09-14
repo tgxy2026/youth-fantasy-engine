@@ -16,7 +16,7 @@
 ## 封装 / 构建坑
 - 🔴 `ELECTRON_CACHE` 须指系统默认 `AppData/Local/electron/Cache`，**切勿**指 `release/eb-cache/electron-zip`。
 - 正常体积：桌面 **80.68MiB**（≈84.6MB）、便携 **8.44MiB**。两脚本内置体积闸门：**退出码 0 也可能没达标**。
-- NSIS：`perMachine:false`+`allowToChangeInstallationDirectory:false` → 按用户装、重装免管理员；旧 per-machine 版需管理员迁移一次；**勿设 `allowElevation:false`**。
+- NSIS：`perMachine:false`+`allowToChangeInstallationDirectory:false` → 按用户装、重装免管理员；旧 per-machine 版需管理员迁移一次；勿设 `allowElevation:false`。
 
 ## 架构红线
 - 无 i18n（中文硬编码）；schema 列名即存储键；约 380 处中文参与判断。
@@ -24,7 +24,7 @@
 - 左下角只准一个浮层 `DataDock`；项目内禁全局 fixed 浮层，内嵌 Sidebar Footer。
 - 种子：卡片键 `模块名::字段名`、表格键=schema 列名；改种子必跑 `seed-schema-check.mjs`。
 - `WEB` 由 `__WEB__` 定，禁写 `!PORTABLE && !DESKTOP`。
-- 🔴 编辑器双图层（NovelEditor）：开高亮时 textarea 透明、文字全来自叠层。① 盒模型逐项一致；② 叠层重建归零 scrollTop → 高亮/切章/字号/页宽/专注/检索必用 `useLayoutEffect` 回填；③ 只走 `scanRefHighlight` 单次正则（禁双扫）。
+- 🔴 编辑器双图层（NovelEditor）：开高亮时 textarea 透明、文字全来自叠层。① 盒模型逐项一致；② 叠层重建归零 scrollTop → 高亮/切章/字号/页宽/专注/检索必 `useLayoutEffect` 回填；③ 只走 `scanRefHighlight` 单次正则。
 
 ## 存储 / 同步（丢数据风险）
 - 桌面整库一 JSON（`%APPDATA%\novel-studio\`）；⚠️ 别让云盘同步该目录。
@@ -38,7 +38,7 @@
 - 设置项排版：标题 →（可选）输入区 → **说明放下面**；复制统一 `copyText()`；#031 备份须**导出外部文件**。
 
 ## 布局与尺寸坑
-- 🔴🔴 **`<html>` 有界面缩放（`yfe-ui-zoom`，默认 108%）**：凡「量尺寸再算回 CSS 值」**一律用 `offsetHeight`，绝不能 `getBoundingClientRect()`**（rect 是视觉像素）。
+- 🔴🔴 **`<html>` 有界面缩放（`yfe-ui-zoom`，默认 108%）**：凡「量尺寸再算回 CSS 值」**一律 `offsetHeight`，绝不能 `getBoundingClientRect()`**（rect 是视觉像素）。
 - 🔴 按对侧高度定高：flex item 的 `min-height:auto`（=内容高）**会把定高顶回去 → 加 `overflow-hidden`；别同写 `flex-1` 和 `height`**。
 
 ## AI 层
@@ -52,34 +52,36 @@
 - 服务器 🔴 Nginx SPA 回退：**任意不存在路径返 200 + index.html** → 不能靠 200 判断上线。
 
 ## 工程质量
-- `npm run verify`（tsc+lint+test）；runner **每入口单开子进程**。ESLint 只开 hooks/exhaustive-deps/no-empty；🔴 那 11 条不能盲改（缺失依赖＝未包 useCallback）。
+- `npm run verify`（tsc+lint+test）；runner **每入口单开子进程**。ESLint 只开 hooks/exhaustive-deps/no-empty；那 11 条 warnings 不能盲改。
 - 🔴 **界面实机**走 skill **`novel-studio-ui-livecheck`**；模型链路用 `build-test.mjs live-tavern|live-free`（手动、不进回归）。
 - ⚠️ 手动实弹脚本的断言会**静默过时**（不进回归、不影响退出码）→ 读日志必须 grep ✗，别只看「实弹观察」行。
 - 单一口径入口：`aiParse`/`constants`/`promptGuard`/`zLayer`/`useSvgPanZoom`/`LoadingState`/`AutoTextarea`。
 
 ## 酒馆模式
 - 源自 `酒馆模式_完整落地方案.md`（**冲突以方案为准**）+ `本地模型角色扮演完全手册.html`。
-- 侧栏序＝`TABS` 数组序：控制面板→剧情推演→推演报告→自由对话→角色卡片。
-- 🔴 **数据归属（测试已锁）**：剧情会话+扮演设定+报告**随项目**；自由会话+角色卡+记忆日常+面板设置**跨项目**。索引与分条成对读写；`tavernReports` 独立表（DB v10），别漏 `deleteProject`。
-- 🎛️ 控制面板（**五段两列**）：设置走全局 meta `tavern.settings`，**一律 `getTavernSettings()`**；优先级 会话→角色→**面板**→`TAVERN_DEFAULTS`。协议可编辑（改前弹窗警示）。**加参数前先搜 tavern 目录写死的数**；settings 引反向依赖会成环。🔴 协议段必须始终是左列最后一项（等高按「除末项外的全部子项」算）。
-- 🔴 分支/检查点/回滚（第 3 批）：`branchSession` 复制会话截到该条 —— **水位线在分叉点之后必须连记忆一起清空**（否则模型引用被截掉的「未来」）；`rollbackToCheckpoint` 连记忆一起还原并写 `undoSnapshot`（只留一层，可撤销）。项目级数据在 **settingsKV**（`${pid}::tavern.*`），**不在 meta**。
-- 🎛️ 「我的档案」＝全局 `profile`（**替代已删的 `free.defaultUserCharId`**）：空则不注入；`buildUserProfileBlock` 分两态 —— 没演角色＝在场身份，演了角色＝「屏幕后面是谁」（禁拿档案名换角色名）。⚠️ `mergeDeep` 会把**已删的默认键照抄回来** → 废弃字段须在 `upgradeLegacyDefaults` **主动 delete**。
+- 侧栏序＝`TABS` 数组序：控制面板→剧情推演→推演报告→自由对话→角色卡片→**剧本编辑（占位，未开发）**。
+- 🔴 **数据归属（测试已锁）**：剧情会话+扮演设定+报告**随项目**；自由会话+角色卡+记忆日常+面板设置**跨项目**。索引与分条成对读写；`tavernReports` 独立表，别漏 `deleteProject`。
+- 🎛️ 控制面板（**六段两列**）：设置走全局 meta `tavern.settings`，一律 `getTavernSettings()`；优先级 会话→角色→**面板**→`TAVERN_DEFAULTS`。**加参数前先搜 tavern 里写死的数**；settings 引反向依赖会成环。🔴 协议段必须是左列最后一项（等高按「除末项外全部子项」算）。
+- 🔴 分支/检查点/回滚：`branchSession` 复制会话截到该条 —— **水位线在分叉点之后必须连记忆一起清空**（否则模型引用被截掉的「未来」）；`rollbackToCheckpoint` 连记忆还原 + `undoSnapshot`（只一层）。项目级数据在 **settingsKV**（`${pid}::tavern.*`），**不在 meta**。
+- 🎛️ 「我的档案」＝全局 `profile`（替代已删的 `free.defaultUserCharId`）：空则不注入；`buildUserProfileBlock` 两态（没演角色＝在场身份 / 演了＝「屏幕后面是谁」）。⚠️ `mergeDeep` 会把已删的默认键**照抄回来** → 废弃字段须在 `upgradeLegacyDefaults` delete。
 - 🔴 层序：设定→记忆→身份→档位→（通用→本场补充）→未带入声明→**协议（钉末尾）**。三处去冗：`memoryTitle:null`、补充要求加 〖〗标题、`inlineDropNote:false`。
 - 🔴 `buildMultiCharRule`：整场 AI（无「你演」）必传 `{hasUser:false}`，否则模型等一个不存在的人。
-- 🔴 自由模式「用户扮演的角色」=`FreeSession.userCharId`。**AI 名单/发言轮转/记忆块三处都要排除 Ta**（否则 AI 替 Ta 回答）；Ta 的记忆**不给 AI**。
-- 🔴 记忆**按角色分别整理**（右栏页签）；水位线**全部成功才推进**；卡页可手改记忆。自由对话页**无角色列表**，左栏＝全局会话列表。
+- 🔴 自由模式「用户扮演的角色」=`FreeSession.userCharId`：**AI 名单/轮转/记忆块三处都排除 Ta**（否则 AI 替 Ta 回答），Ta 的记忆**不给 AI**。
+- 🔴 记忆**按角色分别整理**（右栏页签）；水位线**全部成功才推进**；卡页可手改记忆。自由对话页无角色列表，左栏＝全局会话列表。
 - 🔴 采样链走 `ai.ts` 的 `extraOptions`：Ollama 原样并入；OpenAI 只转白名单（top_k/repeat_penalty/num_ctx 别发）。
 - 🔴🔴 防剧透两层：① 段落级 `viewMode:"character-view"` 排除 10 个作者侧页签；② 字段级 `AUTHOR_SIDE_FIELDS`（新增未来向字段须登记②）。
 - 🔴 提示词与解析器对齐：标题**整行匹配**（禁 `includes`）；容忍新旧符号。
 - `think:false` 是 **Ollama 专有**；报告 finding 指不回条目即降「存疑」；总结**必带角色背景**。
 - 🔴 角色卡块带名（块标题带名与短码）：**仅同场同名才挂短码**+`buildSameNameNote`；**复制为新卡**（照抄四章、**不复制记忆/日常**）。
-- 🔴 **输出规范 v1.3**（改提示词先读）：**输出** —— 对白＝纯文本（不加引号/括号/名字，**名字也不许单独成行**）、动作·神态·心理＝（）、**客观环境·外在＝【】**、状态＝〔状态〕；**输入**一律 〖〗（标题/说话人，如 〖对方〗）与〈〉。**两端必须分开**；（）动作心理、【】状态外观别写两遍。自由对话的「客观描写」密度＝`free.sceneDescription`（默认 standard）：出场写穿着姿态、转场补环境、情绪落外在细节，算在 60–160 字内。
-- 🔴 指代角色一律「Ta」。协议/示范卡改过 → **老数据升级靠全等锚点**：`LEGACY_PROTOCOLS`、`LEGACY_SEED_EXAMPLES`+`upgradeSeedCards()`（boot 每次跑、幂等、作者改过的不动）。**改内置文本必补锚点**。
-- 三张卡关系网：**都知道对方是谁、都不知道彼此的分量**。老库更新走角色卡页**「恢复内置版本」**（`resetCardToSeed`，只覆盖四章、不动记忆）—— **别再写逐句锚点补丁**。
-- 🔴 消息级操作（A1）：`hidden` 唯一出口＝`toChatMessages`+`messagesAfterWatermark`；重说＝`runPlotTurn/runFreeTurn(session, null)`（不追用户消息+先丢末尾 assistant），**只有末条 AI 可重说**；两页共用 `TavernMessageBody`（**外层容器恒定**）；快捷条走协议「」导演通道。
-- 初版记忆：导入/新建卡后**自动生成**（`coldStartMemory` AI 优先 → 回落 `draftMemoryFromCard` 摘录）；记忆为空时卡页有手动按钮。
-- 路线图（任务 56-63）：**第 1–3 批已完成**；A 档全接受；B1→**「背景设定」页签**（面板下/剧情推演上，两模式各自一键 AI 录入+人工微调）；B2/B3/B5 做；**ST 卡导入不做**；C 档先不做，仅**状态栏面板**立项（先只读）。
-- 示范卡三张：洛汐/苏念/楚楠；交付 `你需要的文件在这里/角色卡-楚楠.taverncard.json`。`createDemoProject` 有 **single-flight**。待办：角色头像（第 8 批）。
+- 🔴 **输出规范 v1.3**（改提示词先读）：**输出** —— 对白＝纯文本（无引号/括号/名字，名字也不许单独成行）、动作神态心理＝（）、**客观环境·外在＝【】**、状态＝〔〕；**输入**一律 〖〗/〈〉，**两端必须分开**。自由对话「客观描写」＝`free.sceneDescription`（默认 standard）：出场写穿着姿态、转场补环境、情绪落外在细节，算在 60–160 字内。
+- 🔴 指代角色一律「Ta」。协议/示范卡改过 → **老数据升级靠全等锚点**：`LEGACY_PROTOCOLS`、`upgradeSeedCards()`（boot 每次跑、幂等、作者改过的不动）。**改内置文本必补锚点**。
+- 三张卡关系网：**都知道对方是谁、都不知道彼此的分量**。老库更新走卡页**「恢复内置版本」**（只覆盖四章）—— **别写逐句锚点补丁**。
+- 🔴 消息级操作：`hidden` 唯一出口＝`toChatMessages`+`messagesAfterWatermark`；重说＝`runPlotTurn/runFreeTurn(session, null)`（**只末条 AI 可重说**）；两页共用 `TavernMessageBody`（外层容器恒定）；快捷条走协议「」通道。
+- 初版记忆：导入/新建卡后**自动生成**（`coldStartMemory` AI 优先 → 回落 `draftMemoryFromCard` 摘录）；卡页另有手动按钮。
+- 路线图：**第 1–4 批已完成**；B1→**「背景设定」页签**（面板下/剧情推演上，两模式一键 AI 录入）；B2/B3/B5 做；**ST 卡导入不做**；C 档仅**状态栏面板**（先只读）；**新增「剧本编辑」页签＝占位待开发**。
+- 🎛️ 预设方案（A4）：全局 meta `tavern.presets`；快照＝整套设置**含协议**；应用/导入走 `saveTavernSettings`（深合并补缺字段）；导入只校验 common/plot/free **三段形状**。
+- 🔴 在场调度（A6）：`muted`+`talkativity` 会话级、两模式共用（回默认即删键）。静音＝在场但这一轮不发言，**卡与记忆都不进上下文**；声明分两处（self 层 + 剩 >1 人时的发言规则）；UI 拦「最后一位不能静音」。
+- 示范卡三张：洛汐/苏念/楚楠（交付件在「你需要的文件在这里」）；`createDemoProject` 有 **single-flight**；待办角色头像（第 8 批）。
 
 ## 环境（Windows + Git Bash）
 - git `…/PortableGit/versions/1.2.0/cmd/git.exe`；npm 走 `"<托管node>/node.exe" "<…>/npm/bin/npm-cli.js"`，路径用 `C:/` 正斜杠。

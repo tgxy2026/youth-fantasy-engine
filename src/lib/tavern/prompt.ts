@@ -31,6 +31,7 @@
  */
 import { PROTOCOL_CORE } from './protocol'
 import type { TavernTone, TavernMessage, CastSetting, SceneDescLevel } from './types'
+import { talkBandOf } from './types'
 
 export type PromptLayers = {
   /** 档位：叙事向（剧情默认，即协议默认） / 聊天向（自由默认，追加一句风格提示） */
@@ -180,21 +181,47 @@ export function buildOpeningMessage(
  * `userName`：自由模式里用户可能**扮演某个具体角色**（用户演苏念、AI 演楚楠）。
  * 写明是谁，模型才知道自己在跟谁对话，也不会顺手把那个人的台词也演了。
  */
-export function buildMultiCharRule(names: string[], opts: { hasUser?: boolean; userName?: string } = {}): string {
+export function buildMultiCharRule(
+  names: string[],
+  opts: {
+    hasUser?: boolean
+    userName?: string
+    /** 静音：在场但这一场不发言的角色名（已从 names 摘掉，这里只作声明，防模型替 Ta 开口） */
+    silentNames?: string[]
+    /** 健谈度：**只传偏离默认的**（全默认时整段不加，别白占上下文） */
+    talkativity?: { name: string; value: number }[]
+  } = {},
+): string {
   const hasUser = opts.hasUser !== false
   const who = !hasUser
     ? '本场没有你演的角色，全部由你推进。'
     : opts.userName?.trim()
       ? `用户扮演：${opts.userName.trim()}。`
       : '用户扮演用户自己的角色。'
-  return [
+  const lines = [
     '〖发言规则〗',
     `你是下列角色：${names.join('、')}。${who}`,
     '- 一次只让一个角色说话，不要在同一回合里让多个角色各说一句。',
     '- 轮到谁由语境决定，不要强行轮流。',
     '- 不说话的角色不要替它发言；它就在场，但这一回合没开口。',
     '- 用户点名某个角色时，那个角色必须接话。',
-  ].join('\n')
+  ]
+  // 静音：必须写成「人在场、但不开口」—— 只把人从名单里拿掉不说这句的话，
+  // 模型可能干脆当 Ta 不存在（连「在场」都演不出来）。
+  const silent = (opts.silentNames ?? []).filter(Boolean)
+  if (silent.length) {
+    lines.push("- 还有 " + silent.length + " 人在场，但**这一场不开口**：" + silent.join("、") +
+      " —— 不要替 Ta 们发言，也不要写成 Ta 们已经离开。")
+  }
+  // 健谈度：写成「发言分量」而不是硬性轮流 —— 平均轮流会让所有人的存在感变得一样。
+  const talk = (opts.talkativity ?? []).filter(t => t.name)
+  if (talk.length) {
+    const rows = [...talk].sort((a, b) => b.value - a.value)
+    const text = rows.map(t => { const b = talkBandOf(t.value); return t.name + ' —— ' + b.name + '（' + b.line + '）' }).join('；')
+    lines.push('- 发言分量（各角色自己的习惯，不是硬性轮流）：' + text + '。' +
+      '多数回合仍由语境决定谁开口，但这些差别要看得出来 —— 安静的人别写成话痨，健谈的人别写成闷葫芦。')
+  }
+  return lines.join('\n')
 }
 
 /**

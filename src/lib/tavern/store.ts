@@ -20,7 +20,7 @@
  */
 import * as db from '../db'
 import { uid } from '../id'
-import { EMPTY_CAST_SETTING } from './types'
+import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY } from './types'
 import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
@@ -88,6 +88,38 @@ export function patchMessage<T extends MsgHost>(s: T, id: string, patch: Partial
 /** 删掉一条消息 */
 export function dropMessage<T extends MsgHost>(s: T, id: string): T {
   return { ...s, messages: s.messages.filter(m => m.id !== id), updatedAt: Date.now() }
+}
+
+/**
+ * 在场调度（A6）：静音 / 取消静音、设健谈度。
+ *
+ * 也写成泛型纯函数，因为剧情会话（cardId）与自由会话（charId）共用同一套字段语义 ——
+ * 两处各写一份必然漂移（本项目反复踩过），而「静音」的语义一旦分叉就会变成两种行为。
+ */
+type DirectedHost = {
+  muted?: string[]
+  talkativity?: Record<string, number>
+  updatedAt: number
+}
+
+/** 静音 = 在场但不发言（临时开关，随时可取消） */
+export function setMuted<T extends DirectedHost>(s: T, id: string, muted: boolean): T {
+  const cur = new Set(s.muted ?? [])
+  if (muted) cur.add(id)
+  else cur.delete(id)
+  const list = [...cur]
+  return { ...s, muted: list.length ? list : undefined, updatedAt: Date.now() }
+}
+
+/**
+ * 设健谈度（0–100）。**回到默认值就删键** —— 否则会话记录里会攒一堆「50」，
+ * 既看不出哪些是作者真调过的，也让「全默认 → 不注入这一层」的优化失效。
+ */
+export function setTalkativity<T extends DirectedHost>(s: T, id: string, value: number): T {
+  const next = { ...(s.talkativity ?? {}) }
+  if (value === DEFAULT_TALKATIVITY) delete next[id]
+  else next[id] = value
+  return { ...s, talkativity: Object.keys(next).length ? next : undefined, updatedAt: Date.now() }
 }
 
 /**

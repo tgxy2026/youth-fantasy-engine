@@ -124,6 +124,9 @@ export type TavernSession = {
   checkpoints?: TavernCheckpoint[]
   /** 回滚前的自动备份：存在就说明可以「撤销上次回滚」 */
   undoSnapshot?: TavernRollbackUndo
+  /** 在场调度（A6）：健谈度与静音。语义见 CastDirection，两模式共用同一套 */
+  muted?: string[]
+  talkativity?: Record<string, number>
   createdAt: number
   updatedAt: number
 }
@@ -267,6 +270,9 @@ export type FreeSession = {
   model: TavernModelRef
   params: TavernParams
   watermark?: TavernWatermark
+  /** 在场调度（A6）：健谈度与静音。语义见 CastDirection，两模式共用同一套 */
+  muted?: string[]
+  talkativity?: Record<string, number>
   lastActiveAt: number
   createdAt: number
   updatedAt: number
@@ -375,6 +381,64 @@ export const TAVERN_DEFAULTS: {
 }
 
 /** 记忆字数约束（方案 4.5）：软上限 1200，硬截断 2000 */
+/**
+ * 在场调度（2026-09-14，路线图第 4 批 A6）：**两种模式共用**的一套字段与语义。
+ *
+ * 健谈度与静音只影响**提示词怎么写**，不改变数据归属、也不删记忆 ——
+ * 静音的角色依然在场：别人可以提到 Ta，六栏记忆里发生过的照旧算数，只是这一场不开口。
+ */
+export type CastDirection = {
+  /** 在场但**不发言**的角色 id（临时开关，随时可取消） */
+  muted?: string[]
+  /** 0–100 健谈度，越大越常开口；缺省 = DEFAULT_TALKATIVITY（均衡） */
+  talkativity?: Record<string, number>
+}
+
+/** 健谈度默认值：均衡。缺省即此值，不写进会话记录 */
+export const DEFAULT_TALKATIVITY = 50
+
+/**
+ * 健谈度分档 —— 提示词与界面**共用同一份**。
+ * 两处各写一份文案必然漂移，而「说明与实现不一致」比没有说明更坏（与 paramGuide 同一条纪律）。
+ */
+export const TALK_BANDS = [
+  { min: 0, max: 19, name: '很安静', line: '基本不主动开口，只在被点名时才应声' },
+  { min: 20, max: 39, name: '偏静', line: '偶尔插一句，多数时候在听' },
+  { min: 40, max: 59, name: '均衡', line: '跟其他人差不多，轮到就说' },
+  { min: 60, max: 79, name: '健谈', line: '明显更常开口，会主动起话头' },
+  { min: 80, max: 100, name: '话很多', line: '几乎每回合都想接，会抢着说' },
+] as const
+
+/** 取健谈度所在档（越界与非法值一律按默认档处理） */
+export function talkBandOf(v: number) {
+  const n = Number.isFinite(v) ? v : DEFAULT_TALKATIVITY
+  return TALK_BANDS.find(b => n >= b.min && n <= b.max) ?? TALK_BANDS[2]
+}
+
+/** 这个角色是否被静音（在场但不发言） */
+export function isMuted(dir: CastDirection | null | undefined, id: string): boolean {
+  return !!dir?.muted?.includes(id)
+}
+
+/** 取健谈度（缺省即默认值） */
+export function talkativityOf(dir: CastDirection | null | undefined, id: string): number {
+  const v = dir?.talkativity?.[id]
+  return typeof v === 'number' && Number.isFinite(v) ? v : DEFAULT_TALKATIVITY
+}
+
+/**
+ * 挑出**偏离默认**的健谈度行 —— 全默认时返回空数组。
+ * 调用方据此整段不注入：满场都是「均衡」时写进提示词只是白占上下文。
+ */
+export function talkativityRowsOf(
+  list: { id: string; name: string }[],
+  dir: CastDirection | null | undefined,
+): { name: string; value: number }[] {
+  return list
+    .map(c => ({ name: c.name, value: talkativityOf(dir, c.id) }))
+    .filter(r => r.value !== DEFAULT_TALKATIVITY)
+}
+
 export const MEMORY_SOFT_LIMIT = 1200
 export const MEMORY_HARD_LIMIT = 2000
 /** 「长期摘要」单独的字数上限 */
