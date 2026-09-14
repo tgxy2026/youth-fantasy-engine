@@ -4,7 +4,7 @@
  * 自由模式的角色卡管理：四章模板（世界 / 人物档案 / 行为规范 / 示例对话），分区块表单编辑。
  *
  * 【为什么是「分区块表单」而不是一个大文本框】
- * 四章是给模型的**不同层**用的：第 2 章管「她是谁」、第 3 章管「怎么演」、
+ * 四章是给模型的**不同层**用的：第 2 章管「Ta是谁」、第 3 章管「怎么演」、
  * 第 4 章管「照着这个说话」。合成一坨，作者一定会漏掉最关键的第四章。
  *
  * 【第 4 章「示例对话」是杠杆最高、也最容易被跳过的一章】
@@ -469,17 +469,17 @@ export default function TavernCard() {
 
                 {/* 第 1 章 */}
                 <section>
-                  <SectionTitle sub="她活在一个什么样的世界里（时代 / 地点 / 规则）—— 故事发生的舞台。">
+                  <SectionTitle sub="Ta活在一个什么样的世界里（时代 / 地点 / 规则）—— 故事发生的舞台。">
                     第 1 章 · 世界
                   </SectionTitle>
                   <Field label="世界设定" hint="时代、地点、社会规则、与用户的初始关系" rows={3}
                     value={draft.world} onChange={v => up('world', v)}
-                    ph="例：现代都市，老城区一间凌晨还亮着灯的便利店。她是店员，你是常来的顾客。" />
+                    ph="例：现代都市，老城区一间凌晨还亮着灯的便利店。Ta是店员，你是常来的顾客。" />
                 </section>
 
                 {/* 第 2 章 */}
                 <section>
-                  <SectionTitle sub="她是谁 —— 这一章决定角色立不立得住。">
+                  <SectionTitle sub="Ta是谁 —— 这一章决定角色立不立得住。">
                     第 2 章 · 人物档案
                   </SectionTitle>
                   <div className="space-y-3">
@@ -492,12 +492,12 @@ export default function TavernCard() {
                     <Field label="2.3 语言特征" hint="怎么说话：句子长短、口头禅、语气习惯" rows={2}
                       value={draft.profile.speech} onChange={v => upProfile('speech', v)}
                       ph="例：句子短，习惯用反问，从不说软话。" />
-                    <Field label="2.4 关系" hint="她与其他角色的关系（没有可留空）" rows={2}
+                    <Field label="2.4 关系" hint="Ta与其他角色的关系（没有可留空）" rows={2}
                       value={draft.profile.relations} onChange={v => upProfile('relations', v)} />
                     <Field label="2.5 做不到的事" hint="能力与性格上的硬限制 —— 写了它就不会突然全能" rows={2}
                       value={draft.profile.cannot} onChange={v => upProfile('cannot', v)}
                       ph="例：说不出关心的话，只能换成别的方式表达。" />
-                    <Field label="2.6 知识边界" hint="哪些事她不知道 —— 写了它就不会「恰好知道」" rows={2}
+                    <Field label="2.6 知识边界" hint="哪些事Ta不知道 —— 写了它就不会「恰好知道」" rows={2}
                       value={draft.profile.knowledge} onChange={v => upProfile('knowledge', v)}
                       ph="例：不知道顾客的职业与过去。" />
                   </div>
@@ -505,13 +505,13 @@ export default function TavernCard() {
 
                 {/* 第 3 章 */}
                 <section>
-                  <SectionTitle sub="怎么演她 —— 这一章防 OOC（演崩）。">
+                  <SectionTitle sub="怎么演Ta —— 这一章防 OOC（演崩）。">
                     第 3 章 · 行为规范
                   </SectionTitle>
                   <div className="space-y-3">
                     <Field label="视角与人称" hint="以什么视角叙述（第一人称最稳）" rows={2}
                       value={draft.conduct.perspective} onChange={v => upConduct('perspective', v)}
-                      ph="例：第一人称，只描写她自己的动作与感官。" />
+                      ph="例：第一人称，只描写Ta自己的动作与感官。" />
                     <Field label="底线清单" hint="碰到会怎样 —— 写反应，不写理由" rows={2}
                       value={draft.conduct.bottomLine} onChange={v => upConduct('bottomLine', v)}
                       ph="例：不越界打听私事；被追问会转移话题，不会发火。" />
@@ -530,15 +530,20 @@ export default function TavernCard() {
                     第 4 章 · 示例对话（杠杆最高）
                   </SectionTitle>
                   <div className="mb-2.5 rounded-md bg-ink-900/60 border border-ink-700 px-3 py-2">
-                    <p className="text-[11.5px] text-ink-300 font-medium">三条硬规矩（都是踩过的坑）</p>
+                    <p className="text-[11.5px] text-ink-300 font-medium">四条硬规矩（前两条是踩过的坑）</p>
                     <ul className="mt-1 space-y-1 text-[11px] text-ink-400 leading-relaxed">
                       <li>
                         <span className="text-amber/90">① 格式必须和你要的输出完全一致。</span>
-                        示例里若写「苏念：台词」，正式输出也会带上名字前缀，人称甚至被带偏成第三人称。
-                        <span className="text-ink-200">正确做法：只给对方加标记，她那一侧不加任何前缀。</span>
+                        示例里若写「名字：台词」，正式输出也会带上名字前缀，人称甚至被带偏成第三人称。
+                        <span className="text-ink-200">正确做法：对方的台词用「对方：」标出来，你这侧的对白不加任何前缀。</span>
                       </li>
-                      <li><span className="text-amber/90">② 三段覆盖不同侧面</span>（常态 / 被戳到时 / 松动时），别都是同一种情绪。</li>
-                      <li><span className="text-amber/90">③ 别写长。</span>三段短来回就够 —— 写成整段剧情既费上下文，又容易被照搬。</li>
+                      <li>
+                        <span className="text-amber/90">② 三类标记各就各位。</span>
+                        对白＝纯文本（正常标点）；动作、神态、心理＝（ ）独立成行；
+                        客观环境与人物外在＝【 】独立成行。示例里怎么标，输出就得怎么标。
+                      </li>
+                      <li><span className="text-amber/90">③ 三段覆盖不同侧面</span>（常态 / 被戳到时 / 松动时），别都是同一种情绪。</li>
+                      <li><span className="text-amber/90">④ 别写长。</span>三段短来回就够 —— 写成整段剧情既费上下文，又容易被照搬。</li>
                     </ul>
                   </div>
                   <AutoTextarea
@@ -546,7 +551,20 @@ export default function TavernCard() {
                     textClass="text-[12.5px]"
                     minRows={8}
                     maxHeight={520}
-                    placeholder={'对方：这么晚还不下班？\n她把找零推过去，没抬头：\n「灯还亮着。」\n\n对方：你一个人看店不怕吗？\n她停了一下，把烟按灭。\n「惯了。」\n\n对方：……谢谢。\n她背过身去理货架，声音很轻：\n「伞在门后。」'}
+                    placeholder={[
+                      '对方：这么晚还不下班？',
+                      '（把找零推过去，没抬头）',
+                      '灯还亮着。',
+                      '',
+                      '【门外下着雨，玻璃上蒙了一层水汽】',
+                      '对方：你一个人看店不怕吗？',
+                      '（停了一下，把手里的抹布搭在台面上）',
+                      '惯了。',
+                      '',
+                      '对方：……谢谢。',
+                      '（背过身去理货架，声音很轻）',
+                      '伞在门后。',
+                    ].join('\n')}
                     value={draft.examples}
                     onChange={v => up('examples', v)}
                   />
@@ -556,7 +574,7 @@ export default function TavernCard() {
                 <section className="rounded-lg border border-ink-700 bg-ink-850/40 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="text-[13px] font-semibold text-amber/90">她的记忆（可手动编辑）</h3>
+                      <h3 className="text-[13px] font-semibold text-amber/90">Ta的记忆（可手动编辑）</h3>
                       <p className="mt-0.5 text-[11px] text-ink-500 leading-relaxed">
                         六栏记忆就在这里。AI 整理时会在此基础上压缩；你也可以直接改，改完点「保存记忆」。
                       </p>
@@ -586,7 +604,7 @@ export default function TavernCard() {
                         <span className="text-ink-100">关键事实</span>与<span className="text-ink-100">未爆的雷</span>只增不改、
                         <span className="text-ink-100">关系状态</span>每次整理重写、
                         <span className="text-ink-100">最近日记</span>只留最近几天。
-                        手改时别把「只增」的两栏清空 —— 那等于让她失忆。
+                        手改时别把「只增」的两栏清空 —— 那等于让Ta失忆。
                       </p>
                       <div className="mt-3 space-y-3">
                         {MEMORY_SECTIONS.map(sec => (

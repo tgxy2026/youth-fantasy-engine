@@ -67,8 +67,14 @@ async function main() {
     const sys = buildImportSystem()
     ok('写死「不许编造」且给出【待补】标记', sys.includes('不许编造') && sys.includes(MISSING_TAG))
     ok('写死「丢掉剧透」（她不该知道自己后面会怎样）', sys.includes('剧透') && sys.includes('结局'))
-    ok('写死示例对话的格式要求（只给对方加标记）', sys.includes('只给对方加标记') && sys.includes('不要写任何名字前缀'))
-    ok('说明「改写而非照抄」的理由（设定 → 行为倾向）', sys.includes('该怎么演她') && sys.includes('改写'))
+    ok('写死示例对话的格式要求：对方用「对方：」、自己不加前缀',
+      sys.includes('用「对方：」起头') && sys.includes('不加引号、不加括号、不写名字'))
+    ok('写死三类标记（动作神态心理用（）/ 客观环境与人物外在用【】）',
+      sys.includes('全角圆括号（ ）') && sys.includes('方头括号【 】'))
+    ok('四章标题用输入侧符号 〖〗（不与输出标记撞车）',
+      sys.includes('〖第 1 章 · 世界〗') && !sys.includes('【第 1 章 · 世界】'))
+    ok('说明「改写而非照抄」的理由（设定 → 行为倾向；代词已中性化为 Ta）',
+      sys.includes('该怎么演Ta') && sys.includes('改写'))
     ok('四章标题齐全', ['第 1 章 · 世界', '2.1 外在', '2.6 知识边界', '第 3 章 · 行为规范', '第 4 章 · 示例对话']
       .every(t => sys.includes(t)))
   }

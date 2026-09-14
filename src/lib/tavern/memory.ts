@@ -79,7 +79,7 @@ export function isMemoryEmpty(m: FreeMemory | null | undefined): boolean {
 /** 序列化成交给模型的档案文本（空栏也保留标题，便于模型知道有这一栏可填） */
 export function memoryToText(m: FreeMemory): string {
   return MEMORY_SECTIONS
-    .map(s => `【${s.title}】\n${String(m[s.key] ?? '').trim() || '（暂无）'}`)
+    .map(s => `〖${s.title}〗\n${String(m[s.key] ?? '').trim() || '（暂无）'}`)
     .join('\n\n')
 }
 
@@ -172,7 +172,7 @@ function matchSectionTitle(line: string): { key: MemorySectionKey; rest: string 
   const pack = (key: MemorySectionKey, bare: string) => {
     const i = t.indexOf(bare)
     if (i < 0) return null
-    const after = t.slice(i + bare.length).replace(/^[】\]）):：、.。\-]+/, '')
+    const after = t.slice(i + bare.length).replace(/^[】〗\]）):：、.。\-]+/, '')
     return { key, rest: after }
   }
   for (const s of MEMORY_SECTIONS) {

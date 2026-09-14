@@ -31,6 +31,13 @@ export interface ProjectContextOptions {
   focusChapterId?: string
   /** 相关章节召回条数上限，默认 8 */
   relatedChapterLimit?: number
+  /**
+   * 是否在正文尾部附一段「（注：以下资料因长度预算未带入…）」。默认 true。
+   * 酒馆模式传 false —— 它把 dropped 交给 buildSystemPrompt 生成**独立的**
+   * 〖未带入的资料〗 层（结构化、位置更靠近生成点），两处一起写等于同一件事说两遍。
+   * 其余 AI 功能（整理 / 校对 / 审计）不消费 dropped 数组，保持默认 true 以免丢声明。
+   */
+  inlineDropNote?: boolean
 
   // ===== 酒馆模式（方案 §4.2）：以下三项只加参数，不传即完全维持原行为 =====
   /**
@@ -204,7 +211,7 @@ function renderCards(tab: TabDef, recs: { name: string; data: Record<string, str
   const out: string[] = []
   for (const r of recs.slice(0, cap)) {
     const body = renderForm(tab, r.data, o)
-    out.push(`【${r.name || '未命名'}】${body ? '\n' + body : ''}`)
+    out.push(`〖${r.name || '未命名'}〗${body ? '\n' + body : ''}`)
   }
   if (recs.length > cap) out.push(`（另有 ${recs.length - cap} 条未列出）`)
   return out.join('\n')
@@ -356,7 +363,7 @@ export async function getChapterTexts(ids: string[], charCap = 20000): Promise<s
   let used = 0
   for (const c of pick) {
     const seq = seqs.get(c.id) ?? 0
-    const head = `【${seq > 0 ? `第${seq}章 · ` : ''}${c.title || '未命名章节'}】\n`
+    const head = `〖${seq > 0 ? `第${seq}章 · ` : ''}${c.title || '未命名章节'}〗\n`
     const room = charCap - used - head.length
     if (room <= 200) {
       out.push(`（其余章节因长度限制未带入）`)
@@ -483,7 +490,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
 
   const push = (title: string, body: string) => {
     if (!body.trim()) return
-    const block = `## ${title}\n${body.trim()}`
+    const block = `〖${title}〗\n${body.trim()}`
     if (used + block.length > budget) {
       dropped.push(title)
       return
@@ -566,7 +573,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   }
 
   // 被预算丢弃的段落必须在文末声明，否则模型会把自己没看到的资料当成不存在
-  const note = dropped.length > 0
+  const note = dropped.length > 0 && opts.inlineDropNote !== false
     ? `\n\n（注：以下资料因长度预算未带入本提示，仅供参考时留意其可能存在：${dropped.join('、')}）`
     : ''
   const text = parts.join('\n\n') + note

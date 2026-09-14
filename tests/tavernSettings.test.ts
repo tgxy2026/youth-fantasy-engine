@@ -12,7 +12,7 @@ import {
   DEFAULT_PROTOCOL, thinkOptOf, summaryLockTtlOf,
 } from '../src/lib/tavern/settings'
 import { FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
-import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
+import { PROTOCOL_CORE, PROTOCOL_VERSION, LEGACY_PROTOCOLS } from '../src/lib/tavern/protocol'
 import { resolveParams } from '../src/lib/tavern/params'
 import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
@@ -44,7 +44,7 @@ async function main() {
     ok('自由：温度 0.9 / presence 0.45（陪伴要松）',
       d.free.temperature === 0.9 && d.free.presencePenalty === 0.45,
       `${d.free.temperature}/${d.free.presencePenalty}`)
-    ok('自由：聊天向风格取 prompt 里的内置默认（单一真源）', d.free.styleHint === TONE_HINT.chat && d.free.styleHint.includes('【本场风格】'))
+    ok('自由：聊天向风格取 prompt 里的内置默认（单一真源）', d.free.styleHint === TONE_HINT.chat && d.free.styleHint.includes('〖本场风格〗'))
 
     ok('记忆：触发条数沿用 SUMMARY_TRIGGER_MESSAGES', d.free.triggerMessages === SUMMARY_TRIGGER_MESSAGES, String(d.free.triggerMessages))
     ok('记忆：软 / 硬 / 长期摘要上限沿用常量',
@@ -88,6 +88,15 @@ async function main() {
       st.plot.temperature === 0.85,
       JSON.stringify(st.common))
     ok('整个缺失的分组也补全', st.common.extraPrompt === DEFAULT_COMMON_EXTRA)
+
+    // 协议升级：存的就是**旧版内置协议**（v1.1）时静默换新；作者自己改过的一律不动
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[0] } as never)
+    ok('存着 v1.1 全文 → 自动升级到 v1.2', (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: '我自己改过的协议正文' } as never)
+    ok('自定义协议不被覆盖（全等比对，判据保守）',
+      (await getTavernSettings()).protocol === '我自己改过的协议正文')
     ok('旧数据里没有 sceneDescription 时回落到「标准」档（不会 undefined）',
       st.free.sceneDescription === 'standard', String(st.free.sceneDescription))
   }
@@ -134,6 +143,7 @@ async function main() {
     ok('自由：日常生活记录条数 = 原 DAILY_LOG_KEEP',
       d.free.dailyLogKeep === DAILY_LOG_KEEP, String(d.free.dailyLogKeep))
     ok('协议：默认就是内置常量', d.protocol === PROTOCOL_CORE && d.protocol === DEFAULT_PROTOCOL)
+    ok('协议版本已到 v1.2', PROTOCOL_VERSION === 'v1.2' && PROTOCOL_CORE.includes('v1.2'))
   }
 
   // ---------- 6) 派生量：本轮新增两项 ----------

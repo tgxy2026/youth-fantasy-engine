@@ -93,6 +93,8 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
   const ctx = await buildProjectContext({
     budget: Math.round(total * st.plot.settingRatio),
     viewMode: session.mode === 'immersive' ? 'character-view' : 'director-view',
+    // 未带入声明由 buildSystemPrompt 的 〖未带入的资料〗 层统一出，别在正文尾部再说一遍
+    inlineDropNote: false,
     anchorChapterId: session.anchorChapterId,
     // 知情者过滤：多个 AI 角色时传入全部名字（aiContext 侧按「任一命中」匹配）
     knowerName: aiNames.join('、') || undefined,
@@ -128,7 +130,7 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
     dropped: ctx.dropped,
     styleHint: st.plot.styleHint,
     commonExtra: st.common.extraPrompt,
-    modeExtra: st.plot.extraPrompt,
+    modeExtra: st.plot.extraPrompt.trim() ? `〖本场补充要求〗\n${st.plot.extraPrompt.trim()}` : '',
     protocol: st.protocol,
   })
 
@@ -163,7 +165,7 @@ export function buildPlotMessages(session: TavernSession, budgetChars: number): 
   const all = toChatMessages(session.messages, {
     // 多角色同场：输入侧标注这句是谁说的（协议禁止的是**输出**写名字前缀，输入标注不冲突）
     withSpeaker: casts.ai.length > 1
-      ? (id?: string) => (id && nameById.get(id) ? `（${nameById.get(id)}）` : '')
+      ? (id?: string) => (id && nameById.get(id) ? `〈${nameById.get(id)}〉` : '')
       : undefined,
   })
   const trimmed = trimHistory(all, budgetChars)
@@ -270,7 +272,7 @@ export async function runPlotTurn(
 //
 // 与剧情模式的三处根本差异：
 //   ① 设定层不是「项目资料」，而是**作者手写的角色卡四章**
-//   ② 记忆是**角色级**的（tavern.free.mem.<charId>）—— 记忆是「她记得什么」，
+//   ② 记忆是**角色级**的（tavern.free.mem.<charId>）—— 记忆是「Ta记得什么」，
 //      不是「这场戏的公共档案」；多角色同场时各自更新各自的那份
 //   ③ 档位是**聊天向**（剧情默认叙事向），且没有锚点/信息边界这些概念
 
@@ -289,7 +291,7 @@ const FREE_TONE = 'chat' as const
  */
 export function renderFreeCharacter(c: FreeCharacter, opts: { tag?: string } = {}): string {
   const secs: string[] = []
-  if (c.world?.trim()) secs.push(`【第 1 章 · 世界】\n${c.world.trim()}`)
+  if (c.world?.trim()) secs.push(`〖第 1 章 · 世界〗\n${c.world.trim()}`)
 
   const profile: [string, string][] = [
     ['2.1 外在', c.profile?.externals ?? ''],
@@ -300,7 +302,7 @@ export function renderFreeCharacter(c: FreeCharacter, opts: { tag?: string } = {
     ['2.6 知识边界', c.profile?.knowledge ?? ''],
   ]
   const pl = profile.filter(([, v]) => v.trim()).map(([k, v]) => `${k}：${v.trim()}`)
-  if (pl.length) secs.push(`【第 2 章 · 人物档案】\n${pl.join('\n')}`)
+  if (pl.length) secs.push(`〖第 2 章 · 人物档案〗\n${pl.join('\n')}`)
 
   const conduct: [string, string][] = [
     ['视角与人称', c.conduct?.perspective ?? ''],
@@ -309,15 +311,15 @@ export function renderFreeCharacter(c: FreeCharacter, opts: { tag?: string } = {
     ['尺度', c.conduct?.rating ?? ''],
   ]
   const cl = conduct.filter(([, v]) => v.trim()).map(([k, v]) => `${k}：${v.trim()}`)
-  if (cl.length) secs.push(`【第 3 章 · 行为规范】\n${cl.join('\n')}`)
+  if (cl.length) secs.push(`〖第 3 章 · 行为规范〗\n${cl.join('\n')}`)
 
   if (c.examples?.trim()) {
-    secs.push(`【第 4 章 · 示例对话（请模仿其应对话术与格式）】\n${c.examples.trim()}`)
+    secs.push(`〖第 4 章 · 示例对话（请模仿其应对话术与格式）〗\n${c.examples.trim()}`)
   }
   // 空卡仍然渲染成空串（不产生一个只有标题的空壳块）
   if (secs.length === 0) return ''
   const tag = opts.tag ? ` #${opts.tag}` : ''
-  return `【角色卡 · ${c.name.trim() || '（未命名）'}${tag}】\n\n${secs.join('\n\n')}`
+  return `〖角色卡 · ${c.name.trim() || '（未命名）'}${tag}〗\n\n${secs.join('\n\n')}`
 }
 
 export type FreeSystemResult = {
@@ -367,8 +369,8 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   const tagOf = (c: FreeCharacter) => (dupNames.has(c.name.trim()) ? charTag(c.id) : '')
 
   const setting = (() => {
-    // 用户扮演的角色（可选）：他由用户自己掌控，**不是 AI 的位子** ——
-    // 从 AI 的名单、发言轮转、记忆块里都要摘出去（否则模型会替他说话、抢他的台词）。
+    // 用户扮演的角色（可选）：Ta 由用户自己掌控，**不是 AI 的位子** ——
+    // 从 AI 的名单、发言轮转、记忆块里都要摘出去（否则模型会替 Ta 说话、抢 Ta 的台词）。
     const parts: string[] = []
     // 对照表放最前：它解释的是「下面为什么有两张同名的卡」，先读规则再读卡
     if (dupNames.size) {
@@ -380,8 +382,8 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     if (userChar) {
       // 用户扮演的那张卡也带给模型，但**只用来说明「对面是谁」**：口吻、立场、底线
       parts.push(
-        `【用户扮演的角色 · ${userChar.name}${tagOf(userChar) ? ` #${tagOf(userChar)}` : ''}】（仅供你理解对方是谁、说话什么调子；\n` +
-        `他的言行归用户自己掌控 —— **不要代写、不要替他决定、也不要替他回答**）\n` +
+        `〖用户扮演的角色 · ${userChar.name}${tagOf(userChar) ? ` #${tagOf(userChar)}` : ''}〗（仅供你理解对方是谁、说话什么调子；\n` +
+        `Ta 的言行归用户自己掌控 —— **不要代写、不要替 Ta 决定、也不要替 Ta 回答**）\n` +
         renderFreeCharacter(userChar, { tag: tagOf(userChar) }),
       )
     }
@@ -392,8 +394,8 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   })()
 
   // 记忆层：**每个角色各自的记忆**分别成块（多角色时模型要能分清「谁知道什么」）。
-  // ⚠️ 用户扮演的那个角色**不给**：那是他自己的底牌，给 AI 看等于让对手读你的日记，
-  //   还容易演成「替你说出你私下想的事」。他的处境光靠角色卡说明就够了。
+  // ⚠️ 用户扮演的那个角色**不给**：那是用户自己的底牌，给 AI 看等于让对手读你的日记，
+  //   还容易演成「替你说出你私下想的事」。Ta 的处境光靠角色卡说明就够了。
   const blocks = await Promise.all(aiChars.map(async c => {
     let m: FreeMemory | null = null
     try { m = await store.getMemory(c.id) } catch { m = null }
@@ -401,14 +403,14 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     const text = m && !isMemoryEmpty(m) ? memoryToText(m).trim() : ''
     // 挂短码的规则与角色卡一致：同名才挂，免得平时多出无意义的标记
     const tag = tagOf(c)
-    return text ? `【长期记忆 · ${c.name}${tag ? ` #${tag}` : ''}】\n${text}` : ''
+    return text ? `〖长期记忆 · ${c.name}${tag ? ` #${tag}` : ''}〗\n${text}` : ''
   }))
   const memory = blocks.filter(Boolean).join('\n\n')
 
   const aiNames = aiChars.map(c => c.name)
   const self = userChar
     ? `你扮演：${aiNames.length ? aiNames.join('、') : '（未指定角色）'}\n` +
-      `用户扮演：${userChar.name}（其言行归用户自己掌控，你不要代写，也不要替他做决定）`
+      `用户扮演：${userChar.name}（其言行归用户自己掌控，你不要代写，也不要替 Ta 做决定）`
     : aiNames.length > 1
       ? `你同时扮演：${aiNames.join('、')}。用户扮演用户自己。`
       : `你扮演：${aiNames[0] ?? '（未指定角色）'}`
@@ -417,15 +419,18 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     tone: FREE_TONE,
     setting,
     memory,
+    // 每块自己带「〖长期记忆 · 角色名〗」，不再套一层「〖长期记忆〗」
+    memoryTitle: null,
     self,
     dropped: [],
     styleHint: st.free.styleHint,
     commonExtra: st.common.extraPrompt,
     // 模式补充要求：内置的「客观描写」在前、作者自己写的在后 —— 作者的话离生成点更近，
     // 真冲突时以作者为准（与「协议钉末尾」同一个思路）。
-    modeExtra: [buildSceneDescriptionRule(st.free.sceneDescription), st.free.extraPrompt]
-      .filter(x => x?.trim())
-      .join('\n\n'),
+    modeExtra: [
+      buildSceneDescriptionRule(st.free.sceneDescription),
+      st.free.extraPrompt.trim() ? `〖本场补充要求〗\n${st.free.extraPrompt.trim()}` : '',
+    ].filter(x => x?.trim()).join('\n\n'),
     protocol: st.protocol,
   })
 
@@ -499,7 +504,7 @@ export async function runFreeTurn(
   }
 
   // 归属角色：指定优先，否则按历史里已有的 assistant 条数轮转。
-  // ⚠️ 轮转名单要**排除用户扮演的角色** —— 他不是 AI 的位子，轮到他就会出现「AI 替你回答你」。
+  // ⚠️ 轮转名单要**排除用户扮演的角色** —— Ta 不是 AI 的位子，轮到 Ta 就会出现「AI 替你回答你」。
   const aiIds = session.charIds.filter(id => id !== session.userCharId)
   const said = session.messages.filter(m => m.role === 'assistant').length
   const autoSpeaker = aiIds.length > 0 ? aiIds[said % aiIds.length] : undefined
@@ -533,12 +538,12 @@ export function buildFreeMessages(
   const nameById = new Map(aiChars.map(c => [c.id, c.name]))
   const all = toChatMessages(msgs, {
     withSpeaker: aiChars.length > 1
-      ? (id?: string) => (id && nameById.get(id) ? `（${nameById.get(id)}）` : '')
+      ? (id?: string) => (id && nameById.get(id) ? `〈${nameById.get(id)}〉` : '')
       : undefined,
   })
   // 手动指定下一位时，在输入侧提示一句（模型据此优先让该角色接话）
   if (speakerId && aiChars.length > 1 && nameById.get(speakerId)) {
-    all.push({ role: 'user', content: `（下一位由 ${nameById.get(speakerId)} 接话）` })
+    all.push({ role: 'user', content: `〈下一位由 ${nameById.get(speakerId)} 接话〉` })
   }
   const trimmed = trimHistory(all, budgetChars)
   return { messages: trimmed.kept.map(m => ({ role: m.role, content: m.content })), dropped: trimmed.dropped }

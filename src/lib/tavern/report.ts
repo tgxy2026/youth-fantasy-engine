@@ -144,20 +144,20 @@ export async function generateReport(session: TavernSession, opts: ReportOptions
   const castLine = session.cast.map(c => `${c.name}（${c.role === 'user' ? '作者扮演' : c.role === 'ai' ? 'AI 扮演' : '在场不出声'}）`).join('、')
   const transcript = session.messages
     .filter(m => m.role !== 'system')
-    .map(m => `${m.role === 'user' ? '【作者】' : '【AI】'}${m.content}`)
+    .map(m => `${m.role === 'user' ? '〖作者〗' : '〖AI〗'}${m.content}`)
     .join('\n')
   const body = transcript.length > cap ? transcript.slice(-cap) : transcript
 
   const user = [
-    `【叙事锚点】${session.anchorChapterLabel || '（未标注）'}`,
-    `【参演角色】${castLine || '（未分配）'}`,
-    sceneLine ? `【场景】${sceneLine}` : '',
-    session.scene.description ? `【场景补充】${session.scene.description}` : '',
+    `〖叙事锚点〗${session.anchorChapterLabel || '（未标注）'}`,
+    `〖参演角色〗${castLine || '（未分配）'}`,
+    sceneLine ? `〖场景〗${sceneLine}` : '',
+    session.scene.description ? `〖场景补充〗${session.scene.description}` : '',
     session.mode === 'immersive'
-      ? '【信息边界】沉浸推演 —— 请按「角色当场能知道的信息」判断合理性，不要用后面的剧情要求它。'
-      : '【信息边界】导演推演 —— 可参照设定判断，但仍以锚点时刻的状态为准。',
+      ? '〖信息边界〗沉浸推演 —— 请按「角色当场能知道的信息」判断合理性，不要用后面的剧情要求它。'
+      : '〖信息边界〗导演推演 —— 可参照设定判断，但仍以锚点时刻的状态为准。',
     '',
-    '【推演记录】',
+    '〖推演记录〗',
     body || '（这场没有对话内容）',
     '',
     '请输出 JSON：{"overview": "三五句话评价这场戏成不成立", "findings": [ ... ]}',

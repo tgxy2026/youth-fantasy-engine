@@ -2,7 +2,7 @@
  * 酒馆模式 · 扮演设定编辑（方案 §6.4）
  *
  * 【它和角色卡的分工】
- * 角色卡回答「她是谁」（设定档）；扮演设定回答「该怎么演她」（行为指令）。
+ * 角色卡回答「Ta是谁」（设定档）；扮演设定回答「该怎么演Ta」（行为指令）。
  * 所以六个字段写的都是**行为倾向**，不是背景资料 —— 界面上也这么提示作者，
  * 免得把角色卡的内容再抄一遍：那样既占上下文，又和卡片打架。
  *
@@ -21,15 +21,15 @@ import AutoTextarea from './AutoTextarea'
 /** 六字段的界面文案（标题 / 说明 / 占位示例）——顺序即渲染顺序，与 prompt.ts 的 CAST_FIELDS 一致 */
 const FIELDS: { key: keyof CastSetting; label: string; hint: string; ph: string }[] = [
   {
-    key: 'voice', label: '口吻', hint: '她怎么说话：句子长短、口头禅、爱不爱反问',
+    key: 'voice', label: '口吻', hint: 'Ta怎么说话：句子长短、口头禅、爱不爱反问',
     ph: '例：话少，句子短，不用感叹号。被逼急了才一次说长句。',
   },
   {
-    key: 'address', label: '称呼你的方式', hint: '她管你叫什么（不同亲疏时可分开写）',
+    key: 'address', label: '称呼你的方式', hint: 'Ta管你叫什么（不同亲疏时可分开写）',
     ph: '例：平常叫「老板」，认真时改口叫全名。',
   },
   {
-    key: 'unknown', label: '知识边界', hint: '哪些事她不知道（写了它就不会「恰好知道」）',
+    key: 'unknown', label: '知识边界', hint: '哪些事Ta不知道（写了它就不会「恰好知道」）',
     ph: '例：不知道你修炼的事，也不知道自己身世的真相。',
   },
   {
@@ -37,8 +37,8 @@ const FIELDS: { key: keyof CastSetting; label: string; hint: string; ph: string 
     ph: '例：被提起家人会沉默，然后转身走开；不会被激怒到动手。',
   },
   {
-    key: 'care', label: '在意的事', hint: '软肋：什么能撬动她',
-    ph: '例：在意别人怎么看待她父亲，一句轻蔑就能让她变色。',
+    key: 'care', label: '在意的事', hint: '软肋：什么能撬动Ta',
+    ph: '例：在意别人怎么看待Ta父亲，一句轻蔑就能让Ta变色。',
   },
   {
     key: 'never', label: '绝不会做的事', hint: '防 OOC 的红线（最重要的一栏）',
@@ -120,8 +120,8 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
         <div className="space-y-4">
           <div className="rounded-md border border-ink-800 bg-ink-850/40 px-3 py-2 text-[11.5px] text-ink-400 leading-relaxed">
             {kind === 'ai' ? (
-              <>这里写的是「<span className="text-amber">该怎么演她</span>」，不是背景资料 —— 背景走角色卡。
-                塞行为，不塞设定：写「被提起家人会沉默」有用，写「她是某某的女儿」没用（卡片里已经有了）。</>
+              <>这里写的是「<span className="text-amber">该怎么演Ta</span>」，不是背景资料 —— 背景走角色卡。
+                塞行为，不塞设定：写「被提起家人会沉默」有用，写「Ta是某某的女儿」没用（卡片里已经有了）。</>
             ) : (
               <>这是<span className="text-amber">你自己演</span>的角色。填了只是让 AI 更懂对方的口吻与底线，
                 <span className="text-ink-300">它不会代写你的台词</span>。</>

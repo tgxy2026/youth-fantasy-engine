@@ -55,7 +55,7 @@ async function prepare() {
   if (providers.length === 0) throw new Error('数据文件里没有模型配置')
 
   __resetMockStores()
-  // 【关键】把真实配置写进（内存）存储 —— 否则 resolveTavernProvider 读不到，
+  // 〖关键〗把真实配置写进（内存）存储 —— 否则 resolveTavernProvider 读不到，
   // 会回退到 requireActiveProvider 并直接抛「尚未配置可用模型」
   await saveProviders(providers)
   await saveActiveId(providers[0].id)
@@ -103,7 +103,7 @@ function mkSession(providerId: string, main: { id: string; name: string }, xiao:
       {
         id: 'm0',
         role: 'user',
-        content: '【场景】地点：青岚宗外门偏院 · 时间：入夜 · 在场：陈渊、萧景行\n雨刚停，廊下积水映着灯笼。\n（我握着扫帚站在檐下，看见他撑伞走进院子）',
+        content: '地点：青岚宗外门偏院 · 时间：入夜 · 在场：陈渊、萧景行\n雨刚停，廊下积水映着灯笼。\n（我握着扫帚站在檐下，看见他撑伞走进院子）',
         at: Date.now(),
       },
     ],
@@ -139,7 +139,7 @@ function mkAiOnlySession(
       {
         id: 'm0',
         role: 'user',
-        content: `【场景】地点：青岚宗外门偏院 · 时间：入夜 · 在场：${a.name}、${b.name}\n雨刚停，廊下积水映着灯笼。`,
+        content: `地点：青岚宗外门偏院 · 时间：入夜 · 在场：${a.name}、${b.name}\n雨刚停，廊下积水映着灯笼。`,
         at: Date.now(),
       },
     ],
@@ -178,7 +178,12 @@ async function runOne(label: string, s: TavernSession, userText = '（我点了�
     console.log(`  引号包裹对白：${/“|”|"/.test(res.reply) ? '⚠️ 有' : '✓ 无'}`)
     console.log(`  篇幅：${res.reply.length} 字（协议建议 60–160）${res.reply.length > 400 ? ' ⚠️ 偏长' : ''}`)
     console.log(`  疑似代写作者角色：${/(（陈渊|陈渊说)/.test(res.reply) ? '⚠️ 有' : '✓ 未见'}`)
-    console.log(`  误用【】元指令：${/【|】/.test(res.reply) ? '⚠️ 有' : '✓ 无'}`)
+    // v1.2：【】是**客观描写**的合法标记，不能再当「误用结构标记」来判；改判两件真事：
+    // ① 对白行不该带「名字：」前缀（示例里的「对方：」是输入侧对照，不许写进输出）；
+    // ② 输入侧的〖〗与〈〉绝不该出现在输出里。
+    console.log(`  输出里混进输入侧标记（〖〗〈〉）：${/〖|〗|〈|〉/.test(res.reply) ? '⚠️ 有' : '✓ 无'}`)
+    console.log(`  对白行带名字前缀：${/^[^\n（【〔]{1,6}[：:]\S*/m.test(res.reply) ? '⚠️ 有（人工看上面输出）' : '✓ 无'}`)
+    console.log(`  用了客观描写【】：${/【/.test(res.reply) ? '✓ 有（人工核对该行是环境/外在）' : '（这轮没写环境，不算错）'}`)
 
     const saved = await store.saveSession(res.session)
     console.log(`  落库：会话 ${saved.id} · 消息 ${saved.messages.length} 条`)
@@ -228,7 +233,7 @@ async function main() {
   const { system, settingChars, dropped } = await buildPlotSystem(probe)
   console.log('\n=== system 组装（离线，不调模型） ===')
   console.log(`  设定层 ${settingChars} 字 · system 总长 ${system.length} 字 · 被裁段落 ${dropped.length ? dropped.join('、') : '无'}`)
-  console.log(`  含扮演设定：${system.includes('【扮演设定 · 萧景行】') ? '✓' : '✗'}`)
+  console.log(`  含扮演设定：${system.includes('〖扮演设定 · 萧景行〗') ? '✓' : '✗'}`)
   console.log(`  含作者侧字段（结局归宿/隐藏设定…）：${/结局归宿|隐藏设定|演变轨迹/.test(system) ? '⚠️ 有' : '✓ 无'}`)
   console.log(`  协议在末尾：${system.trimEnd().endsWith(PROTOCOL_CORE.trimEnd()) ? '✓' : '✗'}`)
   console.log(`  身份提示含「不要代写」：${system.includes('不要代写') ? '✓' : '✗'}`)

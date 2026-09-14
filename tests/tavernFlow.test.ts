@@ -203,20 +203,20 @@ async function main() {
     })
     const { system } = await buildPlotSystem(probe)
     ok('扮演设定进了 system', system.includes('句子短，爱用反问'))
-    ok('带角色名与用途标题', system.includes('【扮演设定 · 萧景行】'))
+    ok('带角色名与用途标题', system.includes('〖扮演设定 · 萧景行〗'))
     ok('空栏不产生噪音', !system.includes('称呼你的方式：')  || system.includes('叫你师弟'))
-    ok('排在协议之前（不打断末尾格式提醒）', system.indexOf('【扮演设定') < system.indexOf(PROTOCOL_CORE))
+    ok('排在协议之前（不打断末尾格式提醒）', system.indexOf('〖扮演设定') < system.indexOf(PROTOCOL_CORE))
 
     // 作者自己演的角色也会带，但必须明示不得代写（否则 AI 会把你的角色也演了）
     await store.saveCastSetting(chenYuanId, { ...EMPTY_CAST_SETTING, voice: '说话直接' })
     const { system: s2 } = await buildPlotSystem(probe)
-    ok('作者角色的设定只作理解之用，并明示不得代写', s2.includes('【对方的扮演设定 · 陈渊】') && s2.includes('不要代写'))
+    ok('作者角色的设定只作理解之用，并明示不得代写', s2.includes('〖对方的扮演设定 · 陈渊〗') && s2.includes('不要代写'))
 
     // 清空后整层消失
     await store.saveCastSetting(chenYuanId, { ...EMPTY_CAST_SETTING })
     await store.saveCastSetting('rec-xiaojingxing', { ...EMPTY_CAST_SETTING })
     const { system: s3 } = await buildPlotSystem(probe)
-    ok('六栏全空时整层跳过（不占上下文）', !s3.includes('【扮演设定') && !s3.includes('【对方的扮演设定'))
+    ok('六栏全空时整层跳过（不占上下文）', !s3.includes('〖扮演设定') && !s3.includes('〖对方的扮演设定'))
   }
   // ---------- 3) 跑一轮推演（流式 + 参数 + 落库） ----------
   let session = mkSession()
@@ -289,7 +289,7 @@ async function main() {
     const { chatFn, calls } = makeFakeChat('「坐吧。」洛清欢抬了抬下巴。')
     await runPlotTurn(twoAi, '（我坐下）', {}, { chatFn })
     const joined = calls[0].messages.map(m => m.content).join('\n')
-    ok('多角色同场：输入侧标注了 AI 说话人（便于模型分清谁在说）', joined.includes('（萧景行）'), joined.slice(0, 100))
+    ok('多角色同场：输入侧标注了 AI 说话人（〈名〉，与输出标记分开）', joined.includes('〈萧景行〉'), joined.slice(0, 100))
 
     // 单 AI 角色时不加标注（避免无谓噪音）——这是有意的设计，顺带钉住
     const oneAi = mkSession()

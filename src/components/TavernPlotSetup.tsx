@@ -432,7 +432,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                     共 {ordered.length} 章 · 命中 {anchorRows.length} 条
                     {anchorRow ? ` · 已选：第 ${anchorRow.no} 章 · ${anchorRow.c.title || '未命名章节'}` : ''}
                     <br />
-                    锚点之后发生的事不会被带进上下文 —— 这样角色才是「此刻的她」，而不是知道结局的演员。
+                    锚点之后发生的事不会被带进上下文 —— 这样角色才是「此刻的Ta」，而不是知道结局的演员。
                   </p>
                 </>
               )}
@@ -549,7 +549,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
             {/* 标题 */}
             <section>
               <div className={labelCls}>推演标题（可留空，默认取锚点章名）</div>
-              <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：她得知师父死讯那一夜" />
+              <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：Ta得知师父死讯那一夜" />
             </section>
 
             <div className="text-[11px] text-ink-500 border-t border-ink-800 pt-2">

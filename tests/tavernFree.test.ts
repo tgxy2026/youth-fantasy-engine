@@ -60,11 +60,11 @@ async function main() {
   // ---------- 1) 角色卡四章渲染 ----------
   {
     const text = renderFreeCharacter(su)
-    ok('渲染出第 1 章 · 世界', text.includes('【第 1 章 · 世界】'))
-    ok('渲染出第 2 章 · 人物档案且带编号子块', text.includes('【第 2 章 · 人物档案】') && text.includes('2.1 外在') && text.includes('2.6 知识边界'))
-    ok('渲染出第 3 章 · 行为规范', text.includes('【第 3 章 · 行为规范】') && text.includes('进度锁'))
+    ok('渲染出第 1 章 · 世界', text.includes('〖第 1 章 · 世界〗'))
+    ok('渲染出第 2 章 · 人物档案且带编号子块', text.includes('〖第 2 章 · 人物档案〗') && text.includes('2.1 外在') && text.includes('2.6 知识边界'))
+    ok('渲染出第 3 章 · 行为规范', text.includes('〖第 3 章 · 行为规范〗') && text.includes('进度锁'))
     ok('第 4 章 · 示例对话带「请模仿」引导（杠杆最高的一章）',
-      text.includes('【第 4 章 · 示例对话（请模仿其应对话术与格式）】') && text.includes('「灯还亮着。」'))
+      text.includes('〖第 4 章 · 示例对话（请模仿其应对话术与格式）〗') && text.includes('「灯还亮着。」'))
     ok('没有第 0 章（协议已是内置常量）', !text.includes('第 0 章'))
 
     // 空章跳过：只填内核时不该出现另外三章的标题
@@ -87,21 +87,21 @@ async function main() {
 
     const { system, missing } = await buildFreeSystem(session, [su])
     ok('system 含角色卡内容', system.includes('外冷内热') && system.includes('「灯还亮着。」'))
-    ok('档位是聊天向（追加了即时聊天风格提示）', system.includes('【本场风格】'), system.slice(0, 60))
+    ok('档位是聊天向（追加了即时聊天风格提示）', system.includes('〖本场风格〗'), system.slice(0, 60))
     ok('身份层写明演的是谁', system.includes('你扮演：苏念'))
     ok('没有锚点/信息边界这些剧情模式概念', !system.includes('信息边界'))
     ok('协议仍钉在绝对末尾', system.trimEnd().endsWith(PROTOCOL_CORE.trimEnd()))
-    ok('单角色时不加发言规则', !system.includes('【发言规则】'))
-    ok('记忆为空时不出现长期记忆块', !system.includes('【长期记忆'))
+    ok('单角色时不加发言规则', !system.includes('〖发言规则〗'))
+    ok('记忆为空时不出现长期记忆块', !system.includes('〖长期记忆'))
     ok('角色卡齐全时 missing 为空', missing.length === 0)
 
     // 记忆按角色分块
     await store.saveMemory({ ...store.emptyMemory(su.id), facts: '她怕黑；店里那只猫叫阿灰', relation: '刚认识，客气', updatedAt: Date.now() })
     const withMem = await buildFreeSystem(session, [su])
-    ok('记忆进了 system 且标明归属角色', withMem.system.includes('【长期记忆 · 苏念】') && withMem.system.includes('阿灰'))
+    ok('记忆进了 system 且标明归属角色', withMem.system.includes('〖长期记忆 · 苏念〗') && withMem.system.includes('阿灰'))
     ok('记忆在设定层之后、协议之前',
-      withMem.system.indexOf('外冷内热') < withMem.system.indexOf('【长期记忆 · 苏念】') &&
-      withMem.system.indexOf('【长期记忆 · 苏念】') < withMem.system.indexOf(PROTOCOL_CORE))
+      withMem.system.indexOf('外冷内热') < withMem.system.indexOf('〖长期记忆 · 苏念〗') &&
+      withMem.system.indexOf('〖长期记忆 · 苏念〗') < withMem.system.indexOf(PROTOCOL_CORE))
 
     // 角色卡被删（引用了不存在的 id）
     const gone = await buildFreeSystem({ ...session, charIds: [su.id, '已删除的卡'] }, [su])
@@ -117,10 +117,10 @@ async function main() {
 
     const { system } = await buildFreeSystem(two, [su, lin])
     ok('多角色：两张角色卡都拼进设定层', system.includes('你扮演成这样的人') === false && system.includes('外冷内热') && system.includes('嘴甜，爱笑'))
-    ok('多角色：追加发言规则', system.includes('【发言规则】') && system.includes('一次只让一个角色说话'))
+    ok('多角色：追加发言规则', system.includes('〖发言规则〗') && system.includes('一次只让一个角色说话'))
     ok('多角色：身份层列出全部扮演对象', system.includes('你同时扮演：苏念、林夏'))
     ok('多角色：各自记忆分别成块',
-      system.includes('【长期记忆 · 苏念】'))
+      system.includes('〖长期记忆 · 苏念〗'))
 
     // 标注：历史里带 speakerId 的 assistant 消息要带说话人前缀
     const history: TavernMessage[] = [
@@ -130,7 +130,7 @@ async function main() {
     ]
     const { messages } = buildFreeMessages(history, two, [su, lin], 100000)
     const joined = messages.map(m => m.content).join('\n')
-    ok('多角色：输入侧标注了说话人', joined.includes('（苏念）「来了。」') && joined.includes('（林夏）'))
+    ok('多角色：输入侧标注了说话人（〈名〉）', joined.includes('〈苏念〉「来了。」') && joined.includes('〈林夏〉'))
   }
 
   // ---------- 4) 跑一轮（单角色） ----------
@@ -253,15 +253,15 @@ async function main() {
     ok('身份层写明「用户扮演：苏念」', sys.includes('用户扮演：苏念'))
     ok('身份层要求不要代写', sys.includes('不要代写'))
     ok('AI 只演楚楠（用户角色不进 AI 名单）', sys.includes('你扮演：楚楠') && !sys.includes('你同时扮演'))
-    ok('用户扮演的角色卡带进设定层（让 AI 知道对面是谁）', sys.includes('【用户扮演的角色 · 苏念】'))
+    ok('用户扮演的角色卡带进设定层（让 AI 知道对面是谁）', sys.includes('〖用户扮演的角色 · 苏念〗'))
     ok('用户扮演角色的记忆**不给 AI**（那是他自己的底牌）',
-      sys.includes('【长期记忆 · 楚楠】') && !sys.includes('【长期记忆 · 苏念】'))
+      sys.includes('〖长期记忆 · 楚楠〗') && !sys.includes('〖长期记忆 · 苏念〗'))
 
     // 多 AI 角色 + 用户角色：发言规则要点名用户演谁、AI 名单不含他
     const s3 = await store.createFreeSession([chu.id, luo.id, su.id], '三人同场', { providerId: '' }, {}, su.id)
     const sys3 = (await buildFreeSystem(s3, [chu, luo, su])).system
     ok('多 AI 角色时发言规则写明用户扮演谁',
-      sys3.includes('【发言规则】') && /用户扮演：苏念。/.test(sys3))
+      sys3.includes('〖发言规则〗') && /用户扮演：苏念。/.test(sys3))
     ok('AI 名单是楚楠、洛汐（不含苏念）', /你是下列角色：楚楠、洛汐/.test(sys3))
 
     // 轮转：绝不能轮到用户扮演的角色（否则 AI 会替他回答）
@@ -304,27 +304,27 @@ async function main() {
 
     const s = await store.createFreeSession([a.id, b.id], '两个洛汐', { providerId: STUB_PROVIDER.id }, {})
     const { system } = await buildFreeSystem(s, [a, b])
-    ok('角色卡块自带角色名（多角色时不再是无主的两段拼接）', system.includes('【角色卡 · 洛汐 #'))
-    ok('注入同名对照说明', system.includes('【同名角色】') && system.includes('不同的人'))
-    const tags = [...system.matchAll(/【角色卡 · 洛汐 #([0-9A-Z]{4})】/g)].map(m => m[1])
+    ok('角色卡块自带角色名（多角色时不再是无主的两段拼接）', system.includes('〖角色卡 · 洛汐 #'))
+    ok('注入同名对照说明', system.includes('〖同名角色〗') && system.includes('不同的人'))
+    const tags = [...system.matchAll(/〖角色卡 · 洛汐 #([0-9A-Z]{4})〗/g)].map(m => m[1])
     ok('两张同名卡各挂一个不同的短码', tags.length === 2 && tags[0] !== tags[1], tags.join(' / '))
     ok('两张卡的内容都在（后面的同名卡没有顶掉前面的）',
       system.includes('爱穿白裙子') && system.includes('常穿工装外套'))
 
-    // 记忆块也要能分辨 —— 否则模型看到两块「【长期记忆 · 洛汐】」还是不知道谁是谁
+    // 记忆块也要能分辨 —— 否则模型看到两块「〖长期记忆 · 洛汐〗」还是不知道谁是谁
     await store.saveMemory({ ...store.emptyMemory(a.id), facts: '她怕黑', updatedAt: Date.now() })
     await store.saveMemory({ ...store.emptyMemory(b.id), facts: '她养了一条狗', updatedAt: Date.now() })
     const withMem = (await buildFreeSystem(s, [a, b])).system
     ok('同名时记忆块也挂短码，且两份记忆都在',
-      /【长期记忆 · 洛汐 #[0-9A-Z]{4}】/.test(withMem) && withMem.includes('她怕黑') && withMem.includes('她养了一条狗'))
+      /〖长期记忆 · 洛汐 #[0-9A-Z]{4}〗/.test(withMem) && withMem.includes('她怕黑') && withMem.includes('她养了一条狗'))
 
     // 不同名时**不注入**任何消歧内容（别白占上下文）
     const c2 = await mkChar('林夏')
     const s2 = await store.createFreeSession([a.id, c2.id], '不同名', { providerId: STUB_PROVIDER.id }, {})
     const plain = (await buildFreeSystem(s2, [a, c2])).system
     ok('不同名时：不加对照说明、也不挂短码',
-      !plain.includes('【同名角色】') && !plain.includes('【角色卡 · 林夏 #'))
-    ok('不同名时角色卡仍带名字（便于模型对应关系）', plain.includes('【角色卡 · 林夏】'))
+      !plain.includes('〖同名角色〗') && !plain.includes('〖角色卡 · 林夏 #'))
+    ok('不同名时角色卡仍带名字（便于模型对应关系）', plain.includes('〖角色卡 · 林夏〗'))
   }
 
   // ---------- 10) 客观描写档位（2026-09-14 新增） ----------
@@ -333,25 +333,25 @@ async function main() {
     const sess = await store.createFreeSession([su2.id], '电影院门口', { providerId: STUB_PROVIDER.id }, {})
 
     const std = (await buildFreeSystem(sess, [su2])).system
-    ok('默认档下 system 含「客观描写」段（= 本轮新增行为的默认值）', std.includes('【客观描写】'))
+    ok('默认档下 system 含「客观描写」段（= 本轮新增行为的默认值）', std.includes('〖客观描写〗'))
     ok('三条落点都在（出场 / 环境 / 情绪）',
       std.includes('出场') && std.includes('环境') && std.includes('情绪明显变化时'))
-    ok('写明只写观察得到的客观事实、不写对方心理（与「不代写」同源）',
-      std.includes('不写对方的心理活动'))
-    ok('写明描写算在协议字数里（不会把 60–160 字撑爆）', std.includes('算在协议规定的字数里'))
+    ok('写明只写观察得到的客观事实、不写任何人的心理（与「不代写」同源）',
+      std.includes('不写任何人的心理活动'))
+    ok('写明描写算在协议字数里（不会把 60–160 字撑爆）', std.includes('算在协议的字数里'))
     ok('排在身份之后、协议之前',
-      std.indexOf('【你在戏里的身份与知识边界】') < std.indexOf('【客观描写】') &&
-      std.indexOf('【客观描写】') < std.indexOf(PROTOCOL_CORE))
+      std.indexOf('〖你在戏里的身份与知识边界〗') < std.indexOf('〖客观描写〗') &&
+      std.indexOf('〖客观描写〗') < std.indexOf(PROTOCOL_CORE))
 
     const stOff = { ...DEFAULT_TAVERN_SETTINGS, free: { ...DEFAULT_TAVERN_SETTINGS.free, sceneDescription: 'off' as const } }
     const off = (await buildFreeSystem(sess, [su2], stOff)).system
-    ok('关掉档位后整段不出现', !off.includes('【客观描写】'), off.slice(0, 0))
+    ok('关掉档位后整段不出现', !off.includes('〖客观描写〗'), off.slice(0, 0))
 
     const stRich = { ...DEFAULT_TAVERN_SETTINGS, free: { ...DEFAULT_TAVERN_SETTINGS.free, sceneDescription: 'rich' as const, extraPrompt: '不要写天气。' } }
     const rich = (await buildFreeSystem(sess, [su2], stRich)).system
-    ok('丰富档多一句「每回合都至少带一句」', rich.includes('每个回合都至少带一句'))
+    ok('丰富档多一句「每回合都至少带一条【】」', rich.includes('每个回合都至少带一条【】'))
     ok('作者的补充要求排在客观描写之后（真冲突以作者为准）',
-      rich.indexOf('【客观描写】') < rich.indexOf('不要写天气。'))
+      rich.indexOf('〖客观描写〗') < rich.indexOf('不要写天气。'))
   }
 
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)

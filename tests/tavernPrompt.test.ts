@@ -25,7 +25,7 @@ function ok(name: string, cond: boolean, extra = '') {
 function main() {
   // ---------- 1) 协议全文完整性（内置常量，条款掉了功能就瘫） ----------
   {
-    ok('协议版本为 v1.1', PROTOCOL_VERSION === 'v1.1')
+    ok('协议版本为 v1.2（三类标记 + 代词中性化）', PROTOCOL_VERSION === 'v1.2')
     const rules = ['R1', 'R2', 'R3', 'R4', 'R5', 'B1', 'B5', 'B8', 'B9', 'O1', 'O2', 'O3', 'O4', 'M1', 'M2', 'E1', 'E2', 'E3']
     const missing = rules.filter(r => !PROTOCOL_CORE.includes(`\n${r} `))
     ok('协议含全部条款编号（R/B/O/M/E 五节）', missing.length === 0, `缺=${missing.join(',')}`)
@@ -38,6 +38,23 @@ function main() {
       PROTOCOL_CORE.includes('[OOC: ') && PROTOCOL_CORE.includes('导演指令'))
     ok('协议含存档归档格式（E1）', PROTOCOL_CORE.includes('归档 · ') && PROTOCOL_CORE.includes('文风锚'))
     ok('协议明确禁止 markdown 与名字前缀', PROTOCOL_CORE.includes('markdown') && PROTOCOL_CORE.includes('不加“角色名：“') === false && PROTOCOL_CORE.includes('角色名：'))
+
+    // —— v1.2 的输出规范（老大 2026-09-14 定：对白纯文本 / （）动作神态心理 / 【】客观环境与人物外在）——
+    ok('O1 定义了「客观环境、人物外在」用【】包裹',
+      PROTOCOL_CORE.includes('客观环境、人物外在 —— 用**方头括号【 】**包裹'))
+    ok('O1 定义了动作、神态、心理用（）包裹（内心话并入，不再单设符号）',
+      PROTOCOL_CORE.includes('动作、神态、心理 —— 用**全角圆括号（ ）**包裹') &&
+      PROTOCOL_CORE.includes('内心话也走这里'))
+    ok('对白要求：不加引号、不加括号、不写名字前缀、正常标点',
+      PROTOCOL_CORE.includes('**不加引号、不加括号、不写"角色名："这类前缀**'))
+    ok('状态块从【状态】迁到〔状态〕（【】已让给客观描写，不能撞车）',
+      PROTOCOL_CORE.includes('〔状态〕') && !PROTOCOL_CORE.includes('【状态】'))
+    ok('代词中性化：不再预设角色性别',
+      PROTOCOL_CORE.includes('用 Ta 的眼睛看') && !PROTOCOL_CORE.includes('用他的眼睛看'))
+    ok('明说输入侧的〖〗与〈〉是结构标注、不许写进输出',
+      PROTOCOL_CORE.includes('输入侧的结构标注'))
+    ok('最后提醒同步了新标记',
+      PROTOCOL_CORE.includes('动作与神态用（），客观环境与人物外在用【】'))
   }
 
   // ---------- 2) 层序：设定 → 记忆 → 身份 → 协议（钉末尾） ----------
@@ -46,21 +63,21 @@ function main() {
       tone: 'narrative', setting: '沧澜山门规', memory: '她记得你救过她', self: '你是李默',
     })
     ok('协议钉在末尾（而非开头）', sys.trimEnd().endsWith('════ 协议结束 ════'), sys.slice(-30))
-    ok('设定在最前', sys.startsWith('【世界与角色设定】'))
+    ok('设定在最前', sys.startsWith('〖世界与角色设定〗'))
     ok('层序：设定 → 记忆 → 身份 → 协议',
-      sys.indexOf('【世界与角色设定】') < sys.indexOf('【长期记忆】') &&
-      sys.indexOf('【长期记忆】') < sys.indexOf('【你在戏里的身份与知识边界】') &&
-      sys.indexOf('【你在戏里的身份与知识边界】') < sys.indexOf('════ 角色扮演通用协议'))
+      sys.indexOf('〖世界与角色设定〗') < sys.indexOf('〖长期记忆〗') &&
+      sys.indexOf('〖长期记忆〗') < sys.indexOf('〖你在戏里的身份与知识边界〗') &&
+      sys.indexOf('〖你在戏里的身份与知识边界〗') < sys.indexOf('════ 角色扮演通用协议'))
     ok('协议的最后提醒紧贴上下文末尾（中间不再插别的层）',
-      sys.lastIndexOf('最后提醒') > sys.indexOf('【你在戏里的身份与知识边界】'))
+      sys.lastIndexOf('最后提醒') > sys.indexOf('〖你在戏里的身份与知识边界〗'))
   }
 
   // ---------- 3) 空层跳过 + 档位 ----------
   {
     const bare = buildSystemPrompt({ tone: 'chat' })
-    ok('空层不留空标题', !bare.includes('【世界与角色设定】') && !bare.includes('【长期记忆】'))
+    ok('空层不留空标题', !bare.includes('〖世界与角色设定〗') && !bare.includes('〖长期记忆〗'))
     ok('仅协议时 system 就等于协议全文（叙事向不追加任何内容）', buildSystemPrompt({ tone: 'narrative' }) === PROTOCOL_CORE)
-    ok('聊天向追加本场风格提示', bare.includes('【本场风格】') && bare.includes('最多连发 2 条'))
+    ok('聊天向追加本场风格提示', bare.includes('〖本场风格〗') && bare.includes('最多连发 2 条'))
     ok('通用补充要求默认含「标点适用范围」（防「消息体无标点」被泛化到全篇）',
       DEFAULT_COMMON_EXTRA.includes('标点照常用') &&
       buildSystemPrompt({ tone: 'narrative', commonExtra: DEFAULT_COMMON_EXTRA }).includes('标点照常用'))
@@ -69,14 +86,23 @@ function main() {
         const sys = buildSystemPrompt({ tone: 'chat', commonExtra: DEFAULT_COMMON_EXTRA })
         return sys.indexOf('标点照常用') >= 0 && sys.indexOf('标点照常用') < sys.indexOf('最后提醒')
       })())
-    ok('叙事向不追加风格提示（协议默认即是）', !buildSystemPrompt({ tone: 'narrative' }).includes('【本场风格】'))
+    ok('叙事向不追加风格提示（协议默认即是）', !buildSystemPrompt({ tone: 'narrative' }).includes('〖本场风格〗'))
+  }
+
+  // ---------- 3b) 记忆层标题可关（多角色分块时正文自带标题，避免两层重复） ----------
+  {
+    const withTitle = buildSystemPrompt({ tone: 'narrative', memory: '六栏正文' })
+    ok('默认给记忆层加「〖长期记忆〗」标题', withTitle.includes('〖长期记忆〗'))
+    const noTitle = buildSystemPrompt({ tone: 'narrative', memory: '〖长期记忆 · 甲〗\n六栏正文', memoryTitle: null })
+    ok('memoryTitle=null 时不再套外层标题（不出现两行「长期记忆」）',
+      noTitle.startsWith('〖长期记忆 · 甲〗') && !noTitle.includes('〖长期记忆〗'))
   }
 
   // ---------- 4) 未带入资料如实声明 ----------
   {
     const d = buildSystemPrompt({ tone: 'narrative', dropped: ['分卷大纲', '伏笔追踪'] })
-    ok('未带入的资料如实声明', d.includes('【未带入的资料】') && d.includes('分卷大纲'))
-    ok('声明在协议之前（不打断协议末尾的提醒）', d.indexOf('【未带入的资料】') < d.indexOf('════ 角色扮演通用协议'))
+    ok('未带入的资料如实声明', d.includes('〖未带入的资料〗') && d.includes('分卷大纲'))
+    ok('声明在协议之前（不打断协议末尾的提醒）', d.indexOf('〖未带入的资料〗') < d.indexOf('════ 角色扮演通用协议'))
   }
 
   // ---------- 5) 开场消息 ----------
@@ -116,8 +142,8 @@ function main() {
     ]
     ok('跳过 system 消息（协议已单独成 system）', toChatMessages(msgs).length === 2)
     ok('不传 withSpeaker 时内容原样', toChatMessages(msgs)[1].content === '嗯。')
-    const tagged = toChatMessages(msgs, { withSpeaker: () => '【苏念】' })
-    ok('多角色同场时给 assistant 标注说话人', tagged[1].content.startsWith('【苏念】'))
+    const tagged = toChatMessages(msgs, { withSpeaker: () => '〈苏念〉' })
+    ok('多角色同场时给 assistant 标注说话人（〈名〉，与输出标记不同符号）', tagged[1].content.startsWith('〈苏念〉'))
     ok('用户消息不加说话人标记', tagged[0].content === '你好')
   }
 
@@ -176,7 +202,7 @@ function main() {
       taboo: '', care: '在意被质疑', never: '绝不会主动示弱',
     }
     const ai = renderCastSetting('萧景行', cs, 'ai')
-    ok('AI 角色的设定块带角色名与用途说明', ai.includes('【扮演设定 · 萧景行】') && ai.includes('你要演成这样的人'))
+    ok('AI 角色的设定块带角色名与用途说明', ai.includes('〖扮演设定 · 萧景行〗') && ai.includes('你要演成这样的人'))
     ok('只渲染填过的字段（空栏不产生「未填」噪音）', !ai.includes('禁忌与底线'))
     ok('填过的字段按固定顺序出现', ai.indexOf('口吻') < ai.indexOf('在意的事') && ai.indexOf('在意的事') < ai.indexOf('绝不会做的事'))
     const user = renderCastSetting('陈渊', cs, 'user')
@@ -188,9 +214,9 @@ function main() {
 
     // 接入 buildSystemPrompt：应出现在身份层之后、协议之前
     const sys = buildSystemPrompt({ tone: 'narrative', setting: '设定文', self: '身份文', cast: ai })
-    ok('扮演设定进了 system 且带独立标题', sys.includes('【扮演设定 · 萧景行】'))
-    ok('排在身份之后', sys.indexOf('身份文') < sys.indexOf('【扮演设定'))
-    ok('排在协议之前（不打断末尾的格式提醒）', sys.indexOf('【扮演设定') < sys.indexOf(PROTOCOL_CORE))
+    ok('扮演设定进了 system 且带独立标题', sys.includes('〖扮演设定 · 萧景行〗'))
+    ok('排在身份之后', sys.indexOf('身份文') < sys.indexOf('〖扮演设定'))
+    ok('排在协议之前（不打断末尾的格式提醒）', sys.indexOf('〖扮演设定') < sys.indexOf(PROTOCOL_CORE))
   }
   // ---------- N) 客观描写档位（自由对话，2026-09-14 新增） ----------
   {
@@ -198,15 +224,17 @@ function main() {
     const light = buildSceneDescriptionRule('light')
     const std = buildSceneDescriptionRule('standard')
     const rich = buildSceneDescriptionRule('rich')
-    ok('每一档都带「只写客观事实、不写对方心理」这条纪律（与 R2 不代写同源）',
-      [light, std, rich].every(t => t.includes('不写对方的心理活动')))
+    ok('每一档都写明「只写客观事实、不写任何人的心理」这条纪律（与 R2 不代写同源）',
+      [light, std, rich].every(t => t.includes('不写任何人的心理活动')))
+    ok('每一档都点明「用【】包住」与「只写状态、动作归（）」（不然会和 O1 的（）抢活）',
+      [light, std, rich].every(t => t.includes('【】') && t.includes('动作')))
     ok('每一档都写明这些话算在协议字数里（60–160 字是硬约束）',
-      [light, std, rich].every(t => t.includes('算在协议规定的字数里')))
+      [light, std, rich].every(t => t.includes('算在协议的字数里')))
     ok('standard 覆盖出场 / 环境 / 情绪三个落点',
       std.includes('出场') && std.includes('环境') && std.includes('情绪明显变化时'))
     ok('light 只在出场与转场时写（不含情绪那条）',
       light.includes('出场') && light.includes('环境') && !light.includes('情绪明显变化时') && light.length < std.length)
-    ok('rich 额外要求「每回合都至少带一句」', rich.includes('每个回合都至少带一句') && rich.length > std.length)
+    ok('rich 额外要求「每回合都至少带一条【】」', rich.includes('每个回合都至少带一条【】') && rich.length > std.length)
     ok('档位文本都够短（≤10 行，别白占 system）', [light, std, rich].every(t => t.split('\n').length <= 10))
   }
 

@@ -81,8 +81,24 @@ async function main() {
     ok('楚楠卡把「两人互不知情」写成行为约束，而不是留给模型自由发挥',
       t.includes('不知道对方在楚楠这里的分量') && t.includes('不会主动提'))
     ok('楚楠卡写明用户可能演谁、AI 要按对面是谁调整', t.includes('先看对面是谁'))
-    ok('楚楠的示例同样是「只给对方加标记、他自己不加前缀」',
-      chu.examples.includes('【用户】') && !/^楚楠[：:]/m.test(chu.examples))
+    ok('示范卡的说明性文字已中性化（指代角色用 Ta，不预设性别）',
+      SEED_FREE_CHARACTERS.every(c => c.examples.includes('Ta')) &&
+      !SEED_FREE_CHARACTERS.some(c => c.examples.includes('她该怎么说话')))
+    ok('楚楠的示例用「对方：」标对方的台词、他自己不加名字前缀',
+      chu.examples.includes('对方：') && !/^楚楠[：:]/m.test(chu.examples) && !chu.examples.includes('〖用户〗'))
+
+    // —— v1.2 示例格式（三类标记各就各位）——
+    for (const c of SEED_FREE_CHARACTERS) {
+      ok(`${c.name}：示例里动作与神态用（）包住、独立成行`,
+        /^（.+）$/m.test(c.examples))
+      ok(`${c.name}：示例里有【】客观环境／人物外在的样例`,
+        /^【.+】$/m.test(c.examples))
+      ok(`${c.name}：示例不再使用旧标记，也不写自己的名字前缀`,
+        !c.examples.includes('【用户】') && !c.examples.includes('〖用户〗') &&
+        !new RegExp(`^${c.name}[：:]`, 'm').test(c.examples))
+      ok(`${c.name}：示例说明里写明「对方：」是输入侧对照、不许写进输出`,
+        c.examples.includes('你的输出里永远不要出现'))
+    }
   }
 
   // ---------- 2) 归位没丢内容：逐节抽查原卡独有字串 ----------
@@ -134,8 +150,8 @@ async function main() {
     ok('苏念：原卡各节内容全部在（逐节抽查 16 处）', lost2.length === 0,
       lost2.map(([k, s]) => `${k}:${s}`).join(' | '))
 
-    ok('两张卡的示例都写明了「无标点只限于她发出去的消息」',
-      [luoxi, sunian].every(c => c.examples.includes('只适用于她发出去的消息')))
+    ok('两张卡的示例都写明了「无标点只限于 Ta 发出去的消息」',
+      [luoxi, sunian].every(c => c.examples.includes('只适用于 Ta 发出去的消息文本')))
     ok('洛汐 3.1 也限定了「无标点」只指消息文本',
       luoxi.conduct.perspective.includes('只适用于**她发出去的消息文本**'))
   }
@@ -158,7 +174,7 @@ async function main() {
     for (const c of SEED_FREE_CHARACTERS) {
       const full: FreeCharacter = { ...c, id: 'x', createdAt: 0, updatedAt: 0 }
       const out = renderFreeCharacter(full)
-      const heads = ['【第 1 章 · 世界】', '【第 2 章 · 人物档案】', '【第 3 章 · 行为规范】', '【第 4 章 · 示例对话']
+      const heads = ['〖第 1 章 · 世界〗', '〖第 2 章 · 人物档案〗', '〖第 3 章 · 行为规范〗', '〖第 4 章 · 示例对话']
       ok(`${c.name}：渲染出全部四章标题`, heads.every(h => out.includes(h)),
         heads.filter(h => !out.includes(h)).join('、'))
       ok(`${c.name}：渲染后不带第 0 章`, !out.includes('第 0 章'))

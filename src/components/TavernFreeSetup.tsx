@@ -261,7 +261,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                 <div className={labelCls}>① 角色分配</div>
                 {options.length === 0 ? (
                   <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-400">
-                    还没有角色卡。先去「角色卡片」建一张 —— 填好第 4 章「示例对话」她会立刻像那个人。
+                    还没有角色卡。先去「角色卡片」建一张 —— 填好第 4 章「示例对话」Ta会立刻像那个人。
                   </div>
                 ) : (
                   <>

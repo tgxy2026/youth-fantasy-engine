@@ -45,7 +45,7 @@ export type TavernTone = 'narrative' | 'chat'
 
 /**
  * 「客观描写」档位（自由对话）：沉浸感靠对白之外的东西撑起来 ——
- * 她出场时的穿着与姿态、环境的光线与声音、情绪落到手上的小动作。
+ * Ta出场时的穿着与姿态、环境的光线与声音、情绪落到手上的小动作。
  *
  * 为什么做成档位而不是写死：聊天向默认要短句快节奏，硬塞描写会盖过对白；
  * 而有些场景（约会、初见、久别重逢）作者就是想要那份「看得见」的质感。
@@ -95,11 +95,11 @@ export type TavernSession = {
 
 /** 扮演设定：给 AI 演「像」用的，塞行为不塞设定（方案 6.4） */
 export type CastSetting = {
-  /** 口吻：她怎么说话 */
+  /** 口吻：Ta怎么说话 */
   voice: string
   /** 称呼你的方式 */
   address: string
-  /** 知识边界：哪些事她不知道 */
+  /** 知识边界：哪些事Ta不知道 */
   unknown: string
   /** 禁忌与底线：碰了会怎样 */
   taboo: string
@@ -257,7 +257,7 @@ export type FreeMemory = {
 
 export type DailyState = {
   charId: string
-  /** 上次活跃时间：下次打开时按 (now - lastActiveAt) 推进她的「生活」 */
+  /** 上次活跃时间：下次打开时按 (now - lastActiveAt) 推进Ta的「生活」 */
   lastActiveAt: number
   /** 最近几天的生活轨迹（生成后累积） */
   log: { date: string; text: string }[]

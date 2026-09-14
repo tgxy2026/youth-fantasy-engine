@@ -51,7 +51,8 @@ async function main() {
     const m = emptyMemory(CHAR)
     ok('空记忆判定为白纸', isMemoryEmpty(m))
     const text = memoryToText(m)
-    ok('空记忆序列化后六栏标题齐全', MEMORY_SECTIONS.every(s => text.includes(`【${s.title}】`)))
+    ok('空记忆序列化后六栏标题齐全（用输入侧 〖〗）',
+      MEMORY_SECTIONS.every(s => text.includes(`〖${s.title}〗`)))
     ok('空栏显示为（暂无）', text.includes('（暂无）'))
 
     const full: FreeMemory = {
@@ -188,8 +189,8 @@ async function main() {
     ok('提示词写明「她不知道的事不能进长期摘要」', sys.includes('绝不能进'))
 
     const tr = renderTranscript('苏念', [msg('a', 'user', '今天冷'), msg('b', 'assistant', '嗯')])
-    ok('对话渲染：用户标【对方】、角色标名字', tr.includes('【对方】今天冷') && tr.includes('【苏念】嗯'))
-    ok('对话渲染跳过空内容', !renderTranscript('苏念', [msg('x', 'user', '   ')]).includes('【对方】'))
+    ok('对话渲染：用户标〖对方〗、角色标名字', tr.includes('〖对方〗今天冷') && tr.includes('〖苏念〗嗯'))
+    ok('对话渲染跳过空内容', !renderTranscript('苏念', [msg('x', 'user', '   ')]).includes('〖对方〗'))
     ok('日期格式化补零', formatDate(new Date('2026-03-05T00:00:00').getTime()) === '2026-03-05')
   }
 

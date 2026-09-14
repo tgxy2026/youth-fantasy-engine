@@ -89,12 +89,34 @@ async function mkChar(): Promise<FreeCharacter> {
   })
 }
 
+/**
+ * 逐行审计模型输出是否符合协议 v1.2：
+ *   对白＝纯文本 / （）＝动作·神态·心理 / 【】＝客观环境与人物外在 / 〔〕＝状态块
+ * 返回各类行数与**违规清单**（带原文片段，便于人工复核）。
+ */
+export function auditFormat(reply: string) {
+  const lines = reply.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  const issues: string[] = []
+  let action = 0, env = 0, talk = 0, status = 0
+  for (const l of lines) {
+    if (/[〖〗〈〉]/.test(l)) issues.push('出现输入侧结构标记：' + l.slice(0, 24))
+    if (/^（|^\(/.test(l)) { action++; continue }
+    if (/^【/.test(l)) { env++; continue }
+    if (/^〔/.test(l)) { status++; continue }
+    talk++
+    if (/[“”"「」]/.test(l)) issues.push('对白里带引号：' + l.slice(0, 24))
+    if (/^(对方|用户|用户角色)[：:]/.test(l)) issues.push('对白带对照标记（对方：）：' + l.slice(0, 24))
+    if (/^[\u4e00-\u9fa5]{2,4}[：:]/.test(l)) issues.push('对白行疑似「名字：」前缀：' + l.slice(0, 24))
+  }
+  return { lines: lines.length, action, env, talk, status, issues }
+}
+
 async function say(session: FreeSession, char: FreeCharacter, text: string, cast?: FreeCharacter[]): Promise<FreeSession> {
   const t0 = Date.now()
   const res = await runFreeTurn(session, cast ?? [char], text)
   const saved = await store.saveFreeSession(res.session)
-  console.log(`\n【我】${text}`)
-  console.log(`【${char.name}】${res.reply}`)
+  console.log(`\n〖我〗${text}`)
+  console.log(`〖${char.name}〗${res.reply}`)
   console.log(`   （${Date.now() - t0} ms）`)
   return saved
 }
@@ -148,7 +170,7 @@ async function main() {
   console.log(`[离线断言] 要求不代写：${sys4.includes('不要代写') ? '✓' : '✗'}`)
   console.log(`[离线断言] AI 只演楚楠：${sys4.includes('你扮演：楚楠') ? '✓' : '✗'}`)
   console.log(`[离线断言] 楚楠卡进了设定层：${sys4.includes('被两个人当作锚点') ? '✓' : '✗'}`)
-  console.log(`[离线断言] 苏念的记忆不给楚楠（她还没聊过，本应为空）：${sys4.includes('【长期记忆 · 苏念】') ? '⚠️ 有' : '✓ 无'}`)
+  console.log(`[离线断言] 苏念的记忆不给楚楠（她还没聊过，本应为空）：${sys4.includes('〖长期记忆 · 苏念〗') ? '⚠️ 有' : '✓ 无'}`)
   s4 = await say(s4, chu, '（我把伞立在门口，没看他，只把烟推过去。）', [chu, su2])
   const reply4 = s4.messages[s4.messages.length - 1]?.content ?? ''
   const stole = /^苏念[：:]/.test(reply4.trim()) || /（苏念/.test(reply4) || /苏念[说道]/.test(reply4)
@@ -180,7 +202,7 @@ async function main() {
     messages: [{ id: uid(), role: 'user', content: buildOpeningMessage(scene5, '（我把两张票捏在手里，看见玻璃门被推开。）'), at: Date.now() }],
   })
   const sys5 = (await buildFreeSystem(s5, [luo, chuU])).system
-  console.log(`[离线断言] system 含【客观描写】：${sys5.includes('【客观描写】') ? '✓' : '✗'}`)
+  console.log(`[离线断言] system 含〖客观描写〗：${sys5.includes('〖客观描写〗') ? '✓' : '✗'}`)
   console.log(`[离线断言] 默认档写明「不写对方的心理活动」：${sys5.includes('不写对方的心理活动') ? '✓' : '✗'}`)
   console.log(`[离线断言] 描写算在协议字数内：${sys5.includes('算在协议规定的字数里') ? '✓' : '✗'}`)
   s5 = await say(s5, luo, '（我把票递过去）路上淋着了吗？', [luo, chuU])
@@ -191,6 +213,49 @@ async function main() {
   console.log(`[实弹观察] 回复里出现客观描写词：${hitWords.length ? '✓ ' + hitWords.join('、') : '⚠️ 未见'}`)
   console.log(`[实弹观察] 回复长度 ${len5} 字 → ${len5 <= 200 ? '✓ 仍在协议篇幅内' : '⚠️ 超出 160 字较多'}`)
   console.log(`[实弹观察] 是否替楚楠（用户角色）说话：${/（楚楠/.test(reply5) || /^楚楠[：:]/.test(reply5.trim()) ? '⚠️ 疑似代写' : '✓ 未见'}`)
+
+  // ---------- 阶段 6：v1.2 输出规范（老大 2026-09-14 定的三类标记） ----------
+  // 要观察的是：对白是不是纯文本（不带引号、不带名字前缀）、动作是不是（）、
+  // 客观环境／人物外在是不是【】，以及**有没有把输入侧的〖〗〈〉漏进输出**。
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 6 · 输出规范（对白纯文本 / （）动作神态心理 / 【】客观环境与人物外在）')
+  console.log('='.repeat(70))
+  {
+    const seedL = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
+    const seedC = SEED_FREE_CHARACTERS.find(c => c.name === '楚楠')
+    if (!seedL || !seedC) { console.log('❌ 示范卡里缺少洛汐/楚楠，跳过本阶段'); return }
+    const luo6 = await store.createFreeChar(seedL)
+    const chu6 = await store.createFreeChar(seedC)
+    const scene6 = {
+      place: '市中心影城的售票大厅', time: '周六傍晚，刚下过一场雨',
+      present: ['洛汐'], description: '楚楠先到，站在取票机旁边等；大厅在放新片预告，声音有点大。',
+    }
+    let s6 = await store.createFreeSession([luo6.id, chu6.id], '格式检查 · 电影院', { providerId: pick.provider.id }, {}, chu6.id)
+    s6 = await store.saveFreeSession({
+      ...s6, scene: scene6,
+      messages: [{ id: uid(), role: 'user', content: buildOpeningMessage(scene6, '（我把两张票捏在手里，看见玻璃门被推开。）'), at: Date.now() }],
+    })
+    const sys6 = (await buildFreeSystem(s6, [luo6, chu6])).system
+    console.log(`[离线断言] system 含〖客观描写〗：${sys6.includes('〖客观描写〗') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 协议正文已是 v1.2：${sys6.includes('角色扮演通用协议 · v1.2') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 身份层代词中性（Ta）：${sys6.includes('用 Ta 的眼睛看') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 输入侧用的是〖〗〈〉（示例标题/说话人）：${sys6.includes('〖样本') || sys6.includes('〈') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 旧版协议不再出现：${sys6.includes('v1.1') ? '⚠️ 有残留' : '✓ 无'}`)
+
+    s6 = await say(s6, luo6, '（我把票递过去）路上淋着了吗？', [luo6, chu6])
+    const reply6 = s6.messages[s6.messages.length - 1]?.content ?? ''
+    const a6 = auditFormat(reply6)
+    console.log(`[实弹观察] 行分布：动作（）${a6.action} · 环境【】${a6.env} · 对白 ${a6.talk} · 状态〔〕${a6.status}`)
+    console.log(`[实弹观察] 违规项：${a6.issues.length ? '⚠️ ' + a6.issues.join(' | ') : '✓ 无'}`)
+    console.log(`[实弹观察] 篇幅 ${reply6.replace(/\s/g, '').length} 字（协议建议 60–160）`)
+
+    // 再来一轮，看稳定度（第一轮常受样本影响，第二轮才是常态）
+    s6 = await say(s6, luo6, '（我往旁边挪了半步，把伞收好。）', [luo6, chu6])
+    const reply6b = s6.messages[s6.messages.length - 1]?.content ?? ''
+    const b6 = auditFormat(reply6b)
+    console.log(`[实弹观察·第 2 轮] 行分布：动作（）${b6.action} · 环境【】${b6.env} · 对白 ${b6.talk}`)
+    console.log(`[实弹观察·第 2 轮] 违规项：${b6.issues.length ? '⚠️ ' + b6.issues.join(' | ') : '✓ 无'}`)
+  }
 
   // ---------- 阶段 1：会话 A 聊出可被记住的事实 ----------
   console.log('\n' + '='.repeat(70))
@@ -235,7 +300,7 @@ async function main() {
   console.log('='.repeat(70))
   let b = await store.createFreeSession([char.id], '第二天', { providerId: pick.provider.id }, {})
   const { system: sysB } = await buildFreeSystem(b, [char])
-  console.log(`B 的 system ${sysB.length} 字 · 含长期记忆块 ${sysB.includes('【长期记忆 · 苏念】') ? '✓' : '✗'}`)
+  console.log(`B 的 system ${sysB.length} 字 · 含长期记忆块 ${sysB.includes('〖长期记忆 · 苏念〗') ? '✓' : '✗'}`)
 
   const reply = await say(b, char, '（我把伞收好）你还记得我家那只猫吗？')
 

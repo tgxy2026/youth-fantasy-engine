@@ -28,7 +28,7 @@ import {
   type TavernParams, type SceneDescLevel,
 } from './types'
 import { TONE_HINT } from './prompt'
-import { PROTOCOL_CORE } from './protocol'
+import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
 import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
 
 /** 设置存储键（全局 meta） */
@@ -153,14 +153,24 @@ const LEGACY_DEFAULT_COMMON_EXTRA = [
 ].join('\n')
 
 /**
- * 老数据升级：把「存的就是旧版默认文本」的那一份换成新版默认文本。
- * 只比 `extraPrompt` 这一处（本文件目前唯一被改过排版的默认值）；
- * 将来若再有默认文本变更，按同样方式在这里追加一条比对，而不是去动用户已保存的值。
+ * 老数据升级：把「存的就是旧版内置文本」的那一份换成新版。**一律全等比对**，
+ * 用户自己改过的一个字都不动。两处要比：
+ *   ① `common.extraPrompt` —— 默认文本改过排版（一句话被硬折成 4 行那次）；
+ *   ② `protocol` —— 协议从 v1.1 升 v1.2（三类标记重划 + 代词中性化）。
+ *      ⚠️ 协议是可编辑的，所以改内置常量**对存过设置的用户无效**，必须在这里升级；
+ *      历史版本全文见 protocol.ts 的 `LEGACY_PROTOCOLS`。
+ * 将来再有默认文本/协议变更，按同样方式在这里追加比对，别去动用户已保存的值。
  */
 function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<TavernSettings> | null {
-  if (!raw || typeof raw !== 'object' || !raw.common) return raw
-  if (raw.common.extraPrompt !== LEGACY_DEFAULT_COMMON_EXTRA) return raw
-  return { ...raw, common: { ...raw.common, extraPrompt: DEFAULT_COMMON_EXTRA } }
+  if (!raw || typeof raw !== 'object') return raw
+  let out = raw
+  if (out.common && out.common.extraPrompt === LEGACY_DEFAULT_COMMON_EXTRA) {
+    out = { ...out, common: { ...out.common, extraPrompt: DEFAULT_COMMON_EXTRA } }
+  }
+  if (typeof out.protocol === 'string' && LEGACY_PROTOCOLS.includes(out.protocol)) {
+    out = { ...out, protocol: PROTOCOL_CORE }
+  }
+  return out
 }
 
 /** 出厂协议（= 内置常量）。面板上的「恢复出厂协议」还原到这里 */

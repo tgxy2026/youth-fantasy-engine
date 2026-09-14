@@ -85,10 +85,10 @@ export default function TavernFree() {
   /** 整理进度（多角色时要逐个整理，显示「2/3」免得以为卡住了） */
   const [sumProgress, setSumProgress] = useState('')
   const [showMemory, setShowMemory] = useState(true)
-  /** 她这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
+  /** Ta这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
   const [daily, setDaily] = useState<DailyState | null>(null)
   const [showDaily, setShowDaily] = useState(false)
-  /** 很久没来时她留着的一句话（§7.5），展示后清除 */
+  /** 很久没来时Ta留着的一句话（§7.5），展示后清除 */
   const [greeting, setGreeting] = useState('')
   /** 本会话在场角色的完整卡（多角色渲染需要） */
   const [castCards, setCastCards] = useState<FreeCharacter[]>([])
@@ -142,7 +142,7 @@ export default function TavernFree() {
 
   // ---------- 日常推进与主动留言（§4.7 / §7.5） ----------
   /**
-   * 距上次活跃够久就补写「这几天的生活」，并拿到她留的一句话。
+   * 距上次活跃够久就补写「这几天的生活」，并拿到Ta留的一句话。
    * 静默执行：失败不打扰（下次打开还会再试），也不阻塞对话。
    */
   const advanceIfNeeded = useCallback(async (card: FreeCharacter, cur?: DailyState | null) => {
@@ -173,7 +173,7 @@ export default function TavernFree() {
   }, [summaryProviderId, lim])
 
   /**
-   * 载入当前会话的上下文：在场角色卡 + **每位角色各自的记忆** + 她留的话。
+   * 载入当前会话的上下文：在场角色卡 + **每位角色各自的记忆** + Ta留的话。
    * 记忆是角色级的，所以一次读全部参演角色；页签默认停在第一个角色。
    */
   const loadSessionContext = useCallback(async (s: FreeSession) => {
@@ -194,7 +194,7 @@ export default function TavernFree() {
         setMemTabId('')
         setDaily(null)
       }
-      // 她留着的话：展示后即清除，不留着反复弹
+      // Ta留着的话：展示后即清除，不留着反复弹
       for (const c of cards) {
         const g = await store.takeGreeting(c.id)
         if (g) { setGreeting(g); break }
@@ -284,7 +284,7 @@ export default function TavernFree() {
           charName: c.name,
           prev,
           messages: pending,
-          // 带上角色背景：不给的话模型会凭对话臆断「她在哪、是谁」，记忆从第一次就开始漂移
+          // 带上角色背景：不给的话模型会凭对话臆断「Ta在哪、是谁」，记忆从第一次就开始漂移
           charContext: [
             c.world.trim() && `世界：${c.world.trim()}`,
             c.profile.core.trim() && `内核：${c.profile.core.trim()}`,
@@ -376,7 +376,7 @@ export default function TavernFree() {
       await refreshSessions()
       if (!res.cancelled) void autoSummarize(saved)
       if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
-      // 说完这句就把她说的话撤掉：那句话是「很久没来」时才该有的
+      // 说完这句就把Ta说的话撤掉：那句话是「很久没来」时才该有的
       setGreeting('')
       setSpeakNext('')
     } catch (e) {
@@ -397,7 +397,7 @@ export default function TavernFree() {
     if (!session) return
     const okGo = await confirmDialog({
       title: '删除这个会话？',
-      message: '对话记录会一并删除。\n注意：**她的记忆是按角色存的**，所以记忆不会跟着消失。',
+      message: '对话记录会一并删除。\n注意：**Ta的记忆是按角色存的**，所以记忆不会跟着消失。',
       confirmText: '删除',
       danger: true,
     })
@@ -462,7 +462,7 @@ export default function TavernFree() {
           <>
             {!!daily?.log?.length && (
               <Button variant="ghost" size="md" onClick={() => setShowDaily(v => !v)}>
-                {showDaily ? '收起这几天' : '她最近几天'}
+                {showDaily ? '收起这几天' : 'Ta最近几天'}
               </Button>
             )}
             <Button variant="ghost" size="md" onClick={() => setShowMemory(v => !v)}>
@@ -528,7 +528,7 @@ export default function TavernFree() {
             <div className="text-center">
               <p className="text-[13px] text-ink-300">还没有角色可聊</p>
               <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
-                先去「角色卡片」建一张卡 —— 填好第 4 章「示例对话」，她会立刻像那个人。
+                先去「角色卡片」建一张卡 —— 填好第 4 章「示例对话」，Ta会立刻像那个人。
                 <br />
                 建好后回到这里，点「＋ 新建对话」就能开口了。
               </p>
@@ -611,11 +611,11 @@ export default function TavernFree() {
                   </div>
                 )}
 
-                {/* 她这几天的生活（时间差推进出来的） */}
+                {/* Ta这几天的生活（时间差推进出来的） */}
                 {showDaily && !!daily?.log?.length && (
                   <div className="mt-2 rounded-md border border-ink-800 bg-ink-900/50 px-3 py-2">
                     <p className="text-[10.5px] text-ink-500 mb-1">
-                      这几天的生活（你没来时她自己过的 —— 界面不打开就不会推进）
+                      这几天的生活（你没来时Ta自己过的 —— 界面不打开就不会推进）
                     </p>
                     <ul className="space-y-0.5">
                       {daily.log.map((l, i) => (
@@ -629,12 +629,12 @@ export default function TavernFree() {
               </div>
 
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-                {/* 很久没来时她留着的一句话（§7.5）：不弹通知，就放在对话里等她看见 */}
+                {/* 很久没来时Ta留着的一句话（§7.5）：不弹通知，就放在对话里等Ta看见 */}
                 {greeting && (
                   <div className="rounded-lg border border-amber/30 bg-amber/8 px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10.5px] text-amber/80 mb-1">你很久没来了，她留下句话：</p>
+                        <p className="text-[10.5px] text-amber/80 mb-1">你很久没来了，Ta留下句话：</p>
                         {renderTavernMessage(greeting)}
                       </div>
                       <button type="button" className="shrink-0 text-[11px] text-ink-500 hover:text-ink-200" onClick={() => setGreeting('')}>
@@ -645,7 +645,7 @@ export default function TavernFree() {
                 )}
                 {session.messages.length === 0 && (
                   <div className="text-center text-[12px] text-ink-500 py-10">
-                    还没有对话。在下面说第一句话，她就会应你。
+                    还没有对话。在下面说第一句话，Ta就会应你。
                   </div>
                 )}
                 {session.messages.map(m => {
@@ -762,7 +762,7 @@ export default function TavernFree() {
                       : (castCards.length > 1 ? `整理全部记忆（${castCards.length} 位）` : '立即整理记忆')}
                   </Button>
                   <p className="mt-1.5 text-[10.5px] text-ink-600 leading-relaxed">
-                    记忆**按角色分别整理**：每位只记他自己在场看到、听到的事。换一场对话，她仍然记得。
+                    记忆**按角色分别整理**：每位只记他自己在场看到、听到的事。换一场对话，Ta仍然记得。
                   </p>
                 </div>
               </aside>

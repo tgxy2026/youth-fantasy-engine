@@ -19,6 +19,14 @@
  * 【每轮重新组装】
  * 不是只在开头发一次 —— 这样中途改设定、记忆更新都能立刻生效。
  *
+ * 【标记分域（v1.2 起的硬纪律，改任何提示词前先读这一段）】
+ *   模型**输出**用：（）动作·神态·心理 ／【】客观环境·人物外在 ／〔〕状态块 ／对白＝纯文本
+ *   我们喂给模型的**输入**用：〖〗结构标题（层名/资料分段/记忆栏） ／〈〉说话人归属
+ *   用户对模型的**元指令**：//  #  「」  [OOC: ]
+ * 为什么两端必须用不同符号：输入若也用【】，模型会把它当输出格式照抄进正文 ——
+ * 「示例对话」「对话记录」这类最容易被模仿（v1.1 时期就出现过把【用户】写进回复的苗头）。
+ * 音形相近的两套符号（〖〗 vs 【】）在视觉上又足够像，作者读提示词时不会觉得别扭。
+ *
  * 本文件是纯逻辑，不含 React。
  */
 import { PROTOCOL_CORE } from './protocol'
@@ -31,6 +39,11 @@ export type PromptLayers = {
   setting?: string
   /** 长期记忆（六栏压缩后的文本） */
   memory?: string
+  /**
+   * 长期记忆层的标题。传 `null` = 正文**自带**标题（自由模式多角色时每块写「〖长期记忆 · 角色名〗」，
+   * 再加一层「〖长期记忆〗」纯属重复）。不传即默认「长期记忆」。
+   */
+  memoryTitle?: string | null
   /** 你在戏里的身份与知识边界 */
   self?: string
   /**
@@ -62,7 +75,7 @@ export type PromptLayers = {
 /** 档位追加提示的内置默认。控制面板可覆盖（settings.free.styleHint），默认值取自这里。 */
 export const TONE_HINT: Record<TavernTone, string> = {
   narrative: '',
-  chat: '【本场风格】现代日常场景，以即时聊天的方式说话：短句为主，最多连发 2 条，不要长篇叙述。',
+  chat: '〖本场风格〗现代日常场景，以即时聊天的方式说话：短句为主，最多连发 2 条，不要长篇叙述。',
 }
 
 /** 按「设定 → 记忆 → 身份 → 未带入声明 → 协议（钉末尾）」拼出整条 system。空层自动跳过。 */
@@ -70,13 +83,16 @@ export function buildSystemPrompt(layers: PromptLayers): string {
   const parts: string[] = []
 
   // ① 世界与角色设定（身份锁定）
-  if (layers.setting?.trim()) parts.push(`【世界与角色设定】\n${layers.setting.trim()}`)
+  if (layers.setting?.trim()) parts.push(`〖世界与角色设定〗\n${layers.setting.trim()}`)
 
   // ② 长期记忆（居中）
-  if (layers.memory?.trim()) parts.push(`【长期记忆】\n${layers.memory.trim()}`)
+  const memTitle = layers.memoryTitle === undefined ? '长期记忆' : layers.memoryTitle
+  if (layers.memory?.trim()) {
+    parts.push(memTitle === null ? layers.memory.trim() : `〖${memTitle}〗\n${layers.memory.trim()}`)
+  }
 
   // ③ 你在戏里的身份与知识边界
-  if (layers.self?.trim()) parts.push(`【你在戏里的身份与知识边界】\n${layers.self.trim()}`)
+  if (layers.self?.trim()) parts.push(`〖你在戏里的身份与知识边界〗\n${layers.self.trim()}`)
 
   // ③b 扮演设定（紧跟身份之后：先知道「你是谁」，再知道「该怎么演」）
   if (layers.cast?.trim()) parts.push(layers.cast.trim())
@@ -87,13 +103,14 @@ export function buildSystemPrompt(layers: PromptLayers): string {
 
   // ④b 通用 / 本模式补充要求（控制面板）—— 都放协议**之前**，
   //     免得打断协议末尾那条「最后提醒」的近因效果（协议钉绝对末尾是既定纪律）。
-  if (layers.commonExtra?.trim()) parts.push(layers.commonExtra.trim())
+  //     两者都**带标题**：作者写的规则与系统规则混在同一段里，模型分不清该听谁。
+  if (layers.commonExtra?.trim()) parts.push(`〖通用补充要求〗\n${layers.commonExtra.trim()}`)
   if (layers.modeExtra?.trim()) parts.push(layers.modeExtra.trim())
 
   // ⑤ 未带入的资料：如实声明（放在协议之前，免得打断协议末尾的提醒）
   if (layers.dropped?.length) {
     parts.push(
-      `【未带入的资料】\n以下资料因篇幅限制未带入本次上下文，请当作你的角色不知道，也不要凭空推测：\n` +
+      `〖未带入的资料〗\n以下资料因篇幅限制未带入本次上下文，请当作你的角色不知道，也不要凭空推测：\n` +
       layers.dropped.map(d => `· ${d}`).join('\n')
     )
   }
@@ -127,8 +144,8 @@ export function renderCastSetting(name: string, cs: CastSetting, kind: 'ai' | 'u
     .map(([k, label]) => `- ${label}：${cs[k].trim()}`)
   if (lines.length === 0) return ''
   const head = kind === 'ai'
-    ? `【扮演设定 · ${name}】你要演成这样的人（这些是行为倾向，落到具体言行上，不要复述本段）`
-    : `【对方的扮演设定 · ${name}】作者自己演的角色，仅供你理解对方的风格；**不要代写他的言行**`
+    ? `〖扮演设定 · ${name}〗你要演成这样的人（这些是行为倾向，落到具体言行上，不要复述本段）`
+    : `〖对方的扮演设定 · ${name}〗作者自己演的角色，仅供你理解对方的风格；**不要代写 Ta 的言行**`
   return `${head}\n${lines.join('\n')}`
 }
 
@@ -145,7 +162,7 @@ export function buildOpeningMessage(
   if (scene.place.trim()) head.push(`地点：${scene.place.trim()}`)
   if (scene.time.trim()) head.push(`时间：${scene.time.trim()}`)
   if (scene.present.length) head.push(`在场：${scene.present.join('、')}`)
-  if (head.length) bits.push(`【场景】${head.join(' · ')}`)
+  if (head.length) bits.push(head.join(' · '))
   if (scene.description.trim()) bits.push(scene.description.trim())
   if (firstLine?.trim()) bits.push(firstLine.trim())
   return bits.join('\n\n')
@@ -171,7 +188,7 @@ export function buildMultiCharRule(names: string[], opts: { hasUser?: boolean; u
       ? `用户扮演：${opts.userName.trim()}。`
       : '用户扮演用户自己的角色。'
   return [
-    '【发言规则】',
+    '〖发言规则〗',
     `你是下列角色：${names.join('、')}。${who}`,
     '- 一次只让一个角色说话，不要在同一回合里让多个角色各说一句。',
     '- 轮到谁由语境决定，不要强行轮流。',
@@ -191,7 +208,7 @@ export function buildMultiCharRule(names: string[], opts: { hasUser?: boolean; u
  */
 export function buildSameNameNote(items: { name: string; tag: string }[]): string {
   return [
-    '【同名角色】',
+    '〖同名角色〗',
     `本场出现了同名角色：\n${items.map(i => `· ${i.name}（#${i.tag}）`).join('\n')}`,
     '他们是**不同的人**：各自的角色卡与长期记忆彼此独立，不要混用，也不要把一个人的经历安到另一个人身上。',
     '提到其中某一位时，以标签和上下文为准；拿不准就只对当下的对话对象说话，不要替另一位补设定。',
@@ -213,26 +230,27 @@ export function buildSceneDescriptionRule(level: SceneDescLevel): string {
   if (level === 'off') return ''
   const discipline = [
     '三条纪律：',
-    '① 只写**观察得到的客观事实** —— 不写对方的心理活动，也不替他决定感受；',
+    '① 只写**观察得到的客观事实** —— 不写任何人的心理活动，也不替对方决定感受；',
     '② 要具体可感（写「洗到发白的牛仔外套」，不要写「穿着衣服」）；',
-    '③ 这些话算在协议规定的字数里，一两句就够，不要盖过对白本身。',
+    '③ 每条独立成行、用【】包住；这些话都算在协议的字数里，一两句就够，不要盖过对白。',
+    '④ 只写「状态与外观」—— 正在发生的动作、神态、心理归（），不要把同一个动作写两遍。',
   ]
   if (level === 'light') {
     return [
-      '【客观描写】偶尔补一两句客观细节，别每回合都写：',
-      '· 出场：某个角色本场第一次开口前，交代她此刻的样子（穿着、姿态、手里在做的事）；',
+      '〖客观描写〗偶尔在【】里补一两句客观细节，别每回合都写：',
+      '· 出场：某个角色本场第一次开口前，交代 Ta 此刻的样子（穿着、姿态、手里在做的事）；',
       '· 环境：场景转换或时间推移时，补一句环境（光线、声音、天气）。',
       ...discipline,
     ].join('\n')
   }
   const body = [
-    '【客观描写】在开口之前，先用一两句写**看得见、听得到**的东西，再进入对白：',
-    '· 出场：某个角色本场第一次开口前，交代她此刻的样子 —— 穿着（颜色、材质、随身物）、姿态、手里正在做的事；',
+    '〖客观描写〗在 Ta 开口之前，先用【】写一两句**看得见、听得到**的东西，再进入对白：',
+    '· 出场：某个角色本场第一次开口前，交代 Ta 此刻的样子 —— 穿着（颜色、材质、随身物）、姿态、手里正在做的事；',
     '· 环境：场景转换、时间推移、光线或天气变化时，补一句环境（声音、气味、温度、光）；',
-    '· 情绪：情绪明显变化时用外在细节表示（手指、呼吸、视线、动作的停顿），不要直接写「她很生气」。',
+    '· 情绪：情绪明显变化时用外在细节表示（手指、呼吸、视线、动作的停顿），不要直接写「Ta 很生气」。',
   ]
   if (level === 'rich') {
-    body.push('· 密度：每个回合都至少带一句环境或身体细节（光线、声音、气味、温度、她手边的东西）。')
+    body.push('· 密度：每个回合都至少带一条【】，写环境或身体细节（光线、声音、气味、温度、Ta 手边的东西）。')
   }
   return [...body, ...discipline].join('\n')
 }

@@ -582,7 +582,7 @@ export default function TavernControl() {
 
             <SelectField
               label="客观描写"
-              hint="只写对白与动作，画面是空的 —— 这一项决定要不要写「她穿什么、屋里什么光、外面什么天气」。标准档：出场交代穿着与姿态、转场补一句环境、情绪用外在细节表示（这三条都要求只写**观察得到的**东西，不写对方的心理活动）。描写算在协议那 60–160 字里，所以别指望它长篇铺陈。"
+              hint="只写对白与动作，画面是空的 —— 这一项决定要不要写「Ta 穿什么、屋里什么光、外面什么天气」。写法固定：用【】包住、独立成行。标准档：出场交代穿着与姿态、转场补一句环境、情绪用外在细节表示（都只写**观察得到的**东西，不写任何人的心理 —— 那是代写）。描写算在协议那 60–160 字里，别指望它长篇铺陈。"
               value={fr.sceneDescription}
               options={SCENE_DESC_OPTIONS}
               onChange={v => setFree('sceneDescription', v)}
@@ -599,7 +599,7 @@ export default function TavernControl() {
               label="自由对话补充要求"
               hint="只对自由对话生效，排在协议之前。"
               minRows={3}
-              placeholder="例：不要替作者的角色做决定；她不确定的事就写不确定。"
+              placeholder="例：不要替作者的角色做决定；Ta不确定的事就写不确定。"
               value={fr.extraPrompt}
               onChange={v => setFree('extraPrompt', v)}
             />

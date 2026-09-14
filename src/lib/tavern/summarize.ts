@@ -35,12 +35,12 @@ export type SummaryLimits = { longTermLimit?: number; diaryDays?: number }
 export function buildSummarySystem(charName: string, now = Date.now(), limits: SummaryLimits = {}): string {
   const longTermLimit = limits.longTermLimit ?? MEMORY_LONGTERM_LIMIT
   const diaryDays = limits.diaryDays ?? MEMORY_DIARY_DAYS
-  return `你是「${charName}」的长期记忆档案员。请把【旧档案】与【新发生的对话】合并，重写出一份完整的六栏档案。
+  return `你是「${charName}」的长期记忆档案员。请把〖旧档案〗与〖新发生的对话〗合并，重写出一份完整的六栏档案。
 
-【当前日期】${formatDate(now)}
+〖当前日期〗${formatDate(now)}
 （日记里凡涉及日期，一律用这个日期换算，不要写「XX月XX日」这类占位符。）
 
-【六栏各自的规矩 —— 硬要求，不要一刀切】
+〖六栏各自的规矩 —— 硬要求，不要一刀切〗
 - 一、长期摘要：**会缩**。已解决、已过期的旧事压掉，只留仍影响当下的。不超过 ${longTermLimit} 字。
 - 二、关键事实：**只增不改**。已确立的事实一律保留，除非新对话明确推翻它。
 - 三、关系状态：**每次重新判断**。写此刻的关系与情绪（情绪写在这一栏）。
@@ -49,25 +49,25 @@ export function buildSummarySystem(charName: string, now = Date.now(), limits: S
 - 五、纪念日与待办：可增可清。
 - 六、最近日记：**倒序（新的在上）**，每条一行，格式 \`- MM-DD：一句话\`，最多保留最近 ${diaryDays} 条。
 
-【三条不容违反】
-1. 这份档案是「${charName} 记得什么」，不是全知档案 —— **她不知道的事绝不能进「长期摘要」与「关键事实」**，
+〖三条不容违反〗
+1. 这份档案是「${charName} 记得什么」，不是全知档案 —— **Ta 不知道的事绝不能进「长期摘要」与「关键事实」**，
    只能放在「未爆的雷」里。
-2. **以【角色背景】为事实基准**：她叫什么、在哪工作、什么性格，一律以角色背景为准；
+2. **以〖角色背景〗为事实基准**：Ta 叫什么、在哪工作、什么性格，一律以角色背景为准；
    对话里没提到的细节不要臆断补全，更不要把背景里的设定改写成别的（例如把「便利店」写成「咖啡店」）。
 3. 只输出档案本身，不要寒暄、不要解释、不要在结尾加总结语。
 
 输出格式（标题一字不差，内容另起一行写在标题下面）：
-【一、长期摘要】
+〖一、长期摘要〗
 
-【二、关键事实】
+〖二、关键事实〗
 
-【三、关系状态】
+〖三、关系状态〗
 
-【四、未爆的雷】
+〖四、未爆的雷〗
 
-【五、纪念日与待办】
+〖五、纪念日与待办〗
 
-【六、最近日记】`
+〖六、最近日记〗`
 }
 
 export type SummarizeArgs = {
@@ -79,7 +79,7 @@ export type SummarizeArgs = {
   messages: TavernMessage[]
   /**
    * 角色背景（角色卡的世界 + 内核等要点）。
-   * 不给的话，模型只能凭对话臆断她是谁、在哪 —— 实测会把「便利店」总结成「咖啡店」，
+   * 不给的话，模型只能凭对话臆断Ta 是谁、在哪 —— 实测会把「便利店」总结成「咖啡店」，
    * 记忆于是从第一次总结就开始漂移。
    */
   charContext?: string
@@ -92,11 +92,11 @@ export type SummarizeArgs = {
   limits?: SummaryLimits
 }
 
-/** 把待总结的对话渲染成提示词片段（用户发言标【对方】，角色发言标名字） */
+/** 把待总结的对话渲染成提示词片段（用户发言标〖对方〗，角色发言标名字） */
 export function renderTranscript(charName: string, messages: TavernMessage[]): string {
   return messages
     .filter(m => m.role !== 'system' && m.content.trim())
-    .map(m => `${m.role === 'user' ? '【对方】' : `【${charName}】`}${m.content.trim()}`)
+    .map(m => `${m.role === 'user' ? '〖对方〗' : `〖${charName}〗`}${m.content.trim()}`)
     .join('\n')
 }
 
@@ -116,12 +116,12 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
     {
       role: 'user',
       content: [
-        charContext?.trim() ? '【角色背景】\n' + charContext.trim() : '',
+        charContext?.trim() ? '〖角色背景〗\n' + charContext.trim() : '',
         '',
-        '【旧档案】',
+        '〖旧档案〗',
         memoryToText(prev ?? emptyMemory(charId)),
         '',
-        '【新发生的对话】',
+        '〖新发生的对话〗',
         renderTranscript(charName, messages),
         '',
         '请输出合并后的完整六栏档案。',

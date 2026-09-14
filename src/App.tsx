@@ -150,6 +150,13 @@ export default function App() {
     ;(async () => {
       const last = await db.getMeta('lastProject', '')
       await db.migrateProjectTypes() // 清理历史遗留的 lite/minimal 项目形态
+      // 酒馆示范角色卡：示例对话升到 v1.2 的输出规范（幂等；与旧种子全等才换，
+      // 作者改过的一律不动）。放在这里而不是播种处 —— 播种只在空库跑一次，
+      // 老用户的库早已有卡，升级必须在每次启动时补一遍。
+      try {
+        const { upgradeSeedCards } = await import('./lib/tavern/seedCards')
+        await upgradeSeedCards()
+      } catch (e) { console.warn('[boot] 示范卡格式升级失败：', e) }
       // 首次启动且存储为空：自动创建示范项目「吞天神脉（示范）」，引导新用户了解全模块功能
       if (!last) {
         const existing = await db.getAllProjects().catch(() => [])
