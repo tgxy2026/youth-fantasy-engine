@@ -73,6 +73,33 @@ export type TavernCast = {
   name: string
 }
 
+/**
+ * 检查点：场内的一个「路标」，之后无论聊成什么样都能一键回到那一刻。
+ *
+ * 🔴 **连记忆一起存** —— 回滚要还原的是「那一刻的完整状态」。只把消息截回去、记忆不动的话，
+ *    记忆里会留着被截掉那段「未来」，模型就会引用还没发生的事（现象是"它怎么知道这个"，
+ *    很难反推回原因）。
+ */
+export type TavernCheckpoint = {
+  id: string
+  /** 用户起的名字（留空则界面显示「第 N 条」） */
+  label: string
+  /** 存点时的消息条数：回到这里 = 截到这里 */
+  messageCount: number
+  watermark?: TavernWatermark
+  /** 存点时的本场记忆（见上：必须一起存） */
+  memory?: string
+  at: number
+}
+
+/** 回滚前的自动备份（**只留一层**）—— 让「回滚」可一键撤销，而不是不可逆 */
+export type TavernRollbackUndo = {
+  messages: TavernMessage[]
+  watermark?: TavernWatermark
+  memory?: string
+  at: number
+}
+
 export type TavernSession = {
   id: string
   title: string
@@ -93,6 +120,10 @@ export type TavernSession = {
   inheritMemoryFrom?: string
   /** 本场推演的六栏记忆（会话级） */
   memory?: string
+  /** 场内的检查点（回到这里 = 消息截回去 + 记忆与水位线一并还原） */
+  checkpoints?: TavernCheckpoint[]
+  /** 回滚前的自动备份：存在就说明可以「撤销上次回滚」 */
+  undoSnapshot?: TavernRollbackUndo
   createdAt: number
   updatedAt: number
 }

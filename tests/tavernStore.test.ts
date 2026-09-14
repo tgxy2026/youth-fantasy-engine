@@ -6,7 +6,7 @@ import * as db from '../src/lib/db'
 import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
-import type { TavernSessionIndexItem, TavernReport } from '../src/lib/tavern/types'
+import type { TavernSessionIndexItem, TavernReport, TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -249,6 +249,118 @@ async function main() {
     const saved = await store.saveFreeSession(hid)
     const back = await store.getFreeSession(saved.id)
     ok('隐藏标记能落库读回（不是只活在内存里）', back?.messages[1].hidden === true)
+  }
+
+  // ---------- 分支 / 检查点 / 回滚（2026-09-14，路线图第 3 批） ----------
+  {
+    __resetMockStores()
+    db.setCurrentProject(PID)
+    const msg = (n: number, role: 'user' | 'assistant'): TavernMessage =>
+      ({ id: `m${n}`, role, content: `第 ${n} 条`, at: n })
+    const base = await store.createSession({
+      ...mkSession('山门夜谈'),
+      messages: [msg(1, 'user'), msg(2, 'assistant'), msg(3, 'user'), msg(4, 'assistant'), msg(5, 'user'), msg(6, 'assistant')],
+    })
+
+    // ---- 检查点：连记忆一起存 ----
+    const s1 = await store.saveSession({
+      ...base,
+      watermark: { messageId: 'm4', at: 40 },
+      memory: '一、长期摘要：到第 4 条为止的事',
+    })
+    const s2 = store.addCheckpoint(s1, '分手前')
+    ok('存检查点：记下消息条数', s2.checkpoints?.length === 1 && s2.checkpoints[0].messageCount === 6,
+      String(s2.checkpoints?.[0]?.messageCount))
+    ok('存检查点：名字与时间都在', s2.checkpoints?.[0].label === '分手前' && !!s2.checkpoints[0].at)
+    ok('🔴 存检查点：**记忆一起存**（只拨水位线救不回记忆）',
+      s2.checkpoints?.[0].memory === '一、长期摘要：到第 4 条为止的事')
+    ok('存检查点：水位线一起存', s2.checkpoints?.[0].watermark?.messageId === 'm4')
+
+    // 之后又聊了两条、记忆被更新（模拟"聊过头了，想退回去"）
+    const s3 = await store.saveSession({
+      ...s2,
+      messages: [...s2.messages, msg(7, 'user'), msg(8, 'assistant')],
+      watermark: { messageId: 'm8', at: 80 },
+      memory: '一、长期摘要：到第 8 条为止的事',
+    })
+
+    // ---- 回滚：截回消息 + 还原记忆与水位线 + 留一层可撤销 ----
+    const cpId = s3.checkpoints![0].id
+    const back = store.rollbackToCheckpoint(s3, cpId)!
+    ok('🔴 回滚：消息截回检查点那一刻', back.messages.length === 6 && back.messages[5].id === 'm6',
+      String(back.messages.length))
+    ok('🔴 回滚：记忆一并还原（只截消息不还原记忆，Ta 会记得被删掉的未来）',
+      back.memory === '一、长期摘要：到第 4 条为止的事')
+    ok('回滚：水位线一并还原', back.watermark?.messageId === 'm4')
+    ok('回滚：检查点本身还在（同一个点可以反复回）', back.checkpoints?.length === 1)
+    ok('🔴 回滚：写入了撤销快照（所以这一步是可逆的）',
+      back.undoSnapshot?.messages.length === 8 && back.undoSnapshot?.memory === '一、长期摘要：到第 8 条为止的事')
+
+    // ---- 撤销回滚 ----
+    const undone = store.undoRollback(back)
+    ok('🔴 撤销回滚：消息回到回滚前', undone.messages.length === 8 && undone.messages[7].id === 'm8')
+    ok('撤销回滚：记忆也回到回滚前', undone.memory === '一、长期摘要：到第 8 条为止的事')
+    ok('撤销回滚：快照被清掉（只留一层，不做无限套娃）', undone.undoSnapshot === undefined)
+    ok('撤销回滚：没有快照时原样返回（不炸）', store.undoRollback(undone) === undone)
+
+    ok('删检查点', (store.dropCheckpoint(s3, cpId).checkpoints ?? []).length === 0)
+    ok('回滚到不存在的检查点 → null（调用方好判断）', store.rollbackToCheckpoint(s3, 'nope') === null)
+  }
+
+  // ---------- 分支：水位线重算（这批最容易埋雷的地方） ----------
+  {
+    __resetMockStores()
+    db.setCurrentProject(PID)
+    const msg = (n: number, role: 'user' | 'assistant'): TavernMessage =>
+      ({ id: `m${n}`, role, content: `第 ${n} 条`, at: n })
+    const messages = [msg(1, 'user'), msg(2, 'assistant'), msg(3, 'user'), msg(4, 'assistant'), msg(5, 'user'), msg(6, 'assistant')]
+    const s = await store.createSession({ ...mkSession('原推演'), messages })
+
+    // ① 水位线落在分叉点之内 → 原样保留（记忆与它一致，没有"未来"）
+    const a = store.branchSession({ ...s, watermark: { messageId: 'm2', at: 20 }, memory: '到第 2 条为止' }, 'm4', ['原推演'])
+    ok('分支：截到指定那一条（含）', a?.messages.length === 4 && a?.messages[3].id === 'm4', String(a?.messages.length))
+    ok('分支：换新 id、改名，**原会话一个字不动**',
+      !!a && a.id !== s.id && a.title === '原推演 ·分支2' && s.messages.length === 6 && s.title === '原推演')
+    ok('分支：水位线在分支内 → 原样保留', a?.watermark?.messageId === 'm2')
+    ok('分支：记忆原样带过来', a?.memory === '到第 2 条为止')
+
+    // ② 水位线在分叉点**之后** → 退到分支末尾 + 清空记忆
+    const b = store.branchSession({ ...s, watermark: { messageId: 'm6', at: 60 }, memory: '到第 6 条为止（含未来）' }, 'm4', ['原推演'])
+    ok('🔴 分支：水位线在分叉点之后 → 退到分支末尾', b?.watermark?.messageId === 'm4', String(b?.watermark?.messageId))
+    ok('🔴 分支：同时清空本场记忆（只退水位线会让模型引用被截掉的未来）', b?.memory === undefined)
+
+    // ③ 从没整理过 → 什么都不用动
+    const c = store.branchSession(s, 'm3', [])
+    ok('分支：没有水位线时不动它', c?.watermark === undefined && c?.messages.length === 3)
+
+    // ④ 分支名避重与剥后缀
+    ok('分支名避重：·分支2 已被占用就跳到 ·分支3',
+      store.branchTitle('原推演', ['原推演 ·分支2']) === '原推演 ·分支3',
+      store.branchTitle('原推演', ['原推演 ·分支2']))
+    ok('分支名避重：已带后缀的标题先剥掉（不会出现 ·分支2 ·分支2）',
+      store.branchTitle('原推演 ·分支2', ['原推演 ·分支2']) === '原推演 ·分支3',
+      store.branchTitle('原推演 ·分支2', ['原推演 ·分支2']))
+
+    // ⑤ 边界：找不到那一条 / 检查点只带得过分支点之前的 / 不带撤销快照
+    ok('分支：找不到那一条 → null', store.branchSession(s, '不存在') === null)
+    const withCps = {
+      ...s,
+      checkpoints: [
+        { id: 'cp1', label: '早', messageCount: 2, at: 1 },
+        { id: 'cp2', label: '晚', messageCount: 6, at: 2 },
+      ],
+    }
+    ok('分支：只带得过分支点之前的检查点',
+      (store.branchSession(withCps, 'm4', [])?.checkpoints ?? []).map(x => x.id).join(',') === 'cp1')
+    ok('分支：不继承撤销快照（那是另一条时间线的东西）',
+      store.branchSession({ ...s, undoSnapshot: { messages: [], at: 1 } }, 'm3', [])?.undoSnapshot === undefined)
+
+    // ⑥ 落库往返：checkpoints 能存能读
+    __resetMockStores()
+    db.setCurrentProject(PID)
+    const saved = await store.saveSession(store.addCheckpoint(await store.createSession({ ...mkSession('落库'), messages }), '存一下'))
+    const read = await store.getSession(saved.id)
+    ok('检查点能落库读回', read?.checkpoints?.length === 1 && read?.checkpoints[0].label === '存一下')
   }
 
   console.log(`\ntavernStore: ${pass} passed, ${fail} failed`)

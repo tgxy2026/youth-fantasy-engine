@@ -15,6 +15,7 @@ import { Button } from './Button'
 import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
 import TavernCastSetting from './TavernCastSetting'
 import TavernMessageBody from './TavernMessageBody'
+import PromptModal from './PromptModal'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
@@ -42,6 +43,8 @@ export default function TavernPlot() {
   const [streamText, setStreamText] = useState('')
   const [phase, setPhase] = useState('')
   const [busyReport, setBusyReport] = useState(false)
+  /** 「存检查点」的命名弹窗（null = 关着） */
+  const [cpNaming, setCpNaming] = useState(false)
   // 扮演设定编辑：正在编辑的角色（null = 未打开）
   const [castEdit, setCastEdit] = useState<{ cardId: string; name: string; kind: 'ai' | 'user' } | null>(null)
   // 哪些角色已填过扮演设定（左栏显示「已设定 / 设定」）
@@ -197,6 +200,80 @@ export default function TavernPlot() {
     void commit(store.dropMessage(session, id))
   }
 
+  // ---------- 分支 / 检查点 / 回滚（2026-09-14，路线图第 3 批） ----------
+  /**
+   * 从某一条分支：**另开一场**推演、只保留到这一条，原推演原封不动。
+   * 记忆与水位线的重算规则见 `store.branchSession` —— 水位线落在分叉点之后时，
+   * 会连本场记忆一起清空（否则分支会"记得还没发生的事"）。
+   */
+  const branchAt = async (messageId: string) => {
+    if (!session || streaming) return
+    const idx = session.messages.findIndex(m => m.id === messageId)
+    if (idx < 0) { showToast('这一条已经不在记录里了', 'info'); return }
+    const okGo = await confirmDialog({
+      title: `从第 ${idx + 1} 条分叉？`,
+      message: [
+        `会另开一场新推演，只保留前 ${idx + 1} 条，从那里重新往下走。`,
+        '原推演**原封不动** —— 两场都在左栏，可以随时来回对比。',
+        '',
+        '记忆按分叉点重算：若原记忆里含「分叉之后才发生」的事，分支会把它清掉，',
+        '否则 Ta 会记得还没发生的事。',
+      ].join('\n'),
+      confirmText: '创建分支',
+    })
+    if (!okGo) return
+    const next = store.branchSession(session, messageId, list.map(x => x.title))
+    if (!next) { showToast('这一条已经不在记录里了', 'info'); return }
+    await store.saveSession(next)
+    await refreshList()
+    setActiveId(next.id)
+    setSession(next)
+    showToast(`已分支：${next.title}`)
+  }
+
+  const saveCheckpoint = () => {
+    if (!session) return
+    setCpNaming(true)
+  }
+
+  const commitCheckpoint = (label: string) => {
+    setCpNaming(false)
+    if (!session) return
+    void commit(store.addCheckpoint(session, label))
+    showToast(`已存检查点（第 ${session.messages.length} 条），之后随时可以回到这里`, 'info')
+  }
+
+  const rollbackTo = async (cpId: string) => {
+    if (!session || streaming) return
+    const cp = (session.checkpoints ?? []).find(c => c.id === cpId)
+    if (!cp) return
+    const name = cp.label || `第 ${cp.messageCount} 条`
+    const okGo = await confirmDialog({
+      title: `回到「${name}」？`,
+      message: [
+        `消息会截回 ${cp.messageCount} 条，本场记忆与记忆水位线也一并还原到那一刻。`,
+        '回滚前会自动留一份当前进度 —— 不满意可以点「撤销上次回滚」退回来。',
+      ].join('\n'),
+      confirmText: '回到这里',
+    })
+    if (!okGo) return
+    const next = store.rollbackToCheckpoint(session, cpId)
+    if (!next) return
+    void commit(next)
+    showToast(`已回到「${name}」（可撤销）`)
+  }
+
+  const undoRollback = () => {
+    if (!session?.undoSnapshot) return
+    void commit(store.undoRollback(session))
+    showToast('已撤销这次回滚')
+  }
+
+  const dropCp = (cpId: string) => {
+    if (!session) return
+    void commit(store.dropCheckpoint(session, cpId))
+  }
+
   /**
    * 重说：`runPlotTurn(session, null)` = 不追加用户消息、先丢掉末尾那条 assistant，
    * 于是新生成的结果**天然替换**掉那一条。只出一个结果，不做多候选（老大 2026-09-14 定）。
@@ -320,6 +397,12 @@ export default function TavernPlot() {
               <option value="">（用全局活动模型）</option>
               {providers.map(p => <option key={p.id} value={p.id}>{p.name} · {p.model}</option>)}
             </select>
+            <Button
+              variant="secondary" size="md" disabled={streaming} onClick={() => saveCheckpoint()}
+              title="记住此刻的消息进度与本场记忆；之后无论聊成什么样都能一键回到这里（回滚还可撤销）"
+            >
+              存检查点
+            </Button>
             <Button variant="secondary" size="md" onClick={() => setShowInfo(v => !v)}>
               {showInfo ? '收起本场信息' : '本场信息'}
             </Button>
@@ -448,6 +531,57 @@ export default function TavernPlot() {
                   <div className="mt-0.5 text-[11.5px] text-ink-400 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{session.memory}</div>
                 </div>
               )}
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-ink-500">检查点（{(session.checkpoints ?? []).length}）</span>
+                  <button
+                    type="button"
+                    className="text-[11px] text-ink-500 hover:text-amber"
+                    onClick={() => saveCheckpoint()}
+                  >
+                    ＋ 存一个
+                  </button>
+                </div>
+                {(session.checkpoints ?? []).length === 0 ? (
+                  <p className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
+                    还没有检查点。存一个之后，后面无论聊成什么样都能回到那一刻 ——
+                    消息与本场记忆一起还原，而且可以撤销。
+                  </p>
+                ) : (
+                  <ul className="mt-1 space-y-1">
+                    {[...(session.checkpoints ?? [])].sort((a, b) => b.at - a.at).map(cp => (
+                      <li key={cp.id} className="flex items-center gap-1.5">
+                        <span
+                          className="min-w-0 flex-1 truncate text-[11.5px] text-ink-300"
+                          title={`第 ${cp.messageCount} 条 · ${new Date(cp.at).toLocaleString()}`}
+                        >
+                          {cp.label || `第 ${cp.messageCount} 条`}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-[10.5px] text-ink-500 hover:text-amber"
+                          onClick={() => void rollbackTo(cp.id)}
+                        >
+                          回到这里
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 text-[10.5px] text-ink-600 hover:text-red-400"
+                          title="删掉这个检查点（不影响对话）"
+                          onClick={() => dropCp(cp.id)}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {session.undoSnapshot && (
+                  <Button variant="ghost" size="sm" className="mt-1.5 w-full !text-[11px]" onClick={undoRollback}>
+                    ↩ 撤销上次回滚（{new Date(session.undoSnapshot.at).toLocaleTimeString()}）
+                  </Button>
+                )}
+              </div>
               <Button variant="ghost" size="md" className="w-full text-[12px]" onClick={removeSession}>删除这场推演</Button>
             </aside>
           )}
@@ -477,6 +611,7 @@ export default function TavernPlot() {
                         onSaveEdit: t => saveEdited(m.id, t),
                         onToggleHidden: () => toggleHidden(m.id),
                         onDelete: () => void removeMsg(m.id),
+                        onBranch: () => void branchAt(m.id),
                       }}
                     />
                   </div>
@@ -525,6 +660,17 @@ export default function TavernPlot() {
       </div>
 
       <TavernPlotSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
+
+      {/* 检查点命名：留空就用「第 N 条」（allowEmpty 让它能直接回车） */}
+      <PromptModal
+        open={cpNaming}
+        title="给这个检查点起个名字"
+        label="名字（可以留空）"
+        placeholder="例：分手前 / 进医院之前"
+        allowEmpty
+        onSubmit={commitCheckpoint}
+        onCancel={() => setCpNaming(false)}
+      />
 
       {castEdit && (
         <TavernCastSetting

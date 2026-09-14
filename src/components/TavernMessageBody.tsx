@@ -4,13 +4,15 @@
  * 剧情推演与自由对话共用这一个组件。两页的气泡外壳不同（头像、说话人名、左右对齐），
  * 但**正文渲染与工具条必须完全一致** —— 各写一份必然慢慢漂移，这是本项目的反复教训。
  *
- * 【四个动作的语义，别搞混】
+ * 【五个动作的语义，别搞混】
  *   · 重说：用**同一段历史**让 AI 再生成一次（只出一个结果，不做多候选）。
  *     ★ 只给**末尾那条 AI 回复**提供入口 —— 重说中间某条，后面的内容是按旧版接的，
  *       改了必然互相打架；中间想改就用「编辑」。
  *   · 编辑：就地改正文（AI 的和自己的都能改）。改完**不会自动重跑** ——
  *     如果是最后一轮的输入，改完点「重说」让 AI 重新接一次。
  *   · 隐藏：**不进上下文**（组装时跳过），但界面留着、可随时恢复。
+ *   · 分支：**另开一场**推演、只保留到这一条（原推演原封不动）—— 从这里换个走向试试。
+ *     只有剧情推演页传 `onBranch`；自由对话不传，按钮就不出现。
  *   · 删除：从历史里移走（不可撤销，调用方负责二次确认）。
  *
  * ⚠️ 外层 `div.group/msg` **必须恒定存在**（编辑态也不能换掉它），且正文始终在**同一个分支**里渲染：
@@ -29,6 +31,8 @@ export type MessageOps = {
   onSaveEdit: (text: string) => void
   onToggleHidden: () => void
   onDelete: () => void
+  /** 从这一条分支（不传 = 这个页面没有分支功能，按钮不渲染） */
+  onBranch?: () => void
 }
 
 export function TavernMessageBody({ content, hidden, edited, ops }: {
@@ -99,6 +103,15 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
             >
               {hidden ? '取消隐藏' : '隐藏'}
             </Button>
+            {ops.onBranch && (
+              <Button
+                variant="ghost" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
+                title="从这一条另开一场推演（只保留到这里，原推演不动）—— 用来试另一个走向"
+                onClick={ops.onBranch}
+              >
+                分支
+              </Button>
+            )}
             <Button
               variant="ghost" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
               title="从这场的记录里删掉（不可撤销）"

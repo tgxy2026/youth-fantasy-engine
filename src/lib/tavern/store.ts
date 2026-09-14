@@ -25,7 +25,7 @@ import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
   FreeCharacter, FreeSession, FreeMemory, DailyState,
-  TavernCharIndexItem, FreeSessionIndexItem, TavernMessage,
+  TavernCharIndexItem, FreeSessionIndexItem, TavernMessage, TavernCheckpoint,
 } from './types'
 
 // ==================== 存储键 ====================
@@ -109,6 +109,124 @@ export function lastAssistantId(messages: TavernMessage[]): string {
     if (messages[i].role === 'assistant') return messages[i].id
   }
   return ''
+}
+
+// ==================== 分支 / 检查点 / 回滚（2026-09-14，路线图第 3 批） ====================
+//
+// 【三件事的语义，别搞混】
+//   · **分支**：另开一场推演、只保留到第 N 条 —— **原推演原封不动**。用于「从这里换个走向试试」。
+//   · **检查点**：场内的路标，连**记忆**一起存，随时可以回到那一刻。
+//   · **回滚**：截回检查点。**回滚前自动留一份当前进度**（undoSnapshot），所以这一步是可逆的 ——
+//     "不可逆的试验"没人敢下手，留一级撤销它才敢用。
+//
+// 与消息级操作同一个约定：这些函数**只构造新会话、不落库**，由调用方决定何时保存。
+
+/**
+ * 分支：复制一场推演并只保留到 `atMessageId`（含这一条）。找不到该条时返回 null。
+ *
+ * 🔴 **水位线必须重算，不能沿用** —— 三种情况要分开处理：
+ *   · 水位线落在分支范围内 → 原样保留（记忆与它一致，边界正确）；
+ *   · 水位线在分叉点**之后**（= 记忆里已经含了「分支里还没发生」的事）→ 把水位线退到分支末尾，
+ *     **并把本场记忆一起清空**。只退水位线不清记忆的话，模型会引用一段被删掉的未来，
+ *     表现是「它怎么知道还没发生的事」—— 这种 bug 很难从现象反推回来。
+ *   · 没有水位线 / 水位线消息已被删 → 什么都不动（`messagesAfterWatermark` 会按"全都没总结"处理）。
+ */
+export function branchSession(
+  s: TavernSession,
+  atMessageId: string,
+  existingTitles: string[] = [],
+): TavernSession | null {
+  const cut = s.messages.findIndex(m => m.id === atMessageId)
+  if (cut < 0) return null
+  const messages = s.messages.slice(0, cut + 1)
+  const last = messages[messages.length - 1]
+
+  let watermark = s.watermark
+  let memory = s.memory
+  // 先取出局部量：在闭包里用 s.watermark 会丢掉收窄（TS 只对能证明不变的引用负责）
+  const wm = s.watermark
+  const wmIdx = wm ? s.messages.findIndex(m => m.id === wm.messageId) : -1
+  if (wm && wmIdx > cut) {
+    watermark = last ? { messageId: last.id, at: now() } : undefined
+    memory = undefined
+  }
+
+  return {
+    ...s,
+    id: uid(),
+    title: branchTitle(s.title, existingTitles),
+    messages,
+    watermark,
+    memory,
+    // 检查点只带得过分支点之前的（后面那些属于"被截掉的那条时间线"）
+    checkpoints: (s.checkpoints ?? []).filter(c => c.messageCount <= messages.length),
+    undoSnapshot: undefined,
+    createdAt: now(),
+    updatedAt: now(),
+  }
+}
+
+/**
+ * 分支名避重：`原题 ·分支2`、`原题 ·分支3`…
+ * 序号从 2 起（第 1 份就是原题本身），并**跳过已被占用的号** —— 删掉分支再建不会撞名。
+ * 已有「·分支N」后缀的标题先剥掉，免得出现「… ·分支2 ·分支2」。
+ */
+export function branchTitle(title: string, existingTitles: string[] = []): string {
+  const base = title.replace(/ ·分支\d+$/, '')
+  for (let i = 2; i < 1000; i++) {
+    const t = `${base} ·分支${i}`
+    if (!existingTitles.includes(t)) return t
+  }
+  return `${base} ·分支${existingTitles.length + 1}`
+}
+
+/** 在场内打个检查点（连记忆一起存 —— 回滚要还原的是「那一刻的完整状态」） */
+export function addCheckpoint(s: TavernSession, label = ''): TavernSession {
+  const cp: TavernCheckpoint = {
+    id: uid(),
+    label: label.trim(),
+    messageCount: s.messages.length,
+    watermark: s.watermark,
+    memory: s.memory,
+    at: now(),
+  }
+  return { ...s, checkpoints: [...(s.checkpoints ?? []), cp], updatedAt: now() }
+}
+
+export function dropCheckpoint(s: TavernSession, cpId: string): TavernSession {
+  return { ...s, checkpoints: (s.checkpoints ?? []).filter(c => c.id !== cpId), updatedAt: now() }
+}
+
+/**
+ * 回到某个检查点：消息截回那一刻，记忆与水位线一并还原。
+ * **会把当前进度先存进 `undoSnapshot`** —— 于是「回滚」变成可撤销的动作（再点「撤销上次回滚」就回来）。
+ */
+export function rollbackToCheckpoint(s: TavernSession, cpId: string): TavernSession | null {
+  const cp = (s.checkpoints ?? []).find(c => c.id === cpId)
+  if (!cp) return null
+  return {
+    ...s,
+    messages: s.messages.slice(0, cp.messageCount),
+    watermark: cp.watermark,
+    memory: cp.memory,
+    // 只留一层：再回滚一次就覆盖它 —— 不做无限套娃（那会把「撤销」变成"往前翻历史"）
+    undoSnapshot: { messages: s.messages, watermark: s.watermark, memory: s.memory, at: now() },
+    updatedAt: now(),
+  }
+}
+
+/** 撤销上一次回滚（没有快照时原样返回；调用方按 `undoSnapshot` 决定按钮显不显示） */
+export function undoRollback(s: TavernSession): TavernSession {
+  const u = s.undoSnapshot
+  if (!u) return s
+  return {
+    ...s,
+    messages: u.messages,
+    watermark: u.watermark,
+    memory: u.memory,
+    undoSnapshot: undefined,
+    updatedAt: now(),
+  }
 }
 
 export async function saveSession(s: TavernSession): Promise<TavernSession> {
