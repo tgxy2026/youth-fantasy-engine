@@ -1,0 +1,113 @@
+// ============ AI 返回解析器（aiParse）单元测试 ============
+// 这是纯函数，是全项目「模型文本 → 结构化数据」的唯一入口，必须锁死行为。
+// 重点覆盖两件事：
+//   ① 2.0.1 修过的「单对象被丢成空数组」——绝不能回归（否则"改稿只剩标点"复现）；
+//   ② 剥代码块 / 切最外层 / 容忍前后夹带解释——旧实现三份行为不一致，现已统一。
+import { parseObjectArray, parsePlainObject, stripCodeFence, hasSubstance, asText, humanText } from '../src/lib/aiParse'
+
+let pass = 0, fail = 0
+function ok(name: string, cond: boolean, extra = '') {
+  if (cond) { pass++; console.log(`PASS ${name}`) }
+  else { fail++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`) }
+}
+
+// ---------- stripCodeFence ----------
+{
+  ok('剥 ```json 围栏', stripCodeFence('```json\n{"a":1}\n```') === '{"a":1}')
+  ok('剥裸 ``` 围栏', stripCodeFence('```\n[1]\n```') === '[1]')
+  ok('无围栏时原样返回（仅 trim）', stripCodeFence('  {"a":1}  ') === '{"a":1}')
+}
+
+// ---------- parseObjectArray ----------
+{
+  ok('标准对象数组', parseObjectArray('[{"a":1},{"a":2}]').length === 2)
+  ok('数组里的非对象被过滤', parseObjectArray('[{"a":1},3,"x",null]').length === 1)
+  ok('空数组返回空数组', parseObjectArray('[]').length === 0)
+
+  // 🔴 核心回归：单个对象必须归一化成单元素数组，不得丢失（2.0.1 修复点）
+  const single = parseObjectArray('{"rewritten":"正文内容","level":"ok"}')
+  ok('【回归】单个对象 → 归一化为 1 条（不得丢成空数组）', single.length === 1, `实际长度=${single.length}`)
+  ok('【回归】单对象内容完整保留', single.length === 1 && single[0].rewritten === '正文内容')
+
+  // {list:[…]} / {data:[…]} 形态
+  ok('{list:[…]} 取内部数组', parseObjectArray('{"list":[{"a":1},{"a":2}]}').length === 2)
+  ok('{data:[…]} 取内部数组', parseObjectArray('{"data":[{"a":1}]}').length === 1)
+  ok('{list:[]} 空内部数组仍可解析出对象本身以外的空', parseObjectArray('{"list":[]}').length === 0)
+
+  // 夹带解释 / 代码块
+  ok('夹带前置解释仍能解析数组', parseObjectArray('好的，结果如下：\n[{"a":1}]').length === 1)
+  ok('夹带后置解释仍能解析数组', parseObjectArray('[{"a":1}]\n以上是结果。').length === 1)
+  ok('```json 围栏内数组可解析', parseObjectArray('```json\n[{"a":1},{"a":2}]\n```').length === 2)
+  ok('围栏 + 夹带解释的单个对象可解析', parseObjectArray('```json\n{"a":1}\n```\n希望有帮助').length === 1)
+
+  // 垃圾输入
+  ok('纯文本返回空数组', parseObjectArray('抱歉我不能完成这个请求').length === 0)
+  ok('空串返回空数组', parseObjectArray('').length === 0)
+  ok('残缺 JSON 返回空数组', parseObjectArray('[{"a":').length === 0)
+  ok('不抛异常（残缺 JSON）', (() => { try { parseObjectArray('{'); return true } catch { return false } })())
+}
+
+// ---------- parsePlainObject ----------
+{
+  ok('标准对象', parsePlainObject('{"1":"甲","2":"乙"}')?.['1'] === '甲')
+  ok('围栏内对象', parsePlainObject('```json\n{"1":"甲"}\n```')?.['1'] === '甲')
+  ok('夹带解释的对象', parsePlainObject('填空结果：{"1":"甲"} 完成')?.['1'] === '甲')
+  ok('数组包裹时取首元素（容错）', parsePlainObject('[{"1":"甲"}]')?.['1'] === '甲')
+  ok('纯文本返回 null', parsePlainObject('无法完成') === null)
+  ok('空串返回 null', parsePlainObject('') === null)
+}
+
+// ---------- hasSubstance（拦「只剩标点」的残骸） ----------
+{
+  ok('纯标点/符号判定为无实质内容', hasSubstance('，。！？——【】（）…') === false)
+  ok('仅数字与符号判定为无实质内容', hasSubstance('123 456 ，。') === false)
+  ok('真实文字判定为有实质内容', hasSubstance('他推开那扇门') === true)
+  ok('四字（边界值）判定为有实质内容', hasSubstance('推开了门') === true)
+  ok('三字（低于阈值）判定为无实质内容', hasSubstance('推开门') === false)
+}
+
+// ---------- asText ----------
+{
+  ok('字符串原样（去首尾空白）', asText(' 甲 ') === '甲')
+  ok('数字转字符串', asText(12) === '12')
+  ok('布尔转字符串', asText(false) === 'false')
+  ok('数组用顿号连接', asText(['甲', '乙']) === '甲、乙')
+  ok('嵌套数组递归连接', asText([['甲'], '乙']) === '甲、乙')
+  ok('对象返回空串（不可展示）', asText({ a: 1 }) === '')
+  ok('null/undefined 返回空串', asText(null) === '' && asText(undefined) === '')
+}
+
+// ---------- humanText（JSON 解析失败时的兜底清洗） ----------
+{
+  // 含 JSON：只取「值」，不取键名
+  const jsonish = '{"rewritten":"他推开了门。","level":"ok"}'
+  const t1 = humanText(jsonish)
+  ok('从 JSON 中只提取值、不含键名', t1.includes('他推开了门。') && !t1.includes('rewritten'), JSON.stringify(t1))
+
+  ok('\\n 转义还原为真实换行', humanText('{"a":"第一行\\n第二行"}').includes('\n'))
+
+  // 🔴 bug 锁：旧实现的正则会从键的闭合引号处重新起步、把 `":"` 捕获成冒号，
+  //    导致残缺 JSON 的兜底结果退化成 `:\n,\n:` 这类标点残渣（作者报的「只剩标点」成因之一）。
+  const malformed = humanText('{"rewritten":"他推开了门。",}')
+  ok('【bug 锁】残缺 JSON 兜底取出正文，而非冒号逗号残渣',
+    malformed.includes('他推开了门。') && !/^[\s:,\[\]{}"'\\]*$/.test(malformed), JSON.stringify(malformed))
+
+  // 不含 JSON：剥掉键名残余与 JSON 符号
+  const t2 = humanText('"rewritten": 正文内容 { ok }')
+  ok('非 JSON 文本剥掉带引号的键名与括号', !t2.includes('{') && !t2.includes('}') && !t2.includes('rewritten') && t2.includes('正文内容'), JSON.stringify(t2))
+
+  ok('普通文本保持可读', humanText('  他推开了门。\n  风灌了进来。  ') === '他推开了门。\n风灌了进来。')
+  ok('剥代码块围栏', humanText('```\n{"a":"正文"}\n```').includes('正文'))
+}
+
+// ---------- 三份旧实现行为一致性（收敛的意义） ----------
+{
+  // 旧 autoContinue 用的是裸 JSON.parse：这两种输入它会整条丢弃，统一后应能解析
+  const fenced = '```json\n[{"name":"青云门","note":"新增门派"}]\n```'
+  ok('【收敛验证】带围栏输入不再整条丢弃（旧裸 JSON.parse 会丢）', parseObjectArray(fenced).length === 1)
+  const withProse = '以下是变化：\n[{"name":"李默","note":"修为提升"}]\n完毕。'
+  ok('【收敛验证】夹带散文输入不再整条丢弃', parseObjectArray(withProse).length === 1)
+}
+
+console.log(`\naiParse: ${pass} passed, ${fail} failed`)
+if (fail > 0) process.exitCode = 1

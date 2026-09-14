@@ -16,6 +16,7 @@ import * as db from './db'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { chat, requireActiveProvider, stripThink, isCancelled } from './ai'
+import { parseObjectArray, asText } from './aiParse'
 import { buildProjectContext, type ProjectContextResult } from './aiContext'
 import {
   aiExtractSettingEntities, aiContinuityAudit, aiOocCheck, aiForeshadowReview,
@@ -376,10 +377,11 @@ async function extractSettingUpdates(body: string, title: string, signal?: Abort
 返回 JSON 数组，元素形如 {"name":"实体名(必须与已登记名完全一致)","note":"一句话描述变化，如 修为提升至凝气四层"}。
 只报确有文本依据的，最多 10 条，没有则返回 []。只输出 JSON 数组，不要解释、不要 markdown 代码块。`
   const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, { signal, json: true })
-  try {
-    const arr = JSON.parse(text)
-    return Array.isArray(arr) ? arr.filter((x: any) => x && x.name).map((x: any) => ({ name: String(x.name), note: String(x.note || '') })) : []
-  } catch { return [] }
+  // 统一走 aiParse：旧实现是裸 JSON.parse——不剥代码块、不切最外层，
+  // 模型只要在 JSON 外套一句解释或 ```json 围栏，整条更新就被静默丢弃。
+  return parseObjectArray(text)
+    .filter(x => asText(x.name))
+    .map(x => ({ name: asText(x.name), note: asText(x.note) }))
 }
 
 function pickNoteCol(data: Record<string, string>): string | null {

@@ -12,6 +12,7 @@
 
 import * as db from './db'
 import { WEB } from './env'
+import { parsePlainObject } from './aiParse'
 
 export type AIProviderType = 'ollama' | 'openai'
 
@@ -619,15 +620,9 @@ ${sketch && sketch.trim() ? sketch.trim() : '（作者未提供草图，请基�
   return { values, aiFilled }
 }
 
-/** 从模型回复中剥离代码块标记并解析为按编号索引的值数组 */
+/** 从模型回复中解析出按编号索引的值数组（剥代码块 / 切最外层统一走 aiParse） */
 function parseTemplateJSON(raw: string, fields: TemplateField[]): string[] {
-  let s = raw.trim()
-  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-  const start = s.indexOf('{')
-  const end = s.lastIndexOf('}')
-  if (start >= 0 && end > start) s = s.slice(start, end + 1)
-  let obj: Record<string, unknown> = {}
-  try { obj = JSON.parse(s) } catch { obj = {} }
+  const obj = parsePlainObject(raw) ?? {}
   const out: string[] = []
   for (let i = 0; i < fields.length; i++) {
     const v = obj[String(i + 1)] ?? obj[i + 1] ?? ''
