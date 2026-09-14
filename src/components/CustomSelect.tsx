@@ -12,6 +12,7 @@ import {
 import { Plus, Check, ChevronDown, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
+import { Z } from '../lib/zLayer'
 
 
 /** 自定义下拉选项变更广播：任意下拉增删改选项后派发，同列其它下拉与地图图例据此刷新 */
@@ -277,12 +278,13 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
           ref={dropRef}
           style={{
             left: pos.left,
+            zIndex: Z.dropdown,
             top: pos.top,
             minWidth: pos.minWidth,
             maxHeight: pos.maxHeight,
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
-          className="fixed z-[9999] overflow-y-auto rounded-md bg-ink-800 border border-ink-600 shadow-xl py-1"
+          className="fixed overflow-y-auto rounded-md bg-ink-800 border border-ink-600 shadow-xl py-1"
         >
           <div className="px-2 py-1.5 border-b border-ink-700 bg-ink-900/60 sticky top-0">
             <input

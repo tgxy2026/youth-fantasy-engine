@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Calendar } from 'lucide-react'
 import { todayKey } from '../lib/date'
 import { Button } from './Button'
+import { Z } from '../lib/zLayer'
 
 /** 视图年月 + 日号 → YYYY-MM-DD（统一走 lib/date，与写作统计同口径） */
 const dayKey = (y: number, m: number, d: number) => todayKey(new Date(y, m - 1, d))
@@ -25,7 +26,7 @@ const WEEK = ['日', '一', '二', '三', '四', '五', '六']
  * 真实日历日期选择器：点击弹出月历，选择后写回 YYYY-MM-DD。
  * 用于写作进度「日期」、设定变更「变更日期」等真实日期列（区别于故事内时间的结构化输入）。
  *
- * 弹层通过 Portal 渲染到 body，并固定 z-[9999]，避免被表格单元格 / 滚动容器 / 其它浮层遮挡；
+ * 弹层通过 Portal 渲染到 body，层级取自 zLayer 真源（Z.dropdown），避免被表格单元格 / 滚动容器 / 其它浮层遮挡；
  * 空间不足时自动翻转到按钮上方。
  */
 export default function CalendarPicker({ value, onChange }: Props) {
@@ -112,13 +113,14 @@ export default function CalendarPicker({ value, onChange }: Props) {
         <div
           ref={dropRef}
           style={{
+            zIndex: Z.dropdown,
             left: pos.left,
             top: pos.top,
             minWidth: pos.minWidth,
             maxHeight: pos.maxHeight,
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
-          className="fixed z-[9999] overflow-y-auto rounded-lg bg-ink-850 border border-ink-700 shadow-xl p-2.5"
+          className="fixed overflow-y-auto rounded-lg bg-ink-850 border border-ink-700 shadow-xl p-2.5"
         >
           <div className="flex items-center justify-between mb-2">
             <Button variant="bare" type="button" onClick={() => shiftMonth(-1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-[14px]">‹</Button>

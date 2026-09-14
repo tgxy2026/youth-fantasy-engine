@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { HelpCircle } from 'lucide-react'
 import { Button } from './Button'
+import { Z } from '../lib/zLayer'
 
 interface Props {
   title: string
@@ -109,12 +110,13 @@ export default function HelpPopover({
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
           style={{
+            zIndex: Z.popover,
             left: pos?.left ?? -9999,
             top: pos?.top ?? -9999,
             width: pos?.w ?? remToPx(width),
             visibility: pos ? 'visible' : 'hidden',
           }}
-          className="fixed z-[10000] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl p-3 text-[11.5px] text-ink-200 leading-relaxed max-h-[70vh] overflow-y-auto"
+          className="fixed bg-ink-800 border border-ink-600 rounded-lg shadow-2xl p-3 text-[11.5px] text-ink-200 leading-relaxed max-h-[70vh] overflow-y-auto"
         >
           <div className="font-semibold text-amber mb-1.5 flex items-center gap-1">
             <HelpCircle size={11} /> {title}

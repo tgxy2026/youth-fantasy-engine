@@ -86,7 +86,9 @@ let toastRoot: HTMLDivElement | null = null
 function ensureToastRoot() {
   if (!toastRoot) {
     toastRoot = document.createElement('div')
-    toastRoot.className = 'fixed top-5 left-1/2 -translate-x-1/2 z-[10000] flex flex-col items-center gap-2 pointer-events-none'
+    // 只设 class，层级由 style.zIndex 从 zLayer 真源取（Tailwind 的任意值 class 无法引用常量）
+    toastRoot.className = 'fixed top-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none'
+    toastRoot.style.zIndex = String(Z.toast)
     document.body.appendChild(toastRoot)
   }
   return toastRoot

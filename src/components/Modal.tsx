@@ -2,16 +2,11 @@ import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from './Button'
+import { Z } from '../lib/zLayer'
 
-// 全站唯一 z 轴真源，替换散落在各处的魔数（z-50 / z-[60] / z-[9998] / z-[9999] …）
-export const Z = {
-  dropdown: 1000, // CustomSelect / CharacterSelect / TableRefSelect / CalendarPicker 等下拉
-  modal: 2000, // 绝大多数弹窗（原 z-50 / z-[60] / z-[1000] / z-[9998] 收敛于此）
-  modalNested: 2100, // 弹窗内嵌弹窗（如设置弹窗里再弹 PromptModal）
-  prompt: 3000, // PromptModal / confirmDialog（需盖住任何 modal）
-  popover: 4000, // HelpPopover
-  toast: 5000, // showToast
-} as const
+// z 轴分层真源已独立到 src/lib/zLayer.ts（纯常量不该挂在组件文件上，
+// 否则每个要用它的下拉都得 import 整个 Modal）。此处再导出，既有 `import { Z } from './Modal'` 不受影响。
+export { Z }
 
 export type ModalWidth = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | number
 export type ModalVariant = 'blur' | 'plain' | 'opaque'
@@ -190,7 +185,9 @@ export function Modal({
 
   return createPortal(
     <div
-      className={`fixed inset-0 flex z-[2000] ${overlayVariant} ${overlayAlign}`}
+      // 层级只走 style.zIndex（取自 zLayer 真源）。此前这里同时写了 class `z-[2000]`
+      // 与 style.zIndex 两份，后者胜出、前者纯属误导，已删。
+      className={`fixed inset-0 flex ${overlayVariant} ${overlayAlign}`}
       style={{ zIndex: layer ?? Z.modal, ...overlayStyle }}
       onMouseDown={e => {
         if (overlayClose && e.target === e.currentTarget) onCloseRef.current()
