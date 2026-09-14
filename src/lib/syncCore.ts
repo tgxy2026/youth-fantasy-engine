@@ -14,6 +14,7 @@ import {
   type SyncTransport,
   type RawSyncResponse,
 } from './syncTransport'
+import { SAVE_DEBOUNCE_MS } from './constants'
 
 // 参与同步的全部 store（与 db.ts 中对象库一致）
 export const SYNC_STORES = [
@@ -554,7 +555,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     pushTimer = setTimeout(() => {
       pushTimer = null
       void flushNow()
-    }, 800)
+    }, SAVE_DEBOUNCE_MS)
   }
 
   function keyOf(store: string, value: any): unknown {

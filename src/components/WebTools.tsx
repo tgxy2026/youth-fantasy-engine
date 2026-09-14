@@ -27,6 +27,7 @@ import {
   type SyncMode,
 } from '../lib/syncTransport'
 import { STATUS_META } from '../lib/syncStatusMeta'
+import { LS_SYNC_CODE, LS_INVITE_OK } from '../lib/constants'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
 
@@ -60,7 +61,7 @@ export default function WebTools() {
   // 已开启状态分模式判定：http 看有没有同步码，file 看有没有开启标记 + 目录
   const [hasCode, setHasCode] = useState(() => {
     try {
-      return !!localStorage.getItem('yfe-sync-code')
+      return !!localStorage.getItem(LS_SYNC_CODE)
     } catch {
       return false
     }
@@ -120,7 +121,7 @@ export default function WebTools() {
       setSyncTransport(createHttpTransport())
       const code = (() => {
         try {
-          return localStorage.getItem('yfe-sync-code') || ''
+          return localStorage.getItem(LS_SYNC_CODE) || ''
         } catch {
           return ''
         }
@@ -356,7 +357,7 @@ export default function WebTools() {
         variant="bare"
         onClick={() => {
           try {
-            localStorage.removeItem('yfe-invite-ok')
+            localStorage.removeItem(LS_INVITE_OK)
           } catch {
             /* 忽略 */
           }

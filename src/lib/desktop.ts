@@ -8,6 +8,7 @@
 // - 便携版数据文件 → 桌面版「导入数据文件」替换本机数据
 import type { StoreOps, PortableData } from './portable'
 import { normalizePortableData } from './portable'
+import { SAVE_DEBOUNCE_MS } from './constants'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
 export interface ElectronStoreAPI {
@@ -117,11 +118,11 @@ export async function initDesktopStore(): Promise<void> {
   }
 }
 
-/** 数据变更后安排一次防抖写盘（800ms 内的连续修改合并为一次写入） */
+/** 数据变更后安排一次防抖写盘（SAVE_DEBOUNCE_MS 内的连续修改合并为一次写入） */
 function scheduleSave() {
   dirty = true
   if (saveTimer != null) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => { saveTimer = null; void flushDesktop() }, 800)
+  saveTimer = setTimeout(() => { saveTimer = null; void flushDesktop() }, SAVE_DEBOUNCE_MS)
   emit()
 }
 

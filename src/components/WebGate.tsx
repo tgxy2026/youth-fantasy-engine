@@ -4,15 +4,16 @@ import { Lock } from 'lucide-react'
 import { showToast } from './dialogs'
 import { Modal } from './Modal'
 import { Button } from './Button'
+import { LS_INVITE_OK } from '../lib/constants'
 
 // 网页体验版邀请门禁：未通过邀请码前拦截整个应用。
 // 邀请码不在客户端明文保存（避免被扒），由服务器 /api/invite/check 比对，
 // 仅在 localStorage 记一个「已通过」标记，避免每次刷新都重新输。
-const INVITE_KEY = 'yfe-invite-ok'
+// 键名统一取自 lib/constants（与 WebTools 的清除入口共用同一常量，避免两处字面量各自漂移）。
 
 export function checkInvited(): boolean {
   try {
-    return localStorage.getItem(INVITE_KEY) === '1'
+    return localStorage.getItem(LS_INVITE_OK) === '1'
   } catch {
     return false
   }
@@ -20,7 +21,7 @@ export function checkInvited(): boolean {
 
 export function markInvited() {
   try {
-    localStorage.setItem(INVITE_KEY, '1')
+    localStorage.setItem(LS_INVITE_OK, '1')
   } catch {
     /* localStorage 不可用时退化为每次都输邀请码，不影响功能 */
   }

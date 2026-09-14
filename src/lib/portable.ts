@@ -8,6 +8,8 @@
 // - 出于浏览器安全策略，每次启动需要用户手动点一次「打开数据文件」授权（仅一次）
 // - 写盘做了 800ms 防抖：连续码字时不会每敲一个字就写一次 U 盘
 
+import { SAVE_DEBOUNCE_MS } from './constants'
+
 declare const __PORTABLE__: boolean | undefined
 
 /** 是否为便携（单文件 U 盘）版本，由构建时 define 注入 */
@@ -192,12 +194,12 @@ export async function createDataFile(): Promise<boolean> {
   }
 }
 
-/** 数据变更后安排一次防抖写盘（800ms 内的连续修改合并为一次写入） */
+/** 数据变更后安排一次防抖写盘（SAVE_DEBOUNCE_MS 内的连续修改合并为一次写入） */
 export function scheduleSave() {
   if (!handle) return
   dirty = true
   if (saveTimer != null) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => { saveTimer = null; void flush() }, 800)
+  saveTimer = setTimeout(() => { saveTimer = null; void flush() }, SAVE_DEBOUNCE_MS)
 }
 
 /**

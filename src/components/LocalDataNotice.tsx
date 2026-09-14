@@ -5,11 +5,11 @@ import { Button } from './Button'
 import { WEB } from '../lib/env'
 import { isWebFileSyncOn } from '../lib/serverStore'
 import { CONTACT_LINKS } from './AboutPage'
+import { LS_SYNC_CODE } from '../lib/constants'
 
 // 网页体验版本地数据提醒：每次打开网页（App 挂载）且未开启任何云端同步时弹出。
 // #032：云端同步有两条路径——①服务器模式（凭同步邀请码）、②云盘文件模式（选目录即开，无需码）。
 // 任一开启，数据即有云端兜底，不再每次打扰。按需求每次打开都弹，故不做 localStorage 「已读」抑制。
-const SYNC_KEY = 'yfe-sync-code'
 
 /**
  * 本组件本次启动是否会弹出（网页版且未开启任何云端同步时恒为 true）。
@@ -19,7 +19,7 @@ const SYNC_KEY = 'yfe-sync-code'
 export function isLocalDataNoticeActive(): boolean {
   if (!WEB) return false
   try {
-    return !(localStorage.getItem(SYNC_KEY) || isWebFileSyncOn())
+    return !(localStorage.getItem(LS_SYNC_CODE) || isWebFileSyncOn())
   } catch {
     return true // 存储不可用时按未开启同步处理，照常提醒
   }

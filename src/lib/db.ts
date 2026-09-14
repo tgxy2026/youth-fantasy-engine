@@ -19,6 +19,7 @@ import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
 import { chapterSeqMap, flattenChapters } from './chapterSeq'
+import { LS_SYNC_CODE } from './constants'
 
 const DB_NAME = 'novel-studio'
 const DB_VERSION = 9
@@ -384,7 +385,7 @@ if (WEB) {
         return
       }
       // ② 服务器模式：凭同步邀请码登录
-      const sc = localStorage.getItem('yfe-sync-code')
+      const sc = localStorage.getItem(LS_SYNC_CODE)
       if (sc) {
         // #031：先按持久化方式恢复传输层（云盘文件中转 / 服务器），再设码握手
         await applyTransportFromPersisted()
@@ -395,7 +396,7 @@ if (WEB) {
         void pullSnapshot().catch((err: unknown) => {
           if (err instanceof CloudAuthError) {
             try {
-              localStorage.removeItem('yfe-sync-code')
+              localStorage.removeItem(LS_SYNC_CODE)
             } catch {
               /* 忽略 */
             }
@@ -450,7 +451,7 @@ export async function enableCloudSync(code: string) {
   }
   setStoreOps(cloudStore)
   try {
-    localStorage.setItem('yfe-sync-code', code)
+    localStorage.setItem(LS_SYNC_CODE, code)
   } catch {
     /* 忽略 */
   }

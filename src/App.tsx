@@ -28,6 +28,7 @@ import GeoMapEditor from './components/GeoMapEditor'
 import PlotCanvas from './components/PlotCanvas'
 import { showToast } from './components/dialogs'
 import { applyTheme, applyZoom, getStoredTheme, getStoredZoom } from './lib/theme'
+import { LS_SPRITE_ENABLED } from './lib/constants'
 import { downloadBlob } from './lib/zip'
 import workbenchBg from './assets/workbench-bg.png'
 
@@ -52,7 +53,7 @@ export default function App() {
   // 全文检索命令面板（v1.3）：Ctrl/Cmd+K 唤起
   const [searchOpen, setSearchOpen] = useState(false)
   // 颉文姬 Q 版精灵开关（面板内可切换，localStorage 持久化）
-  const [spriteEnabled, setSpriteEnabled] = useState(() => localStorage.getItem('yfe-sprite-enabled') !== '0')
+  const [spriteEnabled, setSpriteEnabled] = useState(() => localStorage.getItem(LS_SPRITE_ENABLED) !== '0')
   useEffect(() => {
     const onSetting = (e: Event) => {
       const v = (e as CustomEvent<boolean>).detail

@@ -18,6 +18,7 @@ import {
 import { TABS } from '../lib/schema'
 import { isCancelled } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
+import { LS_SPRITE_ENABLED } from '../lib/constants'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { showToast } from './dialogs'
 import HelpPopover from './HelpPopover'
@@ -130,11 +131,11 @@ export default function JieWenJi({
 }: Props) {
   const { ready: aiReady } = useAIReady()
   // 右侧 Q 版精灵开关（全局，localStorage 持久化 + 事件通知 App）
-  const [spriteOn, setSpriteOn] = useState(() => localStorage.getItem('yfe-sprite-enabled') !== '0')
+  const [spriteOn, setSpriteOn] = useState(() => localStorage.getItem(LS_SPRITE_ENABLED) !== '0')
   const toggleSprite = () => {
     const next = !spriteOn
     setSpriteOn(next)
-    localStorage.setItem('yfe-sprite-enabled', next ? '1' : '0')
+    localStorage.setItem(LS_SPRITE_ENABLED, next ? '1' : '0')
     window.dispatchEvent(new CustomEvent('jiewenji:sprite-setting', { detail: next }))
     showToast(next ? '右侧精灵已显示' : '右侧精灵已隐藏（仍可从工具栏打开 AI 编辑）', 'success')
   }
