@@ -98,6 +98,28 @@
   直接补进依赖数组会让 `useMemo` 每次重算、`useEffect` 可能死循环。**正确解法是先包 `useCallback` 再加依赖**，
   属逐例判断 + 需跑起来验证，别当成"顺手改改"。
 
+## 单一口径模块（2026-09-14 收敛，新增代码请走这些入口）
+- `src/lib/aiParse.ts` —— AI 输出解析唯一入口（详见上文 AI 段）
+- `src/lib/constants.ts` —— 跨文件共用的 localStorage 键（`LS_*`）与防抖/轮询常量
+- `src/lib/zLayer.ts` —— **z 轴分层真源 `Z`**。🔴 浮层必须高于 modal/prompt（下拉会出现在弹窗内部，
+  且全部 Portal 到 body，降下去会导致弹窗内下拉不可用）；Modal.tsx 处保留 `export { Z }` 兼容旧 import
+- `src/lib/useSvgPanZoom.ts` —— SVG 画布平移/缩放/节点拖拽（RelationGraph、FactionGraph 已接入；
+  GeoMapEditor 走 getScreenCTM 逆矩阵、PlotCanvas 是 DOM 卡片，**不是同一套模型，未接入**）
+- `src/lib/seedContent.ts` / `src/lib/materialData.ts` —— 从巨型文件拆出的**纯数据**（原文件保留出口，调用点零改动）
+
+## 两条可复用技法（2026-09-14 实战验证）
+- 🔴 **搬迁大块数据必须做到「可证明零改动」**：① 逐行 splice，**绝不重新序列化/转义**
+  （模板字符串被二次解析就会破坏）；② 脚本内先做**边界断言**（特征行位置不符即抛错，不产半成品）；
+  ③ 搬完做**内容哈希终审**（归一化后 sha256 必须完全一致）。搬 seedData 时长度差恰为
+  `15 × len('export ')` = 105，与预期吻合才敢提交。
+- 🔴 **抽象泄漏判据：形状不一致就不要抽**。审计曾称 AI 状态「五件套复制 4 份」，实测四个消费方形状各异
+  （标准请求结果 / 流式累积 / 带阶段日志的流水线 / 压根没有），强行合一会比重复更糟 —— 已判定不做。
+  「重复」只有在形状真的一致时才值得抽。
+
+## JSX 语法速记（我在这上面栽过两次）
+- `{/* 注释 */}` **不能**写在 JSX 属性位置（会报 TS1005）。
+- `// 注释` **可以**写在 JSX 属性位置（属性行之间），已实测通过 tsc。
+
 ## 本机环境坑（Windows + Git Bash，务必绕行）
 - `git` **不在 PATH** → 用 `C:/Users/18223/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe`。
 - `npm` shim 坏（输出乱码 + 触发 WSL 黑名单）→ 绕行 `"<托管node>/node.exe" "<托管node>/node_modules/npm/bin/npm-cli.js" <命令>`。
