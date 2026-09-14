@@ -31,6 +31,27 @@ export interface ProjectContextOptions {
   focusChapterId?: string
   /** 相关章节召回条数上限，默认 8 */
   relatedChapterLimit?: number
+
+  // ===== 酒馆模式（方案 §4.2）：以下三项只加参数，不传即完全维持原行为 =====
+  /**
+   * 视角档位。
+   * · 'character-view' —— 角色视角：只带角色的「常识」（世界观 / 角色 / 关系 / 名词），
+   *   **排除作者侧资料**（全书总纲、分卷大纲、章节细纲、伏笔追踪、爽点节奏、支线剧情、灵感素材…）。
+   *   理由：那些是作者侧资料，带进去等于剧透，AI 会变成「知道结局的演员」，
+   *   「测试角色真实反应」这个目的直接归零。
+   * · 'director-view' —— 导演视角：作者侧资料照带，但**锚点仍然生效**（只看截至锚点的大纲与伏笔）。
+   */
+  viewMode?: 'character-view' | 'director-view'
+  /**
+   * 叙事锚点（章节 id）。指定后，章节清单与相关章节召回**只保留锚点章及之前的** ——
+   * 之后再发生的事，此刻的角色不可能知道。
+   */
+  anchorChapterId?: string
+  /**
+   * 知情者过滤：`secrets`（知情权限）只带入「该角色是知情者」的条目。
+   * 与「扮演设定的知识边界」互补 —— secrets 管事实边界，扮演设定管认知范围。
+   */
+  knowerName?: string
 }
 
 export interface ProjectContextResult {
@@ -74,6 +95,23 @@ const PRIORITY: string[] = [
   'style',            // 写作规范
   'changelog',        // 设定变更
   'ideas',            // 灵感素材
+]
+
+/**
+ * 作者侧资料：写的是「故事将如何发展」，不是「角色此刻知道什么」。
+ * 酒馆模式的「角色视角」下必须排除 —— 参见 ProjectContextOptions.viewMode 的说明。
+ */
+const AUTHOR_SIDE_TABS = [
+  'master',            // 全书总纲
+  'volume-outline',    // 分卷大纲
+  'chapter-outline',   // 章节细纲
+  'chapter-master',    // 章节总表
+  'foreshadow',        // 伏笔追踪
+  'hookpoints',        // 爽点节奏
+  'subplots',          // 支线剧情
+  'ideas',             // 灵感素材
+  'style',             // 写作规范（作者规范，非角色认知）
+  'changelog',         // 设定变更（作者侧台账）
 ]
 
 /** 各表最多带入的条目数（防止长篇几百行表格直接吃满预算） */
@@ -147,12 +185,45 @@ function renderTable(tab: TabDef, rows: { data: Record<string, string> }[]): str
   return out.join('\n')
 }
 
+/**
+ * 把叙事序列表截到锚点章为止（含锚点本身）。
+ * ⚠️ 锚点找不到时**不裁剪** —— 宁可多带，也不要把上下文清空（锚点章被删属异常情况）。
+ */
+function cutListAtAnchor<T extends { id: string }>(list: T[], anchorId?: string): T[] {
+  if (!anchorId) return list
+  const i = list.findIndex(c => c.id === anchorId)
+  if (i < 0) return list
+  return list.slice(0, i + 1)
+}
+
+/** 锚点及其之前全部章节的 id 集合（用于过滤「相关章节召回」）。返回 null = 无法判定，调用方跳过过滤。 */
+async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
+  try {
+    const [vols, chs] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
+    const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
+    const flat = [...flattenChapters(vols, chs), ...orphans]
+    const i = flat.findIndex(c => c.id === anchorId)
+    if (i < 0) return null
+    return new Set(flat.slice(0, i + 1).map(c => c.id))
+  } catch {
+    return null
+  }
+}
+
 /** 单个页签的资料段（空数据返回空串） */
-async function sectionOf(tab: TabDef): Promise<string> {
+async function sectionOf(tab: TabDef, knowerName?: string): Promise<string> {
   try {
     if (tab.type === 'form') return renderForm(tab, await db.getFormData(tab.id))
     if (tab.type === 'card') return renderCards(tab, await db.getCardRecords(tab.id))
-    if (tab.type === 'table') return renderTable(tab, await db.getTableRows(tab.id))
+    if (tab.type === 'table') {
+      const rows = await db.getTableRows(tab.id)
+      // 酒馆模式：知情权限只带「该角色是知情者」的条目（方案 §6.5 事实边界的自动推断）
+      if (tab.id === 'secrets' && knowerName) {
+        const mine = rows.filter(r => String(r.data?.['知情者'] ?? '').includes(knowerName))
+        return renderTable(tab, mine)
+      }
+      return renderTable(tab, rows)
+    }
   } catch {
     // 单段读取失败就当这段没有，不影响其他资料
   }
@@ -160,7 +231,7 @@ async function sectionOf(tab: TabDef): Promise<string> {
 }
 
 /** 章节清单：卷 → 章（标题 / 字数 / 摘要），不含正文 */
-export async function buildChapterDigest(maxChapters = 200): Promise<string> {
+export async function buildChapterDigest(maxChapters = 200, anchorChapterId?: string): Promise<string> {
   let vols: Volume[] = []
   let chs: Chapter[] = []
   try {
@@ -176,7 +247,9 @@ export async function buildChapterDigest(maxChapters = 200): Promise<string> {
   const flat = flattenChapters(vols, chs)
   const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
   const sorted = [...flat, ...orphans]
-  const listed = sorted.slice(0, maxChapters)
+  // 酒馆模式：锚点裁剪 —— 只列到锚点章为止（之后再发生的事，此刻的角色不可能知道）
+  const cut = cutListAtAnchor(sorted, anchorChapterId)
+  const listed = cut.slice(0, maxChapters)
   const byVol = new Map<string, Chapter[]>()
   for (const c of listed) {
     const arr = byVol.get(c.volumeId) ?? []
@@ -195,7 +268,7 @@ export async function buildChapterDigest(maxChapters = 200): Promise<string> {
   for (const v of volOrder) emit(`◆ ${v.title || '未命名卷'}`, byVol.get(v.id) ?? [])
   const orphan = listed.filter(c => !volOrder.some(v => v.id === c.volumeId))
   emit('◆ 未分卷', orphan)
-  if (sorted.length > listed.length) lines.push(`（另有 ${sorted.length - listed.length} 章未列出）`)
+  if (cut.length > listed.length) lines.push(`（另有 ${cut.length - listed.length} 章未列出）`)
   return lines.join('\n')
 }
 
@@ -357,6 +430,12 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   const budget = opts.budget ?? 12000
   const only = opts.onlyTabIds ? new Set(opts.onlyTabIds) : null
   const exclude = new Set(opts.excludeTabIds ?? [])
+  // 酒馆模式 · 角色视角：排除作者侧资料（带进去 = 剧透，详见 viewMode 说明）
+  if (opts.viewMode === 'character-view') {
+    for (const id of AUTHOR_SIDE_TABS) exclude.add(id)
+  }
+  // 锚点白名单（null = 不裁剪）
+  const anchorAllow = opts.anchorChapterId ? await idsUpToAnchor(opts.anchorChapterId) : null
 
   const parts: string[] = []
   const sections: string[] = []
@@ -411,7 +490,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     // 章节总表按卷建表后，行分散在 chapter-vol-* 各表，需合并所有卷台账再渲染
     const body = id === 'chapter-master'
       ? renderTable(tab, await db.getAllChapterLedgerRows())
-      : await sectionOf(tab)
+      : await sectionOf(tab, opts.knowerName)
     push(tab.name, body)
   }
 
@@ -420,7 +499,9 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   // 该段在「章节清单」之前注入，预算紧张时优先于通用清单占位。
   if (opts.focusChapterId) {
     try {
-      const related = await findRelatedChapters(opts.focusChapterId, opts.relatedChapterLimit ?? 8)
+      const found = await findRelatedChapters(opts.focusChapterId, opts.relatedChapterLimit ?? 8)
+      // 锚点生效时，锚点之后的章节不进召回（否则等于把「未来」喂给此刻的角色）
+      const related = anchorAllow ? found.filter(c => anchorAllow.has(c.id)) : found
       if (related.length > 0) {
         const relLines: string[] = [
           `（与当前章节关联度最高的 ${related.length} 章，含人物共现与叙事邻接，供判断前后文一致性）`,
@@ -438,7 +519,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   }
 
   if (opts.includeChapterList !== false) {
-    const digest = await buildChapterDigest()
+    const digest = await buildChapterDigest(200, opts.anchorChapterId)
     push('章节清单', digest)
   }
 
