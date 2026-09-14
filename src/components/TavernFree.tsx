@@ -28,6 +28,7 @@ import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import TavernFreeSetup, { type FreeDraft } from './TavernFreeSetup'
 import TavernCastDirector from './TavernCastDirector'
+import TavernRevisionDialog from './TavernRevisionDialog'
 import TavernMessageBody from './TavernMessageBody'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import { renderTavernMessage } from './TavernMessage'
@@ -36,6 +37,7 @@ import * as store from '../lib/tavern/store'
 import { runFreeTurn } from '../lib/tavern/engine'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
 import { summarizeMemory } from '../lib/tavern/summarize'
+import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
 import { buildOpeningMessage } from '../lib/tavern/prompt'
 import { uid } from '../lib/id'
 import {
@@ -43,7 +45,7 @@ import {
   shouldRunAutoSummary, MEMORY_SECTIONS, isMemoryEmpty,
 } from '../lib/tavern/memory'
 import {
-  type FreeCharacter, type FreeMemory, type FreeSession,
+  type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
 } from '../lib/tavern/types'
 import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '../lib/tavern/settings'
@@ -99,6 +101,14 @@ export default function TavernFree() {
   const [speakNext, setSpeakNext] = useState('')
   /** 「在场调度」弹窗（静音 / 健谈度，A6） */
   const [directorOpen, setDirectorOpen] = useState(false)
+  /** 设定更新：AI 读对话 → 列出「设定可能该改了」，由作者逐条裁决 */
+  const [reviseOpen, setReviseOpen] = useState(false)
+  const [revising, setRevising] = useState(false)
+  const [applyingRev, setApplyingRev] = useState(false)
+  const [proposals, setProposals] = useState<CardRevision[]>([])
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  /** 设查失败的原因（与「没有需要改设定」必须分开显示） */
+  const [reviseError, setReviseError] = useState('')
   /** 控制面板设置（记忆与日常阈值都从这儿来）—— 读不到时用出厂默认，不含糊 */
   const [tavernSettings, setTavernSettings] = useState<TavernSettings | null>(null)
   /** 会话名内联编辑：列表里只显示标题，改不了就只能删了重开，所以给个直接改的入口 */
@@ -325,6 +335,72 @@ export default function TavernFree() {
       setSumProgress('')
     }
   }, [summaryProviderId, lim])
+
+  /**
+   * 设定更新：对**在场每个角色**分别审查一遍。
+   *
+   * 为什么每个都要跑：关系是**双向**的（用户演的楚楠提分手，楚楠与洛汐两张卡的「2.4 关系」都该改），
+   * 只查 AI 演的那一方会漏掉一半。
+   * 这里只产出建议、**不落库**；采纳由 applyPicked 交给 store。
+   */
+  const openRevise = useCallback(async (s: FreeSession) => {
+    const cards = (await Promise.all(s.charIds.map(async id => store.getFreeChar(id))))
+      .filter((c): c is FreeCharacter => !!c)
+    setReviseOpen(true)
+    if (cards.length === 0) { setProposals([]); return }
+    setRevising(true)
+    setProposals([])
+    setPicked(new Set())
+    setReviseError('')
+    try {
+      // 说话人名字：多角色同场时，「谁对谁说了什么」是判断的关键一半
+      const speakerName = (m: TavernMessage) => cards.find(c => c.id === m.speakerId)?.name ?? '角色'
+      const out: CardRevision[] = []
+      for (const c of cards) {
+        const rows = await proposeCardRevisions({
+          char: c,
+          messages: s.messages,
+          providerId: summaryProviderId || undefined,
+          speakerName,
+        })
+        out.push(...rows)
+      }
+      setProposals(out)
+      setPicked(new Set(out.map(r => r.id)))
+      showToast(out.length
+        ? `读出 ${out.length} 处可能的设定变更，请逐条裁决`
+        : `这段对话没有需要改的设定（共查了 ${cards.length} 张卡）`,
+        'info')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setReviseError(msg)
+      showToast(`检查失败：${msg}`, 'error')
+    } finally {
+      setRevising(false)
+    }
+  }, [summaryProviderId])
+
+  /** 采纳选中的设定变更。写卡后**重读在场角色** —— 下一轮组装就用新设定 */
+  const applyPicked = useCallback(async () => {
+    const items = proposals
+      .filter(p => picked.has(p.id))
+      .map(p => ({ charId: p.charId, field: p.field, after: p.after }))
+    if (items.length === 0) return
+    setApplyingRev(true)
+    try {
+      const n = await store.applyCardRevisions(items)
+      if (session) await loadSessionContext(session)
+      showToast(`已更新 ${n} 处设定 —— 下一轮对话即按新设定演`)
+      setReviseOpen(false)
+      setProposals([])
+      setPicked(new Set())
+      setReviseError('')
+    } catch (e) {
+      showToast(`写入失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setApplyingRev(false)
+    }
+  }, [proposals, picked, session, loadSessionContext])
 
   /** 自动总结：静默，失败也不打扰（下次打开会补算） */
   const autoSummarize = useCallback(async (s: FreeSession) => {
@@ -863,17 +939,28 @@ export default function TavernFree() {
                   )}
                 </div>
                 <div className="p-2 border-t border-ink-800">
-                  <Button
-                    variant="secondary" size="sm" className="w-full"
-                    disabled={!session || summarizing}
-                    onClick={() => { if (session) void runSummary(session, true) }}
-                  >
-                    {summarizing
-                      ? (sumProgress ? `整理中… ${sumProgress}` : '整理中…')
-                      : (castCards.length > 1 ? `整理全部记忆（${castCards.length} 位）` : '立即整理记忆')}
-                  </Button>
+                  <div className="flex gap-1.5">
+                    <Button
+                      variant="secondary" size="sm" className="flex-1"
+                      disabled={!session || summarizing}
+                      onClick={() => { if (session) void runSummary(session, true) }}
+                    >
+                      {summarizing
+                        ? (sumProgress ? `整理中… ${sumProgress}` : '整理中…')
+                        : '整理记忆'}
+                    </Button>
+                    <Button
+                      variant="secondary" size="sm" className="flex-1"
+                      disabled={!session || revising}
+                      title="让 AI 读这段对话，列出「角色设定可能该改了」的条目，由你逐条裁决（记忆与设定分开：这里改的是角色卡）"
+                      onClick={() => { if (session) void openRevise(session) }}
+                    >
+                      {revising ? '检查中…' : '更新设定'}
+                    </Button>
+                  </div>
                   <p className="mt-1.5 text-[10.5px] text-ink-600 leading-relaxed">
-                    记忆**按角色分别整理**：每位只记他自己在场看到、听到的事。换一场对话，Ta仍然记得。
+                    记忆**按角色分别整理**（Ta 记得什么）；设定更新只在你点它时才跑，
+                    而且**只列出来让你裁决**，不自动改卡。
                   </p>
                 </div>
               </aside>
@@ -883,6 +970,25 @@ export default function TavernFree() {
       </div>
 
       <TavernFreeSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
+
+      <TavernRevisionDialog
+        open={reviseOpen}
+        loading={revising}
+        applying={applyingRev}
+        proposals={proposals}
+        picked={picked}
+        error={reviseError}
+        onToggle={id => setPicked(prev => {
+          const next = new Set(prev)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          return next
+        })}
+        onToggleAll={next => setPicked(next ? new Set(proposals.map(p => p.id)) : new Set())}
+        onApply={() => void applyPicked()}
+        onRetry={() => { if (session) void openRevise(session) }}
+        onClose={() => setReviseOpen(false)}
+      />
 
       <TavernCastDirector
         open={directorOpen}

@@ -20,12 +20,13 @@
  */
 import * as db from '../db'
 import { uid } from '../id'
-import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY } from './types'
+import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField } from './types'
 import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
   FreeCharacter, FreeSession, FreeMemory, DailyState,
   TavernCharIndexItem, FreeSessionIndexItem, TavernMessage, TavernCheckpoint,
+  CardFieldPath,
 } from './types'
 
 // ==================== 存储键 ====================
@@ -381,6 +382,34 @@ export async function saveFreeChar(c: FreeCharacter): Promise<FreeCharacter> {
   else idx.push(item)
   await db.setMeta(G.charIndex, idx)
   return next
+}
+
+/**
+ * 采纳若干条「设定更新」（2026-09-14）。返回实际改动的条数。
+ *
+ * 🔴 必须**按角色分组、在同一份卡上连续应用**：同一角色若有多条改动（例：关系 + 内核），
+ *    逐条「读一次卡 → 写一次卡」的话，后一条会基于**旧的**卡去写 —— 前一条被静默覆盖。
+ *    这类丢改动极难察觉（改动确实"成功"了，只是少了）。
+ */
+export async function applyCardRevisions(
+  items: { charId: string; field: CardFieldPath; after: string }[],
+): Promise<number> {
+  const byChar = new Map<string, { field: CardFieldPath; after: string }[]>()
+  for (const it of items) {
+    const arr = byChar.get(it.charId) ?? []
+    arr.push({ field: it.field, after: it.after })
+    byChar.set(it.charId, arr)
+  }
+  let n = 0
+  for (const [charId, list] of byChar) {
+    const card = await getFreeChar(charId)
+    if (!card) continue
+    let next = card
+    for (const it of list) next = writeCardField(next, it.field, it.after)
+    await saveFreeChar(next)
+    n += list.length
+  }
+  return n
 }
 
 /**

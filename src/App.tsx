@@ -45,6 +45,7 @@ const TavernCard = lazy(() => import('./components/TavernCard'))
 const TavernFree = lazy(() => import('./components/TavernFree'))
 const TavernControl = lazy(() => import('./components/TavernControl'))
 const TavernScript = lazy(() => import('./components/TavernScript'))
+const TavernWorld = lazy(() => import('./components/TavernWorld'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -314,6 +315,9 @@ export default function App() {
     }
     if (activeTab === 'material-library') {
       return <MaterialLibrary />
+    }
+    if (activeTab === 'tavern-world') {
+      return <TavernWorld />
     }
     if (activeTab === 'tavern-plot') {
       return <TavernPlot />

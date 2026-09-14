@@ -38,6 +38,11 @@ export type PromptLayers = {
   tone: TavernTone
   /** 世界与角色设定：剧情模式为项目资料；自由模式为角色卡四章拼接 */
   setting?: string
+  /**
+   * 本场背景设定（第 5 批）：作者提炼过的世界资料，**按关键词命中决定要不要注入**。
+   * 空串 = 整层不出现（与①一样，不留空标题占位置）。
+   */
+  world?: string
   /** 长期记忆（六栏压缩后的文本） */
   memory?: string
   /**
@@ -85,6 +90,10 @@ export function buildSystemPrompt(layers: PromptLayers): string {
 
   // ① 世界与角色设定（身份锁定）
   if (layers.setting?.trim()) parts.push(`〖世界与角色设定〗\n${layers.setting.trim()}`)
+
+  // ①b 本场背景设定（第 5 批）：作者从项目资料**提炼**过的那一份，按关键词决定要不要带。
+  //     与①的区别：①是原始资料（可能几千字、每轮都带），这里是精简稿（≤1800 字、可开关）。
+  if (layers.world?.trim()) parts.push(`〖本场背景设定〗\n${layers.world.trim()}`)
 
   // ② 长期记忆（居中）
   const memTitle = layers.memoryTitle === undefined ? '长期记忆' : layers.memoryTitle

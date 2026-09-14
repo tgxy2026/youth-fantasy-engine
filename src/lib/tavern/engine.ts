@@ -12,10 +12,8 @@
  *   · 上下文必须走 buildProjectContext，不自拼 prompt 抓数据
  *   · 加锁 isCancelled 处理，取消要能中断
  */
-import {
-  chat, loadProviders, requireActiveProvider, isCancelled,
-  type AIProvider, type ChatMessage,
-} from '../ai'
+import { chat, isCancelled, type ChatMessage } from '../ai'
+import { resolveTavernProvider, type ChatFn } from './provider'
 import { uid } from '../id'
 import { buildProjectContext } from '../aiContext'
 import {
@@ -30,6 +28,7 @@ import {
   type TavernSettings,
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
+import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack } from './world'
 import {
   talkativityRowsOf,
   hasCastSetting, charTag,
@@ -40,24 +39,9 @@ import {
 /** 剧情模式的档位固定为叙事向（方案 §5.3：剧情默认叙事向、自由默认聊天向） */
 const PLOT_TONE = 'narrative' as const
 
-/**
- * 解析本轮要用的模型。
- * 酒馆模式**单独指定模型**（方案 §7.8），只存 providerId 引用，不复制模型配置；
- * 没配或配的那个已被删除时，回退到全局活动模型（并在 UI 上提示）。
- */
-export async function resolveTavernProvider(
-  ref?: { providerId?: string },
-  fallbackProviderId?: string,
-): Promise<{ provider: AIProvider; fellBack: boolean }> {
-  // 优先会话自己指定的；会话没指定则用**控制面板的默认模型**；都没有才回退全局活动模型
-  const want = ref?.providerId || fallbackProviderId || ''
-  if (want) {
-    const list = await loadProviders()
-    const hit = list.find(p => p.id === want)
-    if (hit) return { provider: hit, fellBack: false }
-  }
-  return { provider: await requireActiveProvider(), fellBack: true }
-}
+// 模型解析在 ./provider（单开一个文件，避免 engine ↔ world 成环）；这里 re-export 保持既有调用点不变。
+export { resolveTavernProvider } from './provider'
+export type { ChatFn } from './provider'
 
 /** 把角色分配表拆成三类 */
 export function splitCast(cast: TavernCast[]) {
@@ -137,9 +121,18 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
   // 作者角色的仅供 AI 理解对方口吻 —— 都填过才成块，全空则整层不出现。
   const castBlock = await buildCastBlock(casts)
 
+  // ⑤ 本场背景设定（第 5 批）：作者**提炼**过的那份世界资料，**命中关键词才注入**。
+  //    这是「不每次喂一大堆」的落点：与上面的设定层（项目原始资料）是两件事。
+  const worldSetting = await getWorldSetting('plot')
+  const worldText = shouldInjectWorld(worldSetting, worldHaystack(
+    [session.title, session.anchorChapterLabel, session.scene?.place, session.scene?.time, session.scene?.description],
+    session.messages.slice(-6).map(m => m.content),
+  )) ? worldToText(worldSetting) : ''
+
   const system = buildSystemPrompt({
     tone: PLOT_TONE,
     setting,
+    world: worldText,
     memory: session.memory,
     self: selfLines.join('\n'),
     cast: castBlock,
@@ -206,8 +199,6 @@ export function dropTrailingAssistant(msgs: TavernMessage[]): TavernMessage[] {
   if (i < 0 || msgs[i].role !== 'assistant') return msgs
   return [...msgs.slice(0, i), ...msgs.slice(i + 1)]
 }
-
-export type ChatFn = typeof chat
 
 export type PlotTurnCallbacks = {
   onToken?: (delta: string) => void
@@ -463,9 +454,17 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
       ? `你同时扮演：${aiNames.join('、')}。用户扮演用户自己。`
       : `你扮演：${aiNames[0] ?? '（未指定角色）'}`) + silentLine
 
+  // 本场背景设定（第 5 批）：自由模式那一份（跨项目），同样按关键词命中决定要不要带上
+  const worldSetting = await getWorldSetting('free')
+  const worldText = shouldInjectWorld(worldSetting, worldHaystack(
+    [session.title, session.scene?.place, session.scene?.time, session.scene?.description],
+    session.messages.slice(-6).map(m => m.content),
+  )) ? worldToText(worldSetting) : ''
+
   const system = buildSystemPrompt({
     tone: FREE_TONE,
     setting,
+    world: worldText,
     memory,
     // 每块自己带「〖长期记忆 · 角色名〗」，不再套一层「〖长期记忆〗」
     memoryTitle: null,

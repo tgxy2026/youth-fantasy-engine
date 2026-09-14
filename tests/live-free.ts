@@ -22,8 +22,10 @@ import { buildOpeningMessage } from '../src/lib/tavern/prompt'
 import { uid } from '../src/lib/id'
 import { summarizeMemory } from '../src/lib/tavern/summarize'
 import { memoryChars, memoryToText, messagesAfterWatermark, nextWatermark, MEMORY_SECTIONS } from '../src/lib/tavern/memory'
+import { proposeCardRevisions } from '../src/lib/tavern/revise'
 import { SEED_FREE_CHARACTERS } from '../src/lib/tavern/seedCards'
 import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
+import type { TavernMessage } from '../src/lib/tavern/types'
 import type { FreeCharacter, FreeSession } from '../src/lib/tavern/types'
 
 const DATA = 'C:/Users/18223/AppData/Roaming/novel-studio/novel-studio-data.json'
@@ -302,6 +304,48 @@ async function main() {
     // ④ 复原，别把档案带进后面的阶段
     await saveTavernSettings(before)
     console.log(`[收尾] 档案已复原为：${JSON.stringify((await getTavernSettings()).profile)}`)
+  }
+
+
+  // ---------- 阶段 8：设定更新（AI 读对话 → 列出该改的设定，作者再裁决） ----------
+  // 要验的是：模型能不能从对话里认出「关系已经变了」，并且**只动该动的字段**。
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 8 · 设定更新（提分手 → 关系栏应被建议修改）')
+  console.log('='.repeat(70))
+  {
+    const seedL8 = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
+    const seedC8 = SEED_FREE_CHARACTERS.find(c => c.name === '楚楠')
+    if (!seedL8 || !seedC8) { console.log('❌ 示范卡里缺洛汐/楚楠，跳过本阶段'); return }
+    const luo8 = await store.createFreeChar(seedL8)
+    const chu8 = await store.createFreeChar(seedC8)
+    const now8 = Date.now()
+    // 造一段「楚楠提分手」的对话（用户演楚楠，所以 user 侧是楚楠的话）
+    const msgs8: TavernMessage[] = [
+      { id: 'x1', role: 'user', content: '（我把手里的烟按灭，没看她。）洛汐，我们……还是算了吧。', at: now8 - 6000 },
+      { id: 'x2', role: 'assistant', content: '（她愣了几秒，问了一句「为什么」。）', at: now8 - 5000, speakerId: luo8.id },
+      { id: 'x3', role: 'user', content: '（我摇头。）这样拖着对你不好。以后别来找我了。', at: now8 - 4000 },
+      { id: 'x4', role: 'assistant', content: '（她点了点头，把东西收好。）\n好。', at: now8 - 3000, speakerId: luo8.id },
+    ]
+    const speakerName8 = (m: TavernMessage) => (m.speakerId === luo8.id ? '洛汐' : '楚楠')
+    for (const c of [luo8, chu8]) {
+      try {
+        const rows = await proposeCardRevisions({
+          char: c, messages: msgs8, providerId: pick.provider.id, speakerName: speakerName8,
+        })
+        console.log(`[实弹观察] ${c.name}：${rows.length} 条建议`)
+        for (const r of rows) {
+          console.log(`    · ${r.fieldLabel}（${r.field}）`)
+          console.log(`      改成：${r.after.replace(/\n/g, " / ").slice(0, 90)}`)
+          console.log(`      理由：${r.reason.slice(0, 60)}`)
+        }
+        const rel = rows.find(r => r.field === 'profile.relations')
+        console.log(`[实弹观察] 是否建议改「2.4 关系」：${rel ? '✓ 有' : '（本轮没提，可能是模型保守 —— 看上面的输出）'}`)
+        const offLimit = rows.filter(r => !['profile.relations', 'profile.knowledge', 'profile.core', 'world', 'conduct.paceLock'].includes(r.field))
+        console.log(`[实弹观察] 越界字段（不该在这个时候动的）：${offLimit.length ? '⚠️ ' + offLimit.map(r => r.field).join('、') : '✓ 无'}`)
+      } catch (e) {
+        console.log(`[实弹观察] ${c.name} 审查失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
   }
 
   // ---------- 阶段 1：会话 A 聊出可被记住的事实 ----------

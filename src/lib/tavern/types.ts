@@ -229,6 +229,88 @@ export type FreeCharacter = {
  *
  * ⚠️ 不要拿它当业务主键，也不要指望它对用户有含义 —— 它只是给人读的消歧标记。
  */
+/**
+ * 角色设定里「可被 AI 建议修改」的字段（2026-09-14，设定更新功能）。
+ *
+ * **不含 name**：改名会牵动索引、记忆键与会话，而且没人希望 AI 给自己改名。
+ * 这里只是白名单 + 读写工具；提示词与界面**共用同一份**（见 revise.ts 与 TavernRevisionDialog）。
+ */
+export type CardFieldPath =
+  | 'world'
+  | 'profile.externals' | 'profile.core' | 'profile.speech' | 'profile.relations' | 'profile.cannot' | 'profile.knowledge'
+  | 'conduct.perspective' | 'conduct.bottomLine' | 'conduct.paceLock' | 'conduct.rating'
+  | 'examples'
+
+/**
+ * 字段清单。`when` 会**原样进提示词** —— 告诉模型「什么情况下才该动这一栏」，
+ * 比只给字段名有效得多（否则它会把所有栏都改一遍以显得勤快）。
+ */
+export const CARD_FIELDS: { path: CardFieldPath; label: string; when: string }[] = [
+  { path: 'profile.relations', label: '2.4 关系', when: '关系实质变化：在一起 / 分手 / 决裂 / 结盟 / 反目' },
+  { path: 'profile.knowledge', label: '2.6 知识边界', when: '知道了原本不知道的事（秘密被揭开、身份暴露）' },
+  { path: 'profile.core', label: '2.2 内核', when: '心境或立场被事件真正改变，Ta 已不是原来那个人' },
+  { path: 'profile.externals', label: '2.1 外在', when: '外貌、穿着、身体状况变了（受伤、换发型、换常穿的衣服）' },
+  { path: 'profile.speech', label: '2.3 语言特征', when: '说话方式变了（改口、不再叫昵称、不再用某种口癖）' },
+  { path: 'profile.cannot', label: '2.5 做不到的事', when: '原本做不到的事做到了，或反过来做不到了' },
+  { path: 'world', label: '1 世界', when: '处境、常去的地点、身份或生活状态发生变动' },
+  { path: 'conduct.paceLock', label: '3 进度锁', when: '关系阶段已经推进（或倒退），原来的锁不再适用' },
+  { path: 'conduct.bottomLine', label: '3 底线清单', when: '底线被事件改写（新长出来的雷区）' },
+  { path: 'conduct.rating', label: '3 尺度', when: '这段关系的尺度需要调整（很少见）' },
+  { path: 'conduct.perspective', label: '3 视角与人称', when: '人称或视角需要改（极少见，多数情况别动）' },
+  { path: 'examples', label: '4 示例对话', when: '口吻已变，现有示例不再代表 Ta 现在怎么说话' },
+]
+
+const FIELD_LABEL = new Map(CARD_FIELDS.map(f => [f.path as string, f.label]))
+
+/** 字段路径 → 给人看的中文名（认不出就原样返回，别抛） */
+export function fieldLabel(path: string): string {
+  return FIELD_LABEL.get(path) ?? path
+}
+
+/** 这个路径是不是可改字段（解析模型输出时的白名单闸门） */
+export function isCardField(path: string): path is CardFieldPath {
+  return FIELD_LABEL.has(path)
+}
+
+/** 读一个字段的当前值 */
+export function readCardField(c: FreeCharacter, path: CardFieldPath): string {
+  switch (path) {
+    case 'world': return c.world ?? ''
+    case 'examples': return c.examples ?? ''
+    case 'profile.externals': return c.profile?.externals ?? ''
+    case 'profile.core': return c.profile?.core ?? ''
+    case 'profile.speech': return c.profile?.speech ?? ''
+    case 'profile.relations': return c.profile?.relations ?? ''
+    case 'profile.cannot': return c.profile?.cannot ?? ''
+    case 'profile.knowledge': return c.profile?.knowledge ?? ''
+    case 'conduct.perspective': return c.conduct?.perspective ?? ''
+    case 'conduct.bottomLine': return c.conduct?.bottomLine ?? ''
+    case 'conduct.paceLock': return c.conduct?.paceLock ?? ''
+    case 'conduct.rating': return c.conduct?.rating ?? ''
+  }
+}
+
+/**
+ * 写一个字段（返回新对象，不改原卡）。**整段替换** ——
+ * AI 给出的 `after` 就是完整的新文本，不做"追加/拼接"（那会随着次数增长而累积成垃圾）。
+ */
+export function writeCardField(c: FreeCharacter, path: CardFieldPath, value: string): FreeCharacter {
+  switch (path) {
+    case 'world': return { ...c, world: value }
+    case 'examples': return { ...c, examples: value }
+    case 'profile.externals': return { ...c, profile: { ...c.profile, externals: value } }
+    case 'profile.core': return { ...c, profile: { ...c.profile, core: value } }
+    case 'profile.speech': return { ...c, profile: { ...c.profile, speech: value } }
+    case 'profile.relations': return { ...c, profile: { ...c.profile, relations: value } }
+    case 'profile.cannot': return { ...c, profile: { ...c.profile, cannot: value } }
+    case 'profile.knowledge': return { ...c, profile: { ...c.profile, knowledge: value } }
+    case 'conduct.perspective': return { ...c, conduct: { ...c.conduct, perspective: value } }
+    case 'conduct.bottomLine': return { ...c, conduct: { ...c.conduct, bottomLine: value } }
+    case 'conduct.paceLock': return { ...c, conduct: { ...c.conduct, paceLock: value } }
+    case 'conduct.rating': return { ...c, conduct: { ...c.conduct, rating: value } }
+  }
+}
+
 export function charTag(id: string): string {
   const s = String(id ?? '').replace(/[^0-9a-z]/gi, '').toUpperCase()
   return s.slice(-4).padStart(4, '0')
