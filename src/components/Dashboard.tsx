@@ -15,6 +15,7 @@ import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { buildProjectContext } from '../lib/aiContext'
 import { aiDiagnoseProject, type ProjectDiagnosis } from '../lib/aiTasks'
 import { Button } from './Button'
+import { LoadingState } from './LoadingState'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -58,7 +59,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   const [diagLoading, setDiagLoading] = useState(false)
   const [diagError, setDiagError] = useState<string | null>(null)
 
-  if (!loaded) return <div className="p-8 text-ink-400 text-sm">加载中…</div>
+  if (!loaded) return <LoadingState />
 
   const totalWords = chapters.reduce((s, c) => s + c.wordCount, 0)
   const publishedCount = chapters.filter(c => c.status === '已发布').length

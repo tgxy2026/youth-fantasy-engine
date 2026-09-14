@@ -10,6 +10,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
+import { LoadingState } from './LoadingState'
 
 // 力量体系是升级流的"宪法"：下面这些字段是境界/数值类，绝不能让 AI 凭空编造，
 // AI 补全时锁定它们，只补全文本型字段（体系名称/来源/限制规则等）。
@@ -119,9 +120,7 @@ export default function FormSheet({ tab }: Props) {
     setShowFill(false)
   }
 
-  if (!loaded) {
-    return <div className="p-8 text-ink-400 text-sm">加载中…</div>
-  }
+  if (!loaded) return <LoadingState />
 
   const filledCount = Object.values(data).filter(v => v && v.trim()).length
   const totalFields = tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0

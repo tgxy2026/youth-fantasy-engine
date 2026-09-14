@@ -28,6 +28,7 @@ import { readAliases } from '../lib/aliases'
 import { useAIReady } from '../lib/useAIReady'
 import { aiChapterSummary } from '../lib/aiTasks'
 import { Button } from './Button'
+import { LoadingState } from './LoadingState'
 
 interface Props {
   onStatsChange?: () => void
@@ -821,7 +822,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const flat = volumes.flatMap(v => chapters.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order))
   const activeIdx = flat.findIndex(c => c.id === activeId)
 
-  if (!loaded) return <div className="p-8 text-ink-400 text-sm">加载中…</div>
+  if (!loaded) return <LoadingState />
 
   return (
     <div className="flex h-full page-enter overflow-hidden">

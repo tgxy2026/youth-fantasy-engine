@@ -11,6 +11,7 @@ import PromptModal from './PromptModal'
 import { confirmDialog } from './dialogs'
 import TemplateLibrary from './TemplateLibrary'
 import { Button } from './Button'
+import { LoadingState } from './LoadingState'
 
 interface Props {
   tab: TabDef
@@ -182,7 +183,7 @@ export default function OutlineSheet({ tab }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [dirty, save])
 
-  if (!loaded) return <div className="p-8 text-ink-400 text-sm">加载中…</div>
+  if (!loaded) return <LoadingState />
 
   const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim()).length : 0
   const totalFields = tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0

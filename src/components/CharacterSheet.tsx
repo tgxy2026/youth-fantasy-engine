@@ -14,6 +14,7 @@ import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { Button } from './Button'
+import { LoadingState } from './LoadingState'
 
 /** 角色卡中以「下拉」形式填写的字段（与设定检索 CARD_SELECT_FIELDS 对应）：value 为存储值，label 为展示文案 */
 const CARD_SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -198,7 +199,7 @@ export default function CharacterSheet({ tab }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [dirty, save])
 
-  if (!loaded) return <div className="p-8 text-ink-400 text-sm">加载中…</div>
+  if (!loaded) return <LoadingState />
 
   return (
     <div className="page-enter">

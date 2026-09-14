@@ -26,6 +26,7 @@ import FeedbackAIPanel from './FeedbackAIPanel'
 import TermDedupPanel from './TermDedupPanel'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
+import { LoadingState } from './LoadingState'
 
 interface Props {
   tab: TabDef
@@ -680,7 +681,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     ? tab.columns.filter(c => !c.hidden).reduce((s, c) => s + widthOf(c.name), 0) + 40 + 28
     : 0
 
-  if (!loaded) return <div className="p-8 text-ink-400 text-sm">加载中…</div>
+  if (!loaded) return <LoadingState />
 
   const isRowDirty = (r: TableRow) => !!drafts[r.id] && Object.keys(drafts[r.id]).length > 0
 
