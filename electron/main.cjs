@@ -234,6 +234,85 @@ app.whenReady().then(() => {
     }
   })
 
+  // ---- 主进程代发 HTTP 请求（联网检索用）----
+  // 为什么必须绕到主进程：搜索接口（自建 SearXNG、Jina、Exa 等）不返回 Access-Control-Allow-Origin，
+  //   渲染进程直连会被同源策略拦掉；桌面版没有自己的服务器，唯一的「后端」就是这个主进程。
+  //   与当年网页版那条 /api/ai 反代同一个道理 —— 但请求不出本机，比走服务器更干净。
+  //
+  // 🔴 它是一个通用 HTTP 客户端，边界必须收窄（否则等于给渲染进程开了一个万能网络出口）：
+  //   · 只允许 http/https —— 拒绝 file: 等协议，否则可以借它读本地文件
+  //   · 只带调用方显式给出的头，**剔除 cookie / referer / origin / host**（主进程的会话 cookie 不该被带走）
+  //   · 限时 30s；响应超 2MB 直接中止（搜索结果是几十 KB 量级，防止大文件把内存吃满）
+  //   · 跟随重定向后再校验最终 URL 协议
+  //   · 永不 throw —— Electron 跨 IPC 的异常会被重新包装、原始信息丢失，一律返回结构化结果
+  const NET_TIMEOUT_MS = 30000
+  const NET_MAX_BYTES = 2 * 1024 * 1024
+  ipcMain.handle('net:fetch', async (_e, url, init) => {
+    const opts = init || {}
+    try {
+      const target = new URL(String(url))
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+        return { ok: false, error: '不允许的协议：' + target.protocol }
+      }
+      const method = String(opts.method || 'GET').toUpperCase()
+      const headers = {}
+      for (const [k, v] of Object.entries(opts.headers || {})) {
+        const lk = String(k).toLowerCase()
+        if (lk === 'cookie' || lk === 'referer' || lk === 'origin' || lk === 'host' || lk === 'content-length') continue
+        headers[k] = String(v)
+      }
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), NET_TIMEOUT_MS)
+      let res
+      try {
+        res = await fetch(target.toString(), {
+          method,
+          headers,
+          body: (method === 'GET' || method === 'HEAD') ? undefined : (opts.body == null ? undefined : String(opts.body)),
+          redirect: 'follow',
+          signal: ctrl.signal,
+        })
+      } finally {
+        clearTimeout(timer)
+      }
+      if (res.url && !/^https?:/i.test(res.url)) {
+        return { ok: false, error: '被重定向到非 http(s) 地址，已中止' }
+      }
+      // 流式读并在超限时立刻中止（不要先全读进内存再判大小）
+      const reader = res.body && typeof res.body.getReader === 'function' ? res.body.getReader() : null
+      const chunks = []
+      let received = 0
+      if (reader) {
+        for (;;) {
+          const step = await reader.read()
+          if (step.done) break
+          received += step.value.byteLength
+          if (received > NET_MAX_BYTES) {
+            try { await reader.cancel() } catch { /* 忽略 */ }
+            return { ok: false, error: '响应超过 ' + Math.round(NET_MAX_BYTES / 1024 / 1024) + 'MB 上限，已中止' }
+          }
+          chunks.push(Buffer.from(step.value))
+        }
+      } else {
+        const buf = Buffer.from(await res.arrayBuffer())
+        received = buf.byteLength
+        if (received > NET_MAX_BYTES) {
+          return { ok: false, error: '响应超过 ' + Math.round(NET_MAX_BYTES / 1024 / 1024) + 'MB 上限，已中止' }
+        }
+        chunks.push(buf)
+      }
+      return {
+        ok: true, status: res.status, statusText: res.statusText,
+        text: Buffer.concat(chunks).toString('utf-8'),
+      }
+    } catch (err) {
+      const msg = err && err.name === 'AbortError'
+        ? '请求超时（' + Math.round(NET_TIMEOUT_MS / 1000) + 's）'
+        : String(err && err.message ? err.message : err)
+      return { ok: false, error: msg }
+    }
+  })
+
   // ---- 主窗口 ----
   const win = new BrowserWindow({
     width: 1280,

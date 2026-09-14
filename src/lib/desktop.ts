@@ -29,15 +29,59 @@ export interface ElectronStoreAPI {
   resetDataPath(text: string): Promise<{ ok: boolean; path: string; adopted: boolean; error: string | null }>
 }
 
+/** 主进程代发请求的结果（**永不抛**：失败走 ok:false，好让界面如实提示） */
+export type NetFetchResult =
+  | { ok: true; status: number; statusText: string; text: string }
+  | { ok: false; error: string }
+
+/**
+ * preload 注入的「主进程代发 HTTP 请求」（联网检索用）。
+ * ⚠️ 只有**桌面（Electron）版**有这一层 —— 便携版是单文件 HTML、跑在系统浏览器里，
+ *   不存在主进程，因此仍然受同源策略限制（只能用自带 CORS 头的搜索接口）。
+ */
+export interface ElectronNetAPI {
+  fetch(url: string, init?: {
+    method?: string
+    headers?: Record<string, string>
+    body?: string
+  }): Promise<NetFetchResult>
+}
+
 declare global {
   interface Window {
     electronStore?: ElectronStoreAPI
+    electronNet?: ElectronNetAPI
   }
 }
 
 /** 是否为桌面（Electron 安装）版本：由 preload 是否注入 electronStore 决定 */
 export const DESKTOP: boolean =
   typeof window !== 'undefined' && typeof window.electronStore === 'object' && window.electronStore !== null
+
+/**
+ * 能否由主进程代发 HTTP 请求（联网检索绕开跨域靠它）。
+ * 桌面版（含 dev 下用 electron 启动）为 true；便携版 / 纯浏览器 dev 为 false。
+ */
+export const HAS_NET_BRIDGE: boolean =
+  typeof window !== 'undefined' && typeof window.electronNet === 'object' && window.electronNet !== null
+
+/**
+ * 由主进程代发一次请求。**永不抛** —— 不可用时返回 ok:false，让调用方把原因如实报给作者，
+ * 而不是静默降级成「模型瞎编」（那种失败最难排查）。
+ */
+export async function netFetch(
+  url: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string },
+): Promise<NetFetchResult> {
+  if (!HAS_NET_BRIDGE) {
+    return { ok: false, error: '当前版本没有「主进程代发请求」能力（便携版跑在浏览器里，只能用自带跨域许可的接口）' }
+  }
+  try {
+    return await (window.electronNet as ElectronNetAPI).fetch(url, init)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
 
 function api(): ElectronStoreAPI {
   return window.electronStore as ElectronStoreAPI

@@ -59,7 +59,10 @@ import * as presets from '../lib/tavern/presets'
 import type { TavernPreset } from '../lib/tavern/presets'
 import { PARAM_GUIDES, GUIDE_SAMPLING, bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
 import { VAR_DEFS, type VarKey } from '../lib/tavern/types'
-import { searchBlockedReason, SEARCH_MODE_LABEL, BOCHA_ENDPOINT, type SearchSettings } from '../lib/webSearch'
+import {
+  searchBlockedReason, SEARCH_MODE_LABEL, SEARCH_ENGINE_LABEL, BOCHA_ENDPOINT, SEARXNG_ENDPOINT,
+  type SearchSettings,
+} from '../lib/webSearch'
 import { DEFAULT_POST_RULES, previewPostRules, type PostRule } from '../lib/tavern/postRules'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
@@ -766,19 +769,23 @@ export default function TavernControl() {
                   ? '不联网。知名题材（蒂法、《梁祝》这类）模型自己就很熟，够用；冷门或原创靠下面「参考素材」那一栏粘进去。'
                   : s.search.mode === 'model'
                     ? '让模型自己去查 —— 前提是你选的模型/中转本身支持联网。本软件看不到这一步，是否真的联网取决于服务商。'
-                    : '由本软件先查好再喂给模型。需要下面填一个搜索接口（博查实测支持浏览器直连，其它接口可能被跨域拦住）。'}
+                    : '由本软件先查好再喂给模型 —— 所以跟模型本身有没有联网能力无关，本地 Ollama 也能用。桌面版由主进程代发请求、不受跨域限制，任何返回 JSON 的搜索接口都能接；便携版跑在浏览器里，只能用它允许跨域的接口（博查）。'}
               </p>
             </Field>
 
             {s.search.mode === 'api' && (
               <>
-                <Field label="搜索引擎" hint="博查可直接用；自定义接口请填完整地址（会用 POST { query, count } 调用，结果尽量自动识别）。">
+                <Field
+                  label="搜索引擎"
+                  hint="博查要密钥、但开箱可用；SearXNG 是自建免费实例、无密钥无次数限制；自定义接口自己填地址。地址里带 {query} 就按 GET 调用，否则按 POST { query, count }。"
+                >
                   <select
                     className={NUM}
                     value={s.search.engine}
                     onChange={e => setSearch({ engine: e.target.value as SearchSettings['engine'] })}
                   >
-                    <option value="bocha">博查（推荐，实测可直连）</option>
+                    <option value="bocha">博查（推荐，开箱可用）</option>
+                    <option value="searxng">SearXNG（自建，免费无限量）</option>
                     <option value="custom">自定义接口</option>
                   </select>
                 </Field>
@@ -794,18 +801,34 @@ export default function TavernControl() {
                   </Field>
                 )}
 
-                <Field
-                  label="密钥"
-                  hint="存在本机数据文件里，不会上传到任何服务器；只有起草时才会带着它去请求搜索接口。"
-                >
-                  <input
-                    className={NUM}
-                    value={s.search.apiKey}
-                    onChange={e => setSearch({ apiKey: e.target.value })}
-                    placeholder="sk-…（博查控制台里生成）"
-                    autoComplete="off"
-                  />
-                </Field>
+                {s.search.engine === 'searxng' && (
+                  <Field
+                    label="接口地址"
+                    hint={`留空即用 ${SEARXNG_ENDPOINT}。两个前提：① SearXNG 的 settings.yml 里 search.formats 要加上 json（默认只有 html，不加就取不到数据）；② 端口要与你 docker run 映射的一致。`}
+                  >
+                    <input
+                      className={NUM}
+                      value={s.search.endpoint}
+                      onChange={e => setSearch({ endpoint: e.target.value })}
+                      placeholder={SEARXNG_ENDPOINT}
+                    />
+                  </Field>
+                )}
+
+                {s.search.engine !== 'searxng' && (
+                  <Field
+                    label="密钥"
+                    hint="存在本机数据文件里，不会上传到任何服务器；只有起草时才会带着它去请求搜索接口。SearXNG 这类自建实例不需要密钥，所以选了它这一栏就不显示了。"
+                  >
+                    <input
+                      className={NUM}
+                      value={s.search.apiKey}
+                      onChange={e => setSearch({ apiKey: e.target.value })}
+                      placeholder="sk-…（博查控制台里生成）"
+                      autoComplete="off"
+                    />
+                  </Field>
+                )}
 
                 <NumField
                   label="每次取几条" guide={PARAM_GUIDES.searchTopK}
@@ -820,7 +843,7 @@ export default function TavernControl() {
                   原先写成三选一，结果「没填密钥」时反而不显示当前档了 —— 信息不是互斥的。 */}
               <p className="text-ink-400">
                 当前：{SEARCH_MODE_LABEL[s.search.mode]}
-                {s.search.mode === 'api' && `（${s.search.engine === 'custom' ? '自定义接口' : '博查'}）`}
+                {s.search.mode === 'api' && `（${SEARCH_ENGINE_LABEL[s.search.engine]}）`}
                 —— 起草时按这一档执行
               </p>
               {searchBlockedReason(s.search) && (

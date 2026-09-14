@@ -31,3 +31,14 @@ contextBridge.exposeInMainWorld('electronStore', {
   /** 云盘文件同步：原子写文件（tmp + .bak 回退），避免写崩导致 .yfe 损坏 */
   syncWrite: (p, text) => ipcRenderer.invoke('sync:writeFile', p, text),
 })
+
+// 联网检索：由主进程代发请求。搜索接口大多不带 CORS 头，渲染进程直连会被同源策略拦掉，
+// 而桌面版唯一的「后端」就是这个主进程。（便携版是单文件 HTML、跑在浏览器里，没有这一层。）
+contextBridge.exposeInMainWorld('electronNet', {
+  /**
+   * 代发一次 HTTP 请求。
+   * @returns {Promise<{ok:true,status:number,statusText:string,text:string}|{ok:false,error:string}>}
+   *          **永不 reject** —— 失败以 ok:false 返回，调用方必须如实告诉作者（别静默退化成瞎编）。
+   */
+  fetch: (url, init) => ipcRenderer.invoke('net:fetch', url, init),
+})
