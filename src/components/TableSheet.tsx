@@ -261,7 +261,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       dragRef.current = null
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
-      try { localStorage.setItem(`yfe-colw::${tab.id}`, JSON.stringify(colWidthsRef.current)) } catch {}
+      // 列宽属纯 UI 偏好，存不进 localStorage（隐私模式/配额满）也不影响数据，
+      // 故此处刻意不提示、不降级——刷新后回到默认列宽即可。
+      try { localStorage.setItem(`yfe-colw::${tab.id}`, JSON.stringify(colWidthsRef.current)) } catch { /* 见上：可安全忽略 */ }
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)

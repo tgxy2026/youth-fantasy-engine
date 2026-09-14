@@ -78,7 +78,16 @@ export function parseObjectArray(raw: string): Record<string, unknown>[] {
   return []
 }
 
-/** 兜底文本是否还有实质内容：排除「只剩标点/符号」的残骸，避免把垃圾塞给作者 */
+/**
+ * 兜底文本是否还有实质内容：排除「只剩标点/符号」的残骸，避免把垃圾塞给作者。
+ *
+ * ⚠️ 当前的实际适用范围（2026-09-14 核对，勿凭空假设它已全局生效）：
+ *   目前**只有 aiTasks 的 aiRewritePassage 一处**调用它（改稿任务，怕把标点残骸当正文回填）。
+ *   其余约 10 处 `humanText(text) || ...` 兜底（各 summary/verdict/direction/report 类任务）
+ *   **并未**过滤——即解析失败且残骸只剩标点时，那些路径仍会把残骸交给 UI。
+ *   是否要一并过滤属**用户可见行为变更**（"空白"与"残渣"哪个体验更好）需产品决策，
+ *   故此处只如实说明现状，未擅自推广。若决定推广，请连同回归测试一起改。
+ */
 export function hasSubstance(s: string): boolean {
   const stripped = s.replace(/[\s\d\p{P}\p{S}]/gu, '')
   return stripped.length >= 4
