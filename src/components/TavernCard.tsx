@@ -24,7 +24,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
-import type { FreeCharacter, TavernCharIndexItem } from '../lib/tavern/types'
+import type { FreeCharacter, FreeMemory, TavernCharIndexItem } from '../lib/tavern/types'
+import { MEMORY_SECTIONS, memoryChars } from '../lib/tavern/memory'
 import { toCardFile, parseCardFile, cardFileName, describeWarnings } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
 import { Button } from './Button'
@@ -76,6 +77,14 @@ export default function TavernCard() {
   /** AI 转换出来的草稿欠着哪些信息（界面必须显示，方案 §7.6 硬要求） */
   const [gaps, setGaps] = useState<string[]>([])
   const [importOpen, setImportOpen] = useState(false)
+  /**
+   * 记忆（六栏）：AI 会整理它，但作者必须能**直接改** ——
+   * 整理是压缩，压错的地方只有作者知道；只读的话就只能删卡重来。
+   */
+  const [mem, setMem] = useState<FreeMemory | null>(null)
+  const [memDirty, setMemDirty] = useState(false)
+  const [showMem, setShowMem] = useState(false)
+  const [savingMem, setSavingMem] = useState(false)
   const [novelChars, setNovelChars] = useState<{ id: string; name: string; tabId: string }[]>([])
   const [converting, setConverting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -93,9 +102,31 @@ export default function TavernCard() {
   useEffect(() => { void load() }, [load])
 
   const open = async (id: string) => {
-    const c = await store.getFreeChar(id)
+    const [c, m] = await Promise.all([
+      store.getFreeChar(id),
+      store.getMemory(id).catch(() => null),
+    ])
     setDraft(c)
+    setMem(m)
+    setMemDirty(false)
+    setShowMem(false)
     setDirty(false)
+  }
+
+  /** 保存手工改过的记忆（与 AI 整理走同一个存储口，更新 updatedAt） */
+  const saveMem = async () => {
+    if (!draft || !mem) return
+    setSavingMem(true)
+    try {
+      await store.saveMemory({ ...mem, charId: draft.id })
+      setMem(await store.getMemory(draft.id))
+      setMemDirty(false)
+      showToast('记忆已保存（AI 下次整理会在此基础上压缩）')
+    } catch (e) {
+      showToast(`记忆保存失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setSavingMem(false)
+    }
   }
 
   const create = async () => {
@@ -139,6 +170,8 @@ export default function TavernCard() {
     try {
       await store.deleteFreeChar(draft.id)
       setDraft(null)
+      setMem(null)
+      setMemDirty(false)
       setDirty(false)
       await load()
       showToast('已删除')
@@ -429,6 +462,62 @@ export default function TavernCard() {
                     value={draft.examples}
                     onChange={v => up('examples', v)}
                   />
+                </section>
+
+                {/* 记忆：AI 会整理，但作者也该能直接改（否则压错了只能删卡重来） */}
+                <section className="rounded-lg border border-ink-700 bg-ink-850/40 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-[13px] font-semibold text-amber/90">她的记忆（可手动编辑）</h3>
+                      <p className="mt-0.5 text-[11px] text-ink-500 leading-relaxed">
+                        六栏记忆就在这里。AI 整理时会在此基础上压缩；你也可以直接改，改完点「保存记忆」。
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {memDirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
+                      {showMem && (
+                        <Button variant="primary" size="sm" disabled={!memDirty || savingMem} onClick={() => void saveMem()}>
+                          {savingMem ? '保存中…' : '保存记忆'}
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" onClick={() => setShowMem(v => !v)}>
+                        {showMem ? '收起' : '展开编辑'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {!showMem ? (
+                    <p className="mt-2 text-[11.5px] text-ink-400">
+                      当前 {mem ? memoryChars(mem) : 0} 字 ·
+                      更新于 {mem ? new Date(mem.updatedAt).toLocaleString('zh-CN') : '（还没有记忆）'}
+                    </p>
+                  ) : (
+                    <>
+                      <p className="mt-2 rounded-md border border-amber/25 bg-amber/8 px-2.5 py-2 text-[11px] text-ink-300 leading-relaxed">
+                        ⚠️ 六栏的行为不一样：<span className="text-ink-100">长期摘要</span>会被压缩、
+                        <span className="text-ink-100">关键事实</span>与<span className="text-ink-100">未爆的雷</span>只增不改、
+                        <span className="text-ink-100">关系状态</span>每次整理重写、
+                        <span className="text-ink-100">最近日记</span>只留最近几天。
+                        手改时别把「只增」的两栏清空 —— 那等于让她失忆。
+                      </p>
+                      <div className="mt-3 space-y-3">
+                        {MEMORY_SECTIONS.map(sec => (
+                          <div key={sec.key}>
+                            <div className="text-[11.5px] text-ink-200">{sec.title}</div>
+                            <AutoTextarea
+                              className="mt-1 bg-ink-900 border border-ink-700 rounded-md px-2.5 py-1.5 text-ink-100 outline-none focus:border-amber/50"
+                              textClass="text-[12px]" minRows={2} maxHeight={360}
+                              value={String(mem?.[sec.key] ?? '')}
+                              onChange={v => {
+                                setMem(m => (m ? { ...m, [sec.key]: v } : m))
+                                setMemDirty(true)
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </section>
 
                 {/* 操作 */}

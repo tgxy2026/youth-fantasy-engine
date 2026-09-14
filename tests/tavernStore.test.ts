@@ -5,6 +5,7 @@
 import * as db from '../src/lib/db'
 import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
+import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import type { TavernSessionIndexItem, TavernReport } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
@@ -181,6 +182,37 @@ async function main() {
 
     const unknown = store.planFreeSessionCast(['zz'], 'zz', () => undefined)
     ok('角色名取不到时不崩（退化为 ?）', unknown.title === '和?的对话', unknown.title)
+  }
+
+  // ---------- 数据归属（老大明确要求，用断言钉死，别在重构里被改掉） ----------
+  //   随项目：剧情推演会话与扮演设定、推演报告
+  //   跨项目：自由对话会话、角色卡、控制面板设置
+  {
+    __resetMockStores()
+    db.setCurrentProject('scope-proj-a')
+    const plot = await store.createSession(mkSession('A 项目的推演'))
+    await store.saveCastSetting('scope-card-1', { voice: '清冷', address: '', unknown: '', taboo: '', care: '', never: '' })
+    const fc = await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '跨项目角色' })
+    const free = await store.createFreeSession([fc.id], '跨项目对话', { providerId: '' }, {})
+    await db.saveReport({
+      id: 'scope-report-1', projectId: 'scope-proj-a', sessionId: plot.id, sessionTitle: 'A 项目的推演',
+      anchorChapterId: 'ch1', anchorChapterLabel: '第1章 · 起始', cast: [], mode: 'immersive',
+      overview: '概览', findings: [], createdAt: Date.now(),
+    })
+    const def = await getTavernSettings()
+    await saveTavernSettings({ ...def, common: { ...def.common, timeoutSec: 123 } })
+
+    db.setCurrentProject('scope-proj-b')
+    ok('剧情推演会话随项目（换项目看不到）', (await store.listSessions()).every(x => x.id !== plot.id))
+    ok('剧情扮演设定随项目', (await store.getCastSetting('scope-card-1')).voice === '')
+    ok('推演报告随项目', (await db.listProjectReports('scope-proj-b')).length === 0)
+    ok('自由对话会话跨项目可见', (await store.listFreeSessions()).some(x => x.id === free.id))
+    ok('角色卡跨项目可见', (await store.listFreeChars()).some(x => x.id === fc.id))
+    ok('控制面板设置跨项目生效', (await getTavernSettings()).common.timeoutSec === 123)
+
+    db.setCurrentProject('scope-proj-a')
+    ok('切回原项目又能看到自己的推演', (await store.listSessions()).some(x => x.id === plot.id))
+    ok('推演报告也能重新看到', (await db.listProjectReports('scope-proj-a')).length === 1)
   }
 
   console.log(`\ntavernStore: ${pass} passed, ${fail} failed`)

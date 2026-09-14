@@ -2,9 +2,12 @@
  * 酒馆模式 · 新建对话（自由模式）
  *
  * 版式对齐「新建推演」（`TavernPlotSetup`）：**位置槽位选角 + 对话内容设置**。
- * 两处差异是有意的：
+ * 差异有三：
  *   · **没有叙事锚点** —— 自由模式不绑小说项目，谈不上「截到第几章」，所以整段去掉；
- *   · **没有「我演 / 在场不出声」** —— 自由对话里用户永远是自己，位置只表示「由 AI 演的角色」。
+ *   · **没有「在场不出声」** —— 自由对话是两个人的话，没开口的角色等于不在场；
+ *   · **每个位置可以选「我演」**（最多一个）—— 自由模式默认你演你自己，
+ *     但也可以反过来：你演苏念、AI 演楚楠。选了之后 AI 才知道自己**在跟谁**对话，
+ *     并且不会代写那个人的言行（见 `engine.buildFreeSystem` 的身份层）。
  *
  * 上限沿用引擎侧的多角色同场上限（3）：一轮里让模型分饰 N 个人，N 越大越容易串味，
  * 单轮输出也越长、等待越久 —— 与剧情模式同一条理由，写在界面上而不是埋在代码里。
@@ -17,7 +20,10 @@ import AutoTextarea from './AutoTextarea'
 import type { TavernScene } from '../lib/tavern/types'
 
 export type FreeDraft = {
+  /** 全部参演角色（含用户扮演的那个） */
   charIds: string[]
+  /** 用户扮演的角色 id（'' = 用户演他自己） */
+  userCharId: string
   title: string
   scene: TavernScene
   /** 开场的第一句话（可留空，之后在对话里说也行） */
@@ -34,10 +40,19 @@ interface Props {
 const MAX_SLOTS = 3
 
 const inputCls = 'w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50'
+const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-[12px] text-ink-100 outline-none focus:border-amber/50'
 const labelCls = 'text-[11px] text-ink-400 mb-1'
 
-/** 选角用的条目：名字 + 内核一句话（用来分辨同名/相似的角色） */
+/** 选角用的条目：名字 + 内核一句话（用来分辨相似的角色） */
 type CharOption = { id: string; name: string; core: string }
+
+/** 一个位置：选中的角色 + 由谁演 */
+type Slot = { charId: string; role: 'ai' | 'user' }
+
+/** 打开弹窗时重建默认位置（每次「新建对话」都是一张白纸） */
+function freshSlots(): Slot[] {
+  return [{ charId: '', role: 'ai' }]
+}
 
 /** 选角弹窗：搜索 + 已被别的位置占用的置灰 */
 function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
@@ -124,8 +139,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   const [options, setOptions] = useState<CharOption[]>([])
   const [loading, setLoading] = useState(true)
 
-  /** 位置：每个槽位存一个 charId，'' = 空位 */
-  const [slots, setSlots] = useState<string[]>([''])
+  const [slots, setSlots] = useState<Slot[]>(() => freshSlots())
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
 
   const [title, setTitle] = useState('')
@@ -140,7 +154,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     if (!open) return
     let alive = true
     setLoading(true)
-    setSlots(['']); setPickerIdx(null)
+    setSlots(freshSlots()); setPickerIdx(null)
     setTitle(''); setPlace(''); setTime(''); setPresent(''); setDescription(''); setFirstLine('')
     ;(async () => {
       try {
@@ -167,26 +181,35 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   /** charId → 占用它的位置序号（1 起） */
   const usedBy = useMemo(() => {
     const m: Record<string, number> = {}
-    slots.forEach((id, i) => { if (id) m[id] = i + 1 })
+    slots.forEach((s, i) => { if (s.charId) m[s.charId] = i + 1 })
     return m
   }, [slots])
 
-  const charIds = slots.filter(Boolean)
-  const canStart = charIds.length >= 1
-  const hint = canStart ? '' : '先给位置 1 选一个角色'
+  const charIds = slots.map(s => s.charId).filter(Boolean)
+  const userCharId = slots.find(s => s.role === 'user' && s.charId)?.charId ?? ''
+  const aiIds = slots.filter(s => s.role === 'ai' && s.charId).map(s => s.charId)
+  const canStart = aiIds.length >= 1
+  const hint = canStart ? '' : (charIds.length === 0 ? '先给位置 1 选一个角色' : '至少要有一个位置是「AI 演」')
 
-  const addSlot = () => setSlots(prev => (prev.length >= MAX_SLOTS ? prev : [...prev, '']))
+  const addSlot = () => setSlots(prev => (prev.length >= MAX_SLOTS ? prev : [...prev, { charId: '', role: 'ai' }]))
   const removeSlot = (i: number) => setSlots(prev => (prev.length <= 1 ? prev : prev.filter((_, k) => k !== i)))
-  const clearSlot = (i: number) => setSlots(prev => prev.map((id, k) => (k === i ? '' : id)))
+  const clearSlot = (i: number) => setSlots(prev => prev.map((s, k) => (k === i ? { ...s, charId: '' } : s)))
   const applyPick = (i: number, id: string) => {
-    setSlots(prev => prev.map((x, k) => (k === i ? id : x)))
+    setSlots(prev => prev.map((s, k) => (k === i ? { ...s, charId: id } : s)))
     setPickerIdx(null)
   }
+  /** 改由谁演：**「我演」只能有一个** —— 设第二个时把前一个改回 AI 演（角色不丢，只是换了谁演） */
+  const setSlotRole = (i: number, role: Slot['role']) => setSlots(prev => prev.map((s, k) => {
+    if (k === i) return { ...s, role }
+    if (role === 'user' && s.role === 'user') return { ...s, role: 'ai' }
+    return s
+  }))
 
   const submit = () => {
     if (!canStart) return
     onCreate({
       charIds,
+      userCharId,
       title: title.trim(),
       scene: {
         place: place.trim(),
@@ -198,7 +221,9 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     })
   }
 
-  const pickerCurrent = pickerIdx === null ? '' : slots[pickerIdx]
+  const pickerCurrent = pickerIdx === null ? '' : slots[pickerIdx]?.charId ?? ''
+  const aiNames = aiIds.map(nameOf).filter(Boolean)
+  const userNames = slots.filter(s => s.role === 'user' && s.charId).map(s => nameOf(s.charId)).filter(Boolean)
 
   return (
     <>
@@ -206,7 +231,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         open={open} onClose={onCancel} title="新建对话" width="xl"
         footer={
           <div className="flex items-center justify-between gap-3 w-full">
-            <span className="text-[11px] text-ink-500">{hint || `准备就绪 · ${charIds.length} 个角色`}</span>
+            <span className="text-[11px] text-ink-500">{hint || '准备就绪'}</span>
             <div className="flex gap-2">
               <Button variant="secondary" size="md" onClick={onCancel}>取消</Button>
               <Button variant="primary" size="md" disabled={!canStart} onClick={submit}>开始对话</Button>
@@ -219,7 +244,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
             <div className="py-8 text-center text-[12px] text-ink-500">正在读取角色卡…</div>
           ) : (
             <>
-              {/* ① 角色分配（位置槽位） */}
+              {/* ① 角色分配（位置槽位 + 由谁演） */}
               <section>
                 <div className={labelCls}>① 角色分配</div>
                 {options.length === 0 ? (
@@ -229,21 +254,30 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                 ) : (
                   <>
                     <p className="mb-2 text-[11px] leading-relaxed text-ink-500">
-                      一个位置就是单角色聊天；多选几个则**多角色同场**：一次只让一个角色说话，
-                      轮到谁由语境决定，也能在会话顶部点头像指定下一位。最多 {MAX_SLOTS} 个
-                      —— 再多，一轮里要分饰太多人，角色容易串味、等待也明显变长。
-                      （记忆按角色共享：换个会话不会让她重来。）
+                      每个位置先选角色，再定**由谁演**。默认你演你自己；把某个位置改成「我演」，
+                      AI 就会知道自己在跟谁对话（不会再把对面当成一个模糊的「用户」），
+                      而且**不会代写那个人的言行**。「我演」最多一个。
+                      多个 AI 角色则**同场**：一次只让一个说话，轮到谁由语境决定，
+                      也能在会话顶部点头像指定下一位（最多 {MAX_SLOTS} 个 —— 再多，一轮里要分饰太多人，
+                      角色容易串味、等待也明显变长）。记忆按角色共享：换个会话不会重来。
                     </p>
                     <div className="space-y-2">
-                      {slots.map((id, i) => (
+                      {slots.map((s, i) => (
                         <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-3 py-2">
                           <span className="w-12 shrink-0 text-[11px] text-ink-500">位置 {i + 1}</span>
-                          {id ? (
+                          {s.charId ? (
                             <>
                               <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">
-                                {nameOf(id) || '（角色已删除）'}
-                                {coreOf(id) && <span className="ml-2 text-[10.5px] text-ink-500">{coreOf(id)}</span>}
+                                {nameOf(s.charId) || '（角色已删除）'}
+                                {coreOf(s.charId) && <span className="ml-2 text-[10.5px] text-ink-500">{coreOf(s.charId)}</span>}
                               </span>
+                              <select
+                                className={selCls} value={s.role}
+                                onChange={e => setSlotRole(i, e.target.value as Slot['role'])}
+                              >
+                                <option value="ai">AI 演</option>
+                                <option value="user">我演</option>
+                              </select>
                               <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => setPickerIdx(i)}>更换</Button>
                               <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => clearSlot(i)}>清空</Button>
                             </>
@@ -255,6 +289,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                               >
                                 ＋ 选择角色
                               </button>
+                              <span className="shrink-0 text-[10.5px] text-ink-500">拟：{s.role === 'user' ? '我演' : 'AI 演'}</span>
                               {slots.length > 1 && (
                                 <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>
                               )}
@@ -265,9 +300,13 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
                       <Button variant="ghost" size="md" className="text-[12px]" disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
-                        ＋ 增加角色（最多 {MAX_SLOTS} 个）
+                        ＋ 增加位置（最多 {MAX_SLOTS} 个）
                       </Button>
-                      <span className="text-[11px] text-ink-500">当前：{charIds.length} 个角色</span>
+                      <span className="text-[11px] text-ink-500">
+                        {userNames.length
+                          ? `你演 ${userNames.join('、')} · AI 演 ${aiNames.join('、') || '（还没定）'}`
+                          : `你演你自己 · AI 演 ${aiNames.join('、') || '（还没定）'}`}
+                      </span>
                     </div>
                   </>
                 )}
@@ -300,9 +339,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                 <div className={labelCls}>会话标题（可留空）</div>
                 <input
                   className={inputCls} value={title} onChange={e => setTitle(e.target.value)}
-                  placeholder={charIds.length > 1
-                    ? `默认：与${charIds.map(nameOf).filter(Boolean).join('、') || '……'}的对话`
-                    : `默认：和${nameOf(charIds[0]) || '……'}的对话`}
+                  placeholder={aiNames.length > 1 ? `默认：与${aiNames.join('、')}的对话` : `默认：和${aiNames[0] ?? '……'}的对话`}
                 />
               </section>
             </>

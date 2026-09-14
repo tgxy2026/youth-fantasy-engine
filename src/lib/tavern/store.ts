@@ -259,9 +259,16 @@ export function planFreeSessionCast(
   return { charIds: ids, title }
 }
 
-export async function createFreeSession(charIds: string[], title: string, model: FreeSession['model'], params: FreeSession['params']): Promise<FreeSession> {
+export async function createFreeSession(
+  charIds: string[],
+  title: string,
+  model: FreeSession['model'],
+  params: FreeSession['params'],
+  /** 用户扮演的角色 id（可选）：不传 = 用户演他自己 */
+  userCharId?: string,
+): Promise<FreeSession> {
   const s: FreeSession = {
-    id: uid(), charIds, title, messages: [], model, params,
+    id: uid(), charIds, userCharId: userCharId || undefined, title, messages: [], model, params,
     lastActiveAt: now(), createdAt: now(), updatedAt: now(),
   }
   return saveFreeSession(s)

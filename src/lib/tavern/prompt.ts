@@ -159,12 +159,20 @@ export function buildOpeningMessage(
  *
  * `hasUser=false` 必须传：剧情模式允许一个「你演」位置都不设（整场交给 AI，2026-09-14 新增能力）。
  * 那种情况下若还写着「用户扮演用户自己的角色」，模型会去等一个**并不存在**的人开口。
+ *
+ * `userName`：自由模式里用户可能**扮演某个具体角色**（用户演苏念、AI 演楚楠）。
+ * 写明是谁，模型才知道自己在跟谁对话，也不会顺手把那个人的台词也演了。
  */
-export function buildMultiCharRule(names: string[], opts: { hasUser?: boolean } = {}): string {
+export function buildMultiCharRule(names: string[], opts: { hasUser?: boolean; userName?: string } = {}): string {
   const hasUser = opts.hasUser !== false
+  const who = !hasUser
+    ? '本场没有你演的角色，全部由你推进。'
+    : opts.userName?.trim()
+      ? `用户扮演：${opts.userName.trim()}。`
+      : '用户扮演用户自己的角色。'
   return [
     '【发言规则】',
-    `你是下列角色：${names.join('、')}。${hasUser ? '用户扮演用户自己的角色。' : '本场没有你演的角色，全部由你推进。'}`,
+    `你是下列角色：${names.join('、')}。${who}`,
     '- 一次只让一个角色说话，不要在同一回合里让多个角色各说一句。',
     '- 轮到谁由语境决定，不要强行轮流。',
     '- 不说话的角色不要替它发言；它就在场，但这一回合没开口。',

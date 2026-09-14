@@ -233,6 +233,67 @@ async function main() {
       String((dflt.calls[0].opts as Record<string, unknown>).temperature))
   }
 
+  // ---------- 用户扮演的角色（2026-09-14 新增：可以反过来演 —— 用户演苏念、AI 演楚楠） ----------
+  {
+    __resetMockStores()
+    // 清库会把上面的桩模型一起清掉，这里补回来（会话的 model 留空 → 走活动模型）
+    await saveProviders([STUB_PROVIDER])
+    await saveActiveId(STUB_PROVIDER.id)
+    const chu = await mkChar('楚楠')   // AI 演
+    const su = await mkChar('苏念')    // 用户演
+    const luo = await mkChar('洛汐')   // AI 演（凑出多角色，才验证得到发言规则）
+    // 两边都写点记忆：用户扮演的那个**不该**出现在 AI 的上下文里
+    await store.saveMemory({ ...store.emptyMemory(chu.id), facts: '楚楠记得：她左手腕有旧疤。' })
+    await store.saveMemory({ ...store.emptyMemory(su.id), facts: '苏念私下知道：那道疤的来历。' })
+
+    const s = await store.createFreeSession([chu.id, su.id], '苏念 × 楚楠', { providerId: '' }, {}, su.id)
+    ok('会话记下了「用户扮演谁」', (await store.getFreeSession(s.id))?.userCharId === su.id)
+
+    const sys = (await buildFreeSystem(s, [chu, su])).system
+    ok('身份层写明「用户扮演：苏念」', sys.includes('用户扮演：苏念'))
+    ok('身份层要求不要代写', sys.includes('不要代写'))
+    ok('AI 只演楚楠（用户角色不进 AI 名单）', sys.includes('你扮演：楚楠') && !sys.includes('你同时扮演'))
+    ok('用户扮演的角色卡带进设定层（让 AI 知道对面是谁）', sys.includes('【用户扮演的角色 · 苏念】'))
+    ok('用户扮演角色的记忆**不给 AI**（那是他自己的底牌）',
+      sys.includes('【长期记忆 · 楚楠】') && !sys.includes('【长期记忆 · 苏念】'))
+
+    // 多 AI 角色 + 用户角色：发言规则要点名用户演谁、AI 名单不含他
+    const s3 = await store.createFreeSession([chu.id, luo.id, su.id], '三人同场', { providerId: '' }, {}, su.id)
+    const sys3 = (await buildFreeSystem(s3, [chu, luo, su])).system
+    ok('多 AI 角色时发言规则写明用户扮演谁',
+      sys3.includes('【发言规则】') && /用户扮演：苏念。/.test(sys3))
+    ok('AI 名单是楚楠、洛汐（不含苏念）', /你是下列角色：楚楠、洛汐/.test(sys3))
+
+    // 轮转：绝不能轮到用户扮演的角色（否则 AI 会替他回答）
+    const { chatFn } = makeFakeChat('（她把找零推过来。）')
+    let cur: FreeSession = (await store.getFreeSession(s.id))!
+    const r1 = await runFreeTurn(cur, [chu, su], '（我推门进来。）', {}, { chatFn })
+    cur = r1.session
+    const r2 = await runFreeTurn(cur, [chu, su], '（我坐下。）', {}, { chatFn })
+    ok('单 AI 角色时说话人就是楚楠', r1.speakerId === chu.id && r2.speakerId === chu.id,
+      `${r1.speakerId} / ${r2.speakerId}`)
+
+    const { chatFn: chat3, calls: calls3 } = makeFakeChat('（她没抬头。）')
+    let c3: FreeSession = (await store.getFreeSession(s3.id))!
+    const speakers: string[] = []
+    for (let i = 0; i < 4; i++) {
+      const r = await runFreeTurn(c3, [chu, luo, su], `第${i}句`, {}, { chatFn: chat3 })
+      c3 = r.session
+      speakers.push(r.speakerId ?? '')
+    }
+    ok('多人轮转只在 AI 角色之间来回（不含用户角色）',
+      speakers.every(x => x === chu.id || x === luo.id) && new Set(speakers).size === 2,
+      speakers.join(' → '))
+    ok('输入侧的说话人标注不因用户角色而开启（只有 2 个 AI 才标）',
+      !calls3.some(c => c.messages.some(m => m.role === 'user' && /^（楚楠）/.test(m.content))))
+
+    // 旧行为不能被改坏：不设 userCharId 时仍是「用户演用户自己」
+    const plain = await store.createFreeSession([chu.id, luo.id], '没设用户角色', { providerId: '' }, {})
+    const sysPlain = (await buildFreeSystem(plain, [chu, luo])).system
+    ok('不设用户角色时，发言规则仍是「用户扮演用户自己的角色」',
+      sysPlain.includes('用户扮演用户自己的角色。'), '')
+  }
+
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

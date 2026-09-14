@@ -88,9 +88,9 @@ async function mkChar(): Promise<FreeCharacter> {
   })
 }
 
-async function say(session: FreeSession, char: FreeCharacter, text: string): Promise<FreeSession> {
+async function say(session: FreeSession, char: FreeCharacter, text: string, cast?: FreeCharacter[]): Promise<FreeSession> {
   const t0 = Date.now()
-  const res = await runFreeTurn(session, [char], text)
+  const res = await runFreeTurn(session, cast ?? [char], text)
   const saved = await store.saveFreeSession(res.session)
   console.log(`\n【我】${text}`)
   console.log(`【${char.name}】${res.reply}`)
@@ -128,6 +128,43 @@ async function main() {
   s0 = await say(s0, char, '（我把伞收在门口，走到柜台前。）')
   const sceneUsed = /雨|伞|灯|柜台|两点/.test(s0.messages[s0.messages.length - 1]?.content ?? '')
   console.log(`[实弹观察] 回复里出现了场景词（雨/伞/灯/柜台/两点）：${sceneUsed ? '✓ 场景被用上了' : '⚠️ 未见场景词'}`)
+
+  // ---------- 阶段 4：用户扮演具体角色（2026-09-14 新增） ----------
+  // 用户不再只是「用户」，而是**演一个具体角色**（苏念），AI 演另一个（楚楠）。
+  // 要验两件事：① 身份层真的写明了谁演谁；② 模型**不抢用户角色的台词**。
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 4 · 用户扮演具体角色（用户演苏念 · AI 演楚楠）')
+  console.log('='.repeat(70))
+  const chu = await store.createFreeChar({
+    ...store.emptyFreeCharacter(),
+    name: '楚楠',
+    world: '现代都市，学摄影的大学生。常来这间便利店买烟。',
+    profile: {
+      externals: '穿旧冲锋衣，手指有显影液的味道',
+      core: '嘴硬心软，不擅长说软话，会记住别人随口提过的小事',
+      speech: '语气平淡，习惯反问，不太用感叹号',
+      relations: '与苏念是这间便利店里认识的熟人',
+      cannot: '说不出直接的关心',
+      knowledge: '不知道苏念打几份工、也不知道她的旧疤来历',
+    },
+    conduct: {
+      perspective: '第一人称，只描写他自己的动作与感官',
+      bottomLine: '不追问别人的私事',
+      paceLock: '关系推进慢',
+      rating: '日常向',
+    },
+    examples: '对方：（她把找零推过来。）\n他把烟塞进兜里，没走。\n「外面的雨小了。」',
+  })
+  let s4 = await store.createFreeSession([chu.id, char.id], '苏念 × 楚楠', { providerId: pick.provider.id }, {}, char.id)
+  const sys4 = (await buildFreeSystem(s4, [chu, char])).system
+  console.log(`[离线断言] 身份层写明「用户扮演：苏念」：${sys4.includes('用户扮演：苏念') ? '✓' : '✗'}`)
+  console.log(`[离线断言] 要求不代写：${sys4.includes('不要代写') ? '✓' : '✗'}`)
+  console.log(`[离线断言] AI 只演楚楠：${sys4.includes('你扮演：楚楠') ? '✓' : '✗'}`)
+  s4 = await say(s4, chu, '（我把伞立在门口，没看他，只把烟推过去。）', [chu, char])
+  const reply4 = s4.messages[s4.messages.length - 1]?.content ?? ''
+  const stole = /^苏念[：:]/.test(reply4.trim()) || /（苏念/.test(reply4) || /苏念[说道]/.test(reply4)
+  console.log(`[实弹观察] 模型是否抢了用户角色（苏念）的台词：${stole ? '⚠️ 疑似抢词' : '✓ 未见'}`)
+  console.log(`[实弹观察] 回复里是否提到苏念（第三人称提到是允许的）：${/苏念/.test(reply4) ? '提到了' : '没提'}`)
 
   // ---------- 阶段 1：会话 A 聊出可被记住的事实 ----------
   console.log('\n' + '='.repeat(70))

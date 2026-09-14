@@ -332,12 +332,36 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     else missing.push(id)
   }
 
-  const setting = found.length > 1
-    ? `${found.map(renderFreeCharacter).join('\n\n')}\n\n${buildMultiCharRule(found.map(c => c.name))}`
-    : found.map(renderFreeCharacter).join('\n\n')
+  /**
+   * 把参演角色拆成两拨：AI 演的和**用户演的**。
+   * `session.userCharId` 未设 = 用户演他自己（旧行为），此时 aiChars === found。
+   */
+  const userChar = found.find(c => c.id === session.userCharId) ?? null
+  const aiChars = found.filter(c => c.id !== userChar?.id)
 
-  // 记忆层：**每个角色各自的记忆**分别成块（多角色时模型要能分清「谁知道什么」）
-  const blocks = await Promise.all(found.map(async c => {
+  const setting = (() => {
+    // 用户扮演的角色（可选）：他由用户自己掌控，**不是 AI 的位子** ——
+    // 从 AI 的名单、发言轮转、记忆块里都要摘出去（否则模型会替他说话、抢他的台词）。
+    const parts: string[] = []
+    if (aiChars.length) parts.push(aiChars.map(renderFreeCharacter).join('\n\n'))
+    if (userChar) {
+      // 用户扮演的那张卡也带给模型，但**只用来说明「对面是谁」**：口吻、立场、底线
+      parts.push(
+        `【用户扮演的角色 · ${userChar.name}】（仅供你理解对方是谁、说话什么调子；\n` +
+        `他的言行归用户自己掌控 —— **不要代写、不要替他决定、也不要替他回答**）\n` +
+        renderFreeCharacter(userChar),
+      )
+    }
+    if (aiChars.length > 1) {
+      parts.push(buildMultiCharRule(aiChars.map(c => c.name), { userName: userChar?.name }))
+    }
+    return parts.join('\n\n')
+  })()
+
+  // 记忆层：**每个角色各自的记忆**分别成块（多角色时模型要能分清「谁知道什么」）。
+  // ⚠️ 用户扮演的那个角色**不给**：那是他自己的底牌，给 AI 看等于让对手读你的日记，
+  //   还容易演成「替你说出你私下想的事」。他的处境光靠角色卡说明就够了。
+  const blocks = await Promise.all(aiChars.map(async c => {
     let m: FreeMemory | null = null
     try { m = await store.getMemory(c.id) } catch { m = null }
     // 空档案不输出：六栏全写「（暂无）」既占上下文又干扰模型，不如整块不出现
@@ -346,9 +370,13 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   }))
   const memory = blocks.filter(Boolean).join('\n\n')
 
-  const self = found.length > 1
-    ? `你同时扮演：${found.map(c => c.name).join('、')}。用户扮演用户自己。`
-    : `你扮演：${found[0]?.name ?? '（未指定角色）'}`
+  const aiNames = aiChars.map(c => c.name)
+  const self = userChar
+    ? `你扮演：${aiNames.length ? aiNames.join('、') : '（未指定角色）'}\n` +
+      `用户扮演：${userChar.name}（其言行归用户自己掌控，你不要代写，也不要替他做决定）`
+    : aiNames.length > 1
+      ? `你同时扮演：${aiNames.join('、')}。用户扮演用户自己。`
+      : `你扮演：${aiNames[0] ?? '（未指定角色）'}`
 
   const system = buildSystemPrompt({
     tone: FREE_TONE,
@@ -431,10 +459,12 @@ export async function runFreeTurn(
     else throw e
   }
 
-  // 归属角色：指定优先，否则按历史里已有的 assistant 条数轮转
+  // 归属角色：指定优先，否则按历史里已有的 assistant 条数轮转。
+  // ⚠️ 轮转名单要**排除用户扮演的角色** —— 他不是 AI 的位子，轮到他就会出现「AI 替你回答你」。
+  const aiIds = session.charIds.filter(id => id !== session.userCharId)
   const said = session.messages.filter(m => m.role === 'assistant').length
-  const autoSpeaker = session.charIds.length > 0 ? session.charIds[said % session.charIds.length] : undefined
-  const speakerId = session.charIds.length > 1 ? (cb.speakerId ?? autoSpeaker) : session.charIds[0]
+  const autoSpeaker = aiIds.length > 0 ? aiIds[said % aiIds.length] : undefined
+  const speakerId = aiIds.length > 1 ? (cb.speakerId ?? autoSpeaker) : aiIds[0]
 
   const next: FreeSession = {
     ...session,
@@ -459,14 +489,16 @@ export function buildFreeMessages(
   budgetChars: number,
   speakerId?: string,
 ): { messages: ChatMessage[]; dropped: number } {
-  const nameById = new Map(chars.map(c => [c.id, c.name]))
+  // 输入侧标注说话人只在**多个 AI 角色**时才需要；用户扮演的角色不算 AI 的位子
+  const aiChars = chars.filter(c => c.id !== session.userCharId)
+  const nameById = new Map(aiChars.map(c => [c.id, c.name]))
   const all = toChatMessages(msgs, {
-    withSpeaker: session.charIds.length > 1
+    withSpeaker: aiChars.length > 1
       ? (id?: string) => (id && nameById.get(id) ? `（${nameById.get(id)}）` : '')
       : undefined,
   })
   // 手动指定下一位时，在输入侧提示一句（模型据此优先让该角色接话）
-  if (speakerId && session.charIds.length > 1 && nameById.get(speakerId)) {
+  if (speakerId && aiChars.length > 1 && nameById.get(speakerId)) {
     all.push({ role: 'user', content: `（下一位由 ${nameById.get(speakerId)} 接话）` })
   }
   const trimmed = trimHistory(all, budgetChars)
