@@ -54,21 +54,15 @@ export default function TavernDirectorNoteBar({
             <span className="min-w-0 flex-1 truncate text-ink-300" title={note?.text}>
               {note?.text}
             </span>
-            <button
-              type="button" disabled={disabled} onClick={() => setOpen(true)}
-              className="shrink-0 text-ink-500 hover:text-amber disabled:opacity-40"
-            >编辑</button>
-            <button
-              type="button" disabled={disabled} onClick={onClear}
-              className="shrink-0 text-ink-500 hover:text-red-400 disabled:opacity-40"
-            >清除</button>
+            <Button variant="secondary" size="xs" disabled={disabled} onClick={() => setOpen(true)} className="shrink-0"
+            >编辑</Button>
+            <Button variant="danger" size="xs" disabled={disabled} onClick={onClear} className="shrink-0"
+            >清除</Button>
           </>
         ) : (
           <>
-            <button
-              type="button" disabled={disabled} onClick={() => setOpen(true)}
-              className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-ink-400 hover:text-amber disabled:opacity-40"
-            >＋ 导演指令</button>
+            <Button variant="secondary" size="xs" disabled={disabled} onClick={() => setOpen(true)} className="shrink-0"
+            >＋ 导演指令</Button>
             <span className="min-w-0 flex-1 truncate text-ink-600">
               临时给接下来几轮加一条指令（如「这场戏节奏放慢」「让洛汐先开口」）—— 不改角色卡，用完自动失效
             </span>
@@ -138,7 +132,7 @@ export default function TavernDirectorNoteBar({
 
         <div className="mt-4 flex justify-end gap-2 border-t border-ink-800 pt-3">
           {active && (
-            <Button variant="ghost" size="md" onClick={() => { onClear(); setOpen(false) }}>清除指令</Button>
+            <Button variant="secondary" size="md" onClick={() => { onClear(); setOpen(false) }}>清除指令</Button>
           )}
           <Button variant="secondary" size="md" onClick={() => setOpen(false)}>取消</Button>
           <Button

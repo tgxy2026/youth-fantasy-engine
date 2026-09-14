@@ -155,7 +155,7 @@ export default function TavernExportDialog({
           对白、（动作）、【环境】、〔状态〕在两种格式里都会区分显示。
         </span>
         <div className="flex shrink-0 gap-2">
-          <Button variant="ghost" size="md" onClick={() => void copyMd()}>复制 Markdown</Button>
+          <Button variant="secondary" size="md" onClick={() => void copyMd()}>复制 Markdown</Button>
           <Button variant="secondary" size="md" onClick={onClose}>取消</Button>
         </div>
       </div>

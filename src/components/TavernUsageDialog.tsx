@@ -135,7 +135,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
           <p className="mt-1 break-all text-[11.5px] text-ink-300 leading-relaxed">{error}</p>
           <div className="mt-3 flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => void measure()}>再量一次</Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>关闭</Button>
+            <Button variant="secondary" size="sm" onClick={onClose}>关闭</Button>
           </div>
         </div>
       ) : loading || !summary ? (
@@ -202,7 +202,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => void measure()}>再量一次</Button>
+            <Button variant="secondary" size="sm" onClick={() => void measure()}>再量一次</Button>
             <Button variant="secondary" size="sm" onClick={onClose}>关闭</Button>
           </div>
         </div>

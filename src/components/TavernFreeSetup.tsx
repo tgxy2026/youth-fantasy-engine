@@ -305,8 +305,8 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                                 <option value="ai">AI 演</option>
                                 <option value="user">我演</option>
                               </select>
-                              <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => setPickerIdx(i)}>更换</Button>
-                              <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => clearSlot(i)}>清空</Button>
+                              <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => setPickerIdx(i)}>更换</Button>
+                              <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => clearSlot(i)}>清空</Button>
                             </>
                           ) : (
                             <>
@@ -318,7 +318,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                               </button>
                               <span className="shrink-0 text-[10.5px] text-ink-500">拟：{s.role === 'user' ? '我演' : 'AI 演'}</span>
                               {slots.length > 1 && (
-                                <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>
+                                <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>
                               )}
                             </>
                           )}
@@ -326,7 +326,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                       ))}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
-                      <Button variant="ghost" size="md" className="text-[12px]" disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
+                      <Button variant="secondary" size="md" className="text-[12px]" disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
                         ＋ 增加位置（最多 {MAX_SLOTS} 个）
                       </Button>
                       <span className="text-[11px] text-ink-500">
@@ -372,13 +372,11 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                   <div className="mt-2 rounded-md border border-ink-700 bg-ink-900/40 px-3 py-2">
                     <div className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-[12.5px] text-amber">{scriptDisplayName(scriptView)}</span>
-                      <button
-                        type="button"
-                        className="shrink-0 text-[11px] text-ink-500 hover:text-amber"
-                        onClick={() => void pickScript('')}
+                      <Button variant="secondary" size="xs"
+                        onClick={() => void pickScript('')} className="shrink-0"
                       >
                         取消引用
-                      </button>
+                      </Button>
                     </div>
                     <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[10.5px] leading-relaxed text-ink-400">
                       {scriptToText(snapshotOf(scriptView)) || '（这份剧本六栏是空的，等于没设）'}

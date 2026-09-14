@@ -45,19 +45,17 @@ export default function AvatarPicker({ src, name, size = 64, onChange, hint }: {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <Button
-            variant="ghost" size="sm" type="button" disabled={busy}
+            variant="secondary" size="sm" type="button" disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
             {busy ? '处理中…' : src ? '换一张' : '上传图片'}
           </Button>
           {src && (
-            <button
-              type="button"
-              className="text-[11px] text-ink-500 hover:text-red-400"
+            <Button variant="danger" size="xs"
               onClick={() => onChange('')}
             >
               移除
-            </button>
+            </Button>
           )}
         </div>
         <p className="mt-1 text-[10.5px] text-ink-500 leading-relaxed">

@@ -8,6 +8,7 @@
  * 遵守项目约定：弹窗用共享 Modal，按钮用 Button，禁 window.confirm（用 confirmDialog），提示用 showToast。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import HelpPopover from './HelpPopover'
 import * as db from '../lib/db'
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
@@ -419,6 +420,17 @@ export default function TavernPlot() {
       {/* ---------- 顶部工具条：只放「本场」的操作，导航（选/新建）都在左栏 ---------- */}
       <header className="flex flex-wrap items-center gap-2 border-b border-ink-800 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">剧情推演</h1>
+
+        <HelpPopover title="剧情推演怎么用" width="24rem" size={14}>
+  左栏是全部场次（点一下就切），右边是这一场的对话。
+
+  • 「＋ 新建推演」时选叙事锚点（从哪一章开始）与在场角色 —— 谁演谁由你定，你也能自己演一个。
+  • 顶部几件：存检查点（记住此刻进度，之后能一键回到这里，回滚还可撤销）、本场信息、导出、结束推演。
+  • 消息上悬停有「重说 / 编辑 / 隐藏 / 分支 / 删除」：隐藏 = 这条先不让 AI 看见（界面仍留着）；
+    分支 = 从这条另开一场试另一个走向，原场不动。
+  • 模型可以单独指定（不跟随全局活动模型），换模型不影响已有记录。
+  • 它是「试戏」不是「写稿」：结束推演出的报告只诊断，不会写回你的小说。
+</HelpPopover>
         {session && (
           <span className="max-w-[28rem] truncate text-[12px] text-ink-400" title={session.title}>{session.title}</span>
         )}
@@ -598,13 +610,11 @@ export default function TavernPlot() {
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-ink-500">检查点（{(session.checkpoints ?? []).length}）</span>
-                  <button
-                    type="button"
-                    className="text-[11px] text-ink-500 hover:text-amber"
+                  <Button variant="secondary" size="xs"
                     onClick={() => saveCheckpoint()}
                   >
                     ＋ 存一个
-                  </button>
+                  </Button>
                 </div>
                 {(session.checkpoints ?? []).length === 0 ? (
                   <p className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
@@ -621,32 +631,28 @@ export default function TavernPlot() {
                         >
                           {cp.label || `第 ${cp.messageCount} 条`}
                         </span>
-                        <button
-                          type="button"
-                          className="shrink-0 text-[10.5px] text-ink-500 hover:text-amber"
-                          onClick={() => void rollbackTo(cp.id)}
+                        <Button variant="secondary" size="xs"
+                          onClick={() => void rollbackTo(cp.id)} className="shrink-0"
                         >
                           回到这里
-                        </button>
-                        <button
-                          type="button"
-                          className="shrink-0 text-[10.5px] text-ink-600 hover:text-red-400"
+                        </Button>
+                        <Button variant="danger" size="xs"
                           title="删掉这个检查点（不影响对话）"
-                          onClick={() => dropCp(cp.id)}
+                          onClick={() => dropCp(cp.id)} className="shrink-0"
                         >
                           ×
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
                 )}
                 {session.undoSnapshot && (
-                  <Button variant="ghost" size="sm" className="mt-1.5 w-full !text-[11px]" onClick={undoRollback}>
+                  <Button variant="secondary" size="sm" className="mt-1.5 w-full !text-[11px]" onClick={undoRollback}>
                     ↩ 撤销上次回滚（{new Date(session.undoSnapshot.at).toLocaleTimeString()}）
                   </Button>
                 )}
               </div>
-              <Button variant="ghost" size="md" className="w-full text-[12px]" onClick={removeSession}>删除这场推演</Button>
+              <Button variant="secondary" size="md" className="w-full text-[12px]" onClick={removeSession}>删除这场推演</Button>
             </aside>
           )}
 

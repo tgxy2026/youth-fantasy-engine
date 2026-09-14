@@ -22,6 +22,7 @@
  * 提示用 showToast。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import HelpPopover from './HelpPopover'
 import { Pencil } from 'lucide-react'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
@@ -730,16 +731,26 @@ export default function TavernFree() {
       {/* 顶部：只放「本场」的操作，导航（选/新建）都在左栏 */}
       <header className="flex flex-wrap items-center gap-2 border-b border-ink-800 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">自由对话</h1>
+
+        <HelpPopover title="自由对话怎么用" width="24rem" size={14}>
+  这里的对话不绑小说项目：换一本书，角色卡与记忆照样在。
+
+  • 顶部几件：Ta最近几天（每日小结）、查看记忆（六栏记忆，可逐栏改）、角色状态（在场角色 + 本场数值）、导出。
+  • 多角色同场时点头像可指定下一位接话；「在场调度」里能静音某个人、调健谈度。
+  • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。
+  • 「本场数值」（好感 / 信任 / 剧情进度 / 心情 / 当前地点）只属于这一场，在「角色状态」里看得到、也能手改。
+  • 想给这一场一个具体处境，就在新建对话时选一份剧本（「剧本编辑」里写）。
+</HelpPopover>
         {session && <span className="max-w-[28rem] truncate text-[12px] text-ink-400" title={session.title}>{session.title}</span>}
         <div className="flex-1" />
         {session && (
           <>
             {!!daily?.log?.length && (
-              <Button variant="ghost" size="md" onClick={() => setShowDaily(v => !v)}>
+              <Button variant="secondary" size="md" onClick={() => setShowDaily(v => !v)}>
                 {showDaily ? '收起这几天' : 'Ta最近几天'}
               </Button>
             )}
-            <Button variant="ghost" size="md" onClick={() => setShowMemory(v => !v)}>
+            <Button variant="secondary" size="md" onClick={() => setShowMemory(v => !v)}>
               {showMemory ? '隐藏记忆' : '查看记忆'}
             </Button>
             <Button
@@ -750,7 +761,7 @@ export default function TavernFree() {
               导出
             </Button>
             <Button
-              variant="ghost" size="md" onClick={() => setStatusOpen(v => !v)}
+              variant="secondary" size="md" onClick={() => setStatusOpen(v => !v)}
               title="在场角色 + 关系状态 + 记忆计数（只读，来自右栏「记忆」那六栏）"
             >
               {statusOpen ? '收起角色状态' : '角色状态'}
@@ -889,14 +900,12 @@ export default function TavernFree() {
                         <span className="text-[11px] text-ink-200">{c.name}</span>
                       </button>
                     ))}
-                    <button
-                      type="button"
+                    <Button variant="secondary" size="xs"
                       onClick={() => setDirectorOpen(true)}
-                      className="ml-auto shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-amber"
-                      title="静音（在场但不发言）与健谈度"
+                      title="静音（在场但不发言）与健谈度" className="shrink-0"
                     >
                       在场调度
-                    </button>
+                    </Button>
                   </div>
                 )}
 
@@ -940,9 +949,9 @@ export default function TavernFree() {
                         <p className="text-[10.5px] text-amber/80 mb-1">你很久没来了，Ta留下句话：</p>
                         {renderTavernMessage(greeting)}
                       </div>
-                      <button type="button" className="shrink-0 text-[11px] text-ink-500 hover:text-ink-200" onClick={() => setGreeting('')}>
+                      <Button variant="secondary" size="xs" onClick={() => setGreeting('')} className="shrink-0">
                         收起
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}

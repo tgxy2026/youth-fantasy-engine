@@ -57,7 +57,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
             onChange={setText}
           />
           <div className="flex items-center justify-end gap-1.5">
-            <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setText(content) }}>取消</Button>
+            <Button variant="secondary" size="sm" onClick={() => { setEditing(false); setText(content) }}>取消</Button>
             <Button
               variant="primary" size="sm" disabled={!text.trim()}
               onClick={() => { ops.onSaveEdit(text.trim()); setEditing(false) }}
@@ -82,7 +82,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
           <div className="mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
             {ops.canReroll && (
               <Button
-                variant="ghost" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
+                variant="secondary" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
                 title="用同一段历史让 AI 重说这一条（只出一个结果）"
                 onClick={ops.onReroll}
               >
@@ -90,14 +90,14 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
               </Button>
             )}
             <Button
-              variant="ghost" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
+              variant="secondary" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
               title="改这条的正文；改完不会自动重跑 —— 若是最后一轮的输入，可以再点「重说」"
               onClick={() => { setText(content); setEditing(true) }}
             >
               编辑
             </Button>
             <Button
-              variant="ghost" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
+              variant="secondary" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
               title={hidden ? '恢复这条，让它重新参与上下文' : '这条先不让 AI 看见（界面仍留着）'}
               onClick={ops.onToggleHidden}
             >
@@ -105,7 +105,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
             </Button>
             {ops.onBranch && (
               <Button
-                variant="ghost" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
+                variant="secondary" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
                 title="从这一条另开一场推演（只保留到这里，原推演不动）—— 用来试另一个走向"
                 onClick={ops.onBranch}
               >
@@ -113,7 +113,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
               </Button>
             )}
             <Button
-              variant="ghost" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
+              variant="secondary" size="sm" className="!px-1.5 !text-[10.5px]" disabled={ops.busy}
               title="从这场的记录里删掉（不可撤销）"
               onClick={ops.onDelete}
             >

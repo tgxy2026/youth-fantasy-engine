@@ -16,7 +16,7 @@ import { Button } from './Button'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
 import TavernScriptFields from './TavernScriptFields'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './TavernDraftBits'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import {
   draftScript, saveScript, mergeScriptDraft, EMPTY_SCRIPT_FIELDS, scriptToText, snapshotOf,
   isEmptyScriptFields, type ScriptDraftFields,

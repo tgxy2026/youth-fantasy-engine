@@ -6,21 +6,32 @@
  * `prompt.ts` 的 TONE_HINT、`memory.ts` 的记忆阈值、`engine.ts` 的超时…），
  * 想调一个数就得改代码 + 重新构建。这个页签把它们全部搬到前台，改完点保存即生效。
  *
- * 【六段的划分依据】
+ * 【九段的划分依据】
  *   · 通用设置 —— 不管哪种模式都要用的：模型、上下文预算、超时、上下文窗口、通用补充要求
  *   · 我的档案 —— **用户本人是谁**（全局、跨项目）。自由对话里「我演」留空时，
  *     它就是 AI 眼中「屏幕后面那个人」；详见 settings.ts 的 TavernProfile。
+ *   · 联网检索 —— 「AI 起草」那一步的素材从哪来（全局，与对话本身无关）
+ *   · 预设方案 —— 把整套设置存成命名快照，一键切换 / 导出分享
+ *   · 输出后处理 —— 两种模式共用的兜底修正规则
+ *   · 本场数值 —— 好感 / 信任等五项数值的更新频率与幅度（自由对话里生效）
  *   · 扮演协议 —— 两种模式共用的格式契约（钉在提示词末尾）
  *   · 剧情推演 —— 只对剧情模式生效的：叙事向采样参数与风格、专属补充要求
  *   · 自由对话 —— 只对自由模式生效的：聊天向采样参数与风格、专属补充要求、记忆与日常阈值
  * 采样参数之所以**分成两段而不是放通用段**：两种模式的默认值本来就不同
  * （剧情 0.85 / 自由 0.9，叙事要稳、陪伴要松），合成一个会把这个差异抹平。
  *
- * 【两列布局的划分依据（2026-09-14 第三轮调整：加入「我的档案」）】
- *   左列 = 通用设置 + 我的档案 + 扮演协议 —— 「全局的、一次调好就不动的」：
- *          跟谁说、我是谁、什么格式契约。
- *   右列 = 剧情推演控制 + 自由对话控制 —— 「分模式的手感」：温度、采样、记忆阈值。
- * 序号按**阅读顺序**重排（左列自上而下 一 → 三，再到右列 四 → 五），不按历史顺序。
+ * 【两列布局的划分依据（2026-09-15 第二轮：按实测高度配平）】
+ *   左列 = 通用设置 + 我的档案 + 联网检索 + 预设方案 + 输出后处理 + 扮演协议
+ *          —— 「不分局部的设置」+ 「两种模式共用的契约」；
+ *   右列 = 剧情推演控制 + 自由对话控制 + 本场数值 —— 「两种模式各自的手感」。
+ * 分列标准只有一条：**左右两列的内容高度要接近**（否则矮的那列底部会留一大片空白）。
+ * ⚠️ 这不是拍脑袋分的，是量出来的（2026-09-15 实测，视口 1600×1000）：
+ *   右列 剧情推演 1876 + 自由对话 3767 + 本场数值 788 ≈ 6463px；左列其余各段合计 ≈ 3852px。
+ *   差值 ≈ 2611px，正好由协议窗吃满 —— 而协议正文实测约 2189px，**刚好整篇装得下、不用内部滚动**，
+ *   底部只剩约 400px 余量（原先协议窗被撑到 4949px，正文之外空了 2700px）。
+ *   反例：只把「联网检索 + 预设方案」（合计 511px）挪过来时，协议窗仍被撑到 4949px、
+ *   正文只有约 900px，等于把一个 4000px 高的空文本域摆在眼前。
+ * 序号按**阅读顺序**重排（左列自上而下 一 → 七，再到右列 八 → 九），不按历史顺序。
  *
  * 【排版约定】每项一律「标题 →（可选）输入区 → 说明文字」。说明放在**下面**，
  * 这样长短不一的解释不会把输入框顶得高低起伏 —— 输入框永远在同一水平线上。
@@ -35,6 +46,7 @@
  * 所以打开这个页面之前与之后，行为完全一致 —— 不存在"升个版本悄悄变了风格"。
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import HelpPopover from './HelpPopover'
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
@@ -260,14 +272,12 @@ function ToggleField({ label, hint, value, onChange }: {
 }) {
   return (
     <Field label={label} hint={hint}>
-      <button
-        type="button" onClick={() => onChange(!value)}
-        className={`h-8 w-full rounded-md border text-[12px] transition-colors ${
-          value ? 'border-amber/50 bg-amber/15 text-amber' : 'border-ink-700 bg-ink-900 text-ink-400 hover:bg-ink-800'
-        }`}
+      <Button
+        variant="toggle" size="md" selected={value}
+        className="w-full" onClick={() => onChange(!value)}
       >
         {value ? '已关闭（推荐）' : '未关闭 —— 模型会先想再答'}
-      </button>
+      </Button>
     </Field>
   )
 }
@@ -388,7 +398,7 @@ export default function TavernControl() {
     const okGo = await confirmDialog({
       title: '应用预设「' + p.name + '」？',
       message: [
-        '当前所有设置（通用 / 我的档案 / 协议 / 剧情推演 / 自由对话 / 本场数值 / 联网检索）都会被这套预设替换 ——',
+        '当前所有设置（通用 / 我的档案 / 联网检索 / 预设方案 / 输出后处理 / 协议 / 剧情推演 / 自由对话 / 本场数值）都会被这套预设替换 ——',
         '包括协议全文。未保存的改动会丢失。',
       ].join('\n'),
       confirmText: '应用',
@@ -538,7 +548,7 @@ export default function TavernControl() {
     const okGo = await confirmDialog({
       title: '恢复出厂设置？',
       message: [
-        '七段设置（通用设置 / 我的档案 / 扮演协议 / 剧情推演 / 自由对话 / 本场数值 / 联网检索）里的所有参数与提示词，都会回到内置默认值。',
+        '九段设置（通用设置 / 我的档案 / 联网检索 / 预设方案 / 输出后处理 / 扮演协议 / 剧情推演 / 自由对话 / 本场数值）里的所有参数与提示词，都会回到内置默认值。',
         '已存的预设方案不受影响 —— 那是独立的快照，要用它随时点「应用」即可。',
         '保存后不可撤销。',
       ].join('\n'),
@@ -591,19 +601,26 @@ export default function TavernControl() {
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-[16px] text-ink-100">控制面板</h1>
+
+          <HelpPopover title="控制面板怎么用" width="24rem" size={14}>
+  酒馆模式全部「接进 AI 的参数与提示词」都在这里。改完点右上「保存」，下一轮对话开始时生效。
+
+  • 左列是「全局的、一次调好就不动的」：跟谁说、我是谁、素材从哪来、整套怎么存，以及两种模式共用的格式契约。
+  • 右列是「分模式的手感与输出规则」：剧情推演 / 自由对话各自的采样参数与阈值、本场数值、输出后处理。
+  • 每个数值都标了取值范围；「显示分段说明」打开后，还能看到「调大 / 调小分别会怎样」。
+  • 「四、预设方案」可以把整套设置存成快照，一键切换或导出分享。
+  • 默认值就是出厂值：不动它时行为与之前完全一致。
+</HelpPopover>
           <p className="mt-1 text-[12px] text-ink-500 leading-relaxed">
-            酒馆模式全部「接进 AI 的参数与提示词」都在这里，改完点保存即可生效（下一轮对话开始时读取）。
+            酒馆模式全部「接进 AI 的参数与提示词」都在这里。改完点右上「保存」，下一轮对话开始时生效。
             <br />
-            左列是通用的「跟谁说、我是谁、说多长」与两种模式共用的格式契约，右列是两种模式各自的手感 ——
-            建议先把左边看过一遍，再去跑剧情推演或自由对话。
-            <br />
-            默认值就是内置的出厂值，所以不动它时行为与之前完全一致。
+            默认值就是内置的出厂值 —— 不动它时行为与之前完全一致。
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {dirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
           <Button
-            variant="ghost" size="sm" onClick={() => setShowBands(v => !v)}
+            variant="secondary" size="sm" onClick={() => setShowBands(v => !v)}
             title="每个数值项下面的「取值范围 + 分段影响」表。全部摊开页面会很长，可以一键收起（当前值的档位仍会显示）"
           >
             {showBands ? '收起分段说明' : '显示分段说明'}
@@ -627,7 +644,7 @@ export default function TavernControl() {
           <div>
           <Section
             title="一、通用设置"
-            desc="两种模式都生效。模型与上下文这些「跟谁说、说多长」的事在这里定；具体的采样手感与提示词在右边两段。"
+            desc="两种模式都生效。模型与上下文这些「跟谁说、说多长」的事在这里定；具体的采样手感与提示词在下面几段。"
           >
             <SelectField
               label="默认模型"
@@ -723,7 +740,252 @@ export default function TavernControl() {
           </Section>
           </div>
 
-          {/* ---------- 三、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ----------
+          {/* ---------- 三、联网检索（起草用） ----------
+              与「通用设置」同类：全局、与对话本身无关，只在「AI 起草」那一步用到。 */}
+          <Section
+            title="三、联网检索"
+            desc="全局设置：所有「AI 起草 / 补全」（酒馆的角色卡与剧本，以及角色管理 / 表单 / 表格的补全）都按这一档取素材，与对话本身无关。默认关闭 —— 不填任何东西也能用一句话起草，靠模型已有知识加你粘贴的素材。"
+          >
+            <Field
+              label="检索方式"
+              hint="起草时的素材从哪来。界面上每次起草都会如实告诉你「本次用的是哪一种」，包括没查成的情况。"
+            >
+              <div className="flex flex-wrap gap-2">
+                {(['off', 'model', 'api'] as const).map(m => (
+                  <Button
+                    key={m} variant="toggle" size="sm"
+                    selected={s.search.mode === m}
+                    onClick={() => setSearch({ mode: m })}
+                  >
+                    {SEARCH_MODE_LABEL[m]}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-500">
+                {s.search.mode === 'off'
+                  ? '不联网。知名题材（蒂法、《梁祝》这类）模型自己就很熟，够用；冷门或原创靠下面「参考素材」那一栏粘进去。'
+                  : s.search.mode === 'model'
+                    ? '让模型自己去查 —— 前提是你选的模型/中转本身支持联网。本软件看不到这一步，是否真的联网取决于服务商。'
+                    : '由本软件先查好再喂给模型。需要下面填一个搜索接口（博查实测支持浏览器直连，其它接口可能被跨域拦住）。'}
+              </p>
+            </Field>
+
+            {s.search.mode === 'api' && (
+              <>
+                <Field label="搜索引擎" hint="博查可直接用；自定义接口请填完整地址（会用 POST { query, count } 调用，结果尽量自动识别）。">
+                  <select
+                    className={NUM}
+                    value={s.search.engine}
+                    onChange={e => setSearch({ engine: e.target.value as SearchSettings['engine'] })}
+                  >
+                    <option value="bocha">博查（推荐，实测可直连）</option>
+                    <option value="custom">自定义接口</option>
+                  </select>
+                </Field>
+
+                {s.search.engine === 'custom' && (
+                  <Field label="接口地址" hint={`留空则用博查的默认地址 ${BOCHA_ENDPOINT}`}>
+                    <input
+                      className={NUM}
+                      value={s.search.endpoint}
+                      onChange={e => setSearch({ endpoint: e.target.value })}
+                      placeholder={BOCHA_ENDPOINT}
+                    />
+                  </Field>
+                )}
+
+                <Field
+                  label="密钥"
+                  hint="存在本机数据文件里，不会上传到任何服务器；只有起草时才会带着它去请求搜索接口。"
+                >
+                  <input
+                    className={NUM}
+                    value={s.search.apiKey}
+                    onChange={e => setSearch({ apiKey: e.target.value })}
+                    placeholder="sk-…（博查控制台里生成）"
+                    autoComplete="off"
+                  />
+                </Field>
+
+                <NumField
+                  label="每次取几条" guide={PARAM_GUIDES.searchTopK}
+                  hint="取多少条结果喂给模型。条数越多细节越全，但摘要里的重复也越多。"
+                  value={s.search.topK} onCommit={v => setSearch({ topK: Math.max(1, Math.min(10, Math.round(v))) })}
+                />
+              </>
+            )}
+
+            <div className="text-[10.5px] leading-relaxed">
+              {/* 🔴 两件事都要说：当前是哪一档（永远显示）+ 有什么问题（有问题才追加）。
+                  原先写成三选一，结果「没填密钥」时反而不显示当前档了 —— 信息不是互斥的。 */}
+              <p className="text-ink-400">
+                当前：{SEARCH_MODE_LABEL[s.search.mode]}
+                {s.search.mode === 'api' && `（${s.search.engine === 'custom' ? '自定义接口' : '博查'}）`}
+                —— 起草时按这一档执行
+              </p>
+              {searchBlockedReason(s.search) && (
+                <p className="mt-0.5 text-amber">⚠️ {searchBlockedReason(s.search)}</p>
+              )}
+            </div>
+          </Section>
+
+          {/* ---------- 四、预设方案（A4） ---------- */}
+          <Section
+            title="四、预设方案"
+            desc="把整套设置存成命名快照，一键切换。预设包含协议全文，所以换预设等于把参数与格式契约一起换掉 —— 只换一半的话，格式规则还是上一套的。"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="primary" size="md" onClick={() => setPresetNaming(true)}>＋ 存为预设</Button>
+              <Button variant="secondary" size="md" onClick={() => presetFileRef.current?.click()}>从文件导入</Button>
+              <input
+                ref={presetFileRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) void importPresetFile(f)
+                  e.target.value = '' // 允许连续导入同一个文件
+                }}
+              />
+            </div>
+            <p className="text-[11px] text-ink-500 leading-relaxed">
+              建议按工作模式分：例如「快速脑暴」（温度高、篇幅短、脑洞优先）与「精修成稿」（温度低、
+              篇幅长、一致性优先）。应用预设会整体替换当前设置，未保存的改动会被覆盖。
+            </p>
+
+            {presetList.length === 0 ? (
+              <p className="text-[11.5px] text-ink-600 leading-relaxed">
+                还没有预设。把当前这套存一个，以后切回来只要点一下 —— 也能导出去分享给别人。
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {presetList.map(p => (
+                  <li key={p.id} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12.5px] text-ink-100">{p.name}</div>
+                      <div className="text-[10.5px] text-ink-500">
+                        {new Date(p.updatedAt).toLocaleString()}
+                        {' · 叙事温度 '}{p.data.plot.temperature}{' · 聊天温度 '}{p.data.free.temperature}
+                      </div>
+                    </div>
+                    <Button
+                      variant="primary" size="xs" className="shrink-0"
+                      onClick={() => void applyPreset(p)}
+                      title="把当前设置整体换成这套预设（含协议）"
+                    >应用</Button>
+                    <Button
+                      variant="secondary" size="xs" className="shrink-0"
+                      onClick={() => void overwritePreset(p)}
+                      title="用当前设置覆盖这份预设"
+                    >覆盖</Button>
+                    <Button
+                      variant="secondary" size="xs" className="shrink-0"
+                      onClick={() => exportPreset(p)}
+                      title="导出成文件，可备份或分享"
+                    >导出</Button>
+                    <Button
+                      variant="danger" size="xs" className="shrink-0"
+                      onClick={() => void dropPreset(p)}
+                      title="只删这份快照，当前设置不受影响"
+                    >删除</Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+
+          {/* ---------- 五、输出后处理（B3） ---------- */}
+          <Section
+            title="五、输出后处理"
+            desc="生成后按下面的规则从上到下修一遍再落库。协议已经把格式写死了，实测却总有模型不听话 —— 用规则兜住，比重跑一次去赌划算。顺序有意义：先去 markdown 再处理单星号动作，否则 **动作** 会被拆成 *（动作）*。"
+          >
+            <ToggleField
+              label="启用输出后处理"
+              hint="关掉就完全不跑规则（排查格式问题时用这一档，先排除规则本身的影响）。"
+              value={s.postRulesEnabled}
+              onChange={v => setPostFlag({ postRulesEnabled: v })}
+            />
+            <ToggleField
+              label="命中时在对话页提示"
+              hint="关掉 = 静默修正：规则照跑，只是不在输入框上方告诉你改了哪几条。正则写错仍会提示 —— 那是配置问题，不该被静默。"
+              value={s.postRuleNotice}
+              onChange={v => setPostFlag({ postRuleNotice: v })}
+            />
+
+            <div className="space-y-2">
+              {s.postRules.map((r, i) => (
+                <div key={r.id} className="rounded-md border border-ink-800 bg-ink-900/40 p-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" className="shrink-0 accent-amber" checked={r.enabled}
+                      onChange={e => setRule(i, { enabled: e.target.checked })}
+                      title="关掉这一条（其余规则照跑）"
+                    />
+                    <span className="shrink-0 text-[10.5px] text-ink-600">{i + 1}</span>
+                    <input
+                      value={r.name} onChange={e => setRule(i, { name: e.target.value })}
+                      className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+                      placeholder="规则名（对话页提示里显示的就是它）"
+                    />
+                    <Button variant="danger" size="xs" className="shrink-0" onClick={() => dropRule(i)}>
+                      删除
+                    </Button>
+                  </div>
+                  <input
+                    value={r.pattern} onChange={e => setRule(i, { pattern: e.target.value })}
+                    className="mt-1.5 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-[11px] text-ink-200 outline-none focus:border-amber/50"
+                    placeholder={`正则源码，例：${RULE_EXAMPLE}`}
+                  />
+                  <input
+                    value={r.replacement} onChange={e => setRule(i, { replacement: e.target.value })}
+                    className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-[11px] text-ink-200 outline-none focus:border-amber/50"
+                    placeholder="替换成（$1 = 第一个捕获组；留空 = 直接删掉）"
+                  />
+                  {r.note && (
+                    <p className={`mt-1 text-[10px] leading-relaxed ${r.enabled ? 'text-ink-600' : 'text-amber/80'}`}>
+                      {r.note}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={addRule}>＋ 新增规则</Button>
+              <Button variant="secondary" size="sm" onClick={resetRules}>恢复出厂四条</Button>
+              <span className="text-[10.5px] text-ink-500">
+                共 {s.postRules.length} 条 · 启用 {s.postRules.filter(r => r.enabled).length} 条
+              </span>
+            </div>
+            <p className="text-[10.5px] text-ink-600 leading-relaxed">
+              正则写法提示：$1 / $2 是捕获组（例：星号动作那条的正则是 {RULE_EXAMPLE}）；
+              flags 固定 gm（m 让 ^ 匹配每一行，行首说话人标签那条要用）。
+            </p>
+
+            {/* 试一段：正则最容易写错，给个立刻能看到结果的入口（比「改完去聊一句看效果」省事） */}
+            <div>
+              <div className="text-[11.5px] text-ink-200">试一段</div>
+              <AutoTextarea
+                className="mt-1 bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
+                textClass="text-[11.5px] font-mono"
+                minRows={2}
+                maxHeight={140}
+                placeholder="贴一段模型输出，例：（她点头。） / **（他把烟按灭）** / 洛汐：你来了。"
+                value={ruleTry}
+                onChange={setRuleTry}
+              />
+              <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[11px] leading-relaxed text-ink-300">{rulePreview.text || '（上面输入内容就能看到结果）'}</pre>
+              <p className="mt-1 text-[10.5px] leading-relaxed text-ink-500">
+                {rulePreview.errors.length > 0
+                  ? <span className="text-amber">⚠️ 正则无效、已跳过：{rulePreview.errors.join('、')}</span>
+                  : rulePreview.applied.length > 0
+                    ? `命中：${rulePreview.applied.map(a => `${a.name} ×${a.count}`).join('、')}`
+                    : '没命中任何规则（上面的输入已符合协议，或规则没写对）'}
+              </p>
+            </div>
+          </Section>
+          {/* ---------- 六、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ----------
               🔴 两条都是踩出来的，别删：
               ① **不能写 `xl:flex-1`** —— 主轴是高度，flex-basis 会压过下面那个 inline `height`，
                  包装层被"填充剩余空间"接管，设多少高度都无效；
@@ -735,7 +997,7 @@ export default function TavernControl() {
             style={protoH === null ? undefined : { height: protoH }}
           >
           <Section
-            title="三、扮演协议"
+            title="六、扮演协议"
             desc={`两种模式共用的格式契约，内置版本 ${PROTOCOL_VERSION}。注入时钉在提示词的最末尾（它自带的「最后提醒」要紧贴生成点）。`}
             className="xl:h-full xl:min-h-0 xl:flex xl:flex-col xl:overflow-hidden"
             bodyClassName="xl:min-h-0 xl:flex-1 xl:flex xl:flex-col xl:overflow-hidden"
@@ -754,7 +1016,7 @@ export default function TavernControl() {
                         恢复出厂协议
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => void startEditProtocol()}>编辑协议</Button>
+                    <Button variant="secondary" size="sm" onClick={() => void startEditProtocol()}>编辑协议</Button>
                   </div>
                 </div>
                 <pre className="max-h-80 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-3 text-[11.5px] leading-relaxed text-ink-300 xl:max-h-none xl:min-h-[12rem]">
@@ -778,7 +1040,7 @@ export default function TavernControl() {
                     onClick={() => edit(prev => ({ ...prev, protocol: DEFAULT_PROTOCOL }))}>
                     恢复出厂协议
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setProtocolEditing(false)}>收起编辑</Button>
+                  <Button variant="secondary" size="sm" onClick={() => setProtocolEditing(false)}>收起编辑</Button>
                 </div>
               </>
             )}
@@ -789,9 +1051,9 @@ export default function TavernControl() {
         {/* ========== 右列（它的高度是协议窗高度的基准） ========== */}
         <div ref={rightColRef} className="space-y-4">
 
-          {/* ---------- 四、剧情推演控制 ---------- */}
+          {/* ---------- 七、剧情推演控制 ---------- */}
           <Section
-            title="四、剧情推演控制"
+            title="七、剧情推演控制"
             desc="只对「剧情推演」生效。叙事向要的是稳 —— 角色反应得站得住，所以默认温度比自由对话低。"
           >
             <div className={GRID2}>
@@ -860,9 +1122,9 @@ export default function TavernControl() {
             />
           </Section>
 
-          {/* ---------- 五、自由对话控制 ---------- */}
+          {/* ---------- 八、自由对话控制 ---------- */}
           <Section
-            title="五、自由对话控制"
+            title="八、自由对话控制"
             desc="只对「自由对话」生效。陪伴要松弛感，所以温度默认更高；下面还有记忆引擎与日常推进的一组阈值。"
           >
             <div className={GRID2}>
@@ -984,10 +1246,9 @@ export default function TavernControl() {
               </div>
             </div>
           </Section>
-
-          {/* ---------- 六、本场数值（C2 第二步） ---------- */}
+          {/* ---------- 九、本场数值（C2 第二步） ---------- */}
           <Section
-            title="六、本场数值"
+            title="九、本场数值"
             desc="只对「自由对话」生效。让 AI 每隔几轮给一次数值变化（好感 / 信任 / 剧情进度 / 心情 / 当前地点），你也能随时手改。数值属于这一场，换一场戏重新算 —— 角色卡管「这个人是谁」，数值管「这一场走到哪了」。"
           >
             <ToggleField
@@ -1005,17 +1266,15 @@ export default function TavernControl() {
                 {VAR_DEFS.map(d => {
                   const on = !(s.vars.off ?? []).includes(d.key)
                   return (
-                    <button
-                      key={d.key} type="button" onClick={() => toggleVarKey(d.key)}
-                      className={`rounded-md border px-2.5 py-1 text-[12px] transition-colors ${on
-                        ? 'border-amber/50 bg-amber/10 text-amber'
-                        : 'border-ink-700 bg-ink-900 text-ink-500 hover:text-ink-300'}`}
+                    <Button
+                      key={d.key} variant="toggle" size="sm"
+                      selected={on} onClick={() => toggleVarKey(d.key)}
                     >
                       {on ? '✓ ' : ''}{d.label}
                       <span className="ml-1 text-[10px] text-ink-500">
                         {d.kind === 'num' ? `${d.min}–${d.max}` : `≤${d.maxLen} 字`}
                       </span>
-                    </button>
+                    </Button>
                   )
                 })}
               </div>
@@ -1041,252 +1300,7 @@ export default function TavernControl() {
             </p>
           </Section>
 
-          {/* ---------- 七、联网检索（起草用） ----------
-              放在最后：它是「起草」这一步的素材来源，与对话本身无关，日常不必动它。 */}
-          <Section
-            title="七、联网检索"
-            desc="只影响「AI 起草」这一步（角色卡 / 剧本 / 背景设定），与对话本身无关。默认关闭：不填任何东西也能用一句话起草 —— 靠模型已有知识加你粘贴的素材。"
-          >
-            <Field
-              label="检索方式"
-              hint="起草时的素材从哪来。界面上每次起草都会如实告诉你「本次用的是哪一种」，包括没查成的情况。"
-            >
-              <div className="flex flex-wrap gap-2">
-                {(['off', 'model', 'api'] as const).map(m => (
-                  <button
-                    key={m} type="button" onClick={() => setSearch({ mode: m })}
-                    className={`rounded-md border px-2.5 py-1 text-[12px] transition-colors ${s.search.mode === m
-                      ? 'border-amber/50 bg-amber/10 text-amber'
-                      : 'border-ink-700 bg-ink-900 text-ink-400 hover:text-ink-200'}`}
-                  >
-                    {SEARCH_MODE_LABEL[m]}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-500">
-                {s.search.mode === 'off'
-                  ? '不联网。知名题材（蒂法、《梁祝》这类）模型自己就很熟，够用；冷门或原创靠下面「参考素材」那一栏粘进去。'
-                  : s.search.mode === 'model'
-                    ? '让模型自己去查 —— 前提是你选的模型/中转本身支持联网。本软件看不到这一步，是否真的联网取决于服务商。'
-                    : '由本软件先查好再喂给模型。需要下面填一个搜索接口（博查实测支持浏览器直连，其它接口可能被跨域拦住）。'}
-              </p>
-            </Field>
 
-            {s.search.mode === 'api' && (
-              <>
-                <Field label="搜索引擎" hint="博查可直接用；自定义接口请填完整地址（会用 POST { query, count } 调用，结果尽量自动识别）。">
-                  <select
-                    className={NUM}
-                    value={s.search.engine}
-                    onChange={e => setSearch({ engine: e.target.value as SearchSettings['engine'] })}
-                  >
-                    <option value="bocha">博查（推荐，实测可直连）</option>
-                    <option value="custom">自定义接口</option>
-                  </select>
-                </Field>
-
-                {s.search.engine === 'custom' && (
-                  <Field label="接口地址" hint={`留空则用博查的默认地址 ${BOCHA_ENDPOINT}`}>
-                    <input
-                      className={NUM}
-                      value={s.search.endpoint}
-                      onChange={e => setSearch({ endpoint: e.target.value })}
-                      placeholder={BOCHA_ENDPOINT}
-                    />
-                  </Field>
-                )}
-
-                <Field
-                  label="密钥"
-                  hint="存在本机数据文件里，不会上传到任何服务器；只有起草时才会带着它去请求搜索接口。"
-                >
-                  <input
-                    className={NUM}
-                    value={s.search.apiKey}
-                    onChange={e => setSearch({ apiKey: e.target.value })}
-                    placeholder="sk-…（博查控制台里生成）"
-                    autoComplete="off"
-                  />
-                </Field>
-
-                <NumField
-                  label="每次取几条" guide={PARAM_GUIDES.searchTopK}
-                  hint="取多少条结果喂给模型。条数越多细节越全，但摘要里的重复也越多。"
-                  value={s.search.topK} onCommit={v => setSearch({ topK: Math.max(1, Math.min(10, Math.round(v))) })}
-                />
-              </>
-            )}
-
-            <div className="text-[10.5px] leading-relaxed">
-              {/* 🔴 两件事都要说：当前是哪一档（永远显示）+ 有什么问题（有问题才追加）。
-                  原先写成三选一，结果「没填密钥」时反而不显示当前档了 —— 信息不是互斥的。 */}
-              <p className="text-ink-400">
-                当前：{SEARCH_MODE_LABEL[s.search.mode]}
-                {s.search.mode === 'api' && `（${s.search.engine === 'custom' ? '自定义接口' : '博查'}）`}
-                —— 起草时按这一档执行
-              </p>
-              {searchBlockedReason(s.search) && (
-                <p className="mt-0.5 text-amber">⚠️ {searchBlockedReason(s.search)}</p>
-              )}
-            </div>
-          </Section>
-
-          {/* ---------- 八、预设方案（A4） ---------- */}
-          <Section
-            title="八、预设方案"
-            desc="把整套设置存成命名快照，一键切换。预设包含协议全文，所以换预设等于把参数与格式契约一起换掉 —— 只换一半的话，格式规则还是上一套的。"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="primary" size="md" onClick={() => setPresetNaming(true)}>＋ 存为预设</Button>
-              <Button variant="secondary" size="md" onClick={() => presetFileRef.current?.click()}>从文件导入</Button>
-              <input
-                ref={presetFileRef}
-                type="file"
-                accept=".json,application/json"
-                className="hidden"
-                onChange={e => {
-                  const f = e.target.files?.[0]
-                  if (f) void importPresetFile(f)
-                  e.target.value = '' // 允许连续导入同一个文件
-                }}
-              />
-            </div>
-            <p className="text-[11px] text-ink-500 leading-relaxed">
-              建议按工作模式分：例如「快速脑暴」（温度高、篇幅短、脑洞优先）与「精修成稿」（温度低、
-              篇幅长、一致性优先）。应用预设会整体替换当前设置，未保存的改动会被覆盖。
-            </p>
-
-            {presetList.length === 0 ? (
-              <p className="text-[11.5px] text-ink-600 leading-relaxed">
-                还没有预设。把当前这套存一个，以后切回来只要点一下 —— 也能导出去分享给别人。
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {presetList.map(p => (
-                  <li key={p.id} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12.5px] text-ink-100">{p.name}</div>
-                      <div className="text-[10.5px] text-ink-500">
-                        {new Date(p.updatedAt).toLocaleString()}
-                        {' · 叙事温度 '}{p.data.plot.temperature}{' · 聊天温度 '}{p.data.free.temperature}
-                      </div>
-                    </div>
-                    <button
-                      type="button" onClick={() => void applyPreset(p)}
-                      className="shrink-0 rounded border border-amber/40 px-1.5 py-0.5 text-[10.5px] text-amber hover:bg-amber/10"
-                      title="把当前设置整体换成这套预设（含协议）"
-                    >应用</button>
-                    <button
-                      type="button" onClick={() => void overwritePreset(p)}
-                      className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-amber"
-                      title="用当前设置覆盖这份预设"
-                    >覆盖</button>
-                    <button
-                      type="button" onClick={() => exportPreset(p)}
-                      className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-amber"
-                      title="导出成文件，可备份或分享"
-                    >导出</button>
-                    <button
-                      type="button" onClick={() => void dropPreset(p)}
-                      className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-red-400"
-                      title="只删这份快照，当前设置不受影响"
-                    >删除</button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          {/* ---------- 九、输出后处理（B3） ---------- */}
-          <Section
-            title="九、输出后处理"
-            desc="生成后按下面的规则从上到下修一遍再落库。协议已经把格式写死了，实测却总有模型不听话 —— 用规则兜住，比重跑一次去赌划算。顺序有意义：先去 markdown 再处理单星号动作，否则 **动作** 会被拆成 *（动作）*。"
-          >
-            <ToggleField
-              label="启用输出后处理"
-              hint="关掉就完全不跑规则（排查格式问题时用这一档，先排除规则本身的影响）。"
-              value={s.postRulesEnabled}
-              onChange={v => setPostFlag({ postRulesEnabled: v })}
-            />
-            <ToggleField
-              label="命中时在对话页提示"
-              hint="关掉 = 静默修正：规则照跑，只是不在输入框上方告诉你改了哪几条。正则写错仍会提示 —— 那是配置问题，不该被静默。"
-              value={s.postRuleNotice}
-              onChange={v => setPostFlag({ postRuleNotice: v })}
-            />
-
-            <div className="space-y-2">
-              {s.postRules.map((r, i) => (
-                <div key={r.id} className="rounded-md border border-ink-800 bg-ink-900/40 p-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox" className="shrink-0 accent-amber" checked={r.enabled}
-                      onChange={e => setRule(i, { enabled: e.target.checked })}
-                      title="关掉这一条（其余规则照跑）"
-                    />
-                    <span className="shrink-0 text-[10.5px] text-ink-600">{i + 1}</span>
-                    <input
-                      value={r.name} onChange={e => setRule(i, { name: e.target.value })}
-                      className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
-                      placeholder="规则名（对话页提示里显示的就是它）"
-                    />
-                    <button type="button" onClick={() => dropRule(i)}
-                      className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-red-400"
-                    >删除</button>
-                  </div>
-                  <input
-                    value={r.pattern} onChange={e => setRule(i, { pattern: e.target.value })}
-                    className="mt-1.5 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-[11px] text-ink-200 outline-none focus:border-amber/50"
-                    placeholder={`正则源码，例：${RULE_EXAMPLE}`}
-                  />
-                  <input
-                    value={r.replacement} onChange={e => setRule(i, { replacement: e.target.value })}
-                    className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-[11px] text-ink-200 outline-none focus:border-amber/50"
-                    placeholder="替换成（$1 = 第一个捕获组；留空 = 直接删掉）"
-                  />
-                  {r.note && (
-                    <p className={`mt-1 text-[10px] leading-relaxed ${r.enabled ? 'text-ink-600' : 'text-amber/80'}`}>
-                      {r.note}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={addRule}>＋ 新增规则</Button>
-              <Button variant="ghost" size="sm" onClick={resetRules}>恢复出厂四条</Button>
-              <span className="text-[10.5px] text-ink-500">
-                共 {s.postRules.length} 条 · 启用 {s.postRules.filter(r => r.enabled).length} 条
-              </span>
-            </div>
-            <p className="text-[10.5px] text-ink-600 leading-relaxed">
-              正则写法提示：$1 / $2 是捕获组（例：星号动作那条的正则是 {RULE_EXAMPLE}）；
-              flags 固定 gm（m 让 ^ 匹配每一行，行首说话人标签那条要用）。
-            </p>
-
-            {/* 试一段：正则最容易写错，给个立刻能看到结果的入口（比「改完去聊一句看效果」省事） */}
-            <div>
-              <div className="text-[11.5px] text-ink-200">试一段</div>
-              <AutoTextarea
-                className="mt-1 bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
-                textClass="text-[11.5px] font-mono"
-                minRows={2}
-                maxHeight={140}
-                placeholder="贴一段模型输出，例：（她点头。） / **（他把烟按灭）** / 洛汐：你来了。"
-                value={ruleTry}
-                onChange={setRuleTry}
-              />
-              <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[11px] leading-relaxed text-ink-300">{rulePreview.text || '（上面输入内容就能看到结果）'}</pre>
-              <p className="mt-1 text-[10.5px] leading-relaxed text-ink-500">
-                {rulePreview.errors.length > 0
-                  ? <span className="text-amber">⚠️ 正则无效、已跳过：{rulePreview.errors.join('、')}</span>
-                  : rulePreview.applied.length > 0
-                    ? `命中：${rulePreview.applied.map(a => `${a.name} ×${a.count}`).join('、')}`
-                    : '没命中任何规则（上面的输入已符合协议，或规则没写对）'}
-              </p>
-            </div>
-          </Section>
         </div>
       </div>
       </ShowBands.Provider>

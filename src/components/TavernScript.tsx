@@ -19,12 +19,13 @@
  * 一键生成 → 人工微调 → 再保存。AI 空着的栏不覆盖你已经写好的内容（起草是补，不是重写）。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import HelpPopover from './HelpPopover'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
 import TavernScriptFields from './TavernScriptFields'
 import TavernInterviewDialog from './TavernInterviewDialog'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './TavernDraftBits'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import { interviewToScript } from '../lib/tavern/interview'
 import {
   listScripts, getScript, saveScript, createScript, deleteScript, draftScript,
@@ -160,11 +161,25 @@ export default function TavernScript() {
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       <header className="border-b border-ink-800 pb-3">
-        <h1 className="text-lg font-bold text-ink-50">剧本编辑</h1>
+        <div className="flex items-center gap-1.5">
+
+          <h1 className="text-lg font-bold text-ink-50">剧本编辑</h1>
+
+          <HelpPopover title="剧本怎么填" width="24rem" size={14}>
+  一份剧本 = 六栏：名称 / 情境 / 开场白 / 你的位置 / 这一场的目标 / 不要发生。
+
+  • 情境只管「此刻」—— 身世与历史归角色卡与「背景设定」。这一层每轮都进上下文，重复写会互相打架。
+  • 开场白会变成对话的第一条消息，它是整场戏的语气锚点。
+  • 「这一场的目标」配合本场数值里的「剧情进度」用最顺手。
+  • 「不要发生」是防止戏跑偏的刹车：写 2–4 条具体的禁区。
+  • 剧本存在全局（跨项目）。引用它的会话保存的是当时的快照 —— 你后来改剧本，不会把老会话的设定悄悄改掉。
+
+  写不动就点「AI 起草」：一句话生成六栏，或让 AI 引导你一轮轮聊出来。
+</HelpPopover>
+
+        </div>
         <p className="text-[12px] text-ink-400 mt-1">
-          给自由对话准备一场戏：此刻在哪、你演谁、这一场想干嘛、什么不要发生。
-          新建对话时可以选一份剧本，也可以留空直接开口聊。剧本存在全局（跨项目），
-          引用它的会话保存的是当时的快照 —— 你后来改剧本，不会把老会话的设定悄悄改掉。
+          给自由对话准备一场戏。剧本存在全局（跨项目），新建对话时选一份即可，也可以留空直接开口聊。
         </p>
       </header>
 
@@ -185,7 +200,7 @@ export default function TavernScript() {
         )}
         <span className="flex-1" />
         {dirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
-        {cur && <Button variant="ghost" size="md" onClick={() => void remove()}>删除这份</Button>}
+        {cur && <Button variant="secondary" size="md" onClick={() => void remove()}>删除这份</Button>}
       </div>
 
       <TavernInterviewDialog

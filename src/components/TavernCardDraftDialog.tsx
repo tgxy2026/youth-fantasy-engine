@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from './Button'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './TavernDraftBits'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import {
   draftCard, EMPTY_CARD_DRAFT, isEmptyCardDraft, type CardDraft, type DraftSource,
 } from '../lib/tavern/draft'

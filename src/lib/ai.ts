@@ -596,14 +596,21 @@ export async function buildWorldContext(): Promise<string> {
 }
 
 /**
- * 设定模板补全：把字段清单 + 草图（+可选世界观上下文）发给当前 AI 模型，返回结构化结果。
- * 内部自取当前模型配置（loadProviders + loadActiveId），调用方无需关心 provider。
+ * 设定模板补全：把字段清单 + 草图（+ 可选的世界观上下文与外部素材）发给当前 AI 模型，
+ * 返回结构化结果。内部自取当前模型配置（loadProviders + loadActiveId），调用方无需关心 provider。
+ *
+ * 外部素材＝联网检索结果或作者粘贴的参考（见 `draftMaterial.ts`）。它单独成块而不是并进
+ * 「世界观上下文」：一个是**本项目已有的设定**，一个是**外面查来的资料**，冲突时该听谁不一样。
  */
 export async function aiCompleteTemplate(
   fields: TemplateField[],
   sketch: string,
-  worldContext?: string,
-  onToken?: (delta: string) => void,
+  opts: {
+    worldContext?: string
+    /** 外部素材（联网检索结果 / 作者粘贴的参考，已拼好的块）—— 有就优先依据它 */
+    material?: string
+    onToken?: (delta: string) => void
+  } = {},
 ): Promise<TemplateFillResult> {
   const cfg = await requireActiveProvider()
   const send = fields.filter(f => !f.locked)
@@ -621,16 +628,20 @@ export async function aiCompleteTemplate(
 1. 严格按字段清单返回，使用给定的编号作为 JSON key（如 {"1":"...","2":"..."}）。
 2. 只补全"设定/世界观/人物/道具"等元信息，绝不写剧情正文、不写章节内容。
 3. 草图中作者已明确说出的信息（名字、身份、定位等），保留原意，不要篡改或擅加矛盾设定。
-4. 草图未提及的字段，基于【世界观上下文】（若有）与网文设定常识合理补全，确保与上下文及字段间内部一致。
-5. 对需要作者特别注意/确认的地方，可在该字段值末尾用「（建议确认：…）」提示，但不要滥用。
-6. 只输出一个 JSON 对象，不要任何解释、不要 Markdown 代码块标记、不要多余文字。
-7. 若某字段确实无从补全，给一个合理的占位或留空字符串 ""，不要编造明显荒谬的内容。`
+4. 草图未提及的字段，基于【世界观上下文】与【外部素材】（若有）以及网文设定常识合理补全，确保与上下文及字段间内部一致。
+5. 【外部素材】优先于你的记忆 —— 它是作者提供的、或刚从网上查到的资料。冲突时以素材为准；素材里没有的具体事实（数字、日期、专有名词）不要编，宁可写得笼统。
+6. 对需要作者特别注意/确认的地方，可在该字段值末尾用「（建议确认：…）」提示，但不要滥用。
+7. 只输出一个 JSON 对象，不要任何解释、不要 Markdown 代码块标记、不要多余文字。
+8. 若某字段确实无从补全，给一个合理的占位或留空字符串 ""，不要编造明显荒谬的内容。`
 
   const user = `【字段清单】
 ${fieldList}
 
 【世界观上下文】
-${worldContext && worldContext.trim() ? worldContext.trim() : '（无）'}
+${opts.worldContext && opts.worldContext.trim() ? opts.worldContext.trim() : '（无）'}
+
+【外部素材】
+${opts.material && opts.material.trim() ? opts.material.trim() : '（无）'}
 
 【作者草图】
 ${sketch && sketch.trim() ? sketch.trim() : '（作者未提供草图，请基于世界观上下文合理补全一份）'}
@@ -643,7 +654,7 @@ ${sketch && sketch.trim() ? sketch.trim() : '（作者未提供草图，请基�
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, onToken: opts.onToken },
   )
 
   const parsed = parseTemplateJSON(text, send)
@@ -655,6 +666,26 @@ ${sketch && sketch.trim() ? sketch.trim() : '（作者未提供草图，请基�
     if (v) { values[key] = v; aiFilled.push(key) }
   })
   return { values, aiFilled }
+}
+
+/**
+ * 用**当前活动模型**发一轮「结构化输出」请求（JSON 模式 + 低温度 + 不要思考过程）。
+ *
+ * 供「对话引导」这类**交互式**补全用：一轮一轮地聊，每轮都要解析 JSON。
+ * 有它，界面就不必自己解析模型配置（那件事只有这里该做），也不会各自漏掉 `think:false`
+ * —— 漏了的话思考型模型每轮都把推理过程吐出来，JSON 解析直接失败。
+ */
+export async function aiChatJson(
+  messages: ChatMessage[],
+  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<string> {
+  const cfg = await requireActiveProvider()
+  return chat(cfg, messages, {
+    timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
+    signal: opts.signal,
+    json: true,
+    think: false,
+  })
 }
 
 /** 从模型回复中解析出按编号索引的值数组（剥代码块 / 切最外层统一走 aiParse） */

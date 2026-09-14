@@ -1,18 +1,19 @@
 /**
- * 起草相关的三小块共用件（参考素材输入 / 检索方式提示 / 来源反馈）
+ * 起草 / 补全相关的三小块共用件（参考素材输入 / 检索方式提示 / 来源反馈）
  *
  * 【为什么抽出来】
- * 角色卡、剧本、背景设定三处都要这三件东西。各写一份的结果必然是「一处说了本次是联网、
- * 另两处忘了说」—— 而「告诉作者这次到底用的是哪种模式」是本轮需求点名的要求，不能漏。
+ * 角色卡、剧本、背景设定，以及角色管理 / 表单 / 表格的 AI 补全，都要这三件东西。
+ * 各写一份的结果必然是「一处说了本次是联网、另几处忘了说」——
+ * 而「告诉作者这次到底用的是哪种模式」是需求点名的要求，不能漏。
  */
 import { useEffect, useState } from 'react'
 import AutoTextarea from './AutoTextarea'
-import { getTavernSettings } from '../lib/tavern/settings'
+import { getSearchSettings } from '../lib/searchSettings'
 import { searchBlockedReason, SEARCH_MODE_LABEL, type SearchSettings } from '../lib/webSearch'
-import type { DraftSource } from '../lib/tavern/draft'
+import type { DraftSource } from '../lib/draftMaterial'
 
 /**
- * 读一次检索设置（起草时用）。
+ * 读一次检索设置（起草 / 补全时用）。
  * 页面打开时读一次即可 —— 作者改设置会保存并提示「下一轮生效」，起草时再读也来得及，
  * 但每次起草都读一遍设置会多一次 IDB 往返，没必要。
  */
@@ -20,8 +21,8 @@ export function useSearchSettings(): SearchSettings | null {
   const [s, setS] = useState<SearchSettings | null>(null)
   useEffect(() => {
     let alive = true
-    getTavernSettings()
-      .then(st => { if (alive) setS(st.search) })
+    getSearchSettings()
+      .then(v => { if (alive) setS(v) })
       .catch(() => { if (alive) setS(null) })
     return () => { alive = false }
   }, [])

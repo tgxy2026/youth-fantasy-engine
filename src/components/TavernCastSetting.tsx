@@ -105,7 +105,7 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
             {loading ? '读取中…' : filled === 0 ? '六栏可全留空 —— 留空就不下发这一层' : `已填 ${filled} / 6 栏`}
           </span>
           <div className="flex gap-2">
-            <Button variant="ghost" size="md" onClick={clearAll} disabled={loading || saving}>清空</Button>
+            <Button variant="secondary" size="md" onClick={clearAll} disabled={loading || saving}>清空</Button>
             <Button variant="secondary" size="md" onClick={onClose}>取消</Button>
             <Button variant="primary" size="md" onClick={save} disabled={loading || saving}>
               {saving ? '保存中…' : '保存'}

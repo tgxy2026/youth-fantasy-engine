@@ -8,6 +8,7 @@
  *    否则作者拿着一堆描述也找不到该改哪里。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import HelpPopover from './HelpPopover'
 import * as store from '../lib/tavern/store'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
@@ -91,7 +92,20 @@ export default function TavernReport() {
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       <header className="border-b border-ink-800 pb-3">
-        <h1 className="text-lg font-bold text-ink-50">推演报告</h1>
+        <div className="flex items-center gap-1.5">
+
+          <h1 className="text-lg font-bold text-ink-50">推演报告</h1>
+
+          <HelpPopover title="推演报告怎么看" width="22rem" size={14}>
+  每场推演结束后的合理性诊断 —— 只在推演里跑，不会写回你的小说。
+
+  • 左栏是历次报告（可筛选），右边是当前这份的正文。
+  • 每条问题尽量指向具体角色卡或表格条目，点「定位」直接跳过去核对。
+  • 「导出」可以把报告存成 Markdown 或单文件 HTML。
+  • 报告只是建议：它说的是「这里可能不合理」，改不改由你定。
+</HelpPopover>
+
+        </div>
         <p className="text-[12px] text-ink-400 mt-1">
           每场推演结束后的合理性报告。每条问题尽量指向具体角色卡或表格条目，点「定位」可直接跳过去。
         </p>
@@ -179,7 +193,7 @@ export default function TavernReport() {
                     >
                       导出
                     </Button>
-                    <Button variant="ghost" size="md" className="text-[12px]" onClick={removeReport}>删除</Button>
+                    <Button variant="secondary" size="md" className="text-[12px]" onClick={removeReport}>删除</Button>
                   </div>
                 </div>
 

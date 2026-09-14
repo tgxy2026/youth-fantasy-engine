@@ -16,11 +16,12 @@
  * 这一条必须显式写在界面上。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import AutoTextarea from './AutoTextarea'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './TavernDraftBits'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import { buildProjectContext } from '../lib/aiContext'
 import {
   getWorldSetting, saveWorldSetting, draftWorldSetting, worldToText,
@@ -102,14 +103,26 @@ export default function TavernWorld() {
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       <header className="border-b border-ink-800 pb-3">
-        <h1 className="text-lg font-bold text-ink-50">背景设定</h1>
+        <div className="flex items-center gap-1.5">
+
+          <h1 className="text-lg font-bold text-ink-50">背景设定</h1>
+
+          <HelpPopover title="背景设定怎么填" width="24rem" size={14}>
+  给剧情推演准备一份「作者侧资料」，用来替代每轮都塞进上下文的长文档。
+
+  • 摘要：这个项目最关键的世界观骨架。
+  • 分节 + 关键词：命中了关键词才带上这一节 —— 这是「不必每次喂一大堆」的关键。
+    关键词留空 = 这一节总是注入。
+  • 只对剧情推演生效，随项目（换书就是另一份）。自由对话不读它 —— 那里可能混着不同世界观的角色，
+    而每个角色的世界观写在角色卡第 1 章「世界」里。
+  • 上限 1800 字：它每轮都可能进上下文，写太长会把对话历史挤掉。起草时用了哪种素材来源，
+    在控制面板「三、联网检索」里定。
+</HelpPopover>
+
+        </div>
         <p className="text-[12px] text-ink-400 mt-1">
-          把项目资料提炼成一份精简背景，供剧情推演使用。它不会每轮都塞进上下文 ——
-          命中了关键词才带上，这也是「不必每次喂一大堆」的落子。
-        </p>
-        <p className="mt-1 text-[11px] text-ink-500 leading-relaxed">
-          只对剧情推演生效，随项目（换书就是另一份）。自由对话不再有背景设定 ——
-          那里可能混着不同世界观的角色，而每个角色的世界观写在角色卡第 1 章「世界」里。
+          把项目资料提炼成一份精简背景，供剧情推演使用。只对剧情推演生效、随项目（换书就是另一份）——
+          自由对话不读它：那里可能混着不同世界观的角色。
         </p>
       </header>
 
@@ -135,13 +148,11 @@ export default function TavernWorld() {
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
               <div className="flex items-center justify-between">
                 <div className="text-[12px] text-ink-200">分节（{w.sections.length}）</div>
-                <button
-                  type="button"
-                  className="text-[11px] text-ink-500 hover:text-amber"
+                <Button variant="secondary" size="xs"
                   onClick={() => edit(prev => ({ ...prev, sections: [...prev.sections, { id: uid(), title: '', body: '' }] }))}
                 >
                   ＋ 加一节
-                </button>
+                </Button>
               </div>
               <p className="mt-0.5 mb-2 text-[10.5px] text-ink-500 leading-relaxed">
                 建议 3–6 节、每节一百多字。只留会影响人物言行的内容，背景板式的描述删掉。
@@ -165,14 +176,12 @@ export default function TavernWorld() {
                           placeholder="小节标题（如「规矩与禁忌」）"
                           className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-[12px] text-ink-100 outline-none focus:border-amber/50"
                         />
-                        <button
-                          type="button"
+                        <Button variant="danger" size="xs"
                           title="删掉这一节"
-                          className="shrink-0 text-[11px] text-ink-500 hover:text-red-400"
-                          onClick={() => edit(prev => ({ ...prev, sections: prev.sections.filter(x => x.id !== s.id) }))}
+                          onClick={() => edit(prev => ({ ...prev, sections: prev.sections.filter(x => x.id !== s.id) }))} className="shrink-0"
                         >
                           删除
-                        </button>
+                        </Button>
                       </div>
                       <div className="mt-1.5">
                         <AutoTextarea

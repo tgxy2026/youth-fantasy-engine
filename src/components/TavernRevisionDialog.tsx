@@ -59,7 +59,7 @@ export default function TavernRevisionDialog({
           </p>
           <div className="mt-3 flex gap-2">
             <Button variant="secondary" size="sm" onClick={onRetry}>重新检查</Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>关闭</Button>
+            <Button variant="secondary" size="sm" onClick={onClose}>关闭</Button>
           </div>
         </div>
       ) : loading ? (
@@ -78,19 +78,17 @@ export default function TavernRevisionDialog({
           </p>
           <div className="mt-3 flex justify-center gap-2">
             <Button variant="secondary" size="sm" onClick={onRetry}>重新检查</Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>关闭</Button>
+            <Button variant="secondary" size="sm" onClick={onClose}>关闭</Button>
           </div>
         </div>
       ) : (
         <>
           <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
+            <Button variant="secondary" size="xs"
               onClick={() => onToggleAll(!allPicked)}
-              className="rounded-md border border-ink-700 px-2 py-1 text-[11px] text-ink-300 hover:text-amber"
             >
               {allPicked ? '全不选' : '全选'}
-            </button>
+            </Button>
             <span className="text-[11px] text-ink-500">
               共 {proposals.length} 处建议 · 已选 {picked.size} 处
             </span>
@@ -168,7 +166,7 @@ export default function TavernRevisionDialog({
               采纳是整段替换该字段（不会追加），角色卡的其它部分原样保留。
             </p>
             <div className="flex shrink-0 gap-2">
-              <Button variant="ghost" size="md" disabled={applying} onClick={onRetry}>重新检查</Button>
+              <Button variant="secondary" size="md" disabled={applying} onClick={onRetry}>重新检查</Button>
               <Button variant="secondary" size="md" disabled={applying} onClick={onClose}>取消</Button>
               <Button variant="primary" size="md" disabled={applying || picked.size === 0} onClick={onApply}>
                 {applying ? '写入中…' : `采纳选中的 ${picked.size} 处`}

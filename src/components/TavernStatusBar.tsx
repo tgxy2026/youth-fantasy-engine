@@ -18,6 +18,7 @@
  */
 import { useEffect, useState } from 'react'
 import Avatar from './Avatar'
+import { Button } from './Button'
 import { agoText, type StatusModel } from '../lib/tavern/status'
 import { varDefOf, type TavernVars, type VarKey } from '../lib/tavern/types'
 import { lastChangeText } from '../lib/tavern/vars'
@@ -124,21 +125,17 @@ export default function TavernStatusBar({ model, sceneText, collapsed, vars, var
                 <span className="text-[10px] text-ink-600">改完回车生效 · 数值属于这一场，换一场重来</span>
                 <span className="flex-1" />
                 {log.length > 0 && (
-                  <button
-                    type="button" onClick={() => setShowLog(v => !v)}
-                    className="shrink-0 text-[10.5px] text-ink-500 hover:text-amber"
-                    title="看这一场数值的变化过程"
+                  <Button variant="secondary" size="xs" onClick={() => setShowLog(v => !v)}
+                    title="看这一场数值的变化过程" className="shrink-0"
                   >
                     {showLog ? '收起变动' : `变动 ${log.length}`}
-                  </button>
+                  </Button>
                 )}
-                <button
-                  type="button" onClick={onResetVars}
-                  className="shrink-0 text-[10.5px] text-ink-500 hover:text-amber"
-                  title="把启用中的数值全部恢复成初始值（好感/信任 50、剧情进度 0，文本清空）"
+                <Button variant="secondary" size="xs" onClick={onResetVars}
+                  title="把启用中的数值全部恢复成初始值（好感/信任 50、剧情进度 0，文本清空）" className="shrink-0"
                 >
                   重置
-                </button>
+                </Button>
               </div>
               <div className="mt-1.5 space-y-1">
                 {varKeys.map(k => <VarRow key={k} k={k} vars={vars} onSet={onSetVar} />)}

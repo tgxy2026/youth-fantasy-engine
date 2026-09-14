@@ -402,7 +402,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                       onChange={e => setAnchorQ(e.target.value)}
                     />
                     {anchorId && (
-                      <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => setAnchorId('')}>
+                      <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => setAnchorId('')}>
                         清除已选
                       </Button>
                     )}
@@ -476,8 +476,8 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                                 <option value="user">我演</option>
                                 <option value="silent">在场不出声</option>
                               </select>
-                              <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => setPickerIdx(i)}>更换</Button>
-                              <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => clearSlot(i)}>清空</Button>
+                              <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => setPickerIdx(i)}>更换</Button>
+                              <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => clearSlot(i)}>清空</Button>
                             </>
                           ) : (
                             <>
@@ -489,7 +489,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                               </button>
                               <span className="shrink-0 text-[10.5px] text-ink-500">拟：{ROLE_LABEL[s.role]}</span>
                               {slots.length > 1 && (
-                                <Button variant="ghost" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>
+                                <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>
                               )}
                             </>
                           )}
@@ -498,7 +498,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                     })}
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3">
-                    <Button variant="ghost" size="md" className="text-[12px]"
+                    <Button variant="secondary" size="md" className="text-[12px]"
                       disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
                       ＋ 增加位置（最多 {MAX_SLOTS} 个）
                     </Button>

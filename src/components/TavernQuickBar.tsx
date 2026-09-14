@@ -28,7 +28,7 @@ export function TavernQuickBar({ actions, disabled, className = '' }: {
       {actions.map(a => (
         <Button
           key={a.key}
-          variant="ghost"
+          variant="secondary"
           size="sm"
           className="!px-2 !text-[11px]"
           disabled={disabled}

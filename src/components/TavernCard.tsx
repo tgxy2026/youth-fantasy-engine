@@ -22,6 +22,7 @@
  * 页面上留了入口但**明确置灰并说明**，不假装能用。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import HelpPopover from './HelpPopover'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
 import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem } from '../lib/tavern/types'
@@ -487,9 +488,28 @@ export default function TavernCard() {
        内容不会再滑到条子后面被半透明条盖住（原先 sticky + bg-ink-900/95 的观感问题）。 */
     <div className="page-enter flex h-full flex-col overflow-hidden">
       <header className="shrink-0 border-b border-ink-800 pb-3">
-        <h1 className="text-xl font-bold text-ink-50">角色卡片</h1>
+        <div className="flex items-center gap-1.5">
+
+          <h1 className="text-xl font-bold text-ink-50">角色卡片</h1>
+
+          <HelpPopover title="角色卡片怎么填" width="24rem" size={14}>
+  一张卡 = AI 的「人设说明书」：写得越具体，演得越像。四章模板：
+
+  • 第 1 章 世界：只写会影响 Ta 言行的东西 —— 这是唯一该写世界的地方。
+  • 第 2 章 人物档案：外在 / 内核 / 语言特征 / 关系 / 做不到的事 / 知识边界。
+    其中「做不到的事」与「知识边界」是防角色崩坏最关键的两栏 —— 写清 Ta 不会什么、不知道什么。
+  • 第 3 章 行为规范：视角与人称 / 底线 / 关系推进节奏 / 尺度。
+  • 第 4 章 示例对话：AI 会照着它的格式与语气模仿，所以按输出规范写（对白不带名字、动作套（）、环境套【】）。
+
+  两种起手方式（右上「AI 起草」）：已经想清楚了 → 一句话补全；只有点感觉、说不清 → 对话引导，
+  让 AI 按上面的模板一轮轮问你，边聊边成形。
+  卡片是全局的（跨项目、换书照样在），也能导出成文件发给别人。
+</HelpPopover>
+
+        </div>
         <p className="text-[12px] text-ink-400 mt-1">
-          自由模式的角色卡片：四章模板（世界 / 人物档案 / 行为规范 / 示例对话），与小说项目相互独立。
+          自由模式的角色卡片：四章模板，与小说项目相互独立（换书照样在）。
+          右上「AI 起草」可以从一句话起手，也可以让 AI 按模板一轮轮问你。
         </p>
       </header>
 
@@ -542,14 +562,14 @@ export default function TavernCard() {
             )}
 
             <div className="pt-2 border-t border-ink-800 space-y-1.5">
-              <Button variant="ghost" size="sm" className="w-full text-[11.5px]" onClick={() => void openNovelPicker()}>
+              <Button variant="secondary" size="sm" className="w-full text-[11.5px]" onClick={() => void openNovelPicker()}>
                 从小说角色导入
               </Button>
               <div className="flex gap-1.5">
-                <Button variant="ghost" size="sm" className="flex-1 text-[11.5px]" onClick={() => fileRef.current?.click()}>
+                <Button variant="secondary" size="sm" className="flex-1 text-[11.5px]" onClick={() => fileRef.current?.click()}>
                   导入 JSON
                 </Button>
-                <Button variant="ghost" size="sm" className="flex-1 text-[11.5px]" disabled={!draft} onClick={exportCard}>
+                <Button variant="secondary" size="sm" className="flex-1 text-[11.5px]" disabled={!draft} onClick={exportCard}>
                   导出 JSON
                 </Button>
               </div>
@@ -591,9 +611,9 @@ export default function TavernCard() {
                         {gaps.join('、')}
                         {gaps.some(g => g.includes('示例对话')) && '（示例对话通常是模型编的，最该改）'}
                       </p>
-                      <button type="button" className="shrink-0 text-[11px] text-ink-500 hover:text-ink-200" onClick={() => setGaps([])}>
+                      <Button variant="secondary" size="xs" onClick={() => setGaps([])} className="shrink-0">
                         知道了
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -761,7 +781,7 @@ export default function TavernCard() {
                           {savingMem ? '保存中…' : '保存记忆'}
                         </Button>
                       )}
-                      <Button variant="ghost" size="sm" onClick={() => setShowMem(v => !v)}>
+                      <Button variant="secondary" size="sm" onClick={() => setShowMem(v => !v)}>
                         {showMem ? '收起' : '展开编辑'}
                       </Button>
                     </div>
@@ -808,14 +828,14 @@ export default function TavernCard() {
                   </span>
                   <div className="flex gap-2">
                     <Button
-                      variant="ghost" size="md" onClick={() => void duplicate()}
+                      variant="secondary" size="md" onClick={() => void duplicate()}
                       title="四章照抄一份新卡，可在它基础上改；记忆与日常状态不复制"
                     >
                       复制为新卡
                     </Button>
                     {isSeedCard(draft) && (
                       <Button
-                        variant="ghost" size="md" onClick={() => void resetSeed()}
+                        variant="secondary" size="md" onClick={() => void resetSeed()}
                         title="用内置的最新版覆盖这四章（记忆与日常不受影响）—— 内置示范卡随版本更新时用它取回新版"
                       >
                         恢复内置版本
