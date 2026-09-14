@@ -249,6 +249,22 @@ export type TavernReportIndexItem = {
   createdAt: number
 }
 
+/**
+ * 新角色卡的空白初值（UI 新建、AI 转换草稿、导入兜底都用这一份）。
+ * 放在 types 而不是 store：与 EMPTY_CAST_SETTING 同理 —— 纯默认值属类型层，
+ * 放在 store 会让「只想要默认值」的纯逻辑模块（如 import.ts）反向依赖存储层。
+ */
+export function emptyFreeCharacter(): Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'> {
+  return {
+    name: '',
+    world: '',
+    profile: { externals: '', core: '', speech: '', relations: '', cannot: '', knowledge: '' },
+    conduct: { perspective: '', bottomLine: '', paceLock: '', rating: '' },
+    examples: '',
+  }
+}
+
+
 /** 自由模式会话索引项（按角色分组展示用） */
 export type FreeSessionIndexItem = {
   id: string

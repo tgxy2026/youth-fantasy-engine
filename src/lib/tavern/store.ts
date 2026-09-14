@@ -169,15 +169,9 @@ export async function getFreeChar(id: string): Promise<FreeCharacter | null> {
   return db.getMeta<FreeCharacter | null>(G.freeChar(id), null)
 }
 
-export function emptyFreeCharacter(): Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'> {
-  return {
-    name: '',
-    world: '',
-    profile: { externals: '', core: '', speech: '', relations: '', cannot: '', knowledge: '' },
-    conduct: { perspective: '', bottomLine: '', paceLock: '', rating: '' },
-    examples: '',
-  }
-}
+// 默认值定义已上移到 ./types（与 EMPTY_CAST_SETTING 同理：纯默认值属类型层）。
+// 这里 re-export 保持既有调用点（store.emptyFreeCharacter()）不变。
+export { emptyFreeCharacter } from './types'
 
 export async function createFreeChar(init: Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'>): Promise<FreeCharacter> {
   const c: FreeCharacter = { ...init, id: uid(), createdAt: now(), updatedAt: now() }
