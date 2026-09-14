@@ -17,9 +17,9 @@
 import {
   chat, CHAT_TIMEOUT_MS, JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage,
 } from '../ai'
-import { parseMemoryText, memoryToText, emptyMemory } from './memory'
+import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './memory'
 import { resolveTavernProvider, type ChatFn } from './engine'
-import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage } from './types'
+import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter } from './types'
 
 /** 把时间戳格式化成「YYYY-MM-DD」（日记用） */
 export function formatDate(ts: number): string {
@@ -141,4 +141,110 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
   return parseMemoryText(reply, charId, prev)
 }
 
+/**
+ * 冷启动用的提示词：在总结提示词之后追加一段「这是第一次建档」的说明。
+ *
+ * 为什么不能直接用总结提示词：那套说明假定「有旧档案 + 有新对话」，冷启动两者都没有 ——
+ * 不换口径的话模型会去编一段"最近发生的事"。这里明确要求**只依据角色背景**，
+ * 并把六栏各自的第一个版本该写什么讲清楚。
+ */
+export function buildColdStartSystem(charName: string, now = Date.now(), limits: SummaryLimits = {}): string {
+  const tail = [
+    '',
+    '〖这一次特殊：这是**第一次建档**（这个角色还没有和任何人聊过）〗',
+    '请**只依据〖角色背景〗**写出第一版档案，不要编造没有发生过的事：',
+    '- 一、长期摘要：Ta 是谁、在哪、眼下是什么处境（三到五句）。',
+    '- 二、关键事实：背景里能确认为**既成事实**的东西（出身、身份、既有的关系、习惯、身上的旧伤）。',
+    '- 三、关系状态：Ta 与背景里出现的每个人各是什么关系、此刻的温度。',
+    '- 四、未爆的雷：背景里明确写着「Ta 不知道 / 说不出口 / 压着」的事；确实没有就写「暂无」。',
+    '- 五、纪念日与待办：背景里提到的固定日子；没有就写「暂无」。',
+    '- 六、最近日记：留空 —— 只写一个「-」，不要写任何事件。',
+  ].join('\n')
+  return buildSummarySystem(charName, now, limits) + tail
+}
+
+export type ColdStartArgs = {
+  charId: string
+  charName: string
+  /** 角色卡四章全文（renderFreeCharacter 的输出） */
+  charContext: string
+  providerId?: string
+  chatFn?: ChatFn
+  signal?: AbortSignal
+  now?: number
+  limits?: SummaryLimits
+}
+
+/**
+ * 冷启动记忆：刚建好 / 刚导入的角色卡，还没有任何对话。
+ *
+ * **不落库**；六栏解析为空时抛错（调用方据此回落到 draftMemoryFromCard）。
+ * 老大 2026-09-14 定：导入的角色卡不该是空记忆 —— 卡片里已经写着 Ta 是谁、跟谁什么关系、
+ * 什么说不出口，这些正是第一版档案该有的东西。
+ */
+export async function coldStartMemory(args: ColdStartArgs): Promise<FreeMemory> {
+  const { charId, charName, charContext, providerId, chatFn, signal, now = Date.now(), limits } = args
+  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
+  const runChat = chatFn ?? chat
+
+  const msgs: ChatMessage[] = [
+    { role: 'system', content: buildColdStartSystem(charName, now, limits) },
+    {
+      role: 'user',
+      content: ['〖角色背景〗', String(charContext ?? '').trim(), '', '请写出第一版六栏档案。'].join('\n'),
+    },
+  ]
+
+  const reply = await runChat(provider, msgs, {
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal,
+    temperature: JSON_TASK_TEMPERATURE,
+    think: false,
+  })
+
+  const parsed = parseMemoryText(reply, charId, null)
+  if (isMemoryEmpty(parsed)) throw new Error('冷启动记忆解析为空（模型没按六栏输出）')
+  return parsed
+}
+
+/** 从卡片文本里取某个「字段名：值」那一行的值（角色卡里各字段就是一行一个前缀） */
+function lineOf(text: string, prefix: string): string {
+  const lines = String(text ?? '').split('\n')
+  const hit = lines.find(l => l.trim().startsWith(prefix))
+  if (!hit) return ''
+  return hit.trim().slice(prefix.length).replace(/^[：:]\s*/, '').trim()
+}
+
+function clip(text: string, n: number): string {
+  const t = String(text ?? '').trim()
+  return t.length <= n ? t : t.slice(0, n) + '…'
+}
+
+/**
+ * 确定性兜底：**不调模型**，直接从角色卡映射出一版六栏。
+ *
+ * 什么时候用：没有可用模型、或冷启动调用失败（额度用尽 / 模型不听话）。
+ * 价值是「有总比空着强」—— 处境、既有关系、说不出口的事，本来就能从卡片里直接读到；
+ * 而且这份东西**用户在角色卡片页可以手改**。所以第一行明确标注它是初版。
+ */
+export function draftMemoryFromCard(c: FreeCharacter): FreeMemory {
+  const mem = emptyMemory(c.id)
+  const p = c.profile ?? ({} as FreeCharacter['profile'])
+  const core = String(p.core ?? '')
+  return {
+    ...mem,
+    longTerm: ['（初版 · 直接摘录角色卡，尚未经 AI 整理）', clip(c.world, 600)].filter(Boolean).join('\n'),
+    facts: [p.externals, lineOf(core, '出身'), lineOf(core, '想要什么')]
+      .map(x => String(x ?? '').trim()).filter(Boolean).join('\n'),
+    relation: String(p.relations ?? '').trim()
+      ? '（初版：还没有互动记录，下面是角色卡里的既有关系）\n' + String(p.relations).trim()
+      : '',
+    mines: [lineOf(core, '不肯说出口的事'), lineOf(core, '真正害怕失去什么')]
+      .map(x => String(x ?? '').trim()).filter(Boolean).join('\n'),
+    anniversaries: '',
+    diaries: '',
+  }
+}
+
 export { isCancelled }
+

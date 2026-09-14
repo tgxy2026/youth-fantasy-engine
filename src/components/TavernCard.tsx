@@ -25,9 +25,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
 import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem } from '../lib/tavern/types'
-import { MEMORY_SECTIONS, memoryChars } from '../lib/tavern/memory'
+import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, parseCardFile, cardFileName, describeWarnings } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
+import { isSeedCardName, resetCardToSeed } from '../lib/tavern/seedCards'
+import { coldStartMemory, draftMemoryFromCard } from '../lib/tavern/summarize'
+import { renderFreeCharacter } from '../lib/tavern/engine'
+import { getTavernSettings } from '../lib/tavern/settings'
+
 import { Button } from './Button'
 import { Modal } from './Modal'
 import { showToast, confirmDialog } from './dialogs'
@@ -109,6 +114,7 @@ export default function TavernCard() {
   const [memDirty, setMemDirty] = useState(false)
   const [showMem, setShowMem] = useState(false)
   const [savingMem, setSavingMem] = useState(false)
+  const [seedingMem, setSeedingMem] = useState(false)
   const [novelChars, setNovelChars] = useState<{ id: string; name: string; tabId: string }[]>([])
   const [converting, setConverting] = useState(false)
 /** 导入弹窗的筛选态：角色多时靠它定位。每次打开重置，免得留下上次的关键字 */
@@ -185,7 +191,73 @@ export default function TavernCard() {
     }
   }
 
+  /**
+   * 初版记忆：导入 / 新建一张卡之后**立刻**给它一版记忆（老大 2026-09-14 定）。
+   *
+   * 优先让 AI 依据角色卡整理（那才是「整理总结」该有的样子）；没有可用模型或调用失败时，
+   * 回落到 draftMemoryFromCard 的确定性摘录 —— 空记忆是最差的结果。
+   * @returns 'ai' | 'draft'（调用方据此提示来源，别让用户以为「AI 整理了」）
+   */
+  const seedMemory = async (card: FreeCharacter): Promise<'ai' | 'draft'> => {
+    try {
+      const st = await getTavernSettings()
+      const m = await coldStartMemory({
+        charId: card.id,
+        charName: card.name,
+        charContext: renderFreeCharacter(card),
+        providerId: st.free.summaryProviderId || undefined,
+      })
+      await store.saveMemory(m)
+      return 'ai'
+    } catch {
+      await store.saveMemory(draftMemoryFromCard(card))
+      return 'draft'
+    }
+  }
+
+  /** 手动生成初版记忆（只在记忆还空着时露出按钮，避免覆盖真实记忆） */
+  const genMemory = async () => {
+    if (!draft) return
+    setSeedingMem(true)
+    try {
+      const how = await seedMemory(draft)
+      setMem(await store.getMemory(draft.id))
+      setMemDirty(false)
+      showToast(
+        how === 'ai' ? '初版记忆已生成（AI 依据角色卡整理）' : '初版记忆已生成（直接摘录角色卡，未接模型）',
+        how === 'ai' ? 'success' : 'info')
+    } catch (e) {
+      showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setSeedingMem(false)
+    }
+  }
+
+  /** 恢复内置示范版本（只覆盖四章，不动记忆与日常） */
+  const resetSeed = async () => {
+    if (!draft) return
+    const okGo = await confirmDialog({
+      title: `把「${draft.name}」恢复成内置示范版本？`,
+      message: '会用内置的最新版覆盖这四章（世界 / 人物档案 / 行为规范 / 示例对话），你在这一页上未保存的改动会丢失。\n\n记忆与日常状态不受影响。',
+      confirmText: '恢复',
+      danger: true,
+    })
+    if (!okGo) return
+    try {
+      const name = await resetCardToSeed(draft.id)
+      if (!name) { showToast('这张卡不在内置示范卡里', 'info'); return }
+      const c = await store.getFreeChar(draft.id)
+      setDraft(c)
+      setDirty(false)
+      setGaps([])
+      showToast(`已恢复为内置的「${name}」`)
+    } catch (e) {
+      showToast(`恢复失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
   const remove = async () => {
+
     if (!draft) return
     const okGo = await confirmDialog({
       title: `删除角色卡「${draft.name}」？`,
@@ -259,10 +331,13 @@ export default function TavernCard() {
       if (!r.ok) { showToast(r.error, 'error'); return }
       // 导入时已重生成新 id，不会覆盖已有卡
       const created = await store.createFreeChar(r.card)
+      // 导入的卡不该是空记忆：立刻依据卡片生成一版初版
+      const how = await seedMemory(created)
       await load()
       await open(created.id)
       setGaps(r.warnings)
-      showToast(r.warnings.length ? `已导入，但${describeWarnings(r.warnings)}` : '已导入，结构完整', r.warnings.length ? 'info' : 'success')
+      const base = r.warnings.length ? `已导入，但${describeWarnings(r.warnings)}` : '已导入，结构完整'
+      showToast(`${base} · 初版记忆已生成（${how === 'ai' ? 'AI 整理' : '直接摘录'}）`, r.warnings.length ? 'info' : 'success')
     } catch (e) {
       showToast(`导入失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
@@ -294,11 +369,14 @@ export default function TavernCard() {
         source: { projectId: db.getCurrentProjectId(), cardId: rec.id },
       })
       const created = await store.createFreeChar({ ...d, name: `${d.name}（导入）` })
+      // 初版记忆：导入的卡直接带着「Ta 是谁、跟谁什么关系」进来，不该从零开始
+      const how = await seedMemory(created)
       await load()
       await open(created.id)
       setGaps(g)
       setImportOpen(false)
-      showToast(g.length ? `草稿已生成，有 ${g.length} 处待补` : '草稿已生成，请审一遍再改', g.length ? 'info' : 'success')
+      const tip = g.length ? `草稿已生成，有 ${g.length} 处待补` : '草稿已生成，请审一遍再改'
+      showToast(`${tip} · 初版记忆已生成（${how === 'ai' ? 'AI 整理' : '直接摘录'}）`, g.length ? 'info' : 'success')
     } catch (e) {
       showToast(`转换失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -581,6 +659,12 @@ export default function TavernCard() {
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {memDirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
+                      {(!mem || isMemoryEmpty(mem)) && (
+                        <Button variant="secondary" size="sm" disabled={seedingMem} onClick={() => void genMemory()}
+                          title="依据这张角色卡生成第一版六栏记忆（AI 优先，失败则直接摘录角色卡）">
+                          {seedingMem ? '生成中…' : '依据角色卡生成初版记忆'}
+                        </Button>
+                      )}
                       {showMem && (
                         <Button variant="primary" size="sm" disabled={!memDirty || savingMem} onClick={() => void saveMem()}>
                           {savingMem ? '保存中…' : '保存记忆'}
@@ -638,6 +722,14 @@ export default function TavernCard() {
                     >
                       复制为新卡
                     </Button>
+                    {isSeedCardName(draft.name) && (
+                      <Button
+                        variant="ghost" size="md" onClick={() => void resetSeed()}
+                        title="用内置的最新版覆盖这四章（记忆与日常不受影响）—— 内置示范卡随版本更新时用它取回新版"
+                      >
+                        恢复内置版本
+                      </Button>
+                    )}
                     <Button variant="danger" size="md" onClick={remove}>删除</Button>
                     <Button variant="primary" size="md" disabled={!dirty || saving} onClick={save}>
                       {saving ? '保存中…' : '保存'}

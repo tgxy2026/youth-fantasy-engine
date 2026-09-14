@@ -3,7 +3,7 @@
 // 这批卡是从老大手写的两张 .md 角色卡转写来的，转写过程做了「原卡五章 → 本系统四章」的归位，
 // 所以这里最关键的不是「结构对不对」，而是**内容有没有在归位时丢掉**。
 // 因此第 2 组断言逐条抽查原卡各节的独有字串 —— 归位可以换位置，但不能丢内容。
-import { SEED_FREE_CHARACTERS, seedFreeChars, upgradeSeedCards, LEGACY_SEED_EXAMPLES } from '../src/lib/tavern/seedCards'
+import { SEED_FREE_CHARACTERS, seedFreeChars, upgradeSeedCards, LEGACY_SEED_EXAMPLES, isSeedCardName, resetCardToSeed } from '../src/lib/tavern/seedCards'
 import { renderFreeCharacter, buildFreeSystem } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import * as store from '../src/lib/tavern/store'
@@ -78,9 +78,29 @@ async function main() {
     ok('楚楠卡的每条关系事实都能在另两张卡里找到出处（8 处抽查）', missing.length === 0,
       missing.map(([k, s]) => `${k}:${s}`).join(' | '))
 
-    ok('楚楠卡把「两人互不知情」写成行为约束，而不是留给模型自由发挥',
-      t.includes('不知道对方在楚楠这里的分量') && t.includes('不会主动提'))
+    ok('🔴 关系逻辑自洽：洛汐知道苏念、苏念知道洛汐（不再写「互不知情」）',
+      t.includes('洛汐知道苏念是他从小一起长大的妹妹') &&
+      t.includes('苏念知道洛汐是他的女朋友') &&
+      !t.includes('都不知道对方在楚楠这里的分量'))
+    ok('楚楠卡把「不解释 / 不传话 / 不比较」写成行为约束',
+      t.includes('谁都不知道对方在他心里究竟多重') && t.includes('不在任何一个人面前评价另一个人'))
     ok('楚楠卡写明用户可能演谁、AI 要按对面是谁调整', t.includes('先看对面是谁'))
+
+    // —— 三人关系网：三张卡说的是同一件事（2026-09-14 老大要求加强三人互动）——
+    const lx = find('洛汐')
+    const sn = find('苏念')
+    ok('洛汐卡写出了苏念（她知道男朋友有个从小一起长大的妹妹）',
+      lx.profile.relations.includes('苏念') && lx.profile.relations.includes('洛汐姐'))
+    ok('苏念卡写出了洛汐（她知道哥哥有女朋友，见过）',
+      sn.profile.relations.includes('洛汐') && sn.profile.relations.includes('洛汐姐'))
+    ok('两侧写的是「不知道对方的分量」，不是「不知道有这个人」',
+      lx.profile.relations.includes('只是他人生里后来才出现的那个') &&
+      sn.profile.relations.includes('哥哥以后就不再需要我了'))
+    ok('洛汐不会被写成争风吃醋的反派（写进底线）', lx.conduct.bottomLine.includes('争风吃醋的反派'))
+    ok('苏念不主动提「洛汐」（写进底线）', sn.conduct.bottomLine.includes('绝不主动提'))
+    ok('三张卡各多了一段三人关系的示例（洛汐·四 / 苏念·四 / 楚楠·五）',
+      lx.examples.includes('也是这么对念念的') && sn.examples.includes('洛汐姐人挺好的呀') &&
+      find('楚楠').examples.includes('这个我不比'))
     ok('示范卡的说明性文字已中性化（指代角色用 Ta，不预设性别）',
       SEED_FREE_CHARACTERS.every(c => c.examples.includes('Ta')) &&
       !SEED_FREE_CHARACTERS.some(c => c.examples.includes('她该怎么说话')))
@@ -254,6 +274,27 @@ async function main() {
     const got4 = (await store.getFreeChar((await store.listFreeChars())[0].id))!.examples
     ok('改过内容的示范卡 → 只换标记、作者补充的段落原样保留',
       got4.includes('我的补充样本') && got4.includes('我先走了') && got4.includes('〖对方〗') && !got4.includes('对方：'))
+  }
+
+  // ---------- 5) 恢复内置版本：只覆盖四章，记忆与日常不动 ----------
+  {
+    ok('内置示范卡名单认得这三张', isSeedCardName('洛汐') && isSeedCardName('苏念') && isSeedCardName('楚楠') && !isSeedCardName('洛汐（副本）'))
+
+    __resetMockStores()
+    const created = await store.createFreeChar({ ...find('楚楠'), world: '被我改坏了', examples: '随便写的' })
+    await store.saveMemory({ ...store.emptyMemory(created.id), longTerm: '这段记忆要活着' })
+    const hit = await resetCardToSeed(created.id)
+    const after = await store.getFreeChar(created.id)
+    const memAfter = await store.getMemory(created.id)
+    ok('恢复内置版本：命中并覆盖四章',
+      hit === '楚楠' && after!.world === find('楚楠').world && after!.examples === find('楚楠').examples)
+    ok('恢复内置版本：记忆与日常状态不受影响（那是「经历」，不是模板）',
+      memAfter.longTerm === '这段记忆要活着')
+
+    __resetMockStores()
+    const renamed = await store.createFreeChar({ ...find('楚楠'), name: '楚楠（副本）', world: '保留我改的' })
+    ok('改了名的卡不会被误伤',
+      (await resetCardToSeed(renamed.id)) === null && (await store.getFreeChar(renamed.id))!.world === '保留我改的')
   }
 
   console.log(`\ntavernSeedCards: ${pass} passed, ${fail} failed`)

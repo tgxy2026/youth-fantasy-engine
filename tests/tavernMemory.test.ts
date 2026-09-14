@@ -11,7 +11,8 @@ import {
   countUnsummarized, nextWatermark, shouldSummarize, shouldRunAutoSummary,
   acquireSummaryLock, releaseSummaryLock, throttleOk,
 } from '../src/lib/tavern/memory'
-import { summarizeMemory, buildSummarySystem, renderTranscript, formatDate } from '../src/lib/tavern/summarize'
+import { summarizeMemory, buildSummarySystem, renderTranscript, formatDate, buildColdStartSystem, coldStartMemory, draftMemoryFromCard } from '../src/lib/tavern/summarize'
+import { SEED_FREE_CHARACTERS } from '../src/lib/tavern/seedCards'
 import {
   MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
   SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
@@ -241,6 +242,55 @@ async function main() {
     const before = calls.length
     const same = await summarizeMemory({ charId: CHAR, charName: '苏念', prev, messages: [], chatFn })
     ok('没有新对话时直接返回旧档案、不调模型', calls.length === before && same === prev)
+  }
+
+  // ---------- 冷启动记忆：导入 / 新建的角色卡不该是空记忆（老大 2026-09-14 定） ----------
+  {
+    const chu = SEED_FREE_CHARACTERS.find(c => c.name === '楚楠')!
+    const sn = SEED_FREE_CHARACTERS.find(c => c.name === '苏念')!
+
+    // ① 确定性兜底：不调模型，直接从卡片摘
+    const d1 = draftMemoryFromCard({ ...chu, id: 'c1', createdAt: 0, updatedAt: 0 })
+    ok('兜底版：长期摘要带「初版」标注（不冒充 AI 整理）', d1.longTerm.startsWith('（初版'))
+    ok('兜底版：长期摘要摘到了第 1 章世界', d1.longTerm.includes('青宜大学城'))
+    ok('兜底版：关键事实含 2.1 与内核里的既成事实',
+      d1.facts.includes('姓名：楚楠') && d1.facts.includes('父母在老家'))
+    ok('兜底版：关系状态把卡片里的既有关系整段带进来',
+      d1.relation.includes('苏念') && d1.relation.includes('洛汐'))
+    ok('兜底版：日记与纪念日留空（还没发生任何事）', !d1.diaries && !d1.anniversaries)
+    ok('兜底版：六栏不是全空', !isMemoryEmpty(d1))
+
+    const d2 = draftMemoryFromCard({ ...sn, id: 'c2', createdAt: 0, updatedAt: 0 })
+    ok('兜底版：「未爆的雷」从「不肯说出口的事」摘到', d2.mines.includes('她其实很怕'), d2.mines.slice(0, 30))
+
+    // ② AI 版：注入 chatFn 给一段六栏文本
+    const reply = [
+      '〖一、长期摘要〗', '他在青宜大学城做影像，租的房子离洛汐宿舍两站公交。',
+      '〖二、关键事实〗', '苏念七岁起就在他家；洛汐是女朋友，在一起四个月。',
+      '〖三、关系状态〗', '洛汐：怕被丢下。苏念：把他当锚点。',
+      '〖四、未爆的雷〗', '洛汐在偷偷准备转专业；苏念生日那晚的事他只讲了一半。',
+      '〖五、纪念日与待办〗', '暂无',
+      '〖六、最近日记〗', '-',
+    ].join('\n')
+    const ai = await coldStartMemory({
+      charId: 'c1', charName: '楚楠', charContext: '（角色卡四章）', chatFn: async () => reply,
+    })
+    ok('AI 版：解析出六栏', !isMemoryEmpty(ai) && ai.facts.includes('洛汐'))
+    ok('AI 版：伏笔进了「只增」栏（未爆的雷）', ai.mines.includes('转专业'))
+
+    // ③ 模型乱答 → 抛错（调用方据此回落兜底版）
+    let threw = false
+    try {
+      await coldStartMemory({ charId: 'c1', charName: '楚楠', charContext: 'x', chatFn: async () => '好的，我来整理一下。' })
+    } catch { threw = true }
+    ok('AI 版：模型不按六栏输出时抛错', threw)
+
+    // ④ 冷启动提示词口径
+    const sys = buildColdStartSystem('楚楠', 0)
+    ok('冷启动提示词写明这是第一次建档', sys.includes('第一次建档'))
+    ok('冷启动提示词要求只依据角色背景、不许编造',
+      sys.includes('只依据〖角色背景〗') && sys.includes('不要编造'))
+    ok('冷启动提示词要求日记留空', sys.includes('最近日记：留空'))
   }
 
   console.log(`\ntavernMemory: ${pass} passed, ${fail} failed`)
