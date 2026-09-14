@@ -802,12 +802,31 @@ export const TABS: TabDef[] = [
     id: 'material-library', name: '素材资料', group: '灵感工具', type: 'material',
     description: '内置只读的写作参考素材库（人物设计等），供阅读与借鉴，不支持编辑。',
   },
+
+  // 「酒馆模式」分组下的四个页签（2026-09-14 新增，方案 §2.1）。
+  // 剧情模式基于当前小说项目（诊断台）；自由模式自成一套（陪伴），数据全局、不绑项目。
+  {
+    id: 'tavern-plot', name: '剧情推演', group: '酒馆模式', type: 'tavern-plot',
+    description: '选叙事锚点、分配角色，试演一场戏看角色反应是否合理。',
+  },
+  {
+    id: 'tavern-report', name: '推演报告', group: '酒馆模式', type: 'tavern-report',
+    description: '推演产出的合理性报告（矛盾 / 漏洞 / 存疑），可定位到具体条目。',
+  },
+  {
+    id: 'tavern-card', name: '角色卡', group: '酒馆模式', type: 'tavern-card',
+    description: '自由模式的角色卡管理（四章模板），可新建 / 导入 / 从小说角色转换。',
+  },
+  {
+    id: 'tavern-free', name: '自由对话', group: '酒馆模式', type: 'tavern-free',
+    description: '与自建角色的长期对话，有记忆、有日常状态。',
+  },
 ]
 
 // 编辑器页签（特殊，由 App 直接路由）
 export const EDITOR_TAB = { id: 'editor', name: '正文编辑', group: '正文写作' }
 
-export const GROUPS = ['工作面板', '正文写作', '灵感工具', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护']
+export const GROUPS = ['工作面板', '正文写作', '灵感工具', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护', '酒馆模式']
 
 export function getTab(id: string): TabDef | undefined {
   const t = TABS.find(t => t.id === id)
@@ -853,6 +872,11 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   'check-tools': 'locked',
   // 默认勾选（可取消）
   about: 'default',
+  // 酒馆模式（方案 §2.3）：角色扮演是可选玩法，不强行出现在每个自定义项目里，故设 default 而非 locked
+  'tavern-plot': 'default',
+  'tavern-report': 'default',
+  'tavern-card': 'default',
+  'tavern-free': 'default',
 }
 
 /** 强关联依赖：勾选 B 必须连带勾选 A（A 被锁定，直到再无 B 依赖它） */

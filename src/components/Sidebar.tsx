@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2 } from 'lucide-react'
+import { BookOpen, ChevronDown, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer } from 'lucide-react'
 import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
 import { confirmDialog } from './dialogs'
@@ -28,6 +28,7 @@ const GROUP_ICONS: Record<string, React.ReactNode> = {
   '大纲规划': <Map size={15} />,
   '创作管理': <Activity size={15} />,
   '运营维护': <Wrench size={15} />,
+  '酒馆模式': <Beer size={15} />,
 }
 
 interface Props {
@@ -43,7 +44,7 @@ interface Props {
 
 export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx }: Props) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(
-    new Set(['工作面板', '正文写作', '灵感工具', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护'])
+    new Set(['工作面板', '正文写作', '灵感工具', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护', '酒馆模式'])
   )
   // 主题与界面缩放（与 <html data-theme> / zoom 同步）
   const [theme, setTheme] = useState(getStoredTheme())

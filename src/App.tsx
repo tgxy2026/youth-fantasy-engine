@@ -38,6 +38,11 @@ const GuidePage = lazy(() => import('./components/GuidePage'))
 const InspireTools = lazy(() => import('./components/InspireTools'))
 const CheckTools = lazy(() => import('./components/CheckTools'))
 const MaterialLibrary = lazy(() => import('./components/MaterialLibrary'))
+// 酒馆模式四页：剧情推演 / 推演报告 / 角色卡 / 自由对话（各自含 AI 交互，按需懒加载）
+const TavernPlot = lazy(() => import('./components/TavernPlot'))
+const TavernReport = lazy(() => import('./components/TavernReport'))
+const TavernCard = lazy(() => import('./components/TavernCard'))
+const TavernFree = lazy(() => import('./components/TavernFree'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -300,6 +305,18 @@ export default function App() {
     }
     if (activeTab === 'material-library') {
       return <MaterialLibrary />
+    }
+    if (activeTab === 'tavern-plot') {
+      return <TavernPlot />
+    }
+    if (activeTab === 'tavern-report') {
+      return <TavernReport />
+    }
+    if (activeTab === 'tavern-card') {
+      return <TavernCard />
+    }
+    if (activeTab === 'tavern-free') {
+      return <TavernFree />
     }
     if (activeTab === 'guide') {
       return <GuidePage onNavigate={navigate} ctx={visCtx} />
