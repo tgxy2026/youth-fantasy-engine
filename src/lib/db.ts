@@ -789,6 +789,38 @@ export async function migrateChapterNumbering(): Promise<void> {
   await Promise.all(writes)
 }
 
+// ============ 迁移统一入口 ============
+
+/**
+ * 按序跑完「当前项目」所需的全部结构迁移，幂等。
+ *
+ * 🔴 调用纪律：**凡把项目置为当前项目（setCurrentProject）后，都必须紧接着调它**——
+ *    包括「启动时自动恢复上次项目」和「用户手动打开项目」两条路径。
+ *
+ * 为什么要有这个统一入口（2026-09-14 审计 P1-7）：
+ *   此前迁移入口散落在 App.tsx 的两处调用点，且**两处跑的集合不一样**——
+ *   手动 openProject 跑了 ledger + numbering + types 三件，
+ *   而启动恢复上次项目那条路径**只跑了 migrateProjectTypes**。
+ *   于是「关掉再开 → 自动回到上次项目」这条最常用路径上，旧的单表台账与卷内编号
+ *   不会被纠正；期间台账展示、全文检索、AI 上下文都会继续读到旧结构，
+ *   直到用户手动重新打开一次项目才自愈——属于「不报错但数据视图不对」的隐性偏差。
+ *
+ * 顺序要求（不可调换）：
+ *   types（归一化项目形态，只碰 projects 库，与另两个独立）
+ *   → ledger（把旧单表章节总表拆成按卷台账）
+ *   → numbering（重算全局连续章节号）
+ *   ⚠️ numbering **必须**排在 ledger 之后：它读写的正是 ledger 拆分后才存在的
+ *      `chapter-vol-<卷id>` 台账行；顺序颠倒会对着空表白跑一遍、编号不生效。
+ *
+ * 注意：这里只做「数据」迁移，不含 UI 侧缓存刷新。调用方若需要刷新侧栏卷页签，
+ *       请自行再调 schema.refreshVolumeTabs()——db 层不引用 schema，以免形成循环依赖。
+ */
+export async function runMigrations(): Promise<void> {
+  if (!currentProjectId) return
+  await migrateProjectTypes()
+  await migrateChapterLedger()
+  await migrateChapterNumbering()
+}
 // ============ 卡片记录 ============
 export async function getCardRecords(tabId: string): Promise<CardRecord[]> {
   const all = await ops.getAll<CardRecord>('cardRecords')

@@ -154,6 +154,11 @@ export default function App() {
         const p = await db.getProject(last)
         if (p) {
           db.setCurrentProject(p.id)
+          // 结构迁移统一入口（幂等）：必须放在 setCurrentProject 之后——迁移函数读的是当前项目。
+          // 修复审计 P1-7：「启动恢复上次项目」这条路径此前只跑了 migrateProjectTypes，
+          // 漏掉 ledger 拆表与全局编号，导致自动回到上次项目时台账/检索读到旧结构。
+          await db.runMigrations()
+          await refreshVolumeTabs()
           setProjectId(p.id)
           setProjectName(p.name)
           setVisCtx({ type: p.projectType ?? 'full', features: p.features ?? [] })
@@ -190,13 +195,11 @@ export default function App() {
     const p = await db.getProject(id)
     if (!p) return
     db.setCurrentProject(id)
-    // 按卷建表：旧项目打开时把单表章节总表迁移为各卷分表，并刷新侧栏卷缓存
-    await db.migrateChapterLedger()
-    // 1.9.2：章节号改为全局连续（幂等，已是正确的就不写库）
-    await db.migrateChapterNumbering()
-    // 清理历史遗留的 lite/minimal 项目形态（归一化为 full，幂等）
-    await db.migrateProjectTypes()
-    await refreshVolumeTabs()
+    // 结构迁移统一入口（幂等），与「启动恢复上次项目」共用同一个入口，
+    // 杜绝两条路径跑的迁移集合不一致（审计 P1-7）。
+    // 内部顺序：项目形态归一化 → ledger 拆表 → 全局连续编号（numbering 依赖 ledger 的结果）
+    await db.runMigrations()
+    await refreshVolumeTabs() // UI 侧缓存刷新，db 层不引用 schema 以免循环依赖
     db.setMeta('lastProject', id)
     setProjectId(id)
     setProjectName(p.name)
