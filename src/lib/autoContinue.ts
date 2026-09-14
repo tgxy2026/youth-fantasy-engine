@@ -17,6 +17,7 @@ import { uid } from './id'
 import { countWords } from './textStats'
 import { chat, requireActiveProvider, stripThink, isCancelled } from './ai'
 import { parseObjectArray, asText } from './aiParse'
+import { authorBlock, newAuthorFence } from './promptGuard'
 import { buildProjectContext, type ProjectContextResult } from './aiContext'
 import {
   aiExtractSettingEntities, aiContinuityAudit, aiOocCheck, aiForeshadowReview,
@@ -215,7 +216,7 @@ async function deAiFlavor(o: {
 }): Promise<string> {
   return askSoft(o.cfg,
     `${DEAI_SYS}\n\n【本次润色侧重点】\n${o.instruction}`,
-    ['【待润色正文】', o.body].join('\n'),
+    ['【待润色正文】', authorBlock(newAuthorFence(), o.body)].join('\n'),
     { signal: o.signal, onToken: o.onToken })
 }
 
@@ -238,12 +239,14 @@ async function generateOneChapter(opts: {
   const sys = buildSysPrompt(opts.targetWords)
   const lo = opts.targetWords - WORD_TOLERANCE
   const hi = opts.targetWords + WORD_TOLERANCE
+  // 作者内容是「不可信文本」：统一用同一边界语言包裹（内容一字不改，见 promptGuard 头部说明）
+  const fenceId = newAuthorFence()
   const user = [
     '【作品设定资料】',
-    opts.ctx.text || '（暂无设定资料，按通用网文逻辑续写）',
+    opts.ctx.text ? authorBlock(fenceId, opts.ctx.text) : '（暂无设定资料，按通用网文逻辑续写）',
     '',
     '【上一章结尾】（必须从这里紧接着往下写）',
-    opts.prevTail || '（本项目还没有正文，这是开篇第一章）',
+    opts.prevTail ? authorBlock(fenceId, opts.prevTail) : '（本项目还没有正文，这是开篇第一章）',
     '',
     '【近期章节概要】（最近 3 章，供把握整体剧情走向，非续写对象）',
     opts.recentSummaries || '（暂无）',

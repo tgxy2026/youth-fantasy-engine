@@ -11,6 +11,7 @@
 
 import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from './ai'
 import { parseObjectArray, asText, humanText, hasSubstance } from './aiParse'
+import { authorBlock, newAuthorFence } from './promptGuard'
 
 // ---------- 通用 JSON 解析（已收敛到 ./aiParse，全项目唯一入口） ----------
 // 原先这里的 sliceJSON / normalizeParsed / parseObjectArray / hasSubstance / asText / humanText
@@ -119,7 +120,7 @@ ${existing}
 ${req.projectContext.trim() || '（无）'}
 
 【待整理文本】
-${req.sourceText.trim() || '（作者未指定正文，请仅依据上方项目资料整理其中已明确写出、但尚未登记进本表的条目）'}
+${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) : '（作者未指定正文，请仅依据上方项目资料整理其中已明确写出、但尚未登记进本表的条目）'}
 
 请返回最多 ${max} 条新条目的 JSON 数组，优先返回最重要、最确定的。`
 
@@ -285,7 +286,7 @@ export async function aiProofread(text: string, opts: ProofreadOptions = {}): Pr
 ${opts.context?.trim() || '（无，请只做文字与逻辑层面的校对）'}
 
 【待校对正文】
-${chunk}
+${authorBlock(newAuthorFence(), chunk)}
 
 请返回问题清单的 JSON 数组。`
 
