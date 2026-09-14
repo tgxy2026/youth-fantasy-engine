@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>青春幻想引擎 · 代码设计审计报告 2026-09-14</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a21; --panel2:#1c212a; --line:#2a313d;
+    --txt:#e6e9ef; --dim:#9aa4b2; --dim2:#6b7684;
+    --p0:#ff5d5d; --p1:#ffa53d; --p2:#4db8ff; --ok:#3ddc97; --mute:#8b93a1;
+    --code-bg:#0b0d11; --code-txt:#c8d3e0;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--txt);
+    font-family:"Segoe UI","Microsoft YaHei",-apple-system,sans-serif;
+    line-height:1.75; font-size:15px;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:48px 28px 80px}
+  header{border-bottom:2px solid var(--line); padding-bottom:24px; margin-bottom:36px}
+  h1{margin:0 0 8px; font-size:28px; letter-spacing:.5px}
+  .sub{color:var(--dim); font-size:13.5px}
+  .sub code{background:var(--code-bg); padding:1px 6px; border-radius:4px; color:#a9c7ff; font-size:12.5px}
+
+  h2{
+    font-size:20px; margin:52px 0 18px; padding-left:12px;
+    border-left:4px solid var(--p1);
+  }
+  h2.p0{border-color:var(--p0)} h2.p1{border-color:var(--p1)}
+  h2.p2{border-color:var(--p2)} h2.ok{border-color:var(--ok)}
+  h3{font-size:16.5px; margin:28px 0 10px; color:#f0f3f8}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:12px; margin:18px 0 8px}
+  .kpi{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px}
+  .kpi .n{font-size:24px; font-weight:700; letter-spacing:.5px}
+  .kpi .l{font-size:12px; color:var(--dim); margin-top:2px}
+  .kpi.good .n{color:var(--ok)} .kpi.warn .n{color:var(--p1)}
+  .kpi.bad .n{color:var(--p0)} .kpi.info .n{color:var(--p2)}
+
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:13.5px}
+  th,td{border:1px solid var(--line); padding:8px 11px; text-align:left; vertical-align:top}
+  th{background:var(--panel2); color:var(--dim); font-weight:600; white-space:nowrap}
+  td code{background:var(--code-bg); padding:1px 5px; border-radius:4px; color:#a9c7ff; font-size:12.5px}
+
+  pre{
+    background:var(--code-bg); border:1px solid var(--line); border-left:3px solid var(--dim2);
+    border-radius:6px; padding:12px 14px; overflow-x:auto; margin:10px 0;
+    font-family:Consolas,"Cascadia Mono",monospace; font-size:12.5px; color:var(--code-txt); line-height:1.6;
+  }
+  code.inline{background:var(--code-bg); padding:1px 5px; border-radius:4px; color:#a9c7ff; font-size:12.8px}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin:16px 0}
+  .card.p0{border-left:4px solid var(--p0)}
+  .card.p1{border-left:4px solid var(--p1)}
+  .card.p2{border-left:4px solid var(--p2)}
+
+  .tag{display:inline-block; font-size:11.5px; font-weight:700; padding:2px 9px; border-radius:20px; margin-right:8px; vertical-align:2px}
+  .t-p0{background:rgba(255,93,93,.16); color:var(--p0); border:1px solid rgba(255,93,93,.4)}
+  .t-p1{background:rgba(255,165,61,.16); color:var(--p1); border:1px solid rgba(255,165,61,.4)}
+  .t-p2{background:rgba(77,184,255,.16); color:var(--p2); border:1px solid rgba(77,184,255,.4)}
+  .t-ok{background:rgba(61,220,151,.14); color:var(--ok); border:1px solid rgba(61,220,151,.4)}
+  .t-ver{background:rgba(139,147,161,.16); color:var(--mute); border:1px solid rgba(139,147,161,.4)}
+
+  ul{margin:8px 0; padding-left:22px} li{margin:5px 0}
+  .lbl{color:var(--dim); font-size:12.5px; font-weight:600; letter-spacing:.3px}
+  .evi{font-family:Consolas,monospace; font-size:12.5px; color:#8fd6a0}
+  .note{background:rgba(77,184,255,.07); border:1px solid rgba(77,184,255,.25); border-radius:8px; padding:12px 16px; margin:14px 0; font-size:13.5px}
+  .warnbox{background:rgba(255,93,93,.07); border:1px solid rgba(255,93,93,.3); border-radius:8px; padding:12px 16px; margin:14px 0; font-size:13.5px}
+  .okbox{background:rgba(61,220,151,.07); border:1px solid rgba(61,220,151,.28); border-radius:8px; padding:12px 16px; margin:14px 0; font-size:13.5px}
+  footer{margin-top:64px; padding-top:20px; border-top:1px solid var(--line); color:var(--dim2); font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>代码设计审计报告</h1>
+  <div class="sub">
+    青春幻想引擎 novel-studio · 审计日期 <b>2026-09-14</b> · 基线 <code>package.json 2.0.1</code><br>
+    审计方式：只读静态分析（tsc / 全文检索 / 结构度量 / 三支并行子系统审计 + 关键结论逐一人工复核）<br>
+    <span style="color:var(--ok)">本次审计未改动任何源码。</span>
+  </div>
+</header>
+
+<h2 class="ok">〇、体检结论</h2>
+
+<div class="grid">
+  <div class="kpi info"><div class="n">110</div><div class="l">源文件（.ts/.tsx）</div></div>
+  <div class="kpi info"><div class="n">41.9k</div><div class="l">src 总行数</div></div>
+  <div class="kpi good"><div class="n">0</div><div class="l">tsc --noEmit 错误</div></div>
+  <div class="kpi good"><div class="n">0</div><div class="l">window.prompt/confirm/alert 违规</div></div>
+  <div class="kpi warn"><div class="n">5</div><div class="l">超大文件（&gt;1000 行）</div></div>
+  <div class="kpi bad"><div class="n">0</div><div class="l">ESLint / Prettier 配置</div></div>
+</div>
+
+<div class="okbox">
+<b>底子是好的。</b> <code class="inline">tsconfig</code> 已开 <code class="inline">strict</code> + <code class="inline">noUnusedLocals</code> +
+<code class="inline">noUnusedParameters</code> 且 <b>零报错</b>——这在个人项目中属于少数派自律；三端 StoreOps 抽象、平台标志位
+（<code class="inline">__WEB__</code>/<code class="inline">__PORTABLE__</code>）、双图层编辑器等核心设计都有明确注释交代「为什么这么做」，
+且在 <code class="inline">docs/</code> 清单里留下了完整的决策轨迹。这不是一个需要推倒重来的代码库。
+</div>
+
+<div class="warnbox">
+<b>但三类结构性债已经显形：</b>
+<ul style="margin-bottom:0">
+  <li><b>工程基建缺位</b>——没有 ESLint、没有 Prettier、没有 test runner（<code class="inline">package.json</code> 里连 <code class="inline">test</code> 脚本都没有），
+      却有 5 行 <code class="inline">// eslint-disable-line</code> 注释在自我安慰。所有质量把关目前全靠 <code class="inline">tsc</code> 一个人扛。</li>
+  <li><b>巨型文件</b>——<code class="inline">materialRef.ts</code> 5791 行（其中 5715 行是纯数据常量）、<code class="inline">seedData.ts</code> 5673 行、
+      <code class="inline">NovelEditor.tsx</code> 1499 行（单个 <code class="inline">return</code> 跨 673 行）。</li>
+  <li><b>无统一调用层</b>——AI 任务、SVG 画布交互、Popover 定位这三类逻辑各自被复制了 3～20 份，改一处必漏其余。</li>
+</ul>
+</div>
+
+<h2 class="p0">一、P0 · 正确性缺陷（建议优先处理）</h2>
+
+<div class="card p0">
+<h3><span class="tag t-p0">P0-1</span>AI 温度参数形同虚设：14 个 JSON 任务实跑在创意温度上</h3>
+<p><span class="lbl">证据</span></p>
+<pre>src/lib/ai.ts:50   export const DEFAULT_TEMPERATURE   = 0.85
+src/lib/ai.ts:52   export const JSON_TASK_TEMPERATURE = 0.3
+src/lib/ai.ts:51-52  /** 结构化 JSON 任务（校对 / 审读 / 改稿 / 抽取）专用：低温换取格式稳定 */
+
+实测：aiTasks.ts 内共 20 处 `await chat(`，其中<b>仅 1 处</b>（:1132 aiRewritePassage）传了 temperature。
+其余 19 处省略该参数 → 落到 ai.ts:329 / ai.ts:409 的 `o.temperature ?? DEFAULT_TEMPERATURE` = 0.85</pre>
+<p><span class="lbl">典型受害者</span>（函数体自述要求 JSON 输出，却未传低温）</p>
+<pre>aiTasks.ts:371  请返回问题清单的 JSON 数组。      ← aiProofread 的 system prompt
+aiTasks.ts:381  { timeoutMs, signal, onToken }      ← 无 temperature，实跑 0.85</pre>
+<p>同样中招的还有：<code class="inline">aiOrganizeRows</code>、<code class="inline">aiSuggestNames</code>、<code class="inline">aiReviewSensitive</code>、
+<code class="inline">aiContinuityAudit</code>、<code class="inline">aiAnalyzeFeedback</code>、<code class="inline">aiDiagnoseProject</code>、
+<code class="inline">aiForeshadowReview</code>、<code class="inline">aiDedupTerms</code>、<code class="inline">aiStyleCheck</code>、
+<code class="inline">aiChapterReview</code>、<code class="inline">aiOocCheck</code>、<code class="inline">aiContinuationAdvice</code>、
+<code class="inline">aiExtractSettingEntities</code>。</p>
+<p><span class="lbl">根因</span>　temperature 是「可选参数」，全靠任务层自觉传，无任何机制约束。</p>
+<p><span class="lbl">影响</span>　代码注释亲口警告：<i>「结构化 JSON 任务必须显式传低值，否则退到文本兜底（2.0.1 的『只剩标点』即由此放大）」</i>。
+即：<b>注释承诺的实现从未在该路径生效</b>，2.0.1 已修过的那个 bug 的温床原地保留。表现为解析失败率升高、AI 返回散文而非 JSON、退化成兜底文案。</p>
+<p><span class="lbl">建议</span>　不要逐个补参数（下次新增任务还会漏）。在 <code class="inline">ai.ts</code> 的 <code class="inline">chat</code> 上层加一个语义开关，
+例如 <code class="inline">chat(cfg, messages, { json:true })</code> 由内部统一注入 <code class="inline">JSON_TASK_TEMPERATURE</code>，
+任务层只声明「我是 JSON 任务」而非「温度填几」。</p>
+<p><span class="lbl">改动量</span>　小（1 个函数签名 + 14 处调用点）；<span class="lbl">风险</span>　低，但属<b>行为变更</b>（AI 输出会更结构化、更保守），需老大认可。</p>
+</div>
+
+<div class="card p0">
+<h3><span class="tag t-p0">P0-2</span>同步文件「读失败」被当成「空库」，随后 push 覆盖真实云端文件</h3>
+<p><span class="lbl">证据</span></p>
+<pre>src/lib/syncTransport.ts:115-124  fsaRead  catch { return null }        ← 权限被拒 / 文件被云盘客户端锁住
+src/lib/syncTransport.ts:157-173  nodeRead catch { return null }
+src/lib/syncTransport.ts:199-207  parseRev: catch { return {rev:0} }   // 注释原文：损坏文件当作空库处理
+src/lib/syncTransport.ts:221-231  push(): cur = parseRev(await readRaw(name))
+                                  if (cur.rev > baseRev) return 409     ← 读失败得 rev=0，0 > baseRev 恒 false
+                                  newRev = baseRev + 1
+                                  await writeRaw(name, ...)             ← 直接覆盖</pre>
+<p><span class="lbl">根因</span>　「文件不存在」「权限被拒」「JSON 损坏」三种截然不同的情况被统一降级为 rev=0，丢掉了最危险的中间态：<b>文件存在但读不到</b>。</p>
+<p><span class="lbl">影响</span>　<b>数据丢失级，但需触发条件</b>：云盘客户端同步瞬间锁文件、目录权限失效、或同步文件被写坏时，
+一次 push 就会用本地内容整体覆盖云端文件。写后回读校验（:229-231）确实会返回 409 触发合并重试——
+<b>但那时文件已经被覆盖了</b>，对方设备的新内容当场消失。</p>
+<p><span class="lbl">建议</span>　① 区分 ENOENT（可安全当空库）与其它读错误（必须中止 push）；
+② <code class="inline">parseRev</code> 解析失败时不再返回 rev=0，而是标记 <code class="inline">corrupt</code>，先把原文件备份为 <code class="inline">.corrupt</code> 再拒绝 push。</p>
+<p><span class="lbl">改动量</span>　小～中（1 个文件）；<span class="lbl">风险</span>　低，且是纯加固方向。</p>
+</div>
+
+<h2 class="p1">二、P1 · 结构性重构（可维护性，收益最大）</h2>
+
+<table>
+<tr><th style="width:34px">#</th><th>问题</th><th>证据</th><th>建议</th></tr>
+<tr>
+  <td>1</td>
+  <td><b>AI 调用无统一层</b>：prompt 组合 + 超时 + 重试 + 流式回调的样板在 <code>aiTasks.ts</code> 里抄了 20 遍</td>
+  <td class="evi">aiTasks.ts:207/375/454/502/553/635/695/761/820/884/962/1016/1073/1128/1181/1237/1290/1333/1356/1419</td>
+  <td>抽 <code>runTask(id, sys, user, opts)</code> 单入口，统一注入温度 / 超时 / 重试 / 解析</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><b>三套 JSON 解析并存</b>，其中一套是裸 <code>JSON.parse</code></td>
+  <td class="evi">aiTasks.ts:17-59 parseObjectArray ｜ ai.ts:607-621 parseTemplateJSON ｜ autoContinue.ts:373-383 裸 JSON.parse（不剥 ```、不切最外层）</td>
+  <td>收敛为唯一 <code>parser</code> 模块，export <code>parseObjectArray/parseObject/parseText</code></td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><b>AI 任务状态机复制 4 份</b>：<code>{loading, error, streamText, abortRef}</code> 五件套每个组件重写一遍</td>
+  <td class="evi">AIAssist.tsx:64-76 ｜ AIOrganize.tsx:48-54 ｜ AutoContinue.tsx:68-72 ｜ CheckTools.tsx:104-114 ｜ AuditModals.tsx 三处</td>
+  <td>抽 <code>useAITask&lt;T&gt;()</code>，组件只声明任务函数</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><b>SVG 画布交互三套重复实现</b>：pan / zoom / 拖拽 / 命中检测各写一遍（且行为已分叉——RelationGraph 有节点钳制，FactionGraph 没有）</td>
+  <td class="evi">RelationGraph.tsx:53-65,138-226 ｜ FactionGraph.tsx:47-58,134-186 ｜ GeoMapEditor.tsx:361-402,494-627 ｜ PlotCanvas.tsx:219-235</td>
+  <td>抽 <code>useSvgPanZoom(svgRef)</code> + <code>useNodeDrag(map)</code>，配回归测试后再合</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><b>Popover 定位骨架复制 6 份</b>，且 z-index 各写各的（<code>z-[9999]</code> / <code>z-[10000]</code> / <code>z-[10001]</code>），与 <code>Modal.tsx</code> 里已定义的 <code>Z</code> 真源互相打架</td>
+  <td class="evi">CustomSelect.tsx:116,275,285 ｜ CharacterSelect.tsx:58,123,133 ｜ TableRefSelect.tsx:52,111,121 ｜ CalendarSelect.tsx:39,116,120 ｜ CalendarPicker.tsx:46,111,121 ｜ HelpPopover.tsx:47,106,117</td>
+  <td>抽 <code>&lt;PortalPopover anchor&gt;</code>，统一测量 + 定位 + <code>Z.dropdown</code></td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><b>超大文件</b>：数据与代码混居 / 单文件塞多个组件</td>
+  <td class="evi">materialRef.ts 5791（5715 行纯数据）｜ seedData.ts 5673 ｜ NovelEditor.tsx 1499（render 跨 673 行，28 useState/13 useEffect/17 useRef）｜ TableSheet.tsx 1340 ｜ GeoMapEditor.tsx 1092（同文件 6 个组件）｜ JieWenJi.tsx 954</td>
+  <td>数据文件按分类拆分；大组件抽子组件（<code>ChapterList</code>/<code>EditorToolbar</code>/<code>EditorStatusBar</code>）；GeoMap 子组件入 <code>geo/</code></td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><b>迁移函数无统一入口</b>：启动恢复上次项目时<b>漏跑</b> <code>migrateChapterLedger</code> / <code>migrateChapterNumbering</code>，只有手动 <code>openProject</code> 才会跑</td>
+  <td class="evi">App.tsx:145 仅调 migrateProjectTypes ｜ App.tsx:194-198 手动路径才按序跑全 | db.ts:527/715/768</td>
+  <td>建 <code>runMigrations(projectId)</code> 幂等入口，boot 与 openProject 共用；meta 记迁移水位</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><b>导入/恢复双份实现</b>：卷章重映射、<code>ch-</code> 行、<code>chapter-vol-&lt;vid&gt;</code> tabId、dailyStats 写入块近乎逐行重复（历史上同一个 tabId 重映射 bug 被修了两遍）</td>
+  <td class="evi">db.ts:866-926 importProject ｜ db.ts:1239-1327 applyBundleToProject ｜ db.ts:554-584 deleteProject 与 :1241-1266 同构</td>
+  <td>抽 <code>writeBundle(pid, bundle, {reuseIds})</code> + <code>clearProjectData(pid)</code> 单一实现</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><b>三端 StoreOps 语义不一致</b>：便携/桌面端 <code>get/getAll</code> 返回内存对象<b>引用</b>，IDB 端返回结构化克隆。调用方原地改返回值即可绕过写盘（数据不落盘）</td>
+  <td class="evi">portable.ts:262-305 ｜ desktop.ts:252-295 ｜ db.ts:241-263（idb 为克隆）｜ syncCore.ts:569-573 返回原引用</td>
+  <td>StoreOps 契约补齐「返回副本」语义；<code>put</code> 校验 keyPath 非空（现缺失时落成字面量 <code>"undefined"</code> 键）</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><b>魔法字符串 / 魔法数字散落</b>：localStorage 键字面量在多文件重复（改一处忘一处）；防抖 800ms 三处硬编码；轮询 8000ms</td>
+  <td class="evi">'yfe-sprite-enabled' 在 App.tsx:55 与 JieWenJi.tsx:133,137 各写一遍 ｜ 800ms: portable.ts:200 / desktop.ts:124 / syncCore.ts:557 ｜ 8000ms: syncTransport.ts:243</td>
+  <td>抽 <code>storageKeys.ts</code> + <code>constants.ts</code> 单一真源</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><b>加密逻辑两套</b>：PBKDF2 + AES-GCM 各写一遍，迭代数写法都不一致（<code>100000</code> vs <code>100_000</code>）</td>
+  <td class="evi">crypto.ts:31-54 ｜ syncCore.ts:107-117,310-326</td>
+  <td>统一走 crypto.ts，syncCore 只调用不重实现</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><b>硬编码 hex 色脱离主题系统</b>：8 套主题全靠 <code>index.css</code> 的 CSS 变量驱动，但这几处色板写死十六进制，浅色主题（护眼/青花）下对比度会失效</td>
+  <td class="evi">RelationGraph.tsx 31 处 hex ｜ FactionGraph.tsx 22 处 ｜ GeoMapEditor.tsx 12 处 ｜ PlotCanvas.tsx 6 处 ｜ WritingGoals.tsx 3 处</td>
+  <td>色板集中到 <code>lib/theme.ts</code>，改走 <code>rgb(var(--ink-850))</code></td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><b>类型安全薄弱点</b>：<code>syncCore.ts</code> 44 处 <code>any</code> 集中在合并层，加解密边界把 <code>JSON.parse</code> 结果直接当 cache，未做 payload 校验；<code>eqRecord</code> 用 <code>JSON.stringify</code> 判等（键序敏感 → 语义相同的记录被误判「两端都改」→ 产生虚假冲突副本）</td>
+  <td class="evi">syncCore.ts:265,279,141-149,564-614,302,346</td>
+  <td>引入 <code>SyncPayload</code> 类型 + 运行时校验；<code>eqRecord</code> 改稳定序列化或逐字段比较</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><b>空 catch / 吞错清单</b>：写盘与读盘关键路径上多处静默失败</td>
+  <td class="evi">desktop.ts:158-160 ｜ syncTransport.ts:121-123,152-155,162-164,170-172 ｜ db.ts:291-296,399-412 ｜ syncCore.ts:194-196,455-456,487-490</td>
+  <td>逐条判定：可忽略的加注释说明，关键路径落 <code>lastError</code> / 上报</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><b>注释与实现不符</b>（会误导后续维护者，成本极低可顺手修）</td>
+  <td class="evi">syncTransport.ts:1-6 仍称「加密/合并保留在 serverStore」，实际已迁至 syncCore.ts ｜ ai.ts:229 温度注释与实现相反（见 P0-1）｜ aiTasks.ts:44-48 说明 <code>hasSubstance</code> 拦残骸，实际仅在 :1140 生效</td>
+  <td>按实现改注释，或按注释改实现</td>
+</tr>
+</table>
+
+<h2 class="p2">三、P2 · 工程基建（地基，建议先补）</h2>
+
+<div class="card p2">
+<h3><span class="tag t-p2">P2-1</span>引入 ESLint / Prettier</h3>
+<p><span class="lbl">现状</span>　零配置。而源码里有 5 处 <code class="inline">// eslint-disable-line</code>（<code class="inline">InspireTools.tsx:52</code>、
+<code class="inline">NovelEditor.tsx:426,454</code>、<code class="inline">OutlineSheet.tsx:60</code>、<code class="inline">TableSheet.tsx:313</code>）——
+这些注释目前是<b>装饰品</b>，因为根本没有 ESLint 在运行。</p>
+<p><span class="lbl">影响</span>　<code class="inline">useEffect</code> 依赖数组漏项、未使用的 ref、可疑的空 catch 全靠人眼。
+上表里 P1-4 / P1-14 这类问题若有 lint 门禁，大半会在提交时就被拦下。</p>
+<p><span class="lbl">建议</span>　只上 <code class="inline">eslint + @typescript-eslint + react-hooks</code> 最小集，先以 <code class="inline">warn</code> 运行避免一次性淹没，
+再逐步收紧到 <code class="inline">error</code>。这一步是后面所有重构的安全网。</p>
+</div>
+
+<div class="card p2">
+<h3><span class="tag t-p2">P2-2</span>给测试加个 runner</h3>
+<p><span class="lbl">现状</span>　<code class="inline">tests/</code> 下有 5 个测试文件（累计 61 个用例，手搓 <code class="inline">ok(name, cond)</code> 断言），
+但 <code class="inline">package.json</code> 里<b>没有 <code class="inline">test</code> 脚本</b>，也没有 vitest/jest 依赖——测试目前得靠手动拼命令行跑。
+同时项目此前跑测试的方式是「esbuild 转译 TS 后直测」（见清单 #005/#023 的处理记录）。</p>
+<p><span class="lbl">建议</span>　加一条 <code class="inline">npm test</code>（沿用 esbuild 转译方案即可，不必引入新框架），
+把「改完必须能一键跑回归」变成默认动作。</p>
+</div>
+
+<div class="card p2">
+<h3><span class="tag t-p2">P2-3</span>其余低优先项</h3>
+<ul style="margin-bottom:0">
+  <li><b>重复空态/加载态 6 处</b>：<code class="inline">NovelEditor.tsx:822</code>、<code class="inline">TableSheet.tsx:681</code>、<code class="inline">Dashboard.tsx:61</code>、
+      <code class="inline">CharacterSheet.tsx:201</code>、<code class="inline">OutlineSheet.tsx:185</code>、<code class="inline">FormSheet.tsx:123</code> → 抽 <code class="inline">&lt;LoadingState/&gt;</code> / <code class="inline">&lt;EmptyState/&gt;</code>。</li>
+  <li><b>props 过深</b>：<code class="inline">JieWenJi</code> 11 个 props、<code class="inline">GeoMapEditor.DetailPanel</code> 11 个 → 收为对象或 Context。</li>
+  <li><b>超长函数 / 深嵌套</b>：<code class="inline">db.ts:41-225</code> 的 <code class="inline">getDB</code> upgrade 回调 185 行塞 9 个版本迁移（无法单测）；
+      <code class="inline">autoContinue.ts:434-593</code> 的 <code class="inline">runAutoContinue</code> 160 行。</li>
+  <li><b>长列表无虚拟化</b>：<code class="inline">TableSheet</code> 全量 map 渲染；<code class="inline">RelationGraph.tsx:81</code> 靠硬截前 80 节点回避性能问题。</li>
+  <li><b>prompt 直接拼接用户正文</b>：正文里出现 <code class="inline">【设定资料】</code> 之类标记即可伪造段落（prompt 注入），
+      建议用独特分隔符包裹并声明。</li>
+  <li><b>死配置</b>：<code class="inline">syncCore.ts:19-22</code> 的 <code class="inline">SYNC_STORES</code> 含 <code class="inline">backups</code>，但 <code class="inline">mergeCaches/liveStores</code> 全程排除。</li>
+</ul>
+</div>
+
+<h2 class="ok">四、已核实并澄清（避免误报的说明）</h2>
+
+<p>审计过程中有若干「看起来很吓人、复核后不成立或已被接受」的项，单独说明，免得后续被当成新问题反复翻出来：</p>
+
+<table>
+<tr><th style="width:34px">#</th><th>初判</th><th>复核结论</th></tr>
+<tr>
+  <td>1</td>
+  <td>便携版 <code>flushNow</code> 与在途保存互斥，最后一次编辑可能不落盘</td>
+  <td><span class="tag t-ver">已知取舍</span><b>不算新问题</b>。清单 <b>#034</b> 已处理并明确登记为「FSA 无同步 API，本项是尽力而为」的残留，
+      且 UI 会提示「保存出错，点击重试」。原审计称「比注释更糟」属过度解读。</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td>便携版未连接数据文件时 <code>scheduleSave()</code> 静默丢弃所有写入（<code>portable.ts:197</code>）</td>
+  <td><span class="tag t-ok">已缓解</span>未连接时 <code>App.tsx:262</code> 会渲染 <code>PortableGate</code> 拦在编辑入口之前，
+      <b>用户到不了编辑器</b>，非活跃风险。可保留一道防御性报错，但不必按 P0 处理。</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td>桌面版 <code>flushDesktopSync</code> 不检查 <code>saving</code>，与在途异步写竞态</td>
+  <td><span class="tag t-ver">窗口极窄</span>两条路径序列化的是<b>同一个内存 <code>data</code> 对象</b>，
+      且 <code>beforeunload</code> 之后不再产生新编辑，内容一致。<b>真实但窗口极窄</b>，可加一个 generation 计数器兜底。</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td>离线期间写入的本地数据，恢复联网后不回流云端（<code>db.ts:303-308</code>）</td>
+  <td><span class="tag t-ver">一致性问题</span>复核成立，但性质是「分裂脑」而非丢失——
+      数据仍在本地文件里，只是 UI 恢复在线后读云端而看不到。与 #011 相邻但未覆盖（#011 只做了「回退本地」，未做「回流云端」）。</td>
+</tr>
+</table>
+
+<div class="note">
+<b>为什么这一节单独列？</b> 因为审计报告最怕的不是漏报，而是<b>把已接受的设计取舍当成新发现</b>——
+那会让老大重复判断同一件事，也会稀释真正需要处理的项。本节四项都经过源码级复核，予以明确降级或排除。
+</div>
+
+<h2 class="p1">五、建议执行批次</h2>
+
+<p>按「收益 / 风险」排序，建议分三批推进。<b>本报告仅为方案，未改动任何代码</b>——等老大圈定批次后再动手。</p>
+
+<table>
+<tr><th>批次</th><th>内容</th><th>涉及项</th><th>特点</th></tr>
+<tr>
+  <td><b>A 批</b><br>正确性止血</td>
+  <td>AI 温度语义开关 + 同步文件读失败保护</td>
+  <td>P0-1、P0-2</td>
+  <td>改动小、定位精准、风险低。P0-1 属行为变更需确认；P0-2 是纯加固。</td>
+</tr>
+<tr>
+  <td><b>B 批</b><br>基建补课</td>
+  <td>ESLint 最小集 + <code>npm test</code> 脚本</td>
+  <td>P2-1、P2-2</td>
+  <td>为后续重构提供安全网。<b>建议放在任何大重构之前</b>，否则重构没有回归保护。</td>
+</tr>
+<tr>
+  <td><b>C 批</b><br>结构重构</td>
+  <td>AI 统一调用层 + 解析器收敛 + <code>useAITask</code> + SVG/SVG PanZoom + PortalPopover + 迁移入口 + 大文件拆分</td>
+  <td>P1-1～P1-8</td>
+  <td>收益最大、改动最多、必须分批验收。建议每完成一项就跑一次 tsc + 回归。</td>
+</tr>
+<tr>
+  <td><b>D 批</b><br>打磨</td>
+  <td>魔法常量归一、主题色收敛、空 catch 梳理、注释纠偏、类型收严</td>
+  <td>P1-9～P1-15、P2-3</td>
+  <td>零散但便宜，适合穿插在内容创作间隙做。</td>
+</tr>
+</table>
+
+<div class="warnbox">
+<b>红线提醒（本次审计严格遵守）：</b>未升版本号、未打包、未碰服务器、未改动任何源码。
+按项目既定规矩，后续任何代码改动完成后最多做到 <code class="inline">tsc --noEmit</code> + <code class="inline">vite build</code> 验证 + git 提交；
+<b>封装一律等老大明说「封装」</b>。
+</div>
+
+<footer>
+青春幻想引擎 novel-studio · 代码设计审计报告 · 生成于 2026-09-14 · 只读审计，零改动<br>
+审计范围：src/ 全量 110 个源文件（lib 44 / components 61 / 入口 3），以及 tsconfig、package.json、vite 三配置、tests/、docs/ 清单
+</footer>
+
+</div>
+</body>
+</html>

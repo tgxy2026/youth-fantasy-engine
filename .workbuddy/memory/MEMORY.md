@@ -52,7 +52,31 @@
 
 ## AI / 服务器
 - AI：颉文姬5模式 clinic/edit/review/brief/ledger；硅基流动 DeepSeek-V3.2。明文本地记忆勿公开。
-- AI 返回解析：统一走 `parseObjectArray`（已支持数组 / 单对象 / `{list:[…]}` 三形态归一化）。🔴 勿退回"先按 `[` 切片"的老写法——单对象会被解析成非数组对象后在 `Array.isArray` 处判失败返回空，导致内容全丢、退 `humanText` 兜底（2.0.1 修的"改稿只剩标点"）。JSON 类任务统一传 `JSON_TASK_TEMPERATURE`(0.3)，创意类维持 `DEFAULT_TEMPERATURE`(0.85)；失败时用 `hasSubstance` 拦垃圾，别把残骸塞给作者。
+- AI 返回解析：统一走 `parseObjectArray`（已支持数组 / 单对象 / `{list:[…]}` 三形态归一化）。🔴 勿退回"先按 `[` 切片"的老写法——单对象会被解析成非数组对象后在 `Array.isArray` 处判失败返回空，导致内容全丢、退 `humanText` 兜底（2.0.1 修的"改稿只剩标点"）。失败时用 `hasSubstance` 拦垃圾，别把残骸塞给作者。
+- 🔴 温度（2026-09-14 起机制变更）：**不要在任务层手填温度**。结构化 JSON 任务传 `chat(..., { json: true })`，
+  由 `ai.ts` 的 `chat()` **统一解析**为 `JSON_TASK_TEMPERATURE`(0.3)；创意类不传即 `DEFAULT_TEMPERATURE`(0.85)。
+  历史坑：20 处调用里 19 处漏传温度、静默跑在 0.85，而注释却写着"必须传低值"——**靠自觉的"可选参数"必然漏**，
+  故改为语义开关 + 上游唯一真源（`CallOpts.temperature` 已改必填，下游无第二个兜底点）。新增 AI 任务时务必带 `json: true`。
 - 服务器 `154.8.178.240`(腾讯云 Ubuntu24.04)；SSH `C:\Users/18223\.ssh\yfe_test_server`(端口22) ubuntu+免密sudo。站点 `/var/www/yfe`；反馈 `/opt/yfe-server/feedback-server.mjs`。码/详情见 `docs/服务器访问记录.md`。
 - 网页部署流程：本地 `vite build --config vite.config.web.ts`(→`dist-web`) → tar 打成单包 → scp 到服务器 `/tmp`（**走 /tmp 中转，避免 scp 套娃）→ `sudo cp -a` 备份旧版 → 清旧 assets/index.html → 解包 → `chown -R www-data:www-data` → `sudo -u www-data test -w` 验收。
 - 🔴 部署校验陷阱：Nginx 配了 SPA 回退，**任意不存在的路径都返回 200 + index.html**——旧 chunk 名照样 200，**绝不能用 HTTP 200 判断资源是否上线**。必须核对 `Content-Length` / `Content-Type` / `Last-Modified` 与首字节内容（新 chunk 首字节应含 `__vite__mapDeps` 及新依赖名）。
+
+## 工程质量与验证（2026-09-14 起）
+- **命令**：`npm run verify`（= typecheck + lint + test，退出码 0 即全绿）/ `npm test` / `npm run lint`。
+- **测试 runner**：`tests/run-all.mjs` 自动发现 `tests/*.test.ts` + `seed-schema-check.mjs`。
+  🔴 **每个入口必须单开子进程**——`roundtrip.test.ts` / `adversarial.test.ts` 结尾是 `process.exit()`，同进程串跑会被直接掐死。
+- **ESLint**：`eslint.config.js` 扁平配置（ESLint 9 + typescript-eslint 8），**只开 3 条**：
+  `rules-of-hooks`(error) / `exhaustive-deps`(warn) / `no-empty`(warn)。`no-explicit-any` **显式关闭**
+  （存量 100 处会淹没 12 条真信号）。当前 **12 warnings / 0 errors**，即 C/D 批的工作面。
+- ⚠️ **遗留**：4 个 eslint 依赖已手工写进 `package.json`，但 **`package-lock.json` 未同步**
+  （直连 npmjs 跑 11 分钟仍未写清单，已终止）。下次 `npm install` 会自动补齐；在此之前 `npm ci` 会失败（本项目无 CI，无影响）。
+
+## 本机环境坑（Windows + Git Bash，务必绕行）
+- `git` **不在 PATH** → 用 `C:/Users/18223/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe`。
+- `npm` shim 坏（输出乱码 + 触发 WSL 黑名单）→ 绕行 `"<托管node>/node.exe" "<托管node>/node_modules/npm/bin/npm-cli.js" <命令>`。
+  🔴 路径必须写 **`C:/...` 正斜杠**；写 `/c/...` 会被 Git Bash 转成 `G:\c\Users\...` 而报 MODULE_NOT_FOUND。
+- Windows 自带同名程序会抢掉 Unix 工具：**`sort.exe`**（`sort -rn` 报「找不到文件」）、**`timeout.exe`**；
+  `find ... -o ...` 在 Git Bash 报「参数格式不正确」→ 改用 `wc -l src/lib/*.ts`（**不接 sort**）/ `ls` / Glob 工具。
+- 本会话 PowerShell 工具**无输出返回**，别依赖它。
+- 🔴 审计纪律：**「数据丢失」级结论禁止直接转述子代理**，必须回源码逐行验尸；
+  且要先对照 `docs/1.9.6-2.0.0_Bug与待优化清单.md`——已有 4 条被当成「新发现」，实为 #034 等已登记的已知取舍。
