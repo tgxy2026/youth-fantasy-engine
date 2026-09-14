@@ -94,6 +94,14 @@ function main() {
     ok('含「点名必须接话」', r.includes('必须接话'))
     ok('含「一次只让一个角色说话」', r.includes('一次只让一个角色说话'))
     ok('列出全部参演角色名', r.includes('苏念') && r.includes('陆青梧'))
+    ok('默认（有「你演」角色）仍写「用户扮演用户自己的角色」', r.includes('用户扮演'))
+
+    // 剧情模式允许一个「你演」位置都不设（整场交给 AI）—— 那种情况下
+    // 这句「用户扮演…」必须消失，否则模型会去等一个并不存在的人开口
+    const noUser = buildMultiCharRule(['苏念', '陆青梧'], { hasUser: false })
+    ok('没有你演的角色时：不写「用户扮演」', !noUser.includes('用户扮演'))
+    ok('没有你演的角色时：改写成「本场没有你演的角色，全部由你推进」', noUser.includes('全部由你推进'))
+    ok('没有你演的角色时：角色名与发言约束照旧', noUser.includes('苏念') && noUser.includes('一次只让一个角色说话'))
   }
 
   // ---------- 7) 消息转换 ----------

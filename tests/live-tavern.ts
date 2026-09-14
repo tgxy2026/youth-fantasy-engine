@@ -71,6 +71,8 @@ async function prepare() {
   const main = (await db.getCardRecords('char-main'))[0]
   const secondary = await db.getCardRecords('char-secondary')
   const xiao = secondary.find(r => r.name === '萧景行') ?? secondary[0]
+  // 「全 AI 扮演」那一场要两个 AI 角色，另找一个次要角色
+  const other = secondary.find(r => r.id !== xiao.id) ?? xiao
 
   // 给 AI 演的角色填一份扮演设定（验证它真影响输出）
   await store.saveCastSetting(xiao.id, {
@@ -82,7 +84,7 @@ async function prepare() {
     never: '绝不会主动示弱，也绝不会失态',
   })
 
-  return { providers, main, xiao }
+  return { providers, main, xiao, other }
 }
 
 function mkSession(providerId: string, main: { id: string; name: string }, xiao: { id: string; name: string }): TavernSession {
@@ -112,7 +114,43 @@ function mkSession(providerId: string, main: { id: string; name: string }, xiao:
   }
 }
 
-async function runOne(label: string, s: TavernSession) {
+/**
+ * 无「你演」角色的会话：整场交给 AI（2026-09-14 新增能力，必须实弹验证）。
+ * 两个 AI 角色 → 身份层应带「一次只让其中一个说话」的多角色规则，
+ * 且**不该**出现「用户扮演」「不要代写」这类只在有你演角色时才成立的语句。
+ */
+function mkAiOnlySession(
+  providerId: string,
+  a: { id: string; name: string },
+  b: { id: string; name: string },
+): TavernSession {
+  return {
+    id: 'live-2',
+    title: '实弹测试 · 全 AI 扮演（无用户角色）',
+    mode: 'immersive',
+    anchorChapterId: anchorId,
+    anchorChapterLabel: anchorLabel,
+    cast: [
+      { cardId: a.id, role: 'ai', tabId: 'char-secondary', name: a.name },
+      { cardId: b.id, role: 'ai', tabId: 'char-secondary', name: b.name },
+    ],
+    scene: { place: '青岚宗外门偏院', time: '入夜', present: [a.name, b.name], description: '雨刚停，两人在廊下对站' },
+    messages: [
+      {
+        id: 'm0',
+        role: 'user',
+        content: `【场景】地点：青岚宗外门偏院 · 时间：入夜 · 在场：${a.name}、${b.name}\n雨刚停，廊下积水映着灯笼。`,
+        at: Date.now(),
+      },
+    ],
+    model: { providerId },
+    params: { contextBudget: 32000 },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+}
+
+async function runOne(label: string, s: TavernSession, userText = '（我点了点头，没有立刻答话，等他先开口。）') {
   console.log('\n' + '='.repeat(72))
   console.log(`▶ 场景：${label}`)
   console.log('='.repeat(72))
@@ -123,7 +161,7 @@ async function runOne(label: string, s: TavernSession) {
   const phases: string[] = []
 
   try {
-    const res = await runPlotTurn(s, '（我点了点头，没有立刻答话，等他先开口。）', {
+    const res = await runPlotTurn(s, userText, {
       onToken: () => { chunks++; if (!firstAt) firstAt = Date.now() - t0 },
       onPhase: p => phases.push(p),
     })
@@ -177,7 +215,7 @@ async function runReport(s: TavernSession) {
 }
 
 async function main() {
-  const { providers, main, xiao } = await prepare()
+  const { providers, main, xiao, other } = await prepare()
   console.log('=== 读到真实模型配置 ===')
   providers.forEach(p => console.log(`  ${p.name} · ${p.type} · ${p.model} · key=${p.apiKey ? '已配置' : '无'}`))
   if (SKIP_NET) console.log('\n（YFE_LIVE_SKIP=1：只做离线检查，不调模型）')
@@ -195,6 +233,16 @@ async function main() {
   console.log(`  协议在末尾：${system.trimEnd().endsWith(PROTOCOL_CORE.trimEnd()) ? '✓' : '✗'}`)
   console.log(`  身份提示含「不要代写」：${system.includes('不要代写') ? '✓' : '✗'}`)
 
+  // 全 AI 扮演那一场：身份层该变的样子（离线断言，不花钱）
+  const aiOnlyProbe = mkAiOnlySession(online?.id ?? providers[0].id, xiao, other)
+  const aiOnlySys = (await buildPlotSystem(aiOnlyProbe)).system
+  console.log('\n=== system 组装 · 无用户角色（全 AI 扮演） ===')
+  console.log(`  不含「用户扮演」（没有你演的角色时不出现）：${aiOnlySys.includes('用户扮演') ? '⚠️ 有' : '✓ 无'}`)
+  console.log(`  改为「全部由你推进」：${aiOnlySys.includes('全部由你推进') ? '✓' : '✗'}`)
+  console.log(`  不含「不要代写」：${aiOnlySys.includes('不要代写') ? '⚠️ 有' : '✓ 无'}`)
+  console.log(`  含多角色发言规则：${aiOnlySys.includes('一次只让其中一个说话') ? '✓' : '✗'}`)
+  console.log(`  含两个 AI 角色名：${aiOnlySys.includes(xiao.name) && aiOnlySys.includes(other.name) ? '✓' : '✗'}`)
+
   if (SKIP_NET) {
     console.log('\n离线检查结束（未消耗额度）。')
     return
@@ -203,6 +251,13 @@ async function main() {
   if (online) {
     const s = await runOne(`联网 · ${online.model}（流式）`, mkSession(online.id, main, xiao))
     if (s) await runReport(s)
+
+    console.log('\n（下一场：没有「你演」的角色，整场由 AI 扮演 —— 验证新路径）')
+    await runOne(
+      `联网 · ${online.model} · 全 AI 扮演`,
+      mkAiOnlySession(online.id, xiao, other),
+      '（旁白：远处更鼓敲了三下。廊下的两人都没动。）',
+    )
   }
 
   if (local) {

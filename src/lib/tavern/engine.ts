@@ -97,8 +97,9 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
     focusChapterId: session.anchorChapterId,
   })
 
+  // 多角色时才追加发言规则；没有「你演」角色时（整场 AI）不再写「用户扮演用户自己的角色」
   const setting = aiNames.length > 1
-    ? `${ctx.text}\n\n${buildMultiCharRule(aiNames)}`
+    ? `${ctx.text}\n\n${buildMultiCharRule(aiNames, { hasUser: userNames.length > 0 })}`
     : ctx.text
 
   // ④ 身份与知识边界

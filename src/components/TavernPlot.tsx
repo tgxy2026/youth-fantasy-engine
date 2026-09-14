@@ -32,6 +32,8 @@ export default function TavernPlot() {
   const [providers, setProviders] = useState<AIProvider[]>([])
   const [setupOpen, setSetupOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(true)
+  /** 左栏情景列表的筛选词（场次多了靠它找，不必滚动） */
+  const [pickQuery, setPickQuery] = useState('')
 
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -198,20 +200,29 @@ export default function TavernPlot() {
   const usedChars = session ? JSON.stringify(session.messages).length + (session.memory?.length ?? 0) : 0
   const budget = session?.params.contextBudget ?? 8000
 
+  /** 左栏情景列表：按筛选词过滤（标题 / 参演角色 / 锚点章名都算命中） */
+  const sessionRows = useMemo(() => {
+    const q = pickQuery.trim().toLowerCase()
+    if (!q) return list
+    return list.filter(s =>
+      `${s.title} ${s.castBrief} ${s.anchorTitle}`.toLowerCase().includes(q))
+  }, [list, pickQuery])
+
+  /** 列表里的日期小字（只到「几月几日」，同年不写年） */
+  const fmtDay = (ts: number) => {
+    const d = new Date(ts)
+    return `${d.getMonth() + 1}/${d.getDate()}`
+  }
+
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      {/* ---------- 顶部工具条 ---------- */}
+      {/* ---------- 顶部工具条：只放「本场」的操作，导航（选/新建）都在左栏 ---------- */}
       <header className="flex flex-wrap items-center gap-2 border-b border-ink-800 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">剧情推演</h1>
-        <select
-          className="bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-[12px] text-ink-100 outline-none focus:border-amber/50 min-w-[14rem]"
-          value={activeId}
-          onChange={e => setActiveId(e.target.value)}
-        >
-          <option value="">— 选择一场推演 —</option>
-          {list.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-        </select>
-        <Button variant="primary" size="md" onClick={() => setSetupOpen(true)}>新建推演</Button>
+        {session && (
+          <span className="max-w-[28rem] truncate text-[12px] text-ink-400" title={session.title}>{session.title}</span>
+        )}
+        <div className="flex-1" />
 
         {session && (
           <>
@@ -234,21 +245,64 @@ export default function TavernPlot() {
         )}
       </header>
 
-      {/* ---------- 主体三栏 ---------- */}
-      {!session ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-[13px] text-ink-300">还没有选择推演</p>
-            <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
-              {list.length === 0
-                ? '先「新建推演」：选一个叙事锚点、分配角色（你演谁 / AI 演谁），就能开演。'
-                : '从上方下拉里选一场继续，或新建一场。'}
-            </p>
+      {/* ---------- 主体：左＝推演情景一览；右＝本场信息 + 对话区 ---------- */}
+      <div className="flex flex-1 min-h-0 gap-3 pt-3">
+        {/* 左栏：推演情景（全部场次一览，点一下就切 —— 不再用下拉菜单挑） */}
+        <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
+          <Button variant="primary" size="md" className="w-full" onClick={() => setSetupOpen(true)}>＋ 新建推演</Button>
+          {list.length > 4 && (
+            <input
+              className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+              placeholder="筛选（标题 / 角色 / 锚点）"
+              value={pickQuery}
+              onChange={e => setPickQuery(e.target.value)}
+            />
+          )}
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+            {sessionRows.map(s => {
+              const active = s.id === activeId
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setActiveId(s.id)}
+                  className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
+                    active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                  }`}
+                >
+                  <div className={`truncate text-[12px] ${active ? 'text-amber' : 'text-ink-200'}`}>{s.title}</div>
+                  <div className="mt-0.5 flex items-center justify-between gap-2">
+                    <span className="truncate text-[10.5px] text-ink-500">
+                      {s.mode === 'immersive' ? '沉浸' : '导演'} · {s.castBrief || '未分配角色'}
+                    </span>
+                    <span className="shrink-0 text-[10.5px] text-ink-600">{fmtDay(s.updatedAt)}</span>
+                  </div>
+                </button>
+              )
+            })}
+            {sessionRows.length === 0 && (
+              <p className="px-1 py-2 text-[11px] leading-relaxed text-ink-500">
+                {list.length === 0 ? '还没有推演 —— 点上面「新建推演」开一场。' : '没有匹配的推演。'}
+              </p>
+            )}
           </div>
-        </div>
-      ) : (
-        <div className="flex flex-1 min-h-0 gap-3 pt-3">
-          {/* 左栏：本场信息 */}
+          <div className="shrink-0 border-t border-ink-800 pt-2 text-[10.5px] text-ink-500">共 {list.length} 场</div>
+        </aside>
+
+        {!session ? (
+          <div className="flex flex-1 items-center justify-center rounded-lg border border-ink-800">
+            <div className="text-center">
+              <p className="text-[13px] text-ink-300">还没有选择推演</p>
+              <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
+                {list.length === 0
+                  ? '先「新建推演」：选一个叙事锚点、分配角色（你演谁 / AI 演谁），就能开演。'
+                  : '从左栏点一场继续，或新建一场。'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+          {/* 本场信息（可收起） */}
           {showInfo && (
             <aside className="w-64 shrink-0 overflow-y-auto rounded-lg border border-ink-800 bg-ink-850/40 p-3 space-y-3">
               <div>
@@ -349,7 +403,9 @@ export default function TavernPlot() {
                 textClass="text-[13px]"
                 minRows={3}
                 maxHeight={200}
-                placeholder="以你的角色身份说一句话、做一个动作…（Ctrl+Enter 发送）"
+                placeholder={casts.user.length
+                  ? '以你的角色身份说一句话、做一个动作…（Ctrl+Enter 发送）'
+                  : '这一场没有你演的角色 —— 可以以旁白或任意角色的身份推进…（Ctrl+Enter 发送）'}
                 value={input}
                 disabled={streaming}
                 onChange={setInput}
@@ -368,8 +424,9 @@ export default function TavernPlot() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       <TavernPlotSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
 

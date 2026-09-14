@@ -153,14 +153,18 @@ export function buildOpeningMessage(
 
 /**
  * 多角色同场的发言规则（方案 §7.3）。
- * 只在自由模式 `charIds.length > 1` 时追加到设定层末尾。
+ * 只在自由模式 `charIds.length > 1` 或剧情模式有多个 AI 角色时追加到设定层末尾。
  * ⚠️ 协议 O1 禁止在**输出**里写角色名前缀，但**输入**侧必须能分清谁在说话，
  * 两者不冲突：这里管的是模型如何组织发言，不改变它的输出格式。
+ *
+ * `hasUser=false` 必须传：剧情模式允许一个「你演」位置都不设（整场交给 AI，2026-09-14 新增能力）。
+ * 那种情况下若还写着「用户扮演用户自己的角色」，模型会去等一个**并不存在**的人开口。
  */
-export function buildMultiCharRule(names: string[]): string {
+export function buildMultiCharRule(names: string[], opts: { hasUser?: boolean } = {}): string {
+  const hasUser = opts.hasUser !== false
   return [
     '【发言规则】',
-    `你是下列角色：${names.join('、')}。用户扮演用户自己的角色。`,
+    `你是下列角色：${names.join('、')}。${hasUser ? '用户扮演用户自己的角色。' : '本场没有你演的角色，全部由你推进。'}`,
     '- 一次只让一个角色说话，不要在同一回合里让多个角色各说一句。',
     '- 轮到谁由语境决定，不要强行轮流。',
     '- 不说话的角色不要替它发言；它就在场，但这一回合没开口。',

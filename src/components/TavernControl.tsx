@@ -23,6 +23,8 @@
  * 这样长短不一的解释不会把输入框顶得高低起伏 —— 输入框永远在同一水平线上。
  * 列宽的纪律：外层两列在 `xl` 断点才分（更窄时保持单列，免得每列挤成 100px 的条），
  * 段内的数值组在 `sm` 先 2 列、`2xl` 才回到 3 列，保证输入框始终有可读宽度。
+ * 两列等高：网格默认 `stretch`，左列用 flex 把「扮演协议」吃满剩余高度（协议正文跟着长），
+ * 否则左列会比右列短一大截。⚠️ 协议段一旦改成 `items-start`，这个等高就没了。
  *
  * 【默认值】全部等于原来的硬编码值（见 settings.ts 的 DEFAULT_TAVERN_SETTINGS），
  * 所以打开这个页面之前与之后，行为完全一致 —— 不存在"升个版本悄悄变了风格"。
@@ -48,15 +50,23 @@ const NUM = `${BOX} w-full`
 const GRID3 = 'grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3'
 const GRID2 = 'grid grid-cols-1 gap-4 sm:grid-cols-2'
 
-/** 分组外壳 */
-function Section({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+/**
+ * 分组外壳。
+ * `className` / `bodyClassName` 是给「需要被拉伸到与对侧等高的那一段」用的（扮演协议）：
+ * 外层网格默认 `align-items: stretch`，两列等高；协议段作为左列最后一个子项吃满剩余高度，
+ * 内容区（pre）再 `flex-1` 跟着长 —— 否则左列会比右列短一大截。
+ */
+function Section({ title, desc, children, className = '', bodyClassName = '' }: {
+  title: string; desc: string; children: React.ReactNode
+  className?: string; bodyClassName?: string
+}) {
   return (
-    <section className="rounded-lg border border-ink-800 bg-ink-850/30">
-      <div className="px-4 py-3 border-b border-ink-800">
+    <section className={`rounded-lg border border-ink-800 bg-ink-850/30 ${className}`}>
+      <div className="shrink-0 px-4 py-3 border-b border-ink-800">
         <h3 className="text-[13.5px] text-amber">{title}</h3>
         <p className="mt-0.5 text-[11.5px] text-ink-500 leading-relaxed">{desc}</p>
       </div>
-      <div className="p-4 space-y-4">{children}</div>
+      <div className={`p-4 space-y-4 ${bodyClassName}`}>{children}</div>
     </section>
   )
 }
@@ -258,11 +268,12 @@ export default function TavernControl() {
         </div>
       </header>
 
-      {/* ==================== 两列：左＝通用与契约；右＝分模式的手感 ==================== */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
+      {/* ==================== 两列：左＝通用与契约；右＝分模式的手感 ====================
+          网格默认 align-items:stretch → 两列等高；左列再靠 flex 把「扮演协议」撑到与右列平齐。 */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
 
         {/* ========== 左列 ========== */}
-        <div className="space-y-4">
+        <div className="space-y-4 xl:flex xl:min-h-0 xl:flex-col">
 
           {/* ---------- 一、通用设置 ---------- */}
           <Section
@@ -322,10 +333,12 @@ export default function TavernControl() {
           <Section
             title="二、扮演协议"
             desc={`两种模式共用的格式契约，内置版本 ${PROTOCOL_VERSION}。注入时钉在提示词的最末尾（它自带的「最后提醒」要紧贴生成点）。`}
+            className="xl:min-h-0 xl:flex xl:flex-1 xl:flex-col"
+            bodyClassName="xl:min-h-0 xl:flex-1 xl:flex xl:flex-col"
           >
             {!protocolEditing ? (
               <>
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex shrink-0 items-center justify-between gap-3">
                   <span className="text-[11.5px] text-ink-500">
                     当前 {s.protocol.length} 字
                     {s.protocol !== DEFAULT_PROTOCOL && <span className="text-amber"> · 已被你改过（与出厂版本不同）</span>}
@@ -340,7 +353,7 @@ export default function TavernControl() {
                     <Button variant="ghost" size="sm" onClick={() => void startEditProtocol()}>编辑协议</Button>
                   </div>
                 </div>
-                <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-3 text-[11.5px] leading-relaxed text-ink-300">
+                <pre className="max-h-80 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-3 text-[11.5px] leading-relaxed text-ink-300 xl:max-h-none xl:min-h-[12rem]">
                   {s.protocol}
                 </pre>
               </>
