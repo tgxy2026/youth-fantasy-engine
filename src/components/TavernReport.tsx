@@ -7,7 +7,7 @@
  *    App 侧会切页签并把该行高亮 —— 这是「报告必须能指回具体条目」这条规矩的最后一环，
  *    否则作者拿着一堆描述也找不到该改哪里。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
@@ -23,10 +23,20 @@ const LEVELS: TavernFinding['level'][] = ['矛盾', '漏洞', '存疑']
 
 const tabName = (id: string) => TABS.find(t => t.id === id)?.name ?? id
 
+/**
+ * 报告名：默认「推演标题 + 报告」。
+ * 同一场推演可以反复结束、生成多份报告，光显示推演标题会分不清是哪一份；
+ * 末尾补「报告」二字既点明它是报告，也让左侧列表一眼能对上号。
+ */
+const reportName = (sessionTitle: string) =>
+  (sessionTitle.endsWith('报告') ? sessionTitle : `${sessionTitle} · 报告`)
+
 export default function TavernReport() {
   const [list, setList] = useState<TavernReportIndexItem[]>([])
   const [activeId, setActiveId] = useState('')
   const [report, setReport] = useState<Report | null>(null)
+  /** 左栏筛选词（报告攒多了一行行找太慢） */
+  const [q, setQ] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -66,6 +76,14 @@ export default function TavernReport() {
 
   const grouped = (r: Report) => LEVELS.map(lv => ({ lv, items: r.findings.filter(f => f.level === lv) }))
 
+  /** 左栏列表：按报告名 / 锚点章名过滤 */
+  const rows = useMemo(() => {
+    const kw = q.trim().toLowerCase()
+    if (!kw) return list
+    return list.filter(it =>
+      `${reportName(it.sessionTitle)} ${it.anchorChapterLabel}`.toLowerCase().includes(kw))
+  }, [list, q])
+
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       <header className="border-b border-ink-800 pb-3">
@@ -86,28 +104,48 @@ export default function TavernReport() {
         </div>
       ) : (
         <div className="flex flex-1 min-h-0 gap-3 pt-3">
-          {/* 左栏：报告列表 */}
-          <aside className="w-72 shrink-0 overflow-y-auto rounded-lg border border-ink-800">
-            {list.map(it => (
-              <button
-                key={it.id}
-                type="button"
-                onClick={() => setActiveId(it.id)}
-                className={`w-full text-left px-3 py-2.5 border-b border-ink-800 transition-colors ${
-                  activeId === it.id ? 'bg-amber/12' : 'hover:bg-ink-800/60'
-                }`}
-              >
-                <div className="text-[12.5px] text-ink-100 truncate">{it.sessionTitle}</div>
-                <div className="mt-0.5 text-[11px] text-ink-500 truncate">{it.anchorChapterLabel || '（无锚点）'}</div>
-                <div className="mt-1 flex items-center gap-2 text-[11px]">
-                  {it.counts['矛盾'] > 0 && <span className="text-red-400">矛盾 {it.counts['矛盾']}</span>}
-                  {it.counts['漏洞'] > 0 && <span className="text-amber">漏洞 {it.counts['漏洞']}</span>}
-                  {it.counts['存疑'] > 0 && <span className="text-ink-400">存疑 {it.counts['存疑']}</span>}
-                  {it.counts['矛盾'] + it.counts['漏洞'] + it.counts['存疑'] === 0 && <span className="text-ink-500">未发现问题</span>}
-                  <span className="ml-auto text-ink-600">{new Date(it.createdAt).toLocaleDateString()}</span>
-                </div>
-              </button>
-            ))}
+          {/* 左栏：报告列表（名称默认「推演标题 + 报告」） */}
+          <aside className="flex w-72 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
+            {list.length > 4 && (
+              <input
+                className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+                placeholder="筛选报告（标题 / 锚点）"
+                value={q}
+                onChange={e => setQ(e.target.value)}
+              />
+            )}
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+              {rows.map(it => {
+                const active = activeId === it.id
+                const total = it.counts['矛盾'] + it.counts['漏洞'] + it.counts['存疑']
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    onClick={() => setActiveId(it.id)}
+                    className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
+                      active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                    }`}
+                  >
+                    <div className={`truncate text-[12px] ${active ? 'text-amber' : 'text-ink-100'}`}>
+                      {reportName(it.sessionTitle)}
+                    </div>
+                    <div className="mt-0.5 truncate text-[10.5px] text-ink-500">{it.anchorChapterLabel || '（无锚点）'}</div>
+                    <div className="mt-0.5 flex items-center gap-2 text-[10.5px]">
+                      {it.counts['矛盾'] > 0 && <span className="text-red-400">矛盾 {it.counts['矛盾']}</span>}
+                      {it.counts['漏洞'] > 0 && <span className="text-amber">漏洞 {it.counts['漏洞']}</span>}
+                      {it.counts['存疑'] > 0 && <span className="text-ink-400">存疑 {it.counts['存疑']}</span>}
+                      {total === 0 && <span className="text-ink-500">未发现问题</span>}
+                      <span className="ml-auto shrink-0 text-ink-600">{new Date(it.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </button>
+                )
+              })}
+              {rows.length === 0 && (
+                <p className="px-1 py-2 text-[11px] leading-relaxed text-ink-500">没有匹配的报告。</p>
+              )}
+            </div>
+            <div className="shrink-0 border-t border-ink-800 pt-2 text-[10.5px] text-ink-500">共 {list.length} 份</div>
           </aside>
 
           {/* 右栏：详情 */}
@@ -118,7 +156,7 @@ export default function TavernReport() {
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="text-[15px] font-semibold text-ink-50 truncate">{report.sessionTitle}</h2>
+                    <h2 className="text-[15px] font-semibold text-ink-50 truncate">{reportName(report.sessionTitle)}</h2>
                     <div className="mt-0.5 text-[11px] text-ink-500">
                       {report.anchorChapterLabel || '（无锚点）'} · {report.mode === 'immersive' ? '沉浸推演' : '导演推演'} ·
                       {' '}{new Date(report.createdAt).toLocaleString()}

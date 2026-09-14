@@ -18,6 +18,8 @@ import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type AIProvider } from '../src/lib/ai'
 import { runFreeTurn, buildFreeSystem } from '../src/lib/tavern/engine'
+import { buildOpeningMessage } from '../src/lib/tavern/prompt'
+import { uid } from '../src/lib/id'
 import { summarizeMemory } from '../src/lib/tavern/summarize'
 import { memoryChars, memoryToText, messagesAfterWatermark, nextWatermark, MEMORY_SECTIONS } from '../src/lib/tavern/memory'
 import type { FreeCharacter, FreeSession } from '../src/lib/tavern/types'
@@ -106,6 +108,26 @@ async function main() {
   await saveActiveId(pick.provider.id)
 
   const char = await mkChar()
+
+  // ---------- 阶段 0：开场设定（2026-09-14 新增：新建对话支持地点/时间/场景/第一句话） ----------
+  // 风险点：开场是**第一条 user 消息**，随后用户再发一句就是**连续两条 user**。
+  // 这里实测模型能不能吃下这种形态、并真的把场景用起来（而不是把开场当成「用户说过的话」回一句）。
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 0 · 开场设定 → 第一条消息（本轮新增能力）')
+  console.log('='.repeat(70))
+  const scene = { place: '老城区便利店', time: '凌晨两点', present: ['苏念'], description: '外面在下雨，店里只有收银台的灯亮着。' }
+  const opening = buildOpeningMessage(scene, '（我把伞收在门口，走到柜台前。）')
+  console.log('渲染出的开场消息：\n' + opening)
+  let s0 = await store.createFreeSession([char.id], '开场设定验证', { providerId: pick.provider.id }, {})
+  s0 = await store.saveFreeSession({
+    ...s0, scene,
+    messages: [{ id: uid(), role: 'user', content: opening, at: Date.now() }],
+  })
+  const { system: sys0 } = await buildFreeSystem(s0, [char])
+  console.log(`[离线断言] system ${sys0.length} 字 · 含角色卡 ${sys0.includes('外冷内热') ? '✓' : '✗'} · 含协议 ${sys0.includes('最后提醒') ? '✓' : '✗'}`)
+  s0 = await say(s0, char, '（我把伞收在门口，走到柜台前。）')
+  const sceneUsed = /雨|伞|灯|柜台|两点/.test(s0.messages[s0.messages.length - 1]?.content ?? '')
+  console.log(`[实弹观察] 回复里出现了场景词（雨/伞/灯/柜台/两点）：${sceneUsed ? '✓ 场景被用上了' : '⚠️ 未见场景词'}`)
 
   // ---------- 阶段 1：会话 A 聊出可被记住的事实 ----------
   console.log('\n' + '='.repeat(70))

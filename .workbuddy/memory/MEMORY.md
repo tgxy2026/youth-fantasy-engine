@@ -35,36 +35,35 @@
 - 🔴 `backups` 本地专属（云端载荷剔除）→ `makeCloudStoreWrapper` 必须把其读写短路到 local，否则备份刷新即丢。**「死配置」结论必须先验消费方再动手**（`seedFromLocal` 那次 backups 读取差点被误删）。
 
 ## UI
-- 8 套主题 `<html data-theme>`；浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，但**分类色盘不要主题化**。
+- 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，但**分类色盘不要主题化**。
 - 🔴 SVG 用 CSS 变量**必须走 `style`**：`fill="rgb(var(--x))"` 无效且**静默回退黑色**。
 - 设置项排版：标题 →（可选）输入区 → **说明放下面**；两列布局外层 `xl` 才分列、列内 `sm` 2 列 / `2xl` 3 列。
 - 复制统一 `copyText()`；#031 备份须**导出外部文件**（`markExported()`）。
 
 ## AI 层
-- 🔴 解析统一 `src/lib/aiParse.ts`（`parseObjectArray`/`parsePlainObject`/`hasSubstance`）；**禁裸 `JSON.parse`**。
-- 🔴 温度不手填：结构化 JSON 传 `chat(..., { json: true })` → 0.3；创意类不传 → 0.85。`CallOpts.temperature` 必填。
+- 🔴 解析统一 `src/lib/aiParse.ts`；**禁裸 `JSON.parse`**。
+- 🔴 温度不手填：结构化 JSON 传 `chat(..., { json: true })` → 0.3；创意类不传 → 0.85。
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering，**顺序不可换**，boot 与 openProject 共用）；`getDB` upgrade 已拆 9 个函数，**upgrade 处是「何时跑哪段」的唯一判断点**。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce 定界）；**绝不清洗正文本身**（`aiProofread` 靠 `indexOf` 定位分块）。
 
 ## 服务器
 - 服务器 `154.8.178.240`；SSH `yfe_test_server`（ubuntu + 免密 sudo）；站点 `/var/www/yfe`；详见 `docs/服务器访问记录.md`。
-- 部署：web 构建 → tar → scp `/tmp` 中转 → 备份 → 解包 → chown www-data → `test -w` 验收。
+- 部署：web 构建 → tar → scp /tmp → 备份 → 解包 → chown www-data → 验收。
 - 🔴 Nginx SPA 回退：**任意不存在路径都返回 200 + index.html** → 绝不能用 200 判断资源是否上线。
 
 ## 工程质量
 - `npm run verify`（typecheck + lint + test）；runner **每入口单开子进程**（roundtrip/adversarial 末尾 `process.exit()`）。
 - ESLint 只开 rules-of-hooks(error) / exhaustive-deps(warn) / no-empty(warn)，`no-explicit-any` 关闭；现状 11 warnings / 0 errors。🔴 那 11 条**不能盲改**：缺失依赖是未包 `useCallback` 的箭头函数，直接补会让 useMemo 每次重算 → **先包 useCallback 再加依赖**。
-- 🔴 同步 lock 用 `npm install --package-lock-only --offline`（2 秒）。
 - 🔴 **界面实机验证**（真浏览器驱动 dev server、量尺寸、出截图）走 skill **`novel-studio-ui-livecheck`**（5 条坑 + 模板）；模型链路用 `tests/live-tavern.ts`。
 - 单一口径入口：`aiParse`／`constants`(localStorage 键与防抖)／`promptGuard`／`zLayer`(Z 轴)／`useSvgPanZoom`／`LoadingState`／`AutoTextarea`(多行输入框唯一出口)。
 
 ## 可复用技法
 - 🔴 **改默认值救不回老数据** → 留「旧默认文本锚点」，读取时比对，正好等于旧值才升级，用户改过的一律不动。
 - 🔴 给人看的默认文本：**一段话就是一整行**，别硬折行 + 行首缩进。
-- 🔴 搬迁大块数据须「可证明零改动」：逐行 splice + 边界断言 + sha256 终审；功能测试串真数据、留注入点（如 `chatFn`）。
+- 🔴 搬迁大块数据须「可证明零改动」：逐行 splice + 边界断言 + sha256 终审。
 
 ## 酒馆模式
-- 来源：`酒馆模式_完整落地方案.md`（规格书，**冲突时以方案为准**）+ `本地模型角色扮演完全手册.html`。角色卡保持**四章**。
+- 来源：`酒馆模式_完整落地方案.md`（规格书，**冲突时以方案为准**）+ `本地模型角色扮演完全手册.html`。角色卡四章。
 - 侧栏顺序＝`TABS.filter` 保序：**控制面板 → 剧情推演 → 推演报告 → 自由对话 → 角色卡片**（控制面板是先决条件）。
 - 🔴 数据归属：剧情 → 项目级 settingsKV；自由 → **全局 meta**（删项目不跟着没）。索引与分条须成对读写（`tavern.sessionIndex` ↔ `tavern.session.<id>`）。`tavernReports` 独立表（DB v10），别漏 `deleteProject` 与 `applyBundleToProject`。
 - 🎛️ 控制面板：**四段两列**（左：通用设置 + 扮演协议；右：剧情推演控制 + 自由对话控制）。两列靠网格默认 `stretch` **等高**，左列用 flex 把协议窗吃满剩余高度 —— ⚠️ 别改回 `xl:items-start`（一改就不等高）。设置存全局 meta `tavern.settings`，**一律走 `getTavernSettings()`**；优先级链 会话 → 角色 → **控制面板** → `TAVERN_DEFAULTS`。协议可编辑（进编辑前**必须弹窗警示**；清空回退内置常量）。**再加参数前先搜 tavern 目录里写死的数**；settings 若引到反向依赖 engine 的模块会成环（常量上移 `types.ts`）。
@@ -74,12 +73,16 @@
 - 🔴🔴 防剧透两层：① 段落级 `viewMode:"character-view"` 排除 10 个作者侧页签；② 字段级 `AUTHOR_SIDE_FIELDS`（约 30 个）隐藏未来向列。**新增未来向字段必须同步登记②**。改前后跑 `tavernContext` + `tavernFlow`。
 - 🔴 提示词与解析器对齐四条：解析器按**提示词写法**写；标题判定**整行匹配**（禁 `includes`）；序号裸化与正则一致；校验查**全部**字段。
 - `think:false` 是 **Ollama 专有**（openai 兼容端点不认 → 选非推理模型或本地 27B）；报告 finding 指不回条目即降级「存疑」；定位走 `yfe:navigate`。
-- 实弹 `tests/build-test.mjs live-tavern|live-free`（手动、不进回归）。总结**必须带角色背景**。六栏差异是硬约束，关键事实/未爆的雷写空时**沿用旧值**。
+- 实弹 `tests/build-test.mjs live-tavern|live-free`（手动、不进回归）。总结**必须带角色背景**；关键事实/未爆的雷写空时**沿用旧值**。
 - 🔴 待办：只剩「角色头像上传」未做（字段已留）。
+
+- 🔴 自由对话页：**无角色列表**，左栏＝全局会话列表（跨角色）；记忆/日常/总结挂**会话第一个角色**；`FreeSession.scene?` 可选，渲染成第一条 user 消息。
+- 🔴 推演报告名＝`sessionTitle + ' · 报告'`。角色卡片页用「固定头部 + 下方滚动区」，别用 sticky 半透明条。
+- 🔴 控制面板协议窗高由 JS 按「右列高 − 通用设置高 − 间距」同步 —— 纯 CSS 不行：滚动块的**内容高**参与网格 auto 行尺寸，正文一长就把左列撑得比右列高。别把它优化掉。
 
 ## 环境（Windows + Git Bash）
 - git 全路径 `…/PortableGit/versions/1.2.0/cmd/git.exe`；npm 走 `"<托管node>/node.exe" "<…>/npm/bin/npm-cli.js"`，路径必须 `C:/` 正斜杠。
 - ⚠️ **Edit 会「假成功」**（dev server 运行时更甚）：**每笔改完立即 grep 复查**；多处替换改用脚本文件；大改直接 Write 再复查。
 - ⚠️ 空串陷阱：`to` 为空时 `includes('')` 恒真 → 删除类改**按行号**处理。CRLF 锚点须自适应行尾。`node -e` 转义易崩 → 改用脚本文件。
-- 审计纪律：「数据丢失」级结论**必须回源码验尸**，先对照 Bug 清单。🔴 实弹测试会读到真实 apiKey（先告知老大，事后建议轮换；绝不落盘/打印/提交）。
-- `find -o` 报错 → 改用 `wc -l` / Glob。JSX：`{/* */}` 不能放属性位置，`//` 可以。
+- 审计纪律：「数据丢失」级结论**必须回源码验尸**，先对照 Bug 清单。🔴 实弹会读到真实 apiKey（先告知老大；绝不落盘/提交）。
+- JSX：`{/* */}` 不能放属性位置，`//` 可以。

@@ -229,15 +229,18 @@ export default function TavernCard() {
   }
 
   return (
-    <div className="page-enter">
-      <header className="mb-5 sticky top-0 z-10 bg-ink-900/95 backdrop-blur py-3 -mt-3">
+    /* 固定头部 + 下方独立滚动区：滚动只发生在标题条**下面**，
+       内容不会再滑到条子后面被半透明条盖住（原先 sticky + bg-ink-900/95 的观感问题）。 */
+    <div className="page-enter flex h-full flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-ink-800 pb-3">
         <h1 className="text-xl font-bold text-ink-50">角色卡片</h1>
         <p className="text-[12px] text-ink-400 mt-1">
           自由模式的角色卡片：四章模板（世界 / 人物档案 / 行为规范 / 示例对话），与小说项目相互独立。
         </p>
       </header>
 
-      {loading ? <LoadingState /> : (
+      {loading ? <div className="min-h-0 flex-1 overflow-y-auto pt-3"><LoadingState /></div> : (
+        <div className="min-h-0 flex-1 overflow-y-auto pt-3">
         <div className="flex gap-4 min-h-0">
           {/* 左：角色列表 */}
           <aside className="w-56 shrink-0 space-y-2">
@@ -443,6 +446,7 @@ export default function TavernCard() {
               </div>
             )}
           </div>
+        </div>
         </div>
       )}
 

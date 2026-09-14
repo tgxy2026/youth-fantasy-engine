@@ -29,7 +29,7 @@
  * 【默认值】全部等于原来的硬编码值（见 settings.ts 的 DEFAULT_TAVERN_SETTINGS），
  * 所以打开这个页面之前与之后，行为完全一致 —— 不存在"升个版本悄悄变了风格"。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
@@ -49,6 +49,10 @@ const NUM = `${BOX} w-full`
 /** 段内数值组：窄屏 1 列 → sm 2 列 → 2xl 3 列（两列布局下，只有超宽屏才装得下 3 列） */
 const GRID3 = 'grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3'
 const GRID2 = 'grid grid-cols-1 gap-4 sm:grid-cols-2'
+/** 两列之间的间距（= 外层 grid 的 gap-4），算协议窗高度时要扣掉 */
+const COL_GAP = 16
+/** 协议窗的最低高度：低于它就没法读了（窄窗口下宁可让左列略高一点） */
+const PROTO_MIN_HEIGHT = 240
 
 /**
  * 分组外壳。
@@ -163,6 +167,39 @@ export default function TavernControl() {
   const [saving, setSaving] = useState(false)
   const [protocolEditing, setProtocolEditing] = useState(false)
 
+  /**
+   * 协议窗高度同步。
+   *
+   * 【为什么必须用 JS 量，而不是纯 CSS】
+   * 协议正文是个「可滚动块」，它的**内容高度**会参与外层网格 auto 行的尺寸计算：
+   * 一旦正文比右列还高，行高就被左列撑大 → 左列反而比右列长（这正是改前的问题）。
+   * 把高度显式写成「右列高 − 通用设置高 − 间距」，行高就只由右列决定，
+   * 两侧底部严格平齐；正文超出的部分交给它自己的滚动条。
+   */
+  const rightColRef = useRef<HTMLDivElement>(null)
+  const commonRef = useRef<HTMLDivElement>(null)
+  const [protoH, setProtoH] = useState<number | null>(null)
+  const layoutReady = s !== null
+
+  useEffect(() => {
+    if (!layoutReady) return
+    // 只在两列布局下同步（与 Tailwind 的 xl 断点一致）；单列时让它自然高
+    const mq = window.matchMedia('(min-width: 1280px)')
+    const sync = () => {
+      if (!mq.matches) { setProtoH(null); return }
+      const r = rightColRef.current?.getBoundingClientRect().height ?? 0
+      const c = commonRef.current?.getBoundingClientRect().height ?? 0
+      if (!r || !c) { setProtoH(null); return }
+      setProtoH(Math.max(PROTO_MIN_HEIGHT, Math.round(r - c - COL_GAP)))
+    }
+    const ro = new ResizeObserver(sync)
+    if (rightColRef.current) ro.observe(rightColRef.current)
+    if (commonRef.current) ro.observe(commonRef.current)
+    mq.addEventListener('change', sync)
+    sync()
+    return () => { ro.disconnect(); mq.removeEventListener('change', sync) }
+  }, [layoutReady])
+
   useEffect(() => {
     void (async () => {
       try {
@@ -269,13 +306,14 @@ export default function TavernControl() {
       </header>
 
       {/* ==================== 两列：左＝通用与契约；右＝分模式的手感 ====================
-          网格默认 align-items:stretch → 两列等高；左列再靠 flex 把「扮演协议」撑到与右列平齐。 */}
+          网格默认 align-items:stretch → 两列等高；左列的协议窗高度由 JS 同步（见 PROTO 注释）。 */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
 
         {/* ========== 左列 ========== */}
         <div className="space-y-4 xl:flex xl:min-h-0 xl:flex-col">
 
-          {/* ---------- 一、通用设置 ---------- */}
+          {/* ---------- 一、通用设置（量它的高度，供协议窗算高度） ---------- */}
+          <div ref={commonRef}>
           <Section
             title="一、通用设置"
             desc="两种模式都生效。模型与上下文这些「跟谁说、说多长」的事在这里定；具体的采样手感与提示词在右边两段。"
@@ -328,12 +366,17 @@ export default function TavernControl() {
               onChange={v => setCommon('extraPrompt', v)}
             />
           </Section>
+          </div>
 
-          {/* ---------- 二、扮演协议 ---------- */}
+          {/* ---------- 二、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ---------- */}
+          <div
+            className="xl:min-h-0 xl:flex xl:flex-1 xl:flex-col"
+            style={protoH === null ? undefined : { height: protoH }}
+          >
           <Section
             title="二、扮演协议"
             desc={`两种模式共用的格式契约，内置版本 ${PROTOCOL_VERSION}。注入时钉在提示词的最末尾（它自带的「最后提醒」要紧贴生成点）。`}
-            className="xl:min-h-0 xl:flex xl:flex-1 xl:flex-col"
+            className="xl:h-full xl:min-h-0 xl:flex xl:flex-col"
             bodyClassName="xl:min-h-0 xl:flex-1 xl:flex xl:flex-col"
           >
             {!protocolEditing ? (
@@ -379,10 +422,11 @@ export default function TavernControl() {
               </>
             )}
           </Section>
+          </div>
         </div>
 
-        {/* ========== 右列 ========== */}
-        <div className="space-y-4">
+        {/* ========== 右列（它的高度是协议窗高度的基准） ========== */}
+        <div ref={rightColRef} className="space-y-4">
 
           {/* ---------- 三、剧情推演控制 ---------- */}
           <Section

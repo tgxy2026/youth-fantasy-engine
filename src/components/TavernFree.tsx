@@ -4,16 +4,19 @@
  * 定位：**陪伴**。自建角色卡的长期对话 —— 记得住事、有时间流逝感、换场景可开新会话
  * （记忆按角色共享，不随会话走）。
  *
+ * 【2026-09-14 第三轮改版：页面版式对齐「剧情推演」】
+ *   · 页面上的**角色列表撤掉了** —— 选角色改由「＋ 新建对话」弹窗承担（位置槽位 + 搜索选角），
+ *     左栏腾给**会话列表**，一屏能看到所有对话、点一下就切，不再挂在某个角色下面；
+ *   · 因此会话列表是**全局的**（跨角色）：每条副行标出在场角色，否则分不清这是和谁聊的；
+ *   · 「记忆 / 日常」依然是**角色级**的，所以打开会话时取**该会话第一个角色**作为主角色
+ *     （`primary`）来读记忆、跑总结、推进日常 —— 多角色会话下这是唯一自洽的口径。
+ *
  * 【无服务端带来的三个 UI 义务（方案 §11 明确要求，不能吞掉）】
  *   1. 总结「不即时」—— 只能回复后判阈值、或下次打开补算。界面必须显示
  *      「记忆更新于 X」，让作者知道记忆的时效边界。
  *   2. 会话超长后早期原文会从上下文消失 —— 原文仍在记录里可翻回，
  *      但预算条要显示占用，别让作者以为模型还记得。
- *   3. 记忆是**角色级**的：换会话不会重来，所以新建会话时要说清这一点。
- *
- * 阶段：P2 范围（单角色对话 + 六栏记忆 + 总结触发）。
- * 多角色同场与发言调度（§7.3）、日常状态时间差推进（§7.4）、角色主动留言（§7.5）
- * 属 P3 —— 引擎层已就绪，界面留待 P3 接。
+ *   3. 记忆是**角色级**的：换会话不会重来，所以新建对话时要写清这一点。
  *
  * 遵守项目约定：弹窗用共享 Modal，按钮用 Button，禁 window.confirm（用 confirmDialog），
  * 提示用 showToast。
@@ -22,14 +25,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
-import { Modal } from './Modal'
 import { LoadingState } from './LoadingState'
+import TavernFreeSetup, { type FreeDraft } from './TavernFreeSetup'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
 import { runFreeTurn } from '../lib/tavern/engine'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
 import { summarizeMemory } from '../lib/tavern/summarize'
+import { buildOpeningMessage } from '../lib/tavern/prompt'
+import { uid } from '../lib/id'
 import {
   memoryChars, messagesAfterWatermark, nextWatermark, acquireSummaryLock, releaseSummaryLock,
   shouldRunAutoSummary, MEMORY_SECTIONS, isMemoryEmpty,
@@ -52,8 +57,9 @@ function ago(ts: number): string {
 
 export default function TavernFree() {
   // ---------- 数据 ----------
+  /** 角色卡索引：只用来显示名字（页面不再用它做选择） */
   const [chars, setChars] = useState<TavernCharIndexItem[]>([])
-  const [charId, setCharId] = useState('')
+  /** 当前会话的**主角色**（会话 charIds[0]）：记忆 / 日常 / 总结都挂在它身上 */
   const [charCard, setCharCard] = useState<FreeCharacter | null>(null)
   const [sessions, setSessions] = useState<FreeSessionIndexItem[]>([])
   const [session, setSession] = useState<FreeSession | null>(null)
@@ -62,6 +68,9 @@ export default function TavernFree() {
 
   // ---------- UI ----------
   const [loading, setLoading] = useState(true)
+  const [setupOpen, setSetupOpen] = useState(false)
+  /** 左栏会话筛选词 */
+  const [q, setQ] = useState('')
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [streamText, setStreamText] = useState('')
@@ -73,9 +82,6 @@ export default function TavernFree() {
   const [showDaily, setShowDaily] = useState(false)
   /** 很久没来时她留着的一句话（§7.5），展示后清除 */
   const [greeting, setGreeting] = useState('')
-  /** 新建会话：多角色同场（§7.3），v1 上限 3 人 */
-  const [pickOpen, setPickOpen] = useState(false)
-  const [picked, setPicked] = useState<string[]>([])
   /** 本会话在场角色的完整卡（多角色渲染需要） */
   const [castCards, setCastCards] = useState<FreeCharacter[]>([])
   /** 手动指定下一位接话的角色（空 = 按轮转） */
@@ -95,6 +101,16 @@ export default function TavernFree() {
     [tavernSettings],
   )
 
+  const nameOf = useCallback((id: string) => chars.find(c => c.id === id)?.name ?? '', [chars])
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      setSessions(await store.listFreeSessions())
+    } catch {
+      showToast('读取会话列表失败', 'error')
+    }
+  }, [])
+
   // ---------- 加载 ----------
   useEffect(() => {
     void (async () => {
@@ -107,7 +123,7 @@ export default function TavernFree() {
         setChars(cs)
         setTavernSettings(st)
         setSummaryProviderId(st.free.summaryProviderId)
-        if (cs.length > 0) setCharId(prev => prev || cs[0].id)
+        setSessions(await store.listFreeSessions())
       } catch (e) {
         showToast(`读取失败：${e instanceof Error ? e.message : String(e)}`, 'error')
       } finally {
@@ -148,79 +164,72 @@ export default function TavernFree() {
     }
   }, [summaryProviderId, lim])
 
-  // 选中的角色 → 读完整卡 + 该角色的会话 + 它的记忆
-  const loadForChar = useCallback(async (id: string) => {
-    if (!id) return
-    try {
-      const [card, all, mem, day] = await Promise.all([
-        store.getFreeChar(id),
-        store.listFreeSessions(),
-        store.getMemory(id).catch(() => null),
-        store.getDaily(id).catch(() => null),
-      ])
-      setCharCard(card)
-      setSessions(all.filter(s => s.charIds.includes(id)))
-      setMemory(mem)
-      setDaily(day)
-      // 打开就补算「这几天的生活」（方案 §4.6 ② 的同一思路：无服务端只能靠打开时补）
-      if (card) void advanceIfNeeded(card, day)
-    } catch (e) {
-      showToast(`读取角色失败：${e instanceof Error ? e.message : String(e)}`, 'error')
-    }
-  }, [advanceIfNeeded])
-
-  useEffect(() => {
-    void loadForChar(charId)
-    setSession(null)
-    setStreamText('')
-  }, [charId, loadForChar, advanceIfNeeded])
-
-  const openSession = useCallback(async (id: string) => {
-    const s = await store.getFreeSession(id)
-    setSession(s)
-    setStreamText('')
-    if (!s) return
-    // 在场角色的完整卡（多角色渲染与发言调度要用）
+  /**
+   * 载入当前会话的上下文：在场角色卡 + 主角色（记忆 / 日常）+ 她留的话。
+   * 主角色取 `charIds[0]` —— 记忆是角色级的，多角色会话只能认一个口径。
+   */
+  const loadSessionContext = useCallback(async (s: FreeSession) => {
     try {
       const cards = (await Promise.all(s.charIds.map(cid => store.getFreeChar(cid)))).filter((c): c is FreeCharacter => !!c)
       setCastCards(cards)
+      const primary = cards[0] ?? null
+      setCharCard(primary)
+      if (primary) {
+        const [mem, day] = await Promise.all([
+          store.getMemory(primary.id).catch(() => null),
+          store.getDaily(primary.id).catch(() => null),
+        ])
+        setMemory(mem)
+        setDaily(day)
+        // 打开就补算「这几天的生活」（方案 §4.6 ② 的同一思路：无服务端只能靠打开时补）
+        void advanceIfNeeded(primary, day)
+      } else {
+        setMemory(null)
+        setDaily(null)
+      }
       // 她留着的话：展示后即清除，不留着反复弹
       for (const c of cards) {
         const g = await store.takeGreeting(c.id)
         if (g) { setGreeting(g); break }
       }
-    } catch { setCastCards([]) }
-    // 打开即补算（方案 §4.6 ②：下次打开应用时扫描水位线补算 —— 这里在打开会话时做）
-    void autoSummarize(s)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [charCard])
+    } catch {
+      setCastCards([])
+    }
+  }, [advanceIfNeeded])
 
-  const createSession = useCallback(async (charIds?: string[]) => {
-    if (!charCard) return
-    // 参演角色与默认标题都由「本次最终选中的角色」推出（规则锁在 planFreeSessionCast 里）
-    const { charIds: ids, title } = store.planFreeSessionCast(
-      charIds ?? [],
-      charCard.id,
-      id => chars.find(c => c.id === id)?.name,
-    )
-    // 模型不再绑定到会话：留空 → 引擎按「控制面板默认模型 → 全局活动模型」解析（不再需要本页的选择器）
+  const openSession = useCallback(async (id: string) => {
+    const s = await store.getFreeSession(id)
+    setSession(s)
+    setStreamText('')
+    setSpeakNext('')
+    if (!s) return
+    await loadSessionContext(s)
+  }, [loadSessionContext])
+
+  // ---------- 新建对话（版式对齐新建推演） ----------
+  const createFromDraft = useCallback(async (d: FreeDraft) => {
+    if (d.charIds.length === 0) return
     try {
-      const s = await store.createFreeSession(
-        ids,
-        title,
-        { providerId: '' },
-        {},
-      )
-      setSession(s)
-      setCastCards((await Promise.all(ids.map(id => store.getFreeChar(id)))).filter((c): c is FreeCharacter => !!c))
-      await loadForChar(charCard.id)
-      showToast(ids.length > 1
+      // 默认标题沿用 store 里的规则（「和X的对话」/「与X、Y的对话」），作者填了就以作者为准
+      const { title } = store.planFreeSessionCast(d.charIds, d.charIds[0], nameOf)
+      const opening = buildOpeningMessage(d.scene, d.firstLine)
+      const created = await store.createFreeSession(d.charIds, d.title || title, { providerId: '' }, {})
+      // 开场设定与第一条消息一起落库（scene 是可选的，旧会话没有这个字段也读得动）
+      const withOpening: FreeSession = opening
+        ? { ...created, scene: d.scene, messages: [{ id: uid(), role: 'user', content: opening, at: Date.now() }] }
+        : { ...created, scene: d.scene }
+      await store.saveFreeSession(withOpening)
+      setSetupOpen(false)
+      await refreshSessions()
+      setSession(withOpening)
+      await loadSessionContext(withOpening)
+      showToast(d.charIds.length > 1
         ? '已新建多角色会话（发言顺序由语境决定，也可点顶部头像指定下一位）'
-        : '已新建会话（记忆按角色共享，换会话不会重来）')
+        : '已新建对话（记忆按角色共享，换会话不会重来）')
     } catch (e) {
       showToast(`新建失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
-  }, [charCard, loadForChar, chars])
+  }, [nameOf, refreshSessions, loadSessionContext])
 
   // ---------- 记忆总结 ----------
   /**
@@ -332,7 +341,7 @@ export default function TavernFree() {
       const saved = await store.saveFreeSession(res.session)
       setSession(saved)
       setStreamText('')
-      await loadForChar(charCard.id)
+      await refreshSessions()
       if (!res.cancelled) void autoSummarize(saved)
       if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
       // 说完这句就把她说的话撤掉：那句话是「很久没来」时才该有的
@@ -348,7 +357,7 @@ export default function TavernFree() {
       setPhase('')
       abortRef.current = null
     }
-  }, [input, session, charCard, streaming, loadForChar, autoSummarize, castCards, speakNext])
+  }, [input, session, charCard, streaming, refreshSessions, autoSummarize, castCards, speakNext])
 
   const stop = () => { abortRef.current?.abort() }
 
@@ -363,7 +372,11 @@ export default function TavernFree() {
     if (!okGo) return
     await store.deleteFreeSession(session.id)
     setSession(null)
-    if (charCard) await loadForChar(charCard.id)
+    setCastCards([])
+    setCharCard(null)
+    setMemory(null)
+    setDaily(null)
+    await refreshSessions()
     showToast('已删除会话')
   }
 
@@ -380,108 +393,115 @@ export default function TavernFree() {
 
   const memChars = memory ? memoryChars(memory) : 0
 
+  /** 左栏列表：按标题 / 在场角色名过滤 */
+  const rows = useMemo(() => {
+    const kw = q.trim().toLowerCase()
+    if (!kw) return sessions
+    return sessions.filter(s =>
+      `${s.title} ${s.charIds.map(nameOf).join(' ')}`.toLowerCase().includes(kw))
+  }, [sessions, q, nameOf])
+
   // ---------- 渲染 ----------
   if (loading) return <div className="page-enter"><LoadingState /></div>
 
   return (
-    <div className="page-enter flex flex-col h-full">
-      <header className="mb-3 shrink-0">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-ink-50">自由对话</h1>
-            <p className="text-[12px] text-ink-400 mt-1">
-              与自建角色的长期对话：记得住事、有时间流逝感、换场景可开新会话（记忆按角色共享）。
-            </p>
-          </div>
-        </div>
-
+    <div className="page-enter flex h-full flex-col overflow-hidden">
+      {/* 顶部：只放「本场」的操作，导航（选/新建）都在左栏 */}
+      <header className="flex flex-wrap items-center gap-2 border-b border-ink-800 pb-3">
+        <h1 className="text-lg font-bold text-ink-50 mr-1">自由对话</h1>
+        {session && <span className="max-w-[28rem] truncate text-[12px] text-ink-400" title={session.title}>{session.title}</span>}
+        <div className="flex-1" />
+        {session && (
+          <>
+            {!!daily?.log?.length && (
+              <Button variant="ghost" size="md" onClick={() => setShowDaily(v => !v)}>
+                {showDaily ? '收起这几天' : '她最近几天'}
+              </Button>
+            )}
+            <Button variant="ghost" size="md" onClick={() => setShowMemory(v => !v)}>
+              {showMemory ? '隐藏记忆' : '查看记忆'}
+            </Button>
+            <Button variant="danger" size="md" onClick={() => void removeSession()}>删除对话</Button>
+          </>
+        )}
       </header>
 
-      {chars.length === 0 ? (
-        <div className="rounded-lg border border-ink-700 bg-ink-850/60 px-6 py-12 text-center">
-          <p className="text-[13px] text-ink-300">还没有角色可聊</p>
-          <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
-            先去「角色卡片」建一张卡 —— 填好第 4 章「示例对话」，她会立刻像那个人。
-            <br />
-            （从小说角色一键导入属 P3，还没开放）
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-1 min-h-0 gap-3">
-          {/* 左栏 */}
-          <aside className="w-52 shrink-0 flex flex-col gap-3 min-h-0">
-            <div>
-              <div className="text-[11px] text-ink-500 mb-1">角色</div>
-              <ul className="space-y-1">
-                {chars.map(c => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => setCharId(c.id)}
-                      className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left ${
-                        charId === c.id ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800/60'
-                      }`}
-                    >
-                      <span className="w-6 h-6 shrink-0 rounded-full bg-ink-700 text-ink-200 text-[11px] flex items-center justify-center">
-                        {c.name.trim().slice(0, 1) || '?'}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] text-ink-500">会话</span>
+      <div className="flex flex-1 min-h-0 gap-3 pt-3">
+        {/* 左栏：会话列表（全局，跨角色 —— 页面不再有角色列表） */}
+        <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
+          <Button
+            variant="primary" size="md" className="w-full"
+            onClick={() => {
+              if (chars.length === 0) { showToast('还没有角色卡 —— 先去「角色卡片」建一张', 'info'); return }
+              setSetupOpen(true)
+            }}
+          >
+            ＋ 新建对话
+          </Button>
+          {sessions.length > 4 && (
+            <input
+              className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+              placeholder="筛选（标题 / 角色）"
+              value={q}
+              onChange={e => setQ(e.target.value)}
+            />
+          )}
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+            {rows.map(s => {
+              const active = session?.id === s.id
+              const names = s.charIds.map(nameOf).filter(Boolean).join('、') || '（角色已删除）'
+              return (
                 <button
+                  key={s.id}
                   type="button"
-                  className="text-[11px] text-amber hover:underline"
-                  onClick={() => { setPicked([charId]); setPickOpen(true) }}
+                  onClick={() => void openSession(s.id)}
+                  className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
+                    active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                  }`}
                 >
-                  新建
+                  <div className={`truncate text-[12px] ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>
+                  <div className="mt-0.5 flex items-center justify-between gap-2">
+                    <span className="truncate text-[10.5px] text-ink-500">{names}</span>
+                    <span className="shrink-0 text-[10.5px] text-ink-600">{ago(s.lastActiveAt)}</span>
+                  </div>
                 </button>
-              </div>
-              {sessions.length === 0 ? (
-                <p className="text-[11px] text-ink-600 leading-relaxed px-1">还没有会话，点「新建」开一场。</p>
-              ) : (
-                <ul className="space-y-1">
-                  {sessions.map(s => (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        onClick={() => void openSession(s.id)}
-                        className={`w-full text-left rounded-md px-2 py-1.5 ${
-                          session?.id === s.id ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800/60'
-                        }`}
-                      >
-                        <div className="truncate text-[12px] text-ink-100">{s.title}</div>
-                        <div className="text-[10.5px] text-ink-600">{ago(s.lastActiveAt)}</div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </aside>
+              )
+            })}
+            {rows.length === 0 && (
+              <p className="px-1 py-2 text-[11px] leading-relaxed text-ink-500">
+                {sessions.length === 0 ? '还没有对话 —— 点上面「新建对话」开一场。' : '没有匹配的对话。'}
+              </p>
+            )}
+          </div>
+          <div className="shrink-0 border-t border-ink-800 pt-2 text-[10.5px] text-ink-500">共 {sessions.length} 场</div>
+        </aside>
 
-          {/* 中栏：对话 */}
-          {!session ? (
-            <div className="flex-1 flex items-center justify-center rounded-lg border border-ink-800">
-              <div className="text-center">
-                <p className="text-[13px] text-ink-300">选一个会话，或新建一场</p>
-                <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
-                  {charCard?.examples?.trim()
-                    ? `「${charCard.name}」已经填了示例对话，开口就会像那个人。`
-                    : `「${charCard?.name ?? ''}」还没填第 4 章「示例对话」—— 补上会明显更像。`}
-                </p>
-              </div>
+        {chars.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center rounded-lg border border-ink-700 bg-ink-850/60">
+            <div className="text-center">
+              <p className="text-[13px] text-ink-300">还没有角色可聊</p>
+              <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
+                先去「角色卡片」建一张卡 —— 填好第 4 章「示例对话」，她会立刻像那个人。
+                <br />
+                建好后回到这里，点「＋ 新建对话」就能开口了。
+              </p>
             </div>
-          ) : (
+          </div>
+        ) : !session ? (
+          <div className="flex flex-1 items-center justify-center rounded-lg border border-ink-800">
+            <div className="text-center">
+              <p className="text-[13px] text-ink-300">还没有选择对话</p>
+              <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
+                从左栏点一场继续，或「＋ 新建对话」开一场 —— 可以单角色聊，也能让两三个角色同场。
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* 对话区 */}
             <div className="flex flex-1 min-w-0 flex-col rounded-lg border border-ink-800 overflow-hidden">
               <div className="px-3 py-2 border-b border-ink-800 bg-ink-850/40">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     {editingTitle ? (
                       <input
@@ -507,22 +527,16 @@ export default function TavernFree() {
                         <Pencil className="w-3 h-3 shrink-0 text-ink-600 group-hover:text-amber" />
                       </button>
                     )}
-                    <div className="text-[10.5px] text-ink-500 flex items-center gap-2">
+                    <div className="text-[10.5px] text-ink-500 flex flex-wrap items-center gap-2">
                       <span>记忆更新于 {ago(memory?.updatedAt ?? 0)}</span>
                       {daily?.mood && <span className="text-amber/80">· 心情：{daily.mood}</span>}
                       {summarizing && <span className="text-amber">· 正在整理记忆…</span>}
+                      {session.scene && [session.scene.place, session.scene.time].filter(Boolean).length > 0 && (
+                        <span className="truncate">
+                          · 场景：{[session.scene.place, session.scene.time].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
                     </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    {!!daily?.log?.length && (
-                      <Button variant="ghost" size="sm" onClick={() => setShowDaily(v => !v)}>
-                        {showDaily ? '收起这几天' : '她最近几天'}
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="sm" onClick={() => setShowMemory(v => !v)}>
-                      {showMemory ? '隐藏记忆' : '查看记忆'}
-                    </Button>
-                    <Button variant="danger" size="sm" onClick={removeSession}>删除</Button>
                   </div>
                 </div>
 
@@ -637,110 +651,64 @@ export default function TavernFree() {
                   <div className="flex gap-2">
                     {streaming
                       ? <Button variant="secondary" size="md" onClick={stop}>停止</Button>
-                      : <Button variant="primary" size="md" disabled={!input.trim()} onClick={send}>发送</Button>}
+                      : <Button variant="primary" size="md" disabled={!input.trim()} onClick={() => void send()}>发送</Button>}
                   </div>
                 </div>
               </div>
             </div>
-          )}
 
-          {/* 右栏：记忆 */}
-          {session && showMemory && (
-            <aside className="w-64 shrink-0 flex flex-col rounded-lg border border-ink-800 bg-ink-850/40 min-h-0">
-              <div className="px-3 py-2 border-b border-ink-800">
-                <div className="text-[12px] text-ink-100">她的记忆</div>
-                <div className="text-[10.5px] text-ink-500">
-                  更新于 {ago(memory?.updatedAt ?? 0)} · {memChars} 字
+            {/* 右栏：记忆（角色级） */}
+            {showMemory && (
+              <aside className="w-64 shrink-0 flex flex-col rounded-lg border border-ink-800 bg-ink-850/40 min-h-0">
+                <div className="px-3 py-2 border-b border-ink-800">
+                  <div className="text-[12px] text-ink-100">
+                    {charCard ? `「${charCard.name}」的记忆` : '她的记忆'}
+                  </div>
+                  <div className="text-[10.5px] text-ink-500">
+                    更新于 {ago(memory?.updatedAt ?? 0)} · {memChars} 字
+                    {castCards.length > 1 && ' · 按会话第一个角色记'}
+                  </div>
                 </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {isMemoryEmpty(memory) ? (
-                  <p className="text-[11.5px] text-ink-500 leading-relaxed">
-                    还没有记忆。
-                    <br />
-                    聊满 {lim.triggerMessages} 条消息后会自动整理一次 —— 但她只会在
-                    <span className="text-ink-400">下次打开时</span>才用上（没有常驻进程，总结不是即时的）。
-                  </p>
-                ) : (
-                  MEMORY_SECTIONS.map(sec => {
-                    const body = String(memory?.[sec.key] ?? '').trim()
-                    if (!body) return null
-                    return (
-                      <div key={sec.key}>
-                        <div className="text-[11px] text-amber/80">{sec.title}</div>
-                        <div className="mt-0.5 text-[11.5px] text-ink-300 whitespace-pre-wrap leading-relaxed">{body}</div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-              <div className="p-2 border-t border-ink-800">
-                <Button
-                  variant="secondary" size="sm" className="w-full"
-                  disabled={!session || summarizing}
-                  onClick={() => void runSummary(session, true)}
-                >
-                  {summarizing ? '整理中…' : '立即整理记忆'}
-                </Button>
-                <p className="mt-1.5 text-[10.5px] text-ink-600 leading-relaxed">
-                  没开应用时她「过了几天」也不会自动发生 —— 这是三端共用一套前端代码的代价，不藏着。
-                </p>
-              </div>
-            </aside>
-          )}
-        </div>
-      )}
-
-      {/* 新建会话：选 1–3 个角色（多角色同场 §7.3） */}
-      <Modal open={pickOpen} onClose={() => setPickOpen(false)} title="新建会话" width="md"
-        footer={
-          <div className="flex items-center justify-between gap-3 w-full">
-            <span className="text-[11px] text-ink-500">
-              {picked.length === 0 ? '至少选一个角色' : `已选 ${picked.length} 个（上限 3）`}
-            </span>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="md" onClick={() => setPickOpen(false)}>取消</Button>
-              <Button
-                variant="primary" size="md"
-                disabled={picked.length === 0}
-                onClick={() => { setPickOpen(false); void createSession(picked) }}
-              >
-                开始对话
-              </Button>
-            </div>
-          </div>
-        }>
-        <div className="space-y-3">
-          <p className="text-[11.5px] text-ink-500 leading-relaxed">
-            选一个就是单角色聊天。选多个则**多角色同场**：一次只让一个角色说话，
-            轮到谁由语境决定，也可以点会话顶部的头像手动指定下一位。
-          </p>
-          <ul className="space-y-1">
-            {chars.map(c => {
-              const on = picked.includes(c.id)
-              return (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => setPicked(prev => {
-                      if (prev.includes(c.id)) return prev.filter(x => x !== c.id)
-                      if (prev.length >= 3) { showToast('最多 3 个角色同场', 'info'); return prev }
-                      return [...prev, c.id]
-                    })}
-                    className={`w-full flex items-center gap-2 rounded-md px-2 py-2 text-left border ${on ? 'border-amber/40 bg-amber/12' : 'border-transparent hover:bg-ink-800/60'}`}
+                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                  {isMemoryEmpty(memory) ? (
+                    <p className="text-[11.5px] text-ink-500 leading-relaxed">
+                      还没有记忆。
+                      <br />
+                      聊满 {lim.triggerMessages} 条消息后会自动整理一次 —— 但她只会在
+                      <span className="text-ink-400">下次打开时</span>才用上（没有常驻进程，总结不是即时的）。
+                    </p>
+                  ) : (
+                    MEMORY_SECTIONS.map(sec => {
+                      const body = String(memory?.[sec.key] ?? '').trim()
+                      if (!body) return null
+                      return (
+                        <div key={sec.key}>
+                          <div className="text-[11px] text-amber/80">{sec.title}</div>
+                          <div className="mt-0.5 text-[11.5px] text-ink-300 whitespace-pre-wrap leading-relaxed">{body}</div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+                <div className="p-2 border-t border-ink-800">
+                  <Button
+                    variant="secondary" size="sm" className="w-full"
+                    disabled={!session || summarizing}
+                    onClick={() => { if (session) void runSummary(session, true) }}
                   >
-                    <span className="w-6 h-6 shrink-0 rounded-full bg-ink-700 text-ink-200 text-[11px] flex items-center justify-center">
-                      {c.name.trim().slice(0, 1) || '?'}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name}</span>
-                    {on && <span className="shrink-0 text-[11px] text-amber">已选</span>}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      </Modal>
+                    {summarizing ? '整理中…' : '立即整理记忆'}
+                  </Button>
+                  <p className="mt-1.5 text-[10.5px] text-ink-600 leading-relaxed">
+                    记忆是**按角色**存的：换一场对话，她仍然记得之前的事。
+                  </p>
+                </div>
+              </aside>
+            )}
+          </>
+        )}
+      </div>
+
+      <TavernFreeSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
     </div>
   )
 }

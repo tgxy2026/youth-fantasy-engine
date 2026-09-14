@@ -69,13 +69,8 @@ export type TavernSession = {
   /** 冗余存章标题，列表展示用（章被删也不变空白） */
   anchorChapterLabel: string
   cast: TavernCast[]
-  /** 开场：轻表单 + 自由描述 */
-  scene: {
-    place: string
-    time: string
-    present: string[]      // 在场人物名
-    description: string    // 自由描述
-  }
+  /** 开场：轻表单 + 自由描述（两种模式共用同一套字段） */
+  scene: TavernScene
   messages: TavernMessage[]
   model: TavernModelRef
   params: TavernParams
@@ -178,10 +173,29 @@ export type FreeCharacter = {
   updatedAt: number
 }
 
+/**
+ * 开场设定（轻表单 + 自由描述）。
+ * 剧情模式必填（并配一个叙事锚点）；自由模式可选 —— 它没有锚点，但同样值得给第一轮一个场景。
+ */
+export type TavernScene = {
+  place: string
+  time: string
+  /** 在场人物名 */
+  present: string[]
+  /** 自由描述 */
+  description: string
+}
+
 export type FreeSession = {
   id: string
   charIds: string[]        // 支持多角色同场；v1 至少 1 个
   title: string
+  /**
+   * 开场设定（可选）。自由模式**没有叙事锚点**，但同样值得给第一轮一个场景：
+   * 新建对话时填的地点/时间/在场/描述会渲染成开场第一条消息（`buildOpeningMessage`），
+   * 这里留一份原件，方便界面回看与二次编辑。旧数据没有这个字段 —— 可选，不做迁移。
+   */
+  scene?: TavernScene
   messages: TavernMessage[]
   model: TavernModelRef
   params: TavernParams
