@@ -245,6 +245,19 @@ export interface ChatOptions {
    */
   temperature?: number
   /**
+   * 额外采样参数（键名用**目标接口的原生名字**，值必须是数字）。
+   *
+   * 为什么留这个口子：top_k / repeat_penalty / num_ctx 只有 Ollama 认，
+   * 而 OpenAI 兼容端点认的是 top_p / presence_penalty / frequency_penalty，
+   * 两边字段名不一致，故不做改名、由调用方按目标接口给键 ——
+   * openaiChat 只转发白名单内的键，其余丢弃，免得把 Ollama 专有字段发过去被端点拒掉。
+   *
+   * ⚠️ 在此之前，酒馆模式的 top_p / top_k / 重复惩罚 / presence_penalty / num_ctx
+   * **一个都没真正下发过**（只有 temperature 能过 chat）—— params.ts 的 toOllamaOptions
+   * 此前是死代码。这是本次补上的。
+   */
+  extraOptions?: Record<string, number>
+  /**
    * 是否关闭思考型模型的思维链输出：
    * - false：关闭（仅用于连通性测试等需要极速反馈的场景）
    * - true / undefined：不传该字段，交给模型/平台默认
@@ -274,6 +287,8 @@ interface CallOpts {
   onToken?: (delta: string) => void
   /** 采样温度。**必填**：由 chat() 统一解析后传入，是唯一真源；下游不再各自做缺省判断。 */
   temperature: number
+  /** 额外采样参数（见 ChatOptions.extraOptions）：原样并入 Ollama 的 options，OpenAI 侧只转发白名单 */
+  extraOptions?: Record<string, number>
 }
 
 /** 内部统一分发：带元信息，供测试面板展示「其中加载耗时」 */
@@ -329,6 +344,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
     signal: opts.signal,
     onToken: opts.onToken,
     temperature,
+    extraOptions: opts.extraOptions,
   })).content
 }
 
@@ -342,7 +358,7 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
     model: config.model,
     messages,
     stream: !!o.onToken,
-    options: { temperature: o.temperature },
+    options: { temperature: o.temperature, ...(o.extraOptions ?? {}) },
   }
   if (think === false) body.think = false
   let res: Response
@@ -405,6 +421,23 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
   return { content: stripThink(content), loadMs: Number.isFinite(loadMs) ? loadMs : 0 }
 }
 
+/**
+ * OpenAI 兼容端点能安全接受的采样参数白名单。
+ * 故意**不含** top_k / repeat_penalty / num_ctx —— 那是 Ollama 专有字段，
+ * 发过去轻则被忽略、重则整条请求 400。
+ */
+export const OPENAI_SAFE_SAMPLING = ['top_p', 'presence_penalty', 'frequency_penalty'] as const
+
+function openaiSampling(o: CallOpts): Record<string, number> {
+  const src = o.extraOptions
+  if (!src) return {}
+  const out: Record<string, number> = {}
+  for (const k of OPENAI_SAFE_SAMPLING) {
+    if (typeof src[k] === 'number' && Number.isFinite(src[k])) out[k] = src[k]
+  }
+  return out
+}
+
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<string> {
   const { timeoutMs } = o
   const rawBase = stripSlash(config.baseUrl || '')
@@ -422,7 +455,11 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
           'Content-Type': 'application/json',
           ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
         },
-        body: JSON.stringify({ model: config.model, messages, temperature: o.temperature, stream: !!o.onToken }),
+        body: JSON.stringify({
+          model: config.model, messages, temperature: o.temperature,
+          ...openaiSampling(o),
+          stream: !!o.onToken,
+        }),
       },
       timeoutMs,
       o.signal,

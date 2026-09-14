@@ -35,9 +35,10 @@ import {
   shouldRunAutoSummary, MEMORY_SECTIONS, isMemoryEmpty,
 } from '../lib/tavern/memory'
 import {
-  MEMORY_SOFT_LIMIT, type FreeCharacter, type FreeMemory, type FreeSession,
+  type FreeCharacter, type FreeMemory, type FreeSession,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
 } from '../lib/tavern/types'
+import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '../lib/tavern/settings'
 
 /** 把时间戳显示成「刚刚 / X 分钟前 / X 小时前 / 日期」 */
 function ago(ts: number): string {
@@ -81,6 +82,8 @@ export default function TavernFree() {
   const [castCards, setCastCards] = useState<FreeCharacter[]>([])
   /** 手动指定下一位接话的角色（空 = 按轮转） */
   const [speakNext, setSpeakNext] = useState('')
+  /** 控制面板设置（记忆与日常阈值都从这儿来）—— 读不到时用出厂默认，不含糊 */
+  const [tavernSettings, setTavernSettings] = useState<TavernSettings | null>(null)
   /** 会话名内联编辑：列表里只显示标题，改不了就只能删了重开，所以给个直接改的入口 */
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -88,18 +91,26 @@ export default function TavernFree() {
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  /** 记忆与日常阈值（控制面板）。读到设置前先用出厂默认，免得界面闪一个错的数字。 */
+  const lim = useMemo(
+    () => memoryLimitsOf(tavernSettings ?? DEFAULT_TAVERN_SETTINGS),
+    [tavernSettings],
+  )
+
   // ---------- 加载 ----------
   useEffect(() => {
     void (async () => {
       try {
-        const [cs, ps, sid] = await Promise.all([
+        const [cs, ps, sid, st] = await Promise.all([
           store.listFreeChars(),
           loadProviders().catch(() => [] as AIProvider[]),
           store.getSummaryProviderId().catch(() => ''),
+          getTavernSettings().catch(() => DEFAULT_TAVERN_SETTINGS),
         ])
         setChars(cs)
         setProviders(ps)
         setSummaryProviderId(sid)
+        setTavernSettings(st)
         if (cs.length > 0) setCharId(prev => prev || cs[0].id)
       } catch (e) {
         showToast(`读取失败：${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -116,7 +127,7 @@ export default function TavernFree() {
    */
   const advanceIfNeeded = useCallback(async (card: FreeCharacter, cur?: DailyState | null) => {
     const d = cur ?? (await store.getDaily(card.id).catch(() => null))
-    if (!shouldAdvanceDaily(d)) return
+    if (!shouldAdvanceDaily(d, Date.now(), lim.dailyAdvanceMs)) return
     if (!acquireSummaryLock()) return // 与总结共用一把锁，避免两个窗口同时写
     try {
       const mem = await store.getMemory(card.id).catch(() => null)
@@ -138,7 +149,7 @@ export default function TavernFree() {
     } finally {
       releaseSummaryLock()
     }
-  }, [summaryProviderId])
+  }, [summaryProviderId, lim])
 
   // 选中的角色 → 读完整卡 + 该角色的会话 + 它的记忆
   const loadForChar = useCallback(async (id: string) => {
@@ -224,7 +235,10 @@ export default function TavernFree() {
     if (!charCard) return
     const prev = await store.getMemory(charCard.id).catch(() => null)
     if (!manual) {
-      const verdict = shouldRunAutoSummary(s, prev)
+      const verdict = shouldRunAutoSummary(s, prev, Date.now(), {
+        triggerMessages: lim.triggerMessages,
+        minIntervalMs: lim.minIntervalMs,
+      })
       if (!verdict.run) return
     }
     const pending = messagesAfterWatermark(s.messages, s.watermark)
@@ -251,6 +265,7 @@ export default function TavernFree() {
           charCard.profile.knowledge.trim() && `知识边界：${charCard.profile.knowledge.trim()}`,
         ].filter(Boolean).join('\n'),
         providerId: summaryProviderId || undefined,
+        limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays },
       })
       await store.saveMemory(next)
       // 水位线推进到最后一条 —— 关机/失败都不丢不重
@@ -267,7 +282,7 @@ export default function TavernFree() {
       releaseSummaryLock()
       setSummarizing(false)
     }
-  }, [charCard, summaryProviderId])
+  }, [charCard, summaryProviderId, lim])
 
   /** 自动总结：静默，失败也不打扰（下次打开会补算） */
   const autoSummarize = useCallback(async (s: FreeSession) => {
@@ -663,7 +678,7 @@ export default function TavernFree() {
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-[11px] text-ink-500">
                     本会话 {usedChars} 字
-                    {memChars > 0 && ` · 记忆 ${memChars}/${MEMORY_SOFT_LIMIT} 字`}
+                    {memChars > 0 && ` · 记忆 ${memChars}/${lim.softLimit} 字`}
                   </span>
                   <div className="flex gap-2">
                     {streaming
@@ -689,7 +704,7 @@ export default function TavernFree() {
                   <p className="text-[11.5px] text-ink-500 leading-relaxed">
                     还没有记忆。
                     <br />
-                    聊满 6 条消息后会自动整理一次 —— 但她只会在
+                    聊满 {lim.triggerMessages} 条消息后会自动整理一次 —— 但她只会在
                     <span className="text-ink-400">下次打开时</span>才用上（没有常驻进程，总结不是即时的）。
                   </p>
                 ) : (

@@ -13,7 +13,7 @@
  *   · 加锁 isCancelled 处理，取消要能中断
  */
 import {
-  chat, loadProviders, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS,
+  chat, loadProviders, requireActiveProvider, isCancelled,
   type AIProvider, type ChatMessage,
 } from '../ai'
 import { uid } from '../id'
@@ -21,7 +21,11 @@ import { buildProjectContext } from '../aiContext'
 import { buildSystemPrompt, buildMultiCharRule, toChatMessages, renderCastSetting } from './prompt'
 import * as store from './store'
 import { trimHistory, historyBudget } from './budget'
-import { resolveParams } from './params'
+import { resolveParams, toOllamaOptions } from './params'
+import {
+  getTavernSettings, commonParamsLayer, modeParamsLayer, timeoutMsOf,
+  type TavernSettings,
+} from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
 import {
   hasCastSetting,
@@ -37,10 +41,15 @@ const PLOT_TONE = 'narrative' as const
  * 酒馆模式**单独指定模型**（方案 §7.8），只存 providerId 引用，不复制模型配置；
  * 没配或配的那个已被删除时，回退到全局活动模型（并在 UI 上提示）。
  */
-export async function resolveTavernProvider(ref?: { providerId?: string }): Promise<{ provider: AIProvider; fellBack: boolean }> {
-  if (ref?.providerId) {
+export async function resolveTavernProvider(
+  ref?: { providerId?: string },
+  fallbackProviderId?: string,
+): Promise<{ provider: AIProvider; fellBack: boolean }> {
+  // 优先会话自己指定的；会话没指定则用**控制面板的默认模型**；都没有才回退全局活动模型
+  const want = ref?.providerId || fallbackProviderId || ''
+  if (want) {
     const list = await loadProviders()
-    const hit = list.find(p => p.id === ref.providerId)
+    const hit = list.find(p => p.id === want)
     if (hit) return { provider: hit, fellBack: false }
   }
   return { provider: await requireActiveProvider(), fellBack: true }
@@ -68,8 +77,10 @@ export type PlotSystemResult = {
  * 关键在 viewMode：沉浸档 → character-view（排除作者侧资料，防剧透）；
  * 导演档 → director-view（作者侧照带，但锚点仍然生效）。
  */
-export async function buildPlotSystem(session: TavernSession): Promise<PlotSystemResult> {
-  const p = resolveParams('plot', session.params)
+export async function buildPlotSystem(session: TavernSession, settings?: TavernSettings): Promise<PlotSystemResult> {
+  const st = settings ?? await getTavernSettings()
+  // 参数优先级：会话参数 → 控制面板（通用层 + 模式层）→ TAVERN_DEFAULTS 兜底
+  const p = resolveParams('plot', commonParamsLayer(st.common), modeParamsLayer('plot', st), session.params)
   const total = p.contextBudget
   const casts = splitCast(session.cast)
   const aiNames = casts.ai.map(c => c.name)
@@ -111,6 +122,9 @@ export async function buildPlotSystem(session: TavernSession): Promise<PlotSyste
     self: selfLines.join('\n'),
     cast: castBlock,
     dropped: ctx.dropped,
+    styleHint: st.plot.styleHint,
+    commonExtra: st.common.extraPrompt,
+    modeExtra: st.plot.extraPrompt,
   })
 
   return { system, settingChars: ctx.chars, dropped: ctx.dropped }
@@ -183,14 +197,17 @@ export async function runPlotTurn(
   session: TavernSession,
   userText: string,
   cb: PlotTurnCallbacks = {},
-  deps: { chatFn?: ChatFn } = {},
+  deps: { chatFn?: ChatFn; settings?: TavernSettings } = {},
 ): Promise<PlotTurnResult> {
   const runChat = deps.chatFn ?? chat
-  const { provider, fellBack } = await resolveTavernProvider(session.model)
-  const p = resolveParams('plot', session.params)
+  const st = deps.settings ?? await getTavernSettings()
+  const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
+  const p = resolveParams('plot', commonParamsLayer(st.common), modeParamsLayer('plot', st), session.params)
+  /** temperature 单独拎出来（chat 的唯一真源），其余整体透传 */
+  const { temperature, ...extraOptions } = toOllamaOptions(p)
 
   cb.onPhase?.('组装上下文')
-  const { system } = await buildPlotSystem(session)
+  const { system } = await buildPlotSystem(session, st)
 
   // 用户这条先并进历史，保证模型看到的是「含本轮输入」的完整对话
   const withUser: TavernMessage[] = [
@@ -209,7 +226,12 @@ export async function runPlotTurn(
       provider,
       [{ role: 'system', content: system }, ...messages],
       {
-        timeoutMs: CHAT_TIMEOUT_MS,
+        timeoutMs: timeoutMsOf(st),
+        // 采样参数：temperature 走 chat 的唯一真源，其余（top_p / top_k /
+        // repeat_penalty / presence_penalty / num_ctx）走 extraOptions 透传。
+        // 此前这些参数压根没下发过，控制面板上的旋钮会是死的。
+        temperature,
+        extraOptions,
         signal: cb.signal,
         onToken: cb.onToken,
         // 见文件头：角色扮演全程关闭思考（对 ai.ts 全局政策的有意例外）
@@ -297,7 +319,8 @@ export type FreeSystemResult = {
  * 设定层**不做预算裁剪** —— 角色卡是作者手写的核心，悄悄砍掉会让角色「设定性失忆」
  * （字段名与字数都摊在 UI 里，超预算由界面提示作者自己精简）。
  */
-export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter[]): Promise<FreeSystemResult> {
+export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter[], settings?: TavernSettings): Promise<FreeSystemResult> {
+  const st = settings ?? await getTavernSettings()
   const found: FreeCharacter[] = []
   const missing: string[] = []
   for (const id of session.charIds) {
@@ -330,6 +353,9 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     memory,
     self,
     dropped: [],
+    styleHint: st.free.styleHint,
+    commonExtra: st.common.extraPrompt,
+    modeExtra: st.free.extraPrompt,
   })
 
   return { system, settingChars: setting.length, memoryChars: memory.length, missing }
@@ -363,18 +389,20 @@ export async function runFreeTurn(
   chars: FreeCharacter[],
   userText: string,
   cb: FreeTurnCallbacks = {},
-  deps: { chatFn?: ChatFn } = {},
+  deps: { chatFn?: ChatFn; settings?: TavernSettings } = {},
 ): Promise<FreeTurnResult> {
-  const { provider, fellBack } = await resolveTavernProvider(session.model)
+  const st = deps.settings ?? await getTavernSettings()
+  const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
   const runChat = deps.chatFn ?? chat
-  const { system } = await buildFreeSystem(session, chars)
+  const { system } = await buildFreeSystem(session, chars, st)
 
   const withUser: TavernMessage[] = [
     ...session.messages,
     { id: uid(), role: 'user', content: userText, at: Date.now() },
   ]
 
-  const p = resolveParams('free', session.params)
+  const p = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st), session.params)
+  const { temperature, ...extraOptions } = toOllamaOptions(p)
   const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, '')
   const { messages } = buildFreeMessages(withUser, session, chars, historyBudgetChars, cb.speakerId)
 
@@ -386,7 +414,9 @@ export async function runFreeTurn(
       provider,
       [{ role: 'system', content: system }, ...messages],
       {
-        timeoutMs: CHAT_TIMEOUT_MS,
+        timeoutMs: timeoutMsOf(st),
+        temperature,
+        extraOptions,
         signal: cb.signal,
         onToken: cb.onToken,
         think: false, // 同剧情模式：陪伴要「像人说话」，不要分析腔

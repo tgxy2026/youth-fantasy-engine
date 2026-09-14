@@ -28,6 +28,23 @@ import {
 export type MemorySectionKey = 'longTerm' | 'facts' | 'relation' | 'mines' | 'anniversaries' | 'diaries'
 
 /** 六栏的键与标题（标题用于序列化/解析，顺序即展示顺序） */
+/**
+ * 可覆盖的记忆字数约束（来自控制面板）。**不传即用内置默认**，所以既有调用零变化。
+ */
+export type MemoryLimits = {
+  hardLimit: number
+  longTermLimit: number
+  diaryDays: number
+}
+
+export function limitsOf(opts?: Partial<MemoryLimits>): MemoryLimits {
+  return {
+    hardLimit: opts?.hardLimit ?? MEMORY_HARD_LIMIT,
+    longTermLimit: opts?.longTermLimit ?? MEMORY_LONGTERM_LIMIT,
+    diaryDays: opts?.diaryDays ?? MEMORY_DIARY_DAYS,
+  }
+}
+
 export const MEMORY_SECTIONS: { key: MemorySectionKey; title: string }[] = [
   { key: 'longTerm', title: '一、长期摘要' },
   { key: 'facts', title: '二、关键事实' },
@@ -79,15 +96,16 @@ export function rollDiaries(text: string, keep = MEMORY_DIARY_DAYS): string {
  * 硬约束收敛：长期摘要超限截断、日记滚动、总量超硬上限时按「先牺牲长期摘要」的顺序压缩。
  * 注意**不动** facts / mines —— 那两栏是「不失忆」的底线。
  */
-export function trimMemory(m: FreeMemory): FreeMemory {
+export function trimMemory(m: FreeMemory, opts?: Partial<MemoryLimits>): FreeMemory {
+  const L = limitsOf(opts)
   const out: FreeMemory = { ...m }
-  out.longTerm = clipSection(out.longTerm, MEMORY_LONGTERM_LIMIT)
-  out.diaries = rollDiaries(out.diaries)
-  if (memoryChars(out) > MEMORY_HARD_LIMIT) {
+  out.longTerm = clipSection(out.longTerm, L.longTermLimit)
+  out.diaries = rollDiaries(out.diaries, L.diaryDays)
+  if (memoryChars(out) > L.hardLimit) {
     // 依次牺牲：长期摘要 → 纪念日/待办 → 关系状态（都属「可重建」信息）
-    out.longTerm = clipSection(out.longTerm, Math.floor(MEMORY_LONGTERM_LIMIT * 0.6))
-    if (memoryChars(out) > MEMORY_HARD_LIMIT) out.anniversaries = clipSection(out.anniversaries, 120)
-    if (memoryChars(out) > MEMORY_HARD_LIMIT) out.relation = clipSection(out.relation, 160)
+    out.longTerm = clipSection(out.longTerm, Math.floor(L.longTermLimit * 0.6))
+    if (memoryChars(out) > L.hardLimit) out.anniversaries = clipSection(out.anniversaries, 120)
+    if (memoryChars(out) > L.hardLimit) out.relation = clipSection(out.relation, 160)
   }
   return out
 }
@@ -108,7 +126,7 @@ function clipSection(s: string, n: number): string {
  *   · 认不出的内容不丢 —— 追加到「长期摘要」末尾，总比整段蒸发好
  *   · prev 给定时对「只增不改」两栏做保护：新值为空而旧值非空 → 保留旧值（防整段丢失）
  */
-export function parseMemoryText(text: string, charId: string, prev?: FreeMemory | null): FreeMemory {
+export function parseMemoryText(text: string, charId: string, prev?: FreeMemory | null, opts?: Partial<MemoryLimits>): FreeMemory {
   const raw = String(text ?? '').replace(/\r\n/g, '\n')
   const out = emptyMemory(charId)
   const hit: Partial<Record<MemorySectionKey, string[]>> = {}
@@ -142,7 +160,7 @@ export function parseMemoryText(text: string, charId: string, prev?: FreeMemory 
   }
 
   out.updatedAt = Date.now()
-  return trimMemory(out)
+  return trimMemory(out, opts)
 }
 
 /**
@@ -231,9 +249,13 @@ export function releaseSummaryLock(): void {
  * ① 时间节流：两次自动总结的间隔下限（用记忆的 updatedAt 当上次总结时间）。
  * 手动点「立即总结」时**不走这个判断** —— 作者点了就该跑。
  */
-export function throttleOk(m: FreeMemory | null | undefined, now = Date.now()): boolean {
+export function throttleOk(
+  m: FreeMemory | null | undefined,
+  now = Date.now(),
+  minIntervalMs = SUMMARY_MIN_INTERVAL_MS,
+): boolean {
   if (!m?.updatedAt) return true
-  return now - m.updatedAt >= SUMMARY_MIN_INTERVAL_MS
+  return now - m.updatedAt >= minIntervalMs
 }
 
 /** 一次总结是否该跑（把①与阈值判断合起来，供调用方一问到底） */
@@ -241,11 +263,13 @@ export function shouldRunAutoSummary(
   session: Pick<FreeSession, 'messages' | 'watermark'>,
   mem: FreeMemory | null | undefined,
   now = Date.now(),
+  opts: { triggerMessages?: number; minIntervalMs?: number } = {},
 ): { run: boolean; reason: string } {
-  if (!shouldSummarize(session)) {
-    return { run: false, reason: `新消息不足 ${SUMMARY_TRIGGER_MESSAGES} 条` }
+  const trigger = opts.triggerMessages ?? SUMMARY_TRIGGER_MESSAGES
+  if (!shouldSummarize(session, trigger)) {
+    return { run: false, reason: `新消息不足 ${trigger} 条` }
   }
-  if (!throttleOk(mem, now)) {
+  if (!throttleOk(mem, now, opts.minIntervalMs)) {
     return { run: false, reason: '距上次总结太近（时间节流）' }
   }
   return { run: true, reason: 'ok' }

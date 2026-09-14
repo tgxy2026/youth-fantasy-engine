@@ -7,6 +7,7 @@
 //   3) 参数改名 —— 内部 repeatPenalty 到 Ollama 那边叫 repeat_penalty（少个 ition）
 import { buildSystemPrompt, buildOpeningMessage, buildMultiCharRule, toChatMessages, renderCastSetting } from '../src/lib/tavern/prompt'
 import { PROTOCOL_CORE, PROTOCOL_VERSION } from '../src/lib/tavern/protocol'
+import { DEFAULT_COMMON_EXTRA } from '../src/lib/tavern/settings'
 import { trimHistory, historyBudget, budgetState, FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
 import { resolveParams, toOllamaOptions } from '../src/lib/tavern/params'
 import { hasCastSetting, EMPTY_CAST_SETTING } from '../src/lib/tavern/types'
@@ -57,8 +58,14 @@ function main() {
     ok('空层不留空标题', !bare.includes('【世界与角色设定】') && !bare.includes('【长期记忆】'))
     ok('仅协议时 system 就等于协议全文（叙事向不追加任何内容）', buildSystemPrompt({ tone: 'narrative' }) === PROTOCOL_CORE)
     ok('聊天向追加本场风格提示', bare.includes('【本场风格】') && bare.includes('最多连发 2 条'))
-    ok('聊天向同时给出标点适用范围（防「消息体无标点」被泛化到全篇）',
-      bare.includes('标点照常用') && bare.includes('她发出去的消息'))
+    ok('通用补充要求默认含「标点适用范围」（防「消息体无标点」被泛化到全篇）',
+      DEFAULT_COMMON_EXTRA.includes('标点照常用') &&
+      buildSystemPrompt({ tone: 'narrative', commonExtra: DEFAULT_COMMON_EXTRA }).includes('标点照常用'))
+    ok('通用补充要求排在协议之前（不打断协议末尾的「最后提醒」）',
+      (() => {
+        const sys = buildSystemPrompt({ tone: 'chat', commonExtra: DEFAULT_COMMON_EXTRA })
+        return sys.indexOf('标点照常用') >= 0 && sys.indexOf('标点照常用') < sys.indexOf('最后提醒')
+      })())
     ok('叙事向不追加风格提示（协议默认即是）', !buildSystemPrompt({ tone: 'narrative' }).includes('【本场风格】'))
   }
 

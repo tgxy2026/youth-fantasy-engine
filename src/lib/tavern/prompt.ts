@@ -38,6 +38,12 @@ export type PromptLayers = {
    * 由 renderCastSetting 渲染好传入；空串则整层跳过。
    */
   cast?: string
+  /** 档位追加提示的覆盖（来自控制面板）。不传则用内置 TONE_HINT —— 保证既有调用零变化。 */
+  styleHint?: string
+  /** 通用补充要求（两种模式都生效，控制面板「通用控制」） */
+  commonExtra?: string
+  /** 本模式专属补充要求（控制面板「剧情推演 / 自由对话」各自的那栏） */
+  modeExtra?: string
   /**
    * 被预算丢弃的段落名。必须如实声明：
    * 否则模型会把自己没看到的资料当成不存在（沿用 buildProjectContext 的既有设计）。
@@ -51,13 +57,10 @@ export type PromptLayers = {
  * 所以这里只补「叙事向不追加（就是协议默认）」，聊天向补一句场景化倾向。
  * ⚠️ 档位的真正差异应主要由**角色卡**承担（手册实践：陆青梧走动作+对白、苏念走消息体）。
  */
-const TONE_HINT: Record<TavernTone, string> = {
+/** 档位追加提示的内置默认。控制面板可覆盖（settings.free.styleHint），默认值取自这里。 */
+export const TONE_HINT: Record<TavernTone, string> = {
   narrative: '',
-  chat: [
-    '【本场风格】现代日常场景，以即时聊天的方式说话：短句为主，最多连发 2 条，不要长篇叙述。',
-    '★ 标点照常用（，。？！）：动作与神态描写（全角括号内）、环境叙述、对白一律要有标点；',
-    '角色卡的示例若采用「无标点的消息体」，那只是**她发出去的消息文本**可以省标点，不要把整段都写成没有标点的空格流。',
-  ].join('\n'),
+  chat: '【本场风格】现代日常场景，以即时聊天的方式说话：短句为主，最多连发 2 条，不要长篇叙述。',
 }
 
 /** 按「设定 → 记忆 → 身份 → 未带入声明 → 协议（钉末尾）」拼出整条 system。空层自动跳过。 */
@@ -76,9 +79,14 @@ export function buildSystemPrompt(layers: PromptLayers): string {
   // ③b 扮演设定（紧跟身份之后：先知道「你是谁」，再知道「该怎么演」）
   if (layers.cast?.trim()) parts.push(layers.cast.trim())
 
-  // ④ 档位追加（叙事向为空，不产生噪音）
-  const hint = TONE_HINT[layers.tone]
-  if (hint) parts.push(hint)
+  // ④ 档位追加（叙事向默认空，不产生噪音）。控制面板给的值优先于内置默认。
+  const hint = layers.styleHint ?? TONE_HINT[layers.tone]
+  if (hint?.trim()) parts.push(hint.trim())
+
+  // ④b 通用 / 本模式补充要求（控制面板）—— 都放协议**之前**，
+  //     免得打断协议末尾那条「最后提醒」的近因效果（协议钉绝对末尾是既定纪律）。
+  if (layers.commonExtra?.trim()) parts.push(layers.commonExtra.trim())
+  if (layers.modeExtra?.trim()) parts.push(layers.modeExtra.trim())
 
   // ⑤ 未带入的资料：如实声明（放在协议之前，免得打断协议末尾的提醒）
   if (layers.dropped?.length) {

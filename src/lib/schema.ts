@@ -821,6 +821,10 @@ export const TABS: TabDef[] = [
     id: 'tavern-card', name: '角色卡片', group: '酒馆模式', type: 'tavern-card',
     description: '自由模式的角色卡片管理（四章模板），可新建 / 导入 / 从小说角色转换。',
   },
+  {
+    id: 'tavern-control', name: '控制面板', group: '酒馆模式', type: 'tavern-control',
+    description: '酒馆模式全部 AI 参数与提示词（通用 / 剧情推演 / 自由对话三段），改完保存即生效。',
+  },
 ]
 
 // 编辑器页签（特殊，由 App 直接路由）
@@ -877,6 +881,7 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   'tavern-report': 'default',
   'tavern-card': 'default',
   'tavern-free': 'default',
+  'tavern-control': 'default',
 }
 
 /** 强关联依赖：勾选 B 必须连带勾选 A（A 被锁定，直到再无 B 依赖它） */

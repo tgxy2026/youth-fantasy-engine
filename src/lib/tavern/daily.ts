@@ -39,10 +39,14 @@ export function emptyDaily(charId: string, now = Date.now()): DailyState {
 }
 
 /** 是否该推进「这几天的生活」（方案 §4.7：间隔 ≥ 8 小时） */
-export function shouldAdvanceDaily(d: DailyState | null | undefined, now = Date.now()): boolean {
+export function shouldAdvanceDaily(
+  d: DailyState | null | undefined,
+  now = Date.now(),
+  advanceMs = DAILY_ADVANCE_MS,
+): boolean {
   if (!d) return false
   if (!d.lastActiveAt) return false
-  return now - d.lastActiveAt >= DAILY_ADVANCE_MS
+  return now - d.lastActiveAt >= advanceMs
 }
 
 /** 距上次活跃过了几天（至少 1 —— 只在超过阈值时才会被调用） */

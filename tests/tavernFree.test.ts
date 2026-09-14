@@ -11,6 +11,7 @@ import {
   buildFreeSystem, buildFreeMessages, runFreeTurn, renderFreeCharacter, type ChatFn,
 } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
+import { DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'
 import type { FreeCharacter, FreeSession, TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
@@ -195,6 +196,41 @@ async function main() {
     const tight = buildFreeMessages(long, session, [su], 2000)
     ok('预算充足时不裁', wide.messages.length === 30, `实际=${wide.messages.length}`)
     ok('预算收紧时裁剪', tight.messages.length < wide.messages.length && tight.dropped > 0)
+  }
+
+  // ---------- 采样参数真的下发了（否则控制面板上的旋钮是死的） ----------
+  {
+    // 背景：在这之前 params.ts 的 toOllamaOptions 从未被调用过 ——
+    // 除了 temperature 能过 chat()，top_p / top_k / 重复惩罚 / presence_penalty /
+    // num_ctx 一个都没到模型那里。这组断言钉住「设置 → 请求」这条线。
+    const { chatFn, calls } = makeFakeChat('「嗯。」')
+    const custom = {
+      ...DEFAULT_TAVERN_SETTINGS,
+      common: { ...DEFAULT_TAVERN_SETTINGS.common, contextBudget: 6000, numCtx: 8192, timeoutSec: 42 },
+      free: {
+        ...DEFAULT_TAVERN_SETTINGS.free,
+        temperature: 0.5, topP: 0.8, topK: 20, repeatPenalty: 1.2, presencePenalty: 0.1,
+      },
+    }
+    const sess = await store.createFreeSession([su.id], '参数下发测试', { providerId: STUB_PROVIDER.id }, {})
+    await runFreeTurn(sess, [su], '（试试参数）', {}, { chatFn, settings: custom })
+
+    const o = calls[0].opts as Record<string, unknown>
+    ok('温度按设置下发（不再恒为默认值）', o.temperature === 0.5, String(o.temperature))
+    ok('超时按设置下发（秒 → 毫秒）', o.timeoutMs === 42 * 1000, String(o.timeoutMs))
+    const ex = (o.extraOptions ?? {}) as Record<string, number>
+    ok('top_p / top_k / 重复惩罚 / presence_penalty / num_ctx 一并下发',
+      ex.top_p === 0.8 && ex.top_k === 20 && ex.repeat_penalty === 1.2 &&
+      ex.presence_penalty === 0.1 && ex.num_ctx === 8192,
+      JSON.stringify(ex))
+    ok('temperature 不在 extraOptions 里重复出现（chat 的唯一真源）', ex.temperature === undefined)
+
+    // 不传 settings 时用出厂默认 → 与改动前行为一致（0.9 是 free 的既有默认温度）
+    const dflt = makeFakeChat('「嗯。」')
+    const sess2 = await store.createFreeSession([su.id], '默认参数', { providerId: STUB_PROVIDER.id }, {})
+    await runFreeTurn(sess2, [su], '（默认）', {}, { chatFn: dflt.chatFn })
+    ok('不传设置时用出厂默认温度 0.9', (dflt.calls[0].opts as Record<string, unknown>).temperature === 0.9,
+      String((dflt.calls[0].opts as Record<string, unknown>).temperature))
   }
 
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)

@@ -43,6 +43,7 @@ const TavernPlot = lazy(() => import('./components/TavernPlot'))
 const TavernReport = lazy(() => import('./components/TavernReport'))
 const TavernCard = lazy(() => import('./components/TavernCard'))
 const TavernFree = lazy(() => import('./components/TavernFree'))
+const TavernControl = lazy(() => import('./components/TavernControl'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -317,6 +318,9 @@ export default function App() {
     }
     if (activeTab === 'tavern-free') {
       return <TavernFree />
+    }
+    if (activeTab === 'tavern-control') {
+      return <div className="p-6"><TavernControl /></div>
     }
     if (activeTab === 'guide') {
       return <GuidePage onNavigate={navigate} ctx={visCtx} />

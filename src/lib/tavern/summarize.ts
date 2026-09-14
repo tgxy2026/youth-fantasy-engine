@@ -29,20 +29,25 @@ export function formatDate(ts: number): string {
 }
 
 /** 六栏档案的存在意义、各栏行为、以及两条不容违反的规矩（对外导出便于测试与 UI 展示） */
-export function buildSummarySystem(charName: string, now = Date.now()): string {
+/** 总结提示词里用到的字数约束（来自控制面板；不传即内置默认） */
+export type SummaryLimits = { longTermLimit?: number; diaryDays?: number }
+
+export function buildSummarySystem(charName: string, now = Date.now(), limits: SummaryLimits = {}): string {
+  const longTermLimit = limits.longTermLimit ?? MEMORY_LONGTERM_LIMIT
+  const diaryDays = limits.diaryDays ?? MEMORY_DIARY_DAYS
   return `你是「${charName}」的长期记忆档案员。请把【旧档案】与【新发生的对话】合并，重写出一份完整的六栏档案。
 
 【当前日期】${formatDate(now)}
 （日记里凡涉及日期，一律用这个日期换算，不要写「XX月XX日」这类占位符。）
 
 【六栏各自的规矩 —— 硬要求，不要一刀切】
-- 一、长期摘要：**会缩**。已解决、已过期的旧事压掉，只留仍影响当下的。不超过 ${MEMORY_LONGTERM_LIMIT} 字。
+- 一、长期摘要：**会缩**。已解决、已过期的旧事压掉，只留仍影响当下的。不超过 ${longTermLimit} 字。
 - 二、关键事实：**只增不改**。已确立的事实一律保留，除非新对话明确推翻它。
 - 三、关系状态：**每次重新判断**。写此刻的关系与情绪（情绪写在这一栏）。
 - 四、未爆的雷：**只增不改**。只写「埋着还没用上的伏笔 / 秘密 / 未说出口的事」——
   已经点破的、已经发生的都不算。确实没有就写「暂无」，不要写「结果尚不确定」这类空话。
 - 五、纪念日与待办：可增可清。
-- 六、最近日记：**倒序（新的在上）**，每条一行，格式 \`- MM-DD：一句话\`，最多保留最近 ${MEMORY_DIARY_DAYS} 条。
+- 六、最近日记：**倒序（新的在上）**，每条一行，格式 \`- MM-DD：一句话\`，最多保留最近 ${diaryDays} 条。
 
 【三条不容违反】
 1. 这份档案是「${charName} 记得什么」，不是全知档案 —— **她不知道的事绝不能进「长期摘要」与「关键事实」**，
@@ -83,6 +88,8 @@ export type SummarizeArgs = {
   chatFn?: ChatFn
   signal?: AbortSignal
   now?: number
+  /** 字数约束（控制面板）；不传即内置默认 */
+  limits?: SummaryLimits
 }
 
 /** 把待总结的对话渲染成提示词片段（用户发言标【对方】，角色发言标名字） */
@@ -98,14 +105,14 @@ export function renderTranscript(charName: string, messages: TavernMessage[]): s
  * 失败会抛出（调用方据此保留旧档案，绝不写入半截结果）。
  */
 export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> {
-  const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now() } = args
+  const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now(), limits } = args
   if (messages.length === 0) return prev ?? emptyMemory(charId)
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = chatFn ?? chat
 
   const msgs: ChatMessage[] = [
-    { role: 'system', content: buildSummarySystem(charName, now) },
+    { role: 'system', content: buildSummarySystem(charName, now, limits) },
     {
       role: 'user',
       content: [
