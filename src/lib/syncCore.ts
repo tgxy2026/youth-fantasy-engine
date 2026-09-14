@@ -16,7 +16,10 @@ import {
 } from './syncTransport'
 import { SAVE_DEBOUNCE_MS } from './constants'
 
-// 参与同步的全部 store（与 db.ts 中对象库一致）
+// 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
+// ⚠️ 注意 'backups' 是**本地专属**：上传侧 liveStores() 会把它从载荷里剔除，
+//    读取侧 db.ts 的 makeCloudStoreWrapper 也把它的读写短路到本地 store（#026）。
+//    因此「云端载荷」实际不含它——真正会被同步的是除 backups 外的其余 store。
 export const SYNC_STORES = [
   'projects', 'volumes', 'chapters', 'formData', 'tableRows', 'cardRecords',
   'meta', 'snapshots', 'dailyStats', 'settingsKV', 'trash', 'backups',
@@ -424,6 +427,10 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   /** 用本地数据播种（仅当远端为空时调用）。 */
   async function seedFromLocal(getAll: (store: string) => Promise<any[]>) {
     for (const s of SYNC_STORES) {
+      // backups 是本地专属保险（#026）：上传侧 liveStores 会剔除它，读取侧 db.ts 的包装层
+      // 也把它短路到本地 store——读进 cache 没有任何下游消费者，纯属无用功。
+      // 而备份体量不小（每份是一整份项目副本，最多 30 份滚动），播种时白读一次的代价真实可感。
+      if (s === 'backups') continue
       try {
         cache[s] = (await getAll(s)) || []
       } catch {

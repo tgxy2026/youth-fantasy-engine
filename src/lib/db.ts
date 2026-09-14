@@ -301,8 +301,16 @@ async function saveConflictCopy(info: SyncConflictInfo) {
 // 网页版（serverStore / idbOps）与 桌面/便携版（desktopCloudStore / desktopStore·portableStore）
 // 共用同一套包装逻辑，仅传入各自的云端实例、本地实例与「不可用判定」。
 // #008：云端不可用时透明回退本地，保证用户看到的始终是自己的数据，而非空白缓存。
-function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavailable: () => boolean): StoreOps {
+// 🔬 导出仅供单测（tests/cloudStoreWrapper.test.ts）：本函数是纯工厂、无副作用，
+// 且「backups 落本地 / 敏感 meta 不上云 / 云端不可用回退本地」三条语义都只在这里，
+// 不导出就无法在不跑浏览器的前提下锁住它们（与 setStoreOps 同理）。
+export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavailable: () => boolean): StoreOps {
   async function cloudOrLocal(op: keyof StoreOps, ...args: any[]): Promise<any> {
+    // 🔴 backups 是「本地专属保险」(#026)：syncCore.liveStores 上传前会把它从载荷里剔除
+    // （云端永不参与备份的增删）。因此这里必须直接落本地——否则会出现「云端不要、本地不写」
+    // 的两头不靠：备份只存在于云端实例的内存 cache 里，刷新/关页即丢，备份列表还会显示为空。
+    // 与下面「敏感 meta 走本地」同构，故在唯一入口处统一短路，覆盖 getAll/get/put/del/bulkPut/bulkDel。
+    if (args[0] === 'backups') return (local as any)[op](...args)
     if (isUnavailable()) return (local as any)[op](...args)
     const r = await (cloud as any)[op](...args)
     return isUnavailable() ? (local as any)[op](...args) : r
