@@ -63,6 +63,6 @@
 
 ## 环境（Windows + Git Bash）
 - git `…/PortableGit/versions/1.2.0/cmd/git.exe`；npm 走 `"<托管node>/node.exe" "<…>/npm/bin/npm-cli.js"`，路径用 `C:/` 正斜杠。
-- ⚠️ **Edit 会「假成功」**（dev server 下更甚）：每笔改完立即 grep 复查；多处替换用脚本（**锚点自适应 LF/CRLF**、**替换要幂等**）；`node -e` 反引号会被 shell 命令替换 → 用脚本文件。
+- ⚠️ **Edit 会「假成功」**（dev server 下更甚）：每笔改完立即 grep 复查；多处替换用脚本（**锚点自适应 LF/CRLF**、**替换要幂等**）；`node -e` 反引号会被 shell 命令替换（症状：`syntax error near unexpected token` + **被包住的内容静默丢失，文件写成残的**）→ 一律用脚本文件。
 - ⚠️ **验「随项目」用换项目**（`db.setCurrentProject`），别直查物理表 —— 写错 API 名会被 `if` 静默跳过 → **假绿**。
 - 审计纪律：「数据丢失」级结论**必须回源码验尸**。🔴 实弹会读真实 apiKey（先告知，绝不提交）。JSX：`{/* */}` 不能放属性位，`//` 可以。
