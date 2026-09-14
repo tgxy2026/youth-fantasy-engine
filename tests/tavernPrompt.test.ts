@@ -5,7 +5,10 @@
 //   1) 层序 —— 手册实测顺序是「角色卡 → 记忆 → 协议收尾」，协议钉在**末尾**
 //   2) 协议全文完整 —— 协议是从手册逐行搬来的内置常量，条款掉了就等于功能瘫了
 //   3) 参数改名 —— 内部 repeatPenalty 到 Ollama 那边叫 repeat_penalty（少个 ition）
-import { buildSystemPrompt, buildOpeningMessage, buildMultiCharRule, toChatMessages, renderCastSetting } from '../src/lib/tavern/prompt'
+import {
+  buildSystemPrompt, buildOpeningMessage, buildMultiCharRule, toChatMessages, renderCastSetting,
+  buildSameNameNote, buildSceneDescriptionRule,
+} from '../src/lib/tavern/prompt'
 import { PROTOCOL_CORE, PROTOCOL_VERSION } from '../src/lib/tavern/protocol'
 import { DEFAULT_COMMON_EXTRA } from '../src/lib/tavern/settings'
 import { trimHistory, historyBudget, budgetState, FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
@@ -189,6 +192,32 @@ function main() {
     ok('排在身份之后', sys.indexOf('身份文') < sys.indexOf('【扮演设定'))
     ok('排在协议之前（不打断末尾的格式提醒）', sys.indexOf('【扮演设定') < sys.indexOf(PROTOCOL_CORE))
   }
+  // ---------- N) 客观描写档位（自由对话，2026-09-14 新增） ----------
+  {
+    ok('off 档不产出任何片段（关掉即回到旧行为）', buildSceneDescriptionRule('off') === '')
+    const light = buildSceneDescriptionRule('light')
+    const std = buildSceneDescriptionRule('standard')
+    const rich = buildSceneDescriptionRule('rich')
+    ok('每一档都带「只写客观事实、不写对方心理」这条纪律（与 R2 不代写同源）',
+      [light, std, rich].every(t => t.includes('不写对方的心理活动')))
+    ok('每一档都写明这些话算在协议字数里（60–160 字是硬约束）',
+      [light, std, rich].every(t => t.includes('算在协议规定的字数里')))
+    ok('standard 覆盖出场 / 环境 / 情绪三个落点',
+      std.includes('出场') && std.includes('环境') && std.includes('情绪明显变化时'))
+    ok('light 只在出场与转场时写（不含情绪那条）',
+      light.includes('出场') && light.includes('环境') && !light.includes('情绪明显变化时') && light.length < std.length)
+    ok('rich 额外要求「每回合都至少带一句」', rich.includes('每个回合都至少带一句') && rich.length > std.length)
+    ok('档位文本都够短（≤10 行，别白占 system）', [light, std, rich].every(t => t.split('\n').length <= 10))
+  }
+
+  // ---------- N+1) 同名角色的对照说明 ----------
+  {
+    const note = buildSameNameNote([{ name: '洛汐', tag: 'A1B2' }, { name: '洛汐', tag: 'C3D4' }])
+    ok('逐个列出同名实例与短码', note.includes('洛汐（#A1B2）') && note.includes('洛汐（#C3D4）'))
+    ok('讲清「不是同一个人、记忆各存各的」', note.includes('不同的人') && note.includes('长期记忆彼此独立'))
+    ok('禁止把一个人的经历安到另一个人身上', note.includes('不要把一个人的经历安到另一个人身上'))
+  }
+
   console.log(`\ntavernPrompt: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

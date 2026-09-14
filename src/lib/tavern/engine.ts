@@ -18,7 +18,10 @@ import {
 } from '../ai'
 import { uid } from '../id'
 import { buildProjectContext } from '../aiContext'
-import { buildSystemPrompt, buildMultiCharRule, toChatMessages, renderCastSetting } from './prompt'
+import {
+  buildSystemPrompt, buildMultiCharRule, toChatMessages, renderCastSetting,
+  buildSameNameNote, buildSceneDescriptionRule,
+} from './prompt'
 import * as store from './store'
 import { trimHistory, historyBudget } from './budget'
 import { resolveParams, toOllamaOptions } from './params'
@@ -28,7 +31,7 @@ import {
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
 import {
-  hasCastSetting,
+  hasCastSetting, charTag,
   type TavernSession, type TavernMessage, type TavernCast,
   type FreeSession, type FreeCharacter, type FreeMemory,
 } from './types'
@@ -278,8 +281,13 @@ const FREE_TONE = 'chat' as const
  * 把角色卡四章渲染成设定块（空章跳过，不留「（未填）」噪音）。
  * 第 4 章「示例对话」杠杆最高 —— 模型会直接吸收示例里的应对话术与格式（手册实测），
  * 所以标题里明确写出「请模仿」，别让它当成普通资料读过就忘。
+ *
+ * 【2026-09-14 改动：块首加角色名】
+ * 从前只输出四章、不带名字 —— 单角色时靠身份层「你扮演：X」还能对上，
+ * 多角色时就是**两段无主的设定拼在一起**，模型只能靠顺序猜谁是谁。
+ * 现在每块自带 `【角色卡 · 名】`；同场有同名卡时再挂 `#短码`（见 `charTag`）。
  */
-export function renderFreeCharacter(c: FreeCharacter): string {
+export function renderFreeCharacter(c: FreeCharacter, opts: { tag?: string } = {}): string {
   const secs: string[] = []
   if (c.world?.trim()) secs.push(`【第 1 章 · 世界】\n${c.world.trim()}`)
 
@@ -306,7 +314,10 @@ export function renderFreeCharacter(c: FreeCharacter): string {
   if (c.examples?.trim()) {
     secs.push(`【第 4 章 · 示例对话（请模仿其应对话术与格式）】\n${c.examples.trim()}`)
   }
-  return secs.join('\n\n')
+  // 空卡仍然渲染成空串（不产生一个只有标题的空壳块）
+  if (secs.length === 0) return ''
+  const tag = opts.tag ? ` #${opts.tag}` : ''
+  return `【角色卡 · ${c.name.trim() || '（未命名）'}${tag}】\n\n${secs.join('\n\n')}`
 }
 
 export type FreeSystemResult = {
@@ -339,17 +350,39 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   const userChar = found.find(c => c.id === session.userCharId) ?? null
   const aiChars = found.filter(c => c.id !== userChar?.id)
 
+  /**
+   * 同名消歧（2026-09-14）。
+   *
+   * 数据层本来就以 **id** 为准（记忆 `tavern.free.mem.<charId>`、消息 `speakerId`），
+   * 所以「新建一张同名但内容不同的卡」**不会**抢走原来那张卡的记忆 —— 这点不用怀疑。
+   * 会出问题的只有提示词：两张卡都叫「洛汐」时，模型读到的是两段同名的设定与记忆，
+   * 无从判断谁是谁。所以同名字段命中时给每张卡挂一个稳定短码，并附一张对照表。
+   */
+  const nameCount = new Map<string, number>()
+  for (const c of found) {
+    const k = c.name.trim()
+    nameCount.set(k, (nameCount.get(k) ?? 0) + 1)
+  }
+  const dupNames = new Set([...nameCount].filter(([, n]) => n > 1).map(([k]) => k))
+  const tagOf = (c: FreeCharacter) => (dupNames.has(c.name.trim()) ? charTag(c.id) : '')
+
   const setting = (() => {
     // 用户扮演的角色（可选）：他由用户自己掌控，**不是 AI 的位子** ——
     // 从 AI 的名单、发言轮转、记忆块里都要摘出去（否则模型会替他说话、抢他的台词）。
     const parts: string[] = []
-    if (aiChars.length) parts.push(aiChars.map(renderFreeCharacter).join('\n\n'))
+    // 对照表放最前：它解释的是「下面为什么有两张同名的卡」，先读规则再读卡
+    if (dupNames.size) {
+      parts.push(buildSameNameNote(
+        found.filter(c => dupNames.has(c.name.trim())).map(c => ({ name: c.name.trim(), tag: charTag(c.id) })),
+      ))
+    }
+    if (aiChars.length) parts.push(aiChars.map(c => renderFreeCharacter(c, { tag: tagOf(c) })).join('\n\n'))
     if (userChar) {
       // 用户扮演的那张卡也带给模型，但**只用来说明「对面是谁」**：口吻、立场、底线
       parts.push(
-        `【用户扮演的角色 · ${userChar.name}】（仅供你理解对方是谁、说话什么调子；\n` +
+        `【用户扮演的角色 · ${userChar.name}${tagOf(userChar) ? ` #${tagOf(userChar)}` : ''}】（仅供你理解对方是谁、说话什么调子；\n` +
         `他的言行归用户自己掌控 —— **不要代写、不要替他决定、也不要替他回答**）\n` +
-        renderFreeCharacter(userChar),
+        renderFreeCharacter(userChar, { tag: tagOf(userChar) }),
       )
     }
     if (aiChars.length > 1) {
@@ -366,7 +399,9 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     try { m = await store.getMemory(c.id) } catch { m = null }
     // 空档案不输出：六栏全写「（暂无）」既占上下文又干扰模型，不如整块不出现
     const text = m && !isMemoryEmpty(m) ? memoryToText(m).trim() : ''
-    return text ? `【长期记忆 · ${c.name}】\n${text}` : ''
+    // 挂短码的规则与角色卡一致：同名才挂，免得平时多出无意义的标记
+    const tag = tagOf(c)
+    return text ? `【长期记忆 · ${c.name}${tag ? ` #${tag}` : ''}】\n${text}` : ''
   }))
   const memory = blocks.filter(Boolean).join('\n\n')
 
@@ -386,7 +421,11 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     dropped: [],
     styleHint: st.free.styleHint,
     commonExtra: st.common.extraPrompt,
-    modeExtra: st.free.extraPrompt,
+    // 模式补充要求：内置的「客观描写」在前、作者自己写的在后 —— 作者的话离生成点更近，
+    // 真冲突时以作者为准（与「协议钉末尾」同一个思路）。
+    modeExtra: [buildSceneDescriptionRule(st.free.sceneDescription), st.free.extraPrompt]
+      .filter(x => x?.trim())
+      .join('\n\n'),
     protocol: st.protocol,
   })
 

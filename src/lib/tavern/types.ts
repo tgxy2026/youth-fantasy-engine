@@ -43,6 +43,15 @@ export type TavernParams = {
 /** 协议档位：叙事向（剧情默认）/ 聊天向（自由默认）。见方案 5.3 */
 export type TavernTone = 'narrative' | 'chat'
 
+/**
+ * 「客观描写」档位（自由对话）：沉浸感靠对白之外的东西撑起来 ——
+ * 她出场时的穿着与姿态、环境的光线与声音、情绪落到手上的小动作。
+ *
+ * 为什么做成档位而不是写死：聊天向默认要短句快节奏，硬塞描写会盖过对白；
+ * 而有些场景（约会、初见、久别重逢）作者就是想要那份「看得见」的质感。
+ */
+export type SceneDescLevel = 'off' | 'light' | 'standard' | 'rich'
+
 /** 记忆水位线：已总结到哪一条消息（关机/失败/中途退出都不丢不重） */
 export type TavernWatermark = { messageId: string; at: number }
 
@@ -171,6 +180,20 @@ export type FreeCharacter = {
   importedFrom?: { projectId: string; cardId: string; at: number }
   createdAt: number
   updatedAt: number
+}
+
+/**
+ * 角色卡的稳定短码（4 位，取自 id 尾部）。
+ *
+ * 用途**只有一个**：同场出现**同名**角色卡时，让提示词里有一套模型能对照的标记
+ * （`【角色卡 · 洛汐 #A1B2】`）。数据层从来以 `id` 为准 —— 记忆、发言归属都不依赖名字，
+ * 所以同名卡彼此不会串档；会串的只有「模型读到的两段设定/记忆都叫洛汐」这一件事。
+ *
+ * ⚠️ 不要拿它当业务主键，也不要指望它对用户有含义 —— 它只是给人读的消歧标记。
+ */
+export function charTag(id: string): string {
+  const s = String(id ?? '').replace(/[^0-9a-z]/gi, '').toUpperCase()
+  return s.slice(-4).padStart(4, '0')
 }
 
 /**

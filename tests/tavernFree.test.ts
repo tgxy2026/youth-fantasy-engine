@@ -294,6 +294,66 @@ async function main() {
       sysPlain.includes('用户扮演用户自己的角色。'), '')
   }
 
+  // ---------- 9) 同名角色消歧（2026-09-14） ----------
+  // 记忆按 id 存 —— 同名卡本来就抢不走彼此的档案；这里锁的是**提示词层**的辨识能力。
+  {
+    __resetMockStores()
+    const a = await mkChar('洛汐', { profile: { externals: '长发，爱穿白裙子', core: '怕生，话少', speech: '句子很轻', relations: '和苏念同校', cannot: '不敢拒绝别人', knowledge: '不知道楚楠的过去' } })
+    const b = await mkChar('洛汐', { profile: { externals: '短发，常穿工装外套', core: '爱开玩笑，人来疯', speech: '语速快，爱用网络梗', relations: '和苏念是邻居', cannot: '坐不住', knowledge: '不知道旧城改造的事' } })
+    ok('两张同名卡是两条独立记录（不同 id）', a.id !== b.id)
+
+    const s = await store.createFreeSession([a.id, b.id], '两个洛汐', { providerId: STUB_PROVIDER.id }, {})
+    const { system } = await buildFreeSystem(s, [a, b])
+    ok('角色卡块自带角色名（多角色时不再是无主的两段拼接）', system.includes('【角色卡 · 洛汐 #'))
+    ok('注入同名对照说明', system.includes('【同名角色】') && system.includes('不同的人'))
+    const tags = [...system.matchAll(/【角色卡 · 洛汐 #([0-9A-Z]{4})】/g)].map(m => m[1])
+    ok('两张同名卡各挂一个不同的短码', tags.length === 2 && tags[0] !== tags[1], tags.join(' / '))
+    ok('两张卡的内容都在（后面的同名卡没有顶掉前面的）',
+      system.includes('爱穿白裙子') && system.includes('常穿工装外套'))
+
+    // 记忆块也要能分辨 —— 否则模型看到两块「【长期记忆 · 洛汐】」还是不知道谁是谁
+    await store.saveMemory({ ...store.emptyMemory(a.id), facts: '她怕黑', updatedAt: Date.now() })
+    await store.saveMemory({ ...store.emptyMemory(b.id), facts: '她养了一条狗', updatedAt: Date.now() })
+    const withMem = (await buildFreeSystem(s, [a, b])).system
+    ok('同名时记忆块也挂短码，且两份记忆都在',
+      /【长期记忆 · 洛汐 #[0-9A-Z]{4}】/.test(withMem) && withMem.includes('她怕黑') && withMem.includes('她养了一条狗'))
+
+    // 不同名时**不注入**任何消歧内容（别白占上下文）
+    const c2 = await mkChar('林夏')
+    const s2 = await store.createFreeSession([a.id, c2.id], '不同名', { providerId: STUB_PROVIDER.id }, {})
+    const plain = (await buildFreeSystem(s2, [a, c2])).system
+    ok('不同名时：不加对照说明、也不挂短码',
+      !plain.includes('【同名角色】') && !plain.includes('【角色卡 · 林夏 #'))
+    ok('不同名时角色卡仍带名字（便于模型对应关系）', plain.includes('【角色卡 · 林夏】'))
+  }
+
+  // ---------- 10) 客观描写档位（2026-09-14 新增） ----------
+  {
+    const su2 = await mkChar('苏念')
+    const sess = await store.createFreeSession([su2.id], '电影院门口', { providerId: STUB_PROVIDER.id }, {})
+
+    const std = (await buildFreeSystem(sess, [su2])).system
+    ok('默认档下 system 含「客观描写」段（= 本轮新增行为的默认值）', std.includes('【客观描写】'))
+    ok('三条落点都在（出场 / 环境 / 情绪）',
+      std.includes('出场') && std.includes('环境') && std.includes('情绪明显变化时'))
+    ok('写明只写观察得到的客观事实、不写对方心理（与「不代写」同源）',
+      std.includes('不写对方的心理活动'))
+    ok('写明描写算在协议字数里（不会把 60–160 字撑爆）', std.includes('算在协议规定的字数里'))
+    ok('排在身份之后、协议之前',
+      std.indexOf('【你在戏里的身份与知识边界】') < std.indexOf('【客观描写】') &&
+      std.indexOf('【客观描写】') < std.indexOf(PROTOCOL_CORE))
+
+    const stOff = { ...DEFAULT_TAVERN_SETTINGS, free: { ...DEFAULT_TAVERN_SETTINGS.free, sceneDescription: 'off' as const } }
+    const off = (await buildFreeSystem(sess, [su2], stOff)).system
+    ok('关掉档位后整段不出现', !off.includes('【客观描写】'), off.slice(0, 0))
+
+    const stRich = { ...DEFAULT_TAVERN_SETTINGS, free: { ...DEFAULT_TAVERN_SETTINGS.free, sceneDescription: 'rich' as const, extraPrompt: '不要写天气。' } }
+    const rich = (await buildFreeSystem(sess, [su2], stRich)).system
+    ok('丰富档多一句「每回合都至少带一句」', rich.includes('每个回合都至少带一句'))
+    ok('作者的补充要求排在客观描写之后（真冲突以作者为准）',
+      rich.indexOf('【客观描写】') < rich.indexOf('不要写天气。'))
+  }
+
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

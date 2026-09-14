@@ -156,6 +156,42 @@ async function main() {
   console.log(`[实弹观察] 是否按卡上关系用「念念」称呼（卡里写他只叫她念念）：${/念念/.test(reply4) ? '✓ 用了' : '（这轮没用，不算错）'}`)
   console.log(`[实弹观察] 是否误把她叫成「苏念」：${/苏念/.test(reply4) ? '⚠️ 叫了全名' : '✓ 没叫全名'}`)
 
+  // ---------- 阶段 5：客观描写（2026-09-14 新增能力） ----------
+  // 老大要的沉浸感：角色出场要「看得见」—— 她穿什么、周围什么光、外面什么天气。
+  // 场景取自他给的例子：楚楠约洛汐看电影。用户演楚楠，AI 演洛汐。
+  // 要验两件事：① 规则真的进了 system；② 模型真写了描写，而且**没把 60–160 字的篇幅撑爆**
+  //            （协议的字数是硬约束，描写若挤掉对白就本末倒置）。
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 5 · 客观描写（约会场景 · 用户演楚楠 / AI 演洛汐）')
+  console.log('='.repeat(70))
+  const seedLuo = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
+  if (!seedLuo) { console.log('❌ 示范卡里缺少洛汐，跳过本阶段'); return }
+  const luo = await store.createFreeChar(seedLuo)
+  const chuU = await store.createFreeChar(seedChu)
+  const scene5 = {
+    place: '市中心影城的售票大厅',
+    time: '周六傍晚，刚下过一场雨',
+    present: ['洛汐'],
+    description: '楚楠先到，站在取票机旁边等；大厅里在放新片的预告，声音有点大。',
+  }
+  let s5 = await store.createFreeSession([luo.id, chuU.id], '洛汐 × 楚楠（电影院）', { providerId: pick.provider.id }, {}, chuU.id)
+  s5 = await store.saveFreeSession({
+    ...s5, scene: scene5,
+    messages: [{ id: uid(), role: 'user', content: buildOpeningMessage(scene5, '（我把两张票捏在手里，看见玻璃门被推开。）'), at: Date.now() }],
+  })
+  const sys5 = (await buildFreeSystem(s5, [luo, chuU])).system
+  console.log(`[离线断言] system 含【客观描写】：${sys5.includes('【客观描写】') ? '✓' : '✗'}`)
+  console.log(`[离线断言] 默认档写明「不写对方的心理活动」：${sys5.includes('不写对方的心理活动') ? '✓' : '✗'}`)
+  console.log(`[离线断言] 描写算在协议字数内：${sys5.includes('算在协议规定的字数里') ? '✓' : '✗'}`)
+  s5 = await say(s5, luo, '（我把票递过去）路上淋着了吗？', [luo, chuU])
+  const reply5 = s5.messages[s5.messages.length - 1]?.content ?? ''
+  const DESC_WORDS = /(外套|裙子|裙|毛衣|围巾|发梢|头发|鞋|袖口|指尖|手里|肩上|雨|伞|灯|光|风|水汽|味道|地毯|海报|广播|玻璃门|大厅|晚场|票根)/
+  const hitWords = (reply5.match(new RegExp(DESC_WORDS.source, 'g')) ?? []).slice(0, 8)
+  const len5 = reply5.replace(/\s/g, '').length
+  console.log(`[实弹观察] 回复里出现客观描写词：${hitWords.length ? '✓ ' + hitWords.join('、') : '⚠️ 未见'}`)
+  console.log(`[实弹观察] 回复长度 ${len5} 字 → ${len5 <= 200 ? '✓ 仍在协议篇幅内' : '⚠️ 超出 160 字较多'}`)
+  console.log(`[实弹观察] 是否替楚楠（用户角色）说话：${/（楚楠/.test(reply5) || /^楚楠[：:]/.test(reply5.trim()) ? '⚠️ 疑似代写' : '✓ 未见'}`)
+
   // ---------- 阶段 1：会话 A 聊出可被记住的事实 ----------
   console.log('\n' + '='.repeat(70))
   console.log('▶ 阶段 1 · 会话 A：聊出事实（自我暴露 + 养了只猫）')

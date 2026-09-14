@@ -64,11 +64,12 @@ async function main() {
     const custom = {
       ...fresh,
       common: { ...fresh.common, timeoutSec: 60, defaultProviderId: 'p1' },
-      free: { ...fresh.free, temperature: 0.5 },
+      free: { ...fresh.free, temperature: 0.5, sceneDescription: 'light' as const },
     }
     await saveTavernSettings(custom)
     const back = await getTavernSettings()
     ok('改完能读回', back.common.timeoutSec === 60 && back.free.temperature === 0.5 && back.common.defaultProviderId === 'p1')
+    ok('档位也能存能读（客观描写 = 轻）', back.free.sceneDescription === 'light', back.free.sceneDescription)
 
     await resetTavernSettings()
     ok('恢复默认后回到出厂值', (await getTavernSettings()).common.timeoutSec === 180)
@@ -87,6 +88,8 @@ async function main() {
       st.plot.temperature === 0.85,
       JSON.stringify(st.common))
     ok('整个缺失的分组也补全', st.common.extraPrompt === DEFAULT_COMMON_EXTRA)
+    ok('旧数据里没有 sceneDescription 时回落到「标准」档（不会 undefined）',
+      st.free.sceneDescription === 'standard', String(st.free.sceneDescription))
   }
 
   // ---------- 4) 派生量 ----------
@@ -124,6 +127,8 @@ async function main() {
     ok('剧情：设定层占比 = 原写死的 0.6', d.plot.settingRatio === 0.6, String(d.plot.settingRatio))
     ok('自由：整理模型默认为空（跟随默认模型）', d.free.summaryProviderId === '')
     ok('自由：默认「我演」留空（= 用户演他自己，AI 不会替你编身份）', d.free.defaultUserCharId === '')
+    // 这一项是**本轮刻意新增**的行为（沉浸感），不是照抄旧硬编码值 —— 改动它必须有意识
+    ok('自由：客观描写默认「标准」档', d.free.sceneDescription === 'standard', d.free.sceneDescription)
     ok('自由：整理锁有效期 = 原 1800 秒换算成 30 分钟',
       d.free.summaryLockTtlMin === SUMMARY_LOCK_TTL_MS / 60000, String(d.free.summaryLockTtlMin))
     ok('自由：日常生活记录条数 = 原 DAILY_LOG_KEEP',

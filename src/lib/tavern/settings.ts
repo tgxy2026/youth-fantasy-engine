@@ -25,7 +25,7 @@ import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
   MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
-  type TavernParams,
+  type TavernParams, type SceneDescLevel,
 } from './types'
 import { TONE_HINT } from './prompt'
 import { PROTOCOL_CORE } from './protocol'
@@ -87,6 +87,12 @@ export type TavernFreeSettings = {
   defaultUserCharId: string
   /** 聊天向风格提示（默认沿用原 TONE_HINT.chat） */
   styleHint: string
+  /**
+   * 客观描写档位（沉浸感）：只靠对白与动作，画面是空的 ——
+   * 这一项决定要不要、以及多密地写「她穿什么、屋里什么光、外面什么天气」。
+   * 默认 standard；关掉即回到「只写对白与动作」的旧行为。
+   */
+  sceneDescription: SceneDescLevel
   /** 自由对话专属补充要求 */
   extraPrompt: string
   /** 未总结消息达到多少条就自动整理一次记忆 */
@@ -190,6 +196,10 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     summaryProviderId: '',
     defaultUserCharId: '',
     styleHint: TONE_HINT.chat,
+    // 默认 standard：这是本轮**刻意新增**的行为（不是照抄旧硬编码值）——
+    // 老大要的沉浸感：出场写穿着/姿态、转场补环境、情绪落到外在细节上。
+    // 嫌吵或嫌占字数就在面板上降到 light / 关掉。
+    sceneDescription: 'standard',
     extraPrompt: '',
     triggerMessages: SUMMARY_TRIGGER_MESSAGES,
     softLimit: MEMORY_SOFT_LIMIT,

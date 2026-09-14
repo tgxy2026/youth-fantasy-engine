@@ -21,10 +21,10 @@
  * 阶段：本页是 P2 范围（CRUD + 表单）。「从小说角色 AI 转换」与「导入导出 JSON」属 P3，
  * 页面上留了入口但**明确置灰并说明**，不假装能用。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
-import type { FreeCharacter, FreeMemory, TavernCharIndexItem } from '../lib/tavern/types'
+import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem } from '../lib/tavern/types'
 import { MEMORY_SECTIONS, memoryChars } from '../lib/tavern/memory'
 import { toCardFile, parseCardFile, cardFileName, describeWarnings } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
@@ -68,6 +68,30 @@ function SectionTitle({ children, sub }: { children: string; sub?: string }) {
   )
 }
 
+/** 从小说角色导入弹窗的分组页签 */
+type NovelTab = 'all' | 'char-main' | 'char-secondary' | 'char-npc'
+const NOVEL_TABS: { id: NovelTab; label: string }[] = [
+  { id: 'all', label: '全部' },
+  { id: 'char-main', label: '主要' },
+  { id: 'char-secondary', label: '次要' },
+  { id: 'char-npc', label: 'NPC' },
+]
+const NOVEL_TAB_LABEL: Record<string, string> = {
+  'char-main': '主要', 'char-secondary': '次要', 'char-npc': 'NPC',
+}
+
+/**
+ * 复制卡时的命名：加「（副本）」，重名就往后排（副本2、副本3…）。
+ * 不加序号的话右栏会立刻出现两张同名卡 —— 那正是我们想替作者避免的困惑。
+ */
+function copyName(base: string, taken: Set<string>): string {
+  const n = base.trim() || '未命名角色'
+  let cand = `${n}（副本）`
+  let i = 2
+  while (taken.has(cand)) cand = `${n}（副本${i++}）`
+  return cand
+}
+
 export default function TavernCard() {
   const [list, setList] = useState<TavernCharIndexItem[]>([])
   const [draft, setDraft] = useState<FreeCharacter | null>(null)
@@ -87,6 +111,9 @@ export default function TavernCard() {
   const [savingMem, setSavingMem] = useState(false)
   const [novelChars, setNovelChars] = useState<{ id: string; name: string; tabId: string }[]>([])
   const [converting, setConverting] = useState(false)
+/** 导入弹窗的筛选态：角色多时靠它定位。每次打开重置，免得留下上次的关键字 */
+  const [nq, setNq] = useState('')
+  const [ntab, setNtab] = useState<NovelTab>('all')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -180,6 +207,35 @@ export default function TavernCard() {
     }
   }
 
+  /**
+   * 复制当前卡为新卡（在现成卡的基础上改，比从零填快得多）。
+   *
+   * 三处刻意决定：
+   *   · 名称加「（副本）」并自动避重 —— 否则右栏立刻出现两张同名卡，正是要避免的困惑；
+   *   · **不复制记忆与日常状态**：那是「那个人经历过的事」，搬过来等于凭空给新角色一段
+   *     不属于他的过去，也正是同名不同人最容易串味的地方；
+   *   · 复制**屏幕上这一份**（含未保存的改动）—— 作者心里想的就是眼前看到的这张。
+   */
+  const duplicate = async () => {
+    if (!draft) return
+    try {
+      const taken = new Set(list.map(i => i.name.trim()))
+      const created = await store.createFreeChar({
+        name: copyName(draft.name, taken),
+        avatar: draft.avatar,
+        world: draft.world,
+        profile: { ...draft.profile },
+        conduct: { ...draft.conduct },
+        examples: draft.examples,
+      })
+      await load()
+      await open(created.id)
+      showToast(`${dirty ? "已复制（含未保存的改动）" : "已复制为新卡"}：记忆与日常状态不随卡复制`)
+    } catch (e) {
+      showToast(`复制失败：${e instanceof Error ? e.message : String(e)}`, "error")
+    }
+  }
+
   // ---------- 导入 / 导出（方案 §7.7） ----------
   const exportCard = () => {
     if (!draft) return
@@ -221,6 +277,8 @@ export default function TavernCard() {
       } catch { /* 该表读不到就跳过 */ }
     }
     setNovelChars(out)
+    setNq('')
+    setNtab('all')
     setImportOpen(true)
     if (out.length === 0) showToast('当前项目里没有已建档的角色', 'info')
   }
@@ -260,6 +318,24 @@ export default function TavernCard() {
     setDraft(d => (d ? { ...d, conduct: { ...d.conduct, [k]: v } } : d))
     setDirty(true)
   }
+
+/** 导入弹窗的可见列表：分组页签 + 关键字（按名字） */
+  const novelRows = useMemo(() => {
+    const kw = nq.trim().toLowerCase()
+    return novelChars.filter(c =>
+      (ntab === 'all' || c.tabId === ntab) && (!kw || c.name.toLowerCase().includes(kw)))
+  }, [novelChars, nq, ntab])
+  const novelCount = (id: NovelTab) =>
+    id === 'all' ? novelChars.length : novelChars.filter(c => c.tabId === id).length
+
+  /**
+   * 与当前卡**同名**的其它卡。
+   * 同名不等于同一人：记忆按角色 id 存，各存各的 —— 这里只是提前把这件事告诉作者，
+   * 免得看到两张同名的卡就以为新卡抢走了老卡的记忆。
+   */
+  const sameNameOthers = draft && draft.name.trim()
+    ? list.filter(i => i.id !== draft.id && i.name.trim() === draft.name.trim())
+    : []
 
   return (
     /* 固定头部 + 下方独立滚动区：滚动只发生在标题条**下面**，
@@ -378,6 +454,18 @@ export default function TavernCard() {
                     头像暂未开放（用名字首字代替）。角色卡是 AI 的「人设说明书」—— 写得越具体，演得越像。
                   </p>
                 </div>
+
+                {sameNameOthers.length > 0 && (
+                  <div className="rounded-md border border-amber/35 bg-amber/8 px-3 py-2 text-[11.5px] text-ink-300 leading-relaxed">
+                    ⚠️ 已有 {sameNameOthers.length} 张卡也叫「{draft.name.trim()}」。
+                    <span className="text-ink-100">同名不等于同一个人</span>：记忆、日常状态、聊天记录都各存各的
+                    （记忆按角色 id 绑定），新建或复制同名卡不会抢走那一张的记忆。
+                    同一场对话里同时出现时，提示词会给它们挂稳定短码区分 —— 这张是
+                    <span className="text-amber"> #{charTag(draft.id)}</span>，另一张是
+                    <span className="text-amber"> #{charTag(sameNameOthers[0].id)}</span>。
+                    想少混淆，建议改名加区别（如「洛汐（旧版）」）。
+                  </div>
+                )}
 
                 {/* 第 1 章 */}
                 <section>
@@ -526,6 +614,12 @@ export default function TavernCard() {
                     {dirty ? '有未保存的改动' : `上次保存：${new Date(draft.updatedAt).toLocaleString('zh-CN')}`}
                   </span>
                   <div className="flex gap-2">
+                    <Button
+                      variant="ghost" size="md" onClick={() => void duplicate()}
+                      title="四章照抄一份新卡，可在它基础上改；记忆与日常状态不复制"
+                    >
+                      复制为新卡
+                    </Button>
                     <Button variant="danger" size="md" onClick={remove}>删除</Button>
                     <Button variant="primary" size="md" disabled={!dirty || saving} onClick={save}>
                       {saving ? '保存中…' : '保存'}
@@ -546,13 +640,35 @@ export default function TavernCard() {
             AI 会把这个角色**改写成角色扮演用的四章卡片**：设定翻译成行为倾向、剧情走向丢掉。
             <span className="text-amber/90"> 结果只是一份草稿 —— 尤其第 4 章示例对话通常是它编的，务必自己改。</span>
           </div>
+          {novelChars.length > 0 && (
+            <>
+              <input
+                className="w-full bg-ink-900 border border-ink-700 rounded-md px-2.5 py-1.5 text-[12.5px] text-ink-100 outline-none focus:border-amber/50"
+                placeholder="搜索角色（按名字）"
+                value={nq}
+                onChange={e => setNq(e.target.value)}
+              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                {NOVEL_TABS.map(t => (
+                  <button
+                    key={t.id} type="button" onClick={() => setNtab(t.id)}
+                    className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                      ntab === t.id ? 'border-amber/40 bg-amber/12 text-amber' : 'border-ink-700 text-ink-400 hover:bg-ink-800/60'
+                    }`}
+                  >
+                    {t.label} {novelCount(t.id)}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {novelChars.length === 0 ? (
             <p className="py-6 text-center text-[12px] text-ink-500">
               当前项目里没有已建档的角色。先去小说项目填几张角色卡再来。
             </p>
           ) : (
             <ul className="max-h-72 overflow-y-auto space-y-1">
-              {novelChars.map(c => (
+              {novelRows.map(c => (
                 <li key={c.id}>
                   <button
                     type="button"
@@ -565,16 +681,21 @@ export default function TavernCard() {
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name}</span>
                     <span className="shrink-0 text-[10.5px] text-ink-600">
-                      {{ 'char-main': '主要', 'char-secondary': '次要', 'char-npc': 'NPC' }[c.tabId] ?? c.tabId}
+                      {NOVEL_TAB_LABEL[c.tabId] ?? c.tabId}
                     </span>
                   </button>
                 </li>
               ))}
+              {novelRows.length === 0 && (
+                <li className="px-3 py-6 text-center text-[12px] text-ink-500">没有匹配的角色</li>
+              )}
             </ul>
           )}
           <div className="flex items-center justify-between border-t border-ink-800 pt-2">
             <span className="text-[11px] text-ink-500">
-              {converting ? '正在转换（要读一遍角色卡，可能要十几秒）…' : `共 ${novelChars.length} 个角色`}
+              {converting
+                ? '正在转换（要读一遍角色卡，可能要十几秒）…'
+                : `共 ${novelChars.length} 个角色${novelRows.length === novelChars.length ? "" : ` · 命中 ${novelRows.length} 个`}`}
             </span>
             <Button variant="secondary" size="md" onClick={() => setImportOpen(false)} disabled={converting}>关闭</Button>
           </div>

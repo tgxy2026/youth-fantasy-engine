@@ -56,6 +56,17 @@ const COL_GAP = 16
 const PROTO_MIN_HEIGHT = 240
 
 /**
+ * 客观描写档位（自由对话）。
+ * 每一档都是**真值**，所以不传 emptyLabel（否则会多出一个空选项）。
+ */
+const SCENE_DESC_OPTIONS = [
+  { id: 'off', label: '关闭 —— 只写对白与动作' },
+  { id: 'light', label: '轻 —— 出场与转场时补一句' },
+  { id: 'standard', label: '标准（推荐）—— 出场 / 环境 / 情绪都落到具体细节' },
+  { id: 'rich', label: '丰富 —— 每回合都带一句环境或身体细节' },
+]
+
+/**
  * 分组外壳。
  * `className` / `bodyClassName` 是给「需要被拉伸到与对侧等高的那一段」用的（扮演协议）：
  * 外层网格默认 `align-items: stretch`，两列等高；协议段作为左列最后一个子项吃满剩余高度，
@@ -127,16 +138,16 @@ function TextField({ label, hint, value, minRows = 3, placeholder, onChange }: {
   )
 }
 
-/** 下拉选择 */
+/** 下拉选择。`emptyLabel` 不传就不渲染那个空选项（用于「每一档都是真值」的档位选择） */
 function SelectField({ label, hint, value, options, emptyLabel, onChange }: {
   label: string; hint?: string; value: string
-  options: { id: string; label: string }[]; emptyLabel: string
+  options: { id: string; label: string }[]; emptyLabel?: string
   onChange: (v: string) => void
 }) {
   return (
     <Field label={label} hint={hint}>
       <select value={value} className={`${NUM} w-full`} onChange={e => onChange(e.target.value)}>
-        <option value="">{emptyLabel}</option>
+        {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
         {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
       </select>
     </Field>
@@ -567,6 +578,14 @@ export default function TavernControl() {
               options={charOptions}
               emptyLabel="（不预填，你演你自己）"
               onChange={v => setFree('defaultUserCharId', v)}
+            />
+
+            <SelectField
+              label="客观描写"
+              hint="只写对白与动作，画面是空的 —— 这一项决定要不要写「她穿什么、屋里什么光、外面什么天气」。标准档：出场交代穿着与姿态、转场补一句环境、情绪用外在细节表示（这三条都要求只写**观察得到的**东西，不写对方的心理活动）。描写算在协议那 60–160 字里，所以别指望它长篇铺陈。"
+              value={fr.sceneDescription}
+              options={SCENE_DESC_OPTIONS}
+              onChange={v => setFree('sceneDescription', v)}
             />
 
             <TextField
