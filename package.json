@@ -14,6 +14,10 @@
     "build:desktop": "node scripts/build-desktop.mjs",
     "electron:dev": "vite --port 5199 & ELECTRON_START_URL=http://localhost:5199 electron .",
     "preview": "vite preview --port 5199",
+    "test": "node tests/run-all.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "verify": "npm run typecheck && npm run lint && npm test",
     "cleanup": "node scripts/cleanup-residual.mjs"
   },
   "devDependencies": {
@@ -23,6 +27,9 @@
     "autoprefixer": "^10.4.19",
     "electron": "^31.3.0",
     "electron-builder": "^24.13.3",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
     "idb": "^8.0.0",
     "lucide-react": "^0.400.0",
     "postcss": "^8.4.39",
@@ -30,6 +37,7 @@
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.6",
     "typescript": "^5.5.3",
+    "typescript-eslint": "^8.70.0",
     "vite": "^5.3.4",
     "vite-plugin-singlefile": "^2.3.3"
   }

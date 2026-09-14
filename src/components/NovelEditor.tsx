@@ -262,7 +262,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     setTodayWords(stats.find(s => s.date === todayKey())?.words ?? 0)
   }, [])
 
-  useEffect(() => { load(); loadTodayWords() }, [])
+  // load / loadTodayWords 均为「依赖链上全是空依赖」的稳定 useCallback
+  // （load → reloadVolumes → []），补进依赖数组不会引发重复执行，仅让 lint 有据可依。
+  useEffect(() => { load(); loadTodayWords() }, [load, loadTodayWords])
 
   // v1.3：加载可用引用名（角色卡 + 世界构建各设定表的条目名称），供本章引用侧栏与内联高亮
   // v1.6：别称一并登记（aliasOf 指向原本名称）——正文出现别称时同样高亮，并归入原名条目
@@ -423,7 +425,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       // 上一章正文，视觉上就是「切换/加载缓慢且内容显示异常」。这里直接同帧对齐。
       setDeferredContent(ch.content ?? '')
     }
-  }, [activeId]) // eslint-disable-line
+  }, [activeId])
 
   // 卸载时清理全部定时器，防止组件卸载后仍触发 setState（内存泄漏）
   useEffect(() => () => {

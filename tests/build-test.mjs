@@ -14,7 +14,8 @@ await build({
   platform: 'node',
   format: 'esm',
   outfile: path.join(here, `.${entry}.mjs`),
-  logLevel: 'info',
+  // 单独跑时保留 info（看得见产物体积/耗时）；被 run-all.mjs 批量调用时置 quiet，避免横幅刷屏
+  logLevel: process.env.YFE_TEST_QUIET ? 'warning' : 'info',
   define: { __PORTABLE__: 'true', __APP_VERSION__: '"test"' },
   plugins: [{
     name: 'stub-stores',
