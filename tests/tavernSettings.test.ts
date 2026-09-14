@@ -123,6 +123,7 @@ async function main() {
     ok('通用：默认关闭思考链（engine 原本恒传 think:false）', d.common.disableThink === true)
     ok('剧情：设定层占比 = 原写死的 0.6', d.plot.settingRatio === 0.6, String(d.plot.settingRatio))
     ok('自由：整理模型默认为空（跟随默认模型）', d.free.summaryProviderId === '')
+    ok('自由：默认「我演」留空（= 用户演他自己，AI 不会替你编身份）', d.free.defaultUserCharId === '')
     ok('自由：整理锁有效期 = 原 1800 秒换算成 30 分钟',
       d.free.summaryLockTtlMin === SUMMARY_LOCK_TTL_MS / 60000, String(d.free.summaryLockTtlMin))
     ok('自由：日常生活记录条数 = 原 DAILY_LOG_KEEP',

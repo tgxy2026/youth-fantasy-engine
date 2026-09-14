@@ -76,6 +76,15 @@ export type TavernFreeSettings = {
   presencePenalty: number
   /** 总结模型：整理记忆用，越快越省越好。留空 = 跟随上面的默认模型 */
   summaryProviderId: string
+  /**
+   * 默认「我演」的角色（自由模式）。
+   *
+   * 自由模式默认是「用户演他自己」—— AI 会把你当作**没有具体身份的本人**，
+   * 不替你编一个角色；但代价是它不知道在跟谁对话，称呼与距离无从针对。
+   * 这里指定一个角色卡之后，新建对话会自动把它预填成一个「我演」位置。
+   * 留空 = 保持「你演你自己」。
+   */
+  defaultUserCharId: string
   /** 聊天向风格提示（默认沿用原 TONE_HINT.chat） */
   styleHint: string
   /** 自由对话专属补充要求 */
@@ -179,6 +188,7 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     repeatPenalty: TAVERN_DEFAULTS.free.repeatPenalty,
     presencePenalty: TAVERN_DEFAULTS.free.presencePenalty,
     summaryProviderId: '',
+    defaultUserCharId: '',
     styleHint: TONE_HINT.chat,
     extraPrompt: '',
     triggerMessages: SUMMARY_TRIGGER_MESSAGES,

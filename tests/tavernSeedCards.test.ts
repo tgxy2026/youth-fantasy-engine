@@ -38,9 +38,9 @@ function find(name: string): SeedCard {
 async function main() {
   // ---------- 1) 结构完整性：四章六个档案栏四个行为栏都在 ----------
   {
-    ok('示范卡共两张', SEED_FREE_CHARACTERS.length === 2, `实际=${SEED_FREE_CHARACTERS.length}`)
-    ok('名字是洛汐 / 苏念',
-      SEED_FREE_CHARACTERS.map(c => c.name).join(',') === '洛汐,苏念',
+    ok('示范卡共三张', SEED_FREE_CHARACTERS.length === 3, `实际=${SEED_FREE_CHARACTERS.length}`)
+    ok('名字是洛汐 / 苏念 / 楚楠',
+      SEED_FREE_CHARACTERS.map(c => c.name).join(',') === '洛汐,苏念,楚楠',
       SEED_FREE_CHARACTERS.map(c => c.name).join(','))
 
     for (const c of SEED_FREE_CHARACTERS) {
@@ -52,8 +52,37 @@ async function main() {
       for (const [k, v] of Object.entries(c.conduct)) if (!String(v).trim()) missing.push(`conduct.${k}`)
       if (!c.examples.trim()) missing.push('examples')
       ok(`${c.name}：四章无空栏`, missing.length === 0, missing.join('、'))
-      ok(`${c.name}：字数足够撑起一张卡（>3500）`, t.length > 3500, String(t.length))
+      // 洛汐/苏念 是**从老大手写的卡转写**来的，门槛高（少了就是归位时丢了内容）；
+      // 楚楠 是**按那两张卡的事实新写的**，没有原卡可比，只卡一个「不是骨架」的下限。
+      const floor = c.name === '楚楠' ? 2500 : 3500
+      ok(`${c.name}：字数足够撑起一张卡（>${floor}）`, t.length > floor, String(t.length))
     }
+  }
+
+  // ---------- 1b) 楚楠（AI 演他 / 用户演苏念或洛汐）必须与另两张卡对得上 ----------
+  {
+    const chu = find('楚楠')
+    const t = allText(chu)
+    // 这些事实全部来自洛汐卡 / 苏念卡，楚楠卡不许自说自话
+    const facts: [string, string][] = [
+      ['苏念对他的称呼', '哥哥'],
+      ['洛汐表白三次', '三次'],
+      ['他的饮食禁忌（苏念知道）', '不吃香菜'],
+      ['他的身体状况（苏念知道）', '胃不好'],
+      ['熬夜后遗症（苏念知道）', '头疼'],
+      ['只有苏念能用的称呼', '念念'],
+      ['洛汐的关系时长', '四个月'],
+      ['与苏念家的地理关系', '窄巷'],
+    ]
+    const missing = facts.filter(([, s]) => !t.includes(s))
+    ok('楚楠卡的每条关系事实都能在另两张卡里找到出处（8 处抽查）', missing.length === 0,
+      missing.map(([k, s]) => `${k}:${s}`).join(' | '))
+
+    ok('楚楠卡把「两人互不知情」写成行为约束，而不是留给模型自由发挥',
+      t.includes('不知道对方在楚楠这里的分量') && t.includes('不会主动提'))
+    ok('楚楠卡写明用户可能演谁、AI 要按对面是谁调整', t.includes('先看对面是谁'))
+    ok('楚楠的示例同样是「只给对方加标记、他自己不加前缀」',
+      chu.examples.includes('【用户】') && !/^楚楠[：:]/m.test(chu.examples))
   }
 
   // ---------- 2) 归位没丢内容：逐节抽查原卡独有字串 ----------
@@ -140,10 +169,10 @@ async function main() {
   {
     __resetMockStores()
     const n1 = await seedFreeChars()
-    ok('首次播种新建 2 张', n1 === 2, String(n1))
+    ok('首次播种新建 3 张', n1 === 3, String(n1))
     const n2 = await seedFreeChars()
     ok('重复播种不再新建（按名字幂等，不堆副本）', n2 === 0, String(n2))
-    ok('库里确实只有 2 张', (await store.listFreeChars()).length === 2)
+    ok('库里确实只有 3 张', (await store.listFreeChars()).length === 3)
   }
 
   // ---------- 6) 集成：创建示范项目会把卡一起播种，且内容真的进 system ----------
@@ -152,7 +181,7 @@ async function main() {
     await createDemoProject()
     const list = await store.listFreeChars()
     const names = list.map(x => x.name)
-    ok('创建示范项目 → 示范角色卡自动入库', names.includes('洛汐') && names.includes('苏念'),
+    ok('创建示范项目 → 示范角色卡自动入库（含楚楠）', names.includes('洛汐') && names.includes('苏念') && names.includes('楚楠'),
       names.join('、'))
 
     const full = (await Promise.all(list.map(i => store.getFreeChar(i.id)))).filter(Boolean) as FreeCharacter[]

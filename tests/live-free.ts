@@ -22,6 +22,7 @@ import { buildOpeningMessage } from '../src/lib/tavern/prompt'
 import { uid } from '../src/lib/id'
 import { summarizeMemory } from '../src/lib/tavern/summarize'
 import { memoryChars, memoryToText, messagesAfterWatermark, nextWatermark, MEMORY_SECTIONS } from '../src/lib/tavern/memory'
+import { SEED_FREE_CHARACTERS } from '../src/lib/tavern/seedCards'
 import type { FreeCharacter, FreeSession } from '../src/lib/tavern/types'
 
 const DATA = 'C:/Users/18223/AppData/Roaming/novel-studio/novel-studio-data.json'
@@ -130,41 +131,30 @@ async function main() {
   console.log(`[实弹观察] 回复里出现了场景词（雨/伞/灯/柜台/两点）：${sceneUsed ? '✓ 场景被用上了' : '⚠️ 未见场景词'}`)
 
   // ---------- 阶段 4：用户扮演具体角色（2026-09-14 新增） ----------
-  // 用户不再只是「用户」，而是**演一个具体角色**（苏念），AI 演另一个（楚楠）。
-  // 要验两件事：① 身份层真的写明了谁演谁；② 模型**不抢用户角色的台词**。
+  // 用**交付的三张示范卡**跑：用户演苏念、AI 演楚楠。
+  // 要验三件事：① 身份层真的写明了谁演谁；② 模型不抢用户角色的台词；
+  //            ③ 按卡上写的关系称呼（楚楠只叫她「念念」，不会叫「苏念」）。
   console.log('\n' + '='.repeat(70))
-  console.log('▶ 阶段 4 · 用户扮演具体角色（用户演苏念 · AI 演楚楠）')
+  console.log('▶ 阶段 4 · 用户扮演苏念 / AI 演楚楠（用交付的示范卡）')
   console.log('='.repeat(70))
-  const chu = await store.createFreeChar({
-    ...store.emptyFreeCharacter(),
-    name: '楚楠',
-    world: '现代都市，学摄影的大学生。常来这间便利店买烟。',
-    profile: {
-      externals: '穿旧冲锋衣，手指有显影液的味道',
-      core: '嘴硬心软，不擅长说软话，会记住别人随口提过的小事',
-      speech: '语气平淡，习惯反问，不太用感叹号',
-      relations: '与苏念是这间便利店里认识的熟人',
-      cannot: '说不出直接的关心',
-      knowledge: '不知道苏念打几份工、也不知道她的旧疤来历',
-    },
-    conduct: {
-      perspective: '第一人称，只描写他自己的动作与感官',
-      bottomLine: '不追问别人的私事',
-      paceLock: '关系推进慢',
-      rating: '日常向',
-    },
-    examples: '对方：（她把找零推过来。）\n他把烟塞进兜里，没走。\n「外面的雨小了。」',
-  })
-  let s4 = await store.createFreeSession([chu.id, char.id], '苏念 × 楚楠', { providerId: pick.provider.id }, {}, char.id)
-  const sys4 = (await buildFreeSystem(s4, [chu, char])).system
+  const seedSu = SEED_FREE_CHARACTERS.find(c => c.name === '苏念')
+  const seedChu = SEED_FREE_CHARACTERS.find(c => c.name === '楚楠')
+  if (!seedSu || !seedChu) { console.log('❌ 示范卡里缺少苏念/楚楠，跳过本阶段'); return }
+  const su2 = await store.createFreeChar(seedSu)
+  const chu = await store.createFreeChar(seedChu)
+  let s4 = await store.createFreeSession([chu.id, su2.id], '苏念 × 楚楠', { providerId: pick.provider.id }, {}, su2.id)
+  const sys4 = (await buildFreeSystem(s4, [chu, su2])).system
   console.log(`[离线断言] 身份层写明「用户扮演：苏念」：${sys4.includes('用户扮演：苏念') ? '✓' : '✗'}`)
   console.log(`[离线断言] 要求不代写：${sys4.includes('不要代写') ? '✓' : '✗'}`)
   console.log(`[离线断言] AI 只演楚楠：${sys4.includes('你扮演：楚楠') ? '✓' : '✗'}`)
-  s4 = await say(s4, chu, '（我把伞立在门口，没看他，只把烟推过去。）', [chu, char])
+  console.log(`[离线断言] 楚楠卡进了设定层：${sys4.includes('被两个人当作锚点') ? '✓' : '✗'}`)
+  console.log(`[离线断言] 苏念的记忆不给楚楠（她还没聊过，本应为空）：${sys4.includes('【长期记忆 · 苏念】') ? '⚠️ 有' : '✓ 无'}`)
+  s4 = await say(s4, chu, '（我把伞立在门口，没看他，只把烟推过去。）', [chu, su2])
   const reply4 = s4.messages[s4.messages.length - 1]?.content ?? ''
   const stole = /^苏念[：:]/.test(reply4.trim()) || /（苏念/.test(reply4) || /苏念[说道]/.test(reply4)
   console.log(`[实弹观察] 模型是否抢了用户角色（苏念）的台词：${stole ? '⚠️ 疑似抢词' : '✓ 未见'}`)
-  console.log(`[实弹观察] 回复里是否提到苏念（第三人称提到是允许的）：${/苏念/.test(reply4) ? '提到了' : '没提'}`)
+  console.log(`[实弹观察] 是否按卡上关系用「念念」称呼（卡里写他只叫她念念）：${/念念/.test(reply4) ? '✓ 用了' : '（这轮没用，不算错）'}`)
+  console.log(`[实弹观察] 是否误把她叫成「苏念」：${/苏念/.test(reply4) ? '⚠️ 叫了全名' : '✓ 没叫全名'}`)
 
   // ---------- 阶段 1：会话 A 聊出可被记住的事实 ----------
   console.log('\n' + '='.repeat(70))

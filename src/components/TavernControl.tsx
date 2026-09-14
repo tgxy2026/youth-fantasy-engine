@@ -36,6 +36,7 @@ import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import AutoTextarea from './AutoTextarea'
 import { PROTOCOL_VERSION } from '../lib/tavern/protocol'
+import * as tavernStore from '../lib/tavern/store'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
   DEFAULT_TAVERN_SETTINGS, DEFAULT_PROTOCOL,
@@ -163,6 +164,8 @@ function ToggleField({ label, hint, value, onChange }: {
 export default function TavernControl() {
   const [s, setS] = useState<TavernSettings | null>(null)
   const [providers, setProviders] = useState<AIProvider[]>([])
+  /** 自由角色卡（给「默认我演的角色」用） */
+  const [freeChars, setFreeChars] = useState<{ id: string; name: string }[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [protocolEditing, setProtocolEditing] = useState(false)
@@ -172,9 +175,14 @@ export default function TavernControl() {
    *
    * 【为什么必须用 JS 量，而不是纯 CSS】
    * 协议正文是个「可滚动块」，它的**内容高度**会参与外层网格 auto 行的尺寸计算：
-   * 一旦正文比右列还高，行高就被左列撑大 → 左列反而比右列长（这正是改前的问题）。
-   * 把高度显式写成「右列高 − 通用设置高 − 间距」，行高就只由右列决定，
-   * 两侧底部严格平齐；正文超出的部分交给它自己的滚动条。
+   * 一旦正文比右列还高，行高就被左列撑大 → 左列反而比右列长。
+   *
+   * 【⚠️ 必须量「右列内容高」，不能量右列元素高】
+   * 网格默认 `align-items: stretch`：右列元素会被**撑到行高**，而行高又受左列影响 ——
+   * 一旦拿它的 `getBoundingClientRect().height` 去算，就会形成正反馈：
+   * 量到的是被撑大的高度 → 协议窗跟着变大 → 行更高 → 永远差一截，且**稳定不自愈**。
+   * 所以这里用「右列两个 section 各自的高度 + 它们之间的间距」，与行高无关。
+   * （这个坑是 2026-09-14 老大反馈「左边还是比右边长一大截」时揪出来的。）
    */
   const rightColRef = useRef<HTMLDivElement>(null)
   const commonRef = useRef<HTMLDivElement>(null)
@@ -183,18 +191,29 @@ export default function TavernControl() {
 
   useEffect(() => {
     if (!layoutReady) return
+    const rightCol = rightColRef.current
+    const common = commonRef.current
+    if (!rightCol || !common) return
+
     // 只在两列布局下同步（与 Tailwind 的 xl 断点一致）；单列时让它自然高
     const mq = window.matchMedia('(min-width: 1280px)')
     const sync = () => {
       if (!mq.matches) { setProtoH(null); return }
-      const r = rightColRef.current?.getBoundingClientRect().height ?? 0
-      const c = commonRef.current?.getBoundingClientRect().height ?? 0
-      if (!r || !c) { setProtoH(null); return }
-      setProtoH(Math.max(PROTO_MIN_HEIGHT, Math.round(r - c - COL_GAP)))
+      const kids = [...rightCol.children] as HTMLElement[]
+      // 🔴 必须用 offsetHeight（CSS 像素），**不能用 getBoundingClientRect()**：
+      //    <html> 上有界面缩放（zoom: 1.08），rect 返回的是缩放后的**视觉像素**，
+      //    而 style.height 收的是 CSS 像素 —— 混用会让算出来的高度恒定偏大 8%
+      //    （表现就是"设了定高却总是差一截"，且怎么调都调不平）。
+      const contentH = kids.reduce((n, el) => n + el.offsetHeight, 0)
+        + COL_GAP * Math.max(0, kids.length - 1)
+      const commonH = common.offsetHeight
+      if (!contentH || !commonH) { setProtoH(null); return }
+      setProtoH(Math.max(PROTO_MIN_HEIGHT, Math.round(contentH - commonH - COL_GAP)))
     }
     const ro = new ResizeObserver(sync)
-    if (rightColRef.current) ro.observe(rightColRef.current)
-    if (commonRef.current) ro.observe(commonRef.current)
+    ro.observe(common)
+    // 观察右列的**每个 section**（它们的盒子高与行高无关），而不是右列本身
+    for (const el of [...rightCol.children]) ro.observe(el)
     mq.addEventListener('change', sync)
     sync()
     return () => { ro.disconnect(); mq.removeEventListener('change', sync) }
@@ -209,6 +228,10 @@ export default function TavernControl() {
         ])
         setS(st)
         setProviders(ps)
+        // 自由角色卡：只为「默认我演的角色」下拉取名字（读不到就留空，不影响面板其余部分）
+        void tavernStore.listFreeChars()
+          .then(list => setFreeChars(list.map(c => ({ id: c.id, name: c.name }))))
+          .catch(() => setFreeChars([]))
       } catch (e) {
         showToast(`读取设置失败：${e instanceof Error ? e.message : String(e)}`, 'error')
         setS(DEFAULT_TAVERN_SETTINGS)
@@ -281,6 +304,7 @@ export default function TavernControl() {
   const pl = s.plot
   const fr = s.free
   const modelOptions = providers.map(p => ({ id: p.id, label: `${p.name} · ${p.model}` }))
+  const charOptions = freeChars.map(c => ({ id: c.id, label: c.name || '（未命名角色）' }))
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-4">
@@ -368,16 +392,22 @@ export default function TavernControl() {
           </Section>
           </div>
 
-          {/* ---------- 二、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ---------- */}
+          {/* ---------- 二、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ----------
+              🔴 两条都是踩出来的，别删：
+              ① **不能写 `xl:flex-1`** —— 主轴是高度，flex-basis 会压过下面那个 inline `height`，
+                 包装层被"填充剩余空间"接管，设多少高度都无效；
+              ② **必须带 `xl:overflow-hidden`** —— flex item 的 `min-height: auto` 等于**内容高度**，
+                 正文一长就把 1452px 的定高顶回 1568px（规范里唯一的例外就是 overflow≠visible）。
+                 同理，里面那个 Section 也要 overflow-hidden，否则它自己又被内容顶高、底部边框被裁掉。 */}
           <div
-            className="xl:min-h-0 xl:flex xl:flex-1 xl:flex-col"
+            className="xl:min-h-0 xl:shrink-0 xl:flex xl:flex-col xl:overflow-hidden"
             style={protoH === null ? undefined : { height: protoH }}
           >
           <Section
             title="二、扮演协议"
             desc={`两种模式共用的格式契约，内置版本 ${PROTOCOL_VERSION}。注入时钉在提示词的最末尾（它自带的「最后提醒」要紧贴生成点）。`}
-            className="xl:h-full xl:min-h-0 xl:flex xl:flex-col"
-            bodyClassName="xl:min-h-0 xl:flex-1 xl:flex xl:flex-col"
+            className="xl:h-full xl:min-h-0 xl:flex xl:flex-col xl:overflow-hidden"
+            bodyClassName="xl:min-h-0 xl:flex-1 xl:flex xl:flex-col xl:overflow-hidden"
           >
             {!protocolEditing ? (
               <>
@@ -528,6 +558,15 @@ export default function TavernControl() {
               options={modelOptions}
               emptyLabel="（跟随默认模型）"
               onChange={v => setFree('summaryProviderId', v)}
+            />
+
+            <SelectField
+              label="默认「我演」的角色"
+              hint="自由模式默认是你演你自己 —— AI 会把你当作没有具体身份的本人（不会替你编角色），但也就无从针对称呼与距离。这里选一张卡，新建对话会自动把它预填成「我演」位置。"
+              value={fr.defaultUserCharId}
+              options={charOptions}
+              emptyLabel="（不预填，你演你自己）"
+              onChange={v => setFree('defaultUserCharId', v)}
             />
 
             <TextField

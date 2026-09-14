@@ -14,6 +14,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
+import { getTavernSettings, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
 import { Button } from './Button'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
@@ -49,8 +50,13 @@ type CharOption = { id: string; name: string; core: string }
 /** 一个位置：选中的角色 + 由谁演 */
 type Slot = { charId: string; role: 'ai' | 'user' }
 
-/** 打开弹窗时重建默认位置（每次「新建对话」都是一张白纸） */
-function freshSlots(): Slot[] {
+/**
+ * 打开弹窗时重建默认位置。
+ * 控制面板配了「默认我演的角色」就预填成「我演」+ 一个待选的 AI 空位；
+ * 没配就是「一个 AI 位置」（= 你演你自己）。
+ */
+function freshSlots(defaultUserCharId?: string): Slot[] {
+  if (defaultUserCharId) return [{ charId: defaultUserCharId, role: 'user' }, { charId: '', role: 'ai' }]
   return [{ charId: '', role: 'ai' }]
 }
 
@@ -158,7 +164,10 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     setTitle(''); setPlace(''); setTime(''); setPresent(''); setDescription(''); setFirstLine('')
     ;(async () => {
       try {
-        const idx = await store.listFreeChars()
+        const [idx, st] = await Promise.all([
+          store.listFreeChars(),
+          getTavernSettings().catch(() => DEFAULT_TAVERN_SETTINGS),
+        ])
         // 逐个读完整卡拿「内核」那一句：选角色时能一眼分清（读失败就留空，不影响选）
         const full = await Promise.all(idx.map(async it => {
           const card = await store.getFreeChar(it.id).catch(() => null)
@@ -166,6 +175,9 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         }))
         if (!alive) return
         setOptions(full)
+        // 控制面板的「默认我演的角色」：卡还在就预填（被删了就保持空位，不硬塞）
+        const def = st.free.defaultUserCharId
+        if (def && full.some(o => o.id === def)) setSlots(freshSlots(def))
       } catch {
         if (alive) setOptions([])
       } finally {
@@ -308,6 +320,15 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                           : `你演你自己 · AI 演 ${aiNames.join('、') || '（还没定）'}`}
                       </span>
                     </div>
+                    {/* 没设「我演」时说清后果 —— 这条是老大明确问到的：AI 到底在跟谁说话 */}
+                    {userNames.length === 0 && (
+                      <p className="mt-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2 text-[11px] leading-relaxed text-ink-400">
+                        当前没有你演的角色：AI 会把你当作**没有具体身份的「本人」** —— 它不会替你编一个角色，
+                        但也就不知道在跟谁说话（称呼、亲疏、距离都无从针对）。
+                        想让 AI 知道对面是谁，就把某个位置设成「我演」；也可以到
+                        「控制面板 → 自由对话控制」里配一个**默认「我演」的角色**，以后新建对话会自动带上。
+                      </p>
+                    )}
                   </>
                 )}
               </section>
