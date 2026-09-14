@@ -5,6 +5,8 @@
  *   · 整理记忆 = 记录**发生过什么**（六栏档案）。自动会跑，手动也能跑。
  *   · 更新设定 = 判断**人物档案本身要不要改**（关系、内核、进度锁…）。**只手动跑**。
  *
+ * 一句话记法：**记忆 = 发生过什么；设定 = 这件事让 Ta 变成了谁**。
+ *
  * 为什么必须分开：记忆是「Ta 记得什么」，设定是「Ta 是谁」。一次分手当然会同时改变两者，
  * 但改设定的后果重得多 —— 改错了，之后**每一轮**对话都从错的人设出发，而且很难察觉
  * （模型会一直照着错的卡演，看上去只是"最近有点怪"）。所以设定只能**列出来让作者逐条裁决**，
@@ -44,6 +46,12 @@ export type CardRevision = {
   reason: string
   /** 来自对话里的哪一句（尽量原文） */
   quote: string
+  /**
+   * 检出「这条 after 里混进了对话原文」时，这里是那段原文（保留标点，便于作者一眼认出）。
+   * 有它 = 模型把「经过」写进了设定 —— 那是记忆的活，写进来就是同一件事喂两遍。
+   * **只提示、不自动删**：删改要落盘的文本属于代笔，交给作者自己裁决。
+   */
+  narrative?: string
 }
 
 export function buildReviseSystem(charName: string): string {
@@ -58,6 +66,22 @@ export function buildReviseSystem(charName: string): string {
   会让作者每次都要逐条否掉，这是最坏的体验。
 - **不要改名字**（名字不在可改字段里）。
 
+〖与「记忆」的分界 —— 只写「定称」，不写「经过」〗
+- 「记忆」那边记的是**发生了什么**：谁说了哪一句、对方当时什么反应、什么场面、什么情绪。
+  这些**不要**写进设定。
+- 你写的是**定义层面的结果**：Ta 现在是什么身份、关系现在算什么、Ta 新知道了什么。
+- ✅ **允许写沿革**：关系的定称与关键节点（在一起多久、谁提的分手、现在算什么关系）——
+  角色卡的关系栏本来就该有这些。
+- ❌ **不要复述对话过程**：原话、语气、对方的反应、当时的场面与情绪。
+  两边出现一模一样的文字 = 同一件事喂了两遍。
+- 反例：「楚楠说『这样拖着对你不好』，她只回了一个好，没有争吵，平静地收好东西」→ 这是经过，属记忆；
+  正确写法：「楚楠（前男友）：在一起 4 个月，由他提出分手」。
+- 🔴 after 里**不要出现对话里的原句**（哪怕只有半句）。我们会逐条比对并标出来 ——
+  引用了原话，就等于把「经过」搬进了设定，而那是记忆的活。
+- after 长度与原文相当即可：**只改必须改的部分**，其余照原样带上，别顺手扩写。
+- 落哪个字段要想清楚：**身份 / 职业 / 生活状态的转变 → world**；关系定称变了 → profile.relations；
+  Ta 新知道了什么 → profile.knowledge；心境或立场的根本转变 → profile.core。
+
 〖可改字段（field 只能填左侧的英文路径）〗
 ${CARD_FIELDS.map(f => `- ${f.path} —— ${f.label}：${f.when}`).join('\n')}
 
@@ -70,6 +94,46 @@ ${CARD_FIELDS.map(f => `- ${f.path} —— ${f.label}：${f.when}`).join('\n')}
 〖输出格式〗只输出一个 JSON 对象，不要代码块、不要解释、不要前后缀：
 {"changes":[{"field":"profile.relations","after":"（改完后的完整文本）","reason":"（为什么）","quote":"（对话原句）"}]}
 不需要修改时输出：{"changes":[]}`
+}
+
+/** 归一化：去掉空白与所有标点 / 符号，只留文字与数字（比「是不是同一句」时才不会被标点差异骗过） */
+function normChars(s: string): { n: string; idx: number[]; chars: string[] } {
+  const chars = [...String(s ?? '')]
+  const out: string[] = []
+  const idx: number[] = []
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i]
+    if (!c.trim() || /\p{P}|\p{S}/u.test(c)) continue
+    out.push(c)
+    idx.push(i)
+  }
+  return { n: out.join(''), idx, chars }
+}
+
+/**
+ * 找出 `after` 与〖对话记录〗**共有的最长片段**（≥ min 个字才算）。返回原文里那一段（保留标点）。
+ * 阈值取 6：实测真被抄进去的片段是「以后别来找我了」（7 字）——
+ * 定得太严会漏（这才是主要风险，因为它只是提示条、误报的代价很低）。
+ *
+ * 【为什么要做这个检查】提示词已经写明「只写定称、不写经过」，但实测本地模型仍会把对白抄进关系栏
+ * （例：`分手时他说「这样拖着对你不好」`）—— 而**靠自觉的指令必然漏**。所以再加一道确定性检查，
+ * 命中了就在裁决界面上标出来。它只负责「标」，不负责「改」：删作者要落盘的文本属于代笔。
+ */
+export function findNarrativeOverlap(after: string, transcript: string, min = 6): string {
+  const a = normChars(after)
+  const t = normChars(transcript).n
+  if (a.n.length < min || t.length < min) return ''
+  let bestAt = -1
+  let bestLen = 0
+  for (let i = 0; i + min <= a.n.length; i++) {
+    if (!t.includes(a.n.slice(i, i + min))) continue
+    let len = min
+    while (i + len < a.n.length && t.includes(a.n.slice(i, i + len + 1))) len++
+    if (len > bestLen) { bestLen = len; bestAt = i }
+  }
+  if (bestAt < 0) return ''
+  // 归一化下标映射回原文：作者一眼能认出是哪句，也方便他手动删掉
+  return a.chars.slice(a.idx[bestAt], a.idx[bestAt + bestLen - 1] + 1).join('')
 }
 
 /**
@@ -153,15 +217,18 @@ export async function proposeCardRevisions(args: ReviseArgs): Promise<CardRevisi
     think: false,
   })
 
-  return parseRevisions(reply, char)
+  return parseRevisions(reply, char, transcript)
 }
 
 /**
  * 解析 + **二次把关**。模型返回的字段名必须落在白名单里，否则丢掉
  * （不做这一步的话，一个拼错的字段名会让整条采纳动作写到一个不存在的键上）。
  * 同一字段出现多条时只留最后一条：采纳是整段替换，前几条必然被覆盖。
+ *
+ * `transcript` 给定时顺带做「after 混进对话原文」的检查：命中就把那一段挂在 `narrative` 上
+ * （界面据此提示，但**不自动改** —— 删作者要落盘的文本属于代笔）。
  */
-export function parseRevisions(raw: string, char: FreeCharacter): CardRevision[] {
+export function parseRevisions(raw: string, char: FreeCharacter, transcript = ''): CardRevision[] {
   const rows = parseObjectArray(raw)
   const byField = new Map<CardFieldPath, CardRevision>()
   for (const r of rows) {
@@ -172,6 +239,7 @@ export function parseRevisions(raw: string, char: FreeCharacter): CardRevision[]
     const before = readCardField(char, field).trim()
     // 与现状一模一样 → 不是改动，别浪费作者的一次裁决
     if (after === before) continue
+    const narrative = transcript ? findNarrativeOverlap(after, transcript) : ''
     byField.set(field, {
       id: uid(),
       charId: char.id,
@@ -182,6 +250,7 @@ export function parseRevisions(raw: string, char: FreeCharacter): CardRevision[]
       after,
       reason: asText(r.reason).trim() || '（模型未给出理由）',
       quote: asText(r.quote).trim(),
+      ...(narrative ? { narrative } : {}),
     })
   }
   return [...byField.values()]

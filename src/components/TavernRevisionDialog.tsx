@@ -138,6 +138,13 @@ export default function TavernRevisionDialog({
                               </div>
                             </div>
 
+                            {p.narrative && (
+                              <p className="mt-1.5 rounded border border-amber/30 bg-amber/5 px-1.5 py-1 text-[10.5px] text-amber/90 leading-relaxed">
+                                ⚠️ 这条里混进了对话原文（「{p.narrative.length > 26 ? p.narrative.slice(0, 26) + '…' : p.narrative}」）。
+                                设定只留「现在算什么关系、Ta 成了谁」，「发生过什么」归记忆 —— 建议先把那段删掉再采纳。
+                              </p>
+                            )}
+
                             <p className="mt-1.5 text-[10.5px] text-ink-500 leading-relaxed">
                               理由：{p.reason}
                             </p>

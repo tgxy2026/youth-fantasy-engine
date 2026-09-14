@@ -246,13 +246,13 @@ export type CardFieldPath =
  * 比只给字段名有效得多（否则它会把所有栏都改一遍以显得勤快）。
  */
 export const CARD_FIELDS: { path: CardFieldPath; label: string; when: string }[] = [
-  { path: 'profile.relations', label: '2.4 关系', when: '关系实质变化：在一起 / 分手 / 决裂 / 结盟 / 反目' },
+  { path: 'profile.relations', label: '2.4 关系', when: '关系**定称**变了：在一起 / 分手 / 决裂 / 结盟 / 反目（写定义，不写经过）' },
   { path: 'profile.knowledge', label: '2.6 知识边界', when: '知道了原本不知道的事（秘密被揭开、身份暴露）' },
   { path: 'profile.core', label: '2.2 内核', when: '心境或立场被事件真正改变，Ta 已不是原来那个人' },
   { path: 'profile.externals', label: '2.1 外在', when: '外貌、穿着、身体状况变了（受伤、换发型、换常穿的衣服）' },
   { path: 'profile.speech', label: '2.3 语言特征', when: '说话方式变了（改口、不再叫昵称、不再用某种口癖）' },
   { path: 'profile.cannot', label: '2.5 做不到的事', when: '原本做不到的事做到了，或反过来做不到了' },
-  { path: 'world', label: '1 世界', when: '处境、常去的地点、身份或生活状态发生变动' },
+  { path: 'world', label: '1 世界', when: '身份 / 职业 / 处境 / 常去的地点发生变动（升职、失业、搬走、断亲）' },
   { path: 'conduct.paceLock', label: '3 进度锁', when: '关系阶段已经推进（或倒退），原来的锁不再适用' },
   { path: 'conduct.bottomLine', label: '3 底线清单', when: '底线被事件改写（新长出来的雷区）' },
   { path: 'conduct.rating', label: '3 尺度', when: '这段关系的尺度需要调整（很少见）' },

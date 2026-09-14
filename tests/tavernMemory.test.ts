@@ -188,6 +188,9 @@ async function main() {
     ok('提示词讲清了六栏行为不同（会缩/只增/重写/滚动）', sys.includes('会缩') && sys.includes('只增不改') && sys.includes('倒序'))
     ok('提示词要求倒序日记并给出条数上限', sys.includes(`最近 ${MEMORY_DIARY_DAYS} 条`))
     ok('提示词写明「她不知道的事不能进长期摘要」', sys.includes('绝不能进'))
+    ok('写明记忆与设定的分界（记忆＝事件与温度，设定＝定义）',
+      sys.includes('发生过什么') && sys.includes('定称'))
+    ok('要求不复述角色卡里的稳定属性', sys.includes('一律不要复述'))
 
     const tr = renderTranscript('苏念', [msg('a', 'user', '今天冷'), msg('b', 'assistant', '嗯')])
     ok('对话渲染：用户标〖对方〗、角色标名字', tr.includes('〖对方〗今天冷') && tr.includes('〖苏念〗嗯'))
@@ -291,6 +294,8 @@ async function main() {
     ok('冷启动提示词要求只依据角色背景、不许编造',
       sys.includes('只依据〖角色背景〗') && sys.includes('不要编造'))
     ok('冷启动提示词要求日记留空', sys.includes('最近日记：留空'))
+    ok('冷启动写明「还没有事件可记」，关键事实留占位（不抄定义性属性）',
+      sys.includes('还没有任何事件可记') && sys.includes('还没有发生过任何事'))
   }
 
   console.log(`\ntavernMemory: ${pass} passed, ${fail} failed`)

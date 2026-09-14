@@ -7,7 +7,7 @@ import { __resetMockStores } from './mock-memory'
 import * as store from '../src/lib/tavern/store'
 import {
   CARD_FIELDS, readCardField, writeCardField, isCardField, fieldLabel,
-  buildReviseSystem, parseRevisions, recentTranscript, proposeCardRevisions,
+  buildReviseSystem, parseRevisions, recentTranscript, proposeCardRevisions, findNarrativeOverlap,
 } from '../src/lib/tavern/revise'
 import type { CardFieldPath } from '../src/lib/tavern/types'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
@@ -128,6 +128,13 @@ async function main() {
     ok('要求 after 是完整文本（不是"加一句"）', sys.includes('完整文本') || sys.includes('整段重写'))
     ok('要来源原句', sys.includes('quote'))
     ok('明说不要改名字', sys.includes('不要改名字'))
+    ok('写明与「记忆」的分界：只写结果、不写经过',
+      sys.includes('不写「经过」') && sys.includes('定义层面的结果'))
+    ok('点明记忆记的是「发生了什么」', sys.includes('发生了什么'))
+    ok('给出正例与反例（✅ / ❌）', sys.includes('✅') && sys.includes('❌'))
+    ok('指明身份 / 职业的转变落到 world 字段', sys.includes('身份 / 职业'))
+    ok('🔴 明写「after 不要出现对话原句」（并告知我们会检查）',
+      sys.includes('不要出现对话里的原句'))
   }
 
   // ---------- 4) 对话渲染与 proposeCardRevisions ----------
@@ -210,6 +217,36 @@ async function main() {
     // 卡不存在时不崩、不计入
     const n2 = await store.applyCardRevisions([{ charId: '不存在', field: 'world' as CardFieldPath, after: 'x' }])
     ok('卡不存在时安全跳过', n2 === 0)
+  }
+
+  // ---------- 5) 确定性检查：after 混进对话原文要被标出来 ----------
+  // 光靠提示词不可靠 —— 实测本地模型仍会把对白抄进关系栏，所以另加一道可测的检查。
+  {
+    const t = recentTranscript([
+      { id: 'a', role: 'user', content: '（我把烟按灭。）洛汐，我们……还是算了吧。以后别来找我了。', at: 1 },
+      { id: 'b', role: 'assistant', content: '（她愣了几秒。）\n好。', at: 2 },
+    ], 6000)
+    const withQuote = '- 楚楠（前男友）：在一起 4 个月，由他提出分手。分手时他说「以后别来找我了」。'
+    ok('🔴 抄了对话原句 → 检出（这是实测里模型真会犯的错）',
+      findNarrativeOverlap(withQuote, t).includes('以后别来找我了'),
+      findNarrativeOverlap(withQuote, t))
+    ok('只写定称与沿革 → 不误报',
+      findNarrativeOverlap('- 楚楠（前男友）：在一起 4 个月，第九十天由他提出分手。', t) === '',
+      findNarrativeOverlap('- 楚楠（前男友）：在一起 4 个月，第九十天由他提出分手。', t))
+    ok('太短的巧合不算（阈值 6 字）', findNarrativeOverlap('好。', t) === '')
+    ok('空对话 → 永远不报', findNarrativeOverlap(withQuote, '') === '')
+
+    const c5 = await mkChar('洛汐')
+    const raw5 = JSON.stringify({
+      changes: [{ field: 'profile.relations', after: withQuote, reason: '分手了', quote: '算了吧' }],
+    })
+    const flagged = parseRevisions(raw5, c5, t)
+    ok('parseRevisions 传入对话后自动挂上 narrative 标记', !!flagged[0]?.narrative, JSON.stringify(flagged[0]?.narrative))
+    const clean = parseRevisions(
+      JSON.stringify({ changes: [{ field: 'profile.relations', after: '- 楚楠（前男友）：在一起 4 个月，由他提出分手。', reason: '分手了', quote: '' }] }),
+      c5, t)
+    ok('干净的定称不带标记', !clean[0]?.narrative)
+    ok('不传 transcript（旧调用点）→ 不做检查、行为不变', !parseRevisions(raw5, c5)[0]?.narrative)
   }
 
   console.log(`\ntavernRevise: ${pass} passed, ${fail} failed`)
