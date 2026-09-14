@@ -52,7 +52,18 @@
 
 ## AI / 服务器
 - AI：颉文姬5模式 clinic/edit/review/brief/ledger；硅基流动 DeepSeek-V3.2。明文本地记忆勿公开。
-- AI 返回解析：统一走 `parseObjectArray`（已支持数组 / 单对象 / `{list:[…]}` 三形态归一化）。🔴 勿退回"先按 `[` 切片"的老写法——单对象会被解析成非数组对象后在 `Array.isArray` 处判失败返回空，导致内容全丢、退 `humanText` 兜底（2.0.1 修的"改稿只剩标点"）。失败时用 `hasSubstance` 拦垃圾，别把残骸塞给作者。
+- AI 返回解析：**统一走 `src/lib/aiParse.ts`**（2026-09-14 收敛，此前有 3 份重复实现）。
+  导出 `parseObjectArray`（数组 / 单对象 / `{list:[…]}` 三形态归一化）/ `parsePlainObject` / `hasSubstance` / `asText` / `humanText`。
+  🔴 勿退回"先按 `[` 切片"的老写法——单对象会被解析成非数组对象后在 `Array.isArray` 处判失败返回空，
+  导致内容全丢、退 `humanText` 兜底（2.0.1 修的"改稿只剩标点"）。**也禁止再手写裸 `JSON.parse` 解析模型输出**
+  （模型一裹解释或加 ```json 围栏就整条丢弃）。失败时用 `hasSubstance` 拦垃圾。
+  ⚠️ `hasSubstance` 目前**只在 aiRewritePassage 一处**生效，其余约 10 处兜底仍直接回 `humanText` 残骸（现状已注明，未擅自推广）。
+- 🔴 **迁移只走 `db.runMigrations()`**（types → ledger → numbering，幂等）：boot 恢复上次项目与手动 openProject
+  必须共用它。历史坑：boot 路径曾漏跑 ledger/numbering 导致自动回到项目时读到旧结构。**顺序不可调换**
+  （numbering 依赖 ledger 拆表后的 `chapter-vol-<卷id>` 行）。db 层不引用 schema（避免循环依赖），
+  刷卷页签由调用方另行 `refreshVolumeTabs()`。
+- **跨文件共用的 localStorage 键 / 防抖常量**收在 `src/lib/constants.ts`（`LS_*` / `SAVE_DEBOUNCE_MS` / `SYNC_POLL_MS`）。
+  新增键改这里一处，别在调用点写字面量——改错键名会让用户偏好静默重置且无报错。
 - 🔴 温度（2026-09-14 起机制变更）：**不要在任务层手填温度**。结构化 JSON 任务传 `chat(..., { json: true })`，
   由 `ai.ts` 的 `chat()` **统一解析**为 `JSON_TASK_TEMPERATURE`(0.3)；创意类不传即 `DEFAULT_TEMPERATURE`(0.85)。
   历史坑：20 处调用里 19 处漏传温度、静默跑在 0.85，而注释却写着"必须传低值"——**靠自觉的"可选参数"必然漏**，
@@ -70,6 +81,10 @@
   （存量 100 处会淹没 12 条真信号）。当前 **12 warnings / 0 errors**，即 C/D 批的工作面。
 - ⚠️ **遗留**：4 个 eslint 依赖已手工写进 `package.json`，但 **`package-lock.json` 未同步**
   （直连 npmjs 跑 11 分钟仍未写清单，已终止）。下次 `npm install` 会自动补齐；在此之前 `npm ci` 会失败（本项目无 CI，无影响）。
+- 🔴 **`exhaustive-deps` 那 11 条警告不能盲改**（2026-09-14 逐条核实）：缺失的依赖**全是组件体内未包
+  `useCallback` 的普通箭头函数**（`load` / `calValueOf` / `validateCodes` / `cellVal` 等），身份每次渲染都变。
+  直接补进依赖数组会让 `useMemo` 每次重算、`useEffect` 可能死循环。**正确解法是先包 `useCallback` 再加依赖**，
+  属逐例判断 + 需跑起来验证，别当成"顺手改改"。
 
 ## 本机环境坑（Windows + Git Bash，务必绕行）
 - `git` **不在 PATH** → 用 `C:/Users/18223/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe`。
