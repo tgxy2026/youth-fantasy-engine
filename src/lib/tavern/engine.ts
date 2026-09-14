@@ -22,7 +22,12 @@ import { buildSystemPrompt, buildMultiCharRule, toChatMessages, renderCastSettin
 import * as store from './store'
 import { trimHistory, historyBudget } from './budget'
 import { resolveParams } from './params'
-import { hasCastSetting, type TavernSession, type TavernMessage, type TavernCast } from './types'
+import { memoryToText, isMemoryEmpty } from './memory'
+import {
+  hasCastSetting,
+  type TavernSession, type TavernMessage, type TavernCast,
+  type FreeSession, type FreeCharacter, type FreeMemory,
+} from './types'
 
 /** 剧情模式的档位固定为叙事向（方案 §5.3：剧情默认叙事向、自由默认聊天向） */
 const PLOT_TONE = 'narrative' as const
@@ -230,6 +235,208 @@ export async function runPlotTurn(
   }
 
   return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack }
+}
+
+
+// ==================== 自由模式（方案 §7） ====================
+//
+// 与剧情模式的三处根本差异：
+//   ① 设定层不是「项目资料」，而是**作者手写的角色卡四章**
+//   ② 记忆是**角色级**的（tavern.free.mem.<charId>）—— 记忆是「她记得什么」，
+//      不是「这场戏的公共档案」；多角色同场时各自更新各自的那份
+//   ③ 档位是**聊天向**（剧情默认叙事向），且没有锚点/信息边界这些概念
+
+/** 自由模式的档位固定为聊天向（方案 §5.3） */
+const FREE_TONE = 'chat' as const
+
+/**
+ * 把角色卡四章渲染成设定块（空章跳过，不留「（未填）」噪音）。
+ * 第 4 章「示例对话」杠杆最高 —— 模型会直接吸收示例里的应对话术与格式（手册实测），
+ * 所以标题里明确写出「请模仿」，别让它当成普通资料读过就忘。
+ */
+export function renderFreeCharacter(c: FreeCharacter): string {
+  const secs: string[] = []
+  if (c.world?.trim()) secs.push(`【第 1 章 · 世界】\n${c.world.trim()}`)
+
+  const profile: [string, string][] = [
+    ['2.1 外在', c.profile?.externals ?? ''],
+    ['2.2 内核', c.profile?.core ?? ''],
+    ['2.3 语言特征', c.profile?.speech ?? ''],
+    ['2.4 关系', c.profile?.relations ?? ''],
+    ['2.5 做不到的事', c.profile?.cannot ?? ''],
+    ['2.6 知识边界', c.profile?.knowledge ?? ''],
+  ]
+  const pl = profile.filter(([, v]) => v.trim()).map(([k, v]) => `${k}：${v.trim()}`)
+  if (pl.length) secs.push(`【第 2 章 · 人物档案】\n${pl.join('\n')}`)
+
+  const conduct: [string, string][] = [
+    ['视角与人称', c.conduct?.perspective ?? ''],
+    ['底线清单', c.conduct?.bottomLine ?? ''],
+    ['进度锁', c.conduct?.paceLock ?? ''],
+    ['尺度', c.conduct?.rating ?? ''],
+  ]
+  const cl = conduct.filter(([, v]) => v.trim()).map(([k, v]) => `${k}：${v.trim()}`)
+  if (cl.length) secs.push(`【第 3 章 · 行为规范】\n${cl.join('\n')}`)
+
+  if (c.examples?.trim()) {
+    secs.push(`【第 4 章 · 示例对话（请模仿其应对话术与格式）】\n${c.examples.trim()}`)
+  }
+  return secs.join('\n\n')
+}
+
+export type FreeSystemResult = {
+  system: string
+  settingChars: number
+  memoryChars: number
+  /** 会话里引用了、但角色卡已被删的 id（UI 据此提示） */
+  missing: string[]
+}
+
+/**
+ * 组装自由模式的 system。
+ * 设定层**不做预算裁剪** —— 角色卡是作者手写的核心，悄悄砍掉会让角色「设定性失忆」
+ * （字段名与字数都摊在 UI 里，超预算由界面提示作者自己精简）。
+ */
+export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter[]): Promise<FreeSystemResult> {
+  const found: FreeCharacter[] = []
+  const missing: string[] = []
+  for (const id of session.charIds) {
+    const c = chars.find(x => x.id === id)
+    if (c) found.push(c)
+    else missing.push(id)
+  }
+
+  const setting = found.length > 1
+    ? `${found.map(renderFreeCharacter).join('\n\n')}\n\n${buildMultiCharRule(found.map(c => c.name))}`
+    : found.map(renderFreeCharacter).join('\n\n')
+
+  // 记忆层：**每个角色各自的记忆**分别成块（多角色时模型要能分清「谁知道什么」）
+  const blocks = await Promise.all(found.map(async c => {
+    let m: FreeMemory | null = null
+    try { m = await store.getMemory(c.id) } catch { m = null }
+    // 空档案不输出：六栏全写「（暂无）」既占上下文又干扰模型，不如整块不出现
+    const text = m && !isMemoryEmpty(m) ? memoryToText(m).trim() : ''
+    return text ? `【长期记忆 · ${c.name}】\n${text}` : ''
+  }))
+  const memory = blocks.filter(Boolean).join('\n\n')
+
+  const self = found.length > 1
+    ? `你同时扮演：${found.map(c => c.name).join('、')}。用户扮演用户自己。`
+    : `你扮演：${found[0]?.name ?? '（未指定角色）'}`
+
+  const system = buildSystemPrompt({
+    tone: FREE_TONE,
+    setting,
+    memory,
+    self,
+    dropped: [],
+  })
+
+  return { system, settingChars: setting.length, memoryChars: memory.length, missing }
+}
+
+export type FreeTurnCallbacks = PlotTurnCallbacks & {
+  /** 下一句由谁接话（点了某个角色头像）；不传则按在场角色依次轮转 */
+  speakerId?: string
+}
+
+export type FreeTurnResult = {
+  session: FreeSession
+  reply: string
+  cancelled: boolean
+  modelName: string
+  fellBack: boolean
+  /** 这句回复归属的角色（多角色同场时标记到消息上，供 UI 显示头像） */
+  speakerId?: string
+}
+
+/**
+ * 跑一轮自由对话（**不落库**，调用方决定保存与总结时机）。
+ *
+ * 发言调度（方案 §7.3）：默认由调用方指定（点头像）或**按在场角色轮转** ——
+ * 轮转而非「让模型自己决定谁说话」，是因为协议禁止输出带名字前缀，我们无法从文本
+ * 可靠地反推说话人，而消息气泡又必须挂对头像。轮转简单、可预测，且满足
+ * 「一次只让一个角色说话」的规则。
+ */
+export async function runFreeTurn(
+  session: FreeSession,
+  chars: FreeCharacter[],
+  userText: string,
+  cb: FreeTurnCallbacks = {},
+  deps: { chatFn?: ChatFn } = {},
+): Promise<FreeTurnResult> {
+  const { provider, fellBack } = await resolveTavernProvider(session.model)
+  const runChat = deps.chatFn ?? chat
+  const { system } = await buildFreeSystem(session, chars)
+
+  const withUser: TavernMessage[] = [
+    ...session.messages,
+    { id: uid(), role: 'user', content: userText, at: Date.now() },
+  ]
+
+  const p = resolveParams('free', session.params)
+  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, '')
+  const { messages } = buildFreeMessages(withUser, session, chars, historyBudgetChars, cb.speakerId)
+
+  cb.onPhase?.('生成中')
+  let reply = ''
+  let cancelled = false
+  try {
+    reply = await runChat(
+      provider,
+      [{ role: 'system', content: system }, ...messages],
+      {
+        timeoutMs: CHAT_TIMEOUT_MS,
+        signal: cb.signal,
+        onToken: cb.onToken,
+        think: false, // 同剧情模式：陪伴要「像人说话」，不要分析腔
+      },
+    )
+  } catch (e) {
+    if (isCancelled(e)) cancelled = true
+    else throw e
+  }
+
+  // 归属角色：指定优先，否则按历史里已有的 assistant 条数轮转
+  const said = session.messages.filter(m => m.role === 'assistant').length
+  const autoSpeaker = session.charIds.length > 0 ? session.charIds[said % session.charIds.length] : undefined
+  const speakerId = session.charIds.length > 1 ? (cb.speakerId ?? autoSpeaker) : session.charIds[0]
+
+  const next: FreeSession = {
+    ...session,
+    messages: [
+      ...withUser,
+      ...(reply.trim()
+        ? [{ id: uid(), role: 'assistant' as const, content: reply.trim(), at: Date.now(), speakerId }]
+        : []),
+    ],
+    lastActiveAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+
+  return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, speakerId }
+}
+
+/** 历史转换 + 预算裁剪（自由模式没有记忆层要预留，故传入 memory 为空串） */
+export function buildFreeMessages(
+  msgs: TavernMessage[],
+  session: FreeSession,
+  chars: FreeCharacter[],
+  budgetChars: number,
+  speakerId?: string,
+): { messages: ChatMessage[]; dropped: number } {
+  const nameById = new Map(chars.map(c => [c.id, c.name]))
+  const all = toChatMessages(msgs, {
+    withSpeaker: session.charIds.length > 1
+      ? (id?: string) => (id && nameById.get(id) ? `（${nameById.get(id)}）` : '')
+      : undefined,
+  })
+  // 手动指定下一位时，在输入侧提示一句（模型据此优先让该角色接话）
+  if (speakerId && session.charIds.length > 1 && nameById.get(speakerId)) {
+    all.push({ role: 'user', content: `（下一位由 ${nameById.get(speakerId)} 接话）` })
+  }
+  const trimmed = trimHistory(all, budgetChars)
+  return { messages: trimmed.kept.map(m => ({ role: m.role, content: m.content })), dropped: trimmed.dropped }
 }
 
 function totalBudget(v: number | undefined): number {
