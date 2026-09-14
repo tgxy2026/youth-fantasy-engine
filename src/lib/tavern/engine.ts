@@ -122,6 +122,13 @@ export function buildPlotMessages(session: TavernSession, budgetChars: number): 
   return { messages: trimmed.kept.map(m => ({ role: m.role, content: m.content })), dropped: trimmed.dropped }
 }
 
+/**
+ * 模型调用注入点：默认用 ai.ts 的 chat。
+ * 以参数注入，是为了让「组装上下文 → 调模型 → 落库」这条链路能在**不起真实模型**的前提下
+ * 端到端跑通（tests/tavernFlow.test.ts 用示范项目的真实数据验证防剧透与报告定位）。
+ */
+export type ChatFn = typeof chat
+
 export type PlotTurnCallbacks = {
   onToken?: (delta: string) => void
   onPhase?: (phase: string) => void
@@ -147,7 +154,9 @@ export async function runPlotTurn(
   session: TavernSession,
   userText: string,
   cb: PlotTurnCallbacks = {},
+  deps: { chatFn?: ChatFn } = {},
 ): Promise<PlotTurnResult> {
+  const runChat = deps.chatFn ?? chat
   const { provider, fellBack } = await resolveTavernProvider(session.model)
   const p = resolveParams('plot', session.params)
 
@@ -167,7 +176,7 @@ export async function runPlotTurn(
   let reply = ''
   let cancelled = false
   try {
-    reply = await chat(
+    reply = await runChat(
       provider,
       [{ role: 'system', content: system }, ...messages],
       {
@@ -187,7 +196,9 @@ export async function runPlotTurn(
     ...session,
     messages: [
       ...withUser,
-      ...(reply.trim() || cancelled
+      // 取消 / 空回复时**不追加**占位消息：原先写成 `|| cancelled` 会插入一条 content 为空的
+      // assistant 消息 —— 界面上留下一个空气泡，让「取消」看起来像真的发生了一轮对话。
+      ...(reply.trim()
         ? [{ id: uid(), role: 'assistant' as const, content: reply.trim(), at: Date.now() }]
         : []),
     ],

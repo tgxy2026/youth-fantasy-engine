@@ -17,7 +17,7 @@ import * as db from '../db'
 import { TABS } from '../schema'
 import { parsePlainObject, parseObjectArray, asText } from '../aiParse'
 import { uid } from '../id'
-import { resolveTavernProvider } from './engine'
+import { resolveTavernProvider, type ChatFn } from './engine'
 import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from './types'
 
 /** 可被指向的表（白名单）：只允许指向「有明确条目」的表，避免模型指向虚空 */
@@ -73,6 +73,8 @@ async function resolveTargetRecord(tabId: string, label: string): Promise<string
 
 export type ReportOptions = {
   signal?: AbortSignal
+  /** 模型调用注入点（见 engine.ts 的 ChatFn）；不传即用真实 chat */
+  chatFn?: ChatFn
   onPhase?: (phase: string) => void
   /** 对话正文送入报告的最大字符数（超出取最近的） */
   maxTranscriptChars?: number
@@ -161,8 +163,9 @@ export async function generateReport(session: TavernSession, opts: ReportOptions
     '请输出 JSON：{"overview": "三五句话评价这场戏成不成立", "findings": [ ... ]}',
   ].filter(Boolean).join('\n')
 
+  const runChat = opts.chatFn ?? chat
   opts.onPhase?.('分析推演记录')
-  const reply = await chat(
+  const reply = await runChat(
     provider,
     [{ role: 'system', content: REPORT_SYS }, { role: 'user', content: user }],
     { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, json: true, think: false },

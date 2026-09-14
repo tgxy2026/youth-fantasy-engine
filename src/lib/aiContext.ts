@@ -36,7 +36,9 @@ export interface ProjectContextOptions {
   /**
    * 视角档位。
    * · 'character-view' —— 角色视角：只带角色的「常识」（世界观 / 角色 / 关系 / 名词），
-   *   **排除作者侧资料**（全书总纲、分卷大纲、章节细纲、伏笔追踪、爽点节奏、支线剧情、灵感素材…）。
+   *   **排除作者侧资料**（全书总纲、分卷大纲、章节细纲、伏笔追踪、爽点节奏、支线剧情、灵感素材…），
+   *   并进一步隐藏常识表内的**作者侧字段**（结局归宿 / 隐藏设定 / 演变轨迹 / 关系终点…，见
+   *   AUTHOR_SIDE_FIELDS）—— 只排页签不够：常识表里混着未来向列，会照样把结局递到演员手里。
    *   理由：那些是作者侧资料，带进去等于剧透，AI 会变成「知道结局的演员」，
    *   「测试角色真实反应」这个目的直接归零。
    * · 'director-view' —— 导演视角：作者侧资料照带，但**锚点仍然生效**（只看截至锚点的大纲与伏笔）。
@@ -114,6 +116,39 @@ const AUTHOR_SIDE_TABS = [
   'changelog',         // 设定变更（作者侧台账）
 ]
 
+/**
+ * 作者侧**字段**（卡片字段名 / 表格列名）：写的是「故事将如何发展」或「作者的设计意图」，
+ * 不是角色此刻知道什么。
+ *
+ * 🔴 为什么段落级排除不够（2026-09-14 端到端测试实测）：
+ *   像「次要角色」这类**表本身属于角色常识**（萧景行当然知道自己的性格、功法），
+ *   但表内混着「结局归宿：卷六雨夜再战，兵解」「隐藏设定：第14章败走时…」这类**未来向**列。
+ *   只排除页签的话，这些列会照原样喂给模型 —— 演员提前知道了自己的结局，
+ *   「测角色真实反应」同样失效。故角色视角下需再过滤一层。
+ *
+ * 口径刻意保守：只列**明确指向尚未发生之事 / 作者底牌**的字段；
+ * 中性字段（如「备注」「知情度」「关系现状」）一律保留，避免误伤角色常识。
+ * 清单可增删 —— 新增页签若带未来向字段，请一并登记到这里。
+ */
+const AUTHOR_SIDE_FIELDS = new Set([
+  // 角色卡：未来命运与作者规划
+  '结局归宿', '死亡/退场规划', '角色弧光', '主角弧光', '高光名场面', '活跃卷与出场频率',
+  // 角色卡 / 势力表：作者眼中的「作用」，不是角色认知
+  '剧情功能', '剧情作用', '戏剧功能', '功能定位', '本章功能',
+  // 人物关系表：关系的**走向**
+  '演变轨迹（按卷）', '演变触发事件', '关系终点',
+  // 角色卡：作者底牌
+  '隐藏设定', '世界终极真相', '体系背后的世界观真相', '体系的隐藏层级', '事件经过（真相）',
+  // 结局与揭晓计划
+  '计划揭晓章节', '大结局', '各主要角色结局',
+  // 伏笔台账（表本身已整体排除，此处兜住散落在其它表里的伏笔列）
+  '计划回收位置', '回收前置条件', '回收方式与效果', '对应伏笔编号', '回收伏笔编号', '埋设伏笔编号',
+  '可埋伏笔点', '贯穿伏笔推进', '本卷回收伏笔', '本卷新埋伏笔',
+])
+
+/** 渲染选项：角色视角下隐藏作者侧字段 */
+type RenderOpts = { hideAuthorFields?: boolean }
+
 /** 各表最多带入的条目数（防止长篇几百行表格直接吃满预算） */
 const ROW_CAP: Record<string, number> = {
   'char-main': 30,
@@ -141,11 +176,12 @@ function fieldName(key: string): string {
 }
 
 /** 按 schema 里的模块顺序渲染表单型数据，空字段跳过 */
-function renderForm(tab: TabDef, data: Record<string, string>): string {
+function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {}): string {
   const lines: string[] = []
   const used = new Set<string>()
   for (const mod of tab.modules ?? []) {
     for (const f of mod.fields) {
+      if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(f.name)) continue
       const key = `${mod.name}::${f.name}`
       const v = data[key] ?? data[f.name] ?? ''
       used.add(key)
@@ -155,17 +191,19 @@ function renderForm(tab: TabDef, data: Record<string, string>): string {
   // 兼容历史遗留 key（schema 改过字段名的老项目），不丢数据
   for (const [k, v] of Object.entries(data)) {
     if (used.has(k) || !v?.trim()) continue
-    lines.push(`${fieldName(k)}：${clip(v, CELL_CAP)}`)
+    const fn = fieldName(k)
+    if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(fn)) continue
+    lines.push(`${fn}：${clip(v, CELL_CAP)}`)
   }
   return lines.join('\n')
 }
 
 /** 卡片型（角色卡 / 分卷大纲 / 章节细纲）：每条一段 */
-function renderCards(tab: TabDef, recs: { name: string; data: Record<string, string> }[]): string {
+function renderCards(tab: TabDef, recs: { name: string; data: Record<string, string> }[], o: RenderOpts = {}): string {
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
   const out: string[] = []
   for (const r of recs.slice(0, cap)) {
-    const body = renderForm(tab, r.data)
+    const body = renderForm(tab, r.data, o)
     out.push(`【${r.name || '未命名'}】${body ? '\n' + body : ''}`)
   }
   if (recs.length > cap) out.push(`（另有 ${recs.length - cap} 条未列出）`)
@@ -173,8 +211,9 @@ function renderCards(tab: TabDef, recs: { name: string; data: Record<string, str
 }
 
 /** 表格型：首行列名，之后每行用 ｜ 分隔（比 JSON 省 token 得多） */
-function renderTable(tab: TabDef, rows: { data: Record<string, string> }[]): string {
-  const cols = (tab.columns ?? []).map(c => c.name)
+function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: RenderOpts = {}): string {
+  // 角色视角：作者侧列整列不渲染（连列名都不出现，避免模型去追问）
+  const cols = (tab.columns ?? []).map(c => c.name).filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
   if (cols.length === 0) return ''
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
   const use = rows.slice(0, cap).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
@@ -211,18 +250,18 @@ async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
 }
 
 /** 单个页签的资料段（空数据返回空串） */
-async function sectionOf(tab: TabDef, knowerName?: string): Promise<string> {
+async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): Promise<string> {
   try {
-    if (tab.type === 'form') return renderForm(tab, await db.getFormData(tab.id))
-    if (tab.type === 'card') return renderCards(tab, await db.getCardRecords(tab.id))
+    if (tab.type === 'form') return renderForm(tab, await db.getFormData(tab.id), o)
+    if (tab.type === 'card') return renderCards(tab, await db.getCardRecords(tab.id), o)
     if (tab.type === 'table') {
       const rows = await db.getTableRows(tab.id)
       // 酒馆模式：知情权限只带「该角色是知情者」的条目（方案 §6.5 事实边界的自动推断）
       if (tab.id === 'secrets' && knowerName) {
         const mine = rows.filter(r => String(r.data?.['知情者'] ?? '').includes(knowerName))
-        return renderTable(tab, mine)
+        return renderTable(tab, mine, o)
       }
-      return renderTable(tab, rows)
+      return renderTable(tab, rows, o)
     }
   } catch {
     // 单段读取失败就当这段没有，不影响其他资料
@@ -483,14 +522,17 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     ordered.push(t.id)
   }
 
+  // 角色视角下再过滤一层「作者侧字段」（段落级排除管不到表内的未来向列，见 AUTHOR_SIDE_FIELDS 说明）
+  const renderOpts: RenderOpts = { hideAuthorFields: opts.viewMode === 'character-view' }
+
   for (const id of ordered) {
     if (only && !only.has(id)) continue
     if (exclude.has(id)) continue
     const tab = byId.get(id)!
     // 章节总表按卷建表后，行分散在 chapter-vol-* 各表，需合并所有卷台账再渲染
     const body = id === 'chapter-master'
-      ? renderTable(tab, await db.getAllChapterLedgerRows())
-      : await sectionOf(tab, opts.knowerName)
+      ? renderTable(tab, await db.getAllChapterLedgerRows(), renderOpts)
+      : await sectionOf(tab, opts.knowerName, renderOpts)
     push(tab.name, body)
   }
 
