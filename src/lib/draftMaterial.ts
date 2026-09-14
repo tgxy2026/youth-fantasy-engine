@@ -16,12 +16,15 @@
  * （只用 `webSearch`），放在 `lib/tavern/` 里会让别的模块被迫 import 酒馆引擎。
  */
 import { newAuthorFence, authorBlock } from './promptGuard'
-import { webSearch, renderSearchResults, type SearchOutcome, type SearchSettings } from './webSearch'
+import {
+  webSearch, renderSearchResults, SEARCH_ENGINE_LABEL,
+  type SearchOutcome, type SearchSettings,
+} from './webSearch'
 
 /** 这次起草的**素材来源**（界面据此告诉作者「本次用的是哪种模式」） */
 export type DraftSource = {
   mode: SearchSettings['mode']
-  /** 显示用：模型已有知识 + 粘贴素材 / 模型自带联网 / 搜索接口（博查） */
+  /** 显示用：模型已有知识 + 粘贴素材 / 模型自带联网 / 搜索接口（<引擎名>） */
   label: string
   /** 真的拿到了外部资料吗 */
   used: boolean
@@ -87,7 +90,10 @@ export async function prepareDraftMaterial(a: DraftMaterialArgs): Promise<DraftM
       : { used: false, engine: a.settings.engine, query: '', results: [], error: '没有可检索的内容（想法写太空了）' }
     source = {
       mode: 'api',
-      label: a.settings.engine === 'custom' ? '搜索接口（自定义）' : '搜索接口（博查）',
+      // 🔴 引擎名必须取自 SEARCH_ENGINE_LABEL（唯一真源）。这里原先写成
+      //    「custom 否则一律博查」，加进 SearXNG 之后界面就开始撒谎 —— 明明走的是
+      //    SearXNG，回执却报「博查」。档位名宁可少写，也不能写错：作者是拿它判断能不能用的。
+      label: `搜索接口（${SEARCH_ENGINE_LABEL[a.settings.engine]}）`,
       used: outcome.used,
       ...(outcome.error ? { error: outcome.error } : {}),
       ...(outcome.used ? { note: `检索词：${outcome.query} · 命中 ${outcome.results.length} 条` } : {}),

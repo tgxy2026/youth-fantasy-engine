@@ -804,7 +804,7 @@ export default function TavernControl() {
                 {s.search.engine === 'searxng' && (
                   <Field
                     label="接口地址"
-                    hint={`留空即用 ${SEARXNG_ENDPOINT}。两个前提：① SearXNG 的 settings.yml 里 search.formats 要加上 json（默认只有 html，不加就取不到数据）；② 端口要与你 docker run 映射的一致。`}
+                    hint={`留空即用 ${SEARXNG_ENDPOINT}。三个前提：① settings.yml 的 search.formats 要加上 json（默认只有 html，不加接口回 403）；② limiter 要设成 false（开着会把本软件的调用当机器人回 429）；③ 端口要与你自己的映射一致。`}
                   >
                     <input
                       className={NUM}

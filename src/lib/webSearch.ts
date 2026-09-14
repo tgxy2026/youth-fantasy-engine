@@ -58,12 +58,14 @@ export const BOCHA_ENDPOINT = 'https://api.bochaai.com/v1/web-search'
 
 /**
  * 自建 SearXNG 的默认地址（免费、无密钥、无次数限制）。
- * ⚠️ 两处前提，缺一个都查不到东西：
- *   ① SearXNG 的 `settings.yml` 里 `search.formats` 要包含 `json`（默认只有 html）；
- *   ② 端口要与你 `docker run -p <端口>:8080` 时映射的一致（这里是 8080）。
+ * ⚠️ 三处前提，缺一个都查不到东西：
+ *   ① `settings.yml` 里 `search.formats` 要包含 `json` —— 官方默认**只有 html**，不加接口直接 403；
+ *   ② `limiter` 要关掉 —— 开着它只放行「像浏览器」的请求，我们的调用会被判成机器人回 429；
+ *   ③ 端口要与你的端口映射一致（这里默认 8888：官方 docker 文档示例用的就是这个，
+ *      且 8080 很容易被别的程序占掉 —— 本机就被 Steam 的 steamwebhelper 占着）。
  * 地址里带 `{query}` 即按 **GET** 调用（SearXNG / Jina / Exa 这类都是 GET 取 JSON）。
  */
-export const SEARXNG_ENDPOINT = 'http://127.0.0.1:8080/search?q={query}&format=json&language=zh-CN'
+export const SEARXNG_ENDPOINT = 'http://127.0.0.1:8888/search?q={query}&format=json&language=zh-CN'
 
 export type SearchItem = {
   title: string
@@ -113,7 +115,7 @@ export const SEARCH_MODE_LABEL: Record<SearchSettings['mode'], string> = {
 /** 引擎显示名 */
 export const SEARCH_ENGINE_LABEL: Record<SearchEngine, string> = {
   bocha: '博查',
-  searxng: 'SearXNG（自建）',
+  searxng: 'SearXNG',
   custom: '自定义接口',
 }
 

@@ -9,6 +9,7 @@ import {
   SEARXNG_ENDPOINT, BOCHA_ENDPOINT, SEARCH_ENGINE_LABEL,
   type SearchSettings, type SearchRequest, type TransportResult,
 } from '../src/lib/webSearch'
+import { prepareDraftMaterial } from '../src/lib/draftMaterial'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -124,6 +125,29 @@ async function main() {
       String(searchBlockedReason(base({ engine: 'searxng' }))))
     ok('检索结果提取对嵌套结构也有效',
       harvestItems({ data: { list: [{ title: 'A', url: 'u', snippet: 's' }] } }, 5).length === 1)
+  }
+
+  // ---------- ④ 档位名必须与所选引擎一致 ----------
+  // 回归：这里曾经写成「custom 否则一律博查」，加进 SearXNG 之后界面开始撒谎 ——
+  // 明明走的是 SearXNG，回执却报「博查」。作者是拿这句话判断能不能用的，不许写错。
+  {
+    const fake = (async (q: string, s: SearchSettings) => ({
+      used: true, engine: s.engine, query: q, results: [{ title: 't', url: 'u', snippet: 's' }],
+    })) as unknown as typeof webSearch
+    for (const engine of ['bocha', 'searxng', 'custom'] as const) {
+      const st: SearchSettings = {
+        mode: 'api', engine, topK: 3,
+        endpoint: engine === 'custom' ? 'https://x.dev/s' : '',
+        apiKey: engine === 'bocha' ? 'k' : '',
+      }
+      const m = await prepareDraftMaterial({ idea: '蒂法', settings: st, searchFn: fake })
+      ok(`🔴 档位名与所选引擎一致（${SEARCH_ENGINE_LABEL[engine]}）`,
+        m.source.label.includes(SEARCH_ENGINE_LABEL[engine]), m.source.label)
+    }
+    ok('三个引擎的显示名互不相同（防退回两分支写法）',
+      new Set(Object.values(SEARCH_ENGINE_LABEL)).size === 3, Object.values(SEARCH_ENGINE_LABEL).join('|'))
+    ok('博查这一档不再被误标给 SearXNG',
+      !(await prepareDraftMaterial({ idea: 'x', settings: { mode: 'api', engine: 'searxng', endpoint: '', apiKey: '', topK: 3 }, searchFn: fake })).source.label.includes('博查'))
   }
 
   console.log('')
