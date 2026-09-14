@@ -14,6 +14,7 @@ import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
 import TavernCastSetting from './TavernCastSetting'
+import { renderTavernMessage } from './TavernMessage'
 import * as store from '../lib/tavern/store'
 import { runPlotTurn, splitCast } from '../lib/tavern/engine'
 import { generateReport } from '../lib/tavern/report'
@@ -22,19 +23,6 @@ import { uid } from '../lib/id'
 import { MEMORY_SOFT_LIMIT, hasCastSetting } from '../lib/tavern/types'
 import type { TavernSession, TavernSessionIndexItem, TavernMessage } from '../lib/tavern/types'
 
-/** 按协议的格式规定做最朴素的样式区分：动作（全角括号）/ 内心〔〕/ 对白 */
-function renderMessage(content: string) {
-  return content.split('\n').filter(l => l.trim()).map((line, i) => {
-    const t = line.trim()
-    if (t.startsWith('（') || t.startsWith('(')) {
-      return <div key={i} className="text-[12px] text-ink-400">{t}</div>
-    }
-    if (t.startsWith('〔')) {
-      return <div key={i} className="text-[12.5px] italic text-ink-400">{t}</div>
-    }
-    return <div key={i} className="text-[13px] leading-relaxed text-ink-100">{t}</div>
-  })
-}
 
 export default function TavernPlot() {
   const [list, setList] = useState<TavernSessionIndexItem[]>([])
@@ -340,14 +328,14 @@ export default function TavernPlot() {
                     {m.role !== 'user' && casts.ai.length > 1 && m.speakerId && (
                       <div className="text-[11px] text-amber">{casts.ai.find(c => c.cardId === m.speakerId)?.name ?? ''}</div>
                     )}
-                    {renderMessage(m.content)}
+                    {renderTavernMessage(m.content)}
                   </div>
                 </div>
               ))}
               {streaming && (
                 <div className="max-w-[85%] space-y-1">
                   {streamText
-                    ? renderMessage(streamText)
+                    ? renderTavernMessage(streamText)
                     : <div className="text-[12px] text-ink-500">{phase || '正在生成…'}</div>}
                 </div>
               )}

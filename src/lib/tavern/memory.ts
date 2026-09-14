@@ -252,3 +252,19 @@ export function shouldRunAutoSummary(
 }
 
 export { MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT }
+
+/**
+ * 取出尚未被总结的消息（水位线之后的 user / assistant）。
+ * 与 countUnsummarized 同一套判定：水位线消息被删等异常时按全部未总结处理。
+ */
+export function messagesAfterWatermark(
+  messages: FreeSession['messages'],
+  watermark?: { messageId: string } | null,
+): FreeSession['messages'] {
+  const msgs = messages.filter(m => m.role !== 'system')
+  const wm = watermark?.messageId
+  if (!wm) return msgs
+  const i = msgs.findIndex(m => m.id === wm)
+  if (i < 0) return msgs
+  return msgs.slice(i + 1)
+}

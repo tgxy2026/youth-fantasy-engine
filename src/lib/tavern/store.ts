@@ -354,3 +354,20 @@ export async function pruneGhostFreeSessions(): Promise<number> {
   await db.setMeta(G.freeSessionIndex, idx.filter(it => !ghosts.some(g => g.id === it.id)))
   return ghosts.length
 }
+
+// ==================== 酒馆设置（全局 meta） ====================
+
+/** 总结模型：可单独指定（方案 §4.6）—— 压缩不需要创意，便宜快的就行。空串 = 跟随全局活动模型 */
+const K_SUMMARY_PROVIDER = 'tavern.summaryProviderId'
+
+export async function getSummaryProviderId(): Promise<string> {
+  try {
+    return (await db.getMeta<string>(K_SUMMARY_PROVIDER, '')) || ''
+  } catch {
+    return ''
+  }
+}
+
+export async function setSummaryProviderId(id: string): Promise<void> {
+  await db.setMeta(K_SUMMARY_PROVIDER, id)
+}
