@@ -4,14 +4,14 @@
 
 ## 红线
 - 🔴 封装须老大明说「封装」；改完最多 tsc+build+commit。
-- 🔴 禁 `git stash`（2026-09-14：stash 被中断 → `.git/refs/`、`objects/pack/*.pack`、近期松散对象被外部永久删除）。恢复流程见 `docs/酒馆模式-工程红线.md` §8；备份 `G:/AI软件/novel-studio-git备份/`。遇 `bad object HEAD`／`not a git repository` → 先 `ls .git` 查 `refs/` 与 pack。
+- 🔴 禁 `git stash`（2026-09-14：stash 被中断 → `.git/refs/`、`objects/pack/*.pack`、近期松散对象被外部永久删除）。恢复流程见 `docs/酒馆模式-工程红线.md` §8；备份见 §8。遇 `bad object HEAD`／`not a git repository` → 先 `ls .git` 查 `refs/` 与 pack。
 - 禁删 `你需要的文件在这里/`、`release/eb-cache/`。禁 `window.prompt/confirm/alert` → PromptModal/confirmDialog/toast。
 - 清单 `docs/…Bug与待优化清单.md`：只记录，明说「处理」才动。提交含 `!` 用 `git commit -F <文件>`。main 无远程。
 
 ## 身份 / 版本 / 封装
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；三存储(IDB/便携/桌面)经 StoreOps；dev 5199。
 - 现 2.1.0（只改号不封装，约每月一版）。版本唯一源 `package.json`；展示 `APP_VERSION_LABEL`；dev 靠 `injectAppVersion()`；不加 dev 角标。
-- 🔴 封装：`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`，切勿指 `release/eb-cache/electron-zip`；两脚本有体积闸门（退出码 0 也可能没达标）。NSIS 用 `perMachine:false`+`allowToChangeInstallationDirectory:false`（免管理员；旧 per-machine 需迁移一次）。
+- 🔴 封装：`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`，切勿指 `release/eb-cache/electron-zip`；两脚本有体积闸门（退出码 0 也可能没达标）。NSIS 用 `perMachine:false`+`allowToChangeInstallationDirectory:false`（免管理员）。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键。
@@ -23,53 +23,55 @@
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录。便携(FSA) `flush()` 是 swap 语义。🔴 图片字段先压缩再入库。
 - 判据：过服务器→要码；云盘→不要码。🔴 两路径二选一；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属 → `makeCloudStoreWrapper` 必须短路到 local。「死配置」先验消费方。
+
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，分类色盘不要主题化。
 - 🔴 SVG 用 CSS 变量必须走 `style`：`fill="rgb(var(--x))"` 无效且静默回退黑。设置项排版＝标题→输入区→说明最后；复制统一 `copyText()`（在 `dialogs.tsx`）。
 - 🔴🔴 `<html>` 有界面缩放（`yfe-ui-zoom`，默认 108%）：凡「量尺寸再算回 CSS 值」一律 `offsetHeight`，绝不 `getBoundingClientRect()`。
 - 🔴 按对侧高度定高：flex item 的 `min-height:auto` 会把定高顶回去 → 加 `overflow-hidden`；别同写 `flex-1`+`height`。
-- 界面文案禁 markdown 星号 → 用「」/（）。⚠️ 例外：演示 markdown 的占位符（后处理「试一段」）保留原样。
+- 界面文案禁 markdown 星号 → 用「」/（）。⚠️ 例外：演示 markdown 的占位符（后处理「试一段」）保留原样。**同一件事的多个信息别写成互斥分支**（「当前档」与「问题提示」都该显示）。
 
 ## AI 层
-- 🔴 解析统一 `aiParse.ts`；禁裸 `JSON.parse`。温度不手填：结构化传 `{json:true}`→0.3；创意类不传→0.85。采样走 `extraOptions`。
-- 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering 顺序不可换）；upgrade 拆 9 函数，upgrade 处是「何时跑哪段」的唯一判断点。
+- 🔴 解析统一 `aiParse.ts`；禁裸 `JSON.parse`。温度不手填：结构化传 `{json:true}`→0.3；创意类不传→0.85。
+- 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering 顺序不可换）；upgrade 处是「何时跑哪段」的唯一判断点。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce）；绝不清洗正文。`think:false` 是 Ollama 专有。
 
 ## 服务器 / 工程质量
 - `154.8.178.240`（ubuntu+免密 sudo，SSH `yfe_test_server`）；站点 `/var/www/yfe`；见 `docs/服务器访问记录.md`。
 - 🔴 Nginx SPA 回退：不存在的路径也返 200 + index.html → 不能靠 200 判断上线。
 - `npm run verify`（tsc+lint+test）；runner 每入口单开子进程；ESLint 11 条 warnings 不能盲改。
-- 🔴 界面实机走 skill `novel-studio-ui-livecheck`；模型链路 `build-test.mjs live-free|live-tavern`。⚠️ 手动实弹断言会静默过时 → 读日志必须 grep ✗。
+- 🔴 界面实机走 skill `novel-studio-ui-livecheck`；模型链路 `build-test.mjs live-free|live-tavern`。⚠️ 实弹断言会静默过时 → 读日志必须 grep ✗。
 
 ## 酒馆模式
 - 源自《酒馆模式_完整落地方案》＋《你需要的文件在这里/酒馆类项目借鉴调研-讨论稿.md》（冲突以方案为准）。侧栏序＝`TABS` 序。
-- 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景设定随项目；自由会话+角色卡+记忆日常+面板设置+自由背景设定+剧本库 跨项目（meta）。索引与分条必须成对；`tavernReports` 别漏 `deleteProject`。
-- 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景设定随项目；自由会话+角色卡+记忆日常+面板设置+自由背景设定+剧本库 跨项目（meta）。索引与分条必须成对；`tavernReports` 独立表别漏 `deleteProject`。
-- 🎛️ 控制面板（八段两列）：`tavern.settings`；优先级 会话→角色→面板→模式默认。加参数前先搜 tavern 里写死的数；数值真源 `paramGuide.ts`。🔴 协议段须是左列最后一项。预设/档案＝全局 `tavern.presets` / `profile`。⚠️ `mergeDeep` 把已删的默认键照抄回来 → 废弃字段须在 `upgradeLegacyDefaults` delete。
+- 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景设定随项目；自由会话+角色卡+记忆日常+面板设置+剧本库 跨项目（meta）。索引与分条必须成对；`tavernReports` 别漏 `deleteProject`。
+- 🎛️ 控制面板（九段两列）：`tavern.settings`；优先级 会话→角色→面板→模式默认。加参数前先搜 tavern 里写死的数；数值真源 `paramGuide.ts`。🔴 协议段须是左列最后一项。预设/档案＝全局 `tavern.presets`/`profile`。⚠️ `mergeDeep` 把已删的默认键照抄回来 → 废弃字段须在 `upgradeLegacyDefaults` delete。
 - 🔴 层序：设定→背景设定→这一场(剧本)→记忆→身份→档位→（通用→本场补充）→未带入→协议（钉末尾）。
-- 🔴🔴 上下文预算：`historyBudget = 预算 − 余量 − 整条 system`（别单独传记忆，system 已含它）。余量→400；`contextBudget`→16000（plot/free/`totalBudget` 三处一致）。`plot.contextSource`＝`both`/`digest`/`raw`。空层不占额度（没填连层头都不加；实测 both 空 2533/满 722）。⚠️ digest + 背景设定空 → 作者侧资料几乎全空（只警告，未自动回落）。
-- 📊 状态一览/用量明细：`status.ts` 只提取不读库；开关在页面工具条「角色状态」（原先进口藏在条内 → 老大找不到）；用量明细调真实组装摊开各层。不做数值化「关系温度」；`agoText` 唯一真源。
-- 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（`summarize.ts`）；设定＝这让 Ta 变成了谁（`revise.ts`）。记忆禁写定称/复述稳定属性；设定禁写经过/抄原句。拦不住 → `findNarrativeOverlap`（≥6 字重合）标 ⚠️，只提示不自动改。
-- 📚 背景设定（`world.ts`）：`brief+sections+keywords`；关键词空＝总是注入，否则命中才注入；上限 1800 字。
+- 🔴🔴 上下文预算：`historyBudget = 预算 − 余量 − 整条 system`（别单独传记忆）。余量→400；`contextBudget`→16000（plot/free/`totalBudget` 三处一致）。`plot.contextSource`＝`both`/`digest`/`raw`。空层不占额度。⚠️ digest + 背景设定空 → 作者侧资料几乎全空（只警告）。
+- 📊 状态一览/用量明细：`status.ts` 只提取不读库；开关在工具条「角色状态」；用量明细调真实组装。不做数值化「关系温度」；`agoText` 唯一真源。
+- 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（`summarize.ts`）；设定＝这让 Ta 变成了谁（`revise.ts`）。拦不住 → `findNarrativeOverlap`（≥6 字重合）标 ⚠️，只提示不自动改。
+- 📚 🔴 背景设定（`world.ts`）：`brief+sections+keywords`；关键词空＝总是注入；上限 1800 字。**只服务剧情推演**（2026-09-15 收口，去掉自由那份：自由对话多世界观，且世界观已在角色卡第 1 章）；键只剩 `tavern.world`（随项目），旧 `tavern.world.free` 保留不删但到不了（哨兵测在 `tavernWorld`）。
+- 🌐 联网检索（面板「七」）：`webSearch.ts` 三档 `off`(默认)/`model`/`api`。🔴 **每次起草如实回告用了哪档，查失败不静默**（照常生成＋显示原因）。博查实测带 ACAO 可直连，智谱无（CORS 拦）。来源由 `prepareDraftMaterial` 统一裁决，界面不许自己重判。
+- ✍️ 起草/对话引导：`draft.ts`（素材管线＋角色卡 13 栏模板）、`interview.ts`（一次问 1–3 个、每轮累积 `filled` 并白名单过滤）。🔴 提纲 `fields` 必须覆盖模板全部栏（剧本漏过「名称」）；角色卡草稿的示例对话要守协议格式（模型照它模仿）。
 - 🎬 临时导演指令：`directorNote{text,depth,turnsLeft}` 会话级，按深度插进历史；成功产出才倒计时。
-- 🛠 输出后处理：`postRules.ts` 按序跑正则再落库；关掉＝静默但正则错误仍回传。🔴 去 markdown 必须排在星号动作前。行首说话人标签默认关。
-- 🎚 本场数值：`vars.ts`＋`VAR_DEFS`（5 项，可逐项关），规则挂自由模式 `modeExtra`（不进协议常量，关掉＝0 字）。🔴 解析认不出连那行都不剥；手改清 `prev` → 重说不翻回模型的错值；先解变量再跑后处理。
-- 🎭 剧本（自由对话专用）：`script.ts` 六栏（名称/情境/开场白/你的位置/目标/不要发生）。🔴 库在全局 meta；🔴🔴 会话存快照不是引用；名称与开场白不进 system（开场白＝对话第一条消息）；「② 对话内容」手填已删，改选剧本/留空。
-- 📤 导出文档 / 头像 / 示范卡来源标记 / 变量 UI / 剧本 —— 实现细则在 `docs/酒馆模式-工程红线.md`，改酒馆前必读那篇 + 本节。
-- 🔴 engine ↔ world/script 成环 → `resolveTavernProvider`/`ChatFn` 上移 `provider.ts`（engine re-export）。设定更新：12 字段白名单（不含 name）＋二次把关；采纳＝整段替换。设定只手动、只列建议。
+- 🛠 输出后处理：`postRules.ts` 按序跑正则再落库；🔴 去 markdown 必须排在星号动作前。行首说话人标签默认关。
+- 🎚 本场数值：`vars.ts`＋`VAR_DEFS`（5 项，可逐项关），规则挂 `modeExtra`（不进协议常量）。🔴 解析认不出连那行都不剥；手改清 `prev` → 重说不翻回模型的错值；先解变量再跑后处理。
+- 🎭 剧本：`script.ts` 六栏。🔴 库在全局 meta；🔴🔴 会话存快照不是引用；名称与开场白不进 system（开场白＝对话第一条消息）。
+- 📤 导出文档/头像/示范卡来源标记/变量 UI/剧本/联网检索/对话引导 —— 实现细则在 `docs/酒馆模式-工程红线.md`（§1–§11），改酒馆前必读那篇＋本节。
+- 🔴 engine ↔ world/script/draft 成环 → `resolveTavernProvider`/`ChatFn` 上移 `provider.ts`（engine re-export）。设定更新：12 字段白名单（不含 name）＋二次把关；采纳＝整段替换；只手动、只列建议。
 - 🔴 分支/回滚：`branchSession` 截到该条 —— 水位线在分叉点之后必须连记忆一起清空；回滚连记忆还原＋`undoSnapshot`。`hidden` 唯一出口＝`toChatMessages`＋`messagesAfterWatermark`；重说＝`runPlotTurn/runFreeTurn(session, null)`。
 - 🔴 `buildMultiCharRule`：整场 AI 必传 `{hasUser:false}`；`userCharId` 这一位的卡/记忆/轮转三处都要排除。记忆按角色分别整理；水位线全成功才推进。
-- 🔴 在场调度：`muted`+`talkativity` 会话级、两模式共用（回默认即删键）。静音＝在场但不发言，卡与记忆都不进上下文；UI 拦「最后一位不能静音」。
-- 🔴🔴 防剧透两层：① 段落级 `viewMode:"character-view"` 排 10 个作者侧页签；② 字段级 `AUTHOR_SIDE_FIELDS`（新字段须登记）。
+- 🔴 在场调度：`muted`+`talkativity` 会话级、两模式共用。静音＝在场但不发言，卡与记忆都不进上下文；UI 拦「最后一位不能静音」。
+- 🔴🔴 防剧透两层：① 段落级 `viewMode:"character-view"` 排作者侧页签；② 字段级 `AUTHOR_SIDE_FIELDS`（新字段须登记）。
 - 🔴 提示词与解析器对齐：标题整行匹配（禁 `includes`）；总结必带角色背景；复制为新卡不复制记忆/日常；导入/新建卡自动生成初版记忆；卡片块带名仅同场同名挂短码。
-- 🔴 输出规范 v1.3（改提示词先读）：输出 对白＝纯文本（不含名字，名字也不许单独成行）、动作神态心理＝（）、环境·外在＝【】、状态＝〔〕；输入一律 〖〗/〈〉。
+- 🔴 输出规范 v1.3（改提示词先读）：输出 对白＝纯文本（不含名字）、动作神态心理＝（）、环境·外在＝【】、状态＝〔〕；输入一律 〖〗/〈〉。
 - 🔴 指代角色一律「Ta」。协议/示范卡改过 → 升级靠全等锚点（`LEGACY_PROTOCOLS`/`upgradeSeedCards()`，幂等）；卡内容走卡页「恢复内置版本」。别写逐句锚点补丁。
 - 示范卡三张：洛汐/苏念/楚楠；关系网＝都知道对方是谁、都不知道彼此的分量。`createDemoProject` single-flight。
-- 路线图：第 1–9 批全部完成（含 C2 第二步变量 UI 与剧本）；C1 向量记忆 / C3 立绘 / ST 卡导入 / TTS 放弃（老大 2026-09-14 定）。方案见 `docs/剧本与变量-设计方案-讨论稿.md`。
+- 路线图：**开发需求全部完成（第 1–10 批）**；C1 向量记忆 / C3 立绘 / ST 卡导入 / TTS 放弃。方案见 `docs/剧本与变量-设计方案-讨论稿.md`。**下一步＝代码审查与优化。**
 
 ## 环境（Windows + Git Bash）
 - git / npm 都用绝对路径（PortableGit 1.2.0 `cmd/git.exe`；托管 node + `npm/bin/npm-cli.js`），路径写 `C:/` 正斜杠。
-- ⚠️ Edit 会「假成功」（dev server 下更甚）：改完立即 grep 复查；多处替换用脚本（幂等、未命中即抛错）；`node -e` 反引号会被 shell 替换、复杂引号直接语法错 → 一律用 Write 落脚本文件。含反引号/`}` 的长文本（文档、记忆）也用 Write，别塞进 shell heredoc。同一文件别在同一轮里既改又追加（会互相看不见对方的结果，本轮把一行写重了）。
+- ⚠️ Edit 会「假成功」（dev server 下更甚）：改完立即 grep 复查；多处替换用脚本（幂等、未命中即抛错）；`node -e` 反引号会被 shell 替换、复杂引号直接语法错 → 一律用 Write 落脚本文件。含反引号/`}` 的长文本（文档、记忆）也用 Write，别塞进 shell heredoc。同一文件别在同一轮里既改又追加（会互相看不见对方的结果，写过重行）。
 - ⚠️ 这台机器 `sort -n` / `sort -r` 有时解析到 Windows `sort.exe` → 用 node 脚本代替。
 - ⚠️ `git bundle create` 遇中文路径建不了 `.lock` → 先建在纯英文路径再 `cp` 回。
 - ⚠️ 验「随项目」用换项目（`db.setCurrentProject`），别直查物理表（写错 API 名会被静默跳过 → 假绿）。审计：「数据丢失」级结论必须回源码验尸；实弹会读真实 apiKey（先告知，绝不提交）。

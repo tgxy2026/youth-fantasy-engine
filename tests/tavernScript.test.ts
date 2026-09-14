@@ -130,8 +130,9 @@ async function main() {
     await saveProviders([{ ...STUB_PROVIDER }])
     await saveActiveId(STUB_PROVIDER.id)
 
-    const out = await draftScript({ seed: '雨夜便利店，她锁了烟柜', chatFn: makeFakeChat(JSON.stringify(full())).chatFn })
+    const { fields: out, source } = await draftScript({ seed: '雨夜便利店，她锁了烟柜', chatFn: makeFakeChat(JSON.stringify(full())).chatFn })
     ok('起草走通并解出六栏', out.name === '雨夜便利店' && out.goal.includes('说出'))
+    ok('不带检索设置时如实标注来源（未联网）', source.mode === 'off' && source.used === false, JSON.stringify(source))
 
     let threw = false
     try { await draftScript({ seed: '   ', chatFn: makeFakeChat('{}').chatFn }) } catch { threw = true }

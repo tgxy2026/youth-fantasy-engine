@@ -31,6 +31,8 @@ import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
 import { parsePlainObject, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
+import { prepareDraftMaterial, type DraftSource } from './draft'
+import { webSearch, type SearchSettings } from '../webSearch'
 
 export type WorldSection = { id: string; title: string; body: string }
 
@@ -157,19 +159,34 @@ export type WorldDraftArgs = {
   seed: string
   /** 项目资料（由调用方用 buildProjectContext 取） */
   projectDigest?: string
+  /** 作者粘贴的参考素材（可空）—— 例如要写民国上海，粘一段史料进来 */
+  refs?: string
+  /** 检索设置（不传 = 不联网） */
+  searchSettings?: SearchSettings
   providerId?: string
   chatFn?: ChatFn
   signal?: AbortSignal
+  /** 测试用：替换检索实现 */
+  searchFn?: typeof webSearch
 }
 
 /**
  * 跑一次一键录入，产出 **WorldSetting 骨架**（不落库；调用方填 seed/draftedAt 后保存）。
  * 模型乱答时抛错，让调用方保留作者现有内容 —— 绝不写半截结果。
  */
-export async function draftWorldSetting(args: WorldDraftArgs): Promise<{ brief: string; sections: WorldSection[]; keywords: string[] }> {
+export async function draftWorldSetting(args: WorldDraftArgs): Promise<{ fields: { brief: string; sections: WorldSection[]; keywords: string[] }; source: DraftSource }> {
   const { seed, projectDigest, providerId, chatFn, signal } = args
   const material = String(projectDigest ?? '').trim()
   if (!material) throw new Error('没有可提炼的项目资料 —— 先在项目里写点世界观 / 人物 / 势力之类的设定，或用记事本起个头也行')
+
+  // 素材（含可选的联网检索结果）统一在 draft.ts 里裁决
+  const extra = await prepareDraftMaterial({
+    idea: seed,
+    refs: args.refs,
+    settings: args.searchSettings ?? { mode: 'off', engine: 'bocha', endpoint: '', apiKey: '', topK: 5 },
+    signal,
+    searchFn: args.searchFn,
+  })
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = chatFn ?? chat
@@ -184,6 +201,7 @@ export async function draftWorldSetting(args: WorldDraftArgs): Promise<{ brief: 
         authorBlock(fence, material),
         '',
         seed.trim() ? `〖作者的额外要求〗\n${seed.trim()}\n` : '',
+        extra.blocks,
         '请按格式输出 JSON。',
       ].filter(Boolean).join('\n'),
     },
@@ -198,7 +216,7 @@ export async function draftWorldSetting(args: WorldDraftArgs): Promise<{ brief: 
 
   const parsed = parseWorldDraft(reply)
   if (!parsed) throw new Error('模型没有返回可用的背景设定（没按 JSON 格式输出）')
-  return parsed
+  return { fields: parsed, source: extra.source }
 }
 
 /** 解析一键录入的结果（导出便于单测）。形状不对就返回 null，绝不猜 */

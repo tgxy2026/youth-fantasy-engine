@@ -275,6 +275,16 @@ export const GUIDE_VAR_MAX_STEP: ParamGuide = {
   ],
 }
 
+/** 联网检索：每次取几条结果喂给模型 */
+export const GUIDE_SEARCH_TOP_K: ParamGuide = {
+  min: 1, max: 10, step: 1, unit: '条',
+  bands: [
+    { from: 1, to: 2, name: '1–2 条', effect: '只够确认「有没有这个东西」；信息面窄，模型仍要大量依赖自己的记忆。' },
+    { from: 2, to: 6, name: '3–5 条', effect: '够看清一个题材的轮廓（人物设定 / 故事梗概 / 关键设定），也不会把上下文挤满。', recommended: true },
+    { from: 6, to: 10, name: '6–10 条', effect: '细节更全（尤其冷门题材），但摘要里的重复与噪音也更多，起草时更容易被带偏。' },
+  ],
+}
+
 export const PARAM_GUIDES = {
   // 通用设置
   contextBudget: GUIDE_CONTEXT_BUDGET,
@@ -296,6 +306,8 @@ export const PARAM_GUIDES = {
   // 本场数值（C2 第二步）
   varEveryTurns: GUIDE_VAR_EVERY_TURNS,
   varMaxStep: GUIDE_VAR_MAX_STEP,
+  // 联网检索
+  searchTopK: GUIDE_SEARCH_TOP_K,
 } as const
 
 /** 两个模式共用的采样参数（语义一致，故只有一份） */

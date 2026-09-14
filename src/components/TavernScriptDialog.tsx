@@ -16,10 +16,12 @@ import { Button } from './Button'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
 import TavernScriptFields from './TavernScriptFields'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './TavernDraftBits'
 import {
   draftScript, saveScript, mergeScriptDraft, EMPTY_SCRIPT_FIELDS, scriptToText, snapshotOf,
   isEmptyScriptFields, type ScriptDraftFields,
 } from '../lib/tavern/script'
+import type { DraftSource } from '../lib/tavern/draft'
 import type { TavernScript } from '../lib/tavern/types'
 
 export default function TavernScriptDialog({ open, onClose, onSaved, editing }: {
@@ -32,12 +34,17 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing }: 
 }) {
   const [fields, setFields] = useState<ScriptDraftFields>(EMPTY_SCRIPT_FIELDS)
   const [seed, setSeed] = useState('')
+  const [refs, setRefs] = useState('')
+  const [lastSource, setLastSource] = useState<DraftSource | null>(null)
   const [drafting, setDrafting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const search = useSearchSettings()
 
   useEffect(() => {
     if (!open) return
     setSeed('')
+    setRefs('')
+    setLastSource(null)
     setDrafting(false)
     setSaving(false)
     setFields(editing
@@ -58,9 +65,13 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing }: 
   const runDraft = async () => {
     setDrafting(true)
     try {
-      const out = await draftScript({ seed })
+      const { fields: out, source } = await draftScript({
+        seed, refs,
+        ...(search ? { searchSettings: search } : {}),
+      })
       setFields(prev => mergeScriptDraft(prev, out))
-      showToast('已生成六栏 —— 过一遍再保存')
+      setLastSource(source)
+      showToast(`已生成六栏（${source.label}）—— 过一遍再保存`)
     } catch (e) {
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -118,13 +129,18 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing }: 
               maxHeight={180}
               placeholder="例：雨夜便利店，她是夜班店员，我是每天来买烟的人。今天她忽然锁了烟柜。"
             />
+            <div className="mt-2">
+              <RefsField value={refs} onChange={setRefs} minRows={2} />
+            </div>
+            <SearchPlanLine settings={search} />
             <Button
               variant="primary" size="md" className="mt-2 w-full"
-              disabled={drafting || !seed.trim()}
+              disabled={drafting || (!seed.trim() && !refs.trim())}
               onClick={() => void runDraft()}
             >
               {drafting ? '正在生成…' : '一键起草'}
             </Button>
+            <DraftSourceLine source={lastSource} />
           </div>
           <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
             <div className="text-[12px] text-ink-200">注入预览</div>

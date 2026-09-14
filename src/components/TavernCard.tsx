@@ -36,6 +36,10 @@ import { getTavernSettings } from '../lib/tavern/settings'
 import { Button } from './Button'
 import Avatar from './Avatar'
 import AvatarPicker from './AvatarPicker'
+import TavernCardDraftDialog from './TavernCardDraftDialog'
+import TavernInterviewDialog from './TavernInterviewDialog'
+import { type CardDraft } from '../lib/tavern/draft'
+import { interviewToCard } from '../lib/tavern/interview'
 import { Modal } from './Modal'
 import { showToast, confirmDialog } from './dialogs'
 import { LoadingState } from './LoadingState'
@@ -102,6 +106,9 @@ function copyName(base: string, taken: Set<string>): string {
 export default function TavernCard() {
   const [list, setList] = useState<TavernCharIndexItem[]>([])
   const [draft, setDraft] = useState<FreeCharacter | null>(null)
+  /** 两个 AI 入口：一句话起草 / 对话引导 */
+  const [aiDraftOpen, setAiDraftOpen] = useState(false)
+  const [interviewOpen, setInterviewOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -386,6 +393,64 @@ export default function TavernCard() {
     }
   }
 
+  /**
+   * 把当前卡面摊成文本，交给「补完」模式当起点。
+   * 只给非空的栏 —— 空栏写了反而会诱导 AI 去「填空」，而我们希望它只补真正缺的。
+   */
+  const flattenCard = (c: FreeCharacter): string => ([
+    ['名字', c.name],
+    ['第 1 章 · 世界', c.world ?? ''],
+    ['外在', c.profile?.externals ?? ''],
+    ['内核', c.profile?.core ?? ''],
+    ['语言特征', c.profile?.speech ?? ''],
+    ['关系', c.profile?.relations ?? ''],
+    ['做不到的事', c.profile?.cannot ?? ''],
+    ['知识边界', c.profile?.knowledge ?? ''],
+    ['视角与人称', c.conduct?.perspective ?? ''],
+    ['底线清单', c.conduct?.bottomLine ?? ''],
+    ['进度锁', c.conduct?.paceLock ?? ''],
+    ['尺度', c.conduct?.rating ?? ''],
+    ['示例对话', c.examples ?? ''],
+  ] as [string, string][])
+    .filter(([, v]) => String(v).trim())
+    .map(([k, v]) => `【${k}】${String(v).trim()}`)
+    .join('\n')
+
+  /**
+   * 把起草结果并进卡面。**空栏不覆盖**（AI 拿不准会留空，那是好事，别把作者写的冲掉）。
+   * 改完只标记「未保存」—— 与其它字段一致，作者自己点保存。
+   */
+  const applyCardDraft = (f: CardDraft, label: string) => {
+    setDraft(d => {
+      if (!d) return d
+      const pick = (v: string, cur: string) => (v.trim() ? v.trim() : cur)
+      return {
+        ...d,
+        name: pick(f.name, d.name),
+        world: pick(f.world, d.world ?? ''),
+        profile: {
+          ...d.profile,
+          externals: pick(f.externals, d.profile?.externals ?? ''),
+          core: pick(f.core, d.profile?.core ?? ''),
+          speech: pick(f.speech, d.profile?.speech ?? ''),
+          relations: pick(f.relations, d.profile?.relations ?? ''),
+          cannot: pick(f.cannot, d.profile?.cannot ?? ''),
+          knowledge: pick(f.knowledge, d.profile?.knowledge ?? ''),
+        },
+        conduct: {
+          ...d.conduct,
+          perspective: pick(f.perspective, d.conduct?.perspective ?? ''),
+          bottomLine: pick(f.bottomLine, d.conduct?.bottomLine ?? ''),
+          paceLock: pick(f.paceLock, d.conduct?.paceLock ?? ''),
+          rating: pick(f.rating, d.conduct?.rating ?? ''),
+        },
+        examples: pick(f.examples, d.examples ?? ''),
+      }
+    })
+    setDirty(true)
+    showToast(`已填入卡面（${label}）—— 逐栏核对后点「保存」`)
+  }
+
   const up = <K extends keyof FreeCharacter>(k: K, v: FreeCharacter[K]) => {
     setDraft(d => (d ? { ...d, [k]: v } : d))
     setDirty(true)
@@ -434,6 +499,24 @@ export default function TavernCard() {
           {/* 左：角色列表 */}
           <aside className="w-56 shrink-0 space-y-2">
             <Button variant="primary" size="md" className="w-full" onClick={create}>新建角色卡</Button>
+
+            {/* 两个 AI 入口：想清楚了用一句话起草，只有个感觉就用对话引导 */}
+            <div className="flex gap-1.5">
+              <Button
+                variant="secondary" size="sm" className="flex-1 text-[11.5px]"
+                disabled={!draft} onClick={() => setAiDraftOpen(true)}
+                title="一句话（或粘一段素材）→ AI 按四章模板填写"
+              >
+                AI 起草
+              </Button>
+              <Button
+                variant="secondary" size="sm" className="flex-1 text-[11.5px]"
+                disabled={!draft} onClick={() => setInterviewOpen(true)}
+                title="AI 按模板提纲一轮一轮地问，边聊边把这张卡塑出来"
+              >
+                对话引导
+              </Button>
+            </div>
 
             {list.length === 0 ? (
               <p className="text-[11.5px] text-ink-500 leading-relaxed px-1 pt-1">
@@ -819,6 +902,22 @@ export default function TavernCard() {
           </div>
         </div>
       </Modal>
+
+      <TavernCardDraftDialog
+        open={aiDraftOpen}
+        {...(draft ? { existing: flattenCard(draft) } : {})}
+        onClose={() => setAiDraftOpen(false)}
+        onApply={(fields, source) => applyCardDraft(fields, source.label)}
+      />
+
+      <TavernInterviewDialog
+        open={interviewOpen}
+        kind="card"
+        subject="角色卡"
+        {...(draft ? { existing: flattenCard(draft) } : {})}
+        onClose={() => setInterviewOpen(false)}
+        onApply={filled => applyCardDraft(interviewToCard(filled), '对话引导')}
+      />
     </div>
   )
 }

@@ -23,11 +23,16 @@ import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
 import TavernScriptFields from './TavernScriptFields'
+import TavernInterviewDialog from './TavernInterviewDialog'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './TavernDraftBits'
+import { interviewToScript } from '../lib/tavern/interview'
 import {
   listScripts, getScript, saveScript, createScript, deleteScript, draftScript,
   scriptToText, snapshotOf, mergeScriptDraft, isEmptyScriptFields, firstLine, scriptDisplayName,
+  flattenScriptFields,
   SCRIPT_MAX_CHARS, EMPTY_SCRIPT_FIELDS, isEmptySnapshot, type ScriptDraftFields,
 } from '../lib/tavern/script'
+import type { DraftSource } from '../lib/tavern/draft'
 import type { TavernScript, TavernScriptIndexItem } from '../lib/tavern/types'
 
 export default function TavernScript() {
@@ -36,8 +41,14 @@ export default function TavernScript() {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [drafting, setDrafting] = useState(false)
-  /** AI 起草的输入（作者的粗略想法）—— 只存在于界面，不落库 */
+  /** AI 起草的输入（作者的粗略想法 + 粘贴的参考素材）—— 只存在于界面，不落库 */
   const [seed, setSeed] = useState('')
+  const [refs, setRefs] = useState('')
+  /** 上一次起草实际用的素材来源（如实回显给作者） */
+  const [lastSource, setLastSource] = useState<DraftSource | null>(null)
+  /** 对话引导弹窗（边聊边写，适合还没想清楚的时候） */
+  const [interviewOpen, setInterviewOpen] = useState(false)
+  const search = useSearchSettings()
 
   const load = useCallback(async (id?: string) => {
     const l = await listScripts()
@@ -111,17 +122,21 @@ export default function TavernScript() {
     if (!cur) return
     setDrafting(true)
     try {
-      const out = await draftScript({ seed })
-      const merged = mergeScriptDraft(
-        {
-          name: cur.name, situation: cur.situation, opening: cur.opening,
-          playerRole: cur.playerRole, goal: cur.goal, taboo: cur.taboo,
-        },
-        out,
-      )
+      const curFields: ScriptDraftFields = {
+        name: cur.name, situation: cur.situation, opening: cur.opening,
+        playerRole: cur.playerRole, goal: cur.goal, taboo: cur.taboo,
+      }
+      const { fields: out, source } = await draftScript({
+        seed, refs,
+        // 已有内容一并给过去：这是「补完」而不是从零重写（AI 空着的栏也不会覆盖作者写的）
+        existing: flattenScriptFields(curFields),
+        ...(search ? { searchSettings: search } : {}),
+      })
+      const merged = mergeScriptDraft(curFields, out)
       setCur(prev => (prev ? { ...prev, ...merged, draftedAt: Date.now() } : prev))
       setDirty(true)
-      showToast('已生成六栏 —— 过一遍再保存（AI 没写的栏保留了你的原文）')
+      setLastSource(source)
+      showToast(`已生成六栏（${source.label}）—— 过一遍再保存`)
     } catch (e) {
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -155,6 +170,13 @@ export default function TavernScript() {
 
       <div className="flex items-center gap-2 pt-3">
         <Button variant="primary" size="md" onClick={() => void createNew()}>＋ 新建剧本</Button>
+        <Button
+          variant="secondary" size="md"
+          onClick={() => setInterviewOpen(true)}
+          title="AI 按六栏提纲一轮一轮地问，边聊边把这场戏塑出来"
+        >
+          对话引导
+        </Button>
         <Button variant="secondary" size="md" disabled={!dirty || saving} onClick={() => void save()}>
           {saving ? '保存中…' : dirty ? '保存' : '已保存'}
         </Button>
@@ -165,6 +187,21 @@ export default function TavernScript() {
         {dirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
         {cur && <Button variant="ghost" size="md" onClick={() => void remove()}>删除这份</Button>}
       </div>
+
+      <TavernInterviewDialog
+        open={interviewOpen}
+        kind="script"
+        subject="剧本"
+        {...(cur ? { existing: flattenScriptFields(fields) } : {})}
+        onClose={() => setInterviewOpen(false)}
+        onApply={filled => {
+          const out = interviewToScript(filled)
+          const merged = mergeScriptDraft(fields, out)
+          setCur(prev => (prev ? { ...prev, ...merged, draftedAt: Date.now() } : prev))
+          setDirty(true)
+          showToast('已填入六栏（对话引导）—— 逐栏核对后点「保存」')
+        }}
+      />
 
       <div className="flex flex-1 min-h-0 gap-3 pt-3">
         {/* 左：剧本列表 */}
@@ -230,16 +267,24 @@ export default function TavernScript() {
                 onChange={setSeed}
                 minRows={3}
                 maxHeight={200}
-                placeholder="例：雨夜便利店，她是夜班店员，我是每天来买烟的人，今天她忽然锁了烟柜。我想让她说出为什么。"
+                placeholder="例：雨夜便利店，她是夜班店员，我是每天来买烟的人，今天她忽然锁了烟柜。我想让她说出为什么。
+也可以点名已有作品：例：按《梁山伯与祝英台》设计一场楼台会的戏。"
               />
+            </div>
+            <div className="mt-2">
+              <RefsField value={refs} onChange={setRefs} />
+            </div>
+            <div className="mt-1.5">
+              <SearchPlanLine settings={search} />
             </div>
             <Button
               variant="primary" size="md" className="mt-2 w-full"
-              disabled={drafting || !cur || !seed.trim()}
+              disabled={drafting || !cur || (!seed.trim() && !refs.trim() && isEmptyScriptFields(fields))}
               onClick={() => void runDraft()}
             >
-              {drafting ? '正在生成…' : '一键起草'}
+              {drafting ? '正在生成…' : '一键起草（缺的栏补上）'}
             </Button>
+            <DraftSourceLine source={lastSource} />
             {cur?.draftedAt ? (
               <p className="mt-1.5 text-[10px] text-ink-500">
                 上次生成：{new Date(cur.draftedAt).toLocaleString()}

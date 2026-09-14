@@ -32,6 +32,8 @@ import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
 import { parsePlainObject, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
+import { prepareDraftMaterial, type DraftSource } from './draft'
+import { webSearch, type SearchSettings } from '../webSearch'
 import type { TavernScript, TavernScriptIndexItem, ScriptSnapshot } from './types'
 
 // 全局 meta 键（无项目前缀）
@@ -215,18 +217,38 @@ export type ScriptDraftArgs = {
   seed: string
   /** 可选：这一场用到的角色名（让情境与目标贴着具体的人写） */
   charNames?: string[]
+  /** 作者粘贴的参考素材（可空） */
+  refs?: string
+  /** 补完模式：现有六栏的摊平文本（可空） */
+  existing?: string
+  /** 检索设置（不传 = 不联网） */
+  searchSettings?: SearchSettings
   providerId?: string
   chatFn?: ChatFn
   signal?: AbortSignal
+  /** 测试用：替换检索实现 */
+  searchFn?: typeof webSearch
 }
 
 /**
  * 跑一次起草，产出六栏骨架（**不落库**；调用方过一遍再保存）。
  * 模型乱答时抛错，让调用方保留作者现有内容 —— 绝不写半截结果。
  */
-export async function draftScript(args: ScriptDraftArgs): Promise<ScriptDraftFields> {
+export async function draftScript(args: ScriptDraftArgs): Promise<{ fields: ScriptDraftFields; source: DraftSource }> {
   const seed = String(args.seed ?? '').trim()
-  if (!seed) throw new Error('请先写一句粗略的想法（这场戏大概是什么样）')
+  if (!seed && !args.refs?.trim() && !args.existing?.trim()) {
+    throw new Error('请先写一句粗略的想法（这场戏大概是什么样）')
+  }
+
+  // 素材（含可选的联网检索结果）由 draft.ts 统一裁决，这里只管剧本自己的模板
+  const material = await prepareDraftMaterial({
+    idea: seed,
+    refs: args.refs,
+    existing: args.existing,
+    settings: args.searchSettings ?? { mode: 'off', engine: 'bocha', endpoint: '', apiKey: '', topK: 5 },
+    signal: args.signal,
+    searchFn: args.searchFn,
+  })
 
   const { provider } = await resolveTavernProvider(args.providerId ? { providerId: args.providerId } : undefined)
   const runChat = args.chatFn ?? chat
@@ -242,6 +264,7 @@ export async function draftScript(args: ScriptDraftArgs): Promise<ScriptDraftFie
         '〖作者的想法〗',
         authorBlock(fence, seed),
         '',
+        material.blocks,
         '请按格式输出 JSON。',
       ].filter(Boolean).join('\n'),
     },
@@ -256,7 +279,18 @@ export async function draftScript(args: ScriptDraftArgs): Promise<ScriptDraftFie
 
   const parsed = parseScriptDraft(reply)
   if (!parsed) throw new Error('模型没有返回可用的剧本（没按 JSON 格式输出）')
-  return parsed
+  return { fields: parsed, source: material.source }
+}
+
+/** 把现有六栏摊平给「补完」模式用（只给非空的栏，省 token 也更聚焦） */
+export function flattenScriptFields(f: ScriptDraftFields): string {
+  return ([
+    ['名称', f.name], ['情境', f.situation], ['开场白', f.opening],
+    ['你的位置', f.playerRole], ['这一场的目标', f.goal], ['不要发生', f.taboo],
+  ] as [string, string][])
+    .filter(([, v]) => v.trim())
+    .map(([k, v]) => `【${k}】${v.trim()}`)
+    .join('\n')
 }
 
 /** 解析起草结果（导出便于单测）。形状不对就返回 null，绝不猜 */

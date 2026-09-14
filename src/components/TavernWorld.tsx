@@ -20,6 +20,7 @@ import { showToast } from './dialogs'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import AutoTextarea from './AutoTextarea'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './TavernDraftBits'
 import { buildProjectContext } from '../lib/aiContext'
 import {
   getWorldSetting, saveWorldSetting, draftWorldSetting, worldToText,
@@ -27,12 +28,17 @@ import {
   type WorldSetting,
 } from '../lib/tavern/world'
 import { uid } from '../lib/id'
+import type { DraftSource } from '../lib/tavern/draft'
 
 export default function TavernWorld() {
   const [w, setW] = useState<WorldSetting | null>(null)
   const [dirty, setDirty] = useState(false)
   const [drafting, setDrafting] = useState(false)
   const [saving, setSaving] = useState(false)
+  /** 起草的参考素材（可空）与上一次的素材来源 */
+  const [refs, setRefs] = useState('')
+  const [lastSource, setLastSource] = useState<DraftSource | null>(null)
+  const search = useSearchSettings()
 
   const load = useCallback(async () => {
     setW(await getWorldSetting())
@@ -71,7 +77,10 @@ export default function TavernWorld() {
     try {
       // 取一份「导演视角」的项目资料（作者侧照带；这里只是给 AI 提炼用，不进对话）
       const ctx = await buildProjectContext({ budget: 8000, viewMode: 'director-view', inlineDropNote: false })
-      const out = await draftWorldSetting({ seed: w.seed, projectDigest: ctx.text })
+      const { fields: out, source } = await draftWorldSetting({
+        seed: w.seed, projectDigest: ctx.text, refs,
+        ...(search ? { searchSettings: search } : {}),
+      })
       edit(prev => ({
         ...prev,
         brief: out.brief || prev.brief,
@@ -79,7 +88,8 @@ export default function TavernWorld() {
         keywords: out.keywords.length ? out.keywords : prev.keywords,
         draftedAt: Date.now(),
       }))
-      showToast(`已从项目资料提炼成 ${out.sections.length} 节 —— 过一遍再保存`)
+      setLastSource(source)
+      showToast(`已从项目资料提炼成 ${out.sections.length} 节（${source.label}）—— 过一遍再保存`)
     } catch (e) {
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -226,6 +236,11 @@ export default function TavernWorld() {
                 />
               </div>
 
+              <div className="mt-2">
+                <RefsField value={refs} onChange={setRefs} minRows={2} />
+              </div>
+              <SearchPlanLine settings={search} />
+
               <Button
                 variant="primary" size="md" className="mt-2 w-full"
                 disabled={drafting}
@@ -236,6 +251,7 @@ export default function TavernWorld() {
               <p className="mt-1.5 text-[10px] text-ink-500 leading-relaxed">
                 ⚠️ 会覆盖现有分节（brief 只在原来是空的时候填）。生成后请过一遍再保存。
               </p>
+              <DraftSourceLine source={lastSource} />
             </div>
 
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">

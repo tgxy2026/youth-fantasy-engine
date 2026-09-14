@@ -31,6 +31,7 @@ import { TONE_HINT } from './prompt'
 import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
 import { DEFAULT_POST_RULES, normalizePostRules, type PostRule } from './postRules'
 import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
+import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from '../webSearch' // 只依赖 env
 
 /** 设置存储键（全局 meta） */
 export const K_TAVERN_SETTINGS = 'tavern.settings'
@@ -193,6 +194,11 @@ export type TavernSettings = {
   free: TavernFreeSettings
   /** 本场变量（C2 第二步）：自由对话专用 */
   vars: TavernVarsSettings
+  /**
+   * 联网检索（起草素材来源）。**全局**：与用哪个模型无关，是「起草时允不允许往外查」。
+   * 默认关（零配置可用）；三条路由与实测的跨域结论见 `webSearch.ts`。
+   */
+  search: SearchSettings
   /** 扮演协议全文（两种模式共用，钉在 system 末尾）。默认 = 内置常量 */
   protocol: string
   /**
@@ -273,6 +279,7 @@ export const DEFAULT_PROTOCOL = PROTOCOL_CORE
 export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
   profile: DEFAULT_TAVERN_PROFILE,
   vars: DEFAULT_TAVERN_VARS,
+  search: DEFAULT_SEARCH_SETTINGS,
   common: {
     defaultProviderId: '',
     contextBudget: TAVERN_DEFAULTS.free.contextBudget,

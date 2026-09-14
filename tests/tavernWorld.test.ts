@@ -142,10 +142,11 @@ async function main() {
       calls.push(messages)
       return JSON.stringify({ brief: '按基础信息扩写的世界', sections: [{ title: '基调', body: '慢、克制。' }], keywords: ['便利店'] })
     }
-    const out = await draftWorldSetting({
+    const { fields: out, source } = await draftWorldSetting({
       seed: '', projectDigest: '现代都市·城南，梅雨季。一堆原始资料。', chatFn: chatFn as never,
     })
     ok('桩模型：拿到 brief 与分节', out.brief.includes('基础信息') && out.sections.length === 1)
+    ok('不带检索设置时如实标注来源（未联网）', source.mode === 'off' && source.used === false, JSON.stringify(source))
     ok('提示词带上项目资料', calls[0][1].content.includes('梅雨季'))
     ok('作者文本用边界块包起来（防注入）', /<<<A-[a-z0-9]+>>>/.test(calls[0][1].content))
     ok('备注为空时不带「额外要求」段', !calls[0][1].content.includes('作者的额外要求'))
