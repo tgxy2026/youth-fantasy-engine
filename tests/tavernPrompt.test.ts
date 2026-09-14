@@ -5,11 +5,12 @@
 //   1) 层序 —— 手册实测顺序是「角色卡 → 记忆 → 协议收尾」，协议钉在**末尾**
 //   2) 协议全文完整 —— 协议是从手册逐行搬来的内置常量，条款掉了就等于功能瘫了
 //   3) 参数改名 —— 内部 repeatPenalty 到 Ollama 那边叫 repeat_penalty（少个 ition）
-import { buildSystemPrompt, buildOpeningMessage, buildMultiCharRule, toChatMessages } from '../src/lib/tavern/prompt'
+import { buildSystemPrompt, buildOpeningMessage, buildMultiCharRule, toChatMessages, renderCastSetting } from '../src/lib/tavern/prompt'
 import { PROTOCOL_CORE, PROTOCOL_VERSION } from '../src/lib/tavern/protocol'
 import { trimHistory, historyBudget, budgetState, FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
 import { resolveParams, toOllamaOptions } from '../src/lib/tavern/params'
-import type { TavernMessage } from '../src/lib/tavern/types'
+import { hasCastSetting, EMPTY_CAST_SETTING } from '../src/lib/tavern/types'
+import type { TavernMessage, CastSetting } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -148,6 +149,29 @@ function main() {
     ok('显式带 num_ctx（否则按全局 128K 加载会爆显存）', o.num_ctx === 32768)
   }
 
+  // ---------- 扮演设定（方案 §6.4） ----------
+  {
+    const cs: CastSetting = {
+      voice: '句子短，爱用反问', address: '叫你师弟', unknown: '不知道胎记的事',
+      taboo: '', care: '在意被质疑', never: '绝不会主动示弱',
+    }
+    const ai = renderCastSetting('萧景行', cs, 'ai')
+    ok('AI 角色的设定块带角色名与用途说明', ai.includes('【扮演设定 · 萧景行】') && ai.includes('你要演成这样的人'))
+    ok('只渲染填过的字段（空栏不产生「未填」噪音）', !ai.includes('禁忌与底线'))
+    ok('填过的字段按固定顺序出现', ai.indexOf('口吻') < ai.indexOf('在意的事') && ai.indexOf('在意的事') < ai.indexOf('绝不会做的事'))
+    const user = renderCastSetting('陈渊', cs, 'user')
+    ok('作者角色的块明确「不要代写他的言行」', user.includes('不要代写'))
+    ok('同一份设定，AI 块与作者块的首行不同', ai.split('\n')[0] !== user.split('\n')[0])
+    ok('全空设定渲染为空串（整层跳过，不占上下文）', renderCastSetting('甲', { ...EMPTY_CAST_SETTING }, 'ai') === '')
+    ok('只有空白字符也算空', !hasCastSetting({ ...EMPTY_CAST_SETTING, voice: '   ' }))
+    ok('任一栏有内容就算已填', hasCastSetting({ ...EMPTY_CAST_SETTING, never: '不哭' }))
+
+    // 接入 buildSystemPrompt：应出现在身份层之后、协议之前
+    const sys = buildSystemPrompt({ tone: 'narrative', setting: '设定文', self: '身份文', cast: ai })
+    ok('扮演设定进了 system 且带独立标题', sys.includes('【扮演设定 · 萧景行】'))
+    ok('排在身份之后', sys.indexOf('身份文') < sys.indexOf('【扮演设定'))
+    ok('排在协议之前（不打断末尾的格式提醒）', sys.indexOf('【扮演设定') < sys.indexOf(PROTOCOL_CORE))
+  }
   console.log(`\ntavernPrompt: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

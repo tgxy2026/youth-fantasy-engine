@@ -20,6 +20,7 @@
  */
 import * as db from '../db'
 import { uid } from '../id'
+import { EMPTY_CAST_SETTING } from './types'
 import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
@@ -114,11 +115,8 @@ export async function renameSession(id: string, title: string): Promise<void> {
 
 // ==================== 剧情模式 · 扮演设定 ====================
 
-const EMPTY_CAST_SETTING: CastSetting = {
-  voice: '', address: '', unknown: '', taboo: '', care: '', never: '',
-}
-
 export async function getCastSetting(cardId: string): Promise<CastSetting> {
+  // 空值兜底走 types 的单一真源（UI 表单初值也用同一个，避免两处写空对象而慢慢漂移）
   return db.getSetting<CastSetting>(K.cast(cardId), EMPTY_CAST_SETTING)
 }
 

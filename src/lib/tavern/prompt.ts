@@ -22,7 +22,7 @@
  * 本文件是纯逻辑，不含 React。
  */
 import { PROTOCOL_CORE } from './protocol'
-import type { TavernTone, TavernMessage } from './types'
+import type { TavernTone, TavernMessage, CastSetting } from './types'
 
 export type PromptLayers = {
   /** 档位：叙事向（剧情默认，即协议默认） / 聊天向（自由默认，追加一句风格提示） */
@@ -33,6 +33,11 @@ export type PromptLayers = {
   memory?: string
   /** 你在戏里的身份与知识边界 */
   self?: string
+  /**
+   * 扮演设定（方案 §6.4）：给 AI 演「像」用的 —— **塞行为，不塞设定**。
+   * 由 renderCastSetting 渲染好传入；空串则整层跳过。
+   */
+  cast?: string
   /**
    * 被预算丢弃的段落名。必须如实声明：
    * 否则模型会把自己没看到的资料当成不存在（沿用 buildProjectContext 的既有设计）。
@@ -64,6 +69,9 @@ export function buildSystemPrompt(layers: PromptLayers): string {
   // ③ 你在戏里的身份与知识边界
   if (layers.self?.trim()) parts.push(`【你在戏里的身份与知识边界】\n${layers.self.trim()}`)
 
+  // ③b 扮演设定（紧跟身份之后：先知道「你是谁」，再知道「该怎么演」）
+  if (layers.cast?.trim()) parts.push(layers.cast.trim())
+
   // ④ 档位追加（叙事向为空，不产生噪音）
   const hint = TONE_HINT[layers.tone]
   if (hint) parts.push(hint)
@@ -80,6 +88,33 @@ export function buildSystemPrompt(layers: PromptLayers): string {
   parts.push(PROTOCOL_CORE)
 
   return parts.join('\n\n')
+}
+
+/** 扮演设定六个字段的展示名（顺序即渲染顺序） */
+const CAST_FIELDS: [keyof CastSetting, string][] = [
+  ['voice', '口吻'],
+  ['address', '称呼你的方式'],
+  ['unknown', '知识边界（不知道的事）'],
+  ['taboo', '禁忌与底线'],
+  ['care', '在意的事'],
+  ['never', '绝不会做的事'],
+]
+
+/**
+ * 把扮演设定渲染成一块提示词（方案 §6.4）。
+ * 两个要点：
+ *   · 只输出填过的字段 —— 空字段不产生「（未填）」这类噪音，免得模型去猜
+ *   · 作者角色的设定明确标注**不要代写** —— 否则 AI 会顺手把作者的角色也演了
+ */
+export function renderCastSetting(name: string, cs: CastSetting, kind: 'ai' | 'user'): string {
+  const lines = CAST_FIELDS
+    .filter(([k]) => typeof cs[k] === 'string' && cs[k].trim())
+    .map(([k, label]) => `- ${label}：${cs[k].trim()}`)
+  if (lines.length === 0) return ''
+  const head = kind === 'ai'
+    ? `【扮演设定 · ${name}】你要演成这样的人（这些是行为倾向，落到具体言行上，不要复述本段）`
+    : `【对方的扮演设定 · ${name}】作者自己演的角色，仅供你理解对方的风格；**不要代写他的言行**`
+  return `${head}\n${lines.join('\n')}`
 }
 
 /**

@@ -18,10 +18,11 @@ import {
 } from '../ai'
 import { uid } from '../id'
 import { buildProjectContext } from '../aiContext'
-import { buildSystemPrompt, buildMultiCharRule, toChatMessages } from './prompt'
+import { buildSystemPrompt, buildMultiCharRule, toChatMessages, renderCastSetting } from './prompt'
+import * as store from './store'
 import { trimHistory, historyBudget } from './budget'
 import { resolveParams } from './params'
-import type { TavernSession, TavernMessage, TavernCast } from './types'
+import { hasCastSetting, type TavernSession, type TavernMessage, type TavernCast } from './types'
 
 /** 剧情模式的档位固定为叙事向（方案 §5.3：剧情默认叙事向、自由默认聊天向） */
 const PLOT_TONE = 'narrative' as const
@@ -94,15 +95,38 @@ export async function buildPlotSystem(session: TavernSession): Promise<PlotSyste
     selfLines.push('⚠️ 你负责多个角色：一次只让其中一个说话，轮到谁由语境决定，不要替没开口的角色发言。')
   }
 
+  // 扮演设定（方案 §6.4）：按 cardId 逐个读。AI 角色的是「你要怎么演」，
+  // 作者角色的仅供 AI 理解对方口吻 —— 都填过才成块，全空则整层不出现。
+  const castBlock = await buildCastBlock(casts)
+
   const system = buildSystemPrompt({
     tone: PLOT_TONE,
     setting,
     memory: session.memory,
     self: selfLines.join('\n'),
+    cast: castBlock,
     dropped: ctx.dropped,
   })
 
   return { system, settingChars: ctx.chars, dropped: ctx.dropped }
+}
+
+/** 逐个读取扮演设定并渲染（无任何填写时返回空串 → 整层跳过） */
+async function buildCastBlock(casts: ReturnType<typeof splitCast>): Promise<string> {
+  const load = async (list: typeof casts.ai, kind: 'ai' | 'user') => {
+    const rows = await Promise.all(list.map(async c => ({
+      name: c.name,
+      cs: await store.getCastSetting(c.cardId).catch(() => null),
+    })))
+    return rows.filter(r => r.cs && hasCastSetting(r.cs))
+      .map(r => renderCastSetting(r.name, r.cs!, kind))
+      .filter(Boolean)
+  }
+  const [aiBlocks, userBlocks] = await Promise.all([
+    load(casts.ai, 'ai'),
+    load(casts.user, 'user'),
+  ])
+  return [...aiBlocks, ...userBlocks].join('\n\n')
 }
 
 /**

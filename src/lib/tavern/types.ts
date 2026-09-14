@@ -105,6 +105,16 @@ export type CastSetting = {
   never: string
 }
 
+/** 扮演设定的空值（UI 表单初值 / store 兜底，单一真源） */
+export const EMPTY_CAST_SETTING: CastSetting = {
+  voice: '', address: '', unknown: '', taboo: '', care: '', never: '',
+}
+
+/** 六栏是否填过任何内容（UI 显示「已设定」标记用） */
+export function hasCastSetting(cs?: Partial<CastSetting> | null): boolean {
+  return !!cs && Object.values(cs).some(v => typeof v === 'string' && v.trim())
+}
+
 export type TavernFindingLevel = '矛盾' | '漏洞' | '存疑'
 
 export type TavernFinding = {

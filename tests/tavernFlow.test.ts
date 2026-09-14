@@ -26,6 +26,7 @@ import {
 import { generateReport } from '../src/lib/tavern/report'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { TABS } from '../src/lib/schema'
+import { EMPTY_CAST_SETTING } from '../src/lib/tavern/types'
 import type { TavernSession, TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
@@ -193,6 +194,30 @@ async function main() {
       tight.messages[tight.messages.length - 1].content === wide.messages[wide.messages.length - 1].content)
   }
 
+  // ---------- 2c) 扮演设定：填了就要真进 system（方案 §6.4） ----------
+  {
+    const probe = mkSession({ id: 'sess-cast' })
+    await store.saveCastSetting('rec-xiaojingxing', {
+      voice: '句子短，爱用反问', address: '叫你师弟', unknown: '不知道胎记的事',
+      taboo: '提到家人会沉默', care: '在意被质疑', never: '绝不会主动示弱',
+    })
+    const { system } = await buildPlotSystem(probe)
+    ok('扮演设定进了 system', system.includes('句子短，爱用反问'))
+    ok('带角色名与用途标题', system.includes('【扮演设定 · 萧景行】'))
+    ok('空栏不产生噪音', !system.includes('称呼你的方式：')  || system.includes('叫你师弟'))
+    ok('排在协议之前（不打断末尾格式提醒）', system.indexOf('【扮演设定') < system.indexOf(PROTOCOL_CORE))
+
+    // 作者自己演的角色也会带，但必须明示不得代写（否则 AI 会把你的角色也演了）
+    await store.saveCastSetting(chenYuanId, { ...EMPTY_CAST_SETTING, voice: '说话直接' })
+    const { system: s2 } = await buildPlotSystem(probe)
+    ok('作者角色的设定只作理解之用，并明示不得代写', s2.includes('【对方的扮演设定 · 陈渊】') && s2.includes('不要代写'))
+
+    // 清空后整层消失
+    await store.saveCastSetting(chenYuanId, { ...EMPTY_CAST_SETTING })
+    await store.saveCastSetting('rec-xiaojingxing', { ...EMPTY_CAST_SETTING })
+    const { system: s3 } = await buildPlotSystem(probe)
+    ok('六栏全空时整层跳过（不占上下文）', !s3.includes('【扮演设定') && !s3.includes('【对方的扮演设定'))
+  }
   // ---------- 3) 跑一轮推演（流式 + 参数 + 落库） ----------
   let session = mkSession()
   {

@@ -13,12 +13,13 @@ import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
+import TavernCastSetting from './TavernCastSetting'
 import * as store from '../lib/tavern/store'
 import { runPlotTurn, splitCast } from '../lib/tavern/engine'
 import { generateReport } from '../lib/tavern/report'
 import { buildOpeningMessage } from '../lib/tavern/prompt'
 import { uid } from '../lib/id'
-import { MEMORY_SOFT_LIMIT } from '../lib/tavern/types'
+import { MEMORY_SOFT_LIMIT, hasCastSetting } from '../lib/tavern/types'
 import type { TavernSession, TavernSessionIndexItem, TavernMessage } from '../lib/tavern/types'
 
 /** 按协议的格式规定做最朴素的样式区分：动作（全角括号）/ 内心〔〕/ 对白 */
@@ -48,6 +49,26 @@ export default function TavernPlot() {
   const [streamText, setStreamText] = useState('')
   const [phase, setPhase] = useState('')
   const [busyReport, setBusyReport] = useState(false)
+  // 扮演设定编辑：正在编辑的角色（null = 未打开）
+  const [castEdit, setCastEdit] = useState<{ cardId: string; name: string; kind: 'ai' | 'user' } | null>(null)
+  // 哪些角色已填过扮演设定（左栏显示「已设定 / 设定」）
+  const [castFilled, setCastFilled] = useState<Record<string, boolean>>({})
+
+  // 读一遍各角色的扮演设定是否填过（切会话/改角色分配时刷新）
+  const castCardIds = useMemo(
+    () => (session?.cast ?? []).filter(c => c.role !== 'silent').map(c => c.cardId),
+    [session],
+  )
+  useEffect(() => {
+    if (castCardIds.length === 0) { setCastFilled({}); return }
+    let alive = true
+    void Promise.all(castCardIds.map(async cardId =>
+      [cardId, hasCastSetting(await store.getCastSetting(cardId))] as const,
+    ))
+      .then(rows => { if (alive) setCastFilled(Object.fromEntries(rows)) })
+      .catch(() => { if (alive) setCastFilled({}) })
+    return () => { alive = false }
+  }, [castCardIds])
 
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -253,11 +274,36 @@ export default function TavernPlot() {
               </div>
               <div>
                 <div className="text-[11px] text-ink-500">角色分配</div>
-                <ul className="mt-1 space-y-0.5">
-                  {casts.user.map(c => <li key={c.cardId} className="text-[12px] text-amber">你演 · {c.name}</li>)}
-                  {casts.ai.map(c => <li key={c.cardId} className="text-[12px] text-ink-200">AI 演 · {c.name}</li>)}
+                <ul className="mt-1 space-y-1">
+                  {casts.user.map(c => (
+                    <li key={c.cardId} className="flex items-center gap-1.5">
+                      <span className="flex-1 min-w-0 truncate text-[12px] text-amber">你演 · {c.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setCastEdit({ cardId: c.cardId, name: c.name, kind: 'user' })}
+                        className={`shrink-0 text-[11px] hover:text-amber ${castFilled[c.cardId] ? 'text-amber/80' : 'text-ink-500'}`}
+                        title="扮演设定：口吻 / 称呼 / 知识边界 / 底线…">
+                        {castFilled[c.cardId] ? '已设定' : '设定'}
+                      </button>
+                    </li>
+                  ))}
+                  {casts.ai.map(c => (
+                    <li key={c.cardId} className="flex items-center gap-1.5">
+                      <span className="flex-1 min-w-0 truncate text-[12px] text-ink-200">AI 演 · {c.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setCastEdit({ cardId: c.cardId, name: c.name, kind: 'ai' })}
+                        className={`shrink-0 text-[11px] hover:text-amber ${castFilled[c.cardId] ? 'text-amber/80' : 'text-ink-500'}`}
+                        title="扮演设定：口吻 / 称呼 / 知识边界 / 底线…">
+                        {castFilled[c.cardId] ? '已设定' : '设定'}
+                      </button>
+                    </li>
+                  ))}
                   {casts.silent.map(c => <li key={c.cardId} className="text-[12px] text-ink-500">在场 · {c.name}</li>)}
                 </ul>
+                <p className="mt-1.5 text-[10.5px] text-ink-500 leading-relaxed">
+                  AI 演的角色建议填一填「扮演设定」—— 它管的是口吻与底线，比堆设定更能演得像。
+                </p>
               </div>
               {(session.scene.place || session.scene.time || session.scene.description) && (
                 <div>
@@ -334,6 +380,22 @@ export default function TavernPlot() {
       )}
 
       <TavernPlotSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
+
+      {castEdit && (
+        <TavernCastSetting
+          open
+          cardId={castEdit.cardId}
+          name={castEdit.name}
+          kind={castEdit.kind}
+          onClose={() => setCastEdit(null)}
+          onSaved={() => {
+            // 保存后立刻刷新「已设定」标记（不必等切会话）
+            void store.getCastSetting(castEdit.cardId)
+              .then(v => setCastFilled(prev => ({ ...prev, [castEdit.cardId]: hasCastSetting(v) })))
+              .catch(() => { /* 读取失败不影响保存本身，标记留旧值即可 */ })
+          }}
+        />
+      )}
     </div>
   )
 }
