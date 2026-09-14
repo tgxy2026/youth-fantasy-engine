@@ -1,0 +1,197 @@
+/**
+ * 酒馆模式 · 推演报告生成（方案 §6.6 / §6.7）
+ *
+ * 报告的价值全在 `findings[]`：**每条必须能指回具体条目**
+ * （targetTabId + targetRecordId + targetLabel）。否则作者拿到的是一堆
+ * 「感觉有点问题」的废话，没法处理。
+ *
+ * 因此这里做两件事：
+ *   1. 提示词要求模型给出「指向哪张表 + 指向谁」
+ *   2. **回填 targetRecordId** —— 拿到 label 后回表里查真实记录 id；
+ *      查不到就把该条降级为「存疑」并留空 id（UI 单独分组显示），而不是硬编一个假 id
+ *
+ * 只诊断、不写回任何项目表（作者已定）。
+ */
+import { chat, CHAT_TIMEOUT_MS, isCancelled } from '../ai'
+import * as db from '../db'
+import { TABS } from '../schema'
+import { parsePlainObject, parseObjectArray, asText } from '../aiParse'
+import { uid } from '../id'
+import { resolveTavernProvider } from './engine'
+import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from './types'
+
+/** 可被指向的表（白名单）：只允许指向「有明确条目」的表，避免模型指向虚空 */
+const TARGETABLE = [
+  'char-main', 'char-secondary', 'char-npc', 'relations', 'secrets',
+  'worldbase', 'power', 'terms', 'nations', 'geography', 'races', 'items', 'history',
+  'timeline', 'foreshadow',
+]
+
+const REPORT_SYS = `你是小说的一致性与合理性审读员。作者刚刚扮演一个角色、你扮演了另一个角色，
+试演了一场戏。现在请判断：**这场戏里的角色反应，与项目设定是否自洽**。
+
+只做诊断，不要改写剧情，不要给写作建议（除非直接关系到设定矛盾）。
+
+对每条问题，必须给出：
+- level：三档之一
+    「矛盾」= 与已有设定明确冲突（姓名、身份、境界、势力归属、已发生的事对不上）
+    「漏洞」= 设定缺失或逻辑跳跃（该有交代的地方没有，行为缺乏动机）
+    「存疑」= 你有疑虑，但**指不出具体条目**（这类会被单独分组）
+- targetTabId：问题出在哪张表。可选值：${TARGETABLE.join(' / ')}
+- targetLabel：指向那条记录的名称（人物名、条目名）。矛盾与漏洞**必须给**；存疑可留空
+- detail：问题描述，一句话说清「哪里对不上」
+- suggestion：可选的修改建议
+
+宁可少报几条，也不要凑数。没有发现问题就返回空数组。`
+
+/** 按 label 回表里查真实记录 id（best-effort；查不到就留空，由调用方降级） */
+async function resolveTargetRecord(tabId: string, label: string): Promise<string | null> {
+  if (!tabId || !label) return null
+  const tab = TABS.find(t => t.id === tabId)
+  if (!tab) return null
+  const needle = label.trim()
+  if (!needle) return null
+  try {
+    if (tab.type === 'card') {
+      const recs = await db.getCardRecords(tabId)
+      const hit = recs.find(r => r.name === needle) ?? recs.find(r => r.name.includes(needle) || needle.includes(r.name))
+      return hit?.id ?? null
+    }
+    if (tab.type === 'table') {
+      const rows = await db.getTableRows(tabId)
+      const col = tab.displayCol
+      const hit = col
+        ? rows.find(r => String(r.data?.[col] ?? '') === needle) ?? rows.find(r => String(r.data?.[col] ?? '').includes(needle))
+        : undefined
+      return hit?.id ?? null
+    }
+  } catch {
+    /* 查不到就当定位失败，交由调用方降级 */
+  }
+  return null
+}
+
+export type ReportOptions = {
+  signal?: AbortSignal
+  onPhase?: (phase: string) => void
+  /** 对话正文送入报告的最大字符数（超出取最近的） */
+  maxTranscriptChars?: number
+}
+
+/**
+ * 把模型给出的原始条目规范化：**回填真实记录 id**，定位不到就把该条降级为「存疑」（方案 §6.7）。
+ * resolver 以参数注入，便于单测；生产环境传 resolveTargetRecord（回表里按名称查 id）。
+ */
+export async function normalizeFindings(
+  raw: Record<string, unknown>[],
+  resolve: (tabId: string, label: string) => Promise<string | null>,
+): Promise<TavernFinding[]> {
+  const findings: TavernFinding[] = []
+  for (const it of raw) {
+    const levelRaw = asText(it.level ?? it.等级 ?? '').trim()
+    let level: TavernFindingLevel = levelRaw.includes('矛盾') ? '矛盾' : levelRaw.includes('漏洞') ? '漏洞' : '存疑'
+    const targetTabId = asText(it.targetTabId ?? it.表 ?? '').trim()
+    const targetLabel = asText(it.targetLabel ?? it.条目 ?? it.指向 ?? '').trim()
+    const detail = asText(it.detail ?? it.问题 ?? it.描述 ?? '').trim()
+    if (!detail) continue
+
+    // 回填真实记录 id。表不在白名单就直接不查 —— 省一次库读，也避免拿非法表去 UI 跳转
+    const validTab = TARGETABLE.includes(targetTabId)
+    let targetRecordId: string | undefined
+    if (validTab && targetLabel) {
+      const rid = await resolve(targetTabId, targetLabel)
+      if (rid) targetRecordId = rid
+      // 「矛盾 / 漏洞」却指不回具体条目 → 降级为「存疑」（方案 §6.7：这类单独分组显示，
+      // 不硬编一个假 id 让作者点了跳空）
+      else if (level !== '存疑') level = '存疑'
+    } else if (level !== '存疑') {
+      // 没给条目名、或表不在白名单 —— 同样属于「指不回去」，按同一规矩降级
+      level = '存疑'
+    }
+
+    findings.push({
+      id: uid(),
+      level,
+      targetTabId: validTab ? targetTabId : '',
+      targetRecordId,
+      targetLabel: targetLabel || undefined,
+      detail,
+      suggestion: asText(it.suggestion ?? it.建议 ?? '').trim() || undefined,
+    })
+  }
+
+  return findings
+}
+
+/**
+ * 生成推演报告。**不落库**（调用方决定保存时机）。
+ */
+/**
+ * 生成推演报告。**不落库**（调用方决定保存时机）。
+ */
+export async function generateReport(session: TavernSession, opts: ReportOptions = {}): Promise<TavernReport> {
+  const { provider } = await resolveTavernProvider(session.model)
+  const cap = opts.maxTranscriptChars ?? 12000
+
+  // 场景 + 对话正文（超出上限时保留最近的）
+  const sceneLine = [
+    session.scene.place && `地点：${session.scene.place}`,
+    session.scene.time && `时间：${session.scene.time}`,
+    session.scene.present.length && `在场：${session.scene.present.join('、')}`,
+  ].filter(Boolean).join(' · ')
+  const castLine = session.cast.map(c => `${c.name}（${c.role === 'user' ? '作者扮演' : c.role === 'ai' ? 'AI 扮演' : '在场不出声'}）`).join('、')
+  const transcript = session.messages
+    .filter(m => m.role !== 'system')
+    .map(m => `${m.role === 'user' ? '【作者】' : '【AI】'}${m.content}`)
+    .join('\n')
+  const body = transcript.length > cap ? transcript.slice(-cap) : transcript
+
+  const user = [
+    `【叙事锚点】${session.anchorChapterLabel || '（未标注）'}`,
+    `【参演角色】${castLine || '（未分配）'}`,
+    sceneLine ? `【场景】${sceneLine}` : '',
+    session.scene.description ? `【场景补充】${session.scene.description}` : '',
+    session.mode === 'immersive'
+      ? '【信息边界】沉浸推演 —— 请按「角色当场能知道的信息」判断合理性，不要用后面的剧情要求它。'
+      : '【信息边界】导演推演 —— 可参照设定判断，但仍以锚点时刻的状态为准。',
+    '',
+    '【推演记录】',
+    body || '（这场没有对话内容）',
+    '',
+    '请输出 JSON：{"overview": "三五句话评价这场戏成不成立", "findings": [ ... ]}',
+  ].filter(Boolean).join('\n')
+
+  opts.onPhase?.('分析推演记录')
+  const reply = await chat(
+    provider,
+    [{ role: 'system', content: REPORT_SYS }, { role: 'user', content: user }],
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, json: true, think: false },
+  )
+
+  const obj: Record<string, unknown> = parsePlainObject(reply) ?? {}
+  const overview = asText(obj.overview ?? obj.概览 ?? '').trim() || '（模型未给出概览）'
+
+  // 优先取解析出来的对象里的数组（模型返回的 {overview, findings[]} 已是结构化数组）；
+  // 拿不到再退回按文本解析 —— 直接对整段 reply 切片有风险：overview 里若含「[」，切片会切错位置。
+  const findingsRaw = obj.findings ?? obj.问题
+  const rawFindings: Record<string, unknown>[] = Array.isArray(findingsRaw)
+    ? (findingsRaw as Record<string, unknown>[])
+    : parseObjectArray(reply)
+  const findings = await normalizeFindings(rawFindings, resolveTargetRecord)
+
+  return {
+    id: uid(),
+    projectId: db.getCurrentProjectId(),
+    sessionId: session.id,
+    sessionTitle: session.title,
+    anchorChapterId: session.anchorChapterId,
+    anchorChapterLabel: session.anchorChapterLabel,
+    cast: session.cast,
+    mode: session.mode,
+    overview,
+    findings,
+    createdAt: Date.now(),
+  }
+}
+
+export { isCancelled }

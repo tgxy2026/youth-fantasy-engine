@@ -23,12 +23,12 @@ export function textLen(s: string | undefined): number {
   return s ? s.length : 0
 }
 
-export function messagesLen(msgs: TavernMessage[]): number {
+export function messagesLen<T extends { content: string }>(msgs: T[]): number {
   return msgs.reduce((n, m) => n + textLen(m.content), 0)
 }
 
-export type TrimResult = {
-  kept: TavernMessage[]
+export type TrimResult<T = TavernMessage> = {
+  kept: T[]
   /** 被裁掉的条数（用于 UI 提示「这一场已很长」） */
   dropped: number
 }
@@ -37,7 +37,7 @@ export type TrimResult = {
  * 裁剪对话历史到预算之内。
  * 从最早的开始丢，**但首条（开场）始终保留**——否则模型会失去场景起点。
  */
-export function trimHistory(messages: TavernMessage[], budgetChars: number): TrimResult {
+export function trimHistory<T extends { content: string }>(messages: T[], budgetChars: number): TrimResult<T> {
   if (messages.length === 0) return { kept: [], dropped: 0 }
   if (budgetChars <= 0) return { kept: [messages[0]], dropped: messages.length - 1 }
 
