@@ -34,13 +34,14 @@
  * 【默认值】全部等于原来的硬编码值（见 settings.ts 的 DEFAULT_TAVERN_SETTINGS），
  * 所以打开这个页面之前与之后，行为完全一致 —— 不存在"升个版本悄悄变了风格"。
  */
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import AutoTextarea from './AutoTextarea'
 import { PROTOCOL_VERSION } from '../lib/tavern/protocol'
+import { PARAM_GUIDES, GUIDE_SAMPLING, bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
   DEFAULT_TAVERN_SETTINGS, DEFAULT_PROTOCOL,
@@ -51,9 +52,20 @@ import {
 const BOX = 'bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50'
 const NUM = `${BOX} w-full`
 
-/** 段内数值组：窄屏 1 列 → sm 2 列 → 2xl 3 列（两列布局下，只有超宽屏才装得下 3 列） */
-const GRID3 = 'grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3'
+/**
+ * 段内数值组。
+ *
+ * ⚠️ **只用 2 列，不再有 3 列**：每个数值项下面都挂一张「取值范围 + 分段影响」表（见 RangeGuide），
+ * 3 列时每格只有约 226px，长一点的说明会被挤成七八行，反而看不清。2 列约 345px 才读得顺。
+ */
 const GRID2 = 'grid grid-cols-1 gap-4 sm:grid-cols-2'
+
+/**
+ * 「是否展开每个数值项下面的分段说明」。
+ * 24 个数值项全摊开会把页面拉到 3000px 以上，所以页头给了一个总开关（默认展开 —— 说明本来就该先看到）。
+ * 用 context 而不是逐项传 prop：开关是**全局的**，24 处各传一遍只会多出 24 个噪音。
+ */
+const ShowBands = createContext(true)
 /** 两列之间的间距（= 外层 grid 的 gap-4），算协议窗高度时要扣掉 */
 const COL_GAP = 16
 /** 协议窗的最低高度：低于它就没法读了（窄窗口下宁可让左列略高一点） */
@@ -95,34 +107,101 @@ function Section({ title, desc, children, className = '', bodyClassName = '' }: 
  * 单项：标题 → 输入区 → 说明。
  * 说明放下面（不是中间），长短不一时输入框仍然对齐。
  */
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, hint, footer, children }: {
+  label: React.ReactNode; hint?: string; footer?: React.ReactNode; children: React.ReactNode
+}) {
   return (
     <div>
       <div className="text-[11.5px] text-ink-200 leading-5">{label}</div>
       <div className="mt-1">{children}</div>
       {hint && <p className="mt-1 text-[10.5px] text-ink-500 leading-relaxed">{hint}</p>}
+      {footer}
     </div>
   )
 }
 
-/** 数值输入：本地留着正在输入的字，避免「打成 0.」时被立刻纠正 */
-function NumField({ label, hint, value, min, max, step = 1, unit, onCommit }: {
-  label: string; hint?: string; value: number; min: number; max: number
-  step?: number; unit?: string; onCommit: (v: number) => void
+/**
+ * 数值项的「取值范围 + 分段影响」表，**高亮当前值落在的那一段**。
+ *
+ * 【为什么要有它】以前每个框旁边只有一句「通常 1.05」—— 用户知道了默认值，却不知道**这一段意味着什么**，
+ * 想按自己的需求微调时无从下手。这里把区间摊开分段，写清每一段对模型输入输出的影响。
+ *
+ * 【为什么数字也在这张表里出】范围与文案收在 `paramGuide.ts`，min/max/step 也由它给 ——
+ * 说明与输入框范围若各写一份，日子久了就会对不上，而**说明写错比没写更坏**（测试锁了分段完整性）。
+ */
+function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
+  const show = useContext(ShowBands)
+  if (!show) return null
+  const cur = bandOf(guide, value)
+  return (
+    <div className="mt-2 overflow-hidden rounded-md border border-ink-800 bg-ink-900/40">
+      <div className="border-b border-ink-800 px-2 py-1 text-[10px] text-ink-600">
+        取值范围 {guide.min} ~ {guide.max}{guide.unit ? `（${guide.unit}）` : ''} · 步进 {guide.step}
+      </div>
+      <ul>
+        {guide.bands.map(b => {
+          const on = b.from === cur.from && b.to === cur.to
+          return (
+            <li
+              key={`${b.from}-${b.to}`}
+              className={`border-t border-ink-800/60 px-2 py-1.5 text-[10.5px] leading-relaxed first:border-t-0 ${
+                on ? 'bg-amber/10' : ''
+              }`}
+            >
+              <span className={`tabular-nums ${on ? 'text-amber' : 'text-ink-500'}`}>
+                {b.from === b.to ? b.from : `${b.from} ~ ${b.to}`}
+              </span>
+              <span className={`ml-1.5 ${on ? 'text-amber' : 'text-ink-300'}`}>{b.name}</span>
+              {b.recommended && <span className="ml-1 text-[9.5px] text-ink-600">默认</span>}
+              <span className={`ml-1.5 ${on ? 'text-ink-200' : 'text-ink-500'}`}>{b.effect}</span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * 数值输入：本地留着正在输入的字，避免「打成 0.」时被立刻纠正。
+ *
+ * `guide` 同时给出 min / max / step / 单位与分段说明 —— **上界下界与说明同源**，
+ * 不会出现「表里说 0~2、输入框只让填到 1」这种自相矛盾（见 paramGuide.ts 顶部注释）。
+ */
+function NumField({ label, hint, guide, value, onCommit }: {
+  label: string; hint?: string; guide: ParamGuide
+  value: number; onCommit: (v: number) => void
 }) {
   const [draft, setDraft] = useState(String(value))
   useEffect(() => { setDraft(String(value)) }, [value])
+  const band = bandOf(guide, value)
   return (
-    <Field label={unit ? `${label}（${unit}）` : label} hint={hint}>
+    <Field
+      label={
+        <span className="flex items-baseline justify-between gap-2">
+          <span>{guide.unit ? `${label}（${guide.unit}）` : label}</span>
+          <span className="shrink-0 tabular-nums text-[10px] text-ink-600">{guide.min} ~ {guide.max}</span>
+        </span>
+      }
+      hint={hint}
+      footer={<RangeGuide guide={guide} value={value} />}
+    >
       <input
-        type="number" min={min} max={max} step={step} value={draft} className={NUM}
+        type="number" min={guide.min} max={guide.max} step={guide.step} value={draft} className={NUM}
         onChange={e => {
           setDraft(e.target.value)
           const n = Number(e.target.value)
-          if (e.target.value.trim() !== '' && Number.isFinite(n)) onCommit(Math.min(max, Math.max(min, n)))
+          if (e.target.value.trim() !== '' && Number.isFinite(n)) {
+            onCommit(Math.min(guide.max, Math.max(guide.min, n)))
+          }
         }}
         onBlur={() => setDraft(String(value))}
       />
+      {/* 这一行**常驻**（表格收起时它是唯一线索）：当前值 → 落在哪一段、那一段的范围 */}
+      <div className="mt-1 text-[10px] text-ink-600">
+        当前 {value} → <span className="text-amber">{band.name}</span>
+        <span className="tabular-nums">（{band.from === band.to ? band.from : `${band.from} ~ ${band.to}`}）</span>
+      </div>
     </Field>
   )
 }
@@ -178,6 +257,8 @@ function ToggleField({ label, hint, value, onChange }: {
 
 export default function TavernControl() {
   const [s, setS] = useState<TavernSettings | null>(null)
+  /** 是否展开所有数值项的分段说明（默认展开） */
+  const [showBands, setShowBands] = useState(true)
   const [providers, setProviders] = useState<AIProvider[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -339,6 +420,12 @@ export default function TavernControl() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {dirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
+          <Button
+            variant="ghost" size="sm" onClick={() => setShowBands(v => !v)}
+            title="每个数值项下面的「取值范围 + 分段影响」表。全部摊开页面会很长，可以一键收起（当前值的档位仍会显示）"
+          >
+            {showBands ? '收起分段说明' : '显示分段说明'}
+          </Button>
           <Button variant="secondary" size="sm" onClick={() => void reset()}>恢复默认</Button>
           <Button variant="primary" size="sm" disabled={!dirty || saving} onClick={() => void save()}>
             {saving ? '保存中…' : '保存'}
@@ -348,6 +435,7 @@ export default function TavernControl() {
 
       {/* ==================== 两列：左＝通用与契约；右＝分模式的手感 ====================
           网格默认 align-items:stretch → 两列等高；左列的协议窗高度由 JS 同步（见 PROTO 注释）。 */}
+      <ShowBands.Provider value={showBands}>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
 
         {/* ========== 左列 ========== */}
@@ -368,19 +456,19 @@ export default function TavernControl() {
               onChange={v => setCommon('defaultProviderId', v)}
             />
 
-            <div className={GRID3}>
+            <div className={GRID2}>
               <NumField
-                label="上下文预算" unit="字" min={1000} max={100000} step={500}
+                label="上下文预算" guide={PARAM_GUIDES.contextBudget}
                 hint="一轮请求里「设定 + 记忆 + 对话历史」加起来的上限。超了先裁最早的对话轮次（开场永不被裁）。"
                 value={c.contextBudget} onCommit={v => setCommon('contextBudget', v)}
               />
               <NumField
-                label="固定开销预留" unit="字" min={500} max={20000} step={100}
+                label="固定开销预留" guide={PARAM_GUIDES.fixedOverheadChars}
                 hint="给提示词骨架与协议留的位置。它不算进「可分配给对话历史」的额度里，调大它就等于压缩历史。"
                 value={c.fixedOverheadChars} onCommit={v => setCommon('fixedOverheadChars', v)}
               />
               <NumField
-                label="请求超时" unit="秒" min={10} max={900} step={10}
+                label="请求超时" guide={PARAM_GUIDES.timeoutSec}
                 hint="超过这个时间就中断并报错。本地模型慢就调大；联网模型一般 60～180 够用。"
                 value={c.timeoutSec} onCommit={v => setCommon('timeoutSec', v)}
               />
@@ -388,7 +476,7 @@ export default function TavernControl() {
 
             <div className={GRID2}>
               <NumField
-                label="上下文窗口长度" unit="词元" min={2048} max={131072} step={1024}
+                label="上下文窗口长度" guide={PARAM_GUIDES.numCtx}
                 hint="显式告诉本地模型能装多少内容。不指定的话它会按全局设置（可能 128K）加载，显存占用会远超预期。"
                 value={c.numCtx} onCommit={v => setCommon('numCtx', v)}
               />
@@ -515,37 +603,35 @@ export default function TavernControl() {
             title="四、剧情推演控制"
             desc="只对「剧情推演」生效。叙事向要的是稳 —— 角色反应得站得住，所以默认温度比自由对话低。"
           >
-            <div className={GRID3}>
+            <div className={GRID2}>
               <NumField
-                label="温度" min={0} max={2} step={0.05}
-                hint="越高越随机、越有意外之喜，也越容易跑偏。叙事推演要稳，默认 0.85。"
+                label="温度" guide={GUIDE_SAMPLING.temperature}
+                hint="叙事推演要稳 —— 角色反应得站得住，所以默认比自由对话低（0.85）。"
                 value={pl.temperature} onCommit={v => setPlot('temperature', v)}
               />
               <NumField
-                label="核采样阈值" min={0} max={1} step={0.01}
-                hint="每一步只从「累积概率达到这个值」的候选词里挑。越低越保守死板，通常 0.9。"
+                label="核采样阈值" guide={GUIDE_SAMPLING.topP}
+                hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
                 value={pl.topP} onCommit={v => setPlot('topP', v)}
               />
               <NumField
-                label="候选词上限" min={0} max={200} step={1}
-                hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。通常 40。"
+                label="候选词上限" guide={GUIDE_SAMPLING.topK}
+                hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
                 value={pl.topK} onCommit={v => setPlot('topK', v)}
               />
-            </div>
-            <div className={GRID3}>
               <NumField
-                label="重复惩罚" min={0.5} max={2} step={0.01}
-                hint="高于 1 会压制重复用词。越高越不容易复读，但太高会让句子发硬、用词别扭。通常 1.05。"
+                label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
+                hint="高于 1 会压制重复用词；太高会让句子发硬、用词别扭。"
                 value={pl.repeatPenalty} onCommit={v => setPlot('repeatPenalty', v)}
               />
               <NumField
-                label="新话题倾向" min={-2} max={2} step={0.05}
-                hint="正数鼓励模型引入新内容，负数让它更愿意围着当前话题说。通常 0.4。"
+                label="新话题倾向" guide={GUIDE_SAMPLING.presencePenalty}
+                hint="正数鼓励引入新内容，负数让它更愿意围着当前话题说。推演要线索连贯，所以默认偏保守（0.4）。"
                 value={pl.presencePenalty} onCommit={v => setPlot('presencePenalty', v)}
               />
               <NumField
-                label="设定层占比" unit="%" min={10} max={95} step={5}
-                hint="上下文预算里分给「项目设定」的比例，剩下的留给长期记忆与对话历史。默认 60%。"
+                label="设定层占比" guide={PARAM_GUIDES.plotSettingRatio}
+                hint="上下文预算里分给「项目设定」的比例，剩下的留给长期记忆与对话历史。"
                 value={Math.round(pl.settingRatio * 100)} onCommit={v => setPlot('settingRatio', v / 100)}
               />
             </div>
@@ -573,32 +659,30 @@ export default function TavernControl() {
             title="五、自由对话控制"
             desc="只对「自由对话」生效。陪伴要松弛感，所以温度默认更高；下面还有记忆引擎与日常推进的一组阈值。"
           >
-            <div className={GRID3}>
+            <div className={GRID2}>
               <NumField
-                label="温度" min={0} max={2} step={0.05}
-                hint="越高越松、越随性。陪伴向对话默认 0.9，比剧情推演更放得开。"
+                label="温度" guide={GUIDE_SAMPLING.temperature}
+                hint="陪伴要松弛感，默认 0.9 —— 比剧情推演更放得开。"
                 value={fr.temperature} onCommit={v => setFree('temperature', v)}
               />
               <NumField
-                label="核采样阈值" min={0} max={1} step={0.01}
-                hint="每一步只从「累积概率达到这个值」的候选词里挑。越低越保守，通常 0.9。"
+                label="核采样阈值" guide={GUIDE_SAMPLING.topP}
+                hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
                 value={fr.topP} onCommit={v => setFree('topP', v)}
               />
               <NumField
-                label="候选词上限" min={0} max={200} step={1}
-                hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。通常 40。"
+                label="候选词上限" guide={GUIDE_SAMPLING.topK}
+                hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
                 value={fr.topK} onCommit={v => setFree('topK', v)}
               />
-            </div>
-            <div className={GRID2}>
               <NumField
-                label="重复惩罚" min={0.5} max={2} step={0.01}
-                hint="高于 1 会压制重复用词。角色的口头禅多，所以这一项比剧情模式更值得调。通常 1.05。"
+                label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
+                hint="角色的口头禅多，所以这一项比剧情模式更值得调。"
                 value={fr.repeatPenalty} onCommit={v => setFree('repeatPenalty', v)}
               />
               <NumField
-                label="新话题倾向" min={-2} max={2} step={0.05}
-                hint="正数鼓励模型引入新内容，负数让它更愿意围着当前话题说。通常 0.45。"
+                label="新话题倾向" guide={GUIDE_SAMPLING.presencePenalty}
+                hint="正数鼓励引入新内容 —— 日常聊天靠它才有「日子在往前走」的感觉。默认 0.45。"
                 value={fr.presencePenalty} onCommit={v => setFree('presencePenalty', v)}
               />
             </div>
@@ -639,39 +723,39 @@ export default function TavernControl() {
 
             <div className="pt-1">
               <div className="mb-3 text-[12px] text-ink-200 border-t border-ink-800 pt-3">记忆引擎</div>
-              <div className={GRID3}>
+              <div className={GRID2}>
                 <NumField
-                  label="触发整理" unit="条" min={2} max={50} step={1}
+                  label="触发整理" guide={PARAM_GUIDES.triggerMessages}
                   hint="没整理过的新消息攒到这么多条，就自动整理一次记忆。"
                   value={fr.triggerMessages} onCommit={v => setFree('triggerMessages', v)}
                 />
                 <NumField
-                  label="记忆软上限" unit="字" min={200} max={10000} step={100}
+                  label="记忆软上限" guide={PARAM_GUIDES.softLimit}
                   hint="超过只在界面上提醒，不会硬截断。"
                   value={fr.softLimit} onCommit={v => setFree('softLimit', v)}
                 />
                 <NumField
-                  label="记忆硬上限" unit="字" min={200} max={20000} step={100}
+                  label="记忆硬上限" guide={PARAM_GUIDES.hardLimit}
                   hint="超过就按「长期摘要 → 纪念日 → 关系状态」的顺序压缩；关键事实与未爆的雷不动。"
                   value={fr.hardLimit} onCommit={v => setFree('hardLimit', v)}
                 />
                 <NumField
-                  label="长期摘要上限" unit="字" min={100} max={2000} step={50}
+                  label="长期摘要上限" guide={PARAM_GUIDES.longTermLimit}
                   hint="「长期摘要」这一栏单独的字数上限，也是最优先被压缩的一栏。"
                   value={fr.longTermLimit} onCommit={v => setFree('longTermLimit', v)}
                 />
                 <NumField
-                  label="日记保留" unit="条" min={1} max={30} step={1}
+                  label="日记保留" guide={PARAM_GUIDES.diaryKeep}
                   hint="「最近日记」保留几条，新的在上、旧的自动滚动掉。"
                   value={fr.diaryDays} onCommit={v => setFree('diaryDays', v)}
                 />
                 <NumField
-                  label="自动整理最小间隔" unit="分钟" min={0} max={1440} step={10}
+                  label="自动整理最小间隔" guide={PARAM_GUIDES.summaryInterval}
                   hint="两次自动整理之间至少隔这么久，避免刚聊两句就反复压缩。手动点「立即整理」不受它限制。"
                   value={fr.summaryMinIntervalMin} onCommit={v => setFree('summaryMinIntervalMin', v)}
                 />
                 <NumField
-                  label="整理锁有效期" unit="分钟" min={1} max={1440} step={10}
+                  label="整理锁有效期" guide={PARAM_GUIDES.summaryLock}
                   hint="防止两个窗口同时整理记忆。上次整理跑到一半崩了，超过这个时间就可以被接管。"
                   value={fr.summaryLockTtlMin} onCommit={v => setFree('summaryLockTtlMin', v)}
                 />
@@ -682,12 +766,12 @@ export default function TavernControl() {
               <div className="mb-3 text-[12px] text-ink-200 border-t border-ink-800 pt-3">日常推进</div>
               <div className={GRID2}>
                 <NumField
-                  label="推进间隔" unit="小时" min={1} max={168} step={1}
+                  label="推进间隔" guide={PARAM_GUIDES.dailyAdvance}
                   hint="距上次活跃超过这么久，才补写一段「这几天的生活」。没有常驻进程，只能靠打开界面时推进。"
                   value={fr.dailyAdvanceHours} onCommit={v => setFree('dailyAdvanceHours', v)}
                 />
                 <NumField
-                  label="生活记录保留" unit="条" min={1} max={30} step={1}
+                  label="生活记录保留" guide={PARAM_GUIDES.dailyKeep}
                   hint="「这几天的生活」保留几条（一天一条），新的在上。"
                   value={fr.dailyLogKeep} onCommit={v => setFree('dailyLogKeep', v)}
                 />
@@ -696,6 +780,7 @@ export default function TavernControl() {
           </Section>
         </div>
       </div>
+      </ShowBands.Provider>
     </div>
   )
 }
