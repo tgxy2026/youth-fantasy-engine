@@ -147,3 +147,17 @@
 - 本会话 PowerShell 工具**无输出返回**，别依赖它。
 - 🔴 审计纪律：**「数据丢失」级结论禁止直接转述子代理**，必须回源码逐行验尸；
   且要先对照 `docs/1.9.6-2.0.0_Bug与待优化清单.md`——已有 4 条被当成「新发现」，实为 #034 等已登记的已知取舍。
+
+## 酒馆模式（2026-09-14 新增，P0 已落地；规格书见 WorkBuddy 目录下的《酒馆模式_完整落地方案.md》）
+- 四页签：`tavern-plot`（剧情推演=诊断台）/ `tavern-report`（推演报告）/ `tavern-card`（自由角色卡）/ `tavern-free`（自由对话=陪伴）。
+  分组「酒馆模式」已加在 `schema.ts` GROUPS 末尾；`FEATURE_TIER` 取 `default`（可选玩法，刻意不用 locked）。
+- 🔴 **两条线的数据归属完全不同**：剧情模式 → 项目级 settingsKV（随项目走、导出自动覆盖）；
+  自由模式 → **全局 meta**（不绑项目、删项目不跟着没）。改动前先读 `src/lib/tavern/store.ts` 文件头。
+- 🔴 **索引与分条必须成对读写**（`tavern.sessionIndex` ↔ `tavern.session.<id>`），否则出现「列表有、点开空」的
+  幽灵条目；store 内已有 `auditXxx` / `pruneGhostXxx` 自检可查可清。
+- `tavernReports` 是独立表（DB_VERSION 10）。登记四处外，另有**两处易漏**：`deleteProject` 清理、
+  `applyBundleToProject` 需先清后写（备份恢复路径）。
+- ⚠️ `src/lib/tavern/protocol.ts` 是**代拟稿**——规格书没交付协议全文，已按 §5 骨架写第一版，**待作者替换内容**。
+- 参数坑：界面叫「重复惩罚」，内部字段 `repeatPenalty`，到 Ollama 叫 `repeat_penalty`（少个 ition）；
+  `num_ctx` 必须显式传，否则 Ollama 按全局 128K 加载会爆显存。
+- 提示词五层顺序不可乱：**协议钉开头、格式提醒钉末尾**（注意力首尾权重最高）；每轮重装而非只发一次。
