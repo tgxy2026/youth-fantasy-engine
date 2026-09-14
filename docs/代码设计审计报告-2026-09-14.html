@@ -79,9 +79,52 @@
   <div class="sub">
     青春幻想引擎 novel-studio · 审计日期 <b>2026-09-14</b> · 基线 <code>package.json 2.0.1</code><br>
     审计方式：只读静态分析（tsc / 全文检索 / 结构度量 / 三支并行子系统审计 + 关键结论逐一人工复核）<br>
-    <span style="color:var(--ok)">本次审计未改动任何源码。</span>
+    <span style="color:var(--ok)">审计阶段为只读分析，零改动；落地修复情况见下方《修复进度》。</span>
   </div>
 </header>
+
+<h2 class="ok">修复进度（2026-09-14 当天，共 7 笔提交）</h2>
+
+<div class="okbox">
+<b>已完成 A / B / C1 / C2 / D1 / D3 六项</b>，每项均通过 <code class="inline">tsc</code> + <code class="inline">npm run verify</code>（8 个测试入口全绿）+ <code class="inline">vite build</code>。
+测试入口从 6 个增至 8 个；lint 从首跑 114 warnings 收敛到 <b>11 warnings / 0 errors</b>。
+<b>本轮未升版本号、未封装、未碰服务器。</b>
+</div>
+
+<table>
+<tr><th style="width:56px">项</th><th>内容</th><th>提交</th><th>状态</th></tr>
+<tr><td>P0-1</td><td>AI 温度语义开关（<code>json:true</code>），修复 19 处漏传温度</td><td><code>7360e24</code></td><td><span class="tag t-ok">已修</span></td></tr>
+<tr><td>P0-2</td><td>同步文件读失败不再当空库（主进程 + 传输层三态）</td><td><code>7360e24</code></td><td><span class="tag t-ok">已修</span></td></tr>
+<tr><td>P2-1</td><td>ESLint 最小集（只开 3 条规则，any 显式关闭）</td><td><code>57c4159</code></td><td><span class="tag t-ok">已完成</span></td></tr>
+<tr><td>P2-2</td><td><code>npm test</code> / <code>typecheck</code> / <code>lint</code> / <code>verify</code> 脚本与聚合 runner</td><td><code>57c4159</code></td><td><span class="tag t-ok">已完成</span></td></tr>
+<tr><td>P1-2</td><td>JSON 解析收敛到 <code>lib/aiParse.ts</code>（顺带修掉 humanText 标点残渣 bug）</td><td><code>39d1ea6</code></td><td><span class="tag t-ok">已重构</span></td></tr>
+<tr><td>P1-7</td><td>迁移统一入口 <code>runMigrations()</code>，修复 boot 路径漏跑迁移</td><td><code>600ab6f</code></td><td><span class="tag t-ok">已修</span></td></tr>
+<tr><td>P1-10</td><td>跨文件持久化键与防抖常量收敛到 <code>lib/constants.ts</code></td><td><code>02d2a09</code></td><td><span class="tag t-ok">已重构</span></td></tr>
+<tr><td>P1-14</td><td>空 catch 标注意图（ESLint 唯一报出的一处）</td><td><code>ce03347</code></td><td><span class="tag t-ok">已处理</span></td></tr>
+<tr><td>P1-15</td><td>三处「注释与实现不符」全部纠正</td><td>分散于各笔</td><td><span class="tag t-ok">已处理</span></td></tr>
+</table>
+
+<div class="warnbox">
+<b>尚未处理 —— 且不宜在「看不到界面」的情况下动：</b>
+<ul style="margin-bottom:0">
+  <li><b>P1-1 / P1-3</b>（AI 统一调用层 + <code>useAITask</code>）：AI 面板是核心界面，改动触及 4 个组件的
+      loading / 流式 / 中止语义。tsc 只验类型，<b>验不了「忘了重置 error」这类逻辑错</b>，且无可用 provider 端到端验证。</li>
+  <li><b>P1-4 / P1-5</b>（<code>useSvgPanZoom</code> / <code>PortalPopover</code>）：画布拖拽缩放与浮层定位，
+      改错是<b>可见回归</b>（且 RelationGraph 与 FactionGraph 的行为已分叉）。</li>
+  <li><b>P1-6</b>（大组件拆分）：<code>NovelEditor</code> 单 <code>return</code> 跨 673 行，搬迁易破坏 props 接线。</li>
+  <li><b>P1-12</b>（主题色收敛）：74 处硬编码 hex 换主题变量，需肉眼核对浅色主题下的对比度。</li>
+  <li><b>P1-13 / P2-3</b>（类型收严 / 其余打磨）：需逐例判断，收益相对靠后。</li>
+</ul>
+</div>
+
+<div class="note">
+<b>关于 lint 剩下的 11 条 <code>exhaustive-deps</code>：别当成"顺手改改"。</b>
+已逐条核实——缺失的依赖<b>全是组件体内未包 <code>useCallback</code> 的普通箭头函数</b>
+（<code>load</code> / <code>calValueOf</code> / <code>validateCodes</code> / <code>cellVal</code> 等），
+其身份<b>每次渲染都变</b>。直接补进依赖数组会让 <code>useMemo</code> 每次重算、
+<code>useEffect</code> 甚至死循环。<b>正确解法是先包 <code>useCallback</code> 再加依赖</b>——
+这属逐例判断 + 需跑起来验证的专项工作。
+</div>
 
 <h2 class="ok">〇、体检结论</h2>
 
@@ -368,7 +411,8 @@ src/lib/syncTransport.ts:221-231  push(): cur = parseRev(await readRaw(name))
 </div>
 
 <footer>
-青春幻想引擎 novel-studio · 代码设计审计报告 · 生成于 2026-09-14 · 只读审计，零改动<br>
+青春幻想引擎 novel-studio · 代码设计审计报告 · 生成于 2026-09-14<br>
+原审计部分为只读分析（零改动）；顶部《修复进度》章节记录当天实际落地的改动，共 7 笔提交。<br>
 审计范围：src/ 全量 110 个源文件（lib 44 / components 61 / 入口 3），以及 tsconfig、package.json、vite 三配置、tests/、docs/ 清单
 </footer>
 
