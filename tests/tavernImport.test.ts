@@ -52,7 +52,7 @@ const NOVEL_REPLY = [
   '尺度：日常向。',
   '',
   '【第 4 章 · 示例对话】',
-  '对方：这么晚还不下班？',
+  '〖对方〗这么晚还不下班？',
   '她把找零推过去，没抬头：',
   '「灯还亮着。」',
 ].join('\n')
@@ -67,8 +67,8 @@ async function main() {
     const sys = buildImportSystem()
     ok('写死「不许编造」且给出【待补】标记', sys.includes('不许编造') && sys.includes(MISSING_TAG))
     ok('写死「丢掉剧透」（她不该知道自己后面会怎样）', sys.includes('剧透') && sys.includes('结局'))
-    ok('写死示例对话的格式要求：对方用「对方：」、自己不加前缀',
-      sys.includes('用「对方：」起头') && sys.includes('不加引号、不加括号、不写名字'))
+    ok('写死示例对话的格式要求：对方用输入侧符号 〖对方〗、自己不加前缀',
+      sys.includes('用〖对方〗起头') && sys.includes('不加引号、不加括号、不写名字'))
     ok('写死三类标记（动作神态心理用（）/ 客观环境与人物外在用【】）',
       sys.includes('全角圆括号（ ）') && sys.includes('方头括号【 】'))
     ok('四章标题用输入侧符号 〖〗（不与输出标记撞车）',
@@ -102,14 +102,14 @@ async function main() {
     ok('2.3 语言特征解析出来（最影响像不像）', d.profile.speech.includes('反问'))
     ok('2.6 知识边界解析出来（含待补标记）', d.profile.knowledge.includes(MISSING_TAG))
     ok('第 3 章四项解析出来', d.conduct.perspective.includes('第一人称') && d.conduct.rating.includes('日常向'))
-    ok('第 4 章示例解析出来（多行保留）', d.examples.includes('灯还亮着') && d.examples.includes('对方：'))
+    ok('第 4 章示例解析出来（多行保留）', d.examples.includes('灯还亮着') && d.examples.includes('〖对方〗'))
 
     // 宽松标题 + 标题内容同行
     const loose = [
       '1. 世界', '校园。',
       '【2.2 内核】爱笑，藏不住事',
       '## 2.5 做不到的事', '撒谎会被一眼看穿',
-      '示例对话', '对方：早啊\n「嗯。」',
+      '示例对话', '〖对方〗早啊\n「嗯。」',
     ].join('\n')
     const d2 = parseCardDraft(loose)
     ok('标题带序号 / 加粗 / 无书名号都认', d2.world === '校园。' && d2.profile.cannot.includes('撒谎'))

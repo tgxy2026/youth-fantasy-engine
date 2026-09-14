@@ -44,8 +44,8 @@
 
 ## AI 层
 - 🔴 解析统一 `src/lib/aiParse.ts`；**禁裸 `JSON.parse`**。
-- 🔴 温度不手填：结构化 JSON 传 `{json:true}` → 0.3；创意类不传 → 0.85。
-- 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering 顺序不可换，boot 与 openProject 共用）；`getDB` upgrade 拆 9 函数，**upgrade 处是「何时跑哪段」的唯一判断点**。
+- 🔴 温度不手填：结构化 JSON 传 `{json:true}`→0.3；创意类不传→0.85。
+- 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering 顺序不可换，boot 与 openProject 共用）；upgrade 拆 9 函数，**upgrade 处是「何时跑哪段」的唯一判断点**。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce 定界）；**绝不清洗正文**。
 
 ## 服务器
@@ -55,30 +55,31 @@
 ## 工程质量
 - `npm run verify`（typecheck+lint+test）；runner **每入口单开子进程**。ESLint 只开 rules-of-hooks/exhaustive-deps/no-empty；🔴 那 11 条不能盲改：缺失依赖＝未包 `useCallback`。
 - 🔴 **界面实机验证**走 skill **`novel-studio-ui-livecheck`**（真浏览器驱动 dev server、量尺寸、出截图；含坑清单+模板）；模型链路用 `build-test.mjs live-tavern|live-free`（手动、不进回归）。
-- 单一口径入口：`aiParse`/`constants`(localStorage 键+防抖)/`promptGuard`/`zLayer`/`useSvgPanZoom`/`LoadingState`/`AutoTextarea`（多行输入框唯一出口）。
+- ⚠️ 手动实弹脚本的断言会**静默过时**（不进回归、不影响退出码）→ 读日志必须 grep ✗，别只看「实弹观察」行。
+- 单一口径入口：`aiParse`/`constants`(localStorage 键+防抖)/`promptGuard`/`zLayer`/`useSvgPanZoom`/`LoadingState`/`AutoTextarea`。
 
 ## 酒馆模式
-- 来源：`酒馆模式_完整落地方案.md`（规格书，**冲突以方案为准**）+ `本地模型角色扮演完全手册.html`。
-- 侧栏顺序＝`TABS.filter` 保序：**控制面板→剧情推演→推演报告→自由对话→角色卡片**（控制面板先决）。
-- 🔴 **数据归属（测试已锁）**：**剧情会话+扮演设定+推演报告随项目**；**自由会话+角色卡+记忆日常留言+控制面板设置跨项目**。索引与分条须成对读写（`sessionIndex` ↔ `session.<id>`）；`tavernReports` 独立表（DB v10），别漏 `deleteProject`/`applyBundleToProject`。
-- 🎛️ 控制面板：设置存全局 meta `tavern.settings`，**一律走 `getTavernSettings()`**；优先级链 会话→角色→**控制面板**→`TAVERN_DEFAULTS`。协议可编辑（编辑前**必须弹窗警示**；清空回退内置常量）。**加参数前先搜 tavern 目录里写死的数**；settings 引反向依赖会成环（常量上移 `types.ts`）。
-- 🔴 层序：设定 → 记忆 → 身份边界 → 档位 →（通用→本场补充）→ 未带入声明 → **协议（钉末尾）**。三处去冗：`memoryTitle:null`、作者补充要求加 〖〗标题、`inlineDropNote:false`（免与 〖未带入的资料〗 说两遍）。
-- 🔴 `buildMultiCharRule`：整场 AI（无「你演」）必须传 `{hasUser:false}`，否则模型等一个不存在的人；用户扮演具体角色时传 `userName`。
-- 🔴 自由模式「用户扮演的角色」=`FreeSession.userCharId`（可选）。**AI 名单/发言轮转/记忆块三处都要排除 Ta**，否则 AI 替 Ta 回答；Ta 本人的记忆**不给 AI**（那是用户的底牌）；身份层写「用户扮演：X，不要代写」。默认值在控制面板「默认我演的角色」。
-- 🔴 记忆**按角色分别整理**（右栏页签）；水位线**全部成功才推进**。角色卡片页可直接手改记忆。自由对话页**无角色列表**，左栏＝全局会话列表；`scene?` 渲染成第一条 user 消息。报告名＝`sessionTitle + ' · 报告'`。
-- 🔴 采样链走 `ai.ts` 的 `extraOptions`：Ollama 原样并入；OpenAI 兼容只转发白名单——**top_k / repeat_penalty / num_ctx 绝不能发给 OpenAI 端点**。
-- 🔴🔴 防剧透两层：① 段落级 `viewMode:"character-view"` 排除 10 个作者侧页签；② 字段级 `AUTHOR_SIDE_FIELDS`（约 30 个）隐藏未来向列。**新增未来向字段必须登记②**。
-- 🔴 提示词与解析器对齐四条：解析器按**提示词写法**写；标题判定**整行匹配**（禁 `includes`）；序号裸化；校验查**全部**字段。解析器同时容忍新旧包裹符号（模型会照抄 〖〗，也会写 【】）。
-- `think:false` 是 **Ollama 专有**；报告 finding 指不回条目即降级「存疑」；定位走 `yfe:navigate`；总结**必须带角色背景**。
-- 🔴 角色卡渲染块带名（`〖角色卡 · 名 #短码〗`）：**仅同场同名才挂短码**+注入 `buildSameNameNote`（记忆按 id 存、同名各存各的）。角色卡支持**复制为新卡**（照抄四章、**不复制记忆/日常**）+ 同名提示；导入弹窗有搜索+分组。
-- 🔴 自由对话「客观描写」=`free.sceneDescription`（off/light/standard/rich，默认 **standard**）：出场写穿着姿态、转场补环境、情绪落外在细节；**只写客观事实、不写任何人的心理**，且算在协议 60–160 字内。拼进 `modeExtra`（内置在前、作者补充在后）。
-- 🔴 **输出规范 v1.2（改任何提示词前先读）**：模型**输出**用 —— 对白＝纯文本（不加引号/括号/名字）、动作·神态·心理＝（）、**客观环境·人物外在＝【】**、状态块＝〔状态〕；**输入**一律 〖〗（标题）/〈〉（说话人）。两端符号**必须分开**：输入若也用【】，模型会把结构照抄进正文。分工：（）写正在发生的动作与心理，【】写可观察的状态与外观 —— 同一动作别写两遍（实弹补的）。
+- 来源：`酒馆模式_完整落地方案.md`（**冲突以方案为准**）+ `本地模型角色扮演完全手册.html`。
+- 侧栏序＝`TABS` 数组序：**控制面板→剧情推演→推演报告→自由对话→角色卡片**（面板先决）。
+- 🔴 **数据归属（测试已锁）**：剧情会话+扮演设定+推演报告**随项目**；自由会话+角色卡+记忆日常留言+控制面板设置**跨项目**。索引与分条须成对读写；`tavernReports` 独立表（DB v10），别漏 `deleteProject`/`applyBundleToProject`。
+- 🎛️ 控制面板：设置存全局 meta `tavern.settings`，**一律走 `getTavernSettings()`**；优先级链 会话→角色→**控制面板**→`TAVERN_DEFAULTS`。协议可编辑（编辑前必须弹窗警示；清空回退内置）。**加参数前先搜 tavern 目录写死的数**；settings 引反向依赖会成环（常量上移 `types.ts`）。
+- 🔴 层序：设定→记忆→身份边界→档位→（通用→本场补充）→未带入声明→**协议（钉末尾）**。三处去冗：`memoryTitle:null`、补充要求加 〖〗标题、`inlineDropNote:false`。
+- 🔴 `buildMultiCharRule`：整场 AI（无「你演」）必须传 `{hasUser:false}`，否则模型等一个不存在的人；有用户角色时传 `userName`。
+- 🔴 自由模式「用户扮演的角色」=`FreeSession.userCharId`（可选）。**AI 名单/发言轮转/记忆块三处都要排除 Ta**，否则 AI 替 Ta 回答；Ta 的记忆**不给 AI**（用户的底牌）；身份层写「用户扮演：X，不要代写」。默认值在控制面板「默认我演」。
+- 🔴 记忆**按角色分别整理**（右栏页签）；水位线**全部成功才推进**。角色卡页可手改记忆。自由对话页**无角色列表**，左栏＝全局会话列表；`scene?` 渲染成第一条 user 消息。报告名＝`sessionTitle + ' · 报告'`。
+- 🔴 采样链走 `ai.ts` 的 `extraOptions`：Ollama 原样并入；OpenAI 兼容只转发白名单 —— **top_k/repeat_penalty/num_ctx 绝不能发 OpenAI 端点**。
+- 🔴🔴 防剧透两层：① 段落级 `viewMode:"character-view"` 排除 10 个作者侧页签；② 字段级 `AUTHOR_SIDE_FIELDS`（约 30 个）。**新增未来向字段必须登记②**。
+- 🔴 提示词与解析器对齐：解析器按提示词写法写；标题**整行匹配**（禁 `includes`）；序号裸化；校验查全部字段；容忍新旧包裹符号（〖〗/【】）。
+- `think:false` 是 **Ollama 专有**；报告 finding 指不回条目即降「存疑」；定位走 `yfe:navigate`；总结**必须带角色背景**。
+- 🔴 角色卡渲染块带名（`〖角色卡 · 名 #短码〗`）：**仅同场同名才挂短码**+`buildSameNameNote`（记忆按 id 存、同名各存各）。支持**复制为新卡**（照抄四章、**不复制记忆/日常**）+ 同名提示；导入弹窗有搜索+分组。
+- 🔴 自由对话「客观描写」=`free.sceneDescription`（四档，默认 standard）：出场写穿着姿态、转场补环境、情绪落外在细节；**只写客观事实、不写任何人心理**，算在协议 60–160 字内。拼进 `modeExtra`（内置在前、作者补充在后）。
+- 🔴 **输出规范 v1.3（改提示词前先读）**：模型**输出** —— 对白＝纯文本（不加引号/括号/名字，**也不许把说话人名字单独起一行**）、动作·神态·心理＝（）、**客观环境·人物外在＝【】**、状态块＝〔状态〕；**输入**一律 〖〗（标题/说话人，例 〖对方〗）与〈〉。**两端符号必须分开**（输入也用【】必被照抄进正文）；（）写正在发生的动作心理、【】写可观察的状态外观，同一动作别写两遍。v1.3 起因：旧条款只禁「名字：」前缀，名字**单独成行**不算前缀（实弹漏过）；示例对照标记「对方：」→〖对方〗（旧标记在**输出字母表**里，必被照抄）。
 - 🔴 指代角色的说明文字一律「Ta」，不预设性别。协议与示范卡都改过 → **老数据升级靠全等锚点**：`LEGACY_PROTOCOLS`（protocol.ts）、`LEGACY_SEED_EXAMPLES` + `upgradeSeedCards()`（boot 每次跑、幂等、作者改过的一字不动）。**改内置文本后必须补锚点**，否则老用户停在旧版（协议/默认文本可编辑，改常量对他们无效）。
-- 示范卡三张：洛汐/苏念/楚楠（楚楠据前两张事实新写）；交付 `你需要的文件在这里/角色卡-楚楠.taverncard.json`。待办只剩「角色头像上传」。
+- 示范卡三张：洛汐/苏念/楚楠（楚楠据前两张事实新写）；交付 `你需要的文件在这里/角色卡-楚楠.taverncard.json`。`createDemoProject` 已加 **single-flight**（StrictMode 双跑会播种两份）。待办只剩「角色头像上传」。
 
 ## 环境（Windows + Git Bash）
 - git 全路径 `…/PortableGit/versions/1.2.0/cmd/git.exe`；npm 走 `"<托管node>/node.exe" "<…>/npm/bin/npm-cli.js"`，路径必须 `C:/` 正斜杠。
-- ⚠️ **Edit 会「假成功」**（dev server 运行时更甚，一次连改 6 处挂了 3 处）：每笔改完立即 grep 复查；多处替换改用脚本；大改直接 Write。
-- ⚠️ 脚本改文件：`to` 为空时 `includes('')` 恒真 → 删除按行号；**锚点须自适应 LF/CRLF**（仓库两种行尾混用）；`node -e` 转义易崩 → 用脚本文件；**替换必须幂等**。
+- ⚠️ **Edit 会「假成功」**（dev server 下更甚，一次连改 6 处挂了 3 处）：每笔改完立即 grep 复查；多处替换改用脚本。
+- ⚠️ 脚本改文件：`to` 空时 `includes('')` 恒真 → 按行号删；**锚点自适应 LF/CRLF**（仓库两种行尾混用）；`node -e` 转义易崩 → 用脚本文件；**替换必须幂等**。
 - 审计纪律：「数据丢失」级结论**必须回源码验尸**。🔴 实弹会读到真实 apiKey（先告知，绝不提交）。
-- JSX：`{/* */}` 不能放属性位置，`//` 可以。
+- JSX：`{/* */}` 不能放属性位，`//` 可以。

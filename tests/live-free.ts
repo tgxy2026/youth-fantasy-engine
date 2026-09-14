@@ -53,15 +53,15 @@ async function pickLocal(): Promise<{ provider: AIProvider; model: string; note:
 }
 
 const CHAR_EXAMPLES = [
-  '对方：这么晚还不下班？',
+  '〖对方〗这么晚还不下班？',
   '她把找零推过去，没抬头：',
   '「灯还亮着。」',
   '',
-  '对方：你一个人看店不怕吗？',
+  '〖对方〗你一个人看店不怕吗？',
   '她停了一下，把烟按灭。',
   '「惯了。」',
   '',
-  '对方：……谢谢。',
+  '〖对方〗……谢谢。',
   '她背过身去理货架，声音很轻：',
   '「伞在门后。」',
 ].join('\n')
@@ -90,11 +90,11 @@ async function mkChar(): Promise<FreeCharacter> {
 }
 
 /**
- * 逐行审计模型输出是否符合协议 v1.2：
+ * 逐行审计模型输出是否符合协议 v1.3：
  *   对白＝纯文本 / （）＝动作·神态·心理 / 【】＝客观环境与人物外在 / 〔〕＝状态块
  * 返回各类行数与**违规清单**（带原文片段，便于人工复核）。
  */
-export function auditFormat(reply: string) {
+export function auditFormat(reply: string, castNames: string[] = []) {
   const lines = reply.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
   const issues: string[] = []
   let action = 0, env = 0, talk = 0, status = 0
@@ -105,7 +105,9 @@ export function auditFormat(reply: string) {
     if (/^〔/.test(l)) { status++; continue }
     talk++
     if (/[“”"「」]/.test(l)) issues.push('对白里带引号：' + l.slice(0, 24))
-    if (/^(对方|用户|用户角色)[：:]/.test(l)) issues.push('对白带对照标记（对方：）：' + l.slice(0, 24))
+    if (/^(对方|用户|用户角色)[：:]/.test(l)) issues.push('对白带对照标记：' + l.slice(0, 24))
+    // v1.3 补的判据：把说话人的名字**单独写成一行** —— 比「名字：」更隐蔽，实测模型会这么干
+    if (castNames.includes(l)) issues.push('对白行是说话人名字单独成行：' + l.slice(0, 24))
     if (/^[\u4e00-\u9fa5]{2,4}[：:]/.test(l)) issues.push('对白行疑似「名字：」前缀：' + l.slice(0, 24))
   }
   return { lines: lines.length, action, env, talk, status, issues }
@@ -203,8 +205,10 @@ async function main() {
   })
   const sys5 = (await buildFreeSystem(s5, [luo, chuU])).system
   console.log(`[离线断言] system 含〖客观描写〗：${sys5.includes('〖客观描写〗') ? '✓' : '✗'}`)
-  console.log(`[离线断言] 默认档写明「不写对方的心理活动」：${sys5.includes('不写对方的心理活动') ? '✓' : '✗'}`)
-  console.log(`[离线断言] 描写算在协议字数内：${sys5.includes('算在协议规定的字数里') ? '✓' : '✗'}`)
+  // ⚠️ 这两条曾长期是 ✗：断言里写的是旧措辞，规则正文早就换了说法（手动实弹不进回归，所以没被发现）。
+  console.log(`[离线断言] 写明「不写任何人的心理活动」：${sys5.includes('不写任何人的心理活动') ? '✓' : '✗'}`)
+  console.log(`[离线断言] 描写算在协议字数内：${sys5.includes('算在协议的字数里') ? '✓' : '✗'}`)
+  console.log(`[离线断言] 写明动作归（）、不要写两遍：${sys5.includes('不要把同一个动作写两遍') ? '✓' : '✗'}`)
   s5 = await say(s5, luo, '（我把票递过去）路上淋着了吗？', [luo, chuU])
   const reply5 = s5.messages[s5.messages.length - 1]?.content ?? ''
   const DESC_WORDS = /(外套|裙子|裙|毛衣|围巾|发梢|头发|鞋|袖口|指尖|手里|肩上|雨|伞|灯|光|风|水汽|味道|地毯|海报|广播|玻璃门|大厅|晚场|票根)/
@@ -214,7 +218,7 @@ async function main() {
   console.log(`[实弹观察] 回复长度 ${len5} 字 → ${len5 <= 200 ? '✓ 仍在协议篇幅内' : '⚠️ 超出 160 字较多'}`)
   console.log(`[实弹观察] 是否替楚楠（用户角色）说话：${/（楚楠/.test(reply5) || /^楚楠[：:]/.test(reply5.trim()) ? '⚠️ 疑似代写' : '✓ 未见'}`)
 
-  // ---------- 阶段 6：v1.2 输出规范（老大 2026-09-14 定的三类标记） ----------
+  // ---------- 阶段 6：v1.2/v1.3 输出规范（老大 2026-09-14 定的三类标记 + 对白无说话人标记） ----------
   // 要观察的是：对白是不是纯文本（不带引号、不带名字前缀）、动作是不是（）、
   // 客观环境／人物外在是不是【】，以及**有没有把输入侧的〖〗〈〉漏进输出**。
   console.log('\n' + '='.repeat(70))
@@ -237,14 +241,16 @@ async function main() {
     })
     const sys6 = (await buildFreeSystem(s6, [luo6, chu6])).system
     console.log(`[离线断言] system 含〖客观描写〗：${sys6.includes('〖客观描写〗') ? '✓' : '✗'}`)
-    console.log(`[离线断言] 协议正文已是 v1.2：${sys6.includes('角色扮演通用协议 · v1.2') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 协议正文已是 v1.3：${sys6.includes('角色扮演通用协议 · v1.3') ? '✓' : '✗'}`)
     console.log(`[离线断言] 身份层代词中性（Ta）：${sys6.includes('用 Ta 的眼睛看') ? '✓' : '✗'}`)
     console.log(`[离线断言] 输入侧用的是〖〗〈〉（示例标题/说话人）：${sys6.includes('〖样本') || sys6.includes('〈') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 对白不许加说话人标记已写进协议：${sys6.includes('不要把说话人的名字单独写成一行') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 示例里的对照标记是输入侧符号 〖对方〗：${sys6.includes('〖对方〗') ? '✓' : '✗'}`)
     console.log(`[离线断言] 旧版协议不再出现：${sys6.includes('v1.1') ? '⚠️ 有残留' : '✓ 无'}`)
 
     s6 = await say(s6, luo6, '（我把票递过去）路上淋着了吗？', [luo6, chu6])
     const reply6 = s6.messages[s6.messages.length - 1]?.content ?? ''
-    const a6 = auditFormat(reply6)
+    const a6 = auditFormat(reply6, ['洛汐', '楚楠'])
     console.log(`[实弹观察] 行分布：动作（）${a6.action} · 环境【】${a6.env} · 对白 ${a6.talk} · 状态〔〕${a6.status}`)
     console.log(`[实弹观察] 违规项：${a6.issues.length ? '⚠️ ' + a6.issues.join(' | ') : '✓ 无'}`)
     console.log(`[实弹观察] 篇幅 ${reply6.replace(/\s/g, '').length} 字（协议建议 60–160）`)

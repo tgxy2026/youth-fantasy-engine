@@ -39,7 +39,26 @@ function row(tabId: string, order: number, data: Record<string, string>): TableR
 // ---------- 示例正文 ----------
 
 
-export async function createDemoProject(): Promise<string> {
+/**
+ * 并发去重（single-flight）：同一时刻只允许有一次示范项目创建在跑。
+ *
+ * 【为什么必须有】调用方是「先查后写」：查项目数是否为 0 → 建项目，两步之间隔着 await。
+ * · React.StrictMode 下 boot effect 会 setup → cleanup → setup **跑两遍**，
+ *   两遍都查到空库、于是各建一个 —— 开发环境里项目中心会出现**两个**「吞天神脉（示范）」（实测）。
+ * · 「创建示范项目」按钮被连点两下同理。
+ *
+ * 只在**进行中**去重，完成即清空：所以按钮隔一会儿再点仍然会重建（那是设计行为，不是 bug）。
+ */
+let demoInflight: Promise<string> | null = null
+
+export function createDemoProject(): Promise<string> {
+  if (!demoInflight) {
+    demoInflight = doCreateDemoProject().finally(() => { demoInflight = null })
+  }
+  return demoInflight
+}
+
+async function doCreateDemoProject(): Promise<string> {
   // 幂等重建：先按名删除已存在的同名示范项目，保证「创建示范项目」按钮每次都得到最新满血数据，不再叠加副本
   const old = (await db.getAllProjects()).find(x => x.name === '吞天神脉（示范）')
   if (old) await db.deleteProject(old.id)

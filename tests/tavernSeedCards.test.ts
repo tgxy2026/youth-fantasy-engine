@@ -3,7 +3,7 @@
 // 这批卡是从老大手写的两张 .md 角色卡转写来的，转写过程做了「原卡五章 → 本系统四章」的归位，
 // 所以这里最关键的不是「结构对不对」，而是**内容有没有在归位时丢掉**。
 // 因此第 2 组断言逐条抽查原卡各节的独有字串 —— 归位可以换位置，但不能丢内容。
-import { SEED_FREE_CHARACTERS, seedFreeChars } from '../src/lib/tavern/seedCards'
+import { SEED_FREE_CHARACTERS, seedFreeChars, upgradeSeedCards, LEGACY_SEED_EXAMPLES } from '../src/lib/tavern/seedCards'
 import { renderFreeCharacter, buildFreeSystem } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import * as store from '../src/lib/tavern/store'
@@ -84,10 +84,11 @@ async function main() {
     ok('示范卡的说明性文字已中性化（指代角色用 Ta，不预设性别）',
       SEED_FREE_CHARACTERS.every(c => c.examples.includes('Ta')) &&
       !SEED_FREE_CHARACTERS.some(c => c.examples.includes('她该怎么说话')))
-    ok('楚楠的示例用「对方：」标对方的台词、他自己不加名字前缀',
-      chu.examples.includes('对方：') && !/^楚楠[：:]/m.test(chu.examples) && !chu.examples.includes('〖用户〗'))
+    ok('楚楠的示例用输入侧符号 〖对方〗 标对方的台词、他自己不加名字前缀',
+      chu.examples.includes('〖对方〗') && !/^楚楠[：:]/m.test(chu.examples) &&
+      !chu.examples.includes('〖用户〗') && !chu.examples.includes('对方：'))
 
-    // —— v1.2 示例格式（三类标记各就各位）——
+    // —— v1.3 示例格式（三类标记各就各位 + 对照标记用输入侧符号 〖对方〗）——
     for (const c of SEED_FREE_CHARACTERS) {
       ok(`${c.name}：示例里动作与神态用（）包住、独立成行`,
         /^（.+）$/m.test(c.examples))
@@ -96,8 +97,10 @@ async function main() {
       ok(`${c.name}：示例不再使用旧标记，也不写自己的名字前缀`,
         !c.examples.includes('【用户】') && !c.examples.includes('〖用户〗') &&
         !new RegExp(`^${c.name}[：:]`, 'm').test(c.examples))
-      ok(`${c.name}：示例说明里写明「对方：」是输入侧对照、不许写进输出`,
-        c.examples.includes('你的输出里永远不要出现'))
+      ok(`${c.name}：示例说明里写明 〖对方〗 是输入侧对照、不许写进输出`,
+        c.examples.includes('你的输出里永远不要出现') && c.examples.includes('〖对方〗'))
+      ok(`${c.name}：对照标记用输入侧符号 〖对方〗，而不是输出字母表里的「对方：」`,
+        !c.examples.includes('对方：'))
     }
   }
 
@@ -209,6 +212,48 @@ async function main() {
     const sys = await buildFreeSystem(sess, [luoxi])
     ok('角色卡内容真的进了 system（不是只躺在库里）', sys.system.includes('青宜大学城'))
     ok('协议仍钉在 system 末尾', sys.system.trimEnd().endsWith(PROTOCOL_CORE.trimEnd()))
+  }
+
+  // ---------- 4) 老数据升级：示范卡示例格式（v1.1 / v1.2 → v1.3） ----------
+  // upgradeSeedCards 是「改内置常量救不回老库」的唯一出路，此前一直没有测试覆盖。
+  // 三条判据各走一遍：全等换整段 / 有签名就只换标记 / 没签名一个字不动。
+  {
+    const luoxiNew = find('洛汐').examples
+    const v12Style = luoxiNew.split('〖对方〗').join('对方：')
+
+    // ① v1.1 全文一字未改 → 整段换成 v1.3
+    __resetMockStores()
+    await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '洛汐', examples: LEGACY_SEED_EXAMPLES['洛汐'] })
+    const n1 = await upgradeSeedCards()
+    const got1 = (await store.getFreeChar((await store.listFreeChars())[0].id))!.examples
+    ok('老卡一字未改（v1.1 全文）→ 整段升级到 v1.3', n1 === 1 && got1 === luoxiNew, `张数=${n1}`)
+
+    // ② v1.2 格式（只差那个对照标记）→ 只换标记，结果与新版种子逐字节相同
+    __resetMockStores()
+    await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '洛汐', examples: v12Style })
+    const n2 = await upgradeSeedCards()
+    const got2 = (await store.getFreeChar((await store.listFreeChars())[0].id))!.examples
+    ok('v1.2 格式的老卡 → 只换标记就回到 v1.3（正文一字不动）',
+      n2 === 1 && got2 === luoxiNew && !got2.includes('对方：'))
+
+    // ③ 作者自己写的示例（没有示范卡头部签名）→ 一个字都不动
+    {
+      __resetMockStores()
+      const mine = '对方：今天吃什么\n（她想了想）\n随便。'
+      await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '洛汐', examples: mine })
+      await upgradeSeedCards()
+      const got3 = (await store.getFreeChar((await store.listFreeChars())[0].id))!.examples
+      ok('作者自己写的示例（无示范卡签名）→ 一个字都不动', got3 === mine)
+    }
+
+    // ④ 改过内容但留着签名与旧标记 → 只换标记，作者的补充段落原样保留
+    __resetMockStores()
+    const edited = v12Style + '\n\n〖我的补充样本〗\n（站起来走了）\n我先走了。'
+    await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '洛汐', examples: edited })
+    await upgradeSeedCards()
+    const got4 = (await store.getFreeChar((await store.listFreeChars())[0].id))!.examples
+    ok('改过内容的示范卡 → 只换标记、作者补充的段落原样保留',
+      got4.includes('我的补充样本') && got4.includes('我先走了') && got4.includes('〖对方〗') && !got4.includes('对方：'))
   }
 
   console.log(`\ntavernSeedCards: ${pass} passed, ${fail} failed`)

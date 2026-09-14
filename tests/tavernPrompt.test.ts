@@ -25,7 +25,7 @@ function ok(name: string, cond: boolean, extra = '') {
 function main() {
   // ---------- 1) 协议全文完整性（内置常量，条款掉了功能就瘫） ----------
   {
-    ok('协议版本为 v1.2（三类标记 + 代词中性化）', PROTOCOL_VERSION === 'v1.2')
+    ok('协议版本为 v1.3（三类标记 + 代词中性化 + 对白无说话人标记）', PROTOCOL_VERSION === 'v1.3')
     const rules = ['R1', 'R2', 'R3', 'R4', 'R5', 'B1', 'B5', 'B8', 'B9', 'O1', 'O2', 'O3', 'O4', 'M1', 'M2', 'E1', 'E2', 'E3']
     const missing = rules.filter(r => !PROTOCOL_CORE.includes(`\n${r} `))
     ok('协议含全部条款编号（R/B/O/M/E 五节）', missing.length === 0, `缺=${missing.join(',')}`)
@@ -39,14 +39,20 @@ function main() {
     ok('协议含存档归档格式（E1）', PROTOCOL_CORE.includes('归档 · ') && PROTOCOL_CORE.includes('文风锚'))
     ok('协议明确禁止 markdown 与名字前缀', PROTOCOL_CORE.includes('markdown') && PROTOCOL_CORE.includes('不加“角色名：“') === false && PROTOCOL_CORE.includes('角色名：'))
 
-    // —— v1.2 的输出规范（老大 2026-09-14 定：对白纯文本 / （）动作神态心理 / 【】客观环境与人物外在）——
+    // —— v1.2 / v1.3 的输出规范（老大 2026-09-14 定：对白纯文本 / （）动作神态心理 / 【】客观环境与人物外在）——
     ok('O1 定义了「客观环境、人物外在」用【】包裹',
       PROTOCOL_CORE.includes('客观环境、人物外在 —— 用**方头括号【 】**包裹'))
     ok('O1 定义了动作、神态、心理用（）包裹（内心话并入，不再单设符号）',
       PROTOCOL_CORE.includes('动作、神态、心理 —— 用**全角圆括号（ ）**包裹') &&
       PROTOCOL_CORE.includes('内心话也走这里'))
-    ok('对白要求：不加引号、不加括号、不写名字前缀、正常标点',
-      PROTOCOL_CORE.includes('**不加引号、不加括号、不写"角色名："这类前缀**'))
+    ok('对白要求：不加引号、不加括号、不加任何说话人标记、正常标点',
+      PROTOCOL_CORE.includes('**不加引号、不加括号、不加任何说话人标记**') &&
+      PROTOCOL_CORE.includes('不写"角色名："这类前缀'))
+    // v1.3 补的那个洞：只禁「名字：」前缀时，模型会把名字**单独起一行**当说话人标签（实弹踩到）
+    ok('对白明确禁止「把说话人的名字单独写成一行」',
+      PROTOCOL_CORE.includes('不要把说话人的名字单独写成一行'))
+    ok('协议点名 〖对方〗 属输入侧标注、不在输出字母表里',
+      PROTOCOL_CORE.includes('〖对方〗') && PROTOCOL_CORE.includes('输入侧的结构标注'))
     ok('状态块从【状态】迁到〔状态〕（【】已让给客观描写，不能撞车）',
       PROTOCOL_CORE.includes('〔状态〕') && !PROTOCOL_CORE.includes('【状态】'))
     ok('代词中性化：不再预设角色性别',
