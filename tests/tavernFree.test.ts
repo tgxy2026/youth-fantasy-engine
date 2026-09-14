@@ -8,10 +8,10 @@ import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import {
-  buildFreeSystem, buildFreeMessages, runFreeTurn, renderFreeCharacter, type ChatFn,
+  buildFreeSystem, buildFreeMessages, runFreeTurn, injectDirectorNote, tickDirectorNote, renderFreeCharacter, type ChatFn,
 } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
-import { DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'
+import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import { DEFAULT_TALKATIVITY, type FreeCharacter, type FreeSession, type TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
@@ -490,6 +490,66 @@ async function main() {
     const said = cur.messages.filter(m => m.role === 'assistant')
     ok('🔴 轮转不轮到被静音的角色', said.length === 2 && said.every(m => m.speakerId === jia.id),
       said.map(m => m.speakerId).join(','))
+  }
+
+  // ---------- B2 临时导演指令 + B3 输出后处理（第 6 批） ----------
+  {
+    __resetMockStores()
+    await saveProviders([{ ...STUB_PROVIDER }])
+    await saveActiveId(STUB_PROVIDER.id)
+
+    // ① 注入：按深度插进历史（1 = 紧贴生成点）
+    const hist: { role: string; content: string }[] = [
+      { role: 'user', content: 'a' }, { role: 'assistant', content: 'b' },
+      { role: 'user', content: 'c' }, { role: 'assistant', content: 'd' },
+      { role: 'user', content: 'e' },
+    ]
+    const injected = injectDirectorNote(hist, { text: '节奏放慢', depth: 2, turnsLeft: 3 })
+    ok('注入到「倒数第 2 条之前」', injected.length === 6 && injected[3].content === '「节奏放慢」',
+      injected.map(m => m.content).join('|'))
+    ok('按协议 R4 用「」包装（模型照做后继续演，不当成台词）', injected[3].content === '「节奏放慢」')
+    ok('role 是 user —— 不塞 system（那会离生成点太远，正是这条功能要避免的）', injected[3].role === 'user')
+    ok('depth 超大时至少插在最前（不崩、不丢）', injectDirectorNote(hist, { text: 'x', depth: 99, turnsLeft: 1 })[0].content === '「x」')
+    ok('没有指令 → 原样返回', injectDirectorNote(hist, undefined).length === 5)
+    ok('空白指令 → 原样返回（等于没写）', injectDirectorNote(hist, { text: '  ', depth: 4, turnsLeft: 3 }).length === 5)
+
+    // ② 倒计时：成功一轮减 1，扣到 0 清掉
+    ok('turnsLeft 3 → 2', tickDirectorNote({ text: 'x', depth: 4, turnsLeft: 3 })?.turnsLeft === 2)
+    ok('turnsLeft 1 → 清掉（返回 undefined）', tickDirectorNote({ text: 'x', depth: 4, turnsLeft: 1 }) === undefined)
+    ok('没有指令 → undefined', tickDirectorNote(undefined) === undefined)
+
+    // ③ 端到端：指令进了 messages、轮次 -1、坏格式被修好
+    const ch = await mkChar('洛汐')
+    const s6 = await store.createFreeSession([ch.id], 'B2B3', { providerId: STUB_PROVIDER.id }, {})
+    const withNote = store.setDirectorNote(s6, { text: '这一段节奏放慢', depth: 2, turnsLeft: 2 })
+    await store.saveFreeSession(withNote)
+    const fake = makeFakeChat('(她点了点头。)\n**洛汐：你来了。**')
+    const res6 = await runFreeTurn(withNote, [ch], '（我推门进来）', {}, { chatFn: fake.chatFn })
+    const flat = fake.calls[0].messages.map(m => m.content).join('\n')
+    ok('指令被注入到发给模型的 messages 里', flat.includes('「这一段节奏放慢」'), flat.slice(-140))
+    ok('成功一轮后 turnsLeft 2 → 1', res6.session.directorNote?.turnsLeft === 1, String(res6.session.directorNote?.turnsLeft))
+    const last6 = res6.session.messages[res6.session.messages.length - 1]?.content ?? ''
+    ok('🔴 后处理把半角括号 + markdown 都修好了', last6 === '（她点了点头。）\n洛汐：你来了。', JSON.stringify(last6))
+    ok('postApplied 记下命中了哪几条', res6.postApplied.length === 2, res6.postApplied.map(a => a.name).join('、'))
+    ok('postErrors 为空（出厂正则都是好的）', res6.postErrors.length === 0)
+
+    // ④ 提示关掉：规则照跑、只是不回传命中列表（正则错误仍回传）
+    await saveTavernSettings({ ...(await getTavernSettings()), postRuleNotice: false })
+    const fake2 = makeFakeChat('(她点了点头。)')
+    const res7 = await runFreeTurn(withNote, [ch], '再来一句', {}, { chatFn: fake2.chatFn })
+    const last7 = res7.session.messages[res7.session.messages.length - 1]?.content ?? ''
+    ok('提示关掉：文本照样被修正', last7 === '（她点了点头。）', JSON.stringify(last7))
+    ok('提示关掉：不回传命中列表（作者选了静默）', res7.postApplied.length === 0)
+    ok('提示关掉：正则错误仍回传（那是配置问题，不该被静默）', Array.isArray(res7.postErrors))
+    await saveTavernSettings({ ...(await getTavernSettings()), postRuleNotice: true })
+
+    // ⑤ 总开关关掉 → 一个字都不改
+    await saveTavernSettings({ ...(await getTavernSettings()), postRulesEnabled: false })
+    const fake3 = makeFakeChat('(她点了点头。)')
+    const res8 = await runFreeTurn(withNote, [ch], '再来一句', {}, { chatFn: fake3.chatFn })
+    const last8 = res8.session.messages[res8.session.messages.length - 1]?.content ?? ''
+    ok('总开关关掉 → 原样落库（排查格式问题时要的就是这个）', last8 === '(她点了点头。)', JSON.stringify(last8))
+    await saveTavernSettings({ ...(await getTavernSettings()), postRulesEnabled: true })
   }
 
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)

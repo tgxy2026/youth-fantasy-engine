@@ -29,10 +29,11 @@ import {
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
 import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack } from './world'
+import { applyPostRules, type PostApplied } from './postRules'
 import {
   talkativityRowsOf,
   hasCastSetting, charTag,
-  type TavernSession, type TavernMessage, type TavernCast,
+  type TavernSession, type TavernMessage, type TavernCast, type TavernDirectorNote,
   type FreeSession, type FreeCharacter, type FreeMemory,
 } from './types'
 
@@ -177,6 +178,39 @@ async function buildCastBlock(casts: ReturnType<typeof splitCast>): Promise<stri
  * 组装发给模型的历史消息。
  * 首轮的开场（user 的第一条）由调用方在创建会话时写入 messages，这里只做转换与预算裁剪。
  */
+/**
+ * 把「临时导演指令」按**深度**插进历史（B2）。
+ *
+ * 为什么插历史而不是塞进 system：ST 的实测结论是**越靠近生成点影响越大**。插进历史等于把指令
+ * 放在离生成点最近的可用位置；塞 system 只能放在协议之前，隔着一整段对话历史，模型容易当耳边风。
+ *
+ * depth = 插在倒数第几条**之前**（1 = 紧贴生成点，默认 4）。不贴死末尾是有意的 ——
+ * 紧贴末尾会盖过用户刚说的那句，模型可能去回应指令而不是回应人。
+ * 注入发生在**裁剪之前**，而它落在末尾附近，所以不会被 trimHistory 裁掉。
+ */
+export function injectDirectorNote<T extends { role: string; content: string }>(
+  msgs: T[], note?: TavernDirectorNote | null, fallbackDepth = 4,
+): T[] {
+  const text = String(note?.text ?? '').trim()
+  if (!text) return msgs
+  const depth = Math.max(1, Math.floor(note?.depth || fallbackDepth))
+  const at = Math.max(0, msgs.length - depth)
+  // 按协议 R4 的元指令通道包装：模型照做后继续演，不当成角色说过的话
+  const line = { role: 'user', content: `「${text}」` } as T
+  return [...msgs.slice(0, at), line, ...msgs.slice(at)]
+}
+
+/**
+ * 临时导演指令的轮次倒计时（B2）。
+ * ⚠️ **成功产出才调它** —— 取消 / 报错都不该消耗作者剩下的轮次（点两下就没了会让人不敢用）。
+ * 扣到 0 返回 undefined，调用方据此把字段清掉。
+ */
+export function tickDirectorNote(note?: TavernDirectorNote | null): TavernDirectorNote | undefined {
+  if (!note) return undefined
+  const left = Math.max(0, Math.floor(note.turnsLeft) || 0) - 1
+  return left > 0 ? { ...note, turnsLeft: left } : undefined
+}
+
 export function buildPlotMessages(session: TavernSession, budgetChars: number): { messages: ChatMessage[]; dropped: number } {
   const casts = splitCast(session.cast)
   const nameById = new Map(casts.ai.map(c => [c.cardId, c.name]))
@@ -186,7 +220,7 @@ export function buildPlotMessages(session: TavernSession, budgetChars: number): 
       ? (id?: string) => (id && nameById.get(id) ? `〈${nameById.get(id)}〉` : '')
       : undefined,
   })
-  const trimmed = trimHistory(all, budgetChars)
+  const trimmed = trimHistory(injectDirectorNote(all, session.directorNote), budgetChars)
   return { messages: trimmed.kept.map(m => ({ role: m.role, content: m.content })), dropped: trimmed.dropped }
 }
 
@@ -224,6 +258,10 @@ export type PlotTurnResult = {
   modelName: string
   /** 是否因没配酒馆模型而回退到了全局活动模型 */
   fellBack: boolean
+  /** B3：本轮实际命中的后处理规则（界面据此提示，空数组 = 一个字没改） */
+  postApplied: PostApplied[]
+  /** B3：正则写错被跳过的规则名（有它就该去面板上改，否则规则是静默失效的） */
+  postErrors: string[]
 }
 
 /**
@@ -292,12 +330,29 @@ export async function runPlotTurn(
   // 取消 / 空回复时**不追加**占位消息（原先写成 `|| cancelled` 会留下一个空气泡，让「取消」看起来像真聊了一轮）。
   // 重说失败时更要小心：那时 withUser 已经把原回复丢掉了 —— 必须**保留原来的 messages**，
   // 否则一次失败就把那条回复删没了。
+  // B3 输出后处理：按规则修一遍再落库。空回复不跑（没有内容可修，跑了还会把 applied 记成噪音）。
+  let postApplied: PostApplied[] = []
+  let postErrors: string[] = []
+  if (reply.trim() && st.postRulesEnabled) {
+    const post = applyPostRules(reply, st.postRules ?? [])
+    reply = post.text
+    // 提示可在面板上关掉（关掉 = 规则照跑、只是不告诉作者改了什么）；
+    // 但**正则写错必须一直回传** —— 那是配置出了问题，不是通知，静默失效最难查。
+    postApplied = st.postRuleNotice ? post.applied : []
+    postErrors = post.errors
+  }
+
   const kept: TavernMessage[] = reply.trim()
     ? [...withUser, { id: uid(), role: 'assistant' as const, content: reply.trim(), at: Date.now() }]
     : (userText === null ? session.messages : withUser)
-  const next: TavernSession = { ...session, messages: kept, updatedAt: Date.now() }
+  // B2：成功产出才倒计时（取消/报错不扣轮次）
+  const directorNote = reply.trim() && !cancelled ? tickDirectorNote(session.directorNote) : session.directorNote
+  const next: TavernSession = {
+    ...session, messages: kept, updatedAt: Date.now(),
+    directorNote,
+  }
 
-  return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack }
+  return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, postApplied, postErrors }
 }
 
 
@@ -508,6 +563,10 @@ export type FreeTurnResult = {
   fellBack: boolean
   /** 这句回复归属的角色（多角色同场时标记到消息上，供 UI 显示头像） */
   speakerId?: string
+  /** B3：本轮实际命中的后处理规则 */
+  postApplied: PostApplied[]
+  /** B3：正则写错被跳过的规则名 */
+  postErrors: string[]
 }
 
 /**
@@ -576,17 +635,32 @@ export async function runFreeTurn(
   const speakerId = aiIds.length > 1 ? (cb.speakerId ?? autoSpeaker) : aiIds[0]
 
   // 同剧情模式：重说失败要**保留原来的那条**（withUser 已经把末尾的 AI 回复丢掉了）
+  // B3 输出后处理（与剧情模式同一套规则；顺序即 settings.postRules 的顺序）
+  let postApplied: PostApplied[] = []
+  let postErrors: string[] = []
+  if (reply.trim() && st.postRulesEnabled) {
+    const post = applyPostRules(reply, st.postRules ?? [])
+    reply = post.text
+    // 提示可在面板上关掉（关掉 = 规则照跑、只是不告诉作者改了什么）；
+    // 但**正则写错必须一直回传** —— 那是配置出了问题，不是通知，静默失效最难查。
+    postApplied = st.postRuleNotice ? post.applied : []
+    postErrors = post.errors
+  }
+
   const kept: TavernMessage[] = reply.trim()
     ? [...withUser, { id: uid(), role: 'assistant' as const, content: reply.trim(), at: Date.now(), speakerId }]
     : (userText === null ? session.messages : withUser)
+  // B2：成功产出才倒计时
+  const directorNote = reply.trim() && !cancelled ? tickDirectorNote(session.directorNote) : session.directorNote
   const next: FreeSession = {
     ...session,
     messages: kept,
     lastActiveAt: Date.now(),
     updatedAt: Date.now(),
+    directorNote,
   }
 
-  return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, speakerId }
+  return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, speakerId, postApplied, postErrors }
 }
 
 /** 历史转换 + 预算裁剪（自由模式没有记忆层要预留，故传入 memory 为空串） */
@@ -609,10 +683,12 @@ export function buildFreeMessages(
   if (speakerId && aiChars.length > 1 && nameById.get(speakerId)) {
     all.push({ role: 'user', content: `〈下一位由 ${nameById.get(speakerId)} 接话〉` })
   }
-  const trimmed = trimHistory(all, budgetChars)
+  const trimmed = trimHistory(injectDirectorNote(all, session.directorNote), budgetChars)
   return { messages: trimmed.kept.map(m => ({ role: m.role, content: m.content })), dropped: trimmed.dropped }
 }
 
 function totalBudget(v: number | undefined): number {
-  return v && Number.isFinite(v) && v > 0 ? v : 8000
+  // 兜底值与 TAVERN_DEFAULTS 保持一致（2026-09-14 由 8000 提到 16000）——
+  // 两处不一致时，「没传参数」的调用点会莫名比面板上的值小一半，很难查。
+  return v && Number.isFinite(v) && v > 0 ? v : 16000
 }

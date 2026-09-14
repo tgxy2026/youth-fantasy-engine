@@ -31,10 +31,12 @@ import TavernCastDirector from './TavernCastDirector'
 import TavernRevisionDialog from './TavernRevisionDialog'
 import TavernMessageBody from './TavernMessageBody'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
+import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
 import { runFreeTurn } from '../lib/tavern/engine'
+import type { PostApplied } from '../lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
 import { summarizeMemory } from '../lib/tavern/summarize'
 import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
@@ -45,7 +47,7 @@ import {
   shouldRunAutoSummary, MEMORY_SECTIONS, isMemoryEmpty,
 } from '../lib/tavern/memory'
 import {
-  type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage,
+  type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
 } from '../lib/tavern/types'
 import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '../lib/tavern/settings'
@@ -83,6 +85,8 @@ export default function TavernFree() {
   /** 左栏会话筛选词 */
   const [q, setQ] = useState('')
   const [input, setInput] = useState('')
+  /** B3：上一轮后处理实际改了什么 */
+  const [postNotice, setPostNotice] = useState<{ applied: PostApplied[]; errors: string[] }>({ applied: [], errors: [] })
   const [streaming, setStreaming] = useState(false)
   const [streamText, setStreamText] = useState('')
   const [phase, setPhase] = useState('')
@@ -455,6 +459,7 @@ export default function TavernFree() {
       const saved = await store.saveFreeSession(res.session)
       setSession(saved)
       setStreamText('')
+      setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       await refreshSessions()
       if (!res.cancelled) void autoSummarize(saved)
       if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
@@ -530,6 +535,7 @@ export default function TavernFree() {
       const saved = await store.saveFreeSession(res.session)
       setSession(saved)
       setStreamText('')
+      setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       await refreshSessions()
       if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
     } catch (e) {
@@ -539,6 +545,14 @@ export default function TavernFree() {
       setPhase('')
       abortRef.current = null
     }
+  }
+
+  /** 临时导演指令（B2）：与剧情推演同一套；落库即生效，传 null 即清除 */
+  const applyDirectorNote = async (note: TavernDirectorNote | null) => {
+    if (!session) return
+    const next = store.setDirectorNote(session, note)
+    setSession(next)
+    await store.saveFreeSession(next).catch(() => undefined)
   }
 
   /** 快捷指令条：走协议 R4 的**导演指令**通道（「」= 照做然后继续演） */
@@ -865,6 +879,14 @@ export default function TavernFree() {
               </div>
 
               <div className="border-t border-ink-800 p-3">
+                <TavernDirectorNoteBar
+                  note={session.directorNote}
+                  postApplied={postNotice.applied}
+                  postErrors={postNotice.errors}
+                  disabled={streaming}
+                  onSave={n => void applyDirectorNote(n)}
+                  onClear={() => void applyDirectorNote(null)}
+                />
                 <TavernQuickBar actions={quickActions} disabled={streaming} className="mb-2" />
                 {/* 自动延展：默认 3 行，写长了自己长高，超过 200px 才内部滚动 */}
                 <AutoTextarea

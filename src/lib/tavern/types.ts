@@ -73,6 +73,24 @@ export type SceneDescLevel = 'off' | 'light' | 'standard' | 'rich'
 /** 记忆水位线：已总结到哪一条消息（关机/失败/中途退出都不丢不重） */
 export type TavernWatermark = { messageId: string; at: number }
 
+/**
+ * 临时导演指令（B2，老大 2026-09-14 接受）。
+ *
+ * 与「本场补充要求」的区别：那个是设置层里的一条常驻规则（每轮都进 system，离生成点很远）；
+ * 这个是**会按深度插进对话历史**的一次性指令（ST 的 depth prompt / author's note 思路）——
+ * 「越靠近生成点影响越大」是实测结论，所以插历史比塞 system 管用。
+ *
+ * 内容按协议的 R4 元指令通道包装（`「…」`），模型照做后继续演，不当成角色说过的话。
+ */
+export type TavernDirectorNote = {
+  /** 指令正文（不用自己加「」，注入时会包） */
+  text: string
+  /** 插在倒数第几条**之前**：1 = 紧贴生成点。默认 4（贴死末尾会盖过用户刚说的那句） */
+  depth: number
+  /** 还剩几轮生效：成功产出一次减 1，扣到 0 自动清除 */
+  turnsLeft: number
+}
+
 // ==================== 剧情模式 ====================
 
 export type CastRole = 'user' | 'ai' | 'silent'
@@ -141,6 +159,8 @@ export type TavernSession = {
   /** 在场调度（A6）：健谈度与静音。语义见 CastDirection，两模式共用同一套 */
   muted?: string[]
   talkativity?: Record<string, number>
+  /** 临时导演指令（B2）：按深度插进历史，只影响接下来 N 轮 */
+  directorNote?: TavernDirectorNote
   createdAt: number
   updatedAt: number
 }
@@ -369,6 +389,8 @@ export type FreeSession = {
   /** 在场调度（A6）：健谈度与静音。语义见 CastDirection，两模式共用同一套 */
   muted?: string[]
   talkativity?: Record<string, number>
+  /** 临时导演指令（B2）：按深度插进历史，只影响接下来 N 轮 */
+  directorNote?: TavernDirectorNote
   lastActiveAt: number
   createdAt: number
   updatedAt: number

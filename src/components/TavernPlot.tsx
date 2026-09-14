@@ -18,6 +18,7 @@ import TavernCastDirector from './TavernCastDirector'
 import TavernMessageBody from './TavernMessageBody'
 import PromptModal from './PromptModal'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
+import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
@@ -26,7 +27,8 @@ import { generateReport } from '../lib/tavern/report'
 import { buildOpeningMessage } from '../lib/tavern/prompt'
 import { uid } from '../lib/id'
 import { MEMORY_SOFT_LIMIT, hasCastSetting, talkBandOf, talkativityOf } from '../lib/tavern/types'
-import type { TavernSession, TavernSessionIndexItem, TavernMessage } from '../lib/tavern/types'
+import type { TavernSession, TavernSessionIndexItem, TavernMessage, TavernDirectorNote } from '../lib/tavern/types'
+import type { PostApplied } from '../lib/tavern/postRules'
 
 
 export default function TavernPlot() {
@@ -40,6 +42,8 @@ export default function TavernPlot() {
   const [pickQuery, setPickQuery] = useState('')
 
   const [input, setInput] = useState('')
+  /** B3：上一轮后处理实际改了什么（空 = 一个字没改） */
+  const [postNotice, setPostNotice] = useState<{ applied: PostApplied[]; errors: string[] }>({ applied: [], errors: [] })
   const [streaming, setStreaming] = useState(false)
   const [streamText, setStreamText] = useState('')
   const [phase, setPhase] = useState('')
@@ -106,6 +110,14 @@ export default function TavernPlot() {
     await store.saveSession(next)
     setSession(next)
   }
+
+  /** 临时导演指令（B2）：会话级、落库即生效。传 null 即清除 */
+  const applyDirectorNote = async (note: TavernDirectorNote | null) => {
+    if (!session) return
+    const next = store.setDirectorNote(session, note)
+    setSession(next)
+    await store.saveSession(next).then(refreshList).catch(() => undefined)
+  }
   const directorRows = useMemo(
     () => casts.ai.map(c => ({ id: c.cardId, name: c.name, tag: 'AI 演', speakable: true })),
     [casts],
@@ -162,6 +174,7 @@ export default function TavernPlot() {
       })
       setSession(res.session)
       setStreamText('')
+      setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       if (res.fellBack) {
         showToast('酒馆模式未单独指定模型，已回退到全局活动模型', 'error')
       }
@@ -660,6 +673,14 @@ export default function TavernPlot() {
 
             {/* 输入区 */}
             <div className="border-t border-ink-800 p-3">
+              <TavernDirectorNoteBar
+                note={session.directorNote}
+                postApplied={postNotice.applied}
+                postErrors={postNotice.errors}
+                disabled={streaming}
+                onSave={n => void applyDirectorNote(n)}
+                onClear={() => void applyDirectorNote(null)}
+              />
               <TavernQuickBar actions={quickActions} disabled={streaming} className="mb-2" />
               <AutoTextarea
                 className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"

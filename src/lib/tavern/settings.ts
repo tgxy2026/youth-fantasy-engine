@@ -29,6 +29,7 @@ import {
 } from './types'
 import { TONE_HINT } from './prompt'
 import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
+import { DEFAULT_POST_RULES, normalizePostRules, type PostRule } from './postRules'
 import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
 
 /** 设置存储键（全局 meta） */
@@ -162,6 +163,16 @@ export type TavernSettings = {
   free: TavernFreeSettings
   /** 扮演协议全文（两种模式共用，钉在 system 末尾）。默认 = 内置常量 */
   protocol: string
+  /**
+   * 输出后处理规则（B3）：生成后**按顺序**跑一遍再落库（半角括号、markdown 星号、行首说话人标签…）。
+   * 与协议同域放全局：它管的是「模型输出格式」，不随项目走。
+   * 顺序有意义 —— 出厂列表里「去 markdown」必须排在「星号动作」之前。
+   */
+  postRules: PostRule[]
+  /** 总开关：关掉就完全不跑规则（排查格式问题时用） */
+  postRulesEnabled: boolean
+  /** 命中规则时是否在对话页提示一句（关掉 = 静默修正） */
+  postRuleNotice: boolean
 }
 
 /**
@@ -273,6 +284,10 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     dailyLogKeep: DAILY_LOG_KEEP,
   },
   protocol: DEFAULT_PROTOCOL,
+  // 出厂四条全开 —— 四条都是「把违规写法掰回协议」，不会误伤正常输出（见 postRules.ts 的说明）
+  postRules: DEFAULT_POST_RULES.map(r => ({ ...r })),
+  postRulesEnabled: true,
+  postRuleNotice: true,
 }
 
 /** 深合并（只对普通对象递归，数组与标量直接覆盖） */
@@ -295,7 +310,9 @@ export async function getTavernSettings(): Promise<TavernSettings> {
   try {
     const raw = await db.getMeta<Partial<TavernSettings> | null>(K_TAVERN_SETTINGS, null)
     // 先过一遍老数据升级（只动「还等于旧默认」的字段），再与默认值深合并
-    return mergeDeep(DEFAULT_TAVERN_SETTINGS, upgradeLegacyDefaults(raw))
+    const merged = mergeDeep(DEFAULT_TAVERN_SETTINGS, upgradeLegacyDefaults(raw))
+    // 后处理规则是数组（mergeDeep 整段替换），老数据或手改过的 JSON 可能缺字段 → 归一化一遍
+    return { ...merged, postRules: normalizePostRules(merged.postRules) }
   } catch {
     return DEFAULT_TAVERN_SETTINGS
   }

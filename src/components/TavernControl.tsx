@@ -34,7 +34,7 @@
  * 【默认值】全部等于原来的硬编码值（见 settings.ts 的 DEFAULT_TAVERN_SETTINGS），
  * 所以打开这个页面之前与之后，行为完全一致 —— 不存在"升个版本悄悄变了风格"。
  */
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
@@ -45,6 +45,7 @@ import { PROTOCOL_VERSION } from '../lib/tavern/protocol'
 import * as presets from '../lib/tavern/presets'
 import type { TavernPreset } from '../lib/tavern/presets'
 import { PARAM_GUIDES, GUIDE_SAMPLING, bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
+import { DEFAULT_POST_RULES, previewPostRules, type PostRule } from '../lib/tavern/postRules'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
   DEFAULT_TAVERN_SETTINGS, DEFAULT_PROTOCOL,
@@ -84,6 +85,9 @@ const SCENE_DESC_OPTIONS = [
   { id: 'standard', label: '标准（推荐）—— 出场 / 环境 / 情绪都落到具体细节' },
   { id: 'rich', label: '丰富 —— 每回合都带一句环境或身体细节' },
 ]
+
+/** 展示用的示例正则（收成常量 —— 反斜杠在 JSX 属性里转义最容易出错，只写一处） */
+const RULE_EXAMPLE = '\*([^*\n]+)\*'
 
 /** 剧情推演：设定层从哪来（A 档） */
 const CONTEXT_SOURCE_OPTIONS = [
@@ -270,6 +274,8 @@ export default function TavernControl() {
   /** 是否展开所有数值项的分段说明（默认展开） */
   const [showBands, setShowBands] = useState(true)
   const [providers, setProviders] = useState<AIProvider[]>([])
+  /** B3：输出后处理规则的「试一段」输入（只用于预览，不进设置） */
+  const [ruleTry, setRuleTry] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [protocolEditing, setProtocolEditing] = useState(false)
@@ -482,6 +488,23 @@ export default function TavernControl() {
   const setFree = (k: keyof TavernSettings['free'], v: number | string) =>
     edit(prev => ({ ...prev, free: { ...prev.free, [k]: v } as TavernSettings['free'] }))
 
+  // ---------- 输出后处理（B3）：规则是数组，所以不能用上面那套 [k]: v ----------
+  const setPostFlag = (patch: Partial<Pick<TavernSettings, 'postRulesEnabled' | 'postRuleNotice'>>) =>
+    edit(prev => ({ ...prev, ...patch }))
+  const setRule = (i: number, patch: Partial<PostRule>) =>
+    edit(prev => ({ ...prev, postRules: prev.postRules.map((r, k) => (k === i ? { ...r, ...patch } : r)) }))
+  const addRule = () =>
+    edit(prev => ({
+      ...prev,
+      postRules: [...prev.postRules, {
+        id: `pr-${Date.now()}`, name: '新规则', pattern: '', replacement: '', flags: 'gm', enabled: true,
+      }],
+    }))
+  const dropRule = (i: number) =>
+    edit(prev => ({ ...prev, postRules: prev.postRules.filter((_, k) => k !== i) }))
+  const resetRules = () =>
+    edit(prev => ({ ...prev, postRules: DEFAULT_POST_RULES.map(r => ({ ...r })) }))
+
   const save = async () => {
     if (!s) return
     setSaving(true)
@@ -533,6 +556,13 @@ export default function TavernControl() {
     })
     if (okGo) setProtocolEditing(true)
   }
+
+  // 后处理规则预览：**必须放在早退之前** —— hook 不能条件调用（eslint rules-of-hooks 会直接报错）。
+  // `s` 就是依赖项之一，加载完成后自然重算。
+  const rulePreview = useMemo(
+    () => (s ? previewPostRules(ruleTry, s.postRules) : { text: '', applied: [] as { name: string; count: number }[], errors: [] as string[] }),
+    [ruleTry, s],
+  )
 
   if (!s) return <LoadingState />
 
@@ -996,6 +1026,97 @@ export default function TavernControl() {
                 ))}
               </ul>
             )}
+          </Section>
+
+          {/* ---------- 七、输出后处理（B3） ---------- */}
+          <Section
+            title="七、输出后处理"
+            desc="生成后按下面的规则从上到下修一遍再落库。协议已经把格式写死了，实测却总有模型不听话 —— 用规则兜住，比重跑一次去赌划算。顺序有意义：先去 markdown 再处理单星号动作，否则 **动作** 会被拆成 *（动作）*。"
+          >
+            <ToggleField
+              label="启用输出后处理"
+              hint="关掉就完全不跑规则（排查格式问题时用这一档，先排除规则本身的影响）。"
+              value={s.postRulesEnabled}
+              onChange={v => setPostFlag({ postRulesEnabled: v })}
+            />
+            <ToggleField
+              label="命中时在对话页提示"
+              hint="关掉 = 静默修正：规则照跑，只是不在输入框上方告诉你改了哪几条。正则写错仍会提示 —— 那是配置问题，不该被静默。"
+              value={s.postRuleNotice}
+              onChange={v => setPostFlag({ postRuleNotice: v })}
+            />
+
+            <div className="space-y-2">
+              {s.postRules.map((r, i) => (
+                <div key={r.id} className="rounded-md border border-ink-800 bg-ink-900/40 p-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" className="shrink-0 accent-amber" checked={r.enabled}
+                      onChange={e => setRule(i, { enabled: e.target.checked })}
+                      title="关掉这一条（其余规则照跑）"
+                    />
+                    <span className="shrink-0 text-[10.5px] text-ink-600">{i + 1}</span>
+                    <input
+                      value={r.name} onChange={e => setRule(i, { name: e.target.value })}
+                      className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+                      placeholder="规则名（对话页提示里显示的就是它）"
+                    />
+                    <button type="button" onClick={() => dropRule(i)}
+                      className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10.5px] text-ink-400 hover:text-red-400"
+                    >删除</button>
+                  </div>
+                  <input
+                    value={r.pattern} onChange={e => setRule(i, { pattern: e.target.value })}
+                    className="mt-1.5 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-[11px] text-ink-200 outline-none focus:border-amber/50"
+                    placeholder={`正则源码，例：${RULE_EXAMPLE}`}
+                  />
+                  <input
+                    value={r.replacement} onChange={e => setRule(i, { replacement: e.target.value })}
+                    className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-[11px] text-ink-200 outline-none focus:border-amber/50"
+                    placeholder="替换成（$1 = 第一个捕获组；留空 = 直接删掉）"
+                  />
+                  {r.note && (
+                    <p className={`mt-1 text-[10px] leading-relaxed ${r.enabled ? 'text-ink-600' : 'text-amber/80'}`}>
+                      {r.note}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={addRule}>＋ 新增规则</Button>
+              <Button variant="ghost" size="sm" onClick={resetRules}>恢复出厂四条</Button>
+              <span className="text-[10.5px] text-ink-500">
+                共 {s.postRules.length} 条 · 启用 {s.postRules.filter(r => r.enabled).length} 条
+              </span>
+            </div>
+            <p className="text-[10.5px] text-ink-600 leading-relaxed">
+              正则写法提示：$1 / $2 是捕获组（例：星号动作那条的正则是 {RULE_EXAMPLE}）；
+              flags 固定 gm（m 让 ^ 匹配每一行，行首说话人标签那条要用）。
+            </p>
+
+            {/* 试一段：正则最容易写错，给个立刻能看到结果的入口（比「改完去聊一句看效果」省事） */}
+            <div>
+              <div className="text-[11.5px] text-ink-200">试一段</div>
+              <AutoTextarea
+                className="mt-1 bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
+                textClass="text-[11.5px] font-mono"
+                minRows={2}
+                maxHeight={140}
+                placeholder="贴一段模型输出，例：（她点头。） / **（他把烟按灭）** / 洛汐：你来了。"
+                value={ruleTry}
+                onChange={setRuleTry}
+              />
+              <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[11px] leading-relaxed text-ink-300">{rulePreview.text || '（上面输入内容就能看到结果）'}</pre>
+              <p className="mt-1 text-[10.5px] leading-relaxed text-ink-500">
+                {rulePreview.errors.length > 0
+                  ? <span className="text-amber">⚠️ 正则无效、已跳过：{rulePreview.errors.join('、')}</span>
+                  : rulePreview.applied.length > 0
+                    ? `命中：${rulePreview.applied.map(a => `${a.name} ×${a.count}`).join('、')}`
+                    : '没命中任何规则（上面的输入已符合协议，或规则没写对）'}
+              </p>
+            </div>
           </Section>
         </div>
       </div>

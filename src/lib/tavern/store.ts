@@ -26,7 +26,7 @@ import type {
   TavernReport, TavernReportIndexItem,
   FreeCharacter, FreeSession, FreeMemory, DailyState,
   TavernCharIndexItem, FreeSessionIndexItem, TavernMessage, TavernCheckpoint,
-  CardFieldPath,
+  TavernDirectorNote, CardFieldPath,
 } from './types'
 
 // ==================== 存储键 ====================
@@ -80,6 +80,17 @@ export async function getSession(id: string): Promise<TavernSession | null> {
 // 两者都有 messages 与 updatedAt，其余字段原样带过。
 
 type MsgHost = { messages: TavernMessage[]; updatedAt: number }
+
+/**
+ * 设置 / 清除临时导演指令（B2）。传 null 即清除；正文为空白也按清除处理
+ * （空白指令等于没写，留着会让界面显示一条点不动的空条目）。
+ */
+export function setDirectorNote<T extends MsgHost>(s: T, note: TavernDirectorNote | null): T {
+  const next = { ...s, updatedAt: Date.now() } as T & { directorNote?: TavernDirectorNote }
+  if (note && String(note.text ?? '').trim()) next.directorNote = note
+  else delete next.directorNote
+  return next
+}
 
 /** 改一条消息：正文（编辑）或只翻标记（hidden / edited） */
 export function patchMessage<T extends MsgHost>(s: T, id: string, patch: Partial<TavernMessage>): T {
