@@ -7,14 +7,15 @@
 import {
   parseVarLine, applyVarOps, emptyVars, recordVarChanges, undoLastVarChanges,
   shouldAskVars, turnSeqOf, buildVarsBlock, renderVarValues, VAR_LINE_TAG,
+  setVarManually, resetVarValues, lastChangeText,
 } from '../src/lib/tavern/vars'
 import { VAR_DEFS, varDefOf } from '../src/lib/tavern/types'
 import { runFreeTurn, buildFreeSystem, varsEnabledKeys } from '../src/lib/tavern/engine'
 import * as store from '../src/lib/tavern/store'
-import { getTavernSettings, DEFAULT_TAVERN_VARS } from '../src/lib/tavern/settings'
+import { getTavernSettings, DEFAULT_TAVERN_VARS, DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
 import type { ChatFn } from '../src/lib/tavern/engine'
-import type { FreeCharacter, VarValues } from '../src/lib/tavern/types'
+import type { FreeCharacter, VarValues, VarKey } from '../src/lib/tavern/types'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0
@@ -248,6 +249,68 @@ async function main() {
   ok('VAR_DEFS 一共 5 项（老大定的集合，改动要同步提示词与界面）', VAR_DEFS.length === 5)
   ok('DEFAULT_TAVERN_VARS 与文档一致（每 3 轮 / ±5）',
     DEFAULT_TAVERN_VARS.everyTurns === 3 && DEFAULT_TAVERN_VARS.maxStep === 5)
+
+  // ---------- 8) 作者手改 / 重置（C2 第二步的界面侧） ----------
+  {
+    const base: VarValues = { affection: 50, trust: 50, progress: 0, mood: '', place: '' }
+
+    const up = setVarManually(base, 'affection', '72')
+    ok('手改数值直接赋值（不受 ±maxStep 限制）', up.values.affection === 72, String(up.values.affection))
+    ok('手改记下一笔变更（from → to）',
+      up.changes.length === 1 && up.changes[0].from === 50 && up.changes[0].to === 72 && up.changes[0].delta === 22)
+
+    const over = setVarManually(base, 'affection', '500')
+    ok('手改越界夹到边界（不做静默丢弃）', over.values.affection === 100)
+
+    const neg = setVarManually(base, 'affection', '-30')
+    ok('手改负数夹到下界', neg.values.affection === 0)
+
+    const bad = setVarManually(base, 'affection', '很高')
+    ok('🔴 认不出的输入原样不动（不当成 0 —— 误清零比不改更坏）',
+      bad.changes.length === 0 && bad.values.affection === 50)
+
+    const same = setVarManually(base, 'affection', '50')
+    ok('改成同一个值不记一笔（免得变动历史被灌水）', same.changes.length === 0)
+
+    const mood = setVarManually(base, 'mood', '微妙的动摇而且这句话很长很长')
+    ok('文本变量按上限截断', String(mood.values.mood).length === 12, String(mood.values.mood))
+
+    // 重置
+    const dirty: VarValues = { affection: 12, trust: 88, progress: 40, mood: '烦', place: '天台' }
+    const keys = varsEnabledKeys({ ...DEFAULT_TAVERN_SETTINGS, vars: { enabled: true, off: [], everyTurns: 3, maxStep: 5 } })
+    const r = resetVarValues(dirty, keys as VarKey[])
+    ok('重置回初始值（好感/信任 50、进度 0）',
+      r.values.affection === 50 && r.values.trust === 50 && r.values.progress === 0,
+      JSON.stringify(r.values))
+    ok('重置清空文本变量', r.values.mood === '' && r.values.place === '')
+    ok('重置记下 5 笔变更', r.changes.length === 5, String(r.changes.length))
+    ok('已在初始值时重置是空操作', resetVarValues(emptyVars(keys as VarKey[]).values, keys as VarKey[]).changes.length === 0)
+
+    // 来源与重说：作者的手是最终裁决
+    const afterAi = recordVarChanges(emptyVars(), [{ key: 'affection', label: '好感', from: 50, to: 56, delta: 6 }], 3, 'ai')
+    ok('模型改动会留前值（供重说撤销）', !!afterAi.prev && afterAi.prev.values.affection === 50)
+    ok('日志标了来源 ai 与轮次', afterAi.log[0].source === 'ai' && afterAi.log[0].turnSeq === 3)
+    const undone = undoLastVarChanges(afterAi)
+    ok('重说能退回模型那次变化', undone?.values.affection === 50 && undone?.prev === undefined)
+
+    // 手改之后重说：**不该**把作者改的数翻回去
+    const manual = recordVarChanges(
+      { ...afterAi, values: { ...afterAi.values, affection: 30 } },
+      [{ key: 'affection', label: '好感', from: 56, to: 30, delta: -26 }],
+      4, 'manual',
+    )
+    ok('手改会清掉待撤销的前值', manual.prev === undefined)
+    ok('手改的日志来源标 manual', manual.log[manual.log.length - 1].source === 'manual')
+    const afterUndo = undoLastVarChanges(manual)
+    ok('🔴 手改之后点重说，数值保持作者改的值（不被翻回 56）',
+      afterUndo?.values.affection === 30, String(afterUndo?.values.affection))
+
+    // 最近差量文案
+    ok('最近差量显示带符号的增量', lastChangeText(manual, 'affection') === '-26', lastChangeText(manual, 'affection'))
+    const textLog = recordVarChanges(emptyVars(), [{ key: 'place', label: '当前地点', from: '', to: '天台' }], 5)
+    ok('文本变量没有差量时给「已填写」', lastChangeText(textLog, 'place') === '已填写', lastChangeText(textLog, 'place'))
+    ok('没有记录时返回空串', lastChangeText(undefined, 'affection') === '')
+  }
 
   console.log(`\ntavernVars: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1

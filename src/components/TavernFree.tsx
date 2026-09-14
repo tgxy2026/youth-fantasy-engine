@@ -39,12 +39,11 @@ import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
-import { runFreeTurn } from '../lib/tavern/engine'
+import { runFreeTurn, varsEnabledKeys } from '../lib/tavern/engine'
 import type { PostApplied } from '../lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
 import { summarizeMemory } from '../lib/tavern/summarize'
 import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
-import { buildOpeningMessage } from '../lib/tavern/prompt'
 import { uid } from '../lib/id'
 import {
   memoryChars, messagesAfterWatermark, nextWatermark, acquireSummaryLock, releaseSummaryLock,
@@ -53,7 +52,11 @@ import {
 import {
   type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
+  type VarKey,
 } from '../lib/tavern/types'
+import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf } from '../lib/tavern/vars'
+import { scriptSceneLine, snapshotOf, openingToMessage } from '../lib/tavern/script'
+import { getScript } from '../lib/tavern/script'
 import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
 import { freeDocModel, type SpeakerInfo } from '../lib/tavern/exportDoc'
 import { buildStatusModel, agoText } from '../lib/tavern/status'
@@ -127,6 +130,14 @@ export default function TavernFree() {
   /** 记忆与日常阈值（控制面板）。读到设置前先用出厂默认，免得界面闪一个错的数字。 */
   const lim = useMemo(
     () => memoryLimitsOf(tavernSettings ?? DEFAULT_TAVERN_SETTINGS),
+    [tavernSettings],
+  )
+  /**
+   * 本场数值启用哪几项。空数组 = 整块不显示、提示词里也没有（与引擎同一判定函数，
+   * 别在界面里再写一份 —— 两处只要有一处不同，就会出现「界面显示着、模型却不知道」）。
+   */
+  const varKeys = useMemo(
+    () => varsEnabledKeys(tavernSettings ?? DEFAULT_TAVERN_SETTINGS),
     [tavernSettings],
   )
 
@@ -251,24 +262,37 @@ export default function TavernFree() {
     try {
       // 默认标题沿用 store 里的规则（「和X的对话」/「与X、Y的对话」），作者填了就以作者为准
       const { title } = store.planFreeSessionCast(d.charIds, d.charIds[0], nameOf)
-      const opening = buildOpeningMessage(d.scene, d.firstLine)
+      /**
+       * 剧本 → **快照**。
+       * 🔴 存快照而不是只存 id：剧本是可编辑的，只存引用的话作者改一次剧本，
+       *    所有引用过它的历史会话都会被悄悄改写 —— 那种问题几乎反推不到原因。
+       * 开场白走**消息通道**（对话的第一条），不进 system：塞进 system 会让模型以为
+       * 用户已经说过这句，也会白占每轮的常驻额度。
+       */
+      const script = d.scriptId ? await getScript(d.scriptId).catch(() => null) : null
+      const snap = script ? snapshotOf(script) : null
+      const opening = snap ? openingToMessage(snap) : ''
       const created = await store.createFreeSession(
         d.charIds, d.title || title, { providerId: '' }, {}, d.userCharId || undefined)
-      // 开场设定与第一条消息一起落库（scene 是可选的，旧会话没有这个字段也读得动）
-      const withOpening: FreeSession = opening
-        ? { ...created, scene: d.scene, messages: [{ id: uid(), role: 'user', content: opening, at: Date.now() }] }
-        : { ...created, scene: d.scene }
+      const withOpening: FreeSession = {
+        ...created,
+        ...(snap ? { scriptId: snap.scriptId, script: snap } : {}),
+        ...(opening ? { messages: [{ id: uid(), role: 'user' as const, content: opening, at: Date.now() }] } : {}),
+      }
       await store.saveFreeSession(withOpening)
       setSetupOpen(false)
       await refreshSessions()
       setSession(withOpening)
       await loadSessionContext(withOpening)
       const aiNames = d.charIds.filter(id => id !== d.userCharId).map(nameOf).filter(Boolean).join('、')
-      showToast(d.userCharId
-        ? `已新建对话：你演 ${nameOf(d.userCharId)}，AI 演 ${aiNames}`
+      const who = d.userCharId
+        ? `你演 ${nameOf(d.userCharId)}，AI 演 ${aiNames}`
         : d.charIds.length > 1
-          ? '已新建多角色会话（发言顺序由语境决定，也可点顶部头像指定下一位）'
-          : '已新建对话（记忆按角色共享，换会话不会重来）')
+          ? '多角色会话（发言顺序由语境决定，也可点顶部头像指定下一位）'
+          : `与 ${aiNames} 的对话`
+      showToast(snap
+        ? `已新建对话（剧本「${snap.name}」）—— ${who}`
+        : `已新建对话 —— ${who}（记忆按角色共享，换会话不会重来）`)
     } catch (e) {
       showToast(`新建失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
@@ -476,6 +500,14 @@ export default function TavernFree() {
       await refreshSessions()
       if (!res.cancelled) void autoSummarize(saved)
       if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
+      // C2 第二步：这一轮数值真的动了就报一句（只是一条提示，不打断阅读）。
+      // 模型写了行但格式没对上时**正文一个字都没动**，这里如实说明，免得作者以为它没给增量。
+      if (res.varChanges.length) {
+        showToast('本场数值：' + res.varChanges
+          .map(c => `${c.label} ${String(c.from || '空')} → ${String(c.to || '空')}`).join('；'), 'info')
+      } else if (res.varParseFailed) {
+        showToast('模型写了数值行但格式没对上 —— 已原样留在正文里，没有记账', 'info')
+      }
       // 说完这句就把Ta说的话撤掉：那句话是「很久没来」时才该有的
       setGreeting('')
       setSpeakNext('')
@@ -497,6 +529,38 @@ export default function TavernFree() {
   const commit = async (next: FreeSession) => {
     setSession(next)
     await store.saveFreeSession(next).then(refreshSessions).catch(() => undefined)
+  }
+
+  // ---------- 本场数值（C2 第二步）：作者手改 ----------
+  /**
+   * 手改一个数值。
+   * 🔴 走 `setVarManually`（与模型增量同一个写入关口）→ 夹取、去重、变更记录只有一套规则；
+   *    并标记来源 manual —— 重说时**不会**把作者刚改的数翻回去（那是作者的手，比模型准）。
+   */
+  const setVar = (key: VarKey, raw: string) => {
+    if (!session) return
+    const cur = varsOf(session, varKeys)
+    const applied = setVarManually(cur.values, key, raw)
+    if (applied.changes.length === 0) return
+    const next = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(session.messages), 'manual')
+    void commit({ ...session, vars: next })
+    showToast(`已改为 ${applied.changes.map(c => `${c.label} ${String(c.to || '空')}`).join('、')}`)
+  }
+
+  const resetVars = async () => {
+    if (!session || varKeys.length === 0) return
+    const cur = varsOf(session, varKeys)
+    const applied = resetVarValues(cur.values, varKeys)
+    if (applied.changes.length === 0) { showToast('数值已经在初始值上了', 'info'); return }
+    const okGo = await confirmDialog({
+      title: '重置本场数值？',
+      message: `${applied.changes.map(c => c.label).join('、')} 会回到初始值（好感/信任 50、剧情进度 0，文本清空）。\n这一场的变动记录会保留，但数值本身回不去 —— 要恢复得再手改一遍。`,
+      confirmText: '重置',
+      danger: true,
+    })
+    if (!okGo) return
+    const next = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(session.messages), 'manual')
+    void commit({ ...session, vars: next })
   }
 
   const saveEdited = (id: string, text: string) => {
@@ -855,8 +919,16 @@ export default function TavernFree() {
 
               <TavernStatusBar
                 model={statusModel}
-                sceneText={[session.scene?.place, session.scene?.time].filter(Boolean).join(' · ')}
+                sceneText={
+                  [session.scene?.place, session.scene?.time].filter(Boolean).join(' · ')
+                  // 没手填场景时用剧本的名字与情境顶上（这一场本来就有处境，不该显示"未设定"）
+                  || scriptSceneLine(session.script)
+                }
                 collapsed={!statusOpen}
+                vars={session.vars}
+                varKeys={varKeys}
+                onSetVar={setVar}
+                onResetVars={() => void resetVars()}
               />
 
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">

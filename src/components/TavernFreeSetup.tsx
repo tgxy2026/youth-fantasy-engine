@@ -13,15 +13,25 @@
  *
  * 上限沿用引擎侧的多角色同场上限（3）：一轮里让模型分饰 N 个人，N 越大越容易串味，
  * 单轮输出也越长、等待越久 —— 与剧情模式同一条理由，写在界面上而不是埋在代码里。
+ *
+ * 【2026-09-14 第四轮改动：「对话内容」抽成「剧本」】
+ * 原先这里有五格手填（地点/时间/在场/场景描述/第一句话），**填完就丢** ——
+ * 想复用一场戏只能凭记忆重填一遍。现在这几格搬进「剧本编辑」（六栏、可命名、可复用），
+ * 这里只留一个**选择器**：留空（直接开口聊）或引用一份已有剧本。
+ * 这样做还顺带解决一个隐患：手填的内容原本只进开场第一条消息、不进 system，
+ * 剧本则把「情境/你的位置/目标/禁区」放进 system（每轮都在），开场白仍走消息通道 —— 分工更清楚。
  */
 import { useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import { getTavernSettings, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
 import { Button } from './Button'
 import { Modal } from './Modal'
-import AutoTextarea from './AutoTextarea'
 import Avatar from './Avatar'
-import type { TavernScene } from '../lib/tavern/types'
+import TavernScriptDialog from './TavernScriptDialog'
+import {
+  listScripts, getScript, scriptToText, snapshotOf, scriptDisplayName,
+} from '../lib/tavern/script'
+import type { TavernScript, TavernScriptIndexItem } from '../lib/tavern/types'
 
 export type FreeDraft = {
   /** 全部参演角色（含用户扮演的那个） */
@@ -29,9 +39,11 @@ export type FreeDraft = {
   /** 用户扮演的角色 id（'' = 用户演他自己） */
   userCharId: string
   title: string
-  scene: TavernScene
-  /** 开场的第一句话（可留空，之后在对话里说也行） */
-  firstLine: string
+  /**
+   * 引用哪份剧本（'' = 留空）。
+   * 调用方据此取**快照**存进会话 —— 之后这份剧本被改被删，这一场都不会变样。
+   */
+  scriptId: string
 }
 
 interface Props {
@@ -155,11 +167,11 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
 
   const [title, setTitle] = useState('')
-  const [place, setPlace] = useState('')
-  const [time, setTime] = useState('')
-  const [present, setPresent] = useState('')
-  const [description, setDescription] = useState('')
-  const [firstLine, setFirstLine] = useState('')
+  /** 剧本列表（索引项）与当前选中的那份全文（用于预览） */
+  const [scripts, setScripts] = useState<TavernScriptIndexItem[]>([])
+  const [scriptId, setScriptId] = useState('')
+  const [scriptView, setScriptView] = useState<TavernScript | null>(null)
+  const [scriptOpen, setScriptOpen] = useState(false)
 
   // 打开时读角色卡（并重置成白纸）
   useEffect(() => {
@@ -167,12 +179,13 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     let alive = true
     setLoading(true)
     setSlots(freshSlots()); setPickerIdx(null); setCallName('')
-    setTitle(''); setPlace(''); setTime(''); setPresent(''); setDescription(''); setFirstLine('')
+    setTitle(''); setScriptId(''); setScriptView(null); setScriptOpen(false)
     ;(async () => {
       try {
-        const [idx, st] = await Promise.all([
+        const [idx, st, sc] = await Promise.all([
           store.listFreeChars(),
           getTavernSettings().catch(() => DEFAULT_TAVERN_SETTINGS),
+          listScripts().catch(() => [] as TavernScriptIndexItem[]),
         ])
         // 逐个读完整卡拿「内核」那一句：选角色时能一眼分清（读失败就留空，不影响选）
         const full = await Promise.all(idx.map(async it => {
@@ -181,6 +194,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         }))
         if (!alive) return
         setOptions(full)
+        setScripts(sc)
         // 「我的档案」有名字 → 界面可以明确讲「AI 已经知道你是谁」。
         // 这正是「默认『我演』的角色」被去掉之后的补偿：**不用选角色也有身份**。
         setCallName(st.profile.address.trim() || st.profile.name.trim())
@@ -192,6 +206,12 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     })()
     return () => { alive = false }
   }, [open])
+
+  /** 选一份剧本（'' = 留空）—— 顺手把全文取回来做预览 */
+  const pickScript = async (id: string) => {
+    setScriptId(id)
+    setScriptView(id ? await getScript(id).catch(() => null) : null)
+  }
 
   const nameOf = (id: string) => options.find(o => o.id === id)?.name ?? ''
   const coreOf = (id: string) => options.find(o => o.id === id)?.core ?? ''
@@ -225,18 +245,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
 
   const submit = () => {
     if (!canStart) return
-    onCreate({
-      charIds,
-      userCharId,
-      title: title.trim(),
-      scene: {
-        place: place.trim(),
-        time: time.trim(),
-        present: present.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean),
-        description: description.trim(),
-      },
-      firstLine: firstLine.trim(),
-    })
+    onCreate({ charIds, userCharId, title: title.trim(), scriptId })
   }
 
   const pickerCurrent = pickerIdx === null ? '' : slots[pickerIdx]?.charId ?? ''
@@ -338,26 +347,69 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                 )}
               </section>
 
-              {/* ② 对话内容 */}
+              {/* ② 剧本（可留空）—— 原先的五格手填已搬进「剧本编辑」 */}
               <section>
-                <div className={labelCls}>② 对话内容（可全留空）</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input className={inputCls} placeholder="地点（如便利店 · 深夜的公寓）" value={place} onChange={e => setPlace(e.target.value)} />
-                  <input className={inputCls} placeholder="时间（如凌晨两点 · 周六午后）" value={time} onChange={e => setTime(e.target.value)} />
+                <div className={labelCls}>② 剧本（可留空）</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className={`${selCls} min-w-0 flex-1`}
+                    value={scriptId}
+                    onChange={e => void pickScript(e.target.value)}
+                  >
+                    <option value="">不设剧本（留空）—— 直接开口聊</option>
+                    {scripts.map(it => (
+                      <option key={it.id} value={it.id}>
+                        {it.name}{it.goalBrief ? ` —— ${it.goalBrief}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <Button variant="secondary" size="md" className="shrink-0" onClick={() => setScriptOpen(true)}>
+                    ＋ 新建剧本
+                  </Button>
                 </div>
-                <input className={`${inputCls} mt-2`} placeholder="在场人物（顿号分隔，可留空）" value={present} onChange={e => setPresent(e.target.value)} />
-                <AutoTextarea className="mt-2 bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
-                  textClass="text-sm" minRows={3} maxHeight={320}
-                  placeholder="场景描述（你们此刻在做什么、气氛如何）"
-                  value={description} onChange={setDescription} />
-                <AutoTextarea className="mt-2 bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
-                  textClass="text-sm" minRows={2} maxHeight={240}
-                  placeholder="你的第一句话（可留空，之后再开口也行）"
-                  value={firstLine} onChange={setFirstLine} />
-                <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
-                  上面这些会渲染成开场的第一条消息，让第一轮就有场景感；全留空也能直接开口聊。
-                  它不是小说项目的锚点 —— 自由模式不绑项目，这里只影响第一轮的语境。
-                </p>
+
+                {scriptView ? (
+                  <div className="mt-2 rounded-md border border-ink-700 bg-ink-900/40 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-amber">{scriptDisplayName(scriptView)}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-[11px] text-ink-500 hover:text-amber"
+                        onClick={() => void pickScript('')}
+                      >
+                        取消引用
+                      </button>
+                    </div>
+                    <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[10.5px] leading-relaxed text-ink-400">
+                      {scriptToText(snapshotOf(scriptView)) || '（这份剧本六栏是空的，等于没设）'}
+                    </pre>
+                    {scriptView.opening.trim() && (
+                      <div className="mt-2 border-t border-ink-800 pt-1.5">
+                        <div className="text-[10.5px] text-ink-500">开场白（会变成对话的第一条消息）：</div>
+                        <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-[10.5px] leading-relaxed text-ink-400">
+                          {scriptView.opening.trim()}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
+                    {scriptId
+                      ? '这份剧本读不到了（可能刚被删）—— 换成「留空」或另选一份。'
+                      : '留空 = 没有开场白，你直接说第一句（旧行为）。选一份剧本则自动带出情境、你的位置、目标与禁区；开场白会渲染成对话的第一条消息。剧本的「情境」只描述此刻，背景仍归角色卡与「背景设定」—— 三处别互相抄。'}
+                  </p>
+                )}
+
+                {scripts.length === 0 && !scriptId && (
+                  <p className="mt-1 text-[10.5px] leading-relaxed text-ink-600">
+                    还没有剧本。点「＋ 新建剧本」就地写一份，或到「剧本编辑」页签慢慢打磨。
+                  </p>
+                )}
+                {!scriptId && (
+                  <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-600">
+                    会话保存的是「引用那一刻的快照」：以后你改这份剧本，这场对话的设定不会跟着变。
+                  </p>
+                )}
               </section>
 
               {/* ③ 标题 */}
@@ -372,6 +424,17 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
           )}
         </div>
       </Modal>
+
+      {open && scriptOpen && (
+        <TavernScriptDialog
+          open
+          onClose={() => setScriptOpen(false)}
+          onSaved={async saved => {
+            setScripts(await listScripts())
+            await pickScript(saved.id)
+          }}
+        />
+      )}
 
       {open && pickerIdx !== null && (
         <CharPicker

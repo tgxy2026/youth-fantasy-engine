@@ -253,6 +253,28 @@ export const GUIDE_DAILY_KEEP: ParamGuide = {
  * 采样五项刻意共用同一份 —— 剧情与自由的**语义完全一样**，
  * 差别只在各自那条 hint 里的取值建议，不该因此写两份会漂移的表。
  */
+/** 本场数值：多久请求一次增量 */
+export const GUIDE_VAR_EVERY_TURNS: ParamGuide = {
+  min: 1, max: 10, step: 1, unit: '轮',
+  bands: [
+    { from: 1, to: 2, name: '每轮都动', effect: '数值几乎每句都在变，看起来最连续；代价是每轮多一行输出、也多一份解析风险，小幅乱跳会明显（像随机数）。' },
+    { from: 2, to: 4, name: '每 3 轮', effect: '变化有节奏、看得出走向，又不会把额度花在数字上。', recommended: true },
+    { from: 4, to: 7, name: '5–6 轮', effect: '变化更慢更"沉"，适合慢节奏长谈；短场景里可能整场都没动过一次。' },
+    { from: 7, to: 10, name: '很稀疏', effect: '一场对话结束可能都没更新过 —— 数值基本等于摆设，只剩你手改。' },
+  ],
+}
+
+/** 本场数值：单次允许的最大变化幅度（给模型的刹车） */
+export const GUIDE_VAR_MAX_STEP: ParamGuide = {
+  min: 1, max: 30, step: 1, unit: '点',
+  bands: [
+    { from: 1, to: 3, name: '很保守', effect: '推进极慢：0–100 的刻度上要走很久才有感觉，适合"关系本来就稳"的长线陪伴。' },
+    { from: 3, to: 8, name: '±5', effect: '一次小事件动 2–5 点，十几轮下来能看到明显位移 —— 变化跟得上剧情又不跳戏。', recommended: true },
+    { from: 8, to: 15, name: '剧烈', effect: '一次大事件的量级；模型容易在每轮都判成"大事件"，数值几轮内就撞顶。' },
+    { from: 15, to: 30, name: '近乎放开', effect: '基本等于不限制，数值会很快停在 0 或 100，之后再也不动 —— 还不如关掉这项。' },
+  ],
+}
+
 export const PARAM_GUIDES = {
   // 通用设置
   contextBudget: GUIDE_CONTEXT_BUDGET,
@@ -271,6 +293,9 @@ export const PARAM_GUIDES = {
   summaryLock: GUIDE_SUMMARY_LOCK,
   dailyAdvance: GUIDE_DAILY_ADVANCE,
   dailyKeep: GUIDE_DAILY_KEEP,
+  // 本场数值（C2 第二步）
+  varEveryTurns: GUIDE_VAR_EVERY_TURNS,
+  varMaxStep: GUIDE_VAR_MAX_STEP,
 } as const
 
 /** 两个模式共用的采样参数（语义一致，故只有一份） */

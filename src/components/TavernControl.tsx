@@ -46,6 +46,7 @@ import { PROTOCOL_VERSION } from '../lib/tavern/protocol'
 import * as presets from '../lib/tavern/presets'
 import type { TavernPreset } from '../lib/tavern/presets'
 import { PARAM_GUIDES, GUIDE_SAMPLING, bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
+import { VAR_DEFS, type VarKey } from '../lib/tavern/types'
 import { DEFAULT_POST_RULES, previewPostRules, type PostRule } from '../lib/tavern/postRules'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
@@ -386,7 +387,7 @@ export default function TavernControl() {
     const okGo = await confirmDialog({
       title: '应用预设「' + p.name + '」？',
       message: [
-        '当前所有设置（通用 / 我的档案 / 协议 / 剧情推演 / 自由对话）都会被这套预设替换 ——',
+        '当前所有设置（通用 / 我的档案 / 协议 / 剧情推演 / 自由对话 / 本场数值）都会被这套预设替换 ——',
         '包括协议全文。未保存的改动会丢失。',
       ].join('\n'),
       confirmText: '应用',
@@ -488,6 +489,14 @@ export default function TavernControl() {
     edit(prev => ({ ...prev, plot: { ...prev.plot, [k]: v } as TavernSettings['plot'] }))
   const setFree = (k: keyof TavernSettings['free'], v: number | string) =>
     edit(prev => ({ ...prev, free: { ...prev.free, [k]: v } as TavernSettings['free'] }))
+  /** 本场数值（C2 第二步）：开关 / 逐项关闭 / 频率 / 幅度 */
+  const setVars = (patch: Partial<TavernSettings['vars']>) =>
+    edit(prev => ({ ...prev, vars: { ...prev.vars, ...patch } }))
+  const toggleVarKey = (k: VarKey) =>
+    edit(prev => {
+      const off = prev.vars.off ?? []
+      return { ...prev, vars: { ...prev.vars, off: off.includes(k) ? off.filter(x => x !== k) : [...off, k] } }
+    })
 
   // ---------- 输出后处理（B3）：规则是数组，所以不能用上面那套 [k]: v ----------
   const setPostFlag = (patch: Partial<Pick<TavernSettings, 'postRulesEnabled' | 'postRuleNotice'>>) =>
@@ -525,7 +534,7 @@ export default function TavernControl() {
     const okGo = await confirmDialog({
       title: '恢复出厂设置？',
       message: [
-        '五段设置（通用设置 / 我的档案 / 扮演协议 / 剧情推演 / 自由对话）里的所有参数与提示词，都会回到内置默认值。',
+        '六段设置（通用设置 / 我的档案 / 扮演协议 / 剧情推演 / 自由对话 / 本场数值）里的所有参数与提示词，都会回到内置默认值。',
         '已存的预设方案不受影响 —— 那是独立的快照，要用它随时点「应用」即可。',
         '保存后不可撤销。',
       ].join('\n'),
@@ -972,9 +981,65 @@ export default function TavernControl() {
             </div>
           </Section>
 
-          {/* ---------- 六、预设方案（A4） ---------- */}
+          {/* ---------- 六、本场数值（C2 第二步） ---------- */}
           <Section
-            title="六、预设方案"
+            title="六、本场数值"
+            desc="只对「自由对话」生效。让 AI 每隔几轮给一次数值变化（好感 / 信任 / 剧情进度 / 心情 / 当前地点），你也能随时手改。数值属于这一场，换一场戏重新算 —— 角色卡管「这个人是谁」，数值管「这一场走到哪了」。"
+          >
+            <ToggleField
+              label="启用本场数值"
+              hint="关掉 = 提示词里一个字都不出现（0 字成本），状态栏也不再显示数值。"
+              value={s.vars.enabled}
+              onChange={v => setVars({ enabled: v })}
+            />
+
+            <Field
+              label={`启用哪几项（已启用 ${VAR_DEFS.filter(d => !(s.vars.off ?? []).includes(d.key)).length} / ${VAR_DEFS.length}）`}
+              hint="点一下切换。关掉的项不会进提示词；「剧情进度」配合剧本的「这一场的目标」用最有意义。"
+            >
+              <div className="flex flex-wrap gap-2">
+                {VAR_DEFS.map(d => {
+                  const on = !(s.vars.off ?? []).includes(d.key)
+                  return (
+                    <button
+                      key={d.key} type="button" onClick={() => toggleVarKey(d.key)}
+                      className={`rounded-md border px-2.5 py-1 text-[12px] transition-colors ${on
+                        ? 'border-amber/50 bg-amber/10 text-amber'
+                        : 'border-ink-700 bg-ink-900 text-ink-500 hover:text-ink-300'}`}
+                    >
+                      {on ? '✓ ' : ''}{d.label}
+                      <span className="ml-1 text-[10px] text-ink-500">
+                        {d.kind === 'num' ? `${d.min}–${d.max}` : `≤${d.maxLen} 字`}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </Field>
+
+            <div className={GRID2}>
+              <NumField
+                label="更新间隔" guide={PARAM_GUIDES.varEveryTurns}
+                hint="每几轮请求模型给一次增量。太频繁会让数值像随机数，太稀疏则整场都不动。"
+                value={s.vars.everyTurns} onCommit={v => setVars({ everyTurns: Math.max(1, Math.round(v)) })}
+              />
+              <NumField
+                label="单次变化幅度" guide={PARAM_GUIDES.varMaxStep}
+                hint="模型给出的增量超过这个值就按这个值取（它是刹车，不是目标值）。"
+                value={s.vars.maxStep} onCommit={v => setVars({ maxStep: Math.max(1, Math.round(v)) })}
+              />
+            </div>
+
+            <p className="text-[10.5px] text-ink-600 leading-relaxed">
+              写进提示词的只有「有哪些数、当前值多少、每轮能改多少」。具体格式（回复最后一行
+              `〔数值〕好感 +2`）由系统在需要时追加要求 —— 格式没对上时「正文一个字都不动」，
+              那一行会原样留在回复里，绝不会为了记账吃掉你要读的内容。
+            </p>
+          </Section>
+
+          {/* ---------- 七、预设方案（A4） ---------- */}
+          <Section
+            title="七、预设方案"
             desc="把整套设置存成命名快照，一键切换。预设包含协议全文，所以换预设等于把参数与格式契约一起换掉 —— 只换一半的话，格式规则还是上一套的。"
           >
             <div className="flex flex-wrap items-center gap-2">
@@ -1040,7 +1105,7 @@ export default function TavernControl() {
 
           {/* ---------- 七、输出后处理（B3） ---------- */}
           <Section
-            title="七、输出后处理"
+            title="八、输出后处理"
             desc="生成后按下面的规则从上到下修一遍再落库。协议已经把格式写死了，实测却总有模型不听话 —— 用规则兜住，比重跑一次去赌划算。顺序有意义：先去 markdown 再处理单星号动作，否则 **动作** 会被拆成 *（动作）*。"
           >
             <ToggleField

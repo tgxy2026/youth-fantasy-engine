@@ -40,7 +40,15 @@ const G = {
   one: (id: string) => `tavern.script.${id}`,
 } as const
 
-/** 六栏的字数上限（超过就在界面上提示 —— 这一层每轮都进 system，不能无限长） */
+/**
+ * 「六栏」这个形状本身（不含 id 与时间戳）。
+ * 编辑表单、AI 起草结果都用它 —— 表单不认识 `TavernScript` 的时间戳，也不必认识。
+ */
+export type ScriptDraftFields = Pick<
+  TavernScript, 'name' | 'situation' | 'opening' | 'playerRole' | 'goal' | 'taboo'
+>
+
+/** 六栏的字数上限（名字那一栏用 30） */
 export const SCRIPT_FIELD_MAX: Record<'situation' | 'opening' | 'playerRole' | 'goal' | 'taboo', number> = {
   situation: 600, opening: 400, playerRole: 300, goal: 200, taboo: 200,
 }
@@ -49,10 +57,12 @@ export const SCRIPT_FIELD_MAX: Record<'situation' | 'opening' | 'playerRole' | '
 export const SCRIPT_MAX_CHARS = 1400
 
 export function emptyScript(): TavernScript {
-  return {
-    id: '', name: '', situation: '', opening: '', playerRole: '', goal: '', taboo: '',
-    draftedAt: 0, createdAt: 0, updatedAt: 0,
-  }
+  return { ...EMPTY_SCRIPT_FIELDS, id: '', draftedAt: 0, createdAt: 0, updatedAt: 0 }
+}
+
+/** 六栏全空（表单的初始值 / 「这份是不是空的」判定） */
+export const EMPTY_SCRIPT_FIELDS: ScriptDraftFields = {
+  name: '', situation: '', opening: '', playerRole: '', goal: '', taboo: '',
 }
 
 /** 名称缺省时给个占位（列表里空名字最难找） */
@@ -214,7 +224,7 @@ export type ScriptDraftArgs = {
  * 跑一次起草，产出六栏骨架（**不落库**；调用方过一遍再保存）。
  * 模型乱答时抛错，让调用方保留作者现有内容 —— 绝不写半截结果。
  */
-export async function draftScript(args: ScriptDraftArgs): Promise<Omit<TavernScript, 'id' | 'createdAt' | 'updatedAt' | 'draftedAt'>> {
+export async function draftScript(args: ScriptDraftArgs): Promise<ScriptDraftFields> {
   const seed = String(args.seed ?? '').trim()
   if (!seed) throw new Error('请先写一句粗略的想法（这场戏大概是什么样）')
 
@@ -250,7 +260,7 @@ export async function draftScript(args: ScriptDraftArgs): Promise<Omit<TavernScr
 }
 
 /** 解析起草结果（导出便于单测）。形状不对就返回 null，绝不猜 */
-export function parseScriptDraft(raw: string): Omit<TavernScript, 'id' | 'createdAt' | 'updatedAt' | 'draftedAt'> | null {
+export function parseScriptDraft(raw: string): ScriptDraftFields | null {
   const o = parsePlainObject(raw)
   if (!o) return null
   const name = asText(o.name).trim().slice(0, 30)
@@ -262,6 +272,21 @@ export function parseScriptDraft(raw: string): Omit<TavernScript, 'id' | 'create
   // 六栏全空 = 没解出来
   if (!situation && !opening && !playerRole && !goal && !taboo) return null
   return { name, situation, opening, playerRole, goal, taboo }
+}
+
+/** 把 AI 起草的结果并进现有六栏：**AI 空着的栏不覆盖作者已写的**（起草只是补，不是重写） */
+export function mergeScriptDraft(cur: ScriptDraftFields, out: ScriptDraftFields): ScriptDraftFields {
+  const next: ScriptDraftFields = { ...cur }
+  for (const k of Object.keys(EMPTY_SCRIPT_FIELDS) as (keyof ScriptDraftFields)[]) {
+    const v = out[k]
+    if (typeof v === 'string' && v.trim()) next[k] = v.trim()
+  }
+  return next
+}
+
+/** 六栏是不是全空（空剧本不该进上下文，也不该占列表） */
+export function isEmptyScriptFields(f: ScriptDraftFields): boolean {
+  return !Object.values(f).some(v => String(v ?? '').trim())
 }
 
 export { isCancelled }
