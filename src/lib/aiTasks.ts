@@ -9,7 +9,7 @@
 // 铁律：本文件所有函数都是「可选增强」。调用方必须保证——
 //   未配置模型 → 按钮禁用，绝不调用；调用失败 → 只提示，绝不破坏已有数据。
 
-import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt, JSON_TASK_TEMPERATURE } from './ai'
+import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from './ai'
 
 // ---------- 通用 JSON 解析 ----------
 
@@ -210,7 +210,7 @@ ${req.sourceText.trim() || '（作者未指定正文，请仅依据上方项目�
       { role: 'system', content: composeSystemPrompt(ORGANIZE_SYS, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken, json: true },
   )
 
   const arr = parseObjectArray(text)
@@ -378,7 +378,7 @@ ${chunk}
           { role: 'system', content: composeSystemPrompt(PROOFREAD_SYS, cfg) },
           { role: 'user', content: user },
         ],
-        { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: opts.onToken },
+        { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: opts.onToken, json: true },
       )
     } catch (e) {
       if (isCancelled(e)) break
@@ -452,6 +452,7 @@ ${req.context.trim() || '（无）'}
 
 请给出 ${n} 个候选。`
   const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
+    json: true,
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: req.signal,
     onToken: req.onToken,
@@ -500,6 +501,7 @@ export async function aiReviewSensitive(hits: SensitiveHitInput[], opts?: { sign
     .map((h, i) => `${i + 1}. 命中词「${h.word}」\n   上下文：${h.snippet.replace(/\s+/g, ' ').slice(0, 120)}`)
     .join('\n')
   const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: `【命中清单】\n${list}\n\n请逐条给出判断。` }], {
+    json: true,
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: opts?.signal,
     onToken: opts?.onToken,
@@ -551,6 +553,7 @@ ${chapterText.trim() || '（作者未指定正文，请仅在设定资料内部�
 
 请返回问题清单。`
   const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
+    json: true,
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: opts?.signal,
     onToken: opts?.onToken,
@@ -638,7 +641,7 @@ ${list}
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
 
   const objs = parseObjectArray(text)
@@ -698,7 +701,7 @@ ${projectContext.trim() || '（无）'}
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
 
   const objs = parseObjectArray(text)
@@ -764,7 +767,7 @@ ${projectContext.trim() || '（无）'}
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
 
   const out: ForeshadowReviewFinding[] = []
@@ -823,7 +826,7 @@ ${list || '（空）'}
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
 
   const objs = parseObjectArray(text)
@@ -887,7 +890,7 @@ ${chapterText.trim() || '（空）'}
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
 
   const out: StyleCheckFinding[] = []
@@ -1016,7 +1019,7 @@ ${projectContext.trim() || '（无）'}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
   const obj = parseObjectArray(text)[0] ?? {}
   const scoreNum = Number(obj.score)
@@ -1073,7 +1076,7 @@ ${chapterText.trim() || '（空）'}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
   const out: OocFinding[] = []
   for (const it of parseObjectArray(text)) {
@@ -1128,8 +1131,9 @@ ${passage.trim() || '（空）'}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    // JSON 任务走低温：0.85 会让模型在 JSON 外夹带寒暄/解释，直接抬高解析失败率
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, temperature: JSON_TASK_TEMPERATURE },
+    // json: true 让 chat 内部自动采用 JSON_TASK_TEMPERATURE 低温——0.85 会让模型在 JSON
+    // 外夹带寒暄/解释，直接抬高解析失败率。温度判断收在 ai.ts 一处，此处不再手填数值。
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
   const obj = parseObjectArray(text)[0] ?? {}
   // 兜底：JSON 解析失败时才走 humanText 抽取，但抽取结果可能只剩标点残骸
@@ -1181,7 +1185,7 @@ ${chapterText.trim() || '（空）'}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
   const obj = parseObjectArray(text)[0] ?? {}
   return {
@@ -1419,7 +1423,7 @@ ${chapterText.trim() || '（空白）'}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(EXTRACT_SYS, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
   )
   const out: ExtractedEntity[] = []
   const seen = new Set<string>()

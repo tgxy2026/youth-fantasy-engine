@@ -226,9 +226,21 @@ export interface ChatOptions {
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */
   timeoutMs?: number
   /**
-   * 采样温度，默认 DEFAULT_TEMPERATURE（0.85，偏创意）。
-   * 结构化 JSON 任务（校对 / 审读 / 改稿 / 结构化抽取）必须显式传低值，否则模型容易
-   * 夹带解释文字或格式漂移，导致解析失败退到文本兜底（2.0.1 修复的"只剩标点"问题即由此放大）。
+   * 【推荐用于结构化任务，而非直接调 temperature】标记本次调用是结构化 JSON 任务。
+   *
+   * 置 true 时，未显式指定 temperature 的调用会自动采用 JSON_TASK_TEMPERATURE（0.3 低温）。
+   *
+   * 之所以做成语义开关而不是让调用方直接填温度：温度是"可选参数"，靠每个任务函数自觉
+   * 传值，一旦有人漏传就会静默退回 0.85 创意温度——2026-09-14 审计即发现 aiTasks.ts 内
+   * 20 处 chat 调用只有 1 处传了低温，其余 14 个 JSON 任务全跑在创意温度上，而本文件
+   * 注释早已写明"必须显式传低值"。把判断收进 chat 内部、任务层只声明"我是 JSON 任务"，
+   * 才能从机制上堵住漏传（新增任务也不例外）。
+   */
+  json?: boolean
+  /**
+   * 采样温度，默认按 DEFAULT_TEMPERATURE（0.85，偏创意）；
+   * 若同时传了 json:true 且未显式给 temperature，则默认改用 JSON_TASK_TEMPERATURE（0.3）。
+   * 结构化任务建议只传 json:true，不要各自硬填温度。
    */
   temperature?: number
   /**
@@ -259,8 +271,8 @@ interface CallOpts {
   signal?: AbortSignal
   /** 流式回调：提供时开启 SSE 流式 */
   onToken?: (delta: string) => void
-  /** 采样温度，缺省用 DEFAULT_TEMPERATURE */
-  temperature?: number
+  /** 采样温度。**必填**：由 chat() 统一解析后传入，是唯一真源；下游不再各自做缺省判断。 */
+  temperature: number
 }
 
 /** 内部统一分发：带元信息，供测试面板展示「其中加载耗时」 */
@@ -307,12 +319,15 @@ async function readSSE(res: Response, onJson: (obj: unknown) => void, onFirstByt
 /** 统一对话入口：按 provider.type 分发 */
 export async function chat(config: AIProvider, messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
   // 注意：opts.think 默认 undefined → ollamaChatRaw 不传 think 字段，思考型模型保持思考。
+  // 温度在此处统一解析（唯一真源）：显式 temperature 优先；否则按是否 JSON 任务取默认值。
+  // 下游 ollamaChatRaw / openaiChat 只管用 o.temperature，不再各自做缺省判断。
+  const temperature = opts.temperature ?? (opts.json ? JSON_TASK_TEMPERATURE : DEFAULT_TEMPERATURE)
   return (await chatRaw(config, messages, {
     timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
     think: opts.think,
     signal: opts.signal,
     onToken: opts.onToken,
-    temperature: opts.temperature,
+    temperature,
   })).content
 }
 
@@ -326,7 +341,7 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
     model: config.model,
     messages,
     stream: !!o.onToken,
-    options: { temperature: o.temperature ?? DEFAULT_TEMPERATURE },
+    options: { temperature: o.temperature },
   }
   if (think === false) body.think = false
   let res: Response
@@ -406,7 +421,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
           'Content-Type': 'application/json',
           ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
         },
-        body: JSON.stringify({ model: config.model, messages, temperature: o.temperature ?? DEFAULT_TEMPERATURE, stream: !!o.onToken }),
+        body: JSON.stringify({ model: config.model, messages, temperature: o.temperature, stream: !!o.onToken }),
       },
       timeoutMs,
       o.signal,
@@ -483,7 +498,8 @@ export async function testProvider(config: AIProvider): Promise<AITestResult> {
   if (pre) return { ok: false, latencyMs: 0, loadMs: 0, reply: '', error: pre }
   const t0 = Date.now()
   try {
-    const raw = await chatRaw(config, [{ role: 'user', content: '请只回复两个字：ok' }], { timeoutMs: TEST_TIMEOUT_MS, think: false })
+    // 连通性测试：只要两个字，用创意温度无妨（此处不涉及结构化解析）
+    const raw = await chatRaw(config, [{ role: 'user', content: '请只回复两个字：ok' }], { timeoutMs: TEST_TIMEOUT_MS, think: false, temperature: DEFAULT_TEMPERATURE })
     const text = raw.content.trim()
     const latencyMs = Date.now() - t0
     if (!text) return { ok: false, latencyMs, loadMs: raw.loadMs, reply: '', error: '模型返回了空内容，可能未正确加载，建议重试或更换模型。' }

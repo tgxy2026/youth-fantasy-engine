@@ -204,9 +204,17 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('sync:readFile', async (_e, p) => {
     try {
-      return await fsp.readFile(p, 'utf-8')
-    } catch {
-      return null // 文件不存在（首次）或读取失败，视为空
+      return { ok: true, text: await fsp.readFile(p, 'utf-8') }
+    } catch (e) {
+      // ⚠️ 这里必须区分「文件不存在」与「读取失败」，二者语义天差地别：
+      //   ENOENT = 首次同步尚无同步文件 → 安全地当作空库（text: null）；
+      //   EACCES / EBUSY / EPERM = 权限被拒或文件被占用（云盘客户端搬运文件时最常见）
+      //     → 必须如实上报为读取失败。若一并当成空库，渲染端会认为「云端为空」，
+      //       随后一次 push 就用本地内容整体覆盖掉云端的真实快照（2026-09-14 审计 P0-2）。
+      // 另：不 throw 而是返回结构化结果——Electron 会把跨 IPC 的异常重新包装，
+      //     原始 err.code 在渲染端会丢失，届时同样无法区分。
+      if (e && e.code === 'ENOENT') return { ok: true, text: null }
+      return { ok: false, reason: e && e.message ? String(e.message) : String(e) }
     }
   })
   ipcMain.handle('sync:writeFile', async (_e, p, text) => {

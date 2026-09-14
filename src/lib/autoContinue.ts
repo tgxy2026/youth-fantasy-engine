@@ -92,7 +92,7 @@ type Cfg = Awaited<ReturnType<typeof requireActiveProvider>>
 
 async function ask(
   cfg: Cfg, sys: string, user: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void } = {},
+  opts: { signal?: AbortSignal; onToken?: (d: string) => void; json?: boolean } = {},
 ): Promise<string> {
   const raw = await chat(cfg, [
     { role: 'system', content: sys },
@@ -104,7 +104,7 @@ async function ask(
 /** 非致命问答：取消向上抛，其它异常吞成空串由调用方按字数判定 */
 async function askSoft(
   cfg: Cfg, sys: string, user: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void } = {},
+  opts: { signal?: AbortSignal; onToken?: (d: string) => void; json?: boolean } = {},
 ): Promise<string> {
   try {
     return await ask(cfg, sys, user, opts)
@@ -375,7 +375,7 @@ async function extractSettingUpdates(body: string, title: string, signal?: Abort
   const sys = `你是设定更新侦探。对比本章正文与已有设定，找出"对已有设定实体的新信息/状态变化"（如角色修为提升、关系变化、物品被获得或损毁、地点状态改变等）。
 返回 JSON 数组，元素形如 {"name":"实体名(必须与已登记名完全一致)","note":"一句话描述变化，如 修为提升至凝气四层"}。
 只报确有文本依据的，最多 10 条，没有则返回 []。只输出 JSON 数组，不要解释、不要 markdown 代码块。`
-  const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, { signal })
+  const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, { signal, json: true })
   try {
     const arr = JSON.parse(text)
     return Array.isArray(arr) ? arr.filter((x: any) => x && x.name).map((x: any) => ({ name: String(x.name), note: String(x.note || '') })) : []
