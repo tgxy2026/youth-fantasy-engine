@@ -279,5 +279,12 @@ export const MEMORY_DIARY_DAYS = 5
 export const SUMMARY_TRIGGER_MESSAGES = 6
 /** 日常状态推进阈值：间隔 ≥ 8 小时才生成「这几天的生活」（方案 4.7） */
 export const DAILY_ADVANCE_MS = 8 * 60 * 60 * 1000
-/** 记忆总结防重复：两次自动总结的最小间隔 */
-export const SUMMARY_MIN_INTERVAL_MS = 60 * 1000
+/**
+ * 记忆总结防重复（三层保险，数值照搬手册「记忆引擎」的实测默认值）：
+ *   ① 时间节流 —— 两次自动总结至少间隔这么久（手册 auto_interval = 600 秒）
+ *   ② 跨实例锁 —— 避免同时开两个窗口跑两遍
+ *   ③ 锁 TTL 兜底 —— 上次跑到一半崩了的情况（手册 auto_lock_ttl = 1800 秒）
+ */
+export const SUMMARY_MIN_INTERVAL_MS = 600 * 1000
+/** 总结锁的 TTL：超过这么久视为陈旧锁，可被接管 */
+export const SUMMARY_LOCK_TTL_MS = 1800 * 1000

@@ -814,19 +814,19 @@ export const TABS: TabDef[] = [
     description: '推演产出的合理性报告（矛盾 / 漏洞 / 存疑），可定位到具体条目。',
   },
   {
-    id: 'tavern-card', name: '角色卡', group: '酒馆模式', type: 'tavern-card',
-    description: '自由模式的角色卡管理（四章模板），可新建 / 导入 / 从小说角色转换。',
-  },
-  {
     id: 'tavern-free', name: '自由对话', group: '酒馆模式', type: 'tavern-free',
     description: '与自建角色的长期对话，有记忆、有日常状态。',
+  },
+  {
+    id: 'tavern-card', name: '角色卡片', group: '酒馆模式', type: 'tavern-card',
+    description: '自由模式的角色卡片管理（四章模板），可新建 / 导入 / 从小说角色转换。',
   },
 ]
 
 // 编辑器页签（特殊，由 App 直接路由）
 export const EDITOR_TAB = { id: 'editor', name: '正文编辑', group: '正文写作' }
 
-export const GROUPS = ['工作面板', '正文写作', '灵感工具', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护', '酒馆模式']
+export const GROUPS = ['工作面板', '正文写作', '灵感工具', '酒馆模式', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护']
 
 export function getTab(id: string): TabDef | undefined {
   const t = TABS.find(t => t.id === id)

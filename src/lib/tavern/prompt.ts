@@ -1,57 +1,74 @@
 /**
- * 酒馆模式 · 提示词组装（五层，每轮重装）
+ * 酒馆模式 · 提示词组装（每轮重装）
  *
- * 设计依据：方案 §4.1。
+ * 【层序：遵循手册的实测配置，而非方案 §4.1 的设想】
+ *
+ * 《本地模型角色扮演完全手册》「注入顺序（都在同一条 system 消息里）」一节写的是：
+ *     角色卡（身份锁定）→ 长期记忆（她记得的事）→ 协议技能（格式与禁令收尾）
+ * 并注明「记忆插在角色卡和技能之间是刻意的：身份先锁定、记忆居中、格式规则收尾」。
+ *
+ * 方案 §4.1 设想的顺序是「协议钉开头、格式提醒钉末尾」。两者并不矛盾，取交集即可：
+ * 因为**协议自身就是「任务定义在前、最后提醒在后」的结构**（v1.1 的两处改动，
+ * 见手册「v1.1 相对 v1.0 的四处改动」），所以把整份协议放在**最末**，
+ * 它的「最后提醒」正好紧贴生成点 —— 既满足方案「格式钉末尾」的意图，
+ * 又符合手册的实测配置。本文件按此实现。
  *
  * 【为什么拼成一整条 system】
- * 多条 system 在各 OpenAI 兼容端点的支持参差，故合并为一条。
+ * 多条 system 在各 OpenAI 兼容端点的支持参差。
  *
- * 【层级顺序不是随便排的】
- * 注意力在**开头与末尾**权重最高、中间最易被忽略。所以：
- *   · 扮演协议（元规则）钉在开头 —— 必须最先读到
- *   · 输出格式 + 最后提醒钉在末尾 —— 紧贴生成点，等价于酒馆的 post_history_instructions
- *
- * 【每轮重新组装，不是只在开头发一次】
- * 这样中途改设定、记忆更新都能立刻生效。
+ * 【每轮重新组装】
+ * 不是只在开头发一次 —— 这样中途改设定、记忆更新都能立刻生效。
  *
  * 本文件是纯逻辑，不含 React。
  */
-import { PROTOCOL_CORE, protocolFormat } from './protocol'
+import { PROTOCOL_CORE } from './protocol'
 import type { TavernTone, TavernMessage } from './types'
 
 export type PromptLayers = {
-  /** 档位：叙事向（剧情默认）/ 聊天向（自由默认） */
+  /** 档位：叙事向（剧情默认，即协议默认） / 聊天向（自由默认，追加一句风格提示） */
   tone: TavernTone
-  /** ②层 · 世界与角色设定（调用方已按信息边界裁剪好） */
+  /** 世界与角色设定：剧情模式为项目资料；自由模式为角色卡四章拼接 */
   setting?: string
-  /** ③层 · 长期记忆（六栏压缩后的文本） */
+  /** 长期记忆（六栏压缩后的文本） */
   memory?: string
-  /** ④层 · 你在戏里的身份与知识边界 */
+  /** 你在戏里的身份与知识边界 */
   self?: string
   /**
-   * 被预算丢弃的段落名。
-   * 必须如实声明：否则模型会把自己没看到的资料当成不存在（沿用 buildProjectContext 的既有设计）。
+   * 被预算丢弃的段落名。必须如实声明：
+   * 否则模型会把自己没看到的资料当成不存在（沿用 buildProjectContext 的既有设计）。
    */
   dropped?: string[]
 }
 
-/** 按五层顺序拼出整条 system 消息。空层自动跳过，不留空标题。 */
+/**
+ * 档位追加提示。
+ * 协议 O1/O2 已规定通用格式（动作全角括号、对白不加引号、一次一个回合、60–160 字），
+ * 所以这里只补「叙事向不追加（就是协议默认）」，聊天向补一句场景化倾向。
+ * ⚠️ 档位的真正差异应主要由**角色卡**承担（手册实践：陆青梧走动作+对白、苏念走消息体）。
+ */
+const TONE_HINT: Record<TavernTone, string> = {
+  narrative: '',
+  chat: '【本场风格】现代日常场景，以即时聊天的方式说话：短句为主，最多连发 2 条，不要长篇叙述。',
+}
+
+/** 按「设定 → 记忆 → 身份 → 未带入声明 → 协议（钉末尾）」拼出整条 system。空层自动跳过。 */
 export function buildSystemPrompt(layers: PromptLayers): string {
   const parts: string[] = []
 
-  // ① 扮演协议（钉开头）
-  parts.push(PROTOCOL_CORE)
-
-  // ② 世界与角色设定
+  // ① 世界与角色设定（身份锁定）
   if (layers.setting?.trim()) parts.push(`【世界与角色设定】\n${layers.setting.trim()}`)
 
-  // ③ 长期记忆
+  // ② 长期记忆（居中）
   if (layers.memory?.trim()) parts.push(`【长期记忆】\n${layers.memory.trim()}`)
 
-  // ④ 你在戏里的身份与知识边界
+  // ③ 你在戏里的身份与知识边界
   if (layers.self?.trim()) parts.push(`【你在戏里的身份与知识边界】\n${layers.self.trim()}`)
 
-  // 未带入的资料：如实声明，别让模型把「没看到」当成「不存在」
+  // ④ 档位追加（叙事向为空，不产生噪音）
+  const hint = TONE_HINT[layers.tone]
+  if (hint) parts.push(hint)
+
+  // ⑤ 未带入的资料：如实声明（放在协议之前，免得打断协议末尾的提醒）
   if (layers.dropped?.length) {
     parts.push(
       `【未带入的资料】\n以下资料因篇幅限制未带入本次上下文，请当作你的角色不知道，也不要凭空推测：\n` +
@@ -59,8 +76,8 @@ export function buildSystemPrompt(layers: PromptLayers): string {
     )
   }
 
-  // ⑤ 输出格式 + 最后提醒（钉末尾）
-  parts.push(protocolFormat(layers.tone))
+  // ⑥ 协议（格式与禁令收尾）—— 钉在绝对末尾
+  parts.push(PROTOCOL_CORE)
 
   return parts.join('\n\n')
 }
@@ -86,7 +103,9 @@ export function buildOpeningMessage(
 
 /**
  * 多角色同场的发言规则（方案 §7.3）。
- * 只在自由模式 `charIds.length > 1` 时追加到 ② 层末尾。
+ * 只在自由模式 `charIds.length > 1` 时追加到设定层末尾。
+ * ⚠️ 协议 O1 禁止在**输出**里写角色名前缀，但**输入**侧必须能分清谁在说话，
+ * 两者不冲突：这里管的是模型如何组织发言，不改变它的输出格式。
  */
 export function buildMultiCharRule(names: string[]): string {
   return [
@@ -108,7 +127,7 @@ export function toChatMessages(
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .map(m => ({
       role: m.role as 'user' | 'assistant',
-      // 多角色同场时，把「这句是谁说的」标进内容，否则模型分不清谁在说话
+      // 多角色同场：只在**输入历史**上标注说话人，方便模型分清谁在说
       content: opts.withSpeaker && m.role === 'assistant' && m.speakerId
         ? `${opts.withSpeaker(m.speakerId)}${m.content}`
         : m.content,
