@@ -49,6 +49,14 @@
 ## UI 规范
 - Button.tsx 套尺寸 primary/secondary/ghost/danger/success/info/icon/icon-ghost/toggle/icon-*；裸图标传 `iconOnly`。
 - 8 套主题 `<html data-theme>`；浅色 4=护眼/羊皮卷/青花/桃笺，禁低透明度 amber 表数据（用实色 `bg-amber` 最低 `/40`）。
+- 🔴 **SVG 里用 CSS 变量必须走 `style`，不能写表现属性**：`fill="rgb(var(--x))"` / `stroke="rgb(var(--x))"`
+  **一律无效**（表现属性不做自定义属性替换）→ 回退为黑，而且**静默不报错**。
+  必须写 `style={{ fill: 'rgb(var(--x))' }}`；含 var() 的动态色（如 `const col = 'rgb(var(--a))'` 再传下去）同理。
+  2026-09-14 全项目扫出 3 处受害者（RelationGraph 边标签底板、WritingGoals 燃尽图网格线与轴标签、
+  琥珀目标线），均长期与主题无关地渲染成黑。**新增/修改任何 SVG 绘制前先看这条。**
+- 图谱/画布界面色（网格点、节点填充与文字、常态描边、连线标签、文字光晕、高亮/选中/高亮文字）
+  统一走 `--graph-*` 变量（`src/index.css`）：暗色系取原暖褐值（观感不变），浅色主题引用各自 ink 刻度自动翻转。
+  ⚠️ 分类色盘（关系类型色、势力关系色、节点调色板、画布类别色）是**数据分类色**，靠色相区分，**不要主题化**。
 
 ## AI / 服务器
 - AI：颉文姬5模式 clinic/edit/review/brief/ledger；硅基流动 DeepSeek-V3.2。明文本地记忆勿公开。
@@ -79,8 +87,12 @@
 - **ESLint**：`eslint.config.js` 扁平配置（ESLint 9 + typescript-eslint 8），**只开 3 条**：
   `rules-of-hooks`(error) / `exhaustive-deps`(warn) / `no-empty`(warn)。`no-explicit-any` **显式关闭**
   （存量 100 处会淹没 12 条真信号）。当前 **12 warnings / 0 errors**，即 C/D 批的工作面。
-- ⚠️ **遗留**：4 个 eslint 依赖已手工写进 `package.json`，但 **`package-lock.json` 未同步**
-  （直连 npmjs 跑 11 分钟仍未写清单，已终止）。下次 `npm install` 会自动补齐；在此之前 `npm ci` 会失败（本项目无 CI，无影响）。
+- ✅ **`package-lock.json` 已于 2026-09-14 同步**（补齐 eslint 四依赖）。
+  🔴 **同步 lock 的正确命令：`npm install --package-lock-only --offline`**——只重算依赖树并写 lock、
+  不碰 node_modules，**2 秒**完成；而 `--prefer-offline` 完整装包会联网核对元数据、跑到 9 分钟仍未收尾。
+  验证自洽性看**幂等**：二次运行应输出 `up to date` 且 diff 无新增。
+  ⚠️ 重算后若出现「删除行」先别慌：逐条判断是**原位元数据重写**还是**真移除**，并核实是否真有代码依赖
+  （2026-09-14 即据此确认裁掉的 `playwright-core` 是历史悬空依赖、全仓库无人引用）。
 - 🔴 **`exhaustive-deps` 那 11 条警告不能盲改**（2026-09-14 逐条核实）：缺失的依赖**全是组件体内未包
   `useCallback` 的普通箭头函数**（`load` / `calValueOf` / `validateCodes` / `cellVal` 等），身份每次渲染都变。
   直接补进依赖数组会让 `useMemo` 每次重算、`useEffect` 可能死循环。**正确解法是先包 `useCallback` 再加依赖**，
