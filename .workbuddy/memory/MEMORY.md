@@ -105,8 +105,22 @@
 - 🔴 **两条线数据归属不同**：剧情 → 项目级 settingsKV（随项目走、导出自动覆盖）；自由 → **全局 meta**（删项目不跟着没）。改前先读 `src/lib/tavern/store.ts` 文件头。
 - 🔴 **索引与分条必须成对读写**（`tavern.sessionIndex` ↔ `tavern.session.<id>`），否则出现幽灵条目；store 内有 `auditXxx`/`pruneGhostXxx`。
 - `tavernReports` 是独立表（DB_VERSION 10）。登记外**两处易漏**：`deleteProject` 清理、`applyBundleToProject`（先清后写）。
-- 模块地图：`src/lib/tavern/` → types / store / protocol（**从手册逐行搬入，勿手改**）/ prompt / budget / params / engine / report / memory / summarize / daily / cardFile / import。
-- 🔴 **提示词层序不可乱**：设定 → 记忆 → 身份边界 → 档位 → 未带入声明 → **协议（钉绝对末尾）**。
+- 模块地图：`src/lib/tavern/` → types / store / protocol（**从手册逐行搬入，勿手改**）/ prompt / budget / params /
+  engine / report / memory / summarize / daily / cardFile / import / **settings（控制面板设置）** / seedCards。
+- 🎛️ **控制面板（`tavern-control` 页签，2026-09-14）**：三段（通用 / 剧情推演 / 自由对话）+ 协议只读展示。
+  设置存**全局 meta `tavern.settings`**，**一律走 `getTavernSettings()`**（与默认值深合并）——
+  直接读 meta 会在新增字段后读出 undefined 并一路传下去。默认值＝原硬编码值，改动它必须是有意识的。
+  参数优先级链不变：会话参数 → 角色参数 → **控制面板** → `TAVERN_DEFAULTS` 兜底。
+  阈值类函数都收成**可选参数注入**（trimMemory / parseMemoryText / throttleOk / shouldRunAutoSummary /
+  shouldAdvanceDaily / buildSummarySystem），不传即原行为 —— 新增调用方别硬写常量。
+- 🔴 **提示词层序不可乱**：设定 → 记忆 → 身份边界 → 档位 →（通用补充要求 → 模式补充要求）→ 未带入声明 →
+  **协议（钉绝对末尾）**。两段「补充要求」来自控制面板，**放在协议之前**，免得打断协议末尾那条
+  「最后提醒」的近因效果（`buildSystemPrompt` 的 styleHint / commonExtra / modeExtra 三个可选层）。
+- 🔴 **采样参数下发链**（2026-09-14 接通，此前是断的）：`params.ts` 的 `toOllamaOptions` 曾**全项目无人调用**，
+  除 temperature 外一个参数都没到过模型 —— 做界面之前先确认这一点，否则面板上的旋钮全是死的。
+  现走 `ai.ts` 的 `ChatOptions.extraOptions`：Ollama 原样并入 `options`；OpenAI 兼容路径只转发
+  `OPENAI_SAFE_SAMPLING` 白名单（top_p / presence_penalty / frequency_penalty），
+  **top_k / repeat_penalty / num_ctx 是 Ollama 专有字段，绝不能发给 OpenAI 兼容端点**。
 
 ### 🔴🔴 防剧透是两层，只做一层等于没做
 ① **段落级**：`viewMode:"character-view"` 排除 10 个作者侧页签；
