@@ -18,6 +18,7 @@
 - 🔴 桌面 `build-desktop.mjs` 的 `ELECTRON_CACHE` 须指向系统默认缓存 `C:/Users/<用户>/AppData/Local/electron/Cache`，**切勿**指向 `release/eb-cache/electron-zip`（仅扁平 zip、缺 @electron/get hash 结构）→ 离线打不出 electron 运行时，只产 ~500KB NSIS 空壳、双击无法运行（b3e5c4f 曾误判成功，2026-09-04 修正 f085dc9）。
 - 桌面/便携正常产物体积：桌面安装包 **80.68 MiB**（Windows 资源管理器显示「80.6M」；十进制记作 84.6MB——三者是同一个文件，别误判成两个包）、便携单文件 **8.44 MiB**。🔴 两个构建脚本已内置体积闸门（`MIN_SETUP_BYTES=50MB` / `MIN_PORTABLE_MB=5MB`），**无论 builder 退出码是否为 0，体积不达标即 abort**——别再退化回「exe 存在即成功」的兜底（2.0.0 曾因此放行 513KB 空壳）。
 - ⚠️ Edit 工具会「假成功」：2.0.1 给 build-desktop.mjs 补 `statSync` 导入时回执 Success 但文件未落盘，首跑直接崩在 `statSync is not defined`。**改完必须 sed/grep 复查真实文件内容。**
+- 🔴 **（2026-09-14 强化）dev server 运行时假成功概率明显更高**：一次连续改 6 个组件时 3 次回执 Success 但文件未变（1 次报 `EBUSY`、2 次无声无息），造成「用了 `<LoadingState/>` 却没 import」的中间态。**对策：① 每笔 Edit 后立即 grep 复查；② 批量/多处替换改用 node 脚本（`split/join` 精确替换，未命中即抛错），一次成功率明显更高。**
 - rcedit `Unable to commit changes` 是 cosmetic 报错，非真失败（exe 已含 metadata）。
 - 🔴 NSIS 安装权限（2026-09-04 决策 ae08e7d）：`nsis.perMachine:false` + `allowToChangeInstallationDirectory:false` → 强制按**当前用户**装到 `%LOCALAPPDATA%\Programs`，重装永不需管理员。`perMachine:true`（装 Program Files）或用户自选 Program Files 会在重装时被旧 per-machine 卸载拦住、必须管理员——这是系统级限制改不了。**升级提示已写进 AboutPage**：旧版在 Program Files 的用户需「右键→以管理员身份运行」一次新版安装包完成迁移，之后即可免管理员重装。切勿为"免提权"把 `allowElevation` 设 false（遇 per-machine 旧版会直接升级失败而非弹管理员）。
 
@@ -39,6 +40,13 @@
 - 🔴 两路径二选一，绝不同时指向同目录（`.yfe` 与 `novel-studio-data.json` 打架）。
 - ⚠️ 架空陷阱：`enableDesktopCloudSync` 仅 `rev===0 && 空` 播种；云盘有数据则第二台原稿不播种但本地 JSON 仍在→救法＝关云盘同步切回本机。
 - ⚠️ 轮询盲区：A 写完关机云盘未传完→B 读旧 rev→直接覆盖 A 不报冲突。「换设备前先关软件+等同步完成」硬纪律。
+- 🔴 `backups` 是**本地专属**（2026-09-14 修正一处真 bug）：云端载荷不含它（`liveStores` 上传前剔除，#026），
+  故 `db.ts` 的 `makeCloudStoreWrapper` 必须把它的**读写短路到 local**（已加 `if (args[0] === 'backups') return local[op](...)`）。
+  否则「云端不要、本地不写」→ 备份只活在云端实例的内存 cache 里，刷新即丢、列表还显示为空。
+  **影响三端**：`desktopCloudSync.ts` 与 `serverStore.ts` 共用同一个 `createCloudStore`，桌面/便携启用云盘同步同样中招。
+  ⚠️ 推论：`seedFromLocal` 里那次 backups 读取因此成了无用功（已跳过）；**但它曾差点被我误删**——
+  `store.getAll` 是从 cache 读的，而 seedFromLocal 恰是唯一把本地备份载入 cache 的地方。
+  **纪律：「死配置」结论必须先验消费方（谁读、谁写、以及读的源头）再动手。**
 
 ## 2.0 只发桌面/便携（网页版后续关闭）
 - 桌面/便携零联网（API 全被 `WEB &&` tree-shake）。2.0 只发这两版。
@@ -70,6 +78,14 @@
   必须共用它。历史坑：boot 路径曾漏跑 ledger/numbering 导致自动回到项目时读到旧结构。**顺序不可调换**
   （numbering 依赖 ledger 拆表后的 `chapter-vol-<卷id>` 行）。db 层不引用 schema（避免循环依赖），
   刷卷页签由调用方另行 `refreshVolumeTabs()`。
+  📌 `getDB` 的 upgrade 回调已拆为 9 个独立函数（`migrateFreshInstall` / `migrateV1toV2` … `migrateV8toV9`，2026-09-14）。
+  **upgrade 处是「何时跑哪一段」的唯一判断点**，函数内不再重复 `oldVersion` 条件（避免同一判断散两处）。
+  ⚠️ 全新安装走 `migrateFreshInstall` 后**不 return**，会继续跑 v3 及之后的段（对空库无副作用的空转）——刻意保留。
+- 🔴 prompt 注入防护（2026-09-14）：作者原文进 prompt 前统一走 `src/lib/promptGuard.ts` 的 `authorBlock(id, text)`
+  （调用级随机 nonce 定界 `<<<A-<id>>>`…`<<<E-<id>>>` + 段前声明）。**两条硬约束**：
+  ① 用随机 nonce 而非固定符号——固定符号一旦被猜中，正文写上它即可「闭合」边界；
+  ② **绝不清洗正文内容本身**——`aiProofread` 依赖 `text.indexOf(chunk)` 精确定位分块，改一个字符整块作废。
+  新增「作者文本进 prompt」的入口时套 `authorBlock` 即可。
 - **跨文件共用的 localStorage 键 / 防抖常量**收在 `src/lib/constants.ts`（`LS_*` / `SAVE_DEBOUNCE_MS` / `SYNC_POLL_MS`）。
   新增键改这里一处，别在调用点写字面量——改错键名会让用户偏好静默重置且无报错。
 - 🔴 温度（2026-09-14 起机制变更）：**不要在任务层手填温度**。结构化 JSON 任务传 `chat(..., { json: true })`，
@@ -106,6 +122,8 @@
 - `src/lib/useSvgPanZoom.ts` —— SVG 画布平移/缩放/节点拖拽（RelationGraph、FactionGraph 已接入；
   GeoMapEditor 走 getScreenCTM 逆矩阵、PlotCanvas 是 DOM 卡片，**不是同一套模型，未接入**）
 - `src/lib/seedContent.ts` / `src/lib/materialData.ts` —— 从巨型文件拆出的**纯数据**（原文件保留出口，调用点零改动）
+- `src/lib/promptGuard.ts` —— 作者原文进 prompt 的边界守卫（`authorBlock`），详见上文 AI 段
+- `src/components/LoadingState.tsx` —— 6 处同款加载态的唯一出口（**空态不在此列**：各处形状差异大，不强抽）
 
 ## 两条可复用技法（2026-09-14 实战验证）
 - 🔴 **搬迁大块数据必须做到「可证明零改动」**：① 逐行 splice，**绝不重新序列化/转义**

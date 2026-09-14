@@ -86,9 +86,9 @@
 <h2 class="ok">修复进度（2026-09-14 当天）</h2>
 
 <div class="okbox">
-<b>已完成 A / B / C1 / C2 / C4 / C5a / C6 / D1 / D3 / D5 十项</b>，每项均通过 <code class="inline">tsc</code> + <code class="inline">npm run verify</code>（8 个测试入口全绿）+ <code class="inline">vite build</code>；
+<b>已完成 A / B / C1 / C2 / C4 / C5a / C6 / D1 / D3 / D5 十项，外加 P2-3 四项</b>，每项均通过 <code class="inline">tsc</code> + <code class="inline">npm run verify</code>（<b>10 个测试入口</b>全绿）+ <code class="inline">vite build</code>；
 其中 D5 与 C4 已经老大在 dev server 上肉眼验收通过。
-测试入口从 6 个增至 8 个；lint 从首跑 114 warnings 收敛到 <b>11 warnings / 0 errors</b>。
+测试入口从 6 个增至 <b>10 个</b>（累计新增 101 个用例）；lint 从首跑 114 warnings 收敛到 <b>11 warnings / 0 errors</b>。
 <b>全程未升版本号、未封装、未碰服务器。</b>
 </div>
 
@@ -108,6 +108,10 @@
 <tr><td>P1-6</td><td>大文件拆分：<code>seedData</code> 5673→986 行、<code>materialRef</code> 5791→79 行</td><td><code>009e896</code> / <code>1e48b45</code></td><td><span class="tag t-ok">已完成</span></td></tr>
 <tr><td>P1-12</td><td>图谱/画布界面色主题化（<b>顺带修掉 3 处 <code>var()</code> 写在 SVG 表现属性里导致恒渲染为黑的 bug</b>）</td><td><code>3d18f91</code></td><td><span class="tag t-ok">已修</span></td></tr>
 <tr><td>遗留</td><td><code>package-lock.json</code> 同步 + 修正一处历史悬空依赖（<code>playwright-core</code>）</td><td><code>6ca517c</code></td><td><span class="tag t-ok">已完成</span></td></tr>
+<tr><td>P2-3a</td><td>6 处重复加载态收敛为 <code>&lt;LoadingState/&gt;</code>（<b>空态刻意不抽</b>：各处形状差异大）</td><td><code>f63c12f</code></td><td><span class="tag t-ok">已完成</span></td></tr>
+<tr><td>P2-3b</td><td><b>云同步下备份「两头不靠」根本不落盘</b>（审计「死配置」条目的真身，三端同中招）</td><td><code>c93111d</code></td><td><span class="tag t-ok">已修</span></td></tr>
+<tr><td>P2-3c</td><td>作者原文加边界守卫抵御 prompt 注入（新增 <code>lib/promptGuard.ts</code>，接入 4 处入口）</td><td><code>e7f7769</code></td><td><span class="tag t-ok">已加固</span></td></tr>
+<tr><td>P2-3d</td><td><code>getDB</code> 的 upgrade 回调拆为 9 个独立迁移函数（语句零改动，sha256 逐段比对）</td><td><code>99b4569</code></td><td><span class="tag t-ok">已重构</span></td></tr>
 </table>
 
 <div class="note">
@@ -116,6 +120,12 @@
   <li><b><code>var()</code> 写在 SVG 表现属性里完全不生效</b>（表现属性不做自定义属性替换）→ 静默回退为黑。
       全项目扫出 3 处受害者：<code>RelationGraph</code> 边标签底板、<code>WritingGoals</code> 燃尽图的
       网格线/轴标签/琥珀目标线。此前**与主题无关地恒渲染为黑**。</li>
+  <li><b>云同步开启后「自动备份」根本没落盘</b>（审计原文仅把它记为「死配置」）：
+      <code>liveStores</code> 上传前把 <code>backups</code> 剔除（#026），但包装层
+      <b>没有把它的读写接回本地</b> → 「云端不要、本地不写」，备份只活在内存 <code>cache</code> 里：
+      自动备份失效、刷新即丢、备份列表还显示为空。<b>三端同中招</b>——
+      <code>desktopCloudSync</code> 与 <code>serverStore</code> 共用同一个 <code>createCloudStore</code>，
+      桌面/便携用户启用云盘同步同样如此。</li>
   <li><b><code>aiParse.humanText</code> 的取值正则会在键的闭合引号处重新起步</b>，把 <code>":"</code> 整体
       捕获成冒号 → 残缺 JSON 的兜底结果退化成 <code>:</code> <code>,</code> 残渣，
       即作者反馈的「改稿只剩标点」成因之一。</li>
@@ -140,8 +150,17 @@
   <li><b>P1-6 后段 · 组件级拆分</b>：<code>seedData</code> / <code>materialRef</code> 的数据分离已完成，
       但 <code>NovelEditor</code>（单 <code>return</code> 跨 673 行，28 个 useState）等等的<b>组件拆分</b>未做——
       搬迁易破坏 props 接线，且无组件级测试兜底，需配合运行时逐项验证。</li>
-  <li><b>P1-13 / P2-3</b>（<code>syncCore</code> 类型收严、空态/加载态 6 处重复、props 过深、
-      长列表无虚拟化、prompt 注入防护、<code>syncCore</code> 死配置）：需逐例判断，收益相对靠后。</li>
+  <li><b>P2-3 剩余项 —— 本轮已逐项判定，均「不做」（附依据）：</b>
+    <ul style="margin-bottom:0">
+      <li><b>长列表虚拟化</b>：撞 <b>#020</b> 已登记取舍（「当前规模无需虚拟滚动，高风险改 inline-edit 布局、低 ROI」）。
+          <code>RelationGraph</code> 硬截前 80 节点是<b>刻意设计</b>（注释写明「避免超大图卡顿」），不是缺陷。</li>
+      <li><b>props 过深</b>（<code>JieWenJi</code> 实为 <b>12</b> 个、<code>GeoMapEditor.DetailPanel</code> 11 个）：
+          收为对象只是包装、<b>不降耦合</b>（值还是 12 个），却要改调用点——属「审美收益 + 真实回归风险」。</li>
+      <li><b><code>runAutoContinue</code> 160 行拆分</b>：与 <code>getDB</code> 性质不同——它有 <b>7 个闭包状态</b>
+          （<code>anchorId</code> / <code>lastBody</code> / <code>created</code> / <code>memory</code> / <code>aborted</code> / <code>minWords</code>）
+          + 双层循环 + 5 个回调，拆分<b>必须重构状态传递</b>，而唯一验证手段是真模型端到端 → 属「改了没法验」，不做。</li>
+      <li><b><code>syncCore</code> 类型收严</b>：收益靠后，且 44 处 <code>any</code> 多为加解密边界既有写法，需逐例判断。</li>
+    </ul></li>
 </ul>
 </div>
 
