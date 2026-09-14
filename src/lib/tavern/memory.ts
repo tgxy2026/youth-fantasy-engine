@@ -199,7 +199,7 @@ function matchSectionTitle(line: string): { key: MemorySectionKey; rest: string 
  * 宁可多总结一次，也不要漏掉一大段记忆。
  */
 export function countUnsummarized(session: Pick<FreeSession, 'messages' | 'watermark'>): number {
-  const msgs = session.messages.filter(m => m.role !== 'system')
+  const msgs = session.messages.filter(m => m.role !== 'system' && !m.hidden)
   const wm = session.watermark?.messageId
   if (!wm) return msgs.length
   const i = msgs.findIndex(m => m.id === wm)
@@ -285,7 +285,8 @@ export function messagesAfterWatermark(
   messages: FreeSession['messages'],
   watermark?: { messageId: string } | null,
 ): FreeSession['messages'] {
-  const msgs = messages.filter(m => m.role !== 'system')
+  // 隐藏的消息既不进上下文，也不该被整理进记忆（隐藏的语义就是「别让 AI 看见」）
+  const msgs = messages.filter(m => m.role !== 'system' && !m.hidden)
   const wm = watermark?.messageId
   if (!wm) return msgs
   const i = msgs.findIndex(m => m.id === wm)

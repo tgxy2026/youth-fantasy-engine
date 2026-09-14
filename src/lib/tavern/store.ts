@@ -25,7 +25,7 @@ import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
   FreeCharacter, FreeSession, FreeMemory, DailyState,
-  TavernCharIndexItem, FreeSessionIndexItem,
+  TavernCharIndexItem, FreeSessionIndexItem, TavernMessage,
 } from './types'
 
 // ==================== 存储键 ====================
@@ -69,6 +69,48 @@ export async function getSession(id: string): Promise<TavernSession | null> {
  * 保存会话（**索引与分条成对写**）。
  * 调用方传入完整会话对象；updatedAt 由本函数统一刷新，避免各处不一致。
  */
+// ==================== 消息级操作（重说 / 编辑 / 隐藏 / 删除） ====================
+//
+// 这四件事都**只构造新会话、不落库** —— 由调用方决定何时保存（通常改完立刻存）。
+// 之所以不在这里写库：编辑时「改一条消息」与「写回索引」应当是一个动作，
+// 中间态落库只会让左栏的更新时间乱跳。
+//
+// 用泛型是因为剧情会话（TavernSession）与自由会话（FreeSession）都要用：
+// 两者都有 messages 与 updatedAt，其余字段原样带过。
+
+type MsgHost = { messages: TavernMessage[]; updatedAt: number }
+
+/** 改一条消息：正文（编辑）或只翻标记（hidden / edited） */
+export function patchMessage<T extends MsgHost>(s: T, id: string, patch: Partial<TavernMessage>): T {
+  return { ...s, messages: s.messages.map(m => (m.id === id ? { ...m, ...patch } : m)), updatedAt: Date.now() }
+}
+
+/** 删掉一条消息 */
+export function dropMessage<T extends MsgHost>(s: T, id: string): T {
+  return { ...s, messages: s.messages.filter(m => m.id !== id), updatedAt: Date.now() }
+}
+
+/**
+ * 隐藏 / 取消隐藏。
+ * 隐藏 = **不进上下文**（组装时跳过，见 prompt.ts 的 toChatMessages 与 memory.ts 的水位线），
+ * 但界面仍然留着、可以随时恢复 —— 长对话里"这段先别让 Ta 记得"最省事的做法。
+ */
+export function toggleMessageHidden<T extends MsgHost>(s: T, id: string): T {
+  return {
+    ...s,
+    messages: s.messages.map(m => (m.id === id ? { ...m, hidden: !m.hidden } : m)),
+    updatedAt: Date.now(),
+  }
+}
+
+/** 末尾那条 AI 回复的 id（只有它可以被「重说」）；没有则返回空串 */
+export function lastAssistantId(messages: TavernMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant') return messages[i].id
+  }
+  return ''
+}
+
 export async function saveSession(s: TavernSession): Promise<TavernSession> {
   const next: TavernSession = { ...s, updatedAt: now() }
   await db.setSetting(K.session(next.id), next)

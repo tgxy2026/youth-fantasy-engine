@@ -20,8 +20,12 @@ export type TavernMessage = {
   at: number
   /** 被编辑过（用于 UI 标记） */
   edited?: boolean
-  /** 多候选回复：同一位置的其他版本 */
-  alternatives?: { id: string; content: string; at: number }[]
+  /**
+   * 已隐藏：**不进上下文**（组装时跳过），但界面仍显示（灰显）、可随时恢复。
+   * 长对话里「这段先别让 Ta 记得」用它。
+   * ⚠️ 排除的唯一出口在 prompt.ts 的 toChatMessages 与 memory.ts 的水位线，别在别处再判一次。
+   */
+  hidden?: boolean
 }
 
 export type TavernModelRef = {

@@ -177,6 +177,20 @@ export function buildPlotMessages(session: TavernSession, budgetChars: number): 
  * 以参数注入，是为了让「组装上下文 → 调模型 → 落库」这条链路能在**不起真实模型**的前提下
  * 端到端跑通（tests/tavernFlow.test.ts 用示范项目的真实数据验证防剧透与报告定位）。
  */
+/**
+ * 丢掉**末尾**那条 assistant 消息（重说用）。
+ *
+ * 只丢紧邻末尾的一条：更早的历史不动 —— 中间的消息想改请用「编辑」
+ * （重说中间那条必然与后面的内容打架）。没有末尾 assistant 时**原样返回**，
+ * 调用方据此判断「没有可重说的回复」。
+ */
+export function dropTrailingAssistant(msgs: TavernMessage[]): TavernMessage[] {
+  let i = msgs.length - 1
+  while (i >= 0 && msgs[i].role === 'system') i--
+  if (i < 0 || msgs[i].role !== 'assistant') return msgs
+  return [...msgs.slice(0, i), ...msgs.slice(i + 1)]
+}
+
 export type ChatFn = typeof chat
 
 export type PlotTurnCallbacks = {
@@ -202,7 +216,8 @@ export type PlotTurnResult = {
  */
 export async function runPlotTurn(
   session: TavernSession,
-  userText: string,
+  /** 用户这轮的输入；**null = 重说**（不追加用户消息，并先丢掉末尾那条 assistant） */
+  userText: string | null,
   cb: PlotTurnCallbacks = {},
   deps: { chatFn?: ChatFn; settings?: TavernSettings } = {},
 ): Promise<PlotTurnResult> {
@@ -216,11 +231,16 @@ export async function runPlotTurn(
   cb.onPhase?.('组装上下文')
   const { system } = await buildPlotSystem(session, st)
 
-  // 用户这条先并进历史，保证模型看到的是「含本轮输入」的完整对话
-  const withUser: TavernMessage[] = [
-    ...session.messages,
-    { id: uid(), role: 'user', content: userText, at: Date.now() },
-  ]
+  // 用户这条先并进历史，保证模型看到的是「含本轮输入」的完整对话。
+  // userText === null 是**重说**：不追加用户消息，并先丢掉末尾那条 assistant（它正是要被替换的那条）。
+  const baseMsgs = userText === null ? dropTrailingAssistant(session.messages) : session.messages
+  // 契约要明确：null 表示「重说」，那就必须有一条可重说的回复 —— 悄悄凭空造一轮会让人以为丢了消息
+  if (userText === null && baseMsgs.length === session.messages.length) {
+    throw new Error('没有可重说的回复（历史末尾不是 AI 的话）')
+  }
+  const withUser: TavernMessage[] = userText === null
+    ? baseMsgs
+    : [...baseMsgs, { id: uid(), role: 'user', content: userText, at: Date.now() }]
 
   const historyBudgetChars = historyBudget(
     totalBudget(p.contextBudget), system, session.memory ?? '', st.common.fixedOverheadChars)
@@ -251,18 +271,13 @@ export async function runPlotTurn(
     else throw e
   }
 
-  const next: TavernSession = {
-    ...session,
-    messages: [
-      ...withUser,
-      // 取消 / 空回复时**不追加**占位消息：原先写成 `|| cancelled` 会插入一条 content 为空的
-      // assistant 消息 —— 界面上留下一个空气泡，让「取消」看起来像真的发生了一轮对话。
-      ...(reply.trim()
-        ? [{ id: uid(), role: 'assistant' as const, content: reply.trim(), at: Date.now() }]
-        : []),
-    ],
-    updatedAt: Date.now(),
-  }
+  // 取消 / 空回复时**不追加**占位消息（原先写成 `|| cancelled` 会留下一个空气泡，让「取消」看起来像真聊了一轮）。
+  // 重说失败时更要小心：那时 withUser 已经把原回复丢掉了 —— 必须**保留原来的 messages**，
+  // 否则一次失败就把那条回复删没了。
+  const kept: TavernMessage[] = reply.trim()
+    ? [...withUser, { id: uid(), role: 'assistant' as const, content: reply.trim(), at: Date.now() }]
+    : (userText === null ? session.messages : withUser)
+  const next: TavernSession = { ...session, messages: kept, updatedAt: Date.now() }
 
   return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack }
 }
@@ -463,7 +478,8 @@ export type FreeTurnResult = {
 export async function runFreeTurn(
   session: FreeSession,
   chars: FreeCharacter[],
-  userText: string,
+  /** 用户这轮的输入；**null = 重说**（不追加用户消息，并先丢掉末尾那条 assistant） */
+  userText: string | null,
   cb: FreeTurnCallbacks = {},
   deps: { chatFn?: ChatFn; settings?: TavernSettings } = {},
 ): Promise<FreeTurnResult> {
@@ -472,10 +488,15 @@ export async function runFreeTurn(
   const runChat = deps.chatFn ?? chat
   const { system } = await buildFreeSystem(session, chars, st)
 
-  const withUser: TavernMessage[] = [
-    ...session.messages,
-    { id: uid(), role: 'user', content: userText, at: Date.now() },
-  ]
+  // 与剧情模式同一条约定：null = 重说（不追加用户消息、先丢掉末尾那条 AI 回复）
+  const baseMsgs = userText === null ? dropTrailingAssistant(session.messages) : session.messages
+  // 与剧情模式同一契约：null = 重说，必须有可重说的回复（UI 也会先判一次）
+  if (userText === null && baseMsgs.length === session.messages.length) {
+    throw new Error('没有可重说的回复（历史末尾不是 AI 的话）')
+  }
+  const withUser: TavernMessage[] = userText === null
+    ? baseMsgs
+    : [...baseMsgs, { id: uid(), role: 'user', content: userText, at: Date.now() }]
 
   const p = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st), session.params)
   const { temperature, ...extraOptions } = toOllamaOptions(p)
@@ -506,18 +527,18 @@ export async function runFreeTurn(
   // 归属角色：指定优先，否则按历史里已有的 assistant 条数轮转。
   // ⚠️ 轮转名单要**排除用户扮演的角色** —— Ta 不是 AI 的位子，轮到 Ta 就会出现「AI 替你回答你」。
   const aiIds = session.charIds.filter(id => id !== session.userCharId)
-  const said = session.messages.filter(m => m.role === 'assistant').length
+  // 轮转按**基座**数（重说时已丢掉被打回的那条）——否则重说会顺延到下一位说话人，观感很怪
+  const said = baseMsgs.filter(m => m.role === 'assistant').length
   const autoSpeaker = aiIds.length > 0 ? aiIds[said % aiIds.length] : undefined
   const speakerId = aiIds.length > 1 ? (cb.speakerId ?? autoSpeaker) : aiIds[0]
 
+  // 同剧情模式：重说失败要**保留原来的那条**（withUser 已经把末尾的 AI 回复丢掉了）
+  const kept: TavernMessage[] = reply.trim()
+    ? [...withUser, { id: uid(), role: 'assistant' as const, content: reply.trim(), at: Date.now(), speakerId }]
+    : (userText === null ? session.messages : withUser)
   const next: FreeSession = {
     ...session,
-    messages: [
-      ...withUser,
-      ...(reply.trim()
-        ? [{ id: uid(), role: 'assistant' as const, content: reply.trim(), at: Date.now(), speakerId }]
-        : []),
-    ],
+    messages: kept,
     lastActiveAt: Date.now(),
     updatedAt: Date.now(),
   }

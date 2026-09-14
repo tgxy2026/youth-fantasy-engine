@@ -27,6 +27,8 @@ import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import TavernFreeSetup, { type FreeDraft } from './TavernFreeSetup'
+import TavernMessageBody from './TavernMessageBody'
+import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
@@ -345,10 +347,11 @@ export default function TavernFree() {
   }, [session, titleDraft])
 
   // ---------- 对话 ----------
-  const send = useCallback(async () => {
-    const text = input.trim()
+  /** preset = 快捷指令条递过来的一句现成话（走导演指令通道）；不传就用输入框里的 */
+  const send = useCallback(async (preset?: string) => {
+    const text = (preset ?? input).trim()
     if (!text || !session || !charCard || streaming) return
-    setInput('')
+    if (!preset) setInput('')
     setStreaming(true)
     setStreamText('')
     setPhase('')
@@ -390,6 +393,83 @@ export default function TavernFree() {
       abortRef.current = null
     }
   }, [input, session, charCard, streaming, refreshSessions, autoSummarize, castCards, speakNext])
+
+  // ---------- 消息级操作（与剧情推演同一套；自由模式多一条：重说时**保持原来的说话人**） ----------
+  const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
+
+  const commit = async (next: FreeSession) => {
+    setSession(next)
+    await store.saveFreeSession(next).then(refreshSessions).catch(() => undefined)
+  }
+
+  const saveEdited = (id: string, text: string) => {
+    if (!session) return
+    void commit(store.patchMessage(session, id, { content: text, edited: true }))
+  }
+
+  const toggleHidden = (id: string) => {
+    if (!session) return
+    const next = store.toggleMessageHidden(session, id)
+    void commit(next)
+    const m = next.messages.find(x => x.id === id)
+    showToast(m?.hidden ? '已隐藏：这条不再进上下文，界面仍留着' : '已恢复：这条重新参与上下文', 'info')
+  }
+
+  const removeMsg = async (id: string) => {
+    if (!session) return
+    const okGo = await confirmDialog({
+      title: '删掉这一条？',
+      message: '删除后不再参与上下文，也不再显示。\n这一步不可撤销（记忆是角色级的，已经整理进去的内容不受影响）。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!okGo) return
+    void commit(store.dropMessage(session, id))
+  }
+
+  /**
+   * 重说：多角色同场时**保持原来的说话人** —— 同一轮换个人接话，观感很怪。
+   * speakerId 传给引擎即走「手动指定下一位」那条路（它优先于轮转）。
+   */
+  const reroll = async () => {
+    if (!session || streaming) return
+    const target = session.messages.find(m => m.id === lastAiId)
+    if (!target) { showToast('还没有可以重说的回复', 'info'); return }
+    setStreaming(true)
+    setStreamText('')
+    setPhase('')
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    try {
+      const cast = (castCards.length ? castCards : (charCard ? [charCard] : [])) as FreeCharacter[]
+      const res = await runFreeTurn(session, cast, null, {
+        onToken: d => setStreamText(prev => prev + d),
+        onPhase: p => setPhase(p),
+        signal: ctrl.signal,
+        speakerId: target.speakerId,
+      })
+      const saved = await store.saveFreeSession(res.session)
+      setSession(saved)
+      setStreamText('')
+      await refreshSessions()
+      if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
+    } catch (e) {
+      showToast(`重说失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setStreaming(false)
+      setPhase('')
+      abortRef.current = null
+    }
+  }
+
+  /** 快捷指令条：走协议 R4 的**导演指令**通道（「」= 照做然后继续演） */
+  const quickActions: QuickAction[] = [
+    { key: 'cont', label: '继续', hint: '让 Ta 接着说', run: () => void send('「继续。」') },
+    { key: 'env', label: '补环境', hint: '先补一句【】里的环境（光、声、气味），再接着说', run: () => void send('「先说一句【】里的环境（光、声、气味），再继续。」') },
+    { key: 'time', label: '推进时间', hint: '把时间往前推一点（半小时 / 第二天）', run: () => void send('「把时间往前推一点（半小时或第二天），再继续。」') },
+    { key: 'mind', label: 'Ta 在想什么', hint: '用一个动作或细节透出心里的想法，不直接写心理', run: () => void send('「用一个动作或细节写出 Ta 此刻心里在想什么，不要直接写心理。」') },
+    { key: 'reroll', label: '重说', hint: '用同一段历史让 Ta 重说这一条（只出一个结果，说话人不变）', run: () => void reroll() },
+  ]
 
   const stop = () => { abortRef.current?.abort() }
 
@@ -664,7 +744,17 @@ export default function TavernFree() {
                         {m.role !== 'user' && aiCards.length > 1 && who && (
                           <div className="text-[10.5px] text-amber/80">{who.name}</div>
                         )}
-                        {renderTavernMessage(m.content)}
+                        <TavernMessageBody
+                          content={m.content} hidden={m.hidden} edited={m.edited}
+                          ops={{
+                            canReroll: m.id === lastAiId && !streaming,
+                            busy: streaming,
+                            onReroll: () => void reroll(),
+                            onSaveEdit: t => saveEdited(m.id, t),
+                            onToggleHidden: () => toggleHidden(m.id),
+                            onDelete: () => void removeMsg(m.id),
+                          }}
+                        />
                       </div>
                     </div>
                   )
@@ -679,6 +769,7 @@ export default function TavernFree() {
               </div>
 
               <div className="border-t border-ink-800 p-3">
+                <TavernQuickBar actions={quickActions} disabled={streaming} className="mb-2" />
                 {/* 自动延展：默认 3 行，写长了自己长高，超过 200px 才内部滚动 */}
                 <AutoTextarea
                   className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"

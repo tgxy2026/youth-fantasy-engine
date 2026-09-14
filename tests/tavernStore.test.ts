@@ -215,6 +215,42 @@ async function main() {
     ok('推演报告也能重新看到', (await db.listProjectReports('scope-proj-a')).length === 1)
   }
 
+  // ---------- 9) 消息级操作：编辑 / 隐藏 / 删除 / 末条识别（老大全接受的 A1） ----------
+  {
+    __resetMockStores()
+    const ch = await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '操作测试' })
+    const s = await store.saveFreeSession({
+      ...(await store.createFreeSession([ch.id], '操作测试场', { providerId: '' }, {})),
+      messages: [
+        { id: 'u1', role: 'user', content: '第一句', at: 1 },
+        { id: 'a1', role: 'assistant', content: '第一答', at: 2 },
+        { id: 'u2', role: 'user', content: '第二句', at: 3 },
+        { id: 'a2', role: 'assistant', content: '第二答', at: 4 },
+      ],
+    })
+
+    ok('末条 AI 回复的 id 能取到（只有它可重说）', store.lastAssistantId(s.messages) === 'a2')
+    ok('没有 AI 回复时返回空串',
+      store.lastAssistantId([{ id: 'u', role: 'user', content: 'x', at: 1 }]) === '')
+
+    const edited = store.patchMessage(s, 'u1', { content: '改过的第一句', edited: true })
+    ok('编辑：只动目标那条、标上 edited、**原会话对象不被改**',
+      edited.messages[0].content === '改过的第一句' && edited.messages[0].edited === true &&
+      s.messages[0].content === '第一句' && edited.messages.length === 4)
+
+    const hid = store.toggleMessageHidden(s, 'a1')
+    ok('隐藏：翻 hidden 标记', hid.messages[1].hidden === true)
+    ok('取消隐藏：再翻一次', !store.toggleMessageHidden(hid, 'a1').messages[1].hidden)
+
+    const dropped = store.dropMessage(s, 'a1')
+    ok('删除：只移走那一条，其余保持顺序',
+      dropped.messages.length === 3 && dropped.messages.map(m => m.id).join(',') === 'u1,u2,a2')
+
+    const saved = await store.saveFreeSession(hid)
+    const back = await store.getFreeSession(saved.id)
+    ok('隐藏标记能落库读回（不是只活在内存里）', back?.messages[1].hidden === true)
+  }
+
   console.log(`\ntavernStore: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

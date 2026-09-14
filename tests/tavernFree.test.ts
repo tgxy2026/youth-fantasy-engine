@@ -354,6 +354,64 @@ async function main() {
       rich.indexOf('〖客观描写〗') < rich.indexOf('不要写天气。'))
   }
 
+  // ---------- 隐藏不进上下文 + 重说（老大全接受的 A1，2026-09-14） ----------
+  {
+    __resetMockStores()
+    // 复位会清掉桩模型，这里要重新装一遍（否则 resolveTavernProvider 直接抛「未配置模型」）
+    await saveProviders([STUB_PROVIDER])
+    await saveActiveId(STUB_PROVIDER.id)
+    const ch = await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '重说测试' })
+    const base = await store.saveFreeSession({
+      ...(await store.createFreeSession([ch.id], '重说测试场', { providerId: '' }, {})),
+      messages: [
+        { id: 'm1', role: 'user', content: '第一句', at: 1 },
+        { id: 'm2', role: 'assistant', content: '不该被看见的旧回复', at: 2, hidden: true },
+        { id: 'm3', role: 'user', content: '第二句', at: 3 },
+        { id: 'm4', role: 'assistant', content: '要被重说的回复', at: 4 },
+      ],
+    })
+
+    // ① 隐藏的消息不进上下文（但仍在 messages 里，界面拿得到）
+    const built = buildFreeMessages(base.messages, base, [ch], 100000)
+    ok('隐藏的消息不进上下文（自由模式）',
+      !built.messages.some(m => m.content.includes('不该被看见')) &&
+      built.messages.some(m => m.content.includes('要被重说的回复')) &&
+      base.messages.length === 4)
+
+    // ② 重说：不追加用户消息、替换末尾那条、历史条数不变
+    const REPLY = '她换了句说法。'
+    const { chatFn, calls } = makeFakeChat(REPLY)
+    const res = await runFreeTurn(base, [ch], null, {}, { chatFn })
+    const msgs = res.session.messages
+    ok('重说：拿到新回复', res.reply === REPLY)
+    ok('重说：不新增用户消息（条数不变）', msgs.length === base.messages.length, String(msgs.length))
+    ok('重说：末尾换成新的，旧的那条已不在历史里',
+      msgs.at(-1)?.content === REPLY && !msgs.some(m => m.content.includes('要被重说')))
+    ok('重说：两条用户消息原样保留',
+      msgs.filter(m => m.role === 'user').map(m => m.content).join('|') === '第一句|第二句')
+
+    const lastCall = calls.at(-1)!
+    const joined = lastCall.messages.map(m => String(m.content)).join('\n')
+    ok('重说：模型看到的最后一条仍是用户那句', lastCall.messages.at(-1)?.role === 'user' && joined.includes('第二句'))
+    ok('重说：隐藏的那条也没进上下文', !joined.includes('不该被看见'))
+
+    // ③ 重说失败（空回复）→ **保留原来那条**，不能一次失败就删掉
+    const { chatFn: emptyChat } = makeFakeChat('')
+    const fail = await runFreeTurn(base, [ch], null, {}, { chatFn: emptyChat })
+    ok('重说失败（空回复）：原来那条被保留',
+      fail.session.messages.length === base.messages.length &&
+      fail.session.messages.some(m => m.content.includes('要被重说的回复')))
+
+    // ④ 没有末尾 assistant 时不该动历史（dropTrailingAssistant 原样返回）
+    const onlyUser = await store.saveFreeSession({
+      ...base,
+      messages: [{ id: 'x1', role: 'user', content: '只有一句', at: 1 }],
+    })
+    let refused = false
+    try { await runFreeTurn(onlyUser, [ch], null, {}, { chatFn }) } catch { refused = true }
+    ok('没有可重说的回复时：明确报错，而不是凭空造一轮', refused)
+  }
+
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

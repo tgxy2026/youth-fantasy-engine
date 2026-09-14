@@ -14,6 +14,8 @@ import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
 import TavernCastSetting from './TavernCastSetting'
+import TavernMessageBody from './TavernMessageBody'
+import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
@@ -126,10 +128,11 @@ export default function TavernPlot() {
     await store.saveSession(next).then(refreshList).catch(() => undefined)
   }
 
-  const send = async () => {
-    if (!session || !input.trim() || streaming) return
-    const text = input.trim()
-    setInput('')
+  /** preset = 快捷指令条递过来的一句现成话（走导演指令通道）；不传就用输入框里的 */
+  const send = async (preset?: string) => {
+    const text = (preset ?? input).trim()
+    if (!session || !text || streaming) return
+    if (!preset) setInput('')
     setStreaming(true)
     setStreamText('')
     setPhase('')
@@ -158,6 +161,88 @@ export default function TavernPlot() {
       abortRef.current = null
     }
   }
+
+  // ---------- 消息级操作（重说 / 编辑 / 隐藏 / 删除，2026-09-14 老大全接受的 A1） ----------
+  /** 只有**末尾那条 AI 回复**能重说 —— 中间那条改了，后面是按旧版接的，必然打架 */
+  const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
+
+  /** 消息改动统一走这里：立刻落库（含索引同步）+ 刷新左栏 */
+  const commit = async (next: TavernSession) => {
+    setSession(next)
+    await store.saveSession(next).then(refreshList).catch(() => undefined)
+  }
+
+  const saveEdited = (id: string, text: string) => {
+    if (!session) return
+    void commit(store.patchMessage(session, id, { content: text, edited: true }))
+  }
+
+  const toggleHidden = (id: string) => {
+    if (!session) return
+    const next = store.toggleMessageHidden(session, id)
+    void commit(next)
+    const m = next.messages.find(x => x.id === id)
+    showToast(m?.hidden ? '已隐藏：这条不再进上下文，界面仍留着' : '已恢复：这条重新参与上下文', 'info')
+  }
+
+  const removeMsg = async (id: string) => {
+    if (!session) return
+    const okGo = await confirmDialog({
+      title: '删掉这一条？',
+      message: '删除后不再参与上下文，也不再显示。\n这一步不可撤销（整场推演仍可「结束推演」生成报告留档）。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!okGo) return
+    void commit(store.dropMessage(session, id))
+  }
+
+  /**
+   * 重说：`runPlotTurn(session, null)` = 不追加用户消息、先丢掉末尾那条 assistant，
+   * 于是新生成的结果**天然替换**掉那一条。只出一个结果，不做多候选（老大 2026-09-14 定）。
+   */
+  const reroll = async () => {
+    if (!session || streaming) return
+    if (!lastAiId) { showToast('还没有可以重说的回复', 'info'); return }
+    setStreaming(true)
+    setStreamText('')
+    setPhase('')
+    const ac = new AbortController()
+    abortRef.current = ac
+    try {
+      const res = await runPlotTurn(session, null, {
+        signal: ac.signal,
+        onToken: d => setStreamText(t => t + d),
+        onPhase: setPhase,
+      })
+      setSession(res.session)
+      setStreamText('')
+      await store.saveSession(res.session)
+      await refreshList()
+      if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
+    } catch (e) {
+      showToast(`重说失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setStreaming(false)
+      setPhase('')
+      setStreamText('')
+      abortRef.current = null
+    }
+  }
+
+  /**
+   * 快捷指令条：走协议 R4 的**导演指令**通道（「」= 照做然后继续演），所以不必改引擎。
+   * 好处是它不污染「角色说过的话」这层语义 —— 不会被当成台词记进记忆。
+   */
+  const quickActions: QuickAction[] = [
+    { key: 'cont', label: '继续', hint: '让 AI 顺着往下演一轮', run: () => void send('「继续，不必解释。」') },
+    { key: 'turn', label: '换个方向', hint: '这一轮换一种走向，不要重复刚才的写法', run: () => void send('「换一个方向演这一轮，不要重复刚才的走向。」') },
+    { key: 'env', label: '补环境', hint: '先补一句【】里的环境（光、声、气味），再接着说', run: () => void send('「先说一句【】里的环境（光、声、气味），再继续。」') },
+    { key: 'time', label: '推进时间', hint: '把时间往前推一点（半小时 / 第二天）', run: () => void send('「把时间往前推一点（半小时或第二天），再继续。」') },
+    { key: 'wind', label: '收束本场', hint: '给这一幕一个可以停下的落点', run: () => void send('「把这一幕收一收，落到一个可以停下的地方。」') },
+    { key: 'mind', label: 'Ta 在想什么', hint: '用一个动作或细节透出心里的想法，不直接写心理', run: () => void send('「用一个动作或细节写出 Ta 此刻心里在想什么，不要直接写心理。」') },
+    { key: 'reroll', label: '重说', hint: '用同一段历史让 AI 重说这一条（只出一个结果）', run: () => void reroll() },
+  ]
 
   const stop = () => {
     abortRef.current?.abort()
@@ -383,7 +468,17 @@ export default function TavernPlot() {
                     {m.role !== 'user' && casts.ai.length > 1 && m.speakerId && (
                       <div className="text-[11px] text-amber">{casts.ai.find(c => c.cardId === m.speakerId)?.name ?? ''}</div>
                     )}
-                    {renderTavernMessage(m.content)}
+                    <TavernMessageBody
+                      content={m.content} hidden={m.hidden} edited={m.edited}
+                      ops={{
+                        canReroll: m.id === lastAiId && !streaming,
+                        busy: streaming,
+                        onReroll: () => void reroll(),
+                        onSaveEdit: t => saveEdited(m.id, t),
+                        onToggleHidden: () => toggleHidden(m.id),
+                        onDelete: () => void removeMsg(m.id),
+                      }}
+                    />
                   </div>
                 </div>
               ))}
@@ -398,6 +493,7 @@ export default function TavernPlot() {
 
             {/* 输入区 */}
             <div className="border-t border-ink-800 p-3">
+              <TavernQuickBar actions={quickActions} disabled={streaming} className="mb-2" />
               <AutoTextarea
                 className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"
                 textClass="text-[13px]"
@@ -419,7 +515,7 @@ export default function TavernPlot() {
                 <div className="flex gap-2">
                   {streaming
                     ? <Button variant="secondary" size="md" onClick={stop}>停止</Button>
-                    : <Button variant="primary" size="md" disabled={!input.trim()} onClick={send}>发送</Button>}
+                    : <Button variant="primary" size="md" disabled={!input.trim()} onClick={() => void send()}>发送</Button>}
                 </div>
               </div>
             </div>

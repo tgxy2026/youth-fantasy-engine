@@ -148,6 +148,12 @@ function main() {
     ]
     ok('跳过 system 消息（协议已单独成 system）', toChatMessages(msgs).length === 2)
     ok('不传 withSpeaker 时内容原样', toChatMessages(msgs)[1].content === '嗯。')
+    // 隐藏的消息不进上下文 —— 这是「别让 AI 看见」的唯一出口（两条线都走它）
+    const withHidden = [...msgs, { id: 'h1', role: 'assistant' as const, content: '这条不该被看见', at: 9, hidden: true }]
+    ok('隐藏的消息不进上下文',
+      toChatMessages(withHidden).length === toChatMessages(msgs).length &&
+      !toChatMessages(withHidden).some(m => m.content.includes('不该被看见')))
+
     const tagged = toChatMessages(msgs, { withSpeaker: () => '〈苏念〉' })
     ok('多角色同场时给 assistant 标注说话人（〈名〉，与输出标记不同符号）', tagged[1].content.startsWith('〈苏念〉'))
     ok('用户消息不加说话人标记', tagged[0].content === '你好')
