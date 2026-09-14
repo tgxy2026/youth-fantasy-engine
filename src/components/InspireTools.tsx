@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import AIAssist from './AIAssist'
+import SearchSettingsPanel from './SearchSettingsPanel'
 import AutoContinue from './AutoContinue'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
@@ -203,6 +204,12 @@ export default function InspireTools() {
 
         {/* ============ AI 辅助规划 ============ */}
         <AIAssist />
+
+        {/* ============ 联网检索（全局）============
+            原先在「酒馆 → 控制面板」，2026-09-15 搬来：它是全局能力（角色卡/剧本/背景设定起草、
+            角色管理/表单/表格的 AI 补全都按它走），跟酒馆的协议与预算没有关系。
+            放在配模型的地方，作者配完模型顺手就把「要不要联网」定了。 */}
+        <SearchSettingsPanel />
       </div>
     </div>
   )

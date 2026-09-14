@@ -59,10 +59,6 @@ import * as presets from '../lib/tavern/presets'
 import type { TavernPreset } from '../lib/tavern/presets'
 import { PARAM_GUIDES, GUIDE_SAMPLING, bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
 import { VAR_DEFS, type VarKey } from '../lib/tavern/types'
-import {
-  searchBlockedReason, SEARCH_MODE_LABEL, SEARCH_ENGINE_LABEL, BOCHA_ENDPOINT, SEARXNG_ENDPOINT,
-  type SearchSettings,
-} from '../lib/webSearch'
 import { DEFAULT_POST_RULES, previewPostRules, type PostRule } from '../lib/tavern/postRules'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
@@ -401,7 +397,7 @@ export default function TavernControl() {
     const okGo = await confirmDialog({
       title: '应用预设「' + p.name + '」？',
       message: [
-        '当前所有设置（通用 / 我的档案 / 联网检索 / 预设方案 / 输出后处理 / 协议 / 剧情推演 / 自由对话 / 本场数值）都会被这套预设替换 ——',
+        '当前所有设置（通用 / 我的档案 / 预设方案 / 输出后处理 / 协议 / 剧情推演 / 自由对话 / 本场数值）都会被这套预设替换 ——',
         '包括协议全文。未保存的改动会丢失。',
       ].join('\n'),
       confirmText: '应用',
@@ -506,9 +502,6 @@ export default function TavernControl() {
   /** 本场数值（C2 第二步）：开关 / 逐项关闭 / 频率 / 幅度 */
   const setVars = (patch: Partial<TavernSettings['vars']>) =>
     edit(prev => ({ ...prev, vars: { ...prev.vars, ...patch } }))
-  /** 联网检索（只影响「AI 起草」那一步） */
-  const setSearch = (patch: Partial<SearchSettings>) =>
-    edit(prev => ({ ...prev, search: { ...prev.search, ...patch } }))
   const toggleVarKey = (k: VarKey) =>
     edit(prev => {
       const off = prev.vars.off ?? []
@@ -551,7 +544,8 @@ export default function TavernControl() {
     const okGo = await confirmDialog({
       title: '恢复出厂设置？',
       message: [
-        '九段设置（通用设置 / 我的档案 / 联网检索 / 预设方案 / 输出后处理 / 扮演协议 / 剧情推演 / 自由对话 / 本场数值）里的所有参数与提示词，都会回到内置默认值。',
+        '八段设置（通用设置 / 我的档案 / 预设方案 / 输出后处理 / 扮演协议 / 剧情推演 / 自由对话 / 本场数值）里的所有参数与提示词，都会回到内置默认值。',
+        '联网检索不在其中 —— 它已搬到「灵感工具 → 灵感启发」，属于全局设置，恢复出厂不会动它。',
         '已存的预设方案不受影响 —— 那是独立的快照，要用它随时点「应用」即可。',
         '保存后不可撤销。',
       ].join('\n'),
@@ -743,118 +737,9 @@ export default function TavernControl() {
           </Section>
           </div>
 
-          {/* ---------- 三、联网检索（起草用） ----------
-              与「通用设置」同类：全局、与对话本身无关，只在「AI 起草」那一步用到。 */}
+          {/* ---------- 三、预设方案（A4） ---------- */}
           <Section
-            title="三、联网检索"
-            desc="全局设置：所有「AI 起草 / 补全」（酒馆的角色卡与剧本，以及角色管理 / 表单 / 表格的补全）都按这一档取素材，与对话本身无关。默认关闭 —— 不填任何东西也能用一句话起草，靠模型已有知识加你粘贴的素材。"
-          >
-            <Field
-              label="检索方式"
-              hint="起草时的素材从哪来。界面上每次起草都会如实告诉你「本次用的是哪一种」，包括没查成的情况。"
-            >
-              <div className="flex flex-wrap gap-2">
-                {(['off', 'model', 'api'] as const).map(m => (
-                  <Button
-                    key={m} variant="toggle" size="sm"
-                    selected={s.search.mode === m}
-                    onClick={() => setSearch({ mode: m })}
-                  >
-                    {SEARCH_MODE_LABEL[m]}
-                  </Button>
-                ))}
-              </div>
-              <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-500">
-                {s.search.mode === 'off'
-                  ? '不联网。知名题材（蒂法、《梁祝》这类）模型自己就很熟，够用；冷门或原创靠下面「参考素材」那一栏粘进去。'
-                  : s.search.mode === 'model'
-                    ? '让模型自己去查 —— 前提是你选的模型/中转本身支持联网。本软件看不到这一步，是否真的联网取决于服务商。'
-                    : '由本软件先查好再喂给模型 —— 所以跟模型本身有没有联网能力无关，本地 Ollama 也能用。桌面版由主进程代发请求、不受跨域限制，任何返回 JSON 的搜索接口都能接；便携版跑在浏览器里，只能用它允许跨域的接口（博查）。'}
-              </p>
-            </Field>
-
-            {s.search.mode === 'api' && (
-              <>
-                <Field
-                  label="搜索引擎"
-                  hint="博查要密钥、但开箱可用；SearXNG 是自建免费实例、无密钥无次数限制；自定义接口自己填地址。地址里带 {query} 就按 GET 调用，否则按 POST { query, count }。"
-                >
-                  <select
-                    className={NUM}
-                    value={s.search.engine}
-                    onChange={e => setSearch({ engine: e.target.value as SearchSettings['engine'] })}
-                  >
-                    <option value="bocha">博查（推荐，开箱可用）</option>
-                    <option value="searxng">SearXNG（自建，免费无限量）</option>
-                    <option value="custom">自定义接口</option>
-                  </select>
-                </Field>
-
-                {s.search.engine === 'custom' && (
-                  <Field label="接口地址" hint={`留空则用博查的默认地址 ${BOCHA_ENDPOINT}`}>
-                    <input
-                      className={NUM}
-                      value={s.search.endpoint}
-                      onChange={e => setSearch({ endpoint: e.target.value })}
-                      placeholder={BOCHA_ENDPOINT}
-                    />
-                  </Field>
-                )}
-
-                {s.search.engine === 'searxng' && (
-                  <Field
-                    label="接口地址"
-                    hint={`留空即用 ${SEARXNG_ENDPOINT}。三个前提：① settings.yml 的 search.formats 要加上 json（默认只有 html，不加接口回 403）；② limiter 要设成 false（开着会把本软件的调用当机器人回 429）；③ 端口要与你自己的映射一致。`}
-                  >
-                    <input
-                      className={NUM}
-                      value={s.search.endpoint}
-                      onChange={e => setSearch({ endpoint: e.target.value })}
-                      placeholder={SEARXNG_ENDPOINT}
-                    />
-                  </Field>
-                )}
-
-                {s.search.engine !== 'searxng' && (
-                  <Field
-                    label="密钥"
-                    hint="存在本机数据文件里，不会上传到任何服务器；只有起草时才会带着它去请求搜索接口。SearXNG 这类自建实例不需要密钥，所以选了它这一栏就不显示了。"
-                  >
-                    <input
-                      className={NUM}
-                      value={s.search.apiKey}
-                      onChange={e => setSearch({ apiKey: e.target.value })}
-                      placeholder="sk-…（博查控制台里生成）"
-                      autoComplete="off"
-                    />
-                  </Field>
-                )}
-
-                <NumField
-                  label="每次取几条" guide={PARAM_GUIDES.searchTopK}
-                  hint="取多少条结果喂给模型。条数越多细节越全，但摘要里的重复也越多。"
-                  value={s.search.topK} onCommit={v => setSearch({ topK: Math.max(1, Math.min(10, Math.round(v))) })}
-                />
-              </>
-            )}
-
-            <div className="text-[10.5px] leading-relaxed">
-              {/* 🔴 两件事都要说：当前是哪一档（永远显示）+ 有什么问题（有问题才追加）。
-                  原先写成三选一，结果「没填密钥」时反而不显示当前档了 —— 信息不是互斥的。 */}
-              <p className="text-ink-400">
-                当前：{SEARCH_MODE_LABEL[s.search.mode]}
-                {s.search.mode === 'api' && `（${SEARCH_ENGINE_LABEL[s.search.engine]}）`}
-                —— 起草时按这一档执行
-              </p>
-              {searchBlockedReason(s.search) && (
-                <p className="mt-0.5 text-amber">⚠️ {searchBlockedReason(s.search)}</p>
-              )}
-            </div>
-          </Section>
-
-          {/* ---------- 四、预设方案（A4） ---------- */}
-          <Section
-            title="四、预设方案"
+            title="三、预设方案"
             desc="把整套设置存成命名快照，一键切换。预设包含协议全文，所以换预设等于把参数与格式契约一起换掉 —— 只换一半的话，格式规则还是上一套的。"
           >
             <div className="flex flex-wrap items-center gap-2">
@@ -918,9 +803,9 @@ export default function TavernControl() {
             )}
           </Section>
 
-          {/* ---------- 五、输出后处理（B3） ---------- */}
+          {/* ---------- 四、输出后处理（B3） ---------- */}
           <Section
-            title="五、输出后处理"
+            title="四、输出后处理"
             desc="生成后按下面的规则从上到下修一遍再落库。协议已经把格式写死了，实测却总有模型不听话 —— 用规则兜住，比重跑一次去赌划算。顺序有意义：先去 markdown 再处理单星号动作，否则 **动作** 会被拆成 *（动作）*。"
           >
             <ToggleField
@@ -1008,7 +893,7 @@ export default function TavernControl() {
               </p>
             </div>
           </Section>
-          {/* ---------- 六、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ----------
+          {/* ---------- 五、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ----------
               🔴 两条都是踩出来的，别删：
               ① **不能写 `xl:flex-1`** —— 主轴是高度，flex-basis 会压过下面那个 inline `height`，
                  包装层被"填充剩余空间"接管，设多少高度都无效；
@@ -1020,7 +905,7 @@ export default function TavernControl() {
             style={protoH === null ? undefined : { height: protoH }}
           >
           <Section
-            title="六、扮演协议"
+            title="五、扮演协议"
             desc={`两种模式共用的格式契约，内置版本 ${PROTOCOL_VERSION}。注入时钉在提示词的最末尾（它自带的「最后提醒」要紧贴生成点）。`}
             className="xl:h-full xl:min-h-0 xl:flex xl:flex-col xl:overflow-hidden"
             bodyClassName="xl:min-h-0 xl:flex-1 xl:flex xl:flex-col xl:overflow-hidden"
@@ -1074,9 +959,9 @@ export default function TavernControl() {
         {/* ========== 右列（它的高度是协议窗高度的基准） ========== */}
         <div ref={rightColRef} className="space-y-4">
 
-          {/* ---------- 七、剧情推演控制 ---------- */}
+          {/* ---------- 六、剧情推演控制 ---------- */}
           <Section
-            title="七、剧情推演控制"
+            title="六、剧情推演控制"
             desc="只对「剧情推演」生效。叙事向要的是稳 —— 角色反应得站得住，所以默认温度比自由对话低。"
           >
             <div className={GRID2}>
@@ -1145,9 +1030,9 @@ export default function TavernControl() {
             />
           </Section>
 
-          {/* ---------- 八、自由对话控制 ---------- */}
+          {/* ---------- 七、自由对话控制 ---------- */}
           <Section
-            title="八、自由对话控制"
+            title="七、自由对话控制"
             desc="只对「自由对话」生效。陪伴要松弛感，所以温度默认更高；下面还有记忆引擎与日常推进的一组阈值。"
           >
             <div className={GRID2}>
@@ -1269,9 +1154,9 @@ export default function TavernControl() {
               </div>
             </div>
           </Section>
-          {/* ---------- 九、本场数值（C2 第二步） ---------- */}
+          {/* ---------- 八、本场数值（C2 第二步） ---------- */}
           <Section
-            title="九、本场数值"
+            title="八、本场数值"
             desc="只对「自由对话」生效。让 AI 每隔几轮给一次数值变化（好感 / 信任 / 剧情进度 / 心情 / 当前地点），你也能随时手改。数值属于这一场，换一场戏重新算 —— 角色卡管「这个人是谁」，数值管「这一场走到哪了」。"
           >
             <ToggleField

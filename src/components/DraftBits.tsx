@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import AutoTextarea from './AutoTextarea'
 import { getSearchSettings } from '../lib/searchSettings'
 import { searchBlockedReason, SEARCH_MODE_LABEL, type SearchSettings } from '../lib/webSearch'
-import type { DraftSource } from '../lib/draftMaterial'
+import { describeSource, type DraftSource } from '../lib/draftMaterial'
 
 /**
  * 读一次检索设置（起草 / 补全时用）。
@@ -60,22 +60,37 @@ export function SearchPlanLine({ settings }: { settings: SearchSettings | null }
     <p className="text-[10.5px] leading-relaxed text-ink-500">
       素材来源：<span className="text-ink-300">{SEARCH_MODE_LABEL[settings.mode]}</span>
       {blocked && <span className="ml-1 text-amber">⚠️ {blocked}</span>}
+      {/* 「模型自带联网」这一档我们看不到它有没有真查 —— 提前就说明白，别让作者以为稳了 */}
+      {!blocked && settings.mode === 'model' && (
+        <span className="ml-1">· 是否真的联网取决于所选模型/中转，本软件看不到这一步</span>
+      )}
     </p>
   )
 }
 
-/** 起草**之后**如实报告这次用了什么（含失败原因，绝不静默） */
+/**
+ * 起草**之后**如实报告这次用了什么。
+ *
+ * 🔴 判定全在 `describeSource`（纯函数），这里只负责渲染 —— 界面自己猜「有没有联上」
+ * 迟早会和实际行为漂移，而这类漂移的表现就是「说联网了其实是凭印象编的」，比不报还坏。
+ */
 export function DraftSourceLine({ source }: { source: DraftSource | null }) {
   if (!source) return null
+  const v = describeSource(source)
+  // 没联网 = 必须显眼（amber）；联上了 = 绿色回执，让作者安心
+  const cls = v.tone === 'warn'
+    ? 'border-amber/40 bg-amber/8 text-amber'
+    : v.tone === 'ok'
+      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+      : 'border-ink-700 bg-ink-900/50 text-ink-400'
   return (
-    <div className={`mt-1.5 rounded border px-2 py-1.5 text-[10.5px] leading-relaxed ${source.error
-      ? 'border-amber/40 bg-amber/8 text-amber'
-      : 'border-ink-700 bg-ink-900/50 text-ink-400'}`}>
-      本次素材来源：<span className="text-ink-200">{source.label}</span>
-      {source.used && !source.error && <span className="ml-1">· 已用上外部资料</span>}
-      {!source.used && source.mode === 'off' && <span className="ml-1">· 未联网</span>}
-      {source.note && <div className="mt-0.5 text-ink-500">{source.note}</div>}
-      {source.error && <div className="mt-0.5">⚠️ {source.error}</div>}
+    <div className={`mt-1.5 rounded border px-2 py-1.5 text-[10.5px] leading-relaxed ${cls}`}>
+      {v.tone === 'warn' && <span className="mr-1">⚠️</span>}
+      <span className="text-ink-100 font-medium">{v.headline}</span>
+      <div className="mt-0.5 opacity-90">
+        {v.detail}
+        {source.web === 'searched' && source.note && <span className="ml-1">{source.note}</span>}
+      </div>
     </div>
   )
 }

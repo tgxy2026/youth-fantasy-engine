@@ -19,6 +19,7 @@ import {
 } from '../src/lib/tavern/interview'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
 import type { ChatFn } from '../src/lib/tavern/engine'
+import { describeSource, type DraftSource } from '../src/lib/draftMaterial'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0
@@ -267,6 +268,61 @@ async function main() {
     const script = interviewToScript({ situation: '雨夜便利店', goal: '让她开口' })
     ok('汇总成剧本草稿', script.situation === '雨夜便利店' && script.goal === '让她开口' && script.taboo === '')
     ok('摊平文本用中文栏名', filledToText({ name: '蒂法' }, 'card').includes('名字') && filledToText({ situation: 'x' }, 'script').includes('情境'))
+  }
+
+  // ---------- ④ 联网状态必须如实回告（含「模型自带联网」那个曾经的谎） ----------
+  {
+    const mk = (over: Partial<DraftSource>): DraftSource => ({
+      mode: 'api', label: '搜索接口（博查）', used: false, web: 'failed', ...over,
+    })
+
+    const okSrc = describeSource(mk({ web: 'searched', used: true, note: '检索词：蒂法 · 命中 4 条' }))
+    ok('查到了 → ok 且标题写「已联网」', okSrc.tone === 'ok' && okSrc.headline.includes('已联网'), okSrc.headline)
+    ok('查到的回执带检索词与条数', okSrc.detail.includes('蒂法') || okSrc.detail.includes('命中'), okSrc.detail)
+
+    const failed = describeSource(mk({ error: '检索失败：HTTP 401' }))
+    ok('🔴 查失败 → warn，标题明说「本次没有联网」', failed.tone === 'warn' && failed.headline.includes('没有联网'), failed.headline)
+    ok('🔴 并说明「内容是模型凭已有知识生成的」（老大点名要的这句）',
+      failed.detail.includes('凭已有知识生成'), failed.detail)
+    ok('失败原因一并带上（绝不静默）', failed.detail.includes('401'), failed.detail)
+
+    const delegated = describeSource(mk({ mode: 'model', label: '模型自带联网', web: 'delegated' }))
+    ok('🔴 模型自带联网 → warn，标题写「无法确认是否联网」', delegated.tone === 'warn' && delegated.headline.includes('无法确认'), delegated.headline)
+    ok('并说明若不支持联网，内容就是它凭已有知识生成的', delegated.detail.includes('凭已有知识生成'), delegated.detail)
+
+    const off = describeSource(mk({ mode: 'off', label: '模型已有知识 + 粘贴素材', web: 'off' }))
+    ok('不联网档 → muted，明说是按设置（不是失败）', off.tone === 'muted' && off.headline.includes('未联网'), off.headline)
+    ok('四态的标题互不相同（防止退化成一句含糊话）',
+      new Set([okSrc.headline, failed.headline, delegated.headline, off.headline]).size === 4)
+
+    // 真跑一遍素材管线，确认 verdict 是**算出来的**而不是默认值
+    for (const [label, settings, expectWeb] of [
+      ['off 档', { mode: 'off' as const, engine: 'bocha' as const, endpoint: '', apiKey: '', topK: 3 }, 'off'],
+      ['model 档', { mode: 'model' as const, engine: 'bocha' as const, endpoint: '', apiKey: '', topK: 3 }, 'delegated'],
+    ] as const) {
+      const m = await prepareDraftMaterial({ idea: '蒂法', settings })
+      ok(`${label} 的 verdict = ${expectWeb}`, m.source.web === expectWeb, m.source.web)
+      ok(`${label} 的 used 为 false（没取回任何外部资料）`, m.source.used === false)
+    }
+
+    const hit = await prepareDraftMaterial({
+      idea: '蒂法',
+      settings: { mode: 'api', engine: 'searxng', endpoint: 'http://x/search?q={query}', apiKey: '', topK: 3 },
+      searchFn: (async (q: string) => ({
+        used: true, engine: 'searxng', query: q, results: [{ title: 't', url: 'u', snippet: 's' }],
+      })) as unknown as typeof webSearch,
+    })
+    ok('🔴 搜索成功 → verdict=searched 且 used=true', hit.source.web === 'searched' && hit.source.used === true, hit.source.web)
+
+    const miss = await prepareDraftMaterial({
+      idea: '蒂法',
+      settings: { mode: 'api', engine: 'searxng', endpoint: 'http://x/search?q={query}', apiKey: '', topK: 3 },
+      searchFn: (async (q: string) => ({
+        used: false, engine: 'searxng', query: q, results: [], error: '检索失败：ECONNREFUSED',
+      })) as unknown as typeof webSearch,
+    })
+    ok('🔴 搜索失败 → verdict=failed（界面据此说「这次没联网」）', miss.source.web === 'failed', miss.source.web)
+    ok('失败原因原样带回', (miss.source.error ?? '').includes('ECONNREFUSED'), miss.source.error)
   }
 
   console.log('')

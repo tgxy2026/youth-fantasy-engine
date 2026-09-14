@@ -26,12 +26,62 @@ export type DraftSource = {
   mode: SearchSettings['mode']
   /** 显示用：模型已有知识 + 粘贴素材 / 模型自带联网 / 搜索接口（<引擎名>） */
   label: string
-  /** 真的拿到了外部资料吗 */
+  /** 我们这边**确实取回了**外部资料（只有「搜索接口」档成功时才为 true） */
   used: boolean
+  /** 这次到底有没有真的联上网（详见 WebVerdict 的注释） */
+  web: WebVerdict
   /** 没查成的原因（used=false 时给界面看，绝不静默） */
   error?: string
   /** 附加说明（例如「是否真的联网取决于所选模型」这种无法验证的实情） */
   note?: string
+}
+
+/**
+ * 「这次联网了吗」——由**产出素材的那一侧**裁决，界面与提示词都不许自己猜。
+ * 猜错的后果比不报还坏：作者以为资料是查来的，就会拿它当事实。
+ *
+ *   · `searched`  —— 我们确实取回了外部资料（只有「搜索接口」档**成功**时成立）
+ *   · `failed`    —— 我们查了，但没成（原因在 `error` 里）
+ *   · `delegated` —— 交给模型/中转自己查，**本软件无法验证**（选了「模型自带联网」）
+ *   · `off`       —— 按设置就没联网
+ */
+export type WebVerdict = 'searched' | 'failed' | 'delegated' | 'off'
+
+/**
+ * 把 source 翻译成「作者一眼能看懂的结论」（纯函数 —— 界面只负责渲染，判定只有这一处）。
+ *
+ * 🔴 三档都要给结论，不能只在成功时说一句：
+ *   作者选「联网」是想要真实资料；**没联上却不说**，他就会把模型编的东西当成查来的事实
+ *   （老大 2026-09-15 点名要求：生成内容的同时必须说明这次到底联没联）。
+ */
+export function describeSource(s: DraftSource): { tone: 'ok' | 'warn' | 'muted'; headline: string; detail: string } {
+  switch (s.web) {
+    case 'searched':
+      return {
+        tone: 'ok',
+        headline: `已联网：${s.label} 取回了外部资料`,
+        detail: s.note ?? '',
+      }
+    case 'failed':
+      return {
+        tone: 'warn',
+        headline: '本次没有联网 —— 检索没成功',
+        detail: `下面这些是模型凭已有知识生成的，不是检索到的资料。${s.error ? '原因：' + s.error : ''}`,
+      }
+    case 'delegated':
+      return {
+        tone: 'warn',
+        headline: '本次无法确认是否联网',
+        detail: '已要求模型自行检索，但本软件看不到这一步。若你选的模型/中转不支持联网，'
+          + '下面这些就是它凭已有知识生成的 —— 把它当参考，别当查证过的事实。',
+      }
+    default:
+      return {
+        tone: 'muted',
+        headline: '本次未联网（按你的设置）',
+        detail: '内容基于模型已有知识与你自己提供的素材。',
+      }
+  }
 }
 
 export type DraftMaterial = {
@@ -72,15 +122,19 @@ const MODE_LABEL: Record<SearchSettings['mode'], string> = {
 export async function prepareDraftMaterial(a: DraftMaterialArgs): Promise<DraftMaterial> {
   const fence = newAuthorFence()
   const parts: string[] = []
-  let source: DraftSource = { mode: a.settings.mode, label: MODE_LABEL[a.settings.mode], used: false }
+  let source: DraftSource = { mode: a.settings.mode, label: MODE_LABEL[a.settings.mode], used: false, web: 'off' }
 
   if (a.settings.mode === 'off') {
     source = { ...source, note: '未联网：只依据模型已有知识与下面粘贴的素材' }
   } else if (a.settings.mode === 'model') {
     source = {
       ...source,
-      used: true,
-      note: '已要求模型自行检索 —— 是否真的联到网取决于你选的模型/中转（本软件看不到这一步）',
+      // 🔴 used 的含义是「我们这边确实取回了外部资料」——交给模型自己查不属于这种情况。
+      //    这里原先写的是 true，界面于是会理直气壮地说「已用上外部资料」；
+      //    可模型到底联没联网我们根本看不到，那句话在最坏的情况下就是纯撒谎。
+      used: false,
+      web: 'delegated',
+      note: '已要求模型自行检索，但本软件看不到这一步 —— 是否真的联到网取决于你选的模型/中转',
     }
   } else {
     const run = a.searchFn ?? webSearch
@@ -95,6 +149,7 @@ export async function prepareDraftMaterial(a: DraftMaterialArgs): Promise<DraftM
       //    SearXNG，回执却报「博查」。档位名宁可少写，也不能写错：作者是拿它判断能不能用的。
       label: `搜索接口（${SEARCH_ENGINE_LABEL[a.settings.engine]}）`,
       used: outcome.used,
+      web: outcome.used ? 'searched' : 'failed',
       ...(outcome.error ? { error: outcome.error } : {}),
       ...(outcome.used ? { note: `检索词：${outcome.query} · 命中 ${outcome.results.length} 条` } : {}),
     }

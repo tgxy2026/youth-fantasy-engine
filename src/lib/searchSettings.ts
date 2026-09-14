@@ -1,27 +1,49 @@
 /**
- * 联网检索设置（全局）—— 给**非酒馆模块**一个干净的入口
+ * 联网检索设置（**全局**）—— 读写唯一的入口
  *
  * 【它住在哪】
- * 值仍然存在全局设置那一份里（`tavern.settings.search`，三端共用的 meta 记录），
- * 与控制面板「联网检索」段的保存按钮同生共死 —— 不另开存储就不会出现「面板存了、别处读到旧的」。
+ * `app.search`（三端共用的 meta 记录）。**不再**挂在酒馆设置里：
+ * 联网检索是全局功能 —— 角色卡 / 剧本 / 背景设定起草，以及角色管理 / 表单 / 表格的 AI 补全，
+ * 全都按这一份走；而它跟「扮演协议」「上下文预算」这些酒馆专属的东西没有任何关系。
+ * 2026-09-15 起界面也从「酒馆 → 控制面板」搬到了「灵感工具 → 灵感启发」（配模型的地方顺手就选了）。
  *
- * 【为什么还要多这一层】
- * 2026-09-15 起，角色管理 / 表单 / 表格的「AI 补全」也要能联网取素材。
- * 那些地方直接 `import { getTavernSettings }` 读起来莫名其妙（"角色管理为什么要读酒馆设置？"），
- * 后来人很容易误以为读错了对象而改坏它。这里把「读的是全局设置里的联网检索段」这件事写明白。
+ * 【老数据怎么办】
+ * 老版本存在 `tavern.settings.search`。这里做**一次性迁移**：读不到新键时看旧位置，
+ * 有就地搬过来（写进新键），之后就读新键。旧键由 `tavern/settings.ts` 的
+ * `upgradeLegacyDefaults` / `saveTavernSettings` 剔掉 —— 不剔的话 mergeDeep 会照抄回来。
  *
- * 🔴 别再在调用点直接读 `tavern.settings`：一旦搜索设置将来搬家（例如独立成一个 app 级设置），
- *    只需改这里一处。
+ * 🔴 调用点一律走这里，别直接读 meta：将来再搬家只需改这一个文件。
  */
-import { getTavernSettings } from './tavern/settings'
+import * as db from './db'
+import { K_TAVERN_SETTINGS } from './tavern/settings'
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from './webSearch'
+
+/** 全局设置键（meta） */
+export const K_APP_SEARCH = 'app.search'
 
 /** 读联网检索设置（读不到就用出厂值 —— 起草/补全永远不该因为读设置失败而整个不可用） */
 export async function getSearchSettings(): Promise<SearchSettings> {
   try {
-    const st = await getTavernSettings()
-    return { ...DEFAULT_SEARCH_SETTINGS, ...(st?.search ?? {}) }
+    const own = await db.getMeta<Partial<SearchSettings> | null>(K_APP_SEARCH, null)
+    if (own && typeof own === 'object') return { ...DEFAULT_SEARCH_SETTINGS, ...own }
+
+    // 老位置（一次性迁移）：写回新键，下次直接命中上面那条分支
+    const legacy = await db.getMeta<{ search?: Partial<SearchSettings> } | null>(K_TAVERN_SETTINGS, null)
+    const old = legacy && typeof legacy === 'object' ? legacy.search : null
+    if (old && typeof old === 'object') {
+      const moved = { ...DEFAULT_SEARCH_SETTINGS, ...old }
+      await db.setMeta(K_APP_SEARCH, moved)
+      return moved
+    }
+    return { ...DEFAULT_SEARCH_SETTINGS }
   } catch {
     return { ...DEFAULT_SEARCH_SETTINGS }
   }
+}
+
+/** 保存（界面每次改动直接落库；条数少、写起来便宜，不做草稿态） */
+export async function saveSearchSettings(next: SearchSettings): Promise<SearchSettings> {
+  const merged = { ...DEFAULT_SEARCH_SETTINGS, ...next }
+  await db.setMeta(K_APP_SEARCH, merged)
+  return merged
 }
