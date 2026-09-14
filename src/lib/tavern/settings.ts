@@ -114,13 +114,39 @@ export type TavernSettings = {
  * 起因：角色卡的示例常是「手机消息体」风格（短句、无标点连发），模型会把这套风格
  * 泛化到整篇，连动作描写（全角括号内）都不加标点。这是两个模式共有的问题，故放通用层。
  * ★ 用户可以改、也可以清空 —— 它只是默认值。
+ *
+ * ⚠️ **排版纪律：一段话就是一整行，不许为了「好看」把一句话硬折成多行。**
+ * 这段文本会直接显示在控制面板的多行输入框里，硬换行 + 行首缩进会让用户看到
+ * 「上一行是逗号、下一行却换行，还带着莫名的空格」的乱排版（首版就踩过这个坑）。
+ * 段与段之间用空行分隔即可（`\n\n`）。
  */
 export const DEFAULT_COMMON_EXTRA = [
+  '标点照常用：动作与神态、环境叙述、对白，一律使用正常的中文标点（，。？！、……）。',
+  '唯一的例外：角色卡的示例若采用「无标点的消息体」风格（真人发微信那种），那也只是该角色发出去的消息文本可以少标点；动作描写（全角括号内）与叙述照旧要用标点，不要把整段写成没有标点的空格流。',
+].join('\n\n')
+
+/**
+ * 首版（2.1.0）的默认文本 —— 句子被硬折成 4 行、行首还带两个空格缩进。
+ * 存过设置的机器会把这串旧文本原样留在库里，光改默认值救不回来，故留作升级比对的锚点。
+ * **只在存储里正好等于这串旧默认时才升级**；用户自己改过的文本一律不动。
+ */
+const LEGACY_DEFAULT_COMMON_EXTRA = [
   '标点照常用：动作与神态、环境叙述、对白一律使用正常的中文标点（，。？！、……）。',
   '★ 唯一的例外：角色卡的示例若采用「无标点的消息体」风格（真人发微信那种），',
   '  那也只是该角色**发出去的消息文本**可以少标点；动作描写（全角括号内）与叙述照旧要用标点，',
   '  不要把整段写成没有标点的空格流。',
 ].join('\n')
+
+/**
+ * 老数据升级：把「存的就是旧版默认文本」的那一份换成新版默认文本。
+ * 只比 `extraPrompt` 这一处（本文件目前唯一被改过排版的默认值）；
+ * 将来若再有默认文本变更，按同样方式在这里追加一条比对，而不是去动用户已保存的值。
+ */
+function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<TavernSettings> | null {
+  if (!raw || typeof raw !== 'object' || !raw.common) return raw
+  if (raw.common.extraPrompt !== LEGACY_DEFAULT_COMMON_EXTRA) return raw
+  return { ...raw, common: { ...raw.common, extraPrompt: DEFAULT_COMMON_EXTRA } }
+}
 
 /** 出厂协议（= 内置常量）。面板上的「恢复出厂协议」还原到这里 */
 export const DEFAULT_PROTOCOL = PROTOCOL_CORE
@@ -187,7 +213,8 @@ function mergeDeep<T>(base: T, patch: unknown): T {
 export async function getTavernSettings(): Promise<TavernSettings> {
   try {
     const raw = await db.getMeta<Partial<TavernSettings> | null>(K_TAVERN_SETTINGS, null)
-    return mergeDeep(DEFAULT_TAVERN_SETTINGS, raw)
+    // 先过一遍老数据升级（只动「还等于旧默认」的字段），再与默认值深合并
+    return mergeDeep(DEFAULT_TAVERN_SETTINGS, upgradeLegacyDefaults(raw))
   } catch {
     return DEFAULT_TAVERN_SETTINGS
   }

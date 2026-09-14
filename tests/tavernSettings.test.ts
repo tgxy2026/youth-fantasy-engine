@@ -152,6 +152,45 @@ async function main() {
       buildSystemPrompt({ tone: 'narrative', protocol: '   ' }) === PROTOCOL_CORE)
   }
 
+  // ---------- 8) 旧默认文本的升级 + 默认文本的排版纪律 ----------
+  {
+    // 排版纪律：**一段话就是一整行**。首版把一句话硬折成 4 行、行首还带缩进，
+    // 在输入框里就成了「上一行是逗号、下一行却换行，还带莫名空格」的乱排版。
+    const lines = DEFAULT_COMMON_EXTRA.split('\n').filter(l => l.trim() !== '')
+    ok('默认文本没有「逗号/顿号结尾就换行」的硬折行',
+      !lines.some(l => /[，、；：]$/.test(l.trim())), JSON.stringify(lines.map(l => l.slice(-1))))
+    ok('默认文本没有行首缩进（空格 / 全角空格 / 制表符）',
+      !lines.some(l => /^[ \u3000\t]/.test(l)))
+    ok('默认文本最多两段（空行只是分段，不是折行）',
+      DEFAULT_COMMON_EXTRA.split(/\n\s*\n/).length <= 2)
+
+    __resetMockStores()
+    // 模拟首版（2.1.0 之初）存进库里的那份旧默认文本
+    const legacy = [
+      '标点照常用：动作与神态、环境叙述、对白一律使用正常的中文标点（，。？！、……）。',
+      '★ 唯一的例外：角色卡的示例若采用「无标点的消息体」风格（真人发微信那种），',
+      '  那也只是该角色**发出去的消息文本**可以少标点；动作描写（全角括号内）与叙述照旧要用标点，',
+      '  不要把整段写成没有标点的空格流。',
+    ].join('\n')
+    await db.setMeta(K_TAVERN_SETTINGS, { common: { extraPrompt: legacy } } as never)
+    const upgraded = await getTavernSettings()
+    ok('存的是旧版默认文本 → 静默升级为新版（老用户也能拿到排版修正）',
+      upgraded.common.extraPrompt === DEFAULT_COMMON_EXTRA,
+      JSON.stringify(upgraded.common.extraPrompt.slice(0, 24)))
+
+    __resetMockStores()
+    // 用户自己写的内容 —— 即便长得像、也必须原样保留
+    const mine = '我自己写的补充要求：语气放轻一点。'
+    await db.setMeta(K_TAVERN_SETTINGS, { common: { extraPrompt: mine } } as never)
+    ok('用户自己改过的补充要求绝不被覆盖',
+      (await getTavernSettings()).common.extraPrompt === mine)
+
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { free: { temperature: 0.3 } } as never)
+    ok('没有 common 分组的旧数据不会因升级逻辑报错',
+      (await getTavernSettings()).common.extraPrompt === DEFAULT_COMMON_EXTRA)
+  }
+
   console.log(`\ntavernSettings: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

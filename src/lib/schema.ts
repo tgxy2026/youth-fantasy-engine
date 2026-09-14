@@ -805,6 +805,12 @@ export const TABS: TabDef[] = [
 
   // 「酒馆模式」分组下的四个页签（2026-09-14 新增，方案 §2.1）。
   // 剧情模式基于当前小说项目（诊断台）；自由模式自成一套（陪伴），数据全局、不绑项目。
+  // ⚠️ 顺序即侧栏顺序：**控制面板放最前**——它是先决条件（模型、预算、提示词不调好，
+  //    后面的推演和对话都跑不顺），所以刻意排在剧情推演之前引导用户先看它。
+  {
+    id: 'tavern-control', name: '控制面板', group: '酒馆模式', type: 'tavern-control',
+    description: '酒馆模式的先决条件：AI 参数与提示词（通用设置 / 扮演协议 / 剧情推演 / 自由对话），改完保存即生效。',
+  },
   {
     id: 'tavern-plot', name: '剧情推演', group: '酒馆模式', type: 'tavern-plot',
     description: '选叙事锚点、分配角色，试演一场戏看角色反应是否合理。',
@@ -820,10 +826,6 @@ export const TABS: TabDef[] = [
   {
     id: 'tavern-card', name: '角色卡片', group: '酒馆模式', type: 'tavern-card',
     description: '自由模式的角色卡片管理（四章模板），可新建 / 导入 / 从小说角色转换。',
-  },
-  {
-    id: 'tavern-control', name: '控制面板', group: '酒馆模式', type: 'tavern-control',
-    description: '酒馆模式全部 AI 参数与提示词（通用 / 剧情推演 / 自由对话三段），改完保存即生效。',
   },
 ]
 
