@@ -13,7 +13,7 @@
 - 🔴 封装：`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`（勿指 `release/eb-cache/electron-zip`）；两脚本有体积闸门。NSIS `perMachine:false`＋`allowToChangeInstallationDirectory:false`。
 
 ## 架构红线
-- 无 i18n；schema 列名即存储键。⚠️ 功能改完回搜 `schema.ts` 的 `description`（曾留着「尚未开发」）。
+- 无 i18n；schema 列名即存储键。⚠️ 功能改完回搜 `schema.ts` 的 `description`。
 - ⚠️ tree-shake：组件只在某平台门控分支被引用会被摇掉整模块 → 门控须用「需该模块平台并集」。`WEB` 由 `__WEB__` 定，禁写 `!PORTABLE && !DESKTOP`。
 - 左下角只准一个浮层 `DataDock`；项目内禁全局 fixed 浮层。种子键：卡片 `模块::字段`、表格=列名；改种子必跑 `seed-schema-check.mjs`。
 - 🔴 编辑器双图层（NovelEditor）：高亮开时文字全来自叠层。① 盒模型逐项一致；② 叠层重建会归零 scrollTop → 高亮/切章/字号/页宽/专注/检索必 `useLayoutEffect` 回填；③ 只走 `scanRefHighlight` 单次正则。
@@ -46,7 +46,7 @@
 
 ## 酒馆模式
 - 源自《酒馆模式_完整落地方案》＋`你需要的文件在这里/` 的调研讨论稿（冲突以方案为准）。侧栏序＝`TABS` 序。
-- 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景随项目；自由会话+角色卡+记忆日常+面板设置+剧本库 跨项目（meta）。索引与分条须成对；tavernReports 别漏 deleteProject。
+- 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景随项目；自由会话+角色卡+记忆日常+面板设置+剧本库 跨项目。索引与分条须成对；tavernReports 别漏 deleteProject。
 - 🎛️ 控制面板（九段两列）：tavern.settings；优先级 会话→角色→面板→模式默认。加参数前先搜 tavern 里写死的数；数值真源 paramGuide.ts。预设/档案＝全局 tavern.presets/profile。⚠️ mergeDeep 把已删默认键照抄回来 → 废弃字段须在 upgradeLegacyDefaults 删。
 - 🔴🔴 控制面板分列按实测高度（§12）：左＝不分局部的设置＋协议（协议必须左列最后一项，列高同步靠 `slice(0,-1)`），右＝两种模式的手感。段号一动，面板内「N 段设置」文案与 `.workbuddy` 一起改。
 - 🔴 层序：设定→背景设定→这一场(剧本)→记忆→身份→档位→（通用→本场补充）→未带入→协议（钉末尾）。
@@ -54,8 +54,8 @@
 - 📊 状态一览/用量明细：`status.ts` 只提取不读库；开关在工具条「角色状态」。不做数值化「关系温度」；`agoText` 唯一真源。
 - 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（summarize.ts）；设定＝这让 Ta 变成了谁（revise.ts）。拦不住 → findNarrativeOverlap（≥6 字）标 ⚠️，只提示。
 - 📚 🔴 背景设定（`world.ts`）：关键词空＝总是注入；上限 1800 字。只服务剧情推演（2026-09-15 收口）；键只剩 `tavern.world`，旧 `tavern.world.free` 保留但到不了（哨兵测）。
-- 🌐 联网检索（面板「三」，全局）：`webSearch.ts` 三档 `off`(默认)/`model`/`api`；素材管线 `lib/draftMaterial.ts`（项目级）、设置门面 `lib/searchSettings.ts`。🔴 每次起草如实回告用了哪档、查失败不静默。博查可直连，智谱无。
-- ✍️ 起草：`draft.ts`（角色卡 13 栏模板）。🔴 提纲 `fields` 必须覆盖模板全部栏；角色卡草稿的示例对话要守协议格式（模型照它模仿）。
+- 🌐 联网检索（面板「三」，全局）：webSearch.ts 三档 off(默认)/model/api；素材管线 draftMaterial.ts、门面 searchSettings.ts。🔴 每次起草如实回告用了哪档、查失败不静默。前端直连受 CORS 限（只认带 ACAO 的，博查可）；Open WebUI 那类服务端检索不受限 —— 本地 Ollama 自己不会联网。
+- ✍️ 起草：draft.ts（角色卡 13 栏模板）。🔴 提纲 fields 必须覆盖模板全部栏；角色卡草稿的示例对话要守协议格式。
 - 🔴 对话引导已泛化到全局补全入口（§13）：机制＝项目级 `lib/interview.ts`（只认 `InterviewSpec`、不管模型配置，由调用方给 `callChat`），界面＝`InterviewChat.tsx`，`AITemplateFill` 两模式＝一句话补全／对话引导。别在业务侧再写一份。
 - 🎬 临时导演指令：`directorNote{text,depth,turnsLeft}` 会话级，按深度插进历史；成功产出才倒计时。
 - 🛠 输出后处理：`postRules.ts` 按序跑正则再落库；🔴 去 markdown 必须排在星号动作前。行首说话人标签默认关。
