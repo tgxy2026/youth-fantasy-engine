@@ -21,10 +21,14 @@
  * 阶段：本页是 P2 范围（CRUD + 表单）。「从小说角色 AI 转换」与「导入导出 JSON」属 P3，
  * 页面上留了入口但**明确置灰并说明**，不假装能用。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as store from '../lib/tavern/store'
+import * as db from '../lib/db'
 import type { FreeCharacter, TavernCharIndexItem } from '../lib/tavern/types'
+import { toCardFile, parseCardFile, cardFileName, describeWarnings } from '../lib/tavern/cardFile'
+import { convertNovelChar } from '../lib/tavern/import'
 import { Button } from './Button'
+import { Modal } from './Modal'
 import { showToast, confirmDialog } from './dialogs'
 import { LoadingState } from './LoadingState'
 
@@ -67,6 +71,12 @@ export default function TavernCard() {
   const [dirty, setDirty] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  /** AI 转换出来的草稿欠着哪些信息（界面必须显示，方案 §7.6 硬要求） */
+  const [gaps, setGaps] = useState<string[]>([])
+  const [importOpen, setImportOpen] = useState(false)
+  const [novelChars, setNovelChars] = useState<{ id: string; name: string; tabId: string }[]>([])
+  const [converting, setConverting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     try {
@@ -135,6 +145,74 @@ export default function TavernCard() {
     }
   }
 
+  // ---------- 导入 / 导出（方案 §7.7） ----------
+  const exportCard = () => {
+    if (!draft) return
+    try {
+      const blob = new Blob([toCardFile(draft)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = cardFileName(draft.name)
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('已导出角色卡文件')
+    } catch (e) {
+      showToast(`导出失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
+  const importCard = async (file: File) => {
+    try {
+      const r = parseCardFile(await file.text())
+      if (!r.ok) { showToast(r.error, 'error'); return }
+      // 导入时已重生成新 id，不会覆盖已有卡
+      const created = await store.createFreeChar(r.card)
+      await load()
+      await open(created.id)
+      setGaps(r.warnings)
+      showToast(r.warnings.length ? `已导入，但${describeWarnings(r.warnings)}` : '已导入，结构完整', r.warnings.length ? 'info' : 'success')
+    } catch (e) {
+      showToast(`导入失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
+  // ---------- 从小说角色 AI 转换（方案 §7.6） ----------
+  const openNovelPicker = async () => {
+    const out: { id: string; name: string; tabId: string }[] = []
+    for (const tabId of ['char-main', 'char-secondary', 'char-npc']) {
+      try {
+        for (const r of await db.getCardRecords(tabId)) out.push({ id: r.id, name: r.name, tabId })
+      } catch { /* 该表读不到就跳过 */ }
+    }
+    setNovelChars(out)
+    setImportOpen(true)
+    if (out.length === 0) showToast('当前项目里没有已建档的角色', 'info')
+  }
+
+  const convert = async (cardId: string, tabId: string) => {
+    setConverting(true)
+    try {
+      const rec = (await db.getCardRecords(tabId)).find(r => r.id === cardId)
+      if (!rec) { showToast('读不到该角色卡', 'error'); return }
+      const { draft: d, gaps: g } = await convertNovelChar({
+        name: rec.name,
+        data: rec.data,
+        source: { projectId: db.getCurrentProjectId(), cardId: rec.id },
+      })
+      const created = await store.createFreeChar({ ...d, name: `${d.name}（导入）` })
+      await load()
+      await open(created.id)
+      setGaps(g)
+      setImportOpen(false)
+      showToast(g.length ? `草稿已生成，有 ${g.length} 处待补` : '草稿已生成，请审一遍再改', g.length ? 'info' : 'success')
+    } catch (e) {
+      showToast(`转换失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setConverting(false)
+    }
+  }
+
   const up = <K extends keyof FreeCharacter>(k: K, v: FreeCharacter[K]) => {
     setDraft(d => (d ? { ...d, [k]: v } : d))
     setDirty(true)
@@ -189,22 +267,31 @@ export default function TavernCard() {
             )}
 
             <div className="pt-2 border-t border-ink-800 space-y-1.5">
-              <button
-                type="button"
-                disabled
-                title="属 P3 阶段，尚未开放"
-                className="w-full rounded-md border border-ink-800 px-2 py-1.5 text-[11.5px] text-ink-600 cursor-not-allowed text-left"
-              >
-                从小说角色导入 <span className="text-ink-700">（P3）</span>
-              </button>
-              <button
-                type="button"
-                disabled
-                title="属 P3 阶段，尚未开放"
-                className="w-full rounded-md border border-ink-800 px-2 py-1.5 text-[11.5px] text-ink-600 cursor-not-allowed text-left"
-              >
-                导入 / 导出 JSON <span className="text-ink-700">（P3）</span>
-              </button>
+              <Button variant="ghost" size="sm" className="w-full text-[11.5px]" onClick={() => void openNovelPicker()}>
+                从小说角色导入
+              </Button>
+              <div className="flex gap-1.5">
+                <Button variant="ghost" size="sm" className="flex-1 text-[11.5px]" onClick={() => fileRef.current?.click()}>
+                  导入 JSON
+                </Button>
+                <Button variant="ghost" size="sm" className="flex-1 text-[11.5px]" disabled={!draft} onClick={exportCard}>
+                  导出 JSON
+                </Button>
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) void importCard(f)
+                  e.target.value = '' // 允许连续导入同一个文件
+                }}
+              />
+              <p className="text-[10.5px] text-ink-600 leading-relaxed px-1">
+                「从小说角色导入」是 AI 转换，**结果只是草稿，必须审**。
+              </p>
             </div>
           </aside>
 
@@ -220,6 +307,22 @@ export default function TavernCard() {
               </div>
             ) : (
               <div className="rounded-lg border border-ink-700 bg-ink-850/40 p-4 space-y-6">
+                {/* 草稿待补提示（AI 转换/导入后必须让作者看见） */}
+                {gaps.length > 0 && (
+                  <div className="rounded-md border border-amber/35 bg-amber/8 px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[11.5px] text-ink-300 leading-relaxed">
+                        <span className="text-amber/90">这张卡有 {gaps.length} 处还需要你补：</span>
+                        {gaps.join('、')}
+                        {gaps.some(g => g.includes('示例对话')) && '（示例对话通常是模型编的，最该改）'}
+                      </p>
+                      <button type="button" className="shrink-0 text-[11px] text-ink-500 hover:text-ink-200" onClick={() => setGaps([])}>
+                        知道了
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* 基本 */}
                 <div>
                   <div className="flex items-center gap-3">
@@ -337,6 +440,48 @@ export default function TavernCard() {
           </div>
         </div>
       )}
+
+      {/* 从小说角色导入：选一个角色 */}
+      <Modal open={importOpen} onClose={() => setImportOpen(false)} title="从小说角色导入" width="lg">
+        <div className="space-y-3">
+          <div className="rounded-md border border-amber/35 bg-amber/8 px-3 py-2 text-[11.5px] text-ink-300 leading-relaxed">
+            AI 会把这个角色**改写成角色扮演用的四章卡片**：设定翻译成行为倾向、剧情走向丢掉。
+            <span className="text-amber/90"> 结果只是一份草稿 —— 尤其第 4 章示例对话通常是它编的，务必自己改。</span>
+          </div>
+          {novelChars.length === 0 ? (
+            <p className="py-6 text-center text-[12px] text-ink-500">
+              当前项目里没有已建档的角色。先去小说项目填几张角色卡再来。
+            </p>
+          ) : (
+            <ul className="max-h-72 overflow-y-auto space-y-1">
+              {novelChars.map(c => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    disabled={converting}
+                    onClick={() => void convert(c.id, c.tabId)}
+                    className="w-full flex items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-ink-800/60 disabled:opacity-50"
+                  >
+                    <span className="w-6 h-6 shrink-0 rounded-full bg-ink-700 text-ink-200 text-[11px] flex items-center justify-center">
+                      {c.name.trim().slice(0, 1) || '?'}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name}</span>
+                    <span className="shrink-0 text-[10.5px] text-ink-600">
+                      {{ 'char-main': '主要', 'char-secondary': '次要', 'char-npc': 'NPC' }[c.tabId] ?? c.tabId}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-center justify-between border-t border-ink-800 pt-2">
+            <span className="text-[11px] text-ink-500">
+              {converting ? '正在转换（要读一遍角色卡，可能要十几秒）…' : `共 ${novelChars.length} 个角色`}
+            </span>
+            <Button variant="secondary" size="md" onClick={() => setImportOpen(false)} disabled={converting}>关闭</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

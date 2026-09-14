@@ -22,10 +22,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
+import { Modal } from './Modal'
 import { LoadingState } from './LoadingState'
 import { renderTavernMessage } from './TavernMessage'
 import * as store from '../lib/tavern/store'
 import { runFreeTurn } from '../lib/tavern/engine'
+import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
 import { summarizeMemory } from '../lib/tavern/summarize'
 import {
   memoryChars, messagesAfterWatermark, nextWatermark, acquireSummaryLock, releaseSummaryLock,
@@ -33,7 +35,7 @@ import {
 } from '../lib/tavern/memory'
 import {
   MEMORY_SOFT_LIMIT, type FreeCharacter, type FreeMemory, type FreeSession,
-  type FreeSessionIndexItem, type TavernCharIndexItem,
+  type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
 } from '../lib/tavern/types'
 
 /** 把时间戳显示成「刚刚 / X 分钟前 / X 小时前 / 日期」 */
@@ -66,6 +68,18 @@ export default function TavernFree() {
   const [summarizing, setSummarizing] = useState(false)
   const [showMemory, setShowMemory] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
+  /** 她这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
+  const [daily, setDaily] = useState<DailyState | null>(null)
+  const [showDaily, setShowDaily] = useState(false)
+  /** 很久没来时她留着的一句话（§7.5），展示后清除 */
+  const [greeting, setGreeting] = useState('')
+  /** 新建会话：多角色同场（§7.3），v1 上限 3 人 */
+  const [pickOpen, setPickOpen] = useState(false)
+  const [picked, setPicked] = useState<string[]>([])
+  /** 本会话在场角色的完整卡（多角色渲染需要） */
+  const [castCards, setCastCards] = useState<FreeCharacter[]>([])
+  /** 手动指定下一位接话的角色（空 = 按轮转） */
+  const [speakNext, setSpeakNext] = useState('')
 
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -91,57 +105,107 @@ export default function TavernFree() {
     })()
   }, [])
 
+  // ---------- 日常推进与主动留言（§4.7 / §7.5） ----------
+  /**
+   * 距上次活跃够久就补写「这几天的生活」，并拿到她留的一句话。
+   * 静默执行：失败不打扰（下次打开还会再试），也不阻塞对话。
+   */
+  const advanceIfNeeded = useCallback(async (card: FreeCharacter, cur?: DailyState | null) => {
+    const d = cur ?? (await store.getDaily(card.id).catch(() => null))
+    if (!shouldAdvanceDaily(d)) return
+    if (!acquireSummaryLock()) return // 与总结共用一把锁，避免两个窗口同时写
+    try {
+      const mem = await store.getMemory(card.id).catch(() => null)
+      const res = await advanceDaily({
+        char: card,
+        prev: d,
+        memory: mem,
+        providerId: summaryProviderId || undefined,
+      })
+      await store.saveDaily(res.state)
+      setDaily(res.state)
+      if (res.greeting) {
+        await store.setGreeting(card.id, res.greeting)
+        const g = await store.takeGreeting(card.id)
+        if (g) setGreeting(g)
+      }
+    } catch {
+      /* 静默：下次打开再试，不弹错打断作者 */
+    } finally {
+      releaseSummaryLock()
+    }
+  }, [summaryProviderId])
+
   // 选中的角色 → 读完整卡 + 该角色的会话 + 它的记忆
   const loadForChar = useCallback(async (id: string) => {
     if (!id) return
     try {
-      const [card, all, mem] = await Promise.all([
+      const [card, all, mem, day] = await Promise.all([
         store.getFreeChar(id),
         store.listFreeSessions(),
         store.getMemory(id).catch(() => null),
+        store.getDaily(id).catch(() => null),
       ])
       setCharCard(card)
       setSessions(all.filter(s => s.charIds.includes(id)))
       setMemory(mem)
+      setDaily(day)
+      // 打开就补算「这几天的生活」（方案 §4.6 ② 的同一思路：无服务端只能靠打开时补）
+      if (card) void advanceIfNeeded(card, day)
     } catch (e) {
       showToast(`读取角色失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
-  }, [])
+  }, [advanceIfNeeded])
 
   useEffect(() => {
     void loadForChar(charId)
     setSession(null)
     setStreamText('')
-  }, [charId, loadForChar])
+  }, [charId, loadForChar, advanceIfNeeded])
 
   const openSession = useCallback(async (id: string) => {
     const s = await store.getFreeSession(id)
     setSession(s)
     setStreamText('')
     if (!s) return
+    // 在场角色的完整卡（多角色渲染与发言调度要用）
+    try {
+      const cards = (await Promise.all(s.charIds.map(cid => store.getFreeChar(cid)))).filter((c): c is FreeCharacter => !!c)
+      setCastCards(cards)
+      // 她留着的话：展示后即清除，不留着反复弹
+      for (const c of cards) {
+        const g = await store.takeGreeting(c.id)
+        if (g) { setGreeting(g); break }
+      }
+    } catch { setCastCards([]) }
     // 打开即补算（方案 §4.6 ②：下次打开应用时扫描水位线补算 —— 这里在打开会话时做）
     void autoSummarize(s)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [charCard])
 
-  const createSession = useCallback(async () => {
+  const createSession = useCallback(async (charIds?: string[]) => {
     if (!charCard) return
+    const ids = (charIds && charIds.length ? charIds : [charCard.id]).slice(0, 3)
+    const names = ids.map(id => chars.find(c => c.id === id)?.name ?? '?').join('、')
     // 模型：跟随全局活动模型（会话级可再改）
     const active = providers.find(p => p.id === (session?.model.providerId ?? '')) ?? providers[0]
     try {
       const s = await store.createFreeSession(
-        [charCard.id],
-        `和${charCard.name}的对话`,
+        ids,
+        ids.length > 1 ? `与${names}的对话` : `和${charCard.name}的对话`,
         { providerId: active?.id ?? '' },
         {},
       )
       setSession(s)
+      setCastCards((await Promise.all(ids.map(id => store.getFreeChar(id)))).filter((c): c is FreeCharacter => !!c))
       await loadForChar(charCard.id)
-      showToast('已新建会话（记忆按角色共享，换会话不会重来）')
+      showToast(ids.length > 1
+        ? '已新建多角色会话（发言顺序由语境决定，也可点顶部头像指定下一位）'
+        : '已新建会话（记忆按角色共享，换会话不会重来）')
     } catch (e) {
       showToast(`新建失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
-  }, [charCard, providers, session, loadForChar])
+  }, [charCard, providers, session, loadForChar, chars])
 
   // ---------- 记忆总结 ----------
   /**
@@ -213,10 +277,12 @@ export default function TavernFree() {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     try {
-      const res = await runFreeTurn(session, [charCard], text, {
+      const cast = castCards.length ? castCards : [charCard]
+      const res = await runFreeTurn(session, cast, text, {
         onToken: d => setStreamText(prev => prev + d),
         onPhase: p => setPhase(p),
         signal: ctrl.signal,
+        speakerId: speakNext || undefined,
       })
       const saved = await store.saveFreeSession(res.session)
       setSession(saved)
@@ -224,6 +290,9 @@ export default function TavernFree() {
       await loadForChar(charCard.id)
       if (!res.cancelled) void autoSummarize(saved)
       if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
+      // 说完这句就把她说的话撤掉：那句话是「很久没来」时才该有的
+      setGreeting('')
+      setSpeakNext('')
     } catch (e) {
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -231,7 +300,7 @@ export default function TavernFree() {
       setPhase('')
       abortRef.current = null
     }
-  }, [input, session, charCard, streaming, loadForChar, autoSummarize])
+  }, [input, session, charCard, streaming, loadForChar, autoSummarize, castCards, speakNext])
 
   const stop = () => { abortRef.current?.abort() }
 
@@ -364,7 +433,13 @@ export default function TavernFree() {
             <div className="flex-1 min-h-0 overflow-y-auto">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11px] text-ink-500">会话</span>
-                <button type="button" className="text-[11px] text-amber hover:underline" onClick={createSession}>新建</button>
+                <button
+                  type="button"
+                  className="text-[11px] text-amber hover:underline"
+                  onClick={() => { setPicked([charId]); setPickOpen(true) }}
+                >
+                  新建
+                </button>
               </div>
               {sessions.length === 0 ? (
                 <p className="text-[11px] text-ink-600 leading-relaxed px-1">还没有会话，点「新建」开一场。</p>
@@ -403,37 +478,110 @@ export default function TavernFree() {
             </div>
           ) : (
             <div className="flex flex-1 min-w-0 flex-col rounded-lg border border-ink-800 overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-ink-800 bg-ink-850/40">
-                <div className="min-w-0">
-                  <div className="truncate text-[12.5px] text-ink-100">{session.title}</div>
-                  <div className="text-[10.5px] text-ink-500">
-                    {charCard?.name} · 记忆更新于 {ago(memory?.updatedAt ?? 0)}
-                    {summarizing && <span className="text-amber ml-2">正在整理记忆…</span>}
+              <div className="px-3 py-2 border-b border-ink-800 bg-ink-850/40">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <div className="truncate text-[12.5px] text-ink-100">{session.title}</div>
+                    <div className="text-[10.5px] text-ink-500 flex items-center gap-2">
+                      <span>记忆更新于 {ago(memory?.updatedAt ?? 0)}</span>
+                      {daily?.mood && <span className="text-amber/80">· 心情：{daily.mood}</span>}
+                      {summarizing && <span className="text-amber">· 正在整理记忆…</span>}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    {!!daily?.log?.length && (
+                      <Button variant="ghost" size="sm" onClick={() => setShowDaily(v => !v)}>
+                        {showDaily ? '收起这几天' : '她最近几天'}
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" onClick={() => setShowMemory(v => !v)}>
+                      {showMemory ? '隐藏记忆' : '查看记忆'}
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={removeSession}>删除</Button>
                   </div>
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button variant="ghost" size="sm" onClick={() => setShowMemory(v => !v)}>
-                    {showMemory ? '隐藏记忆' : '查看记忆'}
-                  </Button>
-                  <Button variant="danger" size="sm" onClick={removeSession}>删除</Button>
-                </div>
+
+                {/* 多角色：在场者一览，点头像 = 指定下一位接话（§7.3） */}
+                {castCards.length > 1 && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-[10.5px] text-ink-500 shrink-0">在场（点头像指定下一位）</span>
+                    {castCards.map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setSpeakNext(speakNext === c.id ? '' : c.id)
+                          showToast(speakNext === c.id ? '已取消指定' : `下一位由 ${c.name} 接话`, 'info')
+                        }}
+                        className={`flex items-center gap-1 rounded-full pl-0.5 pr-2 py-0.5 border ${speakNext === c.id ? 'border-amber/50 bg-amber/15' : 'border-ink-700 hover:bg-ink-800/60'}`}
+                      >
+                        <span className="w-5 h-5 rounded-full bg-ink-700 text-ink-200 text-[10px] flex items-center justify-center">
+                          {c.name.trim().slice(0, 1)}
+                        </span>
+                        <span className="text-[11px] text-ink-200">{c.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* 她这几天的生活（时间差推进出来的） */}
+                {showDaily && !!daily?.log?.length && (
+                  <div className="mt-2 rounded-md border border-ink-800 bg-ink-900/50 px-3 py-2">
+                    <p className="text-[10.5px] text-ink-500 mb-1">
+                      这几天的生活（你没来时她自己过的 —— 界面不打开就不会推进）
+                    </p>
+                    <ul className="space-y-0.5">
+                      {daily.log.map((l, i) => (
+                        <li key={i} className="text-[11.5px] text-ink-300 leading-relaxed">
+                          <span className="text-ink-500">{l.date}</span> {l.text}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* 很久没来时她留着的一句话（§7.5）：不弹通知，就放在对话里等她看见 */}
+                {greeting && (
+                  <div className="rounded-lg border border-amber/30 bg-amber/8 px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10.5px] text-amber/80 mb-1">你很久没来了，她留下句话：</p>
+                        {renderTavernMessage(greeting)}
+                      </div>
+                      <button type="button" className="shrink-0 text-[11px] text-ink-500 hover:text-ink-200" onClick={() => setGreeting('')}>
+                        收起
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {session.messages.length === 0 && (
                   <div className="text-center text-[12px] text-ink-500 py-10">
                     还没有对话。在下面说第一句话，她就会应你。
                   </div>
                 )}
-                {session.messages.map(m => (
-                  <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : ''}>
-                    <div className={m.role === 'user'
-                      ? 'max-w-[80%] rounded-lg bg-amber/12 border border-amber/25 px-3 py-2'
-                      : 'max-w-[85%] space-y-1'}>
-                      {renderTavernMessage(m.content)}
+                {session.messages.map(m => {
+                  const who = m.speakerId ? castCards.find(c => c.id === m.speakerId) : undefined
+                  return (
+                    <div key={m.id} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
+                      {/* 多角色同场时挂头像，才分得清谁在说 */}
+                      {m.role !== 'user' && castCards.length > 1 && (
+                        <span className="w-6 h-6 shrink-0 rounded-full bg-ink-700 text-ink-200 text-[11px] flex items-center justify-center mt-0.5">
+                          {who?.name.trim().slice(0, 1) ?? '?'}
+                        </span>
+                      )}
+                      <div className={m.role === 'user'
+                        ? 'max-w-[80%] rounded-lg bg-amber/12 border border-amber/25 px-3 py-2'
+                        : 'max-w-[85%] space-y-1'}>
+                        {m.role !== 'user' && castCards.length > 1 && who && (
+                          <div className="text-[10.5px] text-amber/80">{who.name}</div>
+                        )}
+                        {renderTavernMessage(m.content)}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
                 {streaming && (
                   <div className="max-w-[85%] space-y-1">
                     {streamText ? renderTavernMessage(streamText) : (
@@ -513,6 +661,57 @@ export default function TavernFree() {
           )}
         </div>
       )}
+
+      {/* 新建会话：选 1–3 个角色（多角色同场 §7.3） */}
+      <Modal open={pickOpen} onClose={() => setPickOpen(false)} title="新建会话" width="md"
+        footer={
+          <div className="flex items-center justify-between gap-3 w-full">
+            <span className="text-[11px] text-ink-500">
+              {picked.length === 0 ? '至少选一个角色' : `已选 ${picked.length} 个（上限 3）`}
+            </span>
+            <div className="flex gap-2">
+              <Button variant="secondary" size="md" onClick={() => setPickOpen(false)}>取消</Button>
+              <Button
+                variant="primary" size="md"
+                disabled={picked.length === 0}
+                onClick={() => { setPickOpen(false); void createSession(picked) }}
+              >
+                开始对话
+              </Button>
+            </div>
+          </div>
+        }>
+        <div className="space-y-3">
+          <p className="text-[11.5px] text-ink-500 leading-relaxed">
+            选一个就是单角色聊天。选多个则**多角色同场**：一次只让一个角色说话，
+            轮到谁由语境决定，也可以点会话顶部的头像手动指定下一位。
+          </p>
+          <ul className="space-y-1">
+            {chars.map(c => {
+              const on = picked.includes(c.id)
+              return (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => setPicked(prev => {
+                      if (prev.includes(c.id)) return prev.filter(x => x !== c.id)
+                      if (prev.length >= 3) { showToast('最多 3 个角色同场', 'info'); return prev }
+                      return [...prev, c.id]
+                    })}
+                    className={`w-full flex items-center gap-2 rounded-md px-2 py-2 text-left border ${on ? 'border-amber/40 bg-amber/12' : 'border-transparent hover:bg-ink-800/60'}`}
+                  >
+                    <span className="w-6 h-6 shrink-0 rounded-full bg-ink-700 text-ink-200 text-[11px] flex items-center justify-center">
+                      {c.name.trim().slice(0, 1) || '?'}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name}</span>
+                    {on && <span className="shrink-0 text-[11px] text-amber">已选</span>}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      </Modal>
     </div>
   )
 }
