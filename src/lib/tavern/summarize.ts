@@ -44,10 +44,12 @@ export function buildSummarySystem(charName: string, now = Date.now()): string {
 - 五、纪念日与待办：可增可清。
 - 六、最近日记：**倒序（新的在上）**，每条一行，格式 \`- MM-DD：一句话\`，最多保留最近 ${MEMORY_DIARY_DAYS} 条。
 
-【两条不容违反】
+【三条不容违反】
 1. 这份档案是「${charName} 记得什么」，不是全知档案 —— **她不知道的事绝不能进「长期摘要」与「关键事实」**，
    只能放在「未爆的雷」里。
-2. 只输出档案本身，不要寒暄、不要解释、不要在结尾加总结语。
+2. **以【角色背景】为事实基准**：她叫什么、在哪工作、什么性格，一律以角色背景为准；
+   对话里没提到的细节不要臆断补全，更不要把背景里的设定改写成别的（例如把「便利店」写成「咖啡店」）。
+3. 只输出档案本身，不要寒暄、不要解释、不要在结尾加总结语。
 
 输出格式（标题一字不差，内容另起一行写在标题下面）：
 【一、长期摘要】
@@ -70,6 +72,12 @@ export type SummarizeArgs = {
   prev: FreeMemory | null
   /** 需要吸收的对话（水位线之后的） */
   messages: TavernMessage[]
+  /**
+   * 角色背景（角色卡的世界 + 内核等要点）。
+   * 不给的话，模型只能凭对话臆断她是谁、在哪 —— 实测会把「便利店」总结成「咖啡店」，
+   * 记忆于是从第一次总结就开始漂移。
+   */
+  charContext?: string
   /** 单独指定的总结模型；不传则回退全局活动模型 */
   providerId?: string
   chatFn?: ChatFn
@@ -90,7 +98,7 @@ export function renderTranscript(charName: string, messages: TavernMessage[]): s
  * 失败会抛出（调用方据此保留旧档案，绝不写入半截结果）。
  */
 export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> {
-  const { charId, charName, prev, messages, providerId, chatFn, signal, now = Date.now() } = args
+  const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now() } = args
   if (messages.length === 0) return prev ?? emptyMemory(charId)
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
@@ -101,6 +109,8 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
     {
       role: 'user',
       content: [
+        charContext?.trim() ? '【角色背景】\n' + charContext.trim() : '',
+        '',
         '【旧档案】',
         memoryToText(prev ?? emptyMemory(charId)),
         '',

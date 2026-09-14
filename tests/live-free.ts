@@ -1,0 +1,175 @@
+// 自由模式 · 实弹验证（**手动运行**，不进全量回归）
+//
+// 目的：验证方案 §10 给 P2 的验收标准 ——「聊满阈值后记忆自动更新；
+//       关掉应用再打开，记忆还在**且能被用上**」。
+//
+// 怎么验最严：「能被用上」不能靠原文还在上下文里冒充。所以流程刻意设计成闭环 ——
+//   会话 A 聊出事实（猫叫阿灰）→ 总结成六栏记忆 → **新建会话 B（同角色，没有任何原文）**
+//   → 问它「还记得那只猫吗」。B 里只有记忆可用，答得出「阿灰」才说明记忆真的在起作用。
+//   （这也顺带验证了方案 §7.2 的设计：记忆是角色级的，跳会话共享。）
+//
+// 用法：
+//   node tests/build-test.mjs live-free                    # 用本地 Ollama（快、免费）
+//   YFE_LIVE_FREE_MODEL=xxx node tests/build-test.mjs live-free
+//
+// 命名不叫 *.test.ts —— 避免被 run-all.mjs 纳入全量回归（会真调模型）。
+import fs from 'fs'
+import * as store from '../src/lib/tavern/store'
+import { __resetMockStores } from './mock-memory'
+import { saveProviders, saveActiveId, type AIProvider } from '../src/lib/ai'
+import { runFreeTurn, buildFreeSystem } from '../src/lib/tavern/engine'
+import { summarizeMemory } from '../src/lib/tavern/summarize'
+import { memoryChars, memoryToText, messagesAfterWatermark, nextWatermark, MEMORY_SECTIONS } from '../src/lib/tavern/memory'
+import type { FreeCharacter, FreeSession } from '../src/lib/tavern/types'
+
+const DATA = 'C:/Users/18223/AppData/Roaming/novel-studio/novel-studio-data.json'
+
+function loadRealProviders(): AIProvider[] {
+  const meta = JSON.parse(fs.readFileSync(DATA, 'utf8')).stores.meta
+  const raw = meta.aiProviders?.value ?? meta.aiProviders
+  return Array.isArray(raw) ? raw : []
+}
+
+/** 挑一个本地真实存在的模型（配置里写的那个可能已被删） */
+async function pickLocal(): Promise<{ provider: AIProvider; model: string; note: string } | null> {
+  const providers = loadRealProviders()
+  const local = providers.find(p => p.type === 'ollama')
+  if (!local) return null
+  const want = process.env.YFE_LIVE_FREE_MODEL
+  try {
+    const j = (await (await fetch('http://localhost:11434/api/tags')).json()) as { models?: { name: string }[] }
+    const names = (j.models ?? []).map(m => m.name)
+    if (names.length === 0) return null
+    if (want && names.includes(want)) return { provider: local, model: want, note: '' }
+    if (names.includes(local.model)) return { provider: local, model: local.model, note: '' }
+    const prefer = names.find(n => /uncensored|abliterated/i.test(n)) ?? names[0]
+    return { provider: local, model: prefer, note: `（配置里的「${local.model}」本地不存在，改用「${prefer}」）` }
+  } catch {
+    return null
+  }
+}
+
+const CHAR_EXAMPLES = [
+  '对方：这么晚还不下班？',
+  '她把找零推过去，没抬头：',
+  '「灯还亮着。」',
+  '',
+  '对方：你一个人看店不怕吗？',
+  '她停了一下，把烟按灭。',
+  '「惯了。」',
+  '',
+  '对方：……谢谢。',
+  '她背过身去理货架，声音很轻：',
+  '「伞在门后。」',
+].join('\n')
+
+async function mkChar(): Promise<FreeCharacter> {
+  return store.createFreeChar({
+    ...store.emptyFreeCharacter(),
+    name: '苏念',
+    world: '现代都市，老城区一间凌晨还亮着灯的便利店。她是店员，你是常来的顾客。',
+    profile: {
+      externals: '短发，总穿同一件洗旧的灰色围裙，左手腕有道旧疤',
+      core: '外冷内热。嘴上不留情，但会记得你爱吃什么。',
+      speech: '句子短，习惯用反问，从不说软话',
+      relations: '独居，父母在老家',
+      cannot: '说不出关心的话，只能换成别的方式表达',
+      knowledge: '不知道顾客的职业与过去',
+    },
+    conduct: {
+      perspective: '第一人称，只描写她自己的动作与感官',
+      bottomLine: '不越界打听私事；被追问会转移话题，不会发火',
+      paceLock: '关系推进要慢',
+      rating: '日常向',
+    },
+    examples: CHAR_EXAMPLES,
+  })
+}
+
+async function say(session: FreeSession, char: FreeCharacter, text: string): Promise<FreeSession> {
+  const t0 = Date.now()
+  const res = await runFreeTurn(session, [char], text)
+  const saved = await store.saveFreeSession(res.session)
+  console.log(`\n【我】${text}`)
+  console.log(`【${char.name}】${res.reply}`)
+  console.log(`   （${Date.now() - t0} ms）`)
+  return saved
+}
+
+async function main() {
+  const pick = await pickLocal()
+  if (!pick) { console.log('❌ 本地 Ollama 不可用或没有模型，跳过'); return }
+  console.log(`=== 使用模型：${pick.model} ${pick.note} ===`)
+
+  __resetMockStores()
+  await saveProviders([{ ...pick.provider, model: pick.model }])
+  await saveActiveId(pick.provider.id)
+
+  const char = await mkChar()
+
+  // ---------- 阶段 1：会话 A 聊出可被记住的事实 ----------
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 1 · 会话 A：聊出事实（自我暴露 + 养了只猫）')
+  console.log('='.repeat(70))
+  let a = await store.createFreeSession([char.id], '夜里便利店', { providerId: pick.provider.id }, {})
+  a = await say(a, char, '（我推门进来，抖了抖伞上的水）还是老样子啊。')
+  a = await say(a, char, '我叫陈默，做后期的，最近天天加班到这个时候。')
+  a = await say(a, char, '家里那只猫叫阿灰，今天把我杯子打碎了，气死我了。')
+
+  const { system: sysA } = await buildFreeSystem(a, [char])
+  console.log(`\n[上下文检查] 首轮 system ${sysA.length} 字 · 含角色卡 ${sysA.includes('外冷内热') ? '✓' : '✗'} · 含协议 ${sysA.includes('最后提醒') ? '✓' : '✗'}`)
+
+  // ---------- 阶段 2：总结成六栏记忆 ----------
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 2 · 总结（真实模型 + 六栏解析）')
+  console.log('='.repeat(70))
+  const pending = messagesAfterWatermark(a.messages, a.watermark)
+  console.log(`待总结消息：${pending.length} 条`)
+  const t0 = Date.now()
+  const mem = await summarizeMemory({
+    charId: char.id,
+    charName: char.name,
+    prev: await store.getMemory(char.id),
+    messages: pending,
+    charContext: [
+      `世界：${char.world}`,
+      `内核：${char.profile.core}`,
+      `做不到的事：${char.profile.cannot}`,
+      `知识边界：${char.profile.knowledge}`,
+    ].join('\n'),
+  })
+  await store.saveMemory(mem)
+  const wm = nextWatermark(a)
+  a = await store.saveFreeSession({ ...a, watermark: wm ?? a.watermark })
+  console.log(`耗时 ${Date.now() - t0} ms · 合计 ${memoryChars(mem)} 字\n`)
+  console.log(memoryToText(mem))
+
+  // ---------- 阶段 3：新建会话 B（无原文）问记忆 ----------
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 3 · 新会话 B（**没有任何原文**，只有角色级记忆）')
+  console.log('='.repeat(70))
+  let b = await store.createFreeSession([char.id], '第二天', { providerId: pick.provider.id }, {})
+  const { system: sysB } = await buildFreeSystem(b, [char])
+  console.log(`B 的 system ${sysB.length} 字 · 含长期记忆块 ${sysB.includes('【长期记忆 · 苏念】') ? '✓' : '✗'}`)
+
+  const reply = await say(b, char, '（我把伞收好）你还记得我家那只猫吗？')
+
+  // ---------- 判定 ----------
+  const last = reply.messages.filter(m => m.role === 'assistant').at(-1)?.content ?? ''
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 判定：记忆是否真的被用上')
+  console.log('='.repeat(70))
+  const knowsCat = /阿灰/.test(last)
+  const knowsMe = /陈默/.test(last)
+  console.log(`  新会话里提到「阿灰」：${knowsCat ? '✅ 是 —— 记忆闭环成立' : '❌ 否'}`)
+  console.log(`  新会话里记得「陈默」：${knowsMe ? '✅ 是' : '（这一轮没提到，不算失败）'}`)
+  console.log(`  记忆字数：${memoryChars(mem)}（软上限 1200）`)
+  console.log(`  六栏解析：${MEMORY_SECTIONS.filter(s => String(mem[s.key] ?? '').trim()).length} / 6 栏非空`)
+  console.log('\n实弹验证结束。')
+}
+
+main().catch(e => {
+  console.log('\n❌ 实弹验证失败：', e?.message ?? e)
+  if (e?.stack) console.log(String(e.stack).split('\n').slice(0, 8).join('\n'))
+  process.exitCode = 1
+})

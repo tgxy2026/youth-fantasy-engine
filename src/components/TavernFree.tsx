@@ -171,6 +171,13 @@ export default function TavernFree() {
         charName: charCard.name,
         prev,
         messages: pending,
+        // 带上角色背景：不给的话模型会凭对话臆断「她在哪、是谁」，记忆从第一次就开始漂移
+        charContext: [
+          charCard.world.trim() && `世界：${charCard.world.trim()}`,
+          charCard.profile.core.trim() && `内核：${charCard.profile.core.trim()}`,
+          charCard.profile.cannot.trim() && `做不到的事：${charCard.profile.cannot.trim()}`,
+          charCard.profile.knowledge.trim() && `知识边界：${charCard.profile.knowledge.trim()}`,
+        ].filter(Boolean).join('\n'),
         providerId: summaryProviderId || undefined,
       })
       await store.saveMemory(next)

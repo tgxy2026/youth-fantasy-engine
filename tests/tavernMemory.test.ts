@@ -219,6 +219,7 @@ async function main() {
     const got = await summarizeMemory({
       charId: CHAR, charName: '苏念', prev,
       messages: [msg('a', 'user', '在吗'), msg('b', 'assistant', '在')],
+      charContext: '世界：现代都市，老城区的便利店。她是店员。',
       chatFn,
     })
     ok('总结结果六栏都解析出来了', got.longTerm.includes('修东西') && got.facts.includes('苏念') && got.diaries.includes('03-15'))
@@ -226,6 +227,10 @@ async function main() {
 
     const call = calls[0]
     ok('总结把旧档案交给模型（改写而非追加）', String(call.messages[1].content).includes('旧档案'))
+    ok('提示词含「以角色背景为事实基准」（防止把设定记漂移）',
+      String(call.messages[0].content).includes('事实基准'))
+    ok('角色背景随输入交给模型（否则它会臆断「她在哪、是谁」）',
+      String(call.messages[1].content).includes('便利店'))
     ok('总结只带水位线之后的对话', !String(call.messages[1].content).includes('不该出现'))
     ok('总结用低温（忠实整理，不是创作）', call.opts.temperature === 0.3, `实际=${call.opts.temperature}`)
     ok('总结关思考（整理活儿不需要思考链）', call.opts.think === false)
