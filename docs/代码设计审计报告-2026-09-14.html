@@ -86,9 +86,10 @@
 <h2 class="ok">修复进度（2026-09-14 当天）</h2>
 
 <div class="okbox">
-<b>已完成 A / B / C1 / C2 / D1 / D3 六项</b>，每项均通过 <code class="inline">tsc</code> + <code class="inline">npm run verify</code>（8 个测试入口全绿）+ <code class="inline">vite build</code>。
+<b>已完成 A / B / C1 / C2 / C4 / C5a / C6 / D1 / D3 / D5 十项</b>，每项均通过 <code class="inline">tsc</code> + <code class="inline">npm run verify</code>（8 个测试入口全绿）+ <code class="inline">vite build</code>；
+其中 D5 与 C4 已经老大在 dev server 上肉眼验收通过。
 测试入口从 6 个增至 8 个；lint 从首跑 114 warnings 收敛到 <b>11 warnings / 0 errors</b>。
-<b>本轮未升版本号、未封装、未碰服务器。</b>
+<b>全程未升版本号、未封装、未碰服务器。</b>
 </div>
 
 <table>
@@ -102,18 +103,45 @@
 <tr><td>P1-10</td><td>跨文件持久化键与防抖常量收敛到 <code>lib/constants.ts</code></td><td><code>02d2a09</code></td><td><span class="tag t-ok">已重构</span></td></tr>
 <tr><td>P1-14</td><td>空 catch 标注意图（ESLint 唯一报出的一处）</td><td><code>ce03347</code></td><td><span class="tag t-ok">已处理</span></td></tr>
 <tr><td>P1-15</td><td>三处「注释与实现不符」全部纠正</td><td>分散于各笔</td><td><span class="tag t-ok">已处理</span></td></tr>
+<tr><td>P1-4</td><td>抽 <code>useSvgPanZoom</code>，两图谱平移/缩放/拖拽收敛为一份（实际核出 <b>5 处分叉</b>）</td><td><code>aabfec4</code></td><td><span class="tag t-ok">已重构</span></td></tr>
+<tr><td>P1-5</td><td>z 轴真源收敛，7 处魔数归位（含 Modal 的 class/style 双写）</td><td><code>858dee9</code></td><td><span class="tag t-ok">前段完成</span></td></tr>
+<tr><td>P1-6</td><td>大文件拆分：<code>seedData</code> 5673→986 行、<code>materialRef</code> 5791→79 行</td><td><code>009e896</code> / <code>1e48b45</code></td><td><span class="tag t-ok">已完成</span></td></tr>
+<tr><td>P1-12</td><td>图谱/画布界面色主题化（<b>顺带修掉 3 处 <code>var()</code> 写在 SVG 表现属性里导致恒渲染为黑的 bug</b>）</td><td><code>3d18f91</code></td><td><span class="tag t-ok">已修</span></td></tr>
+<tr><td>遗留</td><td><code>package-lock.json</code> 同步 + 修正一处历史悬空依赖（<code>playwright-core</code>）</td><td><code>6ca517c</code></td><td><span class="tag t-ok">已完成</span></td></tr>
 </table>
 
-<div class="warnbox">
-<b>尚未处理 —— 且不宜在「看不到界面」的情况下动：</b>
+<div class="note">
+<b>本轮额外挖出的、审计当时未列出的问题（均已修）：</b>
 <ul style="margin-bottom:0">
-  <li><b>P1-1 / P1-3</b>（AI 统一调用层 + <code>useAITask</code>）：AI 面板是核心界面，改动触及 4 个组件的
-      loading / 流式 / 中止语义。tsc 只验类型，<b>验不了「忘了重置 error」这类逻辑错</b>，且无可用 provider 端到端验证。</li>
-  <li><b>P1-4 / P1-5</b>（<code>useSvgPanZoom</code> / <code>PortalPopover</code>）：画布拖拽缩放与浮层定位，
-      改错是<b>可见回归</b>（且 RelationGraph 与 FactionGraph 的行为已分叉）。</li>
-  <li><b>P1-6</b>（大组件拆分）：<code>NovelEditor</code> 单 <code>return</code> 跨 673 行，搬迁易破坏 props 接线。</li>
-  <li><b>P1-12</b>（主题色收敛）：74 处硬编码 hex 换主题变量，需肉眼核对浅色主题下的对比度。</li>
-  <li><b>P1-13 / P2-3</b>（类型收严 / 其余打磨）：需逐例判断，收益相对靠后。</li>
+  <li><b><code>var()</code> 写在 SVG 表现属性里完全不生效</b>（表现属性不做自定义属性替换）→ 静默回退为黑。
+      全项目扫出 3 处受害者：<code>RelationGraph</code> 边标签底板、<code>WritingGoals</code> 燃尽图的
+      网格线/轴标签/琥珀目标线。此前**与主题无关地恒渲染为黑**。</li>
+  <li><b><code>aiParse.humanText</code> 的取值正则会在键的闭合引号处重新起步</b>，把 <code>":"</code> 整体
+      捕获成冒号 → 残缺 JSON 的兜底结果退化成 <code>:</code> <code>,</code> 残渣，
+      即作者反馈的「改稿只剩标点」成因之一。</li>
+  <li><b><code>zLayer</code> 的浮层必须高于 modal</b>：下拉确实会出现在弹窗内部（AIOrganize 自身即 Modal），
+      且全部 Portal 到 body —— 按直觉把下拉排到 modal 之下会让弹窗内下拉完全不可用。</li>
+</ul>
+</div>
+
+<div class="warnbox">
+<b>尚未处理（含一处结论更正）：</b>
+<ul style="margin-bottom:0">
+  <li><b>P1-3 <code>useAITask</code> —— 经复核后判定「不做」。</b>本报告原称「AI 状态五件套复制 4 份」，
+      <b>实测不准确</b>：AIOrganize 是标准请求-结果形状，AIAssist 以流式累积为主导，
+      AutoContinue 是<b>带阶段与日志的流水线</b>（无 error 态、走 toast、还带双向弹窗 Promise），
+      CheckTools 压根没有 AI 状态（全部下沉给子组件）。强行合成「能同时兼容类型化结果 / 流式文本 /
+      流水线」的 hook，<b>比现在的重复更糟</b>；叠加本项目无 React 测试渲染器（hook 无法单测）、
+      AI 面板需真 provider 才能端到端跑，故判定不做。
+      📌 <b>判据</b>：重复只有在形状真的一致时才值得抽，形状不同就抽是制造抽象泄漏。</li>
+  <li><b>P1-5 后段 · <code>PortalPopover</code> 抽取</b>：定位骨架（<code>getBoundingClientRect</code> → pos → <code>createPortal</code>）
+      复制 6 份，但各组件在「宽度对齐 / 空间不足翻转 / 滚动跟随」上需求不同，
+      属<b>可见回归风险最高</b>的一项（下拉定位一旦错位就是全站可用性问题），建议最后单独开一轮。</li>
+  <li><b>P1-6 后段 · 组件级拆分</b>：<code>seedData</code> / <code>materialRef</code> 的数据分离已完成，
+      但 <code>NovelEditor</code>（单 <code>return</code> 跨 673 行，28 个 useState）等等的<b>组件拆分</b>未做——
+      搬迁易破坏 props 接线，且无组件级测试兜底，需配合运行时逐项验证。</li>
+  <li><b>P1-13 / P2-3</b>（<code>syncCore</code> 类型收严、空态/加载态 6 处重复、props 过深、
+      长列表无虚拟化、prompt 注入防护、<code>syncCore</code> 死配置）：需逐例判断，收益相对靠后。</li>
 </ul>
 </div>
 
