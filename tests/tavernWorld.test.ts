@@ -68,27 +68,29 @@ async function main() {
     ok('取材串：跳过 undefined，拼上最近消息', h.includes('标题') && !h.includes('undefined') && h.includes('最近二句'))
   }
 
-  // ---------- 3) 归属：剧情随项目 / 自由跨项目 ----------
+  // ---------- 3) 归属：随项目（2026-09-15 起只有这一份） ----------
   {
     __resetMockStores()
     db.setCurrentProject('world-proj-a')
-    await saveWorldSetting('plot', mkWorld({ brief: 'A 书的世界' }))
-    await saveWorldSetting('free', mkWorld({ brief: '自由世界' }))
-
-    ok('剧情那份能读回', (await getWorldSetting('plot')).brief === 'A 书的世界')
-    ok('自由那份能读回', (await getWorldSetting('free')).brief === '自由世界')
-    ok('两份互不干扰', (await getWorldSetting('plot')).brief !== (await getWorldSetting('free')).brief)
+    await saveWorldSetting(mkWorld({ brief: 'A 书的世界' }))
+    ok('能读回', (await getWorldSetting()).brief === 'A 书的世界')
 
     // 🔴 用「换一个项目」来验归属，而不是去直查物理表 ——
     //    前者验的是**语义**（换书就该看不到），后者依赖 db 内部实现（换过一次实现就失效，
     //    而且写错 API 名会静默跳过断言，得到一个假绿）。
     db.setCurrentProject('world-proj-b')
-    ok('🔴 剧情设定随项目（换项目读不到 A 书那份）', (await getWorldSetting('plot')).brief !== 'A 书的世界')
-    ok('🔴 自由设定跨项目（换项目仍在）', (await getWorldSetting('free')).brief === '自由世界')
+    ok('🔴 随项目（换项目读不到 A 书那份）', (await getWorldSetting()).brief !== 'A 书的世界')
 
     // 回到 A 项目，那份还在（确实是「随项目」而不是「被覆盖了」）
     db.setCurrentProject('world-proj-a')
-    ok('切回来仍在（不是被覆盖）', (await getWorldSetting('plot')).brief === 'A 书的世界')
+    ok('切回来仍在（不是被覆盖）', (await getWorldSetting()).brief === 'A 书的世界')
+
+    // 🔴 收口回归：旧的「自由对话」那一份**不再被读取**。
+    //    数据保留在库里（不动用户数据），但引擎与界面都到不了了 —— 这里直接往那个老键写一份，
+    //    再读一次，读到的必须是剧情那份。这条断言就是「收口有没有真的收干净」的哨兵。
+    await db.setMeta('tavern.world.free', mkWorld({ brief: '早已废弃的自由世界' }))
+    ok('🔴 旧的自由那份写进老键后，getWorldSetting 拿到的仍是剧情那份',
+      (await getWorldSetting()).brief === 'A 书的世界')
   }
 
   // ---------- 4) 解析一键录入的结果 ----------
@@ -116,16 +118,13 @@ async function main() {
     ok('分节数量有上限（防模型一次给 20 节）', !!many && many.sections.length <= 8, String(many?.sections.length))
   }
 
-  // ---------- 5) 提示词：两种模式的输入与边界不同 ----------
+  // ---------- 5) 提示词：只服务剧情推演 ----------
   {
-    const plot = buildWorldDraftSystem('plot')
-    const free = buildWorldDraftSystem('free')
-    ok('剧情模式：强调「提炼」而非摘抄', plot.includes('精简整合') && plot.includes('提炼'))
-    ok('自由模式：强调「不替你定重大设定」', free.includes('不要替他定') || free.includes('一律不要替他定'))
-    ok('自由模式：不出现「项目资料」字样（它没有项目）', !free.includes('项目资料'))
-    ok('两模式都要求 JSON 输出', plot.includes('{"brief"') && free.includes('{"brief"'))
-    ok('都写明「宁少勿滥」', plot.includes('宁少勿滥') || plot.includes('宁少'))
-    ok('都要求每节 ≤300 字（怕撑爆上下文）', plot.includes('300') && free.includes('300'))
+    const sys = buildWorldDraftSystem()
+    ok('强调「提炼」而非摘抄', sys.includes('精简整合') && sys.includes('提炼'))
+    ok('要求 JSON 输出', sys.includes('{"brief"'))
+    ok('写明「宁少勿滥」', sys.includes('宁少勿滥') || sys.includes('宁少'))
+    ok('要求每节 ≤300 字（怕撑爆上下文）', sys.includes('300'))
   }
 
   // ---------- 6) draftWorldSetting：材料为空要报错，桩模型要能跑通 ----------
@@ -135,27 +134,33 @@ async function main() {
     await saveActiveId(STUB_PROVIDER.id)
 
     let threw = false
-    try { await draftWorldSetting({ scope: 'free', seed: '   ' }) } catch { threw = true }
-    ok('自由模式：没填基础信息 → 明确报错（不空跑）', threw)
-
-    let threw2 = false
-    try { await draftWorldSetting({ scope: 'plot', seed: '', projectDigest: '', chatFn: (async () => '{}') as never }) } catch { threw2 = true }
-    ok('剧情模式：没有项目资料 → 明确报错', threw2)
+    try { await draftWorldSetting({ seed: '', projectDigest: '', chatFn: (async () => '{}') as never }) } catch { threw = true }
+    ok('没有项目资料 → 明确报错（不空跑）', threw)
 
     const calls: ChatMessage[][] = []
     const chatFn = async (_c: unknown, messages: ChatMessage[]) => {
       calls.push(messages)
       return JSON.stringify({ brief: '按基础信息扩写的世界', sections: [{ title: '基调', body: '慢、克制。' }], keywords: ['便利店'] })
     }
-    const out = await draftWorldSetting({ scope: 'free', seed: '现代都市·城南，梅雨季', chatFn: chatFn as never })
+    const out = await draftWorldSetting({
+      seed: '', projectDigest: '现代都市·城南，梅雨季。一堆原始资料。', chatFn: chatFn as never,
+    })
     ok('桩模型：拿到 brief 与分节', out.brief.includes('基础信息') && out.sections.length === 1)
-    ok('提示词带上作者填的基础信息', calls[0][1].content.includes('梅雨季'))
+    ok('提示词带上项目资料', calls[0][1].content.includes('梅雨季'))
     ok('作者文本用边界块包起来（防注入）', /<<<A-[a-z0-9]+>>>/.test(calls[0][1].content))
-    ok('基础信息为空时不带「额外要求」段（剧情模式才用）', !calls[0][1].content.includes('作者的额外要求'))
+    ok('备注为空时不带「额外要求」段', !calls[0][1].content.includes('作者的额外要求'))
+
+    const calls2: ChatMessage[][] = []
+    await draftWorldSetting({
+      seed: '重点写学园那条线',
+      projectDigest: '资料正文',
+      chatFn: (async (_c: unknown, m: ChatMessage[]) => { calls2.push(m); return JSON.stringify({ brief: 'x' }) }) as never,
+    })
+    ok('填了备注就带上这一句', calls2[0][1].content.includes('作者的额外要求') && calls2[0][1].content.includes('学园'))
 
     const bad = async () => '模型今天不想干活，随便聊了两句'
     let threw3 = false
-    try { await draftWorldSetting({ scope: 'free', seed: 'x', chatFn: bad as never }) } catch { threw3 = true }
+    try { await draftWorldSetting({ seed: 'x', projectDigest: '有资料', chatFn: bad as never }) } catch { threw3 = true }
     ok('模型乱答 → 抛错（让调用方保留作者现有内容）', threw3)
   }
 
@@ -170,7 +175,7 @@ async function main() {
     ok('空串等同没给（不留空标题）', !buildSystemPrompt({ ...base, world: '   ' }).includes('本场背景设定'))
   }
 
-  // ---------- 8) 引擎接线：关键词命中才注入 ----------
+  // ---------- 8) 引擎接线：自由模式**不再**注入背景设定（收口哨兵） ----------
   {
     __resetMockStores()
     const c = await store.createFreeChar({
@@ -183,20 +188,17 @@ async function main() {
     })
     const session = await store.createFreeSession([c.id], '便利店夜谈', { providerId: '' }, {})
 
-    // ① 关键词未命中 → 不注入
-    await saveWorldSetting('free', mkWorld({ brief: '城南世界的规矩', keywords: ['学园'] }))
+    // 把「剧情那份」写成「总是注入」，再让自由模式去组装：**它一个字的背景设定都不该带**
+    await saveWorldSetting(mkWorld({ brief: '总是带上我', keywords: [] }))
     const s1 = (await buildFreeSystem(session, [c])).system
-    ok('🔴 关键词未命中 → 背景设定不进 system', !s1.includes('本场背景设定'))
+    ok('🔴 自由模式的 system 里没有「本场背景设定」层（收口了）', !s1.includes('本场背景设定'))
+    ok('🔴 也不带那份内容（不是「带了但不带标题」）', !s1.includes('总是带上我'))
+    ok('世界观改由角色卡第 1 章承担（角色卡的「世界」仍在）', s1.includes('现代都市·城南'))
 
-    // ② 命中（会话标题里有「便利店」）→ 注入
-    await saveWorldSetting('free', mkWorld({ brief: '城南世界的规矩', keywords: ['便利店'] }))
+    // 老的自定义 free 键同样读不到
+    await db.setMeta('tavern.world.free', mkWorld({ brief: '废弃字段别冒出来', keywords: [] }))
     const s2 = (await buildFreeSystem(session, [c])).system
-    ok('🔴 命中关键词 → 注入', s2.includes('〖本场背景设定〗') && s2.includes('城南世界的规矩'))
-
-    // ③ 无关键词 → 总是注入
-    await saveWorldSetting('free', mkWorld({ brief: '总是带上我', keywords: [] }))
-    const s3 = (await buildFreeSystem(session, [c])).system
-    ok('无关键词 → 总是注入', s3.includes('总是带上我'))
+    ok('🔴 老键 tavern.world.free 的内容也不会冒出来', !s2.includes('废弃字段别冒出来'))
   }
 
   console.log(`\ntavernWorld: ${pass} passed, ${fail} failed`)

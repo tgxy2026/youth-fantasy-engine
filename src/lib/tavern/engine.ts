@@ -144,7 +144,7 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
   // ⑤ 本场背景设定（第 5 批）：作者**提炼**过的那份世界资料，**命中关键词才注入**。
   //    这是「不每次喂一大堆」的落点：与上面的设定层（项目原始资料）是两件事。
   // 'raw' 档 = 作者明确只要项目原始资料 → 背景设定整层不出现
-  const worldSetting = await getWorldSetting('plot')
+  const worldSetting = await getWorldSetting()
   const worldText = contextSource !== 'raw' && shouldInjectWorld(worldSetting, worldHaystack(
     [session.title, session.anchorChapterLabel, session.scene?.place, session.scene?.time, session.scene?.description],
     session.messages.slice(-6).map(m => m.content),
@@ -435,8 +435,6 @@ export type FreeSystemResult = {
   system: string
   settingChars: number
   memoryChars: number
-  /** 本场背景设定实际注入的字符数（0 = 没填 / 关键词没命中）—— 与剧情模式同一口径 */
-  worldChars: number
   /** 本场剧本（「这一场」层）实际注入的字符数（0 = 没设剧本 / 六栏全空） */
   scriptChars: number
   /** 会话里引用了、但角色卡已被删的 id（UI 据此提示） */
@@ -545,13 +543,10 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
       ? `你同时扮演：${aiNames.join('、')}。用户扮演用户自己。`
       : `你扮演：${aiNames[0] ?? '（未指定角色）'}`) + silentLine
 
-  // 本场背景设定（第 5 批）：自由模式那一份（跨项目），同样按关键词命中决定要不要带上
-  const worldSetting = await getWorldSetting('free')
-  const worldText = shouldInjectWorld(worldSetting, worldHaystack(
-    [session.title, session.scene?.place, session.scene?.time, session.scene?.description],
-    session.messages.slice(-6).map(m => m.content),
-  )) ? worldToText(worldSetting) : ''
-
+  // 2026-09-15 收口：自由模式**不再有背景设定层**。
+  // 理由（老大定）：同一批自由对话里可能混着不同世界观、不同类型的角色，用一份背景把它们框住反而不对；
+  // 而且每个角色的世界观已经写在**角色卡第 1 章「世界」**里，再来一份就是重复占额度。
+  //
   // 本场剧本（自由对话专用）：会话里存的是**快照**，作者后来改剧本不影响这一场。
   // 开场白不进这里 —— 它走消息通道（见 script.ts 文件头）。
   const scriptText = scriptToText(session.script)
@@ -559,7 +554,6 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   const system = buildSystemPrompt({
     tone: FREE_TONE,
     setting,
-    world: worldText,
     scene: scriptText,
     memory,
     // 每块自己带「〖长期记忆 · 角色名〗」，不再套一层「〖长期记忆〗」
@@ -588,7 +582,7 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
 
   return {
     system, settingChars: setting.length, memoryChars: memory.length,
-    worldChars: worldText.length, scriptChars: scriptText.length, missing,
+    scriptChars: scriptText.length, missing,
   }
 }
 

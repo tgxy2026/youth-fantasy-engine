@@ -71,7 +71,6 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
         total = s.params.contextBudget ?? TAVERN_DEFAULTS.free.contextBudget
         label = '自由对话'
         parts.push({ key: 'setting', label: '角色卡（设定层）', chars: r.settingChars, note: `${list.length} 位在场角色的人设说明书；这一层不做预算裁剪` })
-        parts.push({ key: 'world', label: '本场背景设定', chars: r.worldChars, note: '自由模式那一份（跨项目）；命中关键词才注入' })
         parts.push({ key: 'memory', label: '长期记忆', chars: r.memoryChars, note: '按角色分别记账，六栏' })
         if (r.missing.length > 0) {
           warnings.push(`这场对话引用了 ${r.missing.length} 张已被删掉的角色卡 —— 设定层少了这部分，建议在左栏换掉或重新选角。`)

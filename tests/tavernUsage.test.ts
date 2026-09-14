@@ -108,9 +108,9 @@ async function main() {
       createdAt: 0, updatedAt: 0,
     }
 
-    await saveWorldSetting('plot', EMPTY_WORLD)
+    await saveWorldSetting(EMPTY_WORLD)
     const empty = await buildPlotSystem(session, { ...base, plot: { ...base.plot, contextSource: 'both' } })
-    await saveWorldSetting('plot', FULL_WORLD)
+    await saveWorldSetting(FULL_WORLD)
     const full = await buildPlotSystem(session, { ...base, plot: { ...base.plot, contextSource: 'both' } })
 
     const hEmpty = historyBudget(total, empty.system, '', FIXED_OVERHEAD_CHARS)
@@ -128,9 +128,9 @@ async function main() {
     ok('空的时候历史额度明显更宽裕', hEmpty > hFull, `${hEmpty} vs ${hFull}`)
 
     // digest 档：设定层被压成骨架，世界交给背景设定 —— 这是老大要留意的那个组合
-    await saveWorldSetting('plot', EMPTY_WORLD)
+    await saveWorldSetting(EMPTY_WORLD)
     const dEmpty = await buildPlotSystem(session, { ...base, plot: { ...base.plot, contextSource: 'digest' } })
-    await saveWorldSetting('plot', FULL_WORLD)
+    await saveWorldSetting(FULL_WORLD)
     const dFull = await buildPlotSystem(session, { ...base, plot: { ...base.plot, contextSource: 'digest' } })
 
     ok('digest 档确实把设定层压成骨架（比 both 小一个数量级）',
@@ -143,9 +143,9 @@ async function main() {
       `设定层 ${dEmpty.settingChars} 字、背景设定 0 字`)
 
     // raw 档：明确不要背景设定 → 空/满都不变
-    await saveWorldSetting('plot', FULL_WORLD)
+    await saveWorldSetting(FULL_WORLD)
     const rawFull = await buildPlotSystem(session, { ...base, plot: { ...base.plot, contextSource: 'raw' } })
-    await saveWorldSetting('plot', EMPTY_WORLD)
+    await saveWorldSetting(EMPTY_WORLD)
     const rawEmpty = await buildPlotSystem(session, { ...base, plot: { ...base.plot, contextSource: 'raw' } })
     ok('raw 档彻底忽略背景设定（空/满 system 等长）',
       rawFull.system.length === rawEmpty.system.length, `${rawFull.system.length} vs ${rawEmpty.system.length}`)

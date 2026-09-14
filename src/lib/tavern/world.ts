@@ -6,15 +6,19 @@
  * 一次全上，几千字打底，而且每轮都重复。作者真正需要的是：**把已有的资料精简整合成一份背景**，
  * 只在相关的时候带上，而不是每次喂一大堆。
  *
- * 【做法】
- * 两个模式各自一份（`WorldScope = 'plot' | 'free'`），结构相同：
+ * 【2026-09-15 收口：只服务剧情推演】
+ * 原先两种模式各一份（`plot` / `free`）。老大把 `free` 那份去掉了，理由是**自由对话本来就没有统一世界观** ——
+ * 同一批对话里可能同时存在仙侠角色和赛博角色，用一份背景设定把它们框住反而不对；
+ * 而且每个角色的世界观已经在**角色卡的第 1 章「世界」**里写过了，再来一份就是重复占额度。
+ * 所以现在只有一份（剧情推演，随项目）。旧库里 `tavern.world.free` 那份**保留不删**（不动用户数据），
+ * 只是界面与引擎都不再到它 —— 想找回来的话见 `docs/酒馆模式-工程红线.md` §9。
+ *
+ * 【结构】
  *   · `brief`：一句话总纲（时代 / 地点 / 基调）—— 最先注入，模型先抓住大基调
  *   · `sections`：分节正文（3–6 节，每节 ≤300 字）
  *   · `keywords`：**命中才注入**（如「便利店」「城南」）。为空 = 总是注入。
  *
- * 【数据归属】按模式分开，与既有会话归属一致：
- *   · plot → **随项目**（`db.getSetting`，自动带项目前缀）—— 它描述的就是这本书的世界；
- *   · free → **跨项目**（`db.getMeta`）—— 自由对话自成一套，不绑某一本书。
+ * 【数据归属】**随项目**（`db.getSetting`，自动带项目前缀）—— 它描述的就是这本书的世界，换书就是另一份。
  *
  * 【为什么要有硬上限】
  * 这一层每轮都进 system。不设上限的话，作者一路往 additions 里贴资料，
@@ -27,9 +31,6 @@ import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
 import { parsePlainObject, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
-
-/** 两个模式各自一份背景设定 */
-export type WorldScope = 'plot' | 'free'
 
 export type WorldSection = { id: string; title: string; body: string }
 
@@ -54,8 +55,7 @@ export const EMPTY_WORLD_SETTING: WorldSetting = {
 /** 注入上限（字符）。超了截断并注明 —— 宁可少给，也不能把对话历史挤没 */
 export const WORLD_MAX_CHARS = 1800
 
-const K_PLOT = 'tavern.world'
-const K_FREE = 'tavern.world.free'
+const K = 'tavern.world'
 
 export function isEmptyWorld(w: WorldSetting | null | undefined): boolean {
   if (!w) return true
@@ -63,11 +63,9 @@ export function isEmptyWorld(w: WorldSetting | null | undefined): boolean {
 }
 
 /** 读（读不到就是空设定，不抛） */
-export async function getWorldSetting(scope: WorldScope): Promise<WorldSetting> {
+export async function getWorldSetting(): Promise<WorldSetting> {
   try {
-    const raw = scope === 'plot'
-      ? await db.getSetting<Partial<WorldSetting> | null>(K_PLOT, null)
-      : await db.getMeta<Partial<WorldSetting> | null>(K_FREE, null)
+    const raw = await db.getSetting<Partial<WorldSetting> | null>(K, null)
     if (!raw || typeof raw !== 'object') return EMPTY_WORLD_SETTING
     return {
       brief: String(raw.brief ?? ''),
@@ -87,10 +85,9 @@ export async function getWorldSetting(scope: WorldScope): Promise<WorldSetting> 
 }
 
 /** 写 */
-export async function saveWorldSetting(scope: WorldScope, w: WorldSetting): Promise<WorldSetting> {
+export async function saveWorldSetting(w: WorldSetting): Promise<WorldSetting> {
   const next: WorldSetting = { ...w, updatedAt: Date.now() }
-  if (scope === 'plot') await db.setSetting(K_PLOT, next)
-  else await db.setMeta(K_FREE, next)
+  await db.setSetting(K, next)
   return next
 }
 
@@ -130,23 +127,15 @@ export function worldHaystack(parts: (string | undefined)[], recent: string[] = 
 
 // ==================== 一键录入 ====================
 
-export function buildWorldDraftSystem(scope: WorldScope): string {
-  const head = scope === 'plot'
-    ? [
-        '你在为一部小说做**背景设定卡**：把下面这份〖项目资料〗精简整合成一份可直接使用的背景设定。',
-        '',
-        '〖为什么必须精简〗',
-        '这份背景设定会**每一轮都进模型的上下文**。把资料原样搬过去，等于每轮都烧掉几千字额度，',
-        '对话历史反而被挤没了。所以你的任务是「提炼」不是「摘抄」：留下会影响人物言行的东西，',
-        '删掉背景板式的描述。',
-      ].join('\n')
-    : [
-        '你在为一段角色扮演对话做**背景设定卡**：根据作者给出的〖基础信息〗，把它扩展成一份可用的背景设定。',
-        '',
-        '〖扩展的边界〗',
-        '只能**顺着作者给的信息**扩展：地点、氛围、规矩、人物之间已经存在的关系。',
-        '作者没提的重大设定（身世、历史事件、结局走向）一律不要替他定 —— 那是他的故事。',
-      ].join('\n')
+export function buildWorldDraftSystem(): string {
+  const head = [
+    '你在为一部小说做背景设定卡：把下面这份〖项目资料〗精简整合成一份可直接使用的背景设定。',
+    '',
+    '〖为什么必须精简〗',
+    '这份背景设定会每一轮都进模型的上下文。把资料原样搬过去，等于每轮都烧掉几千字额度，',
+    '对话历史反而被挤没了。所以你的任务是「提炼」不是「摘抄」：留下会影响人物言行的东西，',
+    '删掉背景板式的描述。',
+  ].join('\n')
 
   return [
     head,
@@ -164,10 +153,9 @@ export function buildWorldDraftSystem(scope: WorldScope): string {
 }
 
 export type WorldDraftArgs = {
-  scope: WorldScope
-  /** 自由模式：作者填的基础信息；剧情模式：备注（可为空） */
+  /** 作者的额外要求 / 备注（可为空） */
   seed: string
-  /** 剧情模式：项目资料（由调用方用 buildProjectContext 取；自由模式传空） */
+  /** 项目资料（由调用方用 buildProjectContext 取） */
   projectDigest?: string
   providerId?: string
   chatFn?: ChatFn
@@ -179,23 +167,23 @@ export type WorldDraftArgs = {
  * 模型乱答时抛错，让调用方保留作者现有内容 —— 绝不写半截结果。
  */
 export async function draftWorldSetting(args: WorldDraftArgs): Promise<{ brief: string; sections: WorldSection[]; keywords: string[] }> {
-  const { scope, seed, projectDigest, providerId, chatFn, signal } = args
-  const material = scope === 'plot' ? String(projectDigest ?? '').trim() : String(seed ?? '').trim()
-  if (!material) throw new Error(scope === 'plot' ? '没有可提炼的项目资料' : '请先填基础信息（时代 / 地点 / 基调 / 主要人物等）')
+  const { seed, projectDigest, providerId, chatFn, signal } = args
+  const material = String(projectDigest ?? '').trim()
+  if (!material) throw new Error('没有可提炼的项目资料 —— 先在项目里写点世界观 / 人物 / 势力之类的设定，或用记事本起个头也行')
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = chatFn ?? chat
 
   const fence = newAuthorFence()
   const msgs: ChatMessage[] = [
-    { role: 'system', content: buildWorldDraftSystem(scope) },
+    { role: 'system', content: buildWorldDraftSystem() },
     {
       role: 'user',
       content: [
-        scope === 'plot' ? '〖项目资料〗' : '〖基础信息（作者填写）〗',
+        '〖项目资料〗',
         authorBlock(fence, material),
         '',
-        seed.trim() && scope === 'plot' ? `〖作者的额外要求〗\n${seed.trim()}\n` : '',
+        seed.trim() ? `〖作者的额外要求〗\n${seed.trim()}\n` : '',
         '请按格式输出 JSON。',
       ].filter(Boolean).join('\n'),
     },
