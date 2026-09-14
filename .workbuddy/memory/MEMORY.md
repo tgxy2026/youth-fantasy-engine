@@ -82,6 +82,9 @@
 - `useSvgPanZoom.ts` SVG 画布平移/缩放/节点拖拽（RelationGraph、FactionGraph 已接入；GeoMapEditor 走 getScreenCTM、PlotCanvas 是 DOM 卡片，**未接入**）
 - `seedContent.ts` / `materialData.ts` 从巨型文件拆出的纯数据（原文件保留出口）
 - `LoadingState.tsx` 6 处同款加载态的唯一出口（**空态不在此列**，形状差异大不强抽）
+- `AutoTextarea.tsx` —— **所有多行输入框的唯一出口**。默认最小高度 32px（历史行为），
+  要「至少 N 行」传 `minRows`（按**计算行高**换算，换字号无需改）；**字号从 `textClass` 传，
+  别塞 className**（Tailwind 同类工具类谁生效取决于生成顺序）。酒馆各页已全部接入。
 
 ## 可复用技法（2026-09-14 实战验证）
 - 🔴 **搬迁大块数据必须「可证明零改动」**：① 逐行 splice，**绝不重新序列化/转义**；② 脚本内先做**边界断言**（位置不符即抛错）；③ 搬完做**内容哈希终审**（归一化后 sha256 完全一致）。
@@ -113,6 +116,14 @@
   参数优先级链不变：会话参数 → 角色参数 → **控制面板** → `TAVERN_DEFAULTS` 兜底。
   阈值类函数都收成**可选参数注入**（trimMemory / parseMemoryText / throttleOk / shouldRunAutoSummary /
   shouldAdvanceDaily / buildSummarySystem），不传即原行为 —— 新增调用方别硬写常量。
+  📌 **面板现已覆盖**：默认模型、上下文预算、固定开销预留、请求超时、上下文窗口、关闭思考链、通用补充要求、
+  两模式各自的采样参数与风格/补充要求、整理模型、记忆六项阈值、日常两项、以及**扮演协议全文**（可编辑）。
+  📌 **再加参数前先搜一遍**：在 `src/lib/tavern/` 里搜写死的数字/常量，逐个判断是否属「AI 行为参数」；
+  但**别把设置项挪进新模块** —— settings 若引用反向依赖 engine 的模块（如 daily.ts）会成环，
+  常量该上移到 `types.ts` 就别留在原处（`DAILY_LOG_KEEP` 即此例）。
+  📌 **协议默认 = `PROTOCOL_CORE`，可被 `settings.protocol` 覆盖**（`PromptLayers.protocol`）；
+  清空时 `buildSystemPrompt` 回退内置常量，避免 system 尾部空掉。面板进编辑前**必须弹窗警示**。
+  📌 **采样参数下发链已通**（见上一段）；面板上任何新增旋钮都要先确认「它真的到模型了吗」。
 - 🔴 **提示词层序不可乱**：设定 → 记忆 → 身份边界 → 档位 →（通用补充要求 → 模式补充要求）→ 未带入声明 →
   **协议（钉绝对末尾）**。两段「补充要求」来自控制面板，**放在协议之前**，免得打断协议末尾那条
   「最后提醒」的近因效果（`buildSystemPrompt` 的 styleHint / commonExtra / modeExtra 三个可选层）。
