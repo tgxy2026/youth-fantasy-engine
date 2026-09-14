@@ -19,12 +19,16 @@ import TavernMessageBody from './TavernMessageBody'
 import PromptModal from './PromptModal'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import TavernDirectorNoteBar from './TavernDirectorNoteBar'
+import TavernExportDialog from './TavernExportDialog'
+import TavernUsageDialog from './TavernUsageDialog'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
 import { runPlotTurn, splitCast } from '../lib/tavern/engine'
 import { generateReport } from '../lib/tavern/report'
 import { buildOpeningMessage } from '../lib/tavern/prompt'
+import { plotDocModel } from '../lib/tavern/exportDoc'
+import { messagesLen } from '../lib/tavern/budget'
 import { uid } from '../lib/id'
 import { MEMORY_SOFT_LIMIT, hasCastSetting, talkBandOf, talkativityOf } from '../lib/tavern/types'
 import type { TavernSession, TavernSessionIndexItem, TavernMessage, TavernDirectorNote } from '../lib/tavern/types'
@@ -52,6 +56,10 @@ export default function TavernPlot() {
   const [cpNaming, setCpNaming] = useState(false)
   /** 「在场调度」弹窗（静音 / 健谈度，A6） */
   const [directorOpen, setDirectorOpen] = useState(false)
+  /** 导出文档弹窗（B5） */
+  const [exportOpen, setExportOpen] = useState(false)
+  /** 用量明细弹窗（额度怎么分的） */
+  const [usageOpen, setUsageOpen] = useState(false)
   // 扮演设定编辑：正在编辑的角色（null = 未打开）
   const [castEdit, setCastEdit] = useState<{ cardId: string; name: string; kind: 'ai' | 'user' } | null>(null)
   // 哪些角色已填过扮演设定（左栏显示「已设定 / 设定」）
@@ -385,8 +393,12 @@ export default function TavernPlot() {
     showToast('已删除')
   }
 
-  const usedChars = session ? JSON.stringify(session.messages).length + (session.memory?.length ?? 0) : 0
-  const budget = session?.params.contextBudget ?? 8000
+  /**
+   * 对话消息字数。**不含 system** —— 原先这里写 `JSON.stringify(messages).length`（把 JSON 结构也算进去，
+   * 明显虚高），又拿它去比一个不含 system 的「预算」，两个数都不对，作者据此判断不了还剩多少余量。
+   * 真实占用（含协议 / 设定层 / 背景设定 / 记忆）在「用量明细」里按真实组装量。
+   */
+  const dialogChars = session ? messagesLen(session.messages) : 0
 
   /** 左栏情景列表：按筛选词过滤（标题 / 参演角色 / 锚点章名都算命中） */
   const sessionRows = useMemo(() => {
@@ -431,6 +443,13 @@ export default function TavernPlot() {
             </Button>
             <Button variant="secondary" size="md" onClick={() => setShowInfo(v => !v)}>
               {showInfo ? '收起本场信息' : '本场信息'}
+            </Button>
+            <Button
+              variant="secondary" size="md" disabled={streaming || session.messages.length === 0}
+              onClick={() => setExportOpen(true)}
+              title="把这场推演导出成 Markdown 或带样式的单文件 HTML"
+            >
+              导出
             </Button>
             <Button variant="danger" size="md" disabled={busyReport || streaming} onClick={finish}>
               {busyReport ? '生成报告中…' : '结束推演'}
@@ -697,8 +716,16 @@ export default function TavernPlot() {
               />
               <div className="mt-2 flex items-center justify-between">
                 <span className="text-[11px] text-ink-500">
-                  上下文占用约 {usedChars} / {budget} 字
+                  对话消息 {dialogChars} 字
                   {session.memory ? ` · 记忆 ${session.memory.length}/${MEMORY_SOFT_LIMIT} 字` : ''}
+                  <button
+                    type="button"
+                    onClick={() => setUsageOpen(true)}
+                    className="ml-2 text-amber/80 hover:text-amber underline decoration-dotted"
+                    title="按真实组装量一遍：协议 / 设定层 / 背景设定 / 记忆各占多少，留给对话历史多少"
+                  >
+                    用量明细
+                  </button>
                 </span>
                 <div className="flex gap-2">
                   {streaming
@@ -711,6 +738,27 @@ export default function TavernPlot() {
           </>
         )}
       </div>
+
+      {session && (
+        <TavernUsageDialog
+          open={usageOpen}
+          onClose={() => setUsageOpen(false)}
+          mode="plot"
+          session={session}
+        />
+      )}
+
+      {session && (
+        <TavernExportDialog
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          docTitle={session.title}
+          kindLabel="推演记录"
+          messageCount={session.messages.filter(m => m.role !== 'system').length}
+          hiddenCount={session.messages.filter(m => m.hidden).length}
+          build={o => plotDocModel(session, o)}
+        />
+      )}
 
       <TavernPlotSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
 

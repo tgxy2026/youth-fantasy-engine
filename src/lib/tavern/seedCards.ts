@@ -499,12 +499,24 @@ export const SEED_FREE_CHARACTERS: SeedFreeChar[] = [
  * 同时保留作者对卡片的编辑（若已存在就完全不碰）。
  */
 export async function seedFreeChars(): Promise<number> {
-  const existing = await store.listFreeChars()
-  const names = new Set(existing.map(x => x.name))
+  const idx = await store.listFreeChars()
+  const list = (await Promise.all(idx.map(x => store.getFreeChar(x.id)))).filter((c): c is FreeCharacter => !!c)
+
+  // ① 老库补标：名字还认得出的先记下来源 —— 此后作者改名也不会被重复播种
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i]
+    if (c.seededFrom) continue
+    const seed = SEED_FREE_CHARACTERS.find(x => x.name === String(c.name ?? '').trim())
+    if (!seed) continue
+    list[i] = { ...c, seededFrom: seed.name }
+    await store.saveFreeChar(list[i])
+  }
+
+  // ② 按来源标记判断是否已播种（**不再按名字** —— 改名过的卡也算"已经播过"）
   let created = 0
-  for (const card of SEED_FREE_CHARACTERS) {
-    if (names.has(card.name)) continue
-    await store.createFreeChar(card)
+  for (const seed of SEED_FREE_CHARACTERS) {
+    if (list.some(c => c.seededFrom === seed.name)) continue
+    await store.createFreeChar({ ...seed, seededFrom: seed.name })
     created++
   }
   return created
@@ -655,6 +667,26 @@ export function isSeedCardName(name: string): boolean {
 }
 
 /**
+ * 找出这张卡对应哪张内置种子 —— **先按来源标记，再退回按当前名字**。
+ *
+ * 先按标记是为了「作者改过名」这种情况：标记里存着它原本是哪种卡（值＝种子原名），
+ * 所以改名之后依然认得出、不会被重复播种，也照样能吃到格式升级。
+ * 退回按名字是为了老库（那些卡还没有标记，升级路径会顺手把标记补上）。
+ */
+export function findSeedFor(card: { name?: string; seededFrom?: string } | null | undefined): SeedFreeChar | undefined {
+  if (!card) return undefined
+  const byTag = card.seededFrom
+    ? SEED_FREE_CHARACTERS.find(c => c.name === card.seededFrom)
+    : undefined
+  return byTag ?? SEED_FREE_CHARACTERS.find(c => c.name === String(card.name ?? '').trim())
+}
+
+/** 这张卡是不是内置示范卡（按来源认，改名后仍成立）—— UI 据此显示「恢复内置版本」 */
+export function isSeedCard(card: { name?: string; seededFrom?: string } | null | undefined): boolean {
+  return !!findSeedFor(card)
+}
+
+/**
  * 把某张卡的四章内容**恢复成内置最新版**（只覆盖 world / profile / conduct / examples）。
  *
  * 【为什么需要它】示范卡是「内置样板」，会随版本更新（2026-09-14 就改过关系设定与示例格式）。
@@ -663,14 +695,14 @@ export function isSeedCardName(name: string): boolean {
  * 给用户一个**显式的**「恢复内置版本」按钮更诚实：他自己清楚要拿内置内容覆盖。
  *
  * ★ **不碰记忆与日常状态** —— 那是「这个人经历过的事」，跟卡片模板是两回事。
- * ★ 只在名字与内置卡一致时才动（改名过的卡不会被误伤）。
+ * ★ 只对**认得出是内置卡**的卡生效（按来源标记认 —— 改名过的示范卡依然认得出，也不会误伤别人的卡）。
  *
  * @returns 命中的内置卡名；没命中返回 null
  */
 export async function resetCardToSeed(id: string): Promise<string | null> {
   const card = await store.getFreeChar(id)
   if (!card) return null
-  const seed = SEED_FREE_CHARACTERS.find(c => c.name === String(card.name ?? '').trim())
+  const seed = findSeedFor(card)
   if (!seed) return null
   await store.saveFreeChar({
     ...card,
@@ -687,12 +719,17 @@ export async function upgradeSeedCards(): Promise<number> {
   const idx = await store.listFreeChars()
   let n = 0
   for (const it of idx) {
-    const legacy = LEGACY_SEED_EXAMPLES[it.name]
-    if (!legacy) continue
     const card = await store.getFreeChar(it.id)
     if (!card) continue
+    const fresh = findSeedFor(card)
+    if (!fresh) continue // 不是内置卡 → 一个字都不动
+    // 老库补标（幂等）：名字还认得出时先记住来源，此后改名也不会漏掉升级
+    if (!card.seededFrom) {
+      card.seededFrom = fresh.name
+      await store.saveFreeChar(card)
+    }
+    const legacy = LEGACY_SEED_EXAMPLES[fresh.name]
     const cur = card.examples
-    const fresh = SEED_FREE_CHARACTERS.find(c => c.name === it.name)
     // ① 一字未改 → 整段换成新版
     if (fresh && cur === legacy && fresh.examples !== cur) {
       await store.saveFreeChar({ ...card, examples: fresh.examples })

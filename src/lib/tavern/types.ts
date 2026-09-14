@@ -250,6 +250,18 @@ export type FreeCharacter = {
   examples: string
   /** 来自哪张小说角色卡（单向桥溯源用） */
   importedFrom?: { projectId: string; cardId: string; at: number }
+  /**
+   * **内置示范数据**的来源标记（值＝种子里那张卡原本的名字，如 `'洛汐'`）。
+   *
+   * 为什么需要它（2026-09-14 老大问「删掉示范项目重建会不会覆盖我改的东西」）：
+   * 原先「播种 / 格式升级 / 恢复内置版本」全都**按名字**认卡 —— 作者一改名，
+   * 系统就再也不认识它了：重建示范项目会**再播一张原名卡**（看着像改动被种回来），
+   * 而且那张卡再也拿不到格式升级。改成按来源认，改名后依然认得。
+   *
+   * 🔴 **不进导出文件**（`toCardFile` 会剔除）：它只是本机的溯源标记。
+   *    否则别人导入你的示范卡后，他那边也会把它当内置卡去改。
+   */
+  seededFrom?: string
   createdAt: number
   updatedAt: number
 }
@@ -391,6 +403,17 @@ export type FreeSession = {
   talkativity?: Record<string, number>
   /** 临时导演指令（B2）：按深度插进历史，只影响接下来 N 轮 */
   directorNote?: TavernDirectorNote
+  /**
+   * 本场变量（C2 第二步）：好感 / 信任 / 剧情进度 / 心情 / 当前地点。
+   * 由 AI 每隔 N 轮给一次增量，作者也可手改。**会话级**，见 TavernVars 的说明。
+   */
+  vars?: TavernVars
+  /**
+   * 这一场用的剧本（自由对话专用）。`scriptId` 只用于溯源与"再开一场同一剧本"，
+   * 真正进上下文的是 `script` 这份**快照** —— 作者后来改了剧本，这一场不会跟着变。
+   */
+  scriptId?: string
+  script?: ScriptSnapshot
   lastActiveAt: number
   createdAt: number
   updatedAt: number
@@ -422,6 +445,139 @@ export type DailyState = {
   log: { date: string; text: string }[]
   /** 当前心情（并入记忆的关系状态展示，单独存原值便于 UI 显示） */
   mood?: string
+}
+
+// ==================== 变量（C2 第二步：变量 + AI 输出增量）====================
+
+/** 内置变量键（白名单 —— 提示词、解析、界面三处共用这一份，别各写各的） */
+export const VAR_KEYS = ['affection', 'trust', 'progress', 'mood', 'place'] as const
+export type VarKey = (typeof VAR_KEYS)[number]
+
+export type VarDef = {
+  key: VarKey
+  /** 中文名：提示词里用它、解析时也按它认（模型看到的就是这个名字） */
+  label: string
+  kind: 'num' | 'text'
+  min: number
+  max: number
+  /** 文本变量的字数上限 */
+  maxLen?: number
+  init: number | string
+}
+
+/**
+ * **只有这五个**（老大 2026-09-14 定：内置 + 可逐项关闭，不开放自定义）。
+ *
+ * 为什么不开自定义：变量要**进提示词**（不告诉模型有哪些数、什么范围，它就没法给有意义的增量），
+ * 而自定义数值没有语义 —— 模型不知道「金钱 320」算多算少。开放自定义等于让作者去写协议，
+ * 与「少参数、好默认值」的取向相反。作者真正要控制的是**开/关**与**初始值**。
+ */
+export const VAR_DEFS: VarDef[] = [
+  { key: 'affection', label: '好感', kind: 'num', min: 0, max: 100, init: 50 },
+  { key: 'trust', label: '信任', kind: 'num', min: 0, max: 100, init: 50 },
+  { key: 'progress', label: '剧情进度', kind: 'num', min: 0, max: 100, init: 0 },
+  { key: 'mood', label: '心情', kind: 'text', min: 0, max: 0, maxLen: 12, init: '' },
+  { key: 'place', label: '当前地点', kind: 'text', min: 0, max: 0, maxLen: 12, init: '' },
+]
+
+export function varDefOf(key: string): VarDef | undefined {
+  return VAR_DEFS.find(d => d.key === key)
+}
+
+export type VarValue = number | string
+export type VarValues = Partial<Record<VarKey, VarValue>>
+
+/** 解析出来的一个操作（还没应用、没夹取） */
+export type VarOp =
+  | { key: VarKey; label: string; kind: 'delta'; num: number }
+  | { key: VarKey; label: string; kind: 'set'; num: number }
+  | { key: VarKey; label: string; kind: 'text'; text: string }
+
+/** 实际发生的一次变化（已夹取，界面据此显示差量） */
+export type VarChange = {
+  key: VarKey
+  label: string
+  from: VarValue
+  to: VarValue
+  /** 数值变量的差量（文本变量没有） */
+  delta?: number
+}
+
+/**
+ * 会话级变量块。**不是角色级** —— 换一场戏本来就该重新开始。
+ * 🔴 它必须与消息、记忆水位线**一起**被检查点 / 回滚 / 重说带走：
+ *    漏一处就会出现"回到那一刻了、数值还是未来的"（与当年"记忆没跟着回滚"同类，已吃过一次）。
+ */
+export type TavernVars = {
+  values: VarValues
+  /** 上次更新在第几轮（「每 N 轮」按它算） */
+  turnSeq: number
+  /**
+   * 上一次**模型给的**变化的「前值」 —— 重说时要能撤掉。
+   * ⚠️ 作者手改会把它清空（见 `recordVarChanges`）：作者的手是最终裁决，
+   *    重说不该把作者刚纠正过的数再翻回模型算错的那个值。
+   */
+  prev?: { values: VarValues; at: number }
+  /** 变动历史（状态栏回看用，只留最近若干条）。旧数据的 source/turnSeq 可能没有 */
+  log: { at: number; changes: VarChange[]; source?: VarSource; turnSeq?: number }[]
+}
+
+/** 这次变化是谁改的：模型给的增量 / 作者手改 */
+export type VarSource = 'ai' | 'manual'
+
+// ==================== 剧本（自由对话专用：把「对话内容」单独拿出来做成一份可复用的戏） ====================
+
+/**
+ * 一份「简单剧本」＝ 六栏（老大 2026-09-14 定，见 docs/剧本与变量-设计方案-讨论稿.md §2）。
+ *
+ * 解决的是「角色卡只给了人、没给戏」：卡里有身份与性格，却没有「此刻在哪、这一场想干嘛」。
+ * 与 SillyTavern 的 `scenario` + `first_mes` 同构，另加「目标 / 边界」两栏 —— 一场戏得有意图，
+ * 否则模型只会描述气氛、戏不往前走。
+ *
+ * 🔴 **归属：全局（meta，跨项目）** —— 与角色卡同性质，是「玩法模板」，不绑某一本书。
+ * 🔴 会话里存**快照**而非只存 id：剧本可编辑，只存引用的话作者改一次，所有历史会话都会被悄悄改写。
+ */
+export type TavernScript = {
+  id: string
+  /** 1 · 名称（列表展示用，不进上下文） */
+  name: string
+  /** 2 · 情境：此刻在哪、为什么在这儿、刚发生了什么。**刻意只管此刻**，背景交给角色卡与背景设定 */
+  situation: string
+  /** 3 · 开场白：Ta 说的第一句。渲染成对话第一条消息，**不进 system** */
+  opening: string
+  /** 4 · 你的位置：你在这一场里是谁、与 Ta 的关系、你想做什么 */
+  playerRole: string
+  /** 5 · 这一场的目标：给方向，不锁死（变量「剧情进度」就是它的完成度） */
+  goal: string
+  /** 6 · 不要发生：这一场不该出现什么 */
+  taboo: string
+  /** 上次 AI 起草的时间（0 = 从没跑过） */
+  draftedAt: number
+  createdAt: number
+  updatedAt: number
+}
+
+/** 剧本列表项（只放列表要显示的字段，别把全文读进内存） */
+export type TavernScriptIndexItem = {
+  id: string
+  name: string
+  /** 目标那一栏的首句 —— 列表里一眼看出这场戏要干嘛 */
+  goalBrief: string
+  updatedAt: number
+}
+
+/** 会话上的剧本**快照**：加载那一刻的样子，此后与我改不改那份剧本无关 */
+export type ScriptSnapshot = {
+  /** 来源剧本 id（可能已被删除 —— 只是溯源用，不影响这一场） */
+  scriptId: string
+  name: string
+  situation: string
+  opening: string
+  playerRole: string
+  goal: string
+  taboo: string
+  /** 快照时间 */
+  at: number
 }
 
 // ==================== 列表索引项 ====================

@@ -38,6 +38,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
+import AvatarPicker from './AvatarPicker'
 import PromptModal from './PromptModal'
 import { LoadingState } from './LoadingState'
 import AutoTextarea from './AutoTextarea'
@@ -671,6 +672,15 @@ export default function TavernControl() {
             title="二、我的档案"
             desc="你本人是谁 —— 全局设置，跨项目、跨会话生效，每轮都进 system。自由对话里 AI 靠它知道屏幕后面是谁（称呼、亲疏、语气都照它来）；剧情推演不用它 —— 那边你在每场推演里已经选定了自己演的角色，AI 以角色卡为准。三栏全留空 = 整段不注入，行为与以前完全一样。"
           >
+            <div className="mb-1">
+              <AvatarPicker
+                src={pr.avatar}
+                name={pr.name || '我'}
+                size={64}
+                onChange={v => setProfile('avatar', v)}
+                hint="只影响界面：自由对话里 AI 那侧是角色头像，你这一侧就是你 —— 留空用名字首字。"
+              />
+            </div>
             <div className={GRID2}>
               <TextField
                 label="你的名字"

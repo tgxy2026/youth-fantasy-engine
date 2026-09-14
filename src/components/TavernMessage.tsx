@@ -12,23 +12,27 @@
  *
  * 抽成共享件是为了让两条线用**同一套**渲染 —— 两处各写一份必然慢慢漂移
  * （改了剧情推演的样式、自由对话还是旧的）。
+ *
+ * 🔴 「哪一行算什么」不再写在这里，改调 `tavern/exportDoc` 的 `classifyTavernLine` ——
+ *    导出文档（B5）也要按同一套规则分行，判定规则散成两份必然漂移（本项目反复踩过的坑）。
+ *    这里只负责**样式映射**。
  */
+import { classifyTavernLine, type TavernLineKind } from '../lib/tavern/exportDoc'
+
+const KIND_CLASS: Record<TavernLineKind, string> = {
+  action: 'text-[12px] text-ink-400',
+  ambient: 'text-[12px] italic text-ink-500',
+  state: 'text-[12.5px] italic text-ink-400',
+  speech: 'text-[13px] leading-relaxed text-ink-100',
+}
+
 export function renderTavernMessage(content: string) {
   return String(content ?? '')
     .split('\n')
     .filter(l => l.trim())
     .map((line, i) => {
       const t = line.trim()
-      if (t.startsWith('（') || t.startsWith('(')) {
-        return <div key={i} className="text-[12px] text-ink-400">{t}</div>
-      }
-      if (t.startsWith('【')) {
-        return <div key={i} className="text-[12px] italic text-ink-500">{t}</div>
-      }
-      if (t.startsWith('〔')) {
-        return <div key={i} className="text-[12.5px] italic text-ink-400">{t}</div>
-      }
-      return <div key={i} className="text-[13px] leading-relaxed text-ink-100">{t}</div>
+      return <div key={i} className={KIND_CLASS[classifyTavernLine(t)]}>{t}</div>
     })
 }
 

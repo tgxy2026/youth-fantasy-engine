@@ -3,7 +3,8 @@
 // 这批卡是从老大手写的两张 .md 角色卡转写来的，转写过程做了「原卡五章 → 本系统四章」的归位，
 // 所以这里最关键的不是「结构对不对」，而是**内容有没有在归位时丢掉**。
 // 因此第 2 组断言逐条抽查原卡各节的独有字串 —— 归位可以换位置，但不能丢内容。
-import { SEED_FREE_CHARACTERS, seedFreeChars, upgradeSeedCards, LEGACY_SEED_EXAMPLES, isSeedCardName, resetCardToSeed } from '../src/lib/tavern/seedCards'
+import { SEED_FREE_CHARACTERS, seedFreeChars, upgradeSeedCards, LEGACY_SEED_EXAMPLES, isSeedCardName, isSeedCard, findSeedFor, resetCardToSeed } from '../src/lib/tavern/seedCards'
+import { toCardFile } from '../src/lib/tavern/cardFile'
 import { renderFreeCharacter, buildFreeSystem } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import * as store from '../src/lib/tavern/store'
@@ -295,6 +296,63 @@ async function main() {
     const renamed = await store.createFreeChar({ ...find('楚楠'), name: '楚楠（副本）', world: '保留我改的' })
     ok('改了名的卡不会被误伤',
       (await resetCardToSeed(renamed.id)) === null && (await store.getFreeChar(renamed.id))!.world === '保留我改的')
+  }
+
+  // ---------- 7) A 方案：按「来源标记」认卡（老大 2026-09-14 问「删掉示范项目重建会不会覆盖」） ----------
+  //   原先播种 / 升级 / 恢复内置版本三处**都按名字**认卡 —— 作者一改名，系统就不认识它了：
+  //   重建示范项目会再播一张原名卡（看着像改动被种回来），那张卡也再也拿不到格式升级。
+  {
+    __resetMockStores()
+    await seedFreeChars()
+    const full = (await Promise.all((await store.listFreeChars()).map(i => store.getFreeChar(i.id))))
+      .filter((c): c is FreeCharacter => !!c)
+    ok('播种时给每张卡打上来源标记（值＝种子原名）',
+      full.length === 3 && full.every(c => c.seededFrom === c.name),
+      JSON.stringify(full.map(c => [c.name, c.seededFrom])))
+
+    // ① 改名之后不再重复播种
+    const luoxi = full.find(c => c.seededFrom === '洛汐')!
+    await store.saveFreeChar({ ...luoxi, name: '洛汐（改名版）' })
+    const n = await seedFreeChars()
+    ok('🔴 改名之后重建示范项目**不会**再播一张原名卡', n === 0, String(n))
+    ok('改名那张的改动原样保留（没被种回去）',
+      (await store.getFreeChar(luoxi.id))!.name === '洛汐（改名版）')
+    ok('库里仍是 3 张（没多出副本）', (await store.listFreeChars()).length === 3)
+
+    // ② 改名后仍能吃到格式升级
+    __resetMockStores()
+    await seedFreeChars()
+    const su = (await Promise.all((await store.listFreeChars()).map(i => store.getFreeChar(i.id))))
+      .find(c => c?.seededFrom === '苏念')!
+    await store.saveFreeChar({ ...su, name: '苏念·改', examples: LEGACY_SEED_EXAMPLES['苏念'] })
+    const up = await upgradeSeedCards()
+    const suAfter = (await store.getFreeChar(su.id))!
+    ok('🔴 改名后依然被格式升级命中（按来源认，不看现名）',
+      up === 1 && suAfter.examples === find('苏念').examples, '升级 ' + up + ' 张')
+    ok('升级只改示例对话那一章，名字没被动', suAfter.name === '苏念·改')
+
+    // ③ 老库（无标记、名字也没改）→ 播种时补标记，且不重播
+    __resetMockStores()
+    const old = await store.createFreeChar({ ...find('洛汐') })
+    ok('老库的卡一开始确实没有标记', !(await store.getFreeChar(old.id))!.seededFrom)
+    const n3 = await seedFreeChars()
+    ok('播种时给老库的卡补上标记', (await store.getFreeChar(old.id))!.seededFrom === '洛汐')
+    ok('补标那次只补缺的两张（洛汐不重播）', n3 === 2, String(n3))
+    ok('再播一次完全不动（幂等）', (await seedFreeChars()) === 0)
+
+    // ④ 导出不能带这个标记（否则别人的库会把它当内置卡去改）
+    const json = toCardFile((await store.getFreeChar(old.id))!)
+    ok('🔴 导出文件里不含 seededFrom', !json.includes('seededFrom'), json.slice(0, 80))
+
+    // ⑤ 判定函数
+    ok('findSeedFor 优先按标记认（改名后仍指向原种子）',
+      findSeedFor({ name: '随便改的名字', seededFrom: '楚楠' })?.name === '楚楠')
+    ok('findSeedFor 对自建卡返回 undefined',
+      findSeedFor({ name: '我自己写的', seededFrom: undefined }) === undefined)
+    ok('isSeedCard 认得出改名后的示范卡，也放得过自建卡',
+      isSeedCard({ name: '洛汐·改', seededFrom: '洛汐' }) && !isSeedCard({ name: '我自己写的' }))
+    ok('isSeedCardName 保留旧行为（按现名判定）',
+      isSeedCardName('洛汐') && !isSeedCardName('洛汐（改名版）'))
   }
 
   console.log(`\ntavernSeedCards: ${pass} passed, ${fail} failed`)

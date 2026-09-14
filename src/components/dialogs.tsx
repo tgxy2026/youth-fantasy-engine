@@ -106,6 +106,36 @@ export function showToast(message: string, type: ToastType = 'success', duration
   setTimeout(remove, duration)
 }
 
+/**
+ * 复制文本并提示（2026-09-14 从 AboutPage 上移，做**唯一一份**）。
+ *
+ * 剪贴板 API 在非安全上下文（http 局域网直连、file:// 的某些情况）下不可用，
+ * 故保留 execCommand 兜底；两者都失败时提示用户手动复制 —— **绝不静默失败**
+ * （点了没反应，用户只会以为功能坏了）。
+ *
+ * ⚠️ 别再在组件里各写一份：本项目已多次踩「同一套交互写两遍、改一处忘一处」。
+ */
+export async function copyText(text: string, okMsg: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      showToast(okMsg)
+      return
+    }
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    showToast(ok ? okMsg : '复制失败，请手动选中复制', ok ? 'success' : 'error')
+  } catch {
+    showToast('复制失败，请手动选中复制', 'error')
+  }
+}
+
 function ToastItem({ message, type }: { message: string; type: ToastType }) {
   const icon: ReactNode =
     type === 'success' ? <CheckCircle2 size={14} /> : type === 'error' ? <AlertCircle size={14} /> : <Info size={14} />

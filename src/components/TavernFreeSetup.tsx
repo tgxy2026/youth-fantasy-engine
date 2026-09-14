@@ -20,6 +20,7 @@ import { getTavernSettings, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settin
 import { Button } from './Button'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
+import Avatar from './Avatar'
 import type { TavernScene } from '../lib/tavern/types'
 
 export type FreeDraft = {
@@ -47,7 +48,7 @@ const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 t
 const labelCls = 'text-[11px] text-ink-400 mb-1'
 
 /** 选角用的条目：名字 + 内核一句话（用来分辨相似的角色） */
-type CharOption = { id: string; name: string; core: string }
+type CharOption = { id: string; name: string; core: string; avatar?: string }
 
 /** 一个位置：选中的角色 + 由谁演 */
 type Slot = { charId: string; role: 'ai' | 'user' }
@@ -122,6 +123,7 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
                     : cardId === o.id ? 'bg-amber/10' : 'hover:bg-ink-800/60'
                 }`}
               >
+                <Avatar src={o.avatar} name={o.name} size={20} />
                 <span className={`min-w-0 shrink-0 text-[12.5px] ${cardId === o.id ? 'text-amber' : 'text-ink-200'}`}>
                   {o.name || '（未命名）'}
                 </span>
@@ -175,7 +177,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         // 逐个读完整卡拿「内核」那一句：选角色时能一眼分清（读失败就留空，不影响选）
         const full = await Promise.all(idx.map(async it => {
           const card = await store.getFreeChar(it.id).catch(() => null)
-          return { id: it.id, name: it.name, core: (card?.profile.core ?? '').trim().replace(/\s+/g, ' ').slice(0, 28) }
+          return { id: it.id, name: it.name, avatar: card?.avatar, core: (card?.profile.core ?? '').trim().replace(/\s+/g, ' ').slice(0, 28) }
         }))
         if (!alive) return
         setOptions(full)

@@ -91,3 +91,64 @@ export function historyBudget(
 ): number {
   return Math.max(0, total - fixedOverhead - textLen(system) - textLen(memory))
 }
+
+// ==================== 用量明细（2026-09-14；老大问「额度到底怎么分的」）====================
+
+/**
+ * 用量的一「块」。调用方把**能量出来的层**报进来（设定层 / 背景设定 / 记忆 / 角色卡…）。
+ */
+export type UsagePart = { key: string; label: string; chars: number; note?: string }
+
+export type UsageSummary = {
+  /** 各层占用（**保证求和恰等于 systemChars**：剩下的自动并进「其他固定部分」） */
+  parts: UsagePart[]
+  systemChars: number
+  /** 留给对话历史的额度 */
+  historyChars: number
+  total: number
+  overhead: number
+  historyPct: number
+  /** 值得作者注意的组合（如 digest 档但背景设定是空的） */
+  warnings: string[]
+}
+
+/**
+ * 把「总额度 / system 总长 / 各层长度」整理成一份可直接展示的用量明细。
+ *
+ * 🔴 存在的意义：界面上原先只显示「消息字数 / 预算」，**system 一个字都没算** ——
+ * 而 system（协议 + 设定层 + 背景设定 + 记忆）实测能到 1.3~1.5 万字，是吃额度的大头。
+ * 作者据此以为还有大把余量，实际留给历史的不到 1/6。这里把真实构成摊开。
+ *
+ * ⚠️ 差额兜底：调用方量不出的部分（协议正文、身份层、档位提示）会被合并成一行「其他固定部分」，
+ * 所以 Σparts **恒等于** systemChars —— 不会出现"明细加起来对不上总数"这种更让人困惑的账。
+ */
+export function summarizeUsage(a: {
+  total: number
+  systemChars: number
+  parts: UsagePart[]
+  overhead?: number
+  warnings?: string[]
+}): UsageSummary {
+  const overhead = a.overhead ?? FIXED_OVERHEAD_CHARS
+  const parts = a.parts.filter(p => p.chars > 0)
+  const known = parts.reduce((n, p) => n + p.chars, 0)
+  const rest = a.systemChars - known
+  if (rest > 0) {
+    parts.push({
+      key: 'other',
+      label: '其他固定部分',
+      chars: rest,
+      note: '协议正文 · 身份层 · 场景/档位提示 —— 这部分没有单独量，按差额计入',
+    })
+  }
+  const historyChars = historyBudget(a.total, 'x'.repeat(a.systemChars), '', overhead)
+  return {
+    parts,
+    systemChars: a.systemChars,
+    historyChars,
+    total: a.total,
+    overhead,
+    historyPct: a.total > 0 ? Math.round((historyChars / a.total) * 100) : 0,
+    warnings: a.warnings ?? [],
+  }
+}

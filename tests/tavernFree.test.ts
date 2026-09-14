@@ -303,7 +303,7 @@ async function main() {
     const base = DEFAULT_TAVERN_SETTINGS
     const withProfile = {
       ...base,
-      profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧，嘴硬心软。' },
+      profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧，嘴硬心软。', avatar: '' },
     }
 
     // ① 没演角色 + 有档案 → 档案就是「你」的身份（不再是「没有具体身份的本人」）

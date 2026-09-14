@@ -28,12 +28,14 @@ import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem 
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, parseCardFile, cardFileName, describeWarnings } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
-import { isSeedCardName, resetCardToSeed } from '../lib/tavern/seedCards'
+import { isSeedCard, resetCardToSeed } from '../lib/tavern/seedCards'
 import { coldStartMemory, draftMemoryFromCard } from '../lib/tavern/summarize'
 import { renderFreeCharacter } from '../lib/tavern/engine'
 import { getTavernSettings } from '../lib/tavern/settings'
 
 import { Button } from './Button'
+import Avatar from './Avatar'
+import AvatarPicker from './AvatarPicker'
 import { Modal } from './Modal'
 import { showToast, confirmDialog } from './dialogs'
 import { LoadingState } from './LoadingState'
@@ -448,9 +450,7 @@ export default function TavernCard() {
                         draft?.id === c.id ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800/60'
                       }`}
                     >
-                      <span className="w-6 h-6 shrink-0 rounded-full bg-ink-700 text-ink-200 text-[11px] flex items-center justify-center">
-                        {c.name.trim().slice(0, 1) || '?'}
-                      </span>
+                      <Avatar src={c.avatar} name={c.name} size={24} />
                       <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name || '未命名角色'}</span>
                     </button>
                   </li>
@@ -517,10 +517,18 @@ export default function TavernCard() {
 
                 {/* 基本 */}
                 <div>
+                  {/* 头像（批次 8）：角色卡片、自由对话气泡、状态栏、在场者一览共用同一张图 */}
+                  <div className="mb-3">
+                    <AvatarPicker
+                      src={draft.avatar}
+                      name={draft.name}
+                      size={64}
+                      onChange={v => up('avatar', v)}
+                      hint="不设也能用 —— 会话气泡与列表会用名字首字代替。头像随卡片一起存进数据文件。"
+                    />
+                  </div>
                   <div className="flex items-center gap-3">
-                    <span className="w-9 h-9 shrink-0 rounded-full bg-ink-700 text-ink-200 flex items-center justify-center">
-                      {draft.name.trim().slice(0, 1) || '?'}
-                    </span>
+                    <Avatar src={draft.avatar} name={draft.name} size={36} />
                     <input
                       className="flex-1 bg-ink-900 border border-ink-700 rounded-md px-2.5 py-2 text-[15px] font-semibold text-ink-50 outline-none focus:border-amber/50"
                       value={draft.name}
@@ -529,7 +537,7 @@ export default function TavernCard() {
                     />
                   </div>
                   <p className="mt-1.5 text-[11px] text-ink-500">
-                    头像暂未开放（用名字首字代替）。角色卡是 AI 的「人设说明书」—— 写得越具体，演得越像。
+                    角色卡是 AI 的「人设说明书」—— 写得越具体，演得越像。
                   </p>
                 </div>
 
@@ -722,7 +730,7 @@ export default function TavernCard() {
                     >
                       复制为新卡
                     </Button>
-                    {isSeedCardName(draft.name) && (
+                    {isSeedCard(draft) && (
                       <Button
                         variant="ghost" size="md" onClick={() => void resetSeed()}
                         title="用内置的最新版覆盖这四章（记忆与日常不受影响）—— 内置示范卡随版本更新时用它取回新版"

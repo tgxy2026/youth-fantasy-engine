@@ -3,7 +3,7 @@ import payWechat from '../assets/pay-wechat.png'
 import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
 import { APP_VERSION_LABEL } from '../lib/portable'
-import { showToast } from './dialogs'
+import { copyText } from './dialogs'
 import { Button } from './Button'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
@@ -50,31 +50,6 @@ export const CONTACT_LINKS = [
   { label: '作者 QQ', value: '1822304733' },
   { label: '公众号', value: '咸鱼哥的双线人生' },
 ]
-
-/**
- * 复制文本并提示。剪贴板 API 在非安全上下文（如 http 局域网直连）下不可用，
- * 故保留 execCommand 兜底；两者都失败时提示用户手动复制，绝不静默失败。
- */
-async function copyText(text: string, okMsg: string) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      showToast(okMsg)
-      return
-    }
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(ta)
-    showToast(ok ? okMsg : '复制失败，请手动选中复制', ok ? 'success' : 'error')
-  } catch {
-    showToast('复制失败，请手动选中复制', 'error')
-  }
-}
 
 function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (

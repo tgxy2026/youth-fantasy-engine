@@ -286,7 +286,7 @@ async function main() {
     const before = await getTavernSettings()
     await saveTavernSettings({
       ...before,
-      profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧，跟洛汐是同事，嘴硬心软。' },
+      profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧，跟洛汐是同事，嘴硬心软。', avatar: '' },
     })
     const sys7 = (await buildFreeSystem(s7base, [luo7])).system
     console.log(`[离线断言] 有档案：注入〖我的档案 · 用户本人〗：${sys7.includes('〖我的档案 · 用户本人〗') ? '✓' : '✗'}`)

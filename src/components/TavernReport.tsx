@@ -11,6 +11,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
+import TavernExportDialog from './TavernExportDialog'
+import { reportDocModel } from '../lib/tavern/exportDoc'
 import { TABS } from '../lib/schema'
 import type { TavernReport as Report, TavernFinding, TavernReportIndexItem } from '../lib/tavern/types'
 
@@ -37,6 +39,8 @@ export default function TavernReport() {
   const [report, setReport] = useState<Report | null>(null)
   /** 左栏筛选词（报告攒多了一行行找太慢） */
   const [q, setQ] = useState('')
+  /** 导出文档弹窗（B5） */
+  const [exportOpen, setExportOpen] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -167,7 +171,16 @@ export default function TavernReport() {
                       </div>
                     )}
                   </div>
-                  <Button variant="ghost" size="md" className="text-[12px]" onClick={removeReport}>删除</Button>
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      variant="secondary" size="md" className="text-[12px]"
+                      onClick={() => setExportOpen(true)}
+                      title="把这份报告导出成 Markdown 或带样式的单文件 HTML"
+                    >
+                      导出
+                    </Button>
+                    <Button variant="ghost" size="md" className="text-[12px]" onClick={removeReport}>删除</Button>
+                  </div>
                 </div>
 
                 <section className="rounded-lg border border-ink-700 bg-ink-850/40 p-3">
@@ -222,6 +235,25 @@ export default function TavernReport() {
             )}
           </div>
         </div>
+      )}
+
+      {report && (
+        <TavernExportDialog
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          docTitle={`${report.sessionTitle} · 推演报告`}
+          kindLabel="推演报告"
+          metaLabel="附报告信息"
+          metaHint="锚点、推演类型、参演角色与生成时间 —— 报告攒多了也能一眼认出是哪一份。"
+          summary={o => {
+            const total = report.findings.length
+            return [
+              total === 0 ? '未发现问题' : `共 ${total} 条问题（矛盾 ${report.findings.filter(f => f.level === '矛盾').length} · 漏洞 ${report.findings.filter(f => f.level === '漏洞').length} · 存疑 ${report.findings.filter(f => f.level === '存疑').length}）`,
+              o.withMeta ? '附报告信息' : '',
+            ].filter(Boolean).join(' · ')
+          }}
+          build={o => reportDocModel(report, tabName, o)}
+        />
       )}
     </div>
   )

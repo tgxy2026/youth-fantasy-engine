@@ -126,7 +126,7 @@ async function main() {
   {
     __resetMockStores()
     const fresh = await getTavernSettings()
-    await saveTavernSettings({ ...fresh, profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧' } })
+    await saveTavernSettings({ ...fresh, profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧', avatar: '' } })
     const back = await getTavernSettings()
     ok('档案三栏都能存能读',
       back.profile.name === '老巴迪' && back.profile.address === '巴迪哥' && back.profile.persona === '三十出头的编剧')

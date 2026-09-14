@@ -25,7 +25,7 @@ import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
   MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
-  type TavernParams, type SceneDescLevel, type PlotContextSource,
+  type TavernParams, type SceneDescLevel, type PlotContextSource, type VarKey,
 } from './types'
 import { TONE_HINT } from './prompt'
 import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
@@ -137,7 +137,7 @@ export type TavernFreeSettings = {
  * 【为什么只有三个字段】
  * 档案**每轮都进 system**，越长越挤占历史额度。名字 + 称呼 + 一句话自我设定，
  * 足以让 AI 叫对人、拿对语气；人物细节交给角色卡与记忆。
- * 头像是图片（不占字数），它与角色头像共用一套上传组件，排在「状态栏面板」那一批做。
+ * 头像是图片（不占字数），与角色头像共用同一套上传组件（批次 8 已落地）。
  */
 export type TavernProfile = {
   /** 你的名字 */
@@ -146,6 +146,11 @@ export type TavernProfile = {
   address: string
   /** 一句话自我设定：身份、年纪、与对方的关系……越短越有效 */
   persona: string
+  /**
+   * 头像（dataURL，已压缩到 256px）。**不进提示词** —— 它只决定界面上代表你的那张小图。
+   * 空 = 用名字首字代替。
+   */
+  avatar: string
 }
 
 /** 出厂档案：空。**空档案整段不注入**，行为与「没有这一层」完全一致 */
@@ -153,6 +158,31 @@ export const DEFAULT_TAVERN_PROFILE: TavernProfile = {
   name: '',
   address: '',
   persona: '',
+  avatar: '',
+}
+
+/**
+ * 本场变量（C2 第二步）的设置 —— 与角色卡/记忆都无关，是「这一场」的运行参数。
+ *
+ * 默认**开着**：老大点名要做这个功能，默认关掉等于让人去找开关。
+ * 它只在自由对话里生效（剧情推演以「诊断角色反应」为目的，不该引入数值游戏）。
+ */
+export type TavernVarsSettings = {
+  /** 总开关（关掉 = 提示词里一个字都不出现） */
+  enabled: boolean
+  /** 逐项**关闭**的变量（把「不要好感度」这种场合留给作者） */
+  off: VarKey[]
+  /** 每几轮请求一次增量（默认 3；1 = 每轮） */
+  everyTurns: number
+  /** 单次变化幅度上限（默认 ±5，越界按上限走） */
+  maxStep: number
+}
+
+export const DEFAULT_TAVERN_VARS: TavernVarsSettings = {
+  enabled: true,
+  off: [],
+  everyTurns: 3,
+  maxStep: 5,
 }
 
 export type TavernSettings = {
@@ -161,6 +191,8 @@ export type TavernSettings = {
   profile: TavernProfile
   plot: TavernPlotSettings
   free: TavernFreeSettings
+  /** 本场变量（C2 第二步）：自由对话专用 */
+  vars: TavernVarsSettings
   /** 扮演协议全文（两种模式共用，钉在 system 末尾）。默认 = 内置常量 */
   protocol: string
   /**
@@ -240,6 +272,7 @@ export const DEFAULT_PROTOCOL = PROTOCOL_CORE
 /** 出厂默认：**与原硬编码值逐一对应**（不存在"顺手改过"的数） */
 export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
   profile: DEFAULT_TAVERN_PROFILE,
+  vars: DEFAULT_TAVERN_VARS,
   common: {
     defaultProviderId: '',
     contextBudget: TAVERN_DEFAULTS.free.contextBudget,

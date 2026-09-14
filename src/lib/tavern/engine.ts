@@ -29,12 +29,18 @@ import {
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
 import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack } from './world'
+import { scriptToText } from './script'
 import { applyPostRules, type PostApplied } from './postRules'
+import {
+  buildVarsBlock, parseVarLine, applyVarOps, recordVarChanges, undoLastVarChanges,
+  shouldAskVars, turnSeqOf, varsOf,
+} from './vars'
 import {
   talkativityRowsOf,
   hasCastSetting, charTag,
+  VAR_KEYS,
   type TavernSession, type TavernMessage, type TavernCast, type TavernDirectorNote,
-  type FreeSession, type FreeCharacter, type FreeMemory,
+  type FreeSession, type FreeCharacter, type FreeMemory, type VarKey, type VarChange,
 } from './types'
 
 /** 剧情模式的档位固定为叙事向（方案 §5.3：剧情默认叙事向、自由默认聊天向） */
@@ -57,6 +63,11 @@ export type PlotSystemResult = {
   system: string
   /** 上下文（②层设定）实际占用的字符数，供 UI 显示 */
   settingChars: number
+  /**
+   * 本场背景设定**实际注入**的字符数（0 = 没填 / 关键词没命中 / 档位是 raw）。
+   * 回传给界面是为了让「用量明细」用**同一份判定** —— 界面自己再算一遍必然漂移。
+   */
+  worldChars: number
   /** 被预算丢弃的段落名 */
   dropped: string[]
 }
@@ -153,7 +164,17 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
     protocol: st.protocol,
   })
 
-  return { system, settingChars: ctx.chars, dropped: ctx.dropped }
+  return { system, settingChars: ctx.chars, worldChars: worldText.length, dropped: ctx.dropped }
+}
+
+/**
+ * 启用中的变量键（总开关关掉 → 空数组）。
+ * 提示词块与解析白名单**必须用同一份** —— 两边不一致就会出现"让模型报 A、解析器只认 B"。
+ * 导出给界面用（状态栏要按同一份清单显示）。
+ */
+export function varsEnabledKeys(st: TavernSettings): VarKey[] {
+  if (!st.vars?.enabled) return []
+  return VAR_KEYS.filter(k => !(st.vars.off ?? []).includes(k))
 }
 
 /** 逐个读取扮演设定并渲染（无任何填写时返回空串 → 整层跳过） */
@@ -414,6 +435,10 @@ export type FreeSystemResult = {
   system: string
   settingChars: number
   memoryChars: number
+  /** 本场背景设定实际注入的字符数（0 = 没填 / 关键词没命中）—— 与剧情模式同一口径 */
+  worldChars: number
+  /** 本场剧本（「这一场」层）实际注入的字符数（0 = 没设剧本 / 六栏全空） */
+  scriptChars: number
   /** 会话里引用了、但角色卡已被删的 id（UI 据此提示） */
   missing: string[]
 }
@@ -527,10 +552,15 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     session.messages.slice(-6).map(m => m.content),
   )) ? worldToText(worldSetting) : ''
 
+  // 本场剧本（自由对话专用）：会话里存的是**快照**，作者后来改剧本不影响这一场。
+  // 开场白不进这里 —— 它走消息通道（见 script.ts 文件头）。
+  const scriptText = scriptToText(session.script)
+
   const system = buildSystemPrompt({
     tone: FREE_TONE,
     setting,
     world: worldText,
+    scene: scriptText,
     memory,
     // 每块自己带「〖长期记忆 · 角色名〗」，不再套一层「〖长期记忆〗」
     memoryTitle: null,
@@ -540,14 +570,26 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     commonExtra: st.common.extraPrompt,
     // 模式补充要求：内置的「客观描写」在前、作者自己写的在后 —— 作者的话离生成点更近，
     // 真冲突时以作者为准（与「协议钉末尾」同一个思路）。
+    // C2 第二步：本场变量。只在自由模式、且开关打开时出现 —— 关掉就是一个字都不加，
+    // 所以「开/关」也等价于「花不花这份额度」。
     modeExtra: [
       buildSceneDescriptionRule(st.free.sceneDescription),
+      buildVarsBlock({
+        values: varsOf(session, varsEnabledKeys(st)).values,
+        keys: varsEnabledKeys(st),
+        ask: shouldAskVars(turnSeqOf(session.messages), st.vars.everyTurns),
+        everyTurns: st.vars.everyTurns,
+        maxStep: st.vars.maxStep,
+      }),
       st.free.extraPrompt.trim() ? `〖本场补充要求〗\n${st.free.extraPrompt.trim()}` : '',
     ].filter(x => x?.trim()).join('\n\n'),
     protocol: st.protocol,
   })
 
-  return { system, settingChars: setting.length, memoryChars: memory.length, missing }
+  return {
+    system, settingChars: setting.length, memoryChars: memory.length,
+    worldChars: worldText.length, scriptChars: scriptText.length, missing,
+  }
 }
 
 export type FreeTurnCallbacks = PlotTurnCallbacks & {
@@ -567,6 +609,10 @@ export type FreeTurnResult = {
   postApplied: PostApplied[]
   /** B3：正则写错被跳过的规则名 */
   postErrors: string[]
+  /** C2 第二步：本轮实际发生的变量变化（空数组 = 数值没动） */
+  varChanges: VarChange[]
+  /** 模型写了数值行但格式没对上（正文原样保留，只是没记账）—— 界面可提示 */
+  varParseFailed?: boolean
 }
 
 /**
@@ -634,6 +680,31 @@ export async function runFreeTurn(
   const autoSpeaker = aiIds.length > 0 ? aiIds[said % aiIds.length] : undefined
   const speakerId = aiIds.length > 1 ? (cb.speakerId ?? autoSpeaker) : aiIds[0]
 
+  // C2 第二步：本场变量。
+  // 🔴 顺序：**先解变量、再跑输出后处理** —— 后处理会把半角括号转全角、去掉 markdown 记号，
+  //    万一动到数值那一行就再也解析不出来了（解析器只认严格的 〔数值〕 前缀）。
+  // 🔴 重说（userText === null）：先把上一次变化**撤掉** —— 数值不该停在"那个已经被丢掉的回复"上。
+  const varKeys = varsEnabledKeys(st)
+  let varChanges: VarChange[] = []
+  let nextVars = userText === null && varKeys.length ? undoLastVarChanges(session.vars) : session.vars
+  let varParseFailed = false
+  if (varKeys.length && reply.trim()) {
+    const parsed = parseVarLine(reply, varKeys)
+    if (parsed.ops.length > 0) {
+      const cur = varsOf({ ...session, vars: nextVars }, varKeys)
+      const applied = applyVarOps(cur.values, parsed.ops, { maxStep: st.vars.maxStep })
+      if (applied.changes.length > 0) {
+        reply = parsed.text
+        varChanges = applied.changes
+        nextVars = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(withUser))
+      }
+    } else if (parsed.rawLine) {
+      // 认出了标记但一个操作都没解出来 → 记一笔，界面可以提示"数值行格式没对上"。
+      // **不动正文**：那一行原样留在回复里，作者自己看得见。
+      varParseFailed = true
+    }
+  }
+
   // 同剧情模式：重说失败要**保留原来的那条**（withUser 已经把末尾的 AI 回复丢掉了）
   // B3 输出后处理（与剧情模式同一套规则；顺序即 settings.postRules 的顺序）
   let postApplied: PostApplied[] = []
@@ -658,9 +729,13 @@ export async function runFreeTurn(
     lastActiveAt: Date.now(),
     updatedAt: Date.now(),
     directorNote,
+    vars: nextVars,
   }
 
-  return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, speakerId, postApplied, postErrors }
+  return {
+    session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, speakerId,
+    postApplied, postErrors, varChanges, varParseFailed,
+  }
 }
 
 /** 历史转换 + 预算裁剪（自由模式没有记忆层要预留，故传入 memory 为空串） */

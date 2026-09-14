@@ -29,6 +29,10 @@ import { LoadingState } from './LoadingState'
 import TavernFreeSetup, { type FreeDraft } from './TavernFreeSetup'
 import TavernCastDirector from './TavernCastDirector'
 import TavernRevisionDialog from './TavernRevisionDialog'
+import TavernExportDialog from './TavernExportDialog'
+import TavernStatusBar from './TavernStatusBar'
+import TavernUsageDialog from './TavernUsageDialog'
+import Avatar from './Avatar'
 import TavernMessageBody from './TavernMessageBody'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import TavernDirectorNoteBar from './TavernDirectorNoteBar'
@@ -50,17 +54,9 @@ import {
   type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
 } from '../lib/tavern/types'
-import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '../lib/tavern/settings'
-
-/** 把时间戳显示成「刚刚 / X 分钟前 / X 小时前 / 日期」 */
-function ago(ts: number): string {
-  if (!ts) return '还没有记忆'
-  const d = Date.now() - ts
-  if (d < 60_000) return '刚刚'
-  if (d < 3_600_000) return `${Math.floor(d / 60_000)} 分钟前`
-  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} 小时前`
-  return new Date(ts).toLocaleDateString('zh-CN')
-}
+import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
+import { freeDocModel, type SpeakerInfo } from '../lib/tavern/exportDoc'
+import { buildStatusModel, agoText } from '../lib/tavern/status'
 
 export default function TavernFree() {
   // ---------- 数据 ----------
@@ -97,6 +93,10 @@ export default function TavernFree() {
   /** Ta这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
   const [daily, setDaily] = useState<DailyState | null>(null)
   const [showDaily, setShowDaily] = useState(false)
+  /** 状态一览（批次 8，只读）：默认展开 —— 它的价值就在「不用点开就看到」 */
+  const [statusOpen, setStatusOpen] = useState(true)
+  /** 用量明细弹窗（额度怎么分的） */
+  const [usageOpen, setUsageOpen] = useState(false)
   /** 很久没来时Ta留着的一句话（§7.5），展示后清除 */
   const [greeting, setGreeting] = useState('')
   /** 本会话在场角色的完整卡（多角色渲染需要） */
@@ -105,6 +105,8 @@ export default function TavernFree() {
   const [speakNext, setSpeakNext] = useState('')
   /** 「在场调度」弹窗（静音 / 健谈度，A6） */
   const [directorOpen, setDirectorOpen] = useState(false)
+  /** 导出文档弹窗（B5） */
+  const [exportOpen, setExportOpen] = useState(false)
   /** 设定更新：AI 读对话 → 列出「设定可能该改了」，由作者逐条裁决 */
   const [reviseOpen, setReviseOpen] = useState(false)
   const [revising, setRevising] = useState(false)
@@ -129,6 +131,17 @@ export default function TavernFree() {
   )
 
   const nameOf = useCallback((id: string) => chars.find(c => c.id === id)?.name ?? '', [chars])
+
+  /**
+   * 导出文档时「这句是谁说的」（B5）：按**角色名**署名。
+   * 用「角色」这种占位名在导出稿里等于没署 —— 多角色同场时整篇就认不出谁在说。
+   */
+  const exportSpeakerOf = useCallback((m: TavernMessage): SpeakerInfo => {
+    if (m.role === 'user') {
+      return { label: (session?.userCharId && nameOf(session.userCharId)) || '你', side: 'user' }
+    }
+    return { label: nameOf(m.speakerId ?? '') || '角色', side: 'ai' }
+  }, [session?.userCharId, nameOf])
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -622,6 +635,21 @@ export default function TavernFree() {
   /** 右栏页签当前指向的那份记忆 */
   const activeMem = memTabId ? mems[memTabId] ?? null : null
   const memChars = activeMem ? memoryChars(activeMem) : 0
+
+  /**
+   * 状态一览（批次 8，C2 第一步：只读）。
+   * 只吃**已经加载好**的两样东西（在场角色卡 + 每位角色的记忆），不额外读库 ——
+   * 否则同一份数据就有两个来源，哪天两边不同步会很难查。
+   */
+  const statusModel = useMemo(() => buildStatusModel({
+    chars: castCards.map(c => ({ id: c.id, name: c.name, avatar: c.avatar })),
+    direction: session,
+    userCharId: session?.userCharId,
+    memories: mems,
+  }), [castCards, session, mems])
+
+  /** 我的档案（全局）：目前只用来给「你」这一侧挂头像 */
+  const myProfile = tavernSettings?.profile ?? DEFAULT_TAVERN_PROFILE
   /** 当前页签角色的日常（心情 / 这几天的生活也是角色级的） */
   useEffect(() => {
     if (!memTabId) { setDaily(null); return }
@@ -649,6 +677,19 @@ export default function TavernFree() {
             )}
             <Button variant="ghost" size="md" onClick={() => setShowMemory(v => !v)}>
               {showMemory ? '隐藏记忆' : '查看记忆'}
+            </Button>
+            <Button
+              variant="secondary" size="md" disabled={streaming || session.messages.length === 0}
+              onClick={() => setExportOpen(true)}
+              title="把这场对话导出成 Markdown 或带样式的单文件 HTML"
+            >
+              导出
+            </Button>
+            <Button
+              variant="ghost" size="md" onClick={() => setStatusOpen(v => !v)}
+              title="在场角色 + 关系状态 + 记忆计数（只读，来自右栏「记忆」那六栏）"
+            >
+              {statusOpen ? '收起角色状态' : '角色状态'}
             </Button>
             <Button variant="danger" size="md" onClick={() => void removeSession()}>删除对话</Button>
           </>
@@ -691,7 +732,7 @@ export default function TavernFree() {
                   <div className={`truncate text-[12px] ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
                     <span className="truncate text-[10.5px] text-ink-500">{names}</span>
-                    <span className="shrink-0 text-[10.5px] text-ink-600">{ago(s.lastActiveAt)}</span>
+                    <span className="shrink-0 text-[10.5px] text-ink-600">{agoText(s.lastActiveAt)}</span>
                   </div>
                 </button>
               )
@@ -757,14 +798,10 @@ export default function TavernFree() {
                       </button>
                     )}
                     <div className="text-[10.5px] text-ink-500 flex flex-wrap items-center gap-2">
-                      <span>记忆更新于 {ago(activeMem?.updatedAt ?? 0)}</span>
-                      {daily?.mood && <span className="text-amber/80">· 心情：{daily.mood}</span>}
-                      {summarizing && <span className="text-amber">· 正在整理记忆…</span>}
-                      {session.scene && [session.scene.place, session.scene.time].filter(Boolean).length > 0 && (
-                        <span className="truncate">
-                          · 场景：{[session.scene.place, session.scene.time].filter(Boolean).join(' · ')}
-                        </span>
-                      )}
+                      {/* 场景与记忆新鲜度已收进下方「状态」一览（同一信息不写两处）；
+                          这里只留它不显示的：心情（这是**当前页签角色**的心情）与整理进度 */}
+                      {daily?.mood && <span className="text-amber/80">心情：{daily.mood}</span>}
+                      {summarizing && <span className="text-amber">正在整理记忆…</span>}
                     </div>
                   </div>
                 </div>
@@ -784,9 +821,7 @@ export default function TavernFree() {
                         }}
                         className={`flex items-center gap-1 rounded-full pl-0.5 pr-2 py-0.5 border ${speakNext === c.id ? 'border-amber/50 bg-amber/15' : 'border-ink-700 hover:bg-ink-800/60'}`}
                       >
-                        <span className="w-5 h-5 rounded-full bg-ink-700 text-ink-200 text-[10px] flex items-center justify-center">
-                          {c.name.trim().slice(0, 1)}
-                        </span>
+                        <Avatar src={c.avatar} name={c.name} size={20} />
                         <span className="text-[11px] text-ink-200">{c.name}</span>
                       </button>
                     ))}
@@ -818,6 +853,12 @@ export default function TavernFree() {
                 )}
               </div>
 
+              <TavernStatusBar
+                model={statusModel}
+                sceneText={[session.scene?.place, session.scene?.time].filter(Boolean).join(' · ')}
+                collapsed={!statusOpen}
+              />
+
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                 {/* 很久没来时Ta留着的一句话（§7.5）：不弹通知，就放在对话里等Ta看见 */}
                 {greeting && (
@@ -840,18 +881,18 @@ export default function TavernFree() {
                 )}
                 {session.messages.map(m => {
                   const who = m.speakerId ? aiCards.find(c => c.id === m.speakerId) : undefined
+                  // 头像规则：多角色同场必须挂（否则分不清谁在说）；单角色只有**设过头像**才挂
+                  // （没设时挂一个名字首字的圆点，在单人对话里纯属视觉噪音）
+                  const showWho = aiCards.length > 1 || !!who?.avatar
                   return (
                     <div key={m.id} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
-                      {/* 多角色同场时挂头像，才分得清谁在说 */}
-                      {m.role !== 'user' && aiCards.length > 1 && (
-                        <span className="w-6 h-6 shrink-0 rounded-full bg-ink-700 text-ink-200 text-[11px] flex items-center justify-center mt-0.5">
-                          {who?.name.trim().slice(0, 1) ?? '?'}
-                        </span>
+                      {m.role !== 'user' && showWho && (
+                        <Avatar src={who?.avatar} name={who?.name ?? '?'} size={24} className="mt-0.5" />
                       )}
                       <div className={m.role === 'user'
                         ? 'max-w-[80%] rounded-lg bg-amber/12 border border-amber/25 px-3 py-2'
                         : 'max-w-[85%] space-y-1'}>
-                        {m.role !== 'user' && aiCards.length > 1 && who && (
+                        {m.role !== 'user' && showWho && who && (
                           <div className="text-[10.5px] text-amber/80">{who.name}</div>
                         )}
                         <TavernMessageBody
@@ -866,6 +907,10 @@ export default function TavernFree() {
                           }}
                         />
                       </div>
+                      {/* 你自己那侧：只有「我的档案」设过头像才挂 —— 没设就别占地方 */}
+                      {m.role === 'user' && !!myProfile.avatar && (
+                        <Avatar src={myProfile.avatar} name={myProfile.name || '我'} size={24} className="mt-0.5" />
+                      )}
                     </div>
                   )
                 })}
@@ -904,6 +949,14 @@ export default function TavernFree() {
                   <span className="text-[11px] text-ink-500">
                     本会话 {usedChars} 字
                     {memChars > 0 && ` · 记忆 ${memChars}/${lim.softLimit} 字`}
+                    <button
+                      type="button"
+                      onClick={() => setUsageOpen(true)}
+                      className="ml-2 text-amber/80 hover:text-amber underline decoration-dotted"
+                      title="按真实组装量一遍：角色卡 / 背景设定 / 记忆各占多少，留给对话历史多少"
+                    >
+                      用量明细
+                    </button>
                   </span>
                   <div className="flex gap-2">
                     {streaming
@@ -925,10 +978,12 @@ export default function TavernFree() {
                       <button
                         key={c.id} type="button" onClick={() => setMemTabId(c.id)}
                         title={isUser ? '这个角色由你扮演' : '这个角色由 AI 扮演'}
-                        className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                        className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors ${
                           on ? 'border-amber/40 bg-amber/10 text-amber' : 'border-transparent text-ink-300 hover:bg-ink-800/60'
                         }`}
                       >
+                        {/* 只有设过头像才占位 —— 页签窄，一排首字圆点反而更乱 */}
+                        {c.avatar && <Avatar src={c.avatar} name={c.name} size={16} />}
                         {c.name || '（未命名）'}
                         {isUser && <span className="ml-1 text-[9.5px] text-amber/80">我演</span>}
                       </button>
@@ -936,7 +991,7 @@ export default function TavernFree() {
                   })}
                 </div>
                 <div className="px-3 py-2 border-b border-ink-800 text-[10.5px] text-ink-500">
-                  更新于 {ago(activeMem?.updatedAt ?? 0)} · {memChars} 字
+                  更新于 {agoText(activeMem?.updatedAt ?? 0)} · {memChars} 字
                   {castCards.length > 1 && ` · ${castCards.length} 位各自记账`}
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -1011,6 +1066,33 @@ export default function TavernFree() {
         onRetry={() => { if (session) void openRevise(session) }}
         onClose={() => setReviseOpen(false)}
       />
+
+      {session && (
+        <TavernUsageDialog
+          open={usageOpen}
+          onClose={() => setUsageOpen(false)}
+          mode="free"
+          session={session}
+          chars={castCards}
+        />
+      )}
+
+      {session && (
+        <TavernExportDialog
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          docTitle={session.title}
+          kindLabel="对话记录"
+          messageCount={session.messages.filter(m => m.role !== 'system').length}
+          hiddenCount={session.messages.filter(m => m.hidden).length}
+          build={o => freeDocModel(session, {
+            ...o,
+            nameOf,
+            speakerOf: exportSpeakerOf,
+            userLabel: (session.userCharId && nameOf(session.userCharId)) || '你',
+          })}
+        />
+      )}
 
       <TavernCastDirector
         open={directorOpen}

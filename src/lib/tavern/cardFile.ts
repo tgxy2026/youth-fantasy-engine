@@ -38,8 +38,11 @@ export type CardFilePayload = {
 
 /** 导出：把角色卡包成单文件 JSON 文本 */
 export function toCardFile(c: FreeCharacter, now = Date.now()): string {
-  const { id, createdAt, updatedAt, ...rest } = c
-  void id; void createdAt; void updatedAt
+  // seededFrom 是**本机的溯源标记**，不进导出文件 —— 否则别人导入后他那边也会把这张卡
+  // 当成内置示范卡去「恢复内置版本」/自动升级。importedFrom 相反：那是"从哪来"的记录，
+  // 导入时会被重新写成 import:xxx（见 parseCardFile），保留它有溯源价值。
+  const { id, createdAt, updatedAt, seededFrom, ...rest } = c
+  void id; void createdAt; void updatedAt; void seededFrom
   const payload: CardFilePayload = {
     format: FORMAT,
     version: FORMAT_VERSION,

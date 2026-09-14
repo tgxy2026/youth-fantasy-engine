@@ -43,6 +43,12 @@ export type PromptLayers = {
    * 空串 = 整层不出现（与①一样，不留空标题占位置）。
    */
   world?: string
+  /**
+   * 这一场（剧本，自由对话专用）：情境 / 你的位置 / 这一场的目标 / 不要发生。
+   * 排在设定层之后、记忆之前 —— 模型先知道「这是谁的戏」，再知道「此刻是什么处境」。
+   * 空串 = 整层不出现（与其它层同一条纪律：不留空标题占位置）。
+   */
+  scene?: string
   /** 长期记忆（六栏压缩后的文本） */
   memory?: string
   /**
@@ -94,6 +100,10 @@ export function buildSystemPrompt(layers: PromptLayers): string {
   // ①b 本场背景设定（第 5 批）：作者从项目资料**提炼**过的那一份，按关键词决定要不要带。
   //     与①的区别：①是原始资料（可能几千字、每轮都带），这里是精简稿（≤1800 字、可开关）。
   if (layers.world?.trim()) parts.push(`〖本场背景设定〗\n${layers.world.trim()}`)
+
+  // ①c 这一场（剧本）：它回答「此刻在哪、为什么在这儿、这一场想干嘛」——
+  //     与①/①b 的分工是「人是谁 / 世界如何」vs「**这一场**是什么」。空则整层跳过。
+  if (layers.scene?.trim()) parts.push(`〖这一场〗\n${layers.scene.trim()}`)
 
   // ② 长期记忆（居中）
   const memTitle = layers.memoryTitle === undefined ? '长期记忆' : layers.memoryTitle
