@@ -19,10 +19,12 @@ import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
 import { chapterSeqMap, flattenChapters } from './chapterSeq'
+// 酒馆模式报告类型：该模块只导出类型、不引用任何运行时模块，故不构成循环依赖
+import type { TavernReport } from './tavern/types'
 import { LS_SYNC_CODE } from './constants'
 
 const DB_NAME = 'novel-studio'
-const DB_VERSION = 9
+const DB_VERSION = 10
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 /** 当前打开的项目 id（App 切换项目时设置） */
@@ -255,6 +257,14 @@ function migrateV8toV9(tx: Vtx) {
   if (!trStore.indexNames.contains('tabId')) trStore.createIndex('tabId', 'tabId', { unique: false })
 }
 
+/** v9 → v10 迁移：新增酒馆模式「推演报告」独立存储（方案 §3.4） */
+function migrateV9toV10(db: Vdb) {
+  // 报告单独成表，不写回任何项目表（作者已定：酒馆模式只诊断、不动数据）
+  const store = db.createObjectStore('tavernReports', { keyPath: 'id' })
+  // 按 projectId 建索引：报告列表按当前项目过滤，避免列个清单就全表扫
+  store.createIndex('projectId', 'projectId', { unique: false })
+}
+
 function getDB() {
   if (!dbPromise) {
     // 失败时重置缓存，避免 rejected promise 被永久缓存（如隐私模式打开失败后所有调用都失败）
@@ -270,6 +280,7 @@ function getDB() {
         if (oldVersion < 7) await migrateV6toV7(tx)
         if (oldVersion < 8) migrateV7toV8(tx)
         if (oldVersion < 9) migrateV8toV9(tx)
+        if (oldVersion < 10) migrateV9toV10(db)
       },
     }).catch(err => {
       // 失败时重置缓存，避免 rejected promise 被永久缓存（如隐私模式下打开失败后所有后续调用都失败）
@@ -613,7 +624,8 @@ export async function deleteProject(id: string) {
   await ops.del('projects', id)
   // 收集各 store 待删主键，统一批量删除
   const delKeys: Record<string, string[]> = {}
-  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash'] as const) {
+  // tavernReports 也是项目级数据（报告随项目走），务必一并清理，否则项目删了报告还在
+  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash', 'tavernReports'] as const) {
     const all = await ops.getAll<{ id: string; projectId?: string }>(name)
     const keys = all.filter(r => r.projectId === id).map(r => r.id)
     if (keys.length) delKeys[name] = keys
@@ -916,15 +928,18 @@ export interface ProjectBundle {
   settings?: { key: string; value: unknown }[]
   /** 自定义下拉选项（人物状态等）：key 为 `<tabId>::<colName>`，不含项目前缀 */
   customOptions?: { key: string; value: unknown }[]
+  /** 酒馆模式 · 推演报告（可选字段：旧备份没有，导入时按向后兼容处理） */
+  tavernReports?: TavernReport[]
 }
 
 export async function exportProject(id: string): Promise<ProjectBundle> {
   const project = await ops.get<Project>('projects', id)
   if (!project) throw new Error('项目不存在')
-  const [volumes, chapters, formData, tableRows, cardRecords, dailyStats, settingsKV] = await Promise.all([
+  const [volumes, chapters, formData, tableRows, cardRecords, dailyStats, settingsKV, tavernReports] = await Promise.all([
     ops.getAll<Volume>('volumes'), ops.getAll<Chapter>('chapters'), ops.getAll<FormData>('formData'),
     ops.getAll<TableRow>('tableRows'), ops.getAll<CardRecord>('cardRecords'),
     ops.getAll<DailyStat>('dailyStats'), ops.getAll<{ key: string; value: unknown }>('settingsKV'),
+    ops.getAll<TavernReport>('tavernReports'),
   ])
   const prefix = `${id}::`
   const customOptPrefix = `customOption::${id}::`
@@ -947,6 +962,7 @@ export async function exportProject(id: string): Promise<ProjectBundle> {
     customOptions: settingsKV
       .filter(s => s.key.startsWith(customOptPrefix))
       .map(s => ({ key: s.key.slice(customOptPrefix.length), value: s.value })),
+    tavernReports: tavernReports.filter(r => r.projectId === id),
   }
 }
 
@@ -1008,6 +1024,14 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
   if (bundle.customOptions) {
     for (const s of bundle.customOptions) {
       await ops.put('settingsKV', { key: `customOption::${newPid}::${s.key}`, value: s.value })
+    }
+  }
+  // 酒馆模式报告：换新 id 与新 projectId。
+  // sessionId 无需重映射——会话本身存在 settingsKV 里（value 整体搬运、会话 id 不变），
+  // 故报告仍能指回原会话。
+  if (bundle.tavernReports) {
+    for (const r of bundle.tavernReports) {
+      await ops.put('tavernReports', { ...r, id: uid(), projectId: newPid })
     }
   }
   return newPid
@@ -1096,6 +1120,29 @@ export async function getSetting<T>(key: string, def: T): Promise<T> {
 }
 export async function setSetting(key: string, value: unknown) {
   await ops.put('settingsKV', { key: `${currentProjectId}::${key}`, value })
+}
+
+// ============ 酒馆模式 · 推演报告 ============
+// 报告是**项目级**数据（方案 §3.1）：随项目走，导出项目时一并带走，删项目时一并清理。
+export async function getAllReports(): Promise<TavernReport[]> {
+  return ops.getAll<TavernReport>('tavernReports')
+}
+
+export async function getReport(id: string): Promise<TavernReport | undefined> {
+  return ops.get<TavernReport>('tavernReports', id)
+}
+
+/** 某项目的全部报告（走 projectId 索引，避免全表扫） */
+export async function listProjectReports(projectId: string): Promise<TavernReport[]> {
+  return ops.getAllByIndex<TavernReport>('tavernReports', 'projectId', projectId)
+}
+
+export async function saveReport(r: TavernReport): Promise<void> {
+  await ops.put('tavernReports', r)
+}
+
+export async function deleteReport(id: string): Promise<void> {
+  await ops.del('tavernReports', id)
 }
 
 // ============ 回收站 ============
@@ -1327,7 +1374,7 @@ export async function restoreBackup(id: string): Promise<void> {
 async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): Promise<void> {
   // 1. 清空目标项目现有数据（批量删除，大备份恢复更快）
   const delKeys: Record<string, string[]> = {}
-  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash'] as const) {
+  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash', 'tavernReports'] as const) {
     const all = await ops.getAll<{ id: string; projectId?: string }>(name)
     const keys = all.filter(r => r.projectId === targetPid).map(r => r.id)
     if (keys.length) delKeys[name] = keys
@@ -1396,6 +1443,12 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   if (bundle.customOptions) {
     for (const s of bundle.customOptions) {
       await ops.put('settingsKV', { key: `customOption::${targetPid}::${s.key}`, value: s.value })
+    }
+  }
+  // 酒馆模式报告：随备份一并恢复（换新 id；sessionId 不需重映射，理由同 importProject）
+  if (bundle.tavernReports) {
+    for (const r of bundle.tavernReports) {
+      await ops.put('tavernReports', { ...r, id: uid(), projectId: targetPid })
     }
   }
 

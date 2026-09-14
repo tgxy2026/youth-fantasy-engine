@@ -22,13 +22,13 @@ import { SAVE_DEBOUNCE_MS } from './constants'
 //    因此「云端载荷」实际不含它——真正会被同步的是除 backups 外的其余 store。
 export const SYNC_STORES = [
   'projects', 'volumes', 'chapters', 'formData', 'tableRows', 'cardRecords',
-  'meta', 'snapshots', 'dailyStats', 'settingsKV', 'trash', 'backups',
+  'meta', 'snapshots', 'dailyStats', 'settingsKV', 'trash', 'backups', 'tavernReports',
 ] as const
 
 // 各 store 的主键字段（keyPath）
 export const KEY_FIELD: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
-  cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id',
+  cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', tavernReports: 'id',
   formData: 'tabId', meta: 'key', settingsKV: 'key', dailyStats: 'key',
 }
 
