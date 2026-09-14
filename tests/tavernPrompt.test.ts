@@ -57,6 +57,8 @@ function main() {
     ok('空层不留空标题', !bare.includes('【世界与角色设定】') && !bare.includes('【长期记忆】'))
     ok('仅协议时 system 就等于协议全文（叙事向不追加任何内容）', buildSystemPrompt({ tone: 'narrative' }) === PROTOCOL_CORE)
     ok('聊天向追加本场风格提示', bare.includes('【本场风格】') && bare.includes('最多连发 2 条'))
+    ok('聊天向同时给出标点适用范围（防「消息体无标点」被泛化到全篇）',
+      bare.includes('标点照常用') && bare.includes('她发出去的消息'))
     ok('叙事向不追加风格提示（协议默认即是）', !buildSystemPrompt({ tone: 'narrative' }).includes('【本场风格】'))
   }
 

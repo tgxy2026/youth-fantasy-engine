@@ -240,6 +240,25 @@ export async function saveFreeSession(s: FreeSession): Promise<FreeSession> {
   return next
 }
 
+/**
+ * 由「新建会话弹窗里**最终选中**的角色」推出参演 ids 与默认标题。
+ *
+ * 🔴 标题必须**只**由最终选中的角色得出。曾经写成「单角色时用左栏当前选中的角色名」，
+ * 于是「先全选、再取消一个」时，会话名挂的是被取消掉的那个角色（已修）。
+ * 抽成纯函数是为了让这条规则能被单测钉住 —— 放在组件里就只能靠肉眼。
+ */
+export function planFreeSessionCast(
+  pickedIds: string[],
+  fallbackId: string,
+  resolveName: (id: string) => string | undefined,
+): { charIds: string[]; title: string } {
+  const ids = (pickedIds.length ? pickedIds : [fallbackId].filter(Boolean)).slice(0, 3)
+  if (ids.length === 0) return { charIds: [], title: '新对话' }
+  const names = ids.map(id => (resolveName(id) || '').trim() || '?')
+  const title = names.length > 1 ? `与${names.join('、')}的对话` : `和${names[0]}的对话`
+  return { charIds: ids, title }
+}
+
 export async function createFreeSession(charIds: string[], title: string, model: FreeSession['model'], params: FreeSession['params']): Promise<FreeSession> {
   const s: FreeSession = {
     id: uid(), charIds, title, messages: [], model, params,

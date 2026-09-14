@@ -158,6 +158,31 @@ async function main() {
     ok('删角色：其会话因无参演角色一并删除（不留空会话）', (await store.listFreeSessions()).length === 0)
   }
 
+  // ---------- 12) 新建会话：默认标题只由「本次最终选中的角色」得出 ----------
+  {
+    // 曾经的 bug：单角色分支用了「左栏当前选中的角色名」，
+    // 于是「先全选、再取消一个」时，会话名挂的是被取消掉的那个角色。
+    const A = { id: 'ca', name: '洛汐' }
+    const B = { id: 'cb', name: '苏念' }
+    const nameOf = (id: string) => [A, B].find(x => x.id === id)?.name
+
+    const only = store.planFreeSessionCast([A.id], B.id, nameOf)
+    ok('取消勾选苏念后只剩洛汐 → 标题用洛汐而不是左栏选中的苏念',
+      only.charIds.join(',') === A.id && only.title === '和洛汐的对话', only.title)
+
+    const both = store.planFreeSessionCast([A.id, B.id], A.id, nameOf)
+    ok('两个角色 → 标题按选择顺序串起来', both.title === '与洛汐、苏念的对话', both.title)
+
+    const none = store.planFreeSessionCast([], B.id, nameOf)
+    ok('弹窗一个都没选时回退到左栏当前角色', none.charIds.join(',') === B.id && none.title === '和苏念的对话', none.title)
+
+    const many = store.planFreeSessionCast(['c1', 'c2', 'c3', 'c4'], 'c1', id => id)
+    ok('超过 3 个只取前 3（与界面上限一致）', many.charIds.length === 3, String(many.charIds.length))
+
+    const unknown = store.planFreeSessionCast(['zz'], 'zz', () => undefined)
+    ok('角色名取不到时不崩（退化为 ?）', unknown.title === '和?的对话', unknown.title)
+  }
+
   console.log(`\ntavernStore: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

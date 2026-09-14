@@ -104,6 +104,11 @@ async function main() {
     const lost2 = marks2.filter(([, s]) => !t2.includes(s))
     ok('苏念：原卡各节内容全部在（逐节抽查 16 处）', lost2.length === 0,
       lost2.map(([k, s]) => `${k}:${s}`).join(' | '))
+
+    ok('两张卡的示例都写明了「无标点只限于她发出去的消息」',
+      [luoxi, sunian].every(c => c.examples.includes('只适用于她发出去的消息')))
+    ok('洛汐 3.1 也限定了「无标点」只指消息文本',
+      luoxi.conduct.perspective.includes('只适用于**她发出去的消息文本**'))
   }
 
   // ---------- 3) 第 0 章刻意不存（协议已是内置常量） ----------

@@ -19,6 +19,7 @@
  * 提示用 showToast。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Pencil } from 'lucide-react'
 import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
@@ -80,6 +81,9 @@ export default function TavernFree() {
   const [castCards, setCastCards] = useState<FreeCharacter[]>([])
   /** 手动指定下一位接话的角色（空 = 按轮转） */
   const [speakNext, setSpeakNext] = useState('')
+  /** 会话名内联编辑：列表里只显示标题，改不了就只能删了重开，所以给个直接改的入口 */
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
 
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -185,14 +189,18 @@ export default function TavernFree() {
 
   const createSession = useCallback(async (charIds?: string[]) => {
     if (!charCard) return
-    const ids = (charIds && charIds.length ? charIds : [charCard.id]).slice(0, 3)
-    const names = ids.map(id => chars.find(c => c.id === id)?.name ?? '?').join('、')
+    // 参演角色与默认标题都由「本次最终选中的角色」推出（规则锁在 planFreeSessionCast 里）
+    const { charIds: ids, title } = store.planFreeSessionCast(
+      charIds ?? [],
+      charCard.id,
+      id => chars.find(c => c.id === id)?.name,
+    )
     // 模型：跟随全局活动模型（会话级可再改）
     const active = providers.find(p => p.id === (session?.model.providerId ?? '')) ?? providers[0]
     try {
       const s = await store.createFreeSession(
         ids,
-        ids.length > 1 ? `与${names}的对话` : `和${charCard.name}的对话`,
+        title,
         { providerId: active?.id ?? '' },
         {},
       )
@@ -266,6 +274,24 @@ export default function TavernFree() {
     try { await runSummary(s, false) } catch { /* 静默 */ }
   }, [runSummary])
 
+  /** 提交会话改名（Enter / 失焦保存，Esc 取消）。与原名相同则不写库、不提示。 */
+  const saveTitle = useCallback(async () => {
+    const cur = session
+    setEditingTitle(false)
+    if (!cur) return
+    const nextTitle = titleDraft.trim()
+    if (!nextTitle || nextTitle === cur.title) return
+    const updated: FreeSession = { ...cur, title: nextTitle, updatedAt: Date.now() }
+    try {
+      await store.saveFreeSession(updated) // store 会一并更新索引里的标题
+      setSession(s => (s && s.id === updated.id ? updated : s))
+      setSessions(prev => prev.map(x => (x.id === updated.id ? { ...x, title: nextTitle, updatedAt: updated.updatedAt } : x)))
+      showToast('已改名')
+    } catch (e) {
+      showToast(`改名失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }, [session, titleDraft])
+
   // ---------- 对话 ----------
   const send = useCallback(async () => {
     const text = input.trim()
@@ -274,6 +300,14 @@ export default function TavernFree() {
     setStreaming(true)
     setStreamText('')
     setPhase('')
+    // 立刻把这句话显示出来 —— 等整轮生成完才现身的话，中间那几十秒界面像没收到你说话。
+    // 这里只是**预演**：runFreeTurn 内部会用 withUser 自己重建 messages，
+    // 成功后用返回的 session 覆盖，失败则回滚并把文字还回输入框。
+    const optimistic: FreeSession = {
+      ...session,
+      messages: [...session.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, at: Date.now() }],
+    }
+    setSession(optimistic)
     const ctrl = new AbortController()
     abortRef.current = ctrl
     try {
@@ -294,6 +328,9 @@ export default function TavernFree() {
       setGreeting('')
       setSpeakNext('')
     } catch (e) {
+      // 回滚：这句话没送出去，把它还回输入框，别让作者白打一遍
+      setSession(session)
+      setInput(text)
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       setStreaming(false)
@@ -481,7 +518,30 @@ export default function TavernFree() {
               <div className="px-3 py-2 border-b border-ink-800 bg-ink-850/40">
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
-                    <div className="truncate text-[12.5px] text-ink-100">{session.title}</div>
+                    {editingTitle ? (
+                      <input
+                        autoFocus
+                        value={titleDraft}
+                        placeholder="给这场对话起个名字"
+                        onChange={e => setTitleDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') { e.preventDefault(); void saveTitle() }
+                          if (e.key === 'Escape') { e.preventDefault(); setEditingTitle(false) }
+                        }}
+                        onBlur={() => void saveTitle()}
+                        className="w-56 bg-ink-900 border border-amber/50 rounded px-2 py-0.5 text-[12.5px] text-ink-100 outline-none"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        title="点击改名"
+                        onClick={() => { setTitleDraft(session.title); setEditingTitle(true) }}
+                        className="group flex items-center gap-1.5 max-w-full text-left"
+                      >
+                        <span className="truncate text-[12.5px] text-ink-100">{session.title}</span>
+                        <Pencil className="w-3 h-3 shrink-0 text-ink-600 group-hover:text-amber" />
+                      </button>
+                    )}
                     <div className="text-[10.5px] text-ink-500 flex items-center gap-2">
                       <span>记忆更新于 {ago(memory?.updatedAt ?? 0)}</span>
                       {daily?.mood && <span className="text-amber/80">· 心情：{daily.mood}</span>}
