@@ -981,5 +981,18 @@ export async function createDemoProject(): Promise<string> {
   // 7) 历法配置（按项目独立保存的多历法数值体系，时间轴视图按数值判定跨历法先后顺序）
   await db.setSetting('calendars', [{ name: '灵历', value: 0 }])
 
+  // 8) 酒馆模式 · 示范角色卡（自由对话用）
+  //    角色卡在系统里属于**全局 meta**（方案 §3.1：不绑项目、删项目也不会跟着没），
+  //    所以这里做的是「创建示范项目时把示范卡播种到全局」，此后长期可用。
+  //    按名字幂等：重复创建示范项目不会堆副本，也不会覆盖你已经改过的卡。
+  //    动态 import 是因为卡面正文较长，没必要塞进主包（酒馆相关代码也就能集中在一个懒加载块里）。
+  try {
+    const { seedFreeChars } = await import('./tavern/seedCards')
+    await seedFreeChars()
+  } catch (e) {
+    // 播种失败不该连累示范项目创建（卡是附加数据，项目本体才是主产物）
+    console.warn('[seed] 示范角色卡播种失败：', e)
+  }
+
   return p.id
 }
