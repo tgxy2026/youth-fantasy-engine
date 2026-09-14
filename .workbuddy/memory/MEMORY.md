@@ -177,9 +177,26 @@
 改动这两块前后必须跑 `tests/tavernContext.test.ts` + `tests/tavernFlow.test.ts`。
 
 - 🔴 酒馆全程 `think: false`（角色扮演要「像人说话」不要「想得深」），是对 ai.ts 全局政策的**有意例外**。
+  ⚠️ **但 `think` 是 Ollama 专有参数** —— 走 openai 兼容接口（硅基流动等）时它不被识别，
+  推理模型照样思考。实测 `Qwen/Qwen3.5-35B-A3B` 首字 28–51 秒、报告生成 180 秒超时失败；
+  本地 `orcarouter/Qwen3.8-27B-Uncensored:q6_K` 首字 10 秒 / 总 12 秒且质量更好。
+  **角色扮演选型建议：用非推理模型（或本地那个 27B），别用 Qwen3.5 这类混合推理模型。**
 - 报告 findings **必须能指回具体条目**：指不回去的一律降级「存疑」并留空 id（不硬编假 id）；
   UI 的「定位」按钮走 `yfe:navigate` 事件（detail = { tabId, rowId }）。
 - 参数坑：界面叫「重复惩罚」，内部 `repeatPenalty`，Ollama 是 `repeat_penalty`；`num_ctx` 必须显式传。
 - 可测性：`runPlotTurn(session, text, cb, { chatFn })` 与 `generateReport(session, { chatFn })` 都留了注入点 ——
   整条链路可在**不起真实模型**的前提下跑通（`tests/tavernFlow.test.ts`，用示范项目真实数据）。
-- ⚠️ 未做：扮演设定（CastSetting）编辑表单；P2 自由模式核心逻辑（记忆引擎 `auto_interval=600s` / `auto_lock_ttl=1800s`）。
+- 🔴 **实弹测试脚本（手动运行，刻意不进回归）**：`node tests/build-test.mjs live-tavern`；
+  加 `YFE_LIVE_SKIP=1` 可只做离线检查（不烧额度）。它运行时从**桌面版数据文件**读 provider 配置
+  （含 apiKey，绝不写文件/打印）。命名为 `tests/live-tavern.ts` 而非 `*.test.ts` —— 否则会被
+  `run-all.mjs` 纳入，导致每次 `npm run verify` 都真联网烧额度。`build-test.mjs` 已支持
+  「优先 `<entry>.test.ts`，找不到再找 `<entry>.ts`」。
+  ⚠️ 另：avatar 里配的 Ollama 模型 `huihui_ai/qwen3-abliterated:32b` 本地**不存在**（404），
+  实际有的是 `qwen3:4b-instruct-2507-q4_K_M` 与 `orcarouter/Qwen3.8-27B-Uncensored:q6_K`，需改配置。
+  整条链路可在**不起真实模型**的前提下跑通（`tests/tavernFlow.test.ts`，用示范项目真实数据）。
+- 扮演设定（CastSetting）**已落**：表单 `components/TavernCastSetting.tsx`，入口在剧情推演页左栏
+  「角色分配」每个 user / ai 角色旁；六字段经 `prompt.ts → renderCastSetting` 进 system 的 `cast` 层
+  （**在身份层之后、协议之前**）。⚠️ 接这个功能时发现 `buildSystemPrompt` 原先**根本没接收扮演设定** ——
+  只做表单等于填了静默无效。**AI 角色的块写「你要演成这样的人」；作者角色的块明确「不要代写他的言行」**，
+  否则 AI 会顺手把你的角色也演了。
+- ⚠️ 未做：P2 自由模式核心逻辑（记忆引擎 `auto_interval=600s` / `auto_lock_ttl=1800s`）。
