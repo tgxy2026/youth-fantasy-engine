@@ -59,7 +59,7 @@ export default function TavernCastDirector({
   return (
     <Modal open={open} onClose={onClose} title="在场调度" width="lg">
       <p className="text-[11.5px] text-ink-400 leading-relaxed">
-        这里是**这一场**的临时安排：谁不开口、谁话多。不会改动角色卡，也不会删掉记忆 ——
+        这里是这一场的临时安排：谁不开口、谁话多。不会改动角色卡，也不会删掉记忆 ——
         静音的人依然算在场（提示词里会写明「Ta 在、但这一句不是 Ta 说的」），只是这一轮不发言。
       </p>
 

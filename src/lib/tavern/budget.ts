@@ -20,8 +20,15 @@
  */
 import type { TavernMessage } from './types'
 
-/** 固定开销估算（协议 + 格式提醒 + 记忆上限） */
-export const FIXED_OVERHEAD_CHARS = 2600
+/**
+ * 额外安全余量（字）。**2026-09-14 语义变更（老大选 C 档）**。
+ *
+ * 旧注释与取值是「协议 ≈1200 + 格式提醒 ≈200 + 记忆 ≤1200 ≈ 2600」，但实际算法是
+ * `total − 余量 − len(system) − memory`，而 **system 里本来就含协议与记忆** ——
+ * 于是这两样被扣了两遍。实测示范项目：`8000 − 2600 − 8237 − 0` 为负 → 历史额度 0
+ * （21 条消息只剩开场一条）。现在只当纯余量：默认 400。
+ */
+export const FIXED_OVERHEAD_CHARS = 400
 
 export function textLen(s: string | undefined): number {
   return s ? s.length : 0
@@ -68,15 +75,19 @@ export function budgetState(used: number, total: number): BudgetState {
 }
 
 /**
- * 算出「留给对话历史」的额度 = 总预算 − 固定开销 − ②层设定 − ③层记忆。
+ * 算出「留给对话历史」的额度 = 总预算 − 安全余量 − 整条 system − 未含在 system 里的记忆。
  * 结果下限为 0（额度不足时只保留开场）。
+ *
+ * 🔴 `system` 传的是**整条 system**（buildSystemPrompt 的输出，已含协议与记忆）——
+ * 所以第三个参数别再单独传记忆（那会扣两遍）。酒馆两条线现在都传空串。
  */
 export function historyBudget(
   total: number,
-  setting: string,
+  system: string,
+  /** 未包含在 system 里的记忆；酒馆传空串，留着只为兼容旧调用点 */
   memory: string,
-  /** 固定开销预留（控制面板可调）；不传即内置默认 */
+  /** 额外安全余量（控制面板可调）；不传即内置默认 */
   fixedOverhead = FIXED_OVERHEAD_CHARS,
 ): number {
-  return Math.max(0, total - fixedOverhead - textLen(setting) - textLen(memory))
+  return Math.max(0, total - fixedOverhead - textLen(system) - textLen(memory))
 }

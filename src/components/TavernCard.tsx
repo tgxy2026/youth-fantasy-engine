@@ -482,7 +482,7 @@ export default function TavernCard() {
                 }}
               />
               <p className="text-[10.5px] text-ink-600 leading-relaxed px-1">
-                「从小说角色导入」是 AI 转换，**结果只是草稿，必须审**。
+                「从小说角色导入」是 AI 转换，结果只是草稿，必须审。
               </p>
             </div>
           </aside>
@@ -747,7 +747,7 @@ export default function TavernCard() {
       <Modal open={importOpen} onClose={() => setImportOpen(false)} title="从小说角色导入" width="lg">
         <div className="space-y-3">
           <div className="rounded-md border border-amber/35 bg-amber/8 px-3 py-2 text-[11.5px] text-ink-300 leading-relaxed">
-            AI 会把这个角色**改写成角色扮演用的四章卡片**：设定翻译成行为倾向、剧情走向丢掉。
+            AI 会把这个角色改写成角色扮演用的四章卡片：设定翻译成行为倾向、剧情走向丢掉。
             <span className="text-amber/90"> 结果只是一份草稿 —— 尤其第 4 章示例对话通常是它编的，务必自己改。</span>
           </div>
           {novelChars.length > 0 && (

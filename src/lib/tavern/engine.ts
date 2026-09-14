@@ -82,9 +82,17 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
     ...casts.ai.filter(c => mutedSet.has(c.cardId)).map(c => c.name),
   ]
 
-  // ② 设定层：给上下文留出约 60% 的额度，其余留给对话历史与记忆
+  // ② 设定层：给上下文留出约 60% 的额度，其余留给对话历史与记忆。
+  //    🔴 设定来源（A 档，老大 2026-09-14 选）：
+  //      · 'both'   —— 项目原始资料 + 本场背景设定（默认，= 加开关之前的行为）
+  //      · 'digest' —— 设定层只留骨架（作品概览 + 章节清单），世界交给背景设定。
+  //        项目资料实测 4662 字/只进 5 段（丢 11 段，含章节清单与相关召回），换成骨架后
+  //        设定层降到约 2200 字，省下的全还给对话历史。
+  //      · 'raw'    —— 只用项目原始资料，背景设定那一层整层不出现
+  const contextSource = st.plot.contextSource ?? 'both'
   const ctx = await buildProjectContext({
     budget: Math.round(total * st.plot.settingRatio),
+    skeletonOnly: contextSource === 'digest',
     viewMode: session.mode === 'immersive' ? 'character-view' : 'director-view',
     // 未带入声明由 buildSystemPrompt 的 〖未带入的资料〗 层统一出，别在正文尾部再说一遍
     inlineDropNote: false,
@@ -123,8 +131,9 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
 
   // ⑤ 本场背景设定（第 5 批）：作者**提炼**过的那份世界资料，**命中关键词才注入**。
   //    这是「不每次喂一大堆」的落点：与上面的设定层（项目原始资料）是两件事。
+  // 'raw' 档 = 作者明确只要项目原始资料 → 背景设定整层不出现
   const worldSetting = await getWorldSetting('plot')
-  const worldText = shouldInjectWorld(worldSetting, worldHaystack(
+  const worldText = contextSource !== 'raw' && shouldInjectWorld(worldSetting, worldHaystack(
     [session.title, session.anchorChapterLabel, session.scene?.place, session.scene?.time, session.scene?.description],
     session.messages.slice(-6).map(m => m.content),
   )) ? worldToText(worldSetting) : ''
@@ -249,8 +258,10 @@ export async function runPlotTurn(
     ? baseMsgs
     : [...baseMsgs, { id: uid(), role: 'user', content: userText, at: Date.now() }]
 
+  // 🔴 第三参传 '' —— 本场记忆**已经拼在 system 里**了（buildSystemPrompt 干的），
+  //    再单独传一遍等于扣两次额度（2026-09-14 修，C 档）。
   const historyBudgetChars = historyBudget(
-    totalBudget(p.contextBudget), system, session.memory ?? '', st.common.fixedOverheadChars)
+    totalBudget(p.contextBudget), system, '', st.common.fixedOverheadChars)
   const { messages } = buildPlotMessages({ ...session, messages: withUser }, historyBudgetChars)
 
   cb.onPhase?.('生成中')

@@ -25,6 +25,12 @@ export interface ProjectContextOptions {
   /** 是否附带章节清单（卷 / 章标题 / 字数 / 摘要），默认 true */
   includeChapterList?: boolean
   /**
+   * 只出「骨架」：作品概览 + 章节清单，**不带任何页签资料、也不做相关章节召回**。
+   * 酒馆「设定来源 = 背景设定」档用它 —— 世界规则交给作者提炼过的背景设定，
+   * 这里只保留「这本书写到哪了」这条最小上下文（章节清单每章带 120 字摘要，够用且便宜）。
+   */
+  skeletonOnly?: boolean
+  /**
    * #015：焦点章节 id。指定后，上下文会优先带入与它**相关**的章节（人物共现 + 叙事邻接），
    * 而不是把章节清单从头截断 —— 长篇时后者喂给模型的往往只有开头几章，越写到后面越失准。
    */
@@ -474,7 +480,11 @@ export async function findRelatedChapters(focusChapterId: string, limit = 8): Pr
  */
 export async function buildProjectContext(opts: ProjectContextOptions = {}): Promise<ProjectContextResult> {
   const budget = opts.budget ?? 12000
-  const only = opts.onlyTabIds ? new Set(opts.onlyTabIds) : null
+  // skeletonOnly：页签一个都不带（下面 for 循环里的 only 命中判定于是全部不通过），
+  // 而「作品概览」在循环之前无条件 push、「章节清单」由 includeChapterList 单独控制 → 两块都留着。
+  const only = opts.skeletonOnly
+    ? new Set<string>()
+    : (opts.onlyTabIds ? new Set(opts.onlyTabIds) : null)
   const exclude = new Set(opts.excludeTabIds ?? [])
   // 酒馆模式 · 角色视角：排除作者侧资料（带进去 = 剧透，详见 viewMode 说明）
   if (opts.viewMode === 'character-view') {
@@ -546,7 +556,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   // #015：若指定焦点章节，优先召回与之相关的章节（人物共现 + 叙事邻接），
   // 取代"从头截断"——长篇时模型看到的"前文"不再只有开头几章，诊断更准。
   // 该段在「章节清单」之前注入，预算紧张时优先于通用清单占位。
-  if (opts.focusChapterId) {
+  if (opts.focusChapterId && !opts.skeletonOnly) {
     try {
       const found = await findRelatedChapters(opts.focusChapterId, opts.relatedChapterLimit ?? 8)
       // 锚点生效时，锚点之后的章节不进召回（否则等于把「未来」喂给此刻的角色）

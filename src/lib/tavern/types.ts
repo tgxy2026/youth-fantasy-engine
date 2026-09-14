@@ -44,6 +44,20 @@ export type TavernParams = {
   contextBudget?: number
 }
 
+/**
+ * 剧情推演的「设定层来源」（老大 2026-09-14 选 A 档）。
+ *
+ * 起因：项目资料每轮全量注入（示范项目实测 4662 字、丢 11 段），加上协议 3244 字，
+ * 默认预算被吃满 → 留给对话历史的额度算出来是 0（21 条消息只剩开场一条）。
+ * 而后端已经有「背景设定」（world.ts）—— 作者提炼过的精简稿（≤1800 字、可开关）。
+ * 所以给出这一档开关，让作者自己决定「用原始资料还是用提炼稿」。
+ *
+ *   · 'both'   —— 项目原始资料 + 本场背景设定（**默认**，= 加开关之前的行为）
+ *   · 'digest' —— 设定层只留骨架（作品概览 + 章节清单），世界交给背景设定
+ *   · 'raw'    —— 只用项目原始资料，不注入背景设定
+ */
+export type PlotContextSource = 'both' | 'digest' | 'raw'
+
 /** 协议档位：叙事向（剧情默认）/ 聊天向（自由默认）。见方案 5.3 */
 export type TavernTone = 'narrative' | 'chat'
 
@@ -450,15 +464,18 @@ export const TAVERN_DEFAULTS: {
   plot: Required<Pick<TavernParams, 'temperature' | 'topP' | 'topK' | 'repeatPenalty' | 'presencePenalty' | 'numCtx' | 'contextBudget'>>
   free: Required<Pick<TavernParams, 'temperature' | 'topP' | 'topK' | 'repeatPenalty' | 'presencePenalty' | 'numCtx' | 'contextBudget'>>
 } = {
+  // contextBudget 2026-09-14 由 8000 提到 16000（老大选 C 档）：旧值下「协议 3244 + 项目资料 4662
+  // + 重复预留 2600」已把 8000 吃满，历史额度算出来是 0。汉字大致一字≈一词元（不同分词器有出入），
+  // 16000 字约 16k 词元 —— numCtx 32768 还留了约一半给回复，别再往上顶。
   plot: {
     temperature: 0.85, topP: 0.9, topK: 40,
     repeatPenalty: 1.05, presencePenalty: 0.4,
-    numCtx: 32768, contextBudget: 8000,
+    numCtx: 32768, contextBudget: 16000,
   },
   free: {
     temperature: 0.9, topP: 0.9, topK: 40,
     repeatPenalty: 1.05, presencePenalty: 0.45,
-    numCtx: 32768, contextBudget: 8000,
+    numCtx: 32768, contextBudget: 16000,
   },
 }
 

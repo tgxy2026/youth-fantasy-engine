@@ -119,20 +119,21 @@ export const GUIDE_SETTING_RATIO: ParamGuide = {
 export const GUIDE_CONTEXT_BUDGET: ParamGuide = {
   min: 1000, max: 100000, step: 500, unit: '字',
   bands: [
-    { from: 1000, to: 4000, name: '极小', effect: '只记得住最近几轮，角色会反复问已经答过的事；提示词骨架与协议本身就吃掉很大一块。' },
-    { from: 4000, to: 12000, name: '单场戏', effect: '一场完整对话够用；再长就开始裁最早的轮次（开场永不被裁）。', recommended: true },
-    { from: 12000, to: 30000, name: '长线', effect: '能带上整场推演与较完整的记忆；本地模型从这里开始明显变慢。' },
-    { from: 30000, to: 100000, name: '超长', effect: '必须同时把「上下文窗口长度」调大，否则会被模型端截断；显存不够时直接加载失败或大幅降速。' },
+    { from: 1000, to: 4000, name: '极小', effect: '只记得住最近几轮；协议 + 角色卡 + 背景设定本身就吃掉大半，角色会反复问已经答过的事。' },
+    { from: 4000, to: 10000, name: '单场戏', effect: '短对话够用。但剧情推演的 system 常有 8000~10000 字，这一档几乎全被 system 占满 → 留给对话历史的额度接近 0。' },
+    { from: 10000, to: 24000, name: '长线（默认 16000）', effect: 'system 与对话历史都够用，是「一场完整推演 + 记得住前文」的推荐区间。', recommended: true },
+    { from: 24000, to: 100000, name: '超长', effect: '必须同时把「上下文窗口长度」调大，否则会被模型端截断；本地模型从这里开始明显变慢、显存吃紧。' },
   ],
 }
 
 export const GUIDE_FIXED_OVERHEAD: ParamGuide = {
-  min: 500, max: 20000, step: 100, unit: '字',
+  min: 0, max: 20000, step: 100, unit: '字',
+  // 2026-09-14 语义变更：协议与记忆已经算在 system 里，不再重复预留，这一项降到纯余量。
   bands: [
-    { from: 500, to: 1500, name: '留得太少', effect: '真实 system（角色卡 + 记忆 + 协议）很容易超过它 → 估算出的可用历史比真的大，容易在第 N 轮突然报超长。' },
-    { from: 1500, to: 3500, name: '够用', effect: '覆盖协议 + 各层标题 + 一张常规长度的角色卡。', recommended: true },
-    { from: 3500, to: 8000, name: '为长资料预留', effect: '角色卡很长、或项目设定带得多时才需要调到这里；否则等于白扣历史额度。' },
-    { from: 8000, to: 20000, name: '偏大', effect: '每一轮都白白扣掉这么多额度，可用的对话历史被无谓压缩。' },
+    { from: 0, to: 200, name: '几乎不留', effect: '额度贴近真实可用值；模型端若比我们估的多吃一点，长对话里容易突然报超长。' },
+    { from: 200, to: 1000, name: '常规余量（默认 400）', effect: '只当纯余量：覆盖各层标题与少量未计入 system 的内容。协议与记忆已算在 system 里，不再重复预留。', recommended: true },
+    { from: 1000, to: 4000, name: '偏保守', effect: '每轮白扣一千字以上，可用的对话历史被无谓压缩。' },
+    { from: 4000, to: 20000, name: '过大', effect: '历史额度被砍掉一大截 —— 长推演会「忽然失忆」，而且很难联想到是这个数造成的。' },
   ],
 }
 

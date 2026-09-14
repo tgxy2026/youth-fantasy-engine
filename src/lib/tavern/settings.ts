@@ -25,7 +25,7 @@ import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
   MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
-  type TavernParams, type SceneDescLevel,
+  type TavernParams, type SceneDescLevel, type PlotContextSource,
 } from './types'
 import { TONE_HINT } from './prompt'
 import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
@@ -40,7 +40,11 @@ export type TavernCommonSettings = {
   defaultProviderId: string
   /** 上下文预算（字）：一轮请求里「设定 + 记忆 + 历史」的总字数上限 */
   contextBudget: number
-  /** 固定开销预留（字）：给 system 骨架与协议留的位置，不计入可分配给历史的额度 */
+  /**
+   * 额外安全余量（字）。**语义已变（2026-09-14，老大选 C 档）**：以前它是「协议 + 记忆」的预留，
+   * 但 system 里本来就含这两样（buildSystemPrompt 会把记忆一起拼进去）→ 等于扣两遍。
+   * 现在只当纯余量：覆盖各层标题与少量未计入 system 的内容，默认 400。
+   */
   fixedOverheadChars: number
   /** 请求超时（秒）—— 本地模型慢时可调大 */
   timeoutSec: number
@@ -59,6 +63,11 @@ export type TavernPlotSettings = {
   topK: number
   repeatPenalty: number
   presencePenalty: number
+  /**
+   * 设定层来源（A 档）：项目原始资料 / 背景设定 / 两者。
+   * 见 types.PlotContextSource —— 选 digest 能省下约 2400 字设定层开销，全还给对话历史。
+   */
+  contextSource: PlotContextSource
   /** 设定层占上下文预算的比例：剩下的留给对话历史与长期记忆 */
   settingRatio: number
   /** 叙事向风格追加（默认空 = 不追加，就走协议默认 —— 方案 §5.2 的原意） */
@@ -235,6 +244,7 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     topK: TAVERN_DEFAULTS.plot.topK,
     repeatPenalty: TAVERN_DEFAULTS.plot.repeatPenalty,
     presencePenalty: TAVERN_DEFAULTS.plot.presencePenalty,
+    contextSource: 'both', // = 加开关之前的行为，老用户升级后一个字都不会变
     settingRatio: 0.6, // engine 原本写死 Math.round(total * 0.6)
     styleHint: TONE_HINT.narrative,
     extraPrompt: '',

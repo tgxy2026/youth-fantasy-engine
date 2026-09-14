@@ -270,10 +270,10 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                 ) : (
                   <>
                     <p className="mb-2 text-[11px] leading-relaxed text-ink-500">
-                      每个位置先选角色，再定**由谁演**。默认你演你自己；把某个位置改成「我演」，
+                      每个位置先选角色，再定由谁演。默认你演你自己；把某个位置改成「我演」，
                       AI 就会知道自己在跟谁对话（不会再把对面当成一个模糊的「用户」），
-                      而且**不会代写那个人的言行**。「我演」最多一个。
-                      多个 AI 角色则**同场**：一次只让一个说话，轮到谁由语境决定，
+                      而且不会代写那个人的言行。「我演」最多一个。
+                      多个 AI 角色则同场：一次只让一个说话，轮到谁由语境决定，
                       也能在会话顶部点头像指定下一位（最多 {MAX_SLOTS} 个 —— 再多，一轮里要分饰太多人，
                       角色容易串味、等待也明显变长）。记忆按角色共享：换个会话不会重来。
                     </p>
@@ -354,7 +354,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                   value={firstLine} onChange={setFirstLine} />
                 <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
                   上面这些会渲染成开场的第一条消息，让第一轮就有场景感；全留空也能直接开口聊。
-                  它**不是**小说项目的锚点 —— 自由模式不绑项目，这里只影响第一轮的语境。
+                  它不是小说项目的锚点 —— 自由模式不绑项目，这里只影响第一轮的语境。
                 </p>
               </section>
 

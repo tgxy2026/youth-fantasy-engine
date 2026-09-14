@@ -27,8 +27,8 @@ import {
 import { uid } from '../lib/id'
 
 const SCOPES: { id: WorldScope; name: string; hint: string }[] = [
-  { id: 'plot', name: '剧情推演', hint: '描述这本书的世界。存**随项目**，换书就是另一份。' },
-  { id: 'free', name: '自由对话', hint: '描述自由对话所处的世界。存**跨项目**，所有对话共用一份。' },
+  { id: 'plot', name: '剧情推演', hint: '描述这本书的世界。存随项目，换书就是另一份。' },
+  { id: 'free', name: '自由对话', hint: '描述自由对话所处的世界。存跨项目，所有对话共用一份。' },
 ]
 
 export default function TavernWorld() {
@@ -119,7 +119,7 @@ export default function TavernWorld() {
       <header className="border-b border-ink-800 pb-3">
         <h1 className="text-lg font-bold text-ink-50">背景设定</h1>
         <p className="text-[12px] text-ink-400 mt-1">
-          把项目资料（或你填的基础信息）**提炼**成一份精简背景。它不会每轮都塞进上下文 ——
+          把项目资料（或你填的基础信息）提炼成一份精简背景。它不会每轮都塞进上下文 ——
           命中了关键词才带上，这也是「不必每次喂一大堆」的落子。
         </p>
       </header>
@@ -151,7 +151,7 @@ export default function TavernWorld() {
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
               <div className="text-[12px] text-ink-200">一句话总纲</div>
               <p className="mt-0.5 mb-2 text-[10.5px] text-ink-500 leading-relaxed">
-                时代 / 地点 / 基调。它**最先**进上下文，模型靠它抓住大感觉。
+                时代 / 地点 / 基调。它最先进上下文，模型靠它抓住大感觉。
               </p>
               <AutoTextarea
                 value={w.brief}
@@ -173,7 +173,7 @@ export default function TavernWorld() {
                 </button>
               </div>
               <p className="mt-0.5 mb-2 text-[10.5px] text-ink-500 leading-relaxed">
-                建议 3–6 节、每节一百多字。**只留会影响人物言行的内容**，背景板式的描述删掉。
+                建议 3–6 节、每节一百多字。只留会影响人物言行的内容，背景板式的描述删掉。
               </p>
 
               {w.sections.length === 0 ? (
@@ -224,7 +224,7 @@ export default function TavernWorld() {
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
               <div className="text-[12px] text-ink-200">关键词（命中才注入）</div>
               <p className="mt-0.5 mb-2 text-[10.5px] text-ink-500 leading-relaxed">
-                逗号或换行分隔。**留空 = 每轮都注入**；填了就只在这些词出现时带上这一层。
+                逗号或换行分隔。留空 = 每轮都注入；填了就只在这些词出现时带上这一层。
                 通常填地名、势力名、行话这类「提到就说明需要背景」的词。
               </p>
               <AutoTextarea
@@ -254,8 +254,8 @@ export default function TavernWorld() {
               </div>
               <p className="mt-1 text-[10.5px] text-ink-400 leading-relaxed">
                 {scope === 'plot'
-                  ? '读项目里的世界观、势力、人物等资料，由 AI **精简整合**成上面的分节。它不会把资料原样搬过来。'
-                  : 'AI 会顺着你给的基础信息扩写（地点、氛围、规矩、既有关系），**不会替你定重大设定**。'}
+                  ? '读项目里的世界观、势力、人物等资料，由 AI 精简整合成上面的分节。它不会把资料原样搬过来。'
+                  : 'AI 会顺着你给的基础信息扩写（地点、氛围、规矩、既有关系），不会替你定重大设定。'}
               </p>
 
               <div className="mt-2">
@@ -282,7 +282,7 @@ export default function TavernWorld() {
               </Button>
               {scope === 'plot' && (
                 <p className="mt-1.5 text-[10px] text-ink-500 leading-relaxed">
-                  ⚠️ 会**覆盖**现有分节（brief 只在原来是空的时候填）。生成后请过一遍再保存。
+                  ⚠️ 会覆盖现有分节（brief 只在原来是空的时候填）。生成后请过一遍再保存。
                 </p>
               )}
             </div>

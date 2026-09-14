@@ -11,7 +11,7 @@ import {
   commonParamsLayer, modeParamsLayer, memoryLimitsOf, timeoutMsOf,
   DEFAULT_PROTOCOL, thinkOptOf, summaryLockTtlOf,
 } from '../src/lib/tavern/settings'
-import { FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
+import { FIXED_OVERHEAD_CHARS, historyBudget } from '../src/lib/tavern/budget'
 import { PROTOCOL_CORE, PROTOCOL_VERSION, LEGACY_PROTOCOLS } from '../src/lib/tavern/protocol'
 import { resolveParams } from '../src/lib/tavern/params'
 import {
@@ -154,7 +154,7 @@ async function main() {
     ok('timeoutMsOf 有下限保护（填 0 也不会变成 0 超时）', timeoutMsOf({ ...st, common: { ...st.common, timeoutSec: 0 } }) === 5000)
 
     const base = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st))
-    ok('参数继承：控制面板层能落到结果上', base.temperature === 0.9 && base.contextBudget === 8000 && base.numCtx === 32768,
+    ok('参数继承：控制面板层能落到结果上', base.temperature === 0.9 && base.contextBudget === 16000 && base.numCtx === 32768,
       `${base.temperature}/${base.contextBudget}/${base.numCtx}`)
 
     const over = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st), { temperature: 0.11 })
@@ -167,10 +167,18 @@ async function main() {
   // ---------- 5) 本轮新增的项：逐条等于原硬编码值 ----------
   {
     const d = DEFAULT_TAVERN_SETTINGS
+    // 🔴 C 档回归锁：旧算法把「已在 system 里的协议与记忆」又预留了 2600，
+    //    实测 8000 − 2600 − 8237 − 0 → 历史额度 0（21 条消息只剩开场一条）。
+    //    这条断言防止有人把余量调回「给协议留位」的大值。
+    ok('🔴 默认预算下历史额度必须为正（system 8237 是实测值）',
+      historyBudget(d.common.contextBudget, 'a'.repeat(8237), '', d.common.fixedOverheadChars) > 0,
+      `预算=${d.common.contextBudget} 余量=${d.common.fixedOverheadChars} 额度=${historyBudget(d.common.contextBudget, 'a'.repeat(8237), '', d.common.fixedOverheadChars)}`)
     ok('通用：固定开销预留 = budget.ts 的常量',
       d.common.fixedOverheadChars === FIXED_OVERHEAD_CHARS, String(d.common.fixedOverheadChars))
     ok('通用：默认关闭思考链（engine 原本恒传 think:false）', d.common.disableThink === true)
     ok('剧情：设定层占比 = 原写死的 0.6', d.plot.settingRatio === 0.6, String(d.plot.settingRatio))
+    ok('剧情：设定来源出厂为 both（= 加开关之前的行为，升级不改变现象）',
+      d.plot.contextSource === 'both', d.plot.contextSource)
     ok('自由：整理模型默认为空（跟随默认模型）', d.free.summaryProviderId === '')
     ok('档案：出厂为空（三栏都空 = 整段不注入）',
       d.profile.name === '' && d.profile.address === '' && d.profile.persona === '')

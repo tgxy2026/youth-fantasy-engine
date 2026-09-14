@@ -45,7 +45,7 @@ export default function TavernRevisionDialog({
   return (
     <Modal open={open} onClose={onClose} title="更新设定" width="2xl">
       <p className="text-[11.5px] text-ink-400 leading-relaxed">
-        下面是从**这段对话**里读出的「角色设定可能该改了」。**采纳之前不会动任何角色卡** ——
+        下面是从这段对话里读出的「角色设定可能该改了」。采纳之前不会动任何角色卡 ——
         你可以逐条勾选，也可以整条跳过。记忆（Ta 记得什么）与设定（Ta 是谁）是分开的：
         前者交给「整理记忆」，这里改的是角色卡本身。
       </p>
@@ -73,7 +73,7 @@ export default function TavernRevisionDialog({
         <div className="mt-4 rounded-md border border-dashed border-ink-700 bg-ink-850/20 p-4 text-center">
           <p className="text-[12.5px] text-ink-300">这一段对话没有需要改设定</p>
           <p className="mt-1.5 text-[11px] text-ink-500 leading-relaxed">
-            这是**正常结果** —— 大多数日常对话都不会改变「Ta 是谁」。<br />
+            这是正常结果 —— 大多数日常对话都不会改变「Ta 是谁」。<br />
             若刚发生了关系转折（分手、表白、决裂），可以再点一次「更新设定」重跑。
           </p>
           <div className="mt-3 flex justify-center gap-2">
@@ -165,7 +165,7 @@ export default function TavernRevisionDialog({
 
           <div className="mt-4 flex items-center justify-between gap-2 border-t border-ink-800 pt-3">
             <p className="text-[10.5px] text-ink-600 leading-relaxed">
-              采纳是**整段替换**该字段（不会追加），角色卡的其它部分原样保留。
+              采纳是整段替换该字段（不会追加），角色卡的其它部分原样保留。
             </p>
             <div className="flex shrink-0 gap-2">
               <Button variant="ghost" size="md" disabled={applying} onClick={onRetry}>重新检查</Button>

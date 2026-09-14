@@ -556,7 +556,7 @@ export default function TavernFree() {
     if (!session) return
     const okGo = await confirmDialog({
       title: '删除这个会话？',
-      message: '对话记录会一并删除。\n注意：**Ta的记忆是按角色存的**，所以记忆不会跟着消失。',
+      message: '对话记录会一并删除。\n注意：Ta的记忆是按角色存的，所以记忆不会跟着消失。',
       confirmText: '删除',
       danger: true,
     })
@@ -959,8 +959,8 @@ export default function TavernFree() {
                     </Button>
                   </div>
                   <p className="mt-1.5 text-[10.5px] text-ink-600 leading-relaxed">
-                    记忆**按角色分别整理**（Ta 记得什么）；设定更新只在你点它时才跑，
-                    而且**只列出来让你裁决**，不自动改卡。
+                    记忆按角色分别整理（Ta 记得什么）；设定更新只在你点它时才跑，
+                    而且只列出来让你裁决，不自动改卡。
                   </p>
                 </div>
               </aside>

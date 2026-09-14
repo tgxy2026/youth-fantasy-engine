@@ -85,6 +85,13 @@ const SCENE_DESC_OPTIONS = [
   { id: 'rich', label: '丰富 —— 每回合都带一句环境或身体细节' },
 ]
 
+/** 剧情推演：设定层从哪来（A 档） */
+const CONTEXT_SOURCE_OPTIONS = [
+  { id: 'both', label: '项目资料 + 背景设定（默认）' },
+  { id: 'digest', label: '只用背景设定 —— 省字数，长篇推荐' },
+  { id: 'raw', label: '只用项目资料 —— 不注入背景设定' },
+]
+
 /**
  * 分组外壳。
  * `className` / `bodyClassName` 是给「需要被拉伸到与对侧等高的那一段」用的（扮演协议）：
@@ -225,13 +232,13 @@ function TextField({ label, hint, value, minRows = 3, placeholder, onChange }: {
 }
 
 /** 下拉选择。`emptyLabel` 不传就不渲染那个空选项（用于「每一档都是真值」的档位选择） */
-function SelectField({ label, hint, value, options, emptyLabel, onChange }: {
-  label: string; hint?: string; value: string
+function SelectField({ label, hint, footer, value, options, emptyLabel, onChange }: {
+  label: string; hint?: string; footer?: React.ReactNode; value: string
   options: { id: string; label: string }[]; emptyLabel?: string
   onChange: (v: string) => void
 }) {
   return (
-    <Field label={label} hint={hint}>
+    <Field label={label} hint={hint} footer={footer}>
       <select value={value} className={`${NUM} w-full`} onChange={e => onChange(e.target.value)}>
         {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
         {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -373,7 +380,7 @@ export default function TavernControl() {
       title: '应用预设「' + p.name + '」？',
       message: [
         '当前所有设置（通用 / 我的档案 / 协议 / 剧情推演 / 自由对话）都会被这套预设替换 ——',
-        '**包括协议全文**。未保存的改动会丢失。',
+        '包括协议全文。未保存的改动会丢失。',
       ].join('\n'),
       confirmText: '应用',
     })
@@ -495,7 +502,7 @@ export default function TavernControl() {
       title: '恢复出厂设置？',
       message: [
         '五段设置（通用设置 / 我的档案 / 扮演协议 / 剧情推演 / 自由对话）里的所有参数与提示词，都会回到内置默认值。',
-        '已存的**预设方案不受影响** —— 那是独立的快照，要用它随时点「应用」即可。',
+        '已存的预设方案不受影响 —— 那是独立的快照，要用它随时点「应用」即可。',
         '保存后不可撤销。',
       ].join('\n'),
       confirmText: '恢复默认',
@@ -514,7 +521,7 @@ export default function TavernControl() {
     const okGo = await confirmDialog({
       title: '要编辑扮演协议吗？',
       message: [
-        '⚠️ 协议是**剧情推演与自由对话共用**的格式契约，改坏了两种模式的输出格式会一起乱。',
+        '⚠️ 协议是剧情推演与自由对话共用的格式契约，改坏了两种模式的输出格式会一起乱。',
         '',
         '建议：',
         '· 只想调风格/语气 → 用上面的「补充要求」，不必动协议；',
@@ -632,7 +639,7 @@ export default function TavernControl() {
           <div>
           <Section
             title="二、我的档案"
-            desc="你**本人**是谁 —— 全局设置，跨项目、跨会话生效，每轮都进 system。自由对话里 AI 靠它知道屏幕后面是谁（称呼、亲疏、语气都照它来）；剧情推演不用它 —— 那边你在每场推演里已经选定了自己演的角色，AI 以角色卡为准。三栏全留空 = 整段不注入，行为与以前完全一样。"
+            desc="你本人是谁 —— 全局设置，跨项目、跨会话生效，每轮都进 system。自由对话里 AI 靠它知道屏幕后面是谁（称呼、亲疏、语气都照它来）；剧情推演不用它 —— 那边你在每场推演里已经选定了自己演的角色，AI 以角色卡为准。三栏全留空 = 整段不注入，行为与以前完全一样。"
           >
             <div className={GRID2}>
               <TextField
@@ -767,6 +774,21 @@ export default function TavernControl() {
               />
             </div>
 
+            <SelectField
+              label="设定来源"
+              hint="决定「世界与角色设定」这一层从哪来 —— 它每轮都进 system，是预算里最大的一块。"
+              footer={(
+                <div className="mt-1.5 space-y-1 text-[10.5px] text-ink-600 leading-relaxed">
+                  <p>· 两者（默认）：项目原始资料 + 你提炼的背景设定。资料最全，但实测示范项目资料就有 4662 字（还丢了 11 段），加上协议 3244 字 —— 16000 的预算里一半以上被 system 吃掉。</p>
+                  <p>· 只用背景设定：设定层只留「作品概览 + 章节清单」（约 2200 字），世界规则靠你提炼的那份，省下的全给对话历史。代价是没在场配角的卡、名词 / 地理 / 历史细节不再注入 —— 所以背景设定里建议把「主要人物关系」写成一节，并让关键词留空（始终注入）。</p>
+                  <p>· 只用项目资料：不注入背景设定那一层。</p>
+                </div>
+              )}
+              value={pl.contextSource}
+              options={CONTEXT_SOURCE_OPTIONS}
+              onChange={v => setPlot('contextSource', v)}
+            />
+
             <TextField
               label="叙事向风格追加"
               hint="默认留空 —— 不追加就走协议默认的写法（这本来就是方案的原意）。填了会追加在档位那一层。"
@@ -830,7 +852,7 @@ export default function TavernControl() {
 
             <SelectField
               label="客观描写"
-              hint="只写对白与动作，画面是空的 —— 这一项决定要不要写「Ta 穿什么、屋里什么光、外面什么天气」。写法固定：用【】包住、独立成行。标准档：出场交代穿着与姿态、转场补一句环境、情绪用外在细节表示（都只写**观察得到的**东西，不写任何人的心理 —— 那是代写）。描写算在协议那 60–160 字里，别指望它长篇铺陈。"
+              hint="只写对白与动作，画面是空的 —— 这一项决定要不要写「Ta 穿什么、屋里什么光、外面什么天气」。写法固定：用【】包住、独立成行。标准档：出场交代穿着与姿态、转场补一句环境、情绪用外在细节表示（都只写观察得到的东西，不写任何人的心理 —— 那是代写）。描写算在协议那 60–160 字里，别指望它长篇铺陈。"
               value={fr.sceneDescription}
               options={SCENE_DESC_OPTIONS}
               onChange={v => setFree('sceneDescription', v)}
@@ -913,7 +935,7 @@ export default function TavernControl() {
           {/* ---------- 六、预设方案（A4） ---------- */}
           <Section
             title="六、预设方案"
-            desc="把整套设置存成命名快照，一键切换。预设**包含协议全文**，所以换预设等于把参数与格式契约一起换掉 —— 只换一半的话，格式规则还是上一套的。"
+            desc="把整套设置存成命名快照，一键切换。预设包含协议全文，所以换预设等于把参数与格式契约一起换掉 —— 只换一半的话，格式规则还是上一套的。"
           >
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="primary" size="md" onClick={() => setPresetNaming(true)}>＋ 存为预设</Button>
@@ -932,7 +954,7 @@ export default function TavernControl() {
             </div>
             <p className="text-[11px] text-ink-500 leading-relaxed">
               建议按工作模式分：例如「快速脑暴」（温度高、篇幅短、脑洞优先）与「精修成稿」（温度低、
-              篇幅长、一致性优先）。应用预设会**整体替换**当前设置，未保存的改动会被覆盖。
+              篇幅长、一致性优先）。应用预设会整体替换当前设置，未保存的改动会被覆盖。
             </p>
 
             {presetList.length === 0 ? (
