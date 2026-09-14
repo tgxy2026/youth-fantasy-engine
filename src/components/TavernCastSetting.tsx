@@ -15,8 +15,8 @@ import { EMPTY_CAST_SETTING, type CastSetting } from '../lib/tavern/types'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import { showToast } from './dialogs'
+import AutoTextarea from './AutoTextarea'
 
-const inputCls = 'w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50 resize-none'
 
 /** 六字段的界面文案（标题 / 说明 / 占位示例）——顺序即渲染顺序，与 prompt.ts 的 CAST_FIELDS 一致 */
 const FIELDS: { key: keyof CastSetting; label: string; hint: string; ph: string }[] = [
@@ -134,11 +134,14 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
                 <label className="text-[12px] text-ink-200">{f.label}</label>
                 <span className="text-[11px] text-ink-500">{f.hint}</span>
               </div>
-              <textarea
-                className={`${inputCls} mt-1.5 h-16`}
+              <AutoTextarea
+                className="mt-1.5 px-2 py-1.5 bg-ink-900 border border-ink-700 rounded-md py-1.5 text-ink-100 outline-none focus:border-amber/50"
+                textClass="text-sm"
+                minRows={3}
+                maxHeight={320}
                 placeholder={f.ph}
                 value={cs[f.key]}
-                onChange={e => set(f.key, e.target.value)}
+                onChange={v => set(f.key, v)}
               />
             </section>
           ))}

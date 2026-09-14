@@ -31,8 +31,8 @@ import { Button } from './Button'
 import { Modal } from './Modal'
 import { showToast, confirmDialog } from './dialogs'
 import { LoadingState } from './LoadingState'
+import AutoTextarea from './AutoTextarea'
 
-const inputCls = 'w-full bg-ink-900 border border-ink-700 rounded-md px-2.5 py-1.5 text-[12.5px] text-ink-100 outline-none focus:border-amber/50 resize-none leading-relaxed'
 
 /** 单个字段（标题 + 说明 + 输入区）。说明写的是「填什么」，不是「这一栏是什么」。 */
 function Field({ label, hint, value, onChange, rows = 3, ph }: {
@@ -45,12 +45,14 @@ function Field({ label, hint, value, onChange, rows = 3, ph }: {
         <span className="text-[12px] text-ink-200">{label}</span>
         <span className="text-[11px] text-ink-500">{hint}</span>
       </div>
-      <textarea
-        className={`${inputCls} mt-1`}
-        style={{ height: `${rows * 1.75}rem` }}
+      <AutoTextarea
+        className="mt-1 bg-ink-900 border border-ink-700 rounded-md px-2.5 py-1.5 text-ink-100 outline-none focus:border-amber/50"
+        textClass="text-[12.5px]"
+        minRows={rows}
+        maxHeight={420}
         placeholder={ph}
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={onChange}
       />
     </div>
   )
@@ -415,11 +417,14 @@ export default function TavernCard() {
                       <li><span className="text-amber/90">③ 别写长。</span>三段短来回就够 —— 写成整段剧情既费上下文，又容易被照搬。</li>
                     </ul>
                   </div>
-                  <textarea
-                    className={`${inputCls} h-48`}
+                  <AutoTextarea
+                    className="bg-ink-900 border border-ink-700 rounded-md px-2.5 py-1.5 text-ink-100 outline-none focus:border-amber/50"
+                    textClass="text-[12.5px]"
+                    minRows={8}
+                    maxHeight={520}
                     placeholder={'对方：这么晚还不下班？\n她把找零推过去，没抬头：\n「灯还亮着。」\n\n对方：你一个人看店不怕吗？\n她停了一下，把烟按灭。\n「惯了。」\n\n对方：……谢谢。\n她背过身去理货架，声音很轻：\n「伞在门后。」'}
                     value={draft.examples}
-                    onChange={e => up('examples', e.target.value)}
+                    onChange={v => up('examples', v)}
                   />
                 </section>
 

@@ -5,24 +5,53 @@ interface Props {
   onChange: (v: string) => void
   placeholder?: string
   className?: string
-  /** 最小高度（px），保证空字段也有合适的点击区域 */
+  /**
+   * 最小显示行数。按**实际计算出的行高**换算成像素，所以换字号也不用改这里。
+   * 不给则回落到 minHeight（默认 32px，与历史行为一致）。
+   */
+  minRows?: number
+  /** 最小高度（px），保证空字段也有合适的点击区域。给了它就以它为准，忽略 minRows */
   minHeight?: number
   /** 最大高度（px），超过后内部滚动，避免超长文本把页面撑得过长 */
   maxHeight?: number
+  /**
+   * 字号类。默认 12px —— 需要别的字号时**从这里传**，别塞进 className：
+   * Tailwind 同类工具类谁生效取决于生成顺序，两处各写一个字号就成了开盲盒。
+   */
+  textClass?: string
+  disabled?: boolean
+  autoFocus?: boolean
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  title?: string
 }
 
 /**
  * 自动撑高的多行文本框：随内容增高，到 maxHeight 后转为内部滚动。
  * 用于表单型 / 卡片型页签的字段输入，解决"长文本被写死行高截断、需手动滚滑条"的问题。
+ *
+ * 默认最小高度刻意保持 32px（历史行为）—— 想要「至少 3 行」的输入框请传 `minRows={3}`，
+ * 这样已有的几十处调用一个都不会因此变形。
  */
-export default function AutoTextarea({ value, onChange, placeholder, className = '', minHeight = 32, maxHeight = 360 }: Props) {
+export default function AutoTextarea({
+  value, onChange, placeholder, className = '',
+  minRows, minHeight, maxHeight = 360, textClass = 'text-[12px]',
+  disabled, autoFocus, onKeyDown, title,
+}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null)
+
   useEffect(() => {
     const ta = ref.current
     if (!ta) return
     ta.style.height = 'auto'
-    ta.style.height = Math.max(minHeight, Math.min(ta.scrollHeight, maxHeight)) + 'px'
-  }, [value, minHeight, maxHeight])
+    // 行高取**计算值**而不是写死 20px —— 换字号/主题后依然算得准
+    const cs = getComputedStyle(ta)
+    const lh = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) || 12) * 1.5
+    const box = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)
+      + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+    const min = minHeight ?? (minRows ? Math.round(lh * minRows + box) : 32)
+    ta.style.height = Math.max(min, Math.min(ta.scrollHeight, maxHeight)) + 'px'
+  }, [value, minRows, minHeight, maxHeight, textClass])
+
   return (
     <textarea
       ref={ref}
@@ -30,8 +59,12 @@ export default function AutoTextarea({ value, onChange, placeholder, className =
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       rows={1}
-      style={{ minHeight }}
-      className={`w-full text-[12px] leading-relaxed resize-none overflow-y-auto ${className}`}
+      disabled={disabled}
+      autoFocus={autoFocus}
+      onKeyDown={onKeyDown}
+      title={title}
+      style={minHeight ? { minHeight } : undefined}
+      className={`w-full leading-relaxed resize-none overflow-y-auto ${textClass} ${className}`}
     />
   )
 }

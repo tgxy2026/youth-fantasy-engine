@@ -10,6 +10,7 @@ import { flattenChapters } from '../lib/chapterSeq'
 import { TABS } from '../lib/schema'
 import { Button } from './Button'
 import { Modal } from './Modal'
+import AutoTextarea from './AutoTextarea'
 import type { Chapter, Volume, CardRecord } from '../lib/types'
 import type { TavernCast, TavernMode } from '../lib/tavern/types'
 
@@ -218,10 +219,14 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                 <input className={inputCls} placeholder="时间（如清晨 · 灯会后第三日）" value={time} onChange={e => setTime(e.target.value)} />
               </div>
               <input className={`${inputCls} mt-2`} placeholder="在场人物（顿号分隔，可留空）" value={present} onChange={e => setPresent(e.target.value)} />
-              <textarea className={`${inputCls} mt-2 h-20 resize-none`} placeholder="场景描述（这一场从什么地方开始）"
-                value={description} onChange={e => setDescription(e.target.value)} />
-              <textarea className={`${inputCls} mt-2 h-16 resize-none`} placeholder="你的第一句话（可留空，之后再开口也行）"
-                value={firstLine} onChange={e => setFirstLine(e.target.value)} />
+              <AutoTextarea className="mt-2 bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
+                textClass="text-sm" minRows={3} maxHeight={320}
+                placeholder="场景描述（这一场从什么地方开始）"
+                value={description} onChange={setDescription} />
+              <AutoTextarea className="mt-2 bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
+                textClass="text-sm" minRows={2} maxHeight={240}
+                placeholder="你的第一句话（可留空，之后再开口也行）"
+                value={firstLine} onChange={setFirstLine} />
             </section>
 
             {/* 标题 */}

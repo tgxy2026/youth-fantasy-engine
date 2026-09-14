@@ -20,12 +20,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pencil } from 'lucide-react'
-import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { Modal } from './Modal'
 import { LoadingState } from './LoadingState'
 import { renderTavernMessage } from './TavernMessage'
+import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
 import { runFreeTurn } from '../lib/tavern/engine'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
@@ -58,7 +58,6 @@ export default function TavernFree() {
   const [sessions, setSessions] = useState<FreeSessionIndexItem[]>([])
   const [session, setSession] = useState<FreeSession | null>(null)
   const [memory, setMemory] = useState<FreeMemory | null>(null)
-  const [providers, setProviders] = useState<AIProvider[]>([])
   const [summaryProviderId, setSummaryProviderId] = useState('')
 
   // ---------- UI ----------
@@ -69,7 +68,6 @@ export default function TavernFree() {
   const [phase, setPhase] = useState('')
   const [summarizing, setSummarizing] = useState(false)
   const [showMemory, setShowMemory] = useState(true)
-  const [showSettings, setShowSettings] = useState(false)
   /** 她这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
   const [daily, setDaily] = useState<DailyState | null>(null)
   const [showDaily, setShowDaily] = useState(false)
@@ -101,16 +99,14 @@ export default function TavernFree() {
   useEffect(() => {
     void (async () => {
       try {
-        const [cs, ps, sid, st] = await Promise.all([
+        // 模型与总结模型统一由控制面板管（原先那个「模型设置」面板已下线）
+        const [cs, st] = await Promise.all([
           store.listFreeChars(),
-          loadProviders().catch(() => [] as AIProvider[]),
-          store.getSummaryProviderId().catch(() => ''),
           getTavernSettings().catch(() => DEFAULT_TAVERN_SETTINGS),
         ])
         setChars(cs)
-        setProviders(ps)
-        setSummaryProviderId(sid)
         setTavernSettings(st)
+        setSummaryProviderId(st.free.summaryProviderId)
         if (cs.length > 0) setCharId(prev => prev || cs[0].id)
       } catch (e) {
         showToast(`读取失败：${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -128,7 +124,7 @@ export default function TavernFree() {
   const advanceIfNeeded = useCallback(async (card: FreeCharacter, cur?: DailyState | null) => {
     const d = cur ?? (await store.getDaily(card.id).catch(() => null))
     if (!shouldAdvanceDaily(d, Date.now(), lim.dailyAdvanceMs)) return
-    if (!acquireSummaryLock()) return // 与总结共用一把锁，避免两个窗口同时写
+    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) return // 与总结共用一把锁，避免两个窗口同时写
     try {
       const mem = await store.getMemory(card.id).catch(() => null)
       const res = await advanceDaily({
@@ -136,6 +132,7 @@ export default function TavernFree() {
         prev: d,
         memory: mem,
         providerId: summaryProviderId || undefined,
+        logKeep: lim.dailyLogKeep,
       })
       await store.saveDaily(res.state)
       setDaily(res.state)
@@ -206,13 +203,12 @@ export default function TavernFree() {
       charCard.id,
       id => chars.find(c => c.id === id)?.name,
     )
-    // 模型：跟随全局活动模型（会话级可再改）
-    const active = providers.find(p => p.id === (session?.model.providerId ?? '')) ?? providers[0]
+    // 模型不再绑定到会话：留空 → 引擎按「控制面板默认模型 → 全局活动模型」解析（不再需要本页的选择器）
     try {
       const s = await store.createFreeSession(
         ids,
         title,
-        { providerId: active?.id ?? '' },
+        { providerId: '' },
         {},
       )
       setSession(s)
@@ -224,7 +220,7 @@ export default function TavernFree() {
     } catch (e) {
       showToast(`新建失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
-  }, [charCard, providers, session, loadForChar, chars])
+  }, [charCard, loadForChar, chars])
 
   // ---------- 记忆总结 ----------
   /**
@@ -246,7 +242,7 @@ export default function TavernFree() {
       if (manual) showToast('还没有新内容可整理', 'info')
       return
     }
-    if (!acquireSummaryLock()) {
+    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) {
       if (manual) showToast('另一个窗口正在整理记忆', 'info')
       return
     }
@@ -371,20 +367,6 @@ export default function TavernFree() {
     showToast('已删除会话')
   }
 
-  const changeModel = async (providerId: string) => {
-    if (!session) return
-    const next = { ...session, model: { providerId }, updatedAt: Date.now() }
-    await store.saveFreeSession(next)
-    setSession(next)
-    showToast('已切换本会话的模型')
-  }
-
-  const changeSummaryModel = async (id: string) => {
-    setSummaryProviderId(id)
-    await store.setSummaryProviderId(id)
-    showToast(id ? '已指定总结模型' : '总结将跟随全局活动模型')
-  }
-
   // ---------- 自动滚到底 ----------
   useEffect(() => {
     const el = scrollRef.current
@@ -411,40 +393,8 @@ export default function TavernFree() {
               与自建角色的长期对话：记得住事、有时间流逝感、换场景可开新会话（记忆按角色共享）。
             </p>
           </div>
-          {chars.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setShowSettings(v => !v)}>
-              {showSettings ? '收起设置' : '模型设置'}
-            </Button>
-          )}
         </div>
 
-        {showSettings && (
-          <div className="mt-2 rounded-lg border border-ink-700 bg-ink-850/50 p-3 grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-[11px] text-ink-500">本会话模型</span>
-              <select
-                className="mt-1 w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-[12px] text-ink-100 outline-none"
-                value={session?.model.providerId ?? ''}
-                onChange={e => void changeModel(e.target.value)}
-                disabled={!session}
-              >
-                <option value="">（未选择）</option>
-                {providers.map(p => <option key={p.id} value={p.id}>{p.name} · {p.model}</option>)}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-ink-500">总结模型（整理记忆用，越快越省越好）</span>
-              <select
-                className="mt-1 w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-[12px] text-ink-100 outline-none"
-                value={summaryProviderId}
-                onChange={e => void changeSummaryModel(e.target.value)}
-              >
-                <option value="">跟随全局活动模型</option>
-                {providers.map(p => <option key={p.id} value={p.id}>{p.name} · {p.model}</option>)}
-              </select>
-            </label>
-          </div>
-        )}
       </header>
 
       {chars.length === 0 ? (
@@ -667,12 +617,16 @@ export default function TavernFree() {
               </div>
 
               <div className="border-t border-ink-800 p-3">
-                <textarea
-                  className="w-full h-20 resize-none bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-[13px] text-ink-100 outline-none focus:border-amber/50"
+                {/* 自动延展：默认 3 行，写长了自己长高，超过 200px 才内部滚动 */}
+                <AutoTextarea
+                  className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"
+                  textClass="text-[13px]"
+                  minRows={3}
+                  maxHeight={200}
                   placeholder="说点什么…（Ctrl+Enter 发送）"
                   value={input}
                   disabled={streaming}
-                  onChange={e => setInput(e.target.value)}
+                  onChange={setInput}
                   onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send() } }}
                 />
                 <div className="mt-2 flex items-center justify-between">

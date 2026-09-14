@@ -15,6 +15,7 @@ import { Button } from './Button'
 import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
 import TavernCastSetting from './TavernCastSetting'
 import { renderTavernMessage } from './TavernMessage'
+import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
 import { runPlotTurn, splitCast } from '../lib/tavern/engine'
 import { generateReport } from '../lib/tavern/report'
@@ -343,12 +344,15 @@ export default function TavernPlot() {
 
             {/* 输入区 */}
             <div className="border-t border-ink-800 p-3">
-              <textarea
-                className="w-full h-20 resize-none bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-[13px] text-ink-100 outline-none focus:border-amber/50"
+              <AutoTextarea
+                className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"
+                textClass="text-[13px]"
+                minRows={3}
+                maxHeight={200}
                 placeholder="以你的角色身份说一句话、做一个动作…（Ctrl+Enter 发送）"
                 value={input}
                 disabled={streaming}
-                onChange={e => setInput(e.target.value)}
+                onChange={setInput}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send() } }}
               />
               <div className="mt-2 flex items-center justify-between">
