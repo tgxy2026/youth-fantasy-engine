@@ -209,7 +209,9 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
       >
         <defs>
           <pattern id="fg-dots" width="22" height="22" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="1" fill="#2a2620" />
+            {/* 主题化网格。此处原为实心 #2a2620；统一改用与关系图谱相同的网格变量并补 0.28 透明度，
+                暗色下实际渲染差值约 2%（肉眼无感），换来两图风格一致 + 浅色主题下可见。 */}
+            <circle cx="1" cy="1" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity="0.28" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#fg-dots)" />
@@ -244,7 +246,8 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
             const isSel = selected === nd.name
             const isHov = hover === nd.name
             const r = 14 + Math.min(nd.degree, 8) * 2.2
-            const color = isSel ? '#f59e0b' : isHov ? '#fbbf24' : '#d6c7a1'
+            // 主题化的选中/悬停/常态三态色（含 var()，故下游用 style 而非表现属性）
+            const color = isSel ? 'rgb(var(--graph-accent-strong))' : isHov ? 'rgb(var(--graph-accent))' : 'rgb(var(--graph-label))'
             return (
               <g
                 key={nd.name}
@@ -257,8 +260,8 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
                 onPointerLeave={() => setHover(h => (h === nd.name ? null : h))}
                 className="cursor-pointer"
               >
-                <circle r={r} fill="#1c1916" stroke={color} strokeWidth={isSel ? 3 : 2} />
-                <circle r={r * 0.42} fill={color} />
+                <circle r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: color }} strokeWidth={isSel ? 3 : 2} />
+                <circle r={r * 0.42} style={{ fill: color }} />
                 <text
                   y={r + 14}
                   textAnchor="middle"

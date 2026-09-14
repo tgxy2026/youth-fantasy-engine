@@ -775,7 +775,8 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
           >
             <defs>
               <pattern id="gm-dots" width="26" height="26" patternUnits="userSpaceOnUse">
-                <circle cx="1.4" cy="1.4" r="1" fill="#57534e" opacity={painting ? 0.32 : 0.22} />
+                {/* 主题化网格（表现属性不解析 var()，故走 style） */}
+                <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity={painting ? 0.32 : 0.22} />
               </pattern>
             </defs>
             <rect width="100%" height="100%" fill="url(#gm-dots)" pointerEvents="none" />
@@ -814,12 +815,12 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                           fill={col} fillOpacity={fillOp} stroke={col} strokeOpacity={active ? 0.9 : 0.4} strokeWidth={active ? 1 : 0.5} />
                       ))}
                       <text x={tx} y={vs.bbox.y - 5} textAnchor={anchor} fontSize={fs} fontWeight={600} fill={col} pointerEvents="none"
-                        style={{ paintOrder: 'stroke', stroke: '#15120e', strokeWidth: 3.5 }}>{mk.name}</text>
+                        style={{ paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}</text>
                       <text x={tx} y={vs.bbox.y - 5 + fs + 1} textAnchor={anchor} fontSize={fs - 3} fill={col} fillOpacity={0.9} pointerEvents="none"
-                        style={{ paintOrder: 'stroke', stroke: '#15120e', strokeWidth: 3 }}>{mk.category} · {vs.count} 格</text>
+                        style={{ paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>{mk.category} · {vs.count} 格</text>
                       {active && !painting && (
-                        <text x={tx} y={vs.bbox.y - 5 + fs * 2 + 3} textAnchor={anchor} fontSize={fs - 3.5} fill="#f4c266" pointerEvents="none"
-                          style={{ paintOrder: 'stroke', stroke: '#15120e', strokeWidth: 3 }}>详情面板可绘制 · 拖动整体平移</text>
+                        <text x={tx} y={vs.bbox.y - 5 + fs * 2 + 3} textAnchor={anchor} fontSize={fs - 3.5} pointerEvents="none"
+                          style={{ fill: 'rgb(var(--graph-accent-text))', paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>详情面板可绘制 · 拖动整体平移</text>
                       )}
                     </g>
                   )
@@ -833,7 +834,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                 const h = (Math.abs(selRect.y1 - selRect.y0) + 1) * G
                 return (
                   <rect x={x0} y={y0} width={w} height={h} rx={2}
-                    fill="#f4c266" fillOpacity={0.18} stroke="#f4c266" strokeWidth={1.5} strokeDasharray="6 4" pointerEvents="none" />
+                    style={{ fill: 'rgb(var(--graph-accent-text))', stroke: 'rgb(var(--graph-accent-text))' }} fillOpacity={0.18} strokeWidth={1.5} strokeDasharray="6 4" pointerEvents="none" />
                 )
               })()}
 

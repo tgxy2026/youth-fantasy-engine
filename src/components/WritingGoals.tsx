@@ -148,14 +148,17 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
           <svg viewBox={`0 0 ${bW} ${bH}`} className="w-full" style={{ maxHeight: bH }} role="img" aria-label="近14天码字燃尽图">
             {[0, 0.5, 1].map(f => (
               <g key={f}>
-                <line x1={bL} x2={bW - bR} y1={bY(bMax * f)} y2={bY(bMax * f)} stroke="rgb(var(--ink-700))" strokeDasharray="3 3" strokeWidth={0.6} />
-                <text x={bL - 6} y={bY(bMax * f) + 3} textAnchor="end" fontSize={9} fill="rgb(var(--ink-500))">{Math.round(bMax * f).toLocaleString()}</text>
+                {/* ⚠️ 主题变量必须走 style：SVG 表现属性（stroke=/fill=）不解析 var()。
+                    原写作 stroke="rgb(var(--ink-700))" / fill="rgb(var(--ink-500))"，
+                    实际一直无效并回退成黑色——网格线与轴标签此前与主题无关恒为黑。 */}
+                <line x1={bL} x2={bW - bR} y1={bY(bMax * f)} y2={bY(bMax * f)} style={{ stroke: 'rgb(var(--ink-700))' }} strokeDasharray="3 3" strokeWidth={0.6} />
+                <text x={bL - 6} y={bY(bMax * f) + 3} textAnchor="end" fontSize={9} style={{ fill: 'rgb(var(--ink-500))' }}>{Math.round(bMax * f).toLocaleString()}</text>
               </g>
             ))}
             {[0, Math.floor((BURNDOWN_DAYS - 1) / 2), BURNDOWN_DAYS - 1].map(i => (
-              <text key={i} x={bX(i)} y={bH - 6} textAnchor={i === 0 ? 'start' : i === BURNDOWN_DAYS - 1 ? 'end' : 'middle'} fontSize={9} fill="rgb(var(--ink-500))">{burndown[i].label}</text>
+              <text key={i} x={bX(i)} y={bH - 6} textAnchor={i === 0 ? 'start' : i === BURNDOWN_DAYS - 1 ? 'end' : 'middle'} fontSize={9} style={{ fill: 'rgb(var(--ink-500))' }}>{burndown[i].label}</text>
             ))}
-            <path d={bPath('targetCum')} fill="none" stroke="rgb(var(--amber))" strokeOpacity={0.75} strokeWidth={1.6} strokeDasharray="5 4" />
+            <path d={bPath('targetCum')} fill="none" style={{ stroke: 'rgb(var(--amber))' }} strokeOpacity={0.75} strokeWidth={1.6} strokeDasharray="5 4" />
             <path d={bPath('actualCum')} fill="none" stroke="#34d399" strokeWidth={2} />
             <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} fill="#34d399" />
           </svg>

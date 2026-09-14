@@ -356,13 +356,14 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
               <svg className="absolute inset-0 pointer-events-none" width={canvas.w} height={canvas.h}>
                 <defs>
                   <marker id="pc-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-                    <path d="M0,0 L8,3 L0,6 Z" fill="#a89b8c" />
+                    {/* 主题化连线色（表现属性不解析 var()，故走 style） */}
+                    <path d="M0,0 L8,3 L0,6 Z" style={{ fill: 'rgb(var(--graph-edge-label))' }} />
                   </marker>
                 </defs>
                 {conns.map(([a, b], i) => {
                   const pa = cardCenter(a); const pb = cardCenter(b)
                   const mx = (pa.x + pb.x) / 2
-                  return <path key={i} d={`M ${pa.x} ${pa.y} C ${mx} ${pa.y}, ${mx} ${pb.y}, ${pb.x} ${pb.y}`} stroke="#a89b8c" strokeWidth={2} fill="none" markerEnd="url(#pc-arrow)" strokeOpacity={0.7} />
+                  return <path key={i} d={`M ${pa.x} ${pa.y} C ${mx} ${pa.y}, ${mx} ${pb.y}, ${pb.x} ${pb.y}`} style={{ stroke: 'rgb(var(--graph-edge-label))' }} strokeWidth={2} fill="none" markerEnd="url(#pc-arrow)" strokeOpacity={0.7} />
                 })}
               </svg>
 

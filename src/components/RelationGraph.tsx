@@ -266,7 +266,8 @@ export default function RelationGraph({ rows }: Props) {
       >
         <defs>
           <pattern id="rg-dots" width="26" height="26" patternUnits="userSpaceOnUse">
-            <circle cx="1.4" cy="1.4" r="1" fill="#57534e" opacity="0.28" />
+            {/* 主题化网格：表现属性不解析 var()，故走 style（浅色主题下改为该主题墨色） */}
+            <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity="0.28" />
           </pattern>
         </defs>
         {/* 点阵背景（画布层，固定不随内容平移） */}
@@ -293,9 +294,11 @@ export default function RelationGraph({ rows }: Props) {
                   strokeLinecap="round"
                 />
                 <g opacity={active ? 1 : 0.55}>
+                  {/* ⚠️ 原写作 fill="rgb(var(--ink-850))" —— 表现属性不解析 var()，
+                      该值一直无效并回退为黑色底板。改用 style 后变量才真正生效。 */}
                   <rect x={mx - labelW / 2} y={my - 8.5} width={labelW} height={15} rx={7.5}
-                    fill="rgb(var(--ink-850))" stroke={col} strokeOpacity={0.45} strokeWidth={0.6} />
-                  <text x={mx} y={my + 3.4} fill={active ? col : '#a89b8c'} fontSize={9.5} textAnchor="middle">{e.type}</text>
+                    style={{ fill: 'rgb(var(--ink-850))' }} stroke={col} strokeOpacity={0.45} strokeWidth={0.6} />
+                  <text x={mx} y={my + 3.4} style={{ fill: active ? col : 'rgb(var(--graph-edge-label))' }} fontSize={9.5} textAnchor="middle">{e.type}</text>
                 </g>
               </g>
             )
@@ -305,7 +308,8 @@ export default function RelationGraph({ rows }: Props) {
             const r = radius(n.degree)
             const active = hover === n.name
             const dim = hover && !active
-            const col = active ? '#fbbf24' : '#d6c7a1'
+            // 主题化：这两个色值含 var()，故下游一律用 style 而非表现属性
+            const col = active ? 'rgb(var(--graph-accent))' : 'rgb(var(--graph-label))'
             return (
               <g
                 key={n.name}
@@ -315,9 +319,9 @@ export default function RelationGraph({ rows }: Props) {
                 onPointerDown={e => onPointerDown(e, 'node', n.name, p)}
                 style={{ cursor: 'grab' }}
               >
-                <circle cx={p.x} cy={p.y} r={r} fill="#1c1916" stroke={col} strokeWidth={active ? 3 : 2} />
-                <circle cx={p.x} cy={p.y} r={r * 0.42} fill={col} />
-                <text x={p.x} y={p.y + r + 15} fill={active ? '#f4c266' : '#e7e5e4'} fontSize={10} textAnchor="middle">{n.name}</text>
+                <circle cx={p.x} cy={p.y} r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: col }} strokeWidth={active ? 3 : 2} />
+                <circle cx={p.x} cy={p.y} r={r * 0.42} style={{ fill: col }} />
+                <text x={p.x} y={p.y + r + 15} style={{ fill: active ? 'rgb(var(--graph-accent-text))' : 'rgb(var(--graph-node-text))' }} fontSize={10} textAnchor="middle">{n.name}</text>
               </g>
             )
           })}
