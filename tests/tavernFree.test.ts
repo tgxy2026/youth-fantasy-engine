@@ -294,6 +294,47 @@ async function main() {
       sysPlain.includes('用户扮演用户自己的角色。'), '')
   }
 
+  // ---------- 8b) 「我的档案」（2026-09-14 新增，替代原「默认『我演』的角色」） ----------
+  // 档案描述的是**屏幕后面那个人**，与「这次演哪个角色」是两件事 —— 所以拆开存、分开注入。
+  {
+    __resetMockStores()
+    const a = await mkChar('洛汐')
+    const b = await mkChar('楚楠')
+    const base = DEFAULT_TAVERN_SETTINGS
+    const withProfile = {
+      ...base,
+      profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧，嘴硬心软。' },
+    }
+
+    // ① 没演角色 + 有档案 → 档案就是「你」的身份（不再是「没有具体身份的本人」）
+    const s1 = await store.createFreeSession([a.id], '一个人', { providerId: '' }, {})
+    const sys1 = (await buildFreeSystem(s1, [a], withProfile)).system
+    ok('档案：整段挂上〖我的档案 · 用户本人〗', sys1.includes('〖我的档案 · 用户本人〗'))
+    ok('档案：三栏都写进去',
+      sys1.includes('名字：老巴迪') && sys1.includes('希望被这样称呼：巴迪哥') && sys1.includes('自我设定：三十出头的编剧'))
+    ok('没演角色时：说明「Ta 就以这个身份在场」', sys1.includes('就以这个身份在场'))
+
+    // ② 演了角色 → 档案降级为「幕后身份」，且**明确禁止**拿档案名替换角色名
+    const s2 = await store.createFreeSession([b.id, a.id], '两个人', { providerId: '' }, {}, a.id)
+    const sys2 = (await buildFreeSystem(s2, [b, a], withProfile)).system
+    ok('演了角色时：档案说明它是「屏幕后面是谁」', sys2.includes('屏幕后面是谁'))
+    ok('演了角色时：明确禁止用档案名替换角色名', sys2.includes('不要用档案里的名字去替换'))
+    ok('演了角色时：身份层仍以角色优先（用户扮演：洛汐）', sys2.includes('用户扮演：洛汐'))
+
+    // ③ 空档案 → 整段不出现（不白占 context）
+    const sys0 = (await buildFreeSystem(s1, [a], base)).system
+    ok('空档案整段不注入', !sys0.includes('我的档案'))
+
+    // ④ 多 AI 角色 + 有档案 → 发言规则里的「用户是谁」用档案里的称呼
+    const s3 = await store.createFreeSession([a.id, b.id], '多角色', { providerId: '' }, {})
+    const sys3 = (await buildFreeSystem(s3, [a, b], withProfile)).system
+    ok('多 AI 角色 + 有档案：发言规则写「用户扮演：巴迪哥」', sys3.includes('用户扮演：巴迪哥。'))
+
+    // ⑤ 没档案时不能把旧文案改坏
+    const sys4 = (await buildFreeSystem(s3, [a, b], base)).system
+    ok('没档案时发言规则仍是旧文案（不回归）', sys4.includes('用户扮演用户自己的角色。'))
+  }
+
   // ---------- 9) 同名角色消歧（2026-09-14） ----------
   // 记忆按 id 存 —— 同名卡本来就抢不走彼此的档案；这里锁的是**提示词层**的辨识能力。
   {

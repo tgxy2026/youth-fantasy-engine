@@ -198,6 +198,39 @@ export function buildMultiCharRule(names: string[], opts: { hasUser?: boolean; u
 }
 
 /**
+ * 「我的档案」渲染成一段 —— **用户本人**是谁（全局设置，跨项目）。
+ *
+ * 【为什么它不是角色卡】
+ * 角色卡描述**角色**，档案描述**屏幕后面那个人**；两者可以同时存在
+ * （用户演苏念，而他本人是另一个人）。所以这一段永远只讲用户这一侧。
+ *
+ * `playing` = 本场 Ta 扮演的角色名。有没有它，对模型的要求正好相反：
+ *   · 没演角色 → 档案**就是** Ta 的在场身份，照它称呼；
+ *   · 演了角色 → 档案只用来拿捏语气，**不能**拿档案里的名字去替换角色名
+ *     （否则会出现「苏念」被叫成「楚楠」这种串味）。
+ *
+ * 空档案（三栏全空）返回空串 —— 不留一个空标题白占 context。
+ */
+export function buildUserProfileBlock(
+  p: { name?: string; address?: string; persona?: string } | undefined,
+  playing?: string,
+): string {
+  if (!p) return ''
+  const name = (p.name ?? '').trim()
+  const address = (p.address ?? '').trim()
+  const persona = (p.persona ?? '').trim()
+  if (!name && !address && !persona) return ''
+  const lines: string[] = []
+  if (name) lines.push(`名字：${name}`)
+  if (address) lines.push(`希望被这样称呼：${address}`)
+  if (persona) lines.push(`自我设定：${persona}`)
+  const tail = playing
+    ? `（Ta 本场扮演〖${playing}〗。这份档案只说明「屏幕后面是谁」，用来拿捏称呼与语气；不要用档案里的名字去替换 Ta 扮演的角色名。）`
+    : '（本场没有指定 Ta 扮演的角色，Ta 就以这个身份在场 —— 照档案来称呼与对待 Ta。）'
+  return `〖我的档案 · 用户本人〗\n${lines.join('\n')}\n${tail}`
+}
+
+/**
  * 同名角色消歧说明（只在**同一场里出现同名**时才注入）。
  *
  * 【为什么需要】记忆与发言归属在数据层按 `id` 存 —— 两张同名卡永远不会互相串档。

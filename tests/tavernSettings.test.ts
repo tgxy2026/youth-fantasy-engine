@@ -103,6 +103,39 @@ async function main() {
       (await getTavernSettings()).protocol === '我自己改过的协议正文')
     ok('旧数据里没有 sceneDescription 时回落到「标准」档（不会 undefined）',
       st.free.sceneDescription === 'standard', String(st.free.sceneDescription))
+    ok('旧数据里没有 profile 时回落到空档案（不是 undefined）',
+      st.profile.name === '' && st.profile.address === '' && st.profile.persona === '')
+  }
+
+  // ---------- 3b) 废弃字段清理：free.defaultUserCharId ----------
+  // 老库里有这个键（2.1.0 的「默认『我演』的角色」），现在改用全局档案。
+  // 必须**主动删**：mergeDeep 会把「默认值里已经没有的键」照抄进来，不删它会一直躺在库里被写回。
+  {
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { free: { temperature: 0.4, defaultUserCharId: 'some-card-id' } } as never)
+    const st = await getTavernSettings()
+    ok('老库里的 free.defaultUserCharId 被主动删除',
+      !('defaultUserCharId' in (st.free as unknown as Record<string, unknown>)),
+      JSON.stringify(Object.keys(st.free)))
+    ok('同一个 free 分组里其余字段照旧生效', st.free.temperature === 0.4, String(st.free.temperature))
+    ok('档案字段一定存在（老数据也补得上，不会 undefined）',
+      typeof st.profile === 'object' && st.profile !== null && typeof st.profile.name === 'string')
+  }
+
+  // ---------- 3c) 「我的档案」能存能读回 ----------
+  {
+    __resetMockStores()
+    const fresh = await getTavernSettings()
+    await saveTavernSettings({ ...fresh, profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧' } })
+    const back = await getTavernSettings()
+    ok('档案三栏都能存能读',
+      back.profile.name === '老巴迪' && back.profile.address === '巴迪哥' && back.profile.persona === '三十出头的编剧')
+    // 只存了 name 的老/半份数据：其余栏位必须回落空串，不能变成 undefined
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { profile: { name: '只有名字' } } as never)
+    const half = await getTavernSettings()
+    ok('半份档案：缺的栏位回落空串（不是 undefined）',
+      half.profile.name === '只有名字' && half.profile.address === '' && half.profile.persona === '')
   }
 
   // ---------- 4) 派生量 ----------
@@ -139,7 +172,9 @@ async function main() {
     ok('通用：默认关闭思考链（engine 原本恒传 think:false）', d.common.disableThink === true)
     ok('剧情：设定层占比 = 原写死的 0.6', d.plot.settingRatio === 0.6, String(d.plot.settingRatio))
     ok('自由：整理模型默认为空（跟随默认模型）', d.free.summaryProviderId === '')
-    ok('自由：默认「我演」留空（= 用户演他自己，AI 不会替你编身份）', d.free.defaultUserCharId === '')
+    ok('档案：出厂为空（三栏都空 = 整段不注入）',
+      d.profile.name === '' && d.profile.address === '' && d.profile.persona === '')
+    ok('自由：已不再有「默认我演的角色」这个字段（改用全局档案）', !('defaultUserCharId' in d.free))
     // 这一项是**本轮刻意新增**的行为（沉浸感），不是照抄旧硬编码值 —— 改动它必须有意识
     ok('自由：客观描写默认「标准」档', d.free.sceneDescription === 'standard', d.free.sceneDescription)
     ok('自由：整理锁有效期 = 原 1800 秒换算成 30 分钟',

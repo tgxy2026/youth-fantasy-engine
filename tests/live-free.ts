@@ -23,6 +23,7 @@ import { uid } from '../src/lib/id'
 import { summarizeMemory } from '../src/lib/tavern/summarize'
 import { memoryChars, memoryToText, messagesAfterWatermark, nextWatermark, MEMORY_SECTIONS } from '../src/lib/tavern/memory'
 import { SEED_FREE_CHARACTERS } from '../src/lib/tavern/seedCards'
+import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import type { FreeCharacter, FreeSession } from '../src/lib/tavern/types'
 
 const DATA = 'C:/Users/18223/AppData/Roaming/novel-studio/novel-studio-data.json'
@@ -261,6 +262,46 @@ async function main() {
     const b6 = auditFormat(reply6b)
     console.log(`[实弹观察·第 2 轮] 行分布：动作（）${b6.action} · 环境【】${b6.env} · 对白 ${b6.talk}`)
     console.log(`[实弹观察·第 2 轮] 违规项：${b6.issues.length ? '⚠️ ' + b6.issues.join(' | ') : '✓ 无'}`)
+  }
+
+  // ---------- 阶段 7：「我的档案」（2026-09-14 新增，替代原「默认『我演』的角色」） ----------
+  // 这一阶段回答的是：**没设「我演」角色时，AI 到底知不知道屏幕后面是谁？**
+  // 以前答案是「不知道」（只能把你当没有具体身份的本人）；现在档案填了就知道。
+  console.log('\n' + '='.repeat(70))
+  console.log('▶ 阶段 7 · 我的档案（没设「我演」时，AI 靠它知道屏幕后面是谁）')
+  console.log('='.repeat(70))
+  {
+    const seedL7 = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
+    if (!seedL7) { console.log('❌ 示范卡里没有洛汐，跳过本阶段'); return }
+    const luo7 = await store.createFreeChar(seedL7)
+    const s7base = await store.createFreeSession([luo7.id], '档案 · 基线', { providerId: pick.provider.id }, {})
+
+    // ① 空档案 = 旧行为（整段不注入）
+    const sysEmpty = (await buildFreeSystem(s7base, [luo7], await getTavernSettings())).system
+    console.log(`[离线断言] 空档案：整段不注入：${sysEmpty.includes('我的档案') ? '✗ 有' : '✓ 无'}`)
+
+    // ② 填一份档案
+    const before = await getTavernSettings()
+    await saveTavernSettings({
+      ...before,
+      profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧，跟洛汐是同事，嘴硬心软。' },
+    })
+    const sys7 = (await buildFreeSystem(s7base, [luo7])).system
+    console.log(`[离线断言] 有档案：注入〖我的档案 · 用户本人〗：${sys7.includes('〖我的档案 · 用户本人〗') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 有档案：三栏都进去了：${sys7.includes('名字：老巴迪') && sys7.includes('希望被这样称呼：巴迪哥') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 没演角色时改写「就以这个身份在场」：${sys7.includes('就以这个身份在场') ? '✓' : '✗'}`)
+
+    // ③ 实弹：没设「我演」，看模型会不会照档案称呼用户
+    let s7 = await say(s7base, luo7, '（我把伞收好，在柜台前坐下。）', [luo7])
+    const reply7 = s7.messages[s7.messages.length - 1]?.content ?? ''
+    console.log(`[实弹观察] 是否照档案称呼（巴迪哥 / 老巴迪）：${/巴迪哥|老巴迪/.test(reply7) ? '✓ 有' : '（本轮没叫名字，可接受 —— 不是每句都要称呼）'}`)
+    const a7 = auditFormat(reply7, ['洛汐'])
+    console.log(`[实弹观察] 违规项：${a7.issues.length ? '⚠️ ' + a7.issues.join(' | ') : '✓ 无'}`)
+    console.log(`[实弹观察] 篇幅 ${reply7.replace(/\s/g, '').length} 字（协议建议 60–160）`)
+
+    // ④ 复原，别把档案带进后面的阶段
+    await saveTavernSettings(before)
+    console.log(`[收尾] 档案已复原为：${JSON.stringify((await getTavernSettings()).profile)}`)
   }
 
   // ---------- 阶段 1：会话 A 聊出可被记住的事实 ----------

@@ -77,14 +77,14 @@ export type TavernFreeSettings = {
   /** 总结模型：整理记忆用，越快越省越好。留空 = 跟随上面的默认模型 */
   summaryProviderId: string
   /**
-   * 默认「我演」的角色（自由模式）。
+   * （2.1.0 这里曾是「默认『我演』的角色」，**已废弃**。）
    *
-   * 自由模式默认是「用户演他自己」—— AI 会把你当作**没有具体身份的本人**，
-   * 不替你编一个角色；但代价是它不知道在跟谁对话，称呼与距离无从针对。
-   * 这里指定一个角色卡之后，新建对话会自动把它预填成一个「我演」位置。
-   * 留空 = 保持「你演你自己」。
+   * 它把「用户本人是谁」与「这次演谁」混成一个字段，现在拆成两处：
+   *   · 用户本人是谁 → 全局的 `profile`（我的档案，跨项目）
+   *   · 这次演谁     → 新建对话时每个位置的「由谁演」下拉
+   * 老库里残留的 `defaultUserCharId` 由 `upgradeLegacyDefaults` 主动删除 ——
+   * mergeDeep 对「默认值里已经没有的键」是**照抄进去**的，不删它会一直躺在库里被反复写回。
    */
-  defaultUserCharId: string
   /** 聊天向风格提示（默认沿用原 TONE_HINT.chat） */
   styleHint: string
   /**
@@ -115,8 +115,40 @@ export type TavernFreeSettings = {
   dailyLogKeep: number
 }
 
+/**
+ * 「我的档案」——**用户本人**是谁。全局生效（跨项目、跨会话，与控制面板其余设置同域）。
+ *
+ * 【它替代了什么】
+ * 2.1.0 曾在「自由对话控制」里放一个「默认『我演』的角色」（选一张卡预填成「我演」）。
+ * 那个设计把两件事混在一起：用户**自己**是谁（人），与他这次**想演哪个角色**（戏）。
+ * 拆开后：档案只描述屏幕后面这个人，演谁由每次新建对话的槽位决定。
+ * 于是「我演」留空时，AI 不再是「不知道在跟谁说话」，而是**知道你是谁** —— 称呼与距离有据可依。
+ *
+ * 【为什么只有三个字段】
+ * 档案**每轮都进 system**，越长越挤占历史额度。名字 + 称呼 + 一句话自我设定，
+ * 足以让 AI 叫对人、拿对语气；人物细节交给角色卡与记忆。
+ * 头像是图片（不占字数），它与角色头像共用一套上传组件，排在「状态栏面板」那一批做。
+ */
+export type TavernProfile = {
+  /** 你的名字 */
+  name: string
+  /** 希望被怎么称呼（留空 = 直呼名字） */
+  address: string
+  /** 一句话自我设定：身份、年纪、与对方的关系……越短越有效 */
+  persona: string
+}
+
+/** 出厂档案：空。**空档案整段不注入**，行为与「没有这一层」完全一致 */
+export const DEFAULT_TAVERN_PROFILE: TavernProfile = {
+  name: '',
+  address: '',
+  persona: '',
+}
+
 export type TavernSettings = {
   common: TavernCommonSettings
+  /** 我的档案：用户本人是谁（全局，跨项目） */
+  profile: TavernProfile
   plot: TavernPlotSettings
   free: TavernFreeSettings
   /** 扮演协议全文（两种模式共用，钉在 system 末尾）。默认 = 内置常量 */
@@ -159,6 +191,7 @@ const LEGACY_DEFAULT_COMMON_EXTRA = [
  *   ② `protocol` —— 协议从 v1.1 升 v1.2（三类标记重划 + 代词中性化）。
  *      ⚠️ 协议是可编辑的，所以改内置常量**对存过设置的用户无效**，必须在这里升级；
  *      历史版本全文见 protocol.ts 的 `LEGACY_PROTOCOLS`。
+ *   ③ `free.defaultUserCharId` —— 已废弃的键，**直接删**（这不是"升级默认值"，是清场）。
  * 将来再有默认文本/协议变更，按同样方式在这里追加比对，别去动用户已保存的值。
  */
 function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<TavernSettings> | null {
@@ -170,6 +203,14 @@ function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<Tav
   if (typeof out.protocol === 'string' && LEGACY_PROTOCOLS.includes(out.protocol)) {
     out = { ...out, protocol: PROTOCOL_CORE }
   }
+  // ③ `free.defaultUserCharId` —— 已废弃的字段，**主动删掉**。
+  //    mergeDeep 会把「默认值里已经没有的键」照抄进来，留着它就一直躺在库里被反复写回，
+  //    将来有人搜到它还会以为它有用（这类「死配置」本项目已经清过好几个）。
+  if (out.free && typeof out.free === 'object' && 'defaultUserCharId' in out.free) {
+    const rest = { ...(out.free as unknown as Record<string, unknown>) }
+    delete rest.defaultUserCharId
+    out = { ...out, free: rest as unknown as TavernFreeSettings }
+  }
   return out
 }
 
@@ -178,6 +219,7 @@ export const DEFAULT_PROTOCOL = PROTOCOL_CORE
 
 /** 出厂默认：**与原硬编码值逐一对应**（不存在"顺手改过"的数） */
 export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
+  profile: DEFAULT_TAVERN_PROFILE,
   common: {
     defaultProviderId: '',
     contextBudget: TAVERN_DEFAULTS.free.contextBudget,
@@ -204,7 +246,6 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     repeatPenalty: TAVERN_DEFAULTS.free.repeatPenalty,
     presencePenalty: TAVERN_DEFAULTS.free.presencePenalty,
     summaryProviderId: '',
-    defaultUserCharId: '',
     styleHint: TONE_HINT.chat,
     // 默认 standard：这是本轮**刻意新增**的行为（不是照抄旧硬编码值）——
     // 老大要的沉浸感：出场写穿着/姿态、转场补环境、情绪落到外在细节上。

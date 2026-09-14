@@ -20,7 +20,7 @@ import { uid } from '../id'
 import { buildProjectContext } from '../aiContext'
 import {
   buildSystemPrompt, buildMultiCharRule, toChatMessages, renderCastSetting,
-  buildSameNameNote, buildSceneDescriptionRule,
+  buildSameNameNote, buildSceneDescriptionRule, buildUserProfileBlock,
 } from './prompt'
 import * as store from './store'
 import { trimHistory, historyBudget } from './budget'
@@ -403,9 +403,13 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
       )
     }
     if (aiChars.length > 1) {
-      parts.push(buildMultiCharRule(aiChars.map(c => c.name), { userName: userChar?.name }))
+      // 用户没演角色时，档案里的称呼/名字就是「用户是谁」的唯一来源
+      const who = userChar?.name || st.profile.address.trim() || st.profile.name.trim()
+      parts.push(buildMultiCharRule(aiChars.map(c => c.name), who ? { userName: who } : {}))
     }
-    return parts.join('\n\n')
+    // 「我的档案」：描述**屏幕后面那个人**（用户本人）。空档案返回空串，不占位置。
+    parts.push(buildUserProfileBlock(st.profile, userChar?.name))
+    return parts.filter(Boolean).join('\n\n')
   })()
 
   // 记忆层：**每个角色各自的记忆**分别成块（多角色时模型要能分清「谁知道什么」）。

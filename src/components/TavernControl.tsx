@@ -6,25 +6,30 @@
  * `prompt.ts` 的 TONE_HINT、`memory.ts` 的记忆阈值、`engine.ts` 的超时…），
  * 想调一个数就得改代码 + 重新构建。这个页签把它们全部搬到前台，改完点保存即生效。
  *
- * 【四段的划分依据】
+ * 【五段的划分依据】
  *   · 通用设置 —— 不管哪种模式都要用的：模型、上下文预算、超时、上下文窗口、通用补充要求
+ *   · 我的档案 —— **用户本人是谁**（全局、跨项目）。自由对话里「我演」留空时，
+ *     它就是 AI 眼中「屏幕后面那个人」；详见 settings.ts 的 TavernProfile。
  *   · 扮演协议 —— 两种模式共用的格式契约（钉在提示词末尾）
  *   · 剧情推演 —— 只对剧情模式生效的：叙事向采样参数与风格、专属补充要求
  *   · 自由对话 —— 只对自由模式生效的：聊天向采样参数与风格、专属补充要求、记忆与日常阈值
  * 采样参数之所以**分成两段而不是放通用段**：两种模式的默认值本来就不同
  * （剧情 0.85 / 自由 0.9，叙事要稳、陪伴要松），合成一个会把这个差异抹平。
  *
- * 【两列布局的划分依据（2026-09-14 第二轮调整）】
- *   左列 = 通用设置 + 扮演协议 —— 「全局的、一次调好就不动的」：跟谁说、说多长、什么格式契约。
+ * 【两列布局的划分依据（2026-09-14 第三轮调整：加入「我的档案」）】
+ *   左列 = 通用设置 + 我的档案 + 扮演协议 —— 「全局的、一次调好就不动的」：
+ *          跟谁说、我是谁、什么格式契约。
  *   右列 = 剧情推演控制 + 自由对话控制 —— 「分模式的手感」：温度、采样、记忆阈值。
- * 序号按**阅读顺序**重排（左列自上而下 一 → 二，再到右列 三 → 四），不按历史顺序。
+ * 序号按**阅读顺序**重排（左列自上而下 一 → 三，再到右列 四 → 五），不按历史顺序。
  *
  * 【排版约定】每项一律「标题 →（可选）输入区 → 说明文字」。说明放在**下面**，
  * 这样长短不一的解释不会把输入框顶得高低起伏 —— 输入框永远在同一水平线上。
  * 列宽的纪律：外层两列在 `xl` 断点才分（更窄时保持单列，免得每列挤成 100px 的条），
  * 段内的数值组在 `sm` 先 2 列、`2xl` 才回到 3 列，保证输入框始终有可读宽度。
- * 两列等高：网格默认 `stretch`，左列用 flex 把「扮演协议」吃满剩余高度（协议正文跟着长），
+ * 两列等高：网格默认 `stretch`，左列用 flex 把「扮演协议」（左列最后一个子项）吃满剩余高度，
  * 否则左列会比右列短一大截。⚠️ 协议段一旦改成 `items-start`，这个等高就没了。
+ * ⚠️ 高度同步用的是「左列**除协议段以外**的全部子项」这个切片 —— 所以左列再加段也不用改逻辑，
+ *    但**协议段必须始终是左列最后一个子项**。
  *
  * 【默认值】全部等于原来的硬编码值（见 settings.ts 的 DEFAULT_TAVERN_SETTINGS），
  * 所以打开这个页面之前与之后，行为完全一致 —— 不存在"升个版本悄悄变了风格"。
@@ -36,11 +41,10 @@ import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import AutoTextarea from './AutoTextarea'
 import { PROTOCOL_VERSION } from '../lib/tavern/protocol'
-import * as tavernStore from '../lib/tavern/store'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
   DEFAULT_TAVERN_SETTINGS, DEFAULT_PROTOCOL,
-  type TavernSettings,
+  type TavernSettings, type TavernProfile,
 } from '../lib/tavern/settings'
 
 /** 输入框外观（不含字号——字号由 AutoTextarea 的 textClass / input 自己带，避免两处各写一个 size 类打架） */
@@ -175,8 +179,6 @@ function ToggleField({ label, hint, value, onChange }: {
 export default function TavernControl() {
   const [s, setS] = useState<TavernSettings | null>(null)
   const [providers, setProviders] = useState<AIProvider[]>([])
-  /** 自由角色卡（给「默认我演的角色」用） */
-  const [freeChars, setFreeChars] = useState<{ id: string; name: string }[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [protocolEditing, setProtocolEditing] = useState(false)
@@ -195,36 +197,41 @@ export default function TavernControl() {
    * 所以这里用「右列两个 section 各自的高度 + 它们之间的间距」，与行高无关。
    * （这个坑是 2026-09-14 老大反馈「左边还是比右边长一大截」时揪出来的。）
    */
+  const leftColRef = useRef<HTMLDivElement>(null)
   const rightColRef = useRef<HTMLDivElement>(null)
-  const commonRef = useRef<HTMLDivElement>(null)
   const [protoH, setProtoH] = useState<number | null>(null)
   const layoutReady = s !== null
 
   useEffect(() => {
     if (!layoutReady) return
+    const leftCol = leftColRef.current
     const rightCol = rightColRef.current
-    const common = commonRef.current
-    if (!rightCol || !common) return
+    if (!leftCol || !rightCol) return
 
     // 只在两列布局下同步（与 Tailwind 的 xl 断点一致）；单列时让它自然高
     const mq = window.matchMedia('(min-width: 1280px)')
     const sync = () => {
       if (!mq.matches) { setProtoH(null); return }
+      // 协议段是左列**最后一个**子项；它上面那些（通用设置 / 我的档案 …）都要先让出位置。
+      // ⚠️ 别把「左列第一段」写死 —— 用切片就天然适应以后再加段。
+      const above = [...leftCol.children].slice(0, -1) as HTMLElement[]
       const kids = [...rightCol.children] as HTMLElement[]
       // 🔴 必须用 offsetHeight（CSS 像素），**不能用 getBoundingClientRect()**：
       //    <html> 上有界面缩放（zoom: 1.08），rect 返回的是缩放后的**视觉像素**，
       //    而 style.height 收的是 CSS 像素 —— 混用会让算出来的高度恒定偏大 8%
       //    （表现就是"设了定高却总是差一截"，且怎么调都调不平）。
-      const contentH = kids.reduce((n, el) => n + el.offsetHeight, 0)
+      const rightH = kids.reduce((n, el) => n + el.offsetHeight, 0)
         + COL_GAP * Math.max(0, kids.length - 1)
-      const commonH = common.offsetHeight
-      if (!contentH || !commonH) { setProtoH(null); return }
-      setProtoH(Math.max(PROTO_MIN_HEIGHT, Math.round(contentH - commonH - COL_GAP)))
+      // 左列「上面那些」占的高度 = 各自高度 + 每一个后面跟的间距（含它与协议段之间那一份）
+      const usedH = above.reduce((n, el) => n + el.offsetHeight, 0) + COL_GAP * above.length
+      if (!rightH || !usedH) { setProtoH(null); return }
+      setProtoH(Math.max(PROTO_MIN_HEIGHT, Math.round(rightH - usedH)))
     }
     const ro = new ResizeObserver(sync)
-    ro.observe(common)
-    // 观察右列的**每个 section**（它们的盒子高与行高无关），而不是右列本身
+    // 观察「右列每个 section」与「左列协议段以上的每个 section」——
+    // 它们的盒子高与行高无关；观察列容器本身会形成正反馈（见上面注释）
     for (const el of [...rightCol.children]) ro.observe(el)
+    for (const el of [...leftCol.children].slice(0, -1)) ro.observe(el)
     mq.addEventListener('change', sync)
     sync()
     return () => { ro.disconnect(); mq.removeEventListener('change', sync) }
@@ -239,10 +246,6 @@ export default function TavernControl() {
         ])
         setS(st)
         setProviders(ps)
-        // 自由角色卡：只为「默认我演的角色」下拉取名字（读不到就留空，不影响面板其余部分）
-        void tavernStore.listFreeChars()
-          .then(list => setFreeChars(list.map(c => ({ id: c.id, name: c.name }))))
-          .catch(() => setFreeChars([]))
       } catch (e) {
         showToast(`读取设置失败：${e instanceof Error ? e.message : String(e)}`, 'error')
         setS(DEFAULT_TAVERN_SETTINGS)
@@ -256,6 +259,9 @@ export default function TavernControl() {
   }
   const setCommon = (k: keyof TavernSettings['common'], v: number | string | boolean) =>
     edit(prev => ({ ...prev, common: { ...prev.common, [k]: v } as TavernSettings['common'] }))
+  /** 「我的档案」三栏都是文本 */
+  const setProfile = (k: keyof TavernProfile, v: string) =>
+    edit(prev => ({ ...prev, profile: { ...prev.profile, [k]: v } }))
   const setPlot = (k: keyof TavernSettings['plot'], v: number | string) =>
     edit(prev => ({ ...prev, plot: { ...prev.plot, [k]: v } as TavernSettings['plot'] }))
   const setFree = (k: keyof TavernSettings['free'], v: number | string) =>
@@ -279,7 +285,7 @@ export default function TavernControl() {
   const reset = async () => {
     const okGo = await confirmDialog({
       title: '恢复出厂设置？',
-      message: '四段（通用设置 / 扮演协议 / 剧情推演 / 自由对话）里的所有参数与提示词，都会回到内置默认值。\n保存后不可撤销。',
+      message: '五段（通用设置 / 我的档案 / 扮演协议 / 剧情推演 / 自由对话）里的所有参数与提示词，都会回到内置默认值。\n保存后不可撤销。',
       confirmText: '恢复默认',
       danger: true,
     })
@@ -312,10 +318,10 @@ export default function TavernControl() {
   if (!s) return <LoadingState />
 
   const c = s.common
+  const pr = s.profile
   const pl = s.plot
   const fr = s.free
   const modelOptions = providers.map(p => ({ id: p.id, label: `${p.name} · ${p.model}` }))
-  const charOptions = freeChars.map(c => ({ id: c.id, label: c.name || '（未命名角色）' }))
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-4">
@@ -325,7 +331,7 @@ export default function TavernControl() {
           <p className="mt-1 text-[12px] text-ink-500 leading-relaxed">
             酒馆模式全部「接进 AI 的参数与提示词」都在这里，改完点保存即可生效（下一轮对话开始时读取）。
             <br />
-            左列是通用的「跟谁说、说多长」与两种模式共用的格式契约，右列是两种模式各自的手感 ——
+            左列是通用的「跟谁说、我是谁、说多长」与两种模式共用的格式契约，右列是两种模式各自的手感 ——
             建议先把左边看过一遍，再去跑剧情推演或自由对话。
             <br />
             默认值就是内置的出厂值，所以不动它时行为与之前完全一致。
@@ -345,10 +351,10 @@ export default function TavernControl() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
 
         {/* ========== 左列 ========== */}
-        <div className="space-y-4 xl:flex xl:min-h-0 xl:flex-col">
+        <div ref={leftColRef} className="space-y-4 xl:flex xl:min-h-0 xl:flex-col">
 
-          {/* ---------- 一、通用设置（量它的高度，供协议窗算高度） ---------- */}
-          <div ref={commonRef}>
+          {/* ---------- 一、通用设置 ---------- */}
+          <div>
           <Section
             title="一、通用设置"
             desc="两种模式都生效。模型与上下文这些「跟谁说、说多长」的事在这里定；具体的采样手感与提示词在右边两段。"
@@ -403,7 +409,42 @@ export default function TavernControl() {
           </Section>
           </div>
 
-          {/* ---------- 二、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ----------
+          {/* ---------- 二、我的档案（全局，跨项目） ---------- */}
+          <div>
+          <Section
+            title="二、我的档案"
+            desc="你**本人**是谁 —— 全局设置，跨项目、跨会话生效，每轮都进 system。自由对话里 AI 靠它知道屏幕后面是谁（称呼、亲疏、语气都照它来）；剧情推演不用它 —— 那边你在每场推演里已经选定了自己演的角色，AI 以角色卡为准。三栏全留空 = 整段不注入，行为与以前完全一样。"
+          >
+            <div className={GRID2}>
+              <TextField
+                label="你的名字"
+                hint="AI 会按这个名字想到你。"
+                minRows={1}
+                placeholder="例：老巴迪"
+                value={pr.name}
+                onChange={v => setProfile('name', v)}
+              />
+              <TextField
+                label="希望被怎么称呼"
+                hint="留空就直呼名字。想让 AI 用某个叫法（外号、称呼）就写在这里。"
+                minRows={1}
+                placeholder="例：巴迪哥"
+                value={pr.address}
+                onChange={v => setProfile('address', v)}
+              />
+            </div>
+            <TextField
+              label="一句话自我设定"
+              hint="身份、年纪、与对方的关系……越短越有效（这段每轮都进上下文，写长了会挤占对话历史）。例：三十出头的编剧，跟洛汐是同事，嘴硬心软。"
+              minRows={3}
+              placeholder="例：三十出头的编剧，跟洛汐是同事，嘴硬心软。"
+              value={pr.persona}
+              onChange={v => setProfile('persona', v)}
+            />
+          </Section>
+          </div>
+
+          {/* ---------- 三、扮演协议（高度同步到与右列底部平齐；正文超出走内部滚动条） ----------
               🔴 两条都是踩出来的，别删：
               ① **不能写 `xl:flex-1`** —— 主轴是高度，flex-basis 会压过下面那个 inline `height`，
                  包装层被"填充剩余空间"接管，设多少高度都无效；
@@ -415,7 +456,7 @@ export default function TavernControl() {
             style={protoH === null ? undefined : { height: protoH }}
           >
           <Section
-            title="二、扮演协议"
+            title="三、扮演协议"
             desc={`两种模式共用的格式契约，内置版本 ${PROTOCOL_VERSION}。注入时钉在提示词的最末尾（它自带的「最后提醒」要紧贴生成点）。`}
             className="xl:h-full xl:min-h-0 xl:flex xl:flex-col xl:overflow-hidden"
             bodyClassName="xl:min-h-0 xl:flex-1 xl:flex xl:flex-col xl:overflow-hidden"
@@ -469,9 +510,9 @@ export default function TavernControl() {
         {/* ========== 右列（它的高度是协议窗高度的基准） ========== */}
         <div ref={rightColRef} className="space-y-4">
 
-          {/* ---------- 三、剧情推演控制 ---------- */}
+          {/* ---------- 四、剧情推演控制 ---------- */}
           <Section
-            title="三、剧情推演控制"
+            title="四、剧情推演控制"
             desc="只对「剧情推演」生效。叙事向要的是稳 —— 角色反应得站得住，所以默认温度比自由对话低。"
           >
             <div className={GRID3}>
@@ -527,9 +568,9 @@ export default function TavernControl() {
             />
           </Section>
 
-          {/* ---------- 四、自由对话控制 ---------- */}
+          {/* ---------- 五、自由对话控制 ---------- */}
           <Section
-            title="四、自由对话控制"
+            title="五、自由对话控制"
             desc="只对「自由对话」生效。陪伴要松弛感，所以温度默认更高；下面还有记忆引擎与日常推进的一组阈值。"
           >
             <div className={GRID3}>
@@ -571,14 +612,6 @@ export default function TavernControl() {
               onChange={v => setFree('summaryProviderId', v)}
             />
 
-            <SelectField
-              label="默认「我演」的角色"
-              hint="自由模式默认是你演你自己 —— AI 会把你当作没有具体身份的本人（不会替你编角色），但也就无从针对称呼与距离。这里选一张卡，新建对话会自动把它预填成「我演」位置。"
-              value={fr.defaultUserCharId}
-              options={charOptions}
-              emptyLabel="（不预填，你演你自己）"
-              onChange={v => setFree('defaultUserCharId', v)}
-            />
 
             <SelectField
               label="客观描写"

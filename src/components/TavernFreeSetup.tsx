@@ -5,9 +5,11 @@
  * 差异有三：
  *   · **没有叙事锚点** —— 自由模式不绑小说项目，谈不上「截到第几章」，所以整段去掉；
  *   · **没有「在场不出声」** —— 自由对话是两个人的话，没开口的角色等于不在场；
- *   · **每个位置可以选「我演」**（最多一个）—— 自由模式默认你演你自己，
+ *   · **每个位置可以选「我演」**（最多一个）—— 默认你演你自己，
  *     但也可以反过来：你演苏念、AI 演楚楠。选了之后 AI 才知道自己**在跟谁**对话，
  *     并且不会代写那个人的言行（见 `engine.buildFreeSystem` 的身份层）。
+ *   · 「你演你自己」也不再是「没有身份」：控制面板的**「我的档案」**（全局、跨项目）
+ *     会在这种时候作为用户本人的身份注入（名字 / 称呼 / 一句话自我设定）。
  *
  * 上限沿用引擎侧的多角色同场上限（3）：一轮里让模型分饰 N 个人，N 越大越容易串味，
  * 单轮输出也越长、等待越久 —— 与剧情模式同一条理由，写在界面上而不是埋在代码里。
@@ -51,12 +53,12 @@ type CharOption = { id: string; name: string; core: string }
 type Slot = { charId: string; role: 'ai' | 'user' }
 
 /**
- * 打开弹窗时重建默认位置。
- * 控制面板配了「默认我演的角色」就预填成「我演」+ 一个待选的 AI 空位；
- * 没配就是「一个 AI 位置」（= 你演你自己）。
+ * 打开弹窗时重建默认位置：**一个待选的 AI 空位**。
+ *
+ * （2.1.0 曾按控制面板的「默认『我演』的角色」预填成一个「我演」位置 —— 那个字段已废弃。
+ * 「你本人是谁」改由全局的「我的档案」承担，不再需要在这里预填一个角色卡。）
  */
-function freshSlots(defaultUserCharId?: string): Slot[] {
-  if (defaultUserCharId) return [{ charId: defaultUserCharId, role: 'user' }, { charId: '', role: 'ai' }]
+function freshSlots(): Slot[] {
   return [{ charId: '', role: 'ai' }]
 }
 
@@ -144,6 +146,8 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
 export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   const [options, setOptions] = useState<CharOption[]>([])
   const [loading, setLoading] = useState(true)
+  /** 「我的档案」里的称呼/名字（空 = 没填档案）—— 只用来把「AI 已经知道你是谁」讲清楚 */
+  const [callName, setCallName] = useState('')
 
   const [slots, setSlots] = useState<Slot[]>(() => freshSlots())
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
@@ -160,7 +164,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     if (!open) return
     let alive = true
     setLoading(true)
-    setSlots(freshSlots()); setPickerIdx(null)
+    setSlots(freshSlots()); setPickerIdx(null); setCallName('')
     setTitle(''); setPlace(''); setTime(''); setPresent(''); setDescription(''); setFirstLine('')
     ;(async () => {
       try {
@@ -175,9 +179,9 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         }))
         if (!alive) return
         setOptions(full)
-        // 控制面板的「默认我演的角色」：卡还在就预填（被删了就保持空位，不硬塞）
-        const def = st.free.defaultUserCharId
-        if (def && full.some(o => o.id === def)) setSlots(freshSlots(def))
+        // 「我的档案」有名字 → 界面可以明确讲「AI 已经知道你是谁」。
+        // 这正是「默认『我演』的角色」被去掉之后的补偿：**不用选角色也有身份**。
+        setCallName(st.profile.address.trim() || st.profile.name.trim())
       } catch {
         if (alive) setOptions([])
       } finally {
@@ -317,16 +321,15 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                       <span className="text-[11px] text-ink-500">
                         {userNames.length
                           ? `你演 ${userNames.join('、')} · AI 演 ${aiNames.join('、') || '（还没定）'}`
-                          : `你演你自己 · AI 演 ${aiNames.join('、') || '（还没定）'}`}
+                          : `${callName ? `你以「${callName}」的身份说话` : '你演你自己'} · AI 演 ${aiNames.join('、') || '（还没定）'}`}
                       </span>
                     </div>
-                    {/* 没设「我演」时说清后果 —— 这条是老大明确问到的：AI 到底在跟谁说话 */}
+                    {/* 没设「我演」时说清后果 —— 老大明确问过「AI 到底在跟谁说话」 */}
                     {userNames.length === 0 && (
                       <p className="mt-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2 text-[11px] leading-relaxed text-ink-400">
-                        当前没有你演的角色：AI 会把你当作**没有具体身份的「本人」** —— 它不会替你编一个角色，
-                        但也就不知道在跟谁说话（称呼、亲疏、距离都无从针对）。
-                        想让 AI 知道对面是谁，就把某个位置设成「我演」；也可以到
-                        「控制面板 → 自由对话控制」里配一个**默认「我演」的角色**，以后新建对话会自动带上。
+                        {callName
+                          ? <>当前没有你演的角色：AI 会按「我的档案」把你当作 <b className="text-ink-200">{callName}</b> 来对话 —— 称呼、亲疏、距离都照档案来。想改用某个角色出场，就把某个位置设成「我演」。</>
+                          : <>当前没有你演的角色：AI 会把你当作<b className="text-ink-300">没有具体身份的「本人」</b> —— 它不会替你编一个角色，也就不知道在跟谁说话（称呼、亲疏、距离都无从针对）。到「控制面板 → <b className="text-ink-200">我的档案</b>」填一份档案（名字 + 称呼 + 一句话自我设定），AI 就知道对面是谁了；也可以把某个位置设成「我演」。</>}
                       </p>
                     )}
                   </>
