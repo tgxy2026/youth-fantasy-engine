@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getCardRecords } from '../lib/db'
 import type { TableRow } from '../lib/types'
 import { Network, Users, X, ArrowUpRight } from 'lucide-react'
 import { Button } from './Button'
+import { useSvgPanZoom } from '../lib/useSvgPanZoom'
 
 interface Props {
   rows: TableRow[]
@@ -44,18 +44,17 @@ interface FEdge { a: string; b: string; type: string; id: string }
 export default function FactionGraph({ rows, onNavigate }: Props) {
   const [hover, setHover] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  const [view, setView] = useState({ x: 0, y: 0, k: 1 })
-  const [dragged, setDragged] = useState<Map<string, { x: number; y: number }>>(new Map())
-  const svgRef = useRef<SVGSVGElement>(null)
-  const dragRef = useRef<{
-    kind: 'node' | 'pan'
-    name?: string
-    sx: number
-    sy: number
-    origView: { x: number; y: number; k: number }
-    origNode?: { x: number; y: number }
-    moved: boolean
-  } | null>(null)
+
+  // 平移 / 缩放 / 节点拖拽统一走公共 hook（2026-09-14 审计 P1-4）。
+  // ⚠️ 本次迁移带来三处**行为变化**（统一到更稳妥的一套，详见 useSvgPanZoom 注释）：
+  //    ① 节点拖拽新增画布边界钳制（此前不钳制，节点可被拖出视野后「消失」）；
+  //    ② 滚轮缩放由阶梯步进（±10%）改为平滑指数，触控板手感更连续；
+  //    ③ 点击判定由曼哈顿距离改为欧氏距离，斜向轻拖不再被误判为拖动。
+  const { view, dragged, svgRef, onPointerDown, onPointerMove, onPointerUp } = useSvgPanZoom({
+    world: { w: W, h: H, pad: 30 },
+    reattachKey: rows,
+    onNodeClick: name => setSelected(sel => (sel === name ? null : name)),
+  })
 
   const { nodes, edges, init } = useMemo(() => {
     const adj = new Map<string, { degree: number; edges: FEdge[] }>()
@@ -130,60 +129,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
     }
   }, [selected])
 
-  // 滚轮缩放
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      const rect = svg.getBoundingClientRect()
-      const mx = e.clientX - rect.left
-      const my = e.clientY - rect.top
-      setView(v => {
-        const k = Math.min(3, Math.max(0.4, v.k * (e.deltaY < 0 ? 1.1 : 0.9)))
-        const wx = (mx - v.x) / v.k
-        const wy = (my - v.y) / v.k
-        return { k, x: mx - wx * k, y: my - wy * k }
-      })
-    }
-    svg.addEventListener('wheel', onWheel, { passive: false })
-    return () => svg.removeEventListener('wheel', onWheel)
-  }, [])
-
-  const onPointerDown = (e: ReactPointerEvent, name?: string) => {
-    ;(e.target as Element).setPointerCapture?.(e.pointerId)
-    dragRef.current = {
-      kind: name ? 'node' : 'pan',
-      name,
-      sx: e.clientX,
-      sy: e.clientY,
-      origView: { ...view },
-      origNode: name ? dragged.get(name) ?? init.get(name)! : undefined,
-      moved: false,
-    }
-  }
-  const onPointerMove = (e: ReactPointerEvent) => {
-    const d = dragRef.current
-    if (!d) return
-    const dx = e.clientX - d.sx
-    const dy = e.clientY - d.sy
-    if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true
-    if (d.kind === 'pan') {
-      setView(v => ({ ...v, x: d.origView.x + dx, y: d.origView.y + dy }))
-    } else if (d.name && d.origNode) {
-      const wx = dx / view.k
-      const wy = dy / view.k
-      setDragged(m => new Map(m).set(d.name!, { x: d.origNode!.x + wx, y: d.origNode!.y + wy }))
-    }
-  }
-  const onPointerUp = () => {
-    const d = dragRef.current
-    dragRef.current = null
-    if (d?.kind === 'node' && d.name && !d.moved) {
-      const name = d.name
-      setSelected(sel => (sel === name ? null : name))
-    }
-  }
+  // 滚轮缩放 / 拖拽平移 / 节点拖拽均由 useSvgPanZoom 提供，此处不再重复实现
 
   const posOf = (nm: string) => dragged.get(nm) ?? init.get(nm)!
 
@@ -202,7 +148,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
       <svg
         ref={svgRef}
         className="w-full h-full touch-none cursor-grab active:cursor-grabbing select-none"
-        onPointerDown={e => onPointerDown(e)}
+        onPointerDown={e => onPointerDown(e, 'pan')}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
@@ -248,14 +194,12 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
             const r = 14 + Math.min(nd.degree, 8) * 2.2
             // 主题化的选中/悬停/常态三态色（含 var()，故下游用 style 而非表现属性）
             const color = isSel ? 'rgb(var(--graph-accent-strong))' : isHov ? 'rgb(var(--graph-accent))' : 'rgb(var(--graph-label))'
+            // 注：hook 内部已对 'node' 做 stopPropagation（避免同时触发背景平移），此处不必重复
             return (
               <g
                 key={nd.name}
                 transform={`translate(${pa.x},${pa.y})`}
-                onPointerDown={e => {
-                  e.stopPropagation()
-                  onPointerDown(e, nd.name)
-                }}
+                onPointerDown={e => onPointerDown(e, 'node', nd.name, posOf(nd.name))}
                 onPointerEnter={() => setHover(nd.name)}
                 onPointerLeave={() => setHover(h => (h === nd.name ? null : h))}
                 className="cursor-pointer"

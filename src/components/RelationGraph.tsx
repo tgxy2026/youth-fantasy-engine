@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as RPointerEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { RotateCcw, EyeOff, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
 import type { TableRow } from '../lib/types'
 import { Button } from './Button'
+import { useSvgPanZoom } from '../lib/useSvgPanZoom'
 
 interface Props {
   rows: TableRow[]
@@ -49,20 +49,20 @@ export default function RelationGraph({ rows }: Props) {
   const [hover, setHover] = useState<string | null>(null)
   // v1.3：收起（折叠）节点 —— 点击某人物可隐藏其本人与所有关系边，便于在超大关系网里聚焦
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  // 画布视图变换：平移 + 缩放
-  const [view, setView] = useState({ x: 0, y: 0, k: 1 })
-  // 节点拖拽后的位置覆盖（name -> 世界坐标），未拖过的节点用初始力导向布局坐标
-  const [dragged, setDragged] = useState<Map<string, { x: number; y: number }>>(new Map())
-  const svgRef = useRef<SVGSVGElement>(null)
-  const dragRef = useRef<{
-    kind: 'node' | 'pan'
-    name?: string
-    startSX: number
-    startSY: number
-    origView: { x: number; y: number; k: number }
-    origNode?: { x: number; y: number }
-    moved: boolean
-  } | null>(null)
+
+  // 定义须在 hook 之前：下面要把它作为 onNodeClick 传进去（const 箭头有 TDZ，不能后置引用）
+  const toggleCollapse = (name: string) =>
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name); else next.add(name)
+      return next
+    })
+
+  // 平移 / 缩放 / 节点拖拽统一走公共 hook（2026-09-14 审计 P1-4）。
+  // 此前本文件与 FactionGraph 各写一份，且已实质性分叉——节点拖拽是否钳制、滚轮是平滑还是阶梯、
+  // 点击阈值、指针捕获目标全都不同。差异明细与统一取舍见 useSvgPanZoom 的注释。
+  const { view, dragged, svgRef, onPointerDown, onPointerMove, onPointerUp, zoomBy, resetView } =
+    useSvgPanZoom({ world: { w: W, h: H, pad: 30 }, reattachKey: rows, onNodeClick: toggleCollapse })
 
   const { nodes, edges, init } = useMemo(() => {
     const adj = new Map<string, { degree: number; edges: Edge[] }>()
@@ -134,26 +134,6 @@ export default function RelationGraph({ rows }: Props) {
     return { nodes: nodeList, edges: allEdges, init: pos }
   }, [rows])
 
-  // 滚轮缩放（原生监听以禁用默认滚动）；deps 含 rows——首渲染 rows 为空时 svg 未渲染、监听挂不上，数据就位后需重新挂
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const onWheel = (ev: WheelEvent) => {
-      ev.preventDefault()
-      const rect = svg.getBoundingClientRect()
-      const px = ev.clientX - rect.left
-      const py = ev.clientY - rect.top
-      setView(v => {
-        const k = Math.min(3, Math.max(0.4, v.k * Math.exp(-ev.deltaY * 0.0012)))
-        const wx = (px - v.x) / v.k
-        const wy = (py - v.y) / v.k
-        return { k, x: px - wx * k, y: py - wy * k }
-      })
-    }
-    svg.addEventListener('wheel', onWheel, { passive: false })
-    return () => svg.removeEventListener('wheel', onWheel)
-  }, [rows])
-
   if (rows.length === 0) {
     return <div className="rounded-xl border border-ink-700 bg-ink-850 px-4 py-16 text-center text-ink-500">还没有人物关系，先到「表格」视图新增关系记录。</div>
   }
@@ -166,64 +146,9 @@ export default function RelationGraph({ rows }: Props) {
   const maxDeg = Math.max(1, ...nodes.map(n => n.degree))
   const radius = (d: number) => 7 + (d / maxDeg) * 13
 
-  const toggleCollapse = (name: string) =>
-    setCollapsed(prev => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name); else next.add(name)
-      return next
-    })
-
   // 节点最终位置：拖拽覆盖优先，否则用初始布局
   const posMap = new Map<string, { x: number; y: number }>()
   for (const n of nodes) posMap.set(n.name, dragged.get(n.name) ?? init.get(n.name)!)
-
-  const onPointerDown = (e: RPointerEvent<SVGElement>, kind: 'node' | 'pan', name?: string, nodePos?: { x: number; y: number }) => {
-    if (kind === 'node') e.stopPropagation()
-    e.preventDefault()
-    svgRef.current?.setPointerCapture(e.pointerId)
-    dragRef.current = {
-      kind, name, startSX: e.clientX, startSY: e.clientY,
-      origView: view, origNode: nodePos, moved: false,
-    }
-  }
-
-  const onPointerMove = (e: RPointerEvent<SVGElement>) => {
-    const d = dragRef.current
-    if (!d) return
-    const dx = e.clientX - d.startSX
-    const dy = e.clientY - d.startSY
-    if (!d.moved && Math.hypot(dx, dy) > 3) d.moved = true
-    if (d.kind === 'pan') {
-      setView(v => ({ x: d.origView.x + dx, y: d.origView.y + dy, k: v.k }))
-    } else if (d.name && d.origNode) {
-      // 节点拖拽钳制在画布内（留 30px 边距），防止拖出画布后节点消失
-      const nx = Math.max(30, Math.min(W - 30, d.origNode.x + dx / d.origView.k))
-      const ny = Math.max(30, Math.min(H - 30, d.origNode.y + dy / d.origView.k))
-      setDragged(prev => {
-        const m = new Map(prev)
-        m.set(d.name!, { x: nx, y: ny })
-        return m
-      })
-    }
-  }
-
-  const onPointerUp = () => {
-    const d = dragRef.current
-    dragRef.current = null
-    // 未发生位移的按下视为点击：切换收起/展开
-    if (d && d.kind === 'node' && d.name && !d.moved) toggleCollapse(d.name)
-  }
-
-  const zoomBy = (f: number) => {
-    const cx = W / 2, cy = H / 2
-    setView(v => {
-      const k = Math.min(3, Math.max(0.4, v.k * f))
-      const wx = (cx - v.x) / v.k
-      const wy = (cy - v.y) / v.k
-      return { k, x: cx - wx * k, y: cy - wy * k }
-    })
-  }
-  const resetView = () => setView({ x: 0, y: 0, k: 1 })
 
   const legendTypes = [...new Set(visibleEdges.map(e => e.type))]
 
