@@ -8,16 +8,16 @@ const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta
  * ⚠️ dev 下 `define` 不会替换源码里的 `__APP_VERSION__`（2026-09-02 实测：vite dev 返回的
  * portable.ts 模块中该标识符**原样保留**，于是版本恒走 `typeof __APP_VERSION__ === 'undefined'`
  * 兜底分支，界面显示「开发版」）；而 `vite build` 会正常替换并常量折叠掉兜底。
- * 后果是对外文案（关于页「当前版本 vX.Y.Z」、侧栏、项目中心、便携版标题）在 dev 下无法核对。
+ * 后果是对外文案（关于页「当前版本 vX.Y.Z」、侧栏、项目中心）在 dev 下无法核对。
  * 这里用一个极小的 transform 插件补上 dev 的替换，使 dev 与构建显示一致，
- * 且版本号仍只来自 package.json 一处（不必在 portable.ts 里再硬编码一份）。
+ * 且版本号仍只来自 package.json 一处（不必在 env.ts 里再硬编码一份）。
  */
 function injectAppVersion(version: string) {
   return {
     name: 'inject-app-version',
     transform(code: string, id: string) {
       const file = id.split('?')[0].replace(/\\/g, '/')
-      if (!file.endsWith('/src/lib/portable.ts')) return null
+      if (!file.endsWith('/src/lib/env.ts')) return null
       if (!code.includes('__APP_VERSION__')) return null
       return { code: code.replace(/__APP_VERSION__/g, JSON.stringify(version)), map: null }
     },
@@ -27,15 +27,10 @@ function injectAppVersion(version: string) {
 export default defineConfig(() => ({
   plugins: [react(), injectAppVersion(appVersion)],
   // 相对路径：桌面（Electron）版通过 file:// 加载 dist/index.html，绝对路径会解析到磁盘根目录
-  // （对 dev server 与便携单文件版无影响）
+  // （对 dev server 无影响）
   base: './',
   define: {
-    // 便携（U 盘单文件）版本标记：网页/开发模式恒为 false，便携构建在 vite.config.portable.ts 中注入 true
-    __PORTABLE__: 'false',
-    // 网页体验版标记：仅 vite.config.web.ts 注入 true。
-    // dev（本机浏览器）与桌面（Electron）均为 false —— 二者都不走邀请制、不走 AI 反代、不自动连云端。
-    __WEB__: 'false',
-    // 版本号：dev / 桌面 / 网页 / 便携统一取 package.json 真实版本号，四端一致。
+    // 版本号：dev 与构建统一取 package.json 真实版本号（唯一真源）。
     // 2026-09-02 前 dev 模式显示「开发版」（本意为避免反复改号），但副作用是对外文案
     // —— 关于页「当前版本 vX.Y.Z」、侧栏、项目中心、便携版标题 —— 在 dev 下全部核对不了，
     // 只能等到封装后才发现对不对。改回真实号，dev 即可直接核对对外文案。

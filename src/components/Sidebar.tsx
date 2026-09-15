@@ -10,12 +10,10 @@ import { uid } from '../lib/id'
 import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom } from '../lib/theme'
 import { DESKTOP } from '../lib/desktop'
 import { DesktopDataBar } from './Desktop'
-import { PortableBadge } from './Portable'
 import CloudFileSyncBar from './CloudFileSyncBar'
-import { PORTABLE } from '../lib/env'
 import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
 import { useResizable } from '../lib/useResizable'
-import { APP_VERSION_LABEL } from '../lib/portable'
+import { APP_VERSION_LABEL } from '../lib/env'
 import { Button } from './Button'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
@@ -294,11 +292,10 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             </Button>
           </div>
         </div>
-        {/* 本机存储：桌面=数据文件保存/导出/导入，便携=U 盘保存状态。
+        {/* 本机存储：数据文件保存 / 导出 / 导入。
             内嵌进侧栏而非全局 fixed 浮层，避免压住左下角（#032 布局规范化）。 */}
         {DESKTOP && <DesktopDataBar embedded />}
-        {PORTABLE && <PortableBadge embedded />}
-        {/* 云盘文件同步（桌面/便携）：项目内也能看到同步状态并随时开关/换目录 */}
+        {/* 云盘文件同步：项目内也能看到同步状态并随时开关 / 换目录 */}
         {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
       </div>
     </aside>

@@ -2,14 +2,13 @@
 // 由 createCloudStore(transport) 产出一个完整的云端 StoreOps 实例。
 //
 // 设计要点：
-//  - 本文件不关心「字节怎么落地」——那是 SyncTransport 的职责（HTTP 服务器 / 本地文件）。
-//  - 网页版（serverStore）与 桌面/便携版（desktopCloudSync）共用本核心，但各自有独立门控：
-//      · serverStore 仅 WEB 激活（HTTP 传输，依赖我们的服务器）
-//      · desktopCloudSync 仅 DESKTOP || PORTABLE 激活（File 传输，由云盘客户端搬运，无需服务器）
-//    二者互不耦合，也不共享同一个实例——这正满足「不解除 serverStore 的 WEB 门控」的约束。
+//  - 本文件不关心「字节怎么落地」——那是 SyncTransport 的职责（HTTP / 本地文件）。
+//  - 当前唯一使用方是 desktopCloudSync（File 传输，由云盘客户端搬运，无需服务器）。
+//    ⚠️ 2026-09-15：网页版服务器同步（serverStore）已随「只做桌面版」的决定下线，
+//      跨设备同步的唯一途径是**云盘文件**。本核心本身无平台假设，故原样保留。
 //  - 加密：载荷用同步码派生密钥加密（rev 保持明文以便做版本守卫）。
 //    安全上下文(HTTPS/localhost)走 Web Crypto AES-GCM（真加密）；非安全上下文降级为 XOR 混淆。
-import type { StoreOps } from './portable'
+import type { StoreOps } from './storeOps'
 import {
   type SyncTransport,
   type RawSyncResponse,

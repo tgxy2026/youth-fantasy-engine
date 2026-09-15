@@ -1,64 +1,56 @@
-import FeedbackButton from './FeedbackButton'
-import WebTools from './WebTools'
 import CloudFileSyncBar from './CloudFileSyncBar'
 import { DesktopDataBar } from './Desktop'
-import { PortableBadge } from './Portable'
-import { WEB, DESKTOP, PORTABLE } from '../lib/env'
+import { DESKTOP } from '../lib/desktop'
 import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
 
 /**
- * 左下角统一「数据坞」（#032）。
+ * 左下角统一「数据坞」—— 全应用**唯一允许**的全局浮层（#032 布局规范化）。
  *
- * 背景（为什么必须有这个组件）：此前左下角是三拨各自为政的 fixed 浮层——
- *   · DesktopBadge / PortableBadge：fixed bottom-3 left-3 z-50（本机保存、导出、导入）
- *   · WebTools：fixed bottom-4 left-4 z-40（云同步）
- * 定位差 1px、层级差 10、圆角与间距各不相同，桌面版直接**叠成一团互相遮挡**（z-50 压住 z-40，
- * 「保存 / 导出 / 导入」把整条同步 UI 盖掉）。
+ * 背景：此前左下角是三拨各自为政的 fixed 浮层（定位差 1px、层级差 10、圆角与间距各异），
+ * 桌面版直接叠成一团互相遮挡。现在收编为一个等宽面板：统一位置、统一控件高度、统一圆角与分隔线。
  *
- * 现在收编为一个等宽面板：统一位置、统一控件高度（h-8）、统一圆角与分隔线，按平台纵向堆叠：
- *   ① 本机存储（桌面：保存状态 + 导出/导入/打开目录；便携：U 盘保存状态）
- *   ② 云盘文件同步（桌面/便携，CLOUD_FILE_SYNC，无需服务器与同步码）
- *   ③ 网页版同步（WEB，服务器 / 云盘文件中转 + 同步码）
+ * 自 2026-09-15 起本应用只发布桌面版，区块只剩两块：
+ *   ① 本机存储 `DesktopDataBar` —— 数据文件位置、保存状态、导出 / 导入
+ *   ② 云盘文件同步 `CloudFileSyncBar` —— 无服务器、无同步码，选目录即可
  *
- * 注意：项目内（有侧栏）不使用本浮层——桌面端全局 fixed 浮层会压住侧栏底部的
- * 「界面缩放 / 主题」等控件，因此项目内的本机存储行与云同步行改为内嵌进 Sidebar Footer。
+ * 注意：项目内（有侧栏）不使用本浮层——全局 fixed 浮层会压住侧栏底部控件，
+ * 因此项目内的本机存储行与云同步行改为内嵌进 Sidebar Footer。
+ *
+ * ⚠️ 关于 dev 环境：`DESKTOP` 是**运行时探测**（读 `window.electronStore`），
+ * 在 dev 浏览器里恒为 false。若严格按它门控，开发预览下整块不渲染 ——
+ * 界面改动就没法在浏览器里验证（曾排查过一次"左下角同步设置消失"，根因正是它）。
+ * 所以 dev 环境也渲染，代价是其中的按钮会走 electron 分支失败，故顶部给一条提示。
  */
+const DEV = import.meta.env.DEV
+
 function Divider() {
   return <div className="my-2 h-px bg-ink-700/70" />
 }
 
 export default function DataDock() {
-  const showLocal = DESKTOP || PORTABLE
-  const showCloud = CLOUD_FILE_SYNC
-  const showWeb = WEB
-
-  // 三块都没有（如 dev 浏览器环境：DESKTOP 靠运行时探测 window.electronStore，
-  // 普通浏览器里为 false，PORTABLE / WEB 也不成立）→ 不渲染，避免留下一个空面板边框。
-  if (!showLocal && !showCloud && !showWeb) return null
+  // 桌面版是唯一目标平台；dev 预览下也照样渲染，便于界面验证
+  if (!DESKTOP && !DEV) return null
 
   return (
     <div className="fixed bottom-4 left-4 z-40 flex w-[15rem] flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 py-2 shadow-xl backdrop-blur">
-      {showLocal && (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-1.5 text-xs text-ink-300">
-            <span className="font-medium">本机存储</span>
-          </div>
-          {DESKTOP && <DesktopDataBar embedded />}
-          {PORTABLE && <PortableBadge embedded />}
+      {!DESKTOP && DEV && (
+        <div className="mb-1.5 rounded-md border border-amber/30 bg-amber/10 px-2 py-1 text-[11px] leading-snug text-amber">
+          开发预览环境：桌面版专属功能需在打包版中使用
         </div>
       )}
 
-      {showLocal && showCloud && <Divider />}
-
-      {showCloud && <CloudFileSyncBar variant="panel" />}
-
-      {(showLocal || showCloud) && showWeb && <Divider />}
-
-      {showWeb && (
-        <div className="flex flex-col gap-1.5">
-          {WEB && <FeedbackButton />}
-          <WebTools />
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 text-xs text-ink-300">
+          <span className="font-medium">本机存储</span>
         </div>
+        <DesktopDataBar embedded />
+      </div>
+
+      {CLOUD_FILE_SYNC && (
+        <>
+          <Divider />
+          <CloudFileSyncBar variant="panel" />
+        </>
       )}
     </div>
   )

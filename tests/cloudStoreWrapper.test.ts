@@ -15,7 +15,7 @@
 // ⚠️ 这些断言无法靠 tsc 或端到端点击可靠覆盖（需要一个已开启云同步的环境），故必须先锁死。
 import * as db from '../src/lib/db'
 import { createCloudStore, SYNC_STORES } from '../src/lib/syncCore'
-import type { StoreOps } from '../src/lib/portable'
+import type { StoreOps } from '../src/lib/storeOps'
 import type { SyncTransport } from '../src/lib/syncTransport'
 import { memoryOps, __resetMockStores } from './mock-memory'
 

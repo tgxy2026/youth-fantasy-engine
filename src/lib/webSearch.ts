@@ -24,7 +24,6 @@
  *
  * 🔴 本文件只负责「查」，不负责「决定要不要查」：模式、开关、回退都在调用方（draft / 界面）里判。
  */
-import { WEB } from './env'
 import { HAS_NET_BRIDGE, netFetch } from './desktop'
 
 export type SearchEngine = 'bocha' | 'searxng' | 'custom'
@@ -214,7 +213,7 @@ const defaultTransport: SearchTransport = async (req, signal) => {
   const onAbort = () => ctrl.abort()
   signal?.addEventListener('abort', onAbort)
   try {
-    const res = await fetch(toProxyUrl(req.url), {
+    const res = await fetch(req.url, {
       method: req.method, headers: req.headers, body: req.body, signal: ctrl.signal,
     })
     return { ok: true, status: res.status, text: await res.text() }
@@ -314,18 +313,6 @@ export async function webSearch(
       ? '（多半是跨域被拦或网络不通 —— 桌面版由主进程代发，不受跨域限制；便携版请用自带跨域许可的接口）'
       : ''
     return { ...base, error: `检索失败：${msg}${hint}` }
-  }
-}
-
-/** 与 ai.ts 同一套规则：网页版走同源反代，桌面/便携直连 */
-function toProxyUrl(base: string): string {
-  if (!WEB) return base
-  try {
-    const u = new URL(base)
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return base
-    return `/api/ai/${u.host}${u.pathname}${u.search}`
-  } catch {
-    return base
   }
 }
 

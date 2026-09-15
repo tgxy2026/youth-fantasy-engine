@@ -1,19 +1,13 @@
 import { openDB, type IDBPDatabase, type IDBPTransaction } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
-import { PORTABLE, portableStore, type StoreOps } from './portable'
+import type { StoreOps } from './storeOps'
 import { DESKTOP, desktopStore } from './desktop'
-import { WEB } from './env'
-import {
-  serverStore, configureServerStore, pullSnapshot, seedFromLocal, isExcludedMetaKey,
-  isCloudUnavailable, CloudAuthError, onSyncConflict, CONFLICT_KEY_PREFIX,
-  applyTransportFromPersisted,
-  enableWebFileCloud, disableWebFileCloud, applyWebFileSyncFromPersisted, isWebFileSyncOn,
-  type SyncConflictInfo,
-} from './serverStore'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
-  seedDesktopFromLocal,
+  seedDesktopFromLocal, onDesktopSyncConflict,
+  CONFLICT_KEY_PREFIX, isExcludedMetaKey,
+  type SyncConflictInfo,
 } from './desktopCloudSync'
 import { uid } from './id'
 import { countWords } from './textStats'
@@ -21,7 +15,6 @@ import { todayKey } from './date'
 import { chapterSeqMap, flattenChapters } from './chapterSeq'
 // 酒馆模式报告类型：该模块只导出类型、不引用任何运行时模块，故不构成循环依赖
 import type { TavernReport } from './tavern/types'
-import { LS_SYNC_CODE } from './constants'
 
 const DB_NAME = 'novel-studio'
 const DB_VERSION = 10
@@ -292,10 +285,9 @@ function getDB() {
 }
 
 // ============ 存储适配层 ============
-// 开发 / 网页模式：IndexedDB（idb 封装）
-// 便携模式（U 盘单文件版）：portableStore —— 内存数据 + 防抖写回 U 盘上的 JSON 数据文件
 // 桌面模式（Electron 安装版）：desktopStore —— 内存数据 + 防抖写回本机用户数据目录的 JSON 文件
-// 三种实现共用同一组原语，上层所有函数签名与行为保持一致，组件层零改动。
+// 浏览器兜底（dev 预览 / 无 Electron 环境）：IndexedDB（idb 封装）—— 不参与发布
+// 两种实现共用同一组原语，上层所有函数签名与行为保持一致，组件层零改动。
 
 const idbOps: StoreOps = {
   getAll: async store => (await getDB()).getAll(store),
@@ -321,20 +313,25 @@ const idbOps: StoreOps = {
   },
 }
 
-let ops: StoreOps = PORTABLE ? portableStore : (DESKTOP ? desktopStore : idbOps)
+let ops: StoreOps = DESKTOP ? desktopStore : idbOps
 
-// #005 冲突备份（网页版专用）：云端与本地都改过同一条记录时，本地优先采用，
-// 但云端那版不再无声丢弃——另存本地副本供用户比对恢复。副本只落本地 IndexedDB，
+// #005 冲突备份：云盘与本机都改过同一条记录时，本地优先采用，
+// 但云端那版不再无声丢弃 —— 另存本地副本供用户比对恢复。副本只落**当前平台的本地存储**，
 // key 以 syncConflict: 开头，由 isExcludedMetaKey 保证不上传云端。
-onSyncConflict((info: SyncConflictInfo) => {
+//
+// 🔴 2026-09-15 修复：此前这里订阅的是**网页版** serverStore 的冲突回调，而桌面版云盘同步
+//    用的是 desktopCloudSync 的**独立实例** —— 那个实例的 conflictHandler 从未被注册，
+//    syncCore 里的 `conflictHandler?.()` 全走空，于是三路合并冲突时**云端那版被静默丢弃**，
+//    saveConflictCopy 全程不会执行（改副本落点时才发现这个真因）。现改订桌面实例。
+onDesktopSyncConflict((info: SyncConflictInfo) => {
   void saveConflictCopy(info)
 })
 
 async function saveConflictCopy(info: SyncConflictInfo) {
   try {
     // 🔴 必须写**当前平台的本地存储**，不能固定写 idbOps：
-    //    桌面 / 便携版的数据在本地 JSON 文件里，冲突副本写进 IndexedDB 等于扔进没人打开的抽屉
-    //    （界面读的是 desktopLocalStore / portableStore），作者永远看不到「云端那版」。
+    //    桌面版的数据在用户目录的 JSON 文件里，冲突副本写进 IndexedDB 等于扔进没人打开的抽屉
+    //    （界面读的是 desktopLocalStore），作者永远看不到「云端那版」。
     await desktopLocalStore.put('meta', {
       key: `${CONFLICT_KEY_PREFIX}${info.at}:${info.store}:${String(info.key)}`,
       value: {
@@ -359,8 +356,8 @@ async function saveConflictCopy(info: SyncConflictInfo) {
 }
 
 // 云端同步包装层工厂（#003）：在云端 StoreOps 之上叠加「本地回退」与「敏感 meta 不上云」特权。
-// 网页版（serverStore / idbOps）与 桌面/便携版（desktopCloudStore / desktopStore·portableStore）
-// 共用同一套包装逻辑，仅传入各自的云端实例、本地实例与「不可用判定」。
+// 云盘文件同步（desktopCloudStore / desktopStore）与浏览器兜底（null / idbOps）共用同一套包装逻辑，
+// 仅传入各自的云端实例、本地实例与「不可用判定」。
 // #008：云端不可用时透明回退本地，保证用户看到的始终是自己的数据，而非空白缓存。
 // 🔬 导出仅供单测（tests/cloudStoreWrapper.test.ts）：本函数是纯工厂、无副作用，
 // 且「backups 落本地 / 敏感 meta 不上云 / 云端不可用回退本地」三条语义都只在这里，
@@ -430,60 +427,15 @@ export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavai
   }
 }
 
-// 网页版云端同步包装层（serverStore 之上叠加本地回退）。仅 WEB 激活。
-const cloudStore: StoreOps = makeCloudStoreWrapper(serverStore, idbOps, isCloudUnavailable)
-
-// 桌面/便携版云盘文件同步包装层（desktopCloudStore 之上叠加本地回退）。
-// 本地回退目标为当前平台的基础本地存储（桌面=desktopStore，便携=portableStore）。
-// 仅 DESKTOP || PORTABLE 激活；与网页版互不耦合。
-const desktopLocalStore: StoreOps = DESKTOP ? desktopStore : PORTABLE ? portableStore : idbOps
+// 云盘文件同步包装层（desktopCloudStore 之上叠加本地回退）。
+// 本地回退目标为平台基础本地存储（桌面=desktopStore，浏览器兜底=idbOps）。
+const desktopLocalStore: StoreOps = DESKTOP ? desktopStore : idbOps
 const desktopCloudFileStore: StoreOps = makeCloudStoreWrapper(desktopCloudStore, desktopLocalStore, isDesktopCloudUnavailable)
 
-// 网页版云端同步特权（#003）：启动时按持久化方式自动切换到云端存储。
-// 仅网页体验版生效（WEB 由构建期 __WEB__ 决定），dev / 桌面 / 便携 恒不触发。
-// #032 起分两条互斥路径：
-//   ① 云盘文件模式 —— 无需同步码，认「已选目录 + 开启标记」，密钥为内置常量；
-//   ② 服务器模式   —— 需专属同步邀请码（YFE-SYNC- 开头），既做 HTTP 鉴权又做 AES 密钥。
-if (WEB) {
-  void (async () => {
-    try {
-      // ① 云盘文件模式：恢复成功即用，不碰任何码
-      if (await applyWebFileSyncFromPersisted()) {
-        ops = cloudStore
-        void pullSnapshot().catch(() => {})
-        return
-      }
-      // ② 服务器模式：凭同步邀请码登录
-      const sc = localStorage.getItem(LS_SYNC_CODE)
-      if (sc) {
-        // #031：先按持久化方式恢复传输层（云盘文件中转 / 服务器），再设码握手
-        await applyTransportFromPersisted()
-        configureServerStore(sc)
-        ops = cloudStore
-        // 主动握手一次：码若已失效（服务端轮换白名单、槽位被清理等）立刻发现，
-        // 清掉失效码并通知 UI。数据侧由 cloudStore 自动回退本地，用户不会看到空白（#008）。
-        void pullSnapshot().catch((err: unknown) => {
-          if (err instanceof CloudAuthError) {
-            try {
-              localStorage.removeItem(LS_SYNC_CODE)
-            } catch {
-              /* 忽略 */
-            }
-            try {
-              window.dispatchEvent(new CustomEvent('yfe:cloud-auth-failed'))
-            } catch {
-              /* 忽略 */
-            }
-          }
-        })
-      }
-    } catch {
-      /* localStorage 不可用时退化为本地 IndexedDB */
-    }
-  })()
-} else if (CLOUD_FILE_SYNC) {
-  // 桌面/便携版云盘文件同步：启动时若持久化过同步目录，则自动切到云端文件存储（#032 起无需同步码）。
-  // 与网页版 WEB 引导互不干扰：本分支只在该平台激活，且完全不依赖服务器。
+// 云盘文件同步（#032 起已去掉同步码）：启动时若持久化过同步目录，则自动切到云端文件存储。
+// 数据以加密文件落在用户选定的云盘目录（OneDrive / 坚果云 / WPS 云盘等客户端负责搬运），
+// 全程不依赖任何服务器。失败一律回退到本地存储，不会让界面变成空白。
+if (CLOUD_FILE_SYNC) {
   void (async () => {
     try {
       const ok = await applyDesktopCloudFromPersisted()
@@ -504,72 +456,23 @@ export function setStoreOps(o: StoreOps) {
 }
 
 /**
- * 开启云端同步（#003 云端同步特权）：用专属同步邀请码登录。
- * 1) 拉取远端快照；2) 若远端为空，用当前本地数据播种上传；
- * 3) 切换到云端存储并持久化邀请码。调用方应随后刷新页面以载入云端数据。
- */
-export async function enableCloudSync(code: string) {
-  // #031：先按持久化方式恢复传输层（云盘文件中转 / 服务器），再设码
-  await applyTransportFromPersisted()
-  configureServerStore(code)
-  const snap = await pullSnapshot()
-  const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
-  if (empty) {
-    // 此刻 ops 仍为默认本地存储（网页版即 idbOps），用其数据播种
-    await seedFromLocal((s) => ops.getAll(s))
-  }
-  setStoreOps(cloudStore)
-  try {
-    localStorage.setItem(LS_SYNC_CODE, code)
-  } catch {
-    /* 忽略 */
-  }
-}
-
-/**
- * 开启网页版「云盘文件中转」同步（#032：无需同步码，选目录即开）。
- * 与 enableCloudSync（服务器模式，需同步邀请码）平行：两者共用同一套加密/合并逻辑，
- * 差别只在传输层（本地文件 vs HTTP）与密钥来源（内置常量 vs 用户输入的码）。
- * @param handle 同步目录句柄（FileSystemDirectoryHandle）
- */
-export async function enableWebCloudFileSync(handle: any) {
-  await enableWebFileCloud(handle)
-  const snap = await pullSnapshot()
-  const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
-  if (empty) {
-    // 此刻 ops 仍为默认本地存储（网页版即 idbOps），用其数据播种
-    await seedFromLocal((s) => ops.getAll(s))
-  }
-  setStoreOps(cloudStore)
-}
-
-/** 关闭网页版云盘文件同步：清持久化并切回本地 IndexedDB 存储（调用方应随后刷新页面）。 */
-export function disableWebCloudFileSync() {
-  disableWebFileCloud()
-  setStoreOps(idbOps)
-}
-
-/** 网页版云盘文件同步是否已开启（供 UI 判定初始状态）。 */
-export { isWebFileSyncOn }
-
-/**
- * 开启桌面/便携版云盘文件同步（#031 桌面延伸，#032 去掉同步码）。
- * 与 enableCloudSync 平行但走独立门控：数据以加密文件落在用户选定的云盘同步目录，不依赖服务器。
+ * 开启云盘文件同步（#031 引入，#032 去掉同步码）。
+ * 数据以加密文件落在用户选定的云盘同步目录，全程不依赖服务器。
  * 加密使用内置默认密钥（DEFAULT_CLOUD_KEY），所有设备一致 → 指向同一目录即可互通，无需输入任何码。
- * @param handle 同步目录句柄：桌面为目录路径字符串，便携为 FileSystemDirectoryHandle
+ * @param handle 同步目录句柄（桌面版为目录路径字符串）
  */
 export async function enableDesktopCloudSync(handle: any) {
   await enableDesktopCloud(handle)
   const snap = await pullDesktopSnapshot()
   const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
   if (empty) {
-    // 此刻 ops 仍为平台默认本地存储（桌面=desktopStore / 便携=portableStore），用其数据播种
+    // 此刻 ops 仍为平台默认本地存储（桌面=desktopStore），用其数据播种
     await seedDesktopFromLocal((s) => ops.getAll(s))
   }
   setStoreOps(desktopCloudFileStore)
 }
 
-/** 关闭桌面/便携版云盘文件同步，并切回平台默认本地存储。调用方应随后刷新页面。 */
+/** 关闭云盘文件同步，并切回平台默认本地存储。调用方应随后刷新页面。 */
 export function disableDesktopCloudSync() {
   disableDesktopCloud()
   setStoreOps(desktopLocalStore)

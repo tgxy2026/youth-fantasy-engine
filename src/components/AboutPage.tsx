@@ -2,7 +2,7 @@ import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy } from 'luc
 import payWechat from '../assets/pay-wechat.png'
 import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
-import { APP_VERSION_LABEL } from '../lib/portable'
+import { APP_VERSION_LABEL } from '../lib/env'
 import { copyText } from './dialogs'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
