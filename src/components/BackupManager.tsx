@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as db from '../lib/db'
 import { encryptJSON, decryptJSON, isEncrypted } from '../lib/crypto'
-import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle } from 'lucide-react'
+import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle, ChevronDown } from 'lucide-react'
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
@@ -209,18 +209,47 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
   }
   // #012：份数过多会让数据文件变大、开关与保存变慢（便携版单 JSON 全量写盘尤其明显）
   const totalMB = [...sizeMap.values()].reduce((s, n) => s + n, 0) / 1024 / 1024
+  // 折叠状态（只对 collapsible 的分组有意义；默认全收起 = 两组自动备份默认折叠）
+  const [openGroup, setOpenGroup] = useState<Record<string, boolean>>({})
   const MANY_BACKUPS = 40
   const tooMany = backups.length > MANY_BACKUPS
 
-  const Group = ({ title, icon, items, hint }: { title: string; icon: ReactNode; items: db.BackupRecord[]; hint: string }) => (
-    <div>
-      <div className="flex items-center gap-2 mb-2">
+  /**
+   * 分组列表 —— `collapsible` 的两组（每日 / 5 分钟自动）**默认收起**（老大 2026-09-15）：
+   * 自动备份会随着使用一直涨，展开着会把弹窗撑得很长。
+   * 收起时头部照旧显示「份数 · 上限」，信息不丢；手动备份保持展开 —— 那通常才是要找来恢复的那一批。
+   */
+  const Group = ({ id, title, icon, items, hint, collapsible = false }: {
+    id: string; title: string; icon: ReactNode; items: db.BackupRecord[]; hint: string; collapsible?: boolean
+  }) => {
+    const expanded = !collapsible || !!openGroup[id]
+    // 头部：只有**能折**的分组才是按钮（不可折的渲染成普通 div —— 别做点了没反应的假按钮）
+    const head = (
+      <>
         {icon}
         <span className="text-[13px] font-semibold text-ink-100">{title}</span>
         <span className="text-[11px] text-ink-500">{items.length} 份 · {hint}</span>
-      </div>
+        {collapsible && (
+          <ChevronDown size={13} className={`ml-auto text-ink-500 transition-transform duration-200 ${expanded ? '' : '-rotate-90'}`} />
+        )}
+      </>
+    )
+    return (
+    <div className="rounded-lg border border-ink-700 bg-ink-850/40">
+      {collapsible ? (
+        <Button variant="bare"
+          onClick={() => setOpenGroup(m => ({ ...m, [id]: !m[id] }))}
+          className="w-full flex items-center gap-2 px-3 py-2"
+          title={expanded ? '收起这一组' : '展开这一组'}
+        >
+          {head}
+        </Button>
+      ) : (
+        <div className="flex items-center gap-2 px-3 py-2">{head}</div>
+      )}
+      {expanded && <div className="px-3 pb-3">
       {items.length === 0 ? (
-        <div className="text-[11px] text-ink-600 px-2 py-2">暂无备份</div>
+        <div className="text-[11px] text-ink-600 px-1 py-2">暂无备份</div>
       ) : (
         <div className="space-y-1.5">
           {items.map(b => (
@@ -244,8 +273,10 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
           ))}
         </div>
       )}
+      </div>}
     </div>
   )
+  }
 
   return (
     <>
@@ -284,9 +315,9 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
             </div>
           )}
 
-          <Group title="手动备份" icon={<ShieldCheck size={13} className="text-amber" />} items={manual} hint="不设上限，不会自动删除" />
-          <Group title="每日自动备份" icon={<CalendarDays size={13} className="text-amber" />} items={daily} hint={`最多 ${db.MAX_DAILY_BACKUPS} 份`} />
-          <Group title="5 分钟自动备份" icon={<Clock size={13} className="text-amber" />} items={auto} hint={`滚动保留最多 ${db.MAX_AUTO_BACKUPS} 份`} />
+          <Group id="manual" title="手动备份" icon={<ShieldCheck size={13} className="text-amber" />} items={manual} hint="不设上限，不会自动删除" />
+          <Group id="daily" collapsible title="每日自动备份" icon={<CalendarDays size={13} className="text-amber" />} items={daily} hint={`最多 ${db.MAX_DAILY_BACKUPS} 份`} />
+          <Group id="auto" collapsible title="5 分钟自动备份" icon={<Clock size={13} className="text-amber" />} items={auto} hint={`滚动保留最多 ${db.MAX_AUTO_BACKUPS} 份`} />
 
           {/* v1.3 迁移 / 换机：加密迁移包导出导入 */}
           <div className="rounded-lg border border-ink-700 bg-ink-850 px-3 py-3">

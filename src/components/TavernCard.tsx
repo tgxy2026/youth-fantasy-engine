@@ -23,7 +23,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
-import TavernEchoHints from './TavernEchoHints'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
 import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem } from '../lib/tavern/types'
@@ -630,8 +629,6 @@ export default function TavernCard() {
           右上「AI 起草」可以从一句话起手，也可以让 AI 按模板一轮轮问你。
         </p>
 
-        {/* 元指令速查：卡配好之后「怎么跟 Ta 说话」才是作者最常卡住的一步 */}
-        <TavernEchoHints className="mt-2" />
       </header>
 
       {loading ? <div className="min-h-0 flex-1 overflow-y-auto pt-3"><LoadingState /></div> : (

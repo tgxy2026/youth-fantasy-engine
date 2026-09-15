@@ -23,6 +23,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
+import TavernEchoHints from './TavernEchoHints'
 import { Pencil } from 'lucide-react'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
@@ -813,6 +814,10 @@ export default function TavernFree() {
           </>
         )}
       </header>
+
+      {/* 元指令速查：**必须留在 header 外面** —— 放进输入区的话，没有会话时那块不渲染，
+          新用户就永远看不到「可以用「」指挥 Ta」这条。这里常驻可见。 */}
+      <TavernEchoHints className="mt-3 shrink-0" />
 
       <div className="flex flex-1 min-h-0 gap-3 pt-3">
         {/* 左栏：会话列表（全局，跨角色 —— 页面不再有角色列表） */}
