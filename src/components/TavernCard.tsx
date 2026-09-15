@@ -25,6 +25,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
+import { listStories, storyDisplayName } from '../lib/tavern/story'
+import { cardStoryId, type TavernStoryIndexItem } from '../lib/tavern/types'
 import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem } from '../lib/tavern/types'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName, CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem } from '../lib/tavern/cardFile'
@@ -95,6 +97,9 @@ const NOVEL_TAB_LABEL: Record<string, string> = {
  * 复制卡时的命名：加「（副本）」，重名就往后排（副本2、副本3…）。
  * 不加序号的话右栏会立刻出现两张同名卡 —— 那正是我们想替作者避免的困惑。
  */
+/** 「未归属」分组的虚拟 id —— 它不是真故事，只是给自由状态的卡一个落脚的抽屉 */
+const FREE_GROUP = '__free__'
+
 function copyName(base: string, taken: Set<string>): string {
   const n = base.trim() || '未命名角色'
   let cand = `${n}（副本）`
@@ -131,11 +136,29 @@ export default function TavernCard() {
   const [ntab, setNtab] = useState<NovelTab>('all')
   const fileRef = useRef<HTMLInputElement>(null)
 
+  /** 故事列表（角色卡左栏按故事分组；老大 2026-09-16 定：卡必须归属故事） */
+  const [stories, setStories] = useState<TavernStoryIndexItem[]>([])
+  /** 树展开态：故事 id 集合。默认全展开 —— 卡不多时先让作者看见全貌，嫌占地方再自己收 */
+  const [openIds, setOpenIds] = useState<string[]>([])
+  /** 新建卡的第一步：先问它属于哪个故事 */
+  const [pickOpen, setPickOpen] = useState(false)
+  const [pickStoryId, setPickStoryId] = useState('')
+
   const load = useCallback(async () => {
     try {
-      setList(await store.listFreeChars())
+      const [cs, ss] = await Promise.all([store.listFreeChars(), listStories()])
+      setList(cs)
+      setStories(ss)
+      setOpenIds(prev => {
+        const known = new Set(prev)
+        const fresh = ss.map(s => s.id).filter(id => !known.has(id))
+        // 有自由状态的卡 → 默认展开「未归属」，别让它们藏起来没人管
+        if (cs.some(c => !cardStoryId(c)) && !known.has(FREE_GROUP)) fresh.push(FREE_GROUP)
+        return fresh.length ? [...prev, ...fresh] : prev
+      })
     } catch {
       setList([])
+      setStories([])
     } finally {
       setLoading(false)
     }
@@ -206,9 +229,29 @@ export default function TavernCard() {
     }
   }
 
-  const create = async () => {
+  /**
+   * 新建角色卡 —— **先选故事，再建卡**（老大 2026-09-16 定）。
+   *
+   * 为什么必须先选：卡里不再写完整世界设定，世界观由它归属的故事提供；
+   * 没有归属的卡在对话时拿不到「这个世界什么样」，演出来就是悬空的。
+   * 所以入口直接拦一道，而不是先造一张孤儿卡再让用户回头补。
+   */
+  const openCreatePicker = () => {
+    if (!stories.length) {
+      showToast('先去「故事剧本」创建一个故事 —— 角色卡要挂在故事下面', 'info')
+      return
+    }
+    setPickStoryId(stories[0].id)
+    setPickOpen(true)
+  }
+
+  const confirmCreate = async () => {
+    if (!pickStoryId) { showToast('请先选择一个故事', 'error'); return }
+    setPickOpen(false)
     try {
-      const c = await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '未命名角色' })
+      const c = await store.createFreeChar({
+        ...store.emptyFreeCharacter(), storyId: pickStoryId, name: '未命名角色',
+      })
       await load()
       await open(c.id)
       setDirty(true)
@@ -216,6 +259,13 @@ export default function TavernCard() {
     } catch (e) {
       showToast(`新建失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
+  }
+
+  /** 改一张卡的归属（含「不归属任何故事」）—— 解除后它会落到「未归属」分组，随时能再挂回去 */
+  const changeStory = async (storyId: string) => {
+    if (!draft) return
+    setDraft({ ...draft, storyId })
+    setDirty(true)
   }
 
   const save = async () => {
@@ -315,6 +365,7 @@ export default function TavernCard() {
       const taken = new Set(list.map(i => i.name.trim()))
       const created = await store.createFreeChar({
         name: copyName(draft.name, taken),
+        storyId: cardStoryId(draft),
         avatar: draft.avatar,
         world: draft.world,
         profile: { ...draft.profile },
@@ -576,6 +627,49 @@ export default function TavernCard() {
     ? list.filter(i => i.id !== draft.id && i.name.trim() === draft.name.trim())
     : []
 
+  /**
+   * 角色卡按故事分组（老大 2026-09-16 定：树状结构，卡归属于故事）。
+   *
+   * 🔴 **`unbound` 是必须的兜底分组**：删故事时角色卡**不删，只解除归属** ——
+   *    这些卡要有地方落脚，且必须能在编辑时重新归类到别的故事下。
+   *    顺带把「索引里挂着已不存在故事的孤儿卡」也收进来，否则那批卡会凭空消失在列表里。
+   */
+  const groups = useMemo(() => {
+    const byStory = new Map<string, TavernCharIndexItem[]>()
+    const free: TavernCharIndexItem[] = []
+    for (const c of list) {
+      const sid = cardStoryId(c)
+      if (!sid) { free.push(c); continue }
+      const arr = byStory.get(sid) ?? []
+      arr.push(c)
+      byStory.set(sid, arr)
+    }
+    const knownIds = new Set(stories.map(s => s.id))
+    const known = stories.map(s => ({ id: s.id, name: s.name, chars: byStory.get(s.id) ?? [] }))
+    const orphan: TavernCharIndexItem[] = []
+    for (const [sid, arr] of byStory) if (!knownIds.has(sid)) orphan.push(...arr)
+    return { known, unbound: [...free, ...orphan] }
+  }, [list, stories])
+
+  const toggleStory = (id: string) =>
+    setOpenIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
+
+  /** 左栏的一张卡（不管挂在哪个分组下，长相一致 —— 免得作者以为两种卡不一样） */
+  const charRow = (c: TavernCharIndexItem) => (
+    <li key={c.id}>
+      <button
+        type="button"
+        onClick={() => void open(c.id)}
+        className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+          draft?.id === c.id ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800/60'
+        }`}
+      >
+        <Avatar src={c.avatar} name={c.name} size={24} />
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name || '未命名角色'}</span>
+      </button>
+    </li>
+  )
+
   return (
     /* 固定头部 + 下方独立滚动区：滚动只发生在标题条**下面**，
        内容不会再滑到条子后面被半透明条盖住（原先 sticky + bg-ink-900/95 的观感问题）。 */
@@ -588,7 +682,8 @@ export default function TavernCard() {
           <HelpPopover title="角色卡片怎么填" width="24rem" size={14}>
   一张卡 = AI 的「人设说明书」：写得越具体，演得越像。四章模板：
 
-  • 第 1 章 世界：只写会影响 Ta 言行的东西 —— 这是唯一该写世界的地方。
+  • 归属故事：决定这张卡用哪一套世界观 —— 世界设定写在「故事剧本」页的故事里，这里不再重复。
+  • 第 1 章 世界：不写世界本身，只写**角色与这个世界的关系**（身份、处境、常去的地方）。
   • 第 2 章 人物档案：外在 / 内核 / 语言特征 / 关系 / 做不到的事 / 知识边界。
     其中「做不到的事」与「知识边界」是防角色崩坏最关键的两栏 —— 写清 Ta 不会什么、不知道什么。
   • 第 3 章 行为规范：视角与人称 / 底线 / 关系推进节奏 / 尺度。
@@ -601,8 +696,8 @@ export default function TavernCard() {
 
         </div>
         <p className="text-[12px] text-ink-400 mt-1">
-          自由模式的角色卡片：四章模板，与小说项目相互独立（换书照样在）。
-          右上「AI 起草」可以从一句话起手，也可以让 AI 按模板一轮轮问你。
+          自由模式的角色卡片：四章模板 + 归属故事（世界观在故事里，不用重复写）。
+          左栏按故事分组，「未归属」抽屉存放暂时不属于任何故事的卡。
         </p>
 
       </header>
@@ -612,7 +707,7 @@ export default function TavernCard() {
         <div className="flex gap-4 min-h-0">
           {/* 左：角色列表 */}
           <aside className="w-56 shrink-0 space-y-2">
-            <Button variant="primary" size="md" className="w-full" onClick={create}>新建角色卡</Button>
+            <Button variant="primary" size="md" className="w-full" onClick={openCreatePicker}>新建角色卡</Button>
 
             {/* 两个 AI 入口：想清楚了用一句话起草，只有个感觉就用对话引导 */}
             <div className="flex gap-1.5">
@@ -634,25 +729,59 @@ export default function TavernCard() {
 
             {list.length === 0 ? (
               <p className="text-[11.5px] text-ink-500 leading-relaxed px-1 pt-1">
-                还没有角色卡。点上面「新建」开始 —— 也可以先去「自由对话」看看引导。
+                还没有角色卡。点上面「新建」开始 —— 新建时要先选这张卡属于哪个故事。
               </p>
             ) : (
-              <ul className="space-y-1">
-                {list.map(c => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => void open(c.id)}
-                      className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
-                        draft?.id === c.id ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800/60'
-                      }`}
-                    >
-                      <Avatar src={c.avatar} name={c.name} size={24} />
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name || '未命名角色'}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-1">
+                {groups.known.map(g => {
+                  const open = openIds.includes(g.id)
+                  return (
+                    <div key={g.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleStory(g.id)}
+                        className="w-full flex items-center gap-1 rounded-md px-1.5 py-1 text-left hover:bg-ink-800/60 transition-colors"
+                        title={open ? '收起这个故事下的角色卡' : '展开这个角色下的角色卡'}
+                      >
+                        <span className={`text-[10px] text-ink-500 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink-200">{storyDisplayName(g)}</span>
+                        <span className="text-[10.5px] text-ink-500 shrink-0">{g.chars.length}</span>
+                      </button>
+                      {open && (
+                        <ul className="ml-2 pl-1.5 border-l border-ink-800 space-y-0.5 mt-0.5">
+                          {g.chars.length
+                            ? g.chars.map(charRow)
+                            : <li className="px-2 py-1 text-[11px] text-ink-600">这个故事下还没有角色卡</li>}
+                        </ul>
+                      )}
+                    </div>
+                  )
+                })}
+
+                {/* 未归属（自由状态）：删故事留下的卡都在这儿，等着被重新归类 —— 不能让它凭空没地方去 */}
+                {groups.unbound.length > 0 && (() => {
+                  const open = openIds.includes(FREE_GROUP)
+                  return (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => toggleStory(FREE_GROUP)}
+                        className="w-full flex items-center gap-1 rounded-md px-1.5 py-1 text-left hover:bg-ink-800/60 transition-colors"
+                        title="不属于任何故事的角色卡（通常是故事被删了）—— 打开卡片可以在「归属故事」里重新归类"
+                      >
+                        <span className={`text-[10px] text-ink-500 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-amber/80">未归属</span>
+                        <span className="text-[10.5px] text-ink-500 shrink-0">{groups.unbound.length}</span>
+                      </button>
+                      {open && (
+                        <ul className="ml-2 pl-1.5 border-l border-amber/25 space-y-0.5 mt-0.5">
+                          {groups.unbound.map(charRow)}
+                        </ul>
+                      )}
+                    </div>
+                  )
+                })()}
+              </div>
             )}
 
             <div className="pt-2 border-t border-ink-800 space-y-1.5">
@@ -749,6 +878,31 @@ export default function TavernCard() {
                   <p className="mt-1.5 text-[11px] text-ink-500">
                     角色卡是 AI 的「人设说明书」—— 写得越具体，演得越像。
                   </p>
+
+                  {/* 归属故事（老大 2026-09-16）：世界观交给故事层，卡里只写角色自己 */}
+                  <div className="mt-3">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[12px] text-ink-200">归属故事</span>
+                      <span className="text-[11px] text-ink-500">决定对话时用哪一套世界观</span>
+                    </div>
+                    <select
+                      className="mt-1 w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-[12px] text-ink-100 outline-none focus:border-amber/50"
+                      value={cardStoryId(draft)}
+                      onChange={e => void changeStory(e.target.value)}
+                    >
+                      <option value="">（不归属任何故事）</option>
+                      {stories.map(s => <option key={s.id} value={s.id}>{storyDisplayName(s)}</option>)}
+                    </select>
+                    <p className="mt-1 text-[11px] leading-relaxed">
+                      {cardStoryId(draft) ? (
+                        <span className="text-ink-500">世界设定由这个故事提供，卡里不用再写一遍。</span>
+                      ) : (
+                        <span className="text-amber/80">
+                          这张卡现在是「自由状态」—— 不属于任何故事，对话时会拿不到世界观。在上面选一个故事就能归类。
+                        </span>
+                      )}
+                    </p>
+                  </div>
                 </div>
 
                 {sameNameOthers.length > 0 && (
@@ -765,12 +919,12 @@ export default function TavernCard() {
 
                 {/* 第 1 章 */}
                 <section>
-                  <SectionTitle sub="Ta活在一个什么样的世界里（时代 / 地点 / 规则）—— 故事发生的舞台。">
+                  <SectionTitle sub="世界设定写在「故事剧本」页的故事里 —— 这里只写角色在世界里的位置（不重复写世界本身）。">
                     第 1 章 · 世界
                   </SectionTitle>
-                  <Field label="世界设定" hint="时代、地点、社会规则、与用户的初始关系" rows={3}
+                  <Field label="角色与设定的关系" hint="Ta的身份、处境、常去的地方，以及这个世界如何影响Ta" rows={3}
                     value={draft.world} onChange={v => up('world', v)}
-                    ph="例：现代都市，老城区一间凌晨还亮着灯的便利店。Ta是店员，你是常来的顾客。" />
+                    ph="例：这家便利店的夜班店员，欠着债所以不能辞；认识附近多半的老顾客。" />
                 </section>
 
                 {/* 第 2 章 */}
@@ -1024,6 +1178,29 @@ export default function TavernCard() {
                 : `共 ${novelChars.length} 个角色${novelRows.length === novelChars.length ? "" : ` · 命中 ${novelRows.length} 个`}`}
             </span>
             <Button variant="secondary" size="md" onClick={() => setImportOpen(false)} disabled={converting}>关闭</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 新建角色卡第一步：选归属故事。为什么不在卡里填完再回头补 —— 没归属的卡对话时是悬空的 */}
+      <Modal open={pickOpen} onClose={() => setPickOpen(false)} title="这张卡属于哪个故事？" width="md">
+        <div className="space-y-3">
+          <p className="text-[12px] text-ink-300 leading-relaxed">
+            故事决定「这个世界什么样」；角色卡只写角色自己。选一个故事之后，这张卡对话时就用它的世界观。
+          </p>
+          <select
+            className="w-full bg-ink-900 border border-ink-700 rounded-md px-2.5 py-2 text-[12.5px] text-ink-100 outline-none focus:border-amber/50"
+            value={pickStoryId}
+            onChange={e => setPickStoryId(e.target.value)}
+          >
+            {stories.map(s => <option key={s.id} value={s.id}>{storyDisplayName(s)}</option>)}
+          </select>
+          <p className="text-[11px] text-ink-500 leading-relaxed">
+            想在另一个世界里用同一个角色 —— 复制这张卡再改归属就行，两张卡的记忆互不干扰。
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="secondary" size="sm" onClick={() => setPickOpen(false)}>取消</Button>
+            <Button variant="primary" size="sm" onClick={() => void confirmCreate()}>创建角色卡</Button>
           </div>
         </div>
       </Modal>

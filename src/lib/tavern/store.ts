@@ -20,7 +20,7 @@
  */
 import * as db from '../db'
 import { uid } from '../id'
-import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField } from './types'
+import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId } from './types'
 import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
@@ -387,12 +387,50 @@ export async function saveFreeChar(c: FreeCharacter): Promise<FreeCharacter> {
   const next: FreeCharacter = { ...c, updatedAt: now() }
   await db.setMeta(G.freeChar(next.id), next)
   const idx = await db.getMeta<TavernCharIndexItem[]>(G.charIndex, [])
-  const item: TavernCharIndexItem = { id: next.id, name: next.name, avatar: next.avatar, updatedAt: next.updatedAt }
+  const item: TavernCharIndexItem = {
+    id: next.id,
+    name: next.name,
+    storyId: cardStoryId(next),
+    avatar: next.avatar,
+    updatedAt: next.updatedAt,
+  }
   const i = idx.findIndex(x => x.id === next.id)
   if (i >= 0) idx[i] = item
   else idx.push(item)
   await db.setMeta(G.charIndex, idx)
   return next
+}
+
+// ---------------- 角色卡的「故事归属」 ----------------
+// 老大 2026-09-16 定：角色卡必须挂在一个故事下（故事决定世界观）；
+// 删故事不解绑不删卡 → 卡退成「自由状态」（storyId 为空），落在列表的「未归属」分组里等着被重新归类。
+
+/** 某个故事下的全部角色卡 */
+export async function listCharsByStory(storyId: string): Promise<TavernCharIndexItem[]> {
+  const list = await listFreeChars()
+  return list.filter(c => cardStoryId(c) === storyId)
+}
+
+/** 未归属（自由状态）的角色卡 —— 通常是故事被删之后留下的 */
+export async function listUnboundChars(): Promise<TavernCharIndexItem[]> {
+  const list = await listFreeChars()
+  return list.filter(c => !cardStoryId(c))
+}
+
+/**
+ * 改挂 / 解除某个故事下的全部角色卡（用于「删故事」）。
+ *
+ * 🔴 **只改归属，绝不删卡** —— 卡连着记忆与日记，删了就是不可逆丢数据。
+ *    传入空串 = 解除归属（退回自由状态）。返回受影响张数。
+ */
+export async function rebindCharsStory(fromStoryId: string, toStoryId: string): Promise<number> {
+  if (!fromStoryId) return 0
+  const targets = await listCharsByStory(fromStoryId)
+  for (const c of targets) {
+    const full = await getFreeChar(c.id)
+    if (full) await saveFreeChar({ ...full, storyId: toStoryId })
+  }
+  return targets.length
 }
 
 /**

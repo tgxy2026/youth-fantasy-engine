@@ -172,12 +172,16 @@ export default function TavernScript() {
         danger: true,
       })
       if (!okGo) return
-      await deleteStory(story.id)
+      const { reboundChars } = await deleteStory(story.id)
       await refresh()
       setStory(null)
       setKind(null)
       setStoryDirty(false)
-      showToast('已删除故事')
+      // 解绑了卡要说清楚去向 —— 不说的话作者会以为那几张卡跟着没了
+      showToast(
+        reboundChars
+          ? `已删除故事 · ${reboundChars} 张角色卡已移到「未归属」，可在角色卡片里重新归类`
+          : '已删除故事')
       return
     }
     if (kind === 'script' && cur) {

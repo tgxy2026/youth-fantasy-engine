@@ -20,6 +20,7 @@ function ok(name: string, cond: boolean, extra = '') {
 
 const CARD: FreeCharacter = {
   id: 'orig-id-123',
+  storyId: 'story-aaa',
   name: '苏念',
   world: '现代都市，老城区一间凌晨还亮着灯的便利店。',
   profile: {

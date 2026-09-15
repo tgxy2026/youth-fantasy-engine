@@ -111,6 +111,9 @@ function normalizeCard(cardRaw: Record<string, unknown>): CardFileResult {
     ok: true,
     warnings,
     card: {
+      // 导入的卡**不自带故事归属**（文件里没有这一层）→ 落为自由状态，
+      // 作者拿到后在「归属故事」里挂到某个故事下即可。
+      storyId: '',
       name,
       avatar: avatar || undefined,
       world,

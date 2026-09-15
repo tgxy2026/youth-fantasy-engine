@@ -225,6 +225,17 @@ export type TavernReport = {
 
 export type FreeCharacter = {
   id: string
+  /**
+   * 归属哪个故事（空串 ＝ **自由状态**，不属于任何故事）。
+   *
+   * 【为什么会有自由状态】
+   * 老大 2026-09-16 定：删故事**不删角色卡**（卡连着记忆与日记，删不得），
+   * 只解除归属 → 这些卡必须有地方安身，于是落在列表独立的「未归属」分组里，
+   * 随时能在编辑时重新挂到某个故事下。
+   *
+   * 🔴 判空一律用 `cardStoryId(c)`（`|| ''`），别直接比 undefined —— 老库没有这个字段。
+   */
+  storyId: string
   name: string
   avatar?: string          // dataURL
   // ── 角色卡正文：四章分块（第 0 章不要，协议已是内置常量）──
@@ -631,6 +642,8 @@ export type TavernSessionIndexItem = {
 export type TavernCharIndexItem = {
   id: string
   name: string
+  /** 归属故事 id；空串 = 自由状态（未归属） */
+  storyId: string
   avatar?: string
   updatedAt: number
 }
@@ -650,8 +663,14 @@ export type TavernReportIndexItem = {
  * 放在 types 而不是 store：与 EMPTY_CAST_SETTING 同理 —— 纯默认值属类型层，
  * 放在 store 会让「只想要默认值」的纯逻辑模块（如 import.ts）反向依赖存储层。
  */
+/** 取角色卡的归属故事 id：老库没有这个字段 → 一律归一成空串（＝自由状态） */
+export function cardStoryId(c: { storyId?: string } | null | undefined): string {
+  return (c?.storyId as string | undefined) || ''
+}
+
 export function emptyFreeCharacter(): Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'> {
   return {
+    storyId: '',
     name: '',
     world: '',
     profile: { externals: '', core: '', speech: '', relations: '', cannot: '', knowledge: '' },

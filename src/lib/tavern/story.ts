@@ -85,10 +85,13 @@ export async function createStory(init: Partial<TavernStory> = {}): Promise<Tave
  *
  * 🔴 **其下的剧本一并删** —— 剧本是挂在故事下的子节点，留着就成了没人管的孤儿节点；
  *    会话里存的是剧本**快照**，所以老会话照样能跑，不受影响。
- * 🔴 **角色卡不删**，只解除归属（`storyId=''`）后判给创作者自己重挂 —— 与「删地图不删地点」
- *    同一原则：卡连着记忆与日记，删不得。这一步的归属解绑逻辑在 P0-B（角色卡改造）里一并做。
+ * 🔴 **角色卡一张都不删**，只**解除归属**（`storyId=''`）→ 这些卡退成「自由状态」，
+ *    落在角色卡列表的「未归属」分组里，随时能在编辑时重新挂到别的故事下。
+ *    与「删地图不删地点」同一原则：卡连着记忆与日记，删了就是不可逆丢数据。
+ *
+ * @returns 被解绑的角色卡张数（给界面提示用：「已把 N 张卡移出故事」）
  */
-export async function deleteStory(id: string): Promise<void> {
+export async function deleteStory(id: string): Promise<{ reboundChars: number }> {
   // 动态 import：script.ts 将来可能反向引用 story.ts（树状查询），先绕开循环依赖的可能
   const { listScripts, deleteScript } = await import('./script')
   const scripts = await listScripts()
@@ -96,7 +99,12 @@ export async function deleteStory(id: string): Promise<void> {
     if (s.storyId === id) await deleteScript(s.id)
   }
 
+  // 卡：解绑不删。store.ts 不会反向依赖 story.ts，但保持动态 import 的一致写法更省心。
+  const { rebindCharsStory } = await import('./store')
+  const reboundChars = await rebindCharsStory(id, '')
+
   const idx = await db.getMeta<TavernStoryIndexItem[]>(G.index, [])
   await db.setMeta(G.index, idx.filter(x => x.id !== id))
   await db.setMeta(G.one(id), null)
+  return { reboundChars }
 }
