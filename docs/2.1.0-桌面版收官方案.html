@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2.1.0 · 桌面版收官方案（放弃网页版 / 便携版）</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2129; --line:#2a313c;
+    --ink:#e6edf3; --ink2:#9aa5b1; --ink3:#6e7a88;
+    --amber:#e8b36a; --amber-bg:rgba(232,179,106,.12);
+    --rose:#f0a4a4; --rose-bg:rgba(240,164,164,.12);
+    --emerald:#8fd0c4; --emerald-bg:rgba(143,208,196,.12);
+    --blue:#8ab4f8; --blue-bg:rgba(138,180,248,.12);
+    --violet:#c4a7f8; --violet-bg:rgba(196,167,248,.12);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    line-height:1.75; font-size:15px;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:48px 28px 96px}
+  header.top{border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:36px}
+  header.top h1{margin:0 0 8px; font-size:29px; letter-spacing:-.3px}
+  header.top .sub{color:var(--ink2); font-size:14px}
+  .stamp{display:inline-block; margin-top:12px; padding:3px 10px; border-radius:999px;
+    background:var(--amber-bg); color:var(--amber); font-size:12.5px; border:1px solid rgba(232,179,106,.3)}
+
+  h2{margin:52px 0 16px; font-size:21px; padding-left:12px; border-left:3px solid var(--amber); letter-spacing:-.2px}
+  h3{margin:30px 0 12px; font-size:16.5px; color:var(--ink)}
+  h4{margin:22px 0 10px; font-size:14.5px; color:var(--ink2); font-weight:600}
+  p{margin:10px 0}
+  code{background:var(--panel2); padding:2px 6px; border-radius:4px; font-size:12.8px;
+    font-family:"SFMono-Regular",Consolas,monospace; color:var(--amber); white-space:nowrap}
+  pre{background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; overflow-x:auto; margin:14px 0}
+  pre code{background:none; padding:0; color:var(--ink2); white-space:pre; font-size:12.6px; line-height:1.65}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:18px 0}
+  .card.todo{border-left:3px solid var(--blue)}
+  .card.done{border-left:3px solid var(--emerald)}
+  .card.warn{border-left:3px solid var(--rose)}
+  .card.info{border-left:3px solid var(--violet)}
+
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:13.6px}
+  th,td{text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{color:var(--ink2); font-weight:600; font-size:12.8px; background:var(--panel2)}
+  tr:last-child td{border-bottom:none}
+  td code{font-size:12.2px}
+
+  .pill{display:inline-block; padding:1px 8px; border-radius:999px; font-size:11.8px; line-height:1.6; white-space:nowrap}
+  .p-ok{background:var(--emerald-bg); color:var(--emerald)}
+  .p-warn{background:var(--amber-bg); color:var(--amber)}
+  .p-danger{background:var(--rose-bg); color:var(--rose)}
+  .p-info{background:var(--blue-bg); color:var(--blue)}
+  .p-mute{background:var(--panel2); color:var(--ink3)}
+
+  ul,ol{margin:10px 0 10px 22px; padding:0}
+  li{margin:6px 0}
+  li>strong{color:var(--ink)}
+
+  .kv{display:grid; grid-template-columns:118px 1fr; gap:6px 16px; font-size:13.8px}
+  .kv dt{color:var(--ink3)}
+  .kv dd{margin:0}
+
+  .toc{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 20px}
+  .toc ol{margin:8px 0 0 20px}
+  .toc a{color:var(--blue); text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+
+  .note{font-size:13.2px; color:var(--ink2); background:var(--panel2); border-radius:8px; padding:11px 14px; margin:12px 0}
+  .hl{color:var(--amber); font-weight:600}
+  .strike{color:var(--ink3); text-decoration:line-through}
+  hr{border:none; border-top:1px solid var(--line); margin:40px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>2.1.0 · 桌面版收官方案</h1>
+  <div class="sub">放弃网页版 / 便携版 —— 清理测绘 · UI 修正 · 地图列表设计 · 云盘同步重写</div>
+  <span class="stamp">2026-09-15 · 待决策 · 未封装未升版本号</span>
+</header>
+
+<div class="toc">
+  <strong>本文件回答四件事 + 一个 bug</strong>
+  <ol>
+    <li><a href="#s1">地图重置按钮规格</a> —— <span class="p-ok pill">已完成</span></li>
+    <li><a href="#s2">左下角同步窗口为何消失</a> —— <span class="p-info pill">已定位</span></li>
+    <li><a href="#s3">清理网页版 / 便携版独属内容</a> —— <span class="p-warn pill">待确认清单</span></li>
+    <li><a href="#s4">地图列表（多地图）</a> —— <span class="p-warn pill">待选方案</span></li>
+    <li><a href="#s5">跨设备同步（云盘）重写</a> —— <span class="p-warn pill">待定范围</span></li>
+  </ol>
+</div>
+
+<!-- ======================= ① 按钮 ======================= -->
+<h2 id="s1">① 地图「重置」按钮规格 —— 已完成</h2>
+
+<div class="card done">
+  <p><strong>根因</strong>：同一条工具条上，其它按钮用的是「工具条规格」手写 class，而重置按钮用了 <code>Button</code> 组件的标准尺寸 <code>variant="secondary" size="md"</code>，自然比旁边大一整圈。</p>
+  <p><strong>位置</strong>：<code>GeoMapEditor.tsx:753</code></p>
+</div>
+
+<h3>改动前后</h3>
+<pre><code>// 改前 —— 标准按钮尺寸，比同行大一圈
+&lt;Button onClick={fitView} title="重置视图（内容居中）"
+        variant="secondary" size="md" className="items-center text-[11px]"&gt;
+  &lt;Maximize2 size={11} /&gt;重置
+&lt;/Button&gt;
+
+// 改后 —— 与同行「精 / 粗 / 绘制地图」逐字一致的规格
+&lt;Button variant="bare" onClick={fitView}
+        className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700
+                   text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors"
+        title="重置视图（内容居中）"&gt;
+  &lt;Maximize2 size={11} /&gt;重置
+&lt;/Button&gt;</code></pre>
+
+<div class="note">
+  <strong>为什么不用 <code>variant="ghost"</code> 统一？</strong> 项目红线是「静止无边框的按钮不可用 ghost 表达」——但这里走的是 <code>variant="bare"</code> + 手写 <code>border border-ink-700</code>，静止态有可见边框，与同行按钮同源，合规。<br>
+  验证：<code>tsc --noEmit</code> 0 错。
+</div>
+
+<!-- ======================= ② bug ======================= -->
+<h2 id="s2">② 左下角同步设置窗口为何看不见 —— 已定位</h2>
+
+<div class="card info">
+  <p><strong>结论：不是功能丢失，也不是数据问题 —— 是 <code>#032</code> 重构把旧入口合并进了新组件，而新组件在「dev 浏览器」环境下必然不渲染。</strong></p>
+</div>
+
+<h3>时间线</h3>
+<table>
+  <tr><th>阶段</th><th>左下角是什么</th><th>dev 浏览器里可见？</th></tr>
+  <tr>
+    <td><code>#032</code> 之前</td>
+    <td>桌面版 / 便携版各自的独立入口</td>
+    <td><span class="p-mute pill">否</span>（平台标志不成立同样不渲染）</td>
+  </tr>
+  <tr>
+    <td><code>e1d970b</code> 之后<br><span class="pill p-mute">refactor(#032)</span></td>
+    <td>统一为新建的 <code>DataDock.tsx</code>（数据坞）</td>
+    <td><span class="p-danger pill">否</span> ← 你看到的现象</td>
+  </tr>
+</table>
+
+<h3>根因代码</h3>
+<p><code>DataDock.tsx:31-37</code> 用三块平台标志做门控，三块全假时整块 <code>return null</code>：</p>
+<pre><code>const showLocal = DESKTOP || PORTABLE   // dev 浏览器：window.electronStore 不存在 → false
+const showCloud = CLOUD_FILE_SYNC       // = DESKTOP || PORTABLE（desktopCloudSync.ts:40）
+const showWeb   = WEB                   // vite.config.ts 显式注入 false
+
+if (!showLocal && !showCloud && !showWeb) return null   // ← dev 里必然走到这里</code></pre>
+
+<div class="note">
+  <strong>关键区分</strong>：<code>DESKTOP</code> 是<strong>运行时探测</strong>（<code>desktop.ts:60</code> 读 <code>window.electronStore</code>），不是构建期常量。所以：
+  <br>· <strong>打包后的桌面版</strong>里它是 <code>true</code> → 正常显示 ✅
+  <br>· <strong>dev 浏览器</strong>里它是 <code>false</code> → 整块消失 ❌
+  <br>源注释写明了这是有意设计（"避免留下一个空面板边框"），但它让 dev 环境永远看不到同步入口。
+</div>
+
+<div class="card todo">
+  <strong>修法（随第 1 件一起做）</strong>：清理掉网页版 / 便携版后，门控只剩单一平台，本来就要重写。顺带引入 dev 判定，让预览环境也能看到数据坞：
+  <pre><code>// 清理后：桌面版是唯一目标平台，门控可以彻底简化
+// 并让 dev 浏览器也显示（便于界面验证），功能项按能力降级提示
+const showDock = DESKTOP || import.meta.env.DEV</code></pre>
+</div>
+
+<!-- ======================= ③ 清理 ======================= -->
+<h2 id="s3">③ 清理网页版 / 便携版独属内容</h2>
+
+<div class="card warn">
+  <p><strong>这不是"删几个文件"，是拆承重墙。</strong>三个平台标志共 <span class="hl">116 处引用</span>，横跨 14 个文件，其中 <code>db.ts</code>（存储核心）、<code>syncCore.ts</code>（同步引擎）都是三平台共用的。</p>
+  <p>所以我把它拆成三级，<strong>必须成套执行</strong>（删了构建配置但代码还引用 = 直接构建失败），不能只做一半。</p>
+</div>
+
+<h3>引用密度测绘</h3>
+<table>
+  <tr><th>标志</th><th>引用数</th><th>涉及文件</th></tr>
+  <tr><td><code>PORTABLE</code></td><td>38</td><td>10 个</td></tr>
+  <tr><td><code>WEB</code></td><td>37</td><td>12 个</td></tr>
+  <tr><td><code>DESKTOP</code></td><td>41</td><td>10 个 <span class="pill p-ok">保留</span></td></tr>
+</table>
+<p><strong>主战场</strong>：<code>db.ts</code> · <code>syncCore.ts</code> · <code>desktopCloudSync.ts</code> · <code>DataDock.tsx</code> · <code>App.tsx</code> · <code>Sidebar.tsx</code> · <code>serverStore.ts</code></p>
+
+<h3>A 级 · 可直接删（低风险）</h3>
+<table>
+  <tr><th>目标</th><th>说明</th></tr>
+  <tr><td><code>vite.config.web.ts</code></td><td>网页版构建配置</td></tr>
+  <tr><td><code>vite.config.portable.ts</code></td><td>便携版构建配置</td></tr>
+  <tr><td><code>scripts/make-portable.mjs</code></td><td>便携版打包脚本</td></tr>
+  <tr><td><code>package.json</code> → <code>build:web</code> / <code>build:portable</code></td><td>对应 npm 脚本</td></tr>
+  <tr><td><code>src/components/WebGate.tsx</code></td><td>邀请码门禁；唯一用法是 <code>App.tsx:299</code> 的 <code>WEB</code> 分支</td></tr>
+  <tr><td><code>dist-web/</code></td><td>网页版构建产物目录</td></tr>
+  <tr><td><code>tests/mock-portable.ts</code></td><td>便携版测试桩</td></tr>
+</table>
+
+<h3>B 级 · 需改逻辑（中风险）</h3>
+<table>
+  <tr><th>目标</th><th>处置要点</th></tr>
+  <tr>
+    <td><code>src/lib/portable.ts</code></td>
+    <td><span class="p-danger pill">别整删</span> <code>APP_VERSION_LABEL</code> 住在这里，而 <code>AboutPage</code> / <code>ProjectHub</code> / <code>Sidebar</code> 都在用 → <strong>先把它迁到 <code>env.ts</code> 或新建 <code>version.ts</code></strong>，再删其余便携逻辑</td>
+  </tr>
+  <tr><td><code>src/lib/serverStore.ts</code></td><td>网页版后端客户端（含 AES-GCM/XOR 加解密）→ 整删；消费者 3 处：<code>db.ts</code> / <code>WebTools.tsx</code> / <code>LocalDataNotice.tsx</code></td></tr>
+  <tr><td><code>src/components/WebTools.tsx</code></td><td>网页版同步 UI（<code>DataDock.tsx:2</code> 引用）→ 删</td></tr>
+  <tr><td><code>src/components/FeedbackButton.tsx</code></td><td>反馈入口（依赖服务器）→ 删，或改为本地邮箱链接</td></tr>
+  <tr><td><code>src/components/LocalDataNotice.tsx</code></td><td><code>WEB</code> 独属（<code>if (!WEB) return false</code>）→ 删，并摘掉 <code>BackupReminder.tsx:8</code> 的引用</td></tr>
+  <tr><td><code>src/components/Portable.tsx</code></td><td><code>PortableBadge</code> 被 <code>DataDock</code> / <code>Sidebar</code> 引用 → 删</td></tr>
+  <tr><td><code>src/App.tsx</code></td><td>去 <code>WEB</code> 门禁（299 行）、去 <code>PORTABLE</code> 分支与 <code>portable.ts</code> 导入（14 行）</td></tr>
+  <tr><td><code>src/components/DataDock.tsx</code></td><td>门控三块 → 一块（见第 ② 节修法）</td></tr>
+  <tr><td><code>src/components/Sidebar.tsx</code></td><td>去 <code>PortableBadge</code>；<code>APP_VERSION_LABEL</code> 改从新位置导入</td></tr>
+  <tr><td><code>tests/build-test.mjs</code> · <code>build-roundtrip.mjs</code></td><td>去 portable / web 构建目标（<span class="pill p-mute">36 个入口会缩水，属正常</span>）</td></tr>
+</table>
+
+<h3>C 级 · 动存储与同步核心（高风险，需实弹验证）</h3>
+<table>
+  <tr><th>目标</th><th>处置要点</th></tr>
+  <tr>
+    <td><code>src/lib/db.ts</code></td>
+    <td>① <code>ops = PORTABLE ? portableStore : (DESKTOP ? desktopStore : idbOps)</code> → 三选一改二选一<br>
+        ② 顶层 <code>onSyncConflict(...)</code> 来自 <code>serverStore</code>（<span class="pill p-danger">这条正是上一轮埋的 P1</span>）→ 改为订阅云盘同步<br>
+        ③ 443 行附近 "仅网页体验版生效" 分支 → 删</td>
+  </tr>
+  <tr>
+    <td><code>src/lib/syncCore.ts</code></td>
+    <td><span class="p-ok pill">保留</span> 它是桌面云盘同步的引擎；网页版只是另建了一个实例。<strong>删 <code>serverStore</code> 不影响它</strong></td>
+  </tr>
+  <tr><td><code>src/lib/desktopCloudSync.ts</code></td><td><code>CLOUD_FILE_SYNC = DESKTOP || PORTABLE</code> → <code>DESKTOP</code></td></tr>
+  <tr><td><code>src/lib/env.ts</code></td><td>删 <code>WEB</code> / <code>PORTABLE</code> 常量与 <code>__WEB__</code> / <code>__PORTABLE__</code> 声明</td></tr>
+  <tr><td><code>src/lib/ai.ts</code> · <code>src/lib/webSearch.ts</code></td><td>逐处核 <code>WEB</code> 用法：多为"网页版受同源限制"的降级分支 → 删分支后走桌面主进程代发（正常路径）</td></tr>
+</table>
+
+<div class="card warn">
+  <h4 style="margin-top:0">🔴 清理时必守的两条红线</h4>
+  <ol>
+    <li><strong>tree-shake 门控</strong>：项目踩过「组件只在某平台门控分支被引用 → 整模块被摇掉」的坑，约定是"门控须用需该模块的平台<strong>并集</strong>"。清理后只剩单平台，这个风险反而消失——但<strong>每删一块门控都要跑一次 <code>vite build</code> 确认产物没缺页面</strong>（曾发生过产物静默缺失）。</li>
+    <li><strong><code>server/</code> 目录与服务器</strong>：里面除了网页版后端，还有<strong>反馈服务</strong> <code>feedback-server.mjs</code> + systemd 单元 + nginx 配置，线上在跑。删代码库里的目录 ≠ 下线服务器，这两件事要分开决策。</li>
+  </ol>
+</div>
+
+<!-- ======================= ④ 地图列表 ======================= -->
+<h2 id="s4">④ 地图列表（多地图）</h2>
+
+<h3>先看清现状：为什么"只能有一张地图"</h3>
+<pre><code>// "地图"并不是一个实体 —— 它就是 geography 表的所有行
+// 每一行有一个「地图格子」列，存序列化格坐标："gx,gy;gx,gy;…"
+row.data['地图格子']   // ← 这就是一张"图"的全部数据
+
+// 而编辑器把**整表所有行**画进同一个坐标系：
+const G = 36                        // 格子屏幕边长
+const [cellKm, setCellKm] = useState(1)
+db.setSetting('geoMapCellKm', n)    // 格档：项目级单个值，全表共用</code></pre>
+
+<p>所以不是"编辑器不给你存第二张"，而是<strong>数据层压根没有"地图"这个概念</strong>——所有地理条目共享一个坐标系、一个格档。视图坐标 <code>{x,y,k}</code> 甚至不持久化（刷新即重置）。</p>
+
+<h3>两个方案</h3>
+
+<div class="card todo">
+  <h4 style="margin-top:0">方案 A · 轻量分组 <span class="pill p-ok">推荐</span></h4>
+  <ul>
+    <li><strong>数据结构</strong>：新增项目级 setting <code>geoMaps</code>（<code>[{id, name, cellKm}]</code>）作为地图清单；<code>geography</code> 表新增一列<strong>「所属地图」</strong>（存地图 id）。</li>
+    <li><strong>为什么地图清单要单独存</strong>：若靠"从行的列值去重"推导，一张图的地点全删光后地图就会凭空消失——清单必须能独立存在。</li>
+    <li><strong>格档</strong>：由项目级单值改为<strong>每张地图各自持有</strong>（<code>geoMaps[i].cellKm</code>），沿用它现在的语义。</li>
+    <li><strong>迁移</strong>：现有 <code>geography</code> 行全部归入 <code>default</code> 地图（名「默认地图」），格档沿用现值 → 老项目打开后<strong>与现在完全一致</strong>，零感知。</li>
+    <li><strong>UI</strong>：左侧新增地图列表（地图名 + 地点数、新建 / 重命名 / 删除）；右侧画布只画当前地图的行。删除非空地图需二次确认（地点会一并移回默认地图，不删数据）。</li>
+    <li><strong>工程量</strong>：加 1 列迁移 + 编辑器改造；<strong>不动 schema 表结构、不加侧栏页签</strong>。</li>
+  </ul>
+</div>
+
+<div class="card info">
+  <h4 style="margin-top:0">方案 B · 独立「地图」表</h4>
+  <ul>
+    <li>新建 TabDef：地图（名称 / 格档 / 画布范围 / 备注），<code>geography</code> 用引用列指向它。</li>
+    <li>优点是结构化、可挂更多字段（画布尺寸、底图、说明）；代价是动 <code>schema.ts</code> 表定义 + 侧栏多一个页签 + 跨表引用校验（<code>dataHealth</code> 的悬空引用检查要认这张表）。</li>
+    <li>适合"地图要当正式资产维护（配底图、配说明、导出）"的诉求。</li>
+  </ul>
+</div>
+
+<div class="note">
+  <strong>需要你定的两件事</strong>：<br>
+  ① 走 A 还是 B？（默认建议 A：改动可控、老项目零感知）<br>
+  ② 一张地点行能否<strong>同时属于多张图</strong>？（例如"九州图"和"北境详图"都要标同一个城市）——A 方案下这是"单归属"，若要"多归属"就得把「所属地图」改成多值列，复杂度上一档。
+</div>
+
+<!-- ======================= ⑤ 同步重写 ======================= -->
+<h2 id="s5">⑤ 跨设备同步重写（只走云盘）</h2>
+
+<h3>清理后，同步会剩什么</h3>
+<table>
+  <tr><th>层</th><th>文件</th><th>清理后</th></tr>
+  <tr><td>引擎</td><td><code>syncCore.ts</code>（666 行，三路合并）</td><td><span class="p-ok pill">保留</span> 无平台假设，是唯一需要的能力</td></tr>
+  <tr><td>传输</td><td><code>syncTransport.ts</code></td><td><span class="p-warn pill">收窄</span> 只需文件目录（FSA），HTTP 一路可去</td></tr>
+  <tr><td>桌面胶水</td><td><code>desktopCloudSync.ts</code>（197 行）</td><td><span class="p-warn pill">简化</span> 去掉同步码 / 平台双分支</td></tr>
+  <tr><td>服务器后端</td><td><code>serverStore.ts</code></td><td><span class="p-danger pill">整删</span></td></tr>
+  <tr><td>网页版 UI</td><td><code>WebTools.tsx</code></td><td><span class="p-danger pill">整删</span></td></tr>
+  <tr><td>桌面版 UI</td><td><code>CloudFileSyncBar.tsx</code></td><td><span class="p-ok pill">保留</span> 重写为更简的一步式</td></tr>
+</table>
+
+<h3>重写要点（"更简洁、便于使用"的落点）</h3>
+<ol>
+  <li><strong>一步开启</strong>：现状已经是"选目录即完成"（<code>#032</code> 砍掉了同步码，用内置默认密钥），重写后保持并让引导文案更短。</li>
+  <li><strong>依赖</strong>：跨设备要走第三方云盘（OneDrive / 坚果云 / WPS 云盘）的客户端搬运加密文件——这条链路不变，<strong>变的是不再有服务器中转</strong>。</li>
+  <li><strong>状态可见</strong>：保留 <code>STATUS_META</code> 那套八态徽标（同步中 / 已同步 / 失败 / 已失效 / 限流 / 数据过大 / 离线）——这套设计是好的，别在重写中丢掉。</li>
+  <li><strong>顺带修 P1</strong>：桌面版冲突回调<strong>从未注册</strong>，导致三路合并冲突时云端那版被静默丢弃（详见上一轮报告 §7.6.3）。重写时一并接上，并在双设备场景实测。</li>
+  <li><strong>备份文档要同步改</strong>：<code>README</code> / <code>AboutPage</code> / <code>BackupManager</code> 里凡写"网页版可通过邀请码访问 / 服务器同步"的说法，全部要清掉，否则界面继续向作者撒谎。</li>
+</ol>
+
+<div class="card warn">
+  <strong>我要提醒一句</strong>：清理网页版意味着 <code>db.ts</code> 顶层的冲突注册来源被抽走，而云盘同步那条路<strong>目前没有注册者</strong>。两者叠加后，如果重写时忘了接，冲突就会从"网页版会存副本、桌面版静默丢"变成"两边都不存"。<strong>这是本次改动里唯一可能造成数据损失的点</strong>，我会在重写时优先处理并写断言测试锁住。
+</div>
+
+<hr>
+
+<h2>建议的执行顺序</h2>
+<table>
+  <tr><th>批次</th><th>内容</th><th>为什么这个顺序</th></tr>
+  <tr><td>第 1 批</td><td>清理 A 级 + B 级 + C 级（<strong>成套做</strong>）</td><td>清理必须先完成，否则第 ⑤ 件要在两套同步体系上做两遍</td></tr>
+  <tr><td>第 2 批</td><td>云盘同步重写 + 冲突回调接上 + dev 数据坞可见</td><td>依赖第 1 批的结果，且要留双设备实测时间</td></tr>
+  <tr><td>第 3 批</td><td>地图列表（A 或 B 案）</td><td>独立功能，可与其他批次并行</td></tr>
+</table>
+
+<div class="note">
+  第 ① 件（重置按钮）<strong>已改完</strong>，未提交，等你连同后续改动一起走。<br>
+  全程遵守：<strong>未封装、未升版本号、未碰服务器。</strong>
+</div>
+
+</div>
+</body>
+</html>
