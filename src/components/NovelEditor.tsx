@@ -580,12 +580,19 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     setRegenAll(true)
     try {
       const all = await db.getAllChapters()
+      const vols = await db.getAllVolumes()
       const targets = all.filter(c => (c.content || '').trim().length > 0)
       let done = 0
       for (const c of targets) {
         try {
           const s = await aiChapterSummary(c.content)
-          if (s) await db.saveChapter({ ...c, summary: s })
+          if (s) {
+            const next = { ...c, summary: s }
+            await db.saveChapter(next)
+            // 🔴 台账的「一句话事件」是章节总表/情节推演本在读的字段，摘要变了必须同步登记，
+            //    否则总表还显示旧摘要，用户会以为重生成没生效。
+            await syncChapterMaster(next, chapterSeqOf(vols, all, next.id))
+          }
         } catch { /* 单章失败跳过，继续其余 */ }
         done++
         if (done % 8 === 0) showToast(`已重生成摘要 ${done}/${targets.length}`, 'info')

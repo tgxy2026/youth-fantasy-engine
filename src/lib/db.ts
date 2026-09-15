@@ -6,9 +6,11 @@ import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
   seedDesktopFromLocal, onDesktopSyncConflict, persistDesktopCloudEnabled, onDesktopCloudFallback,
+  clearDesktopCloudEnabledFlag,
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo,
 } from './desktopCloudSync'
+import { SYNC_STORES } from './syncCore'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
@@ -471,9 +473,17 @@ if (CLOUD_FILE_SYNC) {
           const snap = await pullDesktopSnapshot()
           empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
         } catch {
-          return // 拉取失败（文件损坏 / 网盘未就绪）→ 保持本地存储，绝不把界面切空
+          // 拉取失败（文件损坏 / 网盘未就绪）→ 保持本地存储，绝不把界面切空；
+          // 同时清掉「已开启」标记，免得界面显示在同步而 ops 其实是本地。
+          clearDesktopCloudEnabledFlag()
+          return
         }
-        if (empty) return // 云端为空：留在本地；用户显式开启同步时才播种上传
+        if (empty) {
+          // 云端为空：留在本地（用户显式开启同步时才播种上传）；标记同样要清，别撒谎。
+          // 目录偏好保留 —— 网盘把 .yfe 同步下来之后再选一次目录即可。
+          clearDesktopCloudEnabledFlag()
+          return
+        }
         ops = desktopCloudFileStore
       }
     } catch {
@@ -493,13 +503,35 @@ export function setStoreOps(o: StoreOps) {
  * 加密使用内置默认密钥（DEFAULT_CLOUD_KEY），所有设备一致 → 指向同一目录即可互通，无需输入任何码。
  * @param handle 同步目录句柄（桌面版为目录路径字符串）
  */
+/**
+ * 抓一份「当前 ops 里参与同步的数据」快照。
+ * 只给「换同步目录」这类**必须在 configure() 之前**取数的场合用。
+ */
+async function captureSyncData(): Promise<Record<string, any[]>> {
+  const out: Record<string, any[]> = {}
+  for (const s of SYNC_STORES) {
+    if (s === 'backups') continue
+    try {
+      out[s] = (await ops.getAll(s)) || []
+    } catch {
+      out[s] = []
+    }
+  }
+  return out
+}
+
 export async function enableDesktopCloudSync(handle: any) {
+  // 🔴 必须在 enableDesktopCloud() **之前**把当前数据抓下来：
+  //    enableDesktopCloud → configure() 会清空 syncCore 的单例 cache，而「同步本来就开着、
+  //    只是换/重选目录」时 ops 正指向**同一个**单例 → 播种读到的是全空，
+  //    于是把一份空快照写进新目录（界面看起来「书全没了」，还会被同步到其他设备）。
+  const carry = await captureSyncData()
   await enableDesktopCloud(handle)
   const snap = await pullDesktopSnapshot()
   const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
   if (empty) {
-    // 此刻 ops 仍为平台默认本地存储（桌面=desktopStore），用其数据播种
-    await seedDesktopFromLocal((s) => ops.getAll(s))
+    // 新目录还是空的 → 用刚才抓下来的数据播种（不能用「此刻的 ops」，它可能已被清空）
+    await seedDesktopFromLocal((s) => Promise.resolve(carry[s] ?? []))
   }
   // 🔴 持久化必须在**上面全部成功之后**：原先写在 enableDesktopCloud 内部（即拉快照之前），
   //    拉快照 / 播种失败时标记已落盘 → 下次启动 UI 仍显示「已开启」，实际却走本地存储（界面撒谎）。
@@ -560,8 +592,7 @@ export async function touchProject(id: string) {
 }
 /** 删除项目及其全部数据 */
 export async function deleteProject(id: string) {
-  const chapters = await ops.getAll<Chapter>('chapters')
-  const chapterIds = new Set(chapters.filter(c => c.projectId === id).map(c => c.id))
+  // 章节行在下面那轮按 projectId 批量删，这里不必先全表读一遍 chapters（曾只为快照守卫而读）
   await ops.del('projects', id)
   // 收集各 store 待删主键，统一批量删除
   const delKeys: Record<string, string[]> = {}
@@ -573,10 +604,10 @@ export async function deleteProject(id: string) {
   }
   const forms = await ops.getAll<FormData>('formData')
   const formKeys = forms.filter(f => f.tabId.startsWith(`${id}::`)).map(f => f.tabId)
-  // 快照按 projectId 索引批量取，删除该项目全部章节快照
-  const snapKeys = chapterIds.size
-    ? (await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', id)).map(s => s.id)
-    : []
+  // 快照按 projectId 索引批量取。
+  // 🔴 不能挂 `chapterIds.size` 这个前提：章节全在回收站时 chapters 为空 → 该项目的快照
+  //    一份都不删，成了界面上永远看不到、却持续进云载荷的孤儿。
+  const snapKeys = (await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', id)).map(s => s.id)
   // 每日统计与设置按 projectId 前缀（含项目独立自定义下拉选项 customOption::<projectId>::...）
   const statKeys: string[] = []
   const setKeys: string[] = []

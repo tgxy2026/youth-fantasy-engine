@@ -320,6 +320,17 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   }
 
   // 仅含活数据（排除本地专属的 backups 与敏感 meta）
+  /**
+   * 一份载荷里的**记录总数**（把所有 store 的行数加起来）。
+   *
+   * 🔴 判断「是不是空载荷」必须用它，不能用 `Object.keys(...).length`：
+   *    `liveStores` 会把每个 store 都放成键（哪怕是空数组），12 个空数组照样能骗过键数判断
+   *    —— 一份「看起来有 12 个 store」的空快照就这么被推上云端，覆盖掉真实数据。
+   */
+  function totalRecords(m: Record<string, any[]>): number {
+    return Object.values(m || {}).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0)
+  }
+
   function liveStores(src: Record<string, any[]>): Record<string, any[]> {
     const out: Record<string, any[]> = {}
     for (const s of Object.keys(src || {})) {
@@ -444,7 +455,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     if (!cloudBackup) return false
     const restored = liveStores(cloudBackup.data)
     // #027：备份为空时拒绝回滚——否则会把空备份当最新状态推上去，反而清空整库。
-    if (Object.keys(restored).length === 0) return false
+    if (totalRecords(restored) === 0) return false
     cache = restored
     baseCache = snapshotOf(cache)
     await pushNow(rev)
@@ -500,7 +511,8 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean }> {
     const uploadCache: Record<string, any> = liveStores(cache)
     // #027：防整库清空——本地缓存为空但存在已知良好基线时，绝不能用空库覆盖云端。
-    if (Object.keys(uploadCache).length === 0 && Object.keys(liveStores(baseCache)).length > 0) {
+    // 🔴 用**记录总数**判（见 totalRecords 的说明），键数判法会被「12 个空数组」骗过去。
+    if (totalRecords(uploadCache) === 0 && totalRecords(liveStores(baseCache)) > 0) {
       setStatus('error')
       throw new Error('refuse empty push: 本地缓存为空但基线非空，已阻止空推覆盖云端')
     }
@@ -526,7 +538,11 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
           serverCache = await decryptObj(resp.enc)
           adoptCloudBackup(serverCache)
         } catch {
-          serverCache = null
+          // 🔴 云端那版**解不开**时必须停下来：继续重试会用本地 cache 以 serverRev 覆盖它，
+          //    而加密载荷只有云端那一份 —— 覆盖之后连 .corrupt 都没留，那版彻底消失。
+          //    （原先把它当成「云端没内容」继续合并推送，是最危险的一条静默路径。）
+          setStatus('error')
+          throw new Error('sync conflict payload undecryptable: 已停止重试以免覆盖云端数据')
         }
       }
       if (serverCache) cache = mergeCaches(baseCache, serverCache, cache)
@@ -585,7 +601,10 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     pushing = true
     setStatus('syncing')
     try {
-      await pushNow(rev)
+      const r = await pushNow(rev)
+      // 🔴 pushNow 在重试耗尽时**返回** {conflict:true} 而不抛 —— 不处理的话状态会一直停在
+      //    'syncing'（界面转圈，实际一条都没传上去）。
+      if (r?.conflict) setStatus('error')
     } catch (e) {
       if (!(e instanceof CloudAuthError) && !transientUnavailable) setStatus('error')
     } finally {

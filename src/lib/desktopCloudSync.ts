@@ -135,6 +135,21 @@ export function persistDesktopCloudEnabled(handle: any) {
   }
 }
 
+/**
+ * 只清「已开启」标记（**保留**目录偏好）。
+ *
+ * 🔴 启动时若云端为空 / 拉不到快照，db.ts 会保持本地存储 —— 那时必须调它：
+ *    否则 localStorage 里还留着「已开启」，界面显示「已开启（待命）」而 ops 其实是本地，
+ *    用户以为在同步、实际一条都没传（网盘只在线、还没把 .yfe 下载下来时最常见）。
+ */
+export function clearDesktopCloudEnabledFlag() {
+  try {
+    localStorage.removeItem(ENABLED_KEY)
+  } catch {
+    /* 忽略 */
+  }
+}
+
 /** 关闭云盘文件同步：清持久化 + 复位传输层。 */
 export function disableDesktopCloud() {
   try {

@@ -4,6 +4,7 @@ import HelpPopover from './HelpPopover'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { enableDesktopCloudSync, disableDesktopCloudSync } from '../lib/db'
+import { getDesktopDataFilePath } from '../lib/desktop'
 import { STATUS_META } from '../lib/syncStatusMeta'
 import {
   chooseDesktopCloudDir,
@@ -69,6 +70,27 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
     try {
       const res = await chooseDesktopCloudDir()
       if (!res) return // 用户取消
+      // 🔴 两套同步别指同一个目录：①「改数据文件位置」＝明文 JSON（含 AI apiKey 明文）
+      //    ②「云盘文件同步」＝加密 .yfe。指到同一目录时，明文库会被网盘客户端一起传上云，
+      //    而且两边会互相覆盖（详见 docs/2.1.1-审计修复记录.md §四）。
+      {
+        const dataFilePath = await getDesktopDataFilePath()
+        const BS = String.fromCharCode(92) // 反斜杠：不用正则，免得转义满天飞
+        const norm = (p: string) => p.split(BS).join('/').replace(/\/+$/, '').toLowerCase()
+        const dirOf = (p: string) => norm(p).split('/').slice(0, -1).join('/')
+        if (dataFilePath && dirOf(dataFilePath) === norm(res.handle)) {
+          const go = await confirmDialog({
+            title: '这个目录里放着你本机的数据文件',
+            message:
+              '该目录正是数据文件（novel-studio-data.json，含 AI 接口密钥的明文）所在的位置。\n\n' +
+              '云盘客户端会把整个目录上传，明文库也会跟着上云；而且「数据文件位置」与「云盘文件同步」' +
+              '指向同一目录会互相覆盖。\n\n建议另选一个空目录专门放同步文件。确定仍要用这个目录吗？',
+            confirmText: '仍要使用',
+            danger: true,
+          })
+          if (!go) return
+        }
+      }
       handleRef.current = res.handle
       setDirName(res.name)
       setBusy(true)

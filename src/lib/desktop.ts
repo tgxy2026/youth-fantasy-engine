@@ -273,6 +273,13 @@ export function flushDesktopSync(): void {
 /** 导出全部数据为便携版数据文件（保存到 U 盘等任意位置，便携版可直接打开使用） */
 export async function exportDesktopData(): Promise<string | null> {
   if (!DESKTOP || !inited) return null
+  // 🔴 锁写盘期间内存里是空库/残缺数据 —— 导出会造出一个**看起来正常**的空备份，
+  //    用户拿它当保险反而把真数据的位置占了（提示语说好了「原文件不会被改动」）。
+  if (writeLocked) {
+    lastError = '数据文件读取失败期间不导出（内存里是空库/残缺数据）：请先按顶部红条提示备份原文件，或解除锁定后再导出'
+    emit()
+    return null
+  }
   data.savedAt = Date.now()
   try {
     return await api().exportFile(JSON.stringify(data))
@@ -306,6 +313,10 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
   }
   data = normalizePortableData(parsed)
   dirty = true
+  // 🔴 导入一个**校验通过**的数据文件正是「锁写盘」的恢复手段：锁着 flushDesktop 直接返回 false，
+  //    导入的数据根本落不了盘（用户只会看到「写入本地数据失败」，莫名其妙）。
+  //    用户是拿合法文件主动覆盖，这份数据就是他要的 —— 显式解锁。
+  if (writeLocked) unlockDesktopWrite()
   const ok = await flushDesktop()
   return ok ? { ok: true } : { ok: false, error: lastError || '写入本地数据失败' }
 }
@@ -313,6 +324,21 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
 /** 在资源管理器中显示本地数据文件（手动备份用） */
 export async function revealDesktopDataFile(): Promise<void> {
   if (DESKTOP) await api().revealDataFile()
+}
+
+/**
+ * 本机数据文件的完整路径（拿不到返回 null）。
+ * 用于「别把云盘同步目录选成数据文件所在目录」这类互斥校验：
+ * 明文库（含 apiKey）与加密 .yfe 混在一个目录，会被网盘客户端一起传上去，两边还会互相覆盖。
+ */
+export async function getDesktopDataFilePath(): Promise<string | null> {
+  if (!DESKTOP) return null
+  try {
+    const p = await api().dataPath()
+    return typeof p === 'string' && p ? p : null
+  } catch {
+    return null
+  }
 }
 
 /** 选择数据文件的新存放位置（返回完整文件路径，取消返回 null） */
@@ -337,6 +363,11 @@ export async function relocateDesktopDataFile(
   target: string,
 ): Promise<{ ok: boolean; path: string; adopted: boolean; error?: string }> {
   if (!DESKTOP || !inited) return { ok: false, path: '', adopted: false, error: '桌面存储未就绪' }
+  // 🔴 锁定期换位置＝把「空库/残缺数据」写成新位置的一份有效文件（原文件虽保留，
+  //    但用户会以为数据搬过去了）。要换就先按顶部红条显式解除锁定。
+  if (writeLocked) {
+    return { ok: false, path: '', adopted: false, error: '数据文件读取失败期间不能更换存放位置：请先按顶部红条处理原文件，或解除锁定后再试' }
+  }
   await flushDesktop() // 先把内存数据落盘，避免带着未保存改动换位置
   data.savedAt = Date.now()
   const r = await api().setDataPath(target, JSON.stringify(data))
@@ -349,6 +380,10 @@ export async function relocateDesktopDataFile(
 /** 恢复默认存放位置（userData 目录）。原位置的数据文件不会被删除。 */
 export async function resetDesktopDataPath(): Promise<{ ok: boolean; path: string; adopted: boolean; error?: string }> {
   if (!DESKTOP || !inited) return { ok: false, path: '', adopted: false, error: '桌面存储未就绪' }
+  // 同 relocateDesktopDataFile：锁定期不落盘
+  if (writeLocked) {
+    return { ok: false, path: '', adopted: false, error: '数据文件读取失败期间不能恢复默认位置：请先按顶部红条处理原文件，或解除锁定后再试' }
+  }
   await flushDesktop()
   data.savedAt = Date.now()
   const r = await api().resetDataPath(JSON.stringify(data))

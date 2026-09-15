@@ -211,11 +211,18 @@ export function createFileTransport(handle: any, fixedName?: string): SyncTransp
   async function nodeWrite(p: string, text: string): Promise<void> {
     const eb = getElectronBackend()
     if (eb && typeof eb.syncWrite === 'function') {
-      await eb.syncWrite(p, text)
+      // 🔴 主进程写失败时**返回 {ok:false} 而不抛**。不查返回值就等于「以为写成功了」：
+      //    写后回读 rev 不匹配 → 上层走 409 重试 → 重试耗尽后 pushNow 返回 conflict（不抛）
+      //    → 界面状态永远停在「同步中」，而目录里一个字都没写进去（目录不可写/磁盘满时最常见）。
+      const r = await eb.syncWrite(p, text)
+      if (r && typeof r === 'object' && r.ok === false) {
+        throw new Error('sync write failed: ' + (r.error || '未知原因'))
+      }
       return
     }
     const fs = getNodeFs()
-    if (!fs) return
+    // 与 nodeRead 同一条纪律：拿不到可写后端就如实报错，绝不静默「成功」
+    if (!fs) throw new Error('node fs 后端不可用（同步文件未写入）')
     const tmp = p + '.tmp'
     await fs.promises.writeFile(tmp, text, 'utf8')
     try {
