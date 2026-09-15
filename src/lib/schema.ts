@@ -792,7 +792,7 @@ export const TABS: TabDef[] = [
   // 「灵感工具」下拆出的两个子页签：与「开书定位」的作品定位/世界设定/力量体系同构（同一 group 下的独立页签，Sidebar 自动列在分组标题下）
   {
     id: 'inspire-tools', name: '灵感启发', group: '灵感工具', type: 'inspire',
-    description: '随机取名生成器与 AI 辅助规划（脑暴）。',
+    description: '模型配置与联网检索（全局）+ 随机取名生成器、AI 一键续写与设定补完、AI 辅助规划（脑暴）。',
   },
   {
     id: 'check-tools', name: '检查工具', group: '灵感工具', type: 'check',

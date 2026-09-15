@@ -645,7 +645,7 @@ export default function TavernControl() {
           >
             <SelectField
               label="默认模型"
-              hint="留空则跟随「模型设置」里选中的全局活动模型。两个模式都用它；会话里不再单独选择模型。"
+              hint="留空则跟随「灵感启发 → 模型配置」里选中的全局活动模型。两个模式都用它；会话里不再单独选择模型。"
               value={c.defaultProviderId}
               options={modelOptions}
               emptyLabel="（跟随全局活动模型）"

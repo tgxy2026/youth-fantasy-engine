@@ -1,5 +1,5 @@
 # novel-studio 长期记忆
-> 规则/红线/决策；事件留 `YYYY-MM-DD.md`。新增前先查同类条目，合并改写别追加第二份。⚠️ 注入上限 ~6100 字符。
+> 规则/红线/决策；事件留 `YYYY-MM-DD.md`。⚠️ 注入上限 ~6100 字符 —— 新增前先查同类、合并改写，别追加第二份。
 
 ## 红线
 - 🔴 封装须老大明说「封装」；改完最多 tsc+build+commit。
@@ -10,13 +10,13 @@
 ## 身份 / 版本 / 封装
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；三存储(IDB/便携/桌面)经 StoreOps；dev 5199。
 - 现 2.1.0（只改号不封装，约每月一版）。版本唯一源 `package.json`；展示 `APP_VERSION_LABEL`；dev 靠 `injectAppVersion()`。
-- 🔴 封装：`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`（勿指 `release/eb-cache/electron-zip`）；两脚本有体积闸门。NSIS perMachine:false＋allowToChangeInstallationDirectory:false。
+- 🔴 封装：`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`（勿指 eb-cache/electron-zip）；两脚本有体积闸门。NSIS perMachine:false＋allowToChangeInstallationDirectory:false。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键。⚠️ 功能改完回搜 `schema.ts` 的 `description`。
 - ⚠️ tree-shake：组件只在某平台门控分支被引用会被摇掉整模块 → 门控须用「需该模块平台并集」。`WEB` 由 `__WEB__` 定，禁写 `!PORTABLE && !DESKTOP`。
 - 左下角只准一个浮层 `DataDock`；项目内禁全局 fixed 浮层。种子键：卡片 `模块::字段`、表格=列名；改种子必跑 `seed-schema-check.mjs`。
-- 🔴 编辑器双图层（NovelEditor）：高亮开时文字全来自叠层。① 盒模型逐项一致；② 叠层重建会归零 scrollTop → 高亮/切章/字号/页宽/专注/检索必 `useLayoutEffect` 回填；③ 只走 `scanRefHighlight` 单次正则。
+- 🔴 编辑器双图层：高亮开时文字全来自叠层。① 盒模型逐项一致；② 叠层重建会归零 scrollTop → 各触发点必 `useLayoutEffect` 回填；③ 只走 `scanRefHighlight` 单次正则。
 
 ## 存储 / 同步（丢数据风险）
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录。便携(FSA) `flush()` 是 swap 语义。🔴 图片字段先压缩再入库。
@@ -54,7 +54,8 @@
 - 📊 状态一览/用量明细：`status.ts` 只提取不读库；开关在工具条「角色状态」。不做数值化「关系温度」；`agoText` 唯一真源。
 - 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（summarize.ts）；设定＝这让 Ta 变成了谁（revise.ts）。拦不住 → findNarrativeOverlap（≥6 字）标 ⚠️，只提示。
 - 📚 🔴 背景设定（`world.ts`）：关键词空＝总是注入；上限 1800 字。只服务剧情推演（2026-09-15 收口）；键只剩 `tavern.world`，旧 `tavern.world.free` 保留但到不了（哨兵测）。
-- 🌐 联网检索：设置＝全局键 `app.search`（唯一入口 `searchSettings.ts`；UI 在灵感启发；旧 `tavern.settings.search` 由它搬走＋两侧 strip）。三档 off/model/api；引擎 bocha/searxng/custom；地址含 {query} ⇒ GET。桌面版走主进程代发 → 不受 CORS 限；便携版无主进程 → 只能带 ACAO（博查）。🔴 起草必须回告联网状态（`WebVerdict` 四态 → `describeSource`）：没联上就明说「凭已有知识生成」。本机 SearXNG 127.0.0.1:8888（只留 360search+bing）。§16
+- 🧩 模型配置＝灵感启发最上方的独立面板（`AIConfigPanel.tsx`，原为 AI 辅助规划的弹窗），下邻联网检索。全应用共用一个活动模型；改配置靠 `reloadKey` 通知下游重读。指路文案统一「灵感启发 → 模型配置」。
+- 🌐 联网检索：设置＝全局键 `app.search`（唯一入口 `searchSettings.ts`，含旧键迁移＋两侧 strip）。三档 off/model/api，引擎 bocha/searxng/custom；地址含 {query} ⇒ GET；桌面版主进程代发，便携版仍受同源限。🔴 起草回告联网状态（`WebVerdict` 四态→`describeSource`）：没联上就明说「凭已有知识生成」。本机 SearXNG 127.0.0.1:8888（只留 360search+bing）。§16
 - ✍️ 起草：draft.ts（角色卡 13 栏模板）。🔴 提纲 fields 必须覆盖模板全部栏；角色卡草稿的示例对话要守协议格式。
 - 🔴 对话引导已泛化到全局补全入口（§13）：机制＝项目级 `lib/interview.ts`（只认 `InterviewSpec`、不管模型配置），界面＝`InterviewChat.tsx`，`AITemplateFill` 两模式＝一句话补全／对话引导。别在业务侧再写一份。
 - 🎬 临时导演指令：`directorNote{text,depth,turnsLeft}` 会话级，按深度插进历史；成功产出才倒计时。
@@ -75,6 +76,6 @@
 
 ## 环境（Windows + Git Bash）
 - git / npm 都用绝对路径（PortableGit 1.2.0 `cmd/git.exe`；托管 node + `npm/bin/npm-cli.js`），路径写 `C:/` 正斜杠。
-- ⚠️ Edit 会「假成功」（dev 下更甚）：改完立即 grep 复查；多处替换用脚本（幂等、未命中即抛）；`node -e` 反引号被 shell 替换 → 一律用 Write 落脚本（别塞 heredoc）。同一文件别同轮既改又追加；搬 JSX 前先看换行符（CRLF 归一成 LF 再锚点）。
+- ⚠️ Edit 会「假成功」（dev 更甚）：改完立即 grep 复查；多处替换用脚本（幂等，未命中即抛错）；`node -e` 反引号被 shell 吞 → 一律 Write 落脚本。别同轮既改又追加同一文件；搬 JSX 前 CRLF 归一成 LF 再锚点。
 - ⚠️ `sort -n/-r` 有时解析到 Windows `sort.exe` → 用 node 脚本代替；`git bundle create` 遇中文路径建不了 `.lock` → 先在英文路径建再 `cp` 回。
 - ⚠️ 验「随项目」用换项目（`db.setCurrentProject`），别直查物理表（写错 API 名会静默跳过→假绿）。「数据丢失」级结论回源码验尸；实弹会读真实 apiKey（先告知，绝不提交）。

@@ -58,7 +58,7 @@ export function aiCapabilityOf(tab: TabDef): AICapability {
 
 /** 未配置模型时，所有 AI 入口按钮的统一禁用提示 */
 export const AI_DISABLED_HINT =
-  '需先接入 AI 模型：到「灵感启发 → AI 辅助规划 → 模型设置」添加本地 Ollama 或联网模型即可启用。' +
+  '需先接入 AI 模型：到「灵感启发 → 模型配置」添加本地 Ollama 或联网模型即可启用。' +
   '（未接入不影响本页任何手动填写功能）'
 
 /**

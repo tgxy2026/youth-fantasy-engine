@@ -37,7 +37,7 @@ export const K_TAVERN_SETTINGS = 'tavern.settings'
 
 /** 通用控制（两种模式都生效） */
 export type TavernCommonSettings = {
-  /** 默认模型：留空 = 跟随「模型设置」里的全局活动模型（会话里还能单独改） */
+  /** 默认模型：留空 = 跟随「灵感启发 → 模型配置」里的全局活动模型（会话里还能单独改） */
   defaultProviderId: string
   /** 上下文预算（字）：一轮请求里「设定 + 记忆 + 历史」的总字数上限 */
   contextBudget: number

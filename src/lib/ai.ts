@@ -351,7 +351,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
 async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {
   const { timeoutMs, think } = o
   const base = stripSlash(config.baseUrl || OLLAMA_DEFAULT_URL)
-  if (!config.model) throw new Error('未选择 Ollama 模型，请先在「模型设置」中拉取并选择本地模型。')
+  if (!config.model) throw new Error('未选择 Ollama 模型，请先到「灵感启发 → 模型配置」拉取并选择本地模型。')
   // 构建请求体：仅在显式要求关闭思考时传 think:false（连通性测试等极速反馈场景）。
   // 正常创作生成不传该字段，由模型/平台默认——思考型模型（deepseek-r1 / gemma4 / qwen3.5）保持思考，利于深度设定补全。
   const body: Record<string, unknown> = {
@@ -797,7 +797,7 @@ export async function getActiveProvider(): Promise<AIProvider | null> {
 /** 取当前模型；没有就抛出统一的中文提示（供必须依赖 AI 的功能使用） */
 export async function requireActiveProvider(): Promise<AIProvider> {
   const cfg = await getActiveProvider()
-  if (!cfg) throw new Error('尚未配置可用的 AI 模型，请先到「灵感启发 → AI 辅助规划 → 模型设置」添加并设为当前。')
+  if (!cfg) throw new Error('尚未配置可用的 AI 模型，请先到「灵感启发 → 模型配置」添加并设为当前。')
   return cfg
 }
 

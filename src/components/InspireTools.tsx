@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import AIAssist from './AIAssist'
+import AIConfigPanel from './AIConfigPanel'
 import SearchSettingsPanel from './SearchSettingsPanel'
 import AutoContinue from './AutoContinue'
 import { useAIReady } from '../lib/useAIReady'
@@ -30,6 +31,12 @@ export default function InspireTools() {
   const [names, setNames] = useState<string[]>([])
   const [favorites, setFavorites] = useState<string[]>([])
   const [copied, setCopied] = useState('')
+
+  /**
+   * 模型配置版本号：配置面板改了模型（新增 / 切换当前 / 删除）就 +1，
+   * 让下方「AI 辅助规划」重读一遍活动模型 —— 否则它手里还是旧的那份。
+   */
+  const [cfgVer, setCfgVer] = useState(0)
 
   // ---- AI 取名（无模型时禁用，本地能力不受影响）----
   const { ready: aiReady } = useAIReady()
@@ -81,14 +88,25 @@ export default function InspireTools() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">灵感启发</h1>
           <HelpPopover title="灵感启发怎么用" width="22rem" size={14}>
-            {'随机取名生成器：按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 风格批量出名字，点名字即复制，星标收藏；\n\nAI 辅助规划：多轮对话式脑暴，可结合你的世界观设定给建议，需接入 AI 模型（未接入时 AI 取名按钮禁用，本地取名不受影响）。'}
+            {'这一页从上到下分两层。\n\n【配置】模型配置（全局：全应用的 AI 功能都按这里选中的模型走）+ 联网检索（起草 / 补全时用什么素材，可用博查或自建 SearXNG）；\n\n【功能】随机取名生成器：按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 风格批量出名字，点名字即复制，星标收藏；AI 一键续写 + 设定补完：从已写章节续写正文、并据此补全设定；AI 辅助规划：多轮对话式脑暴，可结合你的世界观设定给建议。\n\n后两项与 AI 取名都需要模型（未接入时按钮禁用并给出提示），随机取名为本地能力、始终可用。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-[13px] text-ink-300">随机取名生成器 · AI 辅助规划</p>
+        <p className="mt-1 text-[13px] text-ink-300">模型配置 · 联网检索 · 随机取名生成器 · AI 一键续写 · AI 辅助规划</p>
       </header>
 
       <div className="space-y-4">
-        {/* ============ 随机取名 ============ */}
+        {/* ============ ① 模型配置（全局）============
+            它与下面的「联网检索」是一对「配置」，放页面最上边；
+            原先它是「AI 辅助规划」卡片右上角按钮后面的弹窗，和对话窗口挤在一起（2026-09-15 拆出）。 */}
+        <AIConfigPanel onChange={() => setCfgVer(v => v + 1)} />
+
+        {/* ============ ② 联网检索（全局）============
+            原先在「酒馆 → 控制面板」，2026-09-15 搬来：它是全局能力（角色卡/剧本/背景设定起草、
+            角色管理/表单/表格的 AI 补全都按它走），跟酒馆的协议与预算没有关系。
+            放在配模型的地方，作者配完模型顺手就把「要不要联网」定了。 */}
+        <SearchSettingsPanel />
+
+        {/* ============ ③ 随机取名（本地能力，无需模型）============ */}
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-[13px] font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Sparkles size={14} className="text-amber" /> 随机取名生成器
@@ -200,16 +218,12 @@ export default function InspireTools() {
           )}
         </section>
 
+        {/* ============ ④ AI 一键续写 + 设定补完 ============ */}
         <AutoContinue />
 
-        {/* ============ AI 辅助规划 ============ */}
-        <AIAssist />
-
-        {/* ============ 联网检索（全局）============
-            原先在「酒馆 → 控制面板」，2026-09-15 搬来：它是全局能力（角色卡/剧本/背景设定起草、
-            角色管理/表单/表格的 AI 补全都按它走），跟酒馆的协议与预算没有关系。
-            放在配模型的地方，作者配完模型顺手就把「要不要联网」定了。 */}
-        <SearchSettingsPanel />
+        {/* ============ ⑤ AI 辅助规划（对话）============
+            注意：模型配置已拆到页面最上方那张卡片，这里只剩「对话」。 */}
+        <AIAssist reloadKey={cfgVer} />
       </div>
     </div>
   )

@@ -79,7 +79,7 @@ export default function AutoContinue() {
 
   const start = useCallback(async () => {
     if (running) return
-    if (!aiReady) { showToast('请先在「AI 辅助规划 → 模型设置」配置可用模型', 'error'); return }
+    if (!aiReady) { showToast('请先在「灵感启发 → 模型配置」配置可用模型', 'error'); return }
     setRunning(true); setPreview(''); setLogs([]); setPhase('准备中')
     const ac = new AbortController(); abortRef.current = ac
     const res = await runAutoContinue(
