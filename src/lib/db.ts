@@ -1127,10 +1127,6 @@ export async function setSetting(key: string, value: unknown) {
 
 // ============ 酒馆模式 · 推演报告 ============
 // 报告是**项目级**数据（方案 §3.1）：随项目走，导出项目时一并带走，删项目时一并清理。
-export async function getAllReports(): Promise<TavernReport[]> {
-  return ops.getAll<TavernReport>('tavernReports')
-}
-
 export async function getReport(id: string): Promise<TavernReport | undefined> {
   return ops.get<TavernReport>('tavernReports', id)
 }

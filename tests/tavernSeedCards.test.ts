@@ -244,7 +244,7 @@ async function main() {
 
     // ① v1.1 全文一字未改 → 整段换成 v1.3
     __resetMockStores()
-    await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '洛汐', examples: LEGACY_SEED_EXAMPLES['洛汐'] })
+    await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '洛汐', examples: LEGACY_SEED_EXAMPLES['洛汐'][0] })
     const n1 = await upgradeSeedCards()
     const got1 = (await store.getFreeChar((await store.listFreeChars())[0].id))!.examples
     ok('老卡一字未改（v1.1 全文）→ 整段升级到 v1.3', n1 === 1 && got1 === luoxiNew, `张数=${n1}`)
@@ -324,7 +324,7 @@ async function main() {
     await seedFreeChars()
     const su = (await Promise.all((await store.listFreeChars()).map(i => store.getFreeChar(i.id))))
       .find(c => c?.seededFrom === '苏念')!
-    await store.saveFreeChar({ ...su, name: '苏念·改', examples: LEGACY_SEED_EXAMPLES['苏念'] })
+    await store.saveFreeChar({ ...su, name: '苏念·改', examples: LEGACY_SEED_EXAMPLES['苏念'][0] })
     const up = await upgradeSeedCards()
     const suAfter = (await store.getFreeChar(su.id))!
     ok('🔴 改名后依然被格式升级命中（按来源认，不看现名）',

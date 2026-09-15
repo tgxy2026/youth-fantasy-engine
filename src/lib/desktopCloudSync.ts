@@ -48,17 +48,11 @@ const cloud: CloudStoreInstance = createCloudStore(createHttpTransport())
 /** 桌面/便携版云端同步 StoreOps（db.ts 的 desktopCloudFileStore 包装层会在此之上做本地回退）。 */
 export const desktopCloudStore: StoreOps = cloud.store
 
-export function configureDesktopCloud(c: string) {
-  cloud.configure(c)
-}
 export function getDesktopCloudStatus(): SyncStatus {
   return cloud.getStatus()
 }
 export function isDesktopCloudUnavailable(): boolean {
   return cloud.isCloudUnavailable()
-}
-export function isDesktopCloudAuthFailed(): boolean {
-  return cloud.isCloudAuthFailed()
 }
 export function getDesktopCloudBackupMeta(): CloudBackupMeta | null {
   return cloud.getCloudBackupMeta()
@@ -74,9 +68,6 @@ export async function seedDesktopFromLocal(getAll: (store: string) => Promise<an
 }
 export function onDesktopSyncConflict(h: (info: SyncConflictInfo) => void) {
   cloud.onSyncConflict(h)
-}
-export async function desktopBackgroundPull() {
-  return cloud.backgroundPull()
 }
 
 function isStringHandle(h: unknown): h is string {
