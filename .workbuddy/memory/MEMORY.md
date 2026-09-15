@@ -11,7 +11,7 @@
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；三存储经 StoreOps；dev 5199。
 - 现 2.1.0（约每月一版，只改号）。版本唯一源 `package.json`；dev 靠 `injectAppVersion()` 注入 `APP_VERSION_LABEL`。
 - 🔴 封装：`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`（勿指 eb-cache/electron-zip）；两脚本有体积闸门。NSIS perMachine:false＋allowToChangeInstallationDirectory:false。
-- 🔴🔴 **2.1.0 起只做桌面版**：清理须成套（116 处/14 文件）。⚠️ `APP_VERSION_LABEL` 在 `portable.ts` → 先迁 `env.ts`。`syncCore.ts` 保留。方案 `docs/2.1.0-桌面版收官方案.html`。
+- 🔴🔴 **只做桌面版**（清理已完成）：无 WEB/PORTABLE；`StoreOps`+`PortableData` 已独立到 `storeOps.ts`（原在 portable.ts），版本号在 `env.ts`。云盘同步＝唯一跨设备途径（`syncCore` 保留）。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键。⚠️ 功能改完回搜 `schema.ts` 的 `description`。
@@ -19,7 +19,7 @@
 - ⚠️ `DESKTOP` 是**运行时探测**（读 `window.electronStore`）→ **dev 浏览器恒 false**：`DataDock` 门控全假时不渲染，dev 看不到同步入口属正常。
 - 左下角只准一个浮层 `DataDock`；项目内禁全局 fixed 浮层。种子键：卡片 `模块::字段`、表格=列名；改种子必跑 `seed-schema-check.mjs`。
 - 🔴 编辑器双图层：高亮开时文字全来自叠层。① 盒模型逐项一致；② 叠层重建归零 scrollTop → 触发点必 `useLayoutEffect` 回填；③ 只走 `scanRefHighlight`。
-- 🗺 地图＝`geography` 的行（`data['地图格子']` 存 `gx,gy;`）；格档 `cellKm` 是项目级单值（setting `geoMapCellKm`）。多地图＝setting `geoMaps` 清单＋「所属地图」列（**清单须单独存**）。
+- 🗺 **多地图已落地（方案 B）**：新表 `geomaps`（前缀 MAP）＋ geography 的 `所属地图` 引用列；格档**按图**存在地图行；`migrateGeoMaps` 建「默认地图」+回填；🔴 删图不删地点（退回第一张）、改图名须连带改归属。
 
 ## 存储 / 同步（丢数据风险）
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录。🔴 图片字段先压缩再入库。换设备前先关软件＋等同步完。

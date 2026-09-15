@@ -763,6 +763,51 @@ export async function migrateChapterNumbering(): Promise<void> {
   await Promise.all(writes)
 }
 
+/**
+ * 多地图迁移（2.1.0 · 地图列表方案 B）：
+ * 把「升级前唯一的那块画布」登记为一张「默认地图」，并把现有《地理风物》行全部归入它 ——
+ * 升级后打开与升级前**完全一致**（零感知）。
+ *
+ * 幂等：已有地图行时不再新建，只回填「所属地图」为空的地理行。
+ * 格档沿用旧的全局设置 `geoMapCellKm`（原实现把每格公里存在 setting 里）。
+ */
+export async function migrateGeoMaps(): Promise<number> {
+  const pid = currentProjectId
+  if (!pid) return 0
+  const rows = await ops.getAll<TableRow>('tableRows')
+  const maps = rows.filter(r => r.projectId === pid && r.tabId === 'geomaps')
+  let changed = 0
+
+  let defaultName = maps[0]?.data?.['名称']
+  if (!maps.length) {
+    const legacyKm = await getSetting<number>('geoMapCellKm', 1)
+    defaultName = '默认地图'
+    await ops.put('tableRows', {
+      id: uid(),
+      projectId: pid,
+      tabId: 'geomaps',
+      data: {
+        '编号': 'MAP0001',
+        '名称': defaultName,
+        '每格公里': legacyKm === 10 ? '10' : '1',
+        '说明': '升级时自动创建：承接升级前的全部地图内容。',
+      },
+      order: 0,
+      createdAt: Date.now(),
+    })
+    changed++
+  }
+  if (!defaultName) return changed
+
+  for (const r of rows) {
+    if (r.projectId !== pid || r.tabId !== 'geography') continue
+    if (r.data?.['所属地图']) continue
+    await saveTableRow({ ...r, data: { ...r.data, '所属地图': defaultName } })
+    changed++
+  }
+  return changed
+}
+
 // ============ 迁移统一入口 ============
 
 /**
@@ -794,6 +839,7 @@ export async function runMigrations(): Promise<void> {
   await migrateProjectTypes()
   await migrateChapterLedger()
   await migrateChapterNumbering()
+  await migrateGeoMaps()
 }
 // ============ 卡片记录 ============
 export async function getCardRecords(tabId: string): Promise<CardRecord[]> {

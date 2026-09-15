@@ -18,9 +18,9 @@ import type { AuditIssue, AuditLocation } from './audit'
 const PREFIX_TAB: Record<string, string> = {
   N: 'nations', G: 'geography', R: 'races', I: 'items', H: 'history',
   T: 'terms', F: 'foreshadow', LINE: 'subplots', S: 'secrets',
-  C: 'changelog', IDEA: 'ideas',
+  C: 'changelog', IDEA: 'ideas', MAP: 'geomaps',
 }
-const CODE_RE = /^(N|G|R|I|H|T|F|LINE|S|C|IDEA)\d/i
+const CODE_RE = /^(N|G|R|I|H|T|F|LINE|S|C|IDEA|MAP)\d/i
 
 export interface HealthResult {
   issues: AuditIssue[]

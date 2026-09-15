@@ -10,6 +10,7 @@ export const AUTONUM_GROUPS = new Set(['世界构建', '创作管理', '运营�
 export const CODE_PREFIX: Record<string, string> = {
   nations: 'N', geography: 'G', races: 'R', items: 'I', history: 'H', terms: 'T',
   foreshadow: 'F', subplots: 'LINE', secrets: 'S', changelog: 'C', ideas: 'IDEA',
+  geomaps: 'MAP',
 }
 
 /**

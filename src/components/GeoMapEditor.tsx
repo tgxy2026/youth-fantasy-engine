@@ -9,6 +9,7 @@ import { showToast, confirmDialog } from './dialogs'
 import CustomSelect, { CUSTOM_OPTIONS_EVENT, resolveOptions, type ResolvedOption } from './CustomSelect'
 import HelpPopover from './HelpPopover'
 import { Modal } from './Modal'
+import PromptModal from './PromptModal'
 import { Button } from './Button'
 
 /** 内置类别：必须与 schema.ts 中 geography 表「类别」列的内置选项保持一致 */
@@ -124,7 +125,22 @@ function subtreeIds(rootId: string, childMap: Map<string, Marker[]>): string[] {
 }
 
 export default function GeoMapEditor({ tab }: { tab: TabDef }) {
-  const [rows, setRows] = useState<TableRow[]>([])
+  /** 全部地理行（跨所有地图）；画布只渲染当前地图的那一批 —— 见下方 rows 派生 */
+  const [allRows, setAllRows] = useState<TableRow[]>([])
+  /** 《地图》表清单 + 当前地图 id（方案 B：每张地图一块独立画布） */
+  const [maps, setMaps] = useState<TableRow[]>([])
+  const [mapId, setMapId] = useState('')
+  const curMap = useMemo(() => maps.find(m => m.id === mapId), [maps, mapId])
+  const curMapName = curMap?.data['名称'] || ''
+  /**
+   * 当前地图上的地理行。
+   * 🔴 未指定「所属地图」的行**不显示**在任何画布上 —— 宁可让作者回《地理风物》补归属，
+   *    也不能让它同时出现在每张图上（那正是「只有一张地图」时代的旧行为）。
+   */
+  const rows = useMemo(
+    () => (curMapName ? allRows.filter(r => (r.data['所属地图'] || '') === curMapName) : []),
+    [allRows, curMapName],
+  )
   const [fs, setFs] = useState<TableRow[]>([])
   const [tl, setTl] = useState<TableRow[]>([])
   const [chars, setChars] = useState<CardRecord[]>([])
@@ -139,9 +155,12 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   const [dragOverride, setDragOverride] = useState<Map<string, { dx: number; dy: number }>>(new Map())
   const [addPos, setAddPos] = useState<{ x: number; y: number } | null>(null)
   const [layers, setLayers] = useState({ foreshadow: true, character: false, timeline: false })
-  /** 格子档位：每格边长 = 1 或 10 公里，按项目持久化。右上角按钮切换。 */
+  /** 格子档位：每格边长 = 1 或 10 公里。**跟着当前地图走**（每张图各自持有精细度），右上角按钮切换。 */
   const [cellKm, setCellKm] = useState<number>(1)
-  useEffect(() => { void db.getSetting<number>('geoMapCellKm', 1).then(v => (CELL_KM_STEPS.includes(v) ? setCellKm(v) : setCellKm(1))) }, [])
+  useEffect(() => {
+    const km = Number(curMap?.data['每格公里'])
+    setCellKm(CELL_KM_STEPS.includes(km) ? km : 1)
+  }, [curMap])
   const stepCellKm = (dir: 1 | -1) => {
     const i = CELL_KM_STEPS.indexOf(cellKm)
     const ni = Math.min(CELL_KM_STEPS.length - 1, Math.max(0, i + dir))
@@ -154,7 +173,12 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
     const ratio = newN / cellKm
     setCellKm(newN)
     setView({ k: 1, x: vp.w / 2 - wcx / ratio, y: vp.h / 2 - wcy / ratio })
-    void db.setSetting('geoMapCellKm', newN)
+    // 写回当前地图行（原先存项目级 setting，多地图后必须按图区分）
+    if (curMap) {
+      const upd = { ...curMap, data: { ...curMap.data, '每格公里': String(newN) } }
+      setMaps(prev => prev.map(m => (m.id === curMap.id ? upd : m)))
+      void db.saveTableRow(upd)
+    }
   }
   /** 绘制模式：正在绘制的空间 id */
   const [painting, setPainting] = useState<string | null>(null)
@@ -180,15 +204,19 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [gRows, fsRows, tlRows, charTabs] = await Promise.all([
+    const [gRows, fsRows, tlRows, mapRowsAll, charTabs] = await Promise.all([
       db.getTableRows('geography'),
       db.getTableRows('foreshadow'),
       db.getTableRows('timeline'),
+      db.getTableRows('geomaps'),
       Promise.all(
         TABS.filter(t => t.type === 'card' && t.group === '角色管理').map(t => db.getCardRecords(t.id)),
       ),
     ])
-    setRows(gRows)
+    setAllRows(gRows)
+    setMaps(mapRowsAll)
+    // 默认选第一张；原选择若还在就保留（重新加载后不跳图）
+    setMapId(prev => (prev && mapRowsAll.some(m => m.id === prev) ? prev : (mapRowsAll[0]?.id ?? '')))
     setFs(fsRows)
     setTl(tlRows)
     setChars(charTabs.flat())
@@ -494,7 +522,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
     }
     const updated: TableRow = { ...row, data: { ...row.data, '地图格子': serializeCells(cur) } }
     await db.saveTableRow(updated)
-    setRows(prev => prev.map(x => x.id === row.id ? updated : x))
+    setAllRows(prev => prev.map(x => x.id === row.id ? updated : x))
     if (skipped > 0) showToast(`已修改 ${added + removed} 格；${skipped} 格越界、重叠或被子孙占用，已跳过`, 'info')
   }
   const onPointerDown = (e: RPointerEvent<SVGElement>, kind: 'node' | 'pan', _mk?: Marker) => {
@@ -614,7 +642,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
       }).filter(Boolean) as { r: TableRow; upd: TableRow }[]
       if (updates.length) {
         void Promise.all(updates.map(u => db.saveTableRow(u.upd))).then(() => {
-          setRows(prev => prev.map(x => { const f = updates.find(u => u.r.id === x.id); return f ? f.upd : x }))
+          setAllRows(prev => prev.map(x => { const f = updates.find(u => u.r.id === x.id); return f ? f.upd : x }))
           setDragOverride(new Map())
         })
       }
@@ -637,14 +665,16 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
     if (!addPos || !name.trim()) return
     const pid = db.getCurrentProjectId()
     const row: TableRow = {
-      id: uid(), projectId: pid, tabId: 'geography', order: rows.length,
+      id: uid(), projectId: pid, tabId: 'geography', order: allRows.length,
       data: {
         '名称': name.trim(),
         '类别': category || '区域', ...(parent ? { '层级归属': parent } : {}),
+        // 就地新增的地点默认落在**当前地图**上，否则新点会立刻从画布上消失
+        ...(curMapName ? { '所属地图': curMapName } : {}),
       },
     }
     await db.saveTableRow(row)
-    setRows(prev => [...prev, row])
+    setAllRows(prev => [...prev, row])
     setAddPos(null)
     setSelected(row.id)
     showToast(`已登记「${name.trim()}」，点右上角「绘制地图」为它画出地理形状`, 'success')
@@ -656,7 +686,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
     if (!r) return
     const updated: TableRow = { ...r, data: { ...r.data, ...patch } }
     await db.saveTableRow(updated)
-    setRows(prev => prev.map(x => x.id === selected ? updated : x))
+    setAllRows(prev => prev.map(x => x.id === selected ? updated : x))
   }
   const clearCoords = async () => {
     if (!selected) return
@@ -689,7 +719,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
     })
     if (!ok) return
     await db.deleteTableRow(selected)
-    setRows(prev => prev.filter(x => x.id !== selected))
+    setAllRows(prev => prev.filter(x => x.id !== selected))
     setSelected(null)
     showToast(`已删除「${nm}」（地图与《地理风物》同步移除）`, 'success')
   }
@@ -755,8 +785,16 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
         </div>
       </div>
 
-      {/* 中段：画布 + 右侧面板（两者严格等高） */}
+      {/* 中段：地图列表 + 画布（两者严格等高） */}
       <div className="flex-1 flex min-h-0">
+        <GeoMapList
+          maps={maps}
+          mapId={mapId}
+          onPick={setMapId}
+          rowCountOf={name => allRows.filter(r => (r.data['所属地图'] || '') === name).length}
+          onChanged={() => void load()}
+          disabled={loading}
+        />
         <div ref={wrapRef} className="flex-1 min-w-0 relative overflow-hidden" style={{ background: 'rgb(var(--ink-900))' }}>
           {/* 空态提示必须 pointer-events-none，否则会挡住「单击空白新增」 */}
           {loading ? (
@@ -948,6 +986,138 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
 }
 
 /** 「绘制地图」选择弹窗：按「层级归属」缩进展示所有地理范围，提醒从最大范围开始绘制 */
+/**
+ * 左侧地图列表（多地图 · 方案 B）。
+ *
+ * 每张地图 = 一块独立画布（各自坐标系 + 格子档位），通过《地理风物》的「所属地图」把地点挂上去。
+ * 🔴 删除地图**不删地点数据**：把它们退回第一张地图，作者可再指派 —— 地图只是「呈现方式」。
+ */
+function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disabled }: {
+  maps: TableRow[]
+  mapId: string
+  onPick: (id: string) => void
+  rowCountOf: (name: string) => number
+  onChanged: () => void
+  disabled?: boolean
+}) {
+  const [busy, setBusy] = useState(false)
+  /** 弹窗意图：新建 / 重命名（null = 关闭） */
+  const [ask, setAsk] = useState<{ mode: 'add' | 'rename'; target?: TableRow } | null>(null)
+
+  const submitName = async (name: string) => {
+    const intent = ask
+    setAsk(null)
+    if (!intent) return
+    if (maps.some(m => (m.data['名称'] || '') === name && m.id !== intent.target?.id)) {
+      showToast('已有同名地图，换个名字', 'error')
+      return
+    }
+    setBusy(true)
+    try {
+      if (intent.mode === 'add') {
+        await db.saveTableRow({
+          id: uid(), projectId: db.getCurrentProjectId(), tabId: 'geomaps', order: maps.length,
+          data: { '编号': '', '名称': name, '每格公里': '1', '说明': '' },
+        })
+        showToast('已新建地图「' + name + '」', 'success')
+      } else if (intent.target) {
+        const old = intent.target.data['名称'] || ''
+        // ⚠️ 名称是《地理风物》「所属地图」的引用值：改名必须连带改归属，否则那些地点会集体从画布上消失
+        await db.saveTableRow({ ...intent.target, data: { ...intent.target.data, '名称': name } })
+        for (const r of await db.getTableRows('geography')) {
+          if ((r.data['所属地图'] || '') === old) {
+            await db.saveTableRow({ ...r, data: { ...r.data, '所属地图': name } })
+          }
+        }
+        showToast('已改名为「' + name + '」', 'success')
+      }
+      onChanged()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const delMap = async (m: TableRow) => {
+    if (maps.length <= 1) {
+      showToast('至少要保留一张地图', 'error')
+      return
+    }
+    const name = m.data['名称'] || ''
+    const n = rowCountOf(name)
+    if (!await confirmDialog({
+      title: '删除地图',
+      message: n > 0
+        ? '「' + name + '」上有 ' + n + ' 个地点。删除地图不会删除地点数据 —— 它们会退回第一张地图，可再次指派。确定删除？'
+        : '确定删除空地图「' + name + '」？',
+      danger: true,
+    })) return
+    setBusy(true)
+    try {
+      const fallback = maps.find(x => x.id !== m.id)?.data['名称'] || ''
+      for (const r of await db.getTableRows('geography')) {
+        if ((r.data['所属地图'] || '') === name) {
+          await db.saveTableRow({ ...r, data: { ...r.data, '所属地图': fallback } })
+        }
+      }
+      await db.deleteTableRow(m.id)
+      showToast('已删除「' + name + '」', 'success')
+      onChanged()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <aside className="w-40 shrink-0 border-r border-ink-700 flex flex-col min-h-0">
+      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-ink-700 shrink-0">
+        <Layers size={12} className="text-amber" />
+        <span className="text-[11px] font-medium text-ink-200">地图</span>
+        <button type="button" disabled={disabled || busy} onClick={() => setAsk({ mode: 'add' })}
+          title="新建一张独立画布"
+          className="ml-auto inline-flex items-center justify-center h-6 w-6 rounded-md border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40 disabled:opacity-40 transition-colors">
+          <Plus size={11} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
+        {maps.map(m => {
+          const nm = m.data['名称'] || '未命名'
+          const on = m.id === mapId
+          return (
+            <div key={m.id}
+              className={'group flex items-center gap-0.5 rounded-md border px-1.5 py-1 transition-colors ' + (on ? 'border-amber/40 bg-amber/10' : 'border-ink-700 hover:border-ink-600')}>
+              <button type="button" onClick={() => onPick(m.id)}
+                title={'切到「' + nm + '」（' + rowCountOf(nm) + ' 个地点）'}
+                className={'flex-1 min-w-0 text-left text-[11.5px] truncate ' + (on ? 'text-amber' : 'text-ink-300')}>
+                {nm}
+                <span className="ml-1 text-[10px] text-ink-500">{rowCountOf(nm)}</span>
+              </button>
+              <button type="button" disabled={busy} onClick={() => setAsk({ mode: 'rename', target: m })}
+                title="重命名（会连带更新地点的归属）"
+                className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-ink-500 opacity-0 group-hover:opacity-100 hover:text-amber transition-opacity">
+                <Pencil size={10} />
+              </button>
+              <button type="button" disabled={busy} onClick={() => void delMap(m)}
+                title="删除这张地图（地点不会被删，会退回第一张图）"
+                className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-ink-500 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity">
+                <Trash2 size={10} />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      <PromptModal
+        open={!!ask}
+        title={ask?.mode === 'add' ? '新建地图' : '重命名地图'}
+        label="地图名称"
+        defaultValue={ask?.mode === 'rename' ? (ask.target?.data['名称'] || '') : ''}
+        placeholder="如：九州大陆图 / 王城平面图"
+        onSubmit={n => void submitName(n)}
+        onCancel={() => setAsk(null)}
+      />
+    </aside>
+  )
+}
+
 function DrawDialog({ rows, drawnCells, onPick, onClose }: {
   rows: TableRow[]; drawnCells: Map<string, number>
   onPick: (id: string) => void; onClose: () => void
