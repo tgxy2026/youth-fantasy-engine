@@ -18,7 +18,7 @@ export type ResolvedParams = Required<TavernParams>
 
 /**
  * 逐层覆盖出最终参数。
- * @param mode 'plot'（剧情，温度 0.85）/ 'free'（自由，温度 0.9 —— 更松）
+ * @param mode 'plot'（剧情，温度 0.9）/ 'free'（自由，温度 0.95 —— 更松）
  * @param layers 从低优先级到高优先级依次传入（如 角色参数, 会话参数）
  */
 export function resolveParams(mode: 'plot' | 'free', ...layers: (TavernParams | undefined)[]): ResolvedParams {

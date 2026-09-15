@@ -234,11 +234,11 @@ async function main() {
       JSON.stringify(ex))
     ok('temperature 不在 extraOptions 里重复出现（chat 的唯一真源）', ex.temperature === undefined)
 
-    // 不传 settings 时用出厂默认 → 与改动前行为一致（0.9 是 free 的既有默认温度）
+    // 不传 settings 时用出厂默认 → 与改动前行为一致（0.95 = free 的出厂默认温度，2026-09-15 由 0.9 放宽）
     const dflt = makeFakeChat('「嗯。」')
     const sess2 = await store.createFreeSession([su.id], '默认参数', { providerId: STUB_PROVIDER.id }, {})
     await runFreeTurn(sess2, [su], '（默认）', {}, { chatFn: dflt.chatFn })
-    ok('不传设置时用出厂默认温度 0.9', (dflt.calls[0].opts as Record<string, unknown>).temperature === 0.9,
+    ok('不传设置时用出厂默认温度 0.95', (dflt.calls[0].opts as Record<string, unknown>).temperature === 0.95,
       String((dflt.calls[0].opts as Record<string, unknown>).temperature))
   }
 

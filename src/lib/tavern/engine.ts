@@ -724,7 +724,7 @@ export function buildFreeMessages(
 }
 
 function totalBudget(v: number | undefined): number {
-  // 兜底值与 TAVERN_DEFAULTS 保持一致（2026-09-14 由 8000 提到 16000）——
+  // 兜底值与 TAVERN_DEFAULTS 保持一致（2026-09-15 由 16000 提到 24000）——
   // 两处不一致时，「没传参数」的调用点会莫名比面板上的值小一半，很难查。
-  return v && Number.isFinite(v) && v > 0 ? v : 16000
+  return v && Number.isFinite(v) && v > 0 ? v : 24000
 }

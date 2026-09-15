@@ -26,6 +26,7 @@ import { proposeCardRevisions } from '../src/lib/tavern/revise'
 import { SEED_FREE_CHARACTERS } from '../src/lib/tavern/seedCards'
 import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import type { TavernMessage } from '../src/lib/tavern/types'
+import { MEMORY_SOFT_LIMIT } from '../src/lib/tavern/types'
 import type { FreeCharacter, FreeSession } from '../src/lib/tavern/types'
 
 const DATA = 'C:/Users/18223/AppData/Roaming/novel-studio/novel-studio-data.json'
@@ -407,7 +408,7 @@ async function main() {
   const knowsMe = /陈默/.test(last)
   console.log(`  新会话里提到「阿灰」：${knowsCat ? '✅ 是 —— 记忆闭环成立' : '❌ 否'}`)
   console.log(`  新会话里记得「陈默」：${knowsMe ? '✅ 是' : '（这一轮没提到，不算失败）'}`)
-  console.log(`  记忆字数：${memoryChars(mem)}（软上限 1200）`)
+  console.log(`  记忆字数：${memoryChars(mem)}（软上限 ${MEMORY_SOFT_LIMIT}）`)
   console.log(`  六栏解析：${MEMORY_SECTIONS.filter(s => String(mem[s.key] ?? '').trim()).length} / 6 栏非空`)
   console.log('\n实弹验证结束。')
 }

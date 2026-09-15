@@ -121,7 +121,7 @@ export const GUIDE_CONTEXT_BUDGET: ParamGuide = {
   bands: [
     { from: 1000, to: 4000, name: '极小', effect: '只记得住最近几轮；协议 + 角色卡 + 背景设定本身就吃掉大半，角色会反复问已经答过的事。' },
     { from: 4000, to: 10000, name: '单场戏', effect: '短对话够用。但剧情推演的 system 常有 8000~10000 字，这一档几乎全被 system 占满 → 留给对话历史的额度接近 0。' },
-    { from: 10000, to: 24000, name: '长线（默认 16000）', effect: 'system 与对话历史都够用，是「一场完整推演 + 记得住前文」的推荐区间。', recommended: true },
+    { from: 10000, to: 24000, name: '长线（默认 24000）', effect: 'system 与对话历史都够用，是「一场完整推演 + 记得住前文」的推荐区间。', recommended: true },
     { from: 24000, to: 100000, name: '超长', effect: '必须同时把「上下文窗口长度」调大，否则会被模型端截断；本地模型从这里开始明显变慢、显存吃紧。' },
   ],
 }

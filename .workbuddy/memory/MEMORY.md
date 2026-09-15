@@ -54,9 +54,10 @@
 - 🎛️ 控制面板（八段）：tavern.settings；优先级 会话→角色→面板→模式默认。数值真源 paramGuide.ts。⚠️ mergeDeep 会回填已删默认键 → 废弃字段须在 upgradeLegacyDefaults 删。
 - 🔴🔴 控制面板分列按实测高度：左＝不分局部的设置＋协议（协议须**最后一项**），右＝两种模式手感。段号一动，「N 段设置」文案一起改。
 - 🔴 层序：设定→背景设定→这一场(剧本)→记忆→身份→档位→（通用→本场补充）→未带入→协议→（自由模式）**数值块**（协议之后；放它前面的内容容易被那 3.5KB 格式规范盖过去）。
-- 🔴🔴 上下文预算：historyBudget＝预算−400−整条 system（别传记忆）；contextBudget 16000（三处一致）→ 默认档历史仅约 2600 字。源 both/digest/raw。空层不占额度。
+- 🔴🔴 上下文预算：historyBudget＝预算−400−整条 system（别传记忆）；**contextBudget 24000（三处一致：TAVERN_DEFAULTS 两条 + engine.totalBudget 兜底）**。源 both/digest/raw。空层不占额度。
+- ⚙️ 出厂参数（2026-09-15 整体放宽一档，按 5090+本地 27B）：预算 24000 / 超时 300s / 温度 plot 0.9·free 0.95 / topP 0.92 / topK 60 / 记忆软 2000·硬 3000·长期 500 / 背景设定 2400 / 剧本 2000。**numCtx 32768 不动**（27B q6_K≈22GB + 32K KV≈8GB 已贴 32GB 上限）。🔴 每个新值都必须在 paramGuide 的**推荐段**内（`paramGuide.test` 会闸）。改默认值**必须同时在 `upgradeLegacyDefaults` 加「全等旧值才升」的规则**，否则老库永远看不到变化。
 - 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（summarize.ts）；设定＝这让 Ta 变成了谁（revise.ts）。
-- 📚 🔴 背景设定（`world.ts`）：关键词空＝总是注入，上限 1800 字。键只剩 `tavern.world`。
+- 📚 🔴 背景设定（`world.ts`）：关键词空＝总是注入，上限 2400 字。键只剩 `tavern.world`。
 - 🧩 模型配置＝灵感启发顶部独立面板（`AIConfigPanel.tsx`）；全局共用一个活动模型，改配置靠 `reloadKey` 通知下游。
 - 🌐 联网检索：全局键 `app.search`。三档 off/model/api；地址含 {query}⇒GET；主进程代发。🔴 起草须如实回告。
 - ✍️ 起草：draft.ts（角色卡 13 栏）。🔴 提纲 fields 须覆盖全部栏；**示例对话必须合协议**（样例不合规会带偏格式）。

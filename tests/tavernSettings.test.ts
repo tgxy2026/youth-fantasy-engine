@@ -34,16 +34,16 @@ async function main() {
     const d = DEFAULT_TAVERN_SETTINGS
     ok('通用：上下文预算沿用 TAVERN_DEFAULTS', d.common.contextBudget === TAVERN_DEFAULTS.free.contextBudget, String(d.common.contextBudget))
     ok('通用：num_ctx 沿用 TAVERN_DEFAULTS', d.common.numCtx === TAVERN_DEFAULTS.free.numCtx, String(d.common.numCtx))
-    ok('通用：超时 180 秒（= 原 CHAT_TIMEOUT_MS / 1000）', d.common.timeoutSec === 180, String(d.common.timeoutSec))
+    ok('通用：超时 300 秒（2026-09-15 由 180 放宽，本地模型给足时间）', d.common.timeoutSec === 300, String(d.common.timeoutSec))
     ok('通用：默认模型留空 = 跟随全局活动模型', d.common.defaultProviderId === '')
     ok('通用：默认含「标点适用范围」那条', d.common.extraPrompt === DEFAULT_COMMON_EXTRA && d.common.extraPrompt.includes('标点照常用'))
 
-    ok('剧情：温度 0.85 / presence 0.4（叙事要稳）',
-      d.plot.temperature === 0.85 && d.plot.presencePenalty === 0.4,
+    ok('剧情：温度 0.9 / presence 0.5（叙事要稳）',
+      d.plot.temperature === 0.9 && d.plot.presencePenalty === 0.5,
       `${d.plot.temperature}/${d.plot.presencePenalty}`)
     ok('剧情：叙事向风格默认留空（不追加就是协议默认）', d.plot.styleHint === '')
-    ok('自由：温度 0.9 / presence 0.45（陪伴要松）',
-      d.free.temperature === 0.9 && d.free.presencePenalty === 0.45,
+    ok('自由：温度 0.95 / presence 0.55（陪伴要松）',
+      d.free.temperature === 0.95 && d.free.presencePenalty === 0.55,
       `${d.free.temperature}/${d.free.presencePenalty}`)
     ok('自由：聊天向风格取 prompt 里的内置默认（单一真源）', d.free.styleHint === TONE_HINT.chat && d.free.styleHint.includes('〖本场风格〗'))
 
@@ -60,7 +60,7 @@ async function main() {
   {
     __resetMockStores()
     const fresh = await getTavernSettings()
-    ok('没存过时读到出厂默认', fresh.common.timeoutSec === 180)
+    ok('没存过时读到出厂默认', fresh.common.timeoutSec === 300)
 
     const custom = {
       ...fresh,
@@ -73,7 +73,7 @@ async function main() {
     ok('档位也能存能读（客观描写 = 轻）', back.free.sceneDescription === 'light', back.free.sceneDescription)
 
     await resetTavernSettings()
-    ok('恢复默认后回到出厂值', (await getTavernSettings()).common.timeoutSec === 180)
+    ok('恢复默认后回到出厂值', (await getTavernSettings()).common.timeoutSec === 300)
   }
 
   // ---------- 3) 部分存储 → 与默认深合并（旧数据不会读出 undefined） ----------
@@ -85,10 +85,42 @@ async function main() {
     ok('写过的字段生效', st.free.temperature === 0.3, String(st.free.temperature))
     ok('没写的字段回落到默认（不会一路 undefined）',
       st.free.topP === DEFAULT_TAVERN_SETTINGS.free.topP &&
-      st.common.timeoutSec === 180 &&
-      st.plot.temperature === 0.85,
+      st.common.timeoutSec === DEFAULT_TAVERN_SETTINGS.common.timeoutSec &&
+      st.plot.temperature === DEFAULT_TAVERN_SETTINGS.plot.temperature,
       JSON.stringify(st.common))
     ok('整个缺失的分组也补全', st.common.extraPrompt === DEFAULT_COMMON_EXTRA)
+
+    // ---------- 出厂参数放宽的老库升级（2026-09-15） ----------
+    // 只把「还等于旧出厂值」的字段升上来；作者手动调过的一个都不许动。
+    {
+      __resetMockStores()
+      await db.setMeta(K_TAVERN_SETTINGS, {
+        common: { contextBudget: 16000, timeoutSec: 180, defaultProviderId: 'p1' },
+        plot: { temperature: 0.85, topK: 40 },
+        free: { temperature: 0.9, softLimit: 1200, hardLimit: 2000, diaryDays: 5 },
+      } as never)
+      const st = await getTavernSettings()
+      ok('升：上下文预算 16000 → 24000', st.common.contextBudget === 24000, String(st.common.contextBudget))
+      ok('升：超时 180 → 300 秒', st.common.timeoutSec === 300, String(st.common.timeoutSec))
+      ok('升：剧情温度 0.85 → 0.9、候选词上限 40 → 60',
+        st.plot.temperature === 0.9 && st.plot.topK === 60, `${st.plot.temperature}/${st.plot.topK}`)
+      ok('升：自由温度 0.9 → 0.95、软上限 1200 → 2000、硬上限 2000 → 3000、日记 5 → 7 天',
+        st.free.temperature === 0.95 && st.free.softLimit === 2000 && st.free.hardLimit === 3000 && st.free.diaryDays === 7,
+        `${st.free.temperature}/${st.free.softLimit}/${st.free.hardLimit}/${st.free.diaryDays}`)
+      ok('不相关的字段原样保留（defaultProviderId 不被碰）', st.common.defaultProviderId === 'p1', st.common.defaultProviderId)
+
+      // 手动调过的值**不等于旧出厂值**，一律不升
+      __resetMockStores()
+      await db.setMeta(K_TAVERN_SETTINGS, {
+        common: { contextBudget: 12000 },
+        plot: { temperature: 0.6 },
+        free: { softLimit: 900 },
+      } as never)
+      const st2 = await getTavernSettings()
+      ok('手改过的数值不被升级覆盖',
+        st2.common.contextBudget === 12000 && st2.plot.temperature === 0.6 && st2.free.softLimit === 900,
+        `${st2.common.contextBudget}/${st2.plot.temperature}/${st2.free.softLimit}`)
+    }
 
     // 协议升级：存的就是**旧版内置协议**（v1.1）时静默换新；作者自己改过的一律不动
     __resetMockStores()
@@ -186,18 +218,18 @@ async function main() {
       lim.triggerMessages === SUMMARY_TRIGGER_MESSAGES && lim.softLimit === MEMORY_SOFT_LIMIT && lim.hardLimit === MEMORY_HARD_LIMIT,
       `${lim.triggerMessages}/${lim.softLimit}/${lim.hardLimit}`)
 
-    ok('timeoutMsOf：秒 → 毫秒', timeoutMsOf(st) === 180 * 1000, String(timeoutMsOf(st)))
+    ok('timeoutMsOf：秒 → 毫秒', timeoutMsOf(st) === 300 * 1000, String(timeoutMsOf(st)))
     ok('timeoutMsOf 有下限保护（填 0 也不会变成 0 超时）', timeoutMsOf({ ...st, common: { ...st.common, timeoutSec: 0 } }) === 5000)
 
     const base = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st))
-    ok('参数继承：控制面板层能落到结果上', base.temperature === 0.9 && base.contextBudget === 16000 && base.numCtx === 32768,
+    ok('参数继承：控制面板层能落到结果上', base.temperature === 0.95 && base.contextBudget === 24000 && base.numCtx === 32768,
       `${base.temperature}/${base.contextBudget}/${base.numCtx}`)
 
     const over = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st), { temperature: 0.11 })
     ok('参数继承：会话层优先级高于控制面板层', over.temperature === 0.11, String(over.temperature))
 
     const plotBase = resolveParams('plot', commonParamsLayer(st.common), modeParamsLayer('plot', st))
-    ok('两种模式的模式层互不串台（剧情仍是 0.85）', plotBase.temperature === 0.85, String(plotBase.temperature))
+    ok('两种模式的模式层互不串台（剧情仍是 0.9）', plotBase.temperature === 0.9, String(plotBase.temperature))
   }
 
   // ---------- 5) 本轮新增的项：逐条等于原硬编码值 ----------

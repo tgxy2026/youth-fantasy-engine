@@ -217,14 +217,14 @@ function main() {
 
   // ---------- 10) 参数继承 ----------
   {
-    ok('剧情默认温度 0.85', resolveParams('plot').temperature === 0.85)
-    ok('自由默认温度更松（0.9）', resolveParams('free').temperature === 0.9)
+    ok('剧情默认温度 0.9（2026-09-15 由 0.85 放宽）', resolveParams('plot').temperature === 0.9)
+    ok('自由默认温度更松（0.95）', resolveParams('free').temperature === 0.95)
     ok('高层覆盖低层', resolveParams('plot', { temperature: 1.2 }).temperature === 1.2)
     const layered = resolveParams('plot', { temperature: 1.0, topP: 0.5 }, { temperature: 1.2 })
     ok('逐层覆盖：会话参数压过角色参数', layered.temperature === 1.2 && layered.topP === 0.5)
     ok('忽略 undefined 层', resolveParams('plot', undefined, { topK: 7 }).topK === 7)
     ok('非法值（NaN/Infinity）不会污染默认值',
-      resolveParams('plot', { temperature: NaN, topP: Infinity }).temperature === 0.85)
+      resolveParams('plot', { temperature: NaN, topP: Infinity }).temperature === 0.9)
   }
 
   // ---------- 11) Ollama 字段映射（踩过坑的地方） ----------

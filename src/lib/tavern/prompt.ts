@@ -108,7 +108,7 @@ export function buildSystemPrompt(layers: PromptLayers): string {
   if (layers.setting?.trim()) parts.push(`〖世界与角色设定〗\n${layers.setting.trim()}`)
 
   // ①b 本场背景设定（第 5 批）：作者从项目资料**提炼**过的那一份，按关键词决定要不要带。
-  //     与①的区别：①是原始资料（可能几千字、每轮都带），这里是精简稿（≤1800 字、可开关）。
+  //     与①的区别：①是原始资料（可能几千字、每轮都带），这里是精简稿（≤2400 字、可开关）。
   if (layers.world?.trim()) parts.push(`〖本场背景设定〗\n${layers.world.trim()}`)
 
   // ①c 这一场（剧本）：它回答「此刻在哪、为什么在这儿、这一场想干嘛」——

@@ -54,8 +54,9 @@ export const EMPTY_WORLD_SETTING: WorldSetting = {
   brief: '', sections: [], keywords: [], seed: '', draftedAt: 0, updatedAt: 0,
 }
 
-/** 注入上限（字符）。超了截断并注明 —— 宁可少给，也不能把对话历史挤没 */
-export const WORLD_MAX_CHARS = 1800
+/** 注入上限（字符）。超了截断并注明 —— 宁可少给，也不能把对话历史挤没。
+ *  2026-09-15 由 1800 提到 2400：上下文预算同时提到 24000，这一层多占的额度从预算里出得起。 */
+export const WORLD_MAX_CHARS = 2400
 
 const K = 'tavern.world'
 

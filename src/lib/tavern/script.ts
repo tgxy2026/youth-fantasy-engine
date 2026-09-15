@@ -55,8 +55,9 @@ export const SCRIPT_FIELD_MAX: Record<'situation' | 'opening' | 'playerRole' | '
   situation: 600, opening: 400, playerRole: 300, goal: 200, taboo: 200,
 }
 
-/** 注入时的总上限（字符）。超了截断并注明，绝不悄悄吞掉 */
-export const SCRIPT_MAX_CHARS = 1400
+/** 注入时的总上限（字符）。超了截断并注明，绝不悄悄吞掉。
+ *  2026-09-15 由 1400 提到 2000：剧本是「这一场是什么」的骨架，值得多给一点。 */
+export const SCRIPT_MAX_CHARS = 2000
 
 export function emptyScript(): TavernScript {
   return { ...EMPTY_SCRIPT_FIELDS, id: '', draftedAt: 0, createdAt: 0, updatedAt: 0 }

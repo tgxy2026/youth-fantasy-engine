@@ -267,6 +267,44 @@ function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<Tav
   if (typeof out.protocol === 'string' && LEGACY_PROTOCOLS.includes(out.protocol)) {
     out = { ...out, protocol: PROTOCOL_CORE }
   }
+  // ⑤ 出厂参数放宽（2026-09-15）：上下文预算 / 超时 / 采样面 / 记忆三档上限整体上移。
+  //    🔴 与上面各条同一条纪律：**只升级「还等于旧出厂值」的字段**，手动调过的一个都不动。
+  //    不加这段的话，改默认值对存过设置的机器完全无效（mergeDeep 只会用库里的旧值）。
+  {
+    const cur = out.common
+    if (cur) {
+      const next = { ...cur }
+      let dirty = false
+      if (next.contextBudget === 16000) { next.contextBudget = 24000; dirty = true }
+      if (next.timeoutSec === 180) { next.timeoutSec = 300; dirty = true }
+      if (dirty) out = { ...out, common: next }
+    }
+    const p = out.plot
+    if (p) {
+      const next = { ...p }
+      let dirty = false
+      if (next.temperature === 0.85) { next.temperature = 0.9; dirty = true }
+      if (next.topP === 0.9) { next.topP = 0.92; dirty = true }
+      if (next.topK === 40) { next.topK = 60; dirty = true }
+      if (next.presencePenalty === 0.4) { next.presencePenalty = 0.5; dirty = true }
+      if (dirty) out = { ...out, plot: next }
+    }
+    const f = out.free
+    if (f) {
+      const next = { ...f }
+      let dirty = false
+      if (next.temperature === 0.9) { next.temperature = 0.95; dirty = true }
+      if (next.topP === 0.9) { next.topP = 0.92; dirty = true }
+      if (next.topK === 40) { next.topK = 60; dirty = true }
+      if (next.presencePenalty === 0.45) { next.presencePenalty = 0.55; dirty = true }
+      if (next.softLimit === 1200) { next.softLimit = 2000; dirty = true }
+      if (next.hardLimit === 2000) { next.hardLimit = 3000; dirty = true }
+      if (next.longTermLimit === 350) { next.longTermLimit = 500; dirty = true }
+      if (next.diaryDays === 5) { next.diaryDays = 7; dirty = true }
+      if (next.dailyLogKeep === 5) { next.dailyLogKeep = 7; dirty = true }
+      if (dirty) out = { ...out, free: next }
+    }
+  }
   // ③ `search` —— 2026-09-15 搬去了全局键 `app.search`（联网检索是全局功能，
   //    不该挂在酒馆的设置里；界面也搬到了「灵感工具 → 灵感启发」，见 searchSettings.ts）。
   //    🔴 这里必须主动删：mergeDeep 会把「默认值里已经没有的键」从旧数据/旧预设里**照抄回来**，
@@ -298,7 +336,7 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     defaultProviderId: '',
     contextBudget: TAVERN_DEFAULTS.free.contextBudget,
     fixedOverheadChars: FIXED_OVERHEAD_CHARS,
-    timeoutSec: 180, // = ai.ts 的 CHAT_TIMEOUT_MS / 1000
+    timeoutSec: 300, // 本地模型首字慢 + 生成长，2026-09-15 由 180 提到 300（guide 推荐段上限）
     numCtx: TAVERN_DEFAULTS.free.numCtx,
     disableThink: true, // engine 原本恒传 think:false
     extraPrompt: DEFAULT_COMMON_EXTRA,

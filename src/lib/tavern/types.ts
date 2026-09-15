@@ -49,7 +49,7 @@ export type TavernParams = {
  *
  * 起因：项目资料每轮全量注入（示范项目实测 4662 字、丢 11 段），加上协议 3244 字，
  * 默认预算被吃满 → 留给对话历史的额度算出来是 0（21 条消息只剩开场一条）。
- * 而后端已经有「背景设定」（world.ts）—— 作者提炼过的精简稿（≤1800 字、可开关）。
+ * 而后端已经有「背景设定」（world.ts）—— 作者提炼过的精简稿（≤2400 字、可开关）。
  * 所以给出这一档开关，让作者自己决定「用原始资料还是用提炼稿」。
  *
  *   · 'both'   —— 项目原始资料 + 本场背景设定（**默认**，= 加开关之前的行为）
@@ -636,22 +636,26 @@ export const TAVERN_DEFAULTS: {
   plot: Required<Pick<TavernParams, 'temperature' | 'topP' | 'topK' | 'repeatPenalty' | 'presencePenalty' | 'numCtx' | 'contextBudget'>>
   free: Required<Pick<TavernParams, 'temperature' | 'topP' | 'topK' | 'repeatPenalty' | 'presencePenalty' | 'numCtx' | 'contextBudget'>>
 } = {
-  // contextBudget 2026-09-14 由 8000 提到 16000（老大选 C 档）：旧值下「协议 3244 + 项目资料 4662
-  // + 重复预留 2600」已把 8000 吃满，历史额度算出来是 0。汉字大致一字≈一词元（不同分词器有出入），
-  // 16000 字约 16k 词元 —— numCtx 32768 还留了约一半给回复，别再往上顶。
+  // 【2026-09-15 整体放宽一档（老大按 5090 跑本地 27B 的配置要求「给模型更大发挥空间」）】
+  // contextBudget 16000 → 24000：旧值下 system（协议 3244 + 项目资料 + 背景设定 2400 + 记忆 2000）
+  // 常吃掉一万出头，留给对话历史只剩两三千字（十几轮就开始"失忆"）。汉字大致一字≈一词元，
+  // 24000 字约 24k 词元 —— numCtx 32768 仍留 8000+ 给回复，够用。
+  // 采样面同步放宽（温度/核采样/候选词上限/新话题倾向各上移一档，仍都在 guide 的推荐段内）。
+  // ⚠️ numCtx **刻意没动**：5090 跑 27B q6_K（约 22GB 权重）+ 32K KV cache（约 8GB）已逼近 32GB 上限，
+  //    再往上会溢到 CPU 反而更慢。要更长的上下文窗口只能换更小量化。
   plot: {
-    temperature: 0.85, topP: 0.9, topK: 40,
-    repeatPenalty: 1.05, presencePenalty: 0.4,
-    numCtx: 32768, contextBudget: 16000,
+    temperature: 0.9, topP: 0.92, topK: 60,
+    repeatPenalty: 1.05, presencePenalty: 0.5,
+    numCtx: 32768, contextBudget: 24000,
   },
   free: {
-    temperature: 0.9, topP: 0.9, topK: 40,
-    repeatPenalty: 1.05, presencePenalty: 0.45,
-    numCtx: 32768, contextBudget: 16000,
+    temperature: 0.95, topP: 0.92, topK: 60,
+    repeatPenalty: 1.05, presencePenalty: 0.55,
+    numCtx: 32768, contextBudget: 24000,
   },
 }
 
-/** 记忆字数约束（方案 4.5）：软上限 1200，硬截断 2000 */
+/** 记忆字数约束（方案 4.5）：软上限 2000，硬截断 3000（2026-09-15 各上移一档） */
 /**
  * 在场调度（2026-09-14，路线图第 4 批 A6）：**两种模式共用**的一套字段与语义。
  *
@@ -710,12 +714,12 @@ export function talkativityRowsOf(
     .filter(r => r.value !== DEFAULT_TALKATIVITY)
 }
 
-export const MEMORY_SOFT_LIMIT = 1200
-export const MEMORY_HARD_LIMIT = 2000
+export const MEMORY_SOFT_LIMIT = 2000
+export const MEMORY_HARD_LIMIT = 3000
 /** 「长期摘要」单独的字数上限 */
-export const MEMORY_LONGTERM_LIMIT = 350
+export const MEMORY_LONGTERM_LIMIT = 500
 /** 「最近日记」保留天数（硬性滚动） */
-export const MEMORY_DIARY_DAYS = 5
+export const MEMORY_DIARY_DAYS = 7
 
 /** 触发自动总结的新消息条数阈值（方案 4.6 ①） */
 export const SUMMARY_TRIGGER_MESSAGES = 6
