@@ -93,7 +93,7 @@ async function mkChar(): Promise<FreeCharacter> {
 }
 
 /**
- * 逐行审计模型输出是否符合协议 v1.3：
+ * 逐行审计模型输出是否符合协议 v1.4：
  *   对白＝纯文本 / （）＝动作·神态·心理 / 【】＝客观环境与人物外在 / 〔〕＝状态块
  * 返回各类行数与**违规清单**（带原文片段，便于人工复核）。
  */
@@ -244,7 +244,7 @@ async function main() {
     })
     const sys6 = (await buildFreeSystem(s6, [luo6, chu6])).system
     console.log(`[离线断言] system 含〖客观描写〗：${sys6.includes('〖客观描写〗') ? '✓' : '✗'}`)
-    console.log(`[离线断言] 协议正文已是 v1.3：${sys6.includes('角色扮演通用协议 · v1.3') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 协议正文已是 v1.4：${sys6.includes('角色扮演通用协议 · v1.4') ? '✓' : '✗'}`)
     console.log(`[离线断言] 身份层代词中性（Ta）：${sys6.includes('用 Ta 的眼睛看') ? '✓' : '✗'}`)
     console.log(`[离线断言] 输入侧用的是〖〗〈〉（示例标题/说话人）：${sys6.includes('〖样本') || sys6.includes('〈') ? '✓' : '✗'}`)
     console.log(`[离线断言] 对白不许加说话人标记已写进协议：${sys6.includes('不要把说话人的名字单独写成一行') ? '✓' : '✗'}`)

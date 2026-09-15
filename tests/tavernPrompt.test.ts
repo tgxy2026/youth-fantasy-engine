@@ -25,12 +25,18 @@ function ok(name: string, cond: boolean, extra = '') {
 function main() {
   // ---------- 1) 协议全文完整性（内置常量，条款掉了功能就瘫） ----------
   {
-    ok('协议版本为 v1.3（三类标记 + 代词中性化 + 对白无说话人标记）', PROTOCOL_VERSION === 'v1.3')
+    ok('协议版本为 v1.4（v1.3 输出规范 + v1.4 换场纪律）', PROTOCOL_VERSION === 'v1.4')
     const rules = ['R1', 'R2', 'R3', 'R4', 'R5', 'B1', 'B5', 'B8', 'B9', 'O1', 'O2', 'O3', 'O4', 'M1', 'M2', 'E1', 'E2', 'E3']
     const missing = rules.filter(r => !PROTOCOL_CORE.includes(`\n${r} `))
     ok('协议含全部条款编号（R/B/O/M/E 五节）', missing.length === 0, `缺=${missing.join(',')}`)
     ok('协议含五段标题', ['元规则', '怎么演得像', '写成什么样', '记忆与状态', '退出与归档'].every(s => PROTOCOL_CORE.includes(s)))
     ok('协议含「最后提醒」收尾段（近因效应，紧贴生成点）', PROTOCOL_CORE.includes('最后提醒'))
+    // v1.4：换场纪律 —— 实弹里模型把场景从宿舍楼道一步挪到食堂，只补了句【食堂很吵】
+    ok('协议含换场纪律（B2：地点不归你搬 / 要换场先写怎么到的 / 描写不等于移动）',
+      PROTOCOL_CORE.includes('地点不归你搬') && PROTOCOL_CORE.includes('先写清「怎么到的」')
+      && PROTOCOL_CORE.includes('不是**移动**'))
+    ok('换场纪律同时进了「最后提醒」（贴着生成点再压一次）',
+      PROTOCOL_CORE.includes('地点与时间立住了就别自己搬'))
     ok('协议含防代笔主句（R2 守住彼此的边界）', PROTOCOL_CORE.includes('守住彼此的边界') && PROTOCOL_CORE.includes('不替用户决定'))
     ok('协议含篇幅硬约束（60–160 字 / 最多 2 行 / 最多 2 句）',
       PROTOCOL_CORE.includes('60–160 字') && PROTOCOL_CORE.includes('最多 2 行') && PROTOCOL_CORE.includes('最多 2 句'))

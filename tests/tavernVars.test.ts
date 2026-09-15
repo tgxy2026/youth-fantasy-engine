@@ -172,7 +172,16 @@ async function main() {
     ok('提示了这一行不会展示给用户', on.includes('不会展示给用户'))
 
     const off = buildVarsBlock({ values: { affection: 62 }, keys, ask: false, everyTurns: 3, maxStep: 5 })
-    ok('不请求时只给当前值、不提输出格式', off.includes('好感 62') && !off.includes(VAR_LINE_TAG))
+    ok('不请求时不给数值规则（场景锚除外）', off.includes('好感 62') && !off.includes('好感 +2'))
+
+    // 🔴 场景锚（协议 v1.4「地点不归你搬」的配套）：地点是唯一不跟「每 N 轮」走的变量
+    ok('地点为空时：即使不该请求增量，也要求这一轮落一次值',
+      off.includes(VAR_LINE_TAG) && off.includes('当前地点') && off.includes('地点还没记下来'))
+    const anchored = buildVarsBlock({ values: { place: '教学楼三层楼道' }, keys, ask: false, everyTurns: 3, maxStep: 5 })
+    ok('地点已有值时：带上当前值 + 一句轻提示（不重复啰嗦）',
+      anchored.includes('当前地点 教学楼三层楼道') && anchored.includes('若这一轮地点有变'))
+    const noPlace = buildVarsBlock({ values: { affection: 62 }, keys: ['affection'], ask: false, everyTurns: 3, maxStep: 5 })
+    ok('没启用地点 → 场景锚一个字都不出现', !noPlace.includes(VAR_LINE_TAG))
 
     const none = buildVarsBlock({ values: {}, keys: [], ask: true, everyTurns: 3, maxStep: 5 })
     ok('🔴 没启用任何变量 → 空串（一个字都不占额度）', none === '')

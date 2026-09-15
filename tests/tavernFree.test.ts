@@ -12,6 +12,7 @@ import {
 } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
+import { emptyVars } from '../src/lib/tavern/vars'
 import { DEFAULT_TALKATIVITY, type FreeCharacter, type FreeSession, type TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
@@ -393,6 +394,34 @@ async function main() {
     ok('丰富档多一句「每回合都至少带一条【】」', rich.includes('每个回合都至少带一条【】'))
     ok('作者的补充要求排在客观描写之后（真冲突以作者为准）',
       rich.indexOf('〖客观描写〗') < rich.indexOf('不要写天气。'))
+  }
+
+  // ---------- 11) 场景锚：地点不跟「每 N 轮」走（协议 v1.4「地点不归你搬」的配套） ----------
+  {
+    const su3 = await mkChar('苏念')
+    const s = await store.createFreeSession([su3.id], '楼道', { providerId: STUB_PROVIDER.id }, {})
+
+    // 第 1 轮（按 everyTurns=3 本不该请求增量）：地点还空着 → 仍要求这一轮落一次值
+    // 起因：实弹里用户说「一起吃饭」，模型把场景从宿舍楼道一步挪到食堂 —— 上下文里从没说过它在哪
+    const fresh = (await buildFreeSystem(s, [su3])).system
+    ok('第 1 轮就要求落一次「当前地点」（不等「每 3 轮」）',
+      fresh.includes('〖本场数值〗') && fresh.includes('地点还没记下来'))
+
+    // 一旦有值：它每轮都随 system 进上下文 —— 这就是「不该瞬移」的依据
+    const place = '教学楼三层楼道'
+    const withPlace = { ...s, vars: { ...emptyVars(), values: { ...emptyVars().values, place } } }
+    const sys = (await buildFreeSystem(withPlace, [su3])).system
+    ok('地点已记下 → 每轮都注入当前值', sys.includes(`当前地点 ${place}`))
+    ok('有值时只给一句轻提示，不再重复要求落值',
+      sys.includes('若这一轮地点有变') && !sys.includes('地点还没记下来'))
+    ok('场景锚排在协议之前（协议仍钉末尾）',
+      sys.indexOf('〖本场数值〗') < sys.indexOf(PROTOCOL_CORE))
+
+    // 关掉变量总开关 → 连场景锚都不出现（「空层不占额度」）
+    const stVarsOff = { ...DEFAULT_TAVERN_SETTINGS, vars: { ...DEFAULT_TAVERN_SETTINGS.vars, enabled: false } }
+    const noVars = (await buildFreeSystem(withPlace, [su3], stVarsOff)).system
+    ok('关掉变量开关 → 场景锚一个字都不出现',
+      !noVars.includes('〖本场数值〗') && !noVars.includes(place))
   }
 
   // ---------- 隐藏不进上下文 + 重说（老大全接受的 A1，2026-09-14） ----------

@@ -92,11 +92,15 @@ async function main() {
     // 协议升级：存的就是**旧版内置协议**（v1.1）时静默换新；作者自己改过的一律不动
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[0] } as never)
-    ok('存着 v1.1 全文 → 自动升级到 v1.3', (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    ok('存着 v1.1 全文 → 自动升级到 v1.4', (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[1] } as never)
-    ok('存着 v1.2 全文 → 同样升级到 v1.3（每一版历史协议都进了锚点数组）',
+    ok('存着 v1.2 全文 → 同样升级到 v1.4（每一版历史协议都进了锚点数组）',
       LEGACY_PROTOCOLS.length >= 2 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[2] } as never)
+    ok('存着 v1.3 全文 → 同样升级到 v1.4（v1.3 已进锚点，老用户不会卡在旧协议上）',
+      LEGACY_PROTOCOLS.length >= 3 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: '我自己改过的协议正文' } as never)
     ok('自定义协议不被覆盖（全等比对，判据保守）',
@@ -190,7 +194,7 @@ async function main() {
     ok('自由：日常生活记录条数 = 原 DAILY_LOG_KEEP',
       d.free.dailyLogKeep === DAILY_LOG_KEEP, String(d.free.dailyLogKeep))
     ok('协议：默认就是内置常量', d.protocol === PROTOCOL_CORE && d.protocol === DEFAULT_PROTOCOL)
-    ok('协议版本已到 v1.3', PROTOCOL_VERSION === 'v1.3' && PROTOCOL_CORE.includes('v1.3'))
+    ok('协议版本已到 v1.4', PROTOCOL_VERSION === 'v1.4' && PROTOCOL_CORE.includes('v1.4'))
   }
 
   // ---------- 6) 派生量：本轮新增两项 ----------

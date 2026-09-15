@@ -229,9 +229,12 @@ export function renderVarValues(values: VarValues | undefined, keys?: VarKey[]):
 /**
  * 组装自由模式的变量块（进 `modeExtra`）。
  *
- * 两种形态：
+ * 三种形态：
  *   · 该请求增量（每 N 轮）→ 当前值 + 明确要求"最后一行输出〔数值〕"
- *   · 不该请求 → **只给当前值**，一个字都不提输出格式（省额度、也避免模型每轮都吐一行）
+ *   · 不该请求 → **只给当前值**，不提数值格式（省额度、也避免模型每轮都吐一行）
+ *   · **场景锚**（2026-09-15 起）：不论该不该请求增量，「当前地点」都在末尾多带一句 ——
+ *     地点一旦记错，整场戏的场景就会瞬移（实弹：宿舍楼道一步跨到食堂，只补了句【食堂很吵】）。
+ *     它是唯一不跟「每 N 轮」走的变量，见协议 v1.4 的 B2「地点不归你搬」。
  */
 export function buildVarsBlock(a: {
   values: VarValues | undefined
@@ -258,6 +261,15 @@ export function buildVarsBlock(a: {
       `（可用项：${range}。数值写 ±N 或直接写新值；单次变化不超过 ±${a.maxStep}，越界会按边界取。真的没有变化就写「${VAR_LINE_TAG}无变化」。）`,
       `这一行只用于记账、不会展示给用户，所以别把它写进对白里；除了这一行，其余内容照常遵守上面的输出规范。`,
     )
+  }
+  // 场景锚：地点**不跟「每 N 轮」走** —— 它一错，整场戏的场景就会瞬移。
+  // 所以哪怕这一轮不该请求增量，也单独给它一句极短的提示（其余数值仍按 everyTurns 走，省额度）。
+  if (!a.ask && keys.includes('place')) {
+    const placeLabel = varDefOf('place')!.label
+    const cur = String(a.values?.place ?? '').trim()
+    lines.push(cur
+      ? `若这一轮地点有变，在**最后一行**补：${VAR_LINE_TAG}${placeLabel} XXX`
+      : `地点还没记下来 —— 请在**这一轮的**最后一行补：${VAR_LINE_TAG}${placeLabel} XXX（写你此刻所在的具体位置，10 字内）`)
   }
   return lines.join('\n')
 }
