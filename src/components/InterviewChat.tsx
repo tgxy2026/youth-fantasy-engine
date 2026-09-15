@@ -136,7 +136,7 @@ export default function InterviewChat({
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey && input.trim() && !busy) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && input.trim() && !busy) {
                   e.preventDefault()
                   const t = input
                   setInput('')

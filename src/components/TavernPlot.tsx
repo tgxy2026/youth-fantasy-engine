@@ -17,6 +17,7 @@ import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
 import TavernCastSetting from './TavernCastSetting'
 import TavernCastDirector from './TavernCastDirector'
 import TavernMessageBody from './TavernMessageBody'
+import Avatar from './Avatar'
 import PromptModal from './PromptModal'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import TavernDirectorNoteBar from './TavernDirectorNoteBar'
@@ -196,6 +197,8 @@ export default function TavernPlot() {
   }, [session?.messages.length, streamText])
 
   const casts = useMemo(() => (session ? splitCast(session.cast) : { user: [], ai: [], silent: [] }), [session])
+  /** 取某条消息的发言角色名（多角色同场时挂头像与名字标签用） */
+  const castNameOf = (id?: string) => (id ? casts.ai.find(c => c.cardId === id)?.name ?? '' : '')
 
   /** 在场调度（A6）：改的是**这一场**的安排，落库即生效 —— 下一轮组装就用新值 */
   const applyDirection = async (next: TavernSession) => {
@@ -766,12 +769,18 @@ export default function TavernPlot() {
                 </div>
               )}
               {session.messages.map(m => (
-                <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : ''}>
+                <div key={m.id} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
+                  {/* 头像规则与自由对话一致：多角色同场必须挂，否则分不清谁在说。
+                      ⚠️ 剧情模式的角色是**项目角色卡**（CardRecord 没有头像字段），所以这里
+                      只会渲染出「名字首字」圆标 —— 角色卡有了头像列之后把 src 接上即可。 */}
+                  {m.role !== 'user' && casts.ai.length > 1 && (
+                    <Avatar name={castNameOf(m.speakerId) || '?'} size={24} className="mt-0.5" />
+                  )}
                   <div className={m.role === 'user'
                     ? 'max-w-[80%] rounded-lg bg-amber/12 border border-amber/25 px-3 py-2'
                     : 'max-w-[85%] space-y-1'}>
                     {m.role !== 'user' && casts.ai.length > 1 && m.speakerId && (
-                      <div className="text-[11px] text-amber">{casts.ai.find(c => c.cardId === m.speakerId)?.name ?? ''}</div>
+                      <div className="text-[11px] text-amber">{castNameOf(m.speakerId)}</div>
                     )}
                     <TavernMessageBody
                       content={m.content} hidden={m.hidden} edited={m.edited}
@@ -814,12 +823,16 @@ export default function TavernPlot() {
                 minRows={3}
                 maxHeight={200}
                 placeholder={casts.user.length
-                  ? '以你的角色身份说一句话、做一个动作…（Ctrl+Enter 发送）'
-                  : '这一场没有你演的角色 —— 可以以旁白或任意角色的身份推进…（Ctrl+Enter 发送）'}
+                  ? '以你的角色身份说一句话、做一个动作…（Enter 发送，Shift+Enter 换行）'
+                  : '这一场没有你演的角色 —— 可以以旁白或任意角色的身份推进…（Enter 发送，Shift+Enter 换行）'}
                 value={input}
                 disabled={streaming}
                 onChange={setInput}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send() } }}
+                onKeyDown={e => {
+                  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+                  e.preventDefault()
+                  void send()
+                }}
               />
               <div className="mt-2 flex items-center justify-between">
                 <span className="text-[11px] text-ink-500">

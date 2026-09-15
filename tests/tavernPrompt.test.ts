@@ -25,7 +25,7 @@ function ok(name: string, cond: boolean, extra = '') {
 function main() {
   // ---------- 1) 协议全文完整性（内置常量，条款掉了功能就瘫） ----------
   {
-    ok('协议版本为 v1.4（v1.3 输出规范 + v1.4 换场纪律）', PROTOCOL_VERSION === 'v1.4')
+    ok('协议版本为 v1.5（v1.3 输出规范 + v1.4 换场纪律 + v1.5 格式自查）', PROTOCOL_VERSION === 'v1.5')
     const rules = ['R1', 'R2', 'R3', 'R4', 'R5', 'B1', 'B5', 'B8', 'B9', 'O1', 'O2', 'O3', 'O4', 'M1', 'M2', 'E1', 'E2', 'E3']
     const missing = rules.filter(r => !PROTOCOL_CORE.includes(`\n${r} `))
     ok('协议含全部条款编号（R/B/O/M/E 五节）', missing.length === 0, `缺=${missing.join(',')}`)
@@ -37,6 +37,9 @@ function main() {
       && PROTOCOL_CORE.includes('不是**移动**'))
     ok('换场纪律同时进了「最后提醒」（贴着生成点再压一次）',
       PROTOCOL_CORE.includes('地点与时间立住了就别自己搬'))
+    // v1.5：给「动作必须进括号」补一条**一眼能自查的判据**（罗列要求不如给判定标准）
+    ok('协议含格式自查判据（没有括号的行只能是被说出口的话）',
+      PROTOCOL_CORE.includes('没有（ ）或【 】的行') && PROTOCOL_CORE.includes('一律不许落在括号外'))
     ok('协议含防代笔主句（R2 守住彼此的边界）', PROTOCOL_CORE.includes('守住彼此的边界') && PROTOCOL_CORE.includes('不替用户决定'))
     ok('协议含篇幅硬约束（60–160 字 / 最多 2 行 / 最多 2 句）',
       PROTOCOL_CORE.includes('60–160 字') && PROTOCOL_CORE.includes('最多 2 行') && PROTOCOL_CORE.includes('最多 2 句'))

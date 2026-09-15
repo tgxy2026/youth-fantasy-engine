@@ -1016,16 +1016,23 @@ export default function TavernFree() {
                 />
                 <TavernQuickBar actions={quickActions} disabled={streaming} className="mb-2" />
                 {/* 自动延展：默认 3 行，写长了自己长高，超过 200px 才内部滚动 */}
+                {/* 按键：Enter 发送、Shift+Enter 换行（与「对话引导」一致）。
+                    🔴 必须挡 isComposing —— 中文输入法里 Enter 是**选字确认键**，
+                    不挡的话字打到一半就被当成发送，换成 Enter 发送后这是必踩的坑。 */}
                 <AutoTextarea
                   className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"
                   textClass="text-[13px]"
                   minRows={3}
                   maxHeight={200}
-                  placeholder="说点什么…（Ctrl+Enter 发送）"
+                  placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"
                   value={input}
                   disabled={streaming}
                   onChange={setInput}
-                  onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send() } }}
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+                    e.preventDefault()
+                    void send()
+                  }}
                 />
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-[11px] text-ink-500">

@@ -13,6 +13,7 @@ import {
 } from '../src/lib/tavern/settings'
 import { FIXED_OVERHEAD_CHARS, historyBudget } from '../src/lib/tavern/budget'
 import { PROTOCOL_CORE, PROTOCOL_VERSION, LEGACY_PROTOCOLS } from '../src/lib/tavern/protocol'
+import { DEFAULT_POST_RULES, LEGACY_DEFAULT_POST_RULES } from '../src/lib/tavern/postRules'
 import { resolveParams } from '../src/lib/tavern/params'
 import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
@@ -92,15 +93,19 @@ async function main() {
     // 协议升级：存的就是**旧版内置协议**（v1.1）时静默换新；作者自己改过的一律不动
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[0] } as never)
-    ok('存着 v1.1 全文 → 自动升级到 v1.4', (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    ok('存着 v1.1 全文 → 自动升级到 v1.5', (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[1] } as never)
-    ok('存着 v1.2 全文 → 同样升级到 v1.4（每一版历史协议都进了锚点数组）',
+    ok('存着 v1.2 全文 → 同样升级到 v1.5（每一版历史协议都进了锚点数组）',
       LEGACY_PROTOCOLS.length >= 2 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[2] } as never)
-    ok('存着 v1.3 全文 → 同样升级到 v1.4（v1.3 已进锚点，老用户不会卡在旧协议上）',
+    ok('存着 v1.3 全文 → 同样升级到 v1.5（v1.3 已进锚点，老用户不会卡在旧协议上）',
       LEGACY_PROTOCOLS.length >= 3 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[3] } as never)
+    ok('存着 v1.4 全文 → 同样升级到 v1.5',
+      LEGACY_PROTOCOLS.length >= 4 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: '我自己改过的协议正文' } as never)
     ok('自定义协议不被覆盖（全等比对，判据保守）',
@@ -109,6 +114,25 @@ async function main() {
       st.free.sceneDescription === 'standard', String(st.free.sceneDescription))
     ok('旧数据里没有 profile 时回落到空档案（不是 undefined）',
       st.profile.name === '' && st.profile.address === '' && st.profile.persona === '')
+  }
+
+  // ---------- 3b) 输出后处理规则的升级 ----------
+  // 🔴 这条链此前没有测试守着，而它失配时**不报错** —— 只会静默少升级一批老库。
+  {
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { postRules: LEGACY_DEFAULT_POST_RULES } as never)
+    const up1 = (await getTavernSettings()).postRules
+    const curStar = DEFAULT_POST_RULES.find(r => r.id === 'pr-star-action')?.pattern
+    ok('存着旧出厂后处理规则 → 换成当前出厂（pr-star-action 的正则已更新为两支写法）',
+      up1.length === DEFAULT_POST_RULES.length
+      && up1.find(r => r.id === 'pr-star-action')?.pattern === curStar,
+      up1.find(r => r.id === 'pr-star-action')?.pattern ?? '(无)')
+
+    __resetMockStores()
+    const custom = DEFAULT_POST_RULES.map(r => (r.id === 'pr-star-action' ? { ...r, enabled: false } : r))
+    await db.setMeta(K_TAVERN_SETTINGS, { postRules: custom } as never)
+    ok('作者改过任何一条 → 一个字都不动（判据保守）',
+      (await getTavernSettings()).postRules.find(r => r.id === 'pr-star-action')?.enabled === false)
   }
 
   // ---------- 3b) 废弃字段清理：free.defaultUserCharId ----------
@@ -194,7 +218,7 @@ async function main() {
     ok('自由：日常生活记录条数 = 原 DAILY_LOG_KEEP',
       d.free.dailyLogKeep === DAILY_LOG_KEEP, String(d.free.dailyLogKeep))
     ok('协议：默认就是内置常量', d.protocol === PROTOCOL_CORE && d.protocol === DEFAULT_PROTOCOL)
-    ok('协议版本已到 v1.4', PROTOCOL_VERSION === 'v1.4' && PROTOCOL_CORE.includes('v1.4'))
+    ok('协议版本已到 v1.5', PROTOCOL_VERSION === 'v1.5' && PROTOCOL_CORE.includes('v1.5'))
   }
 
   // ---------- 6) 派生量：本轮新增两项 ----------
