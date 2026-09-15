@@ -6,7 +6,7 @@
 // 画布那一段在 Node 里跑不了，取景框的算术才是容易错的地方。
 import {
   AVATAR_SIZE, AVATAR_MAX_INPUT_BYTES,
-  isAcceptableAvatar, fitSquare, avatarInitial,
+  isAcceptableAvatar, fitSquare, avatarInitial, avatarLabel,
 } from '../src/lib/imageAvatar'
 
 let pass = 0, fail = 0
@@ -67,6 +67,21 @@ function main() {
     ok('🔴 emoji 名字不被切半个字符',
       avatarInitial('🎭小丑') === '🎭' && Array.from(avatarInitial('🎭小丑')).length === 1,
       avatarInitial('🎭小丑'))
+  }
+
+  // ---------- 3b) 头像兜底显示的是**名字**而不是姓氏（老大 2026-09-15 反馈） ----------
+  // 起因：只取首字时「苏念 / 苏晴」在同一场戏里头像一模一样，分不清谁在说。
+  {
+    ok('两字名 → 整个名字', avatarLabel('苏念') === '苏念' && avatarLabel('洛汐') === '洛汐')
+    ok('🔴 同姓不同名能区分开', avatarLabel('苏念') !== avatarLabel('苏晴'))
+    ok('前后空格被忽略', avatarLabel('  苏念 ') === '苏念')
+    ok('单字名照常', avatarLabel('王') === '王')
+    ok('超长名截到 2 字（圆里塞不下 3 个字）', avatarLabel('欧阳清风') === '欧阳')
+    ok('英文名截到 2 字符', avatarLabel('Alice') === 'Al')
+    ok('空名 / null → ?', avatarLabel('') === '?' && avatarLabel('   ') === '?' && avatarLabel(undefined as unknown as string) === '?')
+    ok('emoji 名字不被切半个字符', avatarLabel('🎭小丑') === '🎭小')
+    ok('与 avatarInitial 是同一套字符语义（都按字符数而非码元）',
+      Array.from(avatarLabel('🎭小丑')).length === 2)
   }
 
   console.log(`\ntavernAvatar: ${pass} passed, ${fail} failed`)

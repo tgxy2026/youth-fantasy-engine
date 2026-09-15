@@ -233,8 +233,12 @@ export function renderVarValues(values: VarValues | undefined, keys?: VarKey[]):
  *   · 该请求增量（每 N 轮）→ 当前值 + 明确要求"最后一行输出〔数值〕"
  *   · 不该请求 → **只给当前值**，不提数值格式（省额度、也避免模型每轮都吐一行）
  *   · **场景锚**（2026-09-15 起）：不论该不该请求增量，「当前地点」都在末尾多带一句 ——
- *     地点一旦记错，整场戏的场景就会瞬移（实弹：宿舍楼道一步跨到食堂，只补了句【食堂很吵】）。
- *     它是唯一不跟「每 N 轮」走的变量，见协议 v1.4 的 B2「地点不归你搬」。
+ *     地点一旦记错，整场戏的场景就会瞬移（实弹：宿舍楼道一步跨到食堂，只补了句（食堂很吵））。
+ *     它是唯一不跟「每 N 轮」走的变量。
+ *
+ * 🔴 **返回值由调用方挂在 system 的「协议之后」（prompt.ts 的 tail 层）** ——
+ *    这条记账要求属于**任务型指令**，放在协议之前会被格式规范压掉（实测 6/6 轮不执行），
+ *    所以它自己必须补一句「其余照协议」来划清边界（见函数末尾那句）。
  */
 export function buildVarsBlock(a: {
   values: VarValues | undefined
@@ -249,17 +253,20 @@ export function buildVarsBlock(a: {
   const keys = a.keys.filter(k => VAR_DEFS.some(d => d.key === k))
   if (keys.length === 0) return ''
   const now = renderVarValues(a.values, keys)
-  const lines: string[] = ['〖本场数值〗']
-  if (now) lines.push(`现在的值：${now}`)
-  if (a.goal?.trim()) lines.push(`这一场的目标：${a.goal.trim()}`)
+  /**
+   * 这一轮要它写什么记账行。**这几句必须是整块的最后一句话** ——
+   * ⚠️ 曾把「其余照协议」那句排到它们后面，结果模型末读到的是「照协议」，
+   *    第 1 轮的地点就没落下来（2026-09-15 探针实测）。
+   */
+  const demands: string[] = []
   if (a.ask) {
     const range = keys
       .map(k => { const d = varDefOf(k)!; return d.kind === 'num' ? `${d.label}（${d.min}–${d.max}）` : `${d.label}（≤${d.maxLen} 字）` })
       .join(' / ')
-    lines.push(
-      `规则：若这一轮有变化，在回复的**最后一行**追加一行 —— ${VAR_LINE_TAG}好感 +2；心情 微妙的动摇`,
-      `（可用项：${range}。数值写 ±N 或直接写新值；单次变化不超过 ±${a.maxStep}，越界会按边界取。真的没有变化就写「${VAR_LINE_TAG}无变化」。）`,
-      `这一行只用于记账、不会展示给用户，所以别把它写进对白里；除了这一行，其余内容照常遵守上面的输出规范。`,
+    demands.push(
+      `规则：这一轮**必须**在回复的**最后一行**单独写一行 —— ${VAR_LINE_TAG}好感 +2；心情 微妙的动摇`,
+      `（可用项：${range}。数值写 ±N 或直接写新值；单次变化不超过 ±${a.maxStep}，越界会按边界取。这一轮真的没什么可记，也必须写「${VAR_LINE_TAG}无变化」。）`,
+      `这一行只用于记账、不会展示给用户，所以别把它写进对白里；除了它，其余内容照协议的输出规范。`,
     )
   }
   // 场景锚：地点**不跟「每 N 轮」走** —— 它一错，整场戏的场景就会瞬移。
@@ -267,9 +274,19 @@ export function buildVarsBlock(a: {
   if (!a.ask && keys.includes('place')) {
     const placeLabel = varDefOf('place')!.label
     const cur = String(a.values?.place ?? '').trim()
-    lines.push(cur
+    demands.push(cur
       ? `若这一轮地点有变，在**最后一行**补：${VAR_LINE_TAG}${placeLabel} XXX`
-      : `地点还没记下来 —— 请在**这一轮的**最后一行补：${VAR_LINE_TAG}${placeLabel} XXX（写你此刻所在的具体位置，10 字内）`)
+      : `地点还没记下来 —— 请在**这一轮的最后一行**单独写一行：${VAR_LINE_TAG}${placeLabel} XXX（你此刻所在的具体位置，10 字内；这一行用户看不到）`)
+  }
+
+  const lines: string[] = ['〖本场数值〗']
+  if (now) lines.push(`现在的值：${now}`)
+  if (a.goal?.trim()) lines.push(`这一场的目标：${a.goal.trim()}`)
+  if (demands.length) {
+    // 🔴 边界声明排在**要求之前**：这一块挂在协议之后，得先说清「除了记账行都照协议」，
+    //    但它绝不能排在最后 —— 否则模型末读到的是「照协议」，反而把记账行挤掉。
+    lines.push('（除下面要求的记账行之外，其余内容一律照上面的协议写：对白纯文本，其余全部用（ ）包住。）')
+    lines.push(...demands)
   }
   return lines.join('\n')
 }

@@ -109,12 +109,14 @@ async function main() {
       chu.examples.includes('〖对方〗') && !/^楚楠[：:]/m.test(chu.examples) &&
       !chu.examples.includes('〖用户〗') && !chu.examples.includes('对方：'))
 
-    // —— v1.3 示例格式（三类标记各就各位 + 对照标记用输入侧符号 〖对方〗）——
+    // —— v1.6 示例格式（非对白一律（ ）、一件事一个括号；对照标记用输入侧符号 〖对方〗）——
     for (const c of SEED_FREE_CHARACTERS) {
-      ok(`${c.name}：示例里动作与神态用（）包住、独立成行`,
+      ok(`${c.name}：示例里非对白内容用（）包住、独立成行`,
         /^（.+）$/m.test(c.examples))
-      ok(`${c.name}：示例里有【】客观环境／人物外在的样例`,
-        /^【.+】$/m.test(c.examples))
+      ok(`${c.name}：🔴 示例里不再出现【】（v1.6 起环境也归（ ））`,
+        !c.examples.includes('【'))
+      ok(`${c.name}：示例说明行同步了单括号规则`,
+        c.examples.includes('其余全部用全角括号（ ）独立成行'))
       ok(`${c.name}：示例不再使用旧标记，也不写自己的名字前缀`,
         !c.examples.includes('【用户】') && !c.examples.includes('〖用户〗') &&
         !new RegExp(`^${c.name}[：:]`, 'm').test(c.examples))
@@ -232,7 +234,10 @@ async function main() {
     const sess = await store.createFreeSession([luoxi.id], '与洛汐的测试场', { providerId: 'stub' }, {})
     const sys = await buildFreeSystem(sess, [luoxi])
     ok('角色卡内容真的进了 system（不是只躺在库里）', sys.system.includes('青宜大学城'))
-    ok('协议仍钉在 system 末尾', sys.system.trimEnd().endsWith(PROTOCOL_CORE.trimEnd()))
+    // 层序已更新（2026-09-15）：协议之后还剩一个「记账块」
+    ok('协议之后只跟一个记账块（格式提醒仍是协议的最后一段）',
+      sys.system.indexOf(PROTOCOL_CORE) > 0 &&
+      sys.system.indexOf('〖本场数值〗') > sys.system.indexOf(PROTOCOL_CORE))
   }
 
   // ---------- 4) 老数据升级：示范卡示例格式（v1.1 / v1.2 → v1.3） ----------

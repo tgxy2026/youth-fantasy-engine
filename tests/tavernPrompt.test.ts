@@ -25,7 +25,7 @@ function ok(name: string, cond: boolean, extra = '') {
 function main() {
   // ---------- 1) 协议全文完整性（内置常量，条款掉了功能就瘫） ----------
   {
-    ok('协议版本为 v1.5（v1.3 输出规范 + v1.4 换场纪律 + v1.5 格式自查）', PROTOCOL_VERSION === 'v1.5')
+    ok('协议版本为 v1.6（单括号方案 + 数值行许可）', PROTOCOL_VERSION === 'v1.6')
     const rules = ['R1', 'R2', 'R3', 'R4', 'R5', 'B1', 'B5', 'B8', 'B9', 'O1', 'O2', 'O3', 'O4', 'M1', 'M2', 'E1', 'E2', 'E3']
     const missing = rules.filter(r => !PROTOCOL_CORE.includes(`\n${r} `))
     ok('协议含全部条款编号（R/B/O/M/E 五节）', missing.length === 0, `缺=${missing.join(',')}`)
@@ -38,8 +38,8 @@ function main() {
     ok('换场纪律同时进了「最后提醒」（贴着生成点再压一次）',
       PROTOCOL_CORE.includes('地点与时间立住了就别自己搬'))
     // v1.5：给「动作必须进括号」补一条**一眼能自查的判据**（罗列要求不如给判定标准）
-    ok('协议含格式自查判据（没有括号的行只能是被说出口的话）',
-      PROTOCOL_CORE.includes('没有（ ）或【 】的行') && PROTOCOL_CORE.includes('一律不许落在括号外'))
+    ok('「最后提醒」里也留了这条判据（贴着生成点再压一次）',
+      PROTOCOL_CORE.includes('没有（ ）的行，只能是被说出口的话'))
     ok('协议含防代笔主句（R2 守住彼此的边界）', PROTOCOL_CORE.includes('守住彼此的边界') && PROTOCOL_CORE.includes('不替用户决定'))
     ok('协议含篇幅硬约束（60–160 字 / 最多 2 行 / 最多 2 句）',
       PROTOCOL_CORE.includes('60–160 字') && PROTOCOL_CORE.includes('最多 2 行') && PROTOCOL_CORE.includes('最多 2 句'))
@@ -48,12 +48,17 @@ function main() {
     ok('协议含存档归档格式（E1）', PROTOCOL_CORE.includes('归档 · ') && PROTOCOL_CORE.includes('文风锚'))
     ok('协议明确禁止 markdown 与名字前缀', PROTOCOL_CORE.includes('markdown') && PROTOCOL_CORE.includes('不加“角色名：“') === false && PROTOCOL_CORE.includes('角色名：'))
 
-    // —— v1.2 / v1.3 的输出规范（老大 2026-09-14 定：对白纯文本 / （）动作神态心理 / 【】客观环境与人物外在）——
-    ok('O1 定义了「客观环境、人物外在」用【】包裹',
-      PROTOCOL_CORE.includes('客观环境、人物外在 —— 用**方头括号【 】**包裹'))
-    ok('O1 定义了动作、神态、心理用（）包裹（内心话并入，不再单设符号）',
-      PROTOCOL_CORE.includes('动作、神态、心理 —— 用**全角圆括号（ ）**包裹') &&
-      PROTOCOL_CORE.includes('内心话也走这里'))
+    // —— v1.6 的输出规范（老大 2026-09-15 的妥协方案：不再分两套括号，非对白一律用（ ））——
+    ok('🔴 O1 只留一套括号：除对白之外的一切都用（ ）',
+      PROTOCOL_CORE.includes('除对白之外的一切') &&
+      PROTOCOL_CORE.includes('**全部用全角圆括号（ ）包住**') &&
+      !PROTOCOL_CORE.includes('方头括号【 】'))
+    ok('🔴 O1 要求「一件事一个括号、一句一行」（分层）',
+      PROTOCOL_CORE.includes('一件事一个括号、一句一行'))
+    ok('O1 给了自查判据：不在括号里的行只能是被说出口的话',
+      PROTOCOL_CORE.includes('不在括号里的行，只能是被说出口的话'))
+    ok('O1 许可系统要求的〔数值〕记账行（放最末尾、不计篇幅）',
+      PROTOCOL_CORE.includes('〔数值〕') && PROTOCOL_CORE.includes('不计入篇幅'))
     ok('对白要求：不加引号、不加括号、不加任何说话人标记、正常标点',
       PROTOCOL_CORE.includes('**不加引号、不加括号、不加任何说话人标记**') &&
       PROTOCOL_CORE.includes('不写"角色名："这类前缀'))
@@ -68,8 +73,8 @@ function main() {
       PROTOCOL_CORE.includes('用 Ta 的眼睛看') && !PROTOCOL_CORE.includes('用他的眼睛看'))
     ok('明说输入侧的〖〗与〈〉是结构标注、不许写进输出',
       PROTOCOL_CORE.includes('输入侧的结构标注'))
-    ok('最后提醒同步了新标记',
-      PROTOCOL_CORE.includes('动作与神态用（），客观环境与人物外在用【】'))
+    ok('最后提醒同步了新标记（单括号 + 一句一行）',
+      PROTOCOL_CORE.includes('除了说出口的话，其余全部用（ ）包住'))
   }
 
   // ---------- 2) 层序：设定 → 记忆 → 身份 → 协议（钉末尾） ----------
@@ -260,15 +265,15 @@ function main() {
     const rich = buildSceneDescriptionRule('rich')
     ok('每一档都写明「只写客观事实、不写任何人的心理」这条纪律（与 R2 不代写同源）',
       [light, std, rich].every(t => t.includes('不写任何人的心理活动')))
-    ok('每一档都点明「用【】包住」与「只写状态、动作归（）」（不然会和 O1 的（）抢活）',
-      [light, std, rich].every(t => t.includes('【】') && t.includes('动作')))
+    ok('🔴 每一档都点明与 O1 是同一套括号（v1.6 起不再有【】，也不会误用【】）',
+      [light, std, rich].every(t => t.includes('（ ）') && !t.includes('【】')))
     ok('每一档都写明这些话算在协议字数里（60–160 字是硬约束）',
       [light, std, rich].every(t => t.includes('算在协议的字数里')))
     ok('standard 覆盖出场 / 环境 / 情绪三个落点',
       std.includes('出场') && std.includes('环境') && std.includes('情绪明显变化时'))
     ok('light 只在出场与转场时写（不含情绪那条）',
       light.includes('出场') && light.includes('环境') && !light.includes('情绪明显变化时') && light.length < std.length)
-    ok('rich 额外要求「每回合都至少带一条【】」', rich.includes('每个回合都至少带一条【】') && rich.length > std.length)
+    ok('rich 额外要求「每回合都至少带一条环境/身体细节」', rich.includes('每个回合都至少带一条写环境或身体细节的') && rich.length > std.length)
     ok('档位文本都够短（≤10 行，别白占 system）', [light, std, rich].every(t => t.split('\n').length <= 10))
   }
 

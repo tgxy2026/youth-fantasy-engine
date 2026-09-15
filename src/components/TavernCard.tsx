@@ -172,6 +172,41 @@ export default function TavernCard() {
     }
   }
 
+  /**
+   * 一键清空这张卡的角色记忆（六栏全空）。
+   *
+   * 🔴 必须弹窗说清严重性：这是**不可撤销**的（记忆没有备份），而且清掉之后 AI 只会从
+   *    水位线之后的**新内容**重新长记忆 —— 之前的对话原文还在，但总结出来的事回不来。
+   *    所以弹窗里要把「想微调就展开编辑」这条退路一起写清楚，别让作者误点。
+   */
+  const clearMem = async () => {
+    if (!draft || !mem || isMemoryEmpty(mem)) return
+    const go = await confirmDialog({
+      title: '清空 Ta 的角色记忆？',
+      message: [
+        '会把六栏记忆全部清空：长期摘要、关键事实、关系状态、未爆的雷、纪念日、日常片段。',
+        '',
+        '⚠️ 这个操作不可撤销 —— 记忆没有备份，清掉就找不回来了。',
+        '· 之前的对话原文仍然在，但 Ta 会忘掉从那些内容里总结出来的事；',
+        '· 之后继续聊，记忆会从新的内容重新长出来，旧对话不会自动回填。',
+        '',
+        '只想微调几条 → 点「取消」，改用「展开编辑」。',
+      ].join('\n'),
+      confirmText: '清空记忆',
+      danger: true,
+    })
+    if (!go) return
+    try {
+      await store.saveMemory(store.emptyMemory(draft.id))
+      setMem(await store.getMemory(draft.id))
+      setMemDirty(false)
+      setShowMem(false)
+      showToast('记忆已清空 —— 之后会从新的对话重新长出来')
+    } catch (e) {
+      showToast(`清空失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
   const create = async () => {
     try {
       const c = await store.createFreeChar({ ...store.emptyFreeCharacter(), name: '未命名角色' })
@@ -784,6 +819,12 @@ export default function TavernCard() {
                       <Button variant="secondary" size="sm" onClick={() => setShowMem(v => !v)}>
                         {showMem ? '收起' : '展开编辑'}
                       </Button>
+                      {mem && !isMemoryEmpty(mem) && (
+                        <Button variant="danger" size="sm" onClick={() => void clearMem()}
+                          title="把六栏记忆全部清空（不可撤销，会先弹窗确认）">
+                          清空记忆
+                        </Button>
+                      )}
                     </div>
                   </div>
 

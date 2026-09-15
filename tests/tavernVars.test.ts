@@ -249,8 +249,10 @@ async function main() {
     const sysOn = await buildFreeSystem(saved, [su], st)
     const sysOff = await buildFreeSystem(saved, [su], offSt)
     ok('🔴 开关打开 → 提示词里带数值块', sysOn.system.includes('〖本场数值〗'))
-    ok('🔴 开关关掉 → 提示词里一个字都不带（0 字成本）',
-      !sysOff.system.includes('〖本场数值〗') && !sysOff.system.includes(VAR_LINE_TAG))
+    // ⚠️ 判据是「变量块」而不是 VAR_LINE_TAG：协议 v1.6 起正文里本来就有一句
+    //    许可〔数值〕记账行的话（那是固定成本，与开关无关），拿它判会永远为真。
+    ok('🔴 开关关掉 → 不加变量块、不提当前值（0 字成本）',
+      !sysOff.system.includes('〖本场数值〗') && !sysOff.system.includes('现在的值：'))
     ok('关掉时 system 确实更短', sysOff.system.length < sysOn.system.length,
       `${sysOff.system.length} vs ${sysOn.system.length}`)
   }

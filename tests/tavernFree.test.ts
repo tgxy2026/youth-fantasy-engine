@@ -91,7 +91,12 @@ async function main() {
     ok('档位是聊天向（追加了即时聊天风格提示）', system.includes('〖本场风格〗'), system.slice(0, 60))
     ok('身份层写明演的是谁', system.includes('你扮演：苏念'))
     ok('没有锚点/信息边界这些剧情模式概念', !system.includes('信息边界'))
-    ok('协议仍钉在绝对末尾', system.trimEnd().endsWith(PROTOCOL_CORE.trimEnd()))
+    // 🔴 层序新规（2026-09-15）：协议之后还剩一个「记账块」（本场数值）。
+    //    探针实测：任务型指令放协议之前会被格式规范压掉，所以它在协议之后。
+    const pIdx0 = system.indexOf(PROTOCOL_CORE)
+    ok('协议排在身份层之后，记账块紧跟在协议之后',
+      pIdx0 > system.indexOf('〖你在戏里的身份与知识边界〗') &&
+      system.indexOf('〖本场数值〗') > pIdx0)
     ok('单角色时不加发言规则', !system.includes('〖发言规则〗'))
     ok('记忆为空时不出现长期记忆块', !system.includes('〖长期记忆'))
     ok('角色卡齐全时 missing 为空', missing.length === 0)
@@ -145,7 +150,10 @@ async function main() {
     ok('单角色：回复归属该角色', res.speakerId === su.id)
     ok('单角色：消息上标了 speakerId', res.session.messages.at(-1)?.speakerId === su.id)
     ok('用酒馆指定的模型', res.fellBack === false && res.modelName === STUB_PROVIDER.model)
-    ok('模型收到 system 且末尾是协议', String(calls[0].messages[0].content).trimEnd().endsWith(PROTOCOL_CORE.trimEnd()))
+    const sysSent = String(calls[0].messages[0].content)
+    ok('模型收到 system，且协议之后是记账块（新层序）',
+      sysSent.indexOf(PROTOCOL_CORE) >= 0 &&
+      sysSent.indexOf('〖本场数值〗') > sysSent.indexOf(PROTOCOL_CORE))
     ok('用户输入进了上下文', calls[0].messages.some(m => m.content.includes('湿透的外套')))
     ok('自由模式也关思考（陪伴要像人说话）', calls[0].opts.think === false)
     ok('未误传 json', calls[0].opts.json === undefined)
@@ -380,6 +388,8 @@ async function main() {
       std.includes('出场') && std.includes('环境') && std.includes('情绪明显变化时'))
     ok('写明只写观察得到的客观事实、不写任何人的心理（与「不代写」同源）',
       std.includes('不写任何人的心理活动'))
+    ok('🔴 写明与协议 O1 是同一套括号（v1.6 起不再分【】与（））',
+      std.includes('与协议 O1 是**同一套括号**'))
     ok('写明描写算在协议字数里（不会把 60–160 字撑爆）', std.includes('算在协议的字数里'))
     ok('排在身份之后、协议之前',
       std.indexOf('〖你在戏里的身份与知识边界〗') < std.indexOf('〖客观描写〗') &&
@@ -391,7 +401,7 @@ async function main() {
 
     const stRich = { ...DEFAULT_TAVERN_SETTINGS, free: { ...DEFAULT_TAVERN_SETTINGS.free, sceneDescription: 'rich' as const, extraPrompt: '不要写天气。' } }
     const rich = (await buildFreeSystem(sess, [su2], stRich)).system
-    ok('丰富档多一句「每回合都至少带一条【】」', rich.includes('每个回合都至少带一条【】'))
+    ok('丰富档多一句「每回合都至少带一条环境/身体细节」', rich.includes('每个回合都至少带一条写环境或身体细节的'))
     ok('作者的补充要求排在客观描写之后（真冲突以作者为准）',
       rich.indexOf('〖客观描写〗') < rich.indexOf('不要写天气。'))
   }
@@ -414,8 +424,8 @@ async function main() {
     ok('地点已记下 → 每轮都注入当前值', sys.includes(`当前地点 ${place}`))
     ok('有值时只给一句轻提示，不再重复要求落值',
       sys.includes('若这一轮地点有变') && !sys.includes('地点还没记下来'))
-    ok('场景锚排在协议之前（协议仍钉末尾）',
-      sys.indexOf('〖本场数值〗') < sys.indexOf(PROTOCOL_CORE))
+    ok('记账块（含场景锚）排在协议**之后** —— 任务型指令必须离生成点最近',
+      sys.indexOf(PROTOCOL_CORE) < sys.indexOf('〖本场数值〗'))
 
     // 关掉变量总开关 → 连场景锚都不出现（「空层不占额度」）
     const stVarsOff = { ...DEFAULT_TAVERN_SETTINGS, vars: { ...DEFAULT_TAVERN_SETTINGS.vars, enabled: false } }

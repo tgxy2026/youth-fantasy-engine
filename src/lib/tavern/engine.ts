@@ -568,15 +568,18 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     // 所以「开/关」也等价于「花不花这份额度」。
     modeExtra: [
       buildSceneDescriptionRule(st.free.sceneDescription),
-      buildVarsBlock({
-        values: varsOf(session, varsEnabledKeys(st)).values,
-        keys: varsEnabledKeys(st),
-        ask: shouldAskVars(turnSeqOf(session.messages), st.vars.everyTurns),
-        everyTurns: st.vars.everyTurns,
-        maxStep: st.vars.maxStep,
-      }),
       st.free.extraPrompt.trim() ? `〖本场补充要求〗\n${st.free.extraPrompt.trim()}` : '',
     ].filter(x => x?.trim()).join('\n\n'),
+    // 🔴 记账块挂在**协议之后**（prompt.ts 的 tail 层），不是 modeExtra。
+    //    探针对照实验（2026-09-15）：同一条记账要求放协议之前 6/6 轮不执行，
+    //    挪到协议之后立刻开始执行 —— 任务型指令会被协议那 3.5KB 格式规范压掉。
+    tail: buildVarsBlock({
+      values: varsOf(session, varsEnabledKeys(st)).values,
+      keys: varsEnabledKeys(st),
+      ask: shouldAskVars(turnSeqOf(session.messages), st.vars.everyTurns),
+      everyTurns: st.vars.everyTurns,
+      maxStep: st.vars.maxStep,
+    }),
     protocol: st.protocol,
   })
 

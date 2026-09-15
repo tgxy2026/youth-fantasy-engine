@@ -57,16 +57,16 @@ async function pickLocal(): Promise<{ provider: AIProvider; model: string; note:
 
 const CHAR_EXAMPLES = [
   '〖对方〗这么晚还不下班？',
-  '她把找零推过去，没抬头：',
-  '「灯还亮着。」',
+  '（把找零推过去，没抬头）',
+  '灯还亮着。',
   '',
   '〖对方〗你一个人看店不怕吗？',
-  '她停了一下，把烟按灭。',
-  '「惯了。」',
+  '（停了一下，把烟按灭）',
+  '惯了。',
   '',
   '〖对方〗……谢谢。',
-  '她背过身去理货架，声音很轻：',
-  '「伞在门后。」',
+  '（背过身去理货架，声音很轻）',
+  '伞在门后。',
 ].join('\n')
 
 async function mkChar(): Promise<FreeCharacter> {
@@ -93,8 +93,8 @@ async function mkChar(): Promise<FreeCharacter> {
 }
 
 /**
- * 逐行审计模型输出是否符合协议 v1.5：
- *   对白＝纯文本 / （）＝动作·神态·心理 / 【】＝客观环境与人物外在 / 〔〕＝状态块
+ * 逐行审计模型输出是否符合协议 v1.6：
+ *   对白＝纯文本 / （）＝其余一切（动作·神态·心理·环境）/ 〔〕＝状态块与记账行
  * 返回各类行数与**违规清单**（带原文片段，便于人工复核）。
  */
 export function auditFormat(reply: string, castNames: string[] = []) {
@@ -103,8 +103,10 @@ export function auditFormat(reply: string, castNames: string[] = []) {
   let action = 0, env = 0, talk = 0, status = 0
   for (const l of lines) {
     if (/[〖〗〈〉]/.test(l)) issues.push('出现输入侧结构标记：' + l.slice(0, 24))
+    // v1.6 起：动作/神态/心理/环境统一用（），所以「括号行」不再细分
     if (/^（|^\(/.test(l)) { action++; continue }
-    if (/^【/.test(l)) { env++; continue }
+    // 旧格式（v1.5 及以前）的环境行 —— 仍能识别，但**模型不该再写**，记进违规
+    if (/^【/.test(l)) { env++; issues.push('仍用旧格式【】（v1.6 起环境也归（ ））：' + l.slice(0, 24)); continue }
     if (/^〔/.test(l)) { status++; continue }
     talk++
     if (/[“”"「」]/.test(l)) issues.push('对白里带引号：' + l.slice(0, 24))
@@ -211,7 +213,8 @@ async function main() {
   // ⚠️ 这两条曾长期是 ✗：断言里写的是旧措辞，规则正文早就换了说法（手动实弹不进回归，所以没被发现）。
   console.log(`[离线断言] 写明「不写任何人的心理活动」：${sys5.includes('不写任何人的心理活动') ? '✓' : '✗'}`)
   console.log(`[离线断言] 描写算在协议字数内：${sys5.includes('算在协议的字数里') ? '✓' : '✗'}`)
-  console.log(`[离线断言] 写明动作归（）、不要写两遍：${sys5.includes('不要把同一个动作写两遍') ? '✓' : '✗'}`)
+  // v1.6：两套括号合并后，这条改成核对「与协议 O1 是同一套括号」（旧措辞已删）
+  console.log(`[离线断言] 写明与 O1 同一套括号：${sys5.includes('与协议 O1 是**同一套括号**') ? '✓' : '✗'}`)
   s5 = await say(s5, luo, '（我把票递过去）路上淋着了吗？', [luo, chuU])
   const reply5 = s5.messages[s5.messages.length - 1]?.content ?? ''
   const DESC_WORDS = /(外套|裙子|裙|毛衣|围巾|发梢|头发|鞋|袖口|指尖|手里|肩上|雨|伞|灯|光|风|水汽|味道|地毯|海报|广播|玻璃门|大厅|晚场|票根)/
@@ -223,9 +226,9 @@ async function main() {
 
   // ---------- 阶段 6：v1.2/v1.3 输出规范（老大 2026-09-14 定的三类标记 + 对白无说话人标记） ----------
   // 要观察的是：对白是不是纯文本（不带引号、不带名字前缀）、动作是不是（）、
-  // 客观环境／人物外在是不是【】，以及**有没有把输入侧的〖〗〈〉漏进输出**。
+  // 非对白内容是不是都进了（），以及**有没有把输入侧的〖〗〈〉漏进输出**。
   console.log('\n' + '='.repeat(70))
-  console.log('▶ 阶段 6 · 输出规范（对白纯文本 / （）动作神态心理 / 【】客观环境与人物外在）')
+  console.log('▶ 阶段 6 · 输出规范（对白纯文本 / 其余一律用（ ）、一句一行）')
   console.log('='.repeat(70))
   {
     const seedL = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
@@ -244,7 +247,7 @@ async function main() {
     })
     const sys6 = (await buildFreeSystem(s6, [luo6, chu6])).system
     console.log(`[离线断言] system 含〖客观描写〗：${sys6.includes('〖客观描写〗') ? '✓' : '✗'}`)
-    console.log(`[离线断言] 协议正文已是 v1.5：${sys6.includes('角色扮演通用协议 · v1.5') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 协议正文已是 v1.6：${sys6.includes('角色扮演通用协议 · v1.6') ? '✓' : '✗'}`)
     console.log(`[离线断言] 身份层代词中性（Ta）：${sys6.includes('用 Ta 的眼睛看') ? '✓' : '✗'}`)
     console.log(`[离线断言] 输入侧用的是〖〗〈〉（示例标题/说话人）：${sys6.includes('〖样本') || sys6.includes('〈') ? '✓' : '✗'}`)
     console.log(`[离线断言] 对白不许加说话人标记已写进协议：${sys6.includes('不要把说话人的名字单独写成一行') ? '✓' : '✗'}`)
@@ -254,7 +257,7 @@ async function main() {
     s6 = await say(s6, luo6, '（我把票递过去）路上淋着了吗？', [luo6, chu6])
     const reply6 = s6.messages[s6.messages.length - 1]?.content ?? ''
     const a6 = auditFormat(reply6, ['洛汐', '楚楠'])
-    console.log(`[实弹观察] 行分布：动作（）${a6.action} · 环境【】${a6.env} · 对白 ${a6.talk} · 状态〔〕${a6.status}`)
+    console.log(`[实弹观察] 行分布：括号（）${a6.action} · 旧式环境【】${a6.env} · 对白 ${a6.talk} · 状态〔〕${a6.status}`)
     console.log(`[实弹观察] 违规项：${a6.issues.length ? '⚠️ ' + a6.issues.join(' | ') : '✓ 无'}`)
     console.log(`[实弹观察] 篇幅 ${reply6.replace(/\s/g, '').length} 字（协议建议 60–160）`)
 
@@ -262,7 +265,7 @@ async function main() {
     s6 = await say(s6, luo6, '（我往旁边挪了半步，把伞收好。）', [luo6, chu6])
     const reply6b = s6.messages[s6.messages.length - 1]?.content ?? ''
     const b6 = auditFormat(reply6b)
-    console.log(`[实弹观察·第 2 轮] 行分布：动作（）${b6.action} · 环境【】${b6.env} · 对白 ${b6.talk}`)
+    console.log(`[实弹观察·第 2 轮] 行分布：括号（）${b6.action} · 旧式环境【】${b6.env} · 对白 ${b6.talk}`)
     console.log(`[实弹观察·第 2 轮] 违规项：${b6.issues.length ? '⚠️ ' + b6.issues.join(' | ') : '✓ 无'}`)
   }
 

@@ -67,6 +67,23 @@ export function avatarInitial(name: string): string {
   return Array.from(s)[0] ?? '?'
 }
 
+/**
+ * 头像兜底上要显示的文字 —— **名字，不是姓氏**（老大 2026-09-15 反馈）。
+ *
+ * 起因：只取首字时，「苏念 / 苏晴」在同一场戏里的头像长得一模一样，
+ * 作者根本分不清谁在说话 —— 而多角色同场正是最需要头像的场合。
+ *
+ * 为什么封顶 2 字：圆形头像只有 16–36px，塞 3 个字会糊成一团；
+ * 而中文姓名 2 字已足以区分（3 字名的重名概率极低，且悬停 title 里有全名）。
+ * 字数是按 `Array.from` 数**字符**而非码元 —— emoji 名字不会被切半个（同 avatarInitial）。
+ */
+export function avatarLabel(name: string, max = 2): string {
+  const s = String(name ?? '').trim()
+  if (!s) return '?'
+  const chars = Array.from(s)
+  return chars.length <= max ? s : chars.slice(0, max).join('')
+}
+
 function readAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader()
