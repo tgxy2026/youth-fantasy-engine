@@ -104,7 +104,7 @@ export default function ProjectHub({ onOpen }: Props) {
   const createDemo = async () => {
     if (!await confirmDialog({
       title: '创建示范项目',
-      message: '创建示范项目「吞天神脉」？\n将写入示例宇宙（陈渊·苍澜大陆）的全部范例数据：卷章正文、设定表单、角色卡、伏笔、时间脉络、码字统计等，可用于体验和测试各项功能。',
+      message: '创建示范项目「吞天神脉」？\n将写入示例宇宙（陈渊·苍澜大陆）的全部范例数据：两卷二十章正文（约九万字）、设定表单、角色卡、伏笔、时间脉络、码字统计，以及酒馆模式的背景设定与一个可直接开演的剧情推演场景。可用于体验和测试各项功能。',
     })) return
     setBusy(true)
     try {
