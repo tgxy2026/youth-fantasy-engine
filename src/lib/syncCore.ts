@@ -44,6 +44,12 @@ export function onSyncConflict(h: (info: SyncConflictInfo) => void) {
   conflictHandler = h
 }
 
+/**
+ * 「推不出去」时的兜底处理器：收到当前内存 cache，由上层负责落盘。
+ * 见 createCloudStore().onFallback 与 flushNow() 的 blocked 分支。
+ */
+let fallbackHandler: ((cache: Record<string, any[]>) => void) | null = null
+
 /** 敏感/本地专属 meta：AI 配置不上云；冲突副本只落本地、不上传 */
 export function isExcludedMetaKey(key: unknown): boolean {
   if (typeof key !== 'string') return false
@@ -150,6 +156,25 @@ function eqRecord(a: any, b: any): boolean {
     return false
   }
 }
+/**
+ * 两个 store 快照内容是否一致。
+ * 用途：三路合并后判断「是否留下了云端没有的本地改动」（是则必须立刻推回，见 backgroundPull）。
+ */
+function sameStores(a: Record<string, any[]>, b: Record<string, any[]>): boolean {
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})])
+  for (const k of keys) {
+    const av = a?.[k] ?? []
+    const bv = b?.[k] ?? []
+    if (av.length !== bv.length) return false
+    const bm = new Map<any, any>(bv.map((r: any) => [r?.id ?? r?.key, r]))
+    for (const r of av) {
+      const other = bm.get(r?.id ?? r?.key)
+      if (!other || !eqRecord(r, other)) return false
+    }
+  }
+  return true
+}
+
 function snapshotOf(c: Record<string, any[]>): Record<string, any[]> {
   const out: Record<string, any[]> = {}
   for (const k of Object.keys(c || {})) out[k] = (c[k] || []).slice()
@@ -257,6 +282,9 @@ export interface CloudStoreInstance {
   restoreFromCloudBackup(): Promise<boolean>
   backgroundPull(): Promise<void>
   onSyncConflict(h: (info: SyncConflictInfo) => void): void
+  /** 注册「推不出去时的本地兜底」：回调收到当前内存 cache（store 名 → 行数组）。
+   *  云模式下写入先进内存、再推同步目录；推送被挡时若不兜底，关窗即丢。 */
+  onFallback(h: (cache: Record<string, any[]>) => void): void
   armUnloadFlush(): void
 }
 
@@ -455,7 +483,12 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
         adoptCloudBackup(serverCache)
         cache = mergeCaches(baseCache, serverCache, cache)
         rev = remoteRev
+        // 🔴 先判断合并结果与云端是否一致（不一致 = 本地有改动被保下来了），**再**认领新基线。
+        //    顺序反过来的话，这批本地改动会被写进 baseCache，下次合并时被判成「本地未改」
+        //    而静默采用云端版本 —— 改动无声消失，且走的是常规分支、不产生冲突副本。
+        const drifted = !sameStores(cache, serverCache)
         baseCache = snapshotOf(cache)
+        if (drifted) schedulePush()
         setStatus('ok')
       }
     } catch {
@@ -540,7 +573,13 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   async function flushNow(): Promise<void> {
     if (!code) return
     await ensureInit()
-    if (authFailed || transientUnavailable) return
+    if (authFailed || transientUnavailable) {
+      // 🔴 推不出去的时刻：把内存 cache 交上层做本地兜底。
+      //    云模式下这批改动只存在于内存 —— 关窗兜底写的是 desktopStore（不经过它），两边都没有。
+      //    只在异常路径触发，不影响「云模式下普通 store 不写本地」的常态约定。
+      try { fallbackHandler?.(snapshotOf(cache)) } catch { /* 兜底失败不影响主流程 */ }
+      return
+    }
     if (pushTimer) { clearTimeout(pushTimer); pushTimer = null }
     if (pushing) { pendingPush = true; return }
     pushing = true
@@ -662,6 +701,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     restoreFromCloudBackup,
     backgroundPull,
     onSyncConflict: (h) => onSyncConflict(h),
+    onFallback: (h) => { fallbackHandler = h },
     armUnloadFlush,
   }
 }

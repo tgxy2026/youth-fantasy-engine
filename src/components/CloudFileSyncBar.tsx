@@ -29,6 +29,16 @@ import {
  */
 export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'panel' | 'sidebar' }) {
   const [busy, setBusy] = useState(false)
+
+  // 冲突告知：冲突副本由 db.ts 的 saveConflictCopy 落到**当前平台本地存储**的 meta
+  // （key 以 syncConflict: 开头，受 isExcludedMetaKey 保护、永不上云）。
+  // 这里只负责让作者**知道**发生过冲突 —— 否则副本存了却没人看得见，等于白存。
+  useEffect(() => {
+    const onConflict = () =>
+      showToast('检测到同步冲突：云端那一版已另存为本地副本，你的本地修改未被覆盖', 'error', 6000)
+    window.addEventListener('yfe:sync-conflict', onConflict)
+    return () => window.removeEventListener('yfe:sync-conflict', onConflict)
+  }, [])
   const [connected, setConnected] = useState(() => isDesktopCloudEnabled())
   const [status, setStatus] = useState<SyncStatus>(getDesktopCloudStatus())
   const [dirName, setDirName] = useState<string | null>(null)

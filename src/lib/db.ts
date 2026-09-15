@@ -5,7 +5,7 @@ import { DESKTOP, desktopStore } from './desktop'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
-  seedDesktopFromLocal, onDesktopSyncConflict,
+  seedDesktopFromLocal, onDesktopSyncConflict, persistDesktopCloudEnabled, onDesktopCloudFallback,
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo,
 } from './desktopCloudSync'
@@ -327,6 +327,27 @@ onDesktopSyncConflict((info: SyncConflictInfo) => {
   void saveConflictCopy(info)
 })
 
+// 🔴 P0 兜底：云盘**推不出去**的时刻，把内存 cache 镜像进本地存储。
+//
+// 为什么需要它：云模式下 `ops` 是云端实例，写入先进 syncCore 的内存 cache，再由防抖 schedulePush
+// 推到同步目录。若推送被挡（断网 / 网盘客户端占用文件 / 目录不可写 / 凭据失效），这批改动就**只在内存里** ——
+// 而关窗兜底的 flushDesktopSync() 写的是 desktopStore（云模式下根本不经过它）→ 两边都没有，**关窗丢稿**。
+//
+// ⚠️ 为什么不干脆每次都双写：那会破坏「云模式下普通 store 不写本地」的常态约定
+// （本地作为「最后一次成功同步的快照」，混入未上传的改动会让它与云端分歧）。
+// 所以只在异常路径兜底 —— 宁可本地暂时多一份，也不能让稿子凭空消失。
+//
+// 注：回调里的 desktopLocalStore 是模块级 const，注册时尚未初始化，但回调只在关窗/异常时才执行，届时已就绪。
+onDesktopCloudFallback((cache) => {
+  for (const [store, rows] of Object.entries(cache)) {
+    if (store === 'backups') continue
+    const list = store === 'meta'
+      ? (rows as any[]).filter(r => !isExcludedMetaKey(r?.key))
+      : (rows as any[])
+    if (list.length) void desktopLocalStore.bulkPut(store, list).catch(() => {})
+  }
+})
+
 async function saveConflictCopy(info: SyncConflictInfo) {
   try {
     // 🔴 必须写**当前平台的本地存储**，不能固定写 idbOps：
@@ -480,6 +501,9 @@ export async function enableDesktopCloudSync(handle: any) {
     // 此刻 ops 仍为平台默认本地存储（桌面=desktopStore），用其数据播种
     await seedDesktopFromLocal((s) => ops.getAll(s))
   }
+  // 🔴 持久化必须在**上面全部成功之后**：原先写在 enableDesktopCloud 内部（即拉快照之前），
+  //    拉快照 / 播种失败时标记已落盘 → 下次启动 UI 仍显示「已开启」，实际却走本地存储（界面撒谎）。
+  persistDesktopCloudEnabled(handle)
   setStoreOps(desktopCloudFileStore)
 }
 

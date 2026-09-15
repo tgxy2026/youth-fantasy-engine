@@ -64,6 +64,14 @@ export function onDesktopSyncConflict(h: (info: SyncConflictInfo) => void) {
   cloud.onSyncConflict(h)
 }
 
+/**
+ * 注册「云盘推不出去时的本地兜底」。由 db.ts 在初始化时接上：
+ * 回调收到当前内存 cache（store 名 → 行数组），负责把它镜像进本地存储，避免关窗丢稿。
+ */
+export function onDesktopCloudFallback(h: (cache: Record<string, any[]>) => void) {
+  cloud.onFallback(h)
+}
+
 function isStringHandle(h: unknown): h is string {
   return typeof h === 'string'
 }
@@ -107,6 +115,16 @@ export async function chooseDesktopCloudDir(): Promise<{ handle: any; name: stri
 export async function enableDesktopCloud(handle: any) {
   cloud.setTransport(createFileTransport(handle, CLOUD_FILE_NAME))
   cloud.configure(DEFAULT_CLOUD_KEY)
+}
+
+/**
+ * 持久化「已开启」标记与同步目录。
+ *
+ * 🔴 必须等**快照校验 + 播种全部成功之后**才调用（由 db.ts 的 enableDesktopCloudSync 负责）。
+ *    原先这两行就写在 enableDesktopCloud 里，而它是在拉快照 / 播种**之前**执行的 ——
+ *    后两步失败时标记已经落盘，下次启动 UI 仍显示「已开启」，实际却走本地存储。
+ */
+export function persistDesktopCloudEnabled(handle: any) {
   try {
     if (DESKTOP && isStringHandle(handle)) {
       localStorage.setItem(DIR_KEY, handle)
