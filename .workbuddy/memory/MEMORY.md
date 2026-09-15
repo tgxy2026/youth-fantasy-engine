@@ -25,15 +25,14 @@
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录；🔴 图片字段先压缩再入库；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属 → `makeCloudStoreWrapper` 必须短路到 local。🔴🔴 桌面读数据文件失败必须**锁写盘**（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
 - 🔄 **两同步入口别混**：①改数据文件位置＝明文 JSON 进云盘（文件级覆盖、apiKey 明文上云）；②云盘文件同步＝加密 `.yfe`＋记录级合并＋每日备份＋兜底。**用 ②**。
-- 🔴 2026-09-15 修掉一批（详见 `docs/2.1.1-审计修复记录.md` §四）：换目录前先抓旧数据再 `configure()`（否则写空快照）；空推按**记录总数**判；关同步前先 flush；409 解密失败直接抛；IPC 写失败要抛且 `flushNow` 处理 conflict；启动拉不到快照就清 ENABLED 标记。
+- 🔴 2026-09-15 修掉一批（详见 `docs/2.1.1-审计修复记录.md` §四）：换目录前先抓旧数据再 `configure()`；空推按**记录总数**判；关同步前先 flush；409 解密失败直接抛；IPC 写失败要抛；启动拉不到快照清 ENABLED 标记。
 
 ## UI / 布局尺寸
-- 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，分类色盘不要主题化。
-- 🔴 SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 回退黑）。设置项排版＝标题→输入→说明最后；复制统一 `copyText()`。
-- 🔴🔴 `<html>` 界面缩放（默认跟随窗口）：①量尺寸算回 CSS 值一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`；②**zoom 不缩放 vh** → CSS 类由 index.css 折（`.h-screen`/`.min-h-screen`），**内联长度一律走 `foldVh()`**（`theme.ts`；不折的后果＝弹窗比视口还高、页脚按钮点不到），内部滚动区尚有约 16 处裸 vh；③SVG 滚轮锚点与拖拽都要除 zoom。
+- 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，分类色盘不主题化。🔴 SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 回退黑）；设置项排版＝标题→输入→说明；复制统一 `copyText()`。
+- 🔴🔴 `<html>` 界面缩放（默认跟随窗口）：①量尺寸算回 CSS 值一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`；②**zoom 不缩放 vh** → CSS 类由 index.css 折（`.h-screen`/`.min-h-screen`），**内联长度一律走 `foldVh()`**（`theme.ts`，否则弹窗高过视口、页脚按钮点不到）；③SVG 滚轮锚点与拖拽都要除 zoom。
 - 🔴 按对侧高度定高：flex item `min-height:auto` 会顶回定高 → 加 `overflow-hidden`；别同写 `flex-1`+`height`。
 - 🔴 按钮：静止无框别用 `ghost`（→`secondary`）；分段开关 `toggle`+`selected`；行内小操作 `size="xs"`；`danger` 破坏性；列表选择项不算按钮。
-- 🔴 每页签页头要 `HelpPopover` 问号。头像兜底＝**名字**（`avatarLabel` 封顶 2 字），自定义图优先；剧情推演头像来自项目卡（无头像字段 → 首字圆标）。输入：Enter 发送／Shift+Enter 换行，**必挡 `nativeEvent.isComposing`**；快捷指令只预填不发送；用户与 AI 消息**两侧都无气泡框**。
+- 🔴 每页签页头要 `HelpPopover` 问号。头像兜底＝**名字**（`avatarLabel` 封顶 2 字），自定义图优先；剧情推演头像取自项目卡（无则首字圆标）。输入：Enter 发送／Shift+Enter 换行，**必挡 `nativeEvent.isComposing`**；快捷指令只预填不发送；两侧消息均无气泡框。
 - 界面文案禁 markdown 星号 → 用「」/（）；同一事别写成互斥分支。
 
 ## AI 层
@@ -43,13 +42,12 @@
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（SSH `yfe_test_server`），站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务 → 删库 ≠ 下线；⚠️ Nginx SPA 回退：不存在路径也返 200 → 不能靠 200 判上线。
-- `npm run verify`（tsc+lint+test）；runner 每入口单开子进程；ESLint 11 warnings 别盲改。
-- 🔴 实机验证走 skill `novel-studio-ui-livecheck`。⚠️ 实弹断言会静默过时 → 读日志必 grep ✗；子代理结论必回源码验尸（误报约 15%）。
+- `npm run verify`（tsc+lint+test）；runner 每入口单开子进程；ESLint 11 warnings 别盲改。🔴 实机验证走 skill `novel-studio-ui-livecheck`；实弹断言会静默过时 → 日志必 grep ✗；子代理结论必回源码验尸（误报约 15%）。
 
 ## 酒馆模式
-- 源《酒馆模式_完整落地方案》＋`你需要的文件在这里/` 调研稿（冲突以方案为准）。**实现细则一律看 `docs/酒馆模式-工程红线.md`**（§1 导出／§2 头像／§3 状态与额度／§4 示范卡认卡／§5-6 本场变量与数值／§7 剧本／§9 背景设定／§10·15·16 联网检索与起草／§11·13 对话引导／§12 控制面板配平／§14 按钮与问号）—— 动对应功能前先读那一节。
+- 源《酒馆模式_完整落地方案》＋`你需要的文件在这里/` 调研稿（冲突以方案为准）。**实现细则一律看 `docs/酒馆模式-工程红线.md`**（17 节：导出/头像/额度/示范卡/本场变量/剧本/背景设定/联网检索/对话引导/配平/按钮）—— 动对应功能前先读那一节。
 - 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景**随项目**；自由会话+角色卡+记忆日常+面板设置+剧本库**跨项目**（索引与分条须成对，tavernReports 别漏 deleteProject）。
-- 🎛 控制面板＝`tavern.settings`（**八段**）；优先级 会话→角色→面板→模式默认；数值真源 `paramGuide.ts`；⚠️ 废弃字段须在 `upgradeLegacyDefaults` 删（mergeDeep 会回填）；🔴 左列以协议**收尾**、右列放两模式手感（按实测高度分列），段号一动「N 段设置」文案一起改。
+- 🎛 控制面板＝`tavern.settings`（**八段**）；优先级 会话→角色→面板→模式默认；数值真源 `paramGuide.ts`；⚠️ 废弃字段须在 `upgradeLegacyDefaults` 删（mergeDeep 会回填）；🔴 左列以协议**收尾**、右列放两模式手感，段号一动「N 段设置」文案一起改。
 - 🔴 层序：设定→背景设定→这一场(剧本)→记忆→身份→档位→（通用→本场补充）→未带入→协议→**数值块**（协议之后；放前面会被那 3.5KB 格式规范盖过去）。
 - 🔴🔴 上下文预算：`historyBudget`＝预算−400−整条 system（**别传记忆**）；contextBudget **24000**（三处一致）。源 both/digest/raw；空层不占额度。
 - ⚙️ 出厂参数 2026-09-15 放宽一档（数值表见 `types.ts`／`paramGuide.ts`；**numCtx 仍 32768，别动**）。🔴 值须落在 paramGuide **推荐段**内（有测试闸）；改默认值**必须同加 `upgradeLegacyDefaults` 的「全等旧值才升」规则**。
@@ -58,16 +56,22 @@
 - 🔴 分支/回滚：`branchSession` 截到该条、分叉点后**连记忆一起清**；回滚连记忆还原＋`undoSnapshot`；重说＝`run*Turn(session,null)`；剧情记忆 `runPlotSummary`→`memoryToText` 写回 `session.memory`＋推水位线（**全成功才推进**）。
 - 🔴 多角色：`buildMultiCharRule` 必传 `{hasUser:false}`；`userCharId` 的卡/记忆/轮转排除；在场调度 `muted`+`talkativity` 会话级、两模式共用（静音＝在场不发言、卡与记忆不进上下文；最后一位不能静音）。
 - 🔴🔴 防剧透两层：段落级 `viewMode:"character-view"` 排作者侧页签＋字段级 `AUTHOR_SIDE_FIELDS`（新字段须登记）。🔴 提示词与解析器对齐：标题整行匹配（禁 `includes`）；**面板调的记忆上限必须一路传进解析**（`parseMemoryText(…, limits)`）。
-- 🔴 输出规范（协议 v1.7）：对白＝纯文本（不含名字）；**非对白一律（ ）**、一件事一个括号；状态＝〔〕；输入 〖〗/〈〉；**【】彻底废止**。🔴 改协议须同步三处（`PROTOCOL_CORE` 版号＋旧全文追加 `LEGACY_PROTOCOLS`＋`PROTOCOL_VERSION`＋两处断言）。🔴 指代一律「Ta」；协议/示范卡靠等值锚点升级（**多版本数组**、幂等；只留上一代则老库升不上来）：`LEGACY_PROTOCOLS`／`LEGACY_SEED_EXAMPLES`（逐代）＋`LEGACY_SEED_CARD_SIGS`（整卡指纹 `cardSig`，命中即四章整换，改过一字就不碰）。
+- 🔴 输出规范（协议 v1.7）：对白＝纯文本（不含名字）；**非对白一律（ ）**、一件事一个括号；状态＝〔〕；输入 〖〗/〈〉；**【】彻底废止**。🔴 改协议须同步三处（`PROTOCOL_CORE` 版号＋旧全文追加 `LEGACY_PROTOCOLS`＋`PROTOCOL_VERSION`＋两处断言）。🔴 指代一律「Ta」；协议靠等值锚点升级（`LEGACY_PROTOCOLS` **多版本数组**、幂等；只留上一代则老库升不上来）。示范卡那套 `LEGACY_SEED_EXAMPLES`／`LEGACY_SEED_CARD_SIGS`（整卡指纹 `cardSig`）随「原生去卡」一并退役。
 - 🔴 R4 元指令（**用户输入侧**）：`//`或`#`＝讨论剧情；`「…」`＝**导演指令**（照做后继续演）；`[OOC: …]`＝同上；`TavernDirectorNote` 自动包「」。🗣 说明块要看得见：`TavernEchoHints.tsx` 挂在**剧情推演＋自由对话**、须在 header **外**（放输入区则没会话时不渲染）。
-- 📦 导入导出：单卡 `.taverncard.json`／整批 `.taverncards.json`；批量逐张独立校验且**不调 AI**（`draftMemoryFromCard` 离线摘录）。🔴 剧情推演**没有会话级模型选择**。📥 录入固定路径 `G:\AI软件\角色卡录入\`＋skill `tavern-cards-batch`；示范卡**内容**在 `seedCardData.ts`（6 张）、**机制**在 `seedCards.ts`。
+- 📦 导入导出：单卡 `.taverncard.json`／整批 `.taverncards.json`；批量逐张独立校验且**不调 AI**（`draftMemoryFromCard` 离线摘录）。🔴 剧情推演**没有会话级模型选择**。示范卡**内容**在 `seedCardData.ts`、**机制**在 `seedCards.ts`（下一版随「原生去卡」摘除）。
+
+## 出厂数据（角色卡不进原生）
+- 🚫 2026-09-15 老大定：**下一版起原生不预填角色卡** —— 特指**自由对话的 6 张示范自由卡**（`SEED_FREE_CHARACTERS`）；项目内角色卡（`char-*`）**照旧保留**。理由：这批卡每次改版都要同步旧指纹/旧示例/断言，纯负担。**老库里已有的卡只保留、不删**；卡改由老大导入。
+- 摘两处：①`seedCardData.ts`（6 张自由卡＋`LEGACY_SEED_EXAMPLES`/`LEGACY_SEED_CARD_SIGS`）②`seedCards.ts` 的 `seedFreeChars()`＋`seedData.ts` §8 的播种调用（连带 `isSeedCard`/`resetCardToSeed`、`upgradeSeedCards()` 转 no-op、卡页「恢复内置版本」按钮）。
+- ⚠️ 连带必查：闸 `tests/tavernSeedCards.test.ts`（失去对象，重写或删）、`tavernMemory.test.ts` 的兜底摘录、`live-free`/`live-tavern` 里写死的示范卡文案。**与示范项目无关** —— 项目内 `char-*` 卡片、细纲卡「→角色卡」文本、推演会话 `cast` 一律不动。
+- 📥 卡走导入：`G:\AI软件\角色卡录入\`＋skill `tavern-cards-batch` → `.taverncards.json` → 界面导入。
 
 ## 示范项目（吞天神脉）
-- 两卷各十章：**1-10 风起云州 / 11-20 剑鸣中州**（约 9.2 万字）。改/加正文必同步（`seedContent.ts`→`seedData.ts`）：import→`mkChapter`→`masterRows`→卷大纲卡→章节细纲卡→`rows` 台账（13 类，见 `seedData.ts`）→角色卡→酒馆 `world`＋示范推演会话。
+- 两卷各十章：**1-10 风起云州 / 11-20 剑鸣中州**（约 9.2 万字）。改/加正文必同步（`seedContent.ts`→`seedData.ts`，落点链：`mkChapter`→`masterRows`→卷/章卡→`rows` 台账 13 类→酒馆 `world`＋示范推演会话）。
 - 🔴 三道闸必跑：`seed-schema-check.mjs`＋`tests/seedRef.test.ts`＋细纲卡「新增设定登记」逐项落表核对；卷名/章数/终章位置三处口径必须一致。🔴 推演会话 cast 引用**角色卡 id** → 相关卡须留 `card()` 返回值再 `saveCardRecord`；酒馆两步用**动态 import**；播种失败只 warn → **验收必须捕获 console.warn**。
 
 ## 环境（Windows + Git Bash）
 - git/npm 都用绝对路径（PortableGit 1.2.0 `cmd/git.exe`；托管 node＋`npm/bin/npm-cli.js`），路径写 `C:/` 正斜杠；⚠️ `sort -n/-r` 会解析到 Windows `sort.exe` → 用 node 脚本。
-- ⚠️ Edit 会「假成功」：改完立即 grep；多处替换用脚本（**全命中才落盘**；`patch-multi.mjs` 在 `.workbuddy/tmp/`，别当垃圾删）；`node -e` 的引号/反引号会被吞 → Write 落脚本（**纯 JS，别写 TS 类型**）；`replace_all` 前确认每处前提一致；⚠️ 同一消息并发多个 Edit 改同一文件会互相覆盖 → 同文件串行。
+- ⚠️ Edit 会「假成功」：改完立即 grep；多处替换用脚本（**全命中才落盘**；`patch-multi.mjs` 在 skill assets，用时拷进 `.workbuddy/tmp/`）；`node -e` 引号/反引号会被吞 → Write 落脚本（**纯 JS，别写 TS 类型**）；`replace_all` 前确认每处前提一致；同文件并发 Edit 会互相覆盖 → 串行。
 - ⚠️ CRLF/LF 并存 → 跨行锚点先探 EOL；`git checkout -- <file>` 会把 LF 变 CRLF（autocrlf=true）→ 回滚后先归一。
 - ⚠️ 验「随项目」用换项目（`db.setCurrentProject`），别直查物理表（API 名写错会静默跳过→假绿）。实弹会读真实 apiKey（先告知，绝不提交）。⚠️ 改提示词/示范卡内容后 `tests/` 里写死旧文案的断言会挂 —— 断言与文案同一次提交改。
