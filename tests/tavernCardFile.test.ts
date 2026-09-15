@@ -152,7 +152,8 @@ function main() {
     ok('缺 cards 数组 → 拒绝且说清楚',
       (parseCardBundle('{"format":"yfe.taverncards"}') as { error: string }).error.includes('cards'))
     ok('单卡文件不会被误当批量文件（两条通道互不串）', parseCardBundle(toCardFile(many[0])).ok === false)
-    ok('批量后缀与单卡后缀区分开', CARD_BUNDLE_SUFFIX !== CARD_FILE_SUFFIX && CARD_BUNDLE_SUFFIX.endsWith('.json'))
+    ok('批量后缀与单卡后缀区分开',
+      String(CARD_BUNDLE_SUFFIX) !== String(CARD_FILE_SUFFIX) && CARD_BUNDLE_SUFFIX.endsWith('.json'))
   }
 
   console.log(`\ntavernCardFile: ${pass} passed, ${fail} failed`)

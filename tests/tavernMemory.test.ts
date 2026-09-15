@@ -255,16 +255,16 @@ async function main() {
     // ① 确定性兜底：不调模型，直接从卡片摘
     const d1 = draftMemoryFromCard({ ...chu, id: 'c1', createdAt: 0, updatedAt: 0 })
     ok('兜底版：长期摘要带「初版」标注（不冒充 AI 整理）', d1.longTerm.startsWith('（初版'))
-    ok('兜底版：长期摘要摘到了第 1 章世界', d1.longTerm.includes('青宜大学城'))
+    ok('兜底版：长期摘要摘到了第 1 章世界', d1.longTerm.includes('奉阳市'))
     ok('兜底版：关键事实含 2.1 与内核里的既成事实',
-      d1.facts.includes('姓名：楚楠') && d1.facts.includes('父母在老家'))
+      d1.facts.includes('姓名：楚楠') && d1.facts.includes('父母在他七岁那年离婚'))
     ok('兜底版：关系状态把卡片里的既有关系整段带进来',
       d1.relation.includes('苏念') && d1.relation.includes('洛汐'))
     ok('兜底版：日记与纪念日留空（还没发生任何事）', !d1.diaries && !d1.anniversaries)
     ok('兜底版：六栏不是全空', !isMemoryEmpty(d1))
 
     const d2 = draftMemoryFromCard({ ...sn, id: 'c2', createdAt: 0, updatedAt: 0 })
-    ok('兜底版：「未爆的雷」从「不肯说出口的事」摘到', d2.mines.includes('她其实很怕'), d2.mines.slice(0, 30))
+    ok('兜底版：「未爆的雷」从「不肯说出口的事」摘到', d2.mines.includes('她喜欢他'), d2.mines.slice(0, 30))
 
     // ② AI 版：注入 chatFn 给一段六栏文本
     const reply = [

@@ -177,7 +177,7 @@ async function main() {
   console.log(`[离线断言] 身份层写明「用户扮演：苏念」：${sys4.includes('用户扮演：苏念') ? '✓' : '✗'}`)
   console.log(`[离线断言] 要求不代写：${sys4.includes('不要代写') ? '✓' : '✗'}`)
   console.log(`[离线断言] AI 只演楚楠：${sys4.includes('你扮演：楚楠') ? '✓' : '✗'}`)
-  console.log(`[离线断言] 楚楠卡进了设定层：${sys4.includes('被两个人当作锚点') ? '✓' : '✗'}`)
+  console.log(`[离线断言] 楚楠卡进了设定层：${sys4.includes('算得清账') ? '✓' : '✗'}`)
   console.log(`[离线断言] 苏念的记忆不给楚楠（她还没聊过，本应为空）：${sys4.includes('〖长期记忆 · 苏念〗') ? '⚠️ 有' : '✓ 无'}`)
   s4 = await say(s4, chu, '（我把伞立在门口，没看他，只把烟推过去。）', [chu, su2])
   const reply4 = s4.messages[s4.messages.length - 1]?.content ?? ''
