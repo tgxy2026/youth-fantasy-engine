@@ -30,16 +30,99 @@ import { generateReport } from '../lib/tavern/report'
 import { buildOpeningMessage } from '../lib/tavern/prompt'
 import { plotDocModel } from '../lib/tavern/exportDoc'
 import { messagesLen } from '../lib/tavern/budget'
+import { getTavernSettings, type TavernSettings } from '../lib/tavern/settings'
+import { summarizeMemory } from '../lib/tavern/summarize'
+import {
+  messagesAfterWatermark, countUnsummarized, nextWatermark, memoryToText, parseMemoryText,
+  limitsOf, acquireSummaryLock, releaseSummaryLock,
+} from '../lib/tavern/memory'
 import { uid } from '../lib/id'
 import { MEMORY_SOFT_LIMIT, hasCastSetting, talkBandOf, talkativityOf } from '../lib/tavern/types'
 import type { TavernSession, TavernSessionIndexItem, TavernMessage, TavernDirectorNote } from '../lib/tavern/types'
 import type { PostApplied } from '../lib/tavern/postRules'
 
 
+/**
+ * 本场背景（喂给总结提示词）。
+ * 不给的话模型只能凭对话臆断这是哪一场、在哪、要干什么 —— 与自由模式「不给角色背景就漂移」同理。
+ */
+function plotCharContext(s: TavernSession): string {
+  return [
+    s.title && `本场推演：${s.title}`,
+    s.anchorChapterLabel && `叙事锚点：接在「第 ${s.anchorChapterLabel} 章」之后`,
+    s.scene?.place && `地点：${s.scene.place}`,
+    s.scene?.time && `时间：${s.scene.time}`,
+    s.scene?.description && `开场情形：${s.scene.description}`,
+  ].filter(Boolean).join('\n')
+}
+
 export default function TavernPlot() {
   const [list, setList] = useState<TavernSessionIndexItem[]>([])
   const [activeId, setActiveId] = useState('')
   const [session, setSession] = useState<TavernSession | null>(null)
+  /** 正在整理本场记忆（按钮转圈用） */
+  const [summarizing, setSummarizing] = useState(false)
+
+  // ---------- 本场记忆整理 ----------
+  /**
+   * 整理「本场记忆」。
+   *
+   * 🔴 剧情记忆是**会话级**的：记的是"这一场推演发生了什么"，随会话走，
+   *    也随检查点 / 回滚 / 分支一起还原（见 store 的 rollbackToCheckpoint、branchSession）。
+   *    与自由模式的**角色级**记忆（按角色存、跨会话共享）是两条线，别混。
+   *
+   * manual = 作者点了「整理本场记忆」→ 跳过条数阈值（作者点了就该跑）。
+   * 参数沿用控制面板里那一组记忆参数，不另开设置项。
+   */
+  const runPlotSummary = useCallback(async (s: TavernSession, manual = false) => {
+    const pending = messagesAfterWatermark(s.messages, s.watermark)
+    if (pending.length === 0) {
+      if (manual) showToast('还没有新内容可整理', 'info')
+      return
+    }
+    let st: TavernSettings
+    try {
+      st = await getTavernSettings()
+    } catch {
+      if (manual) showToast('读设置失败，无法整理记忆', 'error')
+      return
+    }
+    if (!manual && countUnsummarized(s) < st.free.triggerMessages) return
+    if (!acquireSummaryLock(Date.now(), st.free.summaryLockTtlMin * 60_000)) {
+      if (manual) showToast('另一个窗口正在整理记忆', 'info')
+      return
+    }
+    setSummarizing(true)
+    try {
+      const aiNames = splitCast(s.cast).ai.map(c => c.name)
+      const mem = await summarizeMemory({
+        charId: s.id,
+        charName: aiNames.length === 1 ? aiNames[0] : '本场角色',
+        // 旧档案：session.memory 存的是六栏文本，先反解析回结构（解析不出就当没有旧档案）
+        prev: s.memory ? parseMemoryText(s.memory, s.id, null) : null,
+        messages: pending,
+        charContext: plotCharContext(s),
+        providerId: st.free.summaryProviderId || undefined,
+        limits: limitsOf({ longTermLimit: st.free.longTermLimit, diaryDays: st.free.diaryDays }),
+      })
+      const wm = nextWatermark(s)
+      const updated: TavernSession = {
+        ...s,
+        memory: memoryToText(mem),
+        watermark: wm ?? s.watermark,
+        updatedAt: Date.now(),
+      }
+      await store.saveSession(updated)
+      setSession(cur => (cur && cur.id === updated.id ? updated : cur))
+      if (manual) showToast(`本场记忆已更新（${(updated.memory ?? '').length} 字）`)
+    } catch (e) {
+      // 总结失败**保留旧档案**：绝不写入半截结果（与自由模式同一原则）
+      if (manual) showToast('整理本场记忆失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      releaseSummaryLock()
+      setSummarizing(false)
+    }
+  }, [])
   const [providers, setProviders] = useState<AIProvider[]>([])
   const [setupOpen, setSetupOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(true)
@@ -190,6 +273,8 @@ export default function TavernPlot() {
       // 落库（含索引同步）
       await store.saveSession(res.session)
       await refreshList()
+      // 攒够条数就自动整理一次本场记忆。单独兜错：整理失败不该把这一轮的展示也拖垮。
+      void runPlotSummary(res.session).catch(() => undefined)
     } catch (e) {
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -601,12 +686,28 @@ export default function TavernPlot() {
                   </div>
                 </div>
               )}
-              {session.memory && (
-                <div>
-                  <div className="text-[11px] text-ink-500">本场记忆（{session.memory.length} 字）</div>
-                  <div className="mt-0.5 text-[11.5px] text-ink-400 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{session.memory}</div>
+              {/* 本场记忆：会话级（这一场推演发生了什么），随检查点 / 回滚 / 分支一起还原 */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-ink-500">
+                    本场记忆{session.memory ? `（${session.memory.length} 字）` : ''}
+                  </span>
+                  <Button variant="secondary" size="xs" disabled={summarizing}
+                    onClick={() => void runPlotSummary(session, true)}
+                    title="把水位线之后的新对话整理进本场记忆；攒够条数也会自动整理"
+                  >
+                    {summarizing ? '整理中…' : session.memory ? '重新整理' : '整理本场记忆'}
+                  </Button>
                 </div>
-              )}
+                {session.memory ? (
+                  <div className="mt-0.5 text-[11.5px] text-ink-400 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{session.memory}</div>
+                ) : (
+                  <p className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
+                    还没有本场记忆。对话攒够一定条数会自动整理一次，也可以点上面手动整理。
+                    它会随检查点与回滚一起还原，分支时按分叉点重算 —— 所以分支不会"记得还没发生的事"。
+                  </p>
+                )}
+              </div>
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-ink-500">检查点（{(session.checkpoints ?? []).length}）</span>

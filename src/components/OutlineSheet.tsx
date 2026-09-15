@@ -11,6 +11,7 @@ import PromptModal from './PromptModal'
 import { confirmDialog } from './dialogs'
 import TemplateLibrary from './TemplateLibrary'
 import { Button } from './Button'
+import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
 
 interface Props {
@@ -379,13 +380,7 @@ export default function OutlineSheet({ tab }: Props) {
       )}
 
       {/* 浮动保存按钮 */}
-      {dirty && (
-        <div className="fixed bottom-6 right-6 z-20">
-          <Button onClick={save} variant="primary" solid size="md" className="flex items-center text-[13px] text-ink-900 transition-all animate-pulse">
-            <Save size={14} /> 保存「{draft?.name}」修改
-          </Button>
-        </div>
-      )}
+      {dirty && <SaveFab onClick={save} label={`保存「${draft?.name}」修改`} />}
 
       {tplOpen && (
         <TemplateLibrary

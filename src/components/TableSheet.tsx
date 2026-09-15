@@ -26,6 +26,7 @@ import FeedbackAIPanel from './FeedbackAIPanel'
 import TermDedupPanel from './TermDedupPanel'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
+import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
 
 interface Props {
@@ -1297,11 +1298,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       )}
 
       {dirtyKeys.length > 0 && !isMaster && (
-        <div className="fixed bottom-6 right-6 z-20">
-          <Button onClick={saveAll} variant="primary" solid size="md" className="flex items-center text-ink-900 transition-all animate-pulse">
-            <Save size={14} /> 保存 {dirtyKeys.length} 行修改
-          </Button>
-        </div>
+        <SaveFab onClick={saveAll} label={`保存 ${dirtyKeys.length} 行修改`} />
       )}
 
       {showFill && (

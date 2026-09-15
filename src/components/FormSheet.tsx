@@ -10,6 +10,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
+import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
 
 // 力量体系是升级流的"宪法"：下面这些字段是境界/数值类，绝不能让 AI 凭空编造，
@@ -234,13 +235,7 @@ export default function FormSheet({ tab }: Props) {
       )}
 
       {/* 底部浮动保存按钮（页面很长时方便） */}
-      {dirty && (
-        <div className="fixed bottom-6 right-6 z-20">
-          <Button onClick={save} variant="primary" solid size="md" className="flex items-center text-[13px] text-ink-900 transition-all animate-pulse">
-            <Save size={14} /> 保存修改
-          </Button>
-        </div>
-      )}
+      {dirty && <SaveFab onClick={save} label="保存修改" />}
 
       {showFill && (
         <AITemplateFill

@@ -14,6 +14,7 @@ import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { Button } from './Button'
+import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
 
 /** 角色卡中以「下拉」形式填写的字段（与设定检索 CARD_SELECT_FIELDS 对应）：value 为存储值，label 为展示文案 */
@@ -376,13 +377,7 @@ export default function CharacterSheet({ tab }: Props) {
       )}
 
       {/* 浮动保存按钮 */}
-      {dirty && (
-        <div className="fixed bottom-6 right-6 z-20">
-          <Button onClick={save} variant="primary" solid size="md" className="flex items-center text-[13px] text-ink-900 transition-all animate-pulse">
-            <Save size={14} /> 保存「{draft?.name}」修改
-          </Button>
-        </div>
-      )}
+      {dirty && <SaveFab onClick={save} label={`保存「${draft?.name}」修改`} />}
 
       {showFill && (
         <AITemplateFill

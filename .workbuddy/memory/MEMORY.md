@@ -21,7 +21,7 @@
 ## 存储 / 同步（丢数据风险）
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录。便携(FSA) `flush()` 是 swap 语义。🔴 图片字段先压缩再入库。
 - 判据：过服务器→要码；云盘→不要码。🔴 两路径二选一；换设备前先关软件＋等同步完。
-- 🔴 `backups` 本地专属 → `makeCloudStoreWrapper` 必须短路到 local。「死配置」先验消费方。🔴🔴 桌面读数据文件失败必须**锁写盘**（已修：`main.cjs` 三态 + `desktop.ts` writeLocked + `DesktopWriteLockBanner`）——旧代码注释承诺"不会覆盖"却从未实现。
+- 🔴 `backups` 本地专属 → `makeCloudStoreWrapper` 必须短路到 local。🔴🔴 桌面读数据文件失败必须**锁写盘**（已修：`main.cjs` 三态 + writeLocked + `DesktopWriteLockBanner`）。
 
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，分类色盘不要主题化。
@@ -51,23 +51,24 @@
 - 🔴🔴 控制面板分列按实测高度（§12）：左＝不分局部的设置＋协议（协议须左列最后，列高同步靠 slice(0,-1)），右＝两种模式手感。段号一动，「N 段设置」文案一并改。（§12）：左＝不分局部的设置＋协议（协议须左列最后一项，列高同步靠 slice(0,-1)），右＝两种模式的手感。段号一动，面板内「N 段设置」文案与 `.workbuddy` 一起改。
 - 🔴 层序：设定→背景设定→这一场(剧本)→记忆→身份→档位→（通用→本场补充）→未带入→协议（钉末尾）。
 - 🔴🔴 上下文预算：historyBudget = 预算 − 400 − 整条 system（别传记忆）；contextBudget 16000（三处一致）→ **默认档历史仅约 2600 字**。contextSource＝both/digest/raw。空层不占额度。
-- 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（summarize.ts）；设定＝这让 Ta 变成了谁（revise.ts）。拦不住 → findNarrativeOverlap（≥6 字）标 ⚠️，只提示。
+- 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（summarize.ts）；设定＝这让 Ta 变成了谁（revise.ts）。拦不住 → findNarrativeOverlap 标 ⚠️。
 - 📚 🔴 背景设定（`world.ts`）：关键词空＝总是注入；上限 1800 字。只服务剧情推演；键只剩 `tavern.world`。
 - 🧩 模型配置＝灵感启发最上方独立面板（`AIConfigPanel.tsx`）。全应用共用一个活动模型；改配置靠 `reloadKey` 通知下游重读。指路文案统一「灵感启发 → 模型配置」。
-- 🌐 联网检索：全局键 `app.search`（入口 `searchSettings.ts`）。三档 off/model/api，引擎 bocha/searxng/custom；地址含 {query} ⇒ GET；桌面版主进程代发。🔴 起草须如实回告（`describeSource`），没联上就明说。本机 SearXNG 127.0.0.1:8888。
+- 🌐 联网检索：全局键 `app.search`（入口 `searchSettings.ts`）。三档 off/model/api，引擎 bocha/searxng/custom；地址含 {query} ⇒ GET；桌面版主进程代发。🔴 起草须如实回告，没联上就明说。本机 SearXNG :8888。
 - ✍️ 起草：draft.ts（角色卡 13 栏模板）。🔴 提纲 fields 必须覆盖模板全部栏；角色卡草稿的示例对话要守协议格式。
 - 🔴 对话引导已泛化：机制＝`lib/interview.ts`（只认 `InterviewSpec`），界面＝`InterviewChat.tsx`。别在业务侧再写一份。
 - 🛠 输出后处理：`postRules.ts` 按序跑正则再落库；🔴 去 markdown 必须排在星号动作前。行首说话人标签默认关。
 - 🎚 本场数值：`vars.ts`＋`VAR_DEFS`（可逐项关），规则挂 `modeExtra`。🔴 认不出的行不剥；手改清 `prev`；先解变量再跑后处理。
-- 🎭 剧本：`script.ts` 六栏。🔴 库在全局 meta；🔴🔴 会话存快照不是引用；名称与开场白不进 system（开场白＝对话第一条消息）。
+- 🎭 剧本：`script.ts` 六栏。🔴 库在全局 meta；🔴🔴 会话存快照不是引用；开场白不进 system（＝对话第一条）。
 - 🔴 engine ↔ world/script/draft 环：已上移 `provider.ts`（engine 处 re-export 兼容）。设定更新：12 字段白名单（不含 name）＋二次把关；采纳＝整段替换。
 - 🔴 分支/回滚：branchSession 截到该条，分叉点之后连记忆一起清；回滚连记忆还原＋undoSnapshot。hidden 出口＝toChatMessages＋messagesAfterWatermark；重说＝runPlotTurn/runFreeTurn(session,null)。
-- 🔴 剧情模式**会话级记忆从未实现**（`session.memory/watermark` 全仓 0 写入者）→ TavernPlot「本场记忆」恒不渲染、检查点记忆语义空转。
-- 🔴 `buildMultiCharRule`：整场 AI 必传 `{hasUser:false}`；`userCharId` 这一位的卡/记忆/轮转三处都排除。记忆按角色分开整理；水位线全成功才推进。
+- 🔴 剧情模式会话记忆**已实现**（`runPlotSummary` → `summarizeMemory` → `memoryToText` 写回 `session.memory` + 推水位线）。
+- 🔴 `buildMultiCharRule`：整场 AI 必传 `{hasUser:false}`；`userCharId` 的卡/记忆/轮转三处都排除。水位线全成功才推进。
 - 🔴 在场调度：`muted`+`talkativity` 会话级、两模式共用。静音＝在场不发言、卡与记忆不进上下文；UI 拦「最后一位不能静音」。
 - 🔴🔴 防剧透两层：① 段落级 `viewMode:"character-view"` 排作者侧页签；② 字段级 `AUTHOR_SIDE_FIELDS`（新字段须登记）。
 - 🔴 提示词与解析器对齐：标题整行匹配（禁 `includes`）；总结必带角色背景；复制为新卡不复制记忆/日常；新建/导入卡自动生成初版记忆；卡片块带名仅同场同名挂短码。
-- 🔴 输出规范 v1.3（改提示词先读）：对白＝纯文本（不含名字）、动作神态＝（）、环境＝【】、状态＝〔〕；输入一律 〖〗/〈〉。
+- 🔴 输出规范 v1.3：对白＝纯文本（不含名字）、动作神态＝（）、环境＝【】、状态＝〔〕；输入一律 〖〗/〈〉。
+- ⚠️ `LEGACY_SEED_EXAMPLES` 是**多版本数组**：改示范卡 examples 时把被替换的每一版都追加进去，只留上一代则老库升不上来。
 - 🔴 指代角色一律「Ta」。协议/示范卡改动靠全等锚点升级（`LEGACY_PROTOCOLS`/`upgradeSeedCards()`，幂等）；别写逐句锚点补丁。
 - 示范卡三张：洛汐/苏念/楚楠；都知道对方是谁、不知彼此分量。`createDemoProject` single-flight。
 - 路线图：开发需求全部完成（第 1–10 批）；C1 向量记忆/C3 立绘/ST 卡导入/TTS 放弃。方案见 `docs/剧本与变量-设计方案-讨论稿.md`；2.1.0 审计见 `docs/2.1.0-全量审计报告.html`。
