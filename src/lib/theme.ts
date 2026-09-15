@@ -33,6 +33,8 @@ export const THEMES: ThemeDef[] = [
 
 const THEME_KEY = 'yfe-theme'
 const ZOOM_KEY = 'yfe-ui-zoom'
+/** 用户是否手动调过缩放：'1' = 尊重存储值；否则按窗口宽度自动适配（2026-09-15） */
+const ZOOM_MANUAL_KEY = 'yfe-ui-zoom-manual'
 
 /**
  * 安全读取 localStorage。
@@ -58,27 +60,56 @@ export function applyTheme(id: ThemeId): ThemeId {
 }
 
 /** 界面缩放范围：80% ~ 160% */
+
+/** 按窗口宽度算一个舒适值：窗口越宽界面同比放大（100% ~ 140%） */
+export function autoZoom(): number {
+  if (typeof window === 'undefined') return 100
+  const w = window.innerWidth
+  return Math.min(140, Math.max(100, Math.round(100 + (w - 1280) / 40)))
+}
+
+/** 是否处于「跟随窗口」的自动模式（用户没手动调过缩放） */
+export function isZoomAuto(): boolean {
+  return safeGet(ZOOM_MANUAL_KEY) !== '1'
+}
+
+/**
+ * 界面缩放取值：**手动调过就用存储值，否则按窗口宽度自动适配**。
+ *
+ * 🔴 旧实现是「存储里有值就永远用它」—— 大屏作者首次运行明明自动算出了 132%，
+ *    可只要手动碰过一次（哪怕只为临时看清某处调到 110%），这个值就被永久钉死：
+ *    之后换更大屏 / 全屏，字号偏小且再也不会自适应。故补 manual 标记区分两种情况。
+ */
 export function getStoredZoom(): number {
+  if (isZoomAuto()) return autoZoom()
   const raw = safeGet(ZOOM_KEY)
   if (raw != null) {
     const v = Number(raw)
     if (Number.isFinite(v) && v >= 80 && v <= 160) return v
   }
-  // 首次运行（无已存缩放）：按窗口宽度给一个舒适默认，避免大屏上字号过小。
-  // 用户之后手动调整的缩放会写入 localStorage，覆盖此默认。
-  if (typeof window !== 'undefined') {
-    const w = window.innerWidth
-    const d = Math.min(140, Math.max(100, Math.round(100 + (w - 1280) / 40)))
-    return d
-  }
-  return 100
+  return autoZoom()
 }
 
-export function applyZoom(pct: number): number {
+/**
+ * 应用缩放。`opts.manual === true` 表示这是用户手动调整（此后不再自动适配），
+ * `false` 表示切回「跟随窗口」。不传则只改值、不动模式（启动时用）。
+ */
+export function applyZoom(pct: number, opts?: { manual?: boolean }): number {
   const z = Math.min(160, Math.max(80, Math.round(pct)))
   if (typeof document !== 'undefined') {
-    document.documentElement.style.zoom = String(z / 100)
+    const root = document.documentElement
+    root.style.zoom = String(z / 100)
+    // 🔴 系数必须同步写给 CSS：index.css 的 .h-screen / .min-h-screen 用它把 vh 折回来 ——
+    //    少了这一步，100vh 不跟着缩放走，主容器比窗口高、被 overflow-hidden 裁掉。
+    root.style.setProperty('--ui-zoom', String(z / 100))
   }
-  try { localStorage.setItem(ZOOM_KEY, String(z)) } catch { /* 忽略隐私模式写失败 */ }
+  try {
+    localStorage.setItem(ZOOM_KEY, String(z))
+    if (opts?.manual !== undefined) localStorage.setItem(ZOOM_MANUAL_KEY, opts.manual ? '1' : '0')
+  } catch { /* 忽略隐私模式写失败 */ }
+  // 通知界面同步显示：缩放被自动重算时，侧栏那个数字也得跟着变
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('yfe:zoom-changed', { detail: z }))
+  }
   return z
 }

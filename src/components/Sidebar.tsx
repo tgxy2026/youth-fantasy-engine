@@ -7,7 +7,7 @@ import { GROUPS, TABS, EDITOR_TAB, tabVisible, getVolumeTabs, getVolumeLedgerTab
 import type { TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
-import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom } from '../lib/theme'
+import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom, isZoomAuto } from '../lib/theme'
 import { DESKTOP } from '../lib/desktop'
 import { DesktopDataBar } from './Desktop'
 import CloudFileSyncBar from './CloudFileSyncBar'
@@ -47,15 +47,37 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   // 主题与界面缩放（与 <html data-theme> / zoom 同步）
   const [theme, setTheme] = useState(getStoredTheme())
   const [zoom, setZoom] = useState(getStoredZoom())
+  // 「跟随窗口」模式：窗口尺寸变化时缩放会被自动重算（见 App.tsx 的 resize 监听）
+  const [zoomAuto, setZoomAuto] = useState(isZoomAuto())
   const changeTheme = (id: typeof theme) => setTheme(applyTheme(id))
-  const changeZoom = (d: number) => setZoom(applyZoom(zoom + d))
+  /** 手动调整即退出跟随模式，此后只认这个值 */
+  const changeZoom = (d: number) => {
+    setZoom(applyZoom(zoom + d, { manual: true }))
+    setZoomAuto(false)
+  }
+  /** 切回「跟随窗口」：按当前窗口宽度重算 */
+  const toAutoZoom = () => {
+    setZoom(applyZoom(autoZoom(), { manual: false }))
+    setZoomAuto(true)
+  }
   // 界面缩放：支持手动输入百分比（80% ~ 160%），回车或失焦生效
   const [zoomText, setZoomText] = useState(String(zoom))
   useEffect(() => { setZoomText(String(zoom)) }, [zoom])
+  // 缩放在别处被自动重算时（跟随窗口），让本组件的显示同步过来
+  useEffect(() => {
+    const onZoom = (e: Event) => {
+      const z = (e as CustomEvent<number>).detail
+      if (typeof z === 'number') { setZoom(z); setZoomAuto(isZoomAuto()) }
+    }
+    window.addEventListener('yfe:zoom-changed', onZoom)
+    return () => window.removeEventListener('yfe:zoom-changed', onZoom)
+  }, [])
   const commitZoom = () => {
     const v = Number(zoomText)
-    if (Number.isFinite(v) && v > 0) setZoom(applyZoom(v))
-    else setZoomText(String(zoom))
+    if (Number.isFinite(v) && v > 0) {
+      setZoom(applyZoom(v, { manual: true }))
+      setZoomAuto(false)
+    } else setZoomText(String(zoom))
   }
   // 侧栏宽度可拖拽调整
   const sidebar = useResizable({ key: 'yfe-sidebar-w', initial: 224, initialWide: 300, min: 200, max: 560, side: 'right' })
@@ -266,9 +288,14 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
         <div className="flex items-center gap-2 pt-1">
           <span className="flex items-center gap-1">界面缩放
             <HelpPopover title="界面缩放怎么用" width="20rem" size={11}>
-              {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 设置会自动保存到本地，下次打开沿用；\n· 首次运行会按窗口宽度给一个舒适默认值，大屏不再卡在 100%；\n· 桌面端窗口较大时字号偏小，把缩放调大即可更清晰；\n· 缩放与主题切换相互独立，互不影响。'}
+              {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
             </HelpPopover>
           </span>
+          <Button variant="bare" onClick={toAutoZoom}
+            title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}
+            className={`shrink-0 rounded border px-1 py-0.5 text-[10px] transition-colors ${zoomAuto ? 'border-emerald-500/40 text-emerald-300' : 'border-ink-600 text-ink-400 hover:text-ink-200'}`}>
+            自动
+          </Button>
           <div className="flex items-center gap-1 ml-auto">
             <Button variant="icon-amber" onClick={() => changeZoom(-10)} className="p-0.5" title="缩小界面">
               <ZoomOut size={12} />

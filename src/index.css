@@ -197,6 +197,20 @@
   --graph-accent-text: var(--amber-soft);
 }
 
+/* ============================================================
+   界面缩放 × vh 单位的修正（2026-09-15）
+   ------------------------------------------------------------
+   `document.documentElement.style.zoom` 会放大所有内容，但**不会**缩放 vh / vw 单位 ——
+   100vh 永远等于视口高。于是 zoom=1.32 时，h-screen 主容器被渲染成 1.32 × 视口高，
+   比窗口高出 461px，再被 overflow-hidden 直接裁掉（实测：1.2→288px、1.4→576px、1.6→864px）。
+   下面把 vh 按缩放系数折回来：视觉高度 =（100vh / zoom）× zoom = 100vh，正好占满窗口。
+   --ui-zoom 由 lib/theme.ts 的 applyZoom() 写入，默认 1（未缩放时无影响）。
+   ⚠️ 本段必须留在 @tailwind utilities 之后，否则会被 Tailwind 的同名工具类盖回去。
+   ============================================================ */
+:root { --ui-zoom: 1; }
+.h-screen { height: calc(100vh / var(--ui-zoom, 1)); }
+.min-h-screen { min-height: calc(100vh / var(--ui-zoom, 1)); }
+
 html, body, #root {
   height: 100%;
   margin: 0;

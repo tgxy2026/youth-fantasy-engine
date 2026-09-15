@@ -922,12 +922,9 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   'check-tools': 'locked',
   // 默认勾选（可取消）
   about: 'default',
-  // 酒馆模式（方案 §2.3）：角色扮演是可选玩法，不强行出现在每个自定义项目里，故设 default 而非 locked
-  'tavern-plot': 'default',
-  'tavern-report': 'default',
-  'tavern-card': 'default',
-  'tavern-free': 'default',
-  'tavern-control': 'default',
+  // 酒馆模式（2026-09-15）：整体改为**不默认勾选**（落到 optional）。
+  // 原先 5 项设 default，会让每个自定义项目默认开着一整套角色扮演功能，多数作者用不上。
+  // 它们的联动关系改由下方 STRONG_DEPS / ANY_DEPS 负责。
 }
 
 /** 强关联依赖：勾选 B 必须连带勾选 A（A 被锁定，直到再无 B 依赖它） */
@@ -936,6 +933,28 @@ export const STRONG_DEPS: Record<string, string[]> = {
   'faction-rels': ['nations'],
   relations: ['char-main'],
   secrets: ['char-main'],
+  // —— 酒馆模式（2026-09-15）——
+  // 语义：勾 B 必须连带 A。组内互绑＝双向声明，resolveFeatures 的闭包会把整组拉齐。
+  // ① 启用任一酒馆功能 → 控制面板（没有它连模型都接不上）
+  // ② 背景设定 / 剧情推演 / 推演报告 —— 同进同出
+  // ③ 自由对话 / 角色卡片 / 剧本编辑 —— 同进同出
+  'tavern-world': ['tavern-control', 'tavern-plot', 'tavern-report'],
+  'tavern-plot': ['tavern-control', 'tavern-world', 'tavern-report'],
+  'tavern-report': ['tavern-control', 'tavern-world', 'tavern-plot'],
+  'tavern-free': ['tavern-control', 'tavern-card', 'tavern-script'],
+  'tavern-card': ['tavern-control', 'tavern-free', 'tavern-script'],
+  'tavern-script': ['tavern-control', 'tavern-free', 'tavern-card'],
+}
+
+/**
+ * 「至少需要一个」依赖（2026-09-15）：勾了 key 却连一个候选都没启用时，自动补上候选里的第一个。
+ *
+ * 与 STRONG_DEPS 的区别：那是「被依赖项必须全都有」，这是「有一个就够」。
+ * 现实动机：剧情推演要有项目资料可喂 —— 一个设定功能都没开的话，那场戏只能凭空编。
+ */
+export const ANY_DEPS: Record<string, string[]> = {
+  // 候选按「对推演的有用程度」排序：先角色（没人就没戏），再章节 / 大纲（定叙事锚点），最后世界观
+  'tavern-plot': ['char-main', 'chapter-outline', 'volume-outline', 'chapter-master', 'worldbase', 'master', 'positioning'],
 }
 
 export function tierOf(id: string): FeatureTier {
@@ -956,6 +975,13 @@ export function resolveFeatures(selected: Set<string>): string[] {
         if (!out.has(dep)) { out.add(dep); changed = true }
       }
     }
+    // 「至少一个」依赖：启用者存在、候选全空 → 补首选（保证有资料可喂）
+    for (const [id, cands] of Object.entries(ANY_DEPS)) {
+      if (!out.has(id) || cands.length === 0) continue
+      if (cands.some(c => out.has(c))) continue
+      out.add(cands[0])
+      changed = true
+    }
   }
   return [...out]
 }
@@ -965,6 +991,13 @@ export function forcedByDeps(enabled: Set<string>): Set<string> {
   const forced = new Set<string>()
   for (const id of enabled) {
     for (const dep of STRONG_DEPS[id] ?? []) forced.add(dep)
+  }
+  // 「至少一个」依赖：只在**只剩一个**候选时锁住它 ——
+  // 取消它会被立刻补回，锁住比让勾选框自己弹回来体面；还有别的候选则不锁，允许自由切换资料源。
+  for (const [id, cands] of Object.entries(ANY_DEPS)) {
+    if (!enabled.has(id)) continue
+    const hits = cands.filter(c => enabled.has(c))
+    if (hits.length === 1) forced.add(hits[0])
   }
   return forced
 }

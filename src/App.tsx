@@ -23,7 +23,7 @@ import GeoMapEditor from './components/GeoMapEditor'
 import PlotCanvas from './components/PlotCanvas'
 import { showToast } from './components/dialogs'
 import { Button } from './components/Button'
-import { applyTheme, applyZoom, getStoredTheme, getStoredZoom } from './lib/theme'
+import { applyTheme, applyZoom, getStoredTheme, getStoredZoom, isZoomAuto } from './lib/theme'
 import { LS_SPRITE_ENABLED } from './lib/constants'
 import { downloadBlob } from './lib/zip'
 import workbenchBg from './assets/workbench-bg.png'
@@ -160,6 +160,24 @@ export default function App() {
   useEffect(() => {
     applyTheme(getStoredTheme())
     applyZoom(getStoredZoom())
+  }, [])
+
+  // 「跟随窗口」模式下，窗口尺寸变化时重算缩放（防抖 300ms）。
+  // 例：窗口化 ↔ 全屏切换、把窗口拖到另一块屏 —— 字号自动适配，不必手动调。
+  useEffect(() => {
+    if (!isZoomAuto()) return
+    let t: ReturnType<typeof setTimeout> | null = null
+    const onResize = () => {
+      if (t) clearTimeout(t)
+      t = setTimeout(() => {
+        if (isZoomAuto()) applyZoom(getStoredZoom())
+      }, 300)
+    }
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      if (t) clearTimeout(t)
+    }
   }, [])
 
   // 全局快捷键：Ctrl/Cmd+K 唤起全文检索命令面板（v1.3）

@@ -240,7 +240,7 @@ export default function OutlineSheet({ tab }: Props) {
         )}
       </header>
 
-      <div className="flex gap-5" style={{ minHeight: 'calc(100vh - 200px)' }}>
+      <div className="flex gap-5" style={{ minHeight: 'calc(100vh / var(--ui-zoom, 1) - 200px)' }}>
         {/* 目录列表 */}
         <div className="w-52 shrink-0 space-y-1.5">
           {records.map((rec, i) => {

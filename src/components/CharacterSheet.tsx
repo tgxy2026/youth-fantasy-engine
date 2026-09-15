@@ -248,7 +248,7 @@ export default function CharacterSheet({ tab }: Props) {
         </div>
       </header>
 
-      <div className="flex gap-5" style={{ minHeight: 'calc(100vh - 180px)' }}>
+      <div className="flex gap-5" style={{ minHeight: 'calc(100vh / var(--ui-zoom, 1) - 180px)' }}>
         {/* 角色列表 */}
         <div className="w-44 shrink-0 space-y-1.5">
           {visibleRecords.map(rec => {

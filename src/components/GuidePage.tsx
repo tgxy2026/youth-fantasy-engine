@@ -1,5 +1,5 @@
 import { BookOpen, Lightbulb, ListOrdered } from 'lucide-react'
-import { TABS, tabVisible, type VisCtx } from '../lib/schema'
+import { TABS, EDITOR_TAB, EDITOR_ID, tabVisible, type VisCtx } from '../lib/schema'
 import HelpPopover from './HelpPopover'
 import { Button } from './Button'
 
@@ -15,9 +15,15 @@ const FILL_ORDER = [
 ]
 
 // 全部功能页签按分类分组的展示顺序（对应"从零开书"的递进流程）
+// 末尾两项是工具 / 玩法类：正文写作是码字现场，酒馆模式是可选的角色扮演玩法。
+// ⚠️ 本清单必须与 schema.ts 的 GROUPS 保持覆盖一致 —— 漏一个组，整组页签就从这一页消失
+//    （曾因此漏掉整个酒馆模式：页签、说明、跳转全都没有）。
 const GROUP_ORDER = [
-  '开书定位', '大纲规划', '角色管理', '世界构建', '创作管理', '运营维护', '灵感工具'
+  '开书定位', '大纲规划', '角色管理', '世界构建', '创作管理', '运营维护', '灵感工具', '正文写作', '酒馆模式'
 ]
+
+/** 正文编辑不在 TABS 里（是 EDITOR_TAB 常量），故在列表里单独成条 */
+const EDITOR_DESC = '真正码字的地方：左侧带设定检索栏，可边写边查。'
 
 const TIPS: { title: string; body: string }[] = [
   { title: '先定位再动笔', body: '开书前先填作品定位：赛道、平台、读者、卖点没想清楚就动笔，多半会切书。' },
@@ -85,30 +91,35 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
         </div>
         <div className="p-5 space-y-6">
           {GROUP_ORDER
-            .map(g => ({ group: g, tabs: TABS.filter(t => t.type !== 'dashboard' && t.type !== 'guide' && t.group === g) }))
-            .filter(g => g.tabs.length > 0)
-            .map(({ group, tabs }) => (
+            .map(g => ({
+              group: g,
+              items: g === '正文写作'
+                ? [{ id: EDITOR_ID, name: EDITOR_TAB.name, description: EDITOR_DESC }]
+                : TABS.filter(t => t.type !== 'dashboard' && t.type !== 'guide' && t.group === g),
+            }))
+            .filter(g => g.items.length > 0)
+            .map(({ group, items }) => (
               <div key={group}>
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <span className="w-1 h-3 rounded-full bg-amber/70" />
                   <span className="text-[12px] font-semibold text-ink-200">{group}</span>
-                  <span className="text-[10px] text-ink-600">{tabs.length} 项</span>
+                  <span className="text-[10px] text-ink-600">{items.length} 项</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-1">
-                  {tabs.map(tab => {
-                    const enabled = tabVisible(tab.id, ctx)
+                  {items.map(item => {
+                    const enabled = tabVisible(item.id, ctx)
                     return (
                       <Button variant="bare"
-                        key={tab.id}
+                        key={item.id}
                         disabled={!enabled}
-                        onClick={() => enabled && onNavigate(tab.id)}
+                        onClick={() => enabled && onNavigate(item.id)}
                         className={`group flex-col items-stretch w-full text-left py-2 border-b border-ink-700/50 transition-colors ${enabled ? 'hover:border-amber/30 cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}
                       >
                         <div className="flex items-center gap-2">
-                          <span className={`flex-1 min-w-0 text-[13px] font-medium transition-colors ${enabled ? 'text-ink-100 group-hover:text-amber' : 'text-ink-500'}`}>{tab.name}</span>
+                          <span className={`flex-1 min-w-0 text-[13px] font-medium transition-colors ${enabled ? 'text-ink-100 group-hover:text-amber' : 'text-ink-500'}`}>{item.name}</span>
                           {!enabled && <span className="shrink-0 text-[9px] px-1 py-0.5 rounded bg-ink-700 text-ink-400">未启用</span>}
                         </div>
-                        <div className={`text-[11px] mt-0.5 line-clamp-1 ${enabled ? 'text-ink-400' : 'text-ink-600'}`}>{tab.description}</div>
+                        <div className={`text-[11px] mt-0.5 line-clamp-1 ${enabled ? 'text-ink-400' : 'text-ink-600'}`}>{item.description}</div>
                       </Button>
                     )
                   })}

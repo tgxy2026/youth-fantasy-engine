@@ -22,7 +22,7 @@ const entries = fs.readdirSync(here)
   .sort()
 
 /** 独立回归脚本（各自自带进程与退出码，不经 build-test.mjs） */
-const standalone = ['seed-schema-check.mjs']
+const standalone = ['seed-schema-check.mjs', 'feature-deps-check.mjs']
   .filter(f => fs.existsSync(path.join(here, f)))
 
 const jobs = [
