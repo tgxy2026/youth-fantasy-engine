@@ -74,9 +74,17 @@
 - 🔴 输出规范（协议常量 v1.7）：对白＝纯文本（不含名字）；**非对白一律（ ）**、一件事一个括号、一句一行；状态＝〔〕；输入 〖〗/〈〉。🔴**【】彻底废止**（按对白渲染）。
 - 🔴 改协议须同步：`PROTOCOL_CORE` 版本号＋旧全文追加 `LEGACY_PROTOCOLS`（现 v1.1–1.6）＋`PROTOCOL_VERSION`；两处版本断言。v1.4＝换场纪律；v1.5＝格式自查；v1.6＝单括号方案；v1.7＝【】彻底废止＋去掉数值行许可。
 - 🔴 指代一律「Ta」。协议/示范卡靠全等锚点升级（`upgradeSeedCards()`/`LEGACY_SEED_EXAMPLES` 与协议锚点都是**多版本数组**、幂等；只留上一代则老库升不上来）。示范卡三张洛汐/苏念/楚楠（都知道对方是谁、不知彼此分量）。
+- 🔴 R4 元指令通道（**用户输入侧**，内容不限、可自由发挥）：`//`或`#` 开头＝讨论剧情、`「…」`＝**导演指令**（照做后继续演）、`[OOC: …]`＝同上。`TavernDirectorNote` 注入时自动包「」。别把它与输出侧（ ）/〔〕混为一谈。
+- 🗣 元指令说明要**放在页面上看得见**（`TavernEchoHints.tsx`，两处共用）：剧情推演放 **header 外**（放进输入区的话，没会话时那块不渲染 → 新用户永远看不到），角色卡片放页头说明下；三条示例各带复制按钮。
+- 🔴 剧情推演**没有会话级模型选择**：模型统一在「控制面板 → 通用设置 → 默认模型」，`session.model.providerId` 留空即跟随面板默认（再兜底全局活动模型）。
+
+## 示范项目（吞天神脉）
+- 两卷各十章：**1-10 风起云州 / 11-20 剑鸣中州**，20 章约 9.2 万字。改/加正文后必同步的**落点清单**（`seedContent.ts` → `seedData.ts`）：①import ②`mkChapter` ③`masterRows` ④卷大纲卡 ⑤章节细纲卡 ⑥`rows` 台账（timeline/hookpoints/foreshadow/terms/geography/items/nations/history/relations/subplots/secrets/changelog/feedback）⑦角色卡 ⑧酒馆 `world` 背景设定＋示范推演会话。
+- 🔴 **三道闸必跑**：`seed-schema-check.mjs`（键名对不对）＋`tests/seedRef.test.ts`（跨表引用的值在不在、有无空表）＋细纲卡「新增设定登记」逐项落表核对。卷名/章数/终章位置这三处口径在正文、章节概要、细纲卡、台账里必须一致。
+- 🔴 示范推演会话的 cast 要引用**角色卡 id** → 那几张卡必须保留 `card()` 返回值再 `saveCardRecord`。酒馆两步用**动态 import**（别让引擎进主包）；播种失败只 warn 不连累项目创建，所以**验收时必须同时捕获 console.warn**，否则静默失败。
 
 ## 环境（Windows + Git Bash）
 - git / npm 都用绝对路径（PortableGit 1.2.0 `cmd/git.exe`；托管 node + `npm/bin/npm-cli.js`），路径写 `C:/` 正斜杠。
-- ⚠️ Edit 会「假成功」：改完立即 grep；多处替换用脚本（**全命中才落盘**）；`node -e` 反引号被吞 → Write 落脚本。⚠️ CRLF/LF 并存 → 跨行锚点先探 EOL；`replace_all` 前确认每处前提一致。
+- ⚠️ Edit 会「假成功」：改完立即 grep；多处替换用脚本（**全命中才落盘**）；`node -e` 反引号被吞 → Write 落脚本。⚠️⚠️ **同一条消息并发多个 Edit 改同一文件会互相覆盖**（只生效一个，工具仍报 success）→ 同文件多次改必须串行；⚠️ CRLF/LF 并存 → 跨行锚点先探 EOL；`replace_all` 前确认每处前提一致。
 - ⚠️ `sort -n/-r` 会解析到 Windows `sort.exe` → 用 node 脚本。
 - ⚠️ 验「随项目」用换项目（`db.setCurrentProject`），别直查物理表（API 名写错会静默跳过→假绿）。实弹会读真实 apiKey（先告知，绝不提交）。

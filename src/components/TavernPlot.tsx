@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
 import * as db from '../lib/db'
-import { loadProviders, type AIProvider } from '../lib/ai'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
@@ -20,6 +19,7 @@ import TavernMessageBody from './TavernMessageBody'
 import Avatar from './Avatar'
 import PromptModal from './PromptModal'
 import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
+import TavernEchoHints from './TavernEchoHints'
 import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import TavernExportDialog from './TavernExportDialog'
 import TavernUsageDialog from './TavernUsageDialog'
@@ -124,7 +124,6 @@ export default function TavernPlot() {
       setSummarizing(false)
     }
   }, [])
-  const [providers, setProviders] = useState<AIProvider[]>([])
   const [setupOpen, setSetupOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(true)
   /** 左栏情景列表的筛选词（场次多了靠它找，不必滚动） */
@@ -179,7 +178,6 @@ export default function TavernPlot() {
 
   useEffect(() => {
     void refreshList()
-    void loadProviders().then(setProviders).catch(() => setProviders([]))
   }, [refreshList])
 
   // 切换会话：载入内容
@@ -232,7 +230,9 @@ export default function TavernPlot() {
         cast: d.cast,
         scene: d.scene,
         messages,
-        model: { providerId: providers[0]?.id ?? '' },
+        // 模型统一在「控制面板 → 通用设置 → 默认模型」里选；会话不留副本，
+        // 留空即跟随那份设置（resolveTavernProvider 的兜底链：会话 → 面板默认 → 全局活动模型）
+        model: { providerId: '' },
         params: {},
       })
       setSetupOpen(false)
@@ -242,13 +242,6 @@ export default function TavernPlot() {
     } catch {
       showToast('创建推演失败', 'error')
     }
-  }
-
-  const switchProvider = async (providerId: string) => {
-    if (!session) return
-    const next = { ...session, model: { providerId } }
-    setSession(next)
-    await store.saveSession(next).then(refreshList).catch(() => undefined)
   }
 
   /** preset = 快捷指令条递过来的一句现成话（走导演指令通道）；不传就用输入框里的 */
@@ -271,7 +264,7 @@ export default function TavernPlot() {
       setStreamText('')
       setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       if (res.fellBack) {
-        showToast('酒馆模式未单独指定模型，已回退到全局活动模型', 'error')
+        showToast('「控制面板 → 通用设置 → 默认模型」还没选，这一轮用了全局活动模型', 'info')
       }
       // 落库（含索引同步）
       await store.saveSession(res.session)
@@ -538,7 +531,7 @@ export default function TavernPlot() {
   • 顶部几件：存检查点（记住此刻进度，之后能一键回到这里，回滚还可撤销）、本场信息、导出、结束推演。
   • 消息上悬停有「重说 / 编辑 / 隐藏 / 分支 / 删除」：隐藏 = 这条先不让 AI 看见（界面仍留着）；
     分支 = 从这条另开一场试另一个走向，原场不动。
-  • 模型可以单独指定（不跟随全局活动模型），换模型不影响已有记录。
+  • 模型在「控制面板 → 通用设置 → 默认模型」里统一选，本页不再单独指定。
   • 它是「试戏」不是「写稿」：结束推演出的报告只诊断，不会写回你的小说。
 </HelpPopover>
         {session && (
@@ -548,15 +541,6 @@ export default function TavernPlot() {
 
         {session && (
           <>
-            <select
-              className="bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-[12px] text-ink-100 outline-none focus:border-amber/50"
-              value={session.model.providerId}
-              onChange={e => void switchProvider(e.target.value)}
-              title="酒馆模式单独指定模型（不跟随全局活动模型）"
-            >
-              <option value="">（用全局活动模型）</option>
-              {providers.map(p => <option key={p.id} value={p.id}>{p.name} · {p.model}</option>)}
-            </select>
             <Button
               variant="secondary" size="md" disabled={streaming} onClick={() => saveCheckpoint()}
               title="记住此刻的消息进度与本场记忆；之后无论聊成什么样都能一键回到这里（回滚还可撤销）"
@@ -579,6 +563,10 @@ export default function TavernPlot() {
           </>
         )}
       </header>
+
+      {/* 元指令速查：**必须留在 header 外面** —— 放进输入区的话，没有会话 / 没选中推演时
+          那整块不渲染，新用户就永远看不到「可以用「」指挥 AI」这条。这里常驻可见。 */}
+      <TavernEchoHints className="mt-3 shrink-0" />
 
       {/* ---------- 主体：左＝推演情景一览；右＝本场信息 + 对话区 ---------- */}
       <div className="flex flex-1 min-h-0 gap-3 pt-3">
