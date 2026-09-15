@@ -11,7 +11,7 @@
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；三存储经 StoreOps；dev 5199。
 - 现 2.1.0（约每月一版，只改号）。版本唯一源 `package.json`；dev 靠 `injectAppVersion()` 注入 `APP_VERSION_LABEL`。
 - 🔴🔴 封装**全程无沙箱跑**（沙箱会拦 dist rename / 写 release / 删目录）。rcedit 间歇失败已由 `scripts/after-pack.cjs`（afterPack 钩子，pack 后 NSIS 前，重试+校验）根治 —— 它失败时**退出码仍 0**，只认 stderr `Fatal error`；验收查 exe 含 `青春幻想引擎开发组`。`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`；NSIS perMachine:false＋不可改安装目录。详见 skill §7。
-- 🔴🔴 **只做桌面版**（清理已完成）：无 WEB/PORTABLE；`StoreOps`+`PortableData` 已独立到 `storeOps.ts`（原在 portable.ts），版本号在 `env.ts`。云盘同步＝唯一跨设备途径（`syncCore` 保留）。
+- 🔴🔴 **只做桌面版**（清理已完成）：无 WEB/PORTABLE；`StoreOps`+`PortableData` 在 `storeOps.ts`，版本号在 `env.ts`。云盘同步＝唯一跨设备途径（`syncCore` 保留）。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键。⚠️ 功能改完回搜 `schema.ts` 的 `description`。
@@ -24,6 +24,7 @@
 ## 存储 / 同步（丢数据风险）
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录。🔴 图片字段先压缩再入库。换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属 → `makeCloudStoreWrapper` 必须短路到 local。🔴🔴 桌面读数据文件失败必须**锁写盘**（已修：`main.cjs` 三态 + writeLocked + `DesktopWriteLockBanner`）。
+- 🔄 **两个同步入口别混**：①「更改数据文件位置」＝明文 JSON 整库进云盘（文件级覆盖、无备份、apiKey 明文上云）；②「云盘文件同步」＝加密 `.yfe`＋记录级三路合并＋每日备份＋断网兜底。🔴 用 ②，**别叠加**。
 
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，分类色盘不要主题化。
@@ -42,7 +43,7 @@
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（ubuntu+免密 sudo，SSH `yfe_test_server`）；站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务 → 删库 ≠ 下线服务器。
-- 🔴 Nginx SPA 回退：不存在的路径也返 200 + index.html → 不能靠 200 判断上线。
+- 🔴 Nginx SPA 回退：不存在路径也返 200 + index.html → 不能靠 200 判上线。
 - `npm run verify`（tsc+lint+test）；runner 每入口单开子进程；ESLint 11 warnings 不能盲改。
 - 🔴 实机验证走 skill `novel-studio-ui-livecheck`；模型链路 `build-test.mjs live-free|live-tavern`。⚠️ 实弹断言会静默过时→读日志必 grep ✗；子代理结论必回源码验尸。
 
@@ -56,13 +57,13 @@
 - 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（summarize.ts）；设定＝这让 Ta 变成了谁（revise.ts）。拦不住 → findNarrativeOverlap 标 ⚠️。
 - 📚 🔴 背景设定（`world.ts`）：关键词空＝总是注入，上限 1800 字。只服务剧情推演；键只剩 `tavern.world`。
 - 🧩 模型配置＝灵感启发最上方独立面板（`AIConfigPanel.tsx`）；全应用共用一个活动模型，改配置靠 `reloadKey` 通知下游重读。指路统一「灵感启发 → 模型配置」。
-- 🌐 联网检索：全局键 `app.search`（入口 `searchSettings.ts`）。三档 off/model/api，引擎 bocha/searxng/custom；地址含 {query}⇒GET；桌面主进程代发。🔴 起草须如实回告，没联上就明说。SearXNG :8888。
-- ✍️ 起草：draft.ts（角色卡 13 栏）。🔴 提纲 fields 必须覆盖全部栏；草稿示例对话要守协议格式。
+- 🌐 联网检索：全局键 `app.search`。三档 off/model/api，引擎 bocha/searxng/custom；地址含 {query}⇒GET；桌面主进程代发。🔴 起草须如实回告，没联上就明说。SearXNG :8888。
+- ✍️ 起草：draft.ts（角色卡 13 栏）。🔴 提纲 fields 须覆盖全部栏；示例对话守协议格式。
 - 🔴 对话引导已泛化：机制＝`lib/interview.ts`（只认 `InterviewSpec`），界面＝`InterviewChat.tsx`，别无第二份。
 - 🛠 后处理：`postRules.ts` 按序跑正则再落库；🔴 去 markdown 排在星号动作前。行首说话人标签默认关。
 - 🎚 本场数值：`vars.ts`＋`VAR_DEFS`（可逐项关），规则挂 `modeExtra`。🔴 认不出的行不剥；手改清 `prev`；先解变量再后处理。
 - 🎭 剧本：`script.ts` 六栏。🔴 库在全局 meta；🔴🔴 会话存快照不是引用；开场白不进 system（＝对话第一条）。
-- 🔴 engine↔world/script/draft 环已上移 `provider.ts`（engine 处 re-export）。设定更新：12 字段白名单（不含 name）＋二次把关；采纳＝整段替换。
+- 🔴 engine↔world/script/draft 环已上移 `provider.ts`。设定更新：12 字段白名单（不含 name）＋二次把关；采纳＝整段替换。
 - 🔴 分支/回滚：branchSession 截到该条，分叉点后连记忆一起清；回滚连记忆还原＋undoSnapshot。hidden 出口＝toChatMessages＋messagesAfterWatermark；重说＝runPlotTurn/runFreeTurn(session,null)。
 - 🔴 剧情记忆**已实现**：`runPlotSummary`→`memoryToText` 写回 `session.memory`+推水位线。
 - 🔴 `buildMultiCharRule`：整场 AI 必传 `{hasUser:false}`；`userCharId` 的卡/记忆/轮转都排除。水位线全成功才推进。
@@ -72,7 +73,7 @@
 - 🔴 输出规范 v1.3：对白＝纯文本（不含名字）、动作神态＝（）、环境＝【】、状态＝〔〕；输入一律 〖〗/〈〉。
 - ⚠️ `LEGACY_SEED_EXAMPLES` 是**多版本数组**：改 examples 时把被替换的每一版都追加，只留上一代则老库升不上来。
 - 🔴 指代角色一律「Ta」。协议/示范卡改动靠全等锚点升级（`LEGACY_PROTOCOLS`/`upgradeSeedCards()`，幂等），别写逐句补丁。示范卡三张洛汐/苏念/楚楠（都知道对方是谁、不知彼此分量）；`createDemoProject` single-flight。
-- 路线图：需求全完成；C1 向量记忆/C3 立绘/ST 卡导入/TTS 放弃。方案 `docs/剧本与变量-设计方案-讨论稿.md`；报告 `docs/2.1.0-*`。
+- 路线图：需求全完成；C1/C3/ST 导入/TTS 放弃。方案 `docs/剧本与变量-设计方案-讨论稿.md`。
 
 ## 环境（Windows + Git Bash）
 - git / npm 都用绝对路径（PortableGit 1.2.0 `cmd/git.exe`；托管 node + `npm/bin/npm-cli.js`），路径写 `C:/` 正斜杠。
