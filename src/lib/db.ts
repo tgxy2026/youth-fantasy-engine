@@ -332,7 +332,10 @@ onSyncConflict((info: SyncConflictInfo) => {
 
 async function saveConflictCopy(info: SyncConflictInfo) {
   try {
-    await idbOps.put('meta', {
+    // 🔴 必须写**当前平台的本地存储**，不能固定写 idbOps：
+    //    桌面 / 便携版的数据在本地 JSON 文件里，冲突副本写进 IndexedDB 等于扔进没人打开的抽屉
+    //    （界面读的是 desktopLocalStore / portableStore），作者永远看不到「云端那版」。
+    await desktopLocalStore.put('meta', {
       key: `${CONFLICT_KEY_PREFIX}${info.at}:${info.store}:${String(info.key)}`,
       value: {
         store: info.store,
@@ -1372,7 +1375,10 @@ export async function restoreBackup(id: string): Promise<void> {
 }
 
 async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): Promise<void> {
-  // 1. 清空目标项目现有数据（批量删除，大备份恢复更快）
+  // 1. 收集该项目现有的键 —— ⚠️ 只收集，**先不删**。
+  //    🔴 旧实现是「先清空、再写回」：写到一半失败（配额满、断网、用户关窗），
+  //    项目就变半空且无从恢复。改成「先写后删」之后，任一步失败最多留下些
+  //    可以再清理的多余记录 —— **原数据自始至终完好**。
   const delKeys: Record<string, string[]> = {}
   for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash', 'tavernReports'] as const) {
     const all = await ops.getAll<{ id: string; projectId?: string }>(name)
@@ -1394,12 +1400,6 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
     // 自定义下拉选项 key 形如 customOption::<pid>::…，需用专属前缀清理，否则恢复会残留旧项目选项
     else if (r.key.startsWith(`customOption::${targetPid}::`)) setKeys.push(r.key)
   }
-  for (const [name, keys] of Object.entries(delKeys)) await ops.bulkDel(name, keys)
-  if (formKeys.length) await ops.bulkDel('formData', formKeys)
-  if (snapKeys.length) await ops.bulkDel('snapshots', snapKeys)
-  if (statKeys.length) await ops.bulkDel('dailyStats', statKeys)
-  if (setKeys.length) await ops.bulkDel('settingsKV', setKeys)
-
   // 2. 写入备份包数据（内部 id 全部重生成，避免与残留/冲突）
   const volMap = new Map<string, string>()
   for (const v of bundle.volumes) {
@@ -1452,7 +1452,25 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
     }
   }
 
-  // 3. 同步项目元数据（成为该历史版本）
+  // 3. 写入已全部成功 —— 这才删除旧记录。
+  //    ⚠️ 以 key 为标识的存储（formData / settingsKV / dailyStats）新旧键**可能同名**：
+  //       同名时上面的 put 已就地覆盖，无需再删；若不过滤掉它们，会把刚写好的新数据一起删掉。
+  const newFormKeys = new Set(bundle.formData.map(f => `${targetPid}::${f.tabId}`))
+  const newStatKeys = new Set((bundle.dailyStats ?? []).map(s => `${targetPid}::${s.date}`))
+  const newSetKeys = new Set<string>([
+    ...(bundle.settings ?? []).map(s => `${targetPid}::${s.key}`),
+    ...(bundle.customOptions ?? []).map(s => `customOption::${targetPid}::${s.key}`),
+  ])
+  for (const [name, keys] of Object.entries(delKeys)) await ops.bulkDel(name, keys)
+  const staleForms = formKeys.filter(k => !newFormKeys.has(k))
+  if (staleForms.length) await ops.bulkDel('formData', staleForms)
+  if (snapKeys.length) await ops.bulkDel('snapshots', snapKeys)
+  const staleStats = statKeys.filter(k => !newStatKeys.has(k))
+  if (staleStats.length) await ops.bulkDel('dailyStats', staleStats)
+  const staleSets = setKeys.filter(k => !newSetKeys.has(k))
+  if (staleSets.length) await ops.bulkDel('settingsKV', staleSets)
+
+  // 4. 同步项目元数据（成为该历史版本）
   const old = await ops.get<Project>('projects', targetPid)
   if (old) {
     await ops.put('projects', {

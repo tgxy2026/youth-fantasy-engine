@@ -141,7 +141,7 @@ export default function BackupReminder({ hasProject, onExport }: { hasProject: b
       <div className="flex gap-2 justify-end mt-5">
         {hasProject ? (
           <>
-            <Button variant="ghost" onClick={later}>
+            <Button variant="secondary" onClick={later}>
               稍后再说
             </Button>
             <Button variant="primary" onClick={doExport}>

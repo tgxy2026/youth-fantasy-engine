@@ -105,7 +105,7 @@ export default function LocalDataNotice() {
       </div>
 
       <div className="flex gap-2 justify-end mt-5">
-        <Button variant="ghost" onClick={goAbout}>
+        <Button variant="secondary" onClick={goAbout}>
           前往关于打赏
         </Button>
         <Button variant="primary" onClick={close}>

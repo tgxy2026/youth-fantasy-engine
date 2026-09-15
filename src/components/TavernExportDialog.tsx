@@ -135,7 +135,7 @@ export default function TavernExportDialog({
         >
           <div className="text-[12.5px] text-ink-100">Markdown（.md）</div>
           <div className="mt-1 text-[11px] text-ink-400 leading-relaxed">
-            纯文本带轻量标记。要**继续改**就选它 —— 粘进写作软件、笔记都能接着编辑。
+            纯文本带轻量标记。要「继续改」就选它 —— 粘进写作软件、笔记都能接着编辑。
           </div>
         </button>
         <button
@@ -145,7 +145,7 @@ export default function TavernExportDialog({
         >
           <div className="text-[12.5px] text-ink-100">单文件 HTML（.html）</div>
           <div className="mt-1 text-[11px] text-ink-400 leading-relaxed">
-            自带排版样式，双击就能看。要**给别人看、要打印、要存档**就选它 —— 不依赖本软件。
+            自带排版样式，双击就能看。要「给别人看、要打印、要存档」就选它 —— 不依赖本软件。
           </div>
         </button>
       </div>

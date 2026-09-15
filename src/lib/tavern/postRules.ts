@@ -50,15 +50,18 @@ export const DEFAULT_POST_RULES: PostRule[] = [
     pattern: '\\*\\*(.+?)\\*\\*|`([^`\\n]+)`|^#{1,6}\\s*',
     replacement: '$1$2',
     enabled: true,
-    note: '去掉 **加粗**、`行内代码` 与行首 # 号。必须排在「星号动作」之前，否则 **动作** 会被拆坏。',
+    note: '去掉加粗、行内代码与行首 # 号。必须排在「星号动作」之前，否则「动作」会被拆坏。',
   },
   {
     id: 'pr-star-action',
     name: '星号动作 → （动作）',
-    pattern: '\\*([^*\\n]+)\\*',
-    replacement: '（$1）',
+    // 🔴 分两支：星号里已经是「（括号）」时**只去掉星号**，其余才补括号。
+    //    否则「*(动作)*」会先被「半角括号→全角」转成「*（动作）*」，
+    //    再被这条包一层 → 变成「（（动作））」这种双层括号。
+    pattern: '\\*(?:（([^*\\n]*?)）|([^*\\n]+?))\\*',
+    replacement: '（$1$2）',
     enabled: true,
-    note: '模型用 *星号* 表示动作时改写成 （动作）。只认成对单星号，正常文本不受影响。',
+    note: '模型用 *星号* 表示动作时改写成 （动作）；星号里本来就已经是（括号）的，只去掉星号，不会套成双层。',
   },
   {
     id: 'pr-speaker-label',
@@ -71,6 +74,42 @@ export const DEFAULT_POST_RULES: PostRule[] = [
     //    「可逆的错」才敢默认开，「丢内容的错」宁可默认关 —— 这条是本层唯一会删字的规则。
     enabled: false,
     note: '⚠️ 默认关：会误伤「注意：」「他说：」这类以短词加冒号开头的正常叙述（这条是唯一会删字的规则）。模型爱加说话人标签时才打开。',
+  },
+]
+
+/**
+ * 出厂四条的**旧版本**（`pr-star-action` 的正则会产生双层括号）。
+ * 只用于升级判断：库里与它**关键字段全等** ⇒ 作者从没动过输出后处理，可安全换成新版；
+ * 只要作者改过任何一条（顺序 / 开关 / 正则），就一个字都不动。
+ */
+export const LEGACY_DEFAULT_POST_RULES: PostRule[] = [
+  {
+    id: 'pr-halfwidth-paren',
+    name: '半角括号 → 全角',
+    pattern: '\\(([^)\\n]*)\\)',
+    replacement: '（$1）',
+    enabled: true,
+  },
+  {
+    id: 'pr-strip-markdown',
+    name: '去掉 markdown 装饰',
+    pattern: '\\*\\*(.+?)\\*\\*|`([^`\\n]+)`|^#{1,6}\\s*',
+    replacement: '$1$2',
+    enabled: true,
+  },
+  {
+    id: 'pr-star-action',
+    name: '星号动作 → （动作）',
+    pattern: '\\*([^*\\n]+)\\*',
+    replacement: '（$1）',
+    enabled: true,
+  },
+  {
+    id: 'pr-speaker-label',
+    name: '去掉行首说话人标签',
+    pattern: '^([\\u4e00-\\u9fa5A-Za-z]{2,6})[：:]\\s*',
+    replacement: '',
+    enabled: false,
   },
 ]
 

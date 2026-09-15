@@ -88,8 +88,8 @@ export default function TavernDirectorNoteBar({
 
       <Modal open={open} onClose={() => setOpen(false)} title="临时导演指令" width="lg">
         <p className="text-[11.5px] text-ink-400 leading-relaxed">
-          这条指令会按**深度**插进对话历史（越靠近生成点影响越大），只影响接下来设定的轮数。
-          它走协议的元指令通道，模型照做后继续演，**不会**被当成角色说过的话记进记忆。
+          这条指令会按「深度」插进对话历史（越靠近生成点影响越大），只影响接下来设定的轮数。
+          它走协议的元指令通道，模型照做后继续演，不会被当成角色说过的话记进记忆。
         </p>
 
         <div className="mt-3">

@@ -5,6 +5,7 @@ import authorAvatar from '../assets/author-avatar.png'
 import { APP_VERSION_LABEL } from '../lib/portable'
 import { copyText } from './dialogs'
 import { Button } from './Button'
+import HelpPopover from './HelpPopover'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
 const BILI_URL = 'https://b23.tv/zl4vqyw'
@@ -68,6 +69,9 @@ export default function AboutPage() {
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
+          <HelpPopover title="这一页是什么" side="right">
+            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 打赏名单目前是占位内容（借用了若干知名作品的角色名），正式发布前会替换成真实记录；\n· 页面内容全部来自本项目内置的静态资源，不联网、不上传任何数据。'}
+          </HelpPopover>
         </div>
         <p className="text-ink-400 text-sm mb-8">
           关于「青春幻想引擎」与它的作者，以及支持作者的方式。

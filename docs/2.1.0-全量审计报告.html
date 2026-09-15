@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>青春幻想引擎 2.1.0 · 全量审计报告</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --panel:#ffffff; --panel-2:#f2f4f7; --ink:#1b2330; --ink-2:#4a5568; --ink-3:#8a94a6;
+    --line:#e3e7ee; --brand:#b8860b; --brand-soft:#fdf6e3;
+    --p0:#c0392b; --p0-bg:#fdecea; --p1:#d97706; --p1-bg:#fef4e6; --p2:#2563eb; --p2-bg:#eef4ff; --ok:#0f8a5f; --ok-bg:#e8f7f0;
+    --code-bg:#f3f4f6; --shadow:0 1px 3px rgba(16,24,40,.06),0 8px 24px -12px rgba(16,24,40,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1216; --panel:#161b22; --panel-2:#1c232c; --ink:#e6edf3; --ink-2:#a9b4c0; --ink-3:#6e7a88;
+      --line:#252d38; --brand:#e3b341; --brand-soft:#241f14;
+      --p0:#ff7b72; --p0-bg:#2b1618; --p1:#f0a44a; --p1-bg:#2a2013; --p2:#79b8ff; --p2-bg:#12202e; --ok:#3fb950; --ok-bg:#12251b;
+      --code-bg:#1b2129; --shadow:0 1px 3px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:48px 28px 96px}
+  header.top{border-bottom:2px solid var(--line);padding-bottom:24px;margin-bottom:36px}
+  .kicker{font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--brand);font-weight:700}
+  h1{font-size:30px;line-height:1.35;margin:10px 0 8px;letter-spacing:-.01em}
+  .meta{color:var(--ink-3);font-size:13.5px}
+  h2{font-size:21px;margin:52px 0 16px;padding-bottom:10px;border-bottom:1px solid var(--line);letter-spacing:-.01em}
+  h3{font-size:16.5px;margin:30px 0 10px}
+  p{margin:10px 0}
+  code{background:var(--code-bg);padding:1.5px 6px;border-radius:5px;font-size:12.8px;
+    font-family:ui-monospace,"SF Mono",Consolas,monospace;color:var(--ink)}
+  pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;
+    font-size:12.6px;line-height:1.6;font-family:ui-monospace,"SF Mono",Consolas,monospace;margin:12px 0}
+  pre code{background:none;padding:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0;box-shadow:var(--shadow)}
+  .card.p0{border-left:4px solid var(--p0)}
+  .card.p1{border-left:4px solid var(--p1)}
+  .card.p2{border-left:4px solid var(--p2)}
+  .badge{display:inline-block;font-size:11.5px;font-weight:800;letter-spacing:.06em;padding:2.5px 9px;border-radius:99px;vertical-align:2px;margin-right:8px}
+  .b-p0{background:var(--p0-bg);color:var(--p0)}
+  .b-p1{background:var(--p1-bg);color:var(--p1)}
+  .b-p2{background:var(--p2-bg);color:var(--p2)}
+  .b-ok{background:var(--ok-bg);color:var(--ok)}
+  .card h3{margin:0 0 10px;font-size:16px}
+  .card h3 code{font-size:14px;background:none;padding:0;color:var(--brand);font-weight:700}
+  .field{display:grid;grid-template-columns:74px 1fr;gap:4px 14px;margin:9px 0;font-size:14px}
+  .field dt{color:var(--ink-3);font-size:12.5px;padding-top:3px;font-weight:600}
+  .field dd{margin:0;color:var(--ink-2)}
+  dl{margin:0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.6px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12.5px;color:var(--ink-3);font-weight:700;letter-spacing:.03em;background:var(--panel-2)}
+  tbody tr:last-child td{border-bottom:none}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:12px;margin:18px 0}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 17px;box-shadow:var(--shadow)}
+  .stat .n{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+  .stat .l{font-size:12.3px;color:var(--ink-3);margin-top:3px}
+  .stat.ok .n{color:var(--ok)} .stat.p0 .n{color:var(--p0)} .stat.p1 .n{color:var(--p1)} .stat.p2 .n{color:var(--p2)}
+  .callout{background:var(--brand-soft);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:16px 0;font-size:14px}
+  .callout.warn{background:var(--p1-bg)}
+  .callout.danger{background:var(--p0-bg)}
+  .toc{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 22px;box-shadow:var(--shadow)}
+  .toc ol{margin:0;padding-left:22px} .toc li{margin:5px 0;font-size:14px}
+  .toc a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
+  .toc a:hover{border-bottom-color:var(--brand);color:var(--brand)}
+  ul.tight{margin:8px 0;padding-left:22px} ul.tight li{margin:5px 0}
+  .ok-line{color:var(--ok);font-weight:600}
+  .no-line{color:var(--p0);font-weight:600}
+  hr.soft{border:none;border-top:1px dashed var(--line);margin:26px 0}
+  .tag{display:inline-block;font-size:11.5px;color:var(--ink-3);background:var(--panel-2);border:1px solid var(--line);
+    padding:1.5px 8px;border-radius:99px;margin:0 6px 6px 0}
+  @media print{ body{background:#fff} .card,.stat,.toc{box-shadow:none} h2{page-break-after:avoid} .card{page-break-inside:avoid} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="kicker">Quality Audit · 2026-09-15</div>
+  <h1>青春幻想引擎 2.1.0 · 全量审计报告</h1>
+  <div class="meta">代码（Bug / 优化 / 冗余）· 结构化 · UI 布局 · 内容 · 功能实测（AI 为重点）　|　基线提交 <code>d9551e7</code></div>
+</header>
+
+<div class="callout">
+  <strong>一句话结论：</strong>底子很干净——36 个测试入口全绿、类型零错、分层零违规、零原生 API 违规、AI 记忆闭环实测跑通。
+  但有一处<strong>可导致不可逆数据丢失</strong>的设计缺口（P0），以及一条<strong>从未接通却一直摆在界面上的功能链</strong>（剧情模式记忆）。
+  冗余集中在"写了没人用"的导出，不构成运行风险，属可择期清理。
+</div>
+
+<div class="grid">
+  <div class="stat p0"><div class="n">1</div><div class="l">P0 · 必修</div></div>
+  <div class="stat p1"><div class="n">9</div><div class="l">P1 · 建议修</div></div>
+  <div class="stat p2"><div class="n">19</div><div class="l">P2 · 择期清理</div></div>
+  <div class="stat ok"><div class="n">36/36</div><div class="l">测试入口全绿</div></div>
+  <div class="stat ok"><div class="n">0</div><div class="l">类型错误 / 分层违规</div></div>
+  <div class="stat ok"><div class="n">✅</div><div class="l">AI 记忆闭环实测通过</div></div>
+</div>
+
+<nav class="toc">
+  <strong style="font-size:13.5px;color:var(--ink-3)">目录</strong>
+  <ol>
+    <li><a href="#s0">体检总览与验证方式</a></li>
+    <li><a href="#s1">P0 · 必修（数据安全）</a></li>
+    <li><a href="#s2">P1 · 建议修（9 项）</a></li>
+    <li><a href="#s3">P2 · 择期清理（19 项）</a></li>
+    <li><a href="#s4">AI 功能实测记录（重点）</a></li>
+    <li><a href="#s5">值得肯定项（不要误伤）</a></li>
+    <li><a href="#s6">修改建议与下一步方案</a></li>
+  </ol>
+</nav>
+
+<h2 id="s0">1 · 体检总览与验证方式</h2>
+
+<p>本次审计分五路推进，全部结论都要求有 <code>文件:行号</code> 级证据。凡子代理报回的高严重度结论，均**回源码复核**后才写入本报告（以下结论已剔除 3 处误报，见文末说明）。</p>
+
+<table>
+  <thead><tr><th style="width:19%">维度</th><th style="width:34%">做了什么</th><th>结论</th></tr></thead>
+  <tbody>
+    <tr><td><strong>基线验证</strong></td><td>tsc / eslint / 36 个测试入口</td><td><span class="ok-line">36 入口全绿 · tsc 0 错 · eslint 0 error / 11 warning</span>（11 条均为既有的 <code>exhaustive-deps</code>，无新增）</td></tr>
+    <tr><td><strong>静态扫描</strong></td><td>179 文件 / 60513 行；死导出、TODO、console、类型逃逸、红线 API</td><td>确定死导出 50 个（多为类型）· console 10 处全为合理错误日志 · <code>window.prompt/confirm/alert</code> <span class="ok-line">零违规</span></td></tr>
+    <tr><td><strong>代码审计</strong></td><td>存储 / 同步层、AI 基础层、酒馆引擎全量精读</td><td>P0×1、P1×6、P2×11（详见后文）</td></tr>
+    <tr><td><strong>结构化审计</strong></td><td>自建 import 依赖图：环检测 / 扇入扇出 / 分层校验</td><td>分层违规 <span class="ok-line">0</span> · 孤立模块 <span class="ok-line">0</span> · 循环依赖 4 组（均良性或已缓解）</td></tr>
+    <tr><td><strong>UI 布局审计</strong></td><td>108% 界面缩放下"量尺寸"红线逐点判定（11 个 <code>getBoundingClientRect</code> 调用点）</td><td><span class="no-line">4 处 zoom 口径违规</span> · 按钮/页头/浮层规范 19 处 P2</td></tr>
+    <tr><td><strong>内容审计</strong></td><td>HelpPopover / schema 描述 / 承诺与实现一致性</td><td><span class="no-line">界面 markdown 星号泄漏 13 处</span> · 列名失配 3 处 · <strong>幽灵功能 1 处</strong></td></tr>
+    <tr><td><strong>功能实测</strong></td><td>酒馆离线链路 + 本地模型实弹闭环 + 云端实弹</td><td>记忆闭环 <span class="ok-line">通过</span>；详见第 5 节</td></tr>
+  </tbody>
+</table>
+
+<h2 id="s1">2 · P0 · 必修（数据安全）</h2>
+
+<div class="card p0">
+  <h3><span class="badge b-p0">P0</span>桌面版"读不到数据文件"被当成"空库"，随后首次写盘覆盖真实数据</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>electron/main.cjs:41-47</code> · <code>src/lib/desktop.ts:147-156</code> · <code>src/App.tsx:163-167</code></dd>
+    <dt>触发</dt><dd>主进程读数据文件抛异常（被云盘客户端 / 杀软短暂占用导致 <code>EACCES</code>/<code>EBUSY</code>、权限变更、文件被截断）</dd>
+    <dt>影响</dt><dd><strong>不可逆数据丢失。</strong>用户辛苦写的数据文件被一个空库覆盖。</dd>
+  </dl>
+  <p><strong>证据链（三段全部可复核）：</strong></p>
+<pre><code>// ① electron/main.cjs:41-47 —— 所有异常都被吞成 null，没有区分"文件不存在"与"读失败"
+function readDataFileSync() {
+  try { return fs.readFileSync(dataFile(), 'utf-8') }
+  catch { return null }          // ← 读失败与"首次使用"返回同一个值
+}
+// 主进程 store:load 恒返回 { error: null }（因为上面不抛），desktop.ts 的 r.error 分支永远进不去
+
+// ② src/lib/desktop.ts:147-156 —— 拿到 null 后 data 保持空库，且连 lastError 都不设
+if (r.error) { lastError = '读取本地数据文件失败：' + r.error }
+else if (r.text && r.text.trim()) { /* 解析 */ }
+// 两条都不满足 → data 仍是空 → finally { inited = true }
+
+// ③ src/App.tsx:163-167 —— 见到"没有项目"就自动播种示范项目
+if (!last) {
+  const existing = await db.getAllProjects().catch(() => [])
+  if (existing.length === 0) { await createDemoProject() }   // 数据变更 → dirty → 800ms 后写盘
+}</code></pre>
+  <p>项目在 <code>desktop.ts:154</code> 的注释里明确承诺过「<em>将以空库启动，<strong>原文件不会被覆盖</strong></em>」——但<strong>这个保护从未实现</strong>：没有任何写盘锁定，播种示范项目就会触发 <code>flushDesktop()</code> → <code>store:save</code> 原子写，把原文件覆盖掉。主进程的原子写（<code>writeAtomicSync</code>）只防"写了一半"，不防"用空数据写"。</p>
+  <p><strong>修法（择一，建议 A）：</strong></p>
+  <ul class="tight">
+    <li><strong>A（推荐）</strong>：主进程返回时区分三态——<em>不存在 / 读取失败 / 成功</em>；读取失败或 JSON 解析失败时，渲染层进入<strong>只读锁定态</strong>：禁止任何写盘，界面顶部常驻红色横幅「数据文件读取失败，已暂停写入以免覆盖，请检查文件是否被占用」，并给「重试读取 / 手动选择文件」入口。</li>
+    <li><strong>B（兜底）</strong>：写入前先 <code>store:load</code> 比对——若磁盘上存在非空文件而内存是空库，拒绝写入。</li>
+  </ul>
+</div>
+
+<h2 id="s2">3 · P1 · 建议修（9 项）</h2>
+
+<h3>AI 层</h3>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>剧情模式的"会话级记忆"是一条从未接通的死链</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>tavern/types.ts:149-154</code> · <code>tavern/engine.ts:157</code> · <code>TavernPlot.tsx:604-607,726</code> · <code>TavernUsageDialog.tsx:58</code></dd>
+    <dt>证据</dt><dd>全仓 grep：<code>session.memory</code> 有 <strong>4 处读、1 处类型定义、0 处写</strong>；<code>summarizeMemory</code> 唯一调用点是 <code>TavernFree.tsx:339</code>；<code>store.ts</code> 的检查点/回滚/分支对 <code>memory</code>、<code>watermark</code> 的搬运全是空转；<code>inheritMemoryFrom</code> 无写入者也无消费者。</dd>
+    <dt>影响</dt><dd>① 剧情 system 的「长期记忆」层永远为空 → 长推演无法跨轮记忆；② 「本场记忆（N 字）」面板因 <code>{session.memory && …}</code> 恒假而<strong>整块不渲染</strong>；③ 检查点文案宣称"消息与本场记忆一起还原"是空承诺；④ 用量明细里该项恒为 0。</dd>
+  </dl>
+  <p><strong>这条经两路独立审计交叉验证一致。</strong>方案文档里只有消费端与容器（<code>types.ts:151-154</code> 写着"本场推演的六栏记忆（会话级）"），<strong>生产端从未建成</strong>——即不是"显示 0"，而是整条管线缺一半。</p>
+  <p><strong>修法（二选一，推荐 A）：</strong></p>
+  <ul class="tight">
+    <li><strong>A</strong>：补 <code>summarizePlotMemory</code>（可复用自由模式的 <code>summarizeMemory</code>，把 source 换成剧情 messages），在 <code>runPlotTurn</code> 后按阈值写入 <code>session.memory</code> + 推进 watermark。这样检查点/回滚的记忆语义同时被激活，<code>inheritMemoryFrom</code> 也有了落点。</li>
+    <li><strong>B</strong>：若判定剧情模式不该有会话记忆（毕竟底下就是小说正文），则应<strong>摘干净</strong>：删 UI 面板、删检查点文案里的"记忆"字样、删三个死字段，别让作者以为它在工作。</li>
+  </ul>
+</div>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>变量行未剥离 + 「无变化」被误报为"格式没对上"</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>tavern/engine.ts:685-700</code>（调用方）与 <code>tavern/vars.ts:106-114</code>（解析器）</dd>
+    <dt>影响</dt><dd>模型<strong>完全按我们自己的提示词</strong>写 <code>〔数值〕无变化</code>（<code>vars.ts:258</code> 要求的写法）时，界面会弹「数值行格式没对上」的错误提示，而格式其实是对的——作者会去改一句没坏的提示词。</dd>
+  </dl>
+  <p>解析器其实<strong>已经写好了</strong>正确逻辑：<code>vars.ts:106</code> 注释「认得出，<strong>把行剥掉</strong>」，并返回已剥离的 <code>parsed.text</code>。问题在调用方没用上：</p>
+<pre><code>// engine.ts:687-699
+if (parsed.ops.length > 0) {
+  const applied = applyVarOps(...)
+  if (applied.changes.length > 0) {   // ← 只有这里才 reply = parsed.text
+    reply = parsed.text; ...
+  }
+} else if (parsed.rawLine) {
+  varParseFailed = true               // ← 「无变化」也落这里 → 误报，且那行留在正文
+}</code></pre>
+  <p>还有一个<strong>未覆盖的隐含分支</strong>：<code>ops</code> 非空但夹取后无实际变化（<code>applied.changes.length === 0</code>）时，两个分支都不进——那一行既留在正文里，也不报错。</p>
+  <p><strong>修法</strong>：只要 <code>parsed.rawLine</code> 非空（即确实识别出标记行）就采用 <code>reply = parsed.text</code>；仅当"认不出"（<code>ops.length === 0 &amp;&amp; parsed.text === reply</code>）时才置 <code>varParseFailed</code>。</p>
+</div>
+
+<h3>数据安全</h3>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>恢复备份是"先清空、再写回"，中途失败项目变半空</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>db.ts:1374-1401</code>（批量删除）→ <code>db.ts:1404+</code>（逐条写回）</dd>
+    <dt>影响</dt><dd>删与写之间无事务、无回滚。写入中途失败（IndexedDB 配额、云模式 413 / 断网、用户关窗）→ 项目数据半空且原数据已删。</dd>
+  </dl>
+  <p><strong>附带发现</strong>：恢复会清掉该项目的全部 <code>snapshots</code>（时光机），而 <code>ProjectBundle</code>（<code>db.ts:917-933</code>）本就不含快照、永不再生 → 用户的手动存档在恢复后<strong>全部消失且无任何提示</strong>。<br>
+  <em>说明</em>：删除孤儿快照本身是合理的（恢复时所有 id 都重新生成，旧快照指向的章节已不存在），<strong>缺的是告知</strong>。</p>
+  <p><strong>修法</strong>：先写入临时 projectId，全部成功后再切换引用；或把快照一并纳入 bundle。同时在恢复确认弹窗里如实写明"此项目的时光机存档将被清除"。</p>
+</div>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>桌面版关窗时的同步写盘失败被吞掉</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>desktop.ts:197-206</code> + <code>electron/main.cjs:95-102</code></dd>
+    <dt>证据</dt><dd>主进程 <code>store:save-sync</code> 失败时返回 <code>{ ok:false, error }</code> 而<strong>不抛异常</strong>；渲染层 <code>api().saveSync(JSON.stringify(data))</code> 的返回值<strong>没有检查</strong>，随后<strong>无条件</strong> <code>dirty = false</code>。</dd>
+    <dt>影响</dt><dd>关窗时写盘失败（只读目录、盘满、文件被占用）→ 数据丢失且无提示；<code>desktop.ts:204</code> 注释声称"失败保留 dirty 供下次启动补救"与代码不符。</dd>
+  </dl>
+  <p><strong>修法</strong>：检查返回值，<code>ok !== true</code> 时不改 <code>dirty</code>，并把失败原因通过 <code>lastError</code> 上报给启动 toast。</p>
+</div>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>启动切换到云同步时，不判断"远端是否为空"</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>db.ts:444-451</code>、<code>db.ts:484-493</code></dd>
+    <dt>影响</dt><dd>云盘客户端尚未把 <code>.yfe</code> 同步下来 / 被其它设备删除 / 文件为 0 字节时，直接切到云端 → 本地明明有全量数据却显示空书架；此后一次写入即以近空载荷覆盖云端文件，其它设备的有效数据被清掉。</dd>
+  </dl>
+  <p><strong>修法</strong>：启动即 <code>pull</code>；远端为空而本地非空时，先播种本地数据再切换；失败则回退本地并提示。</p>
+</div>
+
+<h3>稳定性 / UI / 内容</h3>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>启动流程无异常兜底，任一步失败即永久停在空屏</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>App.tsx:150-190</code></dd>
+    <dt>证据</dt><dd>启动 IIFE 无 try/catch；<code>setBooted(true)</code> 在链尾（<code>:188</code>），而 <code>db.getMeta()</code>（<code>:153</code>）、<code>db.getProject()</code> 等均未包 catch；渲染被 <code>if (!booted) return &lt;div className="h-screen bg-ink-950" /&gt;</code> 挡住。</dd>
+    <dt>影响</dt><dd>IndexedDB 打开失败 / 迁移抛错（隐私模式、库损坏）→ 纯黑屏、无报错、无重试入口。</dd>
+  </dl>
+  <p><strong>修法</strong>：整段 <code>try/catch/finally</code> 保证 <code>setBooted(true)</code> 必定执行；失败时渲染可读的错误页（说明原因 + 重试 / 导出数据入口）。</p>
+</div>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>地图编辑器画布尺寸走了 <code>getBoundingClientRect()</code> → 右下被裁掉约 8%</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>GeoMapEditor.tsx:216</code>（写入点 <code>:766-768</code>）</dd>
+    <dt>证据</dt><dd><code>const r = el.getBoundingClientRect()</code> → <code>setVp({w: Math.round(r.width), …})</code> → <code>&lt;svg viewBox={0 0 vp.w vp.h} width={vp.w} height={vp.h}&gt;</code>。而 <code>&lt;html&gt;</code> 有 108% 界面缩放，rect 返回的是<strong>缩放后视口像素</strong>，却被当成 CSS px 属性写入。</dd>
+    <dt>影响</dt><dd>画布容器 800 CSS px 时读出 864 → svg 溢出 64px，被 <code>overflow-hidden</code>（<code>:754</code>）永久裁掉右侧；<code>fitView</code> 以 <code>vp.w/2</code> 居中，于是"居中"永远偏右下。</dd>
+  </dl>
+  <p><strong>对照</strong>：同型画布 <code>PlotCanvas.tsx:107</code> 用的是 <code>clientWidth/clientHeight</code>（CSS px，不受 zoom 影响）——两种口径并存，进一步说明这处是偏离。</p>
+  <p><strong>修法</strong>：改用 <code>el.clientWidth</code> / <code>el.clientHeight</code>；同步修正 <code>:371</code> 兜底分支的单位。</p>
+</div>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>三处拖拽位移未按界面缩放换算，拖动比光标快 8%</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>TableSheet.tsx:257</code>（列宽）· <code>PlotCanvas.tsx:235</code>（卡片）· <code>useSvgPanZoom.ts:115</code>（画布）</dd>
+    <dt>证据</dt><dd>位移取 <code>ev.clientX - startX</code>（视口像素）却直接加到 CSS px 尺寸上：<code>Math.round(startW + dx)</code>。<strong>正确范式就在同仓</strong>——<code>useResizable.ts:53-54</code> 先除以 zoom：<code>const z = Number(document.documentElement.style.zoom) || 1; const dx = (ev.clientX - startX.current) / z</code>。</dd>
+    <dt>影响</dt><dd>默认 108% 缩放下，拖拽越拖越偏（列宽误差被 <code>localStorage</code> 持久化）。</dd>
+  </dl>
+  <p><strong>修法</strong>：三处统一 <code>dx / (Number(document.documentElement.style.zoom) || 1)</code>，或抽成一个共享 hook。</p>
+</div>
+
+<div class="card p1">
+  <h3><span class="badge b-p1">P1</span>记忆解析用子串匹配定位栏标题，违反"标题整行匹配"红线</h3>
+  <dl class="field">
+    <dt>位置</dt><dd><code>tavern/memory.ts:170-192</code></dd>
+    <dt>证据</dt><dd><code>const i = t.indexOf(bare)</code> —— 子串即命中。<code>:190</code> 还注册了裸词别名 <code>pack('relation','关系')</code>。</dd>
+    <dt>影响</dt><dd>正文里任意一行含「关系」「日记」等词（如长期摘要里写"关系状态从疏远转向缓和"）都会被当成<strong>新栏标题</strong>，其后内容串进错误的栏 → 记忆栏位互换、内容被截断，且下一轮总结基于错档案继续漂移。</dd>
+    <dt>对照</dt><dd>同仓 <code>daily.ts:148-158</code>、<code>import.ts:115-125</code> 是正确范式（<code>normalizeTitle</code> + 整行锚定 <code>^…$</code>）——此处没对齐。</dd>
+  </dl>
+  <p><strong>修法</strong>：改用整行匹配（允许标题独占一行或"标题：内容"两种形态），与 <code>daily.ts</code> 保持一致。</p>
+</div>
+
+<h2 id="s3">4 · P2 · 择期清理（19 项）</h2>
+
+<h3>4.1 冗余与死代码（可安全清理，无运行风险）</h3>
+<div class="card p2">
+  <p>自建扫描器的结论：<strong>确定死导出 50 个</strong>（外部 0 引用且同文件 0 引用），<strong>多余 export 90 个</strong>（仅文件内部自用）。50 个里绝大多数是 <code>type/interface</code>（占位类型，无害）；真正"写了没人用"的<strong>值</strong>只有 7 个：</p>
+  <table>
+    <thead><tr><th>文件</th><th>符号</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>lib/db.ts</code></td><td><code>getAllReports</code></td><td>无引用</td></tr>
+      <tr><td><code>lib/desktopCloudSync.ts</code></td><td><code>configureDesktopCloud</code> · <code>isDesktopCloudAuthFailed</code> · <code>onDesktopSyncConflict</code> · <code>desktopBackgroundPull</code></td><td>4 个孤儿导出（<strong>模块本身活着</strong>：<code>CLOUD_FILE_SYNC</code> 被三个组件使用）</td></tr>
+      <tr><td><code>lib/tavern/store.ts</code></td><td><code>pruneGhostFreeChars</code> · <code>pruneGhostFreeSessions</code></td><td>无引用</td></tr>
+      <tr><td><code>lib/tavern/store.ts</code></td><td><code>getSummaryProviderId</code></td><td>无引用；真正生效的是 <code>settings.free.summaryProviderId</code> → <strong>双真源</strong></td></tr>
+    </tbody>
+  </table>
+  <p><strong>建议</strong>：只清理上表 7 个值导出 + <code>setSummaryProviderId</code> 这一对（<strong>顺带消除双真源</strong>）；类型导出保留（它们是模块契约，删除风险大于收益）。清理前请人工确认它们不是"预留 API"。</p>
+</div>
+
+<h3>4.2 界面文案 · markdown 星号泄漏（红线）</h3>
+<div class="card p2">
+  <p><code>HelpPopover.tsx:124</code> 用 <code>&lt;div className="whitespace-pre-wrap"&gt;{children}&lt;/div&gt;</code> <strong>原样渲染纯文本</strong>，全文无 markdown 解析器 → 文案里的 <code>**</code> 会显示成字面星号。共 <strong>13 处载体</strong>会直接给作者看到：</p>
+  <ul class="tight">
+    <li><strong>最严重</strong>：<code>tavern/protocol.ts</code>（<code>PROTOCOL_CORE</code>）内含数十个 <code>**</code>，而它被 <code>TavernControl.tsx:930-932</code> 的 <code>&lt;pre&gt;{s.protocol}&lt;/pre&gt;</code> <strong>原样显示在「扮演协议」段</strong>（默认值即 <code>DEFAULT_PROTOCOL</code>）。同一个字符串既要喂模型又要给作者看，需要拆成两个用途。</li>
+    <li><code>TableSheet.tsx:712/716/718/719/720</code>（帮助面板）、<code>NovelEditor.tsx:845</code>（结构树说明）</li>
+    <li><code>TavernControl.tsx:809</code>（规则 desc）、<code>:882</code>（输入框占位符）</li>
+    <li><code>TavernDirectorNoteBar.tsx:91-92</code>、<code>TavernExportDialog.tsx:138/148</code></li>
+    <li><code>tavern/paramGuide.ts:89/195</code>（经 <code>:184</code> 渲染进参数表）、<code>tavern/postRules.ts:53</code>（经 <code>:853-855</code> 渲染）</li>
+  </ul>
+  <p><em>不报的</em>：<code>aiTasks.ts</code>、<code>interview.ts</code>、<code>draftMaterial.ts</code> 等处的星号是纯模型提示词（不渲染），<code>exporter.ts</code>、<code>exportDoc.ts</code> 是导出 markdown（格式本就该有）——<strong>均正确，无需改</strong>。</p>
+  <p><strong>修法</strong>：界面展示用「」或（）替代；协议字符串拆成"喂模型的版本"与"展示用版本"（或在 <code>&lt;pre&gt;</code> 前做一次星号剥离）。</p>
+</div>
+
+<h3>4.3 内容一致性</h3>
+<div class="card p2">
+  <table>
+    <thead><tr><th style="width:30%">问题</th><th>位置与证据</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>列名失配：3 张表的检索副标题静默消失</strong></td>
+        <td><code>schema.ts:441/472/642</code> 写 <code>subtitleCol:'类型'</code>，但这三张表的列名早已改叫 <code>类别</code>（<code>:434/464/636</code>，<code>db.ts:195-197</code> 有对应迁移 <code>{'类型':'类别'}</code>）。消费方 <code>SettingSearch.tsx:160</code> 取 <code>r.data['类型']</code> 得到 undefined → 副标题不显示。</td>
+      </tr>
+      <tr>
+        <td>帮助文案指向不存在的按钮</td>
+        <td><code>TableSheet.tsx:707/879</code> 说「新增一行」，而人物关系页按钮实为「新增一条关系」（<code>:822</code>）；<code>:720</code> 说右上角有「AI 整理」，但部分表显示「AI 补全」（<code>:827</code>）、大纲规划/章节总表<strong>根本没有 AI 按钮</strong>。</td>
+      </tr>
+      <tr>
+        <td>把图标源码名当文案给用户看</td>
+        <td><code>TableSheet.tsx:718/719</code>：<code>行首 'GitBranch' 按钮</code>、<code>'Sparkles' 用 AI 补全…</code> —— 应写中文按钮名。</td>
+      </tr>
+      <tr>
+        <td>搜索接口"留空回落博查"与代码相反</td>
+        <td><code>SearchSettingsPanel.tsx:137</code> 承诺留空用博查默认地址；实际 <code>webSearch.ts:143-148</code> 对 <code>custom</code> 直接返回所填地址（空即空串）→ 报「没填搜索接口地址」。</td>
+      </tr>
+      <tr>
+        <td>跨页术语不一致</td>
+        <td><code>GuidePage.tsx:83</code>「世界观」vs <code>schema.ts:135</code>「世界设定」；<code>GuidePage.tsx:83</code>「总纲」vs 同文件 <code>:55</code> 与 <code>schema.ts:234</code>「全书总纲」。</td>
+      </tr>
+      <tr>
+        <td>过时注释</td>
+        <td><code>types.ts:57</code> 仍写「tavern-script … 占位，尚未开发」，实际早已实现（<code>schema.ts:837</code>）。</td>
+      </tr>
+      <tr>
+        <td>明示占位内容（非缺陷，待作者替换）</td>
+        <td><code>AboutPage.tsx:200</code> 打赏名单为作品主角占位；<code>schema.ts:706</code> 关于页 description 自述"草稿阶段为占位内容"。</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>4.4 UI 规范</h3>
+<div class="card p2">
+  <ul class="tight">
+    <li><strong>静止态用 <code>ghost</code> 按钮</strong>（静止时无边框、与相邻 secondary 高低不齐）：<code>AutoContinue.tsx:256/288</code>、<code>BackupReminder.tsx:144</code>、<code>LocalDataNotice.tsx:108</code>、<code>ProjectHub.tsx:409</code>、<code>AIOrganize.tsx:393</code>、<code>Modal.tsx:220</code>、<code>NovelEditor.tsx:1029/1032</code> → 改 <code>secondary</code> / <code>icon</code>。</li>
+    <li><strong>分段开关未走 <code>toggle</code>+<code>selected</code></strong>（手写三元 + <code>bg-amber/20</code>，选中令牌已漂移出 /10 /15 /20 三档）：<code>TableSheet.tsx:768/786/804</code>、<code>NovelEditor.tsx:1338/1346</code>、<code>JieWenJi.tsx:519/524</code>、<code>PlotCanvas.tsx:324/325</code>。</li>
+    <li><strong>页头缺 HelpPopover 问号</strong>：<code>MaterialLibrary.tsx:23</code>、<code>AboutPage.tsx:69</code>。</li>
+    <li><strong>项目内 4 处全局 fixed FAB</strong>（<code>fixed bottom-6 right-6 z-20</code>）：<code>CharacterSheet.tsx:380</code>、<code>FormSheet.tsx:238</code>、<code>OutlineSheet.tsx:383</code>、<code>TableSheet.tsx:1297</code> —— 与"项目内禁全局 fixed 浮层"规范不一致（风险低，故列 P2）。</li>
+    <li><strong>卸载后 setState</strong>（缺 <code>alive</code> 守卫）：<code>TavernControl.tsx:353-372</code>、<code>TavernFree.tsx:167-185</code>、<code>TavernCard.tsx:135-145</code>、<code>GeoMapEditor.tsx:181-198</code> → 沿用同仓 <code>PlotCanvas.tsx:80</code> 的写法。</li>
+    <li><code>PlotCanvas.tsx:337</code> 同时写 <code>flex-1</code> 与 <code>h-full</code>（红线 2 冗余）。</li>
+  </ul>
+</div>
+
+<h3>4.5 AI 层细节</h3>
+<div class="card p2">
+  <ul class="tight">
+    <li><strong>总结 / 审校 / 起草没传面板默认模型</strong>：<code>summarize.ts:123</code>、<code>daily.ts:203</code>、<code>world.ts:191</code>、<code>script.ts:253</code>、<code>revise.ts:187</code> 只传 <code>{providerId}</code>，而对话轮次传了第二参 <code>st.common.defaultProviderId</code>（<code>engine.ts:301</code>）。且 <code>settings.ts:88</code> 注释「留空 = 跟随上面的默认模型」与实现不符（实际回退到<strong>全局活动模型</strong>）。</li>
+    <li><strong>剧情总结的角色背景缺栏</strong>：<code>engine.ts:345-352</code> 只传 <code>world/core/cannot/knowledge</code>，<strong>恰缺 2.4 关系</strong>——而总结提示词要求"以〖角色背景〗为事实基准"判断关系（<code>summarize.ts:67</code>）。冷启动走的是完整四章（<code>TavernCard.tsx:217</code>），两处口径不一致。</li>
+    <li><strong>后处理顺序产生双括号</strong>：<code>postRules.ts:38-46</code> 的"半角括号→全角"排在 <code>:55-62</code>「星号动作」之前，于是 <code>*(动作)*</code> → <code>*（动作）*</code> → <code>（（动作））</code>。修法：星号规则不再套外层（用 <code>$1</code>），或加"内容已是全角括号就不再包"。</li>
+    <li><strong>示范卡教模型违规</strong>：<code>seedCards.ts:140/144</code> 等示例块用了 markdown 加粗，而协议 <code>protocol.ts:221</code> 明令「不得使用 markdown 标题、列表、加粗」——示范卡是模仿对象。示例块内改用「」/〖〗。</li>
+    <li><strong>预算签名留着"记忆扣两遍"陷阱</strong>：<code>budget.ts:92</code> 仍从额度里扣 <code>memory</code>，与公式不符；当前三个调用点都传空串所以没出错。建议删掉第四参（或断言必为空），让公式只有一处真源。</li>
+    <li><strong>云端"每日备份"名不副实</strong>：<code>syncCore.ts:475-478</code> 只在跨天时刷新，实为"当天第一次 push 的快照"，而 UI 文案写"最新一份"（<code>WebTools.tsx:250</code>）→ 恢复点比预期早一整天。</li>
+    <li><strong><code>armUnloadFlush</code> 重复注册监听</strong>（<code>syncCore.ts:624-630</code>，每次 <code>configure()</code> 加 3 个且从不注销）。</li>
+    <li><strong>冲突副本写错存储</strong>：<code>db.ts:333-344</code> 的 <code>saveConflictCopy</code> 固定写 <code>idbOps</code>——桌面/便携版发生同步冲突时，副本落进无人读取的 IndexedDB，用户永远看不到。</li>
+    <li><strong>码字统计竞态</strong>：<code>db.ts:1099-1105</code> <code>addDailyWords</code> 是"读—改—写"，并发保存多章互相覆盖（统计偏小，非数据丢失）。</li>
+    <li><strong>便携版 flush 边缘丢最后一次编辑</strong>：<code>portable.ts:220/239/255-261</code>（<code>saving</code> 期间直接返回 false，卸载后重排的定时器永不触发）。</li>
+  </ul>
+</div>
+
+<h2 id="s4">5 · AI 功能实测记录（重点）</h2>
+
+<p>按"离线链路 → 本地闭环 → 云端实弹"三级递进，逐步排除环境干扰。</p>
+
+<h3>5.1 酒馆剧情 · 离线链路检查（不调模型）</h3>
+<div class="card">
+<pre><code>设定层 14621 字 · system 总长 18276 字 · 被裁段落 无
+含扮演设定：✓ ／ 协议在末尾：✓ ／ 身份提示含「不要代写」：✓
+无用户角色（全 AI 扮演）：不含「用户扮演」✓ 改为「全部由你推进」✓ 含多角色发言规则 ✓
+离线检查结束（未消耗额度）</code></pre>
+  <p class="ok-line">结论：system 组装完全符合设计（协议钉末尾、扮演设定到位、全 AI 场景的正确降级）。</p>
+</div>
+
+<h3>5.2 自由模式 · 本地模型实弹闭环（记忆能否真的被用上）</h3>
+<div class="card">
+  <p>测试设计很严：会话 A 聊出事实 → 总结成六栏记忆 → <strong>另开一个没有任何原文的新会话 B</strong> → 问它「还记得那只猫吗」。只有记忆真的生效，B 才答得出来。</p>
+  <table>
+    <thead><tr><th style="width:26%">阶段</th><th>实测结果</th></tr></thead>
+    <tbody>
+      <tr><td>① 会话 A（聊天）</td><td>苏念记住了名字，并对"猫叫阿灰"作出回应；单轮 0.8–8.2s（本地 27B）</td></tr>
+      <tr><td>② 总结</td><td>6 条消息 → <strong>551 字 / 耗时 14.7s / 六栏解析 6-6 全非空</strong>；关系状态、未爆的雷都写到位</td></tr>
+      <tr><td>③ 新会话 B（<strong>无原文</strong>）</td><td>system 4951 字 · 含长期记忆块 ✓ → 回答「<strong>记得。阿灰。</strong>杯子碎了吗？」</td></tr>
+      <tr><td>判定</td><td class="ok-line">记忆闭环成立 ✅　· 修订建议越界字段：0（白名单生效）</td></tr>
+    </tbody>
+  </table>
+  <p><strong>输出规范观察</strong>：对白为纯文本（不含角色名）、环境用【】、动作神态用（）——<strong>协议遵守良好</strong>。</p>
+</div>
+
+<h3>5.3 一个需要老大拍板的参数事实</h3>
+<div class="callout warn">
+  <p>离线检查显示 <code>system 总长 18276 字</code>（该测试用 <code>contextBudget: 32000</code>，所以历史额度仍有约 13300 字，正常）。</p>
+  <p>但在<strong>默认参数</strong>（<code>contextBudget: 16000</code> + <code>settingRatio: 0.6</code>）下，算术关系是：</p>
+  <table>
+    <thead><tr><th>配置</th><th>设定层上限</th><th>system 实估</th><th>留给对话历史</th></tr></thead>
+    <tbody>
+      <tr><td>测试用 32000</td><td>19200</td><td>≈18276</td><td class="ok-line">≈13300 字 ✅</td></tr>
+      <tr><td><strong>默认 16000</strong></td><td>9600</td><td>≈13000</td><td class="no-line">≈2600 字 ⚠️</td></tr>
+    </tbody>
+  </table>
+  <p>也就是说：<strong>默认档位下历史窗口只剩两千多字</strong>（约 1–2 轮对话）。这不是 bug——<code>budget.ts:6-11</code> 与 <code>paramGuide.ts:119-125</code> 里作者自己记录过这条张力，属"设定优先"的取舍。但它直接决定"AI 记不记得住前文"，是<strong>AI 体验的第一号旋钮</strong>：若实测中感觉 AI 忘前文，先调 <code>contextBudget</code>（→24000）或降 <code>settingRatio</code>（→0.5），而不是怀疑模型。<br>
+  界面「用量明细」已经把这块账摊开了（<code>budget.ts:115-124</code> 的设计意图），建议每次调参后对照它看。</p>
+</div>
+
+<h3>5.4 酒馆剧情 · 云端完整实弹（截至报告生成时仍在运行）</h3>
+<div class="card">
+  <p>脚本 <code>build-test.mjs live-tavern</code>（会同时调<strong>本地模型 + 云端模型 + 联网检索</strong>）已启动，截至本文生成时仍在运行（已 8 分钟以上，云端多场景链路较长）。其<strong>离线部分已通过</strong>（见 5.1）。</p>
+  <p>说明：自由模式的本地闭环实弹（5.2）已经完整验证了「记忆生成 → 跨会话生效」与「输出协议遵守」——这是"AI 效果好不好"最关键的证据；云端实弹补充的是"真实网络 + 云端模型下协议遵守度"这一层，属于增益而非必需。</p>
+</div>
+
+<h2 id="s5">6 · 值得肯定项（整改时别误伤）</h2>
+<div class="card">
+  <ul class="tight">
+    <li><span class="ok-line">分层干净</span>：<code>lib/</code> 零反向依赖 <code>components/</code>；无孤立模块。</li>
+    <li><span class="ok-line">备份隔离正确</span>：<code>backups</code> 本地专属约束在读取入口（<code>db.ts:371</code>）与上传侧（<code>syncCore.ts:178-181/299</code>）双向落实。</li>
+    <li><span class="ok-line">迁移机制规范</span>：<code>runMigrations</code> 顺序（types→ledger→numbering）唯一且幂等，<code>getDB</code> 的 upgrade 是"何时跑哪段"的唯一判断点。</li>
+    <li><span class="ok-line">同步传输稳健</span>：<code>syncTransport.ts</code> 对"读失败/损坏/不存在"三态区分，写后回读校验，损坏文件先隔离再暂停写入——语义正确。</li>
+    <li><span class="ok-line">零原生弹窗</span>：<code>window.prompt/confirm/alert</code> 全项目零违规（仅注释里提及）。</li>
+    <li><span class="ok-line">SVG 主题化写法正确</span>：所有 CSS 变量都走了 <code>style</code>，无 <code>fill="rgb(var(--x))"</code> 残留。</li>
+    <li><span class="ok-line">监听器/定时器清理到位</span>：抽查 9 处 <code>addEventListener</code> 均有对应清理，无悬挂监听。</li>
+    <li><span class="ok-line">日志克制</span>：<code>src/</code> 仅 10 处 <code>console.*</code>，全为合理的错误/降级日志，无调试残留。</li>
+    <li><span class="ok-line">循环依赖有处置</span>：engine 的三个环已用 <code>provider.ts</code> + re-export 缓解（<code>engine.ts:49-51</code> 有明确注释）；<code>materialData ↔ materialRef</code> 的反向只有 <code>import type</code>，编译后消失，属良性。</li>
+  </ul>
+</div>
+
+<h3>审计过程中的 3 处误报（已剔除，记录以免日后重复怀疑）</h3>
+<div class="card p2">
+  <ul class="tight">
+    <li><code>Modal.tsx</code> / <code>materialRef.ts</code> 的"自循环" —— 来自注释里的示例代码 <code>import { Z } from './Modal'</code>，非真实依赖。</li>
+    <li>"<code>desktopCloudSync</code> 整个模块是死代码" —— 模块活着（<code>CLOUD_FILE_SYNC</code> 被 3 个组件引用），只有 4 个导出是孤儿。</li>
+    <li>"剧情模式记忆面板显示 0" —— 实际是 <code>{session.memory &amp;&amp; …}</code> 恒假而<strong>整块不渲染</strong>，比"显示 0"更彻底。</li>
+  </ul>
+</div>
+
+<h2 id="s6">7 · 修改建议与下一步方案</h2>
+
+<p>按"风险 × 成本"排成三批，老大挑批次即可，我不擅自动手。</p>
+
+<table>
+  <thead><tr><th style="width:12%">批次</th><th style="width:38%">内容</th><th>为什么是这一批</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>第 1 批<br>止血</strong></td>
+      <td>
+        P0 桌面版读失败保护（改成只读锁定）<br>
+        P1 关窗写盘失败检查返回值<br>
+        P1 恢复备份改"先写后切"<br>
+        P1 启动加 try/finally + 错误页
+      </td>
+      <td>全部指向<strong>数据安全与"打不开"</strong>——用户感知最痛、修起来最不牵动业务逻辑（每处 10–40 行）。</td>
+    </tr>
+    <tr>
+      <td><strong>第 2 批<br>AI 手感</strong></td>
+      <td>
+        变量行剥离 + 「无变化」误报（P1）<br>
+        剧情记忆：补实现 or 摘干净（P1，需你决策 A/B）<br>
+        记忆标题改整行匹配（P1）<br>
+        总结传 <code>defaultProviderId</code> + 剧情总结补 2.4 关系<br>
+        postRules 双括号 · 示范卡 markdown · 预算签名清理
+      </td>
+      <td>这一批直接决定"AI 是否达到预期"。其中<strong>剧情记忆走 A 还是 B 需要你先拍板</strong>——A 是补功能（约新增一个总结入口 + 阈值触发），B 是砍 UI 与字段。</td>
+    </tr>
+    <tr>
+      <td><strong>第 3 批<br>体面</strong></td>
+      <td>
+        zoom 口径 4 处（地图画布 + 3 处拖拽）<br>
+        界面星号 13 处 · 列名失配 3 处 · 文案指向<br>
+        按钮/页头/浮层规范 19 处<br>
+        死导出 7 个 + 双真源清理
+      </td>
+      <td>不影响功能正确性，但影响"专业度"。可一次做完，也可夹在版本迭代里顺带。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p><strong>关于"AI 功能是否达到预期"的直接回答：</strong></p>
+  <p>核心链路<strong>是达标的</strong>——记忆闭环实测跑通（六栏解析全中、跨会话生效）、输出严守协议、检索失败会如实回告、修订白名单拦得住越界字段。真正会让人觉得"AI 不行"的，是两件事：</p>
+  <ol class="tight">
+    <li><strong>变量误报</strong>（P1）——模型按规矩写"无变化"，界面却报格式错，作者会误以为提示词坏了；</li>
+    <li><strong>历史窗口偏窄</strong>（默认档约 2600 字）——长篇推演时 AI 会"忘前文"，很容易被归因成"模型不行"，其实是参数。</li>
+  </ol>
+  <p>剧情模式的记忆死链则是第三个坑，但它目前<strong>不显性</strong>（面板压根不渲染），所以优先级排在第 2 批。</p>
+</div>
+
+<hr class="soft">
+<p style="color:var(--ink-3);font-size:13px">
+本次审计为<strong>只读</strong>：未修改任何产品源码、未升版本号、未封装、未碰服务器。<br>
+所有扫描脚本落在 <code>.workbuddy/tmp/</code>（audit-scan / audit-dead / audit-graph），可复跑复核。<br>
+实弹测试读取了本机模型配置（含密钥）用于调用，<strong>未写入任何文件、未打印密钥、未提交</strong>。
+</p>
+
+</div>
+</body>
+</html>

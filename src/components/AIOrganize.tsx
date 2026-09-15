@@ -390,7 +390,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
                 >
                   <RefreshCw size={12} /> 重新整理
                 </Button>
-                <Button variant="ghost" onClick={onClose} className="ml-auto px-3 py-2 text-[12px]">
+                <Button variant="secondary" onClick={onClose} className="ml-auto px-3 py-2 text-[12px]">
                   取消
                 </Button>
               </div>

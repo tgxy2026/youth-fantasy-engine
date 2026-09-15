@@ -84,7 +84,13 @@ export function budgetState(used: number, total: number): BudgetState {
 export function historyBudget(
   total: number,
   system: string,
-  /** 未包含在 system 里的记忆；酒馆传空串，留着只为兼容旧调用点 */
+  /**
+   * 未包含在 `system` 里的记忆长度（字）。
+   *
+   * 🔴 酒馆两条线**都传空串** —— 记忆已经拼进 `system` 了，再传一遍就会**扣两遍**。
+   * 2026-09-14 实测过这个坑：示范项目算出 `8000 − 2600 − 8237 − 0` 为负 → 历史额度归零，
+   * 21 条消息只剩开场一条。真要传之前，先确认那份内容确实**不在** `system` 里。
+   */
   memory: string,
   /** 额外安全余量（控制面板可调）；不传即内置默认 */
   fixedOverhead = FIXED_OVERHEAD_CHARS,

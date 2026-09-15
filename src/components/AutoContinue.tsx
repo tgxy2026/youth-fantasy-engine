@@ -253,7 +253,7 @@ export default function AutoContinue() {
         title={draft ? `第 ${draft.d.index}/${draft.d.total} 章初稿${draft.d.attempt > 1 ? `（第 ${draft.d.attempt} 稿）` : ''}` : '本章初稿'}
         footer={
           <>
-            <Button variant="ghost" onClick={() => decide('abort')}>停止任务</Button>
+            <Button variant="secondary" onClick={() => decide('abort')}>停止任务</Button>
             <Button variant="secondary" onClick={() => decide('rewrite')}>
               <RotateCcw size={13} className="mr-1" /> 重写本章
             </Button>
@@ -285,7 +285,7 @@ export default function AutoContinue() {
       <Modal open={!!confirm} onClose={confirmSkip} title="设定补登确认" width="lg"
         footer={
           <>
-            <Button variant="ghost" onClick={confirmSkip}>跳过</Button>
+            <Button variant="secondary" onClick={confirmSkip}>跳过</Button>
             <Button variant="primary" onClick={confirmApply}>确认补登（{selected.size}）</Button>
           </>
         }>

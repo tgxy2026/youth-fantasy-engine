@@ -38,11 +38,24 @@ function dataFile() {
   return customDataPath || path.join(app.getPath('userData'), 'novel-studio-data.json')
 }
 
+/**
+ * 读取本地数据文件，返回**三态**（渲染层据此决定是否允许写盘）：
+ *   { text, missing:false }                   读到内容
+ *   { text:null, missing:true }               文件不存在（首次使用，属正常）
+ *   { text:null, missing:false, error:'…' }   读取失败（被云盘/杀软占用、权限、IO）——🔴 危险
+ *
+ * 🔴 为什么必须区分「不存在」与「读失败」：
+ *   旧实现把**所有**异常都吞成 null，渲染层分辨不出，于是把"读失败"当成"空库"启动；
+ *   用户只要动一下数据（哪怕只是启动时自动播种示范项目），空库就会覆盖磁盘上的真实文件。
+ *   这条路径不可逆 —— 必须让渲染层知道"文件在，但没读出来"。
+ */
 function readDataFileSync() {
+  const file = dataFile()
   try {
-    return fs.readFileSync(dataFile(), 'utf-8')
-  } catch {
-    return null // 文件不存在（首次使用）属正常情况
+    return { text: fs.readFileSync(file, 'utf-8'), missing: false }
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { text: null, missing: true }
+    return { text: null, missing: false, error: (e && e.message) || String(e) }
   }
 }
 
@@ -74,11 +87,8 @@ app.whenReady().then(() => {
   // ---- 存储相关 IPC ----
   // 启动时读取本地数据文件
   ipcMain.handle('store:load', () => {
-    try {
-      return { text: readDataFileSync(), path: dataFile(), error: null }
-    } catch (e) {
-      return { text: null, path: dataFile(), error: String(e) }
-    }
+    const r = readDataFileSync()
+    return { text: r.text, path: dataFile(), missing: r.missing === true, error: r.error ?? null }
   })
 
   // 防抖后的异步写盘（渲染层每次数据变更后调用）。原子写，见 writeAtomic 注释。

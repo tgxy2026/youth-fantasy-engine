@@ -684,17 +684,25 @@ export async function runFreeTurn(
   let varParseFailed = false
   if (varKeys.length && reply.trim()) {
     const parsed = parseVarLine(reply, varKeys)
-    if (parsed.ops.length > 0) {
-      const cur = varsOf({ ...session, vars: nextVars }, varKeys)
-      const applied = applyVarOps(cur.values, parsed.ops, { maxStep: st.vars.maxStep })
-      if (applied.changes.length > 0) {
-        reply = parsed.text
-        varChanges = applied.changes
-        nextVars = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(withUser))
+    // 🔴 判据是「解析器有没有把那一行从正文里剥掉」—— vars.ts 只在**认得出**时才剥：
+    //    · 「〔数值〕无变化」是协议允许的写法（提示词明确这么要求），认得出 → 剥掉，且**不报错**；
+    //    · 解出了操作但夹取后没有实际变化 → 同样认得出，那一行不该留在正文里给读者看；
+    //    · 认不出（格式真的不对）→ 正文一字未动，这时才提示作者。
+    //    旧实现只在"有实际变化"时才采用 parsed.text，于是前两种情况的记账行都留在回复里，
+    //    还会被误判成"数值行格式没对上" —— 明明格式是对的，作者只能去改一句没坏的提示词。
+    if (parsed.text !== reply) {
+      reply = parsed.text
+      if (parsed.ops.length > 0) {
+        const cur = varsOf({ ...session, vars: nextVars }, varKeys)
+        const applied = applyVarOps(cur.values, parsed.ops, { maxStep: st.vars.maxStep })
+        if (applied.changes.length > 0) {
+          varChanges = applied.changes
+          nextVars = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(withUser))
+        }
       }
     } else if (parsed.rawLine) {
-      // 认出了标记但一个操作都没解出来 → 记一笔，界面可以提示"数值行格式没对上"。
-      // **不动正文**：那一行原样留在回复里，作者自己看得见。
+      // 认出了标记、但操作一个都没解出来（正文一字未动）→ 记一笔，界面提示"数值行格式没对上"，
+      // 那一行原样留在回复里，作者自己看得见。
       varParseFailed = true
     }
   }

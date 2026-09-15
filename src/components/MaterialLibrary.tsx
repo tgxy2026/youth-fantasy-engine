@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
 import { Button } from './Button'
+import HelpPopover from './HelpPopover'
 import {
   MATERIAL_CATEGORIES,
   type Block,
@@ -24,6 +25,10 @@ export default function MaterialLibrary() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">素材资料</h1>
           <span className="text-[12px] text-ink-400">内置写作参考素材库 · 只读</span>
+          <HelpPopover title="素材资料怎么用" side="right">
+            {'这里是一份\u300c只读\u300d的写作参考，卡壳时翻一翻：\n\n· 五类素材：人物设计 / 故事结构 / 世界框架 / 情绪爽点 / 描写笔法；\n· 上方切换分类，左侧选条目，右侧读全文；\n· 内容为内置素材，不能编辑 —— 想沉淀属于你自己作品的设定，' +
+              '请用「世界构建」「创作管理」下的正式表格（它们才会进 AI 的上下文）。'}
+          </HelpPopover>
         </div>
         <p className="mt-1 text-[13px] text-ink-300">
           收录可直接借鉴的写作参考（人物设计 / 故事结构 / 世界框架 / 情绪爽点 / 描写笔法）；内容仅供阅读，不支持编辑。

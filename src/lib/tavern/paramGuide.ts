@@ -86,7 +86,7 @@ export const GUIDE_TOP_K: ParamGuide = {
 export const GUIDE_REPEAT_PENALTY: ParamGuide = {
   min: 0.5, max: 2, step: 0.01,
   bands: [
-    { from: 0.5, to: 1, name: '鼓励重复', effect: '低于 1 等于**奖励**重复用词 —— 口头禅、整句复读都会明显变多。只有想强化「这个人就爱说这句」时才用。' },
+    { from: 0.5, to: 1, name: '鼓励重复', effect: '低于 1 等于「奖励」重复用词 —— 口头禅、整句复读都会明显变多。只有想强化「这个人就爱说这句」时才用。' },
     { from: 1, to: 1.1, name: '极轻', effect: '1 等于不惩罚；1.05 左右只轻微压住复读，几乎不影响正常表达。', recommended: true },
     { from: 1.1, to: 1.35, name: '明显', effect: '复读显著减少，但模型开始刻意换词 —— 同一个东西换着法儿叫（烟 / 香烟 / 烟卷），偶尔换得别扭。' },
     { from: 1.35, to: 1.7, name: '过强', effect: '连「的、了、他」这类高频虚词都会被回避，句子变生硬、绕口，甚至不成句。' },
@@ -192,7 +192,7 @@ export const GUIDE_LONGTERM_LIMIT: ParamGuide = {
   bands: [
     { from: 100, to: 200, name: '极简', effect: '长期摘要只剩几句话，久远的事容易被压没，角色会「忘了你们怎么认识的」。' },
     { from: 200, to: 500, name: '常规', effect: '能留住一个「她记得的过去」的轮廓，也留得住压缩空间。', recommended: true },
-    { from: 500, to: 1200, name: '详细', effect: '久远经历更完整；但它是超限时**最先**被砍的一栏，写太长意义有限。' },
+    { from: 500, to: 1200, name: '详细', effect: '久远经历更完整；但它是超限时「最先」被砍的一栏，写太长意义有限。' },
     { from: 1200, to: 2000, name: '偏大', effect: '会明显挤占「关键事实」「未爆的雷」这两栏的空间 —— 那两栏才是不能丢的。' },
   ],
 }

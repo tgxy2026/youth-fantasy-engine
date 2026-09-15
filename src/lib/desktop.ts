@@ -12,9 +12,11 @@ import { SAVE_DEBOUNCE_MS } from './constants'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
 export interface ElectronStoreAPI {
-  load(): Promise<{ text: string | null; path: string; error: string | null }>
+  /** missing=true 表示数据文件尚不存在（首次使用）；与"读取失败"必须区分，见 readDataFileSync */
+  load(): Promise<{ text: string | null; path: string; missing?: boolean; error: string | null }>
   save(text: string): Promise<{ ok: boolean; error: string | null }>
-  saveSync(text: string): unknown
+  /** 同步写盘；失败时主进程返回 { ok:false } 而**不抛异常**，调用方必须查返回值 */
+  saveSync(text: string): { ok: boolean; error: string | null } | undefined
   exportFile(text: string): Promise<string | null>
   importFile(): Promise<string | null>
   revealDataFile(): Promise<void>
@@ -104,6 +106,10 @@ export interface DesktopState {
   dataPath: string
   /** 数据文件是否已改到自定义位置（区别于默认的 userData 目录） */
   isCustomPath: boolean
+  /** 🔴 写盘已锁定：数据文件读取失败/损坏/为空，为免覆盖真实数据而暂停写入 */
+  writeLocked: boolean
+  /** 锁定的原因（给作者看的原话，界面据此常驻提示） */
+  writeLockReason: string
 }
 
 let data: PortableData = { app: 'novel-studio', kind: 'portable-data', fileVersion: 1, savedAt: 0, stores: {} }
@@ -115,6 +121,14 @@ let lastSavedAt = 0
 let lastError = ''
 let dataFilePath = ''
 let isCustomPath = false
+/**
+ * 🔴 写盘锁定。数据文件"读不出来"时置位 —— 锁上之后一个字节都不许写。
+ * 为什么必须有这一层：内存里此刻是一份**空库**（或残缺数据），而磁盘上可能躺着
+ * 用户全部心血；只要有任何一次落盘，真实文件就被覆盖了，且不可逆。
+ */
+let writeLocked = false
+/** 锁定的原因（界面常驻提示用） */
+let writeLockReason = ''
 
 const listeners = new Set<() => void>()
 
@@ -130,12 +144,37 @@ export function getDesktopState(): DesktopState {
   return {
     connected: inited, fileName: '本地数据文件', dirty, saving,
     lastSavedAt, lastError, dataPath: dataFilePath, isCustomPath,
+    writeLocked, writeLockReason,
   }
 }
 
-/** 应用启动时调用：从本地用户数据目录读取数据文件（首次使用时文件不存在，视作空库） */
+/**
+ * 解锁并继续用当前（空/残缺）数据写盘。
+ *
+ * 🔴 **破坏性操作**：解锁后下一次落盘会用内存里的数据覆盖磁盘上的原文件。
+ * 界面必须先把这个后果说清楚、并让作者二次确认，才可以调用它。
+ */
+export function unlockDesktopWrite(): void {
+  writeLocked = false
+  writeLockReason = ''
+  lastError = ''
+  emit()
+}
+
+/**
+ * 应用启动时调用：从本地用户数据目录读取数据文件（首次使用时文件不存在，视作空库）。
+ *
+ * 🔴 读不出来时**必须锁写盘**。旧实现只在 lastError 里写了句"原文件不会被覆盖"，
+ *   但没有任何代码实现这个承诺 —— 内存空库照样会在几百毫秒后覆盖真实文件。
+ *   现在"锁"是真的锁：flushDesktop / flushDesktopSync 都会直接返回。
+ */
 export async function initDesktopStore(): Promise<void> {
   if (!DESKTOP || inited) return
+  const lock = (why: string, msg: string) => {
+    writeLocked = true
+    writeLockReason = why
+    lastError = msg
+  }
   try {
     const r = await api().load()
     dataFilePath = r.path
@@ -144,18 +183,36 @@ export async function initDesktopStore(): Promise<void> {
     } catch {
       isCustomPath = false
     }
+    // 只有明确知道"文件在"时才做危险判定（旧 preload 无此字段 → missing 为 undefined → 保持旧行为）
+    const fileExists = r.missing === false
     if (r.error) {
-      lastError = '读取本地数据文件失败：' + r.error
+      lock(
+        `数据文件读取失败：${r.error}`,
+        `读取本地数据文件失败：${r.error}。为免用空库覆盖原文件，已暂停写入。`,
+      )
+    } else if (!fileExists) {
+      // 首次使用（文件还不存在）：空库启动属正常，可以写
     } else if (r.text && r.text.trim()) {
       try {
         data = normalizePortableData(JSON.parse(r.text))
         lastSavedAt = data.savedAt || Date.now()
       } catch {
-        lastError = '本地数据文件已损坏（JSON 解析失败），将以空库启动，原文件不会被覆盖'
+        lock(
+          '数据文件内容不是有效的 JSON（可能被云盘客户端同步截断，或磁盘损坏）',
+          '本地数据文件已损坏（JSON 解析失败）。为免覆盖原文件，已暂停写入。',
+        )
       }
+    } else {
+      lock(
+        '数据文件存在但内容为空（可能云盘正在同步、或上次写入被中断）',
+        '本地数据文件为空。为免覆盖原文件，已暂停写入。',
+      )
     }
   } catch (e) {
-    lastError = e instanceof Error ? e.message : String(e)
+    lock(
+      '读取数据文件时发生异常',
+      `读取数据文件异常：${e instanceof Error ? e.message : String(e)}。为免覆盖原文件，已暂停写入。`,
+    )
   } finally {
     inited = true
     emit()
@@ -173,6 +230,7 @@ function scheduleSave() {
 /** 立即写盘（手动保存 / 导入后调用） */
 export async function flushDesktop(): Promise<boolean> {
   if (!inited || saving) return false
+  if (writeLocked) return false // 🔴 锁定期绝不落盘（见 writeLocked 说明）
   saving = true
   emit()
   try {
@@ -196,12 +254,19 @@ export async function flushDesktop(): Promise<boolean> {
 /** 窗口关闭前同步写盘（beforeunload 中调用，阻塞式保证写入完成） */
 export function flushDesktopSync(): void {
   if (!DESKTOP || !inited || (!dirty && !saving)) return
+  if (writeLocked) return // 🔴 锁定期绝不落盘
   data.savedAt = Date.now()
   try {
-    api().saveSync(JSON.stringify(data))
+    // 🔴 主进程写失败时返回 { ok:false } 而**不抛异常** —— 旧实现不查返回值，
+    //    写失败也照样把 dirty 清掉，等于静默丢掉最后一次编辑。
+    const r = api().saveSync(JSON.stringify(data))
+    if (r && r.ok === false) {
+      lastError = '写入本地数据文件失败：' + (r.error ?? '未知错误')
+      return // 保留 dirty，供下次启动补救
+    }
     dirty = false
   } catch {
-    /* 同步写失败时无从提示，保留 dirty 供下次启动补救 */
+    /* IPC 层抛异常：同样保留 dirty */
   }
 }
 

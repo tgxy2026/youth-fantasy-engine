@@ -232,7 +232,9 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   const onCanvasMove = (e: RPointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
     if (!d) return
-    const dx = e.clientX - d.startX; const dy = e.clientY - d.startY
+    // 🔴 除界面缩放：clientX 是视口像素，而 scrollLeft/scrollTop 是 CSS 像素
+    const z = Number(document.documentElement.style.zoom) || 1
+    const dx = (e.clientX - d.startX) / z; const dy = (e.clientY - d.startY) / z
     if (d.kind === 'pan') {
       const el = scrollRef.current
       if (!el) return

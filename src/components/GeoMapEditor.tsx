@@ -212,11 +212,15 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
+    // 🔴 必须用 clientWidth/clientHeight（CSS 像素）：
+    //    `<html>` 上有界面缩放（默认 108%），getBoundingClientRect 返回的是**缩放后的视口像素**；
+    //    拿它当 CSS px 写进 svg 的 width/height，画布就会比容器大 8%，右侧与下方被 overflow-hidden 永久裁掉，
+    //    连 fitView 的"居中"也会偏。同型画布 PlotCanvas 用的正是 clientWidth/clientHeight。
     const measure = () => {
-      const r = el.getBoundingClientRect()
-      if (r.width > 0 && r.height > 0) {
-        setVp(prev => (Math.abs(prev.w - r.width) < 1 && Math.abs(prev.h - r.height) < 1
-          ? prev : { w: Math.round(r.width), h: Math.round(r.height) }))
+      const w = el.clientWidth
+      const h = el.clientHeight
+      if (w > 0 && h > 0) {
+        setVp(prev => (prev.w === w && prev.h === h ? prev : { w, h }))
       }
     }
     measure()
@@ -368,8 +372,10 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
       const py = inv.b * clientX + inv.d * clientY + inv.f
       return { x: px, y: py }
     }
+    // CTM 拿不到时的兜底：屏幕坐标 → 用户坐标同样要按界面缩放折算（用户坐标 = CSS 像素）
     const r = svg.getBoundingClientRect()
-    return { x: clientX - r.left, y: clientY - r.top }
+    const z = Number(document.documentElement.style.zoom) || 1
+    return { x: (clientX - r.left) / z, y: (clientY - r.top) / z }
   }, [])
 
   /** 居中内容：把全部已绘制空间显示包围盒放到画布正中 */

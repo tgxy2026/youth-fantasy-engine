@@ -40,7 +40,7 @@ import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
-import { runFreeTurn, varsEnabledKeys } from '../lib/tavern/engine'
+import { runFreeTurn, varsEnabledKeys, renderFreeCharacter } from '../lib/tavern/engine'
 import type { PostApplied } from '../lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
 import { summarizeMemory } from '../lib/tavern/summarize'
@@ -341,15 +341,16 @@ export default function TavernFree() {
           charName: c.name,
           prev,
           messages: pending,
-          // 带上角色背景：不给的话模型会凭对话臆断「Ta在哪、是谁」，记忆从第一次就开始漂移
+          // 带上角色背景：不给的话模型会凭对话臆断「Ta在哪、是谁」，记忆从第一次就开始漂移。
+          // 🔴 用**四章全文**（renderFreeCharacter，与「冷启动补算」同源），别只挑四个字段：
+          //    总结提示词明确要求"以〖角色背景〗为事实基准"判断关系，而关系就写在 2.4 ——
+          //    旧实现只传 世界/内核/做不到/知识边界，等于让模型在**不知道对方是谁**的前提下
+          //    重写「关系状态」，正是这个模块最该避免的漂移。
           charContext: [
-            c.world.trim() && `世界：${c.world.trim()}`,
-            c.profile.core.trim() && `内核：${c.profile.core.trim()}`,
-            c.profile.cannot.trim() && `做不到的事：${c.profile.cannot.trim()}`,
-            c.profile.knowledge.trim() && `知识边界：${c.profile.knowledge.trim()}`,
+            renderFreeCharacter(c),
             // 用户扮演的角色：他的台词是用户写的，整理时按「已经发生的事」记，别写成别人转述
             c.id === s.userCharId && '（这位角色由**用户自己**扮演：他说的话与做的事是既成事实，直接记进他的视角；不要写成「某某告诉我」。）',
-          ].filter(Boolean).join('\n'),
+          ].filter(Boolean).join('\n\n'),
           providerId: summaryProviderId || undefined,
           limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays },
         })

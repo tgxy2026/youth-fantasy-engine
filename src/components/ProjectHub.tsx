@@ -406,7 +406,7 @@ export default function ProjectHub({ onOpen }: Props) {
                         disabled={busy} variant="primary" size="md" className="flex items-center text-[12px]">
                         <Check size={13} /> 保存修改
                       </Button>
-                      <Button variant="ghost" onClick={() => setEditingId(null)} className="px-3 py-1.5 text-[12px] border-ink-600 rounded-lg hover:border-ink-500 transition-colors">
+                      <Button variant="secondary" onClick={() => setEditingId(null)} className="px-3 py-1.5 text-[12px] border-ink-600 rounded-lg hover:border-ink-500 transition-colors">
                         取消
                       </Button>
                     </div>

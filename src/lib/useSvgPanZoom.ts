@@ -112,10 +112,15 @@ export function useSvgPanZoom(opts: UseSvgPanZoomOptions = {}) {
   const onPointerMove = useCallback((e: ReactPointerEvent<SVGElement>) => {
     const d = dragRef.current
     if (!d) return
-    const dx = e.clientX - d.startSX
-    const dy = e.clientY - d.startSY
-    // 统一取舍：用欧氏距离判定位移（曼哈顿距离会把斜向轻拖误判为拖动）
-    if (!d.moved && Math.hypot(dx, dy) > CLICK_THRESHOLD) d.moved = true
+    const rawDx = e.clientX - d.startSX
+    const rawDy = e.clientY - d.startSY
+    // 统一取舍：用欧氏距离判定位移（曼哈顿距离会把斜向轻拖误判为拖动）。
+    // ⚠️ 点击判定用**原始视口像素**，保持手感不变；实际位移才折算。
+    if (!d.moved && Math.hypot(rawDx, rawDy) > CLICK_THRESHOLD) d.moved = true
+    // 🔴 view 坐标是 CSS 像素域，而 clientX 是视口像素 —— 不除界面缩放，拖动会比光标快约 8%
+    const z = Number(document.documentElement.style.zoom) || 1
+    const dx = rawDx / z
+    const dy = rawDy / z
 
     if (d.kind === 'pan') {
       setView(v => ({ x: d.origView.x + dx, y: d.origView.y + dy, k: v.k }))

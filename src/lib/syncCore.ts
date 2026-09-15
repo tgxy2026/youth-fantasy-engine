@@ -621,8 +621,11 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     },
   }
 
+  /** 卸载落盘的监听只注册一次 —— 旧实现每次 configure 都加 3 个且从不注销，反复开关同步会不断累积 */
+  let unloadArmed = false
   function armUnloadFlush() {
-    if (typeof window === 'undefined') return
+    if (typeof window === 'undefined' || unloadArmed) return
+    unloadArmed = true
     const onHide = () => { if (document.visibilityState === 'hidden') void flushNow() }
     window.addEventListener('pagehide', () => void flushNow())
     window.addEventListener('beforeunload', () => void flushNow())

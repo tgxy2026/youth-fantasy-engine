@@ -29,7 +29,7 @@ import {
 } from './types'
 import { TONE_HINT } from './prompt'
 import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
-import { DEFAULT_POST_RULES, normalizePostRules, type PostRule } from './postRules'
+import { DEFAULT_POST_RULES, LEGACY_DEFAULT_POST_RULES, normalizePostRules, type PostRule } from './postRules'
 import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
 
 /** 设置存储键（全局 meta） */
@@ -246,9 +246,24 @@ const LEGACY_DEFAULT_COMMON_EXTRA = [
  *   ③ `free.defaultUserCharId` —— 已废弃的键，**直接删**（这不是"升级默认值"，是清场）。
  * 将来再有默认文本/协议变更，按同样方式在这里追加比对，别去动用户已保存的值。
  */
+/** 库里那四条输出后处理规则是不是「原封未动的旧出厂值」（只看关键字段，忽略 flags/note 的差异） */
+function isLegacyPostRules(raw: unknown): boolean {
+  if (!Array.isArray(raw) || raw.length !== LEGACY_DEFAULT_POST_RULES.length) return false
+  return LEGACY_DEFAULT_POST_RULES.every((old, i) => {
+    const r = raw[i] as Partial<PostRule> | undefined
+    return !!r && r.id === old.id && r.pattern === old.pattern && r.replacement === old.replacement
+  })
+}
+
+
 function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<TavernSettings> | null {
   if (!raw || typeof raw !== 'object') return raw
   let out = raw
+  // ④ 输出后处理：旧版 `pr-star-action` 正则会把「*(动作)*」产出成 （（动作））双层括号。
+  //    🔴 只替换「作者的的确确没动过」的库（与旧出厂**全等**）—— 改过顺序 / 开关 / 正则的一律不碰。
+  if (isLegacyPostRules(out.postRules)) {
+    out = { ...out, postRules: DEFAULT_POST_RULES.map(r => ({ ...r })) }
+  }
   if (out.common && out.common.extraPrompt === LEGACY_DEFAULT_COMMON_EXTRA) {
     out = { ...out, common: { ...out.common, extraPrompt: DEFAULT_COMMON_EXTRA } }
   }

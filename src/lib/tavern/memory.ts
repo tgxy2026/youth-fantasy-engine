@@ -168,12 +168,25 @@ export function parseMemoryText(text: string, charId: string, prev?: FreeMemory 
  * 返回 rest = 标题之后的剩余内容（如「长期摘要：甲」里的「甲」），没有则为空串。
  */
 function matchSectionTitle(line: string): { key: MemorySectionKey; rest: string } | null {
+  // 归一化：去掉 markdown 装饰与空白，再按「先剥包裹、后剥序号」的顺序处理开头 ——
+  // 模型写法五花八门：〖一、长期摘要〗 / 【长期摘要】 / 一、长期摘要 / **长期摘要**。
+  // ⚠️ 顺序不能反：包裹在序号**外面**（〖一、…〗）时先剥序号会落空。
+  // ⚠️ 尾部**不做**无条件剥离：那会把内容自带的「（他说的）」这类右括号一起削掉。
+  //    标题后紧跟的 〗】 由下面的 SEP 处理。
   const t = line.replace(/[*#\s]/g, '')
+    .replace(/^[〖【\[（(“"'「]+/, '')
+    .replace(/^(?:[一二三四五六]、|\d+[.、]|[一二三四五六][)）.、])/, '')
+  // 标题后面必须**紧跟分隔符或行尾** —— 这是「整词标题」与「正文里恰好含这个词」的分界线。
+  const SEP = '[】〗\\]）):：、.。\\-—]'
   const pack = (key: MemorySectionKey, bare: string) => {
-    const i = t.indexOf(bare)
-    if (i < 0) return null
-    const after = t.slice(i + bare.length).replace(/^[】〗\]）):：、.。\-]+/, '')
-    return { key, rest: after }
+    // 🔴 只认**行首**命中，绝不用 indexOf 之类的子串查找：
+    //    正文里含「关系」「日记」这类词的句子极其常见（典型如长期摘要里写
+    //    "关系状态从疏远转向缓和"）—— 子串命中会把那一行当成新栏标题，
+    //    其后的内容全部串进错误的栏，下一轮总结再基于串栏的档案继续漂移。
+    if (!t.startsWith(bare)) return null
+    const after = t.slice(bare.length)
+    if (after && !new RegExp(`^${SEP}`).test(after)) return null
+    return { key, rest: after.replace(new RegExp(`^${SEP}+`), '') }
   }
   for (const s of MEMORY_SECTIONS) {
     // 标题本体 = 去掉「一、」这类前缀后的名字

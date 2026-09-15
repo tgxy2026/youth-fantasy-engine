@@ -13,6 +13,7 @@ import * as db from './lib/db'
 import { ensureDailyBackup, startAutoBackup } from './lib/backup'
 import { PORTABLE, getState, subscribe, flushNow } from './lib/portable'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop } from './lib/desktop'
+import { DesktopWriteLockBanner } from './components/DesktopWriteLockBanner'
 import { PortableGate } from './components/Portable'
 import { WEB } from './lib/env'
 import WebGate, { checkInvited } from './components/WebGate'
@@ -27,6 +28,7 @@ import JieWenJiSprite from './components/JieWenJiSprite'
 import GeoMapEditor from './components/GeoMapEditor'
 import PlotCanvas from './components/PlotCanvas'
 import { showToast } from './components/dialogs'
+import { Button } from './components/Button'
 import { applyTheme, applyZoom, getStoredTheme, getStoredZoom } from './lib/theme'
 import { LS_SPRITE_ENABLED } from './lib/constants'
 import { downloadBlob } from './lib/zip'
@@ -54,6 +56,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
   const [booted, setBooted] = useState(false)
+  /** 启动流程抛出的错误（非空则渲染错误页，而不是永远卡在黑屏上） */
+  const [bootError, setBootError] = useState('')
   // 从其他页签（如章节总表）跳转正文编辑时，要直达打开的章节 id
   const [editorTarget, setEditorTarget] = useState<string | null>(null)
   // 数据体检 / 地图等跨组件跳转时，要直达高亮的具体行 id（detail 携带 rowId 时下发）
@@ -150,6 +154,10 @@ export default function App() {
   useEffect(() => {
     if (!fileReady) return
     ;(async () => {
+      // 🔴 整段兜底：旧实现没有 try/catch，任何一步 reject（IndexedDB 打不开、
+      //    迁移抛错、读 meta 失败）都会让 setBooted(true) 执行不到 —— 界面永远黑屏，
+      //    既不报错也没有重试入口。finally 保证一定会离开黑屏。
+      try {
       const last = await db.getMeta('lastProject', '')
       await db.migrateProjectTypes() // 清理历史遗留的 lite/minimal 项目形态
       // 酒馆示范角色卡：示例对话升到 v1.2 的输出规范（幂等；与旧种子全等才换，
@@ -160,7 +168,10 @@ export default function App() {
         await upgradeSeedCards()
       } catch (e) { console.warn('[boot] 示范卡格式升级失败：', e) }
       // 首次启动且存储为空：自动创建示范项目「吞天神脉（示范）」，引导新用户了解全模块功能
-      if (!last) {
+      // 🔴 写盘被锁（数据文件没读出来）时**不播种**：此刻内存是空库，
+      //    播种只会制造"好像有数据"的假象，还可能被误存回去覆盖原文件。
+      const desktopWriteLocked = DESKTOP && getDesktopState().writeLocked
+      if (!last && !desktopWriteLocked) {
         const existing = await db.getAllProjects().catch(() => [])
         if (existing.length === 0) {
           try { await createDemoProject() } catch (e) { console.warn('[boot] 自动创建示范项目失败：', e) }
@@ -185,7 +196,12 @@ export default function App() {
           backupStop.current = startAutoBackup(p.id)
         }
       }
-      setBooted(true)
+      } catch (e) {
+        console.error('[boot] 启动流程失败：', e)
+        setBootError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setBooted(true)
+      }
     })()
   }, [fileReady])
 
@@ -282,12 +298,37 @@ export default function App() {
   // 网页体验版（邀请制）→ 未通过邀请码前拦截
   if (WEB && !checkInvited()) return <WebGate />
 
-  if (!booted) return <div className="h-screen bg-ink-950" />
+  // 启动失败：给一页能读懂的错误 + 一个重试入口，而不是永远停在黑屏上
+  if (bootError) {
+    return (
+      <>
+        <DesktopWriteLockBanner />
+        <div className="flex h-screen flex-col items-center justify-center gap-3 p-8 text-center">
+          <div className="text-base font-semibold">启动失败</div>
+          <div className="max-w-xl text-[13px] leading-relaxed text-ink-400">{bootError}</div>
+          <Button variant="secondary" onClick={() => location.reload()}>重新加载</Button>
+          <div className="max-w-xl text-[12px] text-ink-500">
+            若反复失败，请先备份数据文件（左下角「数据坞」），再重新加载。
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (!booted) {
+    return (
+      <>
+        <DesktopWriteLockBanner />
+        <div className="h-screen bg-ink-950" />
+      </>
+    )
+  }
 
   // 项目未打开 → 项目管理页
   if (!projectId) {
     return (
       <>
+        <DesktopWriteLockBanner />
         <ProjectHub onOpen={openProject} />
         {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。
             此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
@@ -367,6 +408,7 @@ export default function App() {
 
   return (
     <div key={`proj-${projectId}`} className="relative flex h-screen overflow-hidden bg-transparent">
+      <DesktopWriteLockBanner />
       {/* v1.3 幻想工作台背景：纯线条浅金线稿，透明底、若隐若现。
           负 z-index 子元素绘制于 body 背景之上、半透明面板之下，故可从面板后透出；
           父容器设为 bg-transparent，避免不透明背景把装饰层盖住；

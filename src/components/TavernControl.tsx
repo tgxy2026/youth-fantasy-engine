@@ -65,6 +65,7 @@ import {
   DEFAULT_TAVERN_SETTINGS, DEFAULT_PROTOCOL,
   type TavernSettings, type TavernProfile,
 } from '../lib/tavern/settings'
+import { displayProtocol } from '../lib/tavern/protocol'
 
 /** 输入框外观（不含字号——字号由 AutoTextarea 的 textClass / input 自己带，避免两处各写一个 size 类打架） */
 const BOX = 'bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50'
@@ -806,7 +807,7 @@ export default function TavernControl() {
           {/* ---------- 四、输出后处理（B3） ---------- */}
           <Section
             title="四、输出后处理"
-            desc="生成后按下面的规则从上到下修一遍再落库。协议已经把格式写死了，实测却总有模型不听话 —— 用规则兜住，比重跑一次去赌划算。顺序有意义：先去 markdown 再处理单星号动作，否则 **动作** 会被拆成 *（动作）*。"
+            desc="生成后按下面的规则从上到下修一遍再落库。协议已经把格式写死了，实测却总有模型不听话 —— 用规则兜住，比重跑一次去赌划算。顺序有意义：先去 markdown 再处理单星号动作，否则「动作」会被拆成 *（动作）*。"
           >
             <ToggleField
               label="启用输出后处理"
@@ -879,7 +880,7 @@ export default function TavernControl() {
                 textClass="text-[11.5px] font-mono"
                 minRows={2}
                 maxHeight={140}
-                placeholder="贴一段模型输出，例：（她点头。） / **（他把烟按灭）** / 洛汐：你来了。"
+                placeholder="贴一段模型输出，例：（她点头。） / （他把烟按灭） / 洛汐：你来了。"
                 value={ruleTry}
                 onChange={setRuleTry}
               />
@@ -928,7 +929,7 @@ export default function TavernControl() {
                   </div>
                 </div>
                 <pre className="max-h-80 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-3 text-[11.5px] leading-relaxed text-ink-300 xl:max-h-none xl:min-h-[12rem]">
-                  {s.protocol}
+                  {displayProtocol(s.protocol)}
                 </pre>
               </>
             ) : (
