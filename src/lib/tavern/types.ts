@@ -510,14 +510,8 @@ export type VarChange = {
  */
 export type TavernVars = {
   values: VarValues
-  /** 上次更新在第几轮（「每 N 轮」按它算） */
+  /** 最后一次更新时的轮次（状态栏回看用） */
   turnSeq: number
-  /**
-   * 上一次**模型给的**变化的「前值」 —— 重说时要能撤掉。
-   * ⚠️ 作者手改会把它清空（见 `recordVarChanges`）：作者的手是最终裁决，
-   *    重说不该把作者刚纠正过的数再翻回模型算错的那个值。
-   */
-  prev?: { values: VarValues; at: number }
   /** 变动历史（状态栏回看用，只留最近若干条）。旧数据的 source/turnSeq 可能没有 */
   log: { at: number; changes: VarChange[]; source?: VarSource; turnSeq?: number }[]
 }

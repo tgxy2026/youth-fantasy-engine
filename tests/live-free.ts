@@ -93,7 +93,7 @@ async function mkChar(): Promise<FreeCharacter> {
 }
 
 /**
- * 逐行审计模型输出是否符合协议 v1.6：
+ * 逐行审计模型输出是否符合协议 v1.7：
  *   对白＝纯文本 / （）＝其余一切（动作·神态·心理·环境）/ 〔〕＝状态块与记账行
  * 返回各类行数与**违规清单**（带原文片段，便于人工复核）。
  */
@@ -103,10 +103,10 @@ export function auditFormat(reply: string, castNames: string[] = []) {
   let action = 0, env = 0, talk = 0, status = 0
   for (const l of lines) {
     if (/[〖〗〈〉]/.test(l)) issues.push('出现输入侧结构标记：' + l.slice(0, 24))
-    // v1.6 起：动作/神态/心理/环境统一用（），所以「括号行」不再细分
+    // v1.6 起：动作/神态/心理/环境统一用（），所以「括号行」不再细分；v1.7 把【】彻底废止
     if (/^（|^\(/.test(l)) { action++; continue }
     // 旧格式（v1.5 及以前）的环境行 —— 仍能识别，但**模型不该再写**，记进违规
-    if (/^【/.test(l)) { env++; issues.push('仍用旧格式【】（v1.6 起环境也归（ ））：' + l.slice(0, 24)); continue }
+    if (/^【/.test(l)) { env++; issues.push('仍用已废止的【】（v1.7 起只认（ ））：' + l.slice(0, 24)); continue }
     if (/^〔/.test(l)) { status++; continue }
     talk++
     if (/[“”"「」]/.test(l)) issues.push('对白里带引号：' + l.slice(0, 24))
@@ -247,7 +247,7 @@ async function main() {
     })
     const sys6 = (await buildFreeSystem(s6, [luo6, chu6])).system
     console.log(`[离线断言] system 含〖客观描写〗：${sys6.includes('〖客观描写〗') ? '✓' : '✗'}`)
-    console.log(`[离线断言] 协议正文已是 v1.6：${sys6.includes('角色扮演通用协议 · v1.6') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 协议正文已是 v1.7：${sys6.includes('角色扮演通用协议 · v1.7') ? '✓' : '✗'}`)
     console.log(`[离线断言] 身份层代词中性（Ta）：${sys6.includes('用 Ta 的眼睛看') ? '✓' : '✗'}`)
     console.log(`[离线断言] 输入侧用的是〖〗〈〉（示例标题/说话人）：${sys6.includes('〖样本') || sys6.includes('〈') ? '✓' : '✗'}`)
     console.log(`[离线断言] 对白不许加说话人标记已写进协议：${sys6.includes('不要把说话人的名字单独写成一行') ? '✓' : '✗'}`)

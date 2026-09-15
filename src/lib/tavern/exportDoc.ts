@@ -22,13 +22,18 @@ import type { TavernMessage, TavernSession, TavernReport, FreeSession } from './
 
 // ==================== 行类型（与界面渲染同源） ====================
 
-export type TavernLineKind = 'action' | 'ambient' | 'state' | 'speech'
+export type TavernLineKind = 'action' | 'state' | 'speech'
 
-/** 按行首符号判定这一行是什么（协议 O1 v1.3）。认不出就算对白 —— 宁可样式朴素，也不能吃掉正文 */
+/**
+ * 按行首符号判定这一行是什么（协议 O1）。
+ * 认不出就算对白 —— 宁可样式朴素，也不能吃掉正文。
+ *
+ * ⚠️ v1.7 起只有三种：**（ ）**除对白外的一切 / **〔 〕**状态块 / 其余对白。
+ *    旧的【】环境样式**已彻底移除**（老大 2026-09-15 定：测试阶段不留兼容，旧对话按对白渲染即可）。
+ */
 export function classifyTavernLine(line: string): TavernLineKind {
   const t = String(line ?? '').trim()
   if (t.startsWith('（') || t.startsWith('(')) return 'action'
-  if (t.startsWith('【')) return 'ambient'
   if (t.startsWith('〔')) return 'state'
   return 'speech'
 }
@@ -348,7 +353,6 @@ function esc(s: string): string {
 
 const KIND_CLASS: Record<TavernLineKind, string> = {
   action: 'action',
-  ambient: 'ambient',
   state: 'state',
   speech: 'speech',
 }
@@ -383,7 +387,6 @@ h2{font-family:ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft Ya
 .line{margin:0}
 .line+.line{margin-top:.15rem}
 .line.action{color:var(--soft);font-size:.95em}
-.line.ambient{color:var(--soft);font-style:italic;font-size:.95em}
 .line.state{color:var(--soft);font-style:italic;font-size:.92em}
 .para{margin:0}
 .note{color:var(--soft);font-family:ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:.78rem}

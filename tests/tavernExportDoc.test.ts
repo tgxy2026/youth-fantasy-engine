@@ -60,7 +60,7 @@ function main() {
   {
     ok('（动作）→ action', classifyTavernLine('（她把伞收起）') === 'action')
     ok('半角括号也算动作', classifyTavernLine('(she nods)') === 'action')
-    ok('【环境】→ ambient', classifyTavernLine('【雨敲着铁皮檐】') === 'ambient')
+    ok('🔴【】已废止 → 按对白渲染（v1.7 起不再有环境样式）', classifyTavernLine('【雨敲着铁皮檐】') === 'speech')
     ok('〔状态〕→ state', classifyTavernLine('〔她背对着门〕') === 'state')
     ok('其余 → 对白', classifyTavernLine('你来了。') === 'speech')
     ok('前导空白不影响判定', classifyTavernLine('   （收伞）') === 'action')
@@ -218,7 +218,7 @@ function main() {
       !/<(script|link|img)[^>]*(src|href)=/i.test(html) && !/https?:\/\//.test(html))
     ok('样式内联在 <style> 里', html.includes('<style>') && html.includes('</style>'))
     ok('对白行没有额外 class', html.includes('<p class="line speech">你来了。</p>'))
-    ok('环境行标 ambient', html.includes('<p class="line ambient">【雨点砸在遮阳棚上】</p>'))
+    ok('🔴【】不再有专属样式（当作对白行原样输出）', html.includes('<p class="line speech">【雨点砸在遮阳棚上】</p>'))
     ok('动作行标 action', html.includes('<p class="line action">（把伞收起）</p>'))
     ok('状态行标 state', html.includes('<p class="line state">〔她背对着门〕</p>'))
     ok('用户消息加 user 类（排版上区分你 / Ta）', html.includes('class="msg user"'))

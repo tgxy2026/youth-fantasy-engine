@@ -43,7 +43,7 @@ import * as store from '../lib/tavern/store'
 import { runFreeTurn, varsEnabledKeys, renderFreeCharacter } from '../lib/tavern/engine'
 import type { PostApplied } from '../lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
-import { summarizeMemory } from '../lib/tavern/summarize'
+import { summarizeMemory, extractSessionVars } from '../lib/tavern/summarize'
 import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
 import { uid } from '../lib/id'
 import {
@@ -53,7 +53,7 @@ import {
 import {
   type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
-  type VarKey,
+  type VarKey, type VarChange,
 } from '../lib/tavern/types'
 import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf } from '../lib/tavern/vars'
 import { scriptSceneLine, snapshotOf, openingToMessage } from '../lib/tavern/script'
@@ -357,12 +357,39 @@ export default function TavernFree() {
         await store.saveMemory(next)
         done.push(next)
       }
+      // 本场数值：与记忆**同一次触发**（同一个水位线窗口）。
+      // 单开一次结构化小调用读一遍「这几轮有没有变化」—— 旧做法是每轮在回复末尾要一行记账，
+      // 实测遵守率极低（真模型探针 1/6、0/6、0/6），作者只会以为数值功能坏了。
+      // ⚠️ 失败不影响记忆与水位线：数值算不出来，这一场照样能继续演。
+      let nextVars = s.vars
+      let varChanges: VarChange[] = []
+      if (varKeys.length > 0) {
+        const cur = varsOf(s, varKeys)
+        const ex = await extractSessionVars({
+          keys: varKeys,
+          values: cur.values,
+          messages: pending,
+          // nameOf 在本组件里要求 id 必填；抽取件允许缺省（消息可能没有 speakerId）
+          nameOf: (id?: string) => nameOf(id ?? ''),
+          maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
+          providerId: summaryProviderId || undefined,
+        }).catch(() => null)
+        if (ex && ex.changes.length > 0) {
+          nextVars = recordVarChanges({ ...cur, values: ex.values }, ex.changes, turnSeqOf(s.messages))
+          varChanges = ex.changes
+        }
+      }
+
       // 水位线推进到最后一条（全部成功才走到这儿）
       const wm = nextWatermark(s)
-      const updated: FreeSession = { ...s, watermark: wm ?? s.watermark, updatedAt: Date.now() }
+      const updated: FreeSession = { ...s, watermark: wm ?? s.watermark, vars: nextVars, updatedAt: Date.now() }
       await store.saveFreeSession(updated)
       setSession(cur => (cur && cur.id === updated.id ? updated : cur))
       setMems(prev => ({ ...prev, ...Object.fromEntries(done.map(m => [m.charId, m])) }))
+      if (varChanges.length > 0) {
+        showToast('本场数值：' + varChanges
+          .map(c => `${c.label} ${String(c.from || '空')} → ${String(c.to || '空')}`).join('；'), 'info')
+      }
       if (manual) {
         const total = done.reduce((n, m) => n + memoryChars(m), 0)
         showToast(done.length > 1
@@ -377,7 +404,7 @@ export default function TavernFree() {
       setSummarizing(false)
       setSumProgress('')
     }
-  }, [summaryProviderId, lim])
+  }, [summaryProviderId, lim, varKeys, nameOf, tavernSettings])
 
   /**
    * 设定更新：对**在场每个角色**分别审查一遍。
@@ -502,14 +529,6 @@ export default function TavernFree() {
       await refreshSessions()
       if (!res.cancelled) void autoSummarize(saved)
       if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
-      // C2 第二步：这一轮数值真的动了就报一句（只是一条提示，不打断阅读）。
-      // 模型写了行但格式没对上时**正文一个字都没动**，这里如实说明，免得作者以为它没给增量。
-      if (res.varChanges.length) {
-        showToast('本场数值：' + res.varChanges
-          .map(c => `${c.label} ${String(c.from || '空')} → ${String(c.to || '空')}`).join('；'), 'info')
-      } else if (res.varParseFailed) {
-        showToast('模型写了数值行但格式没对上 —— 已原样留在正文里，没有记账', 'info')
-      }
       // 说完这句就把Ta说的话撤掉：那句话是「很久没来」时才该有的
       setGreeting('')
       setSpeakNext('')
@@ -634,14 +653,37 @@ export default function TavernFree() {
     await store.saveFreeSession(next).catch(() => undefined)
   }
 
-  /** 快捷指令条：走协议 R4 的**导演指令**通道（「」= 照做然后继续演） */
+  /**
+   * 快捷指令条：走协议 R4 的**导演指令**通道（「」= 照做然后继续演）。
+   * 🔴 点击**只填进输入框、不直接发送** —— 这些指令几乎都要作者改一处（推进多久），
+   *    直接发出去等于替作者作了决定。带 slot 的（推进时间）会把那一段选中，直接改即可。
+   */
   const quickActions: QuickAction[] = [
-    { key: 'cont', label: '继续', hint: '让 Ta 接着说', run: () => void send('「继续。」') },
-    { key: 'env', label: '补环境', hint: '先补一句【】里的环境（光、声、气味），再接着说', run: () => void send('「先说一句【】里的环境（光、声、气味），再继续。」') },
-    { key: 'time', label: '推进时间', hint: '把时间往前推一点（半小时 / 第二天）', run: () => void send('「把时间往前推一点（半小时或第二天），再继续。」') },
-    { key: 'mind', label: 'Ta 在想什么', hint: '用一个动作或细节透出心里的想法，不直接写心理', run: () => void send('「用一个动作或细节写出 Ta 此刻心里在想什么，不要直接写心理。」') },
+    { key: 'cont', label: '继续', hint: '让 Ta 接着说', text: '「继续。」' },
+    { key: 'env', label: '补环境', hint: '先补一句（ ）里的环境（光、声、气味），再接着说', text: '「先说一句（ ）里的环境（光、声、气味），再继续。」' },
+    { key: 'time', label: '推进时间', hint: '把时间往前推 —— 填进输入框后自己改成需要的时长', text: '「把时间往前推进 半小时，然后继续。」', slot: '半小时' },
+    { key: 'mind', label: 'Ta 在想什么', hint: '用一个动作或细节透出心里的想法，不直接写心理', text: '「用一个动作或细节写出 Ta 此刻心里在想什么，不要直接写心理。」' },
     { key: 'reroll', label: '重说', hint: '用同一段历史让 Ta 重说这一条（只出一个结果，说话人不变）', run: () => void reroll() },
   ]
+
+  /** 输入框 ref：预填后要聚焦并把「该改的那一段」选中 */
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  /**
+   * 快捷指令预填：把预制文本填进输入框、聚焦，并把该改的那段选中（不发送）。
+   * ⚠️ 选区要等 React 把新值渲染进 textarea 之后再设 —— 同步 setState 后立刻设会选到旧值。
+   */
+  const fillInput = (text: string, slot?: string) => {
+    setInput(text)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      const i = slot ? text.indexOf(slot) : -1
+      if (i >= 0) el.setSelectionRange(i, i + slot!.length)
+      else el.setSelectionRange(text.length, text.length)
+    })
+  }
 
   const stop = () => { abortRef.current?.abort() }
 
@@ -971,8 +1013,10 @@ export default function TavernFree() {
                       {m.role !== 'user' && showWho && (
                         <Avatar src={who?.avatar} name={who?.name ?? '?'} size={24} className="mt-0.5" />
                       )}
+                      {/* 两侧都不带外框（老大 2026-09-15 定）：用户那侧靠右对齐 + 头像区分，
+                          加气泡框反而把同一段对话切成了两种视觉语言。 */}
                       <div className={m.role === 'user'
-                        ? 'max-w-[80%] rounded-lg bg-amber/12 border border-amber/25 px-3 py-2'
+                        ? 'max-w-[80%] space-y-1'
                         : 'max-w-[85%] space-y-1'}>
                         {m.role !== 'user' && showWho && who && (
                           <div className="text-[10.5px] text-amber/80">{who.name}</div>
@@ -1014,7 +1058,7 @@ export default function TavernFree() {
                   onSave={n => void applyDirectorNote(n)}
                   onClear={() => void applyDirectorNote(null)}
                 />
-                <TavernQuickBar actions={quickActions} disabled={streaming} className="mb-2" />
+                <TavernQuickBar actions={quickActions} disabled={streaming} onFill={fillInput} className="mb-2" />
                 {/* 自动延展：默认 3 行，写长了自己长高，超过 200px 才内部滚动 */}
                 {/* 按键：Enter 发送、Shift+Enter 换行（与「对话引导」一致）。
                     🔴 必须挡 isComposing —— 中文输入法里 Enter 是**选字确认键**，
@@ -1027,6 +1071,7 @@ export default function TavernFree() {
                   placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"
                   value={input}
                   disabled={streaming}
+                  inputRef={inputRef}
                   onChange={setInput}
                   onKeyDown={e => {
                     if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return

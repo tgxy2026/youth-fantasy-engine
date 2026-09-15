@@ -1189,23 +1189,16 @@ export default function TavernControl() {
               </div>
             </Field>
 
-            <div className={GRID2}>
-              <NumField
-                label="更新间隔" guide={PARAM_GUIDES.varEveryTurns}
-                hint="每几轮请求模型给一次增量。太频繁会让数值像随机数，太稀疏则整场都不动。"
-                value={s.vars.everyTurns} onCommit={v => setVars({ everyTurns: Math.max(1, Math.round(v)) })}
-              />
-              <NumField
-                label="单次变化幅度" guide={PARAM_GUIDES.varMaxStep}
-                hint="模型给出的增量超过这个值就按这个值取（它是刹车，不是目标值）。"
-                value={s.vars.maxStep} onCommit={v => setVars({ maxStep: Math.max(1, Math.round(v)) })}
-              />
-            </div>
+            <NumField
+              label="单次变化幅度" guide={PARAM_GUIDES.varMaxStep}
+              hint="模型给出的增量超过这个值就按这个值取（它是刹车，不是目标值）。"
+              value={s.vars.maxStep} onCommit={v => setVars({ maxStep: Math.max(1, Math.round(v)) })}
+            />
 
             <p className="text-[10.5px] text-ink-600 leading-relaxed">
-              写进提示词的只有「有哪些数、当前值多少、每轮能改多少」。具体格式（回复最后一行
-              `〔数值〕好感 +2`）由系统在需要时追加要求 —— 格式没对上时「正文一个字都不动」，
-              那一行会原样留在回复里，绝不会为了记账吃掉你要读的内容。
+              数值**不靠模型每轮记账**：整理记忆时（自动触发或点「立即整理记忆」）会单开一次小调用，
+              把这几轮里真的变了的项算出来，写进角色状态。写进提示词的只有「当前值多少、一次能改多少」。
+              算不出来时**一个字段都不动** —— 绝不会为了记账改错你要看的内容。
             </p>
           </Section>
 

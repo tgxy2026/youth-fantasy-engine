@@ -19,7 +19,8 @@ import {
 } from '../ai'
 import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './memory'
 import { resolveTavernProvider, type ChatFn } from './engine'
-import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter } from './types'
+import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
+import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps } from './vars'
 
 /** 把时间戳格式化成「YYYY-MM-DD」（日记用） */
 export function formatDate(ts: number): string {
@@ -258,6 +259,69 @@ export function draftMemoryFromCard(c: FreeCharacter): FreeMemory {
     anniversaries: '',
     diaries: '',
   }
+}
+
+// ==================== 本场数值（与记忆整理同一次触发） ====================
+
+export type ExtractVarsArgs = {
+  /** 启用中的变量键。空数组 → 直接返回，不调模型 */
+  keys: VarKey[]
+  /** 当前值 */
+  values: VarValues | undefined
+  /** 要吸收的对话（与记忆同一批：水位线之后的） */
+  messages: TavernMessage[]
+  /** 说话人名字（多角色时给「谁在说」的标注） */
+  nameOf?: (id?: string) => string
+  /** 这一场的剧本目标（有就带上，进度才有锚） */
+  goal?: string
+  /** 单次变化幅度上限（控制面板） */
+  maxStep?: number
+  providerId?: string
+  chatFn?: ChatFn
+  signal?: AbortSignal
+}
+
+/**
+ * 读一遍这段对话，算出「本场数值」有没有变。**不落库**（调用方决定写回）。
+ *
+ * 【为什么单开一次调用，而不是让扮演回复自己带一行记账】
+ * 实测（真模型探针，2026-09-15）：把记账要求塞进每轮回复里，遵守率极低
+ * ——三次跑分别是 1/6、0/6、0/6，作者只会以为「数值功能坏了」。
+ * 而单开一次「只干这一件事」的调用反而干净：它不用跟那 3.5KB 格式协议抢注意力。
+ * 代价是多一次轻量调用，所以它与**记忆整理同一次触发**（同一个水位线窗口），
+ * 不额外增加触发频率。
+ *
+ * 失败会抛出 —— 调用方 catch 掉即可：数值算不出来，这一场照样能继续演。
+ */
+export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ values: VarValues; changes: VarChange[] }> {
+  const { keys, values, messages, nameOf, goal, providerId, chatFn, signal, maxStep = 5 } = args
+  if (keys.length === 0 || messages.length === 0) return { values: values ?? {}, changes: [] }
+  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
+  const runChat = chatFn ?? chat
+  const msgs: ChatMessage[] = [
+    { role: 'system', content: buildVarExtractSystem(keys, { maxStep }) },
+    {
+      role: 'user',
+      content: buildVarExtractUser({ values, keys, goal, transcript: renderVarsTranscript(messages, nameOf) }),
+    },
+  ]
+  const reply = await runChat(provider, msgs, {
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal,
+    // 抽取是结构化任务，与总结同档低温
+    temperature: JSON_TASK_TEMPERATURE,
+    think: false,
+  })
+  const ops = parseVarsFromText(reply, keys)
+  return applyVarOps(values ?? {}, ops, { maxStep })
+}
+
+/** 把这一段对话渲染成抽取用的片段（用户发言标〖对方〗，其余标说话人名字） */
+export function renderVarsTranscript(messages: TavernMessage[], nameOf?: (id?: string) => string): string {
+  return messages
+    .filter(m => m.role !== 'system' && m.content.trim())
+    .map(m => `${m.role === 'user' ? '〖对方〗' : `〖${nameOf?.(m.speakerId) || '角色'}〗`}${m.content.trim()}`)
+    .join('\n')
 }
 
 export { isCancelled }

@@ -183,7 +183,7 @@ async function runOne(label: string, s: TavernSession, userText = '（我点了�
     // ② 输入侧的〖〗与〈〉绝不该出现在输出里。
     console.log(`  输出里混进输入侧标记（〖〗〈〉）：${/〖|〗|〈|〉/.test(res.reply) ? '⚠️ 有' : '✓ 无'}`)
     console.log(`  对白行带名字前缀：${/^[^\n（【〔]{1,6}[：:]\S*/m.test(res.reply) ? '⚠️ 有（人工看上面输出）' : '✓ 无'}`)
-    console.log(`  仍用旧格式【】：${/【/.test(res.reply) ? '⚠️ 有（v1.6 起应为（ ））' : '✓ 无'}`)
+    console.log(`  仍用已废止的【】：${/【/.test(res.reply) ? '⚠️ 有（v1.7 起只认（ ））' : '✓ 无'}`)
 
     const saved = await store.saveSession(res.session)
     console.log(`  落库：会话 ${saved.id} · 消息 ${saved.messages.length} 条`)

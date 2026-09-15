@@ -31,16 +31,13 @@ import { memoryToText, isMemoryEmpty } from './memory'
 import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack } from './world'
 import { scriptToText } from './script'
 import { applyPostRules, type PostApplied } from './postRules'
-import {
-  buildVarsBlock, parseVarLine, applyVarOps, recordVarChanges, undoLastVarChanges,
-  shouldAskVars, turnSeqOf, varsOf,
-} from './vars'
+import { buildVarStateBlock, varsOf } from './vars'
 import {
   talkativityRowsOf,
   hasCastSetting, charTag,
   VAR_KEYS,
   type TavernSession, type TavernMessage, type TavernCast, type TavernDirectorNote,
-  type FreeSession, type FreeCharacter, type FreeMemory, type VarKey, type VarChange,
+  type FreeSession, type FreeCharacter, type FreeMemory, type VarKey,
 } from './types'
 
 /** 剧情模式的档位固定为叙事向（方案 §5.3：剧情默认叙事向、自由默认聊天向） */
@@ -570,15 +567,13 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
       buildSceneDescriptionRule(st.free.sceneDescription),
       st.free.extraPrompt.trim() ? `〖本场补充要求〗\n${st.free.extraPrompt.trim()}` : '',
     ].filter(x => x?.trim()).join('\n\n'),
-    // 🔴 记账块挂在**协议之后**（prompt.ts 的 tail 层），不是 modeExtra。
-    //    探针对照实验（2026-09-15）：同一条记账要求放协议之前 6/6 轮不执行，
-    //    挪到协议之后立刻开始执行 —— 任务型指令会被协议那 3.5KB 格式规范压掉。
-    tail: buildVarsBlock({
+    // 本场数值的**当前值**：挂在 system 的 tail 层（协议之后）。
+    // 🔴 这一层不能省 —— 「当前地点」错了整场戏就会瞬移（实测：宿舍楼道一步跨到食堂）。
+    //    数值本身**不靠模型每轮记账**（那样遵守率很低，探针 6/6 轮不吐），
+    //    改为「整理记忆时一次算清」（summarize.ts 的 extractSessionVars）。
+    tail: buildVarStateBlock({
       values: varsOf(session, varsEnabledKeys(st)).values,
       keys: varsEnabledKeys(st),
-      ask: shouldAskVars(turnSeqOf(session.messages), st.vars.everyTurns),
-      everyTurns: st.vars.everyTurns,
-      maxStep: st.vars.maxStep,
     }),
     protocol: st.protocol,
   })
@@ -606,10 +601,6 @@ export type FreeTurnResult = {
   postApplied: PostApplied[]
   /** B3：正则写错被跳过的规则名 */
   postErrors: string[]
-  /** C2 第二步：本轮实际发生的变量变化（空数组 = 数值没动） */
-  varChanges: VarChange[]
-  /** 模型写了数值行但格式没对上（正文原样保留，只是没记账）—— 界面可提示 */
-  varParseFailed?: boolean
 }
 
 /**
@@ -676,40 +667,6 @@ export async function runFreeTurn(
   const said = baseMsgs.filter(m => m.role === 'assistant').length
   const autoSpeaker = aiIds.length > 0 ? aiIds[said % aiIds.length] : undefined
   const speakerId = aiIds.length > 1 ? (cb.speakerId ?? autoSpeaker) : aiIds[0]
-
-  // C2 第二步：本场变量。
-  // 🔴 顺序：**先解变量、再跑输出后处理** —— 后处理会把半角括号转全角、去掉 markdown 记号，
-  //    万一动到数值那一行就再也解析不出来了（解析器只认严格的 〔数值〕 前缀）。
-  // 🔴 重说（userText === null）：先把上一次变化**撤掉** —— 数值不该停在"那个已经被丢掉的回复"上。
-  const varKeys = varsEnabledKeys(st)
-  let varChanges: VarChange[] = []
-  let nextVars = userText === null && varKeys.length ? undoLastVarChanges(session.vars) : session.vars
-  let varParseFailed = false
-  if (varKeys.length && reply.trim()) {
-    const parsed = parseVarLine(reply, varKeys)
-    // 🔴 判据是「解析器有没有把那一行从正文里剥掉」—— vars.ts 只在**认得出**时才剥：
-    //    · 「〔数值〕无变化」是协议允许的写法（提示词明确这么要求），认得出 → 剥掉，且**不报错**；
-    //    · 解出了操作但夹取后没有实际变化 → 同样认得出，那一行不该留在正文里给读者看；
-    //    · 认不出（格式真的不对）→ 正文一字未动，这时才提示作者。
-    //    旧实现只在"有实际变化"时才采用 parsed.text，于是前两种情况的记账行都留在回复里，
-    //    还会被误判成"数值行格式没对上" —— 明明格式是对的，作者只能去改一句没坏的提示词。
-    if (parsed.text !== reply) {
-      reply = parsed.text
-      if (parsed.ops.length > 0) {
-        const cur = varsOf({ ...session, vars: nextVars }, varKeys)
-        const applied = applyVarOps(cur.values, parsed.ops, { maxStep: st.vars.maxStep })
-        if (applied.changes.length > 0) {
-          varChanges = applied.changes
-          nextVars = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(withUser))
-        }
-      }
-    } else if (parsed.rawLine) {
-      // 认出了标记、但操作一个都没解出来（正文一字未动）→ 记一笔，界面提示"数值行格式没对上"，
-      // 那一行原样留在回复里，作者自己看得见。
-      varParseFailed = true
-    }
-  }
-
   // 同剧情模式：重说失败要**保留原来的那条**（withUser 已经把末尾的 AI 回复丢掉了）
   // B3 输出后处理（与剧情模式同一套规则；顺序即 settings.postRules 的顺序）
   let postApplied: PostApplied[] = []
@@ -734,12 +691,11 @@ export async function runFreeTurn(
     lastActiveAt: Date.now(),
     updatedAt: Date.now(),
     directorNote,
-    vars: nextVars,
   }
 
   return {
     session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, speakerId,
-    postApplied, postErrors, varChanges, varParseFailed,
+    postApplied, postErrors,
   }
 }
 

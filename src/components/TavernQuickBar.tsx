@@ -7,6 +7,10 @@
  * 协议 R4 定义了**导演指令**通道：用「」括起来的句子 = 照做，然后继续演。
  * 所以「补一段环境」「推进时间」这类动作用户本来就能手打；这里只是把它做成按钮。
  * 走这条通道的好处是它**不污染"角色说过的话"**这层语义（不会被当成用户/角色的台词记进记忆）。
+ *
+ * 🔴 点击**只把预制文本填进输入框，不直接发送**（2026-09-15 改）：
+ *    这些指令几乎都需要作者改一处（推进多久、补哪个方向），直接发出去等于替作者作了决定。
+ *    带 slot 的按钮会把那一段**选中**，作者直接改就行。
  */
 import { Button } from './Button'
 
@@ -15,12 +19,19 @@ export type QuickAction = {
   label: string
   /** 悬停说明：写清它会做什么，别让作者猜 */
   hint: string
-  run: () => void
+  /** 点击后**填进输入框**的预制文本（不直接发送，作者可先改）。给了它就忽略 run。 */
+  text?: string
+  /** text 里要**选中**的那一段（如「半小时」）—— 填完直接改这一处即可 */
+  slot?: string
+  /** 没有 text 时的直接动作（如「重说」：它不是一句话，而是一次重算） */
+  run?: () => void
 }
 
-export function TavernQuickBar({ actions, disabled, className = '' }: {
+export function TavernQuickBar({ actions, disabled, onFill, className = '' }: {
   actions: QuickAction[]
   disabled?: boolean
+  /** 点击带 text 的按钮时回调（把预制文本填进输入框） */
+  onFill?: (text: string, slot?: string) => void
   className?: string
 }) {
   return (
@@ -33,7 +44,7 @@ export function TavernQuickBar({ actions, disabled, className = '' }: {
           className="!px-2 !text-[11px]"
           disabled={disabled}
           title={a.hint}
-          onClick={a.run}
+          onClick={() => { if (a.text !== undefined) onFill?.(a.text, a.slot); else a.run?.() }}
         >
           {a.label}
         </Button>

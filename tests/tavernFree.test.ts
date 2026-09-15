@@ -406,31 +406,29 @@ async function main() {
       rich.indexOf('〖客观描写〗') < rich.indexOf('不要写天气。'))
   }
 
-  // ---------- 11) 场景锚：地点不跟「每 N 轮」走（协议 v1.4「地点不归你搬」的配套） ----------
+  // ---------- 11) 本场数值块：只给当前值（数值改由「整理记忆」时算） ----------
   {
     const su3 = await mkChar('苏念')
     const s = await store.createFreeSession([su3.id], '楼道', { providerId: STUB_PROVIDER.id }, {})
 
-    // 第 1 轮（按 everyTurns=3 本不该请求增量）：地点还空着 → 仍要求这一轮落一次值
-    // 起因：实弹里用户说「一起吃饭」，模型把场景从宿舍楼道一步挪到食堂 —— 上下文里从没说过它在哪
+    // 起因：实弹里用户说「一起吃饭」，模型把场景从宿舍楼道一步挪到食堂 —— 上下文里从没说过它在哪。
+    // 现在不再要求模型每轮写记账行（那套遵守率极低），但**当前值仍每轮进上下文**。
     const fresh = (await buildFreeSystem(s, [su3])).system
-    ok('第 1 轮就要求落一次「当前地点」（不等「每 3 轮」）',
-      fresh.includes('〖本场数值〗') && fresh.includes('地点还没记下来'))
+    ok('新会话就有数值块（初值就是起点）', fresh.includes('〖本场数值〗') && fresh.includes('好感 50'))
+    ok('🔴 不再要求模型每轮输出记账行（交给整理记忆，协议里也不再有这条）',
+      !fresh.includes('〔数值〕') && !fresh.includes('地点还没记下来'))
 
-    // 一旦有值：它每轮都随 system 进上下文 —— 这就是「不该瞬移」的依据
     const place = '教学楼三层楼道'
     const withPlace = { ...s, vars: { ...emptyVars(), values: { ...emptyVars().values, place } } }
     const sys = (await buildFreeSystem(withPlace, [su3])).system
-    ok('地点已记下 → 每轮都注入当前值', sys.includes(`当前地点 ${place}`))
-    ok('有值时只给一句轻提示，不再重复要求落值',
-      sys.includes('若这一轮地点有变') && !sys.includes('地点还没记下来'))
-    ok('记账块（含场景锚）排在协议**之后** —— 任务型指令必须离生成点最近',
+    ok('地点已记下 → 每轮都注入当前值（这是「不该瞬移」的依据）', sys.includes(`当前地点 ${place}`))
+    ok('数值块排在协议**之后**（离生成点最近）',
       sys.indexOf(PROTOCOL_CORE) < sys.indexOf('〖本场数值〗'))
 
-    // 关掉变量总开关 → 连场景锚都不出现（「空层不占额度」）
+    // 关掉变量总开关 → 整块不出现（「空层不占额度」）
     const stVarsOff = { ...DEFAULT_TAVERN_SETTINGS, vars: { ...DEFAULT_TAVERN_SETTINGS.vars, enabled: false } }
     const noVars = (await buildFreeSystem(withPlace, [su3], stVarsOff)).system
-    ok('关掉变量开关 → 场景锚一个字都不出现',
+    ok('关掉变量开关 → 数值块一个字都不出现',
       !noVars.includes('〖本场数值〗') && !noVars.includes(place))
   }
 

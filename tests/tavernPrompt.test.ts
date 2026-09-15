@@ -25,7 +25,7 @@ function ok(name: string, cond: boolean, extra = '') {
 function main() {
   // ---------- 1) 协议全文完整性（内置常量，条款掉了功能就瘫） ----------
   {
-    ok('协议版本为 v1.6（单括号方案 + 数值行许可）', PROTOCOL_VERSION === 'v1.6')
+    ok('协议版本为 v1.7（【】彻底移除 + 去掉数值行许可）', PROTOCOL_VERSION === 'v1.7')
     const rules = ['R1', 'R2', 'R3', 'R4', 'R5', 'B1', 'B5', 'B8', 'B9', 'O1', 'O2', 'O3', 'O4', 'M1', 'M2', 'E1', 'E2', 'E3']
     const missing = rules.filter(r => !PROTOCOL_CORE.includes(`\n${r} `))
     ok('协议含全部条款编号（R/B/O/M/E 五节）', missing.length === 0, `缺=${missing.join(',')}`)
@@ -57,8 +57,11 @@ function main() {
       PROTOCOL_CORE.includes('一件事一个括号、一句一行'))
     ok('O1 给了自查判据：不在括号里的行只能是被说出口的话',
       PROTOCOL_CORE.includes('不在括号里的行，只能是被说出口的话'))
-    ok('O1 许可系统要求的〔数值〕记账行（放最末尾、不计篇幅）',
-      PROTOCOL_CORE.includes('〔数值〕') && PROTOCOL_CORE.includes('不计入篇幅'))
+    ok('🔴 O1 不再许可〔数值〕记账行（改为整理记忆时算，协议里不该再提）',
+      !PROTOCOL_CORE.includes('不计入篇幅') && !PROTOCOL_CORE.includes('系统若另有一行〔数值〕'))
+    ok('🔴 O1 明确写出只有（ ）与〔 〕两种括号、【】已废止',
+      PROTOCOL_CORE.includes('方头括号【】已废止') && PROTOCOL_CORE.includes('你只使用两种括号'))
+    ok('最后提醒也点了【】已不用', PROTOCOL_CORE.includes('方头括号【】已经不用了'))
     ok('对白要求：不加引号、不加括号、不加任何说话人标记、正常标点',
       PROTOCOL_CORE.includes('**不加引号、不加括号、不加任何说话人标记**') &&
       PROTOCOL_CORE.includes('不写"角色名："这类前缀'))

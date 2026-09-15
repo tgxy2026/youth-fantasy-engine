@@ -172,8 +172,6 @@ export type TavernVarsSettings = {
   enabled: boolean
   /** 逐项**关闭**的变量（把「不要好感度」这种场合留给作者） */
   off: VarKey[]
-  /** 每几轮请求一次增量（默认 3；1 = 每轮） */
-  everyTurns: number
   /** 单次变化幅度上限（默认 ±5，越界按上限走） */
   maxStep: number
 }
@@ -181,7 +179,6 @@ export type TavernVarsSettings = {
 export const DEFAULT_TAVERN_VARS: TavernVarsSettings = {
   enabled: true,
   off: [],
-  everyTurns: 3,
   maxStep: 5,
 }
 

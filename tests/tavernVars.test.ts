@@ -1,21 +1,24 @@
-// ============ 酒馆模式 · 本场变量（C2 第二步：变量 + AI 输出增量）============
+// ============ 酒馆模式 · 本场变量（C2 第二步）============
 //
-// 这一层的风险全在**解析**上：模型输出是本系统里最不可控的东西，而变量行的解析器
-// 要在一段作者要读的正文里"精准地只吃掉一行"。
-// 所以测试的重点不是"能不能解析"，而是**认不出时有没有一个字都不动**
-// （变量是锦上添花，正文是命根子），以及**重说有没有把数值一起退回去**。
+// 2026-09-15 改：数值**不再靠模型每轮记账**，改为「整理记忆时一次算清」
+// （`extractSessionVars`，单开一次只输出一行的结构化调用）。
+// 所以这一层的风险点变了：
+//   · 抽取解析器「认不出时什么都不做」（宁可不改，也不能改错）；
+//   · 引擎**完全不碰**数值 —— 回复里出现〔数值〕也不剥、不改值（旧行为已下线）；
+//   · 提示词那块只剩「当前值」，不再有任何记账要求。
 import {
-  parseVarLine, applyVarOps, emptyVars, recordVarChanges, undoLastVarChanges,
-  shouldAskVars, turnSeqOf, buildVarsBlock, renderVarValues, VAR_LINE_TAG,
+  applyVarOps, emptyVars, recordVarChanges, turnSeqOf, buildVarStateBlock,
+  buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, renderVarValues, VAR_LINE_TAG,
   setVarManually, resetVarValues, lastChangeText,
 } from '../src/lib/tavern/vars'
 import { VAR_DEFS, varDefOf } from '../src/lib/tavern/types'
 import { runFreeTurn, buildFreeSystem, varsEnabledKeys } from '../src/lib/tavern/engine'
+import { extractSessionVars, renderVarsTranscript } from '../src/lib/tavern/summarize'
 import * as store from '../src/lib/tavern/store'
 import { getTavernSettings, DEFAULT_TAVERN_VARS, DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
 import type { ChatFn } from '../src/lib/tavern/engine'
-import type { FreeCharacter, VarValues, VarKey } from '../src/lib/tavern/types'
+import type { FreeCharacter, VarValues, VarKey, TavernMessage } from '../src/lib/tavern/types'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0
@@ -45,66 +48,39 @@ async function mkChar(name: string): Promise<FreeCharacter> {
   })
 }
 
+const mkMsg = (role: 'user' | 'assistant', content: string, speakerId?: string): TavernMessage =>
+  ({ id: 'm' + Math.random().toString(36).slice(2), role, content, at: Date.now(), speakerId })
+
 async function main() {
-  // ---------- 1) 解析：正常情况 ----------
+  // ---------- 1) 抽取解析：正常情况 ----------
   {
-    const r = parseVarLine('（她把杯子推过来）\n喝点热的。\n〔数值〕好感 +3；心情 松了一点')
-    ok('命中最后一行、剥掉它', !r.text.includes(VAR_LINE_TAG) && r.text.includes('喝点热的。'), JSON.stringify(r.text))
-    ok('解出两个操作', r.ops.length === 2, JSON.stringify(r.ops))
-    // 取到局部变量再判：TS 对 `arr[0].kind === 'x' && arr[0].y` 这种重复下标不保证收窄
-    const op0 = r.ops[0]
-    const op1 = r.ops[1]
+    const ops = parseVarsFromText('好的，我看了一下。\n〔数值〕好感 +3；心情 松了一点')
+    ok('认得以 〔数值〕 开头的那一行（不要求它在最后）', ops.length === 2, JSON.stringify(ops))
+    const op0 = ops[0]
+    const op1 = ops[1]
     ok('数值增量认 +N', op0.kind === 'delta' && op0.num === 3)
     ok('文本变量认中文名', op1.kind === 'text' && op1.text === '松了一点')
-    ok('rawLine 留了原文（调试用）', r.rawLine.startsWith(VAR_LINE_TAG))
 
-    const neg = parseVarLine('好。\n〔数值〕信任 -4')
-    const neg0 = neg.ops[0]
+    const neg0 = parseVarsFromText('〔数值〕信任 -4')[0]
     ok('负增量认 -N', neg0.kind === 'delta' && neg0.num === -4)
-    const setv = parseVarLine('好。\n〔数值〕剧情进度 = 40')
-    const set0 = setv.ops[0]
+    const set0 = parseVarsFromText('〔数值〕剧情进度 = 40')[0]
     ok('直接赋值认 =N', set0.kind === 'set' && set0.num === 40)
-    const noEq = parseVarLine('好。\n〔数值〕剧情进度 40')
-    const noEq0 = noEq.ops[0]
+    const noEq0 = parseVarsFromText('〔数值〕剧情进度 40')[0]
     ok('光写数字也当赋值', noEq0.kind === 'set' && noEq0.num === 40)
-    const half = parseVarLine('好。\n〔数值〕affection +2')
-    const half0 = half.ops[0]
+    const half0 = parseVarsFromText('〔数值〕affection +2')[0]
     ok('英文键也认（模型偶尔会写键名）', half0.key === 'affection' && half0.kind === 'delta' && half0.num === 2)
-    const semi = parseVarLine('好。\n〔数值〕好感 +1;信任 +1')
-    ok('半角分号也认', semi.ops.length === 2)
+    ok('半角分号也认', parseVarsFromText('〔数值〕好感 +1;信任 +1').length === 2)
+    ok('「无变化」= 零操作（不是错误）', parseVarsFromText('〔数值〕无变化').length === 0)
   }
 
-  // ---------- 2) 解析：认不出时必须一个字都不动 ----------
+  // ---------- 2) 抽取解析：认不出时必须什么都不做 ----------
   {
-    const mid = '〔数值〕好感 +9\n（她抬头）\n你回来了。'
-    const m = parseVarLine(mid)
-    ok('🔴 只有**最后一行**才算 —— 正文中间的同样字样不碰',
-      m.ops.length === 0 && m.text === mid, JSON.stringify(m.text))
-
-    const wrongTag = '（她点头）\n〔状态〕好感 +3'
-    ok('🔴 记号不对 → 原样返回（那是角色的状态块，不是数值行）',
-      parseVarLine(wrongTag).text === wrongTag && parseVarLine(wrongTag).ops.length === 0)
-
-    const unknown = '（她点头）\n好。\n〔数值〕金钱 +500'
-    const u = parseVarLine(unknown)
-    ok('🔴 白名单外的变量 → 整个认不出、原样返回（不吃正文）',
-      u.ops.length === 0 && u.text === unknown)
-
-    const noChange = '（她点头）\n好。\n〔数值〕无变化'
-    const nc = parseVarLine(noChange)
-    ok('「无变化」是**认得出**的写法：行剥掉、不产生操作',
-      nc.ops.length === 0 && !nc.text.includes(VAR_LINE_TAG) && nc.text.includes('好。'), JSON.stringify(nc.text))
-
-    const noTail = '（她点头）\n好。\n\n  \n'
-    const nt = parseVarLine(noTail)
-    ok('末尾空行被跳过（找的是最后一个**非空**行）', nt.ops.length === 0)
-
-    const empty = parseVarLine('')
-    ok('空回复不炸', empty.text === '' && empty.ops.length === 0)
-
-    const numNoSign = '好。\n〔数值〕好感 三'
-    ok('数值位写了中文数字 → 认不出、不动',
-      parseVarLine(numNoSign).ops.length === 0)
+    ok('🔴 没有 〔数值〕 行 → 零操作（绝不猜）', parseVarsFromText('（她点头）\n好。').length === 0)
+    ok('🔴 记号不对 → 零操作（那是角色的状态块）', parseVarsFromText('（她点头）\n〔状态〕好感 +3').length === 0)
+    ok('🔴 白名单外的变量 → 零操作（不认识就不动）', parseVarsFromText('〔数值〕金钱 +500').length === 0)
+    ok('数值位写中文数字 → 零操作', parseVarsFromText('〔数值〕好感 三').length === 0)
+    ok('空回复不炸', parseVarsFromText('').length === 0)
+    ok('行首空白不影响', parseVarsFromText('   〔数值〕好感 +2').length === 1)
   }
 
   // ---------- 3) 应用：夹取 ----------
@@ -131,7 +107,7 @@ async function main() {
     ok('文本没变就不记', sameText.changes.length === 0)
   }
 
-  // ---------- 4) 会话块：重说能撤销 ----------
+  // ---------- 4) 会话块：日志与上限 ----------
   {
     let v = emptyVars()
     ok('初始值来自 VAR_DEFS', v.values.affection === 50 && v.values.progress === 0)
@@ -140,12 +116,7 @@ async function main() {
       { key: 'affection', label: '好感', from: 50, to: 53, delta: 3 },
     ], 1)
     ok('记一笔变动', v.log.length === 1 && v.values.affection === 53)
-    ok('同时记下**前值**（重说要用）', v.prev?.values.affection === 50)
-
-    const undone = undoLastVarChanges(v)!
-    ok('🔴 撤销把被改过的键还原成前值', undone.values.affection === 50, String(undone.values.affection))
-    ok('撤销后日志也回退一条', undone.log.length === 0)
-    ok('撤销后没有前值可再撤（幂等）', undoLastVarChanges(undone)!.values.affection === 50)
+    ok('日志标了来源 ai 与轮次', v.log[0].source === 'ai' && v.log[0].turnSeq === 1)
 
     let many = emptyVars()
     for (let i = 0; i < 60; i++) {
@@ -154,44 +125,79 @@ async function main() {
       ], i)
     }
     ok('日志有上限（不会无限长）', many.log.length === 50, String(many.log.length))
+
+    ok('空变更不写日志', recordVarChanges(emptyVars(), [], 1).log.length === 0)
   }
 
-  // ---------- 5) 节流与渲染 ----------
+  // ---------- 5) 提示词层：只给当前值，不再有任何记账要求 ----------
   {
-    ok('每 3 轮：第 3/6 轮才请求', shouldAskVars(3, 3) && shouldAskVars(6, 3) && !shouldAskVars(4, 3))
-    ok('everyTurns=1 = 每轮', shouldAskVars(1, 1) && shouldAskVars(7, 1))
-    ok('非法值兜底成每轮', shouldAskVars(5, 0) && shouldAskVars(5, -3))
-    ok('turnSeq = 已有 AI 回复数 + 1',
-      turnSeqOf([{ role: 'user' }, { role: 'assistant' }, { role: 'user' }]) === 2)
-
     const keys = VAR_DEFS.map(d => d.key)
-    const on = buildVarsBlock({ values: { affection: 62, trust: 40, mood: '微妙的动摇' }, keys, ask: true, everyTurns: 3, maxStep: 5 })
-    ok('请求增量时给规则与格式示例', on.includes(VAR_LINE_TAG) && on.includes('好感 +2'))
-    ok('带上当前值', on.includes('好感 62') && on.includes('心情 微妙的动摇'))
-    ok('带上可用项与范围', on.includes('好感（0–100）') && on.includes('心情（≤12 字）'))
-    ok('提示了这一行不会展示给用户', on.includes('不会展示给用户'))
+    const blk = buildVarStateBlock({ values: { affection: 62, trust: 40, mood: '微妙的动摇' }, keys })
+    ok('带上当前值', blk.includes('好感 62') && blk.includes('心情 微妙的动摇'))
+    ok('🔴 不再要求模型输出记账行（那套已下线）', !blk.includes(VAR_LINE_TAG))
+    ok('带层头（便于模型识别这是一段状态）', blk.includes('〖本场数值〗'))
+    ok('提示不要抄进正文', blk.includes('不要把它抄进正文'))
 
-    const off = buildVarsBlock({ values: { affection: 62 }, keys, ask: false, everyTurns: 3, maxStep: 5 })
-    ok('不请求时不给数值规则（场景锚除外）', off.includes('好感 62') && !off.includes('好感 +2'))
-
-    // 🔴 场景锚（协议 v1.4「地点不归你搬」的配套）：地点是唯一不跟「每 N 轮」走的变量
-    ok('地点为空时：即使不该请求增量，也要求这一轮落一次值',
-      off.includes(VAR_LINE_TAG) && off.includes('当前地点') && off.includes('地点还没记下来'))
-    const anchored = buildVarsBlock({ values: { place: '教学楼三层楼道' }, keys, ask: false, everyTurns: 3, maxStep: 5 })
-    ok('地点已有值时：带上当前值 + 一句轻提示（不重复啰嗦）',
-      anchored.includes('当前地点 教学楼三层楼道') && anchored.includes('若这一轮地点有变'))
-    const noPlace = buildVarsBlock({ values: { affection: 62 }, keys: ['affection'], ask: false, everyTurns: 3, maxStep: 5 })
-    ok('没启用地点 → 场景锚一个字都不出现', !noPlace.includes(VAR_LINE_TAG))
-
-    const none = buildVarsBlock({ values: {}, keys: [], ask: true, everyTurns: 3, maxStep: 5 })
-    ok('🔴 没启用任何变量 → 空串（一个字都不占额度）', none === '')
-
+    ok('🔴 没启用任何变量 → 空串（一个字都不占额度）', buildVarStateBlock({ values: {}, keys: [] }) === '')
+    const onlyText = buildVarStateBlock({ values: { mood: '', place: '' }, keys: ['mood', 'place'] })
+    ok('🔴 启用着但一个值都没有 → 空串（空层不占额度）', onlyText === '')
     ok('空值不渲染成「好感 undefined」', renderVarValues({ affection: 50 }, ['affection', 'mood']) === '好感 50')
     ok('有目标时带上（进度才有锚）',
-      buildVarsBlock({ values: {}, keys, ask: false, everyTurns: 3, maxStep: 5, goal: '让他说出实话' }).includes('让他说出实话'))
+      buildVarStateBlock({ values: { affection: 50 }, keys, goal: '让他说出实话' }).includes('让他说出实话'))
+
+    // 抽取提示词：只干一件事、只输出一行
+    const sys = buildVarExtractSystem(keys, { maxStep: 5 })
+    ok('抽取提示词给出可记录项与范围', sys.includes('好感（0–100）') && sys.includes('心情（≤12 字）'))
+    ok('抽取提示词要求只输出一行', sys.includes('只输出一行') && sys.includes(VAR_LINE_TAG))
+    ok('抽取提示词要求「没变就不写」', sys.includes('只报告**真的变了**的项'))
+    ok('抽取提示词强调当前地点', sys.includes('当前地点'))
+    ok('只请求启用中的项', !buildVarExtractSystem(['affection'], { maxStep: 5 }).includes('心情'))
+
+    const user = buildVarExtractUser({
+      values: { affection: 62 }, keys,
+      transcript: renderVarsTranscript([mkMsg('user', '我回来了。'), mkMsg('assistant', '回来了。', 'c1')], () => '苏念'),
+    })
+    ok('抽取 user 段带当前值', user.includes('好感 62'))
+    ok('抽取 user 段带对话且标了说话人', user.includes('〖对方〗我回来了。') && user.includes('〖苏念〗回来了。'))
   }
 
-  // ---------- 6) 引擎端到端：剥行 / 落库 / 重说撤销 ----------
+  // ---------- 6) 抽取器端到端（桩模型） ----------
+  {
+    __resetMockStores()
+    await saveProviders([{ ...STUB_PROVIDER }])
+    await saveActiveId(STUB_PROVIDER.id)
+    const su = await mkChar('苏念')
+    const keys = VAR_DEFS.map(d => d.key)
+    const msgs = [mkMsg('user', '我回来了。'), mkMsg('assistant', '（她把杯子推过来）\n喝点热的。', su.id)]
+
+    const r1 = await extractSessionVars({
+      keys, values: emptyVars().values, messages: msgs,
+      chatFn: makeFakeChat('〔数值〕好感 +3；心情 松了一点').chatFn,
+    })
+    ok('🔴 抽取把变化写进了返回值（50 + 3）', r1.values.affection === 53, String(r1.values.affection))
+    ok('文本变量也写进去了', r1.values.mood === '松了一点')
+    ok('返回了变化清单（界面据此提示）', r1.changes.length === 2 && r1.changes[0].delta === 3)
+
+    const r2 = await extractSessionVars({
+      keys, values: { ...emptyVars().values, affection: 70 }, messages: msgs,
+      chatFn: makeFakeChat('〔数值〕无变化').chatFn,
+    })
+    ok('「无变化」→ 一个字段都不动、也没有变更记录', r2.changes.length === 0 && r2.values.affection === 70)
+
+    const r3 = await extractSessionVars({
+      keys, values: { ...emptyVars().values, affection: 70 }, messages: msgs,
+      chatFn: makeFakeChat('好感 +9（模型没按格式）').chatFn,
+    })
+    ok('🔴 格式不对 → 什么都不动（宁可不改）', r3.changes.length === 0 && r3.values.affection === 70)
+
+    const boom: ChatFn = async () => { throw new Error('不该被调到') }
+    const r4 = await extractSessionVars({ keys: [], values: emptyVars().values, messages: msgs, chatFn: boom })
+    ok('没启用任何变量 → 不调模型', r4.changes.length === 0)
+    const r5 = await extractSessionVars({ keys, values: emptyVars().values, messages: [], chatFn: boom })
+    ok('没有新消息 → 不调模型', r5.changes.length === 0)
+  }
+
+  // ---------- 7) 引擎：数值不再由每一轮改动 ----------
   {
     __resetMockStores()
     await saveProviders([{ ...STUB_PROVIDER }])
@@ -209,59 +215,34 @@ async function main() {
       session, [su], '我回来了。', {},
       { chatFn: makeFakeChat('（她把杯子推过来）\n喝点热的。\n〔数值〕好感 +3；心情 松了一点').chatFn, settings: st },
     )
-    ok('🔴 数值行被剥掉，正文只剩对白',
-      !r1.reply.includes(VAR_LINE_TAG) && r1.reply.includes('喝点热的。'), JSON.stringify(r1.reply))
-    ok('变量写进了会话（50 + 3）', r1.session.vars?.values.affection === 53, String(r1.session.vars?.values.affection))
-    ok('文本变量也写进去了', r1.session.vars?.values.mood === '松了一点')
-    ok('返回了变化清单（界面据此提示）', r1.varChanges.length === 2 && r1.varChanges[0].delta === 3)
-    ok('没有误报解析失败', !r1.varParseFailed)
+    ok('🔴 引擎不再剥数值行（那一行原样留在正文里，不再由本轮流解析）',
+      r1.reply.includes(VAR_LINE_TAG) && r1.reply.includes('喝点热的。'), JSON.stringify(r1.reply))
+    ok('🔴 这一轮的数值一个都没被改', r1.session.vars?.values.affection === undefined || r1.session.vars?.values.affection === 50,
+      String(r1.session.vars?.values.affection))
 
-    // 重说：先撤销上一次变化，再应用新的
-    const saved = await store.saveFreeSession(r1.session)
-    const r2 = await runFreeTurn(
-      saved, [su], null, {},
-      { chatFn: makeFakeChat('（她没抬头）\n嗯。\n〔数值〕好感 +1').chatFn, settings: st },
-    )
-    ok('🔴 重说把上一次的变化先退回去（53 → 50），再加这一轮的 +1 = 51',
-      r2.session.vars?.values.affection === 51, String(r2.session.vars?.values.affection))
-    ok('重说后的变动日志仍只有一条', (r2.session.vars?.log ?? []).length === 1)
-
-    // 关掉开关：数值行**原样留在正文里**（一个字都不动）
     const offSt = { ...st, vars: { ...st.vars, enabled: false } }
-    const r3 = await runFreeTurn(
-      saved, [su], '再说什么。', {},
-      { chatFn: makeFakeChat('好。\n〔数值〕好感 +9').chatFn, settings: offSt },
-    )
-    ok('🔴 关掉开关后：数值行原样留在正文里（不解析、不剥行）',
-      r3.reply.includes(VAR_LINE_TAG) && r3.varChanges.length === 0)
-    ok('关掉开关后变量一个都不动', r3.session.vars?.values.affection === 53)
-
-    // 格式没对上：正文原样保留，只记一笔"没记账"
-    const r4 = await runFreeTurn(
-      saved, [su], '再说什么。', {},
-      { chatFn: makeFakeChat('好。\n〔数值〕随便写点什么').chatFn, settings: st },
-    )
-    ok('🔴 认不出的数值行原样保留（绝不吞正文）',
-      r4.reply.includes('随便写点什么') && r4.varChanges.length === 0, JSON.stringify(r4.reply))
-    ok('但会标记「解析失败」供界面提示', r4.varParseFailed === true)
-
-    // 提示词层：开关打开才有数值块（关掉 = 一个字都不加，等价于 0 成本）
-    const sysOn = await buildFreeSystem(saved, [su], st)
-    const sysOff = await buildFreeSystem(saved, [su], offSt)
+    const sysOn = await buildFreeSystem(session, [su], st)
+    const sysOff = await buildFreeSystem(session, [su], offSt)
     ok('🔴 开关打开 → 提示词里带数值块', sysOn.system.includes('〖本场数值〗'))
-    // ⚠️ 判据是「变量块」而不是 VAR_LINE_TAG：协议 v1.6 起正文里本来就有一句
-    //    许可〔数值〕记账行的话（那是固定成本，与开关无关），拿它判会永远为真。
     ok('🔴 开关关掉 → 不加变量块、不提当前值（0 字成本）',
-      !sysOff.system.includes('〖本场数值〗') && !sysOff.system.includes('现在的值：'))
+      !sysOff.system.includes('〖本场数值〗') && !sysOff.system.includes('你此刻的状态：'))
     ok('关掉时 system 确实更短', sysOff.system.length < sysOn.system.length,
       `${sysOff.system.length} vs ${sysOn.system.length}`)
+    const withPlace = { ...session, vars: { ...emptyVars(), values: { ...emptyVars().values, place: '教学楼三层楼道' } } }
+    const sysPlace = await buildFreeSystem(withPlace, [su], st)
+    ok('🔴 当前地点每轮都在这段状态里（场景瞬移的唯一防线）', sysPlace.system.includes('当前地点 教学楼三层楼道'))
+    ok('数值块排在协议**之后**（离生成点最近）',
+      sysPlace.system.indexOf('〖本场数值〗') > 0)
   }
 
   ok('VAR_DEFS 一共 5 项（老大定的集合，改动要同步提示词与界面）', VAR_DEFS.length === 5)
-  ok('DEFAULT_TAVERN_VARS 与文档一致（每 3 轮 / ±5）',
-    DEFAULT_TAVERN_VARS.everyTurns === 3 && DEFAULT_TAVERN_VARS.maxStep === 5)
+  ok('DEFAULT_TAVERN_VARS 只剩开关 + 幅度（更新间隔已随「每轮记账」下线）',
+    DEFAULT_TAVERN_VARS.enabled === true && DEFAULT_TAVERN_VARS.maxStep === 5 &&
+    !('everyTurns' in DEFAULT_TAVERN_VARS))
+  ok('turnSeq = 已有 AI 回复数 + 1',
+    turnSeqOf([{ role: 'user' }, { role: 'assistant' }, { role: 'user' }]) === 2)
 
-  // ---------- 8) 作者手改 / 重置（C2 第二步的界面侧） ----------
+  // ---------- 8) 作者手改 / 重置（界面侧） ----------
   {
     const base: VarValues = { affection: 50, trust: 50, progress: 0, mood: '', place: '' }
 
@@ -286,9 +267,8 @@ async function main() {
     const mood = setVarManually(base, 'mood', '微妙的动摇而且这句话很长很长')
     ok('文本变量按上限截断', String(mood.values.mood).length === 12, String(mood.values.mood))
 
-    // 重置
     const dirty: VarValues = { affection: 12, trust: 88, progress: 40, mood: '烦', place: '天台' }
-    const keys = varsEnabledKeys({ ...DEFAULT_TAVERN_SETTINGS, vars: { enabled: true, off: [], everyTurns: 3, maxStep: 5 } })
+    const keys = varsEnabledKeys({ ...DEFAULT_TAVERN_SETTINGS, vars: { enabled: true, off: [], maxStep: 5 } })
     const r = resetVarValues(dirty, keys as VarKey[])
     ok('重置回初始值（好感/信任 50、进度 0）',
       r.values.affection === 50 && r.values.trust === 50 && r.values.progress === 0,
@@ -297,26 +277,13 @@ async function main() {
     ok('重置记下 5 笔变更', r.changes.length === 5, String(r.changes.length))
     ok('已在初始值时重置是空操作', resetVarValues(emptyVars(keys as VarKey[]).values, keys as VarKey[]).changes.length === 0)
 
-    // 来源与重说：作者的手是最终裁决
-    const afterAi = recordVarChanges(emptyVars(), [{ key: 'affection', label: '好感', from: 50, to: 56, delta: 6 }], 3, 'ai')
-    ok('模型改动会留前值（供重说撤销）', !!afterAi.prev && afterAi.prev.values.affection === 50)
-    ok('日志标了来源 ai 与轮次', afterAi.log[0].source === 'ai' && afterAi.log[0].turnSeq === 3)
-    const undone = undoLastVarChanges(afterAi)
-    ok('重说能退回模型那次变化', undone?.values.affection === 50 && undone?.prev === undefined)
-
-    // 手改之后重说：**不该**把作者改的数翻回去
     const manual = recordVarChanges(
-      { ...afterAi, values: { ...afterAi.values, affection: 30 } },
+      { ...emptyVars(), values: { ...emptyVars().values, affection: 30 } },
       [{ key: 'affection', label: '好感', from: 56, to: 30, delta: -26 }],
       4, 'manual',
     )
-    ok('手改会清掉待撤销的前值', manual.prev === undefined)
     ok('手改的日志来源标 manual', manual.log[manual.log.length - 1].source === 'manual')
-    const afterUndo = undoLastVarChanges(manual)
-    ok('🔴 手改之后点重说，数值保持作者改的值（不被翻回 56）',
-      afterUndo?.values.affection === 30, String(afterUndo?.values.affection))
 
-    // 最近差量文案
     ok('最近差量显示带符号的增量', lastChangeText(manual, 'affection') === '-26', lastChangeText(manual, 'affection'))
     const textLog = recordVarChanges(emptyVars(), [{ key: 'place', label: '当前地点', from: '', to: '天台' }], 5)
     ok('文本变量没有差量时给「已填写」', lastChangeText(textLog, 'place') === '已填写', lastChangeText(textLog, 'place'))

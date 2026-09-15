@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type MutableRefObject } from 'react'
 
 interface Props {
   value: string
@@ -23,6 +23,11 @@ interface Props {
   autoFocus?: boolean
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
   title?: string
+  /**
+   * 外部 ref：需要程序化聚焦 / 选中一段文本时传（酒馆的快捷指令预填要用 ——
+   * 预填后把「该改的那一段」选中，作者直接改就行）。
+   */
+  inputRef?: MutableRefObject<HTMLTextAreaElement | null>
 }
 
 /**
@@ -35,9 +40,9 @@ interface Props {
 export default function AutoTextarea({
   value, onChange, placeholder, className = '',
   minRows, minHeight, maxHeight = 360, textClass = 'text-[12px]',
-  disabled, autoFocus, onKeyDown, title,
+  disabled, autoFocus, onKeyDown, title, inputRef,
 }: Props) {
-  const ref = useRef<HTMLTextAreaElement>(null)
+  const ref = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     const ta = ref.current
@@ -54,7 +59,7 @@ export default function AutoTextarea({
 
   return (
     <textarea
-      ref={ref}
+      ref={el => { ref.current = el; if (inputRef) inputRef.current = el }}
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
