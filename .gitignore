@@ -27,3 +27,6 @@ tests/.*.mjs
 Thumbs.db
 Desktop.ini
 *.log
+
+# 临时脚本与中间产物（审计/修复用的一次性补丁器、报告草稿）
+.workbuddy/tmp/
