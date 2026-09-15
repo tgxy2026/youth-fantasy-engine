@@ -440,9 +440,20 @@ if (CLOUD_FILE_SYNC) {
     try {
       const ok = await applyDesktopCloudFromPersisted()
       if (ok) {
+        // 🔴 切换前必须先确认云端**真的**有数据。
+        //    同步目录里的 .yfe 被删掉、或还没从网盘客户端下载下来时，读到的是
+        //    rev=0 + 空 stores —— 会被当成「空库」直接切过去，界面瞬间变成空项目，
+        //    进而触发示范项目播种、反写覆盖云端快照（用户看到的是"我的书全没了"）。
+        //    这与 enableDesktopCloudSync 的空快照守卫同构：那边是「空则播种」，这边是「空则不切」。
+        let empty = true
+        try {
+          const snap = await pullDesktopSnapshot()
+          empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
+        } catch {
+          return // 拉取失败（文件损坏 / 网盘未就绪）→ 保持本地存储，绝不把界面切空
+        }
+        if (empty) return // 云端为空：留在本地；用户显式开启同步时才播种上传
         ops = desktopCloudFileStore
-        // 主动握手一次：拉取远端快照（云端文件可能来自其它设备），失败（如文件损坏）回退本地。
-        void pullDesktopSnapshot().catch(() => {})
       }
     } catch {
       /* 持久化读取失败 → 保持本地存储 */
