@@ -481,7 +481,7 @@ export const TABS: TabDef[] = [
 
 {
   id: 'geomaps', name: '地图', group: '世界构建', type: 'table',
-  description: '手绘地图的清单。每张地图是一块**独立画布**：有自己的坐标系与格子档位，互不干扰。《地理风物》里每条地点通过「所属地图」归属到某一 张图上，在地图编辑里按图切换显示；同一张图内的格子形状互不重叠，不同图之间完全无关。',
+  description: '手绘地图的清单（内部数据表：不单独出现在侧栏，增删改都在「地图编辑」页左侧列表里完成）。每张地图是一块**独立画布**：有自己的坐标系与格子档位，互不干扰。《地理风物》里每条地点通过「所属地图」归属到某张图上，在地图编辑里按图切换显示；同一张图内的格子形状互不重叠，不同图之间完全无关。',
   columns: [
     c('编号'), c('名称'),
     c('每格公里', ['1', '10']),
@@ -955,7 +955,32 @@ export function forcedByDeps(enabled: Set<string>): Set<string> {
 }
 
 /** 判断某功能（页签 / 编辑器）在指定可见性上下文下是否可见（启用） */
+/**
+ * 内部表：**有数据、有 TabDef，但永不作为页签出现**在任何列表里。
+ *
+ * 「地图」表（geomaps）即此类 —— 它的定位是纯数据：给地图编辑页提供地图清单，
+ * 并让《地理风物》的「所属地图」引用列能解析出候选值。
+ * 地图的增删改**全部在地图编辑页左侧的列表里完成**，若是再单开一个表格页，
+ * 作者只会困惑「到底该在哪管地图」（历史上真的同时出现过「地图」与「地图编辑」两个页签）。
+ *
+ * 🔴 不要把内部表从 TABS 里删掉：`getTab('geomaps')` 与 `cr(..., 'geomaps', '名称')`
+ *    的引用解析都依赖它存在于 TABS，只是不该出现在页签列表里。
+ * ⚠️ 走 tabVisible 的地方（侧栏 / 工作面板 / 引导页 / 设定检索 / 全文检索 / AI 上下文）
+ *    会自动隐藏；**不经 tabVisible 的遍历点要自行用 isInternalTab 过滤**
+ *    （已知：NovelEditor 的正文高亮 —— 否则「默认地图」会被当成专名在正文里高亮）。
+ * ⚠️ dataHealth 的表格遍历**故意不过滤**：它要读到 geomaps 的值才能校验
+ *    《地理风物》「所属地图」的悬空引用，滤掉会造成误报。
+ */
+const INTERNAL_TAB_IDS = new Set<string>(['geomaps'])
+
+/** 是否为内部表（有数据、无页签）—— 供不走 tabVisible 的遍历点过滤用 */
+export function isInternalTab(tabId: string): boolean {
+  return INTERNAL_TAB_IDS.has(tabId)
+}
+
 export function tabVisible(tabId: string, ctx: VisCtx): boolean {
+  // 内部表永不作为页签出现（但数据仍可被读写、被引用）
+  if (INTERNAL_TAB_IDS.has(tabId)) return false
   // 卷台账（chapter-vol-*）跟随「章节总表」的可见性：自定义项目里启用了章节总表即显示各卷子表
   if (isVolumeLedgerTab(tabId)) tabId = 'chapter-master'
   // 自定义项目按启用功能集合过滤；完整项目全功能可见（旧版精简/极简类型已移除）
