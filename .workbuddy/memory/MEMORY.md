@@ -9,7 +9,7 @@
 
 ## 身份 / 版本 / 封装
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；存储经 StoreOps；dev 5199。
-- 现 2.1.0。版本唯一源 `package.json`；dev 靠 `injectAppVersion()` 注入 `APP_VERSION_LABEL`。
+- 现 **2.1.1**。版本唯一源 `package.json`；dev 靠 `injectAppVersion()` 注入 `APP_VERSION_LABEL`。⚠️ `package-lock.json` 的**根版本会长期落后**（2.1.0 那版还停在 2.0.1），升版本时单独看一眼；文件里也有依赖自己的同号版本，**禁止全局替换**。
 - 🔴🔴 封装**全程无沙箱跑**（沙箱会拦 dist rename / 写 release / 删目录）。rcedit 间歇失败已由 `scripts/after-pack.cjs`（afterPack）根治 —— 它失败时**退出码仍 0**，只认 stderr `Fatal error`；验收查 exe 含 `青春幻想引擎开发组`。`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`。详见 skill §7。
 - 🔴🔴 **只做桌面版**：无 WEB/PORTABLE；`StoreOps`+`PortableData` 在 `storeOps.ts`，版本号在 `env.ts`。云盘同步＝唯一跨设备途径。
 
@@ -26,14 +26,15 @@
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录。🔴 图片字段先压缩再入库。换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属 → `makeCloudStoreWrapper` 必须短路到 local。🔴🔴 桌面读数据文件失败必须**锁写盘**（`main.cjs` 三态 + `DesktopWriteLockBanner`）。
 - 🔄 **两同步入口别混**：①改数据文件位置＝明文 JSON 进云盘（文件级覆盖、apiKey 明文上云）；②云盘文件同步＝加密 `.yfe`＋记录级合并＋每日备份＋兜底。🔴 用 ②。
+- 🔴⚠️ **2.1.1 审计发现、尚未修**（`docs/2.1.1-审计修复记录.md` §四）：换同步目录到空目录会写入空快照（`configure()` 先清 cache，播种读的还是同一个被清空的 store）；关同步会丢防抖窗口内的改动；云端载荷解密失败被静默覆盖；IPC 写失败被吞→状态永远「同步中」；启动时云端为空却仍显示「已开启」。动之前先跟老大确认。
 
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，分类色盘不要主题化。
 - 🔴 SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 回退黑）。设置项排版＝标题→输入→说明最后；复制统一 `copyText()`。
-- 🔴🔴 `<html>` 界面缩放（默认跟随窗口）：① 量尺寸算回 CSS 值一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`；② 🔴 **zoom 不缩放 vh** → `.h-screen`/`.min-h-screen` 已在 index.css 折回 `calc(100vh / var(--ui-zoom,1))`（`applyZoom()` 写 `--ui-zoom`），新增 vh 照此办。未修：拖拽未除 zoom（3 处）。
+- 🔴🔴 `<html>` 界面缩放（默认跟随窗口）：① 量尺寸算回 CSS 值一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`；② 🔴 **zoom 不缩放 vh** → CSS 类由 index.css 折（`.h-screen`/`.min-h-screen`），**内联长度一律走 `foldVh()`**（`theme.ts`，Modal 的 maxHeight/topOffset/maxWidth 已用它；不折的表现是「弹窗比视口还高、页脚按钮点不到」）。⚠️ 内部滚动区仍有约 16 处裸 vh 未折（只偏高 32%，未致不可达）；③ SVG 滚轮缩放的锚点与拖拽都要除 zoom。
 - 🔴 按对侧高度定高：flex item `min-height:auto` 会顶回定高 → 加 `overflow-hidden`；别同写 `flex-1`+`height`。
 - 🔴 按钮：静止无框别用 `ghost`（→`secondary`）；分段开关 `toggle`+`selected`；行内小操作 `size="xs"`（`danger` 破坏性）。列表选择项不算按钮。
-- 🔴 每页签页头要 `HelpPopover` 问号。头像兜底＝**名字**（`avatarLabel` 封顶 2 字，同姓也分得清），不是姓氏；有自定义图优先用图。输入：Enter 发送／Shift+Enter 换行，**必挡 `nativeEvent.isComposing`**（中文输入法 Enter 是选字确认）。快捷指令＝**点击只预填不发送**（`TavernQuickBar` 的 `text`/`slot`，预填后聚焦并选中可改段）；用户与 AI 消息**两侧都无气泡框**。剧情推演头像来自项目卡（无头像字段 → 只出首字圆标）。
+- 🔴 每页签页头要 `HelpPopover` 问号。头像兜底＝**名字**（`avatarLabel` 封顶 2 字，同姓也分得清），不是姓氏；自定义图优先。输入：Enter 发送／Shift+Enter 换行，**必挡 `nativeEvent.isComposing`**（输入法 Enter＝选字）。快捷指令＝**点击只预填不发送**（`TavernQuickBar` 的 `text`/`slot`，预填后聚焦并选中可改段）；用户与 AI 消息**两侧都无气泡框**。剧情推演头像来自项目卡（无头像字段 → 只出首字圆标）。
 - 界面文案禁 markdown 星号 → 用「」/（）（演示占位符例外）。同一事别写成互斥分支。
 
 ## AI 层
