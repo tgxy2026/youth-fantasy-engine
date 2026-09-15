@@ -8,6 +8,7 @@
 import {
   toCardFile, parseCardFile, cardFileName, describeWarnings,
   CARD_FILE_SUFFIX, CARD_FILE_MAX_CHARS,
+  toCardBundle, parseCardBundle, CARD_BUNDLE_SUFFIX,
 } from '../src/lib/tavern/cardFile'
 import type { FreeCharacter } from '../src/lib/tavern/types'
 
@@ -110,6 +111,48 @@ function main() {
     ok('非法字符被替换', cardFileName('坏:名*字?').includes('_'))
     ok('空名字有兜底', cardFileName('   ').startsWith('未命名角色'))
     ok('过长名字被截断', cardFileName('长'.repeat(100)).length < 60)
+  }
+
+  // ---------- 6) 批量文件（一个文件装多张卡；同一世界观的一批角色常是一起建的） ----------
+  {
+    const many: FreeCharacter[] = [
+      { ...CARD },
+      { ...CARD, id: 'orig-id-456', name: '楚楠', world: '同一座城里，另一间店。' },
+    ]
+    const bundle = toCardBundle(many, '整批导出测试')
+    ok('批量导出带自己的格式标记', bundle.includes('yfe.taverncards'))
+    ok('批量导出不含本机 id（与单卡同一条纪律）',
+      !bundle.includes('orig-id-123') && !bundle.includes('orig-id-456'))
+    ok('note 写进文件（仅供人看）', bundle.includes('整批导出测试'))
+
+    const r = parseCardBundle(bundle)
+    ok('批量回导成功', r.ok === true, r.ok ? '' : (r as { error: string }).error)
+    if (r.ok) {
+      ok('两张都进来了，顺序不变',
+        r.items.length === 2 && r.items[0].name === '苏念' && r.items[1].name === '楚楠',
+        r.items.map(i => i.name).join('/'))
+      ok('四章内容一字不差', r.items[1].card.world === many[1].world && r.items[1].card.examples === CARD.examples)
+      ok('每张**各自**重生成 id（不会互相撞）',
+        r.items[0].card.importedFrom?.cardId !== r.items[1].card.importedFrom?.cardId)
+      ok('整批无失败项', r.failed.length === 0)
+      ok('note 只是给人看的，没进卡里', !JSON.stringify(r.items).includes('整批导出测试'))
+    }
+
+    // 🔴 坏一张不该连累其余：作者填一次表不容易
+    const mixed = JSON.parse(bundle) as { cards: unknown[] }
+    mixed.cards.splice(1, 0, { name: '   ' })
+    const r2 = parseCardBundle(JSON.stringify(mixed))
+    ok('坏的那张进 failed、好的照常导入',
+      r2.ok === true && r2.items.length === 2 && r2.failed.length === 1 && r2.failed[0].index === 1,
+      r2.ok ? `${r2.items.length} 成功 / ${r2.failed.length} 失败` : r2.error)
+
+    ok('一张都读不出来 → 整体失败（不当成"成功导入 0 张"）',
+      parseCardBundle(JSON.stringify({ cards: [{ name: '' }] })).ok === false)
+    ok('不是 JSON → 拒绝', parseCardBundle('这不是 json').ok === false)
+    ok('缺 cards 数组 → 拒绝且说清楚',
+      (parseCardBundle('{"format":"yfe.taverncards"}') as { error: string }).error.includes('cards'))
+    ok('单卡文件不会被误当批量文件（两条通道互不串）', parseCardBundle(toCardFile(many[0])).ok === false)
+    ok('批量后缀与单卡后缀区分开', CARD_BUNDLE_SUFFIX !== CARD_FILE_SUFFIX && CARD_BUNDLE_SUFFIX.endsWith('.json'))
   }
 
   console.log(`\ntavernCardFile: ${pass} passed, ${fail} failed`)

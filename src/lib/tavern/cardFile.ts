@@ -75,6 +75,55 @@ export type CardFileResult =
 const isStr = (v: unknown): v is string => typeof v === 'string'
 
 /**
+ * 单张卡的校验与归一化 —— `parseCardFile`（单卡文件）与 `parseCardBundle`（批量文件）
+ * **共用这一份**：两处各写一份必然漂移，而「校验口径不一致」是最难查的那类 bug。
+ *
+ * 宽容处：缺字段补空串、旧版本无 format 标记也认（只要结构对）；
+ * 严格处：名称必须非空、结构必须是对象。
+ */
+function normalizeCard(cardRaw: Record<string, unknown>): CardFileResult {
+  const name = isStr(cardRaw.name) ? cardRaw.name.trim() : ''
+  if (!name) return { ok: false, error: '角色卡没有名字' }
+
+  const warnings: string[] = []
+  const profile = (cardRaw.profile && typeof cardRaw.profile === 'object' ? cardRaw.profile : {}) as Record<string, unknown>
+  const conduct = (cardRaw.conduct && typeof cardRaw.conduct === 'object' ? cardRaw.conduct : {}) as Record<string, unknown>
+  const s = (v: unknown) => (isStr(v) ? v : '')
+
+  const world = s(cardRaw.world)
+  const examples = s(cardRaw.examples)
+  if (!world.trim()) warnings.push('缺「第 1 章 · 世界」')
+  if (!examples.trim()) warnings.push('缺「第 4 章 · 示例对话」（这一章最影响演出效果）')
+
+  const profileOut = {
+    externals: s(profile.externals), core: s(profile.core), speech: s(profile.speech),
+    relations: s(profile.relations), cannot: s(profile.cannot), knowledge: s(profile.knowledge),
+  }
+  const conductOut = {
+    perspective: s(conduct.perspective), bottomLine: s(conduct.bottomLine),
+    paceLock: s(conduct.paceLock), rating: s(conduct.rating),
+  }
+  if (!profileOut.core.trim()) warnings.push('缺「2.2 内核」')
+  if (!conductOut.perspective.trim()) warnings.push('缺「视角与人称」')
+
+  const avatar = s(cardRaw.avatar)
+  return {
+    ok: true,
+    warnings,
+    card: {
+      name,
+      avatar: avatar || undefined,
+      world,
+      profile: profileOut,
+      conduct: conductOut,
+      examples,
+      // 溯源：导入也记一笔来源（便于以后追「这张卡从哪来」）
+      importedFrom: { projectId: '', cardId: `import:${uid()}`, at: Date.now() },
+    },
+  }
+}
+
+/**
  * 解析并校验单文件。
  * 宽容处：缺字段补空串、旧版本无 format 标记也认（只要结构对）；
  * 严格处：名称必须非空、大小必须在上限内、card 必须是对象。
@@ -98,46 +147,101 @@ export function parseCardFile(text: string): CardFileResult {
     return { ok: false, error: `不是酒馆模式角色卡（format=${obj.format}）` }
   }
   const card = (obj.card && typeof obj.card === 'object' ? obj.card : obj) as Record<string, unknown>
+  return normalizeCard(card)
+}
 
-  const name = isStr(card.name) ? card.name.trim() : ''
-  if (!name) return { ok: false, error: '角色卡没有名字' }
+// ==================== 批量文件（一个文件里装多张卡）====================
+//
+// 【为什么单独一种格式】同一世界观的一批角色往往是**一起建的**（一次填表、一次导入）。
+// 让作者导出 N 个文件再逐个导入，既蠢又容易漏；一个文件装整批、一次导入完，才对得上真实用法。
+//
+// 【宽容尺度与单卡一致】能救的救、不能救的如实报出：第 3 张坏了，不该让前两张也白导
+// （作者填一次表不容易）。所以返回的是「成功 items + 失败 failed」两段，而不是一个 ok/fail。
 
-  const warnings: string[] = []
-  const profile = (card.profile && typeof card.profile === 'object' ? card.profile : {}) as Record<string, unknown>
-  const conduct = (card.conduct && typeof card.conduct === 'object' ? card.conduct : {}) as Record<string, unknown>
-  const s = (v: unknown) => (isStr(v) ? v : '')
+/** 批量文件的后缀（导出整批时用它收尾，与单卡的 .taverncard.json 区分开） */
+export const CARD_BUNDLE_SUFFIX = '.taverncards.json'
+/** 批量文件的格式标记（与单卡区分开，避免把整批文件当单卡解析） */
+const BUNDLE_FORMAT = 'yfe.taverncards'
+/** 批量文件上限：一批几十张卡也够用；再大就该拆文件了 */
+export const CARD_BUNDLE_MAX_CHARS = 4 * 1024 * 1024
 
-  const world = s(card.world)
-  const examples = s(card.examples)
-  if (!world.trim()) warnings.push('缺「第 1 章 · 世界」')
-  if (!examples.trim()) warnings.push('缺「第 4 章 · 示例对话」（这一章最影响演出效果）')
+export type CardBundlePayload = {
+  format: string
+  version: number
+  exportedAt: number
+  app: string
+  /** 整批的说明（**仅供人看**，不参与导入）—— 例如这一批共用的世界观出处 */
+  note?: string
+  cards: Array<Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'>>
+}
 
-  const profileOut = {
-    externals: s(profile.externals), core: s(profile.core), speech: s(profile.speech),
-    relations: s(profile.relations), cannot: s(profile.cannot), knowledge: s(profile.knowledge),
+/** 批量导入里的一张（已归一化、已重生成 id） */
+export type CardBundleItem = {
+  name: string
+  card: Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'>
+  warnings: string[]
+}
+
+export type CardBundleResult =
+  | { ok: true; items: CardBundleItem[]; failed: { index: number; reason: string }[] }
+  | { ok: false; error: string }
+
+/**
+ * 解析批量文件。**逐张独立校验**：坏的进 `failed`（带序号，便于对着表改），
+ * 好的进 `items`；一张都读不出来才算整体失败。
+ */
+export function parseCardBundle(text: string): CardBundleResult {
+  const raw = String(text ?? '')
+  if (raw.length > CARD_BUNDLE_MAX_CHARS) {
+    return { ok: false, error: `文件过大（超过 ${Math.round(CARD_BUNDLE_MAX_CHARS / 1024 / 1024)} MB），建议拆成几个文件` }
   }
-  const conductOut = {
-    perspective: s(conduct.perspective), bottomLine: s(conduct.bottomLine),
-    paceLock: s(conduct.paceLock), rating: s(conduct.rating),
+  let data: unknown
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    return { ok: false, error: '不是合法的 JSON 文件' }
   }
-  if (!profileOut.core.trim()) warnings.push('缺「2.2 内核」')
-  if (!conductOut.perspective.trim()) warnings.push('缺「视角与人称」')
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, error: '批量文件的内容不是对象' }
+  }
+  const obj = data as Record<string, unknown>
+  if (isStr(obj.format) && obj.format !== BUNDLE_FORMAT) {
+    return { ok: false, error: `不是批量角色卡文件（format=${obj.format}）` }
+  }
+  const list = obj.cards
+  if (!Array.isArray(list) || list.length === 0) {
+    return { ok: false, error: '批量文件里没有 cards 数组（或它是空的）' }
+  }
 
-  const avatar = s(card.avatar)
-  return {
-    ok: true,
-    warnings,
-    card: {
-      name,
-      avatar: avatar || undefined,
-      world,
-      profile: profileOut,
-      conduct: conductOut,
-      examples,
-      // 溯源：导入也记一笔来源（便于以后追「这张卡从哪来」）
-      importedFrom: { projectId: '', cardId: `import:${uid()}`, at: Date.now() },
-    },
+  const items: CardBundleItem[] = []
+  const failed: { index: number; reason: string }[] = []
+  list.forEach((c, i) => {
+    const r = normalizeCard((c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+    if (r.ok) items.push({ name: r.card.name, card: r.card, warnings: r.warnings })
+    else failed.push({ index: i, reason: r.error })
+  })
+  if (items.length === 0) {
+    return { ok: false, error: `这批 ${list.length} 张卡一张都读不出来：${failed[0]?.reason ?? '结构不对'}` }
   }
+  return { ok: true, items, failed }
+}
+
+/** 导出整批（与单卡导出对称，供「导出全部」用） */
+export function toCardBundle(cards: FreeCharacter[], note = '', now = Date.now()): string {
+  const payload: CardBundlePayload = {
+    format: BUNDLE_FORMAT,
+    version: FORMAT_VERSION,
+    exportedAt: now,
+    app: 'novel-studio',
+    ...(note.trim() ? { note: note.trim() } : {}),
+    cards: cards.map(c => {
+      // 与单卡导出同一条纪律：本机 id 与溯源标记**不进导出文件**
+      const { id, createdAt, updatedAt, seededFrom, ...rest } = c
+      void id; void createdAt; void updatedAt; void seededFrom
+      return rest
+    }),
+  }
+  return JSON.stringify(payload, null, 2)
 }
 
 /** 生成一张空白的导入结果提示（供 UI 复用文案，避免两处措辞不一致） */

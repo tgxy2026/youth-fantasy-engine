@@ -28,7 +28,7 @@ import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
 import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem } from '../lib/tavern/types'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
-import { toCardFile, parseCardFile, cardFileName, describeWarnings } from '../lib/tavern/cardFile'
+import { toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName, CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
 import { isSeedCard, resetCardToSeed } from '../lib/tavern/seedCards'
 import { coldStartMemory, draftMemoryFromCard } from '../lib/tavern/summarize'
@@ -371,19 +371,101 @@ export default function TavernCard() {
     }
   }
 
-  const importCard = async (file: File) => {
+  /**
+   * 导出**全部**角色卡到一个文件。
+   * 与「导入 JSON」的批量入口对称 —— 整批导进来的，也该能整批带走（备份 / 分享给同好）。
+   */
+  const exportAll = async () => {
     try {
-      const r = parseCardFile(await file.text())
-      if (!r.ok) { showToast(r.error, 'error'); return }
-      // 导入时已重生成新 id，不会覆盖已有卡
-      const created = await store.createFreeChar(r.card)
-      // 导入的卡不该是空记忆：立刻依据卡片生成一版初版
-      const how = await seedMemory(created)
+      const cards: FreeCharacter[] = []
+      for (const it of list) {
+        const c = await store.getFreeChar(it.id)
+        if (c) cards.push(c)
+      }
+      if (!cards.length) { showToast('还没有可导出的角色卡', 'info'); return }
+      const blob = new Blob([toCardBundle(cards, `${cards.length} 张角色卡`)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `角色卡全集-${new Date().toISOString().slice(0, 10)}${CARD_BUNDLE_SUFFIX}`
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast(`已导出 ${cards.length} 张角色卡到一个文件`)
+    } catch (e) {
+      showToast(`导出失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
+  /**
+   * 导入角色卡 —— 三种情形一次搞定：
+   *   ① 一个文件里一张卡（老的 `.taverncard.json`）
+   *   ② 一个文件里整批（`.taverncards`，同一世界观的角色常是一起建的）
+   *   ③ 一次选中多个文件（逐个按上面两种识别）
+   *
+   * 失败项照实报出，但**不影响其余卡入库** —— 作者填一次表不容易，
+   * 不该因为第 3 张坏了把前两张也丢掉（与解析层「能救的救」同一条纪律）。
+   */
+  const importCards = async (picked: File[]) => {
+    if (!picked.length) return
+    try {
+      const batch: CardBundleItem[] = []
+      const failed: string[] = []
+      for (const f of picked) {
+        let text = ''
+        try { text = await f.text() } catch { failed.push(`${f.name}：读不出来`); continue }
+        // 先按批量文件试（format 标记能认出来），不认再按单卡处理
+        const many = parseCardBundle(text)
+        if (many.ok) {
+          batch.push(...many.items)
+          for (const x of many.failed) failed.push(`${f.name} 第 ${x.index + 1} 张：${x.reason}`)
+          continue
+        }
+        const one = parseCardFile(text)
+        if (one.ok) batch.push({ name: one.card.name, card: one.card, warnings: one.warnings })
+        else failed.push(`${f.name}：${one.error}`)
+      }
+
+      if (!batch.length) {
+        showToast(failed[0] ?? '没有可导入的角色卡', 'error')
+        return
+      }
+
+      const created: FreeCharacter[] = []
+      const warnOf = new Map<string, string[]>()
+      for (const it of batch) {
+        try {
+          const c = await store.createFreeChar(it.card)
+          // 批量导入**不逐张调 AI**：N 张就是 N 次模型调用，慢且费额度。
+          // 先用离线摘录兜底，导入后可在每张卡上点「生成初版记忆」升级成 AI 整理版。
+          await store.saveMemory(draftMemoryFromCard(c))
+          warnOf.set(c.id, it.warnings)
+          created.push(c)
+        } catch {
+          failed.push(`${it.name}：写库失败`)
+        }
+      }
+
       await load()
-      await open(created.id)
-      setGaps(r.warnings)
-      const base = r.warnings.length ? `已导入，但${describeWarnings(r.warnings)}` : '已导入，结构完整'
-      showToast(`${base} · 初版记忆已生成（${how === 'ai' ? 'AI 整理' : '直接摘录'}）`, r.warnings.length ? 'info' : 'success')
+      const last = created[created.length - 1]
+      if (last) {
+        await open(last.id)
+        setGaps(warnOf.get(last.id) ?? [])
+      }
+
+      const warnCount = created.filter(c => (warnOf.get(c.id) ?? []).length > 0).length
+      if (created.length === 1) {
+        const w = warnOf.get(created[0].id) ?? []
+        showToast(
+          w.length ? `已导入，但${describeWarnings(w)}` : '已导入，结构完整 · 初版记忆已按角色卡摘录',
+          w.length ? 'info' : 'success')
+      } else {
+        const bits = [`已导入 ${created.length} 张`]
+        if (warnCount) bits.push(`${warnCount} 张结构有缺（导入后可补）`)
+        if (failed.length) bits.push(`${failed.length} 项失败`)
+        bits.push('初版记忆已按角色卡摘录，可在每张卡上点「生成初版记忆」升级')
+        showToast(bits.join(' · '), failed.length ? 'info' : 'success')
+      }
+      if (failed.length) console.warn('[tavern] 角色卡导入失败明细：', failed)
     } catch (e) {
       showToast(`导入失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
@@ -605,22 +687,35 @@ export default function TavernCard() {
                 从小说角色导入
               </Button>
               <div className="flex gap-1.5">
-                <Button variant="secondary" size="sm" className="flex-1 text-[11.5px]" onClick={() => fileRef.current?.click()}>
+                <Button
+                  variant="secondary" size="sm" className="flex-1 text-[11.5px]"
+                  onClick={() => fileRef.current?.click()}
+                  title="支持单卡文件、整批文件（一个文件里多张卡），也可以一次选中多个文件"
+                >
                   导入 JSON
                 </Button>
                 <Button variant="secondary" size="sm" className="flex-1 text-[11.5px]" disabled={!draft} onClick={exportCard}>
                   导出 JSON
                 </Button>
               </div>
+              <Button
+                variant="secondary" size="sm" className="w-full text-[11.5px]"
+                disabled={list.length === 0}
+                onClick={() => void exportAll()}
+                title="把全部角色卡打包成一个文件（整批备份 / 分享给同好），与「导入 JSON」的批量入口对称"
+              >
+                导出全部（{list.length} 张）
+              </Button>
               <input
                 ref={fileRef}
                 type="file"
                 accept=".json,application/json"
+                multiple
                 className="hidden"
                 onChange={e => {
-                  const f = e.target.files?.[0]
-                  if (f) void importCard(f)
-                  e.target.value = '' // 允许连续导入同一个文件
+                  const picked = Array.from(e.target.files ?? [])
+                  if (picked.length) void importCards(picked)
+                  e.target.value = '' // 允许连续导入同一批文件
                 }}
               />
               <p className="text-[10.5px] text-ink-600 leading-relaxed px-1">
