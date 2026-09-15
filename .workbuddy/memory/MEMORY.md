@@ -10,7 +10,7 @@
 ## 身份 / 版本 / 封装
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；三存储经 StoreOps；dev 5199。
 - 现 2.1.0（约每月一版，只改号）。版本唯一源 `package.json`；dev 靠 `injectAppVersion()` 注入 `APP_VERSION_LABEL`。
-- 🔴 封装：`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`（勿指 eb-cache/electron-zip）；两脚本有体积闸门。NSIS perMachine:false＋allowToChangeInstallationDirectory:false。
+- 🔴🔴 封装**全程无沙箱跑**（沙箱会拦 dist rename / 写 release / 删目录）。rcedit 间歇失败已由 `scripts/after-pack.cjs`（afterPack 钩子，pack 后 NSIS 前，重试+校验）根治 —— 它失败时**退出码仍 0**，只认 stderr `Fatal error`；验收查 exe 含 `青春幻想引擎开发组`。`ELECTRON_CACHE` 指 `AppData/Local/electron/Cache`；NSIS perMachine:false＋不可改安装目录。详见 skill §7。
 - 🔴🔴 **只做桌面版**（清理已完成）：无 WEB/PORTABLE；`StoreOps`+`PortableData` 已独立到 `storeOps.ts`（原在 portable.ts），版本号在 `env.ts`。云盘同步＝唯一跨设备途径（`syncCore` 保留）。
 
 ## 架构红线
@@ -19,7 +19,7 @@
 - ⚠️ `DESKTOP` 是**运行时探测**（读 `window.electronStore`）→ **dev 浏览器恒 false**：`DataDock` 门控全假时不渲染，dev 看不到同步入口属正常。
 - 左下角只准一个浮层 `DataDock`；项目内禁全局 fixed 浮层。种子键：卡片 `模块::字段`、表格=列名；改种子必跑 `seed-schema-check.mjs`。
 - 🔴 编辑器双图层：高亮开时文字全来自叠层。① 盒模型逐项一致；② 叠层重建归零 scrollTop → 触发点必 `useLayoutEffect` 回填；③ 只走 `scanRefHighlight`。
-- 🗺 **多地图已落地（方案 B）**：新表 `geomaps`（前缀 MAP）＋ geography 的 `所属地图` 引用列；格档**按图**存在地图行；`migrateGeoMaps` 建「默认地图」+回填；🔴 删图不删地点（退回第一张）、改图名须连带改归属。
+- 🗺 **多地图已落地（方案 B）**：新表 `geomaps`（前缀 MAP）＋ geography 的 `所属地图` 列；格档**按图**存；`migrateGeoMaps` 建「默认地图」+回填；🔴 删图不删地点、改图名须连带改归属。
 
 ## 存储 / 同步（丢数据风险）
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录。🔴 图片字段先压缩再入库。换设备前先关软件＋等同步完。
@@ -28,11 +28,11 @@
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`，分类色盘不要主题化。
 - 🔴 SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 静默回退黑）。设置项排版＝标题→输入区→说明最后；复制统一 `copyText()`。
-- 🔴🔴 `<html>` 界面缩放（默认 108%）：凡「量尺寸算回 CSS 值」一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`。未修：GeoMapEditor:216；拖拽未除 zoom（TableSheet:257/PlotCanvas:235/useSvgPanZoom:115）。
+- 🔴🔴 `<html>` 界面缩放（默认 108%）：凡「量尺寸算回 CSS 值」一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`。未修：GeoMapEditor:216、拖拽未除 zoom（3 处）。
 - 🔴 按对侧高度定高：flex item `min-height:auto` 会顶回定高 → 加 `overflow-hidden`；别同写 `flex-1`+`height`。
 - 🔴 按钮：静止无框别用 `ghost`（酒馆页签→`secondary`）；分段开关 `toggle`+`selected`；行内小操作 `size="xs"`（`danger` 破坏性）。列表选择项不算按钮。
 - 🔴 每个页签页头都要 `HelpPopover` 问号指引。
-- 界面文案禁 markdown 星号 → 用「」/（）（例外：演示 markdown 占位符）。同一件事的多个信息别写成互斥分支。
+- 界面文案禁 markdown 星号 → 用「」/（）（例外：演示占位符）。同一事别写成互斥分支。
 
 ## AI 层
 - 🔴 解析统一 `aiParse.ts`；禁裸 `JSON.parse`。温度不手填：结构化传 `{json:true}`→0.3；创意类不传→0.85。
@@ -44,13 +44,13 @@
 - 服务器 `154.8.178.240`（ubuntu+免密 sudo，SSH `yfe_test_server`）；站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务 → 删库 ≠ 下线服务器。
 - 🔴 Nginx SPA 回退：不存在的路径也返 200 + index.html → 不能靠 200 判断上线。
 - `npm run verify`（tsc+lint+test）；runner 每入口单开子进程；ESLint 11 warnings 不能盲改。
-- 🔴 实机验证走 skill `novel-studio-ui-livecheck`；模型链路 `build-test.mjs live-free|live-tavern`；审计扫描器 `.workbuddy/tmp/audit-{scan,dead,graph}.mjs`。⚠️ 实弹断言会静默过时→读日志必 grep ✗；子代理结论必回源码验尸。
+- 🔴 实机验证走 skill `novel-studio-ui-livecheck`；模型链路 `build-test.mjs live-free|live-tavern`。⚠️ 实弹断言会静默过时→读日志必 grep ✗；子代理结论必回源码验尸。
 
 ## 酒馆模式
 - 源自《酒馆模式_完整落地方案》＋`你需要的文件在这里/` 调研稿（冲突以方案为准）。侧栏序＝`TABS` 序。
 - 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景随项目；自由会话+角色卡+记忆日常+面板设置+剧本库跨项目。索引与分条须成对；tavernReports 别漏 deleteProject。
 - 🎛️ 控制面板（八段两列）：tavern.settings；优先级 会话→角色→面板→模式默认。数值真源 paramGuide.ts；预设/档案＝全局 presets/profile。⚠️ mergeDeep 会照抄回已删默认键 → 废弃字段须在 upgradeLegacyDefaults 删。
-- 🔴🔴 控制面板分列按实测高度（§12）：左＝不分局部的设置＋协议（协议须左列**最后一项**，列高同步靠 slice(0,-1)），右＝两种模式手感。段号一动，「N 段设置」文案与 `.workbuddy` 一起改。
+- 🔴🔴 控制面板分列按实测高度（§12）：左＝不分局部的设置＋协议（协议须**最后一项**，列高同步靠 slice(0,-1)），右＝两种模式手感。段号一动，「N 段设置」文案一起改。
 - 🔴 层序：设定→背景设定→这一场(剧本)→记忆→身份→档位→（通用→本场补充）→未带入→协议（钉末尾）。
 - 🔴🔴 上下文预算：historyBudget＝预算−400−整条 system（别传记忆）；contextBudget 16000（三处一致）→ 默认档历史仅约 2600 字。contextSource＝both/digest/raw。空层不占额度。
 - 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（summarize.ts）；设定＝这让 Ta 变成了谁（revise.ts）。拦不住 → findNarrativeOverlap 标 ⚠️。
@@ -72,7 +72,7 @@
 - 🔴 输出规范 v1.3：对白＝纯文本（不含名字）、动作神态＝（）、环境＝【】、状态＝〔〕；输入一律 〖〗/〈〉。
 - ⚠️ `LEGACY_SEED_EXAMPLES` 是**多版本数组**：改 examples 时把被替换的每一版都追加，只留上一代则老库升不上来。
 - 🔴 指代角色一律「Ta」。协议/示范卡改动靠全等锚点升级（`LEGACY_PROTOCOLS`/`upgradeSeedCards()`，幂等），别写逐句补丁。示范卡三张洛汐/苏念/楚楠（都知道对方是谁、不知彼此分量）；`createDemoProject` single-flight。
-- 路线图：需求全完成；C1 向量记忆/C3 立绘/ST 卡导入/TTS 放弃。方案 `docs/剧本与变量-设计方案-讨论稿.md`；审计+修复 `docs/2.1.0-全量审计报告.html`。
+- 路线图：需求全完成；C1 向量记忆/C3 立绘/ST 卡导入/TTS 放弃。方案 `docs/剧本与变量-设计方案-讨论稿.md`；报告 `docs/2.1.0-*`。
 
 ## 环境（Windows + Git Bash）
 - git / npm 都用绝对路径（PortableGit 1.2.0 `cmd/git.exe`；托管 node + `npm/bin/npm-cli.js`），路径写 `C:/` 正斜杠。

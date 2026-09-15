@@ -16,6 +16,11 @@ files:
 
 asar: true
 
+# 补偿 rcedit 的间歇性失败：本机 electron-builder 内置的 rcedit(2019) 写主 exe 版本资源时会
+# 随机报 `Fatal error: Unable to commit changes`，而 electron-builder 重试 3 次后**继续打包**，
+# 导致产物能用但主 exe 是 Electron 默认图标。该钩子在 pack 后、NSIS 前补跑并校验，见脚本注释。
+afterPack: ./scripts/after-pack.cjs
+
 win:
   target:
     - target: nsis
