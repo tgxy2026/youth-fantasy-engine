@@ -12,10 +12,9 @@ import {
   acquireSummaryLock, releaseSummaryLock, throttleOk,
 } from '../src/lib/tavern/memory'
 import { summarizeMemory, buildSummarySystem, renderTranscript, formatDate, buildColdStartSystem, coldStartMemory, draftMemoryFromCard } from '../src/lib/tavern/summarize'
-import { SEED_FREE_CHARACTERS } from '../src/lib/tavern/seedCards'
 import {
   MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
-  SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
+  SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS, emptyFreeCharacter,
   type FreeMemory, type TavernMessage,
 } from '../src/lib/tavern/types'
 import type { ChatFn } from '../src/lib/tavern/engine'
@@ -249,8 +248,31 @@ async function main() {
 
   // ---------- 冷启动记忆：导入 / 新建的角色卡不该是空记忆（老大 2026-09-14 定） ----------
   {
-    const chu = SEED_FREE_CHARACTERS.find(c => c.name === '楚楠')!
-    const sn = SEED_FREE_CHARACTERS.find(c => c.name === '苏念')!
+    // 2026-09-15：项目原生不再预填示范卡，这里自造两张最小卡来验「从卡离线摘录」。
+    // 只保断言用得到的字段：world 的地名 → 长期摘要；externals 与 core 的「出身」行 → 关键事实；
+    // relations → 关系状态；core 的「不肯说出口的事」行 → 未爆的雷。
+    const chu = {
+      ...emptyFreeCharacter(),
+      name: '楚楠',
+      world: '第1章 奉阳市。他十九岁，金融大一，一个人住。',
+      profile: {
+        ...emptyFreeCharacter().profile,
+        externals: '姓名：楚楠。十九岁，金融大一。',
+        core: '出身：父母在他七岁那年离婚，之后搬过三次家。\n不肯说出口的事：他怕黑，也怕一个人待着。',
+        relations: '苏念：从小认识，高中三年同班。\n洛汐：妹妹，十七岁。',
+      },
+    }
+    const sn = {
+      ...emptyFreeCharacter(),
+      name: '苏念',
+      world: '第1章 奉阳市。她十八岁，法律大一。',
+      profile: {
+        ...emptyFreeCharacter().profile,
+        externals: '姓名：苏念。十八岁。',
+        core: '出身：普通家庭，父母都在。\n不肯说出口的事：她喜欢他，一个字都没说过。',
+        relations: '楚楠：高中三年同班，大学同校。',
+      },
+    }
 
     // ① 确定性兜底：不调模型，直接从卡片摘
     const d1 = draftMemoryFromCard({ ...chu, id: 'c1', createdAt: 0, updatedAt: 0 })

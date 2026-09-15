@@ -728,9 +728,9 @@ export default function TavernControl() {
             </div>
             <TextField
               label="一句话自我设定"
-              hint="身份、年纪、与对方的关系……越短越有效（这段每轮都进上下文，写长了会挤占对话历史）。例：三十出头的编剧，跟洛汐是同事，嘴硬心软。"
+              hint="身份、年纪、与对方的关系……越短越有效（这段每轮都进上下文，写长了会挤占对话历史）。例：三十出头的编剧，跟小满是同事，嘴硬心软。"
               minRows={3}
-              placeholder="例：三十出头的编剧，跟洛汐是同事，嘴硬心软。"
+              placeholder="例：三十出头的编剧，跟小满是同事，嘴硬心软。"
               value={pr.persona}
               onChange={v => setProfile('persona', v)}
             />
@@ -879,7 +879,7 @@ export default function TavernControl() {
                 textClass="text-[11.5px] font-mono"
                 minRows={2}
                 maxHeight={140}
-                placeholder="贴一段模型输出，例：（她点头。） / （他把烟按灭） / 洛汐：你来了。"
+                placeholder="贴一段模型输出，例：（她点头。） / （他把烟按灭） / 小满：你来了。"
                 value={ruleTry}
                 onChange={setRuleTry}
               />

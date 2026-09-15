@@ -23,13 +23,32 @@ import { uid } from '../src/lib/id'
 import { summarizeMemory } from '../src/lib/tavern/summarize'
 import { memoryChars, memoryToText, messagesAfterWatermark, nextWatermark, MEMORY_SECTIONS } from '../src/lib/tavern/memory'
 import { proposeCardRevisions } from '../src/lib/tavern/revise'
-import { SEED_FREE_CHARACTERS } from '../src/lib/tavern/seedCards'
 import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import type { TavernMessage } from '../src/lib/tavern/types'
 import { MEMORY_SOFT_LIMIT } from '../src/lib/tavern/types'
 import type { FreeCharacter, FreeSession } from '../src/lib/tavern/types'
 
 const DATA = 'C:/Users/18223/AppData/Roaming/novel-studio/novel-studio-data.json'
+
+// 2026-09-15：项目原生不再预填示范卡（老大定），实弹脚本改用本地自造的最小卡。
+// 只保本节断言用得到的设定 —— 楚楠卡里的「算得清账」是「卡是否进了设定层」那条离线断言的锚点。
+const CARDS = (() => {
+  const mk = (name: string, world: string, core: string, relations: string) => {
+    const b = store.emptyFreeCharacter()
+    return { ...b, name, world, profile: { ...b.profile, externals: `姓名：${name}。`, core, relations } }
+  }
+  return [
+    mk('苏念', '第0章 奉阳市。十八岁，法律大一。',
+      '出身：普通家庭。\n不肯说出口的事：她喜欢楚楠，一个字都没说过。',
+      '楚楠：高中三年同班，大学同校。'),
+    mk('楚楠', '第0章 奉阳市。十九岁，金融大一，一个人住。\n旁人说他稳重，其实是算得清账：什么该记、什么该翻篇，他分得很开。',
+      '出身：父母在他七岁那年离婚。\n不肯说出口的事：他从不向人示弱。',
+      '苏念：从小认识。\n洛汐：妹妹，十七岁。'),
+    mk('洛汐', '第0章 奉阳市。十七岁，二十中高三。\n对外温婉，在哥哥面前古灵精怪。',
+      '出身：普通家庭。\n不肯说出口的事：她怕被丢下。',
+      '楚楠：哥哥。'),
+  ]
+})()
 
 function loadRealProviders(): AIProvider[] {
   const meta = JSON.parse(fs.readFileSync(DATA, 'utf8')).stores.meta
@@ -161,15 +180,15 @@ async function main() {
   console.log(`[实弹观察] 回复里出现了场景词（雨/伞/灯/柜台/两点）：${sceneUsed ? '✓ 场景被用上了' : '⚠️ 未见场景词'}`)
 
   // ---------- 阶段 4：用户扮演具体角色（2026-09-14 新增） ----------
-  // 用**交付的三张示范卡**跑：用户演苏念、AI 演楚楠。
+  // 用本地自造的三张卡跑（项目原生已不预填示范卡）：用户演苏念、AI 演楚楠。
   // 要验三件事：① 身份层真的写明了谁演谁；② 模型不抢用户角色的台词；
   //            ③ 按卡上写的关系称呼（楚楠只叫她「念念」，不会叫「苏念」）。
   console.log('\n' + '='.repeat(70))
-  console.log('▶ 阶段 4 · 用户扮演苏念 / AI 演楚楠（用交付的示范卡）')
+  console.log('▶ 阶段 4 · 用户扮演苏念 / AI 演楚楠（本地造卡）')
   console.log('='.repeat(70))
-  const seedSu = SEED_FREE_CHARACTERS.find(c => c.name === '苏念')
-  const seedChu = SEED_FREE_CHARACTERS.find(c => c.name === '楚楠')
-  if (!seedSu || !seedChu) { console.log('❌ 示范卡里缺少苏念/楚楠，跳过本阶段'); return }
+  const seedSu = CARDS.find(c => c.name === '苏念')
+  const seedChu = CARDS.find(c => c.name === '楚楠')
+  if (!seedSu || !seedChu) { console.log('❌ 本地造卡缺少苏念/楚楠，跳过本阶段'); return }
   const su2 = await store.createFreeChar(seedSu)
   const chu = await store.createFreeChar(seedChu)
   let s4 = await store.createFreeSession([chu.id, su2.id], '苏念 × 楚楠', { providerId: pick.provider.id }, {}, su2.id)
@@ -194,8 +213,8 @@ async function main() {
   console.log('\n' + '='.repeat(70))
   console.log('▶ 阶段 5 · 客观描写（约会场景 · 用户演楚楠 / AI 演洛汐）')
   console.log('='.repeat(70))
-  const seedLuo = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
-  if (!seedLuo) { console.log('❌ 示范卡里缺少洛汐，跳过本阶段'); return }
+  const seedLuo = CARDS.find(c => c.name === '洛汐')
+  if (!seedLuo) { console.log('❌ 本地造卡缺少洛汐，跳过本阶段'); return }
   const luo = await store.createFreeChar(seedLuo)
   const chuU = await store.createFreeChar(seedChu)
   const scene5 = {
@@ -232,9 +251,9 @@ async function main() {
   console.log('▶ 阶段 6 · 输出规范（对白纯文本 / 其余一律用（ ）、一句一行）')
   console.log('='.repeat(70))
   {
-    const seedL = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
-    const seedC = SEED_FREE_CHARACTERS.find(c => c.name === '楚楠')
-    if (!seedL || !seedC) { console.log('❌ 示范卡里缺少洛汐/楚楠，跳过本阶段'); return }
+    const seedL = CARDS.find(c => c.name === '洛汐')
+    const seedC = CARDS.find(c => c.name === '楚楠')
+    if (!seedL || !seedC) { console.log('❌ 本地造卡缺少洛汐/楚楠，跳过本阶段'); return }
     const luo6 = await store.createFreeChar(seedL)
     const chu6 = await store.createFreeChar(seedC)
     const scene6 = {
@@ -277,8 +296,8 @@ async function main() {
   console.log('▶ 阶段 7 · 我的档案（没设「我演」时，AI 靠它知道屏幕后面是谁）')
   console.log('='.repeat(70))
   {
-    const seedL7 = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
-    if (!seedL7) { console.log('❌ 示范卡里没有洛汐，跳过本阶段'); return }
+    const seedL7 = CARDS.find(c => c.name === '洛汐')
+    if (!seedL7) { console.log('❌ 本地造卡没有洛汐，跳过本阶段'); return }
     const luo7 = await store.createFreeChar(seedL7)
     const s7base = await store.createFreeSession([luo7.id], '档案 · 基线', { providerId: pick.provider.id }, {})
 
@@ -317,9 +336,9 @@ async function main() {
   console.log('▶ 阶段 8 · 设定更新（提分手 → 关系栏应被建议修改）')
   console.log('='.repeat(70))
   {
-    const seedL8 = SEED_FREE_CHARACTERS.find(c => c.name === '洛汐')
-    const seedC8 = SEED_FREE_CHARACTERS.find(c => c.name === '楚楠')
-    if (!seedL8 || !seedC8) { console.log('❌ 示范卡里缺洛汐/楚楠，跳过本阶段'); return }
+    const seedL8 = CARDS.find(c => c.name === '洛汐')
+    const seedC8 = CARDS.find(c => c.name === '楚楠')
+    if (!seedL8 || !seedC8) { console.log('❌ 本地造卡缺洛汐/楚楠，跳过本阶段'); return }
     const luo8 = await store.createFreeChar(seedL8)
     const chu8 = await store.createFreeChar(seedC8)
     const now8 = Date.now()

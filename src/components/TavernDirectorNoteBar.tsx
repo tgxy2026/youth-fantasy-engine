@@ -64,7 +64,7 @@ export default function TavernDirectorNoteBar({
             <Button variant="secondary" size="xs" disabled={disabled} onClick={() => setOpen(true)} className="shrink-0"
             >＋ 导演指令</Button>
             <span className="min-w-0 flex-1 truncate text-ink-600">
-              临时给接下来几轮加一条指令（如「这场戏节奏放慢」「让洛汐先开口」）—— 不改角色卡，用完自动失效
+              临时给接下来几轮加一条指令（如「这场戏节奏放慢」「让小满先开口」）—— 不改角色卡，用完自动失效
             </span>
           </>
         )}
@@ -99,7 +99,7 @@ export default function TavernDirectorNoteBar({
             textClass="text-[12.5px]"
             minRows={3}
             maxHeight={160}
-            placeholder="例：这一段节奏放慢，多写几句环境；让洛汐先开口，别急着把话说透。"
+            placeholder="例：这一段节奏放慢，多写几句环境；让小满先开口，别急着把话说透。"
             value={text}
             onChange={setText}
           />

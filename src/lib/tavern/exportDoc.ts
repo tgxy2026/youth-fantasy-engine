@@ -51,7 +51,7 @@ export function tavernLines(content: string): string[] {
 export type DocItem = {
   /** 小标签（报告的三档：矛盾 / 漏洞 / 存疑） */
   tag?: string
-  /** 粗体小标题（如「角色卡 · 洛汐」） */
+  /** 粗体小标题（如「角色卡 · 小满」） */
   title?: string
   text: string
   /** 次级说明（如「建议：…」） */

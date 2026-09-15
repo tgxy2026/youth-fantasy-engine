@@ -471,7 +471,7 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
    *
    * 数据层本来就以 **id** 为准（记忆 `tavern.free.mem.<charId>`、消息 `speakerId`），
    * 所以「新建一张同名但内容不同的卡」**不会**抢走原来那张卡的记忆 —— 这点不用怀疑。
-   * 会出问题的只有提示词：两张卡都叫「洛汐」时，模型读到的是两段同名的设定与记忆，
+   * 会出问题的只有提示词：两张卡都叫「小满」时，模型读到的是两段同名的设定与记忆，
    * 无从判断谁是谁。所以同名字段命中时给每张卡挂一个稳定短码，并附一张对照表。
    */
   const nameCount = new Map<string, number>()

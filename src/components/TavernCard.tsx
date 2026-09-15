@@ -29,7 +29,6 @@ import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem 
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName, CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
-import { isSeedCard, resetCardToSeed } from '../lib/tavern/seedCards'
 import { coldStartMemory, draftMemoryFromCard } from '../lib/tavern/summarize'
 import { renderFreeCharacter } from '../lib/tavern/engine'
 import { getTavernSettings } from '../lib/tavern/settings'
@@ -275,29 +274,6 @@ export default function TavernCard() {
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       setSeedingMem(false)
-    }
-  }
-
-  /** 恢复内置示范版本（只覆盖四章，不动记忆与日常） */
-  const resetSeed = async () => {
-    if (!draft) return
-    const okGo = await confirmDialog({
-      title: `把「${draft.name}」恢复成内置示范版本？`,
-      message: '会用内置的最新版覆盖这四章（世界 / 人物档案 / 行为规范 / 示例对话），你在这一页上未保存的改动会丢失。\n\n记忆与日常状态不受影响。',
-      confirmText: '恢复',
-      danger: true,
-    })
-    if (!okGo) return
-    try {
-      const name = await resetCardToSeed(draft.id)
-      if (!name) { showToast('这张卡不在内置示范卡里', 'info'); return }
-      const c = await store.getFreeChar(draft.id)
-      setDraft(c)
-      setDirty(false)
-      setGaps([])
-      showToast(`已恢复为内置的「${name}」`)
-    } catch (e) {
-      showToast(`恢复失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }
 
@@ -783,7 +759,7 @@ export default function TavernCard() {
                     同一场对话里同时出现时，提示词会给它们挂稳定短码区分 —— 这张是
                     <span className="text-amber"> #{charTag(draft.id)}</span>，另一张是
                     <span className="text-amber"> #{charTag(sameNameOthers[0].id)}</span>。
-                    想少混淆，建议改名加区别（如「洛汐（旧版）」）。
+                    想少混淆，建议改名加区别（如「小满（旧版）」）。
                   </div>
                 )}
 
@@ -970,14 +946,6 @@ export default function TavernCard() {
                     >
                       复制为新卡
                     </Button>
-                    {isSeedCard(draft) && (
-                      <Button
-                        variant="secondary" size="md" onClick={() => void resetSeed()}
-                        title="用内置的最新版覆盖这四章（记忆与日常不受影响）—— 内置示范卡随版本更新时用它取回新版"
-                      >
-                        恢复内置版本
-                      </Button>
-                    )}
                     <Button variant="danger" size="md" onClick={remove}>删除</Button>
                     <Button variant="primary" size="md" disabled={!dirty || saving} onClick={save}>
                       {saving ? '保存中…' : '保存'}

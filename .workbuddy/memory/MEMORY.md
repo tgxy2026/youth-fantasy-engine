@@ -56,14 +56,16 @@
 - 🔴 分支/回滚：`branchSession` 截到该条、分叉点后**连记忆一起清**；回滚连记忆还原＋`undoSnapshot`；重说＝`run*Turn(session,null)`；剧情记忆 `runPlotSummary`→`memoryToText` 写回 `session.memory`＋推水位线（**全成功才推进**）。
 - 🔴 多角色：`buildMultiCharRule` 必传 `{hasUser:false}`；`userCharId` 的卡/记忆/轮转排除；在场调度 `muted`+`talkativity` 会话级、两模式共用（静音＝在场不发言、卡与记忆不进上下文；最后一位不能静音）。
 - 🔴🔴 防剧透两层：段落级 `viewMode:"character-view"` 排作者侧页签＋字段级 `AUTHOR_SIDE_FIELDS`（新字段须登记）。🔴 提示词与解析器对齐：标题整行匹配（禁 `includes`）；**面板调的记忆上限必须一路传进解析**（`parseMemoryText(…, limits)`）。
-- 🔴 输出规范（协议 v1.7）：对白＝纯文本（不含名字）；**非对白一律（ ）**、一件事一个括号；状态＝〔〕；输入 〖〗/〈〉；**【】彻底废止**。🔴 改协议须同步三处（`PROTOCOL_CORE` 版号＋旧全文追加 `LEGACY_PROTOCOLS`＋`PROTOCOL_VERSION`＋两处断言）。🔴 指代一律「Ta」；协议靠等值锚点升级（`LEGACY_PROTOCOLS` **多版本数组**、幂等；只留上一代则老库升不上来）。示范卡那套 `LEGACY_SEED_EXAMPLES`／`LEGACY_SEED_CARD_SIGS`（整卡指纹 `cardSig`）随「原生去卡」一并退役。
+- 🔴 输出规范（协议 v1.7）：对白＝纯文本（不含名字）；**非对白一律（ ）**、一件事一个括号；状态＝〔〕；输入 〖〗/〈〉；**【】彻底废止**。🔴 改协议须同步三处（`PROTOCOL_CORE` 版号＋旧全文追加 `LEGACY_PROTOCOLS`＋`PROTOCOL_VERSION`＋两处断言）。🔴 指代一律「Ta」；协议靠等值锚点升级（`LEGACY_PROTOCOLS` **多版本数组**、幂等；只留上一代则老库升不上来）。
 - 🔴 R4 元指令（**用户输入侧**）：`//`或`#`＝讨论剧情；`「…」`＝**导演指令**（照做后继续演）；`[OOC: …]`＝同上；`TavernDirectorNote` 自动包「」。🗣 说明块要看得见：`TavernEchoHints.tsx` 挂在**剧情推演＋自由对话**、须在 header **外**（放输入区则没会话时不渲染）。
-- 📦 导入导出：单卡 `.taverncard.json`／整批 `.taverncards.json`；批量逐张独立校验且**不调 AI**（`draftMemoryFromCard` 离线摘录）。🔴 剧情推演**没有会话级模型选择**。示范卡**内容**在 `seedCardData.ts`、**机制**在 `seedCards.ts`（下一版随「原生去卡」摘除）。
+- 📦 导入导出：单卡 `.taverncard.json`／整批 `.taverncards.json`；批量逐张独立校验且**不调 AI**（`draftMemoryFromCard` 离线摘录）。🔴 剧情推演**没有会话级模型选择**。
 
-## 出厂数据（角色卡不进原生）
-- 🚫 2026-09-15 老大定：**下一版起原生不预填角色卡** —— 特指**自由对话的 6 张示范自由卡**（`SEED_FREE_CHARACTERS`）；项目内角色卡（`char-*`）**照旧保留**。理由：这批卡每次改版都要同步旧指纹/旧示例/断言，纯负担。**老库里已有的卡只保留、不删**；卡改由老大导入。
-- 摘两处：①`seedCardData.ts`（6 张自由卡＋`LEGACY_SEED_EXAMPLES`/`LEGACY_SEED_CARD_SIGS`）②`seedCards.ts` 的 `seedFreeChars()`＋`seedData.ts` §8 的播种调用（连带 `isSeedCard`/`resetCardToSeed`、`upgradeSeedCards()` 转 no-op、卡页「恢复内置版本」按钮）。
-- ⚠️ 连带必查：闸 `tests/tavernSeedCards.test.ts`（失去对象，重写或删）、`tavernMemory.test.ts` 的兜底摘录、`live-free`/`live-tavern` 里写死的示范卡文案。**与示范项目无关** —— 项目内 `char-*` 卡片、细纲卡「→角色卡」文本、推演会话 `cast` 一律不动。
+## 出厂数据（角色卡不进原生）✅ 2026-09-15 已执行
+- 🚫 原生**不再预填角色卡** —— 特指**自由对话的 6 张示范自由卡**；项目内 `char-*` 卡（23 张）、细纲卡「→角色卡」文本、推演会话 `cast` **照旧保留**。理由：这批卡每次改版都要同步旧指纹/旧示例/断言，纯负担。🔴 **老库已有的卡只保留、不删**。
+- 已删三个文件：`seedCardData.ts`／`seedCards.ts`／`tests/tavernSeedCards.test.ts`；已删四处调用：`seedData.ts` §8 播种、`App.tsx` 的 `upgradeSeedCards`、卡页「恢复内置版本」按钮与 import。
+- ⚠️ 幽灵引用：全项目 33 处**提示词/文案拿卡名当例子**（含 `revise.ts`/`summarize.ts` 的 few-shot）已换成中性名（阿岩/小满/阿禾）—— 卡都没了还叫着名字，既不准确也会误导。
+- `seededFrom` 字段**已无读取方**，仅为老库数据留在类型里；🔴 别再基于它「认内置卡」（种子表已无）。
+- 🛡 策略闸 `tests/tavernSeedPolicy.test.ts`：新库不播卡 + 老库卡一张不少且不被覆盖。
 - 📥 卡走导入：`G:\AI软件\角色卡录入\`＋skill `tavern-cards-batch` → `.taverncards.json` → 界面导入。
 
 ## 示范项目（吞天神脉）
