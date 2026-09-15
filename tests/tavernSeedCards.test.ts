@@ -282,15 +282,15 @@ async function main() {
   // 整卡指纹表是「2026-09-15 世界观整卡改版」能让老库自动升上来的唯一依据。
   // 生成时是用 git 里那三张旧卡逐个算过的（见提交说明），这里守它的**格式**与**不自我命中**。
   {
-    for (const name of ['洛汐', '苏念', '楚楠']) {
+    for (const name of SEED_FREE_CHARACTERS.map(c => c.name)) {
       const sigs = LEGACY_SEED_CARD_SIGS[name] ?? []
       ok(`${name}：留了历史整卡指纹且格式正确`,
         sigs.length >= 1 && sigs.every(s => /^[0-9a-f]{8}$/.test(s)), JSON.stringify(sigs))
       ok(`${name}：当前版本指纹不在历史表里（否则每次启动都会白刷一遍）`,
         !sigs.includes(cardSig(find(name) as never)))
     }
-    ok('云婉 / 琚瑶 / 琚琪 是新加的卡，不需要历史指纹',
-      !LEGACY_SEED_CARD_SIGS['云婉'] && !LEGACY_SEED_CARD_SIGS['琚瑶'] && !LEGACY_SEED_CARD_SIGS['琚琪'])
+    ok('六张卡都登记了「改版前」的指纹（改过卡内容就必须登记，否则老库升不上来）',
+      SEED_FREE_CHARACTERS.every(c => (LEGACY_SEED_CARD_SIGS[c.name] ?? []).length >= 1))
 
     // ② 整卡升级分支：把一张「四章与某历史版本全等」的卡放进库 → 应当整体换成新版。
     //    这里用一个合成指纹触发（真实指纹已在提交时用 git 旧卡验过），验的是**接线**：

@@ -14,11 +14,6 @@
 
 /** 颉文姬 Q 版桌面精灵是否显示（'0' = 关闭，其余/缺失 = 显示） */
 export const LS_SPRITE_ENABLED = 'yfe-sprite-enabled'
-/** 云同步邀请码（YFE-SYNC- 开头）。同时用于 HTTP 鉴权与载荷加密密钥派生。 */
-export const LS_SYNC_CODE = 'yfe-sync-code'
-/** 进门邀请码是否已通过（'1' = 已通过，避免每次刷新重新输入） */
-export const LS_INVITE_OK = 'yfe-invite-ok'
-
 // ---------- 时序常量 ----------
 
 /** 数据变更后的写盘防抖窗口（便携版 FSA / 桌面版 JSON / 云端推送三处共用同一口径） */

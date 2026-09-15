@@ -151,7 +151,9 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
     think: false,
   })
 
-  return parseMemoryText(reply, charId, prev)
+  // 🔴 limits 必须一路传进**解析**：否则「长期摘要上限 / 日记保留条数 / 记忆硬上限」
+  //    只在提示词里生效，面板调小了照样按出厂默认裁 —— 表现是「我明明调小了却还是那么长」。
+  return parseMemoryText(reply, charId, prev, limits)
 }
 
 /**
@@ -217,7 +219,7 @@ export async function coldStartMemory(args: ColdStartArgs): Promise<FreeMemory> 
     think: false,
   })
 
-  const parsed = parseMemoryText(reply, charId, null)
+  const parsed = parseMemoryText(reply, charId, null, limits)
   if (isMemoryEmpty(parsed)) throw new Error('冷启动记忆解析为空（模型没按六栏输出）')
   return parsed
 }

@@ -52,7 +52,7 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
     setBusy('export')
     try {
       const path = await exportDesktopData()
-      if (path) showToast(`已导出全部数据到：\n${path}\n\n在便携版启动页选「打开数据文件」选中它，即可在 U 盘上继续创作。`, 'success', 6000)
+      if (path) showToast(`已导出全部数据到：\n${path}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。`, 'success', 6000)
     } catch (e) {
       showToast('导出失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
@@ -183,10 +183,10 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
           <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
           <span className="whitespace-nowrap">{text}</span>
         </Button>
-        <Button variant="bare" onClick={doExport} disabled={!!busy} title="导出数据文件：把本机全部数据存到 U 盘等位置，便携版可直接打开使用" className={iconBtn}>
+        <Button variant="bare" onClick={doExport} disabled={!!busy} title="导出数据文件：把本机全部数据导出一个 JSON 文件，用于留档或搬到别的电脑" className={iconBtn}>
           <HardDriveUpload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
         </Button>
-        <Button variant="bare" onClick={doImport} disabled={!!busy} title="导入数据文件：选择便携版（U 盘）的数据文件，替换本机全部数据" className={iconBtn}>
+        <Button variant="bare" onClick={doImport} disabled={!!busy} title="导入数据文件：选择之前导出的数据文件，替换本机全部数据" className={iconBtn}>
           <FileInput size={14} className={busy === 'import' ? 'animate-pulse' : ''} />
         </Button>
       </div>

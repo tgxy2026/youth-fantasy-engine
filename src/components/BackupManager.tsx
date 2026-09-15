@@ -309,7 +309,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               <AlertTriangle size={13} className="text-amber shrink-0 mt-px" />
               <span className="text-amber">
                 当前共 <span className="font-semibold">{backups.length} 份</span>备份，约 {totalMB.toFixed(1)} MB。
-                <span className="font-semibold">备份过多可能影响使用体验</span>——数据文件会持续变大，打开项目、自动保存都会变慢（便携版尤其明显）。
+                <span className="font-semibold">备份过多可能影响使用体验</span>——数据文件会持续变大，打开项目、自动保存都会变慢。
                 建议保留真正需要的节点，删除其余旧备份。
               </span>
             </div>
@@ -357,7 +357,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               <span className="text-[13px] font-semibold text-ink-100">孤儿备份清理</span>
               <HelpPopover title="什么是孤儿备份？" width="21rem" size={12}>
                 删除项目时，其自动备份按约定会保留（防止误删后无法找回）。但项目已删除后，这些备份在软件里看不到、也无法恢复项目，只会持续占用存储。
-                建议定期清理。三种存储形态的位置：网页版 = 浏览器 IndexedDB 库 novel-studio 的 backups 表；便携版 = 数据 JSON 文件的 backups 字段；桌面版 = AppData\Roaming\青春幻想引擎\novel-studio-data.json 的 backups 字段。
+                建议定期清理。位置：本机数据文件 AppData\Roaming\青春幻想引擎\novel-studio-data.json 的 backups 字段。
               </HelpPopover>
             </div>
             <div className="text-[11px] text-ink-400 leading-relaxed mb-2.5">

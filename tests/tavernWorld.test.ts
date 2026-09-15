@@ -44,7 +44,9 @@ async function main() {
     ok('只有 brief 也不算空', !isEmptyWorld(mkWorld()))
     ok('全空的分节不算内容', isEmptyWorld({ ...EMPTY_WORLD_SETTING, sections: [{ id: 'x', title: '', body: '  ' }] }))
 
-    ok('渲染出 brief 与分节标题', worldToText(mkWorld()).includes('现代都市') && worldToText(mkWorld()).includes('【规矩与禁忌】'))
+    ok('渲染出 brief 与分节标题（标题用输入侧符号〖〗，不教模型写【】）',
+      worldToText(mkWorld()).includes('现代都市') && worldToText(mkWorld()).includes('〖规矩与禁忌〗') &&
+      !worldToText(mkWorld()).includes('【规矩与禁忌】'))
     ok('空设定渲染为空串（不留空标题）', worldToText(EMPTY_WORLD_SETTING) === '')
 
     // 超上限：截断并**注明**（悄悄吞掉会让作者以为写进去了）

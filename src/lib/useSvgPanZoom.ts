@@ -68,9 +68,12 @@ export function useSvgPanZoom(opts: UseSvgPanZoomOptions = {}) {
     if (!svg) return
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault()
+      // 🔴 view 坐标是 CSS 像素域，clientX 是视口像素 —— 不除界面缩放，缩放中心会偏离光标
+      //    （越放越往一边滑）。与下面拖拽分支的处理保持一致。
+      const z = Number(document.documentElement.style.zoom) || 1
       const rect = svg.getBoundingClientRect()
-      const px = ev.clientX - rect.left
-      const py = ev.clientY - rect.top
+      const px = (ev.clientX - rect.left) / z
+      const py = (ev.clientY - rect.top) / z
       setView(v => {
         const k = Math.min(MAX_K, Math.max(MIN_K, v.k * Math.exp(-ev.deltaY * 0.0012)))
         // 以光标位置为锚点缩放：光标下的世界坐标保持不变

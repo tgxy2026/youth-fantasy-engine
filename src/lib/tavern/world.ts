@@ -102,7 +102,7 @@ export function worldToText(w: WorldSetting | null | undefined): string {
   for (const s of w.sections) {
     const body = s.body.trim()
     if (!body) continue
-    parts.push(s.title.trim() ? `【${s.title.trim()}】\n${body}` : body)
+    parts.push(s.title.trim() ? `〖${s.title.trim()}〗\n${body}` : body)
   }
   let text = parts.join('\n\n')
   if (text.length > WORLD_MAX_CHARS) {

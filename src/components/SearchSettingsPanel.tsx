@@ -18,7 +18,7 @@ import {
   BOCHA_ENDPOINT, SEARXNG_ENDPOINT, DEFAULT_SEARCH_SETTINGS,
   type SearchSettings,
 } from '../lib/webSearch'
-import { PARAM_GUIDES } from '../lib/tavern/paramGuide'
+import { PARAM_GUIDES, bandOf } from '../lib/tavern/paramGuide'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
@@ -175,9 +175,7 @@ export default function SearchSettingsPanel() {
 
             <Field
               label="每次取几条"
-              hint={`范围 ${guide.min}–${guide.max} ${guide.unit}。${
-                guide.bands.find(b => s.topK >= b.from && s.topK < b.to)?.effect
-                ?? guide.bands[guide.bands.length - 1].effect}`}
+              hint={`范围 ${guide.min}–${guide.max} ${guide.unit}。${bandOf(guide, s.topK).effect}`}
             >
               <input
                 type="number"

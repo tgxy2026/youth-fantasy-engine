@@ -730,7 +730,7 @@ export const DAILY_ADVANCE_MS = 8 * 60 * 60 * 1000
  * 📌 放在 types 而不是 daily.ts：settings.ts 要用它当默认值，而 daily.ts 反向依赖 engine.ts，
  *    settings 若从 daily 取常量就会形成 settings → daily → engine → settings 的循环。
  */
-export const DAILY_LOG_KEEP = 5
+export const DAILY_LOG_KEEP = 7
 /**
  * 记忆总结防重复（三层保险，数值照搬手册「记忆引擎」的实测默认值）：
  *   ① 时间节流 —— 两次自动总结至少间隔这么久（手册 auto_interval = 600 秒）

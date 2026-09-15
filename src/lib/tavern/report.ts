@@ -44,6 +44,21 @@ const REPORT_SYS = `你是小说的一致性与合理性审读员。作者刚刚
 
 宁可少报几条，也不要凑数。没有发现问题就返回空数组。`
 
+/**
+ * 模糊命中**只在唯一时**采用。
+ *
+ * 为什么必须唯一：本模块的全部价值就是「每条问题能指回具体条目」——
+ * 命中多条时宁可当作定位失败（调用方会把「存疑」降级处理），也不能静默指错一条。
+ */
+function fuzzyUnique<T>(rows: T[], pick: (r: T) => string, needle: string): T | undefined {
+  const hits = rows.filter(r => {
+    const v = pick(r)
+    if (!v) return false
+    return v === needle || v.includes(needle) || needle.includes(v)
+  })
+  return hits.length === 1 ? hits[0] : undefined
+}
+
 /** 按 label 回表里查真实记录 id（best-effort；查不到就留空，由调用方降级） */
 async function resolveTargetRecord(tabId: string, label: string): Promise<string | null> {
   if (!tabId || !label) return null
@@ -54,14 +69,14 @@ async function resolveTargetRecord(tabId: string, label: string): Promise<string
   try {
     if (tab.type === 'card') {
       const recs = await db.getCardRecords(tabId)
-      const hit = recs.find(r => r.name === needle) ?? recs.find(r => r.name.includes(needle) || needle.includes(r.name))
+      const hit = recs.find(r => r.name === needle) ?? fuzzyUnique(recs, r => String(r.name ?? ''), needle)
       return hit?.id ?? null
     }
     if (tab.type === 'table') {
       const rows = await db.getTableRows(tabId)
       const col = tab.displayCol
       const hit = col
-        ? rows.find(r => String(r.data?.[col] ?? '') === needle) ?? rows.find(r => String(r.data?.[col] ?? '').includes(needle))
+        ? rows.find(r => String(r.data?.[col] ?? '') === needle) ?? fuzzyUnique(rows, r => String(r.data?.[col] ?? ''), needle)
         : undefined
       return hit?.id ?? null
     }

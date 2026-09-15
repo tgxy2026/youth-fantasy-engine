@@ -85,7 +85,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
       subheader={
         <div className="px-5 py-3 text-[12px] text-ink-400 leading-relaxed">
           勾选本项目要启用的功能。<span className="text-amber/90">锁</span> 标记的是必选（不可取消）。
-          有依赖关系的会自动连带开启（如「人物关系」带「主要角色」、酒馆模式三组互绑），取消依赖项前无法单独关掉。
+          有依赖关系的会自动连带开启（如「人物关系」带「主要角色」、酒馆模式两组互绑、控制面板是其余酒馆页签的前置），取消依赖项前无法单独关掉。
           「剧情推演」需要项目资料可喂，一个都没勾时会自动带上「主要角色」。
         </div>
       }

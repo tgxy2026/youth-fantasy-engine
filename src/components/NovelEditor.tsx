@@ -1024,7 +1024,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           <>
             {/* 工具栏：按钮较多（22 个），窄窗口下原本会溢出到屏幕外点不到（实测溢出 618px）。
                 改为横向可滚动 + 收紧间距，保证任何窗口宽度下按钮都可达 */}
-            <div className="flex items-center gap-1.5 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50 overflow-x-auto overflow-y-hidden">
+            {/* 🔴 菜单打开时要放开纵向裁剪：`overflow-x-auto` 会连 `overflow-y` 一起变成裁剪容器，
+                而导出菜单是工具栏内的绝对定位元素（`top-full`）—— 不放开的话它只在工具栏
+                那 44px 里可见，实际等于「点了不出现」。菜单本身不宽，放开后仍能回到横滚。 */}
+            <div className={`flex items-center gap-1.5 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50 ${exportOpen ? 'overflow-visible' : 'overflow-x-auto overflow-y-hidden'}`}>
               <div className="flex items-center gap-1">
                 <Button variant="ghost" disabled={activeIdx <= 0} onClick={() => openChapter(flat[activeIdx - 1].id)} iconOnly size="sm" className="p-1 disabled:opacity-30 transition-colors shrink-0" title="上一章">
                   <ArrowLeft size={14} />

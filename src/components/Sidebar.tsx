@@ -208,7 +208,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                           {volOpen && (
                             <div className="mt-0.5 space-y-0.5">
                               {volumeTabs.length === 0 && (
-                                <Button onClick={createVolume} variant="ghost" size="md" className="w-full text-left text-[12px] flex items-center">
+                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left text-[12px] flex items-center">
                                   <FolderPlus size={11} /> 新建第一卷
                                 </Button>
                               )}
@@ -233,7 +233,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                                 </div>
                               ))}
                               {volumeTabs.length > 0 && (
-                                <Button onClick={createVolume} variant="ghost" size="md" className="w-full text-left text-[12px] flex items-center">
+                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left text-[12px] flex items-center">
                                   <FolderPlus size={11} /> 新建卷
                                 </Button>
                               )}

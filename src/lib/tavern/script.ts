@@ -159,7 +159,7 @@ export function scriptToText(s: ScriptSnapshot | null | undefined): string {
 
 /**
  * 开场白 → 对话的第一条**消息**。
- * 走的是消息通道，所以用协议的输出规范（对白纯文本 / （）动作 / 【】环境），
+ * 走的是消息通道，所以用协议的输出规范（对白纯文本 / 其余一律全角括号（ ）），
  * 并明确标注「这是你说过的第一句」，免得模型把它当成用户说的话去回应。
  */
 export function openingToMessage(s: ScriptSnapshot | null | undefined): string {
@@ -202,7 +202,7 @@ export function buildScriptDraftSystem(): string {
     '〖输出格式（开场白必须严格遵守）〗',
     '- 对白：纯文本，**不带说话人名字**，也不要把名字单独写成一行；',
     '- 动作 / 神态 / 心理：用（）包住；',
-    '- 客观环境与人物外在：用【】包住。',
+    '- 动作、神态、心理与客观环境：全部用全角括号（ ）包住。',
     '指代对面那个人时用「Ta」或直接称呼，别用「他/她」。',
     '',
     '〖不许做的事〗',
@@ -290,7 +290,7 @@ export function flattenScriptFields(f: ScriptDraftFields): string {
     ['你的位置', f.playerRole], ['这一场的目标', f.goal], ['不要发生', f.taboo],
   ] as [string, string][])
     .filter(([, v]) => v.trim())
-    .map(([k, v]) => `【${k}】${v.trim()}`)
+    .map(([k, v]) => `〖${k}〗${v.trim()}`)
     .join('\n')
 }
 

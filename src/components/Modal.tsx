@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from './Button'
 import { Z } from '../lib/zLayer'
+import { foldVh } from '../lib/theme'
 
 // z 轴分层真源已独立到 src/lib/zLayer.ts（纯常量不该挂在组件文件上，
 // 否则每个要用它的下拉都得 import 整个 Modal）。此处再导出，既有 `import { Z } from './Modal'` 不受影响。
@@ -175,7 +176,7 @@ export function Modal({
         : 'bg-ink-950'
   const overlayAlign =
     align === 'center' ? 'items-center justify-center p-4' : 'items-start justify-center'
-  const overlayStyle = align === 'top' ? { paddingTop: topOffset } : undefined
+  const overlayStyle = align === 'top' ? { paddingTop: foldVh(topOffset) } : undefined
 
   const panelSurface = surface === '900' ? 'bg-ink-900' : 'bg-ink-850'
   const panelAccent =
@@ -200,7 +201,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         className={`${panelSurface} ${panelAccent} rounded-2xl shadow-2xl flex flex-col outline-none ${className}`}
-        style={{ width: `${widthPx}px`, maxWidth: '92vw', maxHeight }}
+        style={{ width: `${widthPx}px`, maxWidth: foldVh('92vw'), maxHeight: foldVh(maxHeight) }}
         onMouseDown={e => e.stopPropagation()}
       >
         {!hideHeader && (

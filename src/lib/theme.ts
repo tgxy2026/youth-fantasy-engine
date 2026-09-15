@@ -113,3 +113,18 @@ export function applyZoom(pct: number, opts?: { manual?: boolean }): number {
   }
   return z
 }
+/**
+ * 把 CSS 长度里的 vh / vw **折回界面缩放**。
+ *
+ * 为什么必须折：`<html>` 上的 `zoom` **不缩放 vh/vw** —— 2560 宽屏（zoom 132%）下
+ * `max-height: 85vh` 的元素视觉高度是 112vh，比视口还高；若同时锁了 body 滚动，
+ * 弹窗的标题栏或页脚按钮就会落到视口外，用户点不到。同 index.css 里 `.h-screen` 的处理。
+ *
+ * 用法：`style={{ maxHeight: foldVh(maxHeight) }}`。非 vh/vw 的写法原样返回。
+ */
+export function foldVh(v?: string): string | undefined {
+  if (!v) return v
+  return v
+    .replace(/(\d+(?:\.\d+)?)vh/g, 'calc($1vh / var(--ui-zoom, 1))')
+    .replace(/(\d+(?:\.\d+)?)vw/g, 'calc($1vw / var(--ui-zoom, 1))')
+}
