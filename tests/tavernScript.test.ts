@@ -49,6 +49,9 @@ async function mkChar(name: string): Promise<FreeCharacter> {
 
 function full(): Omit<TavernScript, 'id' | 'createdAt' | 'updatedAt' | 'draftedAt'> {
   return {
+    // 2026-09-16 起剧本必须挂在某个故事下（故事层）：测试里给个固定 id 即可，
+    // 不真的落库 —— snapshotOf / scriptToText 这些纯函数不看它。
+    storyId: 'story-test',
     name: '雨夜便利店',
     situation: '凌晨两点的便利店，外面在下雨。她刚把烟柜锁上。',
     opening: '【雨点砸在卷帘门上】\n（她把钥匙转了一圈）今天不卖了。',

@@ -24,13 +24,19 @@ import {
 import type { DraftSource } from '../lib/tavern/draft'
 import type { TavernScript } from '../lib/tavern/types'
 
-export default function TavernScriptDialog({ open, onClose, onSaved, editing }: {
+export default function TavernScriptDialog({ open, onClose, onSaved, editing, storyId }: {
   open: boolean
   onClose: () => void
   /** 保存成功 → 把新剧本交回调用方（新建对话那边会立刻选中它） */
   onSaved: (s: TavernScript) => void
   /** 传入 = 编辑这一份；不传 = 新建 */
   editing?: TavernScript | null
+  /**
+   * 新剧本挂在哪个故事下。
+   * 2026-09-16 起剧本必须归属故事（故事层），这里先按可选接进来；
+   * P0-C 改造「新建对话」时会先让作者选故事，届时把它接成必填。
+   */
+  storyId?: string
 }) {
   const [fields, setFields] = useState<ScriptDraftFields>(EMPTY_SCRIPT_FIELDS)
   const [seed, setSeed] = useState('')
@@ -83,7 +89,7 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing }: 
     setSaving(true)
     try {
       const saved = await saveScript(editing ? { ...editing, ...fields } : {
-        ...EMPTY_SCRIPT_FIELDS, ...fields, id: '', draftedAt: 0, createdAt: 0, updatedAt: 0,
+        ...EMPTY_SCRIPT_FIELDS, ...fields, id: '', storyId: storyId ?? '', draftedAt: 0, createdAt: 0, updatedAt: 0,
       })
       showToast(`已保存「${saved.name || '未命名剧本'}」`)
       onSaved(saved)

@@ -60,7 +60,7 @@ export const SCRIPT_FIELD_MAX: Record<'situation' | 'opening' | 'playerRole' | '
 export const SCRIPT_MAX_CHARS = 2000
 
 export function emptyScript(): TavernScript {
-  return { ...EMPTY_SCRIPT_FIELDS, id: '', draftedAt: 0, createdAt: 0, updatedAt: 0 }
+  return { ...EMPTY_SCRIPT_FIELDS, id: '', storyId: '', draftedAt: 0, createdAt: 0, updatedAt: 0 }
 }
 
 /** 六栏全空（表单的初始值 / 「这份是不是空的」判定） */
@@ -80,6 +80,14 @@ export async function listScripts(): Promise<TavernScriptIndexItem[]> {
   return [...list].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/** 某个故事下的剧本（树状列表的叶子层）。按更新时间倒序，最近改的在最上面 */
+export async function listScriptsByStory(storyId: string): Promise<TavernScriptIndexItem[]> {
+  const list = await db.getMeta<TavernScriptIndexItem[]>(G.index, [])
+  return list
+    .filter(x => x.storyId === storyId)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 export async function getScript(id: string): Promise<TavernScript | null> {
   return db.getMeta<TavernScript | null>(G.one(id), null)
 }
@@ -96,6 +104,7 @@ export async function saveScript(s: TavernScript): Promise<TavernScript> {
   const idx = await db.getMeta<TavernScriptIndexItem[]>(G.index, [])
   const item: TavernScriptIndexItem = {
     id: next.id,
+    storyId: next.storyId,
     name: scriptDisplayName(next),
     goalBrief: firstLine(next.goal, 40),
     updatedAt: next.updatedAt,

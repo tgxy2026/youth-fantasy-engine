@@ -1,22 +1,23 @@
 /**
- * 酒馆模式 · 剧本编辑（tavern-script）
+ * 酒馆模式 · 故事剧本（tavern-script）
  *
  * 【这个页签解决什么】
  * 角色卡只回答了「这个人是谁」；一场戏还需要「此刻在哪、为什么在这儿、这一场想干嘛」。
- * 原先这些内容散在「新建对话」弹窗里手填、填完就丢 —— 现在抽成一份**可复用、可命名**的剧本。
+ * 而再往上还有一层 ——「这个世界什么样」。
  *
- * 【六栏 = 调研结论】
- * 与 SillyTavern 的 `scenario` + `first_mes` 同构，另加「目标 / 边界」两栏：
- * 场景只管此刻（背景归角色卡与背景设定）、开场白是杠杆最高的字段、一场戏要有意图与禁区。
- * 详见 docs/剧本与变量-设计方案-讨论稿.md §1–§2。
+ * 【三层分工（老大 2026-09-16 定）】
+ *   故事 Story  → 这个世界的基本设定（规则 / 地理 / 势力 / 常识）
+ *   剧本 Script → 这一个场景发生什么事（六栏）
+ *   故事与剧本是**父子结构**，一个故事下可挂多份剧本，树状展现。
+ *   角色也归属故事（P0-B），扮演时套用该故事的世界观。
+ *
+ * 【为什么世界设定不再写在角色卡里】
+ * 原先每张卡都抄一份世界：N 张卡 N 份，改一处要改 N 处，还容易互相打架。
+ * 现在故事层只写一份，卡片里**只留「角色与设定的关系」**。
  *
  * 【数据归属】
- * 🔴 剧本库是**全局**（`db.getMeta`，跨项目）—— 与角色卡同性质：它是「玩法模板」，不绑某一本书。
- * 🔴 会话引用它时存的是**快照**：作者后来改剧本，历史会话不会跟着变（否则「上周那场戏的设定
- *    今天自己变了」这种问题根本查不出来）。
- *
- * 【AI 起草沿用「背景设定」那一套】
- * 一键生成 → 人工微调 → 再保存。AI 空着的栏不覆盖你已经写好的内容（起草是补，不是重写）。
+ * 🔴 故事与剧本都是**全局**（`db.getMeta`，跨项目）—— 与角色卡同性质：玩法模板，不绑某一本书。
+ * 🔴 会话引用剧本时存的是**快照**：后来改剧本，历史会话不会跟着变。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import HelpPopover from './HelpPopover'
@@ -33,13 +34,25 @@ import {
   flattenScriptFields,
   SCRIPT_MAX_CHARS, EMPTY_SCRIPT_FIELDS, isEmptySnapshot, type ScriptDraftFields,
 } from '../lib/tavern/script'
+import {
+  listStories, getStory, saveStory, createStory, deleteStory, storyDisplayName,
+} from '../lib/tavern/story'
 import type { DraftSource } from '../lib/tavern/draft'
-import type { TavernScript, TavernScriptIndexItem } from '../lib/tavern/types'
+import type { TavernScript, TavernScriptIndexItem, TavernStory, TavernStoryIndexItem } from '../lib/tavern/types'
+
+/** 中间面板当前在编辑谁：故事 / 剧本 / 谁都没选 */
+type EditingKind = 'story' | 'script' | null
 
 export default function TavernScript() {
-  const [list, setList] = useState<TavernScriptIndexItem[]>([])
+  const [stories, setStories] = useState<TavernStoryIndexItem[]>([])
+  const [scripts, setScripts] = useState<TavernScriptIndexItem[]>([])
+  /** 左栏展开着的故事 id —— 树是受控的，刷新后不至于收回去让人以为数据没了 */
+  const [openIds, setOpenIds] = useState<string[]>([])
+  const [story, setStory] = useState<TavernStory | null>(null)
   const [cur, setCur] = useState<TavernScript | null>(null)
-  const [dirty, setDirty] = useState(false)
+  const [kind, setKind] = useState<EditingKind>(null)
+  const [storyDirty, setStoryDirty] = useState(false)
+  const [scriptDirty, setScriptDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [drafting, setDrafting] = useState(false)
   /** AI 起草的输入（作者的粗略想法 + 粘贴的参考素材）—— 只存在于界面，不落库 */
@@ -51,51 +64,95 @@ export default function TavernScript() {
   const [interviewOpen, setInterviewOpen] = useState(false)
   const search = useSearchSettings()
 
-  const load = useCallback(async (id?: string) => {
-    const l = await listScripts()
-    setList(l)
-    const pick = id ?? l[0]?.id
-    setCur(pick ? await getScript(pick) : null)
-    setDirty(false)
+  const refresh = useCallback(async () => {
+    const [sts, scs] = await Promise.all([listStories(), listScripts()])
+    setStories(sts)
+    setScripts(scs)
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void (async () => { await refresh() })() }, [refresh])
 
-  const edit = (patch: Partial<ScriptDraftFields>) => {
-    setCur(prev => (prev ? { ...prev, ...patch } : prev))
-    setDirty(true)
+  // 当前是否有未保存改动 —— 切换 / 删除前用它拦一道
+  const dirty = kind === 'story' ? storyDirty : scriptDirty
+
+  const guard = useCallback(async (): Promise<boolean> => {
+    if (!dirty) return true
+    return confirmDialog({
+      title: '切换？',
+      message: '当前这份有未保存的改动，切过去就丢了。',
+      confirmText: '切过去',
+      danger: true,
+    })
+  }, [dirty])
+
+  const toggleOpen = (id: string) => {
+    setOpenIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
+  }
+
+  const openStory = async (id: string) => {
+    if (story?.id === id && kind === 'story') return
+    if (!(await guard())) return
+    const st = await getStory(id)
+    setStory(st)
+    setCur(null)
+    setKind(st ? 'story' : null)
+    setStoryDirty(false)
+    setScriptDirty(false)
   }
 
   const openScript = async (id: string) => {
-    if (id === cur?.id) return
-    if (dirty) {
-      const okGo = await confirmDialog({
-        title: '切换剧本？',
-        message: '当前这份有未保存的改动，切过去就丢了。',
-        confirmText: '切过去',
-        danger: true,
-      })
-      if (!okGo) return
-    }
-    setCur(await getScript(id))
-    setDirty(false)
+    if (cur?.id === id && kind === 'script') return
+    if (!(await guard())) return
+    const sc = await getScript(id)
+    setCur(sc)
+    setStory(null)
+    setKind(sc ? 'script' : null)
+    setStoryDirty(false)
+    setScriptDirty(false)
   }
 
-  const createNew = async () => {
-    const s = await createScript({ ...EMPTY_SCRIPT_FIELDS, name: '' })
-    await load(s.id)
+  const createStoryNow = async () => {
+    const s = await createStory({ name: '' })
+    await refresh()
+    setStory(s)
+    setCur(null)
+    setKind('story')
+    setStoryDirty(true)
+    setScriptDirty(false)
+    setOpenIds(prev => [...prev, s.id])
+    showToast('已新建一个故事 —— 先写世界设定，再往下挂剧本')
+  }
+
+  /** 剧本必须挂在某个故事下：没选故事时不允许新建（这是必要的前置步骤） */
+  const createScriptUnder = async (storyId: string) => {
+    if (!(await guard())) return
+    const sc = await createScript({ ...EMPTY_SCRIPT_FIELDS, name: '', storyId })
+    await refresh()
+    setCur(sc)
+    setStory(null)
+    setKind('script')
+    setStoryDirty(false)
+    setScriptDirty(false)
+    setOpenIds(prev => (prev.includes(storyId) ? prev : [...prev, storyId]))
     showToast('已新建一份空剧本 —— 六栏填完记得保存')
   }
 
   const save = async () => {
-    if (!cur) return
     setSaving(true)
     try {
-      const saved = await saveScript(cur)
-      setCur(saved)
-      setDirty(false)
-      setList(await listScripts())
-      showToast('已保存 —— 新建对话时就能选到它')
+      if (kind === 'story' && story) {
+        const saved = await saveStory(story)
+        setStory(saved)
+        setStoryDirty(false)
+        await refresh()
+        showToast('故事已保存 —— 接着在它下面新建剧本')
+      } else if (kind === 'script' && cur) {
+        const saved = await saveScript(cur)
+        setCur(saved)
+        setScriptDirty(false)
+        await refresh()
+        showToast('已保存 —— 新建对话时就能选到它')
+      }
     } catch (e) {
       showToast(`保存失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -104,19 +161,40 @@ export default function TavernScript() {
   }
 
   const remove = async () => {
-    if (!cur) return
-    const okGo = await confirmDialog({
-      title: `删掉「${scriptDisplayName(cur)}」？`,
-      message: '用过的会话不受影响 —— 它们保存的是加载时的快照，剧本删了这一场照样能跑。\n但这份剧本列表里就没了，不可撤销。',
-      confirmText: '删除',
-      danger: true,
-    })
-    if (!okGo) return
-    await deleteScript(cur.id)
-    setCur(null)
-    setDirty(false)
-    await load()
-    showToast('已删除剧本')
+    if (kind === 'story' && story) {
+      const under = scripts.filter(s => s.storyId === story.id).length
+      const okGo = await confirmDialog({
+        title: `删掉「${storyDisplayName(story)}」？`,
+        message: under > 0
+          ? `它下面的 ${under} 份剧本会一并删除（角色卡不删，会解除归属）。此操作不可撤销。`
+          : '这个故事会被删除，此操作不可撤销。',
+        confirmText: '删除',
+        danger: true,
+      })
+      if (!okGo) return
+      await deleteStory(story.id)
+      await refresh()
+      setStory(null)
+      setKind(null)
+      setStoryDirty(false)
+      showToast('已删除故事')
+      return
+    }
+    if (kind === 'script' && cur) {
+      const okGo = await confirmDialog({
+        title: `删掉「${scriptDisplayName(cur)}」？`,
+        message: '用过的会话不受影响 —— 它们保存的是加载时的快照，剧本删了这一场照样能跑。\n但这份剧本列表里就没了，不可撤销。',
+        confirmText: '删除',
+        danger: true,
+      })
+      if (!okGo) return
+      await deleteScript(cur.id)
+      await refresh()
+      setCur(null)
+      setKind(null)
+      setScriptDirty(false)
+      showToast('已删除剧本')
+    }
   }
 
   const runDraft = async () => {
@@ -135,7 +213,7 @@ export default function TavernScript() {
       })
       const merged = mergeScriptDraft(curFields, out)
       setCur(prev => (prev ? { ...prev, ...merged, draftedAt: Date.now() } : prev))
-      setDirty(true)
+      setScriptDirty(true)
       setLastSource(source)
       showToast(`已生成六栏（${source.label}）—— 过一遍再保存`)
     } catch (e) {
@@ -158,49 +236,50 @@ export default function TavernScript() {
     }
     : EMPTY_SCRIPT_FIELDS
 
+  /** 「新建剧本」必须知道挂在哪个故事下：以当前编辑中的故事为准，没有就禁用 */
+  const activeStoryId = kind === 'story' ? story?.id ?? '' : cur?.storyId ?? ''
+
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       <header className="border-b border-ink-800 pb-3">
         <div className="flex items-center gap-1.5">
 
-          <h1 className="text-lg font-bold text-ink-50">剧本编辑</h1>
+          <h1 className="text-lg font-bold text-ink-50">故事剧本</h1>
 
-          <HelpPopover title="剧本怎么填" width="24rem" size={14}>
-  一份剧本 = 六栏：名称 / 情境 / 开场白 / 你的位置 / 这一场的目标 / 不要发生。
+          <HelpPopover title="故事与剧本怎么配合" width="26rem" size={14}>
+  先有「故事」，再有「剧本」 —— 一个故事下可以有多份剧本，左边树里折叠展示。
 
-  • 情境只管「此刻」—— 身世与历史归角色卡与「背景设定」。这一层每轮都进上下文，重复写会互相打架。
-  • 开场白会变成对话的第一条消息，它是整场戏的语气锚点。
-  • 「这一场的目标」配合本场数值里的「剧情进度」用最顺手。
-  • 「不要发生」是防止戏跑偏的刹车：写 2–4 条具体的禁区。
-  • 剧本存在全局（跨项目）。引用它的会话保存的是当时的快照 —— 你后来改剧本，不会把老会话的设定悄悄改掉。
+  • 故事写「这个世界什么样」：规则、地理、势力、常识。它取代了原先角色卡第1章的世界设定 ——
+    以前每张卡抄一份，改一处要改 N 处；现在只写这一份，卡片里只留「角色与设定的关系」。
+  • 剧本写「这一场发生什么事」：六栏（名称 / 情境 / 开场白 / 你的位置 / 目标 / 不要发生）。
+    情境只管此刻，别把历史重抄一遍。
+  • 角色卡必须归属某个故事，对话时才有世界观可用 —— 所以「建故事」是使用自由对话的第一步。
 
-  写不动就点「AI 起草」：一句话生成六栏，或让 AI 引导你一轮轮聊出来。
+  写不动就点「AI 起草」：一句话生成剧本六栏，或让 AI 引导你一轮轮聊出来。
 </HelpPopover>
 
         </div>
         <p className="text-[12px] text-ink-400 mt-1">
-          给自由对话准备一场戏。剧本存在全局（跨项目），新建对话时选一份即可，也可以留空直接开口聊。
+          故事决定世界什么样，剧本决定这一场发生什么事。故事与剧本存在全局（跨项目），先建故事，再往下挂剧本。
         </p>
       </header>
 
       <div className="flex items-center gap-2 pt-3">
-        <Button variant="primary" size="md" onClick={() => void createNew()}>＋ 新建剧本</Button>
+        <Button variant="primary" size="md" onClick={() => void createStoryNow()}>＋ 新建故事</Button>
         <Button
           variant="secondary" size="md"
-          onClick={() => setInterviewOpen(true)}
-          title="AI 按六栏提纲一轮一轮地问，边聊边把这场戏塑出来"
+          disabled={!activeStoryId}
+          title={activeStoryId ? '在选中/所属的故事下新建一份剧本' : '先选中一个故事，才能在它下面新建剧本'}
+          onClick={() => void createScriptUnder(activeStoryId)}
         >
-          对话引导
+          ＋ 新建剧本
         </Button>
         <Button variant="secondary" size="md" disabled={!dirty || saving} onClick={() => void save()}>
           {saving ? '保存中…' : dirty ? '保存' : '已保存'}
         </Button>
-        {cur && (
-          <Button variant="secondary" size="md" disabled={!dirty} onClick={() => void openScript(cur.id)}>放弃改动</Button>
-        )}
         <span className="flex-1" />
         {dirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
-        {cur && <Button variant="secondary" size="md" onClick={() => void remove()}>删除这份</Button>}
+        {kind && <Button variant="secondary" size="md" onClick={() => void remove()}>删除这份</Button>}
       </div>
 
       <TavernInterviewDialog
@@ -213,139 +292,239 @@ export default function TavernScript() {
           const out = interviewToScript(filled)
           const merged = mergeScriptDraft(fields, out)
           setCur(prev => (prev ? { ...prev, ...merged, draftedAt: Date.now() } : prev))
-          setDirty(true)
+          setScriptDirty(true)
           showToast('已填入六栏（对话引导）—— 逐栏核对后点「保存」')
         }}
       />
 
       <div className="flex flex-1 min-h-0 gap-3 pt-3">
-        {/* 左：剧本列表 */}
-        <aside className="w-52 shrink-0 overflow-y-auto">
-          {list.length === 0 ? (
+        {/* 左：故事 → 剧本 树状列表 */}
+        <aside className="w-56 shrink-0 overflow-y-auto">
+          {stories.length === 0 ? (
             <p className="rounded-lg border border-dashed border-ink-700 p-3 text-center text-[11.5px] text-ink-500">
-              还没有剧本。点上面「新建剧本」，或让 AI 按你的一句话起草。
+              还没有故事。点上面「新建故事」，先把这个世界写下来 —— 这是使用自由对话的第一步。
             </p>
           ) : (
             <ul className="space-y-1.5">
-              {list.map(it => (
-                <li key={it.id}>
-                  <button
-                    type="button" onClick={() => void openScript(it.id)}
-                    title={it.goalBrief || '（还没写目标）'}
-                    className={`w-full rounded-md border px-2.5 py-2 text-left transition-colors ${it.id === cur?.id
-                      ? 'border-amber/50 bg-amber/10'
-                      : 'border-ink-800 bg-ink-850/30 hover:border-ink-600'}`}
-                  >
-                    <div className={`truncate text-[12.5px] ${it.id === cur?.id ? 'text-amber' : 'text-ink-200'}`}>
-                      {it.name}
+              {stories.map(st => {
+                const under = scripts.filter(s => s.storyId === st.id)
+                const isOpen = openIds.includes(st.id)
+                return (
+                  <li key={st.id}>
+                    <div className="flex items-stretch gap-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleOpen(st.id)}
+                        title={isOpen ? '收起剧本' : '展开剧本'}
+                        className="shrink-0 rounded-md border border-ink-800 bg-ink-850/30 px-1.5 text-[11px] text-ink-400 hover:border-ink-600"
+                      >
+                        {isOpen ? '▾' : '▸'}
+                      </button>
+                      <button
+                        type="button" onClick={() => void openStory(st.id)}
+                        title={st.settingBrief || '（还没写世界设定）'}
+                        className={`min-w-0 flex-1 rounded-md border px-2.5 py-2 text-left transition-colors ${st.id === story?.id && kind === 'story'
+                          ? 'border-amber/50 bg-amber/10'
+                          : 'border-ink-800 bg-ink-850/30 hover:border-ink-600'}`}
+                      >
+                        <div className={`truncate text-[12.5px] ${st.id === story?.id && kind === 'story' ? 'text-amber' : 'text-ink-200'}`}>
+                          {st.name}
+                        </div>
+                        <div className="mt-0.5 truncate text-[10.5px] text-ink-500">
+                          {st.settingBrief || '（还没写世界设定）'}
+                        </div>
+                      </button>
                     </div>
-                    <div className="mt-0.5 truncate text-[10.5px] text-ink-500">
-                      {it.goalBrief || '（还没写目标）'}
-                    </div>
-                  </button>
-                </li>
-              ))}
+
+                    {isOpen && (
+                      <ul className="mt-1 ml-4 space-y-1 border-l border-ink-800 pl-2">
+                        {under.length === 0 ? (
+                          <li className="py-1 text-[10.5px] text-ink-600">（还没有剧本）</li>
+                        ) : under.map(sc => (
+                          <li key={sc.id}>
+                            <button
+                              type="button" onClick={() => void openScript(sc.id)}
+                              title={sc.goalBrief || '（还没写目标）'}
+                              className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${sc.id === cur?.id && kind === 'script'
+                                ? 'border-amber/50 bg-amber/10'
+                                : 'border-ink-800 bg-ink-850/20 hover:border-ink-600'}`}
+                            >
+                              <div className={`truncate text-[12px] ${sc.id === cur?.id && kind === 'script' ? 'text-amber' : 'text-ink-200'}`}>
+                                {sc.name}
+                              </div>
+                              <div className="truncate text-[10px] text-ink-500">{sc.goalBrief || '（还没写目标）'}</div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
           <p className="mt-2 text-[10.5px] leading-relaxed text-ink-600">
-            共 {list.length} 份 · 跨项目共用（换本书也还在）
+            {stories.length} 个故事 · {scripts.length} 份剧本 · 跨项目共用（换本书也还在）
           </p>
         </aside>
 
-        {/* 中：六栏编辑 */}
+        {/* 中：故事设定 / 剧本六栏 */}
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          {!cur ? (
+          {kind === 'story' && story ? (
+            <div className="space-y-3">
+              <div>
+                <div className="text-[12px] text-ink-200">故事名称</div>
+                <input
+                  value={story.name}
+                  onChange={e => { setStory({ ...story, name: e.target.value }); setStoryDirty(true) }}
+                  placeholder="例：云州江湖"
+                  className="mt-1 w-full rounded-md border border-ink-800 bg-ink-850/60 px-2.5 py-1.5 text-[12.5px] text-ink-100 placeholder:text-ink-600 focus:border-amber/50 focus:outline-none"
+                />
+                <p className="mt-1 text-[10.5px] text-ink-600">只用于列表展示，不进上下文。</p>
+              </div>
+              <div>
+                <div className="text-[12px] text-ink-200">世界设定</div>
+                <p className="mt-0.5 text-[10.5px] leading-relaxed text-ink-500">
+                  这个世界的基本设定：规则、地理、势力、常识。角色卡不再重复写它 —— 卡片里只留「角色与设定的关系」。
+                </p>
+                <div className="mt-1">
+                  <AutoTextarea
+                    value={story.setting}
+                    onChange={v => { setStory({ ...story, setting: v }); setStoryDirty(true) }}
+                    minRows={14}
+                    maxHeight={460}
+                    placeholder={'例：\n云州多山，灵脉自北向南枯竭已有百年。\n修行者分三派：守脉、夺脉、弃脉。\n凡人不知灵脉之事，只说山上的人都不下山。'}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : kind === 'script' && cur ? (
+            <TavernScriptFields
+              value={fields}
+              onChange={patch => {
+                setCur(prev => (prev ? { ...prev, ...patch } : prev))
+                setScriptDirty(true)
+              }}
+            />
+          ) : (
             <div className="rounded-lg border border-dashed border-ink-700 p-6 text-center text-[12px] text-ink-500">
-              左边选一份，或新建一份剧本。
+              左边选一个故事看它的设定，或展开它选一份剧本。
               <p className="mt-2 text-[11px] leading-relaxed text-ink-600">
-                剧本只管「这一场」：此刻的处境、你的位置、这一场的目标与禁区。
-                人物的身世与性格放角色卡，世界的规矩放背景设定 —— 三处别互相抄。
+                故事管「世界」，剧本管「这一场」。人物的身世与性格放角色卡 —— 三处别互相抄。
               </p>
             </div>
-          ) : (
-            <TavernScriptFields value={fields} onChange={edit} />
           )}
         </div>
 
-        {/* 右：AI 起草 + 注入预览 */}
+        {/* 右：AI 起草（剧本） / 故事信息 */}
         <aside className="w-72 shrink-0 space-y-3 overflow-y-auto">
-          <div className="rounded-lg border border-amber/25 bg-amber/5 p-3">
-            <div className="text-[12px] text-amber">AI 起草六栏</div>
-            <p className="mt-1 text-[10.5px] text-ink-400 leading-relaxed">
-              写一句你想要的戏（越具体越好），AI 补全六栏。它空着的栏不会覆盖你已写的内容，
-              生成后过一遍再保存。
-            </p>
-            <div className="mt-2">
-              <div className="text-[11px] text-ink-400">一句话想法</div>
-              <AutoTextarea
-                value={seed}
-                onChange={setSeed}
-                minRows={3}
-                maxHeight={200}
-                placeholder="例：雨夜便利店，她是夜班店员，我是每天来买烟的人，今天她忽然锁了烟柜。我想让她说出为什么。
+          {kind === 'script' && cur ? (
+            <>
+              <div className="rounded-lg border border-amber/25 bg-amber/5 p-3">
+                <div className="text-[12px] text-amber">AI 起草剧本六栏</div>
+                <p className="mt-1 text-[10.5px] text-ink-400 leading-relaxed">
+                  写一句你想要的戏（越具体越好），AI 补全六栏。它空着的栏不会覆盖你已写的内容，
+                  生成后过一遍再保存。
+                </p>
+                <div className="mt-2">
+                  <div className="text-[11px] text-ink-400">一句话想法</div>
+                  <AutoTextarea
+                    value={seed}
+                    onChange={setSeed}
+                    minRows={3}
+                    maxHeight={200}
+                    placeholder="例：雨夜便利店，她是夜班店员，我是每天来买烟的人，今天她忽然锁了烟柜。我想让她说出为什么。
 也可以点名已有作品：例：按《梁山伯与祝英台》设计一场楼台会的戏。"
-              />
-            </div>
-            <div className="mt-2">
-              <RefsField value={refs} onChange={setRefs} />
-            </div>
-            <div className="mt-1.5">
-              <SearchPlanLine settings={search} />
-            </div>
-            <Button
-              variant="primary" size="md" className="mt-2 w-full"
-              disabled={drafting || !cur || (!seed.trim() && !refs.trim() && isEmptyScriptFields(fields))}
-              onClick={() => void runDraft()}
-            >
-              {drafting ? '正在生成…' : '一键起草（缺的栏补上）'}
-            </Button>
-            <DraftSourceLine source={lastSource} />
-            {cur?.draftedAt ? (
-              <p className="mt-1.5 text-[10px] text-ink-500">
-                上次生成：{new Date(cur.draftedAt).toLocaleString()}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
-            <div className="text-[12px] text-ink-200">注入情况</div>
-            <div className="mt-1.5 space-y-1 text-[11px] text-ink-400">
-              <div>
-                每轮注入 <span className={preview.length > SCRIPT_MAX_CHARS ? 'text-amber' : 'text-ink-200'}>{preview.length}</span>
-                <span className="text-ink-600"> / 上限 {SCRIPT_MAX_CHARS} 字</span>
+                  />
+                </div>
+                <div className="mt-2">
+                  <RefsField value={refs} onChange={setRefs} />
+                </div>
+                <div className="mt-1.5">
+                  <SearchPlanLine settings={search} />
+                </div>
+                <Button
+                  variant="primary" size="md" className="mt-2 w-full"
+                  disabled={drafting || (!seed.trim() && !refs.trim() && isEmptyScriptFields(fields))}
+                  onClick={() => void runDraft()}
+                >
+                  {drafting ? '正在生成…' : '一键起草（缺的栏补上）'}
+                </Button>
+                <div className="mt-1.5">
+                  <Button variant="secondary" size="md" className="w-full" onClick={() => setInterviewOpen(true)}>
+                    对话引导（边聊边写）
+                  </Button>
+                </div>
+                <DraftSourceLine source={lastSource} />
+                {cur.draftedAt ? (
+                  <p className="mt-1.5 text-[10px] text-ink-500">
+                    上次生成：{new Date(cur.draftedAt).toLocaleString()}
+                  </p>
+                ) : null}
               </div>
-              {preview.length > SCRIPT_MAX_CHARS && (
-                <div className="text-amber leading-relaxed">
-                  超了 —— 它每轮都进上下文，会挤掉对话历史。建议精简情境与目标。
+
+              <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+                <div className="text-[12px] text-ink-200">注入情况</div>
+                <div className="mt-1.5 space-y-1 text-[11px] text-ink-400">
+                  <div>
+                    每轮注入 <span className={preview.length > SCRIPT_MAX_CHARS ? 'text-amber' : 'text-ink-200'}>{preview.length}</span>
+                    <span className="text-ink-600"> / 上限 {SCRIPT_MAX_CHARS} 字</span>
+                  </div>
+                  {preview.length > SCRIPT_MAX_CHARS && (
+                    <div className="text-amber leading-relaxed">
+                      超了 —— 它每轮都进上下文，会挤掉对话历史。建议精简情境与目标。
+                    </div>
+                  )}
+                  <div>开场白单列一条消息，不占这 {SCRIPT_MAX_CHARS} 字</div>
+                  {isEmptyScriptFields(fields) && <div className="text-ink-600">（六栏全空，不进上下文）</div>}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+                <div className="text-[12px] text-ink-200">注入预览</div>
+                <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[10.5px] leading-relaxed text-ink-400">
+                  {preview || '（空）'}
+                </pre>
+                {!isEmptyScriptFields(fields) && (
+                  <>
+                    <div className="mt-2 text-[10.5px] text-ink-500">
+                      开场白（对话第一条消息，示例）：
+                    </div>
+                    <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[10.5px] leading-relaxed text-ink-400">
+                      {cur.opening.trim() || '（没写开场白 → 没有第一条消息，你直接开口）'}
+                    </pre>
+                  </>
+                )}
+                {!isEmptySnapshot(snapshotOf(cur)) && (
+                  <p className="mt-2 text-[10px] leading-relaxed text-ink-600">
+                    这段在会话里以「这一场」为标题注入，排在角色卡之后、记忆之前。
+                    开头那句是 {firstLine(cur.situation, 24) || '（没写情境）'}。
+                  </p>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+              <div className="text-[12px] text-ink-200">故事设定</div>
+              <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-400">
+                世界设定「每轮都要给模型看」，写太长会挤掉对话历史；建议 400–1200 字，
+                把「不写出来模型就会瞎编」的那几件大事写清楚即可。
+                细节让背景设定（关键词触发）去扛 —— 它命中才注入，不占常驻额度。
+              </p>
+              {story && (
+                <div className="mt-2 space-y-1 text-[11px] text-ink-400">
+                  <div>
+                    当前字数 <span className="text-ink-200">{story.setting.trim().length}</span>
+                    <span className="text-ink-600"> 字</span>
+                  </div>
+                  <div>
+                    旗下剧本 <span className="text-ink-200">{scripts.filter(s => s.storyId === story.id).length}</span>
+                    <span className="text-ink-600"> 份</span>
+                  </div>
                 </div>
               )}
-              <div>开场白单列一条消息，不占这 {SCRIPT_MAX_CHARS} 字</div>
-              {cur && isEmptyScriptFields(fields) && <div className="text-ink-600">（六栏全空，不进上下文）</div>}
             </div>
-          </div>
-
-          <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
-            <div className="text-[12px] text-ink-200">注入预览</div>
-            <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[10.5px] leading-relaxed text-ink-400">
-              {preview || '（空）'}
-            </pre>
-            {cur && !isEmptyScriptFields(fields) && (
-              <>
-                <div className="mt-2 text-[10.5px] text-ink-500">
-                  开场白（对话第一条消息，示例）：
-                </div>
-                <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[10.5px] leading-relaxed text-ink-400">
-                  {cur.opening.trim() || '（没写开场白 → 没有第一条消息，你直接开口）'}
-                </pre>
-              </>
-            )}
-            {cur && !isEmptySnapshot(snapshotOf(cur)) && (
-              <p className="mt-2 text-[10px] leading-relaxed text-ink-600">
-                这段在会话里以「这一场」为标题注入，排在角色卡之后、记忆之前。
-                开头那句是 {firstLine(cur.situation, 24) || '（没写情境）'}。
-              </p>
-            )}
-          </div>
+          )}
         </aside>
       </div>
 
