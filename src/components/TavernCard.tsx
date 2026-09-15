@@ -29,7 +29,7 @@ import TavernCardStructField from './TavernCardStructField'
 import { PROFILE_SPECS, CONDUCT_SPECS } from '../lib/tavern/cardFields'
 import { listStories, storyDisplayName } from '../lib/tavern/story'
 import { cardStoryId, readCardField, writeCardField, type TavernStoryIndexItem } from '../lib/tavern/types'
-import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem } from '../lib/tavern/types'
+import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem, type CharJournal } from '../lib/tavern/types'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName, CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
@@ -131,6 +131,12 @@ export default function TavernCard() {
   const [showMem, setShowMem] = useState(false)
   const [savingMem, setSavingMem] = useState(false)
   const [seedingMem, setSeedingMem] = useState(false)
+  /**
+   * 日记：每场对话结束时记一段「这一场发生了什么」，**只给作者回顾，不进 AI 上下文**。
+   * 与记忆第六栏「最近日记」的区别见 types.ts 的 CharJournalEntry 注释。
+   */
+  const [journal, setJournal] = useState<CharJournal | null>(null)
+  const [showJournal, setShowJournal] = useState(false)
   const [novelChars, setNovelChars] = useState<{ id: string; name: string; tabId: string }[]>([])
   const [converting, setConverting] = useState(false)
 /** 导入弹窗的筛选态：角色多时靠它定位。每次打开重置，免得留下上次的关键字 */
@@ -178,6 +184,9 @@ export default function TavernCard() {
     setMemDirty(false)
     setShowMem(false)
     setDirty(false)
+    // 日记单独取：它跟记忆是两套东西，取不到也不该拖累整张卡打不开
+    void store.getJournal(id).then(j => setJournal(j)).catch(() => setJournal(null))
+    setShowJournal(false)
   }
 
   /** 保存手工改过的记忆（与 AI 整理走同一个存储口，更新 updatedAt） */
@@ -228,6 +237,44 @@ export default function TavernCard() {
       showToast('记忆已清空 —— 之后会从新的对话重新长出来')
     } catch (e) {
       showToast(`清空失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
+  /**
+   * 清空日记。比清空记忆温和得多 —— 日记本来就不参与上下文，删了只影响作者自己的回顾，
+   * 但同样是不可撤销的，所以照样弹窗（全清比逐条删更需要拦一下）。
+   */
+  const clearJournal = async () => {
+    if (!draft || !journal?.entries.length) return
+    const go = await confirmDialog({
+      title: '清空这本日记？',
+      message: [
+        `会删掉这 ${journal.entries.length} 条场记（每场对话结束写的那段回顾）。`,
+        '',
+        '⚠️ 不可撤销 —— 日记没有备份。',
+        '· 它不参与 AI 上下文，所以删掉**不会**让 Ta 失忆；',
+        '· 想只删某一条，直接点那一条右边的「删除」就行。',
+      ].join('\n'),
+      confirmText: '清空日记',
+      danger: true,
+    })
+    if (!go) return
+    try {
+      await store.clearJournal(draft.id)
+      setJournal(await store.getJournal(draft.id))
+      showToast('日记已清空')
+    } catch (e) {
+      showToast(`清空失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
+  /** 删单条日记（记错了、或者那一场作者不想要了） */
+  const dropJournal = async (entryId: string) => {
+    if (!draft) return
+    try {
+      setJournal(await store.dropJournalEntry(draft.id, entryId))
+    } catch (e) {
+      showToast(`删除失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }
 
@@ -1075,6 +1122,68 @@ export default function TavernCard() {
                         ))}
                       </div>
                     </>
+                  )}
+                </section>
+
+                {/* 日记：每场对话结束时写的一条回顾（老大 2026-09-16 定）
+                    🔴 与记忆的根本区别：日记**不进 AI 上下文**。所以它可以写细、
+                       可以让人读，而记忆必须压成干巴巴的条目。界面上必须把这点讲清，
+                       否则作者会以为「日记也喂给 AI」而不敢写长。 */}
+                <section className="rounded-lg border border-ink-700 bg-ink-850/40 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-[13px] font-semibold text-amber/90">Ta的日记</h3>
+                      <p className="mt-0.5 text-[11px] text-ink-500 leading-relaxed">
+                        每次点「结束本轮对话」时写一段，记这一场发生了什么。它<span className="text-ink-400">不喂给 AI</span>，只给你回顾用 ——
+                        所以写细一点不占额度。
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => setShowJournal(v => !v)}>
+                        {showJournal ? '收起' : '展开'}
+                      </Button>
+                      {!!journal?.entries.length && (
+                        <Button variant="danger" size="sm" onClick={() => void clearJournal()}
+                          title="删掉这本日记的全部条目（不可撤销，会先弹窗确认）">
+                          清空日记
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {!journal?.entries.length ? (
+                    <p className="mt-2 text-[11.5px] text-ink-500">
+                      还没有日记。去「自由对话」聊一场，点「结束本轮对话」就会记下第一段。
+                    </p>
+                  ) : !showJournal ? (
+                    <p className="mt-2 text-[11.5px] text-ink-400">
+                      共 {journal.entries.length} 条 ·
+                      最近一次 {new Date(journal.entries[0].at).toLocaleString('zh-CN')} ·
+                      「{journal.entries[0].sessionTitle}」
+                    </p>
+                  ) : (
+                    <ul className="mt-3 space-y-2.5">
+                      {journal.entries.map(e => (
+                        <li key={e.id} className="rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 text-[10.5px] text-ink-500">
+                              <span>{new Date(e.at).toLocaleString('zh-CN')}</span>
+                              {e.sessionTitle && <span className="ml-1.5 text-ink-400">「{e.sessionTitle}」</span>}
+                              {e.cast.length > 0 && <span className="ml-1.5">在场：{e.cast.join('、')}</span>}
+                            </div>
+                            <button
+                              type="button"
+                              title="删掉这一条"
+                              onClick={() => void dropJournal(e.id)}
+                              className="shrink-0 text-[10.5px] text-ink-500 hover:text-red-400 transition-colors"
+                            >
+                              删除
+                            </button>
+                          </div>
+                          <p className="mt-1 text-[12px] text-ink-200 whitespace-pre-wrap leading-relaxed">{e.text}</p>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </section>
 

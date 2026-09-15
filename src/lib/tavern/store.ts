@@ -20,11 +20,12 @@
  */
 import * as db from '../db'
 import { uid } from '../id'
-import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId } from './types'
+import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP } from './types'
 import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
   FreeCharacter, FreeSession, FreeMemory, DailyState,
+  CharJournal, CharJournalEntry,
   TavernCharIndexItem, FreeSessionIndexItem, TavernMessage, TavernCheckpoint,
   TavernDirectorNote, CardFieldPath,
 } from './types'
@@ -46,6 +47,7 @@ const G = {
   memory: (charId: string) => `tavern.free.mem.${charId}`,
   daily: (charId: string) => `tavern.free.daily.${charId}`,
   greeting: (charId: string) => `tavern.free.greeting.${charId}`,
+  journal: (charId: string) => `tavern.free.journal.${charId}`,
 } as const
 
 // ==================== 工具 ====================
@@ -472,6 +474,7 @@ export async function deleteFreeChar(id: string): Promise<void> {
   await db.setMeta(G.memory(id), null)
   await db.setMeta(G.daily(id), null)
   await db.setMeta(G.greeting(id), null)
+  await db.setMeta(G.journal(id), null)
 
   const sessions = await listFreeSessions()
   for (const s of sessions) {
@@ -501,6 +504,7 @@ export async function saveFreeSession(s: FreeSession): Promise<FreeSession> {
   const idx = await db.getMeta<FreeSessionIndexItem[]>(G.freeSessionIndex, [])
   const item: FreeSessionIndexItem = {
     id: next.id, title: next.title, charIds: next.charIds,
+    storyId: next.storyId,
     lastActiveAt: next.lastActiveAt, updatedAt: next.updatedAt,
   }
   const i = idx.findIndex(x => x.id === next.id)
@@ -536,9 +540,12 @@ export async function createFreeSession(
   params: FreeSession['params'],
   /** 用户扮演的角色 id（可选）：不传 = 用户演他自己 */
   userCharId?: string,
+  /** 归属故事 id（可选）：新建对话时必须先选故事，左栏据此树状分组 */
+  storyId?: string,
 ): Promise<FreeSession> {
   const s: FreeSession = {
     id: uid(), charIds, userCharId: userCharId || undefined, title, messages: [], model, params,
+    storyId: storyId || undefined,
     lastActiveAt: now(), createdAt: now(), updatedAt: now(),
   }
   return saveFreeSession(s)
@@ -578,6 +585,44 @@ export async function getDaily(charId: string): Promise<DailyState> {
 
 export async function saveDaily(d: DailyState): Promise<void> {
   await db.setMeta(G.daily(d.charId), d)
+}
+
+/**
+ * 日记（给作者回顾用的场记，**不进 AI 上下文**）
+ *
+ * 每场对话结束追加一条；超出 JOURNAL_KEEP 就丢最老的。
+ * 为什么上限这么小：日记是给人读的摘要，第五十场之前的再留着也没人翻，
+ * 而且它跟六栏记忆不一样 —— 那份每年都在重写，这本只会越来越长。
+ */
+export async function getJournal(charId: string): Promise<CharJournal> {
+  return db.getMeta<CharJournal>(G.journal(charId), { charId, entries: [], updatedAt: 0 })
+}
+
+export async function appendJournalEntry(
+  charId: string,
+  entry: CharJournalEntry,
+  keep = JOURNAL_KEEP,
+): Promise<CharJournal> {
+  const cur = await getJournal(charId)
+  const next: CharJournal = {
+    charId,
+    entries: [entry, ...cur.entries].slice(0, keep),
+    updatedAt: now(),
+  }
+  await db.setMeta(G.journal(charId), next)
+  return next
+}
+
+export async function dropJournalEntry(charId: string, entryId: string): Promise<CharJournal> {
+  const cur = await getJournal(charId)
+  const next: CharJournal = { ...cur, entries: cur.entries.filter(e => e.id !== entryId), updatedAt: now() }
+  await db.setMeta(G.journal(charId), next)
+  return next
+}
+
+/** 清空某位角色的日记（角色卡页的「清空日记」用） */
+export async function clearJournal(charId: string): Promise<void> {
+  await db.setMeta(G.journal(charId), { charId, entries: [], updatedAt: now() })
 }
 
 export async function setGreeting(charId: string, text: string): Promise<void> {

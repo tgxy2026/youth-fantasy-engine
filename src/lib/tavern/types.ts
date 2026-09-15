@@ -393,6 +393,14 @@ export type FreeSession = {
   /** 参演角色（**含**用户扮演的那个，如果有）；发言轮转与设定层会自动把他摘出去 */
   charIds: string[]
   /**
+   * 这一场属于哪个故事（老大 2026-09-16 定：新建对话必须先选故事）。
+   *
+   * 为什么存一份而不是从角色卡反推：一场对话的**世界观**由故事提供，而「谁在场」是会变的 ——
+   * 角色卡被删、被改归属之后，反推就得出另一个故事（甚至推不出来），左栏的树会自己搬家。
+   * 可选是为了让旧会话仍能打开：读不到就按角色卡反推（`sessionStoryId`），推不出落「未归属」。
+   */
+  storyId?: string
+  /**
    * 用户扮演的角色 id（可选）。不填 = 用户演他自己（旧行为）。
    *
    * 填了之后有两处变化：
@@ -427,6 +435,13 @@ export type FreeSession = {
    */
   scriptId?: string
   script?: ScriptSnapshot
+  /**
+   * 「结束本轮对话」的时间戳。**有值 = 本轮已归档：只读。**
+   *
+   * 为什么单独一个字段而不是给会话加一个 status 枚举：归档只需要「是 / 否」，
+   * 加枚举会让所有读会话的地方都要处理一类永远用不上的中间态。
+   */
+  endedAt?: number
   lastActiveAt: number
   createdAt: number
   updatedAt: number
@@ -459,6 +474,35 @@ export type DailyState = {
   /** 当前心情（并入记忆的关系状态展示，单独存原值便于 UI 显示） */
   mood?: string
 }
+
+/**
+ * 日记：给**作者**回顾用的一段话，**不进 AI 上下文**。
+ *
+ * 与第六栏「最近日记」的区别是那条根本的区别 —— 六栏记忆每轮都要注入 system，
+ * 所以只能写成干巴巴的一条行 − MM-DD：一句话；而这里的日记是给**人**读的：
+ * 一场对话结束后来一段小结，作者随时能回来翻「这一场到底发生了什么」。
+ * 它不参与任何提示词组装，所以写细一点也不占额度。
+ */
+export type CharJournalEntry = {
+  id: string
+  at: number
+  /** 来自哪一场对话（会话删了也不影响，只是溯源用） */
+  sessionId: string
+  sessionTitle: string
+  /** 这一场在场的人（含用户扮演的那个） */
+  cast: string[]
+  text: string
+}
+
+export type CharJournal = {
+  charId: string
+  /** 倒序（新的在前） */
+  entries: CharJournalEntry[]
+  updatedAt: number
+}
+
+/** 每位角色保留的日记条数（滚动，超出丢最老的） */
+export const JOURNAL_KEEP = 50
 
 // ==================== 变量（C2 第二步：变量 + AI 输出增量）====================
 
@@ -668,6 +712,26 @@ export function cardStoryId(c: { storyId?: string } | null | undefined): string 
   return (c?.storyId as string | undefined) || ''
 }
 
+/**
+ * 取一场对话的归属故事 id（左栏树状分组用）。
+ *
+ * 优先用会话自己存的 `storyId`（新建时选定）；没有（旧会话）则**按在场角色反推** ——
+ * 取第一个能查到归属的角色，因为一场对话的角色是同一个故事里的人（新建时已按故事过滤）。
+ * 推不出（卡都被删了、或卡都自由状态）→ 返回空串，归到「未归属」抽屉，绝不悄悄丢出列表。
+ */
+export function sessionStoryId(
+  s: { storyId?: string; charIds: string[] } | null | undefined,
+  charIndex: { id: string; storyId?: string }[],
+): string {
+  const own = (s?.storyId as string | undefined) || ''
+  if (own) return own
+  for (const id of s?.charIds ?? []) {
+    const hit = charIndex.find(c => c.id === id)
+    if (hit && cardStoryId(hit)) return cardStoryId(hit)
+  }
+  return ''
+}
+
 export function emptyFreeCharacter(): Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'> {
   return {
     storyId: '',
@@ -685,6 +749,8 @@ export type FreeSessionIndexItem = {
   id: string
   title: string
   charIds: string[]
+  /** 左栏按它分组（故事 → 对话）；空 = 未归属 */
+  storyId?: string
   lastActiveAt: number
   updatedAt: number
 }

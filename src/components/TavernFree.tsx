@@ -27,6 +27,7 @@ import TavernEchoHints from './TavernEchoHints'
 import { Pencil } from 'lucide-react'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
+import { Modal } from './Modal'
 import { LoadingState } from './LoadingState'
 import TavernFreeSetup, { type FreeDraft } from './TavernFreeSetup'
 import TavernCastDirector from './TavernCastDirector'
@@ -41,27 +42,33 @@ import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
-import { runFreeTurn, varsEnabledKeys, renderFreeCharacter } from '../lib/tavern/engine'
+import { runFreeTurn, varsEnabledKeys } from '../lib/tavern/engine'
 import type { PostApplied } from '../lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
-import { summarizeMemory, extractSessionVars } from '../lib/tavern/summarize'
 import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
 import { uid } from '../lib/id'
-import {
-  memoryChars, messagesAfterWatermark, nextWatermark, acquireSummaryLock, releaseSummaryLock,
-  shouldRunAutoSummary, MEMORY_SECTIONS, isMemoryEmpty,
-} from '../lib/tavern/memory'
+import { nextWatermark, acquireSummaryLock, releaseSummaryLock } from '../lib/tavern/memory'
 import {
   type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
-  type VarKey, type VarChange,
+  type VarKey, VAR_DEFS, type TavernStoryIndexItem, sessionStoryId,
 } from '../lib/tavern/types'
 import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf } from '../lib/tavern/vars'
 import { scriptSceneLine, snapshotOf, openingToMessage } from '../lib/tavern/script'
 import { getScript } from '../lib/tavern/script'
 import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
+import { listStories, storyDisplayName } from '../lib/tavern/story'
 import { freeDocModel, type SpeakerInfo } from '../lib/tavern/exportDoc'
 import { buildStatusModel, agoText } from '../lib/tavern/status'
+import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult, type RoundEndStage } from '../lib/tavern/roundEnd'
+
+/** 收尾各阶段在界面上的措辞（多角色时还会附上「第几个/共几个」） */
+const STAGE_TEXT: Record<RoundEndStage, string> = {
+  memory: '整理记忆与日记…',
+  vars: '结算本场数值…',
+  revise: '审查设定…',
+  done: '已收尾',
+}
 
 export default function TavernFree() {
   // ---------- 数据 ----------
@@ -70,14 +77,19 @@ export default function TavernFree() {
   /** 当前会话的**主角色**（会话 charIds[0]）：记忆 / 日常 / 总结都挂在它身上 */
   const [charCard, setCharCard] = useState<FreeCharacter | null>(null)
   const [sessions, setSessions] = useState<FreeSessionIndexItem[]>([])
+  /** 故事列表（左栏把对话挂在故事下面；老大 2026-09-16 定） */
+  const [stories, setStories] = useState<TavernStoryIndexItem[]>([])
+  /** 左栏树里被**收起**的故事（默认全展开 —— 对话不多时先让作者看见全貌） */
+  const [closedStoryIds, setClosedStoryIds] = useState<string[]>([])
   const [session, setSession] = useState<FreeSession | null>(null)
   /**
    * 记忆是**角色级**的：一场对话里有几个角色就有几份档案。
-   * 所以这里存成 map，右侧面板用页签切换 —— 不再只显示「主角色」那一份。
+   * 所以存成 map。注意右侧面板已改为显示「本场状态」而非记忆（老大 2026-09-16 定），
+   * 记忆只在点「结束本轮对话」时整理，阅读入口在角色卡片页。
    */
   const [mems, setMems] = useState<Record<string, FreeMemory | null>>({})
-  /** 右栏当前看的是谁的记忆（默认 = 会话第一个角色） */
-  const [memTabId, setMemTabId] = useState('')
+  /** 右栏「Ta这几天的生活 / 心情」看的是谁 —— 默认取第一个 **AI 扮演** 的角色（用户演的那位不是观察对象） */
+  const [statusCharId, setStatusCharId] = useState('')
   const [summaryProviderId, setSummaryProviderId] = useState('')
 
   // ---------- UI ----------
@@ -91,10 +103,16 @@ export default function TavernFree() {
   const [streaming, setStreaming] = useState(false)
   const [streamText, setStreamText] = useState('')
   const [phase, setPhase] = useState('')
-  const [summarizing, setSummarizing] = useState(false)
-  /** 整理进度（多角色时要逐个整理，显示「2/3」免得以为卡住了） */
-  const [sumProgress, setSumProgress] = useState('')
-  const [showMemory, setShowMemory] = useState(true)
+  /**
+   * 「结束本轮对话」进行中。
+   * 注意与旧的 `summarizing` 不同：那玩意儿是**每轮都在后台跑**，作者看得见它卡；
+   * 这个只在作者主动点「结束本轮对话」后才出现，且是一次性的。
+   */
+  const [ending, setEnding] = useState(false)
+  const [endStage, setEndStage] = useState<RoundEndProgress | null>(null)
+  /** 收尾结果摘要（日记 + 数值变化），弹窗展示后关掉即焚 */
+  const [endResult, setEndResult] = useState<RoundEndResult | null>(null)
+  /** 右栏状态面板默认展开；它的价值就在「不用点开就看到」，所以不再给收起按钮 */
   /** Ta这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
   const [daily, setDaily] = useState<DailyState | null>(null)
   const [showDaily, setShowDaily] = useState(false)
@@ -164,6 +182,11 @@ export default function TavernFree() {
     }
   }, [])
 
+  /** 故事列表（左栏把对话挂在故事下面；老大 2026-09-16 定） */
+  const refreshStories = useCallback(async () => {
+    try { setStories(await listStories()) } catch { setStories([]) }
+  }, [])
+
   // ---------- 加载 ----------
   useEffect(() => {
     void (async () => {
@@ -177,13 +200,14 @@ export default function TavernFree() {
         setTavernSettings(st)
         setSummaryProviderId(st.free.summaryProviderId)
         setSessions(await store.listFreeSessions())
+        await refreshStories()
       } catch (e) {
         showToast(`读取失败：${e instanceof Error ? e.message : String(e)}`, 'error')
       } finally {
         setLoading(false)
       }
     })()
-  }, [])
+  }, [refreshStories])
 
   // ---------- 日常推进与主动留言（§4.7 / §7.5） ----------
   /**
@@ -231,12 +255,13 @@ export default function TavernFree() {
         const rows = await Promise.all(cards.map(async c =>
           [c.id, await store.getMemory(c.id).catch(() => null)] as const))
         setMems(Object.fromEntries(rows))
-        setMemTabId(prev => (cards.some(c => c.id === prev) ? prev : (primary?.id ?? '')))
+        const aiFirst = cards.find(c => c.id !== s.userCharId)
+        setStatusCharId(prev => (cards.some(c => c.id === prev) ? prev : (aiFirst?.id ?? primary?.id ?? '')))
         // 打开就补算「这几天的生活」（方案 §4.6 ② 的同一思路：无服务端只能靠打开时补）
         if (primary) void advanceIfNeeded(primary, await store.getDaily(primary.id).catch(() => null))
       } else {
         setMems({})
-        setMemTabId('')
+        setStatusCharId('')
         setDaily(null)
       }
       // Ta留着的话：展示后即清除，不留着反复弹
@@ -275,7 +300,7 @@ export default function TavernFree() {
       const snap = script ? snapshotOf(script) : null
       const opening = snap ? openingToMessage(snap) : ''
       const created = await store.createFreeSession(
-        d.charIds, d.title || title, { providerId: '' }, {}, d.userCharId || undefined)
+        d.charIds, d.title || title, { providerId: '' }, {}, d.userCharId || undefined, d.storyId || undefined)
       const withOpening: FreeSession = {
         ...created,
         ...(snap ? { scriptId: snap.scriptId, script: snap } : {}),
@@ -284,6 +309,7 @@ export default function TavernFree() {
       await store.saveFreeSession(withOpening)
       setSetupOpen(false)
       await refreshSessions()
+      await refreshStories()
       setSession(withOpening)
       await loadSessionContext(withOpening)
       const aiNames = d.charIds.filter(id => id !== d.userCharId).map(nameOf).filter(Boolean).join('、')
@@ -298,114 +324,91 @@ export default function TavernFree() {
     } catch (e) {
       showToast(`新建失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
-  }, [nameOf, refreshSessions, loadSessionContext])
+  }, [nameOf, refreshSessions, refreshStories, loadSessionContext])
 
-  // ---------- 记忆总结 ----------
+  // ---------- 结束本轮对话（一次性收尾：记忆 + 日记 + 数值 + 设定） ----------
   /**
-   * 跑一次总结：**按角色逐个整理**（记忆是角色级的）。
-   * manual = 手动点「立即整理记忆」（不受时间节流限制 —— 作者点了就该跑）。
-   * 自动路径要过三道闸：新消息够不够 → 时间节流 → 跨实例锁；过了才逐个角色整理。
+   * 以前这里是「每轮说完一句就静默整理一次记忆」。本地模型跑一次要几十秒，
+   * 全都压在那句之后 —— 作者的表现就是「说完卡半天」，聊越久越卡（反馈 #3）。
    *
-   * ⚠️ 水位线**只在全部角色都成功后才推进**：宁可下次重算，也不能让某个角色漏记一段。
+   * 现在改成：**聊天过程中一次都不整理**，作者点「结束本轮对话」才走完这一整套。
+   * 代价是本轮的对话要结束时才进长期记忆 —— 换来的是对话过程再不会被打断。
    */
-  const runSummary = useCallback(async (s: FreeSession, manual = false) => {
-    const cards = (await Promise.all(s.charIds.map(async id => store.getFreeChar(id))))
-      .filter((c): c is FreeCharacter => !!c)
-    if (cards.length === 0) return
+  const endRound = useCallback(async () => {
+    const s = session
+    if (!s || ending) return
+    if (s.endedAt) { showToast('本轮已经结束了', 'info'); return }
 
-    if (!manual) {
-      const first = await store.getMemory(cards[0].id).catch(() => null)
-      const verdict = shouldRunAutoSummary(s, first, Date.now(), {
-        triggerMessages: lim.triggerMessages,
-        minIntervalMs: lim.minIntervalMs,
-      })
-      if (!verdict.run) return
-    }
-    const pending = messagesAfterWatermark(s.messages, s.watermark)
-    if (pending.length === 0) {
-      if (manual) showToast('还没有新内容可整理', 'info')
+    const pending = pendingMessages(s)
+    if (pending.length === 0 && s.messages.length === 0) {
+      showToast('这个对话还是空的', 'info')
       return
     }
-    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) {
-      if (manual) showToast('另一个窗口正在整理记忆', 'info')
-      return
-    }
-    setSummarizing(true)
+
+    const ok = await confirmDialog({
+      title: '结束本轮对话',
+      message: [
+        `现在就让 AI 整理这一场（${s.messages.length} 条），然后把它归档。`,
+        '',
+        '整理内容包括：各角色的记忆、本场小结（写进 Ta 的日记）、本场数值，以及要不要改设定的建议。',
+        '结束后这一场会变成只读，想继续就新开一场。',
+      ].join('\n'),
+      danger: false,
+    })
+    if (!ok) return
+
+    setEnding(true)
+    setEndStage(null)
+    setEndResult(null)
     try {
-      const done: FreeMemory[] = []
-      for (let i = 0; i < cards.length; i++) {
-        const c = cards[i]
-        if (cards.length > 1) setSumProgress(`${i + 1}/${cards.length}`)
-        const prev = await store.getMemory(c.id).catch(() => null)
-        const next = await summarizeMemory({
-          charId: c.id,
-          charName: c.name,
-          prev,
-          messages: pending,
-          // 带上角色背景：不给的话模型会凭对话臆断「Ta在哪、是谁」，记忆从第一次就开始漂移。
-          // 🔴 用**四章全文**（renderFreeCharacter，与「冷启动补算」同源），别只挑四个字段：
-          //    总结提示词明确要求"以〖角色背景〗为事实基准"判断关系，而关系就写在 2.4 ——
-          //    旧实现只传 世界/内核/做不到/知识边界，等于让模型在**不知道对方是谁**的前提下
-          //    重写「关系状态」，正是这个模块最该避免的漂移。
-          charContext: [
-            renderFreeCharacter(c),
-            // 用户扮演的角色：他的台词是用户写的，整理时按「已经发生的事」记，别写成别人转述
-            c.id === s.userCharId && '（这位角色由**用户自己**扮演：他说的话与做的事是既成事实，直接记进他的视角；不要写成「某某告诉我」。）',
-          ].filter(Boolean).join('\n\n'),
-          providerId: summaryProviderId || undefined,
-          limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays },
-        })
-        await store.saveMemory(next)
-        done.push(next)
+      if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) {
+        showToast('另一个窗口正在收尾', 'info')
+        return
       }
-      // 本场数值：与记忆**同一次触发**（同一个水位线窗口）。
-      // 单开一次结构化小调用读一遍「这几轮有没有变化」—— 旧做法是每轮在回复末尾要一行记账，
-      // 实测遵守率极低（真模型探针 1/6、0/6、0/6），作者只会以为数值功能坏了。
-      // ⚠️ 失败不影响记忆与水位线：数值算不出来，这一场照样能继续演。
-      let nextVars = s.vars
-      let varChanges: VarChange[] = []
-      if (varKeys.length > 0) {
-        const cur = varsOf(s, varKeys)
-        const ex = await extractSessionVars({
-          keys: varKeys,
-          values: cur.values,
-          messages: pending,
-          // nameOf 在本组件里要求 id 必填；抽取件允许缺省（消息可能没有 speakerId）
-          nameOf: (id?: string) => nameOf(id ?? ''),
-          maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
-          providerId: summaryProviderId || undefined,
-        }).catch(() => null)
-        if (ex && ex.changes.length > 0) {
-          nextVars = recordVarChanges({ ...cur, values: ex.values }, ex.changes, turnSeqOf(s.messages))
-          varChanges = ex.changes
-        }
-      }
+      const res = await runRoundEnd({
+        session: s,
+        cards: castCards,
+        providerId: summaryProviderId || undefined,
+        limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays },
+        varKeys,
+        vars: s.vars,
+        maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
+        nameOf: (id?: string) => nameOf(id ?? ''),
+        onProgress: setEndStage,
+      })
 
-      // 水位线推进到最后一条（全部成功才走到这儿）
-      const wm = nextWatermark(s)
-      const updated: FreeSession = { ...s, watermark: wm ?? s.watermark, vars: nextVars, updatedAt: Date.now() }
+      // 水位线推进到最后一条 + 写回数值 + 打上归档戳
+      const updated: FreeSession = {
+        ...s,
+        watermark: nextWatermark(s) ?? s.watermark,
+        vars: res.vars,
+        endedAt: res.endedAt,
+        updatedAt: Date.now(),
+      }
       await store.saveFreeSession(updated)
       setSession(cur => (cur && cur.id === updated.id ? updated : cur))
-      setMems(prev => ({ ...prev, ...Object.fromEntries(done.map(m => [m.charId, m])) }))
-      if (varChanges.length > 0) {
-        showToast('本场数值：' + varChanges
-          .map(c => `${c.label} ${String(c.from || '空')} → ${String(c.to || '空')}`).join('；'), 'info')
+      setMems(prev => ({ ...prev, ...Object.fromEntries(res.memories.map(m => [m.charId, m])) }))
+
+      const n = Object.keys(res.journals).length
+      showToast(`本轮已结束 —— ${res.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}`)
+
+      setEndResult(res)
+      // 有设定建议就顺手摊开给作者裁决 —— 都到这一步了，让他再点一次按钮纯属多余
+      if (res.proposals.length > 0) {
+        setProposals(res.proposals)
+        setPicked(new Set(res.proposals.map(p => p.id)))
+        setReviseError('')
+        setReviseOpen(true)
       }
-      if (manual) {
-        const total = done.reduce((n, m) => n + memoryChars(m), 0)
-        showToast(done.length > 1
-          ? `已分别更新 ${done.length} 位角色的记忆（合计 ${total} 字）`
-          : `记忆已更新（${total} 字）`)
-      }
+      await refreshSessions()
     } catch (e) {
-      // 失败保留旧档案（已写成功的保留、未写的保持旧值），也**不推进水位线**，下次补算
-      if (manual) showToast(`总结失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(`结束失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       releaseSummaryLock()
-      setSummarizing(false)
-      setSumProgress('')
+      setEnding(false)
+      setEndStage(null)
     }
-  }, [summaryProviderId, lim, varKeys, nameOf, tavernSettings])
+  }, [session, ending, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions])
 
   /**
    * 设定更新：对**在场每个角色**分别审查一遍。
@@ -473,11 +476,6 @@ export default function TavernFree() {
     }
   }, [proposals, picked, session, loadSessionContext])
 
-  /** 自动总结：静默，失败也不打扰（下次打开会补算） */
-  const autoSummarize = useCallback(async (s: FreeSession) => {
-    try { await runSummary(s, false) } catch { /* 静默 */ }
-  }, [runSummary])
-
   /** 提交会话改名（Enter / 失焦保存，Esc 取消）。与原名相同则不写库、不提示。 */
   const saveTitle = useCallback(async () => {
     const cur = session
@@ -501,6 +499,11 @@ export default function TavernFree() {
   const send = useCallback(async (preset?: string) => {
     const text = (preset ?? input).trim()
     if (!text || !session || !charCard || streaming) return
+    // 🔴 归档后只读：这一场已经整理归档再去改它，记忆与日记就会和正文对不上
+    if (session.endedAt) {
+      showToast('本轮对话已结束 —— 想接着聊请新开一场', 'info')
+      return
+    }
     if (!preset) setInput('')
     setStreaming(true)
     setStreamText('')
@@ -528,7 +531,6 @@ export default function TavernFree() {
       setStreamText('')
       setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       await refreshSessions()
-      if (!res.cancelled) void autoSummarize(saved)
       if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
       // 说完这句就把Ta说的话撤掉：那句话是「很久没来」时才该有的
       setGreeting('')
@@ -543,7 +545,7 @@ export default function TavernFree() {
       setPhase('')
       abortRef.current = null
     }
-  }, [input, session, charCard, streaming, refreshSessions, autoSummarize, castCards, speakNext])
+  }, [input, session, charCard, streaming, refreshSessions, castCards, speakNext])
 
   // ---------- 消息级操作（与剧情推演同一套；自由模式多一条：重说时**保持原来的说话人**） ----------
   const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
@@ -702,7 +704,7 @@ export default function TavernFree() {
     setCastCards([])
     setCharCard(null)
     setMems({})
-    setMemTabId('')
+    setStatusCharId('')
     setDaily(null)
     await refreshSessions()
     showToast('已删除会话')
@@ -719,13 +721,53 @@ export default function TavernFree() {
     return session.messages.reduce((n, m) => n + m.content.length, 0)
   }, [session])
 
-  /** 左栏列表：按标题 / 在场角色名过滤 */
-  const rows = useMemo(() => {
+  /**
+   * 左栏树：故事（父）→ 对话（子）。过滤词同时作用于故事名与对话（标题 / 在场角色）。
+   *
+   * 「未归属」抽屉必留：会话的归属是**推**出来的（自己存的 storyId，或按在场角色反推），
+   * 故事被删、卡被删之后就会推不出来 —— 那些对话必须有地方安身，
+   * 否则它们会从列表里凭空消失，而作者只会以为「对话丢了」。
+   */
+  const tree = useMemo(() => {
     const kw = q.trim().toLowerCase()
-    if (!kw) return sessions
-    return sessions.filter(s =>
-      `${s.title} ${s.charIds.map(nameOf).join(' ')}`.toLowerCase().includes(kw))
-  }, [sessions, q, nameOf])
+    const hit = (s: FreeSessionIndexItem) =>
+      !kw || `${s.title} ${s.charIds.map(nameOf).join(' ')}`.toLowerCase().includes(kw)
+    const kept = sessions.filter(hit)
+    const groups = stories
+      .map(st => ({ id: st.id, name: storyDisplayName(st), rows: kept.filter(s => sessionStoryId(s, chars) === st.id) }))
+      // 过滤时把空组隐掉（否则搜一个词会剩一排空标题）；不过滤时保留，让作者看见结构
+      .filter(g => !kw || g.rows.length > 0)
+    const orphan = kept.filter(s => {
+      const sid = sessionStoryId(s, chars)
+      return !sid || !stories.some(st => st.id === sid)
+    })
+    return { groups, orphan, total: kept.length }
+  }, [sessions, stories, chars, q, nameOf])
+
+  const toggleStory = (id: string) =>
+    setClosedStoryIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
+
+  /** 一场对话在左栏树里的样子（故事分组与「未归属」两处共用，抽出来免得走样） */
+  const renderSessionRow = (s: FreeSessionIndexItem) => {
+    const active = session?.id === s.id
+    const names = s.charIds.map(nameOf).filter(Boolean).join('、') || '（角色已删除）'
+    return (
+      <button
+        key={s.id}
+        type="button"
+        onClick={() => void openSession(s.id)}
+        className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
+          active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+        }`}
+      >
+        <div className={`truncate text-[12px] ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <span className="truncate text-[10.5px] text-ink-500">{names}</span>
+          <span className="shrink-0 text-[10.5px] text-ink-600">{agoText(s.lastActiveAt)}</span>
+        </div>
+      </button>
+    )
+  }
 
   /** AI 演的角色（用户扮演的那个不算 AI 的位子：头像行、气泡归属都要摘掉他） */
   const aiCards = useMemo(
@@ -741,10 +783,6 @@ export default function TavernFree() {
     () => aiCards.map(c => ({ id: c.id, name: c.name || '（未命名）', tag: 'AI 演', speakable: true })),
     [aiCards],
   )
-  /** 右栏页签当前指向的那份记忆 */
-  const activeMem = memTabId ? mems[memTabId] ?? null : null
-  const memChars = activeMem ? memoryChars(activeMem) : 0
-
   /**
    * 状态一览（批次 8，C2 第一步：只读）。
    * 只吃**已经加载好**的两样东西（在场角色卡 + 每位角色的记忆），不额外读库 ——
@@ -759,13 +797,13 @@ export default function TavernFree() {
 
   /** 我的档案（全局）：目前只用来给「你」这一侧挂头像 */
   const myProfile = tavernSettings?.profile ?? DEFAULT_TAVERN_PROFILE
-  /** 当前页签角色的日常（心情 / 这几天的生活也是角色级的） */
+  /** 右栏「Ta这几天的生活 / 心情」跟着 statusCharId 走（角色级数据，换人换一份） */
   useEffect(() => {
-    if (!memTabId) { setDaily(null); return }
+    if (!statusCharId) { setDaily(null); return }
     let alive = true
-    void store.getDaily(memTabId).then(d => { if (alive) setDaily(d) }).catch(() => { if (alive) setDaily(null) })
+    void store.getDaily(statusCharId).then(d => { if (alive) setDaily(d) }).catch(() => { if (alive) setDaily(null) })
     return () => { alive = false }
-  }, [memTabId, session?.id])
+  }, [statusCharId, session?.id])
 
   // ---------- 渲染 ----------
   if (loading) return <div className="page-enter"><LoadingState /></div>
@@ -779,11 +817,12 @@ export default function TavernFree() {
         <HelpPopover title="自由对话怎么用" width="24rem" size={14}>
   这里的对话不绑小说项目：换一本书，角色卡与记忆照样在。
 
-  • 顶部几件：Ta最近几天（每日小结）、查看记忆（六栏记忆，可逐栏改）、角色状态（在场角色 + 本场数值）、导出。
+  • 顶部几件：Ta最近几天（每日小结）、结束本轮对话（整理记忆并归档）、导出。
+  • 右侧常驻「本场状态」：好感 / 信任 / 剧情进度 / 心情 这些即时数值，以及在场由 AI 扮演的角色。
   • 多角色同场时点头像可指定下一位接话；「在场调度」里能静音某个人、调健谈度。
-  • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。
-  • 「本场数值」（好感 / 信任 / 剧情进度 / 心情 / 当前地点）只属于这一场，在「角色状态」里看得到、也能手改。
-  • 想给这一场一个具体处境，就在新建对话时选一份剧本（「剧本编辑」里写）。
+  • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它**只在点「结束本轮对话」时**才整理，
+    所以聊天过程中不会被整理任务卡住；整理好的记忆与日记在「角色卡片」页里看。
+  • 想给这一场一个具体处境，就在新建对话时选一份剧本（「故事剧本」里写，要先有故事）。
 </HelpPopover>
         {session && <span className="max-w-[28rem] truncate text-[12px] text-ink-400" title={session.title}>{session.title}</span>}
         <div className="flex-1" />
@@ -794,8 +833,22 @@ export default function TavernFree() {
                 {showDaily ? '收起这几天' : 'Ta最近几天'}
               </Button>
             )}
-            <Button variant="secondary" size="md" onClick={() => setShowMemory(v => !v)}>
-              {showMemory ? '隐藏记忆' : '查看记忆'}
+            {/* 已归档：先说明状态再给唯一的补救入口 —— 顺序不能反，
+                否则作者第一眼看到的是「新开一场」，会以为自己的对话没了 */}
+            {session.endedAt ? (
+              <span className="text-[11.5px] text-amber/80">
+                本轮已于 {agoText(session.endedAt)}结束（只读）
+              </span>
+            ) : null}
+            <Button
+              variant={session.endedAt ? 'secondary' : 'danger'} size="md"
+              disabled={ending || !!session.endedAt}
+              title={session.endedAt
+                ? '这一场已经整理归档了'
+                : '整理这一场：更新各角色记忆、写本场日记、结算数值，并把对话归档为只读'}
+              onClick={() => void endRound()}
+            >
+              {ending ? '收尾中…' : (session.endedAt ? '已结束' : '结束本轮对话')}
             </Button>
             <Button
               variant="secondary" size="md" disabled={streaming || session.messages.length === 0}
@@ -806,7 +859,7 @@ export default function TavernFree() {
             </Button>
             <Button
               variant="secondary" size="md" onClick={() => setStatusOpen(v => !v)}
-              title="在场角色 + 关系状态 + 记忆计数（只读，来自右栏「记忆」那六栏）"
+              title="对话上方那条状态一览：场景、在场角色与本场数值（只读；数值可点右侧「本场状态」改）"
             >
               {statusOpen ? '收起角色状态' : '角色状态'}
             </Button>
@@ -824,8 +877,13 @@ export default function TavernFree() {
         <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
           <Button
             variant="primary" size="md" className="w-full"
-            onClick={() => {
+            onClick={async () => {
+              if (stories.length === 0) {
+                showToast('还没有故事 —— 先去「故事剧本」建一个（世界观由故事提供）', 'info')
+                return
+              }
               if (chars.length === 0) { showToast('还没有角色卡 —— 先去「角色卡片」建一张', 'info'); return }
+              await refreshStories()
               setSetupOpen(true)
             }}
           >
@@ -840,29 +898,64 @@ export default function TavernFree() {
             />
           )}
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-            {rows.map(s => {
-              const active = session?.id === s.id
-              const names = s.charIds.map(nameOf).filter(Boolean).join('、') || '（角色已删除）'
+            {tree.groups.map(g => {
+              const closed = closedStoryIds.includes(g.id)
               return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => void openSession(s.id)}
-                  className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-                    active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
-                  }`}
-                >
-                  <div className={`truncate text-[12px] ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <span className="truncate text-[10.5px] text-ink-500">{names}</span>
-                    <span className="shrink-0 text-[10.5px] text-ink-600">{agoText(s.lastActiveAt)}</span>
-                  </div>
-                </button>
+                <div key={g.id} className="space-y-0.5">
+                  {/* 故事（父）：只有这一组的对话才画出来；空组留个「还没有对话」的痕迹，
+                      否则作者会以为「我在这故事下开的那场不见了」 */}
+                  <button
+                    type="button"
+                    onClick={() => toggleStory(g.id)}
+                    title={closed ? '展开这个故事的对话' : '收起这个故事的对话'}
+                    className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-ink-800/60"
+                  >
+                    <span className={`shrink-0 text-[10px] ${closed ? 'text-ink-600' : 'text-amber/80'}`}>
+                      {closed ? '▸' : '▾'}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-300">{g.name}</span>
+                    <span className="shrink-0 text-[10px] text-ink-600">{g.rows.length}</span>
+                  </button>
+                  {!closed && (
+                    <div className="ml-3 space-y-1 border-l border-ink-800 pl-1.5">
+                      {g.rows.map(s => renderSessionRow(s))}
+                      {g.rows.length === 0 && (
+                        <p className="px-1 py-1 text-[10.5px] text-ink-600">还没有对话</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )
             })}
-            {rows.length === 0 && (
+
+            {/* 未归属：故事被删 / 卡被删之后推不出归属的对话，放这儿等着作者处理 */}
+            {tree.orphan.length > 0 && (
+              <div className="space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => toggleStory('__orphan__')}
+                  title={closedStoryIds.includes('__orphan__') ? '展开' : '收起'}
+                  className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-ink-800/60"
+                >
+                  <span className={`shrink-0 text-[10px] ${closedStoryIds.includes('__orphan__') ? 'text-ink-600' : 'text-amber/80'}`}>
+                    {closedStoryIds.includes('__orphan__') ? '▸' : '▾'}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-300">未归属</span>
+                  <span className="shrink-0 text-[10px] text-ink-600">{tree.orphan.length}</span>
+                </button>
+                {!closedStoryIds.includes('__orphan__') && (
+                  <div className="ml-3 space-y-1 border-l border-ink-800 pl-1.5">
+                    {tree.orphan.map(s => renderSessionRow(s))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tree.total === 0 && (
               <p className="px-1 py-2 text-[11px] leading-relaxed text-ink-500">
-                {sessions.length === 0 ? '还没有对话 —— 点上面「新建对话」开一场。' : '没有匹配的对话。'}
+                {sessions.length === 0
+                  ? '还没有对话 —— 点上面「新建对话」开一场（要先有故事）。'
+                  : '没有匹配的对话。'}
               </p>
             )}
           </div>
@@ -874,9 +967,10 @@ export default function TavernFree() {
             <div className="text-center">
               <p className="text-[13px] text-ink-300">还没有角色可聊</p>
               <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
-                先去「角色卡片」建一张卡 —— 填好第 4 章「示例对话」，Ta会立刻像那个人。
+                先到「故事剧本」建一个<b className="text-ink-400">故事</b>（这个世界什么样），
+                再到「角色卡片」建一张卡（它属于哪个故事）。
                 <br />
-                建好后回到这里，点「＋ 新建对话」就能开口了。
+                填好第 4 章「示例对话」，Ta 会立刻像那个人。建好后回到这里点「＋ 新建对话」。
               </p>
             </div>
           </div>
@@ -885,7 +979,8 @@ export default function TavernFree() {
             <div className="text-center">
               <p className="text-[13px] text-ink-300">还没有选择对话</p>
               <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
-                从左栏点一场继续，或「＋ 新建对话」开一场 —— 可以单角色聊，也能让两三个角色同场。
+                从左栏点一场继续，或「＋ 新建对话」开一场 —— 新建时要先选一个故事，
+                再从这个故事的角色里挑人（可以单角色聊，也能让两三个角色同场）。
               </p>
             </div>
           </div>
@@ -924,7 +1019,12 @@ export default function TavernFree() {
                       {/* 场景与记忆新鲜度已收进下方「状态」一览（同一信息不写两处）；
                           这里只留它不显示的：心情（这是**当前页签角色**的心情）与整理进度 */}
                       {daily?.mood && <span className="text-amber/80">心情：{daily.mood}</span>}
-                      {summarizing && <span className="text-amber">正在整理记忆…</span>}
+                      {ending && (
+                        <span className="text-amber">
+                          {endStage ? STAGE_TEXT[endStage.stage] : '收尾中…'}
+                          {endStage && endStage.total > 1 ? `（${endStage.cur}/${endStage.total}）` : ''}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1055,6 +1155,22 @@ export default function TavernFree() {
               </div>
 
               <div className="border-t border-ink-800 p-3">
+                {session.endedAt ? (
+                  /* 归档后收掉整个输入区 —— 留着可打字的框，作者一定会去敲，
+                     敲完发现发不出去（send 里有守卫），只会以为软件坏了。 */
+                  <div className="rounded-lg border border-amber/30 bg-amber/8 px-3 py-3">
+                    <p className="text-[12px] text-ink-200">
+                      本轮已于 {agoText(session.endedAt)}结束 —— 这一场是只读归档了，记忆、日记与本场数值都已整理好。
+                    </p>
+                    <p className="mt-1 text-[11px] text-ink-500 leading-relaxed">
+                      想接着往下演就新开一场：记忆与日记是跨会话共享的，Ta 不会失忆。
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <Button variant="primary" size="sm" onClick={() => setSetupOpen(true)}>新开一场</Button>
+                    </div>
+                  </div>
+                ) : (
+                <>
                 <TavernDirectorNoteBar
                   note={session.directorNote}
                   postApplied={postNotice.applied}
@@ -1087,7 +1203,6 @@ export default function TavernFree() {
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-[11px] text-ink-500">
                     本会话 {usedChars} 字
-                    {memChars > 0 && ` · 记忆 ${memChars}/${lim.softLimit} 字`}
                     <button
                       type="button"
                       onClick={() => setUsageOpen(true)}
@@ -1103,80 +1218,87 @@ export default function TavernFree() {
                       : <Button variant="primary" size="md" disabled={!input.trim()} onClick={() => void send()}>发送</Button>}
                   </div>
                 </div>
+                </>
+                )}
               </div>
             </div>
 
-            {/* 右栏：记忆（角色级）—— 一场对话里有几个角色就有几份档案，用页签切换 */}
-            {showMemory && castCards.length > 0 && (
+            {/* 右栏：本场状态（老大 2026-09-16 定 —— 这里不再摆记忆）
+                记忆是给 AI 用的六栏档案，摆在这里既不直观、又容易让人去手改成半成品；
+                作者真正想在聊的时候盯的是「好感 / 心情 / 进度」这些即时状态。 */}
+            {castCards.length > 0 && (
               <aside className="w-72 shrink-0 flex flex-col rounded-lg border border-ink-800 bg-ink-850/40 min-h-0">
-                <div className="flex flex-wrap gap-1 border-b border-ink-800 p-2">
-                  {castCards.map(c => {
-                    const on = c.id === memTabId
-                    const isUser = c.id === session.userCharId
-                    return (
-                      <button
-                        key={c.id} type="button" onClick={() => setMemTabId(c.id)}
-                        title={isUser ? '这个角色由你扮演' : '这个角色由 AI 扮演'}
-                        className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors ${
-                          on ? 'border-amber/40 bg-amber/10 text-amber' : 'border-transparent text-ink-300 hover:bg-ink-800/60'
-                        }`}
-                      >
-                        {/* 只有设过头像才占位 —— 页签窄，一排首字圆点反而更乱 */}
-                        {c.avatar && <Avatar src={c.avatar} name={c.name} size={16} />}
-                        {c.name || '（未命名）'}
-                        {isUser && <span className="ml-1 text-[9.5px] text-amber/80">我演</span>}
-                      </button>
-                    )
-                  })}
+                <div className="px-3 py-2 border-b border-ink-800 text-[11px] text-ink-300">
+                  本场状态
+                  <span className="ml-1 text-[10px] text-ink-600">（属于这一场，换场重来）</span>
                 </div>
-                <div className="px-3 py-2 border-b border-ink-800 text-[10.5px] text-ink-500">
-                  更新于 {agoText(activeMem?.updatedAt ?? 0)} · {memChars} 字
-                  {castCards.length > 1 && ` · ${castCards.length} 位各自记账`}
-                </div>
+
                 <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                  {isMemoryEmpty(activeMem) ? (
+                  {varKeys.length === 0 ? (
                     <p className="text-[11.5px] text-ink-500 leading-relaxed">
-                      这个角色还没有记忆。
-                      <br />
-                      聊满 {lim.triggerMessages} 条消息后会自动整理一次 —— 但只会在
-                      <span className="text-ink-400">下次打开时</span>才用上（没有常驻进程，总结不是即时的）。
+                      没有开启任何状态项。去「控制面板」的本场数值里勾选，这里就会显示。
                     </p>
                   ) : (
-                    MEMORY_SECTIONS.map(sec => {
-                      const body = String(activeMem?.[sec.key] ?? '').trim()
-                      if (!body) return null
-                      return (
-                        <div key={sec.key}>
-                          <div className="text-[11px] text-amber/80">{sec.title}</div>
-                          <div className="mt-0.5 text-[11.5px] text-ink-300 whitespace-pre-wrap leading-relaxed">{body}</div>
-                        </div>
-                      )
-                    })
+                    <div className="space-y-1.5">
+                      {VAR_DEFS.filter(d => varKeys.includes(d.key)).map(d => {
+                        const raw = session.vars?.values?.[d.key]
+                        const shown = raw === undefined || raw === '' ? '（未记录）' : String(raw)
+                        const num = d.kind === 'num' ? Number(raw) : NaN
+                        const pct = Number.isFinite(num)
+                          ? Math.max(0, Math.min(100, ((num - d.min) / Math.max(1, d.max - d.min)) * 100))
+                          : 0
+                        return (
+                          <div key={d.key}>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-[11px] text-ink-400">{d.label}</span>
+                              <span className="text-[11.5px] text-ink-100">{shown}</span>
+                            </div>
+                            {d.kind === 'num' && Number.isFinite(num) && (
+                              <span className="mt-0.5 block h-1 w-full overflow-hidden rounded-full bg-ink-700">
+                                <span className="block h-full rounded-full bg-amber/70" style={{ width: `${pct}%` }} />
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
-                </div>
-                <div className="p-2 border-t border-ink-800">
-                  <div className="flex gap-1.5">
-                    <Button
-                      variant="secondary" size="sm" className="flex-1"
-                      disabled={!session || summarizing}
-                      onClick={() => { if (session) void runSummary(session, true) }}
-                    >
-                      {summarizing
-                        ? (sumProgress ? `整理中… ${sumProgress}` : '整理中…')
-                        : '整理记忆'}
-                    </Button>
-                    <Button
-                      variant="secondary" size="sm" className="flex-1"
-                      disabled={!session || revising}
-                      title="让 AI 读这段对话，列出「角色设定可能该改了」的条目，由你逐条裁决（记忆与设定分开：这里改的是角色卡）"
-                      onClick={() => { if (session) void openRevise(session) }}
-                    >
-                      {revising ? '检查中…' : '更新设定'}
-                    </Button>
+
+                  {/* 在场的人：只列 AI 扮演的 —— 用户自己演的那位不是观察对象。
+                      点一个 = 把上面「Ta这几天的生活 / 心情」切到这位名下（多角色时才有意义）。 */}
+                  <div className="border-t border-ink-800 pt-2">
+                    <div className="text-[10.5px] text-ink-500 mb-1">
+                      AI 扮演{aiCards.length > 1 && <span className="text-ink-600">（点名字看他这几天的生活）</span>}
+                    </div>
+                    <ul className="space-y-1">
+                      {aiCards.map(c => {
+                        const on = aiCards.length > 1 && c.id === statusCharId
+                        return (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              onClick={() => setStatusCharId(c.id)}
+                              title={aiCards.length > 1 ? `看 ${c.name || 'Ta'} 这几天的生活` : undefined}
+                              className={`w-full flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${
+                                on ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                              }`}
+                            >
+                              <Avatar src={c.avatar} name={c.name} size={18} />
+                              <span className={`truncate text-[11.5px] ${on ? 'text-amber' : 'text-ink-200'}`}>
+                                {c.name || '（未命名）'}
+                              </span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
                   </div>
-                  <p className="mt-1.5 text-[10.5px] text-ink-600 leading-relaxed">
-                    记忆按角色分别整理（Ta 记得什么）；设定更新只在你点它时才跑，
-                    而且只列出来让你裁决，不自动改卡。
+                </div>
+
+                <div className="p-2 border-t border-ink-800">
+                  <p className="text-[10.5px] text-ink-600 leading-relaxed">
+                    这些状态只在<span className="text-ink-500">点「结束本轮对话」时</span>结算 ——
+                    聊天过程中不跑整理，所以不会卡住对话。
                   </p>
                 </div>
               </aside>
@@ -1215,6 +1337,61 @@ export default function TavernFree() {
           chars={castCards}
         />
       )}
+
+      {/* 收尾摘要：告诉作者这一场到底整理出了什么。
+          没有它就等于「点了结束，什么也没看见」—— 人家会怀疑到底跑没跑。 */}
+      <Modal
+        open={!!endResult}
+        onClose={() => setEndResult(null)}
+        title="本轮已结束"
+        width="lg"
+        footer={
+          <Button variant="primary" size="sm" onClick={() => setEndResult(null)}>知道了</Button>
+        }
+      >
+        {endResult && (
+          <div className="space-y-3">
+            <p className="text-[11.5px] text-ink-400">
+              这一场整理好了：{endResult.memories.length} 位角色的记忆已更新，对话已归档为只读。
+              想接着往下演就新开一场 —— 记忆是跨会话共享的，Ta 不会失忆。
+            </p>
+
+            {endResult.varChanges.length > 0 && (
+              <div>
+                <div className="text-[11px] text-amber/80">本场数值</div>
+                <ul className="mt-0.5 space-y-0.5">
+                  {endResult.varChanges.map((c, i) => (
+                    <li key={i} className="text-[11.5px] text-ink-300">
+                      {c.label}：{String(c.from || '空')} → {String(c.to || '空')}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div>
+              <div className="text-[11px] text-amber/80">写进 Ta 的日记</div>
+              {Object.keys(endResult.journals).length === 0 ? (
+                <p className="mt-0.5 text-[11.5px] text-ink-500">这次没有产出小结。</p>
+              ) : (
+                <ul className="mt-0.5 space-y-2">
+                  {castCards.filter(c => endResult.journals[c.id]).map(c => (
+                    <li key={c.id}>
+                      <div className="text-[11.5px] text-ink-200">{c.name || '（未命名）'}</div>
+                      <div className="text-[11.5px] text-ink-300 whitespace-pre-wrap leading-relaxed">
+                        {endResult.journals[c.id]}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-1 text-[10.5px] text-ink-600">
+                日记只给作者回顾用，不会注进以后的对话；完整内容在「角色卡片」页底部。
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {session && (
         <TavernExportDialog

@@ -30,6 +30,9 @@ export function formatDate(ts: number): string {
 }
 
 /** 六栏档案的存在意义、各栏行为、以及两条不容违反的规矩（对外导出便于测试与 UI 展示） */
+/** 关键事实最多保留的行数（超了要归并，不是丢弃新事 —— 见提示词里的精简纪律） */
+export const FACTS_MAX_LINES = 12
+
 /** 总结提示词里用到的字数约束（来自控制面板；不传即内置默认） */
 export type SummaryLimits = { longTermLimit?: number; diaryDays?: number }
 
@@ -44,11 +47,21 @@ export function buildSummarySystem(charName: string, now = Date.now(), limits: S
 〖六栏各自的规矩 —— 硬要求，不要一刀切〗
 - 一、长期摘要：**会缩**。已解决、已过期的旧事压掉，只留仍影响当下的。不超过 ${longTermLimit} 字。
 - 二、关键事实：**只增不改**。**已经发生过**的事（Ta 亲历或确认过的）一律保留，除非新对话明确推翻它。
+  **每条一行、每行不超过 30 字，最多 ${FACTS_MAX_LINES} 条** —— 挤时进行归并：同一件事的后续写进原有那一行。
 - 三、关系状态：**每次重新判断**。写 Ta 与每个人**此刻**的温度、近况与情绪（情绪写在这一栏）。
+  一人一行、每行不超过 30 字，只写**当下的温度**，不复述聊天过程。
 - 四、未爆的雷：**只增不改**。只写「埋着还没用上的伏笔 / 秘密 / 未说出口的事」——
   已经点破的、已经发生的都不算。确实没有就写「暂无」，不要写「结果尚不确定」这类空话。
-- 五、纪念日与待办：可增可清。
-- 六、最近日记：**倒序（新的在上）**，每条一行，格式 \`- MM-DD：一句话\`，最多保留最近 ${diaryDays} 条。
+- 五、纪念日与待办：可增可清。**一条一行、不超过 20 字**，只留还会用到的。
+- 六、最近日记：**倒序（新的在上）**，每条一行，格式 \`- MM-DD：一句话\`（一句话就是一句话，不含过程），
+  最多保留最近 ${diaryDays} 条。
+
+〖精简纪律 —— 这份档案越短越好〗
+- **禁止**把聊天过程复述成流水账（「他说…然后她说…最后他说…」一律不要）。
+- **禁止**写场面描写 / 环境描写 / 心理活动的长段落；只留结论与事实。
+- 同一件事**只写一次**：已从日记升到「关键事实」的，就别在摘要里再来一遍。
+- 能删的形容词一律删；「非常」「有些」「某种程度上」这类修饰不写。
+- 拿不出新信息的旧条目直接丢掉，不要为了凑满六栏而留着。
 
 〖边界：这份档案只记「发生过什么」，不写「Ta 是谁」〗
 - 记忆与设定是两件事：**记忆 = 发生过什么 + 此刻的温度**；**设定 = 由这些事得出的定义**
@@ -81,6 +94,97 @@ export function buildSummarySystem(charName: string, now = Date.now(), limits: S
 〖五、纪念日与待办〗
 
 〖六、最近日记〗`
+}
+
+// ==================== 结束本轮对话：一次调用，两样产出 ====================
+
+/**
+ * 「本场小结」的小标题。
+ *
+ * 【为什么要它，又为什么不另开一次调用】
+ * 老大 2026-09-16 提：想在角色卡下给每位角色一个「日记」窗口，回看这一场发生了什么 ——
+ * 但明确说了**不进 AI 上下文**（那是给作者看的）。
+ * 若为此单开一次总结调用，本地 27B 每场结束就要多等一整轮推理，等于用卡顿换一个回顾面板。
+ * 所以做法是把小结**挂在同一份总结输出的最末尾**：模型本来就刚读完这段对话，
+ * 顺手补一段 60–120 字不额外消耗理解成本；解析时再把它从六栏里切出去单独存。
+ */
+export const JOURNAL_HEAD = '〖七、本场小结〗'
+
+function journalTail(charName: string): string {
+  return [
+    '',
+    '〖额外产出 · 本场小结（写在六栏**之后**）〗',
+    `除六栏档案外，请在最后另起一段：\`${JOURNAL_HEAD}\` 单独占一行，下面写 60–120 字的小结 ——`,
+    `这场对话对「${charName}」来说发生了什么。`,
+    '- 这一段是写给**作者**看的（记进 Ta 的日记），不参与以后的对话，所以可以比档案写得细一些、',
+    '  带一点 Ta 自己的语气和情绪；但仍然**只写这一场真发生过的事**，不许替后续做铺垫。',
+    '- 空话套话（相谈甚欢 / 一如既往）一律不要；没有实质进展就老实写 Ta 干了什么。',
+  ].join('\n')
+}
+
+/** 结束本轮对话用的总结提示词：六栏 + 追加一段本场小结 */
+export function buildRoundEndSystem(charName: string, now = Date.now(), limits: SummaryLimits = {}): string {
+  return buildSummarySystem(charName, now, limits) + journalTail(charName)
+}
+
+/**
+ * 把「本场小结」从模型回复里切出来，剩下的交给六栏解析。
+ *
+ * 🔴 必须先切再解析：六栏解析器按标题切片，多了第七节会被拼进最后一栏（日记），
+ *    于是「本场小结」同时出现在记忆与日记里 —— 那份记忆每轮都进上下文，白占额度。
+ */
+export function splitJournalSection(reply: string): { rest: string; journal: string } {
+  const raw = String(reply ?? '')
+  // 取**最后一次**出现：模型偶尔会在正文里复述这个标题，追加的那份一定在最末尾
+  const i = raw.lastIndexOf(JOURNAL_HEAD)
+  if (i < 0) return { rest: raw, journal: '' }
+  return { rest: raw.slice(0, i), journal: raw.slice(i + JOURNAL_HEAD.length).trim() }
+}
+
+export type RoundSummaryResult = { memory: FreeMemory; journal: string }
+
+/**
+ * 结束本轮对话时的一次整理：**一次调用**产出「六栏档案」+「本场小结」。
+ *
+ * 与 `summarizeMemory` 的区别只在提示词与返回结构；解析、限流、节流规则完全相同。
+ * 之所以另开一个函数而不是给旧函数加开关：旧函数已在冷启动、补算等处使用，
+ * 加一个 `withJournal` 分支等于让所有调用方都为一种只在收尾出现的形态买单。
+ */
+export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryResult> {
+  const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now(), limits } = args
+  if (messages.length === 0) return { memory: prev ?? emptyMemory(charId), journal: '' }
+
+  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
+  const runChat = chatFn ?? chat
+
+  const msgs: ChatMessage[] = [
+    { role: 'system', content: buildRoundEndSystem(charName, now, limits) },
+    {
+      role: 'user',
+      content: [
+        charContext?.trim() ? '〖角色背景〗\n' + charContext.trim() : '',
+        '',
+        '〖旧档案〗',
+        memoryToText(prev ?? emptyMemory(charId)),
+        '',
+        '〖新发生的对话〗',
+        renderTranscript(charName, messages),
+        '',
+        '请输出合并后的完整六栏档案，并在最后附上「本场小结」。',
+      ].join('\n'),
+    },
+  ]
+
+  const reply = await runChat(provider, msgs, {
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal,
+    temperature: JSON_TASK_TEMPERATURE,
+    think: false,
+  })
+
+  const { rest, journal } = splitJournalSection(reply)
+  // limits 必须一路传进解析，理由同 summarizeMemory（面板调了却按默认裁 = 改了没生效）
+  return { memory: parseMemoryText(rest, charId, prev, limits), journal }
 }
 
 export type SummarizeArgs = {

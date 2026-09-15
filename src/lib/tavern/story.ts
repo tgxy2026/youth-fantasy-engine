@@ -33,6 +33,11 @@ const G = {
   one: (id: string) => `tavern.story.${id}`,
 } as const
 
+/** 故事名长度上限（列表 / 下拉里都放得下）。**写入口统一收口**，见 `saveStory` */
+export const STORY_NAME_MAX = 20
+/** 世界设定长度上限：每轮都要注入，写太长会把对话历史挤没 */
+export const STORY_SETTING_MAX = 2400
+
 export function emptyStory(): TavernStory {
   return { id: '', name: '', setting: '', draftedAt: 0, createdAt: 0, updatedAt: 0 }
 }
@@ -63,6 +68,9 @@ export async function saveStory(s: TavernStory): Promise<TavernStory> {
   const now = Date.now()
   const next: TavernStory = {
     ...s,
+    // 名称在此**统一收口**：界面输入框也设了 maxLength，但导入 / AI 起草 / 将来的批量导入
+    // 都绕过界面 —— 只在界面拦，等于「故事名 ≤ 20 字」这条约定是句空话。
+    name: (s.name ?? '').trim().slice(0, STORY_NAME_MAX),
     id: s.id || uid(),
     createdAt: s.createdAt || now,
     updatedAt: now,
@@ -121,11 +129,6 @@ export async function deleteStory(id: string): Promise<{ reboundChars: number }>
 export type StoryDraftFields = Pick<TavernStory, 'name' | 'setting'>
 
 export const EMPTY_STORY_FIELDS: StoryDraftFields = { name: '', setting: '' }
-
-/** 名字上限（列表里长了会截断，干脆短一点） */
-export const STORY_NAME_MAX = 20
-/** 世界设定上限。它会**每轮注入**，写太长会挤掉对话历史 */
-export const STORY_SETTING_MAX = 2400
 
 export function buildStoryDraftSystem(): string {
   return [

@@ -16,7 +16,7 @@
  *
  * 【2026-09-14 第四轮改动：「对话内容」抽成「剧本」】
  * 原先这里有五格手填（地点/时间/在场/场景描述/第一句话），**填完就丢** ——
- * 想复用一场戏只能凭记忆重填一遍。现在这几格搬进「剧本编辑」（六栏、可命名、可复用），
+ * 想复用一场戏只能凭记忆重填一遍。现在这几格搬进「故事剧本」（六栏、可命名、可复用），
  * 这里只留一个**选择器**：留空（直接开口聊）或引用一份已有剧本。
  * 这样做还顺带解决一个隐患：手填的内容原本只进开场第一条消息、不进 system，
  * 剧本则把「情境/你的位置/目标/禁区」放进 system（每轮都在），开场白仍走消息通道 —— 分工更清楚。
@@ -29,9 +29,11 @@ import { Modal } from './Modal'
 import Avatar from './Avatar'
 import TavernScriptDialog from './TavernScriptDialog'
 import {
-  listScripts, getScript, scriptToText, snapshotOf, scriptDisplayName,
+  getScript, scriptToText, snapshotOf, scriptDisplayName, listScriptsByStory,
 } from '../lib/tavern/script'
-import type { TavernScript, TavernScriptIndexItem } from '../lib/tavern/types'
+import { listStories, storyDisplayName } from '../lib/tavern/story'
+import { cardStoryId } from '../lib/tavern/types'
+import type { TavernScript, TavernScriptIndexItem, TavernStoryIndexItem } from '../lib/tavern/types'
 
 export type FreeDraft = {
   /** 全部参演角色（含用户扮演的那个） */
@@ -44,6 +46,11 @@ export type FreeDraft = {
    * 调用方据此取**快照**存进会话 —— 之后这份剧本被改被删，这一场都不会变样。
    */
   scriptId: string
+  /**
+   * 归属故事（**必选**，老大 2026-09-16 定）。
+   * 这一场的世界观由它提供；会话存一份 id，左栏据此把对话挂在故事下面。
+   */
+  storyId: string
 }
 
 interface Props {
@@ -60,7 +67,7 @@ const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 t
 const labelCls = 'text-[11px] text-ink-400 mb-1'
 
 /** 选角用的条目：名字 + 内核一句话（用来分辨相似的角色） */
-type CharOption = { id: string; name: string; core: string; avatar?: string }
+type CharOption = { id: string; name: string; core: string; avatar?: string; storyId: string }
 
 /** 一个位置：选中的角色 + 由谁演 */
 type Slot = { charId: string; role: 'ai' | 'user' }
@@ -167,7 +174,10 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
 
   const [title, setTitle] = useState('')
-  /** 剧本列表（索引项）与当前选中的那份全文（用于预览） */
+  /** 故事列表（左栏树状的同一批）+ 本次选中的故事 —— 不选故事就不能开始（老大 2026-09-16 定） */
+  const [stories, setStories] = useState<TavernStoryIndexItem[]>([])
+  const [storyId, setStoryId] = useState('')
+  /** 剧本列表（索引项）与当前选中的那份全文（用于预览）。按选中的故事过滤 */
   const [scripts, setScripts] = useState<TavernScriptIndexItem[]>([])
   const [scriptId, setScriptId] = useState('')
   const [scriptView, setScriptView] = useState<TavernScript | null>(null)
@@ -179,22 +189,28 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     let alive = true
     setLoading(true)
     setSlots(freshSlots()); setPickerIdx(null); setCallName('')
-    setTitle(''); setScriptId(''); setScriptView(null); setScriptOpen(false)
+    setTitle(''); setStoryId(''); setScriptId(''); setScriptView(null); setScriptOpen(false)
     ;(async () => {
       try {
-        const [idx, st, sc] = await Promise.all([
+        const [idx, st, ss] = await Promise.all([
           store.listFreeChars(),
           getTavernSettings().catch(() => DEFAULT_TAVERN_SETTINGS),
-          listScripts().catch(() => [] as TavernScriptIndexItem[]),
+          listStories().catch(() => [] as TavernStoryIndexItem[]),
         ])
         // 逐个读完整卡拿「内核」那一句：选角色时能一眼分清（读失败就留空，不影响选）
+        // storyId 从索引项拿（索引里有），不读整卡
         const full = await Promise.all(idx.map(async it => {
           const card = await store.getFreeChar(it.id).catch(() => null)
-          return { id: it.id, name: it.name, avatar: card?.avatar, core: (card?.profile.core ?? '').trim().replace(/\s+/g, ' ').slice(0, 28) }
+          return {
+            id: it.id, name: it.name, avatar: card?.avatar,
+            core: (card?.profile.core ?? '').trim().replace(/\s+/g, ' ').slice(0, 28),
+            storyId: cardStoryId(it),
+          }
         }))
         if (!alive) return
         setOptions(full)
-        setScripts(sc)
+        setStories(ss)
+        setScripts([])  // 故事定了再按它拉剧本
         // 「我的档案」有名字 → 界面可以明确讲「AI 已经知道你是谁」。
         // 这正是「默认『我演』的角色」被去掉之后的补偿：**不用选角色也有身份**。
         setCallName(st.profile.address.trim() || st.profile.name.trim())
@@ -213,8 +229,24 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     setScriptView(id ? await getScript(id).catch(() => null) : null)
   }
 
-  const nameOf = (id: string) => options.find(o => o.id === id)?.name ?? ''
-  const coreOf = (id: string) => options.find(o => o.id === id)?.core ?? ''
+  /**
+   * 选故事 —— 换故事必须**同时清掉选角与剧本**：
+   * 角色与剧本都是挂在故事下的，留着上一个故事的人就会开出一场「人不对世界」的戏。
+   */
+  const pickStory = async (id: string) => {
+    setStoryId(id)
+    setSlots(freshSlots())
+    setPickerIdx(null)
+    setScriptId('')
+    setScriptView(null)
+    setScripts(id ? await listScriptsByStory(id).catch(() => []) : [])
+  }
+
+  /** 只让选本故事下的角色 —— 这是「先选故事」的全部意义 */
+  const scoped = useMemo(() => options.filter(o => o.storyId === storyId), [options, storyId])
+
+  const nameOf = (id: string) => scoped.find(o => o.id === id)?.name ?? ''
+  const coreOf = (id: string) => scoped.find(o => o.id === id)?.core ?? ''
 
   /** charId → 占用它的位置序号（1 起） */
   const usedBy = useMemo(() => {
@@ -226,8 +258,10 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   const charIds = slots.map(s => s.charId).filter(Boolean)
   const userCharId = slots.find(s => s.role === 'user' && s.charId)?.charId ?? ''
   const aiIds = slots.filter(s => s.role === 'ai' && s.charId).map(s => s.charId)
-  const canStart = aiIds.length >= 1
-  const hint = canStart ? '' : (charIds.length === 0 ? '先给位置 1 选一个角色' : '至少要有一个位置是「AI 演」')
+  const canStart = !!storyId && aiIds.length >= 1
+  const hint = !storyId
+    ? '先选一个故事（世界观由它提供）'
+    : (canStart ? '' : (charIds.length === 0 ? '给位置 1 选一个角色' : '至少要有一个位置是「AI 演」'))
 
   const addSlot = () => setSlots(prev => (prev.length >= MAX_SLOTS ? prev : [...prev, { charId: '', role: 'ai' }]))
   const removeSlot = (i: number) => setSlots(prev => (prev.length <= 1 ? prev : prev.filter((_, k) => k !== i)))
@@ -245,7 +279,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
 
   const submit = () => {
     if (!canStart) return
-    onCreate({ charIds, userCharId, title: title.trim(), scriptId })
+    onCreate({ charIds, userCharId, title: title.trim(), scriptId, storyId })
   }
 
   const pickerCurrent = pickerIdx === null ? '' : slots[pickerIdx]?.charId ?? ''
@@ -271,12 +305,46 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
             <div className="py-8 text-center text-[12px] text-ink-500">正在读取角色卡…</div>
           ) : (
             <>
+              {/* ⓪ 故事（必选）—— 老大 2026-09-16 定：建故事是使用自由对话的第一步 */}
+              <section>
+                <div className={labelCls}>⓪ 选择故事（必选）</div>
+                {stories.length === 0 ? (
+                  <div className="rounded-md border border-amber/30 bg-amber/8 px-3 py-3 text-[12px] leading-relaxed text-ink-300">
+                    还没有故事 —— 先去「<b className="text-ink-100">故事剧本</b>」建一个：
+                    故事决定这个世界什么样（时代、地点、规则），角色卡与剧本都挂在它下面。
+                    没有故事，角色就不知道自己活在哪个世界。
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      className={`${selCls} w-full`}
+                      value={storyId}
+                      onChange={e => void pickStory(e.target.value)}
+                    >
+                      <option value="">请选择一个故事…</option>
+                      {stories.map(s => (
+                        <option key={s.id} value={s.id}>{storyDisplayName(s)}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
+                      这一场的世界观由选中的故事提供（每轮都注入）。选定后，下面只能挑这个故事下的角色 ——
+                      换故事会清空已选的角与剧本，免得开出「人不对世界」的戏。
+                    </p>
+                  </>
+                )}
+              </section>
+
               {/* ① 角色分配（位置槽位 + 由谁演） */}
               <section>
                 <div className={labelCls}>① 角色分配</div>
-                {options.length === 0 ? (
+                {!storyId ? (
+                  <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-500">
+                    先在上面选一个故事，这里才会列出它旗下的角色。
+                  </div>
+                ) : scoped.length === 0 ? (
                   <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-400">
-                    还没有角色卡。先去「角色卡片」建一张 —— 填好第 4 章「示例对话」Ta会立刻像那个人。
+                    这个故事下还没有角色卡。先去「角色卡片」建一张（建卡时会让你选归属故事）——
+                    填好第 4 章「示例对话」Ta会立刻像那个人。
                   </div>
                 ) : (
                   <>
@@ -350,6 +418,12 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
               {/* ② 剧本（可留空）—— 原先的五格手填已搬进「剧本编辑」 */}
               <section>
                 <div className={labelCls}>② 剧本（可留空）</div>
+                {!storyId ? (
+                  <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-500">
+                    先在上面选一个故事，这里才会列出它旗下的剧本。
+                  </div>
+                ) : (
+                <>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     className={`${selCls} min-w-0 flex-1`}
@@ -400,13 +474,15 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
 
                 {scripts.length === 0 && !scriptId && (
                   <p className="mt-1 text-[10.5px] leading-relaxed text-ink-600">
-                    还没有剧本。点「＋ 新建剧本」就地写一份，或到「剧本编辑」页签慢慢打磨。
+                    还没有剧本。点「＋ 新建剧本」就地写一份，或到「故事剧本」页签慢慢打磨。
                   </p>
                 )}
                 {!scriptId && (
                   <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-600">
                     会话保存的是「引用那一刻的快照」：以后你改这份剧本，这场对话的设定不会跟着变。
                   </p>
+                )}
+                </>
                 )}
               </section>
 
@@ -426,9 +502,10 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
       {open && scriptOpen && (
         <TavernScriptDialog
           open
+          storyId={storyId}
           onClose={() => setScriptOpen(false)}
           onSaved={async saved => {
-            setScripts(await listScripts())
+            setScripts(await listScriptsByStory(storyId))
             await pickScript(saved.id)
           }}
         />
@@ -437,7 +514,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
       {open && pickerIdx !== null && (
         <CharPicker
           open
-          options={options}
+          options={scoped}
           usedBy={usedBy}
           currentId={pickerCurrent}
           onConfirm={id => applyPick(pickerIdx, id)}

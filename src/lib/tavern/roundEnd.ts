@@ -1,0 +1,196 @@
+/**
+ * 酒馆模式 · 「结束本轮对话」编排（老大 2026-09-16 定，反馈 #3 的落脚点）
+ *
+ * 【为什么把实时整理换成收尾触发】
+ * 原做法：每累计若干条未整理的消息，就在**下一轮发言后**静默跑一次总结。
+ * 本地 27B 跑一次要几十秒，全压在那轮对话之后 —— 表现就是「说完一句卡半天」，
+ * 且聊得越久触发越密（反馈 #3 原话：需要兼顾记忆整理的效率和实时对话的体验）。
+ *
+ * 现做法：**聊天过程中一次都不整理**，由作者点「结束本轮对话」一次性收尾：
+ *   ① 逐位角色整理记忆，顺带产出本场小结（写进日记，不进上下文）
+ *   ② 算一遍本场数值
+ *   ③ 审查设定要不要改（只列建议，不自动改卡）
+ *   ④ 会话标记 endedAt → 归档只读
+ *
+ * 【为什么不拆成三个按钮让人自己点】收尾是一次性的、有先后（先记 → 再算数值 →
+ * 最后拿这些结果审查设定）。拆开只会让人漏点某一项，得到一个「记得不全」的角色。
+ *
+ * 本文件只做编排；单次能力在 summarize.ts / revise.ts，落库在 store.ts。
+ */
+import * as store from './store'
+import { messagesAfterWatermark } from './memory'
+import { summarizeRound, extractSessionVars } from './summarize'
+import { proposeCardRevisions, type CardRevision } from './revise'
+import { recordVarChanges, turnSeqOf } from './vars'
+import { renderFreeCharacter, type ChatFn } from './engine'
+import type {
+  FreeSession, FreeCharacter, FreeMemory, TavernMessage,
+  TavernVars, VarChange, CharJournalEntry, VarKey,
+} from './types'
+
+/** 收尾经历的阶段（界面据此显示进度） */
+export type RoundEndStage = 'memory' | 'vars' | 'revise' | 'done'
+
+export type RoundEndProgress = {
+  stage: RoundEndStage
+  /** 正在处理第几位角色（1 起） */
+  cur: number
+  total: number
+  /** 当前角色名 */
+  name?: string
+}
+
+export type RoundEndResult = {
+  memories: FreeMemory[]
+  /** 本场小结，key = charId（写进日记，不注入 AI） */
+  journals: Record<string, string>
+  /** 算完的本场数值（失败时回传原值） */
+  vars?: TavernVars
+  varChanges: VarChange[]
+  /** 设定变更建议 —— 只产出，由作者在弹窗里逐条裁决 */
+  proposals: CardRevision[]
+  endedAt: number
+}
+
+export type RoundEndArgs = {
+  session: FreeSession
+  /** 参演角色（含用户扮演的 —— 他的记忆同样要记，只是界面不显他） */
+  cards: FreeCharacter[]
+  /** 单独指定的整理模型；不传则回退全局活动模型 */
+  providerId?: string
+  /** 字数约束（控制面板） */
+  limits?: { longTermLimit?: number; diaryDays?: number }
+  /** 本场数值的启用键 */
+  varKeys: VarKey[]
+  /** 当前变量块（算差值的起点） */
+  vars: TavernVars | undefined
+  /** 单次数值变化幅度上限 */
+  maxStep: number
+  /** 说话人名字 */
+  nameOf: (id?: string) => string
+  /**
+   * 注入模型调用（只有测试用）。
+   * 三个子步骤（记忆/数值/设定审查）都会拿它替换真实 `chat` —— 不注入的话这条编排链
+   * 必须真起一个 provider 才能跑，等于没法测。
+   */
+  chatFn?: ChatFn
+  onProgress?: (p: RoundEndProgress) => void
+  signal?: AbortSignal
+}
+
+/** 待整理的对话：水位线之后的全部（半途崩过也不会重复整理同一段） */
+export function pendingMessages(session: FreeSession): TavernMessage[] {
+  return messagesAfterWatermark(session.messages, session.watermark)
+}
+
+/**
+ * 跑一次完整收尾。
+ *
+ * 🔴 唯一的硬失败点是①：记忆整理不出来这场就白聊了，直接抛给界面。
+ *    ②③ 失败一律吞掉并留空 —— 面板少一块，也不能把已经落库的记忆弄丢。
+ */
+export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
+  const { session, cards, providerId, limits, varKeys, maxStep, nameOf, chatFn, onProgress, signal } = args
+  const pending = pendingMessages(session)
+  const total = Math.max(cards.length, 1)
+
+  // ---- ① 记忆 + 本场小结（逐位角色，一次调用两样产出） ----
+  const memories: FreeMemory[] = []
+  const journals: Record<string, string> = {}
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i]
+    onProgress?.({ stage: 'memory', cur: i + 1, total, name: c.name || '未命名角色' })
+    const prev = await store.getMemory(c.id).catch(() => null)
+    const { memory, journal } = await summarizeRound({
+      charId: c.id,
+      charName: c.name,
+      prev,
+      messages: pending,
+      // 带角色背景：不给的话模型会凭对话臆断「Ta 在哪、是谁」，记忆从第一次就开始漂移
+      // （实测把「便利店」总结成「咖啡店」）。🔴 用四章全文，理由同冷启动补算。
+      charContext: [
+        renderFreeCharacter(c),
+        c.id === session.userCharId
+          ? '（这位角色由**用户自己**扮演：他说的话与做的事是既成事实，直接记进他的视角；不要写成「某某告诉我」。）'
+          : '',
+      ].filter(Boolean).join('\n\n'),
+      providerId: providerId || undefined,
+      limits,
+      chatFn,
+      signal,
+    })
+    await store.saveMemory(memory)
+    memories.push(memory)
+    const text = journal.trim()
+    if (text) {
+      journals[c.id] = text
+      await store.appendJournalEntry(c.id, journalEntry(session, cards, text))
+    }
+  }
+
+  // ---- ② 本场数值 ----
+  let nextVars = args.vars
+  let varChanges: VarChange[] = []
+  if (varKeys.length > 0 && pending.length > 0 && args.vars) {
+    onProgress?.({ stage: 'vars', cur: total, total })
+    try {
+      const ex = await extractSessionVars({
+        keys: varKeys,
+        values: args.vars.values,
+        messages: pending,
+        nameOf,
+        maxStep,
+        providerId: providerId || undefined,
+        chatFn,
+        signal,
+      })
+      if (ex.changes.length > 0) {
+        nextVars = recordVarChanges({ ...args.vars, values: ex.values }, ex.changes, turnSeqOf(session.messages))
+        varChanges = ex.changes
+      }
+    } catch {
+      varChanges = [] // 数值算不出来，这一场照样归档
+    }
+  }
+
+  // ---- ③ 设定审查（只产建议，不落卡） ----
+  let proposals: CardRevision[] = []
+  if (session.messages.length > 0) {
+    onProgress?.({ stage: 'revise', cur: total, total })
+    try {
+      const out: CardRevision[] = []
+      for (const c of cards) {
+        // 说话人名字：多角色同场时，「谁对谁说了什么」是判断的关键一半
+        const rows = await proposeCardRevisions({
+          char: c,
+          messages: session.messages,
+          providerId: providerId || undefined,
+          chatFn,
+          speakerName: m => cards.find(x => x.id === m.speakerId)?.name ?? '角色',
+        })
+        out.push(...rows)
+      }
+      proposals = out
+    } catch {
+      proposals = []
+    }
+  }
+
+  onProgress?.({ stage: 'done', cur: total, total })
+  return { memories, journals, vars: nextVars, varChanges, proposals, endedAt: Date.now() }
+}
+
+/** 组装一条日记：记的是「这一场发生了什么」，供作者回头翻，不进任何提示词 */
+function journalEntry(session: FreeSession, cards: FreeCharacter[], text: string): CharJournalEntry {
+  return {
+    id: `jr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    at: Date.now(),
+    sessionId: session.id,
+    sessionTitle: session.title,
+    // 在场的人：会话里没名字的角色（例如会话已删卡）就跳过，不留一串 id
+    cast: session.charIds
+      .map(id => cards.find(c => c.id === id)?.name)
+      .filter((n): n is string => !!n),
+    text,
+  }
+}

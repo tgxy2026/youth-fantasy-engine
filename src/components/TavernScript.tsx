@@ -37,7 +37,7 @@ import {
 import {
   listStories, getStory, saveStory, createStory, deleteStory, storyDisplayName,
   draftStory, flattenStoryFields, mergeStoryDraft, isEmptyStoryFields,
-  EMPTY_STORY_FIELDS, STORY_SETTING_MAX, type StoryDraftFields,
+  EMPTY_STORY_FIELDS, STORY_SETTING_MAX, STORY_NAME_MAX, type StoryDraftFields,
 } from '../lib/tavern/story'
 import { listCharsByStory } from '../lib/tavern/store'
 import type { DraftSource } from '../lib/tavern/draft'
@@ -437,11 +437,15 @@ export default function TavernScript() {
                 <div className="text-[12px] text-ink-200">故事名称</div>
                 <input
                   value={story.name}
+                  maxLength={STORY_NAME_MAX}
                   onChange={e => { setStory({ ...story, name: e.target.value }); setStoryDirty(true) }}
                   placeholder="例：云州江湖"
                   className="mt-1 w-full rounded-md border border-ink-800 bg-ink-850/60 px-2.5 py-1.5 text-[12.5px] text-ink-100 placeholder:text-ink-600 focus:border-amber/50 focus:outline-none"
                 />
-                <p className="mt-1 text-[10.5px] text-ink-600">只用于列表展示，不进上下文。</p>
+                <p className="mt-1 text-[10.5px] text-ink-600">
+                  只用于列表展示，不进上下文。最多 {STORY_NAME_MAX} 字
+                  {story.name.length >= STORY_NAME_MAX && <span className="ml-1 text-amber/80">已到上限</span>}
+                </p>
               </div>
               <div>
                 <div className="text-[12px] text-ink-200">世界设定</div>

@@ -1,0 +1,212 @@
+// ============ 酒馆模式 · 「结束本轮对话」收尾编排（老大 2026-09-16 定）============
+//
+// 这组断言盯的是本次改造的四条硬要求：
+//   ① **本场小结与记忆必须分家** —— 六栏记忆每轮进上下文，小结只给作者看；
+//      混进记忆就是白烧额度（这是 splitJournalSection 存在的唯一理由）
+//   ② **水位线之后才算待整理** —— 收尾过一次再点一次，不能把同一段对话重复吸收
+//   ③ **日记是角色级的、带在场名单与会话标题** —— 删了会话也还能溯源
+//   ④ **记忆整理失败 = 整场收尾失败**（唯一硬失败点）；数值与设定审查失败一律吞掉，
+//      面板少一块也行，绝不能把已经落库的记忆弄丢
+import * as store from '../src/lib/tavern/store'
+import { __resetMockStores } from './mock-memory'
+import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
+import { runRoundEnd, pendingMessages } from '../src/lib/tavern/roundEnd'
+import { JOURNAL_HEAD } from '../src/lib/tavern/summarize'
+import { memoryToText } from '../src/lib/tavern/memory'
+import type { ChatFn } from '../src/lib/tavern/engine'
+import { JOURNAL_KEEP, type FreeCharacter, type FreeSession, type TavernMessage } from '../src/lib/tavern/types'
+
+let pass = 0, fail = 0
+function ok(name: string, cond: boolean, extra = '') {
+  if (cond) { pass++; console.log(`PASS ${name}`) }
+  else { fail++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`) }
+}
+
+const STUB_PROVIDER = { id: 're-stub', name: '桩模型', type: 'ollama' as const, baseUrl: 'http://127.0.0.1:11434', apiKey: '', model: 'stub' }
+
+function makeFakeChat(reply: string) {
+  const calls: { messages: ChatMessage[]; opts: Record<string, unknown> }[] = []
+  const chatFn: ChatFn = async (_cfg, messages, opts) => {
+    calls.push({ messages, opts: (opts ?? {}) as Record<string, unknown> })
+    return reply
+  }
+  return { chatFn, calls }
+}
+
+/** 造一段「六栏 + 本场小结」的模型回复，格式与真实提示词要求一致 */
+function replyWith(summary: string, journal: string): string {
+  return [
+    '〖一、长期摘要〗', summary,
+    '〖二、关键事实〗', '· 她收了那把伞。',
+    '〖三、关系状态〗', '· 与用户：熟客，话变多了。',
+    '〖四、未爆的雷〗', '暂无',
+    '〖五、纪念日与待办〗', '暂无',
+    '〖六、最近日记〗', '- 09-16：留了碗面。',
+    JOURNAL_HEAD, journal,
+  ].join('\n')
+}
+
+async function mkChar(name: string): Promise<FreeCharacter> {
+  return store.createFreeChar({
+    ...store.emptyFreeCharacter(),
+    name,
+    world: '现代都市 · 老城区一间凌晨还亮着灯的便利店',
+    profile: {
+      externals: '短发，围裙', core: '外冷内热', speech: '句子短',
+      relations: '独居', cannot: '说不出关心的话', knowledge: '不知道顾客的职业',
+    },
+    conduct: { perspective: '第一人称', bottomLine: '不越界打听私事', paceLock: '关系推进要慢', rating: '日常向' },
+    examples: '对方：还不下班？\n她没抬头：\n「灯还亮着。」',
+  })
+}
+
+/** 往会话里塞几条消息并落库 */
+async function push(s: FreeSession, list: { role: 'user' | 'assistant'; speakerId?: string; content: string }[]): Promise<FreeSession> {
+  const base = s.messages.length
+  const msgs: TavernMessage[] = list.map((m, i) => ({ id: `m-${base + i}`, role: m.role, speakerId: m.speakerId, content: m.content, at: 1000 + base + i }))
+  return store.saveFreeSession({ ...s, messages: [...s.messages, ...msgs], updatedAt: Date.now() })
+}
+
+async function main() {
+  __resetMockStores()
+  await saveProviders([{ ...STUB_PROVIDER }])
+  await saveActiveId(STUB_PROVIDER.id)
+
+  const A = await mkChar('苏念')
+  const B = await mkChar('楚楠')
+
+  // ---------- 1) 待整理 = 水位线之后 ----------
+  {
+    let s = await store.createFreeSession([A.id], '与苏念的雨夜', { providerId: STUB_PROVIDER.id }, {})
+    s = await push(s, [
+      { role: 'user', content: '还不下班？' },
+      { role: 'assistant', speakerId: A.id, content: '「灯还亮着。」' },
+      { role: 'user', content: '那我陪你。' },
+    ])
+    ok('无水位线时全部计入待整理', pendingMessages(s).length === 3)
+
+    // 手工把水位线推到第 2 条：只剩最后 1 条待整理
+    const only = await store.saveFreeSession({
+      ...s,
+      watermark: { messageId: s.messages[1].id, at: 2000 } as FreeSession['watermark'],
+    })
+    ok('水位线之后的才计入', pendingMessages(only).length === 1 && pendingMessages(only)[0].content === '那我陪你。')
+
+    const atEnd = await store.saveFreeSession({
+      ...only,
+      watermark: { messageId: s.messages[2].id, at: 3000 } as FreeSession['watermark'],
+    })
+    ok('已收到末尾 → 待整理为空（重复点收尾不会重算同一段）', pendingMessages(atEnd).length === 0)
+  }
+
+  // ---------- 2) 一次收尾：记忆 + 日记 ----------
+  {
+    let s = await store.createFreeSession([A.id, B.id], '便利店三人夜', { providerId: STUB_PROVIDER.id }, {})
+    s = await push(s, [
+      { role: 'user', content: '你们俩怎么都在？' },
+      { role: 'assistant', speakerId: A.id, content: '「他躲雨。」' },
+      { role: 'assistant', speakerId: B.id, content: '「我只是路过。」' },
+    ])
+    const cards = [A, B]
+    const { chatFn, calls } = makeFakeChat(replyWith('她把伞收进柜台底下。', '她嘴上说只是顺便，其实把最后那碗面留给了他。'))
+
+    const res = await runRoundEnd({
+      session: s, cards, providerId: STUB_PROVIDER.id,
+      varKeys: [], vars: undefined, maxStep: 5,
+      nameOf: (id?: string) => cards.find(c => c.id === id)?.name ?? '角色',
+      chatFn,
+    })
+
+    // 2 位角色的记忆整理 + 2 位角色的设定审查 = 4 次（本组没开数值，所以没有第 5 次）
+    ok('每位角色各整理一次（2 次记忆 + 2 次设定审查）', calls.length === 4)
+    const sysOf = (i: number) => String(calls[i].messages.find(m => m.role === 'system')?.content ?? '')
+    ok('两次记忆调用带着各自的角色名（不是拿同一个人算两遍）',
+      sysOf(0).includes('苏念') && sysOf(1).includes('楚楠'))
+    ok('记忆调用要求追加本场小结（收尾专用提示词，不是旧的纯六栏版）',
+      sysOf(0).includes(JOURNAL_HEAD) && sysOf(1).includes(JOURNAL_HEAD))
+    ok('返回了两位角色的记忆', res.memories.length === 2 && res.memories.every(m => m.charId))
+    ok('记忆吸收了本场内容', res.memories[0].longTerm.includes('伞收进柜台底下'))
+    ok('记忆里不含本场小结（否则每轮白烧额度）', !memoryToText(res.memories[0]).includes('其实把最后那碗面留给了他'))
+    ok('两位都产出了本场小结', Object.keys(res.journals).length === 2)
+
+    const memA = await store.getMemory(A.id)
+    ok('记忆已落库', !!memA && memA.longTerm.includes('伞收进柜台底下'))
+
+    const jA = await store.getJournal(A.id)
+    ok('日记追加了一条', jA.entries.length === 1)
+    ok('日记正文 = 本场小结', jA.entries[0].text === '她嘴上说只是顺便，其实把最后那碗面留给了他。')
+    ok('日记带会话标题（便于溯源）', jA.entries[0].sessionTitle === '便利店三人夜')
+    ok('日记带在场名单（含用户）', jA.entries[0].cast.includes('苏念') && jA.entries[0].cast.includes('楚楠'))
+    ok('日记带会话 id', jA.entries[0].sessionId === s.id)
+    ok('没有启用数值时不产变更', res.varChanges.length === 0 && res.vars === undefined)
+
+    // 水位线推进是**调用方**的责任（组件里做），这里确认收尾本身没偷偷改会话
+    const back = await store.getFreeSession(s.id)
+    ok('收尾不自行推进水位线（由界面统一处理）', back?.watermark === s.watermark)
+    ok('收尾不自行打归档戳（由界面统一处理）', back?.endedAt === undefined)
+  }
+
+  // ---------- 3) 日记滚动上限与删除 ----------
+  {
+    for (let i = 0; i < JOURNAL_KEEP + 3; i++) {
+      await store.appendJournalEntry(A.id, {
+        id: `jr-x-${i}`, at: i, sessionId: 's-x', sessionTitle: `第${i}场`, cast: ['苏念'], text: `第 ${i} 条`,
+      })
+    }
+    const j = await store.getJournal(A.id)
+    ok(`日记滚动到上限 ${JOURNAL_KEEP} 条`, j.entries.length === JOURNAL_KEEP)
+    ok('新的在最前（倒序）', j.entries[0].text === `第 ${JOURNAL_KEEP + 2} 条`)
+    ok('最老的被丢掉', !j.entries.some(e => e.text === '第 0 条'))
+
+    const dropped = await store.dropJournalEntry(A.id, j.entries[0].id)
+    ok('删单条生效', dropped.entries.length === JOURNAL_KEEP - 1 && !dropped.entries.some(e => e.id === j.entries[0].id))
+
+    await store.clearJournal(A.id)
+    ok('清空日记生效', (await store.getJournal(A.id)).entries.length === 0)
+  }
+
+  // ---------- 4) 硬失败点：记忆整理不出来，整场收尾就该失败 ----------
+  {
+    let s = await store.createFreeSession([A.id], '会失败的一场', { providerId: STUB_PROVIDER.id }, {})
+    s = await push(s, [{ role: 'user', content: '在吗' }])
+    let threw = false
+    try {
+      await runRoundEnd({
+        session: s, cards: [A], providerId: STUB_PROVIDER.id,
+        varKeys: [], vars: undefined, maxStep: 5,
+        nameOf: () => '角色',
+        chatFn: async () => { throw new Error('模型挂了') },
+      })
+    } catch { threw = true }
+    ok('记忆整理失败 → 收尾整体抛出（界面据此报错，且不归档）', threw)
+
+    const untouched = await store.getJournal(A.id)
+    ok('失败时不会留下半截日记', untouched.entries.length === 0)
+  }
+
+  // ---------- 5) 软失败点：设定审查挂了也要把记忆与日记交出去 ----------
+  {
+    let s = await store.createFreeSession([B.id], '审查会挂的一场', { providerId: STUB_PROVIDER.id }, {})
+    s = await push(s, [{ role: 'user', content: '在吗' }])
+    // 第 1 次调用（记忆）正常，第 2 次（设定审查）抛错
+    let n = 0
+    const chatFn: ChatFn = async () => {
+      n++
+      if (n === 1) return replyWith('她记住了这一晚。', '她记住了这一晚。')
+      throw new Error('审查挂了')
+    }
+    const res = await runRoundEnd({
+      session: s, cards: [B], providerId: STUB_PROVIDER.id,
+      varKeys: [], vars: undefined, maxStep: 5,
+      nameOf: () => '角色', chatFn,
+    })
+    ok('审查失败不拖累记忆', res.memories.length === 1)
+    ok('审查失败时建议为空', res.proposals.length === 0)
+    ok('审查失败仍写出日记', !!res.journals[B.id])
+  }
+
+  console.log(`\n${pass} passed, ${fail} failed`)
+  if (fail > 0) process.exit(1)
+}
+
+void main()
