@@ -480,24 +480,6 @@ export const TABS: TabDef[] = [
 },
 
 {
-  id: 'geomaps', name: '地图', group: '世界构建', type: 'table',
-  description: '手绘地图的清单（内部数据表：不单独出现在侧栏，增删改都在「地图编辑」页左侧列表里完成）。每张地图是一块**独立画布**：有自己的坐标系与格子档位，互不干扰。《地理风物》里每条地点通过「所属地图」归属到某张图上，在地图编辑里按图切换显示；同一张图内的格子形状互不重叠，不同图之间完全无关。',
-  columns: [
-    c('编号'), c('名称'),
-    c('每格公里', ['1', '10']),
-    c('说明'),
-  ],
-  displayCol: '名称',
-  subtitleCol: '每格公里',
-  codeRule: '编号规则：MAP + 4 位序号（MAP0001、MAP0002…，MAP=Map 地图）。新增行自动按当前最大序号 +1 编号（从 0001 起）；同表前缀统一、序号递增；已删除条目的编号不复用。',
-  tips: [
-    '每张地图是一块独立画布：格子互不影响，同一张图上才有「子范围必须完全画在父范围之内」的约束，跨图不校验。',
-    '「每格公里」决定精细度（1 = 精细，适合城池 / 秘境；10 = 粗略，适合大陆 / 区域）。在地图编辑右上角可随时切换，切换会按比例换算已画好的格子。',
-    '要让某条地点出现在某张图上，去《地理风物》把它的「所属地图」选成这张图；未指定的地点不会显示在任何画布上。',
-  ]
-},
-
-{
   id: 'geography-map', name: '地图编辑', group: '世界构建', type: 'map',
   description: '在《地理风物》之上叠一层手绘格子地图：点「绘制地图」选择一个范围后，左键涂格、右键退出，形状与格子数完全由你自由设计；按「层级归属」分层叠色，只要求子范围完全画在父范围之内（无飞地）。可叠加伏笔/角色/时间线关联（按「地理位置」字段精确联动）。',
   tips: ['格子档位右上角切换（每格边长 1 公里精细 / 10 公里粗略）：画大陆切粗档快速铺满，画城池切回精档。',
@@ -863,7 +845,40 @@ export const EDITOR_TAB = { id: 'editor', name: '正文编辑', group: '正文�
 
 export const GROUPS = ['工作面板', '正文写作', '灵感工具', '酒馆模式', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护']
 
+/**
+ * 《地图》数据表 —— **不是页签**，因此不在 TABS 里。
+ *
+ * 它的定位是纯数据：给地图编辑页提供地图清单，并让《地理风物》的「所属地图」引用列
+ * （`cr('所属地图', 'geomaps', '名称')`）能解析出目标表。
+ *
+ * 地图的增删改**全部在地图编辑页左侧列表完成** —— 若把这张表塞进 TABS，
+ * 世界构建组下就会同时出现「地图」与「地图编辑」两个页签，作者必然困惑「到底该在哪管地图」
+ * （历史上真的这样出现过一次）。
+ *
+ * ⚠️ 引用列的下拉取数走 `TableRefSelect` 的 `db.getTableRows(refTabId)`，**不依赖本定义**；
+ *    但 dataHealth 的悬空引用校验是从 TABS 遍历出目标表的，故那边显式并入本表（见 dataHealth.ts）。
+ */
+export const GEO_MAPS_TAB: TabDef = {
+  id: 'geomaps', name: '地图', group: '世界构建', type: 'table',
+  description: '手绘地图的清单（内部数据表：不出现在侧栏，增删改都在「地图编辑」页左侧列表里完成）。每张地图是一块独立画布：有自己的坐标系与格子档位，互不干扰。《地理风物》里每条地点通过「所属地图」归属到某张图上，在地图编辑里按图切换显示。',
+  columns: [
+    c('编号'), c('名称'),
+    c('每格公里', ['1', '10']),
+    c('说明'),
+  ],
+  displayCol: '名称',
+  subtitleCol: '每格公里',
+  codeRule: '编号规则：MAP + 4 位序号（MAP0001、MAP0002…，MAP=Map 地图）。新增行自动按当前最大序号 +1 编号（从 0001 起）；同表前缀统一、序号递增；已删除条目的编号不复用。',
+  tips: [
+    '每张地图是一块独立画布：格子互不影响，同一张图上才有「子范围必须完全画在父范围之内」的约束，跨图不校验。',
+    '「说明」会在地图编辑页右侧显示（非编辑状态下），用来记这张图画的是哪片区域、有哪些约定。',
+    '「每格公里」决定精细度（1 = 精细，适合城池 / 秘境；10 = 粗略，适合大陆 / 区域）。',
+  ]
+}
+
 export function getTab(id: string): TabDef | undefined {
+  // 《地图》是独立数据表（不在 TABS 里，见上方 GEO_MAPS_TAB）
+  if (id === GEO_MAPS_TAB.id) return GEO_MAPS_TAB
   const t = TABS.find(t => t.id === id)
   if (t) return t
   if (isVolumeLedgerTab(id)) return _volumeTabs.find(v => v.id === id)
@@ -955,32 +970,7 @@ export function forcedByDeps(enabled: Set<string>): Set<string> {
 }
 
 /** 判断某功能（页签 / 编辑器）在指定可见性上下文下是否可见（启用） */
-/**
- * 内部表：**有数据、有 TabDef，但永不作为页签出现**在任何列表里。
- *
- * 「地图」表（geomaps）即此类 —— 它的定位是纯数据：给地图编辑页提供地图清单，
- * 并让《地理风物》的「所属地图」引用列能解析出候选值。
- * 地图的增删改**全部在地图编辑页左侧的列表里完成**，若是再单开一个表格页，
- * 作者只会困惑「到底该在哪管地图」（历史上真的同时出现过「地图」与「地图编辑」两个页签）。
- *
- * 🔴 不要把内部表从 TABS 里删掉：`getTab('geomaps')` 与 `cr(..., 'geomaps', '名称')`
- *    的引用解析都依赖它存在于 TABS，只是不该出现在页签列表里。
- * ⚠️ 走 tabVisible 的地方（侧栏 / 工作面板 / 引导页 / 设定检索 / 全文检索 / AI 上下文）
- *    会自动隐藏；**不经 tabVisible 的遍历点要自行用 isInternalTab 过滤**
- *    （已知：NovelEditor 的正文高亮 —— 否则「默认地图」会被当成专名在正文里高亮）。
- * ⚠️ dataHealth 的表格遍历**故意不过滤**：它要读到 geomaps 的值才能校验
- *    《地理风物》「所属地图」的悬空引用，滤掉会造成误报。
- */
-const INTERNAL_TAB_IDS = new Set<string>(['geomaps'])
-
-/** 是否为内部表（有数据、无页签）—— 供不走 tabVisible 的遍历点过滤用 */
-export function isInternalTab(tabId: string): boolean {
-  return INTERNAL_TAB_IDS.has(tabId)
-}
-
 export function tabVisible(tabId: string, ctx: VisCtx): boolean {
-  // 内部表永不作为页签出现（但数据仍可被读写、被引用）
-  if (INTERNAL_TAB_IDS.has(tabId)) return false
   // 卷台账（chapter-vol-*）跟随「章节总表」的可见性：自定义项目里启用了章节总表即显示各卷子表
   if (isVolumeLedgerTab(tabId)) tabId = 'chapter-master'
   // 自定义项目按启用功能集合过滤；完整项目全功能可见（旧版精简/极简类型已移除）

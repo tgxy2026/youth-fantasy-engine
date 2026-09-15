@@ -9,7 +9,6 @@ import { showToast, confirmDialog } from './dialogs'
 import CustomSelect, { CUSTOM_OPTIONS_EVENT, resolveOptions, type ResolvedOption } from './CustomSelect'
 import HelpPopover from './HelpPopover'
 import { Modal } from './Modal'
-import PromptModal from './PromptModal'
 import { Button } from './Button'
 
 /** 内置类别：必须与 schema.ts 中 geography 表「类别」列的内置选项保持一致 */
@@ -132,6 +131,8 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   const [mapId, setMapId] = useState('')
   const curMap = useMemo(() => maps.find(m => m.id === mapId), [maps, mapId])
   const curMapName = curMap?.data['名称'] || ''
+  /** 当前地图的说明：非编辑态显示在右侧面板（说明的编辑入口在左侧列表的「地图信息」里） */
+  const mapNote = curMap?.data['说明'] || ''
   /**
    * 当前地图上的地理行。
    * 🔴 未指定「所属地图」的行**不显示**在任何画布上 —— 宁可让作者回《地理风物》补归属，
@@ -749,7 +750,12 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
               + '· 滚轮缩放画面、拖空白平移；拖动整块空间可挪位置（吸附整格）。\n'
               + '· 唯一规则：子范围必须完全画在父范围之内（无飞地）；祖先链上的范围可以叠涂，别的范围不行。\n'
               + '· 图层嵌套按「层级归属」自动分层，子空间格子叠涂在父空间之上。\n'
-              + '· 颜色由系统按层级自动调配：父子高对比、兄弟错开，一眼区分隶属关系。'}
+              + '· 颜色由系统按层级自动调配：父子高对比、兄弟错开，一眼区分隶属关系。\n'
+              + '· 越界涂格会被拒绝；擦父格时若格子被子孙占用，会先提示你擦掉子孙。\n'
+              + '· 点空间查看详情、继续绘制、跳转到表格编辑，或查看其上挂载的伏笔 / 角色 / 时间线（按「地理位置」字段联动）。\n'
+              + '· 「删除地点」会连《地理风物》档案一起删；只想擦掉画好的格子，请用「清空绘制」。\n'
+              + '· 《地理风物》只提供名称 / 类别 / 层级归属；「范围与面积」「相对地理位置」是自由文本备注，类别可在下拉里自定义。\n'
+              + '· 左侧「地图」列表右端的地图信息按钮，可以改地图名称与说明 —— 说明会显示在右侧面板。'}
           </HelpPopover>
         </div>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
@@ -940,16 +946,21 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
               />
             ) : (
               <div className="text-[12px] text-ink-400 space-y-3">
-                <div className="flex items-center gap-2 text-ink-200"><Layers size={14} className="text-amber" /> 使用说明</div>
-                <p>· <strong className="text-ink-200">手绘格子地图</strong>：形状完全由你亲手画。点「绘制地图」选择一个范围（<strong className="text-ink-200">建议从最大的范围开始</strong>），进入绘制模式后<strong className="text-ink-200">左键单击涂/擦一格</strong>。</p>
-                <p>· <strong className="text-ink-200">批量填涂</strong>：绘制模式下<strong className="text-ink-200">按住左键拖出矩形框</strong>，松手把框内整批涂上；<strong className="text-ink-200">Shift+框选 = 批量擦除</strong>。右键单击退出绘制、右键拖动平移画布。</p>
-                <p>· <strong className="text-ink-200">格子档位</strong>：右上角「精 / 粗」切换每格边长 1 公里（精细）或 10 公里（粗略），比例尺真实——切档后同一区域等比例缩放。画大陆切粗档快速铺满，画城池切回精档。</p>
-                <p>· <strong className="text-ink-200">唯一规则</strong>：子范围必须完全画在父范围之内（无飞地）。越界涂格会被拒绝；擦父格时若被子孙占用也会提示先擦子孙。</p>
-                <p>· <strong className="text-ink-200">颜色与图层</strong>：颜色由系统按层级自动调配（父子高对比、兄弟错开）；子空间格子叠涂在父空间之上，按「层级归属」自动分层。</p>
-                <p>· <strong className="text-ink-200">挪位置</strong>：非绘制模式下按住空间拖动，整块格子（含其下所有子空间）按整格吸附平移。</p>
-                <p>· 点击空间查看详情、继续绘制、跳转到表格编辑，或查看其上挂载的伏笔 / 角色 / 时间线（按「地理位置」字段联动）。</p>
-                <p className="text-ink-500">《地理风物》只提供名称、类别与层级归属；「范围与面积」「相对地理位置」为自由文本备注。类别可在新增/详情面板的下拉里自定义。</p>
-                <p className="text-ink-500">删除地点会连《地理风物》档案一起删；只想擦掉画好的格子请用「清空绘制」。</p>
+                <div className="flex items-center gap-2 text-ink-200">
+                  <MapPin size={14} className="text-amber shrink-0" />
+                  <span className="truncate">{curMapName || '地图'} · 说明</span>
+                </div>
+                {mapNote ? (
+                  <p className="whitespace-pre-wrap text-ink-300 leading-relaxed">{mapNote}</p>
+                ) : (
+                  <p className="text-ink-500 leading-relaxed">
+                    这张地图还没写说明。点左侧列表里该地图右端的<strong className="text-ink-300">地图信息</strong>按钮，
+                    可以补一段 —— 比如它画的是哪片区域、有哪些约定、画到哪一步了。
+                  </p>
+                )}
+                <p className="text-ink-500 leading-relaxed pt-2 border-t border-ink-700/70">
+                  操作指引见右上角问号；点画布上的范围查看详情、继续绘制或跳转表格，点空白处可就地新增地点。
+                </p>
               </div>
             )}
           </div>
@@ -1005,7 +1016,7 @@ function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disabled }: {
   /** 弹窗意图：新建 / 重命名（null = 关闭） */
   const [ask, setAsk] = useState<{ mode: 'add' | 'rename'; target?: TableRow } | null>(null)
 
-  const submitName = async (name: string) => {
+  const submitName = async (name: string, note: string) => {
     const intent = ask
     setAsk(null)
     if (!intent) return
@@ -1018,13 +1029,13 @@ function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disabled }: {
       if (intent.mode === 'add') {
         await db.saveTableRow({
           id: uid(), projectId: db.getCurrentProjectId(), tabId: 'geomaps', order: maps.length,
-          data: { '编号': '', '名称': name, '每格公里': '1', '说明': '' },
+          data: { '编号': '', '名称': name, '每格公里': '1', '说明': note },
         })
         showToast('已新建地图「' + name + '」', 'success')
       } else if (intent.target) {
         const old = intent.target.data['名称'] || ''
         // ⚠️ 名称是《地理风物》「所属地图」的引用值：改名必须连带改归属，否则那些地点会集体从画布上消失
-        await db.saveTableRow({ ...intent.target, data: { ...intent.target.data, '名称': name } })
+        await db.saveTableRow({ ...intent.target, data: { ...intent.target.data, '名称': name, '说明': note } })
         for (const r of await db.getTableRows('geography')) {
           if ((r.data['所属地图'] || '') === old) {
             await db.saveTableRow({ ...r, data: { ...r.data, '所属地图': name } })
@@ -1093,7 +1104,7 @@ function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disabled }: {
                 <span className="ml-1 text-[10px] text-ink-500">{rowCountOf(nm)}</span>
               </button>
               <button type="button" disabled={busy} onClick={() => setAsk({ mode: 'rename', target: m })}
-                title="重命名（会连带更新地点的归属）"
+                title="地图信息：改名称与说明（改名会连带更新地点的归属）"
                 className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-ink-500 opacity-0 group-hover:opacity-100 hover:text-amber transition-opacity">
                 <Pencil size={10} />
               </button>
@@ -1106,61 +1117,154 @@ function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disabled }: {
           )
         })}
       </div>
-      <PromptModal
+      <MapInfoModal
         open={!!ask}
-        title={ask?.mode === 'add' ? '新建地图' : '重命名地图'}
-        label="地图名称"
-        defaultValue={ask?.mode === 'rename' ? (ask.target?.data['名称'] || '') : ''}
-        placeholder="如：九州大陆图 / 王城平面图"
-        onSubmit={n => void submitName(n)}
+        title={ask?.mode === 'add' ? '新建地图' : '地图信息'}
+        name={ask?.mode === 'rename' ? (ask.target?.data['名称'] || '') : ''}
+        note={ask?.mode === 'rename' ? (ask.target?.data['说明'] || '') : ''}
+        onSubmit={(n, d) => void submitName(n, d)}
         onCancel={() => setAsk(null)}
       />
     </aside>
   )
 }
 
+/**
+ * 地图信息弹窗（新建 / 编辑共用）：名称 + 说明两个字段。
+ * 说明会显示在地图编辑页右侧面板（非编辑状态下），故编辑入口放在这里，与改名同一处。
+ */
+function MapInfoModal({ open, title, name, note, onSubmit, onCancel }: {
+  open: boolean; title: string; name: string; note: string
+  onSubmit: (name: string, note: string) => void; onCancel: () => void
+}) {
+  const [n, setN] = useState(name)
+  const [d, setD] = useState(note)
+  useEffect(() => { if (open) { setN(name); setD(note) } }, [open, name, note])
+  if (!open) return null
+  return (
+    <Modal open onClose={onCancel} title={title} icon={<MapPin size={16} />} width={440}>
+      <div className="space-y-3">
+        <Field label="地图名称">
+          <input autoFocus value={n} onChange={e => setN(e.target.value)}
+            placeholder="如：九州大陆图 / 王城平面图"
+            className="w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50" />
+        </Field>
+        <Field label="地图说明（显示在右侧面板）">
+          <textarea value={d} onChange={e => setD(e.target.value)} rows={5}
+            placeholder="这张图画的是哪片区域、有哪些约定、画到哪一步了…"
+            className="w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-[12.5px] text-ink-100 outline-none focus:border-amber/50 resize-y leading-relaxed" />
+        </Field>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button onClick={onCancel} variant="secondary" size="md" className="text-[12px]">取消</Button>
+          <Button onClick={() => { if (n.trim()) onSubmit(n.trim(), d.trim()) }} disabled={!n.trim()}
+            variant="bare"
+            className="px-3 py-1.5 rounded-md bg-amber/20 text-amber border border-amber/40 text-[12px] hover:bg-amber/30 disabled:opacity-40 transition-colors">
+            保存
+          </Button>
+        </div>
+        <p className="text-[10px] text-ink-500 leading-relaxed">
+          改名会连带更新《地理风物》里地点的「所属地图」，不会丢数据。
+        </p>
+      </div>
+    </Modal>
+  )
+}
+
+/**
+ * 「绘制地图」选择器。
+ *
+ * 🔴 旧实现的树是**按深度排序**（`.sort((a,b) => a.depth - b.depth)`）—— 那会把父子拆散：
+ *    同一层的所有节点被排到一起，父与子不相邻，看起来完全不成树。
+ *    现改为按父子关系做 DFS，保证**每棵子树连续**。
+ */
 function DrawDialog({ rows, drawnCells, onPick, onClose }: {
   rows: TableRow[]; drawnCells: Map<string, number>
   onPick: (id: string) => void; onClose: () => void
 }) {
-  // 构建缩进树：按父链算深度，根=无父级或父名不存在
-  const items = rows.map(r => {
-    const parentName = r.data['层级归属'] || ''
-    const namesSet = new Set(rows.map(x => x.data['名称'] || ''))
-    let depth = 0
-    let pName: string | '' = parentName
-    while (pName && namesSet.has(pName)) { depth++; pName = rows.find(x => (x.data['名称'] || '') === pName)?.data['层级归属'] || ''; if (depth > 12) break }
-    return { id: r.id, name: r.data['名称'] || '(未命名)', category: r.data['类别'] || '区域', depth }
-  }).sort((a, b) => a.depth - b.depth)
+  const [q, setQ] = useState('')
+
+  /** DFS 展开成有序列表（子树连续），每项带 depth 与已画格数 */
+  const tree = useMemo(() => {
+    const byName = new Map<string, TableRow>()
+    for (const r of rows) byName.set(r.data['名称'] || '', r)
+    const children = new Map<string, TableRow[]>()
+    for (const r of rows) {
+      const p = r.data['层级归属'] || ''
+      const key = p && byName.has(p) && p !== (r.data['名称'] || '') ? p : ''
+      const arr = children.get(key) ?? []
+      arr.push(r)
+      children.set(key, arr)
+    }
+    const out: { id: string; name: string; category: string; depth: number; drawn: number }[] = []
+    const walk = (parent: string, depth: number) => {
+      if (depth > 12) return
+      for (const r of children.get(parent) ?? []) {
+        const nm = r.data['名称'] || '(未命名)'
+        out.push({ id: r.id, name: nm, category: r.data['类别'] || '区域', depth, drawn: drawnCells.get(r.id) ?? 0 })
+        walk(nm, depth + 1)
+      }
+    }
+    walk('', 0)
+    return out
+  }, [rows, drawnCells])
+
+  /** 搜索：命中的条目 + 其**祖先链**（保住层级上下文，否则搜出来的子项看不出归属） */
+  const items = useMemo(() => {
+    const kw = q.trim().toLowerCase()
+    if (!kw) return tree
+    const keep = new Set<number>()
+    tree.forEach((it, idx) => {
+      if (!it.name.toLowerCase().includes(kw) && !it.category.toLowerCase().includes(kw)) return
+      keep.add(idx)
+      // 向上找祖先：DFS 序里，它之前最近的 depth 更小的节点即其父
+      let d = it.depth
+      let i = idx - 1
+      while (d > 0 && i >= 0) {
+        if (tree[i].depth < d) { keep.add(i); d = tree[i].depth }
+        i--
+      }
+    })
+    return tree.filter((_, i) => keep.has(i))
+  }, [q, tree])
+
   return (
     <Modal
       open
       onClose={onClose}
       title="绘制地图 · 选择一个地理范围"
       icon={<Pencil size={16} />}
-      width={384}
+      width={460}
       maxHeight="80vh"
-      subheader={
-        <div className="px-4 py-2.5 text-[11px] text-ink-300 bg-amber/5 border-b border-ink-700 leading-relaxed">
-          建议<strong className="text-amber">从最大的范围开始绘制</strong>（如大陆 → 区域 → 城市），后画的范围会叠在先画的之上。
-          绘制时形状与格子数不限，唯一规则：<strong className="text-amber">子范围必须完全画在父范围之内</strong>。
-        </div>
-      }
-      bodyClassName="p-2"
+      bodyClassName="p-0"
     >
-          {items.length === 0 && <div className="text-center text-ink-500 text-[12px] py-6">《地理风物》还没有条目，请先去登记。</div>}
-          {items.map(it => (
-            <Button variant="bare" key={it.id} onClick={() => onPick(it.id)}
-              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-ink-800 transition-colors text-left"
-              style={{ paddingLeft: 12 + it.depth * 18 }}>
-              {it.depth > 0 && <span className="text-ink-500 text-[10px]">└</span>}
-              <span className="text-[12.5px] text-ink-100">{it.name}</span>
-              <span className="text-[10px] text-ink-500">{it.category}</span>
-              {(drawnCells.get(it.id) ?? 0) > 0 && (
-                <span className="ml-auto text-[10px] text-emerald-400/90">已画 {drawnCells.get(it.id)} 格</span>
-              )}
-            </Button>
-          ))}
+      <div className="px-3 pt-3 pb-2 border-b border-ink-700">
+        <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+          placeholder="搜索地点名称或类别…"
+          className="w-full bg-ink-900 border border-ink-700 rounded-md px-2.5 py-1.5 text-[12.5px] text-ink-100 outline-none focus:border-amber/50" />
+        <div className="mt-2 text-[10.5px] text-ink-500 leading-relaxed">
+          建议<strong className="text-amber">从最大的范围开始画</strong>（大陆 → 区域 → 城市），后画的叠在先画的之上。
+          共 {tree.length} 个地点{q.trim() ? '，匹配 ' + items.length + ' 个' : ''}。
+        </div>
+      </div>
+      <div className="max-h-[52vh] overflow-y-auto p-1.5">
+        {items.length === 0 && (
+          <div className="text-center text-ink-500 text-[12px] py-6">
+            {tree.length === 0 ? '《地理风物》还没有条目，请先去登记。' : '没有匹配「' + q.trim() + '」的地点。'}
+          </div>
+        )}
+        {items.map(it => (
+          <button type="button" key={it.id} onClick={() => onPick(it.id)} title={'绘制「' + it.name + '」'}
+            className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-ink-800 transition-colors text-left">
+            <span className="shrink-0" style={{ width: it.depth * 14 }} />
+            {it.depth > 0 && <span className="shrink-0 text-[10px] text-ink-600">└</span>}
+            <span className="text-[12.5px] text-ink-100 truncate">{it.name}</span>
+            <span className="shrink-0 text-[10px] text-ink-500">{it.category}</span>
+            {it.drawn > 0
+              ? <span className="ml-auto shrink-0 text-[10px] text-emerald-400/90">已画 {it.drawn} 格</span>
+              : <span className="ml-auto shrink-0 text-[10px] text-ink-600">未画</span>}
+          </button>
+        ))}
+      </div>
     </Modal>
   )
 }

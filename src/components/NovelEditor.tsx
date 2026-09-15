@@ -21,7 +21,7 @@ import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
 import JieWenJi, { ADVICE_START, ADVICE_END } from './JieWenJi'
 import { confirmDialog, showToast } from './dialogs'
-import { TABS, type VisCtx, refreshVolumeTabs, isInternalTab } from '../lib/schema'
+import { TABS, type VisCtx, refreshVolumeTabs } from '../lib/schema'
 import { chapterSeqOf, chapterSeqMap, flattenChapters } from '../lib/chapterSeq'
 import { syncChapterMaster } from '../lib/chapterMaster'
 import { readAliases } from '../lib/aliases'
@@ -286,7 +286,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         }
       }
       // 世界构建组下的全部设定表（国家/地理/种族/物品/历史/术语…）均以 displayCol 作为条目名称参与高亮
-      for (const tab of TABS.filter(t => t.group === '世界构建' && t.type === 'table' && t.displayCol && !isInternalTab(t.id))) {
+      for (const tab of TABS.filter(t => t.group === '世界构建' && t.type === 'table' && t.displayCol)) {
         const recs = await db.getTableRows(tab.id)
         for (const r of recs) {
           const v = r.data[tab.displayCol as string]

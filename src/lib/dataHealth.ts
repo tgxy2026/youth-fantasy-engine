@@ -10,7 +10,7 @@
 // 另外独立校验"编号型引用"（如 章节总表的 埋设/回收伏笔编号、历史的 对应伏笔编号）：
 //   值为字母+数字编码时，按前缀映射到目标表，确认该编码真实存在。
 
-import { TABS, getTab } from './schema'
+import { TABS, getTab, GEO_MAPS_TAB } from './schema'
 import { getTableRows } from './db'
 import type { AuditIssue, AuditLocation } from './audit'
 
@@ -29,7 +29,9 @@ export interface HealthResult {
 
 export async function runDataHealthCheck(): Promise<HealthResult> {
   const issues: AuditIssue[] = []
-  const tableTabs = TABS.filter(t => t.type === 'table')
+  // 《地图》是独立数据表（不在 TABS 里），但它是《地理风物》「所属地图」列的**引用目标** ——
+  // 不并进来的话，refValues 取不到它，所有已指派的地图归属都会被误报成「悬空引用」。
+  const tableTabs = [...TABS, GEO_MAPS_TAB].filter(t => t.type === 'table')
   const counter = { n: 0 }
   const push = (
     severity: AuditIssue['severity'],
