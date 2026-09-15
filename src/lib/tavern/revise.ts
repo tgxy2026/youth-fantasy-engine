@@ -24,6 +24,7 @@ import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import { uid } from '../id'
 import { CARD_FIELDS, isCardField, readCardField, fieldLabel } from './types'
+import { structHintFor } from './cardFields'
 import type { CardFieldPath, FreeCharacter, TavernMessage } from './types'
 
 // 字段表与读写工具在 ./types（纯数据 + 纯函数，store 也要用；放这里会让 store→revise→engine→store 成环）
@@ -84,6 +85,16 @@ export function buildReviseSystem(charName: string): string {
 
 〖可改字段（field 只能填左侧的英文路径）〗
 ${CARD_FIELDS.map(f => `- ${f.path} —— ${f.label}：${f.when}`).join('\n')}
+
+〖🔴 after 必须保持原格式 —— 这条写得重是因为改坏了很难发现〗
+这些字段在界面上是**分条的小项**（形如「外貌：短发」一行一项），after 是整段替换：
+- 原文是分条格式的 → after **沿用同一套小项**，只改真正要改的那一行，其余行一字不改照抄；
+- 被改那一栏在设计上有这些小项，别自造新标签：
+${CARD_FIELDS.map(f => {
+  const hint = structHintFor(f.path)
+  return hint ? `  · ${f.path}：${hint}` : ''
+}).filter(Boolean).join('\n')}
+- 把分条改成一整段散文，会让作者那边所有小格塌成一坨 —— 这是必须避免的事故。
 
 〖每条要写清〗
 - field：上面清单里的路径，一字不差。

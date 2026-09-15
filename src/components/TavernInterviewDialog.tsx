@@ -1,16 +1,16 @@
 /**
- * 对话引导弹窗（访谈式创建角色卡 / 剧本）
+ * 对话引导弹窗（访谈式创建角色卡 / 剧本 / 故事）
  *
  * 它只剩一层薄壳：把「酒馆这一侧的东西」（用会话指定的模型发请求、按 kind 选提纲、把结果翻成
- * 角色卡 / 剧本草稿）接上共用的访谈界面 `InterviewChat`。
+ * 对应草稿）接上共用的访谈界面 `InterviewChat`。
  * 界面与访谈机制都在共用件里 —— 2026-09-15 起同一套引导要给全局所有 AI 补全入口复用。
  */
-import { specOf, tavernCallChat } from '../lib/tavern/interview'
+import { specOf, tavernCallChat, type InterviewKind } from '../lib/tavern/interview'
 import InterviewChat from './InterviewChat'
 
 export default function TavernInterviewDialog({ open, kind, subject, existing, providerId, onClose, onApply }: {
   open: boolean
-  kind: 'card' | 'script'
+  kind: InterviewKind
   /** 「角色卡」/「剧本」—— 只用于文案 */
   subject: string
   /** 补完模式：把已有内容作为起点交进去（可空 = 从零创建） */

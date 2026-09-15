@@ -27,7 +27,7 @@ import AutoTextarea from './AutoTextarea'
 import TavernScriptFields from './TavernScriptFields'
 import TavernInterviewDialog from './TavernInterviewDialog'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
-import { interviewToScript } from '../lib/tavern/interview'
+import { interviewToScript, interviewToStory } from '../lib/tavern/interview'
 import {
   listScripts, getScript, saveScript, createScript, deleteScript, draftScript,
   scriptToText, snapshotOf, mergeScriptDraft, isEmptyScriptFields, firstLine, scriptDisplayName,
@@ -36,7 +36,10 @@ import {
 } from '../lib/tavern/script'
 import {
   listStories, getStory, saveStory, createStory, deleteStory, storyDisplayName,
+  draftStory, flattenStoryFields, mergeStoryDraft, isEmptyStoryFields,
+  EMPTY_STORY_FIELDS, STORY_SETTING_MAX, type StoryDraftFields,
 } from '../lib/tavern/story'
+import { listCharsByStory } from '../lib/tavern/store'
 import type { DraftSource } from '../lib/tavern/draft'
 import type { TavernScript, TavernScriptIndexItem, TavernStory, TavernStoryIndexItem } from '../lib/tavern/types'
 
@@ -62,6 +65,8 @@ export default function TavernScript() {
   const [lastSource, setLastSource] = useState<DraftSource | null>(null)
   /** 对话引导弹窗（边聊边写，适合还没想清楚的时候） */
   const [interviewOpen, setInterviewOpen] = useState(false)
+  /** 当前故事下的角色卡张数（右栏显示用 —— 让作者知道删故事会影响到多少卡） */
+  const [storyCharCount, setStoryCharCount] = useState(0)
   const search = useSearchSettings()
 
   const refresh = useCallback(async () => {
@@ -71,6 +76,21 @@ export default function TavernScript() {
   }, [])
 
   useEffect(() => { void (async () => { await refresh() })() }, [refresh])
+
+  // 故事挂了几张卡 —— 异步查，故独立成一个 effect（故事换了才重查，不是每敲一个字都查）
+  const storyIdForCount = story?.id ?? ''
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const n = storyIdForCount ? (await listCharsByStory(storyIdForCount)).length : 0
+        if (alive) setStoryCharCount(n)
+      } catch {
+        if (alive) setStoryCharCount(0)
+      }
+    })()
+    return () => { alive = false }
+  }, [storyIdForCount])
 
   // 当前是否有未保存改动 —— 切换 / 删除前用它拦一道
   const dirty = kind === 'story' ? storyDirty : scriptDirty
@@ -243,6 +263,33 @@ export default function TavernScript() {
   /** 「新建剧本」必须知道挂在哪个故事下：以当前编辑中的故事为准，没有就禁用 */
   const activeStoryId = kind === 'story' ? story?.id ?? '' : cur?.storyId ?? ''
 
+  /** 故事的两栏（与剧本六栏同理，给起草 / 引导当输入） */
+  const storyFields: StoryDraftFields = story
+    ? { name: story.name, setting: story.setting }
+    : EMPTY_STORY_FIELDS
+
+  /** 起草故事的世界设定 —— 同样把已有内容给过去，AI 空着就不动 */
+  const runStoryDraft = async () => {
+    if (!story) return
+    setDrafting(true)
+    try {
+      const { fields: out, source } = await draftStory({
+        seed, refs,
+        existing: flattenStoryFields(storyFields),
+        ...(search ? { searchSettings: search } : {}),
+      })
+      const merged = mergeStoryDraft(storyFields, out)
+      setStory(prev => (prev ? { ...prev, ...merged, draftedAt: Date.now() } : prev))
+      setStoryDirty(true)
+      setLastSource(source)
+      showToast(`已生成世界设定（${source.label}）—— 过一遍再保存`)
+    } catch (e) {
+      showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setDrafting(false)
+    }
+  }
+
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       <header className="border-b border-ink-800 pb-3">
@@ -286,13 +333,23 @@ export default function TavernScript() {
         {kind && <Button variant="secondary" size="md" onClick={() => void remove()}>删除这份</Button>}
       </div>
 
+      {/* 对话引导：故事与剧本共用这一个弹窗，靠当前编辑对象切换提纲 */}
       <TavernInterviewDialog
         open={interviewOpen}
-        kind="script"
-        subject="剧本"
-        {...(cur ? { existing: flattenScriptFields(fields) } : {})}
+        kind={kind === 'story' ? 'story' : 'script'}
+        subject={kind === 'story' ? '故事' : '剧本'}
+        {...(cur || story
+          ? { existing: kind === 'story' ? flattenStoryFields(storyFields) : flattenScriptFields(fields) }
+          : {})}
         onClose={() => setInterviewOpen(false)}
         onApply={filled => {
+          if (kind === 'story' && story) {
+            const merged = mergeStoryDraft(storyFields, interviewToStory(filled))
+            setStory(prev => (prev ? { ...prev, ...merged, draftedAt: Date.now() } : prev))
+            setStoryDirty(true)
+            showToast('已填入故事设定（对话引导）—— 核对后点「保存」')
+            return
+          }
           const out = interviewToScript(filled)
           const merged = mergeScriptDraft(fields, out)
           setCur(prev => (prev ? { ...prev, ...merged, draftedAt: Date.now() } : prev))
@@ -422,7 +479,73 @@ export default function TavernScript() {
 
         {/* 右：AI 起草（剧本） / 故事信息 */}
         <aside className="w-72 shrink-0 space-y-3 overflow-y-auto">
-          {kind === 'script' && cur ? (
+          {kind === 'story' && story ? (
+            <>
+              <div className="rounded-lg border border-amber/25 bg-amber/5 p-3">
+                <div className="text-[12px] text-amber">AI 起草世界设定</div>
+                <p className="mt-1 text-[10.5px] text-ink-400 leading-relaxed">
+                  写一句这个世界大概什么样，AI 补全名称与设定。已有内容一并交给它做「补完」——
+                  它写不出来就不会动你写的部分，生成后请照例审一遍。
+                </p>
+                <div className="mt-2">
+                  <div className="text-[11px] text-ink-400">一句话想法</div>
+                  <AutoTextarea
+                    value={seed}
+                    onChange={setSeed}
+                    minRows={3}
+                    maxHeight={200}
+                    placeholder="例：现代都市但有低阶术法，术士受牌照管制，普通人不知道灵脉存在。江湖与官面井水不犯河水。"
+                  />
+                </div>
+                <div className="mt-2">
+                  <RefsField value={refs} onChange={setRefs} />
+                </div>
+                <div className="mt-1.5">
+                  <SearchPlanLine settings={search} />
+                </div>
+                <Button
+                  variant="primary" size="md" className="mt-2 w-full"
+                  disabled={drafting || (!seed.trim() && !refs.trim() && isEmptyStoryFields(storyFields))}
+                  onClick={() => void runStoryDraft()}
+                >
+                  {drafting ? '正在生成…' : '一键起草（缺的补上）'}
+                </Button>
+                <div className="mt-1.5">
+                  <Button variant="secondary" size="md" className="w-full" onClick={() => setInterviewOpen(true)}>
+                    对话引导（边聊边写）
+                  </Button>
+                </div>
+                <DraftSourceLine source={lastSource} />
+                {story.draftedAt ? (
+                  <p className="mt-1.5 text-[10px] text-ink-500">
+                    上次生成：{new Date(story.draftedAt).toLocaleString()}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+                <div className="text-[12px] text-ink-200">注入情况</div>
+                <div className="mt-1.5 space-y-1 text-[11px] text-ink-400">
+                  <div>
+                    每轮注入 <span className={story.setting.trim().length > STORY_SETTING_MAX ? 'text-amber' : 'text-ink-200'}>
+                      {story.setting.trim().length}
+                    </span>
+                    <span className="text-ink-600"> / 上限 {STORY_SETTING_MAX} 字</span>
+                  </div>
+                  {story.setting.trim().length > STORY_SETTING_MAX && (
+                    <div className="text-amber leading-relaxed">
+                      超了 —— 它每轮都进上下文。把细节挪到背景设定（命中才注入）去。
+                    </div>
+                  )}
+                  <div className="leading-relaxed">
+                    旗下剧本 <span className="text-ink-200">{scripts.filter(s => s.storyId === story.id).length}</span> 份，
+                    角色卡 <span className="text-ink-200">{storyCharCount}</span> 张
+                  </div>
+                  {!story.setting.trim() && <div className="text-ink-600">（还没写设定，扮演时会缺世界观）</div>}
+                </div>
+              </div>
+            </>
+          ) : kind === 'script' && cur ? (
             <>
               <div className="rounded-lg border border-amber/25 bg-amber/5 p-3">
                 <div className="text-[12px] text-amber">AI 起草剧本六栏</div>

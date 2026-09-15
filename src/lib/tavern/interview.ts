@@ -26,10 +26,11 @@ import {
 } from '../interview'
 import { EMPTY_CARD_DRAFT, type CardDraft } from './draft'
 import { EMPTY_SCRIPT_FIELDS, type ScriptDraftFields } from './script'
+import { EMPTY_STORY_FIELDS, type StoryDraftFields } from './story'
 
 export type { InterviewTopic, InterviewTurn, InterviewReply }
 
-export type InterviewKind = 'card' | 'script'
+export type InterviewKind = 'card' | 'script' | 'story'
 
 /** 角色卡提纲：按「先定人、再定形、后定边界」的顺序 —— 前一个话题的答案自然引出后一个 */
 export const CARD_TOPICS: InterviewTopic[] = [
@@ -52,12 +53,30 @@ export const SCRIPT_TOPICS: InterviewTopic[] = [
   { key: 'opening', label: '开场白', ask: '对面开口说的第一句（一两句即可，它是整场戏的语气锚点）', fields: ['opening'] },
 ]
 
+/**
+ * 故事提纲：先「叫什么」，再把这个世界的骨架问全。
+ * 刻意**不问人物与情节** —— 那是角色卡与剧本的活儿，混进来就成了三处重复的设定源。
+ */
+export const STORY_TOPICS: InterviewTopic[] = [
+  { key: 'name', label: '故事名', ask: '先给这个世界起个短名（列表里认得出的那种）', fields: ['name'] },
+  {
+    key: 'setting', label: '这个世界', fields: ['setting'],
+    ask: '把这个世界的骨架说清：发生在什么时候、什么地方（现实还是架空、城市还是乡野）；' +
+      '这里的规矩是什么 —— 有没有超自然或科技底色、有哪些势力、普通人怎么过日子。' +
+      '一次问完，别挤牙膏；作者答不完就先把答到的写进设定，下一轮再补。',
+  },
+]
+
 export function topicsOf(kind: InterviewKind): InterviewTopic[] {
-  return kind === 'card' ? CARD_TOPICS : SCRIPT_TOPICS
+  if (kind === 'card') return CARD_TOPICS
+  if (kind === 'story') return STORY_TOPICS
+  return SCRIPT_TOPICS
 }
 
 export function fieldKeysOf(kind: InterviewKind): string[] {
-  return kind === 'card' ? Object.keys(EMPTY_CARD_DRAFT) : Object.keys(EMPTY_SCRIPT_FIELDS)
+  if (kind === 'card') return Object.keys(EMPTY_CARD_DRAFT)
+  if (kind === 'story') return Object.keys(EMPTY_STORY_FIELDS)
+  return Object.keys(EMPTY_SCRIPT_FIELDS)
 }
 
 /** 栏名 → 中文名（界面摊平、提示词都靠它） */
@@ -70,10 +89,16 @@ export const SCRIPT_LABELS: Record<string, string> = {
   name: '名称', situation: '情境', opening: '开场白', playerRole: '你的位置', goal: '这一场的目标', taboo: '不要发生',
 }
 
-const KIND_NAME: Record<InterviewKind, string> = { card: '角色卡', script: '剧本' }
+export const STORY_LABELS: Record<string, string> = {
+  name: '故事名', setting: '世界设定',
+}
+
+const KIND_NAME: Record<InterviewKind, string> = { card: '角色卡', script: '剧本', story: '故事' }
 
 export function labelsOf(kind: InterviewKind): Record<string, string> {
-  return kind === 'card' ? CARD_LABELS : SCRIPT_LABELS
+  if (kind === 'card') return CARD_LABELS
+  if (kind === 'story') return STORY_LABELS
+  return SCRIPT_LABELS
 }
 
 /** 打包成通用核心认识的「纲」 */
@@ -103,7 +128,11 @@ export function buildInterviewUser(s: InterviewState, existing?: string): string
 
 /** 解析一轮访谈的输出（导出便于单测）—— 角色卡与剧本的栏名都认（兼容旧调用） */
 export function parseInterviewReply(raw: string, prev: Record<string, string> = {}): InterviewReply | null {
-  return parseInterviewReplyCore(raw, [...fieldKeysOf('card'), ...fieldKeysOf('script')], prev)
+  return parseInterviewReplyCore(
+    raw,
+    [...new Set([...fieldKeysOf('card'), ...fieldKeysOf('script'), ...fieldKeysOf('story')])],
+    prev,
+  )
 }
 
 /** 跑一轮访谈。`answer` 为空 = 开场（让 AI 先问） */
@@ -154,6 +183,14 @@ export function interviewToCard(filled: Record<string, string>): CardDraft {
 export function interviewToScript(filled: Record<string, string>): ScriptDraftFields {
   const out: ScriptDraftFields = { ...EMPTY_SCRIPT_FIELDS }
   for (const k of Object.keys(EMPTY_SCRIPT_FIELDS) as (keyof ScriptDraftFields)[]) {
+    out[k] = String(filled[k] ?? '').trim()
+  }
+  return out
+}
+
+export function interviewToStory(filled: Record<string, string>): StoryDraftFields {
+  const out: StoryDraftFields = { ...EMPTY_STORY_FIELDS }
+  for (const k of Object.keys(EMPTY_STORY_FIELDS) as (keyof StoryDraftFields)[]) {
     out[k] = String(filled[k] ?? '').trim()
   }
   return out

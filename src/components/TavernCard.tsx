@@ -25,8 +25,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
+import TavernCardStructField from './TavernCardStructField'
+import { PROFILE_SPECS, CONDUCT_SPECS } from '../lib/tavern/cardFields'
 import { listStories, storyDisplayName } from '../lib/tavern/story'
-import { cardStoryId, type TavernStoryIndexItem } from '../lib/tavern/types'
+import { cardStoryId, readCardField, writeCardField, type TavernStoryIndexItem } from '../lib/tavern/types'
 import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem } from '../lib/tavern/types'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName, CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem } from '../lib/tavern/cardFile'
@@ -600,14 +602,8 @@ export default function TavernCard() {
     setDraft(d => (d ? { ...d, [k]: v } : d))
     setDirty(true)
   }
-  const upProfile = (k: keyof FreeCharacter['profile'], v: string) => {
-    setDraft(d => (d ? { ...d, profile: { ...d.profile, [k]: v } } : d))
-    setDirty(true)
-  }
-  const upConduct = (k: keyof FreeCharacter['conduct'], v: string) => {
-    setDraft(d => (d ? { ...d, conduct: { ...d.conduct, [k]: v } } : d))
-    setDirty(true)
-  }
+  // 注：第 2、3 章改走 `TavernCardStructField`（细字段模板），不再需要整段 set 的小工具；
+  //     它们写回库里仍是原有那十二个字符串字段（`writeCardField`）。
 
 /** 导入弹窗的可见列表：分组页签 + 关键字（按名字） */
   const novelRows = useMemo(() => {
@@ -684,9 +680,8 @@ export default function TavernCard() {
 
   • 归属故事：决定这张卡用哪一套世界观 —— 世界设定写在「故事剧本」页的故事里，这里不再重复。
   • 第 1 章 世界：不写世界本身，只写**角色与这个世界的关系**（身份、处境、常去的地方）。
-  • 第 2 章 人物档案：外在 / 内核 / 语言特征 / 关系 / 做不到的事 / 知识边界。
-    其中「做不到的事」与「知识边界」是防角色崩坏最关键的两栏 —— 写清 Ta 不会什么、不知道什么。
-  • 第 3 章 行为规范：视角与人称 / 底线 / 关系推进节奏 / 尺度。
+  • 第 2 章 人物档案 / 第 3 章 行为规范：都是**按小项分条填**的表格（如「外貌：短发」一行一项），
+    模板没覆盖到的写进该栏的「其他」。不确定怎么填就先看每格的灰字例句。
   • 第 4 章 示例对话：AI 会照着它的格式与语气模仿，所以按输出规范写（对白不带名字、除对白外一律套（ ））。
 
   两种起手方式（右上「AI 起草」）：已经想清楚了 → 一句话补全；只有点感觉、说不清 → 对话引导，
@@ -933,23 +928,18 @@ export default function TavernCard() {
                     第 2 章 · 人物档案
                   </SectionTitle>
                   <div className="space-y-3">
-                    <Field label="2.1 外在" hint="外貌、穿着、有记忆点的小特征" rows={2}
-                      value={draft.profile.externals} onChange={v => upProfile('externals', v)}
-                      ph="例：短发，总穿同一件洗旧的灰色围裙，左手腕有道旧疤。" />
-                    <Field label="2.2 内核" hint="性格、在乎的东西、内在矛盾" rows={3}
-                      value={draft.profile.core} onChange={v => upProfile('core', v)}
-                      ph="例：外冷内热。嘴上不留情，但会记得你爱吃什么。" />
-                    <Field label="2.3 语言特征" hint="怎么说话：句子长短、口头禅、语气习惯" rows={2}
-                      value={draft.profile.speech} onChange={v => upProfile('speech', v)}
-                      ph="例：句子短，习惯用反问，从不说软话。" />
-                    <Field label="2.4 关系" hint="Ta与其他角色的关系（没有可留空）" rows={2}
-                      value={draft.profile.relations} onChange={v => upProfile('relations', v)} />
-                    <Field label="2.5 做不到的事" hint="能力与性格上的硬限制 —— 写了它就不会突然全能" rows={2}
-                      value={draft.profile.cannot} onChange={v => upProfile('cannot', v)}
-                      ph="例：说不出关心的话，只能换成别的方式表达。" />
-                    <Field label="2.6 知识边界" hint="哪些事Ta不知道 —— 写了它就不会「恰好知道」" rows={2}
-                      value={draft.profile.knowledge} onChange={v => upProfile('knowledge', v)}
-                      ph="例：不知道顾客的职业与过去。" />
+                    {PROFILE_SPECS.map(spec => (
+                      <TavernCardStructField
+                        key={spec.path}
+                        spec={spec}
+                        label={spec.label}
+                        value={readCardField(draft, spec.path)}
+                        onChange={v => {
+                          setDraft(prev => (prev ? writeCardField(prev, spec.path, v) : prev))
+                          setDirty(true)
+                        }}
+                      />
+                    ))}
                   </div>
                 </section>
 
@@ -959,18 +949,18 @@ export default function TavernCard() {
                     第 3 章 · 行为规范
                   </SectionTitle>
                   <div className="space-y-3">
-                    <Field label="视角与人称" hint="以什么视角叙述（第一人称最稳）" rows={2}
-                      value={draft.conduct.perspective} onChange={v => upConduct('perspective', v)}
-                      ph="例：第一人称，只描写Ta自己的动作与感官。" />
-                    <Field label="底线清单" hint="碰到会怎样 —— 写反应，不写理由" rows={2}
-                      value={draft.conduct.bottomLine} onChange={v => upConduct('bottomLine', v)}
-                      ph="例：不越界打听私事；被追问会转移话题，不会发火。" />
-                    <Field label="进度锁" hint="关系推进的速度（防一下子自来熟）" rows={2}
-                      value={draft.conduct.paceLock} onChange={v => upConduct('paceLock', v)}
-                      ph="例：关系推进要慢，至少十几次交谈才到熟络。" />
-                    <Field label="尺度" hint="内容尺度边界" rows={1}
-                      value={draft.conduct.rating} onChange={v => upConduct('rating', v)}
-                      ph="例：日常向，不写亲密场面。" />
+                    {CONDUCT_SPECS.map(spec => (
+                      <TavernCardStructField
+                        key={spec.path}
+                        spec={spec}
+                        label={spec.label}
+                        value={readCardField(draft, spec.path)}
+                        onChange={v => {
+                          setDraft(prev => (prev ? writeCardField(prev, spec.path, v) : prev))
+                          setDirty(true)
+                        }}
+                      />
+                    ))}
                   </div>
                 </section>
 

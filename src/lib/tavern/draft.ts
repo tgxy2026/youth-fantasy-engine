@@ -11,9 +11,14 @@
  * 界面判的话就得复刻一遍「有没有 key / 查没查成 / 是不是 model 档」的逻辑 —— 两份判定必然漂移，
  * 表现是「弹窗说联网了，其实没查成」这种最难查的不一致。所以由本模块统一裁决，界面只负责显示。
  *
- * 【为什么角色卡的模板写在这里，剧本/背景设定留在各自模块】
+ * 【为什么新增角色卡的模板写在这里，剧本/背景设定留在各自模块】
  * 剧本与背景设定的模板早就在 `script.ts` / `world.ts` 里，且各有自己的解析与合并规则 —— 搬过来
  * 只会拆散「模板 + 解析 + 合并」这一组本该放一起的东西。角色卡此前没有起草，模板落在这里。
+ *
+ * 【第 2、3 章为什么要求「按小项写」】
+ * 2026-09-16 起这两章在界面上是**细字段表格**（见 `cardFields.ts`），存到库里仍是同一段文本，
+ * 靠「标签：内容」的行格式往返。所以起草时就得按这个格式输出 —— 否则模型给的散文进到界面里
+ * 会整段掉进「其他」那一格，作者看不到分好的条目。
  */
 import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
 import { parsePlainObject, asText } from '../aiParse'
@@ -21,6 +26,7 @@ import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import type { SearchSettings, webSearch } from '../webSearch'
 import { prepareDraftMaterial, type DraftSource } from '../draftMaterial'
+import { PROFILE_SPECS, CONDUCT_SPECS, OTHER_KEY } from './cardFields'
 
 // ==================== 角色卡模板 ====================
 
@@ -65,32 +71,49 @@ const CARD_OUTPUT_RULES = [
   '- 写 2–4 组来回，短句为主，别写成小说段落。',
 ].join('\n')
 
+/** 「profile.core」→ core（模型写的是 JSON 的扁平键） */
+function jsonKeyOf(path: string): string {
+  return path.split('.').pop() ?? path
+}
+
+/**
+ * 第 2、3 章的填写说明：**直接由 `cardFields` 的模板生成**。
+ * 手写一遍迟早和界面那边的模板对不上（那边加了一格这边没提），作者就会看到
+ * 「界面有这一格、AI 从来不填」的怪事 —— 所以源头只有一份。
+ */
+function structFieldLines(): string[] {
+  const out: string[] = []
+  for (const s of [...PROFILE_SPECS, ...CONDUCT_SPECS]) {
+    const keys = [...s.items.map(i => i.key), ...(s.other ? [OTHER_KEY] : [])]
+    out.push(`  · ${jsonKeyOf(s.path)}（${s.label}）：可用小项 ${keys.join(' / ')}`)
+  }
+  return out
+}
+
 export function buildCardDraftSystem(): string {
   return [
     '你在帮一位小说作者做**角色扮演用的角色卡**。作者会给一句话想法（可能是一个已有作品里的角色，',
     '也可能是他自己的原创），你按下面的四章模板把它填成一张可直接使用的卡。',
     '',
+    '〖语言风格 —— 这一条优先于文采〗',
+    '- 只写**事实与结论**：一条一行，主谓宾说清就停。不许抒情、不许散文式烘托、不许形容词堆砌。',
+    '- 不许重复：同一件事换个说法再说一遍，是这里最常见的废话。',
+    '- 拿不准的栏写「待作者补充」，**不要用空话填满**。',
+    '',
     '〖四章各写什么〗',
-    '- world（第 1 章 · 世界）：这个角色所处的世界。**只写会影响 Ta 言行的东西**（时代、地点、',
-    '  有什么规矩或禁忌、技术/超自然水平）。一到三句话。这是唯一一处该写世界的地方 —— 别写成百科。',
-    '- 第 2 章 · 人物档案（6 栏）：',
-    '  · externals 外在：年纪、外貌、穿着、体态、常带的东西 —— 能让读者一眼认出 Ta 的细节；',
-    '  · core 内核：性格、在乎什么、怕什么、想要什么。要能推出行为，不要形容词堆砌；',
-    '  · speech 语言特征：说话的习惯、口头禅、句长、称呼别人的方式；',
-    '  · relations 关系：与谁有什么牵扯（有具体名字更好）；',
-    '  · cannot 做不到的事：Ta 绝不会做 / 做不到什么 —— 这是防角色崩坏最重要的一栏；',
-    '  · knowledge 知识边界：Ta 知道什么、**不知道什么**（防它替作者全知全能）。',
-    '- 第 3 章 · 行为规范（4 栏）：perspective 视角与人称 / bottomLine 底线清单 /',
-    '  paceLock 进度锁（关系推进的节奏限制）/ rating 尺度（一句话：适合什么尺度的内容）。',
-    '- 第 4 章 · examples：示例对话。见下面的格式要求。',
+    '- world（第 1 章 · 世界）：**不写世界本身**（世界观写在别的故事层），只写**角色与这个世界的关系** ——',
+    '  Ta 的身份、处境、常去的地方，以及这个世界怎么影响 Ta。一到三句即可。',
+    '- 第 2 章 · 人物档案 与 第 3 章 · 行为规范：每一栏都**按小项分条写**，一行一项，形如「外貌：短发」。',
+    '  **不要写成一整段**。模板里没有、但又确实该写的，放进该栏的「其他」小项。可用的小项：',
+    ...structFieldLines(),
+    '- examples（第 4 章）：示例对话。见下面的写法要求。',
     '',
     CARD_OUTPUT_RULES,
     '',
     '〖依据什么写〗',
     '- 作者的想法里点名了某个已有作品的角色 → 按**那个角色的公认设定**写；细节记不准就写得保守些，',
     '  **不要编造具体情节**（编错比写少更坏）；',
-    '- 原创角色 → 顺着作者给的信息写，别替他定身世、结局、隐藏秘密这类重大设定；',
-    '- 拿不准的栏写「待作者补充」，**不要用空话填满**。',
+    '- 原创角色 → 顺着作者给的信息写，别替他定身世、结局、隐藏秘密这类重大设定。',
     '',
     '〖长度〗每一栏尽量控制在 120 字以内（examples 除外，它按 2–4 组对话写）。这些内容每轮都进上下文，',
     '写太满会把对话历史挤没。',

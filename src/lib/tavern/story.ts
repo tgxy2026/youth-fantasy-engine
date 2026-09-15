@@ -19,6 +19,12 @@
  */
 import * as db from '../db'
 import { uid } from '../id'
+import { chat, CHAT_TIMEOUT_MS, type ChatMessage } from '../ai'
+import { parsePlainObject, asText } from '../aiParse'
+import { newAuthorFence, authorBlock } from '../promptGuard'
+import { resolveTavernProvider, type ChatFn } from './engine'
+import { prepareDraftMaterial, type DraftSource } from './draft'
+import { webSearch, type SearchSettings } from '../webSearch'
 import type { TavernStory, TavernStoryIndexItem } from './types'
 
 // 全局 meta 键（无项目前缀）
@@ -107,4 +113,133 @@ export async function deleteStory(id: string): Promise<{ reboundChars: number }>
   await db.setMeta(G.index, idx.filter(x => x.id !== id))
   await db.setMeta(G.one(id), null)
   return { reboundChars }
+}
+
+// ==================== AI 起草 / 对话引导 ====================
+
+/** 故事的可编辑字段（表单与 AI 起草共用这一个形状，避免两边漂移） */
+export type StoryDraftFields = Pick<TavernStory, 'name' | 'setting'>
+
+export const EMPTY_STORY_FIELDS: StoryDraftFields = { name: '', setting: '' }
+
+/** 名字上限（列表里长了会截断，干脆短一点） */
+export const STORY_NAME_MAX = 20
+/** 世界设定上限。它会**每轮注入**，写太长会挤掉对话历史 */
+export const STORY_SETTING_MAX = 2400
+
+export function buildStoryDraftSystem(): string {
+  return [
+    '你在为一个角色扮演世界写「故事」的基本设定。作者会给一句粗略的想法，你把它补成两栏。',
+    '',
+    '〖两栏各写什么〗',
+    `- name（故事名）：2–8 字的短名（如"雨夜便利店"），列表里能一眼认出。`,
+    '- setting（世界设定）：这个世界的基本设定 —— 时代与地点、社会规则与常识、',
+    '  有没有超自然或科技底色、有哪些势力、普通人怎么过日子。',
+    '',
+    '〖纪律 —— 这几条比写得好更重要〗',
+    '- 只写**事实与规则**：一条一行，主谓宾说清就停。不许抒情、不许散文式烘托、不许形容词堆砌。',
+    '- 不许重复：同一个意思换个说法再说一遍，是这里最常见的废话。',
+    '- **不写具体人物**（人物归角色卡），**不写某一场戏发生了什么**（那归剧本）。',
+    '- 不要替作者定死结局、揭开秘密的答案 —— 那些留给他们自己填。',
+    `- 控制在 ${STORY_SETTING_MAX} 字以内。这段每轮都要给模型看，写长了是在挤自己的对话历史。`,
+    '',
+    '〖输出格式〗只输出一个 JSON 对象，不要代码块、不要围栏、不要任何解释：',
+    '{"name":"…","setting":"…"}',
+  ].join('\n')
+}
+
+export type StoryDraftArgs = {
+  /** 作者的粗略想法（必填 —— 没有它就等于让模型凭空编） */
+  seed: string
+  /** 作者粘贴的参考素材（可空） */
+  refs?: string
+  /** 补完模式：现有内容的摊平文本（可空） */
+  existing?: string
+  searchSettings?: SearchSettings
+  providerId?: string
+  chatFn?: ChatFn
+  signal?: AbortSignal
+  /** 测试用：替换检索实现 */
+  searchFn?: typeof webSearch
+}
+
+/**
+ * 跑一次起草，产出故事的名字 + 世界设定（**不落库**；界面过一遍再保存）。
+ * 模型乱答就抛错 —— 让调用方保留作者现有内容，绝不写半截结果进去。
+ */
+export async function draftStory(args: StoryDraftArgs): Promise<{ fields: StoryDraftFields; source: DraftSource }> {
+  const seed = String(args.seed ?? '').trim()
+  if (!seed && !args.refs?.trim() && !args.existing?.trim()) {
+    throw new Error('请先写一句粗略的想法（这个世界大概是什么样的）')
+  }
+
+  const material = await prepareDraftMaterial({
+    idea: seed,
+    refs: args.refs,
+    existing: args.existing,
+    settings: args.searchSettings ?? { mode: 'off', engine: 'bocha', endpoint: '', apiKey: '', topK: 5 },
+    signal: args.signal,
+    searchFn: args.searchFn,
+  })
+
+  const { provider } = await resolveTavernProvider(args.providerId ? { providerId: args.providerId } : undefined)
+  const runChat = args.chatFn ?? chat
+
+  const fence = newAuthorFence()
+  const msgs: ChatMessage[] = [
+    { role: 'system', content: buildStoryDraftSystem() },
+    {
+      role: 'user',
+      content: [
+        '〖作者的想法〗',
+        authorBlock(fence, seed),
+        '',
+        material.blocks,
+        '请按格式输出 JSON。',
+      ].filter(Boolean).join('\n'),
+    },
+  ]
+
+  const reply = await runChat(provider, msgs, {
+    timeoutMs: CHAT_TIMEOUT_MS,
+    signal: args.signal,
+    json: true,
+    think: false,
+  })
+
+  const parsed = parseStoryDraft(reply)
+  if (!parsed) throw new Error('模型没有返回可用的故事（没按 JSON 格式输出）')
+  return { fields: parsed, source: material.source }
+}
+
+/** 把现有内容摊平给「补完」模式用（只给非空的栏） */
+export function flattenStoryFields(f: StoryDraftFields): string {
+  return ([['名称', f.name], ['世界设定', f.setting]] as [string, string][])
+    .filter(([, v]) => String(v ?? '').trim())
+    .map(([k, v]) => `〖${k}〗${String(v).trim()}`)
+    .join('\n')
+}
+
+/** 解析起草结果（导出便于单测）。拿不到设定就返回 null，绝不猜 */
+export function parseStoryDraft(raw: string): StoryDraftFields | null {
+  const o = parsePlainObject(raw)
+  if (!o) return null
+  const name = asText(o.name).trim().slice(0, STORY_NAME_MAX)
+  const setting = asText(o.setting).trim()
+  if (!setting) return null
+  return { name, setting }
+}
+
+/** 把起草结果并进现有内容：**AI 空着的栏不覆盖**（起草是补，不是重写） */
+export function mergeStoryDraft(cur: StoryDraftFields, out: StoryDraftFields): StoryDraftFields {
+  const next: StoryDraftFields = { ...cur }
+  for (const k of Object.keys(EMPTY_STORY_FIELDS) as (keyof StoryDraftFields)[]) {
+    const v = out[k]
+    if (typeof v === 'string' && v.trim()) next[k] = v.trim()
+  }
+  return next
+}
+
+export function isEmptyStoryFields(f: StoryDraftFields): boolean {
+  return !String(f.name ?? '').trim() && !String(f.setting ?? '').trim()
 }
