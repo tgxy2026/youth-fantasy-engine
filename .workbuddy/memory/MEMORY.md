@@ -83,6 +83,10 @@
 - git/npm 都用绝对路径（PortableGit 1.2.0 `cmd/git.exe`；托管 node＋`npm/bin/npm-cli.js`），路径写 `C:/` 正斜杠；⚠️ `sort -n/-r` 会解析到 Windows `sort.exe` → 用 node 脚本。
 - ⚠️ Edit 会「假成功」：改完立即 grep；多处替换用脚本（**全命中才落盘**；`patch-multi.mjs` 在 skill assets，用时拷进 `.workbuddy/tmp/`）；`node -e` 引号/反引号会被吞 → Write 落脚本（**纯 JS，别写 TS 类型**）；`replace_all` 前确认每处前提一致；同文件并发 Edit 会互相覆盖 → 串行。
 - ⚠️ CRLF/LF 并存 → 跨行锚点先探 EOL；`git checkout -- <file>` 会把 LF 变 CRLF（autocrlf=true）→ 回滚后先归一。
+- 🔴 **dev 只有一个 origin：`http://localhost:5199`** —— `vite.config.ts` 的 `normalizeDevHost()` 把
+  `127.0.0.1:5199` 302 到 localhost（以前两者是两个 origin ＝ **两份 IndexedDB**，测试数据会「看不见」）。
+  ⚠️ 文档/脚本/探活一律用 **localhost**；用 127.0.0.1 发请求会拿到 302。桌面版走文件存储，
+  与 dev 的 IndexedDB 本来就是两套（设计如此）。
 - ⚠️ 验「随项目」用换项目（`db.setCurrentProject`），别直查物理表（API 名写错会静默跳过→假绿）。实弹会读真实 apiKey（先告知，绝不提交）。⚠️ 改提示词/示范卡内容后 `tests/` 里写死旧文案的断言会挂 —— 断言与文案同一次提交改。
 
 - 🧪 **dev 测试数据：仓库内 `dev-seed/`，一行导入** —— `await import('/dev-seed/fengyang.js?' + Date.now())`；诊断用 `diagnose.js`。🔴 **必须带 `?'+Date.now()`**（ESM 缓存 → 第二次同名 import 不执行，现象=什么都不打印）。🔴 数据在**浏览器 IndexedDB**，**重启 dev server 无效**；`localhost` 与 `127.0.0.1` 是**不同源=两份库**。这两文件不在 `index.html` 依赖图里 → 打包不携带；ESLint 只扫 `src/`+`tests/` 也扫不到。
