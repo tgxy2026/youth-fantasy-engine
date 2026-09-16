@@ -23,6 +23,7 @@ import {
   type VarKey, type VarOp, type VarValues, type VarChange, type TavernVars,
   type VarSource, type FreeSession,
 } from './types'
+import { authorBlock, newAuthorFence } from '../promptGuard'
 
 /** 抽取侧的标记：提示词要求模型只输出以它开头的一行，解析器也只认它 */
 export const VAR_LINE_TAG = '〔数值〕'
@@ -246,7 +247,8 @@ export function buildVarExtractUser(a: {
     a.goal?.trim() ? `〖这一场的目标〗${a.goal.trim()}` : '',
     '',
     '〖刚发生的对话〗',
-    a.transcript,
+    // 🔴 包边界（审计 P1-12）：对话正文是自由文本，裸拼会让人写在正文里的指令跨段生效
+    authorBlock(newAuthorFence(), a.transcript),
     '',
     `请输出那唯一一行（没有变化就写 ${VAR_LINE_TAG}无变化）。`,
   ].filter(x => x !== '').join('\n')

@@ -34,7 +34,9 @@ export type InterviewKind = 'card' | 'script' | 'story'
 
 /** 角色卡提纲：按「先定人、再定形、后定边界」的顺序 —— 前一个话题的答案自然引出后一个 */
 export const CARD_TOPICS: InterviewTopic[] = [
-  { key: 'basic', label: '名字与世界', ask: 'Ta 叫什么、处在什么样的世界（时代 / 地点 / 有没有超自然与科技底色）', fields: ['name', 'world'] },
+  // 🔴 只问「Ta 与这个世界的关系」（审计 P1-11）：世界本身写在「故事」层（起草提示词也明写「不写世界本身」），
+  //    这里再问一遍世界，等于让作者把世界观抄进角色卡 —— 与故事层重复占额度。
+  { key: 'basic', label: '名字与处境', ask: 'Ta 叫什么、在这个世界里处在什么位置（身份、常在什么地方、与「我」是什么关系）', fields: ['name', 'world'] },
   { key: 'look', label: '外在', ask: '长什么样、多大、穿什么、身上常带着什么 —— 能让读者一眼认出 Ta 的细节', fields: ['externals'] },
   { key: 'core', label: '内核', ask: '什么性子、在乎什么、怕什么、眼下想要什么', fields: ['core'] },
   { key: 'speech', label: '说话方式', ask: '怎么说话（句子长短、口头禅、怎么称呼别人）', fields: ['speech'] },

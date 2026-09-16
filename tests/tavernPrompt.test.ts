@@ -25,7 +25,10 @@ function ok(name: string, cond: boolean, extra = '') {
 function main() {
   // ---------- 1) 协议全文完整性（内置常量，条款掉了功能就瘫） ----------
   {
-    ok('协议版本为 v1.7（【】彻底移除 + 去掉数值行许可）', PROTOCOL_VERSION === 'v1.7')
+    // 版本号不再写死（每次改协议正文都要同步升版）：只断言「版本号与正文标题一致、且是 v1.x」，
+    // 这样以后 bump 不必改测试，而「改了正文忘了升版」仍会被逮住。
+    ok('协议版本号与正文标题一致',
+      /^v1\.\d+$/.test(PROTOCOL_VERSION) && PROTOCOL_CORE.includes(`协议 · ${PROTOCOL_VERSION}`))
     const rules = ['R1', 'R2', 'R3', 'R4', 'R5', 'B1', 'B5', 'B8', 'B9', 'O1', 'O2', 'O3', 'O4', 'M1', 'M2', 'E1', 'E2', 'E3']
     const missing = rules.filter(r => !PROTOCOL_CORE.includes(`\n${r} `))
     ok('协议含全部条款编号（R/B/O/M/E 五节）', missing.length === 0, `缺=${missing.join(',')}`)

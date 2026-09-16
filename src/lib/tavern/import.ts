@@ -10,7 +10,7 @@
  *   2. **明确告知作者这是 AI 生成的草稿、必须审** —— 尤其第 4 章示例对话通常是编的
  *
  * 【提示词里必须写死的一条】
- * **不许编造设定**：小说卡里没有的信息一律留 `【待补】`，不要「合理推测」补上。
+ * **不许编造设定**：小说卡里没有的信息一律留 `〖待补〗`，不要「合理推测」补上。
  * 否则作者会拿到一张看起来完整、实则混了一半假信息的卡 —— 那比空着危险得多。
  *
  * 本文件是纯逻辑 + 提示词；提示词与解析都按「段落标记」而不是 JSON ——
@@ -19,9 +19,16 @@
 import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import { emptyFreeCharacter, type FreeCharacter } from './types'
+import { authorBlock, newAuthorFence } from '../promptGuard'
 
 /** 缺失信息的标记：提示词要求模型用它，UI 据此提醒作者去补 */
-export const MISSING_TAG = '【待补】'
+export const MISSING_TAG = '〖待补〗'
+/**
+ * 老标记（2026-09-16 前的 `【待补】`）。
+ * 🔴 `【】` 已废止（输出协议 v1.7），输入侧统一走 `〖〗` —— 但**解析仍要认旧的**：
+ *    模型可能还带着旧习惯输出，认不出就会把「待补」当成正文写进卡里。
+ */
+const LEGACY_MISSING_TAG = '【待补】'
 
 /** 转换结果的四章草稿（不含 id / 时间） */
 export type CardDraft = Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'>
@@ -82,7 +89,7 @@ export function renderNovelChar(name: string, data: Record<string, string>): str
       return val ? `${field}：${val}` : null
     })
     .filter((x): x is string => !!x)
-  return [`【角色名】${name}`, ...lines].join('\n')
+  return [`〖角色名〗${name}`, ...lines].join('\n')
 }
 
 /** 段落标题匹配（宽松：允许【】包裹、「一、」序号、加粗） */
@@ -199,7 +206,11 @@ export function parseCardDraft(text: string): CardDraft {
 /** 草稿里哪些地方还欠着信息（UI 必须显示，让作者知道要去补哪里） */
 export function draftGaps(draft: CardDraft): string[] {
   const gaps: string[] = []
-  const check = (label: string, v: string) => { if (String(v ?? '').includes(MISSING_TAG)) gaps.push(label) }
+  // 新旧标记都算欠信息（老模型可能还输出【待补】）
+  const check = (label: string, v: string) => {
+    const t = String(v ?? '')
+    if (t.includes(MISSING_TAG) || t.includes(LEGACY_MISSING_TAG)) gaps.push(label)
+  }
   // 全部字段都过一遍 —— 只抽查几项的话，作者会以为「没提示=都填好了」
   check('第 1 章 · 角色与设定的关系', draft.world)
   check('2.1 外在', draft.profile.externals)
@@ -242,8 +253,9 @@ export async function convertNovelChar(args: ConvertArgs): Promise<{ draft: Card
     {
       role: 'user',
       content: [
-        '【小说角色设定原文】',
-        renderNovelChar(name, data),
+        '〖小说角色设定原文〗',
+        // 🔴 小说卡原文属作者文本，包边界（审计 P1-14）——全项目唯一一处没包的作者原文
+        authorBlock(newAuthorFence(), renderNovelChar(name, data)),
         '',
         '请按四章结构改写成角色扮演用的角色卡。',
       ].join('\n'),

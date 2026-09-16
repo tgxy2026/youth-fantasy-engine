@@ -22,6 +22,7 @@ import { buildOpeningMessage } from '../src/lib/tavern/prompt'
 import { uid } from '../src/lib/id'
 import { summarizeMemory } from '../src/lib/tavern/summarize'
 import { memoryChars, memoryToText, messagesAfterWatermark, nextWatermark, MEMORY_SECTIONS } from '../src/lib/tavern/memory'
+import { PROTOCOL_VERSION } from '../src/lib/tavern/protocol'
 import { proposeCardRevisions } from '../src/lib/tavern/revise'
 import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import type { TavernMessage } from '../src/lib/tavern/types'
@@ -267,7 +268,7 @@ async function main() {
     })
     const sys6 = (await buildFreeSystem(s6, [luo6, chu6])).system
     console.log(`[离线断言] system 含〖客观描写〗：${sys6.includes('〖客观描写〗') ? '✓' : '✗'}`)
-    console.log(`[离线断言] 协议正文已是 v1.7：${sys6.includes('角色扮演通用协议 · v1.7') ? '✓' : '✗'}`)
+    console.log(`[离线断言] 协议正文已是 ${PROTOCOL_VERSION}：${sys6.includes('角色扮演通用协议 · ' + PROTOCOL_VERSION) ? '✓' : '✗'}`)
     console.log(`[离线断言] 身份层代词中性（Ta）：${sys6.includes('用 Ta 的眼睛看') ? '✓' : '✗'}`)
     console.log(`[离线断言] 输入侧用的是〖〗〈〉（示例标题/说话人）：${sys6.includes('〖样本') || sys6.includes('〈') ? '✓' : '✗'}`)
     console.log(`[离线断言] 对白不许加说话人标记已写进协议：${sys6.includes('不要把说话人的名字单独写成一行') ? '✓' : '✗'}`)

@@ -311,7 +311,7 @@ export const CARD_FIELDS: { path: CardFieldPath; label: string; when: string }[]
   { path: 'profile.externals', label: '2.1 外在', when: '外貌、穿着、身体状况变了（受伤、换发型、换常穿的衣服）' },
   { path: 'profile.speech', label: '2.3 语言特征', when: '说话方式变了（改口、不再叫昵称、不再用某种口癖）' },
   { path: 'profile.cannot', label: '2.5 做不到的事', when: '原本做不到的事做到了，或反过来做不到了' },
-  { path: 'world', label: '1 世界', when: '身份 / 职业 / 处境 / 常去的地点发生变动（升职、失业、搬走、断亲）' },
+  { path: 'world', label: '1 角色与设定的关系', when: '身份 / 职业 / 处境 / 常去的地点发生变动（升职、失业、搬走、断亲）' },
   { path: 'conduct.paceLock', label: '3 进度锁', when: '关系阶段已经推进（或倒退），原来的锁不再适用' },
   { path: 'conduct.bottomLine', label: '3 底线清单', when: '底线被事件改写（新长出来的雷区）' },
   { path: 'conduct.rating', label: '3 尺度', when: '这段关系的尺度需要调整（很少见）' },

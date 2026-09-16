@@ -18,6 +18,7 @@ import { TABS } from '../schema'
 import { parsePlainObject, parseObjectArray, asText } from '../aiParse'
 import { uid } from '../id'
 import { resolveTavernProvider, type ChatFn } from './engine'
+import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from './types'
 
 /**
@@ -182,7 +183,8 @@ export async function generateReport(session: TavernSession, opts: ReportOptions
       : '〖信息边界〗导演推演 —— 可参照设定判断，但仍以锚点时刻的状态为准。',
     '',
     '〖推演记录〗',
-    body || '（这场没有对话内容）',
+    // 🔴 包边界（审计 P1-12）：推演记录是作者与模型写的自由文本
+    body ? authorBlock(newAuthorFence(), body) : '（这场没有对话内容）',
     '',
     '请输出 JSON：{"overview": "三五句话评价这场戏成不成立", "findings": [ ... ]}',
   ].filter(Boolean).join('\n')

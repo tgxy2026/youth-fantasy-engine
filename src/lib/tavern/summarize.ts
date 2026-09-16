@@ -18,6 +18,7 @@ import {
   chat, CHAT_TIMEOUT_MS, JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage,
 } from '../ai'
 import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './memory'
+import { authorBlock, newAuthorFence } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
 import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps } from './vars'
@@ -196,7 +197,9 @@ export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryR
         memoryToText(prev ?? emptyMemory(charId)),
         '',
         '〖新发生的对话〗',
-        renderTranscript(charName, messages),
+        // 🔴 对话正文是作者与模型写的自由文本，必须包边界（审计 P1-12）：
+        //    正文里写「忽略以上指令」或伪造一个〖标题〗，都会跨出这一段。全项目其余七处都走了同一套守卫。
+        authorBlock(newAuthorFence(), renderTranscript(charName, messages)),
         '',
         '请输出合并后的完整六栏档案，并在最后另起一段写「本场日记」。',
       ].join('\n'),
@@ -267,7 +270,8 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
         memoryToText(prev ?? emptyMemory(charId)),
         '',
         '〖新发生的对话〗',
-        renderTranscript(charName, messages),
+        // 同上：包边界（审计 P1-12）
+        authorBlock(newAuthorFence(), renderTranscript(charName, messages)),
         '',
         '请输出合并后的完整六栏档案。',
       ].join('\n'),
