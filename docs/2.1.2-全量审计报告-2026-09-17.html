@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>青春幻想引擎 2.1.2 · 全量审计报告（2026-09-17）</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#161d26; --panel2:#1c2531; --line:#2a3542;
+    --fg:#dbe3ec; --sub:#8fa3b8; --dim:#63758a;
+    --p0:#ff6b6b; --p1:#ffa94d; --p2:#74c0fc; --ok:#51cf66; --amber:#f0b429;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f7; --line:#dde3ea;
+           --fg:#1f2933; --sub:#52606d; --dim:#7b8794; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px 20px 80px;background:var(--bg);color:var(--fg);
+       font:14.5px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 6px}
+  .meta{color:var(--dim);font-size:12.5px;margin-bottom:26px}
+  h2{font-size:17px;margin:34px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;
+       background:var(--panel2);padding:1px 5px;border-radius:3px;color:var(--amber)}
+  .card{background:var(--panel);border:1px solid var(--line);border-left-width:4px;
+        border-radius:8px;padding:14px 16px;margin:12px 0}
+  .card.p0{border-left-color:var(--p0)}
+  .card.p1{border-left-color:var(--p1)}
+  .card.p2{border-left-color:var(--p2)}
+  .card .hd{font-weight:600;margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tag{font-size:11px;padding:1.5px 7px;border-radius:10px;color:#0f1419;font-weight:700}
+  .t-p0{background:var(--p0)} .t-p1{background:var(--p1)} .t-p2{background:var(--p2)}
+  .loc{font-size:12px;color:var(--dim);font-family:ui-monospace,Consolas,monospace}
+  .card .sec{margin:7px 0}
+  .card .sec b{color:var(--sub);font-weight:600;font-size:12.5px}
+  pre{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+      padding:10px 12px;overflow-x:auto;font-size:12px;line-height:1.6;margin:8px 0}
+  .ok{color:var(--ok)} .bad{color:var(--p0)}
+  ul{margin:6px 0;padding-left:22px}
+  li{margin:3px 0}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>青春幻想引擎 2.1.2 · 全量审计报告</h1>
+<div class="meta">
+  2026-09-17 · 方法：基线 → 三路自建扫描器 → 三路只读子代理（提示词文案 / UI一致性 / 代码去冗余）→ 逐条验尸复核<br>
+  本轮重点：<b>AI 提示词模板与文案准确性</b>、<b>UI 一致性</b>、<b>代码去冗余</b>
+</div>
+
+<h2>一、基线（改动前锚点）</h2>
+<table>
+<tr><th>项</th><th>结果</th><th>说明</th></tr>
+<tr><td><code>tsc --noEmit</code></td><td class="ok">0 error</td><td>—</td></tr>
+<tr><td><code>eslint src</code></td><td class="ok">0 error / 11 warning</td><td>11 条均为既有 <code>exhaustive-deps</code>，未盲改</td></tr>
+<tr><td><code>tests/run-all.mjs</code></td><td class="ok">43/43 全绿</td><td>—</td></tr>
+<tr><td>依赖图</td><td class="ok">孤立 0 · 分层违规 0</td><td>循环依赖 7 组（见下，均为既有结构）</td></tr>
+<tr><td>规模</td><td>src 180 文件 / 67,629 行</td><td>超 600 行 21 个；最大 <code>seedContent.ts</code> 7436 行</td></tr>
+</table>
+
+<h2>二、扫描器结论（均已抽样验尸）</h2>
+<ul>
+<li><b>循环依赖 7 组</b>：<code>Modal→Modal</code>（<code>Z</code> 再导出自引用）、tavern engine 与 world/script/story 三组双向、<code>materialRef→materialData→materialRef</code>。<b>均为既有结构，本轮未新增</b>；其中 materialRef 那组被两个独立来源同时点名（见 P1-⑪）。</li>
+<li><b>红线 API</b>：<code>window.prompt/confirm/alert</code> 零实际调用（2 处命中均为注释说明）。</li>
+<li><b>getBoundingClientRect 13 处</b>：全部是 Portal 浮层定位或注释，无"量尺寸"误用 → 合规。</li>
+<li><b>markdown 星号</b>：命中的全部在 JSX <code>{/* 注释 */}</code> 内，<b>不渲染给用户</b> → 非违规（提示词内部星号亦不算）。</li>
+</ul>
+
+<h2>三、P0（1 条）</h2>
+
+<div class="card p0">
+  <div class="hd"><span class="tag t-p0">P0</span>导入通道的第 4 章格式规范漏写「描写一律第三人称」</div>
+  <div class="loc">src/lib/tavern/import.ts:74-81</div>
+  <div class="sec"><b>问题</b>：「小说角色 → 角色卡」转换（<code>convertNovelChar</code>）的第 4 章格式硬要求，<b>与 <code>draft.ts</code> 的 <code>CARD_OUTPUT_RULES</code> 不对称</b>——后者明确写了第三人称条款，前者完全没写。</div>
+  <div class="sec"><b>触发</b>：任何走导入通道生成的卡片。</div>
+  <div class="sec"><b>影响</b>：第 4 章示例会被模型<b>逐字模仿</b>（协议自己也要求照抄示例）。示例里一旦出现「（我把杯子推到你面前）」，<b>之后每一轮的输出人称都跟着错</b> —— 这正是 <code>draft.ts:70-73</code> 注释点名的坑，导入通道却没堵。</div>
+  <div class="sec"><b>证据</b>（对照同一份规范的两个版本）：
+<pre>// draft.ts:72-73  ✅ 写了
+'- **描写一律第三人称**：括号里指代人物写名字、写「他」「她」…',
+'  **不要写"我""你"** —— 只有对白里才说"我""你"…',
+
+// import.ts:76-80  ❌ 漏了
+· 对方的台词 —— 用〖对方〗起头…
+· Ta 的台词 —— 直接写，**不加引号、不加括号、不写名字**…
+· 动作、神态、心理与客观环境 —— 全部用**全角括号（ ）**包住…</pre>
+  </div>
+  <div class="sec"><b>建议</b>：补齐两条（与 draft.ts 一字不差）。<b>更好做法</b>：把 <code>CARD_OUTPUT_RULES</code> 提到 <code>cardFields.ts</code> 导出，两处共用同一常量，杜绝再次漂移。</div>
+</div>
+
+<h2>四、P1（11 条）</h2>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>三处「第一人称」与协议 v1.11 硬性要求冲突</div>
+  <div class="loc">src/lib/tavern/import.ts:69 · src/lib/tavern/cardFields.ts:118 · src/lib/tavern/interview.ts:45</div>
+  <div class="sec"><b>问题</b>：协议 v1.11 的 O1 硬性要求「描写一律第三人称」，B1 才把「人称」解释为<b>认知视角</b>。但三处文案仍直接写「第一人称」，且未区分这两个概念。</div>
+  <div class="sec"><b>证据</b>：
+<pre>// import.ts:69
+视角与人称：以什么视角叙述（默认写「第一人称，只描写Ta自己的动作与感官」）。
+// cardFields.ts:118
+{ key: '人称', label: '人称', ph: '第一人称（最稳）', rows: 1 },
+// interview.ts:45
+ask: '用第几人称演、关系推进的节奏该怎么把握、适合什么尺度'</pre>
+  </div>
+  <div class="sec"><b>影响</b>：作者与模型都会被引向「第一人称描写」，与界面上协议正文的「第三人称」打架；<code>cardFields</code> 的灰字例句是作者填卡时最直接的参照。</div>
+  <div class="sec"><b>建议</b>：统一改为「第三人称描写；认知视角＝Ta 的视角」口径，并在 ph 里点明两者是两件事。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>界面仍用已废弃的变量名「剧情进度」</div>
+  <div class="loc">src/components/TavernFree.tsx:1099 · src/components/TavernScriptFields.tsx:13</div>
+  <div class="sec"><b>证据</b>：<code>• 右侧常驻「本场状态」：好感 / 信任 / <b>剧情进度</b> / 心情 这些即时数值…</code><br>
+  对照 <code>TavernControl.tsx:1192</code>（已改对）：<code>好感 / 信任 / <b>精神</b> / 心情 / <b>地点</b></code></div>
+  <div class="sec"><b>影响</b>：作者按「剧情进度」在面板上找不到对应项；同一功能两处叫法不同。</div>
+  <div class="sec"><b>🔎 验尸更正</b>：<code>protocol.ts:1133</code> 也含「剧情进度」，但经字符偏移核算，<b>现行协议 <code>PROTOCOL_CORE</code> 仅占第 85~222 行</b>，1133 行落在 <code>LEGACY_PROTOCOLS</code>（<b>已冻结旧版</b>）→ <b>不是活 bug，勿改</b>。现行协议第 168 行确为「精神 / 地点」✅。</div>
+  <div class="sec"><b>建议</b>：仅改上述两处（一处 UI 文案、一处注释）。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>红线文档协议版本停在 v1.10（实为 v1.11）</div>
+  <div class="loc">docs/酒馆模式-工程红线.md:584、:586</div>
+  <div class="sec"><b>证据</b>：<code>- 🔴 输出规范（协议 **v1.10**）…</code> / <code>- v1.10 ＝「最后提醒」追加反重复元规则…</code></div>
+  <div class="sec"><b>✅ 已验</b>：代码侧三处同步<b>完全正确</b>——正文标题 <code>· v1.11 ════</code>、<code>PROTOCOL_VERSION='v1.11'</code>、<code>LEGACY_PROTOCOLS</code> 共 10 份（v1.1~v1.10，末位即 v1.10 全文）。<b>只有文档没跟上</b>。</div>
+  <div class="sec"><b>建议</b>：584/586 改 v1.11，并补一行「v1.11 ＝ 放开日式颜文字 + 内置字库」。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>同一行按钮尺寸混档（md 与 sm 并排）</div>
+  <div class="loc">src/components/TavernCard.tsx:746-757（配合 AvatarPicker.tsx:55-72）</div>
+  <div class="sec"><b>问题</b>：<code>actionButtons</code> 的「复制为新卡／删除／保存」是 <code>size="md"</code>（h-9=36px、13px 字号），与同行的「换一张／上传图片」「移除」（<code>sm</code>=h-8=32px、12px）并排。</div>
+  <div class="sec"><b>影响</b>：底边/顶边差 4px、字号不一致 —— <b>这正是上一轮「移除按钮」同类问题的另一半</b>（上轮只按你的指示改了移除，未动这组）。</div>
+  <div class="sec"><b>建议</b>：三键统一 <code>size="sm"</code>。底部那组（<code>TavernCard.tsx:1364</code>）是同一份 JSX，会一起变 sm，仍自洽。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>保存/取消按钮混档，且自定义 padding/字号被 SIZE 基线顶掉</div>
+  <div class="loc">src/components/SettingSearch.tsx:518-523</div>
+  <div class="sec"><b>证据</b>：「保存」无 <code>size</code>（默认 md=36px）与「取消」<code>variant="bare"</code>（无尺寸基线）并排；两者都写了 <code>px-2 py-0.5 text-[10.5px]</code>，但 Button 的 SIZE 基线也带 <code>px-4 text-[13px]</code> → <code>Button.tsx:23-25</code> 已注明「谁生效取决于 Tailwind 生成顺序，结果不可控」。</div>
+  <div class="sec"><b>建议</b>：两键统一 <code>size="xs"</code> 并删掉手写 px/py/text；或「取消」改 <code>secondary</code>。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>分段开关用 bare + 手写三元，绕开 toggle 令牌</div>
+  <div class="loc">src/components/PlotCanvas.tsx:325-327 · src/components/Sidebar.tsx:294-298</div>
+  <div class="sec"><b>证据</b>：<code>&lt;Button variant="bare" … className={… ? 'bg-amber/20 text-amber' : …}&gt;完整/简略&lt;/Button&gt;</code></div>
+  <div class="sec"><b>影响</b>：选中色 <code>bg-amber/20</code> 与 Button 令牌 <code>bg-amber/15 + border-amber/30</code> 不一致；<code>bare</code> 不套尺寸基线，高度随内容漂移。</div>
+  <div class="sec"><b>建议</b>：改 <code>variant="toggle" size="xs" selected={…}</code>，去掉手写三元与 px/py。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>replaceTypos 缺少「按词长降序」保护（有正确性后果）</div>
+  <div class="loc">src/lib/typoWords.ts:88-94（对照 src/lib/sensitiveWords.ts:54-60）</div>
+  <div class="sec"><b>证据</b>——同一算法两份，一份有保护一份没有：
+<pre>// sensitiveWords.ts:54-57 ✅ 注释说清了为什么必须排序
+/** 按词长降序替换：先处理较长的词，避免「短词包含于长词」时短词先被替换、
+ * 导致长词残留（如先替换「赌博」→■■，再找不到「网络赌博」）。 */
+for (const h of [...hits].sort((a, b) => b.word.length - a.word.length)) …
+
+// typoWords.ts:88-92 ❌ 裸循环，无排序
+for (const h of hits) { out = out.split(h.word).join(h.suggest) }</pre>
+  </div>
+  <div class="sec"><b>影响</b>：若错字表同时含 <code>的地得</code> 与 <code>地</code>，误替换会长期残留。</div>
+  <div class="sec"><b>建议</b>：合并为一个 <code>replaceWords(text, pairs)</code>，内部统一按词长降序。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>splitNames 两份已漂移，导致 AI 上下文漏召回</div>
+  <div class="loc">src/lib/audit.ts:39-45 vs src/lib/aiContext.ts:397-401</div>
+  <div class="sec"><b>证据</b>：
+<pre>// audit.ts：会剥「（注释）」，分隔符 [，,、;；\s]
+.split(/[，,、;；\s]+/).map(s => s.replace(/[（(].*?[）)]/g,'').trim())
+// aiContext.ts：不剥注释，分隔符多认 / |
+.split(/[、,，;；/|]/).map(s => s.trim())</pre>
+  </div>
+  <div class="sec"><b>影响</b>：同一个「出场人物」字段，「陈渊（昏迷）」在一致性校验里是 <code>陈渊</code>，在 AI 上下文召回里是 <code>陈渊（昏迷）</code> → <b>口径分裂直接导致漏召回</b>。</div>
+  <div class="sec"><b>建议</b>：aiContext 删除本地版，改 import audit 的 <code>splitNames</code>，并补 <code>/|</code> 作为可选分隔符。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>类型模块反向 re-export 数据模块 → 分层倒挂 + 循环</div>
+  <div class="loc">src/lib/materialRef.ts:79 ↔ src/lib/materialData.ts:7</div>
+  <div class="sec"><b>证据</b>：<code>materialRef.ts:79</code> 写 <code>export { MATERIAL_CATEGORIES } from './materialData'</code>，而 <code>materialData.ts:7</code> 又 <code>import type { MaterialCategory } from './materialRef'</code>。双方注释都自称对方是入口。</div>
+  <div class="sec"><b>影响</b>：<code>MATERIAL_CATEGORIES</code> 是 5725 行巨型常量，只想拿纯类型的模块会被这一行拽进整个依赖图。因 <code>import type</code> 编译期擦除，<b>运行时不成环</b>，但结构倒挂真实存在（扫描器亦报此循环）。</div>
+  <div class="sec"><b>建议</b>：消费方 <code>MaterialLibrary.tsx</code> 改为两边直连，删除该 re-export 行。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>「上下文截取」算法 4 份拷贝（±12 字口径分裂）</div>
+  <div class="loc">sensitiveWords.ts:43 · typoWords.ts:77 · styleAudit.ts:43 · EditorModals.tsx:398</div>
+  <div class="sec"><b>影响</b>：「±12 字」口径要改得改 4 处；且 <code>sensitiveWords</code> 把 <code>.replace(/\n/g,' ')</code> 写在整体结果上、另两处写在 slice 内，<b>边界换行处理已出现细微不一致</b>。</div>
+  <div class="sec"><b>建议</b>：抽 <code>lib/contextSnippet.ts</code> 的 <code>extractContext(text, startIdx, len, {before, after})</code>，四处改调。</div>
+</div>
+
+<div class="card p1">
+  <div class="hd"><span class="tag t-p1">P1</span>日期格式化三份（含 pad 辅助各写一遍）</div>
+  <div class="loc">src/lib/date.ts:2 · src/lib/syncCore.ts:155 · src/lib/tavern/summarize.ts:27</div>
+  <div class="sec"><b>影响</b>：<code>date.ts</code> 注释写「确保口径一致」，但另两处并没走它。</div>
+  <div class="sec"><b>建议</b>：date.ts 加 <code>formatDate(ts)</code> 导出，另两处引入。<b>⚠️ syncCore 属同步层，需单独确认</b>。</div>
+</div>
+
+<h2>五、P2 汇总（打包处理）</h2>
+
+<div class="card p2">
+  <div class="hd"><span class="tag t-p2">P2</span>文案 / 术语类</div>
+  <ul>
+  <li><code>interview.ts:86</code> — <code>CARD_LABELS.world</code> 仍是「世界」（应为「角色与设定的关系」）</li>
+  <li><code>revise.ts:65</code> — 举例用旧称「1 世界」</li>
+  <li><code>daily.ts:212</code> — 提示词把第 1 章渲染成「世界：…」，易诱导模型复述世界观</li>
+  <li><code>TavernCard.tsx:1164</code> — 把「第三人称」当成示例写坏后的<b>负面后果</b>警告，与协议 O1 口径相反（真正毛病是对白被写成旁白叙述）</li>
+  <li><code>cardFields.ts:231-238</code> — 给模型的小项清单只列裸键名，「称呼」无方向说明，易与 2.3「称呼别人」混淆（建议加 <code>hint</code> 字段）</li>
+  </ul>
+</div>
+
+<div class="card p2">
+  <div class="hd"><span class="tag t-p2">P2</span>UI 规范类</div>
+  <ul>
+  <li><code>Modal.tsx:221</code> — ghost 关闭键缺 <code>iconOnly</code>，套成 h-9/48px 宽，<code>p-1</code> 被 <code>px-4</code> 顶掉</li>
+  <li><code>RelationGraph.tsx:187</code> — 内联 <code>70vh</code> 未走 <code>foldVh()</code>，108% 下高约 8%（同项目 <code>CharacterSheet.tsx:267</code> 写法正确）</li>
+  <li>z 层号魔数 5 处：<code>SaveFab:26</code> / <code>DataDock:35</code> / <code>JieWenJiSprite:90</code> / <code>ProjectHub:538</code> / <code>Desktop:163</code>（后者非 embedded 分支为死代码）</li>
+  <li>页头缺 <code>shrink-0</code> 5 处：<code>TavernFree:1091</code>、<code>TavernPlot:540</code>、<code>TavernWorld:105</code>、<code>TavernScript:295</code>、<code>TavernReport:94</code>（<code>TavernCard:781</code> 写了，观感不一致）</li>
+  <li>破坏性操作未用 <code>danger</code> 6 处：<code>PlotCanvas:333</code>、<code>GeoMapEditor:1346</code>、<code>TavernCastSetting:108</code>、<code>CheckTools:412</code>、<code>TavernFreeSetup:392</code>、<code>TavernPlotSetup:495</code></li>
+  </ul>
+</div>
+
+<div class="card p2">
+  <div class="hd"><span class="tag t-p2">P2</span>去冗余类</div>
+  <ul>
+  <li><b>真死（三层验证：外部 0 / 自身文件仅声明行 / tests 0）</b>：<code>syncTransport.ts</code> 的 <code>getSyncMode</code>、<code>setSyncMode</code>、<code>saveSyncFolderHandle</code>、<code>loadSyncFolderHandle</code>、<code>clearSyncFolderHandle</code> 共 5 个。<b>⚠️ 属同步层，删除需单独确认</b>。</li>
+  <li><b>只为测试而活</b>：<code>imageAvatar.ts:64 avatarInitial</code>（产品 0 引用、7 处测试断言）→ 建议接到 <code>Avatar.tsx</code> 无图兜底（目前只用 <code>avatarLabel</code>）</li>
+  <li><b>多余 export（去掉 export，本体保留）</b>：<code>nameGen.ts</code> 六个 <code>gen*</code>、<code>aliases.ts:9 splitAliases</code>、<code>autoCode.ts:10 CODE_PREFIX</code>、<code>db.ts:1355 getBackup</code>、<code>db.ts:589 touchProject</code>、<code>backup.ts:13</code>、<code>exporter.ts:203</code> 等共 15 个</li>
+  <li><b>空态占位 75 处手写</b>：无 <code>EmptyState</code> 组件（项目已有 <code>LoadingState</code> 收得很好，空态是对称缺口）。<code>CustomSelect:302</code>/<code>CalendarSelect:123</code>/<code>TableRefSelect:141</code> 连 className 都完全一致 → 先收这 3 处</li>
+  <li><b>截断三份</b>：<code>aiContext.ts:180</code> / <code>AIAssist.tsx:56</code> / <code>CharacterDistribution.tsx:82</code></li>
+  <li><b>一次性脚本漂移</b>：<code>scripts/resize-image.mjs:33</code> 与 <code>crop-image.mjs:50</code> alpha=0 时 RGB 兜底一个写 0 一个写 255；且 <code>crop-image.mjs:8</code> 硬编码了机器绝对路径（换机必挂）</li>
+  </ul>
+</div>
+
+<h2>六、🔴 判定不改 / 建议保留（避免下轮重复提案）</h2>
+<table>
+<tr><th>项</th><th>理由</th></tr>
+<tr><td><code>protocol.ts:1133</code> 的「剧情进度」</td><td>在 <code>LEGACY_PROTOCOLS</code>（已冻结旧版）内，<b>不是活 bug</b>。现行协议第 168 行确为「精神 / 地点」✅</td></tr>
+<tr><td><code>purgeLedgerRowEverywhere</code>（db.ts:741）</td><td>被 <code>chapterMaster.ts:20</code> 真实调用，是红线「索引与分条成对」的<b>自救工具</b></td></tr>
+<tr><td><code>migrateGeoMaps</code>（db.ts:840）</td><td>表面像死代码（产品无外部调用、测试 0 覆盖），实为 <code>runMigrations()</code> 的一环，<b>没有它地图孤儿条目永久无法自愈</b></td></tr>
+<tr><td><code>promptGuard</code> 的独立 id 生成器</td><td>安全边界 nonce，刻意不可预测，<b>不要为消重而合并到 id.ts</b></td></tr>
+<tr><td><code>StoreOps</code> / <code>PortableData</code> 命名</td><td><code>kind='portable-data'</code> 是写进用户数据文件的字面量，<b>改名会让老数据打不开</b></td></tr>
+<tr><td><code>setStoreOps</code>（db.ts:496）的 export</td><td>注释称供测试用（当前 tests 命中 0，注释已过时）。只修注释，<b>保留 export</b> 以免失去可测试性</td></tr>
+<tr><td>提示词内部的 markdown 星号</td><td>给模型看的强调，不是界面文案 → 不算违规</td></tr>
+<tr><td>纯图标按钮用 <code>ghost</code>（<code>Modal.tsx:221</code>、<code>NovelEditor.tsx:1039</code>）</td><td>既有约定，红线只约束<b>有文字</b>的按钮</td></tr>
+<tr><td><code>getBoundingClientRect</code> 13 处</td><td>全是 Portal 浮层定位或注释，属豁免范围</td></tr>
+<tr><td>右下角 <code>SaveFab</code></td><td>已登记的刻意例外，左下角仍只准 DataDock</td></tr>
+</table>
+
+<h2>七、✅ 治理得好的项（本轮确认无需动）</h2>
+<ul>
+<li><b>Toast / 确认弹窗 / 复制按钮</b>：各只有唯一实现，<code>window.confirm</code> 全仓零命中</li>
+<li><b>z 轴分层</b>：实际代码零魔数，全走 <code>Z.*</code>（仅剩 5 处 Tailwind 字面层号，见 P2）</li>
+<li><b>tavern 依赖图</b>：分层 DAG 清晰，源码里还专门写了防环注释</li>
+<li><b>lib → components</b>：反向依赖零命中</li>
+<li><b>协议三处同步</b>（代码侧）：完全正确</li>
+<li><b>幽灵功能</b>：未发现指向已删除功能的界面文案</li>
+<li><b>提示词小项格式</b>：所有要求模型输出小项的位置<b>均为全角冒号 + 一行一项</b>，未发现会误导模型的写法（人称条款缺失属内容问题，非格式问题）</li>
+</ul>
+
+<h2>八、建议的修复批次</h2>
+<table>
+<tr><th>批次</th><th>内容</th><th>风险</th></tr>
+<tr><td><b>A</b>（先做）</td><td>P0 第 4 章人称条款 + P1 三处「第一人称」+ 界面「剧情进度」+ 红线文档版本</td><td>低（纯提示词/文案）</td></tr>
+<tr><td><b>B</b></td><td>UI 混档三处（TavernCard / SettingSearch / PlotCanvas+Sidebar 的 toggle）</td><td>低（视觉，需 tsc+截图）</td></tr>
+<tr><td><b>C</b></td><td>去冗余有正确性后果的两条（replaceTypos 排序、splitNames 合并）</td><td><b>中</b>（改算法，需补测试）</td></tr>
+<tr><td><b>D</b></td><td>抽公共函数（extractContext / date / EmptyState）+ 删真死导出</td><td>中（面大，分批）</td></tr>
+<tr><td><b>E</b></td><td>其余 P2 打包</td><td>低</td></tr>
+</table>
+
+<p style="color:var(--sub);margin-top:26px">
+本轮为<b>审计结论</b>。按项目红线「先确认再动代码」，建议老大圈定修复范围后再进入阶段 4（脚本式修改 + 每批 tsc/eslint/测试 + 复检依赖图）。
+</p>
+
+</div></body></html>
