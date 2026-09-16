@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
 // 版本取自 package.json，避免标题/版本号写死导致升级后不一致
@@ -24,8 +24,40 @@ function injectAppVersion(version: string) {
   }
 }
 
+/**
+ * dev 下把 `127.0.0.1:5199` **归一化**到 `localhost:5199`。
+ *
+ * 【为什么需要它】浏览器只看「协议 + 主机名 + 端口」这三个字符串来判断是否同一个网站，
+ * **不会**推断「localhost 和 127.0.0.1 是同一台机器」。于是同一个 server、同一个端口，
+ * 却是两个 origin，而同源策略给每个 origin **各存一份 IndexedDB / localStorage**：
+ * 在 127.0.0.1 注入的测试数据，回 localhost 预览时一份都看不到（实测代价）。
+ * 这里把 127.0.0.1 的文档请求 302 到 localhost，从此只存在一个 origin、一份库。
+ *
+ * ⚠️ 只在 dev 生效（`configureServer`）；构建产物与 Electron 桌面版完全不受影响。
+ * ⚠️ `configureServer` 里**直接** `use` 的是**前置**中间件（返回一个函数才是后置）——
+ *    必须在 Vite 内部中间件之前拦下请求，否则 HTML 已经发出去了，重定向无从谈起。
+ * ⚠️ 局域网 IP（手机调试）不受影响：只匹配 `127.0.0.1`。
+ */
+function normalizeDevHost(): Plugin {
+  return {
+    name: 'normalize-dev-host',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const host = String(req.headers.host || '')
+        if (/^127\.0\.0\.1(:\d+)?$/.test(host)) {
+          const port = host.includes(':') ? host.split(':')[1] : '5199'
+          res.writeHead(302, { Location: `http://localhost:${port}${req.url || '/'}` })
+          res.end()
+          return
+        }
+        next()
+      })
+    },
+  }
+}
+
 export default defineConfig(() => ({
-  plugins: [react(), injectAppVersion(appVersion)],
+  plugins: [react(), injectAppVersion(appVersion), normalizeDevHost()],
   // 相对路径：桌面（Electron）版通过 file:// 加载 dist/index.html，绝对路径会解析到磁盘根目录
   // （对 dev server 无影响）
   base: './',

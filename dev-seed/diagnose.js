@@ -2,16 +2,17 @@
 /**
  * 【dev 专用】诊断：当前这个页面「能不能看到那批测试数据」，以及看不到的原因。
  *
- * 用法（在 http://127.0.0.1:5199/ 的 Console 里）：
+ * 用法（在 http://localhost:5199/ 的 Console 里）：
  *
  *     await import('/dev-seed/diagnose.js?' + Date.now())
  *
  * 🔴 **必须带 `?' + Date.now()`**：ESM 模块会被浏览器缓存，第二次同名 import 不会重新执行
  *    （现象是「敲了什么都不打印」，容易误判成脚本坏了）。带上它每次都重新跑。
  *
- * 它会打印一段报告。**第一行是 origin** —— 如果它不是 `http://127.0.0.1:5199`，
- * 那你就是开在另一个源上（例如 `localhost:5199`），那是**另一份 IndexedDB**，
+ * 它会打印一段报告。**第一行是 origin** —— 正常应该是 `http://localhost:5199`。
+ * 如果它是别的（`file://`、别的端口、局域网 IP…），那就是**另一个源、另一份 IndexedDB**，
  * 注入的数据当然不在这一份里。
+ * （`127.0.0.1:5199` 已被 dev server 302 到 `localhost:5199`，两个写法进的是同一份库。）
  */
 const idx = await import('/src/lib/tavern/story.ts')
 const store = await import('/src/lib/tavern/store.ts')
@@ -20,7 +21,8 @@ const db = await import('/src/lib/db.ts')
 const out = []
 const say = (k, v) => { out.push(`${k}：${v}`) }
 
-say('origin', location.origin)
+const EXPECTED = 'http://localhost:5199'
+say('origin', location.origin + (location.origin === EXPECTED ? '  ✅ 正确' : `  ⚠️ 不是 ${EXPECTED} —— 你在另一个源上，那是另一份库`))
 say('href', location.href)
 
 // 当前项目（没进项目的话，项目级数据是不完整的）
@@ -58,7 +60,7 @@ if (hitStory && chars.some(c => c.name === '楚楠')) {
 } else if (storyCount === 0 && chars.length === 0) {
   out.push('▶ 结论：这一份库是**空的**。两种可能：')
   out.push('   a) 你还没执行注入 → 敲：await import(\'/dev-seed/fengyang.js?\' + Date.now())')
-  out.push('   b) 你注入到**另一个源**去了（对照第一行的 origin）')
+  out.push('   b) 你注入到**另一个源**去了（对照第一行的 origin；127.0.0.1 现在会自动跳到 localhost）')
 } else {
   out.push('▶ 结论：库里有数据，但没有这批测试数据 —— 执行注入：await import(\'/dev-seed/fengyang.js?\' + Date.now())')
 }
