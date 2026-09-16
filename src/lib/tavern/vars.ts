@@ -363,6 +363,14 @@ export function buildVarExtractSystem(keys: VarKey[], opts: { maxStep: number })
         }),
       ]
     : []
+  // 各项的判定要点（反馈 #6）：把「什么情况下该动、往哪动」写明，让信任/精神不再几轮不动然后突然跳。
+  const criteriaLines = numDefs.some(d => d.criteria)
+    ? [
+        '',
+        '〖各项的判定要点（这一轮该不该动这一项、往哪动，照这个判断）〗',
+        ...numDefs.filter(d => d.criteria).map(d => `- ${d.label}：${d.criteria}`),
+      ]
+    : []
   const ex = [
     ...numDefs.slice(0, 1).map(d => `${d.label} +2`),
     ...textItems.slice(0, 1).map(d => `${d.label} ${d.key === 'place' ? '便利店收银台' : '松了一点'}`),
@@ -372,6 +380,7 @@ export function buildVarExtractSystem(keys: VarKey[], opts: { maxStep: number })
     '',
     `〖可记录的项〗${range}`,
     ...bandsLines,
+    ...criteriaLines,
     '',
     '〖怎么判断〗',
     '1. 只报告**真的变了**的项；没变的一律不写 —— 宁可不报，也不要编。',

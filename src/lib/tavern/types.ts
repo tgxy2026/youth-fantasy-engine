@@ -549,6 +549,13 @@ export type VarDef = {
   /** 文本变量的字数上限 */
   maxLen?: number
   init: number | string
+  /**
+   * 这一项的**判定要点**（2026-09-16 反馈 #6 补）：告诉模型「什么情况下该动、往哪动」。
+   * 之前只给了一句笼统的「变化要有依据」，导致信任/精神常常几轮不动、然后突然跳一下。
+   * 把每项的具体触发条件写清楚，模型才能稳定、可解释地判定，作者也看得懂「为什么变」。
+   * 只给数值项写；文本项（心情/地点）不需要。
+   */
+  criteria?: string
 }
 
 /**
@@ -565,9 +572,12 @@ export const VAR_DEFS: VarDef[] = [
   //    ⚠️ **键名（affection/trust/progress）一律不动** —— 那是 `session.vars.values` 的存储键，
   //       改键等于动老会话数据。只改**中文 label**（进度→精神、当前地点→地点），
   //       解析与提示词都按 label 走，所以旧格式的模型输出照样认得。
-  { key: 'affection', label: '好感', kind: 'num', min: -100, max: 100, init: 0 },
-  { key: 'trust', label: '信任', kind: 'num', min: -100, max: 100, init: 0 },
-  { key: 'progress', label: '精神', kind: 'num', min: -100, max: 100, init: 0 },
+  { key: 'affection', label: '好感', kind: 'num', min: -100, max: 100, init: 0,
+    criteria: '对对方的「亲近意愿」：被善待、被懂、共同经历升温（＋）；被冷落、被冒犯、被敷衍降温（－）。只看这一轮对方言行带来的亲近感，不看对方与别人的关系。日常寒暄、纯事务性对话不刷分。' },
+  { key: 'trust', label: '信任', kind: 'num', min: -100, max: 100, init: 0,
+    criteria: '对方「可不可靠」：说到做到、主动交底、在要紧事上靠得住（＋）；失约、撒谎、藏关键信息、把对方当筹码（－）。与好感不同——好感看「想不想近」，信任看「敢不敢托付」。一次小守约只微涨，一次大背叛会大跌。' },
+  { key: 'progress', label: '精神', kind: 'num', min: -100, max: 100, init: 0,
+    criteria: '角色「当下的精神余量」：休息好、事情顺、情绪稳、被安抚（＋）；熬夜、挨累、受惊、钻牛角尖、情绪崩、被打断节奏（－）。它反映精神状态，不反映对对方的态度，和好感/信任是三件独立的事。' },
   { key: 'mood', label: '心情', kind: 'text', min: 0, max: 0, maxLen: 12, init: '' },
   { key: 'place', label: '地点', kind: 'text', min: 0, max: 0, maxLen: 12, init: '' },
 ]
