@@ -60,6 +60,7 @@ export const PROFILE_SPECS: StructSpec[] = [
     label: '2.2 内核',
     items: [
       { key: '性格', label: '性格', ph: '外冷内热，嘴上不留情', rows: 1 },
+      { key: '喜好/爱好', label: '喜好/爱好', ph: '爱伺候花草，周末爱去旧书摊翻闲书；讨厌人多吵闹的场合', rows: 2 },
       { key: '在乎什么', label: '在乎什么', ph: '把店守好，别让常来的客人失望', rows: 1 },
       { key: '内在矛盾', label: '内在矛盾', ph: '想被关心，又不肯先开口', rows: 2 },
       { key: '怕什么', label: '怕什么', ph: '欠债的事被街坊知道', rows: 1 },
