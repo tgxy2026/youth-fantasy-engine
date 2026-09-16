@@ -73,6 +73,21 @@ const STAGE_TEXT: Record<RoundEndStage, string> = {
   done: '已收尾',
 }
 
+/**
+ * 本场状态的「主角色」= **AI 扮演的第一个角色**（排除用户扮演的那个）。
+ * 用户把「我演」放在位置 1 时 charIds[0] 就是用户卡 —— 此前 #4 把主角色死写成 charIds[0]，
+ * 导致本场状态（好感/信任/精神…）被算进并回写**用户卡**而非 AI 角色卡（反馈 #16）。
+ * 无 userCharId（纯 AI 多角色、用户不扮演）时回退 charIds[0]，保持旧行为。
+ */
+function primaryAiCharId(s: { charIds: string[]; userCharId?: string | null }): string {
+  const user = s.userCharId
+  if (user) {
+    const ai = s.charIds.filter(id => id !== user)
+    if (ai.length > 0) return ai[0]
+  }
+  return s.charIds[0] ?? ''
+}
+
 /** 把角色卡上的持久状态（CharVars）转成面板要的 TavernVars 形状（面板只用 values，log/turnSeq 是会话级流水，这里给空壳） */
 function charVarsToTavern(cv?: CharVars): TavernVars | undefined {
   if (!cv) return undefined
@@ -86,7 +101,7 @@ function charVarsToTavern(cv?: CharVars): TavernVars | undefined {
  */
 async function seedSessionVarsFromCard(s: FreeSession): Promise<FreeSession> {
   if (s.vars) return s
-  const id = s.charIds[0]
+  const id = primaryAiCharId(s)
   if (!id) return s
   const card = await store.getFreeChar(id).catch(() => null)
   if (!card?.vars) return s
@@ -97,7 +112,7 @@ export default function TavernFree() {
   // ---------- 数据 ----------
   /** 角色卡索引：只用来显示名字（页面不再用它做选择） */
   const [chars, setChars] = useState<TavernCharIndexItem[]>([])
-  /** 当前会话的**主角色**（会话 charIds[0]）：记忆 / 日常 / 总结都挂在它身上 */
+  /** 当前会话的**主角色**（AI 扮演的第一个角色，见 primaryAiCharId）：本场状态挂它身上 */
   const [charCard, setCharCard] = useState<FreeCharacter | null>(null)
   const [sessions, setSessions] = useState<FreeSessionIndexItem[]>([])
   /** 故事列表（左栏把对话挂在故事下面；老大 2026-09-16 定） */
@@ -113,7 +128,7 @@ export default function TavernFree() {
   const [mems, setMems] = useState<Record<string, FreeMemory | null>>({})
   /** 右栏「Ta这几天的生活 / 心情」看的是谁 —— 默认取第一个 **AI 扮演** 的角色（用户演的那位不是观察对象） */
   const [statusCharId, setStatusCharId] = useState('')
-  /** 右栏「本场状态」当前看哪位角色的数值（默认主角色 charIds[0]）；多角色时才需切换（反馈 #4） */
+  /** 右栏「本场状态」当前看哪位角色的数值（默认 AI 扮演的主角色）；多角色时才需切换（反馈 #4） */
   const [varsCharId, setVarsCharId] = useState('')
   const [summaryProviderId, setSummaryProviderId] = useState('')
 
@@ -285,7 +300,7 @@ export default function TavernFree() {
     try {
       const cards = (await Promise.all(s.charIds.map(cid => store.getFreeChar(cid)))).filter((c): c is FreeCharacter => !!c)
       setCastCards(cards)
-      const primary = cards[0] ?? null
+      const primary = cards.find(c => c.id === primaryAiCharId(s)) ?? cards[0] ?? null
       setCharCard(primary)
       if (cards.length) {
         const rows = await Promise.all(cards.map(async c =>
@@ -480,7 +495,7 @@ export default function TavernFree() {
         cards: castCards,
         providerId: summaryProviderId || undefined,
         // 反馈 #4：本场数值算完回写主角色卡（持久、跨会话累积）
-        primaryCharId: s.charIds[0],
+        primaryCharId: primaryAiCharId(s),
         // hardLimit 必须传：不传就永远走内置 3000，面板调的「记忆硬上限」是死的（审计 P1-1）
         limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays, hardLimit: lim.hardLimit },
         varKeys,
@@ -695,7 +710,7 @@ export default function TavernFree() {
         providerId: summaryProviderId || undefined,
         signal: ctrl.signal,
         // 反馈 #4：抽取时把主角色卡当前备注当上下文；算完把新值＋新备注回写卡（持久、跨会话累积）
-        primaryCharId: res.session.charIds[0],
+        primaryCharId: primaryAiCharId(res.session),
         charVars: charCard?.vars,
         persistCharVars,
       })
@@ -744,7 +759,7 @@ export default function TavernFree() {
     const next = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(session.messages), 'manual')
     void commit({ ...session, vars: next })
     // 回写主角色卡：备注沿用卡上已有的（手改数值不动备注）
-    const id = session.charIds[0]
+    const id = primaryAiCharId(session)
     if (id) void persistCharVars(id, { values: next.values ?? applied.values, notes: charCard?.vars?.notes ?? {} })
     showToast(`已改为 ${applied.changes.map(c => `${c.label} ${String(c.to || '空')}`).join('、')}`)
   }
@@ -795,7 +810,7 @@ export default function TavernFree() {
     const next = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(session.messages), 'manual')
     void commit({ ...session, vars: next })
     // 角色卡上的持久状态一并归零
-    const id = session.charIds[0]
+    const id = primaryAiCharId(session)
     if (id) void persistCharVars(id, { values: next.values ?? applied.values, notes: {} })
   }
 
@@ -862,7 +877,7 @@ export default function TavernFree() {
         providerId: summaryProviderId || undefined,
         signal: ctrl.signal,
         // 反馈 #4：抽取时把主角色卡当前备注当上下文；算完把新值＋新备注回写卡（持久、跨会话累积）
-        primaryCharId: res.session.charIds[0],
+        primaryCharId: primaryAiCharId(res.session),
         charVars: charCard?.vars,
         persistCharVars,
       })
@@ -1537,14 +1552,14 @@ export default function TavernFree() {
                   /* 本场数值：**全项目唯一的显示与修改入口**（2026-09-16 去重 ——
                      原先中间那条状态栏里还有一份只读/可改的副本，已删）。
                      反馈 #4：多角色同场时，这里看的是「当前选中的那位」角色卡上的持久数值；
-                     主角色（charIds[0]）走会话工作副本并每轮回写卡，其余角色直接读写各自的卡。 */
+                     主角色（AI 扮演的第一个角色，见 primaryAiCharId）走会话工作副本并每轮回写卡，其余角色直接读写各自的卡。 */
                   <div className="space-y-2">
                     {aiCards.length > 1 && (
                       <div>
                         <div className="text-[10.5px] text-ink-500 mb-1">看哪位角色的数值</div>
                         <ul className="space-y-1">
                           {aiCards.map(c => {
-                            const on = (varsCharId || session?.charIds[0]) === c.id
+                            const on = (varsCharId || primaryAiCharId(session)) === c.id
                             return (
                               <li key={c.id}>
                                 <button
@@ -1559,7 +1574,7 @@ export default function TavernFree() {
                                   <span className={`truncate text-[11.5px] ${on ? 'text-amber' : 'text-ink-200'}`}>
                                     {c.name || '（未命名）'}
                                   </span>
-                                  {c.id === session?.charIds[0] && <span className="ml-auto text-[10px] text-ink-500">主</span>}
+                                  {c.id === primaryAiCharId(session) && <span className="ml-auto text-[10px] text-ink-500">主</span>}
                                 </button>
                               </li>
                             )
@@ -1568,8 +1583,8 @@ export default function TavernFree() {
                       </div>
                     )}
                     {(() => {
-                      const activeId = varsCharId || session?.charIds[0] || ''
-                      const primary = activeId === session?.charIds[0]
+                      const activeId = varsCharId || primaryAiCharId(session) || ''
+                      const primary = activeId === primaryAiCharId(session)
                       const card = castCards.find(c => c.id === activeId) ?? null
                       const vars = primary ? session?.vars : charVarsToTavern(card?.vars)
                       const notes = (primary ? charCard?.vars?.notes : card?.vars?.notes) ?? {}
