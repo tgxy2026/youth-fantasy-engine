@@ -153,8 +153,15 @@ const empty = snap.rev === 0 &amp;&amp; Object.keys(snap.stores).length === 0   
     <li><b>依赖图三项应为 0</b>：本轮循环依赖 / 孤立模块 / 分层违规均为 0，说明底层分层健康。</li>
   </ul>
 
-  <h2>六、下一步</h2>
-  <p style="color:var(--sub)">以上为<b>审计结论</b>。按项目红线「先确认再动数据/代码」，建议老大确认修复范围后再进入阶段 4（脚本式修复，遵循 13 条铁律 + 协议三处同步 + dev 提交不封装）。P1 为低风险替换，P2 多为文案/注释微调，可一批实施。</p>
+  <h2>六、修复状态（已完成 · 2026-09-16）</h2>
+  <p style="color:var(--sub)">老大确认后已进入阶段 4 并完成修复，全部为 <b>dev 提交（未升版本号、未封装）</b>。逐项明细见 <b>docs/2.1.1-审计修复记录-2026-09-16.md</b>。</p>
+  <table>
+    <tr><th>范围</th><th>结果</th></tr>
+    <tr><td>已修</td><td><b style="color:var(--ok)">P1 × 1 + P2 × 7</b></td></tr>
+    <tr><td>判定不改</td><td>3 项（含 1 项验尸剔除的误报：ghost 图标按钮）</td></tr>
+    <tr><td>验证</td><td>tsc 0 error · eslint 0 error / 11 warning（无新增）· tests 43/43 · 负面对照通过 · 复检无新增循环/违规</td></tr>
+    <tr><td>提交</td><td><code>4c72172</code> 同步 P1 · <code>6aee862</code> 酒馆 P2 · <code>988a94f</code> 文案 P2 · <code>6fef27e</code> 报告/修复记录</td></tr>
+  </table>
 </div>
 </body>
 </html>
