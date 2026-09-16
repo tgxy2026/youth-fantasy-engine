@@ -122,19 +122,34 @@ async function main() {
     const sysOf = (i: number) => String(calls[i].messages.find(m => m.role === 'system')?.content ?? '')
     ok('两次记忆调用带着各自的角色名（不是拿同一个人算两遍）',
       sysOf(0).includes('苏念') && sysOf(1).includes('楚楠'))
-    ok('记忆调用要求追加本场小结（收尾专用提示词，不是旧的纯六栏版）',
+    ok('记忆调用要求追加本场日记（收尾专用提示词，不是旧的纯六栏版）',
       sysOf(0).includes(JOURNAL_HEAD) && sysOf(1).includes(JOURNAL_HEAD))
+
+    // 🔴 日记的形态是**产品要求**（老大 2026-09-16 定），不是文风偏好 —— 用断言钉住，
+    //    免得哪天有人「顺手精简提示词」把这几条删掉，日记就悄悄变回第三人称摘要。
+    {
+      const sys = sysOf(0)
+      ok('🔴 日记要求第一人称（Ta 自己写的）', sys.includes('第一人称') && sys.includes('自己写的'))
+      ok('🔴 日记要写「经过」', sys.includes('经过了什么'))
+      ok('🔴 日记要写「主观感受」', sys.includes('我是什么感受'))
+      ok('🔴 明确「不再喂回 AI」（不进记忆、不进任何提示词）',
+        sys.includes('不进六栏记忆') && sys.includes('不进任何提示词'))
+      ok('🔴 日记标题不带序号（带「七、」会被模型当成第七栏记忆）',
+        !JOURNAL_HEAD.includes('七') && JOURNAL_HEAD.includes('日记'))
+      ok('日记与第六栏「最近日记」明确区分（后者要一行一事）',
+        sys.includes('不要') && sys.includes('最近日记'))
+    }
     ok('返回了两位角色的记忆', res.memories.length === 2 && res.memories.every(m => m.charId))
     ok('记忆吸收了本场内容', res.memories[0].longTerm.includes('伞收进柜台底下'))
     ok('记忆里不含本场小结（否则每轮白烧额度）', !memoryToText(res.memories[0]).includes('其实把最后那碗面留给了他'))
-    ok('两位都产出了本场小结', Object.keys(res.journals).length === 2)
+    ok('两位都产出了本场日记', Object.keys(res.journals).length === 2)
 
     const memA = await store.getMemory(A.id)
     ok('记忆已落库', !!memA && memA.longTerm.includes('伞收进柜台底下'))
 
     const jA = await store.getJournal(A.id)
     ok('日记追加了一条', jA.entries.length === 1)
-    ok('日记正文 = 本场小结', jA.entries[0].text === '她嘴上说只是顺便，其实把最后那碗面留给了他。')
+    ok('日记正文 = 模型给的那段回顾', jA.entries[0].text === '她嘴上说只是顺便，其实把最后那碗面留给了他。')
     ok('日记带会话标题（便于溯源）', jA.entries[0].sessionTitle === '便利店三人夜')
     ok('日记带在场名单（含用户）', jA.entries[0].cast.includes('苏念') && jA.entries[0].cast.includes('楚楠'))
     ok('日记带会话 id', jA.entries[0].sessionId === s.id)

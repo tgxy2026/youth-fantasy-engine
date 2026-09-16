@@ -29,7 +29,7 @@ import TavernCardStructField from './TavernCardStructField'
 import { PROFILE_SPECS, CONDUCT_SPECS } from '../lib/tavern/cardFields'
 import { listStories, storyDisplayName } from '../lib/tavern/story'
 import { cardStoryId, readCardField, writeCardField, type TavernStoryIndexItem } from '../lib/tavern/types'
-import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem, type CharJournal } from '../lib/tavern/types'
+import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem, type CharJournal, type CharJournalEntry } from '../lib/tavern/types'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName, CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
@@ -268,11 +268,33 @@ export default function TavernCard() {
     }
   }
 
-  /** 删单条日记（记错了、或者那一场作者不想要了） */
-  const dropJournal = async (entryId: string) => {
+  /**
+   * 删单条日记（记错了、或者那一场作者不想要了）。
+   *
+   * 🔴 **必须弹窗**：日记没有备份、也**不支持编辑** —— 删掉就是永久没了。
+   *    弹窗里要把「它不参与 AI 上下文、删了不会让 Ta 失忆」与「想留就先自己复制」一起讲清，
+   *    否则作者会以为删日记会伤到角色，或者以为可以回头再改。
+   */
+  const dropJournal = async (entry: CharJournalEntry) => {
     if (!draft) return
+    const go = await confirmDialog({
+      title: '删掉这一条日记？',
+      message: [
+        entry.sessionTitle
+          ? `会删掉「${entry.sessionTitle}」那一场记下的回顾。`
+          : '会删掉这一条场记。',
+        '',
+        '⚠️ 日记没有备份 —— 删掉就找不回来了。',
+        '· 它从来不参与 AI 上下文，所以删掉不会让 Ta 失忆；',
+        '· 日记也不支持编辑：想留下内容，请先自己复制一份。',
+      ].join('\n'),
+      confirmText: '删掉这条',
+      danger: true,
+    })
+    if (!go) return
     try {
-      setJournal(await store.dropJournalEntry(draft.id, entryId))
+      setJournal(await store.dropJournalEntry(draft.id, entry.id))
+      showToast('已删掉这条日记')
     } catch (e) {
       showToast(`删除失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
@@ -1134,8 +1156,13 @@ export default function TavernCard() {
                     <div className="min-w-0">
                       <h3 className="text-[13px] font-semibold text-amber/90">Ta的日记</h3>
                       <p className="mt-0.5 text-[11px] text-ink-500 leading-relaxed">
-                        每次点「结束本轮对话」时写一段，记这一场发生了什么。它<span className="text-ink-400">不喂给 AI</span>，只给你回顾用 ——
-                        所以写细一点不占额度。
+                        每次点「结束本轮对话」时，由 Ta 以<span className="text-ink-400">第一人称</span>写一段 ——
+                        记这一场发生了什么，以及 Ta 自己的感受。
+                      </p>
+                      <p className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
+                        🔒 <span className="text-ink-500">只读</span>（日记是 Ta 的，不给改）；
+                        它<span className="text-ink-400">从来不参与 AI 上下文</span>，随便翻、随便删都不会影响 Ta 的记忆。
+                        只有「删除」一个操作 —— 删掉不可恢复。
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -1171,16 +1198,16 @@ export default function TavernCard() {
                               {e.sessionTitle && <span className="ml-1.5 text-ink-400">「{e.sessionTitle}」</span>}
                               {e.cast.length > 0 && <span className="ml-1.5">在场：{e.cast.join('、')}</span>}
                             </div>
-                            <button
-                              type="button"
-                              title="删掉这一条"
-                              onClick={() => void dropJournal(e.id)}
-                              className="shrink-0 text-[10.5px] text-ink-500 hover:text-red-400 transition-colors"
+                            <Button
+                              variant="secondary" size="xs" className="shrink-0"
+                              title="删掉这一条（不可恢复，会先弹窗确认）"
+                              onClick={() => void dropJournal(e)}
                             >
                               删除
-                            </button>
+                            </Button>
                           </div>
                           <p className="mt-1 text-[12px] text-ink-200 whitespace-pre-wrap leading-relaxed">{e.text}</p>
+                          <p className="mt-1 text-[10px] text-ink-600">（Ta 的第一人称回顾 · 只读）</p>
                         </li>
                       ))}
                     </ul>

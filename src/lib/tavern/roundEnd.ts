@@ -7,7 +7,7 @@
  * 且聊得越久触发越密（反馈 #3 原话：需要兼顾记忆整理的效率和实时对话的体验）。
  *
  * 现做法：**聊天过程中一次都不整理**，由作者点「结束本轮对话」一次性收尾：
- *   ① 逐位角色整理记忆，顺带产出本场小结（写进日记，不进上下文）
+ *   ① 逐位角色整理记忆，顺带产出**本场日记**（第一人称，写进日记库，不进上下文）
  *   ② 算一遍本场数值
  *   ③ 审查设定要不要改（只列建议，不自动改卡）
  *   ④ 会话标记 endedAt → 归档只读
@@ -42,7 +42,7 @@ export type RoundEndProgress = {
 
 export type RoundEndResult = {
   memories: FreeMemory[]
-  /** 本场小结，key = charId（写进日记，不注入 AI） */
+  /** 本场日记，key = charId（第一人称回顾，写进日记库，**不注入 AI**） */
   journals: Record<string, string>
   /** 算完的本场数值（失败时回传原值） */
   vars?: TavernVars
@@ -94,7 +94,7 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   const pending = pendingMessages(session)
   const total = Math.max(cards.length, 1)
 
-  // ---- ① 记忆 + 本场小结（逐位角色，一次调用两样产出） ----
+  // ---- ① 记忆 + 本场日记（逐位角色，一次调用两样产出） ----
   const memories: FreeMemory[] = []
   const journals: Record<string, string> = {}
   for (let i = 0; i < cards.length; i++) {
