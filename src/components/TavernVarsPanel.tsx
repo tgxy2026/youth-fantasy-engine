@@ -68,32 +68,38 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
     onNote?.(noteDraft)
   }
 
+  const isNumKind = def.kind === 'num'
+
   return (
     <div className="space-y-1">
-      {/* 第一行：标签 + 值 + 档位名 + 变化量。文本类型（心情/地点）不渲染进度条，只留可编辑框（反馈 #12） */}
+      {/* 第一行（数值型）：标签 → 状态档位 → 变化量 →……→ 数值框贴最右。
+          数值框定宽 + 弹簧顶右，三行的框才会**右边缘对齐**、宽度一致；
+          原先四个元素全 shrink-0、加上 w-full/w-16 打架，整行会顶出容器一截（老大反馈）。
+          文本类型（心情/地点）没有档位，仍是「标签＋整行输入框」（反馈 #12）。 */}
       <div className="flex items-center gap-2">
-        <span className="w-12 shrink-0 text-[11px] text-ink-400" title={def.kind === 'num' ? `${def.min}~${def.max}` : `≤${def.maxLen} 字`}>
+        <span className="w-12 shrink-0 text-[11px] text-ink-400" title={isNumKind ? `${def.min}~${def.max}` : `≤${def.maxLen} 字`}>
           {def.label}
         </span>
+        {isNumKind && band && (
+          <span className="min-w-0 truncate text-[10px] text-ink-500" title={band.effect}>{band.name}</span>
+        )}
+        {isNumKind && delta && (
+          <span className={`shrink-0 text-[10px] ${delta.startsWith('-') ? 'text-ink-400' : 'text-amber/80'}`}>
+            {delta}
+          </span>
+        )}
+        {isNumKind && <span className="flex-1" />}
         <input
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
           disabled={locked}
-          inputMode={def.kind === 'num' ? 'numeric' : undefined}
+          inputMode={isNumKind ? 'numeric' : undefined}
           placeholder={def.kind === 'text' ? '（未填）' : String(def.init ?? '')}
-          className={`w-full min-w-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50 disabled:cursor-not-allowed disabled:opacity-60 ${def.kind === 'num' ? 'shrink-0 w-16' : ''}`}
+          className={`rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50 disabled:cursor-not-allowed disabled:opacity-60 ${isNumKind ? 'w-12 shrink-0 text-center' : 'w-full min-w-0'}`}
           title={locked ? '这一场已结束（只读归档），数值不能再改' : '改完按回车或点一下别处生效'}
         />
-        {band && (
-          <span className="shrink-0 text-[10px] text-ink-500" title={band.effect}>{band.name}</span>
-        )}
-        {delta && (
-          <span className={`shrink-0 text-[10px] ${delta.startsWith('-') ? 'text-ink-400' : 'text-amber/80'}`}>
-            {delta}
-          </span>
-        )}
       </div>
       {/* 第二行（仅数值型）：进度条以 0 为中点、双向填充、正负异色（反馈 #10/#11） */}
       {isNum && (
