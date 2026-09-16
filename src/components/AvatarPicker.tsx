@@ -60,7 +60,7 @@ export default function AvatarPicker({ src, name, size = 64, onChange, hint, act
             {busy ? '处理中…' : src ? '换一张' : '上传图片'}
           </Button>
           {src && (
-            <Button variant="danger" size="xs"
+            <Button variant="danger" size="sm"
               onClick={() => onChange('')}
             >
               移除
