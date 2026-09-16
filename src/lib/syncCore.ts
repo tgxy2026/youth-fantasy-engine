@@ -56,6 +56,17 @@ export function isExcludedMetaKey(key: unknown): boolean {
   return EXCLUDED_META_KEYS.has(key) || key.startsWith(CONFLICT_KEY_PREFIX)
 }
 
+/**
+ * 一份载荷里的**记录总数**（把所有 store 的行数加起来）。
+ *
+ * 🔴 判断「是不是空载荷」必须用它，不能用 `Object.keys(...).length`：
+ *    `liveStores` 会把每个 store 都放成键（哪怕是空数组），12 个空数组照样能骗过键数判断
+ *    —— 一份「看起来有 12 个 store」的空快照就这么被推上云端，覆盖掉真实数据。
+ */
+export function totalRecords(m: Record<string, any[]>): number {
+  return Object.values(m || {}).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0)
+}
+
 export type SyncStatus =
   | 'idle'
   | 'syncing'
@@ -320,17 +331,6 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   }
 
   // 仅含活数据（排除本地专属的 backups 与敏感 meta）
-  /**
-   * 一份载荷里的**记录总数**（把所有 store 的行数加起来）。
-   *
-   * 🔴 判断「是不是空载荷」必须用它，不能用 `Object.keys(...).length`：
-   *    `liveStores` 会把每个 store 都放成键（哪怕是空数组），12 个空数组照样能骗过键数判断
-   *    —— 一份「看起来有 12 个 store」的空快照就这么被推上云端，覆盖掉真实数据。
-   */
-  function totalRecords(m: Record<string, any[]>): number {
-    return Object.values(m || {}).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0)
-  }
-
   function liveStores(src: Record<string, any[]>): Record<string, any[]> {
     const out: Record<string, any[]> = {}
     for (const s of Object.keys(src || {})) {

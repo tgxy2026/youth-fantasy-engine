@@ -10,7 +10,7 @@ import {
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo,
 } from './desktopCloudSync'
-import { SYNC_STORES } from './syncCore'
+import { SYNC_STORES, totalRecords } from './syncCore'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
@@ -471,7 +471,7 @@ if (CLOUD_FILE_SYNC) {
         let empty = true
         try {
           const snap = await pullDesktopSnapshot()
-          empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
+          empty = totalRecords(snap.stores) === 0
         } catch {
           // 拉取失败（文件损坏 / 网盘未就绪）→ 保持本地存储，绝不把界面切空；
           // 同时清掉「已开启」标记，免得界面显示在同步而 ops 其实是本地。
@@ -528,7 +528,7 @@ export async function enableDesktopCloudSync(handle: any) {
   const carry = await captureSyncData()
   await enableDesktopCloud(handle)
   const snap = await pullDesktopSnapshot()
-  const empty = snap.rev === 0 && Object.keys(snap.stores).length === 0
+  const empty = totalRecords(snap.stores) === 0
   if (empty) {
     // 新目录还是空的 → 用刚才抓下来的数据播种（不能用「此刻的 ops」，它可能已被清空）
     await seedDesktopFromLocal((s) => Promise.resolve(carry[s] ?? []))
