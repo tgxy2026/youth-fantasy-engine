@@ -15,8 +15,7 @@ import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import { buildPlotSystem, buildFreeSystem } from '../lib/tavern/engine'
 import { summarizeUsage, type UsagePart, type UsageSummary } from '../lib/tavern/budget'
-import { getTavernSettings } from '../lib/tavern/settings'
-import { TAVERN_DEFAULTS } from '../lib/tavern/types'
+import { getTavernSettings, effectiveContextBudget } from '../lib/tavern/settings'
 import { WORLD_MAX_CHARS } from '../lib/tavern/world'
 import type { FreeCharacter, FreeSession, TavernSession } from '../lib/tavern/types'
 
@@ -51,7 +50,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
         const s = session as TavernSession
         const r = await buildPlotSystem(s, st)
         systemChars = r.system.length
-        total = s.params.contextBudget ?? TAVERN_DEFAULTS.plot.contextBudget
+        total = effectiveContextBudget('plot', st, s.params)
         label = s.mode === 'immersive' ? '沉浸推演' : '导演推演'
         parts.push({ key: 'setting', label: '项目资料（②层设定）', chars: r.settingChars, note: '世界观 / 人物 / 关系 / 名词表等，按视角与锚点裁剪后' })
         parts.push({ key: 'world', label: '本场背景设定', chars: r.worldChars, note: '作者提炼的那份；命中关键词才注入，未命中即 0' })
@@ -68,7 +67,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
         const list = chars ?? []
         const r = await buildFreeSystem(s, list, st)
         systemChars = r.system.length
-        total = s.params.contextBudget ?? TAVERN_DEFAULTS.free.contextBudget
+        total = effectiveContextBudget('free', st, s.params)
         label = '自由对话'
         parts.push({ key: 'setting', label: '角色卡（设定层）', chars: r.settingChars, note: `${list.length} 位在场角色的人设说明书；这一层不做预算裁剪` })
         parts.push({ key: 'memory', label: '长期记忆', chars: r.memoryChars, note: '按角色分别记账，六栏' })

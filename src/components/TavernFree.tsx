@@ -859,7 +859,7 @@ export default function TavernFree() {
             </Button>
             <Button
               variant="secondary" size="md" onClick={() => setStatusOpen(v => !v)}
-              title="对话上方那条状态一览：场景、在场角色与本场数值（只读；数值可点右侧「本场状态」改）"
+              title="对话上方那条一览：场景、在场角色、记忆计数（只读）与本场数值（可直接改）"
             >
               {statusOpen ? '收起角色状态' : '角色状态'}
             </Button>

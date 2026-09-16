@@ -54,7 +54,8 @@
 - ⚙️ 出厂参数 2026-09-15 放宽一档（数值表见 `types.ts`／`paramGuide.ts`；**numCtx 仍 32768，别动**）。🔴 值须落在 paramGuide **推荐段**内（有测试闸）；改默认值**必须同加 `upgradeLegacyDefaults` 的「全等旧值才升」规则**。
 - 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（`summarize.ts`）；设定＝这让 Ta 变成谁（`revise.ts`）。📚 背景设定：关键词空＝总是注入、上限 2400 字；键只剩 `tavern.world`。
 - 🧠 **自由模式记忆整理时机（09-16 重构）**：**只有「结束本轮对话」**（`roundEnd.ts`）——每轮 autoSummarize 已删。收尾＝①逐位角色记忆 ②本场数值 ③设定审查；**唯一硬失败点是①**（抛出且不归档），②③ 失败吞掉。🔴 **`vars`（好感/心情）也随之只在收尾刷新**。🔴 `summarizeRound` **一次调用同时吐六栏档案＋本场小结**，解析前必须 `splitJournalSection` **先切小结**（否则第七节并进「最近日记」，那份记忆每轮进上下文＝白烧额度）。📔 日记 `tavern.free.journal.<charId>`（`JOURNAL_KEEP=50`）**不进任何提示词**，删卡时连它一起清。🔴 会话归档后（`endedAt`）除 `send()` 守卫外，**输入区整块换成只读提示＋新开一场**。
-- ⚠️ **待修（反馈 #1）**：控制面板改「上下文预算」后，自由对话的**用量明细总额度仍显示 24000** —— 疑似 `contextBudget` 常量与设置**双源**。这是下一批 P1。
+- ✅ **反馈 #1 已修（2026-09-16）**：明细总额度不跟面板变 = **显示 bug**（引擎那条路本来就对）。根因是「同一个数两处各算一遍」——明细直接读 `session.params.contextBudget` 再回落硬编码常量，绕过了控制面板。已抽 `settings.ts` 的 `resolveParamsOf()` / `effectiveContextBudget()`，**engine 的 3 处内联 resolveParams 与 TavernUsageDialog 都改走它**，结构性杜绝再分叉。
+- ⏳ **待老大拍板的三件（方案文档 §10.2 有选项）**：① `summaryMinIntervalMin` 已成全应用死键（建议删，连带 `shouldRunAutoSummary`/`throttleOk` 与断言）；② `triggerMessages` 实际只被 `TavernPlot` 用，却挂在「七、自由对话控制」；③ 本场数值同时在**中间状态栏（可改）**与**右栏本场状态（只读）**显示两次。
 - 🎭 剧本 `script.ts` 六栏：🔴🔴 会话存**快照**不是引用；开场白不进 system（＝第一条消息）。🔴 `engine`↔world/script/draft 环已上移 `provider.ts`；设定更新＝12 字段白名单（不含 name）＋二次把关。
 - 🔴 分支/回滚：`branchSession` 截到该条、分叉点后**连记忆一起清**；回滚连记忆还原＋`undoSnapshot`；重说＝`run*Turn(session,null)`；剧情记忆 `runPlotSummary`→`memoryToText` 写回 `session.memory`＋推水位线（**全成功才推进**）。
 - 🔴 多角色：`buildMultiCharRule` 必传 `{hasUser:false}`；`userCharId` 的卡/记忆/轮转排除；在场调度 `muted`+`talkativity` 会话级、两模式共用（静音＝在场不发言、卡与记忆不进上下文；最后一位不能静音）。

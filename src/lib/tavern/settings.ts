@@ -31,6 +31,7 @@ import { TONE_HINT } from './prompt'
 import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
 import { DEFAULT_POST_RULES, LEGACY_DEFAULT_POST_RULES, normalizePostRules, type PostRule } from './postRules'
 import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
+import { resolveParams } from './params'          // 同上：params 只依赖 types
 
 /** 设置存储键（全局 meta） */
 export const K_TAVERN_SETTINGS = 'tavern.settings'
@@ -444,6 +445,28 @@ export function modeParamsLayer(mode: 'plot' | 'free', s: TavernSettings): Taver
     repeatPenalty: m.repeatPenalty,
     presencePenalty: m.presencePenalty,
   }
+}
+
+/** 与引擎**逐字相同**的参数叠层顺序（会话 → 模式 → 通用）。改这里要同步 `engine.ts` 的四处调用 */
+export function resolveParamsOf(mode: 'plot' | 'free', s: TavernSettings, sessionParams?: TavernParams) {
+  return resolveParams(mode, commonParamsLayer(s.common), modeParamsLayer(mode, s), sessionParams)
+}
+
+/**
+ * 这次请求真正会用到的上下文预算。
+ *
+ * 🔴 存在的唯一理由：**同一个数不能在两处各算一遍**。
+ * 反馈 #1 的原话是「控制面板把预算改成 32000，用量明细里的总额度还是 24000」——
+ * 查下来设置本身是生效的（引擎走 `resolveParams`，控制面板的通用层压过会话层），
+ * 但明细那边直接读 `session.params.contextBudget`、空了就回落硬编码常量，
+ * 于是它永远显示内置默认值。抽成这一个函数给界面用，就不会再有第二次分叉。
+ */
+export function effectiveContextBudget(
+  mode: 'plot' | 'free',
+  s: TavernSettings,
+  sessionParams?: TavernParams,
+): number {
+  return resolveParamsOf(mode, s, sessionParams).contextBudget
 }
 
 /** 记忆与日常的阈值（自由对话用） */

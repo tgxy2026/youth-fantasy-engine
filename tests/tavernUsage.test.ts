@@ -13,7 +13,7 @@ import { buildSystemPrompt } from '../src/lib/tavern/prompt'
 import * as db from '../src/lib/db'
 import { createDemoProject } from '../src/lib/seedData'
 import { flattenChapters } from '../src/lib/chapterSeq'
-import { getTavernSettings } from '../src/lib/tavern/settings'
+import { getTavernSettings, effectiveContextBudget, resolveParamsOf } from '../src/lib/tavern/settings'
 import { TAVERN_DEFAULTS } from '../src/lib/tavern/types'
 import { buildPlotSystem } from '../src/lib/tavern/engine'
 import { saveWorldSetting, worldToText, WORLD_MAX_CHARS, EMPTY_WORLD_SETTING, type WorldSetting } from '../src/lib/tavern/world'
@@ -172,6 +172,37 @@ async function main() {
       pEmpty.length === pNone.length, `${pEmpty.length} vs ${pNone.length}`)
     ok('非空 world 才加层头（层头 11 字 + 正文 1 字）',
       pOne.length - pNone.length === 12, `+${pOne.length - pNone.length}`)
+  }
+
+  // ---------- 反馈 #1 回归：明细里的总额度必须跟着控制面板走 ----------
+  //
+  // 现象（老大 2026-09-15 实测）：控制面板把「上下文预算」改成 32000，
+  // 自由对话的用量明细里总额度**还是 24000**。
+  // 查下来设置本身是生效的 —— 引擎走 `resolveParams`（通用层压过会话层），
+  // 是明细那边直接读 `session.params.contextBudget`、空了就回落硬编码常量。
+  // 这条断言盯的是「同一个数不许在两处各算一遍」：界面用的就是引擎那套解析。
+  {
+    const st = await getTavernSettings()
+    const panelUp: typeof st = { ...st, common: { ...st.common, contextBudget: 32000 } }
+
+    ok('🔴 明细总额度＝控制面板的值（不再固定成内置默认）',
+      effectiveContextBudget('free', panelUp) === 32000,
+      String(effectiveContextBudget('free', panelUp)))
+    ok('剧情模式同样跟着面板走', effectiveContextBudget('plot', panelUp) === 32000)
+
+    // 会话层仍能覆盖面板（优先级链没被改掉：会话 → 模式 → 面板 → 内置默认）
+    ok('会话自己的 params 优先级最高',
+      effectiveContextBudget('free', panelUp, { contextBudget: 48000 }) === 48000)
+
+    // 什么都没设 → 内置默认
+    const bare = { ...st, common: { ...st.common, contextBudget: undefined as unknown as number } }
+    ok('缺省时回落内置默认',
+      effectiveContextBudget('free', bare) === TAVERN_DEFAULTS.free.contextBudget)
+
+    // 🔴 与引擎逐字同源：两者必须给出同一个数，否则明细就是在骗人
+    ok('🔴 明细与引擎取到同一个预算',
+      effectiveContextBudget('free', panelUp, { contextBudget: 12345 })
+        === resolveParamsOf('free', panelUp, { contextBudget: 12345 }).contextBudget)
   }
 
   console.log(`\ntavernUsage: ${pass} passed, ${fail} failed`)

@@ -22,9 +22,9 @@ import {
 } from './prompt'
 import * as store from './store'
 import { trimHistory, historyBudget } from './budget'
-import { resolveParams, toOllamaOptions } from './params'
+import { toOllamaOptions } from './params'
 import {
-  getTavernSettings, commonParamsLayer, modeParamsLayer, timeoutMsOf, thinkOptOf,
+  getTavernSettings, resolveParamsOf, timeoutMsOf, thinkOptOf,
   type TavernSettings,
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
@@ -77,7 +77,7 @@ export type PlotSystemResult = {
 export async function buildPlotSystem(session: TavernSession, settings?: TavernSettings): Promise<PlotSystemResult> {
   const st = settings ?? await getTavernSettings()
   // 参数优先级：会话参数 → 控制面板（通用层 + 模式层）→ TAVERN_DEFAULTS 兜底
-  const p = resolveParams('plot', commonParamsLayer(st.common), modeParamsLayer('plot', st), session.params)
+  const p = resolveParamsOf('plot', st, session.params)
   const total = p.contextBudget
   const casts = splitCast(session.cast)
   // 在场调度（A6）：被静音的 AI 角色移到「在场不出声」名单。
@@ -296,7 +296,7 @@ export async function runPlotTurn(
   const runChat = deps.chatFn ?? chat
   const st = deps.settings ?? await getTavernSettings()
   const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
-  const p = resolveParams('plot', commonParamsLayer(st.common), modeParamsLayer('plot', st), session.params)
+  const p = resolveParamsOf('plot', st, session.params)
   /** temperature 单独拎出来（chat 的唯一真源），其余整体透传 */
   const { temperature, ...extraOptions } = toOllamaOptions(p)
 
@@ -634,7 +634,7 @@ export async function runFreeTurn(
     ? baseMsgs
     : [...baseMsgs, { id: uid(), role: 'user', content: userText, at: Date.now() }]
 
-  const p = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st), session.params)
+  const p = resolveParamsOf('free', st, session.params)
   const { temperature, ...extraOptions } = toOllamaOptions(p)
   const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, '', st.common.fixedOverheadChars)
   const { messages } = buildFreeMessages(withUser, session, chars, historyBudgetChars, cb.speakerId)
