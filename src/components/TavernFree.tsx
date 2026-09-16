@@ -619,6 +619,17 @@ export default function TavernFree() {
     }
   }, [session, titleDraft])
 
+  // ---------- 本场数值：把状态落回角色卡（定义在 send 之前，避免 useCallback 依赖数组触发 TDZ） ----------
+  /** 把一份角色卡状态落库并刷新内存（反馈 #4：状态存卡、跨会话累积）。通用：任何角色 id 都能用。 */
+  const persistCharVars = useCallback(async (charId: string, cv: CharVars) => {
+    const card = await store.getFreeChar(charId).catch(() => null)
+    if (!card) return
+    const updated = { ...card, vars: cv }
+    await store.saveFreeChar(updated).catch(() => undefined)
+    setCharCard(prev => (prev && prev.id === charId ? updated : prev))
+    setCastCards(prev => prev.map(c => (c.id === charId ? updated : c)))
+  }, [])
+
   // ---------- 对话 ----------
   /** preset = 快捷指令条递过来的一句现成话（走导演指令通道）；不传就用输入框里的 */
   const send = useCallback(async (preset?: string) => {
@@ -718,16 +729,6 @@ export default function TavernFree() {
   }
 
   // ---------- 本场数值（C2 第二步）：作者手改 + 回写角色卡 ----------
-
-  /** 把一份角色卡状态落库并刷新内存（反馈 #4：状态存卡、跨会话累积）。通用：任何角色 id 都能用。 */
-  const persistCharVars = useCallback(async (charId: string, cv: CharVars) => {
-    const card = await store.getFreeChar(charId).catch(() => null)
-    if (!card) return
-    const updated = { ...card, vars: cv }
-    await store.saveFreeChar(updated).catch(() => undefined)
-    setCharCard(prev => (prev && prev.id === charId ? updated : prev))
-    setCastCards(prev => prev.map(c => (c.id === charId ? updated : c)))
-  }, [])
 
   /**
    * 手改一个数值（主角色）。
