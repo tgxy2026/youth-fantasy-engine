@@ -21,7 +21,8 @@ import * as store from './store'
 import { messagesAfterWatermark } from './memory'
 import { summarizeRound, extractSessionVars } from './summarize'
 import { proposeCardRevisions, type CardRevision } from './revise'
-import { recordVarChanges, turnSeqOf } from './vars'
+import { recordVarChanges, turnSeqOf, emptyVars } from './vars'
+import type { SummaryLimits } from './summarize'
 import { renderFreeCharacter, type ChatFn } from './engine'
 import type {
   FreeSession, FreeCharacter, FreeMemory, TavernMessage,
@@ -58,8 +59,8 @@ export type RoundEndArgs = {
   cards: FreeCharacter[]
   /** 单独指定的整理模型；不传则回退全局活动模型 */
   providerId?: string
-  /** 字数约束（控制面板） */
-  limits?: { longTermLimit?: number; diaryDays?: number }
+  /** 字数约束（控制面板）—— 必须含 hardLimit，否则面板调的「记忆硬上限」永不生效（审计 P1-1） */
+  limits?: SummaryLimits
   /** 本场数值的启用键 */
   varKeys: VarKey[]
   /** 当前变量块（算差值的起点） */
@@ -143,25 +144,33 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   }
 
   // ---- ② 本场数值 ----
+  //
+  // 🔴 会话没有 vars 也要算（审计 P1-2）：新会话从不初始化 vars，旧条件里的 `&& args.vars`
+  //    让这一步**整段跳过** —— 表现是「本场数值永远是空的，得先手改一次才活」。
+  //    这里用 `emptyVars(varKeys)` 兜底，第一场收尾就能把初始值 + 变化写进会话。
   let nextVars = args.vars
   let varChanges: VarChange[] = []
-  if (varKeys.length > 0 && pending.length > 0 && args.vars) {
+  if (varKeys.length > 0 && pending.length > 0) {
     onProgress?.({ stage: 'vars', cur: total, total })
+    const base = args.vars ?? emptyVars(varKeys)
     try {
       const ex = await extractSessionVars({
         keys: varKeys,
-        values: args.vars.values,
+        values: base.values,
         messages: pending,
         nameOf,
         maxStep,
+        // 剧本写的「这一场的目标」—— 少了它，模型只能凭对话猜该往哪个方向推进（审计 P1-7）
+        goal: session.script?.goal,
         providerId: providerId || undefined,
         chatFn,
         signal,
       })
-      if (ex.changes.length > 0) {
-        nextVars = recordVarChanges({ ...args.vars, values: ex.values }, ex.changes, turnSeqOf(session.messages))
-        varChanges = ex.changes
-      }
+      // 有变化：记 log；没变化：也把初始值落下来，否则面板一直显示「未记录」
+      nextVars = ex.changes.length > 0
+        ? recordVarChanges({ ...base, values: ex.values }, ex.changes, turnSeqOf(session.messages))
+        : base
+      varChanges = ex.changes
     } catch {
       varChanges = [] // 数值算不出来，这一场照样归档
     }

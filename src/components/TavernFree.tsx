@@ -258,8 +258,10 @@ export default function TavernFree() {
         setMems(Object.fromEntries(rows))
         const aiFirst = cards.find(c => c.id !== s.userCharId)
         setStatusCharId(prev => (cards.some(c => c.id === prev) ? prev : (aiFirst?.id ?? primary?.id ?? '')))
-        // 打开就补算「这几天的生活」（方案 §4.6 ② 的同一思路：无服务端只能靠打开时补）
-        if (primary) void advanceIfNeeded(primary, await store.getDaily(primary.id).catch(() => null))
+        // 「这几天的生活」的补算移到**右栏那个 effect** 里（审计 P1-6）：
+        // 旧实现只在这里对 cards[0] 推一次 —— 多角色同场时切到别的角色只是只读，
+        // 那几位永远停在旧状态；而且 setDaily 设的是 cards[0]，与右栏默认看的 aiFirst 还可能不是同一个人。
+        // 现在改成「谁被打开看，就补算谁」，一个入口、一处状态。
       } else {
         setMems({})
         setStatusCharId('')
@@ -273,7 +275,8 @@ export default function TavernFree() {
     } catch {
       setCastCards([])
     }
-  }, [advanceIfNeeded])
+    // 不再依赖 advanceIfNeeded —— 日常推进已移到右栏那个 effect（审计 P1-6）
+  }, [])
 
   const openSession = useCallback(async (id: string) => {
     const s = await store.getFreeSession(id)
@@ -361,16 +364,22 @@ export default function TavernFree() {
     setEnding(true)
     setEndStage(null)
     setEndResult(null)
+    // 🔴 取锁必须在 try **之外**（审计 P1-3）：旧写法把取锁放在 try 里，
+    //    而 `finally` 无条件 releaseSummaryLock() —— 取锁失败（说明锁在**别人**手里）时
+    //    也会执行 finally，把别人的锁删掉，防并发形同虚设。
+    //    （TavernPlot 的 runPlotSummary 本来就是正确写法，这里对齐。）
+    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) {
+      showToast('另一个窗口正在收尾', 'info')
+      setEnding(false)
+      return
+    }
     try {
-      if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) {
-        showToast('另一个窗口正在收尾', 'info')
-        return
-      }
       const res = await runRoundEnd({
         session: s,
         cards: castCards,
         providerId: summaryProviderId || undefined,
-        limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays },
+        // hardLimit 必须传：不传就永远走内置 3000，面板调的「记忆硬上限」是死的（审计 P1-1）
+        limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays, hardLimit: lim.hardLimit },
         varKeys,
         vars: s.vars,
         maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
@@ -397,7 +406,10 @@ export default function TavernFree() {
       // 有设定建议就顺手摊开给作者裁决 —— 都到这一步了，让他再点一次按钮纯属多余
       if (res.proposals.length > 0) {
         setProposals(res.proposals)
-        setPicked(new Set(res.proposals.map(p => p.id)))
+        // 🔴 默认**一条都不勾**（审计 P2）：设定改动会动角色卡的根本，老大 2026-09-16 的原话是
+        //    「由于会涉及到角色卡的根本性变化，所以需要用户确认修改内容」。
+        //    默认全勾等于给了一句「一键全采纳」，与「逐条裁决」的初衷相反。
+        setPicked(new Set())
         setReviseError('')
         setReviseOpen(true)
       }
@@ -804,13 +816,25 @@ export default function TavernFree() {
 
   /** 我的档案（全局）：目前只用来给「你」这一侧挂头像 */
   const myProfile = tavernSettings?.profile ?? DEFAULT_TAVERN_PROFILE
-  /** 右栏「Ta这几天的生活 / 心情」跟着 statusCharId 走（角色级数据，换人换一份） */
+  /**
+   * 右栏「Ta这几天的生活 / 心情」跟着 statusCharId 走（角色级数据，换人换一份）。
+   *
+   * 补算也在这里做（审计 P1-6）：**谁被打开看，就补算谁**。
+   * 旧实现只在载入会话时对第一位角色推一次，其余角色切过去只读不推进 —— 永远停在旧状态。
+   * `advanceIfNeeded` 内部有 `shouldAdvanceDaily` 节流，重复进入不会反复调模型。
+   */
   useEffect(() => {
     if (!statusCharId) { setDaily(null); return }
     let alive = true
-    void store.getDaily(statusCharId).then(d => { if (alive) setDaily(d) }).catch(() => { if (alive) setDaily(null) })
+    void (async () => {
+      const cur = await store.getDaily(statusCharId).catch(() => null)
+      if (!alive) return
+      setDaily(cur)
+      const card = castCards.find(c => c.id === statusCharId)
+      if (card) void advanceIfNeeded(card, cur)
+    })()
     return () => { alive = false }
-  }, [statusCharId, session?.id])
+  }, [statusCharId, session?.id, castCards, advanceIfNeeded])
 
   // ---------- 渲染 ----------
   if (loading) return <div className="page-enter"><LoadingState /></div>

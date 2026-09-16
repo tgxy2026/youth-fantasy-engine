@@ -104,7 +104,8 @@ export default function TavernPlot() {
         messages: pending,
         charContext: plotCharContext(s),
         providerId: st.free.summaryProviderId || undefined,
-        limits: limitsOf({ longTermLimit: st.free.longTermLimit, diaryDays: st.free.diaryDays }),
+        // hardLimit 一并传：否则剧情推演这边也永远走内置 3000（审计 P1-1）
+        limits: limitsOf({ longTermLimit: st.free.longTermLimit, diaryDays: st.free.diaryDays, hardLimit: st.free.hardLimit }),
       })
       const wm = nextWatermark(s)
       const updated: TavernSession = {

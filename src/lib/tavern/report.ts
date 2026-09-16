@@ -20,10 +20,19 @@ import { uid } from '../id'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from './types'
 
-/** 可被指向的表（白名单）：只允许指向「有明确条目」的表，避免模型指向虚空 */
+/**
+ * 可被指向的表（白名单）：只允许指向**能定位到具体条目**的页签。
+ *
+ * 🔴 审计 P1-5：这里曾经把 `worldbase` / `power` 也放进来 —— 它们是 `type: 'form'` 的
+ *    **单表单**页签，压根没有「哪一条记录」的概念。模型指对了也只会切个页签、指不到任何东西，
+ *    等于给作者一个点过去发现没反应的链接。所以只留两类：
+ *      · `type: 'table'` —— 走 `TableSheet` 的 `focusRowId`（高亮并滚到那一行）
+ *      · `type: 'card'`  —— 走 `CharacterSheet` 的多记录目录（选中并打开那张卡）
+ * ⚠️ 新增条目时请先确认该页签属于上面两类之一。
+ */
 const TARGETABLE = [
   'char-main', 'char-secondary', 'char-npc', 'relations', 'secrets',
-  'worldbase', 'power', 'terms', 'nations', 'geography', 'races', 'items', 'history',
+  'terms', 'nations', 'geography', 'races', 'items', 'history',
   'timeline', 'foreshadow',
 ]
 

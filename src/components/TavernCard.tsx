@@ -28,7 +28,7 @@ import * as db from '../lib/db'
 import TavernCardStructField from './TavernCardStructField'
 import { PROFILE_SPECS, CONDUCT_SPECS } from '../lib/tavern/cardFields'
 import { listStories, storyDisplayName } from '../lib/tavern/story'
-import { cardStoryId, readCardField, writeCardField, type TavernStoryIndexItem } from '../lib/tavern/types'
+import { MEMORY_SOFT_LIMIT, JOURNAL_KEEP, cardStoryId, readCardField, writeCardField, type TavernStoryIndexItem } from '../lib/tavern/types'
 import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem, type CharJournal, type CharJournalEntry } from '../lib/tavern/types'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName, CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem } from '../lib/tavern/cardFile'
@@ -129,6 +129,17 @@ export default function TavernCard() {
   const [mem, setMem] = useState<FreeMemory | null>(null)
   const [memDirty, setMemDirty] = useState(false)
   const [showMem, setShowMem] = useState(false)
+  /**
+   * 记忆软上限（控制面板）。
+   * 🔴 审计 P1-1：这个旋钮以前**全库无消费者** —— 面板上写「超过只在界面上提醒」，
+   *    而那句提醒从来没实现过。这里把它接上（只提醒，不做硬截断；硬截断归 hardLimit）。
+   */
+  const [softLimit, setSoftLimit] = useState(MEMORY_SOFT_LIMIT)
+  useEffect(() => {
+    void getTavernSettings()
+      .then(st => setSoftLimit(st.free.softLimit))
+      .catch(() => { /* 读不到就按内置默认，不打断卡片页 */ })
+  }, [])
   const [savingMem, setSavingMem] = useState(false)
   const [seedingMem, setSeedingMem] = useState(false)
   /**
@@ -560,6 +571,8 @@ export default function TavernCard() {
         if (warnCount) bits.push(`${warnCount} 张结构有缺（导入后可补）`)
         if (failed.length) bits.push(`${failed.length} 项失败`)
         bits.push('初版记忆已按角色卡摘录，可在每张卡上点「生成初版记忆」升级')
+        // 导入的卡 storyId 为空（文件里没有故事这一层）—— 不说清的话，作者只会觉得「卡不见了」（审计 P1-4）
+        bits.push('都落在「未归属」里：逐张选归属故事后才能用于对话')
         showToast(bits.join(' · '), failed.length ? 'info' : 'success')
       }
       if (failed.length) console.warn('[tavern] 角色卡导入失败明细：', failed)
@@ -601,7 +614,9 @@ export default function TavernCard() {
       setGaps(g)
       setImportOpen(false)
       const tip = g.length ? `草稿已生成，有 ${g.length} 处待补` : '草稿已生成，请审一遍再改'
-      showToast(`${tip} · 初版记忆已生成（${how === 'ai' ? 'AI 整理' : '直接摘录'}）`, g.length ? 'info' : 'success')
+      showToast(
+        `${tip} · 初版记忆已生成（${how === 'ai' ? 'AI 整理' : '直接摘录'}）· 还没有归属故事，在卡里选一个才能用于对话`,
+        g.length ? 'info' : 'success')
     } catch (e) {
       showToast(`转换失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -918,6 +933,20 @@ export default function TavernCard() {
                   </div>
                 )}
 
+                {/* 未归属提示（审计 P1-4）：导入 / AI 转换进来的卡 storyId 是空的。
+                    旧流程里作者只会看到左栏多一张卡，根本不知道"还要归类" ——
+                    而没归属的卡在「新建对话」的角色列表里根本选不到（角色按故事过滤），
+                    表现就是「这张卡怎么不出现」，却看不出原因。 */}
+                {!cardStoryId(draft) && stories.length > 0 && (
+                  <div className="rounded-md border border-amber/35 bg-amber/8 px-3 py-2">
+                    <p className="text-[11.5px] text-ink-300 leading-relaxed">
+                      <span className="text-amber/90">这张卡还没有归属故事</span> —— 没有归属，
+                      对话时拿不到世界观，也不会出现在「新建对话」的角色列表里。
+                      在下面「归属故事」里选一个，它就能用了。
+                    </p>
+                  </div>
+                )}
+
                 {/* 基本 */}
                 <div>
                   {/* 头像（批次 8）：角色卡片、自由对话气泡、状态栏、在场者一览共用同一张图 */}
@@ -1083,7 +1112,18 @@ export default function TavernCard() {
                 <section className="rounded-lg border border-ink-700 bg-ink-850/40 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="text-[13px] font-semibold text-amber/90">Ta的记忆（可手动编辑）</h3>
+                      <h3 className="flex flex-wrap items-center gap-x-2 text-[13px] font-semibold text-amber/90">
+                        Ta的记忆（可手动编辑）
+                        {mem && !isMemoryEmpty(mem) && (
+                          <span
+                            className={`text-[10.5px] font-normal ${memoryChars(mem) > softLimit ? 'text-amber' : 'text-ink-600'}`}
+                            title={`记忆软上限 ${softLimit} 字（控制面板 → 七、自由对话控制）：超过只提醒，不会硬截断`}
+                          >
+                            {memoryChars(mem)} / {softLimit} 字
+                            {memoryChars(mem) > softLimit ? ' · 偏长，整理时会先压「长期摘要」' : ''}
+                          </span>
+                        )}
+                      </h3>
                       <p className="mt-0.5 text-[11px] text-ink-500 leading-relaxed">
                         六栏记忆就在这里。AI 整理时会在此基础上压缩；你也可以直接改，改完点「保存记忆」。
                       </p>
@@ -1164,6 +1204,14 @@ export default function TavernCard() {
                         它<span className="text-ink-400">从来不参与 AI 上下文</span>，随便翻、随便删都不会影响 Ta 的记忆。
                         只有「删除」一个操作 —— 删掉不可恢复。
                       </p>
+                      {!!journal?.entries.length && (
+                        <p className="mt-1 text-[10.5px] text-ink-600">
+                          共 {journal.entries.length} 条
+                          {journal.entries.length >= JOURNAL_KEEP
+                            ? `（已到上限 ${JOURNAL_KEEP} 条：再写新的会滚掉最老的一条）`
+                            : `（最多留 ${JOURNAL_KEEP} 条，超出滚掉最老的）`}
+                        </p>
+                      )}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <Button variant="secondary" size="sm" onClick={() => setShowJournal(v => !v)}>

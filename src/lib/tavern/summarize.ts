@@ -33,8 +33,13 @@ export function formatDate(ts: number): string {
 /** 关键事实最多保留的行数（超了要归并，不是丢弃新事 —— 见提示词里的精简纪律） */
 export const FACTS_MAX_LINES = 12
 
-/** 总结提示词里用到的字数约束（来自控制面板；不传即内置默认） */
-export type SummaryLimits = { longTermLimit?: number; diaryDays?: number }
+/**
+ * 总结提示词 / 解析用到的字数约束（来自控制面板；不传即内置默认）。
+ *
+ * 🔴 `hardLimit` 只影响**解析后的 trimMemory**（提示词里不写它，那是内部约束）——
+ *    但**必须一路传进来**，否则面板调的「记忆硬上限」永远走内置 3000（审计 P1-1 的两个死旋钮之一）。
+ */
+export type SummaryLimits = { longTermLimit?: number; diaryDays?: number; hardLimit?: number }
 
 export function buildSummarySystem(charName: string, now = Date.now(), limits: SummaryLimits = {}): string {
   const longTermLimit = limits.longTermLimit ?? MEMORY_LONGTERM_LIMIT

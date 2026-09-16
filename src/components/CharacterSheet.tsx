@@ -29,9 +29,16 @@ const CARD_SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = 
 
 interface Props {
   tab: TabDef
+  /**
+   * 从别处（如酒馆「推演报告」里的定位链接）跳过来时，要**直接打开的那条记录**。
+   * 🔴 审计 P1-5：card 类页签以前收不到这个参数 —— 报告里指向角色卡的问题，
+   *    点进来只是切了个页签、什么都不选中，作者会以为那个链接是坏的。
+   */
+  focusRowId?: string | null
+  onFocusConsumed?: () => void
 }
 
-export default function CharacterSheet({ tab }: Props) {
+export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Props) {
   const [records, setRecords] = useState<CardRecord[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -63,6 +70,15 @@ export default function CharacterSheet({ tab }: Props) {
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
   const aiCap = aiCapabilityOf(tab)
   const { ready: aiReady } = useAIReady()
+
+  // 定位到指定记录（报告跳转）：records 到位后选中它，并回报"已消费"。
+  // 不写进加载流程里，是因为 focusRowId 可能在组件已经挂载后才变化（同一页签二次跳转）。
+  useEffect(() => {
+    if (!focusRowId) return
+    if (!records.some(r => r.id === focusRowId)) return
+    setActiveId(focusRowId)
+    onFocusConsumed?.()
+  }, [focusRowId, records, onFocusConsumed])
 
   // 用 ref 持有最新状态，避免切换页签时因 effect 闭包过期而丢失未保存草稿
   const draftRef = useRef(draft)
