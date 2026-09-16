@@ -445,7 +445,7 @@ export type FreeSession = {
   /** 临时导演指令（B2）：按深度插进历史，只影响接下来 N 轮 */
   directorNote?: TavernDirectorNote
   /**
-   * 本场变量（C2 第二步）：好感 / 信任 / 剧情进度 / 心情 / 当前地点。
+   * 本场变量（C2 第二步）：好感 / 信任 / 精神 / 心情 / 地点。
    * 由 AI 每隔 N 轮给一次增量，作者也可手改。**会话级**，见 TavernVars 的说明。
    */
   vars?: TavernVars
@@ -799,7 +799,7 @@ export type TavernScript = {
   opening: string
   /** 4 · 你的位置：你在这一场里是谁、与 Ta 的关系、你想做什么 */
   playerRole: string
-  /** 5 · 这一场的目标：给方向，不锁死（变量「剧情进度」就是它的完成度） */
+  /** 5 · 这一场的目标：给方向，不锁死（是否达成由模型按剧情把握，不单独计入变量） */
   goal: string
   /** 6 · 不要发生：这一场不该出现什么 */
   taboo: string

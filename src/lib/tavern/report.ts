@@ -116,7 +116,13 @@ export async function normalizeFindings(
   const findings: TavernFinding[] = []
   for (const it of raw) {
     const levelRaw = asText(it.level ?? it.等级 ?? '').trim()
-    let level: TavernFindingLevel = levelRaw.includes('矛盾') ? '矛盾' : levelRaw.includes('漏洞') ? '漏洞' : '存疑'
+    // 先排否定：「无矛盾 / 没有漏洞 / 未发现矛盾」是「没问题」，别被子串匹配误判成「矛盾」
+    const negated = /^\s*(无|没|未|不)/.test(levelRaw)
+    let level: TavernFindingLevel
+    if (negated) level = '存疑'
+    else if (levelRaw.includes('矛盾')) level = '矛盾'
+    else if (levelRaw.includes('漏洞')) level = '漏洞'
+    else level = '存疑'
     const targetTabId = asText(it.targetTabId ?? it.表 ?? '').trim()
     const targetLabel = asText(it.targetLabel ?? it.条目 ?? it.指向 ?? '').trim()
     const detail = asText(it.detail ?? it.问题 ?? it.描述 ?? '').trim()

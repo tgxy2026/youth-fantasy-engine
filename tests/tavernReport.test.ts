@@ -94,6 +94,14 @@ async function main() {
     ok('等级含「漏洞」即识别为漏洞', b[0].level === '漏洞')
     const c = await normalizeFindings([{ level: '完全看不懂', detail: 'x' }], resolve)
     ok('等级无法识别时按最保守的「存疑」处理', c[0].level === '存疑')
+    // 2026-09-16 审计：先排否定词——「无矛盾 / 没有漏洞」是「没问题」，别被子串匹配误判。
+    // 这里刻意给**可定位**的目标，否则会被「指不回去就降级为存疑」盖过、测不出否定逻辑。
+    const d = await normalizeFindings(
+      [{ level: '无矛盾', targetTabId: 'char-main', targetLabel: '李默', detail: 'x' }], resolve)
+    ok('「无矛盾」不被误判为矛盾（降为存疑）', d[0].level === '存疑')
+    const e = await normalizeFindings(
+      [{ level: '没有漏洞', targetTabId: 'char-main', targetLabel: '李默', detail: 'x' }], resolve)
+    ok('「没有漏洞」不被误判为漏洞（降为存疑）', e[0].level === '存疑')
   }
 
   // ---------- 7) 中文字段名兜底（模型爱写中文键） ----------
