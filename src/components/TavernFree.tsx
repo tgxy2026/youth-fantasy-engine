@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
 import TavernEchoHints from './TavernEchoHints'
-import { Pencil } from 'lucide-react'
+import { ChevronDown, Pencil } from 'lucide-react'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { Modal } from './Modal'
@@ -961,11 +961,25 @@ export default function TavernFree() {
     showToast('已删除会话')
   }
 
-  // ---------- 自动滚到底 ----------
+  // ---------- 自动滚到底 + 「回到底部」按钮状态 ----------
+  const [atBottom, setAtBottom] = useState(true)
+  const updateAtBottom = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+    setAtBottom(dist < 48)
+  }, [])
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    setAtBottom(true)
+  }, [])
+  // 已在底部时才自动跟随（反馈 #13）：用户往回滚看历史时不再被新内容硬拽回底部
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [session?.messages.length, streamText])
+    if (el && atBottom) el.scrollTop = el.scrollHeight
+  }, [session?.messages.length, streamText, atBottom])
 
   const usedChars = useMemo(() => {
     if (!session) return 0
@@ -1338,7 +1352,8 @@ export default function TavernFree() {
                   它横在对话上方会白吃掉一截高度，而右栏本来就有地方摆（与「本场状态」两页切换）。
                   老大原话：「放到一起，能够进行页面切换」。见右栏 `<aside>` 的 statusTab。 */}
 
-              <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="relative flex-1 min-h-0">
+              <div ref={scrollRef} onScroll={updateAtBottom} className="absolute inset-0 overflow-y-auto p-4 space-y-4">
                 {/* 很久没来时Ta留着的一句话（§7.5）：不弹通知，就放在对话里等Ta看见 */}
                 {greeting && (
                   <div className="rounded-lg border border-amber/30 bg-amber/8 px-3 py-2">
@@ -1404,6 +1419,17 @@ export default function TavernFree() {
                     )}
                   </div>
                 )}
+              </div>
+              {!atBottom && (
+                <button
+                  type="button"
+                  onClick={() => scrollToBottom()}
+                  title="回到底部（看历史时一键回到最新消息）"
+                  className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-[11px] text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" /> 回到底部
+                </button>
+              )}
               </div>
 
               <div className="border-t border-ink-800 p-3">

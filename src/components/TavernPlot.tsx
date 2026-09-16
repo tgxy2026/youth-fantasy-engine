@@ -189,11 +189,25 @@ export default function TavernPlot() {
     return () => { alive = false }
   }, [activeId])
 
-  // 流式输出时贴底
+  // 流式输出时贴底 + 「回到底部」按钮状态
+  const [atBottom, setAtBottom] = useState(true)
+  const updateAtBottom = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+    setAtBottom(dist < 48)
+  }, [])
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    setAtBottom(true)
+  }, [])
+  // 已在底部时才自动跟随（反馈 #13）：用户往回滚看历史时不再被新内容硬拽回底部
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [session?.messages.length, streamText])
+    if (el && atBottom) el.scrollTop = el.scrollHeight
+  }, [session?.messages.length, streamText, atBottom])
 
   const casts = useMemo(() => (session ? splitCast(session.cast) : { user: [], ai: [], silent: [] }), [session])
   /** 取某条消息的发言角色名（多角色同场时挂头像与名字标签用） */
@@ -773,7 +787,8 @@ export default function TavernPlot() {
 
           {/* 中栏：对话区 */}
           <div className="flex flex-1 min-w-0 flex-col rounded-lg border border-ink-800 overflow-hidden">
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="relative flex-1 min-h-0">
+            <div ref={scrollRef} onScroll={updateAtBottom} className="absolute inset-0 overflow-y-auto p-4 space-y-4">
               {session.messages.length === 0 && (
                 <div className="text-center text-[12px] text-ink-500 py-10">
                   还没有对话。在下面输入你的第一句话开演。
@@ -816,6 +831,17 @@ export default function TavernPlot() {
                     : <div className="text-[12px] text-ink-500">{phase || '正在生成…'}</div>}
                 </div>
               )}
+            </div>
+            {!atBottom && (
+              <button
+                type="button"
+                onClick={() => scrollToBottom()}
+                title="回到底部（看历史时一键回到最新消息）"
+                className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-[11px] text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700"
+              >
+                ↓ 回到底部
+              </button>
+            )}
             </div>
 
             {/* 输入区 */}
