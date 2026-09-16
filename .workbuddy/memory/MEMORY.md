@@ -38,6 +38,7 @@
 - 🔴 解析统一 `aiParse.ts`（禁裸 `JSON.parse`）。温度不手填：结构化→0.3、创意→0.85；一轮 JSON 走 `aiChatJson`。
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 序不可换）。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce）；绝不清洗正文。
+- 🔴 重复惩罚**射程**（非强度）：`repeat_penalty`/`frequency_penalty`/`presence_penalty` 在 llama.cpp **共用 `penalty_last_n` 窗口**（Ollama 默认 **64 token≈50 汉字**）→ 跨轮复读在射程外，**调高无用且伤虚词**；`repeat_last_n`/`frequency_penalty` 项目**均未下发**。治「语义/句式复读」只能靠提示词（#12 诊断：主因＝协议「用动作·停顿·身体反应代替情绪标签」逼每轮写身体反应却无多样性约束）。
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（SSH `yfe_test_server`），站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务→删库≠下线；Nginx SPA 回退：不存在路径也返 200→不能靠 200 判上线。
@@ -66,7 +67,7 @@
 - 📦 导入导出：单卡 `.taverncard.json`／整批 `.taverncards.json`；批量逐张校验不调 AI（`draftMemoryFromCard` 离线摘录）。🔴 剧情推演无会话级模型选择。
 - ⏳ 待拍板（方案 §10.2）：① `summaryMinIntervalMin` 成死键建议删（连带 `shouldRunAutoSummary`/`throttleOk`+断言）；② `triggerMessages` 仅 `TavernPlot` 用却挂「自由对话控制」。
 - 🔍 审计报告 `docs/酒馆模式-审计报告-2026-09-16.md`：75 条（5P0/34P1/36P2）已于 09-16 全修完（5 批提交 `09daad7`→`3a9afe8`）。
-- ✅ 09-16 验收反馈 13 条**已全实施**（12 条落地、#12 描写重复留待诊断）：清单 `docs/酒馆模式-优化清单-2026-09-16.md`（状态列已更）、方案＋执行记录 `docs/酒馆模式-优化实施方案-2026-09-16.md` §六、**实机验收走 `docs/酒馆模式-本轮改动实机验收清单-2026-09-16.md`**。
+- ✅ 09-16 验收反馈 13 条**已全实施**（12 条落地；#12 描写重复**已补做静态根因诊断**、调优待拍板）：清单 `docs/酒馆模式-优化清单-2026-09-16.md`（状态列已更）、方案＋执行记录 `docs/酒馆模式-优化实施方案-2026-09-16.md` §六、诊断报告 `docs/酒馆模式-12-描写重复诊断报告-2026-09-16.md`、**实机验收走 `docs/酒馆模式-本轮改动实机验收清单-2026-09-16.md`**。
 
 ## 出厂数据（角色卡不进原生）✅ 09-15 已执行
 - 🧪 dev 测试数据放仓库外 `G:\AI软件\角色卡录入\04-开发测试数据（dev专用·不进打包）\`，走 `story.ts`/`store.ts`（索引分条成对、幂等）；🔴 绝不写进 `seedData.ts`。内有「奉阳大学」故事 + 楚楠/苏念两张卡。
