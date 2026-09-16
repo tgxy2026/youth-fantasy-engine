@@ -165,7 +165,7 @@ async function main() {
   {
     for (let i = 0; i < JOURNAL_KEEP + 3; i++) {
       await store.appendJournalEntry(A.id, {
-        id: `jr-x-${i}`, at: i, sessionId: 's-x', sessionTitle: `第${i}场`, cast: ['苏念'], text: `第 ${i} 条`,
+        id: `jr-x-${i}`, at: i, sessionId: `s-x-${i}`, sessionTitle: `第${i}场`, cast: ['苏念'], text: `第 ${i} 条`,
       })
     }
     const j = await store.getJournal(A.id)
@@ -175,6 +175,16 @@ async function main() {
 
     const dropped = await store.dropJournalEntry(A.id, j.entries[0].id)
     ok('删单条生效', dropped.entries.length === JOURNAL_KEEP - 1 && !dropped.entries.some(e => e.id === j.entries[0].id))
+
+    // 🔴 同一场对话重复写日记 → 只留一条（审计 P0-5：收尾失败后作者重跑不能写第二遍）
+    await store.appendJournalEntry(A.id, {
+      id: 'jr-dup-old', at: 1, sessionId: 's-dup', sessionTitle: '重跑场', cast: [], text: '旧版',
+    })
+    const after = await store.appendJournalEntry(A.id, {
+      id: 'jr-dup-new', at: 2, sessionId: 's-dup', sessionTitle: '重跑场', cast: [], text: '新版',
+    })
+    const dup = (await store.getJournal(A.id)).entries.filter(e => e.sessionId === 's-dup')
+    ok('同一场只留一条（收尾重跑不产生重复日记）', dup.length === 1 && after.entries[0].text === '新版')
 
     await store.clearJournal(A.id)
     ok('清空日记生效', (await store.getJournal(A.id)).entries.length === 0)

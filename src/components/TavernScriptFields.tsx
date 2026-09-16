@@ -31,7 +31,7 @@ export const SCRIPT_FIELD_META: { key: keyof ScriptDraftFields; label: string; h
   {
     key: 'opening', label: '③ 开场白', rows: 4,
     hint: 'Ta 说的第一句，会变成对话的第一条消息（不占每轮的常驻额度）。模型会照着它的篇幅和语气往下写 —— 想要短促的对白，这里就别写成长旁白。',
-    placeholder: '例：【雨点砸在卷帘门上】\n（她把钥匙转了一圈，没抬头）今天不卖了。\n你要的东西，我没有。',
+    placeholder: '例：（雨点砸在卷帘门上）\n（她把钥匙转了一圈，没抬头）今天不卖了。\n你要的东西，我没有。',
   },
   {
     key: 'playerRole', label: '④ 你的位置', rows: 3,

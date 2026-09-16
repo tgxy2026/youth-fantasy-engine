@@ -16,7 +16,7 @@
  * 六栏里的「纪念日与待办」「最近日记」就是时间线的轻量表达（都有条数上限、都在滚动更新），
  * 所以这里把它们做成计数，而不是另建一套时间轴数据结构。
  */
-import { MEMORY_SECTIONS, type MemorySectionKey } from './memory'
+import { MEMORY_SECTIONS, isPlaceholder, type MemorySectionKey } from './memory'
 import {
   isMuted, talkBandOf, talkativityOf,
   type CastDirection, type FreeMemory,
@@ -44,7 +44,9 @@ function entryLines(text: string): string[] {
   return String(text ?? '')
     .split('\n')
     .map(l => l.replace(LIST_PREFIX, '').trim())
-    .filter(Boolean)
+    // 🔴 跳过占位行（「暂无」/「-」/「（还没有发生过任何事）」）—— 否则状态栏会显示
+    //    「未爆的雷 1」「纪念日与待办 1」，作者以为真有内容（审计 P0-2 的连带面）。
+    .filter(l => l && !isPlaceholder(l))
 }
 
 /** 数条目：非空行数。长期摘要那种成段文字通常算 1 条，符合直觉 */

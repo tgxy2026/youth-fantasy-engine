@@ -619,6 +619,12 @@ export default function TavernFree() {
    */
   const reroll = async () => {
     if (!session || streaming) return
+    // 🔴 归档守卫：结束本轮对话之后这一场是**只读**的 —— 重说会真调模型并 store.saveFreeSession()
+    //    落库，把归档那一刻的记忆/日记与正文彻底对不上（这正是 send() 那条注释想防的事）。
+    if (session.endedAt) {
+      showToast('这一场已经结束了（只读归档）—— 想接着聊请新开一场', 'info')
+      return
+    }
     const target = session.messages.find(m => m.id === lastAiId)
     if (!target) { showToast('还没有可以重说的回复', 'info'); return }
     setStreaming(true)
@@ -1031,8 +1037,9 @@ export default function TavernFree() {
                 </div>
 
                 {/* 多角色：在场者一览，点头像 = 指定下一位接话（§7.3）。
-                    只列 **AI 演的**角色 —— 用户扮演的那个不是 AI 的位子，指定他接话没有意义。 */}
-                {aiCards.length > 1 && (
+                    只列 **AI 演的**角色 —— 用户扮演的那个不是 AI 的位子，指定他接话没有意义。
+                    归档只读时整块收掉：指定下一位 / 改静音与健谈度都是"为了接着聊"的准备动作。 */}
+                {aiCards.length > 1 && !session.endedAt && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className="text-[10.5px] text-ink-500 shrink-0">在场（点头像指定下一位）</span>
                     {aiCards.map(c => (
@@ -1128,6 +1135,8 @@ export default function TavernFree() {
                           ops={{
                             canReroll: m.id === lastAiId && !streaming,
                             busy: streaming,
+                            // 归档只读：工具条整条不渲染（reroll / 编辑 / 隐藏 / 删除都不该有）
+                            locked: !!session.endedAt,
                             onReroll: () => void reroll(),
                             onSaveEdit: t => saveEdited(m.id, t),
                             onToggleHidden: () => toggleHidden(m.id),
@@ -1238,6 +1247,7 @@ export default function TavernFree() {
                     varKeys={varKeys}
                     onSetVar={setVar}
                     onResetVars={() => void resetVars()}
+                    readOnly={!!session.endedAt}
                   />
 
                   {/* 在场的人：只列 AI 扮演的 —— 用户自己演的那位不是观察对象。

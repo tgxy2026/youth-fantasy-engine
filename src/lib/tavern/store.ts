@@ -604,9 +604,15 @@ export async function appendJournalEntry(
   keep = JOURNAL_KEEP,
 ): Promise<CharJournal> {
   const cur = await getJournal(charId)
+  // 🔴 同一场对话只留一条（审计 P0-5）。
+  //    收尾可能因为某位角色整理失败而被作者重跑；旧实现每次都新 `uid()` 追加，
+  //    结果同一场沉淀出两条几乎一样的日记。按 sessionId 覆盖掉旧的更符合"一本日记"的直觉。
+  const rest = entry.sessionId
+    ? cur.entries.filter(e => e.sessionId !== entry.sessionId)
+    : cur.entries
   const next: CharJournal = {
     charId,
-    entries: [entry, ...cur.entries].slice(0, keep),
+    entries: [entry, ...rest].slice(0, keep),
     updatedAt: now(),
   }
   await db.setMeta(G.journal(charId), next)

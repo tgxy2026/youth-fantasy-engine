@@ -33,6 +33,12 @@ export type MessageOps = {
   onDelete: () => void
   /** 从这一条分支（不传 = 这个页面没有分支功能，按钮不渲染） */
   onBranch?: () => void
+  /**
+   * 🔴 整条工具条锁住（自由对话「结束本轮对话」归档之后）。
+   *    为什么不是「把按钮 disabled」：归档之后**这些操作根本不存在**，
+   *    灰着还挂在 hover 里，作者会以为"多点点也许能通"。直接不渲染最不容易误解。
+   */
+  locked?: boolean
 }
 
 export function TavernMessageBody({ content, hidden, edited, ops }: {
@@ -78,7 +84,9 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
             </div>
           )}
 
-          {/* 工具条：hover 才出现（触屏上 hover 表现为点按后保留） */}
+          {/* 工具条：hover 才出现（触屏上 hover 表现为点按后保留）。
+              归档只读（ops.locked）时**整条不渲染** —— 理由见 MessageOps.locked。 */}
+          {!ops.locked && (
           <div className="mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
             {ops.canReroll && (
               <Button
@@ -120,6 +128,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
               删除
             </Button>
           </div>
+          )}
         </>
       )}
     </div>

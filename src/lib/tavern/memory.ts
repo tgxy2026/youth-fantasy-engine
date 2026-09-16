@@ -7,7 +7,7 @@
  *   · 关系状态 「每次重写」—— 由总结时重新判断（情绪并入本栏）
  *   · 未爆的雷 「只增不改」—— 埋着还没用的伏笔 / 秘密 / 未说出口的事
  *   · 纪念日   「可增可清」
- *   · 最近日记 「硬性滚动」—— 保留最近五天，倒序
+ *   · 最近日记 「硬性滚动」—— 保留最近若干天（默认 7，见 MEMORY_DIARY_DAYS），倒序
  * 全部压缩 → 伏笔被抹掉；全部保留 → 无限膨胀吃满上下文。分两种行为是唯一同时成立的做法。
  *
  * 【改写而非追加】每次总结 = 「旧档案 + 新剧情 → 重写整份完整档案」，
@@ -87,11 +87,35 @@ export function memoryToText(m: FreeMemory): string {
 }
 
 /** 按行拆出「- 日期 内容」形式，倒序保留最近 N 条（方案：最近五天，新在上） */
+/**
+ * 整栏 / 整行只剩一个占位词 ⇒ 这里其实什么都没写。
+ *
+ * 🔴 为什么必须清洗（审计 P0-2）：提示词是给模型留了「没内容就写占位」的口子的
+ *    （「确实没有就写『暂无』」「留一个『-』」…），但旧实现只认 `^（暂无）$` 这一种写法。
+ *    于是 `暂无` / `-` / `（还没有发生过任何事）` 会变成**永久记忆内容**：
+ *      · 每轮注入 system，白占上下文额度（"空层不占额度"是本项目红线）；
+ *      · 状态栏按非空行计数，把「暂无」数成「未爆的雷 1」，骗作者以为真有内容。
+ *    判定放宽到「各种常见占位写法」，**只匹配整段就是占位**的情况，正文里出现这些词不受影响。
+ */
+const PLACEHOLDER_ONLY_RE = new RegExp(
+  '^[（(【\\[《]?\\s*(?:'
+  + '暂无|无|没有|略|空|无内容|待补充|待补|未提及|'
+  + '尚未发生|还没有发生过任何事|还没有发生任何事|什么?都没有发生过|未发生任何事|'
+  + '尚未确定|暂不确定|尚不确定|未确定|'
+  + '[-\\u2014\\u2013\\uff0d_]{1,4}|\\.{2,}|\\u2026{1,3}'
+  + ')\\s*[）)】\\]》]?$',
+)
+
+export function isPlaceholder(text: string | null | undefined): boolean {
+  const t = String(text ?? '').replace(/\s+/g, '')
+  return t === '' || PLACEHOLDER_ONLY_RE.test(t)
+}
+
 export function rollDiaries(text: string, keep = MEMORY_DIARY_DAYS): string {
   const lines = String(text ?? '')
     .split('\n')
     .map(l => l.trim())
-    .filter(l => l && !/^（暂无）$/.test(l))
+    .filter(l => !isPlaceholder(l))
   return lines.slice(0, keep).join('\n')
 }
 
@@ -150,8 +174,10 @@ export function parseMemoryText(text: string, charId: string, prev?: FreeMemory 
 
   for (const s of MEMORY_SECTIONS) {
     const body = (hit[s.key] ?? []).join('\n').trim()
-    // 去掉「（暂无）」这类占位
-    out[s.key] = /^（暂无）$/.test(body.replace(/\s/g, '')) ? '' : body
+    // 去掉「暂无」/「-」/「（还没有发生过任何事）」这类占位（见 isPlaceholder）：
+    // 先逐行丢掉纯占位行，再处理「整栏就是一个占位」的情况。
+    const kept = body.split('\n').map(l => l.trim()).filter(l => !isPlaceholder(l))
+    out[s.key] = kept.join('\n')
   }
 
   if (prev) {

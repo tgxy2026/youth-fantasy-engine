@@ -105,6 +105,11 @@ async function main() {
     ok('2.3 语言特征解析出来（最影响像不像）', d.profile.speech.includes('反问'))
     ok('2.6 知识边界解析出来（含待补标记）', d.profile.knowledge.includes(MISSING_TAG))
     ok('第 3 章四项解析出来', d.conduct.perspective.includes('第一人称') && d.conduct.rating.includes('日常向'))
+    // 🔴 审计 P0-3：第 3 章是**容器标题**，旧实现没有它的锚点 → normalizeTitle 剥完剩「行为规范」
+    //    匹配不到任何字段 → 落进 rest → 被追加到上一栏（实测污染「2.6 知识边界」）。
+    ok('第 3 章容器标题不污染上一栏', !d.profile.knowledge.includes('行为规范'), d.profile.knowledge)
+    ok('第 3 章容器标题不残留在任何字段里',
+      !JSON.stringify(d).includes('行为规范') || d.conduct.bottomLine.includes('不越界'))
     ok('第 4 章示例解析出来（多行保留）', d.examples.includes('灯还亮着') && d.examples.includes('〖对方〗'))
 
     // 宽松标题 + 标题内容同行

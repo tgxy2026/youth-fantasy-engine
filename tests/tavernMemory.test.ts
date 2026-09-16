@@ -103,6 +103,22 @@ async function main() {
     ok('模型给出新内容时以新为准', upd.facts.includes('换了工作'))
   }
 
+  // ---------- 3b) 占位清洗（审计 P0-2）----------
+  // 提示词给模型留了写占位的话口（「确实没有就写『暂无』」），旧实现只认「（暂无）」一种 ——
+  // 于是「暂无」/「-」/「（还没有发生过任何事）」变成**永久记忆内容**：每轮注入白占额度，
+  // 状态栏还把「暂无」数成一条。下面把每一种写法都钉住。
+  {
+    for (const c of ['暂无', '（暂无）', '-', '—', '（还没有发生过任何事）', '尚未发生', '无', '略', '...']) {
+      const got = parseMemoryText(`〖四、未爆的雷〗\n${c}\n`, CHAR, null)
+      ok(`占位「${c}」被清成空`, got.mines === '', JSON.stringify(got.mines))
+    }
+    const mixed = parseMemoryText('〖四、未爆的雷〗\nTa把信藏进了抽屉\n（暂无）\n', CHAR, null)
+    ok('混在真内容里的占位行也被丢掉', mixed.mines === 'Ta把信藏进了抽屉', JSON.stringify(mixed.mines))
+    const real = parseMemoryText('〖四、未爆的雷〗\n她嘴上说「暂无」安排，其实早定了\n', CHAR, null)
+    ok('真内容里出现占位词不受影响', real.mines.includes('其实早定了'), JSON.stringify(real.mines))
+    ok('日记栏的占位也认（「-」不算一条）', rollDiaries('-') === '' && rollDiaries('—') === '')
+  }
+
   // ---------- 4) 日记硬性滚动 ----------
   {
     const many = Array.from({ length: 9 }, (_, i) => `- 03-${String(20 - i).padStart(2, '0')}：第 ${i + 1} 条`).join('\n')

@@ -95,8 +95,14 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   const total = Math.max(cards.length, 1)
 
   // ---- ① 记忆 + 本场日记（逐位角色，一次调用两样产出） ----
-  const memories: FreeMemory[] = []
-  const journals: Record<string, string> = {}
+  //
+  // 🔴 **先全部算完，再统一落库**（审计 P0-5）。
+  //    旧实现是「算一位写一位」：多角色里整理到第 3 位失败时，前 2 位的记忆与日记**已经进库**，
+  //    而水位线与 endedAt 要等整个流程返回才写 —— 于是会话既不归档、水位线也不推进，
+  //    作者看到的是「整理失败了」，实际库里已经躺了半截记忆，再点一次「结束」还会得到**重复日记**。
+  //    改成「全成或全不成」：① 任何一位失败 → 一条都不落库、直接抛给界面（水位线不动，下次重算）。
+  //    配合 `store.appendJournalEntry` 的「同一场只留一条」幂等，重复点「结束」也不会写两遍。
+  const computed: { memory: FreeMemory; journal: string }[] = []
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i]
     onProgress?.({ stage: 'memory', cur: i + 1, total, name: c.name || '未命名角色' })
@@ -119,12 +125,20 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
       chatFn,
       signal,
     })
-    await store.saveMemory(memory)
-    memories.push(memory)
-    const text = journal.trim()
-    if (text) {
-      journals[c.id] = text
-      await store.appendJournalEntry(c.id, journalEntry(session, cards, text))
+    computed.push({ memory, journal: journal.trim() })
+  }
+
+  // 全部成功 → 一次性落库（记忆 + 日记成对写，避免出现"有记忆没日记"的中间态）
+  const memories: FreeMemory[] = []
+  const journals: Record<string, string> = {}
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i]
+    const got = computed[i]
+    await store.saveMemory(got.memory)
+    memories.push(got.memory)
+    if (got.journal) {
+      journals[c.id] = got.journal
+      await store.appendJournalEntry(c.id, journalEntry(session, cards, got.journal))
     }
   }
 

@@ -23,10 +23,12 @@ import { varDefOf, type TavernVars, type VarKey } from '../lib/tavern/types'
 import { lastChangeText } from '../lib/tavern/vars'
 
 /** 一个数值行：标签 + 进度条（仅数值变量）+ 可编辑的值 + 最近一次差量 */
-function VarRow({ k, vars, onSet }: {
+function VarRow({ k, vars, onSet, locked }: {
   k: VarKey
   vars: TavernVars | undefined
   onSet: (key: VarKey, raw: string) => void
+  /** 归档只读：输入框不可改（改也落不进上下文了，只会让界面与归档正文对不上） */
+  locked?: boolean
 }) {
   const def = varDefOf(k)!
   const raw = vars?.values?.[k]
@@ -56,10 +58,11 @@ function VarRow({ k, vars, onSet }: {
         onChange={e => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+        disabled={locked}
         inputMode={def.kind === 'num' ? 'numeric' : undefined}
         placeholder={def.kind === 'text' ? '（未填）' : String(def.init ?? '')}
-        className={`w-full min-w-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50 ${def.kind === 'num' ? 'shrink-0 w-16' : ''}`}
-        title="改完按回车或点一下别处生效"
+        className={`w-full min-w-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50 disabled:cursor-not-allowed disabled:opacity-60 ${def.kind === 'num' ? 'shrink-0 w-16' : ''}`}
+        title={locked ? '这一场已结束（只读归档），数值不能再改' : '改完按回车或点一下别处生效'}
       />
       {def.kind === 'num' && (
         <span className="relative h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-ink-700" title={`${shown} / ${def.max}`}>
@@ -75,12 +78,14 @@ function VarRow({ k, vars, onSet }: {
   )
 }
 
-export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars }: {
+export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, readOnly }: {
   /** 本场数值（C2 第二步）。没有 / 全关闭时整块不渲染 */
   vars?: TavernVars
   varKeys: VarKey[]
   onSetVar: (key: VarKey, raw: string) => void
   onResetVars: () => void
+  /** 归档只读（自由对话「结束本轮对话」之后）：输入框与「重置」一并锁掉 */
+  readOnly?: boolean
 }) {
   const [showLog, setShowLog] = useState(false)
   /** 变动日志倒序（新的在上），最多 12 条 —— 再多也没人翻 */
@@ -97,7 +102,9 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars }
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-ink-600">改完回车生效</span>
+        <span className="text-[10px] text-ink-600">
+          {readOnly ? '这一场已结束 · 只读' : '改完回车生效'}
+        </span>
         <span className="flex-1" />
         {log.length > 0 && (
           <Button variant="secondary" size="xs" onClick={() => setShowLog(v => !v)}
@@ -106,13 +113,15 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars }
             {showLog ? '收起变动' : `变动 ${log.length}`}
           </Button>
         )}
-        <Button variant="secondary" size="xs" onClick={onResetVars}
-          title="把启用中的数值全部恢复成初始值（好感/信任 50、剧情进度 0，文本清空）" className="shrink-0"
-        >
-          重置
-        </Button>
+        {!readOnly && (
+          <Button variant="secondary" size="xs" onClick={onResetVars}
+            title="把启用中的数值全部恢复成初始值（好感/信任 50、剧情进度 0，文本清空）" className="shrink-0"
+          >
+            重置
+          </Button>
+        )}
       </div>
-      {varKeys.map(k => <VarRow key={k} k={k} vars={vars} onSet={onSetVar} />)}
+      {varKeys.map(k => <VarRow key={k} k={k} vars={vars} onSet={onSetVar} locked={readOnly} />)}
       {showLog && (
         <ul className="max-h-40 space-y-0.5 overflow-y-auto border-t border-ink-800 pt-1.5">
           {log.map((e, i) => (
