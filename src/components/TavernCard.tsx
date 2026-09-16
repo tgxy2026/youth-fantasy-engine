@@ -1030,7 +1030,7 @@ export default function TavernCard() {
                     </div>
                     <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
                       好感 / 信任 / 精神 / 心情 / 地点：对话里被模型按剧情推进，也随时可手改。
-                      每项可附一句备注（模型会读取、数值变化时会一并改写，如「好感 20 → 从陌生到熟悉的朋友」）。
+                      每项可附一句备注（模型会读取、数值变化时会一并改写，如「好感 45 → 从陌生到熟悉的朋友」）。
                     </p>
                     <div className="mt-2 space-y-2">
                       {VAR_DEFS.map(def => {

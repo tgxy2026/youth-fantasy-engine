@@ -285,6 +285,8 @@ export interface ChatOptions {
    * 关键约定：think:false 只允许在 testProvider 等明确场景使用；正文生成、设定补全
    * 等需要推理深度的地方必须保持默认（undefined），切勿全局关闭——否则 deepseek-r1 /
    * gemma4 / qwen3.5 等会失去思考过程，补全质量直线下降。
+   * ⚠️ 例外：酒馆模式（扮演对话）是**有意**全局关闭的（见 TavernSettings.common.disableThink，默认 true）
+   *    —— 那边要的是稳定人物口吻而非推理链，别照本条去「修正」掉它。
    */
   think?: boolean
   /** 外部取消信号（对话面板的「停止」按钮） */
