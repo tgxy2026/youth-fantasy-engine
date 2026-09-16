@@ -167,9 +167,13 @@ export function scriptToText(s: ScriptSnapshot | null | undefined): string {
 }
 
 /**
- * 开场白 → 对话的第一条**消息**。
- * 走的是消息通道，所以用协议的输出规范（对白纯文本 / 其余一律全角括号（ ）），
- * 并明确标注「这是你说过的第一句」，免得模型把它当成用户说的话去回应。
+ * 开场白 → 对话的第一条**消息**（内容原样，不加任何标注 —— 加了会破坏协议的渲染格式）。
+ * 走的是消息通道，所以它自己就该按协议写：对白纯文本 / 其余一律全角括号（ ）。
+ *
+ * 🔴 它以 **`role: 'user'`** 落库（见 TavernFree 新建会话处），这是刻意的：
+ *    开场白的作用是「把这一场的起点处境摆出来」，模型读到它就知道戏从哪儿接，
+ *    于是顺着往下演；若标成 `assistant`，模型会以为自己刚说完这句话，转而应答自己。
+ *    代价是界面上它显示在**你那一侧** —— 这一点在「故事剧本」页的开场白说明里已向作者交代。
  */
 export function openingToMessage(s: ScriptSnapshot | null | undefined): string {
   if (!s?.opening) return ''

@@ -40,8 +40,7 @@ export function TavernQuickBar({ actions, disabled, onFill, className = '' }: {
         <Button
           key={a.key}
           variant="secondary"
-          size="sm"
-          className="!px-2 !text-[11px]"
+          size="xs"
           disabled={disabled}
           title={a.hint}
           onClick={() => { if (a.text !== undefined) onFill?.(a.text, a.slot); else a.run?.() }}

@@ -20,6 +20,7 @@ import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import { emptyFreeCharacter, type FreeCharacter } from './types'
 import { authorBlock, newAuthorFence } from '../promptGuard'
+import { structFieldLines } from './cardFields'
 
 /** 缺失信息的标记：提示词要求模型用它，UI 据此提醒作者去补 */
 export const MISSING_TAG = '〖待补〗'
@@ -46,6 +47,12 @@ export function buildImportSystem(): string {
 Ta在这个世界里的位置与处境（身份、常去的地方、这个世界怎么影响 Ta、与「用户」的初始关系）。
 **不写世界本身** —— 世界观另有归属，这里只写 Ta 与它的关系。
 
+〖第 2、3 章怎么写 —— 硬要求〗
+每一栏都**按小项分条写、一行一项**，形如「外貌：短发」。**不要写成一整段** ——
+界面是按小项拆开显示的，写成整段会整段落进「其他」，作者还得重新分拣。
+模板里没有、但又确实该写的，放进该栏的「其他」小项。各栏可用的小项：
+${structFieldLines().join('\n')}
+
 〖2.1 外在〗
 外貌、穿着、有记忆点的小特征。
 〖2.2 内核〗
@@ -69,8 +76,8 @@ Ta在这个世界里的位置与处境（身份、常去的地方、这个世界
 格式硬要求（必须与系统的扮演协议一致，会被模型直接照抄）：
 · 对方的台词 —— 用〖对方〗起头。这是**输入侧的结构标注**，正式输出里不会出现；
 · Ta 的台词 —— 直接写，**不加引号、不加括号、不写名字、也不单独起一行标"谁在说"**，标点照常；
-· 动作、神态、心理 —— 用**全角圆括号（ ）**包住，独立成行；
-· 动作、神态、心理与客观环境 —— 全部用**全角括号（ ）**包住，独立成行（光线、天气、声音，以及对面那个人的穿着与姿态）。
+· 动作、神态、心理与客观环境 —— 全部用**全角括号（ ）**包住、一件事一个括号、独立成行
+  （光线、天气、声音，以及对面那个人的穿着与姿态都算环境，同样写在（ ）里）。
 每段一两句就够，不要写成剧情。
 
 〖三条硬要求〗

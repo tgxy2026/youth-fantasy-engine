@@ -85,15 +85,19 @@ function clampNum(n: number, min = 0, max = 100): number {
 export function applyVarOps(
   values: VarValues,
   ops: VarOp[],
-  opts: { maxStep?: number } = {},
+  opts: { maxStep?: number; pinned?: Iterable<VarKey> } = {},
 ): { values: VarValues; changes: VarChange[] } {
   const maxStep = opts.maxStep ?? 5
+  const pinned = opts.pinned ? new Set(opts.pinned) : null
   const next: VarValues = { ...values }
   const changes: VarChange[] = []
 
   for (const op of ops) {
     const def = varDefOf(op.key)
     if (!def) continue
+
+    // 作者刚手改过这一项 → 只收增量，不收绝对值（见 manualPinnedKeys）
+    if (op.kind === 'set' && pinned?.has(op.key)) continue
 
     if (op.kind === 'text') {
       // 截断只在**这一个写入关口**做（解析侧不再各截一次，免得两处规则漂移）
@@ -135,6 +139,25 @@ export function emptyVars(keys?: VarKey[]): TavernVars {
  * 所以两者都直接改值。（旧版的「重说撤销」随「每轮记账」一起下线了：
  * 数值现在只在整理记忆时变，没有「跟着某一条回复一起撤」的对应关系。）
  */
+/**
+ * 作者最近一次手改过、且之后 AI 还没动过的键（审计 P2）。
+ *
+ * 【为什么要它】模型偶尔会用**绝对值**写法（`好感 80`）而不是增量（`好感 +3`）。
+ * 作者刚手改成 20 的意思就是「我就要 20」，下一轮被一句 `好感 80` 盖回去，等于手改没生效。
+ * 所以对这些键**只接受增量**，绝对值一律忽略（增量仍放行 —— 那是 AI 在正常微调）。
+ *
+ * log 是正序追加的（最近的在后），所以倒着看，每个键第一条命中的就是它最近一次变动。
+ */
+export function manualPinnedKeys(vars: TavernVars | undefined): VarKey[] {
+  const last = new Map<VarKey, VarSource | undefined>()
+  for (const e of [...(vars?.log ?? [])].reverse()) {
+    for (const c of e.changes) if (!last.has(c.key)) last.set(c.key, e.source)
+  }
+  const out: VarKey[] = []
+  for (const [k, src] of last) if (src === 'manual') out.push(k)
+  return out
+}
+
 export function recordVarChanges(
   vars: TavernVars,
   changes: VarChange[],

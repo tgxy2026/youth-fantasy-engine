@@ -47,7 +47,7 @@ export default function TavernRevisionDialog({
       <p className="text-[11.5px] text-ink-400 leading-relaxed">
         下面是从这段对话里读出的「角色设定可能该改了」。采纳之前不会动任何角色卡 ——
         你可以逐条勾选，也可以整条跳过。记忆（Ta 记得什么）与设定（Ta 是谁）是分开的：
-        前者交给「整理记忆」，这里改的是角色卡本身。
+        前者归记忆整理（自由对话点「结束本轮对话」、剧情推演点「整理本场记忆」时更新），这里改的是角色卡本身。
       </p>
 
       {error && !loading ? (

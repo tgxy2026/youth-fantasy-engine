@@ -21,7 +21,7 @@ import * as store from './store'
 import { messagesAfterWatermark } from './memory'
 import { summarizeRound, extractSessionVars } from './summarize'
 import { proposeCardRevisions, type CardRevision } from './revise'
-import { recordVarChanges, turnSeqOf, emptyVars } from './vars'
+import { recordVarChanges, turnSeqOf, emptyVars, manualPinnedKeys } from './vars'
 import type { SummaryLimits } from './summarize'
 import { renderFreeCharacter, type ChatFn } from './engine'
 import type {
@@ -118,7 +118,7 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
       charContext: [
         renderFreeCharacter(c),
         c.id === session.userCharId
-          ? '（这位角色由**用户自己**扮演：他说的话与做的事是既成事实，直接记进他的视角；不要写成「某某告诉我」。）'
+          ? '（这位角色由**用户自己**扮演：Ta 说的话与做的事是既成事实，直接记进 Ta 的视角；不要写成「某某告诉我」。）'
           : '',
       ].filter(Boolean).join('\n\n'),
       providerId: providerId || undefined,
@@ -160,6 +160,8 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
         messages: pending,
         nameOf,
         maxStep,
+        // 作者手改过的项只收增量（审计 P2）：否则模型一句「好感 80」就把作者的 20 盖掉了
+        pinned: manualPinnedKeys(base),
         // 剧本写的「这一场的目标」—— 少了它，模型只能凭对话猜该往哪个方向推进（审计 P1-7）
         goal: session.script?.goal,
         providerId: providerId || undefined,

@@ -202,7 +202,7 @@ export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryR
         authorBlock(newAuthorFence(), renderTranscript(charName, messages)),
         '',
         '请输出合并后的完整六栏档案，并在最后另起一段写「本场日记」。',
-      ].join('\n'),
+      ].filter(Boolean).join('\n'),
     },
   ]
 
@@ -274,7 +274,7 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
         authorBlock(newAuthorFence(), renderTranscript(charName, messages)),
         '',
         '请输出合并后的完整六栏档案。',
-      ].join('\n'),
+      ].filter(Boolean).join('\n'),
     },
   ]
 
@@ -414,6 +414,11 @@ export type ExtractVarsArgs = {
   goal?: string
   /** 单次变化幅度上限（控制面板） */
   maxStep?: number
+  /**
+   * 作者刚手改过的键：这些键**只收增量、不收绝对值**（审计 P2）。
+   * 由调用方从 `vars.log` 算出（见 vars.ts 的 `manualPinnedKeys`）。
+   */
+  pinned?: VarKey[]
   providerId?: string
   chatFn?: ChatFn
   signal?: AbortSignal
@@ -432,7 +437,7 @@ export type ExtractVarsArgs = {
  * 失败会抛出 —— 调用方 catch 掉即可：数值算不出来，这一场照样能继续演。
  */
 export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ values: VarValues; changes: VarChange[] }> {
-  const { keys, values, messages, nameOf, goal, providerId, chatFn, signal, maxStep = 5 } = args
+  const { keys, values, messages, nameOf, goal, providerId, chatFn, signal, maxStep = 5, pinned } = args
   if (keys.length === 0 || messages.length === 0) return { values: values ?? {}, changes: [] }
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = chatFn ?? chat
@@ -451,7 +456,7 @@ export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ value
     think: false,
   })
   const ops = parseVarsFromText(reply, keys)
-  return applyVarOps(values ?? {}, ops, { maxStep })
+  return applyVarOps(values ?? {}, ops, { maxStep, ...(pinned ? { pinned } : {}) })
 }
 
 /** 把这一段对话渲染成抽取用的片段（用户发言标〖对方〗，其余标说话人名字） */

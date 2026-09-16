@@ -193,7 +193,7 @@ export default function TavernReport() {
                     >
                       导出
                     </Button>
-                    <Button variant="secondary" size="md" className="text-[12px]" onClick={removeReport}>删除</Button>
+                    <Button variant="danger" size="md" onClick={removeReport}>删除</Button>
                   </div>
                 </div>
 

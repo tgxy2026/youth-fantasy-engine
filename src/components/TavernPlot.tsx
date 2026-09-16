@@ -762,12 +762,12 @@ export default function TavernPlot() {
                   </ul>
                 )}
                 {session.undoSnapshot && (
-                  <Button variant="secondary" size="sm" className="mt-1.5 w-full !text-[11px]" onClick={undoRollback}>
+                  <Button variant="secondary" size="xs" className="mt-1.5 w-full" onClick={undoRollback}>
                     ↩ 撤销上次回滚（{new Date(session.undoSnapshot.at).toLocaleTimeString()}）
                   </Button>
                 )}
               </div>
-              <Button variant="secondary" size="md" className="w-full text-[12px]" onClick={removeSession}>删除这场推演</Button>
+              <Button variant="danger" size="md" className="w-full" onClick={removeSession}>删除这场推演</Button>
             </aside>
           )}
 

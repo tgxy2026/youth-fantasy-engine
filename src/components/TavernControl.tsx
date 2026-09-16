@@ -1158,7 +1158,7 @@ export default function TavernControl() {
           >
             <ToggleField
               label="启用本场数值"
-              hint="关掉 = 提示词里一个字都不出现（0 字成本），状态栏也不再显示数值。"
+              hint="关掉 = 提示词里一个字都不出现（0 字成本），自由对话右栏的「本场状态」也不再显示它。"
               value={s.vars.enabled}
               onChange={v => setVars({ enabled: v })}
             />

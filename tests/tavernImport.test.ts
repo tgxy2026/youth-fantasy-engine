@@ -108,6 +108,12 @@ async function main() {
     // 🔴 审计 P0-3：第 3 章是**容器标题**，旧实现没有它的锚点 → normalizeTitle 剥完剩「行为规范」
     //    匹配不到任何字段 → 落进 rest → 被追加到上一栏（实测污染「2.6 知识边界」）。
     ok('第 3 章容器标题不污染上一栏', !d.profile.knowledge.includes('行为规范'), d.profile.knowledge)
+    // 🔴 审计 P2：提示词必须要求「按小项分条写」，否则第 2/3 章整段掉进「其他」，
+    //    作者还得自己重新分拣（模板清单由 cardFields 生成，两边不会漂移）
+    const pSys = buildImportSystem()
+    ok('提示词要求按小项分条写', pSys.includes('按小项分条写') && pSys.includes('可用小项'))
+    ok('小项清单来自模板（含 2.1 的「外貌」与 3 的「视角与人称」）',
+      pSys.includes('外貌') && pSys.includes('视角与人称'))
     ok('第 3 章容器标题不残留在任何字段里',
       !JSON.stringify(d).includes('行为规范') || d.conduct.bottomLine.includes('不越界'))
     ok('第 4 章示例解析出来（多行保留）', d.examples.includes('灯还亮着') && d.examples.includes('〖对方〗'))

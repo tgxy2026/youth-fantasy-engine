@@ -330,7 +330,7 @@ export default function TavernScript() {
         </Button>
         <span className="flex-1" />
         {dirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
-        {kind && <Button variant="secondary" size="md" onClick={() => void remove()}>删除这份</Button>}
+        {kind && <Button variant="danger" size="md" onClick={() => void remove()}>删除这份</Button>}
       </div>
 
       {/* 对话引导：故事与剧本共用这一个弹窗，靠当前编辑对象切换提纲 */}

@@ -201,7 +201,9 @@ export async function draftWorldSetting(args: WorldDraftArgs): Promise<{ fields:
         '〖项目资料〗',
         authorBlock(fence, material),
         '',
-        seed.trim() ? `〖作者的额外要求〗\n${seed.trim()}\n` : '',
+        // 🔴 作者的额外要求同样属作者原文 —— 复用同一次调用的 fence（同一任务里的多段作者文本
+        //    应共用一套边界语言，见 promptGuard 的文件头）
+        seed.trim() ? `〖作者的额外要求〗\n${authorBlock(fence, seed.trim())}` : '',
         extra.blocks,
         '请按格式输出 JSON。',
       ].filter(Boolean).join('\n'),

@@ -848,7 +848,8 @@ export default function TavernFree() {
         <HelpPopover title="自由对话怎么用" width="24rem" size={14}>
   这里的对话不绑小说项目：换一本书，角色卡与记忆照样在。
 
-  • 顶部几件：Ta最近几天（每日小结）、结束本轮对话（整理记忆并归档）、导出。
+  • 顶部几件：Ta最近几天（每日小结）、结束本轮对话（整理记忆、写日记、结算本场数值、检查要不要改设定，
+    然后这一场归档为只读）、导出。
   • 右侧常驻「本场状态」：好感 / 信任 / 剧情进度 / 心情 这些即时数值（可直接改，改完回车生效），以及在场由 AI 扮演的角色。
   • 多角色同场时点头像可指定下一位接话；「在场调度」里能静音某个人、调健谈度。
   • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它只在点「结束本轮对话」时才整理，
@@ -884,7 +885,7 @@ export default function TavernFree() {
             <Button
               variant="secondary" size="md" disabled={streaming || session.messages.length === 0}
               onClick={() => setExportOpen(true)}
-              title="把这场对话导出成 Markdown 或带样式的单文件 HTML"
+              title="把这场对话导出成 Markdown 或带样式的单文件 HTML。只含对话正文与场景信息，不含角色记忆与日记"
             >
               导出
             </Button>

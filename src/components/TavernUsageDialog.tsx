@@ -125,7 +125,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
     <Modal open={open} onClose={onClose} title="用量明细" width="lg">
       <p className="text-[11.5px] text-ink-400 leading-relaxed">
         按「真实组装」量一遍这一轮会送去什么，以及每一层各占多少
-        （{tone ? `本页：${tone}` : '当前会话'}）。这里只读不改 —— 想省额度优先精简「项目资料」与「角色卡」这两层。
+        （{tone ? `本页：${tone}` : '当前会话'}）。这里只读不改 —— 想省额度，优先精简下面占得最多的那几层（长条最长的那条就是）。
       </p>
 
       {error ? (

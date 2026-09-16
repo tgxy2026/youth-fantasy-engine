@@ -221,6 +221,22 @@ export function filledCount(vals: Record<string, string>, spec: StructSpec): num
 }
 
 /**
+ * 第 2、3 章各栏「可用的小项清单」，**由模板生成**。
+ *
+ * 🔴 源头只有这一份：手写一遍迟早和界面那边对不上（界面加了一格、提示词没提），
+ *    作者就会看到「界面有这一格、AI 从来不填」的怪事。角色卡起草（draft.ts）与
+ *    小说角色转换（import.ts）都从这里取。
+ */
+export function structFieldLines(): string[] {
+  const out: string[] = []
+  for (const s of ALL_STRUCT_SPECS) {
+    const keys = [...s.items.map(i => i.key), ...(s.other ? [OTHER_KEY] : [])]
+    out.push(`  · ${s.path.split('.').pop()}（${s.label}）：可用小项 ${keys.join(' / ')}`)
+  }
+  return out
+}
+
+/**
  * 给 AI 用的格式说明（贴在设定更新 / 起草提示词里，让它按同样的标记输出）。
  * 只有理解了「我们存的就是这个样子」，AI 才能在不破坏格式的前提下改某一格。
  */

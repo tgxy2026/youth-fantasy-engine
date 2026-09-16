@@ -9,7 +9,7 @@
 import {
   applyVarOps, emptyVars, recordVarChanges, turnSeqOf, buildVarStateBlock,
   buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, renderVarValues, VAR_LINE_TAG,
-  setVarManually, resetVarValues, lastChangeText,
+  setVarManually, resetVarValues, lastChangeText, manualPinnedKeys,
 } from '../src/lib/tavern/vars'
 import { VAR_DEFS, varDefOf } from '../src/lib/tavern/types'
 import { runFreeTurn, buildFreeSystem, varsEnabledKeys } from '../src/lib/tavern/engine'
@@ -288,6 +288,28 @@ async function main() {
     const textLog = recordVarChanges(emptyVars(), [{ key: 'place', label: '当前地点', from: '', to: '天台' }], 5)
     ok('文本变量没有差量时给「已填写」', lastChangeText(textLog, 'place') === '已填写', lastChangeText(textLog, 'place'))
     ok('没有记录时返回空串', lastChangeText(undefined, 'affection') === '')
+  }
+
+  // ---------- N) 作者手改保护（审计 P2）----------
+  // 模型偶尔用绝对值写法（「好感 80」）而不是增量（「好感 +3」）。作者刚手改成 20，
+  // 下一轮被一句「好感 80」盖回去，等于手改白做 —— 所以手改过的键只收增量。
+  {
+    const manual = recordVarChanges(emptyVars(), [{ key: 'affection', label: '好感', from: 50, to: 20 }], 3, 'manual')
+    ok('手改过的键被识别为受保护', manualPinnedKeys(manual).includes('affection'), manualPinnedKeys(manual).join(','))
+    const aiAfter = recordVarChanges(manual, [{ key: 'affection', label: '好感', from: 20, to: 25 }], 4)
+    ok('之后 AI 也改过 → 不再受保护（说明保护只在「手改是最近一次」时生效）',
+      !manualPinnedKeys(aiAfter).includes('affection'))
+    ok('纯 AI 改过的键不受保护', manualPinnedKeys(recordVarChanges(emptyVars(), [{ key: 'trust', label: '信任', from: 50, to: 55 }], 2)).length === 0)
+    ok('没有日志时不保护任何键', manualPinnedKeys(undefined).length === 0)
+
+    const vals = { ...emptyVars().values, affection: 20 }
+    const pinned: VarKey[] = ['affection']
+    const r1 = applyVarOps(vals, [{ key: 'affection', label: '好感', kind: 'set', num: 80 }], { pinned })
+    ok('🔴 绝对值不能覆盖作者手改过的值', r1.values.affection === 20, String(r1.values.affection))
+    ok('被拒的操作不留变动记录', r1.changes.length === 0, JSON.stringify(r1.changes))
+    const r2 = applyVarOps(vals, [{ key: 'affection', label: '好感', kind: 'delta', num: 3 }], { pinned })
+    ok('增量仍放行（AI 的正常微调不受影响）', r2.values.affection === 23, String(r2.values.affection))
+    ok('没传 pinned 时绝对值照旧生效', applyVarOps(vals, [{ key: 'affection', label: '好感', kind: 'set', num: 80 }], {}).values.affection === 80)
   }
 
   console.log(`\ntavernVars: ${pass} passed, ${fail} failed`)

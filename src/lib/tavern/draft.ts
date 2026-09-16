@@ -26,7 +26,7 @@ import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import type { SearchSettings, webSearch } from '../webSearch'
 import { prepareDraftMaterial, type DraftSource } from '../draftMaterial'
-import { PROFILE_SPECS, CONDUCT_SPECS, OTHER_KEY } from './cardFields'
+import { structFieldLines } from './cardFields'
 
 // ==================== 角色卡模板 ====================
 
@@ -71,25 +71,6 @@ const CARD_OUTPUT_RULES = [
   '- 写 2–4 组来回，短句为主，别写成小说段落。',
 ].join('\n')
 
-/** 「profile.core」→ core（模型写的是 JSON 的扁平键） */
-function jsonKeyOf(path: string): string {
-  return path.split('.').pop() ?? path
-}
-
-/**
- * 第 2、3 章的填写说明：**直接由 `cardFields` 的模板生成**。
- * 手写一遍迟早和界面那边的模板对不上（那边加了一格这边没提），作者就会看到
- * 「界面有这一格、AI 从来不填」的怪事 —— 所以源头只有一份。
- */
-function structFieldLines(): string[] {
-  const out: string[] = []
-  for (const s of [...PROFILE_SPECS, ...CONDUCT_SPECS]) {
-    const keys = [...s.items.map(i => i.key), ...(s.other ? [OTHER_KEY] : [])]
-    out.push(`  · ${jsonKeyOf(s.path)}（${s.label}）：可用小项 ${keys.join(' / ')}`)
-  }
-  return out
-}
-
 export function buildCardDraftSystem(): string {
   return [
     '你在帮一位小说作者做**角色扮演用的角色卡**。作者会给一句话想法（可能是一个已有作品里的角色，',
@@ -113,7 +94,7 @@ export function buildCardDraftSystem(): string {
     '〖依据什么写〗',
     '- 作者的想法里点名了某个已有作品的角色 → 按**那个角色的公认设定**写；细节记不准就写得保守些，',
     '  **不要编造具体情节**（编错比写少更坏）；',
-    '- 原创角色 → 顺着作者给的信息写，别替他定身世、结局、隐藏秘密这类重大设定。',
+    '- 原创角色 → 顺着作者给的信息写，别替 Ta 定身世、结局、隐藏秘密这类重大设定。',
     '',
     '〖长度〗每一栏尽量控制在 120 字以内（examples 除外，它按 2–4 组对话写）。这些内容每轮都进上下文，',
     '写太满会把对话历史挤没。',

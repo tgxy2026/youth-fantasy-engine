@@ -208,7 +208,7 @@ export default function TavernCard() {
       await store.saveMemory({ ...mem, charId: draft.id })
       setMem(await store.getMemory(draft.id))
       setMemDirty(false)
-      showToast('记忆已保存（AI 下次整理会在此基础上压缩）')
+      showToast('记忆已保存（下次点「结束本轮对话」整理时会在此基础上压缩）')
     } catch (e) {
       showToast(`记忆保存失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
