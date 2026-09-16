@@ -696,6 +696,8 @@ export default function TavernFree() {
         speakerId: speakNext || undefined,
       })
       setStreamText('')
+      // 反馈 #5：先把这一轮完整回复作为消息立刻显示，文字常驻不闪退；后面的数值结算在后台跑（只更新右栏），不再清空正文导致「文字消失再重现」。
+      setSession(res.session)
       /**
        * 每轮刷新本场数值（2026-09-16 老大反馈 #4）。
        * 这一步还要再等一次小调用 —— 先把阶段提示换上，否则正文都出来了界面还卡着，像死机。
@@ -867,6 +869,8 @@ export default function TavernFree() {
         speakerId: target.speakerId,
       })
       setStreamText('')
+      // 反馈 #5：重说也先把新回复作为消息立刻显示，文字常驻；数值结算在后台跑（只更新右栏）。
+      setSession(res.session)
       // 重说同样要刷新数值（反馈 #4）：回复换了，这一轮的关系走向也就跟着换
       setPhase('正在结算本场数值…')
       const withVars = await refreshSessionVars({
