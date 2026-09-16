@@ -29,7 +29,7 @@ import TavernCardStructField from './TavernCardStructField'
 import { PROFILE_SPECS, CONDUCT_SPECS } from '../lib/tavern/cardFields'
 import { listStories, storyDisplayName } from '../lib/tavern/story'
 import { MEMORY_SOFT_LIMIT, JOURNAL_KEEP, cardStoryId, readCardField, writeCardField, type TavernStoryIndexItem } from '../lib/tavern/types'
-import { charTag, type FreeCharacter, type FreeMemory, type TavernCharIndexItem, type CharJournal, type CharJournalEntry } from '../lib/tavern/types'
+import { charTag, VAR_DEFS, type FreeCharacter, type FreeMemory, type TavernCharIndexItem, type CharJournal, type CharJournalEntry, type CharVars } from '../lib/tavern/types'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName, CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem } from '../lib/tavern/cardFile'
 import { convertNovelChar } from '../lib/tavern/import'
@@ -1021,6 +1021,69 @@ export default function TavernCard() {
                         </span>
                       )}
                     </p>
+                  </div>
+                  {/* 本卡数值状态（老大 2026-09-16 反馈 #4）：持久、跨会话累积，存角色卡 */}
+                  <div className="mt-3 rounded-lg border border-ink-800 bg-ink-900/40 p-3">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[12px] text-ink-200">本卡数值状态</span>
+                      <span className="text-[11px] text-ink-500">持久保存 · 跨会话累积 · 模型每轮读取并改写</span>
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
+                      好感 / 信任 / 精神 / 心情 / 地点：对话里被模型按剧情推进，也随时可手改。
+                      每项可附一句备注（模型会读取、数值变化时会一并改写，如「好感 20 → 从陌生到熟悉的朋友」）。
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {VAR_DEFS.map(def => {
+                        const cv = draft.vars
+                        const val = cv?.values?.[def.key]
+                        const note = cv?.notes?.[def.key] ?? ''
+                        const setVal = (raw: string) => {
+                          const cur: CharVars = cv ?? { values: {}, notes: {} }
+                          const values = { ...cur.values }
+                          if (def.kind === 'num') {
+                            const n = Number(raw.trim())
+                            values[def.key] = raw.trim() === '' || !Number.isFinite(n) ? (def.init as number) : n
+                          } else {
+                            values[def.key] = raw
+                          }
+                          up('vars', { values, notes: { ...cur.notes } })
+                          setDirty(true)
+                        }
+                        const setNote = (text: string) => {
+                          const cur: CharVars = cv ?? { values: {}, notes: {} }
+                          const notes = { ...cur.notes }
+                          if (text.trim()) notes[def.key] = text.trim()
+                          else delete notes[def.key]
+                          up('vars', { values: { ...cur.values }, notes })
+                          setDirty(true)
+                        }
+                        return (
+                          <div key={def.key} className="rounded-md border border-ink-800 bg-ink-900/60 p-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-12 shrink-0 text-[11px] text-ink-300">{def.label}</span>
+                              <input
+                                key={`val-${def.key}-${String(val ?? 'empty')}`}
+                                defaultValue={val === undefined || val === '' ? (def.kind === 'num' ? String(def.init) : '') : String(val)}
+                                onBlur={e => setVal(e.target.value)}
+                                inputMode={def.kind === 'num' ? 'numeric' : undefined}
+                                placeholder={def.kind === 'num' ? String(def.init) : '（未填）'}
+                                className="w-24 min-w-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+                              />
+                              {def.kind === 'num' && (
+                                <span className="text-[10px] text-ink-600">{def.min}–{def.max}</span>
+                              )}
+                            </div>
+                            <input
+                              key={`note-${def.key}-${note}`}
+                              defaultValue={note}
+                              onBlur={e => setNote(e.target.value)}
+                              placeholder="备注（模型会读取 / 改写，如：从陌生到熟悉的朋友）"
+                              className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11px] text-ink-300 outline-none focus:border-amber/40"
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
 

@@ -21,7 +21,7 @@ import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './mem
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
-import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps } from './vars'
+import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from './vars'
 
 /** 把时间戳格式化成「YYYY-MM-DD」（日记用） */
 export function formatDate(ts: number): string {
@@ -423,6 +423,8 @@ export type ExtractVarsArgs = {
    * 由调用方从 `vars.log` 算出（见 vars.ts 的 `manualPinnedKeys`）。
    */
   pinned?: VarKey[]
+  /** 当前各项备注（角色卡持久保存）—— 让模型知道「这个分背后是什么」，回写时据此调整 */
+  notes?: Partial<Record<VarKey, string>>
   providerId?: string
   chatFn?: ChatFn
   signal?: AbortSignal
@@ -440,8 +442,8 @@ export type ExtractVarsArgs = {
  *
  * 失败会抛出 —— 调用方 catch 掉即可：数值算不出来，这一场照样能继续演。
  */
-export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ values: VarValues; changes: VarChange[] }> {
-  const { keys, values, messages, nameOf, goal, providerId, chatFn, signal, maxStep = 5, pinned } = args
+export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ values: VarValues; changes: VarChange[]; notes?: Partial<Record<VarKey, string>> }> {
+  const { keys, values, messages, nameOf, goal, providerId, chatFn, signal, maxStep = 5, pinned, notes } = args
   if (keys.length === 0 || messages.length === 0) return { values: values ?? {}, changes: [] }
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = chatFn ?? chat
@@ -449,7 +451,7 @@ export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ value
     { role: 'system', content: buildVarExtractSystem(keys, { maxStep }) },
     {
       role: 'user',
-      content: buildVarExtractUser({ values, keys, goal, transcript: renderVarsTranscript(messages, nameOf) }),
+      content: buildVarExtractUser({ values, keys, goal, notes, transcript: renderVarsTranscript(messages, nameOf) }),
     },
   ]
   const reply = await runChat(provider, msgs, {
@@ -460,7 +462,16 @@ export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ value
     think: false,
   })
   const ops = parseVarsFromText(reply, keys)
-  return applyVarOps(values ?? {}, ops, { maxStep, ...(pinned ? { pinned } : {}) })
+  const applied = applyVarOps(values ?? {}, ops, { maxStep, ...(pinned ? { pinned } : {}) })
+  // 备注：只保留「这一轮真变了的项」的备注，没变的项沿用旧备注（模型没给就不动）
+  const noteOut = parseVarNotes(reply, keys)
+  const notesOut: Partial<Record<VarKey, string>> = {}
+  let hasNote = false
+  for (const c of applied.changes) {
+    const t = (noteOut as Record<string, string>)[c.key]
+    if (t && t.trim()) { notesOut[c.key] = t.trim(); hasNote = true }
+  }
+  return { values: applied.values, changes: applied.changes, notes: hasNote ? notesOut : undefined }
 }
 
 /** 把这一段对话渲染成抽取用的片段（用户发言标〖对方〗，其余标说话人名字） */

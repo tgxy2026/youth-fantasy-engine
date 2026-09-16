@@ -21,7 +21,7 @@
 import { extractSessionVars } from './summarize'
 import { varsOf, recordVarChanges, turnSeqOf, manualPinnedKeys } from './vars'
 import type { ChatFn } from './provider'
-import type { FreeSession, TavernMessage, VarKey } from './types'
+import type { FreeSession, TavernMessage, VarKey, CharVars } from './types'
 
 export type RefreshVarsArgs = {
   /** 已经带上这一轮新回复的会话（通常在 `runFreeTurn` 返回之后） */
@@ -36,6 +36,15 @@ export type RefreshVarsArgs = {
   signal?: AbortSignal
   /** 参与判断的消息（默认取会话最后两条：本轮的用户输入与 AI 回复） */
   messages?: TavernMessage[]
+  /**
+   * 主角色（charIds[0]）卡上**当前**的持久状态。
+   * ① 把它里面的 `notes` 喂给抽取调用当上下文；② 算完之后把新值＋新备注**回写**到这张卡
+   *    （见 `persistCharVars`）—— 这是反馈 #4「状态存角色卡、跨会话累积」的落点。
+   */
+  primaryCharId?: string
+  charVars?: CharVars
+  /** 把主角色卡的新状态落库（调用方传入，避免这里直接 import store 成环） */
+  persistCharVars?: (charId: string, vars: CharVars) => Promise<void> | void
 }
 
 /**
@@ -66,6 +75,8 @@ export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSessio
       maxStep,
       // 作者手改过的项只收增量：否则模型一句「好感 80」就把作者刚设的值盖掉（审计 P2）
       pinned: manualPinnedKeys(base),
+      // 主角色卡当前备注 → 当上下文（反馈 #4：备注是「这个分背后是什么」的旁白）
+      notes: a.charVars?.notes,
       // 剧本写的「这一场的目标」——少了它，模型只能凭对话猜该往哪个方向推进
       goal: session.script?.goal,
       providerId,
@@ -73,10 +84,19 @@ export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSessio
       signal,
     })
     if (ex.changes.length === 0) return session
-    return {
+    const nextSession = {
       ...session,
       vars: recordVarChanges({ ...base, values: ex.values }, ex.changes, turnSeqOf(session.messages)),
     }
+    // 回写主角色卡（持久、跨会话累积）；备注只在「这一轮变了的项」上更新，没变的沿用旧备注
+    if (a.persistCharVars && a.primaryCharId) {
+      const cardVars: CharVars = {
+        values: ex.values as CharVars['values'],
+        notes: { ...(a.charVars?.notes ?? {}), ...(ex.notes ?? {}) },
+      }
+      await a.persistCharVars(a.primaryCharId, cardVars)
+    }
+    return nextSession
   } catch {
     return session // 静默：数值算不出来不该拦着这一轮对话
   }

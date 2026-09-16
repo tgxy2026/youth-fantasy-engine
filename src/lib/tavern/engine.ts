@@ -618,6 +618,8 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     tail: buildVarStateBlock({
       values: varsOf(session, varsEnabledKeys(st)).values,
       keys: varsEnabledKeys(st),
+      // 主角色卡上的持久备注（反馈 #4）：让模型知道「这个分背后是什么」，下一轮好据此推进
+      notes: found[0]?.vars?.notes,
     }),
     protocol: st.protocol,
   })

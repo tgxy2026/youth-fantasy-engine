@@ -29,13 +29,17 @@ import { Button } from './Button'
 import { varDefOf, bandOf, type TavernVars, type VarKey } from '../lib/tavern/types'
 import { lastChangeText } from '../lib/tavern/vars'
 
-/** 一个数值行：标签 + 进度条（仅数值变量）+ 可编辑的值 + 最近一次差量 */
-function VarRow({ k, vars, onSet, locked }: {
+/** 一个数值行：标签 + 进度条（仅数值变量）+ 可编辑的值 + 最近一次差量 + 可编辑备注 */
+function VarRow({ k, vars, onSet, locked, note, onNote }: {
   k: VarKey
   vars: TavernVars | undefined
   onSet: (key: VarKey, raw: string) => void
   /** 归档只读：输入框不可改（改也落不进上下文了，只会让界面与归档正文对不上） */
   locked?: boolean
+  /** 这一项的备注（角色卡持久保存；模型读取 / 改写） */
+  note?: string
+  /** 作者改备注的回调（空串＝清掉） */
+  onNote?: (text: string) => void
 }) {
   const def = varDefOf(k)!
   const raw = vars?.values?.[k]
@@ -43,6 +47,9 @@ function VarRow({ k, vars, onSet, locked }: {
   const [draft, setDraft] = useState(shown)
   // 外部值变了（AI 更新 / 重置 / 换会话）就刷新草稿 —— 否则输入框会定格在旧值上
   useEffect(() => { setDraft(shown) }, [shown])
+
+  const [noteDraft, setNoteDraft] = useState(note ?? '')
+  useEffect(() => { setNoteDraft(note ?? '') }, [note])
 
   const num = def.kind === 'num' ? Number(shown) : NaN
   const pct = def.kind === 'num' && Number.isFinite(num)
@@ -60,42 +67,58 @@ function VarRow({ k, vars, onSet, locked }: {
     if (draft === shown) return
     onSet(k, draft)
   }
+  const commitNote = () => {
+    if (noteDraft === (note ?? '')) return
+    onNote?.(noteDraft)
+  }
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-12 shrink-0 text-[11px] text-ink-400" title={def.kind === 'num' ? `${def.min}–${def.max}` : `≤${def.maxLen} 字`}>
-        {def.label}
-      </span>
+    <div>
+      <div className="flex items-center gap-2">
+        <span className="w-12 shrink-0 text-[11px] text-ink-400" title={def.kind === 'num' ? `${def.min}–${def.max}` : `≤${def.maxLen} 字`}>
+          {def.label}
+        </span>
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+          disabled={locked}
+          inputMode={def.kind === 'num' ? 'numeric' : undefined}
+          placeholder={def.kind === 'text' ? '（未填）' : String(def.init ?? '')}
+          className={`w-full min-w-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50 disabled:cursor-not-allowed disabled:opacity-60 ${def.kind === 'num' ? 'shrink-0 w-16' : ''}`}
+          title={locked ? '这一场已结束（只读归档），数值不能再改' : '改完按回车或点一下别处生效'}
+        />
+        {def.kind === 'num' && (
+          <span className="relative h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-ink-700" title={`${shown} / ${def.max}`}>
+            <span className="absolute inset-y-0 left-0 rounded-full bg-amber/70" style={{ width: `${pct}%` }} />
+          </span>
+        )}
+        {/* 档位名：一眼看懂这个数意味着什么（悬停有这一档的行为说明） */}
+        {band && (
+          <span className="shrink-0 text-[10px] text-ink-500" title={band.effect}>{band.name}</span>
+        )}
+        {delta && (
+          <span className={`shrink-0 text-[10px] ${delta.startsWith('-') ? 'text-ink-400' : 'text-amber/80'}`}>
+            {delta}
+          </span>
+        )}
+      </div>
+      {/* 备注：模型读取 / 改写，作者也可手改（反馈 #4） */}
       <input
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
+        value={noteDraft}
+        onChange={e => setNoteDraft(e.target.value)}
+        onBlur={commitNote}
         onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
         disabled={locked}
-        inputMode={def.kind === 'num' ? 'numeric' : undefined}
-        placeholder={def.kind === 'text' ? '（未填）' : String(def.init ?? '')}
-        className={`w-full min-w-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50 disabled:cursor-not-allowed disabled:opacity-60 ${def.kind === 'num' ? 'shrink-0 w-16' : ''}`}
-        title={locked ? '这一场已结束（只读归档），数值不能再改' : '改完按回车或点一下别处生效'}
+        placeholder="备注（模型会读取 / 改写，如：从陌生到熟悉的朋友）"
+        className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[10.5px] text-ink-300 outline-none focus:border-amber/40 disabled:cursor-not-allowed disabled:opacity-60"
       />
-      {def.kind === 'num' && (
-        <span className="relative h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-ink-700" title={`${shown} / ${def.max}`}>
-          <span className="absolute inset-y-0 left-0 rounded-full bg-amber/70" style={{ width: `${pct}%` }} />
-        </span>
-      )}
-      {/* 档位名：一眼看懂这个数意味着什么（悬停有这一档的行为说明） */}
-      {band && (
-        <span className="shrink-0 text-[10px] text-ink-500" title={band.effect}>{band.name}</span>
-      )}
-      {delta && (
-        <span className={`shrink-0 text-[10px] ${delta.startsWith('-') ? 'text-ink-400' : 'text-amber/80'}`}>
-          {delta}
-        </span>
-      )}
     </div>
   )
 }
 
-export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, readOnly }: {
+export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, readOnly, noteOf, onSetNote }: {
   /** 本场数值（C2 第二步）。没有 / 全关闭时整块不渲染 */
   vars?: TavernVars
   varKeys: VarKey[]
@@ -103,6 +126,10 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, 
   onResetVars: () => void
   /** 归档只读（自由对话「结束本轮对话」之后）：输入框与「重置」一并锁掉 */
   readOnly?: boolean
+  /** 每项数值的备注（角色卡持久保存） */
+  noteOf?: (key: VarKey) => string
+  /** 作者改备注的回调 */
+  onSetNote?: (key: VarKey, text: string) => void
 }) {
   const [showLog, setShowLog] = useState(false)
   /** 变动日志倒序（新的在上），最多 12 条 —— 再多也没人翻 */
@@ -138,7 +165,7 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, 
           </Button>
         )}
       </div>
-      {varKeys.map(k => <VarRow key={k} k={k} vars={vars} onSet={onSetVar} locked={readOnly} />)}
+      {varKeys.map(k => <VarRow key={k} k={k} vars={vars} onSet={onSetVar} locked={readOnly} note={noteOf?.(k)} onNote={t => onSetNote?.(k, t)} />)}
       {showLog && (
         <ul className="max-h-40 space-y-0.5 overflow-y-auto border-t border-ink-800 pt-1.5">
           {log.map((e, i) => (

@@ -29,12 +29,44 @@
 import {
   VAR_DEFS, bandsOf, varDefOf,
   type VarKey, type VarOp, type VarValues, type VarChange, type TavernVars,
-  type VarSource, type FreeSession,
+  type VarSource, type FreeSession, type CharVars,
 } from './types'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 
 /** 抽取侧的标记：提示词要求模型只输出以它开头的一行，解析器也只认它 */
 export const VAR_LINE_TAG = '〔数值〕'
+
+/** 抽取侧的备注标记：模型可另起一行以它开头，给出「变化项的备注」 */
+export const VAR_NOTE_TAG = '〔备注〕'
+
+/**
+ * 从抽取回复里解出「变化项的备注」。
+ *
+ * 形如 `〔备注〕好感：从陌生到熟悉的朋友；信任：开始有了底气` —— 只认以 `VAR_NOTE_TAG`
+ * 开头的一行，按「项名：一句话」切分。没有这一行（多数情况）返回空对象。
+ * 备注是锦上添花，解析不出就当没给，绝不因此影响数值本身。
+ */
+export function parseVarNotes(text: string, keys?: VarKey[]): Partial<Record<VarKey, string>> {
+  const allow = new Set<VarKey>(keys && keys.length ? keys : VAR_DEFS.map(d => d.key))
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = raw.trim()
+    if (!line.startsWith(VAR_NOTE_TAG)) continue
+    const body = line.slice(VAR_NOTE_TAG.length).trim()
+    const out: Partial<Record<VarKey, string>> = {}
+    for (const item of body.split(/[；;]/)) {
+      const seg = item.trim()
+      if (!seg) continue
+      const def = VAR_DEFS.find(d => allow.has(d.key) && (seg.startsWith(d.label) || seg.startsWith(d.key)))
+      if (!def) continue
+      const marker = seg.startsWith(def.label) ? def.label : def.key
+      let rest = seg.slice(marker.length).trim().replace(/^[：:=＝]\s*/, '')
+      rest = rest.replace(/^["'「『"']|[」』"']$/g, '').trim()
+      if (rest) out[def.key] = rest
+    }
+    return out
+  }
+  return {}
+}
 
 /** 变动历史保留条数（状态栏回看用） */
 export const VAR_LOG_KEEP = 50
@@ -259,6 +291,8 @@ export function buildVarStateBlock(a: {
   keys: VarKey[]
   /** 这一场的剧本目标（有就带上，进度才有锚） */
   goal?: string
+  /** 各项数值的备注（角色卡持久保存）：随当前值一起进上下文，让模型知道「这个分背后是什么」 */
+  notes?: Partial<Record<VarKey, string>>
 }): string {
   const keys = a.keys.filter(k => VAR_DEFS.some(d => d.key === k))
   if (keys.length === 0) return ''
@@ -266,8 +300,28 @@ export function buildVarStateBlock(a: {
   if (!now) return ''
   const lines: string[] = ['〖本场数值〗', `你此刻的状态：${now}`]
   if (a.goal?.trim()) lines.push(`这一场的目标：${a.goal.trim()}`)
+  // 备注：作者写 / 模型改写的对「这个分」的旁白，喂给模型当上下文（不要求它回写）
+  const noteLines = keys.map(k => (a.notes?.[k] ?? '').trim()).filter(Boolean)
+  if (noteLines.length) lines.push(`（备注：${noteLines.join('；')}）`)
   lines.push('（这是给你把握分寸用的状态，不要把它抄进正文。）')
   return lines.join('\n')
+}
+
+// ==================== 角色卡上的持久状态（CharVars）====================
+
+/** 空角色卡状态块：值取各变量初始值，备注为空 */
+export function emptyCharVars(keys?: VarKey[]): CharVars {
+  return { values: emptyVars(keys).values, notes: {} }
+}
+
+/** 改某项备注（作者手改入口；空串＝清掉这条备注） */
+export function setCharNote(cv: CharVars | undefined, key: VarKey, text: string): CharVars {
+  const base = cv ?? emptyCharVars()
+  const notes = { ...base.notes }
+  const t = text.trim()
+  if (t) notes[key] = t
+  else delete notes[key]
+  return { values: { ...base.values }, notes }
 }
 
 // ==================== 整理时抽取（与记忆整理同一次触发） ====================
@@ -331,10 +385,12 @@ export function buildVarExtractSystem(keys: VarKey[], opts: { maxStep: number })
       ? ['   · 「地点」尤其重要 —— 它决定下一轮这场戏发生在哪，对话里看得出换了地方就更新它。']
       : []),
     `4. 一项都没变 → 只输出：${VAR_LINE_TAG}无变化`,
+    `5. 若有项**变了**，可在下一行以 ${VAR_NOTE_TAG} 开头，给每项写一句≤20字的旁白（如「好感：从陌生到熟悉的朋友」）；没变的不写、没有就不写这一行。这句旁白会存进角色卡、下轮当上下文，所以写「这一栏现在意味着什么」，别写事件过程。`,
     '',
     '〖输出〗',
-    `**只输出一行**，以 ${VAR_LINE_TAG} 开头，各项用「；」分隔。不要解释、不要寒暄、不要输出任何多余内容。`,
+    `先输出一行，以 ${VAR_LINE_TAG} 开头，各项用「；」分隔；若本轮回写备注，再单独起一行以 ${VAR_NOTE_TAG} 开头。不要解释、不要寒暄、不要输出任何多余内容。`,
     `例：${VAR_LINE_TAG}${ex || '无变化'}`,
+    ex ? `例：${VAR_LINE_TAG}${ex}　${VAR_NOTE_TAG}好感：从陌生到熟悉的朋友` : '',
   ].join('\n')
 }
 
@@ -343,19 +399,26 @@ export function buildVarExtractUser(a: {
   values: VarValues | undefined
   keys: VarKey[]
   goal?: string
+  /** 当前各项备注（角色卡持久保存）—— 让模型知道「这个分背后是什么」，回写时据此调整 */
+  notes?: Partial<Record<VarKey, string>>
   /** 已渲染好的对话片段（调用方负责标注说话人） */
   transcript: string
 }): string {
   const now = renderVarValues(a.values, a.keys)
+  const notesText = a.keys
+    .map(k => (a.notes?.[k] ?? '').trim())
+    .filter(Boolean)
+    .join('；')
   return [
     `〖当前值〗${now || '（都还是初始值）'}`,
+    notesText ? `〖当前备注〗${notesText}` : '',
     a.goal?.trim() ? `〖这一场的目标〗${a.goal.trim()}` : '',
     '',
     '〖刚发生的对话〗',
     // 🔴 包边界（审计 P1-12）：对话正文是自由文本，裸拼会让人写在正文里的指令跨段生效
     authorBlock(newAuthorFence(), a.transcript),
     '',
-    `请输出那唯一一行（没有变化就写 ${VAR_LINE_TAG}无变化）。`,
+    `请输出那一行（没有变化就写 ${VAR_LINE_TAG}无变化；若有项变了要回写备注，另起一行以 ${VAR_NOTE_TAG} 开头）。`,
   ].filter(x => x !== '').join('\n')
 }
 

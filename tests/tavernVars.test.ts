@@ -13,7 +13,7 @@
 //     否则每次打开会话都会重置一遍，作者手改的数值会被反复抹掉。
 import {
   applyVarOps, emptyVars, recordVarChanges, turnSeqOf, buildVarStateBlock,
-  buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, renderVarValues, VAR_LINE_TAG,
+  buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, renderVarValues, VAR_LINE_TAG, VAR_NOTE_TAG,
   setVarManually, resetVarValues, lastChangeText, manualPinnedKeys,
   migrateVarScale, VAR_SCALE,
 } from '../src/lib/tavern/vars'
@@ -171,7 +171,8 @@ async function main() {
     // 抽取提示词：只干一件事、只输出一行
     const sys = buildVarExtractSystem(keys, { maxStep: 5 })
     ok('抽取提示词给出可记录项与范围', sys.includes('好感（-100–100）') && sys.includes('心情（≤12 字）'), sys.slice(0, 120))
-    ok('抽取提示词要求只输出一行', sys.includes('只输出一行') && sys.includes(VAR_LINE_TAG))
+    ok('抽取提示词要求以〔数值〕开头输出数值行（变化项可另起一行〔备注〕）',
+      sys.includes(VAR_LINE_TAG) && sys.includes(VAR_NOTE_TAG))
     ok('抽取提示词要求「没变就不写」', sys.includes('只报告**真的变了**的项'))
     ok('抽取提示词用新标签「地点」（不再写「当前地点」）', sys.includes('「地点」') && !sys.includes('当前地点'))
     // 🔴 2026-09-16 新增：档位定义必须进提示词 —— 光给「-37」模型判断不了轻重

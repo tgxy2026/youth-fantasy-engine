@@ -54,9 +54,9 @@ import { nextWatermark, acquireSummaryLock, releaseSummaryLock } from '../lib/ta
 import {
   type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
-  type VarKey, type TavernStoryIndexItem, sessionStoryId,
+  type VarKey, type TavernStoryIndexItem, sessionStoryId, type CharVars, type TavernVars,
 } from '../lib/tavern/types'
-import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf, migrateVarScale } from '../lib/tavern/vars'
+import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf, migrateVarScale, VAR_SCALE, setCharNote, emptyVars } from '../lib/tavern/vars'
 import { scriptSceneLine, snapshotOf, openingToMessage } from '../lib/tavern/script'
 import { getScript } from '../lib/tavern/script'
 import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
@@ -71,6 +71,26 @@ const STAGE_TEXT: Record<RoundEndStage, string> = {
   vars: '结算本场数值…',
   revise: '审查设定…',
   done: '已收尾',
+}
+
+/** 把角色卡上的持久状态（CharVars）转成面板要的 TavernVars 形状（面板只用 values，log/turnSeq 是会话级流水，这里给空壳） */
+function charVarsToTavern(cv?: CharVars): TavernVars | undefined {
+  if (!cv) return undefined
+  return { values: cv.values, turnSeq: 0, log: [], scale: VAR_SCALE }
+}
+
+/**
+ * 反馈 #4 配套：会话自身还没数值（新会话 / 老会话未初始化）但主角色卡上已有持久数值时，
+ * 把那一份拉进会话当起点 —— 上一次处出来的好感下一场接着算，而不是从 0 起；
+ * 也顺手修好了反馈 #1「数值不显示」（之前 createFreeSession 从不初始化 vars，面板只能永远停在 0）。
+ */
+async function seedSessionVarsFromCard(s: FreeSession): Promise<FreeSession> {
+  if (s.vars) return s
+  const id = s.charIds[0]
+  if (!id) return s
+  const card = await store.getFreeChar(id).catch(() => null)
+  if (!card?.vars) return s
+  return { ...s, vars: { values: card.vars.values, turnSeq: 0, log: [], scale: VAR_SCALE } }
 }
 
 export default function TavernFree() {
@@ -93,6 +113,8 @@ export default function TavernFree() {
   const [mems, setMems] = useState<Record<string, FreeMemory | null>>({})
   /** 右栏「Ta这几天的生活 / 心情」看的是谁 —— 默认取第一个 **AI 扮演** 的角色（用户演的那位不是观察对象） */
   const [statusCharId, setStatusCharId] = useState('')
+  /** 右栏「本场状态」当前看哪位角色的数值（默认主角色 charIds[0]）；多角色时才需切换（反馈 #4） */
+  const [varsCharId, setVarsCharId] = useState('')
   const [summaryProviderId, setSummaryProviderId] = useState('')
 
   // ---------- UI ----------
@@ -312,6 +334,12 @@ export default function TavernFree() {
     setSpeakNext('')
     if (!s) return
     await loadSessionContext(s)
+    // 反馈 #4：主角色卡上若有持久数值，拉进会话当起点（跨会话累积，也修好 #1 不显示）
+    const seeded = await seedSessionVarsFromCard(s)
+    if (seeded !== s) {
+      setSession(seeded)
+      await store.saveFreeSession(seeded).catch(() => undefined)
+    }
   }, [loadSessionContext])
 
   // ---------- 新建对话（版式对齐新建推演） ----------
@@ -351,6 +379,12 @@ export default function TavernFree() {
       await refreshStories()
       setSession(withOpening)
       await loadSessionContext(withOpening)
+      // 反馈 #4：若主角色卡已有持久数值，新会话接着算（跨会话累积）
+      const seeded = await seedSessionVarsFromCard(withOpening)
+      if (seeded !== withOpening) {
+        setSession(seeded)
+        await store.saveFreeSession(seeded).catch(() => undefined)
+      }
       const aiNames = d.charIds.filter(id => id !== d.userCharId).map(nameOf).filter(Boolean).join('、')
       const who = d.userCharId
         ? `你演 ${nameOf(d.userCharId)}，AI 演 ${aiNames}`
@@ -445,6 +479,8 @@ export default function TavernFree() {
         session: s,
         cards: castCards,
         providerId: summaryProviderId || undefined,
+        // 反馈 #4：本场数值算完回写主角色卡（持久、跨会话累积）
+        primaryCharId: s.charIds[0],
         // hardLimit 必须传：不传就永远走内置 3000，面板调的「记忆硬上限」是死的（审计 P1-1）
         limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays, hardLimit: lim.hardLimit },
         varKeys,
@@ -647,6 +683,10 @@ export default function TavernFree() {
         nameOf: id => nameOf(id ?? ''),
         providerId: summaryProviderId || undefined,
         signal: ctrl.signal,
+        // 反馈 #4：抽取时把主角色卡当前备注当上下文；算完把新值＋新备注回写卡（持久、跨会话累积）
+        primaryCharId: res.session.charIds[0],
+        charVars: charCard?.vars,
+        persistCharVars,
       })
       const saved = await store.saveFreeSession(withVars)
       setSession(saved)
@@ -667,7 +707,7 @@ export default function TavernFree() {
       abortRef.current = null
       streamingHintRef.current = false
     }
-  }, [input, session, charCard, streaming, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf])
+  }, [input, session, charCard, streaming, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf, persistCharVars])
 
   // ---------- 消息级操作（与剧情推演同一套；自由模式多一条：重说时**保持原来的说话人**） ----------
   const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
@@ -677,11 +717,23 @@ export default function TavernFree() {
     await store.saveFreeSession(next).then(refreshSessions).catch(() => undefined)
   }
 
-  // ---------- 本场数值（C2 第二步）：作者手改 ----------
+  // ---------- 本场数值（C2 第二步）：作者手改 + 回写角色卡 ----------
+
+  /** 把一份角色卡状态落库并刷新内存（反馈 #4：状态存卡、跨会话累积）。通用：任何角色 id 都能用。 */
+  const persistCharVars = useCallback(async (charId: string, cv: CharVars) => {
+    const card = await store.getFreeChar(charId).catch(() => null)
+    if (!card) return
+    const updated = { ...card, vars: cv }
+    await store.saveFreeChar(updated).catch(() => undefined)
+    setCharCard(prev => (prev && prev.id === charId ? updated : prev))
+    setCastCards(prev => prev.map(c => (c.id === charId ? updated : c)))
+  }, [])
+
   /**
-   * 手改一个数值。
+   * 手改一个数值（主角色）。
    * 🔴 走 `setVarManually`（与模型增量同一个写入关口）→ 夹取、去重、变更记录只有一套规则；
    *    并标记来源 manual —— 重说时**不会**把作者刚改的数翻回去（那是作者的手，比模型准）。
+   * 同时把新值回写主角色卡（反馈 #4：跨会话累积）。
    */
   const setVar = (key: VarKey, raw: string) => {
     if (!session) return
@@ -690,7 +742,41 @@ export default function TavernFree() {
     if (applied.changes.length === 0) return
     const next = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(session.messages), 'manual')
     void commit({ ...session, vars: next })
+    // 回写主角色卡：备注沿用卡上已有的（手改数值不动备注）
+    const id = session.charIds[0]
+    if (id) void persistCharVars(id, { values: next.values ?? applied.values, notes: charCard?.vars?.notes ?? {} })
     showToast(`已改为 ${applied.changes.map(c => `${c.label} ${String(c.to || '空')}`).join('、')}`)
+  }
+
+  /** 改主角色某项的备注（作者手改入口）；空串＝清掉这条备注 */
+  const setPrimaryNote = (key: VarKey, text: string) => {
+    if (!charCard) return
+    const cv = setCharNote(charCard.vars, key, text)
+    void persistCharVars(charCard.id, cv)
+  }
+
+  /** 手改非主角色的数值（多角色同场，右栏切到某位时） */
+  const setOtherVar = (charId: string, key: VarKey, raw: string) => {
+    const card = castCards.find(c => c.id === charId)
+    if (!card) return
+    const cur = card.vars?.values ?? {}
+    const applied = setVarManually(cur, key, raw)
+    if (applied.changes.length === 0) return
+    void persistCharVars(charId, { values: applied.values, notes: { ...(card.vars?.notes ?? {}) } })
+    showToast(`已改为 ${applied.changes.map(c => `${c.label} ${String(c.to || '空')}`).join('、')}`)
+  }
+
+  /** 改非主角色某项的备注 */
+  const setOtherNote = (charId: string, key: VarKey, text: string) => {
+    const card = castCards.find(c => c.id === charId)
+    if (!card) return
+    void persistCharVars(charId, setCharNote(card.vars, key, text))
+  }
+
+  /** 把某位非主角色的本卡数值归零（多角色同场，右栏切到该角色时可用） */
+  const resetOtherVars = (charId: string) => {
+    void persistCharVars(charId, { values: emptyVars(varKeys).values, notes: {} })
+    showToast('已将该角色本卡数值归零')
   }
 
   const resetVars = async () => {
@@ -700,13 +786,16 @@ export default function TavernFree() {
     if (applied.changes.length === 0) { showToast('数值已经在初始值上了', 'info'); return }
     const okGo = await confirmDialog({
       title: '重置本场数值？',
-      message: `${applied.changes.map(c => c.label).join('、')} 会回到初始值（数值归 0，心情与地点清空）。\n这一场的变动记录会保留，但数值本身回不去 —— 要恢复得再手改一遍。`,
+      message: `${applied.changes.map(c => c.label).join('、')} 会回到初始值（数值归 0，心情与地点清空）。\n这一场的变动记录会保留，但数值本身回不去 —— 要恢复得再手改一遍。\n（重置只清这一场的数值，角色卡上累积的状态也会一并归零。）`,
       confirmText: '重置',
       danger: true,
     })
     if (!okGo) return
     const next = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(session.messages), 'manual')
     void commit({ ...session, vars: next })
+    // 角色卡上的持久状态一并归零
+    const id = session.charIds[0]
+    if (id) void persistCharVars(id, { values: next.values ?? applied.values, notes: {} })
   }
 
   const saveEdited = (id: string, text: string) => {
@@ -771,6 +860,10 @@ export default function TavernFree() {
         nameOf: id => nameOf(id ?? ''),
         providerId: summaryProviderId || undefined,
         signal: ctrl.signal,
+        // 反馈 #4：抽取时把主角色卡当前备注当上下文；算完把新值＋新备注回写卡（持久、跨会话累积）
+        primaryCharId: res.session.charIds[0],
+        charVars: charCard?.vars,
+        persistCharVars,
       })
       const saved = await store.saveFreeSession(withVars)
       setSession(saved)
@@ -1007,12 +1100,6 @@ export default function TavernFree() {
               title="把这场对话导出成 Markdown 或带样式的单文件 HTML。只含对话正文与场景信息，不含角色记忆与日记"
             >
               导出
-            </Button>
-            <Button
-              variant="secondary" size="md" onClick={() => setStatusTab('status')}
-              title="切到右侧「角色状态」页：场景、在场角色的关系状态与记忆计数（只读）。本场数值在右侧「本场状态」页里改"
-            >
-              角色状态
             </Button>
             <Button variant="danger" size="md" onClick={() => void removeSession()}>删除对话</Button>
           </>
@@ -1447,14 +1534,60 @@ export default function TavernFree() {
                   </>
                 ) : (
                   /* 本场数值：**全项目唯一的显示与修改入口**（2026-09-16 去重 ——
-                     原先中间那条状态栏里还有一份只读/可改的副本，已删）。 */
-                  <TavernVarsPanel
-                    vars={session.vars}
-                    varKeys={varKeys}
-                    onSetVar={setVar}
-                    onResetVars={() => void resetVars()}
-                    readOnly={!!session.endedAt}
-                  />
+                     原先中间那条状态栏里还有一份只读/可改的副本，已删）。
+                     反馈 #4：多角色同场时，这里看的是「当前选中的那位」角色卡上的持久数值；
+                     主角色（charIds[0]）走会话工作副本并每轮回写卡，其余角色直接读写各自的卡。 */
+                  <div className="space-y-2">
+                    {aiCards.length > 1 && (
+                      <div>
+                        <div className="text-[10.5px] text-ink-500 mb-1">看哪位角色的数值</div>
+                        <ul className="space-y-1">
+                          {aiCards.map(c => {
+                            const on = (varsCharId || session?.charIds[0]) === c.id
+                            return (
+                              <li key={c.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => setVarsCharId(c.id)}
+                                  title={`看 ${c.name || 'Ta'} 的本卡数值`}
+                                  className={`w-full flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${
+                                    on ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                                  }`}
+                                >
+                                  <Avatar src={c.avatar} name={c.name} size={18} />
+                                  <span className={`truncate text-[11.5px] ${on ? 'text-amber' : 'text-ink-200'}`}>
+                                    {c.name || '（未命名）'}
+                                  </span>
+                                  {c.id === session?.charIds[0] && <span className="ml-auto text-[10px] text-ink-500">主</span>}
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    {(() => {
+                      const activeId = varsCharId || session?.charIds[0] || ''
+                      const primary = activeId === session?.charIds[0]
+                      const card = castCards.find(c => c.id === activeId) ?? null
+                      const vars = primary ? session?.vars : charVarsToTavern(card?.vars)
+                      const notes = (primary ? charCard?.vars?.notes : card?.vars?.notes) ?? {}
+                      const setV = (k: VarKey, raw: string) => (primary ? setVar(k, raw) : setOtherVar(activeId, k, raw))
+                      const setN = (k: VarKey, text: string) => (primary ? setPrimaryNote(k, text) : setOtherNote(activeId, k, text))
+                      const reset = primary ? () => void resetVars() : () => resetOtherVars(activeId)
+                      return (
+                        <TavernVarsPanel
+                          vars={vars}
+                          varKeys={varKeys}
+                          onSetVar={setV}
+                          onSetNote={setN}
+                          noteOf={k => notes[k] ?? ''}
+                          onResetVars={reset}
+                          readOnly={!!session?.endedAt}
+                        />
+                      )
+                    })()}
+                  </div>
                 )}
               </div>
 

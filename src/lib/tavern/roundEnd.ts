@@ -26,7 +26,7 @@ import type { SummaryLimits } from './summarize'
 import { renderFreeCharacter, type ChatFn } from './engine'
 import type {
   FreeSession, FreeCharacter, FreeMemory, TavernMessage,
-  TavernVars, VarChange, CharJournalEntry, VarKey,
+  TavernVars, VarChange, CharJournalEntry, VarKey, CharVars,
 } from './types'
 
 /** 收尾经历的阶段（界面据此显示进度） */
@@ -69,6 +69,8 @@ export type RoundEndArgs = {
   maxStep: number
   /** 说话人名字 */
   nameOf: (id?: string) => string
+  /** 主角色（session.charIds[0]）id —— 本场数值算完回写它的卡（反馈 #4：状态存卡、跨会话累积） */
+  primaryCharId?: string
   /**
    * 注入模型调用（只有测试用）。
    * 三个子步骤（记忆/数值/设定审查）都会拿它替换真实 `chat` —— 不注入的话这条编排链
@@ -165,6 +167,9 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   //    这里用 `emptyVars(varKeys)` 兜底，第一场收尾就能把初始值 + 变化写进会话。
   let nextVars = args.vars
   let varChanges: VarChange[] = []
+  // 主角色卡（回写落点）；拿它的当前备注当抽取上下文，并作为回写时的备注基底
+  const primary = args.primaryCharId ? cards.find(c => c.id === args.primaryCharId) : undefined
+  const primaryNotes = primary?.vars?.notes
   if (varKeys.length > 0 && pending.length > 0) {
     onProgress?.({ stage: 'vars', cur: total, total })
     const base = args.vars ?? emptyVars(varKeys)
@@ -177,6 +182,8 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
         maxStep,
         // 作者手改过的项只收增量（审计 P2）：否则模型一句「好感 80」就把作者的 20 盖掉了
         pinned: manualPinnedKeys(base),
+        // 主角色卡当前备注 → 当上下文（反馈 #4）
+        notes: primaryNotes,
         // 剧本写的「这一场的目标」—— 少了它，模型只能凭对话猜该往哪个方向推进（审计 P1-7）
         goal: session.script?.goal,
         providerId: providerId || undefined,
@@ -188,6 +195,14 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
         ? recordVarChanges({ ...base, values: ex.values }, ex.changes, turnSeqOf(session.messages))
         : base
       varChanges = ex.changes
+      // ②b 回写主角色卡（反馈 #4：状态存卡、跨会话累积）。备注沿用旧的、叠加这一轮新写的
+      if (primary && ex.changes.length > 0) {
+        const cardVars: CharVars = {
+          values: ex.values as CharVars['values'],
+          notes: { ...(primaryNotes ?? {}), ...(ex.notes ?? {}) },
+        }
+        await store.saveFreeChar({ ...primary, vars: cardVars })
+      }
     } catch {
       varChanges = [] // 数值算不出来，这一场照样归档
     }

@@ -275,7 +275,7 @@ function ToggleField({ label, hint, value, onChange }: {
         variant="toggle" size="md" selected={value}
         className="w-full" onClick={() => onChange(!value)}
       >
-        {value ? '已关闭（推荐）' : '未关闭 —— 模型会先想再答'}
+        {value ? '已开启' : '已关闭'}
       </Button>
     </Field>
   )
