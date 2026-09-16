@@ -92,7 +92,7 @@ function normalizeCard(cardRaw: Record<string, unknown>): CardFileResult {
 
   const world = s(cardRaw.world)
   const examples = s(cardRaw.examples)
-  if (!world.trim()) warnings.push('缺「第 1 章 · 世界」')
+  if (!world.trim()) warnings.push('缺「第 1 章 · 角色与设定的关系」')
   if (!examples.trim()) warnings.push('缺「第 4 章 · 示例对话」（这一章最影响演出效果）')
 
   const profileOut = {

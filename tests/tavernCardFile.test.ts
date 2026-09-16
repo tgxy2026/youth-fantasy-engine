@@ -62,12 +62,12 @@ function main() {
     const r = parseCardFile(JSON.stringify(raw))
     ok('缺章仍然可导入（旧卡/故意只填两章都该允许）', r.ok === true)
     if (r.ok) {
-      ok('缺「第 1 章 · 世界」被如实报出', r.warnings.some(w => w.includes('第 1 章')))
+      ok('缺「第 1 章 · 角色与设定的关系」被如实报出', r.warnings.some(w => w.includes('第 1 章')))
       ok('缺「第 4 章 · 示例对话」被如实报出（最影响效果的一章）', r.warnings.some(w => w.includes('第 4 章')))
       ok('缺「视角与人称」被报出', r.warnings.some(w => w.includes('视角与人称')))
       ok('缺失字段补空串（不塞 undefined 进库）', r.card.world === '' && r.card.conduct.perspective === '')
     }
-    ok('警告可转成一句人话', describeWarnings(['缺「第 1 章 · 世界」']).includes('结构有缺'))
+    ok('警告可转成一句人话', describeWarnings(['缺「第 1 章 · 角色与设定的关系」']).includes('结构有缺'))
     ok('无警告时的措辞', describeWarnings([]).includes('结构完整'))
   }
 

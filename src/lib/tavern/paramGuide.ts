@@ -157,16 +157,6 @@ export const GUIDE_NUM_CTX: ParamGuide = {
   ],
 }
 
-export const GUIDE_TRIGGER_MESSAGES: ParamGuide = {
-  min: 2, max: 50, step: 1, unit: '条',
-  bands: [
-    { from: 2, to: 5, name: '频繁', effect: '每聊几句就整理一次：反复调用模型（费时间），记忆被切得太碎，最后只剩结论、细节全丢。' },
-    { from: 5, to: 12, name: '积极', effect: '整理及时，记忆里能留住最近发生的事。', recommended: true },
-    { from: 12, to: 30, name: '从容', effect: '一次整理更多内容，记忆更成块、更像「一段经历」而不是流水账。' },
-    { from: 30, to: 50, name: '很久才整理', effect: '期间新内容完全不进记忆；关掉软件再打开时，这段时间发生的事可能没被记下。' },
-  ],
-}
-
 export const GUIDE_SOFT_LIMIT: ParamGuide = {
   min: 200, max: 10000, step: 100, unit: '字',
   bands: [
@@ -207,23 +197,13 @@ export const GUIDE_DIARY_KEEP: ParamGuide = {
   ],
 }
 
-export const GUIDE_SUMMARY_INTERVAL: ParamGuide = {
-  min: 0, max: 1440, step: 10, unit: '分钟',
-  bands: [
-    { from: 0, to: 5, name: '几乎不设限', effect: '只要攒够条数就整理，可能十几分钟里压缩两三次。' },
-    { from: 5, to: 30, name: '常规', effect: '聊一阵才整理一次，比较省；手动点「立即整理」不受它限制。', recommended: true },
-    { from: 30, to: 180, name: '偏安静', effect: '半小时到三小时才自动整理，期间记忆不更新，角色会「不知道刚发生的事」。' },
-    { from: 180, to: 1440, name: '很久', effect: '基本等于关掉自动整理，只靠手动点「立即整理」—— 记得自己点。' },
-  ],
-}
-
 export const GUIDE_SUMMARY_LOCK: ParamGuide = {
   min: 1, max: 1440, step: 10, unit: '分钟',
   bands: [
     { from: 1, to: 10, name: '太短', effect: '一次整理还没跑完锁就过期，另一个窗口可能抢走它 —— 两份结果互相覆盖。' },
     { from: 10, to: 60, name: '常规', effect: '够一次总结跑完（含慢的本地模型），崩了也能及时被接管。', recommended: true },
     { from: 60, to: 180, name: '偏长', effect: '上次整理中断后，要等一两个小时才能被重新接管。' },
-    { from: 180, to: 1440, name: '很长', effect: '一旦中断，半天内都很难再自动整理 —— 只能靠重启或手动。' },
+    { from: 180, to: 1440, name: '很长', effect: '一旦中断，半天内都很难再整理 —— 只能靠重启软件。' },
   ],
 }
 
@@ -284,12 +264,10 @@ export const PARAM_GUIDES = {
   // 剧情推演
   plotSettingRatio: GUIDE_SETTING_RATIO,
   // 自由对话（记忆与日常）
-  triggerMessages: GUIDE_TRIGGER_MESSAGES,
   softLimit: GUIDE_SOFT_LIMIT,
   hardLimit: GUIDE_HARD_LIMIT,
   longTermLimit: GUIDE_LONGTERM_LIMIT,
   diaryKeep: GUIDE_DIARY_KEEP,
-  summaryInterval: GUIDE_SUMMARY_INTERVAL,
   summaryLock: GUIDE_SUMMARY_LOCK,
   dailyAdvance: GUIDE_DAILY_ADVANCE,
   dailyKeep: GUIDE_DAILY_KEEP,

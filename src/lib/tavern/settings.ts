@@ -23,7 +23,7 @@
 import * as db from '../db'
 import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
-  MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
+  MEMORY_DIARY_DAYS, SUMMARY_LOCK_TTL_MS,
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
   type TavernParams, type SceneDescLevel, type PlotContextSource, type VarKey,
 } from './types'
@@ -106,8 +106,6 @@ export type TavernFreeSettings = {
   sceneDescription: SceneDescLevel
   /** 自由对话专属补充要求 */
   extraPrompt: string
-  /** 未总结消息达到多少条就自动整理一次记忆 */
-  triggerMessages: number
   /** 记忆软上限（字）：超过就在界面上提醒 */
   softLimit: number
   /** 记忆硬上限（字）：超过就按序压缩 */
@@ -116,8 +114,6 @@ export type TavernFreeSettings = {
   longTermLimit: number
   /** 「最近日记」保留天数 */
   diaryDays: number
-  /** 两次自动整理之间的最小间隔（分钟） */
-  summaryMinIntervalMin: number
   /** 整理锁的有效期（分钟）：上次跑到一半崩了，超过它可被接管 */
   summaryLockTtlMin: number
   /** 日常状态推进间隔（小时）—— 距上次活跃超过它才补写「这几天的生活」 */
@@ -125,6 +121,11 @@ export type TavernFreeSettings = {
   /** 日常「这几天的生活」保留条数 */
   dailyLogKeep: number
 }
+
+// 🚫 已废除（2026-09-16，老大拍板）：`triggerMessages`（触发整理的条数阈值）
+//    与 `summaryMinIntervalMin`（两次自动整理的最小间隔）。
+//    项目不再有任何「自动整理」—— 两种模式都由作者手动触发，所以这两个旋钮拧了没有任何效果。
+//    老库里残留的值由 `upgradeLegacyDefaults` 主动删除（mergeDeep 否则会照抄回来）。
 
 /**
  * 「我的档案」——**用户本人**是谁。全局生效（跨项目、跨会话，与控制面板其余设置同域）。
@@ -318,9 +319,14 @@ function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<Tav
   // ③ `free.defaultUserCharId` —— 已废弃的字段，**主动删掉**。
   //    mergeDeep 会把「默认值里已经没有的键」照抄进来，留着它就一直躺在库里被反复写回，
   //    将来有人搜到它还会以为它有用（这类「死配置」本项目已经清过好几个）。
-  if (out.free && typeof out.free === 'object' && 'defaultUserCharId' in out.free) {
+  if (out.free && typeof out.free === 'object' &&
+      ('defaultUserCharId' in out.free || 'triggerMessages' in out.free || 'summaryMinIntervalMin' in out.free)) {
     const rest = { ...(out.free as unknown as Record<string, unknown>) }
     delete rest.defaultUserCharId
+    // 2026-09-16：项目不再有任何「自动整理」—— 这两个旋钮成了死键，拧了没有任何效果。
+    // 不在这里删掉的话，它们会随 mergeDeep 一直留在库里被反复写回。
+    delete rest.triggerMessages
+    delete rest.summaryMinIntervalMin
     out = { ...out, free: rest as unknown as TavernFreeSettings }
   }
   return out
@@ -366,12 +372,10 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     // 嫌吵或嫌占字数就在面板上降到 light / 关掉。
     sceneDescription: 'standard',
     extraPrompt: '',
-    triggerMessages: SUMMARY_TRIGGER_MESSAGES,
     softLimit: MEMORY_SOFT_LIMIT,
     hardLimit: MEMORY_HARD_LIMIT,
     longTermLimit: MEMORY_LONGTERM_LIMIT,
     diaryDays: MEMORY_DIARY_DAYS,
-    summaryMinIntervalMin: Math.round(SUMMARY_MIN_INTERVAL_MS / 60000),
     summaryLockTtlMin: Math.round(SUMMARY_LOCK_TTL_MS / 60000),
     dailyAdvanceHours: Math.round(DAILY_ADVANCE_MS / 3600000),
     dailyLogKeep: DAILY_LOG_KEEP,
@@ -471,12 +475,10 @@ export function effectiveContextBudget(
 
 /** 记忆与日常的阈值（自由对话用） */
 export type TavernMemoryLimits = {
-  triggerMessages: number
   softLimit: number
   hardLimit: number
   longTermLimit: number
   diaryDays: number
-  minIntervalMs: number
   dailyAdvanceMs: number
   /** 整理锁有效期（毫秒） */
   lockTtlMs: number
@@ -487,12 +489,10 @@ export type TavernMemoryLimits = {
 export function memoryLimitsOf(s: TavernSettings): TavernMemoryLimits {
   const f = s.free
   return {
-    triggerMessages: f.triggerMessages,
     softLimit: f.softLimit,
     hardLimit: f.hardLimit,
     longTermLimit: f.longTermLimit,
     diaryDays: f.diaryDays,
-    minIntervalMs: Math.max(0, f.summaryMinIntervalMin) * 60000,
     dailyAdvanceMs: Math.max(0, f.dailyAdvanceHours) * 3600000,
     lockTtlMs: Math.max(1, f.summaryLockTtlMin) * 60000,
     dailyLogKeep: Math.max(1, f.dailyLogKeep),

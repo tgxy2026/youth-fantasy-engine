@@ -8,13 +8,12 @@
 import {
   MEMORY_SECTIONS, emptyMemory, memoryToText, memoryChars, isMemoryEmpty,
   parseMemoryText, rollDiaries, trimMemory,
-  countUnsummarized, nextWatermark, shouldSummarize, shouldRunAutoSummary,
-  acquireSummaryLock, releaseSummaryLock, throttleOk,
+  nextWatermark, acquireSummaryLock, releaseSummaryLock,
 } from '../src/lib/tavern/memory'
 import { summarizeMemory, buildSummarySystem, renderTranscript, formatDate, buildColdStartSystem, coldStartMemory, draftMemoryFromCard } from '../src/lib/tavern/summarize'
 import {
   MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
-  SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS, emptyFreeCharacter,
+  SUMMARY_LOCK_TTL_MS, emptyFreeCharacter,
   type FreeMemory, type TavernMessage,
 } from '../src/lib/tavern/types'
 import type { ChatFn } from '../src/lib/tavern/engine'
@@ -135,39 +134,18 @@ async function main() {
     ok('压缩时不牺牲「未爆的雷」', trimmed.mines === heavy.mines)
   }
 
-  // ---------- 6) 水位线 / 阈值 ----------
+  // ---------- 6) 水位线 ----------
+  // 🚫 2026-09-16：`countUnsummarized` / `shouldSummarize`（条数阈值）已随**自动整理**一并删除
+  //    —— 项目改为作者手动触发整理。只剩水位线推进这一条纯逻辑要盯。
   {
     const msgs = [msg('a', 'user'), msg('b', 'assistant'), msg('c', 'user'), msg('d', 'assistant')]
-    ok('没有水位线时全部算未总结', countUnsummarized({ messages: msgs }) === 4)
-    ok('水位线之后只数新消息', countUnsummarized({ messages: msgs, watermark: { messageId: 'b', at: 0 } }) === 2)
-    ok('水位线在最后一条时无需总结', countUnsummarized({ messages: msgs, watermark: { messageId: 'd', at: 0 } }) === 0)
-    ok('水位线消息被删（异常）时保守按全部未总结', countUnsummarized({ messages: msgs, watermark: { messageId: '不存在', at: 0 } }) === 4)
-    ok('system 消息不计入', countUnsummarized({ messages: [...msgs, msg('s', 'user')], watermark: { messageId: 'd', at: 0 } }) === 1)
-
-    ok('新消息满 6 条触发总结', shouldSummarize({ messages: Array.from({ length: 6 }, (_, i) => msg(String(i), 'user')) }))
-    ok('不足 6 条不触发', !shouldSummarize({ messages: Array.from({ length: 5 }, (_, i) => msg(String(i), 'user')) }))
-
     const wm = nextWatermark({ messages: msgs })
     ok('水位线推进到最后一条', wm?.messageId === 'd')
     ok('空会话不产生水位线', nextWatermark({ messages: [] }) === null)
   }
 
-  // ---------- 7) 三层防重 ----------
+  // ---------- 7) 防重锁（时间节流已废除，只剩跨实例锁 + TTL） ----------
   {
-    const six = Array.from({ length: 6 }, (_, i) => msg(String(i), 'user'))
-
-    // ① 时间节流
-    const fresh: FreeMemory = { ...emptyMemory(CHAR), updatedAt: Date.now() }
-    ok('刚总结过 → 时间节流拦下', !throttleOk(fresh))
-    ok('很久没总结 → 放行', throttleOk({ ...fresh, updatedAt: Date.now() - SUMMARY_MIN_INTERVAL_MS - 1 }))
-    ok('没有档案（首次）→ 放行', throttleOk(null))
-
-    const r1 = shouldRunAutoSummary({ messages: six }, fresh)
-    ok('时间节流时给出可读原因', !r1.run && r1.reason.includes('节流'), r1.reason)
-    const r2 = shouldRunAutoSummary({ messages: six }, null)
-    ok('条件满足时判定该跑', r2.run)
-
-    // ② 跨实例锁 ③ TTL 兜底
     releaseSummaryLock()
     ok('无锁时可取', acquireSummaryLock())
     ok('已被取走时取不到（挡住两个窗口同时跑）', !acquireSummaryLock())
@@ -218,7 +196,7 @@ async function main() {
       ...emptyMemory(CHAR),
       facts: '她叫苏念。',
       mines: '搬来原因未知。',
-      updatedAt: Date.now() - SUMMARY_MIN_INTERVAL_MS - 1,
+      updatedAt: Date.now() - 3600_000,
     }
     const got = await summarizeMemory({
       charId: CHAR, charName: '苏念', prev,
@@ -227,7 +205,7 @@ async function main() {
       chatFn,
     })
     ok('总结结果六栏都解析出来了', got.longTerm.includes('修东西') && got.facts.includes('苏念') && got.diaries.includes('03-15'))
-    ok('总结后刷新了 updatedAt（供时间节流）', got.updatedAt > prev.updatedAt)
+    ok('总结后刷新了 updatedAt（界面据此显示「更新于」）', got.updatedAt > prev.updatedAt)
 
     const call = calls[0]
     ok('总结把旧档案交给模型（改写而非追加）', String(call.messages[1].content).includes('旧档案'))

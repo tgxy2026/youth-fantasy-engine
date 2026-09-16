@@ -397,7 +397,7 @@ const FREE_TONE = 'chat' as const
  */
 export function renderFreeCharacter(c: FreeCharacter, opts: { tag?: string } = {}): string {
   const secs: string[] = []
-  if (c.world?.trim()) secs.push(`〖第 1 章 · 世界〗\n${c.world.trim()}`)
+  if (c.world?.trim()) secs.push(`〖第 1 章 · 角色与设定的关系〗\n${c.world.trim()}`)
 
   const profile: [string, string][] = [
     ['2.1 外在', c.profile?.externals ?? ''],
@@ -542,7 +542,7 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
 
   // 2026-09-15 收口：自由模式**不再有背景设定层**。
   // 理由（老大定）：同一批自由对话里可能混着不同世界观、不同类型的角色，用一份背景把它们框住反而不对；
-  // 而且每个角色的世界观已经写在**角色卡第 1 章「世界」**里，再来一份就是重复占额度。
+  // 而且每个角色的「角色与世界的关系」已经写在**角色卡第 1 章**里，再来一份就是重复占额度。
   //
   // 本场剧本（自由对话专用）：会话里存的是**快照**，作者后来改剧本不影响这一场。
   // 开场白不进这里 —— 它走消息通道（见 script.ts 文件头）。

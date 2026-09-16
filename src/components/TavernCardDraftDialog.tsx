@@ -20,7 +20,7 @@ import {
 /** 十三栏的显示名（预览用；顺序＝四章顺序） */
 const CARD_FIELD_LABELS: [keyof CardDraft, string][] = [
   ['name', '名字'],
-  ['world', '第 1 章 · 世界'],
+  ['world', '第 1 章 · 角色与设定的关系'],
   ['externals', '外在'],
   ['core', '内核'],
   ['speech', '语言特征'],

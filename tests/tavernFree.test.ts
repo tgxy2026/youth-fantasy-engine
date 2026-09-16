@@ -61,7 +61,7 @@ async function main() {
   // ---------- 1) 角色卡四章渲染 ----------
   {
     const text = renderFreeCharacter(su)
-    ok('渲染出第 1 章 · 世界', text.includes('〖第 1 章 · 世界〗'))
+    ok('渲染出第 1 章 · 角色与设定的关系', text.includes('〖第 1 章 · 角色与设定的关系〗'))
     ok('渲染出第 2 章 · 人物档案且带编号子块', text.includes('〖第 2 章 · 人物档案〗') && text.includes('2.1 外在') && text.includes('2.6 知识边界'))
     ok('渲染出第 3 章 · 行为规范', text.includes('〖第 3 章 · 行为规范〗') && text.includes('进度锁'))
     ok('第 4 章 · 示例对话带「请模仿」引导（杠杆最高的一章）',

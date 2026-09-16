@@ -1098,13 +1098,15 @@ export default function TavernControl() {
             />
 
             <div className="pt-1">
-              <div className="mb-3 text-[12px] text-ink-200 border-t border-ink-800 pt-3">记忆引擎</div>
+              <div className="mb-1 text-[12px] text-ink-200 border-t border-ink-800 pt-3">记忆引擎</div>
+              {/* 🚫 2026-09-16：这里原来的「触发整理」与「自动整理最小间隔」已删 ——
+                  项目不再有任何自动整理（两种模式都改为作者手动触发：自由对话「结束本轮对话」、
+                  剧情推演「整理本场记忆」），留着这两个旋钮只会让人以为拧了有用。 */}
+              <p className="mb-3 text-[10.5px] leading-relaxed text-ink-500">
+                下面几项决定记忆怎么压、怎么滚。<span className="text-ink-400">整理时机不在这一栏</span>——
+                现在没有自动整理：自由对话在点「结束本轮对话」时整理，剧情推演点「整理本场记忆」。
+              </p>
               <div className={GRID2}>
-                <NumField
-                  label="触发整理" guide={PARAM_GUIDES.triggerMessages}
-                  hint="没整理过的新消息攒到这么多条，就自动整理一次记忆。"
-                  value={fr.triggerMessages} onCommit={v => setFree('triggerMessages', v)}
-                />
                 <NumField
                   label="记忆软上限" guide={PARAM_GUIDES.softLimit}
                   hint="超过只在界面上提醒，不会硬截断。"
@@ -1124,11 +1126,6 @@ export default function TavernControl() {
                   label="日记保留" guide={PARAM_GUIDES.diaryKeep}
                   hint="「最近日记」保留几条，新的在上、旧的自动滚动掉。"
                   value={fr.diaryDays} onCommit={v => setFree('diaryDays', v)}
-                />
-                <NumField
-                  label="自动整理最小间隔" guide={PARAM_GUIDES.summaryInterval}
-                  hint="两次自动整理之间至少隔这么久，避免刚聊两句就反复压缩。手动点「立即整理」不受它限制。"
-                  value={fr.summaryMinIntervalMin} onCommit={v => setFree('summaryMinIntervalMin', v)}
                 />
                 <NumField
                   label="整理锁有效期" guide={PARAM_GUIDES.summaryLock}
@@ -1195,7 +1192,7 @@ export default function TavernControl() {
             />
 
             <p className="text-[10.5px] text-ink-600 leading-relaxed">
-              数值不靠模型每轮记账：整理记忆时（自动触发或点「立即整理记忆」）会单开一次小调用，
+              数值不靠模型每轮记账：整理记忆时（自由对话「结束本轮对话」/ 剧情推演「整理本场记忆」）会单开一次小调用，
               把这几轮里真的变了的项算出来，写进角色状态。写进提示词的只有「当前值多少、一次能改多少」。
               算不出来时一个字段都不动 —— 绝不会为了记账改错你要看的内容。
             </p>

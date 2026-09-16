@@ -1,0 +1,132 @@
+/**
+ * 酒馆模式 · 本场数值面板（好感 / 信任 / 剧情进度 / 心情 / 当前地点）
+ *
+ * 【为什么单独抽成一个文件】
+ * 这块原先是「对话上方那条角色状态栏」里的一小段；2026-09-16 老大拍板去重：
+ * 同一组数值**只留一处**，也就是自由对话的**右栏「本场状态」**（栏内即看即改），
+ * 中间那条状态栏不再重复显示它。
+ *
+ * 【为什么数值必须有编辑入口】
+ * 它是**会话级**的独立数据（不在记忆里），由 AI 在整理时按剧情算增量。模型算错的时候，
+ * 作者只能手改 —— 没有入口就只能干看着。所以这里不是「展示区」，是**唯一的调节点**。
+ *
+ * 【为什么不做「关系温度」的数值】
+ * 自造一个 0–100 的分数，作者第一句一定问「这 73 分怎么算的」。那一步的温度就是
+ * **记忆里「关系状态」那一栏本身**（模型每轮重写的一句话），它比分数准，且能直接与记忆对照。
+ * 「好感 / 信任」是另一回事：那是作者点名要的变量，且有明确语义（模型按剧情给增量）。
+ *
+ * 🔴 只渲染，不读库不写库（数据由 TavernFree 传进来、改完由它写回）。
+ */
+import { useEffect, useState } from 'react'
+import { Button } from './Button'
+import { varDefOf, type TavernVars, type VarKey } from '../lib/tavern/types'
+import { lastChangeText } from '../lib/tavern/vars'
+
+/** 一个数值行：标签 + 进度条（仅数值变量）+ 可编辑的值 + 最近一次差量 */
+function VarRow({ k, vars, onSet }: {
+  k: VarKey
+  vars: TavernVars | undefined
+  onSet: (key: VarKey, raw: string) => void
+}) {
+  const def = varDefOf(k)!
+  const raw = vars?.values?.[k]
+  const shown = raw === undefined ? String(def.init ?? '') : String(raw)
+  const [draft, setDraft] = useState(shown)
+  // 外部值变了（AI 更新 / 重置 / 换会话）就刷新草稿 —— 否则输入框会定格在旧值上
+  useEffect(() => { setDraft(shown) }, [shown])
+
+  const num = def.kind === 'num' ? Number(shown) : NaN
+  const pct = def.kind === 'num' && Number.isFinite(num)
+    ? Math.max(0, Math.min(100, ((num - def.min) / Math.max(1, def.max - def.min)) * 100))
+    : 0
+  const delta = lastChangeText(vars, k)
+
+  const commit = () => {
+    if (draft === shown) return
+    onSet(k, draft)
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-14 shrink-0 text-[11px] text-ink-400" title={def.kind === 'num' ? `${def.min}–${def.max}` : `≤${def.maxLen} 字`}>
+        {def.label}
+      </span>
+      <input
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+        inputMode={def.kind === 'num' ? 'numeric' : undefined}
+        placeholder={def.kind === 'text' ? '（未填）' : String(def.init ?? '')}
+        className={`w-full min-w-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50 ${def.kind === 'num' ? 'shrink-0 w-16' : ''}`}
+        title="改完按回车或点一下别处生效"
+      />
+      {def.kind === 'num' && (
+        <span className="relative h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-ink-700" title={`${shown} / ${def.max}`}>
+          <span className="absolute inset-y-0 left-0 rounded-full bg-amber/70" style={{ width: `${pct}%` }} />
+        </span>
+      )}
+      {delta && (
+        <span className={`shrink-0 text-[10px] ${delta.startsWith('-') ? 'text-ink-400' : 'text-amber/80'}`}>
+          {delta}
+        </span>
+      )}
+    </div>
+  )
+}
+
+export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars }: {
+  /** 本场数值（C2 第二步）。没有 / 全关闭时整块不渲染 */
+  vars?: TavernVars
+  varKeys: VarKey[]
+  onSetVar: (key: VarKey, raw: string) => void
+  onResetVars: () => void
+}) {
+  const [showLog, setShowLog] = useState(false)
+  /** 变动日志倒序（新的在上），最多 12 条 —— 再多也没人翻 */
+  const log = [...(vars?.log ?? [])].reverse().slice(0, 12)
+
+  if (varKeys.length === 0) {
+    return (
+      <p className="text-[11.5px] text-ink-500 leading-relaxed">
+        没有开启任何状态项。去「控制面板 → 八、本场数值」里勾选，这里就会显示。
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-ink-600">改完回车生效</span>
+        <span className="flex-1" />
+        {log.length > 0 && (
+          <Button variant="secondary" size="xs" onClick={() => setShowLog(v => !v)}
+            title="看这一场数值的变化过程" className="shrink-0"
+          >
+            {showLog ? '收起变动' : `变动 ${log.length}`}
+          </Button>
+        )}
+        <Button variant="secondary" size="xs" onClick={onResetVars}
+          title="把启用中的数值全部恢复成初始值（好感/信任 50、剧情进度 0，文本清空）" className="shrink-0"
+        >
+          重置
+        </Button>
+      </div>
+      {varKeys.map(k => <VarRow key={k} k={k} vars={vars} onSet={onSetVar} />)}
+      {showLog && (
+        <ul className="max-h-40 space-y-0.5 overflow-y-auto border-t border-ink-800 pt-1.5">
+          {log.map((e, i) => (
+            <li key={`${e.at}-${i}`} className="text-[10.5px] leading-relaxed text-ink-500">
+              <span className="text-ink-600">{new Date(e.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+              {e.source === 'manual' && <span className="ml-1 text-amber/70">手改</span>}
+              {e.source !== 'manual' && e.turnSeq ? <span className="ml-1">第 {e.turnSeq} 轮</span> : null}
+              <span className="ml-1">
+                {e.changes.map(c => `${c.label} ${String(c.from || '空')} → ${String(c.to || '空')}`).join('；')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}

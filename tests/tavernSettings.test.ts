@@ -17,7 +17,7 @@ import { DEFAULT_POST_RULES, LEGACY_DEFAULT_POST_RULES } from '../src/lib/tavern
 import { resolveParams } from '../src/lib/tavern/params'
 import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
-  MEMORY_DIARY_DAYS, SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
+  MEMORY_DIARY_DAYS, SUMMARY_LOCK_TTL_MS,
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
 } from '../src/lib/tavern/types'
 import { TONE_HINT, buildSystemPrompt } from '../src/lib/tavern/prompt'
@@ -47,12 +47,12 @@ async function main() {
       `${d.free.temperature}/${d.free.presencePenalty}`)
     ok('自由：聊天向风格取 prompt 里的内置默认（单一真源）', d.free.styleHint === TONE_HINT.chat && d.free.styleHint.includes('〖本场风格〗'))
 
-    ok('记忆：触发条数沿用 SUMMARY_TRIGGER_MESSAGES', d.free.triggerMessages === SUMMARY_TRIGGER_MESSAGES, String(d.free.triggerMessages))
+    // 🚫 2026-09-16：「触发条数」与「自动整理间隔」两项已删（项目不再有自动整理），
+    //    这里只盯还活着的那几项。
     ok('记忆：软 / 硬 / 长期摘要上限沿用常量',
       d.free.softLimit === MEMORY_SOFT_LIMIT && d.free.hardLimit === MEMORY_HARD_LIMIT && d.free.longTermLimit === MEMORY_LONGTERM_LIMIT,
       `${d.free.softLimit}/${d.free.hardLimit}/${d.free.longTermLimit}`)
     ok('记忆：日记保留天数沿用常量', d.free.diaryDays === MEMORY_DIARY_DAYS, String(d.free.diaryDays))
-    ok('记忆：自动整理间隔 = 原 600 秒换算成 10 分钟', d.free.summaryMinIntervalMin === SUMMARY_MIN_INTERVAL_MS / 60000, String(d.free.summaryMinIntervalMin))
     ok('日常：推进间隔 = 原 8 小时', d.free.dailyAdvanceHours === DAILY_ADVANCE_MS / 3600000, String(d.free.dailyAdvanceHours))
   }
 
@@ -190,6 +190,26 @@ async function main() {
       typeof st.profile === 'object' && st.profile !== null && typeof st.profile.name === 'string')
   }
 
+  // ---------- 3b-2) 废弃字段清理：自动整理那两个旋钮（2026-09-16） ----------
+  // 🔴 项目不再有任何自动整理（两种模式都改为作者手动触发），于是
+  //    `triggerMessages`（触发条数）与 `summaryMinIntervalMin`（最小间隔）成了死键 ——
+  //    拧了没有任何效果。不主动删的话，mergeDeep 会让它们永远躺在库里被反复写回，
+  //    将来有人搜到还会以为它们有用（这类「死配置」本项目已经清过好几个）。
+  {
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, {
+      free: { temperature: 0.5, triggerMessages: 12, summaryMinIntervalMin: 30 },
+    } as never)
+    const st = await getTavernSettings()
+    const keys = Object.keys(st.free as unknown as Record<string, unknown>)
+    ok('老库里的 free.triggerMessages 被主动删除', !keys.includes('triggerMessages'), JSON.stringify(keys))
+    ok('老库里的 free.summaryMinIntervalMin 被主动删除', !keys.includes('summaryMinIntervalMin'), JSON.stringify(keys))
+    ok('同一分组的其余字段照旧生效（只删废弃键）', st.free.temperature === 0.5, String(st.free.temperature))
+    ok('记忆上限那几项仍在（别误删还活着的）',
+      typeof st.free.softLimit === 'number' && typeof st.free.hardLimit === 'number' && typeof st.free.diaryDays === 'number')
+    ok('整理锁仍在（跨实例锁是自动整理废除后唯一保留的防重层）', typeof st.free.summaryLockTtlMin === 'number')
+  }
+
   // ---------- 3c) 「我的档案」能存能读回 ----------
   {
     __resetMockStores()
@@ -212,11 +232,10 @@ async function main() {
     const st = DEFAULT_TAVERN_SETTINGS
 
     const lim = memoryLimitsOf(st)
-    ok('memoryLimitsOf：分钟 → 毫秒', lim.minIntervalMs === SUMMARY_MIN_INTERVAL_MS, String(lim.minIntervalMs))
     ok('memoryLimitsOf：小时 → 毫秒', lim.dailyAdvanceMs === DAILY_ADVANCE_MS, String(lim.dailyAdvanceMs))
-    ok('memoryLimitsOf：条数/上限原样带出',
-      lim.triggerMessages === SUMMARY_TRIGGER_MESSAGES && lim.softLimit === MEMORY_SOFT_LIMIT && lim.hardLimit === MEMORY_HARD_LIMIT,
-      `${lim.triggerMessages}/${lim.softLimit}/${lim.hardLimit}`)
+    ok('memoryLimitsOf：上限原样带出',
+      lim.softLimit === MEMORY_SOFT_LIMIT && lim.hardLimit === MEMORY_HARD_LIMIT,
+      `${lim.softLimit}/${lim.hardLimit}`)
 
     ok('timeoutMsOf：秒 → 毫秒', timeoutMsOf(st) === 300 * 1000, String(timeoutMsOf(st)))
     ok('timeoutMsOf 有下限保护（填 0 也不会变成 0 超时）', timeoutMsOf({ ...st, common: { ...st.common, timeoutSec: 0 } }) === 5000)

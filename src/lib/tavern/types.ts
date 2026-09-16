@@ -239,7 +239,7 @@ export type FreeCharacter = {
   name: string
   avatar?: string          // dataURL
   // ── 角色卡正文：四章分块（第 0 章不要，协议已是内置常量）──
-  /** 第 1 章 · 世界 */
+  /** 第 1 章 · 角色与设定的关系（世界观本身在故事层，见 story.ts） */
   world: string
   /** 第 2 章 · 人物档案 */
   profile: {
@@ -847,8 +847,17 @@ export const MEMORY_LONGTERM_LIMIT = 500
 /** 「最近日记」保留天数（硬性滚动） */
 export const MEMORY_DIARY_DAYS = 7
 
-/** 触发自动总结的新消息条数阈值（方案 4.6 ①） */
-export const SUMMARY_TRIGGER_MESSAGES = 6
+/**
+ * 🚫 **2026-09-16 已废除：本项目不再有任何「自动整理」**（原 `SUMMARY_TRIGGER_MESSAGES` /
+ *    `SUMMARY_MIN_INTERVAL_MS` 已删）。
+ *
+ * 两种模式都改成**由作者手动触发**：自由对话 = 「结束本轮对话」（一次跑完记忆 + 日记 + 数值 + 设定审查），
+ * 剧情推演 = 「整理本场记忆」。理由：本地模型跑一次总结几十秒，自动触发全压在一轮对话之后，
+ * 表现就是「说完一句卡半天」，而且聊得越久触发越密。
+ * 老库里残留的 `free.triggerMessages` / `free.summaryMinIntervalMin` 由
+ * `settings.ts` 的 `upgradeLegacyDefaults` 主动删除（mergeDeep 否则会照抄回来）。
+ */
+
 /** 日常状态推进阈值：间隔 ≥ 8 小时才生成「这几天的生活」（方案 4.7） */
 export const DAILY_ADVANCE_MS = 8 * 60 * 60 * 1000
 /**
@@ -858,11 +867,10 @@ export const DAILY_ADVANCE_MS = 8 * 60 * 60 * 1000
  */
 export const DAILY_LOG_KEEP = 7
 /**
- * 记忆总结防重复（三层保险，数值照搬手册「记忆引擎」的实测默认值）：
- *   ① 时间节流 —— 两次自动总结至少间隔这么久（手册 auto_interval = 600 秒）
- *   ② 跨实例锁 —— 避免同时开两个窗口跑两遍
- *   ③ 锁 TTL 兜底 —— 上次跑到一半崩了的情况（手册 auto_lock_ttl = 1800 秒）
+ * 总结的**防重复锁**（自动整理废除后只剩这一层）。
+ *
+ * 原来有三层保险（时间节流 → 跨实例锁 → 锁 TTL 兜底）；手动触发不受时间节流限制，
+ * 所以那一层整层没有了意义。只留跨实例锁 + TTL：避免两个窗口同时跑一遍，
+ * 以及上次跑到一半崩了之后锁永远不释放。
  */
-export const SUMMARY_MIN_INTERVAL_MS = 600 * 1000
-/** 总结锁的 TTL：超过这么久视为陈旧锁，可被接管 */
 export const SUMMARY_LOCK_TTL_MS = 1800 * 1000

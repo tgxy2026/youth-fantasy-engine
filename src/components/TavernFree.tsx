@@ -34,6 +34,7 @@ import TavernCastDirector from './TavernCastDirector'
 import TavernRevisionDialog from './TavernRevisionDialog'
 import TavernExportDialog from './TavernExportDialog'
 import TavernStatusBar from './TavernStatusBar'
+import TavernVarsPanel from './TavernVarsPanel'
 import TavernUsageDialog from './TavernUsageDialog'
 import Avatar from './Avatar'
 import TavernMessageBody from './TavernMessageBody'
@@ -51,7 +52,7 @@ import { nextWatermark, acquireSummaryLock, releaseSummaryLock } from '../lib/ta
 import {
   type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
-  type VarKey, VAR_DEFS, type TavernStoryIndexItem, sessionStoryId,
+  type VarKey, type TavernStoryIndexItem, sessionStoryId,
 } from '../lib/tavern/types'
 import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf } from '../lib/tavern/vars'
 import { scriptSceneLine, snapshotOf, openingToMessage } from '../lib/tavern/script'
@@ -818,7 +819,7 @@ export default function TavernFree() {
   这里的对话不绑小说项目：换一本书，角色卡与记忆照样在。
 
   • 顶部几件：Ta最近几天（每日小结）、结束本轮对话（整理记忆并归档）、导出。
-  • 右侧常驻「本场状态」：好感 / 信任 / 剧情进度 / 心情 这些即时数值，以及在场由 AI 扮演的角色。
+  • 右侧常驻「本场状态」：好感 / 信任 / 剧情进度 / 心情 这些即时数值（可直接改，改完回车生效），以及在场由 AI 扮演的角色。
   • 多角色同场时点头像可指定下一位接话；「在场调度」里能静音某个人、调健谈度。
   • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它**只在点「结束本轮对话」时**才整理，
     所以聊天过程中不会被整理任务卡住；整理好的记忆与日记在「角色卡片」页里看。
@@ -859,7 +860,7 @@ export default function TavernFree() {
             </Button>
             <Button
               variant="secondary" size="md" onClick={() => setStatusOpen(v => !v)}
-              title="对话上方那条一览：场景、在场角色、记忆计数（只读）与本场数值（可直接改）"
+              title="对话上方那条一览：场景、在场角色与记忆计数（只读）。本场数值在右侧「本场状态」里改"
             >
               {statusOpen ? '收起角色状态' : '角色状态'}
             </Button>
@@ -1082,10 +1083,6 @@ export default function TavernFree() {
                   || scriptSceneLine(session.script)
                 }
                 collapsed={!statusOpen}
-                vars={session.vars}
-                varKeys={varKeys}
-                onSetVar={setVar}
-                onResetVars={() => void resetVars()}
               />
 
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -1234,35 +1231,14 @@ export default function TavernFree() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                  {varKeys.length === 0 ? (
-                    <p className="text-[11.5px] text-ink-500 leading-relaxed">
-                      没有开启任何状态项。去「控制面板」的本场数值里勾选，这里就会显示。
-                    </p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {VAR_DEFS.filter(d => varKeys.includes(d.key)).map(d => {
-                        const raw = session.vars?.values?.[d.key]
-                        const shown = raw === undefined || raw === '' ? '（未记录）' : String(raw)
-                        const num = d.kind === 'num' ? Number(raw) : NaN
-                        const pct = Number.isFinite(num)
-                          ? Math.max(0, Math.min(100, ((num - d.min) / Math.max(1, d.max - d.min)) * 100))
-                          : 0
-                        return (
-                          <div key={d.key}>
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-[11px] text-ink-400">{d.label}</span>
-                              <span className="text-[11.5px] text-ink-100">{shown}</span>
-                            </div>
-                            {d.kind === 'num' && Number.isFinite(num) && (
-                              <span className="mt-0.5 block h-1 w-full overflow-hidden rounded-full bg-ink-700">
-                                <span className="block h-full rounded-full bg-amber/70" style={{ width: `${pct}%` }} />
-                              </span>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                  {/* 本场数值：**全项目唯一的显示与修改入口**（2026-09-16 去重 ——
+                      原先中间那条状态栏里还有一份只读/可改的副本，已删）。 */}
+                  <TavernVarsPanel
+                    vars={session.vars}
+                    varKeys={varKeys}
+                    onSetVar={setVar}
+                    onResetVars={() => void resetVars()}
+                  />
 
                   {/* 在场的人：只列 AI 扮演的 —— 用户自己演的那位不是观察对象。
                       点一个 = 把上面「Ta这几天的生活 / 心情」切到这位名下（多角色时才有意义）。 */}

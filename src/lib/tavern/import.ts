@@ -35,8 +35,9 @@ export function buildImportSystem(): string {
 所以你要**改写**：把设定翻译成行为倾向，把剧情信息丢掉或压缩成背景。
 
 〖四章结构（标题一字不差，每章另起一行写内容）〗
-〖第 1 章 · 世界〗
-Ta所在的世界与处境（时代、地点、社会规则、与「用户」的初始关系）。
+〖第 1 章 · 角色与设定的关系〗
+Ta在这个世界里的位置与处境（身份、常去的地方、这个世界怎么影响 Ta、与「用户」的初始关系）。
+**不写世界本身** —— 世界观另有归属，这里只写 Ta 与它的关系。
 
 〖2.1 外在〗
 外貌、穿着、有记忆点的小特征。
@@ -92,7 +93,9 @@ export function renderNovelChar(name: string, data: Record<string, string>): str
  * 「裸化去掉了 2.1、正则还要求 ^2」这种对不上的情况（踩过）。
  */
 const T = {
-  world: /^(世界|世界观|背景)$/,
+  // 🔴 2026-09-16 起新标题是「角色与设定的关系」（世界观搬去故事层）；
+  //    旧名（世界 / 世界观 / 背景）**继续认** —— 老卡与老模型的输出还带着它们。
+  world: /^(角色与设定的关系|角色与世界的关系|与设定的关系|世界|世界观|背景)$/,
   externals: /^(外在|外貌|外表)$/,
   core: /^(内核|性格|内心)$/,
   speech: /^(语言特征|说话风格|语言|口吻)$/,
@@ -108,7 +111,7 @@ const T = {
 
 /**
  * 把一行标题剥成纯名字：去掉包裹符号、加粗标记、各种序号前缀。
- *   「〖第 1 章 · 世界〗」→ 「世界」
+ *   「〖第 1 章 · 角色与设定的关系〗」→ 「角色与设定的关系」
  *   「## 2.5 做不到的事」→ 「做不到的事」
  *   「一、示例对话」/「1. 世界」→ 同样只剩名字
  */
@@ -189,7 +192,7 @@ export function draftGaps(draft: CardDraft): string[] {
   const gaps: string[] = []
   const check = (label: string, v: string) => { if (String(v ?? '').includes(MISSING_TAG)) gaps.push(label) }
   // 全部字段都过一遍 —— 只抽查几项的话，作者会以为「没提示=都填好了」
-  check('第 1 章 · 世界', draft.world)
+  check('第 1 章 · 角色与设定的关系', draft.world)
   check('2.1 外在', draft.profile.externals)
   check('2.2 内核', draft.profile.core)
   check('2.3 语言特征', draft.profile.speech)

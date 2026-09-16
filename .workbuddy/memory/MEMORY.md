@@ -53,7 +53,9 @@
 - 🔴🔴 上下文预算：`historyBudget`＝预算−400−整条 system（**别传记忆**）；contextBudget **24000**（三处一致）。源 both/digest/raw；空层不占额度。
 - ⚙️ 出厂参数 2026-09-15 放宽一档（数值表见 `types.ts`／`paramGuide.ts`；**numCtx 仍 32768，别动**）。🔴 值须落在 paramGuide **推荐段**内（有测试闸）；改默认值**必须同加 `upgradeLegacyDefaults` 的「全等旧值才升」规则**。
 - 🔴 记忆 vs 设定：记忆＝发生过什么＋此刻温度（`summarize.ts`）；设定＝这让 Ta 变成谁（`revise.ts`）。📚 背景设定：关键词空＝总是注入、上限 2400 字；键只剩 `tavern.world`。
-- 🧠 **自由模式记忆整理时机（09-16 重构）**：**只有「结束本轮对话」**（`roundEnd.ts`）——每轮 autoSummarize 已删。收尾＝①逐位角色记忆 ②本场数值 ③设定审查；**唯一硬失败点是①**（抛出且不归档），②③ 失败吞掉。🔴 **`vars`（好感/心情）也随之只在收尾刷新**。🔴 `summarizeRound` **一次调用同时吐六栏档案＋本场小结**，解析前必须 `splitJournalSection` **先切小结**（否则第七节并进「最近日记」，那份记忆每轮进上下文＝白烧额度）。📔 日记 `tavern.free.journal.<charId>`（`JOURNAL_KEEP=50`）**不进任何提示词**，删卡时连它一起清。🔴 会话归档后（`endedAt`）除 `send()` 守卫外，**输入区整块换成只读提示＋新开一场**。
+- 🧠 **整理时机（2026-09-16 定死：全项目没有「自动整理」）**：只有两个**手动**入口 —— 自由对话「结束本轮对话」（`roundEnd.ts`：记忆+日记+数值+设定审查，然后归档只读）、剧情推演「整理本场记忆」（`TavernPlot` 那个按钮，不归档）。原「条数阈值自动整理」整层已删：`triggerMessages`/`summaryMinIntervalMin`/`countUnsummarized`/`shouldSummarize`/`throttleOk`/`shouldRunAutoSummary` 全部不存在了（**别再照旧记忆去找**）；🔴 **只保留跨实例锁 + TTL**（`summaryLockTtlMin`）。老库残留的两个死键由 `upgradeLegacyDefaults` 主动删。🔴 **`vars`（好感/心情）也随之只在收尾刷新**。🔴 `summarizeRound` 一次调用同时吐六栏档案＋本场小结，解析前必须 `splitJournalSection` **先切小结**（否则第七节并进「最近日记」，那份记忆每轮进上下文＝白烧额度）。📔 日记 `tavern.free.journal.<charId>`（`JOURNAL_KEEP=50`）**不进任何提示词**，删卡时连它一起清。🔴 会话归档后（`endedAt`）除 `send()` 守卫外，**输入区整块换成只读提示＋新开一场**。
+- 📊 **本场数值唯一入口**＝自由对话**右栏「本场状态」**（`TavernVarsPanel.tsx`，栏内直接编辑）；中间那条 `TavernStatusBar` 只剩「场景 + 角色状态（只读）」，**别再往它里面加数值**（2026-09-16 去重，方案 B）。
+- 🗂 **第 1 章标题统一「角色与设定的关系」**（不再是「世界」）：界面/渲染/导出/起草/导入提示词全一致；🔴 导入器解析锚点**同时认旧名**（世界/世界观/背景…），老卡与老模型输出不能丢。
 - ✅ **反馈 #1 已修（2026-09-16）**：明细总额度不跟面板变 = **显示 bug**（引擎那条路本来就对）。根因是「同一个数两处各算一遍」——明细直接读 `session.params.contextBudget` 再回落硬编码常量，绕过了控制面板。已抽 `settings.ts` 的 `resolveParamsOf()` / `effectiveContextBudget()`，**engine 的 3 处内联 resolveParams 与 TavernUsageDialog 都改走它**，结构性杜绝再分叉。
 - ⏳ **待老大拍板的三件（方案文档 §10.2 有选项）**：① `summaryMinIntervalMin` 已成全应用死键（建议删，连带 `shouldRunAutoSummary`/`throttleOk` 与断言）；② `triggerMessages` 实际只被 `TavernPlot` 用，却挂在「七、自由对话控制」；③ 本场数值同时在**中间状态栏（可改）**与**右栏本场状态（只读）**显示两次。
 - 🎭 剧本 `script.ts` 六栏：🔴🔴 会话存**快照**不是引用；开场白不进 system（＝第一条消息）。🔴 `engine`↔world/script/draft 环已上移 `provider.ts`；设定更新＝12 字段白名单（不含 name）＋二次把关。
@@ -65,6 +67,7 @@
 - 📦 导入导出：单卡 `.taverncard.json`／整批 `.taverncards.json`；批量逐张独立校验且**不调 AI**（`draftMemoryFromCard` 离线摘录）。🔴 剧情推演**没有会话级模型选择**。
 
 ## 出厂数据（角色卡不进原生）✅ 2026-09-15 已执行
+- 🧪 **dev 测试数据一律放仓库之外**：`G:\AI软件\角色卡录入\04-开发测试数据（dev专用·不进打包）\`（README + 可粘贴 Console 脚本）。🔴 老大明确要求这类数据**打包不携带** → **绝不写进 `seedData.ts`**（会进产物 + 踩 tree-shake）。写法：走应用自己的 `story.ts`/`store.ts`（索引与分条成对），脚本要**幂等**（同名更新不新建）。当前内有「奉阳大学」故事 + 楚楠/苏念两张卡（新细字段格式）。
 - 🚫 原生**不再预填角色卡** —— 特指**自由对话的 6 张示范自由卡**；项目内 `char-*` 卡（23 张）、细纲卡「→角色卡」文本、推演会话 `cast` **照旧保留**。理由：这批卡每次改版都要同步旧指纹/旧示例/断言，纯负担。🔴 **老库已有的卡只保留、不删**。
 - 已删三个文件：`seedCardData.ts`／`seedCards.ts`／`tests/tavernSeedCards.test.ts`；已删四处调用：`seedData.ts` §8 播种、`App.tsx` 的 `upgradeSeedCards`、卡页「恢复内置版本」按钮与 import。
 - ⚠️ 幽灵引用：全项目 33 处**提示词/文案拿卡名当例子**（含 `revise.ts`/`summarize.ts` 的 few-shot）已换成中性名（阿岩/小满/阿禾）—— 卡都没了还叫着名字，既不准确也会误导。

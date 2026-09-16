@@ -13,14 +13,17 @@
  * 【改写而非追加】每次总结 = 「旧档案 + 新剧情 → 重写整份完整档案」，
  * 所以字数在 500~1200 浮动、不会无限长大。
  *
- * 【无服务端约束】novel-studio 是纯前端 SPA + Electron，**不能后台跑任何东西**，
- * 所以总结只能事件驱动（回复后判阈值 / 下次打开补算），绝不轮询。
+ * 【无服务端约束 + 不自动整理】novel-studio 是纯前端 SPA + Electron，**不能后台跑任何东西**，
+ * 也不轮询。总结**只由作者手动触发**（2026-09-16 起，两种模式都是）：
+ *   自由对话 = 「结束本轮对话」（一次跑完记忆 + 日记 + 数值 + 设定审查）
+ *   剧情推演 = 「整理本场记忆」
+ * 早年的「回复后判条数阈值自动整理」已整层废除 —— 本地模型一次几十秒，压在对话之后就是「说完卡半天」。
  *
  * 本文件是纯逻辑：无 React、无 IO、无网络。读写归 store.ts，调模型归 summarize.ts。
  */
 import {
   MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
-  SUMMARY_TRIGGER_MESSAGES, SUMMARY_MIN_INTERVAL_MS, SUMMARY_LOCK_TTL_MS,
+  SUMMARY_LOCK_TTL_MS,
   type FreeMemory, type FreeSession,
 } from './types'
 
@@ -206,20 +209,6 @@ function matchSectionTitle(line: string): { key: MemorySectionKey; rest: string 
 
 // ==================== 水位线与触发判定（方案 §4.6） ====================
 
-/**
- * 水位线之后**需要被总结**的消息条数（只数 user / assistant，system 不计）。
- * 水位线消息已被删除等异常情况下，保守地按「全部未总结」处理 ——
- * 宁可多总结一次，也不要漏掉一大段记忆。
- */
-export function countUnsummarized(session: Pick<FreeSession, 'messages' | 'watermark'>): number {
-  const msgs = session.messages.filter(m => m.role !== 'system' && !m.hidden)
-  const wm = session.watermark?.messageId
-  if (!wm) return msgs.length
-  const i = msgs.findIndex(m => m.id === wm)
-  if (i < 0) return msgs.length
-  return msgs.length - i - 1
-}
-
 /** 水位线之后的第一条消息 id（总结完成后推进到哪 —— 推进到「最后一条」即可） */
 export function nextWatermark(session: Pick<FreeSession, 'messages'>): { messageId: string; at: number } | null {
   const msgs = session.messages.filter(m => m.role !== 'system')
@@ -227,18 +216,16 @@ export function nextWatermark(session: Pick<FreeSession, 'messages'>): { message
   return last ? { messageId: last.id, at: Date.now() } : null
 }
 
-/** 是否够条件触发一次自动总结（方案 §4.6 ①：回复结束后判阈值） */
-export function shouldSummarize(session: Pick<FreeSession, 'messages' | 'watermark'>, threshold = SUMMARY_TRIGGER_MESSAGES): boolean {
-  return countUnsummarized(session) >= threshold
-}
-
-// ==================== 三层防重（方案 §4.6） ====================
-// ① 时间节流 ② 跨实例锁 ③ 锁的 TTL 兜底。纯前端没有原子操作，
-// localStorage 锁只能「尽力而为」—— 但足以挡掉「两个窗口同时总结」这种常见情形。
+// ==================== 跨实例锁（方案 §4.6 的②③） ====================
+// 🚫 ① 时间节流 与「条数阈值判断」在 2026-09-16 随**自动整理**一并废除：
+//    两种模式都由作者手动触发（自由对话「结束本轮对话」/ 剧情推演「整理本场记忆」），
+//    手动触发不受阈值与节流限制，留着一整套自动判定只会成为死代码。
+//    现在只剩跨实例锁 + TTL：纯前端没有原子操作，localStorage 锁只能「尽力而为」——
+//    但足以挡掉「两个窗口同时总结」这种常见情形，以及在跑崩之后靠 TTL 解锁。
 
 const LOCK_KEY = 'yfe-tavern-summary-lock'
 
-/** ② 尝试取锁；③ 陈旧锁（超过 TTL）可被接管 */
+/** 尝试取锁；陈旧锁（超过 TTL）可被接管 */
 export function acquireSummaryLock(now = Date.now(), ttlMs = SUMMARY_LOCK_TTL_MS): boolean {
   try {
     const raw = localStorage.getItem(LOCK_KEY)
@@ -258,41 +245,11 @@ export function releaseSummaryLock(): void {
   try { localStorage.removeItem(LOCK_KEY) } catch { /* 读不到也无所谓 */ }
 }
 
-/**
- * ① 时间节流：两次自动总结的间隔下限（用记忆的 updatedAt 当上次总结时间）。
- * 手动点「立即总结」时**不走这个判断** —— 作者点了就该跑。
- */
-export function throttleOk(
-  m: FreeMemory | null | undefined,
-  now = Date.now(),
-  minIntervalMs = SUMMARY_MIN_INTERVAL_MS,
-): boolean {
-  if (!m?.updatedAt) return true
-  return now - m.updatedAt >= minIntervalMs
-}
-
-/** 一次总结是否该跑（把①与阈值判断合起来，供调用方一问到底） */
-export function shouldRunAutoSummary(
-  session: Pick<FreeSession, 'messages' | 'watermark'>,
-  mem: FreeMemory | null | undefined,
-  now = Date.now(),
-  opts: { triggerMessages?: number; minIntervalMs?: number } = {},
-): { run: boolean; reason: string } {
-  const trigger = opts.triggerMessages ?? SUMMARY_TRIGGER_MESSAGES
-  if (!shouldSummarize(session, trigger)) {
-    return { run: false, reason: `新消息不足 ${trigger} 条` }
-  }
-  if (!throttleOk(mem, now, opts.minIntervalMs)) {
-    return { run: false, reason: '距上次总结太近（时间节流）' }
-  }
-  return { run: true, reason: 'ok' }
-}
-
 export { MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT }
 
 /**
  * 取出尚未被总结的消息（水位线之后的 user / assistant）。
- * 与 countUnsummarized 同一套判定：水位线消息被删等异常时按全部未总结处理。
+ * 水位线消息被删等异常时按「全部未总结」处理（宁可多总结一次，也别漏掉一大段）。
  */
 export function messagesAfterWatermark(
   messages: FreeSession['messages'],

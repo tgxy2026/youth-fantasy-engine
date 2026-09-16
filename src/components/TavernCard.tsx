@@ -593,7 +593,7 @@ export default function TavernCard() {
    */
   const flattenCard = (c: FreeCharacter): string => ([
     ['名字', c.name],
-    ['第 1 章 · 世界', c.world ?? ''],
+    ['第 1 章 · 角色与设定的关系', c.world ?? ''],
     ['外在', c.profile?.externals ?? ''],
     ['内核', c.profile?.core ?? ''],
     ['语言特征', c.profile?.speech ?? ''],
@@ -726,7 +726,7 @@ export default function TavernCard() {
   一张卡 = AI 的「人设说明书」：写得越具体，演得越像。四章模板：
 
   • 归属故事：决定这张卡用哪一套世界观 —— 世界设定写在「故事剧本」页的故事里，这里不再重复。
-  • 第 1 章 世界：不写世界本身，只写**角色与这个世界的关系**（身份、处境、常去的地方）。
+  • 第 1 章 角色与设定的关系：不写世界本身（世界观在「故事剧本」的故事里），只写身份、处境、常去的地方。
   • 第 2 章 人物档案 / 第 3 章 行为规范：都是**按小项分条填**的表格（如「外貌：短发」一行一项），
     模板没覆盖到的写进该栏的「其他」。不确定怎么填就先看每格的灰字例句。
   • 第 4 章 示例对话：AI 会照着它的格式与语气模仿，所以按输出规范写（对白不带名字、除对白外一律套（ ））。
@@ -962,7 +962,7 @@ export default function TavernCard() {
                 {/* 第 1 章 */}
                 <section>
                   <SectionTitle sub="世界设定写在「故事剧本」页的故事里 —— 这里只写角色在世界里的位置（不重复写世界本身）。">
-                    第 1 章 · 世界
+                    第 1 章 · 角色与设定的关系
                   </SectionTitle>
                   <Field label="角色与设定的关系" hint="Ta的身份、处境、常去的地方，以及这个世界如何影响Ta" rows={3}
                     value={draft.world} onChange={v => up('world', v)}
