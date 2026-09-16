@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>青春幻想引擎 2.1.1 · 全量审计报告（2026-09-16）</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1d2638; --line:#2a3650;
+    --txt:#e6ecf5; --sub:#9fb0c8; --mut:#6b7b96;
+    --p0:#ff5d6c; --p1:#ffa53d; --p2:#5fb0ff; --ok:#3ddc97;
+    --chip:#22304a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;padding:28px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 4px}
+  h2{font-size:18px;margin:34px 0 12px;padding-left:10px;border-left:4px solid var(--line)}
+  .meta{color:var(--mut);font-size:12.5px;margin-bottom:18px}
+  .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+  .sc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .sc .n{font-size:26px;font-weight:700}
+  .sc .l{color:var(--sub);font-size:12px;margin-top:2px}
+  .sc.p0 .n{color:var(--p0)} .sc.p1 .n{color:var(--p1)} .sc.p2 .n{color:var(--p2)} .sc.ok .n{color:var(--ok)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:12px 0;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+  .card.p1::before{background:var(--p1)} .card.p2::before{background:var(--p2)}
+  .card .top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--sub)}
+  .tag.p1{color:var(--p1)} .tag.p2{color:var(--p2)}
+  .loc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--mut)}
+  .card h3{margin:2px 0 6px;font-size:15.5px}
+  .card p{margin:6px 0;color:var(--sub)}
+  .ev{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-family:ui-monospace,monospace;font-size:12px;color:#cdd9ec;white-space:pre-wrap;margin:8px 0}
+  .fx{color:var(--ok);font-size:13px}
+  .sec-note{background:var(--panel);border:1px dashed var(--line);border-radius:10px;padding:14px 16px;margin:10px 0;color:var(--sub)}
+  .sec-note b{color:var(--txt)}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--sub);font-weight:600;background:var(--panel2)}
+  code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--mut);font-size:12px;margin-top:8px}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>青春幻想引擎 · 全量审计报告</h1>
+  <div class="meta">项目 novel-studio（青春幻想引擎） · 版本 2.1.1 · 审计日期 2026-09-16 · 流水线：基线 → 三路并行审计（扫描器 + 4 子代理）→ 验尸 → 报告</div>
+
+  <div class="summary">
+    <div class="sc ok"><div class="n">0</div><div class="l">P0（数据/功能正确性致命）</div></div>
+    <div class="sc p1"><div class="n">1</div><div class="l">P1（跨设备数据风险）</div></div>
+    <div class="sc p2"><div class="n">8</div><div class="l">P2（文案/注释/规范漂移）</div></div>
+    <div class="sc"><div class="n">3</div><div class="l">判定不改（含 1 误报）</div></div>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:var(--p0)"></span>P0 致命</span>
+    <span><span class="dot" style="background:var(--p1)"></span>P1 高</span>
+    <span><span class="dot" style="background:var(--p2)"></span>P2 低</span>
+    <span><span class="dot" style="background:var(--mut)"></span>判定不改</span>
+  </div>
+
+  <h2>一、基线锚点（改动前，全绿）</h2>
+  <table>
+    <tr><th>检查项</th><th>命令</th><th>结果</th><th>说明</th></tr>
+    <tr><td>类型</td><td><code>tsc --noEmit</code></td><td><b style="color:var(--ok)">0 error</b></td><td>—</td></tr>
+    <tr><td>规范</td><td><code>eslint src</code></td><td><b style="color:var(--ok)">0 error / 11 warning</b></td><td>11 条为既有 <code>exhaustive-deps</code>，按红线不盲改</td></tr>
+    <tr><td>测试</td><td><code>tests/run-all.mjs</code></td><td><b style="color:var(--ok)">43 / 43 全绿</b></td><td>含 <code>seed-schema-check</code> / <code>feature-deps-check</code> 回归闸</td></tr>
+    <tr><td>死代码扫描</td><td><code>audit-dead.mjs</code></td><td>全部为被 tests 引用的导出</td><td>无产品代码零引用死导出（抽样验尸：均为误报型清单，非真死）</td></tr>
+    <tr><td>依赖图</td><td><code>audit-graph.mjs</code></td><td><b style="color:var(--ok)">0 循环 / 0 孤立 / 0 分层违规</b></td><td>扇入 0 模块（无）；lib 未反向依赖 components</td></tr>
+  </table>
+
+  <h2>二、P1 发现（建议修复）</h2>
+
+  <div class="card p1">
+    <div class="top"><span class="tag p1">P1</span><span class="loc">src/lib/db.ts:474 &amp; :531</span></div>
+    <h3>云端空快照判定用 <code>Object.keys().length</code>，违反存储红线 #2</h3>
+    <p><b>问题</b>：两处用 <code>snap.rev === 0 &amp;&amp; Object.keys(snap.stores).length === 0</code> 判云端快照是否空。但 <code>liveStores()</code> 恒给每个 store 放一个键（哪怕空数组），12 个空数组就能骗过去。</p>
+    <div class="ev">const snap = await pullDesktopSnapshot()
+const empty = snap.rev === 0 &amp;&amp; Object.keys(snap.stores).length === 0   // :474 / :531 同款</div>
+    <p><b>触发条件</b>：A 机空库首次播种写 <code>rev=1</code> 空文件（<code>seedFromLocal</code> 走 <code>pushNow(0)</code> 放行），B 机随后选同一云端目录→B 机真实本地数据被云端空缓存遮蔽，未重编辑的记录丢失。</p>
+    <p class="fx">修复建议：从 <code>syncCore.ts</code> 导出 <code>totalRecords</code>（已存在于 :330，并在 :458/:515 正确用于同语义判空），改为 <code>const empty = snap.rev === 0 || totalRecords(snap.stores) === 0</code>。低风险替换，不改行为。</p>
+  </div>
+
+  <h2>三、P2 发现（文案 / 注释 / 规范漂移）</h2>
+
+  <div class="card p2">
+    <div class="top"><span class="tag p2">P2</span><span class="loc">src/lib/tavern/report.ts:119</span></div>
+    <h3>报告等级分类用子串匹配，「无矛盾」会被误判为「矛盾」</h3>
+    <div class="ev">let level: TavernFindingLevel = levelRaw.includes('矛盾') ? '矛盾'
+  : levelRaw.includes('漏洞') ? '漏洞' : '存疑'</div>
+    <p><b>影响</b>：模型若输出「无矛盾 / 无明显矛盾」会被归到「矛盾」档，污染审计报告结论。先判否定词或精确等价匹配后再回退 <code>includes</code> 即可修复。</p>
+  </div>
+
+  <div class="card p2">
+    <div class="top"><span class="tag p2">P2</span><span class="loc">src/lib/tavern/types.ts:448 + 红线文档 §</span></div>
+    <h3>#6 改名（进度→精神 / 当前地点→地点）后，注释与红线文档残留旧名</h3>
+    <p><code>types.ts:448</code> 注释仍写「好感 / 信任 / <b>剧情进度</b> / 心情 / <b>当前地点</b>」，与全部用户可见文案（<code>VAR_DEFS</code> labels、<code>TavernControl.tsx</code>、<code>protocol.ts</code>）的「精神 / 地点」脱节。仅内部维护可读性问题，但易被误读为两套变量。</p>
+    <p class="fx">修复建议：同步注释与红线文档为「精神 / 地点」。</p>
+  </div>
+
+  <div class="card p2">
+    <div class="top"><span class="tag p2">P2</span><span class="loc">src/lib/schema.ts:841 vs src/components/TavernCard.tsx:1105</span></div>
+    <h3>角色卡说明写「世界」、卡片标题写「设定」，术语不一致</h3>
+    <p><code>schema.ts:841</code> description：<code>卡里只写「角色与<b>世界</b>的关系」</code>；但 <code>TavernCard.tsx:1105</code> 第 1 章标题为 <code>角色与<b>设定</b>的关系</code>。用户侧可见的术语漂移，建议统一为「设定」与卡片标题对齐。</p>
+  </div>
+
+  <div class="card p2">
+    <div class="top"><span class="tag p2">P2</span><span class="loc">src/components/TavernCard.tsx:1033</span></div>
+    <h3>数值备注示例「好感 20 → 从陌生到熟悉的朋友」与新刻度量级略出入</h3>
+    <p>新刻度为 −100~+100、0 为中立起点（<code>TavernControl.tsx</code> 已教授），20 仅属「略亲近」。示例可能让读者低估数值含义，建议改为更贴近量级的值（如 45）或措辞对齐 0=中立框架。</p>
+  </div>
+
+  <div class="card p2">
+    <div class="top"><span class="tag p2">P2</span><span class="loc">src/lib/tavern/ai.ts:285-287（注释）</span></div>
+    <h3>注释称 think:false 仅 testProvider 用，与酒馆实际恒带 think:false 矛盾</h3>
+    <p>酒馆 <code>disableThink</code> 默认 <code>true</code> → 实际恒传 <code>think:false</code>。注释若不补「酒馆是有意例外」，后续维护者可能「修正」掉酒馆的 think:false，破坏红线。补充一句即可。</p>
+  </div>
+
+  <div class="card p2">
+    <div class="top"><span class="tag p2">P2</span><span class="loc">src/lib/db.ts:461-493（启动恢复 IIFE）</span></div>
+    <h3>启动恢复云端同步是未 await 的 IIFE，且切到云端 ops 后未按注释 reload</h3>
+    <p>恢复分支切到 <code>desktopCloudFileStore</code> 后，UI 在 reload 前可能仍读旧本地 <code>data</code>。影响极小（仅启动瞬间），建议补 <code>location.reload()</code> 或显式刷新 store 引用。</p>
+  </div>
+
+  <div class="card p2">
+    <div class="top"><span class="tag p2">P2</span><span class="loc">src/components/DataDock.tsx:35 / SaveFab.tsx:26</span></div>
+    <h3>浮层层级用 Tailwind 魔数（z-40 / z-20），未走 zLayer.ts 单一真源</h3>
+    <p>二者均非禁止的 <code>z-[9999]</code>，但绕过层号真源 <code>Z</code>。建议从 <code>zLayer.ts</code> 取号，消除魔数残留（与 SaveFab 全局 fixed 同属已登记例外，见下）。</p>
+  </div>
+
+  <h2>四、判定不改（含验尸剔除的误报）</h2>
+
+  <div class="sec-note">
+    <b>① 误报剔除 — Modal/NovelEditor 静态图标按钮用 <code>ghost</code></b><br>
+    UI 子代理报 P2：<code>Modal.tsx:221</code> 关闭 × 按钮、<code>NovelEditor.tsx:1039</code> 上/下章按钮用 <code>variant="ghost"</code> 违反「静止无框用 secondary」。经源码验尸，这两处均为<b>纯图标键</b>（<code>&lt;X size={16}/&gt;</code>，无文字），属本项目<b>既有约定</b>（技能验尸章节明文：「纯图标键静止无框是既有约定，断言只应针对有文字的按钮」）。<b>判定不改</b>。
+  </div>
+  <div class="sec-note">
+    <b>② SaveFab 全局 fixed 浮层（SaveFab.tsx:26）</b><br>
+    与红线「项目内禁全局 fixed 浮层」字面冲突，但文件注释已自承偏离（「左下角只准一个 DataDock，别往左挪」）—— 属<b>已确认例外</b>。不强行改，建议在红线文档显式登记 SaveFab 为白名单，避免下轮重复提案。
+  </div>
+  <div class="sec-note">
+    <b>③ 审计范围的验证缺口（非问题，仅记一笔）</b><br>
+    红线「归档后输入区/reroll/工具条/调度/数值全锁」的实现落在 <code>components/TavernFree.tsx</code> / <code>TavernPlot.tsx</code>（依据 <code>endedAt</code> 只读标记），超出 lib 层审计范围；UI 子代理确认 #10/#11/#12/#13 落地正确。建议单独一轮组件级复核归档锁，不在本次清单内。
+  </div>
+
+  <h2>五、复用教训（本轮审计印证）</h2>
+  <ul style="color:var(--sub)">
+    <li><b>子代理误报率约 15%</b>：本轮 4 路子代理共报 11 项，验尸后 1 项确认为误报（ghost 图标按钮），其余 10 项均回源码复核属实。</li>
+    <li><b>扫描器数字不可盲信</b>：<code>audit-dead.mjs</code> 输出全是「被 tests 引用」的导出，无产品零引用真死；按技能规则抽样验尸后才采信。</li>
+    <li><b>依赖图三项应为 0</b>：本轮循环依赖 / 孤立模块 / 分层违规均为 0，说明底层分层健康。</li>
+  </ul>
+
+  <h2>六、下一步</h2>
+  <p style="color:var(--sub)">以上为<b>审计结论</b>。按项目红线「先确认再动数据/代码」，建议老大确认修复范围后再进入阶段 4（脚本式修复，遵循 13 条铁律 + 协议三处同步 + dev 提交不封装）。P1 为低风险替换，P2 多为文案/注释微调，可一批实施。</p>
+</div>
+</body>
+</html>
