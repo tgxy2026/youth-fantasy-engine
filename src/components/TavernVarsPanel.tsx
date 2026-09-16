@@ -52,14 +52,10 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
   useEffect(() => { setNoteDraft(note ?? '') }, [note])
 
   const num = def.kind === 'num' ? Number(shown) : NaN
-  const pct = def.kind === 'num' && Number.isFinite(num)
-    ? Math.max(0, Math.min(100, ((num - def.min) / Math.max(1, def.max - def.min)) * 100))
-    : 0
-  /**
-   * 这个数落在哪一档（2026-09-16 老大要求的分区）。
-   * −100~+100 光看裸数看不出轻重，档位名（极度厌恶 / 中立 / 亲近…）才是读得懂的东西。
-   * 🔴 与喂给模型的是**同一份** `VAR_BANDS`（别在界面里另写一套 —— 两份必然漂移）。
-   */
+  const isNum = def.kind === 'num' && Number.isFinite(num)
+  // 以 0 为中点（反馈 #11）：正→向右（好，绿），负→向左（坏，红）；各占容器半宽最多 50%
+  const mag = isNum ? Math.min(100, Math.abs(num)) / 100 * 50 : 0
+  const good = num >= 0
   const band = def.kind === 'num' ? bandOf(k, num) : null
   const delta = lastChangeText(vars, k)
 
@@ -73,9 +69,10 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
   }
 
   return (
-    <div>
+    <div className="space-y-1">
+      {/* 第一行：标签 + 值 + 档位名 + 变化量。文本类型（心情/地点）不渲染进度条，只留可编辑框（反馈 #12） */}
       <div className="flex items-center gap-2">
-        <span className="w-12 shrink-0 text-[11px] text-ink-400" title={def.kind === 'num' ? `${def.min}–${def.max}` : `≤${def.maxLen} 字`}>
+        <span className="w-12 shrink-0 text-[11px] text-ink-400" title={def.kind === 'num' ? `${def.min}~${def.max}` : `≤${def.maxLen} 字`}>
           {def.label}
         </span>
         <input
@@ -89,12 +86,6 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
           className={`w-full min-w-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-ink-100 outline-none focus:border-amber/50 disabled:cursor-not-allowed disabled:opacity-60 ${def.kind === 'num' ? 'shrink-0 w-16' : ''}`}
           title={locked ? '这一场已结束（只读归档），数值不能再改' : '改完按回车或点一下别处生效'}
         />
-        {def.kind === 'num' && (
-          <span className="relative h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-ink-700" title={`${shown} / ${def.max}`}>
-            <span className="absolute inset-y-0 left-0 rounded-full bg-amber/70" style={{ width: `${pct}%` }} />
-          </span>
-        )}
-        {/* 档位名：一眼看懂这个数意味着什么（悬停有这一档的行为说明） */}
         {band && (
           <span className="shrink-0 text-[10px] text-ink-500" title={band.effect}>{band.name}</span>
         )}
@@ -104,6 +95,18 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
           </span>
         )}
       </div>
+      {/* 第二行（仅数值型）：进度条以 0 为中点、双向填充、正负异色（反馈 #10/#11） */}
+      {isNum && (
+        <div className="relative h-2 w-full overflow-hidden rounded-full bg-ink-700/60" title={`${shown} / ${def.max}（0 为中点）`}>
+          {num !== 0 && (
+            <span
+              className={`absolute inset-y-0 ${good ? 'left-1/2 bg-emerald-500/80' : 'right-1/2 bg-rose-500/80'}`}
+              style={{ width: `${mag}%` }}
+            />
+          )}
+          <span className="absolute inset-y-0 left-1/2 w-px bg-ink-300/70" />
+        </div>
+      )}
       {/* 备注：模型读取 / 改写，作者也可手改（反馈 #4） */}
       <input
         value={noteDraft}
@@ -112,7 +115,7 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
         onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
         disabled={locked}
         placeholder="备注（模型会读取 / 改写，如：从陌生到熟悉的朋友）"
-        className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[10.5px] text-ink-300 outline-none focus:border-amber/40 disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[10.5px] text-ink-300 outline-none focus:border-amber/40 disabled:cursor-not-allowed disabled:opacity-60"
       />
     </div>
   )
