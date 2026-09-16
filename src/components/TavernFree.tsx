@@ -43,7 +43,9 @@ import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
-import { runFreeTurn, varsEnabledKeys } from '../lib/tavern/engine'
+import { runFreeTurn, varsEnabledKeys, resolveTavernProvider } from '../lib/tavern/engine'
+import { unloadOllamaModel } from '../lib/ai'
+import { refreshSessionVars } from '../lib/tavern/varsRefresh'
 import type { PostApplied } from '../lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
 import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
@@ -54,11 +56,11 @@ import {
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
   type VarKey, type TavernStoryIndexItem, sessionStoryId,
 } from '../lib/tavern/types'
-import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf } from '../lib/tavern/vars'
+import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf, migrateVarScale } from '../lib/tavern/vars'
 import { scriptSceneLine, snapshotOf, openingToMessage } from '../lib/tavern/script'
 import { getScript } from '../lib/tavern/script'
 import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
-import { listStories, storyDisplayName } from '../lib/tavern/story'
+import { listStories, storyDisplayName, getStory, snapshotStorySetting } from '../lib/tavern/story'
 import { freeDocModel, type SpeakerInfo } from '../lib/tavern/exportDoc'
 import { buildStatusModel, agoText } from '../lib/tavern/status'
 import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult, type RoundEndStage } from '../lib/tavern/roundEnd'
@@ -113,12 +115,17 @@ export default function TavernFree() {
   const [endStage, setEndStage] = useState<RoundEndProgress | null>(null)
   /** 收尾结果摘要（日记 + 数值变化），弹窗展示后关掉即焚 */
   const [endResult, setEndResult] = useState<RoundEndResult | null>(null)
-  /** 右栏状态面板默认展开；它的价值就在「不用点开就看到」，所以不再给收起按钮 */
   /** Ta这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
   const [daily, setDaily] = useState<DailyState | null>(null)
   const [showDaily, setShowDaily] = useState(false)
-  /** 状态一览（批次 8，只读）：默认展开 —— 它的价值就在「不用点开就看到」 */
-  const [statusOpen, setStatusOpen] = useState(true)
+  /**
+   * 右栏当前看哪一页（2026-09-16 老大定：原先「对话上方那条角色状态」并进右栏，两页切换）。
+   *
+   * 默认停在「本场状态」：好感 / 信任 / 精神这些**每轮都在变**，是聊的时候盯得最多的一块。
+   * 「角色状态」是整理完才长出来的（关系与计数），看一眼就切回去，没必要抢默认位。
+   * 用了会话级 state（不落库）：它跟「作者此刻想看什么」有关，不是项目的持久设置。
+   */
+  const [statusTab, setStatusTab] = useState<'status' | 'vars'>('vars')
   /** 用量明细弹窗（额度怎么分的） */
   const [usageOpen, setUsageOpen] = useState(false)
   /** 很久没来时Ta留着的一句话（§7.5），展示后清除 */
@@ -147,6 +154,12 @@ export default function TavernFree() {
 
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  /**
+   * 「生成中又按了一次发送」的提示节流（反馈 #13）。
+   * 输入框在生成期间**保持可用**（作者可以先把下一句打好），所以 Enter 会真的按下去 ——
+   * 若只是静默拦截，作者会以为键盘坏了。一次生成只提示一次，别每按一下弹一个 toast。
+   */
+  const streamingHintRef = useRef(false)
 
   /** 记忆与日常阈值（控制面板）。读到设置前先用出厂默认，免得界面闪一个错的数字。 */
   const lim = useMemo(
@@ -279,7 +292,21 @@ export default function TavernFree() {
   }, [])
 
   const openSession = useCallback(async (id: string) => {
-    const s = await store.getFreeSession(id)
+    const raw = await store.getFreeSession(id)
+    /**
+     * 🔴 旧刻度的会话在这里**一次性迁移**并落库（2026-09-16 老大定 D2）：
+     * 三项数值从 0–100 制（好感/信任默认 50）改为 −100~+100 制（默认 0），旧值一律归零。
+     *
+     * 为什么不放在读取侧「顺手改」：只在内存里归零的话库里还是旧值，
+     * 下次打开又会再归零一遍 —— 作者手改的数值会被**反复抹掉**。
+     * `migrateVarScale` 对已经在新刻度上的会话原样返回，所以这次判断没有额外代价。
+     */
+    const s: FreeSession | null = raw ? migrateVarScale(raw) : null
+    if (s && s !== raw) {
+      await store.saveFreeSession(s).catch(() => undefined)
+      // 给了提示才不会被当成「我的好感怎么突然清零了」
+      showToast('本场数值的刻度已改为 −100~+100，这一场按新刻度从 0 重新计', 'info')
+    }
     setSession(s)
     setStreamText('')
     setSpeakNext('')
@@ -303,11 +330,19 @@ export default function TavernFree() {
       const script = d.scriptId ? await getScript(d.scriptId).catch(() => null) : null
       const snap = script ? snapshotOf(script) : null
       const opening = snap ? openingToMessage(snap) : ''
+      /**
+       * 故事世界设定 → **快照**（#5 / D1，2026-09-16）。
+       * 同剧本的道理：设定可编辑，只存 storyId 的话作者改一次故事，
+       * 所有引用它的历史会话都会被悄悄改写。**读不到就当没有**，不让新会话失败。
+       */
+      const story = d.storyId ? await getStory(d.storyId).catch(() => null) : null
+      const storySnap = story ? snapshotStorySetting(story) : null
       const created = await store.createFreeSession(
         d.charIds, d.title || title, { providerId: '' }, {}, d.userCharId || undefined, d.storyId || undefined)
       const withOpening: FreeSession = {
         ...created,
         ...(snap ? { scriptId: snap.scriptId, script: snap } : {}),
+        ...(storySnap && storySnap.setting ? { storySetting: storySnap } : {}),
         ...(opening ? { messages: [{ id: uid(), role: 'user' as const, content: opening, at: Date.now() }] } : {}),
       }
       await store.saveFreeSession(withOpening)
@@ -331,6 +366,38 @@ export default function TavernFree() {
   }, [nameOf, refreshSessions, refreshStories, loadSessionContext])
 
   // ---------- 结束本轮对话（一次性收尾：记忆 + 日记 + 数值 + 设定） ----------
+  /**
+   * 让本地 Ollama 把这一场用过的模型吐出去（#11，收尾跑完后才调）。
+   *
+   * 【为什么聊天模型也要卸】老大遇到的正是「清空了记忆与日记，模型扮演的角色还是有记忆」——
+   *   真正带着上一场上下文的是**生成回复那个模型**，它按 keep_alive 挂在显存里。
+   *   总结模型如果与它不是同一个，也一并卸掉（两个都占显存）。
+   *   同一个模型只卸一次（按 类型|地址|模型名 去重），免得白跑一次 HTTP。
+   *
+   * 非本机 Ollama（云端 / 局域网另一台机器）会被 `unloadOllamaModel` 静默跳过，
+   * 这里如实提示一句「没有可卸载的本地模型」，免得作者以为开关坏了。
+   */
+  const unloadLocalModels = useCallback(async () => {
+    const refs: { providerId?: string }[] = []
+    if (session?.model?.providerId) refs.push({ providerId: session.model.providerId })
+    if (summaryProviderId) refs.push({ providerId: summaryProviderId })
+    const seen = new Set<string>()
+    let done = 0
+    for (const ref of refs) {
+      try {
+        const { provider } = await resolveTavernProvider(ref)
+        const key = `${provider.type}|${provider.baseUrl}|${provider.model}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        if (await unloadOllamaModel(provider)) done++
+      } catch {
+        // 单个解析或卸载失败不影响另一个；下面统一提示
+      }
+    }
+    if (done > 0) showToast('已让本地模型退出显存（下一场开场会慢一点：要重新加载）', 'info')
+    else showToast('没有可卸载的本地模型（云端模型不需要卸载，或本机 Ollama 未响应）', 'info')
+  }, [session, summaryProviderId])
+
   /**
    * 以前这里是「每轮说完一句就静默整理一次记忆」。本地模型跑一次要几十秒，
    * 全都压在那句之后 —— 作者的表现就是「说完卡半天」，聊越久越卡（反馈 #3）。
@@ -414,6 +481,15 @@ export default function TavernFree() {
         setReviseOpen(true)
       }
       await refreshSessions()
+
+      // 🔴 #11：卸载排在这一步**之后**（D4 硬约束）。
+      //    到这里的含义是：记忆/日记/数值/设定建议全部产出、会话也已落库、列表也刷过了 ——
+      //    后面不再有任何模型调用，此时卸载才是安全的。
+      //    中途卸会让后面的收尾步骤先等一次模型重新加载（本地 27B 上几十秒），得不偿失。
+      //    失败只提示，**绝不**把这一轮收尾判成失败：卸载是锦上添花的事。
+      if ((tavernSettings ?? DEFAULT_TAVERN_SETTINGS).free.unloadAfterRoundEnd) {
+        void unloadLocalModels()
+      }
     } catch (e) {
       showToast(`结束失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
@@ -421,7 +497,7 @@ export default function TavernFree() {
       setEnding(false)
       setEndStage(null)
     }
-  }, [session, ending, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions])
+  }, [session, ending, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions, unloadLocalModels])
 
   /**
    * 设定更新：对**在场每个角色**分别审查一遍。
@@ -511,13 +587,31 @@ export default function TavernFree() {
   /** preset = 快捷指令条递过来的一句现成话（走导演指令通道）；不传就用输入框里的 */
   const send = useCallback(async (preset?: string) => {
     const text = (preset ?? input).trim()
-    if (!text || !session || !charCard || streaming) return
+    if (!text || !session || !charCard) return
+    /**
+     * 生成中又按了一次发送（反馈 #13）。
+     * 输入框现在**不被 disable**，作者能先把下一句打好 —— 所以 Enter 是真按下去的，
+     * 🔴 不能只是静默 return：那会让作者以为键盘失灵。提示一次即可（ref 节流）。
+     */
+    if (streaming) {
+      if (!streamingHintRef.current) {
+        streamingHintRef.current = true
+        showToast('Ta 还在说 —— 这句说完再接你的下一句', 'info')
+      }
+      return
+    }
     // 🔴 归档后只读：这一场已经整理归档再去改它，记忆与日记就会和正文对不上
     if (session.endedAt) {
       showToast('本轮对话已结束 —— 想接着聊请新开一场', 'info')
       return
     }
-    if (!preset) setInput('')
+    if (!preset) {
+      setInput('')
+      // 发送后把光标留在（已清空的）输入框里：沉浸聊天时下一句直接打，
+      // 不用每轮再抬手点一次框（老大 2026-09-16 反馈 #13）。
+      // ⚠️ 必须等 React 把空值渲染进去再聚焦 —— 同步 setState 后立刻 focus 会跟重渲染打架。
+      requestAnimationFrame(() => inputRef.current?.focus())
+    }
     setStreaming(true)
     setStreamText('')
     setPhase('')
@@ -539,9 +633,23 @@ export default function TavernFree() {
         signal: ctrl.signal,
         speakerId: speakNext || undefined,
       })
-      const saved = await store.saveFreeSession(res.session)
-      setSession(saved)
       setStreamText('')
+      /**
+       * 每轮刷新本场数值（2026-09-16 老大反馈 #4）。
+       * 这一步还要再等一次小调用 —— 先把阶段提示换上，否则正文都出来了界面还卡着，像死机。
+       * 刷新结果与正文**同一笔落库**：数值跟它所依据的那条回复不能分家。
+       */
+      setPhase('正在结算本场数值…')
+      const withVars = await refreshSessionVars({
+        session: res.session,
+        keys: varKeys,
+        maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
+        nameOf: id => nameOf(id ?? ''),
+        providerId: summaryProviderId || undefined,
+        signal: ctrl.signal,
+      })
+      const saved = await store.saveFreeSession(withVars)
+      setSession(saved)
       setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       await refreshSessions()
       if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
@@ -557,8 +665,9 @@ export default function TavernFree() {
       setStreaming(false)
       setPhase('')
       abortRef.current = null
+      streamingHintRef.current = false
     }
-  }, [input, session, charCard, streaming, refreshSessions, castCards, speakNext])
+  }, [input, session, charCard, streaming, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf])
 
   // ---------- 消息级操作（与剧情推演同一套；自由模式多一条：重说时**保持原来的说话人**） ----------
   const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
@@ -591,7 +700,7 @@ export default function TavernFree() {
     if (applied.changes.length === 0) { showToast('数值已经在初始值上了', 'info'); return }
     const okGo = await confirmDialog({
       title: '重置本场数值？',
-      message: `${applied.changes.map(c => c.label).join('、')} 会回到初始值（好感/信任 50、剧情进度 0，文本清空）。\n这一场的变动记录会保留，但数值本身回不去 —— 要恢复得再手改一遍。`,
+      message: `${applied.changes.map(c => c.label).join('、')} 会回到初始值（数值归 0，心情与地点清空）。\n这一场的变动记录会保留，但数值本身回不去 —— 要恢复得再手改一遍。`,
       confirmText: '重置',
       danger: true,
     })
@@ -652,9 +761,19 @@ export default function TavernFree() {
         signal: ctrl.signal,
         speakerId: target.speakerId,
       })
-      const saved = await store.saveFreeSession(res.session)
-      setSession(saved)
       setStreamText('')
+      // 重说同样要刷新数值（反馈 #4）：回复换了，这一轮的关系走向也就跟着换
+      setPhase('正在结算本场数值…')
+      const withVars = await refreshSessionVars({
+        session: res.session,
+        keys: varKeys,
+        maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
+        nameOf: id => nameOf(id ?? ''),
+        providerId: summaryProviderId || undefined,
+        signal: ctrl.signal,
+      })
+      const saved = await store.saveFreeSession(withVars)
+      setSession(saved)
       setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       await refreshSessions()
       if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
@@ -890,10 +1009,10 @@ export default function TavernFree() {
               导出
             </Button>
             <Button
-              variant="secondary" size="md" onClick={() => setStatusOpen(v => !v)}
-              title="对话上方那条一览：场景、在场角色与记忆计数（只读）。本场数值在右侧「本场状态」里改"
+              variant="secondary" size="md" onClick={() => setStatusTab('status')}
+              title="切到右侧「角色状态」页：场景、在场角色的关系状态与记忆计数（只读）。本场数值在右侧「本场状态」页里改"
             >
-              {statusOpen ? '收起角色状态' : '角色状态'}
+              角色状态
             </Button>
             <Button variant="danger" size="md" onClick={() => void removeSession()}>删除对话</Button>
           </>
@@ -1108,15 +1227,9 @@ export default function TavernFree() {
                 )}
               </div>
 
-              <TavernStatusBar
-                model={statusModel}
-                sceneText={
-                  [session.scene?.place, session.scene?.time].filter(Boolean).join(' · ')
-                  // 没手填场景时用剧本的名字与情境顶上（这一场本来就有处境，不该显示"未设定"）
-                  || scriptSceneLine(session.script)
-                }
-                collapsed={!statusOpen}
-              />
+              {/* 🚫 2026-09-16：原「对话上方那条角色状态一览」已挪进右栏 ——
+                  它横在对话上方会白吃掉一截高度，而右栏本来就有地方摆（与「本场状态」两页切换）。
+                  老大原话：「放到一起，能够进行页面切换」。见右栏 `<aside>` 的 statusTab。 */}
 
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                 {/* 很久没来时Ta留着的一句话（§7.5）：不弹通知，就放在对话里等Ta看见 */}
@@ -1216,14 +1329,19 @@ export default function TavernFree() {
                 {/* 按键：Enter 发送、Shift+Enter 换行（与「对话引导」一致）。
                     🔴 必须挡 isComposing —— 中文输入法里 Enter 是**选字确认键**，
                     不挡的话字打到一半就被当成发送，换成 Enter 发送后这是必踩的坑。 */}
+                {/* 🔴 **不再 `disabled={streaming}`**（反馈 #13 的根因）：
+                    旧写法在生成期间把整个 textarea 禁掉，浏览器会**主动把焦点移走**，
+                    生成结束后也没人还回来 —— 表现就是「每轮都要再点一次输入框」。
+                    现在生成期照常可打字（先把下一句备好），发送按钮那侧仍会变成「停止」。 */}
                 <AutoTextarea
                   className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"
                   textClass="text-[13px]"
                   minRows={3}
                   maxHeight={200}
-                  placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"
+                  placeholder={streaming
+                    ? 'Ta 还在说 —— 你可以先把下一句打在这儿'
+                    : '说点什么…（Enter 发送，Shift+Enter 换行）'}
                   value={input}
-                  disabled={streaming}
                   inputRef={inputRef}
                   onChange={setInput}
                   onKeyDown={e => {
@@ -1255,19 +1373,81 @@ export default function TavernFree() {
               </div>
             </div>
 
-            {/* 右栏：本场状态（老大 2026-09-16 定 —— 这里不再摆记忆）
-                记忆是给 AI 用的六栏档案，摆在这里既不直观、又容易让人去手改成半成品；
-                作者真正想在聊的时候盯的是「好感 / 心情 / 进度」这些即时状态。 */}
-            {castCards.length > 0 && (
-              <aside className="w-72 shrink-0 flex flex-col rounded-lg border border-ink-800 bg-ink-850/40 min-h-0">
-                <div className="px-3 py-2 border-b border-ink-800 text-[11px] text-ink-300">
+            {/* 右栏：角色状态 / 本场状态 两页切换（老大 2026-09-16 定 ——
+                原先「对话上方那条一览」并到这里，不再单独占一条横向空间）。
+                · 角色状态 = 场景 + 在场角色的关系状态与记忆计数（只读）
+                · 本场状态 = 这一场的好感 / 信任 / 精神 / 心情 / 地点（改完回车生效）
+                🚫 记忆不摆在这儿：它是给 AI 用的六栏档案，摆出来既不直观、又容易被改成半成品，
+                   阅读与手改入口在「角色卡片」页。
+                ⚠️ 整块**不再用 `castCards.length > 0` 门控** —— 卡被删或还没加载完时，
+                   右栏会连「本场数值」一起消失（这正是反馈里「勾了启用却不显示」的一部分）。 */}
+            <aside className="w-72 shrink-0 flex flex-col rounded-lg border border-ink-800 bg-ink-850/40 min-h-0">
+              {/* 分段切换。红线：分段用 toggle + selected，不要静止无框的 ghost */}
+              <div className="flex gap-1 border-b border-ink-800 p-2">
+                <Button
+                  variant="toggle" size="sm" className="flex-1 justify-center"
+                  selected={statusTab === 'status'} onClick={() => setStatusTab('status')}
+                  title="这一场的场景、在场角色的关系状态与记忆计数（只读）"
+                >
+                  角色状态
+                </Button>
+                <Button
+                  variant="toggle" size="sm" className="flex-1 justify-center"
+                  selected={statusTab === 'vars'} onClick={() => setStatusTab('vars')}
+                  title="这一场的好感 / 信任 / 精神 / 心情 / 地点（改完回车生效）"
+                >
                   本场状态
-                  <span className="ml-1 text-[10px] text-ink-600">（属于这一场，换场重来）</span>
-                </div>
+                </Button>
+              </div>
 
-                <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                  {/* 本场数值：**全项目唯一的显示与修改入口**（2026-09-16 去重 ——
-                      原先中间那条状态栏里还有一份只读/可改的副本，已删）。 */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {statusTab === 'status' ? (
+                  <>
+                    <TavernStatusBar
+                      model={statusModel}
+                      sceneText={
+                        [session.scene?.place, session.scene?.time].filter(Boolean).join(' · ')
+                        // 没手填场景时用剧本的名字与情境顶上（这一场本来就有处境，不该显示"未设定"）
+                        || scriptSceneLine(session.script)
+                      }
+                    />
+
+                    {/* 在场的人：只列 AI 扮演的（用户演的那位不是观察对象）。
+                        点一个 = 把「Ta这几天的生活 / 心情」切到这位名下。
+                        只在多角色时出现 —— 单角色只有一个人可看，列出来纯属占地方。 */}
+                    {aiCards.length > 1 && (
+                      <div className="border-t border-ink-800 pt-2">
+                        <div className="text-[10.5px] text-ink-500 mb-1">
+                          AI 扮演<span className="text-ink-600">（点名字看他这几天的生活）</span>
+                        </div>
+                        <ul className="space-y-1">
+                          {aiCards.map(c => {
+                            const on = c.id === statusCharId
+                            return (
+                              <li key={c.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => setStatusCharId(c.id)}
+                                  title={`看 ${c.name || 'Ta'} 这几天的生活`}
+                                  className={`w-full flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${
+                                    on ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                                  }`}
+                                >
+                                  <Avatar src={c.avatar} name={c.name} size={18} />
+                                  <span className={`truncate text-[11.5px] ${on ? 'text-amber' : 'text-ink-200'}`}>
+                                    {c.name || '（未命名）'}
+                                  </span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  /* 本场数值：**全项目唯一的显示与修改入口**（2026-09-16 去重 ——
+                     原先中间那条状态栏里还有一份只读/可改的副本，已删）。 */
                   <TavernVarsPanel
                     vars={session.vars}
                     varKeys={varKeys}
@@ -1275,46 +1455,17 @@ export default function TavernFree() {
                     onResetVars={() => void resetVars()}
                     readOnly={!!session.endedAt}
                   />
+                )}
+              </div>
 
-                  {/* 在场的人：只列 AI 扮演的 —— 用户自己演的那位不是观察对象。
-                      点一个 = 把上面「Ta这几天的生活 / 心情」切到这位名下（多角色时才有意义）。 */}
-                  <div className="border-t border-ink-800 pt-2">
-                    <div className="text-[10.5px] text-ink-500 mb-1">
-                      AI 扮演{aiCards.length > 1 && <span className="text-ink-600">（点名字看他这几天的生活）</span>}
-                    </div>
-                    <ul className="space-y-1">
-                      {aiCards.map(c => {
-                        const on = aiCards.length > 1 && c.id === statusCharId
-                        return (
-                          <li key={c.id}>
-                            <button
-                              type="button"
-                              onClick={() => setStatusCharId(c.id)}
-                              title={aiCards.length > 1 ? `看 ${c.name || 'Ta'} 这几天的生活` : undefined}
-                              className={`w-full flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${
-                                on ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
-                              }`}
-                            >
-                              <Avatar src={c.avatar} name={c.name} size={18} />
-                              <span className={`truncate text-[11.5px] ${on ? 'text-amber' : 'text-ink-200'}`}>
-                                {c.name || '（未命名）'}
-                              </span>
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="p-2 border-t border-ink-800">
-                  <p className="text-[10.5px] text-ink-600 leading-relaxed">
-                    这些状态只在<span className="text-ink-500">点「结束本轮对话」时</span>结算 ——
-                    聊天过程中不跑整理，所以不会卡住对话。
-                  </p>
-                </div>
-              </aside>
-            )}
+              <div className="p-2 border-t border-ink-800">
+                <p className="text-[10.5px] text-ink-600 leading-relaxed">
+                  {statusTab === 'status'
+                    ? '角色状态只读 —— 来自六栏记忆，整理入口是「结束本轮对话」；要直接改就去「角色卡片」页的记忆区。'
+                    : '数值每轮回复后自动结算，也可随时手改；聊天过程中不跑整理，所以不会卡住对话。'}
+                </p>
+              </div>
+            </aside>
           </>
         )}
       </div>

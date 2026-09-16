@@ -25,7 +25,8 @@ import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import { prepareDraftMaterial, type DraftSource } from './draft'
 import { webSearch, type SearchSettings } from '../webSearch'
-import type { TavernStory, TavernStoryIndexItem } from './types'
+import type { TavernStory, TavernStoryIndexItem, StorySettingSnapshot } from './types'
+import { sessionStoryId } from './types'
 
 // 全局 meta 键（无项目前缀）
 const G = {
@@ -62,6 +63,44 @@ export async function listStories(): Promise<TavernStoryIndexItem[]> {
 
 export async function getStory(id: string): Promise<TavernStory | null> {
   return db.getMeta<TavernStory | null>(G.one(id), null)
+}
+
+// ==================== 会话侧：快照与「这一场用哪份设定」 ====================
+
+/**
+ * 把一份故事拍成**快照**（新建会话时调用）。
+ * 此后作者改故事设定，这一场不跟着变 —— 理由与剧本快照一致（见 types 的 `ScriptSnapshot`）。
+ */
+export function snapshotStorySetting(s: TavernStory): StorySettingSnapshot {
+  return { storyId: s.id, name: s.name, setting: (s.setting ?? '').trim(), at: Date.now() }
+}
+
+/**
+ * 取「这一场该用哪份故事设定」：优先会话里的**快照**，没有（老会话）则实时读那份故事。
+ *
+ * ⚠️ engine 只以**动态 import** 调它 —— `story.ts` 反过来要从 engine 取 `resolveTavernProvider`，
+ *    静态互引就成环了（项目纪律：能不断环就不加环）。
+ *
+ * 读不到一律返回空串：故事被删了不该让一场老对话打不开，也不该报错打断这一轮生成。
+ *
+ * @returns `from` 说明这份设定从哪来（便于排查「作者改了故事但对话没变」这类疑问）
+ */
+export async function resolveSessionStorySetting(
+  session: { storyId?: string; charIds: string[]; storySetting?: StorySettingSnapshot },
+  charIndex: { id: string; storyId?: string }[],
+): Promise<{ name: string; setting: string; from: 'snapshot' | 'live' | 'none' }> {
+  const snap = session.storySetting
+  if (snap) return { name: snap.name ?? '', setting: (snap.setting ?? '').trim(), from: 'snapshot' }
+  // 老会话（这场功能上线前建的）没有快照：按会话 → 角色卡反推故事 id，再实时读
+  const id = sessionStoryId(session, charIndex)
+  if (!id) return { name: '', setting: '', from: 'none' }
+  try {
+    const s = await getStory(id)
+    if (!s) return { name: '', setting: '', from: 'none' }
+    return { name: s.name, setting: (s.setting ?? '').trim(), from: 'live' }
+  } catch {
+    return { name: '', setting: '', from: 'none' }
+  }
 }
 
 export async function saveStory(s: TavernStory): Promise<TavernStory> {

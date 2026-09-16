@@ -31,10 +31,11 @@ import { memoryToText, isMemoryEmpty } from './memory'
 import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack } from './world'
 import { scriptToText } from './script'
 import { applyPostRules, type PostApplied } from './postRules'
+import { PROTOCOL_CORE } from './protocol'
 import { buildVarStateBlock, varsOf } from './vars'
 import {
   talkativityRowsOf,
-  hasCastSetting, charTag,
+  hasCastSetting, charTag, cardStoryId,
   VAR_KEYS,
   type TavernSession, type TavernMessage, type TavernCast, type TavernDirectorNote,
   type FreeSession, type FreeCharacter, type FreeMemory, type VarKey,
@@ -430,12 +431,47 @@ export function renderFreeCharacter(c: FreeCharacter, opts: { tag?: string } = {
 
 export type FreeSystemResult = {
   system: string
+  /** 角色卡层（人设说明书）的实际字符数 */
   settingChars: number
+  /**
+   * **故事的世界设定**层实际注入的字符数（0 = 没选故事 / 故事设定是空的）。
+   * 🔴 2026-09-16 反馈 #5 / 决策 D1 才补的这一层 —— 此前自由对话**从没注入过它**。
+   */
+  storyChars: number
   memoryChars: number
   /** 本场剧本（「这一场」层）实际注入的字符数（0 = 没设剧本 / 六栏全空） */
   scriptChars: number
+  /** 协议正文字符数（作者可在控制面板改，所以按**实际采用的那份**量） */
+  protocolChars: number
   /** 会话里引用了、但角色卡已被删的 id（UI 据此提示） */
   missing: string[]
+}
+
+/**
+ * 取这一场要用的故事世界设定。
+ *
+ * 【为什么是动态 import】`story.ts` 反过来要从本文件取 `resolveTavernProvider`
+ * （它起草故事时要调模型），静态互引就成环 —— 项目纪律是能不断环就不加环。
+ * 模块加载一次后由运行时缓存，这里没有实际开销。
+ *
+ * 失败一律当作「没有这一层」：故事被删了不该让一场老对话打不开。
+ */
+async function loadSessionStory(
+  session: FreeSession,
+  chars: FreeCharacter[],
+): Promise<{ name: string; setting: string }> {
+  // 会话里存了快照就直接用（新建会话时拍的，作者后来改故事不影响这一场）
+  const snap = session.storySetting
+  if (snap) return { name: snap.name ?? '', setting: (snap.setting ?? '').trim() }
+  try {
+    const { resolveSessionStorySetting } = await import('./story')
+    return await resolveSessionStorySetting(
+      session,
+      chars.map(c => ({ id: c.id, storyId: cardStoryId(c) })),
+    )
+  } catch {
+    return { name: '', setting: '' }
+  }
 }
 
 /**
@@ -548,9 +584,17 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   // 开场白不进这里 —— 它走消息通道（见 script.ts 文件头）。
   const scriptText = scriptToText(session.script)
 
+  // 🔴 故事的世界设定（#5 / D1）：角色卡第 1 章写的是「角色与这个世界的关系」，
+  //    可这个世界**本身**以前从没进过上下文 —— `getStory` 在 lib/tavern 下是零调用。
+  //    挂在「背景设定」那一层的位置（设定之后、这一场之前）：先知道世界如何，再知道这一场是什么。
+  const story = await loadSessionStory(session, found)
+
   const system = buildSystemPrompt({
     tone: FREE_TONE,
     setting,
+    // 故事设定层：空串则整层不出现（不占额度、不留空标题）
+    world: story.setting,
+    worldTitle: story.setting ? `故事的世界设定${story.name ? ` · ${story.name}` : ''}` : undefined,
     scene: scriptText,
     memory,
     // 每块自己带「〖长期记忆 · 角色名〗」，不再套一层「〖长期记忆〗」
@@ -579,8 +623,9 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   })
 
   return {
-    system, settingChars: setting.length, memoryChars: memory.length,
-    scriptChars: scriptText.length, missing,
+    system, settingChars: setting.length, storyChars: story.setting.length,
+    memoryChars: memory.length, scriptChars: scriptText.length,
+    protocolChars: (st.protocol?.trim() || PROTOCOL_CORE).length, missing,
   }
 }
 

@@ -120,6 +120,19 @@ export type TavernFreeSettings = {
   dailyAdvanceHours: number
   /** 日常「这几天的生活」保留条数 */
   dailyLogKeep: number
+  /**
+   * 「结束本轮对话」三步全部跑完后，主动让**本地 Ollama** 卸掉这一场用过的模型
+   * （2026-09-16，老大反馈 #11）。
+   *
+   * 【为什么要它】模型加载进显存后按 keep_alive 一直挂着，而且**带着上一场的上下文**。
+   *   作者清了记忆与日记，下一次开场它却还隐约记得刚才那些事 —— 表现就是「我明明清空了，它还记得」。
+   *   打开这个开关，收尾跑完就把它吐掉，下一场从干净的上下文开始。
+   *
+   * 🔴 **默认关**（老大 2026-09-16 拍板）。代价是下一场第一句要等模型重新加载 ——
+   *   本地 27B 上这一步是几十秒，所以由作者自己按需开。
+   *   只对**本机 Ollama** 生效：云端后端没有「卸载」这回事，开关开着也会被静默跳过。
+   */
+  unloadAfterRoundEnd: boolean
 }
 
 // 🚫 已废除（2026-09-16，老大拍板）：`triggerMessages`（触发整理的条数阈值）
@@ -379,6 +392,9 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     summaryLockTtlMin: Math.round(SUMMARY_LOCK_TTL_MS / 60000),
     dailyAdvanceHours: Math.round(DAILY_ADVANCE_MS / 3600000),
     dailyLogKeep: DAILY_LOG_KEEP,
+    // #11：默认**关**（老大 D4 拍板）。默认开等于让所有人下次开场都多等一次模型加载，
+    // 而这个开关的价值只有「在意模型残留上下文」的作者才用得上。
+    unloadAfterRoundEnd: false,
   },
   protocol: DEFAULT_PROTOCOL,
   // 出厂四条全开 —— 四条都是「把违规写法掰回协议」，不会误伤正常输出（见 postRules.ts 的说明）

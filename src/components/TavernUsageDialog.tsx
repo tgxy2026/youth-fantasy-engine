@@ -17,6 +17,7 @@ import { buildPlotSystem, buildFreeSystem } from '../lib/tavern/engine'
 import { summarizeUsage, type UsagePart, type UsageSummary } from '../lib/tavern/budget'
 import { getTavernSettings, effectiveContextBudget } from '../lib/tavern/settings'
 import { WORLD_MAX_CHARS } from '../lib/tavern/world'
+import { STORY_SETTING_MAX } from '../lib/tavern/story'
 import type { FreeCharacter, FreeSession, TavernSession } from '../lib/tavern/types'
 
 const fmt = (n: number) => n.toLocaleString('zh-CN')
@@ -69,10 +70,19 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
         systemChars = r.system.length
         total = effectiveContextBudget('free', st, s.params)
         label = '自由对话'
-        parts.push({ key: 'setting', label: '角色卡（设定层）', chars: r.settingChars, note: `${list.length} 位在场角色的人设说明书；这一层不做预算裁剪` })
+        // 🔴 固定注入的四块分开量（老大反馈 #5）：此前只有「角色卡」与「长期记忆」两行，
+        //    协议那 3.5KB 被并进「其他固定部分」，作者根本看不出格式要求本身花掉多少。
+        parts.push({ key: 'setting', label: '角色卡（人设说明书）', chars: r.settingChars, note: `${list.length} 位在场角色；这一层不做预算裁剪（砍了会「设定性失忆」）` })
+        parts.push({ key: 'story', label: '故事的世界设定', chars: r.storyChars, note: r.storyChars > 0 ? '这一场所属故事的世界设定（新建对话时存了快照，改故事不影响这一场）' : '这一场没挂在任何故事下，或那份故事的世界设定是空的' })
+        parts.push({ key: 'script', label: '本场剧本（这一场）', chars: r.scriptChars, note: r.scriptChars > 0 ? '情境 / 你的位置 / 这一场的目标 / 不要发生 —— 六栏里的内容' : '这一场没选剧本' })
+        parts.push({ key: 'protocol', label: '角色扮演协议', chars: r.protocolChars, note: '格式与禁令的收尾块，钉在 system 末尾；可在控制面板精简' })
         parts.push({ key: 'memory', label: '长期记忆', chars: r.memoryChars, note: '按角色分别记账，六栏' })
         if (r.missing.length > 0) {
           warnings.push(`这场对话引用了 ${r.missing.length} 张已被删掉的角色卡 —— 设定层少了这部分，建议在左栏换掉或重新选角。`)
+        }
+        // 故事设定有硬上限（STORY_SETTING_MAX）：到顶说明被截断了，得让作者看见
+        if (r.storyChars >= STORY_SETTING_MAX) {
+          warnings.push(`故事的世界设定已到 ${fmt(STORY_SETTING_MAX)} 字上限并被截断 —— 超出的部分不会进上下文，建议在「故事」页精简。`)
         }
       }
 
@@ -103,7 +113,8 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
   }, [open, measure])
 
   const bar = (s: UsageSummary) => {
-    const shades = ['bg-ink-500', 'bg-ink-600', 'bg-ink-700', 'bg-ink-400']
+    // 自由模式最多 6 段（角色卡/故事/剧本/协议/记忆/其他）—— 色板备足，免得相邻两段同色看不出分界
+    const shades = ['bg-ink-500', 'bg-ink-600', 'bg-ink-700', 'bg-ink-400', 'bg-ink-800', 'bg-ink-300']
     const seg = s.parts.map((p, i) => ({ key: p.key, label: p.label, chars: p.chars, cls: shades[i % shades.length] }))
     return (
       <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full border border-ink-700">

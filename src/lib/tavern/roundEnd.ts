@@ -19,7 +19,7 @@
  */
 import * as store from './store'
 import { messagesAfterWatermark } from './memory'
-import { summarizeRound, extractSessionVars } from './summarize'
+import { summarizeRound, summarizeMemory, extractSessionVars } from './summarize'
 import { proposeCardRevisions, type CardRevision } from './revise'
 import { recordVarChanges, turnSeqOf, emptyVars, manualPinnedKeys } from './vars'
 import type { SummaryLimits } from './summarize'
@@ -103,12 +103,24 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   //    作者看到的是「整理失败了」，实际库里已经躺了半截记忆，再点一次「结束」还会得到**重复日记**。
   //    改成「全成或全不成」：① 任何一位失败 → 一条都不落库、直接抛给界面（水位线不动，下次重算）。
   //    配合 `store.appendJournalEntry` 的「同一场只留一条」幂等，重复点「结束」也不会写两遍。
+  /**
+   * 用户扮演的那位（`session.userCharId`）——**记忆照记，日记不写**（老大 2026-09-16 反馈 #8）。
+   *
+   * 【为什么砍掉他那一份】日记是「事后一个人回想这一场」的第一人称回顾，而 AI 演的是**别人** ——
+   *   让它替「用户扮演的角色」写回顾，写出来必然是视角错乱的（它根本不知道那个人当时心里怎么想）。
+   *   老大原话：这块 AI 写不好，干脆只写自己演的那个，用户侧日记直接放弃。
+   *
+   * 【为什么改走 `summarizeMemory` 而不是"照写再丢掉"】收尾的设计是一次调用产两样（六栏 + 日记）。
+   *   若仍走 `summarizeRound`，那 200–600 字的日记会被**真的生成出来再扔掉** ——
+   *   本地 27B 上那是实打实的一分多钟白等。走「只出六栏」的通路：记忆一样记，这段时间省掉。
+   *   ⚠️ 只对**用户扮演的那一位**生效；AI 扮演的角色照旧写日记（`computed[].journal` 用得上）。
+   */
   const computed: { memory: FreeMemory; journal: string }[] = []
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i]
     onProgress?.({ stage: 'memory', cur: i + 1, total, name: c.name || '未命名角色' })
     const prev = await store.getMemory(c.id).catch(() => null)
-    const { memory, journal } = await summarizeRound({
+    const shared = {
       charId: c.id,
       charName: c.name,
       prev,
@@ -125,8 +137,11 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
       limits,
       chatFn,
       signal,
-    })
-    computed.push({ memory, journal: journal.trim() })
+    }
+    const got = c.id === session.userCharId
+      ? { memory: await summarizeMemory(shared), journal: '' }
+      : await summarizeRound(shared)
+    computed.push({ memory: got.memory, journal: got.journal.trim() })
   }
 
   // 全部成功 → 一次性落库（记忆 + 日记成对写，避免出现"有记忆没日记"的中间态）

@@ -114,8 +114,8 @@ async function mkChar(): Promise<FreeCharacter> {
 }
 
 /**
- * 逐行审计模型输出是否符合协议 v1.7：
- *   对白＝纯文本 / （）＝其余一切（动作·神态·心理·环境）/ 〔〕＝状态块与记账行
+ * 逐行审计模型输出是否符合协议 v1.9：
+ *   对白＝纯文本 / （）＝其余一切（动作·神态·心理·环境）/ 〔〕＝状态块
  * 返回各类行数与**违规清单**（带原文片段，便于人工复核）。
  */
 export function auditFormat(reply: string, castNames: string[] = []) {
@@ -125,7 +125,12 @@ export function auditFormat(reply: string, castNames: string[] = []) {
   for (const l of lines) {
     if (/[〖〗〈〉]/.test(l)) issues.push('出现输入侧结构标记：' + l.slice(0, 24))
     // v1.6 起：动作/神态/心理/环境统一用（），所以「括号行」不再细分；v1.7 把【】彻底废止
-    if (/^（|^\(/.test(l)) { action++; continue }
+    if (/^（|^\(/.test(l)) {
+      action++
+      // 🔴 v1.9（#7）：描写一律第三人称 —— 括号里出现「我」「你」就是对不上人的写法
+      if (/[我你]/.test(l)) issues.push('描写用「我/你」（v1.9 要求第三人称）：' + l.slice(0, 24))
+      continue
+    }
     // 旧格式（v1.5 及以前）的环境行 —— 仍能识别，但**模型不该再写**，记进违规
     if (/^【/.test(l)) { env++; issues.push('仍用已废止的【】（v1.7 起只认（ ））：' + l.slice(0, 24)); continue }
     if (/^〔/.test(l)) { status++; continue }

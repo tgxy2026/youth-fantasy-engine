@@ -136,16 +136,28 @@ async function main() {
       LEGACY_PROTOCOLS.length >= 3 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[3] } as never)
-    ok('存着 v1.4 全文 → 同样升级到 v1.7',
+    ok('存着 v1.4 全文 → 同样升级到当前版',
       LEGACY_PROTOCOLS.length >= 4 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[4] } as never)
-    ok('存着 v1.5 全文 → 同样升级到 v1.7',
+    ok('存着 v1.5 全文 → 同样升级到当前版',
       LEGACY_PROTOCOLS.length >= 5 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[5] } as never)
-    ok('存着 v1.6 全文 → 同样升级到 v1.7（改协议必须把上一版补进锚点，否则老用户卡住）',
+    ok('存着 v1.6 全文 → 同样升级到当前版',
       LEGACY_PROTOCOLS.length >= 6 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[6] } as never)
+    ok('存着 v1.7 全文 → 同样升级到当前版',
+      LEGACY_PROTOCOLS.length >= 7 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    // 🔴 2026-09-16（反馈 #7：描写改第三人称，协议 v1.8 → v1.9）：
+    //    老用户库里存着的那份 v1.8 必须能被换掉 —— 否则「协议改了，作者手上还是旧的」，
+    //    这次改动对已打开过控制面板的库等于没做。
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[7] } as never)
+    ok('🔴 存着 v1.8 全文 → 升级到 v1.9（改协议必须把上一版补进锚点）',
+      LEGACY_PROTOCOLS.length >= 8 && LEGACY_PROTOCOLS[7].includes('· v1.8 ') &&
+      (await getTavernSettings()).protocol === PROTOCOL_CORE)
     __resetMockStores()
     await db.setMeta(K_TAVERN_SETTINGS, { protocol: '我自己改过的协议正文' } as never)
     ok('自定义协议不被覆盖（全等比对，判据保守）',

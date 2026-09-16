@@ -206,6 +206,44 @@ export async function listOllamaModels(baseUrl: string): Promise<string[]> {
   return (data.models ?? []).map((m: { name?: string; model?: string }) => m.name ?? m.model ?? '').filter(Boolean)
 }
 
+/**
+ * 让本地 Ollama **立刻吐掉**这个模型（2026-09-16，老大反馈 #11）。
+ *
+ * 【解决什么】模型加载进显存后会按 keep_alive 一直挂着。作者「结束本轮对话」清理完记忆与日记后，
+ * 那个模型**还带着上一场的上下文**留在显存里 —— 下一次开场它仍隐约记得刚才那些事，
+ * 作者的表现就是「我明明清空了记忆，它还记得」。
+ *
+ * 【为什么用 `/api/generate` + `keep_alive: 0` 而不是 `ollama stop`】
+ *   · `keep_alive: 0` 是官方 API 字段，跨版本稳定；`ollama stop` 是 CLI 子命令，
+ *     桌面端进程里没有那条命令行可用（且要额外处理 Windows 上的路径/引号）。
+ *   · 这条请求**不生成任何内容**（空 prompt + keep_alive 0）—— Ollama 收到后直接卸载并立即返回。
+ *
+ * 🔴 只对**本地 Ollama** 生效：云端后端（OpenAI 兼容）没有「卸载」这回事，
+ *    非本地地址或非 ollama 类型一律静默跳过。调用方也**不该**因为这里失败而中断收尾流程 ——
+ *    卸载是锦上添花，收尾（记忆/日记/数值）才是正事。
+ *
+ * @param timeoutMs 超时。卸载是收尾后的最后一件事，不值得为它多等 —— 默认 8 秒。
+ * @returns 真的发出并成功了才返回 true；跳过或失败返回 false（调用方据此提示）
+ */
+export async function unloadOllamaModel(config: AIProvider, timeoutMs = 8_000): Promise<boolean> {
+  if (!config || config.type !== 'ollama') return false
+  const base = stripSlash(config.baseUrl || OLLAMA_DEFAULT_URL)
+  // 只认本机地址：远程机器上的 Ollama 不归我们管（也可能是别人在用的服务）
+  if (!/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(base)) return false
+  const model = (config.model ?? '').trim()
+  if (!model) return false
+  try {
+    const res = await fetchWithTimeout(`${base}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, prompt: '', keep_alive: 0 }),
+    }, timeoutMs)
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export interface ChatOptions {
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */
   timeoutMs?: number

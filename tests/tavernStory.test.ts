@@ -8,7 +8,7 @@
 import * as db from '../src/lib/db'
 import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
-import { createStory, listStories, getStory, deleteStory, storyDisplayName, emptyStory } from '../src/lib/tavern/story'
+import { createStory, listStories, getStory, deleteStory, storyDisplayName, emptyStory, saveStory, snapshotStorySetting, resolveSessionStorySetting } from '../src/lib/tavern/story'
 import { emptyScript, saveScript, listScriptsByStory } from '../src/lib/tavern/script'
 import { sessionStoryId, cardStoryId, type FreeCharacter } from '../src/lib/tavern/types'
 
@@ -132,6 +132,36 @@ async function main() {
     ok('空故事有稳定默认值', fresh.name === '' && fresh.setting === '')
     const long = await createStory({ name: 'x'.repeat(80) })
     ok('超长故事名被截断（列表里不撑破）', long.name.length <= 40)
+  }
+
+  // ---------- 8) 会话侧：故事设定快照 + 「这一场该用哪份设定」（#5 / D1）----------
+  {
+    const s = await createStory({ name: '奉阳大学', setting: '  这是一座虚构的城市。  ' })
+    const snap = snapshotStorySetting(s)
+    ok('快照记下来源 id / 名字 / 设定（首尾空白已去掉）',
+      snap.storyId === s.id && snap.name === '奉阳大学' && snap.setting === '这是一座虚构的城市。' && snap.at > 0)
+
+    const r1 = await resolveSessionStorySetting({ charIds: [], storyId: s.id, storySetting: snap }, [])
+    ok('有快照 → 用快照', r1.from === 'snapshot' && r1.setting === '这是一座虚构的城市。')
+
+    const r2 = await resolveSessionStorySetting({ charIds: [], storyId: s.id }, [])
+    ok('🔴 老会话没有快照 → 实时读那份故事（否则这一场一个字的世界设定都没有）',
+      r2.from === 'live' && r2.setting === '这是一座虚构的城市。' && r2.name === '奉阳大学')
+
+    const r3 = await resolveSessionStorySetting({ charIds: ['c1'] }, [{ id: 'c1', storyId: s.id }])
+    ok('老会话连归属都没存 → 按角色卡反推故事 id', r3.from === 'live' && r3.setting === '这是一座虚构的城市。')
+
+    const r4 = await resolveSessionStorySetting({ charIds: ['c1'] }, [])
+    ok('推不出归属 → 空串（不抛、不瞎猜）', r4.from === 'none' && r4.setting === '')
+    const r5 = await resolveSessionStorySetting({ charIds: [], storyId: '已被删的故事' }, [])
+    ok('🔴 故事已被删 → 空串（老对话不该因为删了故事就打不开）', r5.from === 'none' && r5.setting === '')
+
+    // 🔴 快照的真意：作者后来改了故事，**已建的那一场不跟着变**（实时语义只服务没有快照的老会话）
+    await saveStory({ ...s, setting: '改过的新设定' })
+    ok('🔴 快照优先：改了故事，已建的那一场还是旧设定',
+      (await resolveSessionStorySetting({ charIds: [], storyId: s.id, storySetting: snap }, [])).setting === '这是一座虚构的城市。')
+    ok('没快照的老会话读到的是改过之后的（实时语义）',
+      (await resolveSessionStorySetting({ charIds: [], storyId: s.id }, [])).setting === '改过的新设定')
   }
 
   console.log(`\n${pass} passed, ${fail} failed`)

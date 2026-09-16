@@ -7,6 +7,9 @@
 //   ③ **日记是角色级的、带在场名单与会话标题** —— 删了会话也还能溯源
 //   ④ **记忆整理失败 = 整场收尾失败**（唯一硬失败点）；数值与设定审查失败一律吞掉，
 //      面板少一块也行，绝不能把已经落库的记忆弄丢
+//   ⑤ **用户扮演的角色只记记忆、不写日记**（2026-09-16 反馈 #8）——
+//      AI 写不好「别人扮演的角色」的第一人称回顾，硬写只会得到视角错乱的文字；
+//      改成走 `summarizeMemory`：记忆照记，日记不生成也不落库（顺带省掉一次白生成）
 import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
@@ -138,6 +141,9 @@ async function main() {
         !JOURNAL_HEAD.includes('七') && JOURNAL_HEAD.includes('日记'))
       ok('日记与第六栏「最近日记」明确区分（后者要一行一事）',
         sys.includes('不要') && sys.includes('最近日记'))
+      // 反馈 #8：旧提示词没写分段要求，模型就一句一段地吐（像分行写的诗）
+      ok('🔴 日记要求按内容层次分段（不要一句一段）',
+        sys.includes('按内容层次分段') && sys.includes('不要一句一段'))
     }
     ok('返回了两位角色的记忆', res.memories.length === 2 && res.memories.every(m => m.charId))
     ok('记忆吸收了本场内容', res.memories[0].longTerm.includes('伞收进柜台底下'))
@@ -228,6 +234,43 @@ async function main() {
     ok('审查失败不拖累记忆', res.memories.length === 1)
     ok('审查失败时建议为空', res.proposals.length === 0)
     ok('审查失败仍写出日记', !!res.journals[B.id])
+  }
+
+  // ---------- 6) 用户扮演的角色：记忆照记，日记不写（老大 2026-09-16 反馈 #8）----------
+  //
+  // AI 写不好「别人扮演的角色」的第一人称回顾（它不知道那个人当时心里怎么想），
+  // 所以收尾时那一位走**只出六栏**的通路：记忆照记，日记不生成、也不落库。
+  {
+    const U = await mkChar('阿岩')
+    let s = await store.createFreeSession(
+      [A.id, U.id], '用户也在场的一场', { providerId: STUB_PROVIDER.id }, {}, U.id,
+    )
+    s = await push(s, [
+      { role: 'user', content: '我先说。' },
+      { role: 'assistant', speakerId: A.id, content: '「你说。」' },
+    ])
+    const cards = [A, U]
+    const { chatFn, calls } = makeFakeChat(replyWith('她记住了这段。', '她把这句话记在了心里。'))
+
+    const res = await runRoundEnd({
+      session: s, cards, providerId: STUB_PROVIDER.id,
+      varKeys: [], vars: undefined, maxStep: 5,
+      nameOf: (id?: string) => cards.find(c => c.id === id)?.name ?? '角色',
+      chatFn,
+    })
+
+    ok('用户扮演的角色**记忆照记**', res.memories.some(m => m.charId === U.id))
+    ok('🔴 用户扮演的角色**不产日记**，AI 那位照旧产',
+      !res.journals[U.id] && !!res.journals[A.id])
+    ok('用户扮演的角色日记库为空（根本没落库）', (await store.getJournal(U.id)).entries.length === 0)
+
+    // calls[1] = 第二位角色（阿岩）的记忆调用 —— 他走的是「只出六栏」版提示词，
+    // 里面不该有日记段落：那 200–600 字本地 27B 要白跑一分多钟。
+    const sysU = String(calls[1].messages.find(m => m.role === 'system')?.content ?? '')
+    ok('先确认第 2 次调用确实是阿岩（不是拿苏念算两遍）', sysU.includes('阿岩'))
+    ok('用户角色的整理提示词不含日记段落（走 summarizeMemory，不白生成）',
+      !sysU.includes(JOURNAL_HEAD))
+    ok('AI 角色的整理提示词仍含日记段落', String(calls[0].messages.find(m => m.role === 'system')?.content ?? '').includes(JOURNAL_HEAD))
   }
 
   console.log(`\n${pass} passed, ${fail} failed`)

@@ -13,6 +13,8 @@ import {
   type WorldSetting,
 } from '../src/lib/tavern/world'
 import { buildSystemPrompt } from '../src/lib/tavern/prompt'
+import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
+import { createStory, saveStory, snapshotStorySetting } from '../src/lib/tavern/story'
 import { buildFreeSystem } from '../src/lib/tavern/engine'
 import type { ChatMessage } from '../src/lib/ai'
 
@@ -202,6 +204,57 @@ async function main() {
     await db.setMeta('tavern.world.free', mkWorld({ brief: '废弃字段别冒出来', keywords: [] }))
     const s2 = (await buildFreeSystem(session, [c])).system
     ok('🔴 老键 tavern.world.free 的内容也不会冒出来', !s2.includes('废弃字段别冒出来'))
+  }
+
+  // ---------- 9) 🔴 但自由模式**有**「故事的世界设定」这一层（#5 / D1，2026-09-16）----------
+  // 上面第 8 节盯的是「剧情那份背景设定」不许进自由模式；这两件事不矛盾：
+  // 自由模式的世界来自**故事**（跨项目的那份），与项目内的背景设定是两套东西。
+  // 本节盯的是「故事设定有没有真的进上下文」—— 在这之前 `getStory` 是零调用，这一层根本不存在。
+  {
+    __resetMockStores()
+    const c = await store.createFreeChar({
+      ...store.emptyFreeCharacter(),
+      name: '苏念',
+      world: '现代都市·城南',
+      profile: { externals: '', core: '', speech: '', relations: '', cannot: '', knowledge: '' },
+      conduct: { perspective: '', bottomLine: '', paceLock: '', rating: '' },
+      examples: '',
+    })
+    const story = await createStory({ name: '奉阳大学', setting: '校园里有一条老槐树路，夏天走一趟满身汗。' })
+    const session = await store.createFreeSession([c.id], '便利店夜谈', { providerId: '' }, {}, undefined, story.id)
+
+    const r = await buildFreeSystem(session, [c])
+    ok('🔴 故事的世界设定进了 system（#5 之前这一层是零）',
+      r.system.includes('校园里有一条老槐树路'), r.system.slice(0, 80))
+    ok('🔴 用自己的层标题「故事的世界设定 · 故事名」（叫「本场背景设定」是错的）',
+      r.system.includes('〖故事的世界设定 · 奉阳大学〗'))
+    ok('层序：角色卡 → 故事设定 → 这一场（先知道世界如何，再知道这一场是什么）',
+      r.system.indexOf('现代都市·城南') < r.system.indexOf('故事的世界设定'))
+    ok('用量口径：storyChars 量到了真实字数',
+      r.storyChars === '校园里有一条老槐树路，夏天走一趟满身汗。'.length, String(r.storyChars))
+    ok('协议正文也单独量得出来（不再是「其他固定部分」里的黑洞）',
+      r.protocolChars === PROTOCOL_CORE.length, `${r.protocolChars} vs ${PROTOCOL_CORE.length}`)
+
+    // 没挂故事的会话 → 整层不出现（不留空标题、不占额度）
+    const bare = await store.createFreeSession([c.id], '没挂故事', { providerId: '' }, {})
+    const rb = await buildFreeSystem(bare, [c])
+    ok('没挂故事 → 整层不出现（0 字，不留空标题）',
+      rb.storyChars === 0 && !rb.system.includes('故事的世界设定'))
+
+    // 故事设定是空的 → 同样整层不出现
+    const blank = await createStory({ name: '空故事', setting: '   ' })
+    const sb = await store.createFreeSession([c.id], '空故事', { providerId: '' }, {}, undefined, blank.id)
+    ok('故事存在但设定为空 → 也不留空标题', (await buildFreeSystem(sb, [c])).storyChars === 0)
+
+    // 🔴 快照语义：会话里存了快照就用快照 —— 作者后来改故事，已建的那一场不跟着变
+    const snap = snapshotStorySetting(story)
+    const frozen = { ...session, storySetting: snap }
+    await saveStory({ ...story, setting: '改过之后的新设定' })
+    const rf = await buildFreeSystem(frozen, [c])
+    ok('🔴 有快照 → 用快照（作者改故事不改写历史会话）',
+      rf.system.includes('老槐树路') && !rf.system.includes('改过之后的新设定'))
+    const rl = await buildFreeSystem(session, [c])
+    ok('没快照（老会话）→ 实时读，读到改过之后的', rl.system.includes('改过之后的新设定'))
   }
 
   console.log(`\ntavernWorld: ${pass} passed, ${fail} failed`)

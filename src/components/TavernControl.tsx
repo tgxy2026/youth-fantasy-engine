@@ -12,7 +12,7 @@
  *     它就是 AI 眼中「屏幕后面那个人」；详见 settings.ts 的 TavernProfile。
  *   · 预设方案 —— 把整套设置存成命名快照，一键切换 / 导出分享
  *   · 输出后处理 —— 两种模式共用的兜底修正规则
- *   · 本场数值 —— 好感 / 信任等五项数值的更新频率与幅度（自由对话里生效）
+ *   · 本场数值 —— 好感 / 信任 / 精神等五项状态的开关与单次幅度（自由对话里生效）
  *   · 扮演协议 —— 两种模式共用的格式契约（钉在提示词末尾）
  *   · 剧情推演 —— 只对剧情模式生效的：叙事向采样参数与风格、专属补充要求
  *   · 自由对话 —— 只对自由模式生效的：聊天向采样参数与风格、专属补充要求、记忆与日常阈值
@@ -497,9 +497,10 @@ export default function TavernControl() {
     edit(prev => ({ ...prev, profile: { ...prev.profile, [k]: v } }))
   const setPlot = (k: keyof TavernSettings['plot'], v: number | string) =>
     edit(prev => ({ ...prev, plot: { ...prev.plot, [k]: v } as TavernSettings['plot'] }))
-  const setFree = (k: keyof TavernSettings['free'], v: number | string) =>
+  // 自由段里也有开关键（#11 的「卸载本地模型」），所以取值放宽到 boolean（与 setCommon 一致）
+  const setFree = (k: keyof TavernSettings['free'], v: number | string | boolean) =>
     edit(prev => ({ ...prev, free: { ...prev.free, [k]: v } as TavernSettings['free'] }))
-  /** 本场数值（C2 第二步）：开关 / 逐项关闭 / 频率 / 幅度 */
+  /** 本场数值（C2 第二步）：开关 / 逐项关闭 / 单次幅度（刷新时机固定为「每轮回复后」，没有旋钮） */
   const setVars = (patch: Partial<TavernSettings['vars']>) =>
     edit(prev => ({ ...prev, vars: { ...prev.vars, ...patch } }))
   const toggleVarKey = (k: VarKey) =>
@@ -1150,11 +1151,25 @@ export default function TavernControl() {
                 />
               </div>
             </div>
+
+            <div className="pt-1">
+              <div className="mb-3 text-[12px] text-ink-200 border-t border-ink-800 pt-3">收尾与释放</div>
+              <ToggleField
+                label="结束本轮对话后卸载本地模型"
+                hint="收尾（记忆 / 日记 / 数值 / 设定建议）全部跑完之后，让本机 Ollama 把这个模型退出显存。模型留在显存里时会带着上一场的上下文 —— 清空了记忆它却还隐约记得，打开这项就能从干净状态开下一场。只对本机 Ollama 生效。"
+                value={fr.unloadAfterRoundEnd}
+                onChange={v => setFree('unloadAfterRoundEnd', v)}
+              />
+              <p className="mt-2 text-[10.5px] leading-relaxed text-ink-500">
+                代价是「下一场的第一句要等模型重新加载」（本地 27B 上这一步是几十秒），所以默认是关的 ——
+                需要「每场都从干净状态开始」时再打开。
+              </p>
+            </div>
           </Section>
           {/* ---------- 八、本场数值（C2 第二步） ---------- */}
           <Section
             title="八、本场数值"
-            desc="只对「自由对话」生效。整理记忆时顺带算一次数值变化（好感 / 信任 / 剧情进度 / 心情 / 当前地点），你也能随时手改。数值属于这一场，换一场戏重新算 —— 角色卡管「这个人是谁」，数值管「这一场走到哪了」。"
+            desc="只对「自由对话」生效。每轮回复后自动算一次数值变化（好感 / 信任 / 精神 / 心情 / 地点），你也能随时手改。三项数值都是 −100~+100，0 为中立起点：好感与信任往下是反感、往上是亲近；精神为负时，角色会出现与角色卡设定不一致的言行。数值属于这一场，换一场戏重新算。"
           >
             <ToggleField
               label="启用本场数值"
@@ -1165,7 +1180,7 @@ export default function TavernControl() {
 
             <Field
               label={`启用哪几项（已启用 ${VAR_DEFS.filter(d => !(s.vars.off ?? []).includes(d.key)).length} / ${VAR_DEFS.length}）`}
-              hint="点一下切换。关掉的项不会进提示词；「剧情进度」配合剧本的「这一场的目标」用最有意义。"
+              hint="点一下切换。关掉的项不会进提示词；「精神」为负时角色会做出偏离人设的言行，配合剧本的「这一场的目标」用最有意义。"
             >
               <div className="flex flex-wrap gap-2">
                 {VAR_DEFS.map(d => {
@@ -1192,9 +1207,9 @@ export default function TavernControl() {
             />
 
             <p className="text-[10.5px] text-ink-600 leading-relaxed">
-              数值不靠模型每轮记账：整理记忆时（自由对话「结束本轮对话」/ 剧情推演「整理本场记忆」）会单开一次小调用，
-              把这几轮里真的变了的项算出来，写进角色状态。写进提示词的只有「当前值多少、一次能改多少」。
-              算不出来时一个字段都不动 —— 绝不会为了记账改错你要看的内容。
+              自由对话里每轮回复后都会单开一次小调用，把这一轮真的变了的项算出来（点「结束本轮对话」时再兜底算一次）。
+              写进提示词的有三样：当前值、一次能改多少，以及每一项的档位定义（哪一段算反感、哪一段算亲近），
+              模型据此判断现在落在哪一档、该往哪走。算不出来时一个字段都不动 —— 绝不会为了记账改错你要看的内容。
             </p>
           </Section>
 

@@ -734,6 +734,30 @@ export default function TavernCard() {
   const toggleStory = (id: string) =>
     setOpenIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
 
+  /**
+   * 「复制为新卡 / 删除 / 保存」——卡面顶部（头像右侧）与编辑区底部**各放一份**
+   * （老大 2026-09-16 反馈 #9：这张卡很长，这三个按钮原先只挂在最底部，
+   *  改完一处得一路滚到底才存得上，来回很别扭）。
+   *
+   * 🔴 抽成**一个变量渲染两处**，而不是复制两段 JSX：
+   *    ① 复制逻辑最容易出现「同一个动作、两个按钮行为不一致」；
+   *    ② 两处必须共享同一份状态 —— `dirty`（没改动时一起变灰）与 `saving`（保存中一起变「保存中…」）。
+   */
+  const actionButtons = (
+    <>
+      <Button
+        variant="secondary" size="md" onClick={() => void duplicate()}
+        title="四章照抄一份新卡，可在它基础上改；记忆与日常状态不复制"
+      >
+        复制为新卡
+      </Button>
+      <Button variant="danger" size="md" onClick={remove}>删除</Button>
+      <Button variant="primary" size="md" disabled={!dirty || saving} onClick={save}>
+        {saving ? '保存中…' : '保存'}
+      </Button>
+    </>
+  )
+
   /** 左栏的一张卡（不管挂在哪个分组下，长相一致 —— 免得作者以为两种卡不一样） */
   const charRow = (c: TavernCharIndexItem) => (
     <li key={c.id}>
@@ -957,6 +981,8 @@ export default function TavernCard() {
                       size={64}
                       onChange={v => up('avatar', v)}
                       hint="不设也能用 —— 会话气泡与列表会用名字首字代替。头像随卡片一起存进数据文件。"
+                      /* 复制 / 删除 / 保存 提到这儿：与「上传图片」同一行，不用滚到底（反馈 #9） */
+                      actions={actionButtons}
                     />
                   </div>
                   <div className="flex items-center gap-3">
@@ -1271,18 +1297,8 @@ export default function TavernCard() {
                   <span className="text-[11px] text-ink-500">
                     {dirty ? '有未保存的改动' : `上次保存：${new Date(draft.updatedAt).toLocaleString('zh-CN')}`}
                   </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="secondary" size="md" onClick={() => void duplicate()}
-                      title="四章照抄一份新卡，可在它基础上改；记忆与日常状态不复制"
-                    >
-                      复制为新卡
-                    </Button>
-                    <Button variant="danger" size="md" onClick={remove}>删除</Button>
-                    <Button variant="primary" size="md" disabled={!dirty || saving} onClick={save}>
-                      {saving ? '保存中…' : '保存'}
-                    </Button>
-                  </div>
+                  {/* 与卡面顶部那组是**同一份 JSX**（`actionButtons`）—— 两处按钮不可能走样 */}
+                  <div className="flex gap-2">{actionButtons}</div>
                 </div>
               </div>
             )}

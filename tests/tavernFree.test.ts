@@ -413,15 +413,16 @@ async function main() {
 
     // 起因：实弹里用户说「一起吃饭」，模型把场景从宿舍楼道一步挪到食堂 —— 上下文里从没说过它在哪。
     // 现在不再要求模型每轮写记账行（那套遵守率极低），但**当前值仍每轮进上下文**。
+    // ⚠️ 2026-09-16 起刻度改成 −100~+100、起点是 0（原 0–100、好感默认 50）。
     const fresh = (await buildFreeSystem(s, [su3])).system
-    ok('新会话就有数值块（初值就是起点）', fresh.includes('〖本场数值〗') && fresh.includes('好感 50'))
-    ok('🔴 不再要求模型每轮输出记账行（交给整理记忆，协议里也不再有这条）',
+    ok('新会话就有数值块（初值就是起点）', fresh.includes('〖本场数值〗') && fresh.includes('好感 0'))
+    ok('🔴 不再要求模型每轮输出记账行（交给整理变量，协议里也不再有这条）',
       !fresh.includes('〔数值〕') && !fresh.includes('地点还没记下来'))
 
     const place = '教学楼三层楼道'
     const withPlace = { ...s, vars: { ...emptyVars(), values: { ...emptyVars().values, place } } }
     const sys = (await buildFreeSystem(withPlace, [su3])).system
-    ok('地点已记下 → 每轮都注入当前值（这是「不该瞬移」的依据）', sys.includes(`当前地点 ${place}`))
+    ok('地点已记下 → 每轮都注入当前值（这是「不该瞬移」的依据）', sys.includes(`地点 ${place}`))
     ok('数值块排在协议**之后**（离生成点最近）',
       sys.indexOf(PROTOCOL_CORE) < sys.indexOf('〖本场数值〗'))
 

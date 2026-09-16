@@ -46,16 +46,19 @@ export default function TavernEchoHints({ className = '' }: { className?: string
       <ul className="mt-2 space-y-1.5">
         {CHANNELS.map(c => (
           <li key={c.name} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <code className="rounded bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-amber/90">{c.sample}</code>
-            <span className="shrink-0 text-[11px] text-ink-300">{c.name}</span>
-            <span className="text-[11px] text-ink-500">{c.note}</span>
+            {/* 🔴 复制按钮放**最左**（老大 2026-09-16 反馈 #6）：
+                原先它靠 `ml-auto` 顶在整行最右端，要复制得把鼠标横跨整行去够它 ——
+                实际用起来很别扭。现在按钮在最左，后面紧跟着示例与说明。 */}
             <Button
-              variant="secondary" size="xs" className="ml-auto shrink-0"
+              variant="secondary" size="xs" className="shrink-0"
               onClick={() => void copyText(c.sample, '已复制这条示例')}
               title="复制这条示例"
             >
               复制
             </Button>
+            <code className="rounded bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-amber/90">{c.sample}</code>
+            <span className="shrink-0 text-[11px] text-ink-300">{c.name}</span>
+            <span className="text-[11px] text-ink-500">{c.note}</span>
           </li>
         ))}
       </ul>

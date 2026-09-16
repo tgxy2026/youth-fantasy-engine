@@ -238,10 +238,10 @@ export const GUIDE_DAILY_KEEP: ParamGuide = {
 export const GUIDE_VAR_MAX_STEP: ParamGuide = {
   min: 1, max: 30, step: 1, unit: '点',
   bands: [
-    { from: 1, to: 3, name: '很保守', effect: '推进极慢：0–100 的刻度上要走很久才有感觉，适合"关系本来就稳"的长线陪伴。' },
+    { from: 1, to: 3, name: '很保守', effect: '推进极慢：−100~+100 的刻度上要走很久才有感觉，适合"关系本来就稳"的长线陪伴。' },
     { from: 3, to: 8, name: '±5', effect: '一次小事件动 2–5 点，十几轮下来能看到明显位移 —— 变化跟得上剧情又不跳戏。', recommended: true },
     { from: 8, to: 15, name: '剧烈', effect: '一次大事件的量级；模型容易每次都判成「大事件」，数值几次整理就撞顶。' },
-    { from: 15, to: 30, name: '近乎放开', effect: '基本等于不限制，数值会很快停在 0 或 100，之后再也不动 —— 还不如关掉这项。' },
+    { from: 15, to: 30, name: '近乎放开', effect: '基本等于不限制，数值会很快撞到 −100 / +100 的端点，之后再也不动 —— 还不如关掉这项。' },
   ],
 }
 

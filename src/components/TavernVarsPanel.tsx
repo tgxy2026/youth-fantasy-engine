@@ -1,14 +1,21 @@
 /**
- * 酒馆模式 · 本场数值面板（好感 / 信任 / 剧情进度 / 心情 / 当前地点）
+ * 酒馆模式 · 本场数值面板（好感 / 信任 / 精神 / 心情 / 地点）
  *
  * 【为什么单独抽成一个文件】
  * 这块原先是「对话上方那条角色状态栏」里的一小段；2026-09-16 老大拍板去重：
  * 同一组数值**只留一处**，也就是自由对话的**右栏「本场状态」**（栏内即看即改），
- * 中间那条状态栏不再重复显示它。
+ * 中间那条状态栏不再摆放它。
+ *
+ * 【数值怎么变】2026-09-16 起**每轮 AI 回复后自动刷新**（反馈 #4，见 `engine.runFreeTurn`）——
+ * 所以这里显示的是「此刻」的状态，会随对话起伏；作者也能随时手改覆盖。
  *
  * 【为什么数值必须有编辑入口】
- * 它是**会话级**的独立数据（不在记忆里），由 AI 在整理时按剧情算增量。模型算错的时候，
+ * 它是**会话级**的独立数据（不在记忆里），由 AI 按剧情给增量。模型算错的时候，
  * 作者只能手改 —— 没有入口就只能干看着。所以这里不是「展示区」，是**唯一的调节点**。
+ *
+ * 【档位名是什么】三项数值都是 −100 ~ +100，跨度很大，光看「-37」不知道意味着什么。
+ * 所以每个数值后面会显示它落在哪一档（极度厌恶 / 中立 / 亲近…，见 `types.VAR_BANDS`），
+ * 悬停能看到这一档对应的行为说明。这跟提示词里给模型的是同一份定义。
  *
  * 【为什么不做「关系温度」的数值】
  * 自造一个 0–100 的分数，作者第一句一定问「这 73 分怎么算的」。那一步的温度就是
@@ -19,7 +26,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Button } from './Button'
-import { varDefOf, type TavernVars, type VarKey } from '../lib/tavern/types'
+import { varDefOf, bandOf, type TavernVars, type VarKey } from '../lib/tavern/types'
 import { lastChangeText } from '../lib/tavern/vars'
 
 /** 一个数值行：标签 + 进度条（仅数值变量）+ 可编辑的值 + 最近一次差量 */
@@ -41,6 +48,12 @@ function VarRow({ k, vars, onSet, locked }: {
   const pct = def.kind === 'num' && Number.isFinite(num)
     ? Math.max(0, Math.min(100, ((num - def.min) / Math.max(1, def.max - def.min)) * 100))
     : 0
+  /**
+   * 这个数落在哪一档（2026-09-16 老大要求的分区）。
+   * −100~+100 光看裸数看不出轻重，档位名（极度厌恶 / 中立 / 亲近…）才是读得懂的东西。
+   * 🔴 与喂给模型的是**同一份** `VAR_BANDS`（别在界面里另写一套 —— 两份必然漂移）。
+   */
+  const band = def.kind === 'num' ? bandOf(k, num) : null
   const delta = lastChangeText(vars, k)
 
   const commit = () => {
@@ -50,7 +63,7 @@ function VarRow({ k, vars, onSet, locked }: {
 
   return (
     <div className="flex items-center gap-2">
-      <span className="w-14 shrink-0 text-[11px] text-ink-400" title={def.kind === 'num' ? `${def.min}–${def.max}` : `≤${def.maxLen} 字`}>
+      <span className="w-12 shrink-0 text-[11px] text-ink-400" title={def.kind === 'num' ? `${def.min}–${def.max}` : `≤${def.maxLen} 字`}>
         {def.label}
       </span>
       <input
@@ -65,9 +78,13 @@ function VarRow({ k, vars, onSet, locked }: {
         title={locked ? '这一场已结束（只读归档），数值不能再改' : '改完按回车或点一下别处生效'}
       />
       {def.kind === 'num' && (
-        <span className="relative h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-ink-700" title={`${shown} / ${def.max}`}>
+        <span className="relative h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-ink-700" title={`${shown} / ${def.max}`}>
           <span className="absolute inset-y-0 left-0 rounded-full bg-amber/70" style={{ width: `${pct}%` }} />
         </span>
+      )}
+      {/* 档位名：一眼看懂这个数意味着什么（悬停有这一档的行为说明） */}
+      {band && (
+        <span className="shrink-0 text-[10px] text-ink-500" title={band.effect}>{band.name}</span>
       )}
       {delta && (
         <span className={`shrink-0 text-[10px] ${delta.startsWith('-') ? 'text-ink-400' : 'text-amber/80'}`}>
@@ -103,7 +120,7 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, 
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
         <span className="text-[10px] text-ink-600">
-          {readOnly ? '这一场已结束 · 只读' : '改完回车生效'}
+          {readOnly ? '这一场已结束 · 只读' : '每轮回复后自动更新 · 也可手改'}
         </span>
         <span className="flex-1" />
         {log.length > 0 && (
@@ -115,7 +132,7 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, 
         )}
         {!readOnly && (
           <Button variant="secondary" size="xs" onClick={onResetVars}
-            title="把启用中的数值全部恢复成初始值（好感/信任 50、剧情进度 0，文本清空）" className="shrink-0"
+            title="把启用中的数值全部恢复成初始值（数值归 0，文本清空）" className="shrink-0"
           >
             重置
           </Button>

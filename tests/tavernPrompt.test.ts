@@ -81,6 +81,27 @@ function main() {
       PROTOCOL_CORE.includes('输入侧的结构标注'))
     ok('最后提醒同步了新标记（单括号 + 一句一行）',
       PROTOCOL_CORE.includes('除了说出口的话，其余全部用（ ）包住'))
+
+    // —— v1.9（老大反馈 #7：对话内描写改第三人称）——
+    // 实弹里模型把「我」「你」写进括号（（我把杯子推到你面前）），读起来对不上人。
+    // 规则要同时落在三处：O1（正主）、B1（视角与人称的分工）、最后提醒（贴生成点再压一次）。
+    ok('🔴 O1 明文要求「描写一律第三人称」',
+      PROTOCOL_CORE.includes('**描写一律第三人称**') &&
+      PROTOCOL_CORE.includes('写名字、写「他」「她」「Ta」'))
+    ok('🔴 给了正反例（括号里不写「我」「你」）',
+      PROTOCOL_CORE.includes('（把杯子推到她面前）✓') &&
+      PROTOCOL_CORE.includes('（我把杯子推到你面前）✗'))
+    ok('🔴 划清边界：只管括号里的描写，对白照常说「我」「你」',
+      PROTOCOL_CORE.includes('这条只管括号里的描写') && PROTOCOL_CORE.includes('对白里该说"我""你"就说'))
+    ok('🔴 B1 把「认知视角」与「人称措辞」分开（免得与角色卡的人称设定打架）',
+      PROTOCOL_CORE.includes('"视角"与"人称"分开看') && PROTOCOL_CORE.includes('**认知视角**按角色卡办'))
+    ok('🔴 「最后提醒」也点了这条（近因效应，格式要求不复述就守不住）',
+      PROTOCOL_CORE.includes('描写一律第三人称：括号里写名字、写他 / 她'))
+    ok('O4「不要做这些」也补了这条', PROTOCOL_CORE.includes('不把"我""你"写进描写'))
+    // #3 的改名（剧情进度→精神 / 当前地点→地点）必须同步到 M2，否则提示词里两个名字并存
+    ok('🔴 M2 的字段名跟上了 #3 的改名（精神 / 地点）',
+      PROTOCOL_CORE.includes('好感 / 信任 / 精神 / 心情 / 地点') &&
+      !PROTOCOL_CORE.includes('剧情进度') && !PROTOCOL_CORE.includes('当前地点'))
   }
 
   // ---------- 2) 层序：设定 → 记忆 → 身份 → 协议（钉末尾） ----------

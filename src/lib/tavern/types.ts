@@ -436,6 +436,15 @@ export type FreeSession = {
   scriptId?: string
   script?: ScriptSnapshot
   /**
+   * 这一场的故事世界设定**快照**（2026-09-16，老大反馈 #5 / 决策 D1）。
+   *
+   * 与 `script` 同一个理由：故事设定是可编辑的，而「这一场当时是在哪份世界设定底下发生的」
+   * 不该被后来的编辑悄悄改写。新建会话时拍一份存这儿。
+   * **老会话没有这一份** → 回退实时读那份故事（见 engine 的 `loadSessionStory`），所以旧数据不迁移。
+   * 回退链：快照 → 实时读 → 空（都读不到就是没有这一层，绝不因此让会话打不开）。
+   */
+  storySetting?: StorySettingSnapshot
+  /**
    * 「结束本轮对话」的时间戳。**有值 = 本轮已归档：只读。**
    *
    * 为什么单独一个字段而不是给会话加一个 status 枚举：归档只需要「是 / 否」，
@@ -530,15 +539,110 @@ export type VarDef = {
  * 与「少参数、好默认值」的取向相反。作者真正要控制的是**开/关**与**初始值**。
  */
 export const VAR_DEFS: VarDef[] = [
-  { key: 'affection', label: '好感', kind: 'num', min: 0, max: 100, init: 50 },
-  { key: 'trust', label: '信任', kind: 'num', min: 0, max: 100, init: 50 },
-  { key: 'progress', label: '剧情进度', kind: 'num', min: 0, max: 100, init: 0 },
+  // 🔴 2026-09-16 老大定：三项数值改**双向刻度 −100 ~ +100、默认 0**（原为 0–100、好感/信任默认 50）。
+  //    理由：0–100 的单向刻度里「不喜欢」压根没有位置，好感只会涨不会跌，戏就没得演。
+  //    0 是中立起点，往下是反感/不信任/精神混乱，往上是亲近/信赖/精神清明。
+  //    ⚠️ **键名（affection/trust/progress）一律不动** —— 那是 `session.vars.values` 的存储键，
+  //       改键等于动老会话数据。只改**中文 label**（进度→精神、当前地点→地点），
+  //       解析与提示词都按 label 走，所以旧格式的模型输出照样认得。
+  { key: 'affection', label: '好感', kind: 'num', min: -100, max: 100, init: 0 },
+  { key: 'trust', label: '信任', kind: 'num', min: -100, max: 100, init: 0 },
+  { key: 'progress', label: '精神', kind: 'num', min: -100, max: 100, init: 0 },
   { key: 'mood', label: '心情', kind: 'text', min: 0, max: 0, maxLen: 12, init: '' },
-  { key: 'place', label: '当前地点', kind: 'text', min: 0, max: 0, maxLen: 12, init: '' },
+  { key: 'place', label: '地点', kind: 'text', min: 0, max: 0, maxLen: 12, init: '' },
 ]
 
 export function varDefOf(key: string): VarDef | undefined {
   return VAR_DEFS.find(d => d.key === key)
+}
+
+// ==================== 数值分区（2026-09-16 老大要求）====================
+
+/**
+ * 一个数值档位。
+ *
+ * 【为什么要有它】老大原话：−100 ~ +100 这个跨度**有点大**，
+ * 光丢给模型一个 `好感 -37`，它并不知道这意味着什么、该让角色怎么表现 ——
+ * 划成有名字、有行为指引的几档，「数值」才真正能翻译成言行。
+ * 界面上也能顺手显示出「现在处在哪一档」。
+ */
+export type VarBand = {
+  /** 区间起点（含） */
+  from: number
+  /** 区间终点（**不含**；只有最后一档含终点） */
+  to: number
+  /** 这一档叫什么（界面显示 + 提示词里用） */
+  name: string
+  /** 落在这档时角色大致该有什么表现（进提示词，也进界面的 tooltip） */
+  effect: string
+}
+
+/**
+ * 三项数值的分区表。
+ *
+ * 🔴 **不变量**（有测试盯着，见 `tests/tavernVars.test.ts`）：
+ *   ① 每项的首档 `from` 必须等于 `def.min`、末档 `to` 必须等于 `def.max`；
+ *   ② 相邻两档**首尾相接**（`bands[i].to === bands[i+1].from`），不允许有缝或重叠；
+ *   ③ 区间按 `[from, to)` 理解，只有最末一档闭区间 —— 否则边界值（如 -60）会同时落进两档。
+ * 文本项（心情 / 地点）没有"档次"可言，不在此表。
+ *
+ * 类型上用 `satisfies` 而不是 `Partial<Record<…>>`：字面量键（`VAR_BANDS.affection`）
+ * 保持**非可选**（写界面/测试时不必到处 `!`），而动态查键一律走 `bandsOf()`，
+ * 那里才承担「文本项没有档位」这件事。
+ */
+export const VAR_BANDS = {
+  affection: [
+    { from: -100, to: -60, name: '极度厌恶', effect: '语气冷硬、回避接触，对方的示好被当成别有用心' },
+    { from: -60, to: -20, name: '反感', effect: '公事公办、刻意保持距离，对方越热络越往后退' },
+    { from: -20, to: 20, name: '中立', effect: '客气但谈不上亲近，态度随对方当场的言行浮动' },
+    { from: 20, to: 60, name: '亲近', effect: '愿意多聊、肯搭把手，但还留着分寸' },
+    { from: 60, to: 100, name: '亲密依赖', effect: '当自己人：会主动分享、会说软话、会依赖对方' },
+  ],
+  trust: [
+    { from: -100, to: -60, name: '全不信任', effect: '认定对方在骗自己，每句话都反着听，要紧的事绝不托付' },
+    { from: -60, to: -20, name: '提防', effect: '留着一手：话说三分、关键信息不说、答应了也留退路' },
+    { from: -20, to: 20, name: '一般', effect: '按常识判断，谈不上托底 —— 守约就继续，失约就减分' },
+    { from: 20, to: 60, name: '信任', effect: '愿意把要紧的事交出去，肯说一些不轻易对外人讲的话' },
+    { from: 60, to: 100, name: '全然信赖', effect: '无条件相信：对方一句话顶别人十句，敢托付身家性命' },
+  ],
+  // 键名仍是 `progress`（不动存储键），但它现在表达的是「精神状态」。
+  // 老大的语义锚点：>0 精神正常、理性；<0 精神混乱，**会出现与角色卡设定不一致的言行**，越低越严重。
+  progress: [
+    { from: -100, to: -60, name: '崩坏', effect: '分不清现实与幻觉，言行可以完全不像本人（允许脱离角色卡设定）' },
+    { from: -60, to: -20, name: '混乱', effect: '情绪与判断都不稳：钻牛角尖、说错话、突然发火，开始偏离平时的样子' },
+    { from: -20, to: 20, name: '正常', effect: '精神平稳、理性，按角色卡的性格与判断做事' },
+    { from: 20, to: 60, name: '清醒', effect: '状态不错：情绪收得住，遇事能冷静处理' },
+    { from: 60, to: 100, name: '澄澈', effect: '精神极佳：思路锐利、意志坚定，极端的压力下也能保持判断' },
+  ],
+} satisfies Partial<Record<VarKey, VarBand[]>>
+
+/** 取某个键的档位表；**文本项（心情 / 地点）返回 null** —— 它们是文字，没有刻度。 */
+export function bandsOf(key: VarKey): VarBand[] | null {
+  return (VAR_BANDS as Partial<Record<VarKey, VarBand[]>>)[key] ?? null
+}
+
+/**
+ * 取某个值落在哪一档（该变量没有分区、或值算不出来时返回 null）。
+ * 区间语义见 `VAR_BANDS` 的说明：`[from, to)`，末档闭。
+ *
+ * 越界的值按端点算：写入端（`applyVarOps` / `setVarManually`）本来就一律夹到
+ * `[min, max]`，出现越界只可能是老数据或手改过的库 —— 那种时候界面上
+ * 空着一格比显示端点档更让人困惑，所以这里做一次兜底夹取。
+ */
+export function bandOf(key: VarKey, value: number | string | undefined): VarBand | null {
+  const bands = bandsOf(key)
+  if (!bands || bands.length === 0) return null
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  const lo = bands[0].from
+  const hi = bands[bands.length - 1].to
+  const v = n < lo ? lo : n > hi ? hi : n
+  for (let i = 0; i < bands.length; i++) {
+    const b = bands[i]
+    const last = i === bands.length - 1
+    if (v >= b.from && (last ? v <= b.to : v < b.to)) return b
+  }
+  return null
 }
 
 export type VarValue = number | string
@@ -571,6 +675,14 @@ export type TavernVars = {
   turnSeq: number
   /** 变动历史（状态栏回看用，只留最近若干条）。旧数据的 source/turnSeq 可能没有 */
   log: { at: number; changes: VarChange[]; source?: VarSource; turnSeq?: number }[]
+  /**
+   * 刻度版本：`2` = 当前的 **−100~+100** 制（2026-09-16 起）；`1` = 旧的 0–100 制（好感/信任默认 50）。
+   *
+   * 🔴 **旧会话就是靠这个字段认出来的** —— 缺省（undefined）一律视为旧刻度，
+   *    由 `migrateVarScale` 把数值项归零并写回。**千万不要**改去猜「值是不是 50 / 有没有负数」：
+   *    作者完全可能手改出一个 50，那种猜法会在错误的库上做错误的迁移。
+   */
+  scale?: number
 }
 
 /** 这次变化是谁改的：模型给的增量 / 作者手改 */
@@ -666,6 +778,16 @@ export type ScriptSnapshot = {
   playerRole: string
   goal: string
   taboo: string
+  /** 快照时间 */
+  at: number
+}
+
+/** 会话上的**故事世界设定快照**（#5 / D1）—— 与 `ScriptSnapshot` 同构 */
+export type StorySettingSnapshot = {
+  /** 来源故事 id（可能已被删除 —— 只是溯源用，不影响这一场） */
+  storyId: string
+  name: string
+  setting: string
   /** 快照时间 */
   at: number
 }
