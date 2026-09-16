@@ -851,7 +851,7 @@ export default function TavernFree() {
   • 顶部几件：Ta最近几天（每日小结）、结束本轮对话（整理记忆并归档）、导出。
   • 右侧常驻「本场状态」：好感 / 信任 / 剧情进度 / 心情 这些即时数值（可直接改，改完回车生效），以及在场由 AI 扮演的角色。
   • 多角色同场时点头像可指定下一位接话；「在场调度」里能静音某个人、调健谈度。
-  • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它**只在点「结束本轮对话」时**才整理，
+  • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它只在点「结束本轮对话」时才整理，
     所以聊天过程中不会被整理任务卡住；整理好的记忆与日记在「角色卡片」页里看。
   • 想给这一场一个具体处境，就在新建对话时选一份剧本（「故事剧本」里写，要先有故事）。
 </HelpPopover>
@@ -1049,7 +1049,8 @@ export default function TavernFree() {
                     <div className="text-[10.5px] text-ink-500 flex flex-wrap items-center gap-2">
                       {/* 场景与记忆新鲜度已收进下方「状态」一览（同一信息不写两处）；
                           这里只留它不显示的：心情（这是**当前页签角色**的心情）与整理进度 */}
-                      {daily?.mood && <span className="text-amber/80">心情：{daily.mood}</span>}
+                      // 这里的心情来自**日常推进**（Ta 这几天过得怎么样），与右栏「本场数值」里的 mood 是两回事
+                      {daily?.mood && <span className="text-amber/80">这几天的心情：{daily.mood}</span>}
                       {ending && (
                         <span className="text-amber">
                           {endStage ? STAGE_TEXT[endStage.stage] : '收尾中…'}

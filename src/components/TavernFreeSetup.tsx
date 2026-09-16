@@ -378,12 +378,15 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                             </>
                           ) : (
                             <>
-                              <button
-                                type="button" onClick={() => setPickerIdx(i)}
-                                className="min-w-0 flex-1 truncate rounded-md border border-dashed border-ink-700 px-2 py-1 text-left text-[12px] text-ink-500 transition-colors hover:border-amber/40 hover:text-amber"
+                              {/* 空位占位符：保留虚线边框的「这里还空着」语义，但走 Button 组件
+                                  （同屏的「更换 / 清空」都是 Button，混着写两套样式迟早走样） */}
+                              <Button
+                                variant="secondary" size="sm"
+                                className="min-w-0 flex-1 justify-start border-dashed"
+                                onClick={() => setPickerIdx(i)}
                               >
                                 ＋ 选择角色
-                              </button>
+                              </Button>
                               <span className="shrink-0 text-[10.5px] text-ink-500">拟：{s.role === 'user' ? '我演' : 'AI 演'}</span>
                               {slots.length > 1 && (
                                 <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>
@@ -468,7 +471,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                   <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
                     {scriptId
                       ? '这份剧本读不到了（可能刚被删）—— 换成「留空」或另选一份。'
-                      : '留空 = 没有开场白，你直接说第一句（旧行为）。选一份剧本则自动带出情境、你的位置、目标与禁区；开场白会渲染成对话的第一条消息。剧本的「情境」只描述此刻，背景仍归角色卡与「背景设定」—— 三处别互相抄。'}
+                      : '留空 = 没有开场白，你直接说第一句（旧行为）。选一份剧本则自动带出情境、你的位置、目标与禁区；开场白会渲染成对话的第一条消息。剧本的「情境」只描述此刻；背景归角色卡的「角色与设定的关系」与它所属故事的「世界设定」—— 别互相抄。'}
                   </p>
                 )}
 

@@ -481,12 +481,15 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                             </>
                           ) : (
                             <>
-                              <button
-                                type="button" onClick={() => setPickerIdx(i)}
-                                className="min-w-0 flex-1 truncate rounded-md border border-dashed border-ink-700 px-2 py-1 text-left text-[12px] text-ink-500 transition-colors hover:border-amber/40 hover:text-amber"
+                              {/* 空位占位符：保留虚线边框的「这里还空着」语义，但走 Button 组件
+                                  （同屏的「更换 / 清空」都是 Button，混着写两套样式迟早走样） */}
+                              <Button
+                                variant="secondary" size="sm"
+                                className="min-w-0 flex-1 justify-start border-dashed"
+                                onClick={() => setPickerIdx(i)}
                               >
                                 ＋ 选择角色
-                              </button>
+                              </Button>
                               <span className="shrink-0 text-[10.5px] text-ink-500">拟：{ROLE_LABEL[s.role]}</span>
                               {slots.length > 1 && (
                                 <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>

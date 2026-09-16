@@ -679,14 +679,13 @@ export default function TavernPlot() {
                   {casts.silent.map(c => <li key={c.cardId} className="text-[12px] text-ink-500">在场 · {c.name}</li>)}
                 </ul>
                 {casts.ai.length > 1 && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary" size="sm" className="mt-1.5 w-full"
                     onClick={() => setDirectorOpen(true)}
-                    className="mt-1.5 w-full rounded-md border border-ink-700 py-1 text-[11px] text-ink-400 hover:text-amber"
                     title="静音（在场但不发言）与健谈度：只影响提示词怎么写，不改角色卡"
                   >
                     在场调度（静音 / 健谈度）
-                  </button>
+                  </Button>
                 )}
                 <p className="mt-1.5 text-[10.5px] text-ink-500 leading-relaxed">
                   AI 演的角色建议填一填「扮演设定」—— 它管的是口吻与底线，比堆设定更能演得像。

@@ -74,7 +74,7 @@ export default function TavernRevisionDialog({
           <p className="text-[12.5px] text-ink-300">这一段对话没有需要改设定</p>
           <p className="mt-1.5 text-[11px] text-ink-500 leading-relaxed">
             这是正常结果 —— 大多数日常对话都不会改变「Ta 是谁」。<br />
-            若刚发生了关系转折（分手、表白、决裂），可以再点一次「更新设定」重跑。
+            若刚发生了关系转折（分手、表白、决裂），可以点下面的「重新检查」再跑一次。
           </p>
           <div className="mt-3 flex justify-center gap-2">
             <Button variant="secondary" size="sm" onClick={onRetry}>重新检查</Button>

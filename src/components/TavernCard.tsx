@@ -263,7 +263,7 @@ export default function TavernCard() {
         `会删掉这 ${journal.entries.length} 条场记（每场对话结束写的那段回顾）。`,
         '',
         '⚠️ 不可撤销 —— 日记没有备份。',
-        '· 它不参与 AI 上下文，所以删掉**不会**让 Ta 失忆；',
+        '· 它不参与 AI 上下文，所以删掉不会让 Ta 失忆；',
         '· 想只删某一条，直接点那一条右边的「删除」就行。',
       ].join('\n'),
       confirmText: '清空日记',
@@ -764,7 +764,7 @@ export default function TavernCard() {
 
   • 归属故事：决定这张卡用哪一套世界观 —— 世界设定写在「故事剧本」页的故事里，这里不再重复。
   • 第 1 章 角色与设定的关系：不写世界本身（世界观在「故事剧本」的故事里），只写身份、处境、常去的地方。
-  • 第 2 章 人物档案 / 第 3 章 行为规范：都是**按小项分条填**的表格（如「外貌：短发」一行一项），
+  • 第 2 章 人物档案 / 第 3 章 行为规范：都是按小项分条填的表格（如「外貌：短发」一行一项），
     模板没覆盖到的写进该栏的「其他」。不确定怎么填就先看每格的灰字例句。
   • 第 4 章 示例对话：AI 会照着它的格式与语气模仿，所以按输出规范写（对白不带名字、除对白外一律套（ ））。
 
@@ -1204,6 +1204,10 @@ export default function TavernCard() {
                         它<span className="text-ink-400">从来不参与 AI 上下文</span>，随便翻、随便删都不会影响 Ta 的记忆。
                         只有「删除」一个操作 —— 删掉不可恢复。
                       </p>
+                      <p className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
+                        注意别和记忆里那一栏搞混：记忆的「六、最近日记」是给 AI 看的，每轮都进上下文、只能一行一事；
+                        这里是给「你」看的回顾，写得越细越好。
+                      </p>
                       {!!journal?.entries.length && (
                         <p className="mt-1 text-[10.5px] text-ink-600">
                           共 {journal.entries.length} 条
@@ -1304,14 +1308,13 @@ export default function TavernCard() {
               />
               <div className="flex flex-wrap items-center gap-1.5">
                 {NOVEL_TABS.map(t => (
-                  <button
-                    key={t.id} type="button" onClick={() => setNtab(t.id)}
-                    className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
-                      ntab === t.id ? 'border-amber/40 bg-amber/12 text-amber' : 'border-ink-700 text-ink-400 hover:bg-ink-800/60'
-                    }`}
+                  <Button
+                    key={t.id} variant="toggle" size="xs"
+                    selected={ntab === t.id}
+                    onClick={() => setNtab(t.id)}
                   >
                     {t.label} {novelCount(t.id)}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </>
@@ -1330,9 +1333,7 @@ export default function TavernCard() {
                     onClick={() => void convert(c.id, c.tabId)}
                     className="w-full flex items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-ink-800/60 disabled:opacity-50"
                   >
-                    <span className="w-6 h-6 shrink-0 rounded-full bg-ink-700 text-ink-200 text-[11px] flex items-center justify-center">
-                      {c.name.trim().slice(0, 1) || '?'}
-                    </span>
+                    <Avatar name={c.name} size={24} />
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">{c.name}</span>
                     <span className="shrink-0 text-[10.5px] text-ink-600">
                       {NOVEL_TAB_LABEL[c.tabId] ?? c.tabId}

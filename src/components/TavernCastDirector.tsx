@@ -85,28 +85,24 @@ export default function TavernCastDirector({
                 {r.speakable && (
                   <>
                     {showNext && (
-                      <button
-                        type="button"
-                        onClick={() => onPickNext?.(r.id)}
+                      <Button
+                        variant="toggle" size="xs" className="shrink-0"
+                        selected={nextId === r.id}
                         disabled={isMutedNow}
-                        className={`shrink-0 rounded border px-1.5 py-0.5 text-[10.5px] disabled:opacity-40 ${nextId === r.id
-                          ? 'border-amber/50 bg-amber/15 text-amber'
-                          : 'border-ink-700 text-ink-400 hover:text-amber'}`}
+                        onClick={() => onPickNext?.(r.id)}
                         title="指定下一句由 Ta 接话（再点一次取消）"
                       >
                         {nextId === r.id ? '下一位 ✓' : '下一位'}
-                      </button>
+                      </Button>
                     )}
-                    <button
-                      type="button"
+                    <Button
+                      variant="toggle" size="xs" className="shrink-0"
+                      selected={isMutedNow}
                       onClick={() => toggle(r.id, !isMutedNow)}
-                      className={`shrink-0 rounded border px-1.5 py-0.5 text-[10.5px] ${isMutedNow
-                        ? 'border-ink-600 text-ink-400 hover:text-amber'
-                        : 'border-ink-700 text-ink-400 hover:text-amber'}`}
                       title={isMutedNow ? '取消静音（恢复发言）' : '静音：这一场不开口，但仍在场'}
                     >
                       {isMutedNow ? '已静音' : '静音'}
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
