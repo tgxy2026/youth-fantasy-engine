@@ -35,6 +35,12 @@ export function resolveParams(mode: 'plot' | 'free', ...layers: (TavernParams | 
 /**
  * 把解析后的参数翻译成 Ollama 原生 /api/chat 的 options 字段名。
  * ⚠️ 这里就是「重复惩罚」改名的地方：内部 repeatPenalty → Ollama 的 repeat_penalty。
+ *
+ * ⚠️ 两把「治复读」的旋钮（2026-09-16 新增）必须**显式下发**才有意义：
+ *   · `repeat_last_n` —— 不传时 Ollama 用自带默认 **64 词元 ≈ 50 个汉字**，
+ *     而它同时是 repeat_penalty / frequency_penalty / presence_penalty 三者的回看窗口，
+ *     射程只有半句话 → 跨轮复读罚不到（见 GUIDE_REPEAT_LAST_N）。
+ *   · `frequency_penalty` —— 不传时默认 **0（完全关闭）**，按词频扣分这件事根本没发生。
  */
 export function toOllamaOptions(p: ResolvedParams): Record<string, number> {
   return {
@@ -42,6 +48,8 @@ export function toOllamaOptions(p: ResolvedParams): Record<string, number> {
     top_p: p.topP,
     top_k: p.topK,
     repeat_penalty: p.repeatPenalty,
+    frequency_penalty: p.frequencyPenalty,
+    repeat_last_n: p.repeatLastN,
     presence_penalty: p.presencePenalty,
     // 显式传 num_ctx：不传时 Ollama 会按全局 OLLAMA_CONTEXT_LENGTH（可能 128K）加载，
     // 显存占用远超预期（方案 §9.3）

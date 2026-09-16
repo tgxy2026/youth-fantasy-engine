@@ -64,6 +64,10 @@ export type TavernPlotSettings = {
   topP: number
   topK: number
   repeatPenalty: number
+  /** 词频惩罚：治「跨轮反复用同一个动作词」（2026-09-16 新增，见 GUIDE_FREQUENCY_PENALTY） */
+  frequencyPenalty: number
+  /** 三种惩罚共用的回看窗口（词元）。出厂 512 —— Ollama 自带的 64 够不到跨轮复读 */
+  repeatLastN: number
   presencePenalty: number
   /**
    * 设定层来源（A 档）：项目原始资料 / 背景设定 / 两者。
@@ -84,6 +88,10 @@ export type TavernFreeSettings = {
   topP: number
   topK: number
   repeatPenalty: number
+  /** 词频惩罚：治「跨轮反复用同一个动作词」（2026-09-16 新增，见 GUIDE_FREQUENCY_PENALTY） */
+  frequencyPenalty: number
+  /** 三种惩罚共用的回看窗口（词元）。出厂 512 —— Ollama 自带的 64 够不到跨轮复读 */
+  repeatLastN: number
   presencePenalty: number
   /** 总结模型：整理记忆用，越快越省越好。留空 = 跟随上面的默认模型 */
   summaryProviderId: string
@@ -366,6 +374,8 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     topP: TAVERN_DEFAULTS.plot.topP,
     topK: TAVERN_DEFAULTS.plot.topK,
     repeatPenalty: TAVERN_DEFAULTS.plot.repeatPenalty,
+    frequencyPenalty: TAVERN_DEFAULTS.plot.frequencyPenalty,
+    repeatLastN: TAVERN_DEFAULTS.plot.repeatLastN,
     presencePenalty: TAVERN_DEFAULTS.plot.presencePenalty,
     contextSource: 'both', // = 加开关之前的行为，老用户升级后一个字都不会变
     settingRatio: 0.6, // engine 原本写死 Math.round(total * 0.6)
@@ -377,6 +387,8 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     topP: TAVERN_DEFAULTS.free.topP,
     topK: TAVERN_DEFAULTS.free.topK,
     repeatPenalty: TAVERN_DEFAULTS.free.repeatPenalty,
+    frequencyPenalty: TAVERN_DEFAULTS.free.frequencyPenalty,
+    repeatLastN: TAVERN_DEFAULTS.free.repeatLastN,
     presencePenalty: TAVERN_DEFAULTS.free.presencePenalty,
     summaryProviderId: '',
     styleHint: TONE_HINT.chat,
@@ -463,6 +475,8 @@ export function modeParamsLayer(mode: 'plot' | 'free', s: TavernSettings): Taver
     topP: m.topP,
     topK: m.topK,
     repeatPenalty: m.repeatPenalty,
+    frequencyPenalty: m.frequencyPenalty,
+    repeatLastN: m.repeatLastN,
     presencePenalty: m.presencePenalty,
   }
 }

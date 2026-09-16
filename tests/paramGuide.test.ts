@@ -102,6 +102,9 @@ async function main() {
       ['核采样（两种模式）', GUIDE_SAMPLING.topP, TAVERN_DEFAULTS.free.topP],
       ['候选词上限', GUIDE_SAMPLING.topK, TAVERN_DEFAULTS.free.topK],
       ['重复惩罚', GUIDE_SAMPLING.repeatPenalty, TAVERN_DEFAULTS.free.repeatPenalty],
+      ['词频惩罚（剧情）', GUIDE_SAMPLING.frequencyPenalty, TAVERN_DEFAULTS.plot.frequencyPenalty],
+      ['词频惩罚（自由）', GUIDE_SAMPLING.frequencyPenalty, TAVERN_DEFAULTS.free.frequencyPenalty],
+      ['惩罚射程（两种模式）', GUIDE_SAMPLING.repeatLastN, TAVERN_DEFAULTS.free.repeatLastN],
       ['新话题倾向（剧情）', GUIDE_SAMPLING.presencePenalty, TAVERN_DEFAULTS.plot.presencePenalty],
       ['新话题倾向（自由）', GUIDE_SAMPLING.presencePenalty, TAVERN_DEFAULTS.free.presencePenalty],
     ]
@@ -115,10 +118,12 @@ async function main() {
   // ---------- 4) 采样五项在两个模式下共用一份（避免写两份互相漂移的表） ----------
   {
     const keys = Object.keys(GUIDE_SAMPLING)
-    ok('采样参数表恰好 5 项（温度/核采样/候选词上限/重复惩罚/新话题倾向）',
-      keys.length === 5, keys.join(','))
-    ok('采样参数都有单位留空（它们是无单位的比值）',
-      Object.values(GUIDE_SAMPLING).every(g => g.unit === undefined))
+    ok('采样参数表恰好 7 项（温度/核采样/候选词上限/重复惩罚/词频惩罚/惩罚射程/新话题倾向）',
+      keys.length === 7, keys.join(','))
+    // 2026-09-16：多了「惩罚射程」——它是**长度**（词元），不是比值，所以唯一带单位的一个。
+    ok('采样参数里只有「惩罚射程」带单位（词元），其余都是无单位的比值',
+      Object.entries(GUIDE_SAMPLING).every(([k, g]) => (k === 'repeatLastN' ? g.unit === '词元' : g.unit === undefined)),
+      Object.entries(GUIDE_SAMPLING).map(([k, g]) => `${k}:${g.unit ?? '—'}`).join(' '))
   }
 
   console.log(`\nparamGuide: ${pass} passed, ${fail} failed`)

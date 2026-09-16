@@ -987,6 +987,16 @@ export default function TavernControl() {
                 value={pl.repeatPenalty} onCommit={v => setPlot('repeatPenalty', v)}
               />
               <NumField
+                label="词频惩罚" guide={GUIDE_SAMPLING.frequencyPenalty}
+                hint="同一个词出现得越多扣得越狠。推演里的动作描写也容易「每轮都写手」，管的就是这一类反复。"
+                value={pl.frequencyPenalty} onCommit={v => setPlot('frequencyPenalty', v)}
+              />
+              <NumField
+                label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
+                hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
+                value={pl.repeatLastN} onCommit={v => setPlot('repeatLastN', v)}
+              />
+              <NumField
                 label="新话题倾向" guide={GUIDE_SAMPLING.presencePenalty}
                 hint="正数鼓励引入新内容，负数让它更愿意围着当前话题说。推演要线索连贯，所以默认偏保守（0.5）。"
                 value={pl.presencePenalty} onCommit={v => setPlot('presencePenalty', v)}
@@ -1056,6 +1066,16 @@ export default function TavernControl() {
                 label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
                 hint="角色的口头禅多，所以这一项比剧情模式更值得调。"
                 value={fr.repeatPenalty} onCommit={v => setFree('repeatPenalty', v)}
+              />
+              <NumField
+                label="词频惩罚" guide={GUIDE_SAMPLING.frequencyPenalty}
+                hint="同一个词出现得越多扣得越狠。角色的口头禅、习惯小动作最容易反复 —— 这一项比「重复惩罚」更对症。"
+                value={fr.frequencyPenalty} onCommit={v => setFree('frequencyPenalty', v)}
+              />
+              <NumField
+                label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
+                hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
+                value={fr.repeatLastN} onCommit={v => setFree('repeatLastN', v)}
               />
               <NumField
                 label="新话题倾向" guide={GUIDE_SAMPLING.presencePenalty}

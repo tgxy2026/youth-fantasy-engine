@@ -259,6 +259,12 @@ function main() {
     ok('存在惩罚映射为 presence_penalty', 'presence_penalty' in o)
     ok('top_p / top_k 命名正确（下划线而非驼峰）', 'top_p' in o && 'top_k' in o && !('topP' in o))
     ok('显式带 num_ctx（否则按全局 128K 加载会爆显存）', o.num_ctx === 32768)
+    // 2026-09-16：两把「治复读」的旋钮必须**真的下发** —— 不传时 Ollama 用自带默认
+    //（repeat_last_n=64 只够半句话、frequency_penalty=0 等于关闭），跨轮复读罚不到。
+    ok('词频惩罚映射为 frequency_penalty 且默认已打开（0.1，不是 Ollama 的 0）',
+      o.frequency_penalty === 0.1, String(o.frequency_penalty))
+    ok('惩罚射程映射为 repeat_last_n 且默认 512（不是 Ollama 的 64）',
+      o.repeat_last_n === 512, String(o.repeat_last_n))
   }
 
   // ---------- 扮演设定（方案 §6.4） ----------

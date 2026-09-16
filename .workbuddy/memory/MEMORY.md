@@ -38,7 +38,7 @@
 - 🔴 解析统一 `aiParse.ts`（禁裸 `JSON.parse`）。温度不手填：结构化→0.3、创意→0.85；一轮 JSON 走 `aiChatJson`。
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 序不可换）。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce）；绝不清洗正文。
-- 🔴 重复惩罚**射程**（非强度）：`repeat_penalty`/`frequency_penalty`/`presence_penalty` 在 llama.cpp **共用 `penalty_last_n` 窗口**（Ollama 默认 **64 token≈50 汉字**）→ 跨轮复读在射程外，**调高无用且伤虚词**；`repeat_last_n`/`frequency_penalty` 项目**均未下发**。治「语义/句式复读」只能靠提示词（#12 诊断：主因＝协议「用动作·停顿·身体反应代替情绪标签」逼每轮写身体反应却无多样性约束）。
+- 🔴 重复惩罚**射程**（非强度）：`repeat_penalty`/`frequency_penalty`/`presence_penalty` 共用同一个 `penalty_last_n` 窗口（Ollama 默认 **64 token≈50 汉字**）→ 跨轮复读在射程外。✅ 09-16 落地 **`repeat_last_n` 512 + `frequency_penalty` 0.1**（两模式各一套，`paramGuide` 双段；手部率 28.9%→13.4%、同拍复现 0）。🔴🔴 **绝不调高 `repeat_penalty`**：1.4 实测把动作行从 2.08 打到 0.43/轮且括号不闭合——`（`/`）` 自己就落在 64 窗口内，乘法惩罚打的是格式符本身。`presence_penalty` 调低/关掉**均无效**（35.5%/30.1%，「同谋」假设已证伪）。自写反重复规则**只有钉在协议末尾「最后提醒」才有效**，埋中段 ≈0。
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（SSH `yfe_test_server`），站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务→删库≠下线；Nginx SPA 回退：不存在路径也返 200→不能靠 200 判上线。
@@ -62,7 +62,7 @@
 - 🔴 分支/回滚：`branchSession` 分叉点后连记忆清；回滚连记忆还原＋`undoSnapshot`；重说＝`run*Turn(session,null)`；剧情记忆 `runPlotSummary`→`memoryToText` 写回全成功才推进。
 - 🔴 多角色：`buildMultiCharRule` 必传 `{hasUser:false}`；`userCharId` 排除；在场调度 `muted`+`talkativity` 会话级、两模式共用（最后一位不能静音）。
 - 🔴🔴 防剧透两层：段落级 `viewMode:"character-view"`＋字段级 `AUTHOR_SIDE_FIELDS`（新字段须登记）。提示词与解析器对齐：标题整行匹配（禁 `includes`）；面板记忆上限必须传进 `parseMemoryText(…, limits)`。
-- 🔴 输出规范（协议 **v1.9**，09-16 升）：对白纯文本（不含名字）；非对白（ ）一件事一括号；状态〔〕；输入 〖〗/〈〉；【】废止。**描写一律第三人称**（括号里不写「我」「你」，写名字/他·她/省主语；对白不在此限）——规则落在 O1+B1+O4+最后提醒四处，`draft.ts#CARD_OUTPUT_RULES` 与 dev 测试卡「人称」同步对齐。M2 状态块不含「关系温度」且明说数值由系统维护。🔴 改协议同步三处（正文版号＋`LEGACY_PROTOCOLS`＋`PROTOCOL_VERSION`＋两断言）；⚠️ 版本断言改「与正文标题一致」；指代一律「Ta」；等值锚点升级（多版本数组、幂等）。
+- 🔴 输出规范（协议 **v1.10**，09-16 升两次）：对白纯文本（不含名字）；非对白（ ）一件事一括号；状态〔〕；输入 〖〗/〈〉；【】废止。**描写一律第三人称**（括号里不写「我」「你」，写名字/他·她/省主语；对白不在此限）——规则落在 O1+B1+O4+最后提醒四处，`draft.ts#CARD_OUTPUT_RULES` 与 dev 测试卡「人称」同步对齐。v1.10 ＝「最后提醒」追加反重复元规则（手部动作三回合内不重复），**实测这是唯一有效位置**。M2 状态块不含「关系温度」且明说数值由系统维护。🔴 改协议同步三处（正文版号＋`LEGACY_PROTOCOLS`＋`PROTOCOL_VERSION`＋两断言）；⚠️ 版本断言改「与正文标题一致」；指代一律「Ta」；等值锚点升级（多版本数组、幂等）。
 - 🔴 R4 元指令（用户输入侧）：`//`或`#`＝讨论剧情；`「…」`＝导演指令；`[OOC: …]`＝同上；`TavernEchoHints.tsx` 挂剧情推演＋自由对话、须在 header 外。
 - 📦 导入导出：单卡 `.taverncard.json`／整批 `.taverncards.json`；批量逐张校验不调 AI（`draftMemoryFromCard` 离线摘录）。🔴 剧情推演无会话级模型选择。
 - ⏳ 待拍板（方案 §10.2）：① `summaryMinIntervalMin` 成死键建议删（连带 `shouldRunAutoSummary`/`throttleOk`+断言）；② `triggerMessages` 仅 `TavernPlot` 用却挂「自由对话控制」。

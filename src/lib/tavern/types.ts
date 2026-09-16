@@ -38,6 +38,17 @@ export type TavernParams = {
   topP?: number
   topK?: number
   repeatPenalty?: number
+  /**
+   * 词频惩罚（2026-09-16 新增）：按「同一个词出现过几次」扣分。
+   * 见 `paramGuide.ts` 的 `GUIDE_FREQUENCY_PENALTY` —— 它治的是「跨轮反复用同一个动作词」。
+   */
+  frequencyPenalty?: number
+  /**
+   * 重复/词频/存在三种惩罚**共用的回看窗口**（词元数）。
+   * 出厂 512；Ollama 自带默认只有 64（≈50 个汉字），跨轮复读在射程之外，所以必须显式下发。
+   * 见 `GUIDE_REPEAT_LAST_N`。
+   */
+  repeatLastN?: number
   presencePenalty?: number
   numCtx?: number
   /** 上下文总预算（字符） */
@@ -881,8 +892,8 @@ export type FreeSessionIndexItem = {
 
 /** 模式级默认参数（方案 4.9）：继承式覆盖 —— 会话参数 → 角色参数 → 模式默认 → 全局默认 */
 export const TAVERN_DEFAULTS: {
-  plot: Required<Pick<TavernParams, 'temperature' | 'topP' | 'topK' | 'repeatPenalty' | 'presencePenalty' | 'numCtx' | 'contextBudget'>>
-  free: Required<Pick<TavernParams, 'temperature' | 'topP' | 'topK' | 'repeatPenalty' | 'presencePenalty' | 'numCtx' | 'contextBudget'>>
+  plot: Required<Pick<TavernParams, 'temperature' | 'topP' | 'topK' | 'repeatPenalty' | 'frequencyPenalty' | 'repeatLastN' | 'presencePenalty' | 'numCtx' | 'contextBudget'>>
+  free: Required<Pick<TavernParams, 'temperature' | 'topP' | 'topK' | 'repeatPenalty' | 'frequencyPenalty' | 'repeatLastN' | 'presencePenalty' | 'numCtx' | 'contextBudget'>>
 } = {
   // 【2026-09-15 整体放宽一档（老大按 5090 跑本地 27B 的配置要求「给模型更大发挥空间」）】
   // contextBudget 16000 → 24000：旧值下 system（协议 3244 + 项目资料 + 背景设定 2400 + 记忆 2000）
@@ -891,14 +902,25 @@ export const TAVERN_DEFAULTS: {
   // 采样面同步放宽（温度/核采样/候选词上限/新话题倾向各上移一档，仍都在 guide 的推荐段内）。
   // ⚠️ numCtx **刻意没动**：5090 跑 27B q6_K（约 22GB 权重）+ 32K KV cache（约 8GB）已逼近 32GB 上限，
   //    再往上会溢到 CPU 反而更慢。要更长的上下文窗口只能换更小量化。
+  // 【2026-09-16 补两把「治复读」的旋钮（老大令：按对照实验结论落地）】
+  // 起因：实测「每轮都写一个手部小动作」的根源是**惩罚射程只有 64 词元**（半句话），
+  // 跨轮复读在物理上就在射程外 —— 把 repeatPenalty 拧到 1.4 不但没用，还会把（ ）括号一起压掉、
+  // 输出格式直接崩（动作行从 2.08/轮 掉到 0.43/轮，括号不闭合、旁白跑出括号）。
+  // 实测有效的是：射程拉到 512（≈最近两三回合）+ 打开词频惩罚 0.1 ——
+  // 手部描写占比 28.9% → 13.4%（叠加协议末尾的反重复提醒），同拍复现率 7.7% → 0%，
+  // 动作行只从 2.08/轮 降到 1.68/轮（可接受），格式与语感均未受损。
+  // ⚠️ presencePenalty **刻意没动**：实验里把它从 0.55 降到 0.3 / 关到 0，手部占比反而更高（35.5% / 30.1%），
+  //  「它在帮忙制造换个说法继续写手」这个推断被证伪，不要照着旧报告去调它。
   plot: {
     temperature: 0.9, topP: 0.92, topK: 60,
-    repeatPenalty: 1.05, presencePenalty: 0.5,
+    repeatPenalty: 1.05, frequencyPenalty: 0.1, repeatLastN: 512,
+    presencePenalty: 0.5,
     numCtx: 32768, contextBudget: 24000,
   },
   free: {
     temperature: 0.95, topP: 0.92, topK: 60,
-    repeatPenalty: 1.05, presencePenalty: 0.55,
+    repeatPenalty: 1.05, frequencyPenalty: 0.1, repeatLastN: 512,
+    presencePenalty: 0.55,
     numCtx: 32768, contextBudget: 24000,
   },
 }

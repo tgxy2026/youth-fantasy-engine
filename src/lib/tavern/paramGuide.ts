@@ -105,6 +105,45 @@ export const GUIDE_PRESENCE_PENALTY: ParamGuide = {
   ],
 }
 
+/**
+ * 重复惩罚的**射程**（回看多少个词元）。
+ *
+ * 【为什么单独有这一项 —— 2026-09-16 对照实验的直接产物】
+ * `repeat_penalty` / `frequency_penalty` / `presence_penalty` 三者**共用同一个回看窗口**
+ * （llama.cpp 的 `penalty_last_n`），而 Ollama 出厂只给 **64 词元 ≈ 50 个汉字**（半句话）。
+ * 也就是说「隔了一轮又说同一句话」在物理上就不在惩罚范围内 ——
+ * 把「重复惩罚」从 1.05 调到 1.4 也碰不到它，只会误伤窗口内的虚词（句子发硬、甚至把（ ）括号压没）。
+ * 想治跨轮复读，得先把射程拉开，「词频惩罚」才有用武之地。
+ * 实测：只把射程拉大而不开「词频惩罚」，手部描写占比纹丝不动（28.9% → 27.7%）。
+ */
+export const GUIDE_REPEAT_LAST_N: ParamGuide = {
+  min: 0, max: 4096, step: 64, unit: '词元',
+  bands: [
+    { from: 0, to: 0, name: '关闭', effect: '完全不回看：模型可以逐字复读上一句，重复惩罚与词频惩罚一并失效。' },
+    { from: 64, to: 256, name: '半句到一句', effect: 'Ollama 出厂就是 64 —— 只看得到半句话：句内的重复压得住，隔一轮的复读完全够不到。' },
+    { from: 256, to: 1024, name: '最近两三回合', effect: '射程覆盖最近两三个回合，词频惩罚在这里才真正碰得到「上一轮用过的那类词」—— 跨轮复读靠它。', recommended: true },
+    { from: 1024, to: 4096, name: '整段上下文', effect: '回看范围过大：整份常用词表都被压住，输出普遍变呆、用词趋同，动作描写会明显缩水。' },
+  ],
+}
+
+/**
+ * 词频惩罚：按「同一个词在这一段里出现过几次」扣分。
+ *
+ * 与「重复惩罚」的分工：重复惩罚是**乘性**的（出现过就压一下），管的是「本句别复读」；
+ * 词频惩罚是**按次数累加**的，管的是「同一个词反复出现」—— 也就是本品最典型的
+ * 「每一轮都用一个手部小动作」这种症状。实测打开它（0.1）能把跨轮同拍复现率从 7.7% 压到 0%。
+ * ⚠️ 它必须配合「惩罚射程」才有跨轮效果：射程还在 64 时，它同样够不到上一轮。
+ */
+export const GUIDE_FREQUENCY_PENALTY: ParamGuide = {
+  min: 0, max: 2, step: 0.05,
+  bands: [
+    { from: 0, to: 0, name: '关闭', effect: '不按词频扣分：同一个词用几次都不受罚，模型会翻来覆去用同一个动作词。' },
+    { from: 0.05, to: 0.3, name: '轻推', effect: '同一个词每出现一次就轻微扣一点：够把「反复同一个动作词」压下去，句子又不会变硬。', recommended: true },
+    { from: 0.3, to: 0.7, name: '明显', effect: '复读明显减少，代价是描写长度缩水 —— 模型宁可不写动作，也不愿重复用词。' },
+    { from: 0.7, to: 2, name: '过度', effect: '常用词被大面积回避：句子生硬、寡淡，动作与神态描写会被整层挤掉。' },
+  ],
+}
+
 export const GUIDE_SETTING_RATIO: ParamGuide = {
   min: 10, max: 95, step: 5, unit: '%',
   bands: [
@@ -283,6 +322,8 @@ export const GUIDE_SAMPLING = {
   topP: GUIDE_TOP_P,
   topK: GUIDE_TOP_K,
   repeatPenalty: GUIDE_REPEAT_PENALTY,
+  frequencyPenalty: GUIDE_FREQUENCY_PENALTY,
+  repeatLastN: GUIDE_REPEAT_LAST_N,
   presencePenalty: GUIDE_PRESENCE_PENALTY,
 } as const
 
