@@ -6,6 +6,7 @@ import {
   chooseDesktopDataDir, relocateDesktopDataFile, resetDesktopDataPath,
 } from '../lib/desktop'
 import { confirmDialog, showToast } from './dialogs'
+import { isDesktopCloudSyncActive } from '../lib/db'
 import { Z } from '../lib/zLayer'
 import { Button } from './Button'
 
@@ -62,6 +63,15 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
   }
 
   const doImport = async () => {
+    /**
+     * 🔴 审计 2026-09-18（P1-6）：云盘文件同步开启时**拒绝导入**（理由见 db.ts 的
+     *    isDesktopCloudSyncActive）。与其「导入成功却什么都没变」，不如明确拒绝
+     *    并告诉他先关同步 —— 这才是他能照着做的下一步。
+     */
+    if (isDesktopCloudSyncActive()) {
+      showToast('云盘文件同步正在开启，无法导入数据文件。\n请先在「云盘文件同步」栏点「关闭」切回本机存储，再执行导入。', 'error', 6000)
+      return
+    }
     if (!await confirmDialog({
       title: '导入数据文件',
       message: '导入将用所选数据文件的【全部内容】替换本机当前全部数据（含所有项目），确定继续？',

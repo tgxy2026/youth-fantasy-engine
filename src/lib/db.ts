@@ -529,6 +529,22 @@ export function setStoreOps(o: StoreOps) {
 }
 
 /**
+ * 当前底层存储是否走「云盘文件同步」。
+ *
+ * 🔴 审计 2026-09-18（P1-6）：导入数据文件前必须问它 —— 同步开启时界面读的是云端 cache，
+ *    而导入只替换本机 desktopStore：导入的内容既看不见（reload 后 ops 又切回云存储），
+ *    下次兜底镜像 / 关闭同步时还会被云端旧行按主键覆盖回同 key（等于白导，用户却以为成功了）。
+ *
+ * 🔴🔴 这个判断**绝不能放进 desktop.ts**：那边 import desktopCloudSync 会形成
+ *    `desktop → desktopCloudSync → env → desktop` 的环（env.ts 反过来 import DESKTOP），
+ *    实测在浏览器里模块求值期直接 TDZ 崩 —— Cannot access 'DESKTOP' before initialization。
+ *    tsc 与单测都看不出来，只有真跑 ESM 才炸（用 tests/importCycles 静态闸兜底）。
+ */
+export function isDesktopCloudSyncActive(): boolean {
+  return ops === desktopCloudFileStore
+}
+
+/**
  * 开启云盘文件同步（#031 引入，#032 去掉同步码）。
  * 数据以加密文件落在用户选定的云盘同步目录，全程不依赖服务器。
  * 加密使用内置默认密钥（DEFAULT_CLOUD_KEY），所有设备一致 → 指向同一目录即可互通，无需输入任何码。

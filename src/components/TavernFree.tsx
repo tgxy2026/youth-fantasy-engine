@@ -193,6 +193,25 @@ export default function TavernFree() {
   const [titleDraft, setTitleDraft] = useState('')
 
   const abortRef = useRef<AbortController | null>(null)
+  /** 当前会话 id 的 ref：判断「是不是真的换了会话」用 —— 点左栏里当前这一场不该把在途生成杀掉 */
+  const sessionIdRef = useRef<string | null>(null)
+  useEffect(() => { sessionIdRef.current = session?.id ?? null }, [session])
+  /**
+   * 🔴 审计 2026-09-18（P1-2）：切走会话前**中止在途生成**并复位流式状态。
+   *    置空 abortRef 兼作「代次令牌」：在途的 send / reroll / assist 发现自己的 ctrl
+   *    已被换掉，就只落库、不接管界面 —— 否则旧回复会把界面拽回旧会话
+   *    （左栏高亮按 session?.id 判定，高亮与正文就此不一致），失败路径的 setInput(text)
+   *    还会把上一场没发出去的文字灌进新会话的输入框。
+   */
+  const cancelInFlight = useCallback(() => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setStreaming(false)
+    setStreamText('')
+    setPhase('')
+    setAssistBusy(false)
+    setAssistMode(null)
+  }, [])
   const scrollRef = useRef<HTMLDivElement>(null)
   /**
    * 「生成中又按了一次发送」的提示节流（反馈 #13）。
@@ -332,6 +351,12 @@ export default function TavernFree() {
   }, [])
 
   const openSession = useCallback(async (id: string) => {
+    /**
+     * 🔴 审计 2026-09-18（P1-2）：切走会话要中止在途生成 + 复位流式（见 cancelInFlight）。
+     *    只在**真的换了会话**时做 —— 点左栏里当前这一场不该把正在生成的一轮杀掉
+     *    （那会把用户这句话连同回复一起丢掉：原实现只是清流式文字，那一轮仍会落库）。
+     */
+    if (sessionIdRef.current !== id) cancelInFlight()
     const raw = await store.getFreeSession(id)
     /**
      * 🔴 旧刻度的会话在这里**一次性迁移**并落库（2026-09-16 老大定 D2）：
@@ -358,7 +383,7 @@ export default function TavernFree() {
       setSession(seeded)
       await store.saveFreeSession(seeded).catch(() => undefined)
     }
-  }, [loadSessionContext])
+  }, [loadSessionContext, cancelInFlight])
 
   // ---------- 新建对话（版式对齐新建推演） ----------
   const createFromDraft = useCallback(async (d: FreeDraft) => {
@@ -395,6 +420,9 @@ export default function TavernFree() {
       setSetupOpen(false)
       await refreshSessions()
       await refreshStories()
+      // 🔴 审计 2026-09-18（P1-2）：新建会话也是「切走」—— 不中止的话，
+      //    在途的旧回复返回后会 setSession(res.session) 把这个新会话顶掉。
+      cancelInFlight()
       setSession(withOpening)
       await loadSessionContext(withOpening)
       // 反馈 #4：若主角色卡已有持久数值，新会话接着算（跨会话累积）
@@ -415,7 +443,7 @@ export default function TavernFree() {
     } catch (e) {
       showToast(`新建失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     }
-  }, [nameOf, refreshSessions, refreshStories, loadSessionContext])
+  }, [nameOf, refreshSessions, refreshStories, loadSessionContext, cancelInFlight])
 
   // ---------- 结束本轮对话（一次性收尾：记忆 + 日记 + 数值 + 设定） ----------
   /**
@@ -698,6 +726,10 @@ export default function TavernFree() {
         signal: ctrl.signal,
         speakerId: speakNext || undefined,
       })
+      // 🔴 审计 2026-09-18（P1-2）：生成期间切了会话 / 按了停止 → **不回灌界面**。
+      //    否则 setSession(res.session) 会把界面拽回旧会话，而左栏高亮按 session?.id 判定，
+      //    高亮与正文就此不一致。用 ctrl 当「代次令牌」：openSession / stop 会换掉或清空 abortRef。
+      if (abortRef.current !== ctrl) return
       setStreamText('')
       // 反馈 #5：先把这一轮完整回复作为消息立刻显示，文字常驻不闪退；后面的数值结算在后台跑（只更新右栏），不再清空正文导致「文字消失再重现」。
       setSession(res.session)
@@ -720,6 +752,8 @@ export default function TavernFree() {
         persistCharVars,
       })
       const saved = await store.saveFreeSession(withVars)
+      // 🔴 结算期间又切了会话：这一轮**照常落库**（它确实发生在那个会话上），但界面不接管
+      if (abortRef.current !== ctrl) { void refreshSessions(); return }
       setSession(saved)
       setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       await refreshSessions()
@@ -728,6 +762,9 @@ export default function TavernFree() {
       setGreeting('')
       setSpeakNext('')
     } catch (e) {
+      // 🔴 已切走（或主动停止）：绝不能回滚到旧会话 —— setSession(session) 会把界面拽回去，
+      //    setInput(text) 还会把上一场没发出去的文字塞进新会话的输入框（审计 P1-2 原文场景）
+      if (abortRef.current !== ctrl) return
       // 回滚：这句话没送出去，把它还回输入框，别让作者白打一遍
       setSession(session)
       setInput(text)
@@ -871,6 +908,10 @@ export default function TavernFree() {
         signal: ctrl.signal,
         speakerId: target.speakerId,
       })
+      // 🔴 审计 2026-09-18（P1-2）：生成期间切了会话 / 按了停止 → **不回灌界面**。
+      //    否则 setSession(res.session) 会把界面拽回旧会话，而左栏高亮按 session?.id 判定，
+      //    高亮与正文就此不一致。用 ctrl 当「代次令牌」：openSession / stop 会换掉或清空 abortRef。
+      if (abortRef.current !== ctrl) return
       setStreamText('')
       // 反馈 #5：重说也先把新回复作为消息立刻显示，文字常驻；数值结算在后台跑（只更新右栏）。
       setSession(res.session)
@@ -889,11 +930,14 @@ export default function TavernFree() {
         persistCharVars,
       })
       const saved = await store.saveFreeSession(withVars)
+      // 🔴 结算期间又切了会话：照常落库，但界面不接管（同 send）
+      if (abortRef.current !== ctrl) { void refreshSessions(); return }
       setSession(saved)
       setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       await refreshSessions()
       if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
     } catch (e) {
+      if (abortRef.current !== ctrl) return   // 已切走：不报「失败」，也不回滚界面
       showToast(`重说失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       setStreaming(false)
@@ -948,8 +992,11 @@ export default function TavernFree() {
           },
         },
       )
+      // 🔴 切走之后不能再动输入框：setInput 会把旧会话的润色/续写结果填进**新会话**的框里（同 P1-2）
+      if (abortRef.current !== ctrl) return
       setInput(res.text)                          // 最终以完整结果为准（已在 engine 里去空行）
     } catch (e) {
+      if (abortRef.current !== ctrl) return
       if (isCancelled(e)) setInput(applyPostRulesForPreview(buf, tavernSettings ?? DEFAULT_TAVERN_SETTINGS)) // 取消：保留已生成部分（同口径后处理）
       else {
         showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')

@@ -184,6 +184,15 @@ export default function TavernPlot() {
   // 切换会话：载入内容
   useEffect(() => {
     let alive = true
+    // 🔴 审计 2026-09-18（P1-2）：切会话要**中止在途生成**并复位流式状态 ——
+    //    否则旧请求返回后 setSession(res.session) 会把界面拽回旧会话，
+    //    左栏高亮按 session?.id 判定 → 高亮与正文不一致。
+    //    置空 abortRef 兼作「代次令牌」，供 send 判定自己是否已过期。
+    abortRef.current?.abort()
+    abortRef.current = null
+    setStreaming(false)
+    setStreamText('')
+    setPhase('')
     if (!activeId) { setSession(null); return }
     void store.getSession(activeId).then(s => { if (alive) setSession(s) })
     return () => { alive = false }
@@ -275,19 +284,28 @@ export default function TavernPlot() {
         onToken: d => setStreamText(t => t + d),
         onPhase: setPhase,
       })
+      /**
+       * 🔴 审计 2026-09-18（P1-2）：生成期间切了会话 / 按了停止 → 这一轮**照常落库**
+       *    （它确实发生在那个会话上，数据不该丢），但**不回灌界面**：否则
+       *    setSession(res.session) 会把界面拽回旧会话，左栏高亮与正文不一致。
+       */
+      // 落库（含索引同步）
+      await store.saveSession(res.session)
+      await refreshList()
+      // 🔴 必须等**全部 await 之后**再判「有没有切走」：提前判的话，
+      //    saveSession / refreshList 这两个 await 期间切走仍会 setSession 覆盖新会话。
+      if (abortRef.current !== ac) return
       setSession(res.session)
       setStreamText('')
       setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       if (res.fellBack) {
         showToast('「控制面板 → 通用设置 → 默认模型」还没选，这一轮用了全局活动模型', 'info')
       }
-      // 落库（含索引同步）
-      await store.saveSession(res.session)
-      await refreshList()
       // 🚫 2026-09-16 起**不再自动整理本场记忆**（老大拍板：全项目没有自动整理了）。
       //    理由：本地模型一次总结几十秒，压在一轮对话之后就是「说完一句卡半天」，聊越久越密。
       //    改由作者点「整理本场记忆」触发 —— 那条路径与这里同一套逻辑，只是 rel 由人决定。
     } catch (e) {
+      if (abortRef.current !== ac) return   // 已切走：这不是「失败」，别弹错误提示
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       setStreaming(false)
