@@ -490,20 +490,30 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
 
   /** 用本地数据播种（仅当远端为空时调用）。 */
   async function seedFromLocal(getAll: (store: string) => Promise<any[]>) {
+    // 🔴 审计 2026-09-18（P2-3）：逐 store 读失败**绝不能静默当空**继续播种。
+    //    残缺载荷一旦推上去就成了新基线，另一台设备 mergeCaches 时按「云端没有该记录、
+    //    本地也没改过」丢弃那些记录 —— 真实数据在**两端一起消失**。
+    //    所以先读到临时对象、全部成功才提交；有任何失败就中止（界面报错，下次再播）。
+    const next: Record<string, any[]> = {}
+    const failed: string[] = []
     for (const s of SYNC_STORES) {
       // backups 是本地专属保险（#026）：上传侧 liveStores 会剔除它，读取侧 db.ts 的包装层
       // 也把它短路到本地 store——读进 cache 没有任何下游消费者，纯属无用功。
       // 而备份体量不小（每份是一整份项目副本，最多 30 份滚动），播种时白读一次的代价真实可感。
       if (s === 'backups') continue
       try {
-        cache[s] = (await getAll(s)) || []
+        next[s] = (await getAll(s)) || []
       } catch {
-        cache[s] = []
+        failed.push(s)
       }
     }
-    if (cache['meta']) {
-      cache['meta'] = cache['meta'].filter((r: any) => !isExcludedMetaKey(r.key))
+    if (failed.length) {
+      throw new Error(`播种失败：读取本地数据出错（${failed.join('、')}），已中止以免把残缺数据推上云端`)
     }
+    if (next['meta']) {
+      next['meta'] = next['meta'].filter((r: any) => !isExcludedMetaKey(r.key))
+    }
+    cache = next
     await pushNow(0)
   }
 
@@ -754,6 +764,16 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       transientUnavailable = false
       rateLimitedUntil = 0
       baseCache = {}
+      // 🔴 审计 2026-09-18（P2-1）：换目录时必须清掉**待执行的防抖推送**。旧计时器会在
+      //    transport 已指向新目录之后才触发，而此刻 cache 已被清空 → 它会把一份空载荷
+      //    当成「rev=0 的第一份」推上去（新目录凭空多出 rev=1），并把本该走
+      //    「空则播种」的流程推进 409 冲突分支。
+      // 🔴 同日换目录（P2-2）：cloudBackup 属于**上一个目录**；day 相同时 pushNow 里
+      //    「day 变了才重建」的判断不成立 → 旧目录的备份被写进新目录载荷，
+      //    作者点「从备份恢复」还会把旧目录的内容回灌进来。必须一起清掉。
+      if (pushTimer) { clearTimeout(pushTimer); pushTimer = null }
+      pendingPush = false
+      cloudBackup = null
       setStatus('idle')
       transport.setCode(c)
       if (c) transport.startWatch(() => void backgroundPull())

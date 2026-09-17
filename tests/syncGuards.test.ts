@@ -10,6 +10,7 @@
 //
 // 这三条都靠端到端点不出来（需要一个真出错的云盘目录），所以必须先锁死。
 import { createCloudStore } from '../src/lib/syncCore'
+import { SAVE_DEBOUNCE_MS } from '../src/lib/constants'
 import type { SyncTransport } from '../src/lib/syncTransport'
 import { __resetMockStores } from './mock-memory'
 
@@ -174,6 +175,53 @@ async function main() {
     ok('🔴 并发推送被串行化（任一时刻只有一次在途）', maxInFlight === 1, `maxInFlight=${maxInFlight}`)
     ok('第二次推送用的是**推进后**的 rev（不是排到时已过期的基线）',
       raws.length === 2 && raws[1] === raws[0] + 1, JSON.stringify(raws))
+  }
+
+  // ---------- ⑤ 换目录：待推送的防抖计时器必须清掉（P2-1） ----------
+  // 不清的话：旧计时器在 transport 已指向新目录时才触发，而 cache 此刻已被清空
+  // → 把一份空载荷当「rev=0 的第一份」推上去（新目录凭空多出 rev=1），
+  //   并让本该走「空则播种」的流程被推进 409 冲突分支。
+  {
+    const { t, pushes } = scriptedTransport({})
+    const cloud = createCloudStore(t)
+    cloud.configure('dir-a')
+    await cloud.store.put('projects', { id: 'p1' })   // 写一笔 → 排下一次防抖推送
+    cloud.configure('dir-b')                          // 立刻换目录
+    await sleep(SAVE_DEBOUNCE_MS + 700)
+    ok('🔴 换目录后旧计时器不再补推（否则新目录会多出一份空载荷）',
+      pushes.length === 0, '实际推了 ' + pushes.length + ' 次：' + JSON.stringify(pushes.map(p => p.baseRev)))
+  }
+
+  // ---------- ⑥ 换目录必须清掉云备份元信息（P2-2） ----------
+  // cloudBackup 属于**上一个目录**；同名日切换时 day 相同 → pushNow 里「day 变了才重建」
+  // 不成立 → 旧目录的备份被写进新目录载荷，点「从备份恢复」还会回灌旧目录内容。
+  {
+    const { t } = scriptedTransport({})
+    const cloud = createCloudStore(t)
+    cloud.configure('dir-a')
+    await cloud.seedFromLocal(async () => [{ id: 'x1' }])   // 正常播种 → 产生 cloudBackup
+    ok('前置：播种后确实存在云备份元信息', cloud.getCloudBackupMeta() !== null)
+    cloud.configure('dir-b')
+    ok('🔴 换目录后云备份元信息被清掉（不会把旧目录的备份带到新目录）',
+      cloud.getCloudBackupMeta() === null, JSON.stringify(cloud.getCloudBackupMeta()))
+  }
+
+  // ---------- ⑦ 播种时读本地失败 → 中止，绝不推残缺载荷（P2-3） ----------
+  {
+    const { t, pushes } = scriptedTransport({})
+    const cloud = createCloudStore(t)
+    cloud.configure('seed-partial')
+    let n = 0
+    let threw = false, msg = ''
+    try {
+      await cloud.seedFromLocal(async () => {
+        n++
+        if (n === 2) throw new Error('read failed')   // 第 2 个 store 读失败
+        return [{ id: 'ok-' + n }]
+      })
+    } catch (e) { threw = true; msg = e instanceof Error ? e.message : String(e) }
+    ok('🔴 播种时某个 store 读失败 → 抛出并中止（不再静默当空继续推）', threw && /播种失败/.test(msg), msg)
+    ok('中止时一次都没推（残缺载荷不会成为新基线）', pushes.length === 0, String(pushes.length))
   }
 
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)
