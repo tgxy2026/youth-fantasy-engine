@@ -180,6 +180,52 @@ const ROW_CAP: Record<string, number> = {
 }
 const DEFAULT_ROW_CAP = 40
 
+/**
+ * 「保密等级」= 信息档位（定义见 schema 的字段说明）：在此决定**条目**进上下文预算的先后。
+ * 数值越小越先塞：S 必带 → A 优先 → B 常规 → C 最先丢。
+ *
+ * 🔴 它同时是「可见性」的依据（角色视角排除 S 级），但那一步在 RenderOpts 层做，不在这里 ——
+ *   本文件里它只管顺序，不管过滤，两件事分开放，免得日后改一处忘另一处。
+ * 🔴 未填 / 未知值一律按中性（= B 档）。**绝不能当 C** —— 否则历史数据会因为当年没标等级
+ *   而被排到最后优先丢弃，等于用一个新功能把老项目的数据静默降级。
+ */
+const SECRECY_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3 }
+const DEFAULT_RANK = 2
+
+/**
+ * 取一条记录的预算优先级（读不到等级时给中性档）。
+ *
+ * 🔴 两种存储口径都要认（2026-09-17 实测踩过）：
+ *   · 表格行：**裸列名**键 —— data['保密等级']
+ *   · 卡片 / 表单：**复合键** —— data['一、基础信息::保密等级']（与 renderForm 的取值口径一致）
+ *   只认前者时，所有角色卡的等级都会被读成"未填" → 全部中性 → 角色卡排序**静默失效**
+ *   （表格型却正常，所以光看表格测不出来，必须卡片型也测）。
+ */
+function rankOf(data: Record<string, string> | undefined): number {
+  if (!data) return DEFAULT_RANK
+  let raw = data['保密等级']
+  if (raw === undefined) {
+    for (const [k, v] of Object.entries(data)) {
+      if (k.endsWith('::保密等级')) { raw = v; break }
+    }
+  }
+  return SECRECY_RANK[String(raw ?? '').trim().toUpperCase()] ?? DEFAULT_RANK
+}
+
+/**
+ * 按预算优先级排序，且**严格稳定**（同等级保持录入顺序）。
+ *
+ * 🔴 稳定性是硬要求，不是修饰：本地模型的 prompt prefix cache 依赖前缀逐字一致；
+ *   同级顺序若随排序抖动，每次请求都要重算 prefill —— 就成了"改了个好事反而更慢"。
+ *   故显式带原下标做 tiebreaker，不依赖引擎 sort 的稳定性承诺。
+ */
+function sortBySecrecy<T extends { data?: Record<string, string> }>(rows: T[]): T[] {
+  return rows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => rankOf(a.r.data) - rankOf(b.r.data) || a.i - b.i)
+    .map(x => x.r)
+}
+
 /** 单个字段值的字符上限，超出截断（设定里偶有超长自由文本） */
 const CELL_CAP = 200
 
@@ -220,7 +266,9 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
 function renderCards(tab: TabDef, recs: { name: string; data: Record<string, string> }[], o: RenderOpts = {}): string {
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
   const out: string[] = []
-  for (const r of recs.slice(0, cap)) {
+  // 2.2.0：先按「保密等级」排预算优先级、再截断（同等级保持录入序）。
+  // 原来是纯录入序 slice —— 长篇后段会"琐碎的先占位、重要的进不来"。
+  for (const r of sortBySecrecy(recs).slice(0, cap)) {
     const body = renderForm(tab, r.data, o)
     out.push(`〖${r.name || '未命名'}〗${body ? '\n' + body : ''}`)
   }
@@ -234,7 +282,8 @@ function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: R
   const cols = (tab.columns ?? []).map(c => c.name).filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
   if (cols.length === 0) return ''
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
-  const use = rows.slice(0, cap).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
+  // 2.2.0：同 renderCards —— 先按「保密等级」排预算优先级再截断（同等级保持录入序）
+  const use = sortBySecrecy(rows).slice(0, cap).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
   if (use.length === 0) return ''
   const out = [cols.join(' ｜ ')]
   for (const r of use) out.push(cols.map(c => clip(r.data[c] ?? '', CELL_CAP)).join(' ｜ '))

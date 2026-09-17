@@ -642,9 +642,10 @@ async function doCreateDemoProject(): Promise<string> {
     '隐藏设定': '身怀洛家秘传「听雪剑意」，外界不知其深浅',
   })
   await db.saveCardRecord(cardLuoQinghuan)
-  await db.saveCardRecord(card('char-npc', '王铁柱', 0, { '别称': '铁柱' }))
+  await db.saveCardRecord(card('char-npc', '王铁柱', 0, { '别称': '铁柱', '保密等级': 'B' }))
   const cardLaoXiazi = card('char-npc', '老瞎子', 1, {
     '姓名': '老瞎子',
+    '保密等级': 'B',
     '别称': '塔灵',
     '身份': '青岚宗守山门老奴',
     '功能定位': '伏笔承载者+隐藏导师（上古叛神残魂）',
@@ -655,6 +656,7 @@ async function doCreateDemoProject(): Promise<string> {
   await db.saveCardRecord(cardLaoXiazi)
   await db.saveCardRecord(card('char-npc', '陈瑶', 2, {
     '姓名': '陈瑶',
+    '保密等级': 'A',
     '身份': '主角胞妹',
     '功能定位': '温情线承载+后期神女觉醒关键人物',
     '一句话性格': '嘴硬心软，攒糖给兄长',
@@ -663,6 +665,7 @@ async function doCreateDemoProject(): Promise<string> {
   }))
   await db.saveCardRecord(card('char-npc', '黑风', 3, {
     '姓名': '黑风',
+    '保密等级': 'C',
     '别称': '独眼、独眼杀手',
     '身份': '云州散修杀手（独眼）',
     '功能定位': '第4章雨夜截杀执行者，引出萧景行借刀杀人暗线',
@@ -702,6 +705,7 @@ async function doCreateDemoProject(): Promise<string> {
   }))
   await db.saveCardRecord(card('char-npc', '孙铁山', 5, {
     '姓名': '孙铁山',
+    '保密等级': 'C',
     '别称': '铁山',
     '身份': '青岚宗外门弟子（淬体四重）',
     '年龄/性别/外貌特征': '21岁/男，魁梧粗犷，络腮胡',
@@ -713,6 +717,7 @@ async function doCreateDemoProject(): Promise<string> {
   }))
   await db.saveCardRecord(card('char-npc', '陈管事', 6, {
     '姓名': '陈管事',
+    '保密等级': 'C',
     '别称': '陈管事',
     '身份': '青岚宗杂役院管事（淬体七重退下来的老弟子）',
     '年龄/性别/外貌特征': '45岁/男，精瘦，留一撇鼠须',
@@ -754,6 +759,7 @@ async function doCreateDemoProject(): Promise<string> {
   }))
   await db.saveCardRecord(card('char-npc', '赵虎', 8, {
     '姓名': '赵虎',
+    '保密等级': 'C',
     '别称': '灰衣杀手',
     '身份': '血魔教外围暗桩（灰衣杀手）',
     '功能定位': '第7章现身、第9章谷口被擒，坐实血魔教暗线',
@@ -883,6 +889,7 @@ async function doCreateDemoProject(): Promise<string> {
   }))
   await db.saveCardRecord(card('char-npc', '守阁人', 11, {
     '姓名': '守阁人',
+    '保密等级': 'C',
     '别称': '老古董',
     '身份': '藏经阁管事（须发皆白老者）',
     '功能定位': '第6章发魁首功法份额，点出残简来历',
