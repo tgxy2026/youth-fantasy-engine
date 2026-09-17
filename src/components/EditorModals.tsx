@@ -425,7 +425,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && doSearch()}
+          onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && doSearch()}
           placeholder="搜索全书正文与章名…"
           className="flex-1 !py-1.5 text-[13px]"
           autoFocus

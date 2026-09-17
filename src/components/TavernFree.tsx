@@ -1338,7 +1338,7 @@ export default function TavernFree() {
                         placeholder="给这场对话起个名字"
                         onChange={e => setTitleDraft(e.target.value)}
                         onKeyDown={e => {
-                          if (e.key === 'Enter') { e.preventDefault(); void saveTitle() }
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void saveTitle() }
                           if (e.key === 'Escape') { e.preventDefault(); setEditingTitle(false) }
                         }}
                         onBlur={() => void saveTitle()}

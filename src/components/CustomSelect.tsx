@@ -314,7 +314,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                     value={renameDraft}
                     onChange={e => setRenameDraft(e.target.value)}
                     onKeyDown={e => {
-                      if (e.key === 'Enter') { e.preventDefault(); submitRenameBuiltin() }
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitRenameBuiltin() }
                       if (e.key === 'Escape') { setRenaming(null); setRenameDraft('') }
                     }}
                     className="flex-1 !py-0.5 text-[12px] min-w-0"
@@ -335,7 +335,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   value={editDraft}
                   onChange={e => setEditDraft(e.target.value)}
                   onKeyDown={e => {
-                    if (e.key === 'Enter') { e.preventDefault(); submitEditUser() }
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitEditUser() }
                     if (e.key === 'Escape') { setEditing(null); setEditDraft('') }
                   }}
                   className="flex-1 !py-0.5 text-[12px] min-w-0"
@@ -421,7 +421,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 value={draft}
                 onChange={e => setDraft(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter') { e.preventDefault(); submitDraft() }
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitDraft() }
                   if (e.key === 'Escape') { setAdding(false); setDraft('') }
                 }}
                 placeholder="输入新选项"

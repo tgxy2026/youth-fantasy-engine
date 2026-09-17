@@ -304,7 +304,7 @@ export default function ProjectHub({ onOpen }: Props) {
                   <input
                     value={form.name}
                     onChange={e => setForm({ ...form, name: e.target.value })}
-                    onKeyDown={e => { if (e.key === 'Enter') create() }}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) create() }}
                     placeholder="给这本书起个名字，其他信息之后随时可以补"
                     autoFocus
                     className="w-full text-[13px]"
@@ -384,7 +384,7 @@ export default function ProjectHub({ onOpen }: Props) {
                         <input
                           value={editForm.name}
                           onChange={e => setEditForm({ ...editForm, name: e.target.value })}
-                          onKeyDown={e => { if (e.key === 'Enter') saveEdit() }}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) saveEdit() }}
                           autoFocus
                           className="w-full text-[13px]"
                         />

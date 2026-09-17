@@ -1279,7 +1279,7 @@ function AddMarkerForm({ categories, parentOptions, onCancel, onCreate }: {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-ink-100 font-medium"><Plus size={14} className="text-amber" /> 就地新增地理范围</div>
-      <Field label="名称"><input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onCreate(name, category, parent) }} className="w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50" placeholder="如：南荒秘境" /></Field>
+      <Field label="名称"><input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && name.trim()) onCreate(name, category, parent) }} className="w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50" placeholder="如：南荒秘境" /></Field>
       <Field label="类别（可在下拉里新增自定义类别）">
         <CustomSelect tabId="geography" colName="类别" options={categories} value={category} onChange={setCategory} />
       </Field>

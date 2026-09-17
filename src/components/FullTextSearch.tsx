@@ -65,7 +65,7 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
     if (e.key === 'Escape') { e.preventDefault(); onClose(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(flat.length - 1, s + 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(0, s - 1)) }
-    else if (e.key === 'Enter') { e.preventDefault(); if (flat[sel]) open(flat[sel]) }
+    else if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); if (flat[sel]) open(flat[sel]) }
   }
 
   useEffect(() => {
