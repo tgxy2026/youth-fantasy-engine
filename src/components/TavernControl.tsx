@@ -46,7 +46,8 @@
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
-import { loadProviders, type AIProvider } from '../lib/ai'
+import { loadProviders, loadActiveId, type AIProvider } from '../lib/ai'
+import { adviseCapacity } from '../lib/modelCapacity'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import AvatarPicker from './AvatarPicker'
@@ -286,6 +287,8 @@ export default function TavernControl() {
   /** 是否展开所有数值项的分段说明（默认展开） */
   const [showBands, setShowBands] = useState(true)
   const [providers, setProviders] = useState<AIProvider[]>([])
+  /** 全局活动模型 id —— 本场未指定模型时，实际生效的就是它（用于推断上下文能力） */
+  const [activeProviderId, setActiveProviderId] = useState<string | null>(null)
   /** B3：输出后处理规则的「试一段」输入（只用于预览，不进设置） */
   const [ruleTry, setRuleTry] = useState('')
   const [dirty, setDirty] = useState(false)
@@ -353,12 +356,14 @@ export default function TavernControl() {
   useEffect(() => {
     void (async () => {
       try {
-        const [st, ps] = await Promise.all([
+        const [st, ps, actId] = await Promise.all([
           getTavernSettings(),
           loadProviders().catch(() => [] as AIProvider[]),
+          loadActiveId().catch(() => null),
         ])
         setS(st)
         setProviders(ps)
+        setActiveProviderId(actId)
       } catch (e) {
         showToast(`读取设置失败：${e instanceof Error ? e.message : String(e)}`, 'error')
         setS(DEFAULT_TAVERN_SETTINGS)
@@ -594,6 +599,19 @@ export default function TavernControl() {
   const fr = s.free
   const modelOptions = providers.map(p => ({ id: p.id, label: `${p.name} · ${p.model}` }))
 
+  // 2.2.0：解析「当前实际生效的模型」—— 本场指定优先，否则跟随全局活动模型。
+  // 为什么要它：numCtx 32768 / contextBudget 24000 是为本地 5090 + 27B q6_K 算的，
+  // 而 num_ctx 是 Ollama 专有字段 —— 云端端点不认它。不区分的话，接上 256K 窗口的云端模型
+  // 仍会被"本地算出来的数"锁死，且面板上毫无提示（见 lib/modelCapacity.ts）。
+  // ⚠️ 刻意**不用 useMemo**：本组件在 `if (!s) return <LoadingState/>` 处有 early return，
+  // 而 c 依赖 s —— Hook 写在 return 之后会违反"每次渲染调用顺序一致"的规则（lint 报过）。
+  // 这里只是几次正则匹配 + 算术，每次渲染重算的成本可以忽略。
+  const activeProvider = (() => {
+    const id = c.defaultProviderId || activeProviderId
+    return providers.find(p => p.id === id) ?? null
+  })()
+  const cap = adviseCapacity(activeProvider, { numCtx: c.numCtx, contextBudget: c.contextBudget })
+
   return (
     <div className="mx-auto max-w-[1500px] space-y-4">
       <header className="flex items-start justify-between gap-4">
@@ -656,7 +674,7 @@ export default function TavernControl() {
             <div className={GRID2}>
               <NumField
                 label="上下文预算" guide={PARAM_GUIDES.contextBudget}
-                hint="一轮请求里「设定 + 记忆 + 对话历史」加起来的上限。超了先裁最早的对话轮次（开场永不被裁）。"
+                hint={`一轮请求里「设定 + 记忆 + 对话历史」加起来的上限。超了先裁最早的对话轮次（开场永不被裁）。当前模型建议值：${cap.suggestContextBudget}。`}
                 value={c.contextBudget} onCommit={v => setCommon('contextBudget', v)}
               />
               <NumField
@@ -674,7 +692,9 @@ export default function TavernControl() {
             <div className={GRID2}>
               <NumField
                 label="上下文窗口长度" guide={PARAM_GUIDES.numCtx}
-                hint="显式告诉本地模型能装多少内容。不指定的话它会按全局设置（可能 128K）加载，显存占用会远超预期。"
+                hint={cap.local
+                  ? '显式告诉本地模型能装多少内容。不指定的话它会按全局设置（可能 128K）加载，显存占用会远超预期。本地窗口由显存决定，别照模型标称值往大调。'
+                  : `此参数只对本地 Ollama 生效 —— 当前接的是云端模型，设了也不生效。该模型窗口为 ${cap.windowTokens} tokens，要让模型多读内容请调大下面的「上下文预算」。`}
                 value={c.numCtx} onCommit={v => setCommon('numCtx', v)}
               />
               <ToggleField

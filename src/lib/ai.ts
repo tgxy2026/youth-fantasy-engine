@@ -32,6 +32,12 @@ export interface AIProvider {
   local?: boolean
   /** 用户自定义系统提示词：追加到各功能自带系统提示词之后，不覆盖、不影响原指令与格式约束 */
   systemPrompt?: string
+  /**
+   * 该模型的上下文窗口（tokens）。**选填**，只在「云端 OpenAI 兼容端点」时才有意义：
+   * 本地 Ollama 的 num_ctx 由显存决定（见 lib/modelCapacity.ts），云端则由服务商决定，
+   * 且没有统一的查询接口 —— 所以允许手填。留空时按 model 名去预设表里认，认不出走保守兜底。
+   */
+  contextWindow?: number
 }
 
 export interface ChatMessage {
