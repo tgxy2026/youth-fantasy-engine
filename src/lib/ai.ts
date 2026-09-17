@@ -287,6 +287,9 @@ export interface ChatOptions {
    * gemma4 / qwen3.5 等会失去思考过程，补全质量直线下降。
    * ⚠️ 例外：酒馆模式（扮演对话）是**有意**全局关闭的（见 TavernSettings.common.disableThink，默认 true）
    *    —— 那边要的是稳定人物口吻而非推理链，别照本条去「修正」掉它。
+   * ⚠️ 例外二：AI 伴写（aiTasks.aiInlineSuggest）同样**有意**关闭 —— 它只续写一句话、要求「停笔即出」，
+   *    思考链既把延迟从 1~3s 拖到十几秒（ghost 体验直接崩），又可能经 ollamaChatRaw 的
+   *    「content 为空则退用 thinking」兜底被当成续写内容透出来。它要的是顺手接一句，不是推理。
    */
   think?: boolean
   /** 外部取消信号（对话面板的「停止」按钮） */

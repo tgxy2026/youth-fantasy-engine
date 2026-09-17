@@ -227,6 +227,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const ghostCache = useRef(new Map<string, string>())
   /** 连续失败计数：满 GHOST_MAX_FAILS 次自动静默禁用（避免每次停笔都白等一轮超时） */
   const ghostFail = useRef(0)
+  /**
+   * Esc 丢弃后记下「光标位置 + 当时正文长度」。
+   * 为什么需要它（2026-09-17 实机验证抓到）：自动保存在停笔 2 秒后提交，`chapters` 一更新
+   * `active` 就是新对象 → 伴写 effect 重跑 → 刚被 Esc 拒掉的建议又被弹回来。作者会觉得"Esc 根本没用"。
+   * 只有光标真的动了、或正文真的变了（长度变化）才允许再次自动请求。
+   */
+  const ghostDismissed = useRef<{ at: number; len: number } | null>(null)
   /** 设定资料 + 《写作规范》缓存（按章节失效）：ghost 请求要低延迟，不能每次重读全库 */
   const ghostCtxCache = useRef<{ chapterId: string; projectContext: string; styleSpec: string } | null>(null)
   // draftContent：当前章节的未保存内容（draftRef 同步镜像，供自动保存定时器读取最新值，防止 2 秒防抖期间 updateContent 的改动被旧值覆盖）
@@ -533,6 +540,15 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const onContentChange = (v: string) => {
     draftRef.current = v
     setDraftContent(v)
+    // 正文真的变了 → 解除「Esc 抑制」（抑制只管"没动过内容的重渲染"，不能管住作者的下一次落笔）
+    ghostDismissed.current = null
+    // 🔴 光标必须在这里同步一次，不能只靠 onKeyUp：**输入法上屏、粘贴、程序化插入都不产生 keyup**，
+    //    只靠 keyUp 会让 caret/selRef 停在旧偏移；伴写据此误判"光标后还有正文"→ 永远不再出建议
+    //    （2026-09-17 实机验证抓到：敲字后 30s 无建议，埋点显示 at=4617 而正文已 4618 字）
+    if (taRef.current) {
+      selRef.current = { start: taRef.current.selectionStart, end: taRef.current.selectionEnd }
+      setCaret(taRef.current.selectionStart)
+    }
     clearTimeout(autosaveTimer.current)
     autosaveTimer.current = setTimeout(() => commitContent(draftRef.current), 2000)
     syncTypewriter(v)
@@ -780,10 +796,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
    * 前置条件全部满足才发请求：已开启 · 模型就绪 · 无选区 · 光标后无正文 · 前文够长 · 未熔断。
    */
   useEffect(() => {
-    if (!companion || !aiReady || !active) { setGhost(null); return }
+    if (!companion || !aiReady || !activeId) { setGhost(null); return }
     if (ghostFail.current >= GHOST_MAX_FAILS) { setGhost(null); return }
     // 光标位置必须夹到当前正文长度内：切章后旧光标值可能越界，不夹会算出"指向章外"的建议
     const at = Math.min(caret, draftContent.length)
+    // 刚被 Esc 拒掉、且位置与正文都没变 → 不重新请求（否则自动保存引起的重渲染会把建议弹回来）
+    const d = ghostDismissed.current
+    if (d && d.at === at && d.len === draftContent.length) { setGhost(null); return }
     const s = selRef.current
     // 三种情况一律不显示、并中断在途请求：有选区（整段要改，不打扰）/ 光标后已有正文（ghost 无处安放）/ 前文太短
     const blocked = (!!s && s.end > s.start) || draftContent.slice(at).trim() !== '' || ghostBefore(at).trim().length < 12
@@ -806,7 +825,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       window.clearTimeout(timer)
       if (ghostTimer.current === timer) ghostTimer.current = null
     }
-  }, [companion, companionLen, companionDeAi, companionStyleNote, aiReady, active, activeId, draftContent, caret, fireGhost, ghostKey])
+    // deps 里用 activeId 而不是 active：active 是 chapters.find(...) 的产物，自动保存一提交就换新对象，
+    // 会让本 effect 白跑一轮并弹回刚被丢弃的建议（依赖 activeId 就不会因无关的列表更新而重跑）
+  }, [companion, companionLen, companionDeAi, companionStyleNote, aiReady, activeId, draftContent, caret, fireGhost, ghostKey])
 
   /**
    * 切章 / 卸载时必须清干净：ghost 是「针对某一章某个位置」算出来的，
@@ -822,8 +843,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   }, [activeId])
 
   /** 丢弃建议：中断在途请求并清空 ghost（打字/Esc/移动光标都会走到这里） */
-  const dismissGhost = () => {
+  const dismissGhost = (at = caret) => {
     ghostAbort.current?.abort()
+    ghostDismissed.current = { at, len: draftRef.current.length }
     setGhost(null)
   }
 
@@ -854,7 +876,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
 
   /** 编辑器按键：先处理伴写的采纳/丢弃/手动触发，其余按键原样放行 */
   const onEditorKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Escape' && ghost) { dismissGhost(); return }
+    if (e.key === 'Escape' && ghost) { dismissGhost(taRef.current?.selectionStart ?? caret); return }
     // Tab 采纳（必须 preventDefault，否则 textarea 默认会跳焦点）
     if (e.key === 'Tab' && ghost && !e.shiftKey && acceptGhost()) { e.preventDefault(); return }
     // → 采纳：仅当光标已在正文末尾（避免与"向右移光标"的日常操作打架）

@@ -1485,6 +1485,11 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
       timeoutMs: CHAT_TIMEOUT_MS,
       signal: opts.signal,
       onToken: opts.onToken,
+      // 🔴 必须关思考链（ai.ts 的 think 注释里已把伴写登记为第二个「有意关闭」的例外，与酒馆同类）：
+      //    思考型模型（qwen3 系等）会先吐一大段推理，① 延迟从 1~3s 变成十几秒，ghost 手感直接崩；
+      //    ② 万一只吐思考不给结论，ollamaChatRaw 有「content 为空则退用 thinking」的兜底，
+      //    那段推理会被当成续写内容透到正文里。伴写要的是"顺手接一句"，不是推理。
+      think: false,
       extraOptions: {
         top_p: 0.92,
         // Ollama 原生字段：显式限产出长度（不传时按模型默认，可能吐一长段）。
