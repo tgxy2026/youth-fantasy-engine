@@ -1087,8 +1087,6 @@ export async function aiContinuationAdvice(
   const cfg = await requireActiveProvider()
   const sys = `你是小说写作指导（卡文救星）。作者刚写完本章，请你给下一部分的创作方向建议。
 
-铁律：只给"方向、思路、钩子设计、坑位提醒"，绝不直接生成正文内容——正文必须由作者自己写。
-
 规则：
 1. direction：下一段最值得推进的冲突/情节方向（2~4 句）。
 2. hooks：可用的章末钩子/悬念点子 2~4 条（只描述效果，不写成品句子）。
