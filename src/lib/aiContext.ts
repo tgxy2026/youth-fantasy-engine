@@ -85,6 +85,13 @@ export interface ProjectContextResult {
  * 上下文段落优先级：越靠前越先塞进预算。
  * 依据：世界观与主角设定是一致性的根，其次是结构性大纲，最后才是运营台账。
  * 刻意排除 progress（写作进度）——纯码字流水，对模型是纯噪音。
+ *
+ * 2026-09-17 审计修正两处：
+ *  · `style`（写作规范）由第 23 位前移 —— 它是"每次生成都要遵守的约束"，体积小却直接决定文风是否一致；
+ *    排在末尾等于"长篇后期预算一紧就先丢它"，代价最大、收益最小。原注释把它归进"运营台账"是一处误判。
+ *  · `faction-rels`（势力关系）补入 —— 原先**不在本表**，只能靠下方 for 循环"兜底追加"到最末，
+ *    结果是明明有数据却几乎带不进去（AI 判断势力格局正需要它）。
+ *  🔴 凡新增资料型页签，务必登记进本表 —— 兜底机制只保证"不丢数据"，不保证"进得了预算"。
  */
 const PRIORITY: string[] = [
   'positioning',      // 作品定位
@@ -94,8 +101,10 @@ const PRIORITY: string[] = [
   'char-main',        // 主要角色
   'relations',        // 人物关系
   'char-secondary',   // 次要角色
+  'style',            // 写作规范
   'terms',            // 名词术语
   'nations',          // 国家势力
+  'faction-rels',     // 势力关系
   'geography',        // 地理风物
   'races',            // 种族生物
   'items',            // 物品资源
@@ -109,7 +118,6 @@ const PRIORITY: string[] = [
   'secrets',          // 知情权限
   'hookpoints',       // 爽点节奏
   'char-npc',         // NPC 角色卡
-  'style',            // 写作规范
   'changelog',        // 设定变更
   'ideas',            // 灵感素材
 ]
