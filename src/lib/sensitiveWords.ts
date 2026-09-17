@@ -4,6 +4,8 @@
  * 主要靠用户在「检查工具」页导入平台官方词库或手动补充自定义词。
  */
 
+import { contextSnippet } from './contextSnippet'
+
 /** 内置基础词库（按类别）。刻意从简：真实平台词库请自行导入。 */
 export const BUILTIN_WORDS: Record<string, string[]> = {
   涉毒: ['冰毒', '海洛因', '可卡因', '大麻', '摇头丸', '制毒', '贩毒', '吸毒', '罂粟', '鸦片'],
@@ -40,9 +42,7 @@ export function scanText(text: string, customWords: string[] = []): SensitiveHit
       idx = text.indexOf(word, idx + word.length)
     }
     if (count > 0) {
-      const start = Math.max(0, firstIdx - 12)
-      const context = (start > 0 ? '…' : '') + text.slice(start, firstIdx + word.length + 12) + (firstIdx + word.length + 12 < text.length ? '…' : '')
-      hits.push({ word, count, context: context.replace(/\n/g, ' ') })
+      hits.push({ word, count, context: contextSnippet(text, firstIdx, word.length) })
     }
   }
   return hits.sort((a, b) => b.count - a.count)

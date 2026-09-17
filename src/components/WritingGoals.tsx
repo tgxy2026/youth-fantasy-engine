@@ -70,7 +70,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
     if (patch.deadline !== undefined) { setDeadline(patch.deadline); await db.setSetting('goalDeadline', patch.deadline) }
   }
 
-  if (!loaded) return <div className="py-4 text-center text-ink-500 text-[12px]">加载中…</div>
+  if (!loaded) return <div className="py-8 text-center text-ink-500 text-[12px]">加载中…</div>
 
   return (
     <div className="space-y-4">

@@ -3,6 +3,7 @@ import * as db from '../lib/db'
 import { countWords } from '../lib/textStats'
 import type { Chapter, Volume } from '../lib/types'
 import { scanText, replaceHits } from '../lib/sensitiveWords'
+import { contextSnippet } from '../lib/contextSnippet'
 import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
@@ -395,8 +396,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
       const contexts: string[] = []
       while (idx !== -1 && contexts.length < 5) {
         count++
-        const start = Math.max(0, idx - 15)
-        contexts.push((start > 0 ? '…' : '') + text.slice(start, idx + q.length + 15).replace(/\n/g, ' ') + '…')
+        contexts.push(contextSnippet(text, idx, q.length))
         idx = text.indexOf(q, idx + q.length)
       }
       while (idx !== -1) { count++; idx = text.indexOf(q, idx + q.length) }

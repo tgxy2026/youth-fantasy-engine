@@ -5,6 +5,7 @@
 // 建立在竞品普遍缺失的「写作规范」数据模型之上，是差异化功能。
 import * as db from './db'
 import { AuditIssue } from './audit'
+import { contextSnippet } from './contextSnippet'
 
 export async function auditStyle(content: string): Promise<AuditIssue[]> {
   const issues: AuditIssue[] = []
@@ -40,8 +41,7 @@ export async function auditStyle(content: string): Promise<AuditIssue[]> {
       const m = content.match(re)
       if (m && m.length > 0) {
         const idx = content.indexOf(w)
-        const start = Math.max(0, idx - 12)
-        const ctx = (start > 0 ? '…' : '') + content.slice(start, idx + w.length + 12).replace(/\n/g, ' ')
+        const ctx = contextSnippet(content, idx, w.length)
         issues.push({
           id: `s-habit-${w}`, severity: m.length >= 3 ? 'warn' : 'info', category: '文风',
           title: `坏习惯词「${w}」出现 ${m.length} 次`,

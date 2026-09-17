@@ -2,6 +2,8 @@
 // 复用「敏感词检测」的交互骨架：内置常见中文错别字词典（含"建议改为"），
 // 扫描正文返回命中与上下文，支持一键替换。
 
+import { contextSnippet } from './contextSnippet'
+
 export interface TypoHit {
   word: string
   suggest: string
@@ -10,7 +12,7 @@ export interface TypoHit {
 }
 
 /** 内置常见错别字 → 正确写法 */
-export const BUILTIN_TYPOS: { word: string; suggest: string }[] = [
+const BUILTIN_TYPOS: { word: string; suggest: string }[] = [
   { word: '帐号', suggest: '账号' },
   { word: '布署', suggest: '部署' },
   { word: '安祥', suggest: '安详' },
@@ -73,10 +75,7 @@ export function scanTypos(text: string, dict?: { word: string; suggest: string }
     let context = ''
     while (idx !== -1) {
       count++
-      if (!context) {
-        const start = Math.max(0, idx - 12)
-        context = (start > 0 ? '…' : '') + text.slice(start, idx + word.length + 12).replace(/\n/g, ' ')
-      }
+      if (!context) context = contextSnippet(text, idx, word.length)
       idx = text.indexOf(word, idx + word.length)
     }
     hits.push({ word, suggest, count, context })
