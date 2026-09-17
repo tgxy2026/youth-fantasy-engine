@@ -207,6 +207,37 @@ engine → script → draft → engine      engine ↔ story</pre>
 </table>
 <p class="muted">扫描器：<code>~/.workbuddy/skills/novel-studio-audit-fix/assets/audit-scan.mjs</code>（§6–§17 为红线，已统一去注释）。未封装（按红线：封装须明说）。</p>
 
+<h2>七、实机验证（真浏览器 + 真 Electron）</h2>
+<div class="kpi">
+  <div><b>26/26</b><span>UI 实机（Chromium）</span></div>
+  <div><b>9/9</b><span>Electron 实机（桌面 / IPC）</span></div>
+</div>
+
+<div class="card ok"><span class="tag ok">UI</span><h4>界面实机验证（真实 Chromium 驱动 dev server，<code>localhost:5199</code>）</h4>
+  <ul>
+    <li>看板娘 inline <code>maxHeight</code> = <code>calc(82vh / var(--ui-zoom, 1))</code>（foldVh 生效）、className 已无 <code>max-h-[82vh]</code></li>
+    <li>项目形态帮助：三项基础设施为「始终常开」，不再说「默认开启、可取消」</li>
+    <li><b>回车守卫</b>：合成 <code>KeyboardEvent(isComposing:true)</code> 的回车<b>不提交</b>（表单仍在、输入未被清）；正常回车能建出并进入项目</li>
+    <li>关系表「清空全部」已是 danger 令牌（<code>bg-red-500/10</code> + <code>text-red-300</code>）</li>
+    <li>工具栏速查：含「⌘ 图标」不含「放大镜」；校对归入【文本工具】，【审计工具】段不再列校对</li>
+    <li>HelpPopover inline <code>maxHeight</code> = <code>calc(70vh / var(--ui-zoom, 1))</code>（foldVh 生效）</li>
+    <li>控制面板帮助：无幽灵「素材从哪来」；左列描述含「输出后处理」、右列不再声称含</li>
+    <li>无页面级 JS 错误</li>
+  </ul>
+</div>
+
+<div class="card ok"><span class="tag ok">Electron</span><h4>桌面数据路径实机验证（真 Electron + 临时 <code>--user-data-dir</code>，P1-1 / P2-10）</h4>
+  <p>用 <code>window.electronStore.load().text</code> 读**磁盘上的 JSON**做**两侧**断言（只查一侧证明不了什么）：</p>
+  <ul>
+    <li>基线：本地文件里确有 <code>probe-local</code></li>
+    <li>云模式下写的 <code>probe-cloud</code> <b>不在</b>本地文件里 —— 证明「云模式下本地不双写」这个 bug 前提成立</li>
+    <li><b>关闭同步后 <code>probe-cloud</code> 已镜像进本地文件</b>，且 API 读回 <code>{v:2}</code> —— <b>P1-1 修复经过端到端验证</b></li>
+    <li>关闭后 ENABLED 标记已清；P2-10：目录偏好缺失时 <code>applyDesktopCloudFromPersisted()</code> 返回 <code>false</code> 且清了标记</li>
+    <li>数据文件落在临时目录（<code>…/yfe-el-*/userdata/novel-studio-data.json</code>），<b>未触碰真实 AppData</b>；跑完即删</li>
+  </ul>
+</div>
+<p class="muted">验证脚本按 <code>novel-studio-ui-livecheck</code> 的规程临时写在 workspace 目录、跑完已删（不属于工程产物）。本轮新踩的坑已回写该 skill。</p>
+
 </div>
 </body>
 </html>
