@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>青春幻想引擎 2.1.3 · 全量审计报告（含修复状态）2026-09-17</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1c2024; --ink2:#5a6470; --ink3:#8a94a0;
+    --line:#e3e6ea; --p1:#c0392b; --p1bg:#fdf1ef; --p2:#b3760a; --p2bg:#fdf8ee;
+    --ok:#1f7a4d; --okbg:#eefaf3; --code:#f2f4f7; --accent:#2b6cb0; --gray:#6b7280; --graybg:#f3f4f6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#14171a; --card:#1c2024; --ink:#e8ebee; --ink2:#a4adb8; --ink3:#77808b;
+      --line:#2b3138; --p1:#f0796a; --p1bg:#2a1c1a; --p2:#e0b45c; --p2bg:#282218;
+      --ok:#5cc98d; --okbg:#16251d; --code:#23282e; --accent:#7ab3ef; --gray:#9aa2ae; --graybg:#23272c;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;padding:40px 22px 80px}
+  h1{font-size:25px;line-height:1.35;margin:0 0 6px}
+  .meta{color:var(--ink2);font-size:13px;margin-bottom:26px}
+  h2{font-size:19px;margin:38px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  h3{font-size:15.5px;margin:22px 0 8px}
+  p{margin:9px 0}
+  ul{margin:8px 0 8px 20px;padding:0}
+  li{margin:5px 0}
+  code{background:var(--code);padding:1.5px 6px;border-radius:5px;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;word-break:break-all}
+  pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow-x:auto;
+    font:12.5px/1.6 ui-monospace,Consolas,monospace;margin:10px 0}
+  .summary{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:18px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--ink3);
+    border-radius:10px;padding:15px 18px;margin:13px 0}
+  .card.p1{border-left-color:var(--p1)}
+  .card.p2{border-left-color:var(--p2)}
+  .card.ok{border-left-color:var(--ok)}
+  .card.gray{border-left-color:var(--gray);background:var(--graybg)}
+  .tag{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.4px;
+    padding:2px 8px;border-radius:999px;margin-right:8px;vertical-align:1px;white-space:nowrap}
+  .tag.p1{background:var(--p1bg);color:var(--p1);border:1px solid var(--p1)}
+  .tag.p2{background:var(--p2bg);color:var(--p2);border:1px solid var(--p2)}
+  .tag.ok{background:var(--okbg);color:var(--ok);border:1px solid var(--ok)}
+  .tag.gray{background:var(--graybg);color:var(--gray);border:1px solid var(--gray)}
+  .card h4{margin:0 0 6px;font-size:15px}
+  .loc{color:var(--ink2);font-size:12.5px;margin:2px 0 8px}
+  .lbl{color:var(--ink2);font-weight:600}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--code);font-weight:600}
+  .muted{color:var(--ink3);font-size:13px}
+  .kpi{display:flex;flex-wrap:wrap;gap:12px;margin:14px 0}
+  .kpi div{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:12px 16px;min-width:132px}
+  .kpi b{display:block;font-size:22px;line-height:1.2}
+  .kpi span{color:var(--ink2);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>青春幻想引擎 2.1.3 · 全量审计报告（含修复状态）</h1>
+<div class="meta">日期：2026-09-17 · 工作区：<code>G:/AI软件/novel-studio开发源码</code> · 配套逐项记录：<code>docs/2.1.3-审计修复记录.md</code></div>
+
+<div class="kpi">
+  <div><b>4 / 4</b><span>P1 已修</span></div>
+  <div><b>14</b><span>P2 已修</span></div>
+  <div><b>11</b><span>P2 判定不改 / 待定</span></div>
+  <div><b>11 → 19</b><span>红线确定性检查项</span></div>
+  <div><b>43/43</b><span>终态测试</span></div>
+  <div><b>0</b><span>循环依赖（原 4 组）</span></div>
+</div>
+
+<div class="summary">
+  <p><b>总体结论：</b>本轮先补齐**审计工具与技能的覆盖缺口**（红线确定性检查由 5 项扩到 19 项、三扫描器统一去注释），再执行审计，最后<b>逐项修复</b>。共确认 <b>4 条 P1（全部已修）</b>与一批 P2（14 项已修、11 项判定不改或待定），<b>全部经回源码验尸</b>。</p>
+  <p class="muted">终态：tsc 0 错 / eslint 0 错（11 既有 warning）/ tests 43-43 / 两闸全绿 / <code>vite build</code> 通过 / 循环依赖 0 组。修复分 6 个提交：<code>d0de562</code> <code>d20f049</code> <code>027ed33</code> <code>72424d6</code> <code>2a8b5ef</code> <code>6774df4</code>。</p>
+</div>
+
+<h2>一、本轮的审计工具与技能升级</h2>
+<table>
+  <tr><th>升级</th><th>内容</th></tr>
+  <tr><td>新增 8 项红线确定性检查</td>
+      <td><code>audit-scan.mjs</code> §10–§17：裸 <code>navigator.clipboard</code> / 内联 <code>vh·vw</code> 未走 <code>foldVh</code> / SVG 表现属性 <code>rgb(var())</code> / 硬编码 <code>z-index</code> / <code>ghost</code> 带文字按钮 / 回车未挡 <code>isComposing</code> / 裸 <code>JSON.parse</code> / 全局 <code>fixed</code> 浮层</td></tr>
+  <tr><td>三扫描器统一去注释</td>
+      <td><code>stripComments()</code>（含跨行 JSX <code>{/* */}</code>、保留字符串内容）→ 修掉 <code>Modal.tsx</code> 一条<b>假循环依赖</b>（注释里躺着示例 <code>import { Z } from './Modal'</code>）；同理修正 audit-dead「注释提及即算引用」的低估</td></tr>
+  <tr><td>§15 扩面 / §11 去误报</td>
+      <td>§15 由「只查 <code>textarea</code>」扩到 <code>input</code> / 容器 <code>onKey</code>（0 → 14 命中）；§11 排除「传给 <code>Modal</code> 的 <code>maxHeight</code> prop」（Modal 内部会折算）（26 → 15 真候选）</td></tr>
+  <tr><td>技能文档</td>
+      <td><code>SKILL.md</code> 新增「红线 → 覆盖方式对照表」「项目自带两闸必跑清单」「三审计技能分工」；并交叉引用 <code>frontend-content-audit</code>（UI 文案 + JSX 注释泄漏扫描器）与 <code>novel-studio-ui-livecheck</code>（实机验证）</td></tr>
+</table>
+
+<h2>二、修复总览</h2>
+<table>
+  <tr><th>编号</th><th>问题（一句话）</th><th>状态</th><th>提交</th></tr>
+  <tr><td>P1-1</td><td>关闭云盘同步不 flush → 切回陈旧本地库、缓冲改动丢失</td><td><span class="tag ok">已修</span></td><td>2a8b5ef</td></tr>
+  <tr><td>P1-2</td><td>后处理升级锚点漏「已发版的中间态」→ 部分用户静默拿不到新规则</td><td><span class="tag ok">已修</span></td><td>d0de562</td></tr>
+  <tr><td>P1-3</td><td>重说不回滚记忆/水位线 → Ta 记得还没发生的事</td><td><span class="tag ok">已修</span></td><td>2a8b5ef</td></tr>
+  <tr><td>P1-4</td><td>回车未挡 <code>isComposing</code>（11 处文本输入）</td><td><span class="tag ok">已修</span></td><td>d20f049</td></tr>
+  <tr><td>P2-1</td><td>assist「第一人称」与协议「描写第三人称」冲突（本轮引入）</td><td><span class="tag ok">已修</span></td><td>d0de562</td></tr>
+  <tr><td>P2-2</td><td>「恢复出厂四条」文案 / 注释过期（现 6 条）</td><td><span class="tag ok">已修</span></td><td>d0de562</td></tr>
+  <tr><td>P2-3</td><td>控制面板帮助三处不准（幽灵「素材从哪来」、输出后处理列位）</td><td><span class="tag ok">已修</span></td><td>027ed33</td></tr>
+  <tr><td>P2-4</td><td>自定义项目帮助称基础设施「可取消」，实为常开</td><td><span class="tag ok">已修</span></td><td>027ed33</td></tr>
+  <tr><td>P2-5</td><td>编辑器帮助：「校对」门控口径、⌘ 图标、已移除的「简略模式」</td><td><span class="tag ok">已修</span></td><td>027ed33</td></tr>
+  <tr><td>P2-6</td><td>裸 <code>navigator.clipboard</code> ×2</td><td><span class="tag ok">已修</span></td><td>72424d6</td></tr>
+  <tr><td>P2-7</td><td>内联 <code>vh</code> 未折算 ×4（会溢出视口）</td><td><span class="tag ok">已修</span></td><td>72424d6</td></tr>
+  <tr><td>P2-8</td><td>导出菜单遮罩 <code>z-30/z-40</code></td><td><span class="tag gray">判定不改</span></td><td>—</td></tr>
+  <tr><td>P2-9</td><td>破坏性「清空全部」未用 <code>danger</code></td><td><span class="tag ok">已修</span></td><td>72424d6</td></tr>
+  <tr><td>P2-10</td><td>目录偏好缺失时不清 ENABLED 标记（界面撒谎）</td><td><span class="tag ok">已修</span></td><td>2a8b5ef</td></tr>
+  <tr><td>P2-11</td><td>桌面文件 <code>missing</code> 未知时放行写盘（可覆盖真文件）</td><td><span class="tag ok">已修</span></td><td>2a8b5ef</td></tr>
+  <tr><td>P2-12</td><td>防剧透字段漏登记 3 个</td><td><span class="tag ok">已修</span></td><td>2a8b5ef</td></tr>
+  <tr><td>P2-13</td><td>预览/取消与最终结果后处理口径不一</td><td><span class="tag ok">已修</span></td><td>2a8b5ef</td></tr>
+  <tr><td>P2-14</td><td>润色/自动回复预算口径与正常对话不同</td><td><span class="tag ok">已修</span></td><td>2a8b5ef</td></tr>
+  <tr><td>P2-15</td><td>124 个「多余 export」</td><td><span class="tag gray">本轮不做</span></td><td>—</td></tr>
+  <tr><td>P2-16</td><td>4 组以 <code>engine</code> 为中心的循环依赖</td><td><span class="tag ok">已修</span></td><td>6774df4</td></tr>
+  <tr><td>P3</td><td><code>cardFields</code> 小项格内换行漂移</td><td><span class="tag gray">仅记录</span></td><td>—</td></tr>
+</table>
+
+<h2>三、P1 详情（4/4 已修）</h2>
+
+<div class="card p1">
+  <span class="tag p1">P1-1</span><span class="tag ok">已修 · 2a8b5ef</span>
+  <h4>关闭云盘同步不 flush：同步期间的写入会从界面「消失」</h4>
+  <div class="loc"><code>src/lib/db.ts</code> · <code>src/lib/desktopCloudSync.ts</code> · <code>src/lib/syncCore.ts</code></div>
+  <p><span class="lbl">问题：</span><code>disableDesktopCloudSync()</code> 直接 <code>cloud.configure('')</code>（清空内存 cache）后把 ops 切回本地；全链路无 flush。而云模式下本地库自开启同步起就不再更新 → 关闭后界面读到的是**启用同步之前的陈旧本地库**；缓冲中未推送的改动（防抖窗口内）不可逆丢失。</p>
+  <p><span class="lbl">修法：</span>改为 async：<code>flushDesktopCloud()</code> 推未发送改动 → <code>mirrorCloudCacheToLocal()</code> 把云端 cache 镜像进本地 → <code>flushDesktop()</code> 落盘 → 才切回本地。调用方 <code>CloudFileSyncBar</code> 已 <code>await</code>。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1-2</span><span class="tag ok">已修 · d0de562</span>
+  <h4>后处理规则的升级锚点漏了「已发版的中间态」</h4>
+  <div class="loc"><code>src/lib/tavern/settings.ts</code> · <code>src/lib/tavern/postRules.ts</code></div>
+  <p><span class="lbl">问题：</span>升级判定只拿「最早那版四条」做全等比对；而 2.1.1 已发版的四条里 <code>pr-star-action</code> 已是新式两分支（已用构建产物 <code>dist_bak_1789465567317</code> 交叉验证）。该批用户与新锚点不匹配 → <b>永远升不到</b>新增的「去空行 / 括号后换行」，且界面看不出。</p>
+  <p><span class="lbl">修法：</span>改为历史版本表 <code>LEGACY_POST_RULES_VERSIONS</code>（v1+v2），遍历任一版本全等即升级；注释钉死「每改一次出厂规则必须追加一版」。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1-3</span><span class="tag ok">已修 · 2a8b5ef</span>
+  <h4>「重说」不回滚记忆与水位线 → Ta 会记得还没发生的事</h4>
+  <div class="loc"><code>src/lib/tavern/store.ts</code> · <code>src/lib/tavern/engine.ts</code></div>
+  <p><span class="lbl">问题：</span>重说只丢末尾那条 assistant 并重新生成（新 id），不碰 <code>session.memory</code> 与 <code>watermark</code>；对照 <code>branchSession</code>（会清）→ 不对称。被打回的内容永久留在记忆里，水位线悬空。</p>
+  <p><span class="lbl">修法：</span>新增 <code>store.rewindAfterReroll()</code>，在成功替换且水位线正指向被替换那条时清记忆 + 水位线退到新末尾；只在 <code>reply</code> 非空时处理（取消/空回复不能误清）。自由模式不涉及（记忆只在结束本轮整理、且归档后重说被挡）。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1-4</span><span class="tag ok">已修 · d20f049</span>
+  <h4>回车处理器未挡 <code>isComposing</code>（11 处文本输入）</h4>
+  <div class="loc"><code>PromptModal</code> · <code>ProjectHub</code> · <code>TavernFree</code> · <code>CustomSelect</code>×3 · <code>FullTextSearch</code> · <code>CheckTools</code> · <code>EditorModals</code> · <code>GeoMapEditor</code></div>
+  <p><span class="lbl">问题：</span>中文输入法里 Enter 是<b>选字确认键</b>，不挡就会「选字即提交」—— 改名/新建时把未上屏的拼音落库、搜索按 Enter 直接跳结果并关窗。</p>
+  <p><span class="lbl">修法：</span>统一补 <code>!e.nativeEvent.isComposing</code>。纯数字输入（<code>Sidebar</code>/<code>TavernVarsPanel</code>）按豁免处理。</p>
+</div>
+
+<h2>四、P2 详情（节选）</h2>
+
+<div class="card p2"><span class="tag p2">P2-1</span><span class="tag ok">已修</span><h4>assist 视角与协议冲突（本轮引入）</h4>
+  <div class="loc"><code>engine.ts</code> 的 assist <code>self</code> 段 · 协议 <code>protocol.ts:136</code>（O1）</div>
+  <p>原措辞要求「全部输出第一人称」，与协议「描写一律第三人称」互斥，可能产出 <code>（我把杯子推到你面前）</code>。已补「括号描写仍按协议用第三人称，不写『我』；『我』只用于对白」。</p>
+</div>
+
+<div class="card p2"><span class="tag p2">P2-7</span><span class="tag ok">已修</span><h4>内联 <code>vh</code> 未折算（4 处会溢出）</h4>
+  <div class="loc"><code>ProjectHub:539</code>（看板娘 82vh）· <code>HelpPopover:119</code>（70vh）· <code>FactionGraph:147</code> · <code>CharacterDistribution:75</code></div>
+  <p>132%/160% 界面缩放下 vh 不缩放 → 内容溢出视口。已改 <code>style={{ …: foldVh('NNvh') }}</code>。余下 15 处均 ≤60vh（低优先，待实机验证）。</p>
+</div>
+
+<div class="card p2"><span class="tag p2">P2-11</span><span class="tag ok">已修</span><h4>桌面数据文件 <code>missing</code> 未知时放行写盘</h4>
+  <div class="loc"><code>desktop.ts:187</code></div>
+  <p>旧 preload 配新渲染层、而文件其实存在时，<code>!fileExists</code> 分支先于文本解析命中 → 允许空库写盘、覆盖真实文件。已改为 <code>missing</code> 未知时以「有非空文本」为存在判据。</p>
+</div>
+
+<div class="card p2"><span class="tag p2">P2-13</span><span class="tag ok">已修</span><h4>预览/取消与最终结果口径不一</h4>
+  <div class="loc"><code>TavernFree</code> 的 <code>assistWrite</code> · <code>engine.ts</code></div>
+  <p>预览/取消只去空行 → 生成途中与最终文本不一致、停止后残留未后处理。已新增 <code>applyPostRulesForPreview()</code> 统一口径；顺带删除已无产品入口的 <code>collapseBlankLines</code>（只剩测试引用的死代码）。</p>
+</div>
+
+<div class="card p2"><span class="tag p2">P2-16</span><span class="tag ok">已修</span><h4>4 组以 <code>engine</code> 为中心的循环依赖</h4>
+  <div class="loc">依赖图报告 §1</div>
+  <pre>world ↔ engine      engine ↔ script
+engine → script → draft → engine      engine ↔ story</pre>
+  <p>根因：四个模块都从 <code>./engine</code> 取 <code>resolveTavernProvider</code> 与 <code>type ChatFn</code>，而 <code>engine</code> 反向 import 它们。这两个符号的真源是 <code>./provider</code>（engine 只是 re-export）→ 改从 <code>./provider</code> 取后<b>循环依赖降为 0</b>。</p>
+</div>
+
+<h2>五、判定不改 / 待定（附理由，避免下轮重复提案）</h2>
+<div class="card gray"><span class="tag gray">不改</span>
+  <ul>
+    <li><b>P2-8 导出菜单遮罩 <code>z-30/z-40</code></b>：页内面板取局部层号是既有事实约定（<code>JieWenJi:417</code> <code>z-30</code>、<code>NovelEditor:1386</code> <code>z-20</code>、<code>Sidebar:135</code> <code>z-20</code>）；且全屏透明遮罩是「点击外部关闭」的<b>唯一</b>机制，改局部会让菜单关不掉。已就地补注释说明意图。</li>
+    <li><b>P2-15 124 个「多余 export」</b>：纯 cosmetic（外部 0 引用、文件内自用，多为类型）。批量 <code>demote-exports</code> 需维护 <code>KEEP</code> 白名单（误降「能力缺口」类会丢唯一自救工具），收益低、churn 大 → 本轮不做。</li>
+    <li>18 处 <code>z-10/20/30</code> 局部叠层、7 处浮层定位用的 <code>getBoundingClientRect</code>、3 处 <code>iconOnly</code> 的 <code>ghost</code>、UI 偏好用 <code>localStorage</code>、受控的 <code>dangerouslySetInnerHTML</code> —— 均符合各自豁免口径。</li>
+    <li>3 处回车数字输入（无 IME）；自由模式 reroll 的记忆（不涉及）；P3 <code>cardFields</code> 格内换行（仅位置漂移）。</li>
+    <li><b>待老大确认口径</b>：AI 助手 / 引导对话的聊天气泡框（非酒馆对话面，红线 14 是否适用待定）。</li>
+  </ul>
+</div>
+
+<h2>六、终态复检</h2>
+<table>
+  <tr><th>检查</th><th>结果</th></tr>
+  <tr><td><code>tsc --noEmit</code></td><td>0 错</td></tr>
+  <tr><td><code>eslint src</code></td><td>0 error / 11 warning（既有 exhaustive-deps，未增）</td></tr>
+  <tr><td><code>tests/run-all.mjs</code></td><td><b>43/43</b>（新增断言 10 条）</td></tr>
+  <tr><td>闸 <code>feature-deps-check</code> / <code>seed-schema-check</code></td><td>39/39 · 2733 键一致</td></tr>
+  <tr><td><code>tests/syncGuards.test.ts</code></td><td>7/7（改了同步层语义，回归闸未响）</td></tr>
+  <tr><td><code>vite build</code></td><td><b>通过</b>（4.84s，exit 0）</td></tr>
+  <tr><td>依赖图</td><td>循环依赖 <b>0</b> 组（原 4）· 分层违规 0 · 孤立模块 0</td></tr>
+  <tr><td>红线扫描器终态</td><td>§10 归零 · §11 26→15 · §12/§14/§15 干净（§15 仅剩 3 处数字输入）· §6/§7/§8/§13 无新增</td></tr>
+  <tr><td>死代码</td><td>确定死代码 0 个</td></tr>
+</table>
+<p class="muted">扫描器：<code>~/.workbuddy/skills/novel-studio-audit-fix/assets/audit-scan.mjs</code>（§6–§17 为红线，已统一去注释）。未封装（按红线：封装须明说）。</p>
+
+</div>
+</body>
+</html>
