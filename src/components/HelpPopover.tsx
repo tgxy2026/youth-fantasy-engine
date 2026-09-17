@@ -14,6 +14,21 @@ interface Props {
   width?: string
   /** 展开方向：'left' 弹窗右边缘对齐图标（向左铺开，默认）；'right' 向右铺开 */
   side?: 'left' | 'right'
+  // ---- 以下 4 项为可选扩展（不传 = 原行为，问号触发键）----
+  /** 自定义触发内容。用于「触发键本身就是功能入口」的场景（如 AI 伴写的钢笔键＝开关+说明同一个键） */
+  trigger?: React.ReactNode
+  /** 自定义触发键 class。**给了它就不再套默认问号样式**，选中态配色由调用方自带（本组件不介入） */
+  triggerClassName?: string
+  /** 自定义触发键的 title / aria-label（默认 `${title}（点击查看说明）`） */
+  triggerTitle?: string
+  triggerDisabled?: boolean
+  /** 触发键套图标尺寸基线（h-8 w-8）。与工具栏其它图标键并排时传 true，否则高度会差一截 */
+  triggerIconBox?: boolean
+  /**
+   * 钉住：**不因鼠标移出而关闭**，只由「再次点触发键 / 点击外部 / Esc」关闭。
+   * 设置类内容（里面要点的控件多）必须传它 —— 否则鼠标一挪到弹窗里的控件上就容易误关。
+   */
+  pin?: boolean
 }
 
 const remToPx = (v: string) => {
@@ -31,6 +46,7 @@ const remToPx = (v: string) => {
  */
 export default function HelpPopover({
   title, children, className = '', size = 13, width = '18rem', side = 'left',
+  trigger, triggerClassName, triggerTitle, triggerDisabled, triggerIconBox, pin = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ left: number; top: number; w: number } | null>(null)
@@ -89,27 +105,29 @@ export default function HelpPopover({
     }
   }, [open, update])
 
+  // pin = 不随鼠标移出关闭（设置类弹窗）；其余场景保持"移出即收起"的原行为
+  const leave = pin ? {} : { onMouseEnter: cancelClose, onMouseLeave: scheduleClose }
   return (
     <span
       className={`relative inline-flex items-center ${className}`}
-      onMouseEnter={cancelClose}
-      onMouseLeave={scheduleClose}
+      {...leave}
     >
       <Button variant="bare"
         ref={btnRef}
         type="button"
+        {...(triggerIconBox ? { iconOnly: true, size: 'sm' as const } : {})}
+        disabled={triggerDisabled}
         onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
-        className={`p-0.5 rounded transition-colors ${open ? 'text-amber' : 'text-ink-500 hover:text-amber'}`}
-        title={`${title}（点击查看说明）`}
-        aria-label={title}
+        className={triggerClassName ?? `p-0.5 rounded transition-colors ${open ? 'text-amber' : 'text-ink-500 hover:text-amber'}`}
+        title={triggerTitle ?? `${title}（点击查看说明）`}
+        aria-label={triggerTitle ?? title}
       >
-        <HelpCircle size={size} />
+        {trigger ?? <HelpCircle size={size} />}
       </Button>
       {open && createPortal(
         <div
           ref={popRef}
-          onMouseEnter={cancelClose}
-          onMouseLeave={scheduleClose}
+          {...leave}
           style={{
             zIndex: Z.popover,
             left: pos?.left ?? -9999,

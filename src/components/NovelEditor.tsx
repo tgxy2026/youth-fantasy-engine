@@ -784,7 +784,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       if (ac.signal.aborted || isCancelled(e)) return
       ghostFail.current += 1
       if (ghostFail.current >= GHOST_MAX_FAILS) {
-        showToast(`AI 伴写已连续失败 ${GHOST_MAX_FAILS} 次，已自动停用（可在工具栏重新开启）`, 'error')
+        showToast(`AI 伴写已连续失败 ${GHOST_MAX_FAILS} 次，已自动停用（点工具栏钢笔键，在弹窗里重新开启）`, 'error')
       }
     } finally {
       if (!ac.signal.aborted) setGhostBusy(false)
@@ -1491,40 +1491,44 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               <Button variant="bare" iconOnly size="sm" onClick={() => setHighlightOn(o => !o)} className={`p-1 transition-colors shrink-0 ${highlightOn ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="引用名内联高亮：正文中标记已登记的角色 / 设定条目名称（开 / 关）">
                 <Highlighter size={14} />
               </Button>
-              {/* 2.2.0 AI 伴写开关（默认关闭）：停笔自动在光标处续写一句话，Tab 采纳才落正文 */}
-              <Button variant="bare" iconOnly size="sm"
-                disabled={!aiReady}
-                onClick={() => setCompanion(o => { const v = !o; localStorage.setItem('novel-companion', v ? '1' : '0'); if (!v) dismissGhost(); return v })}
-                className={`p-1 transition-colors shrink-0 ${!aiReady ? 'text-ink-600 cursor-not-allowed' : companion ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
-                title={!aiReady
-                  ? 'AI 伴写：未配置 AI 模型'
+              {/* 2.2.0 AI 伴写：**点钢笔直接弹出「说明 + 设置 + 开关」**，总开关放在设置下方。
+                  为什么不再单设一个开关图标 + 一个并列的问号：同一件事有两个入口既重复、又难扫；
+                  作者点这个键时想做的事无非「看看它怎么用」和「改一下 / 关掉它」——都收进这一个窗里。
+                  pin：设置类弹窗不许"鼠标移出即关"，否则手往窗里的控件上一挪就误关。 */}
+              <HelpPopover
+                title="AI 伴写"
+                width="24rem"
+                size={13}
+                className="shrink-0"
+                pin
+                triggerIconBox
+                trigger={ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
+                // ⚠️ 刻意**不**把触发键设成 disabled：弹窗里既有开关也有说明，
+                //    禁用掉就变成"没配模型时连它怎么用都看不到"。真正的 AI 入口（弹窗里的总开关）
+                //    仍然是 disabled —— 符合「无模型不调用 AI」这条红线，但把说明留给人读。
+                triggerClassName={`p-1 transition-colors shrink-0 ${!aiReady ? 'text-ink-600' : companion ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
+                triggerTitle={!aiReady
+                  ? 'AI 伴写：未配置 AI 模型（点击可看说明与设置）'
                   : companion
-                    ? 'AI 伴写：已开启（停笔后自动在光标处给出续写建议，Tab 采纳 / Esc 丢弃，继续打字即忽略；Alt+\\ 立即手动触发）'
-                    : 'AI 伴写：已关闭（开启后停笔会在光标处透出一句浅灰续写建议，Tab 采纳才落进正文）'}>
-                {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
-              </Button>
-              {/* 伴写设置：不预设"文风枚举"，只给长度档位 + 去 AI 味 + 一句自定义补充 */}
-              <HelpPopover title="AI 伴写" width="24rem" size={13} className="shrink-0">
+                    ? 'AI 伴写：已开启（点击查看说明、档位与开关）'
+                    : 'AI 伴写：已关闭（点击查看说明、档位与开关）'}
+              >
                 {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Tab 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· Alt+\\ 可随时手动触发一次。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面这句自定义补充。\n\n'}
                 <div className="mt-1.5 space-y-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-ink-400 shrink-0">建议长度</span>
-                    <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md border border-ink-700 bg-ink-800/60">
-                      {(['short', 'sentence', 'two'] as InlineSuggestLength[]).map(k => (
-                        <Button variant="bare" type="button" key={k}
-                          onClick={() => { setCompanionLen(k); localStorage.setItem('novel-companion-len', k) }}
-                          className={`px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap transition-colors ${companionLen === k ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
-                          title={`不超过 ${INLINE_SUGGEST_LIMITS[k].chars} 字`}>
-                          {INLINE_SUGGEST_LIMITS[k].label}
-                        </Button>
-                      ))}
-                    </div>
+                    {(['short', 'sentence', 'two'] as InlineSuggestLength[]).map(k => (
+                      <Button variant="toggle" size="xs" key={k} selected={companionLen === k}
+                        onClick={() => { setCompanionLen(k); localStorage.setItem('novel-companion-len', k) }}
+                        title={`不超过 ${INLINE_SUGGEST_LIMITS[k].chars} 字`}>
+                        {INLINE_SUGGEST_LIMITS[k].label}
+                      </Button>
+                    ))}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-ink-400 shrink-0">去 AI 味</span>
-                    <Button variant="bare" type="button"
+                    <Button variant="toggle" size="xs" selected={companionDeAi}
                       onClick={() => { const v = !companionDeAi; setCompanionDeAi(v); localStorage.setItem('novel-companion-deai', v ? '1' : '0') }}
-                      className={`px-2 py-0.5 rounded border text-[11px] whitespace-nowrap transition-colors ${companionDeAi ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
                       title="约束模型不用「仿佛 / 不禁 / 然而」这类套话开头、不堆四字成语与排比、不写空泛升华（默认开）">
                       {companionDeAi ? '已开启' : '已关闭'}
                     </Button>
@@ -1532,12 +1536,22 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-ink-400 shrink-0">文风补充</span>
-                    <Button variant="bare" type="button"
+                    <Button variant="toggle" size="xs" selected={!!companionStyleNote}
                       onClick={() => setStyleNotePrompt(true)}
-                      className={`px-2 py-0.5 rounded border text-[11px] whitespace-nowrap max-w-[13rem] transition-colors ${companionStyleNote ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
+                      className="max-w-[13rem]"
                       title={companionStyleNote || '点一句话描述你想要的文风，例如"冷硬白描，少心理活动，多用短对白"'}>
                       <span className="truncate">{companionStyleNote || '未设置（点击填写）'}</span>
                     </Button>
+                  </div>
+                  {/* 总开关：按老大要求放在设置下面，并掉与它重复的那个独立开关图标 */}
+                  <div className="flex items-center gap-2 mt-1 pt-2 border-t border-ink-700">
+                    <span className="text-ink-200 shrink-0">总开关</span>
+                    <Button variant="toggle" size="xs" selected={companion} disabled={!aiReady}
+                      onClick={() => setCompanion(o => { const v = !o; localStorage.setItem('novel-companion', v ? '1' : '0'); if (!v) dismissGhost(); return v })}
+                      title={!aiReady ? '未配置 AI 模型' : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
+                      {companion ? '已开启' : '已关闭'}
+                    </Button>
+                    <span className="text-ink-500 text-[10px]">{!aiReady ? '需先接入 AI 模型' : companion ? '停笔即续写一句话' : '默认关闭'}</span>
                   </div>
                   <div className="text-ink-500 text-[10px] leading-relaxed">
                     全部为本机记忆，换章不重置。伴写只用本地/你配置的模型，正文不外发。
@@ -1568,7 +1582,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：一键排版，统一段落首行缩进两个全角空格并规范空行；\n· 拼写图标：校对（本章），本地错别字直接查，语病/逻辑/设定矛盾需接入 AI。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（深度校对/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存修改时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写开关（默认关闭）。开启后停笔会在光标处透出一句浅灰续写建议——Tab 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；Alt+\\ 可手动触发（需接入模型，其右侧问号里有长度档位 / 去 AI 味 / 文风补充三项设置）；\n· 书本：前往本章大纲（章节细纲）；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：一键排版，统一段落首行缩进两个全角空格并规范空行；\n· 拼写图标：校对（本章），本地错别字直接查，语病/逻辑/设定矛盾需接入 AI。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（深度校对/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存修改时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。**点它弹出「说明 + 设置 + 总开关」一个窗**——窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Tab 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章大纲（章节细纲）；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
             </div>
 
