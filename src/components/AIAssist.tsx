@@ -1,3 +1,4 @@
+import { foldVh } from '../lib/theme'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Sparkles, Send, Copy, Check, Trash2, Pencil, Plus,
@@ -230,7 +231,8 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
       )}
 
       {/* 双栏：左历史会话 / 右多轮对话 */}
-      <div className="flex gap-3 h-[60vh] min-h-[420px]">
+      <div className="flex gap-3 min-h-[420px]"
+style={{ height: foldVh('60vh') }}>
         {/* 左：历史会话 */}
         <div className="w-44 shrink-0 flex flex-col bg-ink-900/40 border border-ink-700 rounded-lg overflow-hidden">
           <div className="p-2 border-b border-ink-700">

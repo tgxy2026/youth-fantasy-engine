@@ -21,6 +21,7 @@
  * 字段清单是动态的（表格的列、用户自定义的表单），所以提纲按字段顺序每 2 栏切一个话题
  * （`deriveTopics`）。酒馆的角色卡 / 剧本有精心排过的话题，走它们自己的 spec。
  */
+import { foldVh } from '../lib/theme'
 import { useCallback, useMemo, useState } from 'react'
 import { Sparkles, Check, Loader2, AlertCircle, RefreshCw, MessagesSquare } from 'lucide-react'
 import { Modal } from './Modal'
@@ -243,7 +244,8 @@ export default function AITemplateFill({
                 <div className="text-[12px] text-ink-400">
                   预览：AI 补全的字段已高亮，你可逐条修改后再采用。带「AI补全」的即为模型生成、建议你核对。
                 </div>
-                <div className="space-y-3 max-h-[42vh] overflow-y-auto pr-1">
+                <div className="space-y-3 overflow-y-auto pr-1"
+style={{ maxHeight: foldVh('42vh') }}>
                   {fields.map(f => {
                     const isProduced = !f.locked && !(existing?.[f.key]?.trim())
                     const val = isProduced ? (result[f.key] ?? '') : (existing?.[f.key] ?? '')

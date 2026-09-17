@@ -1,3 +1,4 @@
+import { foldVh } from '../lib/theme'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Check, CheckCircle2, RefreshCw, RotateCcw, Square, Sparkles } from 'lucide-react'
 import { Button } from './Button'
@@ -274,7 +275,8 @@ export default function AutoContinue() {
             <p className="text-[12px] text-ink-400 mb-3">
               你看到的已是「去 AI 味儿」润色后的稿子。采纳后 AI 才会继续做编辑自检、修正与设定补登；点「重写本章」会丢弃本稿重新生成（含重新润色，不会留下垃圾章节，也不会写入数据库）。
             </p>
-            <div className="max-h-[52vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3.5 text-[13.5px] leading-[1.9] text-ink-100">
+            <div className="overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3.5 text-[13.5px] leading-[1.9] text-ink-100"
+style={{ maxHeight: foldVh('52vh') }}>
               {draft.d.body}
             </div>
           </>

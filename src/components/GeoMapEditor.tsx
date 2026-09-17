@@ -1,3 +1,4 @@
+import { foldVh } from '../lib/theme'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { Layers, Maximize2, Plus, Trash2, ZoomIn, ZoomOut, ExternalLink, MapPin, Eraser, Pencil } from 'lucide-react'
@@ -1246,7 +1247,8 @@ function DrawDialog({ rows, drawnCells, onPick, onClose }: {
           共 {tree.length} 个地点{q.trim() ? '，匹配 ' + items.length + ' 个' : ''}。
         </div>
       </div>
-      <div className="max-h-[52vh] overflow-y-auto p-1.5">
+      <div className="overflow-y-auto p-1.5"
+style={{ maxHeight: foldVh('52vh') }}>
         {items.length === 0 && (
           <div className="text-center text-ink-500 text-[12px] py-6">
             {tree.length === 0 ? '《地理风物》还没有条目，请先去登记。' : '没有匹配「' + q.trim() + '」的地点。'}

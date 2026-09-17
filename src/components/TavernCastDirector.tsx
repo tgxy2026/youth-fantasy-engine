@@ -13,6 +13,7 @@
  * 🔴 硬约束：**至少要留一个会说话的角色**。全静音会出现「AI 无角色可演」的怪状态 ——
  *   那不是用户想要的，只是他点顺手了。这里直接拦住并说明，不靠用户自己发现。
  */
+import { foldVh } from '../lib/theme'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import { showToast } from './dialogs'
@@ -64,7 +65,8 @@ export default function TavernCastDirector({
       </p>
 
       {/* 角色多时列表自己滚，别把弹窗顶出屏幕 */}
-      <div className="mt-3 max-h-[50vh] space-y-2 overflow-y-auto pr-0.5">
+      <div className="mt-3 space-y-2 overflow-y-auto pr-0.5"
+style={{ maxHeight: foldVh('50vh') }}>
         {rows.map(r => {
           const isMutedNow = muted.includes(r.id)
           const val = talkativity[r.id] ?? DEFAULT_TALKATIVITY

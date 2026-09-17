@@ -11,6 +11,7 @@
  * 作者裁决时真正需要的是"凭什么这么说"。没有原句，他只能凭记忆猜 —— 那就等于让他去读一遍对话，
  * 这个功能也就白做了。
  */
+import { foldVh } from '../lib/theme'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
@@ -94,7 +95,8 @@ export default function TavernRevisionDialog({
             </span>
           </div>
 
-          <div className="mt-2 max-h-[52vh] space-y-3 overflow-y-auto pr-0.5">
+          <div className="mt-2 space-y-3 overflow-y-auto pr-0.5"
+style={{ maxHeight: foldVh('52vh') }}>
             {[...byChar].map(([charName, list]) => (
               <div key={charName}>
                 <div className="text-[11.5px] text-amber/80">{charName}</div>

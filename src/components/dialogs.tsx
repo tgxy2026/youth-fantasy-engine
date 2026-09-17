@@ -2,6 +2,7 @@
 // 替代浏览器原生 confirm() / alert() —— 三端（网页/便携/桌面）行为一致、样式跟随主题。
 // Electron 桌面端：prompt 未实现（点了没反应）；confirm/alert 虽能用但是原生样式且阻塞交互。
 // 约定：项目内禁止再使用 window.prompt / confirm / alert，统一走本模块。
+import { foldVh } from '../lib/theme'
 import { createRoot } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react'
@@ -148,7 +149,7 @@ function ToastItem({ message, type }: { message: string; type: ToastType }) {
   return (
     <div className={`pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-lg border shadow-2xl text-[12px] ${cls} animate-[fadeInUp_0.2s_ease]`}>
       {icon}
-      <span className="max-w-[70vw]">{message}</span>
+      <span style={{ maxWidth: foldVh('70vw') }}>{message}</span>
     </div>
   )
 }

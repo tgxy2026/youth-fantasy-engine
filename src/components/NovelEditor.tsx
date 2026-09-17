@@ -1,3 +1,5 @@
+import { foldVh } from '../lib/theme'
+import { Z } from '../lib/zLayer'
 import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { Volume, Chapter, ChapterStatus } from '../lib/types'
 import * as db from '../lib/db'
@@ -275,8 +277,19 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const autosaveTimer = useRef<ReturnType<typeof setTimeout>>()
   const flashTimer = useRef<ReturnType<typeof setTimeout>>()
   const metaTimer = useRef<ReturnType<typeof setTimeout>>()
-  // 待冲刷的元信息（标题/摘要）落库函数：updateMeta 写入、卸载时立即冲刷
-  const metaFlush = useRef<null | (() => Promise<void>)>()
+  // 🔴 待冲刷的元信息（标题/摘要）落库任务，**按章节 id 分别记账**（审计 2026-09-18 P2-8）。
+  //    原先只存一个「最新那笔」的 metaFlush：改本章标题后 600ms 内切到别章再改标题，
+  //    clearTimeout 会把前一次待落库的补丁**直接丢掉** —— 它只活在 chapters 状态里，
+  //    重载即失（切章改标题是很常见的动作，不是极端场景）。
+  //    按 id 记账后：同一章的补丁互相覆盖（保住防抖），跨章的各存一份，到点一起冲。
+  const metaPending = useRef(new Map<string, () => Promise<void>>())
+  /** 把所有待落库的元信息补丁一起冲刷（防抖到点、组件卸载都走它；引用稳定，卸载 effect 依赖为空也不怕） */
+  const metaFlush = useRef<() => Promise<void>>(async () => {
+    const jobs = [...metaPending.current.values()]
+    metaPending.current.clear()
+    // 单笔失败不阻断其余（下一轮编辑会再次入账并重试）
+    await Promise.all(jobs.map(j => j().catch(() => { /* 忽略单笔失败 */ })))
+  })
   // 章节树 / 设定检索栏宽度可拖拽调整（持久化）
   const chapterPane = useResizable({ key: 'yfe-chapter-w', initial: 224, initialWide: 300, min: 200, max: 560, side: 'right' })
   const searchPane = useResizable({ key: 'yfe-search-w', initial: 360, initialWide: 480, min: 280, max: 760, side: 'right' })
@@ -610,12 +623,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       await Promise.all([db.saveChapter(next), syncChapterMaster(next, no)])
       onStatsChange?.()
     }
+    // 🔴 P2-8：按章节 id 入账（同章覆盖、跨章共存），不再共用一个"最新那笔"
+    metaPending.current.set(next.id, run)
     clearTimeout(metaTimer.current)
-    metaFlush.current = run
-    metaTimer.current = setTimeout(() => {
-      metaFlush.current = null
-      run()
-    }, 600)
+    metaTimer.current = setTimeout(() => { void metaFlush.current?.() }, 600)
   }
 
   /** AI 一键生成「章节压缩摘要」：基于正文按 ~1/10 压缩回填到 active.summary（自动同步章节总表） */
@@ -1106,7 +1117,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           {/* 拖拽调整章节树宽度 */}
           <div
             onMouseDown={chapterPane.onDragStart}
-            className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors z-10"
+            className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
+style={{ zIndex: Z.pageHandle }}
             title="拖拽调整章节栏宽度"
           />
           <div className="flex items-center justify-between px-3.5 h-11 border-b border-ink-700 shrink-0">
@@ -1282,7 +1294,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           {/* 拖拽调整设定检索栏宽度 */}
           <div
             onMouseDown={searchPane.onDragStart}
-            className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors z-10"
+            className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
+style={{ zIndex: Z.pageHandle }}
             title="拖拽调整检索栏宽度"
           />
           <SettingSearch onNavigate={onNavigate} ctx={ctx} />
@@ -1380,8 +1393,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     {/* 全屏透明遮罩：本页「点击外部关闭」就靠它（没有额外的 document 监听），
                         故有意 fixed inset-0。z 取页内局部层号 —— 与 JieWenJi:417 / 本文件 :1386 /
                         Sidebar:135 的页内面板同一约定；不取 Z 是因为这些是**页内**面板、非全站常驻角标。 */}
-                    <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1 z-40 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 max-h-[60vh] overflow-y-auto">
+                    <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setExportOpen(false)} />
+                    <div className="absolute right-0 top-full mt-1 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 overflow-y-auto"
+style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportChapter(projectName, active))}
                         className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
@@ -1602,7 +1616,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：一键排版，统一段落首行缩进两个全角空格并规范空行；\n· 拼写图标：校对（本章），本地错别字直接查，语病/逻辑/设定矛盾需接入 AI。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（深度校对/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存修改时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。**点它弹出「说明 + 设置 + 总开关」一个窗**——窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Tab 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章大纲（章节细纲）；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：一键排版，统一段落首行缩进两个全角空格并规范空行；\n· 拼写图标：校对（本章），本地错别字直接查，语病/逻辑/设定矛盾需接入 AI。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（深度校对/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存修改时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Tab 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章大纲（章节细纲）；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
             </div>
 
@@ -1649,8 +1663,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   <div
                     ref={highlightRef}
                     aria-hidden
-                  className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent px-6 md:px-8 pt-6 pb-[40vh]"
-                  style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgb(var(--ink-100))' }}
+                  className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent px-6 md:px-8 pt-6"
+                  style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgb(var(--ink-100))', paddingBottom: foldVh('40vh') }}
                     dangerouslySetInnerHTML={{ __html: highlightHTML }}
                   />
                 )}
@@ -1662,8 +1676,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   <div
                     ref={ghostRef}
                     aria-hidden
-                    className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent px-6 md:px-8 pt-6 pb-[40vh]"
-                    style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                    className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent px-6 md:px-8 pt-6"
+                    style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingBottom: foldVh('40vh') }}
                   >
                     {/* 三段必须分行写：JSX 会吃掉"含换行的空白"，不会插入多余空格而把 ghost 挤偏一个字宽 */}
                     <span style={{ color: 'transparent' }}>{draftContent.slice(0, ghost.at)}</span>
@@ -1687,8 +1701,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   onMouseUp={syncSel}
                   onScroll={scheduleHighlightSync}
                   placeholder="落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）"
-                  className="novel-textarea absolute inset-0 z-10 overflow-y-auto px-6 md:px-8 pt-6 pb-[40vh]"
-                  style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, color: highlightOn ? 'transparent' : undefined, caretColor: highlightOn ? 'rgb(var(--amber))' : undefined }}
+                  className="novel-textarea absolute inset-0 z-10 overflow-y-auto px-6 md:px-8 pt-6"
+                  style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, color: highlightOn ? 'transparent' : undefined, caretColor: highlightOn ? 'rgb(var(--amber))' : undefined, paddingBottom: foldVh('40vh') }}
                   spellCheck={false}
                 />
               </div>

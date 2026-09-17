@@ -93,7 +93,13 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onBlur={commit}
-          onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+          onKeyDown={e => {
+            // 🔴 审计 2026-09-18（P2-9）：中文输入法里 Enter 是**选字**，不挡的话拼音还没上屏
+            //    就被 blur() 提交，半截拼音被当成值写进本场数值并落库（模型会读到它）。
+            //    数值字段不产生 composing，这条守卫对它是 no-op。
+            if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+            e.currentTarget.blur()
+          }}
           disabled={locked}
           inputMode={isNumKind ? 'numeric' : undefined}
           placeholder={def.kind === 'text' ? '（未填）' : String(def.init ?? '')}
@@ -118,7 +124,13 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
         value={noteDraft}
         onChange={e => setNoteDraft(e.target.value)}
         onBlur={commitNote}
-        onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+        onKeyDown={e => {
+          // 🔴 审计 2026-09-18（P2-9）：中文输入法里 Enter 是**选字**，不挡的话拼音还没上屏
+          //    就被 blur() 提交，半截拼音被当成值写进本场数值并落库（模型会读到它）。
+          //    数值字段不产生 composing，这条守卫对它是 no-op。
+          if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+          e.currentTarget.blur()
+        }}
         disabled={locked}
         placeholder="备注（模型会读取 / 改写，如：从陌生到熟悉的朋友）"
         className="w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[10.5px] text-ink-300 outline-none focus:border-amber/40 disabled:cursor-not-allowed disabled:opacity-60"

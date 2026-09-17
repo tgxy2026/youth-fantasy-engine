@@ -136,7 +136,8 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
 
   if (nodes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-ink-500 gap-2">
+      <div className="flex flex-col items-center justify-center text-ink-500 gap-2"
+        style={{ height: foldVh('60vh') }}>
         <Network size={32} className="opacity-40" />
         <div className="text-[13px]">暂无势力关系</div>
         <div className="text-[11px] text-ink-600">请在表格登记 势力A / 势力B / 关系类型，图谱会自动生成</div>

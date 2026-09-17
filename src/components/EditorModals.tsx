@@ -1,3 +1,4 @@
+import { foldVh } from '../lib/theme'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import * as db from '../lib/db'
 import { countWords } from '../lib/textStats'
@@ -517,7 +518,8 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
   if (mode === 'none') {
     return (
       <div className="fixed inset-0 bg-ink-950 flex items-center justify-center" style={{ zIndex: Z.modal }}>
-        <div className="w-[440px] max-w-[90vw] bg-ink-850 border border-ink-700 rounded-2xl p-8 text-center">
+        <div className="w-[440px] bg-ink-850 border border-ink-700 rounded-2xl p-8 text-center"
+style={{ maxWidth: foldVh('90vw') }}>
           <div className="w-14 h-14 mx-auto rounded-full bg-amber/15 border border-amber/30 flex items-center justify-center mb-4">
             <Lock size={22} className="text-amber" />
           </div>

@@ -1,3 +1,4 @@
+import { Z } from '../lib/zLayer'
 import { BookOpen, ChevronDown, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer } from 'lucide-react'
 import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
@@ -132,7 +133,8 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
       {/* 拖拽调整侧栏宽度 */}
       <div
         onMouseDown={sidebar.onDragStart}
-        className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors z-20"
+        className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
+style={{ zIndex: Z.pageBase }}
         title="拖拽调整侧栏宽度"
       />
       {/* Logo */}

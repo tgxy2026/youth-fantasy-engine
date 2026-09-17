@@ -108,7 +108,8 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
       {/* 非编辑器页面的引导面板 */}
       {!isEditor && mini && (
         <div
-          className="absolute right-[calc(100%+10px)] bottom-1/2 mb-2 w-56 bg-ink-850 border border-ink-600 rounded-xl shadow-2xl p-3 z-50 pointer-events-auto"
+          className="absolute right-[calc(100%+10px)] bottom-1/2 mb-2 w-56 bg-ink-850 border border-ink-600 rounded-xl shadow-2xl p-3 pointer-events-auto"
+style={{ zIndex: Z.pageTip }}
           onPointerDown={e => e.stopPropagation()}
         >
           <div className="text-[12px] font-semibold text-amber mb-1">颉文姬 · AI 编辑助手</div>

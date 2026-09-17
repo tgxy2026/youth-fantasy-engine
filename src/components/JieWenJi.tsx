@@ -1,3 +1,4 @@
+import { Z } from '../lib/zLayer'
 import { useEffect, useRef, useState } from 'react'
 import {
   Stethoscope, PenLine, BookOpen, BookOpenCheck, X, Wand2, Loader2, AlertTriangle, CheckCircle2,
@@ -414,7 +415,8 @@ export default function JieWenJi({
   const scoreCls = (s: number) => (s >= 75 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : s >= 60 ? 'bg-amber/15 text-amber border-amber/30' : 'bg-red-500/15 text-red-300 border-red-500/30')
 
   return (
-    <div className="absolute right-3 top-14 bottom-10 w-[360px] z-30 bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="absolute right-3 top-14 bottom-10 w-[360px] bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col overflow-hidden"
+style={{ zIndex: Z.pagePanel }}>
       {/* 头部 */}
       <div className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">
         <Wand2 size={14} className="text-amber" />

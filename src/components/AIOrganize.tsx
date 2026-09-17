@@ -1,3 +1,4 @@
+import { foldVh } from '../lib/theme'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Sparkles, Check, Loader2, AlertCircle, RefreshCw, CircleStop,
@@ -241,7 +242,8 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
                     清空
                   </Button>
                 </div>
-                <div className="max-h-[26vh] overflow-y-auto p-1.5">
+                <div className="overflow-y-auto p-1.5"
+style={{ maxHeight: foldVh('26vh') }}>
                   {written.length === 0 && (
                     <div className="px-2 py-3 text-[12px] text-ink-500">还没有写好正文的章节，可改用「仅依据已有设定」。</div>
                   )}
@@ -342,7 +344,8 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
                     <span className="text-[11.5px] text-ink-500">取消勾选即不写入；写入后仍可在表格里继续编辑。</span>
                   </div>
 
-                  <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
+                  <div className="space-y-2 overflow-y-auto pr-1"
+                  style={{ maxHeight: foldVh('38vh') }}>
                     {result.rows.map((row, i) => (
                       <Button variant="bare"
                         key={i}
