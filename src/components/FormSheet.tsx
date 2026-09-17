@@ -41,7 +41,9 @@ export default function FormSheet({ tab }: Props) {
       // 力量体系：数值/境界类字段锁定，避免 AI 编崩"宪法"
       locked: tab.id === 'power' && POWER_NUMERIC_HINTS.some(h => f.name.includes(h)),
     }))),
-    [tab.id],
+    // 🔴 同 CharacterSheet：读 tab.modules 就得依赖 tab 本身，只写 tab.id 会在
+    //    字段结构变化时沿用旧字段表。
+    [tab],
   )
 
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as db from '../lib/db'
 import { encryptJSON, decryptJSON, isEncrypted } from '../lib/crypto'
 import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle, ChevronDown } from 'lucide-react'
@@ -32,12 +32,13 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
   const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const load = async () => {
+  // 恢复 / 导入成功后都要重新拉列表，故用 useCallback 钉住引用供 effect 依赖
+  const load = useCallback(async () => {
     const list = await db.listBackups(projectId)
     setBackups(list)
     setLoaded(true)
-  }
-  useEffect(() => { load() }, [projectId])
+  }, [projectId])
+  useEffect(() => { void load() }, [load])
 
   // v1.6.1：孤儿备份（项目已删除但备份按约定保留）统计与清理
   const [orphans, setOrphans] = useState<db.BackupRecord[]>([])

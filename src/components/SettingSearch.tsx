@@ -71,6 +71,14 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
     () => new Set(TABS.filter(t => !tabVisible(t.id, ctx)).map(t => t.id)),
     [ctx]
   )
+  /**
+   * 🔴 索引重建 effect 的依赖要用这个**内容字符串**，不能直接依赖 hiddenTabs：
+   * Set 是每次 memo 重算都新建的对象，而 ctx 来自上层、引用稳定性无从保证 ——
+   * 直接依赖会形成「effect 重跑 → setDocs → 重渲染 → 新 Set → 再重跑」的循环。
+   * 拼成逗号串后按值比较，可见性真的变了才重建（此前只挂 [reloadKey]，
+   * 项目形态变化时索引会停留在旧可见集上）。
+   */
+  const hiddenTabsKey = useMemo(() => [...hiddenTabs].sort().join(','), [hiddenTabs])
 
   // 一级页签：若某分组下已无任何已启用子页签，则隐藏该分组
   const visibleTopGroups = useMemo(
@@ -233,7 +241,10 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       setLoaded(true)
     })()
     return () => { cancelled = true }
-  }, [reloadKey])
+    // hiddenTabs 的内容变化由 hiddenTabsKey 等价代表（见其定义处说明）；
+    // 直接依赖 hiddenTabs 这个 Set 会因引用每次重建把 effect 拖进循环，故刻意不加。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey, hiddenTabsKey])
 
   // 切换一级页签时，把二级筛选重置为 'all'
   useEffect(() => { setActiveSub('all') }, [topGroup])
@@ -243,7 +254,10 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
     const subs = (SETTING_SUBTABS[activeTop] ?? []).filter(id => !hiddenTabs.has(id))
     const labels = subs.map(id => TABS.find(t => t.id === id)?.name ?? id)
     return [{ id: 'all', name: '全部' }, ...subs.map((id, i) => ({ id, name: labels[i] }))]
-  }, [topGroup, hiddenTabs])
+    // activeTop 已含 topGroup 的全部信息（它 = 可见分组兜底后的值，见上方定义），
+    // 故只依赖 activeTop + hiddenTabs：topGroup 指向的分组被隐藏时会回退到第一个可见分组，
+    // 此时二级项必须跟着换 —— 这正是 activeTop 存在的意义。
+  }, [hiddenTabs, activeTop])
 
   // 当前可见的 docs
   const visibleDocs = useMemo(() => {

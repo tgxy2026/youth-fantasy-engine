@@ -56,6 +56,13 @@ export default function App() {
   const [editorTarget, setEditorTarget] = useState<string | null>(null)
   // 数据体检 / 地图等跨组件跳转时，要直达高亮的具体行 id（detail 携带 rowId 时下发）
   const [focusRowId, setFocusRowId] = useState<string | null>(null)
+  /**
+   * 跨页签跳转聚焦的「已消费」回调。
+   * 🔴 必须用 useCallback 钉住引用：它是 TableSheet 滚动高亮 effect 的依赖之一，
+   *    若写成内联箭头（每次渲染新建），该 effect 会在每次渲染重跑，
+   *    2.6 秒后清除高亮的定时器被反复重置 —— 高亮将永不消失。
+   */
+  const clearFocusRow = useCallback(() => setFocusRowId(null), [])
   // 全文检索命令面板（v1.3）：Ctrl/Cmd+K 唤起
   const [searchOpen, setSearchOpen] = useState(false)
   // 颉文姬 Q 版精灵开关（面板内可切换，localStorage 持久化）
@@ -345,13 +352,13 @@ export default function App() {
       case 'form':
         return <FormSheet key={tab.id} tab={tab} />
       case 'table':
-        return <TableSheet key={tab.id} tab={tab} onNavigate={navigate} ctx={visCtx} focusRowId={focusRowId} onFocusConsumed={() => setFocusRowId(null)} />
+        return <TableSheet key={tab.id} tab={tab} onNavigate={navigate} ctx={visCtx} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
       case 'card':
         // 大纲规划下的卡片页签（分卷大纲/章节细纲）使用多记录目录管理组件
         return tab.group === '大纲规划'
           ? <OutlineSheet key={tab.id} tab={tab} />
           // focusRowId 也要下发：card 类页签（主要/次要/NPC 角色）同样会被报告指向（审计 P1-5）
-          : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={() => setFocusRowId(null)} />
+          : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
       case 'about':
         return <AboutPage />
       case 'map':

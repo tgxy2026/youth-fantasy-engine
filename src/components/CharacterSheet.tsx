@@ -64,7 +64,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
       desc: f.desc,
       example: f.example,
     }))),
-    [tab.id],
+    // 🔴 这里读的是 tab.modules，依赖就必须锚在 tab 本身。
+    //    只写 tab.id 时，同一页签的字段结构被改动（如项目形态/自定义页签重算 schema）
+    //    不会重算，AI 补全弹窗会继续用旧字段表。
+    [tab],
   )
 
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置

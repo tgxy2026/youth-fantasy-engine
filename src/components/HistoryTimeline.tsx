@@ -57,10 +57,6 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
   const [filterStatus, setFilterStatus] = useState<'all' | '已定稿' | '待补充' | '已变更'>('all')
   const [selected, setSelected] = useState<Evt | null>(null)
 
-  const calValueOf = (name: string) => {
-    const c = calendars.find(x => x.name === name)
-    return c ? c.value : 0
-  }
   const yearOf = (t: string) => {
     const k = storyDateKey(t)
     return isFinite(k) ? Math.floor(k / 10000) : NaN
@@ -68,6 +64,11 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
   const dateLabel = (t: string, cal: string) => (cal ? `${cal} ${t}` : t)
 
   const data = useMemo(() => {
+    // 历法权重查表：只在 memo 内部使用，就地定义可让依赖收敛到实际读到的 calendars
+    const calValueOf = (name: string) => {
+      const c = calendars.find(x => x.name === name)
+      return c ? c.value : 0
+    }
     const filtered = rows.filter(r => {
       if (filterStatus === 'all') return true
       return (r.data['状态'] ?? '') === filterStatus

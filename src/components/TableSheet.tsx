@@ -196,7 +196,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const [showDedupAI, setShowDedupAI] = useState(false)
   const tableFields = useMemo<TemplateField[]>(
     () => (tab.columns ?? []).filter(c => !c.hidden).map(c => ({ key: c.name, label: c.name, locked: c.name === codeCol })),
-    [tab.id, codeCol],
+    // 🔴 读 tab.columns，依赖锚在 tab 本身（getTab 返回模块常量引用，同一页签稳定）
+    [tab, codeCol],
   )
   // 保存闪烁定时器（卸载时清理，防止组件卸载后仍触发 setState）
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -237,7 +238,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       onFocusConsumed?.()
     }, 2600)
     return () => clearTimeout(timer)
-  }, [focusRowId, rows])
+    // onFocusConsumed 由 App.tsx 用 useCallback 钉住引用（clearFocusRow），
+    // 依赖它不会导致 effect 每次渲染重跑。
+  }, [focusRowId, rows, onFocusConsumed])
 
   // 列宽（按表独立记忆）：表头可拖拽调整，默认列宽更合理
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
@@ -360,7 +363,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
    * - 编号若命中「已删除不复用」的退役编号池，同样阻止保存
    * 返回错误信息（null 表示通过）
    */
-  const validateCodes = (): string | null => {
+  const validateCodes = useCallback((): string | null => {
     if (!codeCol) return null
     const owner = new Map<string, number>()
     for (const r of rows) {
@@ -377,7 +380,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       }
     }
     return errs.length > 0 ? errs.join('；') : null
-  }
+  }, [codeCol, rows, drafts, retiredCodes])
 
   /** 行删除时，将其编号登记进「退役编号池」（不复用）。支持批量，避免多次写入互相覆盖 */
   const retireCodes = async (targets: TableRow[]) => {
@@ -417,7 +420,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     setSaved(true)
     clearTimeout(savedTimer.current)
     savedTimer.current = setTimeout(() => setSaved(false), 1500)
-  }, [dirtyKeys, drafts, rows, retiredCodes, codeCol, tab.id])
+    // codeCol / retiredCodes / tab.id 已被 validateCodes 一并封装进它的依赖，
+    // 此处不再重复列出（重复不影响正确性，但会让依赖表失真）。
+  }, [dirtyKeys, drafts, rows, validateCodes])
 
   // Ctrl/Cmd+S
   useEffect(() => {
@@ -564,10 +569,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   }, [tab.id, sortedRows])
 
   // 获取某行的当前值（draft 优先于已保存）
-  const cellVal = (r: TableRow, colName: string) => {
+  // 🔴 必须 useCallback 且依赖 drafts：下面 filteredRows 依赖本函数，而本函数读 drafts ——
+  //    此前 filteredRows 的依赖里没有 drafts，导致「正按某列筛选时编辑该列单元格，
+  //    命中结果不实时重算」（编辑后行不随条件变化消失/出现）。
+  const cellVal = useCallback((r: TableRow, colName: string) => {
     if (drafts[r.id] && colName in drafts[r.id]) return drafts[r.id][colName]
     return r.data[colName] ?? ''
-  }
+  }, [drafts])
   // 表头筛选：仅保留在筛选列上命中关键字的行
   // 下拉（select）列用精确匹配选项；文本列用包含匹配
   const selectCols = useMemo(
@@ -615,7 +623,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       if (selectColNames.has(col)) return cell === v.trim() // 下拉列：精确匹配选中项
       return cell.toLowerCase().includes(v.trim().toLowerCase()) // 文本列：包含匹配
     }))
-  }, [sortedRows, colFilters, selectColNames])
+  }, [sortedRows, colFilters, selectColNames, cellVal])
 
   /**
    * 自引用父级列（同一表内的上下级隶属）：国家势力·上级 / 地理风物·层级归属。
