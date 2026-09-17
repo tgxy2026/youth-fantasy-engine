@@ -9,6 +9,7 @@
 import type { StoreOps, PortableData } from './storeOps'
 import { normalizePortableData } from './storeOps'
 import { SAVE_DEBOUNCE_MS } from './constants'
+import { isDesktopCloudEnabled } from './desktopCloudSync'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
 export interface ElectronStoreAPI {
@@ -301,6 +302,14 @@ export async function exportDesktopData(): Promise<string | null> {
 /** 从便携版数据文件导入：校验并替换本机全部数据。成功后应刷新页面重新加载 */
 export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: boolean; error?: string }> {
   if (!DESKTOP || !inited) return { ok: false, error: '桌面存储未就绪' }
+  // 🔴 审计 2026-09-18（P1-6）：云盘文件同步开启时**拒绝导入**。
+  //    导入只替换本机内存并落盘；而同步开启时 ops 指向 desktopCloudFileStore，
+  //    界面读的是云端 cache —— 导入的内容既看不见，下次兜底镜像 / 关闭同步时
+  //    还会被云端旧行按主键 bulkPut 覆盖回同 key（等于白导，且用户以为成功了）。
+  //    与其「导入成功却什么都没变」，不如明确拒绝并告诉他先关同步。
+  if (isDesktopCloudEnabled()) {
+    return { ok: false, error: '云盘文件同步正在开启，无法导入数据文件。请先在「云盘文件同步」栏点「关闭」切回本机存储，再执行导入。' }
+  }
   let text: string | null = null
   try {
     text = await api().importFile()

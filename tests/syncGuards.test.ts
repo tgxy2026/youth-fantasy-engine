@@ -144,6 +144,38 @@ async function main() {
     ok('自愈后状态不再停在 offline', cloud.getStatus() !== 'offline', cloud.getStatus())
   }
 
+  // ---------- ④ 并发推送必须串行（P1-7） ----------
+  // FileTransport.push 是「读 rev → 写 baseRev+1」的**非原子序列**：两次同 baseRev 的并发写
+  // 会互相覆盖、rev 不推进（两边都回 200），其中一份内容静默消失。
+  // 防抖路径（flushNow）本来有 pushing 守卫，但 restoreFromCloudBackup / seedFromLocal
+  // 是直接 await pushNow() 的、绕过了它 —— 修法是在最底层把 push 串行化。
+  {
+    let inFlight = 0, maxInFlight = 0
+    const seen: number[] = []
+    const { t } = scriptedTransport({
+      push: async (baseRev) => {
+        inFlight++
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        seen.push(baseRev)
+        await sleep(40)          // 制造重叠窗口：不串行的话两次 push 会同时在这 40ms 里
+        inFlight--
+        return { status: 200, rev: baseRev + 1 }
+      },
+    })
+    const cloud = createCloudStore(t)
+    cloud.configure('concurrency-key')
+    await cloud.seedFromLocal(async () => [{ id: 'c1' }])   // 建立基线（rev 0→1）并产生 cloudBackup
+    const afterSeed = seen.length
+
+    // 同时发起两次「从备份恢复」——两个入口原先都直接 await pushNow，会并发写同一 baseRev
+    await Promise.all([cloud.restoreFromCloudBackup(), cloud.restoreFromCloudBackup()])
+    const raws = seen.slice(afterSeed)
+
+    ok('🔴 并发推送被串行化（任一时刻只有一次在途）', maxInFlight === 1, `maxInFlight=${maxInFlight}`)
+    ok('第二次推送用的是**推进后**的 rev（不是排到时已过期的基线）',
+      raws.length === 2 && raws[1] === raws[0] + 1, JSON.stringify(raws))
+  }
+
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

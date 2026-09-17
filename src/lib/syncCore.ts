@@ -308,6 +308,8 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   let pushTimer: ReturnType<typeof setTimeout> | null = null
   let pushing = false
   let pendingPush = false
+  /** 已排队的推送链：保证任意两次推送**串行**执行（见 pushNow 的说明） */
+  let pushChain: Promise<unknown> = Promise.resolve()
   let initPromise: Promise<void> | null = null
   let transport: SyncTransport = initialTransport
 
@@ -482,7 +484,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     if (totalRecords(restored) === 0) return false
     cache = restored
     baseCache = snapshotOf(cache)
-    await pushNow(rev)
+    await pushNow(() => rev)
     return true
   }
 
@@ -535,7 +537,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   }
 
   // 推送（带 rev 守卫）。冲突(409)时合并云端版本（本地优先）后用最新 rev 重试。
-  async function pushNow(baseRev: number, depth = 0): Promise<{ conflict?: boolean }> {
+  async function pushNowRaw(baseRev: number, depth = 0): Promise<{ conflict?: boolean }> {
     const uploadCache: Record<string, any> = liveStores(cache)
     // #027：防整库清空——本地缓存为空但存在已知良好基线时，绝不能用空库覆盖云端。
     // 🔴 用**记录总数**判（见 totalRecords 的说明），键数判法会被「12 个空数组」骗过去。
@@ -575,7 +577,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       if (serverCache) cache = mergeCaches(baseCache, serverCache, cache)
       rev = serverRev
       if (depth < MAX_CONFLICT_RETRY) {
-        return pushNow(serverRev, depth + 1)
+        return pushNowRaw(serverRev, depth + 1)
       }
       return { conflict: true }
     }
@@ -613,6 +615,25 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     throw new Error('sync push failed ' + r)
   }
 
+  /**
+   * 推送（**串行化入口**）。`baseRev` 可传函数 —— 排队期间 `rev` 可能已被前一次推送推进，
+   * 执行时才取值，才不会拿着过期基线去撞 409。
+   *
+   * 🔴 为什么必须在**最底层**串行：`FileTransport.push` 是「读 rev → 写 baseRev+1」的
+   *    **非原子序列**，两次同 baseRev 的并发写会互相覆盖、rev 不推进（两边都回 200），
+   *    其中一份内容静默消失（审计 P1-7）。
+   *    防抖路径（flushNow）本来有 `pushing` 守卫，但 `restoreFromCloudBackup` /
+   *    `seedFromLocal` 是直接 `await pushNow()` 的、绕过了它；收口到这里之后，
+   *    以后新增的推送入口也自动受保护。
+   *    ⚠️ 409 重试必须调用 `pushNowRaw` —— 走 `pushNow` 会排到自己后面，直接死锁。
+   */
+  function pushNow(baseRev: number | (() => number)): Promise<{ conflict?: boolean }> {
+    const run = () => pushNowRaw(typeof baseRev === 'function' ? baseRev() : baseRev)
+    const next = pushChain.then(run, run)
+    pushChain = next.catch(() => { /* 失败不阻断后续排队 */ })
+    return next
+  }
+
   async function flushNow(): Promise<void> {
     if (!code) return
     await ensureInit()
@@ -634,7 +655,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     pushing = true
     setStatus('syncing')
     try {
-      const r = await pushNow(rev)
+      const r = await pushNow(() => rev)
       // 🔴 pushNow 在重试耗尽时**返回** {conflict:true} 而不抛 —— 不处理的话状态会一直停在
       //    'syncing'（界面转圈，实际一条都没传上去）。
       if (r?.conflict) setStatus('error')
