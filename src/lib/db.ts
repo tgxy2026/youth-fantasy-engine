@@ -1,12 +1,12 @@
 import { openDB, type IDBPDatabase, type IDBPTransaction } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
 import type { StoreOps } from './storeOps'
-import { DESKTOP, desktopStore } from './desktop'
+import { DESKTOP, desktopStore, flushDesktop } from './desktop'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
   seedDesktopFromLocal, onDesktopSyncConflict, persistDesktopCloudEnabled, onDesktopCloudFallback,
-  clearDesktopCloudEnabledFlag,
+  clearDesktopCloudEnabledFlag, flushDesktopCloud, snapshotDesktopCloudCache,
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo,
 } from './desktopCloudSync'
@@ -340,15 +340,25 @@ onDesktopSyncConflict((info: SyncConflictInfo) => {
 // 所以只在异常路径兜底 —— 宁可本地暂时多一份，也不能让稿子凭空消失。
 //
 // 注：回调里的 desktopLocalStore 是模块级 const，注册时尚未初始化，但回调只在关窗/异常时才执行，届时已就绪。
-onDesktopCloudFallback((cache) => {
+/**
+ * 把云端内存 cache 镜像进**当前平台的本地存储**（异常兜底与「关闭同步」共用）。
+ *
+ * 返回 Promise —— 「关闭同步」必须**等它写完**再切 ops 并 reload，否则写了一半就被打断。
+ * 异常兜底那条路（pagehide/关窗）仍是 fire-and-forget，与原先一致。
+ */
+async function mirrorCloudCacheToLocal(cache: Record<string, any[]>): Promise<void> {
+  const tasks: Promise<unknown>[] = []
   for (const [store, rows] of Object.entries(cache)) {
     if (store === 'backups') continue
     const list = store === 'meta'
       ? (rows as any[]).filter(r => !isExcludedMetaKey(r?.key))
       : (rows as any[])
-    if (list.length) void desktopLocalStore.bulkPut(store, list).catch(() => {})
+    if (list.length) tasks.push(desktopLocalStore.bulkPut(store, list).catch(() => {}))
   }
-})
+  await Promise.all(tasks)
+}
+
+onDesktopCloudFallback((cache) => { void mirrorCloudCacheToLocal(cache) })
 
 async function saveConflictCopy(info: SyncConflictInfo) {
   try {
@@ -539,8 +549,24 @@ export async function enableDesktopCloudSync(handle: any) {
   setStoreOps(desktopCloudFileStore)
 }
 
-/** 关闭云盘文件同步，并切回平台默认本地存储。调用方应随后刷新页面。 */
-export function disableDesktopCloudSync() {
+/**
+ * 关闭云盘文件同步，并切回平台默认本地存储。调用方应随后刷新页面。
+ *
+ * 🔴 审计 2026-09-17（P1-1）：必须**先 flush + 把云端数据镜像进本地**，再切回本地库。
+ *    原实现直接 `disableDesktopCloud()`（= `cloud.configure('')`，清空内存 cache）后
+ *    `setStoreOps(desktopLocalStore)` —— 而云模式下本地库自「开启同步」那一刻起就没再更新过
+ *    （见 enableDesktopCloudSync 末尾的 setStoreOps(desktopCloudFileStore)），于是关闭后
+ *    界面读到的是**启用同步之前的陈旧本地库**：同步期间写的内容会从界面「消失」
+ *    （云端 .yfe 仍在，重开同目录可找回），而缓冲里未推送的改动（防抖窗口内）**不可逆丢失**。
+ */
+export async function disableDesktopCloudSync() {
+  // 1) 先把未推送的改动推出去（推不出去时 flushNow 内部会走 fallback 兜底写本地）
+  await flushDesktopCloud()
+  // 2) 把云端当前数据镜像进本地库 —— 关闭后界面读的就是这份，不再「少一截」
+  await mirrorCloudCacheToLocal(snapshotDesktopCloudCache())
+  // 3) 落盘（桌面版走 JSON 文件；非桌面是空操作），确保 reload 前已持久化
+  await flushDesktop().catch(() => {})
+  // 4) 清标记、复位传输层，切回本地
   disableDesktopCloud()
   setStoreOps(desktopLocalStore)
 }

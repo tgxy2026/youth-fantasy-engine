@@ -8,6 +8,8 @@ export const DESKTOP = true
 export { memoryOps as desktopStore } from './mock-memory'
 export function initDesktopStore() { return Promise.resolve() }
 export function flushDesktopSync() { return Promise.resolve(false) }
+// db.ts 关闭云盘同步时会 await flushDesktop() 再切存储（内存桩无需真落盘，直接成功）
+export function flushDesktop() { return Promise.resolve(true) }
 export function subscribeDesktop() { return () => {} }
 export function getDesktopState() { return { ready: true, path: '', dirty: false } }
 

@@ -213,6 +213,29 @@ export function branchSession(
 }
 
 /**
+ * 重说（reroll）后回收「本场记忆 + 水位线」。
+ *
+ * 重说会丢掉末尾那条 assistant、重新生成一条（**新 id**）。若水位线正好指着**被替换掉的那条**，
+ * 说明「已总结进记忆的内容里含这次作废的回复」→ 必须**清记忆 + 水位线退到新末尾**；
+ * 否则模型会引用一段被删掉的未来，症状是「Ta 记得还没发生的事」
+ * （与 `branchSession` 同一套判据：别只退水位线、也别只清记忆）。
+ *
+ * ⚠️ 只处理**会话级** `memory`。自由模式的记忆是按角色分条存的、且只在「结束本轮对话」时整理，
+ *    而归档后重说被挡 → 自由模式不存在「被总结过又被作废」的回复，故不涉及此函数。
+ *
+ * @param droppedId 被替换掉的那条消息 id；**传 undefined 表示本次没真替换**（取消 / 空回复），原样返回。
+ */
+export function rewindAfterReroll(s: TavernSession, droppedId?: string): TavernSession {
+  if (!droppedId || s.watermark?.messageId !== droppedId) return s
+  const last = s.messages[s.messages.length - 1]
+  return {
+    ...s,
+    watermark: last ? { messageId: last.id, at: now() } : undefined,
+    memory: undefined,
+  }
+}
+
+/**
  * 分支名避重：`原题 ·分支2`、`原题 ·分支3`…
  * 序号从 2 起（第 1 份就是原题本身），并**跳过已被占用的号** —— 删掉分支再建不会撞名。
  * 已有「·分支N」后缀的标题先剥掉，免得出现「… ·分支2 ·分支2」。

@@ -366,10 +366,16 @@ export async function runPlotTurn(
     : (userText === null ? session.messages : withUser)
   // B2：成功产出才倒计时（取消/报错不扣轮次）
   const directorNote = reply.trim() && !cancelled ? tickDirectorNote(session.directorNote) : session.directorNote
-  const next: TavernSession = {
+  // 🔴 审计 2026-09-17（P1）：重说**成功替换**了末尾那条回复时，若水位线正指着被替换的那条，
+  //    说明已总结进本场记忆的内容里含这次作废的回复 → 清记忆 + 水位线退到新末尾。
+  //    只在 reply 非空时处理：取消 / 空回复时原回复被保留、记忆仍然有效，不能误清。
+  const replacedId = userText === null && reply.trim()
+    ? session.messages[session.messages.length - 1]?.id
+    : undefined
+  const next: TavernSession = store.rewindAfterReroll({
     ...session, messages: kept, updatedAt: Date.now(),
     directorNote,
-  }
+  }, replacedId)
 
   return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, postApplied, postErrors }
 }
@@ -800,20 +806,19 @@ export function buildFreeMessages(
   return { messages: trimmed.kept.map(m => ({ role: m.role, content: m.content })), dropped: trimmed.dropped }
 }
 
+// （原 `collapseBlankLines` 已删除：预览/取消改走 `applyPostRulesForPreview` 后它只剩测试在用，
+//   按「只为测试而活 → 删」的纪律清掉。）
+
 /**
- * 去空行归一化（润色/自动回复专用）。
+ * 给「流式预览 / 取消残留」这类中途文本套一遍输出后处理规则 —— 与最终结果**同口径**。
  *
- * 模型常在台词里顺手加空行（行首/行尾留白、段落间多打一个回车），填进输入框既不好看也无意义。
- * 处理口径：**连换行压成单个换行**（去掉空行），但**保留段落内的单换行**；并清掉每行行尾的空白，
- * 免得 "  \n" 被当成有内容的行、压不掉。外层 trim 由本函数一并完成。
- * 只作用于 assist 两功能（不碰正常对话 runFreeTurn），避免误伤作者自己写的多段回复。
+ * 审计 2026-09-17（P2-13）：此前预览与取消只做 `collapseBlankLines`（去空行），
+ * 于是生成途中与最终文本不一致（字会突然跳版），作者点停止留下的文本也没修半角括号 /
+ * 星号动作 / 描写与对白同行。这里复用同一套规则，保证「中途看到什么 = 最终得到什么」。
  */
-export function collapseBlankLines(text: string): string {
-  return String(text ?? '')
-    .replace(/\r\n/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{2,}/g, '\n')
-    .trim()
+export function applyPostRulesForPreview(text: string, st: TavernSettings): string {
+  if (!text.trim() || !st.postRulesEnabled) return text.trim()
+  return applyPostRules(text, st.postRules ?? []).text.trim()
 }
 
 /** 润色 / 自动回复：复用自由模式 system（仅翻转 assist 措辞）+ 历史消息，让模型代用户扮演的角色写这一轮发言，结果回交调用方填输入框（绝不自动发送、不落库）。 */
@@ -831,16 +836,19 @@ export async function runFreeAssist(
   const runChat = deps.chatFn ?? chat
   const { system } = await buildFreeSystem(session, chars, st, { assist: mode })
 
+  // 参数解析先做（下面算历史额度要用到 contextBudget）—— 与 runFreeTurn 同口径：
+  // 会话级覆盖优先，否则回落面板默认。此前这里直接读 st.common.contextBudget，一旦启用会话级
+  // 覆盖，润色/自动回复的历史额度就会与正常对话不一致（审计 P2-14）。
+  const p = resolveParamsOf('free', st, session.params)
   // 历史只取 session.messages（不含用户的"待润色原文"作为 committed 消息）
-  const historyBudgetChars = historyBudget(totalBudget(st.common.contextBudget), system, '', st.common.fixedOverheadChars)
+  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, '', st.common.fixedOverheadChars)
   const { messages } = buildFreeMessages(session.messages, session, chars, historyBudgetChars)
 
   const instruction = mode === 'polish'
     ? `【润色指令】用户已写原文：「${userText}」。请在保留其意图与关键信息的前提下，扩写润色成**以「用户扮演的角色」的第一人称口吻**说的话、含动作/表情/环境描写的发言（对白是这个角色自己说的，不是别的角色在回应他）。只输出润色后的台词本身。`
     : `【代写指令】用户还没想好这一轮怎么回。请根据当前对话上下文、故事剧本、你的角色设定，替用户扮演的角色写一句（或一小段）自然、符合当下的发言，含动作/表情/环境描写。只输出台词本身。`
 
-  const p = resolveParamsOf('free', st, session.params)
-  const { temperature, ...extraOptions } = toOllamaOptions(p)
+  const { temperature, ...extraOptions } = toOllamaOptions(p) // p 已在上面解析
   // 🔴 以 chat 的**返回值**为准（与 runFreeTurn 一致）；onToken 仅用于流式回写 UI，不负担内容累积
   const reply = await runChat(
     provider,

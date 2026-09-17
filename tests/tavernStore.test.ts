@@ -6,7 +6,7 @@ import * as db from '../src/lib/db'
 import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
-import type { TavernSessionIndexItem, TavernReport, TavernMessage } from '../src/lib/tavern/types'
+import type { TavernSession, TavernSessionIndexItem, TavernReport, TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -361,6 +361,30 @@ async function main() {
     const saved = await store.saveSession(store.addCheckpoint(await store.createSession({ ...mkSession('落库'), messages }), '存一下'))
     const read = await store.getSession(saved.id)
     ok('检查点能落库读回', read?.checkpoints?.length === 1 && read?.checkpoints[0].label === '存一下')
+  }
+
+  // ---------- 7) 重说后的记忆回滚（审计 2026-09-17 P1-3） ----------
+  // 场景：作者先「整理本场记忆」（水位线推到末尾那条），再对同一条点重说 ——
+  // 那条回复被换成新的（新 id），而记忆里还留着它 → 不清就会出现「Ta 记得还没发生的事」。
+  {
+    const mk = (msgs: TavernMessage[], wm: string, mem?: string) => ({
+      ...mkSession('重说'), id: 's-rr', messages: msgs,
+      watermark: { messageId: wm, at: 1 }, memory: mem,
+      createdAt: 1, updatedAt: 1,
+    }) as unknown as TavernSession
+    const msgs: TavernMessage[] = [
+      { id: 'm1', role: 'user', content: 'a', at: 1 },
+      { id: 'm2', role: 'assistant', content: 'b', at: 2 },
+      { id: 'm3new', role: 'assistant', content: 'c2', at: 4 }, // 重说后的新回复（新 id）
+    ]
+    const r = store.rewindAfterReroll(mk(msgs, 'm3', 'Ta 记得 m3 的事'), 'm3')
+    ok('重说替换掉水位线所指的回复 → 清本场记忆', r.memory === undefined)
+    ok('重说 → 水位线退到当前末尾（新回复）', r.watermark?.messageId === 'm3new')
+    const keep = store.rewindAfterReroll(mk(msgs, 'm2', '早前记忆'), 'm3')
+    ok('水位线指着更早的消息 → 记忆原样不动（保守）',
+      keep.memory === '早前记忆' && keep.watermark?.messageId === 'm2')
+    const none = store.rewindAfterReroll(mk(msgs, 'm3', '记忆'), undefined)
+    ok('取消 / 空回复（未真替换，droppedId 为空）→ 原样返回', none.memory === '记忆')
   }
 
   console.log(`\ntavernStore: ${pass} passed, ${fail} failed`)

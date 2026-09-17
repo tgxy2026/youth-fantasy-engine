@@ -117,7 +117,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
       danger: true,
     })
     if (!ok) return
-    disableDesktopCloudSync()
+    await disableDesktopCloudSync() // 先 flush + 镜像进本地，再切回（见 db.ts 的说明）
     showToast('已关闭云盘文件同步，切回本机存储', 'success')
     setTimeout(() => location.reload(), 400)
   }

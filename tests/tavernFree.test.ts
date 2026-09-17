@@ -8,7 +8,7 @@ import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import {
-  buildFreeSystem, buildFreeMessages, runFreeTurn, runFreeAssist, injectDirectorNote, tickDirectorNote, renderFreeCharacter, collapseBlankLines, type ChatFn,
+  buildFreeSystem, buildFreeMessages, runFreeTurn, runFreeAssist, injectDirectorNote, tickDirectorNote, renderFreeCharacter, applyPostRulesForPreview, type ChatFn,
 } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
@@ -635,13 +635,14 @@ async function main() {
     ok('runFreeAssist 产出已无空行（去空行规则兜底）', !/\n\s*\n/.test(resB.text) && resB.text === '（他放下伞）\n"你来了。"')
   }
 
-  // ---------- 12) collapseBlankLines 纯函数：去空行但不吃掉段落内换行（用于输入框实时预览） ----------
+  // ---------- 12) applyPostRulesForPreview：预览/取消与最终结果同口径（审计 P2-13） ----------
   {
-    ok('连续空行压成单个换行', collapseBlankLines('（他笑了笑）\n\n\n今天天气不错。') === '（他笑了笑）\n今天天气不错。')
-    ok('保留段落内的单行换行', collapseBlankLines('（他笑了笑）\n今天天气不错。') === '（他笑了笑）\n今天天气不错。')
-    ok('去掉行尾空白后压空行', collapseBlankLines('（他笑了笑）  \n  \n今天天气不错。') === '（他笑了笑）\n今天天气不错。')
-    ok('吃掉首尾空行与空白', collapseBlankLines('\n\n  （他笑了笑）今天天气不错。  \n\n') === '（他笑了笑）今天天气不错。')
-    ok('CRLF 也按 LF 处理', collapseBlankLines('（动作）\r\n\r\n对白') === '（动作）\n对白')
+    const st = await getTavernSettings()
+    const prev = applyPostRulesForPreview('（他放下伞）\n\n"你来了。"', st)
+    ok('预览已去空行（与最终结果同一套规则）', !/\n\s*\n/.test(prev), JSON.stringify(prev))
+    ok('预览里「）」后接对白也换行（与最终结果一致）', prev.split('\n').length >= 2, JSON.stringify(prev))
+    const off = applyPostRulesForPreview('  （动作）  ', { ...st, postRulesEnabled: false })
+    ok('规则总开关关掉 → 只 trim，不改内容', off === '（动作）', JSON.stringify(off))
   }
 
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)

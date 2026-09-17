@@ -183,8 +183,13 @@ export async function initDesktopStore(): Promise<void> {
     } catch {
       isCustomPath = false
     }
-    // 只有明确知道"文件在"时才做危险判定（旧 preload 无此字段 → missing 为 undefined → 保持旧行为）
-    const fileExists = r.missing === false
+    // 只有明确知道"文件在"时才做危险判定（旧 preload 无此字段 → missing 为 undefined）。
+    // 🔴 审计 2026-09-17（P2-11）：missing 未知时**不能直接当「首次使用」放行写盘** ——
+    //    旧 preload 配新渲染层、而文件其实存在（r.text 有内容）时，`!fileExists` 分支会先于
+    //    下面的文本解析命中 → 内存空库被允许写盘 → 覆盖真实文件。故 missing 未知时以「有非空文本」
+    //    为「文件存在」的判据，让文本解析那条路接管。
+    const hasText = !!(r.text && r.text.trim())
+    const fileExists = r.missing === false || (r.missing === undefined && hasText)
     if (r.error) {
       lock(
         `数据文件读取失败：${r.error}`,

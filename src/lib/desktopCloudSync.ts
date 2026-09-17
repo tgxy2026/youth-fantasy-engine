@@ -60,6 +60,20 @@ export async function pullDesktopSnapshot() {
 export async function seedDesktopFromLocal(getAll: (store: string) => Promise<any[]>) {
   return cloud.seedFromLocal(getAll)
 }
+/**
+ * 立即把云盘同步内存里**未推送的改动**推出去（不等防抖）。
+ * 关闭同步前必须调用 —— 否则 `configure('')` 清空 cache，这批改动就没了。
+ */
+export async function flushDesktopCloud(): Promise<void> {
+  return cloud.flushNow()
+}
+/**
+ * 云盘同步内存 cache 的快照（store 名 → 行数组）。
+ * 关闭同步前用它把云端数据镜像进本地库，避免切回后界面读到「启用同步之前的陈旧本地库」。
+ */
+export function snapshotDesktopCloudCache(): Record<string, any[]> {
+  return cloud.getCacheSnapshot()
+}
 export function onDesktopSyncConflict(h: (info: SyncConflictInfo) => void) {
   cloud.onSyncConflict(h)
 }
@@ -176,7 +190,10 @@ export async function applyDesktopCloudFromPersisted(): Promise<boolean> {
       /* 忽略 */
     }
   }
-  if (!handle) return false
+  // 🔴 目录偏好丢了（localStorage 被部分清理 / 损坏）却还留着「已开启」标记时**必须清标记**：
+  //    否则界面显示「已开启（待命）」而 ops 其实是本地库 —— 用户以为在同步、实际一条都没传。
+  //    （审计 2026-09-17 P2-10）
+  if (!handle) { clearDesktopCloudEnabledFlag(); return false }
   if (!isDesktopCloudEnabled()) return false
   cloud.setTransport(createFileTransport(handle, CLOUD_FILE_NAME))
   cloud.configure(DEFAULT_CLOUD_KEY)

@@ -292,6 +292,10 @@ export interface CloudStoreInstance {
    *  云模式下写入先进内存、再推同步目录；推送被挡时若不兜底，关窗即丢。 */
   onFallback(h: (cache: Record<string, any[]>) => void): void
   armUnloadFlush(): void
+  /** 立即把内存里未推送的改动推出去（不等防抖计时器）。关同步 / 关窗前调用。 */
+  flushNow(): Promise<void>
+  /** 当前内存 cache 的快照（store 名 → 行数组）。用于「关闭同步前把云端数据镜像进本地」。 */
+  getCacheSnapshot(): Record<string, any[]>
 }
 
 const MAX_CONFLICT_RETRY = 5
@@ -717,5 +721,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     onSyncConflict: (h) => onSyncConflict(h),
     onFallback: (h) => { fallbackHandler = h },
     armUnloadFlush,
+    flushNow,
+    getCacheSnapshot: () => snapshotOf(cache),
   }
 }
