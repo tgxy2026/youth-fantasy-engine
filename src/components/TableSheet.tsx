@@ -207,6 +207,24 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   useEffect(() => { draftsRef.current = drafts }, [drafts])
   useEffect(() => { rowsRef.current = rows }, [rows])
 
+  /**
+   * 🔴 卸载时冲刷未保存的表格草稿。
+   *
+   * 为什么必须放在卸载清理里：`App.tsx` 给本组件加了「key={tab.id}」，切页签时组件整体重挂 ——
+   * 于是下面那个 [tab.id] 守卫里的 tabIdRef.current 初值就是新 id，
+   * 「prevId !== tab.id」恒假、分支永不执行（未保存草稿被静默丢弃）。
+   * 卸载清理是唯一与 key 无关的稳妥落点。
+   */
+  useEffect(() => () => {
+    const pending = draftsRef.current
+    if (!pending || Object.keys(pending).length === 0) return
+    const snapshot = rowsRef.current
+    for (const rowId of Object.keys(pending)) {
+      const orig = snapshot.find(r => r.id === rowId)
+      if (orig) void saveTableRow({ ...orig, data: { ...orig.data, ...pending[rowId] } })
+    }
+  }, [])
+
   // 跨组件跳转聚焦：数据体检「跳转修复」/ 地图「跳到地理风物」带 rowId 时，滚动到该行并高亮
   useEffect(() => {
     if (!focusRowId) return

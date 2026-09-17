@@ -55,6 +55,14 @@ export default function FormSheet({ tab }: Props) {
   useEffect(() => { dataRef.current = data }, [data])
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
 
+  /**
+   * 🔴 卸载时冲刷未保存修改。原因同 TableSheet：`App.tsx` 的「key={tab.id}」会让下面那个
+   * [tab.id] 守卫里的 tabIdRef 初值即新 id，分支永不执行。
+   */
+  useEffect(() => () => {
+    if (dirtyRef.current) void saveFormData(tabIdRef.current, dataRef.current)
+  }, [])
+
   useEffect(() => {
     // 切到别的页签前，先把当前页签未保存的修改落库（之前会静默丢弃）
     const prevId = tabIdRef.current

@@ -87,6 +87,15 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   const prevActiveRef = useRef<string | null>(null)
   useEffect(() => { draftRef.current = draft }, [draft])
 
+  /**
+   * 🔴 卸载时冲刷未保存的角色卡修改。原因同 TableSheet：`App.tsx` 的「key={tab.id}」
+   * 会让下面那个 [tab.id] 守卫在重挂后失效（dirtyRef 初值为 false）。
+   * 注意：同页签内切卡（activeId 变化）不会重挂，那条守卫仍然有效，与此条互补。
+   */
+  useEffect(() => () => {
+    if (dirtyRef.current && draftRef.current) void saveCardRecord(draftRef.current)
+  }, [])
+
   useEffect(() => {
     // 切到别的页签前，先把当前角色卡未保存的修改落库（之前会静默丢弃）
     if (dirtyRef.current && draftRef.current) {
