@@ -278,6 +278,15 @@ button:disabled { cursor: not-allowed; }
   border-radius: 2px;
 }
 
+/* ---------- AI 伴写 ghost 建议（2.2.0） ---------- */
+/* 透在光标处的「浅灰续写建议」。用「正文色 + 透明度」推导，而不是写死一个灰值：
+   暗主题正文色是浅紫白（--ink-100）→ 42% 得到一层淡灰；
+   亮主题正文色是深墨绿 → 42% 得到浅灰。
+   两个主题下都自然"像提示、不像正文"，且不抢视线。 */
+.ai-ghost {
+  color: rgb(var(--ink-100) / 0.42);
+}
+
 /* ---------- 动画 ---------- */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { Volume, Chapter, ChapterStatus } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
@@ -15,7 +15,7 @@ import {
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
   ShieldAlert, History, Search, Lock, AlignLeft, Upload, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
-  Command, Highlighter, BookOpen, Users, X, GripVertical, Sparkles, Loader2, Wand2, Layers
+  Command, Highlighter, BookOpen, Users, X, GripVertical, Sparkles, Loader2, Wand2, Layers, PenTool
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
@@ -26,7 +26,9 @@ import { chapterSeqOf, chapterSeqMap, flattenChapters } from '../lib/chapterSeq'
 import { syncChapterMaster } from '../lib/chapterMaster'
 import { readAliases } from '../lib/aliases'
 import { useAIReady } from '../lib/useAIReady'
-import { aiChapterSummary } from '../lib/aiTasks'
+import { aiChapterSummary, aiInlineSuggest, INLINE_SUGGEST_LIMITS, type InlineSuggestLength } from '../lib/aiTasks'
+import { buildProjectContext } from '../lib/aiContext'
+import { isCancelled } from '../lib/ai'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 
@@ -112,6 +114,16 @@ function scanRefHighlight(text: string, names: string[]): RefScan {
  *  别称条目也在此登记（aliasOf 指向原本名称），正文出现别称时高亮并归入原名条目。 */
 interface RefName { name: string; type: 'character' | 'setting'; tabId: string; aliasOf?: string }
 
+// ---- AI 伴写（2.2.0）常量 ----
+/** 停笔多久才请求。本地 27B 出一句话约 1~3s，太快会在正常停顿处疯狂起请求 */
+const GHOST_DEBOUNCE_MS = 800
+/** 取光标前多少字作前文：两三千字足够带稳语气、人称与专名，再多是浪费上下文窗口 */
+const GHOST_CONTEXT_CHARS = 2000
+/** 连续失败多少次自动静默禁用（避免每次停笔都白等一轮超时） */
+const GHOST_MAX_FAILS = 3
+/** 同前文缓存上限（LRU） */
+const GHOST_CACHE_MAX = 20
+
 
 /**
  * v1.6.3：卷/章拖拽排序的纯计算函数（不触碰状态/存储，便于复用）。
@@ -188,9 +200,35 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const [modal, setModal] = useState<null | 'sensitive' | 'history' | 'trash' | 'search' | 'lock' | 'foreshadow' | 'continuity' | 'typo' | 'style'>(null)
   // v1.3 编辑器体验：本章引用侧栏 + 内联高亮
   const [showRefs, setShowRefs] = useState(false)
-  const [highlightOn, setHighlightOn] = useState(true)
+  // 2.2.0：引用名内联高亮改为**默认关闭**（长章节全量着色太吵视线，需要时手动开）
+  const [highlightOn, setHighlightOn] = useState(false)
   const [refNames, setRefNames] = useState<RefName[]>([])
   const highlightRef = useRef<HTMLDivElement>(null)
+  // ---- 2.2.0 AI 伴写（ghost 逐句续写）----
+  // 默认关闭：写作者主导权优先。开启后停笔自动在光标后透出一句浅灰建议；Tab 采纳才落进正文，继续打字即丢弃。
+  const [companion, setCompanion] = useState(() => localStorage.getItem('novel-companion') === '1')
+  const [companionLen, setCompanionLen] = useState<InlineSuggestLength>(() => {
+    const v = localStorage.getItem('novel-companion-len')
+    return v === 'short' || v === 'two' ? v : 'sentence'
+  })
+  const [companionDeAi, setCompanionDeAi] = useState(() => localStorage.getItem('novel-companion-deai') !== '0')
+  /** ③ 作者自定义风格补充（本机记忆，默认空）——不设文风枚举，只留这一个自由口子 */
+  const [companionStyleNote, setCompanionStyleNote] = useState(() => localStorage.getItem('novel-companion-style') || '')
+  const [styleNotePrompt, setStyleNotePrompt] = useState(false)
+  /** 当前 ghost 建议：null = 无建议；at = 该建议针对的光标位置（防止错位插入） */
+  const [ghost, setGhost] = useState<{ text: string; at: number } | null>(null)
+  const [ghostBusy, setGhostBusy] = useState(false)
+  /** 光标位置（state 版）：点击/按键把光标挪到新位置时也要重新触发一次伴写 */
+  const [caret, setCaret] = useState(0)
+  const ghostRef = useRef<HTMLDivElement>(null)
+  const ghostAbort = useRef<AbortController | null>(null)
+  const ghostTimer = useRef<number | null>(null)
+  /** 同前文 key → 建议（LRU 上限 20）：在同一位置反复停笔时不重复烧 token */
+  const ghostCache = useRef(new Map<string, string>())
+  /** 连续失败计数：满 GHOST_MAX_FAILS 次自动静默禁用（避免每次停笔都白等一轮超时） */
+  const ghostFail = useRef(0)
+  /** 设定资料 + 《写作规范》缓存（按章节失效）：ghost 请求要低延迟，不能每次重读全库 */
+  const ghostCtxCache = useRef<{ chapterId: string; projectContext: string; styleSpec: string } | null>(null)
   // draftContent：当前章节的未保存内容（draftRef 同步镜像，供自动保存定时器读取最新值，防止 2 秒防抖期间 updateContent 的改动被旧值覆盖）
   const [draftContent, setDraftContent] = useState<string>('')
   const draftRef = useRef('')
@@ -319,9 +357,12 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     [refNames, refScan]
   )
 
-  /** 高亮叠层跟随 textarea 滚动 */
+  /** 高亮叠层 / 伴写 ghost 叠层跟随 textarea 滚动（三者必须同滚动位置，否则文字与正文错位） */
   const syncHighlightScroll = () => {
-    if (highlightRef.current && taRef.current) highlightRef.current.scrollTop = taRef.current.scrollTop
+    if (!taRef.current) return
+    const top = taRef.current.scrollTop
+    if (highlightRef.current) highlightRef.current.scrollTop = top
+    if (ghostRef.current) ghostRef.current.scrollTop = top
   }
   /** scroll 事件频率极高：用 rAF 合并同帧的多次同步，避免滚动时每个像素都写一次布局 */
   const scrollSyncRafRef = useRef(0)
@@ -339,7 +380,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
    */
   useLayoutEffect(() => {
     syncHighlightScroll()
-  }, [highlightHTML, activeId, fontSize, pageWide, focusMode, showSearch])
+    // ghost 也在这里回填：它的叠层是新挂载的 div，scrollTop 恒为 0，不回填会与正文错位
+  }, [highlightHTML, activeId, fontSize, pageWide, focusMode, showSearch, ghost])
 
   /** 编辑区尺寸变化（窗口缩放、检索栏开合）时同样需要对齐叠层 */
   useEffect(() => {
@@ -634,12 +676,201 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const selRef = useRef<{ start: number; end: number } | null>(null)
   const syncSel = () => {
     const ta = taRef.current
-    if (ta) selRef.current = { start: ta.selectionStart, end: ta.selectionEnd }
+    if (ta) {
+      selRef.current = { start: ta.selectionStart, end: ta.selectionEnd }
+      // 伴写：光标位置进 state —— 点击/按键把光标挪到新位置时才可能产出新建议
+      setCaret(ta.selectionStart)
+    }
   }
   const getSelText = () => {
     const s = selRef.current
     if (!s || s.end <= s.start) return null
     return draftContent.slice(s.start, s.end) || null
+  }
+
+  // ============ 2.2.0 AI 伴写（ghost 逐句续写）============
+  //
+  // 交互对齐 WPS AI 伴写：停笔 → 光标后透出一句浅灰建议 → Tab 采纳 / 打字即丢弃。
+  // 三条工程约束：
+  //   · 采纳之前**正文一个字都没被改过**（ghost 只是画在叠层上的字），所以拒绝永远零破坏；
+  //   · ghost 叠层与高亮叠层同层（均 z-0 + 透明基），盒模型逐项照抄高亮层，否则两图层必然错位；
+  //   · **光标后已有正文时不显示** —— ghost 没有"宽度"，压到后面的字上会糊成一片。
+
+  /** 取光标前 GHOST_CONTEXT_CHARS 字作前文（从 draftRef 读最新内容，避免闭包拿到旧值） */
+  const ghostBefore = (at: number) => draftRef.current.slice(Math.max(0, at - GHOST_CONTEXT_CHARS), at)
+
+  /** 拼 ghost 用的请求 key：同前文 + 同参数才复用缓存（useCallback：它是唯一依赖 state 的取值函数，
+   *  进 effect 依赖数组才不会让伴写闭包读到旧的档位/开关） */
+  const ghostKey = useCallback(
+    (before: string) => `${companionLen}|${companionDeAi}|${companionStyleNote}|${before.slice(-600)}`,
+    [companionLen, companionDeAi, companionStyleNote],
+  )
+
+  /**
+   * 懒加载 ghost 用的上下文：《写作规范》摘录 + 设定资料摘要，按章节缓存。
+   * 不放在每次请求里读全库——本地模型本来就慢，再叠一次全量读盘会明显拖长等待。
+   */
+  const loadGhostContext = useCallback(async (chapterId: string) => {
+    const hit = ghostCtxCache.current
+    if (hit && hit.chapterId === chapterId) return hit
+    let styleSpec = ''
+    try {
+      // 复用《写作规范》表（运营维护组）：作者自己写的坏习惯清单 / 标点规范 / 视角规则，
+      // 比任何"文风枚举标签"都准，且零新增数据模型。
+      const style = await db.getFormData('style')
+      const pick = (name: string) => {
+        const key = Object.keys(style || {}).find(k => k.endsWith(`::${name}`))
+        return key ? (style[key] || '').trim() : ''
+      }
+      styleSpec = ([
+        ['已知坏习惯清单', pick('已知坏习惯清单')],
+        ['标点规范', pick('标点规范')],
+        ['视角切换规则', pick('视角切换规则')],
+      ] as const).filter(([, v]) => v).map(([k, v]) => `${k}：${v}`).join('\n')
+    } catch { /* 读不到规范不算错，伴写照常可用 */ }
+    let projectContext = ''
+    try {
+      const built = await buildProjectContext({ budget: 2000, focusChapterId: chapterId, inlineDropNote: false })
+      projectContext = built.text || ''
+    } catch { /* 没有设定摘要时退化为纯前文续写 */ }
+    const next = { chapterId, projectContext, styleSpec }
+    ghostCtxCache.current = next
+    return next
+  }, [])
+
+  /** 发起一次伴写请求（防抖后调用）。连续失败到阈值即熔断，不再打扰作者 */
+  const fireGhost = useCallback(async (before: string, at: number, key: string) => {
+    ghostAbort.current?.abort()
+    const ac = new AbortController()
+    ghostAbort.current = ac
+    setGhostBusy(true)
+    try {
+      const ctx = await loadGhostContext(activeId ?? '')
+      if (ac.signal.aborted) return
+      const text = await aiInlineSuggest(before, {
+        projectContext: ctx.projectContext,
+        styleSpec: ctx.styleSpec,       // ② 《写作规范》负面清单（可关时上面已置空）
+        styleNote: companionStyleNote,  // ③ 作者自定义补充
+        length: companionLen,
+        deAiFlavor: companionDeAi,
+        signal: ac.signal,
+      })
+      if (ac.signal.aborted) return
+      ghostFail.current = 0
+      ghostCache.current.set(key, text)
+      if (ghostCache.current.size > GHOST_CACHE_MAX) {
+        const oldest = ghostCache.current.keys().next()
+        if (!oldest.done) ghostCache.current.delete(oldest.value)
+      }
+      // 空串 = 模型没给出合适建议 → 静默不显示（宁缺毋滥：显示烂建议比不显示更烦人）
+      if (text) setGhost({ text, at })
+    } catch (e) {
+      if (ac.signal.aborted || isCancelled(e)) return
+      ghostFail.current += 1
+      if (ghostFail.current >= GHOST_MAX_FAILS) {
+        showToast(`AI 伴写已连续失败 ${GHOST_MAX_FAILS} 次，已自动停用（可在工具栏重新开启）`, 'error')
+      }
+    } finally {
+      if (!ac.signal.aborted) setGhostBusy(false)
+    }
+  }, [activeId, companionLen, companionDeAi, companionStyleNote, loadGhostContext])
+
+  /**
+   * 伴写主循环：光标 / 正文变化 → 800ms 防抖 → 请求 → 透出 ghost。
+   * 前置条件全部满足才发请求：已开启 · 模型就绪 · 无选区 · 光标后无正文 · 前文够长 · 未熔断。
+   */
+  useEffect(() => {
+    if (!companion || !aiReady || !active) { setGhost(null); return }
+    if (ghostFail.current >= GHOST_MAX_FAILS) { setGhost(null); return }
+    // 光标位置必须夹到当前正文长度内：切章后旧光标值可能越界，不夹会算出"指向章外"的建议
+    const at = Math.min(caret, draftContent.length)
+    const s = selRef.current
+    // 三种情况一律不显示、并中断在途请求：有选区（整段要改，不打扰）/ 光标后已有正文（ghost 无处安放）/ 前文太短
+    const blocked = (!!s && s.end > s.start) || draftContent.slice(at).trim() !== '' || ghostBefore(at).trim().length < 12
+    if (blocked) {
+      ghostAbort.current?.abort()
+      setGhost(null)
+      return
+    }
+    // 位置变了就撤掉旧建议（避免"建议属于旧光标位置"造成错位插入）
+    setGhost(g => (g && g.at === at ? g : null))
+    const key = ghostKey(ghostBefore(at))
+    const cached = ghostCache.current.get(key)
+    if (cached !== undefined) {
+      if (cached) setGhost({ text: cached, at })
+      return
+    }
+    const timer = window.setTimeout(() => { void fireGhost(ghostBefore(at), at, key) }, GHOST_DEBOUNCE_MS)
+    ghostTimer.current = timer
+    return () => {
+      window.clearTimeout(timer)
+      if (ghostTimer.current === timer) ghostTimer.current = null
+    }
+  }, [companion, companionLen, companionDeAi, companionStyleNote, aiReady, active, activeId, draftContent, caret, fireGhost, ghostKey])
+
+  /**
+   * 切章 / 卸载时必须清干净：ghost 是「针对某一章某个位置」算出来的，
+   * 跨章残留会让 Tab 把上一章的建议插进新章的同一偏移处 —— 属于数据事故，别删这段。
+   */
+  useEffect(() => () => {
+    ghostAbort.current?.abort()
+    if (ghostTimer.current) window.clearTimeout(ghostTimer.current)
+  }, [])
+  useEffect(() => {
+    setGhost(null)
+    ghostAbort.current?.abort()
+  }, [activeId])
+
+  /** 丢弃建议：中断在途请求并清空 ghost（打字/Esc/移动光标都会走到这里） */
+  const dismissGhost = () => {
+    ghostAbort.current?.abort()
+    setGhost(null)
+  }
+
+  /**
+   * 采纳建议：把 ghost 文本插到它所属的光标位置。
+   * 走 onContentChange（受控组件 + 保住自动保存链路），插入后把光标移到插入点之后。
+   * @returns 是否真的采纳了（供按键处理决定要不要 preventDefault）
+   */
+  const acceptGhost = () => {
+    if (!ghost) return false
+    // 再夹一次：从"算出建议"到"按下 Tab"之间，正文理论上不会变（变了就会清掉 ghost），
+    // 但夹一次的成本是零，换来的是绝不可能越界写入。
+    const at = Math.min(ghost.at, draftContent.length)
+    const next = draftContent.slice(0, at) + ghost.text + draftContent.slice(at)
+    const pos = at + ghost.text.length
+    setGhost(null)
+    onContentChange(next)
+    // 受控组件：要等 React 把新 value 写回 textarea 之后才能设光标位置
+    requestAnimationFrame(() => {
+      const ta = taRef.current
+      if (!ta) return
+      ta.setSelectionRange(pos, pos)
+      selRef.current = { start: pos, end: pos }
+      setCaret(pos)
+    })
+    return true
+  }
+
+  /** 编辑器按键：先处理伴写的采纳/丢弃/手动触发，其余按键原样放行 */
+  const onEditorKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape' && ghost) { dismissGhost(); return }
+    // Tab 采纳（必须 preventDefault，否则 textarea 默认会跳焦点）
+    if (e.key === 'Tab' && ghost && !e.shiftKey && acceptGhost()) { e.preventDefault(); return }
+    // → 采纳：仅当光标已在正文末尾（避免与"向右移光标"的日常操作打架）
+    if (e.key === 'ArrowRight' && ghost) {
+      const ta = taRef.current
+      if (ta && ta.selectionStart === draftContent.length && acceptGhost()) { e.preventDefault(); return }
+    }
+    // 手动触发 Alt+\（复刻 WPS 的手动伴写键）：重置熔断并立即请求，不等防抖
+    if (e.altKey && (e.key === '\\' || e.code === 'Backslash')) {
+      e.preventDefault()
+      ghostFail.current = 0
+      const at = taRef.current?.selectionStart ?? caret
+      const before = ghostBefore(at)
+      if (before.trim().length >= 12) void fireGhost(before, at, ghostKey(before))
+      return
+    }
   }
   /** 建议段模式：AI 改稿以标记块写入原文下方，绝不动原文；作者自行取舍 */
   const insertAdvice = (rewritten: string, sel: { start: number; end: number } | null) => {
@@ -1238,6 +1469,59 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               <Button variant="bare" iconOnly size="sm" onClick={() => setHighlightOn(o => !o)} className={`p-1 transition-colors shrink-0 ${highlightOn ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="引用名内联高亮：正文中标记已登记的角色 / 设定条目名称（开 / 关）">
                 <Highlighter size={14} />
               </Button>
+              {/* 2.2.0 AI 伴写开关（默认关闭）：停笔自动在光标处续写一句话，Tab 采纳才落正文 */}
+              <Button variant="bare" iconOnly size="sm"
+                disabled={!aiReady}
+                onClick={() => setCompanion(o => { const v = !o; localStorage.setItem('novel-companion', v ? '1' : '0'); if (!v) dismissGhost(); return v })}
+                className={`p-1 transition-colors shrink-0 ${!aiReady ? 'text-ink-600 cursor-not-allowed' : companion ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
+                title={!aiReady
+                  ? 'AI 伴写：未配置 AI 模型'
+                  : companion
+                    ? 'AI 伴写：已开启（停笔后自动在光标处给出续写建议，Tab 采纳 / Esc 丢弃，继续打字即忽略；Alt+\\ 立即手动触发）'
+                    : 'AI 伴写：已关闭（开启后停笔会在光标处透出一句浅灰续写建议，Tab 采纳才落进正文）'}>
+                {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
+              </Button>
+              {/* 伴写设置：不预设"文风枚举"，只给长度档位 + 去 AI 味 + 一句自定义补充 */}
+              <HelpPopover title="AI 伴写" width="24rem" size={13} className="shrink-0">
+                {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Tab 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· Alt+\\ 可随时手动触发一次。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面这句自定义补充。\n\n'}
+                <div className="mt-1.5 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-ink-400 shrink-0">建议长度</span>
+                    <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md border border-ink-700 bg-ink-800/60">
+                      {(['short', 'sentence', 'two'] as InlineSuggestLength[]).map(k => (
+                        <Button variant="bare" type="button" key={k}
+                          onClick={() => { setCompanionLen(k); localStorage.setItem('novel-companion-len', k) }}
+                          className={`px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap transition-colors ${companionLen === k ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
+                          title={`不超过 ${INLINE_SUGGEST_LIMITS[k].chars} 字`}>
+                          {INLINE_SUGGEST_LIMITS[k].label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-ink-400 shrink-0">去 AI 味</span>
+                    <Button variant="bare" type="button"
+                      onClick={() => { const v = !companionDeAi; setCompanionDeAi(v); localStorage.setItem('novel-companion-deai', v ? '1' : '0') }}
+                      className={`px-2 py-0.5 rounded border text-[11px] whitespace-nowrap transition-colors ${companionDeAi ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
+                      title="约束模型不用「仿佛 / 不禁 / 然而」这类套话开头、不堆四字成语与排比、不写空泛升华（默认开）">
+                      {companionDeAi ? '已开启' : '已关闭'}
+                    </Button>
+                    <span className="text-ink-500 text-[10px]">压制套话与排比，默认开</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-ink-400 shrink-0">文风补充</span>
+                    <Button variant="bare" type="button"
+                      onClick={() => setStyleNotePrompt(true)}
+                      className={`px-2 py-0.5 rounded border text-[11px] whitespace-nowrap max-w-[13rem] transition-colors ${companionStyleNote ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
+                      title={companionStyleNote || '点一句话描述你想要的文风，例如"冷硬白描，少心理活动，多用短对白"'}>
+                      <span className="truncate">{companionStyleNote || '未设置（点击填写）'}</span>
+                    </Button>
+                  </div>
+                  <div className="text-ink-500 text-[10px] leading-relaxed">
+                    全部为本机记忆，换章不重置。伴写只用本地/你配置的模型，正文不外发。
+                  </div>
+                </div>
+              </HelpPopover>
               <Button variant="icon-amber" onClick={() => onNavigate?.('chapter-outline')} className="p-1 shrink-0" title="前往本章大纲（章节细纲）">
                 <BookOpen size={14} />
               </Button>
@@ -1262,7 +1546,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：一键排版，统一段落首行缩进两个全角空格并规范空行；\n· 拼写图标：校对（本章），本地错别字直接查，语病/逻辑/设定矛盾需接入 AI。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（深度校对/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存修改时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关；\n· 书本：前往本章大纲（章节细纲）；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：一键排版，统一段落首行缩进两个全角空格并规范空行；\n· 拼写图标：校对（本章），本地错别字直接查，语病/逻辑/设定矛盾需接入 AI。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（深度校对/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存修改时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写开关（默认关闭）。开启后停笔会在光标处透出一句浅灰续写建议——Tab 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；Alt+\\ 可手动触发（需接入模型，其右侧问号里有长度档位 / 去 AI 味 / 文风补充三项设置）；\n· 书本：前往本章大纲（章节细纲）；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
             </div>
 
@@ -1314,6 +1598,23 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     dangerouslySetInnerHTML={{ __html: highlightHTML }}
                   />
                 )}
+                {/* 2.2.0 AI 伴写 ghost 叠层：与高亮层同层（z-0）、盒模型逐项照抄（inset-0 + 同一套 px/pt/pb +
+                    同一字号行高），否则 ghost 文字会与光标位置错位。
+                    before / after 两段全透明（真字由上面的 textarea 或高亮层显色），只有建议段着色，
+                    因此**只在光标后无正文时显示** —— 否则建议会压到后面的字上糊成一片。 */}
+                {companion && ghost && (
+                  <div
+                    ref={ghostRef}
+                    aria-hidden
+                    className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent px-6 md:px-8 pt-6 pb-[40vh]"
+                    style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                  >
+                    {/* 三段必须分行写：JSX 会吃掉"含换行的空白"，不会插入多余空格而把 ghost 挤偏一个字宽 */}
+                    <span style={{ color: 'transparent' }}>{draftContent.slice(0, ghost.at)}</span>
+                    <span className="ai-ghost">{ghost.text}</span>
+                    <span style={{ color: 'transparent' }}>{draftContent.slice(ghost.at)}</span>
+                  </div>
+                )}
                 {/* textarea 绝对铺满编辑区（inset-0）：滚动条天然贴最外缘（铺满=窗口右缘 / 限宽=文本块右缘），
                     自身 padding（pt-6 pb-[40vh] px-6/8）撑出死区，滚动条落在 padding 里不压文字；全编辑区唯一滚动元素。
                     ⚠️ pb-[40vh] 是「滚过结尾」留白（2.0.1）：末尾留出约四成视口的可滚动空间，写最后一行时能把它
@@ -1324,6 +1625,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   value={draftContent}
                   onChange={e => onContentChange(e.target.value)}
                   onKeyUp={() => { syncTypewriter(draftContent); syncSel() }}
+                  onKeyDown={onEditorKeyDown}
                   onClick={() => { syncTypewriter(draftContent); syncSel() }}
                   onSelect={syncSel}
                   onMouseUp={syncSel}
@@ -1509,6 +1811,25 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         defaultValue={namePrompt?.def ?? ''}
         onSubmit={submitNamePrompt}
         onCancel={() => setNamePrompt(null)}
+      />
+      {/* 2.2.0 伴写：自定义文风补充（本机记忆，只影响 AI 伴写的建议口吻） */}
+      <PromptModal
+        open={styleNotePrompt}
+        title="伴写文风补充"
+        label="用一句话描述你想要的文风（留空 = 只用前文与《写作规范》锚定）"
+        defaultValue={companionStyleNote}
+        placeholder="例如：冷硬白描，少心理活动，多用短对白"
+        allowEmpty
+        confirmText="保存"
+        onSubmit={v => {
+          const val = (v || '').trim()
+          setCompanionStyleNote(val)
+          if (val) localStorage.setItem('novel-companion-style', val)
+          else localStorage.removeItem('novel-companion-style')
+          setStyleNotePrompt(false)
+          showToast(val ? '已设置伴写文风补充' : '已清空伴写文风补充', 'success')
+        }}
+        onCancel={() => setStyleNotePrompt(false)}
       />
     </div>
   )
