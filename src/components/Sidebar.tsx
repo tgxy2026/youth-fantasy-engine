@@ -291,9 +291,8 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
               {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
             </HelpPopover>
           </span>
-          <Button variant="bare" onClick={toAutoZoom}
-            title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}
-            className={`shrink-0 rounded border px-1 py-0.5 text-[10px] transition-colors ${zoomAuto ? 'border-emerald-500/40 text-emerald-300' : 'border-ink-600 text-ink-400 hover:text-ink-200'}`}>
+          <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0"
+            title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
             自动
           </Button>
           <div className="flex items-center gap-1 ml-auto">

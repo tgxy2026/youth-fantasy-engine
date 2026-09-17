@@ -323,14 +323,14 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
             <div className="flex items-center justify-between gap-1.5 text-[10px] text-ink-500 px-0.5">
               <span>推演信息</span>
               <div className="flex rounded-md overflow-hidden border border-ink-700">
-                <Button variant="bare" onClick={() => setBriefMode(false)} className={`px-2 py-0.5 transition-colors ${!briefMode ? 'bg-amber/20 text-amber' : 'text-ink-400 hover:text-ink-200'}`} title="喂入章节全要素：推演更准，但耗时长、费 token">完整</Button>
-                <Button variant="bare" onClick={() => setBriefMode(true)} className={`px-2 py-0.5 transition-colors ${briefMode ? 'bg-amber/20 text-amber' : 'text-ink-400 hover:text-ink-200'}`} title="只喂「章节压缩摘要」（约原文 1/10）：速度快、省 token，适合快速过方向">简略</Button>
+                <Button variant="toggle" size="xs" selected={!briefMode} onClick={() => setBriefMode(false)} title="喂入章节全要素：推演更准，但耗时长、费 token">完整</Button>
+                <Button variant="toggle" size="xs" selected={briefMode} onClick={() => setBriefMode(true)} title="只喂「章节压缩摘要」（约原文 1/10）：速度快、省 token，适合快速过方向">简略</Button>
               </div>
             </div>
             <Button variant="primary" disabled={!ai.ready || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
               {generating ? <><Loader2 size={12} className="animate-spin" /> 生成中 {generating.i}/{generating.total}</> : <><Sparkles size={12} /> 生成推演</>}
             </Button>
-            <Button onClick={clearCanvas} variant="secondary" size="md" className="w-full flex items-center justify-center text-[11px]"><Eraser size={11} /> 清空推演本</Button>
+            <Button onClick={clearCanvas} variant="danger" size="md" className="w-full flex items-center justify-center text-[11px]"><Eraser size={11} /> 清空推演本</Button>
             {!ai.ready && <div className="text-[10px] text-ink-500 text-center">未配置 AI 模型，生成按钮已禁用</div>}
           </div>
         </div>

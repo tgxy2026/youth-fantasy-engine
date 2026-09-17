@@ -516,10 +516,9 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                     <div className="mt-1 text-[10px] text-ink-500">改动即自动同步到「{doc.source}」</div>
                                   ) : (
                                     <div className="flex gap-1.5 mt-1">
-                                      <Button variant="primary" disabled={savingField} onClick={() => saveField(doc, f, draft)} className="px-2 py-0.5 text-[10.5px] rounded transition-colors disabled:opacity-50">保存</Button>
-                                      <Button variant="bare"
+                                      <Button variant="primary" size="xs" disabled={savingField} onClick={() => saveField(doc, f, draft)}>保存</Button>
+                                      <Button variant="secondary" size="xs"
                                         onClick={() => setEditing(null)}
-                                        className="px-2 py-0.5 text-[10.5px] text-ink-400 border border-ink-700 rounded hover:text-ink-200 transition-colors"
                                       >取消</Button>
                                     </div>
                                   )}
