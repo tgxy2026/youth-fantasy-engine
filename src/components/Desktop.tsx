@@ -6,6 +6,7 @@ import {
   chooseDesktopDataDir, relocateDesktopDataFile, resetDesktopDataPath,
 } from '../lib/desktop'
 import { confirmDialog, showToast } from './dialogs'
+import { Z } from '../lib/zLayer'
 import { Button } from './Button'
 
 /**
@@ -160,7 +161,11 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
       : 'border-ink-600/80 bg-ink-900/90 text-ink-300 shadow-lg backdrop-blur')
 
   return (
-    <div className={embedded ? 'flex flex-col gap-1.5 pt-1' : 'fixed bottom-3 left-3 z-50 flex flex-col gap-1.5'}>
+    // 🔴 非内嵌分支当前无调用方（两个调用点都传 embedded，见文件头注释），
+    //    但它是一条「左下角全局浮层」，与红线「左下角只准 DataDock」相冲 —— 保留仅为兼容，
+    //    层号统一走 Z.dock，别再写 z-50。
+    <div className={embedded ? 'flex flex-col gap-1.5 pt-1' : 'fixed bottom-3 left-3 flex flex-col gap-1.5'}
+      style={embedded ? undefined : { zIndex: Z.dock }}>
       {/* 第一行：保存状态 + 导出 / 导入 */}
       <div className="flex items-center gap-1.5">
         <Button variant="bare"

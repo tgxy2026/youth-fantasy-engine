@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import jiewenjiPng from '../assets/jiewenji.png'
 import { Button } from './Button'
+import { Z } from '../lib/zLayer'
 
 interface Props {
   /** 当前是否在正文编辑器页面：编辑器内点击唤起完整面板；其他页面弹出引导 */
@@ -87,8 +88,8 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
 
   return (
     <div
-      className="fixed right-0 z-40 select-none"
-      style={{ top: `${topPct}%`, transform: 'translateY(-50%)' }}
+      className="fixed right-0 select-none"
+      style={{ top: `${topPct}%`, transform: 'translateY(-50%)', zIndex: Z.sprite }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

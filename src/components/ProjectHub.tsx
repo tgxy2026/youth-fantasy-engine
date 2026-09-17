@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import Tooltip from './Tooltip'
+import { Z } from '../lib/zLayer'
 import BackupManager from './BackupManager'
 import FeatureSelectModal from './FeatureSelectModal'
 import { confirmDialog, showToast } from './dialogs'
@@ -535,7 +536,8 @@ export default function ProjectHub({ onOpen }: Props) {
         src={jiewenjiGufeng}
         alt="古风看板娘"
         draggable={false}
-        className="fixed bottom-4 right-4 z-20 hidden sm:block w-[160px] md:w-[240px] lg:w-[320px] xl:w-[380px] max-h-[82vh] h-auto pointer-events-none select-none drop-shadow-2xl"
+        className="fixed bottom-4 right-4 hidden sm:block w-[160px] md:w-[240px] lg:w-[320px] xl:w-[380px] max-h-[82vh] h-auto pointer-events-none select-none drop-shadow-2xl"
+        style={{ zIndex: Z.sprite }}
       />
     </div>
   )

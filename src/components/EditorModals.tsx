@@ -67,6 +67,7 @@ export function SensitiveCheck({ content, onApply, onClose }: {
 import { scanTypos, replaceTypos } from '../lib/typoWords'
 import HelpPopover from './HelpPopover'
 import { Button } from './Button'
+import { Z } from '../lib/zLayer'
 
 /** 各类型对应的色标签 */
 const PTF_BADGE: Record<string, string> = {
@@ -515,7 +516,7 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
 
   if (mode === 'none') {
     return (
-      <div className="fixed inset-0 z-50 bg-ink-950 flex items-center justify-center">
+      <div className="fixed inset-0 bg-ink-950 flex items-center justify-center" style={{ zIndex: Z.modal }}>
         <div className="w-[440px] max-w-[90vw] bg-ink-850 border border-ink-700 rounded-2xl p-8 text-center">
           <div className="w-14 h-14 mx-auto rounded-full bg-amber/15 border border-amber/30 flex items-center justify-center mb-4">
             <Lock size={22} className="text-amber" />
@@ -539,7 +540,7 @@ export function FocusLock({ chapter, initialContent, onSave, onExit }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-ink-950 flex flex-col">
+    <div className="fixed inset-0 bg-ink-950 flex flex-col" style={{ zIndex: Z.modal }}>
       {/* 顶部进度条 */}
       <div className="h-1 bg-ink-800 shrink-0">
         <div className={`h-full transition-all duration-500 ${goalMet ? 'bg-emerald-400' : 'bg-amber'}`} style={{ width: `${progress}%` }} />

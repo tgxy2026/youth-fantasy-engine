@@ -1,5 +1,6 @@
 import { Save } from 'lucide-react'
 import { Button } from './Button'
+import { Z } from '../lib/zLayer'
 
 /**
  * 页面内的「保存」悬浮球（固定在右下角）。
@@ -23,7 +24,7 @@ export function SaveFab({
   title?: string
 }) {
   return (
-    <div className="fixed bottom-6 right-6 z-20">
+    <div className="fixed bottom-6 right-6" style={{ zIndex: Z.fab }}>
       <Button
         onClick={onClick}
         variant="primary"

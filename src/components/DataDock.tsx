@@ -2,6 +2,7 @@ import CloudFileSyncBar from './CloudFileSyncBar'
 import { DesktopDataBar } from './Desktop'
 import { DESKTOP } from '../lib/desktop'
 import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
+import { Z } from '../lib/zLayer'
 
 /**
  * 左下角统一「数据坞」—— 全应用**唯一允许**的全局浮层（#032 布局规范化）。
@@ -32,7 +33,7 @@ export default function DataDock() {
   if (!DESKTOP && !DEV) return null
 
   return (
-    <div className="fixed bottom-4 left-4 z-40 flex w-[15rem] flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 py-2 shadow-xl backdrop-blur">
+    <div className="fixed bottom-4 left-4 flex w-[15rem] flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 py-2 shadow-xl backdrop-blur" style={{ zIndex: Z.dock }}>
       {!DESKTOP && DEV && (
         <div className="mb-1.5 rounded-md border border-amber/30 bg-amber/10 px-2 py-1 text-[11px] leading-snug text-amber">
           开发预览环境：桌面版专属功能需在打包版中使用
