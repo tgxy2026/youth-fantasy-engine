@@ -753,7 +753,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           )}
           {/* 多行批量删除按钮（人物关系 / 历史事件支持） */}
           {['relations', 'history'].includes(tab.id) && rows.length > 0 && (
-            <Button variant="bare"
+            <Button variant="danger" // 破坏性操作用 danger 令牌（原为 bare + 手写红样式，与 danger 输出等价）
               onClick={async () => {
                 if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
                 retireCodes(rows).then(() => {  // 全部编号登记进退役池，防止复用
@@ -762,7 +762,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                 setRows([])
                 setDrafts({})
               }}
-              className="flex items-center gap-1.5 px-3.5 h-9 bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg text-[13px] font-medium hover:bg-red-500/20 transition-colors"
+              className="font-medium"
             >
               <Trash2 size={14} /> 清空全部
             </Button>

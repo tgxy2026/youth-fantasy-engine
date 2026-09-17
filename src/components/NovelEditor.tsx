@@ -1113,6 +1113,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 </Button>
                 {exportOpen && (
                   <>
+                    {/* 全屏透明遮罩：本页「点击外部关闭」就靠它（没有额外的 document 监听），
+                        故有意 fixed inset-0。z 取页内局部层号 —— 与 JieWenJi:417 / 本文件 :1386 /
+                        Sidebar:135 的页内面板同一约定；不取 Z 是因为这些是**页内**面板、非全站常驻角标。 */}
                     <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
                     <div className="absolute right-0 top-full mt-1 z-40 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 max-h-[60vh] overflow-y-auto">
                       <Button variant="bare"

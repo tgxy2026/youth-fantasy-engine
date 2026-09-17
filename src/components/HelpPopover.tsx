@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { HelpCircle } from 'lucide-react'
 import { Button } from './Button'
 import { Z } from '../lib/zLayer'
+import { foldVh } from '../lib/theme'
 
 interface Props {
   title: string
@@ -115,8 +116,9 @@ export default function HelpPopover({
             top: pos?.top ?? -9999,
             width: pos?.w ?? remToPx(width),
             visibility: pos ? 'visible' : 'hidden',
+            maxHeight: foldVh('70vh'), // vh 随界面缩放折算，否则 160% 下视觉高度≈112vh，说明的后半段落到视口外
           }}
-          className="fixed bg-ink-800 border border-ink-600 rounded-lg shadow-2xl p-3 text-[11.5px] text-ink-200 leading-relaxed max-h-[70vh] overflow-y-auto"
+          className="fixed bg-ink-800 border border-ink-600 rounded-lg shadow-2xl p-3 text-[11.5px] text-ink-200 leading-relaxed overflow-y-auto"
         >
           <div className="font-semibold text-amber mb-1.5 flex items-center gap-1">
             <HelpCircle size={11} /> {title}

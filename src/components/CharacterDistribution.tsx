@@ -3,6 +3,7 @@ import * as db from '../lib/db'
 import type { Chapter, CardRecord } from '../lib/types'
 import { Button } from './Button'
 import { clipText } from '../lib/textClip'
+import { foldVh } from '../lib/theme'
 
 interface Props {
   onNavigate: (id: string, chapterId?: string) => void
@@ -72,7 +73,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
 
   return (
     <div className="rounded-xl border border-ink-700 bg-ink-850 p-4 overflow-hidden">
-      <div className="max-h-[68vh] overflow-auto">
+      <div className="overflow-auto" style={{ maxHeight: foldVh('68vh') }}>
         <table className="border-collapse text-[10px]">
           <thead>
             <tr>

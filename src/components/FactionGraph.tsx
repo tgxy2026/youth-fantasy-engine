@@ -4,6 +4,7 @@ import type { TableRow } from '../lib/types'
 import { Network, Users, X, ArrowUpRight } from 'lucide-react'
 import { Button } from './Button'
 import { useSvgPanZoom } from '../lib/useSvgPanZoom'
+import { foldVh } from '../lib/theme'
 
 interface Props {
   rows: TableRow[]
@@ -144,7 +145,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
   }
 
   return (
-    <div className="relative w-full h-[68vh] bg-ink-900 rounded-xl border border-ink-700 overflow-hidden">
+    <div className="relative w-full bg-ink-900 rounded-xl border border-ink-700 overflow-hidden" style={{ height: foldVh('68vh') }}>
       <svg
         ref={svgRef}
         className="w-full h-full touch-none cursor-grab active:cursor-grabbing select-none"

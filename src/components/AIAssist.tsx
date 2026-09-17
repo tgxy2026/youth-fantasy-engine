@@ -6,7 +6,7 @@ import {
 import AutoTextarea from './AutoTextarea'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
-import { confirmDialog } from './dialogs'
+import { confirmDialog, copyText } from './dialogs'
 import {
   type AIProvider, type ChatMessage,
   chat, loadProviders, loadActiveId, saveActiveId, typeLabel,
@@ -193,7 +193,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
   useEffect(() => () => clearTimeout(copiedTimer.current), [])
 
   const copyMsg = (id: string, content: string) => {
-    navigator.clipboard?.writeText(content)
+    void copyText(content, '已复制到剪贴板') // 走统一入口：非安全上下文有 execCommand 兜底、失败不静默
     setCopied(id)
     copiedTimer.current = setTimeout(() => setCopied(prev => (prev === id ? null : prev)), 1200)
   }

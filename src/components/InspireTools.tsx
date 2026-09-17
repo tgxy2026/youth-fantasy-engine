@@ -5,6 +5,7 @@ import {
   Sparkles, Star, Trash2, RefreshCw, Check
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
+import { copyText } from './dialogs'
 import AIAssist from './AIAssist'
 import AIConfigPanel from './AIConfigPanel'
 import SearchSettingsPanel from './SearchSettingsPanel'
@@ -65,7 +66,7 @@ export default function InspireTools() {
     await db.setSetting('nameFavorites', next)
   }
   const copy = (name: string) => {
-    navigator.clipboard?.writeText(name)
+    void copyText(name, '已复制到剪贴板') // 走统一入口：非安全上下文有 execCommand 兜底、失败不静默
     setCopied(name)
     clearTimeout(copiedTimer.current)
     copiedTimer.current = setTimeout(() => setCopied(''), 1200)

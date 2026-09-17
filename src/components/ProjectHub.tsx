@@ -9,6 +9,7 @@ import {
 import HelpPopover from './HelpPopover'
 import Tooltip from './Tooltip'
 import { Z } from '../lib/zLayer'
+import { foldVh } from '../lib/theme'
 import BackupManager from './BackupManager'
 import FeatureSelectModal from './FeatureSelectModal'
 import { confirmDialog, showToast } from './dialogs'
@@ -536,8 +537,8 @@ export default function ProjectHub({ onOpen }: Props) {
         src={jiewenjiGufeng}
         alt="古风看板娘"
         draggable={false}
-        className="fixed bottom-4 right-4 hidden sm:block w-[160px] md:w-[240px] lg:w-[320px] xl:w-[380px] max-h-[82vh] h-auto pointer-events-none select-none drop-shadow-2xl"
-        style={{ zIndex: Z.sprite }}
+        className="fixed bottom-4 right-4 hidden sm:block w-[160px] md:w-[240px] lg:w-[320px] xl:w-[380px] h-auto pointer-events-none select-none drop-shadow-2xl"
+        style={{ zIndex: Z.sprite, maxHeight: foldVh('82vh') }} // vh 随界面缩放折算，否则 132% 下 82vh 视觉高度≈108vh，顶部被顶出视口
       />
     </div>
   )
