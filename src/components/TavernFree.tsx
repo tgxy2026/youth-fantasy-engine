@@ -143,6 +143,7 @@ export default function TavernFree() {
   const [streaming, setStreaming] = useState(false)
   /** 润色/自动回复生成中（与 streaming 互斥但同属「正在生成」，期间禁用快捷条与发送） */
   const [assistBusy, setAssistBusy] = useState(false)
+  const [assistMode, setAssistMode] = useState<'polish' | 'auto' | null>(null)
   const [streamText, setStreamText] = useState('')
   const [phase, setPhase] = useState('')
   /**
@@ -916,7 +917,7 @@ export default function TavernFree() {
    */
   // ---------- 润色 / 自动回复（AI 实时生成文本回写输入框，绝不自动发送） ----------
   const assistWrite = useCallback(async (mode: 'polish' | 'auto') => {
-    if (streaming || assistBusy || !session || !session.userCharId) return
+    if (streaming || assistBusy || !session) return
     if (session.messages.length === 0) return           // 首轮（无历史）禁用
     if (session.endedAt) return
     if (mode === 'polish' && !input.trim()) {
@@ -925,6 +926,7 @@ export default function TavernFree() {
     }
     const original = input
     setAssistBusy(true)
+    setAssistMode(mode)
     const ctrl = new AbortController()
     abortRef.current = ctrl
     let buf = ''
@@ -955,6 +957,7 @@ export default function TavernFree() {
       }
     } finally {
       setAssistBusy(false)
+      setAssistMode(null)
       abortRef.current = null
     }
   }, [streaming, assistBusy, session, input, castCards, charCard])
@@ -970,14 +973,14 @@ export default function TavernFree() {
     { key: 'reroll', label: '重说', hint: '用同一段历史让 Ta 重说这一条（只出一个结果，说话人不变）', run: () => void reroll() },
     {
       key: 'polish',
-      label: '润色',
+      label: assistBusy && assistMode === 'polish' ? '润色中…' : '润色',
       hint: 'AI 读取你已写的文本，结合角色卡/剧本/上下文扩写润色，结果覆盖输入框（不自动发送）',
       run: () => void assistWrite('polish'),
       disabled: !canAssist,
     },
     {
       key: 'auto',
-      label: '自动回复',
+      label: assistBusy && assistMode === 'auto' ? '生成中…' : '自动回复',
       hint: 'AI 结合剧本/上下文/角色卡，替你扮演的角色写一句发言填进输入框（不自动发送）',
       run: () => void assistWrite('auto'),
       disabled: !canAssist,
