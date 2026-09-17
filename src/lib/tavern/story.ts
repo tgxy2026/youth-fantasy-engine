@@ -263,7 +263,7 @@ export function flattenStoryFields(f: StoryDraftFields): string {
 }
 
 /** 解析起草结果（导出便于单测）。拿不到设定就返回 null，绝不猜 */
-export function parseStoryDraft(raw: string): StoryDraftFields | null {
+function parseStoryDraft(raw: string): StoryDraftFields | null {
   const o = parsePlainObject(raw)
   if (!o) return null
   const name = asText(o.name).trim().slice(0, STORY_NAME_MAX)

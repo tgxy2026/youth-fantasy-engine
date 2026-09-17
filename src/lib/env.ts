@@ -16,7 +16,7 @@ import { DESKTOP } from './desktop'
 declare const __APP_VERSION__: string | undefined
 
 /** 应用版本号，由构建时 define 注入（取自 package.json）；dev / 未注入时回退到「开发版」 */
-export const APP_VERSION: string = typeof __APP_VERSION__ === 'undefined' ? '开发版' : __APP_VERSION__
+const APP_VERSION: string = typeof __APP_VERSION__ === 'undefined' ? '开发版' : __APP_VERSION__
 
 /**
  * 版本号展示文本：正式版为 `v2.1.2`，回退态为「开发版」（**不带 v 前缀**）。

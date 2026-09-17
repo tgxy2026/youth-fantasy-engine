@@ -196,7 +196,7 @@ export function firstLine(text: string, max = 50): string {
 
 // ==================== AI 起草 ====================
 
-export function buildScriptDraftSystem(): string {
+function buildScriptDraftSystem(): string {
   return [
     '你在为一段角色扮演对话写一份**简单剧本**（一场戏的设定）。作者会给一句粗略的想法，你把它补成六栏。',
     '',

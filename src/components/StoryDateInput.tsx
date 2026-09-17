@@ -9,7 +9,7 @@ interface Props {
 const STRICT_RE = /^(\d+)年(\d{1,2})月(\d{1,2})日$/
 
 /** 解析严格格式的故事内日期；解析失败返回 null */
-export function parseStoryDateParts(s: string | undefined | null): { y: number; m: number; d: number } | null {
+function parseStoryDateParts(s: string | undefined | null): { y: number; m: number; d: number } | null {
   if (!s) return null
   const m = s.trim().match(STRICT_RE)
   if (!m) return null

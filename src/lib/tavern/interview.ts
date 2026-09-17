@@ -97,7 +97,7 @@ export const STORY_LABELS: Record<string, string> = {
 
 const KIND_NAME: Record<InterviewKind, string> = { card: '角色卡', script: '剧本', story: '故事' }
 
-export function labelsOf(kind: InterviewKind): Record<string, string> {
+function labelsOf(kind: InterviewKind): Record<string, string> {
   if (kind === 'card') return CARD_LABELS
   if (kind === 'story') return STORY_LABELS
   return SCRIPT_LABELS

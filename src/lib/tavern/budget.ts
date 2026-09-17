@@ -30,7 +30,7 @@ import type { TavernMessage } from './types'
  */
 export const FIXED_OVERHEAD_CHARS = 400
 
-export function textLen(s: string | undefined): number {
+function textLen(s: string | undefined): number {
   return s ? s.length : 0
 }
 

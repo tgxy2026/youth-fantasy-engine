@@ -830,7 +830,7 @@ export function aiReadySnapshot(): AIReadyInfo {
 }
 
 /** 重新计算就绪状态，有变化才广播 */
-export async function refreshAIReady(): Promise<AIReadyInfo> {
+async function refreshAIReady(): Promise<AIReadyInfo> {
   readyLoaded = true
   let next: AIReadyInfo = AI_NOT_READY
   try {

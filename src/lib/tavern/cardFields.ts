@@ -156,7 +156,7 @@ export const CONDUCT_SPECS: StructSpec[] = [
   },
 ]
 
-export const ALL_STRUCT_SPECS: StructSpec[] = [...PROFILE_SPECS, ...CONDUCT_SPECS]
+const ALL_STRUCT_SPECS: StructSpec[] = [...PROFILE_SPECS, ...CONDUCT_SPECS]
 
 const SPECS_BY_PATH = new Map(ALL_STRUCT_SPECS.map(s => [s.path as string, s]))
 

@@ -406,7 +406,7 @@ export async function getRecentChapterTexts(n = 6, charCap = 16000): Promise<str
  *   · 叙事邻接加成 —— 紧邻的前后章 +2，隔一章 +1（连续性校验最吃这一档）
  * 台账未登记时退化为「正文中出现过的角色名」共现，仍好过纯截断。
  */
-export async function findRelatedChapters(focusChapterId: string, limit = 8): Promise<Chapter[]> {
+async function findRelatedChapters(focusChapterId: string, limit = 8): Promise<Chapter[]> {
   let vols: Volume[] = []
   let chs: Chapter[] = []
   try {

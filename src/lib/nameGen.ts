@@ -220,7 +220,7 @@ const MONSTER_SUFFIX = ['兽', '蛟', '龙', '蟒', '凤', '凰', '鹰', '狼', 
 const MONSTER_XI = ['深渊', '虚空', '影界', '灰烬', '暮光', '黑曜', '裂空', '霜寒', '黑焰', '噬魂']
 const MONSTER_XI_SUFFIX = ['巨龙', '巨魔', '骨龙', '暗影狼', '虚空行者', '深渊领主', '诅咒骑士', '邪灵', '骸骨王', '星界魔']
 
-export function genMonsterName(style = '仙侠'): string {
+function genMonsterName(style = '仙侠'): string {
   if (style === '西幻' || style === '奇幻') {
     return pick(MONSTER_XI) + pick(MONSTER_XI_SUFFIX)
   }

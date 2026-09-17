@@ -39,7 +39,7 @@ const DESC_COL: Partial<Record<SettingEntityType, string>> = {
 export const CARD_TABS = ['char-main', 'char-secondary', 'char-npc'] as const
 
 /** 人物 tier → 角色卡页签（AI 建议的归属，作者可在界面上改） */
-export const TIER_TAB: Record<string, string> = {
+const TIER_TAB: Record<string, string> = {
   主要: 'char-main',
   次要: 'char-secondary',
   NPC: 'char-npc',

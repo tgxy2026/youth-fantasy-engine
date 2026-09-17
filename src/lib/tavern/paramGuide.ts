@@ -285,7 +285,7 @@ export const GUIDE_VAR_MAX_STEP: ParamGuide = {
 }
 
 /** 联网检索：每次取几条结果喂给模型 */
-export const GUIDE_SEARCH_TOP_K: ParamGuide = {
+const GUIDE_SEARCH_TOP_K: ParamGuide = {
   min: 1, max: 10, step: 1, unit: '条',
   bands: [
     { from: 1, to: 2, name: '1–2 条', effect: '只够确认「有没有这个东西」；信息面窄，模型仍要大量依赖自己的记忆。' },

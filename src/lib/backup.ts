@@ -10,7 +10,7 @@ import { todayKey } from './date'
 const FIVE_MIN = 5 * 60 * 1000
 
 /** 今天是否已存在「每日备份」 */
-export async function hasDailyBackupToday(projectId: string): Promise<boolean> {
+async function hasDailyBackupToday(projectId: string): Promise<boolean> {
   const all = await db.listBackups(projectId)
   return all.some(b => b.kind === 'daily' && todayKey(new Date(b.createdAt)) === todayKey())
 }

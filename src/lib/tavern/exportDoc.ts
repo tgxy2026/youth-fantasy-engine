@@ -358,7 +358,7 @@ const KIND_CLASS: Record<TavernLineKind, string> = {
 }
 
 /** 正文行 → 带样式的 HTML（行首符号**原样保留**，作者能自己核对格式） */
-export function lineToHtml(line: string): string {
+function lineToHtml(line: string): string {
   const cls = KIND_CLASS[classifyTavernLine(line)]
   return `<p class="line ${cls}">${esc(line)}</p>`
 }

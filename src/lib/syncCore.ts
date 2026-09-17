@@ -91,7 +91,7 @@ export type CloudBackup = { day: string; ts: number; data: Record<string, any[]>
 export type CloudBackupMeta = { day: string; ts: number }
 
 /** 被服务端限流（429）——与网络异常区分 */
-export class RateLimitError extends Error {
+class RateLimitError extends Error {
   constructor(public retryAfter = 600) {
     super(`尝试过于频繁，请 ${Math.ceil(retryAfter / 60)} 分钟后再试`)
     this.name = 'RateLimitError'

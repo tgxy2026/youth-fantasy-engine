@@ -17,7 +17,7 @@ import { SCRIPT_FIELD_MAX, type ScriptDraftFields } from '../lib/tavern/script'
 import AutoTextarea from './AutoTextarea'
 
 /** 一个栏位的说明（写成常量，页面的「填法提示」也复用） */
-export const SCRIPT_FIELD_META: { key: keyof ScriptDraftFields; label: string; hint: string; placeholder: string; rows: number }[] = [
+const SCRIPT_FIELD_META: { key: keyof ScriptDraftFields; label: string; hint: string; placeholder: string; rows: number }[] = [
   {
     key: 'name', label: '① 名称', rows: 1,
     hint: '列表里认得出就行，不进上下文。',

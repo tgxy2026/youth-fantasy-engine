@@ -166,7 +166,7 @@ export const CARD_BUNDLE_SUFFIX = '.taverncards.json'
 /** 批量文件的格式标记（与单卡区分开，避免把整批文件当单卡解析） */
 const BUNDLE_FORMAT = 'yfe.taverncards'
 /** 批量文件上限：一批几十张卡也够用；再大就该拆文件了 */
-export const CARD_BUNDLE_MAX_CHARS = 4 * 1024 * 1024
+const CARD_BUNDLE_MAX_CHARS = 4 * 1024 * 1024
 
 export type CardBundlePayload = {
   format: string

@@ -46,7 +46,7 @@ const THANKS: { name: string; work: string }[] = [
 ]
 
 // 联系方式（导出供本地数据提醒弹窗复用，避免两处各写一份导致不同步）
-export const CONTACT_LINKS = [
+const CONTACT_LINKS = [
   { label: '青春幻想引擎交流群', value: '1106815480' },
   { label: '作者 QQ', value: '1822304733' },
   { label: '公众号', value: '咸鱼哥的双线人生' },

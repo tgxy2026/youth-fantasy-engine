@@ -20,7 +20,7 @@ export const REMIND_AFTER_DAYS = 7
  * 而变成三天一弹的骚扰（数据安全重要，但弹窗惹人烦会直接反噬口碑）。
  * 两者分开记是为了语义诚实：导出记录的是「真备份过」，稍后记录的是「只是这会儿不想看」。
  */
-export const DISMISS_DAYS = 7
+const DISMISS_DAYS = 7
 
 const DAY = 24 * 60 * 60 * 1000
 

@@ -7,7 +7,7 @@ import type { TableRow } from './types'
 export const AUTONUM_GROUPS = new Set(['世界构建', '创作管理', '运营维护'])
 
 /** 各表编号前缀（与 schema 的 codeRule 一致）；空表新增行时使用默认前缀 */
-export const CODE_PREFIX: Record<string, string> = {
+const CODE_PREFIX: Record<string, string> = {
   nations: 'N', geography: 'G', races: 'R', items: 'I', history: 'H', terms: 'T',
   foreshadow: 'F', subplots: 'LINE', secrets: 'S', changelog: 'C', ideas: 'IDEA',
   geomaps: 'MAP',

@@ -69,7 +69,7 @@ export function shapeOf(row: TableRow | undefined): SpaceShape {
 /** 按档位 n（每格 = n 公里）聚合格子：
  * 满 n×n 的块 → 一个大格（块索引坐标，渲染尺寸 G）；零散格保持 1km 格（渲染尺寸 G/n）。
  * 底层数据始终是 1km 格集合，档位只影响显示聚合与涂格笔刷大小——比例尺真实。 */
-export function aggregateCells(cells: Set<string>, n: number): { full: [number, number][]; rest: [number, number][] } {
+function aggregateCells(cells: Set<string>, n: number): { full: [number, number][]; rest: [number, number][] } {
   const full: [number, number][] = []
   const rest: [number, number][] = []
   if (n <= 1) {

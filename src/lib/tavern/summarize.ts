@@ -150,7 +150,7 @@ function journalTail(charName: string): string {
 }
 
 /** 结束本轮对话用的总结提示词：六栏 + 追加一段本场日记 */
-export function buildRoundEndSystem(charName: string, now = Date.now(), limits: SummaryLimits = {}): string {
+function buildRoundEndSystem(charName: string, now = Date.now(), limits: SummaryLimits = {}): string {
   return buildSummarySystem(charName, now, limits) + journalTail(charName)
 }
 

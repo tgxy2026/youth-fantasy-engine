@@ -310,7 +310,7 @@ export function buildVarStateBlock(a: {
 // ==================== 角色卡上的持久状态（CharVars）====================
 
 /** 空角色卡状态块：值取各变量初始值，备注为空 */
-export function emptyCharVars(keys?: VarKey[]): CharVars {
+function emptyCharVars(keys?: VarKey[]): CharVars {
   return { values: emptyVars(keys).values, notes: {} }
 }
 

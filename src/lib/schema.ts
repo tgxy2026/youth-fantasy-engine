@@ -61,7 +61,7 @@ export const CHAPTER_LEDGER_COLUMNS: TableColumn[] = [
 ]
 
 // ============ 卷台账（按卷建表）的 tabId 约定与合成 ============
-export const VOLUME_LEDGER_PREFIX = 'chapter-vol-'
+const VOLUME_LEDGER_PREFIX = 'chapter-vol-'
 export function getVolumeLedgerTabId(volumeId: string) { return `${VOLUME_LEDGER_PREFIX}${volumeId}` }
 export function isVolumeLedgerTab(id: string) { return id.startsWith(VOLUME_LEDGER_PREFIX) }
 /** 从卷台账 tabId 反解出真实的卷库 id（去掉 `chapter-vol-` 前缀）；若传入的本身就是卷 id 则原样返回 */

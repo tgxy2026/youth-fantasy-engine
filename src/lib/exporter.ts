@@ -200,7 +200,7 @@ function hasContent(data: Record<string, string>): boolean {
   return Object.values(data).some(v => v && v.trim())
 }
 
-export async function buildSettingCompendium(projectName: string): Promise<string> {
+async function buildSettingCompendium(projectName: string): Promise<string> {
   const lines: string[] = [`# ${projectName} · 设定集`, '']
   for (const tab of TABS) {
     if (tab.type === 'dashboard' || tab.type === 'guide' || tab.type === 'about' || tab.id === 'editor') continue

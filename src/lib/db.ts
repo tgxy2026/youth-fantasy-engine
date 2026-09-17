@@ -1352,7 +1352,7 @@ export async function listBackups(projectId: string): Promise<BackupRecord[]> {
   return all.filter(b => b.projectId === projectId).sort((a, b) => b.createdAt - a.createdAt)
 }
 
-export async function getBackup(id: string): Promise<BackupRecord | undefined> {
+async function getBackup(id: string): Promise<BackupRecord | undefined> {
   return ops.get<BackupRecord>('backups', id)
 }
 

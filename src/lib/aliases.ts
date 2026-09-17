@@ -6,7 +6,7 @@
 import { TABS } from './schema'
 
 /** 把「别称」字段值拆成多个别名：顿号 / 逗号 / 分号 / 空白 均视为分隔符 */
-export function splitAliases(v: string | undefined | null): string[] {
+function splitAliases(v: string | undefined | null): string[] {
   if (!v) return []
   return v
     .split(/[，,、;；\s]+/)
