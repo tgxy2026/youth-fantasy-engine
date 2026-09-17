@@ -1357,8 +1357,9 @@ export default function TavernFree() {
                     )}
                     <div className="text-[10.5px] text-ink-500 flex flex-wrap items-center gap-2">
                       {/* 场景与记忆新鲜度已收进下方「状态」一览（同一信息不写两处）；
-                          这里只留它不显示的：心情（这是**当前页签角色**的心情）与整理进度 */}
-                      // 这里的心情来自**日常推进**（Ta 这几天过得怎么样），与右栏「本场数值」里的 mood 是两回事
+                          这里只留它不显示的：心情（这是**当前页签角色**的心情）与整理进度。
+                          心情来自**日常推进**（Ta 这几天过得怎么样），与右栏「本场数值」里的 mood 是两回事。
+                          ⚠️ 注释必须写在 JSX 注释括号里：写在 JSX 子节点区的 `//` 不是注释，会被当字面文本直接渲染出来。 */}
                       {daily?.mood && <span className="text-amber/80">这几天的心情：{daily.mood}</span>}
                       {ending && (
                         <span className="text-amber">
