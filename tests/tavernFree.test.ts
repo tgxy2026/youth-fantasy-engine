@@ -600,7 +600,9 @@ async function main() {
     const { system: sAssist } = await buildFreeSystem(sessUser, [ai, user], st, { assist: 'polish' })
     ok('assist 模式：system 含「代这个角色撰写他这一轮」', sAssist.includes('代这个角色撰写他这一轮'))
     ok('assist 模式：userChar 块不再含「不要代写、不要替 Ta 决定」', !sAssist.includes('不要代写、不要替 Ta 决定'))
-    ok('assist 模式：self 层钉死「代写用户这条发言」任务', sAssist.includes('帮屏幕后的用户') && sAssist.includes('只输出台词本身'))
+    ok('assist 模式：self 层钉死「代写」任务且强制第一人称视角', sAssist.includes('第一人称视角') && sAssist.includes('只输出台词本身'))
+    ok('assist 模式：点名用户扮演的角色来代写（苏念），不是 AI 角色', sAssist.includes('代「苏念」撰写他这一轮要发送的发言'))
+    ok('assist 模式：旧「你扮演：<AI 角色>」框架被整体替换（视角不会反过来）', !sAssist.includes('你扮演：楚楠'))
 
     const { system: sNormal } = await buildFreeSystem(sessUser, [ai, user], st)
     ok('普通模式：userChar 块仍含「不要代写」红线（原行为零改动）', sNormal.includes('不要代写、不要替 Ta 决定'))
