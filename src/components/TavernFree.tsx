@@ -1088,7 +1088,7 @@ export default function TavernFree() {
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       {/* 顶部：只放「本场」的操作，导航（选/新建）都在左栏 */}
-      <header className="flex flex-wrap items-center gap-2 border-b border-ink-800 pb-3">
+      <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-800 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">自由对话</h1>
 
         <HelpPopover title="自由对话怎么用" width="24rem" size={14}>
@@ -1096,7 +1096,7 @@ export default function TavernFree() {
 
   • 顶部几件：Ta最近几天（每日小结）、结束本轮对话（整理记忆、写日记、结算本场数值、检查要不要改设定，
     然后这一场归档为只读）、导出。
-  • 右侧常驻「本场状态」：好感 / 信任 / 剧情进度 / 心情 这些即时数值（可直接改，改完回车生效），以及在场由 AI 扮演的角色。
+  • 右侧常驻「本场状态」：好感 / 信任 / 精神 / 心情 / 地点 这些即时数值（可直接改，改完回车生效），以及在场由 AI 扮演的角色。
   • 多角色同场时点头像可指定下一位接话；「在场调度」里能静音某个人、调健谈度。
   • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它只在点「结束本轮对话」时才整理，
     所以聊天过程中不会被整理任务卡住；整理好的记忆与日记在「角色卡片」页里看。

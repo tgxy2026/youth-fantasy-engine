@@ -746,13 +746,13 @@ export default function TavernCard() {
   const actionButtons = (
     <>
       <Button
-        variant="secondary" size="md" onClick={() => void duplicate()}
+        variant="secondary" size="sm" onClick={() => void duplicate()}
         title="四章照抄一份新卡，可在它基础上改；记忆与日常状态不复制"
       >
         复制为新卡
       </Button>
-      <Button variant="danger" size="md" onClick={remove}>删除</Button>
-      <Button variant="primary" size="md" disabled={!dirty || saving} onClick={save}>
+      <Button variant="danger" size="sm" onClick={remove}>删除</Button>
+      <Button variant="primary" size="sm" disabled={!dirty || saving} onClick={save}>
         {saving ? '保存中…' : '保存'}
       </Button>
     </>
@@ -1161,7 +1161,7 @@ export default function TavernCard() {
                     <ul className="mt-1 space-y-1 text-[11px] text-ink-400 leading-relaxed">
                       <li>
                         <span className="text-amber/90">① 格式必须和你要的输出完全一致。</span>
-                        示例里若写「名字：台词」，正式输出也会带上名字前缀 —— <span className="text-ink-200">把名字单独起一行同样算</span>，人称甚至被带偏成第三人称。
+                        示例里若写「名字：台词」，正式输出也会带上名字前缀 —— <span className="text-ink-200">把名字单独起一行同样算</span>，对白会被写成旁白叙述（如「小满说道」），而不是人物自己开口。
                         <span className="text-ink-200">正确做法：对方的台词用 〖对方〗 标出来（这是给模型看的输入侧标注，不在输出字母表里），你这侧的对白不加任何前缀。</span>
                       </li>
                       <li>

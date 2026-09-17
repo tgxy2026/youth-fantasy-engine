@@ -209,7 +209,7 @@ export async function advanceDaily(args: AdvanceArgs): Promise<AdvanceResult> {
   const user = [
     '〖Ta的角色卡〗',
     `名字：${char.name}`,
-    char.world.trim() ? `世界：${char.world.trim()}` : '',
+    char.world.trim() ? `角色与设定的关系：${char.world.trim()}` : '',
     char.profile.core.trim() ? `内核：${char.profile.core.trim()}` : '',
     char.profile.speech.trim() ? `语言特征：${char.profile.speech.trim()}` : '',
     char.profile.cannot.trim() ? `做不到的事：${char.profile.cannot.trim()}` : '',

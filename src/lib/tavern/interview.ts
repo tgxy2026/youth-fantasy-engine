@@ -42,7 +42,7 @@ export const CARD_TOPICS: InterviewTopic[] = [
   { key: 'speech', label: '说话方式', ask: '怎么说话（句子长短、口头禅、怎么称呼别人）', fields: ['speech'] },
   { key: 'relations', label: '关系', ask: '跟谁有牵扯、什么关系（有具体名字更好）', fields: ['relations'] },
   { key: 'limits', label: '底线与边界', ask: 'Ta 绝不会做什么、做不到什么；以及 Ta 知道什么、不知道什么', fields: ['cannot', 'knowledge'] },
-  { key: 'conduct', label: '扮演规范', ask: '用第几人称演、关系推进的节奏该怎么把握、适合什么尺度', fields: ['perspective', 'bottomLine', 'paceLock', 'rating'] },
+  { key: 'conduct', label: '扮演规范', ask: '以谁的视角看（描写人称固定第三人称）、关系推进的节奏该怎么把握、适合什么尺度', fields: ['perspective', 'bottomLine', 'paceLock', 'rating'] },
   { key: 'examples', label: '示例对话', ask: '写一段小小的示范对话（能定住 Ta 的语气）', fields: ['examples'] },
 ]
 
@@ -83,7 +83,7 @@ export function fieldKeysOf(kind: InterviewKind): string[] {
 
 /** 栏名 → 中文名（界面摊平、提示词都靠它） */
 export const CARD_LABELS: Record<string, string> = {
-  name: '名字', world: '世界', externals: '外在', core: '内核', speech: '语言特征', relations: '关系',
+  name: '名字', world: '角色与设定的关系', externals: '外在', core: '内核', speech: '语言特征', relations: '关系',
   cannot: '做不到的事', knowledge: '知识边界', perspective: '视角与人称', bottomLine: '底线清单',
   paceLock: '进度锁', rating: '尺度', examples: '示例对话',
 }

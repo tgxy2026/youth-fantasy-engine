@@ -25,6 +25,12 @@ export type SubField = {
   /** 占位例句。写「什么样算填得好」，比写说明书有用 */
   ph?: string
   rows?: number
+  /**
+   * 给 AI 的点睛说明（**只进提示词，界面不显示**）。
+   * 专治「方向容易搞反」的小项 —— 如 2.1 的「称呼」（别人怎么叫 Ta）
+   * 与 2.3 的「称呼别人」（Ta 怎么叫别人）。2026-09-17 审计：实测模型会把这两个填反。
+   */
+  hint?: string
 }
 
 export type StructSpec = {
@@ -47,7 +53,7 @@ export const PROFILE_SPECS: StructSpec[] = [
     path: 'profile.externals',
     label: '2.1 外在',
     items: [
-      { key: '称呼', label: '称呼', ph: '平时别人怎么叫Ta（与卡名不同时才用填）', rows: 1 },
+      { key: '称呼', label: '称呼', ph: '平时别人怎么叫Ta（与卡名不同时才用填）', rows: 1, hint: '别人怎么叫Ta，不是Ta怎么叫别人' },
       { key: '性别与年龄', label: '性别与年龄', ph: '女，27 岁', rows: 1 },
       { key: '外貌', label: '外貌', ph: '短发，眼下有颗小痣；左手腕有道旧疤', rows: 2 },
       { key: '穿着', label: '穿着', ph: '总穿同一件洗旧的灰色围裙', rows: 1 },
@@ -74,7 +80,7 @@ export const PROFILE_SPECS: StructSpec[] = [
     items: [
       { key: '句子长短', label: '句子长短', ph: '句子短，很少超过十个字', rows: 1 },
       { key: '口癖', label: '口癖 / 说话习惯', ph: '习惯用反问；从不说软话', rows: 1 },
-      { key: '称呼别人', label: '怎么称呼别人', ph: '叫「喂」，熟了才叫名字', rows: 1 },
+      { key: '称呼别人', label: '怎么称呼别人', ph: '叫「喂」，熟了才叫名字', rows: 1, hint: 'Ta怎么叫别人，不是别人怎么叫Ta' },
       { key: '情绪外露', label: '情绪外露程度', ph: '不太外露，气到极点反而笑', rows: 1 },
     ],
     other: true,
@@ -115,7 +121,7 @@ export const CONDUCT_SPECS: StructSpec[] = [
     path: 'conduct.perspective',
     label: '视角与人称',
     items: [
-      { key: '人称', label: '人称', ph: '第一人称（最稳）', rows: 1 },
+      { key: '人称', label: '人称', ph: '如：Ta 的视角（描写固定第三人称，不随这里改）', rows: 1 },
       { key: '能写什么', label: '能写什么', ph: '只描写Ta自己的动作与感官，不替用户编排反应', rows: 2 },
     ],
     other: true,
@@ -231,7 +237,10 @@ export function filledCount(vals: Record<string, string>, spec: StructSpec): num
 export function structFieldLines(): string[] {
   const out: string[] = []
   for (const s of ALL_STRUCT_SPECS) {
-    const keys = [...s.items.map(i => i.key), ...(s.other ? [OTHER_KEY] : [])]
+    const keys = [
+      ...s.items.map(i => (i.hint ? `${i.key}（${i.hint}）` : i.key)),
+      ...(s.other ? [OTHER_KEY] : []),
+    ]
     out.push(`  · ${s.path.split('.').pop()}（${s.label}）：可用小项 ${keys.join(' / ')}`)
   }
   return out
