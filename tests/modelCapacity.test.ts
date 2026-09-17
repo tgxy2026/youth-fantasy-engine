@@ -13,7 +13,7 @@
 //   ⑤ **输入框上限动态放宽**（scaleGuide）：1M 窗口的模型不该被 100000 的静态上限卡住，
 //      放宽后 paramGuide 的三条不变量（首尾相接 / 完整覆盖 / 唯一推荐段）仍须成立
 import {
-  adviseCapacity, isLocalProvider, recommendTuning, scaleGuide, TUNING_LIMITS,
+  adviseCapacity, isLocalProvider, recommendTuning, scaleGuide, TUNING_LIMITS, lookupWindow,
   CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS, FALLBACK_WINDOW,
 } from '../src/lib/modelCapacity'
 import { PARAM_GUIDES, type ParamGuide } from '../src/lib/tavern/paramGuide'
@@ -144,6 +144,15 @@ for (const [key, g] of pairs) {
     L.min === g.min && L.max === g.max && L.step === g.step,
     `limits=${L.min}/${L.max}/${L.step} guide=${g.min}/${g.max}/${g.step}`)
 }
+
+// ---------- ⑪ lookupWindow：模型配置页用它做"留空会识别成什么"的实时提示 ----------
+const lw = lookupWindow('Qwen/Qwen3.5-35B-A3B')
+ok('lookupWindow：Qwen3.5-35B → 256K 且带预设标签', lw?.window === 262144 && !!lw?.label, JSON.stringify(lw))
+ok('lookupWindow：认不出的模型返回 null（不假装知道）', lookupWindow('my-custom-llm-v9') === null)
+ok('lookupWindow：空串 / undefined / null 都返回 null 而不是抛错',
+  lookupWindow('') === null && lookupWindow(undefined) === null && lookupWindow(null) === null)
+ok('lookupWindow 与 adviseCapacity 对同一模型给出同一窗口（配置页提示不会与面板算的对不上）',
+  lw?.window === qwen.windowTokens, `${lw?.window} vs ${qwen.windowTokens}`)
 
 console.log(`\n—— modelCapacity 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

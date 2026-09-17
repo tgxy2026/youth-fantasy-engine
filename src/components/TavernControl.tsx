@@ -771,7 +771,10 @@ export default function TavernControl() {
                 recommend={cap.local ? rec.numCtx : null}
                 hint={cap.local
                   ? '显式告诉本地模型能装多少内容。不指定的话它会按全局设置（可能 128K）加载，显存占用会远超预期。本地窗口由显存决定，别照模型标称值往大调。'
-                  : `此参数只对本地 Ollama 生效 —— 当前接的是云端模型，设了也不生效，所以这里没有推荐值。该模型窗口为 ${cap.windowTokens} tokens，要让模型多读内容请调大上面的「上下文预算」。`}
+                  : '此参数只对本地 Ollama 生效 —— 当前接的是云端模型，设了也不生效，所以这里没有推荐值。'
+                    + (cap.windowSource === 'fallback'
+                      ? `没能识别这个模型的窗口（现按保守值 ${cap.windowTokens} tokens 估算）—— 可去「灵感工具 → 灵感启发 → 模型配置」手填「上下文窗口」，推荐值就准了。`
+                      : `该模型窗口为 ${cap.windowTokens} tokens，要让模型多读内容请调大上面的「上下文预算」。`)}
                 value={c.numCtx} onCommit={v => setCommon('numCtx', v)}
               />
               <ToggleField

@@ -59,6 +59,17 @@ const KNOWN_WINDOWS: { re: RegExp; window: number; label: string }[] = [
 /** 认不出来时的保守默认（宁可少给，也不要让用户一上来就付长上下文的账） */
 export const FALLBACK_WINDOW = 32768
 
+/**
+ * 查「这个模型名能认出多大窗口」——认不出返回 null。
+ *
+ * 供模型配置页做「留空时会自动识别成什么」的实时提示（与 `adviseCapacity` 共用**同一份**预设表，
+ * 免得两处各写一套、日子久了说法不一）。
+ */
+export function lookupWindow(model: string | undefined | null): { window: number; label: string } | null {
+  const hit = KNOWN_WINDOWS.find(k => k.re.test(String(model ?? '')))
+  return hit ? { window: hit.window, label: hit.label } : null
+}
+
 /** 云端有效系数：标称窗口 × 它 ≈ 可靠推理长度。依据见文件头注释。 */
 export const CLOUD_EFFECTIVE_RATIO = 0.4
 
@@ -211,7 +222,7 @@ export function adviseCapacity(
     windowTokens = Math.floor(userSet)
     windowSource = 'user'
   } else {
-    const hit = KNOWN_WINDOWS.find(k => k.re.test(String(p?.model ?? '')))
+    const hit = lookupWindow(p?.model)
     if (hit) { windowTokens = hit.window; windowSource = 'preset'; windowLabel = hit.label }
     else windowTokens = FALLBACK_WINDOW
   }
@@ -221,6 +232,7 @@ export function adviseCapacity(
     // 但记忆档**要给推荐** —— 用户自己调过预算（比如从 24000 降到 12000）时，
     // 记忆还按出厂的 3000 硬上限走就不成比例了。
     const claim = windowTokens >= 1000 ? Math.round(windowTokens / 1024) + 'K' : windowTokens
+    const claimWhat = windowSource === 'user' ? '你手填的标称窗口' : '模型标称'
     return {
       local: true,
       windowTokens: current.numCtx,
@@ -228,8 +240,8 @@ export function adviseCapacity(
       suggest: recommendTuning(current.contextBudget, current.numCtx),
       approxPromptTokens: current.contextBudget,
       headline: `本地 Ollama · 窗口 ${current.numCtx} 词元 · 预算 ${current.contextBudget} 字`,
-      note: `本地部署：上下文窗口由显存决定（当前 ${current.numCtx}），不随模型标称值放宽；` +
-        `模型标称 ${claim} 属架构容量，单卡跑不到。记忆档按当前预算 ${current.contextBudget} 字同比推荐。`,
+      note: `本地部署：上下文窗口由显存决定（当前 ${current.numCtx}），不读模型配置里那一项；` +
+        `${claimWhat} ${claim} 属架构容量，单卡跑不到。记忆档按当前预算 ${current.contextBudget} 字同比推荐。`,
     }
   }
 

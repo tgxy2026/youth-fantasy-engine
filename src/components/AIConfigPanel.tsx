@@ -27,6 +27,7 @@ import {
   listOllamaModels, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
 } from '../lib/ai'
+import { lookupWindow, FALLBACK_WINDOW } from '../lib/modelCapacity'
 
 function fmtMs(ms: number) {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
@@ -379,6 +380,42 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   </div>
                 </>
               )}
+
+              {/* 上下文窗口（选填）：**只有云端端点读它**。
+                  本地 Ollama 的窗口由显存决定（面板里那个「上下文窗口长度」才是它），
+                  云端则由服务商决定、没有统一的查询接口 —— 所以允许手填。
+                  留空时按模型名去预设表里认，认不出走保守兜底（见 lib/modelCapacity.ts）。 */}
+              {(() => {
+                const isLocal = editing.type === 'ollama' || !!editing.local
+                const hit = lookupWindow(editing.model)
+                const hint = isLocal
+                  ? '本地部署不读这一项 —— 本地窗口由显存决定，请在酒馆控制面板调「上下文窗口长度（num_ctx）」。'
+                  : editing.contextWindow
+                    ? `已手填 ${editing.contextWindow} tokens：酒馆控制面板会按它算上下文预算与记忆档的建议值。`
+                    : hit
+                      ? `留空 = 按模型名识别为 ${hit.window} tokens（${hit.label}）。识别得不对就手填覆盖。`
+                      : `未识别到该模型名 —— 留空会按保守值 ${FALLBACK_WINDOW} tokens 估算，建议手填真实值。`
+                return (
+                  <div>
+                    <label className="block text-[11px] text-ink-500 mb-1">
+                      上下文窗口（tokens）<span className="text-ink-600"> · 选填</span>
+                    </label>
+                    <input
+                      type="number" min={1024} max={2097152} step={1024}
+                      disabled={isLocal}
+                      className={`w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 ${isLocal ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      value={editing.contextWindow ?? ''}
+                      onChange={e => {
+                        const raw = e.target.value.trim()
+                        const n = Number(raw)
+                        setEditing({ ...editing, contextWindow: raw === '' || !Number.isFinite(n) ? undefined : Math.floor(n) })
+                      }}
+                      placeholder="留空 = 按模型名自动识别"
+                    />
+                    <p className="text-[10px] text-ink-500 mt-1 leading-relaxed">{hint}</p>
+                  </div>
+                )
+              })()}
 
               {testing && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] bg-ink-800 border border-ink-700 text-ink-300">
