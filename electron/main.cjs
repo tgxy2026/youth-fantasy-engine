@@ -329,6 +329,9 @@ app.whenReady().then(() => {
     height: 820,
     minWidth: 1000,
     minHeight: 640,
+    // 🔴 2026-09-17 老大反馈：桌面版点开后默认是个小窗，希望**窗口化全屏**。
+    //    show:false 是配套动作 —— 否则会先闪一下 1280×820 的小窗、再跳成最大化，很难看。
+    show: false,
     backgroundColor: '#0c0c0f', // ink-950，避免启动白闪
     autoHideMenuBar: true,
     title: '青春幻想引擎',
@@ -340,6 +343,19 @@ app.whenReady().then(() => {
       sandbox: false,
     },
   })
+
+  // 启动即「窗口化全屏」（最大化）：铺满工作区，但**保留标题栏与系统按钮**。
+  // 刻意不用 fullscreen —— 那会连标题栏一起藏掉，还会和 F11 / 视频全屏的语义混淆。
+  // 必须等 `ready-to-show`：那时渲染器已画好第一帧，「最大化 + 显示」同时发生，看不到跳变。
+  const showMaximized = () => {
+    if (win.isDestroyed()) return
+    win.maximize()
+    win.show()
+  }
+  win.once('ready-to-show', showMaximized)
+  // 兜底：万一 ready-to-show 因渲染失败没触发，5 秒后也把窗口显示出来 ——
+  // 否则用户面对的是「进程起来了但什么都没出现」，比小窗糟糕得多。
+  setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) showMaximized() }, 5000)
 
   // 所有 target="_blank" 的外链一律交给系统浏览器打开。
   // 未配置时 Electron 会在应用内再开一个无地址栏、无法登录/下载的 BrowserWindow，
