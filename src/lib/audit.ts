@@ -35,11 +35,17 @@ export function splitCodes(raw: string | undefined): string[] {
     .filter(Boolean)
 }
 
-/** 把出场人物之类 "陈渊、陈瑶（昏迷）、执事" 拆成候选人名，并去掉（…）注释 */
-export function splitNames(raw: string | undefined): string[] {
-  if (!raw) return []
+/**
+ * 把出场人物之类 "陈渊、陈瑶（昏迷）、执事" 拆成候选人名，并去掉（…）注释。
+ *
+ * 🔴 全项目**唯一实现**（2026-09-17 审计合并）：`aiContext.ts` 曾有一份同名副本，
+ * 分隔符不同、且不剥（…）注释 —— 同一张卡里「陈渊（昏迷）」在一致性校验里是「陈渊」、
+ * 在 AI 上下文召回里却是「陈渊（昏迷）」，**口径分裂直接导致漏召回**。两处已统一到这里。
+ */
+export function splitNames(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw.trim()) return []
   return raw
-    .split(/[，,、;；\s]+/)
+    .split(/[，,、;；\s/|]+/)
     .map(s => s.replace(/[（(].*?[）)]/g, '').trim())
     .filter(Boolean)
 }

@@ -218,7 +218,7 @@ export function Modal({
             )}
             {headerExtra}
             {showCloseButton && (
-              <Button variant="ghost" type="button" onClick={() => onCloseRef.current()} title="关闭" aria-label="关闭" className="p-1 transition-colors">
+              <Button variant="ghost" iconOnly size="sm" type="button" onClick={() => onCloseRef.current()} title="关闭" aria-label="关闭" className="transition-colors">
                 <X size={16} />
               </Button>
             )}

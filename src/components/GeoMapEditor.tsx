@@ -1343,7 +1343,7 @@ function DetailPanel({ marker, linked, cells, categories, parentOptions, paintin
       )}
 
       <div className="flex gap-2 pt-2 border-t border-ink-700">
-        <Button onClick={onClearPainted} title="清掉这个范围画好的所有格子，《地理风物》档案保留" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[11px]"><Eraser size={11} /> 清空绘制</Button>
+        <Button onClick={onClearPainted} title="清掉这个范围画好的所有格子，《地理风物》档案保留" variant="danger" size="md" className="flex-1 flex items-center justify-center text-[11px]"><Eraser size={11} /> 清空绘制</Button>
         <Button onClick={onDelete} title="连《地理风物》档案一起删除，不可撤销" variant="danger" size="md" className="flex-1 flex items-center justify-center text-[11px]"><Trash2 size={11} /> 删除地点</Button>
       </div>
       <p className="text-[10px] text-ink-500 leading-relaxed">「清空绘制」= 只擦掉画好的格子，档案保留；「删除地点」= 《地理风物》条目连档案一起删除，不可撤销。</p>

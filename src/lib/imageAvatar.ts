@@ -57,15 +57,10 @@ export function fitSquare(w: number, h: number): { sx: number; sy: number; size:
   return { sx: Math.floor((width - size) / 2), sy: Math.floor((height - size) / 2), size }
 }
 
-/**
- * 名字首字（无头像时的回退）。
- * 用 `Array.from` 而不是 `slice(0,1)`：中文在 BMP 内无妨，但 emoji 名字会被 slice 切成半个字符。
- */
-export function avatarInitial(name: string): string {
-  const s = String(name ?? '').trim()
-  if (!s) return '?'
-  return Array.from(s)[0] ?? '?'
-}
+// 🔴 2026-09-17 审计：这里原先有一个「只取名字首字」的函数，已被下面的 `avatarLabel`
+//    取代（老大 2026-09-15 反馈：只取首字时「苏念 / 苏晴」在同一场戏里头像一模一样）。
+//    它产品代码零引用、只有测试在用 —— 属被取代的遗留，留着只会诱人「接回去」而把
+//    那个修复倒退回原样，故删除。**无图兜底一律走 `avatarLabel`（封顶 2 字）。**
 
 /**
  * 头像兜底上要显示的文字 —— **名字，不是姓氏**（老大 2026-09-15 反馈）。
@@ -75,7 +70,7 @@ export function avatarInitial(name: string): string {
  *
  * 为什么封顶 2 字：圆形头像只有 16–36px，塞 3 个字会糊成一团；
  * 而中文姓名 2 字已足以区分（3 字名的重名概率极低，且悬停 title 里有全名）。
- * 字数是按 `Array.from` 数**字符**而非码元 —— emoji 名字不会被切半个（同 avatarInitial）。
+ * 字数是按 `Array.from` 数**字符**而非码元 —— emoji 名字不会被切半个。
  */
 export function avatarLabel(name: string, max = 2): string {
   const s = String(name ?? '').trim()

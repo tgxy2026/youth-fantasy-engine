@@ -6,7 +6,7 @@
 // 画布那一段在 Node 里跑不了，取景框的算术才是容易错的地方。
 import {
   AVATAR_SIZE, AVATAR_MAX_INPUT_BYTES,
-  isAcceptableAvatar, fitSquare, avatarInitial, avatarLabel,
+  isAcceptableAvatar, fitSquare, avatarLabel,
 } from '../src/lib/imageAvatar'
 
 let pass = 0, fail = 0
@@ -58,16 +58,9 @@ function main() {
   }
 
   // ---------- 3) 没图时的回退字符 ----------
-  {
-    ok('中文取首字', avatarInitial('洛汐') === '洛')
-    ok('前后空格被忽略', avatarInitial('  苏念 ') === '苏')
-    ok('英文取首字母', avatarInitial('Alice') === 'A')
-    ok('空名 → ?', avatarInitial('') === '?' && avatarInitial('   ') === '?')
-    ok('null 不炸 → ?', avatarInitial(undefined as unknown as string) === '?')
-    ok('🔴 emoji 名字不被切半个字符',
-      avatarInitial('🎭小丑') === '🎭' && Array.from(avatarInitial('🎭小丑')).length === 1,
-      avatarInitial('🎭小丑'))
-  }
+  // 2026-09-17 审计：这段原先测的是一个「只取首字」的旧函数，它已被 `avatarLabel`
+  // 取代（老大 2026-09-15 反馈：只取首字时「苏念 / 苏晴」头像一模一样）并删除。
+  // 回退字符的断言全部归到下面 3b，不再两套并存。
 
   // ---------- 3b) 头像兜底显示的是**名字**而不是姓氏（老大 2026-09-15 反馈） ----------
   // 起因：只取首字时「苏念 / 苏晴」在同一场戏里头像一模一样，分不清谁在说。
@@ -80,7 +73,7 @@ function main() {
     ok('英文名截到 2 字符', avatarLabel('Alice') === 'Al')
     ok('空名 / null → ?', avatarLabel('') === '?' && avatarLabel('   ') === '?' && avatarLabel(undefined as unknown as string) === '?')
     ok('emoji 名字不被切半个字符', avatarLabel('🎭小丑') === '🎭小')
-    ok('与 avatarInitial 是同一套字符语义（都按字符数而非码元）',
+    ok('按字符数而非码元切（emoji 名字不会被切半个）',
       Array.from(avatarLabel('🎭小丑')).length === 2)
   }
 

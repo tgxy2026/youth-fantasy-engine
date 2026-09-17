@@ -84,10 +84,16 @@ export function scanTypos(text: string, dict?: { word: string; suggest: string }
   return hits
 }
 
-/** 一次性替换全部命中词 */
+/**
+ * 一次性替换全部命中词。
+ *
+ * 🔴 必须按**词长降序**替换：先替短词会让「短词包含于长词」的长词残留
+ * （如先替「地」再找不到「的地得」）—— 与 `sensitiveWords.replaceHits` 同一条纪律。
+ * 2026-09-17 审计：这里原先漏了排序，属两份实现漂移，已补齐。
+ */
 export function replaceTypos(text: string, hits: TypoHit[]): string {
   let out = text
-  for (const h of hits) {
+  for (const h of [...hits].sort((a, b) => b.word.length - a.word.length)) {
     out = out.split(h.word).join(h.suggest)
   }
   return out

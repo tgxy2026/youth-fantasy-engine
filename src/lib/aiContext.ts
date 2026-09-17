@@ -12,6 +12,7 @@
 import * as db from './db'
 import { tabVisible, type VisCtx, TABS } from './schema'
 import { readAliases } from './aliases'
+import { splitNames } from './audit'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
 import type { Chapter, TabDef, Volume } from './types'
 
@@ -391,12 +392,6 @@ export async function getRecentChapterTexts(n = 6, charCap = 16000): Promise<str
   } catch {
     return ''
   }
-}
-
-/** 拆「出场人物」类字段为名字集合（支持 、，,；;/| 分隔） */
-function splitNames(raw: unknown): string[] {
-  if (typeof raw !== 'string' || !raw.trim()) return []
-  return raw.split(/[、,，;；/|]/).map(s => s.trim()).filter(s => s.length > 0)
 }
 
 /**

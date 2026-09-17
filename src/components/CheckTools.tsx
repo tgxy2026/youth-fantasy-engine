@@ -409,7 +409,7 @@ export default function CheckTools() {
             </Button>
             <Button onClick={clearIgnored}
               disabled={ignoredIds.length === 0}
-              title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'} variant="secondary" size="md" className="flex items-center text-[12px]">
+              title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'} variant="danger" size="md" className="flex items-center text-[12px]">
               <RotateCcw size={12} /> 清除忽略{ignoredIds.length > 0 ? `（${ignoredIds.length}）` : ''}
             </Button>
             {healthScanning && (

@@ -3,6 +3,7 @@ import { RotateCcw, EyeOff, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
 import type { TableRow } from '../lib/types'
 import { Button } from './Button'
 import { useSvgPanZoom } from '../lib/useSvgPanZoom'
+import { foldVh } from '../lib/theme'
 
 interface Props {
   rows: TableRow[]
@@ -184,7 +185,7 @@ export default function RelationGraph({ rows }: Props) {
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         className="w-full"
-        style={{ height: 'min(70vh, 640px)', touchAction: 'none', cursor: 'grab' }}
+        style={{ height: foldVh('min(70vh, 640px)'), touchAction: 'none', cursor: 'grab' }}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}

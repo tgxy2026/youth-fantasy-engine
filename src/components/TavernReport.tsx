@@ -91,7 +91,7 @@ export default function TavernReport() {
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="border-b border-ink-800 pb-3">
+      <header className="shrink-0 border-b border-ink-800 pb-3">
         <div className="flex items-center gap-1.5">
 
           <h1 className="text-lg font-bold text-ink-50">推演报告</h1>

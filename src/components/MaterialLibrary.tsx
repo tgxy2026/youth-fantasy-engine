@@ -3,7 +3,6 @@ import { Search, ChevronDown } from 'lucide-react'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import {
-  MATERIAL_CATEGORIES,
   type Block,
   type CharType,
   type ComboItem,
@@ -12,6 +11,7 @@ import {
   type AttrItem,
   type ToolboxSection,
 } from '../lib/materialRef'
+import { MATERIAL_CATEGORIES } from '../lib/materialData'
 
 export default function MaterialLibrary() {
   const [catId, setCatId] = useState(MATERIAL_CATEGORIES[0].id)

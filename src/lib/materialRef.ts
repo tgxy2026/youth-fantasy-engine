@@ -74,6 +74,12 @@ export interface MaterialCategory {
 
 
 // ============ 内容库（已拆至 ./materialData）============
-// 5715 行数据搬走后，本文件只剩类型定义与对外出口，便于查阅与维护。
-// 既有 `import { MATERIAL_CATEGORIES } from './materialRef'` 不受影响。
-export { MATERIAL_CATEGORIES } from './materialData'
+// 5715 行数据搬走后，本文件**只剩类型定义**。
+//
+// 🔴 2026-09-17 审计：原先这里有一行「再导出 MATERIAL_CATEGORIES」的兼容写法，
+//    它让「类型模块」反向依赖「数据模块」，与 materialData 回头的类型导入构成循环，
+//    还会把 5725 行的数据常量拽进任何只想拿类型的模块。消费方已改为两边直连，故删除。
+//    新代码请记住：**类型从本文件取，数据从 materialData 取**（别再从这里透出数据）。
+//
+// ⚠️ 写注释时别出现「from '路径'」这种字样 —— 项目的依赖扫描器是**文本级**的，
+//    会把注释里的路径当成真实 import，凭空报出假循环（2026-09-17 就踩了一次）。
