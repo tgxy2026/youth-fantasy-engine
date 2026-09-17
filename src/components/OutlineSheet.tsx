@@ -33,6 +33,12 @@ export default function OutlineSheet({ tab }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [draft, setDraft] = useState<CardRecord | null>(null)
+  // 🔴 用 ref 持有最新草稿：下面「切换卡片」的 effect 里读到的是**切换前**的那一份 —— 正是要落库的。
+  //    （与 CharacterSheet 的切卡守卫同型。审计 2026-09-18 P1-3：原先直接 setDraft(新卡)，
+  //      未保存的编辑静默消失，SaveFab 也一并消失、界面上没有任何提示。）
+  const draftRef = useRef(draft)
+  const prevActiveRef = useRef<string | null>(null)
+  useEffect(() => { draftRef.current = draft }, [draft])
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -54,12 +60,28 @@ export default function OutlineSheet({ tab }: Props) {
     })
   }, [tab.id, reloadKey])
 
-  // 切换 active 时刷新 draft
+  // 切换 active 时刷新 draft —— 切换前先把上一张未保存的草稿落库（不然编辑静默蒸发）
   useEffect(() => {
+    const prev = prevActiveRef.current
+    // 仅当「确实切到了另一张仍存在的卡」才存旧草稿；因删除导致的切换不存档（免得把已删的卡复活）
+    if (prev && prev !== activeId && dirtyRef.current && draftRef.current && records.some(r => r.id === prev)) {
+      const done = draftRef.current
+      void saveCardRecord(done)
+      // 🔴 落库后必须同步刷新内存 records：否则切回来时用**库里的旧记录**回灌，
+      //    刚保存的编辑在界面上又消失（数据其实已入库，但用户看到的是「白改了」，
+      //    且此后 dirty 归零，再改一处保存就会把它覆盖回去）。2026-09-18 实机抓到：
+      //    「切走再切回值回退、但刷新后值又在」——这个组合特征正是内存副本过期。
+      setRecords(list => list.map(r => (r.id === done.id ? done : r)))
+    }
+    prevActiveRef.current = activeId
     if (!activeId) { setDraft(null); return }
+    // 关键守卫：activeId 没变、但 records 因「其它卡增删改」而变化时，若当前草稿有未保存编辑，
+    // 绝不能用库里的旧记录回灌覆盖（否则改了半天、顺手去删另一张卡，编辑就没了）。
+    // draftRef / dirtyRef 的同步 effect 声明在下方，此处读到的是上一轮渲染的值 —— 正是「切换前」状态。
+    if (draftRef.current?.id === activeId && dirtyRef.current) return
     const rec = records.find(r => r.id === activeId)
     setDraft(rec ? { ...rec, data: { ...rec.data } } : null)
-  }, [activeId]) // eslint-disable-line
+  }, [activeId, records])
 
   // v1.6：新增/改名走应用内 PromptModal（浏览器 prompt 在 Electron 桌面端无实现、点击无反应）
   const [namePrompt, setNamePrompt] = useState<null | { kind: 'add' | 'rename'; def?: string }>(null)
@@ -161,6 +183,10 @@ export default function OutlineSheet({ tab }: Props) {
     () => !!draft && JSON.stringify(draft) !== JSON.stringify(records.find(r => r.id === draft.id)),
     [draft, records]
   )
+
+  // 🔴 与上面那个切换守卫配对：声明顺序在它之后，所以守卫里读到的是「上一轮」的脏标记（切换前状态）
+  const dirtyRef = useRef(false)
+  useEffect(() => { dirtyRef.current = dirty }, [dirty])
 
   const save = useCallback(async () => {
     if (!draft || !dirty) return

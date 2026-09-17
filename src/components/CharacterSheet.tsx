@@ -120,7 +120,13 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
     const prev = prevActiveRef.current
     // 仅当「确实切到了另一张仍存在的卡」才存旧卡草稿；因删除导致的切换不存档（避免复活已删卡）
     if (prev && prev !== activeId && dirtyRef.current && draftRef.current && records.some(r => r.id === prev)) {
-      void saveCardRecord(draftRef.current)
+      const done = draftRef.current
+      void saveCardRecord(done)
+      // 🔴 落库后必须同步刷新内存 records：否则切回来时用**库里的旧记录**回灌，
+      //    刚保存的编辑在界面上又消失（数据其实已入库，但用户看到的是「白改了」，
+      //    且此后 dirty 归零，再改一处保存就会把它覆盖回去）。2026-09-18 实机抓到：
+      //    「切走再切回值回退、但刷新后值又在」——这个组合特征正是内存副本过期。
+      setRecords(list => list.map(r => (r.id === done.id ? done : r)))
     }
     prevActiveRef.current = activeId
     if (!activeId) { setDraft(null); return }

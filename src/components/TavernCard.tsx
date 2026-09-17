@@ -186,6 +186,12 @@ export default function TavernCard() {
   useEffect(() => { void load() }, [load])
 
   const open = async (id: string) => {
+    // 🔴 审计 2026-09-18（P1-4）：切卡前先把上一张**未保存**的改动落库。
+    //    原实现直接 setDraft(新卡) + setDirty(false)，旧卡改了没保存就点另一张 = 改动静默消失
+    //    （界面上只有一句「有未保存的改动」，点下去等于放弃）。与 CharacterSheet 的切卡守卫同型。
+    if (dirty && draft && draft.id !== id) {
+      try { await store.saveFreeChar(draft) } catch { /* 落库失败不阻断切卡，脏标记仍在界面上 */ }
+    }
     const [c, m] = await Promise.all([
       store.getFreeChar(id),
       store.getMemory(id).catch(() => null),
