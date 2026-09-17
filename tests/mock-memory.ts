@@ -1,6 +1,15 @@
 // 内存版 StoreOps：Node 端测试用，替换掉 IndexedDB / 文件后端。
-// 键规则与真实实现一致：meta / settingsKV / dailyStats 用 key，其余用 id。
-const KEY_PATHS: Record<string, string> = { meta: 'key', settingsKV: 'key', dailyStats: 'key' }
+//
+// 🔴 主键映射**必须与 src/lib/desktop.ts 的 KEY_PATHS 逐项一致**。
+//    漏一项的后果不是报错，而是**静默错位**：put/get 的 key 取成 `String(undefined)`，
+//    该 store 的所有记录都落到同一个 `'undefined'` 键上互相覆盖，而按正常 key 又一条都读不到。
+//    2026-09-18 实测：这里原先漏了 `formData: 'tabId'` —— 于是**所有表单型页签在测试里都读回空**，
+//    依赖表单数据的断言全在空跑（`tests/antiSpoiler.test.ts` 的排查中顺出来的）。
+export const KEY_PATHS: Record<string, string> = {
+  projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
+  cardRecords: 'id', snapshots: 'id', trash: 'id',
+  formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
+}
 
 const stores = new Map<string, Map<string, unknown>>()
 

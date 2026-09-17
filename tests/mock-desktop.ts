@@ -11,14 +11,14 @@ export function flushDesktopSync() { return Promise.resolve(false) }
 // db.ts 关闭云盘同步时会 await flushDesktop() 再切存储（内存桩无需真落盘，直接成功）
 export function flushDesktop() { return Promise.resolve(true) }
 export function subscribeDesktop() { return () => {} }
-export function getDesktopState() { return { ready: true, path: '', dirty: false } }
-// 与 src/lib/desktop.ts 同名同形：db.ts 的「云端 cache → 本地库」镜像会 import 它判「本地是否已有这条」。
-// 桩里保持一致即可（内存桩同样按这几个字段做 key）。
-export const KEY_PATHS: Record<string, string> = {
-  projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
-  cardRecords: 'id', snapshots: 'id', trash: 'id',
-  formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
+// 与 src/lib/desktop.ts 的 DesktopState 同形：db.ts 的云同步入口会读 writeLocked
+// （测试环境从不锁写盘，固定 false；将来要测「锁定期行为」就在这里放开）
+export function getDesktopState() {
+  return { ready: true, path: '', dirty: false, writeLocked: false, writeLockReason: '' }
 }
+// 与 src/lib/desktop.ts 同名同形：db.ts 的「云端 cache → 本地库」镜像会 import 它判「本地是否已有这条」。
+// 直接复用 mock-memory 那一份，**不要在这里另写一份** —— 两份日期久了对不上就是下次事故。
+export { KEY_PATHS } from './mock-memory'
 
 // 联网检索用的「主进程代发」：Node 测试环境里没有 Electron，固定为不可用。
 // 也因此单测里 SearXNG 会被判成「会被跨域拦」。

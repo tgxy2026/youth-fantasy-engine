@@ -1,7 +1,7 @@
 import { openDB, type IDBPDatabase, type IDBPTransaction } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
 import type { StoreOps } from './storeOps'
-import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS } from './desktop'
+import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState } from './desktop'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
@@ -552,6 +552,17 @@ async function captureSyncData(): Promise<Record<string, any[]>> {
 }
 
 export async function enableDesktopCloudSync(handle: any) {
+  // 🔴 审计 2026-09-17（P1-5）：数据文件读不出来时（writeLocked）**绝不能开启云同步**。
+  //    那种状态下本地存储是空的、不可信的：captureSyncData 会抓到一份空载荷，新目录为空
+  //    → 播种把空载荷推上云端（rev=1）；另一台设备 mergeCaches 时按「云端没有该记录、
+  //    本地也没改过」丢弃全部记录 → **两台设备一起变空**。
+  //    `writeLocked` 的语义本来就是「绝不落盘」（红线），云同步入口必须一并纳入。
+  if (DESKTOP) {
+    const st = getDesktopState()
+    if (st.writeLocked) {
+      throw new Error(st.writeLockReason || '本地数据文件当前不可读，已阻止开启云同步（以免把空数据推上云端）')
+    }
+  }
   // 🔴 必须在 enableDesktopCloud() **之前**把当前数据抓下来：
   //    enableDesktopCloud → configure() 会清空 syncCore 的单例 cache，而「同步本来就开着、
   //    只是换/重选目录」时 ops 正指向**同一个**单例 → 播种读到的是全空，
