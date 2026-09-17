@@ -17,9 +17,16 @@
  *     通常只有标称的 30~65%，多针检索还要再低 15~40 分）；酒馆又是典型"多针"场景
  *     （设定 + 记忆 + 对话历史要同时命中），故取**偏保守的 0.4**。
  *
+ * 【2026-09-17 扩展：从"只管预算"到"管一整批跟着模型走的数"】
+ * 老大的原话是「取值范围和推荐都是基于我的设备定的，能不能跟着模型变」。
+ * 于是本模块算的不只是预算与窗口，还有**记忆档**（软上限 / 硬上限 / 长期摘要 / 日记保留），
+ * 并给出 `scaleGuide()` 用来**动态放宽输入框上限** —— 那些上限同样是按本地设备定的：
+ * `contextBudget` 静态上限 100000，1M 窗口的云端模型本可用到 41 万，却被输入框卡住。
+ *
  * 本模块是纯逻辑、零运行时依赖（只 `import type`），便于单测。
  */
 import type { AIProvider } from './ai'
+import type { ParamGuide } from './tavern/paramGuide'
 
 /** 本地部署判定：Ollama 原生，或标记为「本机/局域网」的 OpenAI 兼容服务 */
 export function isLocalProvider(p: Pick<AIProvider, 'type' | 'local'> | null | undefined): boolean {
@@ -58,19 +65,128 @@ export const CLOUD_EFFECTIVE_RATIO = 0.4
 /** 给回复预留的 token（本地与云端都留 —— 预算算的是"输入能放多少"） */
 export const REPLY_RESERVE_TOKENS = 8192
 
+// ============================================================
+// 记忆档：跟着预算走的推荐
+// ============================================================
+
+/**
+ * 各参数的硬边界与步长 —— **必须与 `tavern/paramGuide.ts` 的 `ParamGuide.min/max/step` 一致**，
+ * `tests/modelCapacity.test.ts` 会逐项比对，漂了就红。
+ *
+ * 为什么不直接 import `PARAM_GUIDES`：本模块刻意保持**零运行时依赖**（只 `import type`），
+ * 这样单测能直接跑、也不会和 tavern 那套形成环。一致性交给测试守。
+ */
+export const TUNING_LIMITS = {
+  contextBudget: { min: 1000, max: 100000, step: 500 },
+  numCtx: { min: 2048, max: 131072, step: 1024 },
+  softLimit: { min: 200, max: 10000, step: 100 },
+  hardLimit: { min: 200, max: 20000, step: 100 },
+  longTermLimit: { min: 100, max: 2000, step: 50 },
+  diaryDays: { min: 1, max: 30, step: 1 },
+} as const
+
+/**
+ * 记忆档的推荐比例 —— **以出厂值为基准反推**，不是另拍一套。
+ *
+ * 出厂 `contextBudget 24000 → 软 2000 / 硬 3000 / 长期 500 / 日记 7 天`，
+ * 是当初在本地 27B 上把配比调好的结果。换模型只该改「总量」，
+ * 内在配比跟着缩放即可 —— 否则换个模型记忆就长得不成比例，是另一种"手感漂移"。
+ */
+const MEM_SOFT_RATIO = 2000 / 24000      // ≈ 8.3% 的预算
+const MEM_HARD_RATIO = 3000 / 24000      // = 12.5% 的预算
+const MEM_LONGTERM_OF_HARD = 500 / 3000  // ≈ 16.7% 的硬上限
+const DIARY_BASE = 7
+const DIARY_BASE_BUDGET = 24000
+
+/** 对齐到 step 的最近倍数：推出来的值带着零头的话，用户改一下就对不齐输入框步长 */
+function snap(v: number, step: number): number {
+  return Math.round(v / step) * step
+}
+
+function clampTo(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v))
+}
+
+/** 一批「跟着当前模型走」的推荐值 */
+export interface TuningAdvice {
+  /** 上下文预算（字符 ≈ token） */
+  contextBudget: number
+  /** 本地生效的上下文窗口；**云端为 null**（`num_ctx` 对 OpenAI 兼容端点无效） */
+  numCtx: number | null
+  softLimit: number
+  hardLimit: number
+  longTermLimit: number
+  diaryDays: number
+}
+
+/**
+ * 由「上下文预算」推出记忆档的推荐值。
+ *
+ * 三项记忆上限按预算**线性**缩放；「日记保留」走**开方**缩放 ——
+ * 它数的是"生活痕迹有几条"，与窗口大小的相关性本来就弱，
+ * 线性放大会让云端模型存下几十条日记、反过来挤占对话历史。
+ *
+ * 推出来的值一律 clamp 到静态范围内（`hardLimit` 先算，软上限再以它为顶 ——
+ * 软上限高于硬上限等于没有上限）。
+ */
+export function recommendTuning(budget: number, numCtx: number | null): TuningAdvice {
+  const B = Math.max(1, budget)
+  const L = TUNING_LIMITS
+
+  const hardLimit = clampTo(snap(B * MEM_HARD_RATIO, L.hardLimit.step), L.hardLimit.min, L.hardLimit.max)
+  const softLimit = clampTo(
+    snap(B * MEM_SOFT_RATIO, L.softLimit.step),
+    L.softLimit.min,
+    Math.min(L.softLimit.max, hardLimit),
+  )
+  const longTermLimit = clampTo(
+    snap(hardLimit * MEM_LONGTERM_OF_HARD, L.longTermLimit.step),
+    L.longTermLimit.min,
+    L.longTermLimit.max,
+  )
+  const diaryDays = clampTo(
+    Math.round(DIARY_BASE * Math.sqrt(B / DIARY_BASE_BUDGET)),
+    L.diaryDays.min,
+    L.diaryDays.max,
+  )
+
+  return { contextBudget: B, numCtx, softLimit, hardLimit, longTermLimit, diaryDays }
+}
+
+/**
+ * 动态放宽一个参数的取值范围。
+ *
+ * 起因：**输入框的上限也是按本地设备定的** —— `contextBudget` 静态上限 100000，
+ * 接上 1M 窗口的云端模型时，41 万的建议值根本填不进去（输入框会自动夹回 100000）。
+ *
+ * 抬法刻意保守：**只延长最后一段的上界**，不动任何分段边界、不动 min/step、
+ * 不动那唯一一个 `recommended` 段 —— 于是 `paramGuide` 的三条不变量
+ * （分段首尾相接 / 完整覆盖 [min,max] / 恰好一个推荐段）仍然成立。
+ *
+ * 本地、或推荐值没超过静态上限时**原样返回同一对象**，行为与改造前完全一致。
+ */
+export function scaleGuide(guide: ParamGuide, suggested: number): ParamGuide {
+  const target = Math.max(guide.max, Math.ceil(suggested * 1.5))
+  if (target <= guide.max) return guide
+  const bands = guide.bands.map((b, i) =>
+    i === guide.bands.length - 1 ? { ...b, to: target } : { ...b },
+  )
+  return { ...guide, max: target, bands }
+}
+
 export interface CapacityAdvice {
   local: boolean
   windowTokens: number
   windowSource: 'user' | 'preset' | 'fallback'
   /** 预设标签（windowSource==='preset' 时给出，用于界面显示"识别为 Qwen3.5 系列"） */
   windowLabel?: string
-  /** 建议的 numCtx；null = 云端，该参数对当前 provider 无效 */
-  suggestNumCtx: number | null
-  /** 建议的上下文预算（字符，≈ token 数） */
-  suggestContextBudget: number
+  /** 跟着当前模型走的**一整批**推荐值：上下文预算 + 记忆档四项 */
+  suggest: TuningAdvice
   /** 按建议预算估算的每轮输入 token（≈ 字符数，中文场景 1 字 ≈ 1 token） */
   approxPromptTokens: number
-  /** 给界面用的一句人话解释 */
+  /** 摘要行（界面直接显示）：模型 → 窗口 → 建议预算 → 占比 */
+  headline: string
+  /** 给界面用的一段人话解释 */
   note: string
 }
 
@@ -101,36 +217,43 @@ export function adviseCapacity(
   }
 
   if (local) {
-    // 本地：numCtx 由显存决定，**不按模型标称放宽**；预算保持用户现值
+    // 本地：numCtx 由显存决定，**不按模型标称放宽**；预算保持用户现值。
+    // 但记忆档**要给推荐** —— 用户自己调过预算（比如从 24000 降到 12000）时，
+    // 记忆还按出厂的 3000 硬上限走就不成比例了。
+    const claim = windowTokens >= 1000 ? Math.round(windowTokens / 1024) + 'K' : windowTokens
     return {
       local: true,
       windowTokens: current.numCtx,
       windowSource: 'user',
-      suggestNumCtx: current.numCtx,
-      suggestContextBudget: current.contextBudget,
+      suggest: recommendTuning(current.contextBudget, current.numCtx),
       approxPromptTokens: current.contextBudget,
-      note: `本地部署：上下文窗口由显存决定（当前 ${current.numCtx}），不随模型标称值放宽。` +
-        `模型标称 ${windowTokens >= 1000 ? Math.round(windowTokens / 1024) + 'K' : windowTokens} 属架构容量，单卡跑不到。`,
+      headline: `本地 Ollama · 窗口 ${current.numCtx} 词元 · 预算 ${current.contextBudget} 字`,
+      note: `本地部署：上下文窗口由显存决定（当前 ${current.numCtx}），不随模型标称值放宽；` +
+        `模型标称 ${claim} 属架构容量，单卡跑不到。记忆档按当前预算 ${current.contextBudget} 字同比推荐。`,
     }
   }
 
   // 云端：有效可用 = 窗口 × 系数 − 回复预留
-  const usable = Math.floor(windowTokens * CLOUD_EFFECTIVE_RATIO) - REPLY_RESERVE_TOKENS
-  const suggestContextBudget = Math.max(4000, usable)
+  const usable = Math.max(4000, Math.floor(windowTokens * CLOUD_EFFECTIVE_RATIO) - REPLY_RESERVE_TOKENS)
   const kind = windowSource === 'user' ? '你填写的窗口'
     : windowSource === 'preset' ? `识别为 ${windowLabel}`
     : `未识别到该模型，按保守值 ${FALLBACK_WINDOW} 估算（可在模型配置里手填窗口）`
+  const short = windowSource === 'user' ? '你填写的窗口'
+    : windowSource === 'preset' ? (windowLabel ?? '')
+    : `未识别模型（按 ${FALLBACK_WINDOW} 保守估算）`
+  const pct = Math.min(100, Math.round((usable / windowTokens) * 100))
 
   return {
     local: false,
     windowTokens,
     windowSource,
     windowLabel,
-    suggestNumCtx: null,
-    suggestContextBudget,
-    approxPromptTokens: suggestContextBudget,
+    suggest: recommendTuning(usable, null),
+    approxPromptTokens: usable,
+    headline: `云端 · ${short} · 窗口 ${windowTokens} 词元 · 建议预算 ${usable} 字（约占窗口 ${pct}%）`,
     note: `云端模型：${kind} → 窗口 ${windowTokens} tokens，` +
       `按有效系数 ${CLOUD_EFFECTIVE_RATIO} 折减并预留 ${REPLY_RESERVE_TOKENS} 给回复，` +
-      `建议预算约 ${suggestContextBudget} 字符。「上下文窗口长度（num_ctx）」对云端无效，可忽略。`,
+      `建议预算约 ${usable} 字符（记忆档一并按此预算推荐，见下方各项）。` +
+      `「上下文窗口长度（num_ctx）」是 Ollama 专有字段，对云端无效、可忽略。`,
   }
 }

@@ -47,7 +47,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
 import { loadProviders, loadActiveId, type AIProvider } from '../lib/ai'
-import { adviseCapacity } from '../lib/modelCapacity'
+import { adviseCapacity, scaleGuide } from '../lib/modelCapacity'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import AvatarPicker from './AvatarPicker'
@@ -197,19 +197,38 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
  * `guide` 同时给出 min / max / step / 单位与分段说明 —— **上界下界与说明同源**，
  * 不会出现「表里说 0~2、输入框只让填到 1」这种自相矛盾（见 paramGuide.ts 顶部注释）。
  */
-function NumField({ label, hint, guide, value, onCommit }: {
+function NumField({ label, hint, guide, value, onCommit, recommend }: {
   label: string; hint?: string; guide: ParamGuide
   value: number; onCommit: (v: number) => void
+  /**
+   * 当前模型下的推荐值（随模型变）。给出时标题右侧多一个可点的「建议 N」：
+   * 与当前值不同 → 琥珀色（提示"这里还能再调"），点了即采用；相同 → 灰字 + ✓。
+   * 不传 = 这一项没有动态推荐，行为与改造前完全一致。
+   */
+  recommend?: number | null
 }) {
   const [draft, setDraft] = useState(String(value))
   useEffect(() => { setDraft(String(value)) }, [value])
   const band = bandOf(guide, value)
+  const stale = typeof recommend === 'number' && recommend !== value
   return (
     <Field
       label={
         <span className="flex items-baseline justify-between gap-2">
           <span>{guide.unit ? `${label}（${guide.unit}）` : label}</span>
-          <span className="shrink-0 tabular-nums text-[10px] text-ink-600">{guide.min} ~ {guide.max}</span>
+          <span className="flex shrink-0 items-baseline gap-1.5">
+            {typeof recommend === 'number' && (
+              <Button variant="bare" type="button"
+                onClick={() => onCommit(recommend)}
+                className={`h-auto px-1 py-0 rounded text-[10px] tabular-nums transition-colors ${stale ? 'text-amber hover:bg-amber/10' : 'text-ink-600'}`}
+                title={stale
+                  ? `当前模型下的推荐值 ${recommend}${guide.unit ? ' ' + guide.unit : ''} —— 点击采用`
+                  : `已与当前模型的推荐值一致（${recommend}${guide.unit ? ' ' + guide.unit : ''}）`}>
+                建议 {recommend}{stale ? ' ↺' : ' ✓'}
+              </Button>
+            )}
+            <span className="tabular-nums text-[10px] text-ink-600">{guide.min} ~ {guide.max}</span>
+          </span>
         </span>
       }
       hint={hint}
@@ -612,13 +631,46 @@ export default function TavernControl() {
   })()
   const cap = adviseCapacity(activeProvider, { numCtx: c.numCtx, contextBudget: c.contextBudget })
 
+  // 「跟着模型走」的推荐值：预算 / 窗口（本地）/ 记忆三项 / 日记保留
+  const rec = cap.suggest
+  // 输入框的上限同样是按本地设备定的（contextBudget 静态上限 100000）——
+  // 1M 窗口的云端模型本可用到 41 万却填不进去，所以按推荐值动态放宽。
+  // 推荐值没超过静态上限时 scaleGuide 原样返回，本地行为完全不变。
+  const gBudget = scaleGuide(PARAM_GUIDES.contextBudget, rec.contextBudget)
+  const gNumCtx = cap.local && rec.numCtx != null ? scaleGuide(PARAM_GUIDES.numCtx, rec.numCtx) : PARAM_GUIDES.numCtx
+  const gSoft = scaleGuide(PARAM_GUIDES.softLimit, rec.softLimit)
+  const gHard = scaleGuide(PARAM_GUIDES.hardLimit, rec.hardLimit)
+  const gLong = scaleGuide(PARAM_GUIDES.longTermLimit, rec.longTermLimit)
+  const gDiary = scaleGuide(PARAM_GUIDES.diaryKeep, rec.diaryDays)
+
+  /** 当前值里有几项偏离推荐（用于「采用推荐值」按钮的提示与禁用态） */
+  const drift = [
+    c.contextBudget !== rec.contextBudget,
+    cap.local && rec.numCtx != null && c.numCtx !== rec.numCtx,
+    fr.softLimit !== rec.softLimit,
+    fr.hardLimit !== rec.hardLimit,
+    fr.longTermLimit !== rec.longTermLimit,
+    fr.diaryDays !== rec.diaryDays,
+  ].filter(Boolean).length
+
+  /** 一键把这一整批数值都设成当前模型的推荐值（只改这六项，其余设置一律不动） */
+  const applyRecommended = () => {
+    setCommon('contextBudget', rec.contextBudget)
+    if (cap.local && rec.numCtx != null) setCommon('numCtx', rec.numCtx)
+    setFree('softLimit', rec.softLimit)
+    setFree('hardLimit', rec.hardLimit)
+    setFree('longTermLimit', rec.longTermLimit)
+    setFree('diaryDays', rec.diaryDays)
+  }
+
   return (
     <div className="mx-auto max-w-[1500px] space-y-4">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[16px] text-ink-100">控制面板</h1>
-
-          <HelpPopover title="控制面板怎么用" width="24rem" size={14}>
+          {/* h1 是块级元素，问号必须与它同处一个 flex 行内容器，否则会被挤到标题下一行 */}
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-[16px] text-ink-100">控制面板</h1>
+            <HelpPopover title="控制面板怎么用" width="24rem" size={14}>
   酒馆模式全部「接进 AI 的参数与提示词」都在这里。改完点右上「保存」，下一轮对话开始时生效。
 
   • 左列是「全局的、一次调好就不动的」：跟谁说、我是谁、整套怎么存，以及两种模式共用的格式契约（输出后处理）。
@@ -627,6 +679,7 @@ export default function TavernControl() {
   • 「三、预设方案」可以把整套设置存成快照，一键切换或导出分享。
   • 默认值就是出厂值：不动它时行为与之前完全一致。
 </HelpPopover>
+          </div>
           <p className="mt-1 text-[12px] text-ink-500 leading-relaxed">
             酒馆模式全部「接进 AI 的参数与提示词」都在这里。改完点右上「保存」，下一轮对话开始时生效。
             <br />
@@ -671,10 +724,33 @@ export default function TavernControl() {
               onChange={v => setCommon('defaultProviderId', v)}
             />
 
+            {/* 模型能力条：把「下面这批数值跟着哪个模型在走」摆到眼前。
+                下面的每一项都可以单独改；这里是当前模型下的一整套建议，点一下全采用。 */}
+            <div className="rounded-md border border-ink-700 bg-ink-800/40 px-3 py-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11.5px] text-ink-200 leading-relaxed">{cap.headline}</div>
+                  <div className="mt-0.5 text-[10.5px] text-ink-500 leading-relaxed">{cap.note}</div>
+                  <div className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
+                    下面「上下文预算 / 上下文窗口 / 记忆三项 / 日记保留」的推荐值都跟着所选模型走 ——
+                    换个模型，它们会一起变。正文续写等其它模式的额度不在这里，仍是后台内置值。
+                  </div>
+                </div>
+                <Button variant="secondary" size="sm" onClick={applyRecommended}
+                  disabled={drift === 0}
+                  title={drift === 0
+                    ? '各项都已在推荐值上，无需改动'
+                    : `有 ${drift} 项偏离当前模型的推荐值，点击一次性采用`}
+                  className="shrink-0 whitespace-nowrap">
+                  {drift === 0 ? '已是推荐值' : `采用推荐值（${drift}）`}
+                </Button>
+              </div>
+            </div>
+
             <div className={GRID2}>
               <NumField
-                label="上下文预算" guide={PARAM_GUIDES.contextBudget}
-                hint={`一轮请求里「设定 + 记忆 + 对话历史」加起来的上限。超了先裁最早的对话轮次（开场永不被裁）。当前模型建议值：${cap.suggestContextBudget}。`}
+                label="上下文预算" guide={gBudget} recommend={rec.contextBudget}
+                hint="一轮请求里「设定 + 记忆 + 对话历史」加起来的上限。超了先裁最早的对话轮次（开场永不被裁）。推荐值按当前模型的窗口折减得出；调大它会同时增加每轮的云端费用。"
                 value={c.contextBudget} onCommit={v => setCommon('contextBudget', v)}
               />
               <NumField
@@ -691,10 +767,11 @@ export default function TavernControl() {
 
             <div className={GRID2}>
               <NumField
-                label="上下文窗口长度" guide={PARAM_GUIDES.numCtx}
+                label="上下文窗口长度" guide={gNumCtx}
+                recommend={cap.local ? rec.numCtx : null}
                 hint={cap.local
                   ? '显式告诉本地模型能装多少内容。不指定的话它会按全局设置（可能 128K）加载，显存占用会远超预期。本地窗口由显存决定，别照模型标称值往大调。'
-                  : `此参数只对本地 Ollama 生效 —— 当前接的是云端模型，设了也不生效。该模型窗口为 ${cap.windowTokens} tokens，要让模型多读内容请调大下面的「上下文预算」。`}
+                  : `此参数只对本地 Ollama 生效 —— 当前接的是云端模型，设了也不生效，所以这里没有推荐值。该模型窗口为 ${cap.windowTokens} tokens，要让模型多读内容请调大上面的「上下文预算」。`}
                 value={c.numCtx} onCommit={v => setCommon('numCtx', v)}
               />
               <ToggleField
@@ -1146,26 +1223,29 @@ export default function TavernControl() {
               <p className="mb-3 text-[10.5px] leading-relaxed text-ink-500">
                 下面几项决定记忆怎么压、怎么滚。<span className="text-ink-400">整理时机不在这一栏</span>——
                 现在没有自动整理：自由对话在点「结束本轮对话」时整理，剧情推演点「整理本场记忆」。
+                <br />
+                这四项的推荐值跟着<span className="text-ink-400">上下文预算</span>走（也就跟着当前模型走）：
+                预算大，记忆可以多存一些；预算小就别让记忆抢了对话历史。
               </p>
               <div className={GRID2}>
                 <NumField
-                  label="记忆软上限" guide={PARAM_GUIDES.softLimit}
+                  label="记忆软上限" guide={gSoft} recommend={rec.softLimit}
                   hint="超过只在界面上提醒，不会硬截断。"
                   value={fr.softLimit} onCommit={v => setFree('softLimit', v)}
                 />
                 <NumField
-                  label="记忆硬上限" guide={PARAM_GUIDES.hardLimit}
+                  label="记忆硬上限" guide={gHard} recommend={rec.hardLimit}
                   hint="超过就按「长期摘要 → 纪念日 → 关系状态」的顺序压缩；关键事实与未爆的雷不动。"
                   value={fr.hardLimit} onCommit={v => setFree('hardLimit', v)}
                 />
                 <NumField
-                  label="长期摘要上限" guide={PARAM_GUIDES.longTermLimit}
-                  hint="「长期摘要」这一栏单独的字数上限，也是最优先被压缩的一栏。"
+                  label="长期摘要上限" guide={gLong} recommend={rec.longTermLimit}
+                  hint="「长期摘要」这一栏单独的字数上限，也是最优先被压缩的一栏。推荐值取硬上限的约六分之一。"
                   value={fr.longTermLimit} onCommit={v => setFree('longTermLimit', v)}
                 />
                 <NumField
-                  label="日记保留" guide={PARAM_GUIDES.diaryKeep}
-                  hint="「最近日记」保留几条，新的在上、旧的自动滚动掉。"
+                  label="日记保留" guide={gDiary} recommend={rec.diaryDays}
+                  hint="「最近日记」保留几条，新的在上、旧的自动滚动掉。它数的是生活痕迹，跟窗口大小相关性弱，所以推荐值按开方缩放（涨得比预算慢）。"
                   value={fr.diaryDays} onCommit={v => setFree('diaryDays', v)}
                 />
                 <NumField
