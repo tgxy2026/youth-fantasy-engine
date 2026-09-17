@@ -192,7 +192,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
         <div className="flex items-center gap-1.5">
           <h2 className="text-[13.5px] text-amber">模型配置</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
-            <p>全应用共用这一份模型配置 —— AI 辅助规划、一键续写、取名、校对、设定补全，以及酒馆模式，都按这里选中的「当前」模型走。</p>
+            <p>全应用共用这一份模型配置 —— AI 辅助规划、一键续写、取名、校对、设定补全都按这里选中的「当前」模型走；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
             <p className="mt-1.5">两类平台：</p>
             <ul className="list-disc pl-4 space-y-1">
               <li><b>本地模型</b>：Ollama / LM Studio 等，跑在你自己机器上，一般免密钥、不联网、数据不出本机。</li>

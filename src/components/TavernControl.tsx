@@ -643,20 +643,24 @@ export default function TavernControl() {
   const gLong = scaleGuide(PARAM_GUIDES.longTermLimit, rec.longTermLimit)
   const gDiary = scaleGuide(PARAM_GUIDES.diaryKeep, rec.diaryDays)
 
-  /** 当前值里有几项偏离推荐（用于「采用推荐值」按钮的提示与禁用态） */
+  /**
+   * 当前值里有几项偏离推荐（用于「采用推荐值」按钮的提示与禁用态）。
+   *
+   * ⚠️ 预算与窗口**不计入**：本地窗口由显存决定、云端窗口由服务商决定，系统不代为更改 ——
+   *    硬给「推荐值」只会是把当前值原样念回来的自指，按钮会永远停在「已是推荐值」。
+   */
   const drift = [
-    c.contextBudget !== rec.contextBudget,
-    cap.local && rec.numCtx != null && c.numCtx !== rec.numCtx,
+    !cap.local && c.contextBudget !== rec.contextBudget,
     fr.softLimit !== rec.softLimit,
     fr.hardLimit !== rec.hardLimit,
     fr.longTermLimit !== rec.longTermLimit,
     fr.diaryDays !== rec.diaryDays,
   ].filter(Boolean).length
 
-  /** 一键把这一整批数值都设成当前模型的推荐值（只改这六项，其余设置一律不动） */
+  /** 一键把这一整批数值都设成当前模型的推荐值（只改这几项，其余设置一律不动） */
   const applyRecommended = () => {
-    setCommon('contextBudget', rec.contextBudget)
-    if (cap.local && rec.numCtx != null) setCommon('numCtx', rec.numCtx)
+    // 预算只在云端才代为更改（本地窗口由显存决定，不该被"推荐"推着走）
+    if (!cap.local) setCommon('contextBudget', rec.contextBudget)
     setFree('softLimit', rec.softLimit)
     setFree('hardLimit', rec.hardLimit)
     setFree('longTermLimit', rec.longTermLimit)
@@ -732,8 +736,9 @@ export default function TavernControl() {
                   <div className="text-[11.5px] text-ink-200 leading-relaxed">{cap.headline}</div>
                   <div className="mt-0.5 text-[10.5px] text-ink-500 leading-relaxed">{cap.note}</div>
                   <div className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
-                    下面「上下文预算 / 上下文窗口 / 记忆三项 / 日记保留」的推荐值都跟着所选模型走 ——
-                    换个模型，它们会一起变。正文续写等其它模式的额度不在这里，仍是后台内置值。
+                    下面「记忆三项 / 日记保留」的推荐值按当前预算同比推算（预算跟着所选模型走，它们也就跟着变）。
+                    预算与窗口不代为更改：本地窗口由显存决定、云端窗口由服务商决定，所以这两项上没有推荐值。
+                    正文续写等其它模式的额度不在这里，仍是后台内置值。
                   </div>
                 </div>
                 <Button variant="secondary" size="sm" onClick={applyRecommended}
@@ -749,7 +754,7 @@ export default function TavernControl() {
 
             <div className={GRID2}>
               <NumField
-                label="上下文预算" guide={gBudget} recommend={rec.contextBudget}
+                label="上下文预算" guide={gBudget} recommend={cap.local ? undefined : rec.contextBudget}
                 hint="一轮请求里「设定 + 记忆 + 对话历史」加起来的上限。超了先裁最早的对话轮次（开场永不被裁）。推荐值按当前模型的窗口折减得出；调大它会同时增加每轮的云端费用。"
                 value={c.contextBudget} onCommit={v => setCommon('contextBudget', v)}
               />
@@ -760,7 +765,7 @@ export default function TavernControl() {
               />
               <NumField
                 label="请求超时" guide={PARAM_GUIDES.timeoutSec}
-                hint="超过这个时间就中断并报错。本地模型慢就调大；联网模型一般 60～180 够用。"
+                hint="超过这个时间就中断并报错。本地模型慢就调大；联网模型一般 60～120 够用。"
                 value={c.timeoutSec} onCommit={v => setCommon('timeoutSec', v)}
               />
             </div>
@@ -768,7 +773,6 @@ export default function TavernControl() {
             <div className={GRID2}>
               <NumField
                 label="上下文窗口长度" guide={gNumCtx}
-                recommend={cap.local ? rec.numCtx : null}
                 hint={cap.local
                   ? '显式告诉本地模型能装多少内容。不指定的话它会按全局设置（可能 128K）加载，显存占用会远超预期。本地窗口由显存决定，别照模型标称值往大调。'
                   : '此参数只对本地 Ollama 生效 —— 当前接的是云端模型，设了也不生效，所以这里没有推荐值。'
@@ -779,7 +783,7 @@ export default function TavernControl() {
               />
               <ToggleField
                 label="关闭思考链"
-                hint="开启时模型直接说话，不再先写一段分析。角色扮演要「像人说话」而不是「想得深」，所以默认关闭；只有本地模型认这个开关。"
+                hint="开启时模型直接说话，不再先写一段分析。角色扮演要「像人说话」而不是「想得深」，所以思考链默认是关闭的；只有本地模型认这个开关。"
                 value={c.disableThink} onChange={v => setCommon('disableThink', v)}
               />
             </div>
@@ -1113,7 +1117,7 @@ export default function TavernControl() {
               hint="决定「世界与角色设定」这一层从哪来 —— 它每轮都进 system，是预算里最大的一块。"
               footer={(
                 <div className="mt-1.5 space-y-1 text-[10.5px] text-ink-600 leading-relaxed">
-                  <p>· 两者（默认）：项目原始资料 + 你提炼的背景设定。资料最全，但项目原始资料本身就有四千六百字以上（示范项目实测还会丢 11 段），加上协议 3244 字 —— 24000 的预算里 system 会吃掉一半左右，留给对话历史仍有一万多字。</p>
+                  <p>· 两者（默认）：项目原始资料 + 你提炼的背景设定。资料最全，但项目原始资料本身就有四千六百字以上（示范项目实测还会丢 11 段），加上协议四千四百多字 —— 24000 的预算里 system 会吃掉一半左右，留给对话历史仍有一万多字。</p>
                   <p>· 只用背景设定：设定层只留「作品概览 + 章节清单」（约 2200 字），世界规则靠你提炼的那份，省下的全给对话历史。代价是没在场配角的卡、名词 / 地理 / 历史细节不再注入 —— 所以背景设定里建议把「主要人物关系」写成一节，并让关键词留空（始终注入）。</p>
                   <p>· 只用项目资料：不注入背景设定那一层。</p>
                 </div>

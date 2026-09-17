@@ -489,7 +489,7 @@ export type FreeMemory = {
   mines: string
   /** 五、纪念日 / 待办 */
   anniversaries: string
-  /** 六、最近日记（保留最近五天，倒序） */
+  /** 六、最近日记（保留最近 N 条，默认 7；一天一条，故也等于「最近 N 天」。倒序） */
   diaries: string
   updatedAt: number
 }

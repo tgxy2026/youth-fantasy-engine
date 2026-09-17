@@ -214,6 +214,12 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const [companionDeAi, setCompanionDeAi] = useState(() => localStorage.getItem('novel-companion-deai') !== '0')
   /** ③ 作者自定义风格补充（本机记忆，默认空）——不设文风枚举，只留这一个自由口子 */
   const [companionStyleNote, setCompanionStyleNote] = useState(() => localStorage.getItem('novel-companion-style') || '')
+  /**
+   * ② 是否把《写作规范》（坏习惯清单 / 标点规范 / 视角规则）锚进伴写。
+   * 默认开 —— 它比任何「文风枚举」都准；但有的作者不希望对白被自己列的规矩绑住，所以给一个关的入口。
+   * （审计 2026-09-18 P1-8：弹窗文案早就写着「可关」，开关却一直没做。）
+   */
+  const [companionStyleSpec, setCompanionStyleSpec] = useState(() => localStorage.getItem('novel-companion-stylespec') !== '0')
   const [styleNotePrompt, setStyleNotePrompt] = useState(false)
   /** 当前 ghost 建议：null = 无建议；at = 该建议针对的光标位置（防止错位插入） */
   const [ghost, setGhost] = useState<{ text: string; at: number } | null>(null)
@@ -235,7 +241,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
    */
   const ghostDismissed = useRef<{ at: number; len: number } | null>(null)
   /** 设定资料 + 《写作规范》缓存（按章节失效）：ghost 请求要低延迟，不能每次重读全库 */
-  const ghostCtxCache = useRef<{ chapterId: string; projectContext: string; styleSpec: string } | null>(null)
+  // styleSpecOn 一并入缓存键：开关一翻，旧缓存里那份 styleSpec 就不能再用了
+  const ghostCtxCache = useRef<{ chapterId: string; projectContext: string; styleSpec: string; styleSpecOn: boolean } | null>(null)
   // draftContent：当前章节的未保存内容（draftRef 同步镜像，供自动保存定时器读取最新值，防止 2 秒防抖期间 updateContent 的改动被旧值覆盖）
   const [draftContent, setDraftContent] = useState<string>('')
   const draftRef = useRef('')
@@ -728,9 +735,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
    */
   const loadGhostContext = useCallback(async (chapterId: string) => {
     const hit = ghostCtxCache.current
-    if (hit && hit.chapterId === chapterId) return hit
+    if (hit && hit.chapterId === chapterId && hit.styleSpecOn === companionStyleSpec) return hit
     let styleSpec = ''
-    try {
+    // 关掉「参考写作规范」时整段不注入 —— 只靠前文样本与作者的文风补充来锚定
+    if (companionStyleSpec) try {
       // 复用《写作规范》表（运营维护组）：作者自己写的坏习惯清单 / 标点规范 / 视角规则，
       // 比任何"文风枚举标签"都准，且零新增数据模型。
       const style = await db.getFormData('style')
@@ -752,10 +760,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       // 而伴写已经有光标前正文了、根本不需要目录，真正该给的设定反而挤不进来。
       projectContext = await buildInlineBriefing()
     } catch { /* 没有设定摘要时退化为纯前文续写 */ }
-    const next = { chapterId, projectContext, styleSpec }
+    const next = { chapterId, projectContext, styleSpec, styleSpecOn: companionStyleSpec }
     ghostCtxCache.current = next
     return next
-  }, [])
+  }, [companionStyleSpec])
 
   /** 发起一次伴写请求（防抖后调用）。连续失败到阈值即熔断，不再打扰作者 */
   const fireGhost = useCallback(async (before: string, at: number, key: string) => {
@@ -1536,6 +1544,15 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                       {companionDeAi ? '已开启' : '已关闭'}
                     </Button>
                     <span className="text-ink-500 text-[10px]">压制套话与排比，默认开</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-ink-400 shrink-0">参考写作规范</span>
+                    <Button variant="toggle" size="xs" selected={companionStyleSpec}
+                      onClick={() => { const v = !companionStyleSpec; setCompanionStyleSpec(v); localStorage.setItem('novel-companion-stylespec', v ? '1' : '0') }}
+                      title="把《写作规范》里登记的坏习惯词 / 标点偏好 / 视角规则锚进伴写；关掉后只靠前文样本与下面的文风补充">
+                      {companionStyleSpec ? '已开启' : '已关闭'}
+                    </Button>
+                    <span className="text-ink-500 text-[10px]">负面清单，默认开</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-ink-400 shrink-0">文风补充</span>

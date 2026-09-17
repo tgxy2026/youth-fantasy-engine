@@ -1253,7 +1253,7 @@ export default function TavernCard() {
                         ⚠️ 六栏的行为不一样：<span className="text-ink-100">长期摘要</span>会被压缩、
                         <span className="text-ink-100">关键事实</span>与<span className="text-ink-100">未爆的雷</span>只增不改、
                         <span className="text-ink-100">关系状态</span>每次整理重写、
-                        <span className="text-ink-100">最近日记</span>只留最近几天。
+                        <span className="text-ink-100">最近日记</span>只留最近几条（一天一条，也就是最近几天）。
                         手改时别把「只增」的两栏清空 —— 那等于让Ta失忆。
                       </p>
                       <div className="mt-3 space-y-3">
