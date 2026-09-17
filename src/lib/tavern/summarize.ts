@@ -20,7 +20,7 @@ import {
 import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './memory'
 import { formatDate } from '../date'
 import { authorBlock, newAuthorFence } from '../promptGuard'
-import { resolveTavernProvider, type ChatFn } from './engine'
+import { resolveTavernProvider, type ChatFn } from './provider'
 import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
 import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from './vars'
 

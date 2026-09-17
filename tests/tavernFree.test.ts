@@ -8,8 +8,9 @@ import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import {
-  buildFreeSystem, buildFreeMessages, runFreeTurn, runFreeAssist, injectDirectorNote, tickDirectorNote, renderFreeCharacter, applyPostRulesForPreview, type ChatFn,
+  buildFreeSystem, buildFreeMessages, runFreeTurn, runFreeAssist, injectDirectorNote, tickDirectorNote, renderFreeCharacter, applyPostRulesForPreview,
 } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import { emptyVars } from '../src/lib/tavern/vars'

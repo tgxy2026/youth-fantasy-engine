@@ -79,8 +79,9 @@ export function snapshotStorySetting(s: TavernStory): StorySettingSnapshot {
 /**
  * 取「这一场该用哪份故事设定」：优先会话里的**快照**，没有（老会话）则实时读那份故事。
  *
- * ⚠️ engine 只以**动态 import** 调它 —— `story.ts` 反过来要从 engine 取 `resolveTavernProvider`，
- *    静态互引就成环了（项目纪律：能不断环就不加环）。
+ * ⚠️ engine 只以**动态 import** 调它。原由是本文件要从 engine 取 `resolveTavernProvider`、
+ *    静态互引就成环；2026-09-18 起本文件改为直接从 `./provider` 取（真源），这条理由已不成立，
+ *    动态 import 保留作**防御** —— 项目纪律：能不断环就不加环。
  *
  * 读不到一律返回空串：故事被删了不该让一场老对话打不开，也不该报错打断这一轮生成。
  *

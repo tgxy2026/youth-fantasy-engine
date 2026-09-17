@@ -21,8 +21,9 @@ import { createDemoProject } from '../src/lib/seedData'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type AIProvider, type ChatMessage } from '../src/lib/ai'
 import {
-  buildPlotSystem, buildPlotMessages, runPlotTurn, splitCast, type ChatFn,
+  buildPlotSystem, buildPlotMessages, runPlotTurn, splitCast,
 } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 import { generateReport } from '../src/lib/tavern/report'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { TABS } from '../src/lib/schema'

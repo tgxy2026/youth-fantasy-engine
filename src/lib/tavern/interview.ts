@@ -12,7 +12,7 @@
  *    两份实现必然漂移（一边改了白名单另一边没改，表现是「界面显示记下了、草稿里却没有」）。
  */
 import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
-import { resolveTavernProvider, type ChatFn } from './engine'
+import { resolveTavernProvider, type ChatFn } from './provider'
 import {
   emptyInterview as emptyInterviewCore,
   interviewProgress as interviewProgressCore,

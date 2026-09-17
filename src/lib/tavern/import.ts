@@ -17,7 +17,7 @@
  * 四章带嵌套，让模型输出深层 JSON 很容易在转义/层级上出错，段落标记则天然抗噪。
  */
 import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
-import { resolveTavernProvider, type ChatFn } from './engine'
+import { resolveTavernProvider, type ChatFn } from './provider'
 import { emptyFreeCharacter, type FreeCharacter } from './types'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import { structFieldLines } from './cardFields'

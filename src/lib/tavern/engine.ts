@@ -44,9 +44,12 @@ import {
 /** 剧情模式的档位固定为叙事向（方案 §5.3：剧情默认叙事向、自由默认聊天向） */
 const PLOT_TONE = 'narrative' as const
 
-// 模型解析在 ./provider（单开一个文件，避免 engine ↔ world 成环）；这里 re-export 保持既有调用点不变。
-export { resolveTavernProvider } from './provider'
-export type { ChatFn } from './provider'
+// 🔴 模型解析的真源是 `./provider`（单开一个文件，避免 engine ↔ world 成环）。
+//    这里**刻意不再 re-export**：2026-09-18 审计发现 daily / import / interview / report /
+//    revise / summarize / roundEnd 七个模块都在从本文件取 `resolveTavernProvider` / `ChatFn`，
+//    只因这对 re-export 顺手。今天没成环（engine 尚未反向调用它们），但**只要 engine 调用
+//    其中任何一个，环立刻闭合**（项目纪律 11 正是防这个）。删掉之后由编译器保证真源唯一
+//    （并加了 tests/importCycles 静态闸兜底）。本文件自己用的时候照旧从 `./provider` import。
 
 /** 把角色分配表拆成三类 */
 export function splitCast(cast: TavernCast[]) {
@@ -456,8 +459,10 @@ export type FreeSystemResult = {
 /**
  * 取这一场要用的故事世界设定。
  *
- * 【为什么是动态 import】`story.ts` 反过来要从本文件取 `resolveTavernProvider`
- * （它起草故事时要调模型），静态互引就成环 —— 项目纪律是能不断环就不加环。
+ * 【为什么留动态 import】原注释给的理由（`story.ts` 反过来要从本文件取
+ * `resolveTavernProvider`）**已经不成立** —— 它 2026-09-18 起改为直接从 `./provider` 取。
+ * 这里继续保留动态 import 作**防御**（不再是为了断环）：把 story 这一层挡在 engine 的
+ * 静态依赖之外，将来它若再引入与 engine 相关的依赖也不会立刻成环。
  * 模块加载一次后由运行时缓存，这里没有实际开销。
  *
  * 失败一律当作「没有这一层」：故事被删了不该让一场老对话打不开。

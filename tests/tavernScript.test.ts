@@ -16,7 +16,7 @@ import { buildFreeSystem } from '../src/lib/tavern/engine'
 import * as store from '../src/lib/tavern/store'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
 import { getTavernSettings } from '../src/lib/tavern/settings'
-import type { ChatFn } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 import type { FreeCharacter, TavernScript } from '../src/lib/tavern/types'
 import { __resetMockStores } from './mock-memory'
 

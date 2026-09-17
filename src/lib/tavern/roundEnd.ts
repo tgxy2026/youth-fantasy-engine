@@ -23,7 +23,8 @@ import { summarizeRound, summarizeMemory, extractSessionVars } from './summarize
 import { proposeCardRevisions, type CardRevision } from './revise'
 import { recordVarChanges, turnSeqOf, emptyVars, manualPinnedKeys } from './vars'
 import type { SummaryLimits } from './summarize'
-import { renderFreeCharacter, type ChatFn } from './engine'
+import { renderFreeCharacter } from './engine'
+import type { ChatFn } from './provider'
 import type {
   FreeSession, FreeCharacter, FreeMemory, TavernMessage,
   TavernVars, VarChange, CharJournalEntry, VarKey, CharVars,

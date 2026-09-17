@@ -24,7 +24,7 @@ import { extractSessionVars, renderVarsTranscript } from '../src/lib/tavern/summ
 import * as store from '../src/lib/tavern/store'
 import { getTavernSettings, DEFAULT_TAVERN_VARS, DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
-import type { ChatFn } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 import type { FreeCharacter, FreeSession, VarValues, VarKey, TavernMessage } from '../src/lib/tavern/types'
 import { __resetMockStores } from './mock-memory'
 

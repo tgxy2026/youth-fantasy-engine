@@ -21,7 +21,7 @@
 import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
-import { resolveTavernProvider, type ChatFn } from './engine'
+import { resolveTavernProvider, type ChatFn } from './provider'
 import { uid } from '../id'
 import { CARD_FIELDS, isCardField, readCardField, fieldLabel } from './types'
 import { structHintFor } from './cardFields'

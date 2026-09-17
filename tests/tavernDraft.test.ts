@@ -18,7 +18,7 @@ import {
   filledToText, fieldKeysOf,
 } from '../src/lib/tavern/interview'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
-import type { ChatFn } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 import { describeSource, type DraftSource } from '../src/lib/draftMaterial'
 import { __resetMockStores } from './mock-memory'
 

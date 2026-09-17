@@ -14,7 +14,7 @@ import { DAILY_ADVANCE_MS, type DailyState, type FreeCharacter } from '../src/li
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import { __resetMockStores } from './mock-memory'
 import * as store from '../src/lib/tavern/store'
-import type { ChatFn } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

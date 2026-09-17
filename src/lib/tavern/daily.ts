@@ -24,9 +24,9 @@
 import {
   chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage,
 } from '../ai'
-import { resolveTavernProvider } from './engine'
+import { resolveTavernProvider } from './provider'
 import { memoryToText, emptyMemory } from './memory'
-import type { ChatFn } from './engine'
+import type { ChatFn } from './provider'
 import {
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP, type DailyState, type FreeCharacter, type FreeMemory,
 } from './types'

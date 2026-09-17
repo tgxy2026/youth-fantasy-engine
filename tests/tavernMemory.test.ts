@@ -17,7 +17,7 @@ import {
   SUMMARY_LOCK_TTL_MS, emptyFreeCharacter,
   type FreeMemory, type TavernMessage,
 } from '../src/lib/tavern/types'
-import type { ChatFn } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
 import { __resetMockStores } from './mock-memory'
 

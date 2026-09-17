@@ -17,7 +17,7 @@ import * as db from '../db'
 import { TABS } from '../schema'
 import { parsePlainObject, parseObjectArray, asText } from '../aiParse'
 import { uid } from '../id'
-import { resolveTavernProvider, type ChatFn } from './engine'
+import { resolveTavernProvider, type ChatFn } from './provider'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from './types'
 

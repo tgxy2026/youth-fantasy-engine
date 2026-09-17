@@ -16,7 +16,7 @@ import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import { runRoundEnd, pendingMessages } from '../src/lib/tavern/roundEnd'
 import { JOURNAL_HEAD } from '../src/lib/tavern/summarize'
 import { memoryToText } from '../src/lib/tavern/memory'
-import type { ChatFn } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 import { JOURNAL_KEEP, type FreeCharacter, type FreeSession, type TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0

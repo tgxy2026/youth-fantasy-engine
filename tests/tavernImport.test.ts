@@ -11,7 +11,7 @@ import {
 import { emptyFreeCharacter } from '../src/lib/tavern/types'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import { __resetMockStores } from './mock-memory'
-import type { ChatFn } from '../src/lib/tavern/engine'
+import type { ChatFn } from '../src/lib/tavern/provider'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
