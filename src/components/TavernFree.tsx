@@ -43,7 +43,7 @@ import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
-import { runFreeTurn, varsEnabledKeys, resolveTavernProvider, runFreeAssist } from '../lib/tavern/engine'
+import { runFreeTurn, varsEnabledKeys, resolveTavernProvider, runFreeAssist, collapseBlankLines } from '../lib/tavern/engine'
 import { unloadOllamaModel, isCancelled } from '../lib/ai'
 import { refreshSessionVars } from '../lib/tavern/varsRefresh'
 import type { PostApplied } from '../lib/tavern/postRules'
@@ -943,13 +943,14 @@ export default function TavernFree() {
           onToken: (t) => {
             buf += t
             const now = Date.now()
-            if (now - lastFlush >= 120) { lastFlush = now; setInput(buf) } // 节流 ~120ms，避免高频重渲染
+            // 节流 ~120ms 回写预览；预览也去空行，避免生成途中输入框闪出空行
+            if (now - lastFlush >= 120) { lastFlush = now; setInput(collapseBlankLines(buf)) }
           },
         },
       )
-      setInput(res.text.trim())                          // 最终以完整结果为准（节流可能漏掉尾部）
+      setInput(res.text)                          // 最终以完整结果为准（已在 engine 里去空行）
     } catch (e) {
-      if (isCancelled(e)) setInput(buf.trim())          // 取消：保留已生成的部分
+      if (isCancelled(e)) setInput(collapseBlankLines(buf))          // 取消：保留已生成的部分（去空行）
       else {
         showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
         if (mode === 'polish') setInput(original)        // 润色失败：还原原文

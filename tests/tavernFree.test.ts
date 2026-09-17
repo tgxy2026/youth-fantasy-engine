@@ -8,7 +8,7 @@ import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import {
-  buildFreeSystem, buildFreeMessages, runFreeTurn, runFreeAssist, injectDirectorNote, tickDirectorNote, renderFreeCharacter, type ChatFn,
+  buildFreeSystem, buildFreeMessages, runFreeTurn, runFreeAssist, injectDirectorNote, tickDirectorNote, renderFreeCharacter, collapseBlankLines, type ChatFn,
 } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
@@ -625,6 +625,20 @@ async function main() {
     const lastA = fakeA.calls[0].messages[fakeA.calls[0].messages.length - 1].content
     ok('runFreeAssist · 自动回复指令不含原文内联', lastA.includes('【代写指令】') && !lastA.includes('我回来了'))
     ok('runFreeAssist · auto 同样返回文本（经后处理）含核心内容', resA.text.includes('今天天气不错'))
+
+    // 关键回归：runFreeAssist 走 postRules（含去空行），模型顺手加的空行不会进输入框
+    const blanks = makeFakeChat('（他放下伞）\n\n\n\n"你来了。"\n\n')
+    const resB = await runFreeAssist(hist, [ai, user], 'auto', '', {}, { chatFn: blanks.chatFn })
+    ok('runFreeAssist 产出已无空行（去空行规则兜底）', !/\n\s*\n/.test(resB.text) && resB.text === '（他放下伞）\n"你来了。"')
+  }
+
+  // ---------- 12) collapseBlankLines 纯函数：去空行但不吃掉段落内换行（用于输入框实时预览） ----------
+  {
+    ok('连续空行压成单个换行', collapseBlankLines('（他笑了笑）\n\n\n今天天气不错。') === '（他笑了笑）\n今天天气不错。')
+    ok('保留段落内的单行换行', collapseBlankLines('（他笑了笑）\n今天天气不错。') === '（他笑了笑）\n今天天气不错。')
+    ok('去掉行尾空白后压空行', collapseBlankLines('（他笑了笑）  \n  \n今天天气不错。') === '（他笑了笑）\n今天天气不错。')
+    ok('吃掉首尾空行与空白', collapseBlankLines('\n\n  （他笑了笑）今天天气不错。  \n\n') === '（他笑了笑）今天天气不错。')
+    ok('CRLF 也按 LF 处理', collapseBlankLines('（动作）\r\n\r\n对白') === '（动作）\n对白')
   }
 
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)

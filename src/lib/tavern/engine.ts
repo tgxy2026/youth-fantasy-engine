@@ -787,6 +787,22 @@ export function buildFreeMessages(
   return { messages: trimmed.kept.map(m => ({ role: m.role, content: m.content })), dropped: trimmed.dropped }
 }
 
+/**
+ * 去空行归一化（润色/自动回复专用）。
+ *
+ * 模型常在台词里顺手加空行（行首/行尾留白、段落间多打一个回车），填进输入框既不好看也无意义。
+ * 处理口径：**连换行压成单个换行**（去掉空行），但**保留段落内的单换行**；并清掉每行行尾的空白，
+ * 免得 "  \n" 被当成有内容的行、压不掉。外层 trim 由本函数一并完成。
+ * 只作用于 assist 两功能（不碰正常对话 runFreeTurn），避免误伤作者自己写的多段回复。
+ */
+export function collapseBlankLines(text: string): string {
+  return String(text ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}
+
 /** 润色 / 自动回复：复用自由模式 system（仅翻转 assist 措辞）+ 历史消息，让模型代用户扮演的角色写这一轮发言，结果回交调用方填输入框（绝不自动发送、不落库）。 */
 export async function runFreeAssist(
   session: FreeSession,
@@ -826,7 +842,8 @@ export async function runFreeAssist(
     },
   )
   let text = reply ?? ''
-  // 套用输出后处理规则（已确认：套用；与正常对话同一套，顺序即 settings.postRules 的顺序）
+  // 套用输出后处理规则（已确认：套用；与正常对话同一套，顺序即 settings.postRules 的顺序）。
+  // 「去掉空行 / 括号后换行」两条默认规则也在这里生效，自动回复与润色与正常对话共用同一套格式兜底。
   if (text.trim() && st.postRulesEnabled) {
     const post = applyPostRules(text, st.postRules ?? [])
     text = post.text
