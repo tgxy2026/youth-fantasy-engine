@@ -23,7 +23,8 @@
 import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
 import { parsePlainObject, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
-import { resolveTavernProvider, type ChatFn } from './engine'
+// 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件（经 script/world），会形成循环依赖
+import { resolveTavernProvider, type ChatFn } from './provider'
 import type { SearchSettings, webSearch } from '../webSearch'
 import { prepareDraftMaterial, type DraftSource } from '../draftMaterial'
 import { structFieldLines } from './cardFields'
