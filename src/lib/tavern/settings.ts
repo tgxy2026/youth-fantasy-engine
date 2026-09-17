@@ -29,7 +29,7 @@ import {
 } from './types'
 import { TONE_HINT } from './prompt'
 import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
-import { DEFAULT_POST_RULES, LEGACY_DEFAULT_POST_RULES, normalizePostRules, type PostRule } from './postRules'
+import { DEFAULT_POST_RULES, LEGACY_POST_RULES_VERSIONS, normalizePostRules, type PostRule } from './postRules'
 import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
 import { resolveParams } from './params'          // 同上：params 只依赖 types
 
@@ -266,13 +266,20 @@ const LEGACY_DEFAULT_COMMON_EXTRA = [
  *   ③ `free.defaultUserCharId` —— 已废弃的键，**直接删**（这不是"升级默认值"，是清场）。
  * 将来再有默认文本/协议变更，按同样方式在这里追加比对，别去动用户已保存的值。
  */
-/** 库里那四条输出后处理规则是不是「原封未动的旧出厂值」（只看关键字段，忽略 flags/note 的差异） */
+/**
+ * 库里的输出后处理规则是不是「原封未动的**某个**旧出厂版本」（只看关键字段，忽略 flags/note 的差异）。
+ * 🔴 必须遍历**全部**历史版本：只比最早那一版，会漏掉「中间版本曾发出去、作者存过设置」的用户
+ *    （2026-09-17 踩坑：2.1.1 已发版的四条不在锚点里 → 那批用户升不到新规则）。
+ */
 function isLegacyPostRules(raw: unknown): boolean {
-  if (!Array.isArray(raw) || raw.length !== LEGACY_DEFAULT_POST_RULES.length) return false
-  return LEGACY_DEFAULT_POST_RULES.every((old, i) => {
-    const r = raw[i] as Partial<PostRule> | undefined
-    return !!r && r.id === old.id && r.pattern === old.pattern && r.replacement === old.replacement
-  })
+  if (!Array.isArray(raw)) return false
+  return LEGACY_POST_RULES_VERSIONS.some(ver =>
+    raw.length === ver.length &&
+    ver.every((old, i) => {
+      const r = raw[i] as Partial<PostRule> | undefined
+      return !!r && r.id === old.id && r.pattern === old.pattern && r.replacement === old.replacement
+    }),
+  )
 }
 
 
@@ -409,7 +416,8 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     unloadAfterRoundEnd: false,
   },
   protocol: DEFAULT_PROTOCOL,
-  // 出厂四条全开 —— 四条都是「把违规写法掰回协议」，不会误伤正常输出（见 postRules.ts 的说明）
+  // 出厂规则（条数见 postRules.ts 的 DEFAULT_POST_RULES，当前 6 条）：绝大多数是「把违规写法掰回协议」，
+  // 不误伤正常输出；只有「去掉行首说话人标签」默认关 —— 它是唯一会删字的规则（见 postRules.ts 的说明）。
   postRules: DEFAULT_POST_RULES.map(r => ({ ...r })),
   postRulesEnabled: true,
   postRuleNotice: true,

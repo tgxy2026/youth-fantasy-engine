@@ -32,8 +32,10 @@ export type PostRule = {
 }
 
 /**
- * 出厂四条。顺序即执行顺序，**别随意调换**：
+ * 出厂规则。顺序即执行顺序，**别随意调换**：
  * 第 2 条必须先于第 3 条（不然 `**动作**` 会被当成单星号动作处理，留下孤立星号）。
+ * 🔴 条数会变（当前 6 条）。**每次增删/改动出厂规则，都要往下面的
+ *    `LEGACY_POST_RULES_VERSIONS` 追加一版旧快照**，否则老用户升不上来。
  */
 export const DEFAULT_POST_RULES: PostRule[] = [
   {
@@ -100,40 +102,86 @@ export const DEFAULT_POST_RULES: PostRule[] = [
 ]
 
 /**
- * 出厂四条的**旧版本**（`pr-star-action` 的正则会产生双层括号）。
- * 只用于升级判断：库里与它**关键字段全等** ⇒ 作者从没动过输出后处理，可安全换成新版；
+ * 出厂规则的**历史版本表**（升级判定用）。
+ *
+ * 库里与其中**任一版关键字段全等** ⇒ 作者从没动过输出后处理 → 整体换成新版；
  * 只要作者改过任何一条（顺序 / 开关 / 正则），就一个字都不动。
+ *
+ * 🔴🔴 **每改一次出厂规则，必须往这里追加一版旧快照**。
+ * 只留「最早那一版」是不行的 —— 中间版本发出去过、作者存过设置，就会永远升不上来
+ * （2026-09-17 实测：2.1.1 发版的四条里 `pr-star-action` 已是新式两分支，
+ *  而锚点只记着更早的旧正则 → 那批用户拿不到「去空行 / 括号后换行」两条新规则）。
  */
-export const LEGACY_DEFAULT_POST_RULES: PostRule[] = [
-  {
-    id: 'pr-halfwidth-paren',
-    name: '半角括号 → 全角',
-    pattern: '\\(([^)\\n]*)\\)',
-    replacement: '（$1）',
-    enabled: true,
-  },
-  {
-    id: 'pr-strip-markdown',
-    name: '去掉 markdown 装饰',
-    pattern: '\\*\\*(.+?)\\*\\*|`([^`\\n]+)`|^#{1,6}\\s*',
-    replacement: '$1$2',
-    enabled: true,
-  },
-  {
-    id: 'pr-star-action',
-    name: '星号动作 → （动作）',
-    pattern: '\\*([^*\\n]+)\\*',
-    replacement: '（$1）',
-    enabled: true,
-  },
-  {
-    id: 'pr-speaker-label',
-    name: '去掉行首说话人标签',
-    pattern: '^([\\u4e00-\\u9fa5A-Za-z]{2,6})[：:]\\s*',
-    replacement: '',
-    enabled: false,
-  },
+export const LEGACY_POST_RULES_VERSIONS: PostRule[][] = [
+  // v1：最初的四条（`pr-star-action` 会把「*(动作)*」产出成 （（动作））双层括号）
+  [
+    {
+      id: 'pr-halfwidth-paren',
+      name: '半角括号 → 全角',
+      pattern: '\\(([^)\\n]*)\\)',
+      replacement: '（$1）',
+      enabled: true,
+    },
+    {
+      id: 'pr-strip-markdown',
+      name: '去掉 markdown 装饰',
+      pattern: '\\*\\*(.+?)\\*\\*|`([^`\\n]+)`|^#{1,6}\\s*',
+      replacement: '$1$2',
+      enabled: true,
+    },
+    {
+      id: 'pr-star-action',
+      name: '星号动作 → （动作）',
+      pattern: '\\*([^*\\n]+)\\*',
+      replacement: '（$1）',
+      enabled: true,
+    },
+    {
+      id: 'pr-speaker-label',
+      name: '去掉行首说话人标签',
+      pattern: '^([\\u4e00-\\u9fa5A-Za-z]{2,6})[：:]\\s*',
+      replacement: '',
+      enabled: false,
+    },
+  ],
+  // v2：2.1.1 发版的四条（`pr-star-action` 改为两分支式；此时尚未有「去空行 / 括号后换行」）
+  [
+    {
+      id: 'pr-halfwidth-paren',
+      name: '半角括号 → 全角',
+      pattern: '\\(([^)\\n]*)\\)',
+      replacement: '（$1）',
+      enabled: true,
+    },
+    {
+      id: 'pr-strip-markdown',
+      name: '去掉 markdown 装饰',
+      pattern: '\\*\\*(.+?)\\*\\*|`([^`\\n]+)`|^#{1,6}\\s*',
+      replacement: '$1$2',
+      enabled: true,
+    },
+    {
+      id: 'pr-star-action',
+      name: '星号动作 → （动作）',
+      pattern: '\\*(?:（([^*\\n]*?)）|([^*\\n]+?))\\*',
+      replacement: '（$1$2）',
+      enabled: true,
+    },
+    {
+      id: 'pr-speaker-label',
+      name: '去掉行首说话人标签',
+      pattern: '^([\\u4e00-\\u9fa5A-Za-z]{2,6})[：:]\\s*',
+      replacement: '',
+      enabled: false,
+    },
+  ],
 ]
+
+/**
+ * 历史版本 v1（保留旧名以示兼容）。新代码请用 `LEGACY_POST_RULES_VERSIONS`。
+ * @deprecated 仅为既有引用/测试保留；判断「作者没动过」请遍历历史版本表。
+ */
+export const LEGACY_DEFAULT_POST_RULES: PostRule[] = LEGACY_POST_RULES_VERSIONS[0]
 
 export type PostApplied = { name: string; count: number }
 export type PostResult = {

@@ -13,7 +13,7 @@ import {
 } from '../src/lib/tavern/settings'
 import { FIXED_OVERHEAD_CHARS, historyBudget } from '../src/lib/tavern/budget'
 import { PROTOCOL_CORE, PROTOCOL_VERSION, LEGACY_PROTOCOLS } from '../src/lib/tavern/protocol'
-import { DEFAULT_POST_RULES, LEGACY_DEFAULT_POST_RULES } from '../src/lib/tavern/postRules'
+import { DEFAULT_POST_RULES, LEGACY_DEFAULT_POST_RULES, LEGACY_POST_RULES_VERSIONS } from '../src/lib/tavern/postRules'
 import { resolveParams } from '../src/lib/tavern/params'
 import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
@@ -185,6 +185,19 @@ async function main() {
     await db.setMeta(K_TAVERN_SETTINGS, { postRules: custom } as never)
     ok('作者改过任何一条 → 一个字都不动（判据保守）',
       (await getTavernSettings()).postRules.find(r => r.id === 'pr-star-action')?.enabled === false)
+
+    // 🔴 回归：中间版本的出厂值也必须能升级。
+    //    2.1.1 发版的四条（v2）曾发出去过、作者存过设置；锚点若只记最早那版（v1），这批人永远升不上来。
+    const v2 = LEGACY_POST_RULES_VERSIONS[1]
+    ok('历史版本表至少含 v1 与 v2（每改一次出厂规则都要追加一版）', LEGACY_POST_RULES_VERSIONS.length >= 2)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { postRules: v2 } as never)
+    const up2 = (await getTavernSettings()).postRules
+    ok('存着 2.1.1 发版的四条 → 也能升到当前出厂（拿到「去空行 / 括号后换行」）',
+      up2.length === DEFAULT_POST_RULES.length
+      && up2.some(r => r.id === 'pr-no-blank-lines')
+      && up2.some(r => r.id === 'pr-break-after-paren'),
+      String(up2.length))
   }
 
   // ---------- 3b) 废弃字段清理：free.defaultUserCharId ----------

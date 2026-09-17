@@ -862,7 +862,7 @@ export default function TavernControl() {
 
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="secondary" size="sm" onClick={addRule}>＋ 新增规则</Button>
-              <Button variant="secondary" size="sm" onClick={resetRules}>恢复出厂四条</Button>
+              <Button variant="secondary" size="sm" onClick={resetRules}>恢复出厂默认</Button>
               <span className="text-[10.5px] text-ink-500">
                 共 {s.postRules.length} 条 · 启用 {s.postRules.filter(r => r.enabled).length} 条
               </span>
