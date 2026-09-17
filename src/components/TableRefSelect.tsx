@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { getTableRows } from '../lib/db'
 import { ChevronDown, Check, Plus } from 'lucide-react'
 import { Button } from './Button'
+import { EmptyState } from './EmptyState'
 import { Z } from '../lib/zLayer'
 
 interface Props {
@@ -138,7 +139,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
             </Button>
           )}
           {filtered.length === 0 && !q.trim() && (
-            <div className="px-2.5 py-2 text-[11px] text-ink-500">暂无可选数据，可直接在上方输入</div>
+            <EmptyState text="暂无可选数据，可直接在上方输入" />
           )}
           {filtered.map(n => (
             <Button variant="bare"

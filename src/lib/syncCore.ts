@@ -14,6 +14,7 @@ import {
   type RawSyncResponse,
 } from './syncTransport'
 import { SAVE_DEBOUNCE_MS } from './constants'
+import { todayKey } from './date'
 
 // 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
 // ⚠️ 注意 'backups' 是**本地专属**：上传侧 liveStores() 会把它从载荷里剔除，
@@ -151,12 +152,6 @@ function xorKeystream(c: string): Uint8Array {
 // ↓ 注意：encryptObj/decryptObj 及 aesEncrypt/aesDecrypt/xorObfuscate/xorDeobfuscate
 // 依赖模块级 `code`，该变量由 createCloudStore 闭包持有，故这些函数定义在工厂内部（见下）。
 // 此处仅保留纯工具（bytesToB64/b64ToBytes/deriveKey/xorKeystream 均不引用 code）。
-
-function todayKey(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
 
 function eqRecord(a: any, b: any): boolean {
   if (a === b) return true

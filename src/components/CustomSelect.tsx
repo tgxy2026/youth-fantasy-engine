@@ -12,6 +12,7 @@ import {
 import { Plus, Check, ChevronDown, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
+import { EmptyState } from './EmptyState'
 import { Z } from '../lib/zLayer'
 
 
@@ -296,10 +297,10 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             />
           </div>
           {(filtered.length === 0 && !adding && !renaming && !editing) && (
-            <div className="px-2.5 py-2 text-[11px] text-ink-500">无匹配项，可点击下方新增</div>
+            <EmptyState text="无匹配项，可点击下方新增" />
           )}
           {list.length === 0 && !adding && !ql && (
-            <div className="px-2.5 py-2 text-[11px] text-ink-500">暂无选项，点击下方新增</div>
+            <EmptyState text="暂无选项，点击下方新增" />
           )}
 
           {renaming && (() => {

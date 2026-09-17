@@ -18,6 +18,7 @@ import { buildProjectContext } from '../lib/aiContext'
 import { getSetting, setSetting } from '../lib/db'
 import { uid } from '../lib/id'
 import { Button } from './Button'
+import { clipText } from '../lib/textClip'
 
 
 // ============ 多轮对话会话模型（按项目持久化在 settingsKV） ============
@@ -53,7 +54,7 @@ const TEMPLATES: { label: string; prompt: string }[] = [
   { label: '一致性自查', prompt: '请帮我做设定一致性自查。以下是当前设定要点（人名 / 地点 / 时间线 / 能力 / 关系），请指出任何前后矛盾或逻辑漏洞，并给出修正建议：\n（在此粘贴你的设定）' },
 ]
 
-const truncateTitle = (s: string, n = 16) => (s.length > n ? s.slice(0, n) + '…' : s)
+const truncateTitle = (s: string, n = 16) => clipText(s, n)
 
 export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
   const { ready: aiReady } = useAIReady()

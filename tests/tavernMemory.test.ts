@@ -10,7 +10,8 @@ import {
   parseMemoryText, rollDiaries, trimMemory,
   nextWatermark, acquireSummaryLock, releaseSummaryLock,
 } from '../src/lib/tavern/memory'
-import { summarizeMemory, buildSummarySystem, renderTranscript, formatDate, buildColdStartSystem, coldStartMemory, draftMemoryFromCard } from '../src/lib/tavern/summarize'
+import { summarizeMemory, buildSummarySystem, renderTranscript, buildColdStartSystem, coldStartMemory, draftMemoryFromCard } from '../src/lib/tavern/summarize'
+import { formatDate } from '../src/lib/date'
 import {
   MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
   SUMMARY_LOCK_TTL_MS, emptyFreeCharacter,

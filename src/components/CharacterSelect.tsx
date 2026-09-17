@@ -5,6 +5,7 @@ import type { CardRecord } from '../lib/types'
 import { tabVisible, type VisCtx, TABS } from '../lib/schema'
 import { ChevronDown, Check } from 'lucide-react'
 import { Button } from './Button'
+import { EmptyState } from './EmptyState'
 import { Z } from '../lib/zLayer'
 
 interface Props {
@@ -144,7 +145,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
             />
           </div>
           {filtered.length === 0 && (
-            <div className="px-2.5 py-2 text-[11px] text-ink-500">无匹配角色</div>
+            <EmptyState text="无匹配角色" />
           )}
           {filtered.map(n => (
             <Button variant="bare"

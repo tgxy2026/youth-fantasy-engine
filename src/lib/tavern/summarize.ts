@@ -18,17 +18,11 @@ import {
   chat, CHAT_TIMEOUT_MS, JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage,
 } from '../ai'
 import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './memory'
+import { formatDate } from '../date'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './engine'
 import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
 import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from './vars'
-
-/** 把时间戳格式化成「YYYY-MM-DD」（日记用） */
-export function formatDate(ts: number): string {
-  const d = new Date(ts)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
 
 /** 六栏档案的存在意义、各栏行为、以及两条不容违反的规矩（对外导出便于测试与 UI 展示） */
 /** 关键事实最多保留的行数（超了要归并，不是丢弃新事 —— 见提示词里的精简纪律） */

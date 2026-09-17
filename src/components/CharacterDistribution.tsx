@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import * as db from '../lib/db'
 import type { Chapter, CardRecord } from '../lib/types'
 import { Button } from './Button'
+import { clipText } from '../lib/textClip'
 
 interface Props {
   onNavigate: (id: string, chapterId?: string) => void
@@ -79,7 +80,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
               {topChapters.map(ch => (
                 <th key={ch.id} className="text-ink-500 font-normal px-0.5 py-1.5 align-bottom" style={{ width: 22 }}>
                   <div className="whitespace-nowrap" style={{ writingMode: 'vertical-rl' }} title={`${ch.title}（点单元格跳转）`}>
-                    {ch.title.length > 10 ? ch.title.slice(0, 10) + '…' : ch.title}
+                    {clipText(ch.title, 10)}
                   </div>
                 </th>
               ))}

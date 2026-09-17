@@ -13,6 +13,7 @@ import * as db from './db'
 import { tabVisible, type VisCtx, TABS } from './schema'
 import { readAliases } from './aliases'
 import { splitNames } from './audit'
+import { clipText } from './textClip'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
 import type { Chapter, TabDef, Volume } from './types'
 
@@ -179,8 +180,7 @@ const DEFAULT_ROW_CAP = 40
 const CELL_CAP = 200
 
 function clip(s: string, n: number): string {
-  const t = (s ?? '').replace(/\s+/g, ' ').trim()
-  return t.length > n ? t.slice(0, n) + '…' : t
+  return clipText(s, n, true) // 压空白再截断 —— 见 lib/textClip.ts
 }
 
 /** 表单/卡片的存储 key 形如「模块::字段」，取字段名 */

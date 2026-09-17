@@ -5,6 +5,7 @@ import { Plus, Check, ChevronDown, Pencil, Trash2 } from 'lucide-react'
 import { confirmDialog } from './dialogs'
 import { Modal, Z } from './Modal'
 import { Button } from './Button'
+import { EmptyState } from './EmptyState'
 
 interface Props {
   /** 当前选中的历法名称 */
@@ -120,7 +121,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
           className="fixed overflow-y-auto rounded-md bg-ink-800 border border-ink-600 shadow-xl py-1 max-h-72"
         >
           {calendars.length === 0 && (
-            <div className="px-2.5 py-2 text-[11px] text-ink-500">暂无历法，点击下方新增</div>
+            <EmptyState text="暂无历法，点击下方新增" />
           )}
           {calendars.map(cal => {
             const selected = value === cal.name
