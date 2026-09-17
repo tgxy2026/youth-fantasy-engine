@@ -69,7 +69,14 @@
 
 <h1>青春幻想引擎 2.2.0 · 全量审计报告</h1>
 <div class="meta">日期：2026-09-17 · 工作区：<code>G:/AI软件/novel-studio开发源码</code> · 逐项记录：<code>docs/2.2.0-审计记录.md</code><br>
-⚠️ <b>本轮只审计、未改任何产品代码</b>（修复待老大安排）。基线 commit：<code>c98e3e2</code></div>
+⚠️ <b>本报告记录的是「审计当时」的状态（只审计、未改代码）</b>。基线 commit：<code>c98e3e2</code></div>
+
+<div style="margin:14px 0;padding:12px 14px;border-radius:10px;border:1px solid var(--ok);background:var(--okbg);color:var(--ink);line-height:1.75">
+  <b>✅ 2026-09-18 更新：全部 31 项（2 P0 / 10 P1 / 19 P2）已逐条修复</b>，共 8 个提交（<code>c58cd4e</code> … <code>7e339fe</code>），
+  基线始终为 tsc 0 错 / lint 11 warning / <code>run-all</code> <b>48/48</b>。
+  逐项状态 + 三处对审计结论的修正 + 两个脚本坑，见 <code>docs/2.2.0-审计记录.md</code> §八。<br>
+  ⚠️ 下面正文中的「未修」均为<b>2026-09-17 审计当时</b>的状态，保留原样以存证。
+</div>
 
 <div class="kpi">
   <div><b>2</b><span>P0（新发现 · 未修）</span></div>
