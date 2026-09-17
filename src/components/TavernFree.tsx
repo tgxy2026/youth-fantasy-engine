@@ -959,8 +959,8 @@ export default function TavernFree() {
     }
   }, [streaming, assistBusy, session, input, castCards, charCard])
 
-  /** 仅当用户扮演了已建角色卡、且已有历史消息（非首轮）时，润色/自动回复才可用 */
-  const canAssist = !!session?.userCharId && session.messages.length > 0
+  /** 只要有历史消息（非首轮），润色/自动回复即可用。自由对话中用户用「我的档案」扮演（无角色卡）亦可用 */
+  const canAssist = !!session && session.messages.length > 0
 
   const quickActions: QuickAction[] = [
     { key: 'cont', label: '继续', hint: '让 Ta 接着说', text: '「继续。」' },
