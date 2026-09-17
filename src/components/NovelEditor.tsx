@@ -27,7 +27,7 @@ import { syncChapterMaster } from '../lib/chapterMaster'
 import { readAliases } from '../lib/aliases'
 import { useAIReady } from '../lib/useAIReady'
 import { aiChapterSummary, aiInlineSuggest, INLINE_SUGGEST_LIMITS, type InlineSuggestLength } from '../lib/aiTasks'
-import { buildProjectContext } from '../lib/aiContext'
+import { buildInlineBriefing } from '../lib/aiContext'
 import { isCancelled } from '../lib/ai'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
@@ -746,8 +746,11 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     } catch { /* 读不到规范不算错，伴写照常可用 */ }
     let projectContext = ''
     try {
-      const built = await buildProjectContext({ budget: 2000, focusChapterId: chapterId, inlineDropNote: false })
-      projectContext = built.text || ''
+      // 2.2.0：换成伴写专用切片 —— 关掉「章节清单（目录）」与"相关章节召回"，
+      // 只带 作品定位/世界设定/主要角色/名词术语，预算 900。
+      // 原先用 buildProjectContext({budget:2000}) 时，章节目录会吃掉大半预算，
+      // 而伴写已经有光标前正文了、根本不需要目录，真正该给的设定反而挤不进来。
+      projectContext = await buildInlineBriefing()
     } catch { /* 没有设定摘要时退化为纯前文续写 */ }
     const next = { chapterId, projectContext, styleSpec }
     ghostCtxCache.current = next

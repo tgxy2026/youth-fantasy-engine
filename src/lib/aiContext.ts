@@ -237,6 +237,38 @@ function sortBySecrecy<T extends { data?: Record<string, string> }>(rows: T[]): 
 /** 单个字段值的字符上限，超出截断（设定里偶有超长自由文本） */
 const CELL_CAP = 200
 
+/**
+ * 天生就该长的字段：真相 / 派系斗争 / 关系演变 / 事件链这类自由文本。
+ * 按 200 字截断的后果是模型只看到半句，反而容易"接着半句往下编" —— 故单独放宽。
+ * 按**字段名**判定（schema 列名即存储键，全库同名同义）。
+ */
+const LONG_FIELDS = new Set([
+  '事件经过（真相）', '民间流传版本（vs真相）', '事件链（起→承→转→合）',
+  '内部派系与权力斗争', '演变轨迹（按卷）', '演变触发事件',
+  '经济来源', '历史沿革', '对外关系',
+  '核心矛盾/内在挣扎', '关键过往经历', '核心性格',
+  '距离与行程时间', '地貌与气候', '范围与面积',
+  '世界终极真相', '隐藏设定', '体系背后的世界观真相', '体系的隐藏层级',
+  '回收方式与效果', '回收前置条件',
+  '镇派功法/核心武力', '实力与功法',
+])
+const CELL_CAP_LONG = 600
+
+/** 取某字段的字符上限（长文本字段放宽到 600） */
+function cellCap(name: string): number {
+  return LONG_FIELDS.has(name) ? CELL_CAP_LONG : CELL_CAP
+}
+
+/**
+ * 纯系统调度元数据：**不往提示词里写**。
+ *
+ * 「保密等级」的使命是"排预算顺序 + 决定可见性"，这两件事在装配层就完成了；
+ * 渲染成裸字母（S/A/B/C）喂给模型毫无意义 —— 模型无法解释它，还会被诱导去追问，
+ * 纯噪音且白占 token（长篇下这一列的累积量不小）。
+ * 它仍然完整参与排序（见 rankOf）与将来的行过滤，只是不出现在提示词里。
+ */
+const SYSTEM_META_FIELDS = new Set(['保密等级'])
+
 function clip(s: string, n: number): string {
   return clipText(s, n, true) // 压空白再截断 —— 见 lib/textClip.ts
 }
@@ -253,19 +285,21 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
   const used = new Set<string>()
   for (const mod of tab.modules ?? []) {
     for (const f of mod.fields) {
+      if (SYSTEM_META_FIELDS.has(f.name)) continue
       if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(f.name)) continue
       const key = `${mod.name}::${f.name}`
       const v = data[key] ?? data[f.name] ?? ''
       used.add(key)
-      if (v.trim()) lines.push(`${f.name}：${clip(v, CELL_CAP)}`)
+      if (v.trim()) lines.push(`${f.name}：${clip(v, cellCap(f.name))}`)
     }
   }
   // 兼容历史遗留 key（schema 改过字段名的老项目），不丢数据
   for (const [k, v] of Object.entries(data)) {
     if (used.has(k) || !v?.trim()) continue
     const fn = fieldName(k)
+    if (SYSTEM_META_FIELDS.has(fn)) continue
     if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(fn)) continue
-    lines.push(`${fn}：${clip(v, CELL_CAP)}`)
+    lines.push(`${fn}：${clip(v, cellCap(fn))}`)
   }
   return lines.join('\n')
 }
@@ -286,15 +320,18 @@ function renderCards(tab: TabDef, recs: { name: string; data: Record<string, str
 
 /** 表格型：首行列名，之后每行用 ｜ 分隔（比 JSON 省 token 得多） */
 function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: RenderOpts = {}): string {
-  // 角色视角：作者侧列整列不渲染（连列名都不出现，避免模型去追问）
-  const cols = (tab.columns ?? []).map(c => c.name).filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
+  // 角色视角：作者侧列整列不渲染（连列名都不出现，避免模型去追问）；
+  // 系统元数据列（保密等级）两个视角都不渲染 —— 它已完成使命，对模型只是噪音。
+  const cols = (tab.columns ?? []).map(c => c.name)
+    .filter(c => !SYSTEM_META_FIELDS.has(c))
+    .filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
   if (cols.length === 0) return ''
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
   // 2.2.0：同 renderCards —— 先按「保密等级」排预算优先级再截断（同等级保持录入序）
   const use = sortBySecrecy(rows).slice(0, cap).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
   if (use.length === 0) return ''
   const out = [cols.join(' ｜ ')]
-  for (const r of use) out.push(cols.map(c => clip(r.data[c] ?? '', CELL_CAP)).join(' ｜ '))
+  for (const r of use) out.push(cols.map(c => clip(r.data[c] ?? '', cellCap(c))).join(' ｜ '))
   if (rows.length > cap) out.push(`（另有 ${rows.length - cap} 行未列出）`)
   return out.join('\n')
 }
@@ -644,4 +681,28 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     : ''
   const text = parts.join('\n\n') + note
   return { text, sections, dropped, chars: text.length }
+}
+
+/**
+ * 伴写专用「相关设定切片」——**刻意极短且只取四类**。
+ *
+ * 为什么另开一个函数、而不复用 buildProjectContext 的默认口径：
+ *   伴写是"停笔即出"的低打扰场景，端到端延迟直接决定手感（27B 实测已 3.3s）。
+ *   默认口径下，2000 预算会被**章节清单（目录）**和"相关章节召回"吃掉大半 ——
+ *   可伴写已经拿到了光标前正文，再给卷/章目录纯属重复，真正的设定反而挤不进来。
+ * 故此处：① 关掉章节清单；② 只带这四类 ——
+ *   作品定位（是不是这本书）/ 世界设定 / 主要角色（身份称谓别写错）/ 名词术语（专名别漂移）。
+ *   《写作规范》由调用方单独摘取（只取 3 个字段，比整表带过来更省更准），故不在此重复。
+ */
+export async function buildInlineBriefing(budget = 900): Promise<string> {
+  try {
+    const r = await buildProjectContext({
+      budget,
+      onlyTabIds: ['positioning', 'worldbase', 'char-main', 'terms'],
+      includeChapterList: false,
+    })
+    return r.text
+  } catch {
+    return '' // 拿不到设定就少带一段，绝不阻断伴写
+  }
 }
