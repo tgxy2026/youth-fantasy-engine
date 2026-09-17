@@ -1,7 +1,7 @@
 import { openDB, type IDBPDatabase, type IDBPTransaction } from 'idb'
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from './types'
 import type { StoreOps } from './storeOps'
-import { DESKTOP, desktopStore, flushDesktop } from './desktop'
+import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS } from './desktop'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
@@ -343,22 +343,43 @@ onDesktopSyncConflict((info: SyncConflictInfo) => {
 /**
  * 把云端内存 cache 镜像进**当前平台的本地存储**（异常兜底与「关闭同步」共用）。
  *
+ * @param overwrite 是否允许覆盖本地已有记录。
+ *   · `true`（默认，供「关闭同步」用）：本地库应当**完全等于**云端数据 → 整体 bulkPut。
+ *   · `false`（供**异常兜底**用）：只补本地缺失的主键，已存在的一律不碰（理由见函数内注释）。
+ *
  * 返回 Promise —— 「关闭同步」必须**等它写完**再切 ops 并 reload，否则写了一半就被打断。
  * 异常兜底那条路（pagehide/关窗）仍是 fire-and-forget，与原先一致。
  */
-async function mirrorCloudCacheToLocal(cache: Record<string, any[]>): Promise<void> {
+async function mirrorCloudCacheToLocal(cache: Record<string, any[]>, overwrite = true): Promise<void> {
   const tasks: Promise<unknown>[] = []
   for (const [store, rows] of Object.entries(cache)) {
     if (store === 'backups') continue
     const list = store === 'meta'
       ? (rows as any[]).filter(r => !isExcludedMetaKey(r?.key))
       : (rows as any[])
-    if (list.length) tasks.push(desktopLocalStore.bulkPut(store, list).catch(() => {}))
+    if (!list.length) continue
+
+    if (overwrite) {
+      tasks.push(desktopLocalStore.bulkPut(store, list).catch(() => {}))
+      continue
+    }
+
+    // 🔴 只补缺失（异常兜底路径专用）：闩锁期包装层已把读写切到本地库，
+    //    用户的新编辑正躺在那里，而这份 cache 是闩锁前的旧数据 ——
+    //    整体 bulkPut 会把新稿整片盖回旧版（审计 P0-2 的静默回滚）。
+    //    getAll 失败时按「本地有数据」处理：宁可不写，也绝不覆盖。
+    const localRows = await desktopLocalStore.getAll(store).catch(() => null)
+    if (localRows === null) continue
+    const kp = KEY_PATHS[store] ?? 'id'
+    const have = new Set((localRows as Record<string, unknown>[]).map(r => String(r[kp] ?? '')))
+    const missing = list.filter(r => !have.has(String((r as Record<string, unknown>)[kp] ?? '')))
+    if (missing.length) tasks.push(desktopLocalStore.bulkPut(store, missing).catch(() => {}))
   }
   await Promise.all(tasks)
 }
 
-onDesktopCloudFallback((cache) => { void mirrorCloudCacheToLocal(cache) })
+// 异常兜底路径：**只补缺失**（overwrite=false）—— 闩锁期本地库才是最权威的那一份
+onDesktopCloudFallback((cache) => { void mirrorCloudCacheToLocal(cache, false) })
 
 async function saveConflictCopy(info: SyncConflictInfo) {
   try {

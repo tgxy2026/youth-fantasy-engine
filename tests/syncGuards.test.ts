@@ -109,6 +109,41 @@ async function main() {
     ok('🔴 推不上去时状态是 error，而不是永远 syncing', cloud.getStatus() === 'error', cloud.getStatus())
   }
 
+  // ---------- ④ 🔴 闩锁自愈（审计 P0-2）：一次推送抖动不能把同步永久锁死 ----------
+  //
+  // 修前：`transport.push` 抛错会置 `transientUnavailable`，而能复位它的 `ensureInit` 被
+  // `initPromise` 记忆化（此后再不会被调用）、`backgroundPull` 又开头就 return ——
+  // 于是标志再没有清掉的机会，只剩「换目录 / 重开同步」一条路。
+  // 后果：包装层（`isCloudUnavailable()`）一直把读写切在本地库上，关窗镜像又拿**陈旧 cache**
+  // 覆盖本地新记录 —— 编辑先落本地生效、随即被静默回滚并写盘（磁盘不可逆丢失）。
+  {
+    let pushDown = false
+    const { t } = scriptedTransport({
+      pull: () => ({ status: 200, rev: 1, enc: null }),
+      push: () => (pushDown ? Promise.reject(new Error('disk busy')) : { status: 200, rev: 2 }),
+    })
+    const cloud = createCloudStore(t)
+    cloud.onFallback(() => { /* 用例只关心闩锁状态，兜底回调不必做事 */ })
+    cloud.configure('latch-key')
+
+    // 先正常写一次 → init 落定、push 成功
+    await cloud.store.put('projects', { id: 'p1' })
+    await sleep(1400)
+    ok('前置：正常写入后云端可用', cloud.isCloudUnavailable() === false, String(cloud.isCloudUnavailable()))
+
+    // 抖动开始：push 抛错（等价于网盘客户端占住同步目录 / 网络瞬断）
+    pushDown = true
+    await cloud.store.put('projects', { id: 'p2' })
+    await sleep(1400)
+    ok('🔴 推送失败后进入「云端不可用」', cloud.isCloudUnavailable() === true, String(cloud.isCloudUnavailable()))
+
+    // 抖动结束：再走一次 flushNow（真实里的关窗 / 轮询回落路径）应当能自愈
+    pushDown = false
+    await cloud.flushNow()
+    ok('🔴 恢复后能自愈（修前是单向闩锁，永远停在不可用）', cloud.isCloudUnavailable() === false, String(cloud.isCloudUnavailable()))
+    ok('自愈后状态不再停在 offline', cloud.getStatus() !== 'offline', cloud.getStatus())
+  }
+
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

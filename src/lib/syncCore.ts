@@ -437,6 +437,31 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     return initPromise
   }
 
+  /**
+   * 🔴 闩锁自愈：`transientUnavailable` 曾经是一条**单向闩锁**。
+   *
+   * 置位之后（网盘客户端占用同步目录 / 网络瞬断 → pull 抛错或非 200）：
+   *   · `backgroundPull` 开头直接 return —— 拉取被自己挡住了；
+   *   · 唯一能复位它的 `ensureInit` 又被 `initPromise` 记忆化，正常使用中不再执行；
+   *   · 于是只剩 `configure()`（换目录 / 重开同步）一条路。
+   * 后果：包装层（`isCloudUnavailable()`）会**一直**把读写切在本地库上，
+   * 而关窗兜底的镜像又拿陈旧的 cache 去覆盖本地新记录 —— 静默回滚、磁盘不可逆丢失（审计 P0-2）。
+   *
+   * 这里给一条明确的恢复通道：清掉记忆化的 init，重跑一次拉取，成功即解锁。
+   * 失败时**保持闩锁**（除 `initPromise` 外什么都不动），不会产生额外副作用。
+   */
+  async function tryRecoverFromTransient(): Promise<boolean> {
+    if (!transientUnavailable) return !authFailed
+    if (authFailed) return false
+    initPromise = null
+    try {
+      await ensureInit()
+    } catch {
+      /* ensureInit 自身会吞异常并置 offline，这里只关心最终状态 */
+    }
+    return !transientUnavailable && !authFailed
+  }
+
   /** 拉取当前快照（init 之后）。码无效时抛 CloudAuthError，而非返回空快照。 */
   async function pullSnapshot(): Promise<{ rev: number; stores: Record<string, any[]> }> {
     await ensureInit()
@@ -482,7 +507,10 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
 
   // 轮询发现远端更新时主动拉取并三路合并（文件模式跨设备同步的核心）。
   async function backgroundPull() {
-    if (!code || authFailed || transientUnavailable) return
+    if (!code || authFailed) return
+    // 🔴 闩锁期要**真的尝试**一次拉取 —— 这是唯一的自愈入口（详见 tryRecoverFromTransient）。
+    //    以前这里直接 return，导致标志一旦置位就再没有人能把它清掉。
+    if (transientUnavailable && !(await tryRecoverFromTransient())) return
     try {
       const resp: RawSyncResponse = await transport.pull()
       if (resp.status !== 200) return
@@ -588,10 +616,16 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   async function flushNow(): Promise<void> {
     if (!code) return
     await ensureInit()
+    // 🔴 闩锁期先试一次自愈（清掉记忆化的 init 再拉一次）。成功就落到下面的正常推送路径 ——
+    //    只靠 fallbackHandler 兜底的话，标志永远清不掉：本地库会一直顶替云端，
+    //    而下面的镜像又会用陈旧的 cache 覆盖本地的新记录（P0-2 静默回滚）。
+    if (transientUnavailable && !authFailed) await tryRecoverFromTransient()
     if (authFailed || transientUnavailable) {
       // 🔴 推不出去的时刻：把内存 cache 交上层做本地兜底。
       //    云模式下这批改动只存在于内存 —— 关窗兜底写的是 desktopStore（不经过它），两边都没有。
       //    只在异常路径触发，不影响「云模式下普通 store 不写本地」的常态约定。
+      //    ⚠️ 兜底方**必须按「只补缺失」写**，不能整体覆盖：闩锁期包装层已把读写切到本地库，
+      //       用户的新编辑正躺在那里，而这里的 cache 是闩锁前的旧数据（见 db.ts 的镜像函数）。
       try { fallbackHandler?.(snapshotOf(cache)) } catch { /* 兜底失败不影响主流程 */ }
       return
     }

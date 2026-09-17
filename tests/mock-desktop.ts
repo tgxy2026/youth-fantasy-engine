@@ -12,6 +12,13 @@ export function flushDesktopSync() { return Promise.resolve(false) }
 export function flushDesktop() { return Promise.resolve(true) }
 export function subscribeDesktop() { return () => {} }
 export function getDesktopState() { return { ready: true, path: '', dirty: false } }
+// 与 src/lib/desktop.ts 同名同形：db.ts 的「云端 cache → 本地库」镜像会 import 它判「本地是否已有这条」。
+// 桩里保持一致即可（内存桩同样按这几个字段做 key）。
+export const KEY_PATHS: Record<string, string> = {
+  projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
+  cardRecords: 'id', snapshots: 'id', trash: 'id',
+  formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
+}
 
 // 联网检索用的「主进程代发」：Node 测试环境里没有 Electron，固定为不可用。
 // 也因此单测里 SearXNG 会被判成「会被跨域拦」。
