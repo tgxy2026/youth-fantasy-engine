@@ -8,7 +8,7 @@ import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import {
-  buildFreeSystem, buildFreeMessages, runFreeTurn, injectDirectorNote, tickDirectorNote, renderFreeCharacter, type ChatFn,
+  buildFreeSystem, buildFreeMessages, runFreeTurn, runFreeAssist, injectDirectorNote, tickDirectorNote, renderFreeCharacter, type ChatFn,
 } from '../src/lib/tavern/engine'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
@@ -588,6 +588,43 @@ async function main() {
     const last8 = res8.session.messages[res8.session.messages.length - 1]?.content ?? ''
     ok('总开关关掉 → 原样落库（排查格式问题时要的就是这个）', last8 === '(她点了点头。)', JSON.stringify(last8))
     await saveTavernSettings({ ...(await getTavernSettings()), postRulesEnabled: true })
+  }
+
+  // ---------- 11) 润色/自动回复 assist 模式：措辞翻转 + 指令内联 ----------
+  {
+    const ai = await mkChar('楚楠')
+    const user = await mkChar('苏念')
+    const sessUser = await store.createFreeSession([ai.id, user.id], 'assist-有角色卡', { providerId: STUB_PROVIDER.id }, {}, user.id)
+    const st = await getTavernSettings()
+
+    const { system: sAssist } = await buildFreeSystem(sessUser, [ai, user], st, { assist: 'polish' })
+    ok('assist 模式：system 含「代这个角色撰写他这一轮」', sAssist.includes('代这个角色撰写他这一轮'))
+    ok('assist 模式：userChar 块不再含「不要代写、不要替 Ta 决定」', !sAssist.includes('不要代写、不要替 Ta 决定'))
+    ok('assist 模式：self 层钉死「代写用户这条发言」任务', sAssist.includes('帮屏幕后的用户') && sAssist.includes('只输出台词本身'))
+
+    const { system: sNormal } = await buildFreeSystem(sessUser, [ai, user], st)
+    ok('普通模式：userChar 块仍含「不要代写」红线（原行为零改动）', sNormal.includes('不要代写、不要替 Ta 决定'))
+
+    // 无角色卡（纯旁观）assist：追加「主要依据剧本与上下文」说明
+    const sessNone = await store.createFreeSession([ai.id], 'assist-无角色卡', { providerId: STUB_PROVIDER.id }, {})
+    const { system: sNone } = await buildFreeSystem(sessNone, [ai], st, { assist: 'auto' })
+    ok('assist + 无角色卡：system 含「没有专属角色卡」说明', sNone.includes('没有专属角色卡'))
+
+    // runFreeAssist：润色内联原文、自动回复不内联，返回 trimmed
+    const hist = await store.createFreeSession([ai.id, user.id], 'assist-run', { providerId: STUB_PROVIDER.id }, {}, user.id)
+    hist.messages.push({ id: 'm1', role: 'assistant', content: '（她抬眼）回来了？', at: Date.now() })
+    const fakeP = makeFakeChat('（他把手里的袋子放下）顺便带了点吃的。')
+    const resP = await runFreeAssist(hist, [ai, user], 'polish', '我回来了', {}, { chatFn: fakeP.chatFn })
+    const lastP = fakeP.calls[0].messages[fakeP.calls[0].messages.length - 1].content
+    ok('runFreeAssist · 润色指令内联原文', lastP.includes('【润色指令】') && lastP.includes('我回来了'))
+    // 默认 postRules 开启，返回文本已套用后处理（可能与原始逐字不同）——只断言核心内容在
+    ok('runFreeAssist · 返回文本（经后处理）含核心内容', resP.text.includes('顺便带了点吃的'))
+
+    const fakeA = makeFakeChat('（他笑了笑）今天天气不错。')
+    const resA = await runFreeAssist(hist, [ai, user], 'auto', '', {}, { chatFn: fakeA.chatFn })
+    const lastA = fakeA.calls[0].messages[fakeA.calls[0].messages.length - 1].content
+    ok('runFreeAssist · 自动回复指令不含原文内联', lastA.includes('【代写指令】') && !lastA.includes('我回来了'))
+    ok('runFreeAssist · auto 同样返回文本（经后处理）含核心内容', resA.text.includes('今天天气不错'))
   }
 
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)

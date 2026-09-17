@@ -479,7 +479,13 @@ async function loadSessionStory(
  * 设定层**不做预算裁剪** —— 角色卡是作者手写的核心，悄悄砍掉会让角色「设定性失忆」
  * （字段名与字数都摊在 UI 里，超预算由界面提示作者自己精简）。
  */
-export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter[], settings?: TavernSettings): Promise<FreeSystemResult> {
+export async function buildFreeSystem(
+  session: FreeSession,
+  chars: FreeCharacter[],
+  settings?: TavernSettings,
+  /** assist 模式：润色/自动回复时翻转「不要代写」措辞，让模型代用户扮演的角色写这一轮发言 */
+  opts?: { assist?: 'polish' | 'auto' },
+): Promise<FreeSystemResult> {
   const st = settings ?? await getTavernSettings()
   const found: FreeCharacter[] = []
   const missing: string[] = []
@@ -530,12 +536,18 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
     }
     if (aiChars.length) parts.push(aiChars.map(c => renderFreeCharacter(c, { tag: tagOf(c) })).join('\n\n'))
     if (userChar) {
-      // 用户扮演的那张卡也带给模型，但**只用来说明「对面是谁」**：口吻、立场、底线
-      parts.push(
-        `〖用户扮演的角色 · ${userChar.name}${tagOf(userChar) ? ` #${tagOf(userChar)}` : ''}〗（仅供你理解对方是谁、说话什么调子；\n` +
-        `Ta 的言行归用户自己掌控 —— **不要代写、不要替 Ta 决定、也不要替 Ta 回答**）\n` +
-        renderFreeCharacter(userChar, { tag: tagOf(userChar) }),
-      )
+      // 用户扮演的那张卡也带给模型。
+      // 普通模式：只用来说明「对面是谁」，且明令「不要代写」。
+      // assist（润色/自动回复）模式：翻转成「你正在代这个角色写他这一轮的发言」，口吻/特质/规范全用上。
+      const block = opts?.assist
+        ? `〖用户扮演的角色 · ${userChar.name}${tagOf(userChar) ? ` #${tagOf(userChar)}` : ''}〗（你正在**代这个角色撰写他这一轮要发送的发言**，请完全代入：用第4章示例对话的口吻、第2章人物档案的特质、第3章的行为规范来写）`
+        : `〖用户扮演的角色 · ${userChar.name}${tagOf(userChar) ? ` #${tagOf(userChar)}` : ''}〗（仅供你理解对方是谁、说话什么调子；\n` +
+          `Ta 的言行归用户自己掌控 —— **不要代写、不要替 Ta 决定、也不要替 Ta 回答**）`
+      parts.push(block + '\n' + renderFreeCharacter(userChar, { tag: tagOf(userChar) }))
+    }
+    // assist 且用户没有专属角色卡：明确告诉模型「主要依据剧本与上下文，档案只作口吻基调」，避免编造设定
+    if (opts?.assist && !userChar) {
+      parts.push('⚠️ 用户没有专属角色卡，只有「我的档案」。请主要依据故事剧本与对话上下文来组织这条发言，用档案里的身份/称呼/自我设定作为口吻基调，不要编造具体人物设定。')
     }
     if (aiChars.length > 1) {
       // 用户没演角色时，档案里的称呼/名字就是「用户是谁」的唯一来源
@@ -569,12 +581,17 @@ export async function buildFreeSystem(session: FreeSession, chars: FreeCharacter
   const silentLine = silentChars.length
     ? `\n在场但这一场不出声：${silentChars.map(c => c.name).join('、')}`
     : ''
-  const self = (userChar
+  let self = (userChar
     ? `你扮演：${aiNames.length ? aiNames.join('、') : '（未指定角色）'}\n` +
       `用户扮演：${userChar.name}（其言行归用户自己掌控，你不要代写，也不要替 Ta 做决定）`
     : aiNames.length > 1
       ? `你同时扮演：${aiNames.join('、')}。用户扮演用户自己。`
       : `你扮演：${aiNames[0] ?? '（未指定角色）'}`) + silentLine
+  // assist 模式：把「你是来代写用户这条发言的」钉死在 self 层，避免模型又退化成「回话」
+  if (opts?.assist) {
+    self += `\n\n【本次任务】你不是要回话，而是帮屏幕后的用户**写他这一轮要发送的内容**（以「用户扮演的角色」的视角与口吻）。` +
+      `只输出台词本身：动作/表情/环境写进（ ）里、对白直接写，不要加「角色名：」前缀，也不要加任何解释或旁白。`
+  }
 
   // 2026-09-15 收口：自由模式**不再有背景设定层**。
   // 理由（老大定）：同一批自由对话里可能混着不同世界观、不同类型的角色，用一份背景把它们框住反而不对；
@@ -768,6 +785,53 @@ export function buildFreeMessages(
   }
   const trimmed = trimHistory(injectDirectorNote(all, session.directorNote), budgetChars)
   return { messages: trimmed.kept.map(m => ({ role: m.role, content: m.content })), dropped: trimmed.dropped }
+}
+
+/** 润色 / 自动回复：复用自由模式 system（仅翻转 assist 措辞）+ 历史消息，让模型代用户扮演的角色写这一轮发言，结果回交调用方填输入框（绝不自动发送、不落库）。 */
+export async function runFreeAssist(
+  session: FreeSession,
+  chars: FreeCharacter[],
+  mode: 'polish' | 'auto',
+  /** 润色模式传用户原文；自动回复传 '' */
+  userText: string,
+  cb: { onToken?: (t: string) => void; signal?: AbortSignal },
+  deps: { chatFn?: ChatFn; settings?: TavernSettings } = {},
+): Promise<{ text: string; modelName: string; fellBack: boolean }> {
+  const st = deps.settings ?? await getTavernSettings()
+  const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
+  const runChat = deps.chatFn ?? chat
+  const { system } = await buildFreeSystem(session, chars, st, { assist: mode })
+
+  // 历史只取 session.messages（不含用户的"待润色原文"作为 committed 消息）
+  const historyBudgetChars = historyBudget(totalBudget(st.common.contextBudget), system, '', st.common.fixedOverheadChars)
+  const { messages } = buildFreeMessages(session.messages, session, chars, historyBudgetChars)
+
+  const instruction = mode === 'polish'
+    ? `【润色指令】用户已写原文：「${userText}」。请在保留其意图与关键信息的前提下，扩写润色成符合角色口吻、含动作/表情/环境描写的发言。只输出润色后的台词本身。`
+    : `【代写指令】用户还没想好这一轮怎么回。请根据当前对话上下文、故事剧本、你的角色设定，替用户扮演的角色写一句（或一小段）自然、符合当下的发言，含动作/表情/环境描写。只输出台词本身。`
+
+  const p = resolveParamsOf('free', st, session.params)
+  const { temperature, ...extraOptions } = toOllamaOptions(p)
+  // 🔴 以 chat 的**返回值**为准（与 runFreeTurn 一致）；onToken 仅用于流式回写 UI，不负担内容累积
+  const reply = await runChat(
+    provider,
+    [{ role: 'system', content: system }, ...messages, { role: 'user', content: instruction }],
+    {
+      timeoutMs: timeoutMsOf(st),
+      temperature,
+      extraOptions,
+      signal: cb.signal,
+      onToken: (t) => { cb.onToken?.(t) },
+      think: thinkOptOf(st), // 同 runFreeTurn：陪伴要"像人说话"，不分析腔
+    },
+  )
+  let text = reply ?? ''
+  // 套用输出后处理规则（已确认：套用；与正常对话同一套，顺序即 settings.postRules 的顺序）
+  if (text.trim() && st.postRulesEnabled) {
+    const post = applyPostRules(text, st.postRules ?? [])
+    text = post.text
+  }
+  return { text: text.trim(), modelName: provider.model, fellBack }
 }
 
 function totalBudget(v: number | undefined): number {

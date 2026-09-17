@@ -23,8 +23,10 @@ export type QuickAction = {
   text?: string
   /** text 里要**选中**的那一段（如「半小时」）—— 填完直接改这一处即可 */
   slot?: string
-  /** 没有 text 时的直接动作（如「重说」：它不是一句话，而是一次重算） */
-  run?: () => void
+  /** 没有 text 时的直接动作；可返回 Promise（如「润色/自动回复」：点下去要异步生成再回写输入框） */
+  run?: () => void | Promise<void>
+  /** 单独的禁用条件（如「用户没扮演角色 / 首轮禁用的润色·自动回复」）；与外层 disabled 取或 */
+  disabled?: boolean
 }
 
 export function TavernQuickBar({ actions, disabled, onFill, className = '' }: {
@@ -41,9 +43,9 @@ export function TavernQuickBar({ actions, disabled, onFill, className = '' }: {
           key={a.key}
           variant="secondary"
           size="xs"
-          disabled={disabled}
+          disabled={disabled || a.disabled}
           title={a.hint}
-          onClick={() => { if (a.text !== undefined) onFill?.(a.text, a.slot); else a.run?.() }}
+          onClick={() => { if (a.text !== undefined) onFill?.(a.text, a.slot); else void a.run?.() }}
         >
           {a.label}
         </Button>

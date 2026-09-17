@@ -43,8 +43,8 @@ import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import { renderTavernMessage } from './TavernMessage'
 import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
-import { runFreeTurn, varsEnabledKeys, resolveTavernProvider } from '../lib/tavern/engine'
-import { unloadOllamaModel } from '../lib/ai'
+import { runFreeTurn, varsEnabledKeys, resolveTavernProvider, runFreeAssist } from '../lib/tavern/engine'
+import { unloadOllamaModel, isCancelled } from '../lib/ai'
 import { refreshSessionVars } from '../lib/tavern/varsRefresh'
 import type { PostApplied } from '../lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
@@ -141,6 +141,8 @@ export default function TavernFree() {
   /** B3：上一轮后处理实际改了什么 */
   const [postNotice, setPostNotice] = useState<{ applied: PostApplied[]; errors: string[] }>({ applied: [], errors: [] })
   const [streaming, setStreaming] = useState(false)
+  /** 润色/自动回复生成中（与 streaming 互斥但同属「正在生成」，期间禁用快捷条与发送） */
+  const [assistBusy, setAssistBusy] = useState(false)
   const [streamText, setStreamText] = useState('')
   const [phase, setPhase] = useState('')
   /**
@@ -912,12 +914,74 @@ export default function TavernFree() {
    * 🔴 点击**只填进输入框、不直接发送** —— 这些指令几乎都要作者改一处（推进多久），
    *    直接发出去等于替作者作了决定。带 slot 的（推进时间）会把那一段选中，直接改即可。
    */
+  // ---------- 润色 / 自动回复（AI 实时生成文本回写输入框，绝不自动发送） ----------
+  const assistWrite = useCallback(async (mode: 'polish' | 'auto') => {
+    if (streaming || assistBusy || !session || !session.userCharId) return
+    if (session.messages.length === 0) return           // 首轮（无历史）禁用
+    if (session.endedAt) return
+    if (mode === 'polish' && !input.trim()) {
+      showToast('输入框是空的，没有可润色的内容', 'info')
+      return
+    }
+    const original = input
+    setAssistBusy(true)
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    let buf = ''
+    let lastFlush = 0
+    try {
+      const cast = castCards.length ? castCards : (charCard ? [charCard] : [])
+      const res = await runFreeAssist(
+        session,
+        cast,
+        mode,
+        mode === 'polish' ? original.trim() : '',
+        {
+          signal: ctrl.signal,
+          onToken: (t) => {
+            buf += t
+            const now = Date.now()
+            if (now - lastFlush >= 120) { lastFlush = now; setInput(buf) } // 节流 ~120ms，避免高频重渲染
+          },
+        },
+      )
+      setInput(res.text.trim())                          // 最终以完整结果为准（节流可能漏掉尾部）
+    } catch (e) {
+      if (isCancelled(e)) setInput(buf.trim())          // 取消：保留已生成的部分
+      else {
+        showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+        if (mode === 'polish') setInput(original)        // 润色失败：还原原文
+        else setInput('')                               // 自动回复失败：留空
+      }
+    } finally {
+      setAssistBusy(false)
+      abortRef.current = null
+    }
+  }, [streaming, assistBusy, session, input, castCards, charCard])
+
+  /** 仅当用户扮演了已建角色卡、且已有历史消息（非首轮）时，润色/自动回复才可用 */
+  const canAssist = !!session?.userCharId && session.messages.length > 0
+
   const quickActions: QuickAction[] = [
     { key: 'cont', label: '继续', hint: '让 Ta 接着说', text: '「继续。」' },
     { key: 'env', label: '补环境', hint: '先补一句（ ）里的环境（光、声、气味），再接着说', text: '「先说一句（ ）里的环境（光、声、气味），再继续。」' },
     { key: 'time', label: '推进时间', hint: '把时间往前推 —— 填进输入框后自己改成需要的时长', text: '「把时间往前推进 半小时，然后继续。」', slot: '半小时' },
     { key: 'mind', label: 'Ta 在想什么', hint: '用一个动作或细节透出心里的想法，不直接写心理', text: '「用一个动作或细节写出 Ta 此刻心里在想什么，不要直接写心理。」' },
     { key: 'reroll', label: '重说', hint: '用同一段历史让 Ta 重说这一条（只出一个结果，说话人不变）', run: () => void reroll() },
+    {
+      key: 'polish',
+      label: '润色',
+      hint: 'AI 读取你已写的文本，结合角色卡/剧本/上下文扩写润色，结果覆盖输入框（不自动发送）',
+      run: () => void assistWrite('polish'),
+      disabled: !canAssist,
+    },
+    {
+      key: 'auto',
+      label: '自动回复',
+      hint: 'AI 结合剧本/上下文/角色卡，替你扮演的角色写一句发言填进输入框（不自动发送）',
+      run: () => void assistWrite('auto'),
+      disabled: !canAssist,
+    },
   ]
 
   /** 输入框 ref：预填后要聚焦并把「该改的那一段」选中 */
@@ -1457,7 +1521,7 @@ export default function TavernFree() {
                   onSave={n => void applyDirectorNote(n)}
                   onClear={() => void applyDirectorNote(null)}
                 />
-                <TavernQuickBar actions={quickActions} disabled={streaming} onFill={fillInput} className="mb-2" />
+                <TavernQuickBar actions={quickActions} disabled={streaming || assistBusy} onFill={fillInput} className="mb-2" />
                 {/* 自动延展：默认 3 行，写长了自己长高，超过 200px 才内部滚动 */}
                 {/* 按键：Enter 发送、Shift+Enter 换行（与「对话引导」一致）。
                     🔴 必须挡 isComposing —— 中文输入法里 Enter 是**选字确认键**，
@@ -1471,8 +1535,8 @@ export default function TavernFree() {
                   textClass="text-[13px]"
                   minRows={3}
                   maxHeight={200}
-                  placeholder={streaming
-                    ? 'Ta 还在说 —— 你可以先把下一句打在这儿'
+                  placeholder={streaming || assistBusy
+                    ? (streaming ? 'Ta 还在说 —— 你可以先把下一句打在这儿' : '正在为你生成 —— 结果会填到这儿')
                     : '说点什么…（Enter 发送，Shift+Enter 换行）'}
                   value={input}
                   inputRef={inputRef}
@@ -1496,7 +1560,7 @@ export default function TavernFree() {
                     </button>
                   </span>
                   <div className="flex gap-2">
-                    {streaming
+                    {streaming || assistBusy
                       ? <Button variant="secondary" size="md" onClick={stop}>停止</Button>
                       : <Button variant="primary" size="md" disabled={!input.trim()} onClick={() => void send()}>发送</Button>}
                   </div>
