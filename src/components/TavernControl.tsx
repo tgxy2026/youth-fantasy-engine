@@ -646,11 +646,14 @@ export default function TavernControl() {
   /**
    * 当前值里有几项偏离推荐（用于「采用推荐值」按钮的提示与禁用态）。
    *
-   * ⚠️ 预算与窗口**不计入**：本地窗口由显存决定、云端窗口由服务商决定，系统不代为更改 ——
+   * ⚠️ 只数**能代为更改**的项：
+   *  · 窗口（numCtx）不计入 —— 本地由显存决定、云端由服务商决定，系统不该替用户改；
    *    硬给「推荐值」只会是把当前值原样念回来的自指，按钮会永远停在「已是推荐值」。
+   *  · 预算（contextBudget）**计入**：云端总能算出建议；本地只有在"超窗口"时
+   *    推荐值才不同于现值（见 modelCapacity 的超窗口保护），低于上限时两者相等、自然不计入。
    */
   const drift = [
-    !cap.local && c.contextBudget !== rec.contextBudget,
+    c.contextBudget !== rec.contextBudget,
     fr.softLimit !== rec.softLimit,
     fr.hardLimit !== rec.hardLimit,
     fr.longTermLimit !== rec.longTermLimit,
@@ -659,12 +662,34 @@ export default function TavernControl() {
 
   /** 一键把这一整批数值都设成当前模型的推荐值（只改这几项，其余设置一律不动） */
   const applyRecommended = () => {
-    // 预算只在云端才代为更改（本地窗口由显存决定，不该被"推荐"推着走）
-    if (!cap.local) setCommon('contextBudget', rec.contextBudget)
+    // 预算：云端总是改；本地只在**超窗口**时回落 —— 本地窗口由显存决定，
+    // 不该被"推荐"推着放大（放大就跑不动）。
+    if (!cap.local || cap.overWindow) setCommon('contextBudget', rec.contextBudget)
     setFree('softLimit', rec.softLimit)
     setFree('hardLimit', rec.hardLimit)
     setFree('longTermLimit', rec.longTermLimit)
     setFree('diaryDays', rec.diaryDays)
+  }
+
+  /**
+   * 换「默认模型」时，**就地**把额度改成新模型的推荐值。
+   *
+   * ⚠️ 这里只改本地草稿、**不写盘** —— 控制面板的契约是"改完点右上「保存」"。
+   *    直接写盘会让面板显示的值与草稿不一致，且用户点保存时会把同步结果覆盖回去。
+   *    在别处换模型（模型配置页「设为当前」）走的是 `syncTuningWithModel()` 那条写盘路径。
+   */
+  const onDefaultModelChange = (v: string) => {
+    setCommon('defaultProviderId', v)
+    if (c.autoTuneByModel === false) return
+    // 解析口径必须与上面的 activeProvider 一致：留空 = 跟随全局活动模型
+    const p = providers.find(x => x.id === (v || activeProviderId)) ?? null
+    const adv = adviseCapacity(p, { numCtx: c.numCtx, contextBudget: c.contextBudget })
+    const r = adv.suggest
+    if (!adv.local || adv.overWindow) setCommon('contextBudget', r.contextBudget)
+    setFree('softLimit', r.softLimit)
+    setFree('hardLimit', r.hardLimit)
+    setFree('longTermLimit', r.longTermLimit)
+    setFree('diaryDays', r.diaryDays)
   }
 
   return (
@@ -721,11 +746,11 @@ export default function TavernControl() {
           >
             <SelectField
               label="默认模型"
-              hint="留空则跟随「灵感启发 → 模型配置」里选中的全局活动模型。两个模式都用它；会话里不再单独选择模型。"
+              hint="留空则跟随「灵感启发 → 模型配置」里选中的全局活动模型。两个模式都用它；会话里不再单独选择模型。换模型时，下面的额度会按新模型的推荐值调整（可在能力条里关掉这个行为）。"
               value={c.defaultProviderId}
               options={modelOptions}
               emptyLabel="（跟随全局活动模型）"
-              onChange={v => setCommon('defaultProviderId', v)}
+              onChange={onDefaultModelChange}
             />
 
             {/* 模型能力条：把「下面这批数值跟着哪个模型在走」摆到眼前。
@@ -737,7 +762,8 @@ export default function TavernControl() {
                   <div className="mt-0.5 text-[10.5px] text-ink-500 leading-relaxed">{cap.note}</div>
                   <div className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
                     下面「记忆三项 / 日记保留」的推荐值按当前预算同比推算（预算跟着所选模型走，它们也就跟着变）。
-                    预算与窗口不代为更改：本地窗口由显存决定、云端窗口由服务商决定，所以这两项上没有推荐值。
+                    窗口不代为更改 —— 本地由显存决定、云端由服务商决定，所以它没有推荐值；
+                    预算在云端会跟随模型放宽，本地只在「超过窗口承载」时才回落（否则会被静默截断）。
                     正文续写等其它模式的额度不在这里，仍是后台内置值。
                   </div>
                 </div>
@@ -749,6 +775,14 @@ export default function TavernControl() {
                   className="shrink-0 whitespace-nowrap">
                   {drift === 0 ? '已是推荐值' : `采用推荐值（${drift}）`}
                 </Button>
+              </div>
+              <div className="mt-2 border-t border-ink-700/60 pt-2">
+                <ToggleField
+                  label="额度跟随模型自动调整"
+                  hint="换模型后自动把这批数值套用成新模型的推荐值。⚠️ 只在你**换模型**时生效 —— 同一个模型下你手调的值不会被改回去（想完全手工就关掉它，面板上仍可点「采用推荐值」）。"
+                  value={c.autoTuneByModel !== false}
+                  onChange={v => setCommon('autoTuneByModel', v)}
+                />
               </div>
             </div>
 

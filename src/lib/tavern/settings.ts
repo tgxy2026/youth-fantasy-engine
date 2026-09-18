@@ -32,6 +32,16 @@ import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
 import { DEFAULT_POST_RULES, LEGACY_POST_RULES_VERSIONS, normalizePostRules, type PostRule } from './postRules'
 import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
 import { resolveParams } from './params'          // 同上：params 只依赖 types
+/**
+ * 「额度跟着模型走」需要知道当前接的是谁 —— 所以这里要读 provider。
+ * 🔴 不会成环的依据：`modelCapacity` 是**零运行时依赖**的纯逻辑模块（只 `import type`），
+ *    而 `ai.ts` 不反向 import tavern（已核）。改完 import 关系务必跑
+ *    `node tests/build-test.mjs importCycles` —— 循环依赖 tsc 与单测都看不见。
+ */
+import {
+  adviseCapacity, modelFingerprintOf, shouldApplyTuning, type TuningAdvice,
+} from '../modelCapacity'
+import { loadProviders, loadActiveId, type AIProvider } from '../ai'
 
 /** 设置存储键（全局 meta） */
 export const K_TAVERN_SETTINGS = 'tavern.settings'
@@ -56,6 +66,21 @@ export type TavernCommonSettings = {
   disableThink: boolean
   /** 通用补充要求：拼进两种模式的 system（放在协议之前）。默认含「标点适用范围」那条 */
   extraPrompt: string
+  /**
+   * 额度是否**跟着模型自动调整**（2026-09-18 新增，默认开）。
+   * 开启时：**换模型后**自动把「上下文预算 + 记忆档四项」套用成新模型的推荐值
+   * （见 `modelCapacity.adviseCapacity`）；同模型下**绝不动**用户手调的值。
+   * 关掉即完全回到手工模式（面板上仍可点「采用推荐值」）。
+   */
+  autoTuneByModel?: boolean
+  /**
+   * 上次自动套用额度时对应的**模型指纹**（`providerId|model|contextWindow`）。
+   *
+   * 🔴 它是「自动跟随」与「手工覆盖」能共存的**唯一依据**：自动套用只在**指纹变化（= 真换了模型）**
+   *    时发生。若改成"发现偏离就纠正"，用户手调完一开对话就被改回去，"仍可手工覆盖"就成了空话。
+   * 空/缺失 = 尚未登记：老用户升上来后首次同步**只登记指纹、不改任何值**，避免升级瞬间动他的配置。
+   */
+  tunedFor?: string
 }
 
 /** 剧情推演控制 */
@@ -375,6 +400,7 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     numCtx: TAVERN_DEFAULTS.free.numCtx,
     disableThink: true, // engine 原本恒传 think:false
     extraPrompt: DEFAULT_COMMON_EXTRA,
+    autoTuneByModel: true, // 换模型后自动套用推荐额度；同模型下不动用户手调的值（见 tunedFor）
   },
   plot: {
     temperature: TAVERN_DEFAULTS.plot.temperature,
@@ -466,6 +492,78 @@ export async function saveTavernSettings(next: TavernSettings): Promise<TavernSe
 export async function resetTavernSettings(): Promise<TavernSettings> {
   await db.setMeta(K_TAVERN_SETTINGS, DEFAULT_TAVERN_SETTINGS)
   return DEFAULT_TAVERN_SETTINGS
+}
+
+// ==================== 额度跟着模型走（2026-09-18） ====================
+
+export interface SyncTuningResult {
+  /** 是否真的改动了设置（"只登记指纹"与"没换模型"都是 false） */
+  changed: boolean
+  /** 本次生效的推荐值（changed 时给出） */
+  advice?: TuningAdvice
+  /** 跳过/命中原因，便于调用方与测试断言 */
+  reason: 'off' | 'registered' | 'same-model' | 'no-drift' | 'applied' | 'error'
+}
+
+/**
+ * 把「上下文预算 + 记忆档四项」同步成**当前模型**的推荐值。换模型后调用一次即可。
+ *
+ * 【判定链】
+ *  ① `autoTuneByModel === false` → 不动（用户要手工模式）。
+ *  ② 指纹未登记（老用户首次）→ **只登记、不改值**：避免升级瞬间动他调好的配置。
+ *  ③ 指纹与上次相同（没换模型）→ 不动。🔴 这一条才是"仍可手工覆盖"的保证 ——
+ *     若改成"发现偏离就纠正"，用户手调完一开对话就被改回去。
+ *  ④ 指纹变了 → 按 `adviseCapacity` 套用：云端预算总是跟随；
+ *     本地只在「预算超窗口」时回落（本地窗口由显存决定，不按模型标称放大）。
+ *
+ * 异常一律吞掉并返回 changed:false —— 同步额度失败绝不该拦住对话。
+ */
+export async function syncTuningWithModel(): Promise<SyncTuningResult> {
+  try {
+    const st = await getTavernSettings()
+    const [providers, activeId] = await Promise.all([
+      loadProviders().catch(() => [] as AIProvider[]),
+      loadActiveId().catch(() => null),
+    ])
+    const p = providers.find(x => x.id === (st.common.defaultProviderId || activeId)) ?? null
+    const fingerprint = modelFingerprintOf(p)
+
+    // 判定链抽在 modelCapacity.shouldApplyTuning（纯函数）——「手工覆盖不被改回去」由它的单测守着
+    const verdict = shouldApplyTuning({
+      autoTune: st.common.autoTuneByModel !== false,
+      tunedFor: st.common.tunedFor,
+      fingerprint,
+    })
+    if (verdict === 'off') return { changed: false, reason: 'off' }
+    if (verdict === 'same-model') return { changed: false, reason: 'same-model' }
+    if (verdict === 'registered') {
+      await saveTavernSettings({ ...st, common: { ...st.common, tunedFor: fingerprint } })
+      return { changed: false, reason: 'registered' }
+    }
+
+    const cap = adviseCapacity(p, { numCtx: st.common.numCtx, contextBudget: st.common.contextBudget })
+    const rec = cap.suggest
+    const nextCommon = { ...st.common, tunedFor: fingerprint }
+    const nextFree = { ...st.free }
+
+    if (!cap.local || cap.overWindow) nextCommon.contextBudget = rec.contextBudget
+    nextFree.softLimit = rec.softLimit
+    nextFree.hardLimit = rec.hardLimit
+    nextFree.longTermLimit = rec.longTermLimit
+    nextFree.diaryDays = rec.diaryDays
+
+    const changed = nextCommon.contextBudget !== st.common.contextBudget
+      || nextFree.softLimit !== st.free.softLimit
+      || nextFree.hardLimit !== st.free.hardLimit
+      || nextFree.longTermLimit !== st.free.longTermLimit
+      || nextFree.diaryDays !== st.free.diaryDays
+
+    // 指纹无论如何都要记：值恰好相同也要记住"这个模型已经套过了"
+    await saveTavernSettings({ ...st, common: nextCommon, free: nextFree })
+    return { changed, advice: rec, reason: changed ? 'applied' : 'no-drift' }
+  } catch {
+    return { changed: false, reason: 'error' }
+  }
 }
 
 // ==================== 给引擎用的派生量 ====================

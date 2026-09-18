@@ -76,6 +76,15 @@ export const CLOUD_EFFECTIVE_RATIO = 0.4
 /** 给回复预留的 token（本地与云端都留 —— 预算算的是"输入能放多少"） */
 export const REPLY_RESERVE_TOKENS = 8192
 
+/**
+ * 本地「预算 : 窗口」的**出厂配比** = 24000 / 32768 ≈ 0.732。
+ *
+ * 预算必须小于 numCtx 才有意义（预算 > 窗口 ⇒ 塞进去的内容被静默截断）。
+ * 出厂值就是按这个比例配的，故用它当**安全上限**：超过它说明这份预算多半来自云端
+ * （云端可到 41 万），切回本地后需要回落。
+ */
+export const LOCAL_BUDGET_OF_CTX = 24000 / 32768
+
 // ============================================================
 // 记忆档：跟着预算走的推荐
 // ============================================================
@@ -185,6 +194,48 @@ export function scaleGuide(guide: ParamGuide, suggested: number): ParamGuide {
   return { ...guide, max: target, bands }
 }
 
+// ============================================================
+// 额度自动跟随：判定（纯函数，便于单测）
+// ============================================================
+
+/**
+ * 模型指纹：**模型换了**（或窗口声明改了）才需要重新套用推荐额度。
+ * 同一模型下手调的值必须留住 —— 这是"自动跟随"与"手工覆盖"能共存的依据。
+ */
+export function modelFingerprintOf(
+  p: Pick<AIProvider, 'id' | 'model' | 'contextWindow'> | null | undefined,
+): string {
+  return p ? `${p.id}|${p.model ?? ''}|${p.contextWindow ?? ''}` : 'none'
+}
+
+export type TuningSyncVerdict =
+  /** 用户关掉了自动跟随 → 什么都不动 */
+  | 'off'
+  /** 首次（指纹未登记）→ 只登记指纹、不改值（老用户升级时不惊动他的配置） */
+  | 'registered'
+  /** 没换模型 → 不动（保住用户手调的值） */
+  | 'same-model'
+  /** 换模型了 → 套用推荐值 */
+  | 'apply'
+
+/**
+ * 该不该把额度套用成推荐值。
+ *
+ * 抽成纯函数是为了让这段判定**能被单测锁住**：一旦写成"发现偏离就纠正"，
+ * 用户手调的值会在每次读设置/开对话时被悄悄改回去 —— 而这种回归在界面上几乎看不出来
+ * （只是"我明明改过，怎么又变回来了"）。
+ */
+export function shouldApplyTuning(opts: {
+  autoTune: boolean
+  tunedFor: string | undefined
+  fingerprint: string
+}): TuningSyncVerdict {
+  if (!opts.autoTune) return 'off'
+  if (!opts.tunedFor) return 'registered'
+  if (opts.tunedFor === opts.fingerprint) return 'same-model'
+  return 'apply'
+}
+
 export interface CapacityAdvice {
   local: boolean
   windowTokens: number
@@ -199,6 +250,11 @@ export interface CapacityAdvice {
   headline: string
   /** 给界面用的一段人话解释 */
   note: string
+  /**
+   * 本地专用：当前预算已超出窗口承载范围（预算 > numCtx × 出厂配比）。
+   * 多为「先在云端用过大预算、再切回本地」造成，需要回落，否则 prompt 会被静默截断。
+   */
+  overWindow?: boolean
 }
 
 /**
@@ -228,20 +284,39 @@ export function adviseCapacity(
   }
 
   if (local) {
-    // 本地：numCtx 由显存决定，**不按模型标称放宽**；预算保持用户现值。
-    // 但记忆档**要给推荐** —— 用户自己调过预算（比如从 24000 降到 12000）时，
-    // 记忆还按出厂的 3000 硬上限走就不成比例了。
+    // 本地：numCtx 由显存决定，**不按模型标称放宽**；预算一般保持用户现值 —— 但有个例外：
+    // 见下面的「超窗口保护」。
     const claim = windowTokens >= 1000 ? Math.round(windowTokens / 1024) + 'K' : windowTokens
     const claimWhat = windowSource === 'user' ? '你手填的标称窗口' : '模型标称'
+
+    /**
+     * 🔴 超窗口保护：预算也可能被云端放大过（云端可达 41 万），而 numCtx 是本地显存定的。
+     * 两者不匹配时 prompt 会超过 num_ctx，被 Ollama **静默截断** —— 而被裁掉的恰恰是最前面的
+     * 协议与设定（`engine.ts` 里是 `const total = p.contextBudget`，运行时没有任何 clamp）。
+     * 故以「出厂配比 × 当前窗口」为安全上限：**只有超限才给回落建议**，
+     * 低于上限时一律尊重用户现值（他很可能是刻意调小的）。
+     */
+    const safeMax = Math.floor(current.numCtx * LOCAL_BUDGET_OF_CTX)
+    const overWindow = current.contextBudget > safeMax
+    const budget = overWindow
+      ? clampTo(snap(safeMax, TUNING_LIMITS.contextBudget.step), TUNING_LIMITS.contextBudget.min, TUNING_LIMITS.contextBudget.max)
+      : current.contextBudget
+
     return {
       local: true,
       windowTokens: current.numCtx,
       windowSource: 'user',
-      suggest: recommendTuning(current.contextBudget, current.numCtx),
-      approxPromptTokens: current.contextBudget,
-      headline: `本地 Ollama · 窗口 ${current.numCtx} 词元 · 预算 ${current.contextBudget} 字`,
+      overWindow,
+      suggest: recommendTuning(budget, current.numCtx),
+      approxPromptTokens: budget,
+      headline: `本地 Ollama · 窗口 ${current.numCtx} 词元 · 预算 ${current.contextBudget} 字`
+        + (overWindow ? `（超窗口承载，建议 ${budget}）` : ''),
       note: `本地部署：上下文窗口由显存决定（当前 ${current.numCtx}），不读模型配置里那一项；` +
-        `${claimWhat} ${claim} 属架构容量，单卡跑不到。记忆档按当前预算 ${current.contextBudget} 字同比推荐。`,
+        `${claimWhat} ${claim} 属架构容量，单卡跑不到。记忆档按当前预算 ${budget} 字同比推荐。`
+        + (overWindow
+          ? `⚠️ 当前预算 ${current.contextBudget} 字已超过本地窗口 ${current.numCtx} 的承载范围，`
+            + `发给模型的资料会被静默截断（先裁协议与设定）。建议回落到 ${budget} 字。`
+          : ''),
     }
   }
 

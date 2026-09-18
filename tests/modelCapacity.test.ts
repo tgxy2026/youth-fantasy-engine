@@ -15,6 +15,7 @@
 import {
   adviseCapacity, isLocalProvider, recommendTuning, scaleGuide, TUNING_LIMITS, lookupWindow,
   CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS, FALLBACK_WINDOW,
+  modelFingerprintOf, shouldApplyTuning,
 } from '../src/lib/modelCapacity'
 import { PARAM_GUIDES, type ParamGuide } from '../src/lib/tavern/paramGuide'
 
@@ -153,6 +154,61 @@ ok('lookupWindow：空串 / undefined / null 都返回 null 而不是抛错',
   lookupWindow('') === null && lookupWindow(undefined) === null && lookupWindow(null) === null)
 ok('lookupWindow 与 adviseCapacity 对同一模型给出同一窗口（配置页提示不会与面板算的对不上）',
   lw?.window === qwen.windowTokens, `${lw?.window} vs ${qwen.windowTokens}`)
+
+// ---------- ⑫ 超窗口保护：预算被云端放大过、窗口却是本地的 ----------
+// 场景：先在云端把预算用到 9.6 万（那是按 256K 窗口算的），再切回本地 —— 本地 numCtx 仍由显存决定。
+// 此时预算 > 窗口承载，prompt 会被 Ollama **静默截断**（先裁协议与设定），所以必须给回落建议。
+const carried = adviseCapacity({ type: 'ollama', model: 'qwen3.5-27b' }, { numCtx: 32768, contextBudget: 96665 })
+ok('超窗口：标记 overWindow', carried.overWindow === true)
+ok('超窗口：建议预算回落到窗口承载范围内',
+  carried.suggest.contextBudget < 96665 && carried.suggest.contextBudget <= 32768,
+  String(carried.suggest.contextBudget))
+ok('超窗口：回落值 = 窗口 × 出厂配比(24000/32768)，且对齐 step',
+  carried.suggest.contextBudget === 24000, String(carried.suggest.contextBudget))
+ok('超窗口：headline 与 note 都点明"会被静默截断"',
+  /超窗口承载/.test(carried.headline) && /截断/.test(carried.note), carried.headline)
+ok('超窗口：记忆档按回落后的预算算，不按超限值',
+  carried.suggest.hardLimit === 3000 && carried.suggest.diaryDays === 7, JSON.stringify(carried.suggest))
+
+// 边界：正好等于安全上限（出厂 24000/32768 就是这个比例）→ 不算超限，出厂配置零变化
+const atEdge = adviseCapacity({ type: 'ollama', model: 'qwen3.5-27b' }, { numCtx: 32768, contextBudget: 24000 })
+ok('超窗口：正好等于安全上限时不触发（出厂配置零变化）',
+  !atEdge.overWindow && atEdge.suggest.contextBudget === 24000)
+
+// 用户刻意调小预算 → 不该被"推荐"顶回去
+const lowered = adviseCapacity({ type: 'ollama', model: 'qwen3.5-27b' }, { numCtx: 32768, contextBudget: 12000 })
+ok('超窗口：低于上限时尊重用户现值（不往上顶）',
+  !lowered.overWindow && lowered.suggest.contextBudget === 12000, String(lowered.suggest.contextBudget))
+
+// 小显存设备：窗口 8192 → 安全上限同步变小
+const smallCtx = adviseCapacity({ type: 'ollama', model: 'llama3-8b' }, { numCtx: 8192, contextBudget: 24000 })
+ok('超窗口：安全上限跟着 numCtx 缩放（小显存设备同样要回落）',
+  smallCtx.overWindow === true && smallCtx.suggest.contextBudget === 6000, String(smallCtx.suggest.contextBudget))
+ok('超窗口：云端不用这个标记（云端预算本就按窗口算出来）', !qwen.overWindow)
+
+// ---------- ⑬ 额度自动跟随的判定链（"自动"与"手工覆盖"共存）----------
+// 🔴 这是本次改动的**核心不变量**：自动套用只在"换了模型"时发生。
+//    判定若写成"发现偏离就纠正"，用户手调的值会在每次同步时被改回去，手工覆盖就成了空话。
+const fp = modelFingerprintOf({ id: 'v', model: 'Qwen3.5-35B', contextWindow: undefined })
+ok('指纹：同 provider 同 model → 指纹相同',
+  fp === modelFingerprintOf({ id: 'v', model: 'Qwen3.5-35B', contextWindow: undefined }), fp)
+ok('指纹：换模型 / 改窗口声明 / 换 provider 都会变',
+  fp !== modelFingerprintOf({ id: 'v', model: 'DeepSeek-V3', contextWindow: undefined }) &&
+  fp !== modelFingerprintOf({ id: 'v', model: 'Qwen3.5-35B', contextWindow: 100000 }) &&
+  fp !== modelFingerprintOf({ id: 'v2', model: 'Qwen3.5-35B', contextWindow: undefined }), fp)
+ok('指纹：无 provider 也有稳定取值（不会因 undefined 反复触发套用）',
+  modelFingerprintOf(null) === 'none' && modelFingerprintOf(undefined) === 'none')
+
+ok('判定：关掉开关 → off（完全手工）',
+  shouldApplyTuning({ autoTune: false, tunedFor: 'x', fingerprint: 'y' }) === 'off')
+ok('判定：首次（未登记）→ registered（只登记，不动老用户已调好的配置）',
+  shouldApplyTuning({ autoTune: true, tunedFor: undefined, fingerprint: 'y' }) === 'registered')
+ok('🔴 判定：同模型 → same-model（用户手调的值必须留住）',
+  shouldApplyTuning({ autoTune: true, tunedFor: 'y', fingerprint: 'y' }) === 'same-model')
+ok('判定：换了模型 → apply',
+  shouldApplyTuning({ autoTune: true, tunedFor: 'y', fingerprint: 'z' }) === 'apply')
+ok('判定：tunedFor 为空串按"未登记"处理（真实指纹不会是空串，故不会误判）',
+  shouldApplyTuning({ autoTune: true, tunedFor: '', fingerprint: 'y' }) === 'registered')
 
 console.log(`\n—— modelCapacity 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

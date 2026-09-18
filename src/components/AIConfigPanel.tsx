@@ -20,7 +20,8 @@ import {
 } from 'lucide-react'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
-import { confirmDialog } from './dialogs'
+import { confirmDialog, showToast } from './dialogs'
+import { syncTuningWithModel } from '../lib/tavern/settings'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
   LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset,
@@ -91,18 +92,33 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
 
   useEffect(() => { refresh() }, [refresh])
 
+  /**
+   * 换过模型后，把酒馆模式的「上下文预算 + 记忆档」同步成新模型的推荐值。
+   *
+   * 为什么不 await：切模型的手感不该被几次本地读写拖住。安全性由 sync 自己保证 ——
+   * 它按**模型指纹**判定，"没换模型"时什么都不做（同模型下用户手调的值不会被改回去），
+   * 异常也已吞掉；「额度跟随模型自动调整」可在控制面板关闭。
+   */
+  const syncTavernTuning = () => {
+    void syncTuningWithModel().then(r => {
+      if (r.changed) showToast('酒馆模式的上下文额度已按新模型调整，可在控制面板查看', 'success')
+    })
+  }
+
   const persist = async (list: AIProvider[], aid: string | null) => {
     await saveProviders(list)
     if (aid !== null) await saveActiveId(aid)
     setProviders(list)
     setActiveId(aid)
     onChange?.()
+    syncTavernTuning() // 编辑 provider 时可能改过 model / 上下文窗口 —— 两者都在指纹里
   }
 
   const setActive = async (id: string) => {
     await saveActiveId(id)
     setActiveId(id)
     onChange?.()
+    syncTavernTuning()
   }
 
   /** 配置变动后旧测试结论即失效，清掉避免误导 */
