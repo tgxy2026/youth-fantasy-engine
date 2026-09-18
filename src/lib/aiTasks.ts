@@ -10,7 +10,7 @@
 //   未配置模型 → 按钮禁用，绝不调用；调用失败 → 只提示，绝不破坏已有数据。
 
 import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from './ai'
-import { parseObjectArray, asText, humanText, hasSubstance } from './aiParse'
+import { parseObjectArray, parsePlainObject, asText, humanText, hasSubstance } from './aiParse'
 import { authorBlock, newAuthorFence } from './promptGuard'
 
 // ---------- 通用 JSON 解析（已收敛到 ./aiParse，全项目唯一入口） ----------
@@ -1291,16 +1291,24 @@ export async function aiChapterSummary(
 
 export type SettingEntityType = '人物' | '势力' | '地点' | '种族' | '物品' | '术语'
 
-/** AI 从本章正文抽出的候选实体（尚未与设定表比对） */
+/** AI 抽出的候选实体（尚未与设定表比对） */
 export interface ExtractedEntity {
   type: SettingEntityType
   name: string
-  /** 一句话描述，只写正文写明的 */
+  /** 一句话描述：拆书＝只写正文写明的；创意写作＝一句话设定 */
   desc: string
-  /** 原文原句证据 */
+  /** 原文原句证据（拆书用；创意写作是凭种子生成，无原文，留空） */
   evidence: string
   /** 仅人物：建议归入哪张角色卡 */
   tier?: '主要' | '次要' | 'NPC'
+  /**
+   * 额外字段。键取 `flow/fieldMap.ts` 里该类型的 `slots[].from`
+   * （人物＝identity/traits/realm/faction/special…；势力＝category/leader…）。
+   *
+   * 拆书 B1 的现成抽取不产出它（只有 name/desc）；**B2 的两遍全字段抽取**与
+   * **「创意写作」的设定奠基**用它 —— 这样两者都能复用同一条"判重 → 草稿 → 审阅 → 落库"管线。
+   */
+  fields?: Record<string, string>
 }
 
 const ENTITY_TYPES: SettingEntityType[] = ['人物', '势力', '地点', '种族', '物品', '术语']

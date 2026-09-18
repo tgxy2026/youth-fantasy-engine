@@ -53,6 +53,8 @@ interface Merged {
   from: { index: number; source: string }[]
   /** 原文证据（去重后） */
   quotes: string[]
+  /** 额外字段（键＝fieldMap.slots 的 from；同名键取更长的一份） */
+  extra: Record<string, string>
 }
 
 /** tier 重要度：主要 > 次要 > NPC（合并时取最高） */
@@ -84,6 +86,7 @@ function mergeEntities(batches: EntityBatch[]): Merged[] {
           ...(e.tier ? { tier: e.tier } : {}),
           from: [{ index: b.index, source: b.source }],
           quotes: quote ? [quote] : [],
+          extra: { ...(e.fields ?? {}) },
         })
         continue
       }
@@ -92,6 +95,12 @@ function mergeEntities(batches: EntityBatch[]): Merged[] {
       if (quote && !cur.quotes.includes(quote)) cur.quotes.push(quote)
       if (!cur.from.some(f => f.index === b.index && f.source === b.source)) {
         cur.from.push({ index: b.index, source: b.source })
+      }
+      // 额外字段：同名键取更长的一份（信息更全）
+      for (const [k, v] of Object.entries(e.fields ?? {})) {
+        const val = (v ?? '').trim()
+        if (!val) continue
+        if (val.length > (cur.extra[k] ?? '').length) cur.extra[k] = val
       }
     }
   }
@@ -135,6 +144,14 @@ function fieldsOf(m: Merged, tabId: string): { fields: DraftField[]; nameKey: st
   const first = resolveFieldPath(tabId, map.firstFields ?? [])
   if (first && m.from[0]?.source) put(first.field, m.from[0].source)
   if (map.statusValue) put('人物状态', map.statusValue)
+  // 额外字段（B2 的全字段抽取 / 「创意写作」的设定奠基）：按 slots 的候选名解析落点。
+  // 已被前面写过的键跳过 —— 否则同一列会被写两次（后写的覆盖先写的）。
+  for (const slot of map.slots ?? []) {
+    const v = (m.extra[slot.from] ?? '').trim()
+    if (!v) continue
+    const hit = resolveFieldPath(tabId, slot.to)
+    if (hit && !out.some(f => f.key === hit.key)) out.push({ key: hit.key, label: hit.field, value: v })
+  }
   return { fields: out, nameKey, ...(descKey ? { descKey } : {}) }
 }
 
@@ -205,6 +222,24 @@ export async function buildDraftBundle(
       chapters: [...new Set(m.from.map(f => f.index))].sort((a, b) => a - b),
     })
   })
+
+  // 🔴 同名但被抽成**不同类型**（模型偶尔会这么做：把「中州皇朝」一次抽成势力、一次抽成地点）——
+  //    若不管，会落成两条重复条目（一条进国家势力、一条进地理风物）。实机 6 章样本上真抓到过。
+  //    处置：**除首条外**都标 conflict 并写明两边类型，默认不勾选（`defaultPicked` 只认 status==='new'），
+  //    由作者在审阅时取舍。刻意**不擅自合并** —— 同名不同类在设定里确实可能存在（如「青云」既是人名又是地名）。
+  const firstByName = new Map<string, DraftRow>()
+  for (const r of rows) {
+    const nk = normName(r.name)
+    const prev = firstByName.get(nk)
+    if (!prev) { firstByName.set(nk, r); continue }
+    r.status = 'conflict'
+    r.conflicts = [{
+      field: '实体类型',
+      existing: `${prev.kindLabel}（写入「${prev.tabName}」）`,
+      incoming: `${r.kindLabel}（写入「${r.tabName}」）`,
+    }]
+    r.confidence = Math.max(0, r.confidence - 0.3)
+  }
 
   return bundleOf(rows)
 }

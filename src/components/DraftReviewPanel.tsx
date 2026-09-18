@@ -219,6 +219,12 @@ export default function DraftReviewPanel({ bundle, conflict = 'keep-existing', o
                                 项目里已有「{r.matched.name}」——若不是同一对象，请改名后再写入。
                               </div>
                             )}
+                            {r.conflicts?.map((c, i) => (
+                              <div key={i} className="mt-1 text-[10.5px] leading-relaxed text-amber">
+                                ⚠️ {c.field}不一致：这条按「{c.incoming}」抽出，但同名实体已按「{c.existing}」抽出过。
+                                默认不勾选 —— 请确认它们是不是同一个对象，再二选一。
+                              </div>
+                            ))}
                           </div>
                         )}
                       </li>

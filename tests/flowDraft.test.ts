@@ -86,6 +86,28 @@ ok('首现章写进草稿（术语 → 首次出现章节）',
   ok('合并后仍不误判为已有（青岚宗未登记）', row.status === 'new', row.status)
 }
 
+// ---------- ②b 同名但类型不同 → 标 conflict、默认不勾（实机 6 章样本上抓到的真问题） ----------
+{
+  const b3 = await buildDraftBundle([{
+    source: '第1章', index: 1,
+    entities: [
+      { type: '势力', name: '中州皇朝', desc: '王朝', evidence: 'E1' },
+      { type: '地点', name: '中州皇朝', desc: '城池', evidence: 'E2' },
+    ],
+  }], { rawText: 'E1 E2' })
+  ok('同名异类仍产出 2 条（不擅自合并 —— 同名不同类在设定里确实可能出现）',
+    b3.rows.length === 2, String(b3.rows.length))
+  const first = b3.rows[0]
+  const second = b3.rows[1]
+  ok('首条保持 new', first.status === 'new', first.status)
+  ok('🔴 次条标为 conflict（否则会落成两条重复条目，一条进势力表一条进地理表）',
+    second.status === 'conflict', second.status)
+  ok('冲突写明两边类型', second.conflicts?.[0]?.field === '实体类型', JSON.stringify(second.conflicts))
+  ok('🔴 冲突条默认不勾选（defaultPicked 只认 new）', !defaultPicked(second), String(defaultPicked(second)))
+  ok('冲突条置信度被扣到 ≤0.5', second.confidence <= 0.5, String(second.confidence))
+  ok('两条确实写入不同表（所以必须让作者取舍）', first.tabId !== second.tabId, `${first.tabId}/${second.tabId}`)
+}
+
 // ---------- ③ 落库预览（写入前必须让用户看清将要发生什么） ----------
 {
   const pv = await previewCommit(bundle.rows, 'keep-existing')
