@@ -1628,7 +1628,8 @@ export async function aiGenerateBible(
       cfg,
       [
         { role: 'system', content: composeSystemPrompt(bibleSys(counts), cfg) },
-        { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。` },
+        // 同样把数量与体量约束重申在**消息末尾**（system 里的铁律容易被忽略）
+        { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，**宁少勿多**；每个字段 ≤ 40 字；只输出 JSON。` },
       ],
       { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
     )
@@ -1690,6 +1691,16 @@ export interface OutlineResult {
   chapters: OutlineChapter[]
 }
 
+/**
+ * 大纲的输出体量目标（字）。按"每卷 11 个字段 × 约 40 字 + 每章约 160 字"估。
+ *
+ * 🔴 为什么必须给这个数：不给的话模型会把它当正文写 —— 实测（硅基流动 Qwen3-30B）
+ *    只要 1 卷 1 章，却连续吐了 **13000+ 字**还在继续，白等 5 分钟以上。
+ *    这里只做**提示词层面的预算**，不用 `max_tokens` 硬截断：截断会把 JSON 切残，
+ *    反而让整批结果报废（比慢更糟）。
+ */
+const outlineCharCap = (volumes: number, chapters: number) => 300 + volumes * 420 + chapters * 160
+
 const outlineSys = (volumes: number, chapters: number) => `你是网文大纲师。给定设定资料，请产出分卷大纲与逐章细纲。
 
 铁律：
@@ -1700,6 +1711,8 @@ const outlineSys = (volumes: number, chapters: number) => `你是网文大纲师
 5. 事件链要有递进（起→承→转→合）；每卷结尾留钩子给下卷。
 6. title 只写章名本身，**不要带"第X章"前缀**（系统会自动编号）。
 7. 每章 scenes 给 2~3 条场景（地点+人物+发生什么）。
+8. **体量纪律（重要）**：这些都是**卡片摘要**，不是正文 —— 单字段不超过 40 字（events / subplots 不超过 60 字），scenes 每条不超过 30 字。整份 JSON 控制在 ${outlineCharCap(volumes, chapters)} 字以内。
+9. **严格按量输出**：只写 ${volumes} 卷、${chapters} 章，多写出来的会被系统丢弃（白耗时间）。资料撑不满时，把每章写得更精练，而不是多写章。
 
 JSON 结构：
 {
@@ -1723,7 +1736,9 @@ export async function aiGenerateOutline(
       cfg,
       [
         { role: 'system', content: composeSystemPrompt(outlineSys(volCount, chCount), cfg) },
-        { role: 'user', content: `【设定资料】\n${bibleDigest.trim() || '（无，请按题材自行克制地设定）'}\n\n请产出分卷大纲与逐章细纲。` },
+        // 🔴 硬约束放**消息末尾**：模型对最后一条指令最敏感。实测仅写在 system 里时
+        //    Qwen3-30B 会无视"只写 1 卷 1 章"，连吐 13000+ 字；末尾重申才压得住。
+        { role: 'user', content: `【设定资料】\n${bibleDigest.trim() || '（无，请按题材自行克制地设定）'}\n\n请产出分卷大纲与逐章细纲。\n\n【必须遵守】只输出 ${volCount} 卷、${chCount} 章，一个不多；单字段 ≤ 40 字；整份 JSON ≤ ${outlineCharCap(volCount, chCount)} 字。` },
       ],
       { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
     )
