@@ -24,6 +24,7 @@ import { resolveSlot } from './flow/fieldMap'
 import { createFlow } from './flow/pipeline'
 import type { CommitOutcome, DraftBundle, DraftRow, FlowProgress, FlowStage } from './flow/types'
 import { uid } from './id'
+import { chapterNoOf, outlineCardName, outlineEventKey } from './outlineCard'
 import type { Volume } from './types'
 
 /** 阶段声明（weight 按实测耗时：连写占绝大部分） */
@@ -32,12 +33,6 @@ export const CREATIVE_STAGES: FlowStage[] = [
   { id: 'outline', label: '分卷大纲', weight: 2 },
   { id: 'draft', label: '逐章连写', weight: 12 },
 ]
-
-/** 从卡名（「第3章 风云」）里取章号；取不到返回 0 */
-function chapterNoOf(name: string): number {
-  const m = (name ?? '').match(/第\s*(\d+)\s*章/)
-  return m ? parseInt(m[1], 10) : 0
-}
 
 /** 按「语义字段名 → 值」构造卡片数据（落点由 schema 现查，schema 改了字段归属也不会失配） */
 function cardDataOf(tabId: string, pairs: [string, string][]): Record<string, string> {
@@ -107,7 +102,7 @@ export async function commitOutline(
   const hasChName = new Set(chCards.map(c => c.name.trim()))
   for (const c of result.chapters) {
     if (opts.signal?.aborted) break
-    const fullName = `第${c.no}章 ${c.title}`.trim()
+    const fullName = outlineCardName(c.no, c.title)
     if (hasChName.has(fullName)) continue
     const data = cardDataOf('chapter-outline', [
       ['章节号/标题', fullName], ['本章一句话事件', c.event], ['本章功能', c.fn],
@@ -129,7 +124,7 @@ export async function commitOutline(
 export async function loadChapterOutlines(): Promise<Map<number, string>> {
   const map = new Map<number, string>()
   const cards = await db.getCardRecords('chapter-outline').catch(() => [])
-  const evKey = resolveSlot('chapter-outline', '本章一句话事件')
+  const evKey = outlineEventKey()
   const hookKey = resolveSlot('chapter-outline', '章末钩子')
   const fnKey = resolveSlot('chapter-outline', '本章功能')
   const sceneKeys = [1, 2, 3]
