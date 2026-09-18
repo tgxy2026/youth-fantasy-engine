@@ -3,12 +3,17 @@ import { Database, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
-import { loadProviders, loadActiveId, type AIProvider } from '../lib/ai'
-import { adviseCapacity } from '../lib/modelCapacity'
-import { getTavernSettings } from '../lib/tavern/settings'
 import {
-  DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS, getWriterBudget, saveWriterBudget, recommendWriterBase, previewAt,
+  DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS, getWriterBudget, saveWriterBudget, previewAt, currentModelAdvice,
 } from '../lib/aiWriterBudget'
+
+interface Props {
+  /**
+   * 由父级在「模型配置发生变动」时 +1（InspireTools 的 cfgVer）。
+   * 🔴 换模型后本面板的推荐值必须跟着重算 —— 不传它就会停在挂载时那份快照上（看起来像"额度没跟着模型走"）。
+   */
+  refreshKey?: number
+}
 
 /**
  * 「正文写作 AI 额度」面板 —— 紧贴在**模型配置**下方。
@@ -19,7 +24,7 @@ import {
  *    `contextBudget` / `numCtx` + 记忆档，管的是角色扮演那一整条链路；
  *    这里只影响编辑器 / 颉文姬 / 检查工具 / 灵感工具这些**正文写作**的 AI 功能。
  */
-export default function AIWriterBudgetPanel() {
+export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
   const [base, setBase] = useState(DEFAULT_WRITER_BASE)
   const [draft, setDraft] = useState(String(DEFAULT_WRITER_BASE))
   const [saving, setSaving] = useState(false)
@@ -27,37 +32,50 @@ export default function AIWriterBudgetPanel() {
   const [rec, setRec] = useState<number | null>(null)
   const [modelDesc, setModelDesc] = useState('')
   const [localModel, setLocalModel] = useState(true)
+  const [autoTune, setAutoTune] = useState(true)
+  const [tunedFor, setTunedFor] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     void (async () => {
       const st = await getWriterBudget()
       setBase(st.base)
       setDraft(String(st.base))
-      try {
-        const [providers, activeId, tav] = await Promise.all([
-          loadProviders().catch(() => [] as AIProvider[]),
-          loadActiveId().catch(() => null),
-          getTavernSettings().catch(() => null),
-        ])
-        const p = providers.find(x => x.id === activeId) ?? null
-        // 本地窗口由显存决定，值就取酒馆那边设的 numCtx（同一个模型，窗口是同一个）
-        const numCtx = tav?.common.numCtx ?? 32768
-        const cap = adviseCapacity(p, { numCtx, contextBudget: tav?.common.contextBudget ?? 24000 })
-        setRec(recommendWriterBase(cap))
-        setModelDesc(cap.headline)
-        setLocalModel(cap.local)
-      } catch { /* 拿不到模型信息就不显示推荐，不影响手动设置 */ }
+      setAutoTune(st.autoTuneByModel !== false)
+      setTunedFor(st.tunedFor)
+      // 与「自动跟随」共用同一口径（currentModelAdvice）—— 免得面板显示的推荐值与实际套用的值算得不一样
+      const info = await currentModelAdvice()
+      if (info) {
+        setRec(info.recommended)
+        setModelDesc(info.cap.headline)
+        setLocalModel(info.cap.local)
+      }
     })()
-  }, [])
+  }, [refreshKey])
 
   const commit = async (v: number) => {
     setSaving(true)
     try {
-      const out = await saveWriterBudget({ base: v })
+      // 带上 tunedFor：它是"上次给哪个模型套用过"的记录，清掉会让下次同步重新登记（无害但没必要）
+      const out = await saveWriterBudget({ base: v, autoTuneByModel: autoTune, tunedFor })
       setBase(out.base)
       setDraft(String(out.base))
+      setTunedFor(out.tunedFor)
       showToast(`正文写作额度已保存：基准 ${out.base} 字`, 'success')
     } catch (e) {
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally { setSaving(false) }
+  }
+
+  /** 开关是"行为开关"，立即落库（不跟基准一起等「保存」）—— 语义更清楚，也不必记草稿 */
+  const toggleAutoTune = async (v: boolean) => {
+    setAutoTune(v)
+    setSaving(true)
+    try {
+      const out = await saveWriterBudget({ base, autoTuneByModel: v, tunedFor })
+      setTunedFor(out.tunedFor)
+      showToast(v ? '已开启：换模型时自动套用推荐额度' : '已关闭：额度完全手工设置', 'success')
+    } catch (e) {
+      setAutoTune(!v) // 回滚开关，别让界面显示与实际设置不一致
       showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally { setSaving(false) }
   }
@@ -108,6 +126,21 @@ export default function AIWriterBudgetPanel() {
           </div>
         </div>
       )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1.5 text-[12px] text-ink-300 cursor-pointer select-none">
+          <input type="checkbox" checked={autoTune} disabled={saving}
+            onChange={e => void toggleAutoTune(e.target.checked)} className="accent-amber" />
+          额度跟随模型自动调整
+        </label>
+        <HelpPopover title="额度跟随模型自动调整" width="21rem" size={12}>
+          {`开启后：**换模型时**自动把基准套用成新模型的推荐值 —— 云端大窗口模型会自动多带资料，本地模型按显存收紧。
+
+⚠️ 只在你**换模型**时生效：同一个模型下你手调的基准**不会被改回去**（想完全手工就关掉这个开关，
+面板上仍可随时点「采用推荐值」手动套一次）。`}
+        </HelpPopover>
+        {!autoTune && <span className="text-[10.5px] text-ink-500">（当前为手工模式，换模型不会自动改）</span>}
+      </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <label className="text-[12px] text-ink-300">资料预算基准</label>

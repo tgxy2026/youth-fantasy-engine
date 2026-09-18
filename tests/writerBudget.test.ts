@@ -8,7 +8,7 @@
 //   ③ 推荐值：本地**不放大**、云端按窗口放大且有上下限；
 //   ④ 系数表与展示名表**键集合一致**（漏一个 label 会让面板明细里少一行）。
 import {
-  WRITER_BUDGET_KINDS, WRITER_BUDGET_LABELS, DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS,
+  WRITER_BUDGET_KINDS, WRITER_BUDGET_LABELS, DEFAULT_WRITER_BASE, DEFAULT_WRITER_BUDGET, WRITER_BASE_LIMITS,
   budgetForKind, previewAt, recommendWriterBase, type WriterBudgetKind,
 } from '../src/lib/aiWriterBudget'
 import { adviseCapacity } from '../src/lib/modelCapacity'
@@ -94,6 +94,12 @@ ok('previewAt 每项都有非空 label', pv.every(x => x.label.trim().length > 0
 // ---------- ⑤ 边界常量 ----------
 ok('基准范围含出厂值', WRITER_BASE_LIMITS.min <= DEFAULT_WRITER_BASE && DEFAULT_WRITER_BASE <= WRITER_BASE_LIMITS.max,
   `${WRITER_BASE_LIMITS.min}~${WRITER_BASE_LIMITS.max} 出厂 ${DEFAULT_WRITER_BASE}`)
+
+// ---------- ⑥ 自动跟随模型的出厂设置 ----------
+ok('出厂：默认开启「跟随模型自动调整」', DEFAULT_WRITER_BUDGET.autoTuneByModel === true)
+ok('出厂：tunedFor 未登记（首次同步只登记指纹、不改值 —— 不动老用户已调好的基准）',
+  DEFAULT_WRITER_BUDGET.tunedFor === undefined)
+ok('出厂基准 = 出厂常量（面板与同步口径同源）', DEFAULT_WRITER_BUDGET.base === DEFAULT_WRITER_BASE)
 
 console.log(`\n—— writerBudget 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

@@ -22,6 +22,7 @@ import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import { confirmDialog, showToast } from './dialogs'
 import { syncTuningWithModel } from '../lib/tavern/settings'
+import { syncWriterBudgetToModel } from '../lib/aiWriterBudget'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
   LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset,
@@ -102,6 +103,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   const syncTavernTuning = () => {
     void syncTuningWithModel().then(r => {
       if (r.changed) showToast('酒馆模式的上下文额度已按新模型调整，可在控制面板查看', 'success')
+    })
+    // 正文写作链路的额度也跟模型走 —— 两边各按自己的口径算，互不冲突
+    void syncWriterBudgetToModel().then(r => {
+      if (r.changed) showToast(`正文写作额度已按新模型调整为基准 ${r.base} 字`, 'success')
     })
   }
 

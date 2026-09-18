@@ -106,7 +106,7 @@ export default function InspireTools() {
 
         {/* 正文写作链路的额度总闸门：跟着模型走，放在模型配置正下方便于一起调。
             ⚠️ 与酒馆模式的额度互不冲突（酒馆那两个数在「酒馆模式 → 控制面板」）。 */}
-        <AIWriterBudgetPanel />
+        <AIWriterBudgetPanel refreshKey={cfgVer} />
 
         {/* ============ ② 联网检索（全局）============
             原先在「酒馆 → 控制面板」，2026-09-15 搬来：它是全局能力（角色卡/剧本/背景设定起草、

@@ -16,7 +16,9 @@
  * 与酒馆的额度**互不影响**：这里只管正文写作链路，酒馆那两个数在「控制面板」里单独设置。
  */
 import * as db from './db'
-import type { CapacityAdvice } from './modelCapacity'
+import { adviseCapacity, modelFingerprintOf, shouldApplyTuning, type CapacityAdvice } from './modelCapacity'
+import { loadProviders, loadActiveId, type AIProvider } from './ai'
+import { getTavernSettings } from './tavern/settings'
 
 const K_WRITER_BUDGET = 'ai.writerBudget'
 
@@ -80,17 +82,36 @@ export const WRITER_BUDGET_LABELS: Record<WriterBudgetKind, string> = {
 export interface WriterBudgetSettings {
   /** 基准（字） */
   base: number
+  /**
+   * 上次自动套用时的**模型指纹**（`providerId|model|contextWindow`）。
+   *
+   * 🔴 与酒馆额度同一套判定：自动套用**只在指纹变化（= 真换了模型）时**发生。
+   *    若改成"发现偏离就纠正"，作者手调的基准会在每次同步被改回去。
+   *    空/缺失 = 尚未登记：首次同步**只登记指纹、不改值**。
+   */
+  tunedFor?: string
+  /** 是否跟着模型自动调整（默认开；关掉即完全手工） */
+  autoTuneByModel?: boolean
 }
 
-export const DEFAULT_WRITER_BUDGET: WriterBudgetSettings = { base: DEFAULT_WRITER_BASE }
+export const DEFAULT_WRITER_BUDGET: WriterBudgetSettings = {
+  base: DEFAULT_WRITER_BASE,
+  autoTuneByModel: true,
+}
 
 /** 读设置。异常/越界一律回退出厂值 —— 额度读不出来不该让 AI 功能整个挂掉 */
 export async function getWriterBudget(): Promise<WriterBudgetSettings> {
   try {
     const raw = await db.getMeta<Partial<WriterBudgetSettings> | null>(K_WRITER_BUDGET, null)
     const base = Number(raw?.base)
-    if (!Number.isFinite(base) || base < WRITER_BASE_LIMITS.min) return DEFAULT_WRITER_BUDGET
-    return { base: Math.min(WRITER_BASE_LIMITS.max, Math.round(base)) }
+    const safeBase = (!Number.isFinite(base) || base < WRITER_BASE_LIMITS.min)
+      ? DEFAULT_WRITER_BASE
+      : Math.min(WRITER_BASE_LIMITS.max, Math.round(base))
+    return {
+      base: safeBase,
+      tunedFor: typeof raw?.tunedFor === 'string' ? raw.tunedFor : undefined,
+      autoTuneByModel: raw?.autoTuneByModel !== false,
+    }
   } catch {
     return DEFAULT_WRITER_BUDGET
   }
@@ -98,7 +119,8 @@ export async function getWriterBudget(): Promise<WriterBudgetSettings> {
 
 export async function saveWriterBudget(next: WriterBudgetSettings): Promise<WriterBudgetSettings> {
   const base = Math.max(WRITER_BASE_LIMITS.min, Math.min(WRITER_BASE_LIMITS.max, Math.round(next.base)))
-  const out: WriterBudgetSettings = { base }
+  const out: WriterBudgetSettings = { base, autoTuneByModel: next.autoTuneByModel !== false }
+  if (next.tunedFor) out.tunedFor = next.tunedFor
   await db.setMeta(K_WRITER_BUDGET, out)
   return out
 }
@@ -135,4 +157,65 @@ export function previewAt(base: number): { kind: WriterBudgetKind; label: string
     label: WRITER_BUDGET_LABELS[kind],
     value: budgetForKind(kind, base),
   }))
+}
+
+// ==================== 跟着模型走（与酒馆额度同一套判定） ====================
+
+/**
+ * 当前生效模型的能力与推荐基准 —— **面板与自动跟随共用同一个口径**，
+ * 免得"面板显示的推荐值"与"实际自动套用的值"算得不一样。
+ */
+export async function currentModelAdvice(): Promise<
+  { cap: CapacityAdvice; recommended: number; fingerprint: string } | null
+> {
+  try {
+    const [providers, activeId, tav] = await Promise.all([
+      loadProviders().catch(() => [] as AIProvider[]),
+      loadActiveId().catch(() => null),
+      getTavernSettings().catch(() => null),
+    ])
+    const p = providers.find(x => x.id === activeId) ?? null
+    // 本地窗口由显存决定 —— 取酒馆那边设的 numCtx（同一个模型，窗口也是同一个）
+    const numCtx = tav?.common.numCtx ?? 32768
+    const cap = adviseCapacity(p, { numCtx, contextBudget: tav?.common.contextBudget ?? 24000 })
+    return { cap, recommended: recommendWriterBase(cap), fingerprint: modelFingerprintOf(p) }
+  } catch {
+    return null
+  }
+}
+
+export interface WriterSyncResult {
+  changed: boolean
+  reason: 'off' | 'registered' | 'same-model' | 'no-drift' | 'applied' | 'error'
+  base?: number
+}
+
+/**
+ * 换模型后把基准同步成当前模型的推荐值。
+ *
+ * 判定链（与酒馆额度共用 `shouldApplyTuning`）：
+ *  ① 关掉开关 → off；② 首次（指纹未登记）→ 只登记、不改值；
+ *  ③ 同模型 → 不动（**保住作者手调的基准**）；④ 换了模型 → 套用推荐值。
+ *
+ * 异常一律吞掉 —— 同步额度失败不该拦住任何 AI 功能。
+ */
+export async function syncWriterBudgetToModel(): Promise<WriterSyncResult> {
+  try {
+    const st = await getWriterBudget()
+    if (st.autoTuneByModel === false) return { changed: false, reason: 'off' }
+    const info = await currentModelAdvice()
+    if (!info) return { changed: false, reason: 'error' }
+
+    const verdict = shouldApplyTuning({ autoTune: true, tunedFor: st.tunedFor, fingerprint: info.fingerprint })
+    if (verdict === 'same-model') return { changed: false, reason: 'same-model' }
+    if (verdict === 'registered') {
+      await saveWriterBudget({ ...st, tunedFor: info.fingerprint })
+      return { changed: false, reason: 'registered' }
+    }
+    const changed = info.recommended !== st.base
+    await saveWriterBudget({ ...st, base: info.recommended, tunedFor: info.fingerprint })
+    return { changed, reason: changed ? 'applied' : 'no-drift', base: info.recommended }
+  } catch {
+    return { changed: false, reason: 'error' }
+  }
 }
