@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import AIDataSourceNote from './AIDataSourceNote'
 import { Sparkles, Loader2, AlertCircle, Layers } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
@@ -56,6 +57,7 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
           让 AI 扫描术语表，找出同义 / 重复的概念并建议合并归一，避免"同一事物两个名字"的前后矛盾。未配置模型不影响手动录入。
         </span>
       </div>
+      <AIDataSourceNote feature="term-dedup" />
 
       {terms.length === 0 && !done && (
         <div className="text-[12px] text-ink-400 py-6 text-center">术语表还是空的，先登记一些术语再来查重。</div>

@@ -20,6 +20,7 @@ import {
   Command, Highlighter, BookOpen, Users, X, GripVertical, Sparkles, Loader2, Wand2, Layers, PenTool
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import PromptModal from './PromptModal'
 import JieWenJi, { ADVICE_START, ADVICE_END } from './JieWenJi'
 import { confirmDialog, showToast } from './dialogs'
@@ -1539,6 +1540,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     : 'AI 伴写：已关闭（点击查看说明、档位与开关）'}
               >
                 {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Tab 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· Alt+\\ 可随时手动触发一次。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面这句自定义补充。\n\n'}
+                <AIDataSourceNote feature="inline-suggest" />
                 <div className="mt-1.5 space-y-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-ink-400 shrink-0">建议长度</span>
@@ -1642,6 +1644,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
               </Button>
               <HelpPopover title="章节压缩摘要" width="22rem" size={12} className="shrink-0 mt-0.5">
                 {'用 AI 把本章正文压缩成约 1/10 长度的连贯摘要（保留关键情节/人物/伏笔/转折/设定），例如"陈渊借雷劫破境，引动青铜小塔吞噬雷池，被苍澜宗执法长老察觉，妹妹陈瑶以桂花糖安抚其经脉反噬"。\n\n· 输入即自动同步到「章节总表」的一句话事件列；\n· 它是「综合诊断 / 情节推演」的【简略模式】数据源——用它能大幅加快 AI 调用、省 token；想让 AI 看完整正文时，在这些功能的「完整（正文）」模式里切换即可；\n· 连续性校验与伏笔看板也会读取它来做提示。'}
+                <AIDataSourceNote feature="chapter-summary" />
               </HelpPopover>
             </div>
 

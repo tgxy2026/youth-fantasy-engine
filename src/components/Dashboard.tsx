@@ -6,6 +6,7 @@ import {
   TrendingUp, FileText, ChevronRight, CalendarDays, Zap, Users, Loader2, AlertCircle
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import CharacterDistribution from './CharacterDistribution'
 import WritingGoals from './WritingGoals'
 import { TABS, tabVisible, type VisCtx } from '../lib/schema'
@@ -377,6 +378,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             </Button>
             <HelpPopover title="创作健康提醒" width="20rem" className="ml-auto">
               {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品定位与全书总纲再动笔。\n\n全部指标健康时会显示"保持节奏继续写"。'}
+              <AIDataSourceNote feature="project-diagnose" />
             </HelpPopover>
           </h2>
           <div className="space-y-2.5 text-[12px]">

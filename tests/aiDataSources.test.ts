@@ -43,20 +43,11 @@ const allComponentText = componentSrc.map(c => c.text).join('\n')
 /**
  * 文案已就绪、**但界面尚未挂载**的功能 id —— 即当前进度待办。
  * 挂完后把它从下面这个集合里删掉，这条断言就会开始守它。
+ *
+ * 当前只剩这两条：它们在酒馆里是**工具条上的按钮**（「整理记忆」「结束本轮对话」），
+ * 旁边没有说明位、按钮 title 也塞不进组件 —— 要挂得先给它们设计展示位（如加一个说明气泡）。
  */
 const NOT_YET_MOUNTED = new Set([
-  'inline-suggest',      // AI 伴写（弹窗说明处）
-  'chapter-summary',     // 章节压缩摘要
-  'proofread',           // 校对
-  'foreshadow-review',   // 伏笔闭环审查
-  'continuity-audit',    // 连续性校验
-  'style-check',         // 文风体检
-  'project-diagnose',    // 创作健康诊断
-  'fill-template',       // AI 补全
-  'feedback-ai',         // 读者反馈分析
-  'term-dedup',          // 术语查重
-  'sensitive-check',     // 敏感词 AI
-  'name-suggest',        // AI 取名
   'tavern-memory',       // 本场记忆整理
   'tavern-round-end',    // 结束本轮对话
 ])

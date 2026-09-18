@@ -68,6 +68,7 @@ export function SensitiveCheck({ content, onApply, onClose }: {
 // ============ 校对（本章）：本地错别字词库 + AI 深度校对 ============
 import { scanTypos, replaceTypos } from '../lib/typoWords'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 import { Z } from '../lib/zLayer'
 
@@ -166,6 +167,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
         </span>
         <HelpPopover title="校对怎么用" width="22rem">
           {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「AI 深度校对」：接入模型后，逐句检查错别字＋语病＋逻辑＋设定矛盾。它只报确定的问题，可在正文里点「替换此条」就地改正。\n· 未接入模型时，AI 校对按钮禁用，但本地错别字检测与本章所有手动功能不受影响。'}
+          <AIDataSourceNote feature="proofread" />
         </HelpPopover>
       </div>
 

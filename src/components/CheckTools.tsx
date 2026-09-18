@@ -5,6 +5,7 @@ import {
   Sparkles, ShieldAlert, ScanSearch, RefreshCw, FileDown, Upload, Loader2, Stethoscope, EyeOff, RotateCcw, Trash2
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import AutoTextarea from './AutoTextarea'
 import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
@@ -202,6 +203,7 @@ export default function CheckTools() {
             <ShieldAlert size={14} className="text-red-400" /> 敏感词检测
             <HelpPopover title="敏感词检测怎么用" width="22rem" className="ml-auto">
               {'两个能力：\n\n· 系统扫描（始终可用）：内置基础违禁词库 + 你的自定义词，逐章检查并列出命中词、次数与上下文；\n· AI 检测（需接入 AI）：让模型结合上下文判断每个命中词是误报还是真有风险，并给出替换建议。无 AI 时该按钮禁用，本地扫描不受影响。\n\n· 添加：输入框支持逗号 / 顿号 / 换行批量粘贴；\n· 一键导入文件：支持 .txt（一行一词）/.csv/.tsv/.json 数组，井号 # 开头视为注释。\n只做提示不自动改字——是否规避请自行判断（编辑器工具栏也有单章版敏感词检测，可直接替换）。'}
+              <AIDataSourceNote feature="sensitive-check" />
             </HelpPopover>
           </h2>
           <p className="text-[11px] text-ink-500 mb-4">
@@ -331,6 +333,7 @@ export default function CheckTools() {
             <ScanSearch size={14} className="text-sky-400" /> AI 一致性深度自查
             <HelpPopover title="AI 一致性深度自查怎么用" width="22rem" className="ml-auto">
               {'把你的世界观 / 角色 / 时间脉络设定交给 AI，对照检查前后矛盾与逻辑硬伤。\n\n· 上方文本框可粘贴一段正文（可选），AI 会同时核对正文与设定；留空则只在设定资料内部互查；\n· 结果按 严重 / 中等 / 提示 分级，并给出冲突依据与涉及位置；\n· 需先接入 AI 模型，未接入时按钮禁用；本地能力不受影响。'}
+              <AIDataSourceNote feature="continuity-audit" />
             </HelpPopover>
           </h2>
           <p className="text-[11px] text-ink-500 mb-3">

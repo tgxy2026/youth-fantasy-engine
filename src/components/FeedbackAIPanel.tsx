@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import AIDataSourceNote from './AIDataSourceNote'
 import { Sparkles, Loader2, AlertCircle, BarChart3 } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
@@ -57,6 +58,7 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
           把已登记的读者反馈 / 运营数据交给 AI，做流失归因与应对建议分析。未配置模型不影响本表手动填写。
         </span>
       </div>
+      <AIDataSourceNote feature="feedback-ai" />
 
       {entries.length === 0 && !result && (
         <div className="text-[12px] text-ink-400 py-6 text-center">

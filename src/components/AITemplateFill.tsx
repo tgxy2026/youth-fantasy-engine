@@ -22,6 +22,7 @@
  * （`deriveTopics`）。酒馆的角色卡 / 剧本有精心排过的话题，走它们自己的 spec。
  */
 import { foldVh } from '../lib/theme'
+import AIDataSourceNote from './AIDataSourceNote'
 import { useCallback, useMemo, useState } from 'react'
 import { Sparkles, Check, Loader2, AlertCircle, RefreshCw, MessagesSquare } from 'lucide-react'
 import { Modal } from './Modal'
@@ -220,6 +221,7 @@ export default function AITemplateFill({
                 参照本项目世界观（提升一致性，补全更贴合已设的世界观 / 力量体系）
               </label>
             )}
+            <AIDataSourceNote feature="fill-template" />
 
             {!result && <SearchPlanLine settings={search} />}
 
