@@ -7,7 +7,7 @@
 // 另外验证：章节号要接在已有内容之后**连续**（否则卷台账的「第N章」会从 1 重来）。
 import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
-import { persistSplitToChapters, planVolumes } from '../src/lib/bookbreak/persist'
+import { persistSplitToChapters, planVolumes, stripChapterNumber } from '../src/lib/bookbreak/persist'
 import { splitNovelText, type SplitResult } from '../src/lib/bookbreak/split'
 import { chapterSeqMap, flattenChapters } from '../src/lib/chapterSeq'
 import type { Chapter, Volume } from '../src/lib/types'
@@ -68,7 +68,17 @@ function mkSplit(items: { title: string; text: string }[]): SplitResult {
     plan.volumes.map(v => v.title).join(','))
 }
 
-// ---------- ② 落库：写入 + 章节号接续 ----------
+// ---------- ② 标题剥离（消除「第22章 第1章 xxx」的自相矛盾）----------
+{
+  ok('剥掉「第1章 」前缀留章名', stripChapterNumber('第1章 风起云州') === '风起云州', stripChapterNumber('第1章 风起云州'))
+  ok('剥掉中文数字「第十二回 」', stripChapterNumber('第十二回 血月夜') === '血月夜', stripChapterNumber('第十二回 血月夜'))
+  ok('剥掉「Chapter 3: 」', stripChapterNumber('Chapter 3: The Fall') === 'The Fall', stripChapterNumber('Chapter 3: The Fall'))
+  ok('只有编号、没有章名 → 原样保留（否则会变空标题）', stripChapterNumber('第一章') === '第一章', stripChapterNumber('第一章'))
+  ok('没有编号的标题原样保留', stripChapterNumber('序章') === '序章')
+  ok('空串不抛错', stripChapterNumber('') === '')
+}
+
+// ---------- ③ 落库：写入 + 章节号接续 ----------
 {
   // 预置：项目里已有一卷一章（模拟"用户已经在写了"）
   const now = Date.now()
@@ -109,9 +119,11 @@ function mkSplit(items: { title: string; text: string }[]): SplitResult {
   const newVol = vols.find(v => v.title === '导入原文')!
   const rows = await db.getTableRows(`chapter-vol-${newVol.id}`)
   ok('🔴 卷台账已同步出 2 行', rows.length === 2, String(rows.length))
-  ok('  · 台账行带章节标题与章节号',
-    rows.some(r => r.data['章节标题'] === '第1章 风起云州') && rows.some(r => r.data['章节号'] === '第3章'),
+  ok('  · 台账行带章节标题与章节号', rows.some(r => r.data['章节标题'] === '风起云州') && rows.some(r => r.data['章节号'] === '第3章'),
     rows.map(r => `${r.data['章节号']}:${r.data['章节标题']}`).join(' | '))
+  ok('🔴 落库标题已剥掉「第N章」前缀（不再和系统编号打架）',
+    chs.filter(c => c.volumeId === newVol.id).every(c => !/^第\s*[0-9零一二三四五六七八九十百千]+\s*[章回节]/.test(c.title)),
+    chs.filter(c => c.volumeId === newVol.id).map(c => c.title).join(' | '))
 }
 
 // ---------- ③ 重复导入守卫 ----------

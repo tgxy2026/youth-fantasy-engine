@@ -66,14 +66,48 @@ function betterTier(a?: string, b?: string): string | undefined {
   return tierRank(a) >= tierRank(b) ? a : b
 }
 
-/** 同名同类型合并：描述取更长的一份（信息更全），证据去重，来源合并 */
+/** 去重保序（过滤空串） */
+function uniq(list: string[]): string[] {
+  const out: string[] = []
+  for (const x of list) if (x && !out.includes(x)) out.push(x)
+  return out
+}
+
+/**
+ * 同名同类型合并：描述取更长的一份（信息更全），证据去重，来源合并；
+ * **别称也一起收进来**，并按别称做跨章归并（见下方注释）。
+ */
 function mergeEntities(batches: EntityBatch[]): Merged[] {
   const byKey = new Map<string, Merged>()
+  /**
+   * 别称（规范化）→ 规范实体的 key。用来把跨章的简称并进本名那条。
+   * 🔴 索引键**必须带类型**：否则「中州皇朝」在「势力」下登记后，
+   *    同名的「地点」实体也会被并进去 —— 而"同名异类"是刻意允许共存的
+   *    （见本文件下方 `firstByName` 的注释），会破坏那条既有语义。
+   */
+  const aliasIndex = new Map<string, string>()
+  const register = (type: string, key: string, names: string[]) => {
+    for (const n of names) {
+      const k = `${type}::${normName(n)}`
+      if (k && !aliasIndex.has(k)) aliasIndex.set(k, key)
+    }
+  }
   for (const b of batches) {
     for (const e of b.entities) {
       const name = (e.name ?? '').trim()
       if (!name) continue
-      const key = `${e.type}::${normName(name)}`
+      const incoming = uniq((e.aliases ?? []).map(a => (a ?? '').trim()))
+      let key = `${e.type}::${normName(name)}`
+      if (!byKey.has(key)) {
+        // 本名没出现过，但这条实体的**某个名字**已经在别称索引/已有实体里 —— 并进那一条，别新建重复条目：
+        //   · 第 1 章叫「王铁柱」（别称 铁柱）、第 5 章只出现「铁柱」  → 本名命中别称索引
+        //   · 第 2 章先出现「铁柱」、第 6 章才出现「王铁柱」+别称 铁柱 → 它的别称正好是已有实体的 key
+        const names = [name, ...incoming]
+        const viaKey = names.map(n => `${e.type}::${normName(n)}`).find(k => byKey.has(k))
+        const viaIndex = names.map(n => aliasIndex.get(`${e.type}::${normName(n)}`)).find(k => k && byKey.has(k))
+        const target = viaKey ?? viaIndex
+        if (target) key = target
+      }
       const desc = (e.desc ?? '').trim()
       const quote = (e.evidence ?? '').trim()
       const cur = byKey.get(key)
@@ -81,15 +115,24 @@ function mergeEntities(batches: EntityBatch[]): Merged[] {
         byKey.set(key, {
           type: e.type,
           name,
-          aliases: [],
+          aliases: incoming.filter(a => a !== name),
           desc,
           ...(e.tier ? { tier: e.tier } : {}),
           from: [{ index: b.index, source: b.source }],
           quotes: quote ? [quote] : [],
           extra: { ...(e.fields ?? {}) },
         })
+        register(e.type, key, [name, ...incoming])
         continue
       }
+      // 🔴 规范名择优：见过的名字里取**最长**的当本名，其余全进别称。
+      //    这样「铁柱」与「王铁柱」最终合成 本名＝王铁柱 / 别称＝[铁柱] 一条，
+      //    ① 不再落出重复条目；② settingLedger 判重能按别称命中已登记条目（召回↑）。
+      const all = uniq([cur.name, ...cur.aliases, name, ...incoming])
+      const canonical = all.reduce((best, x) => (x.length > best.length ? x : best), all[0] ?? '')
+      cur.name = canonical
+      cur.aliases = all.filter(x => x !== canonical)
+      register(e.type, key, all)
       if (desc.length > cur.desc.length) cur.desc = desc
       cur.tier = betterTier(cur.tier, e.tier)
       if (quote && !cur.quotes.includes(quote)) cur.quotes.push(quote)

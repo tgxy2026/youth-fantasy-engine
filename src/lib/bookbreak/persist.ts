@@ -46,6 +46,23 @@ export interface PersistPlan {
 export const DEFAULT_IMPORT_VOLUME_TITLE = '导入原文'
 
 /**
+ * 剥掉章标题里的「第N章/回/节」「Chapter N」前缀，只留章名。
+ *
+ * 🔴 为什么必须剥（2026-09-18 实机发现）：导入的章在项目里被系统重新编号
+ * （原书「第1章」在这个项目里可能是第 22 章），卷台账会同时显示「第22章」与标题里的「第1章」，
+ * **自相矛盾**。项目自身的约定就是"标题只写章名、编号由系统派生"
+ * （见 `aiTasks.outlineSys` 铁律 6）。
+ * 标题只有编号、没有章名时（如「第一章」）原样保留，否则会变成空标题。
+ */
+export function stripChapterNumber(title: string): string {
+  const t = (title ?? '').trim()
+  if (!t) return ''
+  const CN = '0-9零一二两三四五六七八九十百千壹贰叁肆伍陆柒捌玖拾佰仟'
+  const m = t.match(new RegExp(`^(?:第\\s*[${CN}]+\\s*[章回节]|Chapter\\s*\\d+)\\s*[:：、.·\\-—]?\\s*(.+)$`, 'i'))
+  return m && m[1].trim() ? m[1].trim() : t
+}
+
+/**
  * 把切分结果排成「卷 → 章」结构（纯函数，零 IO，可单测）。
  *
  * 分层规则：
@@ -73,7 +90,7 @@ export function planVolumes(sp: SplitResult, opts: { volumeTitle?: string } = {}
       continue
     }
     if (!text) continue
-    ensureDefault().chapters.push({ title: ch.title.trim() || `第${ch.index}章`, text, sourceIndex: ch.index })
+    ensureDefault().chapters.push({ title: stripChapterNumber(ch.title) || `第${ch.index}章`, text, sourceIndex: ch.index })
   }
 
   // 丢掉没有正文的空卷（例如原文末尾孤零零一个「卷二」）

@@ -20,30 +20,14 @@ import { estimateCalls, previewSplit, runBookBreak } from '../lib/bookbreak/run'
 import type { SplitResult } from '../lib/bookbreak/split'
 import { planVolumes } from '../lib/bookbreak/persist'
 import type { PersistResult } from '../lib/bookbreak/persist'
-import type { DraftBundle, FlowProgress, StageStatus } from '../lib/flow/types'
+import WorkflowTimeline from './WorkflowTimeline'
+import type { DraftBundle, FlowProgress } from '../lib/flow/types'
 import { adviseCapacity, type CapacityAdvice } from '../lib/modelCapacity'
 import { getTavernSettings } from '../lib/tavern/settings'
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024
 
 const fmtNum = (n: number) => n.toLocaleString('zh-CN')
-
-const STAGE_MARK: Record<StageStatus, string> = {
-  pending: '○',
-  running: '◐',
-  done: '●',
-  skipped: '－',
-  failed: '✕',
-  cancelled: '×',
-}
-const STAGE_CLS: Record<StageStatus, string> = {
-  pending: 'text-ink-600',
-  running: 'text-amber',
-  done: 'text-emerald-400',
-  skipped: 'text-ink-600',
-  failed: 'text-red-400',
-  cancelled: 'text-ink-600',
-}
 
 export default function BookBreakPanel() {
   const [raw, setRaw] = useState('')
@@ -55,6 +39,8 @@ export default function BookBreakPanel() {
   const [writeToChapters, setWriteToChapters] = useState(true)
   const [cap, setCap] = useState<CapacityAdvice | null>(null)
   const [persistInfo, setPersistInfo] = useState<PersistResult | null>(null)
+  /** 各阶段的产物摘要（`FlowProgress.stages[].detail` 会被下一阶段覆盖，产物摘要得自己留） */
+  const [summaries, setSummaries] = useState<Record<string, string>>({})
   const abortRef = useRef<AbortController | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
@@ -111,6 +97,7 @@ export default function BookBreakPanel() {
     setBundle(null)
     setProgress(null)
     setPersistInfo(null)
+    setSummaries({})
     try {
       const res = await runBookBreak(raw, {
         signal: ctl.signal,
@@ -129,6 +116,22 @@ export default function BookBreakPanel() {
       }
       setBundle(res.bundle)
       setPersistInfo(res.persist)
+      // 阶段产物摘要：让跑完之后也看得见每一步做了什么（否则 detail 会被下一阶段覆盖）
+      const sum: Record<string, string> = {
+        split: `识别到 ${res.split.chapters.length} ${res.split.mode === 'chapters' ? '章' : '块'} · ${fmtNum(res.split.stats.chars)} 字`,
+        extract: res.batches.length
+          ? `从 ${res.batches.length} 个批次抽到 ${res.batches.reduce((n, b) => n + b.entities.length, 0)} 条实体`
+          : '没有抽到实体',
+        draft: `整理出 ${res.bundle.stats.total} 条草稿`,
+      }
+      if (res.persist) {
+        sum.persist = res.persist.alreadyImported
+          ? '已导入过，跳过写入'
+          : res.persist.aborted
+            ? `写入中止：已写入 ${res.persist.chaptersCreated} 章`
+            : `写入 ${res.persist.volumes.length} 卷 ${res.persist.chaptersCreated} 章 · ${fmtNum(res.persist.words)} 字`
+      }
+      setSummaries(sum)
       const parts: string[] = []
       if (res.persist) {
         parts.push(res.persist.alreadyImported
@@ -173,7 +176,7 @@ export default function BookBreakPanel() {
             <FileUp size={12} /> 导入 .txt
           </Button>
           <Button size="xs" variant="ghost" disabled={running || !raw}
-            onClick={() => { setRaw(''); setBundle(null); setPreview(null); setProgress(null) }}>
+            onClick={() => { setRaw(''); setBundle(null); setPreview(null); setProgress(null); setPersistInfo(null); setSummaries({}) }}>
             <X size={12} /> 清空
           </Button>
         </div>
@@ -253,25 +256,8 @@ export default function BookBreakPanel() {
         {running && <span className="text-[11px] text-ink-400">{progress?.message ?? ''}</span>}
       </div>
 
-      {/* 进度 */}
-      {progress && running && (
-        <div className="mt-2 rounded border border-ink-700 bg-ink-900/40 px-3 py-2">
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-700">
-              <div className="h-full bg-amber transition-all" style={{ width: `${Math.round(progress.ratio * 100)}%` }} />
-            </div>
-            <span className="text-[10.5px] tabular-nums text-ink-400">{Math.round(progress.ratio * 100)}%</span>
-          </div>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-            {progress.stages.map(s => (
-              <span key={s.id} className={`text-[10.5px] ${STAGE_CLS[s.status]}`}>
-                {STAGE_MARK[s.status]} {s.label}
-                {s.status === 'running' && s.detail && <span className="text-ink-500"> · {s.detail}</span>}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 进度：节点时间线（跑完保留，事后能看到每一步做了什么、花了多久） */}
+      <WorkflowTimeline progress={progress} running={running} summaries={summaries} className="mt-2" />
 
       {/* ③ 审阅 */}
       {persistInfo && (

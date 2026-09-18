@@ -1302,6 +1302,15 @@ export interface ExtractedEntity {
   /** 仅人物：建议归入哪张角色卡 */
   tier?: '主要' | '次要' | 'NPC'
   /**
+   * 别称 / 简称 / 曾用名（不含 `name` 本身）。
+   *
+   * 🔴 为什么必须有（2026-09-18 对照验证抓到的真问题）：正文里同一个实体常以简称出现
+   *    （`铁柱`＝`王铁柱`、`吞天诀`＝`混沌吞天诀`）。不把简称并入本名，就会
+   *    ① 在设定表里落出重复条目；② 让 `settingLedger` 的判重失效（它拿抽出的名字
+   *    跟登记表的名+别称比，简称对不上全称）—— 实测这会明显压低召回。
+   */
+  aliases?: string[]
+  /**
    * 额外字段。键取 `flow/fieldMap.ts` 里该类型的 `slots[].from`
    * （人物＝identity/traits/realm/faction/special…；势力＝category/leader…）。
    *
@@ -1326,13 +1335,21 @@ type 只能取这 6 个值之一：
 铁律：
 1. 只抽**本章正文确实出现**的实体。严禁虚构、严禁推测、严禁"合理补充"——这是资料整理，不是创作。
 2. 每个实体必须附 evidence：正文中包含该名称的**原句**（照抄、不要改写，不超过 60 字）。找不到原句的就不要抽。
-3. 只抽有专名的（如"青岚宗""陈渊"）；不抽无名代称（如"那个老者""一名侍卫"）。
-4. 不抽现实世界事物、不抽通用词（如"灵气""长剑"这类泛称）。
+3. **只抽"本作独有的专名"**。下面几类**一律不抽**（同类的一律不抽，不要因为"重要"就抽）：
+   - 场合与设施：山门、山门口、演武场、议事堂、识海、杂役院、闭关室、后山…
+   - 通用物品与货币：铜钱、灵石、银子、油纸、号牌、腰牌、药丸、干粮…
+   - 泛称与统称：长老、执事、弟子、守卫、杀手、路人、清道夫、大比、外门大比…
+   - 通用器物泛称：长剑、丹药、功法、秘籍、残简、秘境、符箓…
+   - 🔴 自检一问：**把这个词单独摘出来给一个没读过这本书的人，他能判断这是本书独有的吗？**
+     不能（比如"演武场""铜钱"，任何小说里都有），就**不要抽**。能（比如"青岚宗""镇界塔"），才抽。
+4. 不抽现实世界事物、不抽通用词。
 5. desc：一句话（不超过 40 字）概括本章展现的该实体信息，只写正文写明的，不知道就留空。
 6. 人物额外给 tier：主要（主角团/贯穿全书/终极反派）/ 次要（宿敌/导师/重要配角）/ NPC（功能型、龙套），按本章戏份与定位判断；非人物类型不要给 tier。
-7. 同一实体在本章有本名与别称时只输出一条，name 用正文最常用的那个。
-8. 最多 20 条，按重要度排序。没有任何可抽取的实体就返回 []。
-9. 只输出 JSON 数组，元素形如 {"type":"人物","name":"张三","desc":"…","evidence":"…","tier":"NPC"}，不要解释、不要 markdown 代码块标记。`
+7. 🔴 **同一实体的本名与简称/别称只输出一条**：name 写**最完整的那个**（如「王铁柱」而不是「铁柱」、「混沌吞天诀」而不是「吞天诀」），其余简称/别称放进 aliases 数组（如 {"name":"王铁柱","aliases":["铁柱"]}）。
+   **绝不把简称单独抽成另一条** —— 那会让设定表出现重复条目，也会让"是否已登记"的判重失效。
+8. 同一实体在本章出现多次只输出一条。
+9. 最多 20 条，按重要度排序。没有任何可抽取的实体就返回 []。
+10. 只输出 JSON 数组，元素形如 {"type":"人物","name":"王铁柱","aliases":["铁柱"],"desc":"…","evidence":"…","tier":"NPC"}，不要解释、不要 markdown 代码块标记。没有别称时 aliases 给空数组。`
 
 export async function aiExtractSettingEntities(
   chapterText: string,
@@ -1364,11 +1381,23 @@ ${chapterText.trim() || '（空白）'}
     if (seen.has(key)) continue
     seen.add(key)
     const rawTier = asText(it.tier ?? it['层级'])
+    // 别称：数组或「铁柱、阿柱」这类分隔串都吃；剔除与本名相同的、去重
+    const rawAlias = it.aliases ?? it['别称'] ?? it['别名'] ?? it['曾用名']
+    const aliasSrc = Array.isArray(rawAlias)
+      ? rawAlias.map(asText)
+      : typeof rawAlias === 'string' ? rawAlias.split(/[、,，;；/／|]+/) : []
+    const aliases: string[] = []
+    for (const a of aliasSrc) {
+      const v = (a ?? '').trim()
+      if (!v || v === name || aliases.includes(v)) continue
+      aliases.push(v)
+    }
     out.push({
       type,
       name,
       desc: asText(it.desc ?? it['描述']),
       evidence: asText(it.evidence ?? it['原文'] ?? it['证据']),
+      ...(aliases.length ? { aliases } : {}),
       ...(type === '人物' && (rawTier === '主要' || rawTier === '次要' || rawTier === 'NPC') ? { tier: rawTier } : {}),
     })
     if (out.length >= 20) break

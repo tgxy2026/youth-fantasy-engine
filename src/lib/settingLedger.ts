@@ -52,6 +52,16 @@ export function normName(s: string): string {
     .toLowerCase()
 }
 
+/** 一组名字归一化并去重（丢弃空串）—— 用于「本名 + 别称」参与判重 */
+function uniqNames(names: string[]): string[] {
+  const out: string[] = []
+  for (const n of names) {
+    const k = normName(n)
+    if (k && !out.includes(k)) out.push(k)
+  }
+  return out
+}
+
 export interface RegistryEntry {
   /** 正式名 */
   name: string
@@ -130,16 +140,22 @@ export function classify(entities: ExtractedEntity[], reg: EntityRegistry): Ledg
     if (!target) return base
 
     const pool = reg[e.type] ?? []
+    // 🔴 抽出的实体自带别称时，别称也要参与比对（2026-09-18）：
+    //    正文里同一实体常以简称出现，模型把「铁柱」放进 aliases、本名给「王铁柱」。
+    //    只比 name 的话，正文用简称的那些章就全都判成"未登记"，白落一堆重复条目。
+    const incoming = uniqNames([e.name, ...(e.aliases ?? [])])
 
     for (const entry of pool) {
-      if ([entry.name, ...entry.aliases].some(n => normName(n) === target)) {
+      if ([entry.name, ...entry.aliases].some(n => incoming.includes(normName(n)))) {
         return { ...base, status: 'registered', matchedName: entry.name, matchedTabId: entry.tabId, matchedId: entry.id }
       }
     }
     for (const entry of pool) {
       for (const n of [entry.name, ...entry.aliases]) {
         const nn = normName(n)
-        if (nn.length >= 2 && target.length >= 2 && (nn.includes(target) || target.includes(nn))) {
+        if (nn.length < 2) continue
+        // 任一侧的任一名字互相包含即视为疑似重复（如「云州城」vs「云州」）
+        if (incoming.some(x => x.length >= 2 && (nn.includes(x) || x.includes(nn)))) {
           return { ...base, status: 'duplicate', matchedName: entry.name, matchedTabId: entry.tabId, matchedId: entry.id }
         }
       }
