@@ -957,7 +957,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                 <span className="px-1.5 py-px text-[10px] rounded bg-ink-800 text-ink-300 border border-ink-700 shrink-0">{type}</span>
                               )}
                               {!rOpen && status && <span className="text-[11px] text-ink-500 truncate">{status}</span>}
-                              {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存修改" />}
+                              {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存的改动" />}
                             </Button>
                             <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1 shrink-0" title="删除此条关系">
                               <Trash2 size={12} />

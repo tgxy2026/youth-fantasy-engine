@@ -200,7 +200,7 @@ export default function BookBreakPanel() {
           <Button size="xs" variant="secondary" disabled={running} onClick={() => fileRef.current?.click()}>
             <FileUp size={12} /> 导入 .txt
           </Button>
-          <Button size="xs" variant="ghost" disabled={running || !raw}
+          <Button size="xs" variant="secondary" disabled={running || !raw}
             onClick={() => { setRaw(''); setBundle(null); setPreview(null); setProgress(null); setPersistInfo(null); setSummaries({}) }}>
             <X size={12} /> 清空
           </Button>

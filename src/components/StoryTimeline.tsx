@@ -352,8 +352,9 @@ export default function StoryTimeline({ rows, calendars }: Props) {
                 </h3>
               </div>
               <Button variant="bare" iconOnly size="xs"
-                onClick={() => setSelected(null)}
-                className=".5 text-ink-500 hover:text-ink-200 hover:bg-ink-700 rounded-lg transition-colors shrink-0"
+                title="关闭详情"
+onClick={() => setSelected(null)}
+                className="shrink-0 rounded-lg p-1 text-ink-500 hover:text-ink-200 hover:bg-ink-700 transition-colors"
               ><X size={16} /></Button>
             <div className="p-4 space-y-2.5">
               {regressed.includes(selected.id) && (

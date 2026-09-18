@@ -284,7 +284,7 @@ export default function OutlineSheet({ tab }: Props) {
                 <div className="flex items-center gap-1.5">
                   {isVolume ? <BookOpen size={13} className="shrink-0" /> : <FileText size={13} className="shrink-0" />}
                   <span className="text-[13px] font-medium truncate flex-1">{rec.name}</span>
-                  {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存修改" />}
+                  {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存的改动" />}
                 </div>
                 <div className="text-[10px] text-ink-500 mt-0.5 truncate">
                   {Object.entries(rec.data)

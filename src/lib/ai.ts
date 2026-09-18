@@ -709,7 +709,7 @@ ${opts.material && opts.material.trim() ? opts.material.trim() : '（无）'}
 【作者草图】
 ${sketch && sketch.trim() ? sketch.trim() : '（作者未提供草图，请基于世界观上下文合理补全一份）'}
 
-请返回补全后的 JSON。`
+请返回补全后的 JSON（只输出这一个对象，不要解释、不要 Markdown 代码块标记）。`
 
   const text = await chat(
     cfg,

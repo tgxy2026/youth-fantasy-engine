@@ -149,7 +149,7 @@ export default function FormSheet({ tab }: Props) {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
               <HelpPopover title={`${tab.name} · 怎么填`} width="23rem" size={14}>
-                {`${tab.description}\n\n填写要点：\n· 左侧是字段名与说明，右侧输入框直接填，内容长会自动变高；\n· 未填时下方会给出「示例：…」参考，照着改成自己的设定即可；\n· 顶部进度条显示已填 / 总项数，不必一次填满，随写随补；\n· Ctrl+S 或点「保存」落库，右下角出现浮动按钮说明还有未保存修改；\n· 「清空」会清掉本页全部内容（不可撤销，慎用）。\n\n填完的内容会自动进入正文编辑器左侧的设定检索栏，写作时可随时速查与就地修改。`}
+                {`${tab.description}\n\n填写要点：\n· 左侧是字段名与说明，右侧输入框直接填，内容长会自动变高；\n· 未填时下方会给出「示例：…」参考，照着改成自己的设定即可；\n· 顶部进度条显示已填 / 总项数，不必一次填满，随写随补；\n· Ctrl+S 或点「保存」落库，右下角出现浮动按钮说明还有未保存的改动；\n· 「清空」会清掉本页全部内容（不可撤销，慎用）。\n\n填完的内容会自动进入正文编辑器左侧的设定检索栏，写作时可随时速查与就地修改。`}
               </HelpPopover>
             </div>
             <p className="mt-1.5 text-[13px] text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>

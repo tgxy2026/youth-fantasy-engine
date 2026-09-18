@@ -252,8 +252,9 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
                 <h3 className="text-[16px] font-semibold text-ink-50 leading-snug">{selected.title || '（未命名事件）'}</h3>
               </div>
               <Button variant="bare" iconOnly size="xs"
-                onClick={() => setSelected(null)}
-                className=".5 text-ink-500 hover:text-ink-200 hover:bg-ink-700 rounded-lg transition-colors shrink-0"
+                title="关闭详情"
+onClick={() => setSelected(null)}
+                className="shrink-0 rounded-lg p-1 text-ink-500 hover:text-ink-200 hover:bg-ink-700 transition-colors"
               ><X size={16} /></Button>
             <div className="p-4 space-y-2.5">
               {detail(selected).map(([label, value]) => (

@@ -179,8 +179,8 @@ export default function DraftReviewPanel({
                 <span className="text-[12px] text-ink-200">写入「{g.tabName}」</span>
                 <span className="text-[11px] text-ink-500">{g.rows.length} 条 · 已选 {sel}</span>
                 <div className="flex-1" />
-                <Button size="xs" variant="ghost" onClick={() => pickGroup(g.rows, true)}>本组全选</Button>
-                <Button size="xs" variant="ghost" onClick={() => pickGroup(g.rows, false)}>本组清空</Button>
+                <Button size="xs" variant="secondary" onClick={() => pickGroup(g.rows, true)}>本组全选</Button>
+                <Button size="xs" variant="secondary" onClick={() => pickGroup(g.rows, false)}>本组清空</Button>
               </div>
 
               {!isCollapsed && (
@@ -222,7 +222,7 @@ export default function DraftReviewPanel({
                                   疑似同物「{r.variantOf}」
                                 </span>
                               )}
-                              <Button variant="ghost" size="xs" className="shrink-0 text-[10px]"
+                              <Button variant="secondary" size="xs" className="shrink-0 text-[10px]"
                                 onClick={() => setExpanded(open ? null : r.key)}>
                                 {open ? '收起' : '详情'}
                               </Button>

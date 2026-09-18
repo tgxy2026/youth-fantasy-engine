@@ -10,7 +10,7 @@ import ProjectHub from './components/ProjectHub'
 import AboutPage from './components/AboutPage'
 import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
 import * as db from './lib/db'
-import { ensureDailyBackup, startAutoBackup } from './lib/backup'
+import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from './lib/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop } from './lib/desktop'
 import { DesktopWriteLockBanner } from './components/DesktopWriteLockBanner'
 import DataDock from './components/DataDock'
@@ -162,6 +162,24 @@ export default function App() {
   useEffect(() => {
     applyTheme(getStoredTheme())
     applyZoom(getStoredZoom())
+  }, [])
+
+  // 🔴 自动备份失败必须让用户看见（2026-09-19 六维审计修复）
+  // 此前备份失败只 console.warn：作者会以为「每 5 分钟一份、留 30 份」还在保护他，
+  // 实际可能一份都没存成功（磁盘满 / 数据文件只读 / 桌面写盘失败）。等要恢复时才发现没有。
+  // lib 侧负责记录（takeBackupFailure 取走即清空 ⇒ 同一条最多提示一次），此处只负责展示。
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const f = takeBackupFailure()
+      if (!f) return
+      const label = f.kind === 'daily' ? '每日备份' : '自动备份'
+      showToast(
+        `${label}失败：${f.message}。请尽快用「导出备份」另存到外部文件，避免数据丢失`,
+        'error',
+        8000,
+      )
+    }, 30_000)
+    return () => clearInterval(timer)
   }, [])
 
   // 「跟随窗口」模式下，窗口尺寸变化时重算缩放（防抖 300ms）。

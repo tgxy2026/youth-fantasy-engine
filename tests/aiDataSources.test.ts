@@ -10,6 +10,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { AI_DATA_SOURCES, sourcesOf, summarizeSources } from '../src/lib/aiDataSources'
+import { TABS } from '../src/lib/schema'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -129,6 +130,22 @@ for (const id of ['bookbreak', 'creative-writing']) {
 ok('创意写作：写清了「只保存大纲」不写正文这条边界',
   !!AI_DATA_SOURCES['creative-writing'].excludes?.some(x => x.includes('只保存大纲')),
   JSON.stringify(AI_DATA_SOURCES['creative-writing'].excludes))
+
+// ---------- ⑧ 页签说明里同样不许承诺"不外发" ----------
+// 上一节只锁住了 `AI_DATA_SOURCES[id].excludes`，而**功能说明（schema 的 description）一样会显示给作者**
+// （功能选择弹窗 / 页签说明里都能读到）。2026-09-19 六维审计实测：`bookbreak` 的 description
+// 写着「全程本地模型，原文不外发」—— 而它明明支持云端模型。误导只差一层没被闸住，这里补上。
+//
+// 口径（与 aiDataSources 一致）：**发给「当前选定的那个模型」** ——
+// 本地不出本机，云端上传到该服务商。绝对化的「不外发 / 不上传 / 全程本地」一律不许写。
+// ⚠️ 只禁绝对承诺：正确口径里也会出现「本地模型不出本机」，所以不能用"不出本机"当判据。
+const ABSOLUTE_PROMISE = /全程本地|不外发|不上传|绝不外发|纯本地/
+for (const t of TABS) {
+  const d = t.description ?? ''
+  if (!d.trim()) continue
+  ok(`🔴 页签说明 ${t.id}：不向作者作绝对化的"不外发"承诺`,
+    !ABSOLUTE_PROMISE.test(d), d.slice(0, 80))
+}
 
 console.log(`\n—— aiDataSources 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

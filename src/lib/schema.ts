@@ -810,7 +810,7 @@ export const TABS: TabDef[] = [
   },
   {
     id: 'bookbreak', name: '一键拆书', group: '灵感工具', type: 'bookbreak',
-    description: '粘贴或导入整本小说原文，AI 逐章抽出人物 / 势力 / 地点 / 种族 / 物品 / 术语，整理成草稿供你勾选后写入项目设定表。全程本地模型，原文不外发。',
+    description: '粘贴或导入整本小说原文，AI 逐章抽出人物 / 势力 / 地点 / 种族 / 物品 / 术语，整理成草稿供你勾选后写入项目设定表。原文只发给你当前选定的模型：本地模型不出本机，云端会上传到该服务商。',
   },
   {
     id: 'creative-writing', name: '创意写作', group: '灵感工具', type: 'creative-writing',

@@ -309,7 +309,7 @@ style={{ zIndex: Z.pageBase }}
                 value={zoomText}
                 onChange={(e) => setZoomText(e.target.value)}
                 onBlur={commitZoom}
-                onKeyDown={(e) => { if (e.key === 'Enter') { commitZoom(); (e.target as HTMLInputElement).blur() } }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { commitZoom(); (e.target as HTMLInputElement).blur() } }}
                 title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
                 className="w-12 rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-center text-ink-200 tabular-nums outline-none focus:border-amber"
               />
