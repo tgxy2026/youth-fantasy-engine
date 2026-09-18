@@ -18,7 +18,7 @@
 - ✅ **A 伴写（09-17）**：`aiInlineSuggest()`＋ghost 第三叠层＋「钢笔」弹窗（**默认关**）；文风三层锚定**不做枚举**、去 AI 味钉 system 末尾、长度三档。🔴 **切章必须清 ghost**（Tab 插错章＝数据事故）。
 - ✅ **B1 拆书（09-18）**：通用件在 **`src/lib/flow/`**（域中立；🔴 别去 `bookbreak/` 找）：`pipeline`（状态机/中止/续跑）、`fieldMap`（**只声明语义字段名**，真键由 `resolveSlot()` 查 schema；**同名异类标 conflict**）、`draft`（判重走 `settingLedger.classify`）、`commit`（默认 `keep-existing`；🔴 写前必 `previewCommit`）。页签在灵感工具组。🔴 `terms` 无「别称」列。
 - ✅ **C 创意写作（09-18）**：`runCreativeWriting`（bible→**闸门①**→outline→**闸门②**→连写）。🔴 **闸门＝await Promise**、**落库只在闸门通过后**（放弃不留半成品）；连写复用 `runAutoContinue`＋`outlineFor` 按细纲写；额度 kind `outline-generate`。
-- ✅ **拆书 P0 写入正文（09-18）**：`bookbreak/persist.ts` 把切分结果写进正文编辑的**卷/章**（阶段序 split→**persist**→extract→draft），默认开、面板可关；🔴 **只追加不覆盖 / 重复导入守卫 / 中止返回半成品**。🔴 **导入量口径：逐章抽、单次只喂一章 → 不撞窗口，受限的是调用次数与耗时**。
+- ✅ **拆书 P0 写入正文（09-18）**：`bookbreak/persist.ts` 把切分结果写进正文编辑的**卷/章**（阶段序 split→**persist**→extract→draft），默认开、面板可关；🔴 **只追加不覆盖 / 重复导入守卫 / 中止返回半成品**。🔴 **导入量口径：逐章抽不撞窗口**，受限的是调用次数/耗时。 抽取 `aliases`→`flow/draft` **跨章归并**（索引必带类型）；可视化统一走 `WorkflowTimeline`。
 - 📌 需求源 `Desktop\开发需求.txt`；解读/冲突/4 决策/P1P2 全在 **`docs/2.2.0-双功能需求解读与P0落地.md`**（动这两功能前先读；拆书另见 `docs/一键拆书-方案规划.md`＋`-详细设计.md`，**B2 必读**）。🔴 拆书抽取**会带泛称简称**（B2 改进项）；form 型（世界观/力量体系/定位）**commit 无通道**。🔴 文本**零外发**。
 - ⏳ **B2**＝两遍全字段抽取（只换 extract 阶段）。
 
@@ -33,13 +33,13 @@
 ## 存储 / 同步
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录；🔴 图片先压缩再入库；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
-- 🔄 两同步入口别混：①改数据位置＝明文 JSON 进云盘；②云盘同步＝加密 `.yfe`＋记录级合并＋每日备份。**用 ②**。
+- 🔄 两同步入口别混：①位置＝明文 JSON；②云盘同步＝加密 `.yfe`＋记录级合并＋每日备份。**用 ②**。
 - 🔴 09-15 修一批同步缺陷（细则见 `docs/2.1.1-审计修复记录.md` §四）。
 
 ## UI / 布局尺寸
-- 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 会回退黑）。设置项排版＝标题→输入→说明；复制统一 `copyText()`。
+- 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 会回退黑）。设置项＝标题→输入→说明；复制走 `copyText()`。
 - 🔴🔴 `<html>` 界面缩放（默认跟随窗口）：①量尺寸一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`；②zoom 不缩放 vh→内联长度走 `foldVh()`（`theme.ts`）；③SVG 滚轮锚点/拖拽除 zoom。
-- 🔴 **光标/选区同步不能只靠 `onKeyUp`**：**输入法上屏、粘贴、程序化插入都不产生 keyup** → 依赖 keyup 的 UI 会拿到过期 `selectionStart`。有 `onChange` 的地方就在里面同步一次。
+- 🔴 **光标/选区同步不能只靠 `onKeyUp`**：**输入法上屏、粘贴、程序化插入都不产生 keyup** → 会拿到过期 selectionStart。有 `onChange` 就在里面同步一次。
 - 🔴 判"琥珀开启态"按 class **词元**比（`c.split(/\s+/).includes('text-amber')`）：off 态写着 `hover:text-amber`，`includes` 恒真 → 假 PASS。
 - 🔴 按对侧高度定高：flex item `min-height:auto` 顶回定高→加 `overflow-hidden`；别同写 `flex-1`+`height`。
 - 🔴 按钮：静止无框用 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；行内小操作 `size="xs"`；`danger` 破坏性。
@@ -86,8 +86,8 @@
 - ⚠️ Edit 假成功：改完立即 grep；多处替换用脚本（全命中才落盘）；`node -e` 引号被吞→Write 落纯 JS；并发 Edit 互覆盖→串行。**跨行锚点先探 EOL**（CRLF/LF 同仓库并存；改 CRLF 文件必须写 `\r\n`）。
 - 🔴 改 `protocol.ts` 正文**别用 Edit**（10 份历史协议，锚点必不唯一）→ 走临时脚本（只改 `PROTOCOL_CORE` 内＋每锚点断言命中 1 次＋旧版进 `LEGACY_PROTOCOLS`），落盘即删。
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**——会返空→误判"不存在"→`Write` 覆盖！09-17 把当日日志 215 行覆盖成 37 行（靠 `git show HEAD:<path>` 恢复）。判存在用 `Read` 或 `test -f`。
-- 🔴 `memory/*.md` 日志**只准 append**（先 Read 再 Edit，禁 `Write` 覆盖）；覆盖类事故**先查 git**，提交过就能救。
-- 🔴 dev 仅 `localhost:5199`（127.0.0.1 会 302→两份 IndexedDB）；桌面走文件存储、与 dev 两套。
+- 🔴 `memory/*.md` **只准 append**（先 Read 再 Edit，禁 `Write`）；覆盖事故**先查 git**。
+- 🔴 dev 仅 `localhost:5199`（127.0.0.1 会 302→两份 IndexedDB）；桌面走文件存储、两套。
 - ⚠️ 验「随项目」用 `db.setCurrentProject`；改提示词/示范卡文案后同步改 `tests/` 旧断言。
-- 🧪 dev 测试数据：仓库内 `dev-seed/`，`import('/dev-seed/fengyang.js?'+Date.now())`（🔴 必须带时间戳）；数据在 IndexedDB，重启 dev server 无效。
+- 🧪 dev 测试数据：仓库内 `dev-seed/`，`import('/dev-seed/fengyang.js?'+Date.now())`（🔴 必带时间戳）；数据在 IndexedDB，重启无效。
 
