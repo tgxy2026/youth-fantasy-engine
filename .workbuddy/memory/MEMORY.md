@@ -15,10 +15,10 @@
 - 🔴🔴 **只做桌面版**（无 WEB/PORTABLE）。`StoreOps` 在 `storeOps.ts`，版本号在 `env.ts`。云盘同步＝唯一跨设备途径。
 
 ## 2.2.0 三功能（伴写 / 拆书 / 工作流）
-- 细则全在四份文档：`docs/2.2.0-AI伴写*.md`（✅）、`docs/一键拆书-*.md`、`docs/2.2.0-全自动*.md`、`docs/2.2.0-三功能优先级*.md`。
-- 🔴 **唯一强依赖＝拆书 → 工作流**（`DraftRow`/`pipeline.ts`/`map.ts` 共用）；**排期 A→B1→C→B2**（B1＝通用管线层，B2＝抽取本体后置）。
-- ✅ **伴写阶段一已落地（09-17）**：`aiInlineSuggest()`；`NovelEditor.tsx` ghost 第三叠层＋「钢笔」弹窗（**默认关**）。定案：文风三层锚定**不做枚举**、去 AI 味默认开且钉 system 末尾、长度三档。🔴 切章必须清 ghost，否则 Tab 把上章建议插进新章＝数据事故。
-- 可复用：C 的「想法→Bible」走 `interview.ts`＋`draftMaterial.ts`（带来源标注）。
+- 细则四份文档：`docs/2.2.0-AI伴写*`、`docs/一键拆书-*`、`docs/2.2.0-全自动*`、`docs/2.2.0-三功能优先级*`。**排期 A→B1→C→B2**（唯一强依赖＝拆书→工作流）。C 的「想法→Bible」走 `interview.ts`＋`draftMaterial.ts`。
+- ✅ **A 伴写（09-17）**：`aiInlineSuggest()`＋`NovelEditor` ghost 第三叠层＋「钢笔」弹窗（**默认关**）；文风三层锚定**不做枚举**、去 AI 味钉 system 末尾、长度三档。🔴 切章必须清 ghost（否则 Tab 把上章建议插进新章＝数据事故）。
+- ✅ **B1 拆书（09-18）**：通用件在 **`src/lib/flow/`**（域中立，C 复用；🔴 别去 `bookbreak/` 找）：`pipeline`（状态机/中止/续跑）、`fieldMap`（**只声明语义字段名**，真键由 `resolveSlot()` 查 schema——三张卡结构不同靠「候选取第一个存在者」共用）、`draft`（判重走 `settingLedger.classify`）、`commit`（默认 `keep-existing` 分毫不动；🔴 写前必 `previewCommit`）。页签在灵感工具组（灵感启发之下）。🔴 `terms` 表无「别称」列。
+- ⏳ **C（创意写作）**＝按 `docs/2.2.0-全自动*`：种子→Bible→闸门→大纲→闸门→逐章 `runAutoContinue`→审校→导出（复用 flow＋`DraftReviewPanel`）。**B2**＝两遍全字段抽取，只换 `run.ts` 的 extract 阶段。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键（改功能后回搜 `schema.ts` 的 `description`）。
@@ -52,14 +52,14 @@
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 序不可换）。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce）；绝不清洗正文。
 - 🔴 采样惩罚看**射程**不看强度（共用 `penalty_last_n` 窗口，Ollama 默认 64 词元≈50 汉字）。✅ 09-16 落地 **`repeat_last_n` 512 ＋ `frequency_penalty` 0.1** → 手部率 28.9%→13.4%。🔴🔴 **绝不调高 `repeat_penalty`**（1.4 实测崩）。`presence_penalty` 归零**无效**。反重复提示词**只钉 system 末尾有效**。
-- 🔴 **面板参数推荐跟着模型走（09-17）**：`adviseCapacity()` 出整套 `suggest`；`recommendTuning()` 按出厂配比（硬＝预算×12.5%、软＝8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`scaleGuide()` 只延长末段放宽上限。🔴🔴 **记忆档跟「预算」走、不跟本地/云端走**。`TUNING_LIMITS` 必须与 `paramGuide` 同源（有测试锁）。窗口可在模型配置页手填 `contextWindow`（`lookupWindow()` 提示识别结果）。
+- 🔴 **额度跟模型走（09-17/18）**：`adviseCapacity()`→`recommendTuning()`（出厂配比：硬＝预算×12.5%、软＝8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`syncTuningWithModel()` **换模型即套用**，🔴🔴 靠**模型指纹**判定（同模型下手调值绝不覆盖、首次只登记）；本地**超窗口保护**（预算>`numCtx×0.732` 回落，否则被静默截断）。🔴🔴 **记忆档跟「预算」走、不跟本地/云端走**。`TUNING_LIMITS` 与 `paramGuide` 必须同源（有测试锁）。窗口可在模型配置页手填 `contextWindow`。
 - 🔴 本地实弹探针：思考模型必带 `think:false`（否则全文进 `message.thinking`、`content` 空）；改口径别重跑 GPU，走 `LR_ANALYZE=<json>` 离线重算；CUDA 固定 seed **不保证逐位复现**（±4pp 噪声带）。
 - 🔴 自己驱动 `runAutoContinue` 必须传 **`onBodyToken`**（就是"开流式"开关；不传走 180s 总超时，27B 必被掐死）；先 `ai.chat` 预热；别 `await page.evaluate(整流程)`（改点火＋轮询 `window.__gen`）。
-- 🔴 **额度跟模型走 + AI 数据来源标注（09-18）**：① `syncTuningWithModel()` 换模型即套用推荐值，🔴🔴 靠**模型指纹**判定（只换模型才动、同模型下手调值绝不覆盖、首次只登记）；本地**超窗口保护**（预算> `numCtx×0.732` 才回落，否则被静默截断）。② AI「会读哪些数据」＝ `lib/aiDataSources.ts` 单一源＋`AIDataSourceNote` 进各功能气泡；闸 `tests/aiDataSources.test.ts`。⚠️ 两处未做：正文链路额度仍硬编码、部分气泡待挂。
+- 🔴 **AI「会读哪些数据」＝ `lib/aiDataSources.ts` 单一源**＋`AIDataSourceNote` 进各功能气泡；改 prompt 来源**必须同步改它**，闸 `tests/aiDataSources.test.ts`。
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（SSH `yfe_test_server`），站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务→删库≠下线；Nginx SPA 回退：不存在路径也返 200→不能靠 200 判上线。
-- `npm run verify`（tsc+lint+test）；ESLint 09-18 起 **0 warning**（只开 rules-of-hooks / no-empty / exhaustive-deps）。⚠️ exhaustive-deps **别盲改**，分三类：真漏依赖（`filteredRows` 缺 `drafts`＝真 bug）／普通函数当依赖（改 `useCallback`）／派生值误报（内联或补派生变量）。🔴 实机验证走 `novel-studio-ui-livecheck`；实弹断言会静默过时；子代理结论必回源码验。
+- `npm run verify`（tsc+lint+test）；ESLint 09-18 起 **0 warning**。⚠️ exhaustive-deps **别盲改**，分三类：真漏依赖（改对依赖）／普通函数当依赖（改 `useCallback`）／派生值误报（内联）。🔴 实机验证走 `novel-studio-ui-livecheck`；实弹断言会静默过时；子代理结论必回源码验。
 
 ## 酒馆模式
 - 🔴🔴 **细则全在 `docs/酒馆模式-工程红线.md`（18 节）——动酒馆任何功能前必读对应节**。09-16 起酒馆条目整块迁去该文档 §18，只在此留「跨节最易错」几条。
@@ -86,9 +86,8 @@
 - 🔴 `memory/*.md` 日志**只准 append**：先 Read 再 Edit，任何情况不用 `Write` 覆盖。覆盖类事故**先查 git**，提交过就能救。
 - 🔴 dev 仅 `http://localhost:5199`（127.0.0.1 会 302→两份 IndexedDB）；桌面走文件存储、与 dev 两套（设计如此）。
 - ⚠️ 验「随项目」用 `db.setCurrentProject` 别直查物理表；改提示词/示范卡文案后同步改 `tests/` 写死的旧断言。
-- 🧪 dev 测试数据：仓库内 `dev-seed/`，`await import('/dev-seed/fengyang.js?' + Date.now())`；🔴 必须带时间戳；数据在浏览器 IndexedDB，重启 dev server 无效。
+- 🧪 dev 测试数据：仓库内 `dev-seed/`，`await import('/dev-seed/fengyang.js?'+Date.now())`（🔴 必须带时间戳）；数据在 IndexedDB，重启 dev server 无效。
 
-## 一键拆书（规划中 · 未开发）
-- 📌 **触发规则**：老大提「开发一键拆书 / 智能拆书」时**必须先读这两份**——`docs/一键拆书-方案规划.md`（战略）、`docs/一键拆书-详细设计.md`（战术＋5 个开放问题）。
-- 🎯 输入小说文本 → 模型分析 → 回填各设定模块；定位「AI 辅助填设定草稿」。路线＝**schema-aligned 轻量抽取**（**不**上 GraphRAG；对齐借力角色卡「别称」＋`cr()` 引用）。分期 MVP（本地27B两遍抽取＋字段直映＋草稿预览人工写入）→ 中期（六层校验/对齐/断点续跑/置信度UI）→ 长期可选（LightRAG）。
-- 🔴 **写入红线**：草稿预览＋人工写入，**绝不自动覆盖**已锁定设定；导入文本**零外发网络请求**（商业机密红线）。
+## 拆书 · 开发入口
+- 📌 老大提「开发拆书」时**必先读**：`docs/一键拆书-方案规划.md`（战略）＋`docs/一键拆书-详细设计.md`（战术＋5 个开放问题，**B2 必读**）。
+- 路线＝**schema-aligned 轻量抽取**（**不**上 GraphRAG；借力角色卡「别称」＋`cr()` 引用）。🔴 导入文本**零外发**。
