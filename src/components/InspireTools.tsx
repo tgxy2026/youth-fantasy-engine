@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { writerBudgetFor } from '../lib/aiWriterBudget'
 import * as db from '../lib/db'
 import { genName, type NameType, STYLES as NAME_STYLES } from '../lib/nameGen'
 import {
@@ -9,6 +10,7 @@ import AIDataSourceNote from './AIDataSourceNote'
 import { copyText } from './dialogs'
 import AIAssist from './AIAssist'
 import AIConfigPanel from './AIConfigPanel'
+import AIWriterBudgetPanel from './AIWriterBudgetPanel'
 import SearchSettingsPanel from './SearchSettingsPanel'
 import AutoContinue from './AutoContinue'
 import { useAIReady } from '../lib/useAIReady'
@@ -77,7 +79,7 @@ export default function InspireTools() {
     if (!aiReady || aiNameLoading) return
     setAiNameLoading(true); setAiNameErr(''); setAiNames([]); setStreamText('')
     try {
-      const ctx = await buildProjectContext({ budget: 3000 }).catch(() => ({ text: '' }))
+      const ctx = await buildProjectContext({ budget: await writerBudgetFor('name-suggest') }).catch(() => ({ text: '' }))
       const out = await aiSuggestNames({ target: nameType, style, extra: '', context: ctx.text, count: 10, onToken: (d) => setStreamText(prev => prev + d) })
       setAiNames(out)
     } catch (e) { setAiNameErr(e instanceof Error ? e.message : String(e)) }
@@ -101,6 +103,10 @@ export default function InspireTools() {
             它与下面的「联网检索」是一对「配置」，放页面最上边；
             原先它是「AI 辅助规划」卡片右上角按钮后面的弹窗，和对话窗口挤在一起（2026-09-15 拆出）。 */}
         <AIConfigPanel onChange={() => setCfgVer(v => v + 1)} />
+
+        {/* 正文写作链路的额度总闸门：跟着模型走，放在模型配置正下方便于一起调。
+            ⚠️ 与酒馆模式的额度互不冲突（酒馆那两个数在「酒馆模式 → 控制面板」）。 */}
+        <AIWriterBudgetPanel />
 
         {/* ============ ② 联网检索（全局）============
             原先在「酒馆 → 控制面板」，2026-09-15 搬来：它是全局能力（角色卡/剧本/背景设定起草、

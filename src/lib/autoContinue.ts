@@ -13,6 +13,7 @@
  * - 每章初稿先交作者裁决（采纳/重写/中止），采纳后才进入审查修正与设定补登。
  */
 import * as db from './db'
+import { writerBudgetFor } from './aiWriterBudget'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { chat, requireActiveProvider, stripThink, isCancelled } from './ai'
@@ -471,7 +472,7 @@ export async function runAutoContinue(
     const tag = `第 ${i + 1}/${opts.chapters} 章`
     try {
       cb.onPhase?.(`${tag}：组装上下文`)
-      const ctx = await buildProjectContext({ focusChapterId: anchorId ?? undefined, budget: 12000 })
+      const ctx = await buildProjectContext({ focusChapterId: anchorId ?? undefined, budget: await writerBudgetFor('auto-continue') })
         .catch(() => ({ text: '', sections: [], dropped: [], chars: 0 }) as ProjectContextResult)
       const prevTail = [
         lastTitle ? `（上一章标题：《${lastTitle}》）` : '',

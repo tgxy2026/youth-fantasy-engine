@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { ToolModal } from './EditorModals'
 import AuditPanel from './AuditPanel'
 import HelpPopover from './HelpPopover'
@@ -29,7 +30,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
   const runAiReview = async () => {
     setAiLoading(true); setAiError(null); setAiFindings([])
     try {
-      const ctx = await buildProjectContext({ budget: 12000, onlyTabIds: ['foreshadow', 'chapter-master', 'timeline'] })
+      const ctx = await buildProjectContext({ budget: await writerBudgetFor('foreshadow-review'), onlyTabIds: ['foreshadow', 'chapter-master', 'timeline'] })
       const r = await aiForeshadowReview(ctx.text)
       setAiFindings(r)
     } catch (e) { setAiError(e instanceof Error ? e.message : String(e)) }
@@ -155,7 +156,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
   const runAiAudit = async () => {
     setAiLoading(true); setAiError(null); setAiFindings([])
     try {
-      const ctx = await buildProjectContext({ budget: 12000 })
+      const ctx = await buildProjectContext({ budget: await writerBudgetFor('continuity-audit') })
       // 喂最近 6 章正文：一致性冲突最常出现在临近章节；空串时 prompt 会自动退化为仅查设定内部矛盾
       const texts = await getRecentChapterTexts(6).catch(() => '')
       const r = await aiContinuityAudit(ctx.text, texts)

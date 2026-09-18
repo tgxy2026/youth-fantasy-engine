@@ -1,4 +1,5 @@
 import { foldVh } from '../lib/theme'
+import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Sparkles, Check, Loader2, AlertCircle, RefreshCw, CircleStop,
@@ -122,7 +123,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
         // 卷台账页签还要排除 chapter-master 聚合段——那段含全部卷（含当前卷）的台账行，
         // 不排除的话当前表的行会重复进 prompt（1.9.2 按卷建表后）。
         const built = await buildProjectContext({
-          budget: 9000,
+          budget: await writerBudgetFor('organize-rows'),
           excludeTabIds: isVolumeLedgerTab(tab.id) ? [tab.id, 'chapter-master'] : [tab.id],
           includeChapterList: mode !== 'chapters',
         })

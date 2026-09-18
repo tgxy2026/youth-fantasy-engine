@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { writerBudgetFor } from '../lib/aiWriterBudget'
 import * as db from '../lib/db'
 import { scanText, BUILTIN_WORDS, getCustomSensitiveWords, setCustomSensitiveWords } from '../lib/sensitiveWords'
 import {
@@ -174,7 +175,7 @@ export default function CheckTools() {
     if (!aiReady || auditLoading) return
     setAuditLoading(true); setAuditErr(''); setFindings([]); setStreamText('')
     try {
-      const ctx = await buildProjectContext({ budget: 8000 }).catch(() => ({ text: '' }))
+      const ctx = await buildProjectContext({ budget: await writerBudgetFor('consistency-selfcheck') }).catch(() => ({ text: '' }))
       setFindings(await aiContinuityAudit(ctx.text, auditText.trim(), { onToken: (d) => setStreamText(prev => prev + d) }))
       setAuditRun(true)
     } catch (e) { setAuditErr(e instanceof Error ? e.message : String(e)) }

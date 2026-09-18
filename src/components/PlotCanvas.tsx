@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { writerBudgetFor } from '../lib/aiWriterBudget'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { Loader2, Eraser, Sparkles, GitBranch, Check, X, Move } from 'lucide-react'
 import * as db from '../lib/db'
@@ -138,7 +139,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
     if (chosen.length === 0) { showToast('请先在左侧选择至少一个章节', 'info'); return }
     showToast('AI 推演本生成需要 30–90 秒，请耐心等待（并非卡死）', 'info')
     setGenerating({ i: 0, total: chosen.length })
-    const projCtx = (await buildProjectContext({ budget: 6000 })).text
+    const projCtx = (await buildProjectContext({ budget: await writerBudgetFor('plot-canvas') })).text
     const newCards: CardItem[] = []
     // 续接在已有卡片右侧，避免与旧推演重叠；首列从可见区内起排，避免最左一列被裁切
     const baseX = cards.length ? Math.max(...cards.map(c => c.x)) + 360 : CARD_W / 2 + 40

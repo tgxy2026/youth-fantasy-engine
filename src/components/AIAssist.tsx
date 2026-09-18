@@ -1,4 +1,5 @@
 import { foldVh } from '../lib/theme'
+import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Sparkles, Send, Copy, Check, Trash2, Pencil, Plus,
@@ -167,7 +168,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
       let sys = composeSystemPrompt(SYSTEM_PROMPT, cfg)
       if (bringContext) {
         try {
-          const ctx = await buildProjectContext({ budget: 4000 })
+          const ctx = await buildProjectContext({ budget: await writerBudgetFor('ai-assist') })
           if (ctx.text) sys += `\n\n【项目资料（供参考：人名 / 设定 / 时间线 / 势力，可据此约束你的建议）】\n${ctx.text}`
         } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
       }

@@ -1,4 +1,5 @@
 import { foldVh } from '../lib/theme'
+import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import * as db from '../lib/db'
 import { countWords } from '../lib/textStats'
@@ -110,7 +111,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
     setAiLoading(true); setAiDone(false); setAiIssues([]); setAiSkipped(0); setAiScanned(0); setProgress({ done: 0, total: 0 }); setAiError('')
     try {
       let ctxText = ''
-      try { ctxText = (await buildProjectContext({ budget: 6000 })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
+      try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('proofread') })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
       const res = await aiProofread(text, { context: ctxText, signal: ctrl.signal, onProgress: (d, t) => setProgress({ done: d, total: t }) })
       setAiIssues(res.issues); setAiScanned(res.scanned); setAiSkipped(res.skipped); setAiDone(true)
     } catch (e) {

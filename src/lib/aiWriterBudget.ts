@@ -1,0 +1,138 @@
+/**
+ * 正文写作链路的 AI「资料预算」（全局设置）。
+ *
+ * 【要解决的问题】
+ * 正文写作那一整条链路的额度原本是**散落的硬编码常量**：校对 6000、颉文姬 OOC 10000、
+ * 一键续写 12000…… 想调一个数就得改代码；而且它们同样是为本地设备定的，
+ * 接上云端大窗口模型时不会跟着放大（酒馆已经有「额度跟着模型走」了，这边没有）。
+ *
+ * 【设计：一个基准 + 一组系数】
+ * 只暴露**一个**用户可调的「基准」（默认 8000 字），各功能按各自的系数换算。
+ * 🔴 系数是**从现有硬编码值反推**的，所以出厂基准 8000 下每一项换算结果都**等于改造前的值** ——
+ *    升级后一个字的行为都不会变（这是本项目对"默认值"的一贯要求）。
+ *
+ * 【为什么基准能跟着模型走】
+ * 资料预算大不大，取决于模型能吃多少。本地受显存限制（numCtx），云端按可用窗口的一个小比例。
+ * 与酒馆的额度**互不影响**：这里只管正文写作链路，酒馆那两个数在「控制面板」里单独设置。
+ */
+import * as db from './db'
+import type { CapacityAdvice } from './modelCapacity'
+
+const K_WRITER_BUDGET = 'ai.writerBudget'
+
+/** 出厂基准（字）。各功能按系数换算，出厂值下与改造前的硬编码完全一致 */
+export const DEFAULT_WRITER_BASE = 8000
+
+/** 基准的可调范围与步长（与面板上的输入框一致） */
+export const WRITER_BASE_LIMITS = { min: 1000, max: 100000, step: 500 } as const
+
+/**
+ * 各功能的系数（相对基准）。
+ *
+ * ⚠️ 出厂 base = 8000 时，每项换算结果 = 注释里那个数 = **改造前的硬编码值**。
+ *    改这里之前先想清楚：任何系数变动都会**改变默认行为**。
+ */
+export const WRITER_BUDGET_KINDS = {
+  'auto-continue': 1.5,           // 12000 一键续写
+  'proofread': 0.75,              //  6000 校对（编辑器）/ 颉文姬深度校对
+  'foreshadow-review': 1.5,       // 12000 伏笔闭环审查（只带三张表）
+  'continuity-audit': 1.5,        // 12000 连续性校验
+  'consistency-selfcheck': 1.0,   //  8000 检查工具页「AI 一致性深度自查」
+  'project-diagnose': 1.5,        // 12000 创作健康诊断
+  'organize-rows': 1.125,         //  9000 AI 整理（批量补条目）
+  'ai-assist': 0.5,               //  4000 AI 辅助规划
+  'name-suggest': 0.375,          //  3000 AI 取名
+  'plot-canvas': 0.75,            //  6000 情节推演画布
+  'jiewenji-proofread': 0.75,     //  6000 颉文姬 · 深度校对
+  'jiewenji-diagnosis': 1.0,      //  8000 综合诊断
+  'jiewenji-review': 1.0,         //  8000 章节编辑意见
+  'jiewenji-ooc': 1.25,           // 10000 OOC 人设检查（读角色卡最全）
+  'jiewenji-advice': 1.0,         //  8000 续写方向
+  'jiewenji-pleasure': 1.0,       //  8000 爽点 / 毒点
+  'jiewenji-opening': 1.0,        //  8000 黄金三章
+  'jiewenji-brief': 1.0,          //  8000 本章写作简报
+} as const
+
+export type WriterBudgetKind = keyof typeof WRITER_BUDGET_KINDS
+
+/** 界面展示用：各功能的称呼（展开明细时列出来，让作者知道"基准调了会影响谁"） */
+export const WRITER_BUDGET_LABELS: Record<WriterBudgetKind, string> = {
+  'auto-continue': 'AI 一键续写',
+  'proofread': '校对 / 颉文姬深度校对',
+  'foreshadow-review': '伏笔闭环审查',
+  'continuity-audit': '连续性校验',
+  'consistency-selfcheck': 'AI 一致性深度自查（检查工具）',
+  'project-diagnose': '创作健康诊断',
+  'organize-rows': 'AI 整理（批量补条目）',
+  'ai-assist': 'AI 辅助规划',
+  'name-suggest': 'AI 取名',
+  'plot-canvas': '情节推演画布',
+  'jiewenji-proofread': '颉文姬 · 深度校对',
+  'jiewenji-diagnosis': '颉文姬 · 综合诊断',
+  'jiewenji-review': '颉文姬 · 章节编辑意见',
+  'jiewenji-ooc': '颉文姬 · OOC 人设检查',
+  'jiewenji-advice': '颉文姬 · 续写方向',
+  'jiewenji-pleasure': '颉文姬 · 爽点 / 毒点',
+  'jiewenji-opening': '颉文姬 · 黄金三章',
+  'jiewenji-brief': '颉文姬 · 本章写作简报',
+}
+
+export interface WriterBudgetSettings {
+  /** 基准（字） */
+  base: number
+}
+
+export const DEFAULT_WRITER_BUDGET: WriterBudgetSettings = { base: DEFAULT_WRITER_BASE }
+
+/** 读设置。异常/越界一律回退出厂值 —— 额度读不出来不该让 AI 功能整个挂掉 */
+export async function getWriterBudget(): Promise<WriterBudgetSettings> {
+  try {
+    const raw = await db.getMeta<Partial<WriterBudgetSettings> | null>(K_WRITER_BUDGET, null)
+    const base = Number(raw?.base)
+    if (!Number.isFinite(base) || base < WRITER_BASE_LIMITS.min) return DEFAULT_WRITER_BUDGET
+    return { base: Math.min(WRITER_BASE_LIMITS.max, Math.round(base)) }
+  } catch {
+    return DEFAULT_WRITER_BUDGET
+  }
+}
+
+export async function saveWriterBudget(next: WriterBudgetSettings): Promise<WriterBudgetSettings> {
+  const base = Math.max(WRITER_BASE_LIMITS.min, Math.min(WRITER_BASE_LIMITS.max, Math.round(next.base)))
+  const out: WriterBudgetSettings = { base }
+  await db.setMeta(K_WRITER_BUDGET, out)
+  return out
+}
+
+/** 某功能在给定基准下实际使用的资料预算（对齐到 100 字，免得界面上出现 6375 这种数） */
+export function budgetForKind(kind: WriterBudgetKind, base: number): number {
+  const raw = base * WRITER_BUDGET_KINDS[kind]
+  return Math.max(1000, Math.round(raw / 100) * 100)
+}
+
+/** 调用点用这个：读设置 + 换算一步到位 */
+export async function writerBudgetFor(kind: WriterBudgetKind): Promise<number> {
+  const { base } = await getWriterBudget()
+  return budgetForKind(kind, base)
+}
+
+/**
+ * 按当前模型推荐基准。
+ *  · 本地：**不放大** —— 资料预算不该超过窗口的 1/4（剩下的要留给正文与输出）。
+ *  · 云端：按可用窗口的 12%，下限出厂值、上限 48000（再多也只是把设定堆给模型，收益递减）。
+ */
+export function recommendWriterBase(cap: CapacityAdvice): number {
+  const snap100 = (v: number) => Math.round(v / 100) * 100
+  if (cap.local) {
+    return Math.max(WRITER_BASE_LIMITS.min, Math.min(DEFAULT_WRITER_BASE, snap100(cap.windowTokens * 0.25)))
+  }
+  return Math.max(DEFAULT_WRITER_BASE, Math.min(48000, snap100(cap.approxPromptTokens * 0.12)))
+}
+
+/** 按模型推荐值时，各功能会变成多少（面板上展开明细用） */
+export function previewAt(base: number): { kind: WriterBudgetKind; label: string; value: number }[] {
+  return (Object.keys(WRITER_BUDGET_KINDS) as WriterBudgetKind[]).map(kind => ({
+    kind,
+    label: WRITER_BUDGET_LABELS[kind],
+    value: budgetForKind(kind, base),
+  }))
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { writerBudgetFor } from '../lib/aiWriterBudget'
 import * as db from '../lib/db'
 import type { Volume, Chapter, TableRow } from '../lib/types'
 import {
@@ -79,7 +80,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   const runDiag = async () => {
     setDiagLoading(true); setDiagError(null); setDiag(null)
     try {
-      const ctx = await buildProjectContext({ budget: 12000 })
+      const ctx = await buildProjectContext({ budget: await writerBudgetFor('project-diagnose') })
       const r = await aiDiagnoseProject(ctx.text, {
         chapters: chapters.length,
         words: totalWords,
