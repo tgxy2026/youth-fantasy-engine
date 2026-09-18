@@ -3,7 +3,7 @@
 // 重点覆盖两件事：
 //   ① 2.0.1 修过的「单对象被丢成空数组」——绝不能回归（否则"改稿只剩标点"复现）；
 //   ② 剥代码块 / 切最外层 / 容忍前后夹带解释——旧实现三份行为不一致，现已统一。
-import { parseObjectArray, parsePlainObject, parseLooseObject, stripCodeFence, stripStrayPunct, hasSubstance, asText, humanText } from '../src/lib/aiParse'
+import { parseObjectArray, parsePlainObject, parseLooseObject, parseTruncatedJson, stripCodeFence, stripStrayPunct, hasSubstance, asText, humanText } from '../src/lib/aiParse'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -160,6 +160,65 @@ function ok(name: string, cond: boolean, extra = '') {
   ok('无 JSON 的纯文本 → null', parseLooseObject('今天天气不错') === null)
   ok('顶层是数组时取首元素（沿用 parsePlainObject 既有容错，非 null）',
     parseLooseObject('[{"a":1}]')?.a === 1, JSON.stringify(parseLooseObject('[{"a":1}]')))
+}
+
+// ============ 截断修复（parseTruncatedJson）：被测出来的真实场景 ============
+// 2026-09-18 创意写作实机：本地 27B 产大纲时输出到一半停住，原始返回**少一个外层 `}`**：
+//   {"volumes":[…],"chapters":[{…,"scenes":["…","…"]}]
+// 旧实现要求结构完整 → 整批全丢 → 上游报"模型没有产出章节细纲"；重试同 prompt 又断在同一处。
+{
+  const full = '{"volumes":[{"title":"风起云州"}],"chapters":[{"title":"废脉","scenes":["a","b"]}]}'
+  ok('① 完整 JSON 照常解析', (parseTruncatedJson(full) as { chapters: unknown[] })?.chapters?.length === 1)
+
+  // 少一个外层 }（实机抓到的原始形态）
+  const cutTail = full.slice(0, -1)
+  const r1 = parseTruncatedJson(cutTail) as { volumes: unknown[]; chapters: { title: string; scenes: string[] }[] }
+  ok('🔴 少一个收尾括号 → 补齐后仍能拿到全部内容（不再全丢）',
+    r1?.chapters?.length === 1 && r1.chapters[0].title === '废脉', JSON.stringify(r1)?.slice(0, 120))
+  ok('　· 场景数组内容一根不少', r1?.chapters?.[0]?.scenes?.join(',') === 'a,b')
+
+  // 截断在字符串中间（流式被掐断的典型形态）
+  const cutStr = '{"volumes":[{"title":"风起云州"}],"chapters":[{"title":"废'
+  const r2 = parseTruncatedJson(cutStr) as { chapters: { title: string }[] }
+  ok('② 截断在字符串中间 → 补引号后保住已完整的部分',
+    r2?.chapters?.[0]?.title === '废', JSON.stringify(r2))
+
+  // 截断在数组元素中间：丢掉不完整的那条，保住前面
+  const cutMid = '{"chapters":[{"title":"A"},{"title":"B"},{"ti'
+  const r3 = parseTruncatedJson(cutMid) as { chapters: { title: string }[] }
+  ok('③ 截断在数组元素中间 → 丢掉残条、保住前两条',
+    r3?.chapters?.length === 2 && r3.chapters.map(c => c.title).join('') === 'AB',
+    JSON.stringify(r3))
+
+  // 字符串内部的 } / ] 不能被当成结构闭合符（否则会切坏内容）
+  const inner = '{"chapters":[{"note":"他说{别动}","title":"甲"}]'
+  const r4 = parseTruncatedJson(inner) as { chapters: { note: string; title: string }[] }
+  ok('④ 字符串内的 { } 不参与结构补全（内容不被切坏）',
+    r4?.chapters?.[0]?.note === '他说{别动}' && r4.chapters[0].title === '甲',
+    JSON.stringify(r4))
+
+  // 绝不编造：救不回来就老实返回 null，让调用方走失败分支
+  ok('🔴 ⑤ 纯垃圾 → null（不猜、不造）', parseTruncatedJson('今天天气不错') === null)
+  ok('🔴 ⑤ 空串 → null', parseTruncatedJson('') === null)
+  ok('🔴 ⑤ 只有开头括号 → null', parseTruncatedJson('{') === null)
+
+  // 悬挂的逗号/冒号（"…"," 或 "…":）
+  const dangling = '{"a":1,"b":'
+  ok('⑥ 悬挂的冒号 → 去掉后能解析出已有的键', (parseTruncatedJson(dangling) as { a: number })?.a === 1)
+
+  ok('⑦ 代码块围栏内的截断 JSON 也能修', (parseTruncatedJson('```json\n' + cutTail + '\n```') as { chapters: unknown[] })?.chapters?.length === 1)
+}
+
+// 两个入口的末级兜底真的接上了（否则上面修好了、调用方仍拿不到）
+{
+  // ⚠️ 样例刻意**含两个顶层键**：只用 `{"chapters":[{…}]` 这类会被 `parsePlainObject` 的
+  //    "数组里取首元素"容错先接住（返回 `{title:…}`、丢掉外层 chapters），测不到本层兜底。
+  const cut = '{"volumes":[{"title":"甲"}],"chapters":[{"title":"乙"}]'
+  ok('🔴 parseLooseObject 走到截断兜底（外层键不丢）',
+    (parseLooseObject(cut) as { chapters: unknown[] })?.chapters?.length === 1, JSON.stringify(parseLooseObject(cut)))
+  const cutArr = '{"list":[{"n":"甲"},{"n":"乙"}]'
+  ok('🔴 parseObjectArray 走到截断兜底（保住前 N-1 条）',
+    parseObjectArray(cutArr).length === 2, JSON.stringify(parseObjectArray(cutArr)))
 }
 
 console.log(`\naiParse: ${pass} passed, ${fail} failed`)

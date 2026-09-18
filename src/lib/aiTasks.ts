@@ -1884,14 +1884,18 @@ export async function aiGenerateOutline(
   const cfg = await requireActiveProvider()
   const volCount = Math.max(1, Math.min(8, opts.volumes ?? 1))
   const chCount = Math.max(1, Math.min(60, opts.chapters ?? 10))
-  const askOnce = async (): Promise<OutlineResult> => {
+  const askOnce = async (tighten = false): Promise<OutlineResult> => {
+    // 🔴 重试必须**换策略**：实测（本地 27B，2026-09-18）同样的 prompt 重试会断在同一处
+    //    （模型输出到一半自己停住，少一个收尾 `}`），连试两次都失败。第二次收紧体量预算，
+    //    并在末尾点明"上次被截断"，比原样重发有用得多。
+    const cap = tighten ? Math.max(240, Math.round(outlineCharCap(volCount, chCount) * 0.7)) : outlineCharCap(volCount, chCount)
     const text = await chat(
       cfg,
       [
         { role: 'system', content: composeSystemPrompt(outlineSys(volCount, chCount), cfg) },
         // 🔴 硬约束放**消息末尾**：模型对最后一条指令最敏感。实测仅写在 system 里时
         //    Qwen3-30B 会无视"只写 1 卷 1 章"，连吐 13000+ 字；末尾重申才压得住。
-        { role: 'user', content: `【设定资料】\n${bibleDigest.trim() || '（无，请按题材自行克制地设定）'}\n\n请产出分卷大纲与逐章细纲。\n\n【必须遵守】只输出 ${volCount} 卷、${chCount} 章，一个不多；单字段 ≤ 40 字；整份 JSON ≤ ${outlineCharCap(volCount, chCount)} 字。` },
+        { role: 'user', content: `【设定资料】\n${bibleDigest.trim() || '（无，请按题材自行克制地设定）'}\n\n请产出分卷大纲与逐章细纲。\n\n【必须遵守】只输出 ${volCount} 卷、${chCount} 章，一个不多；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。${tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : ''}` },
       ],
       { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
     )
@@ -1940,7 +1944,8 @@ export async function aiGenerateOutline(
   }
 
   // 空结果重试一次（同 aiGenerateBible：模型输出有随机性，格式瑕疵 regenerate 一次多半就好）
+  // 🔴 但重试要**收紧体量**（见 askOnce 的 tighten）—— 同 prompt 重发会断在同一处。
   const first = await askOnce()
   if (first.chapters.length) return first
-  return askOnce()
+  return askOnce(true)
 }

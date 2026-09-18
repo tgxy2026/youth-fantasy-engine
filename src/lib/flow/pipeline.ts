@@ -22,6 +22,15 @@ export interface StageCtx {
   /** 上报本阶段进度（0..1）与一行说明。detail 省略时保留上一次的说明。 */
   report(ratio: number, detail?: string): void
   /**
+   * 提前结束**剩余阶段**：本阶段照常算完成（产物照常进 bag），其后所有阶段记为 skipped。
+   *
+   * 存在的理由＝**条件分支**：创意写作里用户在闸门②选「只生成大纲」，连写阶段就根本不该跑。
+   * 为什么不干脆不登记那个阶段：决策发生在闸门②**运行到一半**的时候，那时 stages 早已定好；
+   * 而把它标成 done 也不行 —— 界面会显示"逐章连写 ●"，作者以为正文写了，实际一个字没有。
+   * skipped + 一行原因，才是这件事的诚实表达。
+   */
+  skipRest(reason?: string): void
+  /**
    * 各阶段产物，按阶段 id 取。
    * 「续跑」场景：把上次跑出的产物预先放进来（见 createFlow 的 bag 选项），
    * 再从中间某阶段 `run(from)` 即可，前序阶段不必重跑。
@@ -93,6 +102,8 @@ export function createFlow(
   const totalWeight = declared.reduce((n, s) => n + (s.weight ?? 1), 0)
   let status: FlowStatus = 'idle'
   let aborted = false
+  /** skipRest 请求：从 fromIdx 起（含）的阶段一律记为 skipped */
+  let skipReq: { fromIdx: number; reason: string } | null = null
 
   // 外部 signal → 内部 controller（executor 拿到的一律是内部 signal，调用方只需管自己那一个）
   const markAbort = () => { aborted = true; ctl.abort() }
@@ -112,7 +123,11 @@ export function createFlow(
     for (const s of declared) {
       const st = stateOf(s.id)
       const w = s.weight ?? 1
-      if (st.status === 'done') acc += w
+      // 🔴 skipped 也要计入分子（＝"这一阶段已经不需要跑了"）。
+      //    否则跳过一旦发生，进度条会永远停在跳过之前的比例上：创意写作选「只保存大纲」时
+      //    连写阶段占 12/17 权重，界面会显示「已完成 26%」，看着像跑到一半断了。
+      //    续跑场景同理 —— 起点之前的阶段标 skipped，本就意味着"这部分已完成"。
+      if (st.status === 'done' || st.status === 'skipped') acc += w
       else if (st.status === 'running') acc += w * clamp01(st.ratio)
     }
     const running = declared.find(s => stateOf(s.id).status === 'running')
@@ -142,6 +157,13 @@ export function createFlow(
       const stage = declared[i]
       const st = stateOf(stage.id)
 
+      // 上一阶段喊了 skipRest → 从这里开始全部跳过（含尚未轮到的、也含续跑时本会重跑的阶段）
+      if (skipReq && i >= skipReq.fromIdx) {
+        if (st.status === 'pending') { st.status = 'skipped'; st.detail = skipReq.reason }
+        emit()
+        continue
+      }
+
       if (aborted) {
         if (st.status === 'pending' || st.status === 'running') { st.status = 'cancelled' }
         continue
@@ -161,6 +183,10 @@ export function createFlow(
             st.ratio = clamp01(ratio)
             if (detail !== undefined) st.detail = detail
             emit()
+          },
+          skipRest: reason => {
+            // 只管"当前阶段之后"的：已经跑完的、以及正在跑的这个，都不该被这条请求改写状态
+            skipReq = { fromIdx: i + 1, reason: (reason ?? '').trim() || '（已跳过）' }
           },
         })
         bag[stage.id] = out

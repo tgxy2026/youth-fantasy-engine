@@ -131,5 +131,45 @@ function ok(name: string, cond: boolean, extra = '') {
     `${before.status}/${before.stages[0].status}`)
 }
 
+// ---------- ⑨ skipRest：条件提前结束剩余阶段（创意写作「只保存大纲」靠它） ----------
+{
+  const ran: string[] = []
+  const flow = createFlow([
+    { id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' },
+  ])
+  flow.on('a', async () => { ran.push('a'); return 1 })
+  flow.on('b', async ctx => { ran.push('b'); ctx.skipRest('（已选择：只生成大纲）'); return 2 })
+  flow.on('c', async () => { ran.push('c'); return 3 })
+  const res = await flow.run()
+  const [stA, stB, stC] = res.progress.stages
+  ok('skipRest：被跳过的阶段不执行', ran.join(',') === 'a,b', ran.join(','))
+  ok('🔴 skipRest：剩余阶段记 skipped 而非 done（界面不能谎称正文写了）', stC.status === 'skipped', stC.status)
+  ok('skipRest：触发它的那个阶段照常算完成', stB.status === 'done', stB.status)
+  ok('skipRest：跳过原因写进 detail（说明"为什么没跑"）', stC.detail === '（已选择：只生成大纲）', stC.detail)
+  ok('skipRest：流程整体仍是 done（正常收尾，不是中止/失败）', res.status === 'done', res.status)
+  ok('skipRest：跳过的阶段不产出 bag 条目', res.bag.a === 1 && res.bag.b === 2 && !('c' in res.bag),
+    JSON.stringify(res.bag))
+  ok('🔴 skipRest：进度不因跳过而卡住（skipped 计入已完成）', res.progress.ratio === 1, String(res.progress.ratio))
+  ok('skipRest：先前阶段状态未被改写', stA.status === 'done', stA.status)
+}
+{
+  // 边界：最后一个阶段喊 skipRest —— 后面没阶段可跳，不能因此把流程判成异常
+  const flow = createFlow([{ id: 'a', label: 'A' }])
+  flow.on('a', async ctx => { ctx.skipRest('后面没阶段了'); return 1 })
+  const res = await flow.run()
+  ok('skipRest：在最后一个阶段调用 → 无副作用',
+    res.status === 'done' && res.progress.stages[0].status === 'done',
+    `${res.status}/${res.progress.stages[0].status}`)
+}
+{
+  // 边界：skipRest 与「未登记执行体」的 skipped 走的是同一条通路 —— 别互相踩
+  const flow = createFlow([{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }])
+  flow.on('a', async ctx => { ctx.skipRest(); return 1 })
+  const res = await flow.run()
+  ok('skipRest：不给原因时用兜底文案（detail 不为空，界面不显示空白）',
+    res.progress.stages[1].status === 'skipped' && res.progress.stages[1].detail === '（已跳过）',
+    res.progress.stages[1].detail)
+}
+
 console.log(`\n—— flowPipeline 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

@@ -7,24 +7,23 @@
  * 两个闸门是刻意留的：AI 生成设定/大纲的质量波动必须由人过一眼再落库 —— 人定方向，AI 跑量。
  * 闸门用 Promise 实现（编排器 await 在那里等），所以本组件只需在点击时 resolve 掉它。
  */
-import { useRef, useState } from 'react'
-import { Loader2, Play, Square } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, Play, Sparkles, Square } from 'lucide-react'
 import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 import DraftReviewPanel from './DraftReviewPanel'
 import HelpPopover from './HelpPopover'
+import InterviewChat from './InterviewChat'
+import WorkflowTimeline from './WorkflowTimeline'
 import { showToast } from './dialogs'
+import { aiChatJson, loadActiveId, loadProviders, type AIProvider } from '../lib/ai'
 import { runCreativeWriting, type CreativeWritingResult } from '../lib/aiWorkflow'
 import type { OutlineResult } from '../lib/aiTasks'
-import type { DraftBundle, DraftRow, FlowProgress, StageStatus } from '../lib/flow/types'
-
-const STAGE_MARK: Record<StageStatus, string> = {
-  pending: '○', running: '◐', done: '●', skipped: '－', failed: '✕', cancelled: '×',
-}
-const STAGE_CLS: Record<StageStatus, string> = {
-  pending: 'text-ink-600', running: 'text-amber', done: 'text-emerald-400',
-  skipped: 'text-ink-600', failed: 'text-red-400', cancelled: 'text-ink-600',
-}
+import { CREATIVE_SEED_SPEC, seedFromFilled } from '../lib/creativeSeed'
+import type { DraftBundle, DraftRow, FlowProgress } from '../lib/flow/types'
+import { adviseCapacity, type CapacityAdvice } from '../lib/modelCapacity'
+import { getTavernSettings } from '../lib/tavern/settings'
+import { MAX_CHAPTERS, advisePace, type PaceAdvice } from '../lib/writingPace'
 
 const NUM_INPUT = 'w-20 rounded bg-ink-900 border border-ink-700 px-2 py-1 text-[12px] text-ink-100 outline-none focus:border-amber/50'
 
@@ -34,13 +33,18 @@ export default function CreativeWritingPanel() {
   const [words, setWords] = useState(2500)
   const [volumes, setVolumes] = useState(1)
   const [progress, setProgress] = useState<FlowProgress | null>(null)
+  const [summaries, setSummaries] = useState<Record<string, string>>({})
   const [running, setRunning] = useState(false)
   const [log, setLog] = useState<string[]>([])
   const [bibleGate, setBibleGate] = useState<DraftBundle | null>(null)
   const [outlineGate, setOutlineGate] = useState<OutlineResult | null>(null)
   const [result, setResult] = useState<CreativeWritingResult | null>(null)
+  const [interview, setInterview] = useState(false)
+  const [cap, setCap] = useState<CapacityAdvice | null>(null)
   const gateRef = useRef<((v: unknown) => void) | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  /** 阶段产物摘要：detail 会在下一阶段开始时被覆盖，所以在"完成那一刻"抓一次存下来 */
+  const summariesRef = useRef<Record<string, string>>({})
 
   const openGate = <T,>(setter: (v: T) => void) => (payload: T) =>
     new Promise<unknown>(resolve => {
@@ -48,23 +52,61 @@ export default function CreativeWritingPanel() {
       setter(payload)
     })
 
+  // 模型能力（只读一次）：换算成「推荐章数 + 预计耗时」。
+  // 🔴 口径见 writingPace.ts —— 连写是一章一次调用、单章只带设定与最近摘要，
+  //    **不受模型窗口限制**，受限的是总耗时。
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [providers, activeId, tav] = await Promise.all([
+          loadProviders().catch(() => [] as AIProvider[]),
+          loadActiveId().catch(() => null),
+          getTavernSettings().catch(() => null),
+        ])
+        const p = providers.find(x => x.id === activeId) ?? null
+        setCap(adviseCapacity(p, { numCtx: tav?.common.numCtx ?? 32768, contextBudget: tav?.common.contextBudget ?? 24000 }))
+      } catch { /* 拿不到模型信息就不显示推荐，不影响创作本身 */ }
+    })()
+  }, [])
+
+  const pace: PaceAdvice | null = useMemo(
+    () => (cap ? advisePace(cap, { chapters, targetWords: words }) : null),
+    [cap, chapters, words],
+  )
+
   const start = async () => {
     if (!seed.trim()) { showToast('请先用一句话说清你想写什么', 'info'); return }
     const ctl = new AbortController()
     abortRef.current = ctl
-    setRunning(true); setResult(null); setLog([]); setProgress(null)
+    setRunning(true); setResult(null); setLog([]); setProgress(null); setSummaries({})
+    summariesRef.current = {}
     try {
       const res = await runCreativeWriting(seed, {
         chapters, targetWords: words, volumes,
         signal: ctl.signal,
-        onProgress: setProgress,
+        onProgress: p => {
+          setProgress(p)
+          // 抓"刚完成那一刻"的 detail 当阶段产物摘要（下一阶段一开跑就会把它覆盖掉）
+          const next = { ...summariesRef.current }
+          let changed = false
+          for (const s of p.stages) {
+            if (s.status === 'done' && s.detail && !next[s.id]) {
+              next[s.id] = s.detail.replace(/…$/, '')
+              changed = true
+            }
+          }
+          if (changed) { summariesRef.current = next; setSummaries(next) }
+        },
         onBibleGate: openGate(setBibleGate) as (b: DraftBundle) => Promise<DraftRow[] | null>,
-        onOutlineGate: openGate(setOutlineGate) as (o: OutlineResult) => Promise<boolean>,
+        onOutlineGate: openGate(setOutlineGate) as (o: OutlineResult) => Promise<boolean | 'outline-only'>,
         onChapterSaved: ch => setLog(l => [...l, `✅ 第${ch.no}章 ${ch.title}`]),
       })
       if (!res) { showToast('已中止，未留下半成品', 'info'); return }
       setResult(res)
-      showToast(`创作完成：写了 ${res.chapters.length} 章`, 'success')
+      showToast(
+        res.outlineOnly ? '大纲已保存 —— 按你的选择，没有写正文' : `创作完成：写了 ${res.chapters.length} 章`,
+        'success',
+      )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (/放弃/.test(msg)) showToast('已放弃本次创作（未写入任何数据）', 'info')
@@ -93,7 +135,9 @@ export default function CreativeWritingPanel() {
           <div className="space-y-1.5 text-[11.5px] leading-relaxed text-ink-300">
             <p>给一句话想法，AI 依次完成：<b>设定奠基 → 分卷大纲 → 逐章连写</b>（审校闭环、伏笔自动更新在后续阶段）。</p>
             <p>两个<b>人工闸门</b>：设定草稿与大纲都必须你确认后才落库、才继续 —— 人定方向，AI 跑量。</p>
+            <p>只想先要大纲、暂不写正文：在闸门②选<b>「只保存大纲」</b>即可，之后正文可以自己写、也可以随时回来补写。</p>
             <p>落库只发生在闸门通过之后；在任何闸门处「放弃」，都不会留下半成品。</p>
+            <p className="text-ink-500">想法还说不清时点<b>「对话引导」</b>：AI 按「题材 → 主角 → 冲突 → 世界」一路问，聊完自动把要点填回输入框。</p>
             <p className="text-ink-500">连写阶段用的是「AI 一键续写」那套（含字数校准与落库硬闸门），并按已落库的《章节细纲》逐章推进。</p>
             <AIDataSourceNote feature="creative-writing" compact />
           </div>
@@ -102,7 +146,13 @@ export default function CreativeWritingPanel() {
 
       {/* ① 想法与参数 */}
       <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
-        <div className="text-[13px] text-ink-100">① 一句话想法</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px] text-ink-100">① 一句话想法</span>
+          <div className="flex-1" />
+          <Button size="xs" variant="secondary" disabled={running} onClick={() => setInterview(true)}>
+            <Sparkles size={11} /> 对话引导
+          </Button>
+        </div>
         <textarea
           value={seed}
           onChange={e => setSeed(e.target.value)}
@@ -117,14 +167,26 @@ export default function CreativeWritingPanel() {
               onChange={e => setVolumes(Math.max(1, Math.min(8, Number(e.target.value) || 1)))} className={NUM_INPUT} />
           </label>
           <label className="flex items-center gap-1.5">连写章数
-            <input type="number" min={1} max={60} value={chapters} disabled={running}
-              onChange={e => setChapters(Math.max(1, Math.min(60, Number(e.target.value) || 1)))} className={NUM_INPUT} />
+            <input type="number" min={1} max={MAX_CHAPTERS} value={chapters} disabled={running}
+              onChange={e => setChapters(Math.max(1, Math.min(MAX_CHAPTERS, Number(e.target.value) || 1)))} className={NUM_INPUT} />
           </label>
           <label className="flex items-center gap-1.5">每章目标字数
             <input type="number" min={800} max={8000} step={100} value={words} disabled={running}
               onChange={e => setWords(Math.max(800, Math.min(8000, Number(e.target.value) || 2500)))} className={NUM_INPUT} />
           </label>
         </div>
+        {pace && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span title={pace.model} className={`text-[10.5px] leading-relaxed ${pace.level === 'ok' ? 'text-ink-500' : 'text-amber'}`}>
+              {pace.note}
+            </span>
+            {chapters !== pace.recommendedChapters && (
+              <Button size="xs" variant="secondary" onClick={() => setChapters(pace.recommendedChapters)}>
+                用推荐值（{pace.recommendedChapters} 章）
+              </Button>
+            )}
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="primary" solid disabled={running || !seed.trim()} onClick={() => void start()}>
             {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
@@ -138,29 +200,12 @@ export default function CreativeWritingPanel() {
           {running && <span className="text-[11px] text-ink-400">{progress?.message ?? ''}</span>}
         </div>
         <div className="mt-1.5 text-[10.5px] leading-relaxed text-ink-500">
-          连写会在当前项目的现有章节之后接着写；写多少章就调多少次模型，本地模型耗时较长，可随时中止。
+          连写会在当前项目的现有章节之后接着写，随时可中止；写完去「正文编辑」逐章审阅。
         </div>
       </section>
 
-      {/* 阶段进度 */}
-      {progress && (
-        <div className="mt-2 rounded border border-ink-700 bg-ink-900/40 px-3 py-2">
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-700">
-              <div className="h-full bg-amber transition-all" style={{ width: `${Math.round(progress.ratio * 100)}%` }} />
-            </div>
-            <span className="text-[10.5px] tabular-nums text-ink-400">{Math.round(progress.ratio * 100)}%</span>
-          </div>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-            {progress.stages.map(s => (
-              <span key={s.id} className={`text-[10.5px] ${STAGE_CLS[s.status]}`}>
-                {STAGE_MARK[s.status]} {s.label}
-                {s.status === 'running' && s.detail && <span className="text-ink-500"> · {s.detail}</span>}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 阶段进度：竖向节点时间线（跑完保留 —— 事后能看到每一步做了什么、花了多久、产出多少） */}
+      <WorkflowTimeline progress={progress} running={running} summaries={summaries} className="mt-2" />
 
       {/* 闸门①：设定草稿 */}
       {bibleGate && (
@@ -172,7 +217,7 @@ export default function CreativeWritingPanel() {
               只有勾选的条目会落库；可以改名称、也可以直接舍弃不要的
             </span>
             <div className="flex-1" />
-            <Button size="xs" variant="ghost" onClick={() => resolveGate(null)}>放弃本次创作</Button>
+            <Button size="xs" variant="secondary" onClick={() => resolveGate(null)}>放弃本次创作</Button>
           </div>
           <DraftReviewPanel
             bundle={bibleGate}
@@ -191,9 +236,12 @@ export default function CreativeWritingPanel() {
               确认分卷大纲（{outlineGate.volumes.length} 卷 / {outlineGate.chapters.length} 章）
             </span>
             <div className="flex-1" />
-            <Button size="xs" variant="ghost" onClick={() => resolveGate(false)}>放弃本次创作</Button>
+            <Button size="xs" variant="secondary" onClick={() => resolveGate(false)}>放弃本次创作</Button>
+            <Button size="sm" variant="secondary" onClick={() => resolveGate('outline-only')}>
+              只保存大纲（不写正文）
+            </Button>
             <Button size="sm" variant="primary" solid onClick={() => resolveGate(true)}>
-              确认大纲，开始逐章连写
+              保存大纲并开始连写
             </Button>
           </div>
 
@@ -243,12 +291,36 @@ export default function CreativeWritingPanel() {
             <li>大纲：{result.outline.volumes.length} 卷 / {result.outline.chapters.length} 章
               {result.outlineCommit && ` → 新建 ${result.outlineCommit.volumesCreated} 卷、${result.outlineCommit.volumeCardsCreated} 份分卷大纲、${result.outlineCommit.chapterCardsCreated} 份章节细纲`}
             </li>
-            <li>正文：{result.chapters.length} 章已落库</li>
+            <li>
+              {result.outlineOnly
+                ? '正文：按你的选择只出大纲，未写正文'
+                : `正文：${result.chapters.length} 章已落库`}
+            </li>
           </ul>
           <div className="mt-1.5 text-[10.5px] text-ink-500">
-            去「正文编辑」看正文；设定与大纲分别在对应页签（角色管理 / 世界构建 / 大纲规划）。
+            {result.outlineOnly
+              ? '设定与大纲已落库（角色管理 / 世界构建 / 大纲规划）；想写正文时把连写章数改成要写的量、再跑一次即可。'
+              : '去「正文编辑」看正文；设定与大纲分别在对应页签（角色管理 / 世界构建 / 大纲规划）。'}
           </div>
         </section>
+      )}
+
+      {/* 对话引导：聊完把要点拼回「一句话想法」 */}
+      {interview && (
+        <InterviewChat
+          subject={CREATIVE_SEED_SPEC.subject}
+          spec={CREATIVE_SEED_SPEC}
+          existing={seed.trim() || undefined}
+          callChat={(msgs, opts) => aiChatJson(msgs, { signal: opts.signal })}
+          onClose={() => setInterview(false)}
+          onApply={filled => {
+            const text = seedFromFilled(filled)
+            if (text) setSeed(text)
+            setInterview(false)
+            showToast('已填入想法 —— 生成的是要点提纲，改完再开始创作')
+          }}
+          applyLabel="填入想法"
+        />
       )}
     </div>
   )

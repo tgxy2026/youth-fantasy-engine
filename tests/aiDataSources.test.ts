@@ -114,5 +114,21 @@ const inline = AI_DATA_SOURCES['inline-suggest']
 ok('AI 伴写：点明了精选设定只有 4 类且不含章节目录',
   inline.sources.some(s => s.group.includes('4 类') && !!s.note?.includes('不含章节目录')), '')
 
+// ---------- ⑦ 别向作者承诺"不外发" ----------
+// 拆书与创意写作都支持云端模型（作者选了云端，内容就会离开本机）。
+// 笼统一句「全程本地模型，不外发」是**误导性声明**：作者据此决定要不要用它拆自己没发表的稿子时，
+// 会得到一个错误的安心。这里锁住"发给当前选定的模型"这个诚实口径，防止将来又被写回去。
+for (const id of ['bookbreak', 'creative-writing']) {
+  const f = AI_DATA_SOURCES[id]
+  const says = (f.excludes ?? []).join(' ／ ')
+  ok(`🔴 ${id}：说明的是「发给当前选定的模型」，不是笼统的"不外发"`,
+    says.includes('当前选定') && !says.includes('全程本地模型'),
+    says || '(excludes 为空)')
+}
+
+ok('创意写作：写清了「只保存大纲」不写正文这条边界',
+  !!AI_DATA_SOURCES['creative-writing'].excludes?.some(x => x.includes('只保存大纲')),
+  JSON.stringify(AI_DATA_SOURCES['creative-writing'].excludes))
+
 console.log(`\n—— aiDataSources 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

@@ -320,7 +320,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     excludes: [
       '不读各设定表的字段内容（只比对名称与别称，不看条目里写了什么）',
       '不写任何项目数据 —— 只有你在草稿上点「写入项目」之后才落库',
-      '全程本地模型，原文不外发',
+      '原文只发给你**当前选定的那个模型**：本地模型（Ollama 等）不出本机；选了云端模型就会上传到该服务商',
     ],
   },
 
@@ -329,9 +329,9 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: '创意写作',
     sources: [
       {
-        group: '你写的一句话想法',
+        group: '你写的一段创作想法',
         items: [],
-        note: '设定奠基阶段只依据这句话展开；此时**不读**项目现有设定',
+        note: '一句话直写，或用「对话引导」聊出来（AI 按题材 → 主角 → 冲突 → 世界一路问，聊完拼成这段文本）。设定奠基阶段只依据它展开，此时**不读**项目现有设定',
       },
       {
         group: '项目设定资料',
@@ -346,7 +346,8 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     ],
     excludes: [
       '闸门处未确认前不写任何数据 —— 任一闸门放弃都不留半成品',
-      '全程本地模型，不外发',
+      '闸门②选「只保存大纲」时不会调用连写：只落库卷 / 分卷大纲 / 章节细纲，不产生任何正文',
+      '内容只发给你**当前选定的那个模型**：本地模型（Ollama 等）不出本机；选了云端模型就会上传到该服务商',
     ],
   },
 }

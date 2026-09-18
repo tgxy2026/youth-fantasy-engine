@@ -91,8 +91,99 @@ export function stripStrayPunct(s: string): string {
 }
 
 /**
+ * 解析**被截断的 JSON** —— 模型输出到一半自己停住（长上下文里尤其常见）。
+ *
+ * 【为什么必须单独有这一手（2026-09-18 创意写作实机抓到）】
+ * 本地 27B 产分卷大纲时，原始返回长这样（**结尾少一个外层 `}`**）：
+ *   `{"volumes":[…],"chapters":[{…,"scenes":["…","…"]}]`
+ * `parsePlainObject` / `parseLooseObject` 都要求结构完整，于是整批**全丢**，
+ * 上游表现为「生成成功但 0 章」；而 `aiGenerateOutline` 的重试用的是同一份 prompt，
+ * 于是**断在同一处、连试两次都失败**（实机就是 86 秒后报"模型没有产出章节细纲"）。
+ * 但内容前面 95% 都是好的 —— 为一个收尾括号丢掉全部产出，代价完全不成比例。
+ *
+ * 【三级让步，但绝不编造】
+ *   ① 原文直接解析；
+ *   ② 补上未闭合的括号（截断在字符串中时先补引号、去掉悬挂的 `,` / `:`）后解析；
+ *   ③ 从尾部回退到最近一个**字符串外**的断点（`,` / `}` / `]`），再补全解析 ——
+ *      丢掉被截断的那一条，保住前面的。截断常常停在 `"字段":` 或 `"字段":"写了一半`，
+ *      这时只有从逗号处回退才救得回来。
+ * 🔴 只做「修剪 + 补齐」：不补值、不改键名、不猜字段。宁可少一条，不可造一条。
+ *
+ * @returns 解析结果（对象或数组）；彻底救不回来时返回 null（调用方照旧走失败分支）
+ */
+export function parseTruncatedJson(raw: string): unknown {
+  const base = stripCodeFence(raw).trim()
+  if (!base || (base[0] !== '{' && base[0] !== '[')) return null
+  // 除括号与空白外什么都没写 → 没有可救的内容。
+  // 🔴 不能把 `{` "修复"成 `{}` —— 那会让调用方以为"解析成功、只是字段为空"，
+  //    把"输出被掐断"这种必须报出来的事，伪装成一次正常的空结果。
+  if (!/[^\s{}[\]]/.test(base)) return null
+
+  const direct = tryParse(base)
+  if (direct !== null) return direct
+
+  const closed = tryParse(closeBrackets(base))
+  if (closed !== null) return closed
+
+  // 回退到最近的断点再补全。限步数：几 KB 的文本最多试 400 个候选，耗时可控。
+  const breaks = structuralBreaks(base)
+  const limit = Math.max(0, breaks.length - 400)
+  for (let k = breaks.length - 1; k >= limit; k--) {
+    // 断在逗号 → 从逗号**之前**切（丢弃它后面那条残缺的）；断在 } / ] → 含它一起切
+    const at = breaks[k]
+    const cut = base[at] === ','
+      ? base.slice(0, at)
+      : base.slice(0, at + 1).replace(/,\s*$/, '')
+    const v = tryParse(closeBrackets(cut))
+    if (v !== null) return v
+  }
+  return null
+}
+
+/** 补齐未闭合的括号；截断停在字符串内时先补引号，并去掉悬挂的 `,` / `:` */
+function closeBrackets(s: string): string {
+  let inStr = false
+  let esc = false
+  const stack: string[] = []
+  for (const ch of s) {
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === '{') stack.push('}')
+    else if (ch === '[') stack.push(']')
+    else if (ch === '}' || ch === ']') stack.pop()
+  }
+  let out = inStr ? s + '"' : s
+  out = out.replace(/[,:]\s*$/, '')
+  return out + stack.reverse().join('')
+}
+
+/** **字符串之外**的断点位置（`,` / `}` / `]`）；字符串里的同名字符不算 */
+function structuralBreaks(s: string): number[] {
+  const out: number[] = []
+  let inStr = false
+  let esc = false
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === ',' || ch === '}' || ch === ']') out.push(i)
+  }
+  return out
+}
+
+/**
  * **宽松**解析单个 JSON 对象：先走严格路径（`parsePlainObject`），失败再清掉结构位的
- * 杂散标点与尾随逗号重试。
+ * 杂散标点与尾随逗号重试，最后兜底**截断修复**。
  *
  * ⚠️ 刻意**不改** `parsePlainObject` 本身 —— 它被全项目 20+ 处复用，改变其容错边界属于
  * "静默扩大接受范围"，风险大于收益。生成型入口（`aiGenerateBible` / `aiGenerateOutline`）
@@ -102,7 +193,12 @@ export function parseLooseObject(raw: string): Record<string, unknown> | null {
   const strict = parsePlainObject(raw)
   if (strict) return strict
   const v = tryParse(stripStrayPunct(sliceJSON(raw, '{')))
-  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>
+  // 末级兜底：结构被截断（少收尾括号）时修剪 + 补齐再试 —— 否则前面全部内容白丢
+  const repaired = parseTruncatedJson(raw)
+  return repaired && typeof repaired === 'object' && !Array.isArray(repaired)
+    ? (repaired as Record<string, unknown>)
+    : null
 }
 
 /**
@@ -120,6 +216,10 @@ export function parseObjectArray(raw: string): Record<string, unknown>[] {
   if (arr && arr.length > 0) return arr
   const obj = normalizeParsed(tryParse(sliceJSON(raw, '{')))
   if (obj && obj.length > 0) return obj
+  // 末级兜底：结构被截断时修剪 + 补齐 —— 抽取任务一次要吐十几条，
+  // 最后一条被截断就会让整批解析失败（保住前 N-1 条也远好过全丢）
+  const repaired = normalizeParsed(parseTruncatedJson(raw))
+  if (repaired && repaired.length > 0) return repaired
   return []
 }
 

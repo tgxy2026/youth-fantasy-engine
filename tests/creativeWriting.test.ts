@@ -9,6 +9,7 @@ import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
 import { DEFAULT_BIBLE_COUNTS, collectBibleEntities, type BibleCounts } from '../src/lib/aiTasks'
 import { commitOutline, loadChapterOutlines } from '../src/lib/aiWorkflow'
+import { CREATIVE_SEED_SPEC, seedFromFilled } from '../src/lib/creativeSeed'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
 import type { OutlineResult } from '../src/lib/aiTasks'
 
@@ -121,6 +122,31 @@ const OUTLINE: OutlineResult = {
   const r = await commitOutline({ volumes: [], chapters: [] })
   ok('空大纲 → 全部计数为 0 且不抛错',
     r.volumesCreated === 0 && r.volumeCardsCreated === 0 && r.chapterCardsCreated === 0)
+}
+
+// ---------- ⑥ 「对话引导」的纲与"拼回想法"的一致性 ----------
+// 这层很容易腐烂：往 spec 里加了一栏，却忘了给它写话题 → 那一栏**永远问不到**，
+// 界面进度还会显示"共 N 栏"，作者以为 AI 会问。所以两头都要对一遍。
+{
+  const spec = CREATIVE_SEED_SPEC
+  ok('想法引导：每个话题的字段都在白名单里（否则模型写了也会被丢掉）',
+    spec.topics.every(t => t.fields.every(f => spec.allowedKeys.includes(f))),
+    spec.topics.flatMap(t => t.fields).filter(f => !spec.allowedKeys.includes(f)).join(','))
+  ok('🔴 想法引导：白名单被话题全覆盖（有栏位无话题 = 永远问不到）',
+    spec.allowedKeys.every(k => spec.topics.some(t => t.fields.includes(k))),
+    spec.allowedKeys.filter(k => !spec.topics.some(t => t.fields.includes(k))).join(','))
+  ok('想法引导：每栏都有中文名（右侧"已收集"面板按它摊平）',
+    spec.allowedKeys.every(k => !!spec.labels?.[k]),
+    spec.allowedKeys.filter(k => !spec.labels?.[k]).join(','))
+  ok('想法引导：话题顺序＝先定调、再定人、后定壳',
+    spec.topics.map(t => t.key).join(',') === 'genre,hero,conflict,shell',
+    spec.topics.map(t => t.key).join(','))
+
+  const text = seedFromFilled({ genre: '玄幻', protagonist: '杂役少年', style: '冷厉克制' })
+  ok('拼回想法：带中文标签（作者能逐行核对是不是自己说的）',
+    text.includes('【题材类型】玄幻') && text.includes('【主角是谁】杂役少年'), text)
+  ok('🔴 拼回想法：空栏不出现（不留"（未填）"污染提示词）', !text.includes('核心冲突'), text)
+  ok('拼回想法：全空 → 空串（调用方据此不覆盖输入框）', seedFromFilled({}) === '')
 }
 
 console.log(`\n—— creativeWriting 用例结束：${pass} 通过 / ${fail} 失败`)

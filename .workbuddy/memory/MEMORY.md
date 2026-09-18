@@ -1,6 +1,6 @@
 # novel-studio 长期记忆
 > 红线/决策索引；事件留 `YYYY-MM-DD.md`。⚠️ **目标 ≤8500 字符**（压不动就把整节外链主题文档）。
-> 主题细则外链：`docs/酒馆模式-工程红线.md`、`docs/2.1.1-审计修复记录.md`、`docs/AI上下文*.md`、`docs/2.2.0-*`、`docs/AI设定数据*.md`。
+> 主题细则外链：`docs/酒馆模式-工程红线.md`、`docs/2.1.1-审计修复记录.md`、`docs/AI上下文*.md`、`docs/2.2.0-*`、`docs/一键拆书-*`。
 
 ## 红线
 - 🔴 封装须老大明说「封装/重打包」；改完最多 tsc+lint+test+commit。
@@ -14,15 +14,14 @@
 - 🔴🔴 封装**全程无沙箱跑**。rcedit 间歇失败（退出码仍 0，只认 stderr `Fatal error`）由 `scripts/after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`；`ELECTRON_CACHE`→AppData/Local。
 - 🔴🔴 **只做桌面版**（无 WEB/PORTABLE）。`StoreOps` 在 `storeOps.ts`，版本号在 `env.ts`。云盘同步＝唯一跨设备途径。
 
-## 2.2.0 三功能（伴写 / 拆书 / 工作流）
+## 2.2.0 三功能（伴写 / 拆书 / 创意写作）
 - ✅ **A 伴写（09-17）**：`aiInlineSuggest()`＋ghost 第三叠层＋「钢笔」弹窗（**默认关**）；文风三层锚定**不做枚举**、去 AI 味钉 system 末尾、长度三档。🔴 **切章必须清 ghost**（Tab 插错章＝数据事故）。
-- ✅ **B1 拆书（09-18）**：通用件在 **`lib/flow/`**（域中立；🔴 别去 `bookbreak/` 找）：`pipeline`（状态机/中止/续跑）／`fieldMap`（**声明式**：只写语义字段，真键 `resolveSlot()` 查 schema）／`draft`（判重走 `settingLedger.classify`）／`commit`（默认 `keep-existing`；🔴 写前必 `previewCommit`）。`terms` 无「别称」列。
-- ✅ **C 创意写作（09-18）**：`runCreativeWriting`（bible→**闸门①**→outline→**闸门②**→连写）。🔴 **闸门＝await Promise**、**落库只在闸门通过后**（放弃不留半成品）；连写复用 `runAutoContinue`＋`outlineFor` 按细纲写；额度 kind `outline-generate`。
-- ✅ **拆书 P0（09-18）**：`persist.ts` 写进正文**卷/章**（面板可关）；🔴 **只追加不覆盖／重复导入守卫／中止返半成品**。🔴 **导入量：逐章抽不撞窗口**，受限的是调用次数/耗时。抽取 `aliases`→`draft` **跨章归并**；可视化走 `WorkflowTimeline`。
-- ✅ **B2 全字段（09-18）**：字段键**从 `fieldMap` 派生**（闸 `tests/extractFields`）→ 漂移不可能；解析纯函数 `parseExtractedEntities`。🔴 **冲突只在硬事实字段报**（类别/境界/品级/实力/危险/掌权者；「包含=详略」不算）—— 全字段报冲突时 38% 草稿被标、真矛盾被埋；冲突不猜、交作者。抽取**必走流式**。
-- 📌 需求源 `Desktop\开发需求.txt`；解读/冲突/4 决策/P1P2 全在 **`docs/2.2.0-双功能需求解读与P0落地.md`**（动拆书前先读；细则另见 `docs/一键拆书-*.md`＋`docs/2.2.0-C方案*`）。🔴 **未做**：form 通道（世界观/力量/定位）、关系表 kind、跨块同指、章节概要回填。文本**零外发**。
-- 🔴 **去泛称：C 别走、走 D（09-18 实测）**：C（二遍复核）精度仅~60%、误伤核心专名、微调即翻 → **不上自动剔除**。✅ **D＝`draft.foldNameVariants()`**（零调用）：🔴 **只认后缀**（前缀位会把 `青岚宗` 并进 `青岚宗藏经阁`）、**多容器只标核心词**（`混沌/噬魂吞天诀` 是两个功法）、数字量词不并；收益只在**新项目**（66→63）。
-- ⏳ **B2**＝两遍全字段抽取（只换 extract 阶段）。
+- ✅ **B1 拆书（09-18）**：通用件在 **`lib/flow/`**（域中立；🔴 别去 `bookbreak/` 找）：`pipeline`（状态机/中止/续跑/**skipRest**）／`fieldMap`（**声明式**，真键 `resolveSlot()` 查 schema）／`draft`（判重走 `settingLedger.classify`）／`commit`（默认 `keep-existing`；🔴 写前必 `previewCommit`）。
+- ✅ **C 创意写作（09-18）**：`runCreativeWriting`（bible→**闸门①**→outline→**闸门②**→连写）。🔴 **闸门＝await Promise**、**落库只在闸门通过后**（放弃不留半成品）；连写复用 `runAutoContinue`＋`outlineFor`；额度 kind `outline-generate`。
+- ✅ **C 的 P1 三项（09-18）**：① 闸门②三按钮「**只保存大纲**」靠 `pipeline.skipRest()`（🔴 **skipped 必计入进度分子**，否则进度条停 26%；别记 done，界面会谎称写了正文）。② 对话引导 `creativeSeed.ts`（复用 `interview.ts`＋`InterviewChat`，8 栏）。③ 体量推荐 `writingPace.ts`（🔴 口径＝**一章一次调用、不撞窗口，受限的是耗时**）。
+- ✅ **B2 全字段（09-18）**：字段键**从 `fieldMap` 派生**（闸 `tests/extractFields`）→ 漂移不可能；解析 `parseExtractedEntities`；抽取**必走流式**。🔴 **冲突只在硬事实字段报**（类别/境界/品级/实力/危险/掌权者；「包含=详略」不算）—— 全字段报时 38% 草稿被标、真矛盾反被埋。细则 `docs/一键拆书-B2*.md`。
+- 🔴 **去泛称走 D 不走 C（09-18 实测）**：C（二遍复核）精度~60%、误伤核心专名、微调即翻 → 不上自动剔除。✅ D＝`draft.foldNameVariants()`（零调用）：🔴 **只认后缀**（前缀位会把 `青岚宗` 并进 `青岚宗藏经阁`）、**多容器只标核心词**、数字量词不并。
+- 📌 需求/冲突/决策/P1P2 全在 **`docs/2.2.0-双功能需求解读与P0落地.md`**（动拆书/创意写作前先读）。🔴 **未做**：form 通道、关系表 kind、跨块同指、章节概要回填（P2）。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键（改功能后回搜 `schema.ts` 的 `description`）。
@@ -48,47 +47,42 @@
 - 🔴 每页签页头 `HelpPopover` 问号**必须在标题右侧同行**（`h1` 是块级，须同处 flex 行）。头像兜底＝名字；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」/（）。
 
 ## AI 层
-- 🔴 **「保密等级」＝信息档位＋行级预算排序**：单字段双输出**不并存**（S＝角色视角排除＋P0；A/B/C＝P1/2/3）。`aiContext.ts` `rankOf`/`sortBySecrecy`；排序后 `slice(0,cap)`；🔴 同级要稳定（护 prefix cache）。🔴🔴 **`rankOf` 必须同时认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::保密等级`）——只认裸键让**角色卡排序静默失效**。详见 `docs/AI上下文-*.md`。
-- 🔴 **预算为何 1~2 万而非标称 256K**：32GB 显存下 KV cache 32K=8.7GB（+模型≈塞满）、128K 溢出——上限就在 32K；叠加"有效上下文仅标称 30~65%""**3000 token 起有长度税**"。详见 `docs/AI上下文预算策略-…md`。
+- 🔴 **「保密等级」＝档位＋行级预算排序**：单字段双输出**不并存**（S＝角色视角排除＋P0；A/B/C＝P1/2/3）。`aiContext.ts` `rankOf`/`sortBySecrecy`→排序后 `slice(0,cap)`；🔴 同级稳定（护 prefix cache）。🔴🔴 **`rankOf` 必须同时认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::保密等级`）——只认裸键让**角色卡排序静默失效**。详见 `docs/AI上下文-*.md`。
+- 🔴 **本地预算上限＝32K**（32GB 显存下 KV cache 32K=8.7GB≈塞满；有效上下文仅标称 30~65%；3000 token 起有长度税）。「为何不是 256K」见 `docs/AI上下文预算策略-…md`。
 - 🔴 **防剧透＝四道闸（`aiContext`，调用方传参）**：① `viewMode:'character-view'` 排 10 张作者侧页签 ② `AUTHOR_SIDE_FIELDS`（**新字段须登记**）不渲染 ③ `anchorChapterId` 只到锚点 ④ `knowerName` 过滤 secrets 知情条目。**只覆盖剧情推演**；其余 AI 功能拿全量。
 - 🔴 **新增资料型页签必须登记 `PRIORITY`**——兜底循环只保证"数据不丢"、不保证"进得了预算"（09-17：`faction-rels` 有数据却带不上；`style` 已前移）。
-- 🔴 解析统一 `aiParse.ts`（禁裸 `JSON.parse`）；**生成型入口（Bible / 大纲）走 `parseLooseObject`＋空结果重试**——小模型会在 JSON **结构位**塞杂字符，严格解析全丢后表现为"生成成功但 0 条"，极难排查。温度：结构化 0.3、创意 0.85；一轮 JSON 走 `aiChatJson`。
+- 🔴 解析统一 `aiParse.ts`（禁裸 `JSON.parse`）；**生成型入口（Bible / 大纲）走 `parseLooseObject`＋空结果重试**——小模型会在 JSON **结构位**塞杂字符，严格解析全丢后表现为"生成成功但 0 条"。温度：结构化 0.3、创意 0.85；一轮 JSON 走 `aiChatJson`。
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 序不可换）。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce）；绝不清洗正文。
 - 🔴 采样惩罚看**射程**不看强度（共用 `penalty_last_n` 窗口）。`repeat_last_n` 512＋`frequency_penalty` 0.1 → 手部率 28.9%→13.4%。🔴🔴 **绝不调高 `repeat_penalty`**（1.4 实测崩）；`presence_penalty` 无效；反重复提示词只钉 system 末尾。
-- 🔴 **额度跟模型走（09-17/18）**：`adviseCapacity()`→`recommendTuning()`（硬×12.5%、软×8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`syncTuningWithModel()` **换模型即套用**，🔴🔴 靠**模型指纹**判定（同模型手调值绝不覆盖）；本地**超窗口保护**（预算>`numCtx×0.732` 回落）。🔴🔴 **记忆档跟「预算」走**。`TUNING_LIMITS` 与 `paramGuide` 同源（锁）。
-- 🔴🔴 **思考模型必须关思考**：本地传 `think:false`；**云端 Qwen3 系由 `openaiChat` 自动下发 `enable_thinking:false`**（`HYBRID_THINKING_RE`；400 退掉重试；本地不碰）。实测：开 50~130s、content 271 字必残；关 35s ✅。
-- 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式响应头要等**整段生成完**才回来 → 必撞 180s 墙；流式首字节即清。与 `onBodyToken` 同类。⚠️ 未修：生成入口无 `max_tokens` 上限。
+- 🔴 **额度跟模型走**：`adviseCapacity()`→`recommendTuning()`（硬×12.5%、软×8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`syncTuningWithModel()` 换模型即套用，🔴🔴 靠**模型指纹**（同模型手调值绝不覆盖）；本地**超窗口保护**（预算>`numCtx×0.732`）。🔴🔴 **记忆档跟「预算」走**；`TUNING_LIMITS` 与 `paramGuide` 同源（锁）。
+- 🔴🔴 **思考模型必须关思考**：本地传 `think:false`；**云端 Qwen3 系由 `openaiChat` 自动下发 `enable_thinking:false`**（`HYBRID_THINKING_RE`；400 退掉重试）。实测：开 50~130s、content 271 字必残；关 35s ✅。
+- 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式响应头要等**整段生成完**才回来 → 必撞 180s 墙。🔴 自己驱动 `runAutoContinue` 必传 **`onBodyToken`**（＝流式开关；不传必被掐死）；先 `ai.chat` 预热；别 `await page.evaluate(整流程)`（改点火＋轮询 `window.__gen`）。⚠️ 生成入口无 `max_tokens` 上限。
+- 🔴 **AI「会读哪些数据」＝ `lib/aiDataSources.ts` 单一源**＋`AIDataSourceNote` 进各功能气泡；改 prompt 来源**必须同步改它**（闸 `tests/aiDataSources.test.ts`）。🔴🔴 **禁写「全程本地模型／不外发」**——这些功能都能选云端模型，那是**误导性声明**；口径只能是「发给**当前选定的**那个模型：本地不出本机，云端会上传到该服务商」。
 - 🔴 本地实弹探针：改口径走 `LR_ANALYZE=<json>` 离线重算（别重跑 GPU）；CUDA 固定 seed **不保证逐位复现**（±4pp）。
-- 🔴 自己驱动 `runAutoContinue` 必须传 **`onBodyToken`**（"开流式"开关；不传走 180s 总超时，27B 必被掐死）；先 `ai.chat` 预热；别 `await page.evaluate(整流程)`（改点火＋轮询 `window.__gen`）。
-- 🔴 **AI「会读哪些数据」＝ `lib/aiDataSources.ts` 单一源**＋`AIDataSourceNote` 进各功能气泡；改 prompt 来源**必须同步改它**，闸 `tests/aiDataSources.test.ts`。
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（SSH `yfe_test_server`），站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务→删库≠下线；Nginx SPA 回退：不存在路径也返 200→不能靠 200 判上线。
-- `npm run verify`（tsc+lint+test）；ESLint 09-18 起 **0 warning**。⚠️ exhaustive-deps **别盲改**：真漏补依赖／函数身份改 `useCallback`／派生值误报内联。🔴 实机走 `novel-studio-ui-livecheck`（**先读其"五条必踩的坑"**；09-18 漏读→白跑 25 条假 FAIL）；实弹断言会过时；子代理结论必回源码验。
+- `npm run verify`（tsc+lint+test）；ESLint 09-18 起 **0 warning**。⚠️ exhaustive-deps **别盲改**：真漏补依赖／函数身份改 `useCallback`／派生值误报内联。🔴 实机走 `novel-studio-ui-livecheck`（**先读其"五条必踩的坑"**）；实弹断言会过时；子代理结论必回源码验。
 
 ## 酒馆模式
 - 🔴🔴 **动酒馆任何功能前必读 `docs/酒馆模式-工程红线.md`（18 节）**；此处只留「跨节最易错」几条。
 - 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景**随项目**；自由会话+角色卡+记忆日常+面板设置+剧本库**跨项目**（索引与分条成对，tavernReports 别漏 deleteProject）。
 - 🔴🔴 预算三数（**出厂默认**；面板可按模型覆盖，见「AI 层」）：`historyBudget`＝预算−400−整条 system（别传记忆）；contextBudget **24000**；numCtx **32768** 别动（本地由显存决定，云端的 `num_ctx` 无效）。
-- 🔴 酒馆最易踩：①会话存**快照非引用**（`snapshotStorySetting`）；②角色卡小项**只能「小项名：内容」同一行＋全角冒号**（半角/独占行 → 整栏掉进「其他」框）。其余见外链 §18。
-- 🔴 协议 **v1.11**（旧版冻进 `LEGACY_PROTOCOLS`；改协议同步三处＋两断言）。📋 验收清单 `docs/酒馆模式-本轮改动实机验收清单-2026-09-16.md`。
+- 🔴 酒馆最易踩：①会话存**快照非引用**（`snapshotStorySetting`）；②角色卡小项**只能「小项名：内容」同一行＋全角冒号**（半角/独占行 → 整栏掉进「其他」框）。
+- 🔴 协议 **v1.11**（旧版冻进 `LEGACY_PROTOCOLS`；改协议同步三处＋两断言）。
 
-## 出厂数据（角色卡不进原生）✅ 09-15
+## 出厂数据 / 示范项目
 - 🧪 dev 测试数据放仓库外 `…\04-开发测试数据\`，走 `story.ts`/`store.ts`；🔴 绝不写进 `seedData.ts`。📥 卡走 skill `tavern-cards-batch` 导入。
 - 🚫 原生不再预填自由示范卡（已删 `seedCard*` 与 33 处卡名）；闸 `tests/tavernSeedPolicy.test.ts`；🔴 老库卡只保留不删。
-
-## 示范项目（吞天神脉）
-- 三卷 21 章：1-10 风起云州 / 11-20 剑鸣中州 / 21 起 **剑锁中州**。改/加正文同步 `seedContent.ts`→`seedData.ts`。
-- 🔴 三道闸：seed-schema-check＋`tests/seedRef.test.ts`＋细纲卡核对；推演 cast 引用卡 id→相关卡留 `card()` 返回值，播种失败只 warn。🔴 闸 `tests/importCycles`：**循环依赖只在浏览器 TDZ 崩**。
+- 示范项目《吞天神脉》三卷 21 章（1-10 风起云州 / 11-20 剑鸣中州 / 21 起 **剑锁中州**）。改/加正文同步 `seedContent.ts`→`seedData.ts`。
+- 🔴 三道闸：seed-schema-check＋`tests/seedRef.test.ts`＋细纲卡核对；推演 cast 引用卡 id→相关卡留 `card()` 返回值。🔴 闸 `tests/importCycles`：**循环依赖只在浏览器 TDZ 崩**。
 
 ## 环境（Windows + Git Bash）
-- git/npm 用**绝对路径**（git＝`…/binaries/PortableGit/versions/1.2.0/cmd/git.exe`；托管 node）——PATH 每次不持久；⚠️ `sort`/`find`/`timeout` 会解析到 Windows 同名 exe→改用 node 脚本。
-- ⚠️ Edit 假成功：改完立即 grep；多处替换用脚本（全命中才落盘）；`node -e` 引号被吞→Write 落纯 JS；并发 Edit 互覆盖→串行。**跨行锚点先探 EOL**（CRLF/LF 同仓库并存；改 CRLF 文件必须写 `\r\n`）。
-- 🔴 改 `protocol.ts` 正文**别用 Edit**（10 份历史协议，锚点必不唯一）→ 走临时脚本（只改 `PROTOCOL_CORE` 内＋每锚点断言命中 1 次＋旧版进 `LEGACY_PROTOCOLS`），落盘即删。
-- 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**——会返空→误判"不存在"→`Write` 覆盖！09-17 把当日日志 215 行覆盖成 37 行（靠 `git show HEAD:<path>` 恢复）。判存在用 `Read` 或 `test -f`。
-- 🔴 `memory/*.md` **只准 append**（先 Read 再 Edit，禁 `Write`）；覆盖事故**先查 git**。
+- git/npm 用**绝对路径**（git＝`…/PortableGit/versions/1.2.0/cmd/git.exe`；托管 node）——PATH 每次不持久；⚠️ `sort`/`find`/`timeout` 会解析到 Windows 同名 exe→改用 node 脚本。
+- 🔴🔴 **同一条消息里对同一文件发多个 Edit 会相互覆盖**（09-18 又踩：两处只落一处，靠 tsc 报"未使用"才发现）。**串行改、改完立即 grep**；`node -e` 引号会被吞→Write 落纯 JS；**跨行锚点先探 EOL**（CRLF/LF 并存；改 CRLF 必须写 `\r\n`）。
+- 🔴 改 `protocol.ts` 正文别用 Edit（历史协议 10 份锚点不唯一）→ 临时脚本＋旧版进 `LEGACY_PROTOCOLS`，落盘即删。
+- 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判"不存在"→`Write` 覆盖；09-17 日志 215 行被覆成 37 行）。判存在用 `Read`／`test -f`；`memory/*.md` 只准 append，覆盖事故**先查 git**。
 - 🔴 dev 仅 `localhost:5199`（127.0.0.1 会 302→两份 IndexedDB）；桌面走文件存储、两套。
-- ⚠️ 验「随项目」用 `db.setCurrentProject`；改提示词/示范卡文案后同步改 `tests/` 旧断言。
+- ⚠️ 验「随项目」用 `db.setCurrentProject`（别直查物理表）；**实弹读真实 apiKey 先告知不提交**；改提示词/示范卡文案后同步改 `tests/` 旧断言。
 - 🧪 dev 测试数据：仓库内 `dev-seed/`，`import('/dev-seed/fengyang.js?'+Date.now())`（🔴 必带时间戳）；数据在 IndexedDB，重启无效。
-

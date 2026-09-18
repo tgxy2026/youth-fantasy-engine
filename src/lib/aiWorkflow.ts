@@ -158,8 +158,16 @@ export interface CreativeWritingOptions {
   volumes?: number
   /** 闸门①：设定草稿审阅。返回用户勾选的条目；**返回 null = 放弃整条流程** */
   onBibleGate?: (bundle: DraftBundle) => Promise<DraftRow[] | null>
-  /** 闸门②：大纲审阅。返回 false = 放弃整条流程 */
-  onOutlineGate?: (outline: OutlineResult) => Promise<boolean>
+  /**
+   * 闸门②：大纲审阅。三种决定：
+   *   `true`           = 落库大纲 + 逐章连写正文（默认）
+   *   `'outline-only'` = **只落库大纲，不写正文**（需求里的"只生成大纲"分支）
+   *   `false`          = 放弃整条流程（不留半成品）
+   *
+   * 为什么决策放在这个闸门、而不是开跑前先选：作者是**看完大纲**才谈得上要不要正文
+   * —— 先让他选，等于逼他在看不到成品的情况下猜。少跑一次连写不省时间，写歪了才费时间。
+   */
+  onOutlineGate?: (outline: OutlineResult) => Promise<boolean | 'outline-only'>
   onProgress?: (p: FlowProgress) => void
   onChapterSaved?: (ch: { id: string; title: string; no: number }) => void
   onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
@@ -173,6 +181,12 @@ export interface CreativeWritingResult {
   outline: OutlineResult
   outlineCommit: OutlineCommitOutcome | null
   chapters: { id: string; title: string; no: number }[]
+  /**
+   * 用户在闸门②选了「只生成大纲」—— 正文一个字没写，`chapters` 必为空。
+   * 单独立一个字段而不是让调用方靠 `chapters.length === 0` 猜：那两种情况
+   * （"选了不写"与"想写但一章都没成功"）在结果里长得一模一样，界面文案必须分开。
+   */
+  outlineOnly: boolean
 }
 
 /**
@@ -239,10 +253,13 @@ export async function runCreativeWriting(
     })
     if (!outline.chapters.length) throw new Error('模型没有产出章节细纲，请重试或换一个更大的模型')
     ctx.report(1, `${outline.volumes.length} 卷 / ${outline.chapters.length} 章，等待确认…`)
-    const ok = opts.onOutlineGate ? await opts.onOutlineGate(outline) : true
-    if (!ok) giveUp()
+    const decision = opts.onOutlineGate ? await opts.onOutlineGate(outline) : true
+    if (!decision) giveUp()
     const outlineCommit = await commitOutline(outline, { signal: ctx.signal })
-    return { outline, outlineCommit }
+    // 「只生成大纲」：大纲照常落库，但连写阶段不跑。用 skipRest 而不是"不登记 draft"——
+    // 决策发生在流程跑到一半时，那时阶段表早已定好；也不能记成 done（界面会谎称正文写完了）。
+    if (decision === 'outline-only') ctx.skipRest('（已选择：只生成大纲）')
+    return { outline, outlineCommit, outlineOnly: decision === 'outline-only' }
   })
 
   flow.on('draft', async ctx => {
@@ -273,7 +290,8 @@ export async function runCreativeWriting(
   if (res.status === 'error') throw new Error(res.error ?? '创作流程失败')
 
   const bibleBag = res.bag.bible as { bundle: DraftBundle; bibleCommit: CommitOutcome | null } | undefined
-  const outlineBag = res.bag.outline as { outline: OutlineResult; outlineCommit: OutlineCommitOutcome } | undefined
+  const outlineBag = res.bag.outline as
+    { outline: OutlineResult; outlineCommit: OutlineCommitOutcome; outlineOnly: boolean } | undefined
   if (!bibleBag || !outlineBag) throw new Error('流程产物缺失（内部错误）')
   return {
     seed,
@@ -282,5 +300,6 @@ export async function runCreativeWriting(
     outline: outlineBag.outline,
     outlineCommit: outlineBag.outlineCommit,
     chapters: (res.bag.draft as { id: string; title: string; no: number }[]) ?? [],
+    outlineOnly: outlineBag.outlineOnly === true,
   }
 }
