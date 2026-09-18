@@ -71,10 +71,10 @@ export default function AvatarPicker({ src, name, size = 64, onChange, hint, act
               `flex-wrap` 兜窄屏：挤不下时整组换行，不会把「上传图片」压扁。 */}
           {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
-        <p className="mt-1 text-[10.5px] text-ink-500 leading-relaxed">
+        <p className="mt-1 text-10 text-ink-500 leading-relaxed">
           {hint ?? '不设也能用 —— 会用名字首字代替。'}
         </p>
-        <p className="mt-0.5 text-[10.5px] text-ink-600 leading-relaxed">{AVATAR_HINT_SPEC}</p>
+        <p className="mt-0.5 text-10 text-ink-600 leading-relaxed">{AVATAR_HINT_SPEC}</p>
       </div>
       <input
         ref={fileRef}

@@ -44,7 +44,7 @@ function confCls(c: number): string {
   return c >= 0.8 ? 'text-emerald-300' : c >= DRAFT_PICK_THRESHOLD ? 'text-ink-300' : 'text-amber'
 }
 
-const EDIT_INPUT = 'w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-[11.5px] text-ink-100 outline-none hover:border-ink-700 focus:border-amber/50 focus:bg-ink-900'
+const EDIT_INPUT = 'w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-11 text-ink-100 outline-none hover:border-ink-700 focus:border-amber/50 focus:bg-ink-900'
 
 export default function DraftReviewPanel({
   bundle, conflict = 'keep-existing', onCommitted, onConfirm, confirmText,
@@ -139,7 +139,7 @@ export default function DraftReviewPanel({
 
   if (!rows.length) {
     return (
-      <div className="rounded-lg border border-ink-700 bg-ink-800/40 p-4 text-[12px] text-ink-400">
+      <div className="rounded-lg border border-ink-700 bg-ink-800/40 p-4 text-12 text-ink-400">
         没有可审阅的草稿。
       </div>
     )
@@ -148,12 +148,12 @@ export default function DraftReviewPanel({
   return (
     <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-[13px] text-ink-100">共 <b>{rows.length}</b> 条草稿</span>
-        <span className="text-[11px] text-ink-500">
+        <span className="text-13 text-ink-100">共 <b>{rows.length}</b> 条草稿</span>
+        <span className="text-11 text-ink-500">
           新建 {stat.new} · 疑似已有 {stat.duplicate}{stat.conflict ? ` · 冲突 ${stat.conflict}` : ''}
         </span>
         {(bundle.stats.folded > 0 || bundle.stats.variants > 0) && (
-          <span className="text-[11px] text-ink-500"
+          <span className="text-11 text-ink-500"
             title="同一实体的多种写法（如「吞天诀」与「混沌吞天诀」）已自动归并成一条；疑似同物的只标注、默认不勾，不会被删除">
             · 已归并 {bundle.stats.folded} 条同物写法
             {bundle.stats.variants > 0 ? ` · ${bundle.stats.variants} 条疑似同物（默认不勾）` : ''}
@@ -176,8 +176,8 @@ export default function DraftReviewPanel({
                   title={isCollapsed ? '展开' : '收起'}>
                   {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                 </Button>
-                <span className="text-[12px] text-ink-200">写入「{g.tabName}」</span>
-                <span className="text-[11px] text-ink-500">{g.rows.length} 条 · 已选 {sel}</span>
+                <span className="text-12 text-ink-200">写入「{g.tabName}」</span>
+                <span className="text-11 text-ink-500">{g.rows.length} 条 · 已选 {sel}</span>
                 <div className="flex-1" />
                 <Button size="xs" variant="secondary" onClick={() => pickGroup(g.rows, true)}>本组全选</Button>
                 <Button size="xs" variant="secondary" onClick={() => pickGroup(g.rows, false)}>本组清空</Button>
@@ -202,32 +202,32 @@ export default function DraftReviewPanel({
                             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                               <input value={r.name} onChange={e => editField(r.key, r.nameKey, e.target.value)}
                                 className={`${EDIT_INPUT} min-w-[6rem] flex-1`} />
-                              <span className={`shrink-0 rounded border px-1 py-px text-[10px] ${tag.cls}`}>{tag.text}</span>
-                              <span className={`shrink-0 text-[10px] tabular-nums ${confCls(r.confidence)}`}
+                              <span className={`shrink-0 rounded border px-1 py-px text-10 ${tag.cls}`}>{tag.text}</span>
+                              <span className={`shrink-0 text-10 tabular-nums ${confCls(r.confidence)}`}
                                 title="置信度：原文有据 +0.2，多章一致 +0.2，冲突 −0.3">
                                 {r.confidence.toFixed(2)}
                               </span>
                               {r.matched && (
-                                <span className="shrink-0 text-[10px] text-ink-500">已有「{r.matched.name}」</span>
+                                <span className="shrink-0 text-10 text-ink-500">已有「{r.matched.name}」</span>
                               )}
                               {!!r.foldedNames?.length && (
-                                <span className="shrink-0 text-[10px] text-ink-500"
+                                <span className="shrink-0 text-10 text-ink-500"
                                   title={`已把同一对象的其他写法并入本行：${r.foldedNames.join('、')}（都进了别称，未丢弃）`}>
                                   已并入 {r.foldedNames.length} 个写法
                                 </span>
                               )}
                               {r.variantOf && (
-                                <span className="shrink-0 text-[10px] text-amber"
+                                <span className="shrink-0 text-10 text-amber"
                                   title={`疑似与「${r.variantOf}」为同一对象（名称是同一核心词的另一种写法）——默认不勾，若确为两个对象请直接勾上`}>
                                   疑似同物「{r.variantOf}」
                                 </span>
                               )}
-                              <Button variant="secondary" size="xs" className="shrink-0 text-[10px]"
+                              <Button variant="secondary" size="xs" className="shrink-0 text-10"
                                 onClick={() => setExpanded(open ? null : r.key)}>
                                 {open ? '收起' : '详情'}
                               </Button>
                             </div>
-                            {!open && desc && <div className="mt-0.5 truncate text-[11px] text-ink-400">{desc}</div>}
+                            {!open && desc && <div className="mt-0.5 truncate text-11 text-ink-400">{desc}</div>}
                           </div>
                         </div>
 
@@ -235,35 +235,35 @@ export default function DraftReviewPanel({
                           <div className="mx-2 mb-2 rounded border border-ink-700 bg-ink-900/60 px-2 py-1.5">
                             {r.fields.map(f => (
                               <div key={f.key} className="flex items-start gap-2 py-0.5">
-                                <span className="w-20 shrink-0 pt-0.5 text-[10.5px] text-ink-500">{f.label}</span>
+                                <span className="w-20 shrink-0 pt-0.5 text-10 text-ink-500">{f.label}</span>
                                 <input value={f.value} onChange={e => editField(r.key, f.key, e.target.value)}
                                   className={EDIT_INPUT} />
                               </div>
                             ))}
                             {r.quotes.length > 0 && (
                               <div className="mt-1.5 border-t border-ink-700/60 pt-1">
-                                <div className="text-[10px] text-ink-500">原文引用</div>
+                                <div className="text-10 text-ink-500">原文引用</div>
                                 {r.quotes.slice(0, 3).map((q, i) => (
-                                  <div key={i} className="text-[10.5px] leading-relaxed text-ink-400">「{q}」</div>
+                                  <div key={i} className="text-10 leading-relaxed text-ink-400">「{q}」</div>
                                 ))}
                               </div>
                             )}
                             {r.chapters.length > 1 && (
-                              <div className="mt-1 text-[10px] text-ink-500">出现在第 {r.chapters.join('、')} 章（已合并为一条）</div>
+                              <div className="mt-1 text-10 text-ink-500">出现在第 {r.chapters.join('、')} 章（已合并为一条）</div>
                             )}
                             {!!r.foldedNames?.length && (
-                              <div className="mt-1 text-[10.5px] text-ink-400">
+                              <div className="mt-1 text-10 text-ink-400">
                                 已并入同一对象的其他写法：{r.foldedNames.join('、')}（都写进了别称，没有丢弃任何名字）
                               </div>
                             )}
                             {r.variantOf && (
-                              <div className="mt-1 text-[10.5px] leading-relaxed text-amber">
+                              <div className="mt-1 text-10 leading-relaxed text-amber">
                                 疑似与「{r.variantOf}」为同一对象（名称是同一核心词的另一种写法），默认不勾选 ——
                                 若两者确实是不同对象，直接勾上即可。
                               </div>
                             )}
                             {r.matched && (
-                              <div className="mt-1 text-[10.5px] text-amber">
+                              <div className="mt-1 text-10 text-amber">
                                 项目里已有「{r.matched.name}」——若不是同一对象，请改名后再写入。
                               </div>
                             )}
@@ -273,7 +273,7 @@ export default function DraftReviewPanel({
                               //  · 字段值冲突（B2：同一字段在不同章给出互不包含的值）→ 问「哪个值对」
                               //    且**不能写「默认不勾选」** —— 字段冲突只扣置信度、未必掉到阈值以下，
                               //    写成不勾是误导（2026-09-18 实机验收时发现文案照搬了上面那套）
-                              <div key={i} className="mt-1 text-[10.5px] leading-relaxed text-amber">
+                              <div key={i} className="mt-1 text-10 leading-relaxed text-amber">
                                 {c.field === '实体类型'
                                   ? `⚠️ ${c.field}不一致：这条按「${c.incoming}」抽出，但同名实体已按「${c.existing}」抽出过。默认不勾选 —— 请确认它们是不是同一个对象，再二选一。`
                                   : `⚠️ ${c.field}前后不一致：一处写「${c.existing}」、一处写「${c.incoming}」。本行暂取更完整的那份，写入前请确认哪个对。`}
@@ -292,7 +292,7 @@ export default function DraftReviewPanel({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-700 pt-3">
-        <span className="text-[11px] text-ink-400">
+        <span className="text-11 text-ink-400">
           已勾选 <b className="text-ink-200">{picked.size}</b> 条
           {conflict === 'keep-existing' && <span className="text-ink-500"> · 已有同名条目不会被改动</span>}
         </span>

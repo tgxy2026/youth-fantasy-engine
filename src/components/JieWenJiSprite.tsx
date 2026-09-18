@@ -100,7 +100,7 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
     >
       {/* 悬停气泡 */}
       {!tucked && hover && !mini && (
-        <div className="absolute right-[calc(100%+12px)] top-1/2 -translate-y-1/2 bg-ink-850 border border-ink-600 rounded-xl shadow-2xl px-3 py-2 text-[11px] text-ink-200 whitespace-nowrap pointer-events-none">
+        <div className="absolute right-[calc(100%+12px)] top-1/2 -translate-y-1/2 bg-ink-850 border border-ink-600 rounded-xl shadow-2xl px-3 py-2 text-11 text-ink-200 whitespace-nowrap pointer-events-none">
           {isEditor ? '主人，要校对或润色吗？' : '正文编辑器的 AI 助手，点我去编辑器～'}
         </div>
       )}
@@ -112,11 +112,11 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
 style={{ zIndex: Z.pageTip }}
           onPointerDown={e => e.stopPropagation()}
         >
-          <div className="text-[12px] font-semibold text-amber mb-1">颉文姬 · AI 编辑助手</div>
-          <div className="text-[11px] text-ink-300 leading-relaxed mb-2">
+          <div className="text-12 font-semibold text-amber mb-1">颉文姬 · AI 编辑助手</div>
+          <div className="text-11 text-ink-300 leading-relaxed mb-2">
             本地校对、AI 深度校对、选区润色、审读建议、爽点毒点、续写方向、写作简报、本章设定补登……都在正文编辑器里。
           </div>
-          <Button variant="primary" onClick={() => { onNavigate?.('editor'); setMini(false) }} className="w-full px-2 py-1.5 rounded-lg text-[11.5px] transition-colors">
+          <Button variant="primary" onClick={() => { onNavigate?.('editor'); setMini(false) }} className="w-full px-2 py-1.5 rounded-lg text-11 transition-colors">
             前往正文编辑器
           </Button>
         </div>
@@ -142,7 +142,7 @@ style={{ zIndex: Z.pageTip }}
 
       {/* 收边提示 */}
       {tucked && (
-        <div className="absolute -top-6 right-2 text-[9px] text-ink-500 whitespace-nowrap pointer-events-none">双击展开</div>
+        <div className="absolute -top-6 right-2 text-9 text-ink-500 whitespace-nowrap pointer-events-none">双击展开</div>
       )}
     </div>
   )

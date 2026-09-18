@@ -45,7 +45,7 @@ export default function TavernDirectorNoteBar({
 
   return (
     <div className="mb-2 space-y-1">
-      <div className="flex items-center gap-2 text-[11px]">
+      <div className="flex items-center gap-2 text-11">
         {active ? (
           <>
             <span className="shrink-0 rounded border border-amber/40 bg-amber/10 px-1.5 py-0.5 text-amber">
@@ -71,7 +71,7 @@ export default function TavernDirectorNoteBar({
       </div>
 
       {(postApplied.length > 0 || postErrors.length > 0) && (
-        <div className="text-[10.5px] leading-relaxed">
+        <div className="text-10 leading-relaxed">
           {postApplied.length > 0 && (
             <span className="text-ink-500">
               已按规则修正：{postApplied.map(a => `${a.name}${a.count > 1 ? ` ×${a.count}` : ''}`).join('、')}
@@ -87,16 +87,16 @@ export default function TavernDirectorNoteBar({
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="临时导演指令" width="lg">
-        <p className="text-[11.5px] text-ink-400 leading-relaxed">
+        <p className="text-11 text-ink-400 leading-relaxed">
           这条指令会按「深度」插进对话历史（越靠近生成点影响越大），只影响接下来设定的轮数。
           它走协议的元指令通道，模型照做后继续演，不会被当成角色说过的话记进记忆。
         </p>
 
         <div className="mt-3">
-          <div className="text-[11.5px] text-ink-200">指令内容</div>
+          <div className="text-11 text-ink-200">指令内容</div>
           <AutoTextarea
             className="mt-1 bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"
-            textClass="text-[12.5px]"
+            textClass="text-12"
             minRows={3}
             maxHeight={160}
             placeholder="例：这一段节奏放慢，多写几句环境；让小满先开口，别急着把话说透。"
@@ -107,24 +107,24 @@ export default function TavernDirectorNoteBar({
 
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div>
-            <div className="text-[11.5px] text-ink-200">插在第几条之前</div>
+            <div className="text-11 text-ink-200">插在第几条之前</div>
             <input
               type="number" min={1} max={40} value={depth}
               onChange={e => setDepth(Math.max(1, Number(e.target.value) || 1))}
-              className="mt-1 w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-[12px] text-ink-100 outline-none focus:border-amber/50"
+              className="mt-1 w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
             />
-            <p className="mt-1 text-[10.5px] text-ink-500 leading-relaxed">
+            <p className="mt-1 text-10 text-ink-500 leading-relaxed">
               倒数第几条。1 = 紧贴生成点；默认 4 —— 贴死末尾会盖过你刚说的那句。
             </p>
           </div>
           <div>
-            <div className="text-[11.5px] text-ink-200">生效轮数</div>
+            <div className="text-11 text-ink-200">生效轮数</div>
             <input
               type="number" min={1} max={50} value={turns}
               onChange={e => setTurns(Math.max(1, Number(e.target.value) || 1))}
-              className="mt-1 w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-[12px] text-ink-100 outline-none focus:border-amber/50"
+              className="mt-1 w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
             />
-            <p className="mt-1 text-[10.5px] text-ink-500 leading-relaxed">
+            <p className="mt-1 text-10 text-ink-500 leading-relaxed">
               每成功生成一轮减 1，扣到 0 自动清除。取消或失败不扣。
             </p>
           </div>

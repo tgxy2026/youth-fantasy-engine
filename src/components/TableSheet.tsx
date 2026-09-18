@@ -150,7 +150,7 @@ function CellTextarea({ value, onChange, invalid, title }: {
       onChange={e => onChange(e.target.value)}
       rows={1}
       title={title ?? value}
-      className={`!py-1 text-[12px] w-full whitespace-pre-wrap break-words resize-none overflow-hidden bg-transparent ${invalid ? '!border-red-500/60 text-red-300' : ''}`}
+      className={`!py-1 text-12 w-full whitespace-pre-wrap break-words resize-none overflow-hidden bg-transparent ${invalid ? '!border-red-500/60 text-red-300' : ''}`}
     />
   )
 }
@@ -752,13 +752,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <AIDataSourceNote feature="organize-rows" />
           </HelpPopover>
           </div>
-          <p className="mt-1.5 text-[13px] text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
+          <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+          <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
-          <span className="text-[10px] text-ink-500">
+          <span className="text-10 text-ink-500">
             {tab.id === 'relations'
               ? `共 ${rows.length} 条关系 · ${relationGroups.filter(g => !g.unnamed).length} 位人物`
               : tab.newestFirst
@@ -771,7 +771,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           <Button variant="bare"
             onClick={saveAll}
             disabled={dirtyKeys.length === 0 || saving}
-            className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium border transition-colors
+            className={`flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium border transition-colors
               ${dirtyKeys.length > 0
                 ? 'bg-amber/15 text-amber border-amber/40 hover:bg-amber/25'
                 : 'bg-ink-800 text-ink-500 border-ink-700 cursor-not-allowed'}`}
@@ -800,14 +800,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
+                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
               </Button>
               <Button variant="bare"
                 onClick={() => setViewMode('timeline')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
+                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
                   ${viewMode === 'timeline' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Calendar size={11} /> 时间轴
@@ -818,14 +818,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
+                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
               </Button>
               <Button variant="bare"
                 onClick={() => setViewMode('graph')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
+                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
                   ${viewMode === 'graph' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Network size={11} /> 关系图
@@ -836,14 +836,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
+                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
               </Button>
               <Button variant="bare"
                 onClick={() => setViewMode('storyline')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-[12px] transition-colors
+                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
                   ${viewMode === 'storyline' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <GitBranch size={11} /> 剧情线
@@ -851,24 +851,24 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </div>
           )}
           {!isMaster && (
-          <Button onClick={addRow} variant="primary" size="md" className="flex items-center text-[13px] shrink-0">
+          <Button onClick={addRow} variant="primary" size="md" className="flex items-center text-13 shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
           </Button>
           )}
           {aiCap !== 'none' && !isMaster && (
-            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : '新建一行，并提供粗略设定由 AI 补全（不影响已有行 / 其他表）' }>
+            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : '新建一行，并提供粗略设定由 AI 补全（不影响已有行 / 其他表）' }>
               <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 补全'}
             </Button>
           )}
           {/* 读者反馈：AI 分析（运营维护组，不接补全/整理，单独开分析入口） */}
           {tab.id === 'feedback' && (
-            <Button variant="secondary" onClick={() => setShowFeedbackAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}>
+            <Button variant="secondary" onClick={() => setShowFeedbackAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}>
               <Sparkles size={14} /> AI 分析反馈
             </Button>
           )}
           {/* 名词术语：AI 查重（在「AI 补全」之外，额外提供同义/重复归一入口） */}
           {tab.id === 'terms' && (
-            <Button variant="secondary" onClick={() => setShowDedupAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}>
+            <Button variant="secondary" onClick={() => setShowDedupAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}>
               <Sparkles size={14} /> AI 查重
             </Button>
           )}
@@ -879,7 +879,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {tab.codeRule && (
         <div className="mb-4 rounded-lg border border-amber/20 bg-amber/5 px-3.5 py-2.5 flex items-start gap-2">
           <Hash size={12} className="mt-0.5 shrink-0 text-amber/80" />
-          <span className="text-[11.5px] text-amber/80 leading-relaxed">{tab.codeRule}</span>
+          <span className="text-11 text-amber/80 leading-relaxed">{tab.codeRule}</span>
         </div>
       )}
 
@@ -887,7 +887,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {codeError && (
         <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-3.5 py-2.5 flex items-start gap-2 animate-pulse">
           <AlertTriangle size={12} className="mt-0.5 shrink-0 text-red-400" />
-          <span className="text-[11.5px] text-red-300 leading-relaxed">
+          <span className="text-11 text-red-300 leading-relaxed">
             <b>编号校验未通过，无法保存：</b>{codeError}。请修改编号后重新保存。
           </span>
         </div>
@@ -927,8 +927,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                 >
                   <span className="text-ink-500">{gOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
                   <Users size={12} className="text-amber/80 shrink-0" />
-                  <span className="text-[13px] font-semibold text-ink-100 truncate">{g.name}</span>
-                  <span className="text-[10px] text-ink-500 shrink-0">{g.rows.length} 条关系</span>
+                  <span className="text-13 font-semibold text-ink-100 truncate">{g.name}</span>
+                  <span className="text-10 text-ink-500 shrink-0">{g.rows.length} 条关系</span>
                 </Button>
                 {gOpen && (
                   <div className="border-t border-ink-700/60 px-3 py-2.5 space-y-2">
@@ -952,11 +952,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                               className="flex-1 !flex items-center gap-2 min-w-0 text-left !justify-start"
                             >
                               <span className="text-ink-500 shrink-0">{rOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
-                              <span className="text-[12.5px] text-ink-100 font-medium truncate">↔ {other || '（未填写对方人物）'}</span>
+                              <span className="text-12 text-ink-100 font-medium truncate">↔ {other || '（未填写对方人物）'}</span>
                               {type && (
-                                <span className="px-1.5 py-px text-[10px] rounded bg-ink-800 text-ink-300 border border-ink-700 shrink-0">{type}</span>
+                                <span className="px-1.5 py-px text-10 rounded bg-ink-800 text-ink-300 border border-ink-700 shrink-0">{type}</span>
                               )}
-                              {!rOpen && status && <span className="text-[11px] text-ink-500 truncate">{status}</span>}
+                              {!rOpen && status && <span className="text-11 text-ink-500 truncate">{status}</span>}
                               {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存的改动" />}
                             </Button>
                             <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1 shrink-0" title="删除此条关系">
@@ -980,7 +980,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                 const long = LONG_REL_COLS.has(col.name)
                                 return (
                                   <div key={col.name} className={long ? 'md:col-span-2' : ''}>
-                                    <div className="text-[10px] text-ink-500 mb-1">{col.name}</div>
+                                    <div className="text-10 text-ink-500 mb-1">{col.name}</div>
                                     {col.type === 'tableRef' ? (
                                       /* 跨表引用：从来源设定表取值，禁止手动输入 */
                                       <TableRefSelect
@@ -1013,7 +1013,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                         value={val}
                                         onChange={e => setCellDraft(row.id, col.name, e.target.value)}
                                         placeholder={col.name}
-                                        className="!py-1 text-[12px] w-full"
+                                        className="!py-1 text-12 w-full"
                                       />
                                     )}
                                   </div>
@@ -1035,10 +1035,10 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {/* 表格 */}
       <div className="rounded-xl border border-ink-700 bg-ink-850 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="text-[12px] table-fixed" style={{ width: totalWidth || undefined, minWidth: '100%' }}>
+          <table className="text-12 table-fixed" style={{ width: totalWidth || undefined, minWidth: '100%' }}>
             <thead>
               <tr className="bg-ink-800 border-b border-ink-700">
-                <th className="w-10 px-2 py-2.5 align-middle text-ink-500 text-[10px] font-medium">#</th>
+                <th className="w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
                 <th className="w-7 px-1 py-2.5 align-middle" />
                 {tab.columns!.filter(col => !col.hidden).map(col => (
                   <th key={col.name} className="px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
@@ -1047,7 +1047,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                       <select
                         value={colFilters[col.name] ?? ''}
                         onChange={e => setColFilters(prev => ({ ...prev, [col.name]: e.target.value }))}
-                        className="mt-1 w-full text-[10px] px-1 py-0.5 rounded bg-ink-900/60 border border-ink-700 text-ink-100 outline-none focus:border-amber/40"
+                        className="mt-1 w-full text-10 px-1 py-0.5 rounded bg-ink-900/60 border border-ink-700 text-ink-100 outline-none focus:border-amber/40"
                       >
                         <option value="">全部</option>
                         {/* 与行内下拉同口径：内置（去隐藏/应用改名）+ 用户自定义项 */}
@@ -1060,7 +1060,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                         value={colFilters[col.name] ?? ''}
                         onChange={e => setColFilters(prev => ({ ...prev, [col.name]: e.target.value }))}
                         placeholder="筛选"
-                        className="mt-1 w-full text-[10px] px-1.5 py-0.5 rounded bg-ink-900/60 border border-ink-700 text-ink-100 placeholder:text-ink-600 outline-none focus:border-amber/40"
+                        className="mt-1 w-full text-10 px-1.5 py-0.5 rounded bg-ink-900/60 border border-ink-700 text-ink-100 placeholder:text-ink-600 outline-none focus:border-amber/40"
                       />
                     )}
                     <div
@@ -1099,7 +1099,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                     ref={el => { rowRefs.current[row.id] = el }}
                     className={`group hover:bg-ink-800/60 transition-colors ${bg ?? ''} ${rowDirty ? 'bg-amber/5' : ''} ${hlRowId === row.id ? 'ring-2 ring-emerald-400/80 bg-emerald-500/10' : ''}`}
                   >
-                    <td className="px-2 py-1 text-center text-ink-500 text-[10px] relative">
+                    <td className="px-2 py-1 text-center text-ink-500 text-10 relative">
                       {i + 1}
                       {rowDirty && <span className="absolute left-0 top-1 w-0.5 h-5 bg-amber rounded-r" />}
                     </td>
@@ -1146,7 +1146,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                         const fh = (tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/g)) || null
                         return (
                           <td key={col.name} className="px-1 py-1 align-middle" style={{ width: widthOf(col.name) }}>
-                            <div className="px-2 py-1 text-[12px] text-ink-200 whitespace-pre-wrap break-words leading-relaxed">
+                            <div className="px-2 py-1 text-12 text-ink-200 whitespace-pre-wrap break-words leading-relaxed">
                               {val ? val : <span className="text-ink-600">—</span>}
                             </div>
                             {fh && (
@@ -1155,7 +1155,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                   <Button variant="bare"
                                     key={code}
                                     onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-px text-[11px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
                                     title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                                   >
                                     <Link2 size={9} />{code}
@@ -1239,7 +1239,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                               type="number"
                               value={val}
                               onChange={e => setCellDraft(row.id, col.name, e.target.value)}
-                              className="!py-1 text-[12px] w-full bg-ink-900 border border-ink-700 rounded px-2 outline-none focus:border-amber/50"
+                              className="!py-1 text-12 w-full bg-ink-900 border border-ink-700 rounded px-2 outline-none focus:border-amber/50"
                             />
                           ) : (
                             col.name === tab.displayCol && parentCol ? (
@@ -1265,7 +1265,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                         <Button variant="bare"
                                           key={code}
                                           onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
-                                          className="inline-flex items-center gap-0.5 px-1.5 py-px text-[11px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                                          className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
                                           title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                                         >
                                           <Link2 size={9} />{code}
@@ -1290,7 +1290,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                     <Button variant="bare"
                                       key={code}
                                       onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
-                                      className="inline-flex items-center gap-0.5 px-1.5 py-px text-[11px] rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
                                       title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                                     >
                                       <Link2 size={9} />{code}
@@ -1318,7 +1318,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {tab.tips && tab.tips.length > 0 && (
         <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4 space-y-1.5">
           {tab.tips.map((tip, i) => (
-            <div key={i} className="text-[12px] text-amber/80 leading-relaxed flex items-start gap-2">
+            <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
               <Info size={12} className="mt-0.5 shrink-0" />
               <span>{tip}</span>
             </div>

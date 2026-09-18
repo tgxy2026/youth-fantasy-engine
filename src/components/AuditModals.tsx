@@ -59,7 +59,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
   return (
     <ToolModal title="伏笔闭环看板" icon={<GitBranch size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-[11px] text-ink-500">
+        <span className="flex-1 text-11 text-ink-500">
           从「章节总表」反推每条伏笔的生命周期，对照「伏笔追踪」状态，自动发现跨度过大、孤儿、前置未铺就、状态未同步等问题。
         </span>
         <HelpPopover title="伏笔闭环怎么用" width="22rem">
@@ -68,9 +68,9 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
         </HelpPopover>
       </div>
 
-      {loading ? <div className="text-[12px] text-ink-400 py-8 text-center">分析伏笔网络…</div> : (
+      {loading ? <div className="text-12 text-ink-400 py-8 text-center">分析伏笔网络…</div> : (
         <>
-          <div className="flex gap-2 mb-3 text-[11px]">
+          <div className="flex gap-2 mb-3 text-11">
             {columns.map(c => (
               <span key={c.status} className="px-2 py-0.5 rounded bg-ink-800 text-ink-300 border border-ink-700">{c.label} {countBy(c.status)}</span>
             ))}
@@ -78,22 +78,22 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
             {columns.map(col => (
               <div key={col.status} className={`flex flex-col bg-ink-800/60 border border-ink-700 rounded-lg border-t-2 ${col.cls} p-2 min-h-[120px]`}>
-                <div className="text-[11px] font-semibold text-ink-200 mb-1.5">{col.label}</div>
+                <div className="text-11 font-semibold text-ink-200 mb-1.5">{col.label}</div>
                 <div className="space-y-1.5">
                   {board.filter(b => b.status === col.status).map(b => (
                     <div key={b.code} className="rounded bg-ink-850 border border-ink-700 px-2 py-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-amber">{b.code}</span>
-                        <span className="text-[9px] text-ink-500">{b.importance}</span>
+                        <span className="text-11 font-semibold text-amber">{b.code}</span>
+                        <span className="text-9 text-ink-500">{b.importance}</span>
                       </div>
-                      <div className="text-[10.5px] text-ink-300 mt-0.5 truncate" title={b.content}>{b.content}</div>
+                      <div className="text-10 text-ink-300 mt-0.5 truncate" title={b.content}>{b.content}</div>
                       {b.span != null && (
-                        <div className="text-[9px] text-ink-500 mt-0.5">跨度 {b.span} 章</div>
+                        <div className="text-9 text-ink-500 mt-0.5">跨度 {b.span} 章</div>
                       )}
                     </div>
                   ))}
                   {board.filter(b => b.status === col.status).length === 0 && (
-                    <div className="text-[10px] text-ink-600 text-center py-2">—</div>
+                    <div className="text-10 text-ink-600 text-center py-2">—</div>
                   )}
                 </div>
               </div>
@@ -102,27 +102,27 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
 
           <div className="mt-4 pt-3 border-t border-ink-700">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[12px] font-semibold text-ink-200">可定位问题（点击跳转修正）</span>
+              <span className="text-12 font-semibold text-ink-200">可定位问题（点击跳转修正）</span>
               <Button onClick={runAiReview}
                 disabled={!aiReady || aiLoading}
                 
-                title={!aiReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-[11px]">
+                title={!aiReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
                 {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                 AI 深度分析
               </Button>
             </div>
             <AuditPanel issues={issues} emptyText="伏笔网络健康 ✓ 无跨度/孤儿/状态异常" onNavigateTab={onNavigateTab} />
             {aiError && (
-              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[12px] text-red-300">
+              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                 <span>{aiError}</span>
               </div>
             )}
             {aiFindings.length > 0 && (
               <div className="mt-3 space-y-1.5">
-                <div className="text-[11px] text-ink-500">AI 伏笔健康审查</div>
+                <div className="text-11 text-ink-500">AI 伏笔健康审查</div>
                 {aiFindings.map((f, i) => (
-                  <div key={i} className="flex items-start gap-2 text-[12px]">
+                  <div key={i} className="flex items-start gap-2 text-12">
                     <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${f.level === '严重' ? 'bg-red-400' : f.level === '中等' ? 'bg-amber' : 'bg-sky-400'}`} />
                     <span>
                       <span className="text-ink-200">{f.title}</span>
@@ -178,7 +178,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
   return (
     <ToolModal title="连续性校验器" icon={<Link2 size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-[11px] text-ink-500">
+        <span className="flex-1 text-11 text-ink-500">
           基于章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡 / 爽点节奏 / 写作进度，做 10 类确定性冲突与节奏检测。
         </span>
         <HelpPopover title="连续性校验怎么用" width="22rem">
@@ -186,14 +186,14 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
           <AIDataSourceNote feature="continuity-audit" />
         </HelpPopover>
       </div>
-      {loading ? <div className="text-[12px] text-ink-400 py-8 text-center">逐表对账中…</div> : (
+      {loading ? <div className="text-12 text-ink-400 py-8 text-center">逐表对账中…</div> : (
         <>
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[12px] font-semibold text-ink-200">本地确定性冲突</span>
+            <span className="text-12 font-semibold text-ink-200">本地确定性冲突</span>
             <Button onClick={runAiAudit}
               disabled={!aiReady || aiLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-[11px]">
+              title={!aiReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 深度审计
             </Button>
@@ -205,16 +205,16 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
             onOpenChapter={onOpenChapter}
           />
           {aiError && (
-            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[12px] text-red-300">
+            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{aiError}</span>
             </div>
           )}
           {aiFindings.length > 0 && (
             <div className="mt-3 space-y-1.5">
-              <div className="text-[11px] text-ink-500">AI 一致性审计</div>
+              <div className="text-11 text-ink-500">AI 一致性审计</div>
               {aiFindings.map((f, i) => (
-                <div key={i} className="flex items-start gap-2 text-[12px]">
+                <div key={i} className="flex items-start gap-2 text-12">
                   <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${f.level === '严重' ? 'bg-red-400' : f.level === '中等' ? 'bg-amber' : 'bg-sky-400'}`} />
                   <span>
                     <span className="text-ink-200">{f.title}</span>
@@ -267,7 +267,7 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
   return (
     <ToolModal title="文风体检（本章）" icon={<Feather size={16} />} onClose={onClose}>
       <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-[11px] text-ink-500">
+        <span className="flex-1 text-11 text-ink-500">
           读取《写作规范》表的"个人坏习惯清单"与"标点规范"，对本章正文做静态体检。
         </span>
         <HelpPopover title="文风体检怎么用" width="22rem">
@@ -275,37 +275,37 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
           <AIDataSourceNote feature="style-check" />
         </HelpPopover>
       </div>
-      {loading ? <div className="text-[12px] text-ink-400 py-8 text-center">对照写作规范…</div> : (
+      {loading ? <div className="text-12 text-ink-400 py-8 text-center">对照写作规范…</div> : (
         <>
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[12px] font-semibold text-ink-200">本地文风体检</span>
+            <span className="text-12 font-semibold text-ink-200">本地文风体检</span>
             <Button onClick={runAiStyle}
               disabled={!aiReady || aiLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-[11px]">
+              title={!aiReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 文风体检
             </Button>
           </div>
           <AuditPanel issues={issues} emptyText="本章文风体检通过 ✓" />
           {aiError && (
-            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[12px] text-red-300">
+            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{aiError}</span>
             </div>
           )}
           {aiStyle.length > 0 && (
             <div className="mt-3 space-y-2">
-              <div className="text-[11px] text-ink-500">AI 文风体检</div>
+              <div className="text-11 text-ink-500">AI 文风体检</div>
               {aiStyle.map((f, i) => (
                 <div key={i} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className={`px-1.5 py-px rounded text-[10px] ${f.level === '严重' ? 'bg-red-500/15 text-red-300' : f.level === '中等' ? 'bg-amber/15 text-amber' : 'bg-sky-500/15 text-sky-300'}`}>{f.level}</span>
-                    <span className="text-[11px] text-ink-400">{f.type}</span>
+                    <span className={`px-1.5 py-px rounded text-10 ${f.level === '严重' ? 'bg-red-500/15 text-red-300' : f.level === '中等' ? 'bg-amber/15 text-amber' : 'bg-sky-500/15 text-sky-300'}`}>{f.level}</span>
+                    <span className="text-11 text-ink-400">{f.type}</span>
                   </div>
-                  {f.quote && <div className="text-[12px] text-ink-200 mb-0.5">「{f.quote}」</div>}
-                  <div className="text-[12px] text-ink-300">{f.issue}</div>
-                  {f.suggestion && <div className="text-[11.5px] text-amber/80 mt-0.5">建议：{f.suggestion}</div>}
+                  {f.quote && <div className="text-12 text-ink-200 mb-0.5">「{f.quote}」</div>}
+                  <div className="text-12 text-ink-300">{f.issue}</div>
+                  {f.suggestion && <div className="text-11 text-amber/80 mt-0.5">建议：{f.suggestion}</div>}
                 </div>
               ))}
             </div>

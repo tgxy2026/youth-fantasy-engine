@@ -106,7 +106,7 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing, st
       open={open} onClose={onClose} title={editing ? '编辑剧本' : '新建剧本'} width="xl"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
-          <span className="text-[11px] text-ink-500">
+          <span className="text-11 text-ink-500">
             {empty ? '六栏全空 —— 保存了也不会进上下文' : `每轮注入约 ${preview.length} 字（开场白单列一条消息）`}
           </span>
           <div className="flex gap-2">
@@ -124,8 +124,8 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing, st
         </div>
         <aside className="space-y-3">
           <div className="rounded-lg border border-amber/25 bg-amber/5 p-3">
-            <div className="text-[12px] text-amber">AI 起草</div>
-            <p className="mt-1 text-[10.5px] text-ink-400 leading-relaxed">
+            <div className="text-12 text-amber">AI 起草</div>
+            <p className="mt-1 text-10 text-ink-400 leading-relaxed">
               写一句你想要的戏，AI 补全六栏（不会覆盖你已经写好的内容）。
             </p>
             <AutoTextarea
@@ -149,8 +149,8 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing, st
             <DraftSourceLine source={lastSource} />
           </div>
           <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
-            <div className="text-[12px] text-ink-200">注入预览</div>
-            <pre className="mt-1.5 max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[10.5px] leading-relaxed text-ink-400">
+            <div className="text-12 text-ink-200">注入预览</div>
+            <pre className="mt-1.5 max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
               {preview || '（空）'}
             </pre>
           </div>

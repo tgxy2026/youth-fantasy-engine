@@ -124,8 +124,8 @@ function Section({ title, desc, children, className = '', bodyClassName = '' }: 
   return (
     <section className={`rounded-lg border border-ink-800 bg-ink-850/30 ${className}`}>
       <div className="shrink-0 px-4 py-3 border-b border-ink-800">
-        <h3 className="text-[13.5px] text-amber">{title}</h3>
-        <p className="mt-0.5 text-[11.5px] text-ink-500 leading-relaxed">{desc}</p>
+        <h3 className="text-13 text-amber">{title}</h3>
+        <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">{desc}</p>
       </div>
       <div className={`p-4 space-y-4 ${bodyClassName}`}>{children}</div>
     </section>
@@ -141,9 +141,9 @@ function Field({ label, hint, footer, children }: {
 }) {
   return (
     <div>
-      <div className="text-[11.5px] text-ink-200 leading-5">{label}</div>
+      <div className="text-11 text-ink-200 leading-5">{label}</div>
       <div className="mt-1">{children}</div>
-      {hint && <p className="mt-1 text-[10.5px] text-ink-500 leading-relaxed">{hint}</p>}
+      {hint && <p className="mt-1 text-10 text-ink-500 leading-relaxed">{hint}</p>}
       {footer}
     </div>
   )
@@ -164,7 +164,7 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
   const cur = bandOf(guide, value)
   return (
     <div className="mt-2 overflow-hidden rounded-md border border-ink-800 bg-ink-900/40">
-      <div className="border-b border-ink-800 px-2 py-1 text-[10px] text-ink-600">
+      <div className="border-b border-ink-800 px-2 py-1 text-10 text-ink-600">
         取值范围 {guide.min} ~ {guide.max}{guide.unit ? `（${guide.unit}）` : ''} · 步进 {guide.step}
       </div>
       <ul>
@@ -173,7 +173,7 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
           return (
             <li
               key={`${b.from}-${b.to}`}
-              className={`border-t border-ink-800/60 px-2 py-1.5 text-[10.5px] leading-relaxed first:border-t-0 ${
+              className={`border-t border-ink-800/60 px-2 py-1.5 text-10 leading-relaxed first:border-t-0 ${
                 on ? 'bg-amber/10' : ''
               }`}
             >
@@ -181,7 +181,7 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
                 {b.from === b.to ? b.from : `${b.from} ~ ${b.to}`}
               </span>
               <span className={`ml-1.5 ${on ? 'text-amber' : 'text-ink-300'}`}>{b.name}</span>
-              {b.recommended && <span className="ml-1 text-[9.5px] text-ink-600">默认</span>}
+              {b.recommended && <span className="ml-1 text-9 text-ink-600">默认</span>}
               <span className={`ml-1.5 ${on ? 'text-ink-200' : 'text-ink-500'}`}>{b.effect}</span>
             </li>
           )
@@ -220,14 +220,14 @@ function NumField({ label, hint, guide, value, onCommit, recommend }: {
             {typeof recommend === 'number' && (
               <Button variant="bare" type="button"
                 onClick={() => onCommit(recommend)}
-                className={`h-auto px-1 py-0 rounded text-[10px] tabular-nums transition-colors ${stale ? 'text-amber hover:bg-amber/10' : 'text-ink-600'}`}
+                className={`h-auto px-1 py-0 rounded text-10 tabular-nums transition-colors ${stale ? 'text-amber hover:bg-amber/10' : 'text-ink-600'}`}
                 title={stale
                   ? `当前模型下的推荐值 ${recommend}${guide.unit ? ' ' + guide.unit : ''} —— 点击采用`
                   : `已与当前模型的推荐值一致（${recommend}${guide.unit ? ' ' + guide.unit : ''}）`}>
                 建议 {recommend}{stale ? ' ↺' : ' ✓'}
               </Button>
             )}
-            <span className="tabular-nums text-[10px] text-ink-600">{guide.min} ~ {guide.max}</span>
+            <span className="tabular-nums text-10 text-ink-600">{guide.min} ~ {guide.max}</span>
           </span>
         </span>
       }
@@ -246,7 +246,7 @@ function NumField({ label, hint, guide, value, onCommit, recommend }: {
         onBlur={() => setDraft(String(value))}
       />
       {/* 这一行**常驻**（表格收起时它是唯一线索）：当前值 → 落在哪一段、那一段的范围 */}
-      <div className="mt-1 text-[10px] text-ink-600">
+      <div className="mt-1 text-10 text-ink-600">
         当前 {value} → <span className="text-amber">{band.name}</span>
         <span className="tabular-nums">（{band.from === band.to ? band.from : `${band.from} ~ ${band.to}`}）</span>
       </div>
@@ -262,7 +262,7 @@ function TextField({ label, hint, value, minRows = 3, placeholder, onChange }: {
   return (
     <Field label={label} hint={hint}>
       <AutoTextarea
-        className={BOX} textClass="text-[12.5px]" minRows={minRows} maxHeight={420}
+        className={BOX} textClass="text-12" minRows={minRows} maxHeight={420}
         placeholder={placeholder} value={value} onChange={onChange}
       />
     </Field>
@@ -698,7 +698,7 @@ export default function TavernControl() {
         <div>
           {/* h1 是块级元素，问号必须与它同处一个 flex 行内容器，否则会被挤到标题下一行 */}
           <div className="flex items-center gap-1.5">
-            <h1 className="text-[16px] text-ink-100">控制面板</h1>
+            <h1 className="text-16 text-ink-100">控制面板</h1>
             <HelpPopover title="控制面板怎么用" width="24rem" size={14}>
   酒馆模式全部「接进 AI 的参数与提示词」都在这里。改完点右上「保存」，下一轮对话开始时生效。
 
@@ -709,14 +709,14 @@ export default function TavernControl() {
   • 默认值就是出厂值：不动它时行为与之前完全一致。
 </HelpPopover>
           </div>
-          <p className="mt-1 text-[12px] text-ink-500 leading-relaxed">
+          <p className="mt-1 text-12 text-ink-500 leading-relaxed">
             酒馆模式全部「接进 AI 的参数与提示词」都在这里。改完点右上「保存」，下一轮对话开始时生效。
             <br />
             默认值就是内置的出厂值 —— 不动它时行为与之前完全一致。
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {dirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
+          {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
           <Button
             variant="secondary" size="sm" onClick={() => setShowBands(v => !v)}
             title="每个数值项下面的「取值范围 + 分段影响」表。全部摊开页面会很长，可以一键收起（当前值的档位仍会显示）"
@@ -758,9 +758,9 @@ export default function TavernControl() {
             <div className="rounded-md border border-ink-700 bg-ink-800/40 px-3 py-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-[11.5px] text-ink-200 leading-relaxed">{cap.headline}</div>
-                  <div className="mt-0.5 text-[10.5px] text-ink-500 leading-relaxed">{cap.note}</div>
-                  <div className="mt-1 text-[10.5px] text-ink-600 leading-relaxed">
+                  <div className="text-11 text-ink-200 leading-relaxed">{cap.headline}</div>
+                  <div className="mt-0.5 text-10 text-ink-500 leading-relaxed">{cap.note}</div>
+                  <div className="mt-1 text-10 text-ink-600 leading-relaxed">
                     下面「记忆三项 / 日记保留」的推荐值按当前预算同比推算（预算跟着所选模型走，它们也就跟着变）。
                     窗口不代为更改 —— 本地由显存决定、云端由服务商决定，所以它没有推荐值；
                     预算在云端会跟随模型放宽，本地只在「超过窗口承载」时才回落（否则会被静默截断）。
@@ -896,13 +896,13 @@ export default function TavernControl() {
                 }}
               />
             </div>
-            <p className="text-[11px] text-ink-500 leading-relaxed">
+            <p className="text-11 text-ink-500 leading-relaxed">
               建议按工作模式分：例如「快速脑暴」（温度高、篇幅短、脑洞优先）与「精修成稿」（温度低、
               篇幅长、一致性优先）。应用预设会整体替换当前设置，未保存的改动会被覆盖。
             </p>
 
             {presetList.length === 0 ? (
-              <p className="text-[11.5px] text-ink-600 leading-relaxed">
+              <p className="text-11 text-ink-600 leading-relaxed">
                 还没有预设。把当前这套存一个，以后切回来只要点一下 —— 也能导出去分享给别人。
               </p>
             ) : (
@@ -910,8 +910,8 @@ export default function TavernControl() {
                 {presetList.map(p => (
                   <li key={p.id} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-2">
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12.5px] text-ink-100">{p.name}</div>
-                      <div className="text-[10.5px] text-ink-500">
+                      <div className="truncate text-12 text-ink-100">{p.name}</div>
+                      <div className="text-10 text-ink-500">
                         {new Date(p.updatedAt).toLocaleString()}
                         {' · 叙事温度 '}{p.data.plot.temperature}{' · 聊天温度 '}{p.data.free.temperature}
                       </div>
@@ -969,10 +969,10 @@ export default function TavernControl() {
                       onChange={e => setRule(i, { enabled: e.target.checked })}
                       title="关掉这一条（其余规则照跑）"
                     />
-                    <span className="shrink-0 text-[10.5px] text-ink-600">{i + 1}</span>
+                    <span className="shrink-0 text-10 text-ink-600">{i + 1}</span>
                     <input
                       value={r.name} onChange={e => setRule(i, { name: e.target.value })}
-                      className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+                      className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
                       placeholder="规则名（对话页提示里显示的就是它）"
                     />
                     <Button variant="danger" size="xs" className="shrink-0" onClick={() => dropRule(i)}>
@@ -981,16 +981,16 @@ export default function TavernControl() {
                   </div>
                   <input
                     value={r.pattern} onChange={e => setRule(i, { pattern: e.target.value })}
-                    className="mt-1.5 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-[11px] text-ink-200 outline-none focus:border-amber/50"
+                    className="mt-1.5 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-11 text-ink-200 outline-none focus:border-amber/50"
                     placeholder={`正则源码，例：${RULE_EXAMPLE}`}
                   />
                   <input
                     value={r.replacement} onChange={e => setRule(i, { replacement: e.target.value })}
-                    className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-[11px] text-ink-200 outline-none focus:border-amber/50"
+                    className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-11 text-ink-200 outline-none focus:border-amber/50"
                     placeholder="替换成（$1 = 第一个捕获组；留空 = 直接删掉）"
                   />
                   {r.note && (
-                    <p className={`mt-1 text-[10px] leading-relaxed ${r.enabled ? 'text-ink-600' : 'text-amber/80'}`}>
+                    <p className={`mt-1 text-10 leading-relaxed ${r.enabled ? 'text-ink-600' : 'text-amber/80'}`}>
                       {r.note}
                     </p>
                   )}
@@ -1001,29 +1001,29 @@ export default function TavernControl() {
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="secondary" size="sm" onClick={addRule}>＋ 新增规则</Button>
               <Button variant="secondary" size="sm" onClick={resetRules}>恢复出厂默认</Button>
-              <span className="text-[10.5px] text-ink-500">
+              <span className="text-10 text-ink-500">
                 共 {s.postRules.length} 条 · 启用 {s.postRules.filter(r => r.enabled).length} 条
               </span>
             </div>
-            <p className="text-[10.5px] text-ink-600 leading-relaxed">
+            <p className="text-10 text-ink-600 leading-relaxed">
               正则写法提示：$1 / $2 是捕获组（例：星号动作那条的正则是 {RULE_EXAMPLE}）；
               flags 固定 gm（m 让 ^ 匹配每一行，行首说话人标签那条要用）。
             </p>
 
             {/* 试一段：正则最容易写错，给个立刻能看到结果的入口（比「改完去聊一句看效果」省事） */}
             <div>
-              <div className="text-[11.5px] text-ink-200">试一段</div>
+              <div className="text-11 text-ink-200">试一段</div>
               <AutoTextarea
                 className="mt-1 bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
-                textClass="text-[11.5px] font-mono"
+                textClass="text-11 font-mono"
                 minRows={2}
                 maxHeight={140}
                 placeholder="贴一段模型输出，例：（她点头。） / （他把烟按灭） / 小满：你来了。"
                 value={ruleTry}
                 onChange={setRuleTry}
               />
-              <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[11px] leading-relaxed text-ink-300">{rulePreview.text || '（上面输入内容就能看到结果）'}</pre>
-              <p className="mt-1 text-[10.5px] leading-relaxed text-ink-500">
+              <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-11 leading-relaxed text-ink-300">{rulePreview.text || '（上面输入内容就能看到结果）'}</pre>
+              <p className="mt-1 text-10 leading-relaxed text-ink-500">
                 {rulePreview.errors.length > 0
                   ? <span className="text-amber">⚠️ 正则无效、已跳过：{rulePreview.errors.join('、')}</span>
                   : rulePreview.applied.length > 0
@@ -1052,7 +1052,7 @@ export default function TavernControl() {
             {!protocolEditing ? (
               <>
                 <div className="flex shrink-0 items-center justify-between gap-3">
-                  <span className="text-[11.5px] text-ink-500">
+                  <span className="text-11 text-ink-500">
                     当前 {s.protocol.length} 字
                     {s.protocol !== DEFAULT_PROTOCOL && <span className="text-amber"> · 已被你改过（与出厂版本不同）</span>}
                   </span>
@@ -1066,18 +1066,18 @@ export default function TavernControl() {
                     <Button variant="secondary" size="sm" onClick={() => void startEditProtocol()}>编辑协议</Button>
                   </div>
                 </div>
-                <pre className="max-h-80 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-3 text-[11.5px] leading-relaxed text-ink-300 xl:max-h-none xl:min-h-[12rem]">
+                <pre className="max-h-80 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-3 text-11 leading-relaxed text-ink-300 xl:max-h-none xl:min-h-[12rem]">
                   {displayProtocol(s.protocol)}
                 </pre>
               </>
             ) : (
               <>
-                <div className="rounded-md border border-amber/40 bg-amber/10 px-3 py-2 text-[11.5px] text-amber leading-relaxed">
+                <div className="rounded-md border border-amber/40 bg-amber/10 px-3 py-2 text-11 text-amber leading-relaxed">
                   正在编辑协议。改完记得点右上角「保存」才生效；改坏了可以点「恢复出厂协议」，或整体「恢复默认」。
                 </div>
                 <Field label="协议全文" hint="建议只做小幅增删。别删掉「写成什么样」里的格式规定与末尾的「最后提醒」—— 那两处是格式契约的核心。">
                   <AutoTextarea
-                    className={BOX} textClass="text-[11.5px]" minRows={14} maxHeight={720}
+                    className={BOX} textClass="text-11" minRows={14} maxHeight={720}
                     value={s.protocol}
                     onChange={v => edit(prev => ({ ...prev, protocol: v }))}
                   />
@@ -1150,7 +1150,7 @@ export default function TavernControl() {
               label="设定来源"
               hint="决定「世界与角色设定」这一层从哪来 —— 它每轮都进 system，是预算里最大的一块。"
               footer={(
-                <div className="mt-1.5 space-y-1 text-[10.5px] text-ink-600 leading-relaxed">
+                <div className="mt-1.5 space-y-1 text-10 text-ink-600 leading-relaxed">
                   <p>· 两者（默认）：项目原始资料 + 你提炼的背景设定。资料最全，但项目原始资料本身就有四千六百字以上（示范项目实测还会丢 11 段），加上协议四千四百多字 —— 24000 的预算里 system 会吃掉一半左右，留给对话历史仍有一万多字。</p>
                   <p>· 只用背景设定：设定层只留「作品概览 + 章节清单」（约 2200 字），世界规则靠你提炼的那份，省下的全给对话历史。代价是没在场配角的卡、名词 / 地理 / 历史细节不再注入 —— 所以背景设定里建议把「主要人物关系」写成一节，并让关键词留空（始终注入）。</p>
                   <p>· 只用项目资料：不注入背景设定那一层。</p>
@@ -1257,11 +1257,11 @@ export default function TavernControl() {
             />
 
             <div className="pt-1">
-              <div className="mb-1 text-[12px] text-ink-200 border-t border-ink-800 pt-3">记忆引擎</div>
+              <div className="mb-1 text-12 text-ink-200 border-t border-ink-800 pt-3">记忆引擎</div>
               {/* 🚫 2026-09-16：这里原来的「触发整理」与「自动整理最小间隔」已删 ——
                   项目不再有任何自动整理（两种模式都改为作者手动触发：自由对话「结束本轮对话」、
                   剧情推演「整理本场记忆」），留着这两个旋钮只会让人以为拧了有用。 */}
-              <p className="mb-3 text-[10.5px] leading-relaxed text-ink-500">
+              <p className="mb-3 text-10 leading-relaxed text-ink-500">
                 下面几项决定记忆怎么压、怎么滚。<span className="text-ink-400">整理时机不在这一栏</span>——
                 现在没有自动整理：自由对话在点「结束本轮对话」时整理，剧情推演点「整理本场记忆」。
                 <br />
@@ -1298,7 +1298,7 @@ export default function TavernControl() {
             </div>
 
             <div className="pt-1">
-              <div className="mb-3 text-[12px] text-ink-200 border-t border-ink-800 pt-3">日常推进</div>
+              <div className="mb-3 text-12 text-ink-200 border-t border-ink-800 pt-3">日常推进</div>
               <div className={GRID2}>
                 <NumField
                   label="推进间隔" guide={PARAM_GUIDES.dailyAdvance}
@@ -1314,14 +1314,14 @@ export default function TavernControl() {
             </div>
 
             <div className="pt-1">
-              <div className="mb-3 text-[12px] text-ink-200 border-t border-ink-800 pt-3">收尾与释放</div>
+              <div className="mb-3 text-12 text-ink-200 border-t border-ink-800 pt-3">收尾与释放</div>
               <ToggleField
                 label="结束本轮对话后卸载本地模型"
                 hint="收尾（记忆 / 日记 / 数值 / 设定建议）全部跑完之后，让本机 Ollama 把这个模型退出显存。模型留在显存里时会带着上一场的上下文 —— 清空了记忆它却还隐约记得，打开这项就能从干净状态开下一场。只对本机 Ollama 生效。"
                 value={fr.unloadAfterRoundEnd}
                 onChange={v => setFree('unloadAfterRoundEnd', v)}
               />
-              <p className="mt-2 text-[10.5px] leading-relaxed text-ink-500">
+              <p className="mt-2 text-10 leading-relaxed text-ink-500">
                 代价是「下一场的第一句要等模型重新加载」（本地 27B 上这一步是几十秒），所以默认是关的 ——
                 需要「每场都从干净状态开始」时再打开。
               </p>
@@ -1352,7 +1352,7 @@ export default function TavernControl() {
                       selected={on} onClick={() => toggleVarKey(d.key)}
                     >
                       {on ? '✓ ' : ''}{d.label}
-                      <span className="ml-1 text-[10px] text-ink-500">
+                      <span className="ml-1 text-10 text-ink-500">
                         {d.kind === 'num' ? `${d.min}–${d.max}` : `≤${d.maxLen} 字`}
                       </span>
                     </Button>
@@ -1367,7 +1367,7 @@ export default function TavernControl() {
               value={s.vars.maxStep} onCommit={v => setVars({ maxStep: Math.max(1, Math.round(v)) })}
             />
 
-            <p className="text-[10.5px] text-ink-600 leading-relaxed">
+            <p className="text-10 text-ink-600 leading-relaxed">
               自由对话里每轮回复后都会单开一次小调用，把这一轮真的变了的项算出来（点「结束本轮对话」时再兜底算一次）。
               写进提示词的有三样：当前值、一次能改多少，以及每一项的档位定义（哪一段算反感、哪一段算亲近），
               模型据此判断现在落在哪一档、该往哪走。算不出来时一个字段都不动 —— 绝不会为了记账改错你要看的内容。

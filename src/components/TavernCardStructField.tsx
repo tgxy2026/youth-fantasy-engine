@@ -45,15 +45,15 @@ export default function TavernCardStructField({ spec, value, onChange, label }: 
   return (
     <div className="rounded-md border border-ink-800 bg-ink-850/20 p-2.5">
       <div className="flex items-baseline gap-2">
-        <span className="text-[12px] text-ink-200">{label}</span>
-        <span className="text-[10.5px] text-ink-500">
+        <span className="text-12 text-ink-200">{label}</span>
+        <span className="text-10 text-ink-500">
           {got}/{total} 项已填
         </span>
         <span className="flex-1" />
         <button
           type="button"
           onClick={() => setShowRaw(v => !v)}
-          className="text-[10.5px] text-ink-500 hover:text-ink-300 transition-colors"
+          className="text-10 text-ink-500 hover:text-ink-300 transition-colors"
           title="没被模板覆盖到的内容写进「其他」；想整段手改也可以在这里展开"
         >
           {showRaw ? '收起原文' : '编辑原文'}
@@ -64,14 +64,14 @@ export default function TavernCardStructField({ spec, value, onChange, label }: 
         <div className="mt-1.5">
           <AutoTextarea
             className="bg-ink-900 border border-ink-700 rounded-md px-2.5 py-1.5 text-ink-100 outline-none focus:border-amber/50"
-            textClass="text-[12.5px]"
+            textClass="text-12"
             minRows={4}
             maxHeight={360}
             value={value}
             onChange={onChange}
             placeholder={`一行一项，形如「${spec.items[0].key}：…」`}
           />
-          <p className="mt-1 text-[10px] text-ink-600 leading-relaxed">
+          <p className="mt-1 text-10 text-ink-600 leading-relaxed">
             这里是存进数据库的原文。改它会同步到上面的小格；认不出来的行会落进「其他」。
           </p>
         </div>
@@ -79,10 +79,10 @@ export default function TavernCardStructField({ spec, value, onChange, label }: 
         <div className="mt-1.5 space-y-2">
           {spec.items.map(it => (
             <div key={it.key}>
-              <div className="text-[11px] text-ink-400">{it.label}</div>
+              <div className="text-11 text-ink-400">{it.label}</div>
               <AutoTextarea
                 className="mt-0.5 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-ink-100 outline-none focus:border-amber/50"
-                textClass="text-[12px]"
+                textClass="text-12"
                 minRows={it.rows ?? 1}
                 maxHeight={200}
                 value={vals[it.key] ?? ''}
@@ -93,10 +93,10 @@ export default function TavernCardStructField({ spec, value, onChange, label }: 
           ))}
           {spec.other && (
             <div>
-              <div className="text-[11px] text-ink-400">{OTHER_KEY}（上面没覆盖到的写这儿）</div>
+              <div className="text-11 text-ink-400">{OTHER_KEY}（上面没覆盖到的写这儿）</div>
               <AutoTextarea
                 className="mt-0.5 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-ink-100 outline-none focus:border-amber/50"
-                textClass="text-[12px]"
+                textClass="text-12"
                 minRows={2}
                 maxHeight={240}
                 value={vals[OTHER_KEY] ?? ''}

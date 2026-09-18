@@ -186,28 +186,28 @@ export default function AITemplateFill({
               <MessagesSquare size={12} /> 对话引导
             </Button>
           </div>
-          <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-500">
+          <p className="mt-1.5 text-10 leading-relaxed text-ink-500">
             想清楚了（甚至想照某个已有作品填）→ 用「一句话补全」，写一句就走；
             只有点感觉、说不清 → 用「对话引导」，AI 按模板提纲一轮轮问你，聊出来的内容最后汇总成草稿。
           </p>
         </div>
 
         {sendFields.length === 0 ? (
-          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber/8 border border-amber/25 text-[12px] text-amber">
+          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber/8 border border-amber/25 text-12 text-amber">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />
             <span>没有需要补全的空字段（已全部填写或被锁定）—— 对话引导也帮不上忙，先去清掉几个再回来。</span>
           </div>
         ) : (
           <>
             <div>
-              <label className="block text-[12px] text-ink-300 mb-1">
+              <label className="block text-12 text-ink-300 mb-1">
                 你的粗略设定（名字 / 身份 / 定位等，越具体补全越准）
               </label>
               <AutoTextarea
                 value={sketch}
                 onChange={setSketch}
                 placeholder={sketchPlaceholder ?? '例如：一个叫叶昭的少年，是没落剑派最后一名弟子，性格倔强但重情义，想复兴门派……'}
-                className="text-[13px]"
+                className="text-13"
                 minHeight={64}
                 maxHeight={200}
               />
@@ -216,7 +216,7 @@ export default function AITemplateFill({
             <RefsField value={refs} onChange={setRefs} minRows={2} />
 
             {withWorldContext && (
-              <label className="flex items-center gap-2 text-[12px] text-ink-300 cursor-pointer select-none">
+              <label className="flex items-center gap-2 text-12 text-ink-300 cursor-pointer select-none">
                 <input type="checkbox" checked={useCtx} onChange={e => setUseCtx(e.target.checked)} className="accent-amber" />
                 参照本项目世界观（提升一致性，补全更贴合已设的世界观 / 力量体系）
               </label>
@@ -227,14 +227,14 @@ export default function AITemplateFill({
 
             {!result && (
               <Button onClick={run}
-                disabled={loading} variant="primary" size="md" className="flex items-center text-[13px]">
+                disabled={loading} variant="primary" size="md" className="flex items-center text-13">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? '正在生成补全…' : '生成补全'}
               </Button>
             )}
 
             {error && (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[12px] text-red-300">
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                 <span>{error}</span>
               </div>
@@ -243,7 +243,7 @@ export default function AITemplateFill({
             {result && (
               <>
                 <DraftSourceLine source={source} />
-                <div className="text-[12px] text-ink-400">
+                <div className="text-12 text-ink-400">
                   预览：AI 补全的字段已高亮，你可逐条修改后再采用。带「AI补全」的即为模型生成、建议你核对。
                 </div>
                 <div className="space-y-3 overflow-y-auto pr-1"
@@ -255,26 +255,26 @@ style={{ maxHeight: foldVh('42vh') }}>
                     return (
                       <div key={f.key}>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[12px] font-medium text-ink-100">{f.label}</span>
+                          <span className="text-12 font-medium text-ink-100">{f.label}</span>
                           {filled && (
-                            <span className="px-1.5 py-px text-[10px] rounded bg-amber/15 text-amber border border-amber/30">AI补全</span>
+                            <span className="px-1.5 py-px text-10 rounded bg-amber/15 text-amber border border-amber/30">AI补全</span>
                           )}
                           {!isProduced && f.locked && (
-                            <span className="px-1.5 py-px text-[10px] rounded bg-ink-800 text-ink-500 border border-ink-700">锁定</span>
+                            <span className="px-1.5 py-px text-10 rounded bg-ink-800 text-ink-500 border border-ink-700">锁定</span>
                           )}
                           {!isProduced && !f.locked && (
-                            <span className="px-1.5 py-px text-[10px] rounded bg-ink-800 text-ink-500 border border-ink-700">已填</span>
+                            <span className="px-1.5 py-px text-10 rounded bg-ink-800 text-ink-500 border border-ink-700">已填</span>
                           )}
                         </div>
                         {isProduced ? (
                           <textarea
                             value={val}
                             onChange={e => setVal(f.key, e.target.value)}
-                            className="w-full text-[12px] bg-ink-900 border border-ink-700 rounded-lg px-2 py-1.5 resize-y focus:border-amber/40 outline-none"
+                            className="w-full text-12 bg-ink-900 border border-ink-700 rounded-lg px-2 py-1.5 resize-y focus:border-amber/40 outline-none"
                             rows={2}
                           />
                         ) : (
-                          <div className="text-[12px] text-ink-400 bg-ink-900/50 border border-ink-800 rounded-lg px-2 py-1.5 whitespace-pre-wrap break-words">
+                          <div className="text-12 text-ink-400 bg-ink-900/50 border border-ink-800 rounded-lg px-2 py-1.5 whitespace-pre-wrap break-words">
                             {val || '（空）'}
                           </div>
                         )}
@@ -283,7 +283,7 @@ style={{ maxHeight: foldVh('42vh') }}>
                   })}
                 </div>
                 <div className="flex items-center gap-2 pt-1">
-                  <Button onClick={apply} variant="primary" size="md" className="flex items-center text-[13px]">
+                  <Button onClick={apply} variant="primary" size="md" className="flex items-center text-13">
                     <Check size={13} /> 采用并创建
                   </Button>
                   <Button

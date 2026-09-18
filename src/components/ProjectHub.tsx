@@ -169,14 +169,14 @@ export default function ProjectHub({ onOpen }: Props) {
             青春幻想引擎
             <span className="text-base font-normal text-ink-400">{APP_VERSION_LABEL}</span>
           </h1>
-          <p className="mt-2 text-[13px] text-ink-400">在你的世界中讲述你的故事</p>
+          <p className="mt-2 text-13 text-ink-400">在你的世界中讲述你的故事</p>
         </header>
 
         {/* 操作条 */}
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-[14px] font-semibold text-ink-100 flex items-center gap-2 flex-wrap">
+          <h2 className="text-14 font-semibold text-ink-100 flex items-center gap-2 flex-wrap">
             <Sparkles size={14} className="text-amber" /> 我的作品 ({projects.length})
-            <span className="text-[12px] font-normal text-ink-400">每本书是一个独立项目 · 打开后进入完整创作面板</span>
+            <span className="text-12 font-normal text-ink-400">每本书是一个独立项目 · 打开后进入完整创作面板</span>
             <HelpPopover title="项目管理怎么用" width="22rem" size={13}>
               {'一本书 = 一个独立项目，设定 / 大纲 / 正文 / 统计互不干扰。\n\n· 新建小说项目：只需书名即可开工，封面与其他信息随时可补；\n· 创建示范项目：一键写入完整范例数据（卷章正文、设定表单、角色卡、伏笔、时间脉络、码字统计），用来快速摸清各功能怎么用，体验完可直接删除；\n· 导入项目：选择之前导出的 .json 备份即可还原全部内容；\n· 备份：把某本书导出成 .json 文件，换设备或重装前务必先导一份；导入项目可选择之前的 .json 备份还原；\n· 设定集：一键导出汇总全书世界观 / 人物 / 设定表的 Markdown 文档；\n· 备份与恢复：查看打开项目时自动生成的备份（每 5 分钟 / 每日首次打开各一类），可一键恢复历史版本；\n· 打开项目：进入该书的完整创作面板。'}
             </HelpPopover>
@@ -185,10 +185,10 @@ export default function ProjectHub({ onOpen }: Props) {
             <Button onClick={createDemo}
               disabled={busy}
               
-              title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center text-[13px]">
+              title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center text-13">
               <BookPlus size={13} /> 创建示范项目
             </Button>
-            <Button variant="secondary" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3.5 h-9 text-[13px] rounded-lg transition-colors">
+            <Button variant="secondary" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg transition-colors">
               <FileDown size={13} /> 导入项目
             </Button>
             <input
@@ -202,7 +202,7 @@ export default function ProjectHub({ onOpen }: Props) {
                 e.target.value = ''
               }}
             />
-            <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors">
+            <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors">
               <BookPlus size={14} /> 新建小说项目
             </Button>
           </div>
@@ -212,7 +212,7 @@ export default function ProjectHub({ onOpen }: Props) {
         {creating && (
           <div className="mb-6 rounded-xl border border-amber/25 bg-ink-850 p-5 page-enter">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[13px] font-semibold text-ink-100">新建小说项目</h3>
+              <h3 className="text-13 font-semibold text-ink-100">新建小说项目</h3>
               <Button variant="icon-muted" onClick={() => setCreating(false)}><X size={16} /></Button>
             </div>
             <div className="flex gap-5">
@@ -237,7 +237,7 @@ export default function ProjectHub({ onOpen }: Props) {
                   ) : (
                     <div className="flex flex-col items-center gap-1.5 text-ink-500 group-hover:text-amber/70 transition-colors">
                       <ImageIcon size={20} />
-                      <span className="text-[10px]">上传封面</span>
+                      <span className="text-10">上传封面</span>
                     </div>
                   )}
                 </Button>
@@ -257,7 +257,7 @@ export default function ProjectHub({ onOpen }: Props) {
               <div className="flex-1 flex flex-col gap-3">
                 {/* 项目形态：完整 / 自定义 */}
                 <div>
-                  <label className="text-[11px] text-ink-400 mb-1 block flex items-center gap-1">项目形态
+                  <label className="text-11 text-ink-400 mb-1 block flex items-center gap-1">项目形态
                     <HelpPopover title="项目形态怎么选" width="23rem" size={11}>
                       {'决定项目初始开放哪些功能，新建时选定、创建后不可更改：\n\n· 完整项目：功能最全，适合中长篇连载——含全部设定表（力量体系、人物关系、国家 / 地理 / 种族 / 物品设定、历史事件、伏笔、时间脉络、知情权限、分卷大纲、设定变更等）与灵感 / 检查工具；\n· 自定义项目：从完整项目功能全集里自由勾选要启用的模块（工作面板、正文写作、灵感工具为必选、不可取消；备份与恢复 / 全文检索 / 设定检索为全局基础设施、始终常开（不进入清单、不可取消）；其余模块自由勾选）。拿不准就选「完整项目」，用不到的模块不填即可。'}
                     </HelpPopover>
@@ -283,36 +283,36 @@ export default function ProjectHub({ onOpen }: Props) {
                           className="flex-1 text-left px-3 py-2 rounded-lg border hover:border-ink-500"
                           title={opt.desc}
                         >
-                          <div className="text-[12.5px] font-medium">{opt.label}</div>
-                          <div className="text-[10px] text-ink-500 mt-0.5">{opt.desc}</div>
+                          <div className="text-12 font-medium">{opt.label}</div>
+                          <div className="text-10 text-ink-500 mt-0.5">{opt.desc}</div>
                         </Button>
                       )
                     })}
                   </div>
                   {form.projectType === 'custom' && (
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'create', initial: form.features.length ? form.features.filter(id => !LOCKED_IDS.includes(id)) : DEFAULT_IDS })} className="flex items-center gap-1.5 px-3 h-9 text-[12px] rounded-lg transition-colors">
+                      <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'create', initial: form.features.length ? form.features.filter(id => !LOCKED_IDS.includes(id)) : DEFAULT_IDS })} className="flex items-center gap-1.5 px-3 h-9 text-12 rounded-lg transition-colors">
                         <ListChecks size={13} /> {form.features.length ? `已选 ${form.features.length} 个功能 · 重新选择` : '选择功能模块'}
                       </Button>
                       {form.features.length > 0 && (
-                        <span className="text-[11px] text-ink-500">含必选模块与依赖自动带入项，共 {form.features.length} 项</span>
+                        <span className="text-11 text-ink-500">含必选模块与依赖自动带入项，共 {form.features.length} 项</span>
                       )}
                     </div>
                   )}
                 </div>
                 <div className="flex-1">
-                  <label className="text-[11px] text-ink-400 mb-1 block">书名 *</label>
+                  <label className="text-11 text-ink-400 mb-1 block">书名 *</label>
                   <input
                     value={form.name}
                     onChange={e => setForm({ ...form, name: e.target.value })}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) create() }}
                     placeholder="给这本书起个名字，其他信息之后随时可以补"
                     autoFocus
-                    className="w-full text-[13px]"
+                    className="w-full text-13"
                   />
                 </div>
                 <Button onClick={create}
-                  disabled={busy} variant="primary" solid size="md" className="w-full text-[13px]">
+                  disabled={busy} variant="primary" solid size="md" className="w-full text-13">
                   {busy ? '创建中…' : '创建并进入项目'}
                 </Button>
               </div>
@@ -324,8 +324,8 @@ export default function ProjectHub({ onOpen }: Props) {
         {projects.length === 0 ? (
           <div className="rounded-xl border border-dashed border-ink-700 py-16 text-center">
             <BookPlus size={28} className="mx-auto text-ink-600 mb-3" />
-            <div className="text-[13px] text-ink-400">还没有作品，点击右上角「新建小说项目」开启第一本书</div>
-            <div className="mt-1.5 text-[11.5px] text-ink-500">
+            <div className="text-13 text-ink-400">还没有作品，点击右上角「新建小说项目」开启第一本书</div>
+            <div className="mt-1.5 text-11 text-ink-500">
               第一次使用？点上方「创建示范项目」，一键体验全部功能
             </div>
           </div>
@@ -339,9 +339,9 @@ export default function ProjectHub({ onOpen }: Props) {
               if (items.length === 0) return null
               return (
                 <section key={g.key}>
-                  <h3 className="text-[13px] font-semibold text-ink-200 flex items-center gap-2 mb-3">
+                  <h3 className="text-13 font-semibold text-ink-200 flex items-center gap-2 mb-3">
                     {g.label}
-                    <span className="px-1.5 py-px text-[10px] rounded bg-ink-800 text-ink-400 border border-ink-700">{items.length}</span>
+                    <span className="px-1.5 py-px text-10 rounded bg-ink-800 text-ink-400 border border-ink-700">{items.length}</span>
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                     {items.map(p => (
@@ -369,7 +369,7 @@ export default function ProjectHub({ onOpen }: Props) {
                         ) : (
                           <div className="flex flex-col items-center gap-1.5 text-ink-500 group-hover/cover:text-amber/70 transition-colors">
                             <ImageIcon size={16} />
-                            <span className="text-[10px]">上传封面</span>
+                            <span className="text-10">上传封面</span>
                           </div>
                         )}
                       </Button>
@@ -381,34 +381,34 @@ export default function ProjectHub({ onOpen }: Props) {
                         onChange={e => { const f = e.target.files?.[0]; if (f) pickEditCover(f); e.target.value = '' }}
                       />
                       <div className="min-w-0 flex-1">
-                        <label className="text-[11px] text-ink-400 mb-1 block">书名 *</label>
+                        <label className="text-11 text-ink-400 mb-1 block">书名 *</label>
                         <input
                           value={editForm.name}
                           onChange={e => setEditForm({ ...editForm, name: e.target.value })}
                           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) saveEdit() }}
                           autoFocus
-                          className="w-full text-[13px]"
+                          className="w-full text-13"
                         />
                       </div>
                     </div>
                     {editForm.projectType === 'custom' && (
                       <div className="mt-4">
-                        <div className="text-[11px] text-ink-400 mb-1.5 flex items-center gap-1">功能模块
+                        <div className="text-11 text-ink-400 mb-1.5 flex items-center gap-1">功能模块
                           <HelpPopover title="自定义项目功能" width="20rem" size={11}>
                             {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作、灵感工具）与依赖自动带入的模块不可取消；其余模块自由调整。修改后点击「保存修改」生效。'}
                           </HelpPopover>
                         </div>
-                        <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })} className="flex items-center gap-1.5 px-3 h-9 text-[12px] rounded-lg transition-colors">
+                        <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })} className="flex items-center gap-1.5 px-3 h-9 text-12 rounded-lg transition-colors">
                           <ListChecks size={13} /> 已启用 {editForm.features.length} 个功能 · 编辑功能
                         </Button>
                       </div>
                     )}
                     <div className="mt-4 flex items-center gap-2">
                       <Button onClick={saveEdit}
-                        disabled={busy} variant="primary" size="md" className="flex items-center text-[12px]">
+                        disabled={busy} variant="primary" size="md" className="flex items-center text-12">
                         <Check size={13} /> 保存修改
                       </Button>
-                      <Button variant="secondary" onClick={() => setEditingId(null)} className="px-3 py-1.5 text-[12px] border-ink-600 rounded-lg hover:border-ink-500 transition-colors">
+                      <Button variant="secondary" onClick={() => setEditingId(null)} className="px-3 py-1.5 text-12 border-ink-600 rounded-lg hover:border-ink-500 transition-colors">
                         取消
                       </Button>
                     </div>
@@ -425,16 +425,16 @@ export default function ProjectHub({ onOpen }: Props) {
                       )}
                       <div className="flex-1 min-w-0 flex flex-col">
                         <div>
-                          <h3 className="text-[15px] font-bold text-ink-50 truncate">{p.name}</h3>
+                          <h3 className="text-15 font-bold text-ink-50 truncate">{p.name}</h3>
                           <div className="flex items-center gap-2 mt-1.5">
-                            {p.genre && <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber/10 text-amber/90 border border-amber/25">{p.genre}</span>}
-                            {p.projectType === 'custom' && <span className="px-2 py-0.5 text-[10px] rounded-full bg-purple-500/10 text-purple-300/90 border border-purple-500/25">自定义</span>}
-                            <span className="text-[10px] text-ink-500">
+                            {p.genre && <span className="px-2 py-0.5 text-10 rounded-full bg-amber/10 text-amber/90 border border-amber/25">{p.genre}</span>}
+                            {p.projectType === 'custom' && <span className="px-2 py-0.5 text-10 rounded-full bg-purple-500/10 text-purple-300/90 border border-purple-500/25">自定义</span>}
+                            <span className="text-10 text-ink-500">
                               {p.stats?.volumes ?? 0} 卷 · {p.stats?.chapters ?? 0} 章 · {((p.stats?.words ?? 0) / 10000).toFixed(1)} 万字
                             </span>
                           </div>
-                          {p.intro && <p className="mt-2 text-[11.5px] text-ink-400 line-clamp-2">{p.intro}</p>}
-                          <div className="mt-2 text-[10px] text-ink-600">
+                          {p.intro && <p className="mt-2 text-11 text-ink-400 line-clamp-2">{p.intro}</p>}
+                          <div className="mt-2 text-10 text-ink-600">
                             创建于 {new Date(p.createdAt).toLocaleDateString()} · 最近活动 {new Date(p.updatedAt).toLocaleDateString()}
                           </div>
                         </div>

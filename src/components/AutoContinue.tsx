@@ -29,11 +29,11 @@ function Stepper({ label, value, min, max, step, onChange }: {
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[13px] text-ink-200">{label}</span>
+      <span className="text-13 text-ink-200">{label}</span>
       <div className="flex items-center gap-1 ml-auto">
-        <Button variant="toggle" onClick={() => onChange(Math.max(min, value - step))} aria-label="减少" className="h-7 w-7 rounded-lg text-[15px] leading-none">−</Button>
+        <Button variant="toggle" onClick={() => onChange(Math.max(min, value - step))} aria-label="减少" className="h-7 w-7 rounded-lg text-15 leading-none">−</Button>
         <span className="w-14 text-center text-ink-100 tabular-nums">{value}</span>
-        <Button variant="toggle" onClick={() => onChange(Math.min(max, value + step))} aria-label="增加" className="h-7 w-7 rounded-lg text-[15px] leading-none">+</Button>
+        <Button variant="toggle" onClick={() => onChange(Math.min(max, value + step))} aria-label="增加" className="h-7 w-7 rounded-lg text-15 leading-none">+</Button>
       </div>
     </div>
   )
@@ -144,7 +144,7 @@ export default function AutoContinue() {
   return (
     <>
       <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
-        <h2 className="text-[13px] font-semibold text-ink-100 mb-4 flex items-center gap-2">
+        <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <BookOpen size={14} className="text-amber" /> AI 一键续写 + 设定补完
           <HelpPopover title="AI 一键续写怎么用" width="24rem" className="ml-auto">
             {`基于项目已有设定与最新一章正文，AI 续写新章节并抽取补登设定。\n\n每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 →（开启时）去 AI 味儿润色 → 你确认采纳/重写 → 编辑自检（连续性/人设/伏笔，命中则改写）→ 抽取补登设定 → 进入下一章。\n\n· 章节数 1–5、每章 2000–8000 汉字（按汉字数计，容差 ±${WORD_TOLERANCE}）。\n· 不填情节概要时，AI 会严格承接上一章结尾往下写，并参考最近 3 章的章节摘要把握整体走向，不另起新线。\n· 续写时会参考：上一章结尾（约 1200 字）+ 最近 3 章摘要 + 项目全部设定资料。\n· 去 AI 味儿：内置 3 套润色提示词（口语化 / 网文化 / 去套路，可自定义），生成初稿后自动润色再去弹窗，去掉 AI 套话。\n· 已有设定更新策略：仅限新增（最稳）/ 候选确认（默认）/ 自动更新。\n· 每章初稿会弹窗让你决定「采纳」或「重写」，重写不会留下垃圾章节。\n· 章节顺序由系统自动派生，与标题无关，不会错乱。`}
@@ -157,12 +157,12 @@ export default function AutoContinue() {
           <Stepper label={`每章字数（汉字，±${WORD_TOLERANCE}）`} value={targetWords} min={2000} max={8000} step={500} onChange={setTargetWords} />
 
           <div>
-            <div className="text-[13px] text-ink-200 mb-1.5">已有设定更新策略</div>
+            <div className="text-13 text-ink-200 mb-1.5">已有设定更新策略</div>
             <div className="flex flex-wrap gap-1.5">
               {STRATEGIES.map(s => (
                 <Button key={s} variant="toggle" selected={strategy === s}
                   onClick={() => setStrategy(s)} title={STRATEGY_META[s].hint}
-                  className="px-3 h-8 rounded-lg text-[12px]">
+                  className="px-3 h-8 rounded-lg text-12">
                   {STRATEGY_META[s].label}
                 </Button>
               ))}
@@ -172,9 +172,9 @@ export default function AutoContinue() {
           {/* 去 AI 味儿：生成前的前置选项，放在策略下边，点「开始续写」前可手动调整 */}
           <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
             <div className="flex items-center justify-between">
-              <div className="text-[13px] text-ink-200">生成后自动「去 AI 味儿」</div>
+              <div className="text-13 text-ink-200">生成后自动「去 AI 味儿」</div>
               <Button variant="toggle" selected={deAiOn} onClick={() => setDeAiOn(v => !v)}
-                className="px-3 h-8 rounded-lg text-[12px]" title="开启后，AI 每章初稿会先按所选提示词润色一遍，再去弹窗交你裁决">
+                className="px-3 h-8 rounded-lg text-12" title="开启后，AI 每章初稿会先按所选提示词润色一遍，再去弹窗交你裁决">
                 {deAiOn ? '已开启' : '已关闭'}
               </Button>
             </div>
@@ -184,7 +184,7 @@ export default function AutoContinue() {
                   {DEAI_TEMPLATES.map(t => (
                     <Button key={t.id} variant="toggle" selected={deAiTpl === t.id}
                       onClick={() => setDeAiTpl(t.id)} title={t.desc}
-                      className="px-3 h-8 rounded-lg text-[12px]">
+                      className="px-3 h-8 rounded-lg text-12">
                       {t.label}
                     </Button>
                   ))}
@@ -193,7 +193,7 @@ export default function AutoContinue() {
                   <AutoTextarea value={deAiCustom} onChange={setDeAiCustom} minHeight={50} maxHeight={140}
                     placeholder="粘贴你自己的去 AI 味儿提示词（例如：去掉说教感，多用短句……）" />
                 )}
-                <p className="text-[11px] text-ink-500 leading-relaxed">
+                <p className="text-11 text-ink-500 leading-relaxed">
                   内置 3 套去味儿提示词（即网络上常见「去 AI 味儿 skill」的本地化版本），可切换或自定义。润色异常时自动保留原稿。
                 </p>
               </div>
@@ -201,10 +201,10 @@ export default function AutoContinue() {
           </div>
 
           <div>
-            <div className="text-[13px] text-ink-200 mb-1.5">情节概要（可选，不填则承接上一章自然延续）</div>
+            <div className="text-13 text-ink-200 mb-1.5">情节概要（可选，不填则承接上一章自然延续）</div>
             <AutoTextarea value={intent} onChange={setIntent} minHeight={60} maxHeight={160}
               placeholder="例如：陈渊在秘境深处发现上古遗迹，意外获得一卷残破功法……" />
-            <p className="mt-1.5 text-[11px] text-ink-500 leading-relaxed">
+            <p className="mt-1.5 text-11 text-ink-500 leading-relaxed">
               小提示：续写前，若先对前几章正文通读梳理一遍（或在编辑器里重生成章节压缩摘要），能让 AI 更好地承接剧情、衔接更流畅自然。
             </p>
           </div>
@@ -219,11 +219,11 @@ export default function AutoContinue() {
                 <Square size={13} className="mr-1" /> 停止
               </Button>
             )}
-            {!aiReady && <span className="text-[11px] text-amber">{AI_DISABLED_HINT}</span>}
+            {!aiReady && <span className="text-11 text-amber">{AI_DISABLED_HINT}</span>}
           </div>
 
           {phase && (
-            <div className="flex items-center gap-2 text-[12px] text-ink-300">
+            <div className="flex items-center gap-2 text-12 text-ink-300">
               {!running ? (
                 <CheckCircle2 size={13} className={`shrink-0 ${phase.startsWith('✓') ? 'text-emerald-400' : 'text-ink-500'}`} />
               ) : (
@@ -234,8 +234,8 @@ export default function AutoContinue() {
 
           {preview && (
             <div className="mt-2">
-              <div className="text-[12px] text-ink-400 mb-1">实时正文预览（{countWords(preview)} 字 · 汉字计）</div>
-              <div className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3 text-[13px] leading-relaxed text-ink-100">
+              <div className="text-12 text-ink-400 mb-1">实时正文预览（{countWords(preview)} 字 · 汉字计）</div>
+              <div className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3 text-13 leading-relaxed text-ink-100">
                 {preview}
               </div>
             </div>
@@ -244,7 +244,7 @@ export default function AutoContinue() {
           {logs.length > 0 && (
             <div className="mt-2 space-y-1 rounded-lg border border-ink-700 bg-ink-900 p-3">
               {logs.map((l, i) => (
-                <div key={i} className="text-[12px] text-ink-300">{l}</div>
+                <div key={i} className="text-12 text-ink-300">{l}</div>
               ))}
             </div>
           )}
@@ -267,17 +267,17 @@ export default function AutoContinue() {
         }>
         {draft && (
           <>
-            <div className="mb-3 flex items-center gap-3 text-[12px]">
+            <div className="mb-3 flex items-center gap-3 text-12">
               <span className={dOk ? 'text-emerald-400' : 'text-amber'}>
                 {draft.d.words} 汉字 {dOk ? '· 已达标' : '· 超出容差'}
               </span>
               <span className="text-ink-500">目标 {draft.d.target} ± {WORD_TOLERANCE}（{dLo}~{dHi}）</span>
               {deAiOn && <span className="text-ink-300 border border-ink-700 rounded px-1.5 py-0.5">已去 AI 味儿</span>}
             </div>
-            <p className="text-[12px] text-ink-400 mb-3">
+            <p className="text-12 text-ink-400 mb-3">
               你看到的已是「去 AI 味儿」润色后的稿子。采纳后 AI 才会继续做编辑自检、修正与设定补登；点「重写本章」会丢弃本稿重新生成（含重新润色，不会留下垃圾章节，也不会写入数据库）。
             </p>
-            <div className="overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3.5 text-[13.5px] leading-[1.9] text-ink-100"
+            <div className="overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3.5 text-13 leading-[1.9] text-ink-100"
 style={{ maxHeight: foldVh('52vh') }}>
               {draft.d.body}
             </div>
@@ -293,7 +293,7 @@ style={{ maxHeight: foldVh('52vh') }}>
             <Button variant="primary" onClick={confirmApply}>确认补登（{selected.size}）</Button>
           </>
         }>
-        <p className="text-[12px] text-ink-400 mb-3">勾选要补登到设定表 / 角色卡的条目。绿色=新设定，黄色=疑似已存在需你确认；已登记项不会改动。</p>
+        <p className="text-12 text-ink-400 mb-3">勾选要补登到设定表 / 角色卡的条目。绿色=新设定，黄色=疑似已存在需你确认；已登记项不会改动。</p>
         <div className="max-h-80 overflow-auto space-y-2">
           {confirm?.cands.map(c => (
             <label key={c.key} className="flex items-start gap-2 rounded-lg border border-ink-700 bg-ink-900 p-2 cursor-pointer">
@@ -303,13 +303,13 @@ style={{ maxHeight: foldVh('52vh') }}>
                 })} />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-ink-50 font-medium">{c.name}</span>
-                  <span className="text-[11px] text-ink-400">{c.type}</span>
-                  <span className={`text-[11px] px-1 rounded ${c.status === 'new' ? 'bg-emerald-900/40 text-emerald-300' : 'bg-amber-900/40 text-amber-300'}`}>
+                  <span className="text-13 text-ink-50 font-medium">{c.name}</span>
+                  <span className="text-11 text-ink-400">{c.type}</span>
+                  <span className={`text-11 px-1 rounded ${c.status === 'new' ? 'bg-emerald-900/40 text-emerald-300' : 'bg-amber-900/40 text-amber-300'}`}>
                     {c.status === 'new' ? '新设定' : '疑似重复'}
                   </span>
                 </div>
-                {c.desc && <div className="text-[12px] text-ink-300 mt-0.5 break-words">{c.desc}</div>}
+                {c.desc && <div className="text-12 text-ink-300 mt-0.5 break-words">{c.desc}</div>}
               </div>
             </label>
           ))}

@@ -70,54 +70,54 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
     if (patch.deadline !== undefined) { setDeadline(patch.deadline); await db.setSetting('goalDeadline', patch.deadline) }
   }
 
-  if (!loaded) return <div className="py-8 text-center text-ink-500 text-[12px]">加载中…</div>
+  if (!loaded) return <div className="py-8 text-center text-ink-500 text-12">加载中…</div>
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <label className="block">
-          <div className="text-[11px] text-ink-400 mb-1">每日目标字数</div>
+          <div className="text-11 text-ink-400 mb-1">每日目标字数</div>
           <input
             type="number" min={0} value={daily}
             onChange={e => save({ daily: Math.max(0, parseInt(e.target.value || '0', 10)) })}
-            className="w-full bg-ink-800 border border-ink-700 rounded-lg px-3 py-2 text-[13px] text-ink-100 outline-none focus:border-amber/50"
+            className="w-full bg-ink-800 border border-ink-700 rounded-lg px-3 py-2 text-13 text-ink-100 outline-none focus:border-amber/50"
           />
         </label>
         <label className="block">
-          <div className="text-[11px] text-ink-400 mb-1">全书目标字数</div>
+          <div className="text-11 text-ink-400 mb-1">全书目标字数</div>
           <input
             type="number" min={0} value={total}
             onChange={e => save({ total: Math.max(0, parseInt(e.target.value || '0', 10)) })}
             placeholder="例：1000000"
-            className="w-full bg-ink-800 border border-ink-700 rounded-lg px-3 py-2 text-[13px] text-ink-100 outline-none focus:border-amber/50"
+            className="w-full bg-ink-800 border border-ink-700 rounded-lg px-3 py-2 text-13 text-ink-100 outline-none focus:border-amber/50"
           />
         </label>
         <label className="block">
-          <div className="text-[11px] text-ink-400 mb-1">完稿截止日</div>
+          <div className="text-11 text-ink-400 mb-1">完稿截止日</div>
           <input
             type="date" value={deadline}
             onChange={e => save({ deadline: e.target.value })}
-            className="w-full bg-ink-800 border border-ink-700 rounded-lg px-3 py-2 text-[13px] text-ink-100 outline-none focus:border-amber/50"
+            className="w-full bg-ink-800 border border-ink-700 rounded-lg px-3 py-2 text-13 text-ink-100 outline-none focus:border-amber/50"
           />
         </label>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-ink-800 rounded-lg px-3 py-2.5">
-          <div className="text-[10px] text-ink-500">当前总字数</div>
-          <div className="text-[15px] font-bold text-ink-50 mt-0.5">{totalWords.toLocaleString()}</div>
+          <div className="text-10 text-ink-500">当前总字数</div>
+          <div className="text-15 font-bold text-ink-50 mt-0.5">{totalWords.toLocaleString()}</div>
         </div>
         <div className="bg-ink-800 rounded-lg px-3 py-2.5">
-          <div className="text-[10px] text-ink-500">近7日日均</div>
-          <div className="text-[15px] font-bold text-amber mt-0.5">{recentPace.toLocaleString()}</div>
+          <div className="text-10 text-ink-500">近7日日均</div>
+          <div className="text-15 font-bold text-amber mt-0.5">{recentPace.toLocaleString()}</div>
         </div>
         <div className="bg-ink-800 rounded-lg px-3 py-2.5">
-          <div className="text-[10px] text-ink-500">距目标还差</div>
-          <div className="text-[15px] font-bold text-ink-50 mt-0.5">{remaining.toLocaleString()}</div>
+          <div className="text-10 text-ink-500">距目标还差</div>
+          <div className="text-15 font-bold text-ink-50 mt-0.5">{remaining.toLocaleString()}</div>
         </div>
         <div className="bg-ink-800 rounded-lg px-3 py-2.5">
-          <div className="text-[10px] text-ink-500">预估完稿</div>
-          <div className="text-[15px] font-bold text-emerald-400 mt-0.5">
+          <div className="text-10 text-ink-500">预估完稿</div>
+          <div className="text-15 font-bold text-emerald-400 mt-0.5">
             {total > 0 ? (estDate ? estDate.toLocaleDateString() : '—') : '设目标'}
           </div>
         </div>
@@ -125,7 +125,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
 
       {total > 0 && (
         <div>
-          <div className="flex items-center justify-between text-[11px] mb-1">
+          <div className="flex items-center justify-between text-11 mb-1">
             <span className="text-ink-400">全书完成度</span>
             <span className="text-ink-200">{totalPct}%</span>
           </div>
@@ -139,8 +139,8 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
       {daily > 0 && burndown.length > 0 && (
         <div className="rounded-lg border border-ink-700 bg-ink-850 p-3">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[12px] font-semibold text-ink-100">近 14 天燃尽图</span>
-            <div className="flex items-center gap-3 text-[10px] text-ink-400">
+            <span className="text-12 font-semibold text-ink-100">近 14 天燃尽图</span>
+            <div className="flex items-center gap-3 text-10 text-ink-400">
               <span className="flex items-center gap-1"><i className="w-3.5 h-0.5 bg-amber/70 inline-block rounded" /> 目标累计</span>
               <span className="flex items-center gap-1"><i className="w-3.5 h-0.5 inline-block rounded" style={{ background: '#34d399' }} /> 实际累计</span>
             </div>
@@ -162,7 +162,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
             <path d={bPath('actualCum')} fill="none" stroke="#34d399" strokeWidth={2} />
             <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} fill="#34d399" />
           </svg>
-          <div className="text-[10px] text-ink-500 mt-1">
+          <div className="text-10 text-ink-500 mt-1">
             今日累计 {burndown[BURNDOWN_DAYS - 1].actualCum.toLocaleString()} / 目标 {burndown[BURNDOWN_DAYS - 1].targetCum.toLocaleString()} 字
             {(() => {
               const diff = burndown[BURNDOWN_DAYS - 1].actualCum - burndown[BURNDOWN_DAYS - 1].targetCum
@@ -175,7 +175,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
       )}
 
       {deadline && (
-        <div className="text-[11px] text-ink-400">
+        <div className="text-11 text-ink-400">
           截止日 {deadline}：按当前日均，{daysNeeded > 0 ? `还需约 ${daysNeeded} 天（${estDate?.toLocaleDateString()} 前完稿可达成）` : '已达标或暂无法预估'}
           {(() => {
             const dl = new Date(deadline).getTime()
@@ -187,7 +187,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
         </div>
       )}
       {recentPace === 0 && total > 0 && (
-        <div className="text-[11px] text-ink-500">近 7 日暂无码字记录，无法预估完稿日期——先在编辑器写几章，或在「写作进度」登记每日字数。</div>
+        <div className="text-11 text-ink-500">近 7 日暂无码字记录，无法预估完稿日期——先在编辑器写几章，或在「写作进度」登记每日字数。</div>
       )}
     </div>
   )

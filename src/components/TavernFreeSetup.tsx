@@ -63,8 +63,8 @@ interface Props {
 const MAX_SLOTS = 3
 
 const inputCls = 'w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50'
-const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-[12px] text-ink-100 outline-none focus:border-amber/50'
-const labelCls = 'text-[11px] text-ink-400 mb-1'
+const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50'
+const labelCls = 'text-11 text-ink-400 mb-1'
 
 /** 选角用的条目：名字 + 内核一句话（用来分辨相似的角色） */
 type CharOption = { id: string; name: string; core: string; avatar?: string; storyId: string }
@@ -115,7 +115,7 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
       open={open} onClose={onClose} title="选择角色" width="lg"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
-          <span className="text-[11px] text-ink-500">{picked ? `已选：${picked.name || '（未命名）'}` : '还没选角色'}</span>
+          <span className="text-11 text-ink-500">{picked ? `已选：${picked.name || '（未命名）'}` : '还没选角色'}</span>
           <div className="flex gap-2">
             <Button variant="secondary" size="md" onClick={onClose}>取消</Button>
             <Button variant="primary" size="md" disabled={!cardId} onClick={() => onConfirm(cardId)}>确定</Button>
@@ -143,22 +143,22 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
                 }`}
               >
                 <Avatar src={o.avatar} name={o.name} size={20} />
-                <span className={`min-w-0 shrink-0 text-[12.5px] ${cardId === o.id ? 'text-amber' : 'text-ink-200'}`}>
+                <span className={`min-w-0 shrink-0 text-12 ${cardId === o.id ? 'text-amber' : 'text-ink-200'}`}>
                   {o.name || '（未命名）'}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-right text-[10.5px] text-ink-500">
+                <span className="min-w-0 flex-1 truncate text-right text-10 text-ink-500">
                   {disabled ? `已在位置 ${used}` : o.core}
                 </span>
               </button>
             )
           })}
           {rows.length === 0 && (
-            <div className="px-3 py-3 text-[12px] text-ink-500">
+            <div className="px-3 py-3 text-12 text-ink-500">
               {options.length === 0 ? '还没有角色卡 —— 先去「角色卡片」建一张。' : '没有匹配的角色。'}
             </div>
           )}
         </div>
-        <p className="text-[10.5px] text-ink-500">共 {options.length} 个角色 · 命中 {rows.length} 个</p>
+        <p className="text-10 text-ink-500">共 {options.length} 个角色 · 命中 {rows.length} 个</p>
       </div>
     </Modal>
   )
@@ -292,7 +292,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         open={open} onClose={onCancel} title="新建对话" width="xl"
         footer={
           <div className="flex items-center justify-between gap-3 w-full">
-            <span className="text-[11px] text-ink-500">{hint || '准备就绪'}</span>
+            <span className="text-11 text-ink-500">{hint || '准备就绪'}</span>
             <div className="flex gap-2">
               <Button variant="secondary" size="md" onClick={onCancel}>取消</Button>
               <Button variant="primary" size="md" disabled={!canStart} onClick={submit}>开始对话</Button>
@@ -302,14 +302,14 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
       >
         <div className="space-y-4">
           {loading ? (
-            <div className="py-8 text-center text-[12px] text-ink-500">正在读取角色卡…</div>
+            <div className="py-8 text-center text-12 text-ink-500">正在读取角色卡…</div>
           ) : (
             <>
               {/* ⓪ 故事（必选）—— 老大 2026-09-16 定：建故事是使用自由对话的第一步 */}
               <section>
                 <div className={labelCls}>⓪ 选择故事（必选）</div>
                 {stories.length === 0 ? (
-                  <div className="rounded-md border border-amber/30 bg-amber/8 px-3 py-3 text-[12px] leading-relaxed text-ink-300">
+                  <div className="rounded-md border border-amber/30 bg-amber/8 px-3 py-3 text-12 leading-relaxed text-ink-300">
                     还没有故事 —— 先去「<b className="text-ink-100">故事剧本</b>」建一个：
                     故事决定这个世界什么样（时代、地点、规则），角色卡与剧本都挂在它下面。
                     没有故事，角色就不知道自己活在哪个世界。
@@ -326,7 +326,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                         <option key={s.id} value={s.id}>{storyDisplayName(s)}</option>
                       ))}
                     </select>
-                    <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
+                    <p className="mt-1 text-11 leading-relaxed text-ink-500">
                       这一场的世界观由选中的故事提供（每轮都注入）。选定后，下面只能挑这个故事下的角色 ——
                       换故事会清空已选的角与剧本，免得开出「人不对世界」的戏。
                     </p>
@@ -338,17 +338,17 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
               <section>
                 <div className={labelCls}>① 角色分配</div>
                 {!storyId ? (
-                  <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-500">
+                  <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-12 text-ink-500">
                     先在上面选一个故事，这里才会列出它旗下的角色。
                   </div>
                 ) : scoped.length === 0 ? (
-                  <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-400">
+                  <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-12 text-ink-400">
                     这个故事下还没有角色卡。先去「角色卡片」建一张（建卡时会让你选归属故事）——
                     填好第 4 章「示例对话」Ta会立刻像那个人。
                   </div>
                 ) : (
                   <>
-                    <p className="mb-2 text-[11px] leading-relaxed text-ink-500">
+                    <p className="mb-2 text-11 leading-relaxed text-ink-500">
                       每个位置先选角色，再定由谁演。默认你演你自己；把某个位置改成「我演」，
                       AI 就会知道自己在跟谁对话（不会再把对面当成一个模糊的「用户」），
                       而且不会代写那个人的言行。「我演」最多一个。
@@ -359,12 +359,12 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                     <div className="space-y-2">
                       {slots.map((s, i) => (
                         <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-3 py-2">
-                          <span className="w-12 shrink-0 text-[11px] text-ink-500">位置 {i + 1}</span>
+                          <span className="w-12 shrink-0 text-11 text-ink-500">位置 {i + 1}</span>
                           {s.charId ? (
                             <>
-                              <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">
+                              <span className="min-w-0 flex-1 truncate text-12 text-ink-100">
                                 {nameOf(s.charId) || '（角色已删除）'}
-                                {coreOf(s.charId) && <span className="ml-2 text-[10.5px] text-ink-500">{coreOf(s.charId)}</span>}
+                                {coreOf(s.charId) && <span className="ml-2 text-10 text-ink-500">{coreOf(s.charId)}</span>}
                               </span>
                               <select
                                 className={selCls} value={s.role}
@@ -373,8 +373,8 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                                 <option value="ai">AI 演</option>
                                 <option value="user">我演</option>
                               </select>
-                              <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => setPickerIdx(i)}>更换</Button>
-                              <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => clearSlot(i)}>清空</Button>
+                              <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => setPickerIdx(i)}>更换</Button>
+                              <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => clearSlot(i)}>清空</Button>
                             </>
                           ) : (
                             <>
@@ -387,9 +387,9 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                               >
                                 ＋ 选择角色
                               </Button>
-                              <span className="shrink-0 text-[10.5px] text-ink-500">拟：{s.role === 'user' ? '我演' : 'AI 演'}</span>
+                              <span className="shrink-0 text-10 text-ink-500">拟：{s.role === 'user' ? '我演' : 'AI 演'}</span>
                               {slots.length > 1 && (
-                                <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>
+                                <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => removeSlot(i)}>移除位置</Button>
                               )}
                             </>
                           )}
@@ -397,10 +397,10 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                       ))}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
-                      <Button variant="secondary" size="md" className="text-[12px]" disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
+                      <Button variant="secondary" size="md" className="text-12" disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
                         ＋ 增加位置（最多 {MAX_SLOTS} 个）
                       </Button>
-                      <span className="text-[11px] text-ink-500">
+                      <span className="text-11 text-ink-500">
                         {userNames.length
                           ? `你演 ${userNames.join('、')} · AI 演 ${aiNames.join('、') || '（还没定）'}`
                           : `${callName ? `你以「${callName}」的身份说话` : '你演你自己'} · AI 演 ${aiNames.join('、') || '（还没定）'}`}
@@ -408,7 +408,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                     </div>
                     {/* 没设「我演」时说清后果 —— 老大明确问过「AI 到底在跟谁说话」 */}
                     {userNames.length === 0 && (
-                      <p className="mt-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2 text-[11px] leading-relaxed text-ink-400">
+                      <p className="mt-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2 text-11 leading-relaxed text-ink-400">
                         {callName
                           ? <>当前没有你演的角色：AI 会按「我的档案」把你当作 <b className="text-ink-200">{callName}</b> 来对话 —— 称呼、亲疏、距离都照档案来。想改用某个角色出场，就把某个位置设成「我演」。</>
                           : <>当前没有你演的角色：AI 会把你当作<b className="text-ink-300">没有具体身份的「本人」</b> —— 它不会替你编一个角色，也就不知道在跟谁说话（称呼、亲疏、距离都无从针对）。到「控制面板 → <b className="text-ink-200">我的档案</b>」填一份档案（名字 + 称呼 + 一句话自我设定），AI 就知道对面是谁了；也可以把某个位置设成「我演」。</>}
@@ -422,7 +422,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
               <section>
                 <div className={labelCls}>② 剧本（可留空）</div>
                 {!storyId ? (
-                  <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-500">
+                  <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-12 text-ink-500">
                     先在上面选一个故事，这里才会列出它旗下的剧本。
                   </div>
                 ) : (
@@ -448,27 +448,27 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                 {scriptView ? (
                   <div className="mt-2 rounded-md border border-ink-700 bg-ink-900/40 px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-amber">{scriptDisplayName(scriptView)}</span>
+                      <span className="min-w-0 flex-1 truncate text-12 text-amber">{scriptDisplayName(scriptView)}</span>
                       <Button variant="secondary" size="xs"
                         onClick={() => void pickScript('')} className="shrink-0"
                       >
                         取消引用
                       </Button>
                     </div>
-                    <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[10.5px] leading-relaxed text-ink-400">
+                    <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-10 leading-relaxed text-ink-400">
                       {scriptToText(snapshotOf(scriptView)) || '（这份剧本六栏是空的，等于没设）'}
                     </pre>
                     {scriptView.opening.trim() && (
                       <div className="mt-2 border-t border-ink-800 pt-1.5">
-                        <div className="text-[10.5px] text-ink-500">开场白（会变成对话的第一条消息）：</div>
-                        <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-[10.5px] leading-relaxed text-ink-400">
+                        <div className="text-10 text-ink-500">开场白（会变成对话的第一条消息）：</div>
+                        <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-10 leading-relaxed text-ink-400">
                           {scriptView.opening.trim()}
                         </pre>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
+                  <p className="mt-1 text-11 leading-relaxed text-ink-500">
                     {scriptId
                       ? '这份剧本读不到了（可能刚被删）—— 换成「留空」或另选一份。'
                       : '留空 = 没有开场白，你直接说第一句（旧行为）。选一份剧本则自动带出情境、你的位置、目标与禁区；开场白会渲染成对话的第一条消息。剧本的「情境」只描述此刻；背景归角色卡的「角色与设定的关系」与它所属故事的「世界设定」—— 别互相抄。'}
@@ -476,12 +476,12 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                 )}
 
                 {scripts.length === 0 && !scriptId && (
-                  <p className="mt-1 text-[10.5px] leading-relaxed text-ink-600">
+                  <p className="mt-1 text-10 leading-relaxed text-ink-600">
                     还没有剧本。点「＋ 新建剧本」就地写一份，或到「故事剧本」页签慢慢打磨。
                   </p>
                 )}
                 {!scriptId && (
-                  <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-600">
+                  <p className="mt-1.5 text-10 leading-relaxed text-ink-600">
                     会话保存的是「引用那一刻的快照」：以后你改这份剧本，这场对话的设定不会跟着变。
                   </p>
                 )}

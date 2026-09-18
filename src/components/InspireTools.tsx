@@ -95,7 +95,7 @@ export default function InspireTools() {
             {'这一页从上到下分两层。\n\n【配置】模型配置（全局：全应用的 AI 功能都按这里选中的模型走）+ 联网检索（起草 / 补全时用什么素材，可用博查或自建 SearXNG）；\n\n【功能】随机取名生成器：按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 风格批量出名字，点名字即复制，星标收藏；AI 一键续写 + 设定补完：从已写章节续写正文、并据此补全设定；AI 辅助规划：多轮对话式脑暴，可结合你的世界观设定给建议。\n\n后两项与 AI 取名都需要模型（未接入时按钮禁用并给出提示），随机取名为本地能力、始终可用。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-[13px] text-ink-300">模型配置 · 联网检索 · 随机取名生成器 · AI 一键续写 · AI 辅助规划</p>
+        <p className="mt-1 text-13 text-ink-300">模型配置 · 联网检索 · 随机取名生成器 · AI 一键续写 · AI 辅助规划</p>
       </header>
 
       <div className="space-y-4">
@@ -116,7 +116,7 @@ export default function InspireTools() {
 
         {/* ============ ③ 随机取名（本地能力，无需模型）============ */}
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
-          <h2 className="text-[13px] font-semibold text-ink-100 mb-4 flex items-center gap-2">
+          <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Sparkles size={14} className="text-amber" /> 随机取名生成器
             <HelpPopover title="随机取名怎么用" width="21rem" className="ml-auto">
               {'三步出名字：\n\n1. 选类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）；\n2. 选题材风格（仙侠、玄幻、科幻…），切换类型时会自动带上该类型的常用风格；\n3. 点「换一批」刷新 10 个候选。\n\n· 点名字本身即复制到剪贴板；\n· 点右侧星标收藏，收藏区会列在下方，可随时删除；\n· 定稿的名字记得回「名词术语」或角色卡登记，避免后面重名。'}
@@ -125,7 +125,7 @@ export default function InspireTools() {
           </h2>
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {/* 分类（人名/门派…）与风格（仙侠/古风…）为两级筛选：
-                尺寸统一为 h-8 / px-3 / text-[12px]，靠「形状 + 选中色」区分层级——
+                尺寸统一为 h-8 / px-3 / text-12，靠「形状 + 选中色」区分层级——
                 分类 = 胶囊形 + 琥珀选中（主层级），风格 = 圆角矩形 + 天蓝选中（次层级）。 */}
             <div className="flex gap-1 flex-wrap">
               {NAME_TYPES.map(t => (
@@ -147,24 +147,24 @@ export default function InspireTools() {
                 <Button variant="bare"
                   key={s}
                   onClick={() => setStyle(s)}
-                  className={`h-8 px-3 text-[12px] rounded-lg transition-colors ${style === s ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30' : 'bg-ink-800 text-ink-400 border border-ink-700'}`}
+                  className={`h-8 px-3 text-12 rounded-lg transition-colors ${style === s ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30' : 'bg-ink-800 text-ink-400 border border-ink-700'}`}
                   title={`题材风格：${s}`}
                 >{s}</Button>
               ))}
             </div>
-            <Button onClick={rollNames} variant="primary" size="md" className="ml-auto flex items-center text-[12px]">
+            <Button onClick={rollNames} variant="primary" size="md" className="ml-auto flex items-center text-12">
               <RefreshCw size={12} /> 换一批
             </Button>
             {aiReady ? (
               <Button onClick={aiName}
                 disabled={aiNameLoading}
                 
-                title="让 AI 结合你的世界观设定生成更贴设定的候选名" variant="secondary" size="md" className="flex items-center text-[12px]">
+                title="让 AI 结合你的世界观设定生成更贴设定的候选名" variant="secondary" size="md" className="flex items-center text-12">
                 <Sparkles size={12} /> {aiNameLoading ? 'AI 取名中…' : 'AI 取名'}
               </Button>
             ) : (
               <Button disabled
-                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-[12px] cursor-not-allowed">
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
                 <Sparkles size={12} /> AI 取名
               </Button>
             )}
@@ -174,7 +174,7 @@ export default function InspireTools() {
               <div key={`${n}-${i}`} className="group flex items-center justify-between px-3 py-2.5 bg-ink-800 border border-ink-700 rounded-lg hover:border-amber/40 transition-colors">
                 <span
                   onClick={() => copy(n)}
-                  className="text-[13px] text-ink-100 cursor-pointer hover:text-amber transition-colors"
+                  className="text-13 text-ink-100 cursor-pointer hover:text-amber transition-colors"
                   title="点击复制"
                 >
                   {copied === n ? <span className="text-emerald-400 flex items-center gap-1"><Check size={11} />已复制</span> : n}
@@ -187,16 +187,16 @@ export default function InspireTools() {
           </div>
           {aiNameLoading && streamText && (
             <div className="mt-3">
-              <div className="text-[11px] text-ink-500 mb-1">AI 实时输出</div>
-              <pre className="whitespace-pre-wrap text-[11px] text-ink-300 bg-ink-900/60 border border-ink-700 rounded-lg p-2.5 max-h-48 overflow-auto">{streamText}</pre>
+              <div className="text-11 text-ink-500 mb-1">AI 实时输出</div>
+              <pre className="whitespace-pre-wrap text-11 text-ink-300 bg-ink-900/60 border border-ink-700 rounded-lg p-2.5 max-h-48 overflow-auto">{streamText}</pre>
             </div>
           )}
           {favorites.length > 0 && (
             <div className="mt-4">
-              <div className="text-[11px] text-ink-500 mb-1.5">已收藏（{favorites.length}）</div>
+              <div className="text-11 text-ink-500 mb-1.5">已收藏（{favorites.length}）</div>
               <div className="flex flex-wrap gap-1.5">
                 {favorites.map(f => (
-                  <span key={f} className="inline-flex items-center gap-1 px-2 py-1 bg-ink-800 border border-ink-700 rounded-md text-[12px] text-ink-200">
+                  <span key={f} className="inline-flex items-center gap-1 px-2 py-1 bg-ink-800 border border-ink-700 rounded-md text-12 text-ink-200">
                     {f}
                     <Button variant="icon-danger" onClick={() => toggleFavorite(f)}><Trash2 size={10} /></Button>
                   </span>
@@ -206,19 +206,19 @@ export default function InspireTools() {
           )}
 
           {aiNameErr && (
-            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[12px] text-red-300">
+            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
               <Sparkles size={13} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{aiNameErr}</span>
             </div>
           )}
           {aiNames.length > 0 && (
             <div className="mt-4">
-              <div className="text-[11px] text-ink-500 mb-1.5">AI 取名结果（{aiNames.length}，点名字复制）</div>
+              <div className="text-11 text-ink-500 mb-1.5">AI 取名结果（{aiNames.length}，点名字复制）</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {aiNames.map((n, i) => (
                   <Button variant="bare" key={i} onClick={() => copy(n.name)} className="text-left flex items-start justify-between gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded-lg hover:border-amber/40 transition-colors">
                     <span>
-                      <span className="text-[13px] text-ink-100">{copied === n.name ? <span className="text-emerald-400 flex items-center gap-1"><Check size={11} />已复制</span> : n.name}</span>
-                      {n.meaning && <span className="block text-[10.5px] text-ink-500 mt-0.5">{n.meaning}</span>}
+                      <span className="text-13 text-ink-100">{copied === n.name ? <span className="text-emerald-400 flex items-center gap-1"><Check size={11} />已复制</span> : n.name}</span>
+                      {n.meaning && <span className="block text-10 text-ink-500 mt-0.5">{n.meaning}</span>}
                     </span>
                   </Button>
                 ))}

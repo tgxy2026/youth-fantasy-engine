@@ -57,13 +57,13 @@ function ConfirmView({ title, message, confirmText = '确定', cancelText = '取
         <>
           <Button variant="bare"
             onClick={() => onResult(false)}
-            className="px-3 py-1.5 rounded-lg text-[12px] text-ink-300 border border-ink-600 hover:border-ink-500 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-12 text-ink-300 border border-ink-600 hover:border-ink-500 transition-colors"
           >
             {cancelText}
           </Button>
           <Button variant="bare"
             onClick={() => onResult(true)}
-            className={`px-3 py-1.5 rounded-lg text-[12px] border transition-colors ${
+            className={`px-3 py-1.5 rounded-lg text-12 border transition-colors ${
               danger
                 ? 'bg-red-500/15 text-red-300 border-red-500/40 hover:bg-red-500/25'
                 : 'bg-amber/15 text-amber border-amber/30 hover:bg-amber/25'
@@ -74,7 +74,7 @@ function ConfirmView({ title, message, confirmText = '确定', cancelText = '取
         </>
       }
     >
-      <div className="text-[12px] text-ink-400 leading-relaxed whitespace-pre-line">{message}</div>
+      <div className="text-12 text-ink-400 leading-relaxed whitespace-pre-line">{message}</div>
     </Modal>
   )
 }
@@ -147,7 +147,7 @@ function ToastItem({ message, type }: { message: string; type: ToastType }) {
         ? 'text-red-300 border-red-500/30 bg-red-500/10'
         : 'text-sky-300 border-sky-500/30 bg-sky-500/10'
   return (
-    <div className={`pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-lg border shadow-2xl text-[12px] ${cls} animate-[fadeInUp_0.2s_ease]`}>
+    <div className={`pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-lg border shadow-2xl text-12 ${cls} animate-[fadeInUp_0.2s_ease]`}>
       {icon}
       <span style={{ maxWidth: foldVh('70vw') }}>{message}</span>
     </div>

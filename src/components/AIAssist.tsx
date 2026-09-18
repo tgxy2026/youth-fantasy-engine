@@ -210,7 +210,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
     <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
       <div className="flex items-center gap-2 mb-3">
         <Sparkles size={14} className="text-amber" />
-        <h2 className="text-[13px] font-semibold text-ink-100">AI 辅助规划</h2>
+        <h2 className="text-13 font-semibold text-ink-100">AI 辅助规划</h2>
         <HelpPopover title="AI 辅助规划怎么用" width="23rem" className="ml-0.5">
           {'多轮对话式辅助：左侧可新建 / 切换 / 重命名 / 删除多个规划会话；右侧与模型连续对话。\n\n· 勾选「带入项目资料」可让模型参考你的世界观与角色设定，给出的建议更贴设定；\n· 灵感激发 / 剧情人物世界观规划 / 一致性自查（不生成正文）；\n· 首次使用先到上方「模型配置」添加并选择模型，未接入时对话按钮禁用。'}
           <AIDataSourceNote feature="ai-assist" />
@@ -219,8 +219,8 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
 
       {/* 当前模型状态条 */}
       {active ? (
-        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-ink-800/70 border border-ink-700/70 text-[12px]">
-          <span className={`px-1.5 py-0.5 rounded text-[10px] ${active.type === 'ollama' || active.local ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-400'}`}>
+        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-ink-800/70 border border-ink-700/70 text-12">
+          <span className={`px-1.5 py-0.5 rounded text-10 ${active.type === 'ollama' || active.local ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-400'}`}>
             {typeLabel(active)}
           </span>
           <span className="text-ink-200">{active.name}</span>
@@ -228,7 +228,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
           <span className="text-ink-300 font-mono">{active.model || '（未选模型）'}</span>
         </div>
       ) : (
-        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber/10 border border-amber/25 text-[12px] text-amber">
+        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber/10 border border-amber/25 text-12 text-amber">
           <AlertCircle size={13} /> 尚未配置模型：请先在上方「模型配置」里添加本地或联网模型。
         </div>
       )}
@@ -239,13 +239,13 @@ style={{ height: foldVh('60vh') }}>
         {/* 左：历史会话 */}
         <div className="w-44 shrink-0 flex flex-col bg-ink-900/40 border border-ink-700 rounded-lg overflow-hidden">
           <div className="p-2 border-b border-ink-700">
-            <Button onClick={newSession} variant="primary" size="md" className="w-full flex items-center justify-center text-[12px]">
+            <Button onClick={newSession} variant="primary" size="md" className="w-full flex items-center justify-center text-12">
               <Plus size={12} /> 新建对话
             </Button>
           </div>
           <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
             {sessions.length === 0 ? (
-              <div className="text-[11px] text-ink-500 text-center py-6 px-2">还没有对话，点上方新建</div>
+              <div className="text-11 text-ink-500 text-center py-6 px-2">还没有对话，点上方新建</div>
             ) : (
               [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).map(s => (
                 <div
@@ -254,7 +254,7 @@ style={{ height: foldVh('60vh') }}>
                   className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer transition-colors ${s.id === activeSessionId ? 'bg-amber/10 border border-amber/30' : 'border border-transparent hover:bg-ink-800'}`}
                 >
                   <MessageSquarePlus size={12} className={`shrink-0 ${s.id === activeSessionId ? 'text-amber' : 'text-ink-500'}`} />
-                  <span className={`flex-1 text-[11.5px] truncate ${s.id === activeSessionId ? 'text-amber' : 'text-ink-300'}`}>{s.title}</span>
+                  <span className={`flex-1 text-11 truncate ${s.id === activeSessionId ? 'text-amber' : 'text-ink-300'}`}>{s.title}</span>
                   <Button variant="icon-muted" onClick={e => { e.stopPropagation(); renameSession(s.id) }} className="opacity-40 group-hover:opacity-100 p-0.5" title="重命名"><Pencil size={11} /></Button>
                   <Button variant="icon-danger" onClick={e => { e.stopPropagation(); deleteSession(s.id) }} className="opacity-40 group-hover:opacity-100 p-0.5" title="删除"><Trash2 size={11} /></Button>
                 </div>
@@ -269,12 +269,12 @@ style={{ height: foldVh('60vh') }}>
             {!activeSession || activeSession.messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center text-ink-500 gap-2">
                 <FolderOpen size={20} className="text-ink-600" />
-                <span className="text-[12px]">开始和 AI 聊你的创作构想吧<br />点上方模板可快速提问</span>
+                <span className="text-12">开始和 AI 聊你的创作构想吧<br />点上方模板可快速提问</span>
               </div>
             ) : (
               [...activeSession.messages, ...(loading ? [{ id: '__stream__', role: 'assistant' as const, content: streamingText || '思考中…', ts: Date.now() }] : [])].map(m => (
                 <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-xl px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-amber/15 text-amber border border-amber/25' : 'bg-ink-800 text-ink-200 border border-ink-700'}`}>
+                  <div className={`max-w-[85%] rounded-xl px-3 py-2 text-12 leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-amber/15 text-amber border border-amber/25' : 'bg-ink-800 text-ink-200 border border-ink-700'}`}>
                     {m.content}
                     {m.role === 'assistant' && (
                       <Button variant="icon-muted" onClick={() => copyMsg(m.id, m.content)} className="ml-2 align-middle" title="复制">
@@ -290,12 +290,12 @@ style={{ height: foldVh('60vh') }}>
           {/* 输入区 */}
           <div className="border-t border-ink-700 p-2.5 space-y-2">
             {error && (
-              <div className="flex items-start gap-2 px-2 py-1.5 rounded-lg bg-red-500/10 border border-red-500/25 text-[11px] text-red-300">
+              <div className="flex items-start gap-2 px-2 py-1.5 rounded-lg bg-red-500/10 border border-red-500/25 text-11 text-red-300">
                 <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{error}</span>
               </div>
             )}
             <div className="flex items-center gap-2 flex-wrap">
-              <label className="flex items-center gap-1.5 text-[11px] text-ink-400 cursor-pointer select-none">
+              <label className="flex items-center gap-1.5 text-11 text-ink-400 cursor-pointer select-none">
                 <input type="checkbox" checked={bringContext} onChange={e => setBringContext(e.target.checked)} className="accent-amber" />
                 带入项目资料
               </label>
@@ -304,7 +304,7 @@ style={{ height: foldVh('60vh') }}>
                   <Button variant="bare"
                     key={t.label}
                     onClick={() => setPrompt(t.prompt)}
-                    className="px-2 py-0.5 rounded-full text-[10.5px] bg-ink-800 text-ink-300 border border-ink-700 hover:text-amber hover:border-amber/30 transition-colors"
+                    className="px-2 py-0.5 rounded-full text-10 bg-ink-800 text-ink-300 border border-ink-700 hover:text-amber hover:border-amber/30 transition-colors"
                     title={t.prompt}
                   >
                     {t.label}
@@ -322,11 +322,11 @@ style={{ height: foldVh('60vh') }}>
                 className="!px-3 !py-2 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 focus:border-amber/40 outline-none placeholder:text-ink-600 flex-1"
               />
               {loading ? (
-                <Button onClick={stop} variant="danger" size="md" className="shrink-0 flex items-center text-[12px]">
+                <Button onClick={stop} variant="danger" size="md" className="shrink-0 flex items-center text-12">
                   <AlertCircle size={13} /> 停止
                 </Button>
               ) : (
-                <Button variant="primary" onClick={() => void send()} disabled={!aiReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!aiReady ? AI_DISABLED_HINT : '发送'}>
+                <Button variant="primary" onClick={() => void send()} disabled={!aiReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-12 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!aiReady ? AI_DISABLED_HINT : '发送'}>
                   <Send size={13} /> 发送
                 </Button>
               )}

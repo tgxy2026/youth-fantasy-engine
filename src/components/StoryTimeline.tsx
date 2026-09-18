@@ -178,7 +178,7 @@ export default function StoryTimeline({ rows, calendars }: Props) {
     <div className="page-enter">
       {/* 无环校验提示：检测到时间倒流时给出非阻断告警 */}
       {regressed.length > 0 && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-300">
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-12 text-rose-300">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <div>
             <span className="font-semibold">时间线无环校验：</span>
@@ -189,12 +189,12 @@ export default function StoryTimeline({ rows, calendars }: Props) {
       )}
       {/* 工具条 */}
       <div className="mb-4 flex items-center gap-3 flex-wrap">
-        <div className="text-[12px] text-ink-400">
+        <div className="text-12 text-ink-400">
           共 <span className="text-amber font-semibold">{data.length}</span> 章
           {calLegend && <>，历法顺序：<span className="text-ink-200">{calLegend}</span></>}
         </div>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-          <span className="text-[11px] text-ink-500 mr-1 inline-flex items-center gap-1">
+          <span className="text-11 text-ink-500 mr-1 inline-flex items-center gap-1">
             <Layers size={11} /> 轨道：
           </span>
           {allTracks.map(t => {
@@ -209,7 +209,7 @@ export default function StoryTimeline({ rows, calendars }: Props) {
                   if (next.has(t)) next.delete(t); else next.add(t)
                   return next
                 })}
-                className={`px-2.5 py-0.5 rounded-md text-[11px] border transition-colors inline-flex items-center gap-1
+                className={`px-2.5 py-0.5 rounded-md text-11 border transition-colors inline-flex items-center gap-1
                   ${hidden ? 'bg-ink-800 text-ink-600 border-ink-700 line-through'
                     : `bg-ink-800 ${color.text} border-ink-700 hover:border-ink-600`}`}
               >
@@ -219,12 +219,12 @@ export default function StoryTimeline({ rows, calendars }: Props) {
           })}
         </div>
         <div className="flex items-center gap-1">
-          <span className="text-[11px] text-ink-500 mr-1">核对状态：</span>
+          <span className="text-11 text-ink-500 mr-1">核对状态：</span>
           {(['all', '正常', '已修正', '待核对'] as const).map(s => (
             <Button variant="toggle" selected={filterStatus === s}
               key={s}
               onClick={() => setFilterStatus(s)}
-              className="px-2.5 py-0.5 rounded-md text-[11px] border hover:text-ink-200"
+              className="px-2.5 py-0.5 rounded-md text-11 border hover:text-ink-200"
             >
               {s === 'all' ? '全部' : s}
             </Button>
@@ -244,7 +244,7 @@ export default function StoryTimeline({ rows, calendars }: Props) {
               const color = COLORS[idx % COLORS.length]
               return (
                 <div key={t} className="flex items-start px-2 pt-2" style={{ height: LANE_H }}>
-                  <span className={`text-[11px] font-semibold ${color.text} leading-tight`}>{t}</span>
+                  <span className={`text-11 font-semibold ${color.text} leading-tight`}>{t}</span>
                 </div>
               )
             })}
@@ -296,22 +296,22 @@ export default function StoryTimeline({ rows, calendars }: Props) {
                           : active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
                     >
                       {regressed.includes(d.id) && (
-                        <span className="absolute -top-1.5 -right-1.5 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-rose-500 text-white text-[8px] font-bold shadow" title="时间倒流：故事内时间早于前序事件">
+                        <span className="absolute -top-1.5 -right-1.5 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-rose-500 text-white text-9 font-bold shadow" title="时间倒流：故事内时间早于前序事件">
                           <AlertTriangle size={8} /> 倒流
                         </span>
                       )}
-                      <div className={`text-[10px] ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
+                      <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
                         <Calendar size={9} /> {d.time ? dateLabel(d.time, d.calName) : '时间未定'}
                       </div>
-                      <div className="text-[12px] text-ink-100 font-semibold leading-snug line-clamp-2">
+                      <div className="text-12 text-ink-100 font-semibold leading-snug line-clamp-2">
                         {d.chapter ? `${d.chapter} ` : ''}{d.title || '（未命名章节）'}
                       </div>
                       {d.event && (
-                        <div className="mt-1 text-[10px] text-ink-400 line-clamp-2">{d.event}</div>
+                        <div className="mt-1 text-10 text-ink-400 line-clamp-2">{d.event}</div>
                       )}
                       {d.check && (
                         <div className="mt-1.5">
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded ${CHECK_STYLE[d.check] ?? 'bg-ink-700 text-ink-300'}`}>{d.check}</span>
+                          <span className={`text-9 px-1.5 py-0.5 rounded ${CHECK_STYLE[d.check] ?? 'bg-ink-700 text-ink-300'}`}>{d.check}</span>
                         </div>
                       )}
                     </div>
@@ -343,11 +343,11 @@ export default function StoryTimeline({ rows, calendars }: Props) {
       {selected && (
         <Modal open onClose={() => setSelected(null)} hideHeader width={480} maxHeight="85vh" bodyClassName="!p-0">
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] text-amber font-semibold mb-0.5">
+                <div className="text-10 text-amber font-semibold mb-0.5">
                   {selected.time ? dateLabel(selected.time, selected.calName) : '时间未定'}
                   {selected.calName && <span className="text-ink-500"> · {selected.calName}</span>}
                 </div>
-                <h3 className="text-[16px] font-semibold text-ink-50 leading-snug">
+                <h3 className="text-16 font-semibold text-ink-50 leading-snug">
                   {selected.chapter ? `${selected.chapter} ` : ''}{selected.title || '（未命名章节）'}
                 </h3>
               </div>
@@ -358,12 +358,12 @@ onClick={() => setSelected(null)}
               ><X size={16} /></Button>
             <div className="p-4 space-y-2.5">
               {regressed.includes(selected.id) && (
-                <div className="flex items-center gap-1.5 text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-md px-2 py-1.5">
+                <div className="flex items-center gap-1.5 text-11 text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-md px-2 py-1.5">
                   <AlertTriangle size={11} /> 时间倒流：本章故事内时间早于其前序事件，请核对是否为有意倒叙。
                 </div>
               )}
               {detail(selected).map(([label, value]) => (
-                <div key={label} className="text-[12.5px] leading-relaxed">
+                <div key={label} className="text-12 leading-relaxed">
                   <span className="text-amber/80 font-semibold">{label}：</span>
                   <span className="text-ink-200">{value}</span>
                 </div>

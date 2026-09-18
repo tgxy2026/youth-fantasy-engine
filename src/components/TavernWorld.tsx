@@ -122,7 +122,7 @@ export default function TavernWorld() {
 </HelpPopover>
 
         </div>
-        <p className="text-[12px] text-ink-400 mt-1">
+        <p className="text-12 text-ink-400 mt-1">
           把项目资料提炼成一份精简背景，供剧情推演使用。只对剧情推演生效、随项目（换书就是另一份）——
           自由对话不读它：那里可能混着不同世界观的角色。
         </p>
@@ -135,8 +135,8 @@ export default function TavernWorld() {
           {/* 左：编辑区 */}
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
-              <div className="text-[12px] text-ink-200">一句话总纲</div>
-              <p className="mt-0.5 mb-2 text-[10.5px] text-ink-500 leading-relaxed">
+              <div className="text-12 text-ink-200">一句话总纲</div>
+              <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
                 时代 / 地点 / 基调。它最先进上下文，模型靠它抓住大感觉。
               </p>
               <AutoTextarea
@@ -149,19 +149,19 @@ export default function TavernWorld() {
 
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
               <div className="flex items-center justify-between">
-                <div className="text-[12px] text-ink-200">分节（{w.sections.length}）</div>
+                <div className="text-12 text-ink-200">分节（{w.sections.length}）</div>
                 <Button variant="secondary" size="xs"
                   onClick={() => edit(prev => ({ ...prev, sections: [...prev.sections, { id: uid(), title: '', body: '' }] }))}
                 >
                   ＋ 加一节
                 </Button>
               </div>
-              <p className="mt-0.5 mb-2 text-[10.5px] text-ink-500 leading-relaxed">
+              <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
                 建议 3–6 节、每节一百多字。只留会影响人物言行的内容，背景板式的描述删掉。
               </p>
 
               {w.sections.length === 0 ? (
-                <p className="rounded border border-dashed border-ink-700 p-3 text-center text-[11.5px] text-ink-500">
+                <p className="rounded border border-dashed border-ink-700 p-3 text-center text-11 text-ink-500">
                   还没有分节。可以点右边「一键录入」让 AI 起草，也可以自己一节一节写。
                 </p>
               ) : (
@@ -176,7 +176,7 @@ export default function TavernWorld() {
                             sections: prev.sections.map(x => x.id === s.id ? { ...x, title: e.target.value } : x),
                           }))}
                           placeholder="小节标题（如「规矩与禁忌」）"
-                          className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-[12px] text-ink-100 outline-none focus:border-amber/50"
+                          className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50"
                         />
                         <Button variant="danger" size="xs"
                           title="删掉这一节"
@@ -204,8 +204,8 @@ export default function TavernWorld() {
             </div>
 
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
-              <div className="text-[12px] text-ink-200">关键词（命中才注入）</div>
-              <p className="mt-0.5 mb-2 text-[10.5px] text-ink-500 leading-relaxed">
+              <div className="text-12 text-ink-200">关键词（命中才注入）</div>
+              <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
                 逗号或换行分隔。留空 = 每轮都注入；填了就只在这些词出现时带上这一层。
                 通常填地名、势力名、行话这类「提到就说明需要背景」的词。
               </p>
@@ -224,20 +224,20 @@ export default function TavernWorld() {
               <Button variant="secondary" size="md" disabled={!dirty} onClick={() => void load()}>
                 放弃改动
               </Button>
-              {dirty && <span className="text-[11px] text-amber">有未保存的改动</span>}
+              {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
             </div>
           </div>
 
           {/* 右：一键录入 + 状态 */}
           <aside className="w-72 shrink-0 space-y-3 overflow-y-auto">
             <div className="rounded-lg border border-amber/25 bg-amber/5 p-3">
-              <div className="text-[12px] text-amber">从项目资料提炼</div>
-              <p className="mt-1 text-[10.5px] text-ink-400 leading-relaxed">
+              <div className="text-12 text-amber">从项目资料提炼</div>
+              <p className="mt-1 text-10 text-ink-400 leading-relaxed">
                 读项目里的世界观、势力、人物等资料，由 AI 精简整合成上面的分节。它不会把资料原样搬过来。
               </p>
 
               <div className="mt-2">
-                <div className="text-[11px] text-ink-400">额外要求（可留空）</div>
+                <div className="text-11 text-ink-400">额外要求（可留空）</div>
                 <AutoTextarea
                   value={w.seed}
                   onChange={v => edit(prev => ({ ...prev, seed: v }))}
@@ -259,15 +259,15 @@ export default function TavernWorld() {
               >
                 {drafting ? '正在生成…' : '一键从项目提炼'}
               </Button>
-              <p className="mt-1.5 text-[10px] text-ink-500 leading-relaxed">
+              <p className="mt-1.5 text-10 text-ink-500 leading-relaxed">
                 ⚠️ 会覆盖现有分节（brief 只在原来是空的时候填）。生成后请过一遍再保存。
               </p>
               <DraftSourceLine source={lastSource} />
             </div>
 
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
-              <div className="text-[12px] text-ink-200">注入情况</div>
-              <div className="mt-1.5 space-y-1 text-[11px] text-ink-400">
+              <div className="text-12 text-ink-200">注入情况</div>
+              <div className="mt-1.5 space-y-1 text-11 text-ink-400">
                 <div>
                   当前 <span className={overLimit ? 'text-amber' : 'text-ink-200'}>{chars}</span> 字
                   <span className="text-ink-600"> / 上限 {WORLD_MAX_CHARS}</span>
@@ -288,8 +288,8 @@ export default function TavernWorld() {
             </div>
 
             <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
-              <div className="text-[12px] text-ink-200">注入预览</div>
-              <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-[10.5px] leading-relaxed text-ink-400">
+              <div className="text-12 text-ink-200">注入预览</div>
+              <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
                 {worldToText(w) || '（空）'}
               </pre>
             </div>

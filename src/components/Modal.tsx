@@ -212,7 +212,7 @@ export function Modal({
                 {titleSlot}
               </div>
             ) : (
-              <h3 id={titleId} className="text-[14px] font-semibold text-ink-50 flex-1 truncate">
+              <h3 id={titleId} className="text-14 font-semibold text-ink-50 flex-1 truncate">
                 {title}
               </h3>
             )}

@@ -250,31 +250,31 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 • 字段带「示例」时可参考填法；修改后点右上「保存」或按 Ctrl+S。
 • 右上「隐藏已退场」开关：开启后列表与统计隐藏「人物状态 = 已退场」的角色，角色过多时方便聚焦。`}</HelpPopover>
           </div>
-          <p className="mt-1.5 text-[13px] text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
+          <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+          <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
           <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
-            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium hover:bg-amber/25"
+            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
             title={dirty ? '保存（Ctrl+S）' : '无未保存修改'}
           >
             <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
           </Button>
-          <Button onClick={addCard} variant="primary" size="md" className="flex items-center text-[13px]">
+          <Button onClick={addCard} variant="primary" size="md" className="flex items-center text-13">
             <Plus size={14} /> 新建角色
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全角色卡其余字段'}>
+            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全角色卡其余字段'}>
               <Sparkles size={14} /> AI 补全
             </Button>
           )}
           <Button variant="toggle" selected={hideRetired}
             onClick={() => setHideRetired(v => !v)}
-            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium hover:bg-amber/25"
+            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
             title="隐藏「人物状态 = 已退场」的角色，避免列表过长"
           >
             <EyeOff size={14} /> 隐藏已退场
@@ -299,20 +299,20 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
               >
                 <div className="flex items-center gap-2">
                   <UserRound size={13} className="shrink-0" />
-                  <span className="text-[13px] font-medium truncate flex-1">{rec.name}</span>
+                  <span className="text-13 font-medium truncate flex-1">{rec.name}</span>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存的改动" />}
                   <Button variant="icon-danger" onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-40 group-hover:opacity-100 transition-all">
                     <Trash2 size={12} />
                   </Button>
                 </div>
-                <div className="text-[10px] text-ink-500 mt-0.5 truncate">
+                <div className="text-10 text-ink-500 mt-0.5 truncate">
                   {Object.values(rec.data).find(v => v) || '未填写'}
                 </div>
               </div>
             )
           })}
           {visibleRecords.length === 0 && (
-            <div className="text-center text-ink-500 text-[12px] py-12 border border-dashed border-ink-700 rounded-lg">
+            <div className="text-center text-ink-500 text-12 py-12 border border-dashed border-ink-700 rounded-lg">
               {records.length === 0 ? '点击右上角新建角色' : '已退场的角色已隐藏'}
             </div>
           )}
@@ -330,13 +330,13 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                 >
                   {draft.name}
                 </h2>
-                <span className="text-[10px] text-ink-500">点击姓名可改名 · 修改后点「保存」</span>
+                <span className="text-10 text-ink-500">点击姓名可改名 · 修改后点「保存」</span>
               </div>
               {tab.modules!.map(mod => (
                 <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
                   <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
                     <span className="w-1 h-3 rounded-full bg-amber/70" />
-                    <h3 className="text-[12px] font-semibold text-ink-100">{mod.name}</h3>
+                    <h3 className="text-12 font-semibold text-ink-100">{mod.name}</h3>
                   </div>
                   <div className="divide-y divide-ink-700/60">
                     {mod.fields.map(field => {
@@ -345,7 +345,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                       return (
                         <div key={key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
                           <div>
-                            <div className="text-[12px] font-medium text-ink-100">{field.name}</div>
+                            <div className="text-12 font-medium text-ink-100">{field.name}</div>
                             {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                           </div>
                           <div>
@@ -362,7 +362,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                               <select
                                 value={val}
                                 onChange={e => updateField(key, e.target.value)}
-                                className="w-full text-[12px] bg-ink-800 border border-ink-700 rounded px-2 py-1"
+                                className="w-full text-12 bg-ink-800 border border-ink-700 rounded px-2 py-1"
                               >
                                 {CARD_SELECT_OPTIONS[field.name].map(o => (
                                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -373,7 +373,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                                 value={val}
                                 onChange={v => updateField(key, v)}
                                 placeholder="点击填写…"
-                                className="text-[12px]"
+                                className="text-12"
                                 minHeight={32}
                               />
                             )}
@@ -402,7 +402,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
       {tab.tips && tab.tips.length > 0 && (
         <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4 space-y-1.5">
           {tab.tips.map((tip, i) => (
-            <div key={i} className="text-[12px] text-amber/80 leading-relaxed flex items-start gap-2">
+            <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
               <Info size={12} className="mt-0.5 shrink-0" />
               <span>{tip}</span>
             </div>

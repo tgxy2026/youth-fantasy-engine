@@ -66,17 +66,17 @@ export default function PromptModal({
       layer={Z.prompt}
       footer={
         <>
-          <Button onClick={onCancel} variant="secondary" size="md" className="text-[12px]">
+          <Button onClick={onCancel} variant="secondary" size="md" className="text-12">
             {cancelText}
           </Button>
           <Button onClick={submit}
-            disabled={!allowEmpty && !val.trim()} variant="primary" size="md" className="text-[12px]">
+            disabled={!allowEmpty && !val.trim()} variant="primary" size="md" className="text-12">
             {confirmText}
           </Button>
         </>
       }
     >
-      {label && <div className="text-[11px] text-ink-400 leading-relaxed mb-1.5">{label}</div>}
+      {label && <div className="text-11 text-ink-400 leading-relaxed mb-1.5">{label}</div>}
       <input
         ref={inputRef}
         autoFocus
@@ -89,7 +89,7 @@ export default function PromptModal({
         }}
         placeholder={placeholder}
         style={transformUppercase ? { textTransform: 'uppercase' } : undefined}
-        className="w-full bg-ink-900 border border-ink-600 rounded-lg px-3 py-2 text-[13px] text-ink-100 outline-none focus:border-amber/60 placeholder:text-ink-500 mb-4"
+        className="w-full bg-ink-900 border border-ink-600 rounded-lg px-3 py-2 text-13 text-ink-100 outline-none focus:border-amber/60 placeholder:text-ink-500 mb-4"
       />
     </Modal>
   )

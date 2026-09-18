@@ -148,20 +148,20 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
     <div className="page-enter">
       {/* 工具条 */}
       <div className="mb-4 flex items-center gap-3 flex-wrap">
-        <div className="text-[12px] text-ink-400">
+        <div className="text-12 text-ink-400">
           共 <span className="text-amber font-semibold">{data.length}</span> 个事件
           {calLegend && <>，历法顺序：<span className="text-ink-200">{calLegend}</span></>}
         </div>
         {calendars.length > 1 && (
-          <span className="text-[10px] text-ink-500">（虚线段 = 相邻事件时间跨度超过 5 年）</span>
+          <span className="text-10 text-ink-500">（虚线段 = 相邻事件时间跨度超过 5 年）</span>
         )}
         <div className="flex items-center gap-1 ml-auto">
-          <span className="text-[11px] text-ink-500 mr-1">状态筛选：</span>
+          <span className="text-11 text-ink-500 mr-1">状态筛选：</span>
           {(['all', '已定稿', '待补充', '已变更'] as const).map(s => (
             <Button variant="toggle" selected={filterStatus === s}
               key={s}
               onClick={() => setFilterStatus(s)}
-              className="px-2.5 py-0.5 rounded-md text-[11px] border hover:text-ink-200"
+              className="px-2.5 py-0.5 rounded-md text-11 border hover:text-ink-200"
             >
               {s === 'all' ? '全部' : s}
             </Button>
@@ -204,20 +204,20 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
                   className={`bg-ink-850 border rounded-lg p-2.5 cursor-pointer transition-all
                     ${active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
                 >
-                  <div className={`text-[10px] ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
+                  <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
                     <Calendar size={9} /> {d.time ? dateLabel(d.time, d.calName) : '时间未定'}
                   </div>
-                  <div className="text-[12px] text-ink-100 font-semibold leading-snug line-clamp-2">
+                  <div className="text-12 text-ink-100 font-semibold leading-snug line-clamp-2">
                     {d.title || '（未命名事件）'}
                   </div>
                   {d.who && (
-                    <div className="mt-1.5 text-[10px] text-ink-400 flex items-center gap-1">
+                    <div className="mt-1.5 text-10 text-ink-400 flex items-center gap-1">
                       <Users size={9} /> <span className="truncate">{d.who}</span>
                     </div>
                   )}
                   {d.status && (
                     <div className="mt-1.5">
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded ${STATUS_STYLE[d.status] ?? 'bg-ink-700 text-ink-300'}`}>{d.status}</span>
+                      <span className={`text-9 px-1.5 py-0.5 rounded ${STATUS_STYLE[d.status] ?? 'bg-ink-700 text-ink-300'}`}>{d.status}</span>
                     </div>
                   )}
                 </div>
@@ -245,11 +245,11 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
       {selected && (
         <Modal open onClose={() => setSelected(null)} hideHeader width={480} maxHeight="85vh" bodyClassName="!p-0">
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] text-amber font-semibold mb-0.5">
+                <div className="text-10 text-amber font-semibold mb-0.5">
                   {selected.time ? dateLabel(selected.time, selected.calName) : '时间未定'}
                   {selected.calName && <span className="text-ink-500"> · {selected.calName}</span>}
                 </div>
-                <h3 className="text-[16px] font-semibold text-ink-50 leading-snug">{selected.title || '（未命名事件）'}</h3>
+                <h3 className="text-16 font-semibold text-ink-50 leading-snug">{selected.title || '（未命名事件）'}</h3>
               </div>
               <Button variant="bare" iconOnly size="xs"
                 title="关闭详情"
@@ -258,7 +258,7 @@ onClick={() => setSelected(null)}
               ><X size={16} /></Button>
             <div className="p-4 space-y-2.5">
               {detail(selected).map(([label, value]) => (
-                <div key={label} className="text-[12.5px] leading-relaxed">
+                <div key={label} className="text-12 leading-relaxed">
                   <span className="text-amber/80 font-semibold">{label}：</span>
                   <span className="text-ink-200">{value}</span>
                 </div>

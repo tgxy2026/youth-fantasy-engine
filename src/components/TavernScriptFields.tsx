@@ -64,15 +64,15 @@ export default function TavernScriptFields({ value, onChange }: {
         return (
           <div key={f.key} className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
             <div className="flex items-center gap-2">
-              <span className="text-[12px] text-ink-200">{f.label}</span>
+              <span className="text-12 text-ink-200">{f.label}</span>
               <span className="flex-1" />
               {max && (
-                <span className={`text-[10.5px] ${over ? 'text-amber' : 'text-ink-600'}`}>
+                <span className={`text-10 ${over ? 'text-amber' : 'text-ink-600'}`}>
                   {text.length} / {max}
                 </span>
               )}
             </div>
-            <p className="mt-0.5 mb-2 text-[10.5px] leading-relaxed text-ink-500">{f.hint}</p>
+            <p className="mt-0.5 mb-2 text-10 leading-relaxed text-ink-500">{f.hint}</p>
             {f.rows <= 1 ? (
               <input
                 value={text}

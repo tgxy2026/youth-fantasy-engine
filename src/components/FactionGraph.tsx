@@ -139,8 +139,8 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
       <div className="flex flex-col items-center justify-center text-ink-500 gap-2"
         style={{ height: foldVh('60vh') }}>
         <Network size={32} className="opacity-40" />
-        <div className="text-[13px]">暂无势力关系</div>
-        <div className="text-[11px] text-ink-600">请在表格登记 势力A / 势力B / 关系类型，图谱会自动生成</div>
+        <div className="text-13">暂无势力关系</div>
+        <div className="text-11 text-ink-600">请在表格登记 势力A / 势力B / 关系类型，图谱会自动生成</div>
       </div>
     )
   }
@@ -231,17 +231,17 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
             ...present.filter(t => !REL_COLORS[t]),
           ]
           return ordered.map(t => (
-            <span key={t} className="flex items-center gap-1 text-[11px] text-ink-300">
+            <span key={t} className="flex items-center gap-1 text-11 text-ink-300">
               <span className="w-2.5 h-2.5 rounded-full" style={{ background: relColor(t) }} />
               {t}
-              {!REL_COLORS[t] && <span className="text-[9px] text-ink-500 bg-ink-900 px-1 rounded leading-none">自定义</span>}
+              {!REL_COLORS[t] && <span className="text-9 text-ink-500 bg-ink-900 px-1 rounded leading-none">自定义</span>}
             </span>
           ))
         })()}
       </div>
 
       {/* 缩放提示 */}
-      <div className="absolute right-3 top-3 text-[10px] text-ink-500 bg-ink-850/70 rounded px-2 py-0.5">
+      <div className="absolute right-3 top-3 text-10 text-ink-500 bg-ink-850/70 rounded px-2 py-0.5">
         滚轮缩放 · 拖拽平移/移动节点
       </div>
 
@@ -249,28 +249,28 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
       {selected && (
         <div className="absolute right-3 top-12 bottom-3 w-64 bg-ink-850/95 backdrop-blur rounded-xl border border-ink-700 p-3 overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-[13px] font-semibold text-amber">{selected}</div>
+            <div className="text-13 font-semibold text-amber">{selected}</div>
             <Button variant="icon-muted" onClick={() => setSelected(null)}>
               <X size={16} />
             </Button>
           </div>
           <Button variant="bare"
             onClick={() => onNavigate?.('nations')}
-            className="text-[11px] text-sky-400 hover:text-sky-300 mb-3 inline-flex items-center gap-1"
+            className="text-11 text-sky-400 hover:text-sky-300 mb-3 inline-flex items-center gap-1"
           >
             <ArrowUpRight size={11} /> 在《国家势力》查看
           </Button>
-          <div className="text-[11px] text-ink-400 mb-1.5 flex items-center gap-1">
+          <div className="text-11 text-ink-400 mb-1.5 flex items-center gap-1">
             <Users size={11} /> 所属成员（{members.length}）
           </div>
           {members.length === 0 ? (
-            <div className="text-[11px] text-ink-600">暂无角色卡将「所属势力」设为 {selected}</div>
+            <div className="text-11 text-ink-600">暂无角色卡将「所属势力」设为 {selected}</div>
           ) : (
             <div className="space-y-1.5">
               {members.map((m, i) => (
                 <div key={i} className="bg-ink-800 rounded-lg px-2 py-1.5">
-                  <div className="text-[12px] text-ink-100">{m.name}</div>
-                  <div className="text-[10px] text-ink-500">
+                  <div className="text-12 text-ink-100">{m.name}</div>
+                  <div className="text-10 text-ink-500">
                     {m.type}
                     {m.role ? ' · ' + m.role : ''}
                   </div>

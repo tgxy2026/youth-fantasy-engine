@@ -53,28 +53,28 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
   return (
     <ToolModal title="名词术语 AI 查重" icon={<Layers size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-[11px] text-ink-500">
+        <span className="flex-1 text-11 text-ink-500">
           让 AI 扫描术语表，找出同义 / 重复的概念并建议合并归一，避免"同一事物两个名字"的前后矛盾。未配置模型不影响手动录入。
         </span>
       </div>
       <AIDataSourceNote feature="term-dedup" />
 
       {terms.length === 0 && !done && (
-        <div className="text-[12px] text-ink-400 py-6 text-center">术语表还是空的，先登记一些术语再来查重。</div>
+        <div className="text-12 text-ink-400 py-6 text-center">术语表还是空的，先登记一些术语再来查重。</div>
       )}
 
       {terms.length > 0 && !done && (
         <Button onClick={run}
           disabled={!aiReady || loading}
           
-          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的术语做 AI 查重'} variant="primary" size="md" className="flex items-center text-[13px]">
+          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的术语做 AI 查重'} variant="primary" size="md" className="flex items-center text-13">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '查重中…' : `开始查重（${terms.length} 个术语）`}
         </Button>
       )}
 
       {error && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[12px] text-red-300 mt-3">
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300 mt-3">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -82,30 +82,30 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
 
       {done && (
         groups.length === 0 ? (
-          <div className="text-[12px] text-emerald-400 py-6 text-center">未发现明显重复 / 同义的术语 ✓</div>
+          <div className="text-12 text-emerald-400 py-6 text-center">未发现明显重复 / 同义的术语 ✓</div>
         ) : (
           <div className="space-y-3 mt-2">
-            <div className="text-[12px] text-ink-400">AI 找到 {groups.length} 组可能重复 / 同义的术语：</div>
+            <div className="text-12 text-ink-400">AI 找到 {groups.length} 组可能重复 / 同义的术语：</div>
             {groups.map((g, i) => (
               <div key={i} className="rounded-lg border border-amber/25 bg-amber/5 p-3">
                 <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                   {g.terms.map((t, j) => (
-                    <span key={j} className="px-2 py-0.5 rounded bg-ink-800 text-ink-100 text-[12px] border border-ink-700">
+                    <span key={j} className="px-2 py-0.5 rounded bg-ink-800 text-ink-100 text-12 border border-ink-700">
                       {t}
                     </span>
                   ))}
                 </div>
-                <div className="text-[11.5px] text-ink-400 mb-1">
+                <div className="text-11 text-ink-400 mb-1">
                   <span className="text-ink-500">为什么重复：</span>{g.reason || '—'}
                 </div>
-                <div className="text-[11.5px] text-amber/80">
+                <div className="text-11 text-amber/80">
                   <span className="text-ink-500">建议统一为：</span>{g.suggestion || '—'}
                 </div>
               </div>
             ))}
             <Button variant="bare"
               onClick={() => setDone(false)}
-              className="px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600"
+              className="px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-12 hover:bg-ink-600"
             >
               重新查重
             </Button>

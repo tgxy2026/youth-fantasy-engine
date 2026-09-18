@@ -90,7 +90,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
     <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
       <div className="flex items-center gap-2">
         <Database size={14} className="shrink-0 text-amber" />
-        <h2 className="text-[13px] font-semibold text-ink-100">正文写作 AI 额度</h2>
+        <h2 className="text-13 font-semibold text-ink-100">正文写作 AI 额度</h2>
         <HelpPopover title="正文写作 AI 额度怎么用" width="23rem" size={12}>
           {`编辑器、颉文姬、检查工具、灵感工具这些「正文写作」的 AI 功能，会把项目里的设定资料一并发给模型做参照。
 这个「基准」就是它们带多少资料的「总闸门」 —— 各功能按自己的系数取用（点下面「看各功能实际取值」有明细）。
@@ -103,21 +103,21 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
 那边还有记忆档、设定层占比等一整套。两边各管各的、「互不冲突」。`}
         </HelpPopover>
         <div className="flex-1" />
-        {dirty && <span className="text-[11px] text-amber">未保存</span>}
+        {dirty && <span className="text-11 text-amber">未保存</span>}
         <Button variant="primary" size="sm" disabled={!dirty || saving} onClick={() => void commit(parsed)}>
           {saving ? '保存中…' : '保存'}
         </Button>
       </div>
 
-      <p className="mt-1 text-[11.5px] text-ink-500 leading-relaxed">
+      <p className="mt-1 text-11 text-ink-500 leading-relaxed">
         正文写作链路各 AI 功能「带多少项目设定资料」的总闸门。出厂基准 {DEFAULT_WRITER_BASE} 字 ——
         不动它时行为与以前完全一致。
       </p>
 
       {modelDesc && (
         <div className="mt-2 rounded border border-ink-700 bg-ink-900/40 px-3 py-2">
-          <div className="text-[11.5px] text-ink-200">{modelDesc}</div>
-          <div className="mt-0.5 text-[10.5px] text-ink-500">
+          <div className="text-11 text-ink-200">{modelDesc}</div>
+          <div className="mt-0.5 text-10 text-ink-500">
             {rec != null
               ? (localModel
                 ? `本地模型：基准不放大（推荐 ${rec} 字，资料不该超过窗口的 1/4，其余留给正文与输出）`
@@ -129,7 +129,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1.5 text-[12px] text-ink-300 cursor-pointer select-none">
+        <label className="flex items-center gap-1.5 text-12 text-ink-300 cursor-pointer select-none">
           <input type="checkbox" checked={autoTune} disabled={saving}
             onChange={e => void toggleAutoTune(e.target.checked)} className="accent-amber" />
           额度跟随模型自动调整
@@ -140,11 +140,11 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
 ⚠️ 只在「换模型」时生效：同一个模型下你手调的基准「不会被改回去」（想完全手工就关掉这个开关，
 面板上仍可随时点「采用推荐值」手动套一次）。`}
         </HelpPopover>
-        {!autoTune && <span className="text-[10.5px] text-ink-500">（当前为手工模式，换模型不会自动改）</span>}
+        {!autoTune && <span className="text-10 text-ink-500">（当前为手工模式，换模型不会自动改）</span>}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <label className="text-[12px] text-ink-300">资料预算基准</label>
+        <label className="text-12 text-ink-300">资料预算基准</label>
         <input
           type="number"
           value={draft}
@@ -152,10 +152,10 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
           max={WRITER_BASE_LIMITS.max}
           step={WRITER_BASE_LIMITS.step}
           onChange={e => setDraft(e.target.value)}
-          className="w-28 rounded bg-ink-900 border border-ink-700 px-2 py-1 text-[12px] text-ink-100 outline-none focus:border-amber/50"
+          className="w-28 rounded bg-ink-900 border border-ink-700 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50"
         />
-        <span className="text-[11px] text-ink-500">字（{WRITER_BASE_LIMITS.min} ~ {WRITER_BASE_LIMITS.max}）</span>
-        {!valid && draft !== '' && <span className="text-[11px] text-rose-300">超出可填范围</span>}
+        <span className="text-11 text-ink-500">字（{WRITER_BASE_LIMITS.min} ~ {WRITER_BASE_LIMITS.max}）</span>
+        {!valid && draft !== '' && <span className="text-11 text-rose-300">超出可填范围</span>}
         {rec != null && rec !== base && (
           <Button variant="secondary" size="sm" className="inline-flex items-center gap-1"
             onClick={() => setDraft(String(rec))} title={`按当前模型采用推荐值 ${rec} 字`}>
@@ -172,13 +172,13 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
       <div className="mt-3">
         <Button variant="bare" size="xs"
           onClick={() => setOpen(o => !o)}
-          className="inline-flex items-center gap-1 px-1 py-px rounded text-[11px] text-ink-400 hover:text-amber hover:bg-ink-700/60 transition-colors">
+          className="inline-flex items-center gap-1 px-1 py-px rounded text-11 text-ink-400 hover:text-amber hover:bg-ink-700/60 transition-colors">
           {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           {open ? '收起明细' : `看各功能实际取值（${preview.length} 项）`}
         </Button>
         {open && (
           <>
-            <div className="mt-1.5 text-[10.5px] text-ink-500">
+            <div className="mt-1.5 text-10 text-ink-500">
               按当前基准 {(valid ? parsed : base)} 字换算
               {rec != null && rec !== (valid ? parsed : base) && <> · <span className="text-amber/90">→ 为推荐基准 {rec} 字下的值</span></>}
             </div>
@@ -186,7 +186,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
               {preview.map(x => {
                 const recVal = rec != null ? budgetForKind(x.kind, rec) : null
                 return (
-                  <li key={x.kind} className="flex items-baseline gap-1.5 text-[11px]">
+                  <li key={x.kind} className="flex items-baseline gap-1.5 text-11">
                     <span className="text-ink-400 truncate">{x.label}</span>
                     <span className="flex-1 border-b border-dotted border-ink-700/70" />
                     <span className="text-ink-200 tabular-nums">{x.value}</span>
@@ -202,7 +202,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
       </div>
 
       {/* 🔴 必须保留：这是作者最容易混淆的一点（酒馆的额度在别处，两边不冲突） */}
-      <div className="mt-3 border-t border-ink-700/70 pt-2 text-[10.5px] text-ink-500 leading-relaxed">
+      <div className="mt-3 border-t border-ink-700/70 pt-2 text-10 text-ink-500 leading-relaxed">
         这里的额度只作用于<b className="text-ink-400">正文写作链路</b>（编辑器 / 颉文姬 / 检查工具 / 灵感工具）。
         酒馆模式（剧情推演 / 自由对话）的上下文额度在<b className="text-ink-400">「酒馆模式 → 控制面板」</b>里单独设置，
         那边还有记忆档、设定层占比等一整套 —— <b className="text-ink-400">两边各管各的、互不冲突</b>。

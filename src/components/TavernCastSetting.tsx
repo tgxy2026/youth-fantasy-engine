@@ -101,7 +101,7 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
       width="lg"
       footer={
         <div className="flex items-center justify-between gap-3 w-full">
-          <span className="text-[11px] text-ink-500">
+          <span className="text-11 text-ink-500">
             {loading ? '读取中…' : filled === 0 ? '六栏可全留空 —— 留空就不下发这一层' : `已填 ${filled} / 6 栏`}
           </span>
           <div className="flex gap-2">
@@ -115,10 +115,10 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
       }
     >
       {loading ? (
-        <div className="py-8 text-center text-[12px] text-ink-500">正在读取扮演设定…</div>
+        <div className="py-8 text-center text-12 text-ink-500">正在读取扮演设定…</div>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-md border border-ink-800 bg-ink-850/40 px-3 py-2 text-[11.5px] text-ink-400 leading-relaxed">
+          <div className="rounded-md border border-ink-800 bg-ink-850/40 px-3 py-2 text-11 text-ink-400 leading-relaxed">
             {kind === 'ai' ? (
               <>这里写的是「<span className="text-amber">该怎么演Ta</span>」，不是背景资料 —— 背景走角色卡。
                 塞行为，不塞设定：写「被提起家人会沉默」有用，写「Ta是某某的女儿」没用（卡片里已经有了）。</>
@@ -131,8 +131,8 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
           {FIELDS.map(f => (
             <section key={f.key}>
               <div className="flex items-baseline gap-2">
-                <label className="text-[12px] text-ink-200">{f.label}</label>
-                <span className="text-[11px] text-ink-500">{f.hint}</span>
+                <label className="text-12 text-ink-200">{f.label}</label>
+                <span className="text-11 text-ink-500">{f.hint}</span>
               </div>
               <AutoTextarea
                 className="mt-1.5 px-2 py-1.5 bg-ink-900 border border-ink-700 rounded-md py-1.5 text-ink-100 outline-none focus:border-amber/50"
@@ -146,7 +146,7 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
             </section>
           ))}
 
-          <div className="text-[11px] text-ink-500 border-t border-ink-800 pt-2 leading-relaxed">
+          <div className="text-11 text-ink-500 border-t border-ink-800 pt-2 leading-relaxed">
             想不起怎么填时，先填<span className="text-ink-300">「绝不会做的事」</span> —— 它防 OOC 最有效。
           </div>
         </div>

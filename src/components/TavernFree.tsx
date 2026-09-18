@@ -1142,10 +1142,10 @@ export default function TavernFree() {
           active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
         }`}
       >
-        <div className={`truncate text-[12px] ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>
+        <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <span className="truncate text-[10.5px] text-ink-500">{names}</span>
-          <span className="shrink-0 text-[10.5px] text-ink-600">{agoText(s.lastActiveAt)}</span>
+          <span className="truncate text-10 text-ink-500">{names}</span>
+          <span className="shrink-0 text-10 text-ink-600">{agoText(s.lastActiveAt)}</span>
         </div>
       </button>
     )
@@ -1220,7 +1220,7 @@ export default function TavernFree() {
   • 想给这一场一个具体处境，就在新建对话时选一份剧本（「故事剧本」里写，要先有故事）。
   <AIDataSourceNote feature="tavern-free" />
 </HelpPopover>
-        {session && <span className="max-w-[28rem] truncate text-[12px] text-ink-400" title={session.title}>{session.title}</span>}
+        {session && <span className="max-w-[28rem] truncate text-12 text-ink-400" title={session.title}>{session.title}</span>}
         <div className="flex-1" />
         {session && (
           <>
@@ -1232,7 +1232,7 @@ export default function TavernFree() {
             {/* 已归档：先说明状态再给唯一的补救入口 —— 顺序不能反，
                 否则作者第一眼看到的是「新开一场」，会以为自己的对话没了 */}
             {session.endedAt ? (
-              <span className="text-[11.5px] text-amber/80">
+              <span className="text-11 text-amber/80">
                 本轮已于 {agoText(session.endedAt)}结束（只读）
               </span>
             ) : null}
@@ -1281,7 +1281,7 @@ export default function TavernFree() {
           </Button>
           {sessions.length > 4 && (
             <input
-              className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+              className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
               placeholder="筛选（标题 / 角色）"
               value={q}
               onChange={e => setQ(e.target.value)}
@@ -1300,17 +1300,17 @@ export default function TavernFree() {
                     title={closed ? '展开这个故事的对话' : '收起这个故事的对话'}
                     className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-ink-800/60"
                   >
-                    <span className={`shrink-0 text-[10px] ${closed ? 'text-ink-600' : 'text-amber/80'}`}>
+                    <span className={`shrink-0 text-10 ${closed ? 'text-ink-600' : 'text-amber/80'}`}>
                       {closed ? '▸' : '▾'}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-300">{g.name}</span>
-                    <span className="shrink-0 text-[10px] text-ink-600">{g.rows.length}</span>
+                    <span className="min-w-0 flex-1 truncate text-11 text-ink-300">{g.name}</span>
+                    <span className="shrink-0 text-10 text-ink-600">{g.rows.length}</span>
                   </button>
                   {!closed && (
                     <div className="ml-3 space-y-1 border-l border-ink-800 pl-1.5">
                       {g.rows.map(s => renderSessionRow(s))}
                       {g.rows.length === 0 && (
-                        <p className="px-1 py-1 text-[10.5px] text-ink-600">还没有对话</p>
+                        <p className="px-1 py-1 text-10 text-ink-600">还没有对话</p>
                       )}
                     </div>
                   )}
@@ -1327,11 +1327,11 @@ export default function TavernFree() {
                   title={closedStoryIds.includes('__orphan__') ? '展开' : '收起'}
                   className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-ink-800/60"
                 >
-                  <span className={`shrink-0 text-[10px] ${closedStoryIds.includes('__orphan__') ? 'text-ink-600' : 'text-amber/80'}`}>
+                  <span className={`shrink-0 text-10 ${closedStoryIds.includes('__orphan__') ? 'text-ink-600' : 'text-amber/80'}`}>
                     {closedStoryIds.includes('__orphan__') ? '▸' : '▾'}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-300">未归属</span>
-                  <span className="shrink-0 text-[10px] text-ink-600">{tree.orphan.length}</span>
+                  <span className="min-w-0 flex-1 truncate text-11 text-ink-300">未归属</span>
+                  <span className="shrink-0 text-10 text-ink-600">{tree.orphan.length}</span>
                 </button>
                 {!closedStoryIds.includes('__orphan__') && (
                   <div className="ml-3 space-y-1 border-l border-ink-800 pl-1.5">
@@ -1342,21 +1342,21 @@ export default function TavernFree() {
             )}
 
             {tree.total === 0 && (
-              <p className="px-1 py-2 text-[11px] leading-relaxed text-ink-500">
+              <p className="px-1 py-2 text-11 leading-relaxed text-ink-500">
                 {sessions.length === 0
                   ? '还没有对话 —— 点上面「新建对话」开一场（要先有故事）。'
                   : '没有匹配的对话。'}
               </p>
             )}
           </div>
-          <div className="shrink-0 border-t border-ink-800 pt-2 text-[10.5px] text-ink-500">共 {sessions.length} 场</div>
+          <div className="shrink-0 border-t border-ink-800 pt-2 text-10 text-ink-500">共 {sessions.length} 场</div>
         </aside>
 
         {chars.length === 0 ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border border-ink-700 bg-ink-850/60">
             <div className="text-center">
-              <p className="text-[13px] text-ink-300">还没有角色可聊</p>
-              <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
+              <p className="text-13 text-ink-300">还没有角色可聊</p>
+              <p className="mt-2 text-12 text-ink-500 leading-relaxed">
                 先到「故事剧本」建一个<b className="text-ink-400">故事</b>（这个世界什么样），
                 再到「角色卡片」建一张卡（它属于哪个故事）。
                 <br />
@@ -1367,8 +1367,8 @@ export default function TavernFree() {
         ) : !session ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border border-ink-800">
             <div className="text-center">
-              <p className="text-[13px] text-ink-300">还没有选择对话</p>
-              <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
+              <p className="text-13 text-ink-300">还没有选择对话</p>
+              <p className="mt-2 text-12 text-ink-500 leading-relaxed">
                 从左栏点一场继续，或「＋ 新建对话」开一场 —— 新建时要先选一个故事，
                 再从这个故事的角色里挑人（可以单角色聊，也能让两三个角色同场）。
               </p>
@@ -1392,7 +1392,7 @@ export default function TavernFree() {
                           if (e.key === 'Escape') { e.preventDefault(); setEditingTitle(false) }
                         }}
                         onBlur={() => void saveTitle()}
-                        className="w-56 bg-ink-900 border border-amber/50 rounded px-2 py-0.5 text-[12.5px] text-ink-100 outline-none"
+                        className="w-56 bg-ink-900 border border-amber/50 rounded px-2 py-0.5 text-12 text-ink-100 outline-none"
                       />
                     ) : (
                       <button
@@ -1401,11 +1401,11 @@ export default function TavernFree() {
                         onClick={() => { setTitleDraft(session.title); setEditingTitle(true) }}
                         className="group flex items-center gap-1.5 max-w-full text-left"
                       >
-                        <span className="truncate text-[12.5px] text-ink-100">{session.title}</span>
+                        <span className="truncate text-12 text-ink-100">{session.title}</span>
                         <Pencil className="w-3 h-3 shrink-0 text-ink-600 group-hover:text-amber" />
                       </button>
                     )}
-                    <div className="text-[10.5px] text-ink-500 flex flex-wrap items-center gap-2">
+                    <div className="text-10 text-ink-500 flex flex-wrap items-center gap-2">
                       {/* 场景与记忆新鲜度已收进下方「状态」一览（同一信息不写两处）；
                           这里只留它不显示的：心情（这是**当前页签角色**的心情）与整理进度。
                           心情来自**日常推进**（Ta 这几天过得怎么样），与右栏「本场数值」里的 mood 是两回事。
@@ -1426,7 +1426,7 @@ export default function TavernFree() {
                     归档只读时整块收掉：指定下一位 / 改静音与健谈度都是"为了接着聊"的准备动作。 */}
                 {aiCards.length > 1 && !session.endedAt && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="text-[10.5px] text-ink-500 shrink-0">在场（点头像指定下一位）</span>
+                    <span className="text-10 text-ink-500 shrink-0">在场（点头像指定下一位）</span>
                     {aiCards.map(c => (
                       <button
                         key={c.id}
@@ -1438,7 +1438,7 @@ export default function TavernFree() {
                         className={`flex items-center gap-1 rounded-full pl-0.5 pr-2 py-0.5 border ${speakNext === c.id ? 'border-amber/50 bg-amber/15' : 'border-ink-700 hover:bg-ink-800/60'}`}
                       >
                         <Avatar src={c.avatar} name={c.name} size={20} />
-                        <span className="text-[11px] text-ink-200">{c.name}</span>
+                        <span className="text-11 text-ink-200">{c.name}</span>
                       </button>
                     ))}
                     <Button variant="secondary" size="xs"
@@ -1453,12 +1453,12 @@ export default function TavernFree() {
                 {/* Ta这几天的生活（时间差推进出来的） */}
                 {showDaily && !!daily?.log?.length && (
                   <div className="mt-2 rounded-md border border-ink-800 bg-ink-900/50 px-3 py-2">
-                    <p className="text-[10.5px] text-ink-500 mb-1">
+                    <p className="text-10 text-ink-500 mb-1">
                       这几天的生活（你没来时Ta自己过的 —— 界面不打开就不会推进）
                     </p>
                     <ul className="space-y-0.5">
                       {daily.log.map((l, i) => (
-                        <li key={i} className="text-[11.5px] text-ink-300 leading-relaxed">
+                        <li key={i} className="text-11 text-ink-300 leading-relaxed">
                           <span className="text-ink-500">{l.date}</span> {l.text}
                         </li>
                       ))}
@@ -1478,7 +1478,7 @@ export default function TavernFree() {
                   <div className="rounded-lg border border-amber/30 bg-amber/8 px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10.5px] text-amber/80 mb-1">你很久没来了，Ta留下句话：</p>
+                        <p className="text-10 text-amber/80 mb-1">你很久没来了，Ta留下句话：</p>
                         {renderTavernMessage(greeting)}
                       </div>
                       <Button variant="secondary" size="xs" onClick={() => setGreeting('')} className="shrink-0">
@@ -1488,7 +1488,7 @@ export default function TavernFree() {
                   </div>
                 )}
                 {session.messages.length === 0 && (
-                  <div className="text-center text-[12px] text-ink-500 py-10">
+                  <div className="text-center text-12 text-ink-500 py-10">
                     还没有对话。在下面说第一句话，Ta就会应你。
                   </div>
                 )}
@@ -1508,7 +1508,7 @@ export default function TavernFree() {
                         ? 'max-w-[80%] space-y-1'
                         : 'max-w-[85%] space-y-1'}>
                         {m.role !== 'user' && showWho && who && (
-                          <div className="text-[10.5px] text-amber/80">{who.name}</div>
+                          <div className="text-10 text-amber/80">{who.name}</div>
                         )}
                         <TavernMessageBody
                           content={m.content} hidden={m.hidden} edited={m.edited}
@@ -1534,7 +1534,7 @@ export default function TavernFree() {
                 {streaming && (
                   <div className="max-w-[85%] space-y-1">
                     {streamText ? renderTavernMessage(streamText) : (
-                      <div className="text-[12px] text-ink-500">{phase || '正在想…'}</div>
+                      <div className="text-12 text-ink-500">{phase || '正在想…'}</div>
                     )}
                   </div>
                 )}
@@ -1544,7 +1544,7 @@ export default function TavernFree() {
                   type="button"
                   onClick={() => scrollToBottom()}
                   title="回到底部（看历史时一键回到最新消息）"
-                  className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-[11px] text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700"
+                  className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-11 text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700"
                 >
                   <ChevronDown className="h-3.5 w-3.5" /> 回到底部
                 </button>
@@ -1556,10 +1556,10 @@ export default function TavernFree() {
                   /* 归档后收掉整个输入区 —— 留着可打字的框，作者一定会去敲，
                      敲完发现发不出去（send 里有守卫），只会以为软件坏了。 */
                   <div className="rounded-lg border border-amber/30 bg-amber/8 px-3 py-3">
-                    <p className="text-[12px] text-ink-200">
+                    <p className="text-12 text-ink-200">
                       本轮已于 {agoText(session.endedAt)}结束 —— 这一场是只读归档了，记忆、日记与本场数值都已整理好。
                     </p>
-                    <p className="mt-1 text-[11px] text-ink-500 leading-relaxed">
+                    <p className="mt-1 text-11 text-ink-500 leading-relaxed">
                       想接着往下演就新开一场：记忆与日记是跨会话共享的，Ta 不会失忆。
                     </p>
                     <div className="mt-2 flex gap-2">
@@ -1587,7 +1587,7 @@ export default function TavernFree() {
                     现在生成期照常可打字（先把下一句备好），发送按钮那侧仍会变成「停止」。 */}
                 <AutoTextarea
                   className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"
-                  textClass="text-[13px]"
+                  textClass="text-13"
                   minRows={3}
                   maxHeight={200}
                   placeholder={streaming || assistBusy
@@ -1603,7 +1603,7 @@ export default function TavernFree() {
                   }}
                 />
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-[11px] text-ink-500">
+                  <span className="text-11 text-ink-500">
                     本会话 {usedChars} 字
                     <button
                       type="button"
@@ -1669,7 +1669,7 @@ export default function TavernFree() {
                         只在多角色时出现 —— 单角色只有一个人可看，列出来纯属占地方。 */}
                     {aiCards.length > 1 && (
                       <div className="border-t border-ink-800 pt-2">
-                        <div className="text-[10.5px] text-ink-500 mb-1">
+                        <div className="text-10 text-ink-500 mb-1">
                           AI 扮演<span className="text-ink-600">（点名字看他这几天的生活）</span>
                         </div>
                         <ul className="space-y-1">
@@ -1686,7 +1686,7 @@ export default function TavernFree() {
                                   }`}
                                 >
                                   <Avatar src={c.avatar} name={c.name} size={18} />
-                                  <span className={`truncate text-[11.5px] ${on ? 'text-amber' : 'text-ink-200'}`}>
+                                  <span className={`truncate text-11 ${on ? 'text-amber' : 'text-ink-200'}`}>
                                     {c.name || '（未命名）'}
                                   </span>
                                 </button>
@@ -1705,7 +1705,7 @@ export default function TavernFree() {
                   <div className="space-y-2">
                     {aiCards.length > 1 && (
                       <div>
-                        <div className="text-[10.5px] text-ink-500 mb-1">看哪位角色的数值</div>
+                        <div className="text-10 text-ink-500 mb-1">看哪位角色的数值</div>
                         <ul className="space-y-1">
                           {aiCards.map(c => {
                             const on = (varsCharId || primaryAiCharId(session)) === c.id
@@ -1720,10 +1720,10 @@ export default function TavernFree() {
                                   }`}
                                 >
                                   <Avatar src={c.avatar} name={c.name} size={18} />
-                                  <span className={`truncate text-[11.5px] ${on ? 'text-amber' : 'text-ink-200'}`}>
+                                  <span className={`truncate text-11 ${on ? 'text-amber' : 'text-ink-200'}`}>
                                     {c.name || '（未命名）'}
                                   </span>
-                                  {c.id === primaryAiCharId(session) && <span className="ml-auto text-[10px] text-ink-500">主</span>}
+                                  {c.id === primaryAiCharId(session) && <span className="ml-auto text-10 text-ink-500">主</span>}
                                 </button>
                               </li>
                             )
@@ -1757,7 +1757,7 @@ export default function TavernFree() {
               </div>
 
               <div className="p-2 border-t border-ink-800">
-                <p className="text-[10.5px] text-ink-600 leading-relaxed">
+                <p className="text-10 text-ink-600 leading-relaxed">
                   {statusTab === 'status'
                     ? '角色状态只读 —— 来自六栏记忆，整理入口是「结束本轮对话」；要直接改就去「角色卡片」页的记忆区。'
                     : '数值每轮回复后自动结算，也可随时手改；聊天过程中不跑整理，所以不会卡住对话。'}
@@ -1812,17 +1812,17 @@ export default function TavernFree() {
       >
         {endResult && (
           <div className="space-y-3">
-            <p className="text-[11.5px] text-ink-400">
+            <p className="text-11 text-ink-400">
               这一场整理好了：{endResult.memories.length} 位角色的记忆已更新，对话已归档为只读。
               想接着往下演就新开一场 —— 记忆是跨会话共享的，Ta 不会失忆。
             </p>
 
             {endResult.varChanges.length > 0 && (
               <div>
-                <div className="text-[11px] text-amber/80">本场数值</div>
+                <div className="text-11 text-amber/80">本场数值</div>
                 <ul className="mt-0.5 space-y-0.5">
                   {endResult.varChanges.map((c, i) => (
-                    <li key={i} className="text-[11.5px] text-ink-300">
+                    <li key={i} className="text-11 text-ink-300">
                       {c.label}：{String(c.from || '空')} → {String(c.to || '空')}
                     </li>
                   ))}
@@ -1831,22 +1831,22 @@ export default function TavernFree() {
             )}
 
             <div>
-              <div className="text-[11px] text-amber/80">写进 Ta 的日记</div>
+              <div className="text-11 text-amber/80">写进 Ta 的日记</div>
               {Object.keys(endResult.journals).length === 0 ? (
-                <p className="mt-0.5 text-[11.5px] text-ink-500">这次没有产出小结。</p>
+                <p className="mt-0.5 text-11 text-ink-500">这次没有产出小结。</p>
               ) : (
                 <ul className="mt-0.5 space-y-2">
                   {castCards.filter(c => endResult.journals[c.id]).map(c => (
                     <li key={c.id}>
-                      <div className="text-[11.5px] text-ink-200">{c.name || '（未命名）'}</div>
-                      <div className="text-[11.5px] text-ink-300 whitespace-pre-wrap leading-relaxed">
+                      <div className="text-11 text-ink-200">{c.name || '（未命名）'}</div>
+                      <div className="text-11 text-ink-300 whitespace-pre-wrap leading-relaxed">
                         {endResult.journals[c.id]}
                       </div>
                     </li>
                   ))}
                 </ul>
               )}
-              <p className="mt-1 text-[10.5px] text-ink-600">
+              <p className="mt-1 text-10 text-ink-600">
                 日记只给作者回顾用，不会注进以后的对话；完整内容在「角色卡片」页底部。
               </p>
             </div>

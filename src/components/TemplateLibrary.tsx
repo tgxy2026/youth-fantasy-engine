@@ -122,29 +122,29 @@ export default function TemplateLibrary({ tabId, isVolume, onApplied, onClose }:
       title="结构模板库"
       icon={<Layers size={16} />}
       width={672}
-      headerExtra={<span className="text-[11px] text-ink-500">套用到「{isVolume ? '分卷大纲' : '章节细纲'}」</span>}
+      headerExtra={<span className="text-11 text-ink-500">套用到「{isVolume ? '分卷大纲' : '章节细纲'}」</span>}
     >
       <div className="space-y-3">
           {list.map(tpl => (
             <div key={tpl.id} className="rounded-xl border border-ink-700 bg-ink-850 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-[13px] font-semibold text-ink-100">{tpl.name}</div>
-                  <div className="text-[11px] text-ink-400 mt-1 leading-relaxed">{tpl.desc}</div>
+                  <div className="text-13 font-semibold text-ink-100">{tpl.name}</div>
+                  <div className="text-11 text-ink-400 mt-1 leading-relaxed">{tpl.desc}</div>
                 </div>
-                <Button variant="primary" disabled={busy} onClick={() => apply(tpl)} className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium disabled:opacity-50">
+                <Button variant="primary" disabled={busy} onClick={() => apply(tpl)} className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-12 font-medium disabled:opacity-50">
                   <Plus size={12} /> 套用（{tpl.items.length}）
                 </Button>
               </div>
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 {tpl.items.map((it, i) => (
-                  <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-ink-800 border border-ink-700 text-ink-300">{it.name}</span>
+                  <span key={i} className="text-10 px-2 py-0.5 rounded-full bg-ink-800 border border-ink-700 text-ink-300">{it.name}</span>
                 ))}
               </div>
             </div>
           ))}
           {list.length === 0 && (
-            <div className="text-center text-ink-500 text-[12px] py-8">当前大纲类型暂无可套用模板。</div>
+            <div className="text-center text-ink-500 text-12 py-8">当前大纲类型暂无可套用模板。</div>
           )}
         </div>
     </Modal>

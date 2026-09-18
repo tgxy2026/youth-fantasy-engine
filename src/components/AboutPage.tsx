@@ -116,7 +116,7 @@ export default function AboutPage() {
                   若社交平台看到更新公告，可来此获取最新版。
                 </p>
                 {/* 安装权限提示：旧版按机器安装(Program Files)需先管理员升级一次，迁移为当前用户安装后重装免管理员 */}
-                <div className="mt-4 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2.5 text-[11px] text-ink-200 leading-relaxed">
+                <div className="mt-4 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2.5 text-11 text-ink-200 leading-relaxed">
                   <span className="font-medium text-amber">安装提示：</span>
                   若你电脑上已安装过旧版（装在 C 盘「Program Files」目录下），请先用「右键 → 以管理员身份运行」打开本安装包完成一次升级；升级后会迁移为「当前用户安装」，之后重装都不再需要管理员权限。
                 </div>
@@ -139,7 +139,7 @@ export default function AboutPage() {
                 </div>
                 {/* 提取码：网页端 URL 已带 pwd 可自动填，但手机端 / 客户端常需手填，故单独明示 */}
                 <div className="mt-3 flex items-center gap-2">
-                  <span className="text-[11px] text-ink-500">提取码</span>
+                  <span className="text-11 text-ink-500">提取码</span>
                   <code className="rounded bg-ink-900/60 border border-ink-700 px-2 py-0.5 text-xs text-ink-100 tracking-wider">
                     {LATEST_VERSION_CODE}
                   </code>
@@ -147,12 +147,12 @@ export default function AboutPage() {
                     variant="bare"
                     size="xs"
                     onClick={() => copyText(LATEST_VERSION_CODE, '提取码已复制')}
-                    className="gap-1 text-[11px] text-ink-400 hover:text-amber"
+                    className="gap-1 text-11 text-ink-400 hover:text-amber"
                   >
                     <Copy size={12} /> 复制
                   </Button>
                 </div>
-                <p className="mt-3 text-[11px] text-ink-500 leading-relaxed">
+                <p className="mt-3 text-11 text-ink-500 leading-relaxed">
                   若链接失效或提取码有误，请加 <span className="text-ink-300">QQ 交流群</span> 或关注公众号获取最新地址。
                 </p>
               </section>
@@ -164,7 +164,7 @@ export default function AboutPage() {
               <ul className="space-y-3">
                 {CONTACT_LINKS.map(l => (
                   <li key={l.label} className="flex flex-col">
-                    <span className="text-[11px] text-ink-500">{l.label}</span>
+                    <span className="text-11 text-ink-500">{l.label}</span>
                     <span className="text-sm text-ink-200">{l.value}</span>
                   </li>
                 ))}
@@ -200,7 +200,7 @@ export default function AboutPage() {
               <h3 className="text-xs font-semibold text-ink-200 mb-1 flex items-center gap-2">
                 <Users size={14} className="text-amber" /> 致谢名单
               </h3>
-              <p className="text-ink-500 text-[11px] mb-3">
+              <p className="text-ink-500 text-11 mb-3">
                 名单暂为示例占位（借用各位知名网络小说主角的名号排排站），待作者替换为真实打赏记录——你的名字也会出现在这里。
               </p>
               <div className="flex flex-wrap gap-2 content-start">
@@ -210,7 +210,7 @@ export default function AboutPage() {
                     className="inline-flex items-center gap-1.5 rounded-full bg-ink-800 border border-ink-700 px-3 py-1 text-xs text-ink-300"
                   >
                     <span className="text-ink-100">{t.name}</span>
-                    <span className="text-[10px] text-ink-500">《{t.work}》</span>
+                    <span className="text-10 text-ink-500">《{t.work}》</span>
                   </span>
                 ))}
               </div>

@@ -14,6 +14,7 @@ import { confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { EmptyState } from './EmptyState'
 import { Z } from '../lib/zLayer'
+import { computeDropdownPos, type DropdownPos } from '../lib/dropdownPos'
 
 
 /** 自定义下拉选项变更广播：任意下拉增删改选项后派发，同列其它下拉与地图图例据此刷新 */
@@ -85,7 +86,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   const editInputRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   // 下拉浮层用 Portal + fixed 定位渲染在 body 上，避免被表格滚动容器裁剪/遮挡
-  const [pos, setPos] = useState<{ left: number; top: number; minWidth: number; maxHeight: number; flip: boolean } | null>(null)
+  const [pos, setPos] = useState<DropdownPos | null>(null)
 
   // 加载
   useEffect(() => {
@@ -115,23 +116,12 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   const updatePos = () => {
     const btn = btnRef.current
     if (!btn) return
-    const r = btn.getBoundingClientRect()
-    const estH = 288 // max-h-72 的估算高度
-    const spaceBelow = window.innerHeight - r.bottom
-    const spaceAbove = r.top
-    const flip = spaceBelow < 220 && spaceAbove > spaceBelow
-    const avail = flip ? spaceAbove - 12 : spaceBelow - 12
-    const next = {
-      left: Math.max(8, Math.min(r.left, window.innerWidth - 200)),
-      top: flip ? r.top - 4 : r.bottom + 4,
-      minWidth: Math.max(180, Math.round(r.width)),
-      maxHeight: Math.min(Math.max(160, avail), estH),
-      flip,
-    }
-    setPos(prev => (
-      prev && prev.left === next.left && prev.top === next.top && prev.minWidth === next.minWidth
+    // estH/翻转阈值/留白沿用本组件原值；几何统一走 lib，避免这份算法在多处漂移
+    setPos(prev => {
+      const next = computeDropdownPos(btn.getBoundingClientRect(), { estH: 288, flipBelow: 220, margin: 12, minWidth: 180, clampRight: 200 })
+      return prev && prev.left === next.left && prev.top === next.top && prev.minWidth === next.minWidth
         && prev.maxHeight === next.maxHeight && prev.flip === next.flip ? prev : next
-    ))
+    })
   }
 
   // 打开时计算位置；容器滚动或窗口变化时跟随重算
@@ -269,7 +259,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full !py-1 text-[12px] min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
+        className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
         <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? (labelMap?.[value] ?? value) : '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
@@ -293,7 +283,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
               value={q}
               onChange={e => setQ(e.target.value)}
               placeholder="搜索选项…"
-              className="w-full !py-0.5 text-[12px]"
+              className="w-full !py-0.5 text-12"
             />
           </div>
           {(filtered.length === 0 && !adding && !renaming && !editing) && (
@@ -307,7 +297,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             const item = list.find(i => i.original === renaming)
             return (
               <div className="px-2 py-1.5 border-b border-ink-700 bg-ink-900/60">
-                <div className="text-[10px] text-ink-500 mb-1">重命名内置项</div>
+                <div className="text-10 text-ink-500 mb-1">重命名内置项</div>
                 <div className="flex items-center gap-1">
                   <input
                     ref={renameInputRef}
@@ -317,18 +307,18 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                       if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitRenameBuiltin() }
                       if (e.key === 'Escape') { setRenaming(null); setRenameDraft('') }
                     }}
-                    className="flex-1 !py-0.5 text-[12px] min-w-0"
+                    className="flex-1 !py-0.5 text-12 min-w-0"
                   />
-                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="md" className="text-[11px] rounded">保存</Button>
+                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="md" className="text-11 rounded">保存</Button>
                 </div>
-                <div className="mt-1 text-[10px] text-ink-500">原名：{item?.display}</div>
+                <div className="mt-1 text-10 text-ink-500">原名：{item?.display}</div>
               </div>
             )
           })()}
 
           {editing && (
             <div className="px-2 py-1.5 border-b border-ink-700 bg-ink-900/60">
-              <div className="text-[10px] text-ink-500 mb-1">编辑自定义项</div>
+              <div className="text-10 text-ink-500 mb-1">编辑自定义项</div>
               <div className="flex items-center gap-1">
                 <input
                   ref={editInputRef}
@@ -338,9 +328,9 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                     if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitEditUser() }
                     if (e.key === 'Escape') { setEditing(null); setEditDraft('') }
                   }}
-                  className="flex-1 !py-0.5 text-[12px] min-w-0"
+                  className="flex-1 !py-0.5 text-12 min-w-0"
                 />
-                <Button type="button" onClick={submitEditUser} variant="primary" size="md" className="text-[11px] rounded">保存</Button>
+                <Button type="button" onClick={submitEditUser} variant="primary" size="md" className="text-11 rounded">保存</Button>
               </div>
             </div>
           )}
@@ -352,7 +342,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             return (
               <div
                 key={item.key}
-                className={`group flex items-center px-1 py-0.5 text-[12px] hover:bg-ink-700
+                className={`group flex items-center px-1 py-0.5 text-12 hover:bg-ink-700
                   ${selected ? 'text-amber' : 'text-ink-200'}`}
               >
                 <Button variant="bare"
@@ -363,7 +353,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   {selected ? <Check size={10} /> : <span className="w-[10px]" />}
                   <span className="truncate flex-1">{item.display}</span>
                   {item.kind === 'user' && (
-                    <span className="ml-auto text-[9px] text-ink-500 bg-ink-900 px-1 rounded">自定义</span>
+                    <span className="ml-auto text-9 text-ink-500 bg-ink-900 px-1 rounded">自定义</span>
                   )}
                 </Button>
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 pr-1">
@@ -398,9 +388,9 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
           {/* 已隐藏的内置项可还原 */}
           {payload.hidden.length > 0 && (
             <div className="border-t border-ink-700 mt-1 pt-1">
-              <div className="px-2.5 py-0.5 text-[10px] text-ink-500">已移除的内置项（可还原）</div>
+              <div className="px-2.5 py-0.5 text-10 text-ink-500">已移除的内置项（可还原）</div>
               {payload.hidden.map(h => (
-                <div key={`h-${h}`} className="group flex items-center px-1 py-0.5 text-[12px] text-ink-500 hover:bg-ink-700">
+                <div key={`h-${h}`} className="group flex items-center px-1 py-0.5 text-12 text-ink-500 hover:bg-ink-700">
                   <span className="flex-1 px-1.5 py-0.5 line-through truncate">{h}</span>
                   <Button variant="bare" iconOnly size="xs"
                     type="button"
@@ -425,16 +415,16 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   if (e.key === 'Escape') { setAdding(false); setDraft('') }
                 }}
                 placeholder="输入新选项"
-                className="flex-1 !py-0.5 text-[12px] min-w-0"
+                className="flex-1 !py-0.5 text-12 min-w-0"
               />
               <Button type="button"
-                onClick={submitDraft} variant="primary" size="md" className="text-[11px] rounded">保存</Button>
+                onClick={submitDraft} variant="primary" size="md" className="text-11 rounded">保存</Button>
             </div>
           ) : (
             <Button variant="bare"
               type="button"
               onClick={() => { setAdding(true); setTimeout(() => inputRef.current?.focus(), 0) }}
-              className="w-full text-left !justify-start px-2.5 py-1.5 text-[11.5px] text-amber/90 border-t border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
+              className="w-full text-left !justify-start px-2.5 py-1.5 text-11 text-amber/90 border-t border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
             >
               <Plus size={11} /> 添加新值…
             </Button>

@@ -8,7 +8,7 @@
  * ⚠️ 刻意只收「这一种形状」。项目里另有若干加载态写法与本组件不同——
  *   · App.tsx 的 Suspense fallback（整屏居中）
  *   · ProjectHub（居中 + Loader2 旋转图标）
- *   · CharacterDistribution / WritingGoals（py-8 居中 + text-[12px]）
+ *   · CharacterDistribution / WritingGoals（py-8 居中 + text-12）
  *   · BackupManager（行内小字）
  * 它们排版/语义确实不一样，强行统一会制造抽象泄漏（参见 MEMORY 中「抽象泄漏判据」）。
  * 需要那些排版请继续各自内联，不要往本组件堆 variant。

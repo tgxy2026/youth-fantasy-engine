@@ -188,7 +188,7 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
                 : `最后保存：${time}（点击立即保存到本地数据文件）`
           }
           className={
-            'flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] text-ink-300 transition-colors hover:border-amber/50 hover:text-ink-100 ' +
+            'flex h-8 items-center gap-2 rounded-full border px-3 text-12 text-ink-300 transition-colors hover:border-amber/50 hover:text-ink-100 ' +
             (embedded
               ? 'border-ink-700 bg-ink-800/60'
               : 'border-ink-600/80 bg-ink-900/90 shadow-lg backdrop-blur')
@@ -213,7 +213,7 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
           onClick={() => void revealDesktopDataFile()}
           title={state.dataPath ? `数据文件：${state.dataPath}\n点击在资源管理器中打开该文件夹` : '点击打开数据文件夹'}
           className={
-            'flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-full border px-2.5 text-[11px] text-ink-400 transition-colors hover:border-amber/50 hover:text-ink-200 ' +
+            'flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-full border px-2.5 text-11 text-ink-400 transition-colors hover:border-amber/50 hover:text-ink-200 ' +
             (embedded
               ? 'border-ink-700 bg-ink-800/60'
               : 'border-ink-600/80 bg-ink-900/90 shadow-lg backdrop-blur')

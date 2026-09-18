@@ -7,6 +7,7 @@ import { ChevronDown, Check } from 'lucide-react'
 import { Button } from './Button'
 import { EmptyState } from './EmptyState'
 import { Z } from '../lib/zLayer'
+import { computeDropdownPos, type DropdownPos } from '../lib/dropdownPos'
 
 interface Props {
   value: string
@@ -30,7 +31,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ left: number; top: number; minWidth: number; maxHeight: number; flip: boolean } | null>(null)
+  const [pos, setPos] = useState<DropdownPos | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -57,19 +58,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
   const updatePos = () => {
     const btn = btnRef.current
     if (!btn) return
-    const r = btn.getBoundingClientRect()
-    const estH = 256
-    const spaceBelow = window.innerHeight - r.bottom
-    const spaceAbove = r.top
-    const flip = spaceBelow < 200 && spaceAbove > spaceBelow
-    const avail = flip ? spaceAbove - 8 : spaceBelow - 8
-    setPos({
-      left: Math.max(8, r.left),
-      top: flip ? r.top - 4 : r.bottom + 4,
-      minWidth: Math.max(160, r.width),
-      maxHeight: Math.min(Math.max(160, avail), estH),
-      flip,
-    })
+    setPos(computeDropdownPos(btn.getBoundingClientRect()))
   }
 
   useEffect(() => {
@@ -117,7 +106,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full !py-1 text-[12px] min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
+        className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
         <span className={display ? 'text-ink-100 truncate' : 'text-ink-500 truncate'}>{display || placeholder}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
@@ -141,7 +130,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
               value={q}
               onChange={e => setQ(e.target.value)}
               placeholder="搜索角色…"
-              className="w-full !py-0.5 text-[12px]"
+              className="w-full !py-0.5 text-12"
             />
           </div>
           {filtered.length === 0 && (
@@ -152,7 +141,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
               key={n}
               type="button"
               onClick={() => toggle(n)}
-              className={`flex items-center gap-1.5 !justify-start w-full text-left px-2.5 py-1 text-[12px] hover:bg-ink-700 ${isSel(n) ? 'text-amber' : 'text-ink-200'}`}
+              className={`flex items-center gap-1.5 !justify-start w-full text-left px-2.5 py-1 text-12 hover:bg-ink-700 ${isSel(n) ? 'text-amber' : 'text-ink-200'}`}
             >
               {multi && (isSel(n) ? <Check size={10} className="shrink-0" /> : <span className="w-[10px] shrink-0" />)}
               <span className="truncate flex-1">{n}</span>

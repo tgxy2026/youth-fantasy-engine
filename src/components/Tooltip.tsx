@@ -19,7 +19,7 @@ export default function Tooltip({ label, children, side = 'top', className = '' 
       {children}
       <span
         role="tooltip"
-        className={`pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-ink-700 border border-ink-500 px-2 py-1 text-[10.5px] text-ink-100 shadow-lg
+        className={`pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-ink-700 border border-ink-500 px-2 py-1 text-10 text-ink-100 shadow-lg
           opacity-0 scale-95 group-hover/tt:opacity-100 group-hover/tt:scale-100 transition-all duration-150
           ${side === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'}`}
         style={{ zIndex: Z.pageTip }}

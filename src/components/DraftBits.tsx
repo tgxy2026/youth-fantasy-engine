@@ -37,7 +37,7 @@ export function RefsField({ value, onChange, minRows = 3 }: {
 }) {
   return (
     <div>
-      <div className="text-[11px] text-ink-400">参考素材（可留空）</div>
+      <div className="text-11 text-ink-400">参考素材（可留空）</div>
       <AutoTextarea
         value={value}
         onChange={onChange}
@@ -45,7 +45,7 @@ export function RefsField({ value, onChange, minRows = 3 }: {
         maxHeight={200}
         placeholder="粘一段资料进来（百科摘要、设定集、你写的备忘都行）—— 模型会优先依据它，而不是凭印象编。"
       />
-      <p className="mt-1 text-[10.5px] leading-relaxed text-ink-500">
+      <p className="mt-1 text-10 leading-relaxed text-ink-500">
         想写冷门或原创题材时最有用的就是这一栏：模型对知名题材很熟，对冷门设定只会一本正经地编。
       </p>
     </div>
@@ -57,7 +57,7 @@ export function SearchPlanLine({ settings }: { settings: SearchSettings | null }
   if (!settings) return null
   const blocked = searchBlockedReason(settings)
   return (
-    <p className="text-[10.5px] leading-relaxed text-ink-500">
+    <p className="text-10 leading-relaxed text-ink-500">
       素材来源：<span className="text-ink-300">{SEARCH_MODE_LABEL[settings.mode]}</span>
       {blocked && <span className="ml-1 text-amber">⚠️ {blocked}</span>}
       {/* 「模型自带联网」这一档我们看不到它有没有真查 —— 提前就说明白，别让作者以为稳了 */}
@@ -84,7 +84,7 @@ export function DraftSourceLine({ source }: { source: DraftSource | null }) {
       ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
       : 'border-ink-700 bg-ink-900/50 text-ink-400'
   return (
-    <div className={`mt-1.5 rounded border px-2 py-1.5 text-[10.5px] leading-relaxed ${cls}`}>
+    <div className={`mt-1.5 rounded border px-2 py-1.5 text-10 leading-relaxed ${cls}`}>
       {v.tone === 'warn' && <span className="mr-1">⚠️</span>}
       <span className="text-ink-100 font-medium">{v.headline}</span>
       <div className="mt-0.5 opacity-90">

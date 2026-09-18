@@ -82,7 +82,7 @@ export default function TavernCardDraftDialog({ open, existing, onClose, onApply
       open={open} onClose={onClose} title="AI 起草角色卡" width="xl"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
-          <span className="text-[11px] text-ink-500">
+          <span className="text-11 text-ink-500">
             {err ? '生成失败' : fields
               ? `生成了 ${preview.length} 栏 —— 填入后仍是草稿，记得逐栏核对再保存`
               : '先写一句想法（或粘一段素材）'}
@@ -108,7 +108,7 @@ export default function TavernCardDraftDialog({ open, existing, onClose, onApply
         {/* 左：输入 */}
         <div className="space-y-3">
           <div>
-            <div className="text-[11px] text-ink-400">一句话想法</div>
+            <div className="text-11 text-ink-400">一句话想法</div>
             <AutoTextarea
               value={idea}
               onChange={setIdea}
@@ -127,9 +127,9 @@ export default function TavernCardDraftDialog({ open, existing, onClose, onApply
             {busy ? '正在起草…' : fields ? '重新起草' : '开始起草'}
           </Button>
           <DraftSourceLine source={source} />
-          {err && <p className="text-[11px] leading-relaxed text-amber">⚠️ {err}</p>}
+          {err && <p className="text-11 leading-relaxed text-amber">⚠️ {err}</p>}
           {existing?.trim() && (
-            <p className="text-[10.5px] leading-relaxed text-ink-600">
+            <p className="text-10 leading-relaxed text-ink-600">
               当前卡面已有内容：会当作「补完」的起点交给 AI —— 你已经写好的栏不会被动，它只补缺。
             </p>
           )}
@@ -137,23 +137,23 @@ export default function TavernCardDraftDialog({ open, existing, onClose, onApply
 
         {/* 右：预览 */}
         <div className="min-h-0">
-          <div className="text-[11px] text-ink-400">起草结果预览</div>
+          <div className="text-11 text-ink-400">起草结果预览</div>
           {!fields ? (
-            <p className="mt-1.5 rounded-md border border-dashed border-ink-700 p-4 text-center text-[11.5px] text-ink-500">
+            <p className="mt-1.5 rounded-md border border-dashed border-ink-700 p-4 text-center text-11 text-ink-500">
               生成后会在这里逐栏摊开 —— 看完再决定要不要填进卡面。
             </p>
           ) : preview.length === 0 ? (
-            <p className="mt-1.5 text-[11.5px] text-amber">模型什么都没写出来（十三栏全空），换个说法再试一次。</p>
+            <p className="mt-1.5 text-11 text-amber">模型什么都没写出来（十三栏全空），换个说法再试一次。</p>
           ) : (
             <div className="mt-1.5 max-h-[26rem] space-y-2 overflow-y-auto pr-1">
               {preview.map(([k, label]) => (
                 <div key={k} className="rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-2">
-                  <div className="text-[11px] text-amber">{label}</div>
-                  <div className="mt-0.5 whitespace-pre-wrap text-[11.5px] leading-relaxed text-ink-300">{fields[k]}</div>
+                  <div className="text-11 text-amber">{label}</div>
+                  <div className="mt-0.5 whitespace-pre-wrap text-11 leading-relaxed text-ink-300">{fields[k]}</div>
                 </div>
               ))}
               {CARD_FIELD_LABELS.some(([k]) => !String(fields[k] ?? '').trim()) && (
-                <p className="text-[10.5px] text-ink-600">
+                <p className="text-10 text-ink-600">
                   空着的栏：{CARD_FIELD_LABELS.filter(([k]) => !String(fields[k] ?? '').trim()).map(([, l]) => l).join('、')}
                   {' '}（AI 拿不准的栏会留空 —— 比瞎编强，之后自己补）
                 </p>
@@ -161,7 +161,7 @@ export default function TavernCardDraftDialog({ open, existing, onClose, onApply
             </div>
           )}
           {fields && isEmptyCardDraft(fields) && (
-            <p className="mt-1 text-[10.5px] text-ink-500">（提示：也可以用「对话引导」边聊边塑形，适合还没想清楚的时候。）</p>
+            <p className="mt-1 text-10 text-ink-500">（提示：也可以用「对话引导」边聊边塑形，适合还没想清楚的时候。）</p>
           )}
         </div>
       </div>

@@ -155,7 +155,7 @@ export default function RelationGraph({ rows }: Props) {
 
   return (
     <div className="rounded-xl border border-ink-700 bg-ink-900 overflow-hidden select-none">
-      <div className="px-4 py-2 text-[11px] text-ink-500 border-b border-ink-700 flex items-center justify-between gap-2 flex-wrap">
+      <div className="px-4 py-2 text-11 text-ink-500 border-b border-ink-700 flex items-center justify-between gap-2 flex-wrap">
         <span>节点越大 = 关系越多；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开</span>
         <span className="flex items-center gap-2">
           {collapsed.size > 0 && (
@@ -257,24 +257,24 @@ export default function RelationGraph({ rows }: Props) {
       {legendTypes.length > 0 && (
         <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap">
           {legendTypes.map(t => (
-            <span key={t} className="flex items-center gap-1.5 text-[10px] text-ink-400">
+            <span key={t} className="flex items-center gap-1.5 text-10 text-ink-400">
               <span className="w-3 h-[3px] rounded-full inline-block" style={{ background: edgeColor(t) }} />
               {t}
-              {!TYPE_COLORS[t] && <span className="text-[9px] text-ink-500 border border-ink-700 rounded px-1 leading-none">自定义</span>}
+              {!TYPE_COLORS[t] && <span className="text-9 text-ink-500 border border-ink-700 rounded px-1 leading-none">自定义</span>}
             </span>
           ))}
-          <span className="text-[10px] text-ink-500 ml-auto">节点大小 = 关系数；边 = 一条关系记录</span>
+          <span className="text-10 text-ink-500 ml-auto">节点大小 = 关系数；边 = 一条关系记录</span>
         </div>
       )}
       {/* 收起的人物：点击单个可重新展开 */}
       {collapsed.size > 0 && (
         <div className="px-4 py-2 border-t border-ink-700 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-ink-500 shrink-0">已收起：</span>
+          <span className="text-10 text-ink-500 shrink-0">已收起：</span>
           {[...collapsed].map(name => (
             <Button variant="bare"
               key={name}
               onClick={() => toggleCollapse(name)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-ink-800 border border-ink-600 text-[11px] text-ink-300 hover:text-amber hover:border-amber/40 transition-colors"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-ink-800 border border-ink-600 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors"
               title="重新展开该人物"
             >
               <EyeOff size={10} className="opacity-70" /> {name}

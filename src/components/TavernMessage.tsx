@@ -20,9 +20,9 @@
 import { classifyTavernLine, type TavernLineKind } from '../lib/tavern/exportDoc'
 
 const KIND_CLASS: Record<TavernLineKind, string> = {
-  action: 'text-[12px] text-ink-400',
-  state: 'text-[12.5px] italic text-ink-400',
-  speech: 'text-[13px] leading-relaxed text-ink-100',
+  action: 'text-12 text-ink-400',
+  state: 'text-12 italic text-ink-400',
+  speech: 'text-13 leading-relaxed text-ink-100',
 }
 
 export function renderTavernMessage(content: string) {

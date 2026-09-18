@@ -148,10 +148,10 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
 
   // —— 形态相关的样式 ——
   const headCls = inSidebar
-    ? 'flex items-center gap-1.5 pt-1 text-[12px] text-ink-300'
+    ? 'flex items-center gap-1.5 pt-1 text-12 text-ink-300'
     : 'flex items-center gap-1.5 text-xs text-ink-300'
   const rowBtn =
-    'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 text-[12px] transition-colors disabled:opacity-60 '
+    'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 text-12 transition-colors disabled:opacity-60 '
 
   return (
     <div className={inSidebar ? 'flex flex-col gap-1.5' : 'flex flex-col gap-1.5'}>
@@ -160,7 +160,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
         <Cloud size={13} className="text-sky-300/90" />
         <span className="font-medium">云盘文件同步</span>
         {connected && (
-          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-ink-300">
+          <span className="ml-auto flex items-center gap-1.5 text-11 text-ink-300">
             <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
             {meta.text || '待命'}
           </span>
@@ -194,7 +194,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
             <FolderOpen size={14} />
             {busy ? '开启中…' : '选择同步目录'}
           </Button>
-          <p className="text-[11px] leading-snug text-ink-500">
+          <p className="text-11 leading-snug text-ink-500">
             选一个网盘文件夹即可开启，无需账号或同步码
           </p>
         </>
@@ -202,7 +202,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
         /* —— 已开启：状态 + 目录名 + 操作 —— */
         <>
           <div
-            className="flex items-center gap-1.5 text-[11px] text-ink-400"
+            className="flex items-center gap-1.5 text-11 text-ink-400"
             title={dirName ? '当前同步目录' : undefined}
           >
             <FolderOpen size={12} className="shrink-0 text-ink-500" />

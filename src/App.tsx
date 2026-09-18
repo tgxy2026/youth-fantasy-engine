@@ -290,9 +290,9 @@ export default function App() {
         <DesktopWriteLockBanner />
         <div className="flex h-screen flex-col items-center justify-center gap-3 p-8 text-center">
           <div className="text-base font-semibold">启动失败</div>
-          <div className="max-w-xl text-[13px] leading-relaxed text-ink-400">{bootError}</div>
+          <div className="max-w-xl text-13 leading-relaxed text-ink-400">{bootError}</div>
           <Button variant="secondary" onClick={() => location.reload()}>重新加载</Button>
-          <div className="max-w-xl text-[12px] text-ink-500">
+          <div className="max-w-xl text-12 text-ink-500">
             若反复失败，请先备份数据文件（左下角「数据坞」），再重新加载。
           </div>
         </div>

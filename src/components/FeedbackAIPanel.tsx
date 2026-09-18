@@ -54,14 +54,14 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
   return (
     <ToolModal title="读者反馈 AI 分析" icon={<BarChart3 size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-[11px] text-ink-500">
+        <span className="flex-1 text-11 text-ink-500">
           把已登记的读者反馈 / 运营数据交给 AI，做流失归因与应对建议分析。未配置模型不影响本表手动填写。
         </span>
       </div>
       <AIDataSourceNote feature="feedback-ai" />
 
       {entries.length === 0 && !result && (
-        <div className="text-[12px] text-ink-400 py-6 text-center">
+        <div className="text-12 text-ink-400 py-6 text-center">
           还没有可分析的反馈记录——先在表格里登记几行（数据周期 / 追读 / 均订 / 高频吐槽 / 流失点 / 流失原因），再来分析。
         </div>
       )}
@@ -70,14 +70,14 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
         <Button onClick={run}
           disabled={!aiReady || loading}
           
-          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center text-[13px]">
+          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center text-13">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '分析中…' : `开始分析（${entries.length} 条记录）`}
         </Button>
       )}
 
       {error && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[12px] text-red-300 mt-3">
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300 mt-3">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -90,7 +90,7 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
           <Section title="③ 应对建议" body={result.suggestions} />
           <Button variant="bare"
             onClick={() => setResult(null)}
-            className="px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-[12px] hover:bg-ink-600"
+            className="px-3 py-2 bg-ink-700 text-ink-200 border border-ink-600 rounded-lg text-12 hover:bg-ink-600"
           >
             重新分析
           </Button>
@@ -103,8 +103,8 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
 function Section({ title, body }: { title: string; body: string }) {
   return (
     <div>
-      <div className="text-[12px] font-semibold text-amber mb-1">{title}</div>
-      <div className="text-[12.5px] text-ink-200 leading-relaxed whitespace-pre-wrap break-words bg-ink-900/40 border border-ink-800 rounded-lg px-3 py-2">
+      <div className="text-12 font-semibold text-amber mb-1">{title}</div>
+      <div className="text-12 text-ink-200 leading-relaxed whitespace-pre-wrap break-words bg-ink-900/40 border border-ink-800 rounded-lg px-3 py-2">
         {body}
       </div>
     </div>

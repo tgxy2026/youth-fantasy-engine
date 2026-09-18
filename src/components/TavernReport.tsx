@@ -108,7 +108,7 @@ export default function TavernReport() {
 </HelpPopover>
 
         </div>
-        <p className="text-[12px] text-ink-400 mt-1">
+        <p className="text-12 text-ink-400 mt-1">
           每场推演结束后的合理性报告。每条问题尽量指向具体角色卡或表格条目，点「定位」可直接跳过去。
         </p>
       </header>
@@ -116,8 +116,8 @@ export default function TavernReport() {
       {list.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <p className="text-[13px] text-ink-300">还没有推演报告</p>
-            <p className="mt-2 text-[12px] text-ink-500 leading-relaxed">
+            <p className="text-13 text-ink-300">还没有推演报告</p>
+            <p className="mt-2 text-12 text-ink-500 leading-relaxed">
               去「剧情推演」演完一场，点「结束推演」，报告就会出现在这里。
             </p>
           </div>
@@ -128,7 +128,7 @@ export default function TavernReport() {
           <aside className="flex w-72 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
             {list.length > 4 && (
               <input
-                className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-[11.5px] text-ink-100 outline-none focus:border-amber/50"
+                className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
                 placeholder="筛选报告（标题 / 锚点）"
                 value={q}
                 onChange={e => setQ(e.target.value)}
@@ -147,11 +147,11 @@ export default function TavernReport() {
                       active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
                     }`}
                   >
-                    <div className={`truncate text-[12px] ${active ? 'text-amber' : 'text-ink-100'}`}>
+                    <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>
                       {reportName(it.sessionTitle)}
                     </div>
-                    <div className="mt-0.5 truncate text-[10.5px] text-ink-500">{it.anchorChapterLabel || '（无锚点）'}</div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[10.5px]">
+                    <div className="mt-0.5 truncate text-10 text-ink-500">{it.anchorChapterLabel || '（无锚点）'}</div>
+                    <div className="mt-0.5 flex items-center gap-2 text-10">
                       {it.counts['矛盾'] > 0 && <span className="text-red-400">矛盾 {it.counts['矛盾']}</span>}
                       {it.counts['漏洞'] > 0 && <span className="text-amber">漏洞 {it.counts['漏洞']}</span>}
                       {it.counts['存疑'] > 0 && <span className="text-ink-400">存疑 {it.counts['存疑']}</span>}
@@ -162,34 +162,34 @@ export default function TavernReport() {
                 )
               })}
               {rows.length === 0 && (
-                <p className="px-1 py-2 text-[11px] leading-relaxed text-ink-500">没有匹配的报告。</p>
+                <p className="px-1 py-2 text-11 leading-relaxed text-ink-500">没有匹配的报告。</p>
               )}
             </div>
-            <div className="shrink-0 border-t border-ink-800 pt-2 text-[10.5px] text-ink-500">共 {list.length} 份</div>
+            <div className="shrink-0 border-t border-ink-800 pt-2 text-10 text-ink-500">共 {list.length} 份</div>
           </aside>
 
           {/* 右栏：详情 */}
           <div className="flex-1 min-w-0 overflow-y-auto rounded-lg border border-ink-800 p-4">
             {!report ? (
-              <div className="text-center text-[12px] text-ink-500 py-10">从左边选一份报告</div>
+              <div className="text-center text-12 text-ink-500 py-10">从左边选一份报告</div>
             ) : (
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="text-[15px] font-semibold text-ink-50 truncate">{reportName(report.sessionTitle)}</h2>
-                    <div className="mt-0.5 text-[11px] text-ink-500">
+                    <h2 className="text-15 font-semibold text-ink-50 truncate">{reportName(report.sessionTitle)}</h2>
+                    <div className="mt-0.5 text-11 text-ink-500">
                       {report.anchorChapterLabel || '（无锚点）'} · {report.mode === 'immersive' ? '沉浸推演' : '导演推演'} ·
                       {' '}{new Date(report.createdAt).toLocaleString()}
                     </div>
                     {report.cast.length > 0 && (
-                      <div className="mt-1 text-[11px] text-ink-500">
+                      <div className="mt-1 text-11 text-ink-500">
                         {report.cast.map(c => `${c.name}（${c.role === 'user' ? '你演' : c.role === 'ai' ? 'AI 演' : '在场'}）`).join('、')}
                       </div>
                     )}
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <Button
-                      variant="secondary" size="md" className="text-[12px]"
+                      variant="secondary" size="md" className="text-12"
                       onClick={() => setExportOpen(true)}
                       title="把这份报告导出成 Markdown 或带样式的单文件 HTML"
                     >
@@ -200,18 +200,18 @@ export default function TavernReport() {
                 </div>
 
                 <section className="rounded-lg border border-ink-700 bg-ink-850/40 p-3">
-                  <div className="text-[11px] text-ink-500 mb-1">概览</div>
-                  <div className="text-[13px] text-ink-200 leading-relaxed whitespace-pre-wrap">{report.overview}</div>
+                  <div className="text-11 text-ink-500 mb-1">概览</div>
+                  <div className="text-13 text-ink-200 leading-relaxed whitespace-pre-wrap">{report.overview}</div>
                 </section>
 
                 {report.findings.length === 0 ? (
-                  <div className="rounded-lg border border-ink-700 bg-ink-850/40 p-4 text-center text-[12px] text-ink-400">
+                  <div className="rounded-lg border border-ink-700 bg-ink-850/40 p-4 text-center text-12 text-ink-400">
                     这一场没有发现问题 —— 角色反应与设定是自洽的。
                   </div>
                 ) : (
                   grouped(report).map(({ lv, items }) => items.length === 0 ? null : (
                     <section key={lv}>
-                      <div className={`inline-block rounded px-2 py-0.5 text-[11px] border ${LEVEL_STYLE[lv]}`}>
+                      <div className={`inline-block rounded px-2 py-0.5 text-11 border ${LEVEL_STYLE[lv]}`}>
                         {lv} · {items.length} 条
                       </div>
                       <div className="mt-2 space-y-2">
@@ -220,18 +220,18 @@ export default function TavernReport() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 {f.targetLabel && (
-                                  <div className="text-[11.5px] text-ink-400">
+                                  <div className="text-11 text-ink-400">
                                     {f.targetTabId ? tabName(f.targetTabId) : '（未能定位）'}
                                     {f.targetLabel ? ` · ${f.targetLabel}` : ''}
                                   </div>
                                 )}
-                                <div className="mt-0.5 text-[13px] text-ink-100 leading-relaxed">{f.detail}</div>
+                                <div className="mt-0.5 text-13 text-ink-100 leading-relaxed">{f.detail}</div>
                                 {f.suggestion && (
-                                  <div className="mt-1 text-[12px] text-ink-400 leading-relaxed">建议：{f.suggestion}</div>
+                                  <div className="mt-1 text-12 text-ink-400 leading-relaxed">建议：{f.suggestion}</div>
                                 )}
                               </div>
                               {f.targetTabId && f.targetRecordId && (
-                                <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => jumpTo(f)}>
+                                <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => jumpTo(f)}>
                                   定位
                                 </Button>
                               )}
@@ -243,7 +243,7 @@ export default function TavernReport() {
                   ))
                 )}
 
-                <div className="border-t border-ink-800 pt-2 text-[11px] text-ink-500">
+                <div className="border-t border-ink-800 pt-2 text-11 text-ink-500">
                   报告只做诊断，不会写回任何项目表 —— 是否采纳由你决定。
                   {report.findings.some(f => f.level === '存疑') && ' 「存疑」是模型有疑虑但指不出具体条目的部分，未必是错。'}
                 </div>

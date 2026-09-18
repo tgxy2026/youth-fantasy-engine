@@ -134,15 +134,15 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
 
   return (
     <Modal open={open} onClose={onClose} title="用量明细" width="lg">
-      <p className="text-[11.5px] text-ink-400 leading-relaxed">
+      <p className="text-11 text-ink-400 leading-relaxed">
         按「真实组装」量一遍这一轮会送去什么，以及每一层各占多少
         （{tone ? `本页：${tone}` : '当前会话'}）。这里只读不改 —— 想省额度，优先精简下面占得最多的那几层（长条最长的那条就是）。
       </p>
 
       {error ? (
         <div className="mt-4 rounded-md border border-red-400/30 bg-red-400/5 p-4">
-          <p className="text-[12.5px] text-red-400">量不出来</p>
-          <p className="mt-1 break-all text-[11.5px] text-ink-300 leading-relaxed">{error}</p>
+          <p className="text-12 text-red-400">量不出来</p>
+          <p className="mt-1 break-all text-11 text-ink-300 leading-relaxed">{error}</p>
           <div className="mt-3 flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => void measure()}>再量一次</Button>
             <Button variant="secondary" size="sm" onClick={onClose}>关闭</Button>
@@ -153,7 +153,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
       ) : (
         <div className="mt-3 space-y-3">
           <div className="rounded-lg border border-ink-700 bg-ink-850/40 p-3">
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[12px]">
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-12">
               <span className="text-ink-400">总额度 <span className="text-ink-100">{fmt(summary.total)}</span> 字</span>
               <span className="text-ink-400">固定送入 <span className="text-ink-100">{fmt(summary.systemChars)}</span></span>
               <span className="text-ink-400">安全余量 <span className="text-ink-100">{fmt(summary.overhead)}</span></span>
@@ -163,13 +163,13 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
               </span>
             </div>
             {bar(summary)}
-            <p className="mt-1.5 text-[10.5px] text-ink-500">
+            <p className="mt-1.5 text-10 text-ink-500">
               灰色＝固定送入（下面明细的各层），琥珀＝留给对话历史，剩下的空白＝安全余量。
             </p>
           </div>
 
           <div className="overflow-hidden rounded-lg border border-ink-700">
-            <table className="w-full text-[11.5px]">
+            <table className="w-full text-11">
               <thead className="bg-ink-850/60 text-ink-400">
                 <tr>
                   <th className="px-3 py-1.5 text-left font-normal">层</th>
@@ -182,7 +182,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
                   <tr key={p.key} className="border-t border-ink-800">
                     <td className="px-3 py-2 align-top">
                       <div className="text-ink-100">{p.label}</div>
-                      {p.note && <div className="mt-0.5 text-[10.5px] text-ink-500 leading-relaxed">{p.note}</div>}
+                      {p.note && <div className="mt-0.5 text-10 text-ink-500 leading-relaxed">{p.note}</div>}
                     </td>
                     <td className="px-3 py-2 text-right align-top text-ink-200">{fmt(p.chars)}</td>
                     <td className="px-3 py-2 text-right align-top text-ink-500">
@@ -200,12 +200,12 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
           </div>
 
           {summary.warnings.map((w, i) => (
-            <div key={i} className="rounded-md border border-amber/35 bg-amber/8 px-3 py-2 text-[11.5px] text-ink-300 leading-relaxed">
+            <div key={i} className="rounded-md border border-amber/35 bg-amber/8 px-3 py-2 text-11 text-ink-300 leading-relaxed">
               ⚠️ {w}
             </div>
           ))}
 
-          <div className="border-t border-ink-800 pt-2 text-[10.5px] text-ink-500 leading-relaxed">
+          <div className="border-t border-ink-800 pt-2 text-10 text-ink-500 leading-relaxed">
             某一层没填内容就是 0 字，不会预留 —— 省下来的额度自动归到对话历史
             （所以「背景设定」留空时，历史额度反而更宽裕）。历史超额度时从最早的轮次开始裁，
             开场与记忆里已有的内容不裁。

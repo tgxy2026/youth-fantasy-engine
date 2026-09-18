@@ -59,7 +59,7 @@ export default function TavernCastDirector({
 
   return (
     <Modal open={open} onClose={onClose} title="在场调度" width="lg">
-      <p className="text-[11.5px] text-ink-400 leading-relaxed">
+      <p className="text-11 text-ink-400 leading-relaxed">
         这里是这一场的临时安排：谁不开口、谁话多。不会改动角色卡，也不会删掉记忆 ——
         静音的人依然算在场（提示词里会写明「Ta 在、但这一句不是 Ta 说的」），只是这一轮不发言。
       </p>
@@ -80,10 +80,10 @@ style={{ maxHeight: foldVh('50vh') }}>
                 : 'border-ink-700 bg-ink-850/40'}`}
             >
               <div className="flex items-center gap-2">
-                <span className={`min-w-0 flex-1 truncate text-[12.5px] ${isMutedNow || disabled ? 'text-ink-500' : 'text-ink-100'}`}>
+                <span className={`min-w-0 flex-1 truncate text-12 ${isMutedNow || disabled ? 'text-ink-500' : 'text-ink-100'}`}>
                   {r.name}
                 </span>
-                <span className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-[10px] text-ink-500">{r.tag}</span>
+                <span className="shrink-0 rounded border border-ink-700 px-1.5 py-0.5 text-10 text-ink-500">{r.tag}</span>
                 {r.speakable && (
                   <>
                     {showNext && (
@@ -111,24 +111,24 @@ style={{ maxHeight: foldVh('50vh') }}>
 
               {r.speakable && !isMutedNow && (
                 <div className="mt-2 flex items-center gap-2">
-                  <span className="shrink-0 text-[10.5px] text-ink-500">健谈度</span>
+                  <span className="shrink-0 text-10 text-ink-500">健谈度</span>
                   <select
                     value={String(val)}
                     onChange={e => onSetTalkativity(r.id, Number(e.target.value))}
-                    className="shrink-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11px] text-ink-100 outline-none focus:border-amber/50"
+                    className="shrink-0 rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-11 text-ink-100 outline-none focus:border-amber/50"
                   >
                     {TALK_BANDS.map(b => (
                       <option key={b.name} value={String(midOf(b.min, b.max))}>{b.name}</option>
                     ))}
                   </select>
-                  <span className="min-w-0 flex-1 truncate text-[10.5px] text-ink-500" title={band.line}>
+                  <span className="min-w-0 flex-1 truncate text-10 text-ink-500" title={band.line}>
                     {band.line}
                   </span>
                 </div>
               )}
 
               {r.speakable && isMutedNow && (
-                <p className="mt-1.5 text-[10.5px] text-ink-600 leading-relaxed">
+                <p className="mt-1.5 text-10 text-ink-600 leading-relaxed">
                   在场但不发言 —— 这一场不开口，Ta 的角色卡与记忆也不占上下文。
                   （想让 Ta 对场面有反应，就别静音。）
                 </p>
@@ -138,7 +138,7 @@ style={{ maxHeight: foldVh('50vh') }}>
         })}
       </div>
 
-      {note && <p className="mt-3 text-[10.5px] text-ink-600 leading-relaxed">{note}</p>}
+      {note && <p className="mt-3 text-10 text-ink-600 leading-relaxed">{note}</p>}
 
       <div className="mt-4 flex justify-end">
         <Button variant="secondary" size="md" onClick={onClose}>完成</Button>

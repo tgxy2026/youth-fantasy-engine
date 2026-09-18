@@ -152,25 +152,25 @@ export default function FormSheet({ tab }: Props) {
                 {`${tab.description}\n\n填写要点：\n· 左侧是字段名与说明，右侧输入框直接填，内容长会自动变高；\n· 未填时下方会给出「示例：…」参考，照着改成自己的设定即可；\n· 顶部进度条显示已填 / 总项数，不必一次填满，随写随补；\n· Ctrl+S 或点「保存」落库，右下角出现浮动按钮说明还有未保存的改动；\n· 「清空」会清掉本页全部内容（不可撤销，慎用）。\n\n填完的内容会自动进入正文编辑器左侧的设定检索栏，写作时可随时速查与就地修改。`}
               </HelpPopover>
             </div>
-            <p className="mt-1.5 text-[13px] text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
+            <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
-            <span className={`text-[11px] transition-opacity duration-300 ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+            <span className={`text-11 transition-opacity duration-300 ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
-            <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-[13px] text-red-400">
+            <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-13 text-red-400">
               <RotateCcw size={12} /> 清空
             </Button>
           <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
-            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium hover:bg-amber/25"
+            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
             title={dirty ? '保存（Ctrl+S）' : '无未保存修改'}
           >
             <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}>
+            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}>
               <Sparkles size={12} /> AI 补全
             </Button>
           )}
@@ -184,7 +184,7 @@ export default function FormSheet({ tab }: Props) {
               style={{ width: `${totalFields ? (filledCount / totalFields) * 100 : 0}%` }}
             />
           </div>
-          <span className="text-[10px] text-ink-400 shrink-0">{filledCount} / {totalFields} 项已填</span>
+          <span className="text-10 text-ink-400 shrink-0">{filledCount} / {totalFields} 项已填</span>
         </div>
       </header>
 
@@ -196,8 +196,8 @@ export default function FormSheet({ tab }: Props) {
           <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden h-full">
             <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
               <span className="w-1 h-3.5 rounded-full bg-amber/70" />
-              <h2 className="text-[13px] font-semibold text-ink-100">{mod.name}</h2>
-              <span className="text-[10px] text-ink-500 ml-auto">{mod.fields.length} 项</span>
+              <h2 className="text-13 font-semibold text-ink-100">{mod.name}</h2>
+              <span className="text-10 text-ink-500 ml-auto">{mod.fields.length} 项</span>
             </div>
             <div className="divide-y divide-ink-700/60">
               {mod.fields.map(field => {
@@ -206,7 +206,7 @@ export default function FormSheet({ tab }: Props) {
                 return (
                   <div key={key} className="px-5 py-4 grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-2 md:gap-4 hover:bg-ink-800/40 transition-colors">
                     <div>
-                      <div className="text-[13px] font-medium text-ink-100">{field.name}</div>
+                      <div className="text-13 font-medium text-ink-100">{field.name}</div>
                       {field.desc && <div className="field-desc mt-1">{field.desc}</div>}
                     </div>
                     <div>
@@ -214,7 +214,7 @@ export default function FormSheet({ tab }: Props) {
                                 value={val}
                                 onChange={v => setField(key, v)}
                                 placeholder="点击填写…"
-                                className="text-[13px]"
+                                className="text-13"
                                 minHeight={36}
                               />
                       {!val && field.example && (
@@ -236,7 +236,7 @@ export default function FormSheet({ tab }: Props) {
       {tab.tips && tab.tips.length > 0 && (
         <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4">
           {tab.tips.map((tip, i) => (
-            <div key={i} className="text-[12px] text-amber/80 leading-relaxed flex items-start gap-2">
+            <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
               <Info size={12} className="mt-0.5 shrink-0" />
               <span>{tip}</span>
             </div>

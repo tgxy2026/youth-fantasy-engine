@@ -1123,7 +1123,7 @@ style={{ zIndex: Z.pageHandle }}
             title="拖拽调整章节栏宽度"
           />
           <div className="flex items-center justify-between px-3.5 h-11 border-b border-ink-700 shrink-0">
-            <span className="text-[12px] font-semibold text-ink-200 flex items-center gap-1.5">
+            <span className="text-12 font-semibold text-ink-200 flex items-center gap-1.5">
               <BookMarked size={13} className="text-amber" /> 章节
               <HelpPopover title="卷章目录怎么用" width="22rem" side="right">
                 {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「下载」图标一键导出全书 TXT。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
@@ -1144,7 +1144,7 @@ style={{ zIndex: Z.pageHandle }}
 
           <div className="flex-1 overflow-y-auto py-2 px-2">
             {volumes.length === 0 && (
-              <div className="text-center py-14 text-ink-500 text-[12px] border border-dashed border-ink-700 rounded-lg mx-1">
+              <div className="text-center py-14 text-ink-500 text-12 border border-dashed border-ink-700 rounded-lg mx-1">
                 <FolderPlus size={18} className="mx-auto mb-2 text-ink-600" />
                 点击右上角新建第一卷
               </div>
@@ -1185,12 +1185,12 @@ style={{ zIndex: Z.pageHandle }}
                     </Button>
                     <span
                       onClick={() => setNamePrompt({ kind: 'renVol', title: '修改卷名', def: vol.title, payload: vol })}
-                      className="text-[12.5px] font-semibold text-ink-100 cursor-pointer hover:text-amber transition-colors flex-1 truncate"
+                      className="text-12 font-semibold text-ink-100 cursor-pointer hover:text-amber transition-colors flex-1 truncate"
                       title="点击改卷名"
                     >
                       {vol.title}
                     </span>
-                    <span className="text-[9px] text-ink-600">{chs.length}章·{(volWords / 10000).toFixed(1)}万</span>
+                    <span className="text-9 text-ink-600">{chs.length}章·{(volWords / 10000).toFixed(1)}万</span>
                     <Button variant="bare" iconOnly size="sm"
                       onClick={() => setNamePrompt({ kind: 'addCh', title: '新建章节', def: `第${nextChapterNo}章`, payload: vol.id })}
                       className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
@@ -1236,15 +1236,15 @@ style={{ zIndex: Z.pageHandle }}
                               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[ch.status]}`} title={ch.status} />
                               {/* 系统派生的正文序号：与章名无关，改名字它也不会变 */}
                               <span
-                                className="text-[9px] text-ink-600 shrink-0 tabular-nums w-4 text-right"
+                                className="text-9 text-ink-600 shrink-0 tabular-nums w-4 text-right"
                                 title={ch.excludeFromNumbering ? '不计入序号（序章 / 番外 / 后记）' : '正文序号（由卷序与章序派生）'}
                               >
                                 {chapterSeqs.get(ch.id) || ''}
                               </span>
-                              <span className="text-[12px] truncate flex-1" onDoubleClick={() => setNamePrompt({ kind: 'renCh', title: '修改章名', def: ch.title, payload: ch })} title={`双击改章名 · 状态：${ch.status}`}>
+                              <span className="text-12 truncate flex-1" onDoubleClick={() => setNamePrompt({ kind: 'renCh', title: '修改章名', def: ch.title, payload: ch })} title={`双击改章名 · 状态：${ch.status}`}>
                                 {ch.title}
                               </span>
-                              <span className="text-[9px] text-ink-600 group-hover:hidden">{ch.wordCount > 0 ? `${ch.wordCount}字` : ''}</span>
+                              <span className="text-9 text-ink-600 group-hover:hidden">{ch.wordCount > 0 ? `${ch.wordCount}字` : ''}</span>
                               <Button variant="bare"
                                 onClick={e => { e.stopPropagation(); toggleExcludeNumbering(ch) }}
                                 className={`p-0.5 transition-colors ${
@@ -1271,7 +1271,7 @@ style={{ zIndex: Z.pageHandle }}
                           onClick={() => setNamePrompt({ kind: 'addCh', title: '新建章节', def: `第${nextChapterNo}章`, payload: vol.id })}
                           onDragOver={e => { if (dragKind !== 'ch') return; e.preventDefault(); e.stopPropagation(); setOverKey({ kind: 'vol', id: vol.id, pos: 'after' }) }}
                           onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop() }}
-                          className={`w-full text-left px-2 py-1.5 text-[11px] transition-colors ${overKey?.kind === 'vol' && overKey.id === vol.id ? 'text-amber bg-amber/5 ring-1 ring-amber/70' : 'text-ink-500 hover:text-amber'}`}
+                          className={`w-full text-left px-2 py-1.5 text-11 transition-colors ${overKey?.kind === 'vol' && overKey.id === vol.id ? 'text-amber bg-amber/5 ring-1 ring-amber/70' : 'text-ink-500 hover:text-amber'}`}
                           title="拖动章节到此可加入本卷"
                         >
                           + 新建第一章
@@ -1330,12 +1330,12 @@ style={{ zIndex: Z.pageHandle }}
               <input
                 value={active.title}
                 onChange={e => updateMeta({ title: e.target.value })}
-                className="!bg-transparent !border-transparent !px-1 text-[14px] font-semibold text-ink-50 flex-1 min-w-0 hover:!border-ink-600 focus:!border-amber/50 font-serif"
+                className="!bg-transparent !border-transparent !px-1 text-14 font-semibold text-ink-50 flex-1 min-w-0 hover:!border-ink-600 focus:!border-amber/50 font-serif"
               />
               <select
                 value={active.status}
                 onChange={e => updateMeta({ status: e.target.value as ChapterStatus })}
-                className="!py-0.5 !px-1.5 text-[11px] shrink-0"
+                className="!py-0.5 !px-1.5 text-11 shrink-0"
                 title={`章节状态：${active.status}`}
               >
                 {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1399,59 +1399,59 @@ style={{ zIndex: Z.pageHandle }}
 style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportChapter(projectName, active))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出本章（{active.title}）
                       </Button>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportWholeBook(projectName, volumes, chapters))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全本（一卷一章）
                       </Button>
                       <div className="my-1 mx-2 border-t border-ink-700" />
-                      <div className="px-3 py-1 text-[10px] text-ink-500">导出全文（多格式）</div>
+                      <div className="px-3 py-1 text-10 text-ink-500">导出全文（多格式）</div>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportBookMD(projectName, volumes, chapters))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（Markdown）
                       </Button>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportEPUB(projectName, volumes, chapters))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（EPUB）
                       </Button>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportDOCX(projectName, volumes, chapters))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（DOCX）
                       </Button>
                       <Button variant="bare"
                         onClick={() => runExport(m => m.exportBookPlatformText(projectName, volumes, chapters))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                         title="干净纯文本，适配起点 / 番茄等网文平台粘贴"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（平台粘贴版）
                       </Button>
                       <div className="my-1 mx-2 border-t border-ink-700" />
-                      <div className="px-3 py-1 text-[10px] text-ink-500">按卷导出</div>
+                      <div className="px-3 py-1 text-10 text-ink-500">按卷导出</div>
                       {volumes.length === 0 ? (
-                        <div className="px-3 py-1.5 text-[11px] text-ink-500">暂无分卷</div>
+                        <div className="px-3 py-1.5 text-11 text-ink-500">暂无分卷</div>
                       ) : volumes.map(vol => (
                         <Button variant="bare"
                           key={vol.id}
                           onClick={() => runExport(m => m.exportVolume(projectName, vol, chapters))}
-                          className="w-full text-left !justify-start pl-5 pr-3 py-1 text-[12px] text-ink-200 hover:bg-ink-700 truncate"
+                          className="w-full text-left !justify-start pl-5 pr-3 py-1 text-12 text-ink-200 hover:bg-ink-700 truncate"
                           title={`导出「${vol.title}」`}
                         >
                           {vol.title}（{chapters.filter(c => c.volumeId === vol.id).length} 章）
                         </Button>
                       ))}
                       <div className="my-1 mx-2 border-t border-ink-700" />
-                      <div className="px-3 py-1 text-[10px] text-ink-500">按章节导出</div>
+                      <div className="px-3 py-1 text-10 text-ink-500">按章节导出</div>
                       <Button variant="bare"
                         onClick={async () => {
                           // 每章一个文件——使用循环 setTimeout 避免浏览器拦截多个下载
@@ -1466,7 +1466,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                           tick()
                           setExportOpen(false)
                         }}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-[12px] text-ink-200 hover:bg-ink-700 flex items-center gap-2"
+                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-200 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} /> 全部章节逐一导出（{chapters.length} 个文件）
                       </Button>
@@ -1475,7 +1475,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                           <Button variant="bare"
                             key={ch.id}
                             onClick={() => runExport(m => m.exportChapter(projectName, ch))}
-                            className="w-full text-left !justify-start pl-5 pr-3 py-0.5 text-[11px] text-ink-300 hover:bg-ink-700 truncate"
+                            className="w-full text-left !justify-start pl-5 pr-3 py-0.5 text-11 text-ink-300 hover:bg-ink-700 truncate"
                             title={ch.title}
                           >
                             {ch.title}
@@ -1559,7 +1559,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       title="约束模型不用「仿佛 / 不禁 / 然而」这类套话开头、不堆四字成语与排比、不写空泛升华（默认开）">
                       {companionDeAi ? '已开启' : '已关闭'}
                     </Button>
-                    <span className="text-ink-500 text-[10px]">压制套话与排比，默认开</span>
+                    <span className="text-ink-500 text-10">压制套话与排比，默认开</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-ink-400 shrink-0">参考写作规范</span>
@@ -1568,7 +1568,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       title="把《写作规范》里登记的坏习惯词 / 标点偏好 / 视角规则锚进伴写；关掉后只靠前文样本与下面的文风补充">
                       {companionStyleSpec ? '已开启' : '已关闭'}
                     </Button>
-                    <span className="text-ink-500 text-[10px]">负面清单，默认开</span>
+                    <span className="text-ink-500 text-10">负面清单，默认开</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-ink-400 shrink-0">文风补充</span>
@@ -1587,9 +1587,9 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       title={!aiReady ? '未配置 AI 模型' : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
                       {companion ? '已开启' : '已关闭'}
                     </Button>
-                    <span className="text-ink-500 text-[10px]">{!aiReady ? '需先接入 AI 模型' : companion ? '停笔即续写一句话' : '默认关闭'}</span>
+                    <span className="text-ink-500 text-10">{!aiReady ? '需先接入 AI 模型' : companion ? '停笔即续写一句话' : '默认关闭'}</span>
                   </div>
-                  <div className="text-ink-500 text-[10px] leading-relaxed">
+                  <div className="text-ink-500 text-10 leading-relaxed">
                     全部为本机记忆，换章不重置。伴写正文只发给你当前选定的模型：本地不出本机，云端会上传到该服务商。
                   </div>
                 </div>
@@ -1630,7 +1630,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                 onChange={e => updateMeta({ summary: e.target.value })}
                 placeholder="章节压缩摘要（AI 约 1/10，供综合诊断/推演简略模式）…"
                 rows={1}
-                className="!bg-transparent !border-transparent !px-0 py-1 text-[11px] leading-relaxed text-ink-300 hover:!border-ink-600 focus:!border-amber/50 flex-1 min-w-0 resize-none overflow-hidden box-border appearance-none"
+                className="!bg-transparent !border-transparent !px-0 py-1 text-11 leading-relaxed text-ink-300 hover:!border-ink-600 focus:!border-amber/50 flex-1 min-w-0 resize-none overflow-hidden box-border appearance-none"
               />
               <Button onClick={genSummary}
                 disabled={!aiReady || summarizing || !active}
@@ -1712,7 +1712,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             </div>
 
             {/* 底部状态栏：实时字数 / 今日码字 / 保存状态 / 打字机模式 / 字号 */}
-            <div className="h-8 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-4 px-5 text-[11px] text-ink-400">
+            <div className="h-8 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-4 px-5 text-11 text-ink-400">
               <span className="flex items-center gap-1">
                 <Hash size={10} />{countWords(draftContent)} 字
               </span>
@@ -1746,7 +1746,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                   title="减小字号">
                   −
                 </Button>
-                <span className="w-6 text-center text-ink-300 tabular-nums text-[11px]">{fontSize}</span>
+                <span className="w-6 text-center text-ink-300 tabular-nums text-11">{fontSize}</span>
                 <Button variant="bare"
                   onClick={() => changeFontSize(1)}
                   className="w-5 flex items-center justify-center rounded text-ink-400 hover:text-amber transition-colors"
@@ -1764,13 +1764,13 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
               <div className="absolute right-3 top-14 bottom-10 w-72 z-20 bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col">
                 <div className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">
                   <Users size={13} className="text-amber" />
-                  <span className="text-[12px] font-semibold text-ink-200 flex-1">本章引用</span>
-                  <span className="text-[10px] text-ink-500">{referenced.length} 处</span>
+                  <span className="text-12 font-semibold text-ink-200 flex-1">本章引用</span>
+                  <span className="text-10 text-ink-500">{referenced.length} 处</span>
                   <Button variant="icon-muted" onClick={() => setShowRefs(false)} className="p-1" title="收起"><X size={16} /></Button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2">
                   {referenced.length === 0 ? (
-                    <div className="text-ink-500 text-[11px] p-3 leading-relaxed">
+                    <div className="text-ink-500 text-11 p-3 leading-relaxed">
                       本章正文未匹配到已登记的角色名 / 设定条目名。<br />
                       先在「主要角色」「世界构建」各设定表（国家 / 地理 / 种族 / 物品 / 历史 / 术语…）登记，写作时用到会自动出现在这里，并可一键直达。
                     </div>
@@ -1780,19 +1780,19 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       if (!items.length) return null
                       return (
                         <div key={t}>
-                          <div className="text-[10px] text-ink-500 px-1 py-1">{t === 'character' ? '角色' : '设定'} · {items.length}</div>
+                          <div className="text-10 text-ink-500 px-1 py-1">{t === 'character' ? '角色' : '设定'} · {items.length}</div>
                           {items.map(r => (
                             <Button variant="bare"
                               key={r.name + (r.aliasOf ?? '')}
                               onClick={() => onNavigate?.(r.tabId)}
-                              className="w-full text-left !justify-start px-2 py-1.5 rounded hover:bg-ink-800 flex items-center gap-2 text-ink-100 text-[12px] transition-colors"
+                              className="w-full text-left !justify-start px-2 py-1.5 rounded hover:bg-ink-800 flex items-center gap-2 text-ink-100 text-12 transition-colors"
                               title={`直达「${r.tabId}」`}
                             >
                               <span className="truncate flex-1">
                                 {r.name}
-                                {r.aliasOf && <span className="text-ink-500 text-[10px] ml-1.5">（{r.aliasOf} 的别称）</span>}
+                                {r.aliasOf && <span className="text-ink-500 text-10 ml-1.5">（{r.aliasOf} 的别称）</span>}
                               </span>
-                              <span className="text-[9px] text-ink-500">→</span>
+                              <span className="text-9 text-ink-500">→</span>
                             </Button>
                           ))}
                         </div>
@@ -1800,7 +1800,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     })
                   )}
                 </div>
-                <div className="px-3 py-2 border-t border-ink-700 text-[10px] text-ink-500 leading-relaxed">
+                <div className="px-3 py-2 border-t border-ink-700 text-10 text-ink-500 leading-relaxed">
                   点击条目直达对应角色卡 / 设定表；高亮开关在工具栏（<Highlighter size={10} className="inline" />）。
                 </div>
               </div>
@@ -1811,7 +1811,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             <PenLine size={32} className="text-ink-700" />
             <div className="text-sm">选择左侧章节，或新建一卷开始创作</div>
             {volumes.length === 0 && (
-              <Button variant="primary" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} className="px-4 py-2 rounded-lg text-[13px] transition-colors">
+              <Button variant="primary" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} className="px-4 py-2 rounded-lg text-13 transition-colors">
                 <FolderPlus size={14} className="inline mr-1.5" />新建第一卷
               </Button>
             )}

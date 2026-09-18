@@ -252,10 +252,10 @@ button:disabled { cursor: not-allowed; }
 
 /* ---------- 表单页字段说明气泡 ---------- */
 .field-desc {
-  @apply text-[11px] leading-relaxed text-ink-300;
+  @apply text-11 leading-relaxed text-ink-300;
 }
 .field-example {
-  @apply text-[11px] leading-relaxed text-amber/70 mt-0.5;
+  @apply text-11 leading-relaxed text-amber/70 mt-0.5;
 }
 
 /* ---------- 编辑器打字机模式 ---------- */
@@ -314,7 +314,7 @@ button:disabled { cursor: not-allowed; }
 
 /* ---------- 状态徽章 ---------- */
 .badge {
-  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium;
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-10 font-medium;
 }
 .badge-green { @apply bg-emerald-500/15 text-emerald-400 border border-emerald-500/30; }
 .badge-amber { @apply bg-amber/15 text-amber border border-amber/30; }

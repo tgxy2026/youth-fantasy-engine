@@ -41,14 +41,14 @@ export default function TavernStatusBar({ model, sceneText }: {
     <div className="space-y-2.5">
       {/* 场景：这一场此刻发生在哪 —— 与下面「关系状态」不是一回事，单独一行 */}
       <div className="flex items-start gap-2">
-        <span className="shrink-0 text-[10.5px] text-ink-500 mt-0.5">场景</span>
-        <span className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-ink-300" title={sceneText}>
+        <span className="shrink-0 text-10 text-ink-500 mt-0.5">场景</span>
+        <span className="min-w-0 flex-1 text-11 leading-relaxed text-ink-300" title={sceneText}>
           {sceneText || <span className="text-ink-600">未设定场景（新建对话时可选一份剧本）</span>}
         </span>
       </div>
 
       {/* 一句话总览：几位在场、记了多少事实与雷，以及记忆什么时候更新的 */}
-      <div className="flex flex-wrap items-center gap-x-2 text-[10.5px] text-ink-500">
+      <div className="flex flex-wrap items-center gap-x-2 text-10 text-ink-500">
         <span>{model.rows.length} 人在场</span>
         {model.facts > 0 && <span>· 关键事实 {model.facts}</span>}
         {model.mines > 0 && <span>· 未爆的雷 {model.mines}</span>}
@@ -58,7 +58,7 @@ export default function TavernStatusBar({ model, sceneText }: {
 
       {/* ---------- 角色状态（只读） ---------- */}
       {model.rows.length === 0 ? (
-        <p className="text-[11px] leading-relaxed text-ink-600">这一场还没有在场角色。</p>
+        <p className="text-11 leading-relaxed text-ink-600">这一场还没有在场角色。</p>
       ) : (
         <ul className="space-y-2">
           {model.rows.map(r => (
@@ -66,14 +66,14 @@ export default function TavernStatusBar({ model, sceneText }: {
               <Avatar src={r.avatar} name={r.name} size={22} className="mt-0.5" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <span className="text-[12px] text-ink-100">{r.name}</span>
-                  {r.isUser && <span className="text-[10px] text-amber">你演</span>}
+                  <span className="text-12 text-ink-100">{r.name}</span>
+                  {r.isUser && <span className="text-10 text-amber">你演</span>}
                   {r.muted
-                    ? <span className="text-[10px] text-ink-500">已静音 · 仍算在场</span>
-                    : r.talkBand && <span className="text-[10px] text-ink-500">{r.talkBand}</span>}
+                    ? <span className="text-10 text-ink-500">已静音 · 仍算在场</span>
+                    : r.talkBand && <span className="text-10 text-ink-500">{r.talkBand}</span>}
                 </div>
                 <div
-                  className="mt-0.5 text-[11px] leading-relaxed text-ink-400"
+                  className="mt-0.5 text-11 leading-relaxed text-ink-400"
                   title={r.relationFull || undefined}
                 >
                   {r.empty
@@ -83,7 +83,7 @@ export default function TavernStatusBar({ model, sceneText }: {
                       : <span className="text-ink-600">关系状态这一栏还没写</span>}
                 </div>
                 {!r.empty && (
-                  <div className="mt-0.5 text-[10.5px] text-ink-500">
+                  <div className="mt-0.5 text-10 text-ink-500">
                     关键事实 {r.facts} · 未爆的雷 {r.mines} · 纪念日与待办 {r.anniversaries}
                   </div>
                 )}
@@ -93,7 +93,7 @@ export default function TavernStatusBar({ model, sceneText }: {
         </ul>
       )}
 
-      <p className="text-[10.5px] leading-relaxed text-ink-600">
+      <p className="text-10 leading-relaxed text-ink-600">
         {noMemory
           ? '角色状态来自六栏记忆，现在还是空的 —— 自由对话只在点「结束本轮对话」时整理记忆，所以这一场聊完才会长出来。'
           : '角色状态只读（关系状态与计数来自六栏记忆，整理入口是「结束本轮对话」，要直接改就去「角色卡片」页的记忆区）。'}

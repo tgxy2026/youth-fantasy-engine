@@ -83,7 +83,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
       width="2xl"
       maxHeight="88vh"
       subheader={
-        <div className="px-5 py-3 text-[12px] text-ink-400 leading-relaxed">
+        <div className="px-5 py-3 text-12 text-ink-400 leading-relaxed">
           勾选本项目要启用的功能。<span className="text-amber/90">锁</span> 标记的是必选（不可取消）。
           有依赖关系的会自动连带开启（如「人物关系」带「主要角色」、酒馆模式两组互绑、控制面板是其余酒馆页签的前置），取消依赖项前无法单独关掉。
           「剧情推演」需要项目资料可喂，一个都没勾时会自动带上「主要角色」。
@@ -93,12 +93,12 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
       footer={
         <>
           <div className="flex gap-2">
-            <Button onClick={selectAll} variant="secondary" size="sm" className="text-[12px]">全选可选</Button>
-            <Button onClick={reset} variant="secondary" size="sm" className="text-[12px]">重置</Button>
+            <Button onClick={selectAll} variant="secondary" size="sm" className="text-12">全选可选</Button>
+            <Button onClick={reset} variant="secondary" size="sm" className="text-12">重置</Button>
           </div>
           <div className="flex gap-2">
-            <Button onClick={onClose} variant="secondary" size="md" className="text-[13px]">取消</Button>
-            <Button variant="bare" onClick={() => onConfirm(resolveFeatures(selected))} className="px-4 h-9 text-[13px] font-medium bg-amber/20 text-amber border border-amber/40 rounded-lg hover:bg-amber/30 transition-colors">确认</Button>
+            <Button onClick={onClose} variant="secondary" size="md" className="text-13">取消</Button>
+            <Button variant="bare" onClick={() => onConfirm(resolveFeatures(selected))} className="px-4 h-9 text-13 font-medium bg-amber/20 text-amber border border-amber/40 rounded-lg hover:bg-amber/30 transition-colors">确认</Button>
           </div>
         </>
       }
@@ -109,7 +109,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
             if (!items) return null
             return (
               <div key={group}>
-                <div className="text-[12px] font-semibold text-amber/90 mb-2">{group}</div>
+                <div className="text-12 font-semibold text-amber/90 mb-2">{group}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {items.map(e => {
                     const locked = e.tier === 'locked' || (forced.has(e.id) && !selected.has(e.id))
@@ -129,18 +129,18 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                             <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-amber border-amber text-ink-900' : 'border-ink-500'}`}>
                               {checked && <Check size={12} strokeWidth={3} />}
                             </span>
-                            <span className="text-[13px] text-ink-100 flex items-center gap-1.5 whitespace-nowrap">
+                            <span className="text-13 text-ink-100 flex items-center gap-1.5 whitespace-nowrap">
                               {e.name}
                               {e.tier === 'locked' && <Lock size={11} className="text-amber/70" />}
-                              {e.tier === 'default' && <span className="text-[10px] text-emerald-300/80">默认</span>}
+                              {e.tier === 'default' && <span className="text-10 text-emerald-300/80">默认</span>}
                             </span>
                           </div>
-                          <div className="mt-1 text-[11px] text-ink-400 leading-snug line-clamp-2">{e.desc}</div>
+                          <div className="mt-1 text-11 text-ink-400 leading-snug line-clamp-2">{e.desc}</div>
                           {e.requires.length > 0 && (
-                            <div className="mt-1 text-[10px] text-rose-300/80 leading-snug">需同时启用：{e.requires.map(nameOf).join('、')}</div>
+                            <div className="mt-1 text-10 text-rose-300/80 leading-snug">需同时启用：{e.requires.map(nameOf).join('、')}</div>
                           )}
                           {locked && e.tier !== 'locked' && (
-                            <div className="mt-1 text-[10px] text-amber/70">已因依赖自动开启，不可单独取消</div>
+                            <div className="mt-1 text-10 text-amber/70">已因依赖自动开启，不可单独取消</div>
                           )}
                         </div>
                       </Button>

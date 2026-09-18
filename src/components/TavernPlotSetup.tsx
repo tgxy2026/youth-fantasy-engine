@@ -67,8 +67,8 @@ const ROLE_DESC: Record<CastRole, string> = {
 }
 
 const inputCls = 'w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50'
-const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-[12px] text-ink-100 outline-none focus:border-amber/50'
-const labelCls = 'text-[11px] text-ink-400 mb-1'
+const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50'
+const labelCls = 'text-11 text-ink-400 mb-1'
 
 /** 读卡片里的某个字段（模块名不固定，按「::字段名」后缀找 —— 与 CharacterSheet 同法） */
 function fieldOf(rec: CardRecord, field: string): string {
@@ -138,7 +138,7 @@ function CharacterPicker({ open, title, options, usedBy, initialCardId, initialR
       open={open} onClose={onClose} title={title} width="lg"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
-          <span className="text-[11px] text-ink-500">
+          <span className="text-11 text-ink-500">
             {picked ? `已选：${picked.name || '（未命名）'} · ${ROLE_LABEL[role]}` : '还没选角色'}
           </span>
           <div className="flex gap-2">
@@ -163,7 +163,7 @@ function CharacterPicker({ open, title, options, usedBy, initialCardId, initialR
               </Button>
             ))}
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
+          <p className="mt-1 text-11 leading-relaxed text-ink-500">
             {ROLE_DESC[role]}
             {aiFull && <span className="text-amber"> （{MAX_AI_ROLES} 个 AI 名额已被其它位置占满）</span>}
           </p>
@@ -200,21 +200,21 @@ function CharacterPicker({ open, title, options, usedBy, initialCardId, initialR
                     : cardId === o.id ? 'bg-amber/10' : 'hover:bg-ink-800/60'
                 }`}
               >
-                <span className={`min-w-0 flex-1 truncate text-[12.5px] ${cardId === o.id ? 'text-amber' : 'text-ink-200'}`}>
+                <span className={`min-w-0 flex-1 truncate text-12 ${cardId === o.id ? 'text-amber' : 'text-ink-200'}`}>
                   {o.name || '（未命名）'}
-                  {o.retired && <span className="ml-1.5 text-[10.5px] text-ink-500">已退场</span>}
+                  {o.retired && <span className="ml-1.5 text-10 text-ink-500">已退场</span>}
                 </span>
-                <span className="shrink-0 truncate text-[10.5px] text-ink-500">
+                <span className="shrink-0 truncate text-10 text-ink-500">
                   {disabled ? `已在位置 ${used}` : (o.identity || o.tabName)}
                 </span>
               </button>
             )
           })}
           {rows.length === 0 && (
-            <div className="px-3 py-3 text-[12px] text-ink-500">没有匹配的角色。</div>
+            <div className="px-3 py-3 text-12 text-ink-500">没有匹配的角色。</div>
           )}
         </div>
-        <p className="text-[10.5px] text-ink-500">共 {options.length} 个角色 · 命中 {rows.length} 个</p>
+        <p className="text-10 text-ink-500">共 {options.length} 个角色 · 命中 {rows.length} 个</p>
       </div>
     </Modal>
   )
@@ -373,7 +373,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
     <Modal open={open} onClose={onCancel} title="新建推演" width="xl"
       footer={
         <div className="flex items-center justify-between gap-3 w-full">
-          <span className="text-[11px] text-ink-500">{hint || '准备就绪'}</span>
+          <span className="text-11 text-ink-500">{hint || '准备就绪'}</span>
           <div className="flex gap-2">
             <Button variant="secondary" size="md" onClick={onCancel}>取消</Button>
             <Button variant="primary" size="md" disabled={!canStart} onClick={submit}>开始推演</Button>
@@ -382,14 +382,14 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
       }>
       <div className="space-y-4">
         {loading ? (
-          <div className="py-8 text-center text-[12px] text-ink-500">正在读取章节与角色…</div>
+          <div className="py-8 text-center text-12 text-ink-500">正在读取章节与角色…</div>
         ) : (
           <>
             {/* ① 叙事锚点 */}
             <section>
               <div className={labelCls}>① 叙事锚点（必选）</div>
               {ordered.length === 0 ? (
-                <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-400">
+                <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-12 text-ink-400">
                   这个项目还没有章节。推演需要一个锚点 —— 请先在「正文编辑」里写几章，再回来。
                 </div>
               ) : (
@@ -402,7 +402,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                       onChange={e => setAnchorQ(e.target.value)}
                     />
                     {anchorId && (
-                      <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => setAnchorId('')}>
+                      <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => setAnchorId('')}>
                         清除已选
                       </Button>
                     )}
@@ -417,18 +417,18 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                             active ? 'bg-amber/10' : 'hover:bg-ink-800/60'
                           }`}
                         >
-                          <span className={`min-w-0 flex-1 truncate text-[12px] ${active ? 'text-amber' : 'text-ink-200'}`}>
+                          <span className={`min-w-0 flex-1 truncate text-12 ${active ? 'text-amber' : 'text-ink-200'}`}>
                             第 {r.no} 章 · {r.c.title || '未命名章节'}
                           </span>
-                          {r.vol && <span className="shrink-0 text-[10.5px] text-ink-500">{r.vol}</span>}
+                          {r.vol && <span className="shrink-0 text-10 text-ink-500">{r.vol}</span>}
                         </button>
                       )
                     })}
                     {anchorRows.length === 0 && (
-                      <div className="px-3 py-3 text-[12px] text-ink-500">没有匹配的章节。</div>
+                      <div className="px-3 py-3 text-12 text-ink-500">没有匹配的章节。</div>
                     )}
                   </div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
+                  <p className="mt-1 text-11 leading-relaxed text-ink-500">
                     共 {ordered.length} 章 · 命中 {anchorRows.length} 条
                     {anchorRow ? ` · 已选：第 ${anchorRow.no} 章 · ${anchorRow.c.title || '未命名章节'}` : ''}
                     <br />
@@ -442,12 +442,12 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
             <section>
               <div className={labelCls}>② 角色分配</div>
               {options.length === 0 ? (
-                <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-[12px] text-ink-400">
+                <div className="rounded-md border border-ink-700 bg-ink-850/60 px-3 py-3 text-12 text-ink-400">
                   角色管理里还没有角色卡。请先建几张角色卡（主要角色 / 次要角色 / NPC 均可）。
                 </div>
               ) : (
                 <>
-                  <p className="mb-2 text-[11px] leading-relaxed text-ink-500">
+                  <p className="mb-2 text-11 leading-relaxed text-ink-500">
                     空位置点一下就能选角色，选完在弹窗里定「由谁演出」。
                     AI 同时最多演 {MAX_AI_ROLES} 个 —— 再多，一轮里要分饰太多人，角色容易串味、等待也明显变长；
                     两个通常是推演效果与输出效率的平衡点。「我演」可以留空（整场交给 AI），也至多一个。
@@ -459,12 +459,12 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                       const aiLocked = aiOther >= MAX_AI_ROLES
                       return (
                         <div key={s.key} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-3 py-2">
-                          <span className="w-12 shrink-0 text-[11px] text-ink-500">位置 {i + 1}</span>
+                          <span className="w-12 shrink-0 text-11 text-ink-500">位置 {i + 1}</span>
                           {card ? (
                             <>
-                              <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-100">
+                              <span className="min-w-0 flex-1 truncate text-12 text-ink-100">
                                 {card.name || '（未命名）'}
-                                <span className="ml-2 text-[10.5px] text-ink-500">
+                                <span className="ml-2 text-10 text-ink-500">
                                   {card.tabName}{card.identity ? ` · ${card.identity}` : ''}
                                 </span>
                               </span>
@@ -476,8 +476,8 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                                 <option value="user">我演</option>
                                 <option value="silent">在场不出声</option>
                               </select>
-                              <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => setPickerIdx(i)}>更换</Button>
-                              <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => clearSlot(i)}>清空</Button>
+                              <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => setPickerIdx(i)}>更换</Button>
+                              <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => clearSlot(i)}>清空</Button>
                             </>
                           ) : (
                             <>
@@ -490,9 +490,9 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                               >
                                 ＋ 选择角色
                               </Button>
-                              <span className="shrink-0 text-[10.5px] text-ink-500">拟：{ROLE_LABEL[s.role]}</span>
+                              <span className="shrink-0 text-10 text-ink-500">拟：{ROLE_LABEL[s.role]}</span>
                               {slots.length > 1 && (
-                                <Button variant="secondary" size="md" className="shrink-0 text-[12px]" onClick={() => removeSlot(i)}>移除位置</Button>
+                                <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => removeSlot(i)}>移除位置</Button>
                               )}
                             </>
                           )}
@@ -501,11 +501,11 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                     })}
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3">
-                    <Button variant="secondary" size="md" className="text-[12px]"
+                    <Button variant="secondary" size="md" className="text-12"
                       disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
                       ＋ 增加位置（最多 {MAX_SLOTS} 个）
                     </Button>
-                    <span className="text-[11px] text-ink-500">
+                    <span className="text-11 text-ink-500">
                       当前：AI 演 {aiCount} 个 · 我演 {userCount} 个{userCount === 0 ? '（整场由 AI 扮演）' : ''}
                     </span>
                   </div>
@@ -524,7 +524,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                   导演推演
                 </Button>
               </div>
-              <p className="mt-1 text-[11px] text-ink-500">
+              <p className="mt-1 text-11 text-ink-500">
                 {mode === 'immersive'
                   ? '沉浸：只带入角色的「常识」（世界观 / 角色 / 关系），排除大纲与伏笔 —— 用它测角色反应最准。'
                   : '导演：可参照大纲与伏笔，但同样只到锚点为止 —— 适合检查「按设定这里该怎么演」。'}
@@ -555,7 +555,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
               <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：Ta得知师父死讯那一夜" />
             </section>
 
-            <div className="text-[11px] text-ink-500 border-t border-ink-800 pt-2">
+            <div className="text-11 text-ink-500 border-t border-ink-800 pt-2">
               ⚠️ 角色卡与人物关系表都是「全书当前快照」、没有时间版本。
               推演早期剧情时，若卡上写着他「已继任宗主」，带进去就会错位 —— 请留意这种状态错位。
             </div>

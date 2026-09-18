@@ -115,12 +115,12 @@ export default function StorylineView() {
   const hasData = useMemo(() => (nodes ?? []).some(n => n.events.length || n.hooks.length || n.planted.length || n.reaped.length), [nodes])
 
   if (!nodes) {
-    return <div className="flex items-center justify-center py-16 text-ink-500 text-[12px]"><Loader2 size={13} className="animate-spin mr-2" />正在聚合剧情线…</div>
+    return <div className="flex items-center justify-center py-16 text-ink-500 text-12"><Loader2 size={13} className="animate-spin mr-2" />正在聚合剧情线…</div>
   }
 
   if (!hasData) {
     return (
-      <div className="rounded-xl border border-ink-700 bg-ink-850 px-4 py-16 text-center text-ink-500 text-[13px]">
+      <div className="rounded-xl border border-ink-700 bg-ink-850 px-4 py-16 text-center text-ink-500 text-13">
         还没有剧情数据——先在「伏笔追踪 / 爽点节奏 / 时间脉络」登记内容，剧情线会自动聚合。
       </div>
     )
@@ -146,26 +146,26 @@ export default function StorylineView() {
               <div className="absolute left-0 top-0 bottom-0 w-px bg-ink-700" />
               <div className="absolute left-[-4px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-amber bg-ink-900" />
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[13px] font-bold text-ink-100">第 {n.no} 章</span>
-                {n.title && <span className="text-[12px] text-ink-400">{n.title}</span>}
-                {n.planted.length > 0 && <span className="text-[10px] px-1.5 py-px rounded bg-amber/10 text-amber border border-amber/25">埋 {n.planted.join(' ')}</span>}
-                {n.reaped.length > 0 && <span className="text-[10px] px-1.5 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">收 {n.reaped.join(' ')}</span>}
+                <span className="text-13 font-bold text-ink-100">第 {n.no} 章</span>
+                {n.title && <span className="text-12 text-ink-400">{n.title}</span>}
+                {n.planted.length > 0 && <span className="text-10 px-1.5 py-px rounded bg-amber/10 text-amber border border-amber/25">埋 {n.planted.join(' ')}</span>}
+                {n.reaped.length > 0 && <span className="text-10 px-1.5 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">收 {n.reaped.join(' ')}</span>}
               </div>
               {empty ? (
-                <div className="text-[11px] text-ink-500 italic">（本章无登记事件 / 爽点 / 伏笔）</div>
+                <div className="text-11 text-ink-500 italic">（本章无登记事件 / 爽点 / 伏笔）</div>
               ) : (
                 <div className="space-y-1">
                   {n.events.map((e, i) => (
-                    <div key={`e${i}`} className="flex items-start gap-1.5 text-[12px] text-ink-200 leading-snug">
+                    <div key={`e${i}`} className="flex items-start gap-1.5 text-12 text-ink-200 leading-snug">
                       <Flag size={11} className="mt-0.5 shrink-0 text-ink-500" />
                       <span>{e}</span>
                     </div>
                   ))}
                   {n.hooks.map((h, i) => (
-                    <div key={`h${i}`} className="flex items-start gap-1.5 text-[12px] text-amber/90 leading-snug">
+                    <div key={`h${i}`} className="flex items-start gap-1.5 text-12 text-amber/90 leading-snug">
                       <Zap size={11} className="mt-0.5 shrink-0 text-amber" />
                       <span>
-                        <span className="px-1 py-px mr-1 rounded bg-amber/10 border border-amber/25 text-[10px]">{h.type}</span>
+                        <span className="px-1 py-px mr-1 rounded bg-amber/10 border border-amber/25 text-10">{h.type}</span>
                         {h.content}
                         {h.hook && <span className="text-ink-400"> · 钩子：{h.hook}</span>}
                       </span>
@@ -179,7 +179,7 @@ export default function StorylineView() {
       </div>
 
       {stats.overdue > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-[11.5px] text-red-300 leading-relaxed">
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-11 text-red-300 leading-relaxed">
           <AlertTriangle size={13} className="mt-0.5 shrink-0" />
           <span>
             有 <b>{stats.overdue}</b> 条伏笔的「计划回收位置」已到章（当前剧情已进行到对应章节），但状态仍是未回收——
@@ -195,8 +195,8 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'amb
   const cls = tone === 'amber' ? 'text-amber' : tone === 'green' ? 'text-emerald-400' : 'text-red-400'
   return (
     <div className="bg-ink-800 rounded-lg px-3 py-2">
-      <div className="text-[10px] text-ink-500">{label}</div>
-      <div className={`text-[16px] font-bold mt-0.5 ${cls}`}>{value}</div>
+      <div className="text-10 text-ink-500">{label}</div>
+      <div className={`text-16 font-bold mt-0.5 ${cls}`}>{value}</div>
     </div>
   )
 }

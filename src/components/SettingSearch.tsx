@@ -333,7 +333,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       <div className="px-3 pt-3 pb-2 border-b border-ink-700 shrink-0">
         <div className="flex items-center gap-1.5">
           <Search size={13} className="text-amber shrink-0" />
-          <span className="text-[12px] font-semibold text-ink-200 flex-1">设定检索</span>
+          <span className="text-12 font-semibold text-ink-200 flex-1">设定检索</span>
           <HelpPopover title="设定检索与联动编辑" width="23rem" side="right">
             {'左侧是全书设定的实时速查索引，按角色 / 世界 / 创作三大类组织。\n\n· 输入关键词检索本组设定（角色名、伏笔、境界、地名…）；\n· 展开任意一条可查看全部字段，点字段右侧的 ✎ 就地修改，自动同步回对应角色卡 / 设定表，不必跳页重填；\n· 原表单里是下拉选择的字段（人物状态、伏笔状态、重要程度…），在这里同样是下拉，选项可增删改，选中即保存；\n· 角色类的多选字段（如《知情权限》的「知情者」）在这里同样从已创建角色卡中多选、不可手填，与设定表完全一致；\n· 真实日期字段（写作进度、读者反馈等）点开弹出月历选择；故事内时间（某年某月某日）用结构化下拉填写，避免时间轴排序错乱；\n· 纯文本字段改完点「保存」生效；\n· "→ 跳转到" 直达该设定所在页签做大改；\n· 右上旋转箭头可重建索引（在别处新填的内容没出现时点一下）。\n\n注：已回收的伏笔、未登场的角色不进入索引，避免刷屏。'}
           </HelpPopover>
@@ -351,7 +351,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="搜角色名 / 伏笔 / 境界 / 地名…"
-            className="w-full !pl-7 text-[12px]"
+            className="w-full !pl-7 text-12"
           />
           <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none" />
         </div>
@@ -361,13 +361,13 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
             <Button variant="bare"
               key={g}
               onClick={() => setTopGroup(g)}
-              className={`flex-1 px-2 py-1 rounded-md text-[11px] border transition-colors
+              className={`flex-1 px-2 py-1 rounded-md text-11 border transition-colors
                 ${activeTop === g
                   ? 'bg-amber/15 text-amber border-amber/30 font-medium'
                   : 'text-ink-400 border-ink-700 hover:border-ink-500'}`}
             >
               {g}
-              <span className="ml-1 text-[9px] text-ink-500">{totalForGroup[g] ?? 0}</span>
+              <span className="ml-1 text-9 text-ink-500">{totalForGroup[g] ?? 0}</span>
             </Button>
           ))}
         </div>
@@ -377,7 +377,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
             <Button variant="bare"
               key={s.id}
               onClick={() => setActiveSub(s.id)}
-              className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors
+              className={`px-1.5 py-0.5 rounded text-10 border transition-colors
                 ${activeSub === s.id
                   ? 'bg-ink-700 text-ink-100 border-ink-500'
                   : 'text-ink-500 border-ink-800 hover:text-ink-300'}`}
@@ -391,16 +391,16 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       {/* 结果列表 */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {!loaded ? (
-          <div className="text-center py-10 text-[11px] text-ink-500">加载设定索引…</div>
+          <div className="text-center py-10 text-11 text-ink-500">加载设定索引…</div>
         ) : results.length === 0 ? (
-          <div className="text-center py-10 text-[11px] text-ink-500 leading-relaxed">
+          <div className="text-center py-10 text-11 text-ink-500 leading-relaxed">
             {q ? `没有匹配「${query}」的设定` : `${activeTop} 暂无已填设定`}<br />
-            <span className="text-[10px] text-ink-600">在左侧各页签填写后，点右上角刷新按钮重建索引</span>
+            <span className="text-10 text-ink-600">在左侧各页签填写后，点右上角刷新按钮重建索引</span>
           </div>
         ) : (
           <>
             {!q && (
-              <div className="flex items-start gap-1.5 px-1.5 pb-2 mb-1 text-[10px] text-ink-500 border-b border-ink-700/60">
+              <div className="flex items-start gap-1.5 px-1.5 pb-2 mb-1 text-10 text-ink-500 border-b border-ink-700/60">
                 <Info size={10} className="mt-0.5 shrink-0" />
                 <span>高频速查预览 · 输入关键词检索本组 {visibleDocs.length} 条设定</span>
               </div>
@@ -418,28 +418,28 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                       <div className="w-full flex flex-col items-start text-left">
                         <div className="flex items-center gap-1.5 w-full">
                           {open ? <ChevronDown size={11} className="text-ink-500 shrink-0" /> : <ChevronRight size={11} className="text-ink-500 shrink-0" />}
-                          <span className="text-[12.5px] font-medium text-ink-100 truncate flex-1">{doc.title}</span>
-                          <span className="px-1.5 py-px text-[9px] rounded bg-ink-800 text-ink-400 border border-ink-700 shrink-0">{doc.source}</span>
+                          <span className="text-12 font-medium text-ink-100 truncate flex-1">{doc.title}</span>
+                          <span className="px-1.5 py-px text-9 rounded bg-ink-800 text-ink-400 border border-ink-700 shrink-0">{doc.source}</span>
                         </div>
                         {!open && doc.subtitle && (
-                          <div className="text-[10px] text-amber/70 mt-0.5 pl-4 truncate w-full">{doc.subtitle}</div>
+                          <div className="text-10 text-amber/70 mt-0.5 pl-4 truncate w-full">{doc.subtitle}</div>
                         )}
                         {!open && !doc.subtitle && snippet && (
-                          <div className="text-[10.5px] text-ink-500 mt-1 truncate pl-4 w-full">{snippet}</div>
+                          <div className="text-10 text-ink-500 mt-1 truncate pl-4 w-full">{snippet}</div>
                         )}
                       </div>
                     </Button>
                     {open && (
                       <div className="px-3 pb-2.5 pt-0.5 space-y-1.5">
                         {doc.subtitle && (
-                          <div className="text-[10.5px] text-amber/80 pb-1 border-b border-ink-700/60">{doc.subtitle}</div>
+                          <div className="text-10 text-amber/80 pb-1 border-b border-ink-700/60">{doc.subtitle}</div>
                         )}
                         {doc.fields.map((f, i) => {
                           const isEditing = editing?.key === doc.key && editing.idx === i
                           return (
                             <div key={i}>
                               <div className="flex items-center gap-1">
-                                {f.label && <div className="text-[10px] text-amber/70">{f.label}</div>}
+                                {f.label && <div className="text-10 text-amber/70">{f.label}</div>}
                                 {doc.kind !== 'relation' && !isEditing && (
                                   <Button variant="bare" iconOnly size="xs"
                                     onClick={() => { setEditing({ key: doc.key, idx: i }); setDraft(f.value) }}
@@ -481,7 +481,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                             value={draft}
                                             autoFocus
                                             onChange={e => { setDraft(e.target.value); saveField(doc, f, e.target.value) }}
-                                            className="w-full !py-1 !px-1.5 text-[11.5px] !bg-transparent !border-0"
+                                            className="w-full !py-1 !px-1.5 text-11 !bg-transparent !border-0"
                                           >
                                             {f.options.map(o => <option key={o} value={o}>{SABC_LABELS[o] ?? o}</option>)}
                                           </select>
@@ -523,11 +523,11 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                       value={draft}
                                       autoFocus
                                       onChange={e => setDraft(e.target.value)}
-                                      className="w-full !py-1 !px-1.5 text-[11.5px] bg-ink-900 border border-amber/40 rounded resize-y min-h-[48px]"
+                                      className="w-full !py-1 !px-1.5 text-11 bg-ink-900 border border-amber/40 rounded resize-y min-h-[48px]"
                                     />
                                   )}
                                   {f.type === 'select' || f.type === 'characters' || f.type === 'date' || f.type === 'calendar-select' || f.type === 'tableRef' ? (
-                                    <div className="mt-1 text-[10px] text-ink-500">改动即自动同步到「{doc.source}」</div>
+                                    <div className="mt-1 text-10 text-ink-500">改动即自动同步到「{doc.source}」</div>
                                   ) : (
                                     <div className="flex gap-1.5 mt-1">
                                       <Button variant="primary" size="xs" disabled={savingField} onClick={() => saveField(doc, f, draft)}>保存</Button>
@@ -538,16 +538,16 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                   )}
                                 </div>
                               ) : (
-                                <div className="text-[11.5px] text-ink-300 leading-relaxed whitespace-pre-wrap">{f.label === '保密等级' && SABC_LABELS[f.value] ? SABC_LABELS[f.value] : f.value}</div>
+                                <div className="text-11 text-ink-300 leading-relaxed whitespace-pre-wrap">{f.label === '保密等级' && SABC_LABELS[f.value] ? SABC_LABELS[f.value] : f.value}</div>
                               )}
                             </div>
                           )
                         })}
-                        {doc.fields.length === 0 && <div className="text-[11px] text-ink-500">（暂无内容）</div>}
+                        {doc.fields.length === 0 && <div className="text-11 text-ink-500">（暂无内容）</div>}
                         {onNavigate && (
                           <Button variant="bare"
                             onClick={() => onNavigate(doc.tabId)}
-                            className="text-[11px] text-ink-500 hover:text-amber transition-colors mt-1"
+                            className="text-11 text-ink-500 hover:text-amber transition-colors mt-1"
                           >
                             → 跳转到「{doc.source}」
                           </Button>
@@ -566,7 +566,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       <div className="px-3 py-2 border-t border-ink-700 shrink-0">
         <Button variant="bare"
           onClick={() => onNavigate?.('guide')}
-          className="flex items-center gap-1.5 text-[11px] text-ink-500 hover:text-amber transition-colors"
+          className="flex items-center gap-1.5 text-11 text-ink-500 hover:text-amber transition-colors"
         >
           <BookMarked size={10} /> 设定不齐？查看填写指南
         </Button>

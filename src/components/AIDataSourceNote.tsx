@@ -39,7 +39,7 @@ export default function AIDataSourceNote({ feature, compact = false, className =
         <span className="text-ink-200">{summarizeSources(f)}</span>
         <Button variant="bare" type="button" size="xs"
           onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
-          className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[10.5px] text-ink-400 hover:text-amber hover:bg-ink-700/60 transition-colors"
+          className="inline-flex items-center gap-0.5 px-1 py-px rounded text-10 text-ink-400 hover:text-amber hover:bg-ink-700/60 transition-colors"
           title={open ? '收起明细' : '展开看具体读了哪些内容与边界'}>
           {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
           {open ? '收起' : '看明细'}

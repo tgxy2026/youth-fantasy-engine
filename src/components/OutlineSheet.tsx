@@ -230,25 +230,25 @@ export default function OutlineSheet({ tab }: Props) {
 • 右侧按模块（定位 / 核心 / 钩子……）双栏铺开，长文自动撑高。
 • 顶部进度条显示当前${noun}已填字段比例；修改后点「保存」或 Ctrl+S。`}</HelpPopover>
             </div>
-            <p className="mt-1.5 text-[13px] text-ink-300 leading-relaxed max-w-none">{tab.description}</p>
+            <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-none">{tab.description}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
-            <span className="text-[11px] text-ink-500">{records.length} 个{noun}</span>
-            <span className={`text-[11px] transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+            <span className="text-11 text-ink-500">{records.length} 个{noun}</span>
+            <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
             <Button variant="toggle" selected={dirty}
               onClick={save}
               disabled={!dirty || saving}
-              className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium hover:bg-amber/25"
+              className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
               title={dirty ? '保存（Ctrl+S）' : '无未保存修改'}
             >
               <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
             </Button>
-            <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[13px] font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
+            <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
               <Layers size={14} /> 模板库
             </Button>
-            <Button onClick={addRecord} variant="primary" size="md" className="flex items-center text-[13px]">
+            <Button onClick={addRecord} variant="primary" size="md" className="flex items-center text-13">
               <Plus size={14} /> 新建{noun}
             </Button>
           </div>
@@ -261,7 +261,7 @@ export default function OutlineSheet({ tab }: Props) {
                 style={{ width: `${totalFields ? (filledCount / totalFields) * 100 : 0}%` }}
               />
             </div>
-            <span className="text-[10px] text-ink-400 shrink-0">{draft.name} · {filledCount} / {totalFields} 项已填</span>
+            <span className="text-10 text-ink-400 shrink-0">{draft.name} · {filledCount} / {totalFields} 项已填</span>
           </div>
         )}
       </header>
@@ -283,10 +283,10 @@ export default function OutlineSheet({ tab }: Props) {
               >
                 <div className="flex items-center gap-1.5">
                   {isVolume ? <BookOpen size={13} className="shrink-0" /> : <FileText size={13} className="shrink-0" />}
-                  <span className="text-[13px] font-medium truncate flex-1">{rec.name}</span>
+                  <span className="text-13 font-medium truncate flex-1">{rec.name}</span>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存的改动" />}
                 </div>
-                <div className="text-[10px] text-ink-500 mt-0.5 truncate">
+                <div className="text-10 text-ink-500 mt-0.5 truncate">
                   {Object.entries(rec.data)
                     .filter(([k, v]) => v && v.trim() && k !== nameKey)
                     .map(([, v]) => v)[0] || '未填写'}
@@ -318,9 +318,9 @@ export default function OutlineSheet({ tab }: Props) {
             )
           })}
           {records.length === 0 && (
-            <div className="text-center text-ink-500 text-[12px] py-10 border border-dashed border-ink-700 rounded-lg leading-relaxed">
+            <div className="text-center text-ink-500 text-12 py-10 border border-dashed border-ink-700 rounded-lg leading-relaxed">
               还没有{noun}大纲<br />
-              <span className="text-[11px]">点击右上角「新建{noun}」开始</span>
+              <span className="text-11">点击右上角「新建{noun}」开始</span>
             </div>
           )}
         </div>
@@ -337,11 +337,11 @@ export default function OutlineSheet({ tab }: Props) {
                 >
                   {draft.name}
                 </h2>
-                <span className="text-[10px] text-ink-500">点击名称可改名 · 修改后点「保存」</span>
+                <span className="text-10 text-ink-500">点击名称可改名 · 修改后点「保存」</span>
                 <span className="flex-1" />
                 <Button onClick={duplicateRecord}
                   
-                  title={`复制当前${noun}大纲为新${noun}`} variant="secondary" size="md" className="flex items-center text-[11px]">
+                  title={`复制当前${noun}大纲为新${noun}`} variant="secondary" size="md" className="flex items-center text-11">
                   <Copy size={11} /> 复制
                 </Button>
               </div>
@@ -350,8 +350,8 @@ export default function OutlineSheet({ tab }: Props) {
                   <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
                     <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
                       <span className="w-1 h-3 rounded-full bg-amber/70" />
-                      <h3 className="text-[12px] font-semibold text-ink-100">{mod.name}</h3>
-                      <span className="text-[10px] text-ink-500 ml-auto">{mod.fields.length} 项</span>
+                      <h3 className="text-12 font-semibold text-ink-100">{mod.name}</h3>
+                      <span className="text-10 text-ink-500 ml-auto">{mod.fields.length} 项</span>
                     </div>
                     <div className="divide-y divide-ink-700/60">
                       {mod.fields.map(field => {
@@ -360,7 +360,7 @@ export default function OutlineSheet({ tab }: Props) {
                         return (
                           <div key={key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
                             <div>
-                              <div className="text-[12px] font-medium text-ink-100">{field.name}</div>
+                              <div className="text-12 font-medium text-ink-100">{field.name}</div>
                               {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                             </div>
                             <div>
@@ -368,7 +368,7 @@ export default function OutlineSheet({ tab }: Props) {
                                 value={val}
                                 onChange={v => updateField(key, v)}
                                 placeholder="点击填写…"
-                                className="text-[12px]"
+                                className="text-12"
                                 minHeight={32}
                               />
                               {!val && field.example && (
@@ -397,7 +397,7 @@ export default function OutlineSheet({ tab }: Props) {
       {tab.tips && tab.tips.length > 0 && (
         <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4 space-y-1.5">
           {tab.tips.map((tip, i) => (
-            <div key={i} className="text-[12px] text-amber/80 leading-relaxed flex items-start gap-2">
+            <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
               <Info size={12} className="mt-0.5 shrink-0" />
               <span>{tip}</span>
             </div>

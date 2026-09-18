@@ -28,9 +28,9 @@ const BOX = 'bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-10
 function Field({ label, hint, children }: { label: React.ReactNode; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[11.5px] text-ink-200 leading-5">{label}</div>
+      <div className="text-11 text-ink-200 leading-5">{label}</div>
       <div className="mt-1">{children}</div>
-      {hint && <div className="mt-1 text-[10.5px] text-ink-500 leading-relaxed">{hint}</div>}
+      {hint && <div className="mt-1 text-10 text-ink-500 leading-relaxed">{hint}</div>}
     </div>
   )
 }
@@ -68,7 +68,7 @@ export default function SearchSettingsPanel() {
     <section className="rounded-lg border border-ink-800 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-800">
         <div className="flex items-center gap-1.5">
-          <h2 className="text-[13.5px] text-amber">联网检索</h2>
+          <h2 className="text-13 text-amber">联网检索</h2>
           <HelpPopover title="联网检索怎么用" width="24rem" size={14}>
             <p>起草 / 补全时用什么素材。三种方式：</p>
             <ul className="list-disc pl-4 space-y-1">
@@ -86,7 +86,7 @@ export default function SearchSettingsPanel() {
             </p>
           </HelpPopover>
         </div>
-        <p className="mt-0.5 text-[11.5px] text-ink-500 leading-relaxed">
+        <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">
           全局设置：所有「AI 起草 / 补全」都按这一档取素材。默认关闭 —— 不填任何东西也能用一句话起草。
         </p>
       </div>
@@ -107,7 +107,7 @@ export default function SearchSettingsPanel() {
               </Button>
             ))}
           </div>
-          <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-500">
+          <p className="mt-1.5 text-10 leading-relaxed text-ink-500">
             {s.mode === 'off'
               ? '不联网。知名题材模型自己就很熟；冷门或原创靠下面「参考素材」粘进去。'
               : s.mode === 'model'
@@ -193,7 +193,7 @@ export default function SearchSettingsPanel() {
         )}
 
         {/* 当前档 + 问题提示：**两件事都要说**，别写成互斥分支 */}
-        <div className="text-[10.5px] leading-relaxed">
+        <div className="text-10 leading-relaxed">
           <p className="text-ink-400">
             当前：{SEARCH_MODE_LABEL[s.mode]}
             {s.mode === 'api' && `（${SEARCH_ENGINE_LABEL[s.engine]}）`}

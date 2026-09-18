@@ -70,7 +70,7 @@ export default function StoryDateInput({ value, onChange }: Props) {
     onChange(`${yy}年${mm}月${dd}日`)
   }
 
-  const selectCls = 'px-1.5 py-1 text-[12px] bg-ink-800/60 border border-ink-700 rounded text-ink-100 focus:border-amber/50 outline-none cursor-pointer'
+  const selectCls = 'px-1.5 py-1 text-12 bg-ink-800/60 border border-ink-700 rounded text-ink-100 focus:border-amber/50 outline-none cursor-pointer'
 
   return (
     <div className="flex flex-col gap-0.5 min-w-[200px]">
@@ -86,10 +86,10 @@ export default function StoryDateInput({ value, onChange }: Props) {
             const v = Math.max(1, Math.floor(Number(raw)))
             if (!Number.isNaN(v)) compose(v)
           }}
-          className="w-[4.5rem] px-1.5 py-1 text-[12px] bg-ink-800/60 border border-ink-700 rounded text-ink-100 focus:border-amber/50 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          className="w-[4.5rem] px-1.5 py-1 text-12 bg-ink-800/60 border border-ink-700 rounded text-ink-100 focus:border-amber/50 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           title="年份数字，如 3024"
         />
-        <span className="text-ink-400 text-[11px] shrink-0">年</span>
+        <span className="text-ink-400 text-11 shrink-0">年</span>
         <select
           value={m ?? ''}
           onChange={e => { const v = e.target.value; compose(undefined, v ? Number(v) : undefined) }}
@@ -115,7 +115,7 @@ export default function StoryDateInput({ value, onChange }: Props) {
         </select>
       </div>
       {legacy ? (
-        <span className="text-[10px] text-amber/70 flex items-center gap-0.5" title="此条记录仍是旧格式自由文本，重新选择年月日后将自动转为标准格式">
+        <span className="text-10 text-amber/70 flex items-center gap-0.5" title="此条记录仍是旧格式自由文本，重新选择年月日后将自动转为标准格式">
           <CalendarDays size={9} /> 旧格式：{legacy}
         </span>
       ) : null}

@@ -266,7 +266,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         <div className="flex items-center gap-2 min-w-0">
           <GitBranch size={15} className="text-amber shrink-0" />
           <span className="font-semibold text-ink-100">{tab.name}</span>
-          <span className="text-[11px] text-ink-500">{cards.length} 张卡片 · {conns.length} 条推演链</span>
+          <span className="text-11 text-ink-500">{cards.length} 张卡片 · {conns.length} 条推演链</span>
           <HelpPopover
             title="情节推演"
             width="20rem"
@@ -282,14 +282,14 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         </div>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
           {Object.entries(TYPE_META).map(([k, m]) => (
-            <span key={k} className="flex items-center gap-1 text-[10px] text-ink-400"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: m.color }} />{m.label}</span>
+            <span key={k} className="flex items-center gap-1 text-10 text-ink-400"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: m.color }} />{m.label}</span>
           ))}
-          <span className="flex items-center gap-1 text-[10px] text-ink-500 border border-ink-700 rounded-md px-1.5 py-1" title="按住鼠标左键拖动空白处即可平移画布">
+          <span className="flex items-center gap-1 text-10 text-ink-500 border border-ink-700 rounded-md px-1.5 py-1" title="按住鼠标左键拖动空白处即可平移画布">
             <Move size={10} /> 左键拖动平移
           </span>
           <Button variant="bare"
             onClick={() => { setConnectMode(v => !v); setPendingConn(null) }}
-            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] transition-colors ${connectMode ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-11 transition-colors ${connectMode ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
             title="连接模式：依次点两张卡连成推演链；鼠标移到连线上点 × 取消"
           >
             <GitBranch size={11} /> {connectMode ? '连接中…' : '连接模式'}
@@ -303,17 +303,17 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         <div className="w-64 shrink-0 border-r border-ink-700 bg-ink-850/60 flex flex-col h-full min-h-0">
           <div className="px-3 py-2.5 border-b border-ink-700">
             <div className="flex items-center gap-2 text-ink-100 font-medium"><GitBranch size={14} className="text-amber" /> 选择章节</div>
-            <div className="text-[10px] text-ink-500 mt-0.5">多选后点「生成推演」，复用颉文姬灵感简报同一 AI 管线</div>
+            <div className="text-10 text-ink-500 mt-0.5">多选后点「生成推演」，复用颉文姬灵感简报同一 AI 管线</div>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {chapters.length === 0 && <div className="text-[11px] text-ink-500 px-1 py-2">暂无《章节总表》数据。</div>}
+            {chapters.length === 0 && <div className="text-11 text-ink-500 px-1 py-2">暂无《章节总表》数据。</div>}
             {chapters.map(ch => {
               const id = ch.id; const on = selected.has(id)
               return (
                 <Button variant="bare"
                   key={id}
                   onClick={() => toggleChapter(id)}
-                  className={`w-full text-left !justify-start px-2 py-1.5 rounded-md border text-[12px] flex items-center gap-2 transition-colors ${on ? 'bg-amber/10 border-amber/30 text-amber' : 'border-ink-700 text-ink-300 hover:text-ink-100 hover:bg-ink-800'}`}
+                  className={`w-full text-left !justify-start px-2 py-1.5 rounded-md border text-12 flex items-center gap-2 transition-colors ${on ? 'bg-amber/10 border-amber/30 text-amber' : 'border-ink-700 text-ink-300 hover:text-ink-100 hover:bg-ink-800'}`}
                 >
                   <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${on ? 'bg-amber border-amber text-ink-900' : 'border-ink-600'}`}>{on && <Check size={10} />}</span>
                   <span className="truncate"><span className="text-ink-500">{ch.data['章节号'] || ''} </span>{ch.data['章节标题'] || '（未命名）'}</span>
@@ -323,18 +323,18 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
           </div>
           <div className="p-2 border-t border-ink-700 space-y-1.5">
             {/* 信息密度：完整（章节全要素）/ 简略（压缩摘要） */}
-            <div className="flex items-center justify-between gap-1.5 text-[10px] text-ink-500 px-0.5">
+            <div className="flex items-center justify-between gap-1.5 text-10 text-ink-500 px-0.5">
               <span>推演信息</span>
               <div className="flex rounded-md overflow-hidden border border-ink-700">
                 <Button variant="toggle" size="xs" selected={!briefMode} onClick={() => setBriefMode(false)} title="喂入章节全要素：推演更准，但耗时长、费 token">完整</Button>
                 <Button variant="toggle" size="xs" selected={briefMode} onClick={() => setBriefMode(true)} title="只喂「章节压缩摘要」（约原文 1/10）：速度快、省 token，适合快速过方向">简略</Button>
               </div>
             </div>
-            <Button variant="primary" disabled={!ai.ready || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            <Button variant="primary" disabled={!ai.ready || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-12 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
               {generating ? <><Loader2 size={12} className="animate-spin" /> 生成中 {generating.i}/{generating.total}</> : <><Sparkles size={12} /> 生成推演</>}
             </Button>
-            <Button onClick={clearCanvas} variant="danger" size="md" className="w-full flex items-center justify-center text-[11px]"><Eraser size={11} /> 清空推演本</Button>
-            {!ai.ready && <div className="text-[10px] text-ink-500 text-center">未配置 AI 模型，生成按钮已禁用</div>}
+            <Button onClick={clearCanvas} variant="danger" size="md" className="w-full flex items-center justify-center text-11"><Eraser size={11} /> 清空推演本</Button>
+            {!ai.ready && <div className="text-10 text-ink-500 text-center">未配置 AI 模型，生成按钮已禁用</div>}
           </div>
         </div>
 
@@ -384,10 +384,10 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                   >
                     <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-ink-700" style={{ borderTopColor: meta.color }}>
                       <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: meta.color }} />
-                      <span className="text-[10px] font-medium" style={{ color: meta.color }}>{meta.label}</span>
-                      <span className="text-[9px] text-ink-500 ml-auto truncate">{c.chapter}</span>
+                      <span className="text-10 font-medium" style={{ color: meta.color }}>{meta.label}</span>
+                      <span className="text-9 text-ink-500 ml-auto truncate">{c.chapter}</span>
                     </div>
-                    <div className="px-2.5 py-2 text-[12px] text-ink-200 leading-snug">{c.text}</div>
+                    <div className="px-2.5 py-2 text-12 text-ink-200 leading-snug">{c.text}</div>
                     <Button variant="bare"
                       onPointerDown={e => { e.stopPropagation(); removeCard(c.id) }}
                       className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-ink-800 border border-ink-600 text-ink-400 hover:text-red-300 hover:border-red-400 items-center justify-center hidden group-hover:flex"
@@ -417,7 +417,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                   <div className="text-center text-ink-500 text-sm max-w-sm">
                     <GitBranch size={28} className="mx-auto mb-2 opacity-50" />
                     左侧选择章节 → 点「生成推演」<br />AI 会把灵感简报升级成可拖拽、可连线的结构化卡片
-                    <div className="text-[11px] text-ink-600 mt-2">卡片多到超出一屏时，画布会自动扩展并出现滚动条；按住左键拖动空白处即可平移。</div>
+                    <div className="text-11 text-ink-600 mt-2">卡片多到超出一屏时，画布会自动扩展并出现滚动条；按住左键拖动空白处即可平移。</div>
                   </div>
                 </div>
               )}

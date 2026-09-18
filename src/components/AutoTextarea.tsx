@@ -39,7 +39,7 @@ interface Props {
  */
 export default function AutoTextarea({
   value, onChange, placeholder, className = '',
-  minRows, minHeight, maxHeight = 360, textClass = 'text-[12px]',
+  minRows, minHeight, maxHeight = 360, textClass = 'text-12',
   disabled, autoFocus, onKeyDown, title, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement | null>(null)

@@ -42,7 +42,7 @@ function TestResultBar({ r }: { r: AITestResult }) {
   const loadHint = r.loadMs > 500 ? `（其中模型加载 ${fmtMs(r.loadMs)}）` : ''
   return (
     <div
-      className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg text-[11px] ${
+      className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg text-11 ${
         r.ok
           ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-300'
           : 'bg-red-500/10 border border-red-500/25 text-red-300'
@@ -211,7 +211,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     <section className="rounded-lg border border-ink-800 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-800">
         <div className="flex items-center gap-1.5">
-          <h2 className="text-[13.5px] text-amber">模型配置</h2>
+          <h2 className="text-13 text-amber">模型配置</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
             <p>全应用共用这一份模型配置 —— AI 辅助规划、一键续写、取名、校对、设定补全都按这里选中的「当前」模型走；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
             <p className="mt-1.5">两类平台：</p>
@@ -228,7 +228,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             </p>
           </HelpPopover>
         </div>
-        <p className="mt-0.5 text-[11.5px] text-ink-500 leading-relaxed">
+        <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">
           全局设置：全应用的 AI 功能都按这里选中的「当前」模型执行。改完即存，不需要另找保存按钮。
         </p>
       </div>
@@ -238,9 +238,9 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           {editing === null ? (
             <>
               {providers.length === 0 ? (
-                <div className="text-[12px] text-ink-500 mb-3">还没有任何模型，先添加一个：</div>
+                <div className="text-12 text-ink-500 mb-3">还没有任何模型，先添加一个：</div>
               ) : (
-                <p className="text-[11px] text-ink-500 mb-2.5 leading-relaxed">
+                <p className="text-11 text-ink-500 mb-2.5 leading-relaxed">
                   配置好模型后点该行「测试」，会真实发起一次最小对话来验证是否能正常调用。
                   <span className="text-ink-600">本地大参数模型首次调用需加载进显存，可能等待数十秒，属正常现象。</span>
                 </p>
@@ -249,23 +249,23 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 {providers.map(p => (
                   <div key={p.id} className="rounded-lg bg-ink-800 border border-ink-700">
                     <div className="flex items-center gap-2 px-3 py-2">
-                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] ${p.type === 'ollama' || p.local ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-400'}`}>
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${p.type === 'ollama' || p.local ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-400'}`}>
                         {typeLabel(p)}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] text-ink-100 truncate">{p.name}</div>
-                        <div className="text-[11px] text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
+                        <div className="text-12 text-ink-100 truncate">{p.name}</div>
+                        <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
                       </div>
                       {activeId === p.id ? (
-                        <span className="shrink-0 flex items-center gap-1 text-[11px] text-emerald-400"><CheckCircle2 size={12} /> 当前</span>
+                        <span className="shrink-0 flex items-center gap-1 text-11 text-emerald-400"><CheckCircle2 size={12} /> 当前</span>
                       ) : (
-                        <Button variant="bare" onClick={() => setActive(p.id)} className="shrink-0 text-[11px] px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</Button>
+                        <Button variant="bare" onClick={() => setActive(p.id)} className="shrink-0 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</Button>
                       )}
                       <Button variant="bare"
                         onClick={() => runRowTest(p)}
                         disabled={testingId !== null}
                         title={testingId !== null ? '有测试正在进行中，请稍候' : '发起一次最小对话，验证该模型能否正常调用'}
-                        className="shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="shrink-0 flex items-center gap-1 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {testingId === p.id ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
                         {testingId === p.id ? '测试中…' : '测试'}
@@ -274,7 +274,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       <Button variant="icon-danger" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1"><Trash2 size={12} /></Button>
                     </div>
                     {testingId === p.id && (
-                      <div className="px-3 pb-2 text-[11px] text-ink-400 flex items-center gap-1.5">
+                      <div className="px-3 pb-2 text-11 text-ink-400 flex items-center gap-1.5">
                         <Loader2 size={11} className="animate-spin text-amber" /> 正在调用「{p.model}」，本地大模型可能需要数十秒…
                       </div>
                     )}
@@ -285,24 +285,24 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 ))}
               </div>
               <div className="flex gap-2">
-                <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 rounded-lg text-[12px] hover:bg-emerald-500/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），运行在本机，一般免密钥、无需联网">
+                <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 rounded-lg text-12 hover:bg-emerald-500/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），运行在本机，一般免密钥、无需联网">
                   <Cpu size={13} /> 添加本地模型
                 </Button>
-                <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-sky-500/10 text-sky-300 border border-sky-500/25 rounded-lg text-[12px] hover:bg-sky-500/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
+                <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-sky-500/10 text-sky-300 border border-sky-500/25 rounded-lg text-12 hover:bg-sky-500/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
                   <Globe size={13} /> 添加联网模型
                 </Button>
               </div>
               {pickMode !== 'none' && (
                 <div className="mt-3 rounded-lg border border-ink-700 bg-ink-800/40 p-3">
                   <div className="flex items-center gap-2 mb-2.5">
-                    <span className="text-[12px] font-medium text-ink-200">
+                    <span className="text-12 font-medium text-ink-200">
                       {pickMode === 'local' ? '选择本地平台' : '选择联网平台'}
                     </span>
                     <Button variant="secondary" size="sm" onClick={() => setPickMode('none')} className="ml-auto">返回</Button>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {(pickMode === 'local' ? LOCAL_PRESETS : ONLINE_PRESETS).map(p => (
-                      <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 text-[12px] hover:text-emerald-300 hover:border-emerald-400/40 transition-colors text-left">
+                      <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 text-12 hover:text-emerald-300 hover:border-emerald-400/40 transition-colors text-left">
                         {pickMode === 'local'
                           ? <Cpu size={12} className="text-emerald-400 shrink-0" />
                           : <Globe size={12} className="text-sky-400 shrink-0" />}
@@ -310,7 +310,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       </Button>
                     ))}
                   </div>
-                  <p className="text-[10px] text-ink-500 mt-2 leading-relaxed">
+                  <p className="text-10 text-ink-500 mt-2 leading-relaxed">
                     {pickMode === 'local'
                       ? '本地平台运行在本机 / 局域网，一般免密钥、无需联网；Ollama 需先「ollama pull」拉取模型。'
                       : '联网平台需要 API 密钥，按预设填好接口地址后填入密钥与模型名即可。'}
@@ -320,7 +320,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             </>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-[12px]">
+              <div className="flex items-center gap-2 text-12">
                 {editing.type === 'ollama' ? (
                   <span className="flex items-center gap-1 text-emerald-400"><Cpu size={13} /> 本地 Ollama</span>
                 ) : editing.local ? (
@@ -331,51 +331,51 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               </div>
 
               <div>
-                <label className="block text-[11px] text-ink-500 mb-1">显示名称</label>
-                <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="如：本地 llama3 / DeepSeek" />
+                <label className="block text-11 text-ink-500 mb-1">显示名称</label>
+                <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="如：本地 llama3 / DeepSeek" />
               </div>
 
               <div>
-                <label className="block text-[11px] text-ink-500 mb-1">自定义系统提示词（可选）</label>
+                <label className="block text-11 text-ink-500 mb-1">自定义系统提示词（可选）</label>
                 <textarea
-                  className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 resize-none"
+                  className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 resize-none"
                   rows={3}
                   value={editing.systemPrompt ?? ''}
                   onChange={e => setEditing({ ...editing, systemPrompt: e.target.value })}
                   placeholder="对所有调用此模型的功能追加一段总体指令（如写作风格、人称、禁忌）。留空则按系统预设。"
                 />
-                <p className="text-[10px] text-ink-500 mt-1 leading-relaxed">只附加在各功能自带的系统提示词之后，不会影响校对 / 补全 / 整理 / 对话的原有指令与格式约束。</p>
+                <p className="text-10 text-ink-500 mt-1 leading-relaxed">只附加在各功能自带的系统提示词之后，不会影响校对 / 补全 / 整理 / 对话的原有指令与格式约束。</p>
               </div>
 
               {editing.type === 'ollama' ? (
                 <>
                   <div>
-                    <label className="block text-[11px] text-ink-500 mb-1">Ollama 地址</label>
+                    <label className="block text-11 text-ink-500 mb-1">Ollama 地址</label>
                     <div className="flex gap-2">
-                      <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="http://localhost:11434" />
+                      <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="http://localhost:11434" />
                       <Button variant="secondary" size="sm" onClick={() => fetchModels(editing.baseUrl)} className="shrink-0">获取本地模型</Button>
                     </div>
                   </div>
                   {ollamaModels.length > 0 && (
                     <div>
-                      <label className="block text-[11px] text-ink-500 mb-1">选择模型</label>
-                      <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })}>
+                      <label className="block text-11 text-ink-500 mb-1">选择模型</label>
+                      <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })}>
                         <option value="">— 请选择 —</option>
                         {ollamaModels.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </div>
                   )}
                   <div>
-                    <label className="block text-[11px] text-ink-500 mb-1">或手动填写模型名</label>
-                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} placeholder="需本机已 ollama pull" />
+                    <label className="block text-11 text-ink-500 mb-1">或手动填写模型名</label>
+                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} placeholder="需本机已 ollama pull" />
                   </div>
                 </>
               ) : (
                 <>
                   <div>
-                    <label className="block text-[11px] text-ink-500 mb-1">平台预设</label>
+                    <label className="block text-11 text-ink-500 mb-1">平台预设</label>
                     <select
-                      className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40"
+                      className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40"
                       value={presetList.find(p => p.baseUrl === editing.baseUrl)?.label ?? '自定义'}
                       onChange={e => {
                         const pre = presetList.find(p => p.label === e.target.value)
@@ -385,19 +385,19 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     >
                       {presetList.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
                     </select>
-                    <p className="text-[10px] text-ink-500 mt-1">本地平台（LM Studio / LocalAI 等）一般免密钥、无需联网；联网平台需填写 API 密钥。选「自定义」可手填接口地址。</p>
+                    <p className="text-10 text-ink-500 mt-1">本地平台（LM Studio / LocalAI 等）一般免密钥、无需联网；联网平台需填写 API 密钥。选「自定义」可手填接口地址。</p>
                   </div>
                   <div>
-                    <label className="block text-[11px] text-ink-500 mb-1">API 接口地址（baseUrl）</label>
-                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="https://api.deepseek.com/v1" />
+                    <label className="block text-11 text-ink-500 mb-1">API 接口地址（baseUrl）</label>
+                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="https://api.deepseek.com/v1" />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-ink-500 mb-1">API 密钥</label>
-                    <input type="password" className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 font-mono placeholder:text-ink-600" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} placeholder="仅本地保存，不上传" />
+                    <label className="block text-11 text-ink-500 mb-1">API 密钥</label>
+                    <input type="password" className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 font-mono placeholder:text-ink-600" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} placeholder="仅本地保存，不上传" />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-ink-500 mb-1">模型名称</label>
-                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} placeholder="如 deepseek-chat / qwen-plus / glm-4-flash" />
+                    <label className="block text-11 text-ink-500 mb-1">模型名称</label>
+                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} placeholder="如 deepseek-chat / qwen-plus / glm-4-flash" />
                   </div>
                 </>
               )}
@@ -418,13 +418,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       : `未识别到该模型名 —— 留空会按保守值 ${FALLBACK_WINDOW} tokens 估算，建议手填真实值。`
                 return (
                   <div>
-                    <label className="block text-[11px] text-ink-500 mb-1">
+                    <label className="block text-11 text-ink-500 mb-1">
                       上下文窗口（tokens）<span className="text-ink-600"> · 选填</span>
                     </label>
                     <input
                       type="number" min={1024} max={2097152} step={1024}
                       disabled={isLocal}
-                      className={`w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-[12px] px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 ${isLocal ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      className={`w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 ${isLocal ? 'opacity-40 cursor-not-allowed' : ''}`}
                       value={editing.contextWindow ?? ''}
                       onChange={e => {
                         const raw = e.target.value.trim()
@@ -433,13 +433,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       }}
                       placeholder="留空 = 按模型名自动识别"
                     />
-                    <p className="text-[10px] text-ink-500 mt-1 leading-relaxed">{hint}</p>
+                    <p className="text-10 text-ink-500 mt-1 leading-relaxed">{hint}</p>
                   </div>
                 )
               })()}
 
               {testing && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] bg-ink-800 border border-ink-700 text-ink-300">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-12 bg-ink-800 border border-ink-700 text-ink-300">
                   <Loader2 size={13} className="animate-spin text-amber shrink-0" />
                   正在测试「{editing.model || '未设置模型'}」…本地大模型首次调用需加载进显存，请稍候。
                 </div>

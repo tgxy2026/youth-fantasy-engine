@@ -87,13 +87,13 @@ export default function TavernExportDialog({
 
   return (
     <Modal open={open} onClose={onClose} title="导出文档" width="lg">
-      <p className="text-[11.5px] text-ink-400 leading-relaxed">
+      <p className="text-11 text-ink-400 leading-relaxed">
         把这份{kindLabel}变成可以带走、可以继续改、可以直接发出去的文档。导出只读，不改任何数据。
       </p>
 
       <div className="mt-3 rounded-lg border border-ink-700 bg-ink-850/40 p-3">
-        <div className="text-[12.5px] text-ink-100">{docTitle || '（未命名）'}</div>
-        <div className="mt-1 text-[11px] text-ink-400 leading-relaxed">{summaryText}</div>
+        <div className="text-12 text-ink-100">{docTitle || '（未命名）'}</div>
+        <div className="mt-1 text-11 text-ink-400 leading-relaxed">{summaryText}</div>
       </div>
 
       {/* 导出选项：两条都默认开，关掉要出于明确意图 */}
@@ -104,9 +104,9 @@ export default function TavernExportDialog({
               type="checkbox" className="mt-0.5 shrink-0 accent-amber"
               checked={includeHidden} onChange={e => setIncludeHidden(e.target.checked)}
             />
-            <span className="text-[11.5px] text-ink-300 leading-relaxed">
+            <span className="text-11 text-ink-300 leading-relaxed">
               含已隐藏的对话{hiddenCount > 0 ? `（${hiddenCount} 条）` : ''}
-              <span className="block text-[10.5px] text-ink-500">
+              <span className="block text-10 text-ink-500">
                 隐藏只是「不让 Ta 记得」，不是删除 —— 导出稿里标出来，方便你自己核对。
               </span>
             </span>
@@ -117,9 +117,9 @@ export default function TavernExportDialog({
             type="checkbox" className="mt-0.5 shrink-0 accent-amber"
             checked={withMeta} onChange={e => setWithMeta(e.target.checked)}
           />
-          <span className="text-[11.5px] text-ink-300 leading-relaxed">
+          <span className="text-11 text-ink-300 leading-relaxed">
             {metaLabel ?? '附角色与场景信息'}
-            <span className="block text-[10.5px] text-ink-500">
+            <span className="block text-10 text-ink-500">
               {metaHint ?? '标题下面那几行：模式、叙事锚点、谁演谁、开场场景 —— 过几个月再翻出来也知道这是哪一场。'}
             </span>
           </span>
@@ -133,8 +133,8 @@ export default function TavernExportDialog({
           onClick={() => exportAs('markdown')}
           className="rounded-lg border border-ink-700 bg-ink-850/40 p-3 text-left transition-colors hover:border-amber/50 hover:bg-amber/5"
         >
-          <div className="text-[12.5px] text-ink-100">Markdown（.md）</div>
-          <div className="mt-1 text-[11px] text-ink-400 leading-relaxed">
+          <div className="text-12 text-ink-100">Markdown（.md）</div>
+          <div className="mt-1 text-11 text-ink-400 leading-relaxed">
             纯文本带轻量标记。要「继续改」就选它 —— 粘进写作软件、笔记都能接着编辑。
           </div>
         </button>
@@ -143,15 +143,15 @@ export default function TavernExportDialog({
           onClick={() => exportAs('html')}
           className="rounded-lg border border-ink-700 bg-ink-850/40 p-3 text-left transition-colors hover:border-amber/50 hover:bg-amber/5"
         >
-          <div className="text-[12.5px] text-ink-100">单文件 HTML（.html）</div>
-          <div className="mt-1 text-[11px] text-ink-400 leading-relaxed">
+          <div className="text-12 text-ink-100">单文件 HTML（.html）</div>
+          <div className="mt-1 text-11 text-ink-400 leading-relaxed">
             自带排版样式，双击就能看。要「给别人看、要打印、要存档」就选它 —— 不依赖本软件。
           </div>
         </button>
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-800 pt-3">
-        <span className="text-[10.5px] text-ink-500 leading-relaxed">
+        <span className="text-10 text-ink-500 leading-relaxed">
           对白、（动作）、〔状态〕在两种格式里都会区分显示（v1.7 起已废止【环境】，环境描写与动作一样写在（ ）里）。
         </span>
         <div className="flex shrink-0 gap-2">

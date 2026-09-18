@@ -26,7 +26,7 @@ export default function AuditPanel({ issues, emptyText, onNavigateTab, onOpenCha
 
   if (issues.length === 0) {
     return (
-      <div className="py-10 text-center text-[13px] text-emerald-400">
+      <div className="py-10 text-center text-13 text-emerald-400">
         {emptyText ?? '未发现可定位问题 ✓'}
       </div>
     )
@@ -34,7 +34,7 @@ export default function AuditPanel({ issues, emptyText, onNavigateTab, onOpenCha
 
   return (
     <div>
-      <div className="flex gap-2 mb-3 text-[11px]">
+      <div className="flex gap-2 mb-3 text-11">
         <span className="px-2 py-0.5 rounded bg-red-500/10 text-red-300 border border-red-500/25">冲突 {counts.error}</span>
         <span className="px-2 py-0.5 rounded bg-amber/10 text-amber border border-amber/25">注意 {counts.warn}</span>
         <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/25">提示 {counts.info}</span>
@@ -49,15 +49,15 @@ export default function AuditPanel({ issues, emptyText, onNavigateTab, onOpenCha
               <div className="flex items-start gap-2">
                 <span className={`mt-0.5 shrink-0 ${m.dot}`}>{m.icon}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12.5px] font-medium text-ink-100">{issue.title}</div>
-                  <div className="text-[11.5px] text-ink-300 leading-relaxed whitespace-pre-wrap mt-0.5">{issue.detail}</div>
+                  <div className="text-12 font-medium text-ink-100">{issue.title}</div>
+                  <div className="text-11 text-ink-300 leading-relaxed whitespace-pre-wrap mt-0.5">{issue.detail}</div>
                   {loc && onJump && (
-                    <Button variant="icon-amber" onClick={onJump} className="mt-1.5 inline-flex items-center gap-1 text-[10.5px]">
+                    <Button variant="icon-amber" onClick={onJump} className="mt-1.5 inline-flex items-center gap-1 text-10">
                       <ArrowRight size={10} /> 跳转{loc.hint ? `「${loc.hint}」` : ''}
                     </Button>
                   )}
                 </div>
-                <span className="shrink-0 text-[9px] px-1.5 py-px rounded bg-ink-800 text-ink-500 border border-ink-700">{SEVERITY_LABEL[issue.severity]}</span>
+                <span className="shrink-0 text-9 px-1.5 py-px rounded bg-ink-800 text-ink-500 border border-ink-700">{SEVERITY_LABEL[issue.severity]}</span>
               </div>
             </div>
           )

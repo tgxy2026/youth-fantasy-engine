@@ -52,7 +52,7 @@ export function DesktopWriteLockBanner() {
       style={{ zIndex: Z.dropdown }}
     >
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-      <div className="min-w-0 flex-1 text-[12.5px] leading-snug">
+      <div className="min-w-0 flex-1 text-12 leading-snug">
         <div className="font-semibold">
           数据文件读取失败，已暂停保存 —— 你原来的数据文件没有被改动
         </div>

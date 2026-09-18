@@ -56,7 +56,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
         <div className="space-y-2">
           <AutoTextarea
             className="bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50"
-            textClass="text-[12.5px]"
+            textClass="text-12"
             minRows={3}
             maxHeight={260}
             value={text}
@@ -77,7 +77,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
           <div className={hidden ? 'opacity-45' : ''}>{renderTavernMessage(content)}</div>
 
           {(hidden || edited) && (
-            <div className="mt-0.5 text-[10px] text-ink-600">
+            <div className="mt-0.5 text-10 text-ink-600">
               {hidden ? '已隐藏 · 不进上下文' : ''}
               {hidden && edited ? ' · ' : ''}
               {edited ? '改过' : ''}

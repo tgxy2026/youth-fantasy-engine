@@ -84,17 +84,17 @@ function renderReport(text: string) {
       {text.split('\n').map((ln, i) => {
         const t = ln.trim()
         if (!t) return <div key={i} className="h-1" />
-        if (t.startsWith('## ')) return <div key={i} className="text-[12px] font-semibold text-amber mt-2 mb-0.5">{renderInline(t.slice(3))}</div>
+        if (t.startsWith('## ')) return <div key={i} className="text-12 font-semibold text-amber mt-2 mb-0.5">{renderInline(t.slice(3))}</div>
         if (/^\d+[.、)]/.test(t) || t.startsWith('- ') || t.startsWith('• ') || t.startsWith('* ')) {
           const num = t.match(/^\d+/)?.[0]
           return (
-            <div key={i} className="flex gap-1.5 text-[11.5px] text-ink-100 leading-relaxed">
+            <div key={i} className="flex gap-1.5 text-11 text-ink-100 leading-relaxed">
               <span className="text-amber/80 shrink-0">{num ?? '·'}</span>
               <span className="min-w-0">{renderInline(t.replace(/^\d+[.、)]\s*/, '').replace(/^[-•*]\s*/, ''))}</span>
             </div>
           )
         }
-        return <div key={i} className="text-[11.5px] text-ink-100 leading-relaxed">{renderInline(t)}</div>
+        return <div key={i} className="text-11 text-ink-100 leading-relaxed">{renderInline(t)}</div>
       })}
     </div>
   )
@@ -124,7 +124,7 @@ const SEV_BADGE: Record<string, string> = {
 
 function SevBadge({ s }: { s: string }) {
   const cls = SEV_BADGE[s] ?? 'bg-ink-700 text-ink-300 border-ink-600'
-  return <span className={`inline-block px-1.5 py-px rounded text-[9.5px] border ${cls}`}>{s}</span>
+  return <span className={`inline-block px-1.5 py-px rounded text-9 border ${cls}`}>{s}</span>
 }
 
 export default function JieWenJi({
@@ -413,7 +413,7 @@ export default function JieWenJi({
     }
   }
 
-  const aiBtnCls = 'w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] border transition-colors disabled:opacity-45 disabled:cursor-not-allowed'
+  const aiBtnCls = 'w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-12 border transition-colors disabled:opacity-45 disabled:cursor-not-allowed'
   const scoreCls = (s: number) => (s >= 75 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : s >= 60 ? 'bg-amber/15 text-amber border-amber/30' : 'bg-red-500/15 text-red-300 border-red-500/30')
 
   return (
@@ -422,7 +422,7 @@ style={{ zIndex: Z.pagePanel }}>
       {/* 头部 */}
       <div className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">
         <Wand2 size={14} className="text-amber" />
-        <span className="text-[12px] font-semibold text-ink-100 flex-1">颉文姬 · AI 编辑</span>
+        <span className="text-12 font-semibold text-ink-100 flex-1">颉文姬 · AI 编辑</span>
         <HelpPopover title="颉文姬 · AI 编辑" width="24rem" size={12} className="shrink-0">
           {'· 诊室：AI 深度校对（错别字 / 语病 / 逻辑 / 设定矛盾，可逐条「替换此条」）；AI 综合诊断（主编视角：优先级 / 隐藏风险 / 批量建议）。\n· 编辑：先在正文选中一段，选润色 / 扩写 / 精简 / 改语气 / 换视角。改稿以「建议段」标记写入原文下方，你的原文一字不动，取舍后可用「清除全部建议段」一键清理。\n· 审读：章节编辑意见（六维打分）/ OOC 人设检查 / 续写方向（只给思路不生成正文）/ 爽点毒点 / 黄金三章。\n· 简报（v1.6.1）：开写前一键生成「本章写作简报」——未回收伏笔 / 钩子爽点方向 / 角色状态提醒 / 下一章衔接，只给方向不代写正文。\n· 补登（v1.9.1）：扫本章正文，抽出有专名的人物 / 势力 / 地点 / 种族 / 物品 / 术语，与已有设定比对后分「已登记 / 疑似重复 / 待补登」三档；勾选即可一键写入对应设定表或角色卡，只填名称与一句话，其余留空自己补。「是否已登记」由程序按名称与别称精确比对，AI 只负责抽取。\n· 所有 AI 入口需先配置模型；未配置时按钮禁用，原有本地功能不受影响。\n· 底部开关可控制屏幕右侧的 Q 版精灵是否显示。'}
           <AIDataSourceNote feature="jiewenji-panel" />
@@ -442,7 +442,7 @@ style={{ zIndex: Z.pagePanel }}>
           <Button variant="bare"
             key={m}
             onClick={() => setMode(m)}
-            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11.5px] border transition-colors ${
+            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-11 border transition-colors ${
               mode === m ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-transparent hover:bg-ink-800 hover:text-ink-200'
             }`}
           >
@@ -456,7 +456,7 @@ style={{ zIndex: Z.pagePanel }}>
         {mode === 'clinic' && (
           <>
             {/* 校对只走完整正文：摘要定位不到原文 quote，简略模式会误替换（已移除） */}
-            <div className="flex items-center gap-1.5 text-[10.5px] text-ink-500">
+            <div className="flex items-center gap-1.5 text-10 text-ink-500">
               <span>校对范围</span>
               <div className="flex rounded-md overflow-hidden border border-ink-700">
                 <Button title="校对结果需在正文中精确定位替换，故恒校对全文" variant="bare" className="px-2 py-0.5 transition-colors bg-amber/20 text-amber cursor-default">完整（正文）</Button>
@@ -476,17 +476,17 @@ style={{ zIndex: Z.pagePanel }}>
                 <div className="h-1 rounded bg-ink-700 overflow-hidden flex-1">
                   <div className="h-full bg-amber transition-all" style={{ width: `${proof.progress.total ? (proof.progress.done / proof.progress.total) * 100 : 0}%` }} />
                 </div>
-                <Button onClick={stopProofread} variant="secondary" size="md" className="text-[11px] shrink-0">
+                <Button onClick={stopProofread} variant="secondary" size="md" className="text-11 shrink-0">
                   停止
                 </Button>
               </div>
             )}
-            {proof.error && <div className="text-[11px] text-red-300 px-1">{proof.error}</div>}
+            {proof.error && <div className="text-11 text-red-300 px-1">{proof.error}</div>}
             {proof.done && !proof.loading && proof.cancelled && (
-              <div className="text-[11px] text-ink-300 px-1">已停止校对（保留已查出的 {proof.issues.length} 处）</div>
+              <div className="text-11 text-ink-300 px-1">已停止校对（保留已查出的 {proof.issues.length} 处）</div>
             )}
             {proof.done && !proof.loading && !proof.cancelled && (
-              <div className="text-[10.5px] text-ink-500">
+              <div className="text-10 text-ink-500">
                 共校对 {proof.scanned} 字{proof.skipped > 0 ? `，跳过 ${proof.skipped} 字` : ''}，发现 {proof.issues.length} 处
               </div>
             )}
@@ -495,15 +495,15 @@ style={{ zIndex: Z.pagePanel }}>
                 {proof.issues.map((iss, i) => (
                   <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="inline-block px-1.5 py-px rounded text-[9.5px] border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
-                      <span className="text-[11px] text-red-300 line-through">{iss.quote}</span>
-                      <span className="text-[10px] text-ink-500">→</span>
-                      <span className="text-[11px] text-emerald-300">{iss.fix}</span>
+                      <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
+                      <span className="text-11 text-red-300 line-through">{iss.quote}</span>
+                      <span className="text-10 text-ink-500">→</span>
+                      <span className="text-11 text-emerald-300">{iss.fix}</span>
                     </div>
-                    {iss.why && <div className="text-[10.5px] text-ink-400 mt-0.5">{iss.why}</div>}
+                    {iss.why && <div className="text-10 text-ink-400 mt-0.5">{iss.why}</div>}
                     <Button variant="bare"
                       onClick={() => replaceOne(iss)}
-                      className="mt-1 px-2 py-0.5 rounded-md text-[10.5px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
+                      className="mt-1 px-2 py-0.5 rounded-md text-10 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
                     >
                       替换此条
                     </Button>
@@ -512,13 +512,13 @@ style={{ zIndex: Z.pagePanel }}>
               </div>
             )}
             {proof.done && !proof.loading && !proof.cancelled && proof.issues.length === 0 && (
-              <div className="text-center text-[11.5px] text-emerald-300 py-1">
+              <div className="text-center text-11 text-emerald-300 py-1">
                 <CheckCircle2 size={13} className="inline mr-1" /> 未发现确定问题
               </div>
             )}
 
             {/* 诊断范围：完整（正文）/ 简略（压缩摘要） */}
-            <div className="flex items-center gap-1.5 text-[10.5px] text-ink-500">
+            <div className="flex items-center gap-1.5 text-10 text-ink-500">
               <span>诊断范围</span>
               <div className="flex rounded-md overflow-hidden border border-ink-700">
                 <Button variant="bare"
@@ -542,9 +542,9 @@ style={{ zIndex: Z.pagePanel }}>
               {diag.loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {diag.loading ? '诊断中…' : 'AI 综合诊断（优先级 / 隐藏风险 / 批量建议）'}
             </Button>
-            {!aiReady && <div className="text-[10.5px] text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
+            {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
 
-            {diag.error && <div className="text-[11px] text-red-300 px-1">{diag.error}</div>}
+            {diag.error && <div className="text-11 text-red-300 px-1">{diag.error}</div>}
             {diag.data && (
               <div className="rounded-lg border border-amber/25 bg-amber/5 px-3 py-2.5">
                 {renderReport(diag.data.report)}
@@ -558,13 +558,13 @@ style={{ zIndex: Z.pagePanel }}>
           <>
             <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10.5px] text-ink-500">当前选区</span>
-                {selText && <span className="text-[10px] text-ink-500">{selText.length} 字</span>}
+                <span className="text-10 text-ink-500">当前选区</span>
+                {selText && <span className="text-10 text-ink-500">{selText.length} 字</span>}
               </div>
               {selText ? (
-                <div className="text-[11.5px] text-ink-100 leading-snug max-h-32 overflow-y-auto line-clamp-5">{selText}</div>
+                <div className="text-11 text-ink-100 leading-snug max-h-32 overflow-y-auto line-clamp-5">{selText}</div>
               ) : (
-                <div className="text-[11px] text-ink-500 leading-relaxed">先在正文中选中一段文字（选中后无需再点任何按钮，选区会自动同步到这里）。</div>
+                <div className="text-11 text-ink-500 leading-relaxed">先在正文中选中一段文字（选中后无需再点任何按钮，选区会自动同步到这里）。</div>
               )}
             </div>
 
@@ -573,7 +573,7 @@ style={{ zIndex: Z.pagePanel }}>
                 <Button variant="toggle" selected={instruction === ins}
                   key={ins}
                   onClick={() => setInstruction(ins)}
-                  className="px-2.5 py-1 rounded-full border text-[11px] hover:border-ink-500"
+                  className="px-2.5 py-1 rounded-full border text-11 hover:border-ink-500"
                 >
                   {ins}
                 </Button>
@@ -590,27 +590,27 @@ style={{ zIndex: Z.pagePanel }}>
               {rewrite.loading ? '改稿中…' : `让颉文姬${instruction}选区`}
             </Button>
 
-            {rewrite.error && <div className="text-[11px] text-red-300 px-1">{rewrite.error}</div>}
+            {rewrite.error && <div className="text-11 text-red-300 px-1">{rewrite.error}</div>}
 
             {rewrite.data && (rewrite.data.rewritten ? (
               <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2.5 space-y-2">
-                <div className="flex items-center gap-1.5 text-[11px] text-amber">
+                <div className="flex items-center gap-1.5 text-11 text-amber">
                   <CheckCircle2 size={12} /> 改稿完成{rewrite.data.notes ? `：${rewrite.data.notes}` : ''}
                 </div>
-                <div className="text-[11.5px] text-ink-100 leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">{rewrite.data.rewritten}</div>
-                <Button onClick={applyAdvice} variant="primary" size="md" className="w-full flex items-center justify-center text-[12px]">
+                <div className="text-11 text-ink-100 leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">{rewrite.data.rewritten}</div>
+                <Button onClick={applyAdvice} variant="primary" size="md" className="w-full flex items-center justify-center text-12">
                   <PenLine size={12} /> 写入原文下方（建议段）
                 </Button>
-                <div className="text-[10.5px] text-ink-500 leading-relaxed">
+                <div className="text-10 text-ink-500 leading-relaxed">
                   建议段以「{ADVICE_START}」标记写入原文下方，不会改动你的原文。请自行取舍：保留的直接并入，不用的删除；下方按钮可一键清除全部建议段。
                 </div>
               </div>
             ) : (
               <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2.5 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-[11px] text-red-300">
+                <div className="flex items-center gap-1.5 text-11 text-red-300">
                   <AlertTriangle size={12} /> 本次未取到有效内容
                 </div>
-                <div className="text-[10.5px] text-ink-400 leading-relaxed">
+                <div className="text-10 text-ink-400 leading-relaxed">
                   模型返回的内容无法解析为有效段落（多为返回格式不规范，或选区过长被截断）。
                   建议缩短选区后重试；连续失败可更换模型。你的原文未被改动。
                 </div>
@@ -639,39 +639,39 @@ style={{ zIndex: Z.pagePanel }}>
               {rev.loading ? '审读中…' : '章节编辑意见（节奏 / 钩子 / 水文 / 对话）'}
             </Button>
 
-            {rev.error && <div className="text-[11px] text-red-300 px-1">{rev.error}</div>}
+            {rev.error && <div className="text-11 text-red-300 px-1">{rev.error}</div>}
             {rev.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className={`text-[15px] font-bold px-2.5 py-0.5 rounded-lg border ${scoreCls(rev.data.score)}`}>{rev.data.score}</span>
-                  <span className="text-[11px] text-ink-100 leading-snug flex-1">{rev.data.verdict}</span>
+                  <span className={`text-15 font-bold px-2.5 py-0.5 rounded-lg border ${scoreCls(rev.data.score)}`}>{rev.data.score}</span>
+                  <span className="text-11 text-ink-100 leading-snug flex-1">{rev.data.verdict}</span>
                 </div>
                 <div className="space-y-1.5">
                   {rev.data.dimensions.map((d, i) => (
                     <div key={i} className="flex items-center gap-2">
-                      <span className="text-[10.5px] text-ink-400 w-16 shrink-0">{d.name}</span>
+                      <span className="text-10 text-ink-400 w-16 shrink-0">{d.name}</span>
                       <div className="flex gap-0.5 flex-1">
                         {Array.from({ length: 10 }, (_, j) => (
                           <span key={j} className={`h-1.5 w-2 rounded-sm ${j < d.score ? 'bg-amber' : 'bg-ink-700'}`} />
                         ))}
                       </div>
-                      <span className="text-[10px] text-ink-500 w-5 text-right">{d.score}</span>
+                      <span className="text-10 text-ink-500 w-5 text-right">{d.score}</span>
                     </div>
                   ))}
                 </div>
                 {rev.data.highlights.length > 0 && (
                   <div>
-                    <div className="text-[10.5px] text-emerald-400 mb-1">亮点</div>
+                    <div className="text-10 text-emerald-400 mb-1">亮点</div>
                     <ul className="space-y-1">
-                      {rev.data.highlights.map((h, i) => <li key={i} className="text-[11px] text-ink-200 leading-snug">· {h}</li>)}
+                      {rev.data.highlights.map((h, i) => <li key={i} className="text-11 text-ink-200 leading-snug">· {h}</li>)}
                     </ul>
                   </div>
                 )}
                 {rev.data.warnings.length > 0 && (
                   <div>
-                    <div className="text-[10.5px] text-amber mb-1">需处理</div>
+                    <div className="text-10 text-amber mb-1">需处理</div>
                     <ul className="space-y-1">
-                      {rev.data.warnings.map((w, i) => <li key={i} className="text-[11px] text-ink-200 leading-snug">· {w}</li>)}
+                      {rev.data.warnings.map((w, i) => <li key={i} className="text-11 text-ink-200 leading-snug">· {w}</li>)}
                     </ul>
                   </div>
                 )}
@@ -688,22 +688,22 @@ style={{ zIndex: Z.pagePanel }}>
               {ooc.loading ? '检查中…' : 'OOC 人设偏离检查'}
             </Button>
 
-            {ooc.error && <div className="text-[11px] text-red-300 px-1">{ooc.error}</div>}
+            {ooc.error && <div className="text-11 text-red-300 px-1">{ooc.error}</div>}
             {ooc.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
                 {ooc.data.length === 0 ? (
-                  <div className="text-center text-[11.5px] text-emerald-300 py-2"><CheckCircle2 size={13} className="inline mr-1" /> 未发现明显 OOC</div>
+                  <div className="text-center text-11 text-emerald-300 py-2"><CheckCircle2 size={13} className="inline mr-1" /> 未发现明显 OOC</div>
                 ) : (
                   <div className="space-y-2">
                     {ooc.data.map((f, i) => (
                       <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
                         <div className="flex items-center gap-1.5">
                           <SevBadge s={f.level} />
-                          <span className="text-[11px] font-medium text-amber">{f.character}</span>
+                          <span className="text-11 font-medium text-amber">{f.character}</span>
                         </div>
-                        {f.evidence && <div className="text-[10.5px] text-ink-400 mt-1">原文：{f.evidence}</div>}
-                        <div className="text-[11px] text-ink-100 mt-0.5 leading-snug">{f.issue}</div>
-                        {f.suggestion && <div className="text-[10.5px] text-amber/80 mt-0.5">→ {f.suggestion}</div>}
+                        {f.evidence && <div className="text-10 text-ink-400 mt-1">原文：{f.evidence}</div>}
+                        <div className="text-11 text-ink-100 mt-0.5 leading-snug">{f.issue}</div>
+                        {f.suggestion && <div className="text-10 text-amber/80 mt-0.5">→ {f.suggestion}</div>}
                       </div>
                     ))}
                   </div>
@@ -721,33 +721,33 @@ style={{ zIndex: Z.pagePanel }}>
               {adv.loading ? '思考中…' : '续写方向（只给思路，不生成正文）'}
             </Button>
 
-            {adv.error && <div className="text-[11px] text-red-300 px-1">{adv.error}</div>}
+            {adv.error && <div className="text-11 text-red-300 px-1">{adv.error}</div>}
             {adv.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5 space-y-2">
                 <div>
-                  <div className="text-[10.5px] text-ink-500 mb-1">方向建议</div>
-                  <div className="text-[11.5px] text-ink-100 leading-relaxed">{adv.data.direction}</div>
+                  <div className="text-10 text-ink-500 mb-1">方向建议</div>
+                  <div className="text-11 text-ink-100 leading-relaxed">{adv.data.direction}</div>
                 </div>
                 {adv.data.hooks.length > 0 && (
                   <div>
-                    <div className="text-[10.5px] text-ink-500 mb-1">可用钩子</div>
+                    <div className="text-10 text-ink-500 mb-1">可用钩子</div>
                     <ul className="space-y-1">
-                      {adv.data.hooks.map((h, i) => <li key={i} className="text-[11px] text-ink-200 leading-snug">· {h}</li>)}
+                      {adv.data.hooks.map((h, i) => <li key={i} className="text-11 text-ink-200 leading-snug">· {h}</li>)}
                     </ul>
                   </div>
                 )}
                 {adv.data.pitfalls.length > 0 && (
                   <div>
-                    <div className="text-[10.5px] text-amber mb-1">别踩的坑</div>
+                    <div className="text-10 text-amber mb-1">别踩的坑</div>
                     <ul className="space-y-1">
-                      {adv.data.pitfalls.map((p, i) => <li key={i} className="text-[11px] text-ink-200 leading-snug">· {p}</li>)}
+                      {adv.data.pitfalls.map((p, i) => <li key={i} className="text-11 text-ink-200 leading-snug">· {p}</li>)}
                     </ul>
                   </div>
                 )}
                 {adv.data.foreshadow && (
                   <div>
-                    <div className="text-[10.5px] text-ink-500 mb-1">伏笔联动</div>
-                    <div className="text-[11px] text-ink-200 leading-snug">{adv.data.foreshadow}</div>
+                    <div className="text-10 text-ink-500 mb-1">伏笔联动</div>
+                    <div className="text-11 text-ink-200 leading-snug">{adv.data.foreshadow}</div>
                   </div>
                 )}
               </div>
@@ -763,7 +763,7 @@ style={{ zIndex: Z.pagePanel }}>
               {plea.loading ? '检查中…' : '爽点 / 毒点检查（YY·代入感·金手指）'}
             </Button>
 
-            {plea.error && <div className="text-[11px] text-red-300 px-1">{plea.error}</div>}
+            {plea.error && <div className="text-11 text-red-300 px-1">{plea.error}</div>}
             {plea.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
                 {renderReport(plea.data.report)}
@@ -780,14 +780,14 @@ style={{ zIndex: Z.pagePanel }}>
               {open.loading ? '检查中…' : '黄金三章检查（开篇定生死）'}
             </Button>
 
-            {open.error && <div className="text-[11px] text-red-300 px-1">{open.error}</div>}
+            {open.error && <div className="text-11 text-red-300 px-1">{open.error}</div>}
             {open.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
                 {renderReport(open.data.report)}
               </div>
             )}
 
-            {!aiReady && <div className="text-[10.5px] text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
+            {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
           </>
         )}
 
@@ -803,12 +803,12 @@ style={{ zIndex: Z.pagePanel }}>
               {brief.loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {brief.loading ? '生成中…' : '生成本章写作简报（开写前）'}
             </Button>
-            <div className="text-[10.5px] text-ink-500 leading-relaxed px-1">
+            <div className="text-10 text-ink-500 leading-relaxed px-1">
               写下一章之前点一下：AI 汇总未回收伏笔、可安排的钩子爽点、出场角色状态提醒与上一章衔接建议——只给方向，不代写正文。
             </div>
-            {!aiReady && <div className="text-[10.5px] text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
+            {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
 
-            {brief.error && <div className="text-[11px] text-red-300 px-1">{brief.error}</div>}
+            {brief.error && <div className="text-11 text-red-300 px-1">{brief.error}</div>}
             {brief.data && (
               <div className="rounded-lg border border-amber/25 bg-amber/5 px-3 py-2.5">
                 {renderReport(brief.data.report)}
@@ -822,24 +822,24 @@ style={{ zIndex: Z.pagePanel }}>
           <div className="space-y-2.5">
             <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-2.5">
               <div className="flex items-start justify-between gap-2">
-                <div className="text-[11px] text-ink-300 leading-relaxed">
+                <div className="text-11 text-ink-300 leading-relaxed">
                   从本章正文抽出有专名的设定实体，与已有设定比对后分三档。
                   <span className="text-ink-500">「是否已登记」由程序按名称与别称精确比对，AI 只负责抽取，不会凭空编造。</span>
                 </div>
                 <Button onClick={runLedger}
                   disabled={!aiReady || ledger.loading || !content.trim()}
-                  title={!aiReady ? AI_DISABLED_HINT : ledger.scannedAt ? '重新扫描本章正文' : '扫描本章正文'} variant="primary" size="md" className="shrink-0 flex items-center rounded text-[11px]">
+                  title={!aiReady ? AI_DISABLED_HINT : ledger.scannedAt ? '重新扫描本章正文' : '扫描本章正文'} variant="primary" size="md" className="shrink-0 flex items-center rounded text-11">
                   {ledger.loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                   {ledger.loading ? '扫描中' : ledger.scannedAt ? '重新扫描' : '扫描本章'}
                 </Button>
               </div>
-              {!aiReady && <div className="mt-1.5 text-[10.5px] text-ink-500">{AI_DISABLED_HINT}</div>}
+              {!aiReady && <div className="mt-1.5 text-10 text-ink-500">{AI_DISABLED_HINT}</div>}
             </div>
 
-            {ledger.error && <div className="text-[11px] text-red-300 px-1">{ledger.error}</div>}
+            {ledger.error && <div className="text-11 text-red-300 px-1">{ledger.error}</div>}
 
             {!ledger.loading && ledger.scannedAt > 0 && ledger.items.length === 0 && (
-              <div className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-4 text-center text-[11px] text-ink-500">
+              <div className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-4 text-center text-11 text-ink-500">
                 本章没有抽出设定实体
               </div>
             )}
@@ -850,8 +850,8 @@ style={{ zIndex: Z.pagePanel }}>
               return (
                 <div key={type}>
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className="text-[11px] text-amber font-medium">{type}</span>
-                    <span className="text-[10px] text-ink-500">{list.length} 条</span>
+                    <span className="text-11 text-amber font-medium">{type}</span>
+                    <span className="text-10 text-ink-500">{list.length} 条</span>
                   </div>
                   <div className="space-y-1">
                     {list.map(it => {
@@ -879,28 +879,28 @@ style={{ zIndex: Z.pagePanel }}>
                             )}
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[12px] text-ink-100">{it.name}</span>
-                                <span className={`inline-block px-1 py-px rounded text-[9.5px] border ${meta.cls}`}>{meta.label}</span>
+                                <span className="text-12 text-ink-100">{it.name}</span>
+                                <span className={`inline-block px-1 py-px rounded text-9 border ${meta.cls}`}>{meta.label}</span>
                                 {it.status !== 'new' && it.matchedName && it.matchedName !== it.name && (
-                                  <span className="text-[10px] text-ink-500">→ 已记为「{it.matchedName}」</span>
+                                  <span className="text-10 text-ink-500">→ 已记为「{it.matchedName}」</span>
                                 )}
                               </div>
 
-                              {it.desc && <div className="mt-0.5 text-[11px] text-ink-300 leading-relaxed">{it.desc}</div>}
+                              {it.desc && <div className="mt-0.5 text-11 text-ink-300 leading-relaxed">{it.desc}</div>}
 
                               {it.evidence && (
-                                <div className="mt-1 text-[10.5px] text-ink-500 border-l-2 border-ink-700 pl-1.5 leading-relaxed">
+                                <div className="mt-1 text-10 text-ink-500 border-l-2 border-ink-700 pl-1.5 leading-relaxed">
                                   「{it.evidence}」
                                 </div>
                               )}
 
                               {it.type === '人物' && it.status === 'new' && (
                                 <div className="mt-1 flex items-center gap-1">
-                                  <span className="text-[10px] text-ink-500">归入</span>
+                                  <span className="text-10 text-ink-500">归入</span>
                                   <select
                                     value={it.targetTabId ?? 'char-npc'}
                                     onChange={e => setLedgerTargetTab(it.key, e.target.value)}
-                                    className="text-[10px] px-1 py-px rounded bg-ink-900/60 border border-ink-700 text-ink-100 outline-none focus:border-amber/40"
+                                    className="text-10 px-1 py-px rounded bg-ink-900/60 border border-ink-700 text-ink-100 outline-none focus:border-amber/40"
                                   >
                                     {CARD_TABS.map(t => (
                                       <option key={t} value={t}>{TABS.find(x => x.id === t)?.name ?? t}</option>
@@ -913,7 +913,7 @@ style={{ zIndex: Z.pagePanel }}>
                                 <Button variant="bare"
                                   type="button"
                                   onClick={() => jumpToEntry(it.matchedTabId!, it.matchedId)}
-                                  className="mt-1 flex items-center gap-0.5 text-[11px] text-amber/80 hover:text-amber"
+                                  className="mt-1 flex items-center gap-0.5 text-11 text-amber/80 hover:text-amber"
                                 >
                                   去核对 <ExternalLink size={9} />
                                 </Button>
@@ -930,7 +930,7 @@ style={{ zIndex: Z.pagePanel }}>
 
             {ledger.items.length > 0 && (
               <Button onClick={commitLedger}
-                disabled={ledgerSaving || ledgerPicked.size === 0} variant="primary" size="md" className="w-full flex items-center justify-center text-[11.5px]">
+                disabled={ledgerSaving || ledgerPicked.size === 0} variant="primary" size="md" className="w-full flex items-center justify-center text-11">
                 {ledgerSaving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
                 {ledgerSaving ? '写入中' : `补登选中的 ${ledgerPicked.size} 项`}
               </Button>
@@ -941,7 +941,7 @@ style={{ zIndex: Z.pagePanel }}>
 
       {/* 精灵开关 */}
       <div className="px-3 py-1.5 border-t border-ink-700 flex items-center justify-between gap-2 shrink-0">
-        <span className="text-[10px] text-ink-500">屏幕右侧 Q 版精灵</span>
+        <span className="text-10 text-ink-500">屏幕右侧 Q 版精灵</span>
         <Button variant="bare"
           onClick={toggleSprite}
           className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${spriteOn ? 'bg-amber' : 'bg-ink-600'}`}
@@ -951,7 +951,7 @@ style={{ zIndex: Z.pagePanel }}>
         </Button>
       </div>
       {/* 底部状态 */}
-      <div className="px-3 py-2 border-t border-ink-700 text-[10px] text-ink-500 flex items-center justify-between gap-2 shrink-0">
+      <div className="px-3 py-2 border-t border-ink-700 text-10 text-ink-500 flex items-center justify-between gap-2 shrink-0">
         <span>诊室两个入口均需配置模型 · 未配置时按钮禁用</span>
         {!aiReady && <span className="text-amber/70">未配置模型</span>}
       </div>

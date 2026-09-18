@@ -4,6 +4,7 @@ import { Calendar } from 'lucide-react'
 import { todayKey } from '../lib/date'
 import { Button } from './Button'
 import { Z } from '../lib/zLayer'
+import { computeDropdownPos, type DropdownPos } from '../lib/dropdownPos'
 
 /** 视图年月 + 日号 → YYYY-MM-DD（统一走 lib/date，与写作统计同口径） */
 const dayKey = (y: number, m: number, d: number) => todayKey(new Date(y, m - 1, d))
@@ -37,26 +38,14 @@ export default function CalendarPicker({ value, onChange }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ left: number; top: number; minWidth: number; maxHeight: number; flip: boolean } | null>(null)
+  const [pos, setPos] = useState<DropdownPos | null>(null)
 
   useEffect(() => {
     if (!open) { setPos(null); return }
     const updatePos = () => {
       const btn = btnRef.current
       if (!btn) return
-      const r = btn.getBoundingClientRect()
-      const estH = 264
-      const spaceBelow = window.innerHeight - r.bottom
-      const spaceAbove = r.top
-      const flip = spaceBelow < 248 && spaceAbove > spaceBelow
-      const avail = flip ? spaceAbove - 8 : spaceBelow - 8
-      setPos({
-        left: Math.max(8, r.left),
-        top: flip ? r.top - 4 : r.bottom + 4,
-        minWidth: Math.max(180, r.width),
-        maxHeight: Math.min(Math.max(208, avail), estH),
-        flip,
-      })
+      setPos(computeDropdownPos(btn.getBoundingClientRect(), { estH: 264, flipBelow: 248, minWidth: 180, minHeight: 208 }))
     }
     updatePos()
     const onScroll = () => updatePos()
@@ -104,7 +93,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 !justify-start w-full text-left px-1.5 py-1 text-[12px] bg-ink-800/60 border border-ink-700 rounded text-ink-100 hover:border-amber/50 transition-colors"
+        className="flex items-center gap-1.5 !justify-start w-full text-left px-1.5 py-1 text-12 bg-ink-800/60 border border-ink-700 rounded text-ink-100 hover:border-amber/50 transition-colors"
       >
         <Calendar size={12} className="text-amber/80 shrink-0" />
         <span className={value ? '' : 'text-ink-500'}>{value || '选择日期'}</span>
@@ -123,11 +112,11 @@ export default function CalendarPicker({ value, onChange }: Props) {
           className="fixed overflow-y-auto rounded-lg bg-ink-850 border border-ink-700 shadow-xl p-2.5"
         >
           <div className="flex items-center justify-between mb-2">
-            <Button variant="bare" type="button" onClick={() => shiftMonth(-1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-[14px]">‹</Button>
-            <span className="text-[12px] text-ink-100 font-medium">{view.y} 年 {view.m} 月</span>
-            <Button variant="bare" type="button" onClick={() => shiftMonth(1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-[14px]">›</Button>
+            <Button variant="bare" type="button" onClick={() => shiftMonth(-1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-14">‹</Button>
+            <span className="text-12 text-ink-100 font-medium">{view.y} 年 {view.m} 月</span>
+            <Button variant="bare" type="button" onClick={() => shiftMonth(1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-14">›</Button>
           </div>
-          <div className="grid grid-cols-7 gap-0.5 text-[10px] text-ink-500 text-center mb-1">
+          <div className="grid grid-cols-7 gap-0.5 text-10 text-ink-500 text-center mb-1">
             {WEEK.map(w => <div key={w}>{w}</div>)}
           </div>
           <div className="grid grid-cols-7 gap-0.5">
@@ -136,12 +125,12 @@ export default function CalendarPicker({ value, onChange }: Props) {
                 key={i}
                 type="button"
                 onClick={() => pick(d)}
-                className={`py-1 rounded text-[11px] transition-colors
+                className={`py-1 rounded text-11 transition-colors
                   ${value === dayKey(view.y, view.m, d) ? 'bg-amber/20 text-amber' : 'text-ink-200 hover:bg-ink-700'}`}
               >{d}</Button>
             ))}
           </div>
-          <Button variant="icon-muted" type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-[11px]">清除日期</Button>
+          <Button variant="icon-muted" type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-11">清除日期</Button>
         </div>,
         document.body,
       )}

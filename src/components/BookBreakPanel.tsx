@@ -178,9 +178,9 @@ export default function BookBreakPanel() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-4 flex items-center gap-2">
-        <h1 className="text-[15px] font-medium text-ink-100">一键拆书</h1>
+        <h1 className="text-15 font-medium text-ink-100">一键拆书</h1>
         <HelpPopover title="一键拆书怎么用" pin>
-          <div className="space-y-1.5 text-[11.5px] leading-relaxed text-ink-300">
+          <div className="space-y-1.5 text-11 leading-relaxed text-ink-300">
             <p>粘贴或导入一整本小说原文，AI 会<b>先按识别出的结构把原文写进「正文编辑」</b>（卷 / 章），再逐章抽取其中的<b>人物 / 势力 / 地点 / 种族 / 物品 / 术语</b>，并尽量补全各类的设定字段（身份定位、外貌特征、实力境界、功法技能、类别、剧情作用…），整理成草稿供你勾选。</p>
             <p>抽出的每条都带<b>原文引用</b>与<b>置信度</b>，并会与项目里已有的设定比对：已登记过的标为「疑似已有」、默认不勾选。</p>
             <p>同一实体在不同章节抽出的字段若出现<b>互相矛盾</b>的值（如境界一处是「废脉」、一处是「淬体一重」），会标为「冲突」并把两边的值都列出来，由你决定留哪个 —— 系统不替你猜。人物性格、外貌、人际关系这类可以累积的字段不做冲突判定，只取更完整的一份。</p>
@@ -194,8 +194,8 @@ export default function BookBreakPanel() {
       {/* ① 原文 */}
       <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13px] text-ink-100">① 原文</span>
-          <span className="text-[11px] text-ink-500">{raw.length.toLocaleString()} 字</span>
+          <span className="text-13 text-ink-100">① 原文</span>
+          <span className="text-11 text-ink-500">{raw.length.toLocaleString()} 字</span>
           <div className="flex-1" />
           <Button size="xs" variant="secondary" disabled={running} onClick={() => fileRef.current?.click()}>
             <FileUp size={12} /> 导入 .txt
@@ -215,9 +215,9 @@ export default function BookBreakPanel() {
           disabled={running}
           spellCheck={false}
           placeholder="把小说原文粘贴到这里（支持整本），或点右上角「导入 .txt」。"
-          className="mt-2 h-56 w-full resize-y rounded border border-ink-700 bg-ink-900 px-3 py-2 text-[12px] leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
+          className="mt-2 h-56 w-full resize-y rounded border border-ink-700 bg-ink-900 px-3 py-2 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
         />
-        <label className="mt-2 flex items-start gap-1.5 text-[11.5px] text-ink-300">
+        <label className="mt-2 flex items-start gap-1.5 text-11 text-ink-300">
           <input
             type="checkbox"
             checked={writeToChapters}
@@ -230,7 +230,7 @@ export default function BookBreakPanel() {
             <span className="text-ink-500">—— 切分完就能在「正文写作」里翻着读；已有卷章只追加、不动。</span>
           </span>
         </label>
-        <label className="mt-2 flex items-start gap-1.5 text-[11.5px] text-ink-300">
+        <label className="mt-2 flex items-start gap-1.5 text-11 text-ink-300">
           <input
             type="checkbox"
             checked={summarizeForms}
@@ -244,7 +244,7 @@ export default function BookBreakPanel() {
           </span>
         </label>
         {writeToChapters && (
-          <div className="mt-1 text-[11px] leading-relaxed text-ink-500">
+          <div className="mt-1 text-11 leading-relaxed text-ink-500">
             建议在<b className="text-ink-300">新建的项目</b>里拆书：整本正文会写进「当前项目」，
             与已有内容混在一起后续不好清理。
           </div>
@@ -253,7 +253,7 @@ export default function BookBreakPanel() {
 
       {/* 切分预览 */}
       {preview && (
-        <div className="mt-2 space-y-1 rounded border border-ink-700 bg-ink-900/40 px-3 py-2 text-[11.5px] leading-relaxed text-ink-300">
+        <div className="mt-2 space-y-1 rounded border border-ink-700 bg-ink-900/40 px-3 py-2 text-11 leading-relaxed text-ink-300">
           <div>
             识别为 <b className="text-ink-100">{preview.chapters.length}</b>
             {preview.mode === 'chapters' ? ' 章' : ' 块（未识别到章节标题，已按段落分块）'}
@@ -296,10 +296,10 @@ export default function BookBreakPanel() {
         {running && (
           <Button size="sm" variant="danger" onClick={() => abortRef.current?.abort()}>中止</Button>
         )}
-        {running && <span className="text-[11px] text-ink-400">{progress?.message ?? ''}</span>}
+        {running && <span className="text-11 text-ink-400">{progress?.message ?? ''}</span>}
       </div>
       {!running && resume && (
-        <div className="mt-1 text-[11px] leading-relaxed text-ink-400">
+        <div className="mt-1 text-11 leading-relaxed text-ink-400">
           上次中止在：{resume.label}。点「继续抽取」会从这里接着跑，<b className="text-ink-300">已抽过的块不会重跑</b>；
           <span className="text-ink-500">若你改过原文，断点会失效（自动从头跑），避免抽出的内容与章节错位。</span>
         </div>
@@ -310,7 +310,7 @@ export default function BookBreakPanel() {
 
       {/* ③ 审阅 */}
       {persistInfo && (
-        <div className="mt-3 rounded border border-ink-700 bg-ink-900/40 px-3 py-2 text-[11.5px] leading-relaxed text-ink-300">
+        <div className="mt-3 rounded border border-ink-700 bg-ink-900/40 px-3 py-2 text-11 leading-relaxed text-ink-300">
           {persistInfo.alreadyImported ? (
             <>原文结构<b className="text-ink-100">已导入过</b>（同名卷 + 同章标题），本次跳过写入正文 —— 避免把同一本书复制成两份。</>
           ) : (
@@ -326,9 +326,9 @@ export default function BookBreakPanel() {
       {bundle && (
         <div className="mt-5">
           <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
-            <span className="text-[13px] text-ink-100">③ 审阅草稿</span>
+            <span className="text-13 text-ink-100">③ 审阅草稿</span>
             {formRows.length > 0 && (
-              <span className="text-[11px] text-ink-400">
+              <span className="text-11 text-ink-400">
                 含末尾汇总的 {formRows.length} 张「全书设定」—— 已填过的字段不会被覆盖，只补空。
               </span>
             )}

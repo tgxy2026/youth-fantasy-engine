@@ -6,6 +6,7 @@ import { confirmDialog } from './dialogs'
 import { Modal, Z } from './Modal'
 import { Button } from './Button'
 import { EmptyState } from './EmptyState'
+import { computeDropdownPos } from '../lib/dropdownPos'
 
 interface Props {
   /** 当前选中的历法名称 */
@@ -37,16 +38,8 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
   const updatePos = () => {
     const btn = btnRef.current
     if (!btn) return
-    const r = btn.getBoundingClientRect()
-    const spaceBelow = window.innerHeight - r.bottom
-    const spaceAbove = r.top
-    const flip = spaceBelow < 240 && spaceAbove > spaceBelow
-    setPos({
-      left: Math.max(8, Math.min(r.left, window.innerWidth - 220)),
-      top: flip ? r.top - 4 : r.bottom + 4,
-      minWidth: Math.max(160, Math.round(r.width)),
-      flip,
-    })
+    // 本组件的浮层靠自身 max-h-72 限高，故 estH 传 null（不产出 maxHeight）
+    setPos(computeDropdownPos(btn.getBoundingClientRect(), { estH: null, flipBelow: 240, clampRight: 220 }))
   }
 
   useEffect(() => {
@@ -109,7 +102,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full !py-1 text-[12px] min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
+        className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
         <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value || '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
@@ -128,7 +121,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
             return (
               <div
                 key={cal.name}
-                className={`group flex items-center px-1 py-0.5 text-[12px] hover:bg-ink-700 ${selected ? 'text-amber' : 'text-ink-200'}`}
+                className={`group flex items-center px-1 py-0.5 text-12 hover:bg-ink-700 ${selected ? 'text-amber' : 'text-ink-200'}`}
               >
                 <Button variant="bare"
                   type="button"
@@ -137,7 +130,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
                 >
                   {selected ? <Check size={10} /> : <span className="w-[10px]" />}
                   <span className="truncate flex-1">{cal.name}</span>
-                  <span className="text-[10px] text-ink-500">({cal.value})</span>
+                  <span className="text-10 text-ink-500">({cal.value})</span>
                 </Button>
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 pr-1">
                   <Button variant="bare" iconOnly size="xs"
@@ -155,7 +148,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
           <Button variant="bare"
             type="button"
             onClick={() => openEditor()}
-            className="w-full text-left !justify-start px-2.5 py-1.5 text-[11.5px] text-amber/90 border-t border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
+            className="w-full text-left !justify-start px-2.5 py-1.5 text-11 text-amber/90 border-t border-ink-700 flex items-center gap-1.5 hover:bg-ink-700"
           >
             <Plus size={11} /> 新增历法…
           </Button>
@@ -164,26 +157,26 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
       )}
       {editing && (
         <Modal open onClose={closeEditor} width={320} bodyClassName="p-4" title={editing.name ? '编辑历法' : '新增历法'}>
-            <label className="block text-[11px] text-ink-500 mb-1">历法名称</label>
+            <label className="block text-11 text-ink-500 mb-1">历法名称</label>
             <input
               value={draftName}
               onChange={e => setDraftName(e.target.value)}
               placeholder="如 灵历 / 上古历"
-              className="w-full !py-1.5 text-[13px] mb-3"
+              className="w-full !py-1.5 text-13 mb-3"
             />
-            <label className="block text-[11px] text-ink-500 mb-1">数值（默认 0；数值越小越早，如 上古历=-1 表示早于灵历）</label>
+            <label className="block text-11 text-ink-500 mb-1">数值（默认 0；数值越小越早，如 上古历=-1 表示早于灵历）</label>
             <input
               type="number"
               value={draftValue}
               onChange={e => setDraftValue(Number(e.target.value))}
-              className="w-full !py-1.5 text-[13px] mb-1"
+              className="w-full !py-1.5 text-13 mb-1"
             />
-            <div className="text-[10px] text-ink-500 mb-3">
+            <div className="text-10 text-ink-500 mb-3">
               用于跨历法先后顺序与延续性判断：时间轴先按数值排序，再按故事内时间。
             </div>
             <div className="flex gap-2 justify-end">
-              <Button onClick={closeEditor} variant="secondary" size="md" className="text-[12px]">取消</Button>
-              <Button onClick={saveEditor} variant="primary" size="md" className="text-[12px]">保存</Button>
+              <Button onClick={closeEditor} variant="secondary" size="md" className="text-12">取消</Button>
+              <Button onClick={saveEditor} variant="primary" size="md" className="text-12">保存</Button>
             </div>
         </Modal>
       )}

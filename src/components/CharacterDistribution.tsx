@@ -51,11 +51,11 @@ export default function CharacterDistribution({ onNavigate }: Props) {
   const topChapters = chapters
   const maxCount = useMemo(() => Math.max(1, ...rows.flatMap(r => Object.values(r.counts))), [rows])
 
-  if (!loaded) return <div className="py-8 text-center text-ink-500 text-[12px]">加载中…</div>
+  if (!loaded) return <div className="py-8 text-center text-ink-500 text-12">加载中…</div>
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-ink-700 bg-ink-850 px-4 py-12 text-center text-ink-500 text-[12px] leading-relaxed">
+      <div className="rounded-xl border border-ink-700 bg-ink-850 px-4 py-12 text-center text-ink-500 text-12 leading-relaxed">
         还没有可统计的出场数据——先在角色卡新建角色，并在正文里写几章，<br />
         系统会自动统计每位角色在各章的出场次数。
       </div>
@@ -74,7 +74,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
   return (
     <div className="rounded-xl border border-ink-700 bg-ink-850 p-4 overflow-hidden">
       <div className="overflow-auto" style={{ maxHeight: foldVh('68vh') }}>
-        <table className="border-collapse text-[10px]">
+        <table className="border-collapse text-10">
           <thead>
             <tr>
               <th className="sticky left-0 z-10 bg-ink-850 text-left text-ink-400 font-medium px-2 py-1.5 pr-3 whitespace-nowrap">角色 \\ 章节</th>
@@ -108,7 +108,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
           </tbody>
         </table>
       </div>
-      <div className="flex items-center gap-1.5 mt-3 text-[9px] text-ink-500">
+      <div className="flex items-center gap-1.5 mt-3 text-9 text-ink-500">
         <span>少</span>
         <span className="w-[14px] h-[14px] rounded-[3px] bg-ink-800 inline-block" />
         <span className="w-[14px] h-[14px] rounded-[3px] bg-amber/25 inline-block" />

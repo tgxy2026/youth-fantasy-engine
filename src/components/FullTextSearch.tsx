@@ -87,9 +87,9 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="搜全书：章节正文 / 角色名 / 设定（名词、地名、伏笔…）"
-            className="flex-1 !bg-transparent !border-0 !px-0 text-[14px] text-ink-50 focus:!outline-none"
+            className="flex-1 !bg-transparent !border-0 !px-0 text-14 text-ink-50 focus:!outline-none"
           />
-          {!ready && <span className="text-[11px] text-ink-500 shrink-0">建索引…</span>}
+          {!ready && <span className="text-11 text-ink-500 shrink-0">建索引…</span>}
           <HelpPopover title="全文检索怎么用" width="24rem" size={13} className="shrink-0">
             {'全书级检索：章节正文、角色卡、全部设定表（国家/地理/术语/伏笔/关系…）一次搜尽。\n\n· Ctrl/Cmd + K 随时唤起；\n· 输入即出结果，按 章节 / 角色 / 设定 分组；\n· ↑ ↓ 选择，回车跳转：章节直达正文编辑，角色/设定直达所在页签；\n· Esc 关闭。\n\n中文按词/字切分，英文按单词；标题命中优先置顶。'}
           </HelpPopover>
@@ -100,12 +100,12 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
         <div ref={listRef} className="overflow-y-auto py-2"
 style={{ maxHeight: foldVh('60vh') }}>
           {query.trim() && flat.length === 0 && (
-            <div className="text-center text-ink-500 text-[12px] py-10">
+            <div className="text-center text-ink-500 text-12 py-10">
               {ready ? `没有匹配「${query.trim()}」的内容` : '索引构建中…'}
             </div>
           )}
           {!query.trim() && (
-            <div className="text-center text-ink-500 text-[12px] py-10">
+            <div className="text-center text-ink-500 text-12 py-10">
               输入关键词，搜遍全书正文与设定
             </div>
           )}
@@ -115,7 +115,7 @@ style={{ maxHeight: foldVh('60vh') }}>
             const Icon = TYPE_ICON[type]
             return (
               <div key={type} className="mb-1">
-                <div className="flex items-center gap-1.5 px-4 py-1 text-[10px] text-ink-500 sticky top-0 bg-ink-850/95">
+                <div className="flex items-center gap-1.5 px-4 py-1 text-10 text-ink-500 sticky top-0 bg-ink-850/95">
                   <Icon size={11} className="text-amber/70" />
                   {SEARCH_TYPE_LABEL[type]} · {items.length}
                 </div>
@@ -132,13 +132,13 @@ style={{ maxHeight: foldVh('60vh') }}>
                       className={`w-full text-left !justify-start px-4 py-2 flex items-start gap-2.5 transition-colors
                         ${active ? 'bg-amber/10' : 'hover:bg-ink-800/60'}`}
                     >
-                      <span className={`mt-0.5 text-[10px] px-1.5 py-px rounded shrink-0 border
+                      <span className={`mt-0.5 text-10 px-1.5 py-px rounded shrink-0 border
                         ${type === 'chapter' ? 'border-sky-400/30 text-sky-300' : type === 'character' ? 'border-violet-400/30 text-violet-300' : 'border-emerald-400/30 text-emerald-300'}`}>
                         {r.source}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="text-[13px] text-ink-100 font-medium truncate block">{r.title}</span>
-                        <span className="text-[11px] text-ink-500 line-clamp-1 block">{r.snippet || '（无正文摘要）'}</span>
+                        <span className="text-13 text-ink-100 font-medium truncate block">{r.title}</span>
+                        <span className="text-11 text-ink-500 line-clamp-1 block">{r.snippet || '（无正文摘要）'}</span>
                       </span>
                       <CornerDownLeft size={12} className={`mt-1 shrink-0 ${active ? 'text-amber' : 'text-ink-700'}`} />
                     </Button>
@@ -150,7 +150,7 @@ style={{ maxHeight: foldVh('60vh') }}>
         </div>
 
         {/* 底部提示 */}
-        <div className="flex items-center gap-3 px-4 h-9 border-t border-ink-700 text-[10px] text-ink-600 bg-ink-900/60">
+        <div className="flex items-center gap-3 px-4 h-9 border-t border-ink-700 text-10 text-ink-600 bg-ink-900/60">
           <span className="flex items-center gap-1"><Hash size={10} />{flat.length} 条结果</span>
           <span className="flex-1" />
           <span>↑↓ 选择 · 回车打开 · Esc 关闭</span>

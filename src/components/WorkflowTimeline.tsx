@@ -93,13 +93,13 @@ export default function WorkflowTimeline({ progress, running, summaries = {}, cl
             style={{ width: `${pct}%` }}
           />
         </div>
-        <span className="text-[10.5px] tabular-nums text-ink-400">{pct}%</span>
-        <span className={`text-[10.5px] ${running ? 'text-amber' : 'text-ink-400'}`}>
+        <span className="text-10 tabular-nums text-ink-400">{pct}%</span>
+        <span className={`text-10 ${running ? 'text-amber' : 'text-ink-400'}`}>
           {running ? '进行中' : FLOW_STATUS_TEXT[progress.status]}
         </span>
       </div>
       {running && progress.message && (
-        <div className="mt-1 truncate text-[11px] text-ink-300">{progress.message}</div>
+        <div className="mt-1 truncate text-11 text-ink-300">{progress.message}</div>
       )}
 
       {/* 节点时间线 */}
@@ -121,17 +121,17 @@ export default function WorkflowTimeline({ progress, running, summaries = {}, cl
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-baseline gap-x-2">
-                  <span className={`text-[11.5px] ${s.status === 'pending' ? 'text-ink-500' : 'text-ink-200'}`}>{s.label}</span>
-                  <span className={`text-[10.5px] ${STATUS_TEXT_CLS[s.status]}`}>{STATUS_TEXT[s.status]}</span>
-                  {dur && <span className="text-[10.5px] tabular-nums text-ink-500">{dur}</span>}
+                  <span className={`text-11 ${s.status === 'pending' ? 'text-ink-500' : 'text-ink-200'}`}>{s.label}</span>
+                  <span className={`text-10 ${STATUS_TEXT_CLS[s.status]}`}>{STATUS_TEXT[s.status]}</span>
+                  {dur && <span className="text-10 tabular-nums text-ink-500">{dur}</span>}
                 </span>
                 {line && (
-                  <span className="mt-0.5 block text-[10.5px] leading-relaxed text-ink-400">
+                  <span className="mt-0.5 block text-10 leading-relaxed text-ink-400">
                     {line}
                     {s.status === 'running' && !s.detail && '…'}
                   </span>
                 )}
-                {s.error && <span className="mt-0.5 block text-[10.5px] text-red-400">{s.error}</span>}
+                {s.error && <span className="mt-0.5 block text-10 text-red-400">{s.error}</span>}
               </span>
             </li>
           )

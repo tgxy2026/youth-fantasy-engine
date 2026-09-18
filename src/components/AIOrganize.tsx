@@ -194,7 +194,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   const modeBtn = (m: SourceMode, icon: React.ReactNode, label: string) => (
     <Button variant="toggle" selected={mode === m}
       onClick={() => setMode(m)}
-      className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[12px] border"
+      className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-12 border"
     >
       {icon} {label}
     </Button>
@@ -204,7 +204,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
     <Modal open onClose={onClose} icon={<Sparkles size={14} />} title={`AI 整理 · ${tab.name}`} width="2xl" maxHeight="90vh">
 
         <div className="space-y-4">
-          <p className="text-[12px] text-ink-400 leading-relaxed">
+          <p className="text-12 text-ink-400 leading-relaxed">
             {organizeHint(tab.id)}
             <br />
             判重依据：<span className="text-amber/80">{keyCols.join(' + ') || '（首列）'}</span>
@@ -213,7 +213,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
 
           {/* 数据来源 */}
           <div className="space-y-2">
-            <div className="text-[12px] text-ink-300">整理依据</div>
+            <div className="text-12 text-ink-300">整理依据</div>
             <div className="flex items-center gap-2 flex-wrap">
               {modeBtn('chapters', <BookOpen size={12} />, '指定章节正文')}
               {modeBtn('paste', <ClipboardPaste size={12} />, '手动粘贴文本')}
@@ -222,7 +222,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
 
             {mode === 'chapters' && (
               <div className="rounded-lg border border-ink-700 bg-ink-900/40">
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800 text-[11.5px] text-ink-400">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800 text-11 text-ink-400">
                   <span>已选 {picked.size} / {written.length} 章（有正文的章节）</span>
                   <Button variant="bare"
                     onClick={() => setPicked(new Set(written.slice(-3).map(c => c.id)))}
@@ -246,7 +246,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
                 <div className="overflow-y-auto p-1.5"
 style={{ maxHeight: foldVh('26vh') }}>
                   {written.length === 0 && (
-                    <div className="px-2 py-3 text-[12px] text-ink-500">还没有写好正文的章节，可改用「仅依据已有设定」。</div>
+                    <div className="px-2 py-3 text-12 text-ink-500">还没有写好正文的章节，可改用「仅依据已有设定」。</div>
                   )}
                   {written.map(c => (
                     <Button variant="bare"
@@ -257,12 +257,12 @@ style={{ maxHeight: foldVh('26vh') }}>
                       {picked.has(c.id)
                         ? <CheckSquare size={13} className="text-amber shrink-0" />
                         : <Square size={13} className="text-ink-600 shrink-0" />}
-                      <span className="text-[12px] text-ink-200 truncate">{c.title || '未命名章节'}</span>
-                      <span className="ml-auto text-[11px] text-ink-500 shrink-0">{c.wordCount || 0} 字</span>
+                      <span className="text-12 text-ink-200 truncate">{c.title || '未命名章节'}</span>
+                      <span className="ml-auto text-11 text-ink-500 shrink-0">{c.wordCount || 0} 字</span>
                     </Button>
                   ))}
                 </div>
-                <div className="px-3 py-1.5 border-t border-ink-800 text-[11px] text-ink-500">
+                <div className="px-3 py-1.5 border-t border-ink-800 text-11 text-ink-500">
                   选太多章会超出模型上下文，超出部分自动截断；建议一次 1~3 章，整理更准。
                 </div>
               </div>
@@ -273,20 +273,20 @@ style={{ maxHeight: foldVh('26vh') }}>
                 value={paste}
                 onChange={setPaste}
                 placeholder="把要整理的文本粘贴进来（章节片段、大纲草稿、设定笔记都行）……"
-                className="text-[13px]"
+                className="text-13"
                 minHeight={90}
                 maxHeight={240}
               />
             )}
 
             {mode === 'settings' && (
-              <div className="text-[11.5px] text-ink-500 px-1">
+              <div className="text-11 text-ink-500 px-1">
                 不带正文，仅从已填写的世界观 / 角色卡 / 各类设定表中，挑出本表尚未登记的条目。
               </div>
             )}
           </div>
 
-          <label className="flex items-center gap-2 text-[12px] text-ink-300 cursor-pointer select-none">
+          <label className="flex items-center gap-2 text-12 text-ink-300 cursor-pointer select-none">
             <input type="checkbox" checked={useCtx} onChange={e => setUseCtx(e.target.checked)} className="accent-amber" />
             带入项目资料（世界观 / 角色卡 / 各类设定），让人名与设定对得上
           </label>
@@ -294,12 +294,12 @@ style={{ maxHeight: foldVh('26vh') }}>
           {!result && (
             <div className="flex items-center gap-2">
               <Button onClick={run}
-                disabled={loading} variant="primary" size="md" className="flex items-center text-[13px]">
+                disabled={loading} variant="primary" size="md" className="flex items-center text-13">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? (phase || '正在整理…') : '开始整理'}
               </Button>
               {loading && (
-                <Button onClick={stop} variant="secondary" size="md" className="flex items-center text-[12px]">
+                <Button onClick={stop} variant="secondary" size="md" className="flex items-center text-12">
                   <CircleStop size={12} /> 停止
                 </Button>
               )}
@@ -307,7 +307,7 @@ style={{ maxHeight: foldVh('26vh') }}>
           )}
 
           {error && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[12px] text-red-300">
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
@@ -315,7 +315,7 @@ style={{ maxHeight: foldVh('26vh') }}>
 
           {result && (
             <>
-              <div className="text-[12px] text-ink-400">
+              <div className="text-12 text-ink-400">
                 模型返回 {result.rawCount} 条
                 {result.dupSkipped > 0 && <> · 与已有条目重复已丢弃 <span className="text-amber/80">{result.dupSkipped}</span> 条</>}
                 {result.invalidSkipped > 0 && <> · 关键列缺失丢弃 {result.invalidSkipped} 条</>}
@@ -323,7 +323,7 @@ style={{ maxHeight: foldVh('26vh') }}>
               </div>
 
               {result.rows.length === 0 ? (
-                <div className="px-3 py-3 rounded-lg bg-ink-900/50 border border-ink-800 text-[12px] text-ink-400">
+                <div className="px-3 py-3 rounded-lg bg-ink-900/50 border border-ink-800 text-12 text-ink-400">
                   没有可新增的条目 —— 要么正文里的内容已经全部登记过，要么这段文本里没有可抽取的信息。
                   可以换几章正文，或改用「手动粘贴」给一段更明确的文本。
                 </div>
@@ -332,17 +332,17 @@ style={{ maxHeight: foldVh('26vh') }}>
                   <div className="flex items-center gap-2">
                     <Button variant="bare"
                       onClick={() => setChecked(new Set(result.rows.map((_, i) => i)))}
-                      className="px-2 py-1 rounded bg-ink-800 border border-ink-700 text-[11.5px] text-ink-300 hover:bg-ink-700"
+                      className="px-2 py-1 rounded bg-ink-800 border border-ink-700 text-11 text-ink-300 hover:bg-ink-700"
                     >
                       全选
                     </Button>
                     <Button variant="bare"
                       onClick={() => setChecked(new Set())}
-                      className="px-2 py-1 rounded bg-ink-800 border border-ink-700 text-[11.5px] text-ink-300 hover:bg-ink-700"
+                      className="px-2 py-1 rounded bg-ink-800 border border-ink-700 text-11 text-ink-300 hover:bg-ink-700"
                     >
                       全不选
                     </Button>
-                    <span className="text-[11.5px] text-ink-500">取消勾选即不写入；写入后仍可在表格里继续编辑。</span>
+                    <span className="text-11 text-ink-500">取消勾选即不写入；写入后仍可在表格里继续编辑。</span>
                   </div>
 
                   <div className="space-y-2 overflow-y-auto pr-1"
@@ -359,14 +359,14 @@ style={{ maxHeight: foldVh('26vh') }}>
                           {checked.has(i)
                             ? <CheckSquare size={13} className="text-amber shrink-0" />
                             : <Square size={13} className="text-ink-600 shrink-0" />}
-                          <span className="text-[12.5px] font-medium text-ink-100 truncate">
+                          <span className="text-12 font-medium text-ink-100 truncate">
                             {keyCols.map(c => row[c]).filter(Boolean).join(' — ') || '（未命名条目）'}
                           </span>
                         </div>
                         <div className="pl-5 space-y-0.5">
                           {aiCols.map(c =>
                             keyCols.includes(c.name) || !row[c.name]?.trim() ? null : (
-                              <div key={c.name} className="text-[11.5px] text-ink-400 break-words">
+                              <div key={c.name} className="text-11 text-ink-400 break-words">
                                 <span className="text-ink-500">{c.name}：</span>
                                 {row[c.name]}
                               </div>
@@ -382,7 +382,7 @@ style={{ maxHeight: foldVh('26vh') }}>
               <div className="flex items-center gap-2 pt-1">
                 {result.rows.length > 0 && (
                   <Button onClick={apply}
-                    disabled={adding || checked.size === 0} variant="primary" size="md" className="flex items-center text-[13px]">
+                    disabled={adding || checked.size === 0} variant="primary" size="md" className="flex items-center text-13">
                     {adding ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                     添加选中 {checked.size} 条
                   </Button>
@@ -390,11 +390,11 @@ style={{ maxHeight: foldVh('26vh') }}>
                 <Button
                   onClick={() => { setResult(null); setChecked(new Set()) }}
                   variant="secondary" size="md"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] hover:bg-ink-600"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-12 hover:bg-ink-600"
                 >
                   <RefreshCw size={12} /> 重新整理
                 </Button>
-                <Button variant="secondary" onClick={onClose} className="ml-auto px-3 py-2 text-[12px]">
+                <Button variant="secondary" onClick={onClose} className="ml-auto px-3 py-2 text-12">
                   取消
                 </Button>
               </div>

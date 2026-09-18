@@ -143,25 +143,25 @@ style={{ zIndex: Z.pageBase }}
           <BrandMark size={16} className="text-amber" />
         </div>
         <div className="min-w-0">
-          <div className="text-[14px] font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-[10px] font-normal text-ink-400 ml-1">{APP_VERSION_LABEL}</span></div>
-          <div className="text-[10px] text-ink-400 -mt-0.5 truncate">小说创作工作台</div>
+          <div className="text-14 font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-10 font-normal text-ink-400 ml-1">{APP_VERSION_LABEL}</span></div>
+          <div className="text-10 text-ink-400 -mt-0.5 truncate">小说创作工作台</div>
         </div>
       </div>
 
       {/* 当前项目条 */}
       <div className="px-3 py-2.5 border-b border-ink-700 shrink-0">
         <div className="rounded-lg bg-ink-800/70 border border-ink-700 px-2.5 py-2">
-          <div className="text-[9px] text-ink-500 mb-0.5">当前项目</div>
-          <div className="text-[13px] font-semibold text-amber truncate leading-tight" title={projectName}>{projectName}</div>
+          <div className="text-9 text-ink-500 mb-0.5">当前项目</div>
+          <div className="text-13 font-semibold text-amber truncate leading-tight" title={projectName}>{projectName}</div>
           <div className="flex gap-1 mt-2">
             <Button onClick={onExitProject}
               
-              title="返回项目列表" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[11px] rounded">
+              title="返回项目列表" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-11 rounded">
               <ArrowLeft size={10} /> 切换项目
             </Button>
             <Button onClick={onExport}
               
-              title="导出当前项目 JSON 备份" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-[11px] rounded">
+              title="导出当前项目 JSON 备份" variant="secondary" size="md" className="flex-1 flex items-center justify-center text-11 rounded">
               <Upload size={10} /> 备份
             </Button>
           </div>
@@ -180,7 +180,7 @@ style={{ zIndex: Z.pageBase }}
             <div key={group}>
               <Button variant="bare"
                 onClick={() => toggleGroup(group)}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] font-medium text-ink-400 hover:text-ink-200 transition-colors uppercase tracking-wider"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-12 font-medium text-ink-400 hover:text-ink-200 transition-colors uppercase tracking-wider"
               >
                 {GROUP_ICONS[group]}
                 <span>{group}</span>
@@ -210,7 +210,7 @@ style={{ zIndex: Z.pageBase }}
                           {volOpen && (
                             <div className="mt-0.5 space-y-0.5">
                               {volumeTabs.length === 0 && (
-                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left text-[12px] flex items-center">
+                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left text-12 flex items-center">
                                   <FolderPlus size={11} /> 新建第一卷
                                 </Button>
                               )}
@@ -218,7 +218,7 @@ style={{ zIndex: Z.pageBase }}
                                 <div key={v.id} className="group flex items-center gap-0.5">
                                   <Button variant="bare"
                                     onClick={() => onNavigate(v.id)}
-                                    className={`flex-1 text-left !justify-start px-2.5 py-1 pl-12 rounded-md text-[13px] transition-all duration-150
+                                    className={`flex-1 text-left !justify-start px-2.5 py-1 pl-12 rounded-md text-13 transition-all duration-150
                                       ${v.id === activeTab
                                         ? 'bg-amber/10 text-amber font-medium border border-amber/25'
                                         : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
@@ -235,7 +235,7 @@ style={{ zIndex: Z.pageBase }}
                                 </div>
                               ))}
                               {volumeTabs.length > 0 && (
-                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left text-[12px] flex items-center">
+                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left text-12 flex items-center">
                                   <FolderPlus size={11} /> 新建卷
                                 </Button>
                               )}

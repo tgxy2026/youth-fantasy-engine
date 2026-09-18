@@ -83,7 +83,7 @@ export default function InterviewChat({
       open onClose={onClose} title={`对话引导 · 创建${subject}`} width="xl"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
-          <span className="text-[11px] text-ink-500">
+          <span className="text-11 text-ink-500">
             {progress.got === 0
               ? '还没聊出内容 —— 先回答 AI 的问题'
               : `已收集 ${progress.got} / ${progress.total} 栏${state.done ? ' · AI 认为可以收尾了' : ''}`}
@@ -110,25 +110,25 @@ export default function InterviewChat({
         <div className="flex h-[26rem] min-h-0 flex-col">
           <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md border border-ink-800 bg-ink-900/40 p-3">
             {state.turns.length === 0 && (
-              <p className="text-[12px] text-ink-500">
+              <p className="text-12 text-ink-500">
                 {busy ? 'AI 正在想第一个问题…' : '准备开始。'}
                 {existing?.trim() && <span className="block mt-1">（会把已有内容当起点，只追问缺口）</span>}
               </p>
             )}
             {state.turns.map((t, i) => (
               <div key={i} className={`flex ${t.role === 'user' ? 'justify-end' : ''}`}>
-                <div className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-[12.5px] leading-relaxed ${t.role === 'user'
+                <div className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-12 leading-relaxed ${t.role === 'user'
                   ? 'bg-amber/12 border border-amber/25 text-ink-100'
                   : 'bg-ink-850 border border-ink-800 text-ink-200'}`}>
                   {t.text}
                 </div>
               </div>
             ))}
-            {busy && <p className="text-[11px] text-ink-500">正在想下一个问题…</p>}
+            {busy && <p className="text-11 text-ink-500">正在想下一个问题…</p>}
           </div>
 
           {err && (
-            <p className="mt-1.5 text-[11px] leading-relaxed text-amber">⚠️ {err}</p>
+            <p className="mt-1.5 text-11 leading-relaxed text-amber">⚠️ {err}</p>
           )}
 
           <div className="mt-2 flex items-end gap-2">
@@ -145,7 +145,7 @@ export default function InterviewChat({
               }}
               rows={2}
               placeholder="回答上面的问题（Enter 发送，Shift+Enter 换行）—— 答得越具体，结果越贴近你想的样子。"
-              className="min-h-0 flex-1 resize-none rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-[12.5px] text-ink-100 outline-none focus:border-amber/50"
+              className="min-h-0 flex-1 resize-none rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
             />
             <Button
               variant="primary" size="md" className="shrink-0"
@@ -159,13 +159,13 @@ export default function InterviewChat({
 
         {/* 右：已收集的栏（随时核对，别等生成完才发现记错了） */}
         <aside className="space-y-2">
-          <div className="rounded-md border border-ink-700 px-2 py-1.5 text-[11.5px] text-ink-300">
+          <div className="rounded-md border border-ink-700 px-2 py-1.5 text-11 text-ink-300">
             已收集 {progress.got} / {progress.total} 栏
           </div>
-          <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-2 text-[10.5px] leading-relaxed text-ink-400">
+          <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
             {filledRows.length ? filledToText(state.filled, spec.labels) : '（还没有内容）'}
           </pre>
-          <p className="text-[10.5px] leading-relaxed text-ink-600">
+          <p className="text-10 leading-relaxed text-ink-600">
             这些是 AI 从对话里顺手提炼的，可能记错 —— 生成后到表单里逐栏核对。
             聊不完也可以随时「{applyLabel}」，剩下的栏之后自己补（或再开一次引导继续）。
           </p>

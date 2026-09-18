@@ -24,10 +24,10 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 // 否则「SIZE 的 rounded-lg」与「shape 的 rounded-full」会同时出现在 class 里，
 // 谁生效取决于 Tailwind 的生成顺序，结果不可控 —— 实测 pill 形会被 rounded-lg 顶掉。
 const SIZE: Record<Size, string> = {
-  xs: 'h-6 px-2 text-[11px]',
-  sm: 'h-8 px-3 text-[12px]',
-  md: 'h-9 px-4 text-[13px]',
-  lg: 'h-10 px-5 text-[14px]',
+  xs: 'h-6 px-2 text-11',
+  sm: 'h-8 px-3 text-12',
+  md: 'h-9 px-4 text-13',
+  lg: 'h-10 px-5 text-14',
 }
 // 图标专用：去掉横向 padding，定宽定高
 const ICON_SIZE: Record<Size, string> = {
@@ -113,7 +113,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   // v2.0 按钮统一化：bare / toggle / icon-* 原先不套尺寸基线，导致大量按钮高度靠内容撑开、
   // 与标准按钮并排时高低不齐。现在统一走 size 体系：
   //   · icon-amber / icon-danger / icon-muted → 定宽定高图标键（默认 h-8 w-8 rounded-lg）
-  //   · toggle → 标准文字按钮基线（默认 h-8 px-3 text-[12px] rounded-lg）
+  //   · toggle → 标准文字按钮基线（默认 h-8 px-3 text-12 rounded-lg）
   //   · bare 用途驳杂（从大卡片到菜单项），一刀切加固定高度会撑坏卡片类布局，故仅保留无尺寸；
   //     纯图标的 bare 按钮请传 iconOnly，即可自动套 ICON_SIZE
   //   · toggle-text 为纯文字/图标选中态（页签、侧栏），不套尺寸以免破坏既有排版

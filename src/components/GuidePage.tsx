@@ -56,7 +56,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
       <section className="mb-6 bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
         <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <ListOrdered size={14} className="text-amber" />
-          <h2 className="text-[13px] font-semibold text-ink-100">推荐填写顺序</h2>
+          <h2 className="text-13 font-semibold text-ink-100">推荐填写顺序</h2>
           <HelpPopover title="推荐填写顺序" width="21rem" className="ml-auto">
             {'这是"从零开书"的标准路径：\n\n1-3 先定位与世界底层（赛道/读者/卖点、世界法则、力量体系）；\n4-5 立住主角与核心配角；\n6 用倒推法把历史事件从结局倒推回开篇；\n7-8 写全书总纲与分卷规划；\n9-10 落到章节总表与章节细纲，然后就可以动笔了。\n\n不必一次填满：每卷开写前补一轮，写完一卷回看修订一轮。'}
           </HelpPopover>
@@ -68,15 +68,15 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
               if (!tab || !tabVisible(tab.id, ctx)) return null
               return (
                 <div key={id} className="flex items-center gap-1.5">
-                  <Button variant="secondary" onClick={() => onNavigate(id)} className="px-3 py-1.5 rounded-lg text-[12px] hover:border-amber/50 hover:text-amber transition-colors">
+                  <Button variant="secondary" onClick={() => onNavigate(id)} className="px-3 py-1.5 rounded-lg text-12 hover:border-amber/50 hover:text-amber transition-colors">
                     {i + 1}. {tab.name}
                   </Button>
-                  {i < FILL_ORDER.length - 1 && <span className="text-ink-600 text-[10px]">→</span>}
+                  {i < FILL_ORDER.length - 1 && <span className="text-ink-600 text-10">→</span>}
                 </div>
               )
             })}
           </div>
-          <p className="mt-3 text-[11px] text-ink-400">历史事件用倒推法（从大结局倒推到开篇）；写作期间持续维护伏笔、时间脉络与设定变更。</p>
+          <p className="mt-3 text-11 text-ink-400">历史事件用倒推法（从大结局倒推到开篇）；写作期间持续维护伏笔、时间脉络与设定变更。</p>
         </div>
       </section>
 
@@ -84,7 +84,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
       <section className="mb-6 bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
         <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <BookOpen size={14} className="text-amber" />
-          <h2 className="text-[13px] font-semibold text-ink-100">全部功能页签</h2>
+          <h2 className="text-13 font-semibold text-ink-100">全部功能页签</h2>
           <HelpPopover title="全部功能页签" width="21rem" className="ml-auto">
             {'软件里每个页签的职责一览，点任意条目直接跳转。\n\n· 表单型页签（作品定位、世界设定、全书总纲…）：一栏一栏填，Ctrl+S 保存；\n· 表格型页签（伏笔、时间脉络、爽点、设定变更…）：一行一条记录，随写随登记；\n· 卡片型页签（角色卡、分卷大纲、章节细纲）：一张卡一个对象，左侧目录切换；\n· 正文编辑：真正码字的地方，左侧带设定检索栏可边写边查；\n· 颉文姬 · AI 编辑：右下角的 Q 版精灵（或编辑器工具栏魔杖图标）——诊室（深度校对 / 综合诊断）、编辑（选区润色改稿）、审读（六维打分 / OOC / 爽点毒点 / 黄金三章）、简报（开写前的本章写作简报）、补登（抽出本章新设定，一键登记进设定表或角色卡），未配置模型时本地功能照常。\n· 自定义项目：本页列出全部页签，未启用的功能以灰色显示且不可跳转；要启用请回到项目管理页编辑项目功能清单。'}
           </HelpPopover>
@@ -102,8 +102,8 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
               <div key={group}>
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <span className="w-1 h-3 rounded-full bg-amber/70" />
-                  <span className="text-[12px] font-semibold text-ink-200">{group}</span>
-                  <span className="text-[10px] text-ink-600">{items.length} 项</span>
+                  <span className="text-12 font-semibold text-ink-200">{group}</span>
+                  <span className="text-10 text-ink-600">{items.length} 项</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-x-6 gap-y-1">
                   {items.map(item => {
@@ -116,10 +116,10 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
                         className={`group flex-col items-stretch w-full text-left py-2 border-b border-ink-700/50 transition-colors ${enabled ? 'hover:border-amber/30 cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}
                       >
                         <div className="flex items-center gap-2">
-                          <span className={`flex-1 min-w-0 text-[13px] font-medium transition-colors ${enabled ? 'text-ink-100 group-hover:text-amber' : 'text-ink-500'}`}>{item.name}</span>
-                          {!enabled && <span className="shrink-0 text-[9px] px-1 py-0.5 rounded bg-ink-700 text-ink-400">未启用</span>}
+                          <span className={`flex-1 min-w-0 text-13 font-medium transition-colors ${enabled ? 'text-ink-100 group-hover:text-amber' : 'text-ink-500'}`}>{item.name}</span>
+                          {!enabled && <span className="shrink-0 text-9 px-1 py-0.5 rounded bg-ink-700 text-ink-400">未启用</span>}
                         </div>
-                        <div className={`text-[11px] mt-0.5 line-clamp-1 ${enabled ? 'text-ink-400' : 'text-ink-600'}`}>{item.description}</div>
+                        <div className={`text-11 mt-0.5 line-clamp-1 ${enabled ? 'text-ink-400' : 'text-ink-600'}`}>{item.description}</div>
                       </Button>
                     )
                   })}
@@ -133,7 +133,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
       <section className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
         <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <Lightbulb size={14} className="text-amber" />
-          <h2 className="text-[13px] font-semibold text-ink-100">核心创作方法论</h2>
+          <h2 className="text-13 font-semibold text-ink-100">核心创作方法论</h2>
           <HelpPopover title="核心创作方法论" width="21rem" className="ml-auto">
             {'12 条从网文实战里提炼的规则，对应软件里的具体动作：\n\n· 开书前：先定位 → 再总纲 → 再世界观三层填法；\n· 连载中：随写随登记（新设定当天回表）、每章结尾留钩子、伏笔写清前置条件；\n· 改设定：必须先过「设定变更」，冲突未处理前不要发布后续章节。\n\n卡文时优先翻「灵感素材」而不是硬编。'}
           </HelpPopover>
@@ -141,8 +141,8 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
           {TIPS.map(tip => (
             <div key={tip.title} className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-4 py-3">
-              <div className="text-[12px] font-semibold text-amber/90">{tip.title}</div>
-              <div className="text-[11px] text-ink-300 leading-relaxed mt-1">{tip.body}</div>
+              <div className="text-12 font-semibold text-amber/90">{tip.title}</div>
+              <div className="text-11 text-ink-300 leading-relaxed mt-1">{tip.body}</div>
             </div>
           ))}
         </div>

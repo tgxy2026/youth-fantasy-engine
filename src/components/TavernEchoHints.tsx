@@ -39,8 +39,8 @@ export default function TavernEchoHints({ className = '' }: { className?: string
   return (
     <div className={`rounded-lg border border-ink-800 bg-ink-850/40 px-3 py-2.5 ${className}`}>
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="text-[12px] font-semibold text-ink-200">想指挥 Ta？在对话框里这么写就行</span>
-        <span className="text-[10.5px] text-ink-500">这三种写法是仅有的「出戏」入口，示例可直接复制</span>
+        <span className="text-12 font-semibold text-ink-200">想指挥 Ta？在对话框里这么写就行</span>
+        <span className="text-10 text-ink-500">这三种写法是仅有的「出戏」入口，示例可直接复制</span>
       </div>
 
       <ul className="mt-2 space-y-1.5">
@@ -56,14 +56,14 @@ export default function TavernEchoHints({ className = '' }: { className?: string
             >
               复制
             </Button>
-            <code className="rounded bg-ink-900 px-1.5 py-0.5 text-[11.5px] text-amber/90">{c.sample}</code>
-            <span className="shrink-0 text-[11px] text-ink-300">{c.name}</span>
-            <span className="text-[11px] text-ink-500">{c.note}</span>
+            <code className="rounded bg-ink-900 px-1.5 py-0.5 text-11 text-amber/90">{c.sample}</code>
+            <span className="shrink-0 text-11 text-ink-300">{c.name}</span>
+            <span className="text-11 text-ink-500">{c.note}</span>
           </li>
         ))}
       </ul>
 
-      <p className="mt-2 text-[10.5px] leading-relaxed text-ink-500">
+      <p className="mt-2 text-10 leading-relaxed text-ink-500">
         除这三种写法之外，你打出去的一切都算「你的角色说过或做过的事」，会实实在在地写进剧情。
         「」里的话不限说法 —— 想让它怎么演，就怎么写。
       </p>
