@@ -95,6 +95,34 @@ export function formFieldNames(tabId: string): Set<string> {
 }
 
 /**
+ * 把模型给的「页签 → 模块 → 字段」压平成「字段名 → 值」。
+ *
+ * 🔴 为什么必须容这两层（2026-09-18 实机抓到的真问题）：
+ *   提示词里字段清单是按「页签 〖〗 → 模块 → 字段」三层给的（那是最贴近作者填表习惯的读法），
+ *   模型于是**照着这个层级输出**：
+ *     {"世界设定":{"一、世界总览":{"世界名称":"苍澜大陆"}}}
+ *   而原来的实现只认两层（`页签 → 字段`）—— 拿 `bag['世界名称']` 取到的是 undefined，
+ *   结果**5 张表全部被静默丢弃**，界面只显示"没汇总出可用的全书级设定"。
+ *   产出本身完全正确，错的是我们读它的方式。
+ * 所以这里兼容：值是对象 → 当它是一层模块继续摊；值是标量 → 直接取。
+ */
+function flattenFormBag(bag: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(bag)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const [k2, v2] of Object.entries(v as Record<string, unknown>)) {
+        const t = asText(v2).trim()
+        if (t) out[k2] = t
+      }
+    } else {
+      const t = asText(v).trim()
+      if (t) out[k] = t
+    }
+  }
+  return out
+}
+
+/**
  * 模型产出 → 草稿行（**每张表单一行**，一整份设定就是一行）。
  *
  * @param values 顶层键＝页签名（`世界设定`）或页签 id（`worldbase`），值＝`{ 字段名: 内容 }`。
@@ -102,7 +130,7 @@ export function formFieldNames(tabId: string): Set<string> {
  * @returns 只包含**真填到了内容**的页签；一个字段都没填的页签不产出空行（免得界面出现一行空的"世界设定"）
  */
 export function formDraftRows(
-  values: Record<string, Record<string, string>>,
+  values: Record<string, Record<string, unknown>>,
   tabIds: readonly string[] = summaryFormTabs(),
 ): DraftRow[] {
   const rows: DraftRow[] = []
@@ -111,13 +139,15 @@ export function formDraftRows(
     if (tab?.type !== 'form' || !tab.modules) continue
     const bag = values[tab.name] ?? values[tabId]
     if (!bag || typeof bag !== 'object') continue
+    // 模型可能按「页签 → 模块 → 字段」输出（提示词就是那么给的），先压平成「字段 → 值」
+    const flat = flattenFormBag(bag)
     const allowed = formFieldNames(tabId)
     const fields: DraftField[] = []
     // 按 schema 顺序遍历（而不是遍历模型给的键）→ 行内字段顺序稳定，落库顺序也稳定
     for (const m of tab.modules) {
       for (const f of m.fields) {
         if (!allowed.has(f.name)) continue
-        const v = asText(bag[f.name]).trim()
+        const v = flat[f.name] ?? ''
         if (!v) continue
         fields.push({ key: `${m.name}::${f.name}`, label: f.name, value: v })
       }

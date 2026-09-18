@@ -70,6 +70,32 @@ const FORM_TABS = TABS.filter(t => t.type === 'form')
     formDraftRows({ 主要角色: { 姓名: '陈渊' } }).length === 0)
 }
 
+// ---------- ②b 🔴 模型按「页签 → 模块 → 字段」三层输出（实机就是这个形态） ----------
+// 2026-09-18 实机抓到：提示词里的字段清单按「页签〖〗→ 模块 → 字段」给，模型于是照着这个层级输出，
+// 而原实现只认两层（页签 → 字段）→ **5 张表全部被静默丢弃**，界面只显示"没汇总出可用的全书级设定"。
+// 产出本身完全正确，错的是我们读它的方式。
+{
+  const real = {
+    作品定位: { '一、基本信息': { 类型赛道: '东方玄幻' } },
+    世界设定: { '一、世界总览': { 世界名称: '苍澜大陆', 世界体量与格局: '东洲·云州' } },
+    力量体系: { '一、体系总览': { 体系类型: '修炼流' }, '二、修炼路径与资源': { 修炼资源体系: '青玉丹' } },
+  }
+  const rows = formDraftRows(real)
+  ok('🔴 三层结构也能读出草稿行', rows.length === 3, `${rows.length}：${rows.map(r => r.tabId).join(',')}`)
+  const world = rows.find(r => r.tabId === 'worldbase')
+  ok('  字段值正确取出', world?.fields.map(f => f.label).join(',') === '世界名称,世界体量与格局',
+    JSON.stringify(world?.fields.map(f => f.label)))
+  ok('  落库键仍按 `模块::字段` 组装', world?.fields[0].key === '一、世界总览::世界名称', world?.fields[0].key)
+  ok('  同一张表跨模块的字段都收齐（力量体系 2 个模块 2 字段）',
+    rows.find(r => r.tabId === 'power')?.fields.length === 2,
+    JSON.stringify(rows.find(r => r.tabId === 'power')?.fields.map(f => f.label)))
+  ok('两层与三层混用也不出错（模型两种都可能给）',
+    formDraftRows({ 世界设定: { 世界名称: '甲' }, 力量体系: { '一、体系总览': { 体系名称: '乙' } } }).length === 2)
+  ok('三层里的幽灵字段照样被挡',
+    formDraftRows({ 世界设定: { '一、世界总览': { 世界名称: '甲', 瞎写: 'x' } } })[0].fields.length === 1,
+    JSON.stringify(formDraftRows({ 世界设定: { '一、世界总览': { 世界名称: '甲', 瞎写: 'x' } } })[0].fields.map(f => f.label)))
+}
+
 // ---------- ③ 表单写入通道 ----------
 {
   const rows = () => formDraftRows({ 世界设定: { 世界名称: '苍澜大陆', 一句话世界观: '神族封仙路' } })

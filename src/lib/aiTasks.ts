@@ -1979,16 +1979,17 @@ const formSummarySys = () => `你是长篇小说的**设定资料整理员**。�
  * 实测本地 27B 会在长输出里**截断**（JSON 少收尾括号）。同 prompt 重发会断在同一处，
  * 所以第二次点明"上次被截断，请更精炼"（配合 `parseTruncatedJson` 兜底一手）。
  *
- * @returns 顶层键＝页签名或 id，值＝`{ 字段名: 内容 }`；交给 `flow/formMap.formDraftRows` 转成草稿行
+ * @returns 顶层键＝页签名或 id；值**原样保留模型给的结构**（可能是 `{字段:内容}`，
+ *          也可能是 `{模块:{字段:内容}}`）—— 摊平与字段校验统一由 `flow/formMap.formDraftRows` 做
  */
 export async function aiSummarizeFormSettings(
   material: string,
   opts: { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void } = {},
-): Promise<Record<string, Record<string, string>>> {
+): Promise<Record<string, Record<string, unknown>>> {
   const cfg = await requireActiveProvider()
   const tabIds = summaryFormTabs()
   const fieldList = formFieldsPrompt(tabIds)
-  const askOnce = async (tighten = false): Promise<Record<string, Record<string, string>>> => {
+  const askOnce = async (tighten = false): Promise<Record<string, Record<string, unknown>>> => {
     const text = await chat(
       cfg,
       [
@@ -1999,15 +2000,15 @@ export async function aiSummarizeFormSettings(
     )
     opts.onRaw?.(text)
     const obj = parseLooseObject(text) ?? {}
-    // 只收「值确实是对象」的页签 —— 字段名的合法性由 formDraftRows 再过滤一道（防幽灵字段）
-    const out: Record<string, Record<string, string>> = {}
+    // 只收「值确实是对象」的页签。
+    // 🔴 **这里不做摊平、也不做值过滤**：模型是按提示词的层级输出的 ——「页签 → 模块 → 字段」，
+    //    在这一层拍平成两层会把嵌套对象当成空值**全部丢掉**（2026-09-18 实测：5 张表全丢，
+    //    界面只显示"没汇总出可用的全书级设定"，而模型产出的内容其实完全正确）。
+    //    结构兼容交给 `flow/formMap.formDraftRows`（它知道 schema，也知道该怎么摊）。
+    const out: Record<string, Record<string, unknown>> = {}
     for (const [tabName, v] of Object.entries(obj)) {
       if (!v || typeof v !== 'object' || Array.isArray(v)) continue
-      const bag: Record<string, string> = {}
-      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-        const t = asText(val).trim()
-        if (t) bag[k] = t
-      }
+      const bag = v as Record<string, unknown>
       if (Object.keys(bag).length) out[tabName] = bag
     }
     return out
