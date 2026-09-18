@@ -41,7 +41,7 @@
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 会回退黑）。设置项＝标题→输入→说明；复制走 `copyText()`。
 - 🔴🔴 `<html>` 界面缩放（默认跟随窗口）：①量尺寸一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`；②zoom 不缩放 vh→内联长度走 `foldVh()`（`theme.ts`）；③SVG 滚轮锚点/拖拽除 zoom。
-- 🔴 **光标/选区同步不能只靠 `onKeyUp`**：**输入法上屏、粘贴、程序化插入都不产生 keyup** → 会拿到过期 selectionStart。有 `onChange` 就在里面同步一次。
+- 🔴 **光标/选区同步不能只靠 `onKeyUp`**（输入法上屏 / 粘贴 / 程序化插入都不产生 keyup）→ 有 `onChange` 就在里面同步一次。
 - 🔴 判"琥珀开启态"按 class **词元**比（`c.split(/\s+/).includes('text-amber')`）：off 态写着 `hover:text-amber`，`includes` 恒真 → 假 PASS。
 - 🔴 按对侧高度定高：flex item `min-height:auto` 顶回定高→加 `overflow-hidden`；别同写 `flex-1`+`height`。
 - 🔴 按钮：静止无框用 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；行内小操作 `size="xs"`；`danger` 破坏性。
@@ -49,7 +49,7 @@
 
 ## AI 层
 - 🔴 **提示词给几层，模型就按几层输出** —— 汇总表单时字段清单按「页签→模块→字段」给，模型照此嵌套；读取端只按两层取值会把**整表静默丢光**（09-18 实测 5 张表全丢，模型产出其实完全正确）。读模型产出必须兼容**自己给的**层级。
-- 🔴 **「保密等级」＝档位＋行级预算排序**：单字段双输出**不并存**（S＝角色视角排除＋P0；A/B/C＝P1/2/3）。`aiContext.ts` `rankOf`/`sortBySecrecy`→排序后 `slice(0,cap)`；🔴 同级稳定（护 prefix cache）。🔴🔴 **`rankOf` 必须同时认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::保密等级`）——只认裸键让**角色卡排序静默失效**。详见 `docs/AI上下文-*.md`。
+- 🔴 **「保密等级」＝档位＋行级预算排序**：单字段双输出**不并存**。`aiContext.ts` `rankOf`/`sortBySecrecy`→排序后 `slice(0,cap)`；🔴 同级稳定（护 prefix cache）。🔴🔴 **`rankOf` 必须同时认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::保密等级`）——只认裸键让**角色卡排序静默失效**。详见 `docs/AI上下文-*.md`。
 - 🔴 **本地预算上限＝32K**（KV cache 32K=8.7GB≈塞满；有效上下文仅标称 30~65%）。详见 `docs/AI上下文预算策略-….md`。
 - 🔴 **防剧透＝四道闸（`aiContext`，调用方传参）**：① `viewMode:'character-view'` 排 10 张作者侧页签 ② `AUTHOR_SIDE_FIELDS`（**新字段须登记**）不渲染 ③ `anchorChapterId` 只到锚点 ④ `knowerName` 过滤 secrets 知情条目。**只覆盖剧情推演**；其余 AI 功能拿全量。
 - 🔴 **新增资料型页签必须登记 `PRIORITY`**——兜底循环只保证"数据不丢"、不保证"进得了预算"（09-17：`faction-rels` 有数据却带不上；`style` 已前移）。
@@ -59,7 +59,7 @@
 - 🔴 采样惩罚看**射程**不看强度（共用 `penalty_last_n` 窗口）。`repeat_last_n` 512＋`frequency_penalty` 0.1 → 手部率 28.9%→13.4%。🔴🔴 **绝不调高 `repeat_penalty`**（1.4 实测崩）；`presence_penalty` 无效；反重复提示词只钉 system 末尾。
 - 🔴 **额度跟模型走**：`adviseCapacity()`→`recommendTuning()`（硬×12.5%、软×8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`syncTuningWithModel()` 换模型即套用，🔴🔴 靠**模型指纹**（同模型手调值绝不覆盖）；本地**超窗口保护**（预算>`numCtx×0.732`）。🔴🔴 **记忆档跟「预算」走**；`TUNING_LIMITS` 与 `paramGuide` 同源（锁）。
 - 🔴🔴 **思考模型必须关思考**：本地传 `think:false`；**云端 Qwen3 系由 `openaiChat` 自动下发 `enable_thinking:false`**（`HYBRID_THINKING_RE`；400 退掉重试）。实测：开 50~130s、content 271 字必残；关 35s ✅。
-- 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式响应头要等**整段生成完**才回来 → 必撞 180s 墙。🔴 自己驱动 `runAutoContinue` 必传 **`onBodyToken`**（＝流式开关；不传必被掐死）；先 `ai.chat` 预热；别 `await page.evaluate(整流程)`（改点火＋轮询 `window.__gen`）。⚠️ 生成入口无 `max_tokens` 上限。
+- 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式要等整段生成完才回首字节 → 必撞 180s 墙。🔴 自驱 `runAutoContinue` 必传 **`onBodyToken`**（＝流式开关）；先 `ai.chat` 预热；别 `await page.evaluate(整流程)`（改点火＋轮询 `window.__gen`）。⚠️ 生成入口无 `max_tokens`。
 - 🔴 **AI「会读哪些数据」＝ `lib/aiDataSources.ts` 单一源**＋`AIDataSourceNote` 进各功能气泡；改 prompt 来源**必须同步改它**（闸 `tests/aiDataSources.test.ts`）。🔴🔴 **禁写「全程本地模型／不外发」**——这些功能都能选云端模型，那是**误导性声明**；口径只能是「发给**当前选定的**那个模型：本地不出本机，云端会上传到该服务商」。
 - 🔴 本地实弹探针：改口径走 `LR_ANALYZE=<json>` 离线重算（别重跑 GPU）；CUDA 固定 seed **不保证逐位复现**（±4pp）。
 
