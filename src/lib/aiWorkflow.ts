@@ -195,7 +195,16 @@ export async function runCreativeWriting(
 
   flow.on('bible', async ctx => {
     ctx.report(0.15, '生成设定草稿…')
-    const entities = await aiGenerateBible(seed, { signal: ctx.signal })
+    // 收字回调：一来给作者"正在生成"的实时反馈，二来它同时就是**流式开关**
+    // （不传的话非流式请求会撞 180s 总超时墙，见 aiTasks 的 longStream 注释）
+    let got = 0
+    const entities = await aiGenerateBible(seed, {
+      signal: ctx.signal,
+      onToken: d => {
+        got += d.length
+        if (got % 400 < d.length) ctx.report(0.5, `生成设定草稿… 已收到 ${got} 字`)
+      },
+    })
     if (!entities.length) {
       throw new Error('模型没有产出任何设定 —— 请把想法写得更具体些（题材 / 主角 / 核心冲突）')
     }
@@ -218,10 +227,15 @@ export async function runCreativeWriting(
       .then(r => r.text)
       .catch(() => '')
     ctx.report(0.45, '生成分卷大纲…')
+    let got = 0
     const outline = await aiGenerateOutline(digest, {
       signal: ctx.signal,
       ...(opts.volumes !== undefined ? { volumes: opts.volumes } : {}),
       ...(opts.chapters !== undefined ? { chapters: opts.chapters } : {}),
+      onToken: d => {
+        got += d.length
+        if (got % 400 < d.length) ctx.report(0.7, `生成分卷大纲… 已收到 ${got} 字`)
+      },
     })
     if (!outline.chapters.length) throw new Error('模型没有产出章节细纲，请重试或换一个更大的模型')
     ctx.report(1, `${outline.volumes.length} 卷 / ${outline.chapters.length} 章，等待确认…`)

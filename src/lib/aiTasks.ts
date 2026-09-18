@@ -298,7 +298,7 @@ ${authorBlock(newAuthorFence(), chunk)}
           { role: 'system', content: composeSystemPrompt(PROOFREAD_SYS, cfg) },
           { role: 'user', content: user },
         ],
-        { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: opts.onToken, json: true },
+        { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
       )
     } catch (e) {
       if (isCancelled(e)) break
@@ -1600,6 +1600,17 @@ export function collectBibleEntities(obj: Record<string, unknown>, c: BibleCount
 }
 
 /**
+ * 长文生成一律走**流式**（调用方不需要逐字展示时也给个空回调）。
+ *
+ * 🔴 非流式请求的响应头要等**整段生成完**才回来，于是必然撞上 `CHAT_TIMEOUT_MS`（180s）的总超时；
+ *    而流式只要首字节到达就清掉那个定时器（见 `fetchWithTimeout` 的 `onResponse`）。
+ *    实测：Bible 一次要产 28 条（2+4+4+4+5+6+3），云端模型超过 180s → 被掐死；
+ *    表现为「闸门① 永远不出现」，且外层还会再重试一次 → 白等 6 分钟。
+ *    这与 `runAutoContinue` 必须传 `onBodyToken` 是同一类问题。
+ */
+const longStream = (onToken?: (d: string) => void) => onToken ?? (() => {})
+
+/**
  * 创意写作①：**设定奠基** —— 一句话想法 → 设定草稿（条目型）。
  * 产出交「闸门①」审阅（复用 `DraftReviewPanel`），用户勾选后才落库。
  *
@@ -1619,7 +1630,7 @@ export async function aiGenerateBible(
         { role: 'system', content: composeSystemPrompt(bibleSys(counts), cfg) },
         { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。` },
       ],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: opts.onToken, json: true },
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
     )
     opts.onRaw?.(text)
     // 🔴 宽松解析：小模型常在 JSON **结构位**塞杂散字符（实测 qwen3:4b 会插「、」甚至孤立引号），
@@ -1714,7 +1725,7 @@ export async function aiGenerateOutline(
         { role: 'system', content: composeSystemPrompt(outlineSys(volCount, chCount), cfg) },
         { role: 'user', content: `【设定资料】\n${bibleDigest.trim() || '（无，请按题材自行克制地设定）'}\n\n请产出分卷大纲与逐章细纲。` },
       ],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: opts.onToken, json: true },
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
     )
     opts.onRaw?.(text)
     // 同 aiGenerateBible：宽松解析 + 顶层键中英双认（只认英文键会表现为"生成成功但 0 章"）

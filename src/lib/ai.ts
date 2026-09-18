@@ -296,6 +296,10 @@ export interface ChatOptions {
    * ⚠️ 例外二：AI 伴写（aiTasks.aiInlineSuggest）同样**有意**关闭 —— 它只续写一句话、要求「停笔即出」，
    *    思考链既把延迟从 1~3s 拖到十几秒（ghost 体验直接崩），又可能经 ollamaChatRaw 的
    *    「content 为空则退用 thinking」兜底被当成续写内容透出来。它要的是顺手接一句，不是推理。
+   * ⚠️ 例外三：**云端 OpenAI 兼容通道 + 混合思考模型（Qwen3 系）由 `openaiChat` 自动关思考**
+   *    —— 同上，不是偏好而是可用性：那边思考不进 `content` 且吃光输出预算，
+   *    开着等于让所有 AI 功能静默失败。实测数据见 `HYBRID_THINKING_RE` 上方注释。
+   *    这条**别按上面那句「切勿全局关闭」去改回来** —— 它只作用于云端 Qwen3，不碰本地。
    */
   think?: boolean
   /** 外部取消信号（对话面板的「停止」按钮） */
@@ -460,6 +464,23 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
  */
 export const OPENAI_SAFE_SAMPLING = ['top_p', 'presence_penalty', 'frequency_penalty'] as const
 
+/**
+ * 「混合思考」模型（Qwen3 系）在 OpenAI 兼容端点上的关思考字段。
+ *
+ * 🔴 为什么必须处理（2026-09-18 对照实验，硅基流动 `Qwen/Qwen3.5-35B-A3B`，同一 prompt 连跑）：
+ *    · 思考**开**：50.5s，thinking 12687 字，**content 只剩 271 字且被截断** → JSON 必残
+ *      （另一次更极端：216.8s、content 0 字、completion_tokens 0）
+ *    · 思考**关**：14.9s，content 3298 字，JSON 直接可解析
+ *    即：思考**吃光输出预算**、且思考内容不进 `delta.content`。表现出来就是
+ *    「AI 生成静默失败 / 极慢 / 结构残缺」，极难排查 —— 所以这里不是偏好，是可用性问题。
+ *
+ * 只在**非本地**且模型名匹配时下发：
+ *   · 本地 Ollama 走的是 `think` 字段，且项目**刻意保留思考**（利于深度设定补全），不在此处干预；
+ *   · 其它云端端点不认这个字段，乱发会 400 —— 故另有「400 就退回重试」的兜底。
+ * 调用方仍可用 `think:true` 显式要求保留思考（逃生口）。
+ */
+const HYBRID_THINKING_RE = /(^|[/_\-. ])(qwen3|qwen-3|qwq)/i
+
 function openaiSampling(o: CallOpts): Record<string, number> {
   const src = o.extraOptions
   if (!src) return {}
@@ -478,25 +499,35 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
   if (!config.model) throw new Error('未填写模型名称。')
   let res: Response
   let clearTimer: (() => void) | null = null
-  try {
-    res = await fetchWithTimeout(
-      `${base}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-        },
-        body: JSON.stringify({
-          model: config.model, messages, temperature: o.temperature,
-          ...openaiSampling(o),
-          stream: !!o.onToken,
-        }),
+  // 云端 Qwen3 系：思考开着就拿不到 content，等于静默废掉所有 AI 功能 —— 默认关掉（`think:true` 可显式保留）
+  const thinkToggle = !config.local && o.think !== true && HYBRID_THINKING_RE.test(config.model)
+  const doFetch = (withToggle: boolean) => fetchWithTimeout(
+    `${base}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       },
-      timeoutMs,
-      o.signal,
-      o.onToken ? (ct) => { clearTimer = ct } : undefined,
-    )
+      body: JSON.stringify({
+        model: config.model, messages, temperature: o.temperature,
+        ...openaiSampling(o),
+        stream: !!o.onToken,
+        ...(withToggle ? { enable_thinking: false } : {}),
+      }),
+    },
+    timeoutMs,
+    o.signal,
+    o.onToken ? (ct) => { clearTimer = ct } : undefined,
+  )
+  try {
+    res = await doFetch(thinkToggle)
+    // 该端点不认 enable_thinking（返回 400）→ 丢掉这个字段重试一次。
+    // 宁可少一个优化，也绝不因为多发一个字段把功能弄坏。
+    if (res.status === 400 && thinkToggle) {
+      await res.text().catch(() => '')
+      res = await doFetch(false)
+    }
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒），请检查网络或稍后重试。`)
