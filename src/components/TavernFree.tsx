@@ -23,6 +23,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import TavernEchoHints from './TavernEchoHints'
 import { ChevronDown, Pencil } from 'lucide-react'
 import { showToast, confirmDialog } from './dialogs'
@@ -1217,6 +1218,7 @@ export default function TavernFree() {
   • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它只在点「结束本轮对话」时才整理，
     所以聊天过程中不会被整理任务卡住；整理好的记忆与日记在「角色卡片」页里看。
   • 想给这一场一个具体处境，就在新建对话时选一份剧本（「故事剧本」里写，要先有故事）。
+  <AIDataSourceNote feature="tavern-free" />
 </HelpPopover>
         {session && <span className="max-w-[28rem] truncate text-[12px] text-ink-400" title={session.title}>{session.title}</span>}
         <div className="flex-1" />

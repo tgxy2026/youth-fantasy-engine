@@ -8,6 +8,7 @@ import { buildProjectContext } from '../lib/aiContext'
 import { useAIReady } from '../lib/useAIReady'
 import { showToast } from './dialogs'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 
 
@@ -275,6 +276,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
               + '· 拖动卡片自由排布；按住空白处左键拖动可平移画布，卡片多到超出一屏时画布自动扩展并出现滚动条。\n'
               + '· 连接模式：依次点两张卡即可连成一条推演链；鼠标移到连线上点「×」可取消该连线。\n'
               + '· 推演内容会自动保存为项目快照（切换页面 / 重启都不丢失）。「清空推演本」可一键复位。'}
+            <AIDataSourceNote feature="plot-canvas" />
           </HelpPopover>
         </div>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">

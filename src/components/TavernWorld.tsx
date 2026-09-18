@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import { showToast } from './dialogs'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
@@ -117,6 +118,7 @@ export default function TavernWorld() {
     自由对话的世界观由角色卡「所属的故事」提供（卡里只写角色与它的关系）。
   • 上限 {WORLD_MAX_CHARS} 字：它每轮都可能进上下文，写太长会把对话历史挤掉。起草时用了哪种素材来源，
     在「灵感工具 → 灵感启发 → 联网检索」里定。
+  <AIDataSourceNote feature="tavern-world-draft" />
 </HelpPopover>
 
         </div>

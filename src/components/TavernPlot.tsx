@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import * as db from '../lib/db'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
@@ -567,6 +568,7 @@ export default function TavernPlot() {
     分支 = 从这条另开一场试另一个走向，原场不动。
   • 模型在「控制面板 → 通用设置 → 默认模型」里统一选，本页不再单独指定。
   • 它是「试戏」不是「写稿」：结束推演出的报告只诊断，不会写回你的小说。
+  <AIDataSourceNote feature="tavern-plot" />
 </HelpPopover>
         {session && (
           <span className="max-w-[28rem] truncate text-[12px] text-ink-400" title={session.title}>{session.title}</span>

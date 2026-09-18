@@ -17,6 +17,7 @@ import CharacterSelect from './CharacterSelect'
 import TableRefSelect from './TableRefSelect'
 import CalendarSelect from './CalendarSelect'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import AITemplateFill from './AITemplateFill'
 import AIOrganize from './AIOrganize'
 import type { TemplateField } from '../lib/ai'
@@ -747,7 +748,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 • 伏笔追踪可切到「剧情线」视图（v1.6.1）：自动聚合伏笔（埋设/回收）、爽点、时间脉络事件，按章节串成一条叙事主线；顶部统计悬空伏笔与「已到点未回收」的警示。
 • 带「上级 / 层级归属」列的表（国家势力、地理风物、种族生物、物品资源、历史事件、名词术语等）支持「树形层级」：按隶属关系折叠 / 展开，行首的树形图标按钮可在某条下新增子条目（编号形如「父编号-001」，父级顺序号不变），父级下拉自动排除自身与子孙防成环。
 • 行首三个小按钮：删除此行、AI 补全本行空白（只填当前行未填字段，不影响其他行 / 表）、新增子条目；章节总表行首另有「打开正文」按钮。
-• 批量：右上角的 AI 按钮（不同表显示为「AI 整理」或「AI 补全」，部分表没有这个按钮）从章节正文 / 已有设定批量整理出尚未登记的条目并落盘（不重复生成）；人物关系 / 历史事件支持「清空全部」批量删除。`}</HelpPopover>
+• 批量：右上角的 AI 按钮（不同表显示为「AI 整理」或「AI 补全」，部分表没有这个按钮）从章节正文 / 已有设定批量整理出尚未登记的条目并落盘（不重复生成）；人物关系 / 历史事件支持「清空全部」批量删除。`}
+            <AIDataSourceNote feature="organize-rows" />
+          </HelpPopover>
           </div>
           <p className="mt-1.5 text-[13px] text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
         </div>

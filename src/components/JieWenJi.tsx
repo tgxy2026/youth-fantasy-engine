@@ -23,6 +23,7 @@ import { LS_SPRITE_ENABLED } from '../lib/constants'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { showToast } from './dialogs'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 
 // ============ 颉文姬 · 编辑器 AI 助手（v1.6 收官功能） ============
@@ -423,6 +424,7 @@ style={{ zIndex: Z.pagePanel }}>
         <span className="text-[12px] font-semibold text-ink-100 flex-1">颉文姬 · AI 编辑</span>
         <HelpPopover title="颉文姬 · AI 编辑" width="24rem" size={12} className="shrink-0">
           {'· 诊室：AI 深度校对（错别字 / 语病 / 逻辑 / 设定矛盾，可逐条「替换此条」）；AI 综合诊断（主编视角：优先级 / 隐藏风险 / 批量建议）。\n· 编辑：先在正文选中一段，选润色 / 扩写 / 精简 / 改语气 / 换视角。改稿以「建议段」标记写入原文下方，你的原文一字不动，取舍后可用「清除全部建议段」一键清理。\n· 审读：章节编辑意见（六维打分）/ OOC 人设检查 / 续写方向（只给思路不生成正文）/ 爽点毒点 / 黄金三章。\n· 简报（v1.6.1）：开写前一键生成「本章写作简报」——未回收伏笔 / 钩子爽点方向 / 角色状态提醒 / 下一章衔接，只给方向不代写正文。\n· 补登（v1.9.1）：扫本章正文，抽出有专名的人物 / 势力 / 地点 / 种族 / 物品 / 术语，与已有设定比对后分「已登记 / 疑似重复 / 待补登」三档；勾选即可一键写入对应设定表或角色卡，只填名称与一句话，其余留空自己补。「是否已登记」由程序按名称与别称精确比对，AI 只负责抽取。\n· 所有 AI 入口需先配置模型；未配置时按钮禁用，原有本地功能不受影响。\n· 底部开关可控制屏幕右侧的 Q 版精灵是否显示。'}
+          <AIDataSourceNote feature="jiewenji-panel" />
         </HelpPopover>
         <Button variant="icon-muted" onClick={onClose} className="p-1" title="收起"><X size={16} /></Button>
       </div>

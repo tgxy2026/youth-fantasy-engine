@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import AutoTextarea from './AutoTextarea'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import PromptModal from './PromptModal'
 import { confirmDialog, copyText } from './dialogs'
 import {
@@ -211,6 +212,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
         <h2 className="text-[13px] font-semibold text-ink-100">AI 辅助规划</h2>
         <HelpPopover title="AI 辅助规划怎么用" width="23rem" className="ml-0.5">
           {'多轮对话式辅助：左侧可新建 / 切换 / 重命名 / 删除多个规划会话；右侧与模型连续对话。\n\n· 勾选「带入项目资料」可让模型参考你的世界观与角色设定，给出的建议更贴设定；\n· 灵感激发 / 剧情人物世界观规划 / 一致性自查（不生成正文）；\n· 首次使用先到上方「模型配置」添加并选择模型，未接入时对话按钮禁用。'}
+          <AIDataSourceNote feature="ai-assist" />
         </HelpPopover>
       </div>
 

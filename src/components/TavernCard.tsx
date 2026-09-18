@@ -23,6 +23,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
 import TavernCardStructField from './TavernCardStructField'
@@ -801,6 +802,7 @@ export default function TavernCard() {
   两种起手方式（右上「AI 起草」）：已经想清楚了 → 一句话补全；只有点感觉、说不清 → 对话引导，
   让 AI 按上面的模板一轮轮问你，边聊边成形。
   卡片是全局的（跨项目、换书照样在），也能导出成文件发给别人。
+  <AIDataSourceNote feature="tavern-card-draft" />
 </HelpPopover>
 
         </div>

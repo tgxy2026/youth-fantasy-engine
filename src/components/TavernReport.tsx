@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import HelpPopover from './HelpPopover'
+import AIDataSourceNote from './AIDataSourceNote'
 import * as store from '../lib/tavern/store'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
@@ -103,6 +104,7 @@ export default function TavernReport() {
   • 每条问题尽量指向具体角色卡或表格条目，点「定位」直接跳过去核对。
   • 「导出」可以把报告存成 Markdown 或单文件 HTML。
   • 报告只是建议：它说的是「这里可能不合理」，改不改由你定。
+  <AIDataSourceNote feature="tavern-report" />
 </HelpPopover>
 
         </div>
