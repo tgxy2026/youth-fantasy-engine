@@ -1,15 +1,19 @@
 /**
  * 一键拆书 · 管线编排（B1）。
  *
- * 三个阶段：切分 → 逐块抽取 → 整理草稿。用 `lib/flow` 的状态机驱动，
+ * 四个阶段：切分 → **写入正文** → 逐块抽取 → 整理草稿。用 `lib/flow` 的状态机驱动，
  * 好处是中止 / 进度 / 产物保留都是现成的，且与「创意写作」共用同一套。
  *
  * 复用既有能力（不重造）：
  * - 抽取：`aiTasks.aiExtractSettingEntities`（按章抽「人物/势力/地点/种族/物品/术语」+ 原文证据）
  * - 判重：`settingLedger.classify`（登记表比对，确定性字符串运算）
  * - 草稿：`flow/draft.buildDraftBundle`
+ * - 落库：`bookbreak/persist.persistSplitToChapters`（写卷/章 + 同步章节台账）
  *
- * 🔴 本文件**不写库**。产出 DraftBundle 交界面审阅，用户勾选后才由 `flow/commit` 落库。
+ * 🔴 写库边界（2026-09-18 起）：
+ * - **设定草稿不自动落库** —— 仍由用户勾选后经 `flow/commit` 写入；
+ * - **原文结构会写库**（卷/章正文），因为老大要求「切分后立刻能在正文编辑看到框架」。
+ *   它由 `persistToChapters` 开关控制，默认开；只追加、绝不覆盖已有卷章。
  *
  * ⚠️ B1 的抽取粒度是「专名清单」（name/desc/evidence），不含全字段（身份定位/外貌/境界…）。
  *    B2 会换成「两遍全字段抽取」，届时只需替换 extract 阶段的实现，draft/commit/UI 全不用改。
@@ -18,11 +22,13 @@ import { aiExtractSettingEntities } from '../aiTasks'
 import { buildDraftBundle, type EntityBatch } from '../flow/draft'
 import { createFlow, type StageCtx } from '../flow/pipeline'
 import type { DraftBundle, FlowProgress, FlowStage } from '../flow/types'
+import { persistSplitToChapters, planVolumes, type PersistResult } from './persist'
 import { chunkText, splitNovelText, type RawChapter, type SplitResult } from './split'
 
-/** 阶段声明（weight 按实测耗时给：抽取占绝大部分） */
+/** 阶段声明（weight 按实测耗时给：抽取占绝大部分；写入正文是纯 IO，给 1） */
 export const BOOKBREAK_STAGES: FlowStage[] = [
   { id: 'split', label: '切分原文', weight: 1 },
+  { id: 'persist', label: '写入正文', weight: 1 },
   { id: 'extract', label: '逐块抽取', weight: 8 },
   { id: 'draft', label: '整理草稿', weight: 1 },
 ]
@@ -36,6 +42,13 @@ export interface BookBreakOptions {
   maxUnits?: number
   /** 兜底分块的块大小（token） */
   chunkTokens?: number
+  /**
+   * 是否把切分结果写入正文编辑的卷/章（**默认 true**）。
+   * 关掉即退化成旧行为：只抽设定、不动正文。
+   */
+  persistToChapters?: boolean
+  /** 无卷结构时用的卷名（默认「导入原文」） */
+  volumeTitle?: string
   /** 中止信号（界面的「中止」按钮接它） */
   signal?: AbortSignal
   /** 进度回调 */
@@ -46,6 +59,8 @@ export interface BookBreakOptions {
 
 export interface BookBreakResult {
   split: SplitResult
+  /** 原文写入正文的结果（开关关闭或没有可写内容时为 null） */
+  persist: PersistResult | null
   batches: EntityBatch[]
   bundle: DraftBundle
 }
@@ -105,6 +120,29 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     return r
   })
 
+  // ② 写入正文：把原文结构同步进「正文编辑」（老大要求"切分后立刻看到卷/章框架"）。
+  //    纯 IO、不调模型，所以放在抽取之前 —— 用户马上能在正文编辑里翻着看，
+  //    而不是等几十分钟抽完才见到东西。
+  flow.on('persist', async (ctx: StageCtx) => {
+    const sp = ctx.bag.split as SplitResult
+    if (opts.persistToChapters === false) {
+      ctx.report(1, '已关闭「写入正文」，跳过')
+      return null
+    }
+    const plan = planVolumes(sp, opts.volumeTitle !== undefined ? { volumeTitle: opts.volumeTitle } : {})
+    if (!plan.chapterCount) { ctx.report(1, '没有可写入的正文'); return null }
+    const total = plan.chapterCount
+    ctx.report(0.05, `准备写入 ${plan.volumes.length} 卷 / ${total} 章…`)
+    const r = await persistSplitToChapters(sp, {
+      ...(opts.volumeTitle !== undefined ? { volumeTitle: opts.volumeTitle } : {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      onProgress: (done, n) => ctx.report(done / Math.max(1, n), `已写入 ${done}/${n} 章`),
+    })
+    if (r.alreadyImported) { ctx.report(1, '检测到已导入过同一本书，已跳过（避免重复建卷）'); return r }
+    ctx.report(1, r.aborted ? `已写入 ${r.chaptersCreated} 章（中止）` : `已写入 ${r.volumes.length} 卷 ${r.chaptersCreated} 章`)
+    return r
+  })
+
   flow.on('extract', async (ctx: StageCtx) => {
     const sp = ctx.bag.split as SplitResult
     const { units, truncated } = expandUnits(sp.chapters, maxUnitChars, maxUnits)
@@ -155,6 +193,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
 
   return {
     split: res.bag.split as SplitResult,
+    persist: (res.bag.persist as PersistResult | null) ?? null,
     batches: (res.bag.extract as EntityBatch[]) ?? [],
     bundle: res.bag.draft as DraftBundle,
   }

@@ -4,7 +4,7 @@
 // 切错了不会报错，只会让后续「抽取」少抽几章、或把标题混进正文。
 // 更危险的是 charStart/charEnd 算错：抽取出的实体带原文引用，引用核对靠它回定位，
 // 算了错区间就会把「原文有据」判成「无据」，置信度静默掉档。
-import { chunkText, cnToNum, estTokens, splitNovelText } from '../src/lib/bookbreak/split'
+import { chunkText, cnToNum, estTokens, isVolumeTitle, splitNovelText } from '../src/lib/bookbreak/split'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -108,6 +108,32 @@ ok('estTokens：2 个汉字 → 2', estTokens('你好') === 2, String(estTokens(
   ok('空串 → 0 章不抛错', splitNovelText('').chapters.length === 0)
   const tiny = splitNovelText('很短。')
   ok('极短文本 → 0 章或 1 块，不抛错', tiny.chapters.length <= 1, String(tiny.chapters.length))
+}
+
+// ---------- ⑨ 文本完整性：硬切必须退到句末（2026-09-18 需求）----------
+// 需求原话：「剪裁的时候要注意文本的完整性，不能因为字数的问题在某一段文本的中间截断，
+//            至少也是在这一个段落结束之后进行截断。」
+// 段落边界已经保证了；剩下唯一会破例的是**单段超长**（整段不换行）时的硬切 ——
+// 这里必须退到最近的句末标点，而不是按字符数硬剁。
+{
+  // 一整段不换行、且远超 limit：每句 10 字（含句号），共 200 句 = 2000 字
+  const oneParagraph = Array.from({ length: 200 }, (_, i) => `这是第${i}句话。`).join('')
+  const chunks = chunkText(oneParagraph, { chunkTokens: 300, overlapTokens: 0 })
+  ok('超长单段被切成多块', chunks.length >= 3, String(chunks.length))
+  // 除最后一块外，每块都应以句末标点收尾（不在句中截断）
+  const bad = chunks.slice(0, -1).filter(c => !/[。！？…；!?;]["”’」』）】]*$/.test(c.text))
+  ok('🔴 除末块外每块都断在句末标点（不在句子中间截断）', bad.length === 0,
+    bad.map(b => b.text.slice(-14)).join(' | '))
+  ok('  每块区间切回原文等于该块文本', chunks.every(c => oneParagraph.slice(c.start, c.end) === c.text))
+}
+
+// ---------- ⑩ 卷标题识别（落库分层依赖它）----------
+{
+  ok('「卷一」判为卷标题', isVolumeTitle('卷一'))
+  ok('「卷 1：风起云州」判为卷标题', isVolumeTitle('卷 1：风起云州'))
+  ok('「第三章 血月」不是卷标题', !isVolumeTitle('第三章 血月'))
+  ok('「序章」不是卷标题（按章处理）', !isVolumeTitle('序章'))
+  ok('空串不抛错且不是卷标题', !isVolumeTitle(''))
 }
 
 console.log(`\n—— bookbreakSplit 用例结束：${pass} 通过 / ${fail} 失败`)

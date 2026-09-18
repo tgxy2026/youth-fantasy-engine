@@ -72,6 +72,17 @@ const CHAPTER_TITLE_RE = new RegExp(
   ')[^\\n]{0,40}$',
 )
 
+/** 「卷X」标题行正则 —— 落库分层时用它判断「这一条是卷边界，不是章」 */
+const VOLUME_TITLE_RE = new RegExp(`^\\s*卷\\s*[${CN_NUM}]+\\s*[:：]?[^\\n]{0,40}$`)
+
+/**
+ * 这一条是不是「卷」标题（而非章节标题）。
+ * 切分把「卷一」「卷1：风起」这类行也当章节条目产出，落库时要靠它分层。
+ */
+export function isVolumeTitle(line: string): boolean {
+  return VOLUME_TITLE_RE.test(line ?? '')
+}
+
 const CN_DIGIT: Record<string, number> = {
   零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
   壹: 1, 贰: 2, 叁: 3, 肆: 4, 伍: 5, 陆: 6, 柒: 7, 捌: 8, 玖: 9,
@@ -128,6 +139,23 @@ function splitParagraphs(text: string): { start: number; text: string }[] {
   return scanLines(text).filter(l => l.text.trim().length > 0)
 }
 
+/** 句末标点（含紧随的收尾引号/括号）——硬切时用它把切口退到句子边界 */
+const SENTENCE_END_RE = /[。！？…；!?;]+[”’」』）】]*/g
+
+/**
+ * 从 `from` 往前找最近的句末标点，返回切口位置（含标点）；找不到返回 -1。
+ * 只在 `[minPos, from]` 内找，避免退得太远把块切得过于零碎。
+ */
+function findSentenceEnd(text: string, from: number, minPos: number): number {
+  if (from <= minPos) return -1
+  const seg = text.slice(minPos, from)
+  SENTENCE_END_RE.lastIndex = 0
+  let last = -1
+  let m: RegExpExecArray | null
+  while ((m = SENTENCE_END_RE.exec(seg)) !== null) last = minPos + m.index + m[0].length
+  return last
+}
+
 /**
  * 兜底分块：按 token 上限切，尽量落在段落边界，相邻块重叠 `overlapTokens`。
  * 单段落本身超限时硬切（否则一整章不换行的文本会变成一块超大块）。
@@ -162,7 +190,14 @@ export function chunkText(text: string, opts: SplitOptions = {}): TextChunk[] {
       let s = p.start
       while (s < pEnd) {
         // 硬切按字符数走（中文 1 字 ≈ 1 token）
-        const e = Math.min(pEnd, s + limit)
+        let e = Math.min(pEnd, s + limit)
+        if (e < pEnd) {
+          // 🔴 文本完整性：宁可这一块短一点，也不在句子中间截断。
+          //    回溯范围取块的末 40%（下限 200 字），退到最近的句末标点。
+          const floor = s + Math.max(200, Math.floor(limit * 0.6))
+          const cut = findSentenceEnd(text, e, floor)
+          if (cut > s) e = cut
+        }
         chunks.push({ start: s, end: e, text: text.slice(s, e) })
         if (e >= pEnd) break
         s = Math.max(s + 1, e - overlapChars)
