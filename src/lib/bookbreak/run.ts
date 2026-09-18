@@ -21,7 +21,7 @@
 import { aiExtractSettingEntities, aiSummarizeFormSettings } from '../aiTasks'
 import { buildDraftBundle, bundleOf, type EntityBatch } from '../flow/draft'
 import { formDraftRows } from '../flow/formMap'
-import { createFlow, type StageCtx } from '../flow/pipeline'
+import { createFlow, firstUnfinishedStage, type StageCtx } from '../flow/pipeline'
 import type { DraftBundle, DraftRow, FlowProgress, FlowStage } from '../flow/types'
 import { buildFormMaterial } from './formSummary'
 import { persistSplitToChapters, planVolumes, type PersistResult } from './persist'
@@ -38,6 +38,28 @@ export const BOOKBREAK_STAGES: FlowStage[] = [
   //    —— 逐章增量写表单会越写越长、还覆盖作者手改（§3 冲突 3）。
   { id: 'worldview', label: '汇总全书设定', weight: 3 },
 ]
+
+/**
+ * 续跑信息 —— 中止时交回界面，界面原样存住；下次点「继续」把它传回 `resume` 即可接着跑。
+ *
+ * 🔴 为什么不能只靠"从某个阶段重跑"：拆书最耗时的是 `extract`（60 章书就是 60 次模型调用），
+ *    而阶段内的循环没有断点 —— 从阶段头重跑等于把已抽的几十章**全部白跑一遍**，
+ *    那这个功能就没有意义了。所以这里记的是**阶段内断点**（已完成多少个抽取单元 + 已抽到的批次）。
+ */
+export interface BookBreakResume {
+  /** 状态机已完成的阶段产物（续跑时预置，前序阶段不必重跑） */
+  bag: Record<string, unknown>
+  /** 从哪个阶段继续（中止时正在跑的那个） */
+  from: string
+  /** 已完成的抽取单元数 —— `extract` 就从这个下标之后接着跑 */
+  doneUnits: number
+  /** 上次切分出的单元总数：**用来防止"改了原文还续跑"**（单元数对不上就不给续，避免抽出的内容错位） */
+  totalUnits: number
+  /** 已抽到的批次（按章合并过的） */
+  batches: EntityBatch[]
+  /** 给界面显示的一行说明 */
+  label: string
+}
 
 export interface BookBreakOptions {
   /** 最多处理多少章 / 块（默认 60，见 split.ts） */
@@ -67,6 +89,13 @@ export interface BookBreakOptions {
   onProgress?: (p: FlowProgress) => void
   /** 每抽完一个单元回调一次（界面即时显示抽到了什么） */
   onBatch?: (b: EntityBatch) => void
+  /**
+   * 续跑：把上次中止时拿到的 `BookBreakResume` 原样传回来。
+   * 前序阶段会据此预置产物、`extract` 从已完成的单元之后接着跑。
+   */
+  resume?: BookBreakResume
+  /** 中止时回头交一份续跑信息（界面存住即可显示「继续」） */
+  onResume?: (r: BookBreakResume) => void
 }
 
 export interface BookBreakResult {
@@ -117,16 +146,49 @@ function expandUnits(chapters: RawChapter[], maxUnitChars: number, maxUnits: num
 }
 
 /**
+ * 续跑判定（纯函数，便于单测）：这次该从第几个抽取单元开始、要用哪些已有批次。
+ *
+ * 三种结果：
+ * - `fresh`       首次运行（没有断点）→ 从头跑，无种子批次
+ * - `resume`      断点有效 → 从 `doneUnits` 之后接着跑，装回上次抽好的批次
+ * - `invalidated` 🔴 **断点失效**：上次抽了 N 块、这次切出来的单元数却不是 N —— 说明**原文改过了**。
+ *                 继续按旧下标接下去会让抽出的内容与章节整体错位，所以**从零重抽**（宁慢勿错）。
+ *
+ * 🔴 返回的种子批次是**深拷贝**：直接交出 `resume.batches` 的引用会让抽取过程污染界面存的那份断点，
+ *    下次续跑就带着上一次的中间态（表现在"越续越乱"）。
+ */
+export function planResume(
+  unitsLen: number,
+  resume?: BookBreakResume,
+): { start: number; seedBatches: EntityBatch[]; reason: 'fresh' | 'resume' | 'invalidated' } {
+  if (!resume || resume.doneUnits <= 0) return { start: 0, seedBatches: [], reason: 'fresh' }
+  if (resume.totalUnits !== unitsLen) return { start: 0, seedBatches: [], reason: 'invalidated' }
+  return {
+    start: Math.min(resume.doneUnits, unitsLen),
+    seedBatches: (resume.batches ?? []).map(b => ({ ...b, entities: [...b.entities] })),
+    reason: 'resume',
+  }
+}
+
+/**
  * 跑完整拆书管线。
  * @returns 结果；**返回 null 表示被中止**（此时不产出草稿，调用方据此提示）
  */
 export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Promise<BookBreakResult | null> {
   const maxUnitChars = opts.maxUnitChars ?? DEFAULT_MAX_UNIT_CHARS
   const maxUnits = opts.maxUnits ?? DEFAULT_MAX_UNITS
+  /** 阶段内断点：已完成多少个抽取单元（extract 每处理完一个就更新） */
+  let doneUnits = opts.resume?.doneUnits ?? 0
+  /** 本次切分出的单元总数 —— 中止时交回界面，用于"改了原文就别续跑"的校验 */
+  let totalUnits = 0
+  /** 已抽到的批次。跨阶段保留：中止时它就是续跑的起点（阶段没跑完时 bag 里是没有它的） */
+  let partialBatches: EntityBatch[] = (opts.resume?.batches ?? []).map(b => ({ ...b, entities: [...b.entities] }))
 
   const flow = createFlow(BOOKBREAK_STAGES, {
     ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
+    // 续跑：把上次已完成阶段的产物预置进 bag，那些阶段就不必重跑
+    ...(opts.resume?.bag ? { bag: opts.resume.bag } : {}),
   })
 
   flow.on('split', async (ctx: StageCtx) => {
@@ -164,11 +226,21 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
   flow.on('extract', async (ctx: StageCtx) => {
     const sp = ctx.bag.split as SplitResult
     const { units, truncated } = expandUnits(sp.chapters, maxUnitChars, maxUnits)
+    totalUnits = units.length
+    // 续跑：决定从哪个单元开始、装回哪些批次（判定逻辑抽成纯函数 planResume，便于单测）
+    const plan = planResume(units.length, opts.resume)
+    const start = plan.start
+    // 断点失效（原文改过）→ 已抽批次一并丢掉，别让上次的旧批次混进这次的结果
+    if (plan.reason !== 'resume') { doneUnits = 0; partialBatches = [] }
     // 同章被细分成多块时，合并进同一个 EntityBatch（章标题/章号一致）
     const perChapter = new Map<number, EntityBatch>()
-    let entityCount = 0
+    for (const b of plan.seedBatches) perChapter.set(b.index, b)
+    let entityCount = [...perChapter.values()].reduce((n, b) => n + b.entities.length, 0)
+    if (start > 0) {
+      ctx.report(start / Math.max(1, units.length), `续跑：已完成 ${start}/${units.length} 块，从第 ${start + 1} 块接着抽`)
+    }
 
-    for (let i = 0; i < units.length; i++) {
+    for (let i = start; i < units.length; i++) {
       if (ctx.signal.aborted) break
       const u = units[i]
       ctx.report(i / Math.max(1, units.length), `${u.chapterTitle}（${i + 1}/${units.length}）`)
@@ -205,11 +277,15 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
         }
         opts.onBatch?.(perChapter.get(u.chapterIndex) as EntityBatch)
       }
+      // 阶段内断点：处理完一块就记一块 —— 中途被中止也能从下一块接着跑
+      doneUnits = i + 1
+      partialBatches = [...perChapter.values()].sort((a, b) => a.index - b.index)
     }
 
     const batches = [...perChapter.values()].sort((a, b) => a.index - b.index)
+    partialBatches = batches
     const note = truncated ? `（已达到上限 ${maxUnits} 块，剩余未处理）` : ''
-    ctx.report(1, `共抽到 ${entityCount} 条实体${note}`)
+    ctx.report(1, `${start > 0 ? '续跑后' : ''}共抽到 ${entityCount} 条实体${note}`)
     return batches
   })
 
@@ -247,8 +323,19 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     return rows
   })
 
-  const res = await flow.run()
-  if (res.status === 'cancelled') return null
+  const res = await flow.run(opts.resume?.from)
+  if (res.status === 'cancelled') {
+    // 交回续跑信息：已完成到哪个阶段 + **阶段内断点**（已抽完多少块、已抽到哪些批次）
+    opts.onResume?.({
+      bag: res.bag,
+      from: firstUnfinishedStage(res.progress),
+      doneUnits,
+      totalUnits,
+      batches: partialBatches,
+      label: totalUnits ? `已完成 ${doneUnits}/${totalUnits} 个抽取单元` : '已完成部分阶段',
+    })
+    return null
+  }
   if (res.status === 'error') throw new Error(res.error ?? '拆书失败')
 
   const base = res.bag.draft as DraftBundle

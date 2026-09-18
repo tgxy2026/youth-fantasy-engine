@@ -23,12 +23,31 @@ export const MAX_CHAPTERS = 60
  */
 export const COMFORT_MINUTES = 20
 
-/** 单章耗时（秒）：固定开销 + 按千字线性增长。输入侧开销不随字数变，故拆成两项。 */
+/**
+ * 单章耗时的**倍率**与**附加短调用次数**。
+ *
+ * 🔴 口径修正（2026-09-18，读 `autoContinue` 源码核出来的，旧注释是错的）：
+ *   原先这里写"一章一次调用" —— **不对**。连写一章实际会调模型 **5~8 次**：
+ *     续写正文 →（去 AI 味，默认关）→ 字数校准 → **AI 编辑自检** →（发现问题则）改写修正
+ *     → 二次字数校准 → 生成标题 → 生成 1/10 摘要 → 抽取并补登设定
+ *   其中"续写"与"改写修正"都是长输出（各要生成一章的量），其余是短输出但各有固定开销
+ *   （每次都要重新 prefill 上下文）。
+ *   故：单章耗时 ≈ 一次长生成 × CHAPTER_MULTIPLIER + EXTRA_CALLS × 固定开销。
+ *   实测印证：本地 27B 写一章（目标 800 字）**2~4 分钟**；按旧口径（一次调用）会低估 3 倍以上。
+ */
+const CHAPTER_MULTIPLIER = 2.2
+const EXTRA_CALLS = 4
+
+/** 一次长生成的耗时（秒）：固定开销 + 按千字线性增长。输入侧开销不随字数变，故拆成两项。 */
 function secPerChapter(cap: CapacityAdvice, targetWords: number): [number, number] {
   const k = Math.max(0.2, targetWords / 1000) // 千字
   const fixed = cap.local ? 25 : 8
   const perK: [number, number] = cap.local ? [30, 70] : [8, 20]
-  return [Math.round(fixed + k * perK[0]), Math.round(fixed + k * perK[1])]
+  const one: [number, number] = [fixed + k * perK[0], fixed + k * perK[1]]
+  return [
+    Math.round(one[0] * CHAPTER_MULTIPLIER + EXTRA_CALLS * fixed),
+    Math.round(one[1] * CHAPTER_MULTIPLIER + EXTRA_CALLS * fixed),
+  ]
 }
 
 export interface PaceAdvice {
@@ -70,7 +89,7 @@ export function advisePace(
   const time = minutes[0] === minutes[1] ? `${minutes[0]} 分钟` : `${minutes[0]}~${minutes[1]} 分钟`
   // 口径说明放在**所有档位**都出现的位置：它回答的是"这个数是不是硬上限"，
   // 而作者恰恰在最想多写（也就是 large/long 档）时最需要知道"不是"。
-  const base = '逐章连写、一次一章，不受模型窗口限制。'
+  const base = '连写一章要跑 5~8 次模型调用（续写、编辑自检、字数校准、标题、摘要、设定抽取），一次一章、不受模型窗口限制。'
   const note = level === 'ok'
     ? `预计 ${time}。${base}`
     : level === 'large'

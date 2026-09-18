@@ -16,7 +16,7 @@ import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '../lib/ai'
 import { adviseImport, type ImportAdvice } from '../lib/bookbreak/recommend'
-import { estimateCalls, previewSplit, runBookBreak } from '../lib/bookbreak/run'
+import { estimateCalls, previewSplit, runBookBreak, type BookBreakResume } from '../lib/bookbreak/run'
 import type { SplitResult } from '../lib/bookbreak/split'
 import { planVolumes } from '../lib/bookbreak/persist'
 import type { PersistResult } from '../lib/bookbreak/persist'
@@ -40,6 +40,12 @@ export default function BookBreakPanel() {
   const [summarizeForms, setSummarizeForms] = useState(true)
   /** 末尾汇总出的「全书设定」草稿行（已并入 bundle，这里单留一份只用于文案说明） */
   const [formRows, setFormRows] = useState<DraftRow[]>([])
+  /**
+   * 中止后拿到的续跑信息（界面存住它 → 显示「继续」按钮）。
+   * 🔴 断点装在**阶段内**：`extract` 抽到第 3 块时中止，继续时从第 4 块接着抽，
+   *    前面抽好的不重跑（60 章书抽到一半中止，从阶段头重跑＝白跑 30 章）。
+   */
+  const [resume, setResume] = useState<BookBreakResume | null>(null)
   const [cap, setCap] = useState<CapacityAdvice | null>(null)
   const [persistInfo, setPersistInfo] = useState<PersistResult | null>(null)
   /** 各阶段的产物摘要（`FlowProgress.stages[].detail` 会被下一阶段覆盖，产物摘要得自己留） */
@@ -92,10 +98,13 @@ export default function BookBreakPanel() {
     }
   }
 
-  const start = async () => {
+  const start = async (fromScratch = false) => {
     if (!raw.trim()) { showToast('请先粘贴或导入原文', 'info'); return }
     const ctl = new AbortController()
     abortRef.current = ctl
+    // 「从头重跑」= 丢掉断点；否则有断点就接着抽
+    const useResume = fromScratch ? null : resume
+    if (fromScratch) setResume(null)
     setRunning(true)
     setBundle(null)
     setFormRows([])
@@ -108,19 +117,23 @@ export default function BookBreakPanel() {
         onProgress: setProgress,
         persistToChapters: writeToChapters,
         summarizeForms,
+        // 续跑：把上次的断点原样传回（阶段内断点 + 已完成阶段的产物）
+        ...(useResume ? { resume: useResume } : {}),
+        onResume: r => setResume(r),
       })
       // 🔴 中止时要如实说明：写入正文发生在抽取之前，中止时正文可能**已经写进去一部分**
       if (!res) {
         showToast(
-          writeToChapters
+          (writeToChapters
             ? '已中止：设定草稿未产出；已写入的正文卷章保留在「正文编辑」里'
-            : '已中止，未写入任何数据',
+            : '已中止，未写入任何数据') + '；可点「继续抽取」接着跑，已抽过的块不会重跑',
           'info',
         )
         return
       }
       setBundle(res.bundle)
       setFormRows(res.formRows)
+      setResume(null) // 跑完了，断点作废（下次是从头开始的新任务）
       setPersistInfo(res.persist)
       // 阶段产物摘要：让跑完之后也看得见每一步做了什么（否则 detail 会被下一阶段覆盖）
       const sum: Record<string, string> = {
@@ -273,13 +286,24 @@ export default function BookBreakPanel() {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button size="sm" variant="primary" solid disabled={running || !raw.trim()} onClick={() => void start()}>
           {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-          {running ? '抽取中…' : '② 开始抽取'}
+          {running ? '抽取中…' : resume ? '继续抽取' : '② 开始抽取'}
         </Button>
+        {!running && resume && (
+          <Button size="sm" variant="secondary" onClick={() => void start(true)}>
+            从头重跑（丢弃断点）
+          </Button>
+        )}
         {running && (
           <Button size="sm" variant="danger" onClick={() => abortRef.current?.abort()}>中止</Button>
         )}
         {running && <span className="text-[11px] text-ink-400">{progress?.message ?? ''}</span>}
       </div>
+      {!running && resume && (
+        <div className="mt-1 text-[11px] leading-relaxed text-ink-400">
+          上次中止在：{resume.label}。点「继续抽取」会从这里接着跑，<b className="text-ink-300">已抽过的块不会重跑</b>；
+          <span className="text-ink-500">若你改过原文，断点会失效（自动从头跑），避免抽出的内容与章节错位。</span>
+        </div>
+      )}
 
       {/* 进度：节点时间线（跑完保留，事后能看到每一步做了什么、花了多久） */}
       <WorkflowTimeline progress={progress} running={running} summaries={summaries} className="mt-2" />

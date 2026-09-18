@@ -26,7 +26,11 @@ const CLOUD = adviseCapacity({ type: 'openai', local: false, model: 'Qwen/Qwen3.
     a.recommendedChapters === Math.floor((COMFORT_MINUTES * 60) / a.secPerChapter[1]), String(a.recommendedChapters))
   ok('本地：推荐值明显少于云端', a.recommendedChapters <= 10, String(a.recommendedChapters))
   ok('本地：预计耗时按**当前填的章数**算（不是推荐值）', a.minutes[1] >= 15, JSON.stringify(a.minutes))
-  ok('本地：文案说明了一次一章、不受窗口限制', a.note.includes('不受模型窗口限制'), a.note)
+  ok('本地：文案说明了「一次一章、不受窗口限制」', a.note.includes('不受模型窗口限制'), a.note)
+  // 🔴 旧口径把连写当成"一章一次调用"，实测是 5~8 次（续写+自检+字数校准+标题+摘要+抽取）——
+  //    不写明这一点，作者会以为"写 3 章 = 3 次调用"，等到真跑了一小时才发现预期错了一个数量级
+  ok('🔴 文案写明「一章要跑 5~8 次模型调用」（旧口径写成一次，低估 3 倍以上）',
+    a.note.includes('5~8 次模型调用'), a.note)
 }
 
 // ---------- ② 云端模型：快 → 推荐更多、同样章数更省时 ----------

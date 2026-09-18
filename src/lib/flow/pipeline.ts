@@ -61,6 +61,19 @@ export interface FlowRunner {
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0)
 
+/**
+ * 找第一个"没跑完"的阶段 id —— 中止后据此确定**续跑起点**。
+ *
+ * 判据：`running` / `pending` / `cancelled` / `failed` 都算没跑完；`done` 与 `skipped` 算已了结
+ * （skipped 是"不需要跑"，比如用户选了只出大纲，它不该被当断点）。
+ * 全都了结时返回空串 —— 调用方 `run('')` 会退化成从头跑，是安全的兜底。
+ */
+export function firstUnfinishedStage(progress: FlowProgress): string {
+  const s = progress.stages.find(x =>
+    x.status === 'running' || x.status === 'pending' || x.status === 'cancelled' || x.status === 'failed')
+  return s?.id ?? ''
+}
+
 /** 中止类错误的判定：DOMException('AbortError') 或本项目自造的取消错误 */
 function isAbortLike(e: unknown): boolean {
   if (!e || typeof e !== 'object') return false

@@ -17,7 +17,7 @@ import InterviewChat from './InterviewChat'
 import WorkflowTimeline from './WorkflowTimeline'
 import { showToast } from './dialogs'
 import { aiChatJson, loadActiveId, loadProviders, type AIProvider } from '../lib/ai'
-import { runCreativeWriting, type CreativeWritingResult } from '../lib/aiWorkflow'
+import { runCreativeWriting, type CreativeResume, type CreativeWritingResult } from '../lib/aiWorkflow'
 import type { OutlineResult } from '../lib/aiTasks'
 import { CREATIVE_SEED_SPEC, seedFromFilled } from '../lib/creativeSeed'
 import type { DraftBundle, DraftRow, FlowProgress } from '../lib/flow/types'
@@ -41,6 +41,8 @@ export default function CreativeWritingPanel() {
   const [result, setResult] = useState<CreativeWritingResult | null>(null)
   const [interview, setInterview] = useState(false)
   const [cap, setCap] = useState<CapacityAdvice | null>(null)
+  /** 被中止后拿到的续跑信息（存住它 → 显示「继续写作」；闸门处主动放弃不会产生它） */
+  const [resume, setResume] = useState<CreativeResume | null>(null)
   const gateRef = useRef<((v: unknown) => void) | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   /** 阶段产物摘要：detail 会在下一阶段开始时被覆盖，所以在"完成那一刻"抓一次存下来 */
@@ -74,16 +76,23 @@ export default function CreativeWritingPanel() {
     [cap, chapters, words],
   )
 
-  const start = async () => {
+  const start = async (fromScratch = false) => {
     if (!seed.trim()) { showToast('请先用一句话说清你想写什么', 'info'); return }
     const ctl = new AbortController()
     abortRef.current = ctl
+    // 「从头重写」= 丢掉断点；否则有断点就从断点接着写
+    const useResume = fromScratch ? null : resume
+    if (fromScratch) setResume(null)
+    /** 本次运行是否交回了续跑信息（用局部变量判定，setState 是异步的、闭包里的 resume 还是旧值） */
+    let gotResume: CreativeResume | null = null
     setRunning(true); setResult(null); setLog([]); setProgress(null); setSummaries({})
     summariesRef.current = {}
     try {
       const res = await runCreativeWriting(seed, {
         chapters, targetWords: words, volumes,
         signal: ctl.signal,
+        ...(useResume ? { resume: useResume } : {}),
+        onResume: r => { gotResume = r; setResume(r) },
         onProgress: p => {
           setProgress(p)
           // 抓"刚完成那一刻"的 detail 当阶段产物摘要（下一阶段一开跑就会把它覆盖掉）
@@ -101,8 +110,16 @@ export default function CreativeWritingPanel() {
         onOutlineGate: openGate(setOutlineGate) as (o: OutlineResult) => Promise<boolean | 'outline-only'>,
         onChapterSaved: ch => setLog(l => [...l, `✅ 第${ch.no}章 ${ch.title}`]),
       })
-      if (!res) { showToast('已中止，未留下半成品', 'info'); return }
+      if (!res) {
+        // 有续跑信息 = 被中止（可以接着写）；没有 = 在闸门处主动放弃，就别再劝他继续了
+        showToast(
+          gotResume ? '已中止 —— 可点「继续写作」接着写，已写完的章不会重写' : '已中止，未留下半成品',
+          'info',
+        )
+        return
+      }
       setResult(res)
+      setResume(null) // 跑完了，断点作废（下次是从头开始的新任务）
       showToast(
         res.outlineOnly ? '大纲已保存 —— 按你的选择，没有写正文' : `创作完成：写了 ${res.chapters.length} 章`,
         'success',
@@ -190,8 +207,13 @@ export default function CreativeWritingPanel() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="primary" solid disabled={running || !seed.trim()} onClick={() => void start()}>
             {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-            {running ? '创作中…' : '开始创作'}
+            {running ? '创作中…' : resume ? '继续写作' : '开始创作'}
           </Button>
+          {!running && resume && (
+            <Button size="sm" variant="secondary" onClick={() => void start(true)}>
+              从头重写（丢弃断点）
+            </Button>
+          )}
           {running && (
             <Button size="sm" variant="danger" onClick={() => abortRef.current?.abort()}>
               <Square size={12} /> 中止
@@ -199,6 +221,13 @@ export default function CreativeWritingPanel() {
           )}
           {running && <span className="text-[11px] text-ink-400">{progress?.message ?? ''}</span>}
         </div>
+        {!running && resume && (
+          <div className="mt-1 text-[11px] leading-relaxed text-ink-400">
+            上次中止在：{resume.label}。点「继续写作」从断点接着写，
+            <b className="text-ink-300">已落库的章不会重写</b>；
+            <span className="text-ink-500">改了「连写章数」会令断点失效（自动从头跑），避免剩余章数算错。</span>
+          </div>
+        )}
         <div className="mt-1.5 text-[10.5px] leading-relaxed text-ink-500">
           连写会在当前项目的现有章节之后接着写，随时可中止；写完去「正文编辑」逐章审阅。
         </div>

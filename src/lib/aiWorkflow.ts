@@ -21,7 +21,7 @@ import * as db from './db'
 import { commitDraftRows } from './flow/commit'
 import { buildDraftBundle, defaultPicked } from './flow/draft'
 import { resolveSlot } from './flow/fieldMap'
-import { createFlow } from './flow/pipeline'
+import { createFlow, firstUnfinishedStage } from './flow/pipeline'
 import type { CommitOutcome, DraftBundle, DraftRow, FlowProgress, FlowStage } from './flow/types'
 import { uid } from './id'
 import { chapterNoOf, outlineCardName, outlineEventKey } from './outlineCard'
@@ -144,6 +144,25 @@ export async function loadChapterOutlines(): Promise<Map<number, string>> {
   return map
 }
 
+/**
+ * 续跑信息 —— 中止时交回界面，界面原样存住；下次点「继续」把它传回 `resume` 即可接着写。
+ *
+ * 🔴 创意写作的断点粒度是**章**：连写 10 章写到第 4 章中止，续跑就只补剩下的 6 章，
+ *    已写好的 4 章一个字都不动（它们已经落库，重跑不但白花钱还会重复建章）。
+ */
+export interface CreativeResume {
+  /** 已完成阶段的产物（续跑时预置进 bag，设定奠基 / 分卷大纲那些阶段不必重跑） */
+  bag: Record<string, unknown>
+  /** 从哪个阶段继续（中止时正在跑的那个） */
+  from: string
+  /** 已经写好的章节数 */
+  doneChapters: number
+  /** 这次总共打算写多少章 —— 校验用：参数改了就不给续（否则"剩余章数"算不对） */
+  totalChapters: number
+  /** 给界面显示的一行说明 */
+  label: string
+}
+
 export interface CreativeWritingOptions {
   /** 连写多少章（默认 10） */
   chapters?: number
@@ -166,6 +185,10 @@ export interface CreativeWritingOptions {
   onProgress?: (p: FlowProgress) => void
   onChapterSaved?: (ch: { id: string; title: string; no: number }) => void
   onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
+  /** 续跑：把上次中止时拿到的 `CreativeResume` 原样传回来 */
+  resume?: CreativeResume
+  /** 中止时回头交一份续跑信息（界面存住即可显示「继续」） */
+  onResume?: (r: CreativeResume) => void
   signal?: AbortSignal
 }
 
@@ -192,12 +215,24 @@ export async function runCreativeWriting(
   seed: string,
   opts: CreativeWritingOptions = {},
 ): Promise<CreativeWritingResult | null> {
+  /** 这次总共打算写多少章（同时是续跑校验的基准：参数变了就不给续） */
+  const plannedChapters = Math.max(1, Math.min(60, opts.chapters ?? 10))
+  /** 续跑起点：已经写好多少章。参数对不上（或没给 resume）就不续，从零写 */
+  const baseDone = opts.resume && opts.resume.totalChapters === plannedChapters && opts.resume.doneChapters > 0
+    ? opts.resume.doneChapters
+    : 0
+  let doneChapters = baseDone
+
   const flow = createFlow(CREATIVE_STAGES, {
     ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
+    // 续跑：预置已完成阶段的产物（设定奠基 / 分卷大纲就不会被重跑一遍）
+    ...(baseDone > 0 && opts.resume?.bag ? { bag: opts.resume.bag } : {}),
   })
   /** 用户放弃：先 abort（让状态机归为 cancelled）再抛，避免后续阶段继续跑 */
+  let gaveUp = false
   function giveUp(): never {
+    gaveUp = true
     flow.abort()
     throw new Error('用户放弃了本次创作')
   }
@@ -258,17 +293,20 @@ export async function runCreativeWriting(
   })
 
   flow.on('draft', async ctx => {
-    const n = Math.max(1, Math.min(60, opts.chapters ?? 10))
+    // 续跑：已经写好的章不再写，只补剩下的（`plannedChapters` 是**总共**要多少章）
+    const remaining = Math.max(0, plannedChapters - doneChapters)
+    if (remaining === 0) { ctx.report(1, '章数已写满，跳过连写'); return [] }
     const outlines = await loadChapterOutlines()
     let done = 0
     const res = await runAutoContinue(
-      { chapters: n, targetWords: opts.targetWords ?? 2500, strategy: 'add-only' },
+      { chapters: remaining, targetWords: opts.targetWords ?? 2500, strategy: 'add-only' },
       {
         signal: ctx.signal,
-        onPhase: msg => ctx.report(done / n, msg),
+        onPhase: msg => ctx.report(done / remaining, msg),
         onChapterSaved: ch => {
           done++
-          ctx.report(done / n, `已写 ${done}/${n} 章`)
+          doneChapters = baseDone + done
+          ctx.report(done / remaining, `已写 ${doneChapters}/${plannedChapters} 章`)
           opts.onChapterSaved?.(ch)
         },
         ...(opts.onChapterDraft ? { onChapterDraft: opts.onChapterDraft } : {}),
@@ -280,8 +318,22 @@ export async function runCreativeWriting(
     return res.created
   })
 
-  const res = await flow.run()
-  if (res.status === 'cancelled') return null
+  const res = await flow.run(baseDone > 0 ? opts.resume?.from : undefined)
+  if (res.status === 'cancelled') {
+    // 🔴 闸门处主动「放弃」≠ 被中止：放弃是作者的终态决定，不该再递一个「继续」入口
+    //    （否则界面上会冒出一个"要继续写吗"，看起来像系统没听懂他放弃）。
+    if (!gaveUp) {
+      // 交回续跑信息：写到第几章 + 已完成阶段的产物（已落库的章不会重写）
+      opts.onResume?.({
+        bag: res.bag,
+        from: firstUnfinishedStage(res.progress),
+        doneChapters,
+        totalChapters: plannedChapters,
+        label: `已写 ${doneChapters}/${plannedChapters} 章`,
+      })
+    }
+    return null
+  }
   if (res.status === 'error') throw new Error(res.error ?? '创作流程失败')
 
   const bibleBag = res.bag.bible as { bundle: DraftBundle; bibleCommit: CommitOutcome | null } | undefined
