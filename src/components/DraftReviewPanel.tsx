@@ -12,7 +12,7 @@ import { CheckSquare, ChevronDown, ChevronRight, Square } from 'lucide-react'
 import { Button } from './Button'
 import { confirmDialog, showToast } from './dialogs'
 import { commitDraftRows, previewCommit, type ConflictPolicy } from '../lib/flow/commit'
-import { DRAFT_PICK_THRESHOLD, defaultPicked } from '../lib/flow/draft'
+import { DRAFT_PICK_THRESHOLD, defaultPicked, pickableAsNew } from '../lib/flow/draft'
 import type { CommitOutcome, DraftBundle, DraftRow } from '../lib/flow/types'
 
 interface Props {
@@ -92,7 +92,9 @@ export default function DraftReviewPanel({
     }))
   }
 
-  const pickNew = () => setPicked(new Set(rows.filter(r => r.status === 'new').map(r => r.key)))
+  // 「全选新建」用 pickableAsNew：它会排除「疑似同一对象的另一种写法」，
+  // 否则作者一点全选就把刚标好的去重提示撤销了（见该函数的注释）
+  const pickNew = () => setPicked(new Set(rows.filter(pickableAsNew).map(r => r.key)))
   const pickHigh = () => setPicked(new Set(rows.filter(defaultPicked).map(r => r.key)))
   const clearPick = () => setPicked(new Set())
 
@@ -150,6 +152,13 @@ export default function DraftReviewPanel({
         <span className="text-[11px] text-ink-500">
           新建 {stat.new} · 疑似已有 {stat.duplicate}{stat.conflict ? ` · 冲突 ${stat.conflict}` : ''}
         </span>
+        {(bundle.stats.folded > 0 || bundle.stats.variants > 0) && (
+          <span className="text-[11px] text-ink-500"
+            title="同一实体的多种写法（如「吞天诀」与「混沌吞天诀」）已自动归并成一条；疑似同物的只标注、默认不勾，不会被删除">
+            · 已归并 {bundle.stats.folded} 条同物写法
+            {bundle.stats.variants > 0 ? ` · ${bundle.stats.variants} 条疑似同物（默认不勾）` : ''}
+          </span>
+        )}
         <div className="flex-1" />
         <Button size="xs" variant="secondary" onClick={pickNew}>全选新建</Button>
         <Button size="xs" variant="secondary" onClick={pickHigh}>仅高可信</Button>
@@ -201,6 +210,18 @@ export default function DraftReviewPanel({
                               {r.matched && (
                                 <span className="shrink-0 text-[10px] text-ink-500">已有「{r.matched.name}」</span>
                               )}
+                              {!!r.foldedNames?.length && (
+                                <span className="shrink-0 text-[10px] text-ink-500"
+                                  title={`已把同一对象的其他写法并入本行：${r.foldedNames.join('、')}（都进了别称，未丢弃）`}>
+                                  已并入 {r.foldedNames.length} 个写法
+                                </span>
+                              )}
+                              {r.variantOf && (
+                                <span className="shrink-0 text-[10px] text-amber"
+                                  title={`疑似与「${r.variantOf}」为同一对象（名称是同一核心词的另一种写法）——默认不勾，若确为两个对象请直接勾上`}>
+                                  疑似同物「{r.variantOf}」
+                                </span>
+                              )}
                               <Button variant="ghost" size="xs" className="shrink-0 text-[10px]"
                                 onClick={() => setExpanded(open ? null : r.key)}>
                                 {open ? '收起' : '详情'}
@@ -229,6 +250,17 @@ export default function DraftReviewPanel({
                             )}
                             {r.chapters.length > 1 && (
                               <div className="mt-1 text-[10px] text-ink-500">出现在第 {r.chapters.join('、')} 章（已合并为一条）</div>
+                            )}
+                            {!!r.foldedNames?.length && (
+                              <div className="mt-1 text-[10.5px] text-ink-400">
+                                已并入同一对象的其他写法：{r.foldedNames.join('、')}（都写进了别称，没有丢弃任何名字）
+                              </div>
+                            )}
+                            {r.variantOf && (
+                              <div className="mt-1 text-[10.5px] leading-relaxed text-amber">
+                                疑似与「{r.variantOf}」为同一对象（名称是同一核心词的另一种写法），默认不勾选 ——
+                                若两者确实是不同对象，直接勾上即可。
+                              </div>
                             )}
                             {r.matched && (
                               <div className="mt-1 text-[10.5px] text-amber">

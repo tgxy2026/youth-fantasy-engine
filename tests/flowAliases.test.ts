@@ -62,14 +62,25 @@ db.setCurrentProject('flow-aliases-test')
     b.rows.map(r => r.name).join(','))
 }
 
-// ---------- ④ 负面对照：两章都只给简称、且无别称信息 → 合不了（已知局限，如实钉住）----------
+// ---------- ④ 同一情形的**反向对照**：D 方案（同物多写法归并，09-18）已把这条局限补上 ----------
+//   09-18 之前：模型没给别称 → `铁柱` 与 `王铁柱` 落成两条重复条目（当时如实钉住为「已知局限」）。
+//   09-18 之后：`draft.foldNameVariants` 按「前后缀即同物」确定性归并 → 合成一条。
+//   本用例保留的意义变成**看门狗**：将来若有人关掉/改坏归并，这条会立刻红。
 {
-  const b = await buildDraftBundle([
-    { source: '第2章', index: 2, entities: [{ type: '人物', name: '铁柱', desc: '', evidence: '' }] },
-    { source: '第7章', index: 7, entities: [{ type: '人物', name: '王铁柱', desc: '', evidence: '' }] },
-  ], { rawText: '' })
-  ok('模型没给别称信息时合不了（2 条）—— 这是已知局限，不假装能合',
-    b.stats.total === 2, b.rows.map(r => r.name).join(','))
+  const batches = [
+    { source: '第2章', index: 2, entities: [{ type: '人物' as const, name: '铁柱', desc: '', evidence: '' }] },
+    { source: '第7章', index: 7, entities: [{ type: '人物' as const, name: '王铁柱', desc: '', evidence: '' }] },
+  ]
+  const b = await buildDraftBundle(batches, { rawText: '' })
+  ok('🔴 模型没给别称时也能合成一条（D 方案补上了旧局限）',
+    b.stats.total === 1 && (b.rows[0] as DraftRow).name === '王铁柱',
+    b.rows.map(r => r.name).join(','))
+  ok('  · 简称进了别称（名字没丢）', (b.rows[0] as DraftRow).aliases.includes('铁柱'),
+    (b.rows[0] as DraftRow).aliases.join(','))
+  // 负面对照：关掉归并 → 回到 2 条，证明上一条确实是归并在起作用（不是别处顺手合的）
+  const off = await buildDraftBundle(batches, { rawText: '', foldVariants: false })
+  ok('  · 负面对照：关掉归并后确实回到 2 条（证明归并有效）',
+    off.stats.total === 2, off.rows.map(r => r.name).join(','))
 }
 
 // ---------- ⑤ 判重：抽出实体自带的别称也要参与比对 ----------

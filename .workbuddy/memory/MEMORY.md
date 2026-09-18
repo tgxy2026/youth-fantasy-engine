@@ -20,7 +20,7 @@
 - ✅ **C 创意写作（09-18）**：`runCreativeWriting`（bible→**闸门①**→outline→**闸门②**→连写）。🔴 **闸门＝await Promise**、**落库只在闸门通过后**（放弃不留半成品）；连写复用 `runAutoContinue`＋`outlineFor` 按细纲写；额度 kind `outline-generate`。
 - ✅ **拆书 P0 写入正文（09-18）**：`bookbreak/persist.ts` 写进正文**卷/章**（序 split→**persist**→extract→draft；面板可关）；🔴 **只追加不覆盖／重复导入守卫／中止返半成品**。🔴 **导入量：逐章抽不撞窗口**，受限的是调用次数/耗时。抽取 `aliases`→`flow/draft` **跨章归并**（索引必带类型）；可视化走 `WorkflowTimeline`。
 - 📌 需求源 `Desktop\开发需求.txt`；解读/冲突/4 决策/P1P2 全在 **`docs/2.2.0-双功能需求解读与P0落地.md`**（动这两功能前先读；拆书另见 `docs/一键拆书-*.md`，**B2 必读**）。🔴 form 型（世界观/力量体系/定位）**commit 无通道**；文本**零外发**。
-- 🔴 **去泛称别走 C（09-18 实测）**：复核精度仅~60%、误伤核心专名、微调即翻（剔33→0）、仅给名单剔59/60 → 只可「降级不删」＋登记表兜底。真噪音＝**同物多写法**（9簇/20%）→ **确定性归并**。详见 `docs/2.2.0-C方案*`。
+- 🔴 **去泛称：C 别走、走 D（09-18 实测）**：C（二遍复核）精度仅~60%、误伤核心专名、微调即翻 → **不上自动剔除**。✅ **D＝`draft.foldNameVariants()` 确定性归并**（零调用）：🔴 **只认后缀**（前缀位会把 `青岚宗` 并进 `青岚宗藏经阁`）、**多容器只标核心词**（`混沌/噬魂吞天诀` 是两个功法）、数字量词不并、全选新建不勾疑似同物；收益只在**空登记表的新项目**（6 章 66→63）。详见 `docs/2.2.0-C*`。
 - ⏳ **B2**＝两遍全字段抽取（只换 extract 阶段）。
 
 ## 架构红线
@@ -55,7 +55,7 @@
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 序不可换）。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce）；绝不清洗正文。
 - 🔴 采样惩罚看**射程**不看强度（三惩罚共用 `penalty_last_n` 窗口）。✅ 09-16：`repeat_last_n` 512＋`frequency_penalty` 0.1 → 手部率 28.9%→13.4%。🔴🔴 **绝不调高 `repeat_penalty`**（1.4 实测崩）；`presence_penalty` 无效；反重复提示词只钉 system 末尾。
-- 🔴 **额度跟模型走（09-17/18）**：`adviseCapacity()`→`recommendTuning()`（硬×12.5%、软×8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`syncTuningWithModel()` **换模型即套用**，🔴🔴 靠**模型指纹**判定（同模型手调值绝不覆盖）；本地**超窗口保护**（预算>`numCtx×0.732` 回落）。🔴🔴 **记忆档跟「预算」走、不跟本地/云端走**。`TUNING_LIMITS` 与 `paramGuide` 同源（测试锁）。
+- 🔴 **额度跟模型走（09-17/18）**：`adviseCapacity()`→`recommendTuning()`（硬×12.5%、软×8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`syncTuningWithModel()` **换模型即套用**，🔴🔴 靠**模型指纹**判定（同模型手调值绝不覆盖）；本地**超窗口保护**（预算>`numCtx×0.732` 回落）。🔴🔴 **记忆档跟「预算」走**。`TUNING_LIMITS` 与 `paramGuide` 同源（锁）。
 - 🔴🔴 **思考模型必须关思考**：本地传 `think:false`；**云端 Qwen3 系由 `openaiChat` 自动下发 `enable_thinking:false`**（`HYBRID_THINKING_RE`；400 退掉重试；本地不碰）。实测 Qwen3.5-35B：开 50~130s、content 271 字必残；关 35s/3318 字 ✅。
 - 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式响应头要等**整段生成完**才回来 → 必撞 180s 墙；流式首字节即清。与 `onBodyToken` 同类。⚠️ 未修：生成入口无 `max_tokens` 上限。
 - 🔴 本地实弹探针：改口径走 `LR_ANALYZE=<json>` 离线重算（别重跑 GPU）；CUDA 固定 seed **不保证逐位复现**（±4pp）。
@@ -70,8 +70,7 @@
 - 🔴🔴 **动酒馆任何功能前必读 `docs/酒馆模式-工程红线.md`（18 节）**；此处只留「跨节最易错」几条。
 - 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景**随项目**；自由会话+角色卡+记忆日常+面板设置+剧本库**跨项目**（索引与分条成对，tavernReports 别漏 deleteProject）。
 - 🔴🔴 预算三数（**出厂默认**；面板可按模型覆盖，见「AI 层」）：`historyBudget`＝预算−400−整条 system（别传记忆）；contextBudget **24000**；numCtx **32768** 别动（本地由显存决定，云端的 `num_ctx` 无效）。
-- 🔴🔴 防剧透两层：段落级 `viewMode:"character-view"`＋字段级 `AUTHOR_SIDE_FIELDS`（**新字段须登记**）；标题整行匹配（禁 `includes`）。
-- 🔴 最易踩：①会话存**快照非引用**（`snapshotStorySetting`）；②`branchSession` 分支/回滚**连记忆一起**；③归档后输入区只读＋`reroll`/工具条/调度/数值全锁；④角色卡小项**只能「小项名：内容」同一行＋全角冒号**（半角/独占行 → 整栏掉进「其他」框）。
+- 🔴 酒馆最易踩：①会话存**快照非引用**（`snapshotStorySetting`）；②角色卡小项**只能「小项名：内容」同一行＋全角冒号**（半角/独占行 → 整栏掉进「其他」框）。其余见外链 §18。
 - 🔴 协议 **v1.11**（旧版冻进 `LEGACY_PROTOCOLS`；改协议同步三处＋两断言）。📋 验收清单 `docs/酒馆模式-本轮改动实机验收清单-2026-09-16.md`。
 
 ## 出厂数据（角色卡不进原生）✅ 09-15

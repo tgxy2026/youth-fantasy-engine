@@ -29,6 +29,11 @@ export interface BuildDraftOptions {
   rawText?: string
   /** 复用已装载的登记表（多批次调用时省一次全项目扫描） */
   registry?: EntityRegistry
+  /**
+   * 是否做「同物多写法归并」（默认**开**）。
+   * 关掉后所有写法各自成行，由作者手工去重 —— 排障时用它对比归并前后的差异。
+   */
+  foldVariants?: boolean
 }
 
 /** 默认勾选阈值：低于它的草稿在界面上默认不勾（用户仍可手动勾） */
@@ -42,8 +47,11 @@ interface Classified {
   matchedId?: string
 }
 
-/** 合并后的实体（同名跨章） */
-interface Merged {
+/**
+ * 合并后的实体（同名跨章）。
+ * 导出是为了让「同物多写法归并」这条**纯函数**（`foldNameVariants`）能被单测直接覆盖。
+ */
+export interface MergedEntity {
   type: SettingEntityType
   name: string
   aliases: string[]
@@ -77,8 +85,8 @@ function uniq(list: string[]): string[] {
  * 同名同类型合并：描述取更长的一份（信息更全），证据去重，来源合并；
  * **别称也一起收进来**，并按别称做跨章归并（见下方注释）。
  */
-function mergeEntities(batches: EntityBatch[]): Merged[] {
-  const byKey = new Map<string, Merged>()
+function mergeEntities(batches: EntityBatch[]): MergedEntity[] {
+  const byKey = new Map<string, MergedEntity>()
   /**
    * 别称（规范化）→ 规范实体的 key。用来把跨章的简称并进本名那条。
    * 🔴 索引键**必须带类型**：否则「中州皇朝」在「势力」下登记后，
@@ -151,6 +159,128 @@ function mergeEntities(batches: EntityBatch[]): Merged[] {
   return [...byKey.values()].sort((a, b) => (a.from[0]?.index ?? 0) - (b.from[0]?.index ?? 0))
 }
 
+// ==================== 同物多写法归并（确定性规则，不调模型） ====================
+
+/**
+ * 短名是不是长名的**后缀**（规范化后）—— 判定两者可能是**同一对象的不同写法**。
+ *
+ * 三条边界，都是实测踩出来的（详见 `docs/2.2.0-C方案复核实验记录.md` §6）：
+ * 1. **只要后缀**（短名是长名的中心词，长名＝修饰语＋短名）：`吞天诀` ⊂ `混沌吞天诀`、
+ *    `铁柱` ⊂ `王铁柱`、`藏经阁` ⊂ `青岚宗藏经阁` —— 6/6 都是同一对象。
+ * 2. 🔴 **不要前缀**：短名在前缀位时，长名往往是在它后面接了**另一个名词**，
+ *    指向的是子体而非同一对象 —— 实测 `青岚宗` ⊂ `青岚宗藏经阁`（宗门 ≠ 它的藏经阁）、
+ *    `南荒` ⊂ `南荒秘境`（区域 ≠ 区域里的秘境）。这两条真被并错过，故一律不处理。
+ * 3. **不要中间包含**：多半是巧合（`玉牌` ⊂ `青玉腰牌`）。
+ */
+function isVariantWriting(short: string, long: string): boolean {
+  const s = normName(short)
+  const l = normName(long)
+  if (s.length < 2 || l.length <= s.length) return false
+  return l.endsWith(s)
+}
+
+/** 数字与量词：限定语里带它，通常意味着**并列层级**（三品玄脉 / 四品玄脉），不是同一对象 */
+const ORDINAL_RE = /[0-9零一二三四五六七八九十百千万两壹贰叁肆伍陆柒捌玖拾品级重层阶星]/
+
+/** 取「长名去掉短名后剩下的修饰语」（短名是后缀，所以修饰语就是它前面那段） */
+function modifierOf(shortNorm: string, longNorm: string): string {
+  return longNorm.slice(0, longNorm.length - shortNorm.length)
+}
+
+/** 把 `short` 并入 `long`：名字全进别称（本名取最长）、描述取更长、证据/来源/额外字段合并 */
+function absorbInto(long: MergedEntity, short: MergedEntity, absorbed: Map<MergedEntity, string[]>): void {
+  const names = uniq([short.name, ...short.aliases])
+  const all = uniq([long.name, ...long.aliases, ...names])
+  const canonical = all.reduce((best, x) => (x.length > best.length ? x : best), all[0] ?? '')
+  long.name = canonical
+  long.aliases = all.filter(x => x !== canonical)
+  if (short.desc.length > long.desc.length) long.desc = short.desc
+  long.tier = betterTier(long.tier, short.tier)
+  for (const q of short.quotes) if (!long.quotes.includes(q)) long.quotes.push(q)
+  for (const f of short.from) {
+    if (!long.from.some(x => x.index === f.index && x.source === f.source)) long.from.push(f)
+  }
+  for (const [k, v] of Object.entries(short.extra)) {
+    const val = (v ?? '').trim()
+    if (val && val.length > (long.extra[k] ?? '').length) long.extra[k] = val
+  }
+  const prev = absorbed.get(long) ?? []
+  absorbed.set(long, uniq([...prev, ...names.filter(n => n !== long.name)]))
+}
+
+export interface FoldVariantsResult {
+  /** 保留下来的实体（无歧义的同物多写法已并入） */
+  items: MergedEntity[]
+  /** 「疑似同一对象」：值＝那条规范条目的**名字**。这类**不合并也不删除**，只默认不勾 */
+  variantOf: Map<MergedEntity, string>
+  /** 被并入的写法：值＝该条目吸收掉的名字（界面据此如实交代「并了什么进来」） */
+  absorbed: Map<MergedEntity, string[]>
+}
+
+/**
+ * 🔴 **同物多写法归并**（确定性规则，零模型调用、零幻觉、可单测）。
+ *
+ * 由来（09-18 实测，见 `docs/2.2.0-C方案复核实验记录.md`）：
+ * 让模型「二遍复核」去泛称，精度仅约 60%、会误删核心专名（`镇界塔`/`神契`/`封仙路`）、
+ * 且提示词两句话之差就从「剔 33 条」翻成「剔 0 条」→ 不能用于破坏性操作。
+ * 但同一次实测发现草稿里真正的冗余是**同一实体的多种写法**（占 20%）：
+ * `胎记`/`左腕胎记`/`暗金胎记`、`吞天诀`/`混沌吞天诀`、`山门`/`山门口`、`神体`/`混沌神体`…
+ * 这类关系字符串规则即可判定 —— 于是有了本函数。
+ *
+ * 两条处置，**都不删除数据**：
+ * 1. **无歧义**（短名只被一个长名包含）且修饰语不带数字/量词 → **自动并入**：
+ *    短名进别称，描述/证据/来源/额外字段一并合并（合并只增不减，信息不丢）。
+ * 2. **有歧义**（短名被多个长名共用，如「胎记」既在「左腕胎记」又在「暗金胎记」里）→
+ *    **只标这条「核心词」**并默认不勾，长名一律不牵连、不合并 —— 理由见下方实现处的注释
+ *    （长名之间到底是同物还是并列的两个对象，字符串判不出来，宁可不标）。
+ * 数字/量词刹车（三品玄脉/四品玄脉、三品灵脉 这类**并列层级**）用于第 1 条：
+ * 修饰语带数字量词时一律不合并，只标注。
+ *
+ * ⚠️ 残余取舍（已实测排除两条真误并，见 `isVariantWriting` 的注释）：
+ * 若一本书里真有两个「同一中心词、不同修饰语」的独立对象（如 `玄天剑宗` 与 `青云剑宗`
+ * 之间互不为后缀，不会被并；但 `剑宗` 若也被抽出则会被并进其中一条），会并成一条 ——
+ * 名字都进别称、界面标注「已并入 N 个写法」，作者看得到也改得动；
+ * 要按项目习惯整体关掉就传 `foldVariants: false`。
+ */
+export function foldNameVariants(items: MergedEntity[]): FoldVariantsResult {
+  const variantOf = new Map<MergedEntity, string>()
+  const absorbed = new Map<MergedEntity, string[]>()
+  let live = [...items]
+  // 按名字长度升序处理：短的先并进长的。长名之后若又并进更长的，别名会随记录一起走
+  // （传递归并天然成立，不必再做一次闭包）。
+  const order = [...items].sort((a, b) =>
+    a.name.length - b.name.length || (a.from[0]?.index ?? 0) - (b.from[0]?.index ?? 0))
+
+  for (const m of order) {
+    if (!live.includes(m)) continue
+    const containers = live.filter(x => x !== m && x.type === m.type && isVariantWriting(m.name, x.name))
+    if (!containers.length) continue
+
+    if (containers.length === 1) {
+      const only = containers[0] as MergedEntity
+      // 限定语带数字/量词（如 `聚灵境` ⊂ `聚灵境三重`）→ 视为**并列层级**而非同一对象：
+      // 只标注、不自动并 —— 层级/品级在一本书里是并列的，并错比不并更糟。
+      if (ORDINAL_RE.test(modifierOf(normName(m.name), normName(only.name)))) {
+        variantOf.set(m, only.name)
+        continue
+      }
+      absorbInto(only, m, absorbed)
+      live = live.filter(x => x !== m)
+      continue
+    }
+
+    // 有歧义：短名被多个长名共用 → **只标这条「核心词」**，绝不牵连那些长名。
+    // 🔴 为什么连"疑似同组"的长名也不标：长名之间可能是同一对象的两种限定写法（`左腕胎记`/`暗金胎记`），
+    //    也可能是**两个并列的不同对象**（`混沌吞天诀`/`噬魂吞天诀` 是两个功法）。
+    //    字符串规则判不出这个差别，而**误把一个核心实体降级**（默认不勾）的代价，
+    //    远大于**留下一条重复条目**（作者一眼能看出并手动删）—— 所以宁可少标。
+    const longest = containers.reduce((b, x) => (x.name.length > b.name.length ? x : b), containers[0] as MergedEntity)
+    variantOf.set(m, longest.name)
+  }
+
+  return { items: live, variantOf, absorbed }
+}
+
 function tabNameOf(tabId: string): string {
   return TABS.find(t => t.id === tabId)?.name ?? tabId
 }
@@ -169,7 +299,7 @@ function scoreOf(o: { quoteHit: boolean; sources: number; conflicts: number }): 
 }
 
 /** 用 fieldMap 把合并结果落成「目标表真实键 → 值」（带显示名，UI 直接渲染） */
-function fieldsOf(m: Merged, tabId: string): { fields: DraftField[]; nameKey: string; descKey?: string } {
+function fieldsOf(m: MergedEntity, tabId: string): { fields: DraftField[]; nameKey: string; descKey?: string } {
   const map = KIND_MAP[m.type]
   const out: DraftField[] = []
   const put = (fieldName: string | undefined, value: string): string | undefined => {
@@ -206,7 +336,14 @@ export async function buildDraftBundle(
   batches: EntityBatch[],
   opts: BuildDraftOptions = {},
 ): Promise<DraftBundle> {
-  const merged = mergeEntities(batches)
+  const rawMerged = mergeEntities(batches)
+  // 🔴 同物多写法归并（确定性，不调模型）—— 必须排在**判重之前**：
+  //    并入会让别称变多，而 `settingLedger.classify` 是按「本名 + 别称」比对的，
+  //    排在后面就会漏掉「正文只写简称」那些章节的命中。
+  const folds: FoldVariantsResult = opts.foldVariants === false
+    ? { items: rawMerged, variantOf: new Map(), absorbed: new Map() }
+    : foldNameVariants(rawMerged)
+  const merged = folds.items
   const reg = opts.registry ?? await loadRegistry().catch(() => null)
 
   // 复用 settingLedger 的三档判重（registered / duplicate / new）—— 口径只此一处
@@ -263,6 +400,9 @@ export async function buildDraftBundle(
       confidence: scoreOf({ quoteHit, sources: m.from.length, conflicts: conflicts.length }),
       quotes: m.quotes,
       chapters: [...new Set(m.from.map(f => f.index))].sort((a, b) => a - b),
+      // 「同物多写法」的两条如实交代：并进来了哪些写法 / 疑似与谁同物（都不删除、不隐藏）
+      ...(folds.absorbed.get(m)?.length ? { foldedNames: folds.absorbed.get(m) as string[] } : {}),
+      ...(folds.variantOf.has(m) ? { variantOf: folds.variantOf.get(m) as string } : {}),
     })
   })
 
@@ -298,14 +438,34 @@ export function bundleOf(rows: DraftRow[]): DraftBundle {
   }
   const byStatus: Record<DraftStatus, number> = { new: 0, duplicate: 0, conflict: 0 }
   const byKind: Record<string, number> = {}
+  let folded = 0
+  let variants = 0
   for (const r of rows) {
     byStatus[r.status]++
     byKind[r.kindLabel] = (byKind[r.kindLabel] ?? 0) + 1
+    folded += r.foldedNames?.length ?? 0
+    if (r.variantOf) variants++
   }
-  return { rows, groups, stats: { total: rows.length, byStatus, byKind } }
+  return { rows, groups, stats: { total: rows.length, byStatus, byKind, folded, variants } }
 }
 
-/** 默认勾选判定：新建 + 置信度达标（重复项默认不勾，避免重复登记） */
+/**
+ * 默认勾选判定：
+ * - 「疑似同一对象的另一种写法」（`variantOf`）→ **不勾**。它没被删也没被藏，作者想留可以自己勾。
+ * - 其余：新建 + 置信度达标（重复项默认不勾，避免重复登记）。
+ */
 export function defaultPicked(r: DraftRow): boolean {
+  if (r.variantOf) return false
   return r.status === 'new' && r.confidence >= DRAFT_PICK_THRESHOLD
+}
+
+/**
+ * 「全选新建」按钮该勾哪些行。
+ *
+ * 🔴 必须**排除**「疑似同一对象的另一种写法」：否则作者一点「全选新建」，
+ *    刚标好的去重提示就被自己撤销了 —— 等于白标。
+ *    抽成纯函数是为了能单测（UI 里那行 if 没人测得住，实机也未必碰得到这种数据）。
+ */
+export function pickableAsNew(r: DraftRow): boolean {
+  return r.status === 'new' && !r.variantOf
 }

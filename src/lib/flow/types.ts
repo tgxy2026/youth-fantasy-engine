@@ -112,6 +112,17 @@ export interface DraftRow {
   quotes: string[]
   /** 来源章节序号（1 起） */
   chapters: number[]
+  /**
+   * 被「同物多写法」规则**并入**本行的其他写法（如 `吞天诀` 并入 `混沌吞天诀`）。
+   * 这些名字同时进了 `aliases`；单独留一份是为了让界面**如实告诉作者「并了什么进来」**。
+   */
+  foldedNames?: string[]
+  /**
+   * 疑似与另一条是**同一对象**（名称是同一核心词的另一种限定写法），值为那条的名字。
+   * 🔴 这类**既不合并也不隐藏**：只默认不勾 + 行内标注，由作者取舍。
+   *    判定规则见 `draft.foldNameVariants`（确定性字符串规则，不调模型）。
+   */
+  variantOf?: string
 }
 
 export interface DraftBundle {
@@ -123,6 +134,10 @@ export interface DraftBundle {
     byStatus: Record<DraftStatus, number>
     /** 按分类标签统计，如 { 人物: 12, 地点: 5 } */
     byKind: Record<string, number>
+    /** 被「同物多写法」规则并入其他条目的条数（界面用来交代「已归并 N 条」） */
+    folded: number
+    /** 标为「疑似同一对象、默认不勾」的条数 */
+    variants: number
   }
 }
 
