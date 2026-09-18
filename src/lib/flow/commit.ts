@@ -16,6 +16,7 @@ import * as db from '../db'
 import { uid } from '../id'
 import { TABS } from '../schema'
 import { normName } from '../settingLedger'
+import { formFieldNames } from './formMap'
 import type { CardRecord, TableRow } from '../types'
 import type { CommitOutcome, DraftField, DraftRow } from './types'
 
@@ -104,6 +105,13 @@ export async function commitDraftRows(rows: DraftRow[], opts: CommitOptions = {}
     if (!v) { v = await db.getCardRecords(tabId); cardCache.set(tabId, v) }
     return v
   }
+  // 表单型：一份表一条记录（`projectId::tabId`），同批量内也不复读
+  const formCache = new Map<string, Record<string, string>>()
+  const formOf = async (tabId: string): Promise<Record<string, string>> => {
+    let v = formCache.get(tabId)
+    if (!v) { v = await db.getFormData(tabId).catch(() => ({} as Record<string, string>)); formCache.set(tabId, v) }
+    return v
+  }
 
   for (let i = 0; i < ordered.length; i++) {
     const row = ordered[i]
@@ -112,7 +120,34 @@ export async function commitDraftRows(rows: DraftRow[], opts: CommitOptions = {}
       const tab = TABS.find(t => t.id === row.tabId)
       if (!tab) { out.failed.push(row.name); continue }
 
-      if (tab.type === 'card') {
+      if (tab.type === 'form') {
+        // 表单型是**整项目单份**，没有"同名条目"这回事 —— 冲突策略直接作用在**字段**上：
+        // · keep-existing / fill-empty：**只填空字段**（作者手改过的内容一律不动）
+        // · use-incoming：覆盖（危险，界面须二次确认）
+        // ⚠️ 这里刻意让 keep-existing 也填空：表单字段天生"存在但可能为空"，
+        //    若按条目型那样"已存在就整条不动"，末尾汇总将永远写不进任何东西（功能静默失效）。
+        const cur = await formOf(row.tabId)
+        const allowed = formFieldNames(row.tabId)
+        const next = { ...cur }
+        let changed = false
+        for (const f of row.fields) {
+          if (!f.value) continue
+          if (!allowed.has(f.label)) continue // 防幽灵字段（schema 改过名时）
+          if (policy === 'use-incoming') {
+            if ((next[f.key] ?? '') !== f.value) { next[f.key] = f.value; changed = true }
+          } else if (!(next[f.key] ?? '').trim()) {
+            next[f.key] = f.value
+            changed = true
+          }
+        }
+        if (changed) {
+          await db.saveFormData(row.tabId, next)
+          formCache.set(row.tabId, next)
+          // 整份表原本一个字都没有 → 算"新建"；只是补了几个空字段 → 算"更新"
+          if (Object.values(cur).some(v => (v ?? '').trim())) out.updated++
+          else out.created++
+        }
+      } else if (tab.type === 'card') {
         const list = await cardRowsOf(row.tabId)
         const hit = list.find(r => nameMatches(r.name, readAliases(row.tabId, r.data), row.name))
         if (hit) {
@@ -200,6 +235,21 @@ export async function previewCommit(rows: DraftRow[], conflict: ConflictPolicy =
     if (!tab) { out.skip++; out.items.push({ name: row.name, tabId: row.tabId, tabName: row.tabName, action: 'skip' }); continue }
     let exists = false
     try {
+      if (tab.type === 'form') {
+        // 表单型要预览的是"**有没有字段真会被写**"，而不是"有没有同名条目"——
+        // 表单永远"存在"（它有默认值），按条目型那套判断会把每一张都算成"跳过"。
+        const cur = await db.getFormData(row.tabId).catch(() => ({} as Record<string, string>))
+        const allowed = formFieldNames(row.tabId)
+        const fillable = row.fields.filter(f =>
+          f.value && allowed.has(f.label) &&
+          (conflict === 'use-incoming' ? (cur[f.key] ?? '') !== f.value : !(cur[f.key] ?? '').trim()))
+        const anyFilled = Object.values(cur).some(v => (v ?? '').trim())
+        const action: 'create' | 'update' | 'skip' =
+          fillable.length === 0 ? 'skip' : anyFilled ? 'update' : 'create'
+        out[action]++
+        out.items.push({ name: row.name, tabId: row.tabId, tabName: row.tabName, action })
+        continue
+      }
       if (tab.type === 'card') {
         const list = await db.getCardRecords(row.tabId)
         exists = list.some(r => nameMatches(r.name, readAliases(row.tabId, r.data), row.name))

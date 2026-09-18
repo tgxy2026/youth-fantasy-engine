@@ -18,10 +18,12 @@
  * ⚠️ B1 的抽取粒度是「专名清单」（name/desc/evidence），不含全字段（身份定位/外貌/境界…）。
  *    B2 会换成「两遍全字段抽取」，届时只需替换 extract 阶段的实现，draft/commit/UI 全不用改。
  */
-import { aiExtractSettingEntities } from '../aiTasks'
-import { buildDraftBundle, type EntityBatch } from '../flow/draft'
+import { aiExtractSettingEntities, aiSummarizeFormSettings } from '../aiTasks'
+import { buildDraftBundle, bundleOf, type EntityBatch } from '../flow/draft'
+import { formDraftRows } from '../flow/formMap'
 import { createFlow, type StageCtx } from '../flow/pipeline'
-import type { DraftBundle, FlowProgress, FlowStage } from '../flow/types'
+import type { DraftBundle, DraftRow, FlowProgress, FlowStage } from '../flow/types'
+import { buildFormMaterial } from './formSummary'
 import { persistSplitToChapters, planVolumes, type PersistResult } from './persist'
 import { chunkText, splitNovelText, type RawChapter, type SplitResult } from './split'
 
@@ -31,6 +33,10 @@ export const BOOKBREAK_STAGES: FlowStage[] = [
   { id: 'persist', label: '写入正文', weight: 1 },
   { id: 'extract', label: '逐块抽取', weight: 8 },
   { id: 'draft', label: '整理草稿', weight: 1 },
+  // 末尾**汇总一次**全书级设定（表单型：作品定位 / 世界设定 / 力量体系 …）。
+  // 🔴 必须放在最后：它吃的是前面抽出来的实体，而且要"整本书看完再收敛成一份档案"
+  //    —— 逐章增量写表单会越写越长、还覆盖作者手改（§3 冲突 3）。
+  { id: 'worldview', label: '汇总全书设定', weight: 3 },
 ]
 
 export interface BookBreakOptions {
@@ -49,6 +55,12 @@ export interface BookBreakOptions {
   persistToChapters?: boolean
   /** 无卷结构时用的卷名（默认「导入原文」） */
   volumeTitle?: string
+  /**
+   * 末尾是否汇总**全书级设定**（表单型：作品定位 / 世界设定 / 力量体系 …，**默认 true**）。
+   * 它比逐章抽取多一次模型调用（几十秒），但这是需求里点名要覆盖的四类之一；
+   * 不想要就在面板上关掉。
+   */
+  summarizeForms?: boolean
   /** 中止信号（界面的「中止」按钮接它） */
   signal?: AbortSignal
   /** 进度回调 */
@@ -63,6 +75,12 @@ export interface BookBreakResult {
   persist: PersistResult | null
   batches: EntityBatch[]
   bundle: DraftBundle
+  /**
+   * 末尾汇总出的**全书级设定**草稿行（每张表单一行；关闭汇总或模型没产出时为空）。
+   * 它们**同时已并入 `bundle.rows`**（界面统一勾选/落库）—— 这里单列一份是给面板做文案用
+   * （如「另汇总了 3 张表的全书设定」），不参与落库判断，别当成"还没并入"。
+   */
+  formRows: DraftRow[]
 }
 
 const DEFAULT_MAX_UNIT_CHARS = 4000
@@ -203,15 +221,45 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     return bundle
   })
 
+  // ⑤ 汇总全书级设定（表单型）：吃前面抽出的实体 + 开篇样本，末尾**一次**收敛成一份档案。
+  //    产出与条目型草稿同构的 DraftRow（每张表一行）→ 复用同一套勾选 / 预览 / 落库界面，
+  //    作者不必"在 A 处确认条目、再到 B 处确认世界观"。
+  flow.on('worldview', async (ctx: StageCtx) => {
+    if (opts.summarizeForms === false) { ctx.report(1, '已关闭「汇总全书级设定」，跳过'); return null }
+    const batches = (ctx.bag.extract as EntityBatch[]) ?? []
+    const material = buildFormMaterial(batches, raw)
+    if (!material.trim()) { ctx.report(1, '没有可用于汇总的材料，跳过'); return null }
+    ctx.report(0.15, '汇总全书级设定…')
+    let got = 0
+    let reported = 0
+    const values = await aiSummarizeFormSettings(material, {
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      // 收字回调同时就是**流式开关**（不传会撞 180s 总超时墙）
+      onToken: d => {
+        got += d.length
+        if (got - reported < 400 && got < 8192) return
+        reported = got
+        ctx.report(0.6, `汇总全书级设定… 已收到 ${got} 字`)
+      },
+    })
+    const rows = formDraftRows(values)
+    ctx.report(1, rows.length ? `汇总出 ${rows.length} 张表的全书设定` : '模型没有产出可用的全书级设定')
+    return rows
+  })
+
   const res = await flow.run()
   if (res.status === 'cancelled') return null
   if (res.status === 'error') throw new Error(res.error ?? '拆书失败')
 
+  const base = res.bag.draft as DraftBundle
+  const formRows = (res.bag.worldview as DraftRow[] | null) ?? []
   return {
     split: res.bag.split as SplitResult,
     persist: (res.bag.persist as PersistResult | null) ?? null,
     batches: (res.bag.extract as EntityBatch[]) ?? [],
-    bundle: res.bag.draft as DraftBundle,
+    // 汇总出的表单行**并进同一份 bundle**：作者在一个界面里勾选、确认、落库
+    bundle: formRows.length ? bundleOf([...base.rows, ...formRows]) : base,
+    formRows,
   }
 }
 

@@ -21,7 +21,7 @@ import type { SplitResult } from '../lib/bookbreak/split'
 import { planVolumes } from '../lib/bookbreak/persist'
 import type { PersistResult } from '../lib/bookbreak/persist'
 import WorkflowTimeline from './WorkflowTimeline'
-import type { DraftBundle, FlowProgress } from '../lib/flow/types'
+import type { DraftBundle, DraftRow, FlowProgress } from '../lib/flow/types'
 import { adviseCapacity, type CapacityAdvice } from '../lib/modelCapacity'
 import { getTavernSettings } from '../lib/tavern/settings'
 
@@ -37,6 +37,9 @@ export default function BookBreakPanel() {
   const [running, setRunning] = useState(false)
   /** 是否把原文写进正文编辑（老大 2026-09-18 需求：切分后立刻形成卷/章框架）。默认开。 */
   const [writeToChapters, setWriteToChapters] = useState(true)
+  const [summarizeForms, setSummarizeForms] = useState(true)
+  /** 末尾汇总出的「全书设定」草稿行（已并入 bundle，这里单留一份只用于文案说明） */
+  const [formRows, setFormRows] = useState<DraftRow[]>([])
   const [cap, setCap] = useState<CapacityAdvice | null>(null)
   const [persistInfo, setPersistInfo] = useState<PersistResult | null>(null)
   /** 各阶段的产物摘要（`FlowProgress.stages[].detail` 会被下一阶段覆盖，产物摘要得自己留） */
@@ -95,6 +98,7 @@ export default function BookBreakPanel() {
     abortRef.current = ctl
     setRunning(true)
     setBundle(null)
+    setFormRows([])
     setProgress(null)
     setPersistInfo(null)
     setSummaries({})
@@ -103,6 +107,7 @@ export default function BookBreakPanel() {
         signal: ctl.signal,
         onProgress: setProgress,
         persistToChapters: writeToChapters,
+        summarizeForms,
       })
       // 🔴 中止时要如实说明：写入正文发生在抽取之前，中止时正文可能**已经写进去一部分**
       if (!res) {
@@ -115,6 +120,7 @@ export default function BookBreakPanel() {
         return
       }
       setBundle(res.bundle)
+      setFormRows(res.formRows)
       setPersistInfo(res.persist)
       // 阶段产物摘要：让跑完之后也看得见每一步做了什么（否则 detail 会被下一阶段覆盖）
       const sum: Record<string, string> = {
@@ -122,7 +128,12 @@ export default function BookBreakPanel() {
         extract: res.batches.length
           ? `从 ${res.batches.length} 个批次抽到 ${res.batches.reduce((n, b) => n + b.entities.length, 0)} 条实体`
           : '没有抽到实体',
-        draft: `整理出 ${res.bundle.stats.total} 条草稿`,
+        // ⚠️ 扣掉全书设定那几行：它们是"汇总"出来的，不是逐章"整理"出来的，
+        //    算进这里会让作者以为抽到了更多条目
+        draft: `整理出 ${Math.max(0, res.bundle.stats.total - res.formRows.length)} 条草稿`,
+        ...(summarizeForms
+          ? { worldview: res.formRows.length ? `汇总出 ${res.formRows.length} 张表的全书设定` : '没汇总出可用的全书设定' }
+          : {}),
       }
       if (res.persist) {
         sum.persist = res.persist.alreadyImported
@@ -206,6 +217,19 @@ export default function BookBreakPanel() {
             <span className="text-ink-500">—— 切分完就能在「正文写作」里翻着读；已有卷章只追加、不动。</span>
           </span>
         </label>
+        <label className="mt-2 flex items-start gap-1.5 text-[11.5px] text-ink-300">
+          <input
+            type="checkbox"
+            checked={summarizeForms}
+            disabled={running}
+            onChange={e => setSummarizeForms(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            末尾汇总<b className="text-ink-100">全书级设定</b>（作品定位 / 世界设定 / 力量体系 等表单页签）
+            <span className="text-ink-500">—— 多一次模型调用，把整本书的信息收敛成一份档案；已填过的字段只补空、不覆盖你手改过的内容。</span>
+          </span>
+        </label>
         {writeToChapters && (
           <div className="mt-1 text-[11px] leading-relaxed text-ink-500">
             建议在<b className="text-ink-300">新建的项目</b>里拆书：整本正文会写进「当前项目」，
@@ -277,7 +301,14 @@ export default function BookBreakPanel() {
 
       {bundle && (
         <div className="mt-5">
-          <div className="mb-2 text-[13px] text-ink-100">③ 审阅草稿</div>
+          <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+            <span className="text-[13px] text-ink-100">③ 审阅草稿</span>
+            {formRows.length > 0 && (
+              <span className="text-[11px] text-ink-400">
+                含末尾汇总的 {formRows.length} 张「全书设定」—— 已填过的字段不会被覆盖，只补空。
+              </span>
+            )}
+          </div>
           <DraftReviewPanel bundle={bundle} />
         </div>
       )}
