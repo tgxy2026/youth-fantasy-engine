@@ -51,10 +51,12 @@
 - 🔴 解析统一 `aiParse.ts`（禁裸 `JSON.parse`）。温度不手填：结构化→0.3、创意→0.85；一轮 JSON 走 `aiChatJson`。
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 序不可换）。
 - 🔴 作者原文进 prompt 走 `promptGuard.authorBlock()`（随机 nonce）；绝不清洗正文。
-- 🔴 采样惩罚看**射程**不看强度（三惩罚共用 `penalty_last_n` 窗口，Ollama 默认 64 词元≈50 汉字）。✅ 09-16 落地 **`repeat_last_n` 512 ＋ `frequency_penalty` 0.1** → 手部率 28.9%→13.4%。🔴🔴 **绝不调高 `repeat_penalty`**（1.4 实测动作行崩、括号不闭合）。`presence_penalty` 调低/归零**均无效**（已证伪）。反重复提示词**只有钉 system 末尾有效**，埋中段≈0。
-- 🔴 **面板参数推荐跟着模型走（09-17）**：`modelCapacity.ts` `adviseCapacity()` 出整套 `suggest`（预算＋记忆档四项）；`recommendTuning()` 按出厂配比推（硬＝预算×12.5%、软＝8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`scaleGuide()` 按需放宽输入框上限（**只延长末段**）。🔴🔴 **记忆档跟着「预算」走、不跟本地/云端走**（断言别写成"切回本地就回出厂档"）。`TUNING_LIMITS` 必须与 `paramGuide` 的 min/max/step 同源（有测试锁）。窗口可在模型配置页手填 `contextWindow`（`lookupWindow()` 供配置页提示"留空识别成什么"；本地禁用）。
+- 🔴 采样惩罚看**射程**不看强度（共用 `penalty_last_n` 窗口，Ollama 默认 64 词元≈50 汉字）。✅ 09-16 落地 **`repeat_last_n` 512 ＋ `frequency_penalty` 0.1** → 手部率 28.9%→13.4%。🔴🔴 **绝不调高 `repeat_penalty`**（1.4 实测崩）。`presence_penalty` 归零**无效**。反重复提示词**只钉 system 末尾有效**。
+- 🔴 **面板参数推荐跟着模型走（09-17）**：`adviseCapacity()` 出整套 `suggest`；`recommendTuning()` 按出厂配比（硬＝预算×12.5%、软＝8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`scaleGuide()` 只延长末段放宽上限。🔴🔴 **记忆档跟「预算」走、不跟本地/云端走**。`TUNING_LIMITS` 必须与 `paramGuide` 同源（有测试锁）。窗口可在模型配置页手填 `contextWindow`（`lookupWindow()` 提示识别结果）。
 - 🔴 本地实弹探针：思考模型必带 `think:false`（否则全文进 `message.thinking`、`content` 空）；改口径别重跑 GPU，走 `LR_ANALYZE=<json>` 离线重算；CUDA 固定 seed **不保证逐位复现**（±4pp 噪声带）。
 - 🔴 自己驱动 `runAutoContinue` 必须传 **`onBodyToken`**（就是"开流式"开关；不传走 180s 总超时，27B 必被掐死）；先 `ai.chat` 预热；别 `await page.evaluate(整流程)`（改点火＋轮询 `window.__gen`）。
+- 🔴 **额度跟模型走（09-18）**：`syncTuningWithModel()` 换模型即套用整批推荐值（开关 `autoTuneByModel`）。🔴🔴 **靠模型指纹 `providerId|model|contextWindow` 判定**——只指纹变才套用；同模型下手调值**绝不覆盖**（写成"偏离就纠正"＝"手工覆盖"变空话），首次只登记。本地**超窗口保护**：预算 > `numCtx×0.732` 才回落（否则被静默截断）。⚠️ 仅酒馆，正文链路额度仍硬编码。
+- 🔴 **AI「会读哪些数据」＝ `lib/aiDataSources.ts` 单一源 + `AIDataSourceNote`**（进各功能问号气泡，概括+展开）。改 prompt 来源**必须同步改它**；闸 `tests/aiDataSources.test.ts`。
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（SSH `yfe_test_server`），站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务→删库≠下线；Nginx SPA 回退：不存在路径也返 200→不能靠 200 判上线。
