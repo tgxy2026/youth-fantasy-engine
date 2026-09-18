@@ -22,9 +22,27 @@ const REPLY = JSON.stringify([
   { type: '地点', name: '青岚山', desc: '', evidence: '青岚山积雪。' },
 ])
 
+/** 记住最近一次请求是否带 stream —— 顺带锁住「抽取必须走流式」这条 B2 不变量 */
+const seen: { stream: boolean }[] = []
+
 const server = http.createServer((req, res) => {
-  req.on('data', () => { /* 丢弃请求体 */ })
+  let raw = ''
+  req.on('data', c => { raw += c })
   req.on('end', () => {
+    let body: Record<string, unknown> = {}
+    try { body = JSON.parse(raw) } catch { /* 忽略 */ }
+    seen.push({ stream: body.stream === true })
+    if (body.stream === true) {
+      // 🔴 抽取自 B2 起走流式（输出变长，非流式会撞 180s 总超时墙）——
+      //    假端点必须会推 SSE，否则这里会以「API 未返回内容」崩掉（2026-09-18 真踩过）。
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      const mid = Math.floor(REPLY.length / 2)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: REPLY.slice(0, mid) } }] })}\n\n`)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: REPLY.slice(mid) } }] })}\n\n`)
+      res.write('data: [DONE]\n\n')
+      res.end()
+      return
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ choices: [{ message: { content: REPLY } }] }))
   })
@@ -60,6 +78,11 @@ ok('  · 中文键「原文」被认成 evidence', sm?.evidence === '噬命诀�
 
 const ql = by('青岚山')
 ok('模型没给别称时不下发 aliases 字段（避免脏数据）', ql !== undefined && ql.aliases === undefined, JSON.stringify(ql?.aliases))
+
+// 🔴 B2 起抽取必须走流式（输出变长，非流式必撞 180s 总超时墙）——
+//    这条断言保证将来没人把 onToken 摘掉（摘了这里立刻红，而不是等到线上「抽取卡死」）
+ok('🔴 抽取请求带 stream:true（B2：长输出必须流式）', seen.length > 0 && seen.every(s => s.stream),
+  JSON.stringify(seen))
 
 server.close()
 console.log(`\n—— extractAliases 用例结束：${pass} 通过 / ${fail} 失败`)

@@ -57,6 +57,31 @@ function stripComments(src: string): string {
   return out
 }
 
+/**
+ * 擦掉**纯类型 import** —— 它们编译期就被删掉，运行时不产生任何依赖边。
+ *
+ * 🔴 为什么要这一步（2026-09-18）：`aiTasks` 为了把抽取字段清单从落库映射表派生出来，
+ *    运行时 import 了 `flow/fieldMap`；而 `fieldMap` 只 `import type { SettingEntityType }`
+ *    反过来引用 aiTasks —— 两者凑成一个**假的环**，本闸当场报红，而它运行期其实不存在。
+ *    不擦类型边的话，这种「为了共用一份声明而互相 type 引用」的正当写法会被闸逼着放弃。
+ *
+ * 擦除的两种写法（其余一律保留，宁可保守）：
+ *   · `import type { X } from './y'`（整条语句都是类型）
+ *   · `import { type X, type Y } from './y'`（**所有**具名绑定都带 type 修饰）
+ * ⚠️ 混合写法 `import { type X, foo } from './y'` **不擦**（foo 是运行时绑定，那条边真实存在）。
+ */
+function stripTypeOnlyImports(t: string): string {
+  // 负向前瞻避免跨到下一条 import 语句（本项目风格不写分号，不能用 `[^;]*` 截断）
+  let out = t.replace(/\bimport\b\s+type\s+(?:(?!\bimport\b)[\s\S])*?from\s*['"][^'"]+['"]/g,
+    m => ' '.repeat(m.length))
+  out = out.replace(/\bimport\s*\{([^}]*)\}\s*from\s*['"][^'"]+['"]/g, (m, inner: string) => {
+    const specs = String(inner).split(',').map(s => s.trim()).filter(Boolean)
+    const allType = specs.length > 0 && specs.every(s => /^type\s+/.test(s))
+    return allType ? ' '.repeat(m.length) : m
+  })
+  return out
+}
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name)
@@ -77,7 +102,7 @@ if (!SRC) {
 
   const importsOf = new Map<string, string[]>()
   for (const f of files) {
-    const t = stripComments(fs.readFileSync(f, 'utf8'))
+    const t = stripTypeOnlyImports(stripComments(fs.readFileSync(f, 'utf8')))
     const deps = new Set<string>()
     // 兼容跨行 import：只认 `from '...'` 与动态 `import('...')`，且只认相对路径
     const re = /(?:from|import)\s*\(?\s*['"](\.[^'"]+)['"]/g
@@ -92,6 +117,18 @@ if (!SRC) {
   }
 
   ok('扫描到源文件', files.length > 100, String(files.length))
+
+  // ---- 擦除器自检：它哪天失效，闸就会「悄悄放过所有类型边」，必须钉住 ----
+  {
+    const edges = (src: string) => (stripTypeOnlyImports(src).match(/(?:from|import)\s*\(?\s*['"](\.[^'"]+)['"]/g) ?? []).length
+    ok('自检：`import type` 不产生依赖边', edges("import type { A } from './a'") === 0)
+    ok('自检：全 type 修饰的具名 import 不产生依赖边', edges("import { type A, type B } from './a'") === 0)
+    ok('自检：混合 import **保留**依赖边（含运行时绑定）', edges("import { type A, foo } from './a'") === 1)
+    ok('自检：普通 import 保留依赖边', edges("import { foo } from './a'") === 1)
+    ok('自检：动态 import 保留依赖边', edges("const m = await import('./a')") === 1)
+    const totalEdges = [...importsOf.values()].reduce((n, d) => n + d.length, 0)
+    ok('擦除后依赖边数量合理（没把图擦空）', totalEdges > 200, String(totalEdges))
+  }
 
   // DFS 找环（去重）
   const cycles: string[][] = []

@@ -75,6 +75,8 @@ export const KIND_MAP: Record<SettingEntityType, KindMap> = {
     statusValue: '已登场',
     slots: [
       { from: 'identity', to: ['身份定位', '身份'] },
+      // 「年龄/性别」是角色卡自己的列（B2 实测发现原来没有对应 slot → 永远抽不到）
+      { from: 'age', to: ['年龄/性别', '年龄'] },
       { from: 'appearance', to: ['外貌特征', '年龄/性别/外貌特征'] },
       { from: 'firstAppear', to: ['首次出场', '关键出场'] },
       { from: 'traits', to: ['核心性格', '一句话性格'] },

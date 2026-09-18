@@ -63,6 +63,67 @@ export interface MergedEntity {
   quotes: string[]
   /** 额外字段（键＝fieldMap.slots 的 from；同名键取更长的一份） */
   extra: Record<string, string>
+  /**
+   * 同一字段在不同块给出的**互不包含**的值（B2 全字段抽取）。
+   * 这类值到底哪个对，代码判不了 —— 记下来交作者在审阅面板里取舍，**不静默选一个**。
+   */
+  conflicts: { key: string; label: string; values: string[] }[]
+}
+
+// ==================== 字段合并与冲突检测（B2 全字段） ====================
+
+/** 值比较用归一化：忽略空白与常见标点，免得「淬体三重」与「淬体三重。」被判成矛盾 */
+function normFieldValue(s: string): string {
+  return s.replace(/[\s，。、；：,.;:!！?？"'“”‘’()（）\[\]【】《》]/g, '').toLowerCase()
+}
+
+function sameFieldValue(a: string, b: string): boolean {
+  return normFieldValue(a) === normFieldValue(b)
+}
+
+/** 记一处字段矛盾（同一字段最多留 3 个不同值，免得界面被刷屏） */
+function addConflict(m: MergedEntity, from: string, values: string[]): void {
+  let c = m.conflicts.find(x => x.key === from)
+  if (!c) {
+    // 界面显示名用**表里的中文列名**（slot.to[0]），作者才看得懂是哪个字段
+    const label = (KIND_MAP[m.type].slots ?? []).find(s => s.from === from)?.to[0] ?? from
+    c = { key: from, label, values: [] }
+    m.conflicts.push(c)
+  }
+  for (const v of values) {
+    if (!v || sameFieldValue(c.values[0] ?? '', v) && c.values.length > 0) continue
+    if (c.values.some(x => sameFieldValue(x, v))) continue
+    if (c.values.length >= 3) break
+    c.values.push(v)
+  }
+}
+
+/**
+ * 「硬事实」字段：这类字段**只能有一个值**，不同块给出互不包含的值就是真不一致 → 报冲突。
+ *
+ * 🔴 为什么必须有这条护栏（2026-09-18 实测）：一开始对所有字段都报冲突，
+ *    6 章样本上 **23/61 条草稿（38%）** 被标成「有冲突」，点开一看大半是
+ *    「壮实，嗓门大」vs「身板结实」这类**互补描述**、或「陈渊：兄长」vs「陈渊：兄妹」这类**同义写法**。
+ *    真矛盾（境界从「废脉」跳到「淬体一重」）反而被埋掉了。
+ *    其余字段是**可累积的叙述** —— 各块各说一面很正常，取更长的一份即可，不报冲突。
+ */
+const CONFLICT_FIELDS = new Set(['category', 'realm', 'grade', 'power', 'danger', 'leader'])
+
+/**
+ * 合并一个字段值（B2 全字段抽取走了这里）：
+ *  · 空 → 直接写
+ *  · 归一化后相同 → 不动
+ *  · **一个包含另一个** → 视为「更详细的写法」，取长的，**不算矛盾**
+ *    （「青岚宗」vs「青岚宗外门」是同一条信息的不同详略，标成矛盾只会淹掉真矛盾）
+ *  · 否则 → 主值取长的；**只有硬事实字段**才记进 `conflicts`，叙述型字段安静合并
+ */
+function mergeExtraField(m: MergedEntity, from: string, val: string): void {
+  const old = (m.extra[from] ?? '').trim()
+  if (!old) { m.extra[from] = val; return }
+  if (sameFieldValue(old, val)) return
+  const contained = old.includes(val) || val.includes(old)
+  if (val.length > old.length) m.extra[from] = val
+  if (!contained && CONFLICT_FIELDS.has(from)) addConflict(m, from, [old, val])
 }
 
 /** tier 重要度：主要 > 次要 > NPC（合并时取最高） */
@@ -129,6 +190,7 @@ function mergeEntities(batches: EntityBatch[]): MergedEntity[] {
           from: [{ index: b.index, source: b.source }],
           quotes: quote ? [quote] : [],
           extra: { ...(e.fields ?? {}) },
+          conflicts: [],
         })
         register(e.type, key, [name, ...incoming])
         continue
@@ -147,11 +209,10 @@ function mergeEntities(batches: EntityBatch[]): MergedEntity[] {
       if (!cur.from.some(f => f.index === b.index && f.source === b.source)) {
         cur.from.push({ index: b.index, source: b.source })
       }
-      // 额外字段：同名键取更长的一份（信息更全）
+      // 额外字段（B2 全字段）：更长的一份胜出；**互不包含**的值记一处冲突交作者判断
       for (const [k, v] of Object.entries(e.fields ?? {})) {
         const val = (v ?? '').trim()
-        if (!val) continue
-        if (val.length > (cur.extra[k] ?? '').length) cur.extra[k] = val
+        if (val) mergeExtraField(cur, k, val)
       }
     }
   }
@@ -202,7 +263,7 @@ function absorbInto(long: MergedEntity, short: MergedEntity, absorbed: Map<Merge
   }
   for (const [k, v] of Object.entries(short.extra)) {
     const val = (v ?? '').trim()
-    if (val && val.length > (long.extra[k] ?? '').length) long.extra[k] = val
+    if (val) mergeExtraField(long, k, val)
   }
   const prev = absorbed.get(long) ?? []
   absorbed.set(long, uniq([...prev, ...names.filter(n => n !== long.name)]))
@@ -312,19 +373,28 @@ function fieldsOf(m: MergedEntity, tabId: string): { fields: DraftField[]; nameK
 
   const nameKey = put(map.nameField, m.name) ?? ''
   if (map.aliasField && m.aliases.length) put(map.aliasField, m.aliases.join('、'))
-  const desc = resolveFieldPath(tabId, map.descFields ?? [])
-  const descKey = desc && m.desc ? put(desc.field, m.desc) : undefined
-  const first = resolveFieldPath(tabId, map.firstFields ?? [])
-  if (first && m.from[0]?.source) put(first.field, m.from[0].source)
-  if (map.statusValue) put('人物状态', map.statusValue)
-  // 额外字段（B2 的全字段抽取 / 「创意写作」的设定奠基）：按 slots 的候选名解析落点。
-  // 已被前面写过的键跳过 —— 否则同一列会被写两次（后写的覆盖先写的）。
+  // 🔴 顺序：**先落 slots（B2 的细节字段），再落 desc（一句话概括）**。
+  //    两者常抢同一个落点：人物的 `descFields` 与 slot `identity` 都指「身份定位」。
+  //    identity 是明确的身份定位、desc 只是一句话概括，前者更准 → 让它先占。
+  //    已被前面写过的键跳过 —— 否则同一列会被写两次（后写的覆盖先写的）。
   for (const slot of map.slots ?? []) {
     const v = (m.extra[slot.from] ?? '').trim()
     if (!v) continue
     const hit = resolveFieldPath(tabId, slot.to)
     if (hit && !out.some(f => f.key === hit.key)) out.push({ key: hit.key, label: hit.field, value: v })
   }
+  // desc：落点已被占就**不重复写**（让位的是较弱的概括，不是数据）。
+  // 但 `descKey` 仍指向那一格 —— 界面折叠行的摘要照样有内容可显示。
+  const descAt = resolveFieldPath(tabId, map.descFields ?? [])
+  let descKey: string | undefined
+  if (descAt && m.desc) {
+    const taken = out.find(f => f.key === descAt.key)
+    if (taken) descKey = taken.key
+    else { out.push({ key: descAt.key, label: descAt.field, value: m.desc }); descKey = descAt.key }
+  }
+  const first = resolveFieldPath(tabId, map.firstFields ?? [])
+  if (first && m.from[0]?.source && !out.some(f => f.key === first.key)) put(first.field, m.from[0].source)
+  if (map.statusValue) put('人物状态', map.statusValue)
   return { fields: out, nameKey, ...(descKey ? { descKey } : {}) }
 }
 
@@ -377,7 +447,12 @@ export async function buildDraftBundle(
 
     // registered / duplicate 都归入 duplicate（界面语：疑似已存在），点明命中的是谁
     const status: DraftStatus = it.status === 'new' ? 'new' : 'duplicate'
-    const conflicts: DraftConflict[] = [] // B1 的现成抽取不产出字段值，无从比对；B2 全字段抽取时在此填充
+    // B2：同一字段在不同块给出互不包含的值 → 如实列出，交给作者取舍（详细设计 §7.2）
+    const conflicts: DraftConflict[] = (m.conflicts ?? []).slice(0, 3).map(c => ({
+      field: c.label,
+      existing: c.values[0] ?? '',
+      incoming: c.values.slice(1).join(' ／ ') || c.values[0] || '',
+    }))
     const quoteHit = raw
       ? m.quotes.some(q => q && raw.includes(q))
       : m.quotes.length > 0

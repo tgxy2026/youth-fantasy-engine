@@ -12,6 +12,9 @@
 import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from './ai'
 import { parseObjectArray, parseLooseObject, asText, humanText, hasSubstance } from './aiParse'
 import { authorBlock, newAuthorFence } from './promptGuard'
+// 🔴 只为一个用途：把「该抽哪些字段」的键清单从**落库映射表**派生出来（见 SLOT_HINT 注释）。
+//    这是 type-only 的反向引用（fieldMap 只 `import type` 本文件），不成环。
+import { KIND_MAP } from './flow/fieldMap'
 
 // ---------- 通用 JSON 解析（已收敛到 ./aiParse，全项目唯一入口） ----------
 // 原先这里的 sliceJSON / normalizeParsed / parseObjectArray / hasSubstance / asText / humanText
@@ -1349,7 +1352,103 @@ type 只能取这 6 个值之一：
    **绝不把简称单独抽成另一条** —— 那会让设定表出现重复条目，也会让"是否已登记"的判重失效。
 8. 同一实体在本章出现多次只输出一条。
 9. 最多 20 条，按重要度排序。没有任何可抽取的实体就返回 []。
-10. 只输出 JSON 数组，元素形如 {"type":"人物","name":"王铁柱","aliases":["铁柱"],"desc":"…","evidence":"…","tier":"NPC"}，不要解释、不要 markdown 代码块标记。没有别称时 aliases 给空数组。`
+10. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。没有别称时 aliases 给空数组。
+    除 name/aliases/desc/evidence 外，请尽量补全下方列出的**全字段**（键名照抄）。`
+
+/**
+ * 字段键 → 中文提示。**键清单从 `flow/fieldMap` 的 slots 派生**（那份表是唯一真理源），
+ * 这里只负责措辞 —— 于是「schema / 落库映射改了、抽取 prompt 没跟」这类漂移在结构上不会发生。
+ * ⚠️ fieldMap 新增 slot 时必须在此补一句；`tests/extractFields.test.ts` 会断言两者严格一一对应。
+ */
+export const SLOT_HINT: Record<string, string> = {
+  identity: '身份定位',
+  age: '年龄 / 性别（如「16岁/男」）',
+  appearance: '外貌特征',
+  firstAppear: '首次出场章号',
+  traits: '核心性格',
+  innerStruggle: '核心矛盾/内在挣扎',
+  realm: '实力境界',
+  skills: '功法/技能',
+  special: '金手指/特殊能力',
+  gear: '装备法宝',
+  background: '出身背景',
+  faction: '所属势力',
+  location: '地理位置',
+  relations: '人际关系（写成「甲：关系；乙：关系」）',
+  category: '类别',
+  parent: '上级 / 层级归属',
+  geo: '地理位置',
+  danger: '危险 / 威胁等级',
+  power: '实力等级',
+  leader: '掌权者',
+  economy: '经济来源',
+  relationToMain: '与主角关系',
+  role: '剧情作用',
+  ability: '能力特性',
+  weakness: '弱点',
+  grade: '品级',
+  origin: '来源 / 出处',
+  effect: '能力 / 效果',
+  cost: '限制与代价',
+  note: '命名备注',
+}
+
+/** 每类实体该抽哪些字段键（**派生自 fieldMap**，见上） */
+export const EXTRACT_FIELD_KEYS = Object.fromEntries(
+  ENTITY_TYPES.map(t => [t, (KIND_MAP[t].slots ?? []).map(s => s.from)]),
+) as Record<SettingEntityType, string[]>
+
+/** 追加进 system 的「全字段」说明段（B2 全字段抽取） */
+export const EXTRACT_FIELDS_SPEC = [
+  '',
+  '【应补全的字段】',
+  '除 name / aliases / desc / evidence 外，请尽量补全下列字段。键名**照抄**（英文小写），单个值不超过 30 字。',
+  '⚠️ 正文没写到的**留空或省略，绝不猜** —— 编造会污染设定表，比留空糟得多。',
+  ...ENTITY_TYPES.map(t => `· ${t}：` + EXTRACT_FIELD_KEYS[t].map(k => `${k}（${SLOT_HINT[k] ?? k}）`).join('、')),
+  '',
+  '输出示例（一条人物）：',
+  '{"type":"人物","name":"陈渊","aliases":["渊儿"],"desc":"一句话描述","evidence":"原文原句",'
+  + '"tier":"主要","identity":"外门弟子","realm":"淬体一重","skills":"混沌吞天诀","relations":"老瞎子：恩人"}',
+].join('\n')
+
+/** 实际发给模型的系统提示词（B2 起为「专名清单 + 全字段」两份说明） */
+export const EXTRACT_SYS_FULL = EXTRACT_SYS + EXTRACT_FIELDS_SPEC
+
+/**
+ * 取某个 slot 的值：模型可能平铺在顶层、也可能塞进 `fields` 子对象；
+ * 键可能用我们要的英文键、也可能是**表里的中文列名**（模型爱这么干）。两种都认。
+ */
+function pickSlotValue(
+  top: Record<string, unknown>,
+  nested: Record<string, unknown> | undefined,
+  from: string,
+  cn: string,
+): unknown {
+  for (const src of [top, nested]) {
+    if (!src) continue
+    const v = src[from] ?? src[cn]
+    if (v !== undefined && v !== null && v !== '') return v
+  }
+  return undefined
+}
+
+/** 单字段值长度上限：设定表里是给人看的，不是存档 —— 超长的直接截断，别撑破表格 */
+const FIELD_VALUE_MAX = 120
+
+/** 人际关系可能是数组（[{with,type,detail}] 或字符串数组），统一拼成「甲：关系；乙：关系」 */
+function joinRelations(v: unknown): string {
+  if (!Array.isArray(v)) return asText(v).trim()
+  const parts: string[] = []
+  for (const x of v) {
+    if (typeof x === 'string') { const s = x.trim(); if (s) parts.push(s); continue }
+    const o = (x ?? {}) as Record<string, unknown>
+    const who = asText(o.with ?? o['人物'] ?? o.name ?? o['对象']).trim()
+    const how = asText(o.type ?? o.detail ?? o['关系'] ?? o['说明']).trim()
+    const s = [who, how].filter(Boolean).join('：')
+    if (s) parts.push(s)
+  }
+  return parts.join('；')
+}
 
 export async function aiExtractSettingEntities(
   chapterText: string,
@@ -1365,9 +1464,21 @@ ${chapterText.trim() || '（空白）'}
 请抽取本章出现的设定实体。`
   const text = await chat(
     cfg,
-    [{ role: 'system', content: composeSystemPrompt(EXTRACT_SYS, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    [{ role: 'system', content: composeSystemPrompt(EXTRACT_SYS_FULL, cfg) }, { role: 'user', content: user }],
+    // 🔴 走流式（B2 起输出变长：每类实体十几个字段）：非流式要等整段生成完才回响应头，
+    //    必然撞 CHAT_TIMEOUT_MS（180s）的总超时墙 —— 与 Bible/大纲是同一类问题。
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true },
   )
+  return parseExtractedEntities(text)
+}
+
+/**
+ * 把模型返回的 JSON 文本解析成实体数组（**纯函数**，不碰网络/数据库，便于单测）。
+ * 容错点：顶层/fields 子对象、英文键/中文列名、别称的数组与分隔串、relations 的数组与字符串。
+ * 🔴 只认该类型 slots 里声明的字段键 —— 模型偶尔把字段给错类型（给「地点」塞 identity），
+ *    照单全收会写出一列驴唇不对马嘴的数据。
+ */
+export function parseExtractedEntities(text: string): ExtractedEntity[] {
   const out: ExtractedEntity[] = []
   const seen = new Set<string>()
   for (const it of parseObjectArray(text)) {
@@ -1392,6 +1503,18 @@ ${chapterText.trim() || '（空白）'}
       if (!v || v === name || aliases.includes(v)) continue
       aliases.push(v)
     }
+    // B2：全字段。**只认该类型 slots 里声明的键** —— 模型偶尔会把字段给错类型
+    //（如给「地点」塞 identity），照单全收会写出一列驴唇不对马嘴的数据。
+    const slots = KIND_MAP[type].slots ?? []
+    const nested = (it.fields ?? it['字段']) as Record<string, unknown> | undefined
+    const fields: Record<string, string> = {}
+    for (const slot of slots) {
+      const raw = pickSlotValue(it, nested, slot.from, slot.to[0] ?? '')
+      if (raw === undefined) continue
+      const v = (slot.from === 'relations' ? joinRelations(raw) : asText(raw)).trim()
+      if (!v) continue
+      fields[slot.from] = v.slice(0, FIELD_VALUE_MAX)
+    }
     out.push({
       type,
       name,
@@ -1399,6 +1522,7 @@ ${chapterText.trim() || '（空白）'}
       evidence: asText(it.evidence ?? it['原文'] ?? it['证据']),
       ...(aliases.length ? { aliases } : {}),
       ...(type === '人物' && (rawTier === '主要' || rawTier === '次要' || rawTier === 'NPC') ? { tier: rawTier } : {}),
+      ...(Object.keys(fields).length ? { fields } : {}),
     })
     if (out.length >= 20) break
   }

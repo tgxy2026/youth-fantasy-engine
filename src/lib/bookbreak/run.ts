@@ -155,8 +155,24 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
       const u = units[i]
       ctx.report(i / Math.max(1, units.length), `${u.chapterTitle}（${i + 1}/${units.length}）`)
       let entities: Awaited<ReturnType<typeof aiExtractSettingEntities>> = []
+      // B2 全字段抽取的输出是 B1 的好几倍，必须走流式（否则撞 180s 总超时墙）；
+      // 这里把流式字节数做成「已收到 N 字」显示在节点时间线上，避免一行进度卡住不动。
+      // 节流到每 ~120 字报一次：逐 token 上报会把 React 重渲染拖垮。
+      let got = 0
+      let reported = 0
       try {
-        entities = await aiExtractSettingEntities(u.text, u.chapterTitle, { signal: ctx.signal })
+        entities = await aiExtractSettingEntities(u.text, u.chapterTitle, {
+          signal: ctx.signal,
+          onToken: d => {
+            got += d.length
+            if (got - reported < 120 && got < 4096) return
+            reported = got
+            ctx.report(
+              (i + 0.5) / Math.max(1, units.length),
+              `${u.chapterTitle}（${i + 1}/${units.length}）· 已收到 ${got} 字`,
+            )
+          },
+        })
       } catch (e) {
         if (isAbort(e) || ctx.signal.aborted) throw e
         entities = [] // 单块失败不中断整本书——记不到就跳过，最后界面会显示"共抽到 N 条"

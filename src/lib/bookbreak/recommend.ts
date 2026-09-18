@@ -14,9 +14,16 @@
 import type { CapacityAdvice } from '../modelCapacity'
 import type { SplitResult } from './split'
 
-/** 单次抽取的粗估耗时（秒） */
+/**
+ * 单次抽取的粗估耗时（秒）。
+ *
+ * 🔴 B2（全字段抽取）之后每章输出从「专名+一句话描述」涨到**每条十几个字段**，
+ *    单次调用明显变长：2026-09-18 用云端 Qwen3-30B-Instruct 实测示范项目 6 章
+ *    （9 个抽取单元）共用 456.6s ≈ **51s/次**。旧口径（云端 8~18s）已低估 3~6 倍，
+ *    故这里整体上调；区间取宽，宁保守勿乐观（本地 27B 受显存/量化影响更大）。
+ */
 function secPerCall(cap: CapacityAdvice): [number, number] {
-  return cap.local ? [20, 40] : [8, 18]
+  return cap.local ? [60, 150] : [25, 60]
 }
 
 /** 一轮跑完的「舒服」调用次数上限：超过就建议分段 */
