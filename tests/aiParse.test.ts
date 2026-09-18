@@ -3,7 +3,7 @@
 // 重点覆盖两件事：
 //   ① 2.0.1 修过的「单对象被丢成空数组」——绝不能回归（否则"改稿只剩标点"复现）；
 //   ② 剥代码块 / 切最外层 / 容忍前后夹带解释——旧实现三份行为不一致，现已统一。
-import { parseObjectArray, parsePlainObject, stripCodeFence, hasSubstance, asText, humanText } from '../src/lib/aiParse'
+import { parseObjectArray, parsePlainObject, parseLooseObject, stripCodeFence, stripStrayPunct, hasSubstance, asText, humanText } from '../src/lib/aiParse'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -107,6 +107,59 @@ function ok(name: string, cond: boolean, extra = '') {
   ok('【收敛验证】带围栏输入不再整条丢弃（旧裸 JSON.parse 会丢）', parseObjectArray(fenced).length === 1)
   const withProse = '以下是变化：\n[{"name":"李默","note":"修为提升"}]\n完毕。'
   ok('【收敛验证】夹带散文输入不再整条丢弃', parseObjectArray(withProse).length === 1)
+}
+
+// ---------- parseLooseObject / stripStrayPunct（2026-09-18 新增：生成型入口的容错路径） ----------
+// 第一条样本是**实机抓到的原文**：小模型在 JSON 结构位塞了个中文顿号，
+// 严格解析整批丢弃 → 表现为"生成成功但 0 条"，作者完全无从下手（排查了一整轮才定位）。
+{
+  const REAL_BROKEN = `{
+  "characters": [
+    {
+      "name": "林烬",
+      "tier": "主要",
+      "desc": "少年，靠吞噬他人修为续命",
+      "realm": "碎境巅峰",
+     、
+      "faction": "夜渊会",
+      "special": "可借他人修为短暂化形"
+    }
+  ]
+}`
+  ok('【判别力】严格解析在实机样本上确实失败', parsePlainObject(REAL_BROKEN) === null)
+  const fixed = parseLooseObject(REAL_BROKEN)
+  ok('🔴 宽松解析救回实机样本', !!fixed && Array.isArray(fixed.characters), JSON.stringify(Object.keys(fixed ?? {})))
+  const c = (fixed?.characters as Record<string, unknown>[] | undefined)?.[0]
+  ok('顿号之前的字段完好（realm）', c?.realm === '碎境巅峰', String(c?.realm))
+  ok('顿号之后的字段也在（faction）', c?.faction === '夜渊会', String(c?.faction))
+
+  // 🔴 负面对照：字符串**内部**的顿号/句号是正常内容，绝不能删
+  const withPunctInside = '{"desc":"江、河、湖、海，皆可吞。","name":"林烬"}'
+  ok('🔴 字符串内的顿号保持原样', stripStrayPunct(withPunctInside).includes('江、河、湖、海，皆可吞。'))
+  ok('值读出来与原句一致（未被清洗）', parseLooseObject(withPunctInside)?.desc === '江、河、湖、海，皆可吞。', String(parseLooseObject(withPunctInside)?.desc))
+
+  // 转义引号不应把"字符串外"判断搞错
+  const escaped = '{"a":"他说：\\"江、河。\\"","b":"x、y"}'
+  const cleanedEsc = stripStrayPunct(escaped)
+  ok('转义引号内的顿号未被删', cleanedEsc.includes('江、河。'), cleanedEsc)
+  ok('末尾字符串的顿号未被删', cleanedEsc.includes('x、y'), cleanedEsc)
+
+  // 尾随逗号 / 连续逗号
+  ok('严格解析在尾随逗号上失败', parsePlainObject('{"a":"1","b":"2",}') === null)
+  ok('宽松解析处理尾随逗号', parseLooseObject('{"a":"1","b":"2",}')?.b === '2')
+  ok('数组内尾随逗号也能处理', Array.isArray(parseLooseObject('{"list":["x","y",]}')?.list))
+  ok('连续逗号收敛为一个', parseLooseObject('{"a":"1",,"b":"2"}')?.b === '2')
+
+  // 合法输入不被"清洗"（严格路径原样返回）
+  const good = '{"characters":[{"name":"张三"}],"factions":[{"name":"青岚宗"}]}'
+  ok('合法输入两条路径结果一致', JSON.stringify(parsePlainObject(good)) === JSON.stringify(parseLooseObject(good)))
+  ok('合法输入里含顿号的值原样保留', parseLooseObject('{"a":"甲、乙"}')?.a === '甲、乙')
+
+  // 真·坏输入仍返回 null（不硬造对象）
+  ok('空串 → null', parseLooseObject('') === null)
+  ok('无 JSON 的纯文本 → null', parseLooseObject('今天天气不错') === null)
+  ok('顶层是数组时取首元素（沿用 parsePlainObject 既有容错，非 null）',
+    parseLooseObject('[{"a":1}]')?.a === 1, JSON.stringify(parseLooseObject('[{"a":1}]')))
 }
 
 console.log(`\naiParse: ${pass} passed, ${fail} failed`)

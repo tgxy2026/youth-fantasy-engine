@@ -84,6 +84,12 @@ export interface ContinueCallbacks {
   onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
   /** B 策略：返回用户勾选的待补登项；返回 null 表示跳过本次补登 */
   onSettingsCandidates?: (cands: LedgerItem[]) => Promise<LedgerItem[] | null>
+  /**
+   * 「创意写作」用：给出指定章号的细纲文本（来自大纲阶段落库的《章节细纲》）。
+   * 有则注入本章 prompt 末段，让逐章连写「按大纲走」而不是自由发挥。
+   * 不传 = 一键续写的老行为（完全不受影响）。
+   */
+  outlineFor?: (chapterNo: number) => string | undefined
   onLog?: (msg: string) => void
   signal?: AbortSignal
 }
@@ -478,6 +484,12 @@ export async function runAutoContinue(
         lastTitle ? `（上一章标题：《${lastTitle}》）` : '',
         lastBody.slice(-1200) || '（本项目还没有正文，这是开篇第一章）',
         memory ? `\n【本轮已写前序章节摘要（供衔接）】\n${memory}` : '',
+        // 「创意写作」按大纲写：细纲钉在**末段**（越靠后的指令权重越高，与"反重复提示词只钉
+        // system 末尾有效"同一道理）。不传 outlineFor 时这段为空，一键续写的老行为不受影响。
+        (() => {
+          const o = cb.outlineFor?.(ordered.length + i + 1)
+          return o ? `\n【本章细纲（按此写，不要自行改主线）】\n${o}` : ''
+        })(),
       ].filter(Boolean).join('\n')
 
       // ---- 初稿：生成 →（可选）作者裁决采纳 / 重写 / 中止 ----

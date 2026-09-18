@@ -10,7 +10,7 @@
 //   未配置模型 → 按钮禁用，绝不调用；调用失败 → 只提示，绝不破坏已有数据。
 
 import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from './ai'
-import { parseObjectArray, parsePlainObject, asText, humanText, hasSubstance } from './aiParse'
+import { parseObjectArray, parseLooseObject, asText, humanText, hasSubstance } from './aiParse'
 import { authorBlock, newAuthorFence } from './promptGuard'
 
 // ---------- 通用 JSON 解析（已收敛到 ./aiParse，全项目唯一入口） ----------
@@ -1513,4 +1513,255 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
     },
   )
   return trimInlineSuggestion(text, limit.chars)
+}
+
+// ==================== 创意写作（全自动创作工作流 · 生成型入口）====================
+//
+// 方案见 `docs/2.2.0-全自动AI小说创作工作流方案.md`：整条链路里**只有这两块要新写**，
+// 其余节点（逐章草稿 / 审校闭环 / 伏笔 / 导出）全部复用既有能力。
+//
+// 🔴 输出故意与「一键拆书」的 `ExtractedEntity[]` **同形状**：这样「判重 → 草稿 → 审阅 → 落库」
+//    整条管线（`lib/flow`）与审阅界面（`DraftReviewPanel`）都能直接复用，不另造一套。
+// 🔴 生成与落库严格分离：本文件只产出内存对象，**绝不触达 db**；写库一律由用户在草稿界面上确认。
+// 🔴 数量必须封顶：不封顶时模型会一口气生成几十个角色，作者光删就删到手软。
+// 🔴 不许新造专名（大纲这一步）：新造的名字在设定表里对不上，反而制造"未登记实体"。
+
+/** 设定奠基的产出上限（给模型的硬约束） */
+export interface BibleCounts {
+  main: number; secondary: number; npc: number
+  faction: number; location: number; term: number; item: number
+}
+
+export const DEFAULT_BIBLE_COUNTS: BibleCounts = {
+  main: 2, secondary: 4, npc: 4, faction: 4, location: 5, term: 6, item: 3,
+}
+
+const bibleSys = (c: BibleCounts) => `你是网文设定架构师。作者给了一句话想法，你要把它展开成一套「够开写、不写死」的设定草稿。
+
+铁律：
+1. 只输出 JSON，不要任何解释文字，不要 markdown 代码块围栏。
+2. 每条设定都必须服务于这句话想法本身，不要偏离题材另起炉灶。
+3. **宁可少而准**：每条都要有存在理由（能撑起冲突 / 爽点 / 悬念 / 世界规则），凑数的不要。
+4. **留白**：不要把故事写死（例如"他最终成神"）；写到"够开写"就停下。
+5. 名字要像正经中文网文：人名 2~3 字、宗门地名带风格感；严禁"张三""某宗""XX城"这类占位名。
+6. desc 一句话（不超过 40 字），写清"它在故事里是什么 / 干什么"。
+7. tier 只给人物：主要（主角团 / 贯穿全书）/ 次要（宿敌 / 导师 / 重要配角）/ NPC（功能型）。
+8. 数量上限（**不得超过**）：主要角色 ${c.main}、次要角色 ${c.secondary}、NPC ${c.npc}、势力 ${c.faction}、地点 ${c.location}、术语 ${c.term}、物品 ${c.item}。
+9. 严格使用下面给定的键名，不得增删改名。
+
+JSON 结构：
+{
+  "characters": [{"name":"","tier":"主要","desc":"","identity":"身份定位","traits":"核心性格","realm":"实力境界","faction":"所属势力","special":"金手指/特殊能力"}],
+  "factions":   [{"name":"","desc":"","category":"王朝/宗门/世家/商会/魔道/隐秘组织","leader":"掌权者","relationToMain":"与主角关系"}],
+  "locations":  [{"name":"","desc":"","category":"大陆/区域/城市/秘境/禁地/遗迹/山脉","parent":"层级归属"}],
+  "terms":      [{"name":"","desc":"","category":"境界/功法/法宝/地名/组织/种族/称谓/物品/其他"}],
+  "items":      [{"name":"","desc":"","category":"功法/法宝/丹药/材料/货币/传承/其他","grade":"品级"}]
+}`
+
+/**
+ * 把 Bible JSON 摊平成 `ExtractedEntity[]`（带 `fields`，供 fieldMap 的 slots 映射到真实列）。
+ * 上限在这里**再兜一道**：prompt 说了不许超，但模型偶尔会多给 —— 落草稿前必须裁掉。
+ *
+ * ⚠️ 导出仅为**可测**（`tests/creativeWriting.test.ts` 验上限裁剪与字段映射）；业务请走 `aiGenerateBible`。
+ */
+export function collectBibleEntities(obj: Record<string, unknown>, c: BibleCounts): ExtractedEntity[] {
+  const out: ExtractedEntity[] = []
+  const push = (type: SettingEntityType, arr: unknown, cap: number, fieldKeys: string[]) => {
+    const list = Array.isArray(arr) ? arr : []
+    let n = 0
+    for (const raw of list) {
+      if (n >= cap) break
+      const o = (raw ?? {}) as Record<string, unknown>
+      const name = asText(o.name ?? o['名称']).trim()
+      if (!name) continue
+      const fields: Record<string, string> = {}
+      for (const k of fieldKeys) {
+        const v = asText(o[k]).trim()
+        if (v) fields[k] = v
+      }
+      const tier = asText(o.tier)
+      out.push({
+        type,
+        name,
+        desc: asText(o.desc ?? o['描述']).trim(),
+        evidence: '', // 生成型入口没有原文（引用核对只对拆书有意义）
+        ...(type === '人物' && (tier === '主要' || tier === '次要' || tier === 'NPC') ? { tier } : {}),
+        ...(Object.keys(fields).length ? { fields } : {}),
+      })
+      n++
+    }
+  }
+  push('人物', obj.characters, c.main + c.secondary + c.npc, ['identity', 'traits', 'realm', 'faction', 'special'])
+  push('势力', obj.factions, c.faction, ['category', 'leader', 'relationToMain'])
+  push('地点', obj.locations, c.location, ['category', 'parent'])
+  push('术语', obj.terms, c.term, ['category'])
+  push('物品', obj.items, c.item, ['category', 'grade'])
+  return out
+}
+
+/**
+ * 创意写作①：**设定奠基** —— 一句话想法 → 设定草稿（条目型）。
+ * 产出交「闸门①」审阅（复用 `DraftReviewPanel`），用户勾选后才落库。
+ *
+ * @param opts.onRaw 原始返回回显（**诊断用**：模型不守 JSON 结构时，靠它看清到底回了什么）
+ */
+export async function aiGenerateBible(
+  seed: string,
+  opts: { signal?: AbortSignal; onToken?: (d: string) => void; counts?: Partial<BibleCounts>; onRaw?: (raw: string) => void } = {},
+): Promise<ExtractedEntity[]> {
+  const cfg = await requireActiveProvider()
+  const counts = { ...DEFAULT_BIBLE_COUNTS, ...(opts.counts ?? {}) }
+
+  const askOnce = async (): Promise<ExtractedEntity[]> => {
+    const text = await chat(
+      cfg,
+      [
+        { role: 'system', content: composeSystemPrompt(bibleSys(counts), cfg) },
+        { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。` },
+      ],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: opts.onToken, json: true },
+    )
+    opts.onRaw?.(text)
+    // 🔴 宽松解析：小模型常在 JSON **结构位**塞杂散字符（实测 qwen3:4b 会插「、」甚至孤立引号），
+    //    严格解析会把整批结果全丢掉，且表现为"生成成功但 0 条"—— 极难排查。
+    const raw = parseLooseObject(text)
+    if (!raw) return []
+    // 🔴 键名容错：国产模型（Qwen 系尤甚）有时连**顶层键**也中文化（"人物" 而非 "characters"）。两种都认。
+    const pick = (...keys: string[]): unknown => {
+      for (const k of keys) if (raw[k] !== undefined) return raw[k]
+      return undefined
+    }
+    return collectBibleEntities({
+      characters: pick('characters', '人物', '角色'),
+      factions: pick('factions', '势力', '组织'),
+      locations: pick('locations', '地点', '地理', '场景'),
+      terms: pick('terms', '术语', '名词'),
+      items: pick('items', '物品', '道具'),
+    }, counts)
+  }
+
+  // 🔴 空结果重试一次：模型输出有随机性，结构瑕疵 regenerate 一次多半就好。
+  //    两次都空则**如实返回空数组**，由调用方给出明确提示 —— 绝不在这里静默吞掉
+  //    （否则用户看到的是"生成成功但一条设定都没有"，完全无从下手）。
+  const first = await askOnce()
+  if (first.length) return first
+  return askOnce()
+}
+
+/** 分卷大纲（每卷一条） */
+export interface OutlineVolume {
+  title: string
+  positioning: string
+  stage: string
+  scope: string
+  opening: string
+  climax1: string
+  turn: string
+  climax2: string
+  ending: string
+  events: string
+  subplots: string
+}
+
+/** 章节细纲（每章一条；`no` 由顺序决定，不让模型自己编） */
+export interface OutlineChapter {
+  no: number
+  title: string
+  event: string
+  fn: string
+  cast: string
+  hook: string
+  scenes: string[]
+}
+
+export interface OutlineResult {
+  volumes: OutlineVolume[]
+  chapters: OutlineChapter[]
+}
+
+const outlineSys = (volumes: number, chapters: number) => `你是网文大纲师。给定设定资料，请产出分卷大纲与逐章细纲。
+
+铁律：
+1. 只输出 JSON，不要解释文字，不要 markdown 代码块围栏。
+2. 卷数 = ${volumes}，总章数 = ${chapters}（各卷章数自行分配）。
+3. **不许新造专名**：人物、地名、势力只能用设定资料里已有的名字。新造的名字在设定表里对不上，会制造"未登记实体"。
+4. 每章都要有"事件 + 钩子"，严禁"过渡章""日常"这类空章。
+5. 事件链要有递进（起→承→转→合）；每卷结尾留钩子给下卷。
+6. title 只写章名本身，**不要带"第X章"前缀**（系统会自动编号）。
+7. 每章 scenes 给 2~3 条场景（地点+人物+发生什么）。
+
+JSON 结构：
+{
+  "volumes":[{"title":"","positioning":"本卷一句话定位","stage":"主角境界区间","scope":"舞台范围","opening":"卷首状态","climax1":"第一大高潮","turn":"卷中转折","climax2":"卷末高潮","ending":"卷末状态","events":"事件链 起→承→转→合","subplots":"支线事件"}],
+  "chapters":[{"title":"","event":"本章一句话事件","function":"推进主线/铺垫/爽点/情感","cast":"出场人物","hook":"章末钩子","scenes":["场景1","场景2"]}]
+}`
+
+/**
+ * 创意写作②：**分卷大纲 + 章节细纲** —— 设定资料 → 大纲草稿。
+ * 产出交「闸门②」审阅；确认后才建卷/章（`runAutoContinue` 再据此逐章连写）。
+ */
+export async function aiGenerateOutline(
+  bibleDigest: string,
+  opts: { signal?: AbortSignal; onToken?: (d: string) => void; volumes?: number; chapters?: number; onRaw?: (raw: string) => void } = {},
+): Promise<OutlineResult> {
+  const cfg = await requireActiveProvider()
+  const volCount = Math.max(1, Math.min(8, opts.volumes ?? 1))
+  const chCount = Math.max(1, Math.min(60, opts.chapters ?? 10))
+  const askOnce = async (): Promise<OutlineResult> => {
+    const text = await chat(
+      cfg,
+      [
+        { role: 'system', content: composeSystemPrompt(outlineSys(volCount, chCount), cfg) },
+        { role: 'user', content: `【设定资料】\n${bibleDigest.trim() || '（无，请按题材自行克制地设定）'}\n\n请产出分卷大纲与逐章细纲。` },
+      ],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: opts.onToken, json: true },
+    )
+    opts.onRaw?.(text)
+    // 同 aiGenerateBible：宽松解析 + 顶层键中英双认（只认英文键会表现为"生成成功但 0 章"）
+    const rawObj = parseLooseObject(text) ?? {}
+    const obj: Record<string, unknown> = {
+      volumes: rawObj.volumes ?? rawObj['卷'] ?? rawObj['分卷'] ?? rawObj['分卷大纲'],
+      chapters: rawObj.chapters ?? rawObj['章节'] ?? rawObj['章'] ?? rawObj['章节细纲'],
+    }
+
+    const volumes: OutlineVolume[] = (Array.isArray(obj.volumes) ? obj.volumes : []).slice(0, volCount).map(raw => {
+      const o = (raw ?? {}) as Record<string, unknown>
+      return {
+        title: asText(o.title).trim(),
+        positioning: asText(o.positioning).trim(),
+        stage: asText(o.stage).trim(),
+        scope: asText(o.scope).trim(),
+        opening: asText(o.opening).trim(),
+        climax1: asText(o.climax1).trim(),
+        turn: asText(o.turn).trim(),
+        climax2: asText(o.climax2).trim(),
+        ending: asText(o.ending).trim(),
+        events: asText(o.events).trim(),
+        subplots: asText(o.subplots).trim(),
+      }
+    }).filter(v => v.title)
+
+    const chapters: OutlineChapter[] = (Array.isArray(obj.chapters) ? obj.chapters : []).slice(0, chCount).map((raw, i) => {
+      const o = (raw ?? {}) as Record<string, unknown>
+      const scenes = (Array.isArray(o.scenes) ? o.scenes : []).map(asText).filter(Boolean).slice(0, 3)
+      // 防御：模型偶尔会自带「第X章」前缀 —— 系统会重新编号，这里剥掉避免双重编号
+      const title = asText(o.title).trim().replace(/^第\s*[\d零一二三四五六七八九十百千]+\s*[章回]\s*/, '')
+      return {
+        no: i + 1,
+        title,
+        event: asText(o.event).trim(),
+        fn: asText(o['function'] ?? o.fn).trim(),
+        cast: asText(o.cast).trim(),
+        hook: asText(o.hook).trim(),
+        scenes,
+      }
+    }).filter(c => c.title)
+
+    return { volumes, chapters }
+  }
+
+  // 空结果重试一次（同 aiGenerateBible：模型输出有随机性，格式瑕疵 regenerate 一次多半就好）
+  const first = await askOnce()
+  if (first.chapters.length) return first
+  return askOnce()
 }

@@ -39,6 +39,8 @@ const LEGACY: Record<WriterBudgetKind, number> = {
   'jiewenji-pleasure': 8000,
   'jiewenji-opening': 8000,
   'jiewenji-brief': 8000,
+  // 创意写作（2026-09-18 新增）：分卷大纲按 1.5 档，出厂即 12000
+  'outline-generate': 12000,
 }
 ok('每个 kind 都有对应的"改造前值"断言（新增功能别忘了登记）',
   Object.keys(LEGACY).length === Object.keys(WRITER_BUDGET_KINDS).length,

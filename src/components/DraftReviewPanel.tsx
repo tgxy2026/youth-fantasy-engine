@@ -24,6 +24,14 @@ interface Props {
   /** 已有同名条目时的策略（默认 keep-existing：已有数据分毫不动） */
   conflict?: ConflictPolicy
   onCommitted?: (out: CommitOutcome) => void
+  /**
+   * 自定义「写入」动作。给了它，本组件就**不再自己落库**，而是把用户勾选的行交回调用方。
+   * 「创意写作」的闸门①用它 —— 那边落库时机必须由编排器统一掌握
+   * （用户在闸门处放弃时，绝不能已经写了一半进库）。
+   */
+  onConfirm?: (picked: DraftRow[]) => void | Promise<void>
+  /** 写入按钮文案（配合 onConfirm 用，如「确认设定，继续生成大纲」） */
+  confirmText?: string
 }
 
 const STATUS_TAG: Record<DraftRow['status'], { text: string; cls: string }> = {
@@ -38,7 +46,9 @@ function confCls(c: number): string {
 
 const EDIT_INPUT = 'w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-[11.5px] text-ink-100 outline-none hover:border-ink-700 focus:border-amber/50 focus:bg-ink-900'
 
-export default function DraftReviewPanel({ bundle, conflict = 'keep-existing', onCommitted }: Props) {
+export default function DraftReviewPanel({
+  bundle, conflict = 'keep-existing', onCommitted, onConfirm, confirmText,
+}: Props) {
   const [rows, setRows] = useState<DraftRow[]>(bundle.rows)
   const [picked, setPicked] = useState<Set<string>>(
     () => new Set(bundle.rows.filter(defaultPicked).map(r => r.key)),
@@ -89,6 +99,12 @@ export default function DraftReviewPanel({ bundle, conflict = 'keep-existing', o
   const doCommit = async () => {
     const chosen = rows.filter(r => picked.has(r.key))
     if (!chosen.length) { showToast('请先勾选要写入的条目', 'info'); return }
+    // 调用方接管落库（创意写作的闸门①）：这里不 commit、也不弹确认 —— 由调用方的流程决定落库时机
+    if (onConfirm) {
+      setBusy(true)
+      try { await onConfirm(chosen) } catch { /* 调用方自行提示错误 */ } finally { setBusy(false) }
+      return
+    }
     setBusy(true)
     try {
       const pv = await previewCommit(chosen, conflict)
@@ -244,7 +260,7 @@ export default function DraftReviewPanel({ bundle, conflict = 'keep-existing', o
         </span>
         <div className="flex-1" />
         <Button size="sm" variant="primary" solid disabled={busy || picked.size === 0} onClick={doCommit}>
-          {busy ? '写入中…' : `写入项目（${picked.size}）`}
+          {busy ? '处理中…' : `${confirmText ?? '写入项目'}（${picked.size}）`}
         </Button>
       </div>
     </section>

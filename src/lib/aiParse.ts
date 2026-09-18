@@ -61,6 +61,51 @@ export function parsePlainObject(raw: string): Record<string, unknown> | null {
 }
 
 /**
+ * 剥掉 JSON **结构位置**（字符串字面量之外）上的杂散标点，并清掉尾随逗号。
+ *
+ * 为什么需要（2026-09-18 实机抓到）：小模型（qwen3:4b 实测）会在属性之间多写一个中文顿号 ——
+ *   `"realm": "碎境巅峰", 、 "faction": "夜渊会"` → `JSON.parse` 直接死在 position 677。
+ *   模型自己不知道这类瑕疵，而整批结果会全丢（表现为"生成成功但 0 条"，极难排查）。
+ *
+ * 做法：逐字符扫描、跟踪"是否在字符串内"（含转义），**只在字符串外**丢弃全角标点；
+ *   字符串内部的顿号/句号是正常内容，绝不能动（否则会把描写句子改坏）。
+ */
+export function stripStrayPunct(s: string): string {
+  let out = ''
+  let inStr = false
+  let esc = false
+  for (const ch of s) {
+    if (inStr) {
+      out += ch
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') { inStr = true; out += ch; continue }
+    if (ch === '、' || ch === '，' || ch === '；' || ch === '。') continue
+    out += ch
+  }
+  // 连续逗号 → 一个；对象/数组闭合前的尾随逗号 → 去掉
+  return out.replace(/,(?=\s*,)/g, '').replace(/,(\s*[}\]])/g, '$1')
+}
+
+/**
+ * **宽松**解析单个 JSON 对象：先走严格路径（`parsePlainObject`），失败再清掉结构位的
+ * 杂散标点与尾随逗号重试。
+ *
+ * ⚠️ 刻意**不改** `parsePlainObject` 本身 —— 它被全项目 20+ 处复用，改变其容错边界属于
+ * "静默扩大接受范围"，风险大于收益。生成型入口（`aiGenerateBible` / `aiGenerateOutline`）
+ * 输出规模大、模型更易出格式瑕疵，故单独用本函数。
+ */
+export function parseLooseObject(raw: string): Record<string, unknown> | null {
+  const strict = parsePlainObject(raw)
+  if (strict) return strict
+  const v = tryParse(stripStrayPunct(sliceJSON(raw, '{')))
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+}
+
+/**
  * 解析「对象数组」。模型偶尔返回单个对象或 {list:[…]}，一并兼容。
  *
  * ⚠️ 修复（2.0.1）：原实现先按 '[' 切片，若 raw 本身就是**单个 JSON 对象**，
