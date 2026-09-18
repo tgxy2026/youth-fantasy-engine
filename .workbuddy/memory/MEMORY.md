@@ -15,9 +15,9 @@
 - 🔴🔴 **只做桌面版**（无 WEB/PORTABLE）。`StoreOps` 在 `storeOps.ts`，版本号在 `env.ts`。云盘同步＝唯一跨设备途径。
 
 ## 2.2.0 三功能（伴写 / 拆书 / 工作流）
-- 细则全在四份文档（本文件只留红线）：`docs/2.2.0-AI伴写*.md`（✅ 已落地）、`docs/一键拆书-*.md`、`docs/2.2.0-全自动*.md`、`docs/2.2.0-三功能优先级*.md`（排期决策）。
+- 细则全在四份文档：`docs/2.2.0-AI伴写*.md`（✅）、`docs/一键拆书-*.md`、`docs/2.2.0-全自动*.md`、`docs/2.2.0-三功能优先级*.md`。
 - 🔴 **唯一强依赖＝拆书 → 工作流**（`DraftRow`/`pipeline.ts`/`map.ts` 共用）；**排期 A→B1→C→B2**（B1＝通用管线层，B2＝抽取本体后置）。
-- ✅ **伴写阶段一已落地（09-17）**：`aiTasks.ts` `aiInlineSuggest()`；`NovelEditor.tsx` ghost 第三叠层＋「钢笔」弹窗（**默认关**）。定案：文风三层锚定**不做枚举**、去 AI 味默认开且钉 system 末尾、长度三档。🔴 切章必须清 ghost，否则 Tab 把上章建议插进新章＝数据事故。
+- ✅ **伴写阶段一已落地（09-17）**：`aiInlineSuggest()`；`NovelEditor.tsx` ghost 第三叠层＋「钢笔」弹窗（**默认关**）。定案：文风三层锚定**不做枚举**、去 AI 味默认开且钉 system 末尾、长度三档。🔴 切章必须清 ghost，否则 Tab 把上章建议插进新章＝数据事故。
 - 可复用：C 的「想法→Bible」走 `interview.ts`＋`draftMaterial.ts`（带来源标注）。
 
 ## 架构红线
@@ -32,7 +32,7 @@
 - 桌面整库一 JSON；⚠️ 别让云盘同步该目录；🔴 图片先压缩再入库；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
 - 🔄 两同步入口别混：①改数据位置＝明文 JSON 进云盘；②云盘同步＝加密 `.yfe`＋记录级合并＋每日备份。**用 ②**。
-- 🔴 09-15 修一批同步缺陷（6 条细则见 `docs/2.1.1-审计修复记录.md` §四）。
+- 🔴 09-15 修一批同步缺陷（细则见 `docs/2.1.1-审计修复记录.md` §四）。
 
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 会回退黑）。设置项排版＝标题→输入→说明；复制统一 `copyText()`。
@@ -44,9 +44,9 @@
 - 🔴 每页签页头 `HelpPopover` 问号**必须在标题右侧同行**（`h1` 是块级，须同处 flex 行内容器）。头像兜底＝名字（`avatarLabel` 封顶 2 字）；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」/（）。
 
 ## AI 层
-- 🔴 **「保密等级」＝信息档位＋行级预算排序（09-17）**：单字段双输出**不并存**（S＝角色视角排除＋P0；A/B/C＝可见＋P1/2/3）。`aiContext.ts` `rankOf`/`sortBySecrecy`，`renderCards/renderTable` 排序后 `slice(0,cap)`；🔴 同级必须稳定（护 prefix cache）。🔴🔴 **`rankOf` 必须同时认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::保密等级`）——只认裸键让**角色卡排序静默失效**，且只测表格发现不了。详见 `docs/AI上下文-*.md`。⚠️ 未做：角色视角过滤 S 级行、时序加权。
-- 🔴 **预算为何 1~2 万而非标称 256K**：32GB 显存下 KV cache 32K=8.7GB（+模型 23GB≈塞满）、128K=34.9GB 溢出——物理上限就在 32K；叠加"有效上下文仅标称 30~65%""**3000 token 起有长度税**"。详见 `docs/AI上下文预算策略-…md`。
-- 🔴 **防剧透＝四道闸（`aiContext`，调用方传参）**：① `viewMode:'character-view'` 排 10 张作者侧页签 ② `AUTHOR_SIDE_FIELDS`（~40 个未来向列名，**新字段须登记**）整列不渲染 ③ `anchorChapterId` 清单/召回只到锚点 ④ `knowerName` 过滤 secrets 知情条目。**只覆盖剧情推演链路**；自由对话不读项目设定表，其余 AI 功能拿全量上下文。
+- 🔴 **「保密等级」＝信息档位＋行级预算排序（09-17）**：单字段双输出**不并存**（S＝角色视角排除＋P0；A/B/C＝可见＋P1/2/3）。`aiContext.ts` `rankOf`/`sortBySecrecy`，`renderCards/renderTable` 排序后 `slice(0,cap)`；🔴 同级必须稳定（护 prefix cache）。🔴🔴 **`rankOf` 必须同时认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::保密等级`）——只认裸键让**角色卡排序静默失效**。详见 `docs/AI上下文-*.md`。⚠️ 未做：角色视角过滤 S 级行、时序加权。
+- 🔴 **预算为何 1~2 万而非标称 256K**：32GB 显存下 KV cache 32K=8.7GB（+模型≈塞满）、128K=34.9GB 溢出——上限就在 32K；叠加"有效上下文仅标称 30~65%""**3000 token 起有长度税**"。详见 `docs/AI上下文预算策略-…md`。
+- 🔴 **防剧透＝四道闸（`aiContext`，调用方传参）**：① `viewMode:'character-view'` 排 10 张作者侧页签 ② `AUTHOR_SIDE_FIELDS`（~40 个未来向列名，**新字段须登记**）不渲染 ③ `anchorChapterId` 只到锚点 ④ `knowerName` 过滤 secrets 知情条目。**只覆盖剧情推演**；其余 AI 功能拿全量。
 - 🔴 **新增资料型页签必须登记 `PRIORITY`**——兜底循环只保证"数据不丢"、不保证"进得了预算"（09-17：`faction-rels` 有数据却带不上；`style` 已前移）。
 - 🔴 解析统一 `aiParse.ts`（禁裸 `JSON.parse`）。温度不手填：结构化→0.3、创意→0.85；一轮 JSON 走 `aiChatJson`。
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 序不可换）。
@@ -55,8 +55,7 @@
 - 🔴 **面板参数推荐跟着模型走（09-17）**：`adviseCapacity()` 出整套 `suggest`；`recommendTuning()` 按出厂配比（硬＝预算×12.5%、软＝8.3%、长期＝硬÷6、日记＝`7×√(预算/24000)`）；`scaleGuide()` 只延长末段放宽上限。🔴🔴 **记忆档跟「预算」走、不跟本地/云端走**。`TUNING_LIMITS` 必须与 `paramGuide` 同源（有测试锁）。窗口可在模型配置页手填 `contextWindow`（`lookupWindow()` 提示识别结果）。
 - 🔴 本地实弹探针：思考模型必带 `think:false`（否则全文进 `message.thinking`、`content` 空）；改口径别重跑 GPU，走 `LR_ANALYZE=<json>` 离线重算；CUDA 固定 seed **不保证逐位复现**（±4pp 噪声带）。
 - 🔴 自己驱动 `runAutoContinue` 必须传 **`onBodyToken`**（就是"开流式"开关；不传走 180s 总超时，27B 必被掐死）；先 `ai.chat` 预热；别 `await page.evaluate(整流程)`（改点火＋轮询 `window.__gen`）。
-- 🔴 **额度跟模型走（09-18）**：`syncTuningWithModel()` 换模型即套用整批推荐值（开关 `autoTuneByModel`）。🔴🔴 **靠模型指纹 `providerId|model|contextWindow` 判定**——只指纹变才套用；同模型下手调值**绝不覆盖**（写成"偏离就纠正"＝"手工覆盖"变空话），首次只登记。本地**超窗口保护**：预算 > `numCtx×0.732` 才回落（否则被静默截断）。⚠️ 仅酒馆，正文链路额度仍硬编码。
-- 🔴 **AI「会读哪些数据」＝ `lib/aiDataSources.ts` 单一源 + `AIDataSourceNote`**（进各功能问号气泡，概括+展开）。改 prompt 来源**必须同步改它**；闸 `tests/aiDataSources.test.ts`。
+- 🔴 **额度跟模型走 + AI 数据来源标注（09-18）**：① `syncTuningWithModel()` 换模型即套用推荐值，🔴🔴 靠**模型指纹**判定（只换模型才动、同模型下手调值绝不覆盖、首次只登记）；本地**超窗口保护**（预算> `numCtx×0.732` 才回落，否则被静默截断）。② AI「会读哪些数据」＝ `lib/aiDataSources.ts` 单一源＋`AIDataSourceNote` 进各功能气泡；闸 `tests/aiDataSources.test.ts`。⚠️ 两处未做：正文链路额度仍硬编码、部分气泡待挂。
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（SSH `yfe_test_server`），站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务→删库≠下线；Nginx SPA 回退：不存在路径也返 200→不能靠 200 判上线。
@@ -76,7 +75,7 @@
 
 ## 示范项目（吞天神脉）
 - 三卷 21 章：1-10 风起云州 / 11-20 剑鸣中州 / 21 起 **剑锁中州**（草稿）。改/加正文同步 `seedContent.ts`→`seedData.ts`（mkChapter→masterRows→卷/章卡→rows 台账→酒馆 world）。
-- 🔴 三道闸：seed-schema-check＋`tests/seedRef.test.ts`＋细纲卡核对。推演 cast 引用卡 id→相关卡留 `card()` 返回值；播种失败只 warn→验收捕获 console.warn。
+- 🔴 三道闸：seed-schema-check＋`tests/seedRef.test.ts`＋细纲卡核对。推演 cast 引用卡 id→相关卡留 `card()` 返回值；播种失败只 warn。
 - ✅ **2.2.0 审计 31 项（2/10/19）09-18 全部修完**，8 提交；逐项见 `docs/2.2.0-审计记录.md` §八。🔴 新增闸 `tests/importCycles`：循环依赖 tsc/单测看不见、只在浏览器 TDZ 崩。
 
 ## 环境（Windows + Git Bash）
@@ -86,7 +85,7 @@
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**——会返空→误判"不存在"→`Write` 覆盖！09-17 把当日日志 215 行覆盖成 37 行（靠 `git show HEAD:<path>` 恢复）。判存在用 `Read` 或 `test -f`。
 - 🔴 `memory/*.md` 日志**只准 append**：先 Read 再 Edit，任何情况不用 `Write` 覆盖。覆盖类事故**先查 git**，提交过就能救。
 - 🔴 dev 仅 `http://localhost:5199`（127.0.0.1 会 302→两份 IndexedDB）；桌面走文件存储、与 dev 两套（设计如此）。
-- ⚠️ 验「随项目」用 `db.setCurrentProject` 别直查物理表；实弹读真实 apiKey 先告知不提交；改提示词/示范卡文案后同步改 `tests/` 写死旧文案的断言。
+- ⚠️ 验「随项目」用 `db.setCurrentProject` 别直查物理表；改提示词/示范卡文案后同步改 `tests/` 写死的旧断言。
 - 🧪 dev 测试数据：仓库内 `dev-seed/`，`await import('/dev-seed/fengyang.js?' + Date.now())`；🔴 必须带时间戳；数据在浏览器 IndexedDB，重启 dev server 无效。
 
 ## 一键拆书（规划中 · 未开发）
