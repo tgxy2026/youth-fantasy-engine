@@ -1,0 +1,246 @@
+/**
+ * 通用草稿审阅面板（域中立）。
+ *
+ * 「一键拆书」与「创意写作」共用同一套审阅交互：分组 → 勾选 → 行内改 → 写入（带确认）。
+ * 本组件只管「呈现 + 收集用户决定」，落库逻辑全在 `lib/flow/commit`。
+ *
+ * 🔴 写入前必须弹确认并列出「将新建 N 条 / 更新 M 条 / 跳过 K 条」——
+ *    「绝不静默覆盖」这条红线要在用户点下按钮**之前**就让他看清将要发生什么。
+ */
+import { useEffect, useMemo, useState } from 'react'
+import { CheckSquare, ChevronDown, ChevronRight, Square } from 'lucide-react'
+import { Button } from './Button'
+import { confirmDialog, showToast } from './dialogs'
+import { commitDraftRows, previewCommit, type ConflictPolicy } from '../lib/flow/commit'
+import { DRAFT_PICK_THRESHOLD, defaultPicked } from '../lib/flow/draft'
+import type { CommitOutcome, DraftBundle, DraftRow } from '../lib/flow/types'
+
+interface Props {
+  /**
+   * 草稿包。⚠️ 调用方必须保证**引用稳定**（放 state，别在 render 里现造）——
+   * 本组件按引用变化重置内部编辑态与勾选态。
+   */
+  bundle: DraftBundle
+  /** 已有同名条目时的策略（默认 keep-existing：已有数据分毫不动） */
+  conflict?: ConflictPolicy
+  onCommitted?: (out: CommitOutcome) => void
+}
+
+const STATUS_TAG: Record<DraftRow['status'], { text: string; cls: string }> = {
+  new: { text: '新建', cls: 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' },
+  duplicate: { text: '疑似已有', cls: 'border-ink-600 bg-ink-700/60 text-ink-300' },
+  conflict: { text: '冲突', cls: 'border-amber/30 bg-amber/15 text-amber' },
+}
+
+function confCls(c: number): string {
+  return c >= 0.8 ? 'text-emerald-300' : c >= DRAFT_PICK_THRESHOLD ? 'text-ink-300' : 'text-amber'
+}
+
+const EDIT_INPUT = 'w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-[11.5px] text-ink-100 outline-none hover:border-ink-700 focus:border-amber/50 focus:bg-ink-900'
+
+export default function DraftReviewPanel({ bundle, conflict = 'keep-existing', onCommitted }: Props) {
+  const [rows, setRows] = useState<DraftRow[]>(bundle.rows)
+  const [picked, setPicked] = useState<Set<string>>(
+    () => new Set(bundle.rows.filter(defaultPicked).map(r => r.key)),
+  )
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  // bundle 换了（重跑拆书）→ 重置编辑态与勾选态
+  useEffect(() => {
+    setRows(bundle.rows)
+    setPicked(new Set(bundle.rows.filter(defaultPicked).map(r => r.key)))
+    setExpanded(null)
+  }, [bundle])
+
+  const stat = useMemo(() => {
+    const s = { new: 0, duplicate: 0, conflict: 0 }
+    for (const r of rows) s[r.status]++
+    return s
+  }, [rows])
+
+  const togglePick = (key: string) => {
+    setPicked(p => { const n = new Set(p); if (n.has(key)) n.delete(key); else n.add(key); return n })
+  }
+  const toggleGroup = (tabId: string) => {
+    setCollapsed(c => { const n = new Set(c); if (n.has(tabId)) n.delete(tabId); else n.add(tabId); return n })
+  }
+  const pickGroup = (rowsOfGroup: DraftRow[], on: boolean) => {
+    setPicked(p => {
+      const n = new Set(p)
+      for (const r of rowsOfGroup) { if (on) n.add(r.key); else n.delete(r.key) }
+      return n
+    })
+  }
+  /** 改字段；若改的正是主名键，同步 row.name（否则落库写的还是旧名） */
+  const editField = (rowKey: string, fieldKey: string, value: string) => {
+    setRows(rs => rs.map(r => {
+      if (r.key !== rowKey) return r
+      const fields = r.fields.map(f => (f.key === fieldKey ? { ...f, value } : f))
+      return { ...r, fields, name: fieldKey === r.nameKey ? value : r.name }
+    }))
+  }
+
+  const pickNew = () => setPicked(new Set(rows.filter(r => r.status === 'new').map(r => r.key)))
+  const pickHigh = () => setPicked(new Set(rows.filter(defaultPicked).map(r => r.key)))
+  const clearPick = () => setPicked(new Set())
+
+  const doCommit = async () => {
+    const chosen = rows.filter(r => picked.has(r.key))
+    if (!chosen.length) { showToast('请先勾选要写入的条目', 'info'); return }
+    setBusy(true)
+    try {
+      const pv = await previewCommit(chosen, conflict)
+      const policyNote = conflict === 'keep-existing'
+        ? '已有条目不会被修改（当前策略：保留已有）。'
+        : conflict === 'fill-empty'
+          ? '已有条目只补空字段，非空字段一律不动。'
+          : '⚠️ 当前策略会用新值覆盖已有条目的字段。'
+      const okGo = await confirmDialog({
+        title: '写入项目设定',
+        message: [
+          `将处理 ${chosen.length} 条：新建 ${pv.create} 条，更新 ${pv.update} 条，跳过 ${pv.skip} 条（已存在同名）。`,
+          policyNote,
+        ].join('\n'),
+        confirmText: '确认写入',
+      })
+      if (!okGo) return
+      const out = await commitDraftRows(chosen, { conflict })
+      const parts = [`新建 ${out.created} 条`]
+      if (out.updated) parts.push(`更新 ${out.updated} 条`)
+      if (out.failed.length) parts.push(`失败 ${out.failed.length} 条（${out.failed.slice(0, 3).join('、')}${out.failed.length > 3 ? '…' : ''}）`)
+      showToast(`已写入：${parts.join('、')}`, out.failed.length ? 'error' : 'success')
+      onCommitted?.(out)
+    } catch (e) {
+      showToast('写入失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!rows.length) {
+    return (
+      <div className="rounded-lg border border-ink-700 bg-ink-800/40 p-4 text-[12px] text-ink-400">
+        没有可审阅的草稿。
+      </div>
+    )
+  }
+
+  return (
+    <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[13px] text-ink-100">共 <b>{rows.length}</b> 条草稿</span>
+        <span className="text-[11px] text-ink-500">
+          新建 {stat.new} · 疑似已有 {stat.duplicate}{stat.conflict ? ` · 冲突 ${stat.conflict}` : ''}
+        </span>
+        <div className="flex-1" />
+        <Button size="xs" variant="secondary" onClick={pickNew}>全选新建</Button>
+        <Button size="xs" variant="secondary" onClick={pickHigh}>仅高可信</Button>
+        <Button size="xs" variant="secondary" onClick={clearPick}>全不选</Button>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {bundle.groups.map(g => {
+          const sel = g.rows.filter(r => picked.has(r.key)).length
+          const isCollapsed = collapsed.has(g.tabId)
+          return (
+            <div key={g.tabId} className="rounded border border-ink-700 bg-ink-900/40">
+              <div className="flex items-center gap-2 px-2 py-1.5">
+                <Button variant="bare" size="xs" className="shrink-0 text-ink-400" onClick={() => toggleGroup(g.tabId)}
+                  title={isCollapsed ? '展开' : '收起'}>
+                  {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                </Button>
+                <span className="text-[12px] text-ink-200">写入「{g.tabName}」</span>
+                <span className="text-[11px] text-ink-500">{g.rows.length} 条 · 已选 {sel}</span>
+                <div className="flex-1" />
+                <Button size="xs" variant="ghost" onClick={() => pickGroup(g.rows, true)}>本组全选</Button>
+                <Button size="xs" variant="ghost" onClick={() => pickGroup(g.rows, false)}>本组清空</Button>
+              </div>
+
+              {!isCollapsed && (
+                <ul className="border-t border-ink-700/70">
+                  {g.rows.map(r => {
+                    const tag = STATUS_TAG[r.status]
+                    const desc = r.descKey ? r.fields.find(f => f.key === r.descKey)?.value : ''
+                    const open = expanded === r.key
+                    return (
+                      <li key={r.key} className="border-b border-ink-700/40 last:border-0">
+                        <div className="flex items-start gap-2 px-2 py-1.5">
+                          <Button variant="bare" size="xs" className="mt-0.5 shrink-0" onClick={() => togglePick(r.key)}
+                            title={picked.has(r.key) ? '取消勾选' : '勾选'}>
+                            {picked.has(r.key)
+                              ? <CheckSquare size={14} className="text-amber" />
+                              : <Square size={14} className="text-ink-500" />}
+                          </Button>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                              <input value={r.name} onChange={e => editField(r.key, r.nameKey, e.target.value)}
+                                className={`${EDIT_INPUT} min-w-[6rem] flex-1`} />
+                              <span className={`shrink-0 rounded border px-1 py-px text-[10px] ${tag.cls}`}>{tag.text}</span>
+                              <span className={`shrink-0 text-[10px] tabular-nums ${confCls(r.confidence)}`}
+                                title="置信度：原文有据 +0.2，多章一致 +0.2，冲突 −0.3">
+                                {r.confidence.toFixed(2)}
+                              </span>
+                              {r.matched && (
+                                <span className="shrink-0 text-[10px] text-ink-500">已有「{r.matched.name}」</span>
+                              )}
+                              <Button variant="ghost" size="xs" className="shrink-0 text-[10px]"
+                                onClick={() => setExpanded(open ? null : r.key)}>
+                                {open ? '收起' : '详情'}
+                              </Button>
+                            </div>
+                            {!open && desc && <div className="mt-0.5 truncate text-[11px] text-ink-400">{desc}</div>}
+                          </div>
+                        </div>
+
+                        {open && (
+                          <div className="mx-2 mb-2 rounded border border-ink-700 bg-ink-900/60 px-2 py-1.5">
+                            {r.fields.map(f => (
+                              <div key={f.key} className="flex items-start gap-2 py-0.5">
+                                <span className="w-20 shrink-0 pt-0.5 text-[10.5px] text-ink-500">{f.label}</span>
+                                <input value={f.value} onChange={e => editField(r.key, f.key, e.target.value)}
+                                  className={EDIT_INPUT} />
+                              </div>
+                            ))}
+                            {r.quotes.length > 0 && (
+                              <div className="mt-1.5 border-t border-ink-700/60 pt-1">
+                                <div className="text-[10px] text-ink-500">原文引用</div>
+                                {r.quotes.slice(0, 3).map((q, i) => (
+                                  <div key={i} className="text-[10.5px] leading-relaxed text-ink-400">「{q}」</div>
+                                ))}
+                              </div>
+                            )}
+                            {r.chapters.length > 1 && (
+                              <div className="mt-1 text-[10px] text-ink-500">出现在第 {r.chapters.join('、')} 章（已合并为一条）</div>
+                            )}
+                            {r.matched && (
+                              <div className="mt-1 text-[10.5px] text-amber">
+                                项目里已有「{r.matched.name}」——若不是同一对象，请改名后再写入。
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-700 pt-3">
+        <span className="text-[11px] text-ink-400">
+          已勾选 <b className="text-ink-200">{picked.size}</b> 条
+          {conflict === 'keep-existing' && <span className="text-ink-500"> · 已有同名条目不会被改动</span>}
+        </span>
+        <div className="flex-1" />
+        <Button size="sm" variant="primary" solid disabled={busy || picked.size === 0} onClick={doCommit}>
+          {busy ? '写入中…' : `写入项目（${picked.size}）`}
+        </Button>
+      </div>
+    </section>
+  )
+}

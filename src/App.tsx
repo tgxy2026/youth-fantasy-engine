@@ -34,6 +34,8 @@ const GuidePage = lazy(() => import('./components/GuidePage'))
 const InspireTools = lazy(() => import('./components/InspireTools'))
 const CheckTools = lazy(() => import('./components/CheckTools'))
 const MaterialLibrary = lazy(() => import('./components/MaterialLibrary'))
+const BookBreakPanel = lazy(() => import('./components/BookBreakPanel'))
+const CreativeWritingPanel = lazy(() => import('./components/CreativeWritingPanel'))
 // 酒馆模式四页：剧情推演 / 推演报告 / 角色卡 / 自由对话（各自含 AI 交互，按需懒加载）
 const TavernPlot = lazy(() => import('./components/TavernPlot'))
 const TavernReport = lazy(() => import('./components/TavernReport'))
@@ -321,6 +323,12 @@ export default function App() {
     }
     if (activeTab === 'material-library') {
       return <MaterialLibrary />
+    }
+    if (activeTab === 'bookbreak') {
+      return <BookBreakPanel />
+    }
+    if (activeTab === 'creative-writing') {
+      return <CreativeWritingPanel />
     }
     if (activeTab === 'tavern-world') {
       return <TavernWorld />

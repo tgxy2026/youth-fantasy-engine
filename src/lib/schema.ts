@@ -809,6 +809,14 @@ export const TABS: TabDef[] = [
     description: '模型配置与联网检索（全局）+ 随机取名生成器、AI 一键续写与设定补完、AI 辅助规划（脑暴）。',
   },
   {
+    id: 'bookbreak', name: '一键拆书', group: '灵感工具', type: 'bookbreak',
+    description: '粘贴或导入整本小说原文，AI 逐章抽出人物 / 势力 / 地点 / 种族 / 物品 / 术语，整理成草稿供你勾选后写入项目设定表。全程本地模型，原文不外发。',
+  },
+  {
+    id: 'creative-writing', name: '创意写作', group: '灵感工具', type: 'creative-writing',
+    description: '给一句话想法，AI 依次完成设定奠基 → 分卷大纲 → 逐章草稿 → 审校闭环 → 导出（开发中）。',
+  },
+  {
     id: 'check-tools', name: '检查工具', group: '灵感工具', type: 'check',
     description: '敏感词检测、AI 一致性深度自查与数据体检。',
   },
@@ -937,6 +945,9 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   'material-library': 'locked',
   'check-tools': 'locked',
   // 默认勾选（可取消）
+  // 拆书 / 创意写作（2026-09-18）：与正文创作强相关，默认勾选但可取消。
+  bookbreak: 'default',
+  'creative-writing': 'default',
   about: 'default',
   // 酒馆模式（2026-09-15）：整体改为**不默认勾选**（落到 optional）。
   // 原先 5 项设 default，会让每个自定义项目默认开着一整套角色扮演功能，多数作者用不上。
