@@ -25,8 +25,23 @@ const K_WRITER_BUDGET = 'ai.writerBudget'
 /** 出厂基准（字）。各功能按系数换算，出厂值下与改造前的硬编码完全一致 */
 export const DEFAULT_WRITER_BASE = 8000
 
-/** 基准的可调范围与步长（与面板上的输入框一致） */
-export const WRITER_BASE_LIMITS = { min: 1000, max: 100000, step: 500 } as const
+/** 基准的可调范围与步长（与面板上的输入框一致）。上限必须 ≥ 云端推荐上限，否则推荐值填不进去 */
+export const WRITER_BASE_LIMITS = { min: 1000, max: 200000, step: 500 } as const
+
+/**
+ * 「按模型推荐」的比例与上限（2026-09-18 放宽，老大选 30% 档）。
+ *
+ * 为什么是 30%：资料之外还要放正文片段（本章 / 上一章）与模型输出，
+ * 给资料留不到三分之一才合理。
+ *
+ * 放宽前的两处保守：
+ *  · 本地写成 `min(出厂值 8000, numCtx×0.25)` —— 出厂值成了天花板，numCtx 提到 131072 也不动；
+ *  · 云端只用 12%（256K 窗口才给 11600，128K 窗口几乎不放大）。
+ */
+export const WRITER_RECOMMEND = {
+  local: { ratio: 0.30, cap: 48000 },
+  cloud: { ratio: 0.30, cap: 120000 },
+} as const
 
 /**
  * 各功能的系数（相对基准）。
@@ -139,15 +154,16 @@ export async function writerBudgetFor(kind: WriterBudgetKind): Promise<number> {
 
 /**
  * 按当前模型推荐基准。
- *  · 本地：**不放大** —— 资料预算不该超过窗口的 1/4（剩下的要留给正文与输出）。
- *  · 云端：按可用窗口的 12%，下限出厂值、上限 48000（再多也只是把设定堆给模型，收益递减）。
+ *  · 本地：跟着 `numCtx`（窗口由显存决定）—— numCtx 变大时资料预算也跟着涨，**不再封顶在出厂值**。
+ *  · 云端：按可用窗口的比例，下限出厂值、上限见 `WRITER_RECOMMEND`。
  */
 export function recommendWriterBase(cap: CapacityAdvice): number {
   const snap100 = (v: number) => Math.round(v / 100) * 100
+  const R = WRITER_RECOMMEND
   if (cap.local) {
-    return Math.max(WRITER_BASE_LIMITS.min, Math.min(DEFAULT_WRITER_BASE, snap100(cap.windowTokens * 0.25)))
+    return Math.max(WRITER_BASE_LIMITS.min, Math.min(R.local.cap, snap100(cap.windowTokens * R.local.ratio)))
   }
-  return Math.max(DEFAULT_WRITER_BASE, Math.min(48000, snap100(cap.approxPromptTokens * 0.12)))
+  return Math.max(DEFAULT_WRITER_BASE, Math.min(R.cloud.cap, snap100(cap.approxPromptTokens * R.cloud.ratio)))
 }
 
 /** 按模型推荐值时，各功能会变成多少（面板上展开明细用） */

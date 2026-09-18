@@ -59,24 +59,29 @@ ok('换算结果一律对齐到 100（界面上不出现零头）',
 ok('极小基准也不低于 1000（不能把资料层压没了）', budgetForKind('name-suggest', 1000) === 1000, String(budgetForKind('name-suggest', 1000)))
 ok('所有系数为正（负系数会让预算变负）', Object.values(WRITER_BUDGET_KINDS).every(v => v > 0))
 
-// ---------- ③ 推荐值：本地不放大、云端放大且有上下限 ----------
+// ---------- ③ 推荐值：本地跟着 numCtx 走、云端按可用窗口，两边都有上限 ----------
+// 2026-09-18 放宽到 30% 档：此前本地被 min(出厂 8000, …) 封死（numCtx 再大也不动）、云端只用 12%。
 const CUR = { numCtx: 32768, contextBudget: 24000 }
 const localCap = adviseCapacity({ type: 'ollama', model: 'qwen3.5-27b' }, CUR)
-ok('本地：推荐基准 = 出厂值（不放大）', recommendWriterBase(localCap) === DEFAULT_WRITER_BASE, String(recommendWriterBase(localCap)))
+ok('本地 32768：推荐基准 = numCtx × 30% = 9800', recommendWriterBase(localCap) === 9800, String(recommendWriterBase(localCap)))
+
+const bigLocal = adviseCapacity({ type: 'ollama', model: 'qwen3.5-27b' }, { numCtx: 65536, contextBudget: 24000 })
+ok('🔴 本地 numCtx 翻倍 → 推荐基准跟着翻倍（19700）—— 放宽前这里恒为 8000',
+  recommendWriterBase(bigLocal) === 19700, String(recommendWriterBase(bigLocal)))
 
 const smallLocal = adviseCapacity({ type: 'ollama', model: 'llama3-8b' }, { numCtx: 8192, contextBudget: 6000 })
-ok('本地小窗口（8192）：推荐基准跟着窗口收紧到 2000',
-  recommendWriterBase(smallLocal) === 2000, String(recommendWriterBase(smallLocal)))
+ok('本地小窗口（8192）：推荐基准跟着收紧到 2500',
+  recommendWriterBase(smallLocal) === 2500, String(recommendWriterBase(smallLocal)))
 
 const cloudCap = adviseCapacity({ type: 'openai', local: false, model: 'Qwen/Qwen3.5-35B-A3B' }, CUR)
-const cloudRec = recommendWriterBase(cloudCap)
-ok('云端 256K：推荐基准放大到出厂值之上', cloudRec > DEFAULT_WRITER_BASE, String(cloudRec))
-ok('云端 256K：推荐值 ≈ 可用窗口 × 12%', Math.abs(cloudRec - Math.round(cloudCap.approxPromptTokens * 0.12 / 100) * 100) <= 100,
-  `${cloudRec} vs ${Math.round(cloudCap.approxPromptTokens * 0.12 / 100) * 100}`)
+ok('云端 256K：推荐基准 29000（可用窗口 96665 × 30%）',
+  recommendWriterBase(cloudCap) === 29000, String(recommendWriterBase(cloudCap)))
 
 const hugeCap = adviseCapacity({ type: 'openai', local: false, model: 'gpt-4.1' }, CUR)
-ok('1M 窗口：推荐基准被封顶 48000（再多收益递减）', recommendWriterBase(hugeCap) === 48000, String(recommendWriterBase(hugeCap)))
+ok('1M 窗口：推荐基准被封顶 120000', recommendWriterBase(hugeCap) === 120000, String(recommendWriterBase(hugeCap)))
 ok('推荐基准永远 ≥ 出厂值（云端不会比本地还小）', [cloudCap, hugeCap].every(c => recommendWriterBase(c) >= DEFAULT_WRITER_BASE))
+ok('🔴 基准输入框上限 ≥ 云端推荐上限（否则推荐值填不进去）',
+  WRITER_BASE_LIMITS.max >= recommendWriterBase(hugeCap), `${WRITER_BASE_LIMITS.max} vs ${recommendWriterBase(hugeCap)}`)
 
 // ---------- ④ 面板明细：键集合一致 + 顺序稳定 ----------
 const kindKeys = Object.keys(WRITER_BUDGET_KINDS).sort()

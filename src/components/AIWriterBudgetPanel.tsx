@@ -4,7 +4,8 @@ import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
 import {
-  DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS, getWriterBudget, saveWriterBudget, previewAt, currentModelAdvice,
+  DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS, getWriterBudget, saveWriterBudget, previewAt,
+  currentModelAdvice, budgetForKind,
 } from '../lib/aiWriterBudget'
 
 interface Props {
@@ -176,15 +177,27 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
           {open ? '收起明细' : `看各功能实际取值（${preview.length} 项）`}
         </Button>
         {open && (
-          <ul className="mt-1.5 grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
-            {preview.map(x => (
-              <li key={x.kind} className="flex items-baseline gap-1.5 text-[11px]">
-                <span className="text-ink-400 truncate">{x.label}</span>
-                <span className="flex-1 border-b border-dotted border-ink-700/70" />
-                <span className="text-ink-200 tabular-nums">{x.value}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="mt-1.5 text-[10.5px] text-ink-500">
+              按当前基准 {(valid ? parsed : base)} 字换算
+              {rec != null && rec !== (valid ? parsed : base) && <> · <span className="text-amber/90">→ 为推荐基准 {rec} 字下的值</span></>}
+            </div>
+            <ul className="mt-1 grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
+              {preview.map(x => {
+                const recVal = rec != null ? budgetForKind(x.kind, rec) : null
+                return (
+                  <li key={x.kind} className="flex items-baseline gap-1.5 text-[11px]">
+                    <span className="text-ink-400 truncate">{x.label}</span>
+                    <span className="flex-1 border-b border-dotted border-ink-700/70" />
+                    <span className="text-ink-200 tabular-nums">{x.value}</span>
+                    {recVal != null && recVal !== x.value && (
+                      <span className="text-amber/90 tabular-nums" title={`按当前模型推荐值 ${rec} 字换算`}>→{recVal}</span>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </>
         )}
       </div>
 
