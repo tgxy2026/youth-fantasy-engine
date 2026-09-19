@@ -13,7 +13,7 @@ import {
   restoreDesktopFromCloudBackup,
   isDesktopCloudEnabled,
   getDesktopCloudDirName,
-  type SyncStatus,
+  type SyncStatus, type SyncDirHandle,
 } from '../lib/desktopCloudSync'
 
 /**
@@ -44,7 +44,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
   const [status, setStatus] = useState<SyncStatus>(getDesktopCloudStatus())
   const [dirName, setDirName] = useState<string | null>(null)
   const [backupDay, setBackupDay] = useState<string | null>(null)
-  const handleRef = useRef<any>(null)
+  const handleRef = useRef<SyncDirHandle | null>(null)
   const inSidebar = variant === 'sidebar'
 
   useEffect(() => {
@@ -80,7 +80,9 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
         const BS = String.fromCharCode(92) // 反斜杠：不用正则，免得转义满天飞
         const norm = (p: string) => p.split(BS).join('/').replace(/\/+$/, '').toLowerCase()
         const dirOf = (p: string) => norm(p).split('/').slice(0, -1).join('/')
-        if (dataFilePath && dirOf(dataFilePath) === norm(res.handle)) {
+        // 🔴 先判字符串句柄：桌面版选出来的是路径字符串；若哪天走网页版 FSA，handle 是对象，
+        //    `norm(对象)` 会得到 "undefined" 而**静默判不等** —— 原先形参是 any，这处差异被藏住了。
+        if (dataFilePath && typeof res.handle === 'string' && dirOf(dataFilePath) === norm(res.handle)) {
           const go = await confirmDialog({
             title: '这个目录里放着你本机的数据文件',
             message:
@@ -105,11 +107,13 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
       )
       reloading = true
       setTimeout(() => location.reload(), 800)
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 🔴 用户在系统选盘对话框点「取消」= AbortError：原先直接 return，
       //    setBusy(false) 永不执行 → 按钮永久转圈（2026-09-19 六维审计 P1-10）
-      if (e && e.name === 'AbortError') showToast('已取消选择同步目录', 'info')
-      else showToast('开启失败：' + (e?.message || e), 'error')
+      // catch 的形参是 unknown（TS 的 useUnknownInCatchVariables），故先断言成错误形状再取字段
+      const err = e as { name?: string; message?: string } | null
+      if (err && err.name === 'AbortError') showToast('已取消选择同步目录', 'info')
+      else showToast('开启失败：' + (err?.message ?? String(e)), 'error')
     } finally {
       if (!reloading) setBusy(false)
     }

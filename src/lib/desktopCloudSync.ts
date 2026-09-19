@@ -18,17 +18,20 @@ import {
   CloudAuthError,
   CONFLICT_KEY_PREFIX,
   isExcludedMetaKey,
+  type SyncStores,
 } from './syncCore'
 import {
   createFileTransport,
   createIdleTransport,
   DEFAULT_CLOUD_KEY,
   CLOUD_FILE_NAME,
+  type SyncDirHandle,
 } from './syncTransport'
 import { DESKTOP } from './env'
 
 // #032：常量已下沉到 syncTransport（网页版云盘模式也要用），此处 re-export 保持调用方不变。
 export { DEFAULT_CLOUD_KEY, CLOUD_FILE_NAME }
+export type { SyncDirHandle }
 
 /** 云盘文件同步门控开关（桌面版唯一形态；网页版服务器同步已下线）。 */
 export const CLOUD_FILE_SYNC = DESKTOP
@@ -58,7 +61,7 @@ export async function restoreDesktopFromCloudBackup(): Promise<boolean> {
 export async function pullDesktopSnapshot() {
   return cloud.pullSnapshot()
 }
-export async function seedDesktopFromLocal(getAll: (store: string) => Promise<any[]>) {
+export async function seedDesktopFromLocal(getAll: (store: string) => Promise<unknown[]>) {
   return cloud.seedFromLocal(getAll)
 }
 /**
@@ -72,7 +75,7 @@ export async function flushDesktopCloud(): Promise<void> {
  * 云盘同步内存 cache 的快照（store 名 → 行数组）。
  * 关闭同步前用它把云端数据镜像进本地库，避免切回后界面读到「启用同步之前的陈旧本地库」。
  */
-export function snapshotDesktopCloudCache(): Record<string, any[]> {
+export function snapshotDesktopCloudCache(): SyncStores {
   return cloud.getCacheSnapshot()
 }
 export function onDesktopSyncConflict(h: (info: SyncConflictInfo) => void) {
@@ -83,7 +86,7 @@ export function onDesktopSyncConflict(h: (info: SyncConflictInfo) => void) {
  * 注册「云盘推不出去时的本地兜底」。由 db.ts 在初始化时接上：
  * 回调收到当前内存 cache（store 名 → 行数组），负责把它镜像进本地存储，避免关窗丢稿。
  */
-export function onDesktopCloudFallback(h: (cache: Record<string, any[]>) => void) {
+export function onDesktopCloudFallback(h: (cache: SyncStores) => void) {
   cloud.onFallback(h)
 }
 
@@ -91,7 +94,7 @@ export function onDesktopCloudFallback(h: (cache: Record<string, any[]>) => void
  * 注册「读本地库快照」。启动合并（`ensureInit`）需要它来判断
  * 「本机删掉了某记录」还是「本机还没见过它」—— 详见 syncCore 的 onLocalSnapshot。
  */
-export function onDesktopLocalSnapshot(h: () => Promise<Record<string, any[]>>) {
+export function onDesktopLocalSnapshot(h: () => Promise<SyncStores>) {
   cloud.onLocalSnapshot(h)
 }
 
@@ -123,7 +126,7 @@ export async function getDesktopCloudDirName(): Promise<string | null> {
  * 选择同步文件夹（桌面：原生对话框经 IPC 返回目录路径字符串）。
  * 返回 { handle, name }，handle 用于构造 FileTransport。
  */
-export async function chooseDesktopCloudDir(): Promise<{ handle: any; name: string } | null> {
+export async function chooseDesktopCloudDir(): Promise<{ handle: SyncDirHandle; name: string } | null> {
   const path = await (window as any).electronStore?.chooseSyncDir?.()
   if (typeof path === 'string' && path) {
     return { handle: path, name: path.split(/[\\/]/).filter(Boolean).pop() || path }
@@ -135,7 +138,7 @@ export async function chooseDesktopCloudDir(): Promise<{ handle: any; name: stri
  * 开启云盘文件同步（#032：选目录即开）。
  * 传输层指向所选目录，加密走内置默认密钥（DEFAULT_CLOUD_KEY），两端一致即可互通。
  */
-export async function enableDesktopCloud(handle: any) {
+export async function enableDesktopCloud(handle: SyncDirHandle) {
   cloud.setTransport(createFileTransport(handle, CLOUD_FILE_NAME))
   cloud.configure(DEFAULT_CLOUD_KEY)
 }
@@ -147,7 +150,7 @@ export async function enableDesktopCloud(handle: any) {
  *    原先这两行就写在 enableDesktopCloud 里，而它是在拉快照 / 播种**之前**执行的 ——
  *    后两步失败时标记已经落盘，下次启动 UI 仍显示「已开启」，实际却走本地存储。
  */
-export function persistDesktopCloudEnabled(handle: any) {
+export function persistDesktopCloudEnabled(handle: SyncDirHandle) {
   try {
     if (DESKTOP && isStringHandle(handle)) {
       localStorage.setItem(DIR_KEY, handle)
@@ -190,7 +193,7 @@ export function disableDesktopCloud() {
  * 成功返回 true（db.ts 据此切到云端存储）。
  */
 export async function applyDesktopCloudFromPersisted(): Promise<boolean> {
-  let handle: any = null
+  let handle: SyncDirHandle | null = null
   if (DESKTOP) {
     try {
       const dir = localStorage.getItem(DIR_KEY)

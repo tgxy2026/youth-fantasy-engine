@@ -904,7 +904,14 @@ export const TABS: TabDef[] = [
 ]
 
 // 编辑器页签（特殊，由 App 直接路由）
-export const EDITOR_TAB = { id: 'editor', name: '正文编辑', group: '正文写作' }
+/**
+ * 补 `type` / `description` 是为了让它**真的是一个 `TabDef`** —— 原先调用点要靠 `as any` 才能
+ * 把它并进 `TABS` 的数组里，那等于把「缺了两个必填字段」这件事藏了起来。
+ * `description` 留空：侧栏与各列表只用 `name`（GuidePage 另用 `EDITOR_DESC`），不会漏出空白。
+ */
+export const EDITOR_TAB: TabDef = {
+  id: 'editor', name: '正文编辑', group: '正文写作', type: 'editor', description: '',
+}
 
 export const GROUPS = ['工作面板', '正文写作', '灵感工具', '酒馆模式', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护']
 

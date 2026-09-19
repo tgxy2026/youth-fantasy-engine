@@ -173,7 +173,7 @@ style={{ zIndex: Z.pageBase }}
         {GROUPS.map(group => {
           const isOpen = openGroups.has(group)
           const tabs = group === '正文写作'
-            ? [EDITOR_TAB as any, ...TABS.filter(t => t.group === group && tabVisible(t.id, ctx))]
+            ? [EDITOR_TAB, ...TABS.filter(t => t.group === group && tabVisible(t.id, ctx))]
             : TABS.filter(t => t.group === group && tabVisible(t.id, ctx))
           if (tabs.length === 0 && group !== '正文写作') return null
           return (

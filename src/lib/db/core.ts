@@ -15,7 +15,7 @@ import {
   seedDesktopFromLocal, onDesktopSyncConflict, persistDesktopCloudEnabled, onDesktopCloudFallback,
   clearDesktopCloudEnabledFlag, flushDesktopCloud, snapshotDesktopCloudCache, onDesktopLocalSnapshot,
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
-  type SyncConflictInfo,
+  type SyncConflictInfo, type SyncDirHandle,
 } from '../desktopCloudSync'
 import { SYNC_STORES, totalRecords, type SyncStores, type SyncRow } from '../syncCore'
 import {
@@ -194,19 +194,26 @@ async function saveConflictCopy(info: SyncConflictInfo) {
 // 且「backups 落本地 / 敏感 meta 不上云 / 云端不可用回退本地」三条语义都只在这里，
 // 不导出就无法在不跑浏览器的前提下锁住它们（与 setStoreOps 同理）。
 export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavailable: () => boolean): StoreOps {
-  async function cloudOrLocal(op: keyof StoreOps, ...args: any[]): Promise<any> {
+  /**
+   * 动态分发的统一取用形状：StoreOps 六个方法签名各不相同，按名字分发只能先擦成这个。
+   * 🔴 断言**只在这一个函数里**，调用点各自断言回自己需要的返回类型 —— 散着写就会看不出
+   *    「哪一处是真的无法静态描述」，这正是本轮收窄 any 想消灭的那种含混。
+   */
+  type OpFn = (...a: unknown[]) => Promise<unknown>
+
+  async function cloudOrLocal(op: keyof StoreOps, ...args: unknown[]): Promise<unknown> {
     // 🔴 backups 是「本地专属保险」(#026)：syncCore.liveStores 上传前会把它从载荷里剔除
     // （云端永不参与备份的增删）。因此这里必须直接落本地——否则会出现「云端不要、本地不写」
     // 的两头不靠：备份只存在于云端实例的内存 cache 里，刷新/关页即丢，备份列表还会显示为空。
     // 与下面「敏感 meta 走本地」同构，故在唯一入口处统一短路，覆盖 getAll/get/put/del/bulkPut/bulkDel。
-    if (args[0] === 'backups') return (local as any)[op](...args)
-    if (isUnavailable()) return (local as any)[op](...args)
-    const r = await (cloud as any)[op](...args)
-    return isUnavailable() ? (local as any)[op](...args) : r
+    if (args[0] === 'backups') return (local[op] as OpFn)(...args)
+    if (isUnavailable()) return (local[op] as OpFn)(...args)
+    const r = await (cloud[op] as OpFn)(...args)
+    return isUnavailable() ? (local[op] as OpFn)(...args) : r
   }
   return {
     getAll: async <T,>(store: string): Promise<T[]> => {
-      if (store !== 'meta') return cloudOrLocal('getAll', store)
+      if (store !== 'meta') return cloudOrLocal('getAll', store) as Promise<T[]>
       if (isUnavailable()) return local.getAll<T>('meta')
       const localMeta = (await local.getAll<T>('meta')).filter((r) => isExcludedMetaKey((r as { key?: unknown }).key))
       const cloudMeta = await cloud.getAll<T>('meta')
@@ -215,22 +222,23 @@ export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavai
     },
     get: async <T,>(store: string, key: string): Promise<T | undefined> => {
       if (store === 'meta' && isExcludedMetaKey(key)) return local.get<T>('meta', key)
-      return cloudOrLocal('get', store, key)
+      return cloudOrLocal('get', store, key) as Promise<T | undefined>
     },
-    put: async (store: string, value: any) => {
-      if (store === 'meta' && isExcludedMetaKey(value?.key)) return local.put('meta', value)
-      return cloudOrLocal('put', store, value)
+    put: async (store: string, value: unknown) => {
+      if (store === 'meta' && isExcludedMetaKey((value as { key?: unknown })?.key)) return local.put('meta', value)
+      // StoreOps.put 返回 Promise<void>，而 cloudOrLocal 统一返回 unknown → 用 await 丢弃，不 return
+      await cloudOrLocal('put', store, value)
     },
     del: async (store: string, key: string) => {
       if (store === 'meta' && isExcludedMetaKey(key)) return local.del('meta', key)
-      return cloudOrLocal('del', store, key)
+      await cloudOrLocal('del', store, key)
     },
     getAllByIndex: async <T,>(store: string, indexName: string, value: unknown): Promise<T[]> =>
-      cloudOrLocal('getAllByIndex', store, indexName, value),
-    bulkPut: async (store: string, values: any[]) => {
+      cloudOrLocal('getAllByIndex', store, indexName, value) as Promise<T[]>,
+    bulkPut: async (store: string, values: unknown[]) => {
       if (store === 'meta') {
-        const excl = values.filter((v) => isExcludedMetaKey(v?.key))
-        const rest = values.filter((v) => !isExcludedMetaKey(v?.key))
+        const excl = values.filter((v) => isExcludedMetaKey((v as { key?: unknown })?.key))
+        const rest = values.filter((v) => !isExcludedMetaKey((v as { key?: unknown })?.key))
         if (excl.length) await local.bulkPut('meta', excl)
         if (rest.length) {
           if (isUnavailable()) return local.bulkPut('meta', rest)
@@ -239,7 +247,7 @@ export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavai
         }
         return
       }
-      return cloudOrLocal('bulkPut', store, values)
+      await cloudOrLocal('bulkPut', store, values)
     },
     bulkDel: async (store: string, keys: string[]) => {
       if (store === 'meta') {
@@ -253,7 +261,7 @@ export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavai
         }
         return
       }
-      return cloudOrLocal('bulkDel', store, keys)
+      await cloudOrLocal('bulkDel', store, keys)
     },
   }
 }
@@ -353,7 +361,7 @@ async function captureSyncData(): Promise<SyncStores> {
   return out
 }
 
-export async function enableDesktopCloudSync(handle: any) {
+export async function enableDesktopCloudSync(handle: SyncDirHandle) {
   // 🔴 审计 2026-09-17（P1-5）：数据文件读不出来时（writeLocked）**绝不能开启云同步**。
   //    那种状态下本地存储是空的、不可信的：captureSyncData 会抓到一份空载荷，新目录为空
   //    → 播种把空载荷推上云端（rev=1）；另一台设备 mergeCaches 时按「云端没有该记录、

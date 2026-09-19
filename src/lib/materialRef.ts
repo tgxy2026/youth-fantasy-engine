@@ -62,6 +62,11 @@ export interface Block {
   id: string
   title: string
   kind: BlockKind
+  /**
+   * any 理由：`data` 的形状由 `kind` **判别**（每种 BlockKind 一种）。
+   * 改成判别联合是正确方向，但读端有约 30 处 `block.data.*`，逐处收窄反而更啰嗦；
+   * 且 `src/data/materialData.ts` 有 5700+ 行块状数据要同步标注 —— 属独立一轮。
+   */
   data: any
 }
 

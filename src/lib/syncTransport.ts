@@ -52,6 +52,36 @@ export const DEFAULT_CLOUD_KEY = 'YFE-CLOUD-FILE-SYNC-V1'
 /** 云盘同步文件名（固定，便于用户在云盘目录里认出它）。 */
 export const CLOUD_FILE_NAME = '青春幻想引擎-同步数据.yfe'
 
+/**
+ * 网页版目录句柄里的一个**文件**句柄（只声明本项目用到的成员）。
+ * 只在本文件用 → **不 export**（`audit-dead` 的「多余 export」清单是刻意压着的）。
+ */
+interface FsaFileHandle {
+  getFile(): Promise<{ text(): Promise<string> }>
+  createWritable(): Promise<{ write(text: string): Promise<void>; close(): Promise<void> }>
+}
+
+/**
+ * 网页版目录句柄（只声明本项目用到的成员）。
+ *
+ * 🔴 为什么不用标准库的 `FileSystemDirectoryHandle`（2026-09-20 收窄 any 时的**真发现**）：
+ *    本项目调用的 `requestPermission()` 是 **Chromium 的早期实现**，标准 `FileSystemHandle`
+ *    类型里**并没有它** —— 换成标准类型后这行直接报「属性不存在」。而原先的 `any` 把这个
+ *    「实现与标准的差异」彻底藏住了。故在此显式声明成**可选成员**，调用点用 `?.` 兜底：
+ *    既说清了「它可能不存在」，也保留了「不支持就跳过」的现有行为。
+ */
+/** 同上：只在本文件用 → 不 export（它经由 `SyncDirHandle` 联合对外可见，但外部无需直接命名它） */
+interface FsaDirHandle {
+  requestPermission?(opts: { mode: string }): Promise<unknown>
+  getFileHandle(name: string, opts?: { create?: boolean }): Promise<FsaFileHandle>
+}
+
+/**
+ * 同步目录句柄：桌面版是**字符串路径**（经 IPC 桥 / fs），网页版是 `FsaDirHandle`。
+ * 两者没有公共类型 —— 用联合表达，调用点按 `typeof h === 'string'` 分支各自收窄。
+ */
+export type SyncDirHandle = string | FsaDirHandle
+
 // ============ 工具 ============
 async function sha256Hex(s: string): Promise<string> {
   const data = new TextEncoder().encode(s)
@@ -95,11 +125,12 @@ export function createIdleTransport(): SyncTransport {
 /**
  * 本地文件传输。
  * @param handle 目录句柄：桌面版是**字符串路径**（经 IPC / fs），网页版是
- *   `FileSystemDirectoryHandle` —— 两者没有公共类型，故形参是 any；
- *   由 `typeof handle === 'string'` 分支各自收窄（见函数内）。
+ *   `FileSystemDirectoryHandle` —— 用 `SyncDirHandle` 联合表达，函数内收窄成 `fsa` 可空引用。
+ *   ⚠️ 为什么不留 `const isFsa = typeof handle !== 'string'` 靠它窄化：TS 的「布尔别名窄化」
+ *      只作用于 const 引用，而 `handle` 是**函数参数**，别名对它不生效 —— 必须显式收窄一次。
  */
-export function createFileTransport(handle: any, fixedName?: string): SyncTransport {
-  const isFsa = typeof handle !== 'string'
+export function createFileTransport(handle: SyncDirHandle, fixedName?: string): SyncTransport {
+  const fsa = typeof handle === 'string' ? null : handle
   let code = ''
   let slot: string | null = fixedName || null
   let watchTimer: ReturnType<typeof setInterval> | null = null
@@ -111,9 +142,9 @@ export function createFileTransport(handle: any, fixedName?: string): SyncTransp
   }
 
   async function ensurePerm(): Promise<void> {
-    if (isFsa) {
+    if (fsa) {
       try {
-        await handle.requestPermission?.({ mode: 'readwrite' })
+        await fsa.requestPermission?.({ mode: 'readwrite' })
       } catch {
         /* 权限弹窗被拒/不支持时静默继续，读写失败会被上层当作离线 */
       }
@@ -138,7 +169,8 @@ export function createFileTransport(handle: any, fixedName?: string): SyncTransp
   async function fsaRead(name: string): Promise<RawRead> {
     try {
       await ensurePerm()
-      const fh = await handle.getFileHandle(name)
+      // 只在 fsa 分支被调用（见下方 `fsa ? fsaRead : nodeRead`），故此处 fsa 必然非空
+      const fh = await fsa!.getFileHandle(name)
       const f = await fh.getFile()
       return { ok: true, text: await f.text() }
     } catch (e) {
@@ -150,7 +182,8 @@ export function createFileTransport(handle: any, fixedName?: string): SyncTransp
   }
   async function fsaWrite(name: string, text: string): Promise<void> {
     await ensurePerm()
-    const fh = await handle.getFileHandle(name, { create: true })
+    // 同上：只在 fsa 分支被调用
+    const fh = await fsa!.getFileHandle(name, { create: true })
     const w = await fh.createWritable()
     await w.write(text)
     await w.close()
@@ -237,10 +270,10 @@ export function createFileTransport(handle: any, fixedName?: string): SyncTransp
   }
 
   async function readRaw(name: string): Promise<RawRead> {
-    return isFsa ? fsaRead(name) : nodeRead(String(handle) + '/' + name)
+    return fsa ? fsaRead(name) : nodeRead(String(handle) + '/' + name)
   }
   async function writeRaw(name: string, text: string): Promise<void> {
-    return isFsa ? fsaWrite(name, text) : nodeWrite(String(handle) + '/' + name, text)
+    return fsa ? fsaWrite(name, text) : nodeWrite(String(handle) + '/' + name, text)
   }
 
   type ParsedRev = { rev: number; enc: string | null } | { corrupt: true }

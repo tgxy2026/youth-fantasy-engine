@@ -350,6 +350,16 @@ async function chatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts)
 // OpenAI 兼容接口：每行 `data: {json}\n`，结束发 `data: [DONE]`。
 // Ollama /api/chat：每行是裸 JSON 对象（无 data: 前缀），结束对象 done:true。
 // 这里写一套统一的行解析器，两种格式都吃：遇到 `data:` 前缀则剥掉；其余按裸 JSON 解析。
+/**
+ * SSE 增量行的形状。两家格式不同（Ollama 是 `message.content`、OpenAI 兼容是
+ * `choices[0].delta.content`），故字段全可选；取到 content 后仍按 `typeof === 'string'` 把守。
+ */
+type SseChunk = {
+  message?: { content?: unknown }
+  choices?: Array<{ delta?: { content?: unknown } }>
+  done?: boolean
+}
+
 async function readSSE(res: Response, onJson: (obj: unknown) => void, onFirstByte?: () => void): Promise<void> {
   if (!res.body) throw new Error('当前环境不支持流式读取响应体。')
   const reader = res.body.getReader()
@@ -443,8 +453,9 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
   if (o.onToken) {
     let content = ''
     try {
-      await readSSE(res, (obj: any) => {
-        const delta = obj?.message?.content
+      await readSSE(res, (obj) => {
+        const chunk = obj as SseChunk
+        const delta = chunk?.message?.content
         if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
       }, () => clearTimer?.())
     } catch (e) {
@@ -557,8 +568,9 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
   if (o.onToken) {
     let content = ''
     try {
-      await readSSE(res, (obj: any) => {
-        const delta = obj?.choices?.[0]?.delta?.content
+      await readSSE(res, (obj) => {
+        const chunk = obj as SseChunk
+        const delta = chunk?.choices?.[0]?.delta?.content
         if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
       }, () => clearTimer?.())
     } catch (e) {

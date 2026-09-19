@@ -297,10 +297,14 @@ async function selfRefine(body: string, ctx: ProjectContextResult, signal?: Abor
   if (!ctx.text.trim() || countWords(body) < 200) return body
   onPhase?.('AI 编辑自检（连续性 / 人设 / 伏笔）')
   const findings: Array<{ level?: string; title?: string; detail?: string }> = []
-  const push = (arr: any[]) => { for (const f of arr) if (f && (f.level === '严重' || f.level === '中等')) findings.push(f) }
-  push(await aiContinuityAudit(ctx.text, body, { signal }).catch(() => [] as any[]))
-  push(await aiOocCheck(ctx.text, body, { signal }).catch(() => [] as any[]))
-  push(await aiForeshadowReview(ctx.text, { signal }).catch(() => [] as any[]))
+  /** 三类审查产出的**共同形状**：自检只按 `level` 过滤，其余字段原样带过（不为每个 Finding 单写一套类型） */
+  type RefineFinding = { level?: string }
+  const push = (arr: readonly RefineFinding[]) => {
+    for (const f of arr) if (f && (f.level === '严重' || f.level === '中等')) findings.push(f)
+  }
+  push(await aiContinuityAudit(ctx.text, body, { signal }).catch(() => [] as RefineFinding[]))
+  push(await aiOocCheck(ctx.text, body, { signal }).catch(() => [] as RefineFinding[]))
+  push(await aiForeshadowReview(ctx.text, { signal }).catch(() => [] as RefineFinding[]))
   if (!findings.length) {
     onPhase?.('编辑自检通过，未发现严重问题')
     return body
