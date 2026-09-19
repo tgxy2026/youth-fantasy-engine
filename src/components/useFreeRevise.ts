@@ -19,7 +19,7 @@ import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
 import type { FreeCharacter, FreeSession, TavernMessage } from '../lib/tavern/types'
 
 /** 入参一律来自 `useTavernFreeModel` 的同一次渲染作用域 */
-export type FreeReviseDeps = {
+type FreeReviseDeps = {
   session: FreeSession | null
   /** 采纳设定后要重读在场角色（卡 + 记忆），所以把载入函数传进来 */
   loadSessionContext: (s: FreeSession) => Promise<void>

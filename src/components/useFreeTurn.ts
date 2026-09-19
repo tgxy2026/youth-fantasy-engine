@@ -37,7 +37,7 @@ import type { PostApplied } from '../lib/tavern/postRules'
 import type { FreeCharacter, FreeSession, CharVars } from '../lib/tavern/types'
 
 /** 入参一律来自 `useTavernFreeModel` 的同一次渲染作用域（状态值 + setter / useCallback） */
-export type FreeTurnDeps = {
+type FreeTurnDeps = {
   session: FreeSession | null
   setSession: Dispatch<SetStateAction<FreeSession | null>>
   input: string

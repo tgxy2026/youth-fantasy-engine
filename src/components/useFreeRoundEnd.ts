@@ -29,7 +29,7 @@ import type { CardRevision } from '../lib/tavern/revise'
 import type { FreeCharacter, FreeSession, FreeMemory, VarKey } from '../lib/tavern/types'
 
 /** 入参一律来自 `useTavernFreeModel` 的同一次渲染作用域 */
-export type FreeRoundEndDeps = {
+type FreeRoundEndDeps = {
   session: FreeSession | null
   setSession: Dispatch<SetStateAction<FreeSession | null>>
   setMems: Dispatch<SetStateAction<Record<string, FreeMemory | null>>>
