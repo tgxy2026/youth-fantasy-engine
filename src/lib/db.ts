@@ -6,7 +6,7 @@ import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
   seedDesktopFromLocal, onDesktopSyncConflict, persistDesktopCloudEnabled, onDesktopCloudFallback,
-  clearDesktopCloudEnabledFlag, flushDesktopCloud, snapshotDesktopCloudCache,
+  clearDesktopCloudEnabledFlag, flushDesktopCloud, snapshotDesktopCloudCache, onDesktopLocalSnapshot,
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo,
 } from './desktopCloudSync'
@@ -602,6 +602,17 @@ export async function enableDesktopCloudSync(handle: any) {
   }
   // 🔴 持久化必须在**上面全部成功之后**：原先写在 enableDesktopCloud 内部（即拉快照之前），
   //    拉快照 / 播种失败时标记已落盘 → 下次启动 UI 仍显示「已开启」，实际却走本地存储（界面撒谎）。
+  // 🔴 注册「读本地库快照」：启动合并靠它区分「本机删掉了这个项目」与「本机还没见过它」。
+  //    不注册的话，被删掉的项目会被云端那份旧快照反复带回来（幽灵项目，2026-09-19 实测）。
+  //    注意读的是 desktopLocalStore（本机数据文件），不是当前的 ops —— 云模式下那是内存 cache。
+  onDesktopLocalSnapshot(async () => {
+    const out: Record<string, any[]> = {}
+    for (const s of SYNC_STORES) {
+      if (s === 'backups') continue
+      out[s] = await desktopLocalStore.getAll(s).catch(() => [])
+    }
+    return out
+  })
   persistDesktopCloudEnabled(handle)
   setStoreOps(desktopCloudFileStore)
 }

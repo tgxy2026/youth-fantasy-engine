@@ -87,6 +87,14 @@ export function onDesktopCloudFallback(h: (cache: Record<string, any[]>) => void
   cloud.onFallback(h)
 }
 
+/**
+ * 注册「读本地库快照」。启动合并（`ensureInit`）需要它来判断
+ * 「本机删掉了某记录」还是「本机还没见过它」—— 详见 syncCore 的 onLocalSnapshot。
+ */
+export function onDesktopLocalSnapshot(h: () => Promise<Record<string, any[]>>) {
+  cloud.onLocalSnapshot(h)
+}
+
 function isStringHandle(h: unknown): h is string {
   return typeof h === 'string'
 }

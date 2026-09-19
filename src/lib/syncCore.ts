@@ -15,6 +15,7 @@ import {
 } from './syncTransport'
 import { SAVE_DEBOUNCE_MS } from './constants'
 import { todayKey } from './date'
+import { isDeleted, markDeleted, clearDeleted, resetTombs } from './syncTombstone'
 
 // 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
 // ⚠️ 注意 'backups' 是**本地专属**：上传侧 liveStores() 会把它从载荷里剔除，
@@ -203,6 +204,14 @@ function mergeCaches(
     ...Object.keys(server || {}),
     ...Object.keys(local || {}),
   ])
+  /**
+   * 「本地这份快照算不算一份有内容的库」。
+   * 只有它非空时，才能把"本地没有这条记录"读成"本机删掉了它" —— 若整库为空
+   * （新设备首同步 / 启动瞬间 cache 尚未建立），那只说明"还没拉下来"，必须采用云端。
+   * 缺了这道闸，新设备首次同步会把云端数据整片丢掉。
+   */
+  const localHasContent = Object.keys(local || {}).some((k) => ((local || {})[k] || []).length > 0)
+
   for (const s of stores) {
     // #026：backups 是本地专属保险，云端永不参与其增删
     if (s === 'backups') {
@@ -234,7 +243,16 @@ function mergeCaches(
       if (lo === undefined) {
         if (sv === undefined) continue // 两端皆无
         if (b === undefined) {
-          arr.push(sv) // 基线无、云端有 → 另一端新增（或本地尚未拉取），采用云端
+          /**
+           * 基线快照里也没有它 —— 「谁删的」只能靠**墓碑**（本机明确的删除记忆）来判断。
+           * 🔴 这一步就是「幽灵项目」的修复点：旧实现一律判为「另一端新增」而采用云端，
+           *    于是凡是云端还留着、而本机早已删掉的记录都会被搬回来（2026-09-19 实测）。
+           * ⚠️ 必须同时满足 `localHasContent`（见其说明）—— 否则会丢掉整库云端数据。
+           */
+          if (localHasContent && isDeleted(s, k)) {
+            continue // 本机删过 + 本地没有 + 云端有 → 尊重删除，不采用云端
+          }
+          arr.push(sv) // 没删过 + 云端有 → 另一端新增（或本地尚未拉取），采用云端
           continue
         }
         if (!eqRecord(sv, b)) {
@@ -291,6 +309,12 @@ export interface CloudStoreInstance {
   /** 注册「推不出去时的本地兜底」：回调收到当前内存 cache（store 名 → 行数组）。
    *  云模式下写入先进内存、再推同步目录；推送被挡时若不兜底，关窗即丢。 */
   onFallback(h: (cache: Record<string, any[]>) => void): void
+  /**
+   * 注册「读本地库快照」的回调。`ensureInit` 启动合并时把它当三路合并的 `local` 路 ——
+   * 用来区分「本机删掉了某记录」与「本机还没见过它（新设备 / 首次同步）」。
+   * 不注册时退回只用内存 cache（保守：不会误删云端数据，但也治不了幽灵项目）。
+   */
+  onLocalSnapshot(h: () => Promise<Record<string, any[]>>): void
   armUnloadFlush(): void
   /** 立即把内存里未推送的改动推出去（不等防抖计时器）。关同步 / 关窗前调用。 */
   flushNow(): Promise<void>
@@ -327,6 +351,16 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
 
   let cloudBackup: CloudBackup | null = null
   let baseCache: Record<string, any[]> = {}
+  /** 「读本地库快照」的注入回调，见 CloudStoreInstance.onLocalSnapshot */
+  let localSnapshotProvider: (() => Promise<Record<string, any[]>>) | null = null
+
+  /**
+   * 认领新基线（推送成功后调用）。
+   * 墓碑不在这里维护 —— 它记录的是「删除事件」，由 store.put / store.del 各自维护。
+   */
+  function adoptBaseline() {
+    baseCache = snapshotOf(cache)
+  }
 
   function setStatus(s: SyncStatus) {
     if (syncStatus === s) return
@@ -422,8 +456,16 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
           if (r === 200) {
             rev = Number(resp.rev) || 0
             if (resp.enc) {
-              cache = await decryptObj(resp.enc)
-              adoptCloudBackup(cache)
+              const serverCache = await decryptObj(resp.enc)
+              adoptCloudBackup(serverCache)
+              // 🔴 不能写成 `cache = serverCache` 直接整体替换（2026-09-19 老大实测）：
+              //    那样等于把内存数据整片换成云端那一版 —— 启动后界面会先显示**旧状态**，
+              //    本地早已删掉的记录也会被云端那份顺手带回来。
+              //    改走同一套三路合并，并且把**本地库**当成 `local` 路：云模式下内存 cache
+              //    此刻通常是空的，只看它无法区分"本机删了这条"和"还没拉下来"，
+              //    而这两种判反的代价并不对称（误判成删除会丢云端数据，误判成新增会让删掉的项目复活）。
+              const localSnap = localSnapshotProvider ? await localSnapshotProvider().catch(() => null) : null
+              cache = mergeCaches(baseCache, serverCache, localSnap ?? cache)
             } else {
               cache = {}
             }
@@ -433,7 +475,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
             //    唯一通道，只清标志不报状态时界面会一直显示「离线」—— 而 `backgroundPull` 只在
             //    「远端有更新」时才置 ok，无更新时直接 return，永远轮不到它复位。
             setStatus('ok')
-            baseCache = snapshotOf(cache)
+            adoptBaseline()
             return
           }
           if (r === 0) throw new Error('sync pull network error')
@@ -498,7 +540,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     // #027：备份为空时拒绝回滚——否则会把空备份当最新状态推上去，反而清空整库。
     if (totalRecords(restored) === 0) return false
     cache = restored
-    baseCache = snapshotOf(cache)
+    adoptBaseline()
     await pushNow(() => rev)
     return true
   }
@@ -552,7 +594,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
         //    顺序反过来的话，这批本地改动会被写进 baseCache，下次合并时被判成「本地未改」
         //    而静默采用云端版本 —— 改动无声消失，且走的是常规分支、不产生冲突副本。
         const drifted = !sameStores(cache, serverCache)
-        baseCache = snapshotOf(cache)
+        adoptBaseline()
         if (drifted) schedulePush()
         setStatus('ok')
       }
@@ -638,7 +680,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       //    拉取。丢弃结果即可，新一轮 push 会重新建立基线。
       if (myEpoch !== epoch) return { conflict: false }
       rev = resp.rev ?? baseRev + 1
-      baseCache = snapshotOf(cache)
+      adoptBaseline()
       setStatus('ok')
       return { conflict: false }
     }
@@ -728,12 +770,18 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       const i = arr.findIndex((x: any) => x[KEY_FIELD[store] ?? 'id'] === k)
       if (i >= 0) arr[i] = value
       else arr.push(value)
+      // 🔴 写回同 key 的记录 → 清掉它的墓碑，允许「删掉之后又重建」（从项目备份导入等）
+      clearDeleted(store, [String(k)])
       schedulePush()
     },
     del: async (store: string, key: string) => {
       await ensureInit()
       const kf = KEY_FIELD[store] ?? 'id'
       cache[store] = (cache[store] || []).filter((x: any) => x[kf] !== key)
+      // 🔴 记墓碑：这是「本机明确删过它」的唯一凭据。没有它，云端那份旧记录会在下次启动
+      //    合并时被判成「另一端新增」而搬回来（幽灵项目，2026-09-19 实测）。
+      //    meta 不记 —— 那是配置/开关，删了就是删了，不需要跨启动的删除记忆。
+      if (store !== 'meta') markDeleted(store, [key])
       schedulePush()
     },
     getAllByIndex: async <T,>(store: string, indexName: string, value: unknown): Promise<T[]> => {
@@ -752,6 +800,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
         if (i >= 0) arr[i] = v
         else arr.push(v)
       }
+      clearDeleted(store, values.map((v: any) => v?.[kf]))
       schedulePush()
     },
     bulkDel: async (store: string, keys: string[]) => {
@@ -759,6 +808,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       const kf = KEY_FIELD[store] ?? 'id'
       const set = new Set(keys)
       cache[store] = (cache[store] || []).filter((x: any) => !set.has(x[kf]))
+      if (store !== 'meta') markDeleted(store, keys)
       schedulePush()
     },
   }
@@ -786,6 +836,11 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       transientUnavailable = false
       rateLimitedUntil = 0
       baseCache = {}
+      // 关闭同步（code 传空）→ 忘掉「曾存在过」历史，下次开启视为全新云端；
+      // 换目录则**保留** —— 同一批项目的 id 不变，保留才能继续识别「本地删除」。
+      // 关闭同步（code 传空）→ 忘掉删除记忆，下次开启视为全新云端；
+      // 换目录则**保留** —— 同一批记录的 id 不变，保留才能继续挡住已删记录的复活。
+      if (!c) resetTombs()
       // 🔴 审计 2026-09-18（P2-1）：换目录时必须清掉**待执行的防抖推送**。旧计时器会在
       //    transport 已指向新目录之后才触发，而此刻 cache 已被清空 → 它会把一份空载荷
       //    当成「rev=0 的第一份」推上去（新目录凭空多出 rev=1），并把本该走
@@ -817,6 +872,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     backgroundPull,
     onSyncConflict: (h) => onSyncConflict(h),
     onFallback: (h) => { fallbackHandler = h },
+    onLocalSnapshot: (h) => { localSnapshotProvider = h },
     armUnloadFlush,
     flushNow,
     getCacheSnapshot: () => snapshotOf(cache),

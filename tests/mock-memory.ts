@@ -56,3 +56,27 @@ export const memoryOps = {
     for (const k of keys) storeOf(store).delete(String(k))
   },
 }
+
+// ============ localStorage mock（Node 端没有这个全局对象）============
+//
+// 🔴 为什么必须装：syncCore 的「曾存在过」主键名单（区分「本地删除」与「另一端新增」，
+//    见 syncCore.ts 顶部说明）要落 localStorage。Node 里没有它，那段读写会被 try/catch
+//    **静默降级为空** —— 测试照样全绿，而实际一行都没验证到（这类"看着通过其实空跑"的
+//    假绿是这套测试最危险的形态，2026-09-18 的 formData 键漏配就是同类问题）。
+//
+// ⚠️ 这里**故意不在 __resetMockStores 里清空** —— 「重启后仍然记得曾经见过的记录」
+//    正是要验证的行为，清了就等于把被测前提删了。需要隔离时用 __resetLocalStorage。
+const lsMap = new Map<string, string>()
+if (typeof (globalThis as { localStorage?: unknown }).localStorage === 'undefined') {
+  ;(globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (k: string) => (lsMap.has(k) ? (lsMap.get(k) as string) : null),
+    setItem: (k: string, v: string) => { lsMap.set(k, String(v)) },
+    removeItem: (k: string) => { lsMap.delete(k) },
+    clear: () => { lsMap.clear() },
+    key: (i: number) => [...lsMap.keys()][i] ?? null,
+    get length() { return lsMap.size },
+  }
+}
+
+/** 清空 mock localStorage（仅用于需要"全新设备"语义的测试） */
+export function __resetLocalStorage() { lsMap.clear() }

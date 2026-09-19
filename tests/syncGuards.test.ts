@@ -12,7 +12,7 @@
 import { createCloudStore } from '../src/lib/syncCore'
 import { SAVE_DEBOUNCE_MS } from '../src/lib/constants'
 import type { SyncTransport } from '../src/lib/syncTransport'
-import { __resetMockStores } from './mock-memory'
+import { __resetMockStores, __resetLocalStorage } from './mock-memory'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -222,6 +222,105 @@ async function main() {
     } catch (e) { threw = true; msg = e instanceof Error ? e.message : String(e) }
     ok('🔴 播种时某个 store 读失败 → 抛出并中止（不再静默当空继续推）', threw && /播种失败/.test(msg), msg)
     ok('中止时一次都没推（残缺载荷不会成为新基线）', pushes.length === 0, String(pushes.length))
+  }
+
+  // ---------- ⑧ 「幽灵项目」：本机删掉的记录，不能被云端旧快照带回来 ----------
+  //
+  // 2026-09-19 老大实测：删掉的项目每次打开软件又出现在项目管理页（且反复出现）。
+  // 根因：`baseCache` 只活在内存里、**每次启动都是空的**，启动后第一次合并时
+  //       「本地没有、云端有」的记录因基线里查不到而被判成「另一端新增」→ 采用云端；
+  //       删掉的记录于是被带回来，复活后又被推回云端 → 此后每次启动稳定复现（自锁）。
+  // 修复（两件事缺一不可）：
+  //   ① `store.del` 记**墓碑** —— "本机明确删过它"的唯一凭据；
+  //   ② 启动合并把**本地库**当 `local` 路 —— 证明"我这份库是有内容的"，
+  //      否则空 cache 会让墓碑判定被安全闸挡住（怕误删云端数据）。
+  {
+    __resetMockStores()
+    __resetLocalStorage()
+
+    // —— 第一次同步：云端与本地库都有 p1 / p2，并推上一份云端载荷 ——
+    const { t, pushes } = scriptedTransport({})
+    const cloud = createCloudStore(t)
+    cloud.configure('ghost-key')
+    // 先跑完 ensureInit（mock 的 pull 返回 enc:null，会让 cache 归零）——
+    // 否则下面 del 里的首次 ensureInit 会顺手把刚 seed 进去的数据清掉。
+    await cloud.pullSnapshot()
+    await cloud.seedFromLocal(async (s) => (s === 'projects' ? [{ id: 'p1' }, { id: 'p2' }] : []))
+    const cloudEnc = pushes[pushes.length - 1]?.enc
+    ok('前置：播种推了一次并留下云端载荷', pushes.length === 1 && !!cloudEnc, String(pushes.length))
+
+    // —— 本机删除 p2（这就是老大删掉的那个项目）——
+    await cloud.store.del('projects', 'p2')
+    const afterDel = await cloud.store.getAll<{ id: string }>('projects')
+    ok('前置：本机已删掉 p2', afterDel.length === 1 && afterDel[0].id === 'p1', JSON.stringify(afterDel))
+
+    // —— 模拟「重启软件」：新实例（基线归零）、墓碑仍在 localStorage；
+    //     本地库（数据文件）含 p1、不含 p2 —— 正是老大机器上的真实形态 ——
+    const t2 = scriptedTransport({ pull: () => ({ status: 200, rev: 9, enc: cloudEnc }) })
+    const cloud2 = createCloudStore(t2.t)
+    cloud2.configure('ghost-key')
+    cloud2.onLocalSnapshot(async () => ({ projects: [{ id: 'p1' }] }))
+    await cloud2.pullSnapshot()
+    const merged = await cloud2.store.getAll<{ id: string }>('projects')
+    ok('🔴 重启后合并：被删的 p2 不会被云端旧快照带回来（幽灵项目修复）',
+      merged.length === 1 && merged[0].id === 'p1', JSON.stringify(merged))
+  }
+
+  // ---------- ⑨ 反例①：全新设备首同步仍要采纳云端（修复不能误伤「真·新增」） ----------
+  // 修复里那道 `localHasContent` 闸就是为它立的：本机还没见过这些记录时，
+  // 必须原样采纳云端 —— 否则新设备首次同步会把整库云端数据丢掉，比幽灵项目严重得多。
+  {
+    __resetMockStores()
+    __resetLocalStorage() // 全新设备：无墓碑、本地库为空
+    const { t, pushes } = scriptedTransport({})
+    const cloud = createCloudStore(t)
+    cloud.configure('newdev-key')
+    // 先跑完 ensureInit（mock 的 pull 返回 enc:null，会让 cache 归零）——
+    // 否则下面 del 里的首次 ensureInit 会顺手把刚 seed 进去的数据清掉。
+    await cloud.pullSnapshot()
+    await cloud.seedFromLocal(async (s) => (s === 'projects' ? [{ id: 'x1' }, { id: 'x2' }] : []))
+    const enc = pushes[pushes.length - 1]?.enc
+
+    __resetMockStores()
+    __resetLocalStorage()
+    const t2 = scriptedTransport({ pull: () => ({ status: 200, rev: 9, enc }) })
+    const cloud2 = createCloudStore(t2.t)
+    cloud2.configure('newdev-key')
+    cloud2.onLocalSnapshot(async () => ({})) // 本机数据文件是空的
+    await cloud2.pullSnapshot()
+    const rows = await cloud2.store.getAll<{ id: string }>('projects')
+    ok('🔴 反例：全新设备（无墓碑、本地库为空）照样采纳云端记录，不会丢数据',
+      rows.length === 2, JSON.stringify(rows))
+  }
+
+  // ---------- ⑩ 反例②：删掉又重建（put 清墓碑）不能被墓碑永久挡住 ----------
+  // 墓碑若只在 del 里加、不在 put 里清，"删掉再导入回来"的记录就会被永久挡住 ——
+  // 那是个比幽灵项目更难发现的死记录。
+  {
+    __resetMockStores()
+    __resetLocalStorage()
+    const { t, pushes } = scriptedTransport({})
+    const cloud = createCloudStore(t)
+    cloud.configure('revive-key')
+    // 先跑完 ensureInit（mock 的 pull 返回 enc:null，会让 cache 归零）——
+    // 否则下面 del 里的首次 ensureInit 会顺手把刚 seed 进去的数据清掉。
+    await cloud.pullSnapshot()
+    await cloud.seedFromLocal(async (s) => (s === 'projects' ? [{ id: 'r1' }] : []))
+    const enc = pushes[pushes.length - 1]?.enc
+
+    await cloud.store.del('projects', 'r1') // 删 → 记墓碑
+    await cloud.store.put('projects', { id: 'r1' }) // 重建同 id → 应清墓碑
+    const back = await cloud.store.getAll<{ id: string }>('projects')
+    ok('前置：删掉又重建后，本机重新持有 r1', back.length === 1, JSON.stringify(back))
+
+    const t2 = scriptedTransport({ pull: () => ({ status: 200, rev: 9, enc }) })
+    const cloud2 = createCloudStore(t2.t)
+    cloud2.configure('revive-key')
+    cloud2.onLocalSnapshot(async () => ({ projects: [{ id: 'r1' }] }))
+    await cloud2.pullSnapshot()
+    const rows = await cloud2.store.getAll<{ id: string }>('projects')
+    ok('🔴 反例：墓碑随写入清除，重建后的记录能正常同步（不是删得掉、进不来）',
+      rows.length === 1, JSON.stringify(rows))
   }
 
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)

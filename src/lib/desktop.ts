@@ -9,6 +9,7 @@
 import type { StoreOps, PortableData } from './storeOps'
 import { normalizePortableData } from './storeOps'
 import { SAVE_DEBOUNCE_MS } from './constants'
+import { markDeleted, clearDeleted } from './syncTombstone'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
 export interface ElectronStoreAPI {
@@ -414,12 +415,17 @@ export const desktopStore: StoreOps = {
     const key = String((value as Record<string, unknown>)[kp])
     const st = data.stores[store] ?? (data.stores[store] = {})
     st[key] = value
+    // 🔴 写回同 key → 清墓碑（允许「删掉之后又重建」）
+    clearDeleted(store, [key])
     scheduleSave()
   },
   async del(store: string, key: string): Promise<void> {
     const st = data.stores[store]
     if (st && key in st) {
       delete st[key]
+      // 🔴 记墓碑：关闭同步期间（走本地库）的删除同样要记住，否则重开同步后
+      //    云端那份旧记录会在合并时被判成「另一端新增」而复活（幽灵项目，2026-09-19）。
+      if (store !== 'meta') markDeleted(store, [key])
       scheduleSave()
     }
   },
@@ -434,6 +440,7 @@ export const desktopStore: StoreOps = {
       const st = data.stores[store] ?? (data.stores[store] = {})
       st[key] = v
     }
+    clearDeleted(store, values.map((v) => String((v as Record<string, unknown>)[kp])))
     scheduleSave()
   },
   async bulkDel(store: string, keys: (string | number)[]): Promise<void> {
@@ -443,6 +450,9 @@ export const desktopStore: StoreOps = {
     for (const k of keys) {
       if (k in st) { delete st[k]; changed = true }
     }
-    if (changed) scheduleSave()
+    if (changed) {
+      if (store !== 'meta') markDeleted(store, keys)
+      scheduleSave()
+    }
   },
 }
