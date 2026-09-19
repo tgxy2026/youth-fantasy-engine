@@ -1,4 +1,6 @@
-// 清理打包残留：release/desktop-out-*（electron-builder 中间产物，非交付物）
+// 清理打包残留：
+//   ① release/desktop-out-*（electron-builder 中间产物，非交付物）
+//   ② dist_bak_*（构建前把旧 dist 改名避让 safe-delete 留下的备份，纯残留）
 // 用法：node scripts/cleanup-residual.mjs
 //
 // 为什么需要单独一个脚本：
@@ -10,6 +12,7 @@
 //   release/eb-cache      electron-builder 缓存（106MB，删了下次打包要重新联网下载）
 //   release/novel-studio-* 便携版交付物
 //   release/桌面安装版      桌面版交付物
+//   dist                  `npm run preview` 要读它，不是残留
 import { readdirSync, rmSync, statSync, existsSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,18 +20,27 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseDir = join(root, 'release')
 
-if (!existsSync(releaseDir)) {
-  console.log('release/ 不存在，无需清理。')
-  process.exit(0)
-}
+// ① release/desktop-out-*：只认这个前缀，其它目录一律不动（白名单式，避免误伤交付物）
+const targets = existsSync(releaseDir)
+  ? readdirSync(releaseDir)
+    .filter((n) => n.startsWith('desktop-out-'))
+    .map((n) => join(releaseDir, n))
+  : []
 
-// 只认 desktop-out-*，其它目录一律不动（白名单式，避免误伤交付物）
-const targets = readdirSync(releaseDir)
-  .filter((n) => n.startsWith('desktop-out-'))
-  .map((n) => join(releaseDir, n))
+// ② dist_bak_*（在项目根）：build-desktop.mjs 每次构建前把旧 dist 改名到这里，
+//    之前没有任何脚本清它 → 逐轮堆积（老大 2026-09-19 发现两个共 15MB 后要求清掉）。
+//    🔴 它是**构建当次**的避让备份，构建结束后就没有用途了，所以并入本脚本一起清。
+const distBak = readdirSync(root)
+  .filter((n) => n.startsWith('dist_bak_'))
+  .map((n) => join(root, n))
+  .filter((p) => {
+    try { return statSync(p).isDirectory() } catch { return false }
+  })
 
-if (targets.length === 0) {
-  console.log('没有 desktop-out-* 残留，工作区很干净。')
+const all = [...targets, ...distBak]
+
+if (all.length === 0) {
+  console.log('没有残留（desktop-out-* / dist_bak_* 都没有），工作区很干净。')
   process.exit(0)
 }
 
@@ -54,7 +66,7 @@ const mb = (n) => (n / 1024 / 1024).toFixed(1) + ' MB'
 let freed = 0
 const failed = []
 
-for (const t of targets) {
+for (const t of all) {
   const size = dirSize(t)
   try {
     rmSync(t, { recursive: true, force: true })

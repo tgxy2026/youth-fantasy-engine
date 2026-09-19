@@ -685,6 +685,20 @@ export async function touchProject(id: string) {
 export async function deleteProject(id: string) {
   // 章节行在下面那轮按 projectId 批量删，这里不必先全表读一遍 chapters（曾只为快照守卫而读）
   await ops.del('projects', id)
+  /**
+   * 🔴 删项目后要把「上次打开的项目」指针一并清掉（老大 2026-09-19 遇到的怪事：
+   *    删掉的项目，下次启动又被自动打开）。
+   *
+   * 为什么光删 projects 记录不够：`lastProject` 是**随云盘同步的 meta**
+   * （不在 EXCLUDED_META_KEYS 里），而启动时那条读有可能落在「本地镜像」一侧 ——
+   * 镜像里还留着删除前的旧状态（甚至 projects 记录也还在），于是指针 + 陈旧记录
+   * 一起把「已删除的项目」重新拼了出来。指针不清，就等于给陈旧数据留着一扇门。
+   *
+   * ⚠️ 2026-09-19 起启动**不再自动打开上次项目**（默认停项目管理首页），这条是第二道闸：
+   *    即便将来又有人加回"自动打开"的逻辑，也不会再打开一个被删掉的项目。
+   */
+  const last = await ops.get<{ key: string; value: unknown }>('meta', 'lastProject')
+  if (last?.value === id) await ops.del('meta', 'lastProject')
   // 收集各 store 待删主键，统一批量删除
   const delKeys: Record<string, string[]> = {}
   // tavernReports 也是项目级数据（报告随项目走），务必一并清理，否则项目删了报告还在

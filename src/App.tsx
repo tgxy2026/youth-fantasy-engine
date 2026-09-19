@@ -112,7 +112,10 @@ export default function App() {
     onDesktop(); return subscribeDesktop(onDesktop)
   }, [])
 
-  // 启动时恢复上次打开的项目（便携模式需等数据文件连接后执行）
+  // 启动引导（便携模式需等数据文件连接后执行）
+  //
+  // 2026-09-19 前这里会**自动打开上次的项目**；老大要求启动默认停在「项目管理首页」，
+  // 所以现在只做三件与「有没有项目」无关的事：结构归一 → 首次使用播示范项目 → 装载提示词覆写。
   useEffect(() => {
     if (!fileReady) return
     ;(async () => {
@@ -121,7 +124,7 @@ export default function App() {
       //    既不报错也没有重试入口。finally 保证一定会离开黑屏。
       try {
       const last = await db.getMeta('lastProject', '')
-      await db.migrateProjectTypes() // 清理历史遗留的 lite/minimal 项目形态
+      await db.migrateProjectTypes() // 清理历史遗留的 lite/minimal 项目形态（全局、幂等）
       // 首次启动且存储为空：自动创建示范项目「吞天神脉（示范）」，引导新用户了解全模块功能
       // 🔴 写盘被锁（数据文件没读出来）时**不播种**：此刻内存是空库，
       //    播种只会制造"好像有数据"的假象，还可能被误存回去覆盖原文件。
@@ -132,27 +135,16 @@ export default function App() {
           try { await createDemoProject() } catch (e) { console.warn('[boot] 自动创建示范项目失败：', e) }
         }
       }
-      if (last) {
-        const p = await db.getProject(last)
-        if (p) {
-          db.setCurrentProject(p.id)
-          // 结构迁移统一入口（幂等）：必须放在 setCurrentProject 之后——迁移函数读的是当前项目。
-          // 修复审计 P1-7：「启动恢复上次项目」这条路径此前只跑了 migrateProjectTypes，
-          // 漏掉 ledger 拆表与全局编号，导致自动回到上次项目时台账/检索读到旧结构。
-          await db.runMigrations()
-          // AI 提示词的作者覆写要在任何 AI 调用之前生效（登记在各 lib 模块顶层，import 即完成）
-          await loadPromptOverrides()
-          await refreshVolumeTabs()
-          setProjectId(p.id)
-          setProjectName(p.name)
-          setVisCtx({ type: p.projectType ?? 'full', features: p.features ?? [] })
-          // 与 openProject 一致的备份策略：自动恢复上次项目时也要启动自动备份，
-          // 否则「关掉再开 → 回到上次项目」这条最常用路径完全没有滚动/每日备份安全网
-          void ensureDailyBackup(p.id)
-          backupStop.current?.()
-          backupStop.current = startAutoBackup(p.id)
-        }
-      }
+      // AI 提示词的作者覆写要在任何 AI 调用之前生效（登记在各 lib 模块顶层，import 即完成）。
+      // 它存在**全局 meta**（`ai.promptOverrides`，不是项目级 —— 与 lastProject 同一个 meta 区），
+      // 所以放在这里调用、与「有没有打开项目」无关。
+      await loadPromptOverrides()
+      // 🔴 2026-09-19 老大要求：**启动后默认停在「项目管理首页」**，不再自动打开上次的项目。
+      //    于是现在进项目只有一条路径 —— 作者在首页挑一个 → `openProject()`，
+      //    那里的 runMigrations / refreshVolumeTabs / 自动备份 / setActiveTab('dashboard')
+      //    本来就是主路径（点项目卡片走的就是它），不会漏步骤。
+      //    `lastProject` 这个 meta **仍然保留写入**，它现在只服务一件事：
+      //    判断"要不要给首次使用的用户播一个示范项目"（下面那段）。退出项目时会清空它。
       } catch (e) {
         console.error('[boot] 启动流程失败：', e)
         setBootError(e instanceof Error ? e.message : String(e))

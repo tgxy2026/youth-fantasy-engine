@@ -44,7 +44,9 @@ import { MAX_CHAPTERS, advisePace, type PaceAdvice } from '../lib/writingPace'
 import { foldVh } from '../lib/theme'
 import NumberField from './NumberField'
 
-const NUM_INPUT = 'w-20 rounded bg-ink-900 border border-ink-700 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50'
+/** 数值输入框：宽度与高度都对齐面板里那批 toggle（h-8）——
+ *  原来只有 py-1（≈28px），和 h-8 的按钮排一行时高矮不齐（老大 2026-09-19 要求统一） */
+const NUM_INPUT = 'h-8 w-20 rounded bg-ink-900 border border-ink-700 px-2 text-12 text-ink-100 outline-none focus:border-amber/50'
 
 /**
  * 两种起点的展示元数据 —— 顺序即界面顺序。
@@ -278,12 +280,6 @@ export default function CreativeWritingPanel() {
               </Button>
             )
           })}
-          <div className="flex-1" />
-          {inp.mode === 'scratch' && (
-            <Button size="xs" variant="secondary" disabled={s.running} onClick={() => setInterview(true)}>
-              <Sparkles size={11} /> 对话引导
-            </Button>
-          )}
         </div>
 
         {/* 产出目标：两种起点都有 —— 开跑前就分清「只要规划」还是「连正文一起写」 */}
@@ -342,6 +338,12 @@ export default function CreativeWritingPanel() {
           </div>
         )}
 
+        {/* 开跑前一次定完的五件参数，**排在同一行**（老大 2026-09-19 要求）：
+            卷数 · 连写章数 · 每章目标字数 · 用推荐值 · 对话引导
+            🔴 尺寸一律 h-8：本面板所有 toggle 本来就是 h-8（`px-3 h-8 rounded-lg text-12`），
+               而输入框原来 py-1 只有 ≈28px、「用推荐值／对话引导」原来是 xs(24px) ——
+               同一排里三个高度，看着就是散的。
+            ⚠️ 别拆回两三行：这五件是同一次决策（这一次跑多大），散开就要上下找。 */}
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-11 text-ink-400">
           {inp.mode === 'scratch' && (
             <label className="flex items-center gap-1.5">卷数
@@ -363,18 +365,25 @@ export default function CreativeWritingPanel() {
                 onChange={v => updateInputs({ words: v ?? 2500 })} className={NUM_INPUT} />
             </label>
           )}
+          {/* 「用推荐值」紧跟每章目标字数（推荐值是按字数×模型窗口一起算出来的，
+              按钮文案里也写着调成几章，不会误读成"改字数"） */}
+          {pace && inp.chapters !== pace.recommendedChapters && (
+            <Button size="sm" variant="secondary" disabled={s.running} title={pace.model}
+              onClick={() => updateInputs({ chapters: pace.recommendedChapters })}>
+              用推荐值（{pace.recommendedChapters} 章）
+            </Button>
+          )}
+          {/* 对话引导：只服务「从一句话创作」的输入框（接着写没有这个入口） */}
+          {inp.mode === 'scratch' && (
+            <Button size="sm" variant="secondary" disabled={s.running} onClick={() => setInterview(true)}>
+              <Sparkles size={12} /> 对话引导
+            </Button>
+          )}
         </div>
         {pace && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span title={pace.model} className={`text-10 leading-relaxed ${pace.level === 'ok' ? 'text-ink-500' : 'text-amber'}`}>
-              {pace.note}
-            </span>
-            {inp.chapters !== pace.recommendedChapters && (
-              <Button size="xs" variant="secondary" onClick={() => updateInputs({ chapters: pace.recommendedChapters })}>
-                用推荐值（{pace.recommendedChapters} 章）
-              </Button>
-            )}
-          </div>
+          <p title={pace.model} className={`mt-1 text-10 leading-relaxed ${pace.level === 'ok' ? 'text-ink-500' : 'text-amber'}`}>
+            {pace.note}
+          </p>
         )}
 
         {/* 连写设置（两种起点共用 —— 融合点之一：从零创作与接着写用的是同一套连写引擎，
