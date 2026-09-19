@@ -1190,23 +1190,32 @@ const CHAPTER_REWRITE_ACTION_RULES: Record<ChapterRewriteAction, string> = {
 //     与设定表就全对不上了。所以历史章只允许**文字层面**的加工，设定类内容一律冻结。
 //   · 改**最新章**可以放开手脚（它后面还没有正文）；但正因如此，落库后必须补跑一轮
 //     设定抽取 / 补登 / 更新，把这一章的新信息同步进设定表（否则「接着写」时会读到旧设定）。
-let CHAPTER_REWRITE_HISTORY_RULE = `【本次改写的是**已定稿的旧章**，不是正在推进的最新章】只做文字层面的加工：
+let CHAPTER_REWRITE_HISTORY_RULE = `【本次改写的是**已定稿的旧章**】这一章后面已经有写好的正文与对应设定 —— 所以**设定类内容一律冻结**：
+旧章里的身份 / 关系 / 境界 / 器物来历一旦被改动，后面已写好的正文与设定表就全对不上了。
 
-可以做的：
-- 丰富人物的表情 / 动作 / 环境 / 感官细节；调整句式长短与节奏；去掉 AI 腔；
-- 补上过场衔接、情绪反应类的台词（寒暄、调侃、惊讶、沉默），让对话更自然。
-
-🔴 **绝对不能做的**（改了就与后文和设定表对不上）：
-- 不改人物的身份 / 关系 / 境界 / 实力 / 品级，不改势力与地点的归属，不改物品的来龙去脉与术语用法；
+**通用红线**（四种动作都适用）：
+- 不改人物的身份 / 关系 / 境界 / 实力 / 品级；不改势力与地点的归属；不改物品的来龙去脉与术语用法；
 - 不改已发生事件的因果与结果，不新增剧情事件，不埋伏笔、不给后文留下新的接口；
-- 新增的台词必须是**对情节没有实质影响**的，不得借台词透露新信息；
-- 原文若有跟前文矛盾之处，**不要顺手改对** —— 那不是本次任务，改了反而让设定记录对不上。`
+- 不借台词透露新信息；新增的台词必须**对情节没有实质影响**（寒暄、调侃、惊讶、沉默）；
+- 须是「字面变了、信息没变」：原文若跟前文有矛盾，**不要顺手改对** —— 那不是本次任务，改了反而让设定记录对不上。
 
-let CHAPTER_REWRITE_LATEST_RULE = `【本次改写的是**当前最新章**】可以比旧章放开手脚：按作者要求调整叙述角度、强化冲突、重排场景、补写细节与对白，甚至改写局部走向。
+**按动作各自的边界**：
+- **润色**：只换字不换事 —— 字词、句式、节奏可改；情节、信息、专名一律不动。润色天然不产生新设定，但同样不许顺手把泛指写成专指（「一位老者」不能改成「青云宗长老」）。
+- **扩写**：🔴 **描写层可以加，信息层不可以加**。「一柄剑」可以写成「一柄样式古朴的剑」，**不能**写成「师父所赠的断岳剑」—— 后者凭空造出专名与来历，设定表里没有、后文也不知道。
+  可以加的：环境与感官、动作与微表情、情绪递进、无实质信息的过场衔接台词。
+  不可以加的：任何新的人物 / 地点 / 势力 / 功法 / 器物 / 术语名称，以及任何新的来历、身份、境界、归属交代。
+- **精简**：🔴 **承载设定交代的句子一律保留**。只删冗余重复、注水抒情与无信息量的过渡。
+  「他取出那枚得自青云宗的储物戒」不能压成「他取出储物戒」—— 来历交代删掉后，后文就断了。凡带专名、来历、境界、关系、归属、器物来源的句子，整句留着。
+- **改写**：只改叙述方式与文字（句式、节奏、场景切分），设定类内容一字不动，不新增事件、不埋伏笔。`
 
-仍要守住两条：① 与前文设定不冲突；② 原文若有章末钩子，改写后必须留着 —— 它是下一章的接口。
+let CHAPTER_REWRITE_LATEST_RULE = `【本次改写的是**当前最新章**】它后面还没有正文，因此不必像改旧章那样收紧 —— 但🔴 **尺度由「动作」决定，不因「最新章」而放宽**：
 
-落库后系统会自动补跑一轮「设定抽取 / 补登 / 更新」，把本章新增或变化的信息同步进设定表。`
+- 只有**改写**这一档可以放开手脚：按作者要求调整叙述角度、强化冲突、重排场景、补写细节与对白，甚至改写局部走向。
+- **润色 / 扩写 / 精简仍严格按各自的动作纪律执行**（润色不增删情节与信息、扩写不注水、精简不丢信息）—— 「这是最新章」不是放宽它们的理由。
+
+不论哪种动作都要守住两条：① 与前文设定不冲突；② 原文若有章末钩子，改写后必须留着 —— 它是下一章的接口。
+
+🔴 落库后系统会自动补跑一轮「设定抽取 / 补登 / 更新」，把本章新增或变化的信息同步进设定表，供下一次「接着写」读取。`
 
 
 export interface ChapterRewriteOpts {
@@ -2317,8 +2326,8 @@ registerPrompt({ id: 'chapter-review', group: '编辑与审校', name: '章节�
 registerPrompt({ id: 'ooc-check', group: '编辑与审校', name: '人设一致性（OOC）', note: '对照角色卡，查角色言行是否崩人设。' }, () => P_ooc_check, t => { P_ooc_check = t })
 registerPrompt({ id: 'rewrite-passage', group: '正文写作', name: '选区改稿', note: '对作者选中的段落做局部修改。' }, () => P_rewrite_passage, t => { P_rewrite_passage = t })
 registerPrompt({ id: 'chapter-rewrite', group: '正文写作', name: '整章改写', note: '对整章正文做润色 / 扩写 / 精简 / 改写（纯文本输出，结果由作者确认后才替换正文）。' }, () => CHAPTER_REWRITE_BASE, t => { CHAPTER_REWRITE_BASE = t })
-registerPrompt({ id: 'chapter-rewrite-history', group: '正文写作', name: '整章改写 · 历史章纪律', note: '改已定稿旧章时的硬约束：只做文字加工，设定类内容一律冻结。' }, () => CHAPTER_REWRITE_HISTORY_RULE, t => { CHAPTER_REWRITE_HISTORY_RULE = t })
-registerPrompt({ id: 'chapter-rewrite-latest', group: '正文写作', name: '整章改写 · 最新章纪律', note: '改当前最新章时的放开尺度（允许创造性改写；落库后补跑设定抽取）。' }, () => CHAPTER_REWRITE_LATEST_RULE, t => { CHAPTER_REWRITE_LATEST_RULE = t })
+registerPrompt({ id: 'chapter-rewrite-history', group: '正文写作', name: '整章改写 · 历史章纪律', note: '改已定稿旧章时的设定冻结条款，按动作分节（润色不动设定 / 扩写不得新增设定 / 精简不得删设定交代 / 改写只改叙述方式）。' }, () => CHAPTER_REWRITE_HISTORY_RULE, t => { CHAPTER_REWRITE_HISTORY_RULE = t })
+registerPrompt({ id: 'chapter-rewrite-latest', group: '正文写作', name: '整章改写 · 最新章纪律', note: '改当前最新章时的尺度：只有「改写」档可放开，润色 / 扩写 / 精简仍守各自纪律；落库后补跑设定同步。' }, () => CHAPTER_REWRITE_LATEST_RULE, t => { CHAPTER_REWRITE_LATEST_RULE = t })
 registerPrompt({ id: 'extend-outline', group: '正文写作', name: '续排细纲', note: '接着已有《章节细纲》往下排（「接着已有内容写」的「只做大纲规划」用）。' }, () => EXTEND_OUTLINE_BASE, t => { EXTEND_OUTLINE_BASE = t })
 registerPrompt({ id: 'continuation-advice', group: '正文写作', name: '卡文建议', note: '刚写完一章，给下一部分的方向建议。' }, () => P_continuation_advice, t => { P_continuation_advice = t })
 registerPrompt({ id: 'pleasure-check', group: '编辑与审校', name: '爽点与毒点管理', note: '按爽感管理标准审本章的爽点供给与毒点风险。' }, () => P_pleasure_check, t => { P_pleasure_check = t })

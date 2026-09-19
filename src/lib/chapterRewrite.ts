@@ -14,7 +14,37 @@ import { chapterSeqMap, flattenChapters } from './chapterSeq'
 import { syncChapterMaster } from './chapterMaster'
 import * as db from './db'
 import { countWords } from './textStats'
+import type { ChapterRewriteAction } from './aiTasks'
 import type { Chapter, Volume } from './types'
+
+/**
+ * 本次改写的**期望字数** —— 异常判定的基准。
+ *   · 润色：就是原文长度（润色的定义是"字数与原文相当 ±10%"）；
+ *   · 扩写 / 精简 / 改写：面板上填的目标字数（没填才退回原文长度）。
+ *
+ * 🔴 为什么要区分（2026-09-19 修）：原实现一律以"原文的 35%"为下限，对**精简**是结构性误判 ——
+ *    原文 3800 字压到目标 1200 字只占原文 31.6%，**必定**被判"结果明显偏短"并锁住「替换该章正文」，
+ *    作者明明要求的就是这个字数，却怎么也替换不了。反过来对**扩写**又漏判（原文 2000 / 目标 6000，
+ *    只返回 1500 属严重缩水，但占原文 75% → 不报异常）。
+ */
+export function expectedRewriteWords(
+  action: ChapterRewriteAction, fromWords: number, targetWords?: number,
+): number {
+  if (action === 'polish') return fromWords
+  return targetWords && targetWords > 0 ? targetWords : fromWords
+}
+
+/**
+ * 改写结果是否"可疑"（差距过大，必须锁住替换）。
+ *
+ * 下限 60% 期望：模型抽风 / 被截断（实测偶发只吐 1 个字）时保住作者正文；
+ * 上限 3 倍期望：精简动作却越改越长、润色却膨胀数倍，同样不是作者要的东西。
+ * 原文 ≤600 字的短章不套用 —— 短章的正常波动也会碰到这两条线，锁了反而碍事。
+ */
+export function isSuspectRewrite(fromWords: number, outWords: number, expect: number): boolean {
+  if (fromWords <= 600) return false
+  return outWords < expect * 0.6 || outWords > expect * 3
+}
 
 export interface RewriteCandidate {
   chapter: Chapter

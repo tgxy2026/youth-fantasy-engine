@@ -9,8 +9,10 @@
  * 另测两个纯函数：cleanChapterOutput（剥围栏 / 前言）与 listRewriteCandidates 的叙事顺序。
  */
 import * as db from '../src/lib/db'
-import { applyChapterRewrite, listRewriteCandidates } from '../src/lib/chapterRewrite'
-import { CHAPTER_REWRITE_META, cleanChapterOutput } from '../src/lib/aiTasks'
+import {
+  applyChapterRewrite, expectedRewriteWords, isSuspectRewrite, listRewriteCandidates,
+} from '../src/lib/chapterRewrite'
+import { CHAPTER_REWRITE_META, cleanChapterOutput, type ChapterRewriteAction } from '../src/lib/aiTasks'
 import { __resetMockStores } from './mock-memory'
 import fs from 'node:fs'
 import type { Chapter, Volume } from '../src/lib/types'
@@ -108,13 +110,27 @@ await db.saveChapter(chap('c3', 'v2', 0, '第二章 承', '原文二。'.repeat(
   ok('CRLF 归一化', !cleanChapterOutput('第一段\r\n第二段').includes('\r'))
 }
 
-// ---------- ⑦ 结果异常保护（纯判定：阈值口径写死在 creativeSession，这里锁住它） ----------
+// ---------- ⑦ 结果异常保护（直接调真实函数，不再写"镜像断言" —— 镜像会随实现悄悄漂移） ----------
+// 判据是「与**期望字数**的差距」，不是「相对原文的固定占比」。后者有两处结构性缺陷（2026-09-19 修）：
+//   ① 正常**精简**必被误判 —— 压到目标字数必然远低于原文（原文 3800 → 目标 1200 只占 31.6%）；
+//   ② **扩写**方向的严重缩水漏判（原文 2000 / 目标 6000，只给 1500 占原文 75%，不报异常）。
 {
-  const suspect = (srcLen: number, outLen: number) => srcLen > 600 && outLen < srcLen * 0.35
-  ok('🔴 模型只吐 1 个字（原文 2886）判定为异常', suspect(2886, 1))
-  ok('正常扩写（2886 → 4500）不误判', !suspect(2886, 4500))
-  ok('正常精简（压到 40% 原文）不误判', !suspect(2886, 1200))
-  ok('短章不套用该保护（原文 600 字以内不判异常）', !suspect(400, 50))
+  const at = (a: ChapterRewriteAction, from: number, target?: number) => expectedRewriteWords(a, from, target)
+
+  ok('期望字数 · 润色＝原文长度（不看目标字数）', at('polish', 2886, 3000) === 2886)
+  ok('期望字数 · 扩写 / 精简 / 改写＝面板填的目标字数',
+    at('expand', 2886, 5200) === 5200 && at('condense', 2886, 1200) === 1200 && at('rewrite', 2886, 3000) === 3000)
+  ok('期望字数 · 没填目标时退回原文长度（不会把期望算成 0 → 一切皆可疑）', at('expand', 2886) === 2886)
+
+  ok('🔴 模型只吐 1 个字（原文 2886）判定为异常', isSuspectRewrite(2886, 1, at('polish', 2886)))
+  ok('🔴 精简压到目标 1200 字不再被误判（旧口径按"原文 35%"必锁住替换）',
+    !isSuspectRewrite(2886, 1200, at('condense', 2886, 1200)))
+  ok('🔴 扩写缩水（目标 6000 只给 1500）现在能判出异常（旧口径漏判）',
+    isSuspectRewrite(2886, 1500, at('expand', 2886, 6000)))
+  ok('正常润色（2886 → 3000）不误判', !isSuspectRewrite(2886, 3000, at('polish', 2886)))
+  ok('精简却越改越长（目标 1200 给 4200）判为异常', isSuspectRewrite(2886, 4200, at('condense', 2886, 1200)))
+  ok('短章不套用该保护（原文 600 字以内不判异常）', !isSuspectRewrite(400, 50, at('polish', 400)))
+
   const panel = fs.readFileSync('src/components/CreativeWritingPanel.tsx', 'utf8')
   ok('🔴 异常结果在界面上被锁住替换（不是只弹个提示就放开）',
     /disabled=\{!!s\.rewrite\.suspect\}/.test(panel))
@@ -127,6 +143,23 @@ await db.saveChapter(chap('c3', 'v2', 0, '第二章 承', '原文二。'.repeat(
     CHAPTER_REWRITE_META.expand.needWords && CHAPTER_REWRITE_META.condense.needWords && CHAPTER_REWRITE_META.rewrite.needWords)
   ok('四种动作都有中文标签与说明',
     (['polish', 'expand', 'condense', 'rewrite'] as const).every(k => !!CHAPTER_REWRITE_META[k].label && !!CHAPTER_REWRITE_META[k].hint))
+}
+
+// ---------- ⑨ 改写纪律是「动作 × 章位置」矩阵（不是只按"章位置"分） ----------
+// 老大 2026-09-19 要求：历史章不产生新设定是对的，但**不只"改写"这一档**要管 —— 扩写可能凭空造设定
+// （「一柄剑」→「师父所赠的断岳剑」）、精简可能删掉设定交代（「得自青云宗的储物戒」→「储物戒」），
+// 两者在历史章同样必须冻结。反过来「最新章」也不能无差别放开：润色本来就不增删情节，
+// 被当成"可重排场景 / 可改写局部走向"是越权授权 —— 两份规则打架时模型会挑宽松的那条。
+{
+  const src = fs.readFileSync('src/lib/aiTasks.ts', 'utf8')
+  ok('🔴 历史章纪律按动作分节（润色 / 扩写 / 精简 / 改写四档各有边界）',
+    ['**润色**：只换字不换事', '**扩写**：', '**精简**：', '**改写**：只改叙述方式'].every(s => src.includes(s)))
+  ok('🔴 历史章 · 扩写：描写层可加、信息层不可加（防"凭空造设定"）',
+    src.includes('描写层可以加，信息层不可以加'))
+  ok('🔴 历史章 · 精简：承载设定交代的句子一律保留（防"删掉来历"）',
+    src.includes('承载设定交代的句子一律保留'))
+  ok('🔴 最新章：只有「改写」档可放开，润色 / 扩写 / 精简仍守各自纪律（消除越权授权）',
+    src.includes('只有**改写**这一档可以放开手脚') && src.includes('不因「最新章」而放宽'))
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 共 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)

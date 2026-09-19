@@ -127,8 +127,13 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('三条新提示词都登记了（可在模型设置里改）',
     /'chapter-rewrite-history'/.test(rw) && /'chapter-rewrite-latest'/.test(rw) && /'extend-outline'/.test(rw))
 
-  ok('🔴 异常短结果判定存在（原文>600 且 结果<35%）',
-    /content\.length > 600 && text\.length < hit\.chapter\.content\.length \* 0\.35/.test(sess))
+  // 2026-09-19 第二轮：判定基准由「原文的固定占比」改为「期望字数」——
+  // 旧口径对**精简**是结构性误判（压到目标字数必然远低于原文 → 必被锁住替换），
+  // 对**扩写**方向的严重缩水又漏判。判定逻辑已抽成 chapterRewrite 里的两个纯函数（见 chapterRewrite 用例 ⑦）。
+  ok('🔴 异常结果判定以「期望字数」为基准（润色＝原文 / 扩写·精简·改写＝目标字数）',
+    /isSuspectRewrite\(fromWords, outWords, expectWords\)/.test(sess)
+    && /export function expectedRewriteWords/.test(rwLib)
+    && /export function isSuspectRewrite/.test(rwLib))
   ok('🔴 会话层不 import 组件（lib → components 是反向依赖，会被 importCycles 拦）',
     !/from '\.\.\/components\//.test(session))
   ok('会话层用 useSyncExternalStore 订阅（React 18 标准姿势）',

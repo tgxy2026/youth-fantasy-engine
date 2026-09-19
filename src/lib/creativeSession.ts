@@ -32,7 +32,13 @@ import {
   type ChapterRewriteAction,
   type OutlineResult,
 } from './aiTasks'
-import { applyChapterRewrite, listRewriteCandidates } from './chapterRewrite'
+import {
+  applyChapterRewrite,
+  expectedRewriteWords,
+  isSuspectRewrite,
+  listRewriteCandidates,
+} from './chapterRewrite'
+import { countWords } from './textStats'
 import type { LedgerItem } from './settingLedger'
 
 /** 创作起点：从一句话想法从零写 / 接着项目已有内容往下写 */
@@ -125,13 +131,19 @@ export interface RewriteState {
   /** 原文字数 —— 界面用来显示「2200 → 3800 字」 */
   fromWords: number
   /**
+   * 本次改写的**期望字数**（异常判定的基准，见 `expectedRewriteWords`）：
+   * 润色＝原文长度；扩写 / 精简 / 改写＝面板上填的目标字数。
+   */
+  expectWords: number
+  /**
    * 这一章是不是项目**最新章**（末章）。
-   *   · 最新章：允许创造性改写，落库后补跑设定抽取；
-   *   · 历史章：只做文字加工（提示词会硬约束），不跑设定抽取 —— 它不是新信息源。
+   *   · 最新章：改写档可放开（历史章不可），落库后补跑设定同步；
+   *   · 历史章：设定类内容一律冻结（提示词按动作分节硬约束），不跑设定同步 —— 它不是新信息源。
+   * ⚠️ 「最新章」只解除**改写档**的束缚：润色 / 扩写 / 精简在最新章同样守各自的动作纪律。
    */
   isLatest: boolean
   /**
-   * 结果明显异常（远短于原文）—— 多半是模型被截断或抽风。
+   * 结果与**期望字数**差距过大 —— 多半是模型被截断、抽风，或与所选动作不符。
    * 🔴 置位后**禁用「替换该章正文」**：那是覆盖作者正文的动作，不能在可疑结果上放开。
    */
   suspect?: boolean
@@ -570,13 +582,17 @@ export async function startChapterRewrite(p: {
   //    最新章 vs 历史章的改写纪律完全不同（见 aiTasks 的两条 RULE）：历史章冻结设定，最新章放开、
   //    但落库后要补跑设定同步。
   const isLatest = idx === cands.length - 1
+  // 期望字数（异常判定的基准）：润色＝原文长度；扩写 / 精简 / 改写＝面板上填的目标字数。
+  // 🔴 不能用"原文的固定占比"当基准 —— 精简本来就是要压字数，那样会把正常结果判成异常（见 expectedRewriteWords）。
+  const fromWords = countWords(hit.chapter.content) || hit.chapter.wordCount
+  const expectWords = expectedRewriteWords(p.action, fromWords, p.words)
 
   const ctl = new AbortController()
   rewriteCtl = ctl
   set({
     rewrite: {
       chapterId: hit.chapter.id, title: hit.chapter.title, no: hit.no,
-      action: p.action, text: '', running: true, fromWords: hit.chapter.wordCount, isLatest,
+      action: p.action, text: '', running: true, fromWords, expectWords, isLatest,
     },
   })
   // 上一章结尾当衔接样本（改写后仍要接得上）；改的是首章就没有
@@ -615,9 +631,14 @@ export async function startChapterRewrite(p: {
     //
     // 🔴 结果异常保护：实测遇到模型只返回 1 个字的偶发情况（同一 prompt 前后三次实测
     //    分别返回 3494 / 4271 / 4563 字，说明不是 prompt 问题）。「替换该章正文」是**覆盖**
-    //    作者正文的破坏性动作，一旦点下去就只剩快照能救 —— 所以异常短的结果必须锁住它。
-    const suspect = hit.chapter.content.length > 600 && text.length < hit.chapter.content.length * 0.35
-    if (suspect) notice(`模型只返回了 ${text.length} 字（原文 ${hit.chapter.content.length} 字），明显异常 —— 已锁住替换，请重新改写`, 'error')
+    //    作者正文的破坏性动作，一旦点下去就只剩快照能救 —— 所以可疑结果必须锁住它。
+    // 🔴 判据是「与**期望字数**的差距」，不是「相对原文的固定占比」（见 chapterRewrite 的两个纯函数）：
+    //    后者会把正常精简判成异常（压到目标字数必然远低于原文），又漏掉扩写方向的严重缩水。
+    const outWords = countWords(text)
+    const suspect = isSuspectRewrite(fromWords, outWords, expectWords)
+    if (suspect) {
+      notice(`模型返回 ${outWords} 字，与期望的约 ${expectWords} 字相差过大 —— 已锁住替换，请重新改写`, 'error')
+    }
     const cur = snap.rewrite
     if (cur) set({ rewrite: { ...cur, text: buf, running: false, suspect } })
   } catch (e) {
@@ -658,7 +679,9 @@ export async function applyRewrite() {
         extra = '；设定同步未能完成（不影响正文，可到表格页用「AI 整理」补）'
       }
     } else {
-      extra = '；这是历史章，按纪律未改动任何设定'
+      // 历史章的四种动作（含扩写 / 精简）都不产生设定变化：提示词已按动作分节冻结了设定类内容
+      // （扩写不得新增设定、精简不得删设定交代），所以这一轮无需同步。
+      extra = '；这是历史章，设定类内容已冻结，未改动设定表'
     }
     notice(
       `已替换《${r.title}》正文：${r.fromWords} → ${words} 字${extra}。` +

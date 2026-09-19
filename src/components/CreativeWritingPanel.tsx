@@ -45,23 +45,29 @@ import NumberField from './NumberField'
 
 const NUM_INPUT = 'w-20 rounded bg-ink-900 border border-ink-700 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50'
 
-/** 两种起点的展示元数据 —— 顺序即界面顺序 */
+/**
+ * 两种起点的展示元数据 —— 顺序即界面顺序。
+ * 🔴 措辞口径（2026-09-19 对齐）：**两者是同一套流程**，唯一差别是"起点有没有历史信息"——
+ *    从零创作的历史为空，所以先跑「设定奠基 + 分卷大纲」把基础设定冷启动出来；
+ *    接着写的历史已存在（正文 + 设定表 + 可选细纲），直接进逐章连写。
+ *    "每章抽取设定 / 补登新增 / 更新已有"是**两种起点共用**的环节，不是接着写专属。
+ */
 const MODE_META: Record<CreativeMode, { label: string; icon: typeof PenLine; hint: string }> = {
   scratch: {
     label: '从一句话创作',
     icon: PenLine,
-    hint: '给一句话想法，AI 依次做：设定奠基 → 分卷大纲 → 逐章连写（两个人工闸门）',
+    hint: '给一句话想法：AI 先做设定奠基与分卷大纲（两个人工闸门），再逐章连写 —— 与「接着写」是同一套流程，只是起点没有历史信息',
   },
   continue: {
     label: '接着已有内容写',
     icon: BookOpen,
-    hint: '从项目里最后一章往下续写，并按策略补登新设定；项目已有《章节细纲》时按细纲走',
+    hint: '在已有正文与已有设定的基础上继续往前推进；项目已有《章节细纲》时按细纲走',
   },
 }
 const MODES: CreativeMode[] = ['scratch', 'continue']
 
 /**
- * 产出目标（仅「从一句话创作」显示）。
+ * 产出目标。**两种起点都有这一档**（开跑前就分清「只要规划」还是「正文一起写」）。
  *
  * 老大 2026-09-19 要求：**开口就分清**「只要大纲规划」还是「连正文一起写」，
  * 而不是让作者跑到闸门②才被问「只保存大纲、还是继续写正文」。
@@ -75,17 +81,17 @@ const TARGET_META: Record<CreativeMode, Record<CreativeTarget, { label: string; 
     },
     full: {
       label: '大纲 + 正文',
-      hint: '设定 → 分卷大纲 → 按细纲逐章连写正文（完整创作）',
+      hint: '设定 → 分卷大纲 → 逐章连写正文；每章写完都会抽取设定、补登新增、更新已有（按下面的「设定同步策略」）',
     },
   },
   continue: {
     outline: {
       label: '只做大纲规划',
-      hint: '按已有细纲与正文进度往下续排细纲，不写正文 —— 这一档不会抽取 / 补登设定（没有新正文可抽）',
+      hint: '按已有细纲与正文进度往下续排细纲，不写正文 —— 这一档没有新正文可抽，所以不做设定同步',
     },
     full: {
       label: '大纲 + 正文',
-      hint: '先往下续排细纲，再逐章连写正文；每章会抽设定 / 补登 / 更新（按下面的「更新策略」）',
+      hint: '（可先往下续排细纲，）再逐章连写正文；每章写完同样会抽取设定、补登新增、更新已有',
     },
   },
 }
@@ -100,13 +106,44 @@ const RW_ACTIONS: ChapterRewriteAction[] = ['polish', 'expand', 'condense', 'rew
  */
 type RewriteTree = RewriteCandidateGroup[]
 
-/** 连写时如何对待已有设定（沿用「一键续写」的三种策略，措辞按"融合后"统一） */
+/**
+ * 每章写完之后的「设定同步」策略 —— **两种起点共用同一组档位**（不是「接着写」专属）。
+ *
+ * 每章固定做三件事：① 抽取本章设定 → ② 新增的补登进设定表 → ③ 已登记且发生了变化的信息做更新。
+ * 三个档位只决定 ②③ 的力度，不决定"做不做"。
+ */
 const STRATEGY_META: Record<ContinueStrategy, { label: string; hint: string }> = {
-  'add-only': { label: '仅限新增', hint: '只补登新设定，已登记的设定一律不动（最稳）' },
-  'confirm': { label: '候选确认', hint: '新设定与疑似重复项列出供你勾选，已登记项不改动' },
-  'auto-update': { label: '自动更新', hint: '新设定自动补登，已登记实体的变化追加到备注（不覆盖属性列）' },
+  'add-only': { label: '仅限新增', hint: '每章抽取后只补登新设定；已登记的设定一律不动（最稳）' },
+  'confirm': { label: '候选确认', hint: '新设定与疑似重复项列出供你勾选；已登记项不改动' },
+  'auto-update': { label: '自动更新', hint: '新设定自动补登；已登记实体的变化追加到备注类字段（不覆盖属性列）' },
 }
 const STRATEGIES: ContinueStrategy[] = ['add-only', 'confirm', 'auto-update']
+
+/**
+ * 改写纪律提示 —— 由「**动作 × 章位置**」两个维度共同决定，与提示词侧（aiTasks 的两条 RULE）是同一个矩阵。
+ *
+ * 为什么不能只看"是不是最新章"：润色本来就不增删情节与信息，被当成"可放开改写"是越权；
+ * 而历史章的**扩写**最大的污染路径是"把描写升级成设定"（原文"一柄剑"→ 扩写成"师父所赠的断岳剑"），
+ * 历史章的**精简**最大的风险是"删掉承载设定的句子"（"得自青云宗的储物戒"→"储物戒"）。
+ */
+const RW_SCOPE_NOTE: Record<ChapterRewriteAction, { latest: string; history: string }> = {
+  polish: {
+    latest: '这是项目最新章；但「润色」仍只换字不换事 —— 情节与信息不动，不因是最新章就放开走向。落库后会自动同步设定。',
+    history: '这是历史章；「润色」只换字不换事，不动情节与信息，不会影响设定。',
+  },
+  expand: {
+    latest: '这是项目最新章：补细节时可一并补设定信息；落库后会自动抽取 / 补登 / 更新设定表。',
+    history: '这是历史章：🔴 描写层可以加（环境 / 动作 / 微表情 / 情绪），但不得新增专名、身份、来历、境界、器物名等设定信息 —— 那是凭空造设定，后文接不上。',
+  },
+  condense: {
+    latest: '这是项目最新章：只删冗余重复与注水过渡，承载设定交代的句子照样保留。落库后会自动同步设定。',
+    history: '这是历史章：🔴 只删冗余与注水过渡；承载设定交代的句子（专名 / 来历 / 境界 / 关系 / 器物来源）一律保留 —— 删掉后文就断了。',
+  },
+  rewrite: {
+    latest: '这是项目最新章：四种动作里**只有「改写」**可以放开手脚（调节奏 / 重排场景 / 强化冲突 / 改写局部走向）。落库后会自动同步设定。',
+    history: '这是历史章：只改叙述方式与文字，设定类内容一字不动、不新增剧情事件、不埋伏笔。',
+  },
+}
 
 export default function CreativeWritingPanel() {
   const s = useCreativeSession()
@@ -203,13 +240,14 @@ export default function CreativeWritingPanel() {
         <h1 className="text-15 font-medium text-ink-100">创意写作</h1>
         <HelpPopover title="创意写作怎么用" pin>
           <div className="space-y-1.5 text-11 leading-relaxed text-ink-300">
-            <p>这条流水线有<b>两个起点</b>：</p>
-            <p>· <b>从一句话创作</b> —— 给一句话想法，AI 依次做<b>设定奠基 → 分卷大纲 → 逐章连写</b>，适合新开一本。</p>
-            <p>· <b>接着已有内容写</b> —— 从项目里最后一章往下续写，并顺手补登新设定，适合把手上的稿子推下去、或把「只做大纲规划」的项目补上正文。</p>
+            <p>这条流水线有<b>两个起点</b>，但它们<b>是同一套流程</b> —— 唯一差别是「起点有没有历史信息」：</p>
+            <p>· <b>从一句话创作</b> —— 起点没有历史信息：先用<b>设定奠基</b>与<b>分卷大纲</b>把基础设定冷启动出来（两个人工闸门），再逐章连写。</p>
+            <p>· <b>接着已有内容写</b> —— 起点已有正文与设定：直接进逐章连写，在已有内容上继续往前推进。</p>
+            <p>· 两者<b>共用同一台连写引擎</b>：每章写完都会<b>抽取本章设定 → 新增的补登 → 已有的更新</b>（力度由「每章设定同步策略」决定），去 AI 味儿与逐章确认也完全一致。</p>
             <p>· 两种起点都要先定<b>「这一次要产出什么」</b>：<br/>            &nbsp;&nbsp;—「从一句话创作」的<b>只做大纲规划</b>＝设定 + 分卷大纲就收工；<b>大纲 + 正文</b>＝完整创作。<br/>            &nbsp;&nbsp;—「接着已有内容写」的<b>只做大纲规划</b>＝按已有细纲往下续排 N 章（不写正文、不抽设定）；<b>大纲 + 正文</b>＝先续排细纲再连写（每章抽设定 / 补登 / 更新）。<br/>            &nbsp;&nbsp;已有细纲排好了就用「先续排细纲：已关闭」直接写正文。</p>
             <p><b>两个人工闸门</b>（仅「从一句话创作」有）：设定草稿与大纲都必须你确认后才落库、才继续 —— 人定方向，AI 跑量。</p>
             <p>落库只发生在闸门通过之后（「接着写」则是在每章初稿<b>被采纳</b>之后）；在任何闸门处「放弃」，都不会留下半成品。</p>
-            <p className="text-ink-500">「接着已有内容写」的每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 →（开启时）去 AI 味儿 →（开启时）你确认采纳 → 编辑自检 → 抽取补登设定 → 下一章。项目里有《章节细纲》时，会按章号取当章细纲钉进提示词末段，让正文跟着大纲走。</p>
+            <p className="text-ink-500">两种起点的每章流程完全一样：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 →（开启时）去 AI 味儿 →（开启时）你确认采纳 → 编辑自检 → 抽取设定并补登 / 更新 → 下一章。项目里有《章节细纲》时，会按章号取当章细纲钉进提示词末段，让正文跟着大纲走。</p>
             <p className="text-ink-500">想法还说不清时点<b>「对话引导」</b>：AI 按「题材 → 主角 → 冲突 → 世界」一路问，聊完自动把要点填回输入框。</p>
             <p className="text-ink-500">跑长任务时可以随时切去「正文编辑」看稿 —— 任务不会中断，切回来进度与断点都还在。</p>
             <AIDataSourceNote feature="creative-writing" compact />
@@ -338,14 +376,19 @@ export default function CreativeWritingPanel() {
           </div>
         )}
 
-        {/* 连写设置（两种起点共用 —— 融合点之一：从零创作现在也能去 AI 味儿 / 选补完策略）
+        {/* 连写设置（两种起点共用 —— 融合点之一：从零创作与接着写用的是同一套连写引擎，
+            设定同步策略、去 AI 味儿、逐章确认两边完全一致）
             「只做大纲规划」不写正文，这些设置整块收起来，免得让人以为接下来还要连写 */}
         {!outlineOnlyTarget && (
-        <details className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2" open={inp.mode === 'continue'}>
-          <summary className="cursor-pointer text-12 text-ink-200">连写设置（去 AI 味儿 · 设定补完 · 逐章确认）</summary>
+        <details className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2" open>
+          <summary className="cursor-pointer text-12 text-ink-200">连写设置（每章设定同步 · 去 AI 味儿 · 逐章确认）</summary>
           <div className="mt-2.5 space-y-3">
             <div>
-              <div className="mb-1.5 text-12 text-ink-300">已有设定的更新策略</div>
+              <div className="mb-1.5 text-12 text-ink-300">每章设定同步策略</div>
+              <p className="mb-1.5 text-10 leading-relaxed text-ink-500">
+                每章写完都会固定做三件事：① 抽取本章设定 → ② 新增的补登进设定表 → ③ 已登记且发生变化的信息做更新。
+                下面三档只决定 ②③ 的力度，不决定做不做。
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {STRATEGIES.map(k => (
                   <Button key={k} variant="toggle" selected={inp.strategy === k} disabled={s.running}
@@ -564,6 +607,7 @@ export default function CreativeWritingPanel() {
               <p>挑一章，对<b>整章正文</b>做润色 / 扩写 / 精简 / 改写。与颉文姬的「选区改稿」不同 —— 那边面向一段、产出叫「建议段」；这里送进去的是<b>整章</b>，产出先给你过目，确认后才替换正文。</p>
               <p>改写时会一并送<b>上一章结尾</b>（约 1200 字），保证改完仍接得上；上面那栏「补充要求」可以告诉它往哪个方向改（例如「打斗写细一点」「对话再口语些」）。</p>
               <p>点「替换该章正文」之前，旧稿会自动存进<b>「时光机 · 本章版本历史」</b>，随时能恢复。章节标题、状态、所属卷都不会被改动。</p>
+              <p>🔴 改写纪律由<b>「动作 × 章位置」</b>共同决定：<b>历史章</b>设定类内容一律冻结（润色只换字不换事；扩写只能加描写、不得新增专名与来历；精简不得删掉承载设定交代的句子；改写只改叙述方式）；<b>最新章</b>只有「改写」档可放开手脚，改完落库会自动抽取 / 补登 / 更新设定表。</p>
               <AIDataSourceNote feature="chapter-rewrite" compact />
             </div>
           </HelpPopover>
@@ -600,14 +644,17 @@ export default function CreativeWritingPanel() {
           </div>
         </div>
         <p className="mt-1 text-10 leading-relaxed text-ink-500">{CHAPTER_REWRITE_META[rwAction].hint}</p>
-        {/* 改写纪律：最新章与历史章完全不同 —— 先说清楚，别让作者改完旧章才发现设定对不上 */}
-        {pickInfo && (
-          <p className="mt-1 text-10 leading-relaxed">
-            {pickInfo.chapter.id === latestId
-              ? <span className="text-emerald-300">这是项目最新章：允许放开改写（可调节奏 / 重排场景 / 强化冲突）；落库后会自动同步设定（抽取 / 补登 / 更新）。</span>
-              : <span className="text-amber">这是历史章：只做文字加工（表情 / 动作 / 环境 / 过场台词），设定类内容一律冻结 —— 改旧章的身份 / 境界 / 关系会让后面已写好的正文与设定表对不上。</span>}
-          </p>
-        )}
+        {/* 改写纪律：由「动作 × 章位置」共同决定（与提示词侧同一矩阵）—— 先说清楚，
+            别让作者改完旧章才发现设定对不上，也别让人以为"最新章"就能放开润色 */}
+        {pickInfo && (() => {
+          const isLatest = pickInfo.chapter.id === latestId
+          const tone = isLatest ? 'text-emerald-300' : (rwAction === 'polish' ? 'text-ink-400' : 'text-amber')
+          return (
+            <p className={`mt-1 text-10 leading-relaxed ${tone}`}>
+              {isLatest ? RW_SCOPE_NOTE[rwAction].latest : RW_SCOPE_NOTE[rwAction].history}
+            </p>
+          )
+        })()}
 
         <div className="mt-2">
           <AutoTextarea
@@ -654,7 +701,7 @@ export default function CreativeWritingPanel() {
                   onClick={() => void applyRewrite()}>替换该章正文</Button>
                 <Button size="sm" variant="secondary" onClick={() => discardRewrite()}>丢弃这次结果</Button>
                 {s.rewrite.suspect
-                  ? <span className="text-10 text-amber">结果明显偏短（{s.rewrite.text.length} 字），已锁住替换 —— 请重新改写。</span>
+                  ? <span className="text-10 text-amber">结果与期望的约 {s.rewrite.expectWords} 字相差过大（实际 {countWords(s.rewrite.text)} 字），已锁住替换 —— 请重新改写。</span>
                   : <span className="text-10 text-ink-500">替换前会自动把旧稿存进「时光机 · 本章版本历史」，可随时恢复。</span>}
               </div>
             )}
