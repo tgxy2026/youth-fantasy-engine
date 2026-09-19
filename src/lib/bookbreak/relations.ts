@@ -21,7 +21,7 @@ import { buildFormMaterial } from './formSummary'
 import { clampRelationLimits, type RelationMaterialLimits } from './relationMaterial'
 import type { EntityBatch } from '../flow/draft'
 import type { DraftField, DraftRow } from '../flow/types'
-import { loadCharacterNames } from '../aiContext'
+import { isPrunedForAI, loadCharacterNames } from '../aiContext'
 import * as db from '../db'
 import { organizeRows } from '../organizeRows'
 import { TABS } from '../schema'
@@ -235,7 +235,9 @@ export async function buildRelationDrafts(opts: RelationDraftOptions): Promise<R
       //    写进人物列的关系（老问题「中州萧家进了人物关系」的同一个成因）。
       const roster = tab.id === 'faction-rels'
         ? [...new Set([
-            ...(await db.getTableRows('nations')).map(r => String(r.data['名称'] ?? '').trim()).filter(Boolean),
+            // 🔴 D 级（终结 / 弃用）势力不进候选名单 —— 理由同 loadCharacterNames
+            ...(await db.getTableRows('nations')).filter(r => !isPrunedForAI(r.data))
+              .map(r => String(r.data['名称'] ?? '').trim()).filter(Boolean),
             ...entityNamesOf(opts.batches, '势力'),
           ])]
         : [...new Set([

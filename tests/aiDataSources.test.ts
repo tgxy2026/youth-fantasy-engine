@@ -147,5 +147,15 @@ for (const t of TABS) {
     !ABSOLUTE_PROMISE.test(d), d.slice(0, 80))
 }
 
+// ============ 全局排除项（保密等级 D 级）必须真的渲染出来 ============
+// 只写在文档里没用 —— 作者是看界面气泡的。这里静态确认「不读」清单里追加了 AI_PRUNE_NOTE，
+// 防的正是"哪天有人重构 AIDataSourceNote 时把这一行删了、没人发现"。
+{
+  const note = componentSrc.find(c => c.name === 'AIDataSourceNote.tsx')
+  ok('🔴 D 级排除项被渲染进「不读」清单（不是只写在文档里）',
+    !!note && note.text.includes('AI_PRUNE_NOTE') && note.text.includes('f.excludes'),
+    note ? '' : 'AIDataSourceNote.tsx 未在组件目录中找到')
+}
+
 console.log(`\n—— aiDataSources 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

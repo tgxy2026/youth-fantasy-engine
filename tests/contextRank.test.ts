@@ -17,8 +17,8 @@
 // 用示范项目的数据跑（与 tavernContext.test.ts 同源）。
 import * as db from '../src/lib/db'
 import { createDemoProject } from '../src/lib/seedData'
-import { buildProjectContext, buildInlineBriefing } from '../src/lib/aiContext'
-import { TABS } from '../src/lib/schema'
+import { buildProjectContext, buildInlineBriefing, isPrunedForAI, loadCharacterNames } from '../src/lib/aiContext'
+import { TABS, SABC, SABC_LABELS } from '../src/lib/schema'
 import { uid } from '../src/lib/id'
 import { __resetMockStores } from './mock-memory'
 import type { TableRow } from '../src/lib/types'
@@ -183,6 +183,50 @@ async function main() {
   ok('伴写切片不带「章节清单」目录（伴写已有光标前正文，目录纯属重复）',
     !brief.includes('章节清单'), brief.slice(0, 60))
   ok('伴写切片受预算约束（≤1200 字符）', brief.length <= 1200, `${brief.length} 字符`)
+
+  // ---------- 6) D 级（终结 / 弃用）：**任何情况下都不进 AI**（2026-09-19） ----------
+  //  它的定义是"已用完或不再使用的数据"，所以不是"排最后"，是压根不带 ——
+  //  内容、姓名清单、判重清单三处都要过滤。这里逐处验，并留一条 C 级当对照
+  //  （否则"整段没带上"也会让断言通过，测不出过滤是否精准）。
+  {
+    ok('档位常量五个齐全（含 D）', SABC.join('') === 'SABCD', SABC.join(''))
+    ok('展示文案每档都有，且 S/A 的注解已收成两字（剧透 / 主线）',
+      SABC.every(l => !!SABC_LABELS[l]) &&
+      SABC_LABELS.S.includes('（剧透）') && SABC_LABELS.A.includes('（主线）'),
+      `${SABC_LABELS.S} / ${SABC_LABELS.A}`)
+    ok('🔴 保密等级列被标为固定选项（界面不再提供增 / 改 / 删入口）',
+      TABS.every(t => (t.columns ?? []).filter(c => c.name === '保密等级').every(c => c.fixedOptions === true)),
+      TABS.filter(t => (t.columns ?? []).some(c => c.name === '保密等级' && c.fixedOptions !== true)).map(t => t.id).join(','))
+
+    ok('isPrunedForAI：认裸键（表格行）', isPrunedForAI({ '保密等级': 'D' }))
+    ok('isPrunedForAI：认复合键（卡片 / 表单）', isPrunedForAI({ 'NPC档案::保密等级': 'd' }))
+    ok('isPrunedForAI：别的档位与空值都不误伤',
+      !isPrunedForAI({ '保密等级': 'C' }) && !isPrunedForAI({}) && !isPrunedForAI(undefined))
+
+    const mkD = (code: string, lv: string): TableRow => ({
+      id: uid(), projectId: '', tabId: 'terms', order: 9999,
+      data: { '编号': code, '名称': '弃用用例-' + code, '定义（一句话）': '这些字眼不该出现在模型上下文里', '保密等级': lv, '状态': '使用中' },
+    })
+    await db.saveTableRow(mkD('TD01', 'D'))
+    await db.saveTableRow(mkD('TD02', 'd'))   // 小写也该识别
+    await db.saveTableRow(mkD('TD03', 'C'))   // 对照
+
+    const dCardName = '弃用用例-D级角色'
+    await db.saveCardRecord({
+      id: uid(), projectId: db.getCurrentProjectId(), tabId: 'char-npc', name: dCardName, order: 9999,
+      data: { 'NPC档案::保密等级': 'D', 'NPC档案::身份': '这个角色已经不用了' },
+    })
+
+    const ctxD = await buildProjectContext({ budget: BIG })
+    ok('🔴 D 级表格行不进上下文（内容与名称都不出现）',
+      !ctxD.text.includes('弃用用例-TD01') && !ctxD.text.includes('弃用用例-TD02'),
+      ctxD.text.includes('弃用用例-TD01') ? 'TD01 溜进去了' : (ctxD.text.includes('弃用用例-TD02') ? 'TD02 溜进去了' : ''))
+    ok('对照：同批写入的 C 级仍在（证明不是整段没带上、过滤精准）',
+      ctxD.text.includes('弃用用例-TD03'))
+    ok('🔴 D 级角色卡也不进上下文', !ctxD.text.includes(dCardName))
+    ok('🔴 D 级角色不进「姓名清单」（AI 整理的候选值来源）',
+      !(await loadCharacterNames({ type: 'full', features: [] })).includes(dCardName))
+  }
 
   console.log(`\n—— contextRank 用例结束：${pass} 通过 / ${fail} 失败`)
   if (fail > 0) process.exitCode = 1

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as db from '../lib/db'
-import { TABS, SETTING_SUBTABS, RELATION_PAIR_TAB_IDS, tabVisible, type VisCtx, SABC_LABELS, CARD_TABLE_REF_FIELDS } from '../lib/schema'
+import { TABS, SETTING_SUBTABS, RELATION_PAIR_TAB_IDS, tabVisible, type VisCtx, SABC, SABC_LABELS, CARD_TABLE_REF_FIELDS } from '../lib/schema'
 import type { TableRow, CardRecord, CalendarDef } from '../lib/types'
 import { Search, RefreshCw, BookMarked, ChevronDown, ChevronRight, Info, Pencil, X } from 'lucide-react'
 import HelpPopover from './HelpPopover'
@@ -29,7 +29,8 @@ interface DocField {
 /** 角色卡里以下拉形式填写的字段（与 CharacterSheet 保持一致） */
 const CARD_SELECT_FIELDS: Record<string, string[]> = {
   '人物状态': ['未登场', '已登场', '已退场'],
-  '保密等级': ['S', 'A', 'B', 'C'],
+  // 🔴 引用 schema 的单一源，别抄一份 —— 2.2.0 加 D 档时正是这里漏改了
+  '保密等级': SABC,
 }
 
 interface Doc {
@@ -475,6 +476,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                           value={draft}
                                           onChange={v => { setDraft(v); saveField(doc, f, v) }}
                                           labelMap={f.label === '保密等级' ? SABC_LABELS : undefined}
+                                          fixedOptions={f.label === '保密等级'}
                                         />
                                         ) : (
                                           <select

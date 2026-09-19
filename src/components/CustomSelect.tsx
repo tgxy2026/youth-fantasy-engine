@@ -34,6 +34,14 @@ interface Props {
   /** 选项值 → 展示文案 的映射（如保密等级 S→"S · 绝密"，存储值仍为字母，仅展示用） */
   labelMap?: Record<string, string>
   onRenameBuiltin?: (oldName: string, newName: string) => void  // 让上层把已用旧值替换为新值
+  /**
+   * **选项固定**：不提供增 / 改 / 删 / 移除入口（下拉底部给一行说明代替）。
+   *
+   * 🔴 用于「保密等级」这类被机器逻辑读取的封闭枚举：AI 上下文预算排序与角色视角可见性
+   *    都按这五个字母判定，作者随手加一个自定义值或把 S 改名，两套逻辑就认不出来
+   *    （排序静默失效、该档数据在角色视角下也不再被排除）。见 schema 的 `cFixed()`。
+   */
+  fixedOptions?: boolean
 }
 
 /**
@@ -42,7 +50,7 @@ interface Props {
  * - 每个选项右侧菜单：编辑/删除（自定义项）/隐藏（内置项）/还原（已隐藏项）
  * - 底部"+ 添加新值…"项：输入新文本后回车即可保存
  */
-export default function CustomSelect({ tabId, colName, options, value, onChange, labelMap, onRenameBuiltin }: Props) {
+export default function CustomSelect({ tabId, colName, options, value, onChange, labelMap, onRenameBuiltin, fixedOptions }: Props) {
   const [payload, setPayload] = useState<CustomOptionPayload>({ items: [], hidden: [] })
   const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -159,6 +167,8 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   }
 
   const submitDraft = async () => {
+    // 固定选项列：界面已不提供入口，这里再兜一道（防未来某处直接调进来）
+    if (fixedOptions) { setAdding(false); return }
     const v = draft.trim()
     if (!v) { setAdding(false); return }
     if (list.some(i => i.display === v)) { onChange(v); closeAll(); return }
@@ -185,6 +195,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   }
 
   const submitRenameBuiltin = async () => {
+    if (fixedOptions) { setRenaming(null); return }
     const v = renameDraft.trim()
     if (!v || !renaming) { setRenaming(null); return }
     if (list.some(i => i.display === v && i.original !== renaming)) {
@@ -330,7 +341,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   )}
                 </Button>
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 pr-1">
-                  {item.kind === 'builtin' ? (
+                  {fixedOptions ? null : item.kind === 'builtin' ? (
                     <>
                       <Button variant="bare" iconOnly size="xs"
                         type="button"
@@ -358,8 +369,8 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             )
           })}
 
-          {/* 已隐藏的内置项可还原 */}
-          {payload.hidden.length > 0 && (
+          {/* 已隐藏的内置项可还原（固定选项列不会出现这种情况，一并省略） */}
+          {!fixedOptions && payload.hidden.length > 0 && (
             <div className="border-t border-ink-700 mt-1 pt-1">
               <div className="px-2.5 py-0.5 text-10 text-ink-500">已移除的内置项（可还原）</div>
               {payload.hidden.map(h => (
@@ -376,7 +387,11 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             </div>
           )}
 
-          {adding ? (
+          {fixedOptions ? (
+            <div className="px-2.5 py-1.5 border-t border-ink-700 text-10 leading-relaxed text-ink-500">
+              固定档位，不可增改 —— 它决定「谁看得到」与「谁先占 AI 上下文预算」，多一个值就认不出来。
+            </div>
+          ) : adding ? (
             <div className="px-2 py-1.5 border-t border-ink-700 flex items-center gap-1">
               <input
                 ref={inputRef}

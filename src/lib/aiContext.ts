@@ -196,18 +196,21 @@ const DEFAULT_ROW_CAP = 40
 
 /**
  * 「保密等级」= 信息档位（定义见 schema 的字段说明）：在此决定**条目**进上下文预算的先后。
- * 数值越小越先塞：S 必带 → A 优先 → B 常规 → C 最先丢。
+ * 数值越小越先塞：S 必带 → A 优先 → B 常规 → C 最先丢，**D 永不进**（见 isPrunedForAI）。
  *
- * 🔴 它同时是「可见性」的依据（角色视角排除 S 级），但那一步在 RenderOpts 层做，不在这里 ——
- *   本文件里它只管顺序，不管过滤，两件事分开放，免得日后改一处忘另一处。
+ * 🔴 它同时是「可见性」的依据（角色视角排除 S 级），但那一步在渲染层做，不在这里 ——
+ *   本文件里它只管顺序与 D 档剔除，不管角色视角可见性，两件事分开放，免得日后改一处忘另一处。
  * 🔴 未填 / 未知值一律按中性（= B 档）。**绝不能当 C** —— 否则历史数据会因为当年没标等级
  *   而被排到最后优先丢弃，等于用一个新功能把老项目的数据静默降级。
  */
-const SECRECY_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3 }
+const SECRECY_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3, D: 99 }
 const DEFAULT_RANK = 2
 
+/** D 档 = 终结 / 弃用 */
+const PRUNED_LEVEL = 'D'
+
 /**
- * 取一条记录的预算优先级（读不到等级时给中性档）。
+ * 取一条记录的保密等级原文（大写；读不到给空串）。
  *
  * 🔴 两种存储口径都要认（2026-09-17 实测踩过）：
  *   · 表格行：**裸列名**键 —— data['保密等级']
@@ -215,15 +218,37 @@ const DEFAULT_RANK = 2
  *   只认前者时，所有角色卡的等级都会被读成"未填" → 全部中性 → 角色卡排序**静默失效**
  *   （表格型却正常，所以光看表格测不出来，必须卡片型也测）。
  */
-function rankOf(data: Record<string, string> | undefined): number {
-  if (!data) return DEFAULT_RANK
+function secrecyOf(data: Record<string, string> | undefined): string {
+  if (!data) return ''
   let raw = data['保密等级']
   if (raw === undefined) {
     for (const [k, v] of Object.entries(data)) {
       if (k.endsWith('::保密等级')) { raw = v; break }
     }
   }
-  return SECRECY_RANK[String(raw ?? '').trim().toUpperCase()] ?? DEFAULT_RANK
+  return String(raw ?? '').trim().toUpperCase()
+}
+
+/**
+ * 🔴 **D 级（终结 / 弃用）：任何情况下都不进 AI。**
+ *
+ * 不是"排在最后"，是压根不带 —— 它的定义就是「已经用完或不再使用的数据」，
+ * 再喂给模型只会拿过时的结论污染新判断（旧版设定、已废弃的路线、退场的人物）。
+ * 凡是"把项目数据交给模型"的入口都要过这一道：
+ *   ① 内容装配（renderTable / renderCards 先剔除行，连「另有 N 条未列出」的计数都不算它）；
+ *   ② 姓名清单（`loadCharacterNames` —— 它喂给 AI 整理当候选值）；
+ *   ③ 判重清单（`organizeRows` 的 existingKeys）。
+ *
+ * 与角色视角**无关**：作者侧同样排除（这才是"任何情况下"的含义）。
+ * `rankOf` 给 D 一个大数只是第二道保险 —— 万一某处漏了过滤，它也会排到最后被预算先丢掉。
+ */
+export function isPrunedForAI(data: Record<string, string> | undefined): boolean {
+  return secrecyOf(data) === PRUNED_LEVEL
+}
+
+/** 取一条记录的预算优先级（读不到等级时给中性档） */
+function rankOf(data: Record<string, string> | undefined): number {
+  return SECRECY_RANK[secrecyOf(data)] ?? DEFAULT_RANK
 }
 
 /**
@@ -313,14 +338,16 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
 /** 卡片型（角色卡 / 分卷大纲 / 章节细纲）：每条一段 */
 function renderCards(tab: TabDef, recs: { name: string; data: Record<string, string> }[], o: RenderOpts = {}): string {
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
+  // 🔴 D 级（终结 / 弃用）先剔除：它不进正文，也不该出现在「另有 N 条未列出」的计数里
+  const usable = recs.filter(r => !isPrunedForAI(r.data))
   const out: string[] = []
   // 2.2.0：先按「保密等级」排预算优先级、再截断（同等级保持录入序）。
   // 原来是纯录入序 slice —— 长篇后段会"琐碎的先占位、重要的进不来"。
-  for (const r of sortBySecrecy(recs).slice(0, cap)) {
+  for (const r of sortBySecrecy(usable).slice(0, cap)) {
     const body = renderForm(tab, r.data, o)
     out.push(`〖${r.name || '未命名'}〗${body ? '\n' + body : ''}`)
   }
-  if (recs.length > cap) out.push(`（另有 ${recs.length - cap} 条未列出）`)
+  if (usable.length > cap) out.push(`（另有 ${usable.length - cap} 条未列出）`)
   return out.join('\n')
 }
 
@@ -333,12 +360,14 @@ function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: R
     .filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
   if (cols.length === 0) return ''
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
+  // 🔴 D 级先剔除（同 renderCards：正文与「另有 N 行未列出」的计数都不算它）
+  const usable = rows.filter(r => !isPrunedForAI(r.data))
   // 2.2.0：同 renderCards —— 先按「保密等级」排预算优先级再截断（同等级保持录入序）
-  const use = sortBySecrecy(rows).slice(0, cap).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
+  const use = sortBySecrecy(usable).slice(0, cap).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
   if (use.length === 0) return ''
   const out = [cols.join(' ｜ ')]
   for (const r of use) out.push(cols.map(c => clip(r.data[c] ?? '', cellCap(c))).join(' ｜ '))
-  if (rows.length > cap) out.push(`（另有 ${rows.length - cap} 行未列出）`)
+  if (usable.length > cap) out.push(`（另有 ${usable.length - cap} 行未列出）`)
   return out.join('\n')
 }
 
@@ -442,6 +471,9 @@ export async function loadCharacterNames(ctx: VisCtx = { type: 'full', features:
   for (const id of ids) {
     try {
       for (const r of await db.getCardRecords(id)) {
+        // 🔴 D 级（终结 / 弃用）不进名单：这份名单是喂给 AI 的候选值 / 判重依据，
+        //    带上它就等于告诉模型"这个已弃用的人物还在用"（连带别称也一并跳过）。
+        if (isPrunedForAI(r.data)) continue
         if (r.name?.trim()) out.add(r.name.trim())
         // v1.6：别称一并纳入——模型识别正文/关系里的别称，且不会把它当成无主人物
         for (const a of readAliases(id, r.data)) out.add(a)

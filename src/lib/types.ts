@@ -33,6 +33,11 @@ export interface TableColumn {
   refCol?: string
   /** 隐藏列：在表格视图中不显示，但数据仍保留（例如地图 X/Y 坐标只由地图编辑维护，地理表里隐藏） */
   hidden?: boolean
+  /**
+   * 选项固定：不提供增 / 改 / 删 / 移除入口（保密等级这类被机器逻辑读取的封闭枚举）。
+   * 由 schema 的 `cFixed()` 设置，理由见那里。
+   */
+  fixedOptions?: boolean
 }
 
 /** 页签类型 */

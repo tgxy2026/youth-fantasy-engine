@@ -998,6 +998,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                                         value={val}
                                         onChange={v => setCellDraft(row.id, col.name, v)}
                                         labelMap={col.name === '保密等级' ? SABC_LABELS : undefined}
+                                        fixedOptions={col.fixedOptions}
                                       />
                                     ) : col.type === 'character' ? (
                                       /* 人物A / 人物B：从已创建角色卡选择，禁止手动输入 */
@@ -1233,6 +1234,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                               value={val}
                               onChange={v => setCellDraft(row.id, col.name, v)}
                               labelMap={col.name === '保密等级' ? SABC_LABELS : undefined}
+                              fixedOptions={col.fixedOptions}
                             />
                           ) : col.type === 'number' ? (
                             <input

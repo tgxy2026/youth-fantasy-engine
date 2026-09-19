@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Database, ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from './Button'
-import { sourcesOf, summarizeSources } from '../lib/aiDataSources'
+import { sourcesOf, summarizeSources, AI_PRUNE_NOTE } from '../lib/aiDataSources'
 
 interface Props {
   /** `AI_DATA_SOURCES` 里的功能 id */
@@ -61,14 +61,14 @@ export default function AIDataSourceNote({ feature, compact = false, className =
               </li>
             ))}
           </ul>
-          {f.excludes && f.excludes.length > 0 && (
-            <div className="mt-1.5 border-t border-ink-700/60 pt-1.5">
-              <div className="text-ink-400">不读：</div>
-              <ul className="space-y-0.5">
-                {f.excludes.map(x => <li key={x} className="text-ink-500">{x}</li>)}
-              </ul>
-            </div>
-          )}
+          {/* 「不读」清单：各功能自己的排除项 + **全局那条**（D 级一律不读，见 AI_PRUNE_NOTE）。
+              全局条固定追加，不放进各 feature 的 excludes —— 14 处重复早晚漏改。 */}
+          <div className="mt-1.5 border-t border-ink-700/60 pt-1.5">
+            <div className="text-ink-400">不读：</div>
+            <ul className="space-y-0.5">
+              {[...(f.excludes ?? []), AI_PRUNE_NOTE].map(x => <li key={x} className="text-ink-500">{x}</li>)}
+            </ul>
+          </div>
         </div>
       )}
     </div>

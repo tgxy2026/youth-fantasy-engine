@@ -10,7 +10,7 @@
  *
  * ⚠️ 本文件住在 lib，**不得 import components**（分层红线，见 tests/importCycles.test.ts）。
  */
-import { buildProjectContext, loadCharacterNames } from './aiContext'
+import { buildProjectContext, isPrunedForAI, loadCharacterNames } from './aiContext'
 import { aiOrganizeRows, keyRowToLine, type OrganizeColumn, type OrganizeResult } from './aiTasks'
 import { writerBudgetFor } from './aiWriterBudget'
 import { resolveOptions } from './customOptions'
@@ -132,7 +132,10 @@ export async function organizeRows(tab: TabDef, o: OrganizeRunOptions): Promise<
   o.onPhase?.('正在读取下拉选项…')
   const allowedList = await Promise.all(aiCols.map(c => allowedOf(c)))
   const cols: OrganizeColumn[] = aiCols.map((c, i) => ({ name: c.name, desc: c.tip, allowed: allowedList[i] }))
+  // 🔴 D 级（终结 / 弃用）不进判重清单 —— 它同样属于"不提供给模型"的数据：
+  //    带上它，模型会以为"这条已登记过"从而跳过本该登记的新内容。
   const existingKeys = o.existing
+    .filter(d => !isPrunedForAI(d))
     .map(d => keyRowToLine(d, keyCols))
     .filter(s => s.replace(/[｜\s]/g, '').length > 0)
 
