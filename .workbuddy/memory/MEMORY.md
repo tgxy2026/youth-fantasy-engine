@@ -10,7 +10,7 @@
 
 ## 身份 / 版本 / 封装
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；存储经 StoreOps；dev 5199（须 `localhost`，127.0.0.1 会 302→两份 IndexedDB）。
-- 现 **2.2.0**（主题＝完善 AI 写作）。版本唯一源 `package.json`；⚠️ `package-lock.json` 根版本常落后→只改 `j.version`＋`j.packages['']`。
+- 现 **2.2.1**（主题＝完善 AI 写作）。版本唯一源 `package.json`；⚠️ `package-lock.json` 根版本常落后→只改 `j.version`＋`j.packages['']`。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr `Fatal error`）由 `scripts/after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。
 - 🔴🔴 **只做桌面版**（无 WEB/PORTABLE）。版本号在 `env.ts`；云盘同步＝唯一跨设备途径。
 
@@ -19,7 +19,7 @@
 - ✅ **B 拆书**：通用件在 **`lib/flow/`**（别去 `bookbreak/` 找）；六阶段＝切分→写正文→逐块抽取→整理草稿→汇总全书设定→整理关系。🔴 写前必 `previewCommit`；字段键从 `fieldMap` 派生（闸 `tests/extractFields`）、抽取必走流式；**冲突只在硬事实字段报**（全字段报时真矛盾反被埋）。
 - ✅ **B 的收尾与去泛称**：关系整理在末尾第 6 阶段（`lib/organizeRows.ts`，与表格页「AI 整理」同执行体、默认开），🔴 **创意写作不加**；去泛称走 D 不走 C（C 精度~60%、误伤专名；D＝`draft.foldNameVariants()` 零调用）。
 - ✅ **C 创意写作**（融合「一键续写＋设定补完」）：起点 `scratch`／`continue`，**产出目标也在起点选**（只做大纲规划／大纲＋正文；🔴 闸门只做确认·放弃）。**接着写的「只做大纲规划」＝续排细纲**（`aiExtendOutline`，落库复用 `commitOutline`；🔴 起点＝**正文写到哪+1**，不是细纲最大号；下一章已有细纲则跳过）。🔴 闸门＝await Promise、**落库只在闸门通过后**；连写执行体＝`autoContinue.ts`；额度 `outline-generate`＋`auto-continue`。
-- ✅ **整章改写**：🔴 结果只在内存、写前**显式快照**、只动 content/wordCount/updatedAt；🔴 异常短结果锁替换；🔴 **分最新章／历史章**（`isLatest`＝候选最后一个）：历史章**设定冻结**（只做文字加工），最新章放开且**落库后必跑设定同步**（confirm 降 add-only）。
+- ✅ **整章改写**：🔴 结果只在内存、写前**显式快照**、只动 content/wordCount/updatedAt；🔴🔴 **纪律＝「动作 × 章位置」矩阵**（详规 `docs/2.2.1-续排细纲与改写分治-2026-09-19.md` §三/§七）：历史章设定冻结**不只管"改写"**（扩写"描写层可加、信息层不可加"、精简"承载设定交代的句子保留"、润色只换字不换事）；最新章**只有"改写"档**可放开（`isLatest`＝候选最后一个），落库后必跑设定同步（confirm 降 add-only）；🔴 异常判据＝**期望字数**（润色=原文/其余=目标，<60% 或 >3× 锁替换）——**别按原文占比**（精简必被误锁、扩写缩水漏判）。
 - ✅ **C 的细节**：① 🔴 `skipRest()` 的 skipped **必计入进度分子**。② 对话引导 `creativeSeed.ts`。③ 概要回填细纲卡**只填空、不新建**。④ `worldview` 汇总→表单（🔴 覆盖全部 form 页签）。⑤ **续跑断点在阶段内**；改原文→断点失效。⑥ `writingPace`：一章 5~8 调用。
 
 ## 架构红线
