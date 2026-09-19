@@ -9,7 +9,6 @@ import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
 import { copyText } from './dialogs'
 import AIAssist from './AIAssist'
-import AutoContinue from './AutoContinue'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiSuggestNames } from '../lib/aiTasks'
@@ -88,10 +87,10 @@ export default function InspireTools() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">灵感启发</h1>
           <HelpPopover title="灵感启发怎么用" width="24rem" size={14}>
-            {'这一页是「灵感与创意」的三件套，都从「灵感启发」这个动作出发。\n\n【随机取名生成器】按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 题材风格批量出名字：点名字即复制，点星标收藏；纯本地能力，没有模型也能用。\n\n【AI 一键续写 + 设定补完】从已写章节往下续写正文，并据新正文补全设定。\n\n【AI 辅助规划】多轮对话式脑暴（剧情 / 人物 / 世界观 / 一致性自查），可结合你的世界观设定给建议。\n\n后两项需要模型 —— 未接入时按钮禁用并给出提示。\n\n⚠️ 模型配置、正文写作额度、联网检索**不在这页**了：它们属于全局设置，已移到「工作面板 → 模型设置」。'}
+            {'这一页是「灵感与创意」的两件套，都从「灵感启发」这个动作出发。\n\n【随机取名生成器】按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 题材风格批量出名字：点名字即复制，点星标收藏；纯本地能力，没有模型也能用。\n\n【AI 辅助规划】多轮对话式脑暴（剧情 / 人物 / 世界观 / 一致性自查），可结合你的世界观设定给建议。\n\n需要模型 —— 未接入时按钮禁用并给出提示。\n\n⚠️ 「AI 一键续写 + 设定补完」已并入「创意写作」：到那边选「接着已有内容写」起点即可，断点续跑、进度时间线、去 AI 味儿、设定补完策略都在那里；跑长任务时还能随时切页签看稿，回来进度与断点都在。\n\n⚠️ 模型配置、正文写作额度、联网检索**不在这页**了：它们属于全局设置，已移到「工作面板 → 模型设置」。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-13 text-ink-300">随机取名生成器 · AI 一键续写 · AI 辅助规划</p>
+        <p className="mt-1 text-13 text-ink-300">随机取名生成器 · AI 辅助规划</p>
       </header>
 
       <div className="space-y-4">
@@ -208,10 +207,7 @@ export default function InspireTools() {
           )}
         </section>
 
-        {/* ============ ④ AI 一键续写 + 设定补完 ============ */}
-        <AutoContinue />
-
-        {/* ============ ⑤ AI 辅助规划（对话）============
+        {/* ============ ④ AI 辅助规划（对话）============
              注意：模型配置与联网检索已移到「工作面板 → 模型设置」，这里只剩「对话」。 */}
         <AIAssist />
       </div>

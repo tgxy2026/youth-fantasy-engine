@@ -1,36 +1,58 @@
 /**
- * 「创意写作」编排器 —— 全自动创作工作流的串联层（方案见 `docs/2.2.0-全自动AI小说创作工作流方案.md`）。
+ * 「创意写作」编排器 —— AI 创作工作流的串联层（方案见 `docs/2.2.0-全自动AI小说创作工作流方案.md`）。
  *
- * 全链路：种子 → ①设定奠基 → **闸门①** → ②分卷大纲 → **闸门②** → ③逐章连写 → （④审校闭环留给阶段二）
+ * **两种起点**（2026-09-19 融合「AI 一键续写 + 设定补完」后）：
+ * - `scratch`（从一句话想法从零写）：种子 → ①设定奠基 → **闸门①** → ②分卷大纲 → **闸门②** → ③逐章连写
+ * - `continue`（接着项目已有内容往下写）：③逐章连写（设定补完按策略在每章末尾自动进行）
  *
- * 三条设计要点：
- * 1. **不重造**：逐章连写直接用 `runAutoContinue`（一键续写那套），它自带"字数校准 + 落库硬闸门 +
- *    逐章人审回调"。本文件只负责"把阶段串起来 + 在两个闸门处停下来等人"。
+ * 为什么合成一个编排器而不是两套：两条路线的**第③步是同一件事** —— 都是"按已有设定与上一章结尾
+ * 往下写一章"，都用 `runAutoContinue`。差别只在前两步要不要跑（从零时需要先立设定与大纲）。
+ * 合成一处之后，断点续跑、进度时间线、去 AI 味儿、设定补完策略这些能力两边自动共享。
+ *
+ * 四条设计要点：
+ * 1. **不重造**：逐章连写直接用 `runAutoContinue`，它自带"字数校准 + 落库硬闸门 + 逐章人审回调 +
+ *    设定补完"。本文件只负责"把阶段串起来 + 在闸门处停下来等人"。
  * 2. **闸门＝await**：`onBibleGate` / `onOutlineGate` 返回 Promise，编排器就停在那里等用户；
  *    这也是为什么它直接建在 `lib/flow` 的状态机上（状态机不需要感知"暂停"这件事）。
  * 3. **人和 AI 的分工**：闸门之前全是 AI 跑量，闸门处必须人定方向 —— 不接受"全自动无人值守"，
  *    那是方案里明确否掉的（AI 生成设定/大纲的质量波动，必须由人在落库前过一眼）。
+ * 4. **按大纲写**：项目里已有《章节细纲》时，连写会自动按章号把当章细纲钉进 prompt 末段，
+ *    让正文跟着大纲走而不是自由发挥（`continue` 起点因此也成了"继续推进已规划项目"的入口）。
  *
  * 🔴 写库只发生在两个闸门**通过之后**；用户放弃闸门 = 整条流程中止，不留半成品。
+ * 🔴 `continue` 起点没有闸门：它不新建设定与大纲（那些要么已落库、要么由作者自己在表格页维护），
+ *    正文落库发生在每章的「初稿采纳」之后。
  */
 import { buildProjectContext } from './aiContext'
 import { aiGenerateBible, aiGenerateOutline, type OutlineResult } from './aiTasks'
 import { writerBudgetFor } from './aiWriterBudget'
-import { runAutoContinue, type ChapterDraft, type DraftDecision } from './autoContinue'
+import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from './autoContinue'
 import * as db from './db'
 import { commitDraftRows } from './flow/commit'
 import { buildDraftBundle, defaultPicked } from './flow/draft'
 import { resolveSlot } from './flow/fieldMap'
-import { createFlow, firstUnfinishedStage } from './flow/pipeline'
+import { createFlow, firstUnfinishedStage, type StageCtx } from './flow/pipeline'
 import type { CommitOutcome, DraftBundle, DraftRow, FlowProgress, FlowStage } from './flow/types'
 import { uid } from './id'
 import { chapterNoOf, outlineCardName, outlineEventKey } from './outlineCard'
+import type { LedgerItem } from './settingLedger'
 import type { Volume } from './types'
 
 /** 阶段声明（weight 按实测耗时：连写占绝大部分） */
 export const CREATIVE_STAGES: FlowStage[] = [
   { id: 'bible', label: '设定奠基', weight: 3 },
   { id: 'outline', label: '分卷大纲', weight: 2 },
+  { id: 'draft', label: '逐章连写', weight: 12 },
+]
+
+/**
+ * 「接着已有内容写」的阶段表 —— 只有连写这一步。
+ *
+ * 为什么不复用 CREATIVE_STAGES 再 `skipRest` 掉前两步：`skipRest` 是"跑到一半才发现不用跑"的
+ * 表达（如闸门②选「只保存大纲」），而这里**一开始就知道**不用跑 —— 让它们以 `skipped` 出现在
+ * 时间线上，作者会以为"这两个阶段被跳过了，是不是出问题了"。阶段表不同，就该用不同的表。
+ */
+export const CONTINUE_STAGES: FlowStage[] = [
   { id: 'draft', label: '逐章连写', weight: 12 },
 ]
 
@@ -163,13 +185,33 @@ export interface CreativeResume {
   label: string
 }
 
+/** 创作起点 */
+export type CreativeMode = 'scratch' | 'continue'
+
+/**
+ * 本次创作的输入。
+ * - `scratch`：`seed` 是一句话想法（设定奠基的唯一依据）
+ * - `continue`：`intent` 是可选的情节概要（不填则严格承接上一章结尾）
+ */
+export interface CreativeRunInput {
+  mode?: CreativeMode
+  seed?: string
+  intent?: string
+}
+
 export interface CreativeWritingOptions {
   /** 连写多少章（默认 10） */
   chapters?: number
   /** 每章目标字数（默认 2500） */
   targetWords?: number
-  /** 分几卷（默认 1） */
+  /** 分几卷（默认 1；仅 `scratch` 起点的分卷大纲阶段用） */
   volumes?: number
+  /** 连写时的设定更新策略（默认 add-only）。`confirm` 会走 `onSettingsCandidates` 征询作者 */
+  strategy?: ContinueStrategy
+  /** 连写时生成初稿后自动去 AI 味儿（可选） */
+  deAi?: { enabled: boolean; prompt: string }
+  /** 连写时是否按已落库的《章节细纲》写（默认是；没有细纲卡时自动退回自由发挥） */
+  useOutline?: boolean
   /** 闸门①：设定草稿审阅。返回用户勾选的条目；**返回 null = 放弃整条流程** */
   onBibleGate?: (bundle: DraftBundle) => Promise<DraftRow[] | null>
   /**
@@ -185,6 +227,8 @@ export interface CreativeWritingOptions {
   onProgress?: (p: FlowProgress) => void
   onChapterSaved?: (ch: { id: string; title: string; no: number }) => void
   onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
+  /** `strategy='confirm'` 时：把待补登的设定候选交作者勾选；返回 null = 本次跳过补登 */
+  onSettingsCandidates?: (cands: LedgerItem[]) => Promise<LedgerItem[] | null>
   /** 续跑：把上次中止时拿到的 `CreativeResume` 原样传回来 */
   resume?: CreativeResume
   /** 中止时回头交一份续跑信息（界面存住即可显示「继续」） */
@@ -193,10 +237,16 @@ export interface CreativeWritingOptions {
 }
 
 export interface CreativeWritingResult {
+  mode: CreativeMode
   seed: string
-  bible: DraftBundle
+  /**
+   * 设定奠基产物。🔴 **可为 null**：`continue` 起点没有这个阶段，续跑时也不会重跑它
+   * （产物早已落库）。调用方展示统计时必须判空，别假设它一定在。
+   */
+  bible: DraftBundle | null
   bibleCommit: CommitOutcome | null
-  outline: OutlineResult
+  /** 分卷大纲产物。同上，`continue` 起点为 null */
+  outline: OutlineResult | null
   outlineCommit: OutlineCommitOutcome | null
   chapters: { id: string; title: string; no: number }[]
   /**
@@ -209,12 +259,18 @@ export interface CreativeWritingResult {
 
 /**
  * 跑完整条「创意写作」流程。
+ * @param input 起点与输入。可传字符串（等价于 `{ mode:'scratch', seed }`，兼容旧调用）
  * @returns 结果；**返回 null 表示被中止或用户在闸门处放弃**（此时不留任何半成品）
  */
 export async function runCreativeWriting(
-  seed: string,
+  input: CreativeRunInput | string,
   opts: CreativeWritingOptions = {},
 ): Promise<CreativeWritingResult | null> {
+  const inp: Required<CreativeRunInput> = typeof input === 'string'
+    ? { mode: 'scratch', seed: input, intent: '' }
+    : { mode: input.mode ?? 'scratch', seed: input.seed ?? '', intent: input.intent ?? '' }
+  const mode = inp.mode
+
   /** 这次总共打算写多少章（同时是续跑校验的基准：参数变了就不给续） */
   const plannedChapters = Math.max(1, Math.min(60, opts.chapters ?? 10))
   /** 续跑起点：已经写好多少章。参数对不上（或没给 resume）就不续，从零写 */
@@ -223,7 +279,9 @@ export async function runCreativeWriting(
     : 0
   let doneChapters = baseDone
 
-  const flow = createFlow(CREATIVE_STAGES, {
+  // 阶段表决定这次跑什么：从零创作三步走，接着写只有连写一步。
+  // （下面两个阶段执行体照常登记 —— 阶段表里没有它们时状态机根本不会去取，多登记无害。）
+  const flow = createFlow(mode === 'continue' ? CONTINUE_STAGES : CREATIVE_STAGES, {
     ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
     // 续跑：预置已完成阶段的产物（设定奠基 / 分卷大纲就不会被重跑一遍）
@@ -237,12 +295,13 @@ export async function runCreativeWriting(
     throw new Error('用户放弃了本次创作')
   }
 
+  // —— 阶段①：设定奠基（仅「从零创作」的阶段表里有它；登记着但不会被执行）——
   flow.on('bible', async ctx => {
     ctx.report(0.15, '生成设定草稿…')
     // 收字回调：一来给作者"正在生成"的实时反馈，二来它同时就是**流式开关**
     // （不传的话非流式请求会撞 180s 总超时墙，见 aiTasks 的 longStream 注释）
     let got = 0
-    const entities = await aiGenerateBible(seed, {
+    const entities = await aiGenerateBible(inp.seed, {
       signal: ctx.signal,
       onToken: d => {
         got += d.length
@@ -292,14 +351,25 @@ export async function runCreativeWriting(
     return { outline, outlineCommit, outlineOnly: decision === 'outline-only' }
   })
 
-  flow.on('draft', async ctx => {
+  // ---- 阶段③：逐章连写（**两种起点共用同一实现**，这是融合的关键）----
+  flow.on('draft', async (ctx: StageCtx) => {
     // 续跑：已经写好的章不再写，只补剩下的（`plannedChapters` 是**总共**要多少章）
     const remaining = Math.max(0, plannedChapters - doneChapters)
     if (remaining === 0) { ctx.report(1, '章数已写满，跳过连写'); return [] }
-    const outlines = await loadChapterOutlines()
+    // 按大纲写：从零创作刚落了细纲、「接着写」可能早就有一律现查一次。
+    // 有细纲就按章号钉进本章 prompt 末段；没有则退回"自由发挥"（仍能跑通，只是不保证贴合大纲）
+    const outlines = opts.useOutline === false ? new Map<number, string>() : await loadChapterOutlines()
     let done = 0
     const res = await runAutoContinue(
-      { chapters: remaining, targetWords: opts.targetWords ?? 2500, strategy: 'add-only' },
+      {
+        chapters: remaining,
+        targetWords: opts.targetWords ?? 2500,
+        // 设定补完策略（融合前写死 add-only）。默认仍是最稳的 add-only；
+        // 「候选确认」会经 `onSettingsCandidates` 把待补登项交作者勾选
+        strategy: opts.strategy ?? 'add-only',
+        ...(inp.intent.trim() ? { intent: inp.intent.trim() } : {}),
+        ...(opts.deAi ? { deAi: opts.deAi } : {}),
+      },
       {
         signal: ctx.signal,
         onPhase: msg => ctx.report(done / remaining, msg),
@@ -310,7 +380,7 @@ export async function runCreativeWriting(
           opts.onChapterSaved?.(ch)
         },
         ...(opts.onChapterDraft ? { onChapterDraft: opts.onChapterDraft } : {}),
-        // 有细纲就按大纲写；没有则退回"自由发挥"（仍能跑通，只是不保证贴合大纲）
+        ...(opts.onSettingsCandidates ? { onSettingsCandidates: opts.onSettingsCandidates } : {}),
         ...(outlines.size ? { outlineFor: (no: number) => outlines.get(no) } : {}),
       },
     )
@@ -339,14 +409,20 @@ export async function runCreativeWriting(
   const bibleBag = res.bag.bible as { bundle: DraftBundle; bibleCommit: CommitOutcome | null } | undefined
   const outlineBag = res.bag.outline as
     { outline: OutlineResult; outlineCommit: OutlineCommitOutcome; outlineOnly: boolean } | undefined
-  if (!bibleBag || !outlineBag) throw new Error('流程产物缺失（内部错误）')
+  // 🔴 产物缺失只在「从零创作的首次运行」算异常 —— 那条路必然跑过设定奠基与分卷大纲。
+  //    「接着写」与续跑（前序阶段本就没跑 / 不必重跑）都允许缺失：那两阶段的成果在数据库里、
+  //    不在 bag 里，硬要求它们反而会让续跑误报「内部错误」。
+  if (mode === 'scratch' && baseDone === 0 && (!bibleBag || !outlineBag)) {
+    throw new Error('流程产物缺失（内部错误）')
+  }
   return {
-    seed,
-    bible: bibleBag.bundle,
-    bibleCommit: bibleBag.bibleCommit,
-    outline: outlineBag.outline,
-    outlineCommit: outlineBag.outlineCommit,
+    mode,
+    seed: inp.seed,
+    bible: bibleBag?.bundle ?? null,
+    bibleCommit: bibleBag?.bibleCommit ?? null,
+    outline: outlineBag?.outline ?? null,
+    outlineCommit: outlineBag?.outlineCommit ?? null,
     chapters: (res.bag.draft as { id: string; title: string; no: number }[]) ?? [],
-    outlineOnly: outlineBag.outlineOnly === true,
+    outlineOnly: outlineBag?.outlineOnly === true,
   }
 }

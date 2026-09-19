@@ -1,8 +1,9 @@
 // 同步传输层抽象（#031 云盘中转同步）。
-// 把「数据发到中心服务器」这一动作抽成可替换的传输实现：
-//  - HttpTransport：现有方案，走 /api/sync（依赖我们的服务器）。
-//  - FileTransport：云盘中转方案，读写用户选定的本地同步目录里的 .yfe 文件，
-//    由 OneDrive / Dropbox / Google Drive / 百度网盘 / 坚果云 / WPS 云盘 等客户端负责跨设备搬运。
+// 只做一件事：把「字节怎么落地 / 怎么读回来」与加密、载荷结构、rev 三路合并解耦。
+//  - FileTransport：唯一在用的实现 —— 读写用户选定同步目录里的 .yfe 文件，
+//    由 OneDrive / 百度网盘 / 坚果云 / WPS 云盘 等客户端负责跨设备搬运，全程不经过任何服务器。
+//  - IdleTransport：未开启同步时的占位实现（一切操作按「不可用」上报，上层据此回退本机存储）。
+//    ⚠️ 2026-09 服务器下线后移除：原先这里放的是走 /api/sync 的 HttpTransport（依赖服务器的中心化同步）。
 // 加密、载荷结构、rev 三路合并、#030 空推防护均已迁至 syncCore.ts（本文件不再承担），
 // 这里只负责「字节怎么落地 / 怎么读回来」，并把「文件不存在」与「读取失败」如实分开上报。
 
@@ -15,8 +16,8 @@ export interface RawSyncResponse {
 }
 
 export interface SyncTransport {
-  mode: 'http' | 'file'
-  /** 告知当前同步码（派生文件槽位名 / HTTP 鉴权头）。 */
+  mode: 'none' | 'file'
+  /** 告知当前密钥（派生文件槽位名；固定文件名模式下不影响槽位）。 */
   setCode(code: string): void
   /**
    * 拉取远端快照。
@@ -39,9 +40,8 @@ export interface SyncTransport {
 /**
  * 内置默认加密密钥（网页版云盘模式 / 桌面 / 便携版共用）。
  *
- * 为什么不需要同步码：同步码在「服务器模式」身兼两职——①HTTP 鉴权（换服务器槽位）、②AES 密钥。
- * 云盘文件中转走的是用户自己的网盘，不过我们的服务器，①根本不存在；
- * ②只需要两端一致即可，故用内置常量：所有设备同一密钥 → 指向同一目录就能互通。
+ * 为什么不需要用户填密码：文件同步走的是用户自己的网盘，不过任何服务器，
+ * 加密只需要两端一致即可 —— 故用内置常量：所有设备同一密钥 → 指向同一目录就能互通。
  *
  * 安全边界（必须在 UI 如实告知用户）：此密钥是公开的源码常量，加密强度等同于「混淆」，
  * 仅防云盘明文扫描与误看，**不足以对抗蓄意破解**。机密稿件请放在私人目录、不要共享。
@@ -58,48 +58,39 @@ async function sha256Hex(s: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-// ============ HTTP 传输（现有服务器方案）============
-export function createHttpTransport(): SyncTransport {
-  let code = ''
-  const auth = () => ({ Authorization: `Bearer ${code}`, 'Content-Type': 'application/json' })
+// ============ 占位传输（未开启同步时）============
+/**
+ * 未开启云盘同步时的占位实现。
+ *
+ * 为什么需要它：`createCloudStore` 必须先拿到一个 transport 才能构造实例，而同步目录是
+ * 用户之后才选的（由 `setTransport` 替换）。占位实现把一切操作**如实上报为「不可用」**（status 0），
+ * 上层据此回退本机存储 —— 绝不返回「空库」，否则一次 push 就会覆盖掉云端真实快照。
+ */
+export function createIdleTransport(): SyncTransport {
   return {
-    mode: 'http',
-    setCode(c: string) {
-      code = c
+    mode: 'none',
+    setCode() {
+      /* 未开启同步：无需派生槽位 */
     },
     async pull() {
-      try {
-        const r = await fetch('/api/sync', { headers: { Authorization: `Bearer ${code}` } })
-        if (r.ok) {
-          const d = await r.json().catch(() => ({}))
-          return { status: 200, rev: d.rev, enc: d.enc }
-        }
-        return { status: r.status }
-      } catch {
-        return { status: 0 } // 0 = 网络异常（serverStore 按 offline 处理）
-      }
+      return { status: 0 }
     },
-    async push(baseRev: number, enc: string) {
-      try {
-        const r = await fetch('/api/sync', { method: 'POST', headers: auth(), body: JSON.stringify({ rev: baseRev, enc }) })
-        if (r.status === 409 || r.ok) {
-          const d = await r.json().catch(() => ({}))
-          return { status: r.status, rev: d.rev, enc: d.enc }
-        }
-        return { status: r.status }
-      } catch {
-        return { status: 0 }
-      }
+    async push() {
+      return { status: 0 }
     },
-    startWatch() {},
-    stopWatch() {},
+    startWatch() {
+      /* 未开启同步：无远端可监听 */
+    },
+    stopWatch() {
+      /* 同上 */
+    },
   }
 }
 
 // ============ 文件传输（云盘中转方案）============
 // handle 可为 FileSystemDirectoryHandle（浏览器 FSA）或文件夹路径字符串（桌面 Electron 渲染进程 node fs 兜底）。
 // fixedName：指定固定文件名（桌面/便携版云盘同步用，便于用户在云盘目录里认出它）；
-// 不传则回退到 sha256(code) 命名（网页版云盘中转按码分槽，避免多码互相覆盖）。
+// 不传则回退到 sha256(密钥) 命名（多套数据共用同一目录时按密钥分槽，避免互相覆盖）。
 export function createFileTransport(handle: any, fixedName?: string): SyncTransport {
   const isFsa = typeof handle !== 'string'
   let code = ''

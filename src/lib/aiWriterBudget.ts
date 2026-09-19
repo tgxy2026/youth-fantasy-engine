@@ -50,7 +50,7 @@ export const WRITER_RECOMMEND = {
  *    改这里之前先想清楚：任何系数变动都会**改变默认行为**。
  */
 export const WRITER_BUDGET_KINDS = {
-  'auto-continue': 1.5,           // 12000 一键续写
+  'auto-continue': 1.5,           // 12000 逐章连写（创意写作两种起点共用）
   'proofread': 0.75,              //  6000 校对（编辑器）/ 颉文姬深度校对
   'foreshadow-review': 1.5,       // 12000 伏笔闭环审查（只带三张表）
   'continuity-audit': 1.5,        // 12000 连续性校验
@@ -76,7 +76,7 @@ export type WriterBudgetKind = keyof typeof WRITER_BUDGET_KINDS
 
 /** 界面展示用：各功能的称呼（展开明细时列出来，让作者知道"基准调了会影响谁"） */
 export const WRITER_BUDGET_LABELS: Record<WriterBudgetKind, string> = {
-  'auto-continue': 'AI 一键续写',
+  'auto-continue': '逐章连写（创意写作）',
   'proofread': '校对 / 颉文姬深度校对',
   'foreshadow-review': '伏笔闭环审查',
   'continuity-audit': '连续性校验',

@@ -72,6 +72,7 @@ import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 import { Z } from '../lib/zLayer'
+import NumberField from './NumberField'
 
 /** 各类型对应的色标签 */
 const PTF_BADGE: Record<string, string> = {
@@ -530,11 +531,13 @@ style={{ maxWidth: foldVh('90vw') }}>
           <p className="text-12 text-ink-400 mb-6">设定目标后进入全屏锁定，不达成不轻易退出（防拖延）</p>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <input type="number" value={goalWords} min={100} step={500} onChange={e => setGoalWords(parseInt(e.target.value, 10) || 1000)} className="!py-2 text-13 w-32" />
+              <NumberField value={goalWords} min={100} max={200000} step={500} onChange={v => setGoalWords(v ?? 1000)}
+                title="目标字数：100 ~ 200000（超出范围会调回最近的边界）" className="!py-2 text-13 w-32" />
               <Button variant="primary" onClick={() => start('words')} className="flex-1 py-2.5 rounded-lg text-13 transition-colors">按字数锁定</Button>
             </div>
             <div className="flex items-center gap-2">
-              <input type="number" value={goalMinutes} min={5} step={5} onChange={e => setGoalMinutes(parseInt(e.target.value, 10) || 30)} className="!py-2 text-13 w-32" />
+              <NumberField value={goalMinutes} min={5} max={1440} step={5} onChange={v => setGoalMinutes(v ?? 30)}
+                title="目标时长（分钟）：5 ~ 1440（超出范围会调回最近的边界）" className="!py-2 text-13 w-32" />
               <Button variant="bare" onClick={() => start('minutes')} className="flex-1 py-2.5 bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded-lg text-13 hover:bg-sky-500/25 transition-colors">按时长锁定（分钟）</Button>
             </div>
             <Button variant="bare" onClick={() => tryExit()} className="w-full py-2 text-12 text-ink-500 hover:text-ink-300 transition-colors">不设目标，直接退出</Button>

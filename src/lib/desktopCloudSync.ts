@@ -1,4 +1,4 @@
-// 桌面版 · 云盘文件中转同步（#031 引入，#032 去掉同步码）
+// 桌面版 · 云盘文件中转同步（#031 引入，#032 起选目录即用）
 //
 // 本模块**完全不依赖我们的服务器**：数据以加密文件落在用户选定的云盘同步目录
 // （OneDrive / WPS 云盘 / 百度网盘 / 坚果云 等），由对应客户端负责跨设备搬运。
@@ -21,7 +21,7 @@ import {
 } from './syncCore'
 import {
   createFileTransport,
-  createHttpTransport,
+  createIdleTransport,
   DEFAULT_CLOUD_KEY,
   CLOUD_FILE_NAME,
 } from './syncTransport'
@@ -36,8 +36,9 @@ export const CLOUD_FILE_SYNC = DESKTOP
 const DIR_KEY = 'yfe-desktop-cloud-dir' // 桌面：目录路径字符串
 const ENABLED_KEY = 'yfe-desktop-cloud-on' // 是否已开启云盘同步（布尔标记）
 
-// 用一个占位 transport 创建实例，真正的 FileTransport 在用户选目录后通过 setTransport 替换。
-const cloud: CloudStoreInstance = createCloudStore(createHttpTransport())
+// 用一个占位 transport 创建实例（未开启同步前一切操作都按「不可用」上报），
+// 真正的 FileTransport 在用户选目录后通过 setTransport 替换。
+const cloud: CloudStoreInstance = createCloudStore(createIdleTransport())
 
 /** 桌面/便携版云端同步 StoreOps（db.ts 的 desktopCloudFileStore 包装层会在此之上做本地回退）。 */
 export const desktopCloudStore: StoreOps = cloud.store
@@ -90,7 +91,7 @@ function isStringHandle(h: unknown): h is string {
   return typeof h === 'string'
 }
 
-/** 是否已启用（持久化过开启标记）。#032 起不再需要同步码，只认开启标记 + 目录。 */
+/** 是否已启用（持久化过开启标记）。#032 起不再需要任何凭据，只认开启标记 + 目录。 */
 export function isDesktopCloudEnabled(): boolean {
   try {
     return localStorage.getItem(ENABLED_KEY) === '1'
@@ -123,7 +124,7 @@ export async function chooseDesktopCloudDir(): Promise<{ handle: any; name: stri
 }
 
 /**
- * 开启云盘文件同步（#032：无需同步码，选目录即开）。
+ * 开启云盘文件同步（#032：选目录即开）。
  * 传输层指向所选目录，加密走内置默认密钥（DEFAULT_CLOUD_KEY），两端一致即可互通。
  */
 export async function enableDesktopCloud(handle: any) {
@@ -172,12 +173,12 @@ export function disableDesktopCloud() {
   } catch {
     /* 忽略 */
   }
-  cloud.setTransport(createHttpTransport())
+  cloud.setTransport(createIdleTransport())
   cloud.configure('')
 }
 
 /**
- * 启动时按持久化恢复传输层（#032：不再需要同步码，内置默认密钥即可）。
+ * 启动时按持久化恢复传输层（#032：内置默认密钥即可）。
  * 成功返回 true（db.ts 据此切到云端存储）。
  */
 export async function applyDesktopCloudFromPersisted(): Promise<boolean> {

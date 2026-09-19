@@ -13,6 +13,8 @@ import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 import DraftReviewPanel from './DraftReviewPanel'
 import HelpPopover from './HelpPopover'
+import NewProjectAdvice from './NewProjectAdvice'
+import NumberField from './NumberField'
 import { showToast } from './dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '../lib/ai'
 import { adviseImport, type ImportAdvice } from '../lib/bookbreak/recommend'
@@ -232,6 +234,8 @@ export default function BookBreakPanel() {
         </HelpPopover>
       </div>
 
+      <NewProjectAdvice kind="bookbreak" />
+
       {/* 原文 */}
       <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -319,19 +323,20 @@ export default function BookBreakPanel() {
                     <label key={m.key} className="block">
                       <span className="flex items-center gap-2">
                         <span className="w-28 shrink-0 text-12 text-ink-200">{m.label}</span>
-                        <input
-                          type="number"
+                        <NumberField
+                          value={limits[m.key]}
                           min={m.min}
                           max={m.max}
                           step={m.step}
-                          value={limits[m.key]}
                           disabled={running}
-                          onChange={e => {
-                            const next = { ...limits } as RelationMaterialLimits
-                            next[m.key] = Number(e.target.value)
-                            setLimits(clampRelationLimits(next))
+                          title={`${m.label}：${m.min}~${m.max} ${m.unit}（超出会调回最近的边界）`}
+                          onChange={v => {
+                            const next = clampRelationLimits({ ...limits, [m.key]: v } as RelationMaterialLimits)
+                            setLimits(next)
+                            void saveRelationLimits(next)
                           }}
-                          onBlur={() => { void saveRelationLimits(limits) }}
+                          onClamped={(v, dir) => showToast(
+                            `${m.label}已调整为${dir === 'max' ? '上限' : '下限'} ${v} ${m.unit}`, 'info')}
                           className="w-20 rounded border border-ink-700 bg-ink-900 px-2 py-0.5 text-12 text-ink-100 outline-none focus:border-amber/50 disabled:opacity-60"
                         />
                         <span className="text-11 text-ink-500">{m.unit} · 推荐 {DEFAULT_RELATION_LIMITS[m.key]}</span>

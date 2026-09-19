@@ -30,6 +30,7 @@ import {
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
 } from '../lib/ai'
 import { lookupWindow, FALLBACK_WINDOW } from '../lib/modelCapacity'
+import NumberField from './NumberField'
 
 function fmtMs(ms: number) {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
@@ -421,16 +422,14 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     <label className="block text-11 text-ink-500 mb-1">
                       上下文窗口（tokens）<span className="text-ink-600"> · 选填</span>
                     </label>
-                    <input
-                      type="number" min={1024} max={2097152} step={1024}
+                    <NumberField
+                      value={editing.contextWindow}
+                      min={1024} max={2097152} step={1024}
+                      allowEmpty
                       disabled={isLocal}
                       className={`w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 ${isLocal ? 'opacity-40 cursor-not-allowed' : ''}`}
-                      value={editing.contextWindow ?? ''}
-                      onChange={e => {
-                        const raw = e.target.value.trim()
-                        const n = Number(raw)
-                        setEditing({ ...editing, contextWindow: raw === '' || !Number.isFinite(n) ? undefined : Math.floor(n) })
-                      }}
+                      onChange={v => setEditing({ ...editing, contextWindow: v })}
+                      onClamped={v => showToast(`上下文窗口已调回边界 ${v} tokens`, 'info')}
                       placeholder="留空 = 按模型名自动识别"
                     />
                     <p className="text-10 text-ink-500 mt-1 leading-relaxed">{hint}</p>

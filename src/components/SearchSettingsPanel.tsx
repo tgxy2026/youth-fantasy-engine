@@ -22,6 +22,7 @@ import { PARAM_GUIDES, bandOf } from '../lib/tavern/paramGuide'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
+import NumberField from './NumberField'
 
 const BOX = 'bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50'
 
@@ -177,16 +178,13 @@ export default function SearchSettingsPanel() {
               label="每次取几条"
               hint={`范围 ${guide.min}–${guide.max} ${guide.unit}。${bandOf(guide, s.topK).effect}`}
             >
-              <input
-                type="number"
-                className={`${BOX} w-28`}
+              {/* 受控 + 失焦钳制：原来是 defaultValue（非受控），切换搜索模式导致范围变化时
+                  输入框不会跟着更新，显示值可能与实际生效值不一致。 */}
+              <NumberField
+                value={s.topK}
                 min={guide.min} max={guide.max} step={guide.step}
-                defaultValue={s.topK}
-                onBlur={e => {
-                  const n = Math.max(guide.min, Math.min(guide.max, Math.round(Number(e.target.value) || s.topK)))
-                  if (n !== s.topK) void patch({ topK: n })
-                  e.target.value = String(n)
-                }}
+                className={`${BOX} w-28`}
+                onChange={v => { const n = v ?? s.topK; if (n !== s.topK) void patch({ topK: n }) }}
               />
             </Field>
           </>

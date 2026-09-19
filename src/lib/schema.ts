@@ -828,7 +828,7 @@ export const TABS: TabDef[] = [
 
 {
   // 2026-09-19 新增（老大要求）：把「设置类」从「灵感工具 → 灵感启发」里拆出来。
-  // 灵感启发那页的定位是**灵感与创意**（随机取名 / 一键续写 / 辅助规划），
+  // 灵感启发那页的定位是**灵感与创意**（随机取名 / 辅助规划），
   // 而模型配置、额度、联网检索是**配一次就不动的全局设置** —— 两种东西混在一页，两边都不好找。
   // 位置：工作面板组内、写作面板之下、使用指南之上（与数组顺序一致，Sidebar 按序渲染）。
   id: 'model-settings', name: '模型设置', group: '工作面板', type: 'model-settings',
@@ -845,7 +845,7 @@ export const TABS: TabDef[] = [
   // 「灵感工具」下拆出的两个子页签：与「开书定位」的作品定位/世界设定/力量体系同构（同一 group 下的独立页签，Sidebar 自动列在分组标题下）
   {
     id: 'inspire-tools', name: '灵感启发', group: '灵感工具', type: 'inspire',
-    description: '随机取名生成器、AI 一键续写与设定补完、AI 辅助规划（脑暴）。模型与联网检索已移到「工作面板 → 模型设置」。',
+    description: '随机取名生成器、AI 辅助规划（脑暴）。原「AI 一键续写 + 设定补完」已并入「创意写作」（选「接着已有内容写」起点）。模型与联网检索在「工作面板 → 模型设置」。',
   },
   {
     id: 'bookbreak', name: '一键拆书', group: '灵感工具', type: 'bookbreak',
@@ -853,7 +853,7 @@ export const TABS: TabDef[] = [
   },
   {
     id: 'creative-writing', name: '创意写作', group: '灵感工具', type: 'creative-writing',
-    description: '给一句话想法，AI 依次完成设定奠基 → 分卷大纲 → 逐章草稿 → 审校闭环 → 导出（开发中）。',
+    description: '两种起点：从一句话想法从零创作（设定奠基 → 分卷大纲 → 逐章连写，两处人工闸门），或接着项目已有内容往下续写（可关；项目有《章节细纲》时按细纲写）。每章都做字数校准、去 AI 味儿与设定补完；可随时中止、断点续跑，跑长任务时切页签也不中断。',
   },
   {
     id: 'check-tools', name: '检查工具', group: '灵感工具', type: 'check',
@@ -986,10 +986,15 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   'material-library': 'locked',
   'check-tools': 'locked',
   // 默认勾选（可取消）
-  // 拆书 / 创意写作（2026-09-18）：与正文创作强相关，默认勾选但可取消。
-  bookbreak: 'default',
-  'creative-writing': 'default',
   about: 'default',
+  // 拆书 / 创意写作（2026-09-19 起）：**显式标为 optional，不默认勾选**。
+  // 理由：两者都是"往项目里写大量数据"的重流程，新用户进来第一眼用不上；
+  // 默认勾着会让每个新项目都背上两个重量级入口。需要的人在「自定义项目」里勾上即可，
+  // 两个页面顶部也都加了醒目提示（引导"先新建空项目再跑"）。
+  // 显式写出来而不是省略不写：省略虽然按 `getTier()` 的兜底也是 optional，但
+  // 读 schema 的人会以为是"忘了登记"，而这个档位是**有意为之的产品决定**。
+  bookbreak: 'optional',
+  'creative-writing': 'optional',
   // 酒馆模式（2026-09-15）：整体改为**不默认勾选**（落到 optional）。
   // 原先 5 项设 default，会让每个自定义项目默认开着一整套角色扮演功能，多数作者用不上。
   // 它们的联动关系改由下方 STRONG_DEPS / ANY_DEPS 负责。

@@ -6,7 +6,7 @@
 //  - 当前唯一使用方是 desktopCloudSync（File 传输，由云盘客户端搬运，无需服务器）。
 //    ⚠️ 2026-09-15：网页版服务器同步（serverStore）已随「只做桌面版」的决定下线，
 //      跨设备同步的唯一途径是**云盘文件**。本核心本身无平台假设，故原样保留。
-//  - 加密：载荷用同步码派生密钥加密（rev 保持明文以便做版本守卫）。
+//  - 加密：载荷用内置密钥派生加密（rev 保持明文以便做版本守卫）。
 //    安全上下文(HTTPS/localhost)走 Web Crypto AES-GCM（真加密）；非安全上下文降级为 XOR 混淆。
 import type { StoreOps } from './storeOps'
 import {
@@ -98,9 +98,9 @@ class RateLimitError extends Error {
   }
 }
 
-/** 同步码无效/已失效（服务端 401）——与网络异常明确区分 */
+/** 同步凭据无效/已失效（服务端 401；服务器模式已下线，此分支为遗留路径）——与网络异常明确区分 */
 export class CloudAuthError extends Error {
-  constructor(msg = '同步码无效或已失效') {
+  constructor(msg = '同步凭据无效或已失效') {
     super(msg)
     this.name = 'CloudAuthError'
   }

@@ -3,6 +3,7 @@ import { Database, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
+import NumberField from './NumberField'
 import {
   DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS, getWriterBudget, saveWriterBudget, previewAt,
   currentModelAdvice, budgetForKind,
@@ -27,7 +28,7 @@ interface Props {
  */
 export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
   const [base, setBase] = useState(DEFAULT_WRITER_BASE)
-  const [draft, setDraft] = useState(String(DEFAULT_WRITER_BASE))
+  const [draft, setDraft] = useState<number>(DEFAULT_WRITER_BASE)
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const [rec, setRec] = useState<number | null>(null)
@@ -40,7 +41,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
     void (async () => {
       const st = await getWriterBudget()
       setBase(st.base)
-      setDraft(String(st.base))
+      setDraft(st.base)
       setAutoTune(st.autoTuneByModel !== false)
       setTunedFor(st.tunedFor)
       // 与「自动跟随」共用同一口径（currentModelAdvice）—— 免得面板显示的推荐值与实际套用的值算得不一样
@@ -59,7 +60,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
       // 带上 tunedFor：它是"上次给哪个模型套用过"的记录，清掉会让下次同步重新登记（无害但没必要）
       const out = await saveWriterBudget({ base: v, autoTuneByModel: autoTune, tunedFor })
       setBase(out.base)
-      setDraft(String(out.base))
+      setDraft(out.base)
       setTunedFor(out.tunedFor)
       showToast(`正文写作额度已保存：基准 ${out.base} 字`, 'success')
     } catch (e) {
@@ -81,10 +82,9 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
     } finally { setSaving(false) }
   }
 
-  const parsed = Number(draft)
-  const valid = Number.isFinite(parsed) && parsed >= WRITER_BASE_LIMITS.min && parsed <= WRITER_BASE_LIMITS.max
-  const dirty = valid && parsed !== base
-  const preview = previewAt(valid ? parsed : base)
+  // 数值由 NumberField 保证落在 [min, max]（超范围在失焦时钳回最近的边界），这里不必再自校验
+  const dirty = draft !== base
+  const preview = previewAt(draft)
 
   return (
     <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
@@ -104,7 +104,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
         </HelpPopover>
         <div className="flex-1" />
         {dirty && <span className="text-11 text-amber">未保存</span>}
-        <Button variant="primary" size="sm" disabled={!dirty || saving} onClick={() => void commit(parsed)}>
+        <Button variant="primary" size="sm" disabled={!dirty || saving} onClick={() => void commit(draft)}>
           {saving ? '保存中…' : '保存'}
         </Button>
       </div>
@@ -145,25 +145,24 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <label className="text-12 text-ink-300">资料预算基准</label>
-        <input
-          type="number"
+        <NumberField
           value={draft}
           min={WRITER_BASE_LIMITS.min}
           max={WRITER_BASE_LIMITS.max}
           step={WRITER_BASE_LIMITS.step}
-          onChange={e => setDraft(e.target.value)}
+          onChange={v => setDraft(v ?? base)}
+          onClamped={(v, dir) => showToast(`资料预算已调回${dir === 'max' ? '上限' : '下限'} ${v} 字`, 'info')}
           className="w-28 rounded bg-ink-900 border border-ink-700 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50"
         />
         <span className="text-11 text-ink-500">字（{WRITER_BASE_LIMITS.min} ~ {WRITER_BASE_LIMITS.max}）</span>
-        {!valid && draft !== '' && <span className="text-11 text-rose-300">超出可填范围</span>}
         {rec != null && rec !== base && (
           <Button variant="secondary" size="sm" className="inline-flex items-center gap-1"
-            onClick={() => setDraft(String(rec))} title={`按当前模型采用推荐值 ${rec} 字`}>
+            onClick={() => setDraft(rec)} title={`按当前模型采用推荐值 ${rec} 字`}>
             <RotateCcw size={11} />采用推荐值（{rec}）
           </Button>
         )}
         {base !== DEFAULT_WRITER_BASE && (
-          <Button variant="secondary" size="sm" onClick={() => setDraft(String(DEFAULT_WRITER_BASE))}>
+          <Button variant="secondary" size="sm" onClick={() => setDraft(DEFAULT_WRITER_BASE)}>
             恢复出厂（{DEFAULT_WRITER_BASE}）
           </Button>
         )}
@@ -179,8 +178,8 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
         {open && (
           <>
             <div className="mt-1.5 text-10 text-ink-500">
-              按当前基准 {(valid ? parsed : base)} 字换算
-              {rec != null && rec !== (valid ? parsed : base) && <> · <span className="text-amber/90">→ 为推荐基准 {rec} 字下的值</span></>}
+              按当前基准 {draft} 字换算
+              {rec != null && rec !== draft && <> · <span className="text-amber/90">→ 为推荐基准 {rec} 字下的值</span></>}
             </div>
             <ul className="mt-1 grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
               {preview.map(x => {

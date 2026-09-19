@@ -17,7 +17,7 @@ import {
 } from '../lib/desktopCloudSync'
 
 /**
- * 「云盘文件同步」操作条（#032：去掉同步码）。
+ * 「云盘文件同步」操作条（#032：改为选目录即用，不再需要任何凭据）。
  *
  * 这是本项目**唯一形态**的跨设备同步（网页版服务器同步已于 2026-09-15 下线），
  * 全程**不依赖任何服务器**：数据以加密文件落在用户自选的云盘目录，
@@ -64,7 +64,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
 
   const meta = STATUS_META[status]
 
-  /** 选择目录并直接开启（无需同步码）。 */
+  /** 选择目录并直接开启（无需任何凭据）。 */
   const pickDir = async () => {
     if (busy) return
     try {
@@ -167,9 +167,9 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
         )}
         <HelpPopover title="云盘文件同步说明" side="right" width="22rem">
           {`云盘文件同步把项目数据实时保存为加密文件（${'青春幻想引擎-同步数据.yfe'}）落到你选定的同步文件夹，
-由 OneDrive / WPS 云盘 / 百度网盘 / 坚果云 等客户端负责跨设备搬运——无需我们的服务器，也没有账号和同步码。
+由 OneDrive / WPS 云盘 / 百度网盘 / 坚果云 等客户端负责跨设备搬运，全程不经过任何服务器。
 
-怎么用：在两台设备上都选「同一个网盘目录」即可自动同步，不需要任何密码或邀请码。
+怎么用：在两台设备上都选「同一个网盘目录」即可自动同步，不需要填写任何凭据。
 断网或网盘未同步时自动回退本机存储、编辑不丢；网盘目录更新后会自动拉取合并。
 每日保留一份滚动备份，可点「从同步备份恢复」回退到当天/昨日的检查点。
 
@@ -195,7 +195,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
             {busy ? '开启中…' : '选择同步目录'}
           </Button>
           <p className="text-11 leading-snug text-ink-500">
-            选一个网盘文件夹即可开启，无需账号或同步码
+            选一个网盘文件夹即可开启；两台设备选同一个目录，就会互相同步
           </p>
         </>
       ) : (

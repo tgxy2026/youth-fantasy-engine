@@ -426,9 +426,10 @@ export default function ProjectHub({ onOpen }: Props) {
                       <div className="flex-1 min-w-0 flex flex-col">
                         <div>
                           <h3 className="text-15 font-bold text-ink-50 truncate">{p.name}</h3>
+                          {/* 这一行**只留卷 / 章 / 字数**（2026-09-19 老大要求）：
+                              题材标签多数和书名重复，形态标签（自定义）在编辑项目里能看到 ——
+                              列表上多两个彩色胶囊，扫一眼只添噪声。 */}
                           <div className="flex items-center gap-2 mt-1.5">
-                            {p.genre && <span className="px-2 py-0.5 text-10 rounded-full bg-amber/10 text-amber/90 border border-amber/25">{p.genre}</span>}
-                            {p.projectType === 'custom' && <span className="px-2 py-0.5 text-10 rounded-full bg-purple-500/10 text-purple-300/90 border border-purple-500/25">自定义</span>}
                             <span className="text-10 text-ink-500">
                               {p.stats?.volumes ?? 0} 卷 · {p.stats?.chapters ?? 0} 章 · {((p.stats?.words ?? 0) / 10000).toFixed(1)} 万字
                             </span>

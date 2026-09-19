@@ -15,6 +15,7 @@ import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
 import type { TavernDirectorNote } from '../lib/tavern/types'
 import type { PostApplied } from '../lib/tavern/postRules'
+import NumberField from './NumberField'
 
 export default function TavernDirectorNoteBar({
   note, postApplied, postErrors, disabled, onSave, onClear,
@@ -108,9 +109,9 @@ export default function TavernDirectorNoteBar({
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div>
             <div className="text-11 text-ink-200">插在第几条之前</div>
-            <input
-              type="number" min={1} max={40} value={depth}
-              onChange={e => setDepth(Math.max(1, Number(e.target.value) || 1))}
+            <NumberField
+              value={depth} min={1} max={40}
+              onChange={v => setDepth(v ?? 1)}
               className="mt-1 w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
             />
             <p className="mt-1 text-10 text-ink-500 leading-relaxed">
@@ -119,9 +120,9 @@ export default function TavernDirectorNoteBar({
           </div>
           <div>
             <div className="text-11 text-ink-200">生效轮数</div>
-            <input
-              type="number" min={1} max={50} value={turns}
-              onChange={e => setTurns(Math.max(1, Number(e.target.value) || 1))}
+            <NumberField
+              value={turns} min={1} max={50}
+              onChange={v => setTurns(v ?? 1)}
               className="mt-1 w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
             />
             <p className="mt-1 text-10 text-ink-500 leading-relaxed">

@@ -7,6 +7,7 @@ import { Modal, Z } from './Modal'
 import { Button } from './Button'
 import { EmptyState } from './EmptyState'
 import { computeDropdownPos } from '../lib/dropdownPos'
+import NumberField from './NumberField'
 
 interface Props {
   /** 当前选中的历法名称 */
@@ -165,10 +166,10 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
               className="w-full !py-1.5 text-13 mb-3"
             />
             <label className="block text-11 text-ink-500 mb-1">数值（默认 0；数值越小越早，如 上古历=-1 表示早于灵历）</label>
-            <input
-              type="number"
+            {/* 历法数值可负、可大（表示跨历法先后），故不给 min/max；只要别把 NaN 传下去 */}
+            <NumberField
               value={draftValue}
-              onChange={e => setDraftValue(Number(e.target.value))}
+              onChange={v => setDraftValue(v ?? 0)}
               className="w-full !py-1.5 text-13 mb-1"
             />
             <div className="text-10 text-ink-500 mb-3">

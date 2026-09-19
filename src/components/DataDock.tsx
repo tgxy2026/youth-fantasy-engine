@@ -12,7 +12,7 @@ import { Z } from '../lib/zLayer'
  *
  * 自 2026-09-15 起本应用只发布桌面版，区块只剩两块：
  *   ① 本机存储 `DesktopDataBar` —— 数据文件位置、保存状态、导出 / 导入
- *   ② 云盘文件同步 `CloudFileSyncBar` —— 无服务器、无同步码，选目录即可
+ *   ② 云盘文件同步 `CloudFileSyncBar` —— 无服务器、无凭据，选目录即可
  *
  * 注意：项目内（有侧栏）不使用本浮层——全局 fixed 浮层会压住侧栏底部控件，
  * 因此项目内的本机存储行与云同步行改为内嵌进 Sidebar Footer。

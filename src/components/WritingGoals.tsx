@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import * as db from '../lib/db'
 import { todayKey } from '../lib/date'
+import NumberField from './NumberField'
 
 interface Props {
   totalWords: number
@@ -77,17 +78,17 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <label className="block">
           <div className="text-11 text-ink-400 mb-1">每日目标字数</div>
-          <input
-            type="number" min={0} value={daily}
-            onChange={e => save({ daily: Math.max(0, parseInt(e.target.value || '0', 10)) })}
+          <NumberField
+            value={daily} min={0} max={100000} step={100}
+            onChange={v => save({ daily: v ?? 0 })}
             className="w-full bg-ink-800 border border-ink-700 rounded-lg px-3 py-2 text-13 text-ink-100 outline-none focus:border-amber/50"
           />
         </label>
         <label className="block">
           <div className="text-11 text-ink-400 mb-1">全书目标字数</div>
-          <input
-            type="number" min={0} value={total}
-            onChange={e => save({ total: Math.max(0, parseInt(e.target.value || '0', 10)) })}
+          <NumberField
+            value={total} min={0} max={100000000} step={10000}
+            onChange={v => save({ total: v ?? 0 })}
             placeholder="例：1000000"
             className="w-full bg-ink-800 border border-ink-700 rounded-lg px-3 py-2 text-13 text-ink-100 outline-none focus:border-amber/50"
           />

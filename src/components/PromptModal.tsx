@@ -11,8 +11,6 @@ interface Props {
   placeholder?: string
   /** 密码模式：输入框 type=password（备份迁移包密码等场景） */
   password?: boolean
-  /** 输入即转大写展示（邀请码 / 同步码场景，让用户当场看到规范大写） */
-  transformUppercase?: boolean
   /** 允许空值提交（如"留空 = 不加密"的场景），默认 false */
   allowEmpty?: boolean
   confirmText?: string
@@ -29,7 +27,6 @@ interface Props {
  */
 export default function PromptModal({
   open, title, label, defaultValue = '', placeholder, password = false, allowEmpty = false,
-  transformUppercase = false,
   confirmText = '确定', cancelText = '取消', onSubmit, onCancel,
 }: Props) {
   const [val, setVal] = useState(defaultValue)
@@ -88,7 +85,6 @@ export default function PromptModal({
           if (e.key === 'Escape') onCancel()
         }}
         placeholder={placeholder}
-        style={transformUppercase ? { textTransform: 'uppercase' } : undefined}
         className="w-full bg-ink-900 border border-ink-600 rounded-lg px-3 py-2 text-13 text-ink-100 outline-none focus:border-amber/60 placeholder:text-ink-500 mb-4"
       />
     </Modal>

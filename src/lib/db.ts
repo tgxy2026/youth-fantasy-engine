@@ -486,7 +486,7 @@ export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavai
 const desktopLocalStore: StoreOps = DESKTOP ? desktopStore : idbOps
 const desktopCloudFileStore: StoreOps = makeCloudStoreWrapper(desktopCloudStore, desktopLocalStore, isDesktopCloudUnavailable)
 
-// 云盘文件同步（#032 起已去掉同步码）：启动时若持久化过同步目录，则自动切到云端文件存储。
+// 云盘文件同步（#032 起选目录即用）：启动时若持久化过同步目录，则自动切到云端文件存储。
 // 数据以加密文件落在用户选定的云盘目录（OneDrive / 坚果云 / WPS 云盘等客户端负责搬运），
 // 全程不依赖任何服务器。失败一律回退到本地存储，不会让界面变成空白。
 if (CLOUD_FILE_SYNC) {
@@ -545,9 +545,9 @@ export function isDesktopCloudSyncActive(): boolean {
 }
 
 /**
- * 开启云盘文件同步（#031 引入，#032 去掉同步码）。
+ * 开启云盘文件同步（#031 引入，#032 起选目录即用）。
  * 数据以加密文件落在用户选定的云盘同步目录，全程不依赖服务器。
- * 加密使用内置默认密钥（DEFAULT_CLOUD_KEY），所有设备一致 → 指向同一目录即可互通，无需输入任何码。
+ * 加密使用内置默认密钥（DEFAULT_CLOUD_KEY），所有设备一致 → 指向同一目录即可互通，无需输入任何凭据。
  * @param handle 同步目录句柄（桌面版为目录路径字符串）
  */
 /**
