@@ -1,0 +1,683 @@
+/**
+ * 表格页签的**状态与生命周期**（从 `TableSheet.tsx` 拆出来的，2026-09-19）。
+ *
+ * 【为什么这么拆】
+ *   `TableSheet.tsx` 原先 1381 行：逻辑 576 行 + JSX 646 行，JSX 直接用到 61 个
+ *   组件作用域名字（全组件声明 91 个）。状态、effect 与视图互相缠绕在一个函数体里 ——
+ *   想改一处保存逻辑，得在 1381 行里先认出哪些 effect 与它有关。
+ *
+ *   这里做的是**只搬不改**：把 state / effect / 派生值 / 动作整体收进本 hook，
+ *   视图侧用同名解构接回来（JSX 一个字不改）。改完两边各自单一职责：
+ *   改行为看这个文件，改长相看视图。
+ *
+ * 🔴 关心的红线（搬动时逐条保住）：
+ *   · **卸载冲刷草稿**：`App.tsx` 给表格页签加了 `key={tab.id}`，切页签时组件整体重挂 →
+ *     「prevId !== tab.id」那条守卫恒假；唯一与 key 无关的落点是卸载清理（见下）。
+ *   · **Ctrl/Cmd+S** 只在本页签有草稿时生效，绝不拦全局快捷键。
+ *   · **列宽记忆**写 localStorage 是纯 UI 偏好：写失败（隐私模式/配额满）静默忽略。
+ *   · **编号退役池**按项目+页签持久化，删除的编号永不复用。
+ *   · 列宽拖拽的位移必须按界面缩放折算（clientX 是视口像素，列宽是 CSS 像素）。
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import type { CalendarDef, TableRow, TabDef } from '../lib/types'
+import {
+  deleteTableRow, getAllChapterLedgerRows, getCurrentProjectId, getCustomOptions,
+  getSetting, getTableRows, saveTableRow, setSetting, type CustomOptionPayload,
+} from '../lib/db'
+import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
+import { uid } from '../lib/id'
+import { aiCapabilityOf } from '../lib/aiScope'
+import { useAIReady } from '../lib/useAIReady'
+import { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
+import { showToast, confirmDialog } from './dialogs'
+import type { TemplateField } from '../lib/ai'
+
+/**
+ * 编号自然排序键：数字段补零后拼接，使 "F2" < "F10"、"9" < "10"
+ * 返回 null 表示编号为空或纯文字（无法参与编号排序）
+ */
+function codeSortKey(s: string | undefined): string | null {
+  if (!s || !s.trim()) return null
+  const raw = s.trim()
+  if (!/\d/.test(raw)) return null
+  return raw.replace(/\d+/g, m => m.padStart(8, '0'))
+}
+
+/**
+ * 表格自动排序规则：
+ * - 有「编号」/「章节号」列的表格：按编号升序，编号空白的行自动沉底
+ * - 无编号列的表格：按最后编辑时间降序（最近编辑的排最前）
+ */
+function sortRows(tab: TabDef, rows: TableRow[]): TableRow[] {
+  const list = [...rows]
+  // 按创建时间倒序：越新创建的行越靠上（章节总表等"后写的在最前"场景）
+  if (tab.newestFirst) {
+    const key = (r: TableRow) => r.createdAt ?? r.order ?? 0
+    list.sort((a, b) => key(b) - key(a))
+    return list
+  }
+  const idCol = tab.columns?.find(c => c.name === '编号' || c.name === '章节号')?.name
+  if (idCol) {
+    const key = (r: TableRow) => codeSortKey(r.data[idCol])
+    list.sort((a, b) => {
+      const ka = key(a), kb = key(b)
+      if (!ka && !kb) return 0
+      if (!ka) return 1   // 空白编号沉底
+      if (!kb) return -1
+      return ka.localeCompare(kb)
+    })
+  } else {
+    list.sort((a, b) => (b.updatedAt ?? b.order ?? 0) - (a.updatedAt ?? a.order ?? 0))
+  }
+  return list
+}
+
+type Args = {
+  tab: TabDef
+  /** 数据体检 / 跨组件跳转带下来的目标行 id */
+  focusRowId?: string | null
+  /** 高亮消费后回调（清除上层 focusRowId 以便重复跳转） */
+  onFocusConsumed?: () => void
+}
+
+export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
+  const [rows, setRows] = useState<TableRow[]>([])
+  // 数据体检 / 跨组件跳转：聚焦并高亮目标行
+  const [hlRowId, setHlRowId] = useState<string | null>(null)
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+  const [loaded, setLoaded] = useState(false)
+  // history / timeline 两个页签提供"表格 ⇄ 时间轴"视图切换
+  const isTimelineCapable = tab.id === 'history' || tab.id === 'timeline'
+  // 人物关系 / 势力关系 提供"关系图"视图
+  const isGraphCapable = tab.id === 'relations' || tab.id === 'faction-rels'
+  // 伏笔追踪提供"剧情线"视图（聚合伏笔 + 爽点 + 时间脉络，v1.6.1）
+  const isStorylineCapable = tab.id === 'foreshadow'
+  // 章节总表：只读汇总视图（聚合所有卷台账），不可直接编辑，编辑请到各卷子表
+  const isMaster = tab.id === 'chapter-master'
+  const [viewMode, setViewMode] = useState<'table' | 'timeline' | 'graph' | 'storyline'>('table')
+  // 历法配置（项目级多历法数值体系），时间轴按数值判定跨历法先后顺序
+  const [calendars, setCalendars] = useState<CalendarDef[]>([{ name: '灵历', value: 0 }])
+  // draft = 未保存的编辑态（key=行id, value=该行字段副本）
+  const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({})
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  // 人物关系分组视图：分组（人物名）与关系行的展开状态
+  const [relGroupOpen, setRelGroupOpen] = useState<Set<string>>(new Set())
+  const [relRowOpen, setRelRowOpen] = useState<Set<string>>(new Set())
+  // 编号防重复：已删除不复用的编号（按项目+页签持久化）
+  const [retiredCodes, setRetiredCodes] = useState<Set<string>>(new Set())
+  // 编号校验错误提示（保存时校验，展示在页签顶部）
+  const [codeError, setCodeError] = useState<string | null>(null)
+  // 编号列名（仅「编号」列参与防重复校验；「章节号」由系统自动生成，不校验）
+  const codeCol = tab.columns?.find(c => c.name === '编号')?.name
+  // AI 入口：本表适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
+  const aiCap = aiCapabilityOf(tab)
+  const { ready: aiReady } = useAIReady()
+  const [showFill, setShowFill] = useState(false)
+  const [showOrganize, setShowOrganize] = useState(false)
+  /** 行级「AI 补全本行空白」：只针对这一行、只填仍为空的单元格，绝不越界到其他行/表 */
+  const [fillRow, setFillRow] = useState<TableRow | null>(null)
+  // 读者反馈 / 名词术语的专属 AI 入口（独立于补全/整理能力矩阵）
+  const [showFeedbackAI, setShowFeedbackAI] = useState(false)
+  const [showDedupAI, setShowDedupAI] = useState(false)
+  const tableFields = useMemo<TemplateField[]>(
+    () => (tab.columns ?? []).filter(c => !c.hidden).map(c => ({ key: c.name, label: c.name, locked: c.name === codeCol })),
+    // 🔴 读 tab.columns，依赖锚在 tab 本身（getTab 返回模块常量引用，同一页签稳定）
+    [tab, codeCol],
+  )
+  // 保存闪烁定时器（卸载时清理，防止组件卸载后仍触发 setState）
+  const savedTimer = useRef<ReturnType<typeof setTimeout>>()
+  // 用 ref 持有最新草稿与行数据，避免切换页签时因 effect 闭包过期而丢失未保存草稿
+  const draftsRef = useRef(drafts)
+  const rowsRef = useRef(rows)
+  const tabIdRef = useRef(tab.id)
+  useEffect(() => { draftsRef.current = drafts }, [drafts])
+  useEffect(() => { rowsRef.current = rows }, [rows])
+
+  /**
+   * 🔴 卸载时冲刷未保存的表格草稿。
+   *
+   * 为什么必须放在卸载清理里：`App.tsx` 给本组件加了「key={tab.id}」，切页签时组件整体重挂 ——
+   * 于是下面那个 [tab.id] 守卫里的 tabIdRef.current 初值就是新 id，
+   * 「prevId !== tab.id」恒假、分支永不执行（未保存草稿被静默丢弃）。
+   * 卸载清理是唯一与 key 无关的稳妥落点。
+   */
+  useEffect(() => () => {
+    const pending = draftsRef.current
+    if (!pending || Object.keys(pending).length === 0) return
+    const snapshot = rowsRef.current
+    for (const rowId of Object.keys(pending)) {
+      const orig = snapshot.find(r => r.id === rowId)
+      if (orig) void saveTableRow({ ...orig, data: { ...orig.data, ...pending[rowId] } })
+    }
+  }, [])
+
+  // 跨组件跳转聚焦：数据体检「跳转修复」/ 地图「跳到地理风物」带 rowId 时，滚动到该行并高亮
+  useEffect(() => {
+    if (!focusRowId) return
+    const el = rowRefs.current[focusRowId]
+    if (!el) return
+    setHlRowId(focusRowId)
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const timer = setTimeout(() => {
+      setHlRowId(null)
+      onFocusConsumed?.()
+    }, 2600)
+    return () => clearTimeout(timer)
+    // onFocusConsumed 由 App.tsx 用 useCallback 钉住引用（clearFocusRow），
+    // 依赖它不会导致 effect 每次渲染重跑。
+  }, [focusRowId, rows, onFocusConsumed])
+
+  // 列宽（按表独立记忆）：表头可拖拽调整，默认列宽更合理
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem(`yfe-colw::${tab.id}`) || '{}') } catch { return {} }
+  })
+  const colWidthsRef = useRef(colWidths)
+  colWidthsRef.current = colWidths
+  const dragRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
+  // 表头筛选：每列一个关键字，行内该列命中即保留
+  const [colFilters, setColFilters] = useState<Record<string, string>>({})
+  /**
+   * 各下拉列的「自定义选项」载荷（用户新增项 / 隐藏项 / 内置改名）。
+   * 表头筛选下拉必须与行内 CustomSelect 用同一口径（resolveOptions）渲染，
+   * 否则用户新增的自定义值在筛选里看不到（1.9.1 修复）。
+   */
+  const [customOpts, setCustomOpts] = useState<Record<string, CustomOptionPayload>>({})
+
+  const defaultColWidth = (col: { name: string; type?: string }) => {
+    if (col.name === '编号' || col.name === '章节号') return 110
+    if (col.type === 'date') return 220
+    if (col.type === 'calendar') return 150
+    if (col.type === 'select') return 134
+    return 178
+  }
+  const widthOf = (colName: string) => {
+    const c = tab.columns?.find(x => x.name === colName)
+    if (!c) return 160
+    return colWidths[colName] ?? defaultColWidth(c)
+  }
+  const onResizeStart = (e: ReactMouseEvent, colName: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragRef.current = { col: colName, startX: e.clientX, startW: widthOf(colName) }
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return
+      // 🔴 位移要按界面缩放折算：clientX 是**视口像素**，而 startW 是 CSS 像素（列宽）。
+      //    不除 zoom 时，108% 下拖动会比光标快约 8%，而且算错的列宽会被写进 localStorage 长期留存。
+      const z = Number(document.documentElement.style.zoom) || 1
+      const dx = (ev.clientX - dragRef.current.startX) / z
+      const w = Math.max(90, Math.min(640, Math.round(dragRef.current.startW + dx)))
+      setColWidths(prev => ({ ...prev, [dragRef.current!.col]: w }))
+    }
+    const onUp = () => {
+      dragRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      // 列宽属纯 UI 偏好，存不进 localStorage（隐私模式/配额满）也不影响数据，
+      // 故此处刻意不提示、不降级——刷新后回到默认列宽即可。
+      try { localStorage.setItem(`yfe-colw::${tab.id}`, JSON.stringify(colWidthsRef.current)) } catch { /* 见上：可安全忽略 */ }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  useEffect(() => () => clearTimeout(savedTimer.current), [])
+
+  useEffect(() => {
+    // 切到别的页签前，把当前页签未保存的表格草稿逐行落库（之前会静默丢弃）
+    const prevId = tabIdRef.current
+    const prevDrafts = draftsRef.current
+    if (prevId !== tab.id && prevDrafts && Object.keys(prevDrafts).length > 0) {
+      const prevRows = rowsRef.current
+      for (const rowId of Object.keys(prevDrafts)) {
+        const orig = prevRows.find(r => r.id === rowId)
+        if (orig) void saveTableRow({ ...orig, data: { ...orig.data, ...prevDrafts[rowId] } })
+      }
+    }
+    tabIdRef.current = tab.id
+    const loadRows = tab.id === 'chapter-master'
+      ? getAllChapterLedgerRows()
+      : getTableRows(tab.id)
+    loadRows.then(r => {
+      setRows(r)
+      setLoaded(true)
+    })
+    setViewMode('table')
+    setRelGroupOpen(new Set())
+    setRelRowOpen(new Set())
+    setCodeError(null)
+    setDrafts({}) // 新页签从干净草稿开始（旧草稿已落库）
+    if (codeCol) {
+      getSetting<string[]>(`retiredCodes::${tab.id}`, []).then(list => setRetiredCodes(new Set(list)))
+    }
+    if (tab.id === 'history' || tab.id === 'timeline') {
+      // 加载历法配置；兼容旧版单值 calendarName：若存在则迁移为多历法
+      getSetting<CalendarDef[]>('calendars', []).then(list => {
+        if (list && list.length > 0) { setCalendars(list); return }
+        getSetting<string>('calendarName', '').then(old => {
+          if (old && old.trim()) {
+            const migrated = [{ name: old.trim(), value: 0 }]
+            setCalendars(migrated)
+            setSetting('calendars', migrated)
+            setSetting('calendarName', '')
+          }
+        })
+      })
+    }
+  }, [tab.id]) // eslint-disable-line
+
+  const saveCalendars = (next: CalendarDef[]) => {
+    setCalendars(next)
+    setSetting('calendars', next)
+  }
+
+  const dirtyKeys = Object.keys(drafts)
+
+  const setCellDraft = (rowId: string, colName: string, value: string) => {
+    setDrafts(prev => ({
+      ...prev,
+      [rowId]: { ...(prev[rowId] ?? rows.find(r => r.id === rowId)?.data ?? {}), [colName]: value },
+    }))
+    setSaved(false)
+    // 用户修改了编号相关内容时清除上次的校验错误提示
+    if (codeError) setCodeError(null)
+  }
+
+  /**
+   * 编号唯一性校验（保存前调用）：
+   * - 合并 draft 后逐行提取编号，检测多行重复
+   * - 编号若命中「已删除不复用」的退役编号池，同样阻止保存
+   * 返回错误信息（null 表示通过）
+   */
+  const validateCodes = useCallback((): string | null => {
+    if (!codeCol) return null
+    const owner = new Map<string, number>()
+    for (const r of rows) {
+      const code = ((drafts[r.id]?.[codeCol] ?? r.data[codeCol] ?? '') as string).trim()
+      if (!code) continue
+      owner.set(code, (owner.get(code) ?? 0) + 1)
+    }
+    const errs: string[] = []
+    for (const [code, count] of owner) {
+      if (retiredCodes.has(code)) {
+        errs.push(`「${code}」是已删除条目用过的编号（编号不复用），请换一个`)
+      } else if (count > 1) {
+        errs.push(`「${code}」被 ${count} 行重复使用`)
+      }
+    }
+    return errs.length > 0 ? errs.join('；') : null
+  }, [codeCol, rows, drafts, retiredCodes])
+
+  /** 行删除时，将其编号登记进「退役编号池」（不复用）。支持批量，避免多次写入互相覆盖 */
+  const retireCodes = async (targets: TableRow[]) => {
+    if (!codeCol) return
+    const next = new Set(retiredCodes)
+    let changed = false
+    for (const row of targets) {
+      const code = ((drafts[row.id]?.[codeCol] ?? row.data[codeCol] ?? '') as string).trim()
+      if (code && !next.has(code)) { next.add(code); changed = true }
+    }
+    if (!changed) return
+    setRetiredCodes(next)
+    await setSetting(`retiredCodes::${tab.id}`, [...next])
+  }
+
+  const saveAll = useCallback(async () => {
+    if (dirtyKeys.length === 0) return
+    // 编号防重复校验：不通过则拒绝保存并提示
+    const err = validateCodes()
+    if (err) {
+      setCodeError(err)
+      setSaving(false)
+      return
+    }
+    setCodeError(null)
+    setSaving(true)
+    try {
+      for (const rowId of dirtyKeys) {
+        const orig = rows.find(r => r.id === rowId)
+        if (!orig) continue
+        const merged = { ...orig.data, ...drafts[rowId] }
+        await saveTableRow({ ...orig, data: merged })
+      }
+      // 提交后合并回 rows，清空 drafts
+      setRows(prev => prev.map(r => drafts[r.id] ? { ...r, data: { ...r.data, ...drafts[r.id] } } : r))
+      setDrafts({})
+      setSaved(true)
+      clearTimeout(savedTimer.current)
+      savedTimer.current = setTimeout(() => setSaved(false), 1500)
+    } catch (e) {
+      // 🔴 失败时**不清 drafts**：作者的改动还在输入框里，可以直接重试（审计 P1-5）
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setSaving(false)
+    }
+    // codeCol / retiredCodes / tab.id 已被 validateCodes 一并封装进它的依赖，
+    // 此处不再重复列出（重复不影响正确性，但会让依赖表失真）。
+  }, [dirtyKeys, drafts, rows, validateCodes])
+
+  // Ctrl/Cmd+S
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        if (dirtyKeys.length > 0) saveAll()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [dirtyKeys, saveAll])
+
+  const addRow = async () => {
+    const data: Record<string, string> = {}
+    tab.columns!.forEach(col => { data[col.name] = '' })
+    // 自动编号：世界构建 / 创作管理 / 运营维护 分组下带「编号」列的表，新增行自动续号（4 位补零，从 0001 起）
+    if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
+      data[codeCol] = nextAutoCode(tab.id, rows, drafts, codeCol)
+    }
+    const row: TableRow = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
+    await saveTableRow(row)
+    setRows([...rows, row])
+    // 人物关系：新增的空行落在「未命名关系」分组，自动展开并定位到该行编辑
+    if (tab.id === 'relations') {
+      setRelGroupOpen(prev => new Set(prev).add('rel-__unnamed__'))
+      setRelRowOpen(prev => new Set(prev).add(row.id))
+    }
+  }
+
+  const removeRow = async (rowId: string) => {
+    if (!await confirmDialog({ title: '删除这一行', message: '确定删除这一行？', danger: true })) return
+    const target = rows.find(r => r.id === rowId)
+    if (target) await retireCodes([target])  // 编号登记进退役池，防止复用
+    await deleteTableRow(rowId)
+    setRows(rows.filter(r => r.id !== rowId))
+    setDrafts(prev => {
+      const next = { ...prev }
+      delete next[rowId]
+      return next
+    })
+  }
+
+  // AI 补全：建行（自动编号）+ 用模型补全的单元格值填充各列（编号列 locked，不覆盖）
+  const handleFill = async (values: Record<string, string>) => {
+    const data: Record<string, string> = {}
+    tab.columns!.forEach(col => { data[col.name] = '' })
+    if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
+      data[codeCol] = nextAutoCode(tab.id, rows, drafts, codeCol)
+    }
+    const row: TableRow = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
+    await saveTableRow(row)
+    setRows([...rows, row])
+    for (const [k, v] of Object.entries(values)) {
+      if (k !== codeCol) setCellDraft(row.id, k, v)
+    }
+    setShowFill(false)
+  }
+
+  /**
+   * AI 补全本行空白：只把当前行「仍未填写（含未保存草稿为空）」的单元格交给 AI 结果回填，
+   * 已填的单元格一律不动 —— 作用域严格限定在「当前表 / 这一行」，不影响其他行或其他表（如种族生物）。
+   */
+  const handleFillRow = (row: TableRow, values: Record<string, string>) => {
+    for (const [k, v] of Object.entries(values)) {
+      if (k === codeCol) continue
+      const cur = ((drafts[row.id]?.[k] ?? row.data[k] ?? '') as string).trim()
+      if (!cur) setCellDraft(row.id, k, v)
+    }
+    setFillRow(null)
+  }
+
+  /**
+   * AI 整理：批量落盘新条目。
+   * 直接写库（不进 drafts）—— 整理出来的是已确认的事实条目，作者在弹窗里已逐条勾选过，
+   * 再让他手动按一次「保存」纯属多余；写完仍可在表格里继续改。
+   * 编号在循环内累加计算，避免多行拿到同一个编号。
+   */
+  const handleOrganize = async (newRows: Record<string, string>[]) => {
+    const created: TableRow[] = []
+    for (const vals of newRows) {
+      const data: Record<string, string> = {}
+      tab.columns!.forEach(col => { data[col.name] = vals[col.name] ?? '' })
+      if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
+        data[codeCol] = nextAutoCode(tab.id, [...rows, ...created], drafts, codeCol)
+      }
+      const row: TableRow = {
+        id: uid(),
+        projectId: getCurrentProjectId(),
+        tabId: tab.id,
+        data,
+        order: rows.length + created.length,
+        createdAt: Date.now(),
+      }
+      await saveTableRow(row)
+      created.push(row)
+    }
+    setRows(prev => [...prev, ...created])
+    // 关系网分组视图：把新整理出的关系所属分组展开，作者一眼能看到成果
+    if (tab.id === 'relations') {
+      setRelGroupOpen(prev => {
+        const next = new Set(prev)
+        created.forEach(r => {
+          const a = (r.data['人物A'] ?? '').trim()
+          const b = (r.data['人物B'] ?? '').trim()
+          if (a) next.add(`rel-${a}`)
+          if (b) next.add(`rel-${b}`)
+        })
+        return next
+      })
+    }
+  }
+
+  // 自动排序：有编号列按编号升序（空白沉底），否则按最后编辑时间降序
+  // 注意：必须在所有提前 return 之前调用，否则违反 Hooks 规则导致黑屏崩溃
+  const sortedRows = useMemo(
+    () => sortRows(tab, rows.map(r => ({ ...r, data: { ...r.data, ...(drafts[r.id] ?? {}) } }))),
+    [tab, rows, drafts],
+  )
+
+  /**
+   * 人物关系：按人物分组视图。
+   * 每条关系会同时归入「人物A」与「人物B」两个文件夹；人物不存在时自动新建文件夹。
+   * 人物A/人物B 均未填写的行归入「未命名关系」待整理区。
+   */
+  const relationGroups = useMemo(() => {
+    if (tab.id !== 'relations') return [] as { key: string; name: string; rows: TableRow[]; unnamed?: boolean }[]
+    const map = new Map<string, TableRow[]>()
+    const unnamed: TableRow[] = []
+    for (const row of sortedRows) {
+      const a = (row.data['人物A'] ?? '').trim()
+      const b = (row.data['人物B'] ?? '').trim()
+      if (!a && !b) { unnamed.push(row); continue }
+      if (a) { const arr = map.get(a); arr ? arr.push(row) : map.set(a, [row]) }
+      if (b && b !== a) { const arr = map.get(b); arr ? arr.push(row) : map.set(b, [row]) }
+    }
+    const groups: { key: string; name: string; rows: TableRow[]; unnamed?: boolean }[] = [...map.entries()]
+      .map(([name, rs]) => ({ key: `rel-${name}`, name, rows: rs }))
+      .sort((x, y) => y.rows.length - x.rows.length || x.name.localeCompare(y.name, 'zh'))
+    if (unnamed.length > 0) {
+      groups.unshift({ key: 'rel-__unnamed__', name: '未命名关系（待填写人物A/人物B）', rows: unnamed, unnamed: true })
+    }
+    return groups
+  }, [tab.id, sortedRows])
+
+  // 获取某行的当前值（draft 优先于已保存）
+  // 🔴 必须 useCallback 且依赖 drafts：下面 filteredRows 依赖本函数，而本函数读 drafts ——
+  //    此前 filteredRows 的依赖里没有 drafts，导致「正按某列筛选时编辑该列单元格，
+  //    命中结果不实时重算」（编辑后行不随条件变化消失/出现）。
+  const cellVal = useCallback((r: TableRow, colName: string) => {
+    if (drafts[r.id] && colName in drafts[r.id]) return drafts[r.id][colName]
+    return r.data[colName] ?? ''
+  }, [drafts])
+  // 表头筛选：仅保留在筛选列上命中关键字的行
+  // 下拉（select）列用精确匹配选项；文本列用包含匹配
+  const selectCols = useMemo(
+    () => (tab.columns ?? []).filter(c => !c.hidden && c.type === 'select' && c.options),
+    [tab.columns]
+  )
+  const selectColNames = useMemo(() => new Set(selectCols.map(c => c.name)), [selectCols])
+
+  /**
+   * 装载各下拉列的自定义选项；并监听 CUSTOM_OPTIONS_EVENT，
+   * 让用户在行内下拉里新增/删除/改名后，表头筛选下拉立刻同步。
+   */
+  const loadCustomOpts = useCallback(async () => {
+    if (selectCols.length === 0) return
+    const entries = await Promise.all(
+      selectCols.map(async c => [c.name, await getCustomOptions(tab.id, c.name)] as const)
+    )
+    setCustomOpts(Object.fromEntries(entries))
+  }, [selectCols, tab.id])
+
+  useEffect(() => { void loadCustomOpts() }, [loadCustomOpts])
+
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      const d = (e as CustomEvent<{ tabId: string; colName: string }>).detail
+      if (d && d.tabId !== tab.id) return
+      void loadCustomOpts()
+    }
+    window.addEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
+    return () => window.removeEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
+  }, [loadCustomOpts, tab.id])
+
+  /**
+   * 表头筛选下拉的候选值：与行内 CustomSelect 完全同口径
+   * （内置项去掉 hidden、应用 renamed，再拼上用户自定义项，同名去重）。
+   */
+  const filterOptionsOf = (col: (typeof selectCols)[number]) =>
+    resolveOptions(col.options ?? [], customOpts[col.name] ?? { items: [], hidden: [] })
+      .map(o => o.name)
+  const filteredRows = useMemo(() => {
+    const active = Object.entries(colFilters).filter(([, v]) => (v ?? '').trim().length > 0)
+    if (active.length === 0) return sortedRows
+    return sortedRows.filter(r => active.every(([col, v]) => {
+      const cell = (cellVal(r, col) ?? '').trim()
+      if (selectColNames.has(col)) return cell === v.trim() // 下拉列：精确匹配选中项
+      return cell.toLowerCase().includes(v.trim().toLowerCase()) // 文本列：包含匹配
+    }))
+  }, [sortedRows, colFilters, selectColNames, cellVal])
+
+  /**
+   * 自引用父级列（同一表内的上下级隶属）：国家势力·上级 / 地理风物·层级归属。
+   * 检测到即把表格渲染成可折叠的树（缩进 + 折叠箭头），并提供「在其下新增子条目」。
+   */
+  const parentCol = useMemo(
+    () => (tab.columns?.find(c => c.type === 'tableRef' && c.refTab === tab.id)?.name) ?? null,
+    [tab],
+  )
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleCollapse = (id: string) =>
+    setCollapsed(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  // 树形层级计算（仅当存在自引用父级列时）
+  const tree = useMemo(() => {
+    if (!parentCol) return null
+    const dCol = tab.displayCol ?? '名称'
+    const nameOf = (r: TableRow) => ((drafts[r.id]?.[dCol] ?? r.data[dCol] ?? '') as string).trim()
+    const parentOf = (r: TableRow) => ((drafts[r.id]?.[parentCol] ?? r.data[parentCol] ?? '') as string).trim()
+    const byName = new Map<string, TableRow>()
+    for (const r of filteredRows) {
+      const n = nameOf(r)
+      if (n && !byName.has(n)) byName.set(n, r)
+    }
+    const childrenByRowId = new Map<string, TableRow[]>()
+    for (const r of filteredRows) {
+      const p = parentOf(r)
+      if (!p) continue
+      const pr = byName.get(p)
+      if (!pr) continue // 父级不在本表名称中 → 视为根
+      const arr = childrenByRowId.get(pr.id) ?? []
+      arr.push(r); childrenByRowId.set(pr.id, arr)
+    }
+    const descendantNames = (rowId: string, acc: Set<string>) => {
+      for (const k of childrenByRowId.get(rowId) ?? []) {
+        const n = nameOf(k); if (n) acc.add(n)
+        descendantNames(k.id, acc)
+      }
+    }
+    const order: { row: TableRow; depth: number; hasChildren: boolean }[] = []
+    const visited = new Set<string>()
+    const walk = (r: TableRow, depth: number) => {
+      if (visited.has(r.id)) return // 防环（异常数据时也不会死循环）
+      visited.add(r.id)
+      const kids = childrenByRowId.get(r.id) ?? []
+      order.push({ row: r, depth, hasChildren: kids.length > 0 })
+      if (!collapsed.has(r.id)) for (const k of kids) walk(k, depth + 1)
+    }
+    for (const r of filteredRows) {
+      const p = parentOf(r)
+      if (!p || !byName.has(p)) walk(r, 0) // 根节点
+    }
+    return { order, childrenByRowId, descendantNames, nameOf }
+  }, [parentCol, tab.displayCol, filteredRows, drafts, collapsed])
+
+  const bodyRows: { row: TableRow; depth: number; hasChildren: boolean }[] =
+    parentCol && tree ? tree.order : filteredRows.map(r => ({ row: r, depth: 0, hasChildren: false }))
+
+  /** 在指定父级下新增子条目：新建一行并预置父级列，落库即生效 */
+  const addChild = (parentName: string) => {
+    if (!parentCol) return
+    const dCol = tab.displayCol ?? '名称'
+    const parentOf = (r: TableRow) => ((drafts[r.id]?.[parentCol] ?? r.data[parentCol] ?? '') as string).trim()
+    const nameOf = (r: TableRow) => ((drafts[r.id]?.[dCol] ?? r.data[dCol] ?? '') as string).trim()
+    const data: Record<string, string> = {}
+    tab.columns!.forEach(col => { data[col.name] = '' })
+    data[parentCol] = parentName
+    if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
+      // 子条目编号 = 父级编号 + "-NNN"（如 N0001 → N0001-001）；父级顺序自动编号规则不变
+      const parentRow = rows.find(r => nameOf(r) === parentName)
+      const parentCode = parentRow ? ((drafts[parentRow.id]?.[codeCol] ?? parentRow.data[codeCol] ?? '') as string).trim() : ''
+      const base = parentCode || parentName
+      const siblingCount = rows.filter(r => parentOf(r) === parentName).length
+      data[codeCol] = `${base}-${String(siblingCount + 1).padStart(3, '0')}`
+    }
+    const row: TableRow = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
+    void saveTableRow(row)
+    setRows([...rows, row])
+    setCollapsed(new Set()) // 确保父级处于展开态，子条目立即可见
+  }
+
+  // 表总宽 = 各列宽之和 + 序号列(40) + 操作列(48)。超出容器时由外层 overflow-x-auto 出横向滑条，
+  // 而非压缩其他列（拖动某列只改它自己，不影响其余列宽）。
+  const totalWidth = tab.columns
+    ? tab.columns.filter(c => !c.hidden).reduce((s, c) => s + widthOf(c.name), 0) + 40 + 28
+    : 0
+
+  const isRowDirty = (r: TableRow) => !!drafts[r.id] && Object.keys(drafts[r.id]).length > 0
+
+  /** 编号是否无效（重复或已退役）：输入时即红框提示 */
+  const isInvalidCode = (row: TableRow): boolean => {
+    if (!codeCol) return false
+    const code = cellVal(row, codeCol).trim()
+    if (!code) return false
+    if (retiredCodes.has(code)) return true
+    const same = rows.filter(r => (drafts[r.id]?.[codeCol] ?? r.data[codeCol] ?? '').trim() === code)
+    return same.length > 1
+  }
+
+  return {
+    // 落库与装载
+    rows, setRows, drafts, setDrafts, saving, saved, dirtyKeys, saveAll, loaded,
+    // 行编辑
+    setCellDraft, cellVal, isRowDirty, isInvalidCode, addRow, removeRow,
+    // 排序与筛选
+    sortedRows, filteredRows, colFilters, setColFilters, filterOptionsOf,
+    // 列宽与拖拽
+    widthOf, onResizeStart, totalWidth,
+    // 树形层级
+    parentCol, collapsed, toggleCollapse, tree, bodyRows, addChild,
+    // 编号
+    codeCol, retireCodes, codeError,
+    // 视图与高亮
+    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isMaster, aiCap, aiReady, hlRowId, rowRefs,
+    // 人物关系分组
+    relationGroups, relGroupOpen, setRelGroupOpen, relRowOpen, setRelRowOpen,
+    // 历法
+    calendars, saveCalendars,
+    // AI 入口
+    tableFields, showFill, setShowFill, showOrganize, setShowOrganize, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize,
+  }
+}
+
+/** 供子组件用的类型：`TableSheetRow` / `TableRelationGroups` 都收这一个 prop */
+export type TableSheetModel = ReturnType<typeof useTableSheetModel>
