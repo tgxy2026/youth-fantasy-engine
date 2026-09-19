@@ -1,6 +1,6 @@
 # novel-studio 长期记忆
 > 红线/决策索引；事件留 `YYYY-MM-DD.md`。⚠️ **目标 ≤8000 字符**，压不动就外链主题文档。
-> 外链：`docs/酒馆模式-工程红线.md`、`docs/2.1.1-审计修复记录.md`、`docs/AI上下文*.md`、`docs/2.2.0-*`、`docs/一键拆书-*`。
+> 外链：`docs/酒馆模式-工程红线.md`、`docs/2.1.1-审计修复记录.md`、`docs/AI上下文*.md`、`docs/2.2.0-*`、`docs/一键拆书-*`、`docs/2.2.1-云盘同步幽灵项目*`。
 
 ## 红线
 - 🔴 封装须老大明说「封装/重打包」；改完最多 tsc+lint+test+commit。
@@ -17,9 +17,9 @@
 
 ## 2.2.x 创作链路（伴写 / 拆书 / 创意写作 / 整章改写）
 - ✅ **A 伴写**：`aiInlineSuggest()`＋ghost 第三叠层＋「钢笔」弹窗（默认关）；文风三层锚定**不做枚举**、去 AI 味钉 system 末尾。🔴 **切章必须清 ghost**（Tab 插错章＝数据事故）。
-- ✅ **B 拆书**：通用件在 **`lib/flow/`**（别去 `bookbreak/` 找）；六阶段＝切分→写正文→逐块抽取→整理草稿→汇总全书设定→整理关系（末阶段，🔴 **创意写作不加**）。🔴 写前必 `previewCommit`；字段键从 `fieldMap` 派生（闸 `tests/extractFields`）、抽取必走流式；**冲突只在硬事实字段报**。去泛称走 D 不走 C（D 零调用）。
-- ✅ **C 创意写作**（融合「一键续写＋设定补完」）：起点 `scratch`／`continue`，**产出目标也在起点选**（只做大纲规划／大纲＋正文；🔴 闸门只做确认·放弃、`await` Promise、**落库只在通过后**）。**「只做大纲规划」＝续排细纲**（🔴 起点＝**正文写到哪+1**，非细纲最大号；下一章已有细纲则跳过）。额度 `outline-generate`／`auto-continue`。
-- ✅ **整章改写**：🔴 结果只在内存、写前**显式快照**、只动 content/wordCount/updatedAt；🔴🔴 **纪律＝「动作 × 章位置」矩阵**（详规 `docs/2.2.1-续排细纲与改写分治-2026-09-19.md` §三/§七）：历史章设定冻结**不只管"改写"**（扩写＝描写层可加·信息层不可加；精简＝承载设定交代的句子保留；润色只换字不换事）；最新章**只有"改写"档**可放开（`isLatest`＝候选最后一个）＋落库后必跑设定同步；🔴 异常判据＝**期望字数**（润色=原文/其余=目标）。
+- ✅ **B 拆书**：通用件在 **`lib/flow/`**（别去 `bookbreak/` 找）；六阶段＝切分→写正文→逐块抽取→整理草稿→汇总全书设定→整理关系（末阶段，🔴 **创意写作不加**）。🔴 写前必 `previewCommit`；字段键从 `fieldMap` 派生（闸 `tests/extractFields`）、抽取必走流式；**冲突只在硬事实字段报**。去泛称走 D 不走 C。
+- ✅ **C 创意写作**：起点 `scratch`／`continue`，**产出目标也在起点选**（只做大纲规划／大纲＋正文；🔴 闸门只做确认·放弃、**落库只在通过后**）。**「只做大纲规划」＝续排细纲**（🔴 起点＝**正文写到哪+1**，非细纲最大号）。额度 `outline-generate`／`auto-continue`。
+- ✅ **整章改写**：🔴 结果只在内存、写前**显式快照**、只动 content/wordCount/updatedAt；🔴🔴 **纪律＝「动作 × 章位置」矩阵**（详规 `docs/2.2.1-续排细纲*`）：历史章冻结**不只管改写**（扩写＝描写层可加·信息层不可加；精简＝保留承载设定的句子；润色只换字不换事）；最新章**只有改写档**可放开＋落库后必跑设定同步；🔴 异常判据＝**期望字数**（润色=原文/其余=目标）。
 - ✅ **C 细节**：🔴 `skipRest()` 的 skipped **必计入进度分子**；概要回填细纲卡**只填空不新建**；`worldview` 汇总→表单（🔴 覆盖全部 form 页签）；**续跑断点在阶段内**（改原文→失效）。
 
 ## 架构红线
@@ -30,10 +30,11 @@
 - 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**（关系表列＝人物A/人物B）：`commit` 按名称列判重对它们**恒判"不存在"**→ 点两次「写入项目」＝两条重复关系；`previewCommit` 走同一函数。
 - 🔴 编辑器双图层：盒模型逐项一致；叠层重建归零 scrollTop→`useLayoutEffect` 回填；只走 `scanRefHighlight`。
 - 🗺 多地图方案 B：新表 `geomaps`＋geography 的 `所属地图`；`migrateGeoMaps` 建默认图回填；🔴 删图不删地点、改图名连带改归属。
-- 🔴 **长任务状态必须放模块级 store**（`lib/creativeSession.ts`，单例＋`useSyncExternalStore`）：App 是「切页签即卸载组件」，`useState` 会全丢（老大实测）；🔴 **任务跑在 store 里**；lib 层**禁 import components**（提示写 `notice`）；落盘按项目分键、**断点只存里程**（bag 产物已落库）。
+- 🔴 **长任务状态必须放模块级 store**（`lib/creativeSession.ts`，单例＋`useSyncExternalStore`）：App 是「切页签即卸载组件」，`useState` 会全丢；🔴 **任务跑在 store 里**；lib 层**禁 import components**（提示写 `notice`）；**断点只存里程**（bag 产物已落库）。
 - 🔴 拆书／创意写作**档位＝optional**（不默认勾选，显式登记）；两页顶部有 `NewProjectAdvice` 提示条（"先新建空项目"+选「完整项目」）。
 
 ## 存储 / 同步
+- 🔴🔴 **云盘同步「删了会复活」**：`baseCache` 只在内存（启动即空）→ 合并把"云端有·本地无"判成"另一端新增"→ 删掉的记录回来并**自锁**。修＝墓碑（`syncTombstone.ts`：`del` 记／`put` 清）＋⚠️`localHasContent`闸（整库空时禁用墓碑，否则丢云端）＋`ensureInit` 经 `onLocalSnapshot` 拿本地库当 local。
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步该目录；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
 - 🔄 两同步入口别混：①明文 JSON；②云盘＝加密 `.yfe`＋记录级合并＋每日备份。**用 ②**。
@@ -61,15 +62,15 @@
 - 🔴🔴 **思考模型必须关思考**：本地 `think:false`；云端 Qwen3 系由 `openaiChat` 自动下发 `enable_thinking:false`（`HYBRID_THINKING_RE`）。开＝50~130s 且 content 必残。
 - 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式必撞 180s 墙。自驱 `runAutoContinue` 必传 **`onBodyToken`**；别 `await page.evaluate(整流程)`。⚠️ 生成入口无 `max_tokens`。
 - 🔴 **AI「会读哪些数据」＝`lib/aiDataSources.ts` 单一源**（闸 `tests/aiDataSources.test.ts`），改 prompt 来源必须同步改它。🔴🔴 **禁写「全程本地模型／不外发」**——口径只能是「发给**当前选定的**模型：本地不出本机，云端上传到该服务商」。
-- 🔴🔴 **保密等级 D＝终结（弃用）：任何情况下都不进 AI**（不是"排最后"是**压根不带**）：硬保证在 `aiContext.isPrunedForAI`（三处过滤：内容／姓名／判重；认裸键与复合键），`rankOf` 给 D 大数兜底；**作者侧也排除**。🔴 该列是**封闭枚举**（`cFixed()`＋`fixedOptions`）：禁增/改/删，否则预算排序与可见性静默失效。
+- 🔴🔴 **保密等级 D＝终结（弃用）：任何情况下都不进 AI**：硬保证在 `aiContext.isPrunedForAI`（三处过滤：内容／姓名／判重；认裸键与复合键），`rankOf` 给 D 大数兜底；**作者侧也排除**。🔴 该列是**封闭枚举**（`cFixed()`＋`fixedOptions`）：禁增/改/删，否则预算排序与可见性静默失效。
 - 📌 关系整理材料上限**面板可调**；"真进材料"由 `tests/bookbreakRelations` ⑩ 锁。
-- 🔴🔴 **AI「整理」类产出必须两道本地兜底**（拆书关系阶段实测）：① **候选值＝库里已有 ∪ 本次刚抽出未落库的实体名**；② 产出后按名单**本地过滤**＋要求给**原文依据**并本地核对（`evidenceInMaterial`）。prompt 写「必须从可选值挑」对小模型无效。
+- 🔴🔴 **AI「整理」类产出必须两道本地兜底**（拆书关系阶段实测）：① **候选值＝库里已有 ∪ 本次刚抽出未落库的实体名**；② 产出后按名单**本地过滤**＋要求给**原文依据**并本地核对（`evidenceInMaterial`）。
 
 ## 服务器 / 工程质量
 - 🔴 **服务器已关闭（2026-09，老大确认）**：`154.8.178.240` 站点与同步 API 均下线；`server/` 保留但不再上线。⚠️ 别用 200 判在线、别再写服务器/同步码文案。
 - 三步基线：`tsc --noEmit`／`eslint src`（**0 problem**）／`node tests/run-all.mjs`（别用 `npm run verify`，沙箱会拦）。⚠️ exhaustive-deps 别盲改。
 - 🔴 实机走 skill `novel-studio-ui-livecheck`；**子代理结论必回源码验**。
-- ✅ **巨型组件已全拆**（记录 `docs/2.2.1-巨型组件拆分记录-2026-09-19.md`）：TavernControl 1397→913／TableSheet 1381→377／NovelEditor 1764→740／TavernFree 1935→728。手法＝**状态搬进 `useXxxModel`＋视图同名解构（JSX 零改动）**＋拆前/拆后实机指纹比对＋负面对照；工具 `dep-cost.mjs`/`prune-unused.mjs` 在 audit-fix 资产。🔴 hook 含 JSX 必须 `.tsx`；共享件落第三个文件。
+- ✅ **巨型组件已全拆**（`docs/2.2.1-巨型组件拆分*`）：手法＝**先量化依赖（`dep-cost.mjs`）→ 状态搬进 `useXxxModel`＋视图同名解构（JSX 零改动）→ 子组件只收 `model` → 实机指纹比对＋负面对照**；清导入用 `prune-unused.mjs`（两者在 audit-fix 资产）。🔴 铁律：hook 含 JSX 必须 `.tsx`；共享件落第三个文件。
 
 ## 酒馆模式
 - 🔴🔴 动酒馆前必读 `docs/酒馆模式-工程红线.md`（18 节）。
