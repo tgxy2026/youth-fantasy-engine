@@ -70,7 +70,7 @@
 ## 服务器·工程质量
 - 三步基线：`tsc --noEmit`／`eslint src`（**0 problem**）／`node tests/run-all.mjs`（别用 `npm run verify`，沙箱会拦）。
 - 🔴 闸 `tests/structureGates`（行数/归属/禁裸 `JSON.parse`/原生弹窗/**any 账本只准降**）；类型改动等价性**可证**＝剥类型再 diff（详规 `docs/2.3.0-阶段4清债*护栏`）。
-- 🔴 实机走 skill `novel-studio-ui-livecheck`；**子代理结论必回源码验**；断言「落库」须直读 IndexedDB（`novel-studio`/`chapters`）。
+- 🔴 实机走 skill `novel-studio-ui-livecheck`；**子代理结论必回源码验**；断言「落库」须直读 IDB；脚本**还原须幂等**（按标记过滤，非写回读到的值）。
 - ✅ **巨型组件拆分**（`docs/2.3.0-D4-*`）：**量化依赖→状态搬进 `useXxxModel`→子组件只收 `model`→实机指纹＋负面对照**。🔴 hook 含 JSX 须 `.tsx`。🔴 `useRef` 变 hook 入参→`exhaustive-deps` 报缺：稳定量如实补、只读 ref 改 `useCallback`（**禁 disable**）。🔴 **搬运区间必含注释块**。
 - 🔴🔴 实机**播完种禁 reload**；指纹**只哈希目标容器**＋先折 `HH:MM(:SS)`→`T`、数字→`#`。🔴 造数据后**必须排序**。🔴🔴 负面对照注入点须选**无人复位**的状态。
 
