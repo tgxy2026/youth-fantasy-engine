@@ -59,15 +59,14 @@ function persist(): void {
   }
 }
 
-/** 当前墓碑快照（合并时读取用） */
-export function getTombs(): Tombs {
-  return tombs
-}
-
-/** 从 localStorage 重新载入（换同步目录 / 外部改动后） */
-export function reloadTombs(): void {
-  tombs = load()
-}
+// 📌 2026-09-20 死代码查证：这里原有 `getTombs()` 与 `reloadTombs()` 两个导出，已删。
+//    · `getTombs()` —— 注释写「合并时读取用」，但三路合并实际走的是 `isDeleted(store, key)`
+//      （见 syncCore.mergeCaches）——**用途已被取代，注释是过时的**。
+//    · `reloadTombs()` —— 注释写「换同步目录 / 外部改动后」重载。但换目录走的是 `resetTombs()`，
+//      而墓碑的运行时**唯一**改动源就是本进程（markDeleted / clearDeleted / resetTombs），
+//      单窗口下不存在「外部改动」，该场景不成立。模块初始化时已 `load()` 过一次。
+//    ⚠️ 其余三个「无引用导出」（`promptText` / `pruneGhostFreeChars` / `pruneGhostFreeSessions`）
+//      **不是死代码**，已登记进 `audit-dead.mjs` 的保留白名单，理由见那边的注释。
 
 /**
  * 记录删除。`keys` 可传多个（批量删除场景）。

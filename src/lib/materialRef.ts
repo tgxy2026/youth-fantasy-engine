@@ -4,17 +4,10 @@
 // 组件已按 block.kind 通用渲染，无需改动 UI 代码。
 // 所有内容均为只读，用户不可编辑。
 
-export type BlockKind =
-  | 'charGrid' // 性格类型卡片网格（含性别筛选 / 搜索）
-  | 'list' // 编号 / 普通列表
-  | 'combo' // 混搭组合：A × B = 结果
-  | 'table' // 表格（表头 + 行）
-  | 'tagGroups' // 标签分组云
-  | 'attrs' // 萌属性：名 + 说明
-  | 'roles' // 故事功能角色列表
-  | 'groupedList' // 分组列表（如 补充类型 女 / 男）
-  | 'toolbox' // 工具箱：多小节
-  | 'mixed' // 复合页签：内部含多个子区块（各自保留原生 kind 渲染），用于折叠同主题子页签
+// 📌 2026-09-20：原先这里有一个具名的 `BlockKind` 联合（10 种 kind）。`Block` 改成**按 kind 判别**
+//    之后，每个成员的 `kind` 本身就是**字面量类型**，`BlockKind` 反而没人引用了 —— 成了「确定死代码」。
+//    故删掉它，并把它的 10 条成员说明**原样搬到下面联合的每个成员上**（信息不丢）。
+//    想表达「任意 kind」时用 `Block['kind']`。
 
 export interface CharDim {
   label: string
@@ -78,16 +71,16 @@ interface TableBlockData {
  * ⚠️ 新增 kind 时：先加一支联合成员，再补 `MaterialLibrary` 的 case（漏了会编译不过）。
  */
 export type Block =
-  | { id: string; title: string; kind: 'charGrid'; data: CharType[] }
-  | { id: string; title: string; kind: 'list'; data: string[] }
-  | { id: string; title: string; kind: 'combo'; data: ComboItem[] }
-  | { id: string; title: string; kind: 'table'; data: TableBlockData }
-  | { id: string; title: string; kind: 'tagGroups'; data: TagGroup[] }
-  | { id: string; title: string; kind: 'attrs'; data: AttrItem[] }
-  | { id: string; title: string; kind: 'roles'; data: RoleItem[] }
-  | { id: string; title: string; kind: 'groupedList'; data: GroupedListData }
-  | { id: string; title: string; kind: 'toolbox'; data: ToolboxSection[] }
-  /** 复合页签：内部含多个子区块，各自保留原生 kind 渲染 */
+  | { id: string; title: string; kind: 'charGrid'; data: CharType[] } // 性格类型卡片网格（含性别筛选 / 搜索）
+  | { id: string; title: string; kind: 'list'; data: string[] } // 编号 / 普通列表
+  | { id: string; title: string; kind: 'combo'; data: ComboItem[] } // 混搭组合：A × B = 结果
+  | { id: string; title: string; kind: 'table'; data: TableBlockData } // 表格（表头 + 行）
+  | { id: string; title: string; kind: 'tagGroups'; data: TagGroup[] } // 标签分组云
+  | { id: string; title: string; kind: 'attrs'; data: AttrItem[] } // 萌属性：名 + 说明
+  | { id: string; title: string; kind: 'roles'; data: RoleItem[] } // 故事功能角色列表
+  | { id: string; title: string; kind: 'groupedList'; data: GroupedListData } // 分组列表（如 补充类型 女 / 男）
+  | { id: string; title: string; kind: 'toolbox'; data: ToolboxSection[] } // 工具箱：多小节
+  // 复合页签：内部含多个子区块（各自保留原生 kind 渲染），用于折叠同主题子页签
   | { id: string; title: string; kind: 'mixed'; data: Block[] }
 
 export interface MaterialCategory {
