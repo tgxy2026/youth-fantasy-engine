@@ -6,7 +6,7 @@ import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
 
-import { CH1, CH2, CH3, CH4, CH5, CH6, CH7, CH8, CH9, CH10, CH11, CH12, CH13, CH14, CH15, CH16, CH17, CH18, CH19, CH20, CH21 } from './seedContent'
+import { CH1, CH2, CH3, CH4, CH5, CH6, CH7, CH8, CH9, CH10, CH11, CH12, CH13, CH14, CH15, CH16, CH17, CH18, CH19, CH20, CH21 } from '../data/seedContent'
 function fieldKey(tabId: string, fieldName: string): string {
   const tab = TABS.find(t => t.id === tabId)
   if (!tab?.modules) throw new Error(`tab not found: ${tabId}`)

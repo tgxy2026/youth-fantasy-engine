@@ -156,16 +156,19 @@ if (!SRC) {
     cycles.length === 0,
     cycles.map(c => c.map(rel).join(' → ') + ' → ' + rel(c[0])).join('  ｜  '))
 
-  // 顺带锁住那条最隐蔽的方向：lib 不得反向依赖 components（分层红线）
+  // 顺带锁住那条最隐蔽的方向：非 UI 层不得反向依赖 components（分层红线）
+  // ⚠️ 新增平级数据/资源目录时必须同步登记（2026-09-19 加 `src/data/`）——
+  //    漏登记不报错，只会让新目录的分层违规**静默漏检**。
+  const NO_UI_DIRS = ['src/lib/', 'src/data/']
   const layering: string[] = []
   for (const [f, deps] of importsOf) {
     const fr = rel(f)
     for (const d of deps) {
       const dr = rel(d)
-      if (fr.startsWith('src/lib/') && dr.startsWith('src/components/')) layering.push(`${fr} → ${dr}`)
+      if (NO_UI_DIRS.some(p => fr.startsWith(p)) && dr.startsWith('src/components/')) layering.push(`${fr} → ${dr}`)
     }
   }
-  ok('lib/ 不反向依赖 components/', layering.length === 0, layering.slice(0, 3).join(' ｜ '))
+  ok('非 UI 层不反向依赖 components/', layering.length === 0, layering.slice(0, 3).join(' ｜ '))
 }
 
 console.log(`\nimportCycles: ${pass} passed, ${fail} failed`)

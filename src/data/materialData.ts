@@ -1,10 +1,16 @@
 // ============ 素材资料 · 内置只读内容库（分类 → 板块 → 数据） ============
 // 从 materialRef.ts 拆出（2026-09-14 审计 P1-6：5715 行数据把 60 行类型定义挤没了）。
+// 2026-09-19（2.3.0 结构优化）：从 src/lib/ 搬到 src/data/ —— `lib/` 只放逻辑，
+//   `data/` 只放出厂数据。同批搬来的还有 seedContent.ts（示范正文）。
+//
+// 🔴 `src/data/` 的规矩：**只有数据、不含逻辑**；依赖方向一律 `data/ → lib/`，
+//    **绝不反向依赖 components/**（`tests/importCycles.test.ts` 与审计脚本 audit-graph 都会拦）。
+//
 // 本文件**只有数据**，不含逻辑；类型定义与对外入口仍在 materialRef.ts。
 // ⚠️ 新增/修改内容后无需跑测试，但请自查：卡片键为「模块名::字段名」、表格行键为 schema 列名；
 //    本库是纯只读展示数据，不落库，不参与 seed-schema-check。
 
-import type { MaterialCategory } from './materialRef'
+import type { MaterialCategory } from '../lib/materialRef'
 
 export const MATERIAL_CATEGORIES: MaterialCategory[] = [
   {

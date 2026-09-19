@@ -11,7 +11,7 @@ import {
   type AttrItem,
   type ToolboxSection,
 } from '../lib/materialRef'
-import { MATERIAL_CATEGORIES } from '../lib/materialData'
+import { MATERIAL_CATEGORIES } from '../data/materialData'
 
 export default function MaterialLibrary() {
   const [catId, setCatId] = useState(MATERIAL_CATEGORIES[0].id)
