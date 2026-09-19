@@ -86,6 +86,6 @@
 
 ## 环境（Windows + Git Bash）
 - git/npm/node 用**绝对路径**（git＝`C:/Users/18223/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe`），路径每次现探；⚠️ `sort`/`find`/`timeout` 解析到 Windows 同名 exe→改用 node 脚本。
-- 🔴🔴 **同一条消息里对同一文件发多个 Edit 会相互覆盖**→串行改、改完立即 grep；`node -e` 引号会被吞→Write 落纯 JS；**跨行锚点先探 EOL**（CRLF 与 LF 并存）。
+- 🔴🔴 **同一条消息里对同一文件发多个 Edit 会相互覆盖**→串行改、改完立即 grep；**跨行锚点先探 EOL**（CRLF 与 LF 并存）；`node -e`/JSON 补丁转义易崩→批量改走**分隔符式纯文本补丁**（`@@@FILE/OLD/NEW` 标记 + 解析器、按文件聚合、全命中才落盘）。
 - 🔴 改 `protocol.ts` 正文别用 Edit（锚点不唯一）→ 脚本＋旧版进 `LEGACY_PROTOCOLS`。
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖；曾把 215 行日志覆成 37 行）。判存在用 `Read`／`test -f`；`memory/*.md` 只准 append，覆盖事故**先查 git**。

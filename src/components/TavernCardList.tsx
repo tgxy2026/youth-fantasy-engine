@@ -89,7 +89,8 @@ export default function TavernCardList({
 
   return (
     <aside className="w-56 shrink-0 space-y-2">
-      <Button variant="primary" size="md" className="w-full" onClick={onNewCard}>新建角色卡</Button>
+      {/* 同栏其余按钮都是 sm（2026-09-19 六维审计 P2-15）：面板主操作取 sm 基线，别单独高一档 */}
+      <Button variant="primary" size="sm" className="w-full" onClick={onNewCard}>新建角色卡</Button>
 
       {/* 两个 AI 入口：想清楚了用一句话起草，只有个感觉就用对话引导 */}
       <div className="flex gap-1.5">
@@ -123,7 +124,7 @@ export default function TavernCardList({
                   type="button"
                   onClick={() => toggleStory(g.id)}
                   className="w-full flex items-center gap-1 rounded-md px-1.5 py-1 text-left hover:bg-ink-800/60 transition-colors"
-                  title={open ? '收起这个故事下的角色卡' : '展开这个角色下的角色卡'}
+                  title={open ? '收起这个故事下的角色卡' : '展开这个故事下的角色卡'}
                 >
                   <span className={`text-10 text-ink-500 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
                   <span className="min-w-0 flex-1 truncate text-12 font-medium text-ink-200">{storyDisplayName(g)}</span>

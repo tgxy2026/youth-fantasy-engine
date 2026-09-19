@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>novel-studio 六维审计报告 · 2.2.1 第二轮 · 2026-09-19</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1c1c1e; --ink2: #4a4a4f; --ink3: #7c7c85;
+    --line: #e3e3df; --amber: #b45309; --amber-bg: #fff7ed;
+    --red: #b91c1c; --red-bg: #fef2f2; --green: #047857; --green-bg: #ecfdf5;
+    --blue: #1d4ed8; --blue-bg: #eff6ff; --code-bg: #f2f2ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a; --panel: #1e1e23; --ink: #ececf1; --ink2: #b4b4bd; --ink3: #85858f;
+      --line: #33333b; --amber: #fbbf24; --amber-bg: #2a2113;
+      --red: #f87171; --red-bg: #2a1616; --green: #34d399; --green-bg: #12251f;
+      --blue: #93c5fd; --blue-bg: #16213a; --code-bg: #26262d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 80px;
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.75 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.3px; }
+  h2 { font-size: 19px; margin: 40px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+  h3 { font-size: 15px; margin: 0 0 6px; }
+  .sub { color: var(--ink3); font-size: 13px; margin-bottom: 26px; }
+  .meta { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin-bottom: 20px; }
+  .meta dl { margin: 0; display: grid; grid-template-columns: 92px 1fr; gap: 6px 12px; font-size: 13.5px; }
+  .meta dt { color: var(--ink3); }
+  .meta dd { margin: 0; }
+  .cards { display: grid; gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: 14px 16px; }
+  .card.p0 { border-left-color: var(--red); }
+  .card.p1 { border-left-color: var(--amber); }
+  .card.p2 { border-left-color: var(--blue); }
+  .card.ok { border-left-color: var(--green); }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 5px; vertical-align: 2px; margin-right: 8px; }
+  .t0 { background: var(--red-bg); color: var(--red); }
+  .t1 { background: var(--amber-bg); color: var(--amber); }
+  .t2 { background: var(--blue-bg); color: var(--blue); }
+  .tok { background: var(--green-bg); color: var(--green); }
+  .loc { font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--ink2); background: var(--code-bg); padding: 1px 6px; border-radius: 4px; }
+  .card p { margin: 6px 0 0; font-size: 13.5px; color: var(--ink2); }
+  .card p b { color: var(--ink); }
+  pre { background: var(--code-bg); border-radius: 8px; padding: 10px 12px; margin: 8px 0 0; overflow-x: auto;
+        font: 12.5px/1.6 ui-monospace, Consolas, monospace; color: var(--ink2); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; background: var(--panel);
+          border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--code-bg); font-weight: 600; font-size: 12.5px; color: var(--ink2); }
+  tr:last-child td { border-bottom: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+  ul { padding-left: 20px; margin: 8px 0 0; }
+  li { margin: 3px 0; font-size: 13.5px; color: var(--ink2); }
+  .muted { color: var(--ink3); font-size: 12.5px; }
+  .hl { background: var(--amber-bg); color: var(--amber); padding: 0 4px; border-radius: 3px; font-weight: 600; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>novel-studio 六维审计报告</h1>
+<div class="sub">版本 2.2.1 · 2026-09-19 · 第二轮（全量）· 只审计，未改动任何代码</div>
+
+<div class="meta">
+  <dl>
+    <dt>审计范围</dt><dd>src/ 全量（约 200 个模块）+ docs/ 面向用户的说明 + electron/ 主进程</dd>
+    <dt>方法</dt><dd>八支确定性扫描器（audit-scan / dead / graph / arch / content / prompt / ui / func）＋ 两道项目闸 ＋ 四路只读子代理并行审计 ＋ <b>逐条回源码验尸</b></dd>
+    <dt>基线</dt><dd><b>tsc 0 错</b> / <b>eslint 0 problem</b> / <b>测试 71 入口全过</b> / feature-deps 39/39 / seed-schema 2902 键一致</dd>
+    <dt>结论</dt><dd><span class="hl">P0 × 3</span>　P1 × 11　P2 × 21　判定不改 × 14（含本轮新引入的红线 × 4）</dd>
+    <dt>原始输出</dt><dd class="muted">.workbuddy/tmp/audit-*.txt（保留下轮做基线对比）</dd>
+  </dl>
+</div>
+
+<div class="meta">
+  <dl>
+    <dt>一句话</dt>
+    <dd>代码健康度良好（三道弱引用闸全绿、循环依赖 0 真环、界面层无未捕获 rejection）；<b>真问题集中在三处「静默失败」</b>：正文保存卡死、酒馆记忆被静默清空、云同步关闭时的数据回滚。另有 4 条红线是<b>本轮改动自己带进来的</b>，已单列。</dd>
+  </dl>
+</div>
+
+<h2>P0 · 会丢数据或被静默当成成功</h2>
+<div class="cards">
+
+  <div class="card p0">
+    <h3><span class="tag t0">P0-1</span>酒馆「结束本轮对话」：数值与设定审查失败被吞，界面仍报成功</h3>
+    <p><span class="loc">src/lib/tavern/roundEnd.ts:207</span> <span class="loc">:230</span>（界面 <span class="loc">TavernFree.tsx:554</span>）</p>
+    <pre>} catch {
+  varChanges = []      // 数值算不出来，这一场照样归档
+}
+...
+} catch {
+  proposals = []       // 设定审查同样静默
+}</pre>
+    <p><b>触发</b>：②本场数值 或 ③设定审查 任一步失败。<b>影响</b>：作者看到的是「本轮已结束 —— N 位角色的记忆已更新」的成功提示，实际数值没算、设定建议没出，无任何线索可循。<b>建议</b>：<code>RoundEndResult</code> 加 <code>warnings: string[]</code>，三步各自 catch 时写入，界面按有无 warnings 改写提示。</p>
+  </div>
+
+  <div class="card p0">
+    <h3><span class="tag t0">P0-2</span>酒馆记忆：解析失败时整份旧档案被静默清空</h3>
+    <p><span class="loc">src/lib/tavern/memory.ts:61</span> <span class="loc">:183-189</span></p>
+    <pre>/** 「只增不改」的两栏：新档案里若这两栏变空，判定为模型丢失，保留旧值 */
+const APPEND_ONLY: MemorySectionKey[] = ['facts', 'mines']
+
+if (prev) {
+  for (const k of APPEND_ONLY) {          // ← 只有两栏有兜底
+    if (!out[k] && prev[k]) out[k] = prev[k]
+  }
+}</pre>
+    <p><b>触发</b>：模型没按六栏标题输出（写成散文 / 标题变体），或漏写某几栏。<b>影响</b>：<code>longTerm / relation / anniversaries / diaries</code> 四栏被写成空串后<b>无条件落库</b>，界面还提示「本场记忆已更新」—— 「失忆」被当成成功，且旧值不可恢复。<b>建议</b>：解析后做一次退化判定（非空栏变空 / 总字数骤降），退化则整份回退 <code>prev</code> 并回报 <code>degraded</code>，由界面提示而<b>不落库</b>。</p>
+  </div>
+
+  <div class="card p0">
+    <h3><span class="tag t0">P0-3</span>「关闭云盘同步」在云端不可用时会用陈旧 cache 覆盖本地新稿</h3>
+    <p><span class="loc">src/lib/db.ts:611-616</span>（定义 <span class="loc">:353</span>）</p>
+    <pre>await flushDesktopCloud()
+// 2) 把云端当前数据镜像进本地库 —— 关闭后界面读的就是这份
+await mirrorCloudCacheToLocal(snapshotDesktopCloudCache())   // ← overwrite 默认 true
+await flushDesktop()</pre>
+    <p><b>触发</b>：网盘目录被占用/断网使 <code>transientUnavailable</code> 置位 → 包装层已把读写切到本地（用户此间的新编辑落在本地）→ 用户点「关闭同步」。<b>影响</b>：闩锁期的新编辑被<b>闩锁前的云端旧数据整体覆盖并立即落盘</b>，磁盘级不可逆 —— 正是 <code>mirrorCloudCacheToLocal</code> 自己的注释点名要防的「静默回滚」。<b>建议</b>：关闭前先判 <code>isDesktopCloudUnavailable()</code>；不可用时改 <code>overwrite = false</code>（或先合并较新记录），并如实提示「本次未上传的本地改动已保留」。</p>
+  </div>
+
+</div>
+
+<h2>P1 · 本轮改动带进来的红线违规（4 条，需优先收口）</h2>
+<div class="cards">
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-1</span>界面文案里的 markdown 星号（本轮新引入 2 处）</h3>
+    <p><span class="loc">src/components/CreativeWritingPanel.tsx:143</span>：<code>latest: '这是项目最新章：四种动作里**只有「改写」**可以放开手脚…'</code> —— 该串经 <span class="loc">:654</span> 渲染进 <code>&lt;p&gt;</code>，界面是纯文本，星号会原样露出。</p>
+    <p><span class="loc">src/lib/aiDataSources.ts:348 / :368 / :397</span>：本轮新写的 <code>**并读设定表做判重**</code>、<code>**两种起点都做**</code>、<code>**正文写到哪**</code>，以及作为<b>分组名</b>渲染的 <code>项目设定资料（只在改**最新章**时…）</code> —— 这些会经 <code>AIDataSourceNote</code> 显示在「本次会读」气泡里。</p>
+    <p class="muted">已核：同文件其余星号全在注释/提示词里，不算违规。修正：改用「」或 <code>&lt;b&gt;</code>。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-2</span><code>NumberField</code> 的回车未挡输入法合成（本轮新建的组件）</h3>
+    <p><span class="loc">src/components/NumberField.tsx:96-98</span></p>
+    <pre>onKeyDown={e => {
+  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()   // ← 无 isComposing 守卫
+}}</pre>
+    <p><b>影响</b>：Enter 触发 <code>blur</code> → <code>commit</code> 钳制并改写父值；中文输入法在框内按 Enter 选字上屏时会误提交。<b>建议</b>：<code>if (e.key === 'Enter' &amp;&amp; !e.nativeEvent.isComposing) …</code>（项目红线 §15，全库仅此一处）。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-3</span>内联 vh 未走 <code>foldVh()</code>（132% 缩放会溢出）</h3>
+    <p><span class="loc">src/components/CreativeWritingPanel.tsx:746</span>：<code>style={{ maxHeight: '52vh' }}</code></p>
+    <p><b>影响</b>：CSS <code>zoom</code> 不缩放 <code>vh</code>（项目红线 §11）→ 改写结果预览区视觉高度超出预期，小屏下与面板高度打架、内容被裁。同文件其它弹窗与 <code>Modal.tsx</code> 均已用 <code>foldVh</code>，此为漏网（全库仅此一处）。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-4</span>同排按钮高度不一致 + 手写尺寸绕过 <code>size</code> 体系</h3>
+    <p><span class="loc">src/components/CreativeWritingPanel.tsx:262-285</span>：起点切换按钮（toggle，32px）与同排「对话引导」（<code>size="xs"</code>，24px）并排高低不齐。</p>
+    <p><span class="loc">:273 / :295 / :396 / :407 / :414 / :421 / :434 / :632</span> 与 <span class="loc">AIOrganize.tsx:158</span>：<code>className="px-3 h-8 rounded-lg text-12"</code> 手写尺寸（h-8/px-3/text-12 正是 <code>size="sm"</code> 基线），覆盖了 size 体系 → 以后调 size 基线这几处不跟随。</p>
+  </div>
+
+</div>
+
+<h2>P1 · 其它</h2>
+<div class="cards">
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-5</span>7 处异步落库无 <code>try/catch/finally</code> → 失败后按钮永久卡在「保存中」</h3>
+    <p><span class="loc">NovelEditor.tsx:527</span> <span class="loc">TableSheet.tsx:410</span> <span class="loc">CharacterSheet.tsx:217</span> <span class="loc">OutlineSheet.tsx:193</span> <span class="loc">FormSheet.tsx:89</span> <span class="loc">CheckTools.tsx:91</span> <span class="loc">ProjectHub.tsx:83 / :95</span></p>
+    <pre>setSaving(true)
+const { no } = locate(next)
+await Promise.all([db.saveChapter(next), syncChapterMaster(next, no)])
+setChapters(...)
+setSaving(false)      // ← 上一行抛错就永不执行，会产生未捕获 rejection</pre>
+    <p><b>影响</b>：正文保存（最核心链路）卡死、表格/卡片/大纲/表单全部「保存中」，新建项目失败后按钮永久禁用。<b>对照</b>：<code>AIPromptSettings.tsx:50-58</code> 已用 <code>finally</code> 的正确写法。<b>建议</b>：统一 <code>try / catch(toast) / finally(复位)</code>。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-6</span>酒馆水位线不跳过 <code>hidden</code> → 找不到就整场重喂</h3>
+    <p><span class="loc">src/lib/tavern/memory.ts:239-243</span>（消费端 <span class="loc">:280-291</span>）</p>
+    <pre>// nextWatermark（推进端）
+const msgs = session.messages.filter(m => m.role !== 'system')            // ← 含 hidden
+// messagesAfterWatermark（消费端）
+const msgs = messages.filter(m => m.role !== 'system' &amp;&amp; !m.hidden)
+if (i &lt; 0) return msgs                                                   // 找不到 → 全量</pre>
+    <p><b>触发</b>：隐藏末尾消息 → 点「结束本轮对话 / 整理本场记忆」。<b>影响</b>：旧剧情被重复喂回模型，数值按同一批事件反复累加。<b>建议</b>：推进端同步过滤 <code>!m.hidden</code>；并把 <code>i &lt; 0</code> 的「全量」降级为「取 watermark 时间之后的条目」。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-7</span>云同步初始化吞掉拉取异常 → 与「云端是空库」不可区分 → 静默关掉同步标记</h3>
+    <p><span class="loc">src/lib/syncCore.ts:430-436</span>（消费方 <span class="loc">db.ts:504-516</span>）</p>
+    <pre>} catch {
+  transientUnavailable = true
+  setStatus('offline')
+  initPromise = null
+}
+cache = {}; rev = 0          // ← 异常后照常「成功」返回空快照</pre>
+    <p><b>影响</b>：启动自动恢复同步时若 <code>.yfe</code> 读失败，<code>db.ts</code> 会走 <code>empty</code> 分支 → <code>clearDesktopCloudEnabledFlag()</code> <b>静默清除「已开启」标记</b>，同步被永久静默关闭直到手动重选目录；且 <code>db.ts</code> 里为「拉取失败」写的那个 <code>catch</code> 是死代码。<b>建议</b>：<code>pullSnapshot</code> 在 <code>transientUnavailable</code> 时抛错（与空库区分开），前者保留标记 + 提示重试，后者才清标记。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-8</span><code>AIDataSourceNote</code> 里的页签名与实际页签对不上</h3>
+    <p><span class="loc">src/lib/aiDataSources.ts:47</span>（<code>CORE_TABLES</code>，另有 <code>items</code> 里写「势力」「地理」）</p>
+    <table style="margin-top:8px">
+      <tr><th>声明里写的</th><th>schema 里的真名</th><th>位置</th></tr>
+      <tr><td>世界观设定</td><td>世界设定</td><td class="loc">schema.ts:175</td></tr>
+      <tr><td>NPC 角色（带空格）</td><td>NPC角色</td><td class="loc">schema.ts:432</td></tr>
+      <tr><td>术语表</td><td>名词术语</td><td class="loc">schema.ts:582</td></tr>
+      <tr><td>势力</td><td>国家势力</td><td class="loc">schema.ts:471</td></tr>
+      <tr><td>地理</td><td>地理风物</td><td class="loc">schema.ts:500</td></tr>
+    </table>
+    <p><b>影响</b>：这些串会逐个渲染进各 AI 功能的「本次会读哪些数据」气泡，作者按名字回界面找不到对应页签。<b>建议</b>：全部改用 schema 的 <code>name</code> 原值（最好由 <code>TABS</code> 派生，结构上不可能再漂）。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-9</span>功能介绍文档：幽灵功能 + 过时路径 + 过时数字</h3>
+    <p><span class="loc">docs/功能介绍文档-基于示范项目.md:68,70-72,786</span>：文档称新建项目可选「完整 / 精简 / 极简 / 自定义」四档；实际 <span class="loc">types.ts:100</span> 明确「新建项目只提供「完整 / 自定义」两类，旧版精简/极简类型已移除」，<span class="loc">db.ts:623</span> 有同款注释 —— <b>精简 / 极简是两个已经不存在的档位</b>。</p>
+    <p><span class="loc">同文 :229</span> 引用的「禁用提示原文」是「到「灵感启发 → AI 辅助规划 → 模型设置」」；实际 <span class="loc">aiScope.ts:61-63</span> 已是「到「模型设置 → 模型配置」」。</p>
+    <p><span class="loc">同文 :54</span>「<b>9 个一级分组、37 个功能页签</b>」；实际 <span class="loc">schema.ts:909</span> 的 <code>GROUPS</code> 是 <b>10</b> 组（多「酒馆模式」），且该文档自己的表相加 = 39，与自己写的 37 也不符；说明还漏了「模型设置」与酒馆模式整组。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-10</span>取消系统选盘后界面永久 busy</h3>
+    <p><span class="loc">src/components/CloudFileSyncBar.tsx:96-108</span></p>
+    <pre>setBusy(true)
+await enableDesktopCloudSync(res.handle)
+...
+} catch (e: any) {
+  if (e &amp;&amp; e.name === 'AbortError') return      // ← 直接 return，setBusy(false) 没执行
+  showToast('开启失败：' + (e?.message || e), 'error')
+  setBusy(false)
+}</pre>
+    <p><b>影响</b>：用户在系统选盘对话框点取消 → 按钮永久转圈。<b>建议</b>：改 <code>finally { setBusy(false) }</code>。</p>
+  </div>
+
+  <div class="card p1">
+    <h3><span class="tag t1">P1-11</span>切换同步目录时在途 push 会用旧 rev 污染新目录基线</h3>
+    <p><span class="loc">src/lib/syncCore.ts:758-782</span>（在途回写 <span class="loc">:619-620</span>）</p>
+    <p><code>configure()</code> 清了 <code>cache/rev/baseCache/pushTimer</code>，但<b>未复位 <code>pushing</code>/<code>pushChain</code>、也不等在途 push</b>。旧目录的 push 完成后会执行 <code>rev = resp.rev; baseCache = snapshotOf(cache)</code> → 新目录基线被污染，<code>backgroundPull</code> 的 <code>if (remoteRev &lt;= rev) return</code> 被虚高 rev 永久挡住。<b>建议</b>：<code>configure()</code> 递增 generation/epoch，push 回写前校验 epoch。</p>
+  </div>
+
+</div>
+
+<h2>P2 · 逐条（按主题归并）</h2>
+<table>
+  <tr><th style="width:74px">编号</th><th>问题</th><th style="width:230px">位置</th></tr>
+  <tr><td>P2-1</td><td>自动备份失败可见性只做了半环：<code>recordFailure</code> 只捕 <code>createAutoBackup</code> 抛异常，而「磁盘满 / 只读 / 写盘失败」发生在随后的防抖落盘里（<code>ops.put</code> 是内存写、不抛）→ <code>takeBackupFailure()</code> 永远返回 null</td><td class="loc">backup.ts:66-72<br>db.ts:1409</td></tr>
+  <tr><td>P2-2</td><td>关窗写盘失败「保留 dirty 供下次补救」的注释不成立 —— dirty 只在内存，进程退出即丢，窗口正在关闭也无人展示</td><td class="loc">desktop.ts:263-279</td></tr>
+  <tr><td>P2-3</td><td>同步文件写入在同步目录留下 <code>.bak</code>，与「刻意不留 .bak（云盘流量翻倍）」的注释自相矛盾</td><td class="loc">main.cjs:230-245</td></tr>
+  <tr><td>P2-4</td><td><code>captureSyncData()</code> 对逐 store 读失败静默降级 <code>[]</code>，播种回调永不抛错 → 绕过了 <code>seedFromLocal</code> 的「读失败就中止痛播」守卫</td><td class="loc">db.ts:557-568, 586-593</td></tr>
+  <tr><td>P2-5</td><td>闩锁自愈成功后状态卡在 <code>'offline'</code>（成功分支只清 <code>transientUnavailable</code>，不 <code>setStatus('ok')</code>）</td><td class="loc">syncCore.ts:415-427<br>:521-547</td></tr>
+  <tr><td>P2-6</td><td><code>matchSectionTitle</code> 对<b>每一行</b>都判标题，别名含「关系 / 日记 / 待办」等 → 正文里以这些词开头的行会被当成新栏标题，后续内容串栏并逐轮累积漂移</td><td class="loc">memory.ts:199-234</td></tr>
+  <tr><td>P2-7</td><td>「结束本轮对话」<code>signal</code> 声明并下传，但生产调用从不传 → 本地 27B 上要干等数分钟且无法取消</td><td class="loc">roundEnd.ts:82<br>TavernFree.tsx:526</td></tr>
+  <tr><td>P2-8</td><td><code>deleteSession</code> 只清索引与分条，不清理引用该 <code>sessionId</code> 的 <code>tavernReports</code>（删项目有级联、删单场没有）→ 孤儿报告</td><td class="loc">tavern/store.ts:332-337</td></tr>
+  <tr><td>P2-9</td><td>v1.11 协议新许可的颜文字含<b>半角</b>括号，会被出厂后处理规则的「半角括号→全角」改写，两处口径不一致</td><td class="loc">protocol.ts<br>postRules.ts:42</td></tr>
+  <tr><td>P2-10</td><td>正文切章冲刷落库无 <code>.catch</code>，失败静默丢失且无 toast</td><td class="loc">NovelEditor.tsx:477</td></tr>
+  <tr><td>P2-11</td><td>列表 key 用可能重复的值（卷标题 / 章号）</td><td class="loc">CreativeWritingPanel.tsx:536, 547</td></tr>
+  <tr><td>P2-12</td><td><code>variant="bare"</code> 会丢弃 <code>sizeCls</code>（<code>size="xs"</code> 实际无效），且静止无框无内边距不符约定</td><td class="loc">AIPromptSettings.tsx:116<br>Button.tsx:124</td></tr>
+  <tr><td>P2-13</td><td>图例/描边硬编码 hex（同文件相邻元素已走 token）</td><td class="loc">WritingGoals.tsx:146,163-164</td></tr>
+  <tr><td>P2-14</td><td>文案笔误：「展开这个<b>角色</b>下的角色卡」应为「这个<b>故事</b>」</td><td class="loc">TavernCardList.tsx:126</td></tr>
+  <tr><td>P2-15</td><td>同栏主操作 <code>size="md"</code>(36) 与其余 <code>sm</code>(32) 不一致</td><td class="loc">TavernCardList.tsx:92</td></tr>
+  <tr><td>P2-16</td><td>4 处空 catch / 只 log（<code>App.tsx:132</code> 有 bootError 兜底属低危；<code>seedData.ts:1438,1479</code>；<code>syncTransport.ts:260</code>）</td><td class="loc">见左</td></tr>
+  <tr><td>P2-17</td><td>文档：素材库文件名写成 <code>materialRef.ts</code>（实为 <code>materialData.ts</code>，5725 行）；导出格式写「3 种」（实际含 EPUB / 平台粘贴版 / 设定集 ≥5 种）；作者侧页签「约 13 类」（实际 10 个）；保密等级漏 <b>D · 终结（弃用）</b>；两文档版本号口径不一（v2.0.0 / v2.2.0 / 实际 2.2.1）</td><td class="loc">docs/功能介绍*.md</td></tr>
+  <tr><td>P2-18</td><td>文档：把「势力关系」写在「AI 补全」清单里，而 <code>aiScope.ts:33-41</code> 的 <code>ORGANIZE_TAB_IDS</code> 明确含 <code>faction-rels</code> —— 归属写反</td><td class="loc">docs/…:220-221</td></tr>
+  <tr><td>P2-19</td><td>巨型组件（>1200 行）：TavernFree 1781 / NovelEditor 1573 / TavernCard 1228 / TableSheet 1217 / TavernControl 1094；新建的 CreativeWritingPanel 已到 666 行</td><td class="loc">components/*</td></tr>
+  <tr><td>P2-20</td><td>重复代码：下拉组件 9 行 useEffect 样板 ×4、<code>CharacterSelect ↔ TableRefSelect</code> 重合 48%（56 行）、<code>CharacterSheet ↔ OutlineSheet</code> 38%（130 行）</td><td class="loc">audit-arch A1/A2</td></tr>
+  <tr><td>P2-21</td><td>17 处 <code>filter/sort/map</code> 未包 <code>useMemo</code>（多为 2~5 段小链，行数大时才有感）</td><td class="loc">audit-arch A5</td></tr>
+</table>
+
+<h2>判定不改（下轮别重复提案）</h2>
+<table>
+  <tr><th style="width:240px">项</th><th>理由（含验尸证据）</th></tr>
+  <tr><td><code>getBoundingClientRect</code> 10 处</td><td>全是<b>定位/拖拽/SVG 坐标</b>：下拉浮层定位、<code>clientY</code> 判插入位置、SVG 缩放锚点，与 <code>clientY</code> 同坐标系，缩放下依然正确（项目红线明文豁免）。</td></tr>
+  <tr><td>全局 <code>fixed</code> 浮层 14 处</td><td>下拉浮层 / Modal / 写锁横幅 / 保存悬浮球 / 颉文姬精灵 —— 均属既有约定；层号已全部走 <code>Z</code>（<code>z-50</code> 魔数为 0）。</td></tr>
+  <tr><td><code>JSON.parse</code> 标〔预期〕的 11 处</td><td>解析的是<b>存储 / 加密载荷 / 导入文件</b>，不是 AI 文本；AI 文本解析已统一走 <code>aiParse</code>（裸用 0 处）。</td></tr>
+  <tr><td>提示词内部的 <code>**</code>（aiTasks / interview / tavern/* 等 20+ 处）</td><td>那些是给<b>模型</b>看的文本，不进界面渲染 —— 红线只针对 JSX 文本与 <code>AIDataSourceNote</code>（后者本轮已单列为 P1-1）。</td></tr>
+  <tr><td><code>NovelEditor.tsx:1515</code> 的 <code>dangerouslySetInnerHTML</code></td><td><b>已验</b>：内容由 <code>refScan.html</code> 生成，逐段经 <code>escapeHtml()</code>（<code>NovelEditor.tsx:65/91/99/104</code>），无注入面；且是 <code>aria-hidden</code> 的高亮叠层（双图层设计要求）。</td></tr>
+  <tr><td><code>FactionGraph</code> 的十六进制语义色</td><td>「同盟=绿 / 敌对=红 / 贸易=黄」是<b>语义色</b>，本就该固定、不该随主题变。</td></tr>
+  <tr><td>7 处缺 AI 就绪守卫（F1）</td><td>逐个人工核对：<b>每一处都有 catch → toast / setError</b>，用户看得见报错。属「预先禁用按钮」的 UX 优化，不是 bug。</td></tr>
+  <tr><td><code>TavernPlot</code> / <code>tavern/prompt.ts</code> 未走 promptGuard（P6）</td><td>那里的作者设定<b>就是角色扮演的前提</b>，不是待隔离的不可信数据；包 nonce 块会改变语义且需重跑实弹。</td></tr>
+  <tr><td>循环依赖 1 组（<code>aiTasks ↔ flow/fieldMap</code>）</td><td><b>假环</b>：反向那一行是 <code>import type</code>（编译后擦除），<code>tests/importCycles</code> 按运行时口径判、放它过。</td></tr>
+  <tr><td>「未引用组件」<code>CELL_KM_STEPS</code>（F2）</td><td>它不是组件，是 <code>GeoMapEditor</code> 内的档位常量数组 —— 扫描器口径误判。</td></tr>
+  <tr><td>术语多写法（章节细纲 / 细纲、总纲 / 大纲、设定集 / 设定表）</td><td>语义可能本就不同（如「总纲」＝全书总纲、「大纲」＝分卷大纲）→ 属产品决策，不由审计擅自统一。</td></tr>
+  <tr><td><code>cardFields</code> 只认全角冒号</td><td>「小项名：内容」用全角冒号是<b>已定的卡格式约定</b>（半角/独占行会整栏落「其他」），是有意收窄；是否放宽需老大定（见「待裁决」）。</td></tr>
+  <tr><td><code>App.tsx:132</code> 的 <code>console.warn</code> 空 catch</td><td>启动期「自动创建示范项目」失败，外层 <code>catch</code> 已 <code>setBootError</code> 给用户；且写盘被锁时本就不该播种。低危。</td></tr>
+  <tr><td><code>aiDataSources</code> 未登记的 5 个含提示词文件（P7）</td><td>多为纯计算型 / 不读项目数据的提示词；真闸是 <code>tests/aiDataSources.test.ts</code>（绿）。</td></tr>
+</table>
+
+<h2>建议的修复批次（待老大裁决）</h2>
+<table>
+  <tr><th style="width:74px">批次</th><th>内容</th><th style="width:200px">风险/成本</th></tr>
+  <tr><td><b>A</b></td><td>本轮引入的 4 条红线（P1-1~P1-4）—— 纯文案/属性改动，零逻辑风险</td><td>低，几分钟</td></tr>
+  <tr><td><b>B</b></td><td>7 处 <code>try/finally</code> + <code>CloudFileSyncBar</code> 的 AbortError（P1-5、P1-10）—— 统一写法，有正确样本可抄</td><td>低，但碰核心保存链路，需实机点一遍</td></tr>
+  <tr><td><b>C</b></td><td>酒馆三条静默失败（P0-1/2、P1-6）—— 涉及记忆解析退化判定与水位线口径，改完需实弹验一次「整理记忆」</td><td>中，需实弹</td></tr>
+  <tr><td><b>D</b></td><td>存储/同步四条（P0-3、P1-7、P1-11、P2-4）—— 语义改动谨慎，<code>tests/syncGuards</code> 会先响</td><td>中高，建议单独一轮</td></tr>
+  <tr><td><b>E</b></td><td>文案与文档一致性（P1-8、P1-9、P2-17、P2-18）—— 可与 A 合并批量做</td><td>低</td></tr>
+  <tr><td><b>F</b></td><td>P2 其余（备份可见性、<code>.bak</code>、巨型组件、重复代码…）—— 择机</td><td>视取舍</td></tr>
+</table>
+
+<p class="muted" style="margin-top:28px">原始数据：<code>.workbuddy/tmp/audit-scan.txt</code>（408 行）、<code>audit-dead.txt</code>（351）、<code>audit-arch.txt</code>（96）、<code>audit-ui.txt</code>（76）、<code>audit-graph.txt</code>（69）、<code>audit-prompt.txt</code>（69）、<code>audit-content.txt</code>（52）、<code>audit-func.txt</code>（40）、<code>gate-*.txt</code>。全部为「候选清单」，本报告已逐条验尸。</p>
+
+</div>
+</body>
+</html>

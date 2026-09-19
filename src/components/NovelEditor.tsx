@@ -474,7 +474,11 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       if (leaving && draftRef.current !== leaving.content) {
         const text = draftRef.current
         const next: Chapter = { ...leaving, content: text, wordCount: countWords(text), updatedAt: Date.now() }
-        void db.saveChapter(next).then(() => onStatsChangeRef.current?.())
+        // 🔴 切章冲刷失败必须可见（2026-09-19 六维审计 P2-10）：原先没有 catch，
+        //    落库失败时这段稿子静默丢失，作者只看到字数没变。
+        void db.saveChapter(next)
+          .then(() => onStatsChangeRef.current?.())
+          .catch((e: unknown) => showToast('自动保存失败：' + (e instanceof Error ? e.message : String(e)), 'error'))
         // 同步内存态，避免快速切回时读到陈旧内容把刚落库的稿子覆盖掉
         setChapters(prev => prev.map(c => (c.id === leaving.id ? next : c)))
       }
@@ -525,15 +529,22 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     if (text === active.content) return
     const next: Chapter = { ...active, content: text, wordCount: countWords(text), updatedAt: Date.now() }
     setSaving(true)
-    const { no } = locate(next)
-    await Promise.all([db.saveChapter(next), syncChapterMaster(next, no)])
-    setChapters(prev => prev.map(c => (c.id === next.id ? next : c)))
-    setSaving(false)
-    setSavedFlash(true)
-    clearTimeout(flashTimer.current)
-    flashTimer.current = setTimeout(() => setSavedFlash(false), 1500)
-    onStatsChange?.()
-    loadTodayWords()
+    try {
+      const { no } = locate(next)
+      await Promise.all([db.saveChapter(next), syncChapterMaster(next, no)])
+      setChapters(prev => prev.map(c => (c.id === next.id ? next : c)))
+      setSavedFlash(true)
+      clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => setSavedFlash(false), 1500)
+      onStatsChange?.()
+      loadTodayWords()
+    } catch (e) {
+      // 🔴 落库失败必须复位 saving 并如实报错 —— 原先没有 try/finally，一旦抛错按钮会永久停在
+      //    「保存中…」，还会产生未捕获 rejection（2026-09-19 六维审计 P1-5）。
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   // 打字机模式：用镜像层测量光标纵向位置，让输入行始终保持在可视区中部

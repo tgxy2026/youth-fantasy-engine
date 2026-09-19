@@ -779,7 +779,7 @@ export default function TavernControl() {
               <div className="mt-2 border-t border-ink-700/60 pt-2">
                 <ToggleField
                   label="额度跟随模型自动调整"
-                  hint="换模型后自动把这批数值套用成新模型的推荐值。⚠️ 只在你**换模型**时生效 —— 同一个模型下你手调的值不会被改回去（想完全手工就关掉它，面板上仍可点「采用推荐值」）。"
+                  hint="换模型后自动把这批数值套用成新模型的推荐值。⚠️ 只在你「换模型」时生效 —— 同一个模型下你手调的值不会被改回去（想完全手工就关掉它，面板上仍可点「采用推荐值」）。"
                   value={c.autoTuneByModel !== false}
                   onChange={v => setCommon('autoTuneByModel', v)}
                 />

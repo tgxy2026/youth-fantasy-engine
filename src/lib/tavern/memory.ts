@@ -153,7 +153,26 @@ function clipSection(s: string, n: number): string {
  *   · 认不出的内容不丢 —— 追加到「长期摘要」末尾，总比整段蒸发好
  *   · prev 给定时对「只增不改」两栏做保护：新值为空而旧值非空 → 保留旧值（防整段丢失）
  */
-export function parseMemoryText(text: string, charId: string, prev?: FreeMemory | null, opts?: Partial<MemoryLimits>): FreeMemory {
+/**
+ * 「整份档案退化」判定 —— 新档案比旧档案少太多 = 模型把内容丢了，不是正常压缩。
+ *
+ * 判据（2026-09-19 六维审计 P0-2 后加）：
+ *   · 旧档案得有实质内容（>200 字）才套用 —— 短档案的正常波动不该误报；
+ *   · 新档案总字数不足旧档案的 40%。
+ * 为什么用「总字数」而不是逐栏比：长期摘要本来就会缩、日记本来就会滚，逐栏判必误报；
+ * 而实测的失败形态是「模型把六栏写成散文 / 标题走了样」→ 四栏一起空，总量骤降最灵敏。
+ */
+export function isMemoryDegraded(next: FreeMemory, prev?: FreeMemory | null): boolean {
+  if (!prev) return false
+  const p = memoryChars(prev)
+  if (p <= 200) return false
+  return memoryChars(next) < p * 0.4
+}
+
+export function parseMemoryText(
+  text: string, charId: string, prev?: FreeMemory | null, opts?: Partial<MemoryLimits>,
+  onDegraded?: (reason: string) => void,
+): FreeMemory {
   const raw = String(text ?? '').replace(/\r\n/g, '\n')
   const out = emptyMemory(charId)
   const hit: Partial<Record<MemorySectionKey, string[]>> = {}
@@ -185,6 +204,14 @@ export function parseMemoryText(text: string, charId: string, prev?: FreeMemory 
       if (!String(out[k] ?? '').trim() && String(prev[k] ?? '').trim()) {
         out[k] = prev[k] // 只增不改的栏被整段丢掉 = 失忆，宁可沿用旧值
       }
+    }
+    // 🔴 整份退化保护（2026-09-19 六维审计 P0-2）：上面那条只兜住「关键事实 / 未爆的雷」两栏，
+    //    而模型的真实失败形态是**四栏一起空**（长期摘要 / 关系状态 / 纪念日 / 日记）——
+    //    落库就等于「失忆」，界面却还报「本场记忆已更新」。这里判整份退化 → 整份回退旧档案 +
+    //    如实上报，由调用方提示作者「本次没覆盖」。
+    if (isMemoryDegraded(out, prev)) {
+      onDegraded?.('模型输出比旧档案少太多，本次未覆盖旧档案（原样保留）')
+      return trimMemory({ ...prev, updatedAt: Date.now() }, opts)
     }
   }
 
@@ -237,7 +264,10 @@ function matchSectionTitle(line: string): { key: MemorySectionKey; rest: string 
 
 /** 水位线之后的第一条消息 id（总结完成后推进到哪 —— 推进到「最后一条」即可） */
 export function nextWatermark(session: Pick<FreeSession, 'messages'>): { messageId: string; at: number } | null {
-  const msgs = session.messages.filter(m => m.role !== 'system')
+  // 🔴 必须与 `messagesAfterWatermark` 用**同一个过滤条件**（都排除 hidden）：
+  //    两边不一致时，若末尾消息被隐藏，水位线记的 id 在消费端会被过滤掉 → `i < 0` → 整场重喂
+  //    （旧剧情被重复总结、数值按同一批事件反复累加）。2026-09-19 六维审计 P1-6。
+  const msgs = session.messages.filter(m => m.role !== 'system' && !m.hidden)
   const last = msgs[msgs.length - 1]
   return last ? { messageId: last.id, at: Date.now() } : null
 }
@@ -279,13 +309,22 @@ export { MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT }
  */
 export function messagesAfterWatermark(
   messages: FreeSession['messages'],
-  watermark?: { messageId: string } | null,
+  watermark?: { messageId: string; at?: number } | null,
 ): FreeSession['messages'] {
   // 隐藏的消息既不进上下文，也不该被整理进记忆（隐藏的语义就是「别让 AI 看见」）
   const msgs = messages.filter(m => m.role !== 'system' && !m.hidden)
   const wm = watermark?.messageId
   if (!wm) return msgs
   const i = msgs.findIndex(m => m.id === wm)
-  if (i < 0) return msgs
+  if (i < 0) {
+    // 🔴 水位线消息找不到（被删 / 刚被隐藏）时**不能整场重喂**（2026-09-19 六维审计 P1-6）：
+    //    那会把旧剧情重新总结一遍、数值按同一批事件反复累加。按水位线的时间戳兜底取它之后的。
+    const at = watermark?.at
+    if (typeof at === 'number') {
+      const after = msgs.filter(m => (m.at ?? 0) > at)
+      if (after.length !== msgs.length) return after
+    }
+    return msgs // 连时间也没有（老数据）→ 只能按「全部未总结」处理，宁可多总结一次
+  }
   return msgs.slice(i + 1)
 }

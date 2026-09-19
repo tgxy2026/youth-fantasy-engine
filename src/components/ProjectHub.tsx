@@ -81,26 +81,36 @@ export default function ProjectHub({ onOpen }: Props) {
     if (!editingId) return
     if (!editForm.name.trim()) { showToast('请输入书名', 'error'); return }
     setBusy(true)
-    const patch: Partial<Project> & { id: string } = { id: editingId, name: editForm.name.trim(), cover: editForm.cover }
-    if (editForm.projectType === 'custom') patch.features = editForm.features
-    await db.updateProject(patch)
-    setBusy(false)
-    setEditingId(null)
-    await load()
+    try {
+      const patch: Partial<Project> & { id: string } = { id: editingId, name: editForm.name.trim(), cover: editForm.cover }
+      if (editForm.projectType === 'custom') patch.features = editForm.features
+      await db.updateProject(patch)
+      setEditingId(null)
+      await load()
+    } catch (e) {
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const create = async () => {
     if (!form.name.trim()) { showToast('请输入书名', 'error'); return }
     if (form.projectType === 'custom' && form.features.length === 0) { showToast('请先选择要启用的功能模块', 'error'); return }
     setBusy(true)
-    const p = await db.createProject(
-      form.name.trim(), '', '', form.cover, form.projectType,
-      form.projectType === 'custom' ? form.features : undefined,
-    )
-    setBusy(false)
-    setCreating(false)
-    setForm({ name: '', cover: '', projectType: 'full', features: [] })
-    onOpen(p.id)
+    try {
+      const p = await db.createProject(
+        form.name.trim(), '', '', form.cover, form.projectType,
+        form.projectType === 'custom' ? form.features : undefined,
+      )
+      setCreating(false)
+      setForm({ name: '', cover: '', projectType: 'full', features: [] })
+      onOpen(p.id)
+    } catch (e) {
+      showToast('创建失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const createDemo = async () => {

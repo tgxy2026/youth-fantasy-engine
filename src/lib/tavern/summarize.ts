@@ -178,7 +178,7 @@ export type RoundSummaryResult = { memory: FreeMemory; journal: string }
  * 加一个 `withJournal` 分支等于让所有调用方都为一种只在收尾出现的形态买单。
  */
 export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryResult> {
-  const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now(), limits } = args
+  const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now(), limits, onDegraded } = args
   if (messages.length === 0) return { memory: prev ?? emptyMemory(charId), journal: '' }
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
@@ -213,7 +213,7 @@ export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryR
 
   const { rest, journal } = splitJournalSection(reply)
   // limits 必须一路传进解析，理由同 summarizeMemory（面板调了却按默认裁 = 改了没生效）
-  return { memory: parseMemoryText(rest, charId, prev, limits), journal }
+  return { memory: parseMemoryText(rest, charId, prev, limits, onDegraded), journal }
 }
 
 export type SummarizeArgs = {
@@ -236,6 +236,11 @@ export type SummarizeArgs = {
   now?: number
   /** 字数约束（控制面板）；不传即内置默认 */
   limits?: SummaryLimits
+  /**
+   * 解析出「整份档案退化」时的回调（模型输出比旧档案少太多）—— 档案已整份回退旧值，
+   * 调用方据此如实提示作者「本次没覆盖」。判据见 memory.ts 的 isMemoryDegraded。
+   */
+  onDegraded?: (reason: string) => void
 }
 
 /** 把待总结的对话渲染成提示词片段（用户发言标〖对方〗，角色发言标名字） */
@@ -251,7 +256,7 @@ export function renderTranscript(charName: string, messages: TavernMessage[]): s
  * 失败会抛出（调用方据此保留旧档案，绝不写入半截结果）。
  */
 export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> {
-  const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now(), limits } = args
+  const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now(), limits, onDegraded } = args
   if (messages.length === 0) return prev ?? emptyMemory(charId)
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
@@ -287,7 +292,7 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
 
   // 🔴 limits 必须一路传进**解析**：否则「长期摘要上限 / 日记保留条数 / 记忆硬上限」
   //    只在提示词里生效，面板调小了照样按出厂默认裁 —— 表现是「我明明调小了却还是那么长」。
-  return parseMemoryText(reply, charId, prev, limits)
+  return parseMemoryText(reply, charId, prev, limits, onDegraded)
 }
 
 /**

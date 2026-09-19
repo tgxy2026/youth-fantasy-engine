@@ -230,6 +230,10 @@ app.whenReady().then(() => {
   ipcMain.handle('sync:writeFile', async (_e, p, text) => {
     try {
       // 原子写：先写 tmp，再把旧文件改名 .bak（回退用），最后 rename tmp 为正文件，避免写崩损坏。
+      // ⚠️ 注意 .bak 落在**同步目录**里，会被网盘客户端一并上传（同一份数据占双倍流量）。
+      //    这是**有意保留的取舍**：同步文件只有云端那一份，留一个上一版副本是最后的自救手段。
+      //    （2026-09-19 六维审计 P2-3 记下这个取舍，不再当"忘了删"处理；要改就得连带想清楚
+      //      写坏时拿什么回退。）
       const tmp = p + '.tmp'
       await fsp.writeFile(tmp, String(text), 'utf-8')
       try {

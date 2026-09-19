@@ -329,11 +329,27 @@ export async function createSession(init: Omit<TavernSession, 'id' | 'createdAt'
 }
 
 /** 删除会话（索引与分条同时删，避免幽灵条目） */
+/** 清掉某一场留下的推演报告 —— 见 deleteSession 的说明（孤儿报告清理） */
+async function cleanReportsOfSession(projectId: string, sessionId: string): Promise<void> {
+  const rows = await db.listProjectReports(projectId)
+  for (const r of rows) {
+    if (r.sessionId === sessionId) await db.deleteReport(r.id)
+  }
+}
+
 export async function deleteSession(id: string): Promise<void> {
   const idx = await db.getSetting<TavernSessionIndexItem[]>(K.sessionIndex, [])
   await db.setSetting(K.sessionIndex, idx.filter(x => x.id !== id))
   // 分条直接覆盖为空对象（KV 无 delete 语义时的等价做法：置空后不再被读取）
   await db.setSetting(K.session(id), null)
+  // 🔴 顺带清掉这一场的推演报告（2026-09-19 六维审计 P2-8）：报告以 projectId 为索引，
+  //    删**项目**时有级联（db.deleteProject 会一并清 tavernReports），删**单场会话**却没有 ——
+  //    于是「推演报告」页里留下一份孤儿，点开是一场空，作者也没有入口删它。
+  try {
+    await cleanReportsOfSession(db.getCurrentProjectId(), id)
+  } catch {
+    /* 报告清理失败不该影响会话删除本身 */
+  }
 }
 
 export async function renameSession(id: string, title: string): Promise<void> {

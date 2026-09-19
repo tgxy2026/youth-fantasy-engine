@@ -51,6 +51,12 @@ export type RoundEndResult = {
   varChanges: VarChange[]
   /** 设定变更建议 —— 只产出，由作者在弹窗里逐条裁决 */
   proposals: CardRevision[]
+  /**
+   * 收尾过程中的**未成功项**：②本场数值 / ③设定审查失败，或某位角色的记忆被判退化而回退。
+   * 🔴 界面必须显示出来（2026-09-19 六维审计 P0-1）：原先这些失败被静默吞掉，界面照样报
+   *    「本轮已结束 —— N 位角色的记忆已更新」，作者以为收尾是完整的。
+   */
+  warnings: string[]
   endedAt: number
 }
 
@@ -118,6 +124,7 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
    *   本地 27B 上那是实打实的一分多钟白等。走「只出六栏」的通路：记忆一样记，这段时间省掉。
    *   ⚠️ 只对**用户扮演的那一位**生效；AI 扮演的角色照旧写日记（`computed[].journal` 用得上）。
    */
+  const warnings: string[] = []
   const computed: { memory: FreeMemory; journal: string }[] = []
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i]
@@ -140,6 +147,8 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
       limits,
       chatFn,
       signal,
+      // 记忆被判「整份退化」时如实上报（档案已回退旧值，见 memory.ts 的 isMemoryDegraded）
+      onDegraded: (reason: string) => warnings.push(`${c.name || '一位角色'}的记忆：${reason}`),
     }
     const got = c.id === session.userCharId
       ? { memory: await summarizeMemory(shared), journal: '' }
@@ -204,8 +213,10 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
         }
         await store.saveFreeChar({ ...primary, vars: cardVars })
       }
-    } catch {
-      varChanges = [] // 数值算不出来，这一场照样归档
+    } catch (e) {
+      // 数值算不出来，这一场照样归档 —— 但**必须如实说**（2026-09-19 六维审计 P0-1）
+      varChanges = []
+      warnings.push('本场数值未算出：' + (e instanceof Error ? e.message : String(e)))
     }
   }
 
@@ -227,13 +238,14 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
         out.push(...rows)
       }
       proposals = out
-    } catch {
+    } catch (e) {
       proposals = []
+      warnings.push('设定审查未完成：' + (e instanceof Error ? e.message : String(e)))
     }
   }
 
   onProgress?.({ stage: 'done', cur: total, total })
-  return { memories, journals, vars: nextVars, varChanges, proposals, endedAt: Date.now() }
+  return { memories, journals, vars: nextVars, varChanges, proposals, warnings, endedAt: Date.now() }
 }
 
 /** 组装一条日记：记的是「这一场发生了什么」，供作者回头翻，不进任何提示词 */

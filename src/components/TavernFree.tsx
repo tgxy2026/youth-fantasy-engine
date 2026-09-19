@@ -551,7 +551,14 @@ export default function TavernFree() {
       setMems(prev => ({ ...prev, ...Object.fromEntries(res.memories.map(m => [m.charId, m])) }))
 
       const n = Object.keys(res.journals).length
-      showToast(`本轮已结束 —— ${res.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}`)
+      // 🔴 有步骤没成必须如实说（2026-09-19 六维审计 P0-1）：原先 ②本场数值 / ③设定审查失败被
+      //    静默吞掉，界面照样只报「本轮已结束」，作者以为收尾是完整的。
+      showToast(
+        `本轮已结束 —— ${res.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}`
+        + (res.warnings.length ? `\n⚠️ ${res.warnings.join('\n⚠️ ')}` : ''),
+        res.warnings.length ? 'info' : 'success',
+        6000,
+      )
 
       setEndResult(res)
       // 有设定建议就顺手摊开给作者裁决 —— 都到这一步了，让他再点一次按钮纯属多余

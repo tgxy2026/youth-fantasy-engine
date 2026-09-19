@@ -8,7 +8,7 @@ import {
 import HelpPopover from './HelpPopover'
 import AutoTextarea from './AutoTextarea'
 import PromptModal from './PromptModal'
-import { confirmDialog } from './dialogs'
+import { confirmDialog, showToast } from './dialogs'
 import TemplateLibrary from './TemplateLibrary'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
@@ -191,11 +191,16 @@ export default function OutlineSheet({ tab }: Props) {
   const save = useCallback(async () => {
     if (!draft || !dirty) return
     setSaving(true)
-    await saveCardRecord(draft)
-    setRecords(records.map(r => (r.id === draft.id ? draft : r)))
-    setSaving(false)
-    setSaved(true)
-    savedTimer.current = setTimeout(() => setSaved(false), 1500)
+    try {
+      await saveCardRecord(draft)
+      setRecords(records.map(r => (r.id === draft.id ? draft : r)))
+      setSaved(true)
+      savedTimer.current = setTimeout(() => setSaved(false), 1500)
+    } catch (e) {
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setSaving(false)
+    }
   }, [draft, dirty, records])
 
   // Ctrl/Cmd+S

@@ -96,6 +96,8 @@ export default function TavernPlot() {
     }
     setSummarizing(true)
     try {
+      // 记忆被判「整份退化」时照样如实说：档案已回退旧值，不能报「已更新」
+      const degraded: string[] = []
       const aiNames = splitCast(s.cast).ai.map(c => c.name)
       const mem = await summarizeMemory({
         charId: s.id,
@@ -107,6 +109,7 @@ export default function TavernPlot() {
         providerId: st.free.summaryProviderId || undefined,
         // hardLimit 一并传：否则剧情推演这边也永远走内置 3000（审计 P1-1）
         limits: limitsOf({ longTermLimit: st.free.longTermLimit, diaryDays: st.free.diaryDays, hardLimit: st.free.hardLimit }),
+        onDegraded: (reason: string) => degraded.push(reason),
       })
       const wm = nextWatermark(s)
       const updated: TavernSession = {
@@ -117,7 +120,12 @@ export default function TavernPlot() {
       }
       await store.saveSession(updated)
       setSession(cur => (cur && cur.id === updated.id ? updated : cur))
-      showToast(`本场记忆已更新（${(updated.memory ?? '').length} 字）`)
+      showToast(
+        degraded.length
+          ? `本场记忆未更新：${degraded[0]}`
+          : `本场记忆已更新（${(updated.memory ?? '').length} 字）`,
+        degraded.length ? 'info' : 'success',
+      )
     } catch (e) {
       // 总结失败**保留旧档案**：绝不写入半截结果（与自由模式同一原则）
       showToast('整理本场记忆失败：' + (e instanceof Error ? e.message : String(e)), 'error')

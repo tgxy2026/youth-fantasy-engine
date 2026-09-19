@@ -4,6 +4,7 @@ import { getTableRows, saveTableRow, deleteTableRow, getCurrentProjectId, getSet
 import { SABC_LABELS, isVolumeLedgerTab, type VisCtx } from '../lib/schema'
 import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
 import { uid } from '../lib/id'
+import { showToast } from './dialogs'
 import { Plus, Trash2, Info, Link2, Save, Check, Calendar, Table2, PenLine, Hash, Users, ChevronDown, ChevronRight, AlertTriangle, Network, Sparkles, GitBranch } from 'lucide-react'
 import CustomSelect, { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
 import HistoryTimeline from './HistoryTimeline'
@@ -408,19 +409,25 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     }
     setCodeError(null)
     setSaving(true)
-    for (const rowId of dirtyKeys) {
-      const orig = rows.find(r => r.id === rowId)
-      if (!orig) continue
-      const merged = { ...orig.data, ...drafts[rowId] }
-      await saveTableRow({ ...orig, data: merged })
+    try {
+      for (const rowId of dirtyKeys) {
+        const orig = rows.find(r => r.id === rowId)
+        if (!orig) continue
+        const merged = { ...orig.data, ...drafts[rowId] }
+        await saveTableRow({ ...orig, data: merged })
+      }
+      // 提交后合并回 rows，清空 drafts
+      setRows(prev => prev.map(r => drafts[r.id] ? { ...r, data: { ...r.data, ...drafts[r.id] } } : r))
+      setDrafts({})
+      setSaved(true)
+      clearTimeout(savedTimer.current)
+      savedTimer.current = setTimeout(() => setSaved(false), 1500)
+    } catch (e) {
+      // 🔴 失败时**不清 drafts**：作者的改动还在输入框里，可以直接重试（审计 P1-5）
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setSaving(false)
     }
-    // 提交后合并回 rows，清空 drafts
-    setRows(prev => prev.map(r => drafts[r.id] ? { ...r, data: { ...r.data, ...drafts[r.id] } } : r))
-    setDrafts({})
-    setSaving(false)
-    setSaved(true)
-    clearTimeout(savedTimer.current)
-    savedTimer.current = setTimeout(() => setSaved(false), 1500)
     // codeCol / retiredCodes / tab.id 已被 validateCodes 一并封装进它的依赖，
     // 此处不再重复列出（重复不影响正确性，但会让依赖表失真）。
   }, [dirtyKeys, drafts, rows, validateCodes])

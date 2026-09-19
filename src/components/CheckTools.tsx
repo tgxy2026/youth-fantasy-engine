@@ -89,15 +89,21 @@ export default function CheckTools() {
   /** 系统词库扫描（无 AI 也能用，始终可用）。返回扫描结果以便 AI 检测复用。 */
   const scanBook = async (): Promise<{ title: string; hits: ReturnType<typeof scanText> }[]> => {
     setScanning(true)
-    const chapters = await db.getAllChapters()
-    const result: { title: string; hits: ReturnType<typeof scanText> }[] = []
-    for (const ch of chapters) {
-      const hits = scanText(ch.content || '', customWords)
-      if (hits.length > 0) result.push({ title: ch.title, hits })
+    try {
+      const chapters = await db.getAllChapters()
+      const result: { title: string; hits: ReturnType<typeof scanText> }[] = []
+      for (const ch of chapters) {
+        const hits = scanText(ch.content || '', customWords)
+        if (hits.length > 0) result.push({ title: ch.title, hits })
+      }
+      setScanResult(result)
+      return result
+    } catch (e) {
+      showToast('扫描失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+      return []
+    } finally {
+      setScanning(false)
     }
-    setScanResult(result)
-    setScanning(false)
-    return result
   }
 
   const totalWords = scanResult.reduce((s, r) => s + r.hits.reduce((x, h) => x + h.count, 0), 0)

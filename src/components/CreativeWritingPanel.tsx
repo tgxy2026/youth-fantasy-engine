@@ -41,6 +41,7 @@ import { countWords } from '../lib/textStats'
 import { adviseCapacity, type CapacityAdvice } from '../lib/modelCapacity'
 import { getTavernSettings } from '../lib/tavern/settings'
 import { MAX_CHAPTERS, advisePace, type PaceAdvice } from '../lib/writingPace'
+import { foldVh } from '../lib/theme'
 import NumberField from './NumberField'
 
 const NUM_INPUT = 'w-20 rounded bg-ink-900 border border-ink-700 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50'
@@ -140,7 +141,7 @@ const RW_SCOPE_NOTE: Record<ChapterRewriteAction, { latest: string; history: str
     history: '这是历史章：🔴 只删冗余与注水过渡；承载设定交代的句子（专名 / 来历 / 境界 / 关系 / 器物来源）一律保留 —— 删掉后文就断了。',
   },
   rewrite: {
-    latest: '这是项目最新章：四种动作里**只有「改写」**可以放开手脚（调节奏 / 重排场景 / 强化冲突 / 改写局部走向）。落库后会自动同步设定。',
+    latest: '这是项目最新章：四种动作里只有「改写」可以放开手脚（调节奏 / 重排场景 / 强化冲突 / 改写局部走向）。落库后会自动同步设定。',
     history: '这是历史章：只改叙述方式与文字，设定类内容一字不动、不新增剧情事件、不埋伏笔。',
   },
 }
@@ -532,8 +533,11 @@ export default function CreativeWritingPanel() {
             </Button>
           </div>
 
-          {s.outlineGate.volumes.map(v => (
-            <div key={v.title} className="mb-2 rounded border border-ink-700 bg-ink-900/40 px-3 py-2">
+          {/* 🔴 key 用序号而非卷标题（2026-09-19 六维审计 P2-11）：标题是模型产出的，同名卷
+              理论上会撞 → React 按名复用节点、内容错位。这份列表是闸门预览、不存在重排，
+              序号最稳（顺带避开「标题相同就报 key 重复」的控制台噪音）。 */}
+          {s.outlineGate.volumes.map((v, vi) => (
+            <div key={`vol-${vi}`} className="mb-2 rounded border border-ink-700 bg-ink-900/40 px-3 py-2">
               <div className="text-12 text-ink-100">《{v.title}》</div>
               {v.positioning && <div className="mt-0.5 text-11 text-ink-300">{v.positioning}</div>}
               {v.events && <div className="mt-0.5 text-10 text-ink-500">事件链：{v.events}</div>}
@@ -543,8 +547,8 @@ export default function CreativeWritingPanel() {
 
           <div className="mt-2 max-h-72 overflow-y-auto rounded border border-ink-700 bg-ink-900/40">
             <ul>
-              {s.outlineGate.chapters.map(c => (
-                <li key={c.no} className="border-b border-ink-700/40 px-3 py-1.5 last:border-0">
+              {s.outlineGate.chapters.map((c, ci) => (
+                <li key={`ch-${ci}`} className="border-b border-ink-700/40 px-3 py-1.5 last:border-0">
                   <div className="text-11 text-ink-200">第{c.no}章 {c.title}</div>
                   {c.event && <div className="text-10 text-ink-400">{c.event}</div>}
                   {c.hook && <div className="text-10 text-ink-500">章末钩子：{c.hook}</div>}
@@ -743,7 +747,7 @@ export default function CreativeWritingPanel() {
                 不想每章都停一次，可关掉上面的「逐章确认初稿」。
               </p>
               <div className="overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-700 bg-ink-900 p-3.5 text-13 leading-[1.9] text-ink-100"
-                style={{ maxHeight: '52vh' }}>
+                style={{ maxHeight: foldVh('52vh') }}>
                 {d.body}
               </div>
             </>

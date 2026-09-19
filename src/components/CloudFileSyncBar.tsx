@@ -67,6 +67,8 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
   /** 选择目录并直接开启（无需任何凭据）。 */
   const pickDir = async () => {
     if (busy) return
+    // 成功路靠 reload 收尾、不复位；取消 / 失败必须复位（见下方 finally）
+    let reloading = false
     try {
       const res = await chooseDesktopCloudDir()
       if (!res) return // 用户取消
@@ -101,11 +103,15 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
         'success',
         6000,
       )
+      reloading = true
       setTimeout(() => location.reload(), 800)
     } catch (e: any) {
-      if (e && e.name === 'AbortError') return
-      showToast('开启失败：' + (e?.message || e), 'error')
-      setBusy(false)
+      // 🔴 用户在系统选盘对话框点「取消」= AbortError：原先直接 return，
+      //    setBusy(false) 永不执行 → 按钮永久转圈（2026-09-19 六维审计 P1-10）
+      if (e && e.name === 'AbortError') showToast('已取消选择同步目录', 'info')
+      else showToast('开启失败：' + (e?.message || e), 'error')
+    } finally {
+      if (!reloading) setBusy(false)
     }
   }
 

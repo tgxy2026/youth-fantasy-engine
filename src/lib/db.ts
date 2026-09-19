@@ -504,9 +504,10 @@ if (CLOUD_FILE_SYNC) {
           const snap = await pullDesktopSnapshot()
           empty = totalRecords(snap.stores) === 0
         } catch {
-          // 拉取失败（文件损坏 / 网盘未就绪）→ 保持本地存储，绝不把界面切空；
-          // 同时清掉「已开启」标记，免得界面显示在同步而 ops 其实是本地。
-          clearDesktopCloudEnabledFlag()
+          // 拉取失败（文件损坏 / 网盘未就绪）→ 保持本地存储，绝不把界面切空。
+          // 🔴 **不再清「已开启」标记**（2026-09-19 六维审计 P1-7）：拉不到 ≠ 云端是空的。
+          //    清了标记就等于把同步**静默关掉** —— 下次启动 isDesktopCloudEnabled() 为 false，
+          //    而界面上看不出任何变化，作者会以为一直在同步。保留标记，下次启动 / 网盘就绪后再试。
           return
         }
         if (empty) {
@@ -556,13 +557,21 @@ export function isDesktopCloudSyncActive(): boolean {
  */
 async function captureSyncData(): Promise<Record<string, any[]>> {
   const out: Record<string, any[]> = {}
+  const failed: string[] = []
   for (const s of SYNC_STORES) {
     if (s === 'backups') continue
     try {
       out[s] = (await ops.getAll(s)) || []
     } catch {
+      // 🔴 读失败**不能**静默降级成 []（2026-09-19 六维审计 P2-4）：这份载荷会被当成
+      //    「rev=1 的第一份」推上新目录，本机该 store 于是显示为空，还可能被别的设备
+      //    按「云端没有该记录」当成删除。与 seedFromLocal 的「读失败就中止痛播」同口径。
+      failed.push(s)
       out[s] = []
     }
+  }
+  if (failed.length) {
+    throw new Error(`读取本地数据失败（${failed.join('、')}）—— 已中止开启同步，以免把空数据推上云端`)
   }
   return out
 }
@@ -610,8 +619,16 @@ export async function enableDesktopCloudSync(handle: any) {
 export async function disableDesktopCloudSync() {
   // 1) 先把未推送的改动推出去（推不出去时 flushNow 内部会走 fallback 兜底写本地）
   await flushDesktopCloud()
-  // 2) 把云端当前数据镜像进本地库 —— 关闭后界面读的就是这份，不再「少一截」
-  await mirrorCloudCacheToLocal(snapshotDesktopCloudCache())
+  // 🔴 2) 云端**不可用**（闩锁期：网盘目录被占用 / 断网）时，这份 cache 是**闩锁前**的旧数据 ——
+  //    整体覆盖会把闩锁期用户新写的内容整片盖回旧版并立即落盘，磁盘级不可逆。
+  //    这正是 mirrorCloudCacheToLocal 注释里点名要防的「审计 P0-2 静默回滚」
+  //    （2026-09-19 六维审计 P0-3）。此时只能「只补缺失」，让本地新数据活下来。
+  const cloudUnavailable = isDesktopCloudUnavailable()
+  await mirrorCloudCacheToLocal(snapshotDesktopCloudCache(), !cloudUnavailable)
+  if (cloudUnavailable) {
+    // 如实告知（只记日志：lib 层不能 import components 弹 toast，会形成反向依赖）
+    console.warn('[sync] 云端不可用，关闭同步时以本地数据为准（未用旧快照覆盖本地新改动）')
+  }
   // 3) 落盘（桌面版走 JSON 文件；非桌面是空操作），确保 reload 前已持久化
   await flushDesktop().catch(() => {})
   // 4) 清标记、复位传输层，切回本地

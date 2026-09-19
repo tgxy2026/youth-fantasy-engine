@@ -94,7 +94,8 @@ export default function NumberField({
       onFocus={() => setEditing(true)}
       onBlur={commit}
       onKeyDown={e => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        // 🔴 中文输入法里 Enter 是「选字上屏」，不是提交 —— 不挡会把候选词当提交触发 blur → commit 钳制（红线 §15）
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur()
       }}
       className={className}
     />

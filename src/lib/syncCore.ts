@@ -315,6 +315,13 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
 
   let authFailed = false
   let transientUnavailable = false
+  /**
+   * 目录代际号：每次 `configure()`（换目录 / 重开同步）递增。
+   * 🔴 用来丢弃「换目录期间在途的那次 push」的回写（2026-09-19 六维审计 P1-11）：
+   *    它拿的是**旧目录**的 rev，写回来会让新目录的基线虚高，`backgroundPull` 的
+   *    `remoteRev <= rev` 于是永久挡住拉取 —— 跨设备同步静默停摆，界面上看不出来。
+   */
+  let epoch = 0
   let rateLimitedUntil = 0
   let syncStatus: SyncStatus = 'idle'
 
@@ -422,6 +429,10 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
             }
             authFailed = false
             transientUnavailable = false
+            // 🔴 自愈成功要把状态拨回 'ok'（2026-09-19 六维审计 P2-5）：`ensureInit` 是闩锁自愈的
+            //    唯一通道，只清标志不报状态时界面会一直显示「离线」—— 而 `backgroundPull` 只在
+            //    「远端有更新」时才置 ok，无更新时直接 return，永远轮不到它复位。
+            setStatus('ok')
             baseCache = snapshotOf(cache)
             return
           }
@@ -468,6 +479,10 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   async function pullSnapshot(): Promise<{ rev: number; stores: Record<string, any[]> }> {
     await ensureInit()
     if (authFailed) throw new CloudAuthError()
+    // 🔴 拉取失败时必须**抛**，不能返回 `{rev:0, stores:{}}`（2026-09-19 六维审计 P1-7）：
+    //    那个空快照与「云端确实是空库」在返回值上完全一样，调用方只能猜 ——
+    //    db.ts 猜成「空库」→ 清掉「已开启」标记 → 同步被**静默关掉**（界面上看不出来）。
+    if (transientUnavailable) throw new Error('云端暂不可用（网盘未就绪 / 同步目录被占用）')
     return { rev, stores: cache }
   }
 
@@ -548,6 +563,8 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
 
   // 推送（带 rev 守卫）。冲突(409)时合并云端版本（本地优先）后用最新 rev 重试。
   async function pushNowRaw(baseRev: number, depth = 0): Promise<{ conflict?: boolean }> {
+    // 记下这次 push 属于哪一代目录（见 epoch 的说明）
+    const myEpoch = epoch
     const uploadCache: Record<string, any> = liveStores(cache)
     // #027：防整库清空——本地缓存为空但存在已知良好基线时，绝不能用空库覆盖云端。
     // 🔴 用**记录总数**判（见 totalRecords 的说明），键数判法会被「12 个空数组」骗过去。
@@ -616,6 +633,10 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       throw new Error('sync push network error')
     }
     if (r === 200) {
+      // 🔴 换目录期间在途的那次 push 不回写（2026-09-19 六维审计 P1-11）：它拿的是**旧目录**
+      //    的 rev，写回来会让新目录基线虚高 → `backgroundPull` 的 `remoteRev <= rev` 永久挡住
+      //    拉取。丢弃结果即可，新一轮 push 会重新建立基线。
+      if (myEpoch !== epoch) return { conflict: false }
       rev = resp.rev ?? baseRev + 1
       baseCache = snapshotOf(cache)
       setStatus('ok')
@@ -757,6 +778,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     store,
     configure(c: string) {
       code = c
+      epoch++ // 换目录 → 作废在途 push 的回写（见 epoch 的说明）
       cache = {}
       rev = 0
       initPromise = null

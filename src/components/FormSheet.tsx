@@ -8,7 +8,7 @@ import AITemplateFill from './AITemplateFill'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
-import { confirmDialog } from './dialogs'
+import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
@@ -87,11 +87,16 @@ export default function FormSheet({ tab }: Props) {
 
   const save = useCallback(async () => {
     setSaving(true)
-    await saveFormData(tab.id, data)
-    setSaving(false)
-    setDirty(false)
-    setSaved(true)
-    savedTimer.current = setTimeout(() => setSaved(false), 1500)
+    try {
+      await saveFormData(tab.id, data)
+      setDirty(false)
+      setSaved(true)
+      savedTimer.current = setTimeout(() => setSaved(false), 1500)
+    } catch (e) {
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setSaving(false)
+    }
   }, [tab.id, data])
 
   // 离开页签前若有未保存，提示

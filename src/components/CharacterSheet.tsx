@@ -9,7 +9,7 @@ import AutoTextarea from './AutoTextarea'
 import TableRefSelect from './TableRefSelect'
 import AITemplateFill from './AITemplateFill'
 import PromptModal from './PromptModal'
-import { confirmDialog } from './dialogs'
+import { confirmDialog, showToast } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
@@ -215,11 +215,16 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   const save = useCallback(async () => {
     if (!draft || !dirty) return
     setSaving(true)
-    await saveCardRecord(draft)
-    setRecords(records.map(r => (r.id === draft.id ? draft : r)))
-    setSaving(false)
-    setSaved(true)
-    savedTimer.current = setTimeout(() => setSaved(false), 1500)
+    try {
+      await saveCardRecord(draft)
+      setRecords(records.map(r => (r.id === draft.id ? draft : r)))
+      setSaved(true)
+      savedTimer.current = setTimeout(() => setSaved(false), 1500)
+    } catch (e) {
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setSaving(false)
+    }
   }, [draft, dirty, records])
 
   // Ctrl/Cmd+S
