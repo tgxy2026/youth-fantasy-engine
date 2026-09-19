@@ -246,7 +246,8 @@ export default function CreativeWritingPanel() {
               只有勾选的条目会落库；可以改名称、也可以直接舍弃不要的
             </span>
             <div className="flex-1" />
-            <Button size="xs" variant="secondary" onClick={() => resolveGate(null)}>放弃本次创作</Button>
+            {/* 与下方 DraftReviewPanel 的「确认设定」（sm）同一决策组 —— 尺寸必须一致 */}
+            <Button size="sm" variant="secondary" onClick={() => resolveGate(null)}>放弃本次创作</Button>
           </div>
           <DraftReviewPanel
             bundle={bibleGate}
@@ -265,7 +266,9 @@ export default function CreativeWritingPanel() {
               确认分卷大纲（{outlineGate.volumes.length} 卷 / {outlineGate.chapters.length} 章）
             </span>
             <div className="flex-1" />
-            <Button size="xs" variant="secondary" onClick={() => resolveGate(false)}>放弃本次创作</Button>
+            {/* 同一排三个按钮必须同尺寸：原来「放弃」是 xs（24px）而另两个是 sm（32px），
+                并排站着矮一截（2026-09-19 修）。口径：面板主操作与决策按钮 = sm。 */}
+            <Button size="sm" variant="secondary" onClick={() => resolveGate(false)}>放弃本次创作</Button>
             <Button size="sm" variant="secondary" onClick={() => resolveGate('outline-only')}>
               只保存大纲（不写正文）
             </Button>

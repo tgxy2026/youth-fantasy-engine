@@ -55,19 +55,19 @@ function ConfirmView({ title, message, confirmText = '确定', cancelText = '取
       layer={Z.prompt}
       footer={
         <>
-          <Button variant="bare"
+          {/* 🔴 弹窗内的按钮统一走 md（h-9），别再手写 px-3 py-1.5 ——
+              手写字面量会让这一对按钮约 30px 高，比面板主操作（sm=32px）矮、
+              又比 PromptModal 的按钮（md=36px）矮，三种高度并存（2026-09-19 修）。
+              口径：弹窗内 = md ／ 面板主操作 = sm ／ 面板工具 = xs。 */}
+          <Button variant="secondary" size="md"
             onClick={() => onResult(false)}
-            className="px-3 py-1.5 rounded-lg text-12 text-ink-300 border border-ink-600 hover:border-ink-500 transition-colors"
+            className="text-12"
           >
             {cancelText}
           </Button>
-          <Button variant="bare"
+          <Button variant={danger ? 'danger' : 'primary'} size="md"
             onClick={() => onResult(true)}
-            className={`px-3 py-1.5 rounded-lg text-12 border transition-colors ${
-              danger
-                ? 'bg-red-500/15 text-red-300 border-red-500/40 hover:bg-red-500/25'
-                : 'bg-amber/15 text-amber border-amber/30 hover:bg-amber/25'
-            }`}
+            className="text-12"
           >
             {confirmText}
           </Button>
