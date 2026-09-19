@@ -17,7 +17,7 @@ import {
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo,
 } from '../desktopCloudSync'
-import { SYNC_STORES, totalRecords } from '../syncCore'
+import { SYNC_STORES, totalRecords, type SyncStores, type SyncRow } from '../syncCore'
 import {
   migrateFreshInstall, migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5,
   migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10,
@@ -127,13 +127,13 @@ onDesktopSyncConflict((info: SyncConflictInfo) => {
  * 返回 Promise —— 「关闭同步」必须**等它写完**再切 ops 并 reload，否则写了一半就被打断。
  * 异常兜底那条路（pagehide/关窗）仍是 fire-and-forget，与原先一致。
  */
-async function mirrorCloudCacheToLocal(cache: Record<string, any[]>, overwrite = true): Promise<void> {
+async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Promise<void> {
   const tasks: Promise<unknown>[] = []
   for (const [store, rows] of Object.entries(cache)) {
     if (store === 'backups') continue
     const list = store === 'meta'
-      ? (rows as any[]).filter(r => !isExcludedMetaKey(r?.key))
-      : (rows as any[])
+      ? rows.filter(r => !isExcludedMetaKey(r?.key))
+      : rows
     if (!list.length) continue
 
     if (overwrite) {
@@ -208,7 +208,7 @@ export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavai
     getAll: async <T,>(store: string): Promise<T[]> => {
       if (store !== 'meta') return cloudOrLocal('getAll', store)
       if (isUnavailable()) return local.getAll<T>('meta')
-      const localMeta = (await local.getAll<T>('meta')).filter((r: any) => isExcludedMetaKey(r.key))
+      const localMeta = (await local.getAll<T>('meta')).filter((r) => isExcludedMetaKey((r as { key?: unknown }).key))
       const cloudMeta = await cloud.getAll<T>('meta')
       if (isUnavailable()) return local.getAll<T>('meta')
       return [...localMeta, ...cloudMeta] as T[]
@@ -332,8 +332,8 @@ export function isDesktopCloudSyncActive(): boolean {
  * 抓一份「当前 ops 里参与同步的数据」快照。
  * 只给「换同步目录」这类**必须在 configure() 之前**取数的场合用。
  */
-async function captureSyncData(): Promise<Record<string, any[]>> {
-  const out: Record<string, any[]> = {}
+async function captureSyncData(): Promise<SyncStores> {
+  const out: SyncStores = {}
   const failed: string[] = []
   for (const s of SYNC_STORES) {
     if (s === 'backups') continue
@@ -383,10 +383,12 @@ export async function enableDesktopCloudSync(handle: any) {
   //    不注册的话，被删掉的项目会被云端那份旧快照反复带回来（幽灵项目，2026-09-19 实测）。
   //    注意读的是 desktopLocalStore（本机数据文件），不是当前的 ops —— 云模式下那是内存 cache。
   onDesktopLocalSnapshot(async () => {
-    const out: Record<string, any[]> = {}
+    const out: SyncStores = {}
     for (const s of SYNC_STORES) {
       if (s === 'backups') continue
-      out[s] = await desktopLocalStore.getAll(s).catch(() => [])
+      // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
+      // 落进同步通用载荷前断言成 SyncRow[] —— 形状由写入方保证
+      out[s] = (await desktopLocalStore.getAll(s).catch(() => [])) as SyncRow[]
     }
     return out
   })

@@ -16,6 +16,9 @@ import {
 import { SAVE_DEBOUNCE_MS } from './constants'
 import { todayKey } from './date'
 import { isDeleted, markDeleted, clearDeleted, resetTombs } from './syncTombstone'
+// 🔴 WebCrypto 取用器放在**叶子模块**：syncTransport 也要用它，而从 syncCore 导出会让
+//    syncTransport → syncCore 与本文件的 syncCore → syncTransport 凑成环（importCycles 会报红）。
+import { webcrypto, hasWebCrypto } from './webcrypto'
 
 // 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
 // ⚠️ 注意 'backups' 是**本地专属**：上传侧 liveStores() 会把它从载荷里剔除，
@@ -40,6 +43,24 @@ export const EXCLUDED_META_KEYS = new Set<string>([
 
 export const CONFLICT_KEY_PREFIX = 'syncConflict:'
 
+// ============ 同步层通用类型（2.3.0 · D7）============
+// 为什么要有这一组别名：同步层原先散着 100+ 处 `any`，读的人分不清「这里真的什么都可能」
+// 和「懒得写类型」。收窄到一处声明后，`any` 只剩在**真正无法静态描述**的边界（见各处的注释），
+// 其余位置读字段得到 `unknown` —— 用之前必须显式收窄，正是我们要的摩擦力。
+
+/**
+ * 一条已落库记录。同步层**不关心**具体形状 —— 它只按主键（`id` / `key`）比对、搬运、判重。
+ * 故用索引签名而非 `any`：读字段得 `unknown`，迫使调用点说清「我凭什么认为它是这个形状」。
+ */
+export type SyncRow = Record<string, unknown>
+/** store 名 → 该 store 的记录数组。同步载荷（快照 / 缓存 / 备份 / 每日备份）统一是它。 */
+export type SyncStores = Record<string, SyncRow[]>
+/** 加密载荷解密后的形状：就是 store 快照本身，另挂一个可选的每日备份（#026）。 */
+// 只在本文件内用（外部无引用）→ **不 export**：audit-dead 的「多余 export」清单是刻意压着的，
+// 新增一个它就长一格，而那个清单一旦失控就再也看不出真正的死代码（见 skill 里的验尸率教训）
+type SyncPayload = SyncStores & { __cloudBackup?: CloudBackup }
+
+
 // #005 冲突处理器：两端都改过同一条记录时，把云端那版交给上层另存副本
 let conflictHandler: ((info: SyncConflictInfo) => void) | null = null
 export function onSyncConflict(h: (info: SyncConflictInfo) => void) {
@@ -50,7 +71,7 @@ export function onSyncConflict(h: (info: SyncConflictInfo) => void) {
  * 「推不出去」时的兜底处理器：收到当前内存 cache，由上层负责落盘。
  * 见 createCloudStore().onFallback 与 flushNow() 的 blocked 分支。
  */
-let fallbackHandler: ((cache: Record<string, any[]>) => void) | null = null
+let fallbackHandler: ((cache: SyncStores) => void) | null = null
 
 /** 敏感/本地专属 meta：AI 配置不上云；冲突副本只落本地、不上传 */
 export function isExcludedMetaKey(key: unknown): boolean {
@@ -65,7 +86,7 @@ export function isExcludedMetaKey(key: unknown): boolean {
  *    `liveStores` 会把每个 store 都放成键（哪怕是空数组），12 个空数组照样能骗过键数判断
  *    —— 一份「看起来有 12 个 store」的空快照就这么被推上云端，覆盖掉真实数据。
  */
-export function totalRecords(m: Record<string, any[]>): number {
+export function totalRecords(m: SyncStores): number {
   return Object.values(m || {}).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0)
 }
 
@@ -82,13 +103,13 @@ export type SyncStatus =
 export type SyncConflictInfo = {
   store: string
   key: unknown
-  local: any
-  server: any
+  local: unknown
+  server: unknown
   at: number
 }
 
 // #026/A+：云端每日滚动备份（最新一份，按自然日滚动）。
-export type CloudBackup = { day: string; ts: number; data: Record<string, any[]> }
+export type CloudBackup = { day: string; ts: number; data: SyncStores }
 export type CloudBackupMeta = { day: string; ts: number }
 
 /** 被服务端限流（429）——与网络异常区分 */
@@ -108,14 +129,16 @@ export class CloudAuthError extends Error {
 }
 
 // ============ 加密（载荷级，rev 保持明文） ============
-const hasSubtle = typeof globalThis !== 'undefined' && !!((globalThis as any).crypto && (globalThis as any).crypto.subtle)
+// 探测逻辑已抽到 webcrypto.ts（syncTransport 也要判同一件事，不能各写一份）
+const hasSubtle = hasWebCrypto
 const SYNC_SALT = 'yfe-cloud-sync-v1'
 
 function bytesToB64(bytes: Uint8Array): string {
   let bin = ''
   const chunk = 0x8000
   for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any)
+    // 用 apply 而非展开：单块 32768 个参数，展开写法在部分引擎上会撞「参数过多」
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)))
   }
   return btoa(bin)
 }
@@ -128,8 +151,9 @@ function b64ToBytes(b64: string): Uint8Array {
 
 async function deriveKey(c: string): Promise<CryptoKey> {
   const enc = new TextEncoder()
-  const material = await (globalThis as any).crypto.subtle.importKey('raw', enc.encode(c), 'PBKDF2', false, ['deriveKey'])
-  return (globalThis as any).crypto.subtle.deriveKey(
+  const subtle = webcrypto().subtle
+  const material = await subtle.importKey('raw', enc.encode(c), 'PBKDF2', false, ['deriveKey'])
+  return subtle.deriveKey(
     { name: 'PBKDF2', salt: enc.encode(SYNC_SALT), iterations: 100000, hash: 'SHA-256' },
     material,
     { name: 'AES-GCM', length: 256 },
@@ -154,7 +178,7 @@ function xorKeystream(c: string): Uint8Array {
 // 依赖模块级 `code`，该变量由 createCloudStore 闭包持有，故这些函数定义在工厂内部（见下）。
 // 此处仅保留纯工具（bytesToB64/b64ToBytes/deriveKey/xorKeystream 均不引用 code）。
 
-function eqRecord(a: any, b: any): boolean {
+function eqRecord(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (!a || !b) return false
   try {
@@ -167,13 +191,13 @@ function eqRecord(a: any, b: any): boolean {
  * 两个 store 快照内容是否一致。
  * 用途：三路合并后判断「是否留下了云端没有的本地改动」（是则必须立刻推回，见 backgroundPull）。
  */
-function sameStores(a: Record<string, any[]>, b: Record<string, any[]>): boolean {
+function sameStores(a: SyncStores, b: SyncStores): boolean {
   const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})])
   for (const k of keys) {
     const av = a?.[k] ?? []
     const bv = b?.[k] ?? []
     if (av.length !== bv.length) return false
-    const bm = new Map<any, any>(bv.map((r: any) => [r?.id ?? r?.key, r]))
+    const bm = new Map<unknown, SyncRow>(bv.map(r => [r?.id ?? r?.key, r] as const))
     for (const r of av) {
       const other = bm.get(r?.id ?? r?.key)
       if (!other || !eqRecord(r, other)) return false
@@ -182,8 +206,8 @@ function sameStores(a: Record<string, any[]>, b: Record<string, any[]>): boolean
   return true
 }
 
-function snapshotOf(c: Record<string, any[]>): Record<string, any[]> {
-  const out: Record<string, any[]> = {}
+function snapshotOf(c: SyncStores): SyncStores {
+  const out: SyncStores = {}
   for (const k of Object.keys(c || {})) out[k] = (c[k] || []).slice()
   return out
 }
@@ -194,11 +218,11 @@ function snapshotOf(c: Record<string, any[]>): Record<string, any[]> {
  * 并把云端那版交给 conflictHandler 另存副本，用户可比对照恢复（#005）。
  */
 function mergeCaches(
-  base: Record<string, any[]>,
-  server: Record<string, any[]>,
-  local: Record<string, any[]>,
-): Record<string, any[]> {
-  const out: Record<string, any[]> = {}
+  base: SyncStores,
+  server: SyncStores,
+  local: SyncStores,
+): SyncStores {
+  const out: SyncStores = {}
   const stores = new Set([
     ...Object.keys(base || {}),
     ...Object.keys(server || {}),
@@ -219,19 +243,19 @@ function mergeCaches(
       continue
     }
     const kf = KEY_FIELD[s] ?? 'id'
-    const bMap = new Map<any, any>()
-    const sMap = new Map<any, any>()
-    const lMap = new Map<any, any>()
+    const bMap = new Map<unknown, SyncRow>()
+    const sMap = new Map<unknown, SyncRow>()
+    const lMap = new Map<unknown, SyncRow>()
     for (const r of (base && base[s]) || []) if (r && r[kf] !== undefined) bMap.set(r[kf], r)
     for (const r of (server && server[s]) || []) if (r && r[kf] !== undefined) sMap.set(r[kf], r)
     for (const r of (local && local[s]) || []) if (r && r[kf] !== undefined) lMap.set(r[kf], r)
 
-    const arr: any[] = []
+    const arr: SyncRow[] = []
     for (const k of new Set([...bMap.keys(), ...sMap.keys(), ...lMap.keys()])) {
       const b = bMap.get(k)
       const sv = sMap.get(k)
       const lo = lMap.get(k)
-      const note = (localV: any, serverV: any) => {
+      const note = (localV: unknown, serverV: unknown) => {
         try {
           conflictHandler?.({ store: s, key: k, local: localV, server: serverV, at: Date.now() })
         } catch {
@@ -297,8 +321,8 @@ export interface CloudStoreInstance {
   store: StoreOps
   configure(code: string): void
   setTransport(t: SyncTransport): void
-  pullSnapshot(): Promise<{ rev: number; stores: Record<string, any[]> }>
-  seedFromLocal(getAll: (store: string) => Promise<any[]>): Promise<void>
+  pullSnapshot(): Promise<{ rev: number; stores: SyncStores }>
+  seedFromLocal(getAll: (store: string) => Promise<unknown[]>): Promise<void>
   getStatus(): SyncStatus
   isCloudUnavailable(): boolean
   isCloudAuthFailed(): boolean
@@ -308,18 +332,18 @@ export interface CloudStoreInstance {
   onSyncConflict(h: (info: SyncConflictInfo) => void): void
   /** 注册「推不出去时的本地兜底」：回调收到当前内存 cache（store 名 → 行数组）。
    *  云模式下写入先进内存、再推同步目录；推送被挡时若不兜底，关窗即丢。 */
-  onFallback(h: (cache: Record<string, any[]>) => void): void
+  onFallback(h: (cache: SyncStores) => void): void
   /**
    * 注册「读本地库快照」的回调。`ensureInit` 启动合并时把它当三路合并的 `local` 路 ——
    * 用来区分「本机删掉了某记录」与「本机还没见过它（新设备 / 首次同步）」。
    * 不注册时退回只用内存 cache（保守：不会误删云端数据，但也治不了幽灵项目）。
    */
-  onLocalSnapshot(h: () => Promise<Record<string, any[]>>): void
+  onLocalSnapshot(h: () => Promise<SyncStores>): void
   armUnloadFlush(): void
   /** 立即把内存里未推送的改动推出去（不等防抖计时器）。关同步 / 关窗前调用。 */
   flushNow(): Promise<void>
   /** 当前内存 cache 的快照（store 名 → 行数组）。用于「关闭同步前把云端数据镜像进本地」。 */
-  getCacheSnapshot(): Record<string, any[]>
+  getCacheSnapshot(): SyncStores
 }
 
 const MAX_CONFLICT_RETRY = 5
@@ -327,7 +351,7 @@ const STATUS_EVENT = 'yfe:sync-status'
 
 export function createCloudStore(initialTransport: SyncTransport): CloudStoreInstance {
   let code = ''
-  let cache: Record<string, any[]> = {}
+  let cache: SyncStores = {}
   let rev = 0
   let pushTimer: ReturnType<typeof setTimeout> | null = null
   let pushing = false
@@ -350,9 +374,9 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   let syncStatus: SyncStatus = 'idle'
 
   let cloudBackup: CloudBackup | null = null
-  let baseCache: Record<string, any[]> = {}
+  let baseCache: SyncStores = {}
   /** 「读本地库快照」的注入回调，见 CloudStoreInstance.onLocalSnapshot */
-  let localSnapshotProvider: (() => Promise<Record<string, any[]>>) | null = null
+  let localSnapshotProvider: (() => Promise<SyncStores>) | null = null
 
   /**
    * 认领新基线（推送成功后调用）。
@@ -373,39 +397,41 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   }
 
   // 仅含活数据（排除本地专属的 backups 与敏感 meta）
-  function liveStores(src: Record<string, any[]>): Record<string, any[]> {
-    const out: Record<string, any[]> = {}
+  function liveStores(src: SyncStores): SyncStores {
+    const out: SyncStores = {}
     for (const s of Object.keys(src || {})) {
       if (s === 'backups') continue
       out[s] = (src[s] || []).slice()
     }
-    if (out.meta) out.meta = out.meta.filter((r: any) => !isExcludedMetaKey(r.key))
+    if (out.meta) out.meta = out.meta.filter((r) => !isExcludedMetaKey(r.key))
     return out
   }
 
-  function adoptCloudBackup(obj: any) {
-    if (obj && obj.__cloudBackup) {
-      cloudBackup = obj.__cloudBackup
-      delete obj.__cloudBackup
+  function adoptCloudBackup(obj: unknown) {
+    // 形参是 unknown（解密出来的东西可能根本不是对象），故先断言成载荷形状再判存在性
+    const o = obj as SyncPayload | null
+    if (o && o.__cloudBackup) {
+      cloudBackup = o.__cloudBackup
+      delete o.__cloudBackup
     }
   }
 
   // 以下 4 个函数引用闭包内的 `code`，必须定义在工厂内部（createCloudStore 提供 `code` 作用域）。
   async function aesEncrypt(obj: unknown): Promise<string> {
-    const iv = (globalThis as any).crypto.getRandomValues(new Uint8Array(12))
+    const iv = webcrypto().getRandomValues(new Uint8Array(12))
     const data = new TextEncoder().encode(JSON.stringify(obj))
-    const buf = await (globalThis as any).crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await deriveKey(code), data)
+    const buf = await webcrypto().subtle.encrypt({ name: 'AES-GCM', iv }, await deriveKey(code), data)
     const ct = new Uint8Array(buf)
     const combined = new Uint8Array(iv.length + ct.length)
     combined.set(iv, 0)
     combined.set(ct, iv.length)
     return 'a1:' + bytesToB64(combined)
   }
-  async function aesDecrypt(s: string): Promise<any> {
+  async function aesDecrypt(s: string): Promise<SyncPayload> {
     const combined = b64ToBytes(s.slice(3))
     const iv = combined.subarray(0, 12)
     const data = combined.subarray(12)
-    const buf = await (globalThis as any).crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await deriveKey(code), data)
+    const buf = await webcrypto().subtle.decrypt({ name: 'AES-GCM', iv }, await deriveKey(code), data)
     return JSON.parse(new TextDecoder().decode(buf))
   }
   function xorObfuscate(obj: unknown): string {
@@ -415,7 +441,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     for (let i = 0; i < data.length; i++) out[i] = data[i] ^ key[i & 255]
     return 'x1:' + bytesToB64(out)
   }
-  function xorDeobfuscate(s: string): any {
+  function xorDeobfuscate(s: string): SyncPayload {
     const data = b64ToBytes(s.slice(3))
     const key = xorKeystream(code)
     const out = new Uint8Array(data.length)
@@ -427,7 +453,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     if (hasSubtle) return aesEncrypt(obj)
     return xorObfuscate(obj)
   }
-  async function decryptObj(s: string): Promise<any> {
+  async function decryptObj(s: string): Promise<SyncPayload> {
     if (s.startsWith('a1:')) return await aesDecrypt(s)
     if (s.startsWith('x1:')) return xorDeobfuscate(s)
     return JSON.parse(s)
@@ -518,7 +544,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   }
 
   /** 拉取当前快照（init 之后）。码无效时抛 CloudAuthError，而非返回空快照。 */
-  async function pullSnapshot(): Promise<{ rev: number; stores: Record<string, any[]> }> {
+  async function pullSnapshot(): Promise<{ rev: number; stores: SyncStores }> {
     await ensureInit()
     if (authFailed) throw new CloudAuthError()
     // 🔴 拉取失败时必须**抛**，不能返回 `{rev:0, stores:{}}`（2026-09-19 六维审计 P1-7）：
@@ -546,12 +572,12 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   }
 
   /** 用本地数据播种（仅当远端为空时调用）。 */
-  async function seedFromLocal(getAll: (store: string) => Promise<any[]>) {
+  async function seedFromLocal(getAll: (store: string) => Promise<unknown[]>) {
     // 🔴 审计 2026-09-18（P2-3）：逐 store 读失败**绝不能静默当空**继续播种。
     //    残缺载荷一旦推上去就成了新基线，另一台设备 mergeCaches 时按「云端没有该记录、
     //    本地也没改过」丢弃那些记录 —— 真实数据在**两端一起消失**。
     //    所以先读到临时对象、全部成功才提交；有任何失败就中止（界面报错，下次再播）。
-    const next: Record<string, any[]> = {}
+    const next: SyncStores = {}
     const failed: string[] = []
     for (const s of SYNC_STORES) {
       // backups 是本地专属保险（#026）：上传侧 liveStores 会剔除它，读取侧 db/core.ts 的包装层
@@ -559,7 +585,9 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       // 而备份体量不小（每份是一整份项目副本，最多 30 份滚动），播种时白读一次的代价真实可感。
       if (s === 'backups') continue
       try {
-        next[s] = (await getAll(s)) || []
+        // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
+        // 落进同步通用 cache 前断言成 SyncRow[] —— 形状由写入方（put/bulkPut）保证
+        next[s] = ((await getAll(s)) || []) as SyncRow[]
       } catch {
         failed.push(s)
       }
@@ -568,7 +596,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       throw new Error(`播种失败：读取本地数据出错（${failed.join('、')}），已中止以免把残缺数据推上云端`)
     }
     if (next['meta']) {
-      next['meta'] = next['meta'].filter((r: any) => !isExcludedMetaKey(r.key))
+      next['meta'] = next['meta'].filter((r) => !isExcludedMetaKey(r.key))
     }
     cache = next
     await pushNow(0)
@@ -607,7 +635,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   async function pushNowRaw(baseRev: number, depth = 0): Promise<{ conflict?: boolean }> {
     // 记下这次 push 属于哪一代目录（见 epoch 的说明）
     const myEpoch = epoch
-    const uploadCache: Record<string, any> = liveStores(cache)
+    const uploadCache: SyncPayload = liveStores(cache)
     // #027：防整库清空——本地缓存为空但存在已知良好基线时，绝不能用空库覆盖云端。
     // 🔴 用**记录总数**判（见 totalRecords 的说明），键数判法会被「12 个空数组」骗过去。
     if (totalRecords(uploadCache) === 0 && totalRecords(liveStores(baseCache)) > 0) {
@@ -630,7 +658,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     const r = resp.status
     if (r === 409) {
       const serverRev = resp.rev ?? baseRev
-      let serverCache: Record<string, any[]> | null = null
+      let serverCache: SyncStores | null = null
       if (resp.enc) {
         try {
           serverCache = await decryptObj(resp.enc)
@@ -749,27 +777,32 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     }, SAVE_DEBOUNCE_MS)
   }
 
-  function keyOf(store: string, value: any): unknown {
-    return value?.[KEY_FIELD[store] ?? 'id']
+  function keyOf(store: string, value: unknown): unknown {
+    return (value as SyncRow | undefined)?.[KEY_FIELD[store] ?? 'id']
   }
 
   const store: StoreOps = {
     getAll: async <T,>(store: string): Promise<T[]> => {
       await ensureInit()
-      return ((cache[store] || []) as T[]).map((x) => ({ ...x }))
+      // cast 是「边界断言」：cache 里存的是各业务域的具体记录（Project/Chapter/…），
+      // 与 StoreOps 的泛型签名对齐只能靠它 —— 形状由写入方（put/bulkPut）保证。
+      return (cache[store] || []).map((x) => ({ ...x })) as unknown as T[]
     },
     get: async <T,>(store: string, key: string): Promise<T | undefined> => {
       await ensureInit()
       const kf = KEY_FIELD[store] ?? 'id'
-      return (cache[store] || []).find((x: any) => x[kf] === key) as T | undefined
+      return (cache[store] || []).find((x) => x[kf] === key) as unknown as T | undefined
     },
-    put: async (store: string, value: any) => {
+    put: async (store: string, value: unknown) => {
       await ensureInit()
       const arr = cache[store] || (cache[store] = [])
-      const k = keyOf(store, value)
-      const i = arr.findIndex((x: any) => x[KEY_FIELD[store] ?? 'id'] === k)
-      if (i >= 0) arr[i] = value
-      else arr.push(value)
+      // StoreOps 的入参在类型上是 unknown（各业务域传进来的是自己的记录类型），
+      // 同步层只按主键搬运、不做形状校验 —— 这里断言成 SyncRow 存进通用 cache
+      const rec = value as SyncRow
+      const k = keyOf(store, rec)
+      const i = arr.findIndex((x) => x[KEY_FIELD[store] ?? 'id'] === k)
+      if (i >= 0) arr[i] = rec
+      else arr.push(rec)
       // 🔴 写回同 key 的记录 → 清掉它的墓碑，允许「删掉之后又重建」（从项目备份导入等）
       clearDeleted(store, [String(k)])
       schedulePush()
@@ -777,7 +810,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     del: async (store: string, key: string) => {
       await ensureInit()
       const kf = KEY_FIELD[store] ?? 'id'
-      cache[store] = (cache[store] || []).filter((x: any) => x[kf] !== key)
+      cache[store] = (cache[store] || []).filter((x) => x[kf] !== key)
       // 🔴 记墓碑：这是「本机明确删过它」的唯一凭据。没有它，云端那份旧记录会在下次启动
       //    合并时被判成「另一端新增」而搬回来（幽灵项目，2026-09-19 实测）。
       //    meta 不记 —— 那是配置/开关，删了就是删了，不需要跨启动的删除记忆。
@@ -786,28 +819,29 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     },
     getAllByIndex: async <T,>(store: string, indexName: string, value: unknown): Promise<T[]> => {
       await ensureInit()
-      return ((cache[store] || []) as any[])
+      return (cache[store] || [])
         .filter((x) => x[indexName] === value)
-        .map((x) => ({ ...x })) as T[]
+        .map((x) => ({ ...x })) as unknown as T[]
     },
-    bulkPut: async (store: string, values: any[]) => {
+    bulkPut: async (store: string, values: SyncRow[]) => {
       await ensureInit()
       const arr = cache[store] || (cache[store] = [])
       const kf = KEY_FIELD[store] ?? 'id'
       for (const v of values) {
         const k = v?.[kf]
-        const i = arr.findIndex((x: any) => x[kf] === k)
+        const i = arr.findIndex((x) => x[kf] === k)
         if (i >= 0) arr[i] = v
         else arr.push(v)
       }
-      clearDeleted(store, values.map((v: any) => v?.[kf]))
+      clearDeleted(store, values.map(v => v?.[kf]))
       schedulePush()
     },
     bulkDel: async (store: string, keys: string[]) => {
       await ensureInit()
       const kf = KEY_FIELD[store] ?? 'id'
-      const set = new Set(keys)
-      cache[store] = (cache[store] || []).filter((x: any) => !set.has(x[kf]))
+      // Set 的元素类型用 unknown：x[kf] 是 unknown，若 Set<string> 则 has() 不接受
+      const set = new Set<unknown>(keys)
+      cache[store] = (cache[store] || []).filter((x) => !set.has(x[kf]))
       if (store !== 'meta') markDeleted(store, keys)
       schedulePush()
     },

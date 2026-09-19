@@ -74,7 +74,7 @@ export function reloadTombs(): void {
  *
  * ⚠️ 只在**真正从存储里移除**时调用。移到回收站（`trash`）不算删除 —— 那条记录还在云端。
  */
-export function markDeleted(store: string, keys: (string | number)[]): void {
+export function markDeleted(store: string, keys: readonly unknown[]): void {
   if (!keys.length) return
   const now = Date.now()
   const m = tombs[store] ?? (tombs[store] = {})
@@ -91,7 +91,7 @@ export function markDeleted(store: string, keys: (string | number)[]): void {
 }
 
 /** 记录（重新）写入 → 清掉同 key 的墓碑，允许"删掉又重建" */
-export function clearDeleted(store: string, keys: (string | number)[]): void {
+export function clearDeleted(store: string, keys: readonly unknown[]): void {
   if (!keys.length) return
   const m = tombs[store]
   if (!m) return
@@ -109,7 +109,7 @@ export function clearDeleted(store: string, keys: (string | number)[]): void {
 }
 
 /** 这条记录是否被本机删过 */
-export function isDeleted(store: string, key: string | number): boolean {
+export function isDeleted(store: string, key: unknown): boolean {
   return Object.prototype.hasOwnProperty.call(tombs[store] ?? {}, String(key))
 }
 

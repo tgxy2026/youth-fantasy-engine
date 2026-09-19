@@ -8,6 +8,7 @@
 // 这里只负责「字节怎么落地 / 怎么读回来」，并把「文件不存在」与「读取失败」如实分开上报。
 
 import { SYNC_POLL_MS } from './constants'
+import { webcrypto } from './webcrypto'
 
 export interface RawSyncResponse {
   status: number // 200 成功 / 401 码失效 / 409 冲突 / 413 过大 / 422 空推拒绝 / 0 网络异常（仅 http）
@@ -54,7 +55,7 @@ export const CLOUD_FILE_NAME = '青春幻想引擎-同步数据.yfe'
 // ============ 工具 ============
 async function sha256Hex(s: string): Promise<string> {
   const data = new TextEncoder().encode(s)
-  const buf = await (globalThis as any).crypto.subtle.digest('SHA-256', data)
+  const buf = await webcrypto().subtle.digest('SHA-256', data)
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -91,6 +92,12 @@ export function createIdleTransport(): SyncTransport {
 // handle 可为 FileSystemDirectoryHandle（浏览器 FSA）或文件夹路径字符串（桌面 Electron 渲染进程 node fs 兜底）。
 // fixedName：指定固定文件名（桌面/便携版云盘同步用，便于用户在云盘目录里认出它）；
 // 不传则回退到 sha256(密钥) 命名（多套数据共用同一目录时按密钥分槽，避免互相覆盖）。
+/**
+ * 本地文件传输。
+ * @param handle 目录句柄：桌面版是**字符串路径**（经 IPC / fs），网页版是
+ *   `FileSystemDirectoryHandle` —— 两者没有公共类型，故形参是 any；
+ *   由 `typeof handle === 'string'` 分支各自收窄（见函数内）。
+ */
 export function createFileTransport(handle: any, fixedName?: string): SyncTransport {
   const isFsa = typeof handle !== 'string'
   let code = ''
@@ -153,6 +160,8 @@ export function createFileTransport(handle: any, fixedName?: string): SyncTransp
   // 优先走 Electron 主进程 IPC（preload 注入 window.electronStore.syncRead/syncWrite）：
   //   桌面版渲染进程 nodeIntegration=false，globalThis.require('fs') 不可用，必须经 IPC 桥。
   // 其次回退到渲染进程内 require('fs')（极旧打包/特殊配置下），再其次失败。
+  // any 理由：preload 注入的 IPC 桥（electron/main.cjs 定义），本项目内无类型来源；
+  //           调用点用 `typeof eb.syncRead === 'function'` 运行时把守。
   let electronBackend: any = null
   function getElectronBackend(): any {
     if (electronBackend !== null) return electronBackend
@@ -163,6 +172,9 @@ export function createFileTransport(handle: any, fixedName?: string): SyncTransp
     }
     return electronBackend
   }
+  // any 理由：Node 的 fs 模块（取值失败时置 false 表示「不可用」）——
+  //           `require` 本身不在 DOM 类型里，只能经 globalThis 动态取；
+  //           调用点逐个判 `typeof nodeFs.readFile === 'function'`。
   let nodeFs: any = null
   function getNodeFs(): any {
     if (nodeFs !== null) return nodeFs
