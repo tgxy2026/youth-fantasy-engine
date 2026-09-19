@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { Modal } from './Modal'
 import type { CalendarDef, Chapter, TabDef, TableColumn } from '../lib/types'
-import { getAllChapters, getAllVolumes, getCustomOptions } from '../lib/db'
+import { getAllChapters, getAllVolumes, getCustomOptions, getTableRows } from '../lib/db'
 import { resolveOptions } from './CustomSelect'
 import { buildProjectContext, getChapterTexts, loadCharacterNames } from '../lib/aiContext'
 import { isVolumeLedgerTab, type VisCtx } from '../lib/schema'
@@ -85,8 +85,20 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
    * 必须用与行内下拉完全一致的口径（resolveOptions）：直接给 col.options 会漏掉
    * 用户自定义的选项，还会把已被隐藏 / 改名的旧内置项继续喂给模型（1.9.1 修复）。
    */
+  // 跨表引用列的候选值缓存：同一张来源表在本次整理里只读一次（势力关系有 A/B 两列都引用《国家势力》）
+  const refCache = useRef(new Map<string, string[]>())
   const allowedOf = async (c: TableColumn): Promise<string[] | undefined> => {
     if (c.calendar) return calendars.map(x => x.name).filter(Boolean)
+    // 🔴 跨表引用列（如《势力关系》的势力A / 势力B）：候选值来自被引用表的指定列。
+    //    不喂候选值，模型会自己编势力名 → 写回去就是悬空引用，《势力关系》图谱里会冒出并不存在的节点。
+    if (c.type === 'tableRef' && c.refTab && c.refCol) {
+      const hit = refCache.current.get(c.refTab)
+      if (hit) return hit
+      const rows = await getTableRows(c.refTab)
+      const names = [...new Set(rows.map(r => String(r.data[c.refCol as string] ?? '').trim()).filter(Boolean))]
+      refCache.current.set(c.refTab, names)
+      return names
+    }
     if (c.type === 'select' && c.options?.length) {
       const payload = await getCustomOptions(tab.id, c.name)
       return resolveOptions(c.options, payload).map(o => o.name)

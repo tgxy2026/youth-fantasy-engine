@@ -28,6 +28,12 @@ import { classify, commitEntities, loadRegistry, normName, type LedgerItem } fro
 import { sortChapters, chapterSeqOf } from './chapterSeq'
 import { syncChapterMaster } from './chapterMaster'
 import type { Chapter } from './types'
+import { registerPrompt } from './promptSettings'
+
+/** 「设定更新侦测」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_setting_update_detect = `你是设定更新侦探。对比本章正文与已有设定，找出"对已有设定实体的新信息/状态变化"（如角色修为提升、关系变化、物品被获得或损毁、地点状态改变等）。
+返回 JSON 数组，元素形如 {"name":"实体名(必须与已登记名完全一致)","note":"一句话描述变化，如 修为提升至凝气四层"}。
+只报确有文本依据的，最多 10 条，没有则返回 []。只输出 JSON 数组，不要解释、不要 markdown 代码块。`
 
 /** 已有设定更新策略（创建任务时由用户选择） */
 export type ContinueStrategy = 'add-only' | 'confirm' | 'auto-update'
@@ -383,9 +389,7 @@ async function extractAndCommitSettings(
 
 async function extractSettingUpdates(body: string, title: string, signal?: AbortSignal): Promise<SettingUpdate[]> {
   const cfg = await requireActiveProvider()
-  const sys = `你是设定更新侦探。对比本章正文与已有设定，找出"对已有设定实体的新信息/状态变化"（如角色修为提升、关系变化、物品被获得或损毁、地点状态改变等）。
-返回 JSON 数组，元素形如 {"name":"实体名(必须与已登记名完全一致)","note":"一句话描述变化，如 修为提升至凝气四层"}。
-只报确有文本依据的，最多 10 条，没有则返回 []。只输出 JSON 数组，不要解释、不要 markdown 代码块。`
+  const sys = P_setting_update_detect
   const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, { signal, json: true })
   // 统一走 aiParse：旧实现是裸 JSON.parse——不剥代码块、不切最外层，
   // 模型只要在 JSON 外套一句解释或 ```json 围栏，整条更新就被静默丢弃。
@@ -609,3 +613,6 @@ export async function runAutoContinue(
   )
   return { created }
 }
+
+// —— AI 提示词登记（必须放在文件末尾：上面这些 let 已全部初始化，避免 TDZ）——
+registerPrompt({ id: 'setting-update-detect', group: '设定与资料', name: '设定更新侦测', note: '对比本章正文与已有设定，找出状态变化。' }, () => P_setting_update_detect, t => { P_setting_update_detect = t })

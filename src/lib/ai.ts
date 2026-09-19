@@ -12,6 +12,18 @@
 
 import * as db from './db'
 import { parsePlainObject } from './aiParse'
+import { registerPrompt } from './promptSettings'
+
+/** 「设定模板补全」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_fill_template = `你是「青春幻想引擎」的小说设定辅助助手。作者会给你一份设定模板的字段清单和一段粗略草图，请把草图整理成一份完整、合理的设定，逐项填入模板字段。规则：
+1. 严格按字段清单返回，使用给定的编号作为 JSON key（如 {"1":"...","2":"..."}）。
+2. 只补全"设定/世界观/人物/道具"等元信息，绝不写剧情正文、不写章节内容。
+3. 草图中作者已明确说出的信息（名字、身份、定位等），保留原意，不要篡改或擅加矛盾设定。
+4. 草图未提及的字段，基于【世界观上下文】与【外部素材】（若有）以及网文设定常识合理补全，确保与上下文及字段间内部一致。
+5. 【外部素材】优先于你的记忆 —— 它是作者提供的、或刚从网上查到的资料。冲突时以素材为准；素材里没有的具体事实（数字、日期、专有名词）不要编，宁可写得笼统。
+6. 对需要作者特别注意/确认的地方，可在该字段值末尾用「（建议确认：…）」提示，但不要滥用。
+7. 只输出一个 JSON 对象，不要任何解释、不要 Markdown 代码块标记、不要多余文字。
+8. 若某字段确实无从补全，给一个合理的占位或留空字符串 ""，不要编造明显荒谬的内容。`
 
 export type AIProviderType = 'ollama' | 'openai'
 
@@ -387,7 +399,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
 async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {
   const { timeoutMs, think } = o
   const base = stripSlash(config.baseUrl || OLLAMA_DEFAULT_URL)
-  if (!config.model) throw new Error('未选择 Ollama 模型，请先到「灵感启发 → 模型配置」拉取并选择本地模型。')
+  if (!config.model) throw new Error('未选择 Ollama 模型，请先到「模型设置 → 模型配置」拉取并选择本地模型。')
   // 构建请求体：仅在显式要求关闭思考时传 think:false（连通性测试等极速反馈场景）。
   // 正常创作生成不传该字段，由模型/平台默认——思考型模型（deepseek-r1 / gemma4 / qwen3.5）保持思考，利于深度设定补全。
   const body: Record<string, unknown> = {
@@ -687,15 +699,7 @@ export async function aiCompleteTemplate(
     })
     .join('\n')
 
-  const sys = `你是「青春幻想引擎」的小说设定辅助助手。作者会给你一份设定模板的字段清单和一段粗略草图，请把草图整理成一份完整、合理的设定，逐项填入模板字段。规则：
-1. 严格按字段清单返回，使用给定的编号作为 JSON key（如 {"1":"...","2":"..."}）。
-2. 只补全"设定/世界观/人物/道具"等元信息，绝不写剧情正文、不写章节内容。
-3. 草图中作者已明确说出的信息（名字、身份、定位等），保留原意，不要篡改或擅加矛盾设定。
-4. 草图未提及的字段，基于【世界观上下文】与【外部素材】（若有）以及网文设定常识合理补全，确保与上下文及字段间内部一致。
-5. 【外部素材】优先于你的记忆 —— 它是作者提供的、或刚从网上查到的资料。冲突时以素材为准；素材里没有的具体事实（数字、日期、专有名词）不要编，宁可写得笼统。
-6. 对需要作者特别注意/确认的地方，可在该字段值末尾用「（建议确认：…）」提示，但不要滥用。
-7. 只输出一个 JSON 对象，不要任何解释、不要 Markdown 代码块标记、不要多余文字。
-8. 若某字段确实无从补全，给一个合理的占位或留空字符串 ""，不要编造明显荒谬的内容。`
+  const sys = P_fill_template
 
   const user = `【字段清单】
 ${fieldList}
@@ -860,7 +864,7 @@ export async function getActiveProvider(): Promise<AIProvider | null> {
 /** 取当前模型；没有就抛出统一的中文提示（供必须依赖 AI 的功能使用） */
 export async function requireActiveProvider(): Promise<AIProvider> {
   const cfg = await getActiveProvider()
-  if (!cfg) throw new Error('尚未配置可用的 AI 模型，请先到「灵感启发 → 模型配置」添加并设为当前。')
+  if (!cfg) throw new Error('尚未配置可用的 AI 模型，请先到「模型设置 → 模型配置」添加并设为当前。')
   return cfg
 }
 
@@ -894,3 +898,6 @@ export function subscribeAIReady(fn: () => void): () => void {
   if (!readyLoaded) void refreshAIReady()
   return () => { readyListeners.delete(fn) }
 }
+
+// —— AI 提示词登记（必须放在文件末尾：上面这些 let 已全部初始化，避免 TDZ）——
+registerPrompt({ id: 'fill-template', group: '设定与资料', name: '设定模板补全', note: '把作者草图整理补全成完整设定（按字段返回 JSON）。' }, () => P_fill_template, t => { P_fill_template = t })

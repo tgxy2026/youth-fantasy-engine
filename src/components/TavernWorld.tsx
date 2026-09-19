@@ -117,7 +117,7 @@ export default function TavernWorld() {
   • 只对剧情推演生效，随项目（换书就是另一份）。自由对话不读它 —— 那里可能混着不同世界观的角色，
     自由对话的世界观由角色卡「所属的故事」提供（卡里只写角色与它的关系）。
   • 上限 {WORLD_MAX_CHARS} 字：它每轮都可能进上下文，写太长会把对话历史挤掉。起草时用了哪种素材来源，
-    在「灵感工具 → 灵感启发 → 联网检索」里定。
+    在「工作面板 → 模型设置 → 联网检索」里定。
   <AIDataSourceNote feature="tavern-world-draft" />
 </HelpPopover>
 

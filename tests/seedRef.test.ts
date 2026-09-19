@@ -117,6 +117,57 @@ for (const t of TABS) {
 }
 ok('所有表格页签都有示例数据（功能都能看到）', emptyTabs.length === 0, emptyTabs.join('、'))
 
+// ---------- ⑤ 「人物」列必须是真人物 ----------
+// 2026-09-19：示范项目《人物关系》里出现过「萧景行 ↔ 中州萧家」—— 中州萧家是《国家势力》里的世家。
+// 这类错误界面上**不会报错**（就是一格文本，下拉也不校验），但语义是错的：
+// 《人物关系》的设计是「人物两两关系台账」，混进组织会让"关系失忆"这道防线失效，
+// 而且 AI 整理会照着一个错范式继续生成。上面的 ① 只查 tableRef，人物列一直没闸 —— 就是这里补上的。
+const cardNames = new Set<string>()
+for (const tabId of ['char-main', 'char-secondary', 'char-npc']) {
+  for (const c of await db.getCardRecords(tabId)) if (c.name?.trim()) cardNames.add(c.name.trim())
+}
+ok('确实读到了角色卡（前置条件）', cardNames.size >= 5, String(cardNames.size))
+
+const personErrors: string[] = []
+let personChecked = 0
+for (const t of TABS) {
+  const rows = rowsByTab[t.id]
+  if (!rows || !t.columns) continue
+  for (const col of t.columns) {
+    if (col.type !== 'character') continue          // characters（多人列）种子里暂未使用
+    for (const r of rows) {
+      const v = (r.data[col.name] ?? '').trim()
+      if (!v) continue
+      personChecked++
+      if (!cardNames.has(v)) personErrors.push(`[${t.id}] 「${col.name}」=「${v}」—— 不是任何一张角色卡的名字`)
+    }
+  }
+}
+ok(`「人物」列的值都是真角色（共校验 ${personChecked} 处）`, personErrors.length === 0, personErrors.slice(0, 6).join(' | '))
+
+// ---------- ⑥ 关系表不该有重复条目（A-B 与 B-A 视为同一条）----------
+// 2026-09-19：「陈渊 ↔ 血鸦（敌对）」在示范项目里被登记了两遍。
+// 设计上「已有关系不会重复生成」，手录也不该重复 —— 重复行会让关系图谱出现两条同向边，
+// 也会让「按关系类型着色 / 点边看详情」这类联动看起来像坏了。
+const dupErrors: string[] = []
+for (const tabId of ['relations', 'faction-rels']) {
+  const rows = rowsByTab[tabId] ?? []
+  const cols = TABS.find(t => t.id === tabId)?.columns ?? []
+  const [ac, bc] = cols
+  const tc = cols.find(c => c.type === 'select')
+  if (!ac || !bc) continue
+  const seen = new Map<string, number>()
+  rows.forEach((r, i) => {
+    const a = (r.data[ac.name] ?? '').trim()
+    const b = (r.data[bc.name] ?? '').trim()
+    if (!a || !b) return
+    const key = [a, b].sort().join('↔') + '|' + (tc ? (r.data[tc.name] ?? '') : '')
+    if (seen.has(key)) dupErrors.push(`${tabId} 第 ${seen.get(key)! + 1} 行与第 ${i + 1} 行重复：${a} ↔ ${b}`)
+    else seen.set(key, i)
+  })
+}
+ok('关系表无重复条目（无序对）', dupErrors.length === 0, dupErrors.join(' | '))
+
 if (errors.length) {
   console.log('\n—— 引用问题明细 ——')
   for (const e of errors) console.log('  ✗ ' + e)

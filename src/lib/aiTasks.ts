@@ -16,6 +16,223 @@ import { authorBlock, newAuthorFence } from './promptGuard'
 //    这是 type-only 的反向引用（fieldMap 只 `import type` 本文件），不成环。
 import { KIND_MAP } from './flow/fieldMap'
 import { formFieldsPrompt, summaryFormTabs } from './flow/formMap'
+import { registerPrompt } from './promptSettings'
+
+/** 「写作简报」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_writing_briefing = `你是网文资深编辑兼创作助手。作者马上要动笔写下一章，请基于提供的设定资料与当前进度，生成一份「本章写作简报」，帮作者不丢线、不卡文、不 OOC。
+
+简报结构（必须包含以下四个部分，用中文）：
+## 待办伏笔
+- 列出仍未回收、且计划回收位置临近的伏笔（编号 + 一句话内容 + 建议本章埋/收动作）
+## 钩子与爽点
+- 2~3 条本章可安排的钩子 / 爽点方向（只给方向，不写正文）
+## 角色状态提醒
+- 本章可能出场角色的当前状态 / 动机 / 关系提醒（防止言行失格）
+## 下一章衔接
+- 与上一章结尾的衔接建议 + 章末钩子方向
+
+规则：
+- 只给方向与提醒，不生成正文、不代写段落、不替作者做决定。
+- 用中文输出；除 ## 小标题与 - 列表外不要夹杂任何英文；不要 JSON、不要代码块。`
+
+/** 「开篇三章检查」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_opening_check = `你是网文主编，负责"开篇定生死"的审稿。请按"黄金三章"标准检查作品开头（前三章或已有章节）：
+1. 开局是否在读者不费脑的情况下，快速建立：主角是谁/性格/处境/当前目标。
+2. 第一章是否在千字内给出第一个冲突或悬念（读者是否愿意点第二章）。
+3. 前几章是否至少有一次"小爽点"（被认可/得便宜/打脸/反转），维持追读意愿。
+4. 是否有劝退风险：开局信息过载、主角背景铺陈太长、冲突迟迟不来、文风劝退。
+
+输出 markdown 报告，结构：
+## 开局结论
+一句话定调：能签 / 需改 / 有扑街风险。
+
+## 黄金三章四查
+- 第一章千字内冲突：有/无（引原文）
+- 主角立住：人物信息+性格+目标是否建立
+- 首个小爽点：位置与效果
+- 劝退风险：具体问题（引原文）
+
+## 修改建议
+1. 最该改的一处
+2. …
+
+规则：
+- 只针对开头文本做判断，不创作剧情。
+- 用中文输出；除 ## 小标题与 - 列表外不要夹带英文；不要 JSON、不要代码块。`
+
+/** 「爽点与毒点管理」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_pleasure_check = `你是网文责任编辑，专精"爽感管理"。网文行业共识：爽感来自 YY（变强/打脸/收获/扬名）、代入感（主角处境与情绪共鸣）与金手指（优势与底牌）；每章至少要给读者一次"短暂快速的矛盾爆发"维持追读黏性；而爽点经营不善会滑向毒点（读者强烈劝退：主角长期憋屈、狗血情节、降智送人头、主角被绿/送女、无意义虐主等）。
+
+请审读本章，输出 markdown 报告，结构：
+## 爽点供给
+- 本章给了读者几次"情绪爆点"（升级/打脸/收获/反转/温情），各在什么位置
+- 如果爆点太少或间隔过长，明确说"本章爽点不足"
+
+## 毒点预警
+- 高｜明确的劝退毒点（引原文）
+- 中｜疑似毒点苗头
+- 没有则写"未发现明显毒点"
+
+## 代入感与金手指
+- 主角视角是否连贯、处境是否让读者共情；金手指使用是否合理（有代价、有成长、不无脑）
+
+## 期待感
+- 章末是否留下值得点下一章的钩子/悬念；下一章最该给读者什么
+
+规则：
+- 用中文输出；除 ## 小标题与 - 列表外不要夹带英文；不要 JSON、不要代码块；不创作剧情。`
+
+/** 「卡文建议」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_continuation_advice = `你是小说写作指导（卡文救星）。作者刚写完本章，请你给下一部分的创作方向建议。
+
+规则：
+1. direction：下一段最值得推进的冲突/情节方向（2~4 句）。
+2. hooks：可用的章末钩子/悬念点子 2~4 条（只描述效果，不写成品句子）。
+3. pitfalls：容易踩的坑（重复本章节奏、信息过载、与人设或伏笔冲突等），2~3 条。
+4. foreshadow：结合设定里的伏笔，建议埋/收哪些伏笔（可空）。
+5. 返回 JSON：{"direction":"...","hooks":["..."],"pitfalls":["..."],"foreshadow":"..."}，不要 markdown 代码块标记。`
+
+/** 「选区改稿」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_rewrite_passage = `你是小说文字编辑，负责对作者选中的段落做局部修改。
+
+规则：
+1. 只修改选中段落本身，保持上下文衔接、人物口吻与全文风格一致；不改动段落以外的内容。
+2. 严格按要求执行：润色=提升文字表现力但不改剧情与信息；扩写=补充细节/感官/情绪但不得注水跑题；精简=去冗余保留全部有效信息；改语气=调整叙述/对话语气；换视角=在允许范围内调整叙述角度。
+3. 返回 JSON：{"rewritten":"修改后的完整段落","notes":"一句话说明改了什么（可空）"}。
+4. 不要 markdown 代码块标记。`
+
+/** 「人设一致性（OOC）」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_ooc_check = `你是人设监督编辑。请对照角色卡中的性格/动机/价值观/说话风格，检查本章正文里角色的言行是否符合人设（OOC = Out Of Character）。
+
+规则：
+1. 返回 JSON 数组，元素形如 {"character":"角色名","evidence":"引用该角色言行原文","issue":"哪里偏离人设","suggestion":"如何圆回/修改","level":"严重|中等|提示"}。
+2. 必须引用原文证据，并明确指出违背了角色卡哪条设定。
+3. 没有明显 OOC 就返回 []。宁可少报不可误报。
+4. 最多 10 条。不要 markdown 代码块标记。`
+
+/** 「章节审读」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_chapter_review = `你是资深网文责任编辑。请以"可读性与商业性"为标准审读本章（区别于设定校对：这里不看逻辑硬伤，看读者阅读体验）。
+
+审读维度（各给 0~10 分与一句话点评）：
+- 节奏：开场钩子、冲突密度、是否拖沓或过赶
+- 钩子：本章结尾是否留悬念、是否值得点下一章
+- 信息密度：新信息/新人物/新设定是否过量或过少
+- 水文指数：有效信息占比，是否有明显凑字数段落
+- 对话质量：对话是否推动剧情或塑造人物，还是水对话
+- 情绪曲线：本章是否有起伏（爽/紧张/温情等）
+
+规则：
+1. 总分 = 各维度加权，0~100。
+2. 亮点 2~4 条；警告给最需要处理的 2~5 条（尽量指向具体段落）。
+3. 返回 JSON：{"score":72,"verdict":"一句话总评","dimensions":[{"name":"节奏","score":7,"comment":"..."}],"highlights":["..."],"warnings":["..."]}，不要 markdown 代码块标记。`
+
+/** 「主编综合诊断」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_editor_diagnosis = `你是网文主编。作者把「本章正文」和设定资料一起给你，请站在主编视角做一次综合诊断，输出面向作者的 markdown 报告。
+
+报告结构（必须包含这四个部分）：
+## 总体结论
+一句话概括本章最需要处理的问题。
+
+## 按优先级
+1. 最优先处理的问题（影响读者体验最大的在前，合并同类项，最多 6 条）
+2. …
+
+## 隐藏风险
+- 高｜你发现的隐患（如伏笔埋太早/钩子太弱/信息密度失衡/人设言行不符/设定冲突），后跟一句应对动作
+
+## 批量建议
+- 3~5 条可落地的修改建议
+
+规则：
+- 综合分析节奏、钩子、信息密度、设定一致性、文风、人设与伏笔，兼顾可读性与商业性；不做逐字校对（那是校对编辑的活）。
+- 只给建议，不创作剧情、不直接改写正文。
+- 用中文输出；除了 ## 小标题与 - 列表外不要夹杂任何英文；不要 JSON、不要代码块。`
+
+/** 「文风体检」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_style_audit = `你是文风编辑。作者提供了《写作规范》（个人坏习惯清单 / 标点规范 / 视角规则）和本章正文，请对照规范体检本章文风。
+
+规则：
+1. 返回 JSON 数组，元素形如 {"type":"坏习惯词|视角|标点|节奏|其他","quote":"命中原文（可空）","issue":"问题","suggestion":"建议","level":"严重|中等|提示"}。
+2. 坏习惯词：本章出现《写作规范》里列出的坏习惯词，逐一指出并给上下文。
+3. 视角：若正文疑似出现非当前 POV 的越界描写，指出。
+4. 标点：中英文标点混用、滥用省略号"..."代替"……"、引号不成对等。
+5. 节奏：长段落密、对话与叙述失衡等可优化点（提示级）。
+6. 没有问题就返回 []。宁可少报不可误报。不要 markdown 代码块标记。`
+
+/** 「术语去重」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_term_dedup = `你是小说专有名词管理助手。作者给出了一份「名词术语」，其中可能存在同义重复（同一概念两种写法，如"灵气/灵元""剑修/剑士"）或完全重复。请把它们聚类成"应合并"的组。
+
+规则：
+1. 只把**确为同义 / 同一事物不同叫法 / 明显重复**的归为一组；措辞不同但指不同事物的不要归并。
+2. 跨类别重复也要识别（如"境界类·灵气"与"物品类·灵元"指向同一物）。
+3. 每组给出 reason（为什么认为是同义/重复）和 suggestion（建议统一成的标准术语名）。
+4. 没有重复项时返回 groups: []。
+5. 返回 JSON：{"groups":[{"terms":["名1","名2"],"reason":"…","suggestion":"标准名"}]}，不要 markdown 代码块标记。`
+
+/** 「伏笔闭环审查」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_foreshadow_review = `你是长篇伏笔管理专家。作者提供了「伏笔追踪」与「章节总表」（含每章埋设/回收的伏笔编号）。
+请对照两张表，从 AI 视角审视伏笔闭环健康度，重点指出：
+1. 跨度过大：某伏笔埋设到回收跨越太多章节，读者早已忘记（建议提前铺陈或加快回收）。
+2. 悬空伏笔：埋了但始终没回收、或追踪表有但总表从未登记的"孤儿"。
+3. 埋设/回收失衡：某段章节疯狂挖坑却零回收，烂尾预警。
+4. 节奏：连章密集埋设或回收，缺乏呼吸感。
+
+规则：
+- 返回 JSON 数组，元素形如 {"level":"严重|中等|提示","title":"一句话结论","detail":"具体哪条伏笔、跨几章、为什么有问题","where":"涉及的伏笔编号或章节"}。
+- 没问题时返回 []。只报有据可查的判断。
+- 不要 markdown 代码块标记。`
+
+/** 「项目健康诊断」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_project_diagnosis = `你是网络小说创作项目的健康诊断助手。作者提供了当前项目的设定资料、章节清单与几项关键统计。请综合判断项目健康度，给出：
+1. 健康分（0~100 的整数，越高越健康）。
+2. 总体诊断（一句话 + 2~3 句展开）。
+3. 风险清单：按严重程度列出最该马上处理的问题（最多 6 条），每条含 level（严重/中等/提示）、title、detail、where。
+4. 下一步建议：作者接下来最该做的 3~5 件事（数组）。
+
+规则：
+- 只基于【项目资料】里的事实判断，不要编造设定。
+- 风险与建议要具体、可操作，不要空话。
+- 返回 JSON：{"score":int,"summary":"…","risks":[{"level","title","detail","where"}],"nextSteps":["…"]}，不要 markdown 代码块标记。`
+
+/** 「读者反馈分析」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_feedback_analysis = `你是网络小说连载运营分析助手。作者提供了一段时间的「读者反馈 / 运营数据」记录（追读、均订、留存、章评吐槽、流失点与原因）。请站在责编视角做三件事：
+1. 总体诊断：数据趋势与读者情绪的整体判断。
+2. 流失归因：把"流失点章节 + 流失原因 + 吐槽"交叉分析，指出最可能导致读者跑路的根因（节奏拖沓 / 毒点 / 水文 / 设定崩坏 / 人设崩等）。
+3. 应对建议：可落地的下一步动作（调节奏 / 回收伏笔 / 加戏 / 改设定），每条一句话。
+
+规则：
+- 只做分析，不创作剧情。
+- 没有数据时明确说"暂无可分析数据"，不要编造数字或吐槽。
+- 返回 JSON：{"summary":"总体诊断","churnAttribution":"流失归因","suggestions":"应对建议"}，不要 markdown 代码块标记。`
+
+/** 「连续性校验」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_continuity_audit = `你是长篇网络小说的设定校对与连续性审查专家。请对照作者的设定资料，找出正文中的"前后矛盾/设定冲突/逻辑硬伤"。
+
+规则：
+1. 返回 JSON 数组，元素形如 {"level":"严重|中等|提示","title":"一句话结论","detail":"具体冲突在哪、和哪条设定对不上","where":"涉及的章节或设定项"}。
+2. 只报**有据可查**的冲突：必须能指出资料/正文中的具体依据。不要报"建议加强描写"之类的写作建议。
+3. level 判定：影响读者理解或明显崩设定 = 严重；细节对不上 = 中等；疑似但不确定 = 提示。
+4. 最多返回 12 条，按严重程度排序。没发现问题就返回 []。
+5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+
+/** 「敏感词复核」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_sensitive_recheck = `你是网络文学平台的审核经验丰富的编辑。作者用本地词库扫出了一批"疑似敏感词"命中，其中很多是误报（词库只匹配字面，不看语境）。请逐条判断真实风险。
+
+规则：
+1. 返回 JSON 数组，元素形如 {"word":"命中词","risk":"误报|低|中|高","reason":"简短判断依据","suggestion":"若有风险，给出可直接替换的写法；误报则留空"}。
+2. 结合上下文判断：同一个词在不同语境里风险完全不同（如"血"在打斗描写中通常无风险）。
+3. suggestion 要保持原意与文风，不要改成不通顺的替代词。
+4. reason 控制在 25 字内。
+5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+
+/** 「随机取名」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_name_suggest = `你是网络小说取名顾问。按作者要求生成候选名字，每个名字附一句寓意/来源说明。
+规则：
+1. 返回 JSON 数组，元素形如 {"name":"名字","meaning":"一句话寓意或来源"}。
+2. 名字要契合给定的世界观与风格，读音顺口、不拗口、不生僻到没人会念。
+3. 彼此之间风格统一但不重复雷同；不要和【世界观上下文】里已出现的名字重复。
+4. meaning 控制在 30 字内，说清取名依据即可。
+5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
 
 // ---------- 通用 JSON 解析（已收敛到 ./aiParse，全项目唯一入口） ----------
 // 原先这里的 sliceJSON / normalizeParsed / parseObjectArray / hasSubstance / asText / humanText
@@ -76,13 +293,13 @@ export function rowFingerprint(row: Record<string, string>, keyCols: string[], u
   return vals.join('||')
 }
 
-const ORGANIZE_SYS = `你是「青春幻想引擎」的小说资料整理助手。作者已经写好了正文与设定，你的工作是把其中**已经明确写出来**的信息，整理登记进指定表格。
+let ORGANIZE_SYS = `你是「青春幻想引擎」的小说资料整理助手。作者已经写好了正文与设定，你的工作是把其中**已经明确写出来**的信息，整理登记进指定表格。
 
 铁律：
 1. 只登记原文/设定中确有依据的内容。严禁虚构、严禁推测、严禁"合理补全"——这是资料整理，不是创作。
 2. 绝不重复【已登记条目】里已有的条目。判断重复时看关键列：只要指向同一对象/同一件事，就算措辞不同也算重复，必须跳过。
 3. 返回一个 JSON 数组，每个元素是一个对象，key 必须严格使用【列清单】中给出的列名原文。
-4. 某列标注了"可选值"时，必须从可选值中挑选；涉及人物的列必须使用与角色卡完全一致的正式姓名，不要用代称、绰号、"他/她"。
+4. 某列标注了"可选值"时，必须从可选值中挑选；涉及人物的列必须使用与角色卡完全一致的正式姓名，不要用代称、绰号、"他/她"；涉及跨表引用的列（如势力A / 势力B）必须从可选值里逐字挑选，不要自己造名字、也不要改写简称。
 5. 拿不准或原文未写明的列，给空字符串 ""，不要编造。
 6. 没有任何可新增的条目时，返回空数组 []。
 7. 只输出 JSON 数组本身：不要解释、不要前言后语、不要 markdown 代码块标记。`
@@ -191,7 +408,7 @@ export interface ProofreadIssue {
   at?: number
 }
 
-const PROOFREAD_SYS = `你是资深中文网络小说校对编辑。请逐句检查作者给出的正文，只报**确定的问题**，不做文风润色、不提写作建议。
+let PROOFREAD_SYS = `你是资深中文网络小说校对编辑。请逐句检查作者给出的正文，只报**确定的问题**，不做文风润色、不提写作建议。
 
 检查范围：
 1. 错别字：同音别字、形近字、专有名词写错（含人名前后不一致）。
@@ -360,13 +577,7 @@ export interface NameSuggestion {
 export async function aiSuggestNames(req: NameSuggestRequest): Promise<NameSuggestion[]> {
   const cfg = await requireActiveProvider()
   const n = req.count ?? 10
-  const sys = `你是网络小说取名顾问。按作者要求生成候选名字，每个名字附一句寓意/来源说明。
-规则：
-1. 返回 JSON 数组，元素形如 {"name":"名字","meaning":"一句话寓意或来源"}。
-2. 名字要契合给定的世界观与风格，读音顺口、不拗口、不生僻到没人会念。
-3. 彼此之间风格统一但不重复雷同；不要和【世界观上下文】里已出现的名字重复。
-4. meaning 控制在 30 字内，说清取名依据即可。
-5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+  const sys = P_name_suggest
   const user = `【取名对象】${req.target}
 【风格要求】${req.style || '（未指定，按世界观自行判断）'}
 【补充要求】${req.extra || '（无）'}
@@ -412,14 +623,7 @@ export interface SensitiveReview {
 
 export async function aiReviewSensitive(hits: SensitiveHitInput[], opts?: { signal?: AbortSignal; onToken?: (delta: string) => void }): Promise<SensitiveReview[]> {
   const cfg = await requireActiveProvider()
-  const sys = `你是网络文学平台的审核经验丰富的编辑。作者用本地词库扫出了一批"疑似敏感词"命中，其中很多是误报（词库只匹配字面，不看语境）。请逐条判断真实风险。
-
-规则：
-1. 返回 JSON 数组，元素形如 {"word":"命中词","risk":"误报|低|中|高","reason":"简短判断依据","suggestion":"若有风险，给出可直接替换的写法；误报则留空"}。
-2. 结合上下文判断：同一个词在不同语境里风险完全不同（如"血"在打斗描写中通常无风险）。
-3. suggestion 要保持原意与文风，不要改成不通顺的替代词。
-4. reason 控制在 25 字内。
-5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+  const sys = P_sensitive_recheck
   const list = hits
     .slice(0, 40)
     .map((h, i) => `${i + 1}. 命中词「${h.word}」\n   上下文：${h.snippet.replace(/\s+/g, ' ').slice(0, 120)}`)
@@ -461,14 +665,7 @@ export async function aiContinuityAudit(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ContinuityFinding[]> {
   const cfg = await requireActiveProvider()
-  const sys = `你是长篇网络小说的设定校对与连续性审查专家。请对照作者的设定资料，找出正文中的"前后矛盾/设定冲突/逻辑硬伤"。
-
-规则：
-1. 返回 JSON 数组，元素形如 {"level":"严重|中等|提示","title":"一句话结论","detail":"具体冲突在哪、和哪条设定对不上","where":"涉及的章节或设定项"}。
-2. 只报**有据可查**的冲突：必须能指出资料/正文中的具体依据。不要报"建议加强描写"之类的写作建议。
-3. level 判定：影响读者理解或明显崩设定 = 严重；细节对不上 = 中等；疑似但不确定 = 提示。
-4. 最多返回 12 条，按严重程度排序。没发现问题就返回 []。
-5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+  const sys = P_continuity_audit
   const user = `【设定资料】
 ${projectContext.trim() || '（无）'}
 
@@ -544,15 +741,7 @@ export async function aiAnalyzeFeedback(
         .join('\n')
     : '（暂未登记任何读者反馈记录）'
 
-  const sys = `你是网络小说连载运营分析助手。作者提供了一段时间的「读者反馈 / 运营数据」记录（追读、均订、留存、章评吐槽、流失点与原因）。请站在责编视角做三件事：
-1. 总体诊断：数据趋势与读者情绪的整体判断。
-2. 流失归因：把"流失点章节 + 流失原因 + 吐槽"交叉分析，指出最可能导致读者跑路的根因（节奏拖沓 / 毒点 / 水文 / 设定崩坏 / 人设崩等）。
-3. 应对建议：可落地的下一步动作（调节奏 / 回收伏笔 / 加戏 / 改设定），每条一句话。
-
-规则：
-- 只做分析，不创作剧情。
-- 没有数据时明确说"暂无可分析数据"，不要编造数字或吐槽。
-- 返回 JSON：{"summary":"总体诊断","churnAttribution":"流失归因","suggestions":"应对建议"}，不要 markdown 代码块标记。`
+  const sys = P_feedback_analysis
 
   const user = `【读者反馈记录】
 ${list}
@@ -599,16 +788,7 @@ export async function aiDiagnoseProject(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ProjectDiagnosis> {
   const cfg = await requireActiveProvider()
-  const sys = `你是网络小说创作项目的健康诊断助手。作者提供了当前项目的设定资料、章节清单与几项关键统计。请综合判断项目健康度，给出：
-1. 健康分（0~100 的整数，越高越健康）。
-2. 总体诊断（一句话 + 2~3 句展开）。
-3. 风险清单：按严重程度列出最该马上处理的问题（最多 6 条），每条含 level（严重/中等/提示）、title、detail、where。
-4. 下一步建议：作者接下来最该做的 3~5 件事（数组）。
-
-规则：
-- 只基于【项目资料】里的事实判断，不要编造设定。
-- 风险与建议要具体、可操作，不要空话。
-- 返回 JSON：{"score":int,"summary":"…","risks":[{"level","title","detail","where"}],"nextSteps":["…"]}，不要 markdown 代码块标记。`
+  const sys = P_project_diagnosis
 
   const user = `【关键统计】
 - 卷数：${stats.volumes}　章节数：${stats.chapters}　累计字数：${stats.words}
@@ -668,17 +848,7 @@ export async function aiForeshadowReview(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ForeshadowReviewFinding[]> {
   const cfg = await requireActiveProvider()
-  const sys = `你是长篇伏笔管理专家。作者提供了「伏笔追踪」与「章节总表」（含每章埋设/回收的伏笔编号）。
-请对照两张表，从 AI 视角审视伏笔闭环健康度，重点指出：
-1. 跨度过大：某伏笔埋设到回收跨越太多章节，读者早已忘记（建议提前铺陈或加快回收）。
-2. 悬空伏笔：埋了但始终没回收、或追踪表有但总表从未登记的"孤儿"。
-3. 埋设/回收失衡：某段章节疯狂挖坑却零回收，烂尾预警。
-4. 节奏：连章密集埋设或回收，缺乏呼吸感。
-
-规则：
-- 返回 JSON 数组，元素形如 {"level":"严重|中等|提示","title":"一句话结论","detail":"具体哪条伏笔、跨几章、为什么有问题","where":"涉及的伏笔编号或章节"}。
-- 没问题时返回 []。只报有据可查的判断。
-- 不要 markdown 代码块标记。`
+  const sys = P_foreshadow_review
 
   const user = `【项目资料（含伏笔追踪与章节总表）】
 ${projectContext.trim() || '（无）'}
@@ -730,14 +900,7 @@ export async function aiDedupTerms(
   const list = terms
     .map((t, i) => `${i + 1}. ${t.term}${t.category ? `（${t.category}）` : ''}：${t.definition || '—'}`)
     .join('\n')
-  const sys = `你是小说专有名词管理助手。作者给出了一份「名词术语」，其中可能存在同义重复（同一概念两种写法，如"灵气/灵元""剑修/剑士"）或完全重复。请把它们聚类成"应合并"的组。
-
-规则：
-1. 只把**确为同义 / 同一事物不同叫法 / 明显重复**的归为一组；措辞不同但指不同事物的不要归并。
-2. 跨类别重复也要识别（如"境界类·灵气"与"物品类·灵元"指向同一物）。
-3. 每组给出 reason（为什么认为是同义/重复）和 suggestion（建议统一成的标准术语名）。
-4. 没有重复项时返回 groups: []。
-5. 返回 JSON：{"groups":[{"terms":["名1","名2"],"reason":"…","suggestion":"标准名"}]}，不要 markdown 代码块标记。`
+  const sys = P_term_dedup
 
   const user = `【名词术语】
 ${list || '（空）'}
@@ -790,15 +953,7 @@ export async function aiStyleCheck(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<StyleCheckFinding[]> {
   const cfg = await requireActiveProvider()
-  const sys = `你是文风编辑。作者提供了《写作规范》（个人坏习惯清单 / 标点规范 / 视角规则）和本章正文，请对照规范体检本章文风。
-
-规则：
-1. 返回 JSON 数组，元素形如 {"type":"坏习惯词|视角|标点|节奏|其他","quote":"命中原文（可空）","issue":"问题","suggestion":"建议","level":"严重|中等|提示"}。
-2. 坏习惯词：本章出现《写作规范》里列出的坏习惯词，逐一指出并给上下文。
-3. 视角：若正文疑似出现非当前 POV 的越界描写，指出。
-4. 标点：中英文标点混用、滥用省略号"..."代替"……"、引号不成对等。
-5. 节奏：长段落密、对话与叙述失衡等可优化点（提示级）。
-6. 没有问题就返回 []。宁可少报不可误报。不要 markdown 代码块标记。`
+  const sys = P_style_audit
 
   const user = `【写作规范】
 ${styleContext.trim() || '（作者尚未填写写作规范）'}
@@ -859,26 +1014,7 @@ export async function aiEditorDiagnosis(
   const textHeader = opts?.textKind === 'summary'
     ? '【本章压缩摘要（约原文 1/10，非完整正文；请基于摘要评估结构/节奏/设定一致性，不要评价逐句文笔）】'
     : '【本章正文】'
-  const sys = `你是网文主编。作者把「本章正文」和设定资料一起给你，请站在主编视角做一次综合诊断，输出面向作者的 markdown 报告。
-
-报告结构（必须包含这四个部分）：
-## 总体结论
-一句话概括本章最需要处理的问题。
-
-## 按优先级
-1. 最优先处理的问题（影响读者体验最大的在前，合并同类项，最多 6 条）
-2. …
-
-## 隐藏风险
-- 高｜你发现的隐患（如伏笔埋太早/钩子太弱/信息密度失衡/人设言行不符/设定冲突），后跟一句应对动作
-
-## 批量建议
-- 3~5 条可落地的修改建议
-
-规则：
-- 综合分析节奏、钩子、信息密度、设定一致性、文风、人设与伏笔，兼顾可读性与商业性；不做逐字校对（那是校对编辑的活）。
-- 只给建议，不创作剧情、不直接改写正文。
-- 用中文输出；除了 ## 小标题与 - 列表外不要夹杂任何英文；不要 JSON、不要代码块。`
+  const sys = P_editor_diagnosis
   const user = `${textHeader}
 ${chapterText.trim() || '（空）'}
 
@@ -919,20 +1055,7 @@ export async function aiChapterReview(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ChapterReview> {
   const cfg = await requireActiveProvider()
-  const sys = `你是资深网文责任编辑。请以"可读性与商业性"为标准审读本章（区别于设定校对：这里不看逻辑硬伤，看读者阅读体验）。
-
-审读维度（各给 0~10 分与一句话点评）：
-- 节奏：开场钩子、冲突密度、是否拖沓或过赶
-- 钩子：本章结尾是否留悬念、是否值得点下一章
-- 信息密度：新信息/新人物/新设定是否过量或过少
-- 水文指数：有效信息占比，是否有明显凑字数段落
-- 对话质量：对话是否推动剧情或塑造人物，还是水对话
-- 情绪曲线：本章是否有起伏（爽/紧张/温情等）
-
-规则：
-1. 总分 = 各维度加权，0~100。
-2. 亮点 2~4 条；警告给最需要处理的 2~5 条（尽量指向具体段落）。
-3. 返回 JSON：{"score":72,"verdict":"一句话总评","dimensions":[{"name":"节奏","score":7,"comment":"..."}],"highlights":["..."],"warnings":["..."]}，不要 markdown 代码块标记。`
+  const sys = P_chapter_review
   const user = `【本章正文】
 ${chapterText.trim() || '（空）'}
 
@@ -983,13 +1106,7 @@ export async function aiOocCheck(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<OocFinding[]> {
   const cfg = await requireActiveProvider()
-  const sys = `你是人设监督编辑。请对照角色卡中的性格/动机/价值观/说话风格，检查本章正文里角色的言行是否符合人设（OOC = Out Of Character）。
-
-规则：
-1. 返回 JSON 数组，元素形如 {"character":"角色名","evidence":"引用该角色言行原文","issue":"哪里偏离人设","suggestion":"如何圆回/修改","level":"严重|中等|提示"}。
-2. 必须引用原文证据，并明确指出违背了角色卡哪条设定。
-3. 没有明显 OOC 就返回 []。宁可少报不可误报。
-4. 最多 10 条。不要 markdown 代码块标记。`
+  const sys = P_ooc_check
   const user = `【设定资料】
 ${projectContext.trim() || '（无）'}
 
@@ -1035,13 +1152,7 @@ export async function aiRewritePassage(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<RewriteResult> {
   const cfg = await requireActiveProvider()
-  const sys = `你是小说文字编辑，负责对作者选中的段落做局部修改。
-
-规则：
-1. 只修改选中段落本身，保持上下文衔接、人物口吻与全文风格一致；不改动段落以外的内容。
-2. 严格按要求执行：润色=提升文字表现力但不改剧情与信息；扩写=补充细节/感官/情绪但不得注水跑题；精简=去冗余保留全部有效信息；改语气=调整叙述/对话语气；换视角=在允许范围内调整叙述角度。
-3. 返回 JSON：{"rewritten":"修改后的完整段落","notes":"一句话说明改了什么（可空）"}。
-4. 不要 markdown 代码块标记。`
+  const sys = P_rewrite_passage
   const user = `【写作规范】
 ${styleContext.trim() || '（无）'}
 
@@ -1089,14 +1200,7 @@ export async function aiContinuationAdvice(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ContinuationAdvice> {
   const cfg = await requireActiveProvider()
-  const sys = `你是小说写作指导（卡文救星）。作者刚写完本章，请你给下一部分的创作方向建议。
-
-规则：
-1. direction：下一段最值得推进的冲突/情节方向（2~4 句）。
-2. hooks：可用的章末钩子/悬念点子 2~4 条（只描述效果，不写成品句子）。
-3. pitfalls：容易踩的坑（重复本章节奏、信息过载、与人设或伏笔冲突等），2~3 条。
-4. foreshadow：结合设定里的伏笔，建议埋/收哪些伏笔（可空）。
-5. 返回 JSON：{"direction":"...","hooks":["..."],"pitfalls":["..."],"foreshadow":"..."}，不要 markdown 代码块标记。`
+  const sys = P_continuation_advice
   const user = `【设定资料（摘要）】
 ${projectContext.trim() || '（无）'}
 
@@ -1133,26 +1237,7 @@ export async function aiPleasureCheck(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<PleasureReport> {
   const cfg = await requireActiveProvider()
-  const sys = `你是网文责任编辑，专精"爽感管理"。网文行业共识：爽感来自 YY（变强/打脸/收获/扬名）、代入感（主角处境与情绪共鸣）与金手指（优势与底牌）；每章至少要给读者一次"短暂快速的矛盾爆发"维持追读黏性；而爽点经营不善会滑向毒点（读者强烈劝退：主角长期憋屈、狗血情节、降智送人头、主角被绿/送女、无意义虐主等）。
-
-请审读本章，输出 markdown 报告，结构：
-## 爽点供给
-- 本章给了读者几次"情绪爆点"（升级/打脸/收获/反转/温情），各在什么位置
-- 如果爆点太少或间隔过长，明确说"本章爽点不足"
-
-## 毒点预警
-- 高｜明确的劝退毒点（引原文）
-- 中｜疑似毒点苗头
-- 没有则写"未发现明显毒点"
-
-## 代入感与金手指
-- 主角视角是否连贯、处境是否让读者共情；金手指使用是否合理（有代价、有成长、不无脑）
-
-## 期待感
-- 章末是否留下值得点下一章的钩子/悬念；下一章最该给读者什么
-
-规则：
-- 用中文输出；除 ## 小标题与 - 列表外不要夹带英文；不要 JSON、不要代码块；不创作剧情。`
+  const sys = P_pleasure_check
   const user = `【设定资料（摘要）】
 ${projectContext.trim() || '（无）'}
 
@@ -1183,29 +1268,7 @@ export async function aiOpeningCheck(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<OpeningReport> {
   const cfg = await requireActiveProvider()
-  const sys = `你是网文主编，负责"开篇定生死"的审稿。请按"黄金三章"标准检查作品开头（前三章或已有章节）：
-1. 开局是否在读者不费脑的情况下，快速建立：主角是谁/性格/处境/当前目标。
-2. 第一章是否在千字内给出第一个冲突或悬念（读者是否愿意点第二章）。
-3. 前几章是否至少有一次"小爽点"（被认可/得便宜/打脸/反转），维持追读意愿。
-4. 是否有劝退风险：开局信息过载、主角背景铺陈太长、冲突迟迟不来、文风劝退。
-
-输出 markdown 报告，结构：
-## 开局结论
-一句话定调：能签 / 需改 / 有扑街风险。
-
-## 黄金三章四查
-- 第一章千字内冲突：有/无（引原文）
-- 主角立住：人物信息+性格+目标是否建立
-- 首个小爽点：位置与效果
-- 劝退风险：具体问题（引原文）
-
-## 修改建议
-1. 最该改的一处
-2. …
-
-规则：
-- 只针对开头文本做判断，不创作剧情。
-- 用中文输出；除 ## 小标题与 - 列表外不要夹带英文；不要 JSON、不要代码块。`
+  const sys = P_opening_check
   const user = `【设定资料（摘要）】
 ${projectContext.trim() || '（无）'}
 
@@ -1234,21 +1297,7 @@ export async function aiBriefing(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<BriefingReport> {
   const cfg = await requireActiveProvider()
-  const sys = `你是网文资深编辑兼创作助手。作者马上要动笔写下一章，请基于提供的设定资料与当前进度，生成一份「本章写作简报」，帮作者不丢线、不卡文、不 OOC。
-
-简报结构（必须包含以下四个部分，用中文）：
-## 待办伏笔
-- 列出仍未回收、且计划回收位置临近的伏笔（编号 + 一句话内容 + 建议本章埋/收动作）
-## 钩子与爽点
-- 2~3 条本章可安排的钩子 / 爽点方向（只给方向，不写正文）
-## 角色状态提醒
-- 本章可能出场角色的当前状态 / 动机 / 关系提醒（防止言行失格）
-## 下一章衔接
-- 与上一章结尾的衔接建议 + 章末钩子方向
-
-规则：
-- 只给方向与提醒，不生成正文、不代写段落、不替作者做决定。
-- 用中文输出；除 ## 小标题与 - 列表外不要夹杂任何英文；不要 JSON、不要代码块。`
+  const sys = P_writing_briefing
   const user = `【设定资料（摘要）】
 ${projectContext.trim() || '（无）'}
 
@@ -1326,7 +1375,7 @@ export interface ExtractedEntity {
 
 const ENTITY_TYPES: SettingEntityType[] = ['人物', '势力', '地点', '种族', '物品', '术语']
 
-const EXTRACT_SYS = `你是长篇小说设定资料助理。请从本章正文中，抽取出「有明确专名的设定实体」，供作者核对是否需要登记进设定表。
+let EXTRACT_SYS = `你是长篇小说设定资料助理。请从本章正文中，抽取出「有明确专名的设定实体」，供作者核对是否需要登记进设定表。
 
 type 只能取这 6 个值之一：
 - 人物：有姓名或有明确称号的角色（含仅被提及、未正式出场的历史人物）
@@ -1413,7 +1462,7 @@ export const EXTRACT_FIELDS_SPEC = [
 ].join('\n')
 
 /** 实际发给模型的系统提示词（B2 起为「专名清单 + 全字段」两份说明） */
-export const EXTRACT_SYS_FULL = EXTRACT_SYS + EXTRACT_FIELDS_SPEC
+export function extractSysFull(): string { return EXTRACT_SYS + EXTRACT_FIELDS_SPEC }
 
 /**
  * 取某个 slot 的值：模型可能平铺在顶层、也可能塞进 `fields` 子对象；
@@ -1465,7 +1514,7 @@ ${chapterText.trim() || '（空白）'}
 请抽取本章出现的设定实体。`
   const text = await chat(
     cfg,
-    [{ role: 'system', content: composeSystemPrompt(EXTRACT_SYS_FULL, cfg) }, { role: 'user', content: user }],
+    [{ role: 'system', content: composeSystemPrompt(extractSysFull(), cfg) }, { role: 'user', content: user }],
     // 🔴 走流式（B2 起输出变长：每类实体十几个字段）：非流式要等整段生成完才回响应头，
     //    必然撞 CHAT_TIMEOUT_MS（180s）的总超时墙 —— 与 Bible/大纲是同一类问题。
     { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true },
@@ -1560,7 +1609,7 @@ export const INLINE_SUGGEST_LIMITS: Record<InlineSuggestLength, { label: string;
  * 放进"生成"场景会让模型先去找正文再改写，甚至输出「以下是修改后的内容：」这类前言。
  * 这里只抽它们的共性，写成生成向的短约束——针对"一句话"这个粒度，不用长清单。
  */
-const DEAI_INLINE_RULE = `【文风纪律 · 最重要】
+let DEAI_INLINE_RULE = `【文风纪律 · 最重要】
 不要用「仿佛 / 似乎 / 宛如 / 不禁 / 然而 / 值得一提的是 / 不知为何」这类 AI 高频套话开头；
 不要堆四字成语与对称排比；不要写空泛的总结、升华或哲理感慨；
 不要滥用破折号与省略号；多给具体的动作、对白、感官细节，句子长短错落，像活人顺手写下来的。`
@@ -2017,3 +2066,25 @@ export async function aiSummarizeFormSettings(
   if (Object.keys(first).length) return first
   return askOnce(true)
 }
+
+// —— AI 提示词登记（必须放在文件末尾：上面这些 let 已全部初始化，避免 TDZ）——
+registerPrompt({ id: 'organize-rows', group: '设定与资料', name: 'AI 整理（抽取成表）', note: '从正文/设定里抽成表格行，增量补充、不重复已有条目。' }, () => ORGANIZE_SYS, t => { ORGANIZE_SYS = t })
+registerPrompt({ id: 'proofread', group: '编辑与审校', name: '逐句校对', note: '只报确定的问题（错别字/语病/硬伤），不做文风润色。' }, () => PROOFREAD_SYS, t => { PROOFREAD_SYS = t })
+registerPrompt({ id: 'name-suggest', group: '灵感工具', name: '随机取名', note: '按类型 × 风格批量出名字，每个附一句寓意。' }, () => P_name_suggest, t => { P_name_suggest = t })
+registerPrompt({ id: 'sensitive-recheck', group: '编辑与审校', name: '敏感词复核', note: '对本地词库扫出的疑似命中做复核，剔掉误报。' }, () => P_sensitive_recheck, t => { P_sensitive_recheck = t })
+registerPrompt({ id: 'continuity-audit', group: '编辑与审校', name: '连续性校验', note: '对照设定资料，找正文里的前后矛盾与设定冲突。' }, () => P_continuity_audit, t => { P_continuity_audit = t })
+registerPrompt({ id: 'feedback-analysis', group: '项目诊断', name: '读者反馈分析', note: '把追读 / 均订 / 章评吐槽交叉分析，给出应对建议。' }, () => P_feedback_analysis, t => { P_feedback_analysis = t })
+registerPrompt({ id: 'project-diagnosis', group: '项目诊断', name: '项目健康诊断', note: '从设定资料与章节清单看项目整体健康度。' }, () => P_project_diagnosis, t => { P_project_diagnosis = t })
+registerPrompt({ id: 'foreshadow-review', group: '设定与资料', name: '伏笔闭环审查', note: '查悬空伏笔、跨度失衡、埋设与回收失衡。' }, () => P_foreshadow_review, t => { P_foreshadow_review = t })
+registerPrompt({ id: 'term-dedup', group: '设定与资料', name: '术语去重', note: '找出同义重复的专有名词并给合并建议。' }, () => P_term_dedup, t => { P_term_dedup = t })
+registerPrompt({ id: 'style-audit', group: '编辑与审校', name: '文风体检', note: '按《写作规范》查坏习惯词、标点、视角规则。' }, () => P_style_audit, t => { P_style_audit = t })
+registerPrompt({ id: 'editor-diagnosis', group: '编辑与审校', name: '主编综合诊断', note: '颉文姬的深度诊断：面向作者的整体判断。' }, () => P_editor_diagnosis, t => { P_editor_diagnosis = t })
+registerPrompt({ id: 'chapter-review', group: '编辑与审校', name: '章节审读', note: '按可读性与商业性审读本章，给维度打分。' }, () => P_chapter_review, t => { P_chapter_review = t })
+registerPrompt({ id: 'ooc-check', group: '编辑与审校', name: '人设一致性（OOC）', note: '对照角色卡，查角色言行是否崩人设。' }, () => P_ooc_check, t => { P_ooc_check = t })
+registerPrompt({ id: 'rewrite-passage', group: '正文写作', name: '选区改稿', note: '对作者选中的段落做局部修改。' }, () => P_rewrite_passage, t => { P_rewrite_passage = t })
+registerPrompt({ id: 'continuation-advice', group: '正文写作', name: '卡文建议', note: '刚写完一章，给下一部分的方向建议。' }, () => P_continuation_advice, t => { P_continuation_advice = t })
+registerPrompt({ id: 'pleasure-check', group: '编辑与审校', name: '爽点与毒点管理', note: '按爽感管理标准审本章的爽点供给与毒点风险。' }, () => P_pleasure_check, t => { P_pleasure_check = t })
+registerPrompt({ id: 'opening-check', group: '编辑与审校', name: '开篇三章检查', note: '按「黄金三章」标准审作品开头。' }, () => P_opening_check, t => { P_opening_check = t })
+registerPrompt({ id: 'writing-briefing', group: '正文写作', name: '写作简报', note: '动笔前生成一份本章写作简报。' }, () => P_writing_briefing, t => { P_writing_briefing = t })
+registerPrompt({ id: 'extract-entities', group: '设定与资料', name: '设定实体抽取', note: '从本章正文抽取有专名的设定实体（拆书 / 设定补登共用）。' }, () => EXTRACT_SYS, t => { EXTRACT_SYS = t })
+registerPrompt({ id: 'deai-rule', group: '正文写作', name: '去 AI 味纪律', note: '生成正文时附加的反 AI 腔规则（钉在 system 末尾）。' }, () => DEAI_INLINE_RULE, t => { DEAI_INLINE_RULE = t })

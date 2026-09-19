@@ -32,6 +32,7 @@ const NO_AI_GROUPS = ['大纲规划', '运营维护']
  */
 const ORGANIZE_TAB_IDS = new Set([
   'relations',    // 人物关系
+  'faction-rels', // 势力关系（2026-09-19 老大定：与人物关系同属「AI 整理」，不走补全）
   'foreshadow',   // 伏笔追踪
   'timeline',     // 时间脉络
   'hookpoints',   // 爽点节奏
@@ -58,7 +59,7 @@ export function aiCapabilityOf(tab: TabDef): AICapability {
 
 /** 未配置模型时，所有 AI 入口按钮的统一禁用提示 */
 export const AI_DISABLED_HINT =
-  '需先接入 AI 模型：到「灵感启发 → 模型配置」添加本地 Ollama 或联网模型即可启用。' +
+  '需先接入 AI 模型：到「模型设置 → 模型配置」添加本地 Ollama 或联网模型即可启用。' +
   '（未接入不影响本页任何手动填写功能）'
 
 /**
@@ -67,6 +68,7 @@ export const AI_DISABLED_HINT =
  */
 const ORGANIZE_KEYS: Record<string, string[]> = {
   relations: ['人物A', '人物B'],
+  'faction-rels': ['势力A', '势力B'],
   foreshadow: ['伏笔内容'],
   timeline: ['章节号'],
   hookpoints: ['章节号', '爽点内容'],
@@ -89,7 +91,8 @@ export function organizeKeyColumns(tab: TabDef): string[] {
 
 /** 关系网这类「无序对」表：判重时 A-B 与 B-A 视为同一条关系 */
 export function isUnorderedPairTab(tabId: string): boolean {
-  return tabId === 'relations'
+  // 势力关系同样是无序对：A-B 与 B-A 是同一条
+  return tabId === 'relations' || tabId === 'faction-rels'
 }
 
 /** 「AI 整理」面板的引导文案（各表语境不同，给作者明确预期） */
@@ -100,6 +103,8 @@ export function organizeHint(tabId: string): string {
   switch (tabId) {
     case 'relations':
       return '让 AI 读取角色卡与章节正文，整理出尚未登记的人物关系（已有关系不会重复生成）。'
+    case 'faction-rels':
+      return '让 AI 读取《国家势力》与章节正文 / 已登记的人物与势力设定，整理出尚未登记的势力关系（势力名必须与《国家势力》逐字一致；已有关系不会重复生成）。'
     case 'foreshadow':
       return '让 AI 从章节正文中找出已埋下但尚未登记的伏笔线索。'
     case 'timeline':

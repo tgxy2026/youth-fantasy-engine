@@ -48,7 +48,7 @@ export const K_TAVERN_SETTINGS = 'tavern.settings'
 
 /** 通用控制（两种模式都生效） */
 export type TavernCommonSettings = {
-  /** 默认模型：留空 = 跟随「灵感启发 → 模型配置」里的全局活动模型（会话里不再单独选择） */
+  /** 默认模型：留空 = 跟随「模型设置 → 模型配置」里的全局活动模型（会话里不再单独选择） */
   defaultProviderId: string
   /** 上下文预算（字）：一轮请求里「设定 + 记忆 + 历史」的总字数上限 */
   contextBudget: number
@@ -361,7 +361,7 @@ function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<Tav
     }
   }
   // ③ `search` —— 2026-09-15 搬去了全局键 `app.search`（联网检索是全局功能，
-  //    不该挂在酒馆的设置里；界面也搬到了「灵感工具 → 灵感启发」，见 searchSettings.ts）。
+  //    不该挂在酒馆的设置里；界面也搬到了「工作面板 → 模型设置」，见 searchSettings.ts）。
   //    🔴 这里必须主动删：mergeDeep 会把「默认值里已经没有的键」从旧数据/旧预设里**照抄回来**，
   //    留着它就会一直躺在库里被反复写回，将来有人搜到还会以为它有用。
   if ('search' in (out as Record<string, unknown>)) {

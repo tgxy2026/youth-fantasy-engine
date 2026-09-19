@@ -9,7 +9,7 @@
 //     这些都认；但**不属于该类型的字段键一律丢弃**（否则会往表里写驴唇不对马嘴的数据）。
 import { __resetMockStores } from './mock-memory'
 import {
-  EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, EXTRACT_SYS_FULL, SLOT_HINT, parseExtractedEntities,
+  EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, SLOT_HINT, parseExtractedEntities,
 } from '../src/lib/aiTasks'
 import { KIND_MAP } from '../src/lib/flow/fieldMap'
 
@@ -53,8 +53,8 @@ const TYPES = Object.keys(KIND_MAP) as (keyof typeof KIND_MAP)[]
   ok('没有「死提示」（SLOT_HINT 里的键没人用 = 拼错了或 fieldMap 删过 slot）', dead.length === 0, dead.join(','))
 
   ok('实际发出的 system 含字段段（避免只改了常量没接上）',
-    EXTRACT_SYS_FULL.includes('【应补全的字段】') && EXTRACT_SYS_FULL.length > 900,
-    String(EXTRACT_SYS_FULL.length))
+    extractSysFull().includes('【应补全的字段】') && extractSysFull().length > 900,
+    String(extractSysFull().length))
 
   // 负面对照：凭空加一个不存在的键，一致性检查必须能发现（证明上面几条有判别力）
   const fake = [...EXTRACT_FIELD_KEYS['人物'], 'notARealField']

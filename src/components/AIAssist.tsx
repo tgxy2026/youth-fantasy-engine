@@ -22,7 +22,7 @@ import { getSetting, setSetting } from '../lib/db'
 import { uid } from '../lib/id'
 import { Button } from './Button'
 import { clipText } from '../lib/textClip'
-
+import { registerPrompt } from '../lib/promptSettings'
 
 // ============ 多轮对话会话模型（按项目持久化在 settingsKV） ============
 interface ChatMsg {
@@ -39,7 +39,7 @@ interface ChatSession {
 }
 const SESSIONS_KEY = 'aiChatSessions'
 
-const SYSTEM_PROMPT = `你是一位网络小说创作的辅助助手，专门帮助作者做创作前期的「灵感激发、剧情 / 人物 / 世界观规划、设定脑暴、一致性自查」工作。
+let SYSTEM_PROMPT = `你是一位网络小说创作的辅助助手，专门帮助作者做创作前期的「灵感激发、剧情 / 人物 / 世界观规划、设定脑暴、一致性自查」工作。
 
 规则：
 1. 只输出规划性、启发性的内容（创意、大纲草案、设定建议、可选项），不要替作者直接写出小说正文章节；
@@ -316,7 +316,7 @@ style={{ height: foldVh('60vh') }}>
               <AutoTextarea
                 value={prompt}
                 onChange={setPrompt}
-                placeholder={aiReady ? '描述你的主题、要求或要自查的设定……' : '未接入模型，请先在上方「模型配置」里添加'}
+                placeholder={aiReady ? '描述你的主题、要求或要自查的设定……' : '未接入模型，请先到「工作面板 → 模型设置」添加'}
                 minHeight={40}
                 maxHeight={160}
                 className="!px-3 !py-2 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 focus:border-amber/40 outline-none placeholder:text-ink-600 flex-1"
@@ -347,3 +347,6 @@ style={{ height: foldVh('60vh') }}>
     </section>
   )
 }
+
+// —— AI 提示词登记（必须放在文件末尾：上面这些 let 已全部初始化，避免 TDZ）——
+registerPrompt({ id: 'assist-planner', group: '灵感工具', name: 'AI 辅助规划', note: '多轮对话式脑暴，结合项目设定给创作建议。' }, () => SYSTEM_PROMPT, t => { SYSTEM_PROMPT = t })

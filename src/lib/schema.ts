@@ -798,6 +798,16 @@ export const TABS: TabDef[] = [
 },
 
 {
+  // 2026-09-19 新增（老大要求）：把「设置类」从「灵感工具 → 灵感启发」里拆出来。
+  // 灵感启发那页的定位是**灵感与创意**（随机取名 / 一键续写 / 辅助规划），
+  // 而模型配置、额度、联网检索是**配一次就不动的全局设置** —— 两种东西混在一页，两边都不好找。
+  // 位置：工作面板组内、写作面板之下、使用指南之上（与数组顺序一致，Sidebar 按序渲染）。
+  id: 'model-settings', name: '模型设置', group: '工作面板', type: 'model-settings',
+  description: '模型配置、正文写作 AI 额度、联网检索，以及全部 AI 提示词的前台设置。',
+  modules: [], columns: [],
+},
+
+{
   id: 'guide', name: '使用指南', group: '工作面板', type: 'guide',
   description: '页签导航与使用建议。',
   modules: [], columns: [],
@@ -806,7 +816,7 @@ export const TABS: TabDef[] = [
   // 「灵感工具」下拆出的两个子页签：与「开书定位」的作品定位/世界设定/力量体系同构（同一 group 下的独立页签，Sidebar 自动列在分组标题下）
   {
     id: 'inspire-tools', name: '灵感启发', group: '灵感工具', type: 'inspire',
-    description: '模型配置与联网检索（全局）+ 随机取名生成器、AI 一键续写与设定补完、AI 辅助规划（脑暴）。',
+    description: '随机取名生成器、AI 一键续写与设定补完、AI 辅助规划（脑暴）。模型与联网检索已移到「工作面板 → 模型设置」。',
   },
   {
     id: 'bookbreak', name: '一键拆书', group: '灵感工具', type: 'bookbreak',
@@ -940,6 +950,8 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   // 锁定项（必选，弹窗置灰不可取消）
   [EDITOR_ID]: 'locked',
   dashboard: 'locked',
+  // 模型设置（2026-09-19）：没有它连模型都接不上，与「使用指南」同级锁定
+  'model-settings': 'locked',
   guide: 'locked',
   'inspire-tools': 'locked',
   'material-library': 'locked',

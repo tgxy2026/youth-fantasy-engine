@@ -1,11 +1,11 @@
 /**
  * 「一键拆书」页签面板。
  *
- * 四步：① 贴/导入原文 → ② 开始拆解（切分→**写入正文**→逐块抽取→整理草稿，可中止）
- * → ③ 审阅草稿并勾选写入。
+ * 四步：贴/导入原文 → 开始拆解（切分→**写入正文**→逐块抽取→整理草稿，可中止）
+ * → 审阅草稿并勾选写入。
  *
  * 写库边界：**原文结构会写进正文编辑**（卷/章，可用下方开关关掉）；
- * **设定草稿不自动落库**，仍由用户在第 ③ 步勾选后写入。
+ * **设定草稿不自动落库**，仍由用户在这一步勾选后写入。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileUp, Loader2, Play, X } from 'lucide-react'
@@ -191,10 +191,10 @@ export default function BookBreakPanel() {
         </HelpPopover>
       </div>
 
-      {/* ① 原文 */}
+      {/* 原文 */}
       <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-13 text-ink-100">① 原文</span>
+          <span className="text-13 text-ink-100">原文</span>
           <span className="text-11 text-ink-500">{raw.length.toLocaleString()} 字</span>
           <div className="flex-1" />
           <Button size="xs" variant="secondary" disabled={running} onClick={() => fileRef.current?.click()}>
@@ -282,11 +282,11 @@ export default function BookBreakPanel() {
         </div>
       )}
 
-      {/* ② 运行 */}
+      {/* 运行 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button size="sm" variant="primary" solid disabled={running || !raw.trim()} onClick={() => void start()}>
           {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-          {running ? '抽取中…' : resume ? '继续抽取' : '② 开始抽取'}
+          {running ? '抽取中…' : resume ? '继续抽取' : '开始抽取'}
         </Button>
         {!running && resume && (
           <Button size="sm" variant="secondary" onClick={() => void start(true)}>
@@ -308,7 +308,7 @@ export default function BookBreakPanel() {
       {/* 进度：节点时间线（跑完保留，事后能看到每一步做了什么、花了多久） */}
       <WorkflowTimeline progress={progress} running={running} summaries={summaries} className="mt-2" />
 
-      {/* ③ 审阅 */}
+      {/* 审阅 */}
       {persistInfo && (
         <div className="mt-3 rounded border border-ink-700 bg-ink-900/40 px-3 py-2 text-11 leading-relaxed text-ink-300">
           {persistInfo.alreadyImported ? (
@@ -326,7 +326,7 @@ export default function BookBreakPanel() {
       {bundle && (
         <div className="mt-5">
           <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
-            <span className="text-13 text-ink-100">③ 审阅草稿</span>
+            <span className="text-13 text-ink-100">审阅草稿</span>
             {formRows.length > 0 && (
               <span className="text-11 text-ink-400">
                 含末尾汇总的 {formRows.length} 张「全书设定」—— 已填过的字段不会被覆盖，只补空。

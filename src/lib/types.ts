@@ -38,6 +38,7 @@ export interface TableColumn {
 /** 页签类型 */
 export type TabType =
   | 'dashboard'    // 工作面板
+  | 'model-settings' // 模型设置（模型配置 / 正文写作额度 / 联网检索 / AI 提示词）
   | 'guide'        // 使用说明
   | 'editor'       // 正文编辑
   | 'form'         // 表单型（单份）

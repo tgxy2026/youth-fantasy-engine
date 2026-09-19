@@ -24,6 +24,7 @@ import PlotCanvas from './components/PlotCanvas'
 import { showToast } from './components/dialogs'
 import { Button } from './components/Button'
 import { applyTheme, applyZoom, getStoredTheme, getStoredZoom, isZoomAuto } from './lib/theme'
+import { loadPromptOverrides } from './lib/promptSettings'
 import { LS_SPRITE_ENABLED } from './lib/constants'
 import { downloadBlob } from './lib/zip'
 import workbenchBg from './assets/workbench-bg.png'
@@ -32,6 +33,7 @@ import workbenchBg from './assets/workbench-bg.png'
 // 仅在用户切到对应页签时才加载对应 chunk。Sidebar/仪表盘/编辑器保持常驻以保证首屏速度。
 const GuidePage = lazy(() => import('./components/GuidePage'))
 const InspireTools = lazy(() => import('./components/InspireTools'))
+const ModelSettingsPanel = lazy(() => import('./components/ModelSettingsPanel'))
 const CheckTools = lazy(() => import('./components/CheckTools'))
 const MaterialLibrary = lazy(() => import('./components/MaterialLibrary'))
 const BookBreakPanel = lazy(() => import('./components/BookBreakPanel'))
@@ -138,6 +140,8 @@ export default function App() {
           // 修复审计 P1-7：「启动恢复上次项目」这条路径此前只跑了 migrateProjectTypes，
           // 漏掉 ledger 拆表与全局编号，导致自动回到上次项目时台账/检索读到旧结构。
           await db.runMigrations()
+          // AI 提示词的作者覆写要在任何 AI 调用之前生效（登记在各 lib 模块顶层，import 即完成）
+          await loadPromptOverrides()
           await refreshVolumeTabs()
           setProjectId(p.id)
           setProjectName(p.name)
@@ -332,6 +336,9 @@ export default function App() {
     }
     if (activeTab === 'editor') {
       return <NovelEditor onStatsChange={onStatsChange} onNavigate={navigate} onOpenSearch={() => setSearchOpen(true)} projectName={projectName} openChapterId={editorTarget} ctx={visCtx} />
+    }
+    if (activeTab === 'model-settings') {
+      return <ModelSettingsPanel />
     }
     if (activeTab === 'inspire-tools') {
       return <InspireTools />

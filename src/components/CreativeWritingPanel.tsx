@@ -2,7 +2,7 @@
  * 「创意写作」页签 —— 全自动 AI 创作工作流的界面。
  *
  * 三个可见阶段 + 两个**人工闸门**（方案见 `docs/2.2.0-全自动AI小说创作工作流方案.md`）：
- *   ①设定奠基 →「闸门①：勾选要落库的设定」→ ②分卷大纲 →「闸门②：确认大纲」→ ③逐章连写
+ *   设定奠基 →「闸门 · 设定：勾选要落库的设定」→ 分卷大纲 →「闸门 · 大纲：确认大纲」→ 逐章连写
  *
  * 两个闸门是刻意留的：AI 生成设定/大纲的质量波动必须由人过一眼再落库 —— 人定方向，AI 跑量。
  * 闸门用 Promise 实现（编排器 await 在那里等），所以本组件只需在点击时 resolve 掉它。
@@ -152,7 +152,7 @@ export default function CreativeWritingPanel() {
           <div className="space-y-1.5 text-11 leading-relaxed text-ink-300">
             <p>给一句话想法，AI 依次完成：<b>设定奠基 → 分卷大纲 → 逐章连写</b>（审校闭环、伏笔自动更新在后续阶段）。</p>
             <p>两个<b>人工闸门</b>：设定草稿与大纲都必须你确认后才落库、才继续 —— 人定方向，AI 跑量。</p>
-            <p>只想先要大纲、暂不写正文：在闸门②选<b>「只保存大纲」</b>即可，之后正文可以自己写、也可以随时回来补写。</p>
+            <p>只想先要大纲、暂不写正文：在「闸门 · 大纲」选<b>「只保存大纲」</b>即可，之后正文可以自己写、也可以随时回来补写。</p>
             <p>落库只发生在闸门通过之后；在任何闸门处「放弃」，都不会留下半成品。</p>
             <p className="text-ink-500">想法还说不清时点<b>「对话引导」</b>：AI 按「题材 → 主角 → 冲突 → 世界」一路问，聊完自动把要点填回输入框。</p>
             <p className="text-ink-500">连写阶段用的是「AI 一键续写」那套（含字数校准与落库硬闸门），并按已落库的《章节细纲》逐章推进。</p>
@@ -161,10 +161,10 @@ export default function CreativeWritingPanel() {
         </HelpPopover>
       </div>
 
-      {/* ① 想法与参数 */}
+      {/* 想法与参数 */}
       <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-13 text-ink-100">① 一句话想法</span>
+          <span className="text-13 text-ink-100">一句话想法</span>
           <div className="flex-1" />
           <Button size="xs" variant="secondary" disabled={running} onClick={() => setInterview(true)}>
             <Sparkles size={11} /> 对话引导
@@ -236,11 +236,11 @@ export default function CreativeWritingPanel() {
       {/* 阶段进度：竖向节点时间线（跑完保留 —— 事后能看到每一步做了什么、花了多久、产出多少） */}
       <WorkflowTimeline progress={progress} running={running} summaries={summaries} className="mt-2" />
 
-      {/* 闸门①：设定草稿 */}
+      {/* 闸门 · 设定：设定草稿 */}
       {bibleGate && (
         <div className="mt-4">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="rounded border border-amber/30 bg-amber/15 px-1.5 py-0.5 text-11 text-amber">闸门 ①</span>
+            <span className="rounded border border-amber/30 bg-amber/15 px-1.5 py-0.5 text-11 text-amber">闸门 · 设定</span>
             <span className="text-13 text-ink-100">确认设定草稿</span>
             <span className="text-11 text-ink-500">
               只有勾选的条目会落库；可以改名称、也可以直接舍弃不要的
@@ -256,11 +256,11 @@ export default function CreativeWritingPanel() {
         </div>
       )}
 
-      {/* 闸门②：大纲 */}
+      {/* 闸门 · 大纲 */}
       {outlineGate && (
         <section className="mt-4 rounded-lg border border-amber/40 bg-ink-800/40 p-4">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="rounded border border-amber/30 bg-amber/15 px-1.5 py-0.5 text-11 text-amber">闸门 ②</span>
+            <span className="rounded border border-amber/30 bg-amber/15 px-1.5 py-0.5 text-11 text-amber">闸门 · 大纲</span>
             <span className="text-13 text-ink-100">
               确认分卷大纲（{outlineGate.volumes.length} 卷 / {outlineGate.chapters.length} 章）
             </span>
