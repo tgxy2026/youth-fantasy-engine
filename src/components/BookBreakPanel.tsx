@@ -1,8 +1,8 @@
 /**
  * 「一键拆书」页签面板。
  *
- * 四步：贴/导入原文 → 开始拆解（切分→**写入正文**→逐块抽取→整理草稿，可中止）
- * → 审阅草稿并勾选写入。
+ * 流水线：贴/导入原文 → 开始拆解（切分 → **写入正文** → 逐块抽取 → 整理草稿 →
+ * 汇总全书设定 → 整理关系，可中止）→ 审阅草稿并勾选写入。
  *
  * 写库边界：**原文结构会写进正文编辑**（卷/章，可用下方开关关掉）；
  * **设定草稿不自动落库**，仍由用户在这一步勾选后写入。
@@ -18,6 +18,10 @@ import { loadActiveId, loadProviders, type AIProvider } from '../lib/ai'
 import { adviseImport, type ImportAdvice } from '../lib/bookbreak/recommend'
 import { estimateCalls, previewSplit, runBookBreak, type BookBreakResume } from '../lib/bookbreak/run'
 import type { RelationTabOutcome } from '../lib/bookbreak/relations'
+import {
+  DEFAULT_RELATION_LIMITS, RELATION_LIMIT_META, clampRelationLimits, getRelationLimits,
+  isDefaultLimits, resetRelationLimits, saveRelationLimits, type RelationMaterialLimits,
+} from '../lib/bookbreak/relationMaterial'
 import type { SplitResult } from '../lib/bookbreak/split'
 import { planVolumes } from '../lib/bookbreak/persist'
 import type { PersistResult } from '../lib/bookbreak/persist'
@@ -47,6 +51,11 @@ export default function BookBreakPanel() {
   const [relationRows, setRelationRows] = useState<DraftRow[]>([])
   /** 关系整理逐表结果（哪张表几条、有没有失败）——失败要如实说，并指向表格页的「AI 整理」 */
   const [relationTabs, setRelationTabs] = useState<RelationTabOutcome[]>([])
+  /** 关系整理实际用掉的材料字数（作者调过上限，跑完得看得见调完是多少字） */
+  const [relationChars, setRelationChars] = useState(0)
+  /** 「整理关系」的材料上限（持久保存；见 lib/bookbreak/relationMaterial.ts 里每项为什么） */
+  const [limits, setLimits] = useState<RelationMaterialLimits>(DEFAULT_RELATION_LIMITS)
+  const [showLimits, setShowLimits] = useState(false)
   /**
    * 中止后拿到的续跑信息（界面存住它 → 显示「继续」按钮）。
    * 🔴 断点装在**阶段内**：`extract` 抽到第 3 块时中止，继续时从第 4 块接着抽，
@@ -67,6 +76,9 @@ export default function BookBreakPanel() {
     }, 350)
     return () => clearTimeout(t)
   }, [raw])
+
+  // 材料上限：从全局 meta 读（读不到就用推荐值 —— 绝不因读设置失败挡住拆书）
+  useEffect(() => { getRelationLimits().then(setLimits).catch(() => {}) }, [])
 
   // 模型能力（只读一次）：拿它把「预计调用次数」换算成耗时与推荐导入量。
   // 🔴 推荐口径见 recommend.ts 顶部注释 —— 拆书是逐章抽，导入量不撞窗口，受限的是调用次数与耗时。
@@ -127,6 +139,8 @@ export default function BookBreakPanel() {
         persistToChapters: writeToChapters,
         summarizeForms,
         organizeRelations,
+        // 材料上限（界面可调，持久保存）—— 只影响「整理关系」这一步
+        relationMaterial: limits,
         // 续跑：把上次的断点原样传回（阶段内断点 + 已完成阶段的产物）
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => setResume(r),
@@ -145,6 +159,7 @@ export default function BookBreakPanel() {
       setFormRows(res.formRows)
       setRelationRows(res.relationRows)
       setRelationTabs(res.relationTabs)
+      setRelationChars(res.relationMaterialChars)
       setResume(null) // 跑完了，断点作废（下次是从头开始的新任务）
       setPersistInfo(res.persist)
       // 阶段产物摘要：让跑完之后也看得见每一步做了什么（否则 detail 会被下一阶段覆盖）
@@ -162,7 +177,8 @@ export default function BookBreakPanel() {
         // 关系整理逐表交代（含失败原因）：失败了却只字不提，作者会以为"这本书没有关系"
         ...(organizeRelations && res.relationTabs.length
           ? {
-              relations: res.relationTabs
+              // 带上材料字数：作者刚在面板上调过上限，跑完总得看见"调完是多少字"
+              relations: `材料 ${fmtNum(res.relationMaterialChars)} 字 · ` + res.relationTabs
                 .map(t => {
                   if (t.note) return `《${t.tabName}》失败：${t.note}`
                   const discard = t.dropped + t.unproven
@@ -285,6 +301,58 @@ export default function BookBreakPanel() {
             </span>
           </span>
         </label>
+        {organizeRelations && (
+          <div className="mt-1.5 pl-5">
+            <Button size="xs" variant="secondary" disabled={running} onClick={() => setShowLimits(v => !v)}>
+              {showLimits ? '收起材料上限' : '调整材料上限'}
+              {!isDefaultLimits(limits) && <span className="text-amber"> · 已调整</span>}
+            </Button>
+            {showLimits && (
+              <div className="mt-2 rounded border border-ink-700 bg-ink-900/40 px-3 py-2">
+                <p className="text-11 leading-relaxed text-ink-400">
+                  材料＝<b className="text-ink-200">已抽出的实体清单 ＋ 开篇原文样本</b>，
+                  是这一步唯一的输入（一次调用），因此必须有上限。下面给的是推荐值与推荐理由；
+                  改成多少由你定 —— 改完立刻生效于下次运行，并会记住。
+                </p>
+                <div className="mt-2 space-y-2">
+                  {RELATION_LIMIT_META.map(m => (
+                    <label key={m.key} className="block">
+                      <span className="flex items-center gap-2">
+                        <span className="w-28 shrink-0 text-12 text-ink-200">{m.label}</span>
+                        <input
+                          type="number"
+                          min={m.min}
+                          max={m.max}
+                          step={m.step}
+                          value={limits[m.key]}
+                          disabled={running}
+                          onChange={e => {
+                            const next = { ...limits } as RelationMaterialLimits
+                            next[m.key] = Number(e.target.value)
+                            setLimits(clampRelationLimits(next))
+                          }}
+                          onBlur={() => { void saveRelationLimits(limits) }}
+                          className="w-20 rounded border border-ink-700 bg-ink-900 px-2 py-0.5 text-12 text-ink-100 outline-none focus:border-amber/50 disabled:opacity-60"
+                        />
+                        <span className="text-11 text-ink-500">{m.unit} · 推荐 {DEFAULT_RELATION_LIMITS[m.key]}</span>
+                      </span>
+                      <span className="mt-0.5 block text-11 leading-relaxed text-ink-500">{m.why}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Button size="xs" variant="secondary" disabled={running || isDefaultLimits(limits)}
+                    onClick={() => { void resetRelationLimits().then(setLimits) }}>
+                    恢复推荐值
+                  </Button>
+                  <span className="text-11 text-ink-500">
+                    调大更准也更慢；材料到顶会截断并标注「后面已省略」，不会静默丢。
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {writeToChapters && (
           <div className="mt-1 text-11 leading-relaxed text-ink-500">
             建议在<b className="text-ink-300">新建的项目</b>里拆书：整本正文会写进「当前项目」，
@@ -376,7 +444,8 @@ export default function BookBreakPanel() {
             )}
             {relationRows.length > 0 && (
               <span className="text-11 text-ink-400">
-                含末尾整理的 {relationRows.length} 条关系（人物关系 / 势力关系）—— 已与已有条目比对过，A-B 与 B-A 视为同一条。
+                含末尾整理的 {relationRows.length} 条关系（人物关系 / 势力关系）—— 依据 {fmtNum(relationChars)} 字的材料，
+                已与已有条目比对过（A-B 与 B-A 视为同一条）。
               </span>
             )}
             {relationTabs.some(t => t.note) && (

@@ -18,6 +18,7 @@
  * **静默截断**（模型只看到前半段却照样输出得很像样），见 formSummary 的说明。
  */
 import { buildFormMaterial } from './formSummary'
+import { clampRelationLimits, type RelationMaterialLimits } from './relationMaterial'
 import type { EntityBatch } from '../flow/draft'
 import type { DraftField, DraftRow } from '../flow/types'
 import { loadCharacterNames } from '../aiContext'
@@ -158,8 +159,11 @@ export interface RelationDraftOptions {
   signal?: AbortSignal
   /** 阶段进度（0..1）与一行说明 */
   onProgress?: (ratio: number, detail: string) => void
-  /** 单表最多条数（默认 20） */
-  maxRows?: number
+  /**
+   * 材料上限（界面可调，见 `relationMaterial.ts` 里每一项为什么这么推荐）。
+   * 缺省或只给部分字段时，其余用推荐值；越界值会被钳制。
+   */
+  limits?: Partial<RelationMaterialLimits>
 }
 
 /** 逐表产出统计（界面文案用：哪张表整理出几条、有没有失败） */
@@ -180,6 +184,12 @@ export interface RelationTabOutcome {
 export interface RelationDraftResult {
   rows: DraftRow[]
   perTab: RelationTabOutcome[]
+  /**
+   * 本次材料的实际字数（实体清单 + 开篇样本，已按上限收口）。
+   * 界面要显示它：作者刚在面板上调了上限，跑完得看得见"调完是多少字"，
+   * 否则无法判断材料是不是被截断了。
+   */
+  materialChars: number
 }
 
 function isAbort(e: unknown): boolean {
@@ -197,14 +207,17 @@ export async function buildRelationDrafts(opts: RelationDraftOptions): Promise<R
     .map(id => TABS.find(t => t.id === id))
     .filter((t): t is TabDef => !!t)
 
-  // 材料：实体清单（人物放宽到 50 条）+ 开篇样本。没有材料就没有整理依据，直接空手而归。
+  // 材料：实体清单（人物放宽到 perType 条）+ 开篇样本。没有材料就没有整理依据，直接空手而归。
+  const limits = clampRelationLimits(opts.limits)
   const material = buildFormMaterial(opts.batches, opts.rawText, {
-    perType: 50,
-    perEntityChars: 130,
-    rawHeadChars: 1500,
-    maxChars: 8000,
+    perType: limits.perType,
+    perEntityChars: limits.perEntityChars,
+    rawHeadChars: limits.rawHeadChars,
+    maxChars: limits.maxChars,
   }).trim()
-  if (!material) return { rows: [], perTab: [] }
+  if (!material) return { rows: [], perTab: [], materialChars: 0 }
+  // 先把材料规模报出来：作者在上界面调了上限，得能看见调完是多少字（也便于判断是否被截断）
+  opts.onProgress?.(0.02, `材料 ${material.length} 字（实体清单 + 开篇样本）`)
 
   const out: DraftRow[] = []
   const perTab: RelationTabOutcome[] = []
@@ -239,7 +252,7 @@ export async function buildRelationDrafts(opts: RelationDraftOptions): Promise<R
         useCtx: true,
         // 材料里没有章节清单，且关系表没有章节号列 —— 不需要附
         includeChapterList: false,
-        maxRows: opts.maxRows ?? 20,
+        maxRows: limits.maxRows,
         allowedOverride,
         evidenceField: EVIDENCE_FIELD,
         ...(opts.signal ? { signal: opts.signal } : {}),
@@ -281,5 +294,5 @@ export async function buildRelationDrafts(opts: RelationDraftOptions): Promise<R
     }
   }
 
-  return { rows: out, perTab }
+  return { rows: out, perTab, materialChars: material.length }
 }

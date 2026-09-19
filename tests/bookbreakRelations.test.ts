@@ -16,6 +16,10 @@ import { rowFingerprint } from '../src/lib/aiTasks'
 import { commitDraftRows, previewCommit } from '../src/lib/flow/commit'
 import { defaultPicked, pickableAsNew } from '../src/lib/flow/draft'
 import { RELATION_TAB_IDS, buildRelationDrafts, evidenceInMaterial, filterRowsByRoster, keyColsOf, relationRowsToDrafts } from '../src/lib/bookbreak/relations'
+import {
+  DEFAULT_RELATION_LIMITS, clampRelationLimits, getRelationLimits, isDefaultLimits,
+  resetRelationLimits, saveRelationLimits,
+} from '../src/lib/bookbreak/relationMaterial'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0
@@ -199,6 +203,63 @@ db.setCurrentProject('rel-test')
     !evidenceInMaterial('中州皇朝与血魔教在中州边境对峙多年', material))
   ok('太短的引文不通过（只写个人名证明不了关系）', !evidenceInMaterial('陈渊', material))
   ok('空引文不通过', !evidenceInMaterial('', material))
+}
+
+// ---------- ⑨ 材料上限：钳制与持久化（界面可调的那个旋钮）----------
+{
+  ok('默认值即推荐值（界面「推荐 N」取自它）', isDefaultLimits(DEFAULT_RELATION_LIMITS))
+  ok('没存过 → 全用推荐值', isDefaultLimits(clampRelationLimits(null)))
+  const c = clampRelationLimits({ perType: 9999, perEntityChars: 1, rawHeadChars: -5, maxChars: 999999, maxRows: 0 })
+  ok('越界值被钳到上下界内',
+    c.perType === 200 && c.perEntityChars === 60 && c.rawHeadChars === 0 && c.maxChars === 24000 && c.maxRows === 5,
+    JSON.stringify(c))
+  ok('🔴 原文样本不得超过材料总量（否则它会把实体清单整段挤没）',
+    clampRelationLimits({ maxChars: 3000, rawHeadChars: 6000 }).rawHeadChars === 3000)
+  ok('非数字不污染 → 回落推荐值', clampRelationLimits({ perType: NaN }).perType === DEFAULT_RELATION_LIMITS.perType)
+  ok('小数取整（输入框里手打小数也不会有半条实体）', Number.isInteger(clampRelationLimits({ perType: 50.7 }).perType))
+
+  const saved = await saveRelationLimits({ perType: 120 })
+  ok('保存后读回一致，其余项保持推荐值',
+    saved.perType === 120 && (await getRelationLimits()).perType === 120,
+    JSON.stringify(await getRelationLimits()))
+  ok('保存时也钳制 —— 界面回显的就是实际生效值（不会"显示 9999 实际 200"）',
+    (await saveRelationLimits({ perType: 9999 })).perType === 200)
+  ok('恢复推荐值真的回到推荐值',
+    isDefaultLimits(await resetRelationLimits()) && (await getRelationLimits()).perType === 50)
+}
+
+// ---------- ⑩ 上限确实传进了材料（不是摆设）----------
+{
+  const ents = Array.from({ length: 30 }, (_, i) => ({
+    // desc 要**长过 perEntityChars**，否则单条字数上限根本不参与截断（第一版假数据只有 40 字，
+    // 于是"调大单条字数"看起来毫无作用，材料长度恒定 1551）
+    name: `人物${i}`, type: '人物' as const, desc: '一二三四五六七八九十'.repeat(10), evidence: 'x',
+  }))
+  const batches = [{ source: '第1章', index: 1, entities: ents }]
+  const ctl = new AbortController()
+  ctl.abort() // 让主循环立刻 break：只测材料拼装，不调模型
+
+  let small = 0, big = 0, capped = 0
+  await buildRelationDrafts({
+    batches, rawText: '原文样本。'.repeat(200), signal: ctl.signal,
+    limits: { perType: 5, perEntityChars: 60, rawHeadChars: 100, maxChars: 8000 },
+    onProgress: (_r, d) => { const m = /材料 (\d+) 字/.exec(d); if (m && !small) small = Number(m[1]) },
+  })
+  await buildRelationDrafts({
+    batches, rawText: '原文样本。'.repeat(200), signal: ctl.signal,
+    limits: { perType: 30, perEntityChars: 120, rawHeadChars: 100, maxChars: 8000 },
+    onProgress: (_r, d) => { const m = /材料 (\d+) 字/.exec(d); if (m && !big) big = Number(m[1]) },
+  })
+  await buildRelationDrafts({
+    batches, rawText: '原文样本。'.repeat(200), signal: ctl.signal,
+    // ⚠️ 用「材料总字数」的下限（2000）做截断对照 —— 填比下限还小的值会被钳上去，
+    //    那时材料没超自然不截断（第一版断言就是这么写错的）
+    limits: { perType: 30, perEntityChars: 120, rawHeadChars: 100, maxChars: 2000 },
+    onProgress: (_r, d) => { const m = /材料 (\d+) 字/.exec(d); if (m && !capped) capped = Number(m[1]) },
+  })
+  ok('每类条数上限真的生效（5 条的材料明显小于 30 条）', small > 0 && big > small, `5条=${small} 30条=${big}`)
+  ok('🔴 材料总字数上限真的生效（超了被截断 + 标注已省略，不是静默放行）',
+    capped > 0 && capped < big && capped < 2200, `无上限=${big} 限2000=${capped}`)
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 共 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)

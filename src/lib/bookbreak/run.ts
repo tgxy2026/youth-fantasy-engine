@@ -28,6 +28,7 @@ import type { DraftBundle, DraftRow, FlowProgress, FlowStage } from '../flow/typ
 import { buildFormMaterial } from './formSummary'
 import { persistSplitToChapters, planVolumes, type PersistResult } from './persist'
 import { buildRelationDrafts, type RelationDraftResult, type RelationTabOutcome } from './relations'
+import type { RelationMaterialLimits } from './relationMaterial'
 import { chunkText, splitNovelText, type RawChapter, type SplitResult } from './split'
 
 /** 阶段声明（weight 按实测耗时给：抽取占绝大部分；写入正文是纯 IO，给 1） */
@@ -100,6 +101,12 @@ export interface BookBreakOptions {
    * 代价要如实说：**两张表各一次模型调用**，比逐章抽取便宜但多等一会儿；不想要就关掉。
    */
   organizeRelations?: boolean
+  /**
+   * 「整理关系」的材料上限（界面可调；缺省用推荐值）。
+   * 参数与每项的推荐理由见 `relationMaterial.ts` —— 材料太小时关系召回会掉，
+   * 太大时又会撞模型窗口（静默截断），所以给作者一个显式的旋钮。
+   */
+  relationMaterial?: Partial<RelationMaterialLimits>
   /** 中止信号（界面的「中止」按钮接它） */
   signal?: AbortSignal
   /** 进度回调 */
@@ -134,6 +141,11 @@ export interface BookBreakResult {
   relationRows: DraftRow[]
   /** 关系整理逐表结果（哪张表整理出几条、有没有失败）——面板据此如实交代 */
   relationTabs: RelationTabOutcome[]
+  /**
+   * 关系整理实际用掉的材料字数（已按上限收口）。
+   * 面板要显示它 —— 作者刚调过材料上限，跑完总得看见"调完是多少字"，否则不知道有没有被截断。
+   */
+  relationMaterialChars: number
 }
 
 const DEFAULT_MAX_UNIT_CHARS = 4000
@@ -357,6 +369,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     const r = await buildRelationDrafts({
       batches,
       rawText: raw,
+      ...(opts.relationMaterial ? { limits: opts.relationMaterial } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
       onProgress: (ratio, detail) => ctx.report(ratio, detail),
     })
@@ -402,6 +415,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     formRows,
     relationRows,
     relationTabs: relationRes?.perTab ?? [],
+    relationMaterialChars: relationRes?.materialChars ?? 0,
   }
 }
 
