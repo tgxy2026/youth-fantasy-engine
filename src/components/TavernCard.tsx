@@ -27,7 +27,7 @@ import AIDataSourceNote from './AIDataSourceNote'
 import * as store from '../lib/tavern/store'
 import * as db from '../lib/db'
 import TavernCardStructField from './TavernCardStructField'
-import { PROFILE_SPECS, CONDUCT_SPECS } from '../lib/tavern/cardFields'
+import { PROFILE_SPECS, CONDUCT_SPECS, normalizeStructMarkup, structSpecOf } from '../lib/tavern/cardFields'
 import { listStories, storyDisplayName } from '../lib/tavern/story'
 import { MEMORY_SOFT_LIMIT, JOURNAL_KEEP, cardStoryId, readCardField, writeCardField, type TavernStoryIndexItem } from '../lib/tavern/types'
 import { charTag, VAR_DEFS, type FreeCharacter, type FreeMemory, type TavernCharIndexItem, type CharJournal, type CharJournalEntry, type CharVars } from '../lib/tavern/types'
@@ -660,28 +660,39 @@ export default function TavernCard() {
   const applyCardDraft = (f: CardDraft, label: string) => {
     setDraft(d => {
       if (!d) return d
-      const pick = (v: string, cur: string) => (v.trim() ? v.trim() : cur)
+      /**
+       * 起草 / 小说角色转换 / 对话引导产出的都是 **AI 文本**，落库前先把
+       * 「小项名: 内容」的**半角冒号**归成全角 —— 否则那一行认不出标签，
+       * 会整行落进「其他」（`cardFields.normalizeStructMarkup`）。
+       * 只有「这一栏有细字段模板」时才规范化，world / examples 是自由文本，原样收。
+       */
+      const pick = (v: string, cur: string, path: string) => {
+        const t = v.trim()
+        if (!t) return cur
+        const spec = structSpecOf(path)
+        return spec ? normalizeStructMarkup(t, spec) : t
+      }
       return {
         ...d,
-        name: pick(f.name, d.name),
-        world: pick(f.world, d.world ?? ''),
+        name: pick(f.name, d.name, ''),
+        world: pick(f.world, d.world ?? '', ''),
         profile: {
           ...d.profile,
-          externals: pick(f.externals, d.profile?.externals ?? ''),
-          core: pick(f.core, d.profile?.core ?? ''),
-          speech: pick(f.speech, d.profile?.speech ?? ''),
-          relations: pick(f.relations, d.profile?.relations ?? ''),
-          cannot: pick(f.cannot, d.profile?.cannot ?? ''),
-          knowledge: pick(f.knowledge, d.profile?.knowledge ?? ''),
+          externals: pick(f.externals, d.profile?.externals ?? '', 'profile.externals'),
+          core: pick(f.core, d.profile?.core ?? '', 'profile.core'),
+          speech: pick(f.speech, d.profile?.speech ?? '', 'profile.speech'),
+          relations: pick(f.relations, d.profile?.relations ?? '', 'profile.relations'),
+          cannot: pick(f.cannot, d.profile?.cannot ?? '', 'profile.cannot'),
+          knowledge: pick(f.knowledge, d.profile?.knowledge ?? '', 'profile.knowledge'),
         },
         conduct: {
           ...d.conduct,
-          perspective: pick(f.perspective, d.conduct?.perspective ?? ''),
-          bottomLine: pick(f.bottomLine, d.conduct?.bottomLine ?? ''),
-          paceLock: pick(f.paceLock, d.conduct?.paceLock ?? ''),
-          rating: pick(f.rating, d.conduct?.rating ?? ''),
+          perspective: pick(f.perspective, d.conduct?.perspective ?? '', 'conduct.perspective'),
+          bottomLine: pick(f.bottomLine, d.conduct?.bottomLine ?? '', 'conduct.bottomLine'),
+          paceLock: pick(f.paceLock, d.conduct?.paceLock ?? '', 'conduct.paceLock'),
+          rating: pick(f.rating, d.conduct?.rating ?? '', 'conduct.rating'),
         },
-        examples: pick(f.examples, d.examples ?? ''),
+        examples: pick(f.examples, d.examples ?? '', ''),
       }
     })
     setDirty(true)

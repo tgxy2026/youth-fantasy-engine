@@ -21,6 +21,7 @@
 import * as db from '../db'
 import { uid } from '../id'
 import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP } from './types'
+import { structSpecOf, normalizeStructMarkup } from './cardFields'
 import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
@@ -423,9 +424,46 @@ export async function createFreeChar(init: Omit<FreeCharacter, 'id' | 'createdAt
   return saveFreeChar(c)
 }
 
+/**
+ * 卡文本落库前的**写入侧规范化**（2026-09-19）：
+ * 把「小项名: 内容」里的**半角冒号**归成全角；认不出标签的行一律不动。
+ *
+ * 🔴 为什么钉在这里 —— 这是角色卡的**唯一存储关口**：
+ *    起草 / 小说角色转换（`createFreeChar`）/ 对话引导 / 设定更新，四条 AI 链路最后
+ *    都落到 `saveFreeChar`。逐条去加＝四处里漏一处就前功尽弃；钉在这里一劳永逸。
+ *    作者手打的全角文本是 no-op（幂等），界面上零感知；半角散文本（「他说: 我不去」）
+ *    因标签不匹配也原样保留 —— 规范化的边界只在**认得出的标签**上。
+ */
+function normalizeCardMarkup(c: FreeCharacter): FreeCharacter {
+  const fix = (path: string, v: string): string => {
+    if (!v) return v
+    const spec = structSpecOf(path)
+    return spec ? normalizeStructMarkup(v, spec) : v
+  }
+  return {
+    ...c,
+    profile: {
+      ...c.profile,
+      externals: fix('profile.externals', c.profile?.externals ?? ''),
+      core: fix('profile.core', c.profile?.core ?? ''),
+      speech: fix('profile.speech', c.profile?.speech ?? ''),
+      relations: fix('profile.relations', c.profile?.relations ?? ''),
+      cannot: fix('profile.cannot', c.profile?.cannot ?? ''),
+      knowledge: fix('profile.knowledge', c.profile?.knowledge ?? ''),
+    },
+    conduct: {
+      ...c.conduct,
+      perspective: fix('conduct.perspective', c.conduct?.perspective ?? ''),
+      bottomLine: fix('conduct.bottomLine', c.conduct?.bottomLine ?? ''),
+      paceLock: fix('conduct.paceLock', c.conduct?.paceLock ?? ''),
+      rating: fix('conduct.rating', c.conduct?.rating ?? ''),
+    },
+  }
+}
+
 /** 保存角色卡（索引与分条成对写） */
 export async function saveFreeChar(c: FreeCharacter): Promise<FreeCharacter> {
-  const next: FreeCharacter = { ...c, updatedAt: now() }
+  const next: FreeCharacter = { ...normalizeCardMarkup(c), updatedAt: now() }
   await db.setMeta(G.freeChar(next.id), next)
   const idx = await db.getMeta<TavernCharIndexItem[]>(G.charIndex, [])
   const item: TavernCharIndexItem = {

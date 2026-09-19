@@ -221,6 +221,45 @@ export function packField(vals: Record<string, string>, spec: StructSpec): strin
   return lines.join('\n')
 }
 
+/**
+ * 写入侧规范化：把「小项名」后面的**半角冒号**改成全角。
+ *
+ * 【为什么需要】（2026-09-19 审计 → 老大拍板「按写入侧规范化」）
+ * 库里存的是 `小项名：内容`，解包只认**全角**冒号 —— 半角的那一行认不出标签，
+ * 会整行落进「其他」：内容一个字不丢，但**归错了位**，作者看到的是
+ * 「AI 明明填了这一格，界面里却在『其他』」。模型（尤其小模型）在长文本里
+ * 偶发把 `：` 打成 `:` —— 它们不会照着模板逐字抄标点。
+ *
+ * 【为什么放写入侧，而不是把解包放宽成 `[：:]`】
+ * 放宽读入侧＝把歧义长期留在**数据里**（库里两种冒号混存，任何按文本做的导出 /
+ * 比对 / 统计都得各认一遍）。写入侧只管「AI 产出落库的那一瞬间」，库里永远是
+ * 全角一种形态：数据是干净的，读的一侧就不必猜。
+ *
+ * 【只动认得出的标签】
+ * 行首不是本栏小项名（也不是「其他」）的行**原样保留** —— 那些是散文
+ * （「他说: 我不去」），改了就是篡改文本。全角冒号在前的一行也直接放过。
+ *
+ * 认得出的标签会顺手**去掉冒号后的前导空格**，与 `packField` 的产出形态对齐
+ * （`外貌：短发`）—— 解包本来就会 trim 值，所以这一步不丢任何内容。
+ */
+export function normalizeStructMarkup(text: string, spec: StructSpec): string {
+  const raw = String(text ?? '')
+  if (!raw || raw.indexOf(':') < 0) return raw
+  const keys = new Set([...spec.items.map(i => i.key), OTHER_KEY])
+  return raw
+    .split(/\r?\n/)
+    .map(line => {
+      const i = line.indexOf(':')
+      if (i <= 0) return line
+      const prefix = line.slice(0, i)
+      // 这一行前面已经有全角冒号 → 它本来就是合规的标记行，别多事
+      if (prefix.includes('：')) return line
+      if (!keys.has(prefix.trim())) return line
+      return `${prefix}：${line.slice(i + 1).replace(/^[ \t]+/, '')}`
+    })
+    .join('\n')
+}
+
 /** 有几格是填了内容的（给折叠块显示进度用） */
 export function filledCount(vals: Record<string, string>, spec: StructSpec): number {
   const keys = [...spec.items.map(i => i.key), ...(spec.other ? [OTHER_KEY] : [])]

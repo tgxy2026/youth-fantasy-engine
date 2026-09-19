@@ -10,7 +10,7 @@
 //   ③ 空值不进输出，别把一堆空标签写进库里。
 import {
   PROFILE_SPECS, CONDUCT_SPECS, OTHER_KEY,
-  structSpecOf, unpackField, packField, filledCount,
+  structSpecOf, unpackField, packField, filledCount, normalizeStructMarkup,
 } from '../src/lib/tavern/cardFields'
 
 let pass = 0, fail = 0
@@ -92,6 +92,32 @@ console.log('—— 已填计数 ——')
   const v = unpackField('性格：外冷内热\n怕什么：欠债被知道', CORE)
   ok('数出填了几格', filledCount(v, CORE) === 2, String(filledCount(v, CORE)))
   ok('全空是 0 格', filledCount(unpackField('', CORE), CORE) === 0)
+}
+
+// ---------- ⑧ 写入侧规范化：半角冒号归位（2026-09-19） ----------
+//
+// 触发场景：AI 起草 / 小说角色转换 / 设定更新给出的文本里，偶发把模板要求的「：」
+// 打成「:」。旧行为＝那一行认不出标签，整行掉进「其他」（内容不丢但**归错位**）。
+// 修法：**写入侧**只把「认得出的标签」后面的半角冒号换成全角，散文本一律不动。
+{
+  ok('半角冒号被归位（外貌）', normalizeStructMarkup('外貌: 短发', EXT) === '外貌：短发',
+    normalizeStructMarkup('外貌: 短发', EXT))
+  ok('归位后能被解包认出来（不再掉进「其他」）',
+    unpackField(normalizeStructMarkup('外貌: 短发', EXT), EXT)['外貌'] === '短发')
+  ok('全角本来就对 → 不动', normalizeStructMarkup('外貌：短发', EXT) === '外貌：短发')
+  ok('幂等：跑第二遍不再变化',
+    normalizeStructMarkup(normalizeStructMarkup('外貌: 短发', EXT), EXT) === '外貌：短发')
+  ok('「其他」小项也认半角', unpackField(normalizeStructMarkup('其他: 口袋里总有一把糖', EXT), EXT)[OTHER_KEY] === '口袋里总有一把糖')
+  ok('多行混排：只动认得出的那一行', normalizeStructMarkup('外貌: 短发\n他习惯: 把手插进口袋', EXT) === '外貌：短发\n他习惯: 把手插进口袋',
+    normalizeStructMarkup('外貌: 短发\n他习惯: 把手插进口袋', EXT))
+  ok('🔴 散文本的冒号绝不改（「他说: 我不去」不是标签）', normalizeStructMarkup('他说: 我不去', EXT) === '他说: 我不去')
+  ok('🔴 别的栏的小项名不认（性格 属 2.2，不在 2.1）', normalizeStructMarkup('性格: 温和', EXT) === '性格: 温和')
+  ok('整行无冒号 → 原样', normalizeStructMarkup('短发，眼下有颗小痣', EXT) === '短发，眼下有颗小痣')
+  ok('行首就是冒号 → 原样（不算标签）', normalizeStructMarkup(': 空标签', EXT) === ': 空标签')
+  ok('已有全角冒号在前的行 → 原样（不重复加工）', normalizeStructMarkup('外貌：短发: 补充', EXT) === '外貌：短发: 补充')
+  ok('空串 / 空白不炸', normalizeStructMarkup('', EXT) === '' && normalizeStructMarkup('   ', EXT) === '   ')
+  ok('保留缩进，冒号后的前导空格归零（与 packField 产出对齐）', normalizeStructMarkup('  外貌:  短发', EXT) === '  外貌：短发',
+    JSON.stringify(normalizeStructMarkup('  外貌:  短发', EXT)))
 }
 
 console.log(`\n—— 通过 ${pass} / 失败 ${fail} ——`)
