@@ -234,6 +234,19 @@ function matchSectionTitle(line: string): { key: MemorySectionKey; rest: string 
     .replace(/^(?:[一二三四五六]、|\d+[.、]|[一二三四五六][)）.、])/, '')
   // 标题后面必须**紧跟分隔符或行尾** —— 这是「整词标题」与「正文里恰好含这个词」的分界线。
   const SEP = '[】〗\\]）):：、.。\\-—]'
+  /**
+   * 这些是**短别名**：必须是**整行独占**才算标题，后面跟了内容就不认。
+   *
+   * 🔴 为什么（2026-09-19 六维审计 P2-6）：光「行首命中」还不够 —— SEP 允许「标题：内容」同行，
+   *    于是正文里一句 `关系：与小满已冷淡` 会被当成「三、关系状态」的标题，
+   *    **其后所有内容都串进关系栏**；而档案每轮整理都要反解析往返一次，串栏会一轮轮累积漂移。
+   *    真标题是独占一行的，所以判据取「后面不能有内容」。
+   *    长全称（六栏正式名、「长期摘要」等）**不受此限** —— 它们长到不会在正文里凑巧出现，
+   *    而「一、长期摘要：内容」这种同行写法要保留容错。
+   */
+  const STRICT_BARE = new Set([
+    '未爆', '待办', '日记', '关系', '纪念日', '长期记忆', '重要事实', '埋着的雷', '待引爆',
+  ])
   const pack = (key: MemorySectionKey, bare: string) => {
     // 🔴 只认**行首**命中，绝不用 indexOf 之类的子串查找：
     //    正文里含「关系」「日记」这类词的句子极其常见（典型如长期摘要里写
@@ -241,6 +254,7 @@ function matchSectionTitle(line: string): { key: MemorySectionKey; rest: string 
     //    其后的内容全部串进错误的栏，下一轮总结再基于串栏的档案继续漂移。
     if (!t.startsWith(bare)) return null
     const after = t.slice(bare.length)
+    if (after && STRICT_BARE.has(bare)) return null // 短别名必须独占一行，见上
     if (after && !new RegExp(`^${SEP}`).test(after)) return null
     return { key, rest: after.replace(new RegExp(`^${SEP}+`), '') }
   }

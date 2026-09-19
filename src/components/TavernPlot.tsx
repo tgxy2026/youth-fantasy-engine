@@ -64,6 +64,8 @@ export default function TavernPlot() {
   const [session, setSession] = useState<TavernSession | null>(null)
   /** 正在整理本场记忆（按钮转圈用） */
   const [summarizing, setSummarizing] = useState(false)
+  /** 整理记忆的取消把手（2026-09-19 六维审计 P2-7：`signal` 早就下传了，只是从没接过） */
+  const sumCtlRef = useRef<AbortController | null>(null)
 
   // ---------- 本场记忆整理 ----------
   /**
@@ -94,6 +96,8 @@ export default function TavernPlot() {
       showToast('另一个窗口正在整理记忆', 'info')
       return
     }
+    const ctl = new AbortController()
+    sumCtlRef.current = ctl
     setSummarizing(true)
     try {
       // 记忆被判「整份退化」时照样如实说：档案已回退旧值，不能报「已更新」
@@ -110,6 +114,7 @@ export default function TavernPlot() {
         // hardLimit 一并传：否则剧情推演这边也永远走内置 3000（审计 P1-1）
         limits: limitsOf({ longTermLimit: st.free.longTermLimit, diaryDays: st.free.diaryDays, hardLimit: st.free.hardLimit }),
         onDegraded: (reason: string) => degraded.push(reason),
+        signal: ctl.signal,
       })
       const wm = nextWatermark(s)
       const updated: TavernSession = {
@@ -127,13 +132,22 @@ export default function TavernPlot() {
         degraded.length ? 'info' : 'success',
       )
     } catch (e) {
-      // 总结失败**保留旧档案**：绝不写入半截结果（与自由模式同一原则）
-      showToast('整理本场记忆失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+      // 总结失败 / 被中止**都保留旧档案**：绝不写入半截结果（与自由模式同一原则）
+      const aborted = /取消|abort/i.test(e instanceof Error ? e.message : String(e))
+      showToast(
+        aborted ? '已中止整理 —— 本场记忆保持原样' : '整理本场记忆失败：' + (e instanceof Error ? e.message : String(e)),
+        aborted ? 'info' : 'error',
+      )
     } finally {
+      sumCtlRef.current = null
       releaseSummaryLock()
       setSummarizing(false)
     }
   }, [])
+
+  /** 中止整理（旧档案保持原样，不写入半截结果） */
+  const stopSummary = useCallback(() => { sumCtlRef.current?.abort() }, [])
+
   const [setupOpen, setSetupOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(true)
   /** 左栏情景列表的筛选词（场次多了靠它找，不必滚动） */
@@ -754,6 +768,12 @@ export default function TavernPlot() {
                   >
                     {summarizing ? '整理中…' : session.memory ? '重新整理' : '整理本场记忆'}
                   </Button>
+                  {/* 27B 上整理一次要几十秒到几分钟，给一条退路（中止后旧档案原样保留） */}
+                  {summarizing && (
+                    <Button variant="secondary" size="xs" onClick={stopSummary} title="停止整理：本场记忆保持原样">
+                      中止
+                    </Button>
+                  )}
                 </div>
                 {session.memory ? (
                   <div className="mt-0.5 text-11 text-ink-400 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{session.memory}</div>

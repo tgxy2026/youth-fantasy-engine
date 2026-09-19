@@ -83,6 +83,27 @@ async function main() {
     ]
     const bad = variants.filter(v => parseMemoryText(v, CHAR).longTerm !== '甲')
     ok('栏目标题宽松匹配（加粗/序号/去前缀都认）', bad.length === 0, `不认的写法=${bad.join(' | ')}`)
+
+    // 🔴 短别名必须**整行独占**（2026-09-19 六维审计 P2-6）：正文里 `关系：…` 这类行
+    //    若被当成「三、关系状态」的标题，其后全部内容都会串进关系栏 ——
+    //    而档案每轮整理都要反解析往返一次，串栏会一轮轮累积漂移。
+    const s1 = parseMemoryText('【三、关系状态】\n与小满：冷淡\n关系：与小满已冷淡，见面会绕开', CHAR)
+    ok('🔴 正文里的「关系：…」不被当成栏标题（留在原栏，不串栏）',
+      s1.relation.includes('与小满：冷淡') && s1.relation.includes('关系：与小满已冷淡'),
+      JSON.stringify(s1.relation))
+
+    const s2 = parseMemoryText('【三、关系状态】\n与小满：冷淡\n日记：今天下雨了', CHAR)
+    ok('🔴 正文里的「日记：…」同样不切栏', !s2.diaries && s2.relation.includes('日记：今天下雨了'), JSON.stringify(s2))
+
+    const s3 = parseMemoryText('【三、关系状态】\n与小满：回暖', CHAR)
+    ok('全称标题照旧识别（「三、关系状态」不受收紧影响）', s3.relation === '与小满：回暖', JSON.stringify(s3.relation))
+
+    const s4 = parseMemoryText('关系状态：与小满回暖', CHAR)
+    ok('全称＋同行内容 仍认（「关系状态：内容」这种写法保留容错）', s4.relation === '与小满回暖', JSON.stringify(s4.relation))
+
+    const s5 = parseMemoryText('未爆\nTa还压着那封信\n【五、纪念日与待办】\n待办：明天去买伞', CHAR)
+    ok('「未爆」独占一行才认（真标题写法保留容错）', s5.mines === 'Ta还压着那封信', JSON.stringify(s5.mines))
+    ok('正文里的「待办：…」不切栏，留在纪念日栏', s5.anniversaries.includes('待办：明天去买伞'), JSON.stringify(s5.anniversaries))
   }
 
   // ---------- 3) 「只增不改」两栏的保底保护 ----------

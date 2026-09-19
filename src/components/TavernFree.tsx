@@ -155,6 +155,14 @@ export default function TavernFree() {
    */
   const [ending, setEnding] = useState(false)
   const [endStage, setEndStage] = useState<RoundEndProgress | null>(null)
+  /**
+   * 收尾的取消把手。
+   *
+   * 🔴 为什么要它（2026-09-19 六维审计 P2-7）：`runRoundEnd` 的 `signal` 早就声明了、
+   *    也一路下传到 `chat()`，但**生产调用从不传** —— 本地 27B 上收尾要逐角色总结 + 算数值 +
+   *    审查设定，好几分钟且只能干等。这里把「能中止」补上。
+   */
+  const endCtlRef = useRef<AbortController | null>(null)
   /** 收尾结果摘要（日记 + 数值变化），弹窗展示后关掉即焚 */
   const [endResult, setEndResult] = useState<RoundEndResult | null>(null)
   /** Ta这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
@@ -522,6 +530,8 @@ export default function TavernFree() {
       setEnding(false)
       return
     }
+    const ctl = new AbortController()
+    endCtlRef.current = ctl
     try {
       const res = await runRoundEnd({
         session: s,
@@ -536,6 +546,7 @@ export default function TavernFree() {
         maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
         nameOf: (id?: string) => nameOf(id ?? ''),
         onProgress: setEndStage,
+        signal: ctl.signal,
       })
 
       // 水位线推进到最后一条 + 写回数值 + 打上归档戳
@@ -582,13 +593,26 @@ export default function TavernFree() {
         void unloadLocalModels()
       }
     } catch (e) {
-      showToast(`结束失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+      // 🔴 中止 ≠ 失败（2026-09-19 六维审计 P2-7）：记忆走的是「全算完才统一落库」的设计
+      //    （见 runRoundEnd 顶部说明），中止时一条都没写，水位线与 endedAt 也没推进 ——
+      //    下次点「结束本轮对话」从零重算即可，不会留下半截记忆。
+      const aborted = /取消|abort/i.test(e instanceof Error ? e.message : String(e))
+      showToast(
+        aborted
+          ? '已中止收尾 —— 没有写入任何内容，这一场仍是未结束状态'
+          : `结束失败：${e instanceof Error ? e.message : String(e)}`,
+        aborted ? 'info' : 'error',
+      )
     } finally {
+      endCtlRef.current = null
       releaseSummaryLock()
       setEnding(false)
       setEndStage(null)
     }
   }, [session, ending, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions, unloadLocalModels])
+
+  /** 中止收尾（已产出的部分不落库，见 endRound 的 catch 说明） */
+  const stopEndRound = useCallback(() => { endCtlRef.current?.abort() }, [])
 
   /**
    * 设定更新：对**在场每个角色**分别审查一遍。
@@ -1253,6 +1277,17 @@ export default function TavernFree() {
             >
               {ending ? '收尾中…' : (session.endedAt ? '已结束' : '结束本轮对话')}
             </Button>
+            {/* 🔴 收尾要好几分钟（逐角色总结 + 数值 + 设定审查），必须留一条退路。
+                中止后不落任何数据，这一场仍是未结束状态，可以重来。 */}
+            {ending && (
+              <Button
+                variant="secondary" size="md"
+                onClick={stopEndRound}
+                title="停止收尾：已产出的内容一律不落库，这一场仍是未结束状态"
+              >
+                中止
+              </Button>
+            )}
             <Button
               variant="secondary" size="md" disabled={streaming || session.messages.length === 0}
               onClick={() => setExportOpen(true)}
