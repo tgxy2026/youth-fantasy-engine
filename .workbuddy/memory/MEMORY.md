@@ -12,7 +12,8 @@
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；存储经 StoreOps；dev 5199（须 `localhost`，127.0.0.1 会 302→两份 IndexedDB）。
 - 现 **2.2.1**（主题＝完善 AI 写作）。版本唯一源 `package.json`；⚠️ `package-lock.json` 根版本常落后→只改 `j.version`＋`j.packages['']`。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr `Fatal error`）由 `scripts/after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。
-- 🔴🔴 **只做桌面版**（无 WEB/PORTABLE）。版本号在 `env.ts`；云盘同步＝唯一跨设备途径。
+- 🔴🔴 **只做桌面版**（无 WEB/PORTABLE）。版本号在 `env.ts`。
+- 🔴 启动**默认停项目管理首页**（2026-09-19 老大要求，不再自动打开上次项目）；`lastProject` 只服务「首次使用播示范项目」，删项目时要一并清掉（否则指针 + 本地镜像的陈旧记录会把已删项目重新拼出来）。
 
 ## 2.2.x 创作链路（伴写 / 拆书 / 创意写作 / 整章改写）
 - ✅ **A 伴写**：`aiInlineSuggest()`＋ghost 第三叠层＋「钢笔」弹窗（默认关）；文风三层锚定**不做枚举**、去 AI 味钉 system 末尾。🔴 **切章必须清 ghost**（Tab 插错章＝数据事故）。
@@ -61,11 +62,11 @@
 - 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式必撞 180s 墙。自驱 `runAutoContinue` 必传 **`onBodyToken`**；别 `await page.evaluate(整流程)`。⚠️ 生成入口无 `max_tokens`。
 - 🔴 **AI「会读哪些数据」＝`lib/aiDataSources.ts` 单一源**（闸 `tests/aiDataSources.test.ts`），改 prompt 来源必须同步改它。🔴🔴 **禁写「全程本地模型／不外发」**——口径只能是「发给**当前选定的**模型：本地不出本机，云端上传到该服务商」。
 - 🔴🔴 **保密等级 D＝终结（弃用）：任何情况下都不进 AI**（不是"排最后"是**压根不带**）：硬保证在 `aiContext.isPrunedForAI`（三处过滤：内容／姓名／判重；认裸键与复合键），`rankOf` 给 D 大数兜底；**作者侧也排除**。🔴 该列是**封闭枚举**（`cFixed()`＋`fixedOptions`）：禁增/改/删，否则预算排序与可见性静默失效。
-- 📌 关系整理材料上限**面板可调**（带推荐值与理由、持久化）；"真进材料"由 `tests/bookbreakRelations` ⑩ 锁。
+- 📌 关系整理材料上限**面板可调**；"真进材料"由 `tests/bookbreakRelations` ⑩ 锁。
 - 🔴🔴 **AI「整理」类产出必须两道本地兜底**（拆书关系阶段实测）：① **候选值＝库里已有 ∪ 本次刚抽出未落库的实体名**；② 产出后按名单**本地过滤**＋要求给**原文依据**并本地核对（`evidenceInMaterial`）。prompt 写「必须从可选值挑」对小模型无效。
 
 ## 服务器 / 工程质量
-- 🔴 **服务器已关闭（2026-09，老大确认）**：`154.8.178.240` 站点与同步 API 均下线；`server/` 保留但不再上线。⚠️ 别按旧路子用 200 判在线、别再写涉及服务器/同步码的文案。
+- 🔴 **服务器已关闭（2026-09，老大确认）**：`154.8.178.240` 站点与同步 API 均下线；`server/` 保留但不再上线。⚠️ 别用 200 判在线、别再写服务器/同步码文案。
 - 三步基线：`tsc --noEmit`／`eslint src`（**0 problem**）／`node tests/run-all.mjs`（别用 `npm run verify`，沙箱会拦）。⚠️ exhaustive-deps 别盲改。
 - 🔴 实机走 skill `novel-studio-ui-livecheck`；**子代理结论必回源码验**。
 - ✅ **巨型组件已全拆**（记录 `docs/2.2.1-巨型组件拆分记录-2026-09-19.md`）：TavernControl 1397→913／TableSheet 1381→377／NovelEditor 1764→740／TavernFree 1935→728。手法＝**状态搬进 `useXxxModel`＋视图同名解构（JSX 零改动）**＋拆前/拆后实机指纹比对＋负面对照；工具 `dep-cost.mjs`/`prune-unused.mjs` 在 audit-fix 资产。🔴 hook 含 JSX 必须 `.tsx`；共享件落第三个文件。
@@ -75,12 +76,12 @@
 - 🔴 数据归属：剧情会话+扮演设定+报告+剧情背景**随项目**；自由会话+角色卡+记忆日常+面板设置+剧本库**跨项目**（索引与分条成对，tavernReports 别漏 deleteProject）。
 - 🔴🔴 预算三数：`historyBudget`＝预算−400−整条 system（别再扣记忆）；contextBudget **24000**；numCtx **32768** 别动。
 - 🔴 最易踩：①会话存**快照非引用**（`snapshotStorySetting`）；②角色卡小项只能「小项名：内容」同一行＋**全角冒号**（半角/独占行→整栏掉进「其他」框）。
-- 🔴 协议 **v1.11**（旧版冻进 `LEGACY_PROTOCOLS`；改协议同步三处＋两断言）。
+- 🔴 协议 **v1.11**（旧版冻进 `LEGACY_PROTOCOLS`；改协议同步三处）。
 
 ## 出厂数据 / 示范项目
-- 🧪 dev 数据放仓库外 `…\04-开发测试数据\`；`dev-seed/` 亦可用：`import('/dev-seed/fengyang.js?'+Date.now())`（🔴 必带时间戳）。🔴 绝不写进 `seedData.ts`。
-- 📥 卡走 skill `tavern-cards-batch` 导入。🚫 原生不再预填自由示范卡（闸 `tests/tavernSeedPolicy.test.ts`；🔴 老库卡只保留不删）。
-- 示范项目《吞天神脉》三卷 21 章（1-10 风起云州 / 11-20 剑鸣中州 / 21 起 **剑锁中州**）。改/加正文同步 `seedContent.ts`→`seedData.ts`。
+- 🧪 dev 数据放仓库外 `…\04-开发测试数据\`；`dev-seed/` 亦可用（🔴 import 必带 `?时间戳`）。🔴 绝不写进 `seedData.ts`。
+- 📥 卡走 skill `tavern-cards-batch` 导入。🚫 原生不预填自由示范卡（闸 `tavernSeedPolicy`；🔴 老库卡只保留不删）。
+- 示范项目《吞天神脉》三卷 21 章（第三卷名 **剑锁中州**）。改/加正文同步 `seedContent.ts`→`seedData.ts`。
 - 🔴 三道闸：seed-schema-check＋`tests/seedRef.test.ts`（含"人物列必须是真角色"＋关系无序对不重复）＋细纲卡核对；推演 cast 引用卡 id→相关卡留 `card()` 返回值。闸 `tests/importCycles`：**循环依赖只在浏览器 TDZ 崩**。
 - ⚠️ 验「随项目」用 `db.setCurrentProject`；**实弹读真实 apiKey 先告知不提交**；改提示词/示范卡文案后同步改 `tests/` 旧断言。
 
