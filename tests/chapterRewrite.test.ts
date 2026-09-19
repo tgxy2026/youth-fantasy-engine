@@ -151,7 +151,8 @@ await db.saveChapter(chap('c3', 'v2', 0, '第二章 承', '原文二。'.repeat(
 // 两者在历史章同样必须冻结。反过来「最新章」也不能无差别放开：润色本来就不增删情节，
 // 被当成"可重排场景 / 可改写局部走向"是越权授权 —— 两份规则打架时模型会挑宽松的那条。
 {
-  const src = fs.readFileSync('src/lib/aiTasks.ts', 'utf8')
+  // ⚠️ 2026-09-19 D1：三条改写纪律提示词已从 aiTasks.ts 拆到 aiTasks/rewrite.ts（随域走）。
+  const src = fs.readFileSync('src/lib/aiTasks/rewrite.ts', 'utf8')
   ok('🔴 历史章纪律按动作分节（润色 / 扩写 / 精简 / 改写四档各有边界）',
     ['**润色**：只换字不换事', '**扩写**：', '**精简**：', '**改写**：只改叙述方式'].every(s => src.includes(s)))
   ok('🔴 历史章 · 扩写：描写层可加、信息层不可加（防"凭空造设定"）',

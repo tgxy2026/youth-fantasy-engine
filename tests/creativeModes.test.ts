@@ -96,9 +96,12 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('aiWorkflow 按 target 决定是否跑正文阶段', /opts\.target \?\? 'full'/.test(read('src/lib/aiWorkflow.ts')))
 
   // ---------- 整章改写（2026-09-19）----------
-  const rw = read('src/lib/aiTasks.ts')
+  // ⚠️ 2026-09-19 D1：整章改写的实体（含提示词）已从 aiTasks.ts 拆到 aiTasks/rewrite.ts。
+  //    登记形态也从「registerPrompt({...}) 调用」变成「PROMPTS 数组里的 meta」——
+  //    故这里同时断言「域里有 meta」+「门面 PROMPT_ORDER 里有它」，强度不降。
+  const rw = read('src/lib/aiTasks/rewrite.ts')
   ok('🔴 整章改写的提示词已登记（可在「模型设置 → AI 提示词」里改）',
-    /registerPrompt\(\{ id: 'chapter-rewrite'/.test(rw))
+    /meta: \{ id: 'chapter-rewrite'/.test(rw) && /'chapter-rewrite'/.test(read('src/lib/aiTasks.ts')))
   ok('🔴 整章改写走纯文本输出（不塞 JSON —— 长文塞 JSON 会被转义搞坏）',
     /aiRewriteChapter/.test(rw) && !/aiRewriteChapter[\s\S]{0,900}json: true/.test(rw))
   const rwLib = read('src/lib/chapterRewrite.ts')
@@ -124,8 +127,13 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('🔴 最新章落库后补跑设定同步（历史章不跑）',
     /if \(r\.isLatest\)/.test(sess) && /extractAndCommitSettings/.test(sess))
   ok('🔴 最新章判定＝候选列表最后一章', /idx === cands\.length - 1/.test(sess))
+  // ⚠️ 2026-09-19 D1：`extend-outline` 随「续排细纲」落 aiTasks/creative.ts，不在 rewrite.ts。
+  //    这里三层都查：域里有 meta → 门面 PROMPT_ORDER 有 id（= 真的会出现在设置页）。
+  const cr = read('src/lib/aiTasks/creative.ts')
+  const facade = read('src/lib/aiTasks.ts')
   ok('三条新提示词都登记了（可在模型设置里改）',
-    /'chapter-rewrite-history'/.test(rw) && /'chapter-rewrite-latest'/.test(rw) && /'extend-outline'/.test(rw))
+    /'chapter-rewrite-history'/.test(rw) && /'chapter-rewrite-latest'/.test(rw) && /'extend-outline'/.test(cr) &&
+    ['chapter-rewrite-history', 'chapter-rewrite-latest', 'extend-outline'].every((id) => facade.includes(`'${id}'`)))
 
   // 2026-09-19 第二轮：判定基准由「原文的固定占比」改为「期望字数」——
   // 旧口径对**精简**是结构性误判（压到目标字数必然远低于原文 → 必被锁住替换），

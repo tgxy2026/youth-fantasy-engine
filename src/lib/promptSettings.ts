@@ -50,6 +50,22 @@ export interface PromptEntry extends PromptMeta {
 
 const GROUPS: PromptGroup[] = ['正文写作', '编辑与审校', '设定与资料', '项目诊断', '灵感工具', '酒馆模式', '其它']
 
+/**
+ * 一条可注册提示词的「三件套」。
+ *
+ * 为什么要有这个类型：`registerPrompt` 是**三参数**调用，而拆分后一个域模块里往往有多条提示词，
+ * 门面无法逐个写死调用（那会把域模块的内部变量名泄漏到门面）。于是约定：
+ * **每个域模块导出一个 `PromptDef[]`，门面按 `PROMPT_ORDER` 逐条注册**。
+ *
+ * ⚠️ `read` / `write` 必须直接闭包**本模块的 `let` 变量** —— 这样 setter 与变量同模块，
+ * 既满足「默认值就地声明」的架构原则，也避开了 ESM「不能给 import 进来的绑定赋值」（TS2632）。
+ */
+export interface PromptDef {
+  meta: PromptMeta
+  read: () => string
+  write: (t: string) => void
+}
+
 interface Registered {
   meta: PromptMeta
   /** 读当前生效文本（从原模块的变量读，保证与真实调用一致） */
