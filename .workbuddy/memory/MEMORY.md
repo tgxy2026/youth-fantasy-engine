@@ -29,19 +29,19 @@
 - 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**（关系表＝人物A/人物B）：`commit` 按名称列判重→**恒判"不存在"**→ 点两次＝重复关系。
 - 🔴 编辑器双图层：盒模型逐项一致；叠层重建归零 scrollTop→`useLayoutEffect` 回填；只走 `scanRefHighlight`。
 - 🗺 多地图方案 B：新表 `geomaps`＋geography 的 `所属地图`；`migrateGeoMaps` 建默认图回填；🔴 删图不删地点、改图名连带改归属。
-- 🔴 审计四条（详规在 skill）：①语料净化：再导出/`tests/.x.mjs`/`.workbuddy`/注释不算"引用"；②**门面靠白名单认**；③graph 环**标边类型**（`import type`⇒运行时不成立 ⇒ **D5 无需处理**）；④工具里**任何结构假设**都会静默失明。
+- 🔴 审计四条（详规在 skill）：①语料净化：再导出/`tests/.x.mjs`/`.workbuddy`/注释不算"引用"；②**门面/保留项靠白名单认**（`audit-dead` 已加 `KEEP` 表，必写理由）；🔴🔴 **死代码判定须回查 `docs/` 里的判决** —— A 类 5 个里 4 个是「能力缺口·白名单保护」（有实现有测试、只没接 UI），照字面删就是丢能力；③graph 环**标边类型**（`import type`⇒运行时不成立 ⇒ **D5 无需处理**）；④工具里**任何结构假设**都会静默失明。
 - 🔴 **长任务状态必须放模块级 store**（`lib/creativeSession.ts`，单例＋`useSyncExternalStore`）：切页签即卸载，`useState` 全丢；🔴 **任务跑在 store 里**；lib 层**禁 import components**；**断点只存里程**。
 - 🔴 拆书／创意写作**档位＝optional**（不默认勾选）；两页顶部有 `NewProjectAdvice`（"先建空项目"＋选「完整项目」）。
 
 ## 存储·同步
-- 🔴🔴 **云盘同步「删了会复活」**：`baseCache` 仅内存→合并把"云端有·本地无"判成"另一端新增"→删掉的记录回来并自锁。修＝墓碑`syncTombstone.ts`＋⚠️`localHasContent`闸（整库空即禁）＋`ensureInit` 经 `onLocalSnapshot` 取本地库。
+- 🔴🔴 **云盘同步「删了会复活」**：`baseCache` 仅内存→合并把"云端有·本地无"判成"另一端新增"→删掉的记录回来并自锁。修＝墓碑`syncTombstone.ts`＋⚠️`localHasContent`闸＋`ensureInit` 经 `onLocalSnapshot` 取本地库。
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步它；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
 - 🔄 同步只走云盘（加密 `.yfe`＋记录级合并＋每日备份）。
 - 🔴🔴 **服务器已关（2026-09）**：站点/API 全下线；`server/` 保留不上线（⚠️ 200 ≠ 在线）→跨设备同步**只剩云盘文件夹**（无同步码/邀请码/HTTP）。`createIdleTransport`＝未开启占位（报「不可用」，🔴 **绝不返回空库**否则 push 覆盖云端）。
 
 ## UI·布局尺寸
-- 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量须走 `style`（否则回退黑）。设置项＝标题→输入→说明。
+- 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量须走 `style`。设置项＝标题→输入→说明。
 - 🔴🔴 `<html>` 界面缩放：①量尺寸用 `offsetHeight`/`clientWidth`，禁 `getBoundingClientRect()`；②zoom 不缩放 vh→内联长度走 `foldVh()`；③SVG 滚轮/拖拽除 zoom。
 - 🔴 光标/选区同步不能只靠 `onKeyUp`（上屏/粘贴/程序化插入无 keyup）→ 有 `onChange` 就在里面同步。
 - 🔴 判"琥珀开启态"按 class **词元**比（off 态 `hover:text-amber`→`includes` 恒真＝假 PASS）。
@@ -52,16 +52,16 @@
 
 ## AI 层
 - 🔴 **提示词给几层模型就按几层输出**——读端必须兼容**自己给的**层级，否则整表静默丢光。
-- 🔴 「保密等级」＝档位＋行级预算排序（同级保序护 prefix cache）；🔴🔴 **`rankOf` 须同认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::字段`）。
-- 🔴 提示词可编辑：默认值**就地声明**禁集中搬；变量须模块级 `let`＋**setter 同模块**（跨模块＝TS2632）；🔴🔴 **注册顺序＝设置页顺序**（`listPrompts` 按 group 稳排；`PROMPT_ORDER` 漏登记 warn）。
-- 🔴 本地预算上限 32K。🔴 **防剧透四道闸**（只管推演）：①`viewMode:'character-view'` ②`AUTHOR_SIDE_FIELDS`（新字段登记）③`anchorChapterId` ④`knowerName`。
-- 🔴 新增资料型页签须登记 `PRIORITY`（兜底只保证不丢）。
+- 🔴 「保密等级」＝档位＋行级预算排序；🔴🔴 **`rankOf` 须同认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::字段`）。
+- 🔴 提示词可编辑：默认值**就地声明**禁集中搬；变量须模块级 `let`＋**setter 同模块**；🔴🔴 **注册顺序＝设置页顺序**（`listPrompts` 按 group 稳排；`PROMPT_ORDER` 漏登记 warn）。
+- 🔴 本地预算上限 32K。🔴 **防剧透四道闸**（只管推演）：①`viewMode:'character-view'` ②`AUTHOR_SIDE_FIELDS`③`anchorChapterId` ④`knowerName`。
+- 🔴 新增资料型页签须登记 `PRIORITY`。
 - 🔴 解析统一 `aiParse.ts`（禁裸 `JSON.parse`，@AI 链路）；**生成型走 `parseLooseObject`＋空结果重试**（小模型塞杂字符→"0 条"）。温度：结构化 0.3、创意 0.85；一轮 JSON 走 `aiChatJson`。
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 不可换序）。作者原文进 prompt 走 `promptGuard.authorBlock()`；绝不清洗正文。
 - 🔴 采样惩罚看**射程**不看强度：`repeat_last_n` 512＋`frequency_penalty` 0.1→28.9%→13.4%。🔴🔴 **绝不调高 `repeat_penalty`**（1.4 实测崩）；反重复提示词只钉 system 末尾。
 - 🔴🔴**额度跟模型走**：`adviseCapacity()`→`recommendTuning()`；`syncTuningWithModel()` 靠**模型指纹**（同模型手调不覆盖）；本地超窗口保护（预算>`numCtx×0.732`）。
 - 🔴🔴 **思考模型必须关思考**：本地 `think:false`；云端 Qwen3 系由 `openaiChat` 自动下发 `enable_thinking:false`（`HYBRID_THINKING_RE`）。开＝50~130s 且 content 必残。
-- 🔴 **长文生成必走流式**（`aiTasks/stream.ts`）：非流式必撞 180s 墙；自驱 `runAutoContinue` 必传 **`onBodyToken`**。⚠️ 生成入口无 `max_tokens`。🔴 `onToken`＝**流式开关**（漏传⇒0 章却报绿）；失败原因必经 `onLog` 转界面。
+- 🔴 **长文生成必走流式**（`aiTasks/stream.ts`）：非流式必撞 180s 墙；自驱 `runAutoContinue` 必传 **`onBodyToken`**。⚠️ 生成入口无 `max_tokens`。🔴 `onToken`＝**流式开关**；失败原因必经 `onLog` 转界面。
 - 🔴 **AI「会读哪些数据」＝`lib/aiDataSources.ts` 单一源**（闸 `tests/aiDataSources`，改源须同步改）。🔴🔴 **禁写「全程本地模型／不外发」**——口径只能是「发给**当前选定的**模型：本地不出本机，云端上传该服务商」。
 - 🔴🔴 **保密等级 D＝终结：任何情况都不进 AI**：硬保证在 `aiContext.isPrunedForAI`（内容/姓名/判重），`rankOf` 给 D 大数兜底；**作者侧也排除**。🔴 该列**封闭枚举**（`cFixed()`）：禁增/改/删，否则预算排序与可见性失效。
 - 📌 关系整理材料上限**面板可调**（闸 `tests/bookbreakRelations` ⑩）。
@@ -71,14 +71,14 @@
 - 三步基线：`tsc --noEmit`／`eslint src`（**0 problem**）／`node tests/run-all.mjs`（别用 `npm run verify`，沙箱会拦）。
 - 🔴 闸 `tests/structureGates`（行数/归属/禁裸 `JSON.parse`/原生弹窗/**any 账本只准降**）；类型改动等价性**可证**＝剥类型再 diff（详规 `docs/2.3.0-阶段4清债*护栏`）。
 - 🔴 实机走 skill `novel-studio-ui-livecheck`；**子代理结论必回源码验**；断言「落库」须直读 IndexedDB（`novel-studio`/`chapters`）。
-- ✅ **巨型组件拆分**（`docs/2.3.0-D4-*`）：**量化依赖→状态搬进 `useXxxModel`→子组件只收 `model`→实机指纹＋负面对照**；清导入 `prune-unused.mjs`。🔴 hook 含 JSX 须 `.tsx`。🔴 `useRef` 变 hook 入参→`exhaustive-deps` 报缺：稳定量如实补、只读 ref 改 `useCallback`（**禁 disable**）。🔴 **搬运区间必含注释块**。
-- 🔴🔴 实机**播完种禁 reload**（启动停首页→全 0）；指纹**只哈希目标容器**＋先折 `HH:MM(:SS)`→`T`、数字→`#`。🔴 造数据后**必须排序**。🔴🔴 负面对照注入点须选**无人复位**的状态。
+- ✅ **巨型组件拆分**（`docs/2.3.0-D4-*`）：**量化依赖→状态搬进 `useXxxModel`→子组件只收 `model`→实机指纹＋负面对照**。🔴 hook 含 JSX 须 `.tsx`。🔴 `useRef` 变 hook 入参→`exhaustive-deps` 报缺：稳定量如实补、只读 ref 改 `useCallback`（**禁 disable**）。🔴 **搬运区间必含注释块**。
+- 🔴🔴 实机**播完种禁 reload**；指纹**只哈希目标容器**＋先折 `HH:MM(:SS)`→`T`、数字→`#`。🔴 造数据后**必须排序**。🔴🔴 负面对照注入点须选**无人复位**的状态。
 
 ## 酒馆模式
 - 🔴🔴 动酒馆前必读 `docs/酒馆模式-工程红线.md`（18 节）。
 - 🔴 数据归属：剧情会话+扮演设定+报告+背景**随项目**；自由会话+角色卡+记忆日常+面板设置+剧本库**跨项目**（索引/分条成对，tavernReports 勿漏 deleteProject）。
 - 🔴🔴 预算三数：`historyBudget`＝预算−400−整条 system；contextBudget **24000**；numCtx **32768** 别动。
-- 🔴 最易踩：①会话存**快照非引用**（`snapshotStorySetting`）；②角色卡小项只能「名：内容」同行＋**全角冒号**（半角→整栏掉「其他」框）。
+- 🔴 最易踩：①会话存**快照非引用**（`snapshotStorySetting`）；②角色卡小项只能「名：内容」同行＋**全角冒号**（半角会掉进「其他」框）。
 - 🔴 协议 **v1.11**（旧版冻进 `LEGACY_PROTOCOLS`；改协议同步三处）。
 
 ## 出厂数据·示范项目
