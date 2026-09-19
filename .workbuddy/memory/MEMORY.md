@@ -24,7 +24,7 @@
 - 无 i18n；schema 列名即存储键（改功能后回搜 `schema.ts` 的 `description`）。
 - ⚠️ 打包陷阱：①tree-shake：组件只在门控分支被引→整模块被摇→门控用「需该模块平台并集」，删门控必跑 `vite build`；②`DESKTOP` 探测→dev 浏览器恒 false。
 - 左下角只准一个浮层 `DataDock`；禁全局 fixed 浮层。种子键：卡片 `模块::字段`、表格＝列名；改种子必跑闸。
-- 📁 结构优化（09-19）：D3 纯数据→**`src/data/`**（`seedData.ts` 工厂码留 `lib`）；D2 `db.ts`→门面＋`db/` 10 域；D1 `aiTasks.ts`→门面＋`aiTasks/` 11 域。🔴 门面**显式再导出**（勿 `export *`）；提示词随域走、门面 `PROMPT_ORDER` 还原注册序；`ops`/`currentProjectId` 须 `export let`。🔴 D7 同步层 any **112→8**（`syncCore`/`db/core` 归零）。
+- 📁 结构优化（09-19）：D3 纯数据→**`src/data/`**（`seedData.ts` 工厂码留 `lib`）；D2 `db.ts`→门面＋`db/` 10 域；D1 `aiTasks.ts`→门面＋`aiTasks/` 11 域。🔴 门面**显式再导出**（勿 `export *`）；提示词随域走、门面 `PROMPT_ORDER` 还原注册序；`ops`/`currentProjectId` 须 `export let`。🔴 D7 同步层 any **112→0**（全项目归零）。
 - 🔗 功能门：`FEATURE_TIER`＋`STRONG_DEPS`（双向）＋`ANY_DEPS`；闸 `feature-deps-check.mjs`（两闸在 `tests/` 非 `scripts/`）。
 - 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**（关系表＝人物A/人物B）：`commit` 按名称列判重→**恒判"不存在"**→ 点两次＝重复关系。
 - 🔴 编辑器双图层：盒模型逐项一致；叠层重建归零 scrollTop→`useLayoutEffect` 回填；只走 `scanRefHighlight`。
