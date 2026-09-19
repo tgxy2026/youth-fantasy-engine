@@ -192,7 +192,10 @@ async function saveConflictCopy(info: SyncConflictInfo) {
 // #008：云端不可用时透明回退本地，保证用户看到的始终是自己的数据，而非空白缓存。
 // 🔬 导出仅供单测（tests/cloudStoreWrapper.test.ts）：本函数是纯工厂、无副作用，
 // 且「backups 落本地 / 敏感 meta 不上云 / 云端不可用回退本地」三条语义都只在这里，
-// 不导出就无法在不跑浏览器的前提下锁住它们（与 setStoreOps 同理）。
+// 不导出就无法在不跑浏览器的前提下锁住它们。
+// ⚠️ 2026-09-20：这句末尾原有「（与 setStoreOps 同理）」，**是错的类比**，已删 ——
+//    本函数导出是「为了单测」且确实被 tests/cloudStoreWrapper.test.ts 引用；而 `setStoreOps`
+//    没有任何测试引用它，导出理由完全不同（见其函数注释）。
 export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavailable: () => boolean): StoreOps {
   /**
    * 动态分发的统一取用形状：StoreOps 六个方法签名各不相同，按名字分发只能先擦成这个。
@@ -309,7 +312,18 @@ if (CLOUD_FILE_SYNC) {
   })()
 }
 
-/** 运行时切换底层存储（云端同步特权开启时切到 cloudStore / desktopCloudFileStore） */
+/**
+ * 运行时切换底层存储（云端同步特权开启时切到 cloudStore / desktopCloudFileStore）。
+ *
+ * ⚠️ 为什么必须 export（2026-09-20 补记）：它是模块级 `ops` 的**唯一写入口**，而 `ops` 按文件顶部
+ *    的约定必须 export（兄弟业务域只读活绑定）。此前 `makeCloudStoreWrapper` 的注释把这写成
+ *    「（与 setStoreOps 同理）」，**是错的类比** —— 那个函数导出是「为了单测」，本函数不是。
+ *
+ * ⚠️ 它目前**没有单测，且这不是疏漏**：唯一可观测出口 `isDesktopCloudSyncActive()` 在测试环境
+ *    恒为 false（`desktopCloudFileStore` 是模块内部引用，测试拿不到），正向断言写不出来；
+ *    而它本身只是一行赋值，真正有风险的是两个调用方（enable / disableDesktopCloudSync 里
+ *    「先 flush + 镜像再切」的顺序），那需要真实桌面环境才跑得起来。硬写只会得到恒真的假 PASS。
+ */
 export function setStoreOps(o: StoreOps) {
   ops = o
 }

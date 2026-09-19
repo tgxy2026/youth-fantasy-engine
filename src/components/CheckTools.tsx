@@ -197,7 +197,7 @@ export default function CheckTools() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">检查工具</h1>
           <HelpPopover title="检查工具怎么用" width="22rem" size={14}>
-            {'三个发布前自检能力：\n\n· 敏感词检测：系统词库扫描（始终可用）+ 可选 AI 复核（需接入 AI）；\n· AI 一致性深度自查：对照设定资料查人名/时间脉络/能力的前后矛盾（需 AI）；\n· 数据体检：机械确定性扫描引用断链/编号重复/必填空，不靠 AI，离线可用，每条可忽略或清除忽略。\n\n建议改动过名称/删过条目后跑一次数据体检，发布前至少跑一次敏感词与数据体检。'}
+            {'三个发布前自检能力：\n\n· 敏感词检测：系统词库扫描（始终可用）+ 可选 AI 复核（需接入 AI）；\n· AI 一致性深度自查：对照设定资料查人名/时间脉络/能力的前后矛盾（需 AI）；\n· 数据体检：机械确定性扫描引用断链/编号重复/必填空/酒馆列表残留，不靠 AI，离线可用，每条可忽略或清除忽略。\n\n建议改动过名称/删过条目后跑一次数据体检，发布前至少跑一次敏感词与数据体检。'}
           </HelpPopover>
         </div>
         <p className="mt-1 text-13 text-ink-300">敏感词检测 · AI 一致性深度自查 · 数据体检</p>
@@ -407,11 +407,11 @@ export default function CheckTools() {
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <Stethoscope size={14} className="text-emerald-400" /> 数据体检
             <HelpPopover title="数据体检怎么用" width="23rem" className="ml-auto">
-              {'与上方「AI 一致性深度自查」互补：AI 查"故事通不通"（语义矛盾），本工具查"链接断没断"（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖 AI 模型，离线可用；\n· 四类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空，另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
+              {'与上方「AI 一致性深度自查」互补：AI 查"故事通不通"（语义矛盾），本工具查"链接断没断"（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖 AI 模型，离线可用；\n· 五类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空、酒馆列表残留（酒馆列表项指向的正文已不在，列表里看得见、点开是空的；此类只报告、不自动清理），另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
             </HelpPopover>
           </h2>
           <p className="text-11 text-ink-500 mb-3">
-            对照全项目设定，扫描引用断链 / 编号重复 / 必填空（确定性检查，不靠 AI 推理）。
+            对照全项目设定，扫描引用断链 / 编号重复 / 必填空 / 酒馆列表残留（确定性检查，不靠 AI 推理）。
           </p>
           <div className="flex items-center gap-2">
             <Button variant="success" onClick={runHealth} disabled={healthScanning} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-12 transition-colors disabled:opacity-50">
@@ -430,7 +430,7 @@ export default function CheckTools() {
           </div>
           {healthRun && !healthScanning && visibleIssues.length === 0 && (
             <div className="mt-4 py-3 text-center text-12 text-emerald-400">
-              {healthIssues.length === 0 ? '数据健康，未发现引用断链 / 编号重复 / 必填空 ✓' : '已忽略全部冲突，数据干净 ✓'}
+              {healthIssues.length === 0 ? '数据健康，未发现引用断链 / 编号重复 / 必填空 / 酒馆列表残留 ✓' : '已忽略全部冲突，数据干净 ✓'}
             </div>
           )}
           {visibleIssues.length > 0 && (

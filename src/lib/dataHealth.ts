@@ -2,11 +2,16 @@
 //
 // 与「AI 一致性深度自查」互补：AI 查"故事通不通"（语义矛盾），本引擎查"链接断没断"
 // （数据结构层面的引用完整性）。纯程序遍历所有表格型页签的引用列，毫秒级、100% 确定、
-// 精确到行、可跳转修复。覆盖四类问题：
+// 精确到行、可跳转修复。覆盖五类问题：
 //   1. 悬空引用：cr（跨表引用）列的值在源表对应列中找不到 → 多半是改名/删除后残留
 //   2. 孤儿项：自引用父级（上级/层级归属）指向本表不存在的名称 → 父条目被删
 //   3. 编号冲突：同一表出现重复「编号」
 //   4. 必填空：主名称列（displayCol）未填写，行缺少主标识
+//   5. 酒馆列表残留：酒馆的「列表项」指向的正文/内容已不存在（列表里看得见、点开是空的）。
+//      这一类的覆盖面与上面四类不同 —— 它不在表格里，而在酒馆的索引 + 分条之间，故单列。
+//      ⚠️ **只报告、不自动清理**（2026-09-20 决定）：幽灵的成因常常是「这一侧读失败 / 同步竞态」
+//      而不是真的缺失，盲目删索引会把还能恢复的条目永久抹掉 —— 与「读数据失败必须锁写盘」
+//      是同一类风险。清理入口待后续版本单独设计（带安全前置）。
 // 另外独立校验"编号型引用"（如 章节总表的 埋设/回收伏笔编号、历史的 对应伏笔编号）：
 //   值为字母+数字编码时，按前缀映射到目标表，确认该编码真实存在。
 
@@ -162,6 +167,55 @@ export async function runDataHealthCheck(): Promise<HealthResult> {
         }
       }
     }
+  }
+
+  // —— 5) 酒馆列表「索引项 vs 分条」成对性（幽灵条目）——
+  //
+  // 🔴 必须追加在**最后**，不能插进上面的循环里：issue id 是 `H${counter.n}` 递增的，而本页的
+  //    「忽略」会把 id **持久化**在 healthIgnoredIds 里 —— 中途插入新检查会让作者此前忽略的 id
+  //    **错位到别的条目上**（静默失效：忽略的是 A，实际隐藏的是 B）。
+  //
+  // 🔴 用**动态 import**，不用顶部静态 import。但要如实说清：理由是**防御性**的，不是"现在的体积"。
+  //    2026-09-20 实测过（动态 vs 静态各构建一次，比产物体积）：**当前**分包结构下两者几乎无差
+  //    （主包 +0.00 kB / CheckTools −0.40 kB）—— 因为本页 CheckTools 自身就是懒加载 chunk，而
+  //    `tavern/store` 早已被 Tavern* 组件引用成独立 chunk。原先这里写的是"静态 import 会把酒馆
+  //    存储层无条件打进主包"，**实测不成立**，别照抄到别处。
+  //    留着动态 import 是为了防**将来**的改动（比如有人把 CheckTools 收回主包、或改 manualChunks）：
+  //    `check-tools` 在 FEATURE_TIER 里是 locked（永远在），而酒馆那套全是 optional —— 一个 locked
+  //    模块不该在**模块图**里强依赖 optional 模块。静态 import 一旦把前者收回主包，就会连带把酒馆
+  //    存储层拖给每个项目的每个用户；动态 import 天然免疫。
+  //    同一条惯例见 seedData.ts（「动态 import 同样是为了不把酒馆引擎拖进主包」）—— 那边确实在主包路径上。
+  //    这里**不判功能开关**：未启用酒馆时三个索引本就是空的，检测结果自然是 0 条，判了反而多一处耦合。
+  //
+  // 📌 这一类的检测能力早就写好了（`tavern/store.ts` 的 auditSessions / auditFreeChars /
+  //    auditFreeSessions），一直**没有产品入口**、被登记为「能力缺口」白名单保护。
+  //    2026-09-20 复核时纠正了一处历史误记：不只是自由模式没接，**剧情模式同样没接**
+  //    （`pruneGhostSessions` 当时只被 tests 调用）—— 缺口是两种模式的 6 个函数全套。
+  try {
+    const { auditSessions, auditFreeChars, auditFreeSessions } = await import('./tavern/store')
+    // 三组各取自己有的名字字段：会话两项是 title、角色卡是 name
+    const groups: { label: string; how: string; items: string[] }[] = [
+      { label: '剧情推演会话', how: '这场推演的对话记录', items: (await auditSessions()).ghosts.map(g => g.title) },
+      { label: '自由对话角色卡', how: '这张角色卡的设定与记忆', items: (await auditFreeChars()).ghosts.map(g => g.name) },
+      { label: '自由对话会话', how: '这场对话的记录', items: (await auditFreeSessions()).ghosts.map(g => g.title) },
+    ]
+    for (const g of groups) {
+      const n = g.items.length
+      if (!n) continue
+      const shown = g.items.slice(0, 6).map(s => s || '(无标题)').join('、')
+      push(
+        'warn',
+        '酒馆列表残留',
+        `酒馆「${g.label}」有 ${n} 条残留`,
+        `${g.label}的列表里有 ${n} 条记录，但${g.how}已经不在了 —— 列表里看得见、点开是空的。` +
+        `多为删除或跨设备同步过程中的残留，通常不影响你已有内容的正确性。` +
+        `涉及：${shown}${n > 6 ? ` 等 ${n} 条` : ''}。` +
+        `本页目前只报告、不自动清理（避免误删尚可恢复的条目）。`,
+      )
+    }
+  } catch (e) {
+    // 酒馆模块加载失败 / 存储读取异常：跳过这一类即可，绝不拖垮其余几类检查
+    console.warn('[dataHealth] 酒馆列表成对性检查跳过：', e)
   }
 
   // 严重度排序：error → warn → info
