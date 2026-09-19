@@ -20,6 +20,7 @@
  */
 import * as db from '../db'
 import { uid } from '../id'
+import { DESKTOP, getDesktopState } from '../desktop'
 import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP } from './types'
 import { structSpecOf, normalizeStructMarkup } from './cardFields'
 import type {
@@ -748,27 +749,148 @@ export async function auditFreeSessions(): Promise<{ ghosts: FreeSessionIndexIte
   return { ghosts }
 }
 
-/** 清掉幽灵会话索引项，返回清理条数 */
-export async function pruneGhostSessions(): Promise<number> {
+/**
+ * 清掉幽灵会话索引项，返回清理条数。
+ *
+ * 传 `onlyIds` 则只清这些 id（安全路径 `pruneGhostsSafely` 走这条），不传 = 清掉本次 audit 出的全部。
+ * 🔴 直接调本函数**没有安全前置** —— 界面入口一律走 `pruneGhostsSafely`，理由见那边的注释。
+ */
+export async function pruneGhostSessions(onlyIds?: readonly string[]): Promise<number> {
   const { ghosts } = await auditSessions()
-  if (ghosts.length === 0) return 0
+  const targets = onlyIds ? ghosts.filter(g => onlyIds.includes(g.id)) : ghosts
+  if (targets.length === 0) return 0
   const idx = await listSessions()
-  await db.setSetting(K.sessionIndex, idx.filter(it => !ghosts.some(g => g.id === it.id)))
-  return ghosts.length
+  await db.setSetting(K.sessionIndex, idx.filter(it => !targets.some(g => g.id === it.id)))
+  return targets.length
 }
 
-export async function pruneGhostFreeChars(): Promise<number> {
+export async function pruneGhostFreeChars(onlyIds?: readonly string[]): Promise<number> {
   const { ghosts } = await auditFreeChars()
-  if (ghosts.length === 0) return 0
+  const targets = onlyIds ? ghosts.filter(g => onlyIds.includes(g.id)) : ghosts
+  if (targets.length === 0) return 0
   const idx = await listFreeChars()
-  await db.setMeta(G.charIndex, idx.filter(it => !ghosts.some(g => g.id === it.id)))
-  return ghosts.length
+  await db.setMeta(G.charIndex, idx.filter(it => !targets.some(g => g.id === it.id)))
+  return targets.length
 }
 
-export async function pruneGhostFreeSessions(): Promise<number> {
+export async function pruneGhostFreeSessions(onlyIds?: readonly string[]): Promise<number> {
   const { ghosts } = await auditFreeSessions()
-  if (ghosts.length === 0) return 0
+  const targets = onlyIds ? ghosts.filter(g => onlyIds.includes(g.id)) : ghosts
+  if (targets.length === 0) return 0
   const idx = await listFreeSessions()
-  await db.setMeta(G.freeSessionIndex, idx.filter(it => !ghosts.some(g => g.id === it.id)))
-  return ghosts.length
+  await db.setMeta(G.freeSessionIndex, idx.filter(it => !targets.some(g => g.id === it.id)))
+  return targets.length
+}
+
+// ==================== 幽灵索引清理 · 安全前置（2026-09-20） ====================
+//
+// 上面那三个 `pruneGhost*` 是**裸清理**：检出即删、不问、不备份。数据体检的「清理」入口
+// **不能**直接用它们 —— 幽灵的判据是「索引项在、分条**读不到**」，而「读不到」不等于「不存在」。
+// 下面这层把「哪几种读不到的情况必须挡住」收在一处，界面只管调 `pruneGhostsSafely`。
+
+/** 酒馆三类索引的标识（数据体检的清理入口按组调用） */
+export type TavernGhostGroup = 'sessions' | 'freeChars' | 'freeSessions'
+
+/** 幽灵索引备份的 meta 键前缀；值 = 被删掉的索引项数组（整条存，便于事后恢复） */
+export const GHOST_BACKUP_PREFIX = 'tavern.ghostBackup.'
+
+/** 复判的间隔：给存储层一点喘息，瞬时读失败多半熬不过这一下 */
+const GHOST_RECHECK_DELAY_MS = 200
+
+export interface PruneGhostReport {
+  group: TavernGhostGroup
+  /** 实际清掉的条数（被前置闸挡下时为 0） */
+  pruned: number
+  /** 被前置闸挡下的原因（人类可读，可直接给作者看）；为空 = 没被挡 */
+  blocked?: string
+  /** 备份落地的 meta 键；没有需要备份的项时为空 */
+  backupKey?: string
+}
+
+interface GhostOps {
+  /** 当前判定为幽灵的 id 列表 */
+  audit: () => Promise<string[]>
+  /** 取出指定 id 的索引项整条（备份用；三类索引项类型不同，故是 unknown[]） */
+  snapshot: (ids: readonly string[]) => Promise<unknown[]>
+  /** 按 ids 从索引里剔除 */
+  prune: (onlyIds: readonly string[]) => Promise<number>
+}
+
+function ghostOpsOf(group: TavernGhostGroup): GhostOps {
+  if (group === 'sessions') {
+    return {
+      audit: async () => (await auditSessions()).ghosts.map(g => g.id),
+      snapshot: async ids => (await listSessions()).filter(it => ids.includes(it.id)),
+      prune: pruneGhostSessions,
+    }
+  }
+  if (group === 'freeChars') {
+    return {
+      audit: async () => (await auditFreeChars()).ghosts.map(g => g.id),
+      snapshot: async ids => (await listFreeChars()).filter(it => ids.includes(it.id)),
+      prune: pruneGhostFreeChars,
+    }
+  }
+  return {
+    audit: async () => (await auditFreeSessions()).ghosts.map(g => g.id),
+    snapshot: async ids => (await listFreeSessions()).filter(it => ids.includes(it.id)),
+    prune: pruneGhostFreeSessions,
+  }
+}
+
+/**
+ * 前置闸 ①：**写盘锁期间一律拒绝**。
+ *
+ * 桌面版数据文件读不出来时（`getDesktopState().writeLocked`，见 db/core.ts 的读失败三态），
+ * **所有**分条都读不到 —— 此时清理会把「其实还在、只是读不出来」的索引整片删掉且不可逆。
+ * 同构的先例：`enableDesktopCloudSync` 在 writeLocked 时也直接拒绝（那边是怕把空数据推上云端）。
+ * 非桌面平台恒不锁，直接放行。
+ */
+export function ghostPruneBlockedReason(): string {
+  if (!DESKTOP) return ''
+  const st = getDesktopState()
+  if (!st.writeLocked) return ''
+  return st.writeLockReason || '本地数据文件当前不可读，已阻止清理（此时读不到的内容可能只是暂时读不出来）'
+}
+
+/**
+ * **带安全前置**的幽灵索引清理 —— 数据体检的「清理」入口只走这里。
+ *
+ * 四道前置（界面侧还有第 ④ 条）：
+ *   ① 写盘锁期间拒绝（见 `ghostPruneBlockedReason`）；
+ *   ② **二次复判**：隔一小段时间各检一次，只清「两次都判定为幽灵」的 id —— 瞬时读失败会被这层滤掉；
+ *      两次不一致时**不删**并如实回报，让作者先查存储状态而不是让工具赌一把；
+ *   ③ **先备份**：把待删的索引项整条写进 `tavern.ghostBackup.<ts>`。值得备份是因为分条**有可能回来**
+ *      （云盘同步会把「云端有、本地没有」的那条当另一端新增拉下来，这正是「删了会复活」的另一面），
+ *      那时恢复索引才有意义；顺带也是一份「我清过什么」的审计痕迹；
+ *   ④ 界面弹确认框明示影响（本函数不管界面）。
+ *
+ * 注意本函数**不碰分条**：幽灵的分条本来就不存在，清理只动索引项。
+ */
+export async function pruneGhostsSafely(group: TavernGhostGroup): Promise<PruneGhostReport> {
+  const blocked = ghostPruneBlockedReason()
+  if (blocked) return { group, pruned: 0, blocked }
+
+  const ops = ghostOpsOf(group)
+  const first = await ops.audit()
+  if (first.length === 0) return { group, pruned: 0 }
+
+  // ② 复判：隔一拍再检，取交集
+  await new Promise(r => setTimeout(r, GHOST_RECHECK_DELAY_MS))
+  const second = await ops.audit()
+  const confirmed = first.filter(id => second.includes(id))
+  if (confirmed.length === 0) {
+    return { group, pruned: 0, blocked: '复判时这些条目又能读到了（多半是瞬时读取失败），已放弃清理；请稍后重新体检' }
+  }
+
+  // ③ 备份待删的索引项
+  const snapshot = await ops.snapshot(confirmed)
+  let backupKey: string | undefined
+  if (snapshot.length > 0) {
+    backupKey = GHOST_BACKUP_PREFIX + Date.now()
+    await db.setMeta(backupKey, snapshot)
+  }
+
+  const pruned = await ops.prune(confirmed)
+  return { group, pruned, ...(backupKey ? { backupKey } : {}) }
 }

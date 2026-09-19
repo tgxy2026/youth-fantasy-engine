@@ -12,6 +12,13 @@
 // 🔴 对外 API 的名字与签名一字未改 —— 69 个调用方（含 tests/）无需任何改动。
 // ⚠️ 改 import 结构前先看 tests/build-test.mjs：它用 esbuild 插件把 './desktop' 换成内存桩，
 //    ./db/ 里的模块改用 '../desktop'，那边的 filter 已同步放宽（否则测试会误载真实 Electron 模块）。
+// 📌 `setStoreOps` 目前在 src/ + tests/ **零消费者**（真正调它的只有 enable / disableDesktopCloudSync，
+//    两个都在 `db/core.ts` 模块内）。**2026-09-20 判断：有意保留在对外 API 面上** ——
+//    它表达的是一项真实能力（存储层支持运行时换后端），也是那两个开关的底层原语；
+//    摘掉的收益只是少一个 export 关键字，而将来若要写「模拟切换后端」的测试还得加回来。
+//    ⚠️ 它经门面导出会被 audit-dead 记成「有外部引用」，因此**不会**出现在「多余 export」清单里 ——
+//    所以别指望那份清单替你盯着它，判断写在这里。
+//    它的导出理由（=`ops` 活绑定的唯一写入口）见 `db/core.ts` 里它自己的函数注释。
 export {
   setCurrentProject, getCurrentProjectId, touchProject,
   makeCloudStoreWrapper, setStoreOps,

@@ -14,7 +14,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiReviewSensitive, aiContinuityAudit, type SensitiveReview, type ContinuityFinding } from '../lib/aiTasks'
 import { buildProjectContext } from '../lib/aiContext'
-import { runDataHealthCheck } from '../lib/dataHealth'
+import { runDataHealthCheck, type TavernGhostInfo } from '../lib/dataHealth'
 import { SEVERITY_LABEL, type AuditIssue, type AuditLocation } from '../lib/audit'
 import { Button } from './Button'
 
@@ -125,11 +125,14 @@ export default function CheckTools() {
   const [healthIssues, setHealthIssues] = useState<AuditIssue[]>([])
   const [healthScanning, setHealthScanning] = useState(false)
   const [healthRun, setHealthRun] = useState(false)
+  /** 第 5 类里「可清理」的分组（靠 issueId 与上面 issues 关联，用于在卡片上挂「清理」按钮） */
+  const [ghosts, setGhosts] = useState<TavernGhostInfo[]>([])
   const runHealth = useCallback(async () => {
     setHealthScanning(true); setHealthIssues([]); setHealthRun(false)
     try {
       const res = await runDataHealthCheck()
       setHealthIssues(res.issues)
+      setGhosts(res.tavernGhosts ?? [])
       setHealthRun(true)
     } finally { setHealthScanning(false) }
   }, [])
@@ -160,6 +163,35 @@ export default function CheckTools() {
     setIgnoredIds([])
     await db.setSetting('healthIgnoredIds', [])
     showToast('已清除忽略记录，下次体检会重新汇报')
+  }
+
+  /**
+   * 清理某一组酒馆索引残留。
+   *
+   * 真正的前置判断**不在界面这层**，而在 `pruneGhostsSafely` 里（写盘锁拒绝 / 二次复判 / 先备份）——
+   * 放 lib 层是为了无论谁调都安全；界面只负责弹确认、把 blocked 原因原样告诉作者。
+   */
+  const cleanGhosts = async (info: TavernGhostInfo) => {
+    if (!await confirmDialog({
+      title: '清理索引残留',
+      message: `将把这 ${info.count} 条「${info.label}」的列表项从索引里移除。\n\n`
+        + `它们指向的内容本来就已经不在了（列表里看得见、点开是空的），所以这一步不会影响你任何还能打开的对话或角色卡。\n`
+        + `清理前会再复判一次，并自动留一份索引备份。\n\n`
+        + `此操作不能从界面撤销。确定清理吗？`,
+      confirmText: '清理',
+      danger: true,
+    })) return
+    try {
+      // ⚠️ 动态 import：check-tools 是 locked、酒馆那套是 optional —— 静态引入会把酒馆存储层并进本页 chunk
+      const { pruneGhostsSafely } = await import('../lib/tavern/store')
+      const r = await pruneGhostsSafely(info.group)
+      if (r.blocked) { showToast(r.blocked, 'error'); return }
+      if (r.pruned === 0) { showToast('复判后没有可清理的条目，未做改动'); await runHealth(); return }
+      showToast(`已清理 ${r.pruned} 条索引残留${r.backupKey ? '（已留备份）' : ''}`)
+      await runHealth()
+    } catch (e) {
+      showToast(`清理失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   /** 敏感词 AI 检测：复用 aiReviewSensitive 复核命中词；无扫描结果时先自动跑一次系统扫描 */
@@ -407,7 +439,7 @@ export default function CheckTools() {
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <Stethoscope size={14} className="text-emerald-400" /> 数据体检
             <HelpPopover title="数据体检怎么用" width="23rem" className="ml-auto">
-              {'与上方「AI 一致性深度自查」互补：AI 查"故事通不通"（语义矛盾），本工具查"链接断没断"（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖 AI 模型，离线可用；\n· 五类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空、酒馆列表残留（酒馆列表项指向的正文已不在，列表里看得见、点开是空的；此类只报告、不自动清理），另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
+              {'与上方「AI 一致性深度自查」互补：AI 查"故事通不通"（语义矛盾），本工具查"链接断没断"（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖 AI 模型，离线可用；\n· 五类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空、酒馆列表残留（酒馆列表项指向的正文已不在，列表里看得见、点开是空的；此类不会自动清理，需要你在那条结果上点「清理」），另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
             </HelpPopover>
           </h2>
           <p className="text-11 text-ink-500 mb-3">
@@ -444,6 +476,17 @@ export default function CheckTools() {
                     <span className={`px-1.5 py-0.5 rounded border text-10 ${sevBadge(issue.severity)}`}>{SEVERITY_LABEL[issue.severity]}</span>
                     <span className="text-12 font-semibold text-ink-100">{issue.title}</span>
                     <div className="ml-auto flex items-center gap-1">
+                      {/* 第 5 类（酒馆列表残留）才有这个键：其余几类靠改数据修，这一类靠清索引修。
+                          尺寸 class 刻意与同排的「忽略 / 跳转」一字不差 —— 换成 size="xs" 反而会比邻居高 2px。 */}
+                      {ghosts.filter(g => g.issueId === issue.id).map(g => (
+                        <Button key={g.group} variant="danger"
+                          onClick={() => void cleanGhosts(g)}
+                          title={`把这 ${g.count} 条指向已不存在内容的列表项从索引里移除（只动索引，不碰正文）`}
+                          className="flex items-center gap-1 px-2 py-0.5 text-11 rounded-md transition-colors"
+                        >
+                          <Trash2 size={11} /> 清理 {g.count} 条
+                        </Button>
+                      ))}
                       <Button variant="bare"
                         onClick={() => ignoreIssue(issue.id)}
                         className="flex items-center gap-1 px-2 py-0.5 text-11 rounded-md bg-ink-700 text-ink-300 border border-ink-600 hover:text-ink-100 transition-colors"

@@ -18,6 +18,8 @@
 import { TABS, getTab, GEO_MAPS_TAB } from './schema'
 import { getTableRows } from './db'
 import type { AuditIssue, AuditLocation } from './audit'
+// ⚠️ `import type` 编译后被完全擦除，**不会**把酒馆存储层拽成静态依赖（真正的取用在下面动态 import）
+import type { TavernGhostGroup } from './tavern/store'
 
 /** 编码前缀 → 目标表（用于编号型引用校验） */
 const PREFIX_TAB: Record<string, string> = {
@@ -30,6 +32,26 @@ const CODE_RE = /^(N|G|R|I|H|T|F|LINE|S|C|IDEA|MAP)\d/i
 export interface HealthResult {
   issues: AuditIssue[]
   scannedTables: number
+  /**
+   * 可清理的酒馆幽灵分组 —— 与 `issues` 里那几条**同源**，靠 `issueId` 关联。
+   *
+   * 📌 单独带出来、而不是往 `AuditIssue` 上加字段：后者是审计层的**公共**类型，
+   *    没有理由知道「酒馆」这种具体业务；而且界面若靠解析 `title` 文案去认，
+   *    文案一改就**静默失配**（按钮凭空消失）。用 id 关联是稳的。
+   */
+  tavernGhosts?: TavernGhostInfo[]
+}
+
+/** 一条「可清理的酒馆幽灵」分组（供界面在该 issue 卡片上挂「清理」按钮） */
+export interface TavernGhostInfo {
+  /** 对应 `issues` 里那一条的 id */
+  issueId: string
+  /** 哪一组索引（决定清理时调哪个 prune） */
+  group: TavernGhostGroup
+  /** 人类可读的组名（弹确认框时用） */
+  label: string
+  /** 该组检出条数 */
+  count: number
 }
 
 export async function runDataHealthCheck(): Promise<HealthResult> {
@@ -44,10 +66,14 @@ export async function runDataHealthCheck(): Promise<HealthResult> {
     title: string,
     detail: string,
     loc?: AuditLocation,
-  ) => {
+  ): string => {
     counter.n += 1
-    issues.push({ id: `H${counter.n}`, severity, category, title, detail, location: loc })
+    const id = `H${counter.n}`
+    issues.push({ id, severity, category, title, detail, location: loc })
+    return id
   }
+  /** 第 5 类里记录「哪条 issue 对应哪一组可清理的幽灵」，供界面挂清理按钮 */
+  const tavernGhosts: TavernGhostInfo[] = []
 
   // 预取所有表格数据
   const cache = new Map<string, { id: string; data: Record<string, string> }[]>()
@@ -194,24 +220,25 @@ export async function runDataHealthCheck(): Promise<HealthResult> {
   try {
     const { auditSessions, auditFreeChars, auditFreeSessions } = await import('./tavern/store')
     // 三组各取自己有的名字字段：会话两项是 title、角色卡是 name
-    const groups: { label: string; how: string; items: string[] }[] = [
-      { label: '剧情推演会话', how: '这场推演的对话记录', items: (await auditSessions()).ghosts.map(g => g.title) },
-      { label: '自由对话角色卡', how: '这张角色卡的设定与记忆', items: (await auditFreeChars()).ghosts.map(g => g.name) },
-      { label: '自由对话会话', how: '这场对话的记录', items: (await auditFreeSessions()).ghosts.map(g => g.title) },
+    const groups: { group: TavernGhostGroup; label: string; how: string; items: string[] }[] = [
+      { group: 'sessions', label: '剧情推演会话', how: '这场推演的对话记录', items: (await auditSessions()).ghosts.map(g => g.title) },
+      { group: 'freeChars', label: '自由对话角色卡', how: '这张角色卡的设定与记忆', items: (await auditFreeChars()).ghosts.map(g => g.name) },
+      { group: 'freeSessions', label: '自由对话会话', how: '这场对话的记录', items: (await auditFreeSessions()).ghosts.map(g => g.title) },
     ]
     for (const g of groups) {
       const n = g.items.length
       if (!n) continue
       const shown = g.items.slice(0, 6).map(s => s || '(无标题)').join('、')
-      push(
+      const issueId = push(
         'warn',
         '酒馆列表残留',
         `酒馆「${g.label}」有 ${n} 条残留`,
         `${g.label}的列表里有 ${n} 条记录，但${g.how}已经不在了 —— 列表里看得见、点开是空的。` +
         `多为删除或跨设备同步过程中的残留，通常不影响你已有内容的正确性。` +
         `涉及：${shown}${n > 6 ? ` 等 ${n} 条` : ''}。` +
-        `本页目前只报告、不自动清理（避免误删尚可恢复的条目）。`,
+        `可用这条结果上的「清理」把列表项从索引里去掉 —— 只动索引、不碰正文，清理前会再复判一次并留一份备份。`,
       )
+      tavernGhosts.push({ issueId, group: g.group, label: g.label, count: n })
     }
   } catch (e) {
     // 酒馆模块加载失败 / 存储读取异常：跳过这一类即可，绝不拖垮其余几类检查
@@ -222,5 +249,9 @@ export async function runDataHealthCheck(): Promise<HealthResult> {
   const order = { error: 0, warn: 1, info: 2 } as const
   issues.sort((a, b) => order[a.severity] - order[b.severity])
 
-  return { issues, scannedTables: tableTabs.length }
+  return {
+    issues,
+    scannedTables: tableTabs.length,
+    ...(tavernGhosts.length > 0 ? { tavernGhosts } : {}),
+  }
 }

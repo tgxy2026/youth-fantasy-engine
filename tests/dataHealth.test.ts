@@ -83,8 +83,17 @@ async function main() {
     ok('严重度是 warn（只提醒，不是数据冲突）', hit.length > 0 && hit.every(i => i.severity === 'warn'))
     ok('不带跳转位置（幽灵没有可跳的表格行，「跳转 ↗」会自然置灰）',
       hit.every(i => i.location === undefined))
-    ok('文案写明「只报告、不自动清理」（避免作者以为能一键修）',
-      hit.every(i => i.detail.includes('只报告')))
+    ok('文案如实说明「清理」入口，并讲清只动索引、不碰正文',
+      hit.every(i => i.detail.includes('清理') && i.detail.includes('不碰正文')))
+
+    // ---- 可清理分组：与 issue 靠 id 关联（刻意**不**往 AuditIssue 这个公共类型上加业务字段）----
+    const gs = res.tavernGhosts ?? []
+    ok('体检结果带出可清理分组', gs.length === 3, `实际=${gs.length}`)
+    ok('分组的 issueId 都能在 issues 里找到（关联有效，界面不必解析文案）',
+      gs.every(g => res.issues.some(i => i.id === g.issueId)))
+    ok('三组 group 齐全（决定清理时调哪个 prune）',
+      ['sessions', 'freeChars', 'freeSessions'].every(x => gs.some(g => g.group === x)))
+    ok('每组 count 与对应 issue 的实际条数一致', gs.every(g => g.count === 1), JSON.stringify(gs.map(g => g.count)))
   }
 
   // ---------- 3) 🔴 id 稳定性：新检查不得改变既有问题的 id ----------

@@ -65,8 +65,11 @@ function persist(): void {
 //    · `reloadTombs()` —— 注释写「换同步目录 / 外部改动后」重载。但换目录走的是 `resetTombs()`，
 //      而墓碑的运行时**唯一**改动源就是本进程（markDeleted / clearDeleted / resetTombs），
 //      单窗口下不存在「外部改动」，该场景不成立。模块初始化时已 `load()` 过一次。
-//    ⚠️ 其余三个「无引用导出」（`promptText` / `pruneGhostFreeChars` / `pruneGhostFreeSessions`）
-//      **不是死代码**，已登记进 `audit-dead.mjs` 的保留白名单，理由见那边的注释。
+//    ⚠️ 当时并列提到的三个「无引用导出」，现状（2026-09-20 晚复核）：
+//      · `pruneGhostFreeChars` / `pruneGhostFreeSessions` —— **已不再是缺口**：数据体检第 5 类
+//        「酒馆列表残留」接上了清理入口，它们由 `tavern/store.ts` 的 `pruneGhostsSafely` 调用
+//        （这也是这两个「能力缺口」函数第一次有了真实消费者）。已从 audit-dead 白名单撤下。
+//      · `promptText` —— 仍零引用，但**有意保留**（预留 API），仍在白名单里。
 
 /**
  * 记录删除。`keys` 可传多个（批量删除场景）。
