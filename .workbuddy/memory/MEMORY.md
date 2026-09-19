@@ -60,6 +60,8 @@
 - 🔴🔴 **思考模型必须关思考**：本地 `think:false`；云端 Qwen3 系由 `openaiChat` 自动下发 `enable_thinking:false`（`HYBRID_THINKING_RE`）。开＝50~130s 且 content 必残。
 - 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式必撞 180s 墙。自驱 `runAutoContinue` 必传 **`onBodyToken`**；别 `await page.evaluate(整流程)`。⚠️ 生成入口无 `max_tokens`。
 - 🔴 **AI「会读哪些数据」＝`lib/aiDataSources.ts` 单一源**（闸 `tests/aiDataSources.test.ts`），改 prompt 来源必须同步改它。🔴🔴 **禁写「全程本地模型／不外发」**——口径只能是「发给**当前选定的**模型：本地不出本机，云端上传到该服务商」。
+- 🔴🔴 **保密等级 D＝终结（弃用）：任何情况下都不进 AI** —— 不是"排最后"是**压根不带**。硬保证在 `aiContext.isPrunedForAI`（内容装配／姓名清单／判重清单**三处**过滤；认裸键与复合键），`rankOf` 给 D 大数当第二道保险；**与角色视角无关**（作者侧也排除）。🔴 该列是**封闭枚举**（schema `cFixed()`＋CustomSelect `fixedOptions`）：不许增/改/删，否则预算排序与可见性静默失效。
+- 📌 拆书关系整理的材料上限**面板可调**（`bookbreak/relationMaterial.ts`：五项带推荐值与理由、持久化）；上限真进材料由 `tests/bookbreakRelations` ⑩ 锁。
 - 🔴 本地实弹探针：改口径走 `LR_ANALYZE=<json>` 离线重算；CUDA 固定 seed **不保证逐位复现**（±4pp）。
 - 🔴🔴 **AI「整理」类产出必须两道本地兜底**（拆书关系阶段实测逼出）：① **候选值＝库里已有 ∪ 本次刚抽出、还没落库的实体名**（`allowedOverride`）—— 拆书时角色卡还是空的，名单空→模型编出「陈渊 · 青岚宗」这种**把势力写进人物列**的关系（就是老大点过的老病）；② **要模型给「依据」原文 + 本地核对逐字存在**（`evidenceInMaterial`，`aiOrganizeRows.evidenceField`）—— prompt 里写「不得据项目资料推断」对 4B 无效，实测它编出正文没提过的势力配对。两类丢弃都**如实计数上报**，不许静默吞。
 
