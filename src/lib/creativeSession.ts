@@ -637,7 +637,7 @@ export async function startChapterRewrite(p: {
     const outWords = countWords(text)
     const suspect = isSuspectRewrite(fromWords, outWords, expectWords)
     if (suspect) {
-      notice(`模型返回 ${outWords} 字，与期望的约 ${expectWords} 字相差过大 —— 已锁住替换，请重新改写`, 'error')
+      notice(`模型返回 ${outWords} 字，与期望的约 ${expectWords} 字相差过大 —— 已锁住替换，请重新生成`, 'error')
     }
     const cur = snap.rewrite
     if (cur) set({ rewrite: { ...cur, text: buf, running: false, suspect } })

@@ -673,8 +673,13 @@ export default function CreativeWritingPanel() {
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="primary" solid disabled={!aiReady || !rwChapter || busy}
+            // 🔴 文案别用「开始改写」：上面那排动作里就有一个叫「改写」，两者撞车 ——
+            //    更糟的是选了「润色」时按钮仍说"开始改写"，读起来像要执行另一个动作。
+            //    改成「开始生成 / 重新生成」（与 AITemplateFill、颉文姬的措辞一致），
+            //    动作名只由上面那排承担，这里只说"开始产出结果"。
+            title="按上面选的动作与「补充要求」处理这一章：先出结果给你过目，确认后才替换正文"
             onClick={() => void startChapterRewrite({ chapterId: rwChapter, action: rwAction, requirement: rwReq, words: rwWords })}>
-            <Wand2 size={12} /> {s.rewrite ? '重新改写' : '开始改写'}
+            <Wand2 size={12} /> {s.rewrite ? '重新生成' : '开始生成'}
           </Button>
           {s.rewrite?.running && (
             <Button size="sm" variant="danger" onClick={() => stopChapterRewrite()}>
@@ -705,7 +710,7 @@ export default function CreativeWritingPanel() {
                   onClick={() => void applyRewrite()}>替换该章正文</Button>
                 <Button size="sm" variant="secondary" onClick={() => discardRewrite()}>丢弃这次结果</Button>
                 {s.rewrite.suspect
-                  ? <span className="text-10 text-amber">结果与期望的约 {s.rewrite.expectWords} 字相差过大（实际 {countWords(s.rewrite.text)} 字），已锁住替换 —— 请重新改写。</span>
+                  ? <span className="text-10 text-amber">结果与期望的约 {s.rewrite.expectWords} 字相差过大（实际 {countWords(s.rewrite.text)} 字），已锁住替换 —— 请重新生成。</span>
                   : <span className="text-10 text-ink-500">替换前会自动把旧稿存进「时光机 · 本章版本历史」，可随时恢复。</span>}
               </div>
             )}
