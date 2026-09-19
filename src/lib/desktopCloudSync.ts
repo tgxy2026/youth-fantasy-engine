@@ -40,7 +40,7 @@ const ENABLED_KEY = 'yfe-desktop-cloud-on' // 是否已开启云盘同步（布�
 // 真正的 FileTransport 在用户选目录后通过 setTransport 替换。
 const cloud: CloudStoreInstance = createCloudStore(createIdleTransport())
 
-/** 桌面/便携版云端同步 StoreOps（db.ts 的 desktopCloudFileStore 包装层会在此之上做本地回退）。 */
+/** 桌面/便携版云端同步 StoreOps（db/core.ts 的 desktopCloudFileStore 包装层会在此之上做本地回退）。 */
 export const desktopCloudStore: StoreOps = cloud.store
 
 export function getDesktopCloudStatus(): SyncStatus {
@@ -143,7 +143,7 @@ export async function enableDesktopCloud(handle: any) {
 /**
  * 持久化「已开启」标记与同步目录。
  *
- * 🔴 必须等**快照校验 + 播种全部成功之后**才调用（由 db.ts 的 enableDesktopCloudSync 负责）。
+ * 🔴 必须等**快照校验 + 播种全部成功之后**才调用（由 db/core.ts 的 enableDesktopCloudSync 负责）。
  *    原先这两行就写在 enableDesktopCloud 里，而它是在拉快照 / 播种**之前**执行的 ——
  *    后两步失败时标记已经落盘，下次启动 UI 仍显示「已开启」，实际却走本地存储。
  */

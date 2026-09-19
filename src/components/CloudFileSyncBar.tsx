@@ -31,7 +31,7 @@ import {
 export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'panel' | 'sidebar' }) {
   const [busy, setBusy] = useState(false)
 
-  // 冲突告知：冲突副本由 db.ts 的 saveConflictCopy 落到**当前平台本地存储**的 meta
+  // 冲突告知：冲突副本由 db/core.ts 的 saveConflictCopy 落到**当前平台本地存储**的 meta
   // （key 以 syncConflict: 开头，受 isExcludedMetaKey 保护、永不上云）。
   // 这里只负责让作者**知道**发生过冲突 —— 否则副本存了却没人看得见，等于白存。
   useEffect(() => {
@@ -123,7 +123,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
       danger: true,
     })
     if (!ok) return
-    await disableDesktopCloudSync() // 先 flush + 镜像进本地，再切回（见 db.ts 的说明）
+    await disableDesktopCloudSync() // 先 flush + 镜像进本地，再切回（见 db/core.ts 的说明）
     showToast('已关闭云盘文件同步，切回本机存储', 'success')
     setTimeout(() => location.reload(), 400)
   }

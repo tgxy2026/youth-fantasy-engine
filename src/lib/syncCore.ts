@@ -19,7 +19,7 @@ import { isDeleted, markDeleted, clearDeleted, resetTombs } from './syncTombston
 
 // 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
 // ⚠️ 注意 'backups' 是**本地专属**：上传侧 liveStores() 会把它从载荷里剔除，
-//    读取侧 db.ts 的 makeCloudStoreWrapper 也把它的读写短路到本地 store（#026）。
+//    读取侧 db/core.ts 的 makeCloudStoreWrapper 也把它的读写短路到本地 store（#026）。
 //    因此「云端载荷」实际不含它——真正会被同步的是除 backups 外的其余 store。
 export const SYNC_STORES = [
   'projects', 'volumes', 'chapters', 'formData', 'tableRows', 'cardRecords',
@@ -554,7 +554,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     const next: Record<string, any[]> = {}
     const failed: string[] = []
     for (const s of SYNC_STORES) {
-      // backups 是本地专属保险（#026）：上传侧 liveStores 会剔除它，读取侧 db.ts 的包装层
+      // backups 是本地专属保险（#026）：上传侧 liveStores 会剔除它，读取侧 db/core.ts 的包装层
       // 也把它短路到本地 store——读进 cache 没有任何下游消费者，纯属无用功。
       // 而备份体量不小（每份是一整份项目副本，最多 30 份滚动），播种时白读一次的代价真实可感。
       if (s === 'backups') continue
@@ -719,7 +719,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       //    云模式下这批改动只存在于内存 —— 关窗兜底写的是 desktopStore（不经过它），两边都没有。
       //    只在异常路径触发，不影响「云模式下普通 store 不写本地」的常态约定。
       //    ⚠️ 兜底方**必须按「只补缺失」写**，不能整体覆盖：闩锁期包装层已把读写切到本地库，
-      //       用户的新编辑正躺在那里，而这里的 cache 是闩锁前的旧数据（见 db.ts 的镜像函数）。
+      //       用户的新编辑正躺在那里，而这里的 cache 是闩锁前的旧数据（见 db/core.ts 的镜像函数）。
       try { fallbackHandler?.(snapshotOf(cache)) } catch { /* 兜底失败不影响主流程 */ }
       return
     }

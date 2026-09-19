@@ -91,9 +91,9 @@ function api(): ElectronStoreAPI {
 }
 
 // ---- 与便携版一致的主键映射（store 名 -> 记录主键字段名）----
-// 🔬 导出供 db.ts 的「云端 cache → 本地库」镜像复用：那边要按主键判断「本地是否已有这条」
-//    （闩锁期不能整体覆盖，见 db.ts 的 mirrorCloudCacheToLocal）。两处若是各写一份，
-//    日子久了必然对不上；`tests/cloudStoreWrapper.test.ts` 会比对它与 db.ts 用的一致性。
+// 🔬 导出供 db/core.ts 的「云端 cache → 本地库」镜像复用：那边要按主键判断「本地是否已有这条」
+//    （闩锁期不能整体覆盖，见 db/core.ts 的 mirrorCloudCacheToLocal）。两处若是各写一份，
+//    日子久了必然对不上；`tests/cloudStoreWrapper.test.ts` 会比对它与 db/core.ts 用的一致性。
 export const KEY_PATHS: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id',

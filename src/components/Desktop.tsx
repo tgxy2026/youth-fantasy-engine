@@ -64,7 +64,7 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
 
   const doImport = async () => {
     /**
-     * 🔴 审计 2026-09-18（P1-6）：云盘文件同步开启时**拒绝导入**（理由见 db.ts 的
+     * 🔴 审计 2026-09-18（P1-6）：云盘文件同步开启时**拒绝导入**（理由见 db/core.ts 的
      *    isDesktopCloudSyncActive）。与其「导入成功却什么都没变」，不如明确拒绝
      *    并告诉他先关同步 —— 这才是他能照着做的下一步。
      */
