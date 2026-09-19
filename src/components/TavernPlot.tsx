@@ -6,6 +6,19 @@
  *
  * 布局（方案 §8.1）：顶部工具条 / 左栏本场信息（可折叠）/ 中栏对话区 / 底部上下文占用。
  * 遵守项目约定：弹窗用共享 Modal，按钮用 Button，禁 window.confirm（用 confirmDialog），提示用 showToast。
+ *
+ * 【D4-3 拆分（2026-09-19）】原 1,011 行单文件按「一块职责一个文件」切开，手法是**只搬不改**：
+ *   · `TavernPlotScenes.tsx`    — 左栏情景一览 + 本场信息栏（纯展示）；
+ *   · `TavernPlotChat.tsx`      — 中栏对话区 + 输入区（纯展示）；
+ *   · `usePlotSummary.ts`       — 本场记忆整理（🔴 只有手动入口，无自动整理）；
+ *   · `usePlotCheckpoints.ts`   — 检查点 / 回滚 / 撤销；
+ *   · 本文件保留会话生命周期、AI 回合（send / reroll）、消息级操作与装配。
+ * 展示件的 props 名与原局部变量**同名**、hook 侧同名解构 ⇒ 被搬走的 JSX 与语句逐字未改。
+ *
+ * 🔴 留在本文件、别顺手挪走的三件事：
+ *   · **贴底跟随**（`scrollRef`/`atBottom`）与切会话同拍，挪进子组件会改变 effect 时序；
+ *   · **切会话中止在途生成**（`abortRef` 兼作代次令牌，send 据此判定自己是否已过期）；
+ *   · **分支 `branchAt`**（要新建会话、改左栏选中，不只是检查点操作）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
@@ -16,143 +29,34 @@ import { Button } from './Button'
 import TavernPlotSetup, { type TavernDraft } from './TavernPlotSetup'
 import TavernCastSetting from './TavernCastSetting'
 import TavernCastDirector from './TavernCastDirector'
-import TavernMessageBody from './TavernMessageBody'
-import Avatar from './Avatar'
 import PromptModal from './PromptModal'
-import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
 import TavernEchoHints from './TavernEchoHints'
-import TavernDirectorNoteBar from './TavernDirectorNoteBar'
 import TavernExportDialog from './TavernExportDialog'
 import TavernUsageDialog from './TavernUsageDialog'
-import { renderTavernMessage } from './TavernMessage'
-import AutoTextarea from './AutoTextarea'
 import * as store from '../lib/tavern/store'
 import { runPlotTurn, splitCast } from '../lib/tavern/engine'
 import { generateReport } from '../lib/tavern/report'
 import { buildOpeningMessage } from '../lib/tavern/prompt'
 import { plotDocModel } from '../lib/tavern/exportDoc'
 import { messagesLen } from '../lib/tavern/budget'
-import { getTavernSettings, type TavernSettings } from '../lib/tavern/settings'
-import { summarizeMemory } from '../lib/tavern/summarize'
-import {
-  messagesAfterWatermark, nextWatermark, memoryToText, parseMemoryText,
-  limitsOf, acquireSummaryLock, releaseSummaryLock,
-} from '../lib/tavern/memory'
 import { uid } from '../lib/id'
-import { MEMORY_SOFT_LIMIT, hasCastSetting, talkBandOf, talkativityOf } from '../lib/tavern/types'
+import { hasCastSetting } from '../lib/tavern/types'
 import type { TavernSession, TavernSessionIndexItem, TavernMessage, TavernDirectorNote } from '../lib/tavern/types'
 import type { PostApplied } from '../lib/tavern/postRules'
-
-
-/**
- * 本场背景（喂给总结提示词）。
- * 不给的话模型只能凭对话臆断这是哪一场、在哪、要干什么 —— 与自由模式「不给角色背景就漂移」同理。
- */
-function plotCharContext(s: TavernSession): string {
-  return [
-    s.title && `本场推演：${s.title}`,
-    s.anchorChapterLabel && `叙事锚点：接在「第 ${s.anchorChapterLabel} 章」之后`,
-    s.scene?.place && `地点：${s.scene.place}`,
-    s.scene?.time && `时间：${s.scene.time}`,
-    s.scene?.description && `开场情形：${s.scene.description}`,
-  ].filter(Boolean).join('\n')
-}
+import { usePlotSummary } from './usePlotSummary'
+import { usePlotCheckpoints } from './usePlotCheckpoints'
+import { PlotSessionList, PlotInfoPanel } from './TavernPlotScenes'
+import { PlotChat } from './TavernPlotChat'
 
 export default function TavernPlot() {
   const [list, setList] = useState<TavernSessionIndexItem[]>([])
   const [activeId, setActiveId] = useState('')
   const [session, setSession] = useState<TavernSession | null>(null)
-  /** 正在整理本场记忆（按钮转圈用） */
-  const [summarizing, setSummarizing] = useState(false)
-  /** 整理记忆的取消把手（2026-09-19 六维审计 P2-7：`signal` 早就下传了，只是从没接过） */
-  const sumCtlRef = useRef<AbortController | null>(null)
-
-  // ---------- 本场记忆整理 ----------
-  /**
-   * 整理「本场记忆」。
-   *
-   * 🔴 剧情记忆是**会话级**的：记的是"这一场推演发生了什么"，随会话走，
-   *    也随检查点 / 回滚 / 分支一起还原（见 store 的 rollbackToCheckpoint、branchSession）。
-   *    与自由模式的**角色级**记忆（按角色存、跨会话共享）是两条线，别混。
-   *
-   * 🔴 **只由作者手动触发**（2026-09-16 起；原先还有一条「攒够条数自动整理」，已整层废除）。
-   *    所以这里没有 `manual` 开关、也不看条数阈值 —— 作者点了就该跑。
-   *    参数沿用控制面板里那一组记忆参数，不另开设置项。
-   */
-  const runPlotSummary = useCallback(async (s: TavernSession) => {
-    const pending = messagesAfterWatermark(s.messages, s.watermark)
-    if (pending.length === 0) {
-      showToast('还没有新内容可整理', 'info')
-      return
-    }
-    let st: TavernSettings
-    try {
-      st = await getTavernSettings()
-    } catch {
-      showToast('读设置失败，无法整理记忆', 'error')
-      return
-    }
-    if (!acquireSummaryLock(Date.now(), st.free.summaryLockTtlMin * 60_000)) {
-      showToast('另一个窗口正在整理记忆', 'info')
-      return
-    }
-    const ctl = new AbortController()
-    sumCtlRef.current = ctl
-    setSummarizing(true)
-    try {
-      // 记忆被判「整份退化」时照样如实说：档案已回退旧值，不能报「已更新」
-      const degraded: string[] = []
-      const aiNames = splitCast(s.cast).ai.map(c => c.name)
-      const mem = await summarizeMemory({
-        charId: s.id,
-        charName: aiNames.length === 1 ? aiNames[0] : '本场角色',
-        // 旧档案：session.memory 存的是六栏文本，先反解析回结构（解析不出就当没有旧档案）
-        prev: s.memory ? parseMemoryText(s.memory, s.id, null) : null,
-        messages: pending,
-        charContext: plotCharContext(s),
-        providerId: st.free.summaryProviderId || undefined,
-        // hardLimit 一并传：否则剧情推演这边也永远走内置 3000（审计 P1-1）
-        limits: limitsOf({ longTermLimit: st.free.longTermLimit, diaryDays: st.free.diaryDays, hardLimit: st.free.hardLimit }),
-        onDegraded: (reason: string) => degraded.push(reason),
-        signal: ctl.signal,
-      })
-      const wm = nextWatermark(s)
-      const updated: TavernSession = {
-        ...s,
-        memory: memoryToText(mem),
-        watermark: wm ?? s.watermark,
-        updatedAt: Date.now(),
-      }
-      await store.saveSession(updated)
-      setSession(cur => (cur && cur.id === updated.id ? updated : cur))
-      showToast(
-        degraded.length
-          ? `本场记忆未更新：${degraded[0]}`
-          : `本场记忆已更新（${(updated.memory ?? '').length} 字）`,
-        degraded.length ? 'info' : 'success',
-      )
-    } catch (e) {
-      // 总结失败 / 被中止**都保留旧档案**：绝不写入半截结果（与自由模式同一原则）
-      const aborted = /取消|abort/i.test(e instanceof Error ? e.message : String(e))
-      showToast(
-        aborted ? '已中止整理 —— 本场记忆保持原样' : '整理本场记忆失败：' + (e instanceof Error ? e.message : String(e)),
-        aborted ? 'info' : 'error',
-      )
-    } finally {
-      sumCtlRef.current = null
-      releaseSummaryLock()
-      setSummarizing(false)
-    }
-  }, [])
-
-  /** 中止整理（旧档案保持原样，不写入半截结果） */
-  const stopSummary = useCallback(() => { sumCtlRef.current?.abort() }, [])
-
+  // ---- 本场记忆整理（D4-3 拆出，同名解构接回；下游一个字没改）----
+  // 🔴 只有手动入口，没有自动整理；失败/中止一律保留旧档案
+  const { summarizing, runPlotSummary, stopSummary } = usePlotSummary({ setSession })
   const [setupOpen, setSetupOpen] = useState(false)
   const [showInfo, setShowInfo] = useState(true)
-  /** 左栏情景列表的筛选词（场次多了靠它找，不必滚动） */
-  const [pickQuery, setPickQuery] = useState('')
-
   const [input, setInput] = useState('')
   /** B3：上一轮后处理实际改了什么（空 = 一个字没改） */
   const [postNotice, setPostNotice] = useState<{ applied: PostApplied[]; errors: string[] }>({ applied: [], errors: [] })
@@ -160,8 +64,7 @@ export default function TavernPlot() {
   const [streamText, setStreamText] = useState('')
   const [phase, setPhase] = useState('')
   const [busyReport, setBusyReport] = useState(false)
-  /** 「存检查点」的命名弹窗（null = 关着） */
-  const [cpNaming, setCpNaming] = useState(false)
+
   /** 「在场调度」弹窗（静音 / 健谈度，A6） */
   const [directorOpen, setDirectorOpen] = useState(false)
   /** 导出文档弹窗（B5） */
@@ -404,48 +307,9 @@ export default function TavernPlot() {
     showToast(`已分支：${next.title}`)
   }
 
-  const saveCheckpoint = () => {
-    if (!session) return
-    setCpNaming(true)
-  }
-
-  const commitCheckpoint = (label: string) => {
-    setCpNaming(false)
-    if (!session) return
-    void commit(store.addCheckpoint(session, label))
-    showToast(`已存检查点（第 ${session.messages.length} 条），之后随时可以回到这里`, 'info')
-  }
-
-  const rollbackTo = async (cpId: string) => {
-    if (!session || streaming) return
-    const cp = (session.checkpoints ?? []).find(c => c.id === cpId)
-    if (!cp) return
-    const name = cp.label || `第 ${cp.messageCount} 条`
-    const okGo = await confirmDialog({
-      title: `回到「${name}」？`,
-      message: [
-        `消息会截回 ${cp.messageCount} 条，本场记忆与记忆水位线也一并还原到那一刻。`,
-        '回滚前会自动留一份当前进度 —— 不满意可以点「撤销上次回滚」退回来。',
-      ].join('\n'),
-      confirmText: '回到这里',
-    })
-    if (!okGo) return
-    const next = store.rollbackToCheckpoint(session, cpId)
-    if (!next) return
-    void commit(next)
-    showToast(`已回到「${name}」（可撤销）`)
-  }
-
-  const undoRollback = () => {
-    if (!session?.undoSnapshot) return
-    void commit(store.undoRollback(session))
-    showToast('已撤销这次回滚')
-  }
-
-  const dropCp = (cpId: string) => {
-    if (!session) return
-    void commit(store.dropCheckpoint(session, cpId))
-  }
+  // ---- 检查点 / 回滚（D4-3 拆出，同名解构接回）----
+  const { cpNaming, setCpNaming, saveCheckpoint, commitCheckpoint, rollbackTo, undoRollback, dropCp } =
+    usePlotCheckpoints({ session, streaming, commit })
 
   /**
    * 重说：`runPlotTurn(session, null)` = 不追加用户消息、先丢掉末尾那条 assistant，
@@ -478,42 +342,6 @@ export default function TavernPlot() {
       setStreamText('')
       abortRef.current = null
     }
-  }
-
-  /**
-   * 快捷指令条：走协议 R4 的**导演指令**通道（「」= 照做然后继续演），所以不必改引擎。
-   * 好处是它不污染「角色说过的话」这层语义 —— 不会被当成台词记进记忆。
-   *
-   * 🔴 点击**只填进输入框、不直接发送**（2026-09-15 改）—— 这些指令几乎都要作者改一处，
-   *    直接发出去等于替作者作了决定。带 slot 的（推进时间）会把那一段选中，直接改即可。
-   */
-  const quickActions: QuickAction[] = [
-    { key: 'cont', label: '继续', hint: '让 AI 顺着往下演一轮', text: '「继续，不必解释。」' },
-    { key: 'turn', label: '换个方向', hint: '这一轮换一种走向，不要重复刚才的写法', text: '「换一个方向演这一轮，不要重复刚才的走向。」' },
-    { key: 'env', label: '补环境', hint: '先补一句（ ）里的环境（光、声、气味），再接着说', text: '「先说一句（ ）里的环境（光、声、气味），再继续。」' },
-    { key: 'time', label: '推进时间', hint: '把时间往前推 —— 填进输入框后自己改成需要的时长', text: '「把时间往前推进 半小时，然后继续。」', slot: '半小时' },
-    { key: 'wind', label: '收束本场', hint: '给这一幕一个可以停下的落点', text: '「把这一幕收一收，落到一个可以停下的地方。」' },
-    { key: 'mind', label: 'Ta 在想什么', hint: '用一个动作或细节透出心里的想法，不直接写心理', text: '「用一个动作或细节写出 Ta 此刻心里在想什么，不要直接写心理。」' },
-    { key: 'reroll', label: '重说', hint: '用同一段历史让 AI 重说这一条（只出一个结果）', run: () => void reroll() },
-  ]
-
-  /** 输入框 ref：预填后要聚焦并把「该改的那一段」选中 */
-  const inputRef = useRef<HTMLTextAreaElement | null>(null)
-
-  /**
-   * 快捷指令预填：把预制文本填进输入框、聚焦，并把该改的那段选中（不发送）。
-   * ⚠️ 选区要等 React 把新值渲染进 textarea 之后再设 —— 同步 setState 后立刻设会选到旧值。
-   */
-  const fillInput = (text: string, slot?: string) => {
-    setInput(text)
-    requestAnimationFrame(() => {
-      const el = inputRef.current
-      if (!el) return
-      el.focus()
-      const i = slot ? text.indexOf(slot) : -1
-      if (i >= 0) el.setSelectionRange(i, i + slot!.length)
-      else el.setSelectionRange(text.length, text.length)
-    })
   }
 
   const stop = () => {
@@ -560,20 +388,6 @@ export default function TavernPlot() {
    * 真实占用（含协议 / 设定层 / 背景设定 / 记忆）在「用量明细」里按真实组装量。
    */
   const dialogChars = session ? messagesLen(session.messages) : 0
-
-  /** 左栏情景列表：按筛选词过滤（标题 / 参演角色 / 锚点章名都算命中） */
-  const sessionRows = useMemo(() => {
-    const q = pickQuery.trim().toLowerCase()
-    if (!q) return list
-    return list.filter(s =>
-      `${s.title} ${s.castBrief} ${s.anchorTitle}`.toLowerCase().includes(q))
-  }, [list, pickQuery])
-
-  /** 列表里的日期小字（只到「几月几日」，同年不写年） */
-  const fmtDay = (ts: number) => {
-    const d = new Date(ts)
-    return `${d.getMonth() + 1}/${d.getDate()}`
-  }
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
@@ -629,46 +443,12 @@ export default function TavernPlot() {
       {/* ---------- 主体：左＝推演情景一览；右＝本场信息 + 对话区 ---------- */}
       <div className="flex flex-1 min-h-0 gap-3 pt-3">
         {/* 左栏：推演情景（全部场次一览，点一下就切 —— 不再用下拉菜单挑） */}
-        <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
-          <Button variant="primary" size="md" className="w-full" onClick={() => setSetupOpen(true)}>＋ 新建推演</Button>
-          {list.length > 4 && (
-            <input
-              className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
-              placeholder="筛选（标题 / 角色 / 锚点）"
-              value={pickQuery}
-              onChange={e => setPickQuery(e.target.value)}
-            />
-          )}
-          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-            {sessionRows.map(s => {
-              const active = s.id === activeId
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setActiveId(s.id)}
-                  className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-                    active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
-                  }`}
-                >
-                  <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-200'}`}>{s.title}</div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <span className="truncate text-10 text-ink-500">
-                      {s.mode === 'immersive' ? '沉浸' : '导演'} · {s.castBrief || '未分配角色'}
-                    </span>
-                    <span className="shrink-0 text-10 text-ink-600">{fmtDay(s.updatedAt)}</span>
-                  </div>
-                </button>
-              )
-            })}
-            {sessionRows.length === 0 && (
-              <p className="px-1 py-2 text-11 leading-relaxed text-ink-500">
-                {list.length === 0 ? '还没有推演 —— 点上面「新建推演」开一场。' : '没有匹配的推演。'}
-              </p>
-            )}
-          </div>
-          <div className="shrink-0 border-t border-ink-800 pt-2 text-10 text-ink-500">共 {list.length} 场</div>
-        </aside>
+        <PlotSessionList
+          list={list}
+          activeId={activeId}
+          setActiveId={setActiveId}
+          setSetupOpen={setSetupOpen}
+        />
 
         {!session ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border border-ink-800">
@@ -685,263 +465,50 @@ export default function TavernPlot() {
           <>
           {/* 本场信息（可收起） */}
           {showInfo && (
-            <aside className="w-64 shrink-0 overflow-y-auto rounded-lg border border-ink-800 bg-ink-850/40 p-3 space-y-3">
-              <div>
-                <div className="text-11 text-ink-500">叙事锚点</div>
-                <div className="text-12 text-ink-200 mt-0.5">{session.anchorChapterLabel || '（未标注）'}</div>
-              </div>
-              <div>
-                <div className="text-11 text-ink-500">信息边界</div>
-                <div className="text-12 text-ink-200 mt-0.5">
-                  {session.mode === 'immersive' ? '沉浸推演（只带角色常识）' : '导演推演（可参照大纲，仍截到锚点）'}
-                </div>
-              </div>
-              <div>
-                <div className="text-11 text-ink-500">角色分配</div>
-                <ul className="mt-1 space-y-1">
-                  {casts.user.map(c => (
-                    <li key={c.cardId} className="flex items-center gap-1.5">
-                      <span className="flex-1 min-w-0 truncate text-12 text-amber">你演 · {c.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => setCastEdit({ cardId: c.cardId, name: c.name, kind: 'user' })}
-                        className={`shrink-0 text-11 hover:text-amber ${castFilled[c.cardId] ? 'text-amber/80' : 'text-ink-500'}`}
-                        title="扮演设定：口吻 / 称呼 / 知识边界 / 底线…">
-                        {castFilled[c.cardId] ? '已设定' : '设定'}
-                      </button>
-                    </li>
-                  ))}
-                  {casts.ai.map(c => {
-                    const mutedNow = (session.muted ?? []).includes(c.cardId)
-                    const band = talkBandOf(talkativityOf(session, c.cardId))
-                    return (
-                    <li key={c.cardId} className="flex items-center gap-1.5">
-                      <span className={"flex-1 min-w-0 truncate text-12 " + (mutedNow ? "text-ink-500" : "text-ink-200")}>
-                        AI 演 · {c.name}
-                        {mutedNow
-                          ? <span className="ml-1 text-10 text-ink-600">已静音</span>
-                          : band.name !== '均衡' && <span className="ml-1 text-10 text-ink-500">{band.name}</span>}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setCastEdit({ cardId: c.cardId, name: c.name, kind: 'ai' })}
-                        className={`shrink-0 text-11 hover:text-amber ${castFilled[c.cardId] ? 'text-amber/80' : 'text-ink-500'}`}
-                        title="扮演设定：口吻 / 称呼 / 知识边界 / 底线…">
-                        {castFilled[c.cardId] ? '已设定' : '设定'}
-                      </button>
-                    </li>
-                    )
-                  })}
-                  {casts.silent.map(c => <li key={c.cardId} className="text-12 text-ink-500">在场 · {c.name}</li>)}
-                </ul>
-                {casts.ai.length > 1 && (
-                  <Button
-                    variant="secondary" size="sm" className="mt-1.5 w-full"
-                    onClick={() => setDirectorOpen(true)}
-                    title="静音（在场但不发言）与健谈度：只影响提示词怎么写，不改角色卡"
-                  >
-                    在场调度（静音 / 健谈度）
-                  </Button>
-                )}
-                <p className="mt-1.5 text-10 text-ink-500 leading-relaxed">
-                  AI 演的角色建议填一填「扮演设定」—— 它管的是口吻与底线，比堆设定更能演得像。
-                </p>
-              </div>
-              {(session.scene.place || session.scene.time || session.scene.description) && (
-                <div>
-                  <div className="text-11 text-ink-500">场景</div>
-                  <div className="text-12 text-ink-300 mt-0.5 leading-relaxed">
-                    {[session.scene.place, session.scene.time].filter(Boolean).join(' · ')}
-                    {session.scene.description && <div className="mt-0.5">{session.scene.description}</div>}
-                  </div>
-                </div>
-              )}
-              {/* 本场记忆：会话级（这一场推演发生了什么），随检查点 / 回滚 / 分支一起还原 */}
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-11 text-ink-500">
-                    本场记忆{session.memory ? `（${session.memory.length} 字）` : ''}
-                  </span>
-                  <Button variant="secondary" size="xs" disabled={summarizing}
-                    onClick={() => void runPlotSummary(session)}
-                    title="把水位线之后的新对话整理进本场记忆。没有自动整理 —— 想更新就点这里"
-                  >
-                    {summarizing ? '整理中…' : session.memory ? '重新整理' : '整理本场记忆'}
-                  </Button>
-                  {/* 27B 上整理一次要几十秒到几分钟，给一条退路（中止后旧档案原样保留） */}
-                  {summarizing && (
-                    <Button variant="secondary" size="xs" onClick={stopSummary} title="停止整理：本场记忆保持原样">
-                      中止
-                    </Button>
-                  )}
-                </div>
-                {session.memory ? (
-                  <div className="mt-0.5 text-11 text-ink-400 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{session.memory}</div>
-                ) : (
-                  <p className="mt-1 text-10 text-ink-600 leading-relaxed">
-                    还没有本场记忆。点上面的「整理本场记忆」才会生成 —— 不会自动整理。
-                    它会随检查点与回滚一起还原，分支时按分叉点重算 —— 所以分支不会"记得还没发生的事"。
-                  </p>
-                )}
-              </div>
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-11 text-ink-500">检查点（{(session.checkpoints ?? []).length}）</span>
-                  <Button variant="secondary" size="xs"
-                    onClick={() => saveCheckpoint()}
-                  >
-                    ＋ 存一个
-                  </Button>
-                </div>
-                {(session.checkpoints ?? []).length === 0 ? (
-                  <p className="mt-1 text-10 text-ink-600 leading-relaxed">
-                    还没有检查点。存一个之后，后面无论聊成什么样都能回到那一刻 ——
-                    消息与本场记忆一起还原，而且可以撤销。
-                  </p>
-                ) : (
-                  <ul className="mt-1 space-y-1">
-                    {[...(session.checkpoints ?? [])].sort((a, b) => b.at - a.at).map(cp => (
-                      <li key={cp.id} className="flex items-center gap-1.5">
-                        <span
-                          className="min-w-0 flex-1 truncate text-11 text-ink-300"
-                          title={`第 ${cp.messageCount} 条 · ${new Date(cp.at).toLocaleString()}`}
-                        >
-                          {cp.label || `第 ${cp.messageCount} 条`}
-                        </span>
-                        <Button variant="secondary" size="xs"
-                          onClick={() => void rollbackTo(cp.id)} className="shrink-0"
-                        >
-                          回到这里
-                        </Button>
-                        <Button variant="danger" size="xs"
-                          title="删掉这个检查点（不影响对话）"
-                          onClick={() => dropCp(cp.id)} className="shrink-0"
-                        >
-                          ×
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {session.undoSnapshot && (
-                  <Button variant="secondary" size="xs" className="mt-1.5 w-full" onClick={undoRollback}>
-                    ↩ 撤销上次回滚（{new Date(session.undoSnapshot.at).toLocaleTimeString()}）
-                  </Button>
-                )}
-              </div>
-              <Button variant="danger" size="md" className="w-full" onClick={removeSession}>删除这场推演</Button>
-            </aside>
+            <PlotInfoPanel
+              session={session}
+              casts={casts}
+              castFilled={castFilled}
+              setCastEdit={setCastEdit}
+              setDirectorOpen={setDirectorOpen}
+              summarizing={summarizing}
+              runPlotSummary={runPlotSummary}
+              stopSummary={stopSummary}
+              saveCheckpoint={saveCheckpoint}
+              rollbackTo={rollbackTo}
+              dropCp={dropCp}
+              undoRollback={undoRollback}
+              removeSession={removeSession}
+            />
           )}
 
           {/* 中栏：对话区 */}
-          <div className="flex flex-1 min-w-0 flex-col rounded-lg border border-ink-800 overflow-hidden">
-            <div className="relative flex-1 min-h-0">
-            <div ref={scrollRef} onScroll={updateAtBottom} className="absolute inset-0 overflow-y-auto p-4 space-y-4">
-              {session.messages.length === 0 && (
-                <div className="text-center text-12 text-ink-500 py-10">
-                  还没有对话。在下面输入你的第一句话开演。
-                </div>
-              )}
-              {session.messages.map(m => (
-                <div key={m.id} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
-                  {/* 头像规则与自由对话一致：多角色同场必须挂，否则分不清谁在说。
-                      ⚠️ 剧情模式的角色是**项目角色卡**（CardRecord 没有头像字段），所以这里
-                      只会渲染出「名字首字」圆标 —— 角色卡有了头像列之后把 src 接上即可。 */}
-                  {m.role !== 'user' && casts.ai.length > 1 && (
-                    <Avatar name={castNameOf(m.speakerId) || '?'} size={24} className="mt-0.5" />
-                  )}
-                  {/* 两侧都不带外框（老大 2026-09-15 定）：用户那侧靠右对齐 + 头像区分。 */}
-                  <div className={m.role === 'user'
-                    ? 'max-w-[80%] space-y-1'
-                    : 'max-w-[85%] space-y-1'}>
-                    {m.role !== 'user' && casts.ai.length > 1 && m.speakerId && (
-                      <div className="text-11 text-amber">{castNameOf(m.speakerId)}</div>
-                    )}
-                    <TavernMessageBody
-                      content={m.content} hidden={m.hidden} edited={m.edited}
-                      ops={{
-                        canReroll: m.id === lastAiId && !streaming,
-                        busy: streaming,
-                        onReroll: () => void reroll(),
-                        onSaveEdit: t => saveEdited(m.id, t),
-                        onToggleHidden: () => toggleHidden(m.id),
-                        onDelete: () => void removeMsg(m.id),
-                        onBranch: () => void branchAt(m.id),
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-              {streaming && (
-                <div className="max-w-[85%] space-y-1">
-                  {streamText
-                    ? renderTavernMessage(streamText)
-                    : <div className="text-12 text-ink-500">{phase || '正在生成…'}</div>}
-                </div>
-              )}
-            </div>
-            {!atBottom && (
-              <button
-                type="button"
-                onClick={() => scrollToBottom()}
-                title="回到底部（看历史时一键回到最新消息）"
-                className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-11 text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700"
-              >
-                ↓ 回到底部
-              </button>
-            )}
-            </div>
-
-            {/* 输入区 */}
-            <div className="border-t border-ink-800 p-3">
-              <TavernDirectorNoteBar
-                note={session.directorNote}
-                postApplied={postNotice.applied}
-                postErrors={postNotice.errors}
-                disabled={streaming}
-                onSave={n => void applyDirectorNote(n)}
-                onClear={() => void applyDirectorNote(null)}
-              />
-              <TavernQuickBar actions={quickActions} disabled={streaming} onFill={fillInput} className="mb-2" />
-              <AutoTextarea
-                className="bg-ink-900 border border-ink-700 rounded-md px-3 py-2 text-ink-100 outline-none focus:border-amber/50"
-                textClass="text-13"
-                minRows={3}
-                maxHeight={200}
-                placeholder={casts.user.length
-                  ? '以你的角色身份说一句话、做一个动作…（Enter 发送，Shift+Enter 换行）'
-                  : '这一场没有你演的角色 —— 可以以旁白或任意角色的身份推进…（Enter 发送，Shift+Enter 换行）'}
-                value={input}
-                disabled={streaming}
-                inputRef={inputRef}
-                onChange={setInput}
-                onKeyDown={e => {
-                  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
-                  e.preventDefault()
-                  void send()
-                }}
-              />
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-11 text-ink-500">
-                  对话消息 {dialogChars} 字
-                  {session.memory ? ` · 记忆 ${session.memory.length}/${MEMORY_SOFT_LIMIT} 字` : ''}
-                  <button
-                    type="button"
-                    onClick={() => setUsageOpen(true)}
-                    className="ml-2 text-amber/80 hover:text-amber underline decoration-dotted"
-                    title="按真实组装量一遍：协议 / 设定层 / 背景设定 / 记忆各占多少，留给对话历史多少"
-                  >
-                    用量明细
-                  </button>
-                </span>
-                <div className="flex gap-2">
-                  {streaming
-                    ? <Button variant="secondary" size="md" onClick={stop}>停止</Button>
-                    : <Button variant="primary" size="md" disabled={!input.trim()} onClick={() => void send()}>发送</Button>}
-                </div>
-              </div>
-            </div>
-          </div>
+          <PlotChat
+            session={session}
+            casts={casts}
+            castNameOf={castNameOf}
+            lastAiId={lastAiId}
+            streaming={streaming}
+            streamText={streamText}
+            phase={phase}
+            postNotice={postNotice}
+            input={input}
+            setInput={setInput}
+            dialogChars={dialogChars}
+            scrollRef={scrollRef}
+            atBottom={atBottom}
+            updateAtBottom={updateAtBottom}
+            scrollToBottom={scrollToBottom}
+            reroll={reroll}
+            saveEdited={saveEdited}
+            toggleHidden={toggleHidden}
+            removeMsg={removeMsg}
+            branchAt={branchAt}
+            applyDirectorNote={applyDirectorNote}
+            send={send}
+            stop={stop}
+            setUsageOpen={setUsageOpen}
+          />
           </>
         )}
       </div>
