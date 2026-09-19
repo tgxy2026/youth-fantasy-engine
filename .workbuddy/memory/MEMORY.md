@@ -71,7 +71,7 @@
 ## 服务器·工程质量
 - 三步基线：`tsc --noEmit`／`eslint src`（**0 problem**）／`node tests/run-all.mjs`（别用 `npm run verify`，沙箱会拦）。⚠️ exhaustive-deps 别盲改。
 - 🔴 实机走 skill `novel-studio-ui-livecheck`；**子代理结论必回源码验**。
-- ✅ **巨型组件已全拆**（`docs/2.2.1-巨型组件拆分*`）：手法＝**量化依赖→ 状态搬进 `useXxxModel` → 子组件只收 `model` → 实机指纹＋负面对照**；清导入用 `prune-unused.mjs`。🔴 hook 含 JSX 须 `.tsx`；共享件落第三个文件。
+- ✅ **巨型组件拆分**（`docs/2.2.1-*`·`2.3.0-D4-*`）：手法＝**量化依赖→ 状态搬进 `useXxxModel` → 子组件只收 `model` → 实机指纹＋负面对照**；清导入用 `prune-unused.mjs`。🔴 hook 含 JSX 须 `.tsx`；共享件落第三个文件。
 
 ## 酒馆模式
 - 🔴🔴 动酒馆前必读 `docs/酒馆模式-工程红线.md`（18 节）。
