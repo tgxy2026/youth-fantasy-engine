@@ -3,6 +3,7 @@
  *
  * **两种起点**（2026-09-19 融合「AI 一键续写 + 设定补完」后）：
  * - `scratch`（从一句话想法从零写）：种子 → ①设定奠基 → **闸门①** → ②分卷大纲 → **闸门②** → ③逐章连写
+ *   产出目标（`target`）在**起点**就定：「只做大纲规划」到闸门②确认即收工，正文阶段整段跳过。
  * - `continue`（接着项目已有内容往下写）：③逐章连写（设定补完按策略在每章末尾自动进行）
  *
  * 为什么合成一个编排器而不是两套：两条路线的**第③步是同一件事** —— 都是"按已有设定与上一章结尾
@@ -206,6 +207,15 @@ export interface CreativeWritingOptions {
   targetWords?: number
   /** 分几卷（默认 1；仅 `scratch` 起点的分卷大纲阶段用） */
   volumes?: number
+  /**
+   * 产出目标（仅「从一句话创作」有意义）：
+   *   `'full'`（默认）＝ 设定 → 大纲 → 逐章连写正文；
+   *   `'outline'`      ＝ 只做设定与分卷大纲，**正文一个字都不写**。
+   *
+   * 为什么在起点定、而不是到闸门②再问：作者开跑前就知道自己要什么，不该被逼在
+   * 看不到成品的时候猜。闸门只留「确认 / 放弃」。
+   */
+  target?: 'outline' | 'full'
   /** 连写时的设定更新策略（默认 add-only）。`confirm` 会走 `onSettingsCandidates` 征询作者 */
   strategy?: ContinueStrategy
   /** 连写时生成初稿后自动去 AI 味儿（可选） */
@@ -215,15 +225,13 @@ export interface CreativeWritingOptions {
   /** 闸门①：设定草稿审阅。返回用户勾选的条目；**返回 null = 放弃整条流程** */
   onBibleGate?: (bundle: DraftBundle) => Promise<DraftRow[] | null>
   /**
-   * 闸门②：大纲审阅。三种决定：
-   *   `true`           = 落库大纲 + 逐章连写正文（默认）
-   *   `'outline-only'` = **只落库大纲，不写正文**（需求里的"只生成大纲"分支）
-   *   `false`          = 放弃整条流程（不留半成品）
+   * 闸门②：大纲审阅。`true` = 落库大纲并继续；`false` = 放弃整条流程（不留半成品）。
    *
-   * 为什么决策放在这个闸门、而不是开跑前先选：作者是**看完大纲**才谈得上要不要正文
-   * —— 先让他选，等于逼他在看不到成品的情况下猜。少跑一次连写不省时间，写歪了才费时间。
+   * 🔴 「要不要正文」**不在这里问**（2026-09-19 起）：它是起点的产出目标（`opts.target`），
+   *    开跑前就定了。原先放在这里让作者「看完大纲再选」，等于把目标决策塞进确认动作里 ——
+   *    确认框只该做确认 / 放弃两件事。
    */
-  onOutlineGate?: (outline: OutlineResult) => Promise<boolean | 'outline-only'>
+  onOutlineGate?: (outline: OutlineResult) => Promise<boolean>
   onProgress?: (p: FlowProgress) => void
   onChapterSaved?: (ch: { id: string; title: string; no: number }) => void
   onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
@@ -250,9 +258,9 @@ export interface CreativeWritingResult {
   outlineCommit: OutlineCommitOutcome | null
   chapters: { id: string; title: string; no: number }[]
   /**
-   * 用户在闸门②选了「只生成大纲」—— 正文一个字没写，`chapters` 必为空。
+   * 起点选了「只做大纲规划」—— 正文一个字没写，`chapters` 必为空。
    * 单独立一个字段而不是让调用方靠 `chapters.length === 0` 猜：那两种情况
-   * （"选了不写"与"想写但一章都没成功"）在结果里长得一模一样，界面文案必须分开。
+   * （"只要大纲"与"想写但一章都没成功"）在结果里长得一模一样，界面文案必须分开。
    */
   outlineOnly: boolean
 }
@@ -342,13 +350,15 @@ export async function runCreativeWriting(
     })
     if (!outline.chapters.length) throw new Error('模型没有产出章节细纲，请重试或换一个更大的模型')
     ctx.report(1, `${outline.volumes.length} 卷 / ${outline.chapters.length} 章，等待确认…`)
-    const decision = opts.onOutlineGate ? await opts.onOutlineGate(outline) : true
-    if (!decision) giveUp()
+    const ok = opts.onOutlineGate ? await opts.onOutlineGate(outline) : true
+    if (!ok) giveUp()
     const outlineCommit = await commitOutline(outline, { signal: ctx.signal })
-    // 「只生成大纲」：大纲照常落库，但连写阶段不跑。用 skipRest 而不是"不登记 draft"——
-    // 决策发生在流程跑到一半时，那时阶段表早已定好；也不能记成 done（界面会谎称正文写完了）。
-    if (decision === 'outline-only') ctx.skipRest('（已选择：只生成大纲）')
-    return { outline, outlineCommit, outlineOnly: decision === 'outline-only' }
+    // 「只做大纲规划」：设定与大纲照常落库，连写阶段整段跳过。
+    // 用 skipRest 而不是"不登记 draft"—— 目标在起点就定好了，阶段表早已定好；
+    // 也不能记成 done（界面会谎称正文写完了）。
+    const outlineOnly = (opts.target ?? 'full') === 'outline'
+    if (outlineOnly) ctx.skipRest('（已选择：只做大纲规划）')
+    return { outline, outlineCommit, outlineOnly }
   })
 
   // ---- 阶段③：逐章连写（**两种起点共用同一实现**，这是融合的关键）----

@@ -845,7 +845,7 @@ export const TABS: TabDef[] = [
   // 「灵感工具」下拆出的两个子页签：与「开书定位」的作品定位/世界设定/力量体系同构（同一 group 下的独立页签，Sidebar 自动列在分组标题下）
   {
     id: 'inspire-tools', name: '灵感启发', group: '灵感工具', type: 'inspire',
-    description: '随机取名生成器、AI 辅助规划（脑暴）。原「AI 一键续写 + 设定补完」已并入「创意写作」（选「接着已有内容写」起点）。模型与联网检索在「工作面板 → 模型设置」。',
+    description: '随机取名生成器（人名 / 门派 / 功法 / 地名等，无需模型即可用）与 AI 辅助规划（多轮对话式脑暴：剧情 / 人物 / 世界观 / 一致性自查）。',
   },
   {
     id: 'bookbreak', name: '一键拆书', group: '灵感工具', type: 'bookbreak',

@@ -119,7 +119,7 @@ ok('AI 伴写：点明了精选设定只有 4 类且不含章节目录',
 // 拆书与创意写作都支持云端模型（作者选了云端，内容就会离开本机）。
 // 笼统一句「全程本地模型，不外发」是**误导性声明**：作者据此决定要不要用它拆自己没发表的稿子时，
 // 会得到一个错误的安心。这里锁住"发给当前选定的模型"这个诚实口径，防止将来又被写回去。
-for (const id of ['bookbreak', 'creative-writing']) {
+for (const id of ['bookbreak', 'creative-writing', 'chapter-rewrite']) {
   const f = AI_DATA_SOURCES[id]
   const says = (f.excludes ?? []).join(' ／ ')
   ok(`🔴 ${id}：说明的是「发给当前选定的模型」，不是笼统的"不外发"`,
@@ -127,9 +127,15 @@ for (const id of ['bookbreak', 'creative-writing']) {
     says || '(excludes 为空)')
 }
 
-ok('创意写作：写清了「只保存大纲」不写正文这条边界',
-  !!AI_DATA_SOURCES['creative-writing'].excludes?.some(x => x.includes('只保存大纲')),
+ok('创意写作：写清了「只做大纲规划」不写正文这条边界',
+  !!AI_DATA_SOURCES['creative-writing'].excludes?.some(x => x.includes('只做大纲规划')),
   JSON.stringify(AI_DATA_SOURCES['creative-writing'].excludes))
+
+const cr = AI_DATA_SOURCES['chapter-rewrite']
+ok('整章改写：点明送进模型的是「整章正文」（区别于选区改稿的一段）',
+  !!cr?.sources.some(s => s.group.includes('整章')), JSON.stringify(cr?.sources.map(s => s.group)))
+ok('整章改写：写清了「改动前不写库、写前留快照」这条安全边界',
+  !!cr?.excludes?.some(x => x.includes('快照')), JSON.stringify(cr?.excludes))
 
 // ---------- ⑧ 页签说明里同样不许承诺"不外发" ----------
 // 上一节只锁住了 `AI_DATA_SOURCES[id].excludes`，而**功能说明（schema 的 description）一样会显示给作者**

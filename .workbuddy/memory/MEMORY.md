@@ -18,8 +18,9 @@
 - ✅ **A 伴写**：`aiInlineSuggest()`＋ghost 第三叠层＋「钢笔」弹窗（默认关）；文风三层锚定**不做枚举**、去 AI 味钉 system 末尾。🔴 **切章必须清 ghost**（Tab 插错章＝数据事故）。
 - ✅ **B 拆书**：通用件在 **`lib/flow/`**（别去 `bookbreak/` 找）；六阶段＝切分→写正文→逐块抽取→整理草稿→汇总全书设定→整理关系。🔴 写前必 `previewCommit`；字段键从 `fieldMap` 派生（闸 `tests/extractFields`）、抽取必走流式；**冲突只在硬事实字段报**（类别/境界/品级/实力/危险/掌权者）——全字段报时真矛盾反被埋。
 - ✅ **B 的收尾与去泛称**：关系整理在末尾第 6 阶段（`lib/organizeRows.ts`，与表格页「AI 整理」同执行体、默认开），🔴 **创意写作不加**；去泛称走 D 不走 C（C 精度~60%、误伤专名；D＝`draft.foldNameVariants()` 零调用）。
-- ✅ **C 创意写作＝两种起点**（2026-09-19 融合「一键续写＋设定补完」）：`scratch`（bible→闸门①→outline→闸门②→连写）／`continue`（只连写，可关「按细纲写」）。🔴 **闸门＝await Promise**、**落库只在闸门通过后**；🔴 连写执行体＝`autoContinue.ts`，**独立的一键续写已不存在**；额度 `outline-generate`＋`auto-continue`。
-- ✅ **C 的细节**：①「只保存大纲」＝`skipRest()`（🔴 skipped 必计入进度分子）。② 对话引导 `creativeSeed.ts`。③ 概要回填《章节细纲》卡**只填空、不新建**。④ `worldview` 汇总→表单（🔴 覆盖全部 form 页签、无"同名条目"）。⑤ **续跑断点在阶段内**；改原文→断点失效、闸门放弃≠被中止。⑥ `writingPace`：一章 5~8 次调用。未做：关系表 kind、跨块同指。
+- ✅ **C 创意写作**（2026-09-19 融合「一键续写＋设定补完」）：起点＝`scratch`／`continue`，**产出目标也在起点选**（只做大纲规划／大纲＋正文；🔴 闸门只做确认·放弃）。🔴 **闸门＝await Promise**、**落库只在闸门通过后**；连写执行体＝`autoContinue.ts`（独立的一键续写已不存在）；额度 `outline-generate`＋`auto-continue`。
+- ✅ **整章改写**：🔴 结果只在内存、写前**显式快照**、只动 content/wordCount/updatedAt；🔴 **异常短结果锁替换**。
+- ✅ **C 的细节**：① 🔴 `skipRest()` 的 skipped **必计入进度分子**。② 对话引导 `creativeSeed.ts`。③ 概要回填细纲卡**只填空、不新建**。④ `worldview` 汇总→表单（🔴 覆盖全部 form 页签）。⑤ **续跑断点在阶段内**；改原文→断点失效、闸门放弃≠被中止。⑥ `writingPace`：一章 5~8 调用。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键（改功能后回搜 `schema.ts` 的 `description`）。
@@ -29,14 +30,14 @@
 - 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**（关系表列＝人物A/人物B）：`commit` 按名称列判重对它们**恒判"不存在"**→ 点两次「写入项目」＝两条重复关系；`previewCommit` 走同一函数。
 - 🔴 编辑器双图层：盒模型逐项一致；叠层重建归零 scrollTop→`useLayoutEffect` 回填；只走 `scanRefHighlight`。
 - 🗺 多地图方案 B：新表 `geomaps`＋geography 的 `所属地图`；`migrateGeoMaps` 建默认图回填；🔴 删图不删地点、改图名连带改归属。
-- 🔴 **长任务状态必须放模块级 store**（`lib/creativeSession.ts`：单例＋`useSyncExternalStore`）：🔴 **任务跑在 store 里、不在组件里** —— App 是"切页签即卸载组件"，状态放 `useState` 会让跑到一半的任务回来什么都不剩（老大实测）。🔴 lib 层**禁 import components**（要提示就写 `notice` 让组件取）；落盘按项目分键、**断点只存里程不存 bag**（bag 产物本已落库）。
+- 🔴 **长任务状态必须放模块级 store**（`lib/creativeSession.ts`：单例＋`useSyncExternalStore`）：App 是"切页签即卸载组件"，状态放 `useState` 会全丢（老大实测）；🔴 **任务跑在 store 里、不在组件里**；lib 层**禁 import components**（提示写 `notice` 让组件取）；落盘按项目分键、**断点只存里程不存 bag**。
 - 🔴 拆书／创意写作**档位＝optional**（不默认勾选，显式登记）；两页顶部有 `NewProjectAdvice` 提示条（"先新建空项目"+选「完整项目」）。
 
 ## 存储 / 同步
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步该目录；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
 - 🔄 两同步入口别混：①明文 JSON；②云盘＝加密 `.yfe`＋记录级合并＋每日备份。**用 ②**。
-- 🔴🔴 **服务器已关（2026-09）**：站点与同步 API 全下线 → 跨设备同步**只剩云盘文件夹**（**无同步码/邀请码/HTTP**，文案里也不许再提这几个词）。`syncTransport.createIdleTransport`＝未开启时的占位（一切按"不可用"上报，🔴 **绝不返回空库**，否则一次 push 覆盖云端真实快照）。
+- 🔴🔴 **服务器已关（2026-09）**：站点与同步 API 下线 → 跨设备同步**只剩云盘文件夹**（**无同步码/邀请码/HTTP**，文案不许再提）。`syncTransport.createIdleTransport`＝未开启时的占位（一切按"不可用"上报，🔴 **绝不返回空库**，否则一次 push 覆盖云端真实快照）。
 
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 会回退黑）。设置项＝标题→输入→说明；复制走 `copyText()`。
@@ -77,7 +78,7 @@
 - 🔴 协议 **v1.11**（旧版冻进 `LEGACY_PROTOCOLS`；改协议同步三处＋两断言）。
 
 ## 出厂数据 / 示范项目
-- 🧪 dev 数据放仓库外 `…\04-开发测试数据\`；仓库内 `dev-seed/` 亦可用：`import('/dev-seed/fengyang.js?'+Date.now())`（🔴 必带时间戳）。🔴 绝不写进 `seedData.ts`。
+- 🧪 dev 数据放仓库外 `…\04-开发测试数据\`；`dev-seed/` 亦可用：`import('/dev-seed/fengyang.js?'+Date.now())`（🔴 必带时间戳）。🔴 绝不写进 `seedData.ts`。
 - 📥 卡走 skill `tavern-cards-batch` 导入。🚫 原生不再预填自由示范卡（闸 `tests/tavernSeedPolicy.test.ts`；🔴 老库卡只保留不删）。
 - 示范项目《吞天神脉》三卷 21 章（1-10 风起云州 / 11-20 剑鸣中州 / 21 起 **剑锁中州**）。改/加正文同步 `seedContent.ts`→`seedData.ts`。
 - 🔴 三道闸：seed-schema-check＋`tests/seedRef.test.ts`（含"人物列必须是真角色"＋关系无序对不重复）＋细纲卡核对；推演 cast 引用卡 id→相关卡留 `card()` 返回值。闸 `tests/importCycles`：**循环依赖只在浏览器 TDZ 崩**。

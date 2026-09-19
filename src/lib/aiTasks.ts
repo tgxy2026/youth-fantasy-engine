@@ -1151,6 +1151,102 @@ ${chapterText.trim() || '（空）'}
   return out
 }
 
+// ---------- 整章改写（润色 / 扩写 / 精简 / 改写） ----------
+//
+// 与「选区改稿」（aiRewritePassage）的分工 —— 两者不是替代关系，是按篇幅分工：
+//   · 选区改稿：作者在编辑器里选中**一段**，走 JSON 输出（{rewritten, notes}），结果写成"建议段"；
+//   · 整章改写：对**一整章**做重写，走纯文本流式输出，结果在面板里预览、作者确认后才替换正文。
+// 为什么整章不能复用选区改稿：① 建议段会和原文并排堆成两倍篇幅，作者没法读；
+//   ② 把 4000 字塞进 JSON 字符串，引号 / 换行转义极易解析失败（会退化成"只输出几个标点"）；
+//   ③ 它的定位是"局部修改"，不是"重写一章"。
+
+export type ChapterRewriteAction = 'polish' | 'expand' | 'condense' | 'rewrite'
+
+/** 四种动作的界面文案；`needWords` = 这一档要不要问目标字数 */
+export const CHAPTER_REWRITE_META: Record<ChapterRewriteAction, { label: string; hint: string; needWords: boolean }> = {
+  polish: { label: '润色', hint: '提升文字表现力、去掉 AI 腔；不增删情节，字数与原文相当', needWords: false },
+  expand: { label: '扩写', hint: '在不改情节的前提下补细节与感官描写，把这一章写到目标字数', needWords: true },
+  condense: { label: '精简', hint: '去掉冗余与注水，保留全部有效信息，压到目标字数', needWords: true },
+  rewrite: { label: '改写', hint: '按你的要求重写这一章（换视角 / 调节奏 / 重排场景…）', needWords: true },
+}
+
+let CHAPTER_REWRITE_BASE = `你是资深中文网络小说编辑，负责对作者给出的**整章正文**做改写。
+
+铁律：
+1. 只输出改写后的正文本身 —— 不要任何解释、小标题、开场白、结束语，也不要 markdown 代码围栏。
+2. 保持原有叙事视角与人称；除非作者明确要求，不改人物、不改情节走向、不改章末钩子。
+3. 段落之间用空行分隔，与原文格式保持一致。
+4. 不要写「以下是修改后的内容」这类前言。`
+
+const CHAPTER_REWRITE_ACTION_RULES: Record<ChapterRewriteAction, string> = {
+  polish: '本次动作：**润色**。提升文字表现与节奏，改掉 AI 腔（「仿佛 / 似乎 / 不禁 / 然而 / 不知为何」这类高频套话、堆砌的四字成语与对称排比、滥用破折号）；**不增删情节**，字数与原文相当（±10%）。',
+  expand: '本次动作：**扩写**。在不改情节走向的前提下补细节：环境与感官、人物动作与微表情、对话的潜台词、情绪递进。**不要注水**（不重复同一信息、不空泛抒情），把章节扩到目标字数。',
+  condense: '本次动作：**精简**。去掉冗余重复、注水抒情与无信息量的过渡，保留全部有效情节与关键对白，压到目标字数。',
+  rewrite: '本次动作：**按作者要求改写**。保持人物与情节主线，按【改写要求】调整叙述方式 / 场景顺序 / 冲突强度 / 节奏。',
+}
+
+export interface ChapterRewriteOpts {
+  /** 章节标题（进 prompt 只为让模型知道在写什么，不改它） */
+  title: string
+  /** 本章原文（由调用方从库里读出） */
+  body: string
+  action: ChapterRewriteAction
+  /** 作者的补充要求（可空） */
+  requirement: string
+  /** 目标字数：扩写 / 精简 / 改写档要 */
+  targetWords?: number
+  /** 上一章结尾样本（可选）—— 改写后仍要接得上，给模型当参照 */
+  contextTail?: string
+  signal?: AbortSignal
+  /** 🔴 收字回调：**同时就是流式开关**。整章可能上千字，不传 onToken 会走非流式并撞总超时墙 */
+  onToken?: (d: string) => void
+}
+
+/**
+ * 整章改写。纯文本输出（不是 JSON）—— 长文塞进 JSON 会因转义而解析失败。
+ * @returns 清洗后的正文；**返回空串表示模型没吐出可用正文**（调用方提示重试）
+ */
+export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
+  const cfg = await requireActiveProvider()
+  const fenceId = newAuthorFence()
+  const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action]].join('\n\n')
+  const lines = [
+    `【本章标题】${o.title}`,
+    // 🔴 取**尾部** 1200 字：这一段叫「上一章结尾」，衔接靠的就是末尾那几句。
+    //    2026-09-19 修：原先写的是 slice(0, 1200) 取到开头，等于拿「上一章开头」当衔接参照。
+    o.contextTail?.trim() ? `【上一章结尾】（只作衔接参考，不要改写这一段）\n${o.contextTail.trim().slice(-1200)}` : '',
+    o.requirement.trim() ? `【改写要求】\n${o.requirement.trim()}` : '',
+    o.targetWords ? `【目标字数】${o.targetWords} 字左右（±10%）` : '',
+    '【本章原文】',
+    authorBlock(fenceId, o.body),
+  ].filter(Boolean)
+  lines.push(
+    '',
+    o.targetWords
+      ? `请按上面的动作改写这一章，只输出正文，篇幅约 ${o.targetWords} 汉字。`
+      : '请按上面的动作改写这一章，只输出正文。',
+  )
+  const text = await chat(
+    cfg,
+    [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: lines.join('\n\n') }],
+    { timeoutMs: CHAT_TIMEOUT_MS, ...(o.signal ? { signal: o.signal } : {}), ...(o.onToken ? { onToken: o.onToken } : {}) },
+  )
+  return cleanChapterOutput(text)
+}
+
+/**
+ * 剥掉围栏 / 前言 / 开场客套 —— 纯函数，可单测。
+ * 模型偶尔会先来一句「好的，以下是修改后的内容：」或把正文裹进 ``` 围栏，
+ * 直接落库就把这句写进正文了。
+ */
+export function cleanChapterOutput(raw: string): string {
+  let s = (raw ?? '').replace(/\r/g, '').trim()
+  s = s.replace(/^```[a-zA-Z]*\s*\n?/, '').replace(/\n?```\s*$/, '').trim()
+  s = s.replace(/^(?:好的|明白|收到)[，,：:]?\s*/, '')
+  s = s.replace(/^(?:以下是|这是)[^：:\n]{0,20}[：:]\s*/, '')
+  return s.trim()
+}
+
 // ---------- 颉文姬④：选区改写（建议段模式） ----------
 
 export interface RewriteResult {
@@ -2097,6 +2193,7 @@ registerPrompt({ id: 'editor-diagnosis', group: '编辑与审校', name: '主编
 registerPrompt({ id: 'chapter-review', group: '编辑与审校', name: '章节审读', note: '按可读性与商业性审读本章，给维度打分。' }, () => P_chapter_review, t => { P_chapter_review = t })
 registerPrompt({ id: 'ooc-check', group: '编辑与审校', name: '人设一致性（OOC）', note: '对照角色卡，查角色言行是否崩人设。' }, () => P_ooc_check, t => { P_ooc_check = t })
 registerPrompt({ id: 'rewrite-passage', group: '正文写作', name: '选区改稿', note: '对作者选中的段落做局部修改。' }, () => P_rewrite_passage, t => { P_rewrite_passage = t })
+registerPrompt({ id: 'chapter-rewrite', group: '正文写作', name: '整章改写', note: '对整章正文做润色 / 扩写 / 精简 / 改写（纯文本输出，结果由作者确认后才替换正文）。' }, () => CHAPTER_REWRITE_BASE, t => { CHAPTER_REWRITE_BASE = t })
 registerPrompt({ id: 'continuation-advice', group: '正文写作', name: '卡文建议', note: '刚写完一章，给下一部分的方向建议。' }, () => P_continuation_advice, t => { P_continuation_advice = t })
 registerPrompt({ id: 'pleasure-check', group: '编辑与审校', name: '爽点与毒点管理', note: '按爽感管理标准审本章的爽点供给与毒点风险。' }, () => P_pleasure_check, t => { P_pleasure_check = t })
 registerPrompt({ id: 'opening-check', group: '编辑与审校', name: '开篇三章检查', note: '按「黄金三章」标准审作品开头。' }, () => P_opening_check, t => { P_opening_check = t })

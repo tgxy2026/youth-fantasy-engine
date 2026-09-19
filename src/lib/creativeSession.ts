@@ -25,11 +25,24 @@ import {
 import { runCreativeWriting, type CreativeResume, type CreativeWritingResult } from './aiWorkflow'
 import * as db from './db'
 import type { DraftBundle, DraftRow, FlowProgress } from './flow/types'
-import type { OutlineResult } from './aiTasks'
+import {
+  aiRewriteChapter,
+  CHAPTER_REWRITE_META,
+  type ChapterRewriteAction,
+  type OutlineResult,
+} from './aiTasks'
+import { applyChapterRewrite, listRewriteCandidates } from './chapterRewrite'
 import type { LedgerItem } from './settingLedger'
 
 /** 创作起点：从一句话想法从零写 / 接着项目已有内容往下写 */
 export type CreativeMode = 'scratch' | 'continue'
+
+/**
+ * 产出目标（仅「从一句话创作」有意义）—— **起点就定下来**，不在闸门里问：
+ *   `'outline'` = 只做大纲规划（设定 + 分卷大纲，不写正文）
+ *   `'full'`    = 大纲 + 正文（完整创作）
+ */
+export type CreativeTarget = 'outline' | 'full'
 
 export interface CreativeInputs {
   mode: CreativeMode
@@ -39,6 +52,8 @@ export interface CreativeInputs {
   intent: string
   /** 从零创作：分几卷 */
   volumes: number
+  /** 从零创作：这一次要产出什么（只要大纲 / 大纲+正文） */
+  target: CreativeTarget
   /** 连写多少章 */
   chapters: number
   /** 每章目标字数 */
@@ -60,6 +75,7 @@ export const DEFAULT_INPUTS: CreativeInputs = {
   seed: '',
   intent: '',
   volumes: 1,
+  target: 'full',
   chapters: 10,
   words: 2500,
   strategy: 'add-only',
@@ -82,6 +98,30 @@ export interface CreativeResultSummary {
   /** 本次实际落库的正文章数 */
   wrote: number
   outlineOnly: boolean
+}
+
+/**
+ * 「整章改写」的进行中状态。
+ *
+ * 🔴 结果只活在内存里 —— 作者点「替换该章正文」之前**绝不写库**。
+ *    这是与「创作」不同的地方：创作产出的是新章，改写要覆盖旧正文，必须多一道人工确认。
+ */
+export interface RewriteState {
+  chapterId: string
+  title: string
+  /** 全局叙事序号（0 = 不计入序号，如序章 / 番外） */
+  no: number
+  action: ChapterRewriteAction
+  /** 改写结果（流式累积） */
+  text: string
+  running: boolean
+  /** 原文字数 —— 界面用来显示「2200 → 3800 字」 */
+  fromWords: number
+  /**
+   * 结果明显异常（远短于原文）—— 多半是模型被截断或抽风。
+   * 🔴 置位后**禁用「替换该章正文」**：那是覆盖作者正文的动作，不能在可疑结果上放开。
+   */
+  suspect?: boolean
 }
 
 export interface CreativeNotice {
@@ -112,6 +152,8 @@ export interface CreativeSession {
   result: CreativeResultSummary | null
   resume: CreativeResume | null
   notice: CreativeNotice | null
+  /** 整章改写（null = 没在改写） */
+  rewrite: RewriteState | null
 }
 
 let snap: CreativeSession = {
@@ -129,6 +171,7 @@ let snap: CreativeSession = {
   result: null,
   resume: null,
   notice: null,
+  rewrite: null,
 }
 
 const listeners = new Set<() => void>()
@@ -297,6 +340,7 @@ async function bindProject() {
     set({
       resume: null, result: null, log: [], progress: null, summaries: {},
       bibleGate: null, outlineGate: null, draftAsk: null, candidatesAsk: null, candidatesSelected: [],
+      rewrite: null,
     })
   } else if (!boundProjectId) {
     boundProjectId = pid
@@ -353,6 +397,8 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         chapters: inp.chapters,
         targetWords: inp.words,
         volumes: inp.volumes,
+        // 「接着已有内容写」永远是写正文（它的定义就是续写），只有从零创作才有「只要大纲」这一档
+        target: inp.mode === 'scratch' ? inp.target : 'full',
         strategy: inp.strategy,
         deAi: { enabled: inp.deAiOn, prompt: deAiPromptOf(inp) },
         useOutline: inp.useOutline,
@@ -373,7 +419,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
             set({ bibleGate: bundle })
           }),
         onOutlineGate: (outline: OutlineResult) =>
-          new Promise<boolean | 'outline-only'>(resolve => {
+          new Promise<boolean>(resolve => {
             gateResolve = resolve as (v: unknown) => void
             set({ outlineGate: outline })
           }),
@@ -475,6 +521,124 @@ export function applyCandidates(list: LedgerItem[] | null) {
   candsResolve = null
   set({ candidatesAsk: null, candidatesSelected: [] })
   r?.(list)
+}
+
+// ============ 整章改写（对已有章节做整章级的润色 / 扩写 / 精简 / 改写） ============
+
+let rewriteCtl: AbortController | null = null
+
+/**
+ * 对已有某一章跑整章改写。
+ *
+ * 与「创作」互斥（同一时刻只跑一个长任务）—— 两者都在花额度，同时跑只会互相抢模型。
+ */
+export async function startChapterRewrite(p: {
+  chapterId: string
+  action: ChapterRewriteAction
+  requirement: string
+  words: number
+}) {
+  if (snap.running || snap.rewrite?.running) return
+  await bindProject()
+  let cands: Awaited<ReturnType<typeof listRewriteCandidates>>
+  try {
+    cands = await listRewriteCandidates()
+  } catch (e) {
+    notice('读不到章节列表：' + (e instanceof Error ? e.message : String(e)), 'error')
+    return
+  }
+  const idx = cands.findIndex(c => c.chapter.id === p.chapterId)
+  if (idx < 0) { notice('这一章已经不在项目里了', 'error'); return }
+  const hit = cands[idx]
+  if (!hit.chapter.content.trim()) { notice('这一章还没有正文，没什么可改的', 'info'); return }
+
+  const ctl = new AbortController()
+  rewriteCtl = ctl
+  set({
+    rewrite: {
+      chapterId: hit.chapter.id, title: hit.chapter.title, no: hit.no,
+      action: p.action, text: '', running: true, fromWords: hit.chapter.wordCount,
+    },
+  })
+  // 上一章结尾当衔接样本（改写后仍要接得上）；改的是首章就没有
+  const prevTail = idx > 0 ? (cands[idx - 1].chapter.content ?? '').trim() : ''
+  // 流式累积 + 节流刷新：每个 token 都 set 会让组件逐字重渲染
+  let buf = ''
+  let lastFlush = 0
+  const flush = (force = false) => {
+    const now = Date.now()
+    if (!force && now - lastFlush < 120) return
+    lastFlush = now
+    const cur = snap.rewrite
+    if (cur) set({ rewrite: { ...cur, text: buf } })
+  }
+  try {
+    const text = await aiRewriteChapter({
+      title: hit.chapter.title,
+      body: hit.chapter.content,
+      action: p.action,
+      requirement: p.requirement,
+      ...(CHAPTER_REWRITE_META[p.action].needWords ? { targetWords: p.words } : {}),
+      ...(prevTail ? { contextTail: prevTail } : {}),
+      signal: ctl.signal,
+      onToken: d => { buf += d; flush() },
+    })
+    buf = text
+    if (!text.trim()) {
+      notice('模型没有返回可用正文，可以再试一次', 'error')
+      set({ rewrite: null })
+      return
+    }
+    // 🔴 必须在这里把 running 置回 false。flush() 只更新 text —— 漏了这步，界面会永远停在
+    //    「正在改写…」，预览与「替换该章正文」永远不出来（2026-09-19 实机验证抓到：
+    //    AI 层 86 秒就跑完了，界面却等了 12 分钟还没动静）。
+    //
+    // 🔴 结果异常保护：实测遇到模型只返回 1 个字的偶发情况（同一 prompt 前后三次实测
+    //    分别返回 3494 / 4271 / 4563 字，说明不是 prompt 问题）。「替换该章正文」是**覆盖**
+    //    作者正文的破坏性动作，一旦点下去就只剩快照能救 —— 所以异常短的结果必须锁住它。
+    const suspect = hit.chapter.content.length > 600 && text.length < hit.chapter.content.length * 0.35
+    if (suspect) notice(`模型只返回了 ${text.length} 字（原文 ${hit.chapter.content.length} 字），明显异常 —— 已锁住替换，请重新改写`, 'error')
+    const cur = snap.rewrite
+    if (cur) set({ rewrite: { ...cur, text: buf, running: false, suspect } })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const aborted = /取消|abort/i.test(msg)
+    notice(aborted ? '已中止改写（没有写入任何内容）' : '改写失败：' + msg, aborted ? 'info' : 'error')
+    set({ rewrite: null })
+  } finally {
+    rewriteCtl = null
+  }
+}
+
+/** 中止改写（已收到的部分不写库） */
+export function stopChapterRewrite() {
+  rewriteCtl?.abort()
+}
+
+/**
+ * 把改写结果写回该章 —— **全项目唯一会覆盖正文的动作**。
+ * 写前由 `applyChapterRewrite` 自动存一份旧稿快照（可在「时光机 · 本章版本历史」恢复）。
+ */
+export async function applyRewrite() {
+  const r = snap.rewrite
+  if (!r || r.running) return
+  try {
+    const { words } = await applyChapterRewrite(r.chapterId, r.text)
+    notice(
+      `已替换《${r.title}》正文：${r.fromWords} → ${words} 字。` +
+      '旧稿已存进「时光机 · 本章版本历史」（正文编辑里可随时恢复）。',
+      'success',
+    )
+    set({ rewrite: null })
+  } catch (e) {
+    notice('写入失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+  }
+}
+
+/** 丢弃改写结果（不写库） */
+export function discardRewrite() {
+  if (snap.rewrite?.running) return
+  set({ rewrite: null })
 }
 
 /** 清掉结果卡片与日志（作者想重开一轮时用；不影响已落库的数据） */

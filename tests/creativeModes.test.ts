@@ -80,11 +80,38 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('🔴 灵感启发页不再引用续写组件', !inspire.includes('AutoContinue'))
   ok('灵感启发页副标题已去掉「AI 一键续写」',
     inspire.includes('随机取名生成器 · AI 辅助规划'))
-  ok('灵感启发帮助文案交代了续写去了哪里（不能只删不说）',
-    /已并入「创意写作」/.test(inspire))
+  ok('🔴 灵感启发帮助文案不再提示「功能迁移到哪了」（界面/提示不留迁移指南）',
+    !/已并入|已移到|已迁到|搬到「/.test(inspire))
 
   const session = read('src/lib/creativeSession.ts')
   ok('会话层存在（切页签不丢状态的根）', session.length > 0)
+
+  // ---------- 产出目标在起点（2026-09-19：开口就分清大纲规划 / 正文创作）----------
+  const panel = read('src/components/CreativeWritingPanel.tsx')
+  ok('🔴 起点处可选「产出目标」（只做大纲规划 / 大纲 + 正文）',
+    /TARGET_META/.test(panel) && /updateInputs\(\{ target: k \}\)/.test(panel))
+  ok('🔴 闸门②不再问「只保存大纲」（目标已在起点定，闸门只做确认/放弃）',
+    !/outline-only/.test(panel) && !/outline-only/.test(read('src/lib/aiWorkflow.ts')))
+  ok('CreativeInputs 带 target 字段', /target: CreativeTarget/.test(session))
+  ok('aiWorkflow 按 target 决定是否跑正文阶段', /opts\.target \?\? 'full'/.test(read('src/lib/aiWorkflow.ts')))
+
+  // ---------- 整章改写（2026-09-19）----------
+  const rw = read('src/lib/aiTasks.ts')
+  ok('🔴 整章改写的提示词已登记（可在「模型设置 → AI 提示词」里改）',
+    /registerPrompt\(\{ id: 'chapter-rewrite'/.test(rw))
+  ok('🔴 整章改写走纯文本输出（不塞 JSON —— 长文塞 JSON 会被转义搞坏）',
+    /aiRewriteChapter/.test(rw) && !/aiRewriteChapter[\s\S]{0,900}json: true/.test(rw))
+  const rwLib = read('src/lib/chapterRewrite.ts')
+  ok('🔴 写库前必存快照（旧稿可恢复）', /createSnapshot/.test(rwLib))
+  ok('🔴 只改 content/wordCount/updatedAt，不动标题与卷属',
+    /content: body, wordCount: words, updatedAt: Date.now\(\)/.test(rwLib))
+  ok('改字数后同步章节台账', /syncChapterMaster/.test(rwLib))
+  const sess = read('src/lib/creativeSession.ts')
+  ok('🔴 写入后的提示指向「时光机 · 本章版本历史」（旧稿可恢复要告诉作者）',
+    /时光机/.test(sess))
+  ok('🔴 上一章衔接样本取尾部（不是开头）', /slice\(-1200\)/.test(rw))
+  ok('🔴 异常短结果判定存在（原文>600 且 结果<35%）',
+    /content\.length > 600 && text\.length < hit\.chapter\.content\.length \* 0\.35/.test(sess))
   ok('🔴 会话层不 import 组件（lib → components 是反向依赖，会被 importCycles 拦）',
     !/from '\.\.\/components\//.test(session))
   ok('会话层用 useSyncExternalStore 订阅（React 18 标准姿势）',
