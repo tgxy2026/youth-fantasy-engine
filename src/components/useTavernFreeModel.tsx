@@ -1,0 +1,1243 @@
+/**
+ * 自由对话（酒馆模式）的**状态与生命周期**（从 `TavernFree.tsx` 拆出来的，2026-09-19）。
+ *
+ * 【为什么这么拆】原文件 1935 行（全项目最大）：逻辑 1119 行 + 视图 700 行，
+ *   JSX 直接用到 95 个组件作用域名字（全组件声明 143 个）。自由对话又是全项目交互最密的一页
+ *   （流式输出、逐条改删、收尾多阶段、数值/记忆/日记），所以拆法仍是**只搬不改**：
+ *   状态 / effect / 动作整体收进来，视图侧同名解构接回去 —— JSX 一个字不动。
+ *
+ * 🔴 搬动时逐条保住的红线：
+ *   · **收尾不可取消 → 现在可取消**（本轮审计 P1-2）：`endRound` 全程下传 signal，
+ *     中止 ≠ 失败（措辞按 /取消|abort/ 区分），中止时一条都不落库、水位线不推进；
+ *   · 数值/设定审查失败不再被静默吞掉（`RoundEndResult.warnings[]` 由界面如实显示）；
+ *   · 会话存**快照非引用**：`snapshotStorySetting` 落库后再读，别改成读活设定；
+ *   · 水位线只认 `nextWatermark` 的口径（同一消息集两处过滤条件必须一致）。
+ */
+/**
+ * 酒馆模式 · 自由对话（tavern-free）
+ *
+ * 定位：**陪伴**。自建角色卡的长期对话 —— 记得住事、有时间流逝感、换场景可开新会话
+ * （记忆按角色共享，不随会话走）。
+ *
+ * 【2026-09-14 第三轮改版：页面版式对齐「剧情推演」】
+ *   · 页面上的**角色列表撤掉了** —— 选角色改由「＋ 新建对话」弹窗承担（位置槽位 + 搜索选角），
+ *     左栏腾给**会话列表**，一屏能看到所有对话、点一下就切，不再挂在某个角色下面；
+ *   · 因此会话列表是**全局的**（跨角色）：每条副行标出在场角色，否则分不清这是和谁聊的；
+ *   · 「记忆 / 日常」依然是**角色级**的，所以打开会话时取**该会话第一个角色**作为主角色
+ *     （`primary`）来读记忆、跑总结、推进日常 —— 多角色会话下这是唯一自洽的口径。
+ *
+ * 【无服务端带来的三个 UI 义务（方案 §11 明确要求，不能吞掉）】
+ *   1. 总结「不即时」—— 只能回复后判阈值、或下次打开补算。界面必须显示
+ *      「记忆更新于 X」，让作者知道记忆的时效边界。
+ *   2. 会话超长后早期原文会从上下文消失 —— 原文仍在记录里可翻回，
+ *      但预算条要显示占用，别让作者以为模型还记得。
+ *   3. 记忆是**角色级**的：换会话不会重来，所以新建对话时要写清这一点。
+ *
+ * 遵守项目约定：弹窗用共享 Modal，按钮用 Button，禁 window.confirm（用 confirmDialog），
+ * 提示用 showToast。
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import { showToast, confirmDialog } from './dialogs'
+import { type FreeDraft } from './TavernFreeSetup'
+import { type QuickAction } from './TavernQuickBar'
+import * as store from '../lib/tavern/store'
+import { runFreeTurn, varsEnabledKeys, runFreeAssist, applyPostRulesForPreview } from '../lib/tavern/engine'
+import { resolveTavernProvider } from '../lib/tavern/provider'
+import { unloadOllamaModel, isCancelled } from '../lib/ai'
+import { refreshSessionVars } from '../lib/tavern/varsRefresh'
+import type { PostApplied } from '../lib/tavern/postRules'
+import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
+import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
+import { uid } from '../lib/id'
+import { nextWatermark, acquireSummaryLock, releaseSummaryLock } from '../lib/tavern/memory'
+import {
+  type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
+  type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
+  type VarKey, type TavernStoryIndexItem, sessionStoryId, type CharVars, 
+} from '../lib/tavern/types'
+import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf, migrateVarScale, VAR_SCALE, setCharNote, emptyVars } from '../lib/tavern/vars'
+import { snapshotOf, openingToMessage } from '../lib/tavern/script'
+import { getScript } from '../lib/tavern/script'
+import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
+import { listStories, storyDisplayName, getStory, snapshotStorySetting } from '../lib/tavern/story'
+import { type SpeakerInfo } from '../lib/tavern/exportDoc'
+import { buildStatusModel, agoText } from '../lib/tavern/status'
+import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult, } from '../lib/tavern/roundEnd'
+
+/**
+ * 本场状态的「主角色」= **AI 扮演的第一个角色**（排除用户扮演的那个）。
+ * 用户把「我演」放在位置 1 时 charIds[0] 就是用户卡 —— 此前 #4 把主角色死写成 charIds[0]，
+ * 导致本场状态（好感/信任/精神…）被算进并回写**用户卡**而非 AI 角色卡（反馈 #16）。
+ * 无 userCharId（纯 AI 多角色、用户不扮演）时回退 charIds[0]，保持旧行为。
+ */
+export function primaryAiCharId(s: { charIds: string[]; userCharId?: string | null }): string {
+  const user = s.userCharId
+  if (user) {
+    const ai = s.charIds.filter(id => id !== user)
+    if (ai.length > 0) return ai[0]
+  }
+  return s.charIds[0] ?? ''
+}
+
+/**
+ * 反馈 #4 配套：会话自身还没数值（新会话 / 老会话未初始化）但主角色卡上已有持久数值时，
+ * 把那一份拉进会话当起点 —— 上一次处出来的好感下一场接着算，而不是从 0 起；
+ * 也顺手修好了反馈 #1「数值不显示」（之前 createFreeSession 从不初始化 vars，面板只能永远停在 0）。
+ */
+async function seedSessionVarsFromCard(s: FreeSession): Promise<FreeSession> {
+  if (s.vars) return s
+  const id = primaryAiCharId(s)
+  if (!id) return s
+  const card = await store.getFreeChar(id).catch(() => null)
+  if (!card?.vars) return s
+  return { ...s, vars: { values: card.vars.values, turnSeq: 0, log: [], scale: VAR_SCALE } }
+}
+
+export function useTavernFreeModel() {
+  // ---------- 数据 ----------
+  /** 角色卡索引：只用来显示名字（页面不再用它做选择） */
+  const [chars, setChars] = useState<TavernCharIndexItem[]>([])
+  /** 当前会话的**主角色**（AI 扮演的第一个角色，见 primaryAiCharId）：本场状态挂它身上 */
+  const [charCard, setCharCard] = useState<FreeCharacter | null>(null)
+  const [sessions, setSessions] = useState<FreeSessionIndexItem[]>([])
+  /** 故事列表（左栏把对话挂在故事下面；老大 2026-09-16 定） */
+  const [stories, setStories] = useState<TavernStoryIndexItem[]>([])
+  /** 左栏树里被**收起**的故事（默认全展开 —— 对话不多时先让作者看见全貌） */
+  const [closedStoryIds, setClosedStoryIds] = useState<string[]>([])
+  const [session, setSession] = useState<FreeSession | null>(null)
+  /**
+   * 记忆是**角色级**的：一场对话里有几个角色就有几份档案。
+   * 所以存成 map。注意右侧面板已改为显示「本场状态」而非记忆（老大 2026-09-16 定），
+   * 记忆只在点「结束本轮对话」时整理，阅读入口在角色卡片页。
+   */
+  const [mems, setMems] = useState<Record<string, FreeMemory | null>>({})
+  /** 右栏「Ta这几天的生活 / 心情」看的是谁 —— 默认取第一个 **AI 扮演** 的角色（用户演的那位不是观察对象） */
+  const [statusCharId, setStatusCharId] = useState('')
+  /** 右栏「本场状态」当前看哪位角色的数值（默认 AI 扮演的主角色）；多角色时才需切换（反馈 #4） */
+  const [varsCharId, setVarsCharId] = useState('')
+  const [summaryProviderId, setSummaryProviderId] = useState('')
+
+  // ---------- UI ----------
+  const [loading, setLoading] = useState(true)
+  const [setupOpen, setSetupOpen] = useState(false)
+  /** 左栏会话筛选词 */
+  const [q, setQ] = useState('')
+  const [input, setInput] = useState('')
+  /** B3：上一轮后处理实际改了什么 */
+  const [postNotice, setPostNotice] = useState<{ applied: PostApplied[]; errors: string[] }>({ applied: [], errors: [] })
+  const [streaming, setStreaming] = useState(false)
+  /** 润色/自动回复生成中（与 streaming 互斥但同属「正在生成」，期间禁用快捷条与发送） */
+  const [assistBusy, setAssistBusy] = useState(false)
+  const [assistMode, setAssistMode] = useState<'polish' | 'auto' | null>(null)
+  const [streamText, setStreamText] = useState('')
+  const [phase, setPhase] = useState('')
+  /**
+   * 「结束本轮对话」进行中。
+   * 注意与旧的 `summarizing` 不同：那玩意儿是**每轮都在后台跑**，作者看得见它卡；
+   * 这个只在作者主动点「结束本轮对话」后才出现，且是一次性的。
+   */
+  const [ending, setEnding] = useState(false)
+  const [endStage, setEndStage] = useState<RoundEndProgress | null>(null)
+  /**
+   * 收尾的取消把手。
+   *
+   * 🔴 为什么要它（2026-09-19 六维审计 P2-7）：`runRoundEnd` 的 `signal` 早就声明了、
+   *    也一路下传到 `chat()`，但**生产调用从不传** —— 本地 27B 上收尾要逐角色总结 + 算数值 +
+   *    审查设定，好几分钟且只能干等。这里把「能中止」补上。
+   */
+  const endCtlRef = useRef<AbortController | null>(null)
+  /** 收尾结果摘要（日记 + 数值变化），弹窗展示后关掉即焚 */
+  const [endResult, setEndResult] = useState<RoundEndResult | null>(null)
+  /** Ta这几天的生活与心情（方案 §4.7：靠时间差推进，没有常驻进程） */
+  const [daily, setDaily] = useState<DailyState | null>(null)
+  const [showDaily, setShowDaily] = useState(false)
+  /**
+   * 右栏当前看哪一页（2026-09-16 老大定：原先「对话上方那条角色状态」并进右栏，两页切换）。
+   *
+   * 默认停在「本场状态」：好感 / 信任 / 精神这些**每轮都在变**，是聊的时候盯得最多的一块。
+   * 「角色状态」是整理完才长出来的（关系与计数），看一眼就切回去，没必要抢默认位。
+   * 用了会话级 state（不落库）：它跟「作者此刻想看什么」有关，不是项目的持久设置。
+   */
+  const [statusTab, setStatusTab] = useState<'status' | 'vars'>('vars')
+  /** 用量明细弹窗（额度怎么分的） */
+  const [usageOpen, setUsageOpen] = useState(false)
+  /** 很久没来时Ta留着的一句话（§7.5），展示后清除 */
+  const [greeting, setGreeting] = useState('')
+  /** 本会话在场角色的完整卡（多角色渲染需要） */
+  const [castCards, setCastCards] = useState<FreeCharacter[]>([])
+  /** 手动指定下一位接话的角色（空 = 按轮转） */
+  const [speakNext, setSpeakNext] = useState('')
+  /** 「在场调度」弹窗（静音 / 健谈度，A6） */
+  const [directorOpen, setDirectorOpen] = useState(false)
+  /** 导出文档弹窗（B5） */
+  const [exportOpen, setExportOpen] = useState(false)
+  /** 设定更新：AI 读对话 → 列出「设定可能该改了」，由作者逐条裁决 */
+  const [reviseOpen, setReviseOpen] = useState(false)
+  const [revising, setRevising] = useState(false)
+  const [applyingRev, setApplyingRev] = useState(false)
+  const [proposals, setProposals] = useState<CardRevision[]>([])
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  /** 设查失败的原因（与「没有需要改设定」必须分开显示） */
+  const [reviseError, setReviseError] = useState('')
+  /** 控制面板设置（记忆与日常阈值都从这儿来）—— 读不到时用出厂默认，不含糊 */
+  const [tavernSettings, setTavernSettings] = useState<TavernSettings | null>(null)
+  /** 会话名内联编辑：列表里只显示标题，改不了就只能删了重开，所以给个直接改的入口 */
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+
+  const abortRef = useRef<AbortController | null>(null)
+  /** 当前会话 id 的 ref：判断「是不是真的换了会话」用 —— 点左栏里当前这一场不该把在途生成杀掉 */
+  const sessionIdRef = useRef<string | null>(null)
+  useEffect(() => { sessionIdRef.current = session?.id ?? null }, [session])
+  /**
+   * 🔴 审计 2026-09-18（P1-2）：切走会话前**中止在途生成**并复位流式状态。
+   *    置空 abortRef 兼作「代次令牌」：在途的 send / reroll / assist 发现自己的 ctrl
+   *    已被换掉，就只落库、不接管界面 —— 否则旧回复会把界面拽回旧会话
+   *    （左栏高亮按 session?.id 判定，高亮与正文就此不一致），失败路径的 setInput(text)
+   *    还会把上一场没发出去的文字灌进新会话的输入框。
+   */
+  const cancelInFlight = useCallback(() => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setStreaming(false)
+    setStreamText('')
+    setPhase('')
+    setAssistBusy(false)
+    setAssistMode(null)
+  }, [])
+  const scrollRef = useRef<HTMLDivElement>(null)
+  /**
+   * 「生成中又按了一次发送」的提示节流（反馈 #13）。
+   * 输入框在生成期间**保持可用**（作者可以先把下一句打好），所以 Enter 会真的按下去 ——
+   * 若只是静默拦截，作者会以为键盘坏了。一次生成只提示一次，别每按一下弹一个 toast。
+   */
+  const streamingHintRef = useRef(false)
+
+  /** 记忆与日常阈值（控制面板）。读到设置前先用出厂默认，免得界面闪一个错的数字。 */
+  const lim = useMemo(
+    () => memoryLimitsOf(tavernSettings ?? DEFAULT_TAVERN_SETTINGS),
+    [tavernSettings],
+  )
+  /**
+   * 本场数值启用哪几项。空数组 = 整块不显示、提示词里也没有（与引擎同一判定函数，
+   * 别在界面里再写一份 —— 两处只要有一处不同，就会出现「界面显示着、模型却不知道」）。
+   */
+  const varKeys = useMemo(
+    () => varsEnabledKeys(tavernSettings ?? DEFAULT_TAVERN_SETTINGS),
+    [tavernSettings],
+  )
+
+  const nameOf = useCallback((id: string) => chars.find(c => c.id === id)?.name ?? '', [chars])
+
+  /**
+   * 导出文档时「这句是谁说的」（B5）：按**角色名**署名。
+   * 用「角色」这种占位名在导出稿里等于没署 —— 多角色同场时整篇就认不出谁在说。
+   */
+  const exportSpeakerOf = useCallback((m: TavernMessage): SpeakerInfo => {
+    if (m.role === 'user') {
+      return { label: (session?.userCharId && nameOf(session.userCharId)) || '你', side: 'user' }
+    }
+    return { label: nameOf(m.speakerId ?? '') || '角色', side: 'ai' }
+  }, [session?.userCharId, nameOf])
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      setSessions(await store.listFreeSessions())
+    } catch {
+      showToast('读取会话列表失败', 'error')
+    }
+  }, [])
+
+  /** 故事列表（左栏把对话挂在故事下面；老大 2026-09-16 定） */
+  const refreshStories = useCallback(async () => {
+    try { setStories(await listStories()) } catch { setStories([]) }
+  }, [])
+
+  // ---------- 加载 ----------
+  useEffect(() => {
+    void (async () => {
+      try {
+        // 模型与总结模型统一由控制面板管（原先那个「模型设置」面板已下线）
+        const [cs, st] = await Promise.all([
+          store.listFreeChars(),
+          getTavernSettings().catch(() => DEFAULT_TAVERN_SETTINGS),
+        ])
+        setChars(cs)
+        setTavernSettings(st)
+        setSummaryProviderId(st.free.summaryProviderId)
+        setSessions(await store.listFreeSessions())
+        await refreshStories()
+      } catch (e) {
+        showToast(`读取失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [refreshStories])
+
+  // ---------- 日常推进与主动留言（§4.7 / §7.5） ----------
+  /**
+   * 距上次活跃够久就补写「这几天的生活」，并拿到Ta留的一句话。
+   * 静默执行：失败不打扰（下次打开还会再试），也不阻塞对话。
+   */
+  const advanceIfNeeded = useCallback(async (card: FreeCharacter, cur?: DailyState | null) => {
+    const d = cur ?? (await store.getDaily(card.id).catch(() => null))
+    if (!shouldAdvanceDaily(d, Date.now(), lim.dailyAdvanceMs)) return
+    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) return // 与总结共用一把锁，避免两个窗口同时写
+    try {
+      const mem = await store.getMemory(card.id).catch(() => null)
+      const res = await advanceDaily({
+        char: card,
+        prev: d,
+        memory: mem,
+        providerId: summaryProviderId || undefined,
+        logKeep: lim.dailyLogKeep,
+      })
+      await store.saveDaily(res.state)
+      setDaily(res.state)
+      if (res.greeting) {
+        await store.setGreeting(card.id, res.greeting)
+        const g = await store.takeGreeting(card.id)
+        if (g) setGreeting(g)
+      }
+    } catch {
+      /* 静默：下次打开再试，不弹错打断作者 */
+    } finally {
+      releaseSummaryLock()
+    }
+  }, [summaryProviderId, lim])
+
+  /**
+   * 载入当前会话的上下文：在场角色卡 + **每位角色各自的记忆** + Ta留的话。
+   * 记忆是角色级的，所以一次读全部参演角色；页签默认停在第一个角色。
+   */
+  const loadSessionContext = useCallback(async (s: FreeSession) => {
+    try {
+      const cards = (await Promise.all(s.charIds.map(cid => store.getFreeChar(cid)))).filter((c): c is FreeCharacter => !!c)
+      setCastCards(cards)
+      const primary = cards.find(c => c.id === primaryAiCharId(s)) ?? cards[0] ?? null
+      setCharCard(primary)
+      if (cards.length) {
+        const rows = await Promise.all(cards.map(async c =>
+          [c.id, await store.getMemory(c.id).catch(() => null)] as const))
+        setMems(Object.fromEntries(rows))
+        const aiFirst = cards.find(c => c.id !== s.userCharId)
+        setStatusCharId(prev => (cards.some(c => c.id === prev) ? prev : (aiFirst?.id ?? primary?.id ?? '')))
+        // 「这几天的生活」的补算移到**右栏那个 effect** 里（审计 P1-6）：
+        // 旧实现只在这里对 cards[0] 推一次 —— 多角色同场时切到别的角色只是只读，
+        // 那几位永远停在旧状态；而且 setDaily 设的是 cards[0]，与右栏默认看的 aiFirst 还可能不是同一个人。
+        // 现在改成「谁被打开看，就补算谁」，一个入口、一处状态。
+      } else {
+        setMems({})
+        setStatusCharId('')
+        setDaily(null)
+      }
+      // Ta留着的话：展示后即清除，不留着反复弹
+      for (const c of cards) {
+        const g = await store.takeGreeting(c.id)
+        if (g) { setGreeting(g); break }
+      }
+    } catch {
+      setCastCards([])
+    }
+    // 不再依赖 advanceIfNeeded —— 日常推进已移到右栏那个 effect（审计 P1-6）
+  }, [])
+
+  const openSession = useCallback(async (id: string) => {
+    /**
+     * 🔴 审计 2026-09-18（P1-2）：切走会话要中止在途生成 + 复位流式（见 cancelInFlight）。
+     *    只在**真的换了会话**时做 —— 点左栏里当前这一场不该把正在生成的一轮杀掉
+     *    （那会把用户这句话连同回复一起丢掉：原实现只是清流式文字，那一轮仍会落库）。
+     */
+    if (sessionIdRef.current !== id) cancelInFlight()
+    const raw = await store.getFreeSession(id)
+    /**
+     * 🔴 旧刻度的会话在这里**一次性迁移**并落库（2026-09-16 老大定 D2）：
+     * 三项数值从 0–100 制（好感/信任默认 50）改为 −100~+100 制（默认 0），旧值一律归零。
+     *
+     * 为什么不放在读取侧「顺手改」：只在内存里归零的话库里还是旧值，
+     * 下次打开又会再归零一遍 —— 作者手改的数值会被**反复抹掉**。
+     * `migrateVarScale` 对已经在新刻度上的会话原样返回，所以这次判断没有额外代价。
+     */
+    const s: FreeSession | null = raw ? migrateVarScale(raw) : null
+    if (s && s !== raw) {
+      await store.saveFreeSession(s).catch(() => undefined)
+      // 给了提示才不会被当成「我的好感怎么突然清零了」
+      showToast('本场数值的刻度已改为 −100~+100，这一场按新刻度从 0 重新计', 'info')
+    }
+    setSession(s)
+    setStreamText('')
+    setSpeakNext('')
+    if (!s) return
+    await loadSessionContext(s)
+    // 反馈 #4：主角色卡上若有持久数值，拉进会话当起点（跨会话累积，也修好 #1 不显示）
+    const seeded = await seedSessionVarsFromCard(s)
+    if (seeded !== s) {
+      setSession(seeded)
+      await store.saveFreeSession(seeded).catch(() => undefined)
+    }
+  }, [loadSessionContext, cancelInFlight])
+
+  // ---------- 新建对话（版式对齐新建推演） ----------
+  const createFromDraft = useCallback(async (d: FreeDraft) => {
+    if (d.charIds.length === 0) return
+    try {
+      // 默认标题沿用 store 里的规则（「和X的对话」/「与X、Y的对话」），作者填了就以作者为准
+      const { title } = store.planFreeSessionCast(d.charIds, d.charIds[0], nameOf)
+      /**
+       * 剧本 → **快照**。
+       * 🔴 存快照而不是只存 id：剧本是可编辑的，只存引用的话作者改一次剧本，
+       *    所有引用过它的历史会话都会被悄悄改写 —— 那种问题几乎反推不到原因。
+       * 开场白走**消息通道**（对话的第一条），不进 system：塞进 system 会让模型以为
+       * 用户已经说过这句，也会白占每轮的常驻额度。
+       */
+      const script = d.scriptId ? await getScript(d.scriptId).catch(() => null) : null
+      const snap = script ? snapshotOf(script) : null
+      const opening = snap ? openingToMessage(snap) : ''
+      /**
+       * 故事世界设定 → **快照**（#5 / D1，2026-09-16）。
+       * 同剧本的道理：设定可编辑，只存 storyId 的话作者改一次故事，
+       * 所有引用它的历史会话都会被悄悄改写。**读不到就当没有**，不让新会话失败。
+       */
+      const story = d.storyId ? await getStory(d.storyId).catch(() => null) : null
+      const storySnap = story ? snapshotStorySetting(story) : null
+      const created = await store.createFreeSession(
+        d.charIds, d.title || title, { providerId: '' }, {}, d.userCharId || undefined, d.storyId || undefined)
+      const withOpening: FreeSession = {
+        ...created,
+        ...(snap ? { scriptId: snap.scriptId, script: snap } : {}),
+        ...(storySnap && storySnap.setting ? { storySetting: storySnap } : {}),
+        ...(opening ? { messages: [{ id: uid(), role: 'user' as const, content: opening, at: Date.now() }] } : {}),
+      }
+      await store.saveFreeSession(withOpening)
+      setSetupOpen(false)
+      await refreshSessions()
+      await refreshStories()
+      // 🔴 审计 2026-09-18（P1-2）：新建会话也是「切走」—— 不中止的话，
+      //    在途的旧回复返回后会 setSession(res.session) 把这个新会话顶掉。
+      cancelInFlight()
+      setSession(withOpening)
+      await loadSessionContext(withOpening)
+      // 反馈 #4：若主角色卡已有持久数值，新会话接着算（跨会话累积）
+      const seeded = await seedSessionVarsFromCard(withOpening)
+      if (seeded !== withOpening) {
+        setSession(seeded)
+        await store.saveFreeSession(seeded).catch(() => undefined)
+      }
+      const aiNames = d.charIds.filter(id => id !== d.userCharId).map(nameOf).filter(Boolean).join('、')
+      const who = d.userCharId
+        ? `你演 ${nameOf(d.userCharId)}，AI 演 ${aiNames}`
+        : d.charIds.length > 1
+          ? '多角色会话（发言顺序由语境决定，也可点顶部头像指定下一位）'
+          : `与 ${aiNames} 的对话`
+      showToast(snap
+        ? `已新建对话（剧本「${snap.name}」）—— ${who}`
+        : `已新建对话 —— ${who}（记忆按角色共享，换会话不会重来）`)
+    } catch (e) {
+      showToast(`新建失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }, [nameOf, refreshSessions, refreshStories, loadSessionContext, cancelInFlight])
+
+  // ---------- 结束本轮对话（一次性收尾：记忆 + 日记 + 数值 + 设定） ----------
+  /**
+   * 让本地 Ollama 把这一场用过的模型吐出去（#11，收尾跑完后才调）。
+   *
+   * 【为什么聊天模型也要卸】老大遇到的正是「清空了记忆与日记，模型扮演的角色还是有记忆」——
+   *   真正带着上一场上下文的是**生成回复那个模型**，它按 keep_alive 挂在显存里。
+   *   总结模型如果与它不是同一个，也一并卸掉（两个都占显存）。
+   *   同一个模型只卸一次（按 类型|地址|模型名 去重），免得白跑一次 HTTP。
+   *
+   * 非本机 Ollama（云端 / 局域网另一台机器）会被 `unloadOllamaModel` 静默跳过，
+   * 这里如实提示一句「没有可卸载的本地模型」，免得作者以为开关坏了。
+   */
+  const unloadLocalModels = useCallback(async () => {
+    const refs: { providerId?: string }[] = []
+    if (session?.model?.providerId) refs.push({ providerId: session.model.providerId })
+    if (summaryProviderId) refs.push({ providerId: summaryProviderId })
+    const seen = new Set<string>()
+    let done = 0
+    for (const ref of refs) {
+      try {
+        const { provider } = await resolveTavernProvider(ref)
+        const key = `${provider.type}|${provider.baseUrl}|${provider.model}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        if (await unloadOllamaModel(provider)) done++
+      } catch {
+        // 单个解析或卸载失败不影响另一个；下面统一提示
+      }
+    }
+    if (done > 0) showToast('已让本地模型退出显存（下一场开场会慢一点：要重新加载）', 'info')
+    else showToast('没有可卸载的本地模型（云端模型不需要卸载，或本机 Ollama 未响应）', 'info')
+  }, [session, summaryProviderId])
+
+  /**
+   * 以前这里是「每轮说完一句就静默整理一次记忆」。本地模型跑一次要几十秒，
+   * 全都压在那句之后 —— 作者的表现就是「说完卡半天」，聊越久越卡（反馈 #3）。
+   *
+   * 现在改成：**聊天过程中一次都不整理**，作者点「结束本轮对话」才走完这一整套。
+   * 代价是本轮的对话要结束时才进长期记忆 —— 换来的是对话过程再不会被打断。
+   */
+  const endRound = useCallback(async () => {
+    const s = session
+    if (!s || ending) return
+    if (s.endedAt) { showToast('本轮已经结束了', 'info'); return }
+
+    const pending = pendingMessages(s)
+    if (pending.length === 0 && s.messages.length === 0) {
+      showToast('这个对话还是空的', 'info')
+      return
+    }
+
+    const ok = await confirmDialog({
+      title: '结束本轮对话',
+      message: [
+        `现在就让 AI 整理这一场（${s.messages.length} 条），然后把它归档。`,
+        '',
+        '整理内容包括：各角色的记忆、Ta 的第一人称日记、本场数值，以及要不要改设定的建议。',
+        '结束后这一场会变成只读，想继续就新开一场。',
+      ].join('\n'),
+      danger: false,
+    })
+    if (!ok) return
+
+    setEnding(true)
+    setEndStage(null)
+    setEndResult(null)
+    // 🔴 取锁必须在 try **之外**（审计 P1-3）：旧写法把取锁放在 try 里，
+    //    而 `finally` 无条件 releaseSummaryLock() —— 取锁失败（说明锁在**别人**手里）时
+    //    也会执行 finally，把别人的锁删掉，防并发形同虚设。
+    //    （TavernPlot 的 runPlotSummary 本来就是正确写法，这里对齐。）
+    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) {
+      showToast('另一个窗口正在收尾', 'info')
+      setEnding(false)
+      return
+    }
+    const ctl = new AbortController()
+    endCtlRef.current = ctl
+    try {
+      const res = await runRoundEnd({
+        session: s,
+        cards: castCards,
+        providerId: summaryProviderId || undefined,
+        // 反馈 #4：本场数值算完回写主角色卡（持久、跨会话累积）
+        primaryCharId: primaryAiCharId(s),
+        // hardLimit 必须传：不传就永远走内置 3000，面板调的「记忆硬上限」是死的（审计 P1-1）
+        limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays, hardLimit: lim.hardLimit },
+        varKeys,
+        vars: s.vars,
+        maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
+        nameOf: (id?: string) => nameOf(id ?? ''),
+        onProgress: setEndStage,
+        signal: ctl.signal,
+      })
+
+      // 水位线推进到最后一条 + 写回数值 + 打上归档戳
+      const updated: FreeSession = {
+        ...s,
+        watermark: nextWatermark(s) ?? s.watermark,
+        vars: res.vars,
+        endedAt: res.endedAt,
+        updatedAt: Date.now(),
+      }
+      await store.saveFreeSession(updated)
+      setSession(cur => (cur && cur.id === updated.id ? updated : cur))
+      setMems(prev => ({ ...prev, ...Object.fromEntries(res.memories.map(m => [m.charId, m])) }))
+
+      const n = Object.keys(res.journals).length
+      // 🔴 有步骤没成必须如实说（2026-09-19 六维审计 P0-1）：原先 ②本场数值 / ③设定审查失败被
+      //    静默吞掉，界面照样只报「本轮已结束」，作者以为收尾是完整的。
+      showToast(
+        `本轮已结束 —— ${res.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}`
+        + (res.warnings.length ? `\n⚠️ ${res.warnings.join('\n⚠️ ')}` : ''),
+        res.warnings.length ? 'info' : 'success',
+        6000,
+      )
+
+      setEndResult(res)
+      // 有设定建议就顺手摊开给作者裁决 —— 都到这一步了，让他再点一次按钮纯属多余
+      if (res.proposals.length > 0) {
+        setProposals(res.proposals)
+        // 🔴 默认**一条都不勾**（审计 P2）：设定改动会动角色卡的根本，老大 2026-09-16 的原话是
+        //    「由于会涉及到角色卡的根本性变化，所以需要用户确认修改内容」。
+        //    默认全勾等于给了一句「一键全采纳」，与「逐条裁决」的初衷相反。
+        setPicked(new Set())
+        setReviseError('')
+        setReviseOpen(true)
+      }
+      await refreshSessions()
+
+      // 🔴 #11：卸载排在这一步**之后**（D4 硬约束）。
+      //    到这里的含义是：记忆/日记/数值/设定建议全部产出、会话也已落库、列表也刷过了 ——
+      //    后面不再有任何模型调用，此时卸载才是安全的。
+      //    中途卸会让后面的收尾步骤先等一次模型重新加载（本地 27B 上几十秒），得不偿失。
+      //    失败只提示，**绝不**把这一轮收尾判成失败：卸载是锦上添花的事。
+      if ((tavernSettings ?? DEFAULT_TAVERN_SETTINGS).free.unloadAfterRoundEnd) {
+        void unloadLocalModels()
+      }
+    } catch (e) {
+      // 🔴 中止 ≠ 失败（2026-09-19 六维审计 P2-7）：记忆走的是「全算完才统一落库」的设计
+      //    （见 runRoundEnd 顶部说明），中止时一条都没写，水位线与 endedAt 也没推进 ——
+      //    下次点「结束本轮对话」从零重算即可，不会留下半截记忆。
+      const aborted = /取消|abort/i.test(e instanceof Error ? e.message : String(e))
+      showToast(
+        aborted
+          ? '已中止收尾 —— 没有写入任何内容，这一场仍是未结束状态'
+          : `结束失败：${e instanceof Error ? e.message : String(e)}`,
+        aborted ? 'info' : 'error',
+      )
+    } finally {
+      endCtlRef.current = null
+      releaseSummaryLock()
+      setEnding(false)
+      setEndStage(null)
+    }
+  }, [session, ending, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions, unloadLocalModels])
+
+  /** 中止收尾（已产出的部分不落库，见 endRound 的 catch 说明） */
+  const stopEndRound = useCallback(() => { endCtlRef.current?.abort() }, [])
+
+  /**
+   * 设定更新：对**在场每个角色**分别审查一遍。
+   *
+   * 为什么每个都要跑：关系是**双向**的（用户演的阿岩提分手，阿岩与小满两张卡的「2.4 关系」都该改），
+   * 只查 AI 演的那一方会漏掉一半。
+   * 这里只产出建议、**不落库**；采纳由 applyPicked 交给 store。
+   */
+  const openRevise = useCallback(async (s: FreeSession) => {
+    const cards = (await Promise.all(s.charIds.map(async id => store.getFreeChar(id))))
+      .filter((c): c is FreeCharacter => !!c)
+    setReviseOpen(true)
+    if (cards.length === 0) { setProposals([]); return }
+    setRevising(true)
+    setProposals([])
+    setPicked(new Set())
+    setReviseError('')
+    try {
+      // 说话人名字：多角色同场时，「谁对谁说了什么」是判断的关键一半
+      const speakerName = (m: TavernMessage) => cards.find(c => c.id === m.speakerId)?.name ?? '角色'
+      const out: CardRevision[] = []
+      for (const c of cards) {
+        const rows = await proposeCardRevisions({
+          char: c,
+          messages: s.messages,
+          providerId: summaryProviderId || undefined,
+          speakerName,
+        })
+        out.push(...rows)
+      }
+      setProposals(out)
+      setPicked(new Set(out.map(r => r.id)))
+      showToast(out.length
+        ? `读出 ${out.length} 处可能的设定变更，请逐条裁决`
+        : `这段对话没有需要改的设定（共查了 ${cards.length} 张卡）`,
+        'info')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setReviseError(msg)
+      showToast(`检查失败：${msg}`, 'error')
+    } finally {
+      setRevising(false)
+    }
+  }, [summaryProviderId])
+
+  /** 采纳选中的设定变更。写卡后**重读在场角色** —— 下一轮组装就用新设定 */
+  const applyPicked = useCallback(async () => {
+    const items = proposals
+      .filter(p => picked.has(p.id))
+      .map(p => ({ charId: p.charId, field: p.field, after: p.after }))
+    if (items.length === 0) return
+    setApplyingRev(true)
+    try {
+      const n = await store.applyCardRevisions(items)
+      if (session) await loadSessionContext(session)
+      showToast(`已更新 ${n} 处设定 —— 下一轮对话即按新设定演`)
+      setReviseOpen(false)
+      setProposals([])
+      setPicked(new Set())
+      setReviseError('')
+    } catch (e) {
+      showToast(`写入失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setApplyingRev(false)
+    }
+  }, [proposals, picked, session, loadSessionContext])
+
+  /** 提交会话改名（Enter / 失焦保存，Esc 取消）。与原名相同则不写库、不提示。 */
+  const saveTitle = useCallback(async () => {
+    const cur = session
+    setEditingTitle(false)
+    if (!cur) return
+    const nextTitle = titleDraft.trim()
+    if (!nextTitle || nextTitle === cur.title) return
+    const updated: FreeSession = { ...cur, title: nextTitle, updatedAt: Date.now() }
+    try {
+      await store.saveFreeSession(updated) // store 会一并更新索引里的标题
+      setSession(s => (s && s.id === updated.id ? updated : s))
+      setSessions(prev => prev.map(x => (x.id === updated.id ? { ...x, title: nextTitle, updatedAt: updated.updatedAt } : x)))
+      showToast('已改名')
+    } catch (e) {
+      showToast(`改名失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }, [session, titleDraft])
+
+  // ---------- 本场数值：把状态落回角色卡（定义在 send 之前，避免 useCallback 依赖数组触发 TDZ） ----------
+  /** 把一份角色卡状态落库并刷新内存（反馈 #4：状态存卡、跨会话累积）。通用：任何角色 id 都能用。 */
+  const persistCharVars = useCallback(async (charId: string, cv: CharVars) => {
+    const card = await store.getFreeChar(charId).catch(() => null)
+    if (!card) return
+    const updated = { ...card, vars: cv }
+    await store.saveFreeChar(updated).catch(() => undefined)
+    setCharCard(prev => (prev && prev.id === charId ? updated : prev))
+    setCastCards(prev => prev.map(c => (c.id === charId ? updated : c)))
+  }, [])
+
+  // ---------- 对话 ----------
+  /** preset = 快捷指令条递过来的一句现成话（走导演指令通道）；不传就用输入框里的 */
+  const send = useCallback(async (preset?: string) => {
+    const text = (preset ?? input).trim()
+    if (!text || !session || !charCard) return
+    /**
+     * 生成中又按了一次发送（反馈 #13）。
+     * 输入框现在**不被 disable**，作者能先把下一句打好 —— 所以 Enter 是真按下去的，
+     * 🔴 不能只是静默 return：那会让作者以为键盘失灵。提示一次即可（ref 节流）。
+     */
+    if (streaming) {
+      if (!streamingHintRef.current) {
+        streamingHintRef.current = true
+        showToast('Ta 还在说 —— 这句说完再接你的下一句', 'info')
+      }
+      return
+    }
+    // 🔴 归档后只读：这一场已经整理归档再去改它，记忆与日记就会和正文对不上
+    if (session.endedAt) {
+      showToast('本轮对话已结束 —— 想接着聊请新开一场', 'info')
+      return
+    }
+    if (!preset) {
+      setInput('')
+      // 发送后把光标留在（已清空的）输入框里：沉浸聊天时下一句直接打，
+      // 不用每轮再抬手点一次框（老大 2026-09-16 反馈 #13）。
+      // ⚠️ 必须等 React 把空值渲染进去再聚焦 —— 同步 setState 后立刻 focus 会跟重渲染打架。
+      requestAnimationFrame(() => inputRef.current?.focus())
+    }
+    setStreaming(true)
+    setStreamText('')
+    setPhase('')
+    // 立刻把这句话显示出来 —— 等整轮生成完才现身的话，中间那几十秒界面像没收到你说话。
+    // 这里只是**预演**：runFreeTurn 内部会用 withUser 自己重建 messages，
+    // 成功后用返回的 session 覆盖，失败则回滚并把文字还回输入框。
+    const optimistic: FreeSession = {
+      ...session,
+      messages: [...session.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, at: Date.now() }],
+    }
+    setSession(optimistic)
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    try {
+      const cast = castCards.length ? castCards : [charCard]
+      const res = await runFreeTurn(session, cast, text, {
+        onToken: d => setStreamText(prev => prev + d),
+        onPhase: p => setPhase(p),
+        signal: ctrl.signal,
+        speakerId: speakNext || undefined,
+      })
+      // 🔴 审计 2026-09-18（P1-2）：生成期间切了会话 / 按了停止 → **不回灌界面**。
+      //    否则 setSession(res.session) 会把界面拽回旧会话，而左栏高亮按 session?.id 判定，
+      //    高亮与正文就此不一致。用 ctrl 当「代次令牌」：openSession / stop 会换掉或清空 abortRef。
+      if (abortRef.current !== ctrl) return
+      setStreamText('')
+      // 反馈 #5：先把这一轮完整回复作为消息立刻显示，文字常驻不闪退；后面的数值结算在后台跑（只更新右栏），不再清空正文导致「文字消失再重现」。
+      setSession(res.session)
+      /**
+       * 每轮刷新本场数值（2026-09-16 老大反馈 #4）。
+       * 这一步还要再等一次小调用 —— 先把阶段提示换上，否则正文都出来了界面还卡着，像死机。
+       * 刷新结果与正文**同一笔落库**：数值跟它所依据的那条回复不能分家。
+       */
+      setPhase('正在结算本场数值…')
+      const withVars = await refreshSessionVars({
+        session: res.session,
+        keys: varKeys,
+        maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
+        nameOf: id => nameOf(id ?? ''),
+        providerId: summaryProviderId || undefined,
+        signal: ctrl.signal,
+        // 反馈 #4：抽取时把主角色卡当前备注当上下文；算完把新值＋新备注回写卡（持久、跨会话累积）
+        primaryCharId: primaryAiCharId(res.session),
+        charVars: charCard?.vars,
+        persistCharVars,
+      })
+      const saved = await store.saveFreeSession(withVars)
+      // 🔴 结算期间又切了会话：这一轮**照常落库**（它确实发生在那个会话上），但界面不接管
+      if (abortRef.current !== ctrl) { void refreshSessions(); return }
+      setSession(saved)
+      setPostNotice({ applied: res.postApplied, errors: res.postErrors })
+      await refreshSessions()
+      if (res.fellBack) showToast('该会话指定的模型不可用，已回退到全局活动模型', 'info')
+      // 说完这句就把Ta说的话撤掉：那句话是「很久没来」时才该有的
+      setGreeting('')
+      setSpeakNext('')
+    } catch (e) {
+      // 🔴 已切走（或主动停止）：绝不能回滚到旧会话 —— setSession(session) 会把界面拽回去，
+      //    setInput(text) 还会把上一场没发出去的文字塞进新会话的输入框（审计 P1-2 原文场景）
+      if (abortRef.current !== ctrl) return
+      // 回滚：这句话没送出去，把它还回输入框，别让作者白打一遍
+      setSession(session)
+      setInput(text)
+      showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setStreaming(false)
+      setPhase('')
+      abortRef.current = null
+      streamingHintRef.current = false
+    }
+  }, [input, session, charCard, streaming, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf, persistCharVars])
+
+  // ---------- 消息级操作（与剧情推演同一套；自由模式多一条：重说时**保持原来的说话人**） ----------
+  const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
+
+  const commit = async (next: FreeSession) => {
+    setSession(next)
+    await store.saveFreeSession(next).then(refreshSessions).catch(() => undefined)
+  }
+
+  // ---------- 本场数值（C2 第二步）：作者手改 + 回写角色卡 ----------
+
+  /**
+   * 手改一个数值（主角色）。
+   * 🔴 走 `setVarManually`（与模型增量同一个写入关口）→ 夹取、去重、变更记录只有一套规则；
+   *    并标记来源 manual —— 重说时**不会**把作者刚改的数翻回去（那是作者的手，比模型准）。
+   * 同时把新值回写主角色卡（反馈 #4：跨会话累积）。
+   */
+  const setVar = (key: VarKey, raw: string) => {
+    if (!session) return
+    const cur = varsOf(session, varKeys)
+    const applied = setVarManually(cur.values, key, raw)
+    if (applied.changes.length === 0) return
+    const next = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(session.messages), 'manual')
+    void commit({ ...session, vars: next })
+    // 回写主角色卡：备注沿用卡上已有的（手改数值不动备注）
+    const id = primaryAiCharId(session)
+    if (id) void persistCharVars(id, { values: next.values ?? applied.values, notes: charCard?.vars?.notes ?? {} })
+    showToast(`已改为 ${applied.changes.map(c => `${c.label} ${String(c.to || '空')}`).join('、')}`)
+  }
+
+  /** 改主角色某项的备注（作者手改入口）；空串＝清掉这条备注 */
+  const setPrimaryNote = (key: VarKey, text: string) => {
+    if (!charCard) return
+    const cv = setCharNote(charCard.vars, key, text)
+    void persistCharVars(charCard.id, cv)
+  }
+
+  /** 手改非主角色的数值（多角色同场，右栏切到某位时） */
+  const setOtherVar = (charId: string, key: VarKey, raw: string) => {
+    const card = castCards.find(c => c.id === charId)
+    if (!card) return
+    const cur = card.vars?.values ?? {}
+    const applied = setVarManually(cur, key, raw)
+    if (applied.changes.length === 0) return
+    void persistCharVars(charId, { values: applied.values, notes: { ...(card.vars?.notes ?? {}) } })
+    showToast(`已改为 ${applied.changes.map(c => `${c.label} ${String(c.to || '空')}`).join('、')}`)
+  }
+
+  /** 改非主角色某项的备注 */
+  const setOtherNote = (charId: string, key: VarKey, text: string) => {
+    const card = castCards.find(c => c.id === charId)
+    if (!card) return
+    void persistCharVars(charId, setCharNote(card.vars, key, text))
+  }
+
+  /** 把某位非主角色的本卡数值归零（多角色同场，右栏切到该角色时可用） */
+  const resetOtherVars = (charId: string) => {
+    void persistCharVars(charId, { values: emptyVars(varKeys).values, notes: {} })
+    showToast('已将该角色本卡数值归零')
+  }
+
+  const resetVars = async () => {
+    if (!session || varKeys.length === 0) return
+    const cur = varsOf(session, varKeys)
+    const applied = resetVarValues(cur.values, varKeys)
+    if (applied.changes.length === 0) { showToast('数值已经在初始值上了', 'info'); return }
+    const okGo = await confirmDialog({
+      title: '重置本场数值？',
+      message: `${applied.changes.map(c => c.label).join('、')} 会回到初始值（数值归 0，心情与地点清空）。\n这一场的变动记录会保留，但数值本身回不去 —— 要恢复得再手改一遍。\n（重置只清这一场的数值，角色卡上累积的状态也会一并归零。）`,
+      confirmText: '重置',
+      danger: true,
+    })
+    if (!okGo) return
+    const next = recordVarChanges({ ...cur, values: applied.values }, applied.changes, turnSeqOf(session.messages), 'manual')
+    void commit({ ...session, vars: next })
+    // 角色卡上的持久状态一并归零
+    const id = primaryAiCharId(session)
+    if (id) void persistCharVars(id, { values: next.values ?? applied.values, notes: {} })
+  }
+
+  const saveEdited = (id: string, text: string) => {
+    if (!session) return
+    void commit(store.patchMessage(session, id, { content: text, edited: true }))
+  }
+
+  const toggleHidden = (id: string) => {
+    if (!session) return
+    const next = store.toggleMessageHidden(session, id)
+    void commit(next)
+    const m = next.messages.find(x => x.id === id)
+    showToast(m?.hidden ? '已隐藏：这条不再进上下文，界面仍留着' : '已恢复：这条重新参与上下文', 'info')
+  }
+
+  const removeMsg = async (id: string) => {
+    if (!session) return
+    const okGo = await confirmDialog({
+      title: '删掉这一条？',
+      message: '删除后不再参与上下文，也不再显示。\n这一步不可撤销（记忆是角色级的，已经整理进去的内容不受影响）。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!okGo) return
+    void commit(store.dropMessage(session, id))
+  }
+
+  /**
+   * 重说：多角色同场时**保持原来的说话人** —— 同一轮换个人接话，观感很怪。
+   * speakerId 传给引擎即走「手动指定下一位」那条路（它优先于轮转）。
+   */
+  const reroll = async () => {
+    if (!session || streaming) return
+    // 🔴 归档守卫：结束本轮对话之后这一场是**只读**的 —— 重说会真调模型并 store.saveFreeSession()
+    //    落库，把归档那一刻的记忆/日记与正文彻底对不上（这正是 send() 那条注释想防的事）。
+    if (session.endedAt) {
+      showToast('这一场已经结束了（只读归档）—— 想接着聊请新开一场', 'info')
+      return
+    }
+    const target = session.messages.find(m => m.id === lastAiId)
+    if (!target) { showToast('还没有可以重说的回复', 'info'); return }
+    setStreaming(true)
+    setStreamText('')
+    setPhase('')
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    try {
+      const cast = (castCards.length ? castCards : (charCard ? [charCard] : [])) as FreeCharacter[]
+      const res = await runFreeTurn(session, cast, null, {
+        onToken: d => setStreamText(prev => prev + d),
+        onPhase: p => setPhase(p),
+        signal: ctrl.signal,
+        speakerId: target.speakerId,
+      })
+      // 🔴 审计 2026-09-18（P1-2）：生成期间切了会话 / 按了停止 → **不回灌界面**。
+      //    否则 setSession(res.session) 会把界面拽回旧会话，而左栏高亮按 session?.id 判定，
+      //    高亮与正文就此不一致。用 ctrl 当「代次令牌」：openSession / stop 会换掉或清空 abortRef。
+      if (abortRef.current !== ctrl) return
+      setStreamText('')
+      // 反馈 #5：重说也先把新回复作为消息立刻显示，文字常驻；数值结算在后台跑（只更新右栏）。
+      setSession(res.session)
+      // 重说同样要刷新数值（反馈 #4）：回复换了，这一轮的关系走向也就跟着换
+      setPhase('正在结算本场数值…')
+      const withVars = await refreshSessionVars({
+        session: res.session,
+        keys: varKeys,
+        maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
+        nameOf: id => nameOf(id ?? ''),
+        providerId: summaryProviderId || undefined,
+        signal: ctrl.signal,
+        // 反馈 #4：抽取时把主角色卡当前备注当上下文；算完把新值＋新备注回写卡（持久、跨会话累积）
+        primaryCharId: primaryAiCharId(res.session),
+        charVars: charCard?.vars,
+        persistCharVars,
+      })
+      const saved = await store.saveFreeSession(withVars)
+      // 🔴 结算期间又切了会话：照常落库，但界面不接管（同 send）
+      if (abortRef.current !== ctrl) { void refreshSessions(); return }
+      setSession(saved)
+      setPostNotice({ applied: res.postApplied, errors: res.postErrors })
+      await refreshSessions()
+      if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
+    } catch (e) {
+      if (abortRef.current !== ctrl) return   // 已切走：不报「失败」，也不回滚界面
+      showToast(`重说失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setStreaming(false)
+      setPhase('')
+      abortRef.current = null
+    }
+  }
+
+  /** 临时导演指令（B2）：与剧情推演同一套；落库即生效，传 null 即清除 */
+  const applyDirectorNote = async (note: TavernDirectorNote | null) => {
+    if (!session) return
+    const next = store.setDirectorNote(session, note)
+    setSession(next)
+    await store.saveFreeSession(next).catch(() => undefined)
+  }
+
+  /**
+   * 快捷指令条：走协议 R4 的**导演指令**通道（「」= 照做然后继续演）。
+   * 🔴 点击**只填进输入框、不直接发送** —— 这些指令几乎都要作者改一处（推进多久），
+   *    直接发出去等于替作者作了决定。带 slot 的（推进时间）会把那一段选中，直接改即可。
+   */
+  // ---------- 润色 / 自动回复（AI 实时生成文本回写输入框，绝不自动发送） ----------
+  const assistWrite = useCallback(async (mode: 'polish' | 'auto') => {
+    if (streaming || assistBusy || !session) return
+    if (session.messages.length === 0) return           // 首轮（无历史）禁用
+    if (session.endedAt) return
+    if (mode === 'polish' && !input.trim()) {
+      showToast('输入框是空的，没有可润色的内容', 'info')
+      return
+    }
+    const original = input
+    setAssistBusy(true)
+    setAssistMode(mode)
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    let buf = ''
+    let lastFlush = 0
+    try {
+      const cast = castCards.length ? castCards : (charCard ? [charCard] : [])
+      const res = await runFreeAssist(
+        session,
+        cast,
+        mode,
+        mode === 'polish' ? original.trim() : '',
+        {
+          signal: ctrl.signal,
+          onToken: (t) => {
+            buf += t
+            const now = Date.now()
+            // 节流 ~120ms 回写预览；预览套**同一套**后处理规则，保证「途中看到 = 最终得到」
+            if (now - lastFlush >= 120) { lastFlush = now; setInput(applyPostRulesForPreview(buf, tavernSettings ?? DEFAULT_TAVERN_SETTINGS)) }
+          },
+        },
+      )
+      // 🔴 切走之后不能再动输入框：setInput 会把旧会话的润色/续写结果填进**新会话**的框里（同 P1-2）
+      if (abortRef.current !== ctrl) return
+      setInput(res.text)                          // 最终以完整结果为准（已在 engine 里去空行）
+    } catch (e) {
+      if (abortRef.current !== ctrl) return
+      if (isCancelled(e)) setInput(applyPostRulesForPreview(buf, tavernSettings ?? DEFAULT_TAVERN_SETTINGS)) // 取消：保留已生成部分（同口径后处理）
+      else {
+        showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+        if (mode === 'polish') setInput(original)        // 润色失败：还原原文
+        else setInput('')                               // 自动回复失败：留空
+      }
+    } finally {
+      setAssistBusy(false)
+      setAssistMode(null)
+      abortRef.current = null
+    }
+  }, [streaming, assistBusy, session, input, castCards, charCard, tavernSettings])
+
+  /** 只要有历史消息（非首轮），润色/自动回复即可用。自由对话中用户用「我的档案」扮演（无角色卡）亦可用 */
+  const canAssist = !!session && session.messages.length > 0
+
+  const quickActions: QuickAction[] = [
+    { key: 'cont', label: '继续', hint: '让 Ta 接着说', text: '「继续。」' },
+    { key: 'env', label: '补环境', hint: '先补一句（ ）里的环境（光、声、气味），再接着说', text: '「先说一句（ ）里的环境（光、声、气味），再继续。」' },
+    { key: 'time', label: '推进时间', hint: '把时间往前推 —— 填进输入框后自己改成需要的时长', text: '「把时间往前推进 半小时，然后继续。」', slot: '半小时' },
+    { key: 'mind', label: 'Ta 在想什么', hint: '用一个动作或细节透出心里的想法，不直接写心理', text: '「用一个动作或细节写出 Ta 此刻心里在想什么，不要直接写心理。」' },
+    { key: 'reroll', label: '重说', hint: '用同一段历史让 Ta 重说这一条（只出一个结果，说话人不变）', run: () => void reroll() },
+    {
+      key: 'polish',
+      label: assistBusy && assistMode === 'polish' ? '润色中…' : '润色',
+      hint: 'AI 读取你已写的文本，结合角色卡/剧本/上下文扩写润色，结果覆盖输入框（不自动发送）',
+      run: () => void assistWrite('polish'),
+      disabled: !canAssist,
+    },
+    {
+      key: 'auto',
+      label: assistBusy && assistMode === 'auto' ? '生成中…' : '自动回复',
+      hint: 'AI 结合剧本/上下文/角色卡，替你扮演的角色写一句发言填进输入框（不自动发送）',
+      run: () => void assistWrite('auto'),
+      disabled: !canAssist,
+    },
+  ]
+
+  /** 输入框 ref：预填后要聚焦并把「该改的那一段」选中 */
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  /**
+   * 快捷指令预填：把预制文本填进输入框、聚焦，并把该改的那段选中（不发送）。
+   * ⚠️ 选区要等 React 把新值渲染进 textarea 之后再设 —— 同步 setState 后立刻设会选到旧值。
+   */
+  const fillInput = (text: string, slot?: string) => {
+    setInput(text)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      const i = slot ? text.indexOf(slot) : -1
+      if (i >= 0) el.setSelectionRange(i, i + slot!.length)
+      else el.setSelectionRange(text.length, text.length)
+    })
+  }
+
+  const stop = () => { abortRef.current?.abort() }
+
+  const removeSession = async () => {
+    if (!session) return
+    const okGo = await confirmDialog({
+      title: '删除这个会话？',
+      message: '对话记录会一并删除。\n注意：Ta的记忆是按角色存的，所以记忆不会跟着消失。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!okGo) return
+    await store.deleteFreeSession(session.id)
+    setSession(null)
+    setCastCards([])
+    setCharCard(null)
+    setMems({})
+    setStatusCharId('')
+    setDaily(null)
+    await refreshSessions()
+    showToast('已删除会话')
+  }
+
+  // ---------- 自动滚到底 + 「回到底部」按钮状态 ----------
+  const [atBottom, setAtBottom] = useState(true)
+  const updateAtBottom = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+    setAtBottom(dist < 48)
+  }, [])
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    setAtBottom(true)
+  }, [])
+  // 已在底部时才自动跟随（反馈 #13）：用户往回滚看历史时不再被新内容硬拽回底部
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el && atBottom) el.scrollTop = el.scrollHeight
+  }, [session?.messages.length, streamText, atBottom])
+
+  const usedChars = useMemo(() => {
+    if (!session) return 0
+    return session.messages.reduce((n, m) => n + m.content.length, 0)
+  }, [session])
+
+  /**
+   * 左栏树：故事（父）→ 对话（子）。过滤词同时作用于故事名与对话（标题 / 在场角色）。
+   *
+   * 「未归属」抽屉必留：会话的归属是**推**出来的（自己存的 storyId，或按在场角色反推），
+   * 故事被删、卡被删之后就会推不出来 —— 那些对话必须有地方安身，
+   * 否则它们会从列表里凭空消失，而作者只会以为「对话丢了」。
+   */
+  const tree = useMemo(() => {
+    const kw = q.trim().toLowerCase()
+    const hit = (s: FreeSessionIndexItem) =>
+      !kw || `${s.title} ${s.charIds.map(nameOf).join(' ')}`.toLowerCase().includes(kw)
+    const kept = sessions.filter(hit)
+    const groups = stories
+      .map(st => ({ id: st.id, name: storyDisplayName(st), rows: kept.filter(s => sessionStoryId(s, chars) === st.id) }))
+      // 过滤时把空组隐掉（否则搜一个词会剩一排空标题）；不过滤时保留，让作者看见结构
+      .filter(g => !kw || g.rows.length > 0)
+    const orphan = kept.filter(s => {
+      const sid = sessionStoryId(s, chars)
+      return !sid || !stories.some(st => st.id === sid)
+    })
+    return { groups, orphan, total: kept.length }
+  }, [sessions, stories, chars, q, nameOf])
+
+  const toggleStory = (id: string) =>
+    setClosedStoryIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
+
+  /** 一场对话在左栏树里的样子（故事分组与「未归属」两处共用，抽出来免得走样） */
+  const renderSessionRow = (s: FreeSessionIndexItem) => {
+    const active = session?.id === s.id
+    const names = s.charIds.map(nameOf).filter(Boolean).join('、') || '（角色已删除）'
+    return (
+      <button
+        key={s.id}
+        type="button"
+        onClick={() => void openSession(s.id)}
+        className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
+          active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+        }`}
+      >
+        <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <span className="truncate text-10 text-ink-500">{names}</span>
+          <span className="shrink-0 text-10 text-ink-600">{agoText(s.lastActiveAt)}</span>
+        </div>
+      </button>
+    )
+  }
+
+  /** AI 演的角色（用户扮演的那个不算 AI 的位子：头像行、气泡归属都要摘掉他） */
+  const aiCards = useMemo(
+    () => castCards.filter(c => c.id !== session?.userCharId),
+    [castCards, session],
+  )
+  /** 在场调度（A6）：改的是这一场，落库即生效（下一轮组装就用新值） */
+  const applyDirection = async (next: FreeSession) => {
+    await store.saveFreeSession(next)
+    setSession(cur => (cur && cur.id === next.id ? next : cur))
+  }
+  const directorRows = useMemo(
+    () => aiCards.map(c => ({ id: c.id, name: c.name || '（未命名）', tag: 'AI 演', speakable: true })),
+    [aiCards],
+  )
+  /**
+   * 状态一览（批次 8，C2 第一步：只读）。
+   * 只吃**已经加载好**的两样东西（在场角色卡 + 每位角色的记忆），不额外读库 ——
+   * 否则同一份数据就有两个来源，哪天两边不同步会很难查。
+   */
+  const statusModel = useMemo(() => buildStatusModel({
+    chars: castCards.map(c => ({ id: c.id, name: c.name, avatar: c.avatar })),
+    direction: session,
+    userCharId: session?.userCharId,
+    memories: mems,
+  }), [castCards, session, mems])
+
+  /** 我的档案（全局）：目前只用来给「你」这一侧挂头像 */
+  const myProfile = tavernSettings?.profile ?? DEFAULT_TAVERN_PROFILE
+  /**
+   * 右栏「Ta这几天的生活 / 心情」跟着 statusCharId 走（角色级数据，换人换一份）。
+   *
+   * 补算也在这里做（审计 P1-6）：**谁被打开看，就补算谁**。
+   * 旧实现只在载入会话时对第一位角色推一次，其余角色切过去只读不推进 —— 永远停在旧状态。
+   * `advanceIfNeeded` 内部有 `shouldAdvanceDaily` 节流，重复进入不会反复调模型。
+   */
+  useEffect(() => {
+    if (!statusCharId) { setDaily(null); return }
+    let alive = true
+    void (async () => {
+      const cur = await store.getDaily(statusCharId).catch(() => null)
+      if (!alive) return
+      setDaily(cur)
+      const card = castCards.find(c => c.id === statusCharId)
+      if (card) void advanceIfNeeded(card, cur)
+    })()
+    return () => { alive = false }
+  }, [statusCharId, session?.id, castCards, advanceIfNeeded])
+
+  return {
+    // 会话 / 故事 / 角色数据
+    sessions, session, stories, closedStoryIds, chars, charCard, aiCards, myProfile, castCards, tree, toggleStory, renderSessionRow, refreshStories, nameOf, exportSpeakerOf,
+    // 左栏检索与新建
+    q, setQ, input, setSetupOpen, setupOpen,
+    // 消息与输入
+    inputRef, setInput, fillInput, send, stop, streaming, phase, streamText, assistBusy, quickActions, applyDirectorNote, directorRows,
+    // 消息操作（编辑 / 重生成 / 隐藏 / 删除）
+    saveEdited, toggleHidden, removeMsg, reroll, lastAiId, saveTitle, editingTitle, setEditingTitle, titleDraft, setTitleDraft, removeSession, updateAtBottom,
+    // 滚动
+    scrollRef, scrollToBottom, atBottom, usedChars,
+    // 数值与状态
+    varKeys, varsCharId, setVarsCharId, statusCharId, setStatusCharId, statusModel, statusTab, setStatusTab, setVar, setPrimaryNote, setOtherVar, setOtherNote, resetOtherVars, resetVars,
+    // 收尾 / 待发留言 / 日常
+    ending, endStage, endResult, setEndResult, endRound, stopEndRound, daily, showDaily, setShowDaily, greeting, setGreeting, postNotice, applyDirection,
+    // AI 设定更新（建议 / 采纳）
+    reviseOpen, setReviseOpen, openRevise, revising, applyingRev, reviseError, proposals, picked, setPicked, applyPicked,
+    // 多角色接话
+    speakNext, setSpeakNext,
+    // 弹窗与抽屉
+    usageOpen, setUsageOpen, directorOpen, setDirectorOpen, exportOpen, setExportOpen,
+    // 其他
+    loading, createFromDraft,
+  }
+}
+
+export type TavernFreeModel = ReturnType<typeof useTavernFreeModel>
