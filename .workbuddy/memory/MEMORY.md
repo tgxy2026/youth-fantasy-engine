@@ -42,11 +42,11 @@
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 会回退黑）。设置项＝标题→输入→说明；复制走 `copyText()`。
 - 🔴🔴 `<html>` 界面缩放：①量尺寸一律 `offsetHeight`/`clientWidth`，绝不 `getBoundingClientRect()`；②zoom 不缩放 vh→内联长度走 `foldVh()`；③SVG 滚轮锚点/拖拽除 zoom。
-- 🔴 光标/选区同步不能只靠 `onKeyUp`（输入法上屏/粘贴/程序化插入无 keyup）→ 有 `onChange` 就在里面同步。
+- 🔴 光标/选区同步不能只靠 `onKeyUp`（上屏/粘贴/程序化插入无 keyup）→ 有 `onChange` 就在里面同步。
 - 🔴 判"琥珀开启态"按 class **词元**比（off 态写 `hover:text-amber`，`includes` 恒真→假 PASS）。
 - 🔴 按对侧高度定高：flex item 加 `overflow-hidden`；别同写 `flex-1`+`height`。
-- 🔴 按钮：静止无框用 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；行内小操作 `size="xs"`；`danger` 破坏性。
-- 🔴 页头 `HelpPopover` 问号**必须在标题右侧同行**（`h1` 块级，须同处 flex 行）。头像兜底＝名字；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」/（）。
+- 🔴 按钮：静止无框用 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；`danger` 破坏性。🔴 **尺寸三层＝弹窗 md／主操作 sm／工具 xs；同排同 size、禁手写尺寸**。
+- 🔴 页头 `HelpPopover` 问号**必须在标题右侧同行**（`h1` 块级须同 flex 行）。头像兜底＝名字；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」/（）。
 
 ## AI 层
 - 🔴 **提示词给几层，模型就按几层输出**——读端必须兼容**自己给的**层级，否则整表静默丢光（09-18 实测 5 张表全丢，产出其实正确）。
@@ -60,7 +60,7 @@
 - 🔴🔴 **思考模型必须关思考**：本地 `think:false`；云端 Qwen3 系由 `openaiChat` 自动下发 `enable_thinking:false`（`HYBRID_THINKING_RE`）。开＝50~130s 且 content 必残。
 - 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式必撞 180s 墙。自驱 `runAutoContinue` 必传 **`onBodyToken`**；别 `await page.evaluate(整流程)`。⚠️ 生成入口无 `max_tokens`。
 - 🔴 **AI「会读哪些数据」＝`lib/aiDataSources.ts` 单一源**（闸 `tests/aiDataSources.test.ts`），改 prompt 来源必须同步改它。🔴🔴 **禁写「全程本地模型／不外发」**——口径只能是「发给**当前选定的**模型：本地不出本机，云端上传到该服务商」。
-- 🔴🔴 **保密等级 D＝终结（弃用）：任何情况下都不进 AI** —— 不是"排最后"是**压根不带**。硬保证在 `aiContext.isPrunedForAI`（内容装配／姓名清单／判重清单**三处**过滤；认裸键与复合键），`rankOf` 给 D 大数当第二道保险；**与角色视角无关**（作者侧也排除）。🔴 该列是**封闭枚举**（schema `cFixed()`＋CustomSelect `fixedOptions`）：不许增/改/删，否则预算排序与可见性静默失效。
+- 🔴🔴 **保密等级 D＝终结（弃用）：任何情况下都不进 AI** —— 不是"排最后"是**压根不带**。硬保证在 `aiContext.isPrunedForAI`（三处过滤：内容／姓名／判重清单；认裸键与复合键），`rankOf` 给 D 大数当第二道保险；**与角色视角无关**（作者侧也排除）。🔴 该列是**封闭枚举**（schema `cFixed()`＋CustomSelect `fixedOptions`）：不许增/改/删，否则预算排序与可见性静默失效。
 - 📌 拆书关系整理的材料上限**面板可调**（`bookbreak/relationMaterial.ts`：五项带推荐值与理由、持久化）；上限真进材料由 `tests/bookbreakRelations` ⑩ 锁。
 - 🔴 本地实弹探针：改口径走 `LR_ANALYZE=<json>` 离线重算；CUDA 固定 seed **不保证逐位复现**（±4pp）。
 - 🔴🔴 **AI「整理」类产出必须两道本地兜底**（拆书关系阶段实测逼出）：① **候选值＝库里已有 ∪ 本次刚抽出、还没落库的实体名**（`allowedOverride`）—— 拆书时角色卡还是空的，名单空→模型编出「陈渊 · 青岚宗」这种**把势力写进人物列**的关系（就是老大点过的老病）；② **要模型给「依据」原文 + 本地核对逐字存在**（`evidenceInMaterial`，`aiOrganizeRows.evidenceField`）—— prompt 里写「不得据项目资料推断」对 4B 无效，实测它编出正文没提过的势力配对。两类丢弃都**如实计数上报**，不许静默吞。
