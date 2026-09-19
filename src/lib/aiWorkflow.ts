@@ -25,7 +25,8 @@
  *    正文落库发生在每章的「初稿采纳」之后。
  */
 import { buildProjectContext } from './aiContext'
-import { aiGenerateBible, aiGenerateOutline, type OutlineResult } from './aiTasks'
+import { aiExtendOutline, aiGenerateBible, aiGenerateOutline, type OutlineResult } from './aiTasks'
+import { sortChapters } from './chapterSeq'
 import { writerBudgetFor } from './aiWriterBudget'
 import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from './autoContinue'
 import * as db from './db'
@@ -56,6 +57,43 @@ export const CREATIVE_STAGES: FlowStage[] = [
 export const CONTINUE_STAGES: FlowStage[] = [
   { id: 'draft', label: '逐章连写', weight: 12 },
 ]
+
+/**
+ * 「接着已有内容写」+ 要排细纲时的阶段表：续排细纲 → 逐章连写。
+ *
+ * 用它在两种情况下：① 产出目标选「只做大纲规划」（排完细纲即停，正文阶段由 skipRest 砍掉）；
+ * ② 选「大纲 + 正文」且勾了「先往下续排细纲」。
+ * 不排细纲时仍用 CONTINUE_STAGES（只有连写）—— 那是「作者已有细纲、直接写」的路径。
+ */
+export const CONTINUE_OUTLINE_STAGES: FlowStage[] = [
+  { id: 'outline', label: '续排细纲', weight: 2 },
+  { id: 'draft', label: '逐章连写', weight: 12 },
+]
+
+/**
+ * 组装「续排细纲」的材料：正文进度 + 已有细纲尾部（供接续与模仿风格）+ 设定 / 总纲资料。
+ *
+ * 为什么要带「正文已写到」：细纲要接的是**正文**的下一章；只给细纲的话，模型会以为
+ * 细纲里最后那章就是最新进度。
+ */
+async function buildExtendMaterial(
+  outlines: Map<number, string>, lastTitle: string, fromNo: number,
+): Promise<string> {
+  const tail = [...outlines.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .slice(-6)
+    .map(([no, t]) => `第${no}章\n${t}`)
+    .join('\n\n')
+  const digest = await buildProjectContext({ budget: await writerBudgetFor('outline-generate') })
+    .then(r => r.text)
+    .catch(() => '')
+  return [
+    `【正文已写到】${lastTitle || '（还没有正文）'}`,
+    `【已有细纲（最后 6 章，供接续与模仿写法）】\n${tail || '（还没有细纲 —— 这是第一次往下排，请按设定资料与正文进度起排）'}`,
+    `【设定资料与全书总纲】\n${digest || '（无）'}`,
+    `【本次任务】接着往下排第 ${fromNo} 章起的细纲。`,
+  ].join('\n\n')
+}
 
 /** 按「语义字段名 → 值」构造卡片数据（落点由 schema 现查，schema 改了字段归属也不会失配） */
 function cardDataOf(tabId: string, pairs: [string, string][]): Record<string, string> {
@@ -208,6 +246,11 @@ export interface CreativeWritingOptions {
   /** 分几卷（默认 1；仅 `scratch` 起点的分卷大纲阶段用） */
   volumes?: number
   /**
+   * 仅 `continue` 起点：连写前是否先往下续排细纲（默认否＝按已有细纲直接写，即原行为）。
+   * 「只做大纲规划」目标下无所谓 —— 那种情况一定会排（然后停在那里）。
+   */
+  extendOutlineFirst?: boolean
+  /**
    * 产出目标（仅「从一句话创作」有意义）：
    *   `'full'`（默认）＝ 设定 → 大纲 → 逐章连写正文；
    *   `'outline'`      ＝ 只做设定与分卷大纲，**正文一个字都不写**。
@@ -289,7 +332,14 @@ export async function runCreativeWriting(
 
   // 阶段表决定这次跑什么：从零创作三步走，接着写只有连写一步。
   // （下面两个阶段执行体照常登记 —— 阶段表里没有它们时状态机根本不会去取，多登记无害。）
-  const flow = createFlow(mode === 'continue' ? CONTINUE_STAGES : CREATIVE_STAGES, {
+  // 阶段表决定这次跑什么：
+  //   · 从零创作 → 设定奠基 → 分卷大纲 → 连写（target='outline' 时靠 skipRest 停在闸门②之后）
+  //   · 接着写 + 要排细纲（只做大纲规划 / 勾了先排细纲）→ 续排细纲（→ 连写）
+  //   · 接着写 + 不排细纲 → 只有连写（作者已有细纲时的路径）
+  const stages = mode === 'continue'
+    ? ((opts.target === 'outline' || opts.extendOutlineFirst) ? CONTINUE_OUTLINE_STAGES : CONTINUE_STAGES)
+    : CREATIVE_STAGES
+  const flow = createFlow(stages, {
     ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
     // 续跑：预置已完成阶段的产物（设定奠基 / 分卷大纲就不会被重跑一遍）
@@ -333,6 +383,41 @@ export async function runCreativeWriting(
   })
 
   flow.on('outline', async ctx => {
+    // ── 「接着已有内容写」的细纲：**接着往下排**，不是从零排（从零那条走下面的原有实现）──
+    if (mode === 'continue') {
+      ctx.report(0.15, '读已有细纲与正文进度…')
+      const outlines = await loadChapterOutlines()
+      const chs = await db.getAllChapters().catch(() => [])
+      const vols = await db.getAllVolumes().catch(() => [])
+      const lastCh = sortChapters(vols, chs).slice(-1)[0]
+      // 🔴 起点看**正文写到哪**，不是看细纲最大章号 —— 要写的是正文的下一章；
+      //    细纲可能已经领先（那是作者自己排的），此时不该往后越排越远。
+      const writtenNo = Math.max(0, ...chs.map(c => chapterNoOf(c.title) || 0))
+      const fromNo = writtenNo + 1
+      // 细纲已经盖住下一章 → 无需续排（此时「只做大纲规划」应当如实告诉作者「已经有了」）
+      if (outlines.has(fromNo)) {
+        ctx.report(1, `第 ${fromNo} 章起已有细纲，无需续排`)
+        return { outline: { volumes: [], chapters: [] }, outlineCommit: null, outlineOnly: false, extendSkipped: true }
+      }
+      const material = await buildExtendMaterial(outlines, lastCh?.title ?? '', fromNo)
+      ctx.report(0.45, `往下续排第 ${fromNo} ~ ${fromNo + plannedChapters - 1} 章细纲…`)
+      let got = 0
+      const result = await aiExtendOutline(material, fromNo, plannedChapters, {
+        signal: ctx.signal,
+        onToken: d => {
+          got += d.length
+          if (got % 400 < d.length) ctx.report(0.7, `续排细纲… 已收到 ${got} 字`)
+        },
+      })
+      if (!result.chapters.length) throw new Error('模型没有产出细纲，请重试或换一个更大的模型')
+      ctx.report(1, `${result.chapters.length} 章细纲（第 ${fromNo} 章起），等待确认…`)
+      const ok = opts.onOutlineGate ? await opts.onOutlineGate(result) : true
+      if (!ok) giveUp()
+      const outlineCommit = await commitOutline(result, { signal: ctx.signal })
+      const onlyOutline = (opts.target ?? 'full') === 'outline'
+      if (onlyOutline) ctx.skipRest('（已选择：只做大纲规划）')
+      return { outline: result, outlineCommit, outlineOnly: onlyOutline }
+    }
     ctx.report(0.2, '组装设定摘要…')
     const digest = await buildProjectContext({ budget: await writerBudgetFor('outline-generate') })
       .then(r => r.text)

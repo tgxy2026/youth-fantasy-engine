@@ -18,6 +18,7 @@
 import { useSyncExternalStore } from 'react'
 import {
   DEAI_TEMPLATES,
+  extractAndCommitSettings,
   type ChapterDraft,
   type ContinueStrategy,
   type DraftDecision,
@@ -66,6 +67,11 @@ export interface CreativeInputs {
   deAiCustom: string
   /** 接着写：是否按已落库的《章节细纲》写 */
   useOutline: boolean
+  /**
+   * 接着写：连写前是否**先往下续排细纲**（默认开）。
+   * 关掉＝按已有细纲直接写（作者自己已经把细纲排好了的情况）。
+   */
+  extendOutline: boolean
   /** 每章初稿先交作者确认（关掉＝全自动跑量） */
   reviewEach: boolean
 }
@@ -83,6 +89,7 @@ export const DEFAULT_INPUTS: CreativeInputs = {
   deAiTpl: 'natural',
   deAiCustom: '',
   useOutline: true,
+  extendOutline: true,
   reviewEach: true,
 }
 
@@ -117,6 +124,12 @@ export interface RewriteState {
   running: boolean
   /** 原文字数 —— 界面用来显示「2200 → 3800 字」 */
   fromWords: number
+  /**
+   * 这一章是不是项目**最新章**（末章）。
+   *   · 最新章：允许创造性改写，落库后补跑设定抽取；
+   *   · 历史章：只做文字加工（提示词会硬约束），不跑设定抽取 —— 它不是新信息源。
+   */
+  isLatest: boolean
   /**
    * 结果明显异常（远短于原文）—— 多半是模型被截断或抽风。
    * 🔴 置位后**禁用「替换该章正文」**：那是覆盖作者正文的动作，不能在可疑结果上放开。
@@ -397,8 +410,10 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         chapters: inp.chapters,
         targetWords: inp.words,
         volumes: inp.volumes,
-        // 「接着已有内容写」永远是写正文（它的定义就是续写），只有从零创作才有「只要大纲」这一档
-        target: inp.mode === 'scratch' ? inp.target : 'full',
+        // 两种起点都有「产出目标」（2026-09-19 起）——
+        //   scratch 的「只做大纲规划」= 设定 + 分卷大纲；continue 的 = 往下续排细纲。
+        target: inp.target,
+        ...(inp.mode === 'continue' && inp.extendOutline ? { extendOutlineFirst: true } : {}),
         strategy: inp.strategy,
         deAi: { enabled: inp.deAiOn, prompt: deAiPromptOf(inp) },
         useOutline: inp.useOutline,
@@ -551,13 +566,17 @@ export async function startChapterRewrite(p: {
   if (idx < 0) { notice('这一章已经不在项目里了', 'error'); return }
   const hit = cands[idx]
   if (!hit.chapter.content.trim()) { notice('这一章还没有正文，没什么可改的', 'info'); return }
+  // 🔴 候选列表是按真实叙事顺序排的，所以**最后一个**就是最新章。
+  //    最新章 vs 历史章的改写纪律完全不同（见 aiTasks 的两条 RULE）：历史章冻结设定，最新章放开、
+  //    但落库后要补跑设定同步。
+  const isLatest = idx === cands.length - 1
 
   const ctl = new AbortController()
   rewriteCtl = ctl
   set({
     rewrite: {
       chapterId: hit.chapter.id, title: hit.chapter.title, no: hit.no,
-      action: p.action, text: '', running: true, fromWords: hit.chapter.wordCount,
+      action: p.action, text: '', running: true, fromWords: hit.chapter.wordCount, isLatest,
     },
   })
   // 上一章结尾当衔接样本（改写后仍要接得上）；改的是首章就没有
@@ -578,6 +597,7 @@ export async function startChapterRewrite(p: {
       body: hit.chapter.content,
       action: p.action,
       requirement: p.requirement,
+      isLatest,
       ...(CHAPTER_REWRITE_META[p.action].needWords ? { targetWords: p.words } : {}),
       ...(prevTail ? { contextTail: prevTail } : {}),
       signal: ctl.signal,
@@ -624,8 +644,24 @@ export async function applyRewrite() {
   if (!r || r.running) return
   try {
     const { words } = await applyChapterRewrite(r.chapterId, r.text)
+    // 🔴 最新章改完要补跑一轮设定同步（老大 2026-09-19 要求）：它后面还没有正文，
+    //    这一章的新信息必须进设定表，否则下一次「接着写」会读到旧设定。
+    //    历史章**不跑** —— 纪律上它就不该产生新设定（那会污染设定表）。
+    //    `confirm` 策略需要弹候选勾选，改写场景没有这个交互 → 降级为 `add-only`（只新增，最稳）。
+    let extra = ''
+    if (r.isLatest) {
+      const strategy = snap.inputs.strategy === 'confirm' ? 'add-only' : snap.inputs.strategy
+      try {
+        const res = await extractAndCommitSettings(r.text, r.title, strategy, undefined)
+        extra = res.created > 0 ? `；已同步设定 +${res.created} 条` : '；没有需要新增的设定'
+      } catch {
+        extra = '；设定同步未能完成（不影响正文，可到表格页用「AI 整理」补）'
+      }
+    } else {
+      extra = '；这是历史章，按纪律未改动任何设定'
+    }
     notice(
-      `已替换《${r.title}》正文：${r.fromWords} → ${words} 字。` +
+      `已替换《${r.title}》正文：${r.fromWords} → ${words} 字${extra}。` +
       '旧稿已存进「时光机 · 本章版本历史」（正文编辑里可随时恢复）。',
       'success',
     )

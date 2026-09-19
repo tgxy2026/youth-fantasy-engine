@@ -1184,6 +1184,30 @@ const CHAPTER_REWRITE_ACTION_RULES: Record<ChapterRewriteAction, string> = {
   condense: '本次动作：**精简**。去掉冗余重复、注水抒情与无信息量的过渡，保留全部有效情节与关键对白，压到目标字数。',
   rewrite: '本次动作：**按作者要求改写**。保持人物与情节主线，按【改写要求】调整叙述方式 / 场景顺序 / 冲突强度 / 节奏。',
 }
+//
+// 「最新章」与「历史章」必须分开对待（老大 2026-09-19 要求）：
+//   · 改**历史章**的风险是**污染设定** —— 旧章里的境界 / 身份 / 关系一改，后面已经写好的正文
+//     与设定表就全对不上了。所以历史章只允许**文字层面**的加工，设定类内容一律冻结。
+//   · 改**最新章**可以放开手脚（它后面还没有正文）；但正因如此，落库后必须补跑一轮
+//     设定抽取 / 补登 / 更新，把这一章的新信息同步进设定表（否则「接着写」时会读到旧设定）。
+let CHAPTER_REWRITE_HISTORY_RULE = `【本次改写的是**已定稿的旧章**，不是正在推进的最新章】只做文字层面的加工：
+
+可以做的：
+- 丰富人物的表情 / 动作 / 环境 / 感官细节；调整句式长短与节奏；去掉 AI 腔；
+- 补上过场衔接、情绪反应类的台词（寒暄、调侃、惊讶、沉默），让对话更自然。
+
+🔴 **绝对不能做的**（改了就与后文和设定表对不上）：
+- 不改人物的身份 / 关系 / 境界 / 实力 / 品级，不改势力与地点的归属，不改物品的来龙去脉与术语用法；
+- 不改已发生事件的因果与结果，不新增剧情事件，不埋伏笔、不给后文留下新的接口；
+- 新增的台词必须是**对情节没有实质影响**的，不得借台词透露新信息；
+- 原文若有跟前文矛盾之处，**不要顺手改对** —— 那不是本次任务，改了反而让设定记录对不上。`
+
+let CHAPTER_REWRITE_LATEST_RULE = `【本次改写的是**当前最新章**】可以比旧章放开手脚：按作者要求调整叙述角度、强化冲突、重排场景、补写细节与对白，甚至改写局部走向。
+
+仍要守住两条：① 与前文设定不冲突；② 原文若有章末钩子，改写后必须留着 —— 它是下一章的接口。
+
+落库后系统会自动补跑一轮「设定抽取 / 补登 / 更新」，把本章新增或变化的信息同步进设定表。`
+
 
 export interface ChapterRewriteOpts {
   /** 章节标题（进 prompt 只为让模型知道在写什么，不改它） */
@@ -1198,6 +1222,12 @@ export interface ChapterRewriteOpts {
   /** 上一章结尾样本（可选）—— 改写后仍要接得上，给模型当参照 */
   contextTail?: string
   signal?: AbortSignal
+  /**
+   * 这一章是不是**项目最新章**（决定改写纪律，见上面两条 RULE）：
+   *   `true`  = 最新章，允许创造性改写，落库后由调用方补跑设定抽取；
+   *   `false` = 历史章，只做文字加工、设定类内容一律冻结。
+   */
+  isLatest: boolean
   /** 🔴 收字回调：**同时就是流式开关**。整章可能上千字，不传 onToken 会走非流式并撞总超时墙 */
   onToken?: (d: string) => void
 }
@@ -1209,7 +1239,9 @@ export interface ChapterRewriteOpts {
 export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
   const cfg = await requireActiveProvider()
   const fenceId = newAuthorFence()
-  const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action]].join('\n\n')
+  // 历史章 / 最新章纪律不同（见上面两条 RULE 的说明）
+  const scopeRule = o.isLatest ? CHAPTER_REWRITE_LATEST_RULE : CHAPTER_REWRITE_HISTORY_RULE
+  const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action], scopeRule].join('\n\n')
   const lines = [
     `【本章标题】${o.title}`,
     // 🔴 取**尾部** 1200 字：这一段叫「上一章结尾」，衔接靠的就是末尾那几句。
@@ -2111,6 +2143,97 @@ export async function aiGenerateOutline(
   return askOnce(true)
 }
 
+// ============ 往下续排《章节细纲》（「接着已有内容写」的「只做大纲规划」） ============
+//
+// 与 `aiGenerateOutline` 的分工：那个是**从零**排（输入＝设定摘要，产出＝卷＋全部章）；
+// 这个是**接着**排（输入＝已有细纲尾部＋设定/总纲资料＋正文进度，产出＝第 fromNo 起的 N 章）。
+// 产物仍然是 OutlineResult，所以落库直接复用 commitOutline —— 它按「同名卡跳过」建卡，
+// 重复调用是安全的（已有的章不会被重排或覆盖）。
+
+let EXTEND_OUTLINE_BASE = `你是网文大纲师，负责**接着作者已有的《章节细纲》往下排**。`
+
+const extendOutlineSys = (fromNo: number, count: number, cap: number) => `${EXTEND_OUTLINE_BASE}
+
+铁律：
+1. 只输出 JSON，不要解释文字，不要 markdown 代码块围栏。
+2. 章号必须从 ${fromNo} 连续排到 ${fromNo + count - 1}，一章不多、一章不少。
+3. **接续**：延续已有细纲里的冲突线、伏笔与人物状态；不要把已经发生过的事件再演一遍。
+4. **不许新造专名**：人物 / 地名 / 势力 / 功法只能用资料里已有的写法。
+5. 每章都要有「事件 + 钩子」，严禁「过渡章」「日常」这类空章；事件链要有递进。
+6. 若这批章节跨进了新卷，额外给 newVolume（卷名 + 一句话定位）；没跨卷就**省略该字段**。
+7. 单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`
+
+/**
+ * 往下续排细纲。
+ * @param material 已有细纲尾部 + 设定 / 总纲资料（调用方组装）
+ * @param fromNo   从第几章开始排（通常＝已有细纲最大章号 + 1）
+ * @param count    排多少章
+ * @returns OutlineResult（volumes 里最多一项＝模型建议的新卷）
+ */
+export async function aiExtendOutline(
+  material: string,
+  fromNo: number,
+  count: number,
+  opts: { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void } = {},
+): Promise<OutlineResult> {
+  const cfg = await requireActiveProvider()
+  const n = Math.max(1, Math.min(60, count))
+  const start = Math.max(1, fromNo)
+  const capOf = (tighten: boolean) => {
+    const base = 200 + n * 170
+    return tighten ? Math.max(240, Math.round(base * 0.7)) : base
+  }
+  const askOnce = async (tighten = false): Promise<OutlineResult> => {
+    const cap = capOf(tighten)
+    const text = await chat(
+      cfg,
+      [
+        { role: 'system', content: composeSystemPrompt(extendOutlineSys(start, n, cap), cfg) },
+        {
+          role: 'user',
+          content: `【已有细纲与设定资料】\n${material.trim() || '（无资料，请按通用网文逻辑克制地排）'}\n\n请接着往下排第 ${start} ~ ${start + n - 1} 章。` +
+            `\n\n【必须遵守】只输出 JSON，形如 {"chapters":[{"no":${start},"title":"","event":"","fn":"","cast":"","hook":"","scenes":["","",""]}]}` +
+            '（跨卷时才加 "newVolume":{"title":"","positioning":""}）；章号 ' + `${start}~${start + n - 1} 连续；单字段 ≤ 40 字；整份 ≤ ${cap} 字。` +
+            (tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : ''),
+        },
+      ],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
+    )
+    opts.onRaw?.(text)
+    const rawObj = parseLooseObject(text) ?? {}
+    const arr = rawObj.chapters ?? rawObj['章节'] ?? rawObj['章'] ?? rawObj['章节细纲']
+    const chapters: OutlineChapter[] = (Array.isArray(arr) ? arr : []).slice(0, n).map((raw, i) => {
+      const o = (raw ?? {}) as Record<string, unknown>
+      const scenes = (Array.isArray(o.scenes) ? o.scenes : []).map(asText).filter(Boolean).slice(0, 3)
+      // 防御：模型偶尔自带「第X章」前缀 —— 章号由系统定，剥掉避免双重编号
+      const title = asText(o.title).trim().replace(/^第\s*[\d零一二三四五六七八九十百千]+\s*[章回]\s*/, '')
+      return {
+        // 🔴 章号由调用方给的起点决定，不用模型返回的 no —— 它经常从 1 重新数
+        no: start + i,
+        title,
+        event: asText(o.event).trim(),
+        fn: asText(o['function'] ?? o.fn).trim(),
+        cast: asText(o.cast).trim(),
+        hook: asText(o.hook).trim(),
+        scenes,
+      }
+    }).filter(c => c.title)
+    const nvRaw = (rawObj.newVolume ?? rawObj['新卷'] ?? null) as Record<string, unknown> | null
+    const nvTitle = nvRaw ? asText(nvRaw.title).trim() : ''
+    const volumes: OutlineVolume[] = nvTitle
+      ? [{
+          title: nvTitle, positioning: asText(nvRaw?.positioning).trim(),
+          stage: '', scope: '', opening: '', climax1: '', turn: '', climax2: '', ending: '', events: '', subplots: '',
+        }]
+      : []
+    return { volumes, chapters }
+  }
+  // 空结果重试一次（同 aiGenerateOutline：重试要收紧体量，原样重发会断在同一处）
+  const first = await askOnce(false)
+  if (first.chapters.length) return first
+  return askOnce(true)
+}
+
 /** 汇总「全书级设定」的系统提示词 */
 const formSummarySys = () => `你是长篇小说的**设定资料整理员**。请把给定材料（一本书里已经提取出的设定实体清单 + 开篇样本）汇总成**全书级设定档案**。
 
@@ -2194,6 +2317,9 @@ registerPrompt({ id: 'chapter-review', group: '编辑与审校', name: '章节�
 registerPrompt({ id: 'ooc-check', group: '编辑与审校', name: '人设一致性（OOC）', note: '对照角色卡，查角色言行是否崩人设。' }, () => P_ooc_check, t => { P_ooc_check = t })
 registerPrompt({ id: 'rewrite-passage', group: '正文写作', name: '选区改稿', note: '对作者选中的段落做局部修改。' }, () => P_rewrite_passage, t => { P_rewrite_passage = t })
 registerPrompt({ id: 'chapter-rewrite', group: '正文写作', name: '整章改写', note: '对整章正文做润色 / 扩写 / 精简 / 改写（纯文本输出，结果由作者确认后才替换正文）。' }, () => CHAPTER_REWRITE_BASE, t => { CHAPTER_REWRITE_BASE = t })
+registerPrompt({ id: 'chapter-rewrite-history', group: '正文写作', name: '整章改写 · 历史章纪律', note: '改已定稿旧章时的硬约束：只做文字加工，设定类内容一律冻结。' }, () => CHAPTER_REWRITE_HISTORY_RULE, t => { CHAPTER_REWRITE_HISTORY_RULE = t })
+registerPrompt({ id: 'chapter-rewrite-latest', group: '正文写作', name: '整章改写 · 最新章纪律', note: '改当前最新章时的放开尺度（允许创造性改写；落库后补跑设定抽取）。' }, () => CHAPTER_REWRITE_LATEST_RULE, t => { CHAPTER_REWRITE_LATEST_RULE = t })
+registerPrompt({ id: 'extend-outline', group: '正文写作', name: '续排细纲', note: '接着已有《章节细纲》往下排（「接着已有内容写」的「只做大纲规划」用）。' }, () => EXTEND_OUTLINE_BASE, t => { EXTEND_OUTLINE_BASE = t })
 registerPrompt({ id: 'continuation-advice', group: '正文写作', name: '卡文建议', note: '刚写完一章，给下一部分的方向建议。' }, () => P_continuation_advice, t => { P_continuation_advice = t })
 registerPrompt({ id: 'pleasure-check', group: '编辑与审校', name: '爽点与毒点管理', note: '按爽感管理标准审本章的爽点供给与毒点风险。' }, () => P_pleasure_check, t => { P_pleasure_check = t })
 registerPrompt({ id: 'opening-check', group: '编辑与审校', name: '开篇三章检查', note: '按「黄金三章」标准审作品开头。' }, () => P_opening_check, t => { P_opening_check = t })

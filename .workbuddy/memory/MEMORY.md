@@ -16,11 +16,11 @@
 
 ## 2.2.0 三功能（伴写 / 拆书 / 创意写作）
 - ✅ **A 伴写**：`aiInlineSuggest()`＋ghost 第三叠层＋「钢笔」弹窗（默认关）；文风三层锚定**不做枚举**、去 AI 味钉 system 末尾。🔴 **切章必须清 ghost**（Tab 插错章＝数据事故）。
-- ✅ **B 拆书**：通用件在 **`lib/flow/`**（别去 `bookbreak/` 找）；六阶段＝切分→写正文→逐块抽取→整理草稿→汇总全书设定→整理关系。🔴 写前必 `previewCommit`；字段键从 `fieldMap` 派生（闸 `tests/extractFields`）、抽取必走流式；**冲突只在硬事实字段报**（类别/境界/品级/实力/危险/掌权者）——全字段报时真矛盾反被埋。
+- ✅ **B 拆书**：通用件在 **`lib/flow/`**（别去 `bookbreak/` 找）；六阶段＝切分→写正文→逐块抽取→整理草稿→汇总全书设定→整理关系。🔴 写前必 `previewCommit`；字段键从 `fieldMap` 派生（闸 `tests/extractFields`）、抽取必走流式；**冲突只在硬事实字段报**（全字段报时真矛盾反被埋）。
 - ✅ **B 的收尾与去泛称**：关系整理在末尾第 6 阶段（`lib/organizeRows.ts`，与表格页「AI 整理」同执行体、默认开），🔴 **创意写作不加**；去泛称走 D 不走 C（C 精度~60%、误伤专名；D＝`draft.foldNameVariants()` 零调用）。
-- ✅ **C 创意写作**（2026-09-19 融合「一键续写＋设定补完」）：起点＝`scratch`／`continue`，**产出目标也在起点选**（只做大纲规划／大纲＋正文；🔴 闸门只做确认·放弃）。🔴 **闸门＝await Promise**、**落库只在闸门通过后**；连写执行体＝`autoContinue.ts`（独立的一键续写已不存在）；额度 `outline-generate`＋`auto-continue`。
-- ✅ **整章改写**：🔴 结果只在内存、写前**显式快照**、只动 content/wordCount/updatedAt；🔴 **异常短结果锁替换**。
-- ✅ **C 的细节**：① 🔴 `skipRest()` 的 skipped **必计入进度分子**。② 对话引导 `creativeSeed.ts`。③ 概要回填细纲卡**只填空、不新建**。④ `worldview` 汇总→表单（🔴 覆盖全部 form 页签）。⑤ **续跑断点在阶段内**；改原文→断点失效、闸门放弃≠被中止。⑥ `writingPace`：一章 5~8 调用。
+- ✅ **C 创意写作**（融合「一键续写＋设定补完」）：起点 `scratch`／`continue`，**产出目标也在起点选**（只做大纲规划／大纲＋正文；🔴 闸门只做确认·放弃）。**接着写的「只做大纲规划」＝续排细纲**（`aiExtendOutline`，落库复用 `commitOutline`；🔴 起点＝**正文写到哪+1**，不是细纲最大号；下一章已有细纲则跳过）。🔴 闸门＝await Promise、**落库只在闸门通过后**；连写执行体＝`autoContinue.ts`；额度 `outline-generate`＋`auto-continue`。
+- ✅ **整章改写**：🔴 结果只在内存、写前**显式快照**、只动 content/wordCount/updatedAt；🔴 异常短结果锁替换；🔴 **分最新章／历史章**（`isLatest`＝候选最后一个）：历史章**设定冻结**（只做文字加工），最新章放开且**落库后必跑设定同步**（confirm 降 add-only）。
+- ✅ **C 的细节**：① 🔴 `skipRest()` 的 skipped **必计入进度分子**。② 对话引导 `creativeSeed.ts`。③ 概要回填细纲卡**只填空、不新建**。④ `worldview` 汇总→表单（🔴 覆盖全部 form 页签）。⑤ **续跑断点在阶段内**；改原文→断点失效。⑥ `writingPace`：一章 5~8 调用。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键（改功能后回搜 `schema.ts` 的 `description`）。
@@ -30,14 +30,14 @@
 - 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**（关系表列＝人物A/人物B）：`commit` 按名称列判重对它们**恒判"不存在"**→ 点两次「写入项目」＝两条重复关系；`previewCommit` 走同一函数。
 - 🔴 编辑器双图层：盒模型逐项一致；叠层重建归零 scrollTop→`useLayoutEffect` 回填；只走 `scanRefHighlight`。
 - 🗺 多地图方案 B：新表 `geomaps`＋geography 的 `所属地图`；`migrateGeoMaps` 建默认图回填；🔴 删图不删地点、改图名连带改归属。
-- 🔴 **长任务状态必须放模块级 store**（`lib/creativeSession.ts`：单例＋`useSyncExternalStore`）：App 是"切页签即卸载组件"，状态放 `useState` 会全丢（老大实测）；🔴 **任务跑在 store 里、不在组件里**；lib 层**禁 import components**（提示写 `notice` 让组件取）；落盘按项目分键、**断点只存里程不存 bag**。
+- 🔴 **长任务状态必须放模块级 store**（`lib/creativeSession.ts`，单例＋`useSyncExternalStore`）：App 是「切页签即卸载组件」，`useState` 会全丢（老大实测）；🔴 **任务跑在 store 里**；lib 层**禁 import components**（提示写 `notice`）；落盘按项目分键、**断点只存里程**（bag 产物已落库）。
 - 🔴 拆书／创意写作**档位＝optional**（不默认勾选，显式登记）；两页顶部有 `NewProjectAdvice` 提示条（"先新建空项目"+选「完整项目」）。
 
 ## 存储 / 同步
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步该目录；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
 - 🔄 两同步入口别混：①明文 JSON；②云盘＝加密 `.yfe`＋记录级合并＋每日备份。**用 ②**。
-- 🔴🔴 **服务器已关（2026-09）**：站点与同步 API 下线 → 跨设备同步**只剩云盘文件夹**（**无同步码/邀请码/HTTP**，文案不许再提）。`syncTransport.createIdleTransport`＝未开启时的占位（一切按"不可用"上报，🔴 **绝不返回空库**，否则一次 push 覆盖云端真实快照）。
+- 🔴🔴 **服务器已关（2026-09）**：站点与同步 API 下线 → 跨设备同步**只剩云盘文件夹**（**无同步码/邀请码/HTTP**，文案不许再提）。`createIdleTransport`＝未开启时的占位（一律按「不可用」上报，🔴 **绝不返回空库**，否则 push 覆盖云端快照）。
 
 ## UI / 布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量必须走 `style`（`fill="rgb(var(--x))"` 会回退黑）。设置项＝标题→输入→说明；复制走 `copyText()`。
@@ -47,7 +47,7 @@
 - 🔴 按对侧高度定高：flex item 加 `overflow-hidden`；别同写 `flex-1`+`height`。
 - 🔴 按钮：静止无框用 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；`danger` 破坏性。🔴 **尺寸三层＝弹窗 md／主操作 sm／工具 xs；同排同 size、禁手写尺寸**。
 - 🔴 页头 `HelpPopover` 问号**必须在标题右侧同行**（`h1` 块级须同 flex 行）。头像兜底＝名字；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」/（）。
-- 🔴 **数值输入统一走 `components/NumberField`**：可自由输入（能清空、能打出超范围值）＋超范围在**失焦/回车**钳到最近边界并 toast 告知。🔴 **禁在 `onChange` 里直接 clamp**（打不出大数、清空被立刻填回）。项目卡片那行只留「卷/章/万字」（题材与「自定义」胶囊已删）。
+- 🔴 **数值输入统一走 `NumberField`**：可自由输入（能清空、能打超范围值）＋超范围在**失焦/回车**钳到最近边界（toast 告知）。
 
 ## AI 层
 - 🔴 **提示词给几层，模型就按几层输出**——读端必须兼容**自己给的**层级，否则整表静默丢光（09-18 实测 5 表全丢）。
@@ -63,7 +63,7 @@
 - 🔴 **AI「会读哪些数据」＝`lib/aiDataSources.ts` 单一源**（闸 `tests/aiDataSources.test.ts`），改 prompt 来源必须同步改它。🔴🔴 **禁写「全程本地模型／不外发」**——口径只能是「发给**当前选定的**模型：本地不出本机，云端上传到该服务商」。
 - 🔴🔴 **保密等级 D＝终结（弃用）：任何情况下都不进 AI**（不是"排最后"是**压根不带**）：硬保证在 `aiContext.isPrunedForAI`（三处过滤：内容／姓名／判重；认裸键与复合键），`rankOf` 给 D 大数兜底；**作者侧也排除**。🔴 该列是**封闭枚举**（`cFixed()`＋`fixedOptions`）：禁增/改/删，否则预算排序与可见性静默失效。
 - 📌 关系整理材料上限**面板可调**（`bookbreak/relationMaterial.ts`：带推荐值与理由、持久化）；"真进材料"由 `tests/bookbreakRelations` ⑩ 锁。
-- 🔴🔴 **AI「整理」类产出必须两道本地兜底**（拆书关系阶段实测逼出）：① **候选值＝库里已有 ∪ 本次刚抽出但还没落库的实体名**（`allowedOverride`）—— 拆书时角色卡是空的，名单空→模型把势力写进人物列（「陈渊 · 青岚宗」）；② **要模型给「依据」原文＋本地核对逐字存在**（`evidenceInMaterial`）—— prompt 写「不得据资料推断」对 4B 无效。两类丢弃都**如实计数上报**。
+- 🔴🔴 **AI「整理」类产出必须两道本地兜底**（拆书关系阶段实测）：① **候选值＝库里已有 ∪ 本次刚抽出未落库的实体名**；② 产出后按名单**本地过滤**＋要求给**原文依据**并本地核对（`evidenceInMaterial`）。prompt 写「必须从可选值挑」对小模型无效。
 
 ## 服务器 / 工程质量
 - 🔴 **服务器已关闭（2026-09，老大确认）**：`154.8.178.240` 站点与同步 API 均下线；`server/` 保留但不再上线。⚠️ 别按旧路子用 200 判在线、别再写涉及服务器/同步码的文案。

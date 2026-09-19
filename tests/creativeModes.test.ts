@@ -110,6 +110,23 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('🔴 写入后的提示指向「时光机 · 本章版本历史」（旧稿可恢复要告诉作者）',
     /时光机/.test(sess))
   ok('🔴 上一章衔接样本取尾部（不是开头）', /slice\(-1200\)/.test(rw))
+  // ---------- 续排细纲（方案 B）+ 历史章/最新章分治（2026-09-19 老大要求）----------
+  const wf = read('src/lib/aiWorkflow.ts')
+  ok('🔴 接着写可续排细纲：阶段表有「续排细纲」',
+    /CONTINUE_OUTLINE_STAGES/.test(wf) && /label: '续排细纲'/.test(wf))
+  ok('🔴 续排起点看正文写到哪（不是细纲最大章号）', /const fromNo = writtenNo \+ 1/.test(wf))
+  ok('🔴 细纲已覆盖下一章时跳过续排（不重复排）', /outlines\.has\(fromNo\)/.test(wf))
+  ok('续排产物复用 commitOutline（同名卡跳过，已有章不会被覆盖）', /commitOutline\(result/.test(wf))
+  ok('🔴 整章改写按最新章 / 历史章分治',
+    /CHAPTER_REWRITE_HISTORY_RULE/.test(rw) && /CHAPTER_REWRITE_LATEST_RULE/.test(rw) && /o\.isLatest \?/.test(rw))
+  ok('🔴 历史章纪律写明「不得改动设定类内容」',
+    /HISTORY_RULE = `[\s\S]{0,900}设定类内容/.test(rw) || /绝对不能做的/.test(rw))
+  ok('🔴 最新章落库后补跑设定同步（历史章不跑）',
+    /if \(r\.isLatest\)/.test(sess) && /extractAndCommitSettings/.test(sess))
+  ok('🔴 最新章判定＝候选列表最后一章', /idx === cands\.length - 1/.test(sess))
+  ok('三条新提示词都登记了（可在模型设置里改）',
+    /'chapter-rewrite-history'/.test(rw) && /'chapter-rewrite-latest'/.test(rw) && /'extend-outline'/.test(rw))
+
   ok('🔴 异常短结果判定存在（原文>600 且 结果<35%）',
     /content\.length > 600 && text\.length < hit\.chapter\.content\.length \* 0\.35/.test(sess))
   ok('🔴 会话层不 import 组件（lib → components 是反向依赖，会被 importCycles 拦）',

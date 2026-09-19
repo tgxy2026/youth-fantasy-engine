@@ -14,7 +14,7 @@ import { chapterSeqMap, flattenChapters } from './chapterSeq'
 import { syncChapterMaster } from './chapterMaster'
 import * as db from './db'
 import { countWords } from './textStats'
-import type { Chapter } from './types'
+import type { Chapter, Volume } from './types'
 
 export interface RewriteCandidate {
   chapter: Chapter
@@ -30,6 +30,31 @@ export async function listRewriteCandidates(): Promise<RewriteCandidate[]> {
   const [vols, chs] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
   const seq = chapterSeqMap(vols, chs)
   return flattenChapters(vols, chs).map(chapter => ({ chapter, no: seq.get(chapter.id) ?? 0 }))
+}
+
+/**
+ * 按卷分组的候选 —— 供界面的「卷 → 章」树用。
+ * 空卷不出现在结果里（树里列一个点开是空的卷没有意义）。
+ */
+export interface RewriteCandidateGroup {
+  volume: Volume
+  items: RewriteCandidate[]
+}
+
+export async function listRewriteTree(): Promise<RewriteCandidateGroup[]> {
+  const [vols, chs] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
+  const seq = chapterSeqMap(vols, chs)
+  const byVol = new Map<string, RewriteCandidate[]>()
+  for (const c of flattenChapters(vols, chs)) {
+    const item: RewriteCandidate = { chapter: c, no: seq.get(c.id) ?? 0 }
+    const list = byVol.get(c.volumeId)
+    if (list) list.push(item)
+    else byVol.set(c.volumeId, [item])
+  }
+  return [...vols]
+    .sort((a, b) => a.order - b.order)
+    .map(v => ({ volume: v, items: byVol.get(v.id) ?? [] }))
+    .filter(g => g.items.length > 0)
 }
 
 /**

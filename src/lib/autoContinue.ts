@@ -354,7 +354,13 @@ async function createChapterAfter(anchorId: string | null, title: string, conten
 
 // ============ 设定抽取与补登（按策略） ============
 
-async function extractAndCommitSettings(
+/**
+ * 抽取本章新设定并按策略补登 / 更新。
+ *
+ * 对外导出（2026-09-19）：整章改写改「最新章」后也要跑这套 —— 最新章后面还没正文，
+ * 它的改动必须同步进设定表，否则下一次「接着写」会读到旧设定。
+ */
+export async function extractAndCommitSettings(
   body: string, title: string, strategy: ContinueStrategy,
   onConfirm?: (cands: LedgerItem[]) => Promise<LedgerItem[] | null>,
   signal?: AbortSignal,
