@@ -277,6 +277,15 @@ export interface CreativeWritingOptions {
   onOutlineGate?: (outline: OutlineResult) => Promise<boolean>
   onProgress?: (p: FlowProgress) => void
   onChapterSaved?: (ch: { id: string; title: string; no: number }) => void
+  /**
+   * 连写过程中的**逐章日志**（保存成功 / 失败原因 / 丢弃重试）。
+   *
+   * 🔴 为什么必须存在（2026-09-19 复现用例抓到）：`runAutoContinue` 把失败原因全部交给
+   *    `cb.onLog`，而这里原先**没有把它转发出去** —— 于是「一章都没写出来」时，作者
+   *    在界面上只能看到一句绿色的「创作完成：写了 0 章」，模型为什么失败一个字都看不到
+   *    （真实数据里那条会话的 `log` 是空数组，就是被这个黑洞吃掉的）。
+   */
+  onRunLog?: (line: string) => void
   onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
   /** `strategy='confirm'` 时：把待补登的设定候选交作者勾选；返回 null = 本次跳过补登 */
   onSettingsCandidates?: (cands: LedgerItem[]) => Promise<LedgerItem[] | null>
@@ -396,8 +405,14 @@ export async function runCreativeWriting(
       const fromNo = writtenNo + 1
       // 细纲已经盖住下一章 → 无需续排（此时「只做大纲规划」应当如实告诉作者「已经有了」）
       if (outlines.has(fromNo)) {
+        const onlyOutline = (opts.target ?? 'full') === 'outline'
         ctx.report(1, `第 ${fromNo} 章起已有细纲，无需续排`)
-        return { outline: { volumes: [], chapters: [] }, outlineCommit: null, outlineOnly: false, extendSkipped: true }
+        // 🔴 选了「只做大纲规划」就必须在这里收工。原先这一支硬编 `outlineOnly: false`
+        //    又没调 `skipRest`，于是**只想排细纲，却被拉去写正文**（2026-09-19 复现用例抓到：
+        //    target='outline' 时 draft 阶段照样 running）。白花额度、还改了项目，作者却以为
+        //    自己选的是"只规划"。
+        if (onlyOutline) ctx.skipRest('（已选择：只做大纲规划）')
+        return { outline: { volumes: [], chapters: [] }, outlineCommit: null, outlineOnly: onlyOutline, extendSkipped: true }
       }
       const material = await buildExtendMaterial(outlines, lastCh?.title ?? '', fromNo)
       ctx.report(0.45, `往下续排第 ${fromNo} ~ ${fromNo + plannedChapters - 1} 章细纲…`)
@@ -467,6 +482,16 @@ export async function runCreativeWriting(
       },
       {
         signal: ctx.signal,
+        /**
+         * 🔴 必须传 `onBodyToken`（哪怕是空回调）——它是**流式开关**，不是"要不要显示"。
+         *    非流式请求的响应头要等**整段正文生成完**才回来，4000 字/章的云端生成必然撞
+         *    `CHAT_TIMEOUT_MS`（180s）的总超时；流式只要首字节到达就把那个定时器清掉。
+         *    同一条红线在 `aiTasks/stream.ts` 的 `longStream` 注释里写着，但这里原来漏了 ——
+         *    2026-09-19 复现：用可控假模型跑「接着写」，第 1 章就失败、0 章落库，界面却报「已完成」。
+         */
+        onBodyToken: () => {},
+        // 逐章日志（保存 / 失败原因）—— 原先不转发 ⇒ 「0 章」时界面上一条线索都没有
+        onLog: line => opts.onRunLog?.(line),
         onPhase: msg => ctx.report(done / remaining, msg),
         onChapterSaved: ch => {
           done++

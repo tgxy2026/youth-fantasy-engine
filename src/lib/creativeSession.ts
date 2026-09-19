@@ -451,6 +451,13 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
             set({ outlineGate: outline })
           }),
         onChapterSaved: ch => appendLog(`✅ 第${ch.no}章 ${ch.title}`),
+        /**
+         * 🔴 逐章日志必须接出来（2026-09-19 复现用例抓到）：`runAutoContinue` 把**失败原因**
+         *    全部交给这个回调，原先没接 ⇒ 「一章都没写出来」时，界面上只有一句绿色的
+         *    「创作完成：写了 0 章」，模型为什么失败一个字都看不到。老大真实数据里那条
+         *    会话的 `log` 是空数组，罪魁就是这个黑洞。
+         */
+        onRunLog: line => appendLog(line),
         ...(inp.reviewEach
           ? {
               onChapterDraft: (d: ChapterDraft) =>
@@ -482,12 +489,16 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
       return
     }
     set({ result: summarizeResult(res), resume: null })
-    notice(
-      res.outlineOnly
-        ? '大纲已保存 —— 按你的选择，没有写正文'
-        : `创作完成：写了 ${res.chapters.length} 章`,
-      'success',
-    )
+    // 🔴 「一章都没写出来」不能再报成功（2026-09-19）：原先无论写了几章都弹绿色
+    //    「创作完成：写了 N 章」，N=0 时作者会以为"跑完了、就是没内容"，而真正的原因
+    //    （模型超时 / 未配置）就躺在日志里没人看。分开报，并把「去看日志」写进文案。
+    if (res.outlineOnly) {
+      notice('大纲已保存 —— 按你的选择，没有写正文', 'success')
+    } else if (res.chapters.length === 0) {
+      notice('一章都没写出来 —— 请看下方「运行日志」里的失败原因（常见：模型超时 / 返回异常）', 'error')
+    } else {
+      notice(`创作完成：写了 ${res.chapters.length} 章`, 'success')
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (/放弃/.test(msg)) notice('已放弃本次创作（未写入任何数据）', 'info')
