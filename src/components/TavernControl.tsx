@@ -44,7 +44,7 @@
  * 【默认值】全部等于原来的硬编码值（见 settings.ts 的 DEFAULT_TAVERN_SETTINGS），
  * 所以打开这个页面之前与之后，行为完全一致 —— 不存在"升个版本悄悄变了风格"。
  */
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from './HelpPopover'
 import { loadProviders, loadActiveId, type AIProvider } from '../lib/ai'
 import { adviseCapacity, scaleGuide } from '../lib/modelCapacity'
@@ -57,8 +57,8 @@ import AutoTextarea from './AutoTextarea'
 import { PROTOCOL_VERSION } from '../lib/tavern/protocol'
 import * as presets from '../lib/tavern/presets'
 import type { TavernPreset } from '../lib/tavern/presets'
-import { PARAM_GUIDES, GUIDE_SAMPLING, bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
-import { VAR_DEFS, type VarKey } from '../lib/tavern/types'
+import { PARAM_GUIDES } from '../lib/tavern/paramGuide'
+import type { VarKey } from '../lib/tavern/types'
 import { DEFAULT_POST_RULES, previewPostRules, type PostRule } from '../lib/tavern/postRules'
 import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
@@ -67,239 +67,20 @@ import {
 } from '../lib/tavern/settings'
 import { displayProtocol } from '../lib/tavern/protocol'
 
-/** 输入框外观（不含字号——字号由 AutoTextarea 的 textClass / input 自己带，避免两处各写一个 size 类打架） */
-const BOX = 'bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50'
-const NUM = `${BOX} w-full`
+// 字段原子件（Section / Field / NumField / SelectField / ToggleField / ShowBands …）已拆到 TavernFieldKit；
+// 右列（六~八）拆到 TavernControlModes。两者都靠 props 通信，状态一律留在本组件。
+import {
+  BOX, GRID2, ShowBands, Section, Field, NumField, TextField, SelectField, ToggleField,
+} from './TavernFieldKit'
+import TavernControlModes from './TavernControlModes'
 
-/**
- * 段内数值组。
- *
- * ⚠️ **只用 2 列，不再有 3 列**：每个数值项下面都挂一张「取值范围 + 分段影响」表（见 RangeGuide），
- * 3 列时每格只有约 226px，长一点的说明会被挤成七八行，反而看不清。2 列约 345px 才读得顺。
- */
-const GRID2 = 'grid grid-cols-1 gap-4 sm:grid-cols-2'
-
-/**
- * 「是否展开每个数值项下面的分段说明」。
- * 24 个数值项全摊开会把页面拉到 3000px 以上，所以页头给了一个总开关（默认展开 —— 说明本来就该先看到）。
- * 用 context 而不是逐项传 prop：开关是**全局的**，24 处各传一遍只会多出 24 个噪音。
- */
-const ShowBands = createContext(true)
 /** 两列之间的间距（= 外层 grid 的 gap-4），算协议窗高度时要扣掉 */
 const COL_GAP = 16
 /** 协议窗的最低高度：低于它就没法读了（窄窗口下宁可让左列略高一点） */
 const PROTO_MIN_HEIGHT = 240
 
-/**
- * 客观描写档位（自由对话）。
- * 每一档都是**真值**，所以不传 emptyLabel（否则会多出一个空选项）。
- */
-const SCENE_DESC_OPTIONS = [
-  { id: 'off', label: '关闭 —— 只写对白与动作' },
-  { id: 'light', label: '轻 —— 出场与转场时补一句' },
-  { id: 'standard', label: '标准（推荐）—— 出场 / 环境 / 情绪都落到具体细节' },
-  { id: 'rich', label: '丰富 —— 每回合都带一句环境或身体细节' },
-]
-
 /** 展示用的示例正则（收成常量 —— 反斜杠在 JSX 属性里转义最容易出错，只写一处） */
 const RULE_EXAMPLE = '\*([^*\n]+)\*'
-
-/** 剧情推演：设定层从哪来（A 档） */
-const CONTEXT_SOURCE_OPTIONS = [
-  { id: 'both', label: '项目资料 + 背景设定（默认）' },
-  { id: 'digest', label: '只用背景设定 —— 省字数，长篇推荐' },
-  { id: 'raw', label: '只用项目资料 —— 不注入背景设定' },
-]
-
-/**
- * 分组外壳。
- * `className` / `bodyClassName` 是给「需要被拉伸到与对侧等高的那一段」用的（扮演协议）：
- * 外层网格默认 `align-items: stretch`，两列等高；协议段作为左列最后一个子项吃满剩余高度，
- * 内容区（pre）再 `flex-1` 跟着长 —— 否则左列会比右列短一大截。
- */
-function Section({ title, desc, children, className = '', bodyClassName = '' }: {
-  title: string; desc: string; children: React.ReactNode
-  className?: string; bodyClassName?: string
-}) {
-  return (
-    <section className={`rounded-lg border border-ink-800 bg-ink-850/30 ${className}`}>
-      <div className="shrink-0 px-4 py-3 border-b border-ink-800">
-        <h3 className="text-13 text-amber">{title}</h3>
-        <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">{desc}</p>
-      </div>
-      <div className={`p-4 space-y-4 ${bodyClassName}`}>{children}</div>
-    </section>
-  )
-}
-
-/**
- * 单项：标题 → 输入区 → 说明。
- * 说明放下面（不是中间），长短不一时输入框仍然对齐。
- */
-function Field({ label, hint, footer, children }: {
-  label: React.ReactNode; hint?: string; footer?: React.ReactNode; children: React.ReactNode
-}) {
-  return (
-    <div>
-      <div className="text-11 text-ink-200 leading-5">{label}</div>
-      <div className="mt-1">{children}</div>
-      {hint && <p className="mt-1 text-10 text-ink-500 leading-relaxed">{hint}</p>}
-      {footer}
-    </div>
-  )
-}
-
-/**
- * 数值项的「取值范围 + 分段影响」表，**高亮当前值落在的那一段**。
- *
- * 【为什么要有它】以前每个框旁边只有一句「通常 1.05」—— 用户知道了默认值，却不知道**这一段意味着什么**，
- * 想按自己的需求微调时无从下手。这里把区间摊开分段，写清每一段对模型输入输出的影响。
- *
- * 【为什么数字也在这张表里出】范围与文案收在 `paramGuide.ts`，min/max/step 也由它给 ——
- * 说明与输入框范围若各写一份，日子久了就会对不上，而**说明写错比没写更坏**（测试锁了分段完整性）。
- */
-function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
-  const show = useContext(ShowBands)
-  if (!show) return null
-  const cur = bandOf(guide, value)
-  return (
-    <div className="mt-2 overflow-hidden rounded-md border border-ink-800 bg-ink-900/40">
-      <div className="border-b border-ink-800 px-2 py-1 text-10 text-ink-600">
-        取值范围 {guide.min} ~ {guide.max}{guide.unit ? `（${guide.unit}）` : ''} · 步进 {guide.step}
-      </div>
-      <ul>
-        {guide.bands.map(b => {
-          const on = b.from === cur.from && b.to === cur.to
-          return (
-            <li
-              key={`${b.from}-${b.to}`}
-              className={`border-t border-ink-800/60 px-2 py-1.5 text-10 leading-relaxed first:border-t-0 ${
-                on ? 'bg-amber/10' : ''
-              }`}
-            >
-              <span className={`tabular-nums ${on ? 'text-amber' : 'text-ink-500'}`}>
-                {b.from === b.to ? b.from : `${b.from} ~ ${b.to}`}
-              </span>
-              <span className={`ml-1.5 ${on ? 'text-amber' : 'text-ink-300'}`}>{b.name}</span>
-              {b.recommended && <span className="ml-1 text-9 text-ink-600">默认</span>}
-              <span className={`ml-1.5 ${on ? 'text-ink-200' : 'text-ink-500'}`}>{b.effect}</span>
-            </li>
-          )
-        })}
-      </ul>
-    </div>
-  )
-}
-
-/**
- * 数值输入：本地留着正在输入的字，避免「打成 0.」时被立刻纠正。
- *
- * `guide` 同时给出 min / max / step / 单位与分段说明 —— **上界下界与说明同源**，
- * 不会出现「表里说 0~2、输入框只让填到 1」这种自相矛盾（见 paramGuide.ts 顶部注释）。
- */
-function NumField({ label, hint, guide, value, onCommit, recommend }: {
-  label: string; hint?: string; guide: ParamGuide
-  value: number; onCommit: (v: number) => void
-  /**
-   * 当前模型下的推荐值（随模型变）。给出时标题右侧多一个可点的「建议 N」：
-   * 与当前值不同 → 琥珀色（提示"这里还能再调"），点了即采用；相同 → 灰字 + ✓。
-   * 不传 = 这一项没有动态推荐，行为与改造前完全一致。
-   */
-  recommend?: number | null
-}) {
-  const [draft, setDraft] = useState(String(value))
-  useEffect(() => { setDraft(String(value)) }, [value])
-  const band = bandOf(guide, value)
-  const stale = typeof recommend === 'number' && recommend !== value
-  return (
-    <Field
-      label={
-        <span className="flex items-baseline justify-between gap-2">
-          <span>{guide.unit ? `${label}（${guide.unit}）` : label}</span>
-          <span className="flex shrink-0 items-baseline gap-1.5">
-            {typeof recommend === 'number' && (
-              <Button variant="bare" type="button"
-                onClick={() => onCommit(recommend)}
-                className={`h-auto px-1 py-0 rounded text-10 tabular-nums transition-colors ${stale ? 'text-amber hover:bg-amber/10' : 'text-ink-600'}`}
-                title={stale
-                  ? `当前模型下的推荐值 ${recommend}${guide.unit ? ' ' + guide.unit : ''} —— 点击采用`
-                  : `已与当前模型的推荐值一致（${recommend}${guide.unit ? ' ' + guide.unit : ''}）`}>
-                建议 {recommend}{stale ? ' ↺' : ' ✓'}
-              </Button>
-            )}
-            <span className="tabular-nums text-10 text-ink-600">{guide.min} ~ {guide.max}</span>
-          </span>
-        </span>
-      }
-      hint={hint}
-      footer={<RangeGuide guide={guide} value={value} />}
-    >
-      <input
-        type="number" min={guide.min} max={guide.max} step={guide.step} value={draft} className={NUM}
-        onChange={e => {
-          setDraft(e.target.value)
-          const n = Number(e.target.value)
-          if (e.target.value.trim() !== '' && Number.isFinite(n)) {
-            onCommit(Math.min(guide.max, Math.max(guide.min, n)))
-          }
-        }}
-        onBlur={() => setDraft(String(value))}
-      />
-      {/* 这一行**常驻**（表格收起时它是唯一线索）：当前值 → 落在哪一段、那一段的范围 */}
-      <div className="mt-1 text-10 text-ink-600">
-        当前 {value} → <span className="text-amber">{band.name}</span>
-        <span className="tabular-nums">（{band.from === band.to ? band.from : `${band.from} ~ ${band.to}`}）</span>
-      </div>
-    </Field>
-  )
-}
-
-/** 多行文字输入（自动延展） */
-function TextField({ label, hint, value, minRows = 3, placeholder, onChange }: {
-  label: string; hint?: string; value: string; minRows?: number; placeholder?: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      <AutoTextarea
-        className={BOX} textClass="text-12" minRows={minRows} maxHeight={420}
-        placeholder={placeholder} value={value} onChange={onChange}
-      />
-    </Field>
-  )
-}
-
-/** 下拉选择。`emptyLabel` 不传就不渲染那个空选项（用于「每一档都是真值」的档位选择） */
-function SelectField({ label, hint, footer, value, options, emptyLabel, onChange }: {
-  label: string; hint?: string; footer?: React.ReactNode; value: string
-  options: { id: string; label: string }[]; emptyLabel?: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <Field label={label} hint={hint} footer={footer}>
-      <select value={value} className={`${NUM} w-full`} onChange={e => onChange(e.target.value)}>
-        {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
-        {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-      </select>
-    </Field>
-  )
-}
-
-/** 开关 */
-function ToggleField({ label, hint, value, onChange }: {
-  label: string; hint?: string; value: boolean; onChange: (v: boolean) => void
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      <Button
-        variant="toggle" size="md" selected={value}
-        className="w-full" onClick={() => onChange(!value)}
-      >
-        {value ? '已开启' : '已关闭'}
-      </Button>
-    </Field>
-  )
-}
 
 export default function TavernControl() {
   const [s, setS] = useState<TavernSettings | null>(null)
@@ -1095,286 +876,21 @@ export default function TavernControl() {
           </div>
         </div>
 
-        {/* ========== 右列（它的高度是协议窗高度的基准） ========== */}
+        {/* ========== 右列（它的高度是协议窗高度的基准） ==========
+            下标 div 必须留在**本组件**：协议窗高度同步量的是它的**直接子节点**。
+            子组件返回 Fragment，DOM 里这层的子节点仍是三个 <section>（与拆分前一致）。 */}
         <div ref={rightColRef} className="space-y-4">
-
-          {/* ---------- 六、剧情推演控制 ---------- */}
-          <Section
-            title="六、剧情推演控制"
-            desc="只对「剧情推演」生效。叙事向要的是稳 —— 角色反应得站得住，所以默认温度比自由对话低。"
-          >
-            <div className={GRID2}>
-              <NumField
-                label="温度" guide={GUIDE_SAMPLING.temperature}
-                hint="叙事推演要稳 —— 角色反应得站得住，所以默认比自由对话低（0.9）。"
-                value={pl.temperature} onCommit={v => setPlot('temperature', v)}
-              />
-              <NumField
-                label="核采样阈值" guide={GUIDE_SAMPLING.topP}
-                hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
-                value={pl.topP} onCommit={v => setPlot('topP', v)}
-              />
-              <NumField
-                label="候选词上限" guide={GUIDE_SAMPLING.topK}
-                hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
-                value={pl.topK} onCommit={v => setPlot('topK', v)}
-              />
-              <NumField
-                label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
-                hint="高于 1 会压制重复用词；太高会让句子发硬、用词别扭。"
-                value={pl.repeatPenalty} onCommit={v => setPlot('repeatPenalty', v)}
-              />
-              <NumField
-                label="词频惩罚" guide={GUIDE_SAMPLING.frequencyPenalty}
-                hint="同一个词出现得越多扣得越狠。推演里的动作描写也容易「每轮都写手」，管的就是这一类反复。"
-                value={pl.frequencyPenalty} onCommit={v => setPlot('frequencyPenalty', v)}
-              />
-              <NumField
-                label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
-                hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
-                value={pl.repeatLastN} onCommit={v => setPlot('repeatLastN', v)}
-              />
-              <NumField
-                label="新话题倾向" guide={GUIDE_SAMPLING.presencePenalty}
-                hint="正数鼓励引入新内容，负数让它更愿意围着当前话题说。推演要线索连贯，所以默认偏保守（0.5）。"
-                value={pl.presencePenalty} onCommit={v => setPlot('presencePenalty', v)}
-              />
-              <NumField
-                label="设定层占比" guide={PARAM_GUIDES.plotSettingRatio}
-                hint="上下文预算里分给「项目设定」的比例，剩下的留给长期记忆与对话历史。"
-                value={Math.round(pl.settingRatio * 100)} onCommit={v => setPlot('settingRatio', v / 100)}
-              />
-            </div>
-
-            <SelectField
-              label="设定来源"
-              hint="决定「世界与角色设定」这一层从哪来 —— 它每轮都进 system，是预算里最大的一块。"
-              footer={(
-                <div className="mt-1.5 space-y-1 text-10 text-ink-600 leading-relaxed">
-                  <p>· 两者（默认）：项目原始资料 + 你提炼的背景设定。资料最全，但项目原始资料本身就有四千六百字以上（示范项目实测还会丢 11 段），加上协议四千四百多字 —— 24000 的预算里 system 会吃掉一半左右，留给对话历史仍有一万多字。</p>
-                  <p>· 只用背景设定：设定层只留「作品概览 + 章节清单」（约 2200 字），世界规则靠你提炼的那份，省下的全给对话历史。代价是没在场配角的卡、名词 / 地理 / 历史细节不再注入 —— 所以背景设定里建议把「主要人物关系」写成一节，并让关键词留空（始终注入）。</p>
-                  <p>· 只用项目资料：不注入背景设定那一层。</p>
-                </div>
-              )}
-              value={pl.contextSource}
-              options={CONTEXT_SOURCE_OPTIONS}
-              onChange={v => setPlot('contextSource', v)}
-            />
-
-            <TextField
-              label="叙事向风格追加"
-              hint="默认留空 —— 不追加就走协议默认的写法（这本来就是方案的原意）。填了会追加在档位那一层。"
-              minRows={2}
-              placeholder="例：多用白描，少用形容词；每轮至少给出一个具体的环境细节。"
-              value={pl.styleHint}
-              onChange={v => setPlot('styleHint', v)}
-            />
-            <TextField
-              label="剧情推演补充要求"
-              hint="只对剧情推演生效，排在协议之前。"
-              minRows={3}
-              placeholder="例：作者扮演的角色一律不要代写；不确定的地方宁可留白，也不要替作者做决定。"
-              value={pl.extraPrompt}
-              onChange={v => setPlot('extraPrompt', v)}
-            />
-          </Section>
-
-          {/* ---------- 七、自由对话控制 ---------- */}
-          <Section
-            title="七、自由对话控制"
-            desc="只对「自由对话」生效。陪伴要松弛感，所以温度默认更高；下面还有记忆引擎与日常推进的一组阈值。"
-          >
-            <div className={GRID2}>
-              <NumField
-                label="温度" guide={GUIDE_SAMPLING.temperature}
-                hint="陪伴要松弛感，默认 0.95 —— 比剧情推演（0.9）更放得开。"
-                value={fr.temperature} onCommit={v => setFree('temperature', v)}
-              />
-              <NumField
-                label="核采样阈值" guide={GUIDE_SAMPLING.topP}
-                hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
-                value={fr.topP} onCommit={v => setFree('topP', v)}
-              />
-              <NumField
-                label="候选词上限" guide={GUIDE_SAMPLING.topK}
-                hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
-                value={fr.topK} onCommit={v => setFree('topK', v)}
-              />
-              <NumField
-                label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
-                hint="角色的口头禅多，所以这一项比剧情模式更值得调。"
-                value={fr.repeatPenalty} onCommit={v => setFree('repeatPenalty', v)}
-              />
-              <NumField
-                label="词频惩罚" guide={GUIDE_SAMPLING.frequencyPenalty}
-                hint="同一个词出现得越多扣得越狠。角色的口头禅、习惯小动作最容易反复 —— 这一项比「重复惩罚」更对症。"
-                value={fr.frequencyPenalty} onCommit={v => setFree('frequencyPenalty', v)}
-              />
-              <NumField
-                label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
-                hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
-                value={fr.repeatLastN} onCommit={v => setFree('repeatLastN', v)}
-              />
-              <NumField
-                label="新话题倾向" guide={GUIDE_SAMPLING.presencePenalty}
-                hint="正数鼓励引入新内容 —— 日常聊天靠它才有「日子在往前走」的感觉。默认 0.55。"
-                value={fr.presencePenalty} onCommit={v => setFree('presencePenalty', v)}
-              />
-            </div>
-
-            <SelectField
-              label="整理记忆用的模型"
-              hint="记忆压缩不需要创意，越快越省越好，可以单独指一个便宜的小模型。留空则跟随上面的默认模型。"
-              value={fr.summaryProviderId}
-              options={modelOptions}
-              emptyLabel="（跟随默认模型）"
-              onChange={v => setFree('summaryProviderId', v)}
-            />
-
-
-            <SelectField
-              label="客观描写"
-              hint="只写对白与动作，画面是空的 —— 这一项决定要不要写「Ta 穿什么、屋里什么光、外面什么天气」。写法固定：用全角括号（ ）包住、独立成行（与协议的括号是同一套 —— 【】已废止，别再用）。标准档：出场交代穿着与姿态、转场补一句环境、情绪用外在细节表示（都只写观察得到的东西，不写任何人的心理 —— 那是代写）。描写算在协议那 60–160 字里，别指望它长篇铺陈。"
-              value={fr.sceneDescription}
-              options={SCENE_DESC_OPTIONS}
-              onChange={v => setFree('sceneDescription', v)}
-            />
-
-            <TextField
-              label="聊天向风格提示"
-              hint="自由对话的档位层。默认是「现代日常场景、短句为主、最多连发 2 条」。"
-              minRows={2}
-              value={fr.styleHint}
-              onChange={v => setFree('styleHint', v)}
-            />
-            <TextField
-              label="自由对话补充要求"
-              hint="只对自由对话生效，排在协议之前。"
-              minRows={3}
-              placeholder="例：不要替作者的角色做决定；Ta不确定的事就写不确定。"
-              value={fr.extraPrompt}
-              onChange={v => setFree('extraPrompt', v)}
-            />
-
-            <div className="pt-1">
-              <div className="mb-1 text-12 text-ink-200 border-t border-ink-800 pt-3">记忆引擎</div>
-              {/* 🚫 2026-09-16：这里原来的「触发整理」与「自动整理最小间隔」已删 ——
-                  项目不再有任何自动整理（两种模式都改为作者手动触发：自由对话「结束本轮对话」、
-                  剧情推演「整理本场记忆」），留着这两个旋钮只会让人以为拧了有用。 */}
-              <p className="mb-3 text-10 leading-relaxed text-ink-500">
-                下面几项决定记忆怎么压、怎么滚。<span className="text-ink-400">整理时机不在这一栏</span>——
-                现在没有自动整理：自由对话在点「结束本轮对话」时整理，剧情推演点「整理本场记忆」。
-                <br />
-                这四项的推荐值跟着<span className="text-ink-400">上下文预算</span>走（也就跟着当前模型走）：
-                预算大，记忆可以多存一些；预算小就别让记忆抢了对话历史。
-              </p>
-              <div className={GRID2}>
-                <NumField
-                  label="记忆软上限" guide={gSoft} recommend={rec.softLimit}
-                  hint="超过只在界面上提醒，不会硬截断。"
-                  value={fr.softLimit} onCommit={v => setFree('softLimit', v)}
-                />
-                <NumField
-                  label="记忆硬上限" guide={gHard} recommend={rec.hardLimit}
-                  hint="超过就按「长期摘要 → 纪念日 → 关系状态」的顺序压缩；关键事实与未爆的雷不动。"
-                  value={fr.hardLimit} onCommit={v => setFree('hardLimit', v)}
-                />
-                <NumField
-                  label="长期摘要上限" guide={gLong} recommend={rec.longTermLimit}
-                  hint="「长期摘要」这一栏单独的字数上限，也是最优先被压缩的一栏。推荐值取硬上限的约六分之一。"
-                  value={fr.longTermLimit} onCommit={v => setFree('longTermLimit', v)}
-                />
-                <NumField
-                  label="日记保留" guide={gDiary} recommend={rec.diaryDays}
-                  hint="「最近日记」保留几条，新的在上、旧的自动滚动掉。它数的是生活痕迹，跟窗口大小相关性弱，所以推荐值按开方缩放（涨得比预算慢）。"
-                  value={fr.diaryDays} onCommit={v => setFree('diaryDays', v)}
-                />
-                <NumField
-                  label="整理锁有效期" guide={PARAM_GUIDES.summaryLock}
-                  hint="防止两个窗口同时整理记忆。上次整理跑到一半崩了，超过这个时间就可以被接管。"
-                  value={fr.summaryLockTtlMin} onCommit={v => setFree('summaryLockTtlMin', v)}
-                />
-              </div>
-            </div>
-
-            <div className="pt-1">
-              <div className="mb-3 text-12 text-ink-200 border-t border-ink-800 pt-3">日常推进</div>
-              <div className={GRID2}>
-                <NumField
-                  label="推进间隔" guide={PARAM_GUIDES.dailyAdvance}
-                  hint="距上次活跃超过这么久，才补写一段「这几天的生活」。没有常驻进程，只能靠打开界面时推进。"
-                  value={fr.dailyAdvanceHours} onCommit={v => setFree('dailyAdvanceHours', v)}
-                />
-                <NumField
-                  label="生活记录保留" guide={PARAM_GUIDES.dailyKeep}
-                  hint="「这几天的生活」保留几条（一天一条），新的在上。"
-                  value={fr.dailyLogKeep} onCommit={v => setFree('dailyLogKeep', v)}
-                />
-              </div>
-            </div>
-
-            <div className="pt-1">
-              <div className="mb-3 text-12 text-ink-200 border-t border-ink-800 pt-3">收尾与释放</div>
-              <ToggleField
-                label="结束本轮对话后卸载本地模型"
-                hint="收尾（记忆 / 日记 / 数值 / 设定建议）全部跑完之后，让本机 Ollama 把这个模型退出显存。模型留在显存里时会带着上一场的上下文 —— 清空了记忆它却还隐约记得，打开这项就能从干净状态开下一场。只对本机 Ollama 生效。"
-                value={fr.unloadAfterRoundEnd}
-                onChange={v => setFree('unloadAfterRoundEnd', v)}
-              />
-              <p className="mt-2 text-10 leading-relaxed text-ink-500">
-                代价是「下一场的第一句要等模型重新加载」（本地 27B 上这一步是几十秒），所以默认是关的 ——
-                需要「每场都从干净状态开始」时再打开。
-              </p>
-            </div>
-          </Section>
-          {/* ---------- 八、本场数值（C2 第二步） ---------- */}
-          <Section
-            title="八、本场数值"
-            desc="只对「自由对话」生效。每轮回复后自动算一次数值变化（好感 / 信任 / 精神 / 心情 / 地点），你也能随时手改。三项数值都是 −100~+100，0 为中立起点：好感与信任往下是反感、往上是亲近；精神为负时，角色会出现与角色卡设定不一致的言行。数值属于这一场，换一场戏重新算。"
-          >
-            <ToggleField
-              label="启用本场数值"
-              hint="关掉 = 提示词里一个字都不出现（0 字成本），自由对话右栏的「本场状态」也不再显示它。"
-              value={s.vars.enabled}
-              onChange={v => setVars({ enabled: v })}
-            />
-
-            <Field
-              label={`启用哪几项（已启用 ${VAR_DEFS.filter(d => !(s.vars.off ?? []).includes(d.key)).length} / ${VAR_DEFS.length}）`}
-              hint="点一下切换。关掉的项不会进提示词；「精神」为负时角色会做出偏离人设的言行，配合剧本的「这一场的目标」用最有意义。"
-            >
-              <div className="flex flex-wrap gap-2">
-                {VAR_DEFS.map(d => {
-                  const on = !(s.vars.off ?? []).includes(d.key)
-                  return (
-                    <Button
-                      key={d.key} variant="toggle" size="sm"
-                      selected={on} onClick={() => toggleVarKey(d.key)}
-                    >
-                      {on ? '✓ ' : ''}{d.label}
-                      <span className="ml-1 text-10 text-ink-500">
-                        {d.kind === 'num' ? `${d.min}–${d.max}` : `≤${d.maxLen} 字`}
-                      </span>
-                    </Button>
-                  )
-                })}
-              </div>
-            </Field>
-
-            <NumField
-              label="单次变化幅度" guide={PARAM_GUIDES.varMaxStep}
-              hint="模型给出的增量超过这个值就按这个值取（它是刹车，不是目标值）。"
-              value={s.vars.maxStep} onCommit={v => setVars({ maxStep: Math.max(1, Math.round(v)) })}
-            />
-
-            <p className="text-10 text-ink-600 leading-relaxed">
-              自由对话里每轮回复后都会单开一次小调用，把这一轮真的变了的项算出来（点「结束本轮对话」时再兜底算一次）。
-              写进提示词的有三样：当前值、一次能改多少，以及每一项的档位定义（哪一段算反感、哪一段算亲近），
-              模型据此判断现在落在哪一档、该往哪走。算不出来时一个字段都不动 —— 绝不会为了记账改错你要看的内容。
-            </p>
-          </Section>
-
-
+          <TavernControlModes
+            plot={pl}
+            free={fr}
+            vars={s.vars}
+            setPlot={setPlot}
+            setFree={setFree}
+            setVars={setVars}
+            toggleVarKey={toggleVarKey}
+            modelOptions={modelOptions}
+            advice={{ rec, gSoft, gHard, gLong, gDiary }}
+          />
         </div>
       </div>
       </ShowBands.Provider>
