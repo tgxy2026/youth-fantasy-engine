@@ -20,37 +20,10 @@ import { computeDropdownPos, type DropdownPos } from '../lib/dropdownPos'
 /** 自定义下拉选项变更广播：任意下拉增删改选项后派发，同列其它下拉与地图图例据此刷新 */
 export const CUSTOM_OPTIONS_EVENT = 'yfe:custom-options'
 
-export interface ResolvedOption {
-  /** 展示名（内置项已应用改名） */
-  name: string
-  /** 内置项的原始名（用于取内置配色）；自定义项为 undefined */
-  builtinOrigin?: string
-  kind: 'builtin' | 'user'
-}
-
-/**
- * 按与下拉完全一致的规则算出「有效选项列表」：
- * 内置项（去掉 hidden、应用 renamed）在前，用户自定义项在后，同名去重。
- * 供图例等只读场景复用，避免各处重复实现导致口径不一致。
- */
-export function resolveOptions(builtin: string[], payload: CustomOptionPayload): ResolvedOption[] {
-  const renamed = payload.renamed ?? {}
-  const out: ResolvedOption[] = []
-  const seen = new Set<string>()
-  for (const b of builtin) {
-    if (payload.hidden.includes(b)) continue
-    const display = renamed[b] ?? b
-    if (seen.has(display)) continue
-    seen.add(display)
-    out.push({ name: display, builtinOrigin: b, kind: 'builtin' })
-  }
-  for (const u of payload.items) {
-    if (seen.has(u)) continue
-    seen.add(u)
-    out.push({ name: u, kind: 'user' })
-  }
-  return out
-}
+// 「有效选项」的解析规则已下沉到 lib/customOptions.ts —— 因为「AI 整理」也要用同一口径喂候选值，
+// 而 lib 不得反向依赖 components（分层红线，见 tests/importCycles.test.ts）。
+// 这里再导出，保持既有调用方（TableSheet / GeoMapEditor）的 import 路径不变。
+export { resolveOptions, type ResolvedOption } from '../lib/customOptions'
 
 interface Props {
   tabId: string

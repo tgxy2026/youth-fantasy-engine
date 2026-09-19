@@ -1,20 +1,19 @@
 import { foldVh } from '../lib/theme'
-import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Sparkles, Check, Loader2, AlertCircle, RefreshCw, CircleStop,
   CheckSquare, Square, BookOpen, ClipboardPaste, Database,
 } from 'lucide-react'
 import { Modal } from './Modal'
-import type { CalendarDef, Chapter, TabDef, TableColumn } from '../lib/types'
-import { getAllChapters, getAllVolumes, getCustomOptions, getTableRows } from '../lib/db'
-import { resolveOptions } from './CustomSelect'
-import { buildProjectContext, getChapterTexts, loadCharacterNames } from '../lib/aiContext'
-import { isVolumeLedgerTab, type VisCtx } from '../lib/schema'
+import type { CalendarDef, Chapter, TabDef } from '../lib/types'
+import { getAllChapters, getAllVolumes } from '../lib/db'
+import { getChapterTexts } from '../lib/aiContext'
 import { flattenChapters } from '../lib/chapterSeq'
-import { aiOrganizeRows, keyRowToLine, type OrganizeColumn, type OrganizeResult } from '../lib/aiTasks'
+import type { OrganizeResult } from '../lib/aiTasks'
+import type { VisCtx } from '../lib/schema'
 import { isCancelled } from '../lib/ai'
-import { isUnorderedPairTab, organizeHint, organizeKeyColumns } from '../lib/aiScope'
+import { organizeHint } from '../lib/aiScope'
+import { organizeKeyColsOf, organizeRows, organizeUnorderedOf } from '../lib/organizeRows'
 import AutoTextarea from './AutoTextarea'
 import { Button } from './Button'
 
@@ -45,7 +44,6 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [paste, setPaste] = useState('')
   const [useCtx, setUseCtx] = useState(true)
-  const [charNames, setCharNames] = useState<string[]>([])
 
   const [loading, setLoading] = useState(false)
   const [phase, setPhase] = useState('')
@@ -55,8 +53,8 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   const [adding, setAdding] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
-  const keyCols = useMemo(() => organizeKeyColumns(tab), [tab])
-  const unordered = isUnorderedPairTab(tab.id)
+  const keyCols = useMemo(() => organizeKeyColsOf(tab), [tab])
+  const unordered = organizeUnorderedOf(tab)
   // 编号列由系统自动续号，不让模型插手
   const aiCols = useMemo(() => (tab.columns ?? []).filter(c => c.name !== '编号'), [tab])
 
@@ -74,38 +72,10 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
         if (last) setPicked(new Set([last.id]))
       })
       .catch(() => setChapters([]))
-    loadCharacterNames(ctx).then(n => { if (alive) setCharNames(n) }).catch(() => {})
     return () => { alive = false }
   }, [ctx])
 
   const written = useMemo(() => chapters.filter(c => c.content.trim()), [chapters])
-
-  /**
-   * 下拉列的合法取值。
-   * 必须用与行内下拉完全一致的口径（resolveOptions）：直接给 col.options 会漏掉
-   * 用户自定义的选项，还会把已被隐藏 / 改名的旧内置项继续喂给模型（1.9.1 修复）。
-   */
-  // 跨表引用列的候选值缓存：同一张来源表在本次整理里只读一次（势力关系有 A/B 两列都引用《国家势力》）
-  const refCache = useRef(new Map<string, string[]>())
-  const allowedOf = async (c: TableColumn): Promise<string[] | undefined> => {
-    if (c.calendar) return calendars.map(x => x.name).filter(Boolean)
-    // 🔴 跨表引用列（如《势力关系》的势力A / 势力B）：候选值来自被引用表的指定列。
-    //    不喂候选值，模型会自己编势力名 → 写回去就是悬空引用，《势力关系》图谱里会冒出并不存在的节点。
-    if (c.type === 'tableRef' && c.refTab && c.refCol) {
-      const hit = refCache.current.get(c.refTab)
-      if (hit) return hit
-      const rows = await getTableRows(c.refTab)
-      const names = [...new Set(rows.map(r => String(r.data[c.refCol as string] ?? '').trim()).filter(Boolean))]
-      refCache.current.set(c.refTab, names)
-      return names
-    }
-    if (c.type === 'select' && c.options?.length) {
-      const payload = await getCustomOptions(tab.id, c.name)
-      return resolveOptions(c.options, payload).map(o => o.name)
-    }
-    if (c.type === 'character' || c.type === 'characters') return charNames
-    return undefined
-  }
 
   const stop = () => abortRef.current?.abort()
 
@@ -128,39 +98,18 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
         src = paste
       }
 
-      setPhase('正在打包项目资料…')
-      let ctx = ''
-      if (useCtx) {
-        // 排除当前表自身：它的已有条目单独作为「不得重复」清单给模型，避免重复占预算。
-        // 卷台账页签还要排除 chapter-master 聚合段——那段含全部卷（含当前卷）的台账行，
-        // 不排除的话当前表的行会重复进 prompt（1.9.2 按卷建表后）。
-        const built = await buildProjectContext({
-          budget: await writerBudgetFor('organize-rows'),
-          excludeTabIds: isVolumeLedgerTab(tab.id) ? [tab.id, 'chapter-master'] : [tab.id],
-          includeChapterList: mode !== 'chapters',
-        })
-        ctx = built.text
-      }
-
-      setPhase('正在读取下拉选项…')
-      const allowedList = await Promise.all(aiCols.map(c => allowedOf(c)))
-      const cols: OrganizeColumn[] = aiCols.map((c, i) => ({ name: c.name, desc: c.tip, allowed: allowedList[i] }))
-      const existingKeys = existing
-        .map(d => keyRowToLine(d, keyCols))
-        .filter(s => s.replace(/[｜\s]/g, '').length > 0)
-
-      setPhase('模型正在整理，请稍候…')
-      const r = await aiOrganizeRows({
-        tableName: tab.name,
-        purpose: `${tab.description || ''} ${organizeHint(tab.id)}`.trim(),
-        columns: cols,
-        existingKeys,
-        keyColumns: keyCols,
-        unorderedPair: unordered,
+      // 执行体在 lib/organizeRows.ts —— 与「一键拆书」末尾的「整理关系」阶段共用同一套口径
+      // （候选值注入 / 项目资料打包 / 本地判重），不让两处各写一份导致漂移。
+      const r = await organizeRows(tab, {
+        existing,
         sourceText: src,
-        projectContext: ctx,
+        useCtx,
+        includeChapterList: mode !== 'chapters',
         maxRows: 12,
         signal: ctrl.signal,
+        ctx,
+        calendars,
+        onPhase: setPhase,
       })
       setResult(r)
       setChecked(new Set(r.rows.map((_, i) => i)))

@@ -267,6 +267,18 @@ export interface OrganizeRequest {
   /** 单次最多返回条数 */
   maxRows?: number
   signal?: AbortSignal
+  /**
+   * **额外要求模型输出的字段名**（不会写进表 —— 表里没这一列，写回时会被过滤掉）。
+   *
+   * 目前只用于「拆书末尾的关系整理」：要求模型给出「依据」原文片段，调用方本地核对
+   * 那段话**确实出现在材料里**，编不出来的条目就丢掉。
+   *
+   * 🔴 为什么必须有这一道：2026-09-19 实机（本地 4B）实测，即便 prompt 里写明
+   *    「只登记材料中明确写出的关系、项目资料不得用于推断」，模型仍会拿项目资料里
+   *    已有但本书没提到的势力互相配对（编出「中州皇朝 · 血魔教」这种正文里不存在的关系）。
+   *    逼它给出逐字引文 + 本地核对，是唯一确定性的兜底。
+   */
+  evidenceField?: string
   /** 流式回调：提供时整理过程逐块可见 */
   onToken?: (delta: string) => void
 }
@@ -343,7 +355,8 @@ ${req.projectContext.trim() || '（无）'}
 【待整理文本】
 ${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) : '（作者未指定正文，请仅依据上方项目资料整理其中已明确写出、但尚未登记进本表的条目）'}
 
-请返回最多 ${max} 条新条目的 JSON 数组，优先返回最重要、最确定的。`
+请返回最多 ${max} 条新条目的 JSON 数组，优先返回最重要、最确定的。${req.evidenceField ? `
+每条还必须带一个「${req.evidenceField}」字段：从【待整理文本】里**逐字**摘一句能证明这条的原文（40 字以内，不要改写、不要拼接）。摘不出原文的条目**一律不要输出** —— 宁可少给，也不要编。` : ''}`
 
   const text = await chat(
     cfg,
@@ -356,6 +369,8 @@ ${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) :
 
   const arr = parseObjectArray(text)
   const colNames = req.columns.map(c => c.name)
+  // 表列 + 额外校验字段（依据）：一起从返回对象里取值，后者不进表、只用于本地核对
+  const fieldNames = req.evidenceField ? [...colNames, req.evidenceField] : colNames
   const seen = new Set(req.existingKeys.map(k => rowFingerprint(keyLineToRow(k, req.keyColumns), req.keyColumns, req.unorderedPair)))
 
   const rows: Record<string, string>[] = []
@@ -364,7 +379,7 @@ ${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) :
 
   for (const item of arr) {
     const row: Record<string, string> = {}
-    for (const name of colNames) {
+    for (const name of fieldNames) {
       // 容错：模型可能用了去空格/大小写不同的 key
       const hit = Object.keys(item).find(k => k.trim() === name || k.trim().replace(/\s/g, '') === name.replace(/\s/g, ''))
       row[name] = hit ? asText(item[hit]) : ''

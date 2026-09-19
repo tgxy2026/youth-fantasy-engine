@@ -1,14 +1,16 @@
 /**
  * 一键拆书 · 管线编排（B1）。
  *
- * 四个阶段：切分 → **写入正文** → 逐块抽取 → 整理草稿。用 `lib/flow` 的状态机驱动，
- * 好处是中止 / 进度 / 产物保留都是现成的，且与「创意写作」共用同一套。
+ * 六个阶段：切分 → **写入正文** → 逐块抽取 → 整理草稿 → 汇总全书设定 → 整理关系。
+ * 用 `lib/flow` 的状态机驱动，好处是中止 / 进度 / 产物保留都是现成的，且与「创意写作」共用同一套。
  *
  * 复用既有能力（不重造）：
  * - 抽取：`aiTasks.aiExtractSettingEntities`（按章抽「人物/势力/地点/种族/物品/术语」+ 原文证据）
  * - 判重：`settingLedger.classify`（登记表比对，确定性字符串运算）
  * - 草稿：`flow/draft.buildDraftBundle`
  * - 落库：`bookbreak/persist.persistSplitToChapters`（写卷/章 + 同步章节台账）
+ * - 关系整理：`bookbreak/relations.buildRelationDrafts`（走 `lib/organizeRows`，
+ *   与表格页的「AI 整理」同一套候选值注入 / 判重口径）
  *
  * 🔴 写库边界（2026-09-18 起）：
  * - **设定草稿不自动落库** —— 仍由用户勾选后经 `flow/commit` 写入；
@@ -25,6 +27,7 @@ import { createFlow, firstUnfinishedStage, type StageCtx } from '../flow/pipelin
 import type { DraftBundle, DraftRow, FlowProgress, FlowStage } from '../flow/types'
 import { buildFormMaterial } from './formSummary'
 import { persistSplitToChapters, planVolumes, type PersistResult } from './persist'
+import { buildRelationDrafts, type RelationDraftResult, type RelationTabOutcome } from './relations'
 import { chunkText, splitNovelText, type RawChapter, type SplitResult } from './split'
 
 /** 阶段声明（weight 按实测耗时给：抽取占绝大部分；写入正文是纯 IO，给 1） */
@@ -37,6 +40,12 @@ export const BOOKBREAK_STAGES: FlowStage[] = [
   // 🔴 必须放在最后：它吃的是前面抽出来的实体，而且要"整本书看完再收敛成一份档案"
   //    —— 逐章增量写表单会越写越长、还覆盖作者手改（§3 冲突 3）。
   { id: 'worldview', label: '汇总全书设定', weight: 3 },
+  // 末尾**整理关系**（人物关系 / 势力关系 两张表）。
+  // 🔴 必须放在最后，且不能换成"逐章抽"：关系是**两两事实**，要同时定住 A、B 两人 + 对齐
+  //    已有条目 + 判无序对（A-B 与 B-A 是同一条）。逐章抽只会抽出一地半截关系
+  //    （原文写着「师父」——谁的师父在那一段里没有），所以必须整本看完再收一次。
+  //    weight 3：它比 worldview 贵（两张表各一次调用），但比逐章抽取便宜得多。
+  { id: 'relations', label: '整理关系', weight: 3 },
 ]
 
 /**
@@ -83,6 +92,14 @@ export interface BookBreakOptions {
    * 不想要就在面板上关掉。
    */
   summarizeForms?: boolean
+  /**
+   * 末尾是否**整理关系**（人物关系 / 势力关系 两张表，**默认 true**）。
+   *
+   * 为什么默认开：关系是作者最难手工补的一块 —— 逐章抽取天然产不出来（见 `relations.ts`
+   * 与 BOOKBREAK_STAGES 里的说明），而这两张表又是防「关系失忆 / 泄密穿帮」的底座。
+   * 代价要如实说：**两张表各一次模型调用**，比逐章抽取便宜但多等一会儿；不想要就关掉。
+   */
+  organizeRelations?: boolean
   /** 中止信号（界面的「中止」按钮接它） */
   signal?: AbortSignal
   /** 进度回调 */
@@ -110,6 +127,13 @@ export interface BookBreakResult {
    * （如「另汇总了 3 张表的全书设定」），不参与落库判断，别当成"还没并入"。
    */
   formRows: DraftRow[]
+  /**
+   * 末尾整理出的**关系草稿行**（人物关系 / 势力关系；关闭或没整理出东西时为空）。
+   * 与 `formRows` 同理：**同时也已并入 `bundle.rows`**，这里单列只为面板文案。
+   */
+  relationRows: DraftRow[]
+  /** 关系整理逐表结果（哪张表整理出几条、有没有失败）——面板据此如实交代 */
+  relationTabs: RelationTabOutcome[]
 }
 
 const DEFAULT_MAX_UNIT_CHARS = 4000
@@ -323,6 +347,31 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     return rows
   })
 
+  // ⑥ 整理关系（人物关系 / 势力关系）：**逐章抽取产不出来的那一块**，末尾一次收敛。
+  //    产出的行与其它草稿同构 → 并进同一份 bundle，作者在一个界面里勾选、一次落库。
+  flow.on('relations', async (ctx: StageCtx) => {
+    if (opts.organizeRelations === false) { ctx.report(1, '已关闭「整理关系」，跳过'); return null }
+    const batches = (ctx.bag.extract as EntityBatch[]) ?? []
+    if (!batches.length) { ctx.report(1, '没有可依据的实体，跳过'); return null }
+    ctx.report(0.05, '整理人物关系与势力关系…')
+    const r = await buildRelationDrafts({
+      batches,
+      rawText: raw,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      onProgress: (ratio, detail) => ctx.report(ratio, detail),
+    })
+    const failed = r.perTab.filter(t => t.note)
+    const dropped = r.perTab.reduce((n, t) => n + t.dropped, 0)
+    const unproven = r.perTab.reduce((n, t) => n + t.unproven, 0)
+    // 失败要如实说，并给出**可走的路**：表格页的「AI 整理」还能再补（那边可以自己指定章节）
+    const note = failed.length ? `；${failed.map(t => `《${t.tabName}》失败`).join('、')}（可到该表用「AI 整理」重试）` : ''
+    const dnote = dropped + unproven > 0
+      ? `；另有 ${dropped + unproven} 条被丢掉（名字不在角色卡 / 势力名单里，或给不出原文依据 —— 多半是模型把势力、地点当成了人物，或凭空编了关系）`
+      : ''
+    ctx.report(1, r.rows.length ? `整理出 ${r.rows.length} 条关系${dnote}${note}` : `没有可新增的关系${dnote}${note}`)
+    return r
+  })
+
   const res = await flow.run(opts.resume?.from)
   if (res.status === 'cancelled') {
     // 交回续跑信息：已完成到哪个阶段 + **阶段内断点**（已抽完多少块、已抽到哪些批次）
@@ -340,13 +389,19 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
 
   const base = res.bag.draft as DraftBundle
   const formRows = (res.bag.worldview as DraftRow[] | null) ?? []
+  const relationRes = (res.bag.relations as RelationDraftResult | null) ?? null
+  const relationRows = relationRes?.rows ?? []
+  const merged = [...base.rows, ...formRows, ...relationRows]
   return {
     split: res.bag.split as SplitResult,
     persist: (res.bag.persist as PersistResult | null) ?? null,
     batches: (res.bag.extract as EntityBatch[]) ?? [],
-    // 汇总出的表单行**并进同一份 bundle**：作者在一个界面里勾选、确认、落库
-    bundle: formRows.length ? bundleOf([...base.rows, ...formRows]) : base,
+    // 汇总出的表单行与整理出的关系行**并进同一份 bundle**：作者在一个界面里勾选、确认、落库。
+    // 顺序＝界面分组顺序：实体 → 全书设定表单 → 人物关系/势力关系（关系天然排在最后读）。
+    bundle: merged.length === base.rows.length ? base : bundleOf(merged),
     formRows,
+    relationRows,
+    relationTabs: relationRes?.perTab ?? [],
   }
 }
 

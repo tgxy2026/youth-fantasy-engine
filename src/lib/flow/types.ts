@@ -123,6 +123,17 @@ export interface DraftRow {
    *    判定规则见 `draft.foldNameVariants`（确定性字符串规则，不调模型）。
    */
   variantOf?: string
+  /**
+   * **这张表按哪几列组合判重** —— 只给「没有『名称』列的表格」用（如人物关系是
+   * 人物A + 人物B、势力关系是 势力A + 势力B）。
+   *
+   * 🔴 为什么必须有它：`commit` 默认那套判重是「按名称列找同名条目」，而这类表**压根没有
+   *    「名称」列**（关系不是条目，它没有名字）—— 于是判重静默失效，后果是**作者在草稿页
+   *    点两次「写入项目」就登记两条同样的关系**（图谱里随即多一条重复边）。
+   *    声明了它，落库与「写入前预览」都会按这些列的值组合比对已有行；
+   *    `aiScope.isUnorderedPairTab` 为真的表（人物关系 / 势力关系）还会**无序比较**（A-B = B-A）。
+   */
+  dedupKeys?: string[]
 }
 
 export interface DraftBundle {

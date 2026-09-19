@@ -24,14 +24,20 @@ function batch(index: number, entities: ExtractedEntity[]): EntityBatch {
   return { source: `第${index}章`, index, entities }
 }
 
-// ---------- ① 阶段顺序：汇总必须在最后 ----------
+// ---------- ① 阶段顺序：两个收尾阶段必须排最后 ----------
 {
   const ids = BOOKBREAK_STAGES.map(s => s.id)
   ok('阶段表里有「汇总全书设定」这一步', ids.includes('worldview'), ids.join(','))
-  ok('🔴 它在**最后**（末尾汇总一次，提前跑 = 拿半本书写世界观）',
-    ids[ids.length - 1] === 'worldview', ids.join(','))
-  ok('抽取仍在汇总之前（汇总吃的是抽出来的实体）',
+  ok('阶段表里有「整理关系」这一步（人物关系 / 势力关系）', ids.includes('relations'), ids.join(','))
+  // 🔴 两个收尾阶段（汇总全书设定 / 整理关系）都必须在**整本抽完之后**才跑：
+  //    提前跑 = 拿半本书写世界观、拿半本书定关系。
+  ok('🔴 汇总全书设定排在抽取之后（提前跑 = 拿半本书写世界观）',
     ids.indexOf('extract') < ids.indexOf('worldview'), ids.join(','))
+  ok('🔴 整理关系排在抽取与汇总之后（关系得整本看完再收）',
+    ids.indexOf('extract') < ids.indexOf('relations') && ids.indexOf('worldview') < ids.indexOf('relations'),
+    ids.join(','))
+  ok('🔴 整理关系是**最后一步**（之后只剩作者审阅落库）',
+    ids[ids.length - 1] === 'relations', ids.join(','))
   ok('每一步都有中文显示名（节点时间线要用）',
     BOOKBREAK_STAGES.every(s => !!s.label.trim()))
 }

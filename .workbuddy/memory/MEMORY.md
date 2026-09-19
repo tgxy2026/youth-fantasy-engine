@@ -1,6 +1,6 @@
 # novel-studio 长期记忆
 > 红线/决策索引；事件留 `YYYY-MM-DD.md`。⚠️ **目标 ≤8000 字符**，压不动就外链主题文档。
-> 外链：`docs/酒馆模式-工程红线.md`、`docs/2.1.1-审计修复记录.md`、`docs/AI上下文*.md`、`docs/2.2.0-*`、`docs/一键拆书-*`。
+> 外链：`docs/酒馆模式-工程红线.md`、`docs/2.1.1-审计修复记录.md`、`docs/AI上下文*.md`、`docs/2.2.0-*`、`docs/一键拆书-*`、`docs/2.2.0-拆书关系整理-*`。
 
 ## 红线
 - 🔴 封装须老大明说「封装/重打包」；改完最多 tsc+lint+test+commit。
@@ -22,6 +22,7 @@
 - ✅ **B2 全字段**：字段键**从 `fieldMap` 派生**（闸 `tests/extractFields`）→ 漂移不可能；抽取**必走流式**。🔴 **冲突只在硬事实字段报**（类别/境界/品级/实力/危险/掌权者）——全字段报时 38% 被标、真矛盾反被埋。
 - 🔴 **去泛称走 D 不走 C**：C（二遍复核）精度~60%、误伤专名→不上自动剔除。D＝`draft.foldNameVariants()`（零调用）：只认后缀、多容器只标核心词、数字量词不并。
 - ✅ **P2**：① 概要回填《章节细纲》卡（🔴 **只填空、绝不新建卡**）。② 拆书末尾 `worldview` 汇总**全书级设定**→表单通道；🔴 覆盖**全部 form 页签**；表单**无"同名条目"**，`keep-existing` 也得**填空**。③ **续跑断点在阶段内**；🔴 改原文→断点失效、闸门放弃≠被中止。未做：关系表 kind、跨块同指。
+- ✅ **B3 关系整理**（拆书末尾第 6 阶段 `relations`，默认开）：两表各一次调用，走 `lib/organizeRows.ts`（与表格页「AI 整理」共用同一执行体）；🔴 **创意写作不加**（会打断创作节奏）。
 - 📌 全流程说明：`docs/2.2.0-双功能需求解读与P0落地.md`、`docs/2.2.0-拆书与创意写作-全流程说明.md`。
 
 ## 架构红线
@@ -29,6 +30,7 @@
 - ⚠️ 打包陷阱：①tree-shake——组件只在平台门控分支被引会摇掉整模块→门控用「需该模块平台并集」，删门控必跑 `vite build`；②`DESKTOP` 探测（`window.electronStore`）→dev 浏览器恒 false（`DataDock` 有兜底）。
 - 左下角只准一个浮层 `DataDock`；禁全局 fixed 浮层。种子键：卡片 `模块::字段`、表格＝列名；改种子必跑 seed 闸。
 - 🔗 功能门：`FEATURE_TIER`＋`STRONG_DEPS`（双向）＋`ANY_DEPS`；闸 `feature-deps-check.mjs`（注意：两个闸住在 `tests/` 不是 `scripts/`）。
+- 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**（关系表列＝人物A/人物B）：`commit` 按名称列判重对它们**恒判"不存在"**→ 作者点两次「写入项目」＝两条重复关系。`previewCommit` 走同一函数保一致。
 - 🔴 编辑器双图层：盒模型逐项一致；叠层重建归零 scrollTop→`useLayoutEffect` 回填；只走 `scanRefHighlight`。
 - 🗺 多地图方案 B：新表 `geomaps`＋geography 的 `所属地图`；`migrateGeoMaps` 建默认图回填；🔴 删图不删地点、改图名连带改归属。
 
@@ -59,6 +61,7 @@
 - 🔴 **长文生成必走流式**（`aiTasks.longStream`）：非流式必撞 180s 墙。自驱 `runAutoContinue` 必传 **`onBodyToken`**；别 `await page.evaluate(整流程)`。⚠️ 生成入口无 `max_tokens`。
 - 🔴 **AI「会读哪些数据」＝`lib/aiDataSources.ts` 单一源**（闸 `tests/aiDataSources.test.ts`），改 prompt 来源必须同步改它。🔴🔴 **禁写「全程本地模型／不外发」**——口径只能是「发给**当前选定的**模型：本地不出本机，云端上传到该服务商」。
 - 🔴 本地实弹探针：改口径走 `LR_ANALYZE=<json>` 离线重算；CUDA 固定 seed **不保证逐位复现**（±4pp）。
+- 🔴🔴 **AI「整理」类产出必须两道本地兜底**（拆书关系阶段实测逼出）：① **候选值＝库里已有 ∪ 本次刚抽出、还没落库的实体名**（`allowedOverride`）—— 拆书时角色卡还是空的，名单空→模型编出「陈渊 · 青岚宗」这种**把势力写进人物列**的关系（就是老大点过的老病）；② **要模型给「依据」原文 + 本地核对逐字存在**（`evidenceInMaterial`，`aiOrganizeRows.evidenceField`）—— prompt 里写「不得据项目资料推断」对 4B 无效，实测它编出正文没提过的势力配对。两类丢弃都**如实计数上报**，不许静默吞。
 
 ## 服务器 / 工程质量
 - 服务器 `154.8.178.240`（SSH `yfe_test_server`），站点 `/var/www/yfe`。⚠️ `server/` 含线上反馈服务→删库≠下线；Nginx SPA 回退→不能靠 200 判上线。

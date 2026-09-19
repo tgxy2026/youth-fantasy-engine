@@ -7,10 +7,18 @@
  *   3. **只写目标表真实存在的键**。落点由 `fieldMap.resolveSlot` 产出；本层再兜一道（写前过滤掉
  *      不在列/模块里的键），避免 schema 改动后写出一列幽灵数据。
  *
+ * 🔴 「同一条」怎么认，有**两条路径**（别只想着第一条）：
+ *   1. 有「名称」列的表 → 按名称 / 别称匹配（绝大多数表走这条）；
+ *   2. **没有「名称」列的表**（人物关系 / 势力关系）→ 按草稿行声明的 `dedupKeys` 列值组合匹配，
+ *      无序对表排序后比较（A-B 与 B-A 是同一条）。
+ *   第 2 条是 2026-09-19 补的：关系不是"条目"，它没有名字，`名称` 这个键在表里压根不存在 ——
+ *   缺了它，判重恒判"不存在"，作者在草稿页点两次「写入项目」就登记两条同样的关系。
+ *
  * 写入顺序：**表格型先、卡片型后**。卡片有指向其它表的引用列（「地理位置」→ 地理风物、
  * 「所属势力」→ 国家势力），先建被引用者，引用才不会落空。B2 若新增更深的引用链，在此扩展拓扑。
  */
 import { readAliases } from '../aliases'
+import { isUnorderedPairTab } from '../aiScope'
 import { nextAutoCode } from '../autoCode'
 import * as db from '../db'
 import { uid } from '../id'
@@ -51,6 +59,48 @@ function nameMatches(display: string, aliases: string[], target: string): boolea
   if (!t) return false
   if (normName(display) === t) return true
   return aliases.some(a => normName(a) === t)
+}
+
+/**
+ * 「按列组合判重」用的键值：把指定列的值归一化后拼成一串。
+ * 无序对表（人物关系 / 势力关系）把值**排序后**再拼 —— A-B 与 B-A 是同一条关系。
+ */
+function dedupKeyOf(data: Record<string, string>, keys: string[], unordered: boolean): string {
+  const vals = keys.map(k => normName(data[k] ?? ''))
+  if (unordered) vals.sort()
+  return vals.join('||')
+}
+
+/** 草稿字段 → 同名字典（与已有行的 `data` 同形，便于用同一套判重键比对） */
+function fieldRecordOf(fields: DraftField[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const f of fields) out[f.key] = f.value
+  return out
+}
+
+/**
+ * 表格型草稿在已有行里找「同一条」。两条路径：
+ *
+ * - **有「名称」列**（绝大多数表）→ 按名称 / 别称匹配（原有行为，未改）
+ * - **没有「名称」列**（人物关系 / 势力关系这类）→ 按 `row.dedupKeys` 的列值组合匹配，
+ *   无序对表排序后比较。
+ *
+ * 🔴 第二条路径为什么必要：关系不是"条目"，它没有名字，`名称` 这个键在表里压根不存在。
+ *    旧代码于是恒判"不存在"→ 作者在草稿页点两次「写入项目」就登记两条同样的关系
+ *    （图谱里随即多一条重复边）。没声明 `dedupKeys` 的行仍返回 undefined（不判重，
+ *    与旧行为一致 —— 不会因为这次改动反而变得更激进）。
+ */
+function findTableHit(list: TableRow[], row: DraftRow, cols: Set<string>, nameCol: string): TableRow | undefined {
+  if (cols.has(nameCol)) {
+    return list.find(r => nameMatches(r.data[nameCol] ?? '', readAliases(row.tabId, r.data), row.name))
+  }
+  const keys = (row.dedupKeys ?? []).filter(k => cols.has(k))
+  if (keys.length === 0) return undefined
+  const unordered = isUnorderedPairTab(row.tabId)
+  const want = dedupKeyOf(fieldRecordOf(row.fields), keys, unordered)
+  // 键值全空时**不判重** —— 否则所有"关键列没填"的行会互相当成同一条，第一条之后全被跳过
+  if (!want.replace(/\|/g, '').trim()) return undefined
+  return list.find(r => dedupKeyOf(r.data, keys, unordered) === want)
 }
 
 /** 卡片页签里该 `模块::字段` 键是否真实存在（防止 schema 改过之后写出一列幽灵数据） */
@@ -178,7 +228,7 @@ export async function commitDraftRows(rows: DraftRow[], opts: CommitOptions = {}
         const list = await tableRowsOf(row.tabId)
         const cols = columnNamesOf(row.tabId)
         const nameCol = cols.has('名称') ? '名称' : '事件名称'
-        const hit = list.find(r => nameMatches(r.data[nameCol] ?? '', readAliases(row.tabId, r.data), row.name))
+        const hit = findTableHit(list, row, cols, nameCol)
         if (hit) {
           const next = { ...hit.data }
           let changed = false
@@ -257,7 +307,8 @@ export async function previewCommit(rows: DraftRow[], conflict: ConflictPolicy =
         const cols = columnNamesOf(row.tabId)
         const nameCol = cols.has('名称') ? '名称' : '事件名称'
         const list = await db.getTableRows(row.tabId)
-        exists = list.some(r => nameMatches(r.data[nameCol] ?? '', readAliases(row.tabId, r.data), row.name))
+        // 与落库走**同一个** findTableHit，保证「预览说的」与「实际发生的」一致
+        exists = !!findTableHit(list, row, cols, nameCol)
       }
     } catch { /* 读失败按不存在处理，落库时还会再判一次 */ }
 

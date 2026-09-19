@@ -17,6 +17,7 @@ import { showToast } from './dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '../lib/ai'
 import { adviseImport, type ImportAdvice } from '../lib/bookbreak/recommend'
 import { estimateCalls, previewSplit, runBookBreak, type BookBreakResume } from '../lib/bookbreak/run'
+import type { RelationTabOutcome } from '../lib/bookbreak/relations'
 import type { SplitResult } from '../lib/bookbreak/split'
 import { planVolumes } from '../lib/bookbreak/persist'
 import type { PersistResult } from '../lib/bookbreak/persist'
@@ -38,8 +39,14 @@ export default function BookBreakPanel() {
   /** 是否把原文写进正文编辑（老大 2026-09-18 需求：切分后立刻形成卷/章框架）。默认开。 */
   const [writeToChapters, setWriteToChapters] = useState(true)
   const [summarizeForms, setSummarizeForms] = useState(true)
+  /** 末尾是否整理关系（人物关系 / 势力关系，两张表各一次调用）。默认开：关系是逐章抽取产不出来的那块。 */
+  const [organizeRelations, setOrganizeRelations] = useState(true)
   /** 末尾汇总出的「全书设定」草稿行（已并入 bundle，这里单留一份只用于文案说明） */
   const [formRows, setFormRows] = useState<DraftRow[]>([])
+  /** 末尾整理出的「人物关系 / 势力关系」草稿行（同样已并入 bundle，这里只用于文案说明） */
+  const [relationRows, setRelationRows] = useState<DraftRow[]>([])
+  /** 关系整理逐表结果（哪张表几条、有没有失败）——失败要如实说，并指向表格页的「AI 整理」 */
+  const [relationTabs, setRelationTabs] = useState<RelationTabOutcome[]>([])
   /**
    * 中止后拿到的续跑信息（界面存住它 → 显示「继续」按钮）。
    * 🔴 断点装在**阶段内**：`extract` 抽到第 3 块时中止，继续时从第 4 块接着抽，
@@ -108,6 +115,8 @@ export default function BookBreakPanel() {
     setRunning(true)
     setBundle(null)
     setFormRows([])
+    setRelationRows([])
+    setRelationTabs([])
     setProgress(null)
     setPersistInfo(null)
     setSummaries({})
@@ -117,6 +126,7 @@ export default function BookBreakPanel() {
         onProgress: setProgress,
         persistToChapters: writeToChapters,
         summarizeForms,
+        organizeRelations,
         // 续跑：把上次的断点原样传回（阶段内断点 + 已完成阶段的产物）
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => setResume(r),
@@ -133,6 +143,8 @@ export default function BookBreakPanel() {
       }
       setBundle(res.bundle)
       setFormRows(res.formRows)
+      setRelationRows(res.relationRows)
+      setRelationTabs(res.relationTabs)
       setResume(null) // 跑完了，断点作废（下次是从头开始的新任务）
       setPersistInfo(res.persist)
       // 阶段产物摘要：让跑完之后也看得见每一步做了什么（否则 detail 会被下一阶段覆盖）
@@ -146,6 +158,18 @@ export default function BookBreakPanel() {
         draft: `整理出 ${Math.max(0, res.bundle.stats.total - res.formRows.length)} 条草稿`,
         ...(summarizeForms
           ? { worldview: res.formRows.length ? `汇总出 ${res.formRows.length} 张表的全书设定` : '没汇总出可用的全书设定' }
+          : {}),
+        // 关系整理逐表交代（含失败原因）：失败了却只字不提，作者会以为"这本书没有关系"
+        ...(organizeRelations && res.relationTabs.length
+          ? {
+              relations: res.relationTabs
+                .map(t => {
+                  if (t.note) return `《${t.tabName}》失败：${t.note}`
+                  const discard = t.dropped + t.unproven
+                  return `《${t.tabName}》${t.count} 条${discard ? `（丢弃 ${discard} 条：名字不在名单里或给不出原文依据）` : ''}`
+                })
+                .join(' · '),
+            }
           : {}),
       }
       if (res.persist) {
@@ -185,7 +209,8 @@ export default function BookBreakPanel() {
             <p>抽出的每条都带<b>原文引用</b>与<b>置信度</b>，并会与项目里已有的设定比对：已登记过的标为「疑似已有」、默认不勾选。</p>
             <p>同一实体在不同章节抽出的字段若出现<b>互相矛盾</b>的值（如境界一处是「废脉」、一处是「淬体一重」），会标为「冲突」并把两边的值都列出来，由你决定留哪个 —— 系统不替你猜。人物性格、外貌、人际关系这类可以累积的字段不做冲突判定，只取更完整的一份。</p>
             <p>两处写库要分清：<b>原文结构会直接写进正文编辑</b>（只追加、不动已有卷章，可用下方开关关掉）；<b>设定草稿不会自动落库</b>，要你点「写入项目」才写，且已有同名条目默认分毫不动。</p>
-            <p className="text-ink-500">流程：切分 → 写入正文 → 逐章抽取 → 整理草稿 → 你审阅 → 写入。建议先用 5~10 万字试跑一轮，确认质量后再上整本。</p>
+            <p>末尾还会做两件收尾的事（都可在下方开关关掉）：<b>汇总全书级设定</b>（作品定位 / 世界设定 / 力量体系…），以及<b>整理人物关系 / 势力关系</b>。关系之所以不逐章抽，是因为它是「两两事实」——原文写着「师父」，未必写清是谁的师父，逐章抽只会落一地的半截关系；放到末尾整本看完、对齐已有条目后一次收敛，还能顺带认出 A-B 与 B-A 是同一条。整理出的关系与实体草稿在同一个列表里勾选、一次写入。</p>
+            <p className="text-ink-500">流程：切分 → 写入正文 → 逐章抽取 → 整理草稿 → 汇总全书设定 → 整理关系 → 你审阅 → 写入。建议先用 5~10 万字试跑一轮，确认质量后再上整本。</p>
             <AIDataSourceNote feature="bookbreak" compact />
           </div>
         </HelpPopover>
@@ -201,7 +226,7 @@ export default function BookBreakPanel() {
             <FileUp size={12} /> 导入 .txt
           </Button>
           <Button size="xs" variant="secondary" disabled={running || !raw}
-            onClick={() => { setRaw(''); setBundle(null); setPreview(null); setProgress(null); setPersistInfo(null); setSummaries({}) }}>
+            onClick={() => { setRaw(''); setBundle(null); setPreview(null); setProgress(null); setPersistInfo(null); setSummaries({}); setFormRows([]); setRelationRows([]); setRelationTabs([]) }}>
             <X size={12} /> 清空
           </Button>
         </div>
@@ -241,6 +266,23 @@ export default function BookBreakPanel() {
           <span>
             末尾汇总<b className="text-ink-100">全书级设定</b>（作品定位 / 世界设定 / 力量体系 等表单页签）
             <span className="text-ink-500">—— 多一次模型调用，把整本书的信息收敛成一份档案；已填过的字段只补空、不覆盖你手改过的内容。</span>
+          </span>
+        </label>
+        <label className="mt-2 flex items-start gap-1.5 text-11 text-ink-300">
+          <input
+            type="checkbox"
+            checked={organizeRelations}
+            disabled={running}
+            onChange={e => setOrganizeRelations(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            末尾整理<b className="text-ink-100">人物关系 / 势力关系</b>
+            <span className="text-ink-500">
+              —— 多两次模型调用（两张表各一次）。这两张表是逐章抽取产不出来的：关系是「两两事实」，
+              要同时定住 A、B 两人并对齐已有条目（A-B 与 B-A 算同一条），所以放到末尾整本看完再收一次。
+              整理出的关系会并进下面草稿列表，与实体一起勾选、一次写入。
+            </span>
           </span>
         </label>
         {writeToChapters && (
@@ -330,6 +372,17 @@ export default function BookBreakPanel() {
             {formRows.length > 0 && (
               <span className="text-11 text-ink-400">
                 含末尾汇总的 {formRows.length} 张「全书设定」—— 已填过的字段不会被覆盖，只补空。
+              </span>
+            )}
+            {relationRows.length > 0 && (
+              <span className="text-11 text-ink-400">
+                含末尾整理的 {relationRows.length} 条关系（人物关系 / 势力关系）—— 已与已有条目比对过，A-B 与 B-A 视为同一条。
+              </span>
+            )}
+            {relationTabs.some(t => t.note) && (
+              <span className="text-11 text-amber">
+                {relationTabs.filter(t => t.note).map(t => `《${t.tabName}》整理失败：${t.note}`).join('；')}
+                —— 可到该表用「AI 整理」自行指定章节重试。
               </span>
             )}
           </div>
