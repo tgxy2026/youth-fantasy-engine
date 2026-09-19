@@ -26,6 +26,7 @@ import {
   DEFAULT_CLOUD_KEY,
   CLOUD_FILE_NAME,
   type SyncDirHandle,
+  type ElectronStoreBridge,
 } from './syncTransport'
 import { DESKTOP } from './env'
 
@@ -127,7 +128,7 @@ export async function getDesktopCloudDirName(): Promise<string | null> {
  * 返回 { handle, name }，handle 用于构造 FileTransport。
  */
 export async function chooseDesktopCloudDir(): Promise<{ handle: SyncDirHandle; name: string } | null> {
-  const path = await (window as any).electronStore?.chooseSyncDir?.()
+  const path = await (window as { electronStore?: ElectronStoreBridge }).electronStore?.chooseSyncDir?.()
   if (typeof path === 'string' && path) {
     return { handle: path, name: path.split(/[\\/]/).filter(Boolean).pop() || path }
   }

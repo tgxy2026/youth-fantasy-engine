@@ -77,6 +77,33 @@ interface FsaDirHandle {
 }
 
 /**
+ * preload 注入的 IPC 桥（`electron/main.cjs` 定义）。
+ *
+ * 🔴 本项目内**没有**它的类型来源（主进程是 CJS，不在前端 tsconfig 里），故按**用到的成员**
+ *    声明最小形状。三个方法全是**可选** —— 老版本主进程可能没有它们，调用点一律用
+ *    `typeof x === 'function'` 运行时把守（这是真实约束，不是保守）。
+ */
+export interface ElectronStoreBridge {
+  /** 新契约返回 `{ok,text}` / `{ok,reason}`；旧契约（2.0.1 及更早）返回 `string | null` */
+  syncRead?(p: string): Promise<unknown> | unknown
+  /** 主进程写失败时**返回 `{ok:false}` 而不抛** —— 不查返回值就等于「以为写成功了」 */
+  syncWrite?(p: string, text: string): Promise<unknown> | unknown
+  chooseSyncDir?(): Promise<string | null>
+}
+
+/**
+ * Node `fs` 模块的**最小形状**（只声明本项目用到的三个 promises 方法）。
+ * 只在本文件用 → **不 export**（`ElectronStoreBridge` 相反：desktopCloudSync 要用它）。
+ */
+interface NodeFsBackend {
+  promises: {
+    readFile(p: string, enc: 'utf8'): Promise<string>
+    writeFile(p: string, text: string, enc: 'utf8'): Promise<void>
+    rename(from: string, to: string): Promise<void>
+  }
+}
+
+/**
  * 同步目录句柄：桌面版是**字符串路径**（经 IPC 桥 / fs），网页版是 `FsaDirHandle`。
  * 两者没有公共类型 —— 用联合表达，调用点按 `typeof h === 'string'` 分支各自收窄。
  */
@@ -193,26 +220,25 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
   // 优先走 Electron 主进程 IPC（preload 注入 window.electronStore.syncRead/syncWrite）：
   //   桌面版渲染进程 nodeIntegration=false，globalThis.require('fs') 不可用，必须经 IPC 桥。
   // 其次回退到渲染进程内 require('fs')（极旧打包/特殊配置下），再其次失败。
-  // any 理由：preload 注入的 IPC 桥（electron/main.cjs 定义），本项目内无类型来源；
-  //           调用点用 `typeof eb.syncRead === 'function'` 运行时把守。
-  let electronBackend: any = null
-  function getElectronBackend(): any {
+  // 类型见 `ElectronStoreBridge`：本项目内无来源，按用到的成员声明最小形状。
+  let electronBackend: ElectronStoreBridge | null = null
+  function getElectronBackend(): ElectronStoreBridge | null {
     if (electronBackend !== null) return electronBackend
     try {
-      electronBackend = (typeof window !== 'undefined' && (window as any).electronStore) || null
+      electronBackend = (typeof window !== 'undefined' && (window as { electronStore?: ElectronStoreBridge }).electronStore) || null
     } catch {
       electronBackend = null
     }
     return electronBackend
   }
-  // any 理由：Node 的 fs 模块（取值失败时置 false 表示「不可用」）——
-  //           `require` 本身不在 DOM 类型里，只能经 globalThis 动态取；
-  //           调用点逐个判 `typeof nodeFs.readFile === 'function'`。
-  let nodeFs: any = null
-  function getNodeFs(): any {
+  // 类型见 `NodeFsBackend`；`false` 表示「探过但不可用」（渲染进程 nodeIntegration=false 时的常态）。
+  let nodeFs: NodeFsBackend | false | null = null
+  function getNodeFs(): NodeFsBackend | false | null {
     if (nodeFs !== null) return nodeFs
     try {
-      nodeFs = (globalThis as any).require('fs')
+      // `require` 不在 DOM 类型里，只能经 globalThis 动态取；取不到就置 false ——
+      // 与原实现（抛 TypeError → catch → false）结果一致
+      nodeFs = (globalThis as { require?: (m: string) => NodeFsBackend }).require?.('fs') ?? false
     } catch {
       nodeFs = false
     }
@@ -222,11 +248,13 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
     const eb = getElectronBackend()
     if (eb && typeof eb.syncRead === 'function') {
       try {
-        const r = await eb.syncRead(p)
+        const raw: unknown = await eb.syncRead(p)
         // 新契约（electron/main.cjs）：{ ok,text } / { ok,reason }
-        if (r && typeof r === 'object' && 'ok' in r) {
+        if (raw && typeof raw === 'object' && 'ok' in raw) {
+          const r = raw as { ok?: boolean; text?: string | null; reason?: unknown }
           return r.ok ? { ok: true, text: r.text ?? null } : { ok: false, reason: String(r.reason ?? '读取失败') }
         }
+        const r = raw
         // 旧契约（2.0.1 及更早的主进程）：string | null —— 无法区分空库与读失败，
         // 维持旧行为（当空库），待主进程随下次打包一并更新后自动走新契约。
         return { ok: true, text: r == null ? null : String(r) }
@@ -250,9 +278,10 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
       // 🔴 主进程写失败时**返回 {ok:false} 而不抛**。不查返回值就等于「以为写成功了」：
       //    写后回读 rev 不匹配 → 上层走 409 重试 → 重试耗尽后 pushNow 返回 conflict（不抛）
       //    → 界面状态永远停在「同步中」，而目录里一个字都没写进去（目录不可写/磁盘满时最常见）。
-      const r = await eb.syncWrite(p, text)
-      if (r && typeof r === 'object' && r.ok === false) {
-        throw new Error('sync write failed: ' + (r.error || '未知原因'))
+      const raw: unknown = await eb.syncWrite(p, text)
+      if (raw && typeof raw === 'object') {
+        const r = raw as { ok?: boolean; error?: unknown }
+        if (r.ok === false) throw new Error('sync write failed: ' + (r.error || '未知原因'))
       }
       return
     }

@@ -79,16 +79,17 @@ function BlockView({ block }: { block: Block }) {
 
 function renderBlock(block: Block) {
   switch (block.kind) {
-    case 'charGrid': return <CharGrid types={block.data as CharType[]} />
-    case 'list': return <NumberedList items={block.data as string[]} />
-    case 'combo': return <ComboList items={block.data as ComboItem[]} />
-    case 'table': return <TableView data={block.data as { head: string[]; rows: string[][] }} />
-    case 'tagGroups': return <TagGroups groups={block.data as TagGroup[]} />
-    case 'attrs': return <AttrList items={block.data as AttrItem[]} />
-    case 'roles': return <RoleList items={block.data as RoleItem[]} />
-    case 'groupedList': return <GroupedList data={block.data as { groups: { title: string; items: { name: string; text: string }[] }[] }} />
-    case 'toolbox': return <Toolbox sections={block.data as ToolboxSection[]} />
-    case 'mixed': return <MixedView blocks={block.data as Block[]} />
+    // 🔴 这里**不再需要 any 断言**：`Block` 是按 kind 的判别联合，switch 之后 TS 自动窄化 data
+    case 'charGrid': return <CharGrid types={block.data} />
+    case 'list': return <NumberedList items={block.data} />
+    case 'combo': return <ComboList items={block.data} />
+    case 'table': return <TableView data={block.data} />
+    case 'tagGroups': return <TagGroups groups={block.data} />
+    case 'attrs': return <AttrList items={block.data} />
+    case 'roles': return <RoleList items={block.data} />
+    case 'groupedList': return <GroupedList data={block.data} />
+    case 'toolbox': return <Toolbox sections={block.data} />
+    case 'mixed': return <MixedView blocks={block.data} />
     default: return <div className="text-ink-400 text-13">未知板块类型</div>
   }
 }

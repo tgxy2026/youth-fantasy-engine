@@ -58,17 +58,37 @@ export interface ToolboxSection {
   items?: { label?: string; text: string }[]
 }
 
-export interface Block {
-  id: string
-  title: string
-  kind: BlockKind
-  /**
-   * any 理由：`data` 的形状由 `kind` **判别**（每种 BlockKind 一种）。
-   * 改成判别联合是正确方向，但读端有约 30 处 `block.data.*`，逐处收窄反而更啰嗦；
-   * 且 `src/data/materialData.ts` 有 5700+ 行块状数据要同步标注 —— 属独立一轮。
-   */
-  data: any
+/** 分组列表（groupedList）的 data 形状。只在本文件用（经 `Block` 联合对外可见）→ 不 export */
+interface GroupedListData {
+  groups: { title: string; items: { name: string; text: string }[] }[]
 }
+
+/** 表格（table）的 data 形状。同上 → 不 export */
+interface TableBlockData {
+  head: string[]
+  rows: string[][]
+}
+
+/**
+ * 板块：**按 `kind` 判别**的联合 —— 每种 kind 对应一种 `data` 形状。
+ *
+ * 🔴 为什么不用 `data: any`：读端本来就靠 `switch (block.kind)` 分派，写成联合后 TS
+ *    **自动窄化**，`MaterialLibrary` 里那 10 处 `block.data as XxxType` 可以全部删掉 ——
+ *    少一层人工断言，就少一处「断言与 kind 对不上」的可能（2026-09-20 收窄）。
+ * ⚠️ 新增 kind 时：先加一支联合成员，再补 `MaterialLibrary` 的 case（漏了会编译不过）。
+ */
+export type Block =
+  | { id: string; title: string; kind: 'charGrid'; data: CharType[] }
+  | { id: string; title: string; kind: 'list'; data: string[] }
+  | { id: string; title: string; kind: 'combo'; data: ComboItem[] }
+  | { id: string; title: string; kind: 'table'; data: TableBlockData }
+  | { id: string; title: string; kind: 'tagGroups'; data: TagGroup[] }
+  | { id: string; title: string; kind: 'attrs'; data: AttrItem[] }
+  | { id: string; title: string; kind: 'roles'; data: RoleItem[] }
+  | { id: string; title: string; kind: 'groupedList'; data: GroupedListData }
+  | { id: string; title: string; kind: 'toolbox'; data: ToolboxSection[] }
+  /** 复合页签：内部含多个子区块，各自保留原生 kind 渲染 */
+  | { id: string; title: string; kind: 'mixed'; data: Block[] }
 
 export interface MaterialCategory {
   id: string

@@ -243,19 +243,19 @@ if (!SRC) {
   //   新增 any 必须同时抬账，而抬账是一次看得见的 diff —— 这就是摩擦力。
   // ⚠️ 账本只减不增：收窄了 any 就顺手把数字降下来。
   // 本轮（2026-09-19 · D7）成果：全项目 112 处 → 35 处；`syncCore.ts` 69 处 → **0**。
-  // 2026-09-20 第二轮收窄后：全项目 112 → 35 → **8**。
+  // 🎉 2026-09-20 第三轮收窄后：**全项目 any 归零**（112 → 35 → 8 → 0）。
+  // 🔴 这些 0 不是冗余 —— 它们是「这件事做完了」的证据。哪天有人又写回一个 any，
+  //    这条闸立刻红（已实测：注入 1 个 any → 报「1 > 账本 0」）。
   const ANY_LEDGER: Record<string, number> = {
-    // ↓ 已归零的记账（**保留这些 0**：它们是「这件事做完了」的证据，删了下轮没人知道）
     'src/lib/syncCore.ts': 0,
     'src/lib/db/core.ts': 0,
+    'src/lib/desktopCloudSync.ts': 0,
+    'src/lib/syncTransport.ts': 0,
     'src/lib/autoContinue.ts': 0,
     'src/lib/ai.ts': 0,
     'src/components/CloudFileSyncBar.tsx': 0,
     'src/components/Sidebar.tsx': 0,
-    // ↓ 存量 8 处：都是**真正无法静态描述**的边界，已就地写明理由
-    'src/lib/syncTransport.ts': 6,   // Electron preload 桥 / Node require 探测（本项目无类型来源）
-    'src/lib/desktopCloudSync.ts': 1, // 同上
-    'src/lib/materialRef.ts': 1,      // Block.data 形状由 kind 判别，改判别联合属独立一轮
+    'src/lib/materialRef.ts': 0,
   }
   {
     const re = /(?<![\w.$])any(?![\w$])/g
