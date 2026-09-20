@@ -27,13 +27,28 @@ const SENT = '夜色像水一样漫过城墙，他握紧了手里的短刃，呼
 const PARA = `他沿着墙根往前挪了半步，脚下的碎石发出极轻的一声响。${SENT}`
 const BODY = Array.from({ length: 10 }, (_, i) => `（${i + 1}）${PARA}`).join('\n')
 
+/**
+ * 续排大纲用的假模型返回值（`aiPlanOutline` 吃 JSON）。
+ * 1 卷 + 1 章的规模，够验证"从第 4 章起接着排"。
+ */
+const EXT_OUTLINE_JSON = JSON.stringify({
+  volumes: [{
+    title: '第二卷 星海', positioning: '接着第二卷', stage: '筑基→金丹', scope: '星海',
+    opening: '离宗远行', climax1: '初战告捷', turn: '同伴背叛', climax2: '决死一战',
+    ending: '携秘而归', events: '起→承→转→合', subplots: '支线',
+  }],
+  chapters: [{
+    title: '续章', event: '新事件', function: '推进主线', cast: '主角', hook: '新钩子', scenes: ['场景X'],
+  }],
+})
+
 /** 造 1 卷 + N 章细纲 */
 function mkOutline(count: number, volTitle: string): OutlineResult {
   return {
     volumes: [{
       title: volTitle, positioning: '定位', stage: '炼气→筑基', scope: '云州',
       opening: '卷首', climax1: '高潮一', turn: '转折', climax2: '高潮二', ending: '卷末',
-      events: '起→承→转→合', subplots: '支线',
+      events: '起→承→转→合', subplots: '支线', chapterRange: '',
     }],
     chapters: Array.from({ length: count }, (_, i) => ({
       no: i + 1, title: `章名${i + 1}`, event: `事件${i + 1}`, fn: '推进',
@@ -61,7 +76,7 @@ const isBodyCall = (sys: string) => /续写助手/.test(sys)
     (await loadChapterOutlines()).size === 3 && (await db.getAllChapters()).length === 0)
 
   const runLogs: string[] = []
-  const res = await runCreativeWriting({ mode: 'continue' }, {
+  const res = await runCreativeWriting({}, {
     chapters: 2, targetWords: 600, useOutline: true, target: 'full',
     onRunLog: line => runLogs.push(line),
   }).catch(e => { runLogs.push('抛出：' + (e as Error).message); return null })
@@ -89,7 +104,7 @@ const isBodyCall = (sys: string) => /续写助手/.test(sys)
   await commitOutline(mkOutline(3, '第一卷 空返回'))
 
   const runLogs: string[] = []
-  const res = await runCreativeWriting({ mode: 'continue' }, {
+  const res = await runCreativeWriting({}, {
     chapters: 1, targetWords: 600, useOutline: true, target: 'full',
     onRunLog: line => runLogs.push(line),
   }).catch(e => { runLogs.push('抛出：' + (e as Error).message); return null })
@@ -101,24 +116,33 @@ const isBodyCall = (sys: string) => /续写助手/.test(sys)
   fake.close()
 }
 
-// ---------- ③ 选「只做大纲规划」时不许写正文（细纲已覆盖 → 直接收工） ----------
+// ---------- ③ 选「只做大纲规划」→ 从「已排到哪」接着排，且一章正文都不写 ----------
+//
+// 🔴 2026-09-20 口径变更（老大确认）：「续排起点看**已有细纲最大章号 + 1**，不看正文写到哪」。
+//    旧口径下这个场景（细纲 3 章、正文 0 章）会算出 fromNo = 1 → 命中"第 1 章已有细纲、
+//    无需续排"→ **直接收工**，于是"想接着往下排"根本排不动 —— 长篇分批规划整条路被堵死。
 {
   __resetMockStores()
   db.setCurrentProject('run-pid-3')
-  const fake = await startFakeOllama({ body: BODY })
+  // ⚠️ 大纲任务的 system 提示词里含「JSON」二字 ⇒ 假模型走 `json` 分支，
+  //    所以大纲 JSON 必须传给 `json`（传给 `body` 会拿到默认的 `[]`，表现为"模型没有产出细纲"）。
+  const fake = await startFakeOllama({ body: EXT_OUTLINE_JSON, json: EXT_OUTLINE_JSON })
   await useFake(fake.port)
   await commitOutline(mkOutline(3, '第一卷 只规划'))
 
   const reports: string[] = []
   const runLogs: string[] = []
-  const res = await runCreativeWriting({ mode: 'continue' }, {
-    chapters: 2, targetWords: 600, useOutline: true, target: 'outline',
+  const res = await runCreativeWriting({}, {
+    target: 'outline', volumes: 1, chaptersPerVolume: 1, useOutline: true,
     onProgress: p => reports.push(p.message),
     onRunLog: line => runLogs.push(line),
   }).catch(e => { runLogs.push('抛出：' + (e as Error).message); return null })
 
-  ok('如实说明「第 1 章起已有细纲，无需续排」',
-    reports.some(m => /已有细纲，无需续排/.test(m)), reports.join(' | '))
+  const outs = await loadChapterOutlines()
+  ok('🔴 续排起点＝已有细纲最大章号 + 1（旧口径会算出第 1 章并直接收工）',
+    reports.some(m => /续排第 2 卷（第 4 章起/.test(m)) || outs.has(4),
+    reports.join(' | ') + ' ｜ 细纲章号：' + [...outs.keys()].join(','))
+  ok('细纲 3 → 4 张（新的那张排在第 4 章）', outs.size === 4 && outs.has(4), [...outs.keys()].join(','))
   ok('🔴 选了「只做大纲规划」就一章正文都不写（防回退：原先照样进连写）',
     fake.calls.filter(c => isBodyCall(c.sys)).length === 0,
     '正文请求 ' + fake.calls.filter(c => isBodyCall(c.sys)).length + ' 次')

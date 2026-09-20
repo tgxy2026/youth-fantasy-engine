@@ -11,8 +11,8 @@
  *    切页签会卸载组件，但任务跑在 store 里，回来时进度、日志、闸门、断点原样都在。
  *    这也是"切页签内容就没了"那个问题的根治点（原来状态全在 useState 里）。
  */
-import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Loader2, PenLine, Play, Sparkles, Square, Wand2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Eraser, Loader2, Play, Save, Sparkles, Square, Wand2 } from 'lucide-react'
 import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 import DraftReviewPanel from './DraftReviewPanel'
@@ -22,17 +22,20 @@ import { Modal } from './Modal'
 import NewProjectAdvice from './NewProjectAdvice'
 import WorkflowTimeline from './WorkflowTimeline'
 import AutoTextarea from './AutoTextarea'
-import { showToast } from './dialogs'
+import { confirmDialog, showToast } from './dialogs'
 import { useAIReady } from '../lib/useAIReady'
 import { aiChatJson, loadActiveId, loadProviders, type AIProvider } from '../lib/ai'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { CREATIVE_SEED_SPEC, seedFromFilled } from '../lib/creativeSeed'
 import {
-  applyCandidates, applyRewrite, clearCreativeSession, consumeNotice, decideDraft,
-  discardRewrite, hydrateCreativeSession, resolveGate, startChapterRewrite, startCreativeRun,
+  applyCandidates, applyRewrite, clearCreativeSession, clearSeed, consumeNotice, decideDraft,
+  discardRewrite, hydrateCreativeSession, resolveGate, saveInputsNow, startChapterRewrite, startCreativeRun,
   stopChapterRewrite, stopCreativeRun, toggleCandidate,
-  updateInputs, useCreativeSession, type CreativeMode, type CreativeTarget,
+  updateInputs, useCreativeSession, type CreativeLength, type CreativeTarget,
 } from '../lib/creativeSession'
+// 起点自动判定的依据（库里有没有大纲）；面板用它渲染状态行、决定输入框显隐
+import { probeCreativeProject, type CreativeProjectProbe } from '../lib/aiWorkflow'
+import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '../lib/aiTasks'
 import { DEAI_TEMPLATES, WORD_TOLERANCE, type ContinueStrategy } from '../lib/autoContinue'
 import { CHAPTER_REWRITE_META, type ChapterRewriteAction } from '../lib/aiTasks'
 import { listRewriteTree, type RewriteCandidate, type RewriteCandidateGroup } from '../lib/chapterRewrite'
@@ -49,56 +52,65 @@ import NumberField from './NumberField'
 const NUM_INPUT = 'h-8 w-20 rounded bg-ink-900 border border-ink-700 px-2 text-12 text-ink-100 outline-none focus:border-amber/50'
 
 /**
- * 两种起点的展示元数据 —— 顺序即界面顺序。
- * 🔴 措辞口径（2026-09-19 对齐）：**两者是同一套流程**，唯一差别是"起点有没有历史信息"——
- *    从零创作的历史为空，所以先跑「设定奠基 + 分卷大纲」把基础设定冷启动出来；
- *    接着写的历史已存在（正文 + 设定表 + 可选细纲），直接进逐章连写。
- *    "每章抽取设定 / 补登新增 / 更新已有"是**两种起点共用**的环节，不是接着写专属。
+ * 「已保存 · HH:MM」的时间格式。
+ * 只到分钟：秒级数字一直在跳，看起来像界面在抽搐。完整时间放 title 里。
  */
-const MODE_META: Record<CreativeMode, { label: string; icon: typeof PenLine; hint: string }> = {
-  scratch: {
-    label: '从一句话创作',
-    icon: PenLine,
-    hint: '给一句话想法：AI 先做设定奠基与分卷大纲（两个人工闸门），再逐章连写 —— 与「接着写」是同一套流程，只是起点没有历史信息',
-  },
-  continue: {
-    label: '接着已有内容写',
-    icon: BookOpen,
-    hint: '在已有正文与已有设定的基础上继续往前推进；项目已有《章节细纲》时按细纲走',
-  },
+function fmtSavedAt(t: number): string {
+  const d = new Date(t)
+  const p = (n: number) => String(n).padStart(2, '0')
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`
+  const today = new Date()
+  const sameDay = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()
+  return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`
 }
-const MODES: CreativeMode[] = ['scratch', 'continue']
 
 /**
- * 产出目标。**两种起点都有这一档**（开跑前就分清「只要规划」还是「正文一起写」）。
+ * 篇幅（老大 2026-09-20 要求）：先选篇幅，再选「这一次要产出什么」。
+ * - **短篇**：一次跑完（大纲规划 / 大纲 + 正文），1 卷；
+ * - **中长篇**：两阶段分开做（大纲规划 / 只生成正文），每阶段可反复执行。
  *
- * 老大 2026-09-19 要求：**开口就分清**「只要大纲规划」还是「连正文一起写」，
- * 而不是让作者跑到闸门②才被问「只保存大纲、还是继续写正文」。
- * 目标属于"这一次要什么"，跟起点一样该在开跑前定；闸门只做确认 / 放弃。
+ * 为什么要有这一档：长篇不可能一次生成完（模型上下文与耗时都不允许），
+ * 必须"排一批大纲 → 写一批正文 → 再排一批 → 再写一批"。短篇则没必要拆两趟。
  */
-const TARGET_META: Record<CreativeMode, Record<CreativeTarget, { label: string; hint: string }>> = {
-  scratch: {
-    outline: {
-      label: '只做大纲规划',
-      hint: '生成设定与分卷大纲就收工，正文一个字不写；之后用「接着已有内容写」就能按细纲把正文补上',
-    },
-    full: {
-      label: '大纲 + 正文',
-      hint: '设定 → 分卷大纲 → 逐章连写正文；每章写完都会抽取设定、补登新增、更新已有（按下面的「设定同步策略」）',
-    },
+const LENGTH_META: Record<CreativeLength, { label: string; hint: string }> = {
+  short: {
+    label: '短篇',
+    hint: '一次跑完：设定 → 分卷大纲 → 逐章连写（1 卷）。适合十万字以内的单本作品',
   },
-  continue: {
-    outline: {
-      label: '只做大纲规划',
-      hint: '按已有细纲与正文进度往下续排细纲，不写正文 —— 这一档没有新正文可抽，所以不做设定同步',
-    },
-    full: {
-      label: '大纲 + 正文',
-      hint: '（可先往下续排细纲，）再逐章连写正文；每章写完同样会抽取设定、补登新增、更新已有',
-    },
+  long: {
+    label: '中长篇',
+    hint: '分两阶段、每阶段可反复执行：先按「本批几卷 × 每卷几章」分批把大纲排完，再按批写正文。几十万到几百万字都走这条路',
   },
 }
-const TARGETS: CreativeTarget[] = ['outline', 'full']
+const LENGTHS: CreativeLength[] = ['short', 'long']
+
+/** 各篇幅下可选「这一次要产出什么」（顺序即界面顺序）—— 中长篇没有"一次跑完"这一档 */
+const TARGETS_BY_LENGTH: Record<CreativeLength, CreativeTarget[]> = {
+  short: ['outline', 'full'],
+  long: ['outline', 'draft'],
+}
+
+/**
+ * 产出目标文案。
+ *
+ * 🔴 口径（2026-09-20）：**起点不再由作者选** —— 库里有没有大纲是客观事实，
+ *    编排器自己判定（没大纲先跑设定奠基，已有就接着往下排）。
+ *    作者要决定的只有"这一次要产出什么"。
+ */
+const TARGET_META: Record<CreativeTarget, { label: string; hint: string }> = {
+  outline: {
+    label: '只做大纲规划',
+    hint: '排 / 续排分卷大纲与章节细纲，正文一个字不写。库里还没有大纲时会先做「设定奠基」把基础设定冷启动出来；已有则接着往下排',
+  },
+  full: {
+    label: '大纲 + 正文',
+    hint: '设定 → 分卷大纲 → 逐章连写，一次跑完（适合短篇）。库里已有大纲时本次只补正文，不会重排大纲',
+  },
+  draft: {
+    label: '只生成正文',
+    hint: '按已排好的分卷大纲与章节细纲逐章写正文，从「正文最后一章 + 1」接着写；本次写几章由你定',
+  },
+}
 
 /** 整章改写的四种动作（顺序即界面顺序） */
 const RW_ACTIONS: ChapterRewriteAction[] = ['polish', 'expand', 'condense', 'rewrite']
@@ -163,6 +175,53 @@ export default function CreativeWritingPanel() {
   /** 有长任务在跑（创作或改写）—— 互斥，避免两个任务抢模型 */
   const busy = s.running || !!s.rewrite?.running
 
+  /**
+   * 项目现状 —— **起点自动判定的依据**（2026-09-20：不再让作者手选起点）。
+   * 用它渲染状态行、决定"要不要填一句话想法"，以及跑完之后把进度刷新过来。
+   */
+  const [probe, setProbe] = useState<CreativeProjectProbe | null>(null)
+  const refreshProbe = useCallback(async () => {
+    try { setProbe(await probeCreativeProject()) } catch { /* 读不到就不显示状态行，不打扰作者 */ }
+  }, [])
+  useEffect(() => { void refreshProbe() }, [refreshProbe])
+  /** 任务从"在跑"变回"跑完" → 重新探一次（章数 / 细纲数都变了，状态行得跟上） */
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    if (wasRunning.current && !s.running) void refreshProbe()
+    wasRunning.current = s.running
+  }, [s.running, refreshProbe])
+
+  /**
+   * 清空想法输入框 —— 破坏性（内容不可恢复），所以先确认再清。
+   * ⚠️ 确认弹窗必须留在**组件层**：会话层在 lib 层，不得 import 组件（会被 importCycles 闸拦）。
+   */
+  /**
+   * 切篇幅时**顺带把产出目标映射过去** —— 否则会留下一个「当前篇幅下不存在的档」：
+   * 短篇选着「大纲 + 正文」，切到中长篇后那一档没了，界面却仍按 `full` 渲染提示文案
+   * （hint 取的是 `TARGET_META[inp.target]`，与按钮列表是两套来源）→ 按钮一个都没高亮、
+   * 文案却在讲一个不存在的档位。
+   *
+   * 映射按语义就近：「大纲 + 正文」（一次跑完）↔「只生成正文」（分两阶段跑），
+   * 都是"要写正文"的那一档。
+   */
+  const onPickLength = (l: CreativeLength) => {
+    const list = TARGETS_BY_LENGTH[l]
+    const mapped: CreativeTarget = list.includes(inp.target)
+      ? inp.target
+      : inp.target === 'full' ? 'draft' : inp.target === 'draft' ? 'full' : list[0]
+    updateInputs({ length: l, target: mapped })
+  }
+
+  const onClearSeed = async () => {
+    const ok = await confirmDialog({
+      title: '清空想法输入框？',
+      message: '输入框里的这段想法会被清空，无法撤销。本项目的其它数据（章节 / 设定 / 大纲）不受影响。',
+      confirmText: '清空',
+      danger: true,
+    })
+    if (ok) await clearSeed()
+  }
+
   // 读回本项目的上次会话（模块级只读一次；切项目时会自动重置）
   useEffect(() => {
     hydrateCreativeSession()
@@ -221,21 +280,41 @@ export default function CreativeWritingPanel() {
     [cap, inp.chapters, inp.words],
   )
 
-  /**
-   * 「只做大纲规划」：不写正文，所以字数目标、去 AI 味儿、逐章确认这些连写设置都不该出现。
-   * 章数此时是「规划章数」（要排多少章），仍然要问。
-   * ⚠️ 两种起点都有这一档（scratch＝设定+分卷大纲；continue＝往下续排细纲），所以**不能**再带 mode 条件。
-   */
+  /** 「只做大纲规划」：不写正文，所以字数目标、去 AI 味儿、逐章确认这些连写设置都不该出现 */
   const outlineOnlyTarget = inp.target === 'outline'
-  const chapterLabel = outlineOnlyTarget ? '规划章数' : '连写章数'
+  /** 本篇幅下可选的目标（顺序即界面顺序） */
+  const targets = TARGETS_BY_LENGTH[inp.length]
 
-  /** 起点不同，可开始的条件不同：从零得有想法；接着写只要项目里有正文（由编排器兜底提示） */
-  const canStart = aiReady && (inp.mode === 'continue' || !!inp.seed.trim())
+  /** 库里有没有大纲 —— 起点、以及"要不要填一句话想法"，全看它 */
+  const hasOutline = probe?.hasOutline === true
+  /** 库里还没大纲 → 必须先给一句话想法（设定奠基的唯一依据） */
+  const needSeed = !hasOutline
+  /** 库里有没有章节细纲 —— 决定「按《章节细纲》写」这个开关要不要出现（没细纲时它是空操作） */
+  const hasOutlineCards = (probe?.outlineCardCount ?? 0) > 0
+
+  /** 本批大纲要排多少章（短篇＝1 卷，所以就是全书章数） */
+  const batchTotal = inp.length === 'short' ? inp.chaptersPerVolume : inp.volumes * inp.chaptersPerVolume
+  const batchOversize = batchTotal > MAX_OUTLINE_CHAPTERS
+
+  /** 项目现状一行 —— 把"AI 会从哪开始"如实讲清楚（这就是起点自动判定的可见性） */
+  const probeNote = (() => {
+    if (!probe) return ''
+    if (!probe.hasOutline) {
+      return '这个项目还没有大纲 —— 本次会先做「设定奠基」把基础设定冷启动出来，再从第 1 卷第 1 章起规划。'
+    }
+    const head = `当前已有 ${probe.volumeCardCount} 卷大纲 · ${probe.outlineCardCount} 章细纲 · ${probe.chapterCount} 章正文`
+    return outlineOnlyTarget
+      ? `${head} → 本次从第 ${probe.maxOutlineNo + 1} 章起接着往下排`
+      : `${head} → 本次从第 ${probe.chapterCount + 1} 章接着往下写`
+  })()
+
+  /** 可开始的条件：模型就绪；库里还没有大纲时，还得先写清楚想写什么 */
+  const canStart = aiReady && (!needSeed || !!inp.seed.trim())
   const startLabel = s.resume
     ? '继续写作'
     : (outlineOnlyTarget
-        ? (inp.mode === 'continue' ? '开始排细纲' : '开始规划')
-        : (inp.mode === 'continue' ? '接着写' : '开始创作'))
+        ? (hasOutline ? '续排大纲' : '开始规划')
+        : (hasOutline ? '接着写正文' : '开始创作'))
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -243,14 +322,14 @@ export default function CreativeWritingPanel() {
         <h1 className="text-15 font-medium text-ink-100">创意写作</h1>
         <HelpPopover title="创意写作怎么用" pin>
           <div className="space-y-1.5 text-11 leading-relaxed text-ink-300">
-            <p>这条流水线有<b>两个起点</b>，但它们<b>是同一套流程</b> —— 唯一差别是「起点有没有历史信息」：</p>
-            <p>· <b>从一句话创作</b> —— 起点没有历史信息：先用<b>设定奠基</b>与<b>分卷大纲</b>把基础设定冷启动出来（两个人工闸门），再逐章连写。</p>
-            <p>· <b>接着已有内容写</b> —— 起点已有正文与设定：直接进逐章连写，在已有内容上继续往前推进。</p>
-            <p>· 两者<b>共用同一台连写引擎</b>：每章写完都会<b>抽取本章设定 → 新增的补登 → 已有的更新</b>（力度由「每章设定同步策略」决定），去 AI 味儿与逐章确认也完全一致。</p>
-            <p>· 两种起点都要先定<b>「这一次要产出什么」</b>：<br/>            &nbsp;&nbsp;—「从一句话创作」的<b>只做大纲规划</b>＝设定 + 分卷大纲就收工；<b>大纲 + 正文</b>＝完整创作。<br/>            &nbsp;&nbsp;—「接着已有内容写」的<b>只做大纲规划</b>＝按已有细纲往下续排 N 章（不写正文、不抽设定）；<b>大纲 + 正文</b>＝先续排细纲再连写（每章抽设定 / 补登 / 更新）。<br/>            &nbsp;&nbsp;已有细纲排好了就用「先续排细纲：已关闭」直接写正文。</p>
-            <p><b>两个人工闸门</b>（仅「从一句话创作」有）：设定草稿与大纲都必须你确认后才落库、才继续 —— 人定方向，AI 跑量。</p>
-            <p>落库只发生在闸门通过之后（「接着写」则是在每章初稿<b>被采纳</b>之后）；在任何闸门处「放弃」，都不会留下半成品。</p>
-            <p className="text-ink-500">两种起点的每章流程完全一样：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 →（开启时）去 AI 味儿 →（开启时）你确认采纳 → 编辑自检 → 抽取设定并补登 / 更新 → 下一章。项目里有《章节细纲》时，会按章号取当章细纲钉进提示词末段，让正文跟着大纲走。</p>
+            <p>这条流水线分<b>两个阶段</b>，各自都可以<b>反复执行</b>；先选<b>篇幅</b>，再选这一次要产出什么。</p>
+            <p>· <b>短篇</b> —— 一次跑完：<b>大纲 + 正文</b>（设定奠基 → 分卷大纲 → 逐章连写），或者只做大纲规划。</p>
+            <p>· <b>中长篇</b> —— 两阶段分开做（几十万字不可能一次生成完）：<br/>            &nbsp;&nbsp;① <b>只做大纲规划</b>：每批排「本批几卷 × 每卷几章」。库里没有大纲时先做设定奠基、从第 1 卷第 1 章起排；已有则接着往下排（起点＝已有细纲最大章号 + 1）。<br/>            &nbsp;&nbsp;② <b>只生成正文</b>：按已排好的大纲逐章写，从「正文最后一章 + 1」接着写，本次写几章由你定。</p>
+            <p>· <b>起点不用你选</b>：库里有没有大纲是客观事实，AI 自己判定 —— 状态行里会写明「本次从第几章起」。</p>
+            <p>· <b>两个人工闸门</b>（库里还没有大纲时才有）：设定草稿与大纲都必须你确认后才落库、才继续 —— 人定方向，AI 跑量。</p>
+            <p>落库只发生在闸门通过之后（写正文时是在每章初稿<b>被采纳</b>之后）；在任何闸门处「放弃」，都不会留下半成品。</p>
+            <p className="text-ink-500">每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 →（开启时）去 AI 味儿 →（开启时）你确认采纳 → 编辑自检 → 抽取设定并补登 / 更新 → 下一章。项目里有《章节细纲》时，会按章号取当章细纲钉进提示词末段，让正文跟着大纲走。</p>
+            <p className="text-ink-500">每卷的章号范围（如「第21-40章」）由系统按「每卷多少章」算好写进《分卷大纲》卡 —— 正文因此能自动落进正确的卷，不会全堆在最后一卷。</p>
             <p className="text-ink-500">想法还说不清时点<b>「对话引导」</b>：AI 按「题材 → 主角 → 冲突 → 世界」一路问，聊完自动把要点填回输入框。</p>
             <p className="text-ink-500">跑长任务时可以随时切去「正文编辑」看稿 —— 任务不会中断，切回来进度与断点都还在。</p>
             <AIDataSourceNote feature="creative-writing" compact />
@@ -260,67 +339,74 @@ export default function CreativeWritingPanel() {
 
       <NewProjectAdvice kind="creative-writing" />
 
-      {/* 起点选择 */}
       <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
+        {/* ① 篇幅：短篇一次跑完；中长篇把大纲规划与正文生成分成两趟，各自可反复执行 */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {MODES.map(m => {
-            const Icon = MODE_META[m].icon
-            return (
-              <Button
-                key={m}
-                variant="toggle"
-                selected={inp.mode === m}
-                disabled={s.running}
-                title={MODE_META[m].hint}
-                onClick={() => updateInputs({ mode: m })}
-                className="px-3 h-8 rounded-lg text-12"
-              >
-                <Icon size={12} className="mr-1" />
-                {MODE_META[m].label}
-              </Button>
-            )
-          })}
+          {LENGTHS.map(l => (
+            <Button key={l} variant="toggle" selected={inp.length === l} disabled={busy}
+              title={LENGTH_META[l].hint} onClick={() => onPickLength(l)}
+              className="px-3 h-8 rounded-lg text-12">
+              {LENGTH_META[l].label}
+            </Button>
+          ))}
         </div>
 
-        {/* 产出目标：两种起点都有 —— 开跑前就分清「只要规划」还是「连正文一起写」 */}
+        {/* ② 这一次要产出什么（可选项随篇幅变化） */}
         <div className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
           <div className="mb-1.5 text-12 text-ink-300">这一次要产出什么</div>
           <div className="flex flex-wrap gap-1.5">
-            {TARGETS.map(k => (
+            {targets.map(k => (
               <Button key={k} variant="toggle" selected={inp.target === k} disabled={busy}
-                onClick={() => updateInputs({ target: k })} title={TARGET_META[inp.mode][k].hint}
+                onClick={() => updateInputs({ target: k })} title={TARGET_META[k].hint}
                 className="px-3 h-8 rounded-lg text-12">
-                {TARGET_META[inp.mode][k].label}
+                {TARGET_META[k].label}
               </Button>
             ))}
           </div>
-          <p className="mt-1 text-10 leading-relaxed text-ink-500">{TARGET_META[inp.mode][inp.target].hint}</p>
-          {/* 接着写时：可以不排细纲（作者自己排好了），此时按已有细纲直接写 */}
-          {inp.mode === 'continue' && inp.target === 'full' && (
-            <label className="mt-2 flex flex-wrap items-center gap-1.5 text-11 text-ink-400">
-              <Button size="xs" variant="toggle" selected={inp.extendOutline} disabled={busy}
-                onClick={() => updateInputs({ extendOutline: !inp.extendOutline })}
-                title="关掉＝按已有细纲直接写">
-                先续排细纲：{inp.extendOutline ? '已开启' : '已关闭'}
-              </Button>
-              <span className="text-10 text-ink-500">
-                开：先按已有细纲往下排 {inp.chapters} 章，再连写（下一章已有细纲时自动跳过）；关：直接按已有细纲写。
-              </span>
-            </label>
-          )}
+          <p className="mt-1 text-10 leading-relaxed text-ink-500">{TARGET_META[inp.target].hint}</p>
+          {/* 🔴 起点是自动判定的，所以必须把"AI 会从哪开始"写出来 —— 否则作者无从知道
+              这一次到底会重跑设定、还是接着上次往下排。 */}
+          {probeNote && <p className="mt-1 text-10 leading-relaxed text-amber">{probeNote}</p>}
         </div>
 
-        {/* 输入：两种起点各自的"种子" */}
-        {inp.mode === 'scratch' ? (
-          <textarea
-            value={inp.seed}
-            onChange={e => updateInputs({ seed: e.target.value })}
-            disabled={s.running}
-            spellCheck={false}
-            placeholder="例：一个靠吞噬他人修为续命的少年，在正道与魔道之间越走越深。"
-            className="mt-3 h-24 w-full resize-y rounded border border-ink-700 bg-ink-900 px-3 py-2 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
-          />
-        ) : (
+        {/* ③ 输入：库里还没有大纲 → 必须先给一句话想法（设定奠基的唯一依据）；
+               已有大纲且要写正文 → 可以给一句可选的剧情方向 */}
+        {needSeed ? (
+          <div className="mt-3">
+            {/* 一句话想法：给出**显式保存 / 清空**（老大 2026-09-20 要求）——
+                原先只有自动防抖落盘：作者既看不到存没存，也没有一个能主动确认的动作。 */}
+            <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-13 text-ink-200">一句话想法</span>
+              <span className="text-10 text-ink-500"
+                title={s.lastSavedAt ? `最近保存：${new Date(s.lastSavedAt).toLocaleString('zh-CN')}` : '改动会自动保存到本项目'}>
+                {s.lastSavedAt ? `已保存 · ${fmtSavedAt(s.lastSavedAt)}` : '尚未保存'}
+              </span>
+              <div className="ml-auto flex items-center gap-1.5">
+                <Button size="sm" variant="secondary" disabled={busy}
+                  title="立刻把当前输入保存到本项目（平时改动也会自动保存）"
+                  onClick={() => void saveInputsNow()}>
+                  <Save size={12} /> 保存
+                </Button>
+                <Button size="sm" variant="secondary" disabled={busy || !inp.seed.trim()}
+                  title="清空输入框，重新写"
+                  onClick={() => void onClearSeed()}>
+                  <Eraser size={12} /> 清空
+                </Button>
+              </div>
+            </div>
+            <textarea
+              value={inp.seed}
+              onChange={e => updateInputs({ seed: e.target.value })}
+              disabled={s.running}
+              spellCheck={false}
+              placeholder="例：一个靠吞噬他人修为续命的少年，在正道与魔道之间越走越深。"
+              className="h-24 w-full resize-y rounded border border-ink-700 bg-ink-900 px-3 py-2 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
+            />
+            <p className="mt-1.5 text-11 leading-relaxed text-ink-500">
+              想法按项目保存：切页签、关掉软件再打开都还在。「保存」立刻写入，「清空」清掉重写。
+            </p>
+          </div>
+        ) : inp.target !== 'outline' ? (
           <div className="mt-3">
             <div className="mb-1.5 text-13 text-ink-200">情节概要（可选，不填则严格承接上一章往下写）</div>
             <AutoTextarea
@@ -336,51 +422,61 @@ export default function CreativeWritingPanel() {
               能让 AI 更好地承接剧情、衔接更自然流畅。
             </p>
           </div>
-        )}
+        ) : null}
 
-        {/* 开跑前一次定完的五件参数，**排在同一行**（老大 2026-09-19 要求）：
-            卷数 · 连写章数 · 每章目标字数 · 用推荐值 · 对话引导
-            🔴 尺寸一律 h-8：本面板所有 toggle 本来就是 h-8（`px-3 h-8 rounded-lg text-12`），
-               而输入框原来 py-1 只有 ≈28px、「用推荐值／对话引导」原来是 xs(24px) ——
-               同一排里三个高度，看着就是散的。
-            ⚠️ 别拆回两三行：这五件是同一次决策（这一次跑多大），散开就要上下找。 */}
+        {/* 规模参数（同一行）：大纲规划档问"排多大"，正文档问"写多少"。
+            🔴 尺寸一律 h-8（与本面板其余 toggle 对齐 —— 混着 24/28px 会看着散）。 */}
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-11 text-ink-400">
-          {inp.mode === 'scratch' && (
-            <label className="flex items-center gap-1.5">卷数
-              <NumberField value={inp.volumes} min={1} max={8} disabled={s.running}
-                title="卷数：1 ~ 8（超出范围会调回最近的边界）"
-                onChange={v => updateInputs({ volumes: v ?? 1 })} className={NUM_INPUT} />
-            </label>
+          {outlineOnlyTarget ? (
+            <>
+              {/* 中长篇才分批：短篇就是 1 卷，不劳作者去设 */}
+              {inp.length === 'long' && (
+                <label className="flex items-center gap-1.5">本批卷数
+                  <NumberField value={inp.volumes} min={1} max={MAX_OUTLINE_VOLUMES} disabled={s.running}
+                    title={`本批要排几卷：1 ~ ${MAX_OUTLINE_VOLUMES}（超出范围会调回最近的边界）`}
+                    onChange={v => updateInputs({ volumes: v ?? 1 })} className={NUM_INPUT} />
+                </label>
+              )}
+              <label className="flex items-center gap-1.5">{inp.length === 'long' ? '每卷章数' : '全书章数'}
+                <NumberField value={inp.chaptersPerVolume} min={1} max={MAX_CHAPTERS_PER_VOLUME} disabled={s.running}
+                  title={`每卷多少章：1 ~ ${MAX_CHAPTERS_PER_VOLUME}（硬指标，超出范围会调回最近的边界）`}
+                  onChange={v => updateInputs({ chaptersPerVolume: v ?? 20 })} className={NUM_INPUT} />
+              </label>
+              <span className={batchOversize ? 'text-10 text-amber' : 'text-10 text-ink-500'}>
+                本批共 {batchTotal} 章
+                {batchOversize ? ` —— 超过单批上限 ${MAX_OUTLINE_CHAPTERS} 章，请拆成几批排` : ''}
+              </span>
+            </>
+          ) : (
+            <>
+              <label className="flex items-center gap-1.5">本次写几章
+                <NumberField value={inp.chapters} min={1} max={MAX_CHAPTERS} disabled={s.running}
+                  title={`本次写几章：1 ~ ${MAX_CHAPTERS}（超出范围会调回最近的边界）`}
+                  onChange={v => updateInputs({ chapters: v ?? 1 })} className={NUM_INPUT} />
+              </label>
+              <label className="flex items-center gap-1.5">每章目标字数
+                <NumberField value={inp.words} min={800} max={8000} step={100} disabled={s.running}
+                  title="每章目标字数：800 ~ 8000（超出范围会调回最近的边界）"
+                  onChange={v => updateInputs({ words: v ?? 2500 })} className={NUM_INPUT} />
+              </label>
+              {/* 「用推荐值」紧跟每章目标字数（推荐值是按字数×模型窗口一起算出来的，
+                  按钮文案里也写着调成几章，不会误读成"改字数"） */}
+              {pace && inp.chapters !== pace.recommendedChapters && (
+                <Button size="sm" variant="secondary" disabled={s.running} title={pace.model}
+                  onClick={() => updateInputs({ chapters: pace.recommendedChapters })}>
+                  用推荐值（{pace.recommendedChapters} 章）
+                </Button>
+              )}
+            </>
           )}
-          <label className="flex items-center gap-1.5">{chapterLabel}
-            <NumberField value={inp.chapters} min={1} max={MAX_CHAPTERS} disabled={s.running}
-              title={`${chapterLabel}：1 ~ ${MAX_CHAPTERS}（超出范围会调回最近的边界）`}
-              onChange={v => updateInputs({ chapters: v ?? 1 })} className={NUM_INPUT} />
-          </label>
-          {/* 不写正文时，字数目标没有意义 —— 留着只会让人以为还要连写，收起来 */}
-          {!outlineOnlyTarget && (
-            <label className="flex items-center gap-1.5">每章目标字数
-              <NumberField value={inp.words} min={800} max={8000} step={100} disabled={s.running}
-                title="每章目标字数：800 ~ 8000（超出范围会调回最近的边界）"
-                onChange={v => updateInputs({ words: v ?? 2500 })} className={NUM_INPUT} />
-            </label>
-          )}
-          {/* 「用推荐值」紧跟每章目标字数（推荐值是按字数×模型窗口一起算出来的，
-              按钮文案里也写着调成几章，不会误读成"改字数"） */}
-          {pace && inp.chapters !== pace.recommendedChapters && (
-            <Button size="sm" variant="secondary" disabled={s.running} title={pace.model}
-              onClick={() => updateInputs({ chapters: pace.recommendedChapters })}>
-              用推荐值（{pace.recommendedChapters} 章）
-            </Button>
-          )}
-          {/* 对话引导：只服务「从一句话创作」的输入框（接着写没有这个入口） */}
-          {inp.mode === 'scratch' && (
+          {/* 对话引导：只服务「一句话想法」那个输入框（库里已有大纲时用不上） */}
+          {needSeed && (
             <Button size="sm" variant="secondary" disabled={s.running} onClick={() => setInterview(true)}>
               <Sparkles size={12} /> 对话引导
             </Button>
           )}
         </div>
-        {pace && (
+        {!outlineOnlyTarget && pace && (
           <p title={pace.model} className={`mt-1 text-10 leading-relaxed ${pace.level === 'ok' ? 'text-ink-500' : 'text-amber'}`}>
             {pace.note}
           </p>
@@ -425,7 +521,7 @@ export default function CreativeWritingPanel() {
                 title="开启时每章初稿弹窗让你决定采纳或重写；关闭＝全自动连写">
                 逐章确认初稿：{inp.reviewEach ? '已开启' : '已关闭（全自动）'}
               </Button>
-              {inp.mode === 'continue' && (
+              {hasOutlineCards && (
                 <Button variant="toggle" selected={inp.useOutline} disabled={s.running}
                   onClick={() => updateInputs({ useOutline: !inp.useOutline })}
                   className="px-3 h-8 rounded-lg text-12"
@@ -492,13 +588,13 @@ export default function CreativeWritingPanel() {
           </div>
         )}
         <div className="mt-1.5 text-10 leading-relaxed text-ink-500">
-          {inp.mode === 'scratch'
-            ? (outlineOnlyTarget
-                ? '本次只做大纲规划：设定与分卷大纲确认后即收工，不写正文；随时可在两个闸门处放弃（放弃＝不留半成品）。'
-                : '连写会在当前项目的现有章节之后接着写，随时可中止；写完去「正文编辑」逐章审阅。')
-            : (outlineOnlyTarget
-                ? `本次只做大纲规划：按已有细纲往下排 ${inp.chapters} 章，确认后即收工（不写正文、不抽设定）。`
-                : '从项目里最后一章往下写，随时可中止；已落库的章不会被改写，写完去「正文编辑」逐章审阅。')}
+          {outlineOnlyTarget
+            ? (hasOutline
+                ? `本次只做大纲规划：从第 ${(probe?.maxOutlineNo ?? 0) + 1} 章起接着往下排 ${batchTotal} 章（不写正文、不抽设定），确认后即收工。`
+                : '本次只做大纲规划：先做设定奠基，再排分卷大纲与章节细纲。大纲确认后即收工、不写正文；两个闸门处都可放弃（放弃＝不留半成品）。')
+            : (hasOutline
+                ? '从项目里最后一章往下写，随时可中止；已落库的章不会被改写，写完去「正文编辑」逐章审阅。'
+                : '本次会一次跑完：设定奠基 → 分卷大纲 → 逐章连写；随时可中止，写完去「正文编辑」逐章审阅。')}
         </div>
       </section>
 

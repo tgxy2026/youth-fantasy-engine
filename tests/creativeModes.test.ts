@@ -6,7 +6,7 @@
  * （比如又把续写挂回灵感启发页、又把拆书/创意写作设成默认勾选、又在界面文案里写 markdown 星号）。
  * 本文件跑在 CI 基线里（`tests/run-all.mjs`），改了这些地方就会红。
  */
-import { CONTINUE_STAGES, CREATIVE_STAGES } from '../src/lib/aiWorkflow'
+import { CONTINUE_DRAFT_STAGES, CONTINUE_PLAN_STAGES, CREATIVE_STAGES } from '../src/lib/aiWorkflow'
 import { DEAI_TEMPLATES } from '../src/lib/autoContinue'
 import { FEATURE_TIER, DEFAULT_IDS } from '../src/lib/schema'
 import { AI_DATA_SOURCES } from '../src/lib/aiDataSources'
@@ -26,18 +26,21 @@ const read = (rel: string) => {
 
 console.log('\n—— creativeModes 用例开始 ——')
 
-// ============ ① 阶段表：两种起点各跑什么 ============
+// ============ ① 阶段表：两阶段各自跑什么（2026-09-20 长篇分批改造后） ============
 {
-  const cont = CONTINUE_STAGES.map(s => s.id)
+  const plan = CONTINUE_PLAN_STAGES.map(s => s.id)
+  const draft = CONTINUE_DRAFT_STAGES.map(s => s.id)
   const scr = CREATIVE_STAGES.map(s => s.id)
-  ok('🔴「接着已有内容写」只跑连写一步（不重跑设定奠基与分卷大纲）',
-    cont.length === 1 && cont[0] === 'draft', cont.join(','))
-  ok('「从一句话创作」三步齐（设定奠基 → 分卷大纲 → 逐章连写）',
+  ok('「从零创作」三步齐（设定奠基 → 分卷大纲 → 逐章连写）',
     scr.join(',') === 'bible,outline,draft', scr.join(','))
+  ok('🔴 接着写 +「只做大纲规划」只跑续排大纲（不写正文）',
+    plan.length === 1 && plan[0] === 'outline', plan.join(','))
+  ok('🔴 接着写 +「只生成正文」只跑连写（不重排大纲）',
+    draft.length === 1 && draft[0] === 'draft', draft.join(','))
   ok('两条路线的连写阶段 id 相同（共用同一执行体，融合的关键）',
-    scr.includes('draft') && cont.includes('draft'))
+    scr.includes('draft') && draft.includes('draft'))
   ok('每个阶段都有中文显示名（节点时间线要用）',
-    [...CONTINUE_STAGES, ...CREATIVE_STAGES].every(s => !!s.label.trim()))
+    [...CONTINUE_PLAN_STAGES, ...CONTINUE_DRAFT_STAGES, ...CREATIVE_STAGES].every(s => !!s.label.trim()))
 }
 
 // ============ ② 去 AI 味儿模板：自定义那一条必须是空提示词 ============
@@ -86,10 +89,26 @@ console.log('\n—— creativeModes 用例开始 ——')
   const session = read('src/lib/creativeSession.ts')
   ok('会话层存在（切页签不丢状态的根）', session.length > 0)
 
-  // ---------- 产出目标在起点（2026-09-19：开口就分清大纲规划 / 正文创作）----------
+  // ---------- 产出目标（2026-09-19 起：开口就分清"只要规划"还是"连正文一起写"）----------
   const panel = read('src/components/CreativeWritingPanel.tsx')
-  ok('🔴 起点处可选「产出目标」（只做大纲规划 / 大纲 + 正文）',
-    /TARGET_META/.test(panel) && /updateInputs\(\{ target: k \}\)/.test(panel))
+  ok('🔴 先选篇幅、再选「这一次要产出什么」',
+    /LENGTH_META/.test(panel) && /TARGETS_BY_LENGTH/.test(panel) && /updateInputs\(\{ target: k \}\)/.test(panel))
+  // ---------- 长篇分批（2026-09-20 老大要求）----------
+  ok('🔴 面板不再有「起点」按钮组（起点按项目现状自动判定，作者不必选）',
+    !/MODE_META/.test(panel) && !/MODES\.map/.test(panel))
+  ok('🔴 中长篇不提供「大纲 + 正文」一次跑完（必须分两阶段做）',
+    /short: \['outline', 'full'\]/.test(panel) && /long: \['outline', 'draft'\]/.test(panel))
+  ok('🔴 面板读项目现状探针（状态行与输入框显隐都靠它）', /probeCreativeProject/.test(panel))
+  ok('🔴 旧的「先续排细纲」开关已删除（细纲必须先排好，正文只管写）',
+    !/extendOutline/.test(panel) && !/extendOutline/.test(read('src/lib/creativeSession.ts')) && !/extendOutlineFirst/.test(read('src/lib/aiWorkflow.ts')))
+  ok('🔴 分卷大纲卡带「本卷章号范围」字段（正文切卷的唯一依据）',
+    /f\('本卷章号范围'/.test(read('src/lib/schema.ts')))
+  ok('🔴 章号范围由系统算（fillChapterRanges 是纯函数，可测）',
+    /export function fillChapterRanges/.test(read('src/lib/outlineCard.ts')))
+  ok('🔴 切篇幅时把产出目标一起映射（否则会留下"当前篇幅下不存在的档"：按钮不亮、提示却在讲它）',
+    /onPickLength/.test(panel) && /TARGETS_BY_LENGTH\[l\]/.test(panel))
+  ok('🔴 「只生成正文」需要有已排好的大纲（如实报错，不静默改成"先排大纲"）',
+    /target === 'draft' && !probe\.hasOutline/.test(read('src/lib/aiWorkflow.ts')))
   ok('🔴 闸门②不再问「只保存大纲」（目标已在起点定，闸门只做确认/放弃）',
     !/outline-only/.test(panel) && !/outline-only/.test(read('src/lib/aiWorkflow.ts')))
   ok('CreativeInputs 带 target 字段', /target: CreativeTarget/.test(session))
@@ -115,11 +134,22 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('🔴 上一章衔接样本取尾部（不是开头）', /slice\(-1200\)/.test(rw))
   // ---------- 续排细纲（方案 B）+ 历史章/最新章分治（2026-09-19 老大要求）----------
   const wf = read('src/lib/aiWorkflow.ts')
-  ok('🔴 接着写可续排细纲：阶段表有「续排细纲」',
-    /CONTINUE_OUTLINE_STAGES/.test(wf) && /label: '续排细纲'/.test(wf))
-  ok('🔴 续排起点看正文写到哪（不是细纲最大章号）', /const fromNo = writtenNo \+ 1/.test(wf))
-  ok('🔴 细纲已覆盖下一章时跳过续排（不重复排）', /outlines\.has\(fromNo\)/.test(wf))
-  ok('续排产物复用 commitOutline（同名卡跳过，已有章不会被覆盖）', /commitOutline\(result/.test(wf))
+  // 2026-09-20 长篇分批改造：以下五条钉住新的口径，防的是"某天被改回旧实现"
+  ok('🔴 续排起点看「已排到哪」（＝已有细纲最大章号 + 1）—— 旧口径看正文，纯排大纲时必卡死',
+    /const fromNo = probe\.maxOutlineNo \+ 1/.test(wf))
+  ok('🔴 起点由项目现状自动判定（不再让作者手选"从一句话创作 / 接着写"）',
+    /probeCreativeProject\(\)/.test(wf) && /probe\.hasOutline \? 'continue' : 'scratch'/.test(wf))
+  ok('🔴 每卷章号范围由系统算（fillChapterRanges），且带**实际章数**防"幽灵卷范围"',
+    /fillChapterRanges\(raw\.volumes, fromNo, perVolume, raw\.chapters\.length\)/.test(wf))
+  ok('🔴 产出不足要重试并把差额告知模型（它有时写一半就收尾，而 JSON 是闭合的）',
+    /askOnce\(true, first\.chapters\.length\)/.test(read('src/lib/aiTasks/creative.ts')))
+  ok('🔴 接续提示词点明「这是长篇连载的其中一段，不是全书结局」（防模型写成大结局）',
+    /不是全书结局/.test(read('src/lib/aiTasks/creative.ts')))
+  ok('🔴 正文按大纲切卷（volumeIdFor 交给 runAutoContinue，否则第 21 章留在卷一）',
+    /volumeIdFor: await buildChapterVolumeIndex\(\)/.test(wf))
+  ok('🔴 从零排与接续排共用同一个入口（aiPlanOutline），旧的成对实现不许回来',
+    /aiPlanOutline\(material/.test(wf) && !/aiExtendOutline/.test(wf) && !/aiGenerateOutline/.test(wf))
+  ok('大纲落库复用 commitOutline（同名卡跳过，已有章不会被覆盖）', /commitOutline\(outline/.test(wf))
   ok('🔴 整章改写按最新章 / 历史章分治',
     /CHAPTER_REWRITE_HISTORY_RULE/.test(rw) && /CHAPTER_REWRITE_LATEST_RULE/.test(rw) && /o\.isLatest \?/.test(rw))
   ok('🔴 历史章纪律写明「不得改动设定类内容」',
@@ -165,7 +195,8 @@ console.log('\n—— creativeModes 用例开始 ——')
 {
   const schema = read('src/lib/schema.ts')
   const cwDesc = (schema.match(/id: 'creative-writing'[\s\S]{0,200}?description: '([^']+)'/) || [])[1] ?? ''
-  ok('创意写作页签说明已更新为「两种起点」', /接着项目已有内容往下续写/.test(cwDesc), cwDesc.slice(0, 40))
+  ok('创意写作页签说明已更新为「两阶段分批」',
+    /只做大纲规划/.test(cwDesc) && /只生成正文/.test(cwDesc), cwDesc.slice(0, 60))
   ok('🔴 页签说明里不再有「（开发中）」这类幽灵功能承诺', !/开发中/.test(cwDesc))
 }
 

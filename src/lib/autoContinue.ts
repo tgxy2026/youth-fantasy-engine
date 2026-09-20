@@ -101,6 +101,15 @@ export interface ContinueCallbacks {
    * 不传 = 一键续写的老行为（完全不受影响）。
    */
   outlineFor?: (chapterNo: number) => string | undefined
+  /**
+   * 「创意写作」长篇分批用：给出**第几章**该落进哪个卷（卷记录 id）。
+   *
+   * 🔴 为什么必须由调用方给：`createChapterAfter` 默认把新章塞进**锚点所在的卷** ——
+   *    大纲排了卷一（第1-20章）与卷二（第21-40章），写到第 21 章时它仍会留在卷一，
+   *    卷归属与大纲对不上（2026-09-20 修）。
+   *    返回 undefined = 该章没有对应的卷范围 → 退回旧行为（不瞎猜）。
+   */
+  volumeIdFor?: (chapterNo: number) => string | undefined
   onLog?: (msg: string) => void
   signal?: AbortSignal
 }
@@ -330,12 +339,17 @@ async function suggestTitle(body: string, signal?: AbortSignal): Promise<string>
 
 // ============ 建章（顺序/台账同步，绝不手填卷章号） ============
 
-async function createChapterAfter(anchorId: string | null, title: string, content: string, summary = ''): Promise<Chapter> {
+async function createChapterAfter(
+  anchorId: string | null, title: string, content: string, summary = '', volumeId?: string,
+): Promise<Chapter> {
   const pid = db.getCurrentProjectId()
   const vols = await db.getAllVolumes()
   const chs = await db.getAllChapters()
   const anchor = anchorId ? chs.find(c => c.id === anchorId) : undefined
-  const targetVolId = anchor?.volumeId ?? vols[vols.length - 1]?.id
+  // 🔴 优先用调用方指定的卷（长篇按大纲切卷：第 21 章必须进卷二）。
+  //    先校验它**真实存在** —— 指定一个幽灵卷会把正文写进不存在的卷（数据事故）。
+  const forced = volumeId && vols.some(v => v.id === volumeId) ? volumeId : undefined
+  const targetVolId = forced ?? anchor?.volumeId ?? vols[vols.length - 1]?.id
   if (!targetVolId) throw new Error('项目中还没有卷，请先到「正文写作」创建至少一个卷再续写。')
   const volChs = chs.filter(c => c.volumeId === targetVolId)
   const order = volChs.length
@@ -593,7 +607,10 @@ export async function runAutoContinue(
       const title = await suggestTitle(body, cb.signal)
       // 生成约 1/10 的章节压缩摘要：存入本章 summary（供后续续写参考），并复用于滚动 memory
       const sum = await aiChapterSummary(body, { signal: cb.signal }).catch(() => '')
-      const ch = await createChapterAfter(anchorId, title, body, sum)
+      // 🔴 本章的**计划章号** ＝ 库里已有章数 + 本轮第几章（与上面取细纲的 `ordered.length + i + 1` 同一个数）。
+      //    按它问调用方"这一章该落进哪一卷" —— 长篇跨卷时第 21 章要进卷二，而不是留在锚点所在的卷一。
+      const plannedNo = ordered.length + i + 1
+      const ch = await createChapterAfter(anchorId, title, body, sum, cb.volumeIdFor?.(plannedNo))
       const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
       const no = chapterSeqOf(lv, lc, ch.id)
       cb.onChapterSaved?.({ id: ch.id, title: ch.title, no })

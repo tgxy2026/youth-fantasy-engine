@@ -11,6 +11,7 @@ import { DEFAULT_BIBLE_COUNTS, collectBibleEntities, type BibleCounts } from '..
 import { commitOutline, loadChapterOutlines } from '../src/lib/aiWorkflow'
 import { CREATIVE_SEED_SPEC, seedFromFilled } from '../src/lib/creativeSeed'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
+import { fillChapterRanges, formatChapterRange, parseChapterRange, volumeForChapter } from '../src/lib/outlineCard'
 import type { OutlineResult } from '../src/lib/aiTasks'
 
 let pass = 0, fail = 0
@@ -63,6 +64,8 @@ const OUTLINE: OutlineResult = {
     title: '风起云州', positioning: '废脉少年觉醒', stage: '淬体→聚灵', scope: '云州·青岚宗',
     opening: '寄居杂役院', climax1: '雨夜反杀', turn: '宿敌露真面目', climax2: '外门大比夺魁',
     ending: '获得秘境名额', events: '测灵→觉醒→受辱→反杀→大比→揭密', subplots: '兄妹温情线',
+    // 章号范围由系统算（`fillChapterRanges`），这里给一个等价值：2 章细纲 ⇒ 第1-2章
+    chapterRange: '第1-2章',
   }],
   chapters: [
     { no: 1, title: '废脉', event: '测灵大典判定废脉，当夜神体觉醒', fn: '开局冲突', cast: '陈渊、陈瑶', hook: '识海传来苍老声音', scenes: ['演武场测灵', '杂役院夜话', '深夜觉醒'] },
@@ -147,6 +150,49 @@ const OUTLINE: OutlineResult = {
     text.includes('【题材类型】玄幻') && text.includes('【主角是谁】杂役少年'), text)
   ok('🔴 拼回想法：空栏不出现（不留"（未填）"污染提示词）', !text.includes('核心冲突'), text)
   ok('拼回想法：全空 → 空串（调用方据此不覆盖输入框）', seedFromFilled({}) === '')
+}
+
+// ---------- ⑦ 本卷章号范围：长篇分批的「切卷」地基（2026-09-20）----------
+//
+// 这组纯函数决定"第 21 章落进哪一卷"。它错一次的后果是**整卷正文错位**，
+// 而且不会报错（章都写出来了，只是归属不对），所以必须在这一层钉住。
+{
+  const vols = fillChapterRanges([{ chapterRange: '' }, { chapterRange: '' }, { chapterRange: '' }], 41, 20)
+  ok('🔴 按「每卷章数」连排 3 卷：从第 41 章起',
+    vols.map(v => v.chapterRange).join(' / ') === '第41-60章 / 第61-80章 / 第81-100章',
+    vols.map(v => v.chapterRange).join(' / '))
+  ok('单章卷写成「第N章」（不写成"第7-7章"）', formatChapterRange(7, 7) === '第7章', formatChapterRange(7, 7))
+  ok('每卷章数为 0 时原样返回（防御非法参数，不产出"第1--1章"这种值）',
+    fillChapterRanges([{ chapterRange: '原值' }], 1, 0)[0].chapterRange === '原值')
+
+  // 🔴 实测教训（2026-09-20 线上 27B）：模型偶尔写一半就收尾 —— 承诺 2 卷 × 10 章，
+  //    只给了 10 章，而 JSON 本身是**闭合**的（不是截断）。若仍按承诺算范围，
+  //    第二卷会拿到「第32-41章」而**那 10 章根本不存在**。所以必须按实际章数收敛。
+  ok('🔴 实际章数不足时收敛最后一卷的范围、越界的卷整卷丢弃（防"幽灵卷范围"）',
+    fillChapterRanges([{ chapterRange: '' }, { chapterRange: '' }], 22, 10, 10)
+      .map(v => v.chapterRange).join(' / ') === '第22-31章',
+    fillChapterRanges([{ chapterRange: '' }, { chapterRange: '' }], 22, 10, 10).map(v => v.chapterRange).join(' / '))
+  ok('实际章数为 0 时一卷都不落（没有细纲就不该有范围）',
+    fillChapterRanges([{ chapterRange: '原值' }], 1, 10, 0).length === 0,
+    String(fillChapterRanges([{ chapterRange: '原值' }], 1, 10, 0).length))
+
+  ok('🔴 解析容错：全角波浪号 / 「到」/「至」/ 纯数字都认（作者会手改这一列）',
+    parseChapterRange('第1～20章')?.to === 20 && parseChapterRange('21到40')?.from === 21
+    && parseChapterRange('第61至80章')?.from === 61 && parseChapterRange('81-100')?.to === 100,
+    ['第1～20章', '21到40', '第61至80章', '81-100'].map(s => JSON.stringify(parseChapterRange(s))).join(' '))
+  ok('解析容错：单章写法取到同一个数', parseChapterRange('第7章')?.from === 7 && parseChapterRange('第7章')?.to === 7)
+  ok('解析防御：空串 / 垃圾 / 倒序区间一律返回 null（不瞎猜）',
+    parseChapterRange('') === null && parseChapterRange('待定') === null && parseChapterRange('第20-1章') === null,
+    String(parseChapterRange('第20-1章')))
+
+  const ranges = [
+    { title: '卷一', from: 1, to: 20 },
+    { title: '卷二', from: 21, to: 40 },
+  ]
+  ok('🔴 切卷：第 21 章属于卷二（旧实现会把它塞进卷一）',
+    volumeForChapter(ranges, 20)?.title === '卷一' && volumeForChapter(ranges, 21)?.title === '卷二',
+    `${volumeForChapter(ranges, 20)?.title} / ${volumeForChapter(ranges, 21)?.title}`)
+  ok('切卷：落在所有区间之外 → null（调用方退回旧行为，不瞎猜）', volumeForChapter(ranges, 99) === null)
 }
 
 console.log(`\n—— creativeWriting 用例结束：${pass} 通过 / ${fail} 失败`)

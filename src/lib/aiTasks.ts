@@ -45,8 +45,13 @@ export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiE
 export type { SettingEntityType, ExtractedEntity } from './aiTasks/extract'
 export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest } from './aiTasks/inline'
 export type { InlineSuggestLength, InlineSuggestOptions } from './aiTasks/inline'
-export { DEFAULT_BIBLE_COUNTS, collectBibleEntities, aiGenerateBible, aiGenerateOutline, aiExtendOutline } from './aiTasks/creative'
-export type { BibleCounts, OutlineVolume, OutlineChapter, OutlineResult } from './aiTasks/creative'
+// 2026-09-20：`aiGenerateOutline`（从零排）与 `aiExtendOutline`（接着排）**合并为 `aiPlanOutline`** ——
+// 差别只剩「材料装的是什么」，两条路产出的都是 `OutlineResult`（卷 + 章），落库走同一个 `commitOutline`。
+export {
+  DEFAULT_BIBLE_COUNTS, collectBibleEntities, aiGenerateBible, aiPlanOutline,
+  MAX_OUTLINE_VOLUMES, MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS,
+} from './aiTasks/creative'
+export type { BibleCounts, OutlineVolume, OutlineChapter, OutlineResult, PlanOutlineInput } from './aiTasks/creative'
 export { aiSummarizeFormSettings } from './aiTasks/formSummary'
 
 /**

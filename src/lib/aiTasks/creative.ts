@@ -156,6 +156,14 @@ export interface OutlineVolume {
   ending: string
   events: string
   subplots: string
+  /**
+   * 本卷章号范围，如 `第1-20章`。
+   *
+   * 🔴 **由系统算，不由模型填**（每卷章数是硬指标：第 k 卷 = 第 (k-1)×M+1 ~ k×M 章）。
+   *    它是「正文按大纲切卷」的唯一依据 —— 没有它，第 21 章会被塞进卷一。
+   *    模型产出时这里是空串，由 `aiWorkflow` 在落库前用 `fillChapterRanges()` 补齐。
+   */
+  chapterRange: string
 }
 
 /** 章节细纲（每章一条；`no` 由顺序决定，不让模型自己编） */
@@ -184,18 +192,32 @@ export interface OutlineResult {
  */
 const outlineCharCap = (volumes: number, chapters: number) => 300 + volumes * 420 + chapters * 160
 
-const outlineSys = (volumes: number, chapters: number) => `你是网文大纲师。给定设定资料，请产出分卷大纲与逐章细纲。
+/**
+ * 大纲规划的**可编辑提示词头部**（作者可在「模型设置 → AI 提示词」里改）。
+ *
+ * 🔴 就地声明（禁集中搬）；`read` / `write` 必须同模块 —— 见文件末尾的 `CREATIVE_PROMPTS`。
+ * ⚠️ 提示词 id **沿用旧的 `extend-outline`**（2026-09-20 把「从零排」与「接着排」合并成一条
+ *    路径时**故意没换 id**）：换了 id，作者此前在设置页改过的内容就会失效。
+ */
+let PLAN_OUTLINE_BASE = `你是网文大纲师，负责产出**分卷大纲**与**逐章细纲**。接着已有内容往下排时，延续已有的走向、冲突线与伏笔。`
+
+const planOutlineSys = (o: {
+  volumes: number; perVolume: number; extending: boolean; fromVolumeNo: number; cap: number
+}) => `${PLAN_OUTLINE_BASE}
 
 铁律：
 1. 只输出 JSON，不要解释文字，不要 markdown 代码块围栏。
-2. 卷数 = ${volumes}，总章数 = ${chapters}（各卷章数自行分配）。
-3. **不许新造专名**：人物、地名、势力只能用设定资料里已有的名字。新造的名字在设定表里对不上，会制造"未登记实体"。
+2. **本次产出 ${o.volumes} 卷，每卷 ${o.perVolume} 章，共 ${o.volumes * o.perVolume} 章**（每卷章数是硬指标，不得自行增减，也不得把一卷的章匀给另一卷）。
+3. **不许新造专名**：人物、地名、势力、功法只能用资料里已有的写法。新造的名字在设定表里对不上，会制造"未登记实体"。
 4. 每章都要有"事件 + 钩子"，严禁"过渡章""日常"这类空章。
 5. 事件链要有递进（起→承→转→合）；每卷结尾留钩子给下卷。
 6. title 只写章名本身，**不要带"第X章"前缀**（系统会自动编号）。
 7. 每章 scenes 给 2~3 条场景（地点+人物+发生什么）。
-8. **体量纪律（重要）**：这些都是**卡片摘要**，不是正文 —— 单字段不超过 40 字（events / subplots 不超过 60 字），scenes 每条不超过 30 字。整份 JSON 控制在 ${outlineCharCap(volumes, chapters)} 字以内。
-9. **严格按量输出**：只写 ${volumes} 卷、${chapters} 章，多写出来的会被系统丢弃（白耗时间）。资料撑不满时，把每章写得更精练，而不是多写章。
+8. **体量纪律（重要）**：这些都是**卡片摘要**，不是正文 —— 单字段不超过 40 字（events / subplots 不超过 60 字），scenes 每条不超过 30 字。整份 JSON 控制在 ${o.cap} 字以内。
+9. **严格按量输出**：只写 ${o.volumes} 卷、${o.volumes * o.perVolume} 章，多写出来的会被系统丢弃（白耗时间）。资料撑不满时，把每章写得更精练，而不是多写章。**务必把 ${o.volumes * o.perVolume} 章全部写出来再收尾** —— 写到一半就结束的会被判为不合格。${o.extending ? `
+10. **接续**：这是接着作者已有的大纲往下排 —— 延续已有分卷大纲的走向、已有细纲里的冲突线与伏笔、人物当前状态；不要把已经发生过的事件再演一遍。
+11. 本次的第一卷是全书**第 ${o.fromVolumeNo} 卷**，它必须接住上一卷结尾留下的钩子。
+12. **这是长篇连载的其中一段，不是全书结局**（重要）—— 不要写大结局、不要收束所有主线、不要让主角"功成名就 / 开启新纪元 / 尘埃落定"；本批结尾要留下**新的**悬而未决，给下一批留出推进空间。` : ''}
 
 JSON 结构：
 {
@@ -203,29 +225,80 @@ JSON 结构：
   "chapters":[{"title":"","event":"本章一句话事件","function":"推进主线/铺垫/爽点/情感","cast":"出场人物","hook":"章末钩子","scenes":["场景1","场景2"]}]
 }`
 
+/** 单批大纲的**规模上限**（与 `writingPace.MAX_CHAPTERS` 同口径：单批总量 ≤ 60 章） */
+export const MAX_OUTLINE_VOLUMES = 8
+export const MAX_CHAPTERS_PER_VOLUME = 60
+/** 单批总章数上限 —— 90 章细纲一次约 1.5 万字 JSON，本地 27B 截断风险明显，故不放开 */
+export const MAX_OUTLINE_CHAPTERS = 60
+
+/** 大纲规划的输入规模（从零与接续共用） */
+export interface PlanOutlineInput {
+  /** 本批要排几卷（1 ~ `MAX_OUTLINE_VOLUMES`） */
+  volumes: number
+  /**
+   * **每卷多少章**（硬指标，1 ~ `MAX_CHAPTERS_PER_VOLUME`）。
+   * 本批总量 = volumes × chaptersPerVolume，且受 `MAX_OUTLINE_CHAPTERS` 约束。
+   */
+  chaptersPerVolume: number
+  /** 本批第一卷的起始章号（接续时 = 已有细纲最大章号 + 1）。🔴 章号由系统定，模型不填 */
+  fromNo: number
+  /** 本批第一卷是全书第几卷（接续时 = 已有卷数 + 1） */
+  fromVolumeNo: number
+  /** 是否接着已有内容往下排（只影响提示词里的接续铁律） */
+  extending?: boolean
+}
+
 /**
- * 创意写作②：**分卷大纲 + 章节细纲** —— 设定资料 → 大纲草稿。
- * 产出交「闸门②」审阅；确认后才建卷/章（`runAutoContinue` 再据此逐章连写）。
+ * 大纲规划：**分卷大纲 + 章节细纲** → 大纲草稿（交「闸门②」审阅，确认后才建卷/章）。
+ *
+ * 从零创作与接着往下排**共用这一个入口**，差别只在 `material` 装的是什么：
+ * - 从零：设定摘要（`buildProjectContext`）
+ * - 接续：已有全部卷大纲 + 已有细纲尾部 + 细纲章节脉络 + 正文进度 + 设定摘要
+ *
+ * 🔴 两条纪律（都与「章号」有关，合并在一个入口后尤其要守住）：
+ *   ① 章号由**系统**按 `fromNo + i` 赋（模型返回的 `no` 一律忽略 —— 它经常从 1 重新数）；
+ *   ② 卷的章号范围由**系统**算（`fillChapterRanges`），模型不填。
+ *
+ * @param material 组装好的资料正文（调用方负责组装，本函数不认识"从零 / 接续"）
  */
-export async function aiGenerateOutline(
-  bibleDigest: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void; volumes?: number; chapters?: number; onRaw?: (raw: string) => void } = {},
+export async function aiPlanOutline(
+  material: string,
+  opts: PlanOutlineInput & { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void },
 ): Promise<OutlineResult> {
   const cfg = await requireActiveProvider()
-  const volCount = Math.max(1, Math.min(8, opts.volumes ?? 1))
-  const chCount = Math.max(1, Math.min(60, opts.chapters ?? 10))
-  const askOnce = async (tighten = false): Promise<OutlineResult> => {
+  const volCount = Math.max(1, Math.min(MAX_OUTLINE_VOLUMES, Math.round(opts.volumes) || 1))
+  const perVolume = Math.max(1, Math.min(MAX_CHAPTERS_PER_VOLUME, Math.round(opts.chaptersPerVolume) || 1))
+  // 本批总量按上限夹住：模型多写的会被裁掉（宁少写也不让 JSON 被截断）
+  const total = Math.min(volCount * perVolume, MAX_OUTLINE_CHAPTERS)
+  const start = Math.max(1, Math.round(opts.fromNo) || 1)
+  const volNoStart = Math.max(1, Math.round(opts.fromVolumeNo) || 1)
+  const extending = opts.extending === true
+
+  const askOnce = async (tighten = false, missing = 0): Promise<OutlineResult> => {
     // 🔴 重试必须**换策略**：实测（本地 27B，2026-09-18）同样的 prompt 重试会断在同一处
     //    （模型输出到一半自己停住，少一个收尾 `}`），连试两次都失败。第二次收紧体量预算，
     //    并在末尾点明"上次被截断"，比原样重发有用得多。
-    const cap = tighten ? Math.max(240, Math.round(outlineCharCap(volCount, chCount) * 0.7)) : outlineCharCap(volCount, chCount)
+    const cap = tighten
+      ? Math.max(240, Math.round(outlineCharCap(volCount, total) * 0.7))
+      : outlineCharCap(volCount, total)
+    const task = extending
+      ? `请接着往下排：本次从全书第 ${volNoStart} 卷起，共 ${volCount} 卷、每卷 ${perVolume} 章（对应第 ${start} 章起）。`
+      : `请产出分卷大纲与逐章细纲：共 ${volCount} 卷，每卷 ${perVolume} 章。`
     const text = await chat(
       cfg,
       [
-        { role: 'system', content: composeSystemPrompt(outlineSys(volCount, chCount), cfg) },
+        { role: 'system', content: composeSystemPrompt(planOutlineSys({ volumes: volCount, perVolume, extending, fromVolumeNo: volNoStart, cap }), cfg) },
         // 🔴 硬约束放**消息末尾**：模型对最后一条指令最敏感。实测仅写在 system 里时
         //    Qwen3-30B 会无视"只写 1 卷 1 章"，连吐 13000+ 字；末尾重申才压得住。
-        { role: 'user', content: `【设定资料】\n${bibleDigest.trim() || '（无，请按题材自行克制地设定）'}\n\n请产出分卷大纲与逐章细纲。\n\n【必须遵守】只输出 ${volCount} 卷、${chCount} 章，一个不多；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。${tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : ''}` },
+        {
+          role: 'user',
+          content: `【资料】\n${material.trim() || '（无资料，请按通用网文逻辑克制地设定）'}\n\n${task}` +
+            `\n\n【必须遵守】只输出 ${volCount} 卷、每卷 ${perVolume} 章（共 ${total} 章），**一章不少、一章不多**；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。` +
+            (tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : '') +
+            (missing > 0 && missing < total
+              ? `\n【注意】上一次只写了 ${missing} 章就收尾了，**还差 ${total - missing} 章**。这一次务必把 ${total} 章全部写出来（每章可以更精练，但不能少写）。`
+              : ''),
+        },
       ],
       { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
     )
@@ -237,6 +310,7 @@ export async function aiGenerateOutline(
       chapters: rawObj.chapters ?? rawObj['章节'] ?? rawObj['章'] ?? rawObj['章节细纲'],
     }
 
+    // 🔴 卷数按 volCount 裁、章数按 total 裁：提示词压不住时靠这里兜底
     const volumes: OutlineVolume[] = (Array.isArray(obj.volumes) ? obj.volumes : []).slice(0, volCount).map(raw => {
       const o = (raw ?? {}) as Record<string, unknown>
       return {
@@ -251,98 +325,15 @@ export async function aiGenerateOutline(
         ending: asText(o.ending).trim(),
         events: asText(o.events).trim(),
         subplots: asText(o.subplots).trim(),
+        // 章号范围由系统算（见 OutlineVolume 说明），模型这里一律留空
+        chapterRange: '',
       }
     }).filter(v => v.title)
 
-    const chapters: OutlineChapter[] = (Array.isArray(obj.chapters) ? obj.chapters : []).slice(0, chCount).map((raw, i) => {
+    const chapters: OutlineChapter[] = (Array.isArray(obj.chapters) ? obj.chapters : []).slice(0, total).map((raw, i) => {
       const o = (raw ?? {}) as Record<string, unknown>
       const scenes = (Array.isArray(o.scenes) ? o.scenes : []).map(asText).filter(Boolean).slice(0, 3)
       // 防御：模型偶尔会自带「第X章」前缀 —— 系统会重新编号，这里剥掉避免双重编号
-      const title = asText(o.title).trim().replace(/^第\s*[\d零一二三四五六七八九十百千]+\s*[章回]\s*/, '')
-      return {
-        no: i + 1,
-        title,
-        event: asText(o.event).trim(),
-        fn: asText(o['function'] ?? o.fn).trim(),
-        cast: asText(o.cast).trim(),
-        hook: asText(o.hook).trim(),
-        scenes,
-      }
-    }).filter(c => c.title)
-
-    return { volumes, chapters }
-  }
-
-  // 空结果重试一次（同 aiGenerateBible：模型输出有随机性，格式瑕疵 regenerate 一次多半就好）
-  // 🔴 但重试要**收紧体量**（见 askOnce 的 tighten）—— 同 prompt 重发会断在同一处。
-  const first = await askOnce()
-  if (first.chapters.length) return first
-  return askOnce(true)
-}
-
-// ============ 往下续排《章节细纲》（「接着已有内容写」的「只做大纲规划」） ============
-//
-// 与 `aiGenerateOutline` 的分工：那个是**从零**排（输入＝设定摘要，产出＝卷＋全部章）；
-// 这个是**接着**排（输入＝已有细纲尾部＋设定/总纲资料＋正文进度，产出＝第 fromNo 起的 N 章）。
-// 产物仍然是 OutlineResult，所以落库直接复用 commitOutline —— 它按「同名卡跳过」建卡，
-// 重复调用是安全的（已有的章不会被重排或覆盖）。
-
-let EXTEND_OUTLINE_BASE = `你是网文大纲师，负责**接着作者已有的《章节细纲》往下排**。`
-
-const extendOutlineSys = (fromNo: number, count: number, cap: number) => `${EXTEND_OUTLINE_BASE}
-
-铁律：
-1. 只输出 JSON，不要解释文字，不要 markdown 代码块围栏。
-2. 章号必须从 ${fromNo} 连续排到 ${fromNo + count - 1}，一章不多、一章不少。
-3. **接续**：延续已有细纲里的冲突线、伏笔与人物状态；不要把已经发生过的事件再演一遍。
-4. **不许新造专名**：人物 / 地名 / 势力 / 功法只能用资料里已有的写法。
-5. 每章都要有「事件 + 钩子」，严禁「过渡章」「日常」这类空章；事件链要有递进。
-6. 若这批章节跨进了新卷，额外给 newVolume（卷名 + 一句话定位）；没跨卷就**省略该字段**。
-7. 单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`
-
-/**
- * 往下续排细纲。
- * @param material 已有细纲尾部 + 设定 / 总纲资料（调用方组装）
- * @param fromNo   从第几章开始排（通常＝已有细纲最大章号 + 1）
- * @param count    排多少章
- * @returns OutlineResult（volumes 里最多一项＝模型建议的新卷）
- */
-export async function aiExtendOutline(
-  material: string,
-  fromNo: number,
-  count: number,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void } = {},
-): Promise<OutlineResult> {
-  const cfg = await requireActiveProvider()
-  const n = Math.max(1, Math.min(60, count))
-  const start = Math.max(1, fromNo)
-  const capOf = (tighten: boolean) => {
-    const base = 200 + n * 170
-    return tighten ? Math.max(240, Math.round(base * 0.7)) : base
-  }
-  const askOnce = async (tighten = false): Promise<OutlineResult> => {
-    const cap = capOf(tighten)
-    const text = await chat(
-      cfg,
-      [
-        { role: 'system', content: composeSystemPrompt(extendOutlineSys(start, n, cap), cfg) },
-        {
-          role: 'user',
-          content: `【已有细纲与设定资料】\n${material.trim() || '（无资料，请按通用网文逻辑克制地排）'}\n\n请接着往下排第 ${start} ~ ${start + n - 1} 章。` +
-            `\n\n【必须遵守】只输出 JSON，形如 {"chapters":[{"no":${start},"title":"","event":"","fn":"","cast":"","hook":"","scenes":["","",""]}]}` +
-            '（跨卷时才加 "newVolume":{"title":"","positioning":""}）；章号 ' + `${start}~${start + n - 1} 连续；单字段 ≤ 40 字；整份 ≤ ${cap} 字。` +
-            (tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : ''),
-        },
-      ],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
-    )
-    opts.onRaw?.(text)
-    const rawObj = parseLooseObject(text) ?? {}
-    const arr = rawObj.chapters ?? rawObj['章节'] ?? rawObj['章'] ?? rawObj['章节细纲']
-    const chapters: OutlineChapter[] = (Array.isArray(arr) ? arr : []).slice(0, n).map((raw, i) => {
-      const o = (raw ?? {}) as Record<string, unknown>
-      const scenes = (Array.isArray(o.scenes) ? o.scenes : []).map(asText).filter(Boolean).slice(0, 3)
-      // 防御：模型偶尔自带「第X章」前缀 —— 章号由系统定，剥掉避免双重编号
       const title = asText(o.title).trim().replace(/^第\s*[\d零一二三四五六七八九十百千]+\s*[章回]\s*/, '')
       return {
         // 🔴 章号由调用方给的起点决定，不用模型返回的 no —— 它经常从 1 重新数
@@ -355,20 +346,19 @@ export async function aiExtendOutline(
         scenes,
       }
     }).filter(c => c.title)
-    const nvRaw = (rawObj.newVolume ?? rawObj['新卷'] ?? null) as Record<string, unknown> | null
-    const nvTitle = nvRaw ? asText(nvRaw.title).trim() : ''
-    const volumes: OutlineVolume[] = nvTitle
-      ? [{
-          title: nvTitle, positioning: asText(nvRaw?.positioning).trim(),
-          stage: '', scope: '', opening: '', climax1: '', turn: '', climax2: '', ending: '', events: '', subplots: '',
-        }]
-      : []
+
     return { volumes, chapters }
   }
-  // 空结果重试一次（同 aiGenerateOutline：重试要收紧体量，原样重发会断在同一处）
+
+  // 重试策略（两种情形都要重试，但给模型的提示不同）：
+  //   ① 空结果 / JSON 被截断 → 收紧体量重发（同 prompt 重发会断在同一处）
+  //   ② 🔴 **产出不足**：模型有时写一半就收尾，而 JSON 本身是**闭合**的
+  //      （实测线上 Qwen3.8-27B：2 卷 × 10 章只给了 10 章）→ 把差额写进提示词再要一次。
+  //      这一条不能省：静默接受会让「章号范围」按**承诺**算，落出一批没有细纲的**幽灵范围**。
   const first = await askOnce(false)
-  if (first.chapters.length) return first
-  return askOnce(true)
+  if (first.chapters.length >= total) return first
+  const second = await askOnce(true, first.chapters.length)
+  return second.chapters.length > first.chapters.length ? second : first
 }
 
 /**
@@ -377,8 +367,15 @@ export async function aiExtendOutline(
  */
 export const CREATIVE_PROMPTS: PromptDef[] = [
   {
-    meta: { id: 'extend-outline', group: '正文写作', name: '续排细纲', note: '接着已有《章节细纲》往下排（「接着已有内容写」的「只做大纲规划」用）。' },
-    read: () => EXTEND_OUTLINE_BASE,
-    write: t => { EXTEND_OUTLINE_BASE = t },
+    meta: {
+      // ⚠️ id 保持 `extend-outline` 不变（2026-09-20 合并「从零排 / 接着排」时**故意没改 id**）：
+      //    改了 id，作者在设置页里改过的提示词会失效。只更新显示名与说明，说清它现在管两条路。
+      id: 'extend-outline',
+      group: '正文写作',
+      name: '大纲规划',
+      note: '产出分卷大纲与逐章细纲（「从一句话创作」与「接着已有内容写」共用；接续时延续已有走向与伏笔）。',
+    },
+    read: () => PLAN_OUTLINE_BASE,
+    write: t => { PLAN_OUTLINE_BASE = t },
   },
 ]

@@ -1,14 +1,20 @@
 /**
  * 「创意写作」编排器 —— AI 创作工作流的串联层（方案见 `docs/2.2.0-全自动AI小说创作工作流方案.md`）。
  *
- * **两种起点**（2026-09-19 融合「AI 一键续写 + 设定补完」后）：
- * - `scratch`（从一句话想法从零写）：种子 → ①设定奠基 → **闸门①** → ②分卷大纲 → **闸门②** → ③逐章连写
- *   产出目标（`target`）在**起点**就定：「只做大纲规划」到闸门②确认即收工，正文阶段整段跳过。
- * - `continue`（接着项目已有内容往下写）：③逐章连写（设定补完按策略在每章末尾自动进行）
+ * **两个阶段，各自可以反复执行**（2026-09-20 长篇分批改造，老大要求）：
+ * - **大纲规划**（`target: 'outline'`）：每批产出「N 卷分卷大纲 + N×M 章章节细纲」。
+ *   库里没有大纲 → 先跑「设定奠基」把基础设定冷启动出来（闸门①）再排；库里已有 → **接续**往下排。
+ * - **正文生成**（`target: 'draft'`；短篇的 `'full'` 也走这里）：按已排好的细纲逐章连写。
  *
- * 为什么合成一个编排器而不是两套：两条路线的**第③步是同一件事** —— 都是"按已有设定与上一章结尾
- * 往下写一章"，都用 `runAutoContinue`。差别只在前两步要不要跑（从零时需要先立设定与大纲）。
- * 合成一处之后，断点续跑、进度时间线、去 AI 味儿、设定补完策略这些能力两边自动共享。
+ * 🔴 **起点不再由作者手选，改为自动判定**（老大 2026-09-20）：库里没有分卷大纲 / 章节细纲 →
+ *    从零（`scratch`）；已有 → 接着写（`continue`）。老大的原话是「项目里没有分卷大纲和章节细纲的
+ *    时候，那就默认从第一卷第一章开始生成……已经有了……AI 模型就需要接续」—— 这是**自动**的，
+ *    让人每批都去点一次"从一句话创作 / 接着已有内容写"反而多一道无意义的工序。
+ *
+ * 🔴 **续排起点看「已排到哪」，不看「正文写到哪」**（2026-09-20 改）：长篇是"先把大纲规划完、
+ *    再写正文"，此时正文可能一章都没有而细纲已排到第 40 章 —— 按正文算会得到"从第 1 章起"，
+ *    再被判"第 1 章已有细纲、无需续排"**直接收工**（旧口径 `writtenNo + 1` 就是这么卡死的）。
+ *    现在一律用「已有细纲最大章号 + 1」。
  *
  * 四条设计要点：
  * 1. **不重造**：逐章连写直接用 `runAutoContinue`，它自带"字数校准 + 落库硬闸门 + 逐章人审回调 +
@@ -17,15 +23,18 @@
  *    这也是为什么它直接建在 `lib/flow` 的状态机上（状态机不需要感知"暂停"这件事）。
  * 3. **人和 AI 的分工**：闸门之前全是 AI 跑量，闸门处必须人定方向 —— 不接受"全自动无人值守"，
  *    那是方案里明确否掉的（AI 生成设定/大纲的质量波动，必须由人在落库前过一眼）。
- * 4. **按大纲写**：项目里已有《章节细纲》时，连写会自动按章号把当章细纲钉进 prompt 末段，
- *    让正文跟着大纲走而不是自由发挥（`continue` 起点因此也成了"继续推进已规划项目"的入口）。
+ * 4. **章号与卷归属由系统算**：章号 ＝ `fromNo + i`；每卷的章号范围 ＝ `fillChapterRanges(...)`。
+ *    模型返回的章号一律忽略（它经常从 1 重新数）。
  *
- * 🔴 写库只发生在两个闸门**通过之后**；用户放弃闸门 = 整条流程中止，不留半成品。
- * 🔴 `continue` 起点没有闸门：它不新建设定与大纲（那些要么已落库、要么由作者自己在表格页维护），
- *    正文落库发生在每章的「初稿采纳」之后。
+ * 🔴 写库只发生在闸门**通过之后**；用户放弃闸门 = 整条流程中止，不留半成品。
+ * 🔴 正文落库发生在每章的「初稿采纳」之后。
  */
 import { buildProjectContext } from './aiContext'
-import { aiExtendOutline, aiGenerateBible, aiGenerateOutline, type OutlineResult } from './aiTasks'
+import {
+  aiGenerateBible, aiPlanOutline,
+  MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES,
+  type OutlineResult,
+} from './aiTasks'
 import { sortChapters } from './chapterSeq'
 import { writerBudgetFor } from './aiWriterBudget'
 import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from './autoContinue'
@@ -36,11 +45,15 @@ import { resolveSlot } from './flow/fieldMap'
 import { createFlow, firstUnfinishedStage, type StageCtx } from './flow/pipeline'
 import type { CommitOutcome, DraftBundle, DraftRow, FlowProgress, FlowStage } from './flow/types'
 import { uid } from './id'
-import { chapterNoOf, outlineCardName, outlineEventKey } from './outlineCard'
+import {
+  chapterNoOf, fillChapterRanges, outlineCardName, outlineEventKey, parseChapterRange,
+  VOLUME_OUTLINE_TAB_ID, volumeRangeKey,
+} from './outlineCard'
 import type { LedgerItem } from './settingLedger'
 import type { Volume } from './types'
+import { MAX_CHAPTERS } from './writingPace'
 
-/** 阶段声明（weight 按实测耗时：连写占绝大部分） */
+/** 从零创作：设定奠基 → 分卷大纲 → 逐章连写（`target='outline'` 时靠 `skipRest` 停在闸门②之后） */
 export const CREATIVE_STAGES: FlowStage[] = [
   { id: 'bible', label: '设定奠基', weight: 3 },
   { id: 'outline', label: '分卷大纲', weight: 2 },
@@ -48,51 +61,177 @@ export const CREATIVE_STAGES: FlowStage[] = [
 ]
 
 /**
- * 「接着已有内容写」的阶段表 —— 只有连写这一步。
+ * 「接着已有内容写」+「只做大纲规划」的阶段表 —— 只有续排大纲这一步。
  *
- * 为什么不复用 CREATIVE_STAGES 再 `skipRest` 掉前两步：`skipRest` 是"跑到一半才发现不用跑"的
- * 表达（如闸门②选「只保存大纲」），而这里**一开始就知道**不用跑 —— 让它们以 `skipped` 出现在
- * 时间线上，作者会以为"这两个阶段被跳过了，是不是出问题了"。阶段表不同，就该用不同的表。
+ * 为什么不复用 CREATIVE_STAGES 再 `skipRest` 掉其余：`skipRest` 是"跑到一半才发现不用跑"的
+ * 表达，而这里**一开始就知道**不用跑 —— 让它们以 `skipped` 出现在时间线上，
+ * 作者会以为"这两个阶段被跳过了，是不是出问题了"。阶段表不同，就该用不同的表。
  */
-export const CONTINUE_STAGES: FlowStage[] = [
+export const CONTINUE_PLAN_STAGES: FlowStage[] = [
+  { id: 'outline', label: '续排大纲', weight: 2 },
+]
+
+/**
+ * 「接着已有内容写」+「只生成正文」的阶段表 —— 只有逐章连写一步。
+ *
+ * 也用于短篇「大纲 + 正文」在**已有大纲**时的第二次运行（那一档此时退化为"只写正文"）。
+ */
+export const CONTINUE_DRAFT_STAGES: FlowStage[] = [
   { id: 'draft', label: '逐章连写', weight: 12 },
 ]
 
 /**
- * 「接着已有内容写」+ 要排细纲时的阶段表：续排细纲 → 逐章连写。
+ * 项目现状 —— **起点自动判定**的依据（也给面板状态行用）。
  *
- * 用它在两种情况下：① 产出目标选「只做大纲规划」（排完细纲即停，正文阶段由 skipRest 砍掉）；
- * ② 选「大纲 + 正文」且勾了「先往下续排细纲」。
- * 不排细纲时仍用 CONTINUE_STAGES（只有连写）—— 那是「作者已有细纲、直接写」的路径。
+ * 🔴 为什么不再让作者手选起点：库里有没有大纲是**客观事实**。让作者每批点一次
+ *    "从一句话创作 / 接着已有内容写"，既多一道工序，又给了他选错的机会
+ *    （选错就是重跑设定奠基白花钱，或该接续却从头排）。
  */
-export const CONTINUE_OUTLINE_STAGES: FlowStage[] = [
-  { id: 'outline', label: '续排细纲', weight: 2 },
-  { id: 'draft', label: '逐章连写', weight: 12 },
-]
+export interface CreativeProjectProbe {
+  /** 库里有没有大纲（分卷大纲卡或章节细纲卡任一） */
+  hasOutline: boolean
+  /** 已有分卷大纲卡数（＝已排了几卷） */
+  volumeCardCount: number
+  /** 已有细纲卡数 */
+  outlineCardCount: number
+  /** 已有细纲的**最大章号**（没有则 0）—— 续排起点 ＝ 它 + 1 */
+  maxOutlineNo: number
+  /** 已有正文章数 */
+  chapterCount: number
+  /** 正文最后一章的标题 */
+  lastChapterTitle: string
+}
+
+/** 读一眼当前项目的大纲 / 正文现状（面板状态行与起点判定共用同一份口径） */
+export async function probeCreativeProject(): Promise<CreativeProjectProbe> {
+  const [volCards, chCards, chs, vols] = await Promise.all([
+    db.getCardRecords(VOLUME_OUTLINE_TAB_ID).catch(() => []),
+    db.getCardRecords('chapter-outline').catch(() => []),
+    db.getAllChapters().catch(() => []),
+    db.getAllVolumes().catch(() => []),
+  ])
+  const maxOutlineNo = chCards.reduce((mx, c) => Math.max(mx, chapterNoOf(c.name)), 0)
+  const last = sortChapters(vols, chs).slice(-1)[0]
+  return {
+    hasOutline: volCards.length > 0 || chCards.length > 0,
+    volumeCardCount: volCards.length,
+    outlineCardCount: chCards.length,
+    maxOutlineNo,
+    chapterCount: chs.length,
+    lastChapterTitle: last?.title ?? '',
+  }
+}
+
+/** 读卷大纲卡里的某个语义字段（落点现查 schema；这张表没有该字段时返回空串） */
+function volFieldOf(card: { data: Record<string, string> }, fieldName: string): string {
+  const key = resolveSlot(VOLUME_OUTLINE_TAB_ID, fieldName)
+  return key ? (card.data[key] ?? '') : ''
+}
+
+/** 「已有细纲」里一章的第一行事件（做全书脉络用；取不到由调用方兜底） */
+function eventLineOf(text: string): string {
+  const line = (text || '').split('\n').find(l => l.startsWith('事件：'))
+  return line ? line.slice(3).trim() : ''
+}
 
 /**
- * 组装「续排细纲」的材料：正文进度 + 已有细纲尾部（供接续与模仿风格）+ 设定 / 总纲资料。
+ * 组装「大纲规划」的资料。
  *
- * 为什么要带「正文已写到」：细纲要接的是**正文**的下一章；只给细纲的话，模型会以为
- * 细纲里最后那章就是最新进度。
+ * 🔴 **接续时必须让模型看见全貌，而不只是尾巴**：排第 3 卷要接住前两卷的卷末钩子、
+ *    前 40 章埋下的伏笔。原先只递"最后 6 章细纲"，模型只能顺着最近的语气往下编，
+ *    更早的线一律接不上（2026-09-20 修）。现在分三层给：
+ *      ① 已有分卷大纲（全部，含章号范围）—— 看卷级走向与卷末钩子；
+ *      ② 已有细纲的**全书脉络**（每章一行：章号 + 一句话事件）＋ **尾部 10 章完整字段**
+ *         —— 前者回答"故事讲到哪了"，后者回答"接着要模仿的写法与最近状态"；
+ *      ③ 正文进度 ＋ 设定资料与全书总纲。
+ *
+ * @param task 末段的任务陈述（从零 / 接续两种措辞由调用方给）
  */
-async function buildExtendMaterial(
-  outlines: Map<number, string>, lastTitle: string, fromNo: number,
-): Promise<string> {
-  const tail = [...outlines.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .slice(-6)
-    .map(([no, t]) => `第${no}章\n${t}`)
-    .join('\n\n')
+async function buildPlanMaterial(probe: CreativeProjectProbe, task: string): Promise<string> {
+  const parts: string[] = []
+
+  // ① 已有分卷大纲（全部：卷数本来就不多，而"上一卷留了什么钩子"必须看见）
+  const volCards = await db.getCardRecords(VOLUME_OUTLINE_TAB_ID).catch(() => [])
+  if (volCards.length) {
+    const rangeKey = volumeRangeKey()
+    const lines = volCards.map((c, i) => {
+      const range = rangeKey ? (c.data[rangeKey] ?? '').trim() : ''
+      const bits = [
+        volFieldOf(c, '本卷一句话定位'),
+        volFieldOf(c, '本卷结尾（卷末状态）'),
+        volFieldOf(c, '事件链（起→承→转→合）'),
+      ].filter(Boolean)
+      return `第${i + 1}卷《${c.name}》${range ? `（${range}）` : ''}：${bits.join(' ｜ ')}`
+    })
+    parts.push(`【已有分卷大纲（${volCards.length} 卷）】\n${lines.join('\n')}`)
+  }
+
+  // ② 已有细纲：全书脉络（每章一行）+ 尾部 10 章完整字段
+  const outlines = await loadChapterOutlines()
+  const nos = [...outlines.keys()].sort((a, b) => a - b)
+  const TAIL = 10
+  const tailNos = new Set(nos.slice(-TAIL))
+  const headNos = nos.filter(n => !tailNos.has(n))
+  if (headNos.length) {
+    const brief = headNos
+      .map(no => `第${no}章：${eventLineOf(outlines.get(no) ?? '') || '（无事件摘要）'}`)
+      .join('\n')
+    parts.push(`【已有细纲 · 前 ${headNos.length} 章脉络（每章一行，把握全书走向）】\n${brief}`)
+  }
+  if (tailNos.size) {
+    const tail = [...tailNos]
+      .sort((a, b) => a - b)
+      .map(no => `第${no}章\n${outlines.get(no)}`)
+      .join('\n\n')
+    parts.push(`【已有细纲 · 最近 ${tailNos.size} 章（完整字段，供接续与模仿写法）】\n${tail}`)
+  }
+
+  // ③ 正文进度（只报"写到哪"，不贴正文 —— 正文内容属于正文生成阶段的事）
+  parts.push(
+    `【正文进度】已写 ${probe.chapterCount} 章` +
+    (probe.lastChapterTitle ? `，最新一章是《${probe.lastChapterTitle}》` : '（还没有正文）'),
+  )
+
+  // ④ 设定资料与全书总纲
   const digest = await buildProjectContext({ budget: await writerBudgetFor('outline-generate') })
     .then(r => r.text)
     .catch(() => '')
-  return [
-    `【正文已写到】${lastTitle || '（还没有正文）'}`,
-    `【已有细纲（最后 6 章，供接续与模仿写法）】\n${tail || '（还没有细纲 —— 这是第一次往下排，请按设定资料与正文进度起排）'}`,
-    `【设定资料与全书总纲】\n${digest || '（无）'}`,
-    `【本次任务】接着往下排第 ${fromNo} 章起的细纲。`,
-  ].join('\n\n')
+  parts.push(`【设定资料与全书总纲】\n${digest || '（无）'}`)
+
+  // ⑤ 本次任务
+  parts.push(`【本次任务】${task}`)
+  return parts.join('\n\n')
+}
+
+/**
+ * 建「章号 → 卷记录 id」的查询 —— 长篇正文按大纲**切卷**用。
+ *
+ * 🔴 为什么必须查这一层：`createChapterAfter` 默认把新章塞进**锚点所在的卷**，
+ *    于是大纲排了卷一（第1-20章）与卷二（第21-40章），写到第 21 章时它仍留在卷一，
+ *    卷归属与大纲对不上（2026-09-20 修）。
+ *
+ * 依据是分卷大纲卡的**「本卷章号范围」**（排纲时由系统写入）。读不到那一列、
+ * 或某卷没填范围的老项目，返回的查询对任何章号都答 `undefined` ——
+ * 此时静默退回旧行为，**不做任何猜测**（猜错就是整卷正文错位）。
+ */
+async function buildChapterVolumeIndex(): Promise<(no: number) => string | undefined> {
+  const key = volumeRangeKey()
+  if (!key) return () => undefined
+  const [cards, vols] = await Promise.all([
+    db.getCardRecords(VOLUME_OUTLINE_TAB_ID).catch(() => []),
+    db.getAllVolumes().catch(() => []),
+  ])
+  const ranges = cards
+    .map(c => {
+      const r = parseChapterRange(c.data[key] ?? '')
+      // 卡名 ＝ 卷名（`commitOutline` 就是这么写的）→ 按同名去卷记录里找它对应的 id
+      const vol = r ? vols.find(v => v.title.trim() === c.name.trim()) : undefined
+      return r && vol ? { volId: vol.id, from: r.from, to: r.to } : null
+    })
+    .filter((x): x is { volId: string; from: number; to: number } => !!x)
+    .sort((a, b) => a.from - b.from)
+  if (!ranges.length) return () => undefined
+  return (no: number) => ranges.find(r => no >= r.from && no <= r.to)?.volId
 }
 
 /** 按「语义字段名 → 值」构造卡片数据（落点由 schema 现查，schema 改了字段归属也不会失配） */
@@ -148,6 +287,9 @@ export async function commitOutline(
       ['舞台范围', v.scope], ['本卷开头（卷首状态）', v.opening], ['第一大高潮', v.climax1],
       ['卷中转折', v.turn], ['卷末高潮', v.climax2], ['本卷结尾（卷末状态）', v.ending],
       ['事件链（起→承→转→合）', v.events], ['支线事件', v.subplots],
+      // 🔴 章号范围由系统算好填进来（见 `fillChapterRanges`）——
+      //    它是「正文按大纲切卷」的唯一依据，不要让它空着落库。
+      ['本卷章号范围', v.chapterRange],
     ])
     try {
       await db.saveCardRecord({
@@ -224,41 +366,51 @@ export interface CreativeResume {
   label: string
 }
 
-/** 创作起点 */
+/**
+ * 创作起点。🔴 由编排器**自动判定**（库里有没有大纲），不再是界面上的手选项（2026-09-20）。
+ * 保留它是因为返回值与断点信息都要如实说明"这一次是从零还是接着写"。
+ */
 export type CreativeMode = 'scratch' | 'continue'
 
 /**
+ * 产出目标（「这一次要产出什么」）：
+ * - `'outline'` ＝ **只做大纲规划**：排 / 续排卷大纲与章节细纲，正文一个字不写；
+ * - `'full'`    ＝ **大纲 + 正文**：短篇一次跑完；库里已有大纲时自动退化为"只生成正文"；
+ * - `'draft'`   ＝ **只生成正文**：中长篇的第二阶段，按已排好的大纲逐章写。
+ */
+export type CreativeTarget = 'outline' | 'full' | 'draft'
+
+/**
  * 本次创作的输入。
- * - `scratch`：`seed` 是一句话想法（设定奠基的唯一依据）
- * - `continue`：`intent` 是可选的情节概要（不填则严格承接上一章结尾）
+ * - `seed`：一句话想法 —— 只在**库里还没有大纲**时用得上（设定奠基的唯一依据）
+ * - `intent`：可选的情节概要（正文生成阶段用；不填则严格承接上一章结尾）
+ *
+ * ⚠️ 没有 `mode` 字段（2026-09-20）：起点由 `probeCreativeProject()` 自动判定。
  */
 export interface CreativeRunInput {
-  mode?: CreativeMode
   seed?: string
   intent?: string
 }
 
 export interface CreativeWritingOptions {
-  /** 连写多少章（默认 10） */
+  /**
+   * 产出目标（默认 `'full'`）。
+   *
+   * 为什么开跑前就定、而不是到闸门再问：作者开跑前就知道自己要什么，不该被逼在
+   * 看不到成品的时候猜。闸门只留「确认 / 放弃」。
+   */
+  target?: CreativeTarget
+  /** **本批要排几卷**（大纲规划用，默认 1；1 ~ `MAX_OUTLINE_VOLUMES`） */
+  volumes?: number
+  /**
+   * **每卷多少章**（硬指标，默认 20；1 ~ `MAX_CHAPTERS_PER_VOLUME`）。
+   * 本批总量 ＝ 卷数 × 它，且受 `MAX_OUTLINE_CHAPTERS` 约束。
+   */
+  chaptersPerVolume?: number
+  /** 本次写多少章正文（正文生成用，默认 10；1 ~ `MAX_CHAPTERS`） */
   chapters?: number
   /** 每章目标字数（默认 2500） */
   targetWords?: number
-  /** 分几卷（默认 1；仅 `scratch` 起点的分卷大纲阶段用） */
-  volumes?: number
-  /**
-   * 仅 `continue` 起点：连写前是否先往下续排细纲（默认否＝按已有细纲直接写，即原行为）。
-   * 「只做大纲规划」目标下无所谓 —— 那种情况一定会排（然后停在那里）。
-   */
-  extendOutlineFirst?: boolean
-  /**
-   * 产出目标（仅「从一句话创作」有意义）：
-   *   `'full'`（默认）＝ 设定 → 大纲 → 逐章连写正文；
-   *   `'outline'`      ＝ 只做设定与分卷大纲，**正文一个字都不写**。
-   *
-   * 为什么在起点定、而不是到闸门②再问：作者开跑前就知道自己要什么，不该被逼在
-   * 看不到成品的时候猜。闸门只留「确认 / 放弃」。
-   */
-  target?: 'outline' | 'full'
   /** 连写时的设定更新策略（默认 add-only）。`confirm` 会走 `onSettingsCandidates` 征询作者 */
   strategy?: ContinueStrategy
   /** 连写时生成初稿后自动去 AI 味儿（可选） */
@@ -326,28 +478,45 @@ export async function runCreativeWriting(
   input: CreativeRunInput | string,
   opts: CreativeWritingOptions = {},
 ): Promise<CreativeWritingResult | null> {
-  const inp: Required<CreativeRunInput> = typeof input === 'string'
-    ? { mode: 'scratch', seed: input, intent: '' }
-    : { mode: input.mode ?? 'scratch', seed: input.seed ?? '', intent: input.intent ?? '' }
-  const mode = inp.mode
+  const inp = typeof input === 'string'
+    ? { seed: input, intent: '' }
+    : { seed: input.seed ?? '', intent: input.intent ?? '' }
 
-  /** 这次总共打算写多少章（同时是续跑校验的基准：参数变了就不给续） */
-  const plannedChapters = Math.max(1, Math.min(60, opts.chapters ?? 10))
+  // ① 探测项目现状 → **起点自动判定**（2026-09-20：不再让作者手选"从一句话创作 / 接着已有内容写"）
+  const probe = await probeCreativeProject()
+  const mode: CreativeMode = probe.hasOutline ? 'continue' : 'scratch'
+  const target: CreativeTarget = opts.target ?? 'full'
+
+  // ② 规模参数
+  /** 本批要排几卷 */
+  const plannedVolumes = Math.max(1, Math.min(MAX_OUTLINE_VOLUMES, Math.round(opts.volumes ?? 1) || 1))
+  /** 每卷多少章（硬指标） */
+  const perVolume = Math.max(1, Math.min(MAX_CHAPTERS_PER_VOLUME, Math.round(opts.chaptersPerVolume ?? 20) || 1))
+  /** 本批大纲的总章数（＝ 卷数 × 每卷章数，受单批上限约束） */
+  const planTotalChapters = Math.min(plannedVolumes * perVolume, MAX_OUTLINE_CHAPTERS)
+  /** 这次总共打算写多少章正文（同时是续跑校验的基准：参数变了就不给续） */
+  const plannedChapters = Math.max(1, Math.min(MAX_CHAPTERS, Math.round(opts.chapters ?? 10) || 1))
+
+  // ③ 「只生成正文」的前提是**已经有排好的大纲** —— 没有就是自相矛盾的操作，
+  //    **如实报错**而不是静默改成"先排大纲"（那会让作者以为点错了按钮却跑了别的流程）。
+  if (target === 'draft' && !probe.hasOutline) {
+    throw new Error('这个项目里还没有分卷大纲与章节细纲 —— 请先做「大纲规划」，再生成正文。')
+  }
+
   /** 续跑起点：已经写好多少章。参数对不上（或没给 resume）就不续，从零写 */
   const baseDone = opts.resume && opts.resume.totalChapters === plannedChapters && opts.resume.doneChapters > 0
     ? opts.resume.doneChapters
     : 0
   let doneChapters = baseDone
 
-  // 阶段表决定这次跑什么：从零创作三步走，接着写只有连写一步。
-  // （下面两个阶段执行体照常登记 —— 阶段表里没有它们时状态机根本不会去取，多登记无害。）
-  // 阶段表决定这次跑什么：
-  //   · 从零创作 → 设定奠基 → 分卷大纲 → 连写（target='outline' 时靠 skipRest 停在闸门②之后）
-  //   · 接着写 + 要排细纲（只做大纲规划 / 勾了先排细纲）→ 续排细纲（→ 连写）
-  //   · 接着写 + 不排细纲 → 只有连写（作者已有细纲时的路径）
-  const stages = mode === 'continue'
-    ? ((opts.target === 'outline' || opts.extendOutlineFirst) ? CONTINUE_OUTLINE_STAGES : CONTINUE_STAGES)
-    : CREATIVE_STAGES
+  // ④ 阶段表决定这次跑什么：
+  //   · 从零创作（库里没大纲）→ 设定奠基 → 分卷大纲 → 连写（target='outline' 时靠 skipRest 停在闸门②之后）
+  //   · 接着写 + 只做大纲规划 → 续排大纲
+  //   · 接着写 + 只生成正文   → 逐章连写
+  // （下面三个阶段执行体照常登记 —— 阶段表里没有它们时状态机根本不会去取，多登记无害。）
+  const stages = mode === 'scratch'
+    ? CREATIVE_STAGES
+    : (target === 'outline' ? CONTINUE_PLAN_STAGES : CONTINUE_DRAFT_STAGES)
   const flow = createFlow(stages, {
     ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
@@ -364,6 +533,10 @@ export async function runCreativeWriting(
 
   // —— 阶段①：设定奠基（仅「从零创作」的阶段表里有它；登记着但不会被执行）——
   flow.on('bible', async ctx => {
+    // 走到这里说明库里**还没有大纲**（阶段表决定的）—— 此时一句话想法是唯一的依据，必须给
+    if (!inp.seed.trim()) {
+      throw new Error('这个项目里还没有大纲 —— 请先用一句话说清你想写什么，基础设定要据此冷启动。')
+    }
     ctx.report(0.15, '生成设定草稿…')
     // 收字回调：一来给作者"正在生成"的实时反馈，二来它同时就是**流式开关**
     // （不传的话非流式请求会撞 180s 总超时墙，见 aiTasks 的 longStream 注释）
@@ -391,72 +564,64 @@ export async function runCreativeWriting(
     return { bundle, bibleCommit }
   })
 
+  // —— 阶段②：大纲规划（从零排 / 接续排**共用这一个执行体**）——
   flow.on('outline', async ctx => {
-    // ── 「接着已有内容写」的细纲：**接着往下排**，不是从零排（从零那条走下面的原有实现）──
-    if (mode === 'continue') {
-      ctx.report(0.15, '读已有细纲与正文进度…')
-      const outlines = await loadChapterOutlines()
-      const chs = await db.getAllChapters().catch(() => [])
-      const vols = await db.getAllVolumes().catch(() => [])
-      const lastCh = sortChapters(vols, chs).slice(-1)[0]
-      // 🔴 起点看**正文写到哪**，不是看细纲最大章号 —— 要写的是正文的下一章；
-      //    细纲可能已经领先（那是作者自己排的），此时不该往后越排越远。
-      const writtenNo = Math.max(0, ...chs.map(c => chapterNoOf(c.title) || 0))
-      const fromNo = writtenNo + 1
-      // 细纲已经盖住下一章 → 无需续排（此时「只做大纲规划」应当如实告诉作者「已经有了」）
-      if (outlines.has(fromNo)) {
-        const onlyOutline = (opts.target ?? 'full') === 'outline'
-        ctx.report(1, `第 ${fromNo} 章起已有细纲，无需续排`)
-        // 🔴 选了「只做大纲规划」就必须在这里收工。原先这一支硬编 `outlineOnly: false`
-        //    又没调 `skipRest`，于是**只想排细纲，却被拉去写正文**（2026-09-19 复现用例抓到：
-        //    target='outline' 时 draft 阶段照样 running）。白花额度、还改了项目，作者却以为
-        //    自己选的是"只规划"。
-        if (onlyOutline) ctx.skipRest('（已选择：只做大纲规划）')
-        return { outline: { volumes: [], chapters: [] }, outlineCommit: null, outlineOnly: onlyOutline, extendSkipped: true }
-      }
-      const material = await buildExtendMaterial(outlines, lastCh?.title ?? '', fromNo)
-      ctx.report(0.45, `往下续排第 ${fromNo} ~ ${fromNo + plannedChapters - 1} 章细纲…`)
-      let got = 0
-      const result = await aiExtendOutline(material, fromNo, plannedChapters, {
-        signal: ctx.signal,
-        onToken: d => {
-          got += d.length
-          if (got % 400 < d.length) ctx.report(0.7, `续排细纲… 已收到 ${got} 字`)
-        },
-      })
-      if (!result.chapters.length) throw new Error('模型没有产出细纲，请重试或换一个更大的模型')
-      ctx.report(1, `${result.chapters.length} 章细纲（第 ${fromNo} 章起），等待确认…`)
-      const ok = opts.onOutlineGate ? await opts.onOutlineGate(result) : true
-      if (!ok) giveUp()
-      const outlineCommit = await commitOutline(result, { signal: ctx.signal })
-      const onlyOutline = (opts.target ?? 'full') === 'outline'
-      if (onlyOutline) ctx.skipRest('（已选择：只做大纲规划）')
-      return { outline: result, outlineCommit, outlineOnly: onlyOutline }
-    }
-    ctx.report(0.2, '组装设定摘要…')
-    const digest = await buildProjectContext({ budget: await writerBudgetFor('outline-generate') })
-      .then(r => r.text)
-      .catch(() => '')
-    ctx.report(0.45, '生成分卷大纲…')
+    // 🔴 续排起点看「**已排到哪**」，不看「正文写到哪」（2026-09-20 改，老大确认）：
+    //    长篇是"先把大纲规划完、再写正文"，此时正文可能一章都没有，而细纲已经排到第 40 章。
+    //    旧口径按正文算会得到"从第 1 章起"，紧接着被判"第 1 章已有细纲、无需续排"直接收工 ——
+    //    纯排大纲这条路完全跑不通。
+    const fromNo = probe.maxOutlineNo + 1
+    const fromVolumeNo = probe.volumeCardCount + 1
+    const extending = probe.hasOutline
+
+    ctx.report(0.15, extending ? '读已有卷大纲与细纲脉络…' : '组装设定资料…')
+    const task = extending
+      ? `接着往下排：从全书第 ${fromVolumeNo} 卷起，本批共 ${plannedVolumes} 卷、每卷 ${perVolume} 章（对应第 ${fromNo} 章起）。`
+      : `产出分卷大纲与逐章细纲：本批共 ${plannedVolumes} 卷、每卷 ${perVolume} 章。`
+    const material = await buildPlanMaterial(probe, task)
+
+    ctx.report(0.45, extending
+      ? `续排第 ${fromVolumeNo} 卷（第 ${fromNo} 章起，本批 ${planTotalChapters} 章）…`
+      : `规划 ${plannedVolumes} 卷 × ${perVolume} 章…`)
+    // 收字回调同时就是**流式开关**（不传会撞 180s 总超时墙，见 aiTasks 的 longStream 注释）
     let got = 0
-    const outline = await aiGenerateOutline(digest, {
+    const raw = await aiPlanOutline(material, {
+      volumes: plannedVolumes,
+      chaptersPerVolume: perVolume,
+      fromNo,
+      fromVolumeNo,
+      extending,
       signal: ctx.signal,
-      ...(opts.volumes !== undefined ? { volumes: opts.volumes } : {}),
-      ...(opts.chapters !== undefined ? { chapters: opts.chapters } : {}),
       onToken: d => {
         got += d.length
-        if (got % 400 < d.length) ctx.report(0.7, `生成分卷大纲… 已收到 ${got} 字`)
+        if (got % 400 < d.length) ctx.report(0.7, `生成大纲… 已收到 ${got} 字`)
       },
     })
-    if (!outline.chapters.length) throw new Error('模型没有产出章节细纲，请重试或换一个更大的模型')
-    ctx.report(1, `${outline.volumes.length} 卷 / ${outline.chapters.length} 章，等待确认…`)
+    if (!raw.chapters.length) throw new Error('模型没有产出章节细纲，请重试或换一个更大的模型')
+
+    // 🔴 每卷的章号范围由**系统**按硬指标算好再交闸门 —— 让作者在确认时就看见
+    //    "本卷含第几章到第几章"，而不是等正文写完才发现章落错了卷。
+    //    ⚠️ 必须把**实际排出的章数**一起传进去：模型偶尔写一半就收尾（实测线上 27B：
+    //    2 卷 × 10 章只给 10 章），若仍按承诺的每卷章数算，后一卷会拿到
+    //    「第32-41章」而**那 10 章根本不存在** —— 作者以为排到 41 章，正文写到那里会找不到细纲。
+    const outline: OutlineResult = {
+      ...raw,
+      volumes: fillChapterRanges(raw.volumes, fromNo, perVolume, raw.chapters.length),
+    }
+
+    // 产出不足**如实说明**，不静默：少排的章会让下一批从更早的位置接续。
+    const short = planTotalChapters - outline.chapters.length
+    if (short > 0) {
+      ctx.report(0.95, `注意：本次只排了 ${outline.chapters.length} 章，比承诺的 ${planTotalChapters} 章少了 ${short} 章 —— 已按实际数量收敛卷范围`)
+    }
+    ctx.report(1, `${outline.volumes.length} 卷 / ${outline.chapters.length} 章（第 ${fromNo} 章起），等待确认…`)
     const ok = opts.onOutlineGate ? await opts.onOutlineGate(outline) : true
     if (!ok) giveUp()
     const outlineCommit = await commitOutline(outline, { signal: ctx.signal })
-    // 「只做大纲规划」：设定与大纲照常落库，连写阶段整段跳过。
-    // 用 skipRest 而不是"不登记 draft"—— 目标在起点就定好了，阶段表早已定好；
+    // 「只做大纲规划」：大纲照常落库，连写阶段整段跳过。
+    // 用 skipRest 而不是"不登记 draft"—— 目标在开跑前就定好了，阶段表早已定好；
     // 也不能记成 done（界面会谎称正文写完了）。
-    const outlineOnly = (opts.target ?? 'full') === 'outline'
+    const outlineOnly = target === 'outline'
     if (outlineOnly) ctx.skipRest('（已选择：只做大纲规划）')
     return { outline, outlineCommit, outlineOnly }
   })
@@ -502,6 +667,9 @@ export async function runCreativeWriting(
         ...(opts.onChapterDraft ? { onChapterDraft: opts.onChapterDraft } : {}),
         ...(opts.onSettingsCandidates ? { onSettingsCandidates: opts.onSettingsCandidates } : {}),
         ...(outlines.size ? { outlineFor: (no: number) => outlines.get(no) } : {}),
+        // 🔴 按大纲**切卷**（2026-09-20）：读分卷大纲卡的「本卷章号范围」，建"章号 → 卷 id"查询。
+        //    没有它，第 21 章会被塞进卷一 —— 卷归属与大纲对不上（正文看起来"少了一卷"）。
+        volumeIdFor: await buildChapterVolumeIndex(),
       },
     )
     ctx.report(1, `写完 ${res.created.length} 章`)

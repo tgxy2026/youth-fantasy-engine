@@ -16,7 +16,7 @@
 import http from 'node:http'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, chat } from '../src/lib/ai'
-import { aiGenerateBible, aiGenerateOutline } from '../src/lib/aiTasks'
+import { aiGenerateBible, aiPlanOutline } from '../src/lib/aiTasks'
 import type { AIProvider } from '../src/lib/ai'
 
 let pass = 0, fail = 0
@@ -93,16 +93,28 @@ ok('  · 分类映射正确（势力 / 地点 / 术语 / 物品各 1）',
   ['势力', '地点', '术语', '物品'].every(t => bible.some(e => e.type === t)),
   bible.map(e => e.type).join(','))
 
-// ---------- ② 分卷大纲：同样必须流式 ----------
+// ---------- ② 大纲规划（分卷大纲 + 章节细纲）：同样必须流式 ----------
 payload = OUTLINE_JSON
-const outline = await aiGenerateOutline('【设定资料】陈渊 / 青岚宗 / 云州城', { volumes: 1, chapters: 1 })
+const outline = await aiPlanOutline('【设定资料】陈渊 / 青岚宗 / 云州城', {
+  volumes: 1, chaptersPerVolume: 1, fromNo: 1, fromVolumeNo: 1,
+})
 const outlineReq = seen[seen.length - 1]
-ok('🔴 aiGenerateOutline 发出的是流式请求（stream:true）', outlineReq?.stream === true, JSON.stringify(outlineReq))
-ok('aiGenerateOutline 解析出 1 卷（流式拼接未破坏 JSON）', outline.volumes.length === 1, String(outline.volumes.length))
+ok('🔴 aiPlanOutline 发出的是流式请求（stream:true）', outlineReq?.stream === true, JSON.stringify(outlineReq))
+ok('aiPlanOutline 解析出 1 卷（流式拼接未破坏 JSON）', outline.volumes.length === 1, String(outline.volumes.length))
 ok('  · 卷名与章名都取到了', outline.volumes[0]?.title === '噬命初醒' && outline.chapters[0]?.title === '血月夜',
   `${outline.volumes[0]?.title} / ${outline.chapters[0]?.title}`)
-ok('  · 章节 no 由顺序生成（不接受模型自带编号）', outline.chapters[0]?.no === 1)
+ok('  · 章节 no 由系统从 fromNo 起编号（不接受模型自带编号）', outline.chapters[0]?.no === 1)
 ok('  · scenes 解析为数组', Array.isArray(outline.chapters[0]?.scenes) && outline.chapters[0]!.scenes.length === 2)
+ok('  · 章号范围不由模型产出（留给 fillChapterRanges 填）', outline.volumes[0]?.chapterRange === '',
+  outline.volumes[0]?.chapterRange)
+
+// 接续口径（2026-09-20 核心改动）：章号必须从 fromNo 起 —— 这是"第二批接着排第 41-60 章"的地基
+payload = OUTLINE_JSON
+const ext = await aiPlanOutline('（已有资料：前两卷大纲 + 前 40 章细纲）', {
+  volumes: 1, chaptersPerVolume: 1, fromNo: 41, fromVolumeNo: 3, extending: true,
+})
+ok('🔴 接续时章号从 fromNo 起（第二批排出来的是第 41 章，不是第 1 章）',
+  ext.chapters[0]?.no === 41, String(ext.chapters[0]?.no))
 
 // ---------- ③ 负面对照：不带 onToken 的裸 chat 必须是非流式 ----------
 payload = '可以'

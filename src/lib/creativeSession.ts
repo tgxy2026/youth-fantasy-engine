@@ -23,7 +23,12 @@ import {
   type ContinueStrategy,
   type DraftDecision,
 } from './autoContinue'
-import { runCreativeWriting, type CreativeResume, type CreativeWritingResult } from './aiWorkflow'
+import {
+  runCreativeWriting,
+  type CreativeResume,
+  type CreativeTarget,
+  type CreativeWritingResult,
+} from './aiWorkflow'
 import * as db from './db'
 import type { DraftBundle, DraftRow, FlowProgress } from './flow/types'
 import {
@@ -45,23 +50,33 @@ import type { LedgerItem } from './settingLedger'
 export type CreativeMode = 'scratch' | 'continue'
 
 /**
- * 产出目标（仅「从一句话创作」有意义）—— **起点就定下来**，不在闸门里问：
- *   `'outline'` = 只做大纲规划（设定 + 分卷大纲，不写正文）
- *   `'full'`    = 大纲 + 正文（完整创作）
+ * 产出目标 —— 定义在编排器侧（`aiWorkflow` 的 `CreativeTarget`），这里**再导出**给界面用。
+ *   `'outline'` 只做大纲规划 / `'full'` 大纲 + 正文 / `'draft'` 只生成正文
+ * 🔴 单一真理源：三个档位的语义与编排器的分支是同一处定义，别再本地抄一份（会漂）。
  */
-export type CreativeTarget = 'outline' | 'full'
+export type { CreativeTarget }
+
+/**
+ * 篇幅（老大 2026-09-20 要求）：决定「这一次要产出什么」有哪几档，以及参数的语义。
+ * - `short` 短篇：只做大纲规划 / 大纲 + 正文（一次跑完，1 卷）
+ * - `long`  中长篇：只做大纲规划 / 只生成正文（多卷、分批次反复执行）
+ */
+export type CreativeLength = 'short' | 'long'
 
 export interface CreativeInputs {
-  mode: CreativeMode
-  /** 从零创作：一句话想法 */
+  /** 篇幅（决定产出目标有哪几档 + 参数字义） */
+  length: CreativeLength
+  /** 一句话想法 —— 只在库里**还没有大纲**时用得上 */
   seed: string
-  /** 接着写：情节概要（可选；留空则严格承接上一章结尾） */
+  /** 情节概要（可选；只作用于正文生成，留空则严格承接上一章结尾） */
   intent: string
-  /** 从零创作：分几卷 */
+  /** **本批要排几卷**（大纲规划用；短篇固定 1） */
   volumes: number
-  /** 从零创作：这一次要产出什么（只要大纲 / 大纲+正文） */
+  /** **每卷多少章**（硬指标；短篇时＝这一本共多少章） */
+  chaptersPerVolume: number
+  /** 这一次要产出什么 */
   target: CreativeTarget
-  /** 连写多少章 */
+  /** 本次写多少章正文（正文生成用） */
   chapters: number
   /** 每章目标字数 */
   words: number
@@ -71,22 +86,18 @@ export interface CreativeInputs {
   deAiOn: boolean
   deAiTpl: string
   deAiCustom: string
-  /** 接着写：是否按已落库的《章节细纲》写 */
+  /** 是否按已落库的《章节细纲》写 */
   useOutline: boolean
-  /**
-   * 接着写：连写前是否**先往下续排细纲**（默认开）。
-   * 关掉＝按已有细纲直接写（作者自己已经把细纲排好了的情况）。
-   */
-  extendOutline: boolean
   /** 每章初稿先交作者确认（关掉＝全自动跑量） */
   reviewEach: boolean
 }
 
 export const DEFAULT_INPUTS: CreativeInputs = {
-  mode: 'scratch',
+  length: 'short',
   seed: '',
   intent: '',
   volumes: 1,
+  chaptersPerVolume: 20,
   target: 'full',
   chapters: 10,
   words: 2500,
@@ -95,7 +106,6 @@ export const DEFAULT_INPUTS: CreativeInputs = {
   deAiTpl: 'natural',
   deAiCustom: '',
   useOutline: true,
-  extendOutline: true,
   reviewEach: true,
 }
 
@@ -177,6 +187,16 @@ export interface CreativeSession {
   result: CreativeResultSummary | null
   resume: CreativeResume | null
   notice: CreativeNotice | null
+  /**
+   * 最近一次**成功落盘**的时间戳（0 = 还没保存过）。
+   *
+   * 界面用它显示「已保存 · 08:23」，让作者对输入框里的想法有把握 ——
+   * 这是老大 2026-09-20 提的：「一句话生成的输入窗口没办法保存」。
+   *
+   * 🔴 它由 `persistNow` 直接写快照（走 `emitOnly`，**不走 `set`**）：
+   *    走 `set` 会再排一次写盘 → 「写盘 → 更新时间 → 再写盘」无限循环。
+   */
+  lastSavedAt: number
   /** 整章改写（null = 没在改写） */
   rewrite: RewriteState | null
 }
@@ -196,12 +216,23 @@ let snap: CreativeSession = {
   result: null,
   resume: null,
   notice: null,
+  lastSavedAt: 0,
   rewrite: null,
 }
 
 const listeners = new Set<() => void>()
 function emit() {
   for (const l of listeners) l()
+}
+/**
+ * 只更新快照并通知界面，**不排写盘**。
+ *
+ * 专供 `persistNow` 回写「已保存时间」用：那里若走 `set`，就会
+ * 「写盘成功 → 更新 lastSavedAt → 再次排程写盘」**无限循环**（每 1 秒写一次盘）。
+ */
+function emitOnly(patch: Partial<CreativeSession>) {
+  snap = { ...snap, ...patch }
+  emit()
 }
 function set(patch: Partial<CreativeSession>) {
   snap = { ...snap, ...patch }
@@ -245,12 +276,37 @@ export function updateInputs(patch: Partial<CreativeInputs>) {
   set({ inputs: { ...snap.inputs, ...patch } })
 }
 
+/**
+ * 「保存」按钮：把当前输入（含一句话想法）**立即**落盘，不等那 1 秒防抖。
+ *
+ * 为什么需要它（老大 2026-09-20 要求）：输入框原先只有"自动防抖落盘"这一条路，
+ * 作者既看不到到底存没存，也没有一个能主动确认的动作 —— 于是反馈"这个窗口没办法保存"。
+ * 现在把它变成显式动作：点一下，立刻写下去，并如实回一句结果。
+ */
+export async function saveInputsNow() {
+  const ok = await flushPersist()
+  notice(ok ? '已保存' : '保存失败：当前没有打开的项目', ok ? 'success' : 'error')
+}
+
+/**
+ * 「清空」按钮：清空一句话想法，并立刻落盘。
+ *
+ * 🔴 清空后必须**立刻写盘**：若仍走 1 秒防抖，作者清完马上刷新/切页签，
+ *    读回来的还是清空前的内容 —— 看起来就是"清空失效"。
+ * ⚠️ 破坏性动作的二次确认在**组件层**做（store 在 lib 层，不得 import 组件里的 `confirmDialog`）。
+ */
+export async function clearSeed() {
+  updateInputs({ seed: '' })
+  await flushPersist()
+  notice('想法已清空', 'info')
+}
+
 // ============ 持久化（按项目分键 · 防抖 1s） ============
 
 const KEY_PREFIX = 'creativeSession'
 let persistTimer: ReturnType<typeof setTimeout> | null = null
-/** 本次会话属于哪个项目 —— 切项目时要重置（结果与断点都属于上一个项目） */
-let boundProjectId = ''
+// ⚠️ 「当前会话属于哪个项目」由下面的 `hydratedFor` 唯一表达（2026-09-20）。
+//    原先另有一个 `boundProjectId` 与它重复，且只写不读 —— 已删除，避免两套"当前项目"打架。
 
 function keyOf(pid: string) {
   return `${KEY_PREFIX}:${pid}`
@@ -264,10 +320,10 @@ function schedulePersist() {
   }, 1000)
 }
 
-async function persistNow() {
+async function persistNow(): Promise<boolean> {
   try {
     const pid = db.getCurrentProjectId()
-    if (!pid) return
+    if (!pid) return false
     // 断点只存里程，不存 bag（bag 里的产物本就已落库，续跑跳过前序阶段是对的）
     const resume = snap.resume
       ? {
@@ -294,82 +350,115 @@ async function persistNow() {
         : null,
       summaries: snap.summaries,
     })
+    // 回写「已保存」时间 —— 🔴 必须走 emitOnly：走 set 会再排一次写盘，形成无限循环
+    emitOnly({ lastSavedAt: Date.now() })
+    return true
   } catch {
     /* 写盘失败不影响创作本身（切页签仍在内存里） */
+    return false
   }
 }
 
-let hydrateStarted = false
 /**
- * 首次挂载时调用：读回本项目的上次会话。
- * 只读一次（多组件挂载不会重复读）；`hydrated` 让界面知道"参数是否已就位"。
+ * 立即落盘，不等那 1 秒防抖。
+ *
+ * 「保存」按钮、「清空」都用它 —— 作者点了按钮就应当立刻写下去；
+ * 若仍走防抖，那 1 秒里关软件 / 切项目，这次点击就等于没发生。
  */
-export function hydrateCreativeSession() {
-  if (hydrateStarted) return
-  hydrateStarted = true
-  void (async () => {
-    let patch: Partial<CreativeSession> = { hydrated: true }
-    try {
-      const pid = db.getCurrentProjectId()
-      boundProjectId = pid ?? ''
-      const saved = await db.getMeta<{
-        inputs?: Partial<CreativeInputs>
-        log?: string[]
-        resume?: CreativeResume | null
-        result?: CreativeResultSummary | null
-        progress?: FlowProgress | null
-        summaries?: Record<string, string>
-      } | null>(keyOf(pid ?? ''), null)
-      if (saved) {
-        patch = {
-          hydrated: true,
-          inputs: { ...DEFAULT_INPUTS, ...(saved.inputs ?? {}) },
-          log: saved.log ?? [],
-          // 落盘的 resume 没有 bag（见阶段说明）—— 作为"里程"显示，续跑照常可用
-          resume: (saved.resume as CreativeResume | null) ?? null,
-          result: saved.result ?? null,
-          progress: saved.progress ?? null,
-          summaries: saved.summaries ?? {},
-        }
-      } else {
-        // 老库兼容：一键续写的去 AI 味儿偏好单独存过 key，迁进来
-        const legacy: { enabled?: boolean; template?: string; custom?: string } = await db
-          .getMeta<{ enabled?: boolean; template?: string; custom?: string }>('deAiPrefs', {})
-          .catch(() => ({}))
-        patch = {
-          hydrated: true,
-          inputs: {
-            ...DEFAULT_INPUTS,
-            ...(typeof legacy.enabled === 'boolean' ? { deAiOn: legacy.enabled } : {}),
-            ...(legacy.template ? { deAiTpl: legacy.template } : {}),
-            ...(typeof legacy.custom === 'string' ? { deAiCustom: legacy.custom } : {}),
-          },
-        }
-      }
-    } catch {
-      /* 读不到就用默认值 */
-    }
-    set(patch)
-  })()
+export async function flushPersist(): Promise<boolean> {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  return persistNow()
+}
+
+/** 切项目必须清掉的**运行态**：闸门 / 弹窗 / 改写 —— 它们都属于上一个项目，留着会串味 */
+const RUNTIME_RESET: Partial<CreativeSession> = {
+  bibleGate: null, outlineGate: null, draftAsk: null, candidatesAsk: null, candidatesSelected: [],
+  rewrite: null,
+}
+
+/** 结果类字段的"空"值（读不到会话时用它，而不是留着上一个项目的数据） */
+const SESSION_BLANK: Partial<CreativeSession> = {
+  log: [], resume: null, result: null, progress: null, summaries: {},
 }
 
 /**
- * 切项目检测：会话（结果 / 断点 / 日志）都属于某个项目，切了就得重置 ——
- * 否则会把上一个项目的断点显示在另一个项目里，续写接错章。
+ * 已经读完会话的**项目 id**（`null` = 还没读过任何项目）。
+ *
+ * 🔴 为什么记 id 而不是一个布尔量：原先用 `hydrateStarted: boolean`「只读一次」，
+ *    于是**切项目后不会重读** —— 面板显示的还是上一个项目的想法、断点与日志，
+ *    而且下一次写盘会把它原样写进**新项目**的键里（跨项目串味）。
+ *    这是老大 2026-09-20 反馈「输入窗口没办法保存」的真实成因链之一：
+ *    在 A 项目写的想法会在 B 项目被写回，A 那边反而看不到自己刚写的东西。
+ *    记住 id 之后，切项目（面板重新挂载）会自动换成新项目的会话。
+ */
+let hydratedFor: string | null = null
+
+/**
+ * 面板挂载时调用：读回**当前项目**的上次会话。
+ * 同一个项目重复调用会被跳过（多组件挂载不会重复读）。
+ */
+export function hydrateCreativeSession() {
+  void loadSession(db.getCurrentProjectId() ?? '')
+}
+
+async function loadSession(pid: string) {
+  if (hydratedFor === pid) return
+  hydratedFor = pid
+  let patch: Partial<CreativeSession> = { ...RUNTIME_RESET, ...SESSION_BLANK, hydrated: true }
+  try {
+    const saved = await db.getMeta<{
+      inputs?: Partial<CreativeInputs>
+      log?: string[]
+      resume?: CreativeResume | null
+      result?: CreativeResultSummary | null
+      progress?: FlowProgress | null
+      summaries?: Record<string, string>
+    } | null>(keyOf(pid), null)
+    if (saved) {
+      patch = {
+        ...patch,
+        inputs: { ...DEFAULT_INPUTS, ...(saved.inputs ?? {}) },
+        log: saved.log ?? [],
+        // 落盘的 resume 没有 bag（见阶段说明）—— 作为"里程"显示，续跑照常可用
+        resume: (saved.resume as CreativeResume | null) ?? null,
+        result: saved.result ?? null,
+        progress: saved.progress ?? null,
+        summaries: saved.summaries ?? {},
+      }
+    } else {
+      // 老库兼容：一键续写的去 AI 味儿偏好单独存过 key，迁进来
+      const legacy: { enabled?: boolean; template?: string; custom?: string } = await db
+        .getMeta<{ enabled?: boolean; template?: string; custom?: string }>('deAiPrefs', {})
+        .catch(() => ({}))
+      patch = {
+        ...patch,
+        inputs: {
+          ...DEFAULT_INPUTS,
+          ...(typeof legacy.enabled === 'boolean' ? { deAiOn: legacy.enabled } : {}),
+          ...(legacy.template ? { deAiTpl: legacy.template } : {}),
+          ...(typeof legacy.custom === 'string' ? { deAiCustom: legacy.custom } : {}),
+        },
+      }
+    }
+  } catch {
+    /* 读不到就用默认值 */
+  }
+  set(patch)
+}
+
+/**
+ * 切项目检测：会话（输入参数 / 结果 / 断点 / 日志）都属于某个项目，切了就得**换成新项目的**。
+ *
+ * 🔴 2026-09-20 修正：原来只把结果类字段清零，**不动 `inputs`** ——
+ *    于是切到项目 B 后面板上仍是项目 A 的想法与参数，接着一写盘就把 A 的输入
+ *    写进了 B 的键（A 那边反而"丢"了）。现在改为重读新项目的会话，与「打开面板」走同一条路径。
  * 有活任务时不动（那次运行自己认的是启动时的项目）。
  */
 async function bindProject() {
-  const pid = db.getCurrentProjectId() ?? ''
-  if (boundProjectId && pid && pid !== boundProjectId) {
-    boundProjectId = pid
-    set({
-      resume: null, result: null, log: [], progress: null, summaries: {},
-      bibleGate: null, outlineGate: null, draftAsk: null, candidatesAsk: null, candidatesSelected: [],
-      rewrite: null,
-    })
-  } else if (!boundProjectId) {
-    boundProjectId = pid
-  }
+  await loadSession(db.getCurrentProjectId() ?? '')
 }
 
 // ============ 运行控制（任务跑在这里，不在组件里） ============
@@ -400,10 +489,9 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   if (snap.running) return
   await bindProject()
   const inp = snap.inputs
-  if (inp.mode === 'scratch' && !inp.seed.trim()) {
-    notice('请先用一句话说清你想写什么', 'info')
-    return
-  }
+  // ⚠️ 「库里还没有大纲时必须先写一句话想法」这条校验放在**面板**做（它读得到项目现状，
+  //    能把按钮直接禁用并写明原因）。这里不拦：编排器会给出同样的中文提示，
+  //    而在 store 里凭一个静态开关拦，容易和自动判定的真实起点不一致。
   const useResume = opts.fromScratch ? null : snap.resume
   if (opts.fromScratch) set({ resume: null })
   /** 本次是否交回了续跑信息（用局部变量判定：setState 异步，闭包里的 resume 还是旧值） */
@@ -417,15 +505,14 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   })
   try {
     const res = await runCreativeWriting(
-      { mode: inp.mode, seed: inp.seed, intent: inp.intent },
+      // 🔴 不再传起点：编排器读项目库自己判定（有卷大纲/细纲 → 接着写，否则从零）
+      { seed: inp.seed, intent: inp.intent },
       {
+        target: inp.target,
+        volumes: inp.volumes,
+        chaptersPerVolume: inp.chaptersPerVolume,
         chapters: inp.chapters,
         targetWords: inp.words,
-        volumes: inp.volumes,
-        // 两种起点都有「产出目标」（2026-09-19 起）——
-        //   scratch 的「只做大纲规划」= 设定 + 分卷大纲；continue 的 = 往下续排细纲。
-        target: inp.target,
-        ...(inp.mode === 'continue' && inp.extendOutline ? { extendOutlineFirst: true } : {}),
         strategy: inp.strategy,
         deAi: { enabled: inp.deAiOn, prompt: deAiPromptOf(inp) },
         useOutline: inp.useOutline,

@@ -40,3 +40,94 @@ export function chapterNoOf(cardName: string): number {
 export function outlineEventKey(): string | null {
   return resolveSlot(OUTLINE_TAB_ID, OUTLINE_EVENT_SLOT)
 }
+
+// ==================== 「本卷章号范围」（分卷大纲卡，2026-09-20）====================
+//
+// 这组函数服务一件事：**长篇分批创作时，正文要知道"第 N 章该落进哪一卷"**。
+// 没有它，逐章连写会把所有新章都塞进最后一卷（第 21 章留在卷一），卷归属与大纲对不上。
+
+/** 卷大纲卡所在的页签 id */
+export const VOLUME_OUTLINE_TAB_ID = 'volume-outline'
+
+/** 「本卷章号范围」的**语义**槽位名（真键用 `volumeRangeKey()` 现查） */
+export const VOLUME_RANGE_SLOT = '本卷章号范围'
+
+/** 「本卷章号范围」的真实存储键；schema 里没这一列时返回 null */
+export function volumeRangeKey(): string | null {
+  return resolveSlot(VOLUME_OUTLINE_TAB_ID, VOLUME_RANGE_SLOT)
+}
+
+/** 章号范围的规范写法：单章 `第7章`，多章 `第1-20章` */
+export function formatChapterRange(from: number, to: number): string {
+  return from === to ? `第${from}章` : `第${from}-${to}章`
+}
+
+/**
+ * 解析「本卷章号范围」的值；取不到返回 null。
+ *
+ * 容错来自现实：这列作者**可以手改**，模型也可能在别处带出这个写法 ——
+ * 波浪号全角半角、`到` / `至` / `-` 都得认（漏一种就是"这卷的章全落不进去"）。
+ */
+export function parseChapterRange(text: string): { from: number; to: number } | null {
+  const s = (text ?? '').replace(/[～~—–－_]/g, '-').trim()
+  if (!s) return null
+  const two = s.match(/(\d+)\s*(?:-|到|至)\s*(\d+)/)
+  const one = s.match(/第?\s*(\d+)\s*章/)
+  const m = two ?? one
+  if (!m) return null
+  const from = parseInt(m[1], 10)
+  const to = two && m[2] ? parseInt(m[2], 10) : from
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from <= 0 || to < from) return null
+  return { from, to }
+}
+
+/**
+ * 按「每卷章数」硬指标算出每卷的章号范围并填进去。
+ *
+ * 🔴 **为什么由系统算、不让模型写**：每卷章数是硬指标（第 k 卷 = 第 (k-1)×M+1 ~ k×M 章），
+ *    而模型经常从 1 重新数、或把卷边界写飘。这条边界直接决定"第 21 章落进哪一卷"，
+ *    错一次就是整卷正文错位 —— 与「章号由系统定、不信模型返回的 no」是同一条纪律。
+ *
+ * @param volumes    本批产出的卷（顺序即卷序）
+ * @param fromNo     本批第一卷的起始章号（接续时＝已有细纲最大章号 + 1）
+ * @param perVolume  每卷章数（硬指标）
+ */
+export function fillChapterRanges<T extends { chapterRange: string }>(
+  volumes: T[], fromNo: number, perVolume: number, actualChapters?: number,
+): T[] {
+  if (!(perVolume > 0)) return volumes
+  const start = Math.max(1, fromNo)
+  /**
+   * 🔴 `actualChapters`（本批实际排出的章数）必须传，否则会落出**幽灵卷范围**：
+   *    模型偶尔写一半就收尾（实测 2 卷 × 10 章只给了 10 章），若仍按"承诺的每卷章数"算，
+   *    第二卷会拿到「第32-41章」而那 10 章**根本不存在** —— 作者以为大纲已排到 41 章，
+   *    正文写到那里时会找不到对应细纲。
+   *    给了它：最后一卷的范围按实际章数收敛，越界的卷**整卷丢弃**。
+   */
+  const lastNo = actualChapters === undefined ? null : start + Math.max(0, actualChapters) - 1
+  const out: T[] = []
+  for (let i = 0; i < volumes.length; i++) {
+    const from = start + i * perVolume
+    if (lastNo !== null && from > lastNo) break
+    const to = lastNo === null ? from + perVolume - 1 : Math.min(from + perVolume - 1, lastNo)
+    out.push({ ...volumes[i], chapterRange: formatChapterRange(from, to) })
+  }
+  return out
+}
+
+/** 一卷的章号区间（含标题，正文切卷时要按标题找到真实的卷记录） */
+export interface VolumeRange {
+  title: string
+  from: number
+  to: number
+}
+
+/**
+ * 按章号找它属于哪一卷；找不到返回 null（调用方退回旧行为，不要瞎猜）。
+ *
+ * 区间是**闭区间**且允许重叠时取最先命中的那卷 —— 重叠只可能来自作者手改，
+ * 此时"先写的那一卷"更接近他的本意。
+ */
+export function volumeForChapter(ranges: VolumeRange[], no: number): VolumeRange | null {
+  return ranges.find(r => no >= r.from && no <= r.to) ?? null
+}
