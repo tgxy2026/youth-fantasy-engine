@@ -34,6 +34,8 @@ import { DEFAULT_SEARCH_SETTINGS } from '../lib/webSearch'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import InterviewChat from './InterviewChat'
 import { Button } from './Button'
+import { useAIReady } from '../lib/useAIReady'
+import { AI_DISABLED_HINT } from '../lib/aiScope'
 
 interface Props {
   /** 该实体的全部字段（key 约定见 TemplateField） */
@@ -62,6 +64,11 @@ export default function AITemplateFill({
   onSubmit,
   onClose,
 }: Props) {
+  // 🔴 未配置模型时**预先禁用**「生成补全」（2026-09-20 六维审计 F1）。
+  //    判据与真实调用一致：aiCompleteTemplate 内部走 requireActiveProvider。
+  //    ⚠️ 别拿它去守卫「对话引导」那条路 —— 那个走 InterviewChat 的 callChat（调用方给的模型），
+  //    判据不同，会误禁（见下条注释）。
+  const { ready: aiReady } = useAIReady()
   const [mode, setMode] = useState<Mode>('fill')
   const [sketch, setSketch] = useState('')
   const [refs, setRefs] = useState('')
@@ -227,7 +234,7 @@ export default function AITemplateFill({
 
             {!result && (
               <Button onClick={run}
-                disabled={loading} variant="primary" size="md" className="flex items-center text-13">
+                disabled={loading || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center text-13">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? '正在生成补全…' : '生成补全'}
               </Button>

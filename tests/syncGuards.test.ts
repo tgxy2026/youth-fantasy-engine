@@ -10,9 +10,17 @@
 //
 // 这三条都靠端到端点不出来（需要一个真出错的云盘目录），所以必须先锁死。
 import { createCloudStore } from '../src/lib/syncCore'
+import fs from 'node:fs'
+import path from 'node:path'
 import { SAVE_DEBOUNCE_MS } from '../src/lib/constants'
 import type { SyncTransport } from '../src/lib/syncTransport'
 import { __resetMockStores, __resetLocalStorage } from './mock-memory'
+
+/** 读源码 —— ⑫ 的接线断言要看**位置关系**，光跑行为测不出来（见那条的说明） */
+const read = (rel: string) => {
+  const p = path.join(process.cwd(), rel)
+  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
+}
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -321,6 +329,62 @@ async function main() {
     const rows = await cloud2.store.getAll<{ id: string }>('projects')
     ok('🔴 反例：墓碑随写入清除，重建后的记录能正常同步（不是删得掉、进不来）',
       rows.length === 1, JSON.stringify(rows))
+  }
+
+  // ---------- ⑪ 负面对照：**不注册**「读本地库快照」⇒ 被删的记录立刻复活 ----------
+  //
+  // 这是 ⑧ 的反面，也是 2026-09-20 六维审计那条 P0 的真身。
+  // 🔴 为什么 ⑧ 抓不到它：⑧ 在测试里**手动**调了 `cloud2.onLocalSnapshot(...)` ——
+  //    等于替产品补上了那一步接线。于是「syncCore 的合并逻辑正确」恒成立，
+  //    而「产品的启动路径到底有没有注册」谁也没验。
+  //    **测试替身补上的那一步，正是产品漏掉的那一步** —— 这类接线缺口只能靠
+  //    「把替身拿掉，看还剩什么」来暴露（⑫ 再用源码位置把它钉死）。
+  {
+    __resetMockStores()
+    __resetLocalStorage()
+
+    const { t, pushes } = scriptedTransport({})
+    const cloud = createCloudStore(t)
+    cloud.configure('ghost-key')
+    await cloud.pullSnapshot()
+    await cloud.seedFromLocal(async (s) => (s === 'projects' ? [{ id: 'p1' }, { id: 'p2' }] : []))
+    const cloudEnc = pushes[pushes.length - 1]?.enc
+    ok('前置：云端已有一份含 p1 / p2 的载荷', !!cloudEnc, String(pushes.length))
+
+    await cloud.store.del('projects', 'p2') // 本机删掉 p2（墓碑落在 localStorage）
+
+    // —— 模拟重启：新实例 + 墓碑仍在，但**故意不注册** onLocalSnapshot（复刻漏注册现场）——
+    const t2 = scriptedTransport({ pull: () => ({ status: 200, rev: 9, enc: cloudEnc }) })
+    const cloud2 = createCloudStore(t2.t)
+    cloud2.configure('ghost-key')
+    await cloud2.pullSnapshot()
+    const merged = await cloud2.store.getAll<{ id: string }>('projects')
+    ok('🔴🔴 负面对照：漏注册「读本地库快照」⇒ 被删的 p2 复活（P0 的完整机制）',
+      merged.length === 2, JSON.stringify(merged))
+  }
+
+  // ---------- ⑫ 接线：注册必须落在「所有云模式入口的必经之路」上 ----------
+  //
+  // ⑪ 证明「漏了就坏」，这条证明「现在不会再漏」。
+  // 🔴 判据是**位置关系**而非「文本存在」：原文里确实有注册语句，只是挂错了地方
+  //    （只在手动开启那条路径上），所以「grep 一下有就通过」的写法正是它能长期存活的原因。
+  {
+    const core = read('src/lib/db/core.ts')
+    const callIdx = core.indexOf('onDesktopLocalSnapshot(async () => {')
+    const bootIdx = core.indexOf('if (CLOUD_FILE_SYNC) {')
+    const enableIdx = core.indexOf('export async function enableDesktopCloudSync')
+    const storeIdx = core.indexOf('const desktopLocalStore')
+
+    ok('前置：core.ts 里能找到注册回调', callIdx > 0, `callIdx=${callIdx}`)
+    ok('🔴 注册在 desktopLocalStore 定义**之后**（否则读不到本机数据文件）',
+      storeIdx > 0 && storeIdx < callIdx, `storeIdx=${storeIdx} callIdx=${callIdx}`)
+    ok('🔴 注册在**模块顶层**（不在任何函数体内 ⇒ 早于手动开启函数）',
+      enableIdx > 0 && callIdx < enableIdx, `callIdx=${callIdx} enableIdx=${enableIdx}`)
+    ok('🔴 注册早于启动恢复块（模块顶层求值先于它的 async IIFE）⇒ 启动首次合并带得上本地快照',
+      bootIdx > 0 && callIdx < bootIdx, `callIdx=${callIdx} bootIdx=${bootIdx}`)
+    ok('🔴 全文件只有这一处注册（两处＝两处会各自漂移的口径，漏的那处单测看不出来）',
+      (core.match(/onDesktopLocalSnapshot\(/g) ?? []).length === 1,
+      String((core.match(/onDesktopLocalSnapshot\(/g) ?? []).length))
   }
 
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)

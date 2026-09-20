@@ -274,6 +274,35 @@ export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavai
 const desktopLocalStore: StoreOps = DESKTOP ? desktopStore : idbOps
 const desktopCloudFileStore: StoreOps = makeCloudStoreWrapper(desktopCloudStore, desktopLocalStore, isDesktopCloudUnavailable)
 
+/**
+ * 注册「读本机数据文件快照」回调 —— 云合并靠它区分「本机删掉了这个记录」与「本机还没见过它」。
+ *
+ * 🔴🔴 **必须放在模块顶层，不能只挂在某条开启路径上**（2026-09-20 六维审计 P0）。
+ *    原先只在 `enableDesktopCloudSync()`（手动开启）里注册，而**启动自动恢复同步**
+ *    走的是下面 `CLOUD_FILE_SYNC` 那个块 —— 那条路径从未注册。后果是一条完整的静默链：
+ *      1. 启动时 `applyDesktopCloudFromPersisted()` → `cloud.configure()` 清空内存 cache；
+ *      2. 紧接着的 `pullDesktopSnapshot()` 首次合并，此刻 `localSnapshotProvider` 为 null
+ *         ⇒ `syncCore` 拿不到本机库 ⇒ `localHasContent` 恒假；
+ *      3. 墓碑判定被那道安全闸短路（它怕误删云端数据，见 `syncGuards` 的 `localHasContent` 说明）；
+ *      4. 云端旧快照里的记录一律按「另一端新增」采用 ⇒ **手动删掉的项目每次启动都复活**，
+ *         复活后又推回云端 ⇒ 此后每次启动稳定复现（自锁）。
+ *    放到顶层 ＝ 放在**所有云模式入口的必经之路**上，将来再新增入口也不会漏。
+ *    （`cloud.configure()` **不重置** provider，所以先注册、后 configure 的时序是安全的。）
+ *
+ * ⚠️ 读的是 `desktopLocalStore`（本机数据文件），**不是当前的 `ops`** —— 云模式下 `ops`
+ *    是内存 cache，启动那一刻它刚被清空，拿它当「本地实况」等于什么都没证明。
+ */
+onDesktopLocalSnapshot(async () => {
+  const out: SyncStores = {}
+  for (const s of SYNC_STORES) {
+    if (s === 'backups') continue
+    // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
+    // 落进同步通用载荷前断言成 SyncRow[] —— 形状由写入方保证
+    out[s] = (await desktopLocalStore.getAll(s).catch(() => [])) as SyncRow[]
+  }
+  return out
+})
+
 // 云盘文件同步（#032 起选目录即用）：启动时若持久化过同步目录，则自动切到云端文件存储。
 // 数据以加密文件落在用户选定的云盘目录（OneDrive / 坚果云 / WPS 云盘等客户端负责搬运），
 // 全程不依赖任何服务器。失败一律回退到本地存储，不会让界面变成空白。
@@ -282,6 +311,8 @@ if (CLOUD_FILE_SYNC) {
     try {
       const ok = await applyDesktopCloudFromPersisted()
       if (ok) {
+        // ⓘ 「读本机数据文件快照」的回调已在**模块顶层**注册（见 desktopCloudFileStore 之后那段），
+        //    所以下面这次 pull 触发的首次合并就能认出「本机删过哪些记录」—— 墓碑闸生效的前提。
         // 🔴 切换前必须先确认云端**真的**有数据。
         //    同步目录里的 .yfe 被删掉、或还没从网盘客户端下载下来时，读到的是
         //    rev=0 + 空 stores —— 会被当成「空库」直接切过去，界面瞬间变成空项目，
@@ -401,19 +432,11 @@ export async function enableDesktopCloudSync(handle: SyncDirHandle) {
   }
   // 🔴 持久化必须在**上面全部成功之后**：原先写在 enableDesktopCloud 内部（即拉快照之前），
   //    拉快照 / 播种失败时标记已落盘 → 下次启动 UI 仍显示「已开启」，实际却走本地存储（界面撒谎）。
-  // 🔴 注册「读本地库快照」：启动合并靠它区分「本机删掉了这个项目」与「本机还没见过它」。
-  //    不注册的话，被删掉的项目会被云端那份旧快照反复带回来（幽灵项目，2026-09-19 实测）。
-  //    注意读的是 desktopLocalStore（本机数据文件），不是当前的 ops —— 云模式下那是内存 cache。
-  onDesktopLocalSnapshot(async () => {
-    const out: SyncStores = {}
-    for (const s of SYNC_STORES) {
-      if (s === 'backups') continue
-      // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
-      // 落进同步通用载荷前断言成 SyncRow[] —— 形状由写入方保证
-      out[s] = (await desktopLocalStore.getAll(s).catch(() => [])) as SyncRow[]
-    }
-    return out
-  })
+  // 🔴 注册「读本地库快照」**不在这里** —— 已提到模块顶层（见 `desktopCloudFileStore` 之后那段）。
+  //    原先只在本函数里注册，而启动自动恢复同步走的是 `CLOUD_FILE_SYNC` 块、那条路径从未注册，
+  //    于是「手动删掉的项目重启后复活」长期存在（2026-09-20 六维审计 P0）。
+  //    ⚠️ 别为了「顺手」在这里再加一次：两处注册就是两处会各自漂移的口径，
+  //    而漏掉的那一处**静态检查与单测都看不出来**（只有真跑云盘同步才复现）。
   persistDesktopCloudEnabled(handle)
   setStoreOps(desktopCloudFileStore)
 }

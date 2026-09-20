@@ -272,8 +272,8 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
             width="20rem"
             className="ml-1"
           >
-            {'把灵感简报升级成可拖拽、可连线的结构化推演画布\n\n'
-              + '· 左侧勾选章节 → 点「生成推演」，复用颉文姬灵感简报同一 AI 管线，每章生成一列卡片（待办伏笔 / 钩子爽点 / 角色状态 / 下一章衔接）。\n'
+            {'把本章写作简报升级成可拖拽、可连线的结构化推演画布\n\n'
+              + '· 左侧勾选章节 → 点「生成推演」，复用颉文姬「本章写作简报」同一 AI 管线，每章生成一列卡片（待办伏笔 / 钩子爽点 / 角色状态 / 下一章衔接）。\n'
               + '· 拖动卡片自由排布；按住空白处左键拖动可平移画布，卡片多到超出一屏时画布自动扩展并出现滚动条。\n'
               + '· 连接模式：依次点两张卡即可连成一条推演链；鼠标移到连线上点「×」可取消该连线。\n'
               + '· 推演内容会自动保存为项目快照（切换页面 / 重启都不丢失）。「清空推演本」可一键复位。'}
@@ -303,7 +303,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         <div className="w-64 shrink-0 border-r border-ink-700 bg-ink-850/60 flex flex-col h-full min-h-0">
           <div className="px-3 py-2.5 border-b border-ink-700">
             <div className="flex items-center gap-2 text-ink-100 font-medium"><GitBranch size={14} className="text-amber" /> 选择章节</div>
-            <div className="text-10 text-ink-500 mt-0.5">多选后点「生成推演」，复用颉文姬灵感简报同一 AI 管线</div>
+            <div className="text-10 text-ink-500 mt-0.5">多选后点「生成推演」，复用颉文姬「本章写作简报」同一 AI 管线</div>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {chapters.length === 0 && <div className="text-11 text-ink-500 px-1 py-2">暂无《章节总表》数据。</div>}
@@ -416,7 +416,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center text-ink-500 text-sm max-w-sm">
                     <GitBranch size={28} className="mx-auto mb-2 opacity-50" />
-                    左侧选择章节 → 点「生成推演」<br />AI 会把灵感简报升级成可拖拽、可连线的结构化卡片
+                    左侧选择章节 → 点「生成推演」<br />AI 会把本章写作简报升级成可拖拽、可连线的结构化卡片
                     <div className="text-11 text-ink-600 mt-2">卡片多到超出一屏时，画布会自动扩展并出现滚动条；按住左键拖动空白处即可平移。</div>
                   </div>
                 </div>

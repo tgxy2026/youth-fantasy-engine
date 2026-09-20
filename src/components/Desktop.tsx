@@ -184,7 +184,7 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
             state.lastError
               ? '保存出错，点击重试'
               : state.dataPath
-                ? `数据文件：${state.dataPath}\n最后保存：${time}${state.dirty ? '（有未保存改动）' : ''}（点击立即保存）`
+                ? `数据文件：${state.dataPath}\n最后保存：${time}${state.dirty ? '（有未保存的改动）' : ''}（点击立即保存）`
                 : `最后保存：${time}（点击立即保存到本地数据文件）`
           }
           className={

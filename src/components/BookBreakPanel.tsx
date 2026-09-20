@@ -31,12 +31,18 @@ import WorkflowTimeline from './WorkflowTimeline'
 import type { DraftBundle, DraftRow, FlowProgress } from '../lib/flow/types'
 import { adviseCapacity, type CapacityAdvice } from '../lib/modelCapacity'
 import { getTavernSettings } from '../lib/tavern/settings'
+import { useAIReady } from '../lib/useAIReady'
+import { AI_DISABLED_HINT } from '../lib/aiScope'
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024
 
 const fmtNum = (n: number) => n.toLocaleString('zh-CN')
 
 export default function BookBreakPanel() {
+  // 🔴 未配置模型时**预先禁用**「开始抽取」（2026-09-20 六维审计 F1）。
+  //    判据与真实调用一致：拆书链路（aiExtractSettingEntities / aiSummarizeFormSettings）
+  //    都走 requireActiveProvider。选文件 / 预览分章是纯本地步骤，仍照常可用。
+  const { ready: aiReady } = useAIReady()
   const [raw, setRaw] = useState('')
   const [preview, setPreview] = useState<SplitResult | null>(null)
   const [progress, setProgress] = useState<FlowProgress | null>(null)
@@ -399,7 +405,7 @@ export default function BookBreakPanel() {
 
       {/* 运行 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" solid disabled={running || !raw.trim()} onClick={() => void start()}>
+        <Button size="sm" variant="primary" solid disabled={running || !raw.trim() || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} onClick={() => void start()}>
           {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
           {running ? '抽取中…' : resume ? '继续抽取' : '开始抽取'}
         </Button>

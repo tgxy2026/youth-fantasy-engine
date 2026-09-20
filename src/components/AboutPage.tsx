@@ -70,7 +70,7 @@ export default function AboutPage() {
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
           <HelpPopover title="这一页是什么" side="right">
-            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 打赏名单目前是占位内容（借用了若干知名作品的角色名），正式发布前会替换成真实记录；\n· 页面内容全部来自本项目内置的静态资源，不联网、不上传任何数据。'}
+            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 打赏名单暂为示例（借用了若干知名作品的角色名），后续会更新为真实记录；\n· 页面内容全部来自本项目内置的静态资源，不联网、不上传任何数据。'}
           </HelpPopover>
         </div>
         <p className="text-ink-400 text-sm mb-8">
@@ -201,7 +201,7 @@ export default function AboutPage() {
                 <Users size={14} className="text-amber" /> 致谢名单
               </h3>
               <p className="text-ink-500 text-11 mb-3">
-                名单暂为示例占位（借用各位知名网络小说主角的名号排排站），待作者替换为真实打赏记录——你的名字也会出现在这里。
+                名单暂为示例（借用各位知名网络小说主角的名号排排站），后续会更新为真实打赏记录——你的名字也会出现在这里。
               </p>
               <div className="flex flex-wrap gap-2 content-start">
                 {THANKS.map(t => (

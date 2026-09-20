@@ -12,7 +12,8 @@ import { flattenChapters } from '../lib/chapterSeq'
 import type { OrganizeResult } from '../lib/aiTasks'
 import type { VisCtx } from '../lib/schema'
 import { isCancelled } from '../lib/ai'
-import { organizeHint } from '../lib/aiScope'
+import { useAIReady } from '../lib/useAIReady'
+import { organizeHint, AI_DISABLED_HINT } from '../lib/aiScope'
 import { organizeKeyColsOf, organizeRows, organizeUnorderedOf } from '../lib/organizeRows'
 import AutoTextarea from './AutoTextarea'
 import { Button } from './Button'
@@ -39,6 +40,10 @@ type SourceMode = 'chapters' | 'paste' | 'settings'
  *   2. 绝不产生重复条目 —— prompt 里带上已登记条目清单，返回后再按关键列本地去重。
  */
 export default function AIOrganize({ tab, existing, calendars = [], ctx = { type: 'full', features: [] }, onAdd, onClose }: Props) {
+  // 🔴 未配置模型时**预先禁用**「开始整理」（2026-09-20 六维审计 F1）。
+  //    原先只按 `loading` 禁用 ⇒ 没配模型的机器上按钮是可点的，点下去要等一整轮请求失败
+  //    才弹 toast，用户只会以为「点了没反应」。判据与真实调用一致：整理链路走 requireActiveProvider。
+  const { ready: aiReady } = useAIReady()
   const [mode, setMode] = useState<SourceMode>('chapters')
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -255,7 +260,7 @@ style={{ maxHeight: foldVh('26vh') }}>
           {!result && (
             <div className="flex items-center gap-2">
               <Button onClick={run}
-                disabled={loading} variant="primary" size="md" className="flex items-center text-13">
+                disabled={loading || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center text-13">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? (phase || '正在整理…') : '开始整理'}
               </Button>

@@ -117,7 +117,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               ${dirtyKeys.length > 0
                 ? 'bg-amber/15 text-amber border-amber/40 hover:bg-amber/25'
                 : 'bg-ink-800 text-ink-500 border-ink-700 cursor-not-allowed'}`}
-            title={dirtyKeys.length > 0 ? '保存全部（Ctrl+S）' : '无未保存修改'}
+            title={dirtyKeys.length > 0 ? '保存全部（Ctrl+S）' : '无未保存的改动'}
           >
             <Save size={13} /> {saving ? '保存中…' : '保存'}
           </Button>
