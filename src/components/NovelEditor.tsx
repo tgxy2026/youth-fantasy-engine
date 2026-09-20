@@ -205,7 +205,7 @@ style={{ zIndex: Z.pageHandle }}
               <Button variant="bare" iconOnly size="sm"
                 onClick={() => setJieWenJiOpen(o => !o)}
                 className={`p-1 transition-colors shrink-0 ${jieWenJiOpen ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
-                title="颉文姬 · AI 编辑：深度校对 / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配置模型）"
+                title="颉文姬 · AI 编辑：校对（文字层 / 逻辑层） / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配置模型）"
               >
                 <Wand2 size={14} />
               </Button>
@@ -589,9 +589,10 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
               </HelpPopover>
             </div>
 
-            {/* v1.3 本章引用侧栏（抽屉式）：列出本章正文里出现的已登记角色 / 术语，点击直达 */}
+            {/* v1.3 本章引用侧栏（抽屉式）：列出本章正文里出现的已登记角色 / 术语，点击直达。
+                层号走 zLayer 的 Z（禁裸 z-20）：与其它页内浮层同一套刻度。 */}
             {showRefs && active && (
-              <div className="absolute right-3 top-14 bottom-10 w-72 z-20 bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col">
+              <div className="absolute right-3 top-14 bottom-10 w-72 bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col" style={{ zIndex: Z.pageBase }}>
                 <div className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">
                   <Users size={13} className="text-amber" />
                   <span className="text-12 font-semibold text-ink-200 flex-1">本章引用</span>

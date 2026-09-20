@@ -580,7 +580,7 @@ export default function CreativeWritingPanel() {
               <Button variant="toggle" selected={inp.topUpLast} disabled={s.running}
                 onClick={() => updateInputs({ topUpLast: !inp.topUpLast })}
                 className="px-3 h-8 rounded-lg text-12"
-                title="开启时：开写新章之前，若**最后一章**明显没写完（字数低于目标），先把它补到目标字数再往下写。只补最后一章，历史章一个字不动">
+                title="开启时：开写新章之前，若最后一章明显没写完（字数低于目标），先把它补到目标字数再往下写。只补最后一章，历史章一个字不动">
                 先补完最后一章：{inp.topUpLast ? '已开启' : '已关闭'}
               </Button>
             </div>

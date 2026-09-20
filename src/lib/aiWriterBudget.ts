@@ -86,7 +86,7 @@ export const WRITER_BUDGET_LABELS: Record<WriterBudgetKind, string> = {
   'ai-assist': 'AI 辅助规划',
   'name-suggest': 'AI 取名',
   'plot-canvas': '情节推演画布',
-  'jiewenji-proofread': '颉文姬 · 深度校对',
+  'jiewenji-proofread': '颉文姬 · 校对（文字层 / 逻辑层）',
   'jiewenji-diagnosis': '颉文姬 · 综合诊断',
   'jiewenji-review': '颉文姬 · 章节编辑意见',
   'jiewenji-ooc': '颉文姬 · OOC 人设检查',

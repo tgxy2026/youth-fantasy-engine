@@ -114,7 +114,7 @@ style={{ zIndex: Z.pageTip }}
         >
           <div className="text-12 font-semibold text-amber mb-1">颉文姬 · AI 编辑助手</div>
           <div className="text-11 text-ink-300 leading-relaxed mb-2">
-            本地校对、AI 深度校对、选区润色、审读建议、爽点毒点、续写方向、写作简报、本章设定补登……都在正文编辑器里。
+            本地校对、AI 校对（文字层 / 逻辑层）、选区润色、审读建议、爽点毒点、续写方向、写作简报、本章设定补登……都在正文编辑器里。
           </div>
           <Button variant="primary" onClick={() => { onNavigate?.('editor'); setMini(false) }} className="w-full px-2 py-1.5 rounded-lg text-11 transition-colors">
             前往正文编辑器

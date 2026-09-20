@@ -138,7 +138,10 @@ export function useNovelEditorHighlight({
    */
   useLayoutEffect(() => {
     syncHighlightScroll()
-  }, [highlightHTML, activeId, fontSize, pageWide, focusMode, showSearch, syncHighlightScroll])
+    // 🔴 必须含 highlightOn：高亮层是**条件渲染**（`{highlightOn && …}`），从关到开时它才新挂载，
+    //    而新 DOM 的 scrollTop 恒为 0。少了这个依赖，effect 不重跑 → 叠层停在顶部、与正文错位
+    //    （正文滚在中后段时可视区一片空白，正是 2.0.1 修过的那个"上下滑动不显示文本"）。
+  }, [highlightHTML, activeId, fontSize, pageWide, focusMode, showSearch, highlightOn, syncHighlightScroll])
 
   /** 编辑区尺寸变化（窗口缩放、检索栏开合）时同样需要对齐叠层 */
   useEffect(() => {

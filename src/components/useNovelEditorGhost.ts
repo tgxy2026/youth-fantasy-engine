@@ -298,6 +298,8 @@ export function useNovelEditorGhost({
     }
     // 手动触发 Alt+\（复刻 WPS 的手动伴写键）：重置熔断并立即请求，不等防抖
     if (e.altKey && (e.key === '\\' || e.code === 'Backslash')) {
+      // 与 Ctrl+Enter 同口径：输入法选字期间不抢键；未开启伴写时不发请求
+      if (e.nativeEvent.isComposing || !companion || !aiReady) return
       e.preventDefault()
       ghostFail.current = 0
       const at = taRef.current?.selectionStart ?? caret

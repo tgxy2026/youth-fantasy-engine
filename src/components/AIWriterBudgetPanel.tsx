@@ -120,7 +120,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
           <div className="mt-0.5 text-10 text-ink-500">
             {rec != null
               ? (localModel
-                ? `本地模型：基准不放大（推荐 ${rec} 字，资料不该超过窗口的 1/4，其余留给正文与输出）`
+                ? `本地模型：随窗口按比例放大（推荐 ${rec} 字，资料取窗口的 30%、上限 48000 字，其余留给正文与输出）`
                 : `云端模型：可按窗口放大（推荐 ${rec} 字）`)
               : '未识别到当前模型'}
             {rec != null && rec !== base && <> · 当前为 {base} 字</>}

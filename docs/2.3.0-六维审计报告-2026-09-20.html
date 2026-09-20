@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>novel-studio 2.3.0 六维审计报告 · 2026-09-20</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#1e2227; --ink2:#4a525b; --ink3:#7b848e;
+    --line:#e3e6ea; --amber:#b8730a; --amber-bg:#fdf3e2; --red:#c0392b; --red-bg:#fdeceb;
+    --sky:#1c6fa8; --sky-bg:#e8f3fa; --green:#1c7a4a; --green-bg:#e9f7f0; --grey:#6b7280; --grey-bg:#f1f2f4;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#16181c; --card:#1e2227; --ink:#e6e8ea; --ink2:#b0b6bd; --ink3:#868e98;
+      --line:#2c3138; --amber:#e0a44a; --amber-bg:#2e2415; --red:#e57368; --red-bg:#2e1c1a;
+      --sky:#6db3e0; --sky-bg:#16242e; --green:#69c99a; --green-bg:#16271f; --grey:#9aa2ab; --grey-bg:#23272d;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:.3px}
+  .sub{color:var(--ink3);font-size:13px;margin-bottom:28px}
+  h2{font-size:19px;margin:40px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--amber);display:inline-block}
+  h3{font-size:15px;margin:26px 0 10px;color:var(--ink2)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:16px 0}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .kpi b{display:block;font-size:24px;line-height:1.2}
+  .kpi span{font-size:12px;color:var(--ink3)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--ink3);font-weight:600;font-size:12px;letter-spacing:.4px}
+  code{background:var(--grey-bg);padding:1.5px 5px;border-radius:4px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid;white-space:nowrap;margin-right:6px}
+  .t-p0{color:var(--red);border-color:var(--red);background:var(--red-bg)}
+  .t-p1{color:var(--amber);border-color:var(--amber);background:var(--amber-bg)}
+  .t-p2{color:var(--sky);border-color:var(--sky);background:var(--sky-bg)}
+  .t-ok{color:var(--green);border-color:var(--green);background:var(--green-bg)}
+  .t-no{color:var(--grey);border-color:var(--line);background:var(--grey-bg)}
+  ul{margin:8px 0 8px 18px;padding:0} li{margin:4px 0}
+  .p0{border-left:4px solid var(--red)} .p1{border-left:4px solid var(--amber)}
+  .quote{color:var(--ink2);font-size:13px;border-left:3px solid var(--line);padding-left:12px;margin:8px 0}
+  .muted{color:var(--ink3);font-size:12.5px}
+  hr{border:0;border-top:1px solid var(--line);margin:34px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>novel-studio 2.3.0 · 六维审计报告</h1>
+  <div class="sub">2026-09-20 · 代码 / 结构 / 内容 / 提示词 / UI / 功能性 六维 · 八支扫描器 + 四路子代理 + 逐条验尸</div>
+
+  <div class="grid">
+    <div class="kpi"><b>25</b><span>本次已修（处）</span></div>
+    <div class="kpi"><b style="color:var(--red)">1</b><span>P0 待定</span></div>
+    <div class="kpi"><b style="color:var(--amber)">5</b><span>P1 待定</span></div>
+    <div class="kpi"><b style="color:var(--sky)">6</b><span>P2 待办</span></div>
+    <div class="kpi"><b style="color:var(--grey)">11</b><span>判定不改（类）</span></div>
+  </div>
+
+  <div class="card">
+    <b>基线（改动前后均一致）</b><br>
+    <code>tsc</code> 0 错 · <code>eslint src</code> 0 problem · <code>run-all</code> <b>80 / 80 入口全过</b> ·
+    <code>feature-deps-check</code> 39/39 · <code>seed-schema-check</code> ✅（2911 键）
+  </div>
+
+  <h2>一、六维结论</h2>
+  <table>
+    <thead><tr><th>维度</th><th>扫描器口径（候选）</th><th>验尸后</th><th>处置</th></tr></thead>
+    <tbody>
+      <tr><td>① 代码</td><td>死导出 232 · 确定死代码 <b>0</b> · any 2 · 星号 1 · IME 1 · z 魔数 1</td><td>4 条真</td><td><span class="tag t-ok">已修 4</span></td></tr>
+      <tr><td>② 结构</td><td>环 1（type-only）· 分层违规 <b>0</b> · 孤立 <b>0</b> · 重复块 27 · 空 catch 5 · 门面 2</td><td>均属既定</td><td><span class="tag t-no">判定不改</span></td></tr>
+      <tr><td>③ 内容</td><td>问号缺失 <b>0</b> · 重复文案 2 · 术语 4 组 · 占位 3+4 · 硬编码数量 <b>0</b></td><td>1 条真（星号）+ 若干待办</td><td><span class="tag t-ok">已修 1</span><span class="tag t-p2">待办 7</span></td></tr>
+      <tr><td>④ 提示词</td><td>49 处 / 14952 tok · 缺闭嘴条款 <b>0</b> · 未包 promptGuard <b>5</b> · 字段脱钩 <b>0</b></td><td>1 条真（已验）</td><td><span class="tag t-p1">待定 1</span></td></tr>
+      <tr><td>⑤ UI</td><td>默认色板 11 · 十六进制 78 · 任意值 91 · 缺 title 2 · 可点击 div 1</td><td>3 条真</td><td><span class="tag t-ok">已修 2</span><span class="tag t-p1">待定 3</span></td></tr>
+      <tr><td>⑥ 功能性</td><td>缺 AI 守卫 8/25 · 未引用组件 2 · 界面层无兜底 <b>0</b> · 三闸在位 ✅</td><td><b>0 条真</b>（8 处有 catch 兜底；2 处假报）</td><td><span class="tag t-no">判定不改</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>二、本次已修（25 处 · 10 文件）</h2>
+
+  <h3>A · 本轮（09-20）自己改出来的 —— 重点</h3>
+
+  <div class="card p1">
+    <span class="tag t-p1">P1</span><b>新页签「其他设定」漏登记编号前缀</b> · <code>lib/autoCode.ts</code>
+    <p>schema 的 <code>codeRule</code> 承诺「MISC0001、MISC0002…」，而 <code>CODE_PREFIX</code> 里没有 <code>misc-settings</code> →
+      空表新增行走 <code>CODE_PREFIX[tabId] ?? ''</code>，得到的是裸 <code>0001</code>。</p>
+    <p class="muted">隐蔽点：只有表里已有 MISC 行时才靠 <code>usedPrefix</code> 救回来，而示范项目自带 3 条 MISC 行 → 平时完全看不出来。</p>
+    <p><b>已修</b>：补 <code>'misc-settings': 'MISC'</code>。</p>
+  </div>
+
+  <div class="card p1">
+    <span class="tag t-p1">P1</span><b>伴写 Ctrl+Enter 未挡输入法 + 未校验开启态</b> · <code>components/useNovelEditorGhost.ts</code>
+    <p>中文输入法按 Enter 是「选字」，此刻不该当快捷键（项目红线）；且手动触发路径**绕过了主循环的前置闸** ——
+      关着伴写总开关按下去会静默发一次真实模型请求（烧 token），而结果永远不会渲染（ghost 只在开启时才画），作者只会以为键坏了。</p>
+    <p><b>已修</b>：补 <code>isComposing</code> 挡 + <code>!companion || !aiReady</code> 守卫；<code>Alt+\</code> 同口径一并补。</p>
+  </div>
+
+  <div class="card p1">
+    <span class="tag t-p1">P1</span><b>高亮叠层重建后不回填 scrollTop</b> · <code>components/useNovelEditorHighlight.ts</code>
+    <p>高亮层是**条件渲染**（<code>{highlightOn &amp;&amp; …}</code>）：从关到开时才新挂载，而新 DOM 的 <code>scrollTop</code> 恒为 0。
+      那个负责回填的 <code>useLayoutEffect</code> 依赖数组里**没有 <code>highlightOn</code>** → effect 不重跑 → 叠层停在顶部、与正文错位。</p>
+    <p class="muted">症状就是 2.0.1 修过的那个「上下滑动查看时经常不显示文本」：正文滚在中后段时打开高亮，可视区一片空白。</p>
+    <p><b>已修</b>：deps 补 <code>highlightOn</code>。</p>
+  </div>
+
+  <div class="card p1">
+    <span class="tag t-p1">P1</span><b>界面文案里的 markdown 星号</b> · <code>components/CreativeWritingPanel.tsx:583</code>
+    <p><code>title="…若**最后一章**明显没写完…"</code> —— 原生 tooltip 不解析 markdown，会原样露出 <code>**</code>。
+      （<b>三路独立命中同一处</b>：扫描器 §8 + 两路子代理。）</p>
+    <p><b>已修</b>：去星号。</p>
+  </div>
+
+  <h3>B · 「文案 ↔ 实现」对不上（本次审计抓出的真错）</h3>
+
+  <div class="card">
+    <span class="tag t-p1">P1</span><b>本地模型额度说明说反了</b> · <code>components/AIWriterBudgetPanel.tsx:123</code>
+    <p class="quote">文案：「本地模型：基准不放大…资料不该超过窗口的 1/4」<br>
+      实现：<code>aiWriterBudget.ts</code> 的 <code>local: { ratio: 0.30, cap: 48000 }</code>，注释写着「2026-09-18 放宽…30% 档」，
+      且 <code>recommendWriterBase</code> 是 <b>随 numCtx 放大</b>（32768 窗口即约 9800 字 &gt; 出厂 8000，并非「不放大」）。</p>
+    <p><b>已修</b>：改为「随窗口按比例放大（推荐 N 字，资料取窗口的 30%、上限 48000 字…）」。</p>
+  </div>
+
+  <div class="card">
+    <span class="tag t-p1">P1</span><b>数据源气泡里写着页签别名</b> · <code>lib/aiDataSources.ts</code>（10 处）
+    <p>🔴 <b>同一文件自己写着规则、自己又违反</b>：第 50-52 行明写「这里的名字必须是 schema 的<b>真名</b>（<code>TABS[].name</code>）…
+      写成别名作者照着找就找不到」，而 64 / 169 / 197 / 220 / 232 / 242 / 251 行全是 <code>世界观设定</code>（真名 <code>世界设定</code>）、
+      <code>术语表</code>（真名 <code>名词术语</code>）、<code>NPC 角色</code>（真名 <code>NPC角色</code>）。</p>
+    <p><b>已修</b>：10 处统一改真名。</p>
+  </div>
+
+  <div class="card">
+    <span class="tag t-p2">P2</span><b>校对拆分后的旧名残留（4 处界面文案）</b>
+    <p>校对已拆成「文字层 / 逻辑层」，但 <code>NovelEditor.tsx:208</code>（工具栏 title）、<code>:372/:451</code>（快捷键说明）、
+      <code>JieWenJiSprite.tsx:117</code>、<code>GuidePage.tsx:89</code>、<code>aiWriterBudget.ts:89</code>（额度标签）仍写「深度校对」。</p>
+    <p><b>已修</b>：统一为「校对（文字层 / 逻辑层）」；快捷键说明补全为 <code>Ctrl/Cmd+Enter</code>（与全站惯例一致）。</p>
+  </div>
+
+  <div class="card">
+    <span class="tag t-p2">P2</span><b>裸 <code>z-20</code> 魔数</b> · <code>components/NovelEditor.tsx:594</code>
+    <p>页内层已收敛进 <code>zLayer.ts</code> 的 <code>Z</code>，此处漏改（同位置的颉文姬面板走 <code>Z.pagePanel</code>）。</p>
+    <p><b>已修</b>：改走 <code>style={{ zIndex: Z.pageBase }}</code>（数值与原来相同，零视觉变更）。</p>
+  </div>
+
+  <h3>复跑扫描器核对（修前 → 修后）</h3>
+  <table>
+    <thead><tr><th>项</th><th>修前</th><th>修后</th></tr></thead>
+    <tbody>
+      <tr><td>§8 界面文案星号</td><td>1</td><td><b style="color:var(--green)">0</b></td></tr>
+      <tr><td>§15 未挡 isComposing</td><td>1</td><td><b style="color:var(--green)">0</b></td></tr>
+      <tr><td>§13 z-index 魔数</td><td>1</td><td><b style="color:var(--green)">0（干净）</b></td></tr>
+      <tr><td>tsc / eslint / run-all</td><td>0 / 0 / 80</td><td>0 / 0 / <b>80</b></td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <h2>三、待定 —— 需老大定夺</h2>
+
+  <div class="card p0">
+    <span class="tag t-p0">P0</span><b>启动路径漏注册「读本地库快照」→ 墓碑闸失效 → 幽灵项目复活</b>
+    <div class="muted" style="margin-top:4px">数据安全 · <code>src/lib/db/core.ts</code> + <code>src/lib/syncCore.ts</code></div>
+    <ul>
+      <li><code>onDesktopLocalSnapshot</code> 全仓<b>只有一处调用</b>（<code>core.ts:407</code>，在 <code>enableDesktopCloudSync</code> 内）。</li>
+      <li>但<b>启动时自动恢复云同步</b>走的是另一条路（<code>core.ts:283</code> 的 <code>applyDesktopCloudFromPersisted</code>）—— 那条路上<b>从未注册</b>。</li>
+      <li>后果链（有代码证据）：<code>syncCore.ts:493</code> <code>localSnapshotProvider</code> 为 null → <code>localSnap = null</code> →
+        <code>local = cache</code>（启动时刚被 <code>configure</code> 清空）→ <code>localHasContent = false</code>（<code>:237</code>）→
+        墓碑判断 <code>if (localHasContent &amp;&amp; isDeleted(...))</code>（<code>:276</code>）<b>被短路</b> → 云端旧记录一律按「另一端新增」采用。</li>
+      <li><b>触发</b>：开启云同步 → 删除项目 → 防抖推送完成前关窗（或断网期间删除）→ 重启 ⇒ 删掉的项目<b>复活并自锁</b>。</li>
+      <li><b>建议修法</b>：把注册提到模块初始化（<code>CLOUD_FILE_SYNC</code> 块内、<code>applyDesktopCloudFromPersisted</code> 成功之后），
+        让「读本地库快照」与「哪个路径开启同步」解耦。</li>
+      <li>⚠️ <b>本轮没顺手改</b>：它动的是云同步核心路径，静态检查证明不了行为等价 ——
+        需配「删项目 → 重启 → 断言不复活」的实机对照，建议单独一轮。</li>
+    </ul>
+  </div>
+
+  <h3>P1（建议下轮修）</h3>
+  <table>
+    <thead><tr><th>位置</th><th>问题</th></tr></thead>
+    <tbody>
+      <tr><td><code>db/core.ts:130</code></td><td>关同步时 <code>mirrorCloudCacheToLocal</code> <b>只 put 不 del</b> → 同步期间删掉的记录在关同步后复活；再次开同步还会把它播种上云</td></tr>
+      <tr><td><code>lib/desktop.ts:204</code></td><td><code>initDesktopStore</code> 解析成功后<b>不校验 <code>app/kind</code></b>（导入路径有校验）→ 异种合法 JSON 被当「空库」放行且<b>不锁写盘</b> → 防抖写盘覆盖真实文件</td></tr>
+      <tr><td><code>aiTasks/creative.ts:384</code></td><td>把作者已有细纲/卷大纲原文<b>直接拼进 user 消息、未走 <code>authorBlock()</code></b>（该文件未 import promptGuard）—— 原文里的「忽略以上指令」会被当指令执行</td></tr>
+      <tr><td><code>useTavernCardModel.ts:335</code></td><td>「生成初版记忆」漏传 <code>limits</code> → 面板上的长期摘要上限 / 日记保留天数 / 记忆硬上限在这条路径上不生效（另两条路径已修，这条漏了）</td></tr>
+      <tr><td><code>useFreeTurn.ts:197</code></td><td>三个生成入口的 <code>finally</code> <b>无条件</b>复位并清 <code>abortRef</code>（成功/catch 分支都有代次令牌判断，finally 没有）→ 切会话的旧请求收尾时把新会话的 streaming 置 false、abortRef 清空 → <b>新回复落库但不显示、停止键失效</b></td></tr>
+      <tr><td><code>NovelEditor.tsx:205,321,227</code></td><td>两个图标按钮缺 <code>title</code>；一个可点击 div 无 <code>role</code>/<code>tabIndex</code>（键盘不可达）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>P2（待办 · 记录在案）</h3>
+  <p class="muted">存储：<code>db/core.ts:413</code>（快照读失败静默降级 <code>[]</code>，与 <code>captureSyncData</code> 的「读失败即中止」不一致）、
+    <code>syncCore.ts:602</code>（两处忽略 <code>pushNow</code> 的 <code>{conflict:true}</code>）。
+    酒馆：<code>roundEnd.ts:132</code>（旧档案读失败降级 null → 让整份回退保护失效）、<code>useFreeRevise.ts:66</code>（解析失败与「没有要改的」不可区分）、
+    <code>memory.ts:131</code>（<code>FACTS_MAX_LINES</code> 只在提示词里）、<code>report.ts:123</code>（level 用 <code>includes</code> 子串匹配）。</p>
+  <p class="muted">文案一致性：便携版已下线但仍被提及（<code>SearchSettingsPanel:82</code> / <code>desktop.ts:80</code>）；
+    「无未保存修改」×4 vs「有未保存的改动」×7；「灵感简报」vs「本章写作简报」；
+    Dashboard 的「今日写作」在面板上没有对应卡片；<code>Upload</code> 图标两处叫法相反；<code>ProjectHub:272</code> 称「灵感工具为必选」；
+    <code>AboutPage:73,204</code> 出现「占位 / 待替换」字样。</p>
+
+  <hr>
+
+  <h2>四、判定不改（附理由 · <b>下轮别重复提案</b>）</h2>
+  <table>
+    <thead><tr><th>项</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td><code>getBoundingClientRect</code> 10 处</td><td>全是定位/拖拽坐标（下拉定位、拖拽取 clientY 半区、SVG 缩放锚点）—— 与 clientY 同坐标系，界面缩放下依然正确</td></tr>
+      <tr><td>全局 <code>fixed</code> 14 处</td><td>5 个下拉 + HelpPopover + Modal 全屏锁 + SaveFab + DataDock + 精灵 + write-lock 通栏 + toast —— 均为既有约定</td></tr>
+      <tr><td><code>text-white</code>（U1）</td><td>白字配<b>实心色底</b>，改 ink token 会破坏对比度</td></tr>
+      <tr><td>十六进制色 78 处（U2）</td><td>图谱的「同盟=绿/敌对=红」是<b>语义色</b>，本就该固定、不该随主题变</td></tr>
+      <tr><td>术语 4 组（C3）</td><td>语义确有细分差别（「总纲」指全书总纲表、「大纲」是泛称），属产品决策</td></tr>
+      <tr><td>lib 里 4 处「待补充」</td><td>全是状态枚举值或提示词里叫模型别写「不详」，合法</td></tr>
+      <tr><td>8 处缺 AI 就绪守卫（F1）</td><td>逐个确认<b>都有 catch → toast / setError 反馈</b> —— 属「预先禁用按钮」的 UX 优化，不是静默失败</td></tr>
+      <tr><td><code>NUM</code> / <code>RangeGuide</code>（F2）</td><td><code>NUM</code> 是 className 常量、<code>RangeGuide</code> 是同文件内部用的子组件 —— 属<b>多余 export</b> 而非死代码，删了会破坏文件</td></tr>
+      <tr><td>多余 export 231 个</td><td>历史上刻意压着的账（新增 any/export 都看得见），不批量降级</td></tr>
+      <tr><td>巨型文件/组件</td><td>拆的是状态与生命周期边界，静态证明不了等价 → 需实机验证，单独一轮</td></tr>
+      <tr><td>提示词未包 guard 的另 4 个文件</td><td>已抽查 <code>creative.ts</code> 确认成立；其余逐个核对拼接点，本轮记入待定、未擅自改</td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <h2>五、本轮方法论增量</h2>
+  <div class="card">
+    <ol>
+      <li><b>「本轮引入的」≠「扫描器报出的」</b>：§8 星号与 §15 isComposing 各只报 1 处，<b>两处都是今天我自己改出来的</b>。
+        改完立刻跑一次受影响的那支扫描器，比等下一轮全量审计便宜得多。</li>
+      <li><b>含 JSX 属性 / 反引号 / <code>${}</code> 的片段，用分隔符式补丁器</b>（<code>patch-delim.mjs</code>）：
+        本轮 23 处一次落盘、零转义问题。⚠️ 但 <b>JSX 里加 <code>{/* 注释 */}</code> 不能插在 <code>{cond &amp;&amp; (</code> 与元素之间</b> ——
+        那是两个同级节点，语法直接崩（本轮踩到，tsc 报了一串 TS1005/1382/17015）。</li>
+      <li><b>「承诺 ↔ 实现」最高命中率的判据：同一文件里自己写着规则、自己又违反</b>。
+        <code>aiDataSources.ts</code> 第 50 行写着「必须是真名」、第 64 行起全是别名 —— 这类自相矛盾不需要任何外部知识就能判定。</li>
+      <li><b>审「数字承诺」必须把文案里的数字与常量对齐</b>，不能只看文案内部自洽：
+        <code>AIWriterBudgetPanel</code> 写「1/4、不放大」，而常量是 <code>ratio: 0.30</code> + 注释「不再封顶在出厂值」。</li>
+    </ol>
+  </div>
+
+  <p class="muted" style="margin-top:36px">
+    工具：<code>audit-scan</code> / <code>audit-dead</code> / <code>audit-graph</code> / <code>audit-arch</code> /
+    <code>audit-content</code> / <code>audit-prompt</code> / <code>audit-ui</code> / <code>audit-func</code>（八支）
+    ＋ <code>tests/feature-deps-check.mjs</code> / <code>tests/seed-schema-check.mjs</code>（两闸）
+    ＋ 四路子代理（存储同步 / 酒馆引擎 / UI 组件 / 文案承诺）。
+    逐项改动与不改项理由另见 <code>docs/2.3.0-审计修复记录-2026-09-20.md</code>。
+  </p>
+
+</div>
+</body>
+</html>
