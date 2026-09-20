@@ -49,6 +49,9 @@
 - 🔴 按钮：静止无框 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；`danger` 破坏性。🔴 **尺寸＝弹窗 md／主操作 sm／工具 xs；同排同 size、禁手写**。
 - 🔴 页头 `HelpPopover` 问号**须在标题右侧同行**。头像兜底＝名字；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」/（）。
 - 🔴 **数值输入走 `NumberField`**：可自由输入（能清空、能超范围）＋超范围在**失焦/回车**钳到最近边界（toast）。
+- 🔴 **折叠偏好统一走 `lib/uiPrefs.ts`**（命名空间 `yfe-ui:`，不进项目数据/不跟导出同步）：**一律存「偏离默认的那一侧」**（侧栏存"已折叠的组"）——反存"已展开"会让以后新增分组被判成收起；空集合＝合法状态（勿当"无记录"退回默认）；读失败静默降级。已接：侧栏分组/卷列表、表树（按页签分键）、提示词条目、草稿审阅分组。
+- 🔴 **提示词禁写 markdown 星号**（模型会模仿→正文混进 `**`），强调用「」。📍校对已拆：`aiProofreadText`（文字层·**不读设定资料**）/`aiProofreadLogic`（逻辑层·读设定），两条提示词都在 `PROMPT_ORDER`。
+- 🔴 **新增页签必同步** `SETTING_SUBTABS`（设定检索栏）＋`aiContext.PRIORITY`（否则进不了预算）；侧栏/功能勾选弹窗/指南页/dataHealth 都从 `TABS` 派生（自动）。「其他设定」＝`misc-settings`（MISC 编号，optional 零依赖，示范项目有 3 条种子）。
 
 ## AI 层
 - 🔴 **提示词给几层模型就按几层输出**——读端必须兼容**自己给的**层级，否则整表静默丢光。
@@ -71,6 +74,7 @@
 - 三步基线：`tsc --noEmit`／`eslint src`（**0 problem**）／`node tests/run-all.mjs`（别用 `npm run verify`，沙箱会拦）。
 - 🔴 闸 `tests/structureGates`（行数/归属/禁裸 `JSON.parse`/原生弹窗/**any 账本只准降**）；类型改动等价性**可证**＝剥类型再 diff（详规 `docs/2.3.0-阶段4清债*护栏`）。
 - 🔴 实机走 skill `novel-studio-ui-livecheck`；**子代理结论必回源码验**；断言「落库」须直读 IDB；脚本**还原须幂等**（按标记过滤，非写回读到的值）。
+- 🔴🔴 实机三坑（2026-09-20 连栽 5 轮）：① 编辑器正文须 `textarea.novel-textarea` —— `querySelector('textarea')` 会取到侧栏输入框，表现为伴写**零请求**的假故障；② 编辑器里按 **Esc 会触发伴写抑制**（`dismissGhost` 记下位置→该位置永不再自动出建议）→ 关 Modal **优先点遮罩**；③ 诊断 AI 先看 `/chat/completions` **请求数**（0＝前端没触发，别去怀疑模型/提示词）。
 - ✅ **巨型组件拆分**（`docs/2.3.0-D4-*`）：**量化依赖→状态搬进 `useXxxModel`→子组件只收 `model`→实机指纹＋负面对照**。🔴 hook 含 JSX 须 `.tsx`。🔴 `useRef` 变 hook 入参→`exhaustive-deps` 报缺：稳定量如实补、只读 ref 改 `useCallback`（**禁 disable**）。🔴 **搬运区间必含注释块**。
 - 🔴🔴 实机**播完种禁 reload**；指纹**只哈希目标容器**＋先折 `HH:MM(:SS)`→`T`、数字→`#`。🔴 造数据后**必须排序**。🔴🔴 负面对照注入点须选**无人复位**的状态。
 
