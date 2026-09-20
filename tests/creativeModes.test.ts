@@ -135,8 +135,10 @@ console.log('\n—— creativeModes 用例开始 ——')
   // ---------- 续排细纲（方案 B）+ 历史章/最新章分治（2026-09-19 老大要求）----------
   const wf = read('src/lib/aiWorkflow.ts')
   // 2026-09-20 长篇分批改造：以下五条钉住新的口径，防的是"某天被改回旧实现"
-  ok('🔴 续排起点看「已排到哪」（＝已有细纲最大章号 + 1）—— 旧口径看正文，纯排大纲时必卡死',
-    /const fromNo = probe\.maxOutlineNo \+ 1/.test(wf))
+  // ⚠️ 2026-09-20 二次改造：起点多了一支「缺口优先」（先把没排满的卷补完，再谈新卷）。
+  //    断言从"恒等于 maxOutlineNo + 1"改成"两支都对"—— 这是**口径变更**，不是放宽判据。
+  ok('🔴 续排起点看「已排到哪」（＝已有细纲最大章号 + 1；有缺口时＝缺口起点）—— 旧口径看正文，纯排大纲时必卡死',
+    /const fromNo = sealing \? sealing\.gapFrom : probe\.maxOutlineNo \+ 1/.test(wf))
   ok('🔴 起点由项目现状自动判定（不再让作者手选"从一句话创作 / 接着写"）',
     /probeCreativeProject\(\)/.test(wf) && /probe\.hasOutline \? 'continue' : 'scratch'/.test(wf))
   ok('🔴 每卷章号范围由系统算（fillChapterRanges），且带**实际章数**防"幽灵卷范围"',
@@ -189,6 +191,45 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('🔴 创意写作页挂了提示条', cwp.includes('<NewProjectAdvice kind="creative-writing" />'))
   ok('两个提示条都点名了「完整项目」（老大要求的"开启全部功能"的准确说法）',
     deal.includes('完整项目'))
+
+  // ---------- 缺口优先 + 卷大纲补全 + 正文补齐（2026-09-20 二次改造，老大要求）----------
+  // 钉住的是三件事的**实现接线**（纯函数行为在 tests/volumeGap.test.ts 里逐条验）：
+  //   ① 有卷没排满 → 本批只补缺口、不另开新卷；
+  //   ② 该卷卷大纲只有骨架 → 一并补全，但只填空 / 占位；
+  //   ③ 正文最后一章没写完 → 开写新章前先补齐（只补最后一章）。
+  const ol = read('src/lib/outlineCard.ts')
+  const cont = read('src/lib/autoContinue.ts')
+  ok('🔴 缺口检测纯函数（找第一个没排满的卷）', /export function detectVolumeGap/.test(ol))
+  ok('🔴 卷边界三级取用：本卷章号范围 → 本卷章数预估 → 单章式文本靠「每卷章数」推定',
+    /VOLUME_BOUND_SLOTS = \['本卷章号范围', '本卷章数预估'\]/.test(ol)
+    && /r\.to > r\.from \? r : \{ from: r\.from, to: r\.from \+ m - 1 \}/.test(ol))
+  ok('🔴 有缺口时本批章数由缺口定（卷数 × 每卷章数不参与）',
+    /sealing \? sealing\.gapTo - sealing\.gapFrom \+ 1 : planTotalChapters/.test(wf))
+  ok('🔴 缺口补齐默认不新建卷；只有该卷卷大纲仅剩骨架时才顺带产出一条（volLimit 0/1）',
+    /const volLimit = sealing \? \(sealing\.needVolumeOutline \? 1 : 0\) : volCount/.test(cr))
+  // ⚠️ 2026-09-20 实机抓到的真 bug：system 分支说"顺带补全卷大纲、volumes 只放这一卷"，
+  //    而 user 消息**末尾**（权重最高）写死"volumes 为空数组"⇒ 模型照末尾执行，卷大纲永远补不上。
+  //    这条断言就是钉住"四处措辞必须同源"，别再出现两处约束打架。
+  ok('🔴 缺口模式「要不要产出卷」的措辞四处同源（system 规则 / JSON 结构 / 任务陈述 / 末尾硬约束）',
+    (cr.match(/needVolumeOutline/g) ?? []).length >= 4
+    && /并顺带把\*\*这一卷\*\*的卷大纲补全/.test(cr)
+    && /只放\*\*这一卷\*\*/.test(cr),
+    String((cr.match(/needVolumeOutline/g) ?? []).length) + ' 处')
+  ok('🔴 卷大纲「完整性」只看四个卷级走向字段（伏笔 / 角色那类不算"没规划好"）',
+    /VOLUME_CORE_SLOTS = \['第一大高潮', '卷中转折', '卷末高潮', '本卷结尾（卷末状态）'\]/.test(ol))
+  ok('🔴 卷级字段补全只写空 / 占位（作者已写实的内容一个字不动）',
+    /isPlaceholderText\(card\.data\[key\] \?\? ''\)/.test(wf))
+  ok('🔴 章号范围回填只在原本为空时写（作者手填的范围不能被覆盖）',
+    /isPlaceholderText\(card\.data\[rangeKey\] \?\? ''\)/.test(wf))
+  ok('🔴 正文缺口优先：只补最后一章，只动 content / wordCount / updatedAt',
+    /opts\.topUpLast && last/.test(cont) && /last\.wordCount = w1/.test(cont))
+  ok('🔴 正文补齐绝不压缩（原文若已够长就保持原样，作者可能有意写短章）', /maxShrink: 0/.test(cont))
+  ok('🔴 正文里的 markdown 标记会被剥掉，且**接进了逐章连写链路**（原先只有整章改写在调它）',
+    /export function stripInlineMarkdown/.test(rw) && (cont.match(/cleanChapterOutput\(/g) ?? []).length >= 3)
+  ok('🔴 面板状态行写明「哪一卷还差几章、本次补哪几段」',
+    /还差 \$\{gap\.gapTo - gap\.gapFrom \+ 1\} 章/.test(cwp))
+  ok('🔴 面板与编排器共用同一个 detectVolumeGap（口径只留一个来源，防两处漂移）',
+    /detectVolumeGap\(probe\.volumeBounds, probe\.maxOutlineNo, inp\.chaptersPerVolume\)/.test(cwp))
 }
 
 // ============ ⑥ 界面文案纪律：不许再承诺"开发中"的幽灵功能 ============

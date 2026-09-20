@@ -27,7 +27,7 @@ import { authorBlock, newAuthorFence } from './promptGuard'
 import { buildProjectContext, type ProjectContextResult } from './aiContext'
 import {
   aiExtractSettingEntities, aiContinuityAudit, aiOocCheck, aiForeshadowReview,
-  aiRewritePassage, aiChapterSummary, type ExtractedEntity,
+  aiRewritePassage, aiChapterSummary, cleanChapterOutput, type ExtractedEntity,
 } from './aiTasks'
 import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from './settingLedger'
 import { sortChapters, chapterSeqOf } from './chapterSeq'
@@ -481,6 +481,23 @@ export async function runAutoContinue(
     chapters: number; targetWords: number; strategy: ContinueStrategy; intent?: string;
     /** 去 AI 味儿：生成初稿后自动润色一遍再去弹窗交作者裁决；enabled=false 或 prompt 为空则跳过 */
     deAi?: { enabled: boolean; prompt: string }
+    /**
+     * 🔴 **正文缺口优先**：开写新章之前，先把**最后一章**补到目标字数（2026-09-20）。
+     *
+     * 【为什么】长篇是分批写的：上一批可能因模型收尾过早只落库 2200 字（目标 4000）。
+     * 直接往下写新章的话，这一章会永久停在"没写完"的状态，作者在第 22 章就撞上情绪断层。
+     *
+     * 🔴 只补**最后一章**（＝最新章）—— 项目纪律「最新章可放开、历史章冻结」
+     *    （见 docs/2.2.1-续排细纲*）：改历史章会污染设定与已写正文，绝不碰。
+     * 🔴 只动 `content` / `wordCount` / `updatedAt` 三个字段，标题、顺序、卷归属一概不动。
+     * 不传＝完全不检查（一键续写的老行为一字不变）。
+     */
+    topUpLast?: {
+      /** 容许的字数偏差（默认 `WORD_TOLERANCE`）：低于 `targetWords - tolerance` 才算欠字 */
+      tolerance?: number
+      /** 补写轮数上限（默认 6）—— 每轮都是**增量拼接**，不重写已有内容 */
+      maxExpand?: number
+    }
   },
   cb: ContinueCallbacks = {},
 ): Promise<{ created: { id: string; title: string; no: number }[] }> {
@@ -505,6 +522,51 @@ export async function runAutoContinue(
         return `· 《${c.title || '未命名章节'}》(${w}字)${s ? '：' + s : ''}`
       }).join('\n')
     : ''
+
+  // ---- 🔴 正文缺口优先：先把**最后一章**补到目标字数，再往下写新章（2026-09-20）----
+  //   🔴 只补最后一章（＝最新章）：项目纪律「最新章可放开、历史章冻结」——
+  //      改历史章会污染设定与已写正文（详规 docs/2.2.1-续排细纲*）。
+  //   🔴 只动 content / wordCount / updatedAt；标题、顺序、卷归属一概不动。
+  if (opts.topUpLast && last) {
+    const tol = opts.topUpLast.tolerance ?? WORD_TOLERANCE
+    const floor = Math.max(1, opts.targetWords - Math.max(0, tol))
+    const w0 = last.wordCount || countWords(last.content || '')
+    if (w0 < floor) {
+      cb.onLog?.(`最后一章《${last.title}》只有 ${w0} 汉字（目标 ${opts.targetWords}），先补齐它再往下写`)
+      cb.onPhase?.(`补齐最后一章（${w0} → ${opts.targetWords} 汉字）…`)
+      try {
+        const filled = cleanChapterOutput(await enforceWordRange({
+          cfg: await requireActiveProvider(),
+          body: last.content || '',
+          target: opts.targetWords,
+          sys: buildSysPrompt(opts.targetWords),
+          ...(cb.signal ? { signal: cb.signal } : {}),
+          onPhase: p => cb.onPhase?.(`补齐最后一章：${p}`),
+          onBodyReplace: cb.onBodyReplace,
+          maxExpand: opts.topUpLast.maxExpand ?? 6,
+          // 🔴 补字场景**绝不压缩**：原文若已比目标长，保持原样（作者可能有意写短章）
+          maxShrink: 0,
+        }))
+        const w1 = countWords(filled)
+        // 安全阀：没补进去（或反而变短）就保持原样 —— 宁可不补，也不能把正文改坏
+        if (w1 > w0) {
+          last.content = filled
+          last.wordCount = w1
+          last.updatedAt = Date.now()
+          await db.saveChapter(last)
+          lastBody = filled // 供下一章承接（第 22 章要接着补完的结尾写）
+          await syncChapterMaster(last, chapterSeqOf(vols, await db.getAllChapters(), last.id))
+          cb.onBodyReplace?.(filled)
+          cb.onLog?.(`《${last.title}》已补齐（${w0} → ${w1} 汉字）`)
+        } else {
+          cb.onLog?.(`《${last.title}》补齐无效（${w0} → ${w1} 汉字），已保持原样`)
+        }
+      } catch (e) {
+        if (isCancelled(e)) throw e
+        cb.onLog?.(`补齐最后一章失败：${(e as Error).message}（继续往下写新章）`)
+      }
+    }
+  }
 
   for (let i = 0; i < opts.chapters; i++) {
     if (cb.signal?.aborted) break
@@ -539,6 +601,11 @@ export async function runAutoContinue(
           onBodyReplace: cb.onBodyReplace,
           onLog: cb.onLog,
         })
+        // 🔴 剥掉正文里的 markdown 标记（`**粗体**` / 行首 `#` / 整行 `---`）——
+        //    模型偶尔把正文当文档写，落库后作者在「正文编辑」里看到的是星号而不是强调
+        //    （实测 2026-09-20：`**"第九脉，已至。"**` 进了正文）。
+        //    放在**字数闸门之前**：先净化再量字数，免得把标记也算成有效字数。
+        body = cleanChapterOutput(body)
         const w = countWords(body)
         // 落库硬闸门：内容异常（只剩残片/标点）一律丢弃重生成，绝不落库
         if (w < minWords) {
@@ -554,14 +621,15 @@ export async function runAutoContinue(
         if (opts.deAi?.enabled && opts.deAi.prompt.trim()) {
           cb.onPhase?.(`${tag}：去除 AI 味儿`)
           cb.onBodyReplace?.('')
-          const def = await deAiFlavor({
+          // 去 AI 味儿也是模型产出，同样可能带回 markdown 标记 —— 一并净化后再量字数
+          const def = cleanChapterOutput(await deAiFlavor({
             cfg: await requireActiveProvider(), body, instruction: opts.deAi.prompt,
             signal: cb.signal, onToken: cb.onBodyToken, onBodyReplace: cb.onBodyReplace,
-          }).catch(() => '')
+          }).catch(() => ''))
           const dw = countWords(def)
           // 安全阀：润色结果显著缩水（不足原文 60%）视为模型偷懒/截断，保留原稿
           if (def && dw >= w * 0.6) {
-            shownBody = def.trim()
+            shownBody = def
             shownWords = dw
             cb.onBodyReplace?.(shownBody)
             cb.onLog?.(`${tag}已去除 AI 味儿（${w} → ${dw} 汉字）`)
@@ -594,6 +662,9 @@ export async function runAutoContinue(
         onPhase: p => cb.onPhase?.(`${tag}：${p}`), onBodyReplace: cb.onBodyReplace,
         maxExpand: 2, maxShrink: 2,
       })
+      // 🔴 自检修正与字数校准同样是模型产出 —— 落库前最后净化一次，
+      //    保证进 Chapter.content 的字面里没有任何 markdown 标记（见 cleanChapterOutput）。
+      body = cleanChapterOutput(body)
       cb.onBodyReplace?.(body)
 
       // 二次闸门：改写/压缩后再校验一次，异常则本章不落库

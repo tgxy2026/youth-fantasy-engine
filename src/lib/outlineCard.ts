@@ -131,3 +131,124 @@ export interface VolumeRange {
 export function volumeForChapter(ranges: VolumeRange[], no: number): VolumeRange | null {
   return ranges.find(r => no >= r.from && no <= r.to) ?? null
 }
+
+// ==================== 「未排满的卷」检测（缺口优先，2026-09-20）====================
+//
+// 这一组函数服务一件事：**长篇分批排纲时，先把没排满的卷补齐，再谈开新卷**。
+//
+// 【为什么需要】老大 2026-09-20 的场景：规划是每卷 10 章，库里已有 3 卷、细纲排到第 21 章
+//   ——前两卷满了，第三卷还差 9 章。此时若按"细纲最大章号 + 1"直接往下排，会**跳过第三卷的
+//   后半段**、另开第四卷，作者规划的卷就成了残卷（第四卷的第 31 章接不上第三卷的第 22-30 章）。
+//
+// 【卷边界从哪来（三级取用）】
+//   ① 「本卷章号范围」—— 系统排纲时写入的结构化字段（新数据，权威）；
+//   ② 「本卷章数预估」—— 老数据里的自由文本，作者本来就爱写成 `第11-20章，约四万六千字`；
+//   ③ 只解析到**单章起点**时（如 `第21章起（已写第21章）`），用本次的「每卷章数」把上界补成
+//      `起点 + M - 1`。这一级是**推定**，但推定值会随状态行明示给作者，可被纠正。
+
+/** 取卷边界时依次尝试的槽位名（顺序即优先级） */
+export const VOLUME_BOUND_SLOTS = ['本卷章号范围', '本卷章数预估'] as const
+
+/** 从一张卷大纲卡里取出章号范围的**候选文本**（按优先级；空串已滤掉） */
+export function volumeBoundTextsOf(card: { data: Record<string, string> }): string[] {
+  return VOLUME_BOUND_SLOTS
+    .map(slot => {
+      const key = resolveSlot(VOLUME_OUTLINE_TAB_ID, slot)
+      return key ? (card.data[key] ?? '').trim() : ''
+    })
+    .filter(Boolean)
+}
+
+/**
+ * 从候选文本里解出这一卷的目标章号区间；都解不出返回 null（＝该卷边界未知，跳过不猜）。
+ *
+ * `perVolume` 只在**单章式**文本上生效（见上「三级取用」③）。
+ */
+export function volumeBoundOf(
+  texts: readonly (string | undefined)[], perVolume: number,
+): { from: number; to: number } | null {
+  const m = Math.max(1, Math.round(perVolume) || 1)
+  for (const t of texts) {
+    const r = parseChapterRange(t ?? '')
+    if (!r) continue
+    // 完整区间（`第11-20章`）直接用；单章（`第21章起` / `第21章`）用每卷章数补上界
+    return r.to > r.from ? r : { from: r.from, to: r.from + m - 1 }
+  }
+  return null
+}
+
+/** 一卷的「未排满」信息（闭区间） */
+export interface VolumeGap {
+  /** 卷名（＝卷大纲卡的卡名） */
+  title: string
+  /** 该卷的目标章号范围 */
+  from: number
+  to: number
+  /** 尚未排细纲的那一段：`gapFrom` ~ `gapTo` */
+  gapFrom: number
+  gapTo: number
+}
+
+/**
+ * 找**第一个没排满的卷** —— 缺口补齐的依据；都排满了（或边界全不可知）返回 null。
+ *
+ * 🔴 缺口起点取 `maxOutlineNo + 1` 而不是"扫出第一个空洞"：细纲必须**连续**才能被
+ *    `loadChapterOutlines` 按章号取到，补空洞（如已有 1-5 与 7-21，去补第 6 章）会与
+ *    "接着往下排"的语义打架。老大的场景也一直是**末尾缺**（排到 21、缺 22-30）。
+ */
+export function detectVolumeGap(
+  volumes: readonly { name: string; texts: readonly (string | undefined)[] }[],
+  maxOutlineNo: number,
+  perVolume: number,
+): VolumeGap | null {
+  for (const v of volumes) {
+    const b = volumeBoundOf(v.texts, perVolume)
+    if (!b) continue
+    if (b.to > maxOutlineNo) {
+      return { title: v.name, from: b.from, to: b.to, gapFrom: maxOutlineNo + 1, gapTo: b.to }
+    }
+  }
+  return null
+}
+
+// ==================== 卷大纲「完整性」判定（缺口补齐用，2026-09-20）====================
+//
+// 老大 2026-09-20 定的口径：
+//   · 卷大纲**完整** → 只按它排细纲（卷大纲卡一个字不动）；
+//   · 卷大纲**不完整** → 补细纲的**同时**把这一卷的卷大纲补全。
+// 所以先得能回答"这一卷规划得够不够细"。
+
+/**
+ * 判「卷大纲是否完整」时看的关键字段。
+ *
+ * 🔴 只挑**卷级走向**那四个：它们回答"这一卷要发生什么"，正是排细纲必须依据的东西。
+ *    至于伏笔 / 角色 / 势力那些模块，作者常常在正文写完之后回头才补 ——
+ *    拿它们当"没规划好"的证据，会把好好的卷判成残卷、白让模型重写一遍。
+ */
+export const VOLUME_CORE_SLOTS = ['第一大高潮', '卷中转折', '卷末高潮', '本卷结尾（卷末状态）'] as const
+
+/**
+ * 是不是"还没写"的占位文本（`（待写）` / `待定` / `暂无` / `TBD` / `—` …）。
+ *
+ * ⚠️ 只认**整段就是占位**的情况：像 `凝罡一重 → （待定）` 这种"部分待定"仍算有内容 ——
+ *    它给出了实质信息，覆盖掉反而丢东西。
+ */
+export function isPlaceholderText(text: string): boolean {
+  const s = (text ?? '').trim()
+  if (!s) return true
+  return /^[（(【[「]?\s*(?:待[写定续补填]|暂无|无|未定|不详|TBD|TODO|N\/A|[-—–~]+|\?+|。+|…+)\s*[）)】\]」]?$/i.test(s)
+}
+
+/**
+ * 这一卷的卷大纲是否已经规划完整（`VOLUME_CORE_SLOTS` 四个字段都有实质内容）。
+ *
+ * ⚠️ 字段一个都对不上（schema 改过名）时返回 **true**：判不了就别动它 ——
+ *    宁可少写（只补细纲），也不要因为"认不出字段"把作者的卷大纲整卷重写一遍。
+ */
+export function isVolumeOutlineComplete(card: { data: Record<string, string> }): boolean {
+  const keys = VOLUME_CORE_SLOTS
+    .map(slot => resolveSlot(VOLUME_OUTLINE_TAB_ID, slot))
+    .filter((k): k is string => !!k)
+  if (!keys.length) return true
+  return keys.every(k => !isPlaceholderText(card.data[k] ?? ''))
+}

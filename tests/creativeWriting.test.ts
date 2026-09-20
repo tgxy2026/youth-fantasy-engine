@@ -7,7 +7,9 @@
 // 另外锁住"细纲能被读回并注入连写"这条链路（它是"按大纲写"的唯一依据）。
 import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
-import { DEFAULT_BIBLE_COUNTS, collectBibleEntities, type BibleCounts } from '../src/lib/aiTasks'
+import {
+  DEFAULT_BIBLE_COUNTS, cleanChapterOutput, collectBibleEntities, stripInlineMarkdown, type BibleCounts,
+} from '../src/lib/aiTasks'
 import { commitOutline, loadChapterOutlines } from '../src/lib/aiWorkflow'
 import { CREATIVE_SEED_SPEC, seedFromFilled } from '../src/lib/creativeSeed'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
@@ -193,6 +195,29 @@ const OUTLINE: OutlineResult = {
     volumeForChapter(ranges, 20)?.title === '卷一' && volumeForChapter(ranges, 21)?.title === '卷二',
     `${volumeForChapter(ranges, 20)?.title} / ${volumeForChapter(ranges, 21)?.title}`)
   ok('切卷：落在所有区间之外 → null（调用方退回旧行为，不瞎猜）', volumeForChapter(ranges, 99) === null)
+}
+
+// ---------- ⑦ 正文净化：模型把正文当 markdown 写时的兜底（2026-09-20）----------
+// 实机抓到：逐章连写的正文里混进了 `**"第九脉，已至。"**` —— 编辑器不渲染 markdown，
+// 作者看到的就是星号。清理逻辑已接进连写链路（每章初稿 / 去 AI 味儿后 / 落库前各一次）。
+{
+  ok('剥粗体 `**x**`，保留文字',
+    stripInlineMarkdown('**“第九脉，已至。”**') === '“第九脉，已至。”',
+    stripInlineMarkdown('**“第九脉，已至。”**'))
+  ok('剥 `__粗体__`', stripInlineMarkdown('__陈渊__抬头') === '陈渊抬头',
+    stripInlineMarkdown('__陈渊__抬头'))
+  ok('剥行首 `#` 标题符（层级符号进正文是噪声）',
+    stripInlineMarkdown('## 第三章 血月夜') === '第三章 血月夜',
+    stripInlineMarkdown('## 第三章 血月夜'))
+  ok('整行 `---` 分隔线删掉（段落分隔用空行就够）',
+    stripInlineMarkdown('前面\n\n---\n\n后面') === '前面\n\n后面',
+    JSON.stringify(stripInlineMarkdown('前面\n\n---\n\n后面')))
+  ok('🔴 不误伤把星号当运算符写的句子（`a * b * c` 的星号后面是空格）',
+    stripInlineMarkdown('a * b * c') === 'a * b * c', stripInlineMarkdown('a * b * c'))
+  ok('🔴 不碰全角星号（★★★★★ 这类评分）', stripInlineMarkdown('评分★★★★★') === '评分★★★★★')
+  ok('🔴 客套 + 围栏的组合要剥干净（先围栏后前言只剥一遍会残留围栏）',
+    cleanChapterOutput('好的，以下是修改后的内容：\n```\n## 第三章\n**陈渊**抬头。\n```') === '第三章\n陈渊抬头。',
+    JSON.stringify(cleanChapterOutput('好的，以下是修改后的内容：\n```\n## 第三章\n**陈渊**抬头。\n```')))
 }
 
 console.log(`\n—— creativeWriting 用例结束：${pass} 通过 / ${fail} 失败`)

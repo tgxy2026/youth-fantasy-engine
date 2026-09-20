@@ -41,6 +41,7 @@ import { CHAPTER_REWRITE_META, type ChapterRewriteAction } from '../lib/aiTasks'
 import { listRewriteTree, type RewriteCandidate, type RewriteCandidateGroup } from '../lib/chapterRewrite'
 import ChapterPicker from './ChapterPicker'
 import { countWords } from '../lib/textStats'
+import { detectVolumeGap } from '../lib/outlineCard'
 import { adviseCapacity, type CapacityAdvice } from '../lib/modelCapacity'
 import { getTavernSettings } from '../lib/tavern/settings'
 import { MAX_CHAPTERS, advisePace, type PaceAdvice } from '../lib/writingPace'
@@ -296,6 +297,17 @@ export default function CreativeWritingPanel() {
   const batchTotal = inp.length === 'short' ? inp.chaptersPerVolume : inp.volumes * inp.chaptersPerVolume
   const batchOversize = batchTotal > MAX_OUTLINE_CHAPTERS
 
+  /**
+   * 缺口：第一个**没排满**的卷（口径见 lib/outlineCard 的 `detectVolumeGap`）。
+   *
+   * 🔴 与编排器**用同一份输入、同一个函数**（`probe.volumeBounds` + `maxOutlineNo` + 每卷章数）——
+   *    两处各算一遍必然漂移（界面说"还差 9 章"、实际排了 10 章），所以口径只留一个来源。
+   */
+  const gap = useMemo(
+    () => (probe ? detectVolumeGap(probe.volumeBounds, probe.maxOutlineNo, inp.chaptersPerVolume) : null),
+    [probe, inp.chaptersPerVolume],
+  )
+
   /** 项目现状一行 —— 把"AI 会从哪开始"如实讲清楚（这就是起点自动判定的可见性） */
   const probeNote = (() => {
     if (!probe) return ''
@@ -303,6 +315,11 @@ export default function CreativeWritingPanel() {
       return '这个项目还没有大纲 —— 本次会先做「设定奠基」把基础设定冷启动出来，再从第 1 卷第 1 章起规划。'
     }
     const head = `当前已有 ${probe.volumeCardCount} 卷大纲 · ${probe.outlineCardCount} 章细纲 · ${probe.chapterCount} 章正文`
+    // 🔴 缺口优先（老大 2026-09-20）：先把作者规划好的这一卷补满，不另开新卷。
+    if (outlineOnlyTarget && gap) {
+      return `${head} → 《${gap.title}》（第 ${gap.from}-${gap.to} 章）还差 ${gap.gapTo - gap.gapFrom + 1} 章，`
+        + `本次先补完第 ${gap.gapFrom}-${gap.gapTo} 章`
+    }
     return outlineOnlyTarget
       ? `${head} → 本次从第 ${probe.maxOutlineNo + 1} 章起接着往下排`
       : `${head} → 本次从第 ${probe.chapterCount + 1} 章接着往下写`
@@ -330,6 +347,8 @@ export default function CreativeWritingPanel() {
             <p>落库只发生在闸门通过之后（写正文时是在每章初稿<b>被采纳</b>之后）；在任何闸门处「放弃」，都不会留下半成品。</p>
             <p className="text-ink-500">每章流程：读上下文（含上一章结尾）→ 续写初稿 → 字数校准 →（开启时）去 AI 味儿 →（开启时）你确认采纳 → 编辑自检 → 抽取设定并补登 / 更新 → 下一章。项目里有《章节细纲》时，会按章号取当章细纲钉进提示词末段，让正文跟着大纲走。</p>
             <p className="text-ink-500">每卷的章号范围（如「第21-40章」）由系统按「每卷多少章」算好写进《分卷大纲》卡 —— 正文因此能自动落进正确的卷，不会全堆在最后一卷。</p>
+            <p><b>没排满的卷会优先补齐</b>：如果某一卷当初只排了一部分（比如规划每卷 10 章、只排到第 21 章），下一次「只做大纲规划」会<b>先把这一卷补满</b>（补第 22-30 章），而不是另开新卷 —— 免得你规划的卷变成残卷。该卷卷大纲若还只有骨架（多处「（待写）」），会一并补上；已经写全的就一个字不动。补满后再排下一批，就是新卷了。</p>
+            <p><b>最后一章没写完也会先补齐</b>（「先补完最后一章」开关，默认开）：上一批若因模型收尾过早只写了半章（如 2200 字 / 目标 4000），开写新章前先把它补到目标字数 —— 只补<b>最后一章</b>，历史章一个字不动（改历史章会污染设定与后文）。</p>
             <p className="text-ink-500">想法还说不清时点<b>「对话引导」</b>：AI 按「题材 → 主角 → 冲突 → 世界」一路问，聊完自动把要点填回输入框。</p>
             <p className="text-ink-500">跑长任务时可以随时切去「正文编辑」看稿 —— 任务不会中断，切回来进度与断点都还在。</p>
             <AIDataSourceNote feature="creative-writing" compact />
@@ -430,7 +449,8 @@ export default function CreativeWritingPanel() {
           {outlineOnlyTarget ? (
             <>
               {/* 中长篇才分批：短篇就是 1 卷，不劳作者去设 */}
-              {inp.length === 'long' && (
+              {/* 🔴 缺口模式下「本批卷数」不生效（本批只补那一卷）—— 收起来，免得作者以为它会算数 */}
+              {inp.length === 'long' && !gap && (
                 <label className="flex items-center gap-1.5">本批卷数
                   <NumberField value={inp.volumes} min={1} max={MAX_OUTLINE_VOLUMES} disabled={s.running}
                     title={`本批要排几卷：1 ~ ${MAX_OUTLINE_VOLUMES}（超出范围会调回最近的边界）`}
@@ -439,13 +459,23 @@ export default function CreativeWritingPanel() {
               )}
               <label className="flex items-center gap-1.5">{inp.length === 'long' ? '每卷章数' : '全书章数'}
                 <NumberField value={inp.chaptersPerVolume} min={1} max={MAX_CHAPTERS_PER_VOLUME} disabled={s.running}
-                  title={`每卷多少章：1 ~ ${MAX_CHAPTERS_PER_VOLUME}（硬指标，超出范围会调回最近的边界）`}
+                  title={gap
+                    ? '缺口模式下它用来推断「这一卷原本规划多少章」（老数据的卷卡只写了范围文本时靠它补齐）'
+                    : `每卷多少章：1 ~ ${MAX_CHAPTERS_PER_VOLUME}（硬指标，超出范围会调回最近的边界）`}
                   onChange={v => updateInputs({ chaptersPerVolume: v ?? 20 })} className={NUM_INPUT} />
               </label>
-              <span className={batchOversize ? 'text-10 text-amber' : 'text-10 text-ink-500'}>
-                本批共 {batchTotal} 章
-                {batchOversize ? ` —— 超过单批上限 ${MAX_OUTLINE_CHAPTERS} 章，请拆成几批排` : ''}
-              </span>
+              {/* 🔴 缺口模式：本次产出多少章由**缺口**决定，「卷数 × 每卷章数」不参与 —— 必须如实说明 */}
+              {gap ? (
+                <span className="text-10 text-amber">
+                  本次先补完《{gap.title}》缺的 {gap.gapTo - gap.gapFrom + 1} 章（第 {gap.gapFrom}-{gap.gapTo} 章）
+                  —— 卷数不生效，补满后再排新卷
+                </span>
+              ) : (
+                <span className={batchOversize ? 'text-10 text-amber' : 'text-10 text-ink-500'}>
+                  本批共 {batchTotal} 章
+                  {batchOversize ? ` —— 超过单批上限 ${MAX_OUTLINE_CHAPTERS} 章，请拆成几批排` : ''}
+                </span>
+              )}
             </>
           ) : (
             <>
@@ -529,6 +559,14 @@ export default function CreativeWritingPanel() {
                   按《章节细纲》写：{inp.useOutline ? '已开启' : '已关闭'}
                 </Button>
               )}
+              {/* 🔴 正文缺口优先（2026-09-20）：这是本面板**唯一会改动已有正文**的开关，
+                  所以文案必须把"改哪一章、改什么"讲明白 */}
+              <Button variant="toggle" selected={inp.topUpLast} disabled={s.running}
+                onClick={() => updateInputs({ topUpLast: !inp.topUpLast })}
+                className="px-3 h-8 rounded-lg text-12"
+                title="开启时：开写新章之前，若**最后一章**明显没写完（字数低于目标），先把它补到目标字数再往下写。只补最后一章，历史章一个字不动">
+                先补完最后一章：{inp.topUpLast ? '已开启' : '已关闭'}
+              </Button>
             </div>
 
             {inp.deAiOn && (

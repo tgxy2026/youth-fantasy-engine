@@ -90,6 +90,12 @@ export interface CreativeInputs {
   useOutline: boolean
   /** 每章初稿先交作者确认（关掉＝全自动跑量） */
   reviewEach: boolean
+  /**
+   * 🔴 **先补完最后一章**（2026-09-20，默认开）：上一批若因模型收尾过早只写了半章，
+   * 开写新章前先把它补到目标字数 —— 否则读到第 22 章会撞上情绪断层。
+   * 只补最后一章（最新章可放开、历史章冻结），只动正文与字数。
+   */
+  topUpLast: boolean
 }
 
 export const DEFAULT_INPUTS: CreativeInputs = {
@@ -107,6 +113,7 @@ export const DEFAULT_INPUTS: CreativeInputs = {
   deAiCustom: '',
   useOutline: true,
   reviewEach: true,
+  topUpLast: true,
 }
 
 /** 结果摘要（落盘用；完整结果里的草稿行可达几十条，没必要存） */
@@ -516,6 +523,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         strategy: inp.strategy,
         deAi: { enabled: inp.deAiOn, prompt: deAiPromptOf(inp) },
         useOutline: inp.useOutline,
+        topUpLast: inp.topUpLast,
         signal: ctl.signal,
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => {

@@ -225,6 +225,73 @@ JSON 结构：
   "chapters":[{"title":"","event":"本章一句话事件","function":"推进主线/铺垫/爽点/情感","cast":"出场人物","hook":"章末钩子","scenes":["场景1","场景2"]}]
 }`
 
+/**
+ * 「补完已有卷」的上下文 —— 长篇分批排纲的**缺口优先**（2026-09-20）。
+ *
+ * 【为什么需要】作者规划的是"每卷 10 章"，库里已有 3 卷、细纲排到第 21 章 —— 第三卷还差 9 章。
+ * 此时若直接另开第四卷，第三卷就成了**残卷**（第四卷接不上第三卷的后半段）。
+ * 缺口模式让这一批只干一件事：**把当前这一卷补满**。
+ */
+export interface OutlineSealing {
+  /** 正在补齐的卷名（已存在，**不重建**） */
+  volumeTitle: string
+  /** 该卷的目标章号范围 */
+  volumeFrom: number
+  volumeTo: number
+  /** 本卷已经排到的章号（＝缺口前一段的末尾，供模型对齐） */
+  doneTo: number
+  /** 本次要排的章号区间 */
+  gapFrom: number
+  gapTo: number
+  /**
+   * 这一卷的卷大纲是否**需要一并补全**（老大 2026-09-20 口径）：
+   *   · 卷大纲不完整（关键字段是「（待写）」之类）→ `true`：模型额外产出一条完整卷大纲，
+   *     落库时**只填空 / 占位字段**（作者已手写的实质内容不动）；
+   *   · 卷大纲完整 → `false`：只补细纲，卷大纲卡一个字不碰。
+   */
+  needVolumeOutline?: boolean
+}
+
+/**
+ * 「补完已有卷」的提示词 —— 与 `planOutlineSys` 并列，由调用点二选一。
+ *
+ * 🔴 与 `planOutlineSys` 最本质的差别是**不产出新卷**：默认 `volumes` 返回空数组；
+ *    只有该卷大纲只剩骨架时（`needVolumeOutline`）才允许放进**这一卷**那一条。
+ *    卷大纲卡一个字都不动（作者可能已经手写了很多内容，模型重写会覆盖掉）。
+ */
+const planSealingSys = (o: { sealing: OutlineSealing; cap: number }) => {
+  const s = o.sealing
+  const count = Math.max(1, s.gapTo - s.gapFrom + 1)
+  /** 卷大纲不完整 → 顺带补全（老大 2026-09-20 口径）；完整 → 一个字都不碰 */
+  const fillVolume = s.needVolumeOutline === true
+  const volRule = fillVolume
+    ? `3. 🔴 **卷大纲一并补全**：这一卷的卷大纲目前只有骨架（多处还是「（待写）」）。请为这一卷给出一条**完整**的卷大纲 —— \`volumes\` 里**只放这一卷**，\`title\` 必须原样写「${s.volumeTitle}」（不要改名、不要额外给别的卷）。`
+    : `3. 🔴 **不要新建卷**：这一卷已经存在（作者自己规划的），卷大纲也已写全。\`volumes\` 一律返回**空数组 []**，只给 \`chapters\`。`
+  const chaptersShape = `"chapters":[{"title":"","event":"本章一句话事件","function":"推进主线/铺垫/爽点/情感","cast":"出场人物","hook":"章末钩子","scenes":["场景1","场景2"]}]`
+  const jsonShape = fillVolume
+    ? `{ "volumes":[{"title":"${s.volumeTitle}","positioning":"本卷一句话定位","stage":"主角境界区间","scope":"舞台范围","opening":"卷首状态","climax1":"第一大高潮","turn":"卷中转折","climax2":"卷末高潮","ending":"卷末状态","events":"事件链 起→承→转→合","subplots":"支线事件"}],
+  ${chaptersShape} }`
+    : `{ "volumes":[],
+  ${chaptersShape} }`
+  return `${PLAN_OUTLINE_BASE}
+
+铁律：
+1. 只输出 JSON，不要解释文字，不要 markdown 代码块围栏。
+2. **本次是「补完已有卷」**：作者已经规划了《${s.volumeTitle}》这一卷，它包含全书第 ${s.volumeFrom} ~ ${s.volumeTo} 章；其中第 ${s.volumeFrom} ~ ${s.doneTo} 章已经有细纲了。你**只补第 ${s.gapFrom} ~ ${s.gapTo} 章**，共 ${count} 章，一章不多、一章不少。
+${volRule}
+4. **接着第 ${s.doneTo} 章的结尾往下走**：延续这一卷已有的冲突线、伏笔与人物状态，不要把已经发生过的事件再演一遍；也不要把本卷的卷末高潮草草收掉 —— 后面还要接到第 ${s.volumeTo} 章。
+5. **不许新造专名**：人物、地名、势力、功法只能用资料里已有的写法。新造的名字在设定表里对不上，会制造"未登记实体"。
+6. 每章都要有"事件 + 钩子"，严禁"过渡章""日常"这类空章；事件链要有递进。
+7. title 只写章名本身，**不要带"第X章"前缀**（系统会自动编号）。
+8. 每章 scenes 给 2~3 条场景（地点+人物+发生什么）。
+9. **体量纪律（重要）**：这些都是**卡片摘要**，不是正文 —— 单字段不超过 40 字（events / subplots 不超过 60 字），scenes 每条不超过 30 字。整份 JSON 控制在 ${o.cap} 字以内。
+10. **严格按量输出**：只写 ${count} 章，**务必把 ${count} 章全部写出来再收尾** —— 写到一半就结束的会被判为不合格。
+11. **这是长篇连载的其中一段，不是全书结局** —— 不要写大结局、不要收束所有主线、不要让主角"功成名就 / 开启新纪元 / 尘埃落定"；本批结尾要留下**新的**悬而未决。
+
+JSON 结构（${fillVolume ? 'volumes 只放这一卷、title 必须原样照抄' : '注意 volumes 是空数组'}）：
+${jsonShape}`
+}
+
 /** 单批大纲的**规模上限**（与 `writingPace.MAX_CHAPTERS` 同口径：单批总量 ≤ 60 章） */
 export const MAX_OUTLINE_VOLUMES = 8
 export const MAX_CHAPTERS_PER_VOLUME = 60
@@ -246,6 +313,13 @@ export interface PlanOutlineInput {
   fromVolumeNo: number
   /** 是否接着已有内容往下排（只影响提示词里的接续铁律） */
   extending?: boolean
+  /**
+   * **缺口补齐**：本次只补已有卷里还没排的章，不新建卷（2026-09-20）。
+   *
+   * 给了它就**忽略 `volumes`**（那一次不需要新卷）——
+   * `fromNo` 应等于 `sealing.gapFrom`，本批章数由 `gapTo - gapFrom + 1` 决定。
+   */
+  sealing?: OutlineSealing
 }
 
 /**
@@ -268,8 +342,12 @@ export async function aiPlanOutline(
   const cfg = await requireActiveProvider()
   const volCount = Math.max(1, Math.min(MAX_OUTLINE_VOLUMES, Math.round(opts.volumes) || 1))
   const perVolume = Math.max(1, Math.min(MAX_CHAPTERS_PER_VOLUME, Math.round(opts.chaptersPerVolume) || 1))
+  // 🔴 缺口补齐（2026-09-20）：本批只补这一卷缺的那几章 —— 章数由缺口定，卷数参数不参与。
+  const sealing = opts.sealing
   // 本批总量按上限夹住：模型多写的会被裁掉（宁少写也不让 JSON 被截断）
-  const total = Math.min(volCount * perVolume, MAX_OUTLINE_CHAPTERS)
+  const total = sealing
+    ? Math.max(1, Math.min(MAX_OUTLINE_CHAPTERS, sealing.gapTo - sealing.gapFrom + 1))
+    : Math.min(volCount * perVolume, MAX_OUTLINE_CHAPTERS)
   const start = Math.max(1, Math.round(opts.fromNo) || 1)
   const volNoStart = Math.max(1, Math.round(opts.fromVolumeNo) || 1)
   const extending = opts.extending === true
@@ -281,19 +359,37 @@ export async function aiPlanOutline(
     const cap = tighten
       ? Math.max(240, Math.round(outlineCharCap(volCount, total) * 0.7))
       : outlineCharCap(volCount, total)
-    const task = extending
-      ? `请接着往下排：本次从全书第 ${volNoStart} 卷起，共 ${volCount} 卷、每卷 ${perVolume} 章（对应第 ${start} 章起）。`
-      : `请产出分卷大纲与逐章细纲：共 ${volCount} 卷，每卷 ${perVolume} 章。`
+    const task = sealing
+      // 🔴 措辞必须跟着 `needVolumeOutline` 走：这一行原来写死"不要新建卷"，
+      //    与"卷大纲只剩骨架时顺带补全"直接打架（同一类"两处约束自相矛盾"的坑）。
+      ? `请补完《${sealing.volumeTitle}》第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章（共 ${total} 章）；`
+        + (sealing.needVolumeOutline
+            ? '并顺带把**这一卷**的卷大纲补全（不要额外开新卷）。'
+            : '**不要新建卷**。')
+      : extending
+        ? `请接着往下排：本次从全书第 ${volNoStart} 卷起，共 ${volCount} 卷、每卷 ${perVolume} 章（对应第 ${start} 章起）。`
+        : `请产出分卷大纲与逐章细纲：共 ${volCount} 卷，每卷 ${perVolume} 章。`
+    // 提示词三选一：缺口补齐 / 接续 / 从零（缺口那支不产出卷，见 planSealingSys）
+    const sys = sealing
+      ? planSealingSys({ sealing, cap })
+      : planOutlineSys({ volumes: volCount, perVolume, extending, fromVolumeNo: volNoStart, cap })
     const text = await chat(
       cfg,
       [
-        { role: 'system', content: composeSystemPrompt(planOutlineSys({ volumes: volCount, perVolume, extending, fromVolumeNo: volNoStart, cap }), cfg) },
+        { role: 'system', content: composeSystemPrompt(sys, cfg) },
         // 🔴 硬约束放**消息末尾**：模型对最后一条指令最敏感。实测仅写在 system 里时
         //    Qwen3-30B 会无视"只写 1 卷 1 章"，连吐 13000+ 字；末尾重申才压得住。
         {
           role: 'user',
           content: `【资料】\n${material.trim() || '（无资料，请按通用网文逻辑克制地设定）'}\n\n${task}` +
-            `\n\n【必须遵守】只输出 ${volCount} 卷、每卷 ${perVolume} 章（共 ${total} 章），**一章不少、一章不多**；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。` +
+            // 🔴 末尾是**权重最高**的位置，这里必须与 system 里的分支保持一致：
+            //    2026-09-20 实机抓到过一次自相矛盾 —— system 说"卷大纲一并补全、volumes 只放这一卷"，
+            //    而这里写死"volumes 为空数组"，模型照末尾执行 ⇒ 卷大纲永远补不上。
+            (sealing
+              ? `\n\n【必须遵守】只输出 JSON；\`volumes\` ${sealing.needVolumeOutline
+                  ? `只放**这一卷**（\`title\` 原样写「${sealing.volumeTitle}」，并把「（待写）」那些字段补全）`
+                  : '为**空数组**（这一卷已存在，不要再给卷）'}；只写第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章（共 ${total} 章），**一章不少、一章不多**；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`
+              : `\n\n【必须遵守】只输出 ${volCount} 卷、每卷 ${perVolume} 章（共 ${total} 章），**一章不少、一章不多**；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`) +
             (tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : '') +
             (missing > 0 && missing < total
               ? `\n【注意】上一次只写了 ${missing} 章就收尾了，**还差 ${total - missing} 章**。这一次务必把 ${total} 章全部写出来（每章可以更精练，但不能少写）。`
@@ -310,8 +406,13 @@ export async function aiPlanOutline(
       chapters: rawObj.chapters ?? rawObj['章节'] ?? rawObj['章'] ?? rawObj['章节细纲'],
     }
 
-    // 🔴 卷数按 volCount 裁、章数按 total 裁：提示词压不住时靠这里兜底
-    const volumes: OutlineVolume[] = (Array.isArray(obj.volumes) ? obj.volumes : []).slice(0, volCount).map(raw => {
+    // 🔴 缺口补齐**默认不产出卷**：这一卷已存在（作者规划的），本次只补它缺的章 ——
+    //    返回空数组，调用方就不会建卷、也不会碰卷大纲卡。
+    //    **例外**：`needVolumeOutline` —— 该卷大纲只有骨架（多处「（待写）」），
+    //    老大 2026-09-20 要求这时顺带把它补全，所以保留模型给的那一条卷（只留一条）。
+    // 🔴 卷数按 volLimit 裁、章数按 total 裁：提示词压不住时靠这里兜底
+    const volLimit = sealing ? (sealing.needVolumeOutline ? 1 : 0) : volCount
+    const volumes: OutlineVolume[] = (Array.isArray(obj.volumes) ? obj.volumes : []).slice(0, volLimit).map(raw => {
       const o = (raw ?? {}) as Record<string, unknown>
       return {
         title: asText(o.title).trim(),

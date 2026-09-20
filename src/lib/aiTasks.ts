@@ -39,7 +39,7 @@ export { aiContinuityAudit, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowRe
 export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from './aiTasks/audit'
 export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from './aiTasks/jieWenJi'
 export type { EditorDiagnosis, ReviewDimension, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, BriefingReport } from './aiTasks/jieWenJi'
-export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput } from './aiTasks/rewrite'
+export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput, stripInlineMarkdown } from './aiTasks/rewrite'
 export type { ChapterRewriteAction, ChapterRewriteOpts } from './aiTasks/rewrite'
 export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, parseExtractedEntities } from './aiTasks/extract'
 export type { SettingEntityType, ExtractedEntity } from './aiTasks/extract'

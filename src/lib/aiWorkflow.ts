@@ -33,7 +33,7 @@ import { buildProjectContext } from './aiContext'
 import {
   aiGenerateBible, aiPlanOutline,
   MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES,
-  type OutlineResult,
+  type OutlineResult, type OutlineVolume,
 } from './aiTasks'
 import { sortChapters } from './chapterSeq'
 import { writerBudgetFor } from './aiWriterBudget'
@@ -46,8 +46,9 @@ import { createFlow, firstUnfinishedStage, type StageCtx } from './flow/pipeline
 import type { CommitOutcome, DraftBundle, DraftRow, FlowProgress, FlowStage } from './flow/types'
 import { uid } from './id'
 import {
-  chapterNoOf, fillChapterRanges, outlineCardName, outlineEventKey, parseChapterRange,
-  VOLUME_OUTLINE_TAB_ID, volumeRangeKey,
+  chapterNoOf, detectVolumeGap, fillChapterRanges, formatChapterRange, isPlaceholderText,
+  isVolumeOutlineComplete, outlineCardName, outlineEventKey, parseChapterRange,
+  VOLUME_OUTLINE_TAB_ID, volumeBoundTextsOf, volumeRangeKey,
 } from './outlineCard'
 import type { LedgerItem } from './settingLedger'
 import type { Volume } from './types'
@@ -100,6 +101,13 @@ export interface CreativeProjectProbe {
   chapterCount: number
   /** 正文最后一章的标题 */
   lastChapterTitle: string
+  /**
+   * 已有卷大纲卡的**章号边界候选**（按卡的 order 排好序）—— 缺口检测用。
+   *
+   * 🔴 面板与编排器共用它 + `maxOutlineNo` + 「每卷章数」去算 `detectVolumeGap`：
+   *    两处各算一遍必然漂移（界面说"缺 9 章"、实际排 10 章），所以口径只留一个来源。
+   */
+  volumeBounds: { name: string; texts: string[] }[]
 }
 
 /** 读一眼当前项目的大纲 / 正文现状（面板状态行与起点判定共用同一份口径） */
@@ -119,6 +127,10 @@ export async function probeCreativeProject(): Promise<CreativeProjectProbe> {
     maxOutlineNo,
     chapterCount: chs.length,
     lastChapterTitle: last?.title ?? '',
+    // 按 order 排序：`detectVolumeGap` 是"找到第一个没排满的卷"，卷序错了就会去补错卷
+    volumeBounds: [...volCards]
+      .sort((a, b) => a.order - b.order)
+      .map(c => ({ name: c.name, texts: volumeBoundTextsOf(c) })),
   }
 }
 
@@ -126,6 +138,33 @@ export async function probeCreativeProject(): Promise<CreativeProjectProbe> {
 function volFieldOf(card: { data: Record<string, string> }, fieldName: string): string {
   const key = resolveSlot(VOLUME_OUTLINE_TAB_ID, fieldName)
   return key ? (card.data[key] ?? '') : ''
+}
+
+/**
+ * 该卷的卷大纲是不是"只有骨架" —— 决定缺口补齐时要不要**顺带把它补全**。
+ *
+ * 老大 2026-09-20 口径：卷大纲完整就只按它排细纲；不完整就在补细纲的同时把卷大纲补上。
+ * ⚠️ 找不到同名卡时返回 `true`（当成需要补）：卡片缺失说明这一卷确实没规划好。
+ */
+async function volumeOutlineNeedsFill(title: string): Promise<boolean> {
+  const cards = await db.getCardRecords(VOLUME_OUTLINE_TAB_ID).catch(() => [])
+  const card = cards.find(c => c.name.trim() === title.trim())
+  return card ? !isVolumeOutlineComplete(card) : true
+}
+
+/**
+ * 把一条卷大纲摊成 `语义槽位名 → 值` —— 供 `commitOutline` 按槽位现查真实键后落库。
+ *
+ * 🔴 刻意**不含「卷名」**（改它等于改卡名，会把卡与卷记录的联系切断）
+ *    与「本卷章数预估」（那是作者手写的自由文本，不属于"骨架补齐"的范围）。
+ */
+function volumeFieldsOf(v: OutlineVolume): Record<string, string> {
+  return {
+    '本卷一句话定位': v.positioning, '主角境界区间': v.stage, '舞台范围': v.scope,
+    '本卷开头（卷首状态）': v.opening, '第一大高潮': v.climax1, '卷中转折': v.turn,
+    '卷末高潮': v.climax2, '本卷结尾（卷末状态）': v.ending,
+    '事件链（起→承→转→合）': v.events, '支线事件': v.subplots,
+  }
 }
 
 /** 「已有细纲」里一章的第一行事件（做全书脉络用；取不到由调用方兜底） */
@@ -249,6 +288,18 @@ export interface OutlineCommitOutcome {
   volumesCreated: number
   volumeCardsCreated: number
   chapterCardsCreated: number
+  /**
+   * 回填了「本卷章号范围」的卷数（缺口补齐专用，2026-09-20）。
+   *
+   * 🔴 只在那一卷原本**没有范围**时才写：正文按大纲切卷的唯一依据就是这一列，
+   *    而老数据（如示范项目）的范围只写在「本卷章数预估」的自由文本里 —— 不回填就切不了卷。
+   */
+  volumeRangesFilled: number
+  /**
+   * 补全了卷级字段的**处数**（缺口补齐 + 该卷大纲原本只有骨架时）。
+   * 🔴 只写「空 / 占位（（待写）之类）」的字段 —— 作者已写实的内容一个字不动。
+   */
+  volumeFieldsFilled: number
   failed: string[]
 }
 
@@ -258,9 +309,19 @@ export interface OutlineCommitOutcome {
  */
 export async function commitOutline(
   result: OutlineResult,
-  opts: { signal?: AbortSignal } = {},
+  opts: {
+    signal?: AbortSignal
+    /**
+     * 回填 / 补全卷大纲卡（缺口补齐用，2026-09-20）—— **只写空或占位字段**。
+     * 卷名必须与已有卡**完全一致**，找不到同名卡就跳过（绝不新建）。
+     */
+    volumeFills?: { title: string; range?: string; fields?: Record<string, string> }[]
+  } = {},
 ): Promise<OutlineCommitOutcome> {
-  const out: OutlineCommitOutcome = { volumesCreated: 0, volumeCardsCreated: 0, chapterCardsCreated: 0, failed: [] }
+  const out: OutlineCommitOutcome = {
+    volumesCreated: 0, volumeCardsCreated: 0, chapterCardsCreated: 0,
+    volumeRangesFilled: 0, volumeFieldsFilled: 0, failed: [],
+  }
   const pid = db.getCurrentProjectId()
 
   // ① 建卷
@@ -298,6 +359,38 @@ export async function commitOutline(
       })
       out.volumeCardsCreated++
     } catch { out.failed.push(`大纲：${v.title}`) }
+  }
+
+  // ②.5 回填 / 补全卷大纲卡（缺口补齐专用，2026-09-20）
+  //   🔴 两条铁律：
+  //     ① 「本卷章号范围」只在原本**为空 / 占位**时写 —— 作者手填过的范围是他的判断，
+  //        覆盖它等于篡改他的规划。而这一列是正文按大纲切卷的**唯一依据**：
+  //        老数据（如示范项目）的卷卡没有它（范围只写在「本卷章数预估」的自由文本里），
+  //        不回填这一批正文就切不了卷。
+  //     ② 卷级字段**只填空 / 占位**（「（待写）」之类）—— 骨架补齐不等于重写，
+  //        作者已写实的内容一个字不动（老大 2026-09-20 口径）。
+  //   ⚠️ 卷名必须精确匹配已有卡：模型写错卷名时宁可跳过，也绝不能凭空建出一张新卡。
+  const rangeKey = volumeRangeKey()
+  if (opts.volumeFills?.length) {
+    for (const vf of opts.volumeFills) {
+      if (opts.signal?.aborted) break
+      const card = volCards.find(c => c.name.trim() === vf.title.trim())
+      if (!card) continue
+      const patch: Record<string, string> = {}
+      if (rangeKey && vf.range && isPlaceholderText(card.data[rangeKey] ?? '')) patch[rangeKey] = vf.range
+      for (const [slot, value] of Object.entries(vf.fields ?? {})) {
+        if (!value.trim()) continue
+        const key = resolveSlot('volume-outline', slot)
+        if (!key || !isPlaceholderText(card.data[key] ?? '')) continue
+        patch[key] = value
+      }
+      if (!Object.keys(patch).length) continue
+      try {
+        await db.saveCardRecord({ ...card, data: { ...card.data, ...patch } })
+        if (rangeKey && patch[rangeKey]) out.volumeRangesFilled++
+        out.volumeFieldsFilled += Object.keys(patch).length - (rangeKey && patch[rangeKey] ? 1 : 0)
+      } catch { out.failed.push(`卷大纲：${vf.title}`) }
+    }
   }
 
   // ③ 章节细纲卡
@@ -417,6 +510,14 @@ export interface CreativeWritingOptions {
   deAi?: { enabled: boolean; prompt: string }
   /** 连写时是否按已落库的《章节细纲》写（默认是；没有细纲卡时自动退回自由发挥） */
   useOutline?: boolean
+  /**
+   * 🔴 **正文缺口优先**（默认**开**，2026-09-20）：开写新章之前，先把**最后一章**补到目标字数。
+   *
+   * 长篇是分批写的：上一批可能因模型收尾过早只落库半章（实测 4000 字目标只写了 2200），
+   * 不补就会在第 22 章读到情绪断层。只补最后一章、只动正文与字数（见 `runAutoContinue`）。
+   * 传 `false` 关闭。
+   */
+  topUpLast?: boolean
   /** 闸门①：设定草稿审阅。返回用户勾选的条目；**返回 null = 放弃整条流程** */
   onBibleGate?: (bundle: DraftBundle) => Promise<DraftRow[] | null>
   /**
@@ -564,25 +665,53 @@ export async function runCreativeWriting(
     return { bundle, bibleCommit }
   })
 
-  // —— 阶段②：大纲规划（从零排 / 接续排**共用这一个执行体**）——
+  // —— 阶段②：大纲规划（从零排 / 接续排 / 补缺口 共用这一个执行体）——
   flow.on('outline', async ctx => {
-    // 🔴 续排起点看「**已排到哪**」，不看「正文写到哪」（2026-09-20 改，老大确认）：
+    // 🔴 缺口优先（2026-09-20，老大拍板）：库里已有卷大纲、而**当前那一卷还没排满**时，
+    //    本批只补缺口，**不另开新卷** —— 否则作者规划好的卷会变成残卷
+    //    （示范项目：规划每卷 10 章、细纲排到第 21 章 ⇒ 先补第 22-30 章，而不是排第四卷）。
+    //    补满之后下一批才轮到新卷。
+    const gap = detectVolumeGap(probe.volumeBounds, probe.maxOutlineNo, perVolume)
+    const filling = gap && target === 'outline' ? gap : null
+    // 🔴 这一卷的卷大纲是否"只有骨架"？（老大 2026-09-20 口径）
+    //    完整 → 只按它排细纲，卷大纲卡一个字不动；不完整 → 补细纲时把它一并补全。
+    const needVolumeOutline = filling ? await volumeOutlineNeedsFill(filling.title) : false
+    const sealing = filling
+      ? {
+          volumeTitle: filling.title,
+          volumeFrom: filling.from,
+          volumeTo: filling.to,
+          doneTo: probe.maxOutlineNo,
+          gapFrom: filling.gapFrom,
+          gapTo: filling.gapTo,
+          needVolumeOutline,
+        }
+      : undefined
+    // 🔴 起点看「**已排到哪**」，不看「正文写到哪」（2026-09-20 改，老大确认）：
     //    长篇是"先把大纲规划完、再写正文"，此时正文可能一章都没有，而细纲已经排到第 40 章。
     //    旧口径按正文算会得到"从第 1 章起"，紧接着被判"第 1 章已有细纲、无需续排"直接收工 ——
-    //    纯排大纲这条路完全跑不通。
-    const fromNo = probe.maxOutlineNo + 1
+    //    纯排大纲这条路完全跑不通。缺口模式下起点＝缺口起点（＝已有细纲最大章号 + 1）。
+    const fromNo = sealing ? sealing.gapFrom : probe.maxOutlineNo + 1
     const fromVolumeNo = probe.volumeCardCount + 1
     const extending = probe.hasOutline
+    /** 本批要排多少章（缺口模式＝缺口章数，「卷数 × 每卷章数」不参与） */
+    const planCount = sealing ? sealing.gapTo - sealing.gapFrom + 1 : planTotalChapters
 
     ctx.report(0.15, extending ? '读已有卷大纲与细纲脉络…' : '组装设定资料…')
-    const task = extending
-      ? `接着往下排：从全书第 ${fromVolumeNo} 卷起，本批共 ${plannedVolumes} 卷、每卷 ${perVolume} 章（对应第 ${fromNo} 章起）。`
-      : `产出分卷大纲与逐章细纲：本批共 ${plannedVolumes} 卷、每卷 ${perVolume} 章。`
+    const task = sealing
+      ? `【补完已有卷】作者已经规划了《${sealing.volumeTitle}》（全书第 ${sealing.volumeFrom} ~ ${sealing.volumeTo} 章），`
+        + `其中第 ${sealing.volumeFrom} ~ ${sealing.doneTo} 章已有细纲。本次只补第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章，共 ${planCount} 章；`
+        + `**不要新建卷**，接着第 ${sealing.doneTo} 章的结尾往下走。`
+      : extending
+        ? `接着往下排：从全书第 ${fromVolumeNo} 卷起，本批共 ${plannedVolumes} 卷、每卷 ${perVolume} 章（对应第 ${fromNo} 章起）。`
+        : `产出分卷大纲与逐章细纲：本批共 ${plannedVolumes} 卷、每卷 ${perVolume} 章。`
     const material = await buildPlanMaterial(probe, task)
 
-    ctx.report(0.45, extending
-      ? `续排第 ${fromVolumeNo} 卷（第 ${fromNo} 章起，本批 ${planTotalChapters} 章）…`
-      : `规划 ${plannedVolumes} 卷 × ${perVolume} 章…`)
+    ctx.report(0.45, sealing
+      ? `补完《${sealing.volumeTitle}》第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章（共 ${planCount} 章）…`
+      : extending
+        ? `续排第 ${fromVolumeNo} 卷（第 ${fromNo} 章起，本批 ${planTotalChapters} 章）…`
+        : `规划 ${plannedVolumes} 卷 × ${perVolume} 章…`)
     // 收字回调同时就是**流式开关**（不传会撞 180s 总超时墙，见 aiTasks 的 longStream 注释）
     let got = 0
     const raw = await aiPlanOutline(material, {
@@ -591,6 +720,7 @@ export async function runCreativeWriting(
       fromNo,
       fromVolumeNo,
       extending,
+      ...(sealing ? { sealing } : {}),
       signal: ctx.signal,
       onToken: d => {
         got += d.length
@@ -604,20 +734,43 @@ export async function runCreativeWriting(
     //    ⚠️ 必须把**实际排出的章数**一起传进去：模型偶尔写一半就收尾（实测线上 27B：
     //    2 卷 × 10 章只给 10 章），若仍按承诺的每卷章数算，后一卷会拿到
     //    「第32-41章」而**那 10 章根本不存在** —— 作者以为排到 41 章，正文写到那里会找不到细纲。
-    const outline: OutlineResult = {
-      ...raw,
-      volumes: fillChapterRanges(raw.volumes, fromNo, perVolume, raw.chapters.length),
-    }
+    // 🔴 缺口模式**不产出卷**：这一卷已存在（作者规划的），本批只补它缺的章 ——
+    //    卷大纲卡一个字不动（作者可能已手写很多内容，模型重写会覆盖掉）。
+    const outline: OutlineResult = sealing
+      ? { volumes: [], chapters: raw.chapters }
+      : { ...raw, volumes: fillChapterRanges(raw.volumes, fromNo, perVolume, raw.chapters.length) }
 
     // 产出不足**如实说明**，不静默：少排的章会让下一批从更早的位置接续。
-    const short = planTotalChapters - outline.chapters.length
+    const short = planCount - outline.chapters.length
     if (short > 0) {
-      ctx.report(0.95, `注意：本次只排了 ${outline.chapters.length} 章，比承诺的 ${planTotalChapters} 章少了 ${short} 章 —— 已按实际数量收敛卷范围`)
+      ctx.report(0.95, sealing
+        ? `注意：本次只补了 ${outline.chapters.length} 章（应为 ${planCount} 章），还差 ${short} 章 —— 已按实际数量回填卷范围，下次可以继续补。`
+        : `注意：本次只排了 ${outline.chapters.length} 章，比承诺的 ${planCount} 章少了 ${short} 章 —— 已按实际数量收敛卷范围`)
     }
-    ctx.report(1, `${outline.volumes.length} 卷 / ${outline.chapters.length} 章（第 ${fromNo} 章起），等待确认…`)
+    ctx.report(1, sealing
+      ? `补完第 ${fromNo} ~ ${fromNo + outline.chapters.length - 1} 章（《${sealing.volumeTitle}》），等待确认…`
+      : `${outline.volumes.length} 卷 / ${outline.chapters.length} 章（第 ${fromNo} 章起），等待确认…`)
     const ok = opts.onOutlineGate ? await opts.onOutlineGate(outline) : true
     if (!ok) giveUp()
-    const outlineCommit = await commitOutline(outline, { signal: ctx.signal })
+    // 🔴 缺口补齐要把**推算出的卷边界**回填给卷卡（见 commitOutline ②.5：只在该列原本为空时写）——
+    //    正文按大纲切卷依赖它，而老数据的卷卡里根本没有这一列。
+    //    ⚠️ 写的是「该卷完整目标区间」（含本次之前已排的章）：第 21 章已排且属于第三卷，
+    //       卷范围就该是 21-30；但模型少排时按**实际**排到的章收敛，避免又落出幽灵范围。
+    // 🔴 该卷大纲原本只有骨架时（needVolumeOutline），模型这一批已顺带产出完整卷大纲
+    //    （sealing 模式下 volumes 只放这一卷）——一并交给 commitOutline 按字段补全，
+    //    它只填空 / 占位字段，作者已写实的内容不动。
+    const filledTo = Math.min(sealing?.volumeTo ?? 0, fromNo + outline.chapters.length - 1)
+    const vol0 = raw.volumes[0]
+    const volumeFills = sealing && outline.chapters.length
+      ? [{
+          title: sealing.volumeTitle,
+          range: formatChapterRange(sealing.volumeFrom, Math.max(sealing.volumeFrom, filledTo)),
+          ...(needVolumeOutline && vol0 ? { fields: volumeFieldsOf(vol0) } : {}),
+        }]
+      : undefined
+    const outlineCommit = await commitOutline(outline, {
+      signal: ctx.signal, ...(volumeFills ? { volumeFills } : {}),
+    })
     // 「只做大纲规划」：大纲照常落库，连写阶段整段跳过。
     // 用 skipRest 而不是"不登记 draft"—— 目标在开跑前就定好了，阶段表早已定好；
     // 也不能记成 done（界面会谎称正文写完了）。
@@ -644,6 +797,9 @@ export async function runCreativeWriting(
         strategy: opts.strategy ?? 'add-only',
         ...(inp.intent.trim() ? { intent: inp.intent.trim() } : {}),
         ...(opts.deAi ? { deAi: opts.deAi } : {}),
+        // 🔴 正文缺口优先（默认开）：先把最后一章补到目标字数，再往下写新章。
+        //    库里还没有正文时 `last` 为 null，那段自然跳过（从零创作不受影响）。
+        ...(opts.topUpLast === false ? {} : { topUpLast: {} }),
       },
       {
         signal: ctx.signal,

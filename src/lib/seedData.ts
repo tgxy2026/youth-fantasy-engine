@@ -397,7 +397,11 @@ async function doCreateDemoProject(): Promise<string> {
       '四、衔接与登记::下章预告方向': '陈渊南行：洛崇第二批兵正南聚，那把"锁"要试第二次',
     },
   })
-  await db.saveCardRecord(card('chapter-outline', '第1章 废脉', 0, { '章节号/标题': '第1章 废脉' }))
+  // ⚠️ 2026-09-20 删除一行重复的播种：这里原本还有一句
+  //    `db.saveCardRecord(card('chapter-outline', '第1章 废脉', 0, { '章节号/标题': '第1章 废脉' }))`
+  //    —— 与上方第 151 行那张**完整**的「第1章 废脉」重名，会多播出一张只有标题的**空壳卡**。
+  //    实机验证时表现为「细纲卡 22 张、最大章号却只到 21」（卡数比章号多 1），
+  //    而且 `loadChapterOutlines` 按章号写 Map 时，空壳卡有可能**覆盖**完整卡的细纲内容。
   await db.saveCardRecord({
     id: uid(), projectId: '', tabId: 'chapter-outline', name: '第2章 塔灵', order: 1,
     data: {
