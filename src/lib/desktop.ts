@@ -7,7 +7,7 @@
 // 它是写进用户数据文件的字面量，改名会让老数据文件无法被识别。
 // 桌面版「导出数据文件 / 导入数据文件」即基于该格式，可在设备间手工搬运。
 import type { StoreOps, PortableData } from './storeOps'
-import { normalizePortableData } from './storeOps'
+import { normalizePortableData, isPortableDataFile } from './storeOps'
 import { SAVE_DEBOUNCE_MS } from './constants'
 import { markDeleted, clearDeleted } from './syncTombstone'
 
@@ -203,8 +203,19 @@ export async function initDesktopStore(): Promise<void> {
       // 首次使用（文件还不存在）：空库启动属正常，可以写
     } else if (r.text && r.text.trim()) {
       try {
-        data = normalizePortableData(JSON.parse(r.text))
-        lastSavedAt = data.savedAt || Date.now()
+        const parsed: unknown = JSON.parse(r.text)
+        // 🔴 解析成功 ≠ 是本软件的数据文件（2026-09-20 六维审计 P1-2）：见 isPortableDataFile 的说明。
+        //    漏这一步的后果不是"报错"，而是**静默覆盖** —— 误放的文件被当空库放行、不锁写盘，
+        //    随后第一次防抖写盘就把真实数据文件写没了。
+        if (!isPortableDataFile(parsed)) {
+          lock(
+            '数据文件缺少本软件的格式标识（kind="portable-data"）',
+            '本地数据文件不是本软件写出的（缺少格式标识）。为免覆盖它，已暂停写入。',
+          )
+        } else {
+          data = normalizePortableData(parsed)
+          lastSavedAt = data.savedAt || Date.now()
+        }
       } catch {
         lock(
           '数据文件内容不是有效的 JSON（可能被云盘客户端同步截断，或磁盘损坏）',

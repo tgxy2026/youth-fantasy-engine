@@ -21,12 +21,14 @@ import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './mem
 import { formatDate } from '../date'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './provider'
-import { MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
+import { FACTS_MAX_LINES, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
 import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from './vars'
 
 /** 六栏档案的存在意义、各栏行为、以及两条不容违反的规矩（对外导出便于测试与 UI 展示） */
 /** 关键事实最多保留的行数（超了要归并，不是丢弃新事 —— 见提示词里的精简纪律） */
-export const FACTS_MAX_LINES = 12
+// FACTS_MAX_LINES 已上移到 ./types（memory.ts 的裁剪兜底也要用它，见那边的说明）。
+// 这里再导出一次，只为保持既有的 `import { FACTS_MAX_LINES } from './summarize'` 可用。
+export { FACTS_MAX_LINES }
 
 /**
  * 总结提示词 / 解析用到的字数约束（来自控制面板；不传即内置默认）。

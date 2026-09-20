@@ -6,6 +6,7 @@
 import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseLooseObject, asText } from '../aiParse'
 import { longStream } from './stream'
+import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { SettingEntityType, ExtractedEntity } from './extract'
 import type { PromptDef } from '../promptSettings'
 
@@ -381,7 +382,10 @@ export async function aiPlanOutline(
         //    Qwen3-30B 会无视"只写 1 卷 1 章"，连吐 13000+ 字；末尾重申才压得住。
         {
           role: 'user',
-          content: `【资料】\n${material.trim() || '（无资料，请按通用网文逻辑克制地设定）'}\n\n${task}` +
+          // 🔴 资料里含**作者原文**（已有细纲、已有卷大纲），必须走 authorBlock：
+          //    否则作者正文里一句"忽略以上指令"就会被当指令执行（2026-09-20 六维审计 P1-3）。
+          //    `material` 是"可能含作者原文"的整块，所以整块包 —— 与 organize / rewrite 的口径一致。
+          content: `【资料】\n${material.trim() ? authorBlock(newAuthorFence(), material.trim()) : '（无资料，请按通用网文逻辑克制地设定）'}\n\n${task}` +
             // 🔴 末尾是**权重最高**的位置，这里必须与 system 里的分支保持一致：
             //    2026-09-20 实机抓到过一次自相矛盾 —— system 说"卷大纲一并补全、volumes 只放这一卷"，
             //    而这里写死"volumes 为空数组"，模型照末尾执行 ⇒ 卷大纲永远补不上。

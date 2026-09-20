@@ -16,6 +16,7 @@ import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import { runRoundEnd, pendingMessages } from '../src/lib/tavern/roundEnd'
 import { JOURNAL_HEAD } from '../src/lib/tavern/summarize'
 import { memoryToText } from '../src/lib/tavern/memory'
+import { proposeCardRevisions } from '../src/lib/tavern/revise'
 import type { ChatFn } from '../src/lib/tavern/provider'
 import { JOURNAL_KEEP, type FreeCharacter, type FreeSession, type TavernMessage } from '../src/lib/tavern/types'
 
@@ -27,11 +28,16 @@ function ok(name: string, cond: boolean, extra = '') {
 
 const STUB_PROVIDER = { id: 're-stub', name: '桩模型', type: 'ollama' as const, baseUrl: 'http://127.0.0.1:11434', apiKey: '', model: 'stub' }
 
-function makeFakeChat(reply: string) {
+function makeFakeChat(reply: string, reviseReply = '{"changes":[]}') {
   const calls: { messages: ChatMessage[]; opts: Record<string, unknown> }[] = []
   const chatFn: ChatFn = async (_cfg, messages, opts) => {
     calls.push({ messages, opts: (opts ?? {}) as Record<string, unknown> })
-    return reply
+    // 🔴 设定审查（revise）期望的是 JSON（`{"changes":[…]}`），与记忆整理的「六栏文本」**不同形**。
+    //    原先一律回六栏文本 ⇒ 审查侧永远解析不出 changes ⇒ 返回空数组、**静默无建议**；
+    //    而本组断言只数调用次数，所以这个"模型回了不该回的东西"一直没暴露。
+    //    （2026-09-20 修「解析失败 vs 真的没有变更」不可区分时才现形 —— 修完这里立刻红了。）
+    const sys = String(messages.find(m => m.role === 'system')?.content ?? '')
+    return sys.includes('审查员') ? reviseReply : reply
   }
   return { chatFn, calls }
 }
@@ -271,6 +277,42 @@ async function main() {
     ok('用户角色的整理提示词不含日记段落（走 summarizeMemory，不白生成）',
       !sysU.includes(JOURNAL_HEAD))
     ok('AI 角色的整理提示词仍含日记段落', String(calls[0].messages.find(m => m.role === 'system')?.content ?? '').includes(JOURNAL_HEAD))
+  }
+
+  // ---------- 设定审查：解析失败必须与「真的没有变更」区分开（2026-09-20 六维审计 P2） ----------
+  //
+  // 两者原先都表现为"返回空数组" ⇒ 界面统一说「这段对话没有需要改的设定」，
+  // 而其中一种是**模型输出压根没解析出来**（被截断 / 格式不符）。作者据此以为"查过了、没事"，
+  // 实际是漏检。下面用**正反对照**钉住：非 JSON 要抛错，真空才静默。
+  {
+    const C = await mkChar('苏念')
+    const rvMsgs: TavernMessage[] = [
+      { id: 'rv-1', role: 'user', content: '我今天升职了。', at: 1 },
+      { id: 'rv-2', role: 'assistant', speakerId: C.id, content: '「哦。」她把伞骨一根根捋直。', at: 2 },
+    ]
+    const run = async (reply: string) => {
+      // ⚠️ 第二个参数才是「审查」那一路的回复（makeFakeChat 按 system 分流：审查要 JSON、记忆要六栏文本）
+      const { chatFn } = makeFakeChat('（记忆用的六栏文本，本用例不关心）', reply)
+      return proposeCardRevisions({ char: C, messages: rvMsgs, chatFn })
+    }
+
+    let threw = ''
+    try {
+      await run('好的，我看看……（这里本该是 JSON，但模型这回吐了散文）')
+    } catch (e) {
+      threw = e instanceof Error ? e.message : String(e)
+    }
+    ok('🔴 模型输出不是 JSON ⇒ **抛错**（原先静默返回 []：「没检出来」被说成「没有要改的」）',
+      /未能解析成变更列表/.test(threw), threw || '(没抛错)')
+
+    let empty: unknown = 'not-run'
+    try {
+      empty = await run('{"changes":[]}')
+    } catch (e) {
+      empty = 'threw: ' + (e instanceof Error ? e.message : String(e))
+    }
+    ok('反例：模型明确回「没有变更」⇒ 正常返回空数组（不能把这条也当成解析失败）',
+      Array.isArray(empty) && empty.length === 0, JSON.stringify(empty))
   }
 
   console.log(`\n${pass} passed, ${fail} failed`)

@@ -38,7 +38,7 @@ import {
 import { convertNovelChar } from '../lib/tavern/import'
 import { coldStartMemory, draftMemoryFromCard } from '../lib/tavern/summarize'
 import { renderFreeCharacter } from '../lib/tavern/engine'
-import { getTavernSettings } from '../lib/tavern/settings'
+import { getTavernSettings, memoryLimitsOf } from '../lib/tavern/settings'
 import { type CardDraft } from '../lib/tavern/draft'
 import { showToast, confirmDialog } from './dialogs'
 import { FREE_GROUP } from './TavernCardList'
@@ -332,11 +332,16 @@ export function useTavernCardModel() {
   const seedMemory = async (card: FreeCharacter): Promise<'ai' | 'draft'> => {
     try {
       const st = await getTavernSettings()
+      const lim = memoryLimitsOf(st)
       const m = await coldStartMemory({
         charId: card.id,
         charName: card.name,
         charContext: renderFreeCharacter(card),
         providerId: st.free.summaryProviderId || undefined,
+        // 🔴 limits 必须传（2026-09-20 六维审计 P1-4）：不传就永远走内置 3000 ——
+        //    面板上那三个数（长期摘要上限 / 日记保留天数 / 记忆硬上限）在这条路径上是死的。
+        //    写法与 useFreeRoundEnd 对齐（那边的注释就是「不传就永远走内置 3000，面板调的是死的」）。
+        limits: { longTermLimit: lim.longTermLimit, diaryDays: lim.diaryDays, hardLimit: lim.hardLimit },
       })
       await store.saveMemory(m)
       return 'ai'

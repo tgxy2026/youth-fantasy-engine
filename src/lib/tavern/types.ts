@@ -533,6 +533,15 @@ export type CharJournal = {
 /** 每位角色保留的日记条数（滚动，超出丢最老的） */
 export const JOURNAL_KEEP = 50
 
+/**
+ * 「关键事实」栏的建议行数上限。
+ *
+ * 🔴 定义放在这里而不是 `summarize.ts`（2026-09-20 六维审计 P2）：`memory.ts` 的裁剪兜底
+ *    也要用它，而 `summarize → memory` 是单向依赖 —— 常量留在 summarize 会逼出内存环。
+ *    提示词侧（summarize）与裁剪侧（memory）从此共用这一个来源。
+ */
+export const FACTS_MAX_LINES = 12
+
 // ==================== 变量（C2 第二步：变量 + AI 输出增量）====================
 
 /** 内置变量键（白名单 —— 提示词、解析、界面三处共用这一份，别各写各的） */

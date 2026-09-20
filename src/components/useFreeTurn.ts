@@ -195,10 +195,18 @@ export function useFreeTurn({
       setInput(text)
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
-      setStreaming(false)
-      setPhase('')
-      abortRef.current = null
-      streamingHintRef.current = false
+      // 🔴 代次令牌（2026-09-20 六维审计 P1-5）：切会话后旧请求的收尾**不能**动新会话的状态。
+      //    原先 try / catch 两处都有 `abortRef.current !== ctrl` 判断，只有 finally 没有 ——
+      //    旧请求在 finally 里把 streaming 置回 false、abortRef 清空 ⇒ 新会话的回复照常落库
+      //    却**不显示**（界面以为没在生成），停止键也失效（abortRef 已被清空）。
+      //    ⚠️ 正常停止不会卡住：`stop()` 只 abort、不清空 abortRef，所以这里判断为真、照常复位；
+      //    切会话走 `cancelInFlight`（它自己会 setStreaming(false)），跳过也不会留下坏状态。
+      if (abortRef.current === ctrl) {
+        setStreaming(false)
+        setPhase('')
+        abortRef.current = null
+        streamingHintRef.current = false
+      }
     }
   }, [input, session, charCard, streaming, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf, persistCharVars, setSession, setInput, setSpeakNext, setPostNotice, setGreeting])
   const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
@@ -261,9 +269,12 @@ export function useFreeTurn({
       if (abortRef.current !== ctrl) return   // 已切走：不报「失败」，也不回滚界面
       showToast(`重说失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
-      setStreaming(false)
-      setPhase('')
-      abortRef.current = null
+      // 🔴 同上（P1-5）：只有还是自己那一代时才复位
+      if (abortRef.current === ctrl) {
+        setStreaming(false)
+        setPhase('')
+        abortRef.current = null
+      }
     }
   }
   /**
@@ -316,9 +327,12 @@ export function useFreeTurn({
         else setInput('')                               // 自动回复失败：留空
       }
     } finally {
-      setAssistBusy(false)
-      setAssistMode(null)
-      abortRef.current = null
+      // 🔴 同上（P1-5）：这是第三个生成入口（快捷指令），同样只在代次未变时复位
+      if (abortRef.current === ctrl) {
+        setAssistBusy(false)
+        setAssistMode(null)
+        abortRef.current = null
+      }
     }
   }, [streaming, assistBusy, session, input, castCards, charCard, tavernSettings, setInput])
 

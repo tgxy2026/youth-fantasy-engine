@@ -19,7 +19,7 @@
  * 🔴 本模块**不落库、不改卡**：只产出建议。采纳由调用方执行（`store.applyCardRevision`）。
  */
 import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
-import { parseObjectArray, asText } from '../aiParse'
+import { parseObjectArray, parseLooseObject, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './provider'
 import { uid } from '../id'
@@ -229,6 +229,16 @@ export async function proposeCardRevisions(args: ReviseArgs): Promise<CardRevisi
     think: false,
   })
 
+  // 🔴 解析失败必须与「确实没有需要改的」区分开（2026-09-20 六维审计 P2）：
+  //    两者原先都表现为返回 [] ⇒ 界面说"这段对话没有需要改的设定"，
+  //    作者以为查过了，其实是模型输出压根没解析出来（被截断 / 格式不符）—— 静默漏检。
+  const raw = String(reply ?? '')
+  const shape = parseLooseObject(raw) as Record<string, unknown> | null
+  const arr = shape?.changes ?? shape?.['变更'] ?? shape?.['revisions']
+  // 顶层直接给数组也算解析成功（模型偶尔这么写）
+  if (!Array.isArray(arr) && !/^\s*\[/.test(raw)) {
+    throw new Error('模型输出未能解析成变更列表（可能被截断或格式不符），请重试或换一个更大的模型')
+  }
   return parseRevisions(reply, char, transcript)
 }
 

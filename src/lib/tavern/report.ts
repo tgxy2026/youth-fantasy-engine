@@ -117,7 +117,11 @@ export async function normalizeFindings(
   for (const it of raw) {
     const levelRaw = asText(it.level ?? it.等级 ?? '').trim()
     // 先排否定：「无矛盾 / 没有漏洞 / 未发现矛盾」是「没问题」，别被子串匹配误判成「矛盾」
+    // 🔴 否定判据原先只看**行首**（2026-09-20 六维审计 P2）——「基本没有矛盾」「未发现任何漏洞」
+    //    这类"否定词不在开头"的写法会漏网，随后被子串匹配判成「矛盾」。
+    //    现在放宽成"否定词出现在关键词前 6 字内"，同时保留行首那条最常见的形态。
     const negated = /^\s*(无|没|未|不)/.test(levelRaw)
+      || /(无|没有|没|未|不)[^，。；、]{0,6}(矛盾|漏洞|问题)/.test(levelRaw)
     let level: TavernFindingLevel
     if (negated) level = '存疑'
     else if (levelRaw.includes('矛盾')) level = '矛盾'

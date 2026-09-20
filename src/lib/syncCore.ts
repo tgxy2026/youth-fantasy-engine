@@ -480,6 +480,20 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
             return
           }
           if (r === 200) {
+            // 🔴 「读本机快照失败」必须在**推进 rev 之前**就中止本次拉取（2026-09-20 六维审计 P2）：
+            //    ① 退化成 null ⇒ `local = cache`（启动时是空的）⇒ localHasContent=false
+            //       ⇒ 墓碑闸被短路 —— 正是 P0 那条幽灵项目链路；
+            //    ② 更不能"推进 rev 但不合并"：那样下次推送会拿**旧 cache** 当基线覆盖云端（丢数据）。
+            //    本机状态未知时唯一安全的动作是：状态置 error、什么都不动、等下次远端变化再拉。
+            let localSnapPre: SyncStores | null = null
+            if (resp.enc && localSnapshotProvider) {
+              try {
+                localSnapPre = await localSnapshotProvider()
+              } catch {
+                setStatus('error')
+                return
+              }
+            }
             rev = Number(resp.rev) || 0
             if (resp.enc) {
               const serverCache = await decryptObj(resp.enc)
@@ -490,8 +504,8 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
               //    改走同一套三路合并，并且把**本地库**当成 `local` 路：云模式下内存 cache
               //    此刻通常是空的，只看它无法区分"本机删了这条"和"还没拉下来"，
               //    而这两种判反的代价并不对称（误判成删除会丢云端数据，误判成新增会让删掉的项目复活）。
-              const localSnap = localSnapshotProvider ? await localSnapshotProvider().catch(() => null) : null
-              cache = mergeCaches(baseCache, serverCache, localSnap ?? cache)
+              // 本机实况已在上面取过一次（失败就在这里之前中止了）—— 复用，不再重复调用
+              cache = mergeCaches(baseCache, serverCache, localSnapPre ?? cache)
             } else {
               cache = {}
             }
@@ -567,7 +581,14 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     if (totalRecords(restored) === 0) return false
     cache = restored
     adoptBaseline()
-    await pushNow(() => rev)
+    const r = await pushNow(() => rev)
+    // 🔴 pushNow 在重试耗尽时是**返回** `{conflict:true}` 而不是抛（2026-09-20 六维审计 P2）：
+    //    忽略它 ⇒ 函数照旧 `return true` ⇒ 界面报「已从备份恢复」，而云端其实一个字都没变，
+    //    下次拉取又会把 cache 覆盖回去 —— 作者以为恢复成功了，白忙一场。
+    if (r?.conflict) {
+      setStatus('error')
+      return false
+    }
     return true
   }
 
@@ -599,7 +620,13 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       next['meta'] = next['meta'].filter((r) => !isExcludedMetaKey(r.key))
     }
     cache = next
-    await pushNow(0)
+    const r = await pushNow(0)
+    // 🔴 同上：播种推送没成功就必须抛，否则调用方以为「已用本地数据播种」，
+    //    而云端仍是空的 / 旧的 —— 下次另一台设备同步会把这份"播种"当成不存在。
+    if (r?.conflict) {
+      setStatus('error')
+      throw new Error('播种未能推送到云端（并发更新重试已用尽），请稍后重试')
+    }
   }
 
   // 轮询发现远端更新时主动拉取并三路合并（文件模式跨设备同步的核心）。

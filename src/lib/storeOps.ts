@@ -46,3 +46,21 @@ export function normalizePortableData(parsed: unknown): PortableData {
     fileVersion: obj.fileVersion ?? 1, savedAt: obj.savedAt ?? 0, stores,
   }
 }
+
+/**
+ * 这份 JSON 是不是**本软件写出的**数据文件（只看身份标识，不看内容）。
+ *
+ * 🔴 为什么必须有这一步（2026-09-20 六维审计 P1-2）：`normalizePortableData` 是**容错**归一化 ——
+ *    它无条件把 app/kind 写成合法值，并把任意对象的 `stores` 字段粘过来（没有就是空库）。
+ *    于是"用户误放进来的任意合法 JSON"会被当成**首次使用的空库**放行、**且不锁写盘**，
+ *    随后第一次防抖写盘就把真实数据文件覆盖掉（磁盘级不可逆）。
+ *    `importDesktopData` 一直有这道校验（app + kind 都查），`initDesktopStore` 漏了。
+ *
+ * 判据：`kind` 必查（格式标识，见 desktop.ts 头部「名字不要改」）；`app` 若存在则也必须匹配 ——
+ * 不因历史文件缺 `app` 就把用户锁死（宁可放行，也不能让老数据文件用不了）。
+ */
+export function isPortableDataFile(parsed: unknown): boolean {
+  const o = (parsed ?? {}) as { app?: unknown; kind?: unknown }
+  if (o.kind !== 'portable-data') return false
+  return o.app === undefined || o.app === 'novel-studio'
+}

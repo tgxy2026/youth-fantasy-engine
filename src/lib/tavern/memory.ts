@@ -22,6 +22,7 @@
  * 本文件是纯逻辑：无 React、无 IO、无网络。读写归 store.ts，调模型归 summarize.ts。
  */
 import {
+  FACTS_MAX_LINES,
   MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
   SUMMARY_LOCK_TTL_MS,
   type FreeMemory, type FreeSession,
@@ -133,8 +134,21 @@ export function trimMemory(m: FreeMemory, opts?: Partial<MemoryLimits>): FreeMem
     out.longTerm = clipSection(out.longTerm, Math.floor(L.longTermLimit * 0.6))
     if (memoryChars(out) > L.hardLimit) out.anniversaries = clipSection(out.anniversaries, 120)
     if (memoryChars(out) > L.hardLimit) out.relation = clipSection(out.relation, 160)
+    // 🔴 压完上面四栏**仍然**超硬上限时，才动 facts / mines（2026-09-20 六维审计 P2）。
+    //    这两栏是「不失忆」的底线，所以放在最后 —— 但必须**真的兜住**：
+    //    提示词里的 FACTS_MAX_LINES 只是"请模型自己归并"，模型不听话时这里原先完全不设防，
+    //    「硬上限」于是名不副实（实测能把上下文预算挤爆，而预算三数是红线）。
+    //    ⚠️ 取**后** N 行：越靠后的事实越新，也越可能被当前剧情引用。
+    if (memoryChars(out) > L.hardLimit) out.mines = tailLines(out.mines, FACTS_MAX_LINES)
+    if (memoryChars(out) > L.hardLimit) out.facts = tailLines(out.facts, FACTS_MAX_LINES)
   }
   return out
+}
+
+/** 只保留**最后** n 个非空行（事实类栏目超硬上限时的兜底；行数不足则原样返回） */
+function tailLines(s: string, n: number): string {
+  const lines = String(s ?? '').split('\n').map(l => l.trim()).filter(Boolean)
+  return lines.length <= n ? lines.join('\n') : lines.slice(-n).join('\n')
 }
 
 /** 截断到 n 字，超出则在行边界收尾（不把半句话切得莫名其妙） */

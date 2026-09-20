@@ -129,7 +129,18 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i]
     onProgress?.({ stage: 'memory', cur: i + 1, total, name: c.name || '未命名角色' })
-    const prev = await store.getMemory(c.id).catch(() => null)
+    // 🔴 读失败**必须**与「还没有记忆」区分（2026-09-20 六维审计 P2）：
+    //    `getMemory` 对"没有记忆"返回的是**空记忆对象**（内部 `db.getMeta(key, emptyMemory(...))`），
+    //    所以能走到 catch 的只可能是真正的存储读失败。旧写法把失败降级成 null 继续 ——
+    //    null 会让下游的 `isMemoryDegraded` 失去比较基准 ⇒ 模型这次输出残缺也会被当正常结果落库
+    //    （= 把角色记忆洗成一小段，且不可逆）。宁可不更新这张卡的记忆。
+    let prev: FreeMemory | null = null
+    try {
+      prev = await store.getMemory(c.id)
+    } catch {
+      warnings.push(`${c.name || '一位角色'}：读取现有记忆失败，本次跳过记忆更新（避免用残缺结果覆盖）`)
+      continue
+    }
     const shared = {
       charId: c.id,
       charName: c.name,

@@ -138,6 +138,12 @@ async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Pro
 
     if (overwrite) {
       tasks.push(desktopLocalStore.bulkPut(store, list).catch(() => {}))
+      // 🔴 镜像的另一半：还要删掉「本地有、这份 cache 里没有」的记录（2026-09-20 六维审计 P1-1）。
+      //    云模式下 `store.del` 只是把记录从云端 cache 摘掉，**本机数据文件没动**
+      //    （读写都走 cache，本地库自开启同步那一刻起就不再更新）。
+      //    只 put 不 del ⇒ 那条被删的记录仍躺在本地库里 ⇒ 关同步后立刻"复活"；
+      //    更糟的是下次开启同步时 `seedFromLocal` 会把它**当本地数据播种回云端** —— 删除被彻底撤销。
+      tasks.push(mirrorDeleteExtra(store, list))
       continue
     }
 
@@ -153,6 +159,34 @@ async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Pro
     if (missing.length) tasks.push(desktopLocalStore.bulkPut(store, missing).catch(() => {}))
   }
   await Promise.all(tasks)
+}
+
+/**
+ * 把「本机数据文件里有、而这份云端 cache 里没有」的记录删掉 —— 镜像的另一半（P1-1）。
+ *
+ * ⚠️ 只在 `overwrite`（云端**可用**、且已 `flushDesktopCloud` 推完未落盘改动）时才调用：
+ *    那种状态下 cache 就是权威。闩锁兜底那条路传 `overwrite=false`，**绝不能删** ——
+ *    那时的 cache 是闩锁前的旧数据，删了就是静默回滚用户的新稿（审计 P0-2）。
+ *
+ * ⚠️ 读失败（`getAll` 抛错）一律**不删**：宁可多留一条，也不能因读失败误删。
+ * ⚠️ `backups` 由调用方的 `continue` 跳过（本地专属）；`meta` 的本地专属键要单独滤掉。
+ */
+async function mirrorDeleteExtra(store: string, cloudRows: SyncRow[]): Promise<void> {
+  try {
+    const localRows = await desktopLocalStore.getAll(store)
+    const kp = KEY_PATHS[store] ?? 'id'
+    const rows = localRows as Record<string, unknown>[]
+    const keep = new Set(cloudRows.map(r => String((r as Record<string, unknown>)[kp] ?? '')))
+    const extra = rows
+      .filter(r => !keep.has(String(r[kp] ?? '')))
+      // meta 里的排除键（如同步冲突记录）是本机专属、根本不上云 —— 不能因为"云端没有"就删掉
+      .filter(r => !(store === 'meta' && isExcludedMetaKey(String(r.key ?? ''))))
+      .map(r => r[kp])
+      .filter((k): k is string | number => typeof k === 'string' || typeof k === 'number')
+    if (extra.length) await desktopLocalStore.bulkDel(store, extra)
+  } catch {
+    /* 兜底镜像：读/删失败都保持现状（下次关同步或再开同步还有机会纠正），绝不向上抛 */
+  }
 }
 
 // 异常兜底路径：**只补缺失**（overwrite=false）—— 闩锁期本地库才是最权威的那一份
@@ -294,12 +328,23 @@ const desktopCloudFileStore: StoreOps = makeCloudStoreWrapper(desktopCloudStore,
  */
 onDesktopLocalSnapshot(async () => {
   const out: SyncStores = {}
+  const failed: string[] = []
   for (const s of SYNC_STORES) {
     if (s === 'backups') continue
-    // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
-    // 落进同步通用载荷前断言成 SyncRow[] —— 形状由写入方保证
-    out[s] = (await desktopLocalStore.getAll(s).catch(() => [])) as SyncRow[]
+    try {
+      // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
+      // 落进同步通用载荷前断言成 SyncRow[] —— 形状由写入方保证
+      out[s] = (await desktopLocalStore.getAll(s)) as SyncRow[]
+    } catch {
+      // 🔴 读失败**绝不能**降级成 []（2026-09-20 六维审计 P2）：
+      //    一份"少了几张表"的快照会被下游当成"本机就这些" —— 缺的那些记录从此被判成
+      //    「本机删过」或「本机没见过」，两个方向都可能丢数据。
+      //    与 captureSyncData 的「读失败即中止」同口径：整体抛出去，让 syncCore 放弃本次合并。
+      failed.push(s)
+      out[s] = []
+    }
   }
+  if (failed.length) throw new Error(`读取本机数据失败（${failed.join('、')}）`)
   return out
 })
 
