@@ -724,6 +724,9 @@ export async function startChapterRewrite(p: {
       ...(prevTail ? { contextTail: prevTail } : {}),
       signal: ctl.signal,
       onToken: d => { buf += d; flush() },
+      // 🔴 字数校准**没生效**时如实提示（模型失败 / 被截断）——
+      //    否则作者只看到「2202 → 2202 字」，分不清是"模型没干活"还是"本来就不用补"。
+      onLog: msg => notice(msg, 'info'),
     })
     buf = text
     if (!text.trim()) {

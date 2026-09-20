@@ -1,12 +1,15 @@
-// ============ AI 任务层 · 整章改写（润色 / 扩写 / 精简 / 改写）============
+// ============ AI 任务层 · 整章改写（润色 / 扩写 / 精简 / 续写 / 改写）============
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #17 段）。
 // 🔴 「动作 × 章位置」纪律矩阵（详规 docs/2.2.1-续排细纲*）：历史章冻结、最新章仅改写档放开。
 //    三条纪律提示词（BASE / HISTORY_RULE / LATEST_RULE）都是可编辑项，就地声明在本文件。
 import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
+// 🔴 字数硬校准与容差：从 `lib/wordRange.ts` 取（与逐章连写共用同一常量与同一条校准逻辑）
+import { enforceWordRange, WORD_TOLERANCE } from '../wordRange'
+import { countWords } from '../textStats'
 
-// ---------- 整章改写（润色 / 扩写 / 精简 / 改写） ----------
+// ---------- 整章改写（润色 / 扩写 / 精简 / 续写 / 改写） ----------
 //
 // 与「选区改稿」（aiRewritePassage）的分工 —— 两者不是替代关系，是按篇幅分工：
 //   · 选区改稿：作者在编辑器里选中**一段**，走 JSON 输出（{rewritten, notes}），结果写成"建议段"；
@@ -15,13 +18,21 @@ import type { PromptDef } from '../promptSettings'
 //   ② 把 4000 字塞进 JSON 字符串，引号 / 换行转义极易解析失败（会退化成"只输出几个标点"）；
 //   ③ 它的定位是"局部修改"，不是"重写一章"。
 
-export type ChapterRewriteAction = 'polish' | 'expand' | 'condense' | 'rewrite'
+export type ChapterRewriteAction = 'polish' | 'expand' | 'condense' | 'continue' | 'rewrite'
 
-/** 四种动作的界面文案；`needWords` = 这一档要不要问目标字数 */
+/**
+ * 五种动作的界面文案；`needWords` = 这一档要不要问目标字数。
+ *
+ * 🔴 「扩写」与「续写」的区别（老大 2026-09-20 指出它们不是一回事）：
+ *    · **扩写**＝通篇加料：原文会被**重写一遍**（句子更长、细节更多），文字层面与原稿不同；
+ *    · **续写**＝末尾接续：**原文一字不动**，只在其后追加新内容，把全章补到目标字数。
+ *    写成"这一章还没写完"就用续写；觉得"写得干、想加细节"才用扩写。
+ */
 export const CHAPTER_REWRITE_META: Record<ChapterRewriteAction, { label: string; hint: string; needWords: boolean }> = {
   polish: { label: '润色', hint: '提升文字表现力、去掉 AI 腔；不增删情节，字数与原文相当', needWords: false },
-  expand: { label: '扩写', hint: '在不改情节的前提下补细节与感官描写，把这一章写到目标字数', needWords: true },
+  expand: { label: '扩写', hint: '在不改情节的前提下补细节与感官描写，把这一章写到目标字数（会重写整章文字）', needWords: true },
   condense: { label: '精简', hint: '去掉冗余与注水，保留全部有效信息，压到目标字数', needWords: true },
+  continue: { label: '续写', hint: '原文一字不动，只接着末尾往下写，把全章补到目标字数（适合「这一章还没写完」）', needWords: true },
   rewrite: { label: '改写', hint: '按你的要求重写这一章（换视角 / 调节奏 / 重排场景…）', needWords: true },
 }
 
@@ -37,6 +48,7 @@ const CHAPTER_REWRITE_ACTION_RULES: Record<ChapterRewriteAction, string> = {
   polish: '本次动作：**润色**。提升文字表现与节奏，改掉 AI 腔（「仿佛 / 似乎 / 不禁 / 然而 / 不知为何」这类高频套话、堆砌的四字成语与对称排比、滥用破折号）；**不增删情节**，字数与原文相当（±10%）。',
   expand: '本次动作：**扩写**。在不改情节走向的前提下补细节：环境与感官、人物动作与微表情、对话的潜台词、情绪递进。**不要注水**（不重复同一信息、不空泛抒情），把章节扩到目标字数。',
   condense: '本次动作：**精简**。去掉冗余重复、注水抒情与无信息量的过渡，保留全部有效情节与关键对白，压到目标字数。',
+  continue: '本次动作：**续写**。🔴 **原封不动保留作者已有的正文** —— 一个字都不改写、不删减、不调整顺序、不润色；只在它末尾接着往下写新内容，使全章总量达到目标字数。续写部分必须严格承接原文最后一段的时间、地点、人物状态与情绪；不要重复或重述已写内容、不要重新开头、不要写前情提要。',
   rewrite: '本次动作：**按作者要求改写**。保持人物与情节主线，按【改写要求】调整叙述方式 / 场景顺序 / 冲突强度 / 节奏。',
 }
 //
@@ -85,6 +97,8 @@ export interface ChapterRewriteOpts {
   targetWords?: number
   /** 上一章结尾样本（可选）—— 改写后仍要接得上，给模型当参照 */
   contextTail?: string
+  /** 补足 / 压缩**没生效**时如实说明（透传给 `enforceWordRange`，见那里的 `onLog` 说明） */
+  onLog?: (msg: string) => void
   signal?: AbortSignal
   /**
    * 这一章是不是**项目最新章**（决定改写纪律，见上面两条 RULE）：
@@ -106,20 +120,47 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
   // 历史章 / 最新章纪律不同（见上面两条 RULE 的说明）
   const scopeRule = o.isLatest ? CHAPTER_REWRITE_LATEST_RULE : CHAPTER_REWRITE_HISTORY_RULE
   const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action], scopeRule].join('\n\n')
+
+  // ── 🔴 续写：原文由**我们自己保留**，模型只吐"新增片段" ──
+  //    「原文一字不动」靠提示词是**做不到**的（模型总会顺手把原段润色一遍）；
+  //    所以走结构上保证的路径 —— 直接复用 `enforceWordRange` 的增量补写循环
+  //    （它本来就是"紧接着上文往下写"，与续写语义完全一致）。
+  if (o.action === 'continue') {
+    const target = o.targetWords && o.targetWords > 0 ? o.targetWords : countWords(o.body)
+    const inWords = countWords(o.body)
+    const out = await enforceWordRange({
+      // ⚠️ **刻意不传 `sys`**：这一步要的是"只吐新增片段"，
+      //    与"整章改写"的 system 天然打架（传下去模型会什么都不输出 —— 见 wordRange 的 DEFAULT_FILL_SYS）。
+      cfg, body: o.body, target,
+      // 🔴 补写到**区间下界**为止，别按正中补：续写不能压缩（原文一字不动），
+      //    按正中补一旦补多就永远超上限（实测目标 3500 补到了 3968）。
+      fillTarget: Math.max(inWords, target - WORD_TOLERANCE),
+      ...(o.signal ? { signal: o.signal } : {}),
+      ...(o.onToken ? { onToken: o.onToken } : {}),
+      ...(o.onLog ? { onLog: o.onLog } : {}),
+      maxExpand: 8, // 续写可能要从 1000 补到 4000，轮数给足
+      maxShrink: 0, // 🔴 绝不压缩：原文是作者写的，续写只有"往长里补"一个方向
+    })
+    return cleanChapterOutput(out)
+  }
+
+  // 字数一律写成「区间 + 口径」：只给"A 字左右"时，模型按 token / 字符估，实测能写到目标 +25%。
+  const lo = o.targetWords ? Math.max(1, o.targetWords - WORD_TOLERANCE) : 0
+  const hi = o.targetWords ? o.targetWords + WORD_TOLERANCE : 0
   const lines = [
     `【本章标题】${o.title}`,
     // 🔴 取**尾部** 1200 字：这一段叫「上一章结尾」，衔接靠的就是末尾那几句。
     //    2026-09-19 修：原先写的是 slice(0, 1200) 取到开头，等于拿「上一章开头」当衔接参照。
     o.contextTail?.trim() ? `【上一章结尾】（只作衔接参考，不要改写这一段）\n${o.contextTail.trim().slice(-1200)}` : '',
     o.requirement.trim() ? `【改写要求】\n${o.requirement.trim()}` : '',
-    o.targetWords ? `【目标字数】${o.targetWords} 字左右（±10%）` : '',
+    o.targetWords ? `【目标字数】必须落在 ${lo}~${hi} 个汉字之间（目标 ${o.targetWords}；**按汉字个数计，标点与空白不计**）` : '',
     '【本章原文】',
     authorBlock(fenceId, o.body),
   ].filter(Boolean)
   lines.push(
     '',
     o.targetWords
-      ? `请按上面的动作改写这一章，只输出正文，篇幅约 ${o.targetWords} 汉字。`
+      ? `请按上面的动作改写这一章，只输出正文，篇幅必须落在 ${lo}~${hi} 个汉字之间（按汉字个数计，不含标点）。`
       : '请按上面的动作改写这一章，只输出正文。',
   )
   const text = await chat(
@@ -127,7 +168,24 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: lines.join('\n\n') }],
     { timeoutMs: CHAT_TIMEOUT_MS, ...(o.signal ? { signal: o.signal } : {}), ...(o.onToken ? { onToken: o.onToken } : {}) },
   )
-  return cleanChapterOutput(text)
+  let out = cleanChapterOutput(text)
+
+  // ── 🔴 字数**硬校准**（±WORD_TOLERANCE）──
+  //    提示词写死区间也拦不住超字（实测：原文 3000、目标 4000，实际写出 5000，超 25%），
+  //    所以事后必须用同一套校准逻辑兜住 —— 与逐章连写用的是**同一个函数、同一个容差**。
+  if (o.targetWords && o.targetWords > 0 && out) {
+    out = await enforceWordRange({
+      // ⚠️ 同上：不传 `sys`（补写要用"只吐新增片段"的提示词，不用整章改写那套）
+      cfg, body: out, target: o.targetWords,
+      ...(o.signal ? { signal: o.signal } : {}),
+      ...(o.onLog ? { onLog: o.onLog } : {}),
+      // 精简不该回头补（压到一半又补回去很荒谬）；其余动作补 2 轮
+      maxExpand: o.action === 'condense' ? 0 : 2,
+      maxShrink: 2,
+    })
+    out = cleanChapterOutput(out)
+  }
+  return out
 }
 
 /**

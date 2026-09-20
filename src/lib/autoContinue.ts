@@ -21,7 +21,12 @@ import * as db from './db'
 import { writerBudgetFor } from './aiWriterBudget'
 import { uid } from './id'
 import { countWords } from './textStats'
-import { chat, requireActiveProvider, stripThink, isCancelled } from './ai'
+import { requireActiveProvider, isCancelled, stripThink } from './ai'
+// 🔴 「补写 / 压缩到目标字数」的校准逻辑已抽到 `lib/wordRange.ts`（整章改写侧也要用它，
+//    而那边不能 import 本文件 —— 会与 aiTasks 门面形成循环）。这里再导出一次常量，
+//    只为**保持既有 import 路径可用**（面板仍从本文件取 `WORD_TOLERANCE`）。
+import { ask, askSoft, enforceWordRange, WORD_TOLERANCE, type Cfg } from './wordRange'
+export { WORD_TOLERANCE }
 import { parseObjectArray, asText } from './aiParse'
 import { authorBlock, newAuthorFence } from './promptGuard'
 import { buildProjectContext, type ProjectContextResult } from './aiContext'
@@ -43,8 +48,6 @@ let P_setting_update_detect = `你是设定更新侦探。对比本章正文与�
 /** 已有设定更新策略（创建任务时由用户选择） */
 export type ContinueStrategy = 'add-only' | 'confirm' | 'auto-update'
 
-/** 成品字数容差（汉字）：落在 目标±300 视为达标 */
-export const WORD_TOLERANCE = 300
 /** 同一章初稿最多尝试次数（作者重写 + 异常重生成共用此上限） */
 const MAX_DRAFT_ATTEMPTS = 8
 /** 落库硬闸门：低于此汉字数视为模型异常返回，丢弃重生成 */
@@ -115,33 +118,8 @@ export interface ContinueCallbacks {
 }
 
 interface SettingUpdate { name: string; note: string }
-type Cfg = Awaited<ReturnType<typeof requireActiveProvider>>
-
-// ============ 单次问答（剥思维链只作用于本次返回，绝不重复剥累加体） ============
-
-async function ask(
-  cfg: Cfg, sys: string, user: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void; json?: boolean } = {},
-): Promise<string> {
-  const raw = await chat(cfg, [
-    { role: 'system', content: sys },
-    { role: 'user', content: user },
-  ], opts)
-  return stripThink(raw).trim()
-}
-
-/** 非致命问答：取消向上抛，其它异常吞成空串由调用方按字数判定 */
-async function askSoft(
-  cfg: Cfg, sys: string, user: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void; json?: boolean } = {},
-): Promise<string> {
-  try {
-    return await ask(cfg, sys, user, opts)
-  } catch (e) {
-    if (isCancelled(e)) throw e
-    return ''
-  }
-}
+// 「单次问答 ask / 软失败 askSoft」与 `Cfg` 类型已迁到 `lib/wordRange.ts`
+// （它们服务于字数校准，而校准是两个模块共用的，见那边的模块说明）。
 
 // ============ 提示词 ============
 
@@ -157,70 +135,6 @@ function buildSysPrompt(target: number): string {
     '4. 只输出正文本身。不要任何解说、不要小标题、不要章节号、不要"以下是续写"之类的开场白，也不要输出思考过程。',
     '5. 若作者给了【续写意图】则优先沿其推进；未给则严格沿着上一章结尾的既有走向自然延续，聚焦当前尚未解决的冲突与悬念，不要凭空引入与前文无关的新地图、新势力或新金手指。',
   ].join('\n')
-}
-
-// ============ 字数区间校准（既补也压） ============
-
-async function enforceWordRange(o: {
-  cfg: Cfg
-  body: string
-  target: number
-  sys: string
-  signal?: AbortSignal
-  onToken?: (d: string) => void
-  onPhase?: (p: string) => void
-  onBodyReplace?: (s: string) => void
-  maxExpand?: number
-  maxShrink?: number
-}): Promise<string> {
-  const lo = o.target - WORD_TOLERANCE
-  const hi = o.target + WORD_TOLERANCE
-  let body = o.body
-  let words = countWords(body)
-
-  // ① 偏短：紧接上文分幕补写（增量单独剥思维链后再拼，避免砍掉已写正文）
-  const maxExpand = o.maxExpand ?? 4
-  for (let r = 0; r < maxExpand && words < lo; r++) {
-    o.onPhase?.(`补足篇幅（${words} → ${lo}~${hi} 汉字）`)
-    const gap = Math.max(0, o.target - words)
-    const add = await askSoft(o.cfg, o.sys, [
-      '【本章已写部分】',
-      body,
-      '',
-      `当前已写 ${words} 个汉字，距目标还差约 ${gap} 个汉字。请紧接着上文继续往下写，使全章总量落在 ${lo}~${hi} 汉字之间。`,
-      '要求：不要重复或重述已写内容、不要重新开头、不要用形容词与心理独白注水；情节要实质推进；若剧情已近章末，则收束到章末钩子。只输出新增的正文片段。',
-    ].join('\n'), { signal: o.signal, onToken: o.onToken })
-    if (countWords(add) < 30) break // 无效增量：停止空转，接受偏短
-    body = body.trimEnd() + '\n\n' + add
-    words = countWords(body)
-    o.onBodyReplace?.(body)
-  }
-
-  // ② 偏长：精简压缩到区间。安全阀：压出来过短视为模型偷懒/截断，保留原文（宁可超字也不丢情节）
-  const maxShrink = o.maxShrink ?? 2
-  for (let r = 0; r < maxShrink && words > hi; r++) {
-    o.onPhase?.(`压缩篇幅（${words} → ${lo}~${hi} 汉字）`)
-    const out = await askSoft(o.cfg,
-      '你是资深网文编辑，擅长在不损失任何情节的前提下精简文字。只输出精简后的正文本身。',
-      [
-        `请把下面这一章正文精简到 ${lo}~${hi} 个汉字（按汉字个数计，不含标点）。`,
-        '要求：',
-        '1. 保留全部关键情节、转折、对话要点与章末钩子，不得删除任何情节线，不得删掉结尾。',
-        '2. 只删冗余环境描写、重复铺陈、可有可无的心理独白与形容词堆砌。',
-        '3. 保持原有叙事视角、人称与文风，不得改写成摘要、大纲或提要。',
-        '4. 只输出精简后的完整正文，不要任何说明文字。',
-        '',
-        `【原文（${words} 汉字）】`,
-        body,
-      ].join('\n'),
-      { signal: o.signal })
-    const ow = countWords(out)
-    if (!out || ow < lo * 0.85) break
-    body = out
-    words = ow
-    o.onBodyReplace?.(body)
-  }
-  return body
 }
 
 // ============ 去 AI 味儿（生成初稿后的语言润色） ============
@@ -543,6 +457,7 @@ export async function runAutoContinue(
           ...(cb.signal ? { signal: cb.signal } : {}),
           onPhase: p => cb.onPhase?.(`补齐最后一章：${p}`),
           onBodyReplace: cb.onBodyReplace,
+          ...(cb.onLog ? { onLog: cb.onLog } : {}),
           maxExpand: opts.topUpLast.maxExpand ?? 6,
           // 🔴 补字场景**绝不压缩**：原文若已比目标长，保持原样（作者可能有意写短章）
           maxShrink: 0,
@@ -660,6 +575,7 @@ export async function runAutoContinue(
         cfg: await requireActiveProvider(), body, target: opts.targetWords,
         sys: buildSysPrompt(opts.targetWords), signal: cb.signal,
         onPhase: p => cb.onPhase?.(`${tag}：${p}`), onBodyReplace: cb.onBodyReplace,
+        ...(cb.onLog ? { onLog: cb.onLog } : {}),
         maxExpand: 2, maxShrink: 2,
       })
       // 🔴 自检修正与字数校准同样是模型产出 —— 落库前最后净化一次，

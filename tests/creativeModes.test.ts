@@ -227,9 +227,58 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('🔴 正文里的 markdown 标记会被剥掉，且**接进了逐章连写链路**（原先只有整章改写在调它）',
     /export function stripInlineMarkdown/.test(rw) && (cont.match(/cleanChapterOutput\(/g) ?? []).length >= 3)
   ok('🔴 面板状态行写明「哪一卷还差几章、本次补哪几段」',
-    /还差 \$\{gap\.gapTo - gap\.gapFrom \+ 1\} 章/.test(cwp))
+    /还差 \$\{gapTotal\} 章/.test(cwp) && /gapFillTo/.test(cwp))
+  ok('🔴 缺口量受单批上限夹住（界面说的章数 = 编排器实际会排的章数）',
+    /gapWillFill = Math\.min\(MAX_OUTLINE_CHAPTERS, gapTotal\)/.test(cwp)
+    && /gapTo: Math\.min\(filling\.gapTo, filling\.gapFrom \+ MAX_OUTLINE_CHAPTERS - 1\)/.test(wf))
   ok('🔴 面板与编排器共用同一个 detectVolumeGap（口径只留一个来源，防两处漂移）',
     /detectVolumeGap\(probe\.volumeBounds, probe\.maxOutlineNo, inp\.chaptersPerVolume\)/.test(cwp))
+
+  // ---------- 整章改写：续写动作 + 字数硬校准 + 口径统一（2026-09-20 老大要求）----------
+  // 三条要求：① 补一个「续写」（≠ 扩写：原文一字不动、只在末尾接）；② 目标字数必须管住（±300）；
+  // ③ 字数口径统一到**汉字**（前端 countWords，给模型的提示词也要写明）。
+  const rwSrc = read('src/lib/aiTasks/rewrite.ts')
+  ok('🔴 整章改写有五种动作，含「续写」',
+    /export type ChapterRewriteAction = 'polish' \| 'expand' \| 'condense' \| 'continue' \| 'rewrite'/.test(rwSrc))
+  ok('🔴「续写」出现在界面上（RW_ACTIONS 含 continue）',
+    /RW_ACTIONS: ChapterRewriteAction\[\] = \['polish', 'expand', 'condense', 'continue', 'rewrite'\]/.test(cwp))
+  ok('🔴 续写＝原文由系统保留、只让模型吐增量（结构保证，不靠提示词 —— 模型总会顺手润色原文）',
+    /o\.action === 'continue'[\s\S]{0,500}?enforceWordRange\(\{[\s\S]{0,200}?body: o\.body/.test(rwSrc))
+  ok('🔴 续写绝不压缩（maxShrink: 0）—— 原文是作者的，续写只有"往长里补"一个方向',
+    /maxShrink: 0/.test(rwSrc) && /绝不压缩/.test(rwSrc))
+  ok('🔴 改写结果要过**字数硬校准**（±WORD_TOLERANCE）—— 提示词拦不住超字（实测目标 4000 写成 5000）',
+    /out = await enforceWordRange\(\{[\s\S]{0,200}?body: out, target: o\.targetWords/.test(rwSrc))
+  ok('🔴 精简不回头补（maxExpand: 0，压到一半又补回去很荒谬）',
+    /maxExpand: o\.action === 'condense' \? 0 : 2/.test(rwSrc))
+  ok('🔴 给模型的字数一律写明「按汉字个数计、标点不计」（否则模型按 token / 字符估，必然偏长）',
+    /按汉字个数计，标点与空白不计/.test(rwSrc) && /按汉字个数计，不含标点/.test(rwSrc))
+  const wr = read('src/lib/wordRange.ts')
+  ok('🔴 字数容差与校准逻辑只有一份（wordRange），逐章连写与整章改写共用',
+    /export const WORD_TOLERANCE = 300/.test(wr) && /export async function enforceWordRange/.test(wr)
+    && !/async function enforceWordRange/.test(cont))
+  ok('🔴 面板仍能从 autoContinue 取到 WORD_TOLERANCE（抽模块不破坏既有 import 路径）',
+    /export \{ WORD_TOLERANCE \}/.test(cont))
+  ok('🔴 `countWords` 是汉字口径（CJK 逐字 + 拉丁词），标点不计 —— 界面与 AI 同一口径',
+    /const cjk = \(text\.match\(/.test(read('src/lib/textStats.ts')))
+  // 2026-09-20 实机抓到：续写目标 4000、结果原样 2202，界面上只有「2202 → 2202 字」一个线索 ——
+  // 根因是 `askSoft` 把模型失败吞成空串后**静默 break**。校准必须把失败说出来。
+  ok('🔴 字数校准失败要如实上报（补写 / 压缩没生效都要 onLog，不许静默）',
+    /onLog\?: \(msg: string\) => void/.test(wr) && /补写未生效/.test(wr) && /压缩结果异常/.test(wr))
+  ok('🔴 改写链路把校准日志接到界面提示（否则作者只看到"字数没变"）',
+    /onLog: msg => notice\(msg, 'info'\)/.test(sess))
+  ok('🔴 逐章连写也把校准日志接进逐章日志（两条链路都不静默）',
+    (cont.match(/onLog: cb\.onLog/g) ?? []).length >= 2)
+  // 2026-09-20 实机抓到：把「整章改写」的 system 传给了 enforceWordRange 的补写，
+  // 两套指令打架 → 模型**什么都不输出**（续写 2202→2202 原样返回；改写 2679 后不再往上补）。
+  ok('🔴 补写用的 system 与「整章改写」的提示词分开（传错＝模型不干活）',
+    /const DEFAULT_FILL_SYS/.test(wr) && /fillSys = o\.sys \?\? DEFAULT_FILL_SYS/.test(wr)
+    && !/body: o\.body, target, sys/.test(rwSrc)
+    && !/body: out, target: o\.targetWords, sys/.test(rwSrc))
+  // 2026-09-20 实机抓到：压缩那一步**没传 onToken**（= 非流式）→ 几千字输出必撞 180s 超时
+  // → 压缩从来没成功过，超字一直压不下去（目标 3500、结果停在 3975）。
+  ok('🔴 补写与压缩都要走流式（`onToken` 是流式开关，漏一个就有一半校准永远失效）',
+    (wr.match(/onToken: o\.onToken/g) ?? []).length >= 2,
+    String((wr.match(/onToken: o\.onToken/g) ?? []).length) + ' 处')
 }
 
 // ============ ⑥ 界面文案纪律：不许再承诺"开发中"的幽灵功能 ============

@@ -113,8 +113,10 @@ const TARGET_META: Record<CreativeTarget, { label: string; hint: string }> = {
   },
 }
 
-/** 整章改写的四种动作（顺序即界面顺序） */
-const RW_ACTIONS: ChapterRewriteAction[] = ['polish', 'expand', 'condense', 'rewrite']
+/** 整章改写的五种动作（顺序即界面顺序） */
+// 🔴 顺序即界面顺序：润色 → 扩写 → 精简 → **续写** → 改写。
+//    「续写」放在改写前面 —— 它与扩写同属"加长"，改写是最后一档（重写）。
+const RW_ACTIONS: ChapterRewriteAction[] = ['polish', 'expand', 'condense', 'continue', 'rewrite']
 
 /**
  * 「整章改写」的选章列表（按卷分组，界面做成可搜索的卷章树）。
@@ -155,8 +157,12 @@ const RW_SCOPE_NOTE: Record<ChapterRewriteAction, { latest: string; history: str
     latest: '这是项目最新章：只删冗余重复与注水过渡，承载设定交代的句子照样保留。落库后会自动同步设定。',
     history: '这是历史章：🔴 只删冗余与注水过渡；承载设定交代的句子（专名 / 来历 / 境界 / 关系 / 器物来源）一律保留 —— 删掉后文就断了。',
   },
+  continue: {
+    latest: '这是项目最新章：续写只在末尾追加新内容，原有正文一字不动；落库后会自动抽取 / 补登 / 更新设定表。',
+    history: '这是历史章：🔴 这一章后面已经有正文了 —— 续写等于往中间插入新情节，会与后文打架。想补长度请改用「扩写」（不新增事件），或先确认你要的确实是插叙。',
+  },
   rewrite: {
-    latest: '这是项目最新章：四种动作里只有「改写」可以放开手脚（调节奏 / 重排场景 / 强化冲突 / 改写局部走向）。落库后会自动同步设定。',
+    latest: '这是项目最新章：五种动作里只有「改写」可以放开手脚（调节奏 / 重排场景 / 强化冲突 / 改写局部走向）。落库后会自动同步设定。',
     history: '这是历史章：只改叙述方式与文字，设定类内容一字不动、不新增剧情事件、不埋伏笔。',
   },
 }
@@ -307,6 +313,14 @@ export default function CreativeWritingPanel() {
     () => (probe ? detectVolumeGap(probe.volumeBounds, probe.maxOutlineNo, inp.chaptersPerVolume) : null),
     [probe, inp.chaptersPerVolume],
   )
+  /**
+   * 缺口量（受**单批上限**夹住）—— 界面显示的章数必须与编排器实际会排的一致。
+   * 🔴 规划「每卷 100 章」却只排到第 21 章时，缺口是 79 章、一次排不完；
+   *    编排器只排前 `MAX_OUTLINE_CHAPTERS` 章，界面就不能说「补第 22-100 章」。
+   */
+  const gapTotal = gap ? gap.gapTo - gap.gapFrom + 1 : 0
+  const gapWillFill = Math.min(MAX_OUTLINE_CHAPTERS, gapTotal)
+  const gapFillTo = gap ? gap.gapFrom + gapWillFill - 1 : 0
 
   /** 项目现状一行 —— 把"AI 会从哪开始"如实讲清楚（这就是起点自动判定的可见性） */
   const probeNote = (() => {
@@ -317,8 +331,9 @@ export default function CreativeWritingPanel() {
     const head = `当前已有 ${probe.volumeCardCount} 卷大纲 · ${probe.outlineCardCount} 章细纲 · ${probe.chapterCount} 章正文`
     // 🔴 缺口优先（老大 2026-09-20）：先把作者规划好的这一卷补满，不另开新卷。
     if (outlineOnlyTarget && gap) {
-      return `${head} → 《${gap.title}》（第 ${gap.from}-${gap.to} 章）还差 ${gap.gapTo - gap.gapFrom + 1} 章，`
-        + `本次先补完第 ${gap.gapFrom}-${gap.gapTo} 章`
+      return `${head} → 《${gap.title}》（第 ${gap.from}-${gap.to} 章）还差 ${gapTotal} 章，`
+        + `本次先补完第 ${gap.gapFrom}-${gapFillTo} 章`
+        + (gapWillFill < gapTotal ? `（单批上限 ${MAX_OUTLINE_CHAPTERS} 章，剩下的下次继续）` : '')
     }
     return outlineOnlyTarget
       ? `${head} → 本次从第 ${probe.maxOutlineNo + 1} 章起接着往下排`
@@ -467,7 +482,8 @@ export default function CreativeWritingPanel() {
               {/* 🔴 缺口模式：本次产出多少章由**缺口**决定，「卷数 × 每卷章数」不参与 —— 必须如实说明 */}
               {gap ? (
                 <span className="text-10 text-amber">
-                  本次先补完《{gap.title}》缺的 {gap.gapTo - gap.gapFrom + 1} 章（第 {gap.gapFrom}-{gap.gapTo} 章）
+                  本次补《{gap.title}》缺口 {gapTotal} 章中的第 {gap.gapFrom}-{gapFillTo} 章
+                  {gapWillFill < gapTotal ? `（单批上限 ${MAX_OUTLINE_CHAPTERS} 章，剩下的下次继续）` : ''}
                   —— 卷数不生效，补满后再排新卷
                 </span>
               ) : (
@@ -745,13 +761,14 @@ export default function CreativeWritingPanel() {
         </section>
       )}
 
-      {/* 整章改写：对已有章节做整章级的润色 / 扩写 / 精简 / 改写 */}
+      {/* 整章改写：对已有章节做整章级的润色 / 扩写 / 精简 / 续写 / 改写 */}
       <section className="mt-4 rounded-lg border border-ink-700 bg-ink-900/40 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-13 text-ink-100">整章改写</span>
           <HelpPopover title="整章改写怎么用" width="24rem" size={12}>
             <div className="space-y-1.5 text-11 leading-relaxed text-ink-300">
-              <p>挑一章，对<b>整章正文</b>做润色 / 扩写 / 精简 / 改写。与颉文姬的「选区改稿」不同 —— 那边面向一段、产出叫「建议段」；这里送进去的是<b>整章</b>，产出先给你过目，确认后才替换正文。</p>
+              <p>挑一章，对<b>整章正文</b>做润色 / 扩写 / 精简 / 续写 / 改写。与颉文姬的「选区改稿」不同 —— 那边面向一段、产出叫「建议段」；这里送进去的是<b>整章</b>，产出先给你过目，确认后才替换正文。</p>
+              <p><b>「扩写」与「续写」不是一回事</b>：扩写会<b>重写</b>整章（把原句写长、补细节），文字与原稿不同；续写则<b>原文一字不动</b>，只在末尾接着往下写，把全章补到目标字数 —— 觉得「这一章还没写完」就用<b>续写</b>。</p>
               <p>改写时会一并送<b>上一章结尾</b>（约 1200 字），保证改完仍接得上；上面那栏「补充要求」可以告诉它往哪个方向改（例如「打斗写细一点」「对话再口语些」）。</p>
               <p>点「替换该章正文」之前，旧稿会自动存进<b>「时光机 · 本章版本历史」</b>，随时能恢复。章节标题、状态、所属卷都不会被改动。</p>
               <p>🔴 改写纪律由<b>「动作 × 章位置」</b>共同决定：<b>历史章</b>设定类内容一律冻结（润色只换字不换事；扩写只能加描写、不得新增专名与来历；精简不得删掉承载设定交代的句子；改写只改叙述方式）；<b>最新章</b>只有「改写」档可放开手脚，改完落库会自动抽取 / 补登 / 更新设定表。</p>
@@ -759,7 +776,7 @@ export default function CreativeWritingPanel() {
             </div>
           </HelpPopover>
           <span className="text-11 text-ink-500">
-            挑一章做整章润色 / 扩写 / 精简 / 改写 —— 结果先给你过目，确认后才替换正文（旧稿自动留档）
+            挑一章做整章润色 / 扩写 / 精简 / 续写 / 改写 —— 结果先给你过目，确认后才替换正文（旧稿自动留档）
           </span>
           <div className="flex-1" />
           <Button size="xs" variant="secondary" disabled={busy} onClick={() => void reloadChapters()}>刷新章节</Button>

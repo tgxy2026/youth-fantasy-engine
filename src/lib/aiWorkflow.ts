@@ -680,10 +680,14 @@ export async function runCreativeWriting(
       ? {
           volumeTitle: filling.title,
           volumeFrom: filling.from,
+          // 卷的**目标上界**（原值）—— 回填「本卷章号范围」用它，不受本批上限影响
           volumeTo: filling.to,
           doneTo: probe.maxOutlineNo,
           gapFrom: filling.gapFrom,
-          gapTo: filling.gapTo,
+          // 🔴 本批只排到**单批上限**为止：规划「每卷 100 章」却只排到第 21 章时缺口是 79 章，
+          //    一次排不完（模型也会截断）。夹住后本批排 22-81，剩下的下次继续；
+          //    卷范围仍按"实际排到哪"收敛（`volumeFills` 那段），不会落出「第21-100章」的假范围。
+          gapTo: Math.min(filling.gapTo, filling.gapFrom + MAX_OUTLINE_CHAPTERS - 1),
           needVolumeOutline,
         }
       : undefined
