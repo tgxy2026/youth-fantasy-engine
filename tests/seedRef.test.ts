@@ -117,6 +117,17 @@ for (const t of TABS) {
 }
 ok('所有表格页签都有示例数据（功能都能看到）', emptyTabs.length === 0, emptyTabs.join('、'))
 
+// 2026-09-20：「其他设定」改成**卡片型**，于是它掉到了上面这条闸的覆盖面之外（④ 只查 type==='table'）。
+// 卡片型资料页签同样"不该是空的"，这里单独补一条 —— 免得改完形态就没人管它了。
+const miscCards = await db.getCardRecords('misc-settings')
+ok('「其他设定」示例数据是卡片（改形态后表格口径盖不到它，故单独断）',
+  miscCards.length >= 3, `卡片 ${miscCards.length} 张`)
+ok('  · 卡片的存储键是 `设定内容::内容`（schema / 迁移 / 这里三处必须一致）',
+  miscCards.some(c => (c.data['设定内容::内容'] ?? '').trim().length > 0),
+  JSON.stringify(Object.keys(miscCards[0]?.data ?? {})))
+ok('  · 卡名非空（卡名就是设定名，设定检索与引用高亮都取它）',
+  miscCards.length > 0 && miscCards.every(c => !!c.name?.trim()))
+
 // ---------- ⑤ 「人物」列必须是真人物 ----------
 // 2026-09-19：示范项目《人物关系》里出现过「萧景行 ↔ 中州萧家」—— 中州萧家是《国家势力》里的世家。
 // 这类错误界面上**不会报错**（就是一格文本，下拉也不校验），但语义是错的：

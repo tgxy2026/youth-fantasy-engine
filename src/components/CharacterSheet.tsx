@@ -56,6 +56,16 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
     const k = Object.keys(rec.data).find(kk => kk.endsWith('::人物状态'))
     return k ? (rec.data[k] || '').trim() : ''
   }
+  /**
+   * 卡片单位名词 —— CharacterSheet 从 1.x 起只服务角色卡，文案里写死了「角色」；
+   * 2.3.0 新增「其他设定」（世界构建组）后同一个组件也服务非角色卡片表，
+   * 于是「新建角色 / 删除角色卡 / 已退场的角色」全成了错话（老大实测发现）。
+   * 这里照 OutlineSheet 的范式（`const noun = isVolume ? '分卷' : '章节'`）参数化。
+   * 🔴 术语用「设定」而不是「条目」：卡里装的确实是一条条设定（如「灵力潮汐周期」）。
+   */
+  const isCharTab = tab.group === '角色管理'
+  const noun = isCharTab ? '角色' : '设定'
+  const nounCard = isCharTab ? '角色卡' : '设定'
   const visibleRecords = hideRetired ? records.filter(r => statusOf(r) !== '已退场') : records
   const cardFields = useMemo<TemplateField[]>(
     () => (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
@@ -91,7 +101,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   useEffect(() => { draftRef.current = draft }, [draft])
 
   /**
-   * 🔴 卸载时冲刷未保存的角色卡修改。原因同 TableSheet：`App.tsx` 的「key={tab.id}」
+   * 🔴 卸载时冲刷未保存的卡片修改。原因同 TableSheet：`App.tsx` 的「key={tab.id}」
    * 会让下面那个 [tab.id] 守卫在重挂后失效（dirtyRef 初值为 false）。
    * 注意：同页签内切卡（activeId 变化）不会重挂，那条守卫仍然有效，与此条互补。
    */
@@ -100,7 +110,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   }, [])
 
   useEffect(() => {
-    // 切到别的页签前，先把当前角色卡未保存的修改落库（之前会静默丢弃）
+    // 切到别的页签前，先把当前卡片未保存的修改落库（之前会静默丢弃）
     if (dirtyRef.current && draftRef.current) {
       void saveCardRecord(draftRef.current)
     }
@@ -118,7 +128,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
     })
   }, [tab.id])
 
-  // 切换 active（同一页签内不同角色卡）时刷新 draft；切换前先落盘上一卡未保存的修改，避免静默丢稿
+  // 切换 active（同一页签内不同卡片）时刷新 draft；切换前先落盘上一卡未保存的修改，避免静默丢稿
   useEffect(() => {
     const prev = prevActiveRef.current
     // 仅当「确实切到了另一张仍存在的卡」才存旧卡草稿；因删除导致的切换不存档（避免复活已删卡）
@@ -149,7 +159,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   // AI 补全：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
   const handleFill = async (values: Record<string, string>) => {
     const nameKey = Object.keys(values).find(k => k.endsWith('::姓名'))
-    const name = (nameKey ? values[nameKey] : '')?.trim() || '未命名角色'
+    const name = (nameKey ? values[nameKey] : '')?.trim() || `未命名${noun}`
     const rec: CardRecord = {
       id: uid(),
       projectId: getCurrentProjectId(),
@@ -188,7 +198,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   const removeCard = async (id: string) => {
     const rec = records.find(r => r.id === id)
     if (!rec) return
-    if (!await confirmDialog({ title: '删除角色卡', message: `确定删除「${rec.name}」的角色卡？`, danger: true })) return
+    if (!await confirmDialog({ title: `删除${nounCard}`, message: `确定删除「${rec.name}」的${nounCard}？`, danger: true })) return
     await deleteCardRecord(id)
     const next = records.filter(r => r.id !== id)
     setRecords(next)
@@ -247,13 +257,20 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
-            <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{`这是「${tab.name}」角色卡，按模块填写人物设定：
+            <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{isCharTab ? `这是「${tab.name}」角色卡，按模块填写人物设定：
 
 • 左侧列表切换 / 新建 / 删除角色；点击上方姓名可直接改名（保存后生效）。
 • 右侧按模块（基础信息、外貌、性格……）分栏填写，长文会自动撑高输入框。
 • 「人物状态」用下拉选择：未登场 / 已登场 / 已退场，便于统计登场进度。
 • 字段带「示例」时可参考填法；修改后点右上「保存」或按 Ctrl+S。
-• 右上「隐藏已退场」开关：开启后列表与统计隐藏「人物状态 = 已退场」的角色，角色过多时方便聚焦。`}</HelpPopover>
+• 右上「隐藏已退场」开关：开启后列表与统计隐藏「人物状态 = 已退场」的角色，角色过多时方便聚焦。`
+: `这是「${tab.name}」，一条一张卡：
+
+• 左侧列表切换 / 新建 / 删除设定；点击上方标题可直接改名（保存后生效）。
+• 卡名就是这条设定的名字 —— 正文编辑器会把它做引用高亮，所以名字起得越具体越好。
+• 右侧按字段填写，长文会自动撑高输入框；字段带「示例」时可参考填法。
+• 修改后点右上「保存」或按 Ctrl+S；存不下的内容可分段，不必挤在一行里。
+• 这里的内容同样会进 AI 的设定资料，模型写正文时读得到。`}</HelpPopover>
           </div>
           <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
         </div>
@@ -270,25 +287,29 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
             <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
           </Button>
           <Button onClick={addCard} variant="primary" size="md" className="flex items-center text-13">
-            <Plus size={14} /> 新建角色
+            <Plus size={14} /> 新建{noun}
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全角色卡其余字段'}>
+            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全其余字段'}>
               <Sparkles size={14} /> AI 补全
             </Button>
           )}
-          <Button variant="toggle" selected={hideRetired}
-            onClick={() => setHideRetired(v => !v)}
-            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
-            title="隐藏「人物状态 = 已退场」的角色，避免列表过长"
-          >
-            <EyeOff size={14} /> 隐藏已退场
-          </Button>
+          {/* 只看角色卡：非角色卡片表（世界构建的「其他设定」）没有「人物状态」字段，
+              这个开关对它们点了也没有任何效果 —— 与其摆着让人困惑，不如不渲染 */}
+          {isCharTab && (
+            <Button variant="toggle" selected={hideRetired}
+              onClick={() => setHideRetired(v => !v)}
+              className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
+              title="隐藏「人物状态 = 已退场」的角色，避免列表过长"
+            >
+              <EyeOff size={14} /> 隐藏已退场
+            </Button>
+          )}
         </div>
       </header>
 
       <div className="flex gap-5" style={{ minHeight: 'calc(100vh / var(--ui-zoom, 1) - 180px)' }}>
-        {/* 角色列表 */}
+        {/* 卡片列表 */}
         <div className="w-44 shrink-0 space-y-1.5">
           {visibleRecords.map(rec => {
             const isActive = activeId === rec.id
@@ -318,7 +339,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
           })}
           {visibleRecords.length === 0 && (
             <div className="text-center text-ink-500 text-12 py-12 border border-dashed border-ink-700 rounded-lg">
-              {records.length === 0 ? '点击右上角新建角色' : '已退场的角色已隐藏'}
+              {/* 后一支只在角色卡可达（开关仅角色卡渲染、且过滤依据是「人物状态」），故保留「角色」字样 */}
+              {records.length === 0 ? `点击右上角新建${noun}` : '已退场的角色已隐藏'}
             </div>
           )}
         </div>
@@ -398,7 +420,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-ink-500 text-sm border border-dashed border-ink-700 rounded-xl">
-              选择左侧角色或新建一个
+              选择左侧{noun}或新建一个
             </div>
           )}
         </div>
@@ -431,10 +453,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
       {/* v1.6：应用内输入弹窗（替代浏览器 prompt，桌面端可用） */}
       <PromptModal
         open={!!namePrompt}
-        title={namePrompt?.kind === 'rename' ? '修改角色姓名' : '新建角色'}
+        title={namePrompt?.kind === 'rename' ? `修改${noun}名称` : `新建${noun}`}
         label={namePrompt?.kind === 'rename' ? '修改后点「保存」生效' : undefined}
         defaultValue={namePrompt?.def ?? ''}
-        placeholder="请输入角色姓名"
+        placeholder={`请输入${noun}名称`}
         onSubmit={submitNamePrompt}
         onCancel={() => setNamePrompt(null)}
       />

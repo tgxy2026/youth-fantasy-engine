@@ -2,7 +2,7 @@
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 // ⚠️ 这里跑的是**运行时数据迁移**（打开项目后执行），与 ./idbMigrations 的 IndexedDB schema 迁移是两件事。
 // 🔴 runMigrations 里的调用次序＝依赖次序（types → ledger → numbering → geomaps），不可调换。
-import type { TableRow } from '../types'
+import type { CardRecord, TableRow } from '../types'
 import { uid } from '../id'
 import { chapterSeqMap, flattenChapters } from '../chapterSeq'
 import { ops, currentProjectId } from './core'
@@ -142,6 +142,49 @@ export async function migrateGeoMaps(): Promise<number> {
 // ============ 迁移统一入口 ============
 
 /**
+ * 「其他设定」（misc-settings）**表格 → 卡片**（2026-09-20 晚间形态改定）。
+ *
+ * 为什么必须迁移：两种形态**存在不同的 store** —— 表格在 `tableRows`、卡片在 `cardRecords`。
+ * 改 schema 类型不会自动搬家，不迁移的话作者先前填好的条目会在界面上「凭空消失」
+ * （数据其实还躺在库里，只是新界面读的是另一个 store）。
+ *
+ * 映射：`card.name` ← 原「名称」列；`card.data` ← `{ '设定内容::内容': 原「内容」列 }`。
+ * 🔴 `模块::字段` 这个键形态必须与 schema 一致（卡片表的存储键就是它，见 `resolveSlot`）——
+ *    当前 = 模块「设定内容」+ 字段「内容」。schema 若改模块名，**这里要同步**；
+ *    `tests/miscSettings.test.ts` 有一条断言钉住两者相等，改名会当场红。
+ *    这里刻意不 import schema：db 层引用 schema 会形成循环依赖（见本文件 runMigrations 注释）。
+ *
+ * 幂等：该表已无表格行时直接返回；**先写卡、再删原行**，单条失败留给下次（id 复用 ⇒ 不会重复建卡）。
+ */
+export async function migrateMiscSettingsToCards(): Promise<number> {
+  const pid = currentProjectId
+  if (!pid) return 0
+  const rows = (await ops.getAll<TableRow>('tableRows'))
+    .filter(r => r.projectId === pid && r.tabId === 'misc-settings')
+  if (rows.length === 0) return 0
+  let moved = 0
+  for (const r of rows) {
+    const rec: CardRecord = {
+      // 复用原行 id：即便这里跑第二遍，put 也是覆盖而不是新增（幂等的关键）
+      id: r.id,
+      projectId: pid,
+      tabId: 'misc-settings',
+      name: (r.data['名称'] ?? '').trim() || '未命名设定',
+      data: { '设定内容::内容': r.data['内容'] ?? '' },
+      order: r.order ?? moved,
+    }
+    try {
+      await ops.put('cardRecords', rec)
+      await ops.del('tableRows', r.id)
+      moved++
+    } catch {
+      /* 单条失败：下次打开项目时会再来一遍（行还在，卡已写也不怕） */
+    }
+  }
+  return moved
+}
+
+/**
  * 按序跑完「当前项目」所需的全部结构迁移，幂等。
  *
  * 🔴 调用纪律：**凡把项目置为当前项目（setCurrentProject）后，都必须紧接着调它**——
@@ -171,4 +214,6 @@ export async function runMigrations(): Promise<void> {
   await migrateChapterLedger()
   await migrateChapterNumbering()
   await migrateGeoMaps()
+  // 与上面几步互不相干（只碰 misc-settings 一张表），故放最后，不参与既有的顺序约束
+  await migrateMiscSettingsToCards()
 }

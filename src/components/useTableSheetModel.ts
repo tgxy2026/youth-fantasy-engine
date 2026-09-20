@@ -202,13 +202,20 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     e.stopPropagation()
     dragRef.current = { col: colName, startX: e.clientX, startW: widthOf(colName) }
     const onMove = (ev: MouseEvent) => {
-      if (!dragRef.current) return
+      // 🔴 整份拖拽上下文**同步捕获**到局部量 d —— setColWidths 的 updater 是**延迟执行**的
+      //    （React 在渲染阶段才调用它），而那时 mouseup 早已把 dragRef.current 置空；
+      //    此前写 `[dragRef.current!.col]` 会抛「Cannot read properties of null (reading 'col')」
+      //    （2026-09-20 老大实测：打开表格页签拖列宽即崩）。
+      //    ⚠️ `!` 只是 TS 断言，**编译后没有任何运行时保护**，「上一步 if 判过非空」救不了下一步。
+      //    范式对齐 useSvgPanZoom / PlotCanvas：回调开头取一次，updater 只碰局部量。
+      const d = dragRef.current
+      if (!d) return
       // 🔴 位移要按界面缩放折算：clientX 是**视口像素**，而 startW 是 CSS 像素（列宽）。
       //    不除 zoom 时，108% 下拖动会比光标快约 8%，而且算错的列宽会被写进 localStorage 长期留存。
       const z = Number(document.documentElement.style.zoom) || 1
-      const dx = (ev.clientX - dragRef.current.startX) / z
-      const w = Math.max(90, Math.min(640, Math.round(dragRef.current.startW + dx)))
-      setColWidths(prev => ({ ...prev, [dragRef.current!.col]: w }))
+      const dx = (ev.clientX - d.startX) / z
+      const w = Math.max(90, Math.min(640, Math.round(d.startW + dx)))
+      setColWidths(prev => ({ ...prev, [d.col]: w }))
     }
     const onUp = () => {
       dragRef.current = null

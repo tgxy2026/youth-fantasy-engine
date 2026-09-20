@@ -11,10 +11,9 @@ const CODE_PREFIX: Record<string, string> = {
   nations: 'N', geography: 'G', races: 'R', items: 'I', history: 'H', terms: 'T',
   foreshadow: 'F', subplots: 'LINE', secrets: 'S', changelog: 'C', ideas: 'IDEA',
   geomaps: 'MAP',
-  // 2026-09-20 新增页签「其他设定」。🔴 漏登记这里的后果很隐蔽：schema 的 codeRule 已承诺
-  // 「MISC0001」，而空表新增行走 `CODE_PREFIX[tabId] ?? ''` → 得到裸「0001」；
-  // 只有表里已有 MISC 行时才靠 usedPrefix 救回来，所以示范项目（自带 MISC 行）看不出问题。
-  'misc-settings': 'MISC',
+  // ⚠️ 「其他设定」（misc-settings）**不在此表**，是有意的：它在 2026-09-20 晚间改成了
+  // **卡片型**，而卡片表一律没有「编号」列（角色卡 / 分卷大纲 / 章节细纲都没有）。
+  // 原先给它登记过 'MISC'，是表格时代的事；留着只会是一条永远取不到的死配置。
 }
 
 /**

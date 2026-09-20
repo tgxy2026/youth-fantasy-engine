@@ -81,5 +81,35 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     /拆书与创意写作默认不勾选/.test(read('src/components/ProjectHub.tsx')))
 }
 
+// ---------- 2026-09-20 晚间：列宽拖拽崩溃（老大报障）+ 卡片文案参数化 ----------
+{
+  // 报障原文：TypeError: Cannot read properties of null (reading 'col') @ 打开表格页签调列宽。
+  // 根因：setColWidths 的 updater 是**延迟执行**的（React 在渲染阶段才调用），
+  // 到那时 mouseup 早已把 dragRef.current 置空，而 updater 里还写 [dragRef.current!.col]。
+  // ⚠️ `!` 只是 TS 断言、编译后没有运行时保护 ——「上一步 if 判过非空」救不了下一步。
+  const tsModel = read('src/components/useTableSheetModel.ts')
+  // ⚠️ 判据要精确到 **updater 那一行**：文件注释里刻意保留了反例写法（`[dragRef.current!.col]`）
+  // 来解释历史 bug，宽泛正则会把注释本身也算成违规（第一版就这么假 FAIL 了一次）。
+  ok('🔴 列宽 updater 用的是同步捕获的局部量（而非延迟读取的 dragRef.current）',
+    /setColWidths\(prev => \(\{ \.\.\.prev, \[d\.col\]: w \}\)\)/.test(tsModel)
+    && !/setColWidths\(prev => \(\{ \.\.\.prev, \[dragRef\.current!?\.col\]/.test(tsModel))
+  ok('🔴 拖拽上下文在回调开头就同步捕获（范式同 useSvgPanZoom / PlotCanvas）',
+    /const d = dragRef\.current[\s\S]{0,40}if \(!d\) return/.test(tsModel))
+
+  // 起因：CharacterSheet 从 1.x 起只服务角色卡、文案里写死了「角色」；
+  // 2.3.0 新增「其他设定」（世界构建组，卡片型）后同一组件也服务非角色卡片表，
+  // 于是「新建角色 / 请输入角色姓名」全成了错话（老大实测：功能没问题，文案全是新建角色）。
+  const cs = read('src/components/CharacterSheet.tsx')
+  ok('🔴 CharacterSheet 的卡片文案按页签参数化（照 OutlineSheet 的 noun 范式）',
+    /const isCharTab = tab\.group === '角色管理'/.test(cs) && /const noun = isCharTab/.test(cs))
+  // ⚠️ 同样要精确：注释里举例提到过「新建角色」（用的是中文引号），那不算违规
+  ok('🔴 新建按钮 / 改名弹窗不再写死「新建角色」',
+    !/<Plus size=\{14\} \/> 新建角色/.test(cs) && !/'新建角色'/.test(cs) && !/'修改角色姓名'/.test(cs))
+  ok('🔴 改名弹窗不再写死「请输入角色姓名」', !/请输入角色姓名/.test(cs))
+  ok('🔴 删除确认不再写死「删除角色卡」', !/title: '删除角色卡'/.test(cs))
+  ok('🔴 「隐藏已退场」只对角色卡渲染（非角色卡片表没有「人物状态」字段，开关点了也没用）',
+    /\{isCharTab && \(/.test(cs))
+}
+
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)
