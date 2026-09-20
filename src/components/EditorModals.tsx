@@ -9,7 +9,7 @@ import { contextSnippet } from '../lib/contextSnippet'
 import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { aiProofread, type ProofreadIssue } from '../lib/aiTasks'
+import { aiProofreadText, aiProofreadLogic, type ProofreadIssue } from '../lib/aiTasks'
 import { isCancelled } from '../lib/ai'
 import { buildProjectContext } from '../lib/aiContext'
 import { confirmDialog } from './dialogs'
@@ -84,6 +84,41 @@ const PTF_BADGE: Record<string, string> = {
 }
 const badgeOf = (t: string) => PTF_BADGE[t] ?? 'bg-ink-700 text-ink-300 border-ink-600'
 
+/**
+ * 校对的两块（2026-09-20 拆分，老大要求）：文字层 / 逻辑层。
+ * 拆开的实际收益：文字层**不读设定资料** —— 每块少注入几千字，出结果明显更快；
+ * 逻辑层才读设定（判前后矛盾、设定冲突必须有依据）。
+ */
+type ProofScope = 'text' | 'logic'
+const SCOPE_ORDER: ProofScope[] = ['text', 'logic']
+const SCOPE_META: Record<ProofScope, { label: string; running: string; title: string }> = {
+  text: {
+    label: '查错别字与语病',
+    running: '文字校对中',
+    title: '错别字 / 语病 / 标点 —— 逐字逐句读本章正文，不读设定资料（更快）',
+  },
+  logic: {
+    label: '查逻辑与设定矛盾',
+    running: '逻辑审校中',
+    title: '逻辑矛盾 / 时间空间错乱 / 与设定资料冲突 —— 会读项目设定资料',
+  },
+}
+interface ScopeState {
+  issues: ProofreadIssue[]
+  loading: boolean
+  done: boolean
+  /** 被作者主动停止（保留已查出的部分结果，不当失败） */
+  cancelled: boolean
+  progress: { done: number; total: number }
+  skipped: number
+  scanned: number
+  error: string
+}
+const blankScope = (): ScopeState => ({
+  issues: [], loading: false, done: false, cancelled: false,
+  progress: { done: 0, total: 0 }, skipped: 0, scanned: 0, error: '',
+})
+
 export function ProofreadCheck({ content, onApply, onClose }: {
   content: string; onApply: (next: string) => void; onClose: () => void
 }) {
@@ -94,47 +129,56 @@ export function ProofreadCheck({ content, onApply, onClose }: {
   const [typoHits, setTypoHits] = useState<ReturnType<typeof scanTypos>>([])
   useEffect(() => { setTypoHits(scanTypos(content)); setChecked(true) }, [content])
 
-  // AI 校对结果（错别字 + 语病 + 逻辑 + 设定矛盾）
+  // AI 校对结果 —— **文字层与逻辑层各存一份**：两块可以分别跑、分别看，
+  // 一块的进度与报错不影响另一块（原先一个 aiLoading 盖住全部，跑一块就得等另一块也让路）。
   const [text, setText] = useState(content)
-  const [aiIssues, setAiIssues] = useState<ProofreadIssue[]>([])
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiDone, setAiDone] = useState(false)
-  const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
-  const [aiSkipped, setAiSkipped] = useState(0)
-  const [aiScanned, setAiScanned] = useState(0)
-  const [aiError, setAiError] = useState('')
-  const abortRef = useRef<AbortController | null>(null)
+  const [scopes, setScopes] = useState<Record<ProofScope, ScopeState>>({
+    text: blankScope(), logic: blankScope(),
+  })
+  const abortRef = useRef<Partial<Record<ProofScope, AbortController>>>({})
 
-  const runAI = async () => {
-    if (!aiReady) return
+  const patchScope = (s: ProofScope, patch: Partial<ScopeState>) =>
+    setScopes(prev => ({ ...prev, [s]: { ...prev[s], ...patch } }))
+
+  const runScope = async (scope: ProofScope) => {
+    if (!aiReady || scopes[scope].loading) return
     const ctrl = new AbortController()
-    abortRef.current = ctrl
-    setAiLoading(true); setAiDone(false); setAiIssues([]); setAiSkipped(0); setAiScanned(0); setProgress({ done: 0, total: 0 }); setAiError('')
+    abortRef.current[scope] = ctrl
+    patchScope(scope, { ...blankScope(), loading: true })
     try {
+      // 🔴 逻辑层才读设定资料；文字层刻意不读 —— 省掉每块几千字的注入，出结果更快，
+      //    也避免模型"拿设定去猜人名是不是写错"这类误报（见 aiTasks/proofread.ts 的文字层提示词）。
       let ctxText = ''
-      try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('proofread') })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
-      const res = await aiProofread(text, { context: ctxText, signal: ctrl.signal, onProgress: (d, t) => setProgress({ done: d, total: t }) })
-      setAiIssues(res.issues); setAiScanned(res.scanned); setAiSkipped(res.skipped); setAiDone(true)
+      if (scope === 'logic') {
+        try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('proofread') })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
+      }
+      const run = scope === 'text' ? aiProofreadText : aiProofreadLogic
+      const res = await run(text, {
+        context: ctxText, signal: ctrl.signal,
+        onProgress: (d, t) => patchScope(scope, { progress: { done: d, total: t } }),
+      })
+      patchScope(scope, { issues: res.issues, scanned: res.scanned, skipped: res.skipped, done: true })
     } catch (e) {
       if (isCancelled(e)) {
         // 用户主动停止：保留已查出的部分结果，不当作失败
-        setAiDone(true)
+        patchScope(scope, { done: true, cancelled: true })
       } else {
-        setAiError(e instanceof Error ? e.message : String(e))
-        setAiDone(true)
+        patchScope(scope, { done: true, error: e instanceof Error ? e.message : String(e) })
       }
     } finally {
-      setAiLoading(false); abortRef.current = null
+      patchScope(scope, { loading: false })
+      delete abortRef.current[scope]
     }
   }
 
-  const stopAI = () => abortRef.current?.abort()
+  const stopScope = (scope: ProofScope) => abortRef.current[scope]?.abort()
 
   /** 替换单条 AI 校对结果。
    * 优先用 AI 标注的精确位置 iss.at 定位——正文里同一句话重复出现时，
    * 用 indexOf 会永远命中第一个，导致改错位置；定位不到再回退 indexOf。
-   * 替换后把剩余问题按位移重新锚定，避免后续点击时位置继续漂移。 */
-  const replaceIssue = (iss: ProofreadIssue) => {
+   * 替换后把**两块**里剩余的问题都按位移重新锚定：正文变了，另一层记录的下标也一起漂，
+   * 只重锚定自己那一块的话，切过去再点就是"定位失败"。 */
+  const replaceIssue = (scope: ProofScope, iss: ProofreadIssue) => {
     let idx = -1
     if (iss.at != null && text.slice(iss.at, iss.at + iss.quote.length) === iss.quote) {
       idx = iss.at
@@ -145,12 +189,19 @@ export function ProofreadCheck({ content, onApply, onClose }: {
     const delta = iss.fix.length - iss.quote.length
     const next = text.slice(0, idx) + iss.fix + text.slice(idx + iss.quote.length)
     setText(next); onApply(next)
-    setAiIssues(prev =>
-      prev
-        .filter(i => i !== iss)
-        .map(i => (i.at != null && i.at > idx ? { ...i, at: i.at + delta } : i))
-        .sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
-    )
+    setScopes(prev => {
+      const out = { ...prev }
+      for (const k of SCOPE_ORDER) {
+        out[k] = {
+          ...prev[k],
+          issues: prev[k].issues
+            .filter(i => !(k === scope && i === iss))
+            .map(i => (i.at != null && i.at > idx ? { ...i, at: i.at + delta } : i))
+            .sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
+        }
+      }
+      return out
+    })
   }
 
   const replaceTypoAll = () => {
@@ -165,11 +216,12 @@ export function ProofreadCheck({ content, onApply, onClose }: {
     <ToolModal title="校对（本章）" icon={<span className="text-amber">校</span>} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-11 text-ink-500">
-          错别字由内置词库本地直接查（无需模型）；语病 / 逻辑 / 设定矛盾需接入 AI 模型后由 AI 深度校对。
+          错别字由内置词库本地直接查（无需模型）；AI 校验拆成两块 —— 文字层（错别字 / 语病 / 标点）不读设定资料、出结果更快，逻辑层（逻辑 / 设定矛盾）才读设定资料。
         </span>
         <HelpPopover title="校对怎么用" width="22rem">
-          {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「AI 深度校对」：接入模型后，逐句检查错别字＋语病＋逻辑＋设定矛盾。它只报确定的问题，可在正文里点「替换此条」就地改正。\n· 未接入模型时，AI 校对按钮禁用，但本地错别字检测与本章所有手动功能不受影响。'}
+          {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「查错别字与语病」：接入模型后逐字逐句读本章正文，找错别字、语病、标点问题；不读设定资料，所以更快。\n· 「查逻辑与设定矛盾」：读项目设定资料，判前后矛盾、时间与空间错乱、与既有设定冲突。\n· 两块互相独立：可以只跑一块、分别看结果；点「替换此条」会直接改进正文，另一块的定位会自动跟着位移。\n· 未接入模型时两块按钮都禁用，但本地错别字检测与本章所有手动功能不受影响。'}
           <AIDataSourceNote feature="proofread" />
+          <AIDataSourceNote feature="proofread-logic" />
         </HelpPopover>
       </div>
 
@@ -204,70 +256,104 @@ export function ProofreadCheck({ content, onApply, onClose }: {
       {/* AI 深度校对 */}
       <div className="border-t border-ink-700 pt-4">
         <div className="text-12 font-semibold text-ink-100 mb-2 flex items-center gap-2">
-          AI 深度校对（错别字＋语病＋逻辑＋设定矛盾）
-          <span className="text-10 font-normal text-ink-500">（需模型）</span>
+          AI 校对
+          <span className="text-10 font-normal text-ink-500">（需模型 · 两块可分别跑）</span>
         </div>
 
         <div className="flex items-center gap-2 mb-3">
-          {!aiReady ? (
-            <Button disabled
-              
-              title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
-              <Sparkles size={13} /> AI 校对本章
-            </Button>
-          ) : aiLoading ? (
-            <Button onClick={stopAI} variant="danger" size="md" className="flex items-center text-12">
-              <AlertCircle size={13} /> 停止（{progress.done}/{progress.total}）
-            </Button>
-          ) : (
-            <Button onClick={runAI} variant="primary" size="md" className="flex items-center text-12">
-              <Sparkles size={13} /> {aiDone ? '重新 AI 校对' : 'AI 校对本章'}
-            </Button>
-          )}
+          {SCOPE_ORDER.map(scope => {
+            const st = scopes[scope]
+            const meta = SCOPE_META[scope]
+            if (!aiReady) {
+              return (
+                <Button key={scope} disabled title={AI_DISABLED_HINT}
+                  variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
+                  <Sparkles size={13} /> {meta.label}
+                </Button>
+              )
+            }
+            if (st.loading) {
+              return (
+                <Button key={scope} onClick={() => stopScope(scope)} variant="danger" size="md"
+                  className="flex items-center text-12" title="点击停止（已查出的部分会保留）">
+                  <AlertCircle size={13} /> 停止{meta.running}（{st.progress.done}/{st.progress.total}）
+                </Button>
+              )
+            }
+            return (
+              <Button key={scope} onClick={() => void runScope(scope)} variant="primary" size="md"
+                className="flex items-center text-12" title={meta.title}>
+                <Sparkles size={13} /> {st.done ? `重新${meta.label}` : meta.label}
+              </Button>
+            )
+          })}
           {!aiReady && (
-            <span className="text-11 text-ink-500">未接入 AI 模型——语病 / 逻辑 / 设定矛盾暂无法自动检测。</span>
-          )}
-          {aiLoading && (
-            <span className="text-11 text-ink-400 flex items-center gap-1.5">
-              <Loader2 size={12} className="animate-spin" /> 正在逐段校对…
-            </span>
+            <span className="text-11 text-ink-500">未接入 AI 模型 —— 两块校对都不可用。</span>
           )}
         </div>
 
-        {aiError && (
-          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-11 text-red-300 mb-2">
-            <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{aiError}</span>
-          </div>
-        )}
-
-        {aiDone && !aiLoading && aiIssues.length === 0 && (
-          <div className="py-3 text-center text-12 text-emerald-400">AI 校对完成，本章未发现明显问题 ✓</div>
-        )}
-        {aiDone && !aiLoading && aiIssues.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-11 text-ink-500 mb-1">
-              共 {aiIssues.length} 处 · 已校对 {aiScanned} 字{aiSkipped > 0 ? `（余 ${aiSkipped} 字超出上限未校，可分段或精简后重校）` : ''}
-            </div>
-            {aiIssues.map((iss, i) => (
-              <div key={i} className="flex items-start gap-2 text-12 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
-                <span className={`px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap text-10 ${badgeOf(iss.type)}`}>{iss.type}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-ink-200">
-                    「<span className="text-amber/90">{iss.quote}</span>」→「<span className="text-emerald-300">{iss.fix}</span>」
-                  </div>
-                  {iss.why && <div className="text-ink-500 mt-0.5">{iss.why}</div>}
-                </div>
-                <Button variant="bare"
-                  onClick={() => replaceIssue(iss)}
-                  className="shrink-0 px-2 py-1 bg-ink-700 text-ink-200 border border-ink-600 rounded text-11 hover:bg-ink-600 transition-colors"
-                  title="在正文中替换这一处"
-                >
-                  替换此条
-                </Button>
+        {SCOPE_ORDER.map(scope => {
+          const st = scopes[scope]
+          const meta = SCOPE_META[scope]
+          // 没跑过的块整段不出现 —— 界面上只留"我点过的那块"，没有空壳标题
+          if (!st.loading && !st.done) return null
+          return (
+            <div key={scope} className="mb-3 last:mb-0">
+              <div className="text-11 mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-ink-300">{meta.label}</span>
+                {st.loading && (
+                  <span className="text-ink-500 flex items-center gap-1">
+                    <Loader2 size={11} className="animate-spin" /> 正在逐段校对…
+                  </span>
+                )}
+                {st.done && !st.error && (
+                  <span className="text-ink-500">
+                    共 {st.issues.length} 处 · 已校对 {st.scanned} 字
+                    {st.skipped > 0 ? `（余 ${st.skipped} 字超出上限未校，可分段或精简后重校）` : ''}
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+
+              {st.error && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-11 text-red-300 mb-2">
+                  <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{st.error}</span>
+                </div>
+              )}
+              {st.done && st.cancelled && (
+                <div className="px-3 py-2 rounded-lg bg-ink-800/60 border border-ink-700 text-11 text-ink-400">
+                  已停止（保留已查出的 {st.issues.length} 处）
+                </div>
+              )}
+              {st.done && !st.error && st.issues.length === 0 && (
+                <div className="py-2 text-12 text-emerald-400">
+                  {scope === 'text' ? '未发现错别字 / 语病 / 标点问题 ✓' : '未发现逻辑矛盾或设定冲突 ✓'}
+                </div>
+              )}
+              {st.issues.length > 0 && (
+                <div className="space-y-2">
+                  {st.issues.map((iss, i) => (
+                    <div key={i} className="flex items-start gap-2 text-12 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
+                      <span className={`px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap text-10 ${badgeOf(iss.type)}`}>{iss.type}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-ink-200">
+                          「<span className="text-amber/90">{iss.quote}</span>」→「<span className="text-emerald-300">{iss.fix}</span>」
+                        </div>
+                        {iss.why && <div className="text-ink-500 mt-0.5">{iss.why}</div>}
+                      </div>
+                      <Button variant="bare"
+                        onClick={() => replaceIssue(scope, iss)}
+                        className="shrink-0 px-2 py-1 bg-ink-700 text-ink-200 border border-ink-600 rounded text-11 hover:bg-ink-600 transition-colors"
+                        title="在正文中替换这一处"
+                      >
+                        替换此条
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </ToolModal>
   )

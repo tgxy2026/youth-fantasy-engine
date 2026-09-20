@@ -14,6 +14,7 @@ import { DesktopDataBar } from './Desktop'
 import CloudFileSyncBar from './CloudFileSyncBar'
 import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
 import { useResizable } from '../lib/useResizable'
+import { usePersistedBool, usePersistedSet } from '../lib/uiPrefs'
 import { APP_VERSION_LABEL } from '../lib/env'
 import { Button } from './Button'
 
@@ -42,9 +43,12 @@ interface Props {
 }
 
 export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx }: Props) {
-  const [openGroups, setOpenGroups] = useState<Set<string>>(
-    new Set(['工作面板', '正文写作', '灵感工具', '开书定位', '角色管理', '世界构建', '大纲规划', '创作管理', '运营维护', '酒馆模式'])
-  )
+  // 折叠状态**跨会话记忆**（见 lib/uiPrefs）：
+  //   · 分组存的是「已折叠的分组」而不是「已展开的分组」→ 以后新增分组时，
+  //     老用户的记录里没有它，落回默认值（展开）；反之新分组一上来就是收起的，很别扭。
+  //   · 首次安装（无记录）＝空集合＝全部分组展开，符合"第一眼看到全部功能"。
+  const [collapsedGroups, updateCollapsedGroups] = usePersistedSet('sidebar-collapsed-groups')
+  const [volOpen, setVolOpen] = usePersistedBool('sidebar-volume-open', true)
   // 主题与界面缩放（与 <html data-theme> / zoom 同步）
   const [theme, setTheme] = useState(getStoredTheme())
   const [zoom, setZoom] = useState(getStoredZoom())
@@ -85,7 +89,6 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
 
   // 卷台账子项：从运行期缓存读取（编辑器增删改卷后会刷新缓存并广播事件）
   const [volumeTabs, setVolumeTabs] = useState(getVolumeTabs())
-  const [volOpen, setVolOpen] = useState(true)
   useEffect(() => {
     let alive = true
     const refresh = () => { if (alive) setVolumeTabs(getVolumeTabs()) }
@@ -119,10 +122,11 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   }
 
   const toggleGroup = (g: string) => {
-    const next = new Set(openGroups)
-    if (next.has(g)) next.delete(g)
-    else next.add(g)
-    setOpenGroups(next)
+    updateCollapsedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(g)) next.delete(g); else next.add(g)
+      return next
+    })
   }
 
   return (
@@ -171,7 +175,7 @@ style={{ zIndex: Z.pageBase }}
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
         {GROUPS.map(group => {
-          const isOpen = openGroups.has(group)
+          const isOpen = !collapsedGroups.has(group)
           const tabs = group === '正文写作'
             ? [EDITOR_TAB, ...TABS.filter(t => t.group === group && tabVisible(t.id, ctx))]
             : TABS.filter(t => t.group === group && tabVisible(t.id, ctx))
@@ -198,7 +202,7 @@ style={{ zIndex: Z.pageBase }}
                       return (
                         <div key={tab.id}>
                           <Button variant="bare"
-                            onClick={() => { setVolOpen(o => !o); onNavigate(tab.id) }}
+                            onClick={() => { setVolOpen(!volOpen); onNavigate(tab.id) }}
                             className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
                               ${active
                                 ? 'bg-amber/10 text-amber font-medium border border-amber/25'

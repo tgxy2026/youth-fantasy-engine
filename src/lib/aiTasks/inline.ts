@@ -81,6 +81,14 @@ export interface InlineSuggestOptions {
   length?: InlineSuggestLength
   /** 是否挂「去 AI 味」约束，默认 true（轻量档） */
   deAiFlavor?: boolean
+  /**
+   * 「换一句」：上一次已经给过的建议。传了就要求模型换一个写法。
+   *
+   * 为什么必须显式传：同前文 + 同参数在缓存里就是同一句，而"换一句"的语义是
+   * **作者已经看过这句、不满意**。光绕开缓存还不够 —— 模型在同样的前文上多半会
+   * 给出同样的续写，所以要把上一句当"避免重复"喂回去（见下方 layers 里的注入）。
+   */
+  avoid?: string
   signal?: AbortSignal
   onToken?: (delta: string) => void
 }
@@ -111,6 +119,11 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
   if (opts.projectContext?.trim()) layers.push(`【设定资料（仅用于核对专名、身份、称谓，不要照抄内容）】\n${opts.projectContext.trim()}`)
   if (opts.styleSpec?.trim()) layers.push(`【作者的《写作规范》· 必须遵守】\n${opts.styleSpec.trim()}`)
   if (opts.styleNote?.trim()) layers.push(`【作者本次追加的文风要求】\n${opts.styleNote.trim()}`)
+  // 「换一句」：上一句必须**整段**给出来，模型才认得出要避开什么。
+  // ⚠️ 位置在去 AI 味规则**之前** —— 那条纪律必须钉在 system 末尾才有效（见文件头第 1 条依据）。
+  if (opts.avoid?.trim()) {
+    layers.push(`【上一次已经给过、这次不要用的建议】\n${opts.avoid.trim()}\n\n作者看过上面这句、不采用，请换一个「明显不同」的写法：\n· 可以换主语、换动作、换场景焦点，也可以干脆跳过它、直接写它后面本该发生的事；\n· 不要只把词换掉，不要同义改写，不要在原句上加减几个字。`)
+  }
   if (opts.deAiFlavor !== false) layers.push(DEAI_INLINE_RULE)
 
   const user = `【光标之前的正文】\n${authorBlock(newAuthorFence(), body)}\n\n请接着往下写。`

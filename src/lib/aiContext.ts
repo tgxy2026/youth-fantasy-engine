@@ -109,6 +109,7 @@ const PRIORITY: string[] = [
   'races',            // 种族生物
   'items',            // 物品资源
   'history',          // 历史事件
+  'misc-settings',    // 其他设定（世界构建的兜底页，2026-09-20 新增）
   'volume-outline',   // 分卷大纲
   'chapter-master',   // 章节总表
   'chapter-outline',  // 章节细纲

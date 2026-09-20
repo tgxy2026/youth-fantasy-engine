@@ -4,6 +4,7 @@ import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
 import { foldVh } from '../lib/theme'
+import { usePersistedSet } from '../lib/uiPrefs'
 import {
   listPrompts, savePromptOverride, resetPromptOverride, resetAllPromptOverrides,
   PROMPT_GROUPS, type PromptEntry, type PromptGroup,
@@ -23,7 +24,9 @@ import {
 export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: number }) {
   const [entries, setEntries] = useState<PromptEntry[]>(() => listPrompts())
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  // 提示词条目的展开状态跨会话记忆（见 lib/uiPrefs）：存「已展开的条目」，
+  // 空集合 = 全部收起（默认观感：一屏能扫到全部提示词的名字，想看哪条点哪条）。
+  const [expandedPrompts, updateExpandedPrompts] = usePersistedSet('prompt-expanded')
   const [busy, setBusy] = useState(false)
 
   // 重新读一遍（保存/还原后、或模型配置变了之后）
@@ -104,7 +107,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
               {list.map(e => {
                 const draft = drafts[e.id] ?? e.text
                 const dirty = draft !== e.text
-                const isCollapsed = collapsed[e.id] ?? true
+                const isCollapsed = !expandedPrompts.has(e.id)
                 return (
                   <div key={e.id} className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -117,7 +120,11 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
                           （size="xs" 实际无效）且静止无框无内边距，与「文字按钮用 secondary、
                           行内小操作 xs」的按钮约定不一致。 */}
                       <Button size="xs" variant="secondary"
-                        onClick={() => setCollapsed(c => ({ ...c, [e.id]: !isCollapsed }))}
+                        onClick={() => updateExpandedPrompts(prev => {
+                          const n = new Set(prev)
+                          if (n.has(e.id)) n.delete(e.id); else n.add(e.id)
+                          return n
+                        })}
                         title={isCollapsed ? '展开看提示词全文' : '收起'}>
                         {isCollapsed ? '展开全文' : '收起'}
                       </Button>

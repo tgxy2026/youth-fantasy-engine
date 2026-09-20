@@ -138,7 +138,7 @@ export function useNovelEditorGhost({
   }, [companionStyleSpec])
 
   /** 发起一次伴写请求（防抖后调用）。连续失败到阈值即熔断，不再打扰作者 */
-  const fireGhost = useCallback(async (before: string, at: number, key: string) => {
+  const fireGhost = useCallback(async (before: string, at: number, key: string, avoid = '') => {
     ghostAbort.current?.abort()
     const ac = new AbortController()
     ghostAbort.current = ac
@@ -152,6 +152,8 @@ export function useNovelEditorGhost({
         styleNote: companionStyleNote,  // ③ 作者自定义补充
         length: companionLen,
         deAiFlavor: companionDeAi,
+        // 「换一句」才传：把上一句喂回去要求换个写法（不传＝首次建议）
+        ...(avoid.trim() ? { avoid } : {}),
         signal: ac.signal,
       })
       if (ac.signal.aborted) return
@@ -257,9 +259,36 @@ export function useNovelEditorGhost({
     return true
   }
 
+  /**
+   * 「换一句」（Ctrl/Cmd+Enter）：对当前建议不满意，让 AI 换一个写法重新生成。
+   *
+   * 与 Alt+\（手动触发）的分工：
+   *   · Alt+\ ＝ 我还没看到建议，叫它现在就算（命中缓存就直接复用，省 token）；
+   *   · Ctrl+Enter ＝ 这句我看过了、不满意，换一个 —— **必须绕开缓存**，并把上一句作为
+   *     「避免重复」喂回去。不绕缓存的话，同前文 + 同参数必然返回一字不差的同一句
+   *     （作者会以为按键坏了，这正是这个功能要解决的问题）。
+   */
+  const refreshGhost = () => {
+    const at = taRef.current?.selectionStart ?? caret
+    const before = ghostBefore(at)
+    if (before.trim().length < 12) return
+    const key = ghostKey(before)
+    ghostCache.current.delete(key)
+    ghostFail.current = 0
+    // 之前 Esc 拒过、或连续失败熔断过，都不该挡住作者主动要一句新的
+    ghostDismissed.current = null
+    void fireGhost(before, at, key, ghost?.text ?? '')
+  }
+
   /** 编辑器按键：先处理伴写的采纳/丢弃/手动触发，其余按键原样放行 */
   const onEditorKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Escape' && ghost) { dismissGhost(taRef.current?.selectionStart ?? caret); return }
+    // Ctrl/Cmd+Enter 换一句（必须 preventDefault：不让它落成换行）
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      refreshGhost()
+      return
+    }
     // Tab 采纳（必须 preventDefault，否则 textarea 默认会跳焦点）
     if (e.key === 'Tab' && ghost && !e.shiftKey && acceptGhost()) { e.preventDefault(); return }
     // → 采纳：仅当光标已在正文末尾（避免与"向右移光标"的日常操作打架）
@@ -290,6 +319,6 @@ export function useNovelEditorGhost({
   return {
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi,
     companionStyleNote, setCompanionStyleNote, companionStyleSpec, setCompanionStyleSpec,
-    styleNotePrompt, setStyleNotePrompt, ghost, ghostBusy, dismissGhost, onEditorKeyDown,
+    styleNotePrompt, setStyleNotePrompt, ghost, ghostBusy, dismissGhost, refreshGhost, onEditorKeyDown,
   }
 }

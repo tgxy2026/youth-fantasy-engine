@@ -29,6 +29,7 @@ import { uid } from '../lib/id'
 import { aiCapabilityOf } from '../lib/aiScope'
 import { useAIReady } from '../lib/useAIReady'
 import { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
+import { usePersistedSet } from '../lib/uiPrefs'
 import { showToast, confirmDialog } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 
@@ -565,7 +566,10 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     () => (tab.columns?.find(c => c.type === 'tableRef' && c.refTab === tab.id)?.name) ?? null,
     [tab],
   )
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // 树折叠状态**按页签记忆**（见 lib/uiPrefs）：国家势力的层级、历史事件的上下级
+  // 各记各的；切到别的表不会继承上一个表的折叠。存的是「已折叠的行 id」，
+  // 空集合 = 全展开 = 首次安装的默认观感。行被删除后留下的 id 无害（新行 id 不复用）。
+  const [collapsed, setCollapsed] = usePersistedSet(`table-collapsed:${tab.id}`)
   const toggleCollapse = (id: string) =>
     setCollapsed(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
@@ -634,7 +638,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     const row: TableRow = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
     void saveTableRow(row)
     setRows([...rows, row])
-    setCollapsed(new Set()) // 确保父级处于展开态，子条目立即可见
+    setCollapsed(() => new Set<string>()) // 确保父级处于展开态，子条目立即可见
   }
 
   // 表总宽 = 各列宽之和 + 序号列(40) + 操作列(48)。超出容器时由外层 overflow-x-auto 出横向滑条，

@@ -77,11 +77,19 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     excludes: ['任何设定表 —— 它只压缩你让它压的那一章'],
   },
   'proofread': {
-    label: 'AI 深度校对',
+    label: 'AI 校对 · 文字层（错别字 / 语病 / 标点）',
     sources: [
-      { group: '本章正文', items: [] },
+      { group: '本章正文', items: [], note: '逐字逐句通读；分块送模型，块内不注入设定资料' },
+    ],
+    excludes: ['项目设定资料 —— 文字层刻意不读设定：既省掉每块几千字的注入（出结果更快），也避免"拿设定去猜人名是不是写错"这类误报'],
+  },
+  'proofread-logic': {
+    label: 'AI 校对 · 逻辑层（逻辑 / 设定矛盾）',
+    sources: [
+      { group: '本章正文', items: [], note: '分块送模型，块比文字层更大（判前后矛盾需要更宽的视野）' },
       { group: '项目设定资料', items: CORE_TABLES, note: '约 6000 字预算（' + BY_BUDGET + '）' },
     ],
+    excludes: ['错别字 / 语病 / 标点 —— 那些归文字层，这一层只判「讲不讲得通、跟设定冲不冲突」'],
   },
   'foreshadow-review': {
     label: '伏笔闭环 AI 审查',
@@ -125,10 +133,10 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     ],
   },
   'jiewenji-proofread': {
-    label: '颉文姬 · 深度校对',
+    label: '颉文姬 · 校对（文字层 / 逻辑层）',
     sources: [
-      { group: '本章正文', items: [] },
-      { group: '项目设定资料', items: CORE_TABLES, note: '约 6000 字预算，带锚点（只到本章）' },
+      { group: '本章正文', items: [], note: '两块都只读本章正文；文字层不注入设定资料（更快）' },
+      { group: '项目设定资料（仅逻辑层）', items: CORE_TABLES, note: '约 6000 字预算，带锚点（只到本章）' },
     ],
   },
   'jiewenji-diagnosis': {

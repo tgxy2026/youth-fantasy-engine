@@ -77,7 +77,7 @@ export type WriterBudgetKind = keyof typeof WRITER_BUDGET_KINDS
 /** 界面展示用：各功能的称呼（展开明细时列出来，让作者知道"基准调了会影响谁"） */
 export const WRITER_BUDGET_LABELS: Record<WriterBudgetKind, string> = {
   'auto-continue': '逐章连写（创意写作）',
-  'proofread': '校对 / 颉文姬深度校对',
+  'proofread': '校对 · 逻辑层 / 颉文姬逻辑审校（文字层不读设定，不占额度）',
   'foreshadow-review': '伏笔闭环审查',
   'continuity-audit': '连续性校验',
   'consistency-selfcheck': 'AI 一致性深度自查（检查工具）',

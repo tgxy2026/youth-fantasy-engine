@@ -12,6 +12,7 @@ import { CheckSquare, ChevronDown, ChevronRight, Square } from 'lucide-react'
 import { Button } from './Button'
 import { confirmDialog, showToast } from './dialogs'
 import { commitDraftRows, previewCommit, type ConflictPolicy } from '../lib/flow/commit'
+import { usePersistedSet } from '../lib/uiPrefs'
 import { DRAFT_PICK_THRESHOLD, defaultPicked, pickableAsNew } from '../lib/flow/draft'
 import type { CommitOutcome, DraftBundle, DraftRow } from '../lib/flow/types'
 
@@ -53,7 +54,9 @@ export default function DraftReviewPanel({
   const [picked, setPicked] = useState<Set<string>>(
     () => new Set(bundle.rows.filter(defaultPicked).map(r => r.key)),
   )
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // 分组折叠状态跨会话记忆（见 lib/uiPrefs）：拆书与创意写作共用本组件，
+  // 按目标表 id 记 —— 「我每次都想先看角色那组」这类习惯不该每次都重新点一遍。
+  const [collapsed, setCollapsed] = usePersistedSet('draft-review-collapsed')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 

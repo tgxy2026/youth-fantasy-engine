@@ -592,6 +592,35 @@ export const TABS: TabDef[] = [
 },
 
 {
+  /**
+   * 世界构建的**兜底层**（2026-09-20 新增，老大要求）。
+   *
+   * 为什么需要它：前面六张表（国家势力 / 地理风物 / 种族生物 / 物品资源 / 历史事件 / 名词术语）
+   * 都是**有结构的**，写不进任何一张的零散设定（天气历法的土规矩、货币兑换、民俗禁忌、
+   * 某个不上台面的潜规则）过去只能硬塞进某张表的备注里，或者干脆不记 ——
+   * 结果是 AI 读设定时看不到它，正文里却已经写了。
+   *
+   * 形态刻意做到最简：**名称 + 内容**两列纯文本，不做结构校验、不设枚举、不加依赖。
+   * 默认**不勾选**（`FEATURE_TIER` 里显式标 optional）：它不是每个项目都需要，
+   * 也不该让「自定义项目」的功能清单多出一条默认项。
+   */
+  id: 'misc-settings', name: '其他设定', group: '世界构建', type: 'table',
+  description: '世界构建的兜底页：前面几张表没覆盖到的设定都写在这儿，一条一个「名称 + 内容」，纯文本、不做结构校验。它同样会进 AI 的设定资料，所以放在这里的设定模型读得到，不会因为"没地方记"而落空。',
+  columns: [
+    c('编号'), c('名称'), c('内容', undefined, 'w-96'),
+  ],
+  displayCol: '名称',
+  subtitleCol: '编号',
+  codeRule: '编号规则：MISC + 4 位序号（MISC0001、MISC0002…，MISC=Miscellaneous 其他）。新增行自动按当前最大序号 +1 编号（从 0001 起）；同表前缀统一、序号递增；已删除条目的编号不复用。',
+  tips: [
+    '放"哪张表都不合适"的设定：天气与历法的土规矩、货币与度量换算、民俗禁忌、丧葬婚嫁流程、某个不上台面的潜规则、可复用的小道具……',
+    '先在「名称」里写清它叫什么（便于别处引用、也让 AI 认得出），再在「内容」里写具体。内容列是纯文本，可以自由分段。',
+    '⚠️ 名称尽量起得具体（如「灵力潮汐周期」而不是「灵力」）：正文编辑器会把各设定表的名称做引用高亮，过于笼统的名字会到处亮。',
+    '⚠️ 会反复出现、且需要与其它设定互相关联的内容，优先放进对应的专表（人物进《主要角色》、地名进《地理风物》、专有名词进《名词术语》）—— 本页是兜底，不是首选。',
+  ]
+},
+
+{
   id: 'chapter-master', name: '章节总表', group: '大纲规划', type: 'table',
     newestFirst: true, // 按创建时间倒序：后写的章节在最前，贴合"从第一章往后写"的工作流
   description: '全书章节主台账的只读汇总视图。自「按卷建表」后，每卷各自一张「章节台账」表（见左侧「章节总表」下的各卷子项），此处聚合所有卷的章节供全局核对。每章一行，串联伏笔/时间脉络/爽点三张表的对齐主轴。',
@@ -964,7 +993,7 @@ export function getTab(id: string): TabDef | undefined {
 /** 设定检索栏使用：三个一级页签各自展开后的子项（按页签 id 引用 TABS） */
 export const SETTING_SUBTABS: Record<string, string[]> = {
   '角色管理': ['char-main', 'char-secondary', 'char-npc', 'relations'],
-  '世界构建': ['nations', 'geography', 'races', 'items', 'history', 'terms'],
+  '世界构建': ['nations', 'geography', 'races', 'items', 'history', 'terms', 'misc-settings'],
   '创作管理': ['foreshadow', 'timeline', 'hookpoints', 'subplots', 'secrets'],
 }
 /** 哪些页签 ID 的条目要展示成「甲→乙」双人名（人物关系专用） */
@@ -1006,6 +1035,10 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   // 读 schema 的人会以为是"忘了登记"，而这个档位是**有意为之的产品决定**。
   bookbreak: 'optional',
   'creative-writing': 'optional',
+  // 其他设定（2026-09-20）：世界构建的兜底页 —— 同样**显式标 optional、不默认勾选**。
+  // 它不是每个项目都需要的功能，也不带任何依赖（不动 STRONG_DEPS / ANY_DEPS）。
+  // 写出来而不是省略，是为了让读 schema 的人知道这是有意为之，不是"忘了登记"。
+  'misc-settings': 'optional',
   // 酒馆模式（2026-09-15）：整体改为**不默认勾选**（落到 optional）。
   // 原先 5 项设 default，会让每个自定义项目默认开着一整套角色扮演功能，多数作者用不上。
   // 它们的联动关系改由下方 STRONG_DEPS / ANY_DEPS 负责。

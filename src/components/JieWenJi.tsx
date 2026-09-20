@@ -9,7 +9,7 @@ import { buildProjectContext } from '../lib/aiContext'
 import { getFormData } from '../lib/db'
 import {
   aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice,
-  aiPleasureCheck, aiOpeningCheck, aiProofread, aiBriefing, aiExtractSettingEntities,
+  aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities,
   type EditorDiagnosis, type ChapterReview, type OocFinding, type RewriteResult, type ContinuationAdvice,
   type PleasureReport, type OpeningReport, type ProofreadIssue, type BriefingReport,
 } from '../lib/aiTasks'
@@ -66,6 +66,32 @@ interface Props {
 type Mode = 'clinic' | 'edit' | 'review' | 'brief' | 'ledger'
 
 const INSTRUCTIONS = ['润色', '扩写', '精简', '改语气', '换视角']
+
+/**
+ * 校对的**两块**（2026-09-20 拆分，老大要求）。
+ * 拆开的实际收益：文字层不读设定资料 —— 块内注入少了几千字，出结果明显更快；
+ * 逻辑层才读设定（判前后矛盾、与设定冲突必须有依据）。
+ */
+type ProofScope = 'text' | 'logic'
+const PROOF_ORDER: ProofScope[] = ['text', 'logic']
+const PROOF_META: Record<ProofScope, { label: string; title: string }> = {
+  text: { label: '查错别字与语病', title: '错别字 / 语病 / 标点 —— 逐字逐句读本章正文，不读设定资料（更快）' },
+  logic: { label: '查逻辑与设定矛盾', title: '逻辑矛盾 / 时间空间错乱 / 与设定资料冲突 —— 会读项目设定资料' },
+}
+interface ProofState {
+  loading: boolean
+  issues: ProofreadIssue[]
+  scanned: number
+  skipped: number
+  progress: { done: number; total: number }
+  done: boolean
+  error: string
+  cancelled: boolean
+}
+const blankProof = (): ProofState => ({
+  loading: false, issues: [], scanned: 0, skipped: 0,
+  progress: { done: 0, total: 0 }, done: false, error: '', cancelled: false,
+})
 
 /** 轻量 markdown 渲染：支持 ## 小标题 / 数字与 - 列表 / **加粗**，其余按段落展示 */
 function renderInline(s: string) {
@@ -173,11 +199,16 @@ export default function JieWenJi({
     }
   }
 
-  // ============ 诊室：AI 深度校对（错别字/语病/逻辑/设定矛盾） ============
-  const [proof, setProof] = useState<{
-    loading: boolean; issues: ProofreadIssue[]; scanned: number; skipped: number;
-    progress: { done: number; total: number }; done: boolean; error: string; cancelled: boolean
-  }>({ loading: false, issues: [], scanned: 0, skipped: 0, progress: { done: 0, total: 0 }, done: false, error: '', cancelled: false })
+  // ============ 诊室：AI 校对（文字层 / 逻辑层两块） ============
+  // 两块结果各存一份：分别跑、分别看，一块的进度与报错不影响另一块。
+  // ⚠️ 但**同一时刻只允许跑一块** —— 本面板所有 AI 请求共用 `abortRef` 一个取消器
+  //    （面板卸载时 abort），并发跑两块会让后发的那次把前一次的 signal 顶掉。
+  const [proofs, setProofs] = useState<Record<ProofScope, ProofState>>({
+    text: blankProof(), logic: blankProof(),
+  })
+  const patchProof = (s: ProofScope, patch: Partial<ProofState>) =>
+    setProofs(prev => ({ ...prev, [s]: { ...prev[s], ...patch } }))
+  const propsRunning = PROOF_ORDER.some(s => proofs[s].loading)
   const abortRef = useRef<AbortController | null>(null)
   /** 统一取消器：所有 AI 请求共用，面板卸载时 abort（省 token、防卸载后 setState） */
   const withCtrl = async <T,>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> => {
@@ -253,34 +284,40 @@ export default function JieWenJi({
     }))
   }
 
-  const runProofread = async () => {
-    if (!aiReady || proof.loading) return
+  const runProofread = async (scope: ProofScope) => {
+    if (!aiReady || propsRunning) return
     // 只校对完整正文。曾经提供过「喂压缩摘要」的简略模式，但校对结果要按 quote
     // 在正文里定位替换，摘要文字在正文里定位不到、还会误替换无辜同文——已移除。
     const text = content
-    showToast(`AI 深度校对已启动，篇幅较大时耗时 30–90 秒属正常，并非卡死，请耐心等待`, 'info')
-    setProof({ loading: true, issues: [], scanned: 0, skipped: 0, progress: { done: 0, total: 0 }, done: false, error: '', cancelled: false })
+    showToast(`AI 校对已启动（${PROOF_META[scope].label}），篇幅较大时耗时数十秒属正常，并非卡死，请耐心等待`, 'info')
+    patchProof(scope, { ...blankProof(), loading: true })
     try {
+      // 🔴 逻辑层才读设定资料；文字层不读 —— 少注入几千字，出结果更快，
+      //    也避免模型"拿设定去猜人名是不是写错"这类误报。
       let ctxText = ''
-      try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('jiewenji-proofread'), focusChapterId })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
-      const res = await withCtrl(signal => aiProofread(text, {
+      if (scope === 'logic') {
+        try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('jiewenji-proofread'), focusChapterId })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
+      }
+      const run = scope === 'text' ? aiProofreadText : aiProofreadLogic
+      const res = await withCtrl(signal => run(text, {
         context: ctxText,
         signal,
-        onProgress: (d, t) => setProof(p => ({ ...p, progress: { done: d, total: t } })),
+        onProgress: (d, t) => patchProof(scope, { progress: { done: d, total: t } }),
       }))
-      setProof(p => ({ ...p, loading: false, issues: res.issues, scanned: res.scanned, skipped: res.skipped, done: true }))
+      patchProof(scope, { loading: false, issues: res.issues, scanned: res.scanned, skipped: res.skipped, done: true })
     } catch (e) {
       const cancelled = isCancelled(e)
-      setProof(p => ({
-        ...p, loading: false, done: true, cancelled,
+      patchProof(scope, {
+        loading: false, done: true, cancelled,
         error: cancelled ? '' : e instanceof Error ? e.message : String(e),
-      }))
+      })
     }
   }
   const stopProofread = () => abortRef.current?.abort()
 
-  /** 替换单条校对结果：优先用 AI 标注位置，替换后把其余问题按位移重锚定（重叠/失效的置空走全文定位兜底） */
-  const replaceOne = (iss: ProofreadIssue) => {
+  /** 替换单条校对结果：优先用 AI 标注位置，替换后把**两块**的其余问题都按位移重锚定
+   *  （重叠/失效的置空，走全文定位兜底）。只重锚定自己那块的话，切到另一块再点就是"定位失败"。 */
+  const replaceOne = (scope: ProofScope, iss: ProofreadIssue) => {
     let idx = -1
     if (iss.at != null && content.slice(iss.at, iss.at + iss.quote.length) === iss.quote) idx = iss.at
     else idx = content.indexOf(iss.quote)
@@ -288,18 +325,24 @@ export default function JieWenJi({
     const delta = iss.fix.length - iss.quote.length
     const next = content.slice(0, idx) + iss.fix + content.slice(idx + iss.quote.length)
     onApplyContent?.(next)
-    setProof(prev => ({
-      ...prev,
-      issues: prev.issues
-        .filter(i => i !== iss)
-        .map(i => {
-          if (i.at == null) return i
-          // 替换点之后的坐标整体位移；之前或重叠的按新文本校验，失效则置空，下次替换走 indexOf 兜底
-          const na = i.at > idx ? i.at + delta : i.at
-          return next.slice(na, na + i.quote.length) === i.quote ? { ...i, at: na } : { ...i, at: undefined }
-        })
-        .sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
-    }))
+    setProofs(prev => {
+      const out = { ...prev }
+      for (const k of PROOF_ORDER) {
+        out[k] = {
+          ...prev[k],
+          issues: prev[k].issues
+            .filter(i => !(k === scope && i === iss))
+            .map(i => {
+              if (i.at == null) return i
+              // 替换点之后的坐标整体位移；之前或重叠的按新文本校验，失效则置空，下次替换走 indexOf 兜底
+              const na = i.at > idx ? i.at + delta : i.at
+              return next.slice(na, na + i.quote.length) === i.quote ? { ...i, at: na } : { ...i, at: undefined }
+            })
+            .sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
+        }
+      }
+      return out
+    })
   }
 
   // ============ 编辑：选区改稿 → 建议段 ============
@@ -424,7 +467,7 @@ style={{ zIndex: Z.pagePanel }}>
         <Wand2 size={14} className="text-amber" />
         <span className="text-12 font-semibold text-ink-100 flex-1">颉文姬 · AI 编辑</span>
         <HelpPopover title="颉文姬 · AI 编辑" width="24rem" size={12} className="shrink-0">
-          {'· 诊室：AI 深度校对（错别字 / 语病 / 逻辑 / 设定矛盾，可逐条「替换此条」）；AI 综合诊断（主编视角：优先级 / 隐藏风险 / 批量建议）。\n· 编辑：先在正文选中一段，选润色 / 扩写 / 精简 / 改语气 / 换视角。改稿以「建议段」标记写入原文下方，你的原文一字不动，取舍后可用「清除全部建议段」一键清理。\n· 审读：章节编辑意见（六维打分）/ OOC 人设检查 / 续写方向（只给思路不生成正文）/ 爽点毒点 / 黄金三章。\n· 简报（v1.6.1）：开写前一键生成「本章写作简报」——未回收伏笔 / 钩子爽点方向 / 角色状态提醒 / 下一章衔接，只给方向不代写正文。\n· 补登（v1.9.1）：扫本章正文，抽出有专名的人物 / 势力 / 地点 / 种族 / 物品 / 术语，与已有设定比对后分「已登记 / 疑似重复 / 待补登」三档；勾选即可一键写入对应设定表或角色卡，只填名称与一句话，其余留空自己补。「是否已登记」由程序按名称与别称精确比对，AI 只负责抽取。\n· 所有 AI 入口需先配置模型；未配置时按钮禁用，原有本地功能不受影响。\n· 底部开关可控制屏幕右侧的 Q 版精灵是否显示。'}
+          {'· 诊室：AI 校对分两块 —— 「查错别字与语病」（只读本章正文，出结果更快）与「查逻辑与设定矛盾」（会读设定资料），都可逐条「替换此条」；AI 综合诊断（主编视角：优先级 / 隐藏风险 / 批量建议）。\n· 编辑：先在正文选中一段，选润色 / 扩写 / 精简 / 改语气 / 换视角。改稿以「建议段」标记写入原文下方，你的原文一字不动，取舍后可用「清除全部建议段」一键清理。\n· 审读：章节编辑意见（六维打分）/ OOC 人设检查 / 续写方向（只给思路不生成正文）/ 爽点毒点 / 黄金三章。\n· 简报（v1.6.1）：开写前一键生成「本章写作简报」——未回收伏笔 / 钩子爽点方向 / 角色状态提醒 / 下一章衔接，只给方向不代写正文。\n· 补登（v1.9.1）：扫本章正文，抽出有专名的人物 / 势力 / 地点 / 种族 / 物品 / 术语，与已有设定比对后分「已登记 / 疑似重复 / 待补登」三档；勾选即可一键写入对应设定表或角色卡，只填名称与一句话，其余留空自己补。「是否已登记」由程序按名称与别称精确比对，AI 只负责抽取。\n· 所有 AI 入口需先配置模型；未配置时按钮禁用，原有本地功能不受影响。\n· 底部开关可控制屏幕右侧的 Q 版精灵是否显示。'}
           <AIDataSourceNote feature="jiewenji-panel" />
         </HelpPopover>
         <Button variant="icon-muted" onClick={onClose} className="p-1" title="收起"><X size={16} /></Button>
@@ -462,60 +505,89 @@ style={{ zIndex: Z.pagePanel }}>
                 <Button title="校对结果需在正文中精确定位替换，故恒校对全文" variant="bare" className="px-2 py-0.5 transition-colors bg-amber/20 text-amber cursor-default">完整（正文）</Button>
               </div>
             </div>
-            <Button variant="bare"
-              onClick={() => void runProofread()}
-              disabled={!aiReady || proof.loading}
-              className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-              title={!aiReady ? AI_DISABLED_HINT : '错别字 / 语病 / 逻辑 / 设定矛盾'}
-            >
-              {proof.loading ? <Loader2 size={12} className="animate-spin" /> : <SpellCheck size={12} />}
-              {proof.loading ? '校对中…' : 'AI 深度校对（错别字 / 语病 / 逻辑 / 设定矛盾）'}
-            </Button>
-            {proof.loading && (
-              <div className="flex items-center gap-2">
-                <div className="h-1 rounded bg-ink-700 overflow-hidden flex-1">
-                  <div className="h-full bg-amber transition-all" style={{ width: `${proof.progress.total ? (proof.progress.done / proof.progress.total) * 100 : 0}%` }} />
-                </div>
-                <Button onClick={stopProofread} variant="secondary" size="md" className="text-11 shrink-0">
-                  停止
-                </Button>
-              </div>
-            )}
-            {proof.error && <div className="text-11 text-red-300 px-1">{proof.error}</div>}
-            {proof.done && !proof.loading && proof.cancelled && (
-              <div className="text-11 text-ink-300 px-1">已停止校对（保留已查出的 {proof.issues.length} 处）</div>
-            )}
-            {proof.done && !proof.loading && !proof.cancelled && (
-              <div className="text-10 text-ink-500">
-                共校对 {proof.scanned} 字{proof.skipped > 0 ? `，跳过 ${proof.skipped} 字` : ''}，发现 {proof.issues.length} 处
-              </div>
-            )}
-            {proof.issues.length > 0 && (
-              <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                {proof.issues.map((iss, i) => (
-                  <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
-                      <span className="text-11 text-red-300 line-through">{iss.quote}</span>
-                      <span className="text-10 text-ink-500">→</span>
-                      <span className="text-11 text-emerald-300">{iss.fix}</span>
-                    </div>
-                    {iss.why && <div className="text-10 text-ink-400 mt-0.5">{iss.why}</div>}
-                    <Button variant="bare"
-                      onClick={() => replaceOne(iss)}
-                      className="mt-1 px-2 py-0.5 rounded-md text-10 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
-                    >
-                      替换此条
+            {/* 两块校对：文字层（不读设定资料，更快）与逻辑层（读设定资料）。
+                同一时刻只跑一块 —— 本面板所有 AI 请求共用同一个取消器（见 runProofread 的注释）。 */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {PROOF_ORDER.map(scope => {
+                const st = proofs[scope]
+                const meta = PROOF_META[scope]
+                if (st.loading) {
+                  return (
+                    <Button key={scope} variant="bare" onClick={stopProofread}
+                      className={`${aiBtnCls} bg-red-500/15 border-red-500/30 text-red-300 hover:bg-red-500/25`}
+                      title="点击停止（已查出的结果会保留）">
+                      <Loader2 size={12} className="animate-spin" /> 停止（{st.progress.done}/{st.progress.total}）
                     </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {proof.done && !proof.loading && !proof.cancelled && proof.issues.length === 0 && (
-              <div className="text-center text-11 text-emerald-300 py-1">
-                <CheckCircle2 size={13} className="inline mr-1" /> 未发现确定问题
-              </div>
-            )}
+                  )
+                }
+                return (
+                  <Button key={scope} variant="bare"
+                    onClick={() => void runProofread(scope)}
+                    disabled={!aiReady || propsRunning}
+                    className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
+                    title={!aiReady ? AI_DISABLED_HINT : meta.title}
+                  >
+                    <SpellCheck size={12} />
+                    {st.done ? `重新${meta.label}` : meta.label}
+                  </Button>
+                )
+              })}
+            </div>
+            <div className="text-10 text-ink-500 leading-relaxed">
+              「查错别字与语病」不读设定资料，出结果更快；「查逻辑与设定矛盾」会读设定资料。
+              两块可分别跑、分别看结果，互不覆盖。
+            </div>
+
+            {PROOF_ORDER.map(scope => {
+              const st = proofs[scope]
+              const meta = PROOF_META[scope]
+              if (!st.loading && !st.done) return null
+              return (
+                <div key={scope} className="space-y-1.5">
+                  <div className="text-10 font-medium text-ink-300">{meta.label}</div>
+                  {st.loading && (
+                    <div className="h-1 rounded bg-ink-700 overflow-hidden">
+                      <div className="h-full bg-amber transition-all" style={{ width: `${st.progress.total ? (st.progress.done / st.progress.total) * 100 : 0}%` }} />
+                    </div>
+                  )}
+                  {st.error && <div className="text-11 text-red-300 px-1">{st.error}</div>}
+                  {st.done && st.cancelled && (
+                    <div className="text-11 text-ink-300 px-1">已停止（保留已查出的 {st.issues.length} 处）</div>
+                  )}
+                  {st.done && !st.cancelled && (
+                    <div className="text-10 text-ink-500">
+                      共校对 {st.scanned} 字{st.skipped > 0 ? `，跳过 ${st.skipped} 字` : ''}，发现 {st.issues.length} 处
+                    </div>
+                  )}
+                  {st.issues.length > 0 && (
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                      {st.issues.map((iss, i) => (
+                        <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
+                            <span className="text-11 text-red-300 line-through">{iss.quote}</span>
+                            <span className="text-10 text-ink-500">→</span>
+                            <span className="text-11 text-emerald-300">{iss.fix}</span>
+                          </div>
+                          {iss.why && <div className="text-10 text-ink-400 mt-0.5">{iss.why}</div>}
+                          <Button variant="bare"
+                            onClick={() => replaceOne(scope, iss)}
+                            className="mt-1 px-2 py-0.5 rounded-md text-10 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
+                          >
+                            替换此条
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {st.done && !st.cancelled && st.issues.length === 0 && (
+                    <div className="text-center text-11 text-emerald-300 py-1">
+                      <CheckCircle2 size={13} className="inline mr-1" /> 未发现问题
+                    </div>
+                  )}
+                </div>
+              )
+            })}
 
             {/* 诊断范围：完整（正文）/ 简略（压缩摘要） */}
             <div className="flex items-center gap-1.5 text-10 text-ink-500">

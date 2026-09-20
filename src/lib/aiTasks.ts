@@ -31,7 +31,9 @@ import { CREATIVE_PROMPTS } from './aiTasks/creative'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
-export { aiProofread } from './aiTasks/proofread'
+// 2026-09-20 拆分：`aiProofread`（混查五类）→ `aiProofreadText`（错别字/语病/标点，不读设定）
+// 与 `aiProofreadLogic`（逻辑/设定矛盾，读设定）。两条独立提示词、两个独立入口。
+export { aiProofreadText, aiProofreadLogic } from './aiTasks/proofread'
 export type { ProofreadIssue, ProofreadOptions, ProofreadResult } from './aiTasks/proofread'
 export { aiSuggestNames, aiReviewSensitive } from './aiTasks/suggest'
 export type { NameSuggestRequest, NameSuggestion, SensitiveHitInput, SensitiveReview } from './aiTasks/suggest'
@@ -64,7 +66,8 @@ export { aiSummarizeFormSettings } from './aiTasks/formSummary'
  */
 const PROMPT_ORDER = [
   'organize-rows',
-  'proofread',
+  'proofread-text',
+  'proofread-logic',
   'name-suggest',
   'sensitive-recheck',
   'continuity-audit',
