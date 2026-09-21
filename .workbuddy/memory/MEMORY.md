@@ -9,7 +9,7 @@
 - 清单 `docs/2.3.1-Bug与待优化清单.md` 只记录，明说「处理」才动（旧清单已归档 `docs/归档/`）。提交含 `!` 或换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
-- Electron31+React18.3+TS5.5+Vite5.3+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本走 `env.ts:APP_VERSION_LABEL`。
+- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本走 `env.ts:APP_VERSION_LABEL`。
 - 现 **2.3.1**（紧急修复版，已封装并上 Gitee Release；`package.json` 唯一源，lock 只改 `j.version`＋`j.packages['']`）；2.4 已定稿但**延后**。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。
 - 🔴 启动**默认停项目管理首页**；`lastProject` 只服务「首次播示范项目」，删项目时一并清掉。
@@ -17,7 +17,7 @@
 ## 创作链路（2.2.x）
 - 🔴 **切章必清 ghost**；创意写作起点不手选（看有无卷大纲/细纲）；🔴 续排起点＝**已有细纲最大章号+1**；每卷章数＝硬指标、批总量＝卷×章（≤60）、缺口优先补齐；写前必 `previewCommit`、字段键取自 `fieldMap`（闸 `tests/extractFields`）。
 - 🔴 整章改写五档（**续写**＝代码留原文、模型只吐增量）：结果只在内存、写前显式快照、只动 content/wordCount/updatedAt；过 `enforceWordRange`（±300 **汉字**）；🔴🔴 历史章冻结、最新章仅改写档可放开＋落库后跑设定同步。
-- ✅ 伴写＝ghost 叠层＋「钢笔」弹窗（默认关，**Ctrl+Enter 换一句**）；文风三层锚定、去 AI 味钉 system 末尾；通用件在 `lib/flow/`。
+- ✅ 伴写＝ghost 叠层＋「钢笔」弹窗（默认关，**Ctrl+Enter 换一句**）；去 AI 味钉 system 末尾；通用件 `lib/flow/`。
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键（改功能后回搜 `schema.ts` 的 `description`）。
@@ -41,7 +41,7 @@
 ## UI·布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量须走 `style`。设置项＝标题→输入→说明。
 - 🔴🔴 `<html>` 界面缩放：①量尺寸用 `offsetHeight`/`clientWidth`，禁 `getBoundingClientRect()`；②**vh/vw 都不随 zoom 缩**→内联长度一律走 `foldVh()`（它**同时**折算 vh 与 vw，名字起窄了）；③SVG 滚轮/拖拽除 zoom。
-- 🔴 **远程/分辨率自适应**：固定 px 断点只看逻辑像素宽、不看物理尺寸（32″4K 与 14″2K 会同命中 `xl`）→ 一律用 `foldVh(min(上限, N vw))`（#036 实测）。
+- 🔴 分辨率自适应：固定 px 断点只看逻辑像素宽（32″4K 与 14″2K 同命中 `xl`）→ 用 `foldVh(min(上限, N vw))`。
 - 🔴 光标/选区同步不能只靠 `onKeyUp`（上屏/粘贴/程序化插入无 keyup）→ 有 `onChange` 就在里面同步。
 - 🔴 判「琥珀开启态」按 class **词元**比（off 态 `hover:text-amber`→`includes` 恒真＝假 PASS）。
 - 🔴 按对侧高度定高：flex item 加 `overflow-hidden`；别同写 `flex-1`+`height`。
@@ -55,7 +55,7 @@
 ## AI 层
 - 🔴 **提示词给几层模型就按几层输出**——读端必须兼容**自己给的**层级，否则整表静默丢光。
 - 🔴 「保密等级」＝档位＋行级预算排序；🔴🔴 **`rankOf` 须同认裸键与复合键**（表格＝`保密等级`、卡片＝`模块::字段`）。
-- 🔴 提示词可编辑：默认值就地声明；变量须模块级 `let`＋setter 同模块；🔴🔴 **注册顺序＝设置页顺序**（`listPrompts` 按 group 稳排；`PROMPT_ORDER` 漏登记 warn）。
+- 🔴 提示词可编辑：默认值就地声明；变量须模块级 `let`＋setter 同模块；🔴🔴 **注册顺序＝设置页顺序**（`PROMPT_ORDER` 漏登记 warn）。
 - 🔴 本地预算上限 32K。🔴 **防剧透四道闸**（只管推演）：`viewMode:'character-view'`／`AUTHOR_SIDE_FIELDS`／`anchorChapterId`／`knowerName`。资料型页签须登记 `PRIORITY`。
 - 🔴 解析统一 `aiParse.ts`（禁裸 `JSON.parse`）；**生成型走 `parseLooseObject`＋空结果重试**。温度：结构化 0.3、创意 0.85；一轮 JSON 走 `aiChatJson`。
 - 🔴 迁移只走 `db.runMigrations()`（types→ledger→numbering→geomaps 不可换序）。作者原文进 prompt 走 `promptGuard.authorBlock()`；绝不清洗正文。
@@ -91,12 +91,10 @@
 - 🔴 **G 盘元数据操作极慢**：删 **49ms**/文件、建 25ms/文件（C 盘 1ms ⇒ 差 37 倍）。大批小文件只能**单进程挂后台慢跑**（~20 文件/秒），🔴 **禁并行**（4 并发实测 0/秒）；判「删除慢」先做**跨盘对照**，别归因杀软。
 - 🔴 `git ls-files` 中文路径**加引号转义**→须 `-c core.quotepath=false ls-files -z` 按 `\0` 切。
 - 🔴🔴 同消息对同一文件发多个 Edit 会相互覆盖→串行改、改完即 grep；跨行锚点先探 EOL。🔴 共享中介必须串行。
-- 🔴 改 `protocol.ts` 正文别用 Edit（锚点不唯一）→ 脚本＋旧版进 `LEGACY_PROTOCOLS`。
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖）。判存在用 `Read`／`test -f`；`memory/*.md` 只准 append。
-- 🔴 `git archive HEAD` 基线**带 CRLF**（工作区 LF）→ 先统一换行再比字数。
 
 ## 2.4 规划（已定稿·**开工顺延**，详 `docs/2.4.0-版本规划.md`）
-- 三目标：**转化**（首启 5 分钟出第一段）／**长篇**（性能基线＋章节快照）／**可信**（创作轨迹存证＋投稿自检＋AI 占比申报）；总判断**不横向加功能**。
+- 三目标：**转化**（首启 5 分钟出第一段）／**长篇**（性能＋快照）／**可信**（轨迹存证＋自检＋占比申报）；**不横向加功能**。
 - **已定分批**：2.4.0（A1 首启·A2 性能·A3 快照·A4 轨迹+证据包）→2.4.1（B1-B5）→2.4.2（C 工程/外围）；新页签「创作轨迹」归「创作管理」组；C4 首批**晋江+起点**。
 - 🔴 中文 PDF 禁 jsPDF（字体无中文）→HTML+打印样式为真源，桌面 `printToPDF`、其余 `window.print()`。
 
