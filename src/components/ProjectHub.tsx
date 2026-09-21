@@ -543,13 +543,18 @@ export default function ProjectHub({ onOpen }: Props) {
         )}
       </div>
       {/* 古风看板娘 · 项目管理页右下角静态立绘（v1.9.1）—— 透明底 PNG，无动画；pointer-events-none 不挡交互；
-          右下角 fixed，配合内容容器右侧留白，保证不遮挡项目列示区域、也不被其遮挡；手机端隐藏以免拥挤 */}
+          右下角 fixed，配合内容容器右侧留白，保证不遮挡项目列示区域、也不被其遮挡；手机端隐藏以免拥挤。
+          #036 宽度改「视口比例 + 上限」：原来 w-[160/240/320/380px] 是绝对值，而断点只看**逻辑像素宽度**、
+          不看物理尺寸 —— 1280 逻辑宽的小屏（14 寸 2K@200%）与 2560 的大屏（32 寸 4K@150%）同命中 xl，
+          380px 占比从 19.6% 翻到 29.7%、纵向吃掉 82% 屏高，实测压住右上角「创建/新建项目」按钮。
+          min(380px, 20vw) 经 foldVh 折算（vw 在 zoom 下不缩，必须折）后视觉占比恒为 20%；
+          大屏仍走 380px 上限 → 观感与改动前完全一致。 */}
       <img
         src={jiewenjiGufeng}
         alt="古风看板娘"
         draggable={false}
-        className="fixed bottom-4 right-4 hidden sm:block w-[160px] md:w-[240px] lg:w-[320px] xl:w-[380px] h-auto pointer-events-none select-none drop-shadow-2xl"
-        style={{ zIndex: Z.sprite, maxHeight: foldVh('82vh') }} // vh 随界面缩放折算，否则 132% 下 82vh 视觉高度≈108vh，顶部被顶出视口
+        className="fixed bottom-4 right-4 hidden sm:block h-auto pointer-events-none select-none drop-shadow-2xl"
+        style={{ zIndex: Z.sprite, width: foldVh('min(380px, 20vw)'), maxHeight: foldVh('82vh') }} // vw/vh 都要折算，否则缩放 ≠100% 时占比失真
       />
     </div>
   )

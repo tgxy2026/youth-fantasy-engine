@@ -2,6 +2,7 @@ import CloudFileSyncBar from './CloudFileSyncBar'
 import { DesktopDataBar } from './Desktop'
 import { DESKTOP } from '../lib/desktop'
 import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
+import { foldVh } from '../lib/theme'
 import { Z } from '../lib/zLayer'
 
 /**
@@ -32,8 +33,11 @@ export default function DataDock() {
   // 桌面版是唯一目标平台；dev 预览下也照样渲染，便于界面验证
   if (!DESKTOP && !DEV) return null
 
+  // #036 宽度改「视口比例 + 上限」：原 `w-[15rem]`（240px）是绝对值，在 1280 逻辑宽的小屏上占 18.8%，
+  // 比 2560 屏的 12.4% 显眼得多。min(240px, 17vw) 经 foldVh 折算（vw 不随 zoom 缩，必须折）后
+  // 小屏自动收窄、大屏仍走 240px 上限 —— 大屏观感不变。下限靠内容自身撑开，故不再设 min-width。
   return (
-    <div className="fixed bottom-4 left-4 flex w-[15rem] flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 py-2 shadow-xl backdrop-blur" style={{ zIndex: Z.dock }}>
+    <div className="fixed bottom-4 left-4 flex flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 py-2 shadow-xl backdrop-blur" style={{ zIndex: Z.dock, width: foldVh('min(240px, 17vw)') }}>
       {!DESKTOP && DEV && (
         <div className="mb-1.5 rounded-md border border-amber/30 bg-amber/10 px-2 py-1 text-11 leading-snug text-amber">
           开发预览环境：桌面版专属功能需在打包版中使用
