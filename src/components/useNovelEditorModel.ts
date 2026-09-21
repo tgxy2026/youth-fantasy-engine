@@ -610,10 +610,10 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     onStatsChange?.()
   }
 
-  /** 时光机恢复：先把当前内容快照，再套用历史版本 */
+  /** 时光机恢复：先把当前内容快照（标成"手动回滚前的留档"），再套用历史版本 */
   const restoreSnapshot = async (content: string) => {
     if (!active) return
-    await db.createSnapshot(active)
+    await db.createSnapshot(active, 'manual-restore')
     updateContent(content)
   }
 

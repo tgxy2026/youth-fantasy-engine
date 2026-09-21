@@ -6,6 +6,7 @@ import { countWords } from '../lib/textStats'
 import type { Chapter, Volume } from '../lib/types'
 import { scanText, replaceHits } from '../lib/sensitiveWords'
 import { contextSnippet } from '../lib/contextSnippet'
+import { diffLines, diffStats } from '../lib/textDiff'
 import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
@@ -360,12 +361,30 @@ export function ProofreadCheck({ content, onApply, onClose }: {
 }
 
 // ============ 时光机：版本历史 ============
-export function VersionHistory({ chapterId, onRestore, onClose }: {
-  chapterId: string; onRestore: (content: string) => void; onClose: () => void
+/** 快照来源标签（2.4.0 · A3）：让作者一眼看出哪几版是 AI 动笔前留的旧稿 */
+const SNAP_SOURCE_LABEL: Record<db.SnapshotSource, string> = {
+  'auto': '自动留档',
+  'ai-rewrite': 'AI 改写前',
+  'ai-continue': 'AI 续写前',
+  'ai-generate': 'AI 生成前',
+  'manual-restore': '回滚前留档',
+}
+
+export function VersionHistory({ chapterId, current, onRestore, onClose }: {
+  chapterId: string
+  /** 当前正文 —— 「与当前稿对比」用它做新版 */
+  current: string
+  onRestore: (content: string) => void
+  onClose: () => void
 }) {
   const [snaps, setSnaps] = useState<db.Snapshot[]>([])
   const [preview, setPreview] = useState<db.Snapshot | null>(null)
+  const [tab, setTab] = useState<'content' | 'diff'>('content')
   useEffect(() => { db.getSnapshots(chapterId).then(setSnaps) }, [chapterId])
+
+  // 差异只在选中版本 / 当前正文变化时重算（长篇对比是一次 LCS，别每帧算）
+  const diff = useMemo(() => (preview ? diffLines(preview.content, current) : []), [preview, current])
+  const stats = useMemo(() => diffStats(diff), [diff])
 
   const fmt = (t: number) => {
     const d = new Date(t)
@@ -373,34 +392,71 @@ export function VersionHistory({ chapterId, onRestore, onClose }: {
   }
 
   return (
-    <ToolModal title="时光机 · 本章版本历史（自动快照，保留最近 12 版）" icon={<History size={16} />} onClose={onClose} wide>
+    <ToolModal title="时光机 · 本章版本历史（每章保留最近 12 版）" icon={<History size={16} />} onClose={onClose} wide>
       {snaps.length === 0 ? (
-        <div className="py-8 text-center text-12 text-ink-500">暂无历史版本——写作过程中每 5 分钟或每变化 200 字自动存一版</div>
+        <div className="py-8 text-center text-12 text-ink-500">
+          暂无历史版本 —— 写作过程中每 5 分钟或每变化 200 字自动存一版；AI 改写前也会自动留一版旧稿
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            {snaps.map(s => (
-              <Button variant="bare"
-                key={s.id}
-                onClick={() => setPreview(s)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/10' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
-              >
-                <span className="text-12 text-ink-200">{fmt(s.createdAt)}</span>
-                <span className="text-11 text-ink-500">{s.wordCount} 字</span>
-              </Button>
-            ))}
+            {snaps.map(s => {
+              const src = db.snapshotSourceOf(s)
+              const isAI = db.isAISnapshot(s)
+              return (
+                <Button variant="bare"
+                  key={s.id}
+                  onClick={() => setPreview(s)}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/10' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
+                >
+                  <span className="text-12 text-ink-200 shrink-0">{fmt(s.createdAt)}</span>
+                  <span className={`shrink-0 px-1.5 py-px rounded text-10 ${isAI ? 'bg-amber/15 text-amber' : 'bg-ink-700/60 text-ink-400'}`}>
+                    {SNAP_SOURCE_LABEL[src]}
+                  </span>
+                  <span className="ml-auto text-11 text-ink-500 shrink-0">{s.wordCount} 字</span>
+                </Button>
+              )
+            })}
           </div>
           <div className="bg-ink-800 border border-ink-700 rounded-lg p-3 flex flex-col">
             {preview ? (
               <>
-                <div className="text-11 text-ink-400 mb-2">{fmt(preview.createdAt)} · {preview.wordCount} 字</div>
-                <pre className="flex-1 overflow-y-auto text-12 text-ink-200 whitespace-pre-wrap font-serif max-h-64">{preview.content.slice(0, 2000)}{preview.content.length > 2000 ? '…' : ''}</pre>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-11 text-ink-400">{fmt(preview.createdAt)} · {preview.wordCount} 字</span>
+                  <div className="ml-auto flex gap-1">
+                    <Button variant="toggle" selected={tab === 'content'} size="xs" onClick={() => setTab('content')}>内容</Button>
+                    <Button variant="toggle" selected={tab === 'diff'} size="xs" onClick={() => setTab('diff')}>与当前对比</Button>
+                  </div>
+                </div>
+                {tab === 'content' ? (
+                  <pre className="flex-1 overflow-y-auto text-12 text-ink-200 whitespace-pre-wrap font-serif max-h-64">{preview.content.slice(0, 2000)}{preview.content.length > 2000 ? '…' : ''}</pre>
+                ) : (
+                  <div className="flex-1 overflow-y-auto max-h-64 font-serif text-12 leading-relaxed">
+                    <div className="mb-1.5 text-11 text-ink-500">
+                      这一版 → 当前稿：新增 {stats.added} 行 · 删除 {stats.deleted} 行
+                      {stats.added === 0 && stats.deleted === 0 && ' —— 与当前稿完全一致'}
+                    </div>
+                    {diff.map((l, i) => (
+                      <div
+                        key={i}
+                        className={`whitespace-pre-wrap px-1.5 rounded ${
+                          l.kind === 'add' ? 'bg-emerald-500/10 text-emerald-300'
+                            : l.kind === 'del' ? 'bg-red-500/10 text-red-300/80'
+                              : 'text-ink-400'
+                        }`}
+                      >
+                        <span className="select-none text-ink-600 mr-1">{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
+                        {l.text || '\u00a0'}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <Button variant="primary" onClick={() => { onRestore(preview.content); onClose() }} className="mt-3 px-3 py-2 rounded-lg text-12 transition-colors">
-                  恢复到此版本（当前内容会先自动快照）
+                  恢复到此版本（当前内容会先自动留档）
                 </Button>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-12 text-ink-600">点击左侧版本预览</div>
+              <div className="flex-1 flex items-center justify-center text-12 text-ink-600">点击左侧版本查看内容或对比</div>
             )}
           </div>
         </div>

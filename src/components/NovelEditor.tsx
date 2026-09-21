@@ -778,7 +778,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
         <SensitiveCheck content={draftContent} onApply={updateContent} onClose={() => setModal(null)} />
       )}
       {modal === 'history' && active && (
-        <VersionHistory chapterId={active.id} onRestore={restoreSnapshot} onClose={() => setModal(null)} />
+        <VersionHistory chapterId={active.id} current={draftContent} onRestore={restoreSnapshot} onClose={() => setModal(null)} />
       )}
       {modal === 'trash' && (
         <TrashBin onChanged={() => { load(); onStatsChange?.() }} onClose={() => setModal(null)} />

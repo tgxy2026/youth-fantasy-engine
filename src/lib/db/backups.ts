@@ -38,7 +38,9 @@ function backupLimit(kind: BackupKind): number {
 
 /** 创建一次全量自动备份（默认上限由调用方保证） */
 export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string): Promise<BackupRecord> {
-  const bundle = await exportProject(projectId)
+  // 🔴 自动备份**不带**章节快照（2.4.0 · A3）：它是每 5 分钟一次的高频全量，
+  //    快照随它走会把本地存储迅速撑大。要带走快照的是「手动导出备份」，那条路径走默认值。
+  const bundle = await exportProject(projectId, { includeSnapshots: false })
   const now = Date.now()
   const rec: BackupRecord = {
     id: uid(),
