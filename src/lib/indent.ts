@@ -27,6 +27,12 @@ export interface IndentUnitDef {
   text: string
   /** 界面上的补充说明 */
   hint: string
+  /**
+   * 一个缩进单位的**视觉宽度**（em）。
+   * 只服务「段首缩进参考线」的间距换算 —— 中文正文里全角 ≈ 1em、半角 ≈ 0.5em，
+   * Tab 按「4 个半角」的通行约定算 2em。是估算值，用作对准参考线够用。
+   */
+  emWidth: number
 }
 
 /**
@@ -34,11 +40,11 @@ export interface IndentUnitDef {
  * 全角 ×2 放首位是因为它是中文小说最常见的段首缩进，也是本项目「一键排版」的历史行为。
  */
 export const INDENT_UNITS: IndentUnitDef[] = [
-  { id: 'full2', label: '全角空格 ×2', text: '　　', hint: '中文小说段首缩进的传统写法（推荐）' },
-  { id: 'full1', label: '全角空格 ×1', text: '　', hint: '段首只留一个全角空格，版面更紧凑' },
-  { id: 'half4', label: '半角空格 ×4', text: '    ', hint: '与部分编辑器、Markdown 预览观感一致' },
-  { id: 'half2', label: '半角空格 ×2', text: '  ', hint: '与代码风格一致，适合导出给排版工具' },
-  { id: 'tab', label: 'Tab 字符', text: '\t', hint: '真正的制表符；部分网文平台粘贴后会展开成空格' },
+  { id: 'full2', label: '全角空格 ×2', text: '　　', hint: '中文小说段首缩进的传统写法（推荐）', emWidth: 2 },
+  { id: 'full1', label: '全角空格 ×1', text: '　', hint: '段首只留一个全角空格，版面更紧凑', emWidth: 1 },
+  { id: 'half4', label: '半角空格 ×4', text: '    ', hint: '与部分编辑器、Markdown 预览观感一致', emWidth: 2 },
+  { id: 'half2', label: '半角空格 ×2', text: '  ', hint: '与代码风格一致，适合导出给排版工具', emWidth: 1 },
+  { id: 'tab', label: 'Tab 字符', text: '\t', hint: '真正的制表符；部分网文平台粘贴后会展开成空格', emWidth: 2 },
 ]
 
 export const DEFAULT_INDENT_UNIT: IndentUnit = 'full2'

@@ -18,7 +18,7 @@ import { buildProjectContext } from '../lib/aiContext'
 import { aiDiagnoseProject, type ProjectDiagnosis } from '../lib/aiTasks'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
-import { usePersistedBool } from '../lib/uiPrefs'
+import { useWordCountWithPunct } from '../lib/wordCountMode'
 import { countWords } from '../lib/textStats'
 
 interface Props {
@@ -46,7 +46,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   // #004 字数口径开关：默认「只算汉字」（老口径）；切到「汉字＋标点」＝网文平台计费口径。
   // 🔴 落库的 `wordCount` 始终是**不含标点**的口径、不改动用户数据 —— 含标点模式只在显示层
   //    用 countWords(content, 'cjk-punct') 实时重算，所以开关随时可逆、历史数据不会被打脏。
-  const [withPunct, setWithPunct] = usePersistedBool('word-count-with-punct', false)
+  const [withPunct, setWithPunct] = useWordCountWithPunct()
   const totalWords = useMemo(
     () => (withPunct
       ? chapters.reduce((s, c) => s + countWords(c.content || '', 'cjk-punct'), 0)
@@ -227,7 +227,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           onClick={() => setWithPunct(true)}
           className="px-2.5 py-1 rounded-md text-11"
         >汉字 ＋ 标点</Button>
-        <span className="text-10 text-ink-600">网文平台（起点 / 番茄 / 晋江等）按「汉字＋标点」计字数；切换只影响显示，不会改动已保存的数据</span>
+        <span className="text-10 text-ink-600">平台「作者后台」按「汉字＋标点」统计（含全角空格缩进，与你后台看到的数字对齐）；平台「实际计费字数」通常更小 —— 多会把标点与空格剔掉。切换只影响显示，不会改动已保存的数据</span>
       </div>
 
       {/* 统计卡 */}

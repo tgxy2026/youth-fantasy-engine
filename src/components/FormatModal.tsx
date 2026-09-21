@@ -25,12 +25,18 @@ interface Props {
   content: string
   unit: IndentUnit
   onUnitChange: (u: IndentUnit) => void
+  /** 粘贴归一开关（A5 遗留补全）：开＝多行粘贴按当前单位归一；关＝原样保留 */
+  pasteNormalize: boolean
+  onPasteNormalizeChange: (v: boolean) => void
+  /** 段首缩进参考线（A5 遗留补全）：开＝每级缩进处画一条极淡竖线 */
+  indentGuides: boolean
+  onIndentGuidesChange: (v: boolean) => void
   /** 应用排版结果（由编辑器负责写回，且会走原生编辑命令以保住 Ctrl+Z） */
   onApply: (next: string) => void
   onClose: () => void
 }
 
-export default function FormatModal({ content, unit, onUnitChange, onApply, onClose }: Props) {
+export default function FormatModal({ content, unit, onUnitChange, pasteNormalize, onPasteNormalizeChange, indentGuides, onIndentGuidesChange, onApply, onClose }: Props) {
   const lines = content.split(/\r?\n/)
   const paraCount = lines.filter(l => splitIndent(l).rest !== '').length
   const indentedCount = lines.filter(l => splitIndent(l).indent !== '').length
@@ -101,6 +107,39 @@ export default function FormatModal({ content, unit, onUnitChange, onApply, onCl
           <p className="mt-1.5 text-10 text-ink-500">
             当前：{unitLabel} —— {INDENT_UNITS.find(u => u.id === unit)?.hint}
           </p>
+
+          {/* 粘贴行为（A5 遗留补全）：默认归一；要贴代码 / 表格 / 别人的原文时可关掉 */}
+          <div className="mt-3 pt-3 border-t border-ink-800">
+            <h4 className="text-11 font-medium text-ink-300 mb-1.5">多行粘贴时</h4>
+            <div className="flex gap-2">
+              <Button variant="toggle" selected={pasteNormalize} size="sm"
+                onClick={() => onPasteNormalizeChange(true)}
+                title="从网页 / Word 粘进来的行首空白，按上面的单位统一">按单位归一</Button>
+              <Button variant="toggle" selected={!pasteNormalize} size="sm"
+                onClick={() => onPasteNormalizeChange(false)}
+                title="粘什么就是什么，一个字符都不动（贴代码、表格、别人的原文时用它）">原样保留</Button>
+            </div>
+            <p className="mt-1.5 text-10 text-ink-500">
+              {pasteNormalize
+                ? '多行粘贴会把行首空白统一成上面的单位（单行粘贴本来就不改）。'
+                : '粘贴内容原样保留 —— 从别处带来的空格与缩进都不会被改动。'}
+            </p>
+          </div>
+
+          {/* 段首缩进参考线（A5 遗留补全）：默认关 —— 纯视觉辅助，不碰正文 */}
+          <div className="mt-3 pt-3 border-t border-ink-800">
+            <div className="flex items-center gap-2">
+              <h4 className="text-11 font-medium text-ink-300">段首缩进参考线</h4>
+              <Button variant="toggle" selected={indentGuides} size="sm"
+                onClick={() => onIndentGuidesChange(!indentGuides)}
+                title="在每级缩进的位置画一条极淡的竖线，方便对齐多级缩进（只影响显示，不改正文）">
+                {indentGuides ? '已开启' : '已关闭'}
+              </Button>
+            </div>
+            <p className="mt-1.5 text-10 text-ink-500">
+              开启后按上面的单位间距画淡竖线，用来对齐对白、补充说明这类多级缩进；纯显示辅助，正文一个字都不动。
+            </p>
+          </div>
         </section>
 
         <div className="h-px bg-ink-800" />

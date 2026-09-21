@@ -75,5 +75,26 @@ const ch = {
     txt === 2 && md === 2 && pt === 2, `txt=${txt} md=${md} pt=${pt}`)
 }
 
+// ---------- ⑤ Markdown 遇「半角×4 / Tab」缩进：按需防御转换（A5 遗留补全） ----------
+// Markdown 把「行首 4 个半角空格 / Tab」当代码块 —— 作者若把缩进单位设成半角 ×4，
+// 整章正文会被渲染成大段代码。这里钉住"按需转换 + 头部明示"，同时钉住"默认路径一个字符不动"。
+{
+  const chHalf = {
+    ...ch,
+    content: '　　全角缩进的行。\n    四个半角空格的行。\n\tTab 缩进的行。\n',
+  } as unknown as Chapter
+  const md = bookToMarkdown('测试书', [vol], [chHalf])
+  ok('⑤ 全角缩进原样不动（不因转换而误伤）', md.includes('　　全角缩进的行。'))
+  ok('🔴 ⑤ 行首 4 个半角空格 → 转成全角（否则 MD 渲染成代码块）',
+    !/\n {4}/.test(md), JSON.stringify(md.split('\n').filter(l => l.includes('半角'))))
+  ok('🔴 ⑤ Tab 缩进 → 转成全角（Tab 同样会被当代码块）', !md.includes('\n\t'))
+  ok('⑤ 转换发生时文件头留有说明注释', md.includes('已转为全角空格'))
+
+  // 反面对照：默认全角单位不该被动 —— 连注释都不该多出来
+  const mdClean = bookToMarkdown('测试书', [vol], [ch])
+  ok('🔴 ⑤ 无需转换时不插注释（默认路径保持不变）', !mdClean.includes('已转为全角空格'))
+  ok('⑤ 无需转换时仍保留原缩进', mdClean.includes(U + '缩进一级的对白。'))
+}
+
 console.log(`\n—— exportIndent：${pass} 通过 / ${fail} 失败 ——`)
 if (fail > 0) process.exitCode = 1

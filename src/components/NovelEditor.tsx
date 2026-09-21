@@ -4,13 +4,14 @@ import { Z } from '../lib/zLayer'
 
 import type { ChapterStatus } from '../lib/types'
 import { countWords } from '../lib/textStats'
+import { useWordCountWithPunct, wordCountModeOf } from '../lib/wordCountMode'
 import SettingSearch from './SettingSearch'
 import { SensitiveCheck, VersionHistory, TrashBin, GlobalSearch, FocusLock, ProofreadCheck } from './EditorModals'
 import { ForeshadowBoard, ContinuityCheck, StyleAudit } from './AuditModals'
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 // 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
 import FormatModal from './FormatModal'
-import { indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '../lib/indent'
+import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '../lib/indent'
 import {
   FolderPlus, Trash2, PenLine, ChevronDown,
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
@@ -83,10 +84,16 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // 弹窗与抽屉
     modal, setModal, exportOpen, setExportOpen, styleNotePrompt, setStyleNotePrompt, namePrompt, setNamePrompt, jieWenJiOpen, setJieWenJiOpen,
     // 编辑器缩进（2.4.0 · A5）：缩进单位偏好；缩进动作见下方 onIndentKeyDown / applyIndent
-    indentUnit, setIndentUnit,
+    indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出
     aiReady, runExport,
   } = model
+
+  // 字数口径（#004）：面板与编辑器**共用同一份偏好**（`lib/wordCountMode` 是单一来源）——
+  // 在写作面板切了口径，这里立刻跟着变。只影响显示，落库 `wordCount` 不受影响。
+  const [withPunct] = useWordCountWithPunct()
+  // 段首缩进参考线的间距：按当前单位换算（全角 ≈ 1em / 半角 ≈ 0.5em / Tab ≈ 2em）
+  const indentUnitEm = INDENT_UNITS.find(u => u.id === indentUnit)?.emWidth ?? 2
 
   if (!loaded) return <LoadingState />
 
@@ -174,6 +181,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
    * 单行不拦 —— 随手粘一句话不该被改动。
    */
   const handlePaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    if (!pasteNormalize) return // 开关关掉 → 粘什么就是什么，一个字符都不动
     const text = e.clipboardData.getData('text/plain')
     if (!text || !text.includes('\n')) return
     const ta = taRef.current
@@ -604,6 +612,20 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden" ref={scrollRef}>
               {/* 页宽：默认铺满窗口；关闭"铺满"时回到舒适阅读宽度（隐藏检索栏/专注模式下更宽） */}
               <div className={`${pageWide ? 'w-full' : focusMode || !showSearch ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative flex-1 min-h-0 flex flex-col overflow-hidden transition-[max-width] duration-300`}>
+                {/* 段首缩进参考线（2.4.0 · A5 遗留补全）：极淡竖线标出每级缩进的位置，方便对齐多级缩进。
+                    纯视觉辅助 —— pointer-events:none + aria-hidden，不参与任何交互与朗读。
+                    垫在最底层（z-0）：正文 textarea 背景透明，线能透出来又不会压住文字。
+                    间距按当前缩进单位的视觉宽度换算（INDENT_UNITS.emWidth），与「缩进单位」设置联动。 */}
+                {indentGuides && active && (
+                  <div aria-hidden className="absolute inset-0 z-0 pointer-events-none overflow-hidden px-6 md:px-8 pt-6">
+                    <div
+                      className="h-full"
+                      style={{
+                        backgroundImage: `repeating-linear-gradient(to right, rgb(var(--ink-500) / 0.18) 0 1px, transparent 1px ${indentUnitEm}em)`,
+                      }}
+                    />
+                  </div>
+                )}
                 {/* 打字机模式测量层（不可见，用于计算光标纵向位置；内容起点与 textarea 严格一致：top-6 + px-6/8，无纵向 padding，否则光标纵向偏移） */}
                 <div
                   ref={mirrorRef}
@@ -666,10 +688,11 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
 
             {/* 底部状态栏：实时字数 / 今日码字 / 保存状态 / 打字机模式 / 字号 */}
             <div className="h-8 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-4 px-5 text-11 text-ink-400">
-              <span className="flex items-center gap-1">
-                <Hash size={10} />{countWords(draftContent)} 字
+              {/* 本章实时字数：跟随「字数口径」偏好（#004）—— 与写作面板共用同一个开关 */}
+              <span className="flex items-center gap-1" title={`本章字数（${withPunct ? '汉字＋标点' : '只算汉字'}口径 · 可在写作面板的「字数口径」里切换）`}>
+                <Hash size={10} />{countWords(draftContent, wordCountModeOf(withPunct))} 字
               </span>
-              <span className="flex items-center gap-1 text-amber/80" title="今日码字量（自动统计）">
+              <span className="flex items-center gap-1 text-amber/80" title="今日码字量（按增删自动累计，固定「只算汉字」口径 —— 它记的是当天净增量，换口径也无法重算历史）">
                 <Flame size={10} />今日 {todayWords} 字
               </span>
               <span className={`flex items-center gap-1 transition-colors ${savedFlash ? 'text-emerald-400' : ''}`}>
@@ -708,7 +731,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                 </Button>
               </div>
               <HelpPopover title="状态栏 · 码字体验设置" width="23rem" size={12} className="shrink-0">
-                {'左侧三项是实时状态：\n· 字数：本章当前字数（中文按字计，不含空格换行）；\n· 今日 xx 字：今天的净产出，按增删自动累计，写作面板的码字日历用的就是它；\n· 自动保存已开启：停止输入 2 秒自动保存，也可 Ctrl+S 立即保存。\n\n右侧三项是可调设置（本机记忆，换章不重置）：\n· 铺满 / 限宽：铺满 = 码字区宽度跟随窗口铺满；限宽 = 回到舒适阅读宽度居中显示；\n· 打字机：开启后当前输入行始终保持在屏幕中部，眼睛不用一直往下追；\n· 字号 −/＋：正文字号 14–28px。'}
+                {'左侧三项是实时状态：\n· 字数：本章当前字数（中文按字计）；跟随「字数口径」设置 —— 默认「只算汉字」，可在写作面板切到「汉字＋标点」以对齐平台计费口径；\n· 今日 xx 字：今天的净产出，按增删自动累计（固定「只算汉字」口径，历史增量无法换口径重算），写作面板的码字日历用的就是它；\n· 自动保存已开启：停止输入 2 秒自动保存，也可 Ctrl+S 立即保存。\n\n右侧三项是可调设置（本机记忆，换章不重置）：\n· 铺满 / 限宽：铺满 = 码字区宽度跟随窗口铺满；限宽 = 回到舒适阅读宽度居中显示；\n· 打字机：开启后当前输入行始终保持在屏幕中部，眼睛不用一直往下追；\n· 字号 −/＋：正文字号 14–28px。'}
               </HelpPopover>
             </div>
 
@@ -824,6 +847,10 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
           content={draftContent}
           unit={indentUnit}
           onUnitChange={setIndentUnit}
+          pasteNormalize={pasteNormalize}
+          onPasteNormalizeChange={setPasteNormalize}
+          indentGuides={indentGuides}
+          onIndentGuidesChange={setIndentGuides}
           onApply={replaceAllText}
           onClose={() => setModal(null)}
         />

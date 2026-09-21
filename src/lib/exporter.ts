@@ -54,21 +54,63 @@ export function exportChapter(projectName: string, ch: Chapter) {
 }
 
 // ============ Markdown 整书 ============
+
+/**
+ * Markdown 正文行首缩进的**防御性转换**。
+ *
+ * 🔴 问题：Markdown 把「行首 4 个半角空格」或「Tab」当作**代码块** ——
+ *    作者若把缩进单位设成「半角×4 / Tab」，整章正文在 Markdown 里会被渲染成大段代码
+ *    （字体变等宽、换行全保留），完全没法读。
+ *
+ * 策略（**按需转换 + 头部注释明示**，默认路径一个字符都不动）：
+ *   · 默认单位是「全角空格」—— Markdown 不把它当缩进，因此**如实导出**（守住验收⑥）；
+ *   · 只有某行确实以「Tab」或「≥4 个半角空格」开头时才转成**视觉等宽的全角空格**
+ *     （1 个全角 ≈ 2 个半角宽度）；
+ *   · 发生过转换就在文件顶部留一行注释 —— 作者需要知道这里被动过。
+ */
+function mdIndentSafe(line: string): string {
+  const m = /^[ \t]+/.exec(line)
+  if (!m) return line
+  const raw = m[0]
+  // 1–3 个纯半角空格：Markdown 不当代码块，保持原样 —— 少动一处，就少一分不一致
+  if (!raw.includes('\t') && raw.length < 4) return line
+  const width = raw.replace(/\t/g, '    ').length
+  return '　'.repeat(Math.floor(width / 2)) + ' '.repeat(width % 2) + line.slice(raw.length)
+}
+
 /** 整书 Markdown 正文（纯计算、不触发下载 —— 导出便于单测断言缩进等格式约定） */
 export function bookToMarkdown(projectName: string, volumes: Volume[], chapters: Chapter[]): string {
+  let converted = false
+  /** 章正文 → MD 安全正文（折叠多余空行 + 行首缩进防御性转换） */
+  const mdBody = (content: string): string =>
+    (content || '（本章暂无内容）')
+      .replace(/\n{3,}/g, '\n\n')
+      .split('\n')
+      .map(l => {
+        const safe = mdIndentSafe(l)
+        if (safe !== l) converted = true
+        return safe
+      })
+      .join('\n')
+
   const parts = [`# ${projectName}`, '']
   for (const vol of volumes) {
     const chs = chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.order - b.order)
     if (chs.length === 0) continue
     parts.push(`## ${vol.title}`, '')
-    for (const ch of chs) {
-      parts.push(`### ${ch.title}`, '', (ch.content || '（本章暂无内容）').replace(/\n{3,}/g, '\n\n'), '')
-    }
+    for (const ch of chs) parts.push(`### ${ch.title}`, '', mdBody(ch.content), '')
   }
   const orphan = chapters.filter(c => !volumes.some(v => v.id === c.volumeId))
   if (orphan.length) {
     parts.push(`## 未分卷章节`, '')
-    for (const ch of orphan) parts.push(`### ${ch.title}`, '', (ch.content || '（本章暂无内容）').replace(/\n{3,}/g, '\n\n'), '')
+    for (const ch of orphan) parts.push(`### ${ch.title}`, '', mdBody(ch.content), '')
+  }
+  if (converted) {
+    // 插在书名之后（不能放第一行 —— 那会被当成正文）；HTML 注释不影响 Markdown 渲染
+    parts.splice(2, 0,
+      '<!-- 本文件的正文行首缩进已转为全角空格：Markdown 会把「4 个半角空格 / Tab」渲染成代码块，' +
+      '转换只为保住阅读版式。原始缩进请以 TXT、平台粘贴版或软件内正文为准。 -->',
+      '')
   }
   return parts.join('\n')
 }
