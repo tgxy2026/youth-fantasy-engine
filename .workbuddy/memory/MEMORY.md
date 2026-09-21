@@ -6,11 +6,11 @@
 - 🔴 封装须老大明说「封装/重打包」；改完最多 tsc+lint+test+commit。
 - 🔴🔴 **禁 `git stash`、手工 `git gc`/`reflog expire`**（两次事故）。恢复靠 `git bundle`；`gc.auto=0` 别改回。
 - 禁删 `你需要的文件在这里/`、`release/eb-cache/`；禁原生 `prompt/confirm/alert`→PromptModal/confirmDialog/toast。
-- 清单 `docs/…Bug与待优化清单.md` 只记录，明说「处理」才动。提交含 `!` 或换行用 `git commit -F`。main 无远程。
+- 清单 `docs/2.3.1-Bug与待优化清单.md` 只记录，明说「处理」才动（旧清单已归档 `docs/归档/`）。提交含 `!` 或换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本走 `env.ts:APP_VERSION_LABEL`。
-- 现 **2.3.0**（结构优化·不加功能；评估→**不重写·定向重构**）。版本唯一源 `package.json`；⚠️ lock 只改 `j.version`＋`j.packages['']`。
+- 现 **2.3.0**（结构优化·定向重构，不加功能）；**2.3.1 紧急修复中**（只收社区反馈、不加功能），2.4 规划已定稿但**延后**。版本唯一源 `package.json`；⚠️ lock 只改 `j.version`＋`j.packages['']`。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。
 - 🔴 启动**默认停项目管理首页**；`lastProject` 只服务「首次播示范项目」，删项目时一并清掉。
 
