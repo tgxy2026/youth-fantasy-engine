@@ -10,12 +10,12 @@
 
 ## 身份·版本·封装
 - Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本走 `env.ts:APP_VERSION_LABEL`。
-- 现 **2.3.1**（紧急修复版，已封装并上 Gitee Release；`package.json` 唯一源，lock 只改 `j.version`＋`j.packages['']`）。
+- 现 **2.3.1**（已封装上 Gitee Release；`package.json` 唯一源，lock 只改 `j.version`＋`j.packages['']`）。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。
 - 🔴 启动**默认停项目管理首页**（2.4 A1 起，首启先过「向导三选一」）；删项目时一并清掉 `lastProject`。
 
 ## 创作链路（2.2.x）
-- 🔴 **切章必清 ghost**；创意写作起点不手选（看有无卷大纲/细纲）；🔴 续排起点＝**已有细纲最大章号+1**；每卷章数＝硬指标、批总量＝卷×章（≤60）、缺口优先补齐；写前必 `previewCommit`、字段键取自 `fieldMap`（闸 `tests/extractFields`）。
+- 🔴 **切章必清 ghost**；创意写作起点不手选（看有无卷大纲/细纲）；🔴 续排起点＝**已有细纲最大章号+1**；每卷章数＝硬指标、缺口优先补齐；写前必 `previewCommit`、字段键取自 `fieldMap`（闸 `tests/extractFields`）。
 - 🔴 整章改写五档（**续写**＝代码留原文、模型只吐增量）：结果只在内存、写前显式快照、只动 content/wordCount/updatedAt；过 `enforceWordRange`（±300 **汉字**）；🔴🔴 历史章冻结、最新章仅改写档可放开＋落库后跑设定同步。
 - ✅ 伴写＝ghost 叠层＋「钢笔」弹窗（默认关；🔴 **Ctrl+Enter 采纳、Alt+/ 换一句** —— Tab 已无条件归缩进）；去 AI 味钉 system 末尾；通用件 `lib/flow/`。
 
@@ -24,33 +24,32 @@
 - ⚠️ 打包陷阱：①tree-shake：组件仅在门控分支被引→整模块被摇→门控用「需该模块平台并集」，删门控必跑 `vite build`；②`DESKTOP` 探测→dev 浏览器恒 false。
 - 左下角只准一个浮层 `DataDock`；禁全局 fixed 浮层。种子键：卡片 `模块::字段`、表格＝列名；改种子必跑闸。
 - 📁 结构优化：纯数据→`src/data/`；`db.ts`/`aiTasks.ts`→门面＋域目录。🔴 门面显式再导出（勿 `export *`）；`PROMPT_ORDER` 还原注册序；`ops`/`currentProjectId` 须 `export let`。
-- 🔴 功能门：`FEATURE_TIER`＋`STRONG_DEPS`（双向）＋`ANY_DEPS`；闸 `feature-deps-check.mjs`。
+- 🔴 功能门：`FEATURE_TIER`＋`STRONG_DEPS`（双向）＋`ANY_DEPS`；闸 `feature-deps-check.mjs`；拆书／创意写作＝**optional**（两页顶部有 `NewProjectAdvice`）。
 - 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**（关系表＝人物A/人物B），否则点两次＝重复关系。
 - 🔴 编辑器双图层：盒模型逐项一致；叠层重建归零 scrollTop→`useLayoutEffect` 回填；只走 `scanRefHighlight`。
 - 🗺 多地图方案 B：新表 `geomaps`＋geography 的 `所属地图`；`migrateGeoMaps` 建默认图回填；🔴 删图不删地点、改图名连带改归属。
-- 🔴 审计四条（详规在 skill `novel-studio-audit-fix`）：语料净化／`KEEP` 白名单认保留项／死代码须回查 `docs/` 判决／工具的结构假设会静默失明。
-- 🔴 长任务状态必须放模块级 store（`lib/creativeSession.ts`，单例＋`useSyncExternalStore`）：切页签即卸载，`useState` 全丢；lib 层禁 import components；断点只存里程。
-- 🔴 拆书／创意写作**档位＝optional**（不默认勾选）；两页顶部有 `NewProjectAdvice`。
+- 🔴 审计四条（详规在 skill `novel-studio-audit-fix`）：语料净化／`KEEP` 白名单认保留项／死代码须回查 `docs/` 判决／工具的结构假设会静默失明（A4 实测：禁绝对承诺只查 `description`，`tips` 漏）。
+- 🔴 长任务状态必须放模块级 store（`lib/creativeSession.ts`）：切页签即卸载，`useState` 全丢；lib 层禁 import components；断点只存里程。
 
 ## 存储·同步
 - 🔴🔴 云盘同步「删了会复活」：`baseCache` 仅内存→把「云端有·本地无」判成「另一端新增」。修＝墓碑 `syncTombstone.ts`＋`localHasContent` 闸。
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步它；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
-- 🔴🔴 服务器已**彻底清理**（09-21，续费已关）→ 跨设备同步只剩云盘文件夹。`createIdleTransport`＝未开启占位（🔴 绝不返回空库否则 push 覆盖云端）。
+- 🔴🔴 服务器已**彻底清理**（09-21）→ 跨设备同步只剩云盘文件夹。`createIdleTransport`＝未开启占位（🔴 绝不返回空库，防 push 覆盖云端）。
 
 ## UI·布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量须走 `style`。设置项＝标题→输入→说明。
-- 🔴🔴 `<html>` 界面缩放：①量尺寸用 `offsetHeight`/`clientWidth`，禁 `getBoundingClientRect()`；②**vh/vw 都不随 zoom 缩**→内联长度一律走 `foldVh()`（它**同时**折算 vh 与 vw）；③SVG 滚轮/拖拽除 zoom。
-- 🔴 分辨率自适应：固定 px 断点只看逻辑像素宽（32″4K 与 14″2K 同命中 `xl`）→ 用 `foldVh(min(上限, N vw))`。
+- 🔴🔴 `<html>` 界面缩放：①量尺寸用 `offsetHeight`/`clientWidth`，禁 `getBoundingClientRect()`；②**vh/vw 都不随 zoom 缩**→内联长度一律走 `foldVh()`；③SVG 滚轮/拖拽除 zoom。
+- 🔴 分辨率自适应：固定 px 断点只看逻辑像素宽 → 用 `foldVh(min(上限, N vw))`。
 - 🔴 光标/选区同步不能只靠 `onKeyUp`（上屏/粘贴/程序化插入无 keyup）→ 有 `onChange` 就在里面同步。
-- 🔴 判「琥珀开启态」按 class **词元**比（off 态 `hover:text-amber`→`includes` 恒真＝假 PASS）。
+- 🔴 判「琥珀开启态」按 class **词元**比（`includes` 会把 off 态 `hover:text-amber` 判成真）。
 - 🔴 按对侧高度定高：flex item 加 `overflow-hidden`；别同写 `flex-1`+`height`。
-- 🔴 按钮：静止无框 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；`danger` 破坏性。🔴 **尺寸＝弹窗 md／主操作 sm／工具 xs；同排同 size、禁手写**。
-- 🔴 页头 `HelpPopover` 问号**须与标题同行**。头像兜底＝名字；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」/（）。
+- 🔴 按钮：静止无框 `secondary`（非 `ghost`）；分段 `toggle`+`selected`。🔴 **尺寸＝弹窗 md／主操作 sm／工具 xs；同排同 size、禁手写**。
+- 🔴 页头 `HelpPopover` 问号**须与标题同行**。头像兜底＝名字；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」。
 - 🔴 数值输入走 `NumberField`：可自由输入（能清空、能超范围）＋超范围在**失焦/回车**钳到最近边界（toast）。
-- 🔴 界面偏好走 `lib/uiPrefs.ts`（`yfe-ui:` 命名空间，不进项目数据）：**存「偏离默认的那一侧」**（反存会让新分组被判成收起）；空集合＝合法；枚举偏好用 `usePersistedEnum`（带取值校验）。
-- 🔴 **提示词禁写 markdown 星号**（模型会模仿）。校对已拆 `aiProofreadText`（文字层）/`aiProofreadLogic`（逻辑层），都在 `PROMPT_ORDER`。
-- 🔴 新增页签必同步 `SETTING_SUBTABS`＋`aiContext.PRIORITY`（否则进不了预算）；侧栏/勾选弹窗/指南/dataHealth 由 `TABS` 派生。「其他设定」＝`misc-settings`（MISC 编号，optional 零依赖，3 种子）。
+- 🔴 界面偏好走 `lib/uiPrefs.ts`（`yfe-ui:` 命名空间，不进项目数据）：**存「偏离默认的那一侧」**（反存会让新分组被判成收起）；空集合＝合法；枚举偏好用 `usePersistedEnum`。
+- 🔴 **提示词禁写 markdown 星号**（模型会模仿）。校对已拆 `aiProofreadText` / `aiProofreadLogic`（文字层/逻辑层），都在 `PROMPT_ORDER`。
+- 🔴 新增页签**四处**必同步：`TabType`／`TABS`／`App.renderContent`／`FEATURE_TIER`；**资料型**（form/card/table）另须 `aiContext.PRIORITY`（否则进不了预算）；`SETTING_SUBTABS` 只管可检索表，侧栏/勾选弹窗/指南/dataHealth 由 `TABS` 派生。
 
 ## AI 层
 - 🔴 **提示词给几层模型就按几层输出**——读端必须兼容**自己给的**层级，否则整表静默丢光。
@@ -92,12 +91,12 @@
 - 🔴🔴 同消息对同一文件发多个 Edit 会相互覆盖→串行改、改完即 grep；跨行锚点先探 EOL。🔴 共享中介必须串行。
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖）。判存在用 `Read`／`test -f`；`memory/*.md` 只准 append。
 
-## 2.4 开发（**已开工**，规划 `docs/2.4.0-版本规划.md` ＋ 记录 `docs/2.4.0-开发记录.md`）
+## 2.4 开发（**已开工**；规划 `docs/2.4.0-版本规划.md`，记录 `docs/2.4.0-开发记录.md`）
 - 三目标：**转化**（首启 5 分钟出第一段）／**长篇**（性能＋快照）／**可信**（轨迹存证＋自检＋占比申报）。
-- **分批**：2.4.0（A1 首启·A2 性能·A3 快照·A4 轨迹+证据包·A5 自由缩进）→2.4.1（B1-B3·B5）→2.4.2（C）；新页签「创作轨迹」归「创作管理」；C4 首批**晋江+起点**。
-- ✅ **已完成 09-21**：**A1** 首启「向导三选一」（`meta.welcomeDone`，未走过 且 库空才弹）；**A3** 快照裁剪**优先丢最旧 auto**、AI 快照进备份而**自动备份不带**、时光机加来源＋行级对比（`textDiff`）；**A5** 🔴 **Tab/Shift+Tab 恒为缩进**、程序化插入**必走 `execCommand`**、一键排版默认**保留缩进**、导出禁行首 `trim()`。
+- **分批**：2.4.0（A1-A5）→2.4.1（B1-B3·B5）→2.4.2（C）；新页签「创作轨迹」归「创作管理」；C4 首批**晋江+起点**。
+- ✅ **已完成 09-21**：**A1** 首启「向导三选一」（`meta.welcomeDone`）；**A3** 快照裁剪**优先丢最旧 auto**、AI 快照进备份而**自动备份不带**、时光机加来源＋行级对比（`textDiff`）；**A4** 创作轨迹页签（`trajectory` type＋四处注册＋`default`）＋证据包（HTML `pre` 块保缩进／JSON 全量／桌面 `printToPDF`）；**A5** 🔴 **Tab/Shift+Tab 恒为缩进**、程序化插入**必走 `execCommand`**（禁改 value）、一键排版默认**保留缩进**、导出禁行首 `trim()`。
 - 🔴 中文 PDF 禁 jsPDF（字体无中文）→HTML+打印样式为真源，桌面 `printToPDF`、其余 `window.print()`。
 
 ## 对外推广（09-21 起）
-- 🔴 小黑盒稿文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→改「口令」）；链接压最末、**后须有缓冲文字**、两入口合并成一块。详 `docs/小黑盒推广帖/文末链接规范.md`。
+- 🔴 小黑盒稿文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→改「口令」）；链接压最末、**后须有缓冲文字**、两入口合并成一块（规范见 `docs/小黑盒推广帖/`）。
 - 🔴 **发帖顺序**：稿里承诺的版本号须**先在夸克盘＋Gitee Release 上架**再发帖。第 0 篇已发布；第 1 篇待发布（对外 **2.3.1**，夸克盘待传）。入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。
