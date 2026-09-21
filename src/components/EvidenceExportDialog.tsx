@@ -25,17 +25,54 @@ import {
   evidenceSummary, dailyRange, DEFAULT_EVIDENCE_OPTIONS,
   type EvidencePack, type EvidenceViewOptions,
 } from '../lib/evidencePack'
+import {
+  bookPackToDocModel, bookPackToJson, bookEvidenceHtmlFileName, bookEvidenceJsonFileName,
+  bookEvidenceSummary, bookDailyRange, DEFAULT_BOOK_EVIDENCE_OPTIONS,
+  type BookEvidencePack,
+} from '../lib/bookEvidence'
 
-export default function EvidenceExportDialog({ open, onClose, pack }: {
+export default function EvidenceExportDialog({ open, onClose, pack, bookPack }: {
   open: boolean
   onClose: () => void
+  /** 本章证据包 */
   pack: EvidencePack
+  /** 整书证据包（可选）：传了就在顶部出现「范围」切换（A4 遗留补全） */
+  bookPack?: BookEvidencePack
 }) {
   const [opts, setOpts] = useState<EvidenceViewOptions>(DEFAULT_EVIDENCE_OPTIONS)
+  /** 导出范围（只有传了整书包时才能切）。整书模式不提供「附各版正文」—— 那会让文件大到没法用 */
+  const [scope, setScope] = useState<'chapter' | 'book'>('chapter')
   const [pdfBusy, setPdfBusy] = useState(false)
 
-  const htmlFile = () => renderDoc(packToDocModel(pack, opts), 'html')
-  const range = dailyRange(pack)
+  const isBook = scope === 'book' && !!bookPack
+  /**
+   * 两种范围共用的取值口 —— 下面所有导出动作都只认它，不再各自判断范围。
+   * （这里刻意用一组函数：整书包与本章包的字段名不同，散在十来个地方判 scope 必然漏一处。）
+   */
+  const view = isBook
+    ? {
+      title: () => `${bookPack!.project.name} · 成书过程`,
+      summary: () => bookEvidenceSummary(bookPack!),
+      range: () => bookDailyRange(bookPack!),
+      doc: () => bookPackToDocModel(bookPack!, DEFAULT_BOOK_EVIDENCE_OPTIONS),
+      json: () => bookPackToJson(bookPack!),
+      htmlName: () => bookEvidenceHtmlFileName(bookPack!),
+      jsonName: () => bookEvidenceJsonFileName(bookPack!),
+      lines: () => bookPack!.statement,
+    }
+    : {
+      title: () => `${pack.project.name} · ${pack.chapter.title}`,
+      summary: () => evidenceSummary(pack),
+      range: () => dailyRange(pack),
+      doc: () => packToDocModel(pack, opts),
+      json: () => packToJson(pack),
+      htmlName: () => evidenceHtmlFileName(pack),
+      jsonName: () => evidenceJsonFileName(pack),
+      lines: () => [...pack.statement, pack.retention.note],
+    }
+
+  const htmlFile = () => renderDoc(view.doc(), 'html')
+  const range = view.range()
 
   const fail = (e: unknown) =>
     showToast(`导出失败：${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -51,8 +88,8 @@ export default function EvidenceExportDialog({ open, onClose, pack }: {
 
   const exportJson = () => {
     try {
-      const name = evidenceJsonFileName(pack)
-      downloadBlob(name, new Blob([packToJson(pack)], { type: 'application/json;charset=utf-8' }))
+      const name = view.jsonName()
+      downloadBlob(name, new Blob([view.json()], { type: 'application/json;charset=utf-8' }))
       showToast(`已导出 ${name}`)
       onClose()
     } catch (e) { fail(e) }
@@ -62,7 +99,7 @@ export default function EvidenceExportDialog({ open, onClose, pack }: {
     setPdfBusy(true)
     try {
       const f = htmlFile()
-      const res = await exportPdfDocument(f.content, evidenceHtmlFileName(pack).replace(/\.html$/, '.pdf'))
+      const res = await exportPdfDocument(f.content, view.htmlName().replace(/\.html$/, '.pdf'))
       if (res.ok) {
         showToast('已保存 PDF')
         onClose()
@@ -85,35 +122,51 @@ export default function EvidenceExportDialog({ open, onClose, pack }: {
   return (
     <Modal open={open} onClose={onClose} title="导出创作证据包" width="lg">
       <p className="text-11 text-ink-400 leading-relaxed">
-        把这一章的创作过程整理成可以带走、可以打印、可以交给别人的材料。导出是只读操作，不改任何数据。
+        {isBook
+          ? '把整本书的成书过程整理成可以带走、可以打印、可以交给别人的材料（不含各章全文）。导出是只读操作，不改任何数据。'
+          : '把这一章的创作过程整理成可以带走、可以打印、可以交给别人的材料。导出是只读操作，不改任何数据。'}
       </p>
 
+      {/* 范围切换（A4 遗留补全）：本章看过程细节，整书看规模与节奏 */}
+      {bookPack && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-11 text-ink-500">范围</span>
+          <Button variant="toggle" selected={!isBook} size="sm" onClick={() => setScope('chapter')}>本章</Button>
+          <Button variant="toggle" selected={isBook} size="sm" onClick={() => setScope('book')}>整书</Button>
+          <span className="text-10 text-ink-600">
+            {isBook ? '含成书时间线、逐章一览与写作分布，不含各章全文' : '含细纲、各次改动与当前稿'}
+          </span>
+        </div>
+      )}
+
       <div className="mt-3 rounded-lg border border-ink-700 bg-ink-850/40 p-3">
-        <div className="text-12 text-ink-100">{pack.project.name} · {pack.chapter.title}</div>
+        <div className="text-12 text-ink-100">{view.title()}</div>
         <div className="mt-1 text-11 text-ink-400 leading-relaxed">
-          {evidenceSummary(pack)}
+          {view.summary()}
           {range ? `　·　写作日期 ${range.from} ~ ${range.to}` : ''}
         </div>
       </div>
 
-      {/* 展示选项：只影响 HTML / PDF 的篇幅，**JSON 永远是全量原件** */}
-      <div className="mt-3 space-y-2">
-        {toggles.map(t => (
-          <label key={t.key} className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox" className="mt-0.5 shrink-0 accent-amber"
-              checked={opts[t.key]} onChange={e => setOpts({ ...opts, [t.key]: e.target.checked })}
-            />
-            <span className="text-11 text-ink-300 leading-relaxed">
-              {t.label}
-              <span className="block text-10 text-ink-500">{t.hint}</span>
-            </span>
-          </label>
-        ))}
-        <p className="text-10 text-ink-500 leading-relaxed pl-6">
-          以上选项只影响 PDF / HTML 的篇幅；JSON 原件始终是完整的，不受勾选影响。
-        </p>
-      </div>
+      {/* 展示选项：只影响 HTML / PDF 的篇幅，**JSON 永远是全量原件**。整书模式内容固定，不显示选项 */}
+      {!isBook && (
+        <div className="mt-3 space-y-2">
+          {toggles.map(t => (
+            <label key={t.key} className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox" className="mt-0.5 shrink-0 accent-amber"
+                checked={opts[t.key]} onChange={e => setOpts({ ...opts, [t.key]: e.target.checked })}
+              />
+              <span className="text-11 text-ink-300 leading-relaxed">
+                {t.label}
+                <span className="block text-10 text-ink-500">{t.hint}</span>
+              </span>
+            </label>
+          ))}
+          <p className="text-10 text-ink-500 leading-relaxed pl-6">
+            以上选项只影响 PDF / HTML 的篇幅；JSON 原件始终是完整的，不受勾选影响。
+          </p>
+        </div>
+      )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <Button
@@ -151,14 +204,14 @@ export default function EvidenceExportDialog({ open, onClose, pack }: {
             JSON 原件
           </span>
           <span className="text-10 text-ink-400 font-normal leading-relaxed">
-            原始时间戳与各版全文，供机器核验，不经美化加工。
+            {isBook ? '原始时间戳与逐章统计，供机器核验，不经美化加工。' : '原始时间戳与各版全文，供机器核验，不经美化加工。'}
           </span>
         </Button>
       </div>
 
       {/* 如实交代数据来源与边界 —— 这份东西是拿给别人看的，口径必须经得起追问 */}
       <div className="mt-4 rounded-lg border border-ink-700 bg-ink-850/30 p-3 space-y-1.5">
-        {[...pack.statement, pack.retention.note].map((line, i) => (
+        {view.lines().map((line, i) => (
           <p key={i} className="text-10 text-ink-400 leading-relaxed">· {line}</p>
         ))}
       </div>

@@ -133,6 +133,17 @@ export async function getSnapshots(chapterId: string): Promise<Snapshot[]> {
     .sort((a, b) => b.createdAt - a.createdAt)
 }
 
+/**
+ * 取当前项目的**全部**快照（一次全表读）。
+ *
+ * 用途：整书证据包要按章统计「保留了几版」—— 逐章调 {@link getSnapshots} 会打 N 次库
+ * （300 章 = 300 次），一次全表读再分组要快得多。
+ */
+export async function getAllSnapshots(): Promise<Snapshot[]> {
+  const all = await ops.getAll<Snapshot>('snapshots')
+  return all.filter(s => s.projectId === currentProjectId)
+}
+
 // ============ 回收站 ============
 export interface TrashItem extends Chapter {
   kind: 'chapter'

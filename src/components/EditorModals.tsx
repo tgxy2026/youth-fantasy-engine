@@ -380,16 +380,26 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
   const [snaps, setSnaps] = useState<db.Snapshot[]>([])
   const [preview, setPreview] = useState<db.Snapshot | null>(null)
   const [tab, setTab] = useState<'content' | 'diff'>('content')
+  /**
+   * 对比基准（2.4.0 · A3 遗留补全）：默认 `'current'`＝当前稿（原行为），也可选**另一个版本**。
+   * 此前只能「某版 vs 当前稿」，想看清"这两次改动之间到底动了什么"时没法比 —— 现在可以任意两版互比。
+   */
+  const [baseId, setBaseId] = useState<'current' | string>('current')
   useEffect(() => { db.getSnapshots(chapterId).then(setSnaps) }, [chapterId])
-
-  // 差异只在选中版本 / 当前正文变化时重算（长篇对比是一次 LCS，别每帧算）
-  const diff = useMemo(() => (preview ? diffLines(preview.content, current) : []), [preview, current])
-  const stats = useMemo(() => diffStats(diff), [diff])
 
   const fmt = (t: number) => {
     const d = new Date(t)
     return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
+
+  /** 基准正文；基准被删/换成别的章时回落到当前稿（宁可给出对比，也不要空屏） */
+  const baseContent = baseId === 'current' ? current : (snaps.find(s => s.id === baseId)?.content ?? current)
+  const baseSnap = baseId === 'current' ? null : (snaps.find(s => s.id === baseId) ?? null)
+  const baseLabel = baseSnap ? fmt(baseSnap.createdAt) : '当前稿'
+
+  // 差异只在选中版本 / 基准 / 当前正文变化时重算（长篇对比是一次 LCS，别每帧算）
+  const diff = useMemo(() => (preview ? diffLines(baseContent, preview.content) : []), [preview, baseContent])
+  const stats = useMemo(() => diffStats(diff), [diff])
 
   return (
     <ToolModal title="时光机 · 本章版本历史（每章保留最近 12 版）" icon={<History size={16} />} onClose={onClose} wide>
@@ -425,16 +435,34 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                   <span className="text-11 text-ink-400">{fmt(preview.createdAt)} · {preview.wordCount} 字</span>
                   <div className="ml-auto flex gap-1">
                     <Button variant="toggle" selected={tab === 'content'} size="xs" onClick={() => setTab('content')}>内容</Button>
-                    <Button variant="toggle" selected={tab === 'diff'} size="xs" onClick={() => setTab('diff')}>与当前对比</Button>
+                    <Button variant="toggle" selected={tab === 'diff'} size="xs" onClick={() => setTab('diff')}>对比</Button>
                   </div>
                 </div>
+                {/* 对比基准可选（A3 遗留补全）：默认当前稿；换成另一版就能比"这两次改动之间动了什么" */}
+                {tab === 'diff' && (
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-10 text-ink-500 shrink-0">对比基准</span>
+                    <select
+                      value={baseId}
+                      onChange={e => setBaseId(e.target.value)}
+                      className="flex-1 min-w-0 bg-ink-900 border border-ink-700 rounded px-1.5 py-0.5 text-11 text-ink-200 outline-none focus:border-amber/40"
+                    >
+                      <option value="current">当前稿</option>
+                      {snaps.filter(s => s.id !== preview.id).map(s => (
+                        <option key={s.id} value={s.id}>
+                          {fmt(s.createdAt)} · {SNAP_SOURCE_LABEL[db.snapshotSourceOf(s)]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {tab === 'content' ? (
                   <pre className="flex-1 overflow-y-auto text-12 text-ink-200 whitespace-pre-wrap font-serif max-h-64">{preview.content.slice(0, 2000)}{preview.content.length > 2000 ? '…' : ''}</pre>
                 ) : (
                   <div className="flex-1 overflow-y-auto max-h-64 font-serif text-12 leading-relaxed">
                     <div className="mb-1.5 text-11 text-ink-500">
-                      这一版 → 当前稿：新增 {stats.added} 行 · 删除 {stats.deleted} 行
-                      {stats.added === 0 && stats.deleted === 0 && ' —— 与当前稿完全一致'}
+                      {baseLabel} → {fmt(preview.createdAt)}：新增 {stats.added} 行 · 删除 {stats.deleted} 行
+                      {stats.added === 0 && stats.deleted === 0 && ' —— 两版完全一致'}
                     </div>
                     {diff.map((l, i) => (
                       <div

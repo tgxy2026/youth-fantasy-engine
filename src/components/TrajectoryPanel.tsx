@@ -25,6 +25,7 @@ import {
   isAIVersion, type TrajectoryNode,
 } from '../lib/trajectory'
 import { buildEvidencePack, shortDate } from '../lib/evidencePack'
+import { buildBookEvidencePack } from '../lib/bookEvidence'
 import { foldVh } from '../lib/theme'
 import HelpPopover from './HelpPopover'
 import { Button } from './Button'
@@ -57,24 +58,29 @@ export default function TrajectoryPanel() {
   const [dailyStats, setDailyStats] = useState<{ date: string; words: number }[]>([])
   const [activeId, setActiveId] = useState('')
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
+  /** 全书快照（整书证据包用；一次全表读，别对每章再查一次） */
+  const [allSnapshots, setAllSnapshots] = useState<Snapshot[]>([])
   const [exportOpen, setExportOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const pid = db.getCurrentProjectId()
-      const [pj, vols, chs, cs, ds] = await Promise.all([
+      const [pj, vols, chs, cs, ds, snaps] = await Promise.all([
         pid ? db.getProject(pid).catch(() => undefined) : Promise.resolve(undefined),
         db.getAllVolumes().catch(() => [] as Volume[]),
         db.getAllChapters().catch(() => [] as Chapter[]),
         db.getCardRecords(OUTLINE_TAB).catch(() => [] as CardRecord[]),
         db.getDailyStats().catch(() => [] as { date: string; words: number }[]),
+        // 整书证据包要按章统计版本数 —— 一次全表读，不比逐章查慢
+        db.getAllSnapshots().catch(() => [] as Snapshot[]),
       ])
       setProjectName(pj?.name ?? '')
       setVolumes(vols)
       setChapters(chs)
       setCards(cs)
       setDailyStats(ds)
+      setAllSnapshots(snaps)
       // 默认选中：优先"已有正文的第一章"（空项目则选第一章），都没有则不选
       setActiveId(prev => {
         if (prev && chs.some(c => c.id === prev)) return prev
@@ -113,6 +119,15 @@ export default function TrajectoryPanel() {
   const pack = useMemo(
     () => (traj ? buildEvidencePack(traj, projectName) : null),
     [traj, projectName],
+  )
+
+  /** 整书证据包（A4 遗留补全）：与本章包共用同一个导出弹窗，弹窗里切「范围」即可 */
+  const bookPack = useMemo(
+    () => buildBookEvidencePack({
+      projectName, chapters, volumes, snapshots: allSnapshots,
+      outlineCards: cards, dailyStats,
+    }),
+    [projectName, chapters, volumes, allSnapshots, cards, dailyStats],
   )
 
   // 章列表按卷分组（卷顺序即列表顺序）
@@ -297,7 +312,10 @@ export default function TrajectoryPanel() {
       </div>
 
       {pack && (
-        <EvidenceExportDialog open={exportOpen} onClose={() => setExportOpen(false)} pack={pack} />
+        <EvidenceExportDialog
+          open={exportOpen} onClose={() => setExportOpen(false)}
+          pack={pack} bookPack={bookPack}
+        />
       )}
     </div>
   )
