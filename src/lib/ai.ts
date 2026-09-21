@@ -514,6 +514,47 @@ function openaiSampling(o: CallOpts): Record<string, number> {
   return out
 }
 
+/**
+ * 把云端 API 的失败响应翻译成「一句话原因 + 该怎么办」（2.4.0 · A1 错误映射）。
+ *
+ * 为什么要连服务商原话一起给：同样是 401，「密钥过期」与「少粘了一段」的处置完全不同，
+ * 而各家返回体格式并不统一（`error.message` / `message` / `msg` / 纯文本都有）。
+ * 所以两样都给 —— 按状态码能推出建议时给建议，抠得出原话时一并附上，作者才好定位。
+ *
+ * ⚠️ 这里解析的是 **HTTP 响应体**（传输层），不是「模型正文 → 结构化数据」，故不走 aiParse。
+ */
+function describeApiError(status: number, raw: string): string {
+  let detail = ''
+  try {
+    const j = JSON.parse(raw) as { error?: { message?: string }; message?: string; msg?: string }
+    detail = String(j?.error?.message ?? j?.message ?? j?.msg ?? '').trim()
+  } catch {
+    detail = raw.trim()
+  }
+  const tail = detail ? `\n服务商原话：${detail.slice(0, 160)}` : ''
+  switch (status) {
+    case 400:
+      return `请求被平台拒绝（HTTP 400）：最常见的原因是模型名不在该账户已开通的清单里，也可能是参数不被接受。${tail}`
+    case 401:
+      return `API 密钥无效或缺失（HTTP 401）：检查密钥是否复制完整、有没有夹带空格、是否已过期或被重置。${tail}`
+    case 402:
+      return `账户余额不足（HTTP 402）：请前往平台充值后重试。${tail}`
+    case 403:
+      return `密钥无权访问（HTTP 403）：确认这个 Key 已开通对应模型，或平台是否要求先实名 / 绑定。${tail}`
+    case 404:
+      return `接口地址或模型名不对（HTTP 404）：确认 baseUrl 指到 …/v1 这类 chat/completions 前缀，并核对模型名拼写。${tail}`
+    case 429:
+      return `请求过于频繁或已达配额上限（HTTP 429）：稍后重试，或检查账户额度是否已用尽。${tail}`
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return `服务商端异常（HTTP ${status}）：这不是你本地配置的问题，稍后重试即可；持续报错可以换个平台。${tail}`
+    default:
+      return `API 调用失败（HTTP ${status}）：${detail.slice(0, 200) || '平台未返回可读原因。'}`
+  }
+}
+
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<string> {
   const { timeoutMs } = o
   const rawBase = stripSlash(config.baseUrl || '')
@@ -553,16 +594,12 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     }
   } catch (e) {
     if (isCancelled(e)) throw e
-    if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒），请检查网络或稍后重试。`)
-    throw new Error('无法连接该 API 地址，请检查网络与接口地址（浏览器/桌面端可能因 CORS 拦截跨域请求）。')
+    if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
+    throw new Error('无法连接该 API 地址：请检查网络与接口地址；若连的是本机 / 局域网服务，确认它已启动（浏览器 / 桌面端也可能因 CORS 拦下跨域请求）。')
   }
   if (!res.ok) {
     const txt = await res.text().catch(() => '')
-    if (res.status === 401) throw new Error('API 密钥无效或缺失（HTTP 401）。')
-    if (res.status === 402) throw new Error('账户余额不足（HTTP 402），请前往平台充值后重试。')
-    if (res.status === 404) throw new Error('接口地址或路径不正确（HTTP 404），请确认 baseUrl 指向 …/v1 之类的 chat/completions 前缀。')
-    if (res.status === 429) throw new Error('请求过于频繁或已达配额上限（HTTP 429），请稍后重试。')
-    throw new Error(`API 调用失败（HTTP ${res.status}）：${txt.slice(0, 200)}`)
+    throw new Error(describeApiError(res.status, txt))
   }
   // 流式：边收边回调（联网模型首字出来即可见，本地慢模型不再整轮转圈）
   if (o.onToken) {
@@ -575,7 +612,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
       }, () => clearTimer?.())
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
-      if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒），请检查网络或稍后重试。`)
+      if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
       throw e
     }
     if (!content.trim()) throw new Error('API 未返回内容，请确认模型名称正确且账户有额度。')
