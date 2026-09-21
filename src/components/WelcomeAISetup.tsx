@@ -20,6 +20,7 @@ import {
   Cpu, Globe, Loader2, CheckCircle2, AlertCircle, FlaskConical, RefreshCw, Lightbulb,
 } from 'lucide-react'
 import { Button } from './Button'
+import AIDisabledNotice from './AIDisabledNotice'
 import { showToast } from './dialogs'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
@@ -157,6 +158,11 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
           —— 手动写作从来不用等 AI，随时可以在「模型设置 → 模型配置」里补上。
         </p>
       </div>
+
+      {/* 无 AI 时「哪些入口会灰、为什么灰」的完整清单（A1 遗留补全）。
+          向导里原先只有一句笼统说明；这里把确切范围摆出来，作者才知道"不配到底少什么"。
+          AI 就绪后组件自己返回 null，不用额外判断。 */}
+      <AIDisabledNotice />
 
       {/* ── 第一步：本地还是云端 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

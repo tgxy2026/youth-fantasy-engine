@@ -325,7 +325,7 @@ export default function App() {
     return (
       <>
         <DesktopWriteLockBanner />
-        {needWelcome ? <WelcomeWizard onDone={onWelcomeDone} /> : <ProjectHub onOpen={openProject} />}
+        {needWelcome ? <WelcomeWizard onDone={onWelcomeDone} /> : <ProjectHub onOpen={openProject} onReplayWelcome={() => setNeedWelcome(true)} />}
         {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。
             此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
         <DataDock />

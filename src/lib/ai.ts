@@ -50,6 +50,17 @@ export interface AIProvider {
    * 且没有统一的查询接口 —— 所以允许手填。留空时按 model 名去预设表里认，认不出走保守兜底。
    */
   contextWindow?: number
+  /**
+   * 该模型的**生成温度**（选填）。
+   *
+   * 为什么按 provider 存（2.4.0 · A1 遗留补全）：本地小模型与云端大模型合适的温度差别很大
+   * （小模型偏高温才不呆板、大模型偏低温才不跑偏），做成一个全局常量必然"两头都不合适"。
+   * 留空时回落到 {@link DEFAULT_TEMPERATURE}。
+   *
+   * ⚠️ **结构化 JSON 任务不受它影响** —— 那类固定走 {@link JSON_TASK_TEMPERATURE}（0.3），
+   *    那是「解析稳定性」的红线，不能让显示偏好把它顶掉。
+   */
+  temperature?: number
 }
 
 export interface ChatMessage {
@@ -66,6 +77,23 @@ export const TEST_TIMEOUT_MS = 90_000
 
 /** 创意类生成（续写 / 取名 / 灵感）默认温度 */
 export const DEFAULT_TEMPERATURE = 0.85
+/**
+ * 采样温度的**三档**（2.4.0 · A1 遗留补全）。
+ *
+ * 为什么给档位而不是让作者填数字：对写小说的人来说「稳 / 标准 / 活」比 0.85 直观得多；
+ * 且本项目 `NumberField` 会 `Math.round` 掉小数，温度这种 0.85 的值根本填不进去。
+ * 存进 provider 的仍是**具体数值**（见 AIProvider.temperature），换档即换值。
+ */
+export const TEMPERATURE_TIERS = [
+  { label: '稳', value: 0.7, hint: '更贴前文、少出意外 —— 适合正剧，或需要严丝合缝的段落' },
+  { label: '标准', value: 0.85, hint: '默认档：创意与稳定的平衡点' },
+  { label: '活', value: 1.0, hint: '更跳脱多变 —— 适合脑洞段落，但更容易跑偏' },
+] as const
+
+/** 本地小模型的建议档位值：参数小、容易写得呆板，给「活」一档 */
+export const LOCAL_DEFAULT_TEMPERATURE = 1.0
+/** 云端大模型的建议档位值：创作力强但容易跑偏，用「标准」档 */
+export const CLOUD_DEFAULT_TEMPERATURE = 0.85
 /** 结构化 JSON 任务（校对 / 审读 / 改稿 / 抽取）专用：低温换取格式稳定 */
 export const JSON_TASK_TEMPERATURE = 0.3
 
@@ -118,6 +146,7 @@ export const ONLINE_PRESETS: PlatformPreset[] = [
 export function providerFromPreset(p: PlatformPreset): AIProvider {
   const id = 'p_' + Math.random().toString(36).slice(2, 9)
   const isOllama = p.type === 'ollama'
+  const local = p.local ?? isOllama
   const name = (p.label.replace(/（本地）|（联网）|\(local\)/gi, '').trim()) || (isOllama ? '本地 Ollama' : '联网模型')
   return {
     id,
@@ -126,7 +155,11 @@ export function providerFromPreset(p: PlatformPreset): AIProvider {
     baseUrl: p.baseUrl,
     apiKey: '',
     model: '',
-    local: p.local ?? isOllama,
+    local,
+    // 「一键套用采样」的落点（2.4.0 · A1 遗留补全）：按模型体量给一个合适的初始温度 ——
+    // 本地小模型给高一点（不然呆板）、云端大模型给稳一点（不然跑偏）。
+    // 只是初值，作者可在「模型设置 → 模型配置」里按自己的手感改。
+    temperature: local ? LOCAL_DEFAULT_TEMPERATURE : CLOUD_DEFAULT_TEMPERATURE,
   }
 }
 
@@ -395,7 +428,9 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   // 注意：opts.think 默认 undefined → ollamaChatRaw 不传 think 字段，思考型模型保持思考。
   // 温度在此处统一解析（唯一真源）：显式 temperature 优先；否则按是否 JSON 任务取默认值。
   // 下游 ollamaChatRaw / openaiChat 只管用 o.temperature，不再各自做缺省判断。
-  const temperature = opts.temperature ?? (opts.json ? JSON_TASK_TEMPERATURE : DEFAULT_TEMPERATURE)
+  // 2.4.0：创意生成的默认温度可由 provider 自带（见 AIProvider.temperature）——
+  // 本地小模型与云端大模型合适值差别很大；JSON 任务仍固定低温，不受影响。
+  const temperature = opts.temperature ?? (opts.json ? JSON_TASK_TEMPERATURE : (config.temperature ?? DEFAULT_TEMPERATURE))
   return (await chatRaw(config, messages, {
     timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
     think: opts.think,

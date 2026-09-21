@@ -28,6 +28,7 @@ import {
   LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset,
   listOllamaModels, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
+  TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
 } from '../lib/ai'
 import { lookupWindow, FALLBACK_WINDOW } from '../lib/modelCapacity'
 import NumberField from './NumberField'
@@ -436,6 +437,37 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   </div>
                 )
               })()}
+
+              {/* 采样温度档位（2.4.0 · A1 遗留补全）：**按 provider 存、随模型走**。
+                  本地小模型与云端大模型合适的温度差别很大，做成全局常量必然两头都不合适
+                  （见 lib/ai.ts 的 AIProvider.temperature 与 TEMPERATURE_TIERS）。
+                  ⚠️ 只影响创意生成；结构化任务固定低温，不受这一项影响。 */}
+              <div>
+                <label className="block text-11 text-ink-500 mb-1">
+                  采样温度<span className="text-ink-600"> · 影响续写 / 取名这类创意生成</span>
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  {TEMPERATURE_TIERS.map(tier => (
+                    <Button
+                      key={tier.label}
+                      variant="toggle"
+                      selected={editing.temperature === tier.value}
+                      size="sm"
+                      onClick={() => setEditing({ ...editing, temperature: tier.value })}
+                      title={`${tier.value} —— ${tier.hint}`}
+                    >
+                      {tier.label}
+                    </Button>
+                  ))}
+                  <span className="text-10 text-ink-500">
+                    {TEMPERATURE_TIERS.find(x => x.value === editing.temperature)?.hint
+                      ?? `当前未设：创意生成按平台初值 ${editing.type === 'ollama' || editing.local ? LOCAL_DEFAULT_TEMPERATURE : CLOUD_DEFAULT_TEMPERATURE}`}
+                  </span>
+                </div>
+                <p className="text-10 text-ink-600 mt-1 leading-relaxed">
+                  校对、抽取这类结构化任务固定用 0.3 低温，不受这一项影响。
+                </p>
+              </div>
 
               {testing && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-12 bg-ink-800 border border-ink-700 text-ink-300">
