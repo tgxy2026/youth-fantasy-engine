@@ -5,12 +5,12 @@
 - 🔴 产品立场：AI 只做辅助。**绝不做反检测/洗 AI 痕迹**；只做「创作主权存证＋质量自检＋如实申报」。
 - 🔴 封装须老大明说「封装/重打包」；改完最多 tsc+lint+test+commit。
 - 🔴🔴 **禁 `git stash`、手工 `git gc`/`reflog expire`**（两次事故）。恢复靠 `git bundle`；`gc.auto=0` 别改回。
-- 禁删 `你需要的文件在这里/`、`release/eb-cache/`；禁原生 `prompt/confirm/alert`→PromptModal/confirmDialog/toast。
+- 禁删 `release/eb-cache/`；禁原生 `prompt/confirm/alert`→PromptModal/confirmDialog/toast。
 - 清单 `docs/2.3.1-Bug与待优化清单.md` 只记录，明说「处理」才动（旧清单已归档 `docs/归档/`）。提交含 `!` 或换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本走 `env.ts:APP_VERSION_LABEL`。
-- 现 **2.3.0**（结构优化·定向重构，不加功能）；**2.3.1 紧急修复中**（只收社区反馈、不加功能），2.4 规划已定稿但**延后**。版本唯一源 `package.json`；⚠️ lock 只改 `j.version`＋`j.packages['']`。
+- 现 **2.3.1**（紧急修复版，已封装并上 Gitee Release；`package.json` 唯一源，lock 只改 `j.version`＋`j.packages['']`）；2.4 已定稿但**延后**。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。
 - 🔴 启动**默认停项目管理首页**；`lastProject` 只服务「首次播示范项目」，删项目时一并清掉。
 
@@ -36,11 +36,12 @@
 - 🔴🔴 云盘同步「删了会复活」：`baseCache` 仅内存→把「云端有·本地无」判成「另一端新增」。修＝墓碑 `syncTombstone.ts`＋`localHasContent` 闸。
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步它；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
-- 🔴🔴 服务器已**彻底清理**（09-21，自动续费已关）：站点/服务/数据/配置全删、IP 不可达；`server/` 保留不上线 → 跨设备同步只剩云盘文件夹。`createIdleTransport`＝未开启占位（报「不可用」，🔴 绝不返回空库否则 push 覆盖云端）。
+- 🔴🔴 服务器已**彻底清理**（09-21，续费已关）：IP 不可达；`server/` 保留不上线 → 跨设备同步只剩云盘文件夹。`createIdleTransport`＝未开启占位（🔴 绝不返回空库否则 push 覆盖云端）。
 
 ## UI·布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量须走 `style`。设置项＝标题→输入→说明。
 - 🔴🔴 `<html>` 界面缩放：①量尺寸用 `offsetHeight`/`clientWidth`，禁 `getBoundingClientRect()`；②**vh/vw 都不随 zoom 缩**→内联长度一律走 `foldVh()`（它**同时**折算 vh 与 vw，名字起窄了）；③SVG 滚轮/拖拽除 zoom。
+- 🔴 **远程/分辨率自适应**：固定 px 断点只看逻辑像素宽、不看物理尺寸（32″4K 与 14″2K 会同命中 `xl`）→ 一律用 `foldVh(min(上限, N vw))`（#036 实测）。
 - 🔴 光标/选区同步不能只靠 `onKeyUp`（上屏/粘贴/程序化插入无 keyup）→ 有 `onChange` 就在里面同步。
 - 🔴 判「琥珀开启态」按 class **词元**比（off 态 `hover:text-amber`→`includes` 恒真＝假 PASS）。
 - 🔴 按对侧高度定高：flex item 加 `overflow-hidden`；别同写 `flex-1`+`height`。
@@ -48,7 +49,7 @@
 - 🔴 页头 `HelpPopover` 问号**须与标题同行**。头像兜底＝名字；Enter 发送／Shift+Enter 换行必挡 `isComposing`；文案禁 markdown 星号→用「」/（）。
 - 🔴 数值输入走 `NumberField`：可自由输入（能清空、能超范围）＋超范围在**失焦/回车**钳到最近边界（toast）。
 - 🔴 折叠偏好走 `lib/uiPrefs.ts`（`yfe-ui:` 命名空间，不进项目数据）：**存「偏离默认的那一侧」**——反存会让新分组被判成收起；空集合＝合法；已接 侧栏分组/卷列表、表树、提示词、草稿审阅。
-- 🔴 **提示词禁写 markdown 星号**（模型会模仿）。校对已拆 `aiProofreadText`（文字层·不读设定）/`aiProofreadLogic`（逻辑层·读设定），都在 `PROMPT_ORDER`。
+- 🔴 **提示词禁写 markdown 星号**（模型会模仿）。校对已拆 `aiProofreadText`（文字层）/`aiProofreadLogic`（逻辑层），都在 `PROMPT_ORDER`。
 - 🔴 新增页签必同步 `SETTING_SUBTABS`＋`aiContext.PRIORITY`（否则进不了预算）；侧栏/勾选弹窗/指南/dataHealth 由 `TABS` 派生。「其他设定」＝`misc-settings`（MISC 编号，optional 零依赖，3 种子）。
 
 ## AI 层
@@ -71,7 +72,7 @@
 - 🔴 闸 `tests/structureGates`（行数/归属/禁裸 `JSON.parse`/原生弹窗/**any 账本只准降**）；类型等价性**可证**＝剥类型再 diff。
 - 🔴 实机走 skill `novel-studio-ui-livecheck`；**子代理结论必回源码验**；断言「落库」须直读 IDB；脚本**还原须幂等**。
 - 🔴🔴 实机三坑：①编辑器正文须 `textarea.novel-textarea`；②编辑器里 Esc＝伴写抑制（关 Modal 优先点遮罩）；③诊断 AI 先看 `/chat/completions` 请求数。
-- ✅ 巨型组件拆分：量化依赖→状态搬进 `useXxxModel`→子组件只收 `model`→实机指纹＋负面对照。hook 含 JSX 须 `.tsx`；只读 ref 改 `useCallback`（禁 disable）。
+- ✅ 巨型组件拆分：状态搬进 `useXxxModel`、子组件只收 `model`→实机指纹＋负面对照。hook 含 JSX 须 `.tsx`；只读 ref 改 `useCallback`（禁 disable）。
 - 🔴🔴 实机**播完种禁 reload**；指纹只哈希目标容器＋先折 `HH:MM(:SS)`→`T`、数字→`#`；造数据后**必须排序**；负面对照注入点须**无人复位**。
 
 ## 酒馆模式（动前必读 `docs/酒馆模式-工程红线.md`）
@@ -86,21 +87,20 @@
 - 🔴 三道闸：seed-schema-check＋`tests/seedRef`（人物列须真角色）＋细纲卡核对；`importCycles`：循环只在浏览器 TDZ 崩。⚠️ 验「随项目」用 `db.setCurrentProject`。
 
 ## 环境（Win + Git Bash）
-- git/npm/node 用**绝对路径**且每次现探（git 在 `…/PortableGit/versions/1.2.0/cmd/git.exe`）；⚠️ `sort`/`find`/`timeout` 解析到 Windows 同名 exe→改用 node 脚本。
-- 🔴 **G 盘（本项目所在盘）元数据操作极慢**：删 **49ms**/文件、建 **25ms**/文件（C 盘 1ms，差 37 倍，实测）。
-  ⇒ 大批小文件清理只能**单进程挂后台慢跑**（约 20 文件/秒，42 万文件 ≈ 5 小时）；🔴 **禁并行**（4 并发实测掉到 0/秒）。
-  ⚠️ 判「删除慢」先做**跨盘对照**，别归因杀软（曾误判电脑管家，加信任目录无效）。
+- git/npm/node 用**绝对路径**且每次现探（`…/PortableGit/versions/1.2.0/cmd/git.exe`）；⚠️ `sort`/`find`/`timeout` 解析到 Windows 同名 exe→改 node 脚本。
+- 🔴 **G 盘元数据操作极慢**：删 **49ms**/文件、建 25ms/文件（C 盘 1ms ⇒ 差 37 倍）。大批小文件只能**单进程挂后台慢跑**（~20 文件/秒），🔴 **禁并行**（4 并发实测 0/秒）；判「删除慢」先做**跨盘对照**，别归因杀软。
+- 🔴 `git ls-files` 中文路径**加引号转义**→须 `-c core.quotepath=false ls-files -z` 按 `\0` 切。
 - 🔴🔴 同消息对同一文件发多个 Edit 会相互覆盖→串行改、改完即 grep；跨行锚点先探 EOL。🔴 共享中介必须串行。
 - 🔴 改 `protocol.ts` 正文别用 Edit（锚点不唯一）→ 脚本＋旧版进 `LEGACY_PROTOCOLS`。
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖）。判存在用 `Read`／`test -f`；`memory/*.md` 只准 append。
 - 🔴 `git archive HEAD` 基线**带 CRLF**（工作区 LF）→ 先统一换行再比字数。
 
-## 2.4 规划（09-21 立项，详 `docs/2.4.0-版本规划.md`）
+## 2.4 规划（已定稿·**开工顺延**，详 `docs/2.4.0-版本规划.md`）
 - 三目标：**转化**（首启 5 分钟出第一段）／**长篇**（性能基线＋章节快照）／**可信**（创作轨迹存证＋投稿自检＋AI 占比申报）；总判断**不横向加功能**。
 - **已定分批**：2.4.0（A1 首启·A2 性能·A3 快照·A4 轨迹+证据包）→2.4.1（B1-B5）→2.4.2（C 工程/外围）；新页签「创作轨迹」归「创作管理」组；C4 首批**晋江+起点**。
 - 🔴 中文 PDF 禁 jsPDF（字体无中文）→HTML+打印样式为真源，桌面 `printToPDF`、其余 `window.print()`。
 
 ## 对外推广（09-21 起）
-- 🔴 小黑盒系列稿文末**禁裸链**：禁 `https://`／`pan.quark.cn` 连写／「提取码」（改「口令」）；链接压全篇最末、**后须有缓冲文字**（别以链接收尾）、两入口合并成一块。规范详 `docs/小黑盒推广帖/文末链接规范.md`。
-- 入口（09-21 实测有效）：Gitee `tgxy2026/youth-fantasy-engine`（匿名可 clone ＋ Release 有安装包）；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`（到 2100-01-01，含 1.0.0~2.3.0 共 16 版）。
-- 🔴 **发帖顺序**：稿里承诺的版本号**必须先在两个通道上架**（夸克盘 ＋ Gitee Release）再发帖 —— 读者照文末通道取不到新版＝当场失信。第 0 篇（总论）**已发布**（不再改）；第 1 篇（写作核心闭环）**待发布**，正文开头已含 2.3.1 更新提醒，对外版本号＝**2.3.1**（老大另一窗口升版本号＋封装）。
+- 🔴 小黑盒系列稿文末**禁裸链**：禁 `https://`／`pan.quark.cn` 连写／「提取码」（改「口令」）；链接压全篇最末、**后须有缓冲文字**、两入口合并成一块。规范详 `docs/小黑盒推广帖/文末链接规范.md`。
+- 入口（实测有效）：Gitee `tgxy2026/youth-fantasy-engine`（匿名可 clone ＋ Release 有安装包）；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。
+- 🔴 **发帖顺序**：稿里承诺的版本号**必须先在两个通道上架**（夸克盘 ＋ Gitee Release）再发帖。第 0 篇**已发布**（不再改）；第 1 篇**待发布**，对外版本号＝**2.3.1**（代码已上 Gitee，夸克盘待传）。
