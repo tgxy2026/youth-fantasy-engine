@@ -4,7 +4,7 @@ import type { ProjectBundle } from '../lib/db'
 import type { Project } from '../lib/types'
 import { createDemoProject } from '../lib/seedData'
 import {
-  Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks,
+  Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff,
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import Tooltip from './Tooltip'
@@ -17,6 +17,7 @@ import BrandMark from './BrandMark'
 import { downloadBlob } from '../lib/zip'
 import { markExported } from '../lib/backupReminder'
 import { APP_VERSION_LABEL } from '../lib/env'
+import { usePersistedBool } from '../lib/uiPrefs'
 import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
 import workbenchBg from '../assets/workbench-bg.png'
 import jiewenjiGufeng from '../assets/jiewenji-gufeng.png'
@@ -46,6 +47,9 @@ export default function ProjectHub({ onOpen }: Props) {
   const coverRef = useRef<HTMLInputElement>(null)
   const editCoverRef = useRef<HTMLInputElement>(null)
   const [backupPid, setBackupPid] = useState<string | null>(null)
+  // #002 看板娘显示开关：默认「显示」，故按 uiPrefs 的约定存「偏离默认的那一侧」＝存「已隐藏」。
+  // 走 yfe-ui: 命名空间 → 只服务「这台机器上这个人的界面习惯」，不进项目数据、不随导出/同步走。
+  const [mascotHidden, setMascotHidden] = usePersistedBool('home-mascot-hidden', false)
   const [backupName, setBackupName] = useState('')
 
   const load = useCallback(async () => {
@@ -214,6 +218,15 @@ export default function ProjectHub({ onOpen }: Props) {
             />
             <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors">
               <BookPlus size={14} /> 新建小说项目
+            </Button>
+            <Button
+              variant="toggle"
+              selected={!mascotHidden}
+              onClick={() => setMascotHidden(!mascotHidden)}
+              title={mascotHidden ? '显示右下角看板娘' : '隐藏右下角看板娘'}
+              className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg"
+            >
+              {mascotHidden ? <EyeOff size={13} /> : <Eye size={13} />} 看板娘
             </Button>
           </div>
         </div>
@@ -549,6 +562,8 @@ export default function ProjectHub({ onOpen }: Props) {
           380px 占比从 19.6% 翻到 29.7%、纵向吃掉 82% 屏高，实测压住右上角「创建/新建项目」按钮。
           min(380px, 20vw) 经 foldVh 折算（vw 在 zoom 下不缩，必须折）后视觉占比恒为 20%；
           大屏仍走 380px 上限 → 观感与改动前完全一致。 */}
+      {/* #002 看板娘显示开关：默认显示；用户在操作条可切（偏好走 yfe-ui:） */}
+      {!mascotHidden && (
       <img
         src={jiewenjiGufeng}
         alt="古风看板娘"
@@ -556,6 +571,7 @@ export default function ProjectHub({ onOpen }: Props) {
         className="fixed bottom-4 right-4 hidden sm:block h-auto pointer-events-none select-none drop-shadow-2xl"
         style={{ zIndex: Z.sprite, width: foldVh('min(380px, 20vw)'), maxHeight: foldVh('82vh') }} // vw/vh 都要折算，否则缩放 ≠100% 时占比失真
       />
+      )}
     </div>
   )
 }
