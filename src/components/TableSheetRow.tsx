@@ -1,0 +1,280 @@
+/**
+ * 表格**单行**（从 `TableSheet.tsx` 拆出，2026-09-19）。
+ *
+ * 一行 225 行 JSX：序号格 + 操作列（打开正文 / 删除 / AI 补全本行 / 新增子条目 / 树形折叠）+
+ * 按列类型分派单元格（tableRef / select / character / calendar / date / 编号联动 / 普通文本）。
+ * 塞在主文件里时，表格骨架与单元格细节互相淹没。
+ *
+ * 状态一律来自 `model`（同名解构，JSX 保持原样）；本组件不持有任何状态。
+ * ⚠️ 唯一改动：原来的 `i`（map 下标）改名为 `index` —— 单字符参数名做 props 太容易读错。
+ */
+import { ChevronDown, ChevronRight, GitBranch, Link2, PenLine, Sparkles, Trash2 } from 'lucide-react'
+import type { TabDef, TableRow } from '../lib/types'
+import { SABC_LABELS, isVolumeLedgerTab } from '../lib/schema'
+import type { VisCtx } from '../lib/schema'
+import { Button } from './Button'
+import CalendarPicker from './CalendarPicker'
+import CustomSelect from './CustomSelect'
+import CharacterSelect from './CharacterSelect'
+import TableRefSelect from './TableRefSelect'
+import CalendarSelect from './CalendarSelect'
+import StoryDateInput from './StoryDateInput'
+import { CellTextarea, rowBadgeClass } from './tableSheetShared'
+import type { TableSheetModel } from './useTableSheetModel'
+
+export default function TableSheetRow({ tab, model, entry, index, onNavigate, ctx }: {
+  tab: TabDef
+  model: TableSheetModel
+  /** 一行 + 它在树形层级里的位置（父组件负责排列） */
+  entry: { row: TableRow; depth: number; hasChildren: boolean }
+  index: number
+  onNavigate?: (id: string, chapterId?: string) => void
+  ctx: VisCtx
+}) {
+  const {
+    rowRefs,
+    hlRowId,
+    codeCol,
+    isMaster,
+    aiCap,
+    aiReady,
+    widthOf,
+    saveCalendars,
+    setCellDraft,
+    removeRow,
+    cellVal,
+    parentCol,
+    toggleCollapse,
+    tree,
+    addChild,
+    isRowDirty,
+    isInvalidCode,
+    calendars,
+    collapsed,
+    setFillRow,
+  } = model
+
+    const row = entry.row
+    const depth = entry.depth
+    const hasChildren = entry.hasChildren
+    // 合并 draft 后的最终数据，用于行底色
+    const bg = rowBadgeClass(tab.id, row.data)
+    const rowDirty = isRowDirty(row)
+    // 章节总表 / 各卷台账联动行：id 形如 ch-<chapterId>，提供直达写作入口
+    const chapterLink = (tab.id === 'chapter-master' || isVolumeLedgerTab(tab.id)) && row.id.startsWith('ch-')
+      ? row.id.slice(3) : null
+    return (
+      <tr
+        key={row.id}
+        ref={el => { rowRefs.current[row.id] = el }}
+        className={`group hover:bg-ink-800/60 transition-colors ${bg ?? ''} ${rowDirty ? 'bg-amber/5' : ''} ${hlRowId === row.id ? 'ring-2 ring-emerald-400/80 bg-emerald-500/10' : ''}`}
+      >
+        <td className="px-2 py-1 text-center text-ink-500 text-10 relative">
+          {index + 1}
+          {rowDirty && <span className="absolute left-0 top-1 w-0.5 h-5 bg-amber rounded-r" />}
+        </td>
+        <td className="w-7 px-1 py-1 align-middle">
+          <div className="flex flex-col items-center justify-center gap-0.5 h-full">
+          {chapterLink && (
+            <Button variant="bare" iconOnly size="xs"
+              onClick={() => onNavigate?.('editor', chapterLink)}
+              className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
+              title="打开本章正文编辑"
+            >
+              <PenLine size={12} />
+            </Button>
+          )}
+          {!isMaster && (
+          <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1" title="删除此行">
+            <Trash2 size={12} />
+          </Button>
+          )}
+          {aiCap !== 'none' && !isMaster && (
+            <Button variant="bare" iconOnly size="xs"
+              onClick={() => setFillRow(row)}
+              disabled={!aiReady}
+              className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              title="AI 补全本行空白：只填这一行未填写的字段，不影响其他行 / 表"
+            >
+              <Sparkles size={12} />
+            </Button>
+          )}
+          {parentCol && tree && (
+            <Button variant="bare" iconOnly size="xs"
+              onClick={() => addChild(tree.nameOf(row))}
+              className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
+              title={`在「${tree.nameOf(row) || '该项'}」下新增子条目`}
+            >
+              <GitBranch size={12} />
+            </Button>
+          )}
+          </div>
+        </td>
+        {tab.columns!.filter(col => !col.hidden).map(col => {
+          const val = cellVal(row, col.name)
+          if (isMaster) {
+            const fh = (tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/g)) || null
+            return (
+              <td key={col.name} className="px-1 py-1 align-middle" style={{ width: widthOf(col.name) }}>
+                <div className="px-2 py-1 text-12 text-ink-200 whitespace-pre-wrap break-words leading-relaxed">
+                  {val ? val : <span className="text-ink-600">—</span>}
+                </div>
+                {fh && (
+                  <div className="flex flex-wrap gap-1 mt-0.5 px-2">
+                    {fh.map(code => (
+                      <Button variant="bare"
+                        key={code}
+                        onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                        title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
+                      >
+                        <Link2 size={9} />{code}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </td>
+            )
+          }
+          return (
+            <td key={col.name} className="px-1 py-1 align-middle" style={{ width: widthOf(col.name) }}>
+              {col.type === 'date' ? (
+                /* 严格"某年某月某日"日期输入 */
+                <StoryDateInput
+                  value={val}
+                  onChange={v => setCellDraft(row.id, col.name, v)}
+                />
+              ) : col.type === 'calendar' ? (
+                /* 真实日历日期：弹出月历选择 */
+                <CalendarPicker
+                  value={val}
+                  onChange={v => setCellDraft(row.id, col.name, v)}
+                />
+              ) : col.type === 'character' ? (
+                /* 角色卡单选：从已创建角色中选，禁止手动输入 */
+                <CharacterSelect
+                  value={val}
+                  onChange={v => setCellDraft(row.id, col.name, v)}
+                  placeholder={col.name}
+                  ctx={ctx}
+                />
+              ) : col.type === 'characters' ? (
+                /* 角色卡多选：从已创建角色中选，禁止手动输入 */
+                <CharacterSelect
+                  multi
+                  value={val}
+                  onChange={v => setCellDraft(row.id, col.name, v)}
+                  placeholder={col.name}
+                  ctx={ctx}
+                />
+              ) : col.calendar ? (
+                /* 历法列：选项来自项目级历法配置，支持新增/删改/数值 */
+                <CalendarSelect
+                  value={val}
+                  onChange={v => setCellDraft(row.id, col.name, v)}
+                  calendars={calendars}
+                  onCalendarsChange={saveCalendars}
+                />
+              ) : col.type === 'tableRef' ? (
+                /* 跨表引用：从来源设定表取值，禁止手动输入；自引用父级列排除自身+子孙防成环 */
+                <TableRefSelect
+                  refTabId={col.refTab!}
+                  refCol={col.refCol!}
+                  value={val}
+                  onChange={v => setCellDraft(row.id, col.name, v)}
+                  placeholder={col.name}
+                  excludeNames={
+                    parentCol && col.name === parentCol && tree
+                      ? (() => {
+                          const s = new Set<string>()
+                          const n = tree.nameOf(row)
+                          if (n) s.add(n)
+                          tree.descendantNames(row.id, s)
+                          return [...s]
+                        })()
+                      : undefined
+                  }
+                />
+              ) : col.type === 'select' && col.options ? (
+                <CustomSelect
+                  tabId={tab.id}
+                  colName={col.name}
+                  options={col.options}
+                  value={val}
+                  onChange={v => setCellDraft(row.id, col.name, v)}
+                  labelMap={col.name === '保密等级' ? SABC_LABELS : undefined}
+                  fixedOptions={col.fixedOptions}
+                />
+              ) : col.type === 'number' ? (
+                <input
+                  type="number"
+                  value={val}
+                  onChange={e => setCellDraft(row.id, col.name, e.target.value)}
+                  className="!py-1 text-12 w-full bg-ink-900 border border-ink-700 rounded px-2 outline-none focus:border-amber/50"
+                />
+              ) : (
+                col.name === tab.displayCol && parentCol ? (
+                  <div className="flex items-start gap-1" style={{ paddingLeft: depth * 14 }}>
+                    {hasChildren ? (
+                      <Button variant="icon-amber" type="button" onClick={() => toggleCollapse(row.id)} className="mt-1 shrink-0" title={collapsed.has(row.id) ? '展开子条目' : '折叠子条目'}>
+                        {collapsed.has(row.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                      </Button>
+                    ) : (
+                      <span className="mt-1 w-[11px] shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <CellTextarea
+                        value={val}
+                        onChange={v => setCellDraft(row.id, col.name, v)}
+                        invalid={col.name === codeCol && isInvalidCode(row)}
+                        title={col.name === codeCol && isInvalidCode(row) ? '编号重复或已被删除条目占用（编号不复用），保存前请修改' : undefined}
+                      />
+                      {/* 编号联动：F01 → 伏笔追踪，H01 → 历史事件 */}
+                      {tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/) && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {val.match(/[FH]\d+/g)!.map(code => (
+                            <Button variant="bare"
+                              key={code}
+                              onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
+                              className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                              title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
+                            >
+                              <Link2 size={9} />{code}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                <>
+                  <CellTextarea
+                    value={val}
+                    onChange={v => setCellDraft(row.id, col.name, v)}
+                    invalid={col.name === codeCol && isInvalidCode(row)}
+                    title={col.name === codeCol && isInvalidCode(row) ? '编号重复或已被删除条目占用（编号不复用），保存前请修改' : undefined}
+                  />
+                  {/* 编号联动：F01 → 伏笔追踪，H01 → 历史事件 */}
+                  {tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/) && (
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      {val.match(/[FH]\d+/g)!.map(code => (
+                        <Button variant="bare"
+                          key={code}
+                          onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
+                          className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                          title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
+                        >
+                          <Link2 size={9} />{code}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </>
+                )
+              )}
+            </td>
+          )
+        })}
+      </tr>
+    )
+}

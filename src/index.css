@@ -1,0 +1,333 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   主题变量
+   每个主题为 ink 调色板（950 最深 → 50 最浅）与强调色 amber 提供 RGB 三元组。
+   切换 <html data-theme> 即可整体换肤，组件无需改动（颜色全部走 Tailwind 的 ink/amber）。
+   ============================================================ */
+:root,
+[data-theme='dark'] {
+  --ink-950: 12 12 15;
+  --ink-900: 18 18 24;
+  --ink-850: 23 23 34;
+  --ink-800: 29 29 41;
+  --ink-700: 40 40 56;
+  --ink-600: 52 52 74;
+  --ink-500: 74 74 102;
+  --ink-400: 102 102 138;
+  --ink-300: 142 142 181;
+  --ink-200: 181 181 212;
+  --ink-100: 216 216 234;
+  --ink-50: 238 238 248;
+  --amber: 217 160 74;
+  --amber-soft: 232 184 109;
+
+  /* ---- 图谱/画布专用界面色（2026-09-14）----
+     这几处此前在图组件里写死十六进制，暗色下没问题，但**浅色主题下标签与网格会看不见**
+     （浅色的 #d6c7a1 / #e7e5e4 落在浅底上对比度几乎为零）。
+     现抽出变量：暗色系沿用原来的暖褐色值（观感零变化），浅色主题在下方统一改为该主题
+     自身的墨色/琥珀（见文末「浅色主题·图谱界面色覆盖」）。
+     ⚠️ 注意：SVG 的表现属性（fill=/stroke=）**不解析 var()**，使用这些变量的地方
+     必须写成 style={{ fill: 'rgb(var(--graph-node))' }}，否则会静默无效。 */
+  --graph-grid: 87 83 78;          /* 网格点（原 #57534e） */
+  --graph-node: 28 25 22;          /* 节点/地块填充（原 #1c1916） */
+  --graph-node-text: 231 229 228;  /* 节点名文字（原 #e7e5e4） */
+  --graph-label: 214 199 161;      /* 常态描边与标签（原 #d6c7a1） */
+  --graph-edge-label: 168 155 140; /* 连线类型标签（原 #a89b8c） */
+  --graph-halo: 21 18 14;          /* 文字描边光晕 paintOrder（原 #15120e） */
+  --graph-accent: 251 191 36;      /* 悬停/高亮（原 #fbbf24） */
+  --graph-accent-strong: 245 158 11; /* 选中（原 #f59e0b） */
+  --graph-accent-text: 244 194 102;  /* 高亮文字（原 #f4c266） */
+  color-scheme: dark;
+}
+
+/* 护眼：浅绿柔光，低对比、不刺眼 */
+[data-theme='eye-care'] {
+  --ink-950: 230 240 224;
+  --ink-900: 241 246 236;
+  --ink-850: 233 241 226;
+  --ink-800: 238 244 233;
+  --ink-700: 205 217 196;
+  --ink-600: 188 203 177;
+  --ink-500: 155 181 140;
+  --ink-400: 111 138 95;
+  --ink-300: 86 112 73;
+  --ink-200: 60 82 48;
+  --ink-100: 43 58 34;
+  --ink-50: 28 39 22;
+  --amber: 79 138 91;
+  --amber-soft: 120 170 110;
+  color-scheme: light;
+}
+
+/* 午夜蓝：冷色调深色，与默认暖暗形成区分 */
+[data-theme='midnight'] {
+  --ink-950: 10 14 26;
+  --ink-900: 15 22 38;
+  --ink-850: 20 29 48;
+  --ink-800: 26 39 64;
+  --ink-700: 36 51 82;
+  --ink-600: 50 68 104;
+  --ink-500: 74 96 136;
+  --ink-400: 125 151 194;
+  --ink-300: 169 192 224;
+  --ink-200: 206 221 242;
+  --ink-100: 230 238 251;
+  --ink-50: 243 247 255;
+  --amber: 90 169 214;
+  --amber-soft: 140 200 235;
+  color-scheme: dark;
+}
+
+/* 羊皮卷：暖棕浅色，适合长时间阅读 */
+[data-theme='sepia'] {
+  --ink-950: 239 230 214;
+  --ink-900: 246 239 226;
+  --ink-850: 240 231 214;
+  --ink-800: 243 236 222;
+  --ink-700: 216 201 175;
+  --ink-600: 200 182 151;
+  --ink-500: 168 146 111;
+  --ink-400: 138 114 80;
+  --ink-300: 111 90 60;
+  --ink-200: 79 63 40;
+  --ink-100: 58 46 28;
+  --ink-50: 39 29 16;
+  --amber: 184 121 63;
+  --amber-soft: 205 156 104;
+  color-scheme: light;
+}
+
+/* 暮山紫：紫罗兰深色，古风奇幻，与午夜蓝（冷蓝）/暗夜（暖灰）拉开色相差 */
+[data-theme='dusk-violet'] {
+  --ink-950: 16 13 26;
+  --ink-900: 24 19 38;
+  --ink-850: 32 25 50;
+  --ink-800: 41 32 63;
+  --ink-700: 55 43 82;
+  --ink-600: 72 57 106;
+  --ink-500: 97 78 138;
+  --ink-400: 130 108 175;
+  --ink-300: 164 145 204;
+  --ink-200: 198 185 228;
+  --ink-100: 224 217 244;
+  --ink-50: 241 238 252;
+  --amber: 167 139 250;
+  --amber-soft: 196 175 255;
+  color-scheme: dark;
+}
+
+/* 青花：青白瓷浅色，冷调洁净，适合长时间校对与表格作业 */
+[data-theme='porcelain'] {
+  --ink-950: 228 236 244;
+  --ink-900: 242 247 252;
+  --ink-850: 234 241 248;
+  --ink-800: 238 244 250;
+  --ink-700: 199 213 228;
+  --ink-600: 176 194 214;
+  --ink-500: 140 164 190;
+  --ink-400: 100 126 155;
+  --ink-300: 74 99 128;
+  --ink-200: 52 74 99;
+  --ink-100: 34 52 74;
+  --ink-50: 20 33 50;
+  --amber: 45 100 165;
+  --amber-soft: 80 135 195;
+  color-scheme: light;
+}
+
+/* 松烟墨：墨绿松烟深色，冷绿护眼，与午夜蓝同属冷色但色相明显区分 */
+[data-theme='pine-ink'] {
+  --ink-950: 10 18 18;
+  --ink-900: 15 26 26;
+  --ink-850: 20 34 34;
+  --ink-800: 26 44 43;
+  --ink-700: 34 58 57;
+  --ink-600: 45 76 74;
+  --ink-500: 64 102 99;
+  --ink-400: 92 134 130;
+  --ink-300: 128 170 165;
+  --ink-200: 172 205 200;
+  --ink-100: 210 232 228;
+  --ink-50: 235 246 244;
+  --amber: 94 214 190;
+  --amber-soft: 134 230 212;
+  color-scheme: dark;
+}
+
+/* 桃笺：桃花笺暖粉浅色，柔和暖调，与护眼（绿）/羊皮卷（棕）形成第三种暖色 */
+[data-theme='peach-note'] {
+  --ink-950: 250 238 238;
+  --ink-900: 253 245 245;
+  --ink-850: 250 240 241;
+  --ink-800: 252 246 245;
+  --ink-700: 235 210 212;
+  --ink-600: 222 189 192;
+  --ink-500: 199 156 161;
+  --ink-400: 166 116 123;
+  --ink-300: 140 88 96;
+  --ink-200: 110 66 74;
+  --ink-100: 84 47 55;
+  --ink-50: 60 32 39;
+  --amber: 178 63 93;
+  --amber-soft: 205 100 127;
+  color-scheme: light;
+}
+
+/* ---- 浅色主题 · 图谱界面色覆盖 ----
+   暗色系沿用 :root 里的暖褐色（观感零变化）；这四个浅色主题下，暖褐在浅底上对比度不足，
+   故改为**引用该主题自身的墨色刻度**——ink 刻度在浅色主题里是反的（950 最浅、50 最深），
+   因此 node→ink-800、文字→ink-50 会自动翻成「浅底 + 深字」，无需逐主题手填数值，
+   也天然跟随各主题的色相（护眼偏绿、青花偏蓝、桃笺偏粉）。
+   ⚠️ 前提：组件侧必须用 style={{ fill: 'rgb(var(--graph-*))' }}，表现属性里 var() 不生效。 */
+[data-theme='eye-care'],
+[data-theme='sepia'],
+[data-theme='porcelain'],
+[data-theme='peach-note'] {
+  --graph-grid: var(--ink-600);
+  --graph-node: var(--ink-800);
+  --graph-node-text: var(--ink-50);
+  --graph-label: var(--ink-200);
+  --graph-edge-label: var(--ink-300);
+  --graph-halo: var(--ink-900);      /* 光晕须与画布同色系，浅底上用浅色 */
+  --graph-accent: var(--amber);
+  --graph-accent-strong: var(--amber);
+  --graph-accent-text: var(--amber-soft);
+}
+
+/* ============================================================
+   界面缩放 × vh 单位的修正（2026-09-15）
+   ------------------------------------------------------------
+   `document.documentElement.style.zoom` 会放大所有内容，但**不会**缩放 vh / vw 单位 ——
+   100vh 永远等于视口高。于是 zoom=1.32 时，h-screen 主容器被渲染成 1.32 × 视口高，
+   比窗口高出 461px，再被 overflow-hidden 直接裁掉（实测：1.2→288px、1.4→576px、1.6→864px）。
+   下面把 vh 按缩放系数折回来：视觉高度 =（100vh / zoom）× zoom = 100vh，正好占满窗口。
+   --ui-zoom 由 lib/theme.ts 的 applyZoom() 写入，默认 1（未缩放时无影响）。
+   ⚠️ 本段必须留在 @tailwind utilities 之后，否则会被 Tailwind 的同名工具类盖回去。
+   ============================================================ */
+:root { --ui-zoom: 1; }
+.h-screen { height: calc(100vh / var(--ui-zoom, 1)); }
+.min-h-screen { min-height: calc(100vh / var(--ui-zoom, 1)); }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  @apply bg-ink-950 text-ink-100 font-sans antialiased;
+  font-size: 14px;
+}
+
+/* ---------- 全局选中 / 光标 ---------- */
+::selection {
+  background: rgb(var(--amber) / 0.30);
+}
+.novel-textarea {
+  caret-color: rgb(var(--amber));
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-ink-600 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-ink-500; }
+
+/* ---------- 通用输入 ---------- */
+input, textarea, select {
+  @apply bg-ink-800 border border-ink-600 rounded-md px-3 py-1.5 text-ink-100 outline-none
+         transition-colors duration-150 placeholder:text-ink-400;
+}
+input:focus, textarea:focus, select:focus {
+  @apply border-amber/60 ring-1 ring-amber/30;
+}
+textarea::placeholder {
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+}
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+/* ---------- 表单页字段说明气泡 ---------- */
+.field-desc {
+  @apply text-11 leading-relaxed text-ink-300;
+}
+.field-example {
+  @apply text-11 leading-relaxed text-amber/70 mt-0.5;
+}
+
+/* ---------- 编辑器打字机模式 ---------- */
+.novel-textarea {
+  @apply w-full bg-transparent border-0 outline-none resize-none font-serif;
+  font-size: 17px;
+  line-height: 2;
+  letter-spacing: 0.02em;
+  color: rgb(var(--ink-100));
+  /* 注意：本类不声明任何 overflow —— 滚动权只归编辑区 textarea 自身（overflow-y-auto），
+     高亮叠层/测量层必须保持 overflow:hidden（inline 压制），否则会冒出第二个不可操作的滚动条。 */
+}
+.novel-textarea:focus { border: 0; ring: 0; }
+
+/* ---------- 正文引用名高亮（v1.3） ---------- */
+/* 叠层透出文字，mark 仅加底色；文字色 inherit 自上层 ink-100，确保随主题变化 */
+.ref-mark {
+  background: rgb(var(--amber) / 0.28);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* ---------- AI 伴写 ghost 建议（2.2.0） ---------- */
+/* 透在光标处的「浅灰续写建议」。用「正文色 + 透明度」推导，而不是写死一个灰值：
+   暗主题正文色是浅紫白（--ink-100）→ 42% 得到一层淡灰；
+   亮主题正文色是深墨绿 → 42% 得到浅灰。
+   两个主题下都自然"像提示、不像正文"，且不抢视线。 */
+.ai-ghost {
+  color: rgb(var(--ink-100) / 0.42);
+}
+
+/* ---------- 动画 ---------- */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes jwj-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes jwj-bounce {
+  0% { transform: translateY(0); }
+  30% { transform: translateY(-10px); }
+  60% { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+.page-enter {
+  animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pulseSoft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pulse-soft { animation: pulseSoft 2s ease-in-out infinite; }
+
+/* ---------- 状态徽章 ---------- */
+.badge {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-10 font-medium;
+}
+.badge-green { @apply bg-emerald-500/15 text-emerald-400 border border-emerald-500/30; }
+.badge-amber { @apply bg-amber/15 text-amber border border-amber/30; }
+.badge-red { @apply bg-red-500/15 text-red-400 border border-red-500/30; }
+.badge-blue { @apply bg-sky-500/15 text-sky-400 border border-sky-500/30; }
+.badge-gray { @apply bg-ink-700 text-ink-300 border border-ink-500; }
+
+/* ---------- 卡片悬浮 ---------- */
+.card-hover {
+  @apply transition-all duration-200;
+}
+.card-hover:hover {
+  @apply border-amber/40 -translate-y-0.5;
+  box-shadow: 0 4px 24px rgba(217, 160, 74, 0.08);
+}
+

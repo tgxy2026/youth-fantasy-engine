@@ -1,0 +1,46 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-web/
+dist.oldbak*/
+# 构建时临时移开/另开的输出目录（safe-delete 环境下 emptyOutDir 需绕行）
+dist-web-*/
+dist-web.bak-*/
+dist_bak_*/
+web-build-*/
+*.tsbuildinfo
+
+# 封装输出
+release/
+# build/ 只放 electron-builder 图标源：忽略目录内容但图标本身必须入库（否则换机 clone 丢安装图标）
+build/*
+!build/icon.ico
+
+# 图标设计草稿（AI 生成候选图，定稿应用后清理）
+icon-drafts/
+
+# 测试打包产物（esbuild 转译后的运行包，非源码）
+tests/.roundtrip.mjs
+tests/.*.mjs
+
+# 系统杂项
+Thumbs.db
+Desktop.ini
+*.log
+
+# 内部工作目录（AI 协作记忆、临时产物）
+.workbuddy/
+
+# 环境变量与本地凭证 —— 防止误提交密钥
+.env
+.env.*
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+
+# 编辑器 / IDE
+.vscode/
+!.vscode/extensions.json
+.idea/

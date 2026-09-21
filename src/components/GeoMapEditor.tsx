@@ -1,0 +1,288 @@
+import type { PointerEvent as RPointerEvent } from 'react'
+import { Maximize2, ZoomIn, ZoomOut, MapPin, Pencil } from 'lucide-react'
+import type { TabDef } from '../lib/types'
+import HelpPopover from './HelpPopover'
+import { Button } from './Button'
+import { useGeoMapModel } from './useGeoMapModel'
+import { GeoMapList, DrawDialog, AddMarkerForm, DetailPanel } from './GeoMapParts'
+import { LAYER_COLORS, G, CELL_KM_STEPS } from './geoMapGeometry'
+
+export default function GeoMapEditor({ tab }: { tab: TabDef }) {
+  // 视图侧「同名解构」：JSX 一个字都没改 —— 拆分只把状态与交互挪进了 useGeoMapModel。
+  const {
+    curMapName, mapNote, rows, stepCellKm, wrapRef, svgRef,
+    load, categoryNames, markers, byId, depthMap, spaceColors,
+    spaceShapes, drawnIds, viewShapes, linked, fitView, enterPaint,
+    exitPaint, onPointerDown, onPointerMove, onPointerUp, createMarker, updateSelected,
+    clearCoords, deleteMarker, gotoTable, selMarker, selLinked, anyLayerOn,
+    allRows, maps, mapId, setMapId, loading, view,
+    hover, setHover, selected, addPos, setAddPos, layers,
+    setLayers, cellKm, painting, selRect, drawDialogOpen, setDrawDialogOpen,
+    vp,
+  } = useGeoMapModel()
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      {/* 顶部工具条（通栏） */}
+      <div className="px-4 py-2.5 border-b border-ink-700 flex items-center gap-3 flex-wrap shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <MapPin size={15} className="text-amber shrink-0" />
+          <span className="font-semibold text-ink-100">{tab.name}</span>
+          <span className="text-11 text-ink-500">{markers.length} 个范围 / {rows.length} 条地理条目 / 已绘制 {drawnIds.size}</span>
+          <HelpPopover
+            title="地图编辑"
+            width="20rem"
+            className="ml-1"
+          >
+            {'手绘格子地图 · 形状由你做主\n\n'
+              + '· 左侧「地图」列表管理多张地图：新建 / 重命名 / 删除，每张图是一块独立画布，互相不干扰。切换地图只会换画布，不会动任何地点数据。\n'
+              + '· 点「绘制地图」选择一个范围（建议从最大的范围开始）。左键单击涂/擦一格；按住拖动框选一片批量填涂，Shift+框选批量擦除；右键单击退出、右键拖动平移画布。\n'
+              + '· 右上角「精 / 粗」切换格子档位：每格边长 1 公里（精细）或 10 公里（粗略）。切档后同一区域会等比例缩放，比例尺真实；画大陆用粗档快速铺满，画城池切回精档。\n'
+              + '· 滚轮缩放画面、拖空白平移；拖动整块空间可挪位置（吸附整格）。\n'
+              + '· 唯一规则：子范围必须完全画在父范围之内（无飞地）；祖先链上的范围可以叠涂，别的范围不行。\n'
+              + '· 图层嵌套按「层级归属」自动分层，子空间格子叠涂在父空间之上。\n'
+              + '· 颜色由系统按层级自动调配：父子高对比、兄弟错开，一眼区分隶属关系。\n'
+              + '· 越界涂格会被拒绝；擦父格时若格子被子孙占用，会先提示你擦掉子孙。\n'
+              + '· 点空间查看详情、继续绘制、跳转到表格编辑，或查看其上挂载的伏笔 / 角色 / 时间线（按「地理位置」字段联动）。\n'
+              + '· 「删除地点」会连《地理风物》档案一起删；只想擦掉画好的格子，请用「清空绘制」。\n'
+              + '· 《地理风物》只提供名称 / 类别 / 层级归属；「范围与面积」「相对地理位置」是自由文本备注，类别可在下拉里自定义。\n'
+              + '· 左侧「地图」列表右端的地图信息按钮，可以改地图名称与说明 —— 说明会显示在右侧面板。'}
+          </HelpPopover>
+        </div>
+        <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+          {(['foreshadow', 'character', 'timeline'] as const).map(key => (
+            <Button variant="bare"
+              key={key}
+              onClick={() => setLayers(l => ({ ...l, [key]: !l[key] }))}
+              className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md border text-11 transition-colors ${layers[key] ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
+              title={key === 'foreshadow' ? '叠加伏笔关联' : key === 'character' ? '叠加角色关联' : '叠加时间脉络关联'}
+            >
+              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS[key] }} />
+              {key === 'foreshadow' ? '伏笔' : key === 'character' ? '角色' : '时间脉络'}
+            </Button>
+          ))}
+          {painting && (
+            <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-amber/50 bg-amber/10 text-11 text-amber">
+              <Pencil size={11} /> 正在绘制：{byId.get(painting)?.name}
+              <Button variant="bare" onClick={exitPaint} className="ml-0.5 text-ink-300 hover:text-ink-100" title="右键画布也可取消">完成</Button>
+            </span>
+          )}
+          <Button variant="bare" onClick={() => setDrawDialogOpen(true)} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors" title="选择一个地理范围，用格子画出它的形状">
+            <Pencil size={11} /> 绘制地图
+          </Button>
+          <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-400 select-none" title="当前格子档位：每个格子的边长所代表的真实公里数（1 = 精细 / 10 = 粗略）。用旁边的「精 / 粗」按钮切换。">
+            <span className="text-ink-500">每格</span>
+            <span className="text-amber font-medium">1:{cellKm}</span>
+            <span className="text-ink-500">公里</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <Button variant="bare" onClick={() => stepCellKm(-1)} disabled={cellKm === CELL_KM_STEPS[0]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="提高精度：每格边长 ÷10（1 公里格，画小范围用）"><ZoomIn size={11} />精</Button>
+            <Button variant="bare" onClick={() => stepCellKm(1)} disabled={cellKm === CELL_KM_STEPS[CELL_KM_STEPS.length - 1]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="降低精度：每格边长 ×10（10 公里格，画大范围快速铺格子）"><ZoomOut size={11} />粗</Button>
+            <Button variant="bare" onClick={fitView} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors" title="重置视图（内容居中）"><Maximize2 size={11} />重置</Button>
+          </span>
+        </div>
+      </div>
+
+      {/* 中段：地图列表 + 画布（两者严格等高） */}
+      <div className="flex-1 flex min-h-0">
+        <GeoMapList
+          maps={maps}
+          mapId={mapId}
+          onPick={setMapId}
+          rowCountOf={name => allRows.filter(r => (r.data['所属地图'] || '') === name).length}
+          onChanged={() => void load()}
+          disabled={loading}
+        />
+        <div ref={wrapRef} className="flex-1 min-w-0 relative overflow-hidden" style={{ background: 'rgb(var(--ink-900))' }}>
+          {/* 空态提示必须 pointer-events-none，否则会挡住「单击空白新增」 */}
+          {loading ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center text-ink-500 text-sm pointer-events-none">加载地理数据…</div>
+          ) : rows.length === 0 ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center text-ink-500 text-sm px-8 text-center pointer-events-none">
+              <span>还没有《地理风物》数据。可以直接<strong className="text-ink-300">单击这里的空白处</strong>就地新增地点，也可以先去「地理风物」登记，回来用「绘制地图」给它画形状。</span>
+            </div>
+          ) : null}
+          <svg
+            id="geo-map-canvas"
+            ref={svgRef}
+            viewBox={`0 0 ${vp.w} ${vp.h}`}
+            width={vp.w}
+            height={vp.h}
+            className="block"
+            style={{ touchAction: 'none', cursor: painting ? 'cell' : 'grab' }}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onContextMenu={e => e.preventDefault()}
+          >
+            <defs>
+              <pattern id="gm-dots" width="26" height="26" patternUnits="userSpaceOnUse">
+                {/* 主题化网格（表现属性不解析 var()，故走 style） */}
+                <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity={painting ? 0.32 : 0.22} />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#gm-dots)" pointerEvents="none" />
+            {/* 背景交互层：拖动平移；原地松手 = 空白新增（绘制模式下原地松手 = 涂格） */}
+            <rect width="100%" height="100%" fill="transparent" onPointerDown={e => onPointerDown(e as RPointerEvent<SVGElement>, 'pan')} />
+
+            <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
+              {/* 格子地图：按层级深度从浅到深分层渲染——父空间格子铺底，子空间作为「另一图层」叠涂其上。
+                  颜色由系统按层级自动调配（父子高对比）；渲染按当前档位聚合（满 n×n 块=大格，零散=1km 小格）。 */}
+              {[...markers]
+                .filter(m => drawnIds.has(m.id))
+                .sort((a, b) => (depthMap.get(a.id) ?? 0) - (depthMap.get(b.id) ?? 0))
+                .map(mk => {
+                  const vs = viewShapes.get(mk.id); if (!vs) return null
+                  const col = spaceColors.get(mk.id) || '#8fb4e8'
+                  const active = hover === mk.id || selected === mk.id
+                  const dim = hover && !active
+                  const depth = depthMap.get(mk.id) ?? 0
+                  const fillOp = depth === 0 ? 0.16 : depth === 1 ? 0.30 : 0.42
+                  const fs = Math.max(11, 16 - depth * 2)
+                  // 根范围标签放包围盒右上角外（右对齐），子/孙放各自包围盒左上角外（左对齐）——避免父子名字重叠
+                  const isTop = depth === 0
+                  const tx = isTop ? vs.bbox.x + vs.bbox.w + 4 : vs.bbox.x + 2
+                  const anchor = isTop ? 'end' : 'start'
+                  return (
+                    <g key={mk.id} data-space-id={mk.id} opacity={dim ? 0.4 : 1}
+                      onMouseEnter={() => setHover(mk.id)} onMouseLeave={() => setHover(null)}
+                      onPointerDown={e => onPointerDown(e, 'node', mk)}
+                      style={{ cursor: painting ? 'cell' : (selected === mk.id ? 'pointer' : 'grab') }}>
+                      {vs.full.map(([bx, by]) => (
+                        <rect key={`f${bx},${by}`} x={bx * G + 0.7} y={by * G + 0.7} width={G - 1.4} height={G - 1.4} rx={1.5}
+                          fill={col} fillOpacity={fillOp} stroke={col} strokeOpacity={active ? 0.95 : 0.45} strokeWidth={active ? 1.4 : 0.8} />
+                      ))}
+                      {vs.rest.map(([gx, gy]) => (
+                        <rect key={`r${gx},${gy}`} x={(gx / cellKm) * G + 0.3} y={(gy / cellKm) * G + 0.3} width={G / cellKm - 0.5} height={G / cellKm - 0.5} rx={G / cellKm / 5}
+                          fill={col} fillOpacity={fillOp} stroke={col} strokeOpacity={active ? 0.9 : 0.4} strokeWidth={active ? 1 : 0.5} />
+                      ))}
+                      <text x={tx} y={vs.bbox.y - 5} textAnchor={anchor} fontSize={fs} fontWeight={600} fill={col} pointerEvents="none"
+                        style={{ paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}</text>
+                      <text x={tx} y={vs.bbox.y - 5 + fs + 1} textAnchor={anchor} fontSize={fs - 3} fill={col} fillOpacity={0.9} pointerEvents="none"
+                        style={{ paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>{mk.category} · {vs.count} 格</text>
+                      {active && !painting && (
+                        <text x={tx} y={vs.bbox.y - 5 + fs * 2 + 3} textAnchor={anchor} fontSize={fs - 3.5} pointerEvents="none"
+                          style={{ fill: 'rgb(var(--graph-accent-text))', paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>详情面板可绘制 · 拖动整体平移</text>
+                      )}
+                    </g>
+                  )
+                })}
+
+              {/* 绘制模式框选预览（档位块矩形） */}
+              {painting && selRect && (() => {
+                const x0 = Math.min(selRect.x0, selRect.x1) * G
+                const y0 = Math.min(selRect.y0, selRect.y1) * G
+                const w = (Math.abs(selRect.x1 - selRect.x0) + 1) * G
+                const h = (Math.abs(selRect.y1 - selRect.y0) + 1) * G
+                return (
+                  <rect x={x0} y={y0} width={w} height={h} rx={2}
+                    style={{ fill: 'rgb(var(--graph-accent-text))', stroke: 'rgb(var(--graph-accent-text))' }} fillOpacity={0.18} strokeWidth={1.5} strokeDasharray="6 4" pointerEvents="none" />
+                )
+              })()}
+
+              {/* 关联高亮框（贴合格子风格，挂在格子包围盒外圈） */}
+              {markers.map(mk => {
+                if (!drawnIds.has(mk.id)) return null
+                const lk = linked.get(mk.id)
+                if (!lk) return null
+                const vs = viewShapes.get(mk.id)
+                if (!vs) return null
+                const cx = vs.bbox.x + vs.bbox.w / 2, cy = vs.bbox.y + vs.bbox.h / 2
+                const rr = Math.max(vs.bbox.w, vs.bbox.h) / 2
+                const rings: string[] = []
+                if (layers.foreshadow && lk.foreshadow.length) rings.push(LAYER_COLORS.foreshadow)
+                if (layers.character && lk.character.length) rings.push(LAYER_COLORS.character)
+                if (layers.timeline && lk.timeline.length) rings.push(LAYER_COLORS.timeline)
+                if (rings.length === 0) return null
+                return (
+                  <g key={`ring-${mk.id}`} pointerEvents="none">
+                    {rings.map((col, ri) => {
+                      const pad = 6 + ri * 4
+                      return (
+                        <rect key={ri} x={cx - rr - pad} y={cy - rr - pad} width={(rr + pad) * 2} height={(rr + pad) * 2} rx={4}
+                          fill="none" stroke={col} strokeWidth={2} strokeOpacity={0.85} />
+                      )
+                    })}
+                  </g>
+                )
+              })}
+
+            </g>
+          </svg>
+        </div>
+
+        {/* 右侧详情 / 新增面板：高度与画布严格一致 */}
+        <div className="w-80 shrink-0 border-l border-ink-700 bg-ink-850/60 overflow-y-auto">
+          <div className="p-4">
+            {addPos ? (
+            <AddMarkerForm
+              categories={categoryNames}
+                parentOptions={markers.map(m => m.name)}
+                onCancel={() => setAddPos(null)}
+                onCreate={createMarker}
+              />
+            ) : selMarker ? (
+              <DetailPanel
+                marker={selMarker}
+                linked={selLinked}
+                cells={spaceShapes.get(selMarker.id)?.cells.size ?? 0}
+                categories={categoryNames}
+                painting={painting === selMarker.id}
+                parentOptions={markers.filter(m => m.id !== selMarker.id).map(m => m.name)}
+                onPatch={updateSelected}
+                onClearPainted={clearCoords}
+                onPaint={() => enterPaint(selMarker.id)}
+                onDelete={deleteMarker}
+                onGotoTable={gotoTable}
+              />
+            ) : (
+              <div className="text-12 text-ink-400 space-y-3">
+                <div className="flex items-center gap-2 text-ink-200">
+                  <MapPin size={14} className="text-amber shrink-0" />
+                  <span className="truncate">{curMapName || '地图'} · 说明</span>
+                </div>
+                {mapNote ? (
+                  <p className="whitespace-pre-wrap text-ink-300 leading-relaxed">{mapNote}</p>
+                ) : (
+                  <p className="text-ink-500 leading-relaxed">
+                    这张地图还没写说明。点左侧列表里该地图右端的<strong className="text-ink-300">地图信息</strong>按钮，
+                    可以补一段 —— 比如它画的是哪片区域、有哪些约定、画到哪一步了。
+                  </p>
+                )}
+                <p className="text-ink-500 leading-relaxed pt-2 border-t border-ink-700/70">
+                  操作指引见右上角问号；点画布上的范围查看详情、继续绘制或跳转表格，点空白处可就地新增地点。
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 底部状态条：叠加图层 + 操作提示（颜色由系统按层级自动调配，不再按类别展示色卡） */}
+      <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap text-10 text-ink-400 shrink-0">
+        <span className="flex items-center gap-1.5">
+          <span className="w-3 h-[3px] rounded-full inline-block" style={{ background: '#8fb4e8' }} />
+          颜色按层级自动调配（父子高对比 · 兄弟错开）
+        </span>
+        <span className="ml-auto flex items-center gap-3">
+          {anyLayerOn && (
+            <>叠加：
+              {layers.foreshadow && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.foreshadow }} />伏笔</span>}
+              {layers.character && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.character }} />角色</span>}
+              {layers.timeline && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.timeline }} />时间脉络</span>}
+            </>
+          )}
+          <span className="text-ink-500">{painting ? '绘制中：左键涂/擦 · 拖动框选批量填涂（Shift=批量擦） · 右键退出/平移' : '单击空白新增 · 拖空白平移 · 滚轮缩放画面'}</span>
+        </span>
+      </div>
+
+      {drawDialogOpen && (
+        <DrawDialog
+          rows={rows}
+          drawnCells={new Map(markers.filter(m => (spaceShapes.get(m.id)?.cells.size ?? 0) > 0).map(m => [m.id, spaceShapes.get(m.id)!.cells.size]))}
+          onPick={enterPaint}
+          onClose={() => setDrawDialogOpen(false)}
+        />
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,378 @@
+// ============ 酒馆模式 · 控制面板设置（默认值 / 合并 / 派生量）============
+//
+// 这一层最重要的性质是「**默认值必须等于原来的硬编码值**」——
+// 否则加了这个面板就等于升个版本悄悄改了所有人的风格。
+// 所以第 1 组断言逐条比对这些数字，改动其中之一必须是有意识的。
+import * as db from '../src/lib/db'
+import { __resetMockStores } from './mock-memory'
+import {
+  DEFAULT_TAVERN_SETTINGS, K_TAVERN_SETTINGS, DEFAULT_COMMON_EXTRA,
+  getTavernSettings, saveTavernSettings, resetTavernSettings,
+  commonParamsLayer, modeParamsLayer, memoryLimitsOf, timeoutMsOf,
+  DEFAULT_PROTOCOL, thinkOptOf, summaryLockTtlOf,
+} from '../src/lib/tavern/settings'
+import { FIXED_OVERHEAD_CHARS, historyBudget } from '../src/lib/tavern/budget'
+import { PROTOCOL_CORE, PROTOCOL_VERSION, LEGACY_PROTOCOLS } from '../src/lib/tavern/protocol'
+import { DEFAULT_POST_RULES, LEGACY_DEFAULT_POST_RULES, LEGACY_POST_RULES_VERSIONS } from '../src/lib/tavern/postRules'
+import { resolveParams } from '../src/lib/tavern/params'
+import {
+  TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
+  MEMORY_DIARY_DAYS, SUMMARY_LOCK_TTL_MS,
+  DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
+} from '../src/lib/tavern/types'
+import { TONE_HINT, buildSystemPrompt } from '../src/lib/tavern/prompt'
+
+let pass = 0, fail = 0
+function ok(name: string, cond: boolean, extra = '') {
+  if (cond) { pass++; console.log(`PASS ${name}`) }
+  else { fail++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`) }
+}
+
+async function main() {
+  // ---------- 1) 出厂默认 = 原硬编码值（改这里必须是有意识的） ----------
+  {
+    const d = DEFAULT_TAVERN_SETTINGS
+    ok('通用：上下文预算沿用 TAVERN_DEFAULTS', d.common.contextBudget === TAVERN_DEFAULTS.free.contextBudget, String(d.common.contextBudget))
+    ok('通用：num_ctx 沿用 TAVERN_DEFAULTS', d.common.numCtx === TAVERN_DEFAULTS.free.numCtx, String(d.common.numCtx))
+    ok('通用：超时 300 秒（2026-09-15 由 180 放宽，本地模型给足时间）', d.common.timeoutSec === 300, String(d.common.timeoutSec))
+    ok('通用：默认模型留空 = 跟随全局活动模型', d.common.defaultProviderId === '')
+    ok('通用：默认含「标点适用范围」那条', d.common.extraPrompt === DEFAULT_COMMON_EXTRA && d.common.extraPrompt.includes('标点照常用'))
+
+    ok('剧情：温度 0.9 / presence 0.5（叙事要稳）',
+      d.plot.temperature === 0.9 && d.plot.presencePenalty === 0.5,
+      `${d.plot.temperature}/${d.plot.presencePenalty}`)
+    ok('剧情：叙事向风格默认留空（不追加就是协议默认）', d.plot.styleHint === '')
+    ok('自由：温度 0.95 / presence 0.55（陪伴要松）',
+      d.free.temperature === 0.95 && d.free.presencePenalty === 0.55,
+      `${d.free.temperature}/${d.free.presencePenalty}`)
+    ok('自由：聊天向风格取 prompt 里的内置默认（单一真源）', d.free.styleHint === TONE_HINT.chat && d.free.styleHint.includes('〖本场风格〗'))
+
+    // 🚫 2026-09-16：「触发条数」与「自动整理间隔」两项已删（项目不再有自动整理），
+    //    这里只盯还活着的那几项。
+    ok('记忆：软 / 硬 / 长期摘要上限沿用常量',
+      d.free.softLimit === MEMORY_SOFT_LIMIT && d.free.hardLimit === MEMORY_HARD_LIMIT && d.free.longTermLimit === MEMORY_LONGTERM_LIMIT,
+      `${d.free.softLimit}/${d.free.hardLimit}/${d.free.longTermLimit}`)
+    ok('记忆：日记保留天数沿用常量', d.free.diaryDays === MEMORY_DIARY_DAYS, String(d.free.diaryDays))
+    ok('日常：推进间隔 = 原 8 小时', d.free.dailyAdvanceHours === DAILY_ADVANCE_MS / 3600000, String(d.free.dailyAdvanceHours))
+  }
+
+  // ---------- 2) 读写往返 ----------
+  {
+    __resetMockStores()
+    const fresh = await getTavernSettings()
+    ok('没存过时读到出厂默认', fresh.common.timeoutSec === 300)
+
+    const custom = {
+      ...fresh,
+      common: { ...fresh.common, timeoutSec: 60, defaultProviderId: 'p1' },
+      free: { ...fresh.free, temperature: 0.5, sceneDescription: 'light' as const },
+    }
+    await saveTavernSettings(custom)
+    const back = await getTavernSettings()
+    ok('改完能读回', back.common.timeoutSec === 60 && back.free.temperature === 0.5 && back.common.defaultProviderId === 'p1')
+    ok('档位也能存能读（客观描写 = 轻）', back.free.sceneDescription === 'light', back.free.sceneDescription)
+
+    await resetTavernSettings()
+    ok('恢复默认后回到出厂值', (await getTavernSettings()).common.timeoutSec === 300)
+  }
+
+  // ---------- 3) 部分存储 → 与默认深合并（旧数据不会读出 undefined） ----------
+  {
+    __resetMockStores()
+    // 只写了 free.temperature，其余字段一概没有 —— 模拟将来新增字段后的旧数据
+    await db.setMeta(K_TAVERN_SETTINGS, { free: { temperature: 0.3 } } as never)
+    const st = await getTavernSettings()
+    ok('写过的字段生效', st.free.temperature === 0.3, String(st.free.temperature))
+    ok('没写的字段回落到默认（不会一路 undefined）',
+      st.free.topP === DEFAULT_TAVERN_SETTINGS.free.topP &&
+      st.common.timeoutSec === DEFAULT_TAVERN_SETTINGS.common.timeoutSec &&
+      st.plot.temperature === DEFAULT_TAVERN_SETTINGS.plot.temperature,
+      JSON.stringify(st.common))
+    ok('整个缺失的分组也补全', st.common.extraPrompt === DEFAULT_COMMON_EXTRA)
+
+    // ---------- 出厂参数放宽的老库升级（2026-09-15） ----------
+    // 只把「还等于旧出厂值」的字段升上来；作者手动调过的一个都不许动。
+    {
+      __resetMockStores()
+      await db.setMeta(K_TAVERN_SETTINGS, {
+        common: { contextBudget: 16000, timeoutSec: 180, defaultProviderId: 'p1' },
+        plot: { temperature: 0.85, topK: 40 },
+        free: { temperature: 0.9, softLimit: 1200, hardLimit: 2000, diaryDays: 5 },
+      } as never)
+      const st = await getTavernSettings()
+      ok('升：上下文预算 16000 → 24000', st.common.contextBudget === 24000, String(st.common.contextBudget))
+      ok('升：超时 180 → 300 秒', st.common.timeoutSec === 300, String(st.common.timeoutSec))
+      ok('升：剧情温度 0.85 → 0.9、候选词上限 40 → 60',
+        st.plot.temperature === 0.9 && st.plot.topK === 60, `${st.plot.temperature}/${st.plot.topK}`)
+      ok('升：自由温度 0.9 → 0.95、软上限 1200 → 2000、硬上限 2000 → 3000、日记 5 → 7 天',
+        st.free.temperature === 0.95 && st.free.softLimit === 2000 && st.free.hardLimit === 3000 && st.free.diaryDays === 7,
+        `${st.free.temperature}/${st.free.softLimit}/${st.free.hardLimit}/${st.free.diaryDays}`)
+      ok('不相关的字段原样保留（defaultProviderId 不被碰）', st.common.defaultProviderId === 'p1', st.common.defaultProviderId)
+
+      // 手动调过的值**不等于旧出厂值**，一律不升
+      __resetMockStores()
+      await db.setMeta(K_TAVERN_SETTINGS, {
+        common: { contextBudget: 12000 },
+        plot: { temperature: 0.6 },
+        free: { softLimit: 900 },
+      } as never)
+      const st2 = await getTavernSettings()
+      ok('手改过的数值不被升级覆盖',
+        st2.common.contextBudget === 12000 && st2.plot.temperature === 0.6 && st2.free.softLimit === 900,
+        `${st2.common.contextBudget}/${st2.plot.temperature}/${st2.free.softLimit}`)
+    }
+
+    // 协议升级：存的就是**旧版内置协议**（v1.1）时静默换新；作者自己改过的一律不动
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[0] } as never)
+    ok('存着 v1.1 全文 → 自动升级到当前版', (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[1] } as never)
+    ok('存着 v1.2 全文 → 同样升级（每一版历史协议都进了锚点数组）',
+      LEGACY_PROTOCOLS.length >= 2 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[2] } as never)
+    ok('存着 v1.3 全文 → 同样升级（v1.3 已进锚点，老用户不会卡在旧协议上）',
+      LEGACY_PROTOCOLS.length >= 3 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[3] } as never)
+    ok('存着 v1.4 全文 → 同样升级到当前版',
+      LEGACY_PROTOCOLS.length >= 4 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[4] } as never)
+    ok('存着 v1.5 全文 → 同样升级到当前版',
+      LEGACY_PROTOCOLS.length >= 5 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[5] } as never)
+    ok('存着 v1.6 全文 → 同样升级到当前版',
+      LEGACY_PROTOCOLS.length >= 6 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[6] } as never)
+    ok('存着 v1.7 全文 → 同样升级到当前版',
+      LEGACY_PROTOCOLS.length >= 7 && (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    // 🔴 2026-09-16（反馈 #7：描写改第三人称，协议 v1.8 → v1.9）：
+    //    老用户库里存着的那份 v1.8 必须能被换掉 —— 否则「协议改了，作者手上还是旧的」，
+    //    这次改动对已打开过控制面板的库等于没做。
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: LEGACY_PROTOCOLS[7] } as never)
+    ok('🔴 存着 v1.8 全文 → 升级到 v1.9（改协议必须把上一版补进锚点）',
+      LEGACY_PROTOCOLS.length >= 8 && LEGACY_PROTOCOLS[7].includes('· v1.8 ') &&
+      (await getTavernSettings()).protocol === PROTOCOL_CORE)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { protocol: '我自己改过的协议正文' } as never)
+    ok('自定义协议不被覆盖（全等比对，判据保守）',
+      (await getTavernSettings()).protocol === '我自己改过的协议正文')
+    ok('旧数据里没有 sceneDescription 时回落到「标准」档（不会 undefined）',
+      st.free.sceneDescription === 'standard', String(st.free.sceneDescription))
+    ok('旧数据里没有 profile 时回落到空档案（不是 undefined）',
+      st.profile.name === '' && st.profile.address === '' && st.profile.persona === '')
+  }
+
+  // ---------- 3b) 输出后处理规则的升级 ----------
+  // 🔴 这条链此前没有测试守着，而它失配时**不报错** —— 只会静默少升级一批老库。
+  {
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { postRules: LEGACY_DEFAULT_POST_RULES } as never)
+    const up1 = (await getTavernSettings()).postRules
+    const curStar = DEFAULT_POST_RULES.find(r => r.id === 'pr-star-action')?.pattern
+    ok('存着旧出厂后处理规则 → 换成当前出厂（pr-star-action 的正则已更新为两支写法）',
+      up1.length === DEFAULT_POST_RULES.length
+      && up1.find(r => r.id === 'pr-star-action')?.pattern === curStar,
+      up1.find(r => r.id === 'pr-star-action')?.pattern ?? '(无)')
+
+    __resetMockStores()
+    const custom = DEFAULT_POST_RULES.map(r => (r.id === 'pr-star-action' ? { ...r, enabled: false } : r))
+    await db.setMeta(K_TAVERN_SETTINGS, { postRules: custom } as never)
+    ok('作者改过任何一条 → 一个字都不动（判据保守）',
+      (await getTavernSettings()).postRules.find(r => r.id === 'pr-star-action')?.enabled === false)
+
+    // 🔴 回归：中间版本的出厂值也必须能升级。
+    //    2.1.1 发版的四条（v2）曾发出去过、作者存过设置；锚点若只记最早那版（v1），这批人永远升不上来。
+    const v2 = LEGACY_POST_RULES_VERSIONS[1]
+    ok('历史版本表至少含 v1 与 v2（每改一次出厂规则都要追加一版）', LEGACY_POST_RULES_VERSIONS.length >= 2)
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { postRules: v2 } as never)
+    const up2 = (await getTavernSettings()).postRules
+    ok('存着 2.1.1 发版的四条 → 也能升到当前出厂（拿到「去空行 / 括号后换行」）',
+      up2.length === DEFAULT_POST_RULES.length
+      && up2.some(r => r.id === 'pr-no-blank-lines')
+      && up2.some(r => r.id === 'pr-break-after-paren'),
+      String(up2.length))
+  }
+
+  // ---------- 3b) 废弃字段清理：free.defaultUserCharId ----------
+  // 老库里有这个键（2.1.0 的「默认『我演』的角色」），现在改用全局档案。
+  // 必须**主动删**：mergeDeep 会把「默认值里已经没有的键」照抄进来，不删它会一直躺在库里被写回。
+  {
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { free: { temperature: 0.4, defaultUserCharId: 'some-card-id' } } as never)
+    const st = await getTavernSettings()
+    ok('老库里的 free.defaultUserCharId 被主动删除',
+      !('defaultUserCharId' in (st.free as unknown as Record<string, unknown>)),
+      JSON.stringify(Object.keys(st.free)))
+    ok('同一个 free 分组里其余字段照旧生效', st.free.temperature === 0.4, String(st.free.temperature))
+    ok('档案字段一定存在（老数据也补得上，不会 undefined）',
+      typeof st.profile === 'object' && st.profile !== null && typeof st.profile.name === 'string')
+  }
+
+  // ---------- 3b-2) 废弃字段清理：自动整理那两个旋钮（2026-09-16） ----------
+  // 🔴 项目不再有任何自动整理（两种模式都改为作者手动触发），于是
+  //    `triggerMessages`（触发条数）与 `summaryMinIntervalMin`（最小间隔）成了死键 ——
+  //    拧了没有任何效果。不主动删的话，mergeDeep 会让它们永远躺在库里被反复写回，
+  //    将来有人搜到还会以为它们有用（这类「死配置」本项目已经清过好几个）。
+  {
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, {
+      free: { temperature: 0.5, triggerMessages: 12, summaryMinIntervalMin: 30 },
+    } as never)
+    const st = await getTavernSettings()
+    const keys = Object.keys(st.free as unknown as Record<string, unknown>)
+    ok('老库里的 free.triggerMessages 被主动删除', !keys.includes('triggerMessages'), JSON.stringify(keys))
+    ok('老库里的 free.summaryMinIntervalMin 被主动删除', !keys.includes('summaryMinIntervalMin'), JSON.stringify(keys))
+    ok('同一分组的其余字段照旧生效（只删废弃键）', st.free.temperature === 0.5, String(st.free.temperature))
+    ok('记忆上限那几项仍在（别误删还活着的）',
+      typeof st.free.softLimit === 'number' && typeof st.free.hardLimit === 'number' && typeof st.free.diaryDays === 'number')
+    ok('整理锁仍在（跨实例锁是自动整理废除后唯一保留的防重层）', typeof st.free.summaryLockTtlMin === 'number')
+  }
+
+  // ---------- 3c) 「我的档案」能存能读回 ----------
+  {
+    __resetMockStores()
+    const fresh = await getTavernSettings()
+    await saveTavernSettings({ ...fresh, profile: { name: '老巴迪', address: '巴迪哥', persona: '三十出头的编剧', avatar: '' } })
+    const back = await getTavernSettings()
+    ok('档案三栏都能存能读',
+      back.profile.name === '老巴迪' && back.profile.address === '巴迪哥' && back.profile.persona === '三十出头的编剧')
+    // 只存了 name 的老/半份数据：其余栏位必须回落空串，不能变成 undefined
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { profile: { name: '只有名字' } } as never)
+    const half = await getTavernSettings()
+    ok('半份档案：缺的栏位回落空串（不是 undefined）',
+      half.profile.name === '只有名字' && half.profile.address === '' && half.profile.persona === '')
+  }
+
+  // ---------- 4) 派生量 ----------
+  {
+    __resetMockStores()
+    const st = DEFAULT_TAVERN_SETTINGS
+
+    const lim = memoryLimitsOf(st)
+    ok('memoryLimitsOf：小时 → 毫秒', lim.dailyAdvanceMs === DAILY_ADVANCE_MS, String(lim.dailyAdvanceMs))
+    ok('memoryLimitsOf：上限原样带出',
+      lim.softLimit === MEMORY_SOFT_LIMIT && lim.hardLimit === MEMORY_HARD_LIMIT,
+      `${lim.softLimit}/${lim.hardLimit}`)
+
+    ok('timeoutMsOf：秒 → 毫秒', timeoutMsOf(st) === 300 * 1000, String(timeoutMsOf(st)))
+    ok('timeoutMsOf 有下限保护（填 0 也不会变成 0 超时）', timeoutMsOf({ ...st, common: { ...st.common, timeoutSec: 0 } }) === 5000)
+
+    const base = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st))
+    ok('参数继承：控制面板层能落到结果上', base.temperature === 0.95 && base.contextBudget === 24000 && base.numCtx === 32768,
+      `${base.temperature}/${base.contextBudget}/${base.numCtx}`)
+
+    const over = resolveParams('free', commonParamsLayer(st.common), modeParamsLayer('free', st), { temperature: 0.11 })
+    ok('参数继承：会话层优先级高于控制面板层', over.temperature === 0.11, String(over.temperature))
+
+    const plotBase = resolveParams('plot', commonParamsLayer(st.common), modeParamsLayer('plot', st))
+    ok('两种模式的模式层互不串台（剧情仍是 0.9）', plotBase.temperature === 0.9, String(plotBase.temperature))
+  }
+
+  // ---------- 5) 本轮新增的项：逐条等于原硬编码值 ----------
+  {
+    const d = DEFAULT_TAVERN_SETTINGS
+    // 🔴 C 档回归锁：旧算法把「已在 system 里的协议与记忆」又预留了 2600，
+    //    实测 8000 − 2600 − 8237 − 0 → 历史额度 0（21 条消息只剩开场一条）。
+    //    这条断言防止有人把余量调回「给协议留位」的大值。
+    ok('🔴 默认预算下历史额度必须为正（system 8237 是实测值）',
+      historyBudget(d.common.contextBudget, 'a'.repeat(8237), '', d.common.fixedOverheadChars) > 0,
+      `预算=${d.common.contextBudget} 余量=${d.common.fixedOverheadChars} 额度=${historyBudget(d.common.contextBudget, 'a'.repeat(8237), '', d.common.fixedOverheadChars)}`)
+    ok('通用：固定开销预留 = budget.ts 的常量',
+      d.common.fixedOverheadChars === FIXED_OVERHEAD_CHARS, String(d.common.fixedOverheadChars))
+    ok('通用：默认关闭思考链（engine 原本恒传 think:false）', d.common.disableThink === true)
+    ok('剧情：设定层占比 = 原写死的 0.6', d.plot.settingRatio === 0.6, String(d.plot.settingRatio))
+    ok('剧情：设定来源出厂为 both（= 加开关之前的行为，升级不改变现象）',
+      d.plot.contextSource === 'both', d.plot.contextSource)
+    ok('自由：整理模型默认为空（跟随默认模型）', d.free.summaryProviderId === '')
+    ok('档案：出厂为空（三栏都空 = 整段不注入）',
+      d.profile.name === '' && d.profile.address === '' && d.profile.persona === '')
+    ok('自由：已不再有「默认我演的角色」这个字段（改用全局档案）', !('defaultUserCharId' in d.free))
+    // 这一项是**本轮刻意新增**的行为（沉浸感），不是照抄旧硬编码值 —— 改动它必须有意识
+    ok('自由：客观描写默认「标准」档', d.free.sceneDescription === 'standard', d.free.sceneDescription)
+    ok('自由：整理锁有效期 = 原 1800 秒换算成 30 分钟',
+      d.free.summaryLockTtlMin === SUMMARY_LOCK_TTL_MS / 60000, String(d.free.summaryLockTtlMin))
+    ok('自由：日常生活记录条数 = 原 DAILY_LOG_KEEP',
+      d.free.dailyLogKeep === DAILY_LOG_KEEP, String(d.free.dailyLogKeep))
+    ok('协议：默认就是内置常量', d.protocol === PROTOCOL_CORE && d.protocol === DEFAULT_PROTOCOL)
+    // 不写死版本号（见 tavernPrompt 的同款说明）
+    ok('协议版本号与正文标题一致', PROTOCOL_CORE.includes(`协议 · ${PROTOCOL_VERSION}`))
+  }
+
+  // ---------- 6) 派生量：本轮新增两项 ----------
+  {
+    const lim = memoryLimitsOf(DEFAULT_TAVERN_SETTINGS)
+    ok('memoryLimitsOf：整理锁有效期（分钟 → 毫秒）', lim.lockTtlMs === SUMMARY_LOCK_TTL_MS, String(lim.lockTtlMs))
+    ok('memoryLimitsOf：日常记录条数', lim.dailyLogKeep === DAILY_LOG_KEEP, String(lim.dailyLogKeep))
+    ok('summaryLockTtlOf 与 memoryLimitsOf 口径一致',
+      summaryLockTtlOf(DEFAULT_TAVERN_SETTINGS) === lim.lockTtlMs)
+    ok('thinkOptOf：默认关闭 → 传 false', thinkOptOf(DEFAULT_TAVERN_SETTINGS) === false)
+    ok('thinkOptOf：开回来后 → undefined（不下发该字段，模型保持思考）',
+      thinkOptOf({ ...DEFAULT_TAVERN_SETTINGS, common: { ...DEFAULT_TAVERN_SETTINGS.common, disableThink: false } }) === undefined)
+  }
+
+  // ---------- 7) 协议可被设置覆盖（控制面板的编辑口子） ----------
+  {
+    ok('不传 protocol 时仍是内置常量（既有调用零变化）',
+      buildSystemPrompt({ tone: 'narrative' }) === PROTOCOL_CORE)
+    const custom = buildSystemPrompt({ tone: 'narrative', protocol: '【我的协议】只此一句' })
+    ok('传了 protocol 就整体替换', custom === '【我的协议】只此一句', custom.slice(0, 30))
+    ok('清空 protocol 时回退内置常量（不让 system 尾部空掉）',
+      buildSystemPrompt({ tone: 'narrative', protocol: '   ' }) === PROTOCOL_CORE)
+  }
+
+  // ---------- 8) 旧默认文本的升级 + 默认文本的排版纪律 ----------
+  {
+    // 排版纪律：**一段话就是一整行**。首版把一句话硬折成 4 行、行首还带缩进，
+    // 在输入框里就成了「上一行是逗号、下一行却换行，还带莫名空格」的乱排版。
+    const lines = DEFAULT_COMMON_EXTRA.split('\n').filter(l => l.trim() !== '')
+    ok('默认文本没有「逗号/顿号结尾就换行」的硬折行',
+      !lines.some(l => /[，、；：]$/.test(l.trim())), JSON.stringify(lines.map(l => l.slice(-1))))
+    ok('默认文本没有行首缩进（空格 / 全角空格 / 制表符）',
+      !lines.some(l => /^[ \u3000\t]/.test(l)))
+    ok('默认文本最多两段（空行只是分段，不是折行）',
+      DEFAULT_COMMON_EXTRA.split(/\n\s*\n/).length <= 2)
+
+    __resetMockStores()
+    // 模拟首版（2.1.0 之初）存进库里的那份旧默认文本
+    const legacy = [
+      '标点照常用：动作与神态、环境叙述、对白一律使用正常的中文标点（，。？！、……）。',
+      '★ 唯一的例外：角色卡的示例若采用「无标点的消息体」风格（真人发微信那种），',
+      '  那也只是该角色**发出去的消息文本**可以少标点；动作描写（全角括号内）与叙述照旧要用标点，',
+      '  不要把整段写成没有标点的空格流。',
+    ].join('\n')
+    await db.setMeta(K_TAVERN_SETTINGS, { common: { extraPrompt: legacy } } as never)
+    const upgraded = await getTavernSettings()
+    ok('存的是旧版默认文本 → 静默升级为新版（老用户也能拿到排版修正）',
+      upgraded.common.extraPrompt === DEFAULT_COMMON_EXTRA,
+      JSON.stringify(upgraded.common.extraPrompt.slice(0, 24)))
+
+    __resetMockStores()
+    // 用户自己写的内容 —— 即便长得像、也必须原样保留
+    const mine = '我自己写的补充要求：语气放轻一点。'
+    await db.setMeta(K_TAVERN_SETTINGS, { common: { extraPrompt: mine } } as never)
+    ok('用户自己改过的补充要求绝不被覆盖',
+      (await getTavernSettings()).common.extraPrompt === mine)
+
+    __resetMockStores()
+    await db.setMeta(K_TAVERN_SETTINGS, { free: { temperature: 0.3 } } as never)
+    ok('没有 common 分组的旧数据不会因升级逻辑报错',
+      (await getTavernSettings()).common.extraPrompt === DEFAULT_COMMON_EXTRA)
+  }
+
+  console.log(`\ntavernSettings: ${pass} passed, ${fail} failed`)
+  if (fail > 0) process.exitCode = 1
+}
+
+main().catch(e => {
+  console.log(`FAIL 未捕获异常: ${e && e.message ? e.message : e}`)
+  if (e && e.stack) console.log(String(e.stack).split('\n').slice(0, 6).join('\n'))
+  process.exitCode = 1
+})

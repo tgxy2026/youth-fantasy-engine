@@ -1,0 +1,392 @@
+// Electron 主进程：窗口 + 本地数据文件读写（IPC）
+// 数据文件保存在系统用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\青春幻想引擎\），
+// 格式与便携（U 盘）版完全一致 —— 可互相导出导入。
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const path = require('path')
+const fs = require('fs')
+const fsp = require('fs/promises')
+
+const SMOKE_TEST = process.argv.includes('--smoke-test')
+
+/**
+ * 自定义数据文件位置的配置。
+ * 刻意放在 userData 目录（而不是数据文件旁边）：配置本身绝不能被云盘同步走，
+ * 否则 A 机的路径配置会被同步到 B 机，把 B 机指向错误的目录。
+ */
+function locationFile() {
+  return path.join(app.getPath('userData'), 'data-location.json')
+}
+
+/** 用户自定义的数据文件路径（null = 用默认位置）。启动时读一次，之后由 IPC 维护。 */
+let customDataPath = null
+
+function loadCustomPath() {
+  try {
+    const p = JSON.parse(fs.readFileSync(locationFile(), 'utf-8')).path
+    if (typeof p === 'string' && p) customDataPath = p
+  } catch {
+    customDataPath = null // 未自定义 / 配置损坏 → 回落到默认位置
+  }
+}
+
+/**
+ * 本地数据文件路径。
+ * 默认在用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\novel-studio\），
+ * 用户可改到云盘同步目录里（WPS 云盘 / OneDrive 等）实现跨设备同步。
+ */
+function dataFile() {
+  return customDataPath || path.join(app.getPath('userData'), 'novel-studio-data.json')
+}
+
+/**
+ * 读取本地数据文件，返回**三态**（渲染层据此决定是否允许写盘）：
+ *   { text, missing:false }                   读到内容
+ *   { text:null, missing:true }               文件不存在（首次使用，属正常）
+ *   { text:null, missing:false, error:'…' }   读取失败（被云盘/杀软占用、权限、IO）——🔴 危险
+ *
+ * 🔴 为什么必须区分「不存在」与「读失败」：
+ *   旧实现把**所有**异常都吞成 null，渲染层分辨不出，于是把"读失败"当成"空库"启动；
+ *   用户只要动一下数据（哪怕只是启动时自动播种示范项目），空库就会覆盖磁盘上的真实文件。
+ *   这条路径不可逆 —— 必须让渲染层知道"文件在，但没读出来"。
+ */
+function readDataFileSync() {
+  const file = dataFile()
+  try {
+    return { text: fs.readFileSync(file, 'utf-8'), missing: false }
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { text: null, missing: true }
+    return { text: null, missing: false, error: (e && e.message) || String(e) }
+  }
+}
+
+/**
+ * 原子写盘：先写 .tmp，再 rename 覆盖正文件。
+ *
+ * 为什么必须原子：数据文件可能被放进 WPS 云盘 / OneDrive 等同步目录，
+ * 若像以前那样直接 writeFile 覆盖，云盘客户端可能在「写了一半」时抓拍上传，
+ * 另一台设备拉到的就是截断的 JSON —— 解析失败后应用会以空库启动，
+ * 用户会以为数据全没了。rename 在同一分区内是原子操作，可彻底避免半截文件。
+ *
+ * 刻意不留 .bak：同步目录里多一份副本会让云盘流量翻倍，
+ * 且应用内已有快照（snapshots）机制兜底，不需要再叠一层。
+ */
+function writeAtomicSync(file, text) {
+  const tmp = file + '.tmp'
+  fs.writeFileSync(tmp, text, 'utf-8')
+  fs.renameSync(tmp, file)
+}
+
+async function writeAtomic(file, text) {
+  const tmp = file + '.tmp'
+  await fsp.writeFile(tmp, String(text), 'utf-8')
+  await fsp.rename(tmp, file)
+}
+
+app.whenReady().then(() => {
+  loadCustomPath() // 恢复用户自定义的数据文件位置（若有）
+  // ---- 存储相关 IPC ----
+  // 启动时读取本地数据文件
+  ipcMain.handle('store:load', () => {
+    const r = readDataFileSync()
+    return { text: r.text, path: dataFile(), missing: r.missing === true, error: r.error ?? null }
+  })
+
+  // 防抖后的异步写盘（渲染层每次数据变更后调用）。原子写，见 writeAtomic 注释。
+  ipcMain.handle('store:save', async (_e, text) => {
+    try {
+      await writeAtomic(dataFile(), String(text))
+      return { ok: true, error: null }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  // 同步写盘：窗口关闭（beforeunload）时保证未保存数据落盘。同样原子写。
+  ipcMain.on('store:save-sync', (e, text) => {
+    try {
+      writeAtomicSync(dataFile(), String(text))
+      e.returnValue = { ok: true, error: null }
+    } catch (err) {
+      e.returnValue = { ok: false, error: String(err) }
+    }
+  })
+
+  // 导出全部数据为便携版数据文件（保存到 U 盘等任意位置）
+  ipcMain.handle('store:export', async (_e, text) => {
+    const r = await dialog.showSaveDialog({
+      title: '导出数据文件（可保存到 U 盘，供便携版使用）',
+      defaultPath: '我的小说库.novel.json',
+      filters: [{ name: '小说工坊数据文件', extensions: ['json'] }],
+    })
+    if (r.canceled || !r.filePath) return null
+    await fsp.writeFile(r.filePath, String(text), 'utf-8')
+    return r.filePath
+  })
+
+  // 从便携版数据文件导入（选择 U 盘上的数据文件，读取内容）
+  ipcMain.handle('store:import', async () => {
+    const r = await dialog.showOpenDialog({
+      title: '导入数据文件（选择便携版 U 盘上的数据文件）',
+      properties: ['openFile'],
+      filters: [{ name: '小说工坊数据文件', extensions: ['json'] }],
+    })
+    if (r.canceled || !r.filePaths.length) return null
+    return await fsp.readFile(r.filePaths[0], 'utf-8')
+  })
+
+  // 在资源管理器中显示数据文件（方便用户手动备份）
+  ipcMain.handle('store:reveal', () => {
+    shell.showItemInFolder(dataFile())
+  })
+
+  ipcMain.handle('store:path', () => dataFile())
+
+  // ---- 自定义数据文件位置（#033）----
+  // 目的：让用户把「数据文件」指到 WPS 云盘 / OneDrive 等同步目录，由云盘客户端
+  // 搬运实现跨设备同步，软件里不用再单独配同步路径。
+  // ⚠️ 只搬数据文件本身，**不要把整个 userData 目录交给云盘** —— 里面混着
+  // Chromium 的 Local Storage（leveldb，带独占锁）与十几 MB 缓存，跨设备覆盖会损坏。
+  ipcMain.handle('store:chooseDataDir', async () => {
+    const r = await dialog.showOpenDialog({
+      title: '选择数据文件的存放位置（放进 WPS 云盘 / OneDrive 等同步目录即可跨设备同步）',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (r.canceled || !r.filePaths.length) return null
+    return path.join(r.filePaths[0], 'novel-studio-data.json')
+  })
+
+  /** 迁移数据文件到新位置。目标已存在数据文件时「改用那份」（adopted），不覆盖。 */
+  ipcMain.handle('store:setDataPath', async (_e, target, text) => {
+    try {
+      const p = String(target || '')
+      if (!p || !path.isAbsolute(p)) return { ok: false, path: null, adopted: false, error: '路径无效' }
+      await fsp.mkdir(path.dirname(p), { recursive: true })
+      let adopted = false
+      try {
+        await fsp.access(p)
+        adopted = true // 目标已有数据文件 → 通常是另一台设备同步过来的，改用那份
+      } catch {
+        await writeAtomic(p, String(text ?? ''))
+      }
+      await fsp.writeFile(locationFile(), JSON.stringify({ path: p }), 'utf-8')
+      customDataPath = p
+      return { ok: true, path: p, adopted, error: null }
+    } catch (err) {
+      return { ok: false, path: null, adopted: false, error: String(err) }
+    }
+  })
+
+  /** 恢复默认存放位置（userData 目录）。原位置的数据文件不会被删除。 */
+  ipcMain.handle('store:resetDataPath', async (_e, text) => {
+    try {
+      const p = path.join(app.getPath('userData'), 'novel-studio-data.json')
+      let adopted = false
+      try {
+        await fsp.access(p)
+        adopted = true // 默认位置原本就有数据 → 沿用那份
+      } catch {
+        await writeAtomic(p, String(text ?? ''))
+      }
+      try {
+        await fsp.unlink(locationFile())
+      } catch {
+        /* 本来就没有自定义配置 */
+      }
+      customDataPath = null
+      return { ok: true, path: p, adopted, error: null }
+    } catch (err) {
+      return { ok: false, path: null, adopted: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('store:isCustomPath', () => !!customDataPath)
+
+  // ---- 云盘文件同步（#031 桌面版）：经主进程 fs 读写用户选定的同步目录 ----
+  // 渲染进程 nodeIntegration=false，无法直接 require('fs')；所有文件 IO 必须走 IPC 到主进程。
+  // 桌面版云同步把加密后的 .yfe 文件写在用户选定的云盘同步目录里，由 OneDrive/WPS 云盘 等客户端搬运。
+  ipcMain.handle('sync:chooseDir', async () => {
+    const r = await dialog.showOpenDialog({
+      title: '选择云盘同步文件夹（建议放进 OneDrive / WPS 云盘 等同步目录，即可跨设备同步）',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (r.canceled || !r.filePaths.length) return null
+    return r.filePaths[0]
+  })
+  ipcMain.handle('sync:readFile', async (_e, p) => {
+    try {
+      return { ok: true, text: await fsp.readFile(p, 'utf-8') }
+    } catch (e) {
+      // ⚠️ 这里必须区分「文件不存在」与「读取失败」，二者语义天差地别：
+      //   ENOENT = 首次同步尚无同步文件 → 安全地当作空库（text: null）；
+      //   EACCES / EBUSY / EPERM = 权限被拒或文件被占用（云盘客户端搬运文件时最常见）
+      //     → 必须如实上报为读取失败。若一并当成空库，渲染端会认为「云端为空」，
+      //       随后一次 push 就用本地内容整体覆盖掉云端的真实快照（2026-09-14 审计 P0-2）。
+      // 另：不 throw 而是返回结构化结果——Electron 会把跨 IPC 的异常重新包装，
+      //     原始 err.code 在渲染端会丢失，届时同样无法区分。
+      if (e && e.code === 'ENOENT') return { ok: true, text: null }
+      return { ok: false, reason: e && e.message ? String(e.message) : String(e) }
+    }
+  })
+  ipcMain.handle('sync:writeFile', async (_e, p, text) => {
+    try {
+      // 原子写：先写 tmp，再把旧文件改名 .bak（回退用），最后 rename tmp 为正文件，避免写崩损坏。
+      // ⚠️ 注意 .bak 落在**同步目录**里，会被网盘客户端一并上传（同一份数据占双倍流量）。
+      //    这是**有意保留的取舍**：同步文件只有云端那一份，留一个上一版副本是最后的自救手段。
+      //    （2026-09-19 六维审计 P2-3 记下这个取舍，不再当"忘了删"处理；要改就得连带想清楚
+      //      写坏时拿什么回退。）
+      const tmp = p + '.tmp'
+      await fsp.writeFile(tmp, String(text), 'utf-8')
+      try {
+        await fsp.rename(p, p + '.bak')
+      } catch {
+        /* 首次写入无旧文件，忽略 */
+      }
+      await fsp.rename(tmp, p)
+      return { ok: true, error: null }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  // ---- 主进程代发 HTTP 请求（联网检索用）----
+  // 为什么必须绕到主进程：搜索接口（自建 SearXNG、Jina、Exa 等）不返回 Access-Control-Allow-Origin，
+  //   渲染进程直连会被同源策略拦掉；桌面版没有自己的服务器，唯一的「后端」就是这个主进程。
+  //   与当年网页版那条 /api/ai 反代同一个道理 —— 但请求不出本机，比走服务器更干净。
+  //
+  // 🔴 它是一个通用 HTTP 客户端，边界必须收窄（否则等于给渲染进程开了一个万能网络出口）：
+  //   · 只允许 http/https —— 拒绝 file: 等协议，否则可以借它读本地文件
+  //   · 只带调用方显式给出的头，**剔除 cookie / referer / origin / host**（主进程的会话 cookie 不该被带走）
+  //   · 限时 30s；响应超 2MB 直接中止（搜索结果是几十 KB 量级，防止大文件把内存吃满）
+  //   · 跟随重定向后再校验最终 URL 协议
+  //   · 永不 throw —— Electron 跨 IPC 的异常会被重新包装、原始信息丢失，一律返回结构化结果
+  const NET_TIMEOUT_MS = 30000
+  const NET_MAX_BYTES = 2 * 1024 * 1024
+  ipcMain.handle('net:fetch', async (_e, url, init) => {
+    const opts = init || {}
+    try {
+      const target = new URL(String(url))
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+        return { ok: false, error: '不允许的协议：' + target.protocol }
+      }
+      const method = String(opts.method || 'GET').toUpperCase()
+      const headers = {}
+      for (const [k, v] of Object.entries(opts.headers || {})) {
+        const lk = String(k).toLowerCase()
+        if (lk === 'cookie' || lk === 'referer' || lk === 'origin' || lk === 'host' || lk === 'content-length') continue
+        headers[k] = String(v)
+      }
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), NET_TIMEOUT_MS)
+      let res
+      try {
+        res = await fetch(target.toString(), {
+          method,
+          headers,
+          body: (method === 'GET' || method === 'HEAD') ? undefined : (opts.body == null ? undefined : String(opts.body)),
+          redirect: 'follow',
+          signal: ctrl.signal,
+        })
+      } finally {
+        clearTimeout(timer)
+      }
+      if (res.url && !/^https?:/i.test(res.url)) {
+        return { ok: false, error: '被重定向到非 http(s) 地址，已中止' }
+      }
+      // 流式读并在超限时立刻中止（不要先全读进内存再判大小）
+      const reader = res.body && typeof res.body.getReader === 'function' ? res.body.getReader() : null
+      const chunks = []
+      let received = 0
+      if (reader) {
+        for (;;) {
+          const step = await reader.read()
+          if (step.done) break
+          received += step.value.byteLength
+          if (received > NET_MAX_BYTES) {
+            try { await reader.cancel() } catch { /* 忽略 */ }
+            return { ok: false, error: '响应超过 ' + Math.round(NET_MAX_BYTES / 1024 / 1024) + 'MB 上限，已中止' }
+          }
+          chunks.push(Buffer.from(step.value))
+        }
+      } else {
+        const buf = Buffer.from(await res.arrayBuffer())
+        received = buf.byteLength
+        if (received > NET_MAX_BYTES) {
+          return { ok: false, error: '响应超过 ' + Math.round(NET_MAX_BYTES / 1024 / 1024) + 'MB 上限，已中止' }
+        }
+        chunks.push(buf)
+      }
+      return {
+        ok: true, status: res.status, statusText: res.statusText,
+        text: Buffer.concat(chunks).toString('utf-8'),
+      }
+    } catch (err) {
+      const msg = err && err.name === 'AbortError'
+        ? '请求超时（' + Math.round(NET_TIMEOUT_MS / 1000) + 's）'
+        : String(err && err.message ? err.message : err)
+      return { ok: false, error: msg }
+    }
+  })
+
+  // ---- 主窗口 ----
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 1000,
+    minHeight: 640,
+    // 🔴 2026-09-17 老大反馈：桌面版点开后默认是个小窗，希望**窗口化全屏**。
+    //    show:false 是配套动作 —— 否则会先闪一下 1280×820 的小窗、再跳成最大化，很难看。
+    show: false,
+    backgroundColor: '#0c0c0f', // ink-950，避免启动白闪
+    autoHideMenuBar: true,
+    title: '青春幻想引擎',
+    icon: path.join(__dirname, 'icon.ico'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  // 启动即「窗口化全屏」（最大化）：铺满工作区，但**保留标题栏与系统按钮**。
+  // 刻意不用 fullscreen —— 那会连标题栏一起藏掉，还会和 F11 / 视频全屏的语义混淆。
+  // 必须等 `ready-to-show`：那时渲染器已画好第一帧，「最大化 + 显示」同时发生，看不到跳变。
+  const showMaximized = () => {
+    if (win.isDestroyed()) return
+    win.maximize()
+    win.show()
+  }
+  win.once('ready-to-show', showMaximized)
+  // 兜底：万一 ready-to-show 因渲染失败没触发，5 秒后也把窗口显示出来 ——
+  // 否则用户面对的是「进程起来了但什么都没出现」，比小窗糟糕得多。
+  setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) showMaximized() }, 5000)
+
+  // 所有 target="_blank" 的外链一律交给系统浏览器打开。
+  // 未配置时 Electron 会在应用内再开一个无地址栏、无法登录/下载的 BrowserWindow，
+  // 用户根本意识不到那是网页（B 站主页、网盘下载页都会踩这个坑）。
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url).catch(() => {})
+    return { action: 'deny' }
+  })
+
+  const devUrl = process.env.ELECTRON_START_URL
+  if (devUrl) {
+    win.loadURL(devUrl)
+  } else {
+    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  }
+
+  // 冒烟测试：页面加载完成后自动退出（供构建流水线验证）
+  if (SMOKE_TEST) {
+    win.webContents.on('did-finish-load', () => {
+      setTimeout(() => {
+        console.log('SMOKE_OK')
+        app.exit(0)
+      }, 1500)
+    })
+  }
+})
+
+app.on('window-all-closed', () => {
+  app.quit()
+})

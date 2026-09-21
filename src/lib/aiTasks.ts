@@ -1,0 +1,119 @@
+// ============ AI 任务层 · 对外唯一入口（门面）============
+// 2026-09-19 结构优化 D1：原 2,338 行的巨石已按域拆进 ./aiTasks/ 目录，本文件只做**再导出 + 提示词注册**。
+//
+// 分层约定（沿用原文件）：
+//   ai.ts      —— 传输与配置（provider / chat / 就绪状态 / 设定补全）
+//   aiContext  —— 全项目资料打包
+//   aiTasks.ts —— 本文件（门面）；具体任务的 prompt 与结果解析在 ./aiTasks/*.ts
+//
+// 铁律：本层所有函数都是「可选增强」。调用方必须保证——
+//   未配置模型 → 按钮禁用，绝不调用；调用失败 → 只提示，绝不破坏已有数据。
+//
+// 依赖方向（严格自下而上，禁止反向 import）：
+//   ./aiTasks/stream（长文流式共享件）
+//     ├─ ./aiTasks/extract → 供 creative 取类型
+//     ├─ ./aiTasks/{organize, proofread, suggest, audit, jieWenJi, rewrite, inline, formSummary}
+//     └─ ./aiTasks/creative
+//
+// 🔴 对外 API 的名字与签名一字未改 —— 13 处真 import（含 tests/）+ 2 处源码正则已同步指向新位置。
+// ⚠️ 注册顺序 = 设置页显示顺序，见下方 PROMPT_ORDER（原注册表的书写顺序逐条还原）。
+import { registerPrompt } from './promptSettings'
+import type { PromptDef } from './promptSettings'
+import { ORGANIZE_PROMPTS } from './aiTasks/organize'
+import { PROOFREAD_PROMPTS } from './aiTasks/proofread'
+import { SUGGEST_PROMPTS } from './aiTasks/suggest'
+import { AUDIT_PROMPTS } from './aiTasks/audit'
+import { JIEWENJI_PROMPTS } from './aiTasks/jieWenJi'
+import { REWRITE_PROMPTS } from './aiTasks/rewrite'
+import { EXTRACT_PROMPTS } from './aiTasks/extract'
+import { INLINE_PROMPTS } from './aiTasks/inline'
+import { CREATIVE_PROMPTS } from './aiTasks/creative'
+
+export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
+export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
+// 2026-09-20 拆分：`aiProofread`（混查五类）→ `aiProofreadText`（错别字/语病/标点，不读设定）
+// 与 `aiProofreadLogic`（逻辑/设定矛盾，读设定）。两条独立提示词、两个独立入口。
+export { aiProofreadText, aiProofreadLogic } from './aiTasks/proofread'
+export type { ProofreadIssue, ProofreadOptions, ProofreadResult } from './aiTasks/proofread'
+export { aiSuggestNames, aiReviewSensitive } from './aiTasks/suggest'
+export type { NameSuggestRequest, NameSuggestion, SensitiveHitInput, SensitiveReview } from './aiTasks/suggest'
+export { aiContinuityAudit, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReview, aiDedupTerms, aiStyleCheck } from './aiTasks/audit'
+export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from './aiTasks/audit'
+export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from './aiTasks/jieWenJi'
+export type { EditorDiagnosis, ReviewDimension, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, BriefingReport } from './aiTasks/jieWenJi'
+export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput, stripInlineMarkdown } from './aiTasks/rewrite'
+export type { ChapterRewriteAction, ChapterRewriteOpts } from './aiTasks/rewrite'
+export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, parseExtractedEntities } from './aiTasks/extract'
+export type { SettingEntityType, ExtractedEntity } from './aiTasks/extract'
+export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest } from './aiTasks/inline'
+export type { InlineSuggestLength, InlineSuggestOptions } from './aiTasks/inline'
+// 2026-09-20：`aiGenerateOutline`（从零排）与 `aiExtendOutline`（接着排）**合并为 `aiPlanOutline`** ——
+// 差别只剩「材料装的是什么」，两条路产出的都是 `OutlineResult`（卷 + 章），落库走同一个 `commitOutline`。
+export {
+  DEFAULT_BIBLE_COUNTS, collectBibleEntities, aiGenerateBible, aiPlanOutline,
+  MAX_OUTLINE_VOLUMES, MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS,
+} from './aiTasks/creative'
+export type { BibleCounts, OutlineVolume, OutlineChapter, OutlineResult, PlanOutlineInput } from './aiTasks/creative'
+export { aiSummarizeFormSettings } from './aiTasks/formSummary'
+
+/**
+ * 提示词的**注册顺序**（🔴 有语义：`listPrompts()` 只按 group 稳定排序，组内保持登记顺序）。
+ *
+ * 因此本数组的先后 = 「模型设置 → AI 提示词」界面里组内从上到下的顺序。
+ * ⚠️ 改这个数组等于改 UI 顺序。新增提示词必须在这里登记，否则界面上看不到（下面会 console.warn 出来）。
+ * ⚠️ 注意第 14/15 条：选区改稿（属于 jieWenJi）**排在**整章改写（属于 rewrite）之前 ——
+ *    这是原文件注册表的书写顺序，属于既定 UI，别"顺手理顺"。
+ */
+const PROMPT_ORDER = [
+  'organize-rows',
+  'proofread-text',
+  'proofread-logic',
+  'name-suggest',
+  'sensitive-recheck',
+  'continuity-audit',
+  'feedback-analysis',
+  'project-diagnosis',
+  'foreshadow-review',
+  'term-dedup',
+  'style-audit',
+  'editor-diagnosis',
+  'chapter-review',
+  'ooc-check',
+  'rewrite-passage',
+  'chapter-rewrite',
+  'chapter-rewrite-history',
+  'chapter-rewrite-latest',
+  'extend-outline',
+  'continuation-advice',
+  'pleasure-check',
+  'opening-check',
+  'writing-briefing',
+  'extract-entities',
+  'deai-rule',
+]
+
+const PROMPT_SETS: PromptDef[][] = [
+  ORGANIZE_PROMPTS,
+  PROOFREAD_PROMPTS,
+  SUGGEST_PROMPTS,
+  AUDIT_PROMPTS,
+  JIEWENJI_PROMPTS,
+  REWRITE_PROMPTS,
+  EXTRACT_PROMPTS,
+  INLINE_PROMPTS,
+  CREATIVE_PROMPTS,
+]
+
+const byId = new Map<string, PromptDef>()
+for (const set of PROMPT_SETS) for (const p of set) byId.set(p.meta.id, p)
+for (const id of PROMPT_ORDER) {
+  const p = byId.get(id)
+  if (!p) {
+    console.warn(`[aiTasks] PROMPT_ORDER 里的提示词没找到：${id}（设置页会少这一条）`)
+    continue
+  }
+  registerPrompt(p.meta, p.read, p.write)
+}
+for (const id of byId.keys()) {
+  if (!PROMPT_ORDER.includes(id)) console.warn(`[aiTasks] 提示词未登记进 PROMPT_ORDER：${id}（设置页看不到它）`)
+}

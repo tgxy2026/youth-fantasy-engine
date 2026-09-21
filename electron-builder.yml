@@ -1,0 +1,38 @@
+# 桌面（Windows 安装版）打包配置 —— 用法：npm run build:desktop
+# 产物：release/desktop/青春幻想引擎-Setup-1.0.0.exe（NSIS 安装包）
+appId: cn.novelstudio.yfe
+productName: 青春幻想引擎
+copyright: Copyright © 2026
+
+directories:
+  output: release/desktop
+  buildResources: build
+
+# 只打包运行所需文件：渲染产物 + Electron 主进程（依赖已全部内联进 dist，无需 node_modules）
+files:
+  - electron/**/*
+  - dist/**/*
+  - package.json
+
+asar: true
+
+# 补偿 rcedit 的间歇性失败：本机 electron-builder 内置的 rcedit(2019) 写主 exe 版本资源时会
+# 随机报 `Fatal error: Unable to commit changes`，而 electron-builder 重试 3 次后**继续打包**，
+# 导致产物能用但主 exe 是 Electron 默认图标。该钩子在 pack 后、NSIS 前补跑并校验，见脚本注释。
+afterPack: ./scripts/after-pack.cjs
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false                # 非一键安装：可自选安装目录
+  perMachine: false              # 按用户安装，无需管理员权限
+  allowToChangeInstallationDirectory: false   # 锁定到当前用户目录，杜绝误装 Program Files 再次引入管理员需求
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: 青春幻想引擎
+  artifactName: 青春幻想引擎-Setup-${version}.exe

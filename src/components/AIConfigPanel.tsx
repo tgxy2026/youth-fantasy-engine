@@ -1,0 +1,466 @@
+/**
+ * AI 模型配置（**全局**）—— 挂在「工作面板 → 模型设置」最上边，紧随其下是「联网检索」。
+ *
+ * 【为什么从弹窗改成页面上的独立面板】
+ * 它原本是藏在「AI 辅助规划」卡片右上角一个「模型设置」按钮后面的弹窗，和对话窗口挤在同一张卡里。
+ * 两件事其实完全不同：**配模型**是全局的一次性设置，**对话**是随手用的工具；挤在一起的结果是
+ * 想改模型得先找到那个对话卡片、点开右上角的小按钮（老大 2026-09-15 要求拆分）。
+ * 拆开之后：模型配置 + 联网检索这两件「配置」并肩放在页面最上边，下面才是真正干活的三个功能。
+ *
+ * 【为什么自包含、改完即存】
+ * 它原先活在弹窗里，由父组件的 onClose 负责「关掉后刷新」。现在它是页面上的独立卡片，
+ * 必须自己读写、自己落库 —— 保存即生效，没有「确定 / 取消」这一层。
+ * 模型配置变动会影响全应用的 AI 就绪状态，所以每次落库后调一次 `onChange?.()`
+ * 让上层通知「AI 辅助规划」重新读一遍活动模型（否则它手里还是旧的那份）。
+ */
+import { useCallback, useEffect, useState } from 'react'
+import {
+  Cpu, Globe, Loader2, AlertCircle, CheckCircle2, FlaskConical,
+  Pencil, Trash2, Check,
+} from 'lucide-react'
+import { Button } from './Button'
+import HelpPopover from './HelpPopover'
+import { confirmDialog, showToast } from './dialogs'
+import { syncTuningWithModel } from '../lib/tavern/settings'
+import { syncWriterBudgetToModel } from '../lib/aiWriterBudget'
+import {
+  type AIProvider, type AITestResult, type PlatformPreset,
+  LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset,
+  listOllamaModels, testProvider,
+  loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
+} from '../lib/ai'
+import { lookupWindow, FALLBACK_WINDOW } from '../lib/modelCapacity'
+import NumberField from './NumberField'
+
+function fmtMs(ms: number) {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
+
+/** 测试结果条：成功显示耗时与模型回文，失败显示中文原因 */
+function TestResultBar({ r }: { r: AITestResult }) {
+  const cost = fmtMs(r.latencyMs)
+  // 本地模型首次调用大头在「搬进显存」，标出来避免误判为响应慢
+  const loadHint = r.loadMs > 500 ? `（其中模型加载 ${fmtMs(r.loadMs)}）` : ''
+  return (
+    <div
+      className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg text-11 ${
+        r.ok
+          ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-300'
+          : 'bg-red-500/10 border border-red-500/25 text-red-300'
+      }`}
+    >
+      {r.ok ? <CheckCircle2 size={12} className="mt-0.5 shrink-0" /> : <AlertCircle size={12} className="mt-0.5 shrink-0" />}
+      {r.ok ? (
+        <span>
+          配置可用 · 耗时 {cost}
+          {loadHint && <span className="text-emerald-400/70">{loadHint}</span>}
+          {' · 模型回复「'}
+          <span className="text-emerald-200">{r.reply.slice(0, 40)}</span>
+          {r.reply.length > 40 ? '…' : ''}」
+        </span>
+      ) : (
+        <span className="whitespace-pre-wrap">{r.error}</span>
+      )}
+    </div>
+  )
+}
+
+/** 编辑表单 / 列表区的统一宽度：页面很宽，铺满会显得松散难读 */
+const BODY = 'max-w-3xl'
+
+export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
+  const [providers, setProviders] = useState<AIProvider[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<AIProvider | null>(null)
+  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [testing, setTesting] = useState(false)
+  const [editResult, setEditResult] = useState<AITestResult | null>(null)
+  const [saving, setSaving] = useState(false)
+  /** 列表页：正在测试的模型 id（全局单测，避免多个大模型同时抢显存） */
+  const [testingId, setTestingId] = useState<string | null>(null)
+  /** 列表页：添加模型的平台选择态——none 显示两个大按钮；local/online 显示对应平台预设 */
+  const [pickMode, setPickMode] = useState<'none' | 'local' | 'online'>('none')
+  /** 列表页：各模型最近一次测试结果 */
+  const [rowResults, setRowResults] = useState<Record<string, AITestResult>>({})
+
+  const fail = (msg: string): AITestResult => ({ ok: false, latencyMs: 0, loadMs: 0, reply: '', error: msg })
+
+  const refresh = useCallback(async () => {
+    const list = await loadProviders()
+    const aid = await loadActiveId()
+    setProviders(list)
+    setActiveId(list.some(p => p.id === aid) ? aid : (list[0]?.id ?? null))
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  /**
+   * 换过模型后，把酒馆模式的「上下文预算 + 记忆档」同步成新模型的推荐值。
+   *
+   * 为什么不 await：切模型的手感不该被几次本地读写拖住。安全性由 sync 自己保证 ——
+   * 它按**模型指纹**判定，"没换模型"时什么都不做（同模型下用户手调的值不会被改回去），
+   * 异常也已吞掉；「额度跟随模型自动调整」可在控制面板关闭。
+   */
+  const syncTavernTuning = () => {
+    void syncTuningWithModel().then(r => {
+      if (r.changed) showToast('酒馆模式的上下文额度已按新模型调整，可在控制面板查看', 'success')
+    })
+    // 正文写作链路的额度也跟模型走 —— 两边各按自己的口径算，互不冲突
+    void syncWriterBudgetToModel().then(r => {
+      if (r.changed) showToast(`正文写作额度已按新模型调整为基准 ${r.base} 字`, 'success')
+    })
+  }
+
+  const persist = async (list: AIProvider[], aid: string | null) => {
+    await saveProviders(list)
+    if (aid !== null) await saveActiveId(aid)
+    setProviders(list)
+    setActiveId(aid)
+    onChange?.()
+    syncTavernTuning() // 编辑 provider 时可能改过 model / 上下文窗口 —— 两者都在指纹里
+  }
+
+  const setActive = async (id: string) => {
+    await saveActiveId(id)
+    setActiveId(id)
+    onChange?.()
+    syncTavernTuning()
+  }
+
+  /** 配置变动后旧测试结论即失效，清掉避免误导 */
+  const dropResult = (id: string) => {
+    setRowResults(prev => {
+      if (!(id in prev)) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }
+
+  const removeProvider = async (id: string) => {
+    if (!await confirmDialog({ title: '删除模型配置', message: '确定删除该模型配置？', danger: true })) return
+    const next = providers.filter(p => p.id !== id)
+    const nextActive = activeId === id ? (next[0]?.id ?? null) : activeId
+    await persist(next, nextActive)
+    dropResult(id)
+  }
+
+  /** 由平台预设开始新增一条模型配置（未保存） */
+  const startAddPreset = (p: PlatformPreset) => {
+    setEditResult(null)
+    setEditing(providerFromPreset(p))
+    setPickMode('none')
+  }
+
+  const fetchModels = async (baseUrl: string) => {
+    try {
+      const models = await listOllamaModels(baseUrl)
+      setOllamaModels(models)
+      if (models.length === 0) {
+        setEditResult(fail('Ollama 已连接，但本机还没有任何模型：请先执行 ollama pull <模型名> 拉取。'))
+        return
+      }
+      setEditResult(null)
+      if (editing && !editing.model) setEditing({ ...editing, model: models[0] })
+    } catch (e) {
+      setEditResult(fail(e instanceof Error ? e.message : String(e)))
+    }
+  }
+
+  /** 编辑态：测试当前草稿配置（未保存也能测） */
+  const runTest = async () => {
+    if (!editing) return
+    setTesting(true)
+    setEditResult(null)
+    setEditResult(await testProvider(editing))
+    setTesting(false)
+  }
+
+  /** 列表态：测试某个已保存的模型配置 */
+  const runRowTest = async (p: AIProvider) => {
+    setTestingId(p.id)
+    dropResult(p.id)
+    const r = await testProvider(p)
+    setRowResults(prev => ({ ...prev, [p.id]: r }))
+    setTestingId(null)
+  }
+
+  const saveEdit = async () => {
+    if (!editing) return
+    if (!editing.name.trim()) { setEditResult(fail('请填写显示名称。')); return }
+    if (!editing.model.trim()) { setEditResult(fail('请选择 / 填写模型名称。')); return }
+    setSaving(true)
+    const exists = providers.some(p => p.id === editing.id)
+    const next = exists ? providers.map(p => p.id === editing.id ? editing : p) : [...providers, editing]
+    const nextActive = activeId ?? (!exists ? editing.id : activeId)
+    await persist(next, nextActive)
+    dropResult(editing.id)
+    setSaving(false)
+    setEditing(null)
+    setEditResult(null)
+  }
+
+  /** 编辑态（openai 类型）平台预设下拉：本地 / 联网各自只列本组 */
+  const presetList =
+    editing && editing.type === 'openai'
+      ? editing.local
+        ? [...LOCAL_OPENAI_PRESETS, { label: '自定义', baseUrl: '' }]
+        : ONLINE_PRESETS
+      : ONLINE_PRESETS
+
+  return (
+    <section className="rounded-lg border border-ink-800 bg-ink-850/30">
+      <div className="shrink-0 px-4 py-3 border-b border-ink-800">
+        <div className="flex items-center gap-1.5">
+          <h2 className="text-13 text-amber">模型配置</h2>
+          <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
+            <p>全应用共用这一份模型配置 —— AI 辅助规划、一键续写、取名、校对、设定补全都按这里选中的「当前」模型走；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
+            <p className="mt-1.5">两类平台：</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li><b>本地模型</b>：Ollama / LM Studio 等，跑在你自己机器上，一般免密钥、不联网、数据不出本机。</li>
+              <li><b>联网模型</b>：硅基流动 / DeepSeek / 通义 / 智谱 等，需要 API 密钥，只有填了才发出请求。</li>
+            </ul>
+            <p className="mt-1.5">
+              每行都有「测试」：会真实发起一次最小对话，确认这个配置能不能用（本地大模型首次调用要加载进显存，
+              等几十秒是正常的）。密钥只存在本机数据文件里，不会上传到任何服务器。
+            </p>
+            <p className="mt-1.5">
+              没配模型也不影响任何手动填写功能 —— 只是各处 AI 按钮会禁用并给出提示。
+            </p>
+          </HelpPopover>
+        </div>
+        <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">
+          全局设置：全应用的 AI 功能都按这里选中的「当前」模型执行。改完即存，不需要另找保存按钮。
+        </p>
+      </div>
+
+      <div className="p-4">
+        <div className={BODY}>
+          {editing === null ? (
+            <>
+              {providers.length === 0 ? (
+                <div className="text-12 text-ink-500 mb-3">还没有任何模型，先添加一个：</div>
+              ) : (
+                <p className="text-11 text-ink-500 mb-2.5 leading-relaxed">
+                  配置好模型后点该行「测试」，会真实发起一次最小对话来验证是否能正常调用。
+                  <span className="text-ink-600">本地大参数模型首次调用需加载进显存，可能等待数十秒，属正常现象。</span>
+                </p>
+              )}
+              <div className="space-y-2 mb-4">
+                {providers.map(p => (
+                  <div key={p.id} className="rounded-lg bg-ink-800 border border-ink-700">
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${p.type === 'ollama' || p.local ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-400'}`}>
+                        {typeLabel(p)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-12 text-ink-100 truncate">{p.name}</div>
+                        <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
+                      </div>
+                      {activeId === p.id ? (
+                        <span className="shrink-0 flex items-center gap-1 text-11 text-emerald-400"><CheckCircle2 size={12} /> 当前</span>
+                      ) : (
+                        <Button variant="bare" onClick={() => setActive(p.id)} className="shrink-0 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</Button>
+                      )}
+                      <Button variant="bare"
+                        onClick={() => runRowTest(p)}
+                        disabled={testingId !== null}
+                        title={testingId !== null ? '有测试正在进行中，请稍候' : '发起一次最小对话，验证该模型能否正常调用'}
+                        className="shrink-0 flex items-center gap-1 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {testingId === p.id ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
+                        {testingId === p.id ? '测试中…' : '测试'}
+                      </Button>
+                      <Button variant="bare" iconOnly size="xs" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
+                      <Button variant="icon-danger" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1"><Trash2 size={12} /></Button>
+                    </div>
+                    {testingId === p.id && (
+                      <div className="px-3 pb-2 text-11 text-ink-400 flex items-center gap-1.5">
+                        <Loader2 size={11} className="animate-spin text-amber" /> 正在调用「{p.model}」，本地大模型可能需要数十秒…
+                      </div>
+                    )}
+                    {testingId !== p.id && rowResults[p.id] && (
+                      <div className="px-3 pb-2"><TestResultBar r={rowResults[p.id]} /></div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 rounded-lg text-12 hover:bg-emerald-500/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），运行在本机，一般免密钥、无需联网">
+                  <Cpu size={13} /> 添加本地模型
+                </Button>
+                <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-sky-500/10 text-sky-300 border border-sky-500/25 rounded-lg text-12 hover:bg-sky-500/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
+                  <Globe size={13} /> 添加联网模型
+                </Button>
+              </div>
+              {pickMode !== 'none' && (
+                <div className="mt-3 rounded-lg border border-ink-700 bg-ink-800/40 p-3">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className="text-12 font-medium text-ink-200">
+                      {pickMode === 'local' ? '选择本地平台' : '选择联网平台'}
+                    </span>
+                    <Button variant="secondary" size="sm" onClick={() => setPickMode('none')} className="ml-auto">返回</Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(pickMode === 'local' ? LOCAL_PRESETS : ONLINE_PRESETS).map(p => (
+                      <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 text-12 hover:text-emerald-300 hover:border-emerald-400/40 transition-colors text-left">
+                        {pickMode === 'local'
+                          ? <Cpu size={12} className="text-emerald-400 shrink-0" />
+                          : <Globe size={12} className="text-sky-400 shrink-0" />}
+                        <span className="truncate">{p.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-10 text-ink-500 mt-2 leading-relaxed">
+                    {pickMode === 'local'
+                      ? '本地平台运行在本机 / 局域网，一般免密钥、无需联网；Ollama 需先「ollama pull」拉取模型。'
+                      : '联网平台需要 API 密钥，按预设填好接口地址后填入密钥与模型名即可。'}
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-12">
+                {editing.type === 'ollama' ? (
+                  <span className="flex items-center gap-1 text-emerald-400"><Cpu size={13} /> 本地 Ollama</span>
+                ) : editing.local ? (
+                  <span className="flex items-center gap-1 text-emerald-400"><Cpu size={13} /> 本地 OpenAI 兼容</span>
+                ) : (
+                  <span className="flex items-center gap-1 text-sky-400"><Globe size={13} /> 联网 OpenAI 兼容</span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-11 text-ink-500 mb-1">显示名称</label>
+                <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="如：本地 llama3 / DeepSeek" />
+              </div>
+
+              <div>
+                <label className="block text-11 text-ink-500 mb-1">自定义系统提示词（可选）</label>
+                <textarea
+                  className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 resize-none"
+                  rows={3}
+                  value={editing.systemPrompt ?? ''}
+                  onChange={e => setEditing({ ...editing, systemPrompt: e.target.value })}
+                  placeholder="对所有调用此模型的功能追加一段总体指令（如写作风格、人称、禁忌）。留空则按系统预设。"
+                />
+                <p className="text-10 text-ink-500 mt-1 leading-relaxed">只附加在各功能自带的系统提示词之后，不会影响校对 / 补全 / 整理 / 对话的原有指令与格式约束。</p>
+              </div>
+
+              {editing.type === 'ollama' ? (
+                <>
+                  <div>
+                    <label className="block text-11 text-ink-500 mb-1">Ollama 地址</label>
+                    <div className="flex gap-2">
+                      <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="http://localhost:11434" />
+                      <Button variant="secondary" size="sm" onClick={() => fetchModels(editing.baseUrl)} className="shrink-0">获取本地模型</Button>
+                    </div>
+                  </div>
+                  {ollamaModels.length > 0 && (
+                    <div>
+                      <label className="block text-11 text-ink-500 mb-1">选择模型</label>
+                      <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })}>
+                        <option value="">— 请选择 —</option>
+                        {ollamaModels.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-11 text-ink-500 mb-1">或手动填写模型名</label>
+                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} placeholder="需本机已 ollama pull" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-11 text-ink-500 mb-1">平台预设</label>
+                    <select
+                      className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40"
+                      value={presetList.find(p => p.baseUrl === editing.baseUrl)?.label ?? '自定义'}
+                      onChange={e => {
+                        const pre = presetList.find(p => p.label === e.target.value)
+                        if (pre && pre.baseUrl !== '') setEditing({ ...editing, baseUrl: pre.baseUrl, local: !!pre.local, name: editing.name || pre.label })
+                        else if (pre && pre.baseUrl === '') setEditing({ ...editing, baseUrl: '', local: editing.local, name: editing.name })
+                      }}
+                    >
+                      {presetList.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+                    </select>
+                    <p className="text-10 text-ink-500 mt-1">本地平台（LM Studio / LocalAI 等）一般免密钥、无需联网；联网平台需填写 API 密钥。选「自定义」可手填接口地址。</p>
+                  </div>
+                  <div>
+                    <label className="block text-11 text-ink-500 mb-1">API 接口地址（baseUrl）</label>
+                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="https://api.deepseek.com/v1" />
+                  </div>
+                  <div>
+                    <label className="block text-11 text-ink-500 mb-1">API 密钥</label>
+                    <input type="password" className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 font-mono placeholder:text-ink-600" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} placeholder="仅本地保存，不上传" />
+                  </div>
+                  <div>
+                    <label className="block text-11 text-ink-500 mb-1">模型名称</label>
+                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} placeholder="如 deepseek-chat / qwen-plus / glm-4-flash" />
+                  </div>
+                </>
+              )}
+
+              {/* 上下文窗口（选填）：**只有云端端点读它**。
+                  本地 Ollama 的窗口由显存决定（面板里那个「上下文窗口长度」才是它），
+                  云端则由服务商决定、没有统一的查询接口 —— 所以允许手填。
+                  留空时按模型名去预设表里认，认不出走保守兜底（见 lib/modelCapacity.ts）。 */}
+              {(() => {
+                const isLocal = editing.type === 'ollama' || !!editing.local
+                const hit = lookupWindow(editing.model)
+                const hint = isLocal
+                  ? '本地部署不读这一项 —— 本地窗口由显存决定，请在酒馆控制面板调「上下文窗口长度（num_ctx）」。'
+                  : editing.contextWindow
+                    ? `已手填 ${editing.contextWindow} tokens：酒馆控制面板会按它算上下文预算与记忆档的建议值。`
+                    : hit
+                      ? `留空 = 按模型名识别为 ${hit.window} tokens（${hit.label}）。识别得不对就手填覆盖。`
+                      : `未识别到该模型名 —— 留空会按保守值 ${FALLBACK_WINDOW} tokens 估算，建议手填真实值。`
+                return (
+                  <div>
+                    <label className="block text-11 text-ink-500 mb-1">
+                      上下文窗口（tokens）<span className="text-ink-600"> · 选填</span>
+                    </label>
+                    <NumberField
+                      value={editing.contextWindow}
+                      min={1024} max={2097152} step={1024}
+                      allowEmpty
+                      disabled={isLocal}
+                      className={`w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 ${isLocal ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      onChange={v => setEditing({ ...editing, contextWindow: v })}
+                      onClamped={v => showToast(`上下文窗口已调回边界 ${v} tokens`, 'info')}
+                      placeholder="留空 = 按模型名自动识别"
+                    />
+                    <p className="text-10 text-ink-500 mt-1 leading-relaxed">{hint}</p>
+                  </div>
+                )
+              })()}
+
+              {testing && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-12 bg-ink-800 border border-ink-700 text-ink-300">
+                  <Loader2 size={13} className="animate-spin text-amber shrink-0" />
+                  正在测试「{editing.model || '未设置模型'}」…本地大模型首次调用需加载进显存，请稍候。
+                </div>
+              )}
+              {!testing && editResult && <TestResultBar r={editResult} />}
+
+              <div className="flex items-center gap-2 pt-1">
+                <Button onClick={saveEdit} disabled={saving || testing} variant="primary" size="md">
+                  <Check size={12} /> 保存
+                </Button>
+                <Button onClick={runTest}
+                  disabled={testing}
+                  title="不必先保存，直接用当前填写的配置发起一次最小对话" variant="secondary" size="md">
+                  {testing ? <Loader2 size={12} className="animate-spin" /> : <FlaskConical size={12} />}
+                  {testing ? '测试中…' : '测试此配置'}
+                </Button>
+                <Button variant="secondary" size="md" onClick={() => { setEditing(null); setEditResult(null); setPickMode('none') }} className="ml-auto">取消</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
