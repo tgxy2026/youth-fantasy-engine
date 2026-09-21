@@ -288,6 +288,18 @@ function mergeCaches(
 
       // —— 云端没有这条记录 ——
       if (sv === undefined) {
+        /**
+         * 🔴 这一支同样要查墓碑（P0，2026-09-21 六维审计）—— 原先它完全没有墓碑判断，
+         *    与上一支（本地没有、云端有）**不对称**，于是留下第二条「删了会复活」的路径：
+         *
+         *    云模式下**本机数据文件是「开启同步那一刻」的冻结快照**（此后读写都走 memory cache，
+         *    见 db/core.ts 的 mirrorCloudCacheToLocal 说明）。于是
+         *    「开着同步删掉某条 → 不关同步直接关窗重启」时，陈旧本地文件里那条**还在**：
+         *    合并遇到 lo 有、sv 无 ⇒ 旧实现无条件 arr.push(lo) ⇒ 删除被撤销并回推云端（自锁）。
+         *
+         *    判据与上一支对齐：本机明确删过（墓碑）+ 本地确有内容（防空库误判）+ 本地那份没被改过。
+         */
+        if (localHasContent && isDeleted(s, k) && (b === undefined || eqRecord(lo, b))) continue
         if (b !== undefined && eqRecord(lo, b)) continue
         arr.push(lo)
         continue
@@ -524,9 +536,19 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
           transientUnavailable = true
           setStatus('offline')
           initPromise = null
+          /**
+           * 🔴 拉取失败**不要清空 cache**（P1，2026-09-21 六维审计）。
+           *
+           *    清空只应发生在「本次会话从未成功拉取过」时 —— 而那种情况下 cache 本来就是空的，
+           *    所以这里的清空动作**只对"曾经拉取成功过"的情况生效**，恰好是最不该清的那种：
+           *    随后 `fallbackHandler(snapshotOf(cache))` 会拿到**空快照**，
+           *    于是 `mirrorCloudCacheToLocal({}, false)` 什么都不写 ——
+           *    兜底链条（闩锁期把 cache 镜像回本地、保住未推送的改动）被上游这一步无声抵消。
+           *
+           *    保留旧 cache 是更安全的一侧：本项目的红线是「绝不返回空库，否则 push 覆盖云端」。
+           */
+          return
         }
-        cache = {}
-        rev = 0
       })()
     }
     return initPromise

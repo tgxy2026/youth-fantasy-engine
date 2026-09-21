@@ -90,10 +90,13 @@ function api(): ElectronStoreAPI {
   return window.electronStore as ElectronStoreAPI
 }
 
-// ---- 与便携版一致的主键映射（store 名 -> 记录主键字段名）----
+// ---- 主键映射（store 名 -> 记录主键字段名）----
 // 🔬 导出供 db/core.ts 的「云端 cache → 本地库」镜像复用：那边要按主键判断「本地是否已有这条」
-//    （闩锁期不能整体覆盖，见 db/core.ts 的 mirrorCloudCacheToLocal）。两处若是各写一份，
-//    日子久了必然对不上；`tests/cloudStoreWrapper.test.ts` 会比对它与 db/core.ts 用的一致性。
+//    （闩锁期不能整体覆盖，见 db/core.ts 的 mirrorCloudCacheToLocal）。
+// ⚠️ 这份映射还有**第二份副本**：`tests/mock-memory.ts` 的 KEY_PATHS（测试桩，靠 `?? 'id'` 兜底）。
+//    增删 store 键时**两处都要改** —— 而且**目前没有任何测试钉住二者一致**
+//    （2026-09-21 六维审计核实：原注释所称的 `tests/cloudStoreWrapper.test.ts` 比对并不存在，
+//     已按事实更正注释，避免后人以为有护栏）。
 export const KEY_PATHS: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id',
