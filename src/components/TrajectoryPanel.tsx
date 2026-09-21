@@ -1,0 +1,313 @@
+/**
+ * 创作轨迹（2.4.0 · A4）—— 「这一章是怎么写出来的」。
+ *
+ * 【它回答什么问题】
+ * 作者要投稿、要报名、要跟编辑解释时，常需要说清"我是怎么写出来的"。
+ * 本页把本机已有的三类记录摆到一条时间线上：细纲 → 各次改动 → 当前稿，
+ * 外加逐日字数，并能把整份材料导成**证据包**（PDF / HTML / JSON）。
+ *
+ * 🔴 三条产品纪律（写在这里，改代码前先读）：
+ *   ① **只如实呈现**：缺数据就写"没有"，版本被清理了就写"已清理"。
+ *      绝不补全、不推测、不美化（`lib/trajectory.ts` 的 retention 就是干这个的）。
+ *   ② **不做对抗检测**：本页与证据包里不出现任何「降低 AI 命中率 / 洗掉痕迹」一类说法。
+ *      我们只记录过程，不参与军备竞赛。
+ *   ③ **不采集输入**：所有数据都来自软件本就有的记录（时间戳 / 快照 / 每日字数），
+ *      没有键盘记录，导出不联网。
+ */
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { History, FileDown, Loader2, AlertTriangle, BookOpen } from 'lucide-react'
+import * as db from '../lib/db'
+import type { Chapter, Volume, CardRecord } from '../lib/types'
+import type { Snapshot } from '../lib/db'
+import { chapterSeqMap } from '../lib/chapterSeq'
+import {
+  buildChapterTrajectory, buildTrajectoryOverview, findOutlineCard,
+  isAIVersion, type TrajectoryNode,
+} from '../lib/trajectory'
+import { buildEvidencePack, shortDate } from '../lib/evidencePack'
+import { foldVh } from '../lib/theme'
+import HelpPopover from './HelpPopover'
+import { Button } from './Button'
+import { showToast } from './dialogs'
+import EvidenceExportDialog from './EvidenceExportDialog'
+
+const OUTLINE_TAB = 'chapter-outline'
+
+/** 时间戳 → `M-D HH:MM`（列表里空间紧） */
+function fmtShort(ts: number | null): string {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** 节点在时间线上的圆点配色：AI 动笔前的旧稿最值钱，用琥珀点出来 */
+function dotClass(n: TrajectoryNode): string {
+  if (n.stage === 'outline') return 'bg-ink-500'
+  if (n.stage === 'current') return 'bg-emerald-400'
+  return isAIVersion(n.source) ? 'bg-amber' : 'bg-ink-400'
+}
+
+export default function TrajectoryPanel() {
+  const [loading, setLoading] = useState(true)
+  const [projectName, setProjectName] = useState('')
+  const [volumes, setVolumes] = useState<Volume[]>([])
+  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [cards, setCards] = useState<CardRecord[]>([])
+  const [dailyStats, setDailyStats] = useState<{ date: string; words: number }[]>([])
+  const [activeId, setActiveId] = useState('')
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
+  const [exportOpen, setExportOpen] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const pid = db.getCurrentProjectId()
+      const [pj, vols, chs, cs, ds] = await Promise.all([
+        pid ? db.getProject(pid).catch(() => undefined) : Promise.resolve(undefined),
+        db.getAllVolumes().catch(() => [] as Volume[]),
+        db.getAllChapters().catch(() => [] as Chapter[]),
+        db.getCardRecords(OUTLINE_TAB).catch(() => [] as CardRecord[]),
+        db.getDailyStats().catch(() => [] as { date: string; words: number }[]),
+      ])
+      setProjectName(pj?.name ?? '')
+      setVolumes(vols)
+      setChapters(chs)
+      setCards(cs)
+      setDailyStats(ds)
+      // 默认选中：优先"已有正文的第一章"（空项目则选第一章），都没有则不选
+      setActiveId(prev => {
+        if (prev && chs.some(c => c.id === prev)) return prev
+        const sorted = [...chs].sort((a, b) => (a.volumeId === b.volumeId ? a.order - b.order : 0))
+        return (sorted.find(c => c.wordCount > 0) ?? sorted[0])?.id ?? ''
+      })
+    } catch (e) {
+      showToast(`读取创作记录失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // 选中章节后单独取它的快照（列表里不预先查全部，避免 N 次查询）
+  useEffect(() => {
+    if (!activeId) { setSnapshots([]); return }
+    let alive = true
+    db.getSnapshots(activeId).then(s => { if (alive) setSnapshots(s) }).catch(() => { if (alive) setSnapshots([]) })
+    return () => { alive = false }
+  }, [activeId])
+
+  const seqs = useMemo(() => chapterSeqMap(volumes, chapters), [volumes, chapters])
+  const active = useMemo(() => chapters.find(c => c.id === activeId) ?? null, [chapters, activeId])
+
+  const traj = useMemo(() => {
+    if (!active) return null
+    return buildChapterTrajectory({
+      chapter: active, volumes, chapters, snapshots,
+      outline: findOutlineCard(seqs.get(active.id) ?? 0, cards),
+      dailyStats,
+    })
+  }, [active, volumes, chapters, snapshots, cards, dailyStats, seqs])
+
+  const overview = useMemo(() => buildTrajectoryOverview(chapters, dailyStats), [chapters, dailyStats])
+
+  const pack = useMemo(
+    () => (traj ? buildEvidencePack(traj, projectName) : null),
+    [traj, projectName],
+  )
+
+  // 章列表按卷分组（卷顺序即列表顺序）
+  const groups = useMemo(() => {
+    const out: { title: string; items: Chapter[] }[] = []
+    for (const v of volumes) {
+      const items = chapters.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order)
+      if (items.length) out.push({ title: v.title || '未命名卷', items })
+    }
+    const orphan = chapters.filter(c => !volumes.some(v => v.id === c.volumeId))
+    if (orphan.length) out.push({ title: '未分卷章节', items: [...orphan].sort((a, b) => a.order - b.order) })
+    return out
+  }, [volumes, chapters])
+
+  // 写作分布：最多画最近 60 天（再多柱子就糊成一片了）
+  const dailyShown = useMemo(() => (traj ? traj.daily.slice(-60) : []), [traj])
+  const dailyMax = useMemo(() => Math.max(1, ...dailyShown.map(d => d.words)), [dailyShown])
+
+  if (loading) {
+    return (
+      <div className="w-full page-enter flex items-center justify-center gap-2 text-ink-400 text-13" style={{ height: foldVh('60vh') }}>
+        <Loader2 size={14} className="animate-spin" /> 正在读取创作记录…
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full page-enter">
+      <header className="mb-5">
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-ink-50">创作轨迹</h1>
+          <HelpPopover title="创作轨迹怎么用" width="23rem" size={14}>
+            {'按章回看「这一章是怎么写出来的」：细纲 → 各次改动 → 当前稿，附逐日字数。\n\n· 数据全部来自软件本就有的记录（章节时间戳、自动快照、每日字数），不另外采集你的操作；证据包在本机生成，保存位置由你选择；\n· 每章最多保留 12 个历史版本，超出后会自动清理最旧的 —— 若早期版本已不在，页面会如实写明，不会假装完整；\n· 可导出证据包：PDF（桌面版一键保存）/ 单文件 HTML（可打印）/ JSON（供机器核验）。\n\n用途：投稿、报名、跟编辑说明创作过程时，用来自证。软件不做、也不参与任何「规避 AI 检测」的事情。'}
+          </HelpPopover>
+        </div>
+        <p className="mt-1 text-13 text-ink-300">细纲 → 各次改动 → 当前稿 · 可导出证据包</p>
+      </header>
+
+      {/* 全书总览 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <StatCard label="总字数" value={`${overview.totalWords.toLocaleString()}`} unit="字" />
+        <StatCard label="章节" value={`${overview.writtenChapters}`} unit={`/ ${overview.totalChapters} 章已有正文`} />
+        <StatCard label="写作天数" value={`${overview.activeDays}`} unit={`/ 跨度 ${overview.spanDays} 天`} />
+        <StatCard label="最近动笔" value={overview.lastAt ? shortDate(new Date(overview.lastAt).toISOString().slice(0, 10)) : '—'} unit="" />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[16rem,1fr]">
+        {/* 左：章节列表 */}
+        <aside className="rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
+          <div className="px-3 py-2 border-b border-ink-700 text-11 text-ink-400">选择章节</div>
+          <div className="overflow-auto" style={{ maxHeight: foldVh('62vh') }}>
+            {groups.length === 0 ? (
+              <div className="px-3 py-6 text-11 text-ink-500 text-center">这个项目还没有章节</div>
+            ) : groups.map(g => (
+              <div key={g.title}>
+                <div className="px-3 pt-2.5 pb-1 text-10 text-ink-500">{g.title}</div>
+                {g.items.map(ch => (
+                  <button
+                    key={ch.id}
+                    onClick={() => setActiveId(ch.id)}
+                    className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
+                      ch.id === activeId ? 'bg-amber/10 text-amber' : 'text-ink-300 hover:bg-ink-800/60'
+                    }`}
+                  >
+                    <span className="shrink-0 w-7 text-10 text-ink-500 tabular-nums">{seqs.get(ch.id) || ''}</span>
+                    <span className="flex-1 truncate text-12">{ch.title || '（未命名）'}</span>
+                    <span className="shrink-0 text-10 text-ink-500 tabular-nums">{ch.wordCount}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        {/* 右：轨迹详情 */}
+        <section className="min-w-0">
+          {!traj ? (
+            <div className="rounded-xl border border-ink-700 bg-ink-850/40 flex items-center justify-center text-13 text-ink-500" style={{ height: foldVh('40vh') }}>
+              左侧选一章，这里显示它的创作轨迹
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* 概况 + 导出 */}
+              <div className="rounded-xl border border-ink-700 bg-ink-850/40 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <BookOpen size={14} className="text-amber shrink-0" />
+                      <span className="text-14 font-semibold text-ink-100 truncate">{traj.title}</span>
+                      {traj.no > 0 && <span className="shrink-0 text-10 text-ink-500">第 {traj.no} 章</span>}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-11 text-ink-400">
+                      <span>当前 {traj.currentWords} 字</span>
+                      <span>本机保留 {traj.retainedVersions} 个历史版本</span>
+                      <span>跨度 {traj.spanDays} 天 · 有写作记录 {traj.activeDays} 天</span>
+                      {traj.wordDelta !== null && (
+                        <span>较最早版本 {traj.wordDelta >= 0 ? '+' : ''}{traj.wordDelta} 字</span>
+                      )}
+                    </div>
+                  </div>
+                  <Button variant="primary" size="sm" onClick={() => setExportOpen(true)} className="shrink-0 flex items-center gap-1.5">
+                    <FileDown size={13} /> 导出证据包
+                  </Button>
+                </div>
+
+                {/* 保留情况：不足时如实提醒（这是「可信」的一部分，不能藏） */}
+                {traj.likelyTruncated && (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2">
+                    <AlertTriangle size={13} className="text-amber shrink-0 mt-0.5" />
+                    <p className="text-11 text-ink-200 leading-relaxed">
+                      本章更早的版本可能已被自动清理（每章最多保留 12 个）。下面的时间线是本机实际保留的部分，
+                      证据包里也会如实写明这一点。
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* 时间线 */}
+              <div className="rounded-xl border border-ink-700 bg-ink-850/40 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <History size={13} className="text-ink-400" />
+                  <span className="text-12 font-semibold text-ink-200">创作过程时间线</span>
+                  <span className="text-10 text-ink-500">（细纲卡不记录时间，故不带时间点）</span>
+                </div>
+                <div className="space-y-0">
+                  {traj.nodes.map((n, i) => (
+                    <div key={i} className="flex gap-3">
+                      <div className="w-24 shrink-0 text-right text-10 text-ink-500 pt-0.5 tabular-nums">
+                        {n.at ? fmtShort(n.at) : '起点'}
+                      </div>
+                      <div className="relative flex flex-col items-center">
+                        <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotClass(n)}`} />
+                        {i < traj.nodes.length - 1 && <span className="w-px flex-1 bg-ink-700" />}
+                      </div>
+                      <div className="min-w-0 flex-1 pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-11 ${isAIVersion(n.source) ? 'text-amber' : 'text-ink-200'}`}>{n.label}</span>
+                          {n.wordCount !== undefined && <span className="text-10 text-ink-500">{n.wordCount} 字</span>}
+                        </div>
+                        <p className="mt-0.5 text-11 text-ink-400 leading-relaxed line-clamp-2">{n.preview || '（空）'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 写作分布 */}
+              <div className="rounded-xl border border-ink-700 bg-ink-850/40 p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-12 font-semibold text-ink-200">写作分布</span>
+                  <span className="text-10 text-ink-500">
+                    （口径：本项目当天写的总字数，软件不按章节拆分{dailyShown.length < (traj.daily.length) ? `，此处显示最近 ${dailyShown.length} 天` : ''}）
+                  </span>
+                </div>
+                {dailyShown.length === 0 ? (
+                  <p className="py-6 text-11 text-ink-500 text-center">该章时间跨度内没有每日字数记录</p>
+                ) : (
+                  <>
+                    <div className="flex items-end gap-1 h-20 mt-3">
+                      {dailyShown.map(d => (
+                        <div
+                          key={d.date}
+                          className={`flex-1 max-w-6 min-w-0 rounded-t ${d.words > 0 ? 'bg-amber/70' : 'bg-ink-700'}`}
+                          style={{ height: `${Math.max(2, Math.round((d.words / dailyMax) * 76))}px` }}
+                          title={`${d.date}　${d.words} 字`}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-1.5 flex justify-between text-10 text-ink-500">
+                      <span>{shortDate(dailyShown[0].date)}</span>
+                      {dailyShown.length > 1 && <span>{shortDate(dailyShown[dailyShown.length - 1].date)}</span>}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {pack && (
+        <EvidenceExportDialog open={exportOpen} onClose={() => setExportOpen(false)} pack={pack} />
+      )}
+    </div>
+  )
+}
+
+function StatCard({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <div className="rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-3">
+      <div className="text-10 text-ink-500">{label}</div>
+      <div className="mt-1 flex items-baseline gap-1">
+        <span className="text-18 font-bold text-ink-100 tabular-nums">{value}</span>
+        {unit && <span className="text-10 text-ink-500">{unit}</span>}
+      </div>
+    </div>
+  )
+}

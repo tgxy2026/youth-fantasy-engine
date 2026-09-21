@@ -123,6 +123,46 @@ app.whenReady().then(() => {
     return r.filePath
   })
 
+  /**
+   * 把一段 HTML 渲染成 PDF 并保存（创作证据包 / 打印导出用）。
+   *
+   * 🔴 **为什么必须由主进程做，且必须走 Chromium 的打印引擎**：
+   *    前端 PDF 库（jsPDF 一类）自带字体不含中文，硬套会输出一堆豆腐块；
+   *    而中文子集化 / 嵌入字体是另一个大坑。Chromium 的 printToPDF 用系统字体，零依赖、中文无问题。
+   *
+   * 实现要点：
+   *   · 用**隐藏窗口**加载（不能拿主窗口打 —— 那会把整个应用界面打进去）；
+   *   · HTML 先落**临时文件**再 loadFile：`data:` URL 对超长内容会被截断（证据包轻松过几十 KB）；
+   *   · 窗口禁用 JS：证据包是静态文档，禁用后更安全，且不影响排版。
+   *
+   * @returns 保存后的绝对路径；用户取消返回 null；失败抛异常（由调用方转成界面提示）
+   */
+  ipcMain.handle('export:pdf', async (_e, html, defaultName) => {
+    const r = await dialog.showSaveDialog({
+      title: '保存为 PDF',
+      defaultPath: String(defaultName || '导出文档.pdf'),
+      filters: [{ name: 'PDF 文档', extensions: ['pdf'] }],
+    })
+    if (r.canceled || !r.filePath) return null
+
+    const tmp = path.join(app.getPath('temp'), `yfe-print-${Date.now()}-${process.pid}.html`)
+    let win = null
+    try {
+      await fsp.writeFile(tmp, String(html ?? ''), 'utf-8')
+      win = new BrowserWindow({
+        show: false,
+        webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
+      })
+      await win.loadFile(tmp)
+      const buf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+      await fsp.writeFile(r.filePath, buf)
+      return r.filePath
+    } finally {
+      try { win?.destroy() } catch { /* 窗口已销毁 */ }
+      try { await fsp.unlink(tmp) } catch { /* 临时文件清理失败不阻断导出 */ }
+    }
+  })
+
   // 从便携版数据文件导入（选择 U 盘上的数据文件，读取内容）
   ipcMain.handle('store:import', async () => {
     const r = await dialog.showOpenDialog({

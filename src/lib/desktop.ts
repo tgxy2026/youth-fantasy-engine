@@ -19,6 +19,12 @@ export interface ElectronStoreAPI {
   /** 同步写盘；失败时主进程返回 { ok:false } 而**不抛异常**，调用方必须查返回值 */
   saveSync(text: string): { ok: boolean; error: string | null } | undefined
   exportFile(text: string): Promise<string | null>
+  /**
+   * 把一段 HTML 渲染成 PDF 并保存到用户选择的位置。
+   * 🔴 中文必须走这条通道（Chromium 打印引擎用系统字体）；前端 PDF 库会输出豆腐块。
+   * @returns 保存后的绝对路径 / null（用户取消）；失败 reject（调用方走 {@link exportPdfDocument} 统一处理）
+   */
+  exportPdf(html: string, defaultName: string): Promise<string | null>
   importFile(): Promise<string | null>
   revealDataFile(): Promise<void>
   dataPath(): Promise<string>
@@ -310,6 +316,27 @@ export async function exportDesktopData(): Promise<string | null> {
     lastError = '导出失败：' + (e instanceof Error ? e.message : String(e))
     emit()
     return null
+  }
+}
+
+/**
+ * 把一段 HTML 存成 PDF（**桌面版专属**；便携版是单文件 HTML、跑在浏览器里，没有主进程调不了）。
+ *
+ * 失败与取消**必须分开返回**：取消是正常操作，失败要说清原因 ——
+ * 混成一个 null 会让「用户点了取消」和「真的出错了」在界面上长得一模一样。
+ */
+export async function exportPdfDocument(
+  html: string, defaultName: string,
+): Promise<{ ok: boolean; path?: string; cancelled?: boolean; error?: string }> {
+  if (!DESKTOP || !window.electronStore?.exportPdf) {
+    return { ok: false, error: '当前版本不支持直接存 PDF（仅桌面版可用）' }
+  }
+  try {
+    const p = await window.electronStore.exportPdf(html, defaultName)
+    if (!p) return { ok: false, cancelled: true }
+    return { ok: true, path: p }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 

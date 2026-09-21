@@ -87,7 +87,7 @@ export function isAISnapshot(s: Snapshot): boolean {
 }
 
 /** 每章快照上限：**所有来源共用这一个池子**（老大 2026-09-21 定：不减少现有保护力度） */
-const MAX_SNAPSHOTS_PER_CHAPTER = 12
+export const MAX_SNAPSHOTS_PER_CHAPTER = 12
 
 /**
  * 裁到每章上限。

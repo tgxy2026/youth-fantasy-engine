@@ -55,6 +55,7 @@ export type TabType =
   | 'inspire'      // 灵感启发（随机取名生成器 + AI 辅助规划）
   | 'check'        // 检查工具（敏感词检测 + AI 一致性深度自查 + 数据体检）
   | 'material'     // 素材资料（内置只读写作参考库）
+  | 'trajectory'   // 创作轨迹（按章回看创作过程 + 导出证据包）
   | 'tavern-plot'   // 酒馆模式 · 剧情推演（角色扮演诊断台）
   | 'tavern-report' // 酒馆模式 · 推演报告（合理性报告列表与详情）
   | 'tavern-card'   // 酒馆模式 · 角色卡（自由模式角色卡管理）
