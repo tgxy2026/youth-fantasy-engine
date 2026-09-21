@@ -13,7 +13,7 @@
 - Electron31+React18.3+TS5.5+Vite5.3+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本走 `env.ts:APP_VERSION_LABEL`。
 - 现 **2.3.0**（结构优化·不加功能；评估→**不重写·定向重构**）。版本唯一源 `package.json`；⚠️ lock 只改 `j.version`＋`j.packages['']`。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。
-- 🔴 启动**默认停项目管理首页**；`lastProject` 只服务「首次播示范项目」，删项目时一并清掉（否则陈旧镜像拼回已删项目）。
+- 🔴 启动**默认停项目管理首页**；`lastProject` 只服务「首次播示范项目」，删项目时一并清掉（否则会拼回已删项目）。
 
 ## 创作链路（2.2.x，详 `docs/2.2.1-*`）
 - 🔴 **切章必清 ghost**（Tab 插错章＝数据事故）；创意写作起点不手选（看有无卷大纲/细纲）；🔴 续排起点＝**已有细纲最大章号+1**（看正文→纯排纲必卡死）；每卷章数＝硬指标、批总量＝卷×章（≤60）、缺口优先补齐；写前必 `previewCommit`、字段键取自 `fieldMap`（闸 `tests/extractFields`）。
@@ -31,13 +31,13 @@
 - 🗺 多地图方案 B：新表 `geomaps`＋geography 的 `所属地图`；`migrateGeoMaps` 建默认图回填；🔴 删图不删地点、改图名连带改归属。
 - 🔴 审计四条（详规在 skill）：①语料净化：再导出/`tests/.x.mjs`/`.workbuddy`/注释不算引用；②门面/保留项靠 `KEEP` 白名单认（必写理由）；🔴🔴 死代码须回查 `docs/` 判决（A 类＝能力缺口·白名单保护）；③graph 环标边类型；④工具的结构假设会静默失明。
 - 🔴 长任务状态必须放模块级 store（`lib/creativeSession.ts`，单例＋`useSyncExternalStore`）：切页签即卸载，`useState` 全丢；lib 层禁 import components；断点只存里程。
-- 🔴 拆书／创意写作**档位＝optional**（不默认勾选）；两页顶部有 `NewProjectAdvice`（"先建空项目"＋选「完整项目」）。
+- 🔴 拆书／创意写作**档位＝optional**（不默认勾选）；两页顶部有 `NewProjectAdvice`。
 
 ## 存储·同步
 - 🔴🔴 云盘同步「删了会复活」：`baseCache` 仅内存→把"云端有·本地无"判成"另一端新增"→删掉的记录回来并自锁。修＝墓碑 `syncTombstone.ts`＋`localHasContent` 闸。
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步它；换设备前先关软件＋等同步完。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路到 local。🔴🔴 桌面读数据失败必须锁写盘（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
-- 🔴🔴 服务器已关：站点/API 全下线；`server/` 保留不上线（⚠️ 200 ≠ 在线）→跨设备同步只剩云盘文件夹。`createIdleTransport`＝未开启占位（报「不可用」，🔴 绝不返回空库否则 push 覆盖云端）。
+- 🔴🔴 服务器已**彻底清理**（09-21，早于原定 09-29）：站点/服务/数据/配置全删、nginx 无监听、IP 不可达；`server/` 保留不上线 → 跨设备同步只剩云盘文件夹。`createIdleTransport`＝未开启占位（报「不可用」，🔴 绝不返回空库否则 push 覆盖云端）。
 
 ## UI·布局尺寸
 - 浅色禁低透明 amber 表数据（实色最低 `/40`）；图谱色走 `--graph-*`；SVG 用 CSS 变量须走 `style`。设置项＝标题→输入→说明。
