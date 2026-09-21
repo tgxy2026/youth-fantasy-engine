@@ -134,10 +134,13 @@ async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Pro
     const list = store === 'meta'
       ? rows.filter(r => !isExcludedMetaKey(r?.key))
       : rows
-    if (!list.length) continue
-
     if (overwrite) {
-      tasks.push(desktopLocalStore.bulkPut(store, list).catch(() => {}))
+      // 🔴 空 list 也必须走「删除镜像」（P0，2026-09-21 六维审计）：
+      //    `list` 为空 = 这个 store 在云端被**整片清空**了 —— 恰恰是最需要删掉本地多余记录的那一份。
+      //    旧实现把 `if (!list.length) continue` 排在 overwrite 分支之前，整个空 store 被跳过
+      //    ⇒ 本地旧记录一条不删 ⇒ 关同步后立刻「复活」；
+      //    更糟的是下次开同步时 seedFromLocal 会把它**当本地数据播种回云端** —— 删除被彻底撤销。
+      if (list.length) tasks.push(desktopLocalStore.bulkPut(store, list).catch(() => {}))
       // 🔴 镜像的另一半：还要删掉「本地有、这份 cache 里没有」的记录（2026-09-20 六维审计 P1-1）。
       //    云模式下 `store.del` 只是把记录从云端 cache 摘掉，**本机数据文件没动**
       //    （读写都走 cache，本地库自开启同步那一刻起就不再更新）。
@@ -146,6 +149,10 @@ async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Pro
       tasks.push(mirrorDeleteExtra(store, list))
       continue
     }
+
+    // 兜底路径（overwrite=false）：这份 cache 是**闩锁前的旧数据**，绝不能删；
+    // 且空 list 在这条路上没有任何意义 —— 保持原有语义，直接跳过。
+    if (!list.length) continue
 
     // 🔴 只补缺失（异常兜底路径专用）：闩锁期包装层已把读写切到本地库，
     //    用户的新编辑正躺在那里，而这份 cache 是闩锁前的旧数据 ——
