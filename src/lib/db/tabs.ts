@@ -36,7 +36,16 @@ export async function getCardRecords(tabId: string): Promise<CardRecord[]> {
   return all.filter(r => r.projectId === currentProjectId && r.tabId === tabId).sort((a, b) => a.order - b.order)
 }
 export async function saveCardRecord(rec: CardRecord) {
-  await ops.put('cardRecords', { ...rec, projectId: rec.projectId || currentProjectId })
+  const pid = rec.projectId || currentProjectId
+  // 创建时间（2.4.0 · A4 遗留补全）：**首次落库写一次，之后编辑不改动它**。
+  // 🔴 必须回读原值再决定：若直接 `rec.createdAt ?? Date.now()`，每次用新对象保存同一张卡
+  //    都会刷新成"现在"，那这个字段就失去意义（它要回答的是"这张卡什么时候建的"）。
+  let createdAt = rec.createdAt
+  if (createdAt === undefined) {
+    const prev = await ops.get<CardRecord>('cardRecords', rec.id)
+    createdAt = prev?.createdAt ?? Date.now()
+  }
+  await ops.put('cardRecords', { ...rec, projectId: pid, createdAt })
   touchProject(currentProjectId)
 }
 export async function deleteCardRecord(id: string) {

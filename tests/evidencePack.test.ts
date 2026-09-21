@@ -127,7 +127,8 @@ const pack = buildEvidencePack(buildChapterTrajectory(baseInput), '吞天神脉'
 // ---------- ⑦ 时间线：细纲不带时间点 ----------
 {
   const html = toHtml(packToDocModel(pack, DEFAULT_EVIDENCE_OPTIONS))
-  ok('🔴 ⑦ 细纲条目写明「不记录时间戳」', html.includes('细纲卡不记录时间戳'))
+  ok('🔴 ⑦ 老细纲卡（无创建时间）如实写明「未记录时间」', html.includes('未记录时间'))
+  ok('⑦ 细纲条目仍作为起点出现', html.includes('章节细纲'))
   ok('⑦ 时间线含 AI 版与当前稿', html.includes('第 1 个保留版本') && html.includes('当前稿'))
 }
 

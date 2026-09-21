@@ -61,6 +61,8 @@ export interface EvidencePack {
     wordCount: number
   }
   outline: string | null
+  /** 细纲卡的创建时间（2.4.0 起卡片才记；老卡片为 null → 时间线显示「起点」而不编时间） */
+  outlineAt?: number | null
   versions: EvidenceVersionRecord[]
   current: { at: number; wordCount: number; content: string }
   /** 🔴 本机保留情况 —— 如实申报，不假装完整 */
@@ -108,6 +110,7 @@ export function buildEvidencePack(
       spanDays: t.spanDays, activeDays: t.activeDays, wordCount: t.currentWords,
     },
     outline: t.hasOutline ? (t.nodes.find(n => n.stage === 'outline')?.content ?? null) : null,
+    outlineAt: t.nodes.find(n => n.stage === 'outline')?.at ?? null,
     versions,
     current: {
       at: t.updatedAt,
@@ -208,7 +211,14 @@ export function packToDocModel(pack: EvidencePack, opts: EvidenceViewOptions): D
   blocks.push({ type: 'section', text: '二、创作过程时间线' })
   const timeline: { tag: string; title?: string; text: string; sub?: string }[] = []
   if (opts.includeOutline && pack.outline) {
-    timeline.push({ tag: '起点', title: '章节细纲', text: '细纲卡不记录时间戳，故此处不列时间', sub: '内容见下节' })
+    timeline.push({
+      tag: pack.outlineAt ? stamp(pack.outlineAt) : '起点',
+      title: '章节细纲',
+      text: pack.outlineAt
+        ? '细纲卡创建时间'
+        : '该细纲卡未记录时间（2.4.0 之前创建的卡片没有这个字段）',
+      sub: '内容见下节',
+    })
   }
   pack.versions.forEach((v, i) => {
     timeline.push({

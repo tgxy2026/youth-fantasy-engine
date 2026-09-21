@@ -9,8 +9,9 @@
  * （本项目对「两处各写一份必然漂移」有多次教训，见 exportDoc.ts 的同款说明）。
  *
  * 🔴 **两处数据现实（不要试图绕过，只能如实标注）**：
- *   ① 细纲卡 `CardRecord` **没有时间戳** —— 所以「细纲」节点 `at: null`，
- *      只能作为**起点内容**展示，不能当成时间点。编一个时间出来就是造假。
+ *   ① 细纲卡的创建时间**老数据缺、新数据有**（2.4.0 起 `saveCardRecord` 才写入 createdAt）
+ *      —— 所以「细纲」节点 `at` 可能是 null。**老卡片就显示「—」/「未记录时间」，
+ *      绝不补一个"当前时间"上去**（那是编造历史，比缺字段更糟）。
  *   ② 快照每章只留 {@link MAX_SNAPSHOTS_PER_CHAPTER} 份，且裁剪会丢最旧的自动快照 ——
  *      所以「初稿」可能已不在本机。这时 `likelyTruncated` 为 true，
  *      界面与证据包都必须写清「本机保留 N 个版本」，而不是假装这就是全部。
@@ -163,7 +164,9 @@ export function buildChapterTrajectory(input: TrajectoryInput): ChapterTrajector
   const nodes: TrajectoryNode[] = []
   if (outlineText) {
     nodes.push({
-      stage: 'outline', at: null, label: '章节细纲',
+      // 细纲卡自 2.4.0 起带创建时间；老卡片没有 → at 为 null，
+      // 🔴 界面显示「—」而不是编一个时间（编时间＝造假，这条比"好看"重要）
+      stage: 'outline', at: outline?.createdAt ?? null, label: '章节细纲',
       preview: previewOf(outlineText), content: outlineText,
     })
   }

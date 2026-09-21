@@ -128,7 +128,8 @@ export default function TrajectoryPanel() {
   }, [volumes, chapters])
 
   // 写作分布：最多画最近 60 天（再多柱子就糊成一片了）
-  const dailyShown = useMemo(() => (traj ? traj.daily.slice(-60) : []), [traj])
+  // 全部日期都显示（A4 遗留补全）：天数多时靠横向滚动看全，不再截断 —— 轨迹本就该看得完整
+  const dailyShown = useMemo(() => (traj ? traj.daily : []), [traj])
   const dailyMax = useMemo(() => Math.max(1, ...dailyShown.map(d => d.words)), [dailyShown])
 
   if (loading) {
@@ -235,7 +236,7 @@ export default function TrajectoryPanel() {
                 <div className="flex items-center gap-2 mb-3">
                   <History size={13} className="text-ink-400" />
                   <span className="text-12 font-semibold text-ink-200">创作过程时间线</span>
-                  <span className="text-10 text-ink-500">（细纲卡不记录时间，故不带时间点）</span>
+                  <span className="text-10 text-ink-500">（细纲时间取卡片创建时间；老卡片未记录则显示「—」）</span>
                 </div>
                 <div className="space-y-0">
                   {traj.nodes.map((n, i) => (
@@ -264,22 +265,24 @@ export default function TrajectoryPanel() {
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-12 font-semibold text-ink-200">写作分布</span>
                   <span className="text-10 text-ink-500">
-                    （口径：本项目当天写的总字数，软件不按章节拆分{dailyShown.length < (traj.daily.length) ? `，此处显示最近 ${dailyShown.length} 天` : ''}）
+                    （口径：本项目当天写的总字数，软件不按章节拆分；天数多时可横向滚动看全）
                   </span>
                 </div>
                 {dailyShown.length === 0 ? (
                   <p className="py-6 text-11 text-ink-500 text-center">该章时间跨度内没有每日字数记录</p>
                 ) : (
                   <>
-                    <div className="flex items-end gap-1 h-20 mt-3">
-                      {dailyShown.map(d => (
-                        <div
-                          key={d.date}
-                          className={`flex-1 max-w-6 min-w-0 rounded-t ${d.words > 0 ? 'bg-amber/70' : 'bg-ink-700'}`}
-                          style={{ height: `${Math.max(2, Math.round((d.words / dailyMax) * 76))}px` }}
-                          title={`${d.date}　${d.words} 字`}
-                        />
-                      ))}
+                    <div className="overflow-x-auto pb-1">
+                      <div className="flex items-end gap-1 h-20 mt-3" style={{ minWidth: `${dailyShown.length * 10}px` }}>
+                        {dailyShown.map(d => (
+                          <div
+                            key={d.date}
+                            className={`w-2 shrink-0 rounded-t ${d.words > 0 ? 'bg-amber/70' : 'bg-ink-700'}`}
+                            style={{ height: `${Math.max(2, Math.round((d.words / dailyMax) * 76))}px` }}
+                            title={`${d.date}　${d.words} 字`}
+                          />
+                        ))}
+                      </div>
                     </div>
                     <div className="mt-1.5 flex justify-between text-10 text-ink-500">
                       <span>{shortDate(dailyShown[0].date)}</span>

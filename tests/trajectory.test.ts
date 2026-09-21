@@ -83,6 +83,15 @@ const chapters = [ch()]
   ok('② 无细纲时不产出细纲节点', !t.nodes.some(n => n.stage === 'outline'))
   ok('② hasOutline = false', !t.hasOutline)
 }
+{
+  // A4 遗留补全：细纲卡自 2.4.0 起带 createdAt ⇒ 节点时间取它（老卡片无该字段时仍为 null，不编时间）
+  const t = buildChapterTrajectory({
+    chapter: ch(), volumes: [vol], chapters, snapshots: [],
+    outline: { ...outlineCard, createdAt: T2 }, dailyStats,
+  })
+  const o = t.nodes.find(n => n.stage === 'outline')!
+  ok('② 细纲卡有创建时间时，节点时间取它（不再一律 null）', o.at === T2, String(o.at))
+}
 
 // ---------- ③ 来源 → 标签；AI 版判定 ----------
 {

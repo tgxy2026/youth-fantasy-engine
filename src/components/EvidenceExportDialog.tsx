@@ -78,7 +78,7 @@ export default function EvidenceExportDialog({ open, onClose, pack }: {
 
   const toggles: { key: keyof EvidenceViewOptions; label: string; hint: string }[] = [
     { key: 'includeVersions', label: '附各版完整正文', hint: '把每个历史版本的全文都放进去 —— 这是证据包里最实在的部分，篇幅也最大。' },
-    { key: 'includeOutline', label: '附本章细纲', hint: '动笔前排的细纲。细纲卡不记录时间，所以它只作为起点内容出现，不带时间点。' },
+    { key: 'includeOutline', label: '附本章细纲', hint: '动笔前排的细纲。时间取卡片创建时间（2.4.0 起），老卡片没有则标为「未记录时间」——不编时间。' },
     { key: 'includeDaily', label: '附写作分布', hint: '逐日列出本项目当天写的字数，用于核对更新节奏。' },
   ]
 
