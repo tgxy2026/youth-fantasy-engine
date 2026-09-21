@@ -54,7 +54,8 @@ export function exportChapter(projectName: string, ch: Chapter) {
 }
 
 // ============ Markdown 整书 ============
-function bookToMarkdown(projectName: string, volumes: Volume[], chapters: Chapter[]): string {
+/** 整书 Markdown 正文（纯计算、不触发下载 —— 导出便于单测断言缩进等格式约定） */
+export function bookToMarkdown(projectName: string, volumes: Volume[], chapters: Chapter[]): string {
   const parts = [`# ${projectName}`, '']
   for (const vol of volumes) {
     const chs = chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.order - b.order)
@@ -76,17 +77,39 @@ export function exportBookMD(projectName: string, volumes: Volume[], chapters: C
   downloadFile(sanitize(`${projectName}-全书.md`), bookToMarkdown(projectName, volumes, chapters))
 }
 
-// ============ 平台粘贴版（干净纯文本） ============
-function normalizeParagraphs(text: string): string {
+// ============ 段落切分（TXT / MD / 平台粘贴 / EPUB / DOCX 共用口径） ============
+
+/**
+ * 章节正文 → 规范段落数组：折叠连续空行、清掉行尾空白，**保留行首缩进**。
+ *
+ * 🔴 2.4.0 · A5 修正：此前这段逻辑（以及 EPUB / DOCX 里各自的副本）用的是 `s.trim()` ——
+ *    行首缩进被整段抹掉，导出的 TXT / 平台粘贴版 / EPUB / DOCX 与编辑器里看到的样子对不上。
+ *    缩进是作者的排版主权，多级缩进可能是有意为之（对白、补充说明），导出必须如实带上。
+ *    ⚠️ 判空仍然用 trim：整行只有空白的，不该被当成一个段落。
+ */
+function splitParagraphs(text: string): string[] {
   return text
     .replace(/\r\n/g, '\n')
     .split(/\n+/)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .join('\n\n')
+    .map(s => s.replace(/[ \t\u3000]+$/, ''))
+    .filter(s => s.trim() !== '')
 }
 
-export function exportBookPlatformText(projectName: string, volumes: Volume[], chapters: Chapter[]) {
+/**
+ * EPUB 专用：HTML 会把**连续半角空格**折叠成一个、Tab 直接吃掉，
+ * 行首缩进得靠 `&nbsp;` 才能如实呈现（全角空格「　」不折叠，原样即可）。
+ */
+function indentToNbsp(line: string): string {
+  return line.replace(/^[ \t]+/, m => m.replace(/\t/g, '    ').replace(/ /g, '&nbsp;'))
+}
+
+// ============ 平台粘贴版（干净纯文本） ============
+function normalizeParagraphs(text: string): string {
+  return splitParagraphs(text).join('\n\n')
+}
+
+/** 平台粘贴版正文（纯计算、不触发下载 —— 同样为了可单测） */
+export function bookToPlatformText(volumes: Volume[], chapters: Chapter[]): string {
   const parts: string[] = []
   for (const vol of volumes) {
     const chs = chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.order - b.order)
@@ -101,7 +124,11 @@ export function exportBookPlatformText(projectName: string, volumes: Volume[], c
     parts.push('未分卷章节', '')
     for (const ch of orphan) parts.push(ch.title, '', normalizeParagraphs(ch.content), '')
   }
-  downloadFile(sanitize(`${projectName}-粘贴版.txt`), parts.join('\n'))
+  return parts.join('\n')
+}
+
+export function exportBookPlatformText(projectName: string, volumes: Volume[], chapters: Chapter[]) {
+  downloadFile(sanitize(`${projectName}-粘贴版.txt`), bookToPlatformText(volumes, chapters))
 }
 
 // ============ EPUB ============
@@ -109,9 +136,10 @@ function escapeXml(s: string): string {
   return s.replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]!))
 }
 function contentToXhtml(text: string): string {
-  const paras = text.replace(/\r\n/g, '\n').split(/\n+/).map(s => s.trim()).filter(Boolean)
+  const paras = splitParagraphs(text)
   if (paras.length === 0) return '<p>（本章暂无内容）</p>'
-  return paras.map(p => `<p>${escapeXml(p)}</p>`).join('')
+  // 行首半角空白转 &nbsp;，否则 HTML 会把缩进折叠掉、导出后看不出来（A5）
+  return paras.map(p => `<p>${escapeXml(indentToNbsp(p))}</p>`).join('')
 }
 
 /** 生成符合 urn:uuid: 规范的版本 4 UUID（EPUB 的 dc:identifier 必须是真 UUID，不能拿书名硬塞） */
@@ -184,7 +212,8 @@ export function exportDOCX(projectName: string, volumes: Volume[], chapters: Cha
     body.push(docxPara(docxRun(vol.title, true)))
     for (const ch of chs) {
       body.push(docxPara(docxRun(ch.title, true)))
-      const paras = ch.content.replace(/\r\n/g, '\n').split(/\n+/).map(s => s.trim()).filter(Boolean)
+      // 与 TXT / 平台粘贴版同一口径：保留行首缩进（2.4.0 · A5）
+      const paras = splitParagraphs(ch.content)
       for (const p of paras) body.push(docxPara(docxRun(p)))
     }
   }
