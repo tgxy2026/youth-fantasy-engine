@@ -91,5 +91,7 @@
 
 ## 对外推广
 - 🔴 文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→「口令」）；链接压最末＋**后须有缓冲文字**（规范见 `docs/小黑盒推广帖/`）。
-- 🔴 **发帖顺序**：稿里承诺的版本号须**先在夸克盘＋Gitee Release 上架**再发帖。第 0/1/2 篇**均已发布**；入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。现对外 **2.4.0**（源码已 push，Release 附件待令牌补发）。
+- 🔴 **发帖顺序**：稿里承诺的版本号须**先在夸克盘＋Gitee Release 上架**再发帖。第 0/1/2 篇**均已发布**；入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。现对外 **2.4.0**（Release `v2.4.0` id `1159489` 已挂包）。
+🔴 Gitee 令牌**常驻** `G:/AI软件/.gitee-token.txt`（老大 2026-09-22 同意：只此一库用、到期自弃）→ 发版直接读它，别再要。
+🔴 push 只需 `GIT_CONFIG_NOSYSTEM=1`（踢掉 helper-selector GUI）；🔴🔴 **绝不可再加 `GIT_CONFIG_GLOBAL=NUL`**（会把 GCM 一起屏蔽 ⇒ 无凭据 ⇒ 静默挂死）。
 - 系列进度：第 3 篇（人物三件套）**已完稿待发**（配图 5 张全齐）；第 4 篇＝**世界构建**，稿末已预告。截图库按**篇号前缀**分组，共用图用**注记对照**不复制副本。
