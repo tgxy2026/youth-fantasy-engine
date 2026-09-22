@@ -157,6 +157,57 @@ function main() {
       String(CARD_BUNDLE_SUFFIX) !== String(CARD_FILE_SUFFIX) && CARD_BUNDLE_SUFFIX.endsWith('.json'))
   }
 
+  // ============ 🔴 往返对称：关系状态随卡跨设备（2026-09-22 六维审计）============
+  //
+  // 审计现场：**导出侧一直带着 `vars`**（`toCardFile` / `toCardBundle` 的 `...rest` 都含它），
+  // 而导入侧从不读 ⇒ 「导出 → 导入」往返一次，卡上的关系状态（好感/信任/精神/心情/地点 + 备注）全部归零。
+  // 老大 2026-09-22 拍板：**随卡跨设备**。两侧必须对称 —— 这组断言就是钉住这个对称性，
+  // 防止以后有人只改一侧又把它改回去。
+  {
+    const withVars: FreeCharacter = {
+      ...CARD,
+      vars: {
+        values: { affection: 62, trust: 41, mood: '平稳' },
+        notes: { affection: '从戒备到肯搭把手' },
+      },
+    }
+
+    const back = parseCardFile(toCardFile(withVars))
+    const bv = back.ok ? back.card.vars : undefined // 先窄化，否则 tsc 不认 ok 分支上的 card
+    ok('🔴 单卡往返：vars 被带回来', !!bv)
+    ok('🔴 往返后数值逐项一致',
+      JSON.stringify(bv?.values) === JSON.stringify(withVars.vars?.values),
+      JSON.stringify(bv?.values))
+    ok('🔴 往返后备注一致（备注是「为什么现在是这个分」的旁白，同样不能丢）',
+      bv?.notes?.affection === '从戒备到肯搭把手')
+    ok('文本项（心情）也带回来', bv?.values?.mood === '平稳')
+
+    const manyBack = parseCardBundle(toCardBundle([withVars]))
+    ok('🔴 批量通道同样对称（vars 也带回来）',
+      manyBack.ok && !!manyBack.items[0]?.card.vars
+      && manyBack.items[0].card.vars?.values?.affection === 62)
+
+    // 宽松校验不等于照单全收：非法键、非法类型要丢掉
+    const dirty = JSON.parse(toCardFile(withVars)) as { card: Record<string, unknown> }
+    dirty.card.vars = {
+      values: { affection: 30, evilKey: 99 },
+      notes: { affection: 42, mood: '好' },
+    }
+    const cleaned = parseCardFile(JSON.stringify(dirty))
+    const cv = (cleaned.ok ? cleaned.card.vars?.values : {}) as Record<string, unknown>
+    const cn = (cleaned.ok ? cleaned.card.vars?.notes : {}) as Record<string, unknown>
+    ok('丢弃不在 VAR_KEYS 里的键（evilKey 不收）', cv.affection === 30 && cv.evilKey === undefined)
+    ok('notes 里非字符串的值不收（affection: 42 丢掉），合法的一条留下（mood: "好"）',
+      cn.affection === undefined && cn.mood === '好')
+
+    // 向后兼容：旧文件根本没有 vars 字段 → 不报错，也不给卡硬塞一个空的 vars
+    const legacy = JSON.parse(toCardFile(withVars)) as { card: Record<string, unknown> }
+    delete legacy.card.vars
+    const legacyBack = parseCardFile(JSON.stringify(legacy))
+    ok('向后兼容：旧文件没有 vars → 正常导入且 vars 为 undefined（FORMAT_VERSION 无需升版）',
+      legacyBack.ok && legacyBack.card.vars === undefined)
+  }
+
   console.log(`\ntavernCardFile: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

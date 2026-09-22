@@ -17,8 +17,8 @@
  * 本文件是纯逻辑（无 IO、无 React），文件读写由调用方用 FSA / input[type=file] 完成。
  */
 import { uid } from '../id'
-import { EMPTY_CAST_SETTING } from './types'
-import type { FreeCharacter } from './types'
+import { EMPTY_CAST_SETTING, VAR_KEYS } from './types'
+import type { FreeCharacter, CharVars, VarValues, VarKey } from './types'
 
 /** 文件后缀（导出文件名用它收尾） */
 export const CARD_FILE_SUFFIX = '.taverncard.json'
@@ -81,6 +81,41 @@ const isStr = (v: unknown): v is string => typeof v === 'string'
  * 宽容处：缺字段补空串、旧版本无 format 标记也认（只要结构对）；
  * 严格处：名称必须非空、结构必须是对象。
  */
+/**
+ * 宽松读取导入文件里的 `vars`（关系状态）。
+ *
+ * 🔴 2026-09-22 六维审计：导出侧**一直**带着 `vars`（`toCardFile` / `toCardBundle` 的 `...rest` 都含它），
+ *    导入侧却从不读 —— 往返一次（导出→导入，或换设备），卡上的「关系状态」
+ *    （好感 / 信任 / 精神 / 心情 / 地点 + 每项备注）全部归零。
+ *    老大 2026-09-22 拍板：**随卡跨设备** ⇒ 导出带、导入也必须读。两侧要么都带、要么都不带，不能一边带一边丢。
+ *
+ * 校验取宽松尺度（与本文件其余部分一致）：只认 `VAR_KEYS` 里的键，
+ * 数值项收有限数字、文本项收非空字符串，`notes` 同理 —— 其余一律丢弃。
+ * 一个可用字段都没有时返回 `undefined`（不给卡硬塞一个空的 vars）。
+ * 注意这是**向后兼容**的加法：旧文件没有 `vars` 字段，走的就是这条 `undefined` 分支，
+ * 因此 `FORMAT_VERSION` 不需要升版。
+ */
+function normalizeVars(raw: unknown): CharVars | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const src = raw as Record<string, unknown>
+  const rawValues = (src.values && typeof src.values === 'object' ? src.values : {}) as Record<string, unknown>
+  const rawNotes = (src.notes && typeof src.notes === 'object' ? src.notes : {}) as Record<string, unknown>
+
+  const values: VarValues = {}
+  const notes: Partial<Record<VarKey, string>> = {}
+  for (const k of VAR_KEYS) {
+    const v = rawValues[k]
+    if (typeof v === 'number' && Number.isFinite(v)) values[k] = v
+    else if (isStr(v) && v.trim()) values[k] = v.trim()
+
+    const n = rawNotes[k]
+    if (isStr(n) && n.trim()) notes[k] = n.trim()
+  }
+
+  if (!Object.keys(values).length && !Object.keys(notes).length) return undefined
+  return { values, notes }
+}
+
 function normalizeCard(cardRaw: Record<string, unknown>): CardFileResult {
   const name = isStr(cardRaw.name) ? cardRaw.name.trim() : ''
   if (!name) return { ok: false, error: '角色卡没有名字' }
@@ -122,6 +157,9 @@ function normalizeCard(cardRaw: Record<string, unknown>): CardFileResult {
       examples,
       // 溯源：导入也记一笔来源（便于以后追「这张卡从哪来」）
       importedFrom: { projectId: '', cardId: `import:${uid()}`, at: Date.now() },
+      // 🔴 关系状态随卡跨设备（老大 2026-09-22 拍板）：导出侧一直带着它，这里必须读回来，
+      //    否则「导出→导入」往返一次，好感/信任/精神/心情/地点 + 备注全部归零。
+      vars: normalizeVars(cardRaw.vars),
     },
   }
 }
