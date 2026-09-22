@@ -22,6 +22,18 @@ export function useGeoMapModel() {
   const [mapId, setMapId] = useState('')
   const curMap = useMemo(() => maps.find(m => m.id === mapId), [maps, mapId])
   const curMapName = curMap?.data['名称'] || ''
+  /**
+   * 🔴 B8（2.4.1）底图模式与底图数据。
+   * ⚠️ 「底图模式」是**封闭枚举**（schema 里限定 `['格子','图片']`）：缺省 / 空值 / 任何意外值
+   *    一律**按「格子」处理** —— 老地图没有这一列，天然走格子模式，因此**无需迁移**。
+   */
+  const mapMode: '格子' | '图片' = curMap?.data['底图模式'] === '图片' ? '图片' : '格子'
+  const mapImage: string = mapMode === '图片' ? (curMap?.data['底图'] || '') : ''
+  /**
+   * 底图的**像素尺寸** —— 图片必须解码后才知道，故由 `GeoMapEditor` 的 `<image onLoad>` 回报。
+   * 世界坐标按「1 像素 = 1 世界单位」映射（够用且无需额外标定）。
+   */
+  const [mapImageSize, setMapImageSize] = useState<{ w: number; h: number } | null>(null)
   /** 当前地图的说明：非编辑态显示在右侧面板（说明的编辑入口在左侧列表的「地图信息」里） */
   const mapNote = curMap?.data['说明'] || ''
   /**
@@ -299,7 +311,12 @@ export function useGeoMapModel() {
   }, [])
 
   /** 居中内容：把全部已绘制空间显示包围盒放到画布正中 */
-  const fitView = useCallback(() => {    const bboxes = [...viewShapes.values()].map(s => s.bbox)
+  const fitView = useCallback(() => {
+    const bboxes = [...viewShapes.values()].map(s => s.bbox)
+    // 🔴 B8：图片底图模式下，**图片本身就是要适配的内容**。
+    //    否则只按地点标记 fit —— 图片中心与标记群不重合时，打开地图会"看不到图"。
+    //    图片的世界坐标 = 其像素尺寸（1px = 1 世界单位），尺寸由 <image onLoad> 回报。
+    if (mapImage && mapImageSize) bboxes.push({ x: 0, y: 0, w: mapImageSize.w, h: mapImageSize.h })
     if (bboxes.length === 0) { setView({ x: 0, y: 0, k: 1 }); return }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     for (const b of bboxes) {
@@ -310,7 +327,7 @@ export function useGeoMapModel() {
     const k = Math.min(2.5, Math.max(0.04, Math.min(vp.w / (bw + 120), vp.h / (bh + 120))))
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
     setView({ k, x: vp.w / 2 - cx * k, y: vp.h / 2 - cy * k })
-  }, [viewShapes, vp])
+  }, [viewShapes, vp, mapImage, mapImageSize])
 
   useEffect(() => {
     const svg = svgRef.current
@@ -624,6 +641,11 @@ export function useGeoMapModel() {
   return {
     curMapName,
     mapNote,
+    // 🔴 B8：底图（图片模式）—— 数据给渲染层，尺寸回报给 fitView
+    mapMode,
+    mapImage,
+    mapImageSize,
+    setMapImageSize,
     rows,
     stepCellKm,
     wrapRef,
