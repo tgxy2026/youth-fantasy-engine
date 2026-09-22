@@ -134,11 +134,21 @@ console.log('\n▶ aiAssist')
   const paths: Array<[string, string]> = [
     ['整章改写', 'src/lib/chapterRewrite.ts'],
     ['自动续写', 'src/lib/autoContinue.ts'],
+    ['创意写作', 'src/lib/creativeSession.ts'],
   ]
   for (const [label, f] of paths) {
     let src = ''
     try { src = readFileSync(f, 'utf8') } catch { /* 文件改名就让断言红，正是目的 */ }
-    ok(`🔴 守门：${label} 路径调用了 withAiAssist`, src.includes('withAiAssist'))
+    ok(`🔴 守门：${label} 路径有 AI 记账痕迹`, /withAiAssist|applyChapterRewrite/.test(src))
+  }
+
+  // 🔴 创意写作走的是共用的 `applyChapterRewrite`（那条默认记 rewritten）——
+  //    必须显式传 'generated'，否则"从无到有"的产量会被算成"改写"，分类就错了。
+  {
+    const cs = readFileSync('src/lib/creativeSession.ts', 'utf8')
+    ok('🔴 守门：创意写作显式传 generated（不是默认的 rewritten）', /applyChapterRewrite\([^)]*'generated'/.test(cs))
+    const cr = readFileSync('src/lib/chapterRewrite.ts', 'utf8')
+    ok('守门：applyChapterRewrite 的来源可由调用方声明', /kind:\s*AiSourceKind\s*=\s*'rewritten'/.test(cr))
   }
 }
 

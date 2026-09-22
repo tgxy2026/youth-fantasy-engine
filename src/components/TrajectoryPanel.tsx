@@ -27,6 +27,8 @@ import {
 import { buildEvidencePack, shortDate } from '../lib/evidencePack'
 import { buildBookEvidencePack } from '../lib/bookEvidence'
 import { foldVh } from '../lib/theme'
+import { summarizeAiAssist, AI_SOURCE_LABELS, AI_SOURCE_KINDS } from '../lib/aiAssist'
+import AiDisclosureDialog from './AiDisclosureDialog'
 import HelpPopover from './HelpPopover'
 import { Button } from './Button'
 import { showToast } from './dialogs'
@@ -61,6 +63,13 @@ export default function TrajectoryPanel() {
   /** 全书快照（整书证据包用；一次全表读，别对每章再查一次） */
   const [allSnapshots, setAllSnapshots] = useState<Snapshot[]>([])
   const [exportOpen, setExportOpen] = useState(false)
+  /** 🔴 B3：AI 使用情况申报说明弹窗 */
+  const [aiDraftOpen, setAiDraftOpen] = useState(false)
+  /**
+   * 🔴 B3：全书 AI 辅助占比汇总（数据源＝各章的 `aiAssist` 字段，由 AI 产出时自动记账）。
+   * 口径见 `lib/aiAssist.ts`：记「累计产出量」，可能大于现存字数 ⇒ 占比封顶 100% 且如实说明。
+   */
+  const aiSummary = useMemo(() => summarizeAiAssist(chapters), [chapters])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -174,6 +183,48 @@ export default function TrajectoryPanel() {
         <StatCard label="写作天数" value={`${overview.activeDays}`} unit={`/ 跨度 ${overview.spanDays} 天`} />
         <StatCard label="最近动笔" value={overview.lastAt ? shortDate(new Date(overview.lastAt).toISOString().slice(0, 10)) : '—'} unit="" />
       </div>
+
+      {/* 🔴 B3：AI 辅助占比 —— 如实申报的入口。
+          口径刻意写成「累计产出量」：AI 写完作者常会再改，改完无法反推，
+          所以这里显示的是"产出过多少"，**不是**"成稿里有多少是 AI 的"。 */}
+      <section className="mb-5 rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-baseline gap-2">
+            <span className="text-12 text-ink-300">AI 辅助占比</span>
+            <span className="text-18 font-bold text-amber tabular-nums">{aiSummary.ratioPct}%</span>
+            <span className="text-11 text-ink-500">
+              （累计产出 {aiSummary.aiChars.toLocaleString('zh-CN')} 字 · {aiSummary.aiChapters} 章用过 AI）
+            </span>
+          </div>
+          <div className="ml-auto">
+            <Button variant="secondary" size="sm" onClick={() => setAiDraftOpen(true)}>
+              <FileDown size={12} /> 生成申报说明
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {AI_SOURCE_KINDS.map(k => (
+            <span
+              key={k}
+              className={`rounded-md border px-2 py-0.5 text-11 ${
+                aiSummary.chars[k] > 0
+                  ? 'border-ink-700 bg-ink-900/60 text-ink-300'
+                  : 'border-ink-800 bg-transparent text-ink-600'
+              }`}
+            >
+              {AI_SOURCE_LABELS[k]} {aiSummary.chars[k].toLocaleString('zh-CN')}
+            </span>
+          ))}
+        </div>
+
+        <p className="mt-2 text-10 leading-relaxed text-ink-500">
+          数字由软件在 AI 产出时自动记录（整章改写 / 自动续写 / 创意写作 / 局部润色），非手工填写。
+          {aiSummary.cappedChapters > 0 && (
+            <span className="text-amber"> 有 {aiSummary.cappedChapters} 章经人工大幅删改，实际留存比例低于此数字。</span>
+          )}
+        </p>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-[16rem,1fr]">
         {/* 左：章节列表 */}
@@ -317,6 +368,12 @@ export default function TrajectoryPanel() {
           pack={pack} bookPack={bookPack}
         />
       )}
+
+      {/* 🔴 B3：AI 使用情况申报说明（数字来自软件自动记录，非手填） */}
+      <AiDisclosureDialog
+        open={aiDraftOpen} onClose={() => setAiDraftOpen(false)}
+        summary={aiSummary} bookName={projectName}
+      />
     </div>
   )
 }

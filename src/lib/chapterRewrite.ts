@@ -16,7 +16,7 @@ import * as db from './db'
 import { countWords } from './textStats'
 import type { ChapterRewriteAction } from './aiTasks'
 import type { Chapter, Volume } from './types'
-import { withAiAssist } from './aiAssist'
+import { withAiAssist, type AiSourceKind } from './aiAssist'
 
 /**
  * 本次改写的**期望字数** —— 异常判定的基准。
@@ -93,7 +93,17 @@ export async function listRewriteTree(): Promise<RewriteCandidateGroup[]> {
  * @returns 新字数
  * @throws 章节不存在 / 内容为空时抛错（调用方负责提示作者）
  */
-export async function applyChapterRewrite(chapterId: string, text: string): Promise<{ words: number }> {
+export async function applyChapterRewrite(
+  chapterId: string,
+  text: string,
+  /**
+   * 🔴 B3：这条路径**不止一个调用方** —— 手动「整章改写」用它（= `rewritten`），
+   * 而**创意写作**也从无到有产出正文后调它（= `generated`）。
+   * 写死成 `rewritten` 会让创意写作的产量被记成"改写"，占比分类就错了。
+   * 故由调用方声明来源，默认仍是 `rewritten`（绝大多数调用是改写）。
+   */
+  kind: AiSourceKind = 'rewritten',
+): Promise<{ words: number }> {
   const body = (text ?? '').trim()
   if (!body) throw new Error('改写结果为空，没有可写入的内容')
   const chs = await db.getAllChapters()
@@ -107,7 +117,7 @@ export async function applyChapterRewrite(chapterId: string, text: string): Prom
   //    `withAiAssist` 是纯函数（返回新对象），不改 `ch` 本身；口径是"过程量"，见 lib/aiAssist.ts 文件头。
   const next: Chapter = withAiAssist(
     { ...ch, content: body, wordCount: words, updatedAt: Date.now() },
-    'rewritten',
+    kind,
     words,
   )
   const [vols, all] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
