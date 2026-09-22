@@ -3,7 +3,9 @@ import type { TabDef, CardRecord } from '../lib/types'
 import { SABC_LABELS, CARD_TABLE_REF_FIELDS } from '../lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '../lib/db'
 import { uid } from '../lib/id'
-import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2 } from 'lucide-react'
+import { readPortraitFile, dataUrlBytes, PORTRAIT_ACCEPT } from '../lib/imagePortrait'
+import { PORTRAIT_HINT_SPEC } from '../lib/portraitSpec'
 import HelpPopover from './HelpPopover'
 import AutoTextarea from './AutoTextarea'
 import TableRefSelect from './TableRefSelect'
@@ -46,6 +48,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   // 当前编辑中的本地副本（dirty 状态）
   const [draft, setDraft] = useState<CardRecord | null>(null)
   const [saved, setSaved] = useState(false)
+  /** B7：立绘压缩中（压缩是异步的，要防重复点击） */
+  const [portraitBusy, setPortraitBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => () => clearTimeout(savedTimer.current), [])
@@ -208,6 +212,30 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
     }
   }
 
+  /**
+   * 🔴 B7（2.4.1）：角色立绘 —— 上传后写进 `draft.portrait`。
+   * 走 `dirty`（整对象 JSON 比对）自动变"未保存"，无需额外标记。
+   * `undefined` = 删除立绘（字段可选，删了就回到"没传"的状态）。
+   */
+  const updatePortrait = async (file: File | null) => {
+    if (!file) { setDraft(d => (d ? { ...d, portrait: undefined } : d)); return }
+    setPortraitBusy(true)
+    try {
+      const r = await readPortraitFile(file)
+      setDraft(d => (d ? { ...d, portrait: r.dataUrl } : d))
+      showToast(
+        r.downscaled
+          ? `立绘已就绪（${Math.round(r.bytes / 1024)}KB · 为控制体积用了压缩档 ${r.quality}）`
+          : `立绘已就绪（${Math.round(r.bytes / 1024)}KB）`,
+        'success',
+      )
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '这张图不能用作立绘', 'error')
+    } finally {
+      setPortraitBusy(false)
+    }
+  }
+
   const updateField = (path: string, value: string) => {
     if (!draft) return
     setDraft({ ...draft, data: { ...draft.data, [path]: value } })
@@ -362,13 +390,72 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                 </h2>
                 <span className="text-10 text-ink-500">点击姓名可改名 · 修改后点「保存」</span>
               </div>
-              {tab.modules!.map(mod => (
+              {tab.modules!.map(mod => {
+                // ⚠️ 模块名在 schema 里带序号（「一、基础信息」）—— 别用全等去比，
+                //    否则条件永远不成立、立绘位静默不渲染（2026-09-22 实机踩过）。
+                const isBasicMod = mod.name.includes('基础信息')
+                return (
                 <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
                   <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
                     <span className="w-1 h-3 rounded-full bg-amber/70" />
                     <h3 className="text-12 font-semibold text-ink-100">{mod.name}</h3>
                   </div>
-                  <div className="divide-y divide-ink-700/60">
+                  {/* 🔴 B7：只有在「基础信息」模块里做左右分栏 ——
+                      这一模块的字段都极短（姓名 / 别称 / 保密等级 / 身份定位），
+                      右侧原本是一大片空白；把立绘位放这里，正好把注定空着的空间用起来。
+                      其余模块（外貌 / 性格…）字段可长可短，一栏到底更合适，不动。 */}
+                  <div className={isBasicMod ? 'flex gap-4' : ''}>
+                  {isBasicMod && (
+                    <div className="w-36 shrink-0 px-3 py-3">
+                      <div className="text-11 text-ink-400 mb-1.5">人物立绘</div>
+                      <label
+                        className={`relative block w-full rounded-lg border border-dashed overflow-hidden cursor-pointer transition-colors ${
+                          portraitBusy ? 'border-ink-600 opacity-60' : 'border-ink-600 hover:border-amber/60'
+                        }`}
+                        style={{ aspectRatio: '9 / 16' }}
+                        title={PORTRAIT_HINT_SPEC}
+                      >
+                        <input
+                          type="file"
+                          accept={PORTRAIT_ACCEPT}
+                          className="hidden"
+                          disabled={portraitBusy}
+                          onChange={e => {
+                            const f = e.target.files?.[0]
+                            void updatePortrait(f ?? null)
+                            e.currentTarget.value = ''   // 允许连续选同一张
+                          }}
+                        />
+                        {draft.portrait ? (
+                          <img src={draft.portrait} alt={`${draft.name} 的立绘`} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-ink-500">
+                            {portraitBusy
+                              ? <Loader2 size={16} className="animate-spin" />
+                              : <ImagePlus size={16} />}
+                            <span className="text-10">{portraitBusy ? '处理中…' : '点击上传'}</span>
+                          </span>
+                        )}
+                      </label>
+                      {draft.portrait && (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <span className="text-10 text-ink-500 tabular-nums">
+                            {Math.round(dataUrlBytes(draft.portrait) / 1024)}KB
+                          </span>
+                          <Button
+                            variant="icon-danger" iconOnly size="xs"
+                            title="移除立绘" aria-label="移除立绘"
+                            className="ml-auto"
+                            onClick={() => void updatePortrait(null)}
+                          >
+                            <X size={11} />
+                          </Button>
+                        </div>
+                      )}
+                      <div className="mt-1 text-10 leading-relaxed text-ink-500">推荐 9:16 · 不裁切</div>
+                    </div>
+                  )}
+                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-0' : ''}`}>
                     {mod.fields.map(field => {
                       const key = `${mod.name}::${field.name}`
                       const val = draft.data[key] ?? ''
@@ -418,8 +505,11 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                       )
                     })}
                   </div>
+                  {/* 闭合「基础信息」的左右分栏容器（其余模块这个 div 不生成，类名为空也无害） */}
+                  </div>
                 </section>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-ink-500 text-sm border border-dashed border-ink-700 rounded-xl">

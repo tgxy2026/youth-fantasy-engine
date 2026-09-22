@@ -167,6 +167,16 @@ export interface CardRecord {
    * 🔴 刻意**不做迁移补值**：给老卡补一个"当前时间"就是编造历史，界面显示「时间未知」即可。
    */
   createdAt?: number
+  /**
+   * 角色立绘（2.4.1 · B7）—— **可选**：老卡没有这个字段，语义就是「还没传立绘」。
+   *
+   * 🔴 存的是**已压缩的 dataURL**（由 `lib/imagePortrait.ts` 处理：等比缩放**不裁切**、
+   *    WebP q0.9、超过 200KB 才逐档降质量）。**别把原图直接塞进来** ——
+   *    桌面版整库就是一个 JSON、云同步载荷也是整库，几张几 MB 的原图就能让同步明显变沉。
+   * 🔴 因为可选，所以**不需要迁移**（`undefined` 与「没传」同义）。
+   * ⚠️ 与酒馆头像（`imageAvatar.ts` 的 256×256 方形）是**两条管线**，别混用。
+   */
+  portrait?: string
 }
 
 export interface TableRow {
