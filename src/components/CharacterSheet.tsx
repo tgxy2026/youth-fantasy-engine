@@ -213,20 +213,26 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   }
 
   /**
-   * 🔴 B7（2.4.1）：角色立绘 —— 上传后写进 `draft.portrait`。
+   * 🔴 B7（2.4.1）：角色立绘 —— **两个位**（`portrait` / `portrait2`）。
+   * 「两张」的由来（2026-09-22 老大）：右侧竖着一整列，只放一张时下边空着一块；
+   * 与其留白，不如再给一个位（正装 / 便装、或两个姿态）并排铺满。
    * 走 `dirty`（整对象 JSON 比对）自动变"未保存"，无需额外标记。
-   * `undefined` = 删除立绘（字段可选，删了就回到"没传"的状态）。
+   * `undefined` = 删除该位立绘（字段可选，删了就回到"没传"的状态）。
    */
-  const updatePortrait = async (file: File | null) => {
-    if (!file) { setDraft(d => (d ? { ...d, portrait: undefined } : d)); return }
+  const updatePortrait = async (file: File | null, slot: 1 | 2 = 1) => {
+    if (!file) {
+      setDraft(d => (d ? (slot === 2 ? { ...d, portrait2: undefined } : { ...d, portrait: undefined }) : d))
+      return
+    }
     setPortraitBusy(true)
     try {
       const r = await readPortraitFile(file)
-      setDraft(d => (d ? { ...d, portrait: r.dataUrl } : d))
+      setDraft(d => (d ? (slot === 2 ? { ...d, portrait2: r.dataUrl } : { ...d, portrait: r.dataUrl }) : d))
+      const who = slot === 2 ? '立绘 2 ' : '立绘 '
       showToast(
         r.downscaled
-          ? `立绘已就绪（${Math.round(r.bytes / 1024)}KB · 为控制体积用了压缩档 ${r.quality}）`
-          : `立绘已就绪（${Math.round(r.bytes / 1024)}KB）`,
+          ? `${who}已就绪（${Math.round(r.bytes / 1024)}KB · 为控制体积用了压缩档 ${r.quality}）`
+          : `${who}已就绪（${Math.round(r.bytes / 1024)}KB）`,
         'success',
       )
     } catch (e) {
@@ -467,58 +473,71 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                   </div>
                   {/* 立绘位列（B7）—— 🔴 必须在字段区**之后**：DOM 顺序决定它显示在右侧。
                       与基础信息模块**融合**：只加一条左边框做分隔，不另立卡片。
-                      w-64 / xl:w-72 ⇒ 图片可视宽 224 / 256px（原 144px 的 1.6~1.8 倍）。 */}
+                      ⚠️ 2026-09-22 三次调整：1 张（144px）→ 1 张（256px）→ **2 张并排**
+                      （`w-80 / xl:w-[32rem]`；xl 下每张可视宽约 234px、高约 416px）。
+                      两张的用意是把这一列**竖向占满** —— 只放一张时下方会空着一块。 */}
                   {isBasicMod && (
-                    <div className="w-64 xl:w-72 shrink-0 border-l border-ink-700 px-4 py-3 flex flex-col">
+                    <div className="w-[17.5rem] shrink-0 border-l border-ink-700 px-4 py-3 flex flex-col">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-11 text-ink-400">人物立绘</span>
-                        {draft.portrait && (
-                          <span className="ml-auto text-10 text-ink-500 tabular-nums">
-                            {Math.round(dataUrlBytes(draft.portrait) / 1024)}KB
-                          </span>
-                        )}
+                        <span className="ml-auto text-10 text-ink-500">两张 · 9:16 不裁切</span>
                       </div>
-                      <label
-                        className={`relative block w-full rounded-lg border border-dashed overflow-hidden cursor-pointer transition-colors ${
-                          portraitBusy ? 'border-ink-600 opacity-60' : 'border-ink-600 hover:border-amber/60'
-                        }`}
-                        style={{ aspectRatio: '9 / 16' }}
-                        title={PORTRAIT_HINT_SPEC}
-                      >
-                        <input
-                          type="file"
-                          accept={PORTRAIT_ACCEPT}
-                          className="hidden"
-                          disabled={portraitBusy}
-                          onChange={e => {
-                            const f = e.target.files?.[0]
-                            void updatePortrait(f ?? null)
-                            e.currentTarget.value = ''   // 允许连续选同一张
-                          }}
-                        />
-                        {draft.portrait ? (
-                          <img src={draft.portrait} alt={`${draft.name} 的立绘`} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-500">
-                            {portraitBusy
-                              ? <Loader2 size={20} className="animate-spin" />
-                              : <ImagePlus size={20} />}
-                            <span className="text-10">{portraitBusy ? '处理中…' : '点击上传'}</span>
-                          </span>
-                        )}
-                      </label>
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="text-10 leading-relaxed text-ink-500">推荐 9:16 竖图 · 不裁切</span>
-                        {draft.portrait && (
-                          <Button
-                            variant="icon-danger" iconOnly size="xs"
-                            title="移除立绘" aria-label="移除立绘"
-                            className="ml-auto shrink-0"
-                            onClick={() => void updatePortrait(null)}
-                          >
-                            <X size={11} />
-                          </Button>
-                        )}
+                      {/* 🔴 **竖向**排列（不是并排）：右列是一整条竖空间（实测 894px 高），单张只占 415px、
+                          下边空一半；上下各一格才叫「竖向占满」。并排那版还试过 —— 列宽翻倍会把左列
+                          字段区挤扁（实测输入框只剩 382px）。 */}
+                      <div className="flex-1 min-h-0 flex flex-col gap-3 items-center">
+                        {([1, 2] as const).map(slot => {
+                          const src = slot === 2 ? draft.portrait2 : draft.portrait
+                          return (
+                            <div key={slot} className="flex-1 min-h-0 w-full flex flex-col items-center">
+                              {/* label：flex-1 定**高**、self-center 防被拉伸 ⇒ **宽**由 aspect-ratio 反推（9:16） */}
+                              <label
+                                className={`relative block flex-1 min-h-0 self-center max-w-full rounded-lg border border-dashed overflow-hidden cursor-pointer transition-colors ${
+                                  portraitBusy ? 'border-ink-600 opacity-60' : 'border-ink-600 hover:border-amber/60'
+                                }`}
+                                style={{ aspectRatio: '9 / 16' }}
+                                title={PORTRAIT_HINT_SPEC}
+                              >
+                                <input
+                                  type="file"
+                                  accept={PORTRAIT_ACCEPT}
+                                  className="hidden"
+                                  disabled={portraitBusy}
+                                  onChange={e => {
+                                    const f = e.target.files?.[0]
+                                    void updatePortrait(f ?? null, slot)
+                                    e.currentTarget.value = ''   // 允许连续选同一张
+                                  }}
+                                />
+                                {src ? (
+                                  <img src={src} alt={`${draft.name} 的立绘 ${slot}`} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-500">
+                                    {portraitBusy
+                                      ? <Loader2 size={18} className="animate-spin" />
+                                      : <ImagePlus size={18} />}
+                                    <span className="text-10">{portraitBusy ? '处理中…' : '点击上传'}</span>
+                                  </span>
+                                )}
+                              </label>
+                              <div className="mt-1.5 flex items-center gap-1.5 w-full shrink-0">
+                                <span className="text-10 text-ink-500 tabular-nums">
+                                  {src ? `${Math.round(dataUrlBytes(src) / 1024)}KB` : `立绘 ${slot}`}
+                                </span>
+                                {src && (
+                                  <Button
+                                    variant="icon-danger" iconOnly size="xs"
+                                    title={`移除立绘 ${slot}`} aria-label={`移除立绘 ${slot}`}
+                                    className="ml-auto shrink-0"
+                                    onClick={() => void updatePortrait(null, slot)}
+                                  >
+                                    <X size={11} />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
                   )}
