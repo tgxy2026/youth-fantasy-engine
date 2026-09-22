@@ -16,6 +16,7 @@ import * as db from './db'
 import { countWords } from './textStats'
 import type { ChapterRewriteAction } from './aiTasks'
 import type { Chapter, Volume } from './types'
+import { withAiAssist } from './aiAssist'
 
 /**
  * 本次改写的**期望字数** —— 异常判定的基准。
@@ -102,7 +103,13 @@ export async function applyChapterRewrite(chapterId: string, text: string): Prom
   // 标成 AI 来源：裁剪时优先牺牲定时快照，保住这一版（2.4.0 · A3）
   await db.createSnapshot(ch, 'ai-rewrite')
   const words = countWords(body)
-  const next: Chapter = { ...ch, content: body, wordCount: words, updatedAt: Date.now() }
+  // 🔴 B3（2.4.1）：记账 —— 本章正文由 AI 整章改写而来，把**本次产出字数**累加进 aiAssist。
+  //    `withAiAssist` 是纯函数（返回新对象），不改 `ch` 本身；口径是"过程量"，见 lib/aiAssist.ts 文件头。
+  const next: Chapter = withAiAssist(
+    { ...ch, content: body, wordCount: words, updatedAt: Date.now() },
+    'rewritten',
+    words,
+  )
   const [vols, all] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
   await db.saveChapter(next)
   await syncChapterMaster(next, chapterSeqMap(vols, all).get(next.id) ?? 0)

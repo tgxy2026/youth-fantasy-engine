@@ -115,6 +115,22 @@ export interface Volume {
 
 export type ChapterStatus = '构思' | '细纲' | '草稿' | '修改' | '完稿' | '已发布'
 
+/**
+ * AI 辅助统计（2.4.1 · B3）—— **纯类型定义放这里**（`types.ts` 不依赖任何业务模块，
+ * 放 `aiAssist.ts` 会与之循环依赖：那边要 import `Chapter`）。
+ * 口径说明、记账与统计函数都在 `lib/aiAssist.ts`。
+ *
+ * 只记「过程量」：每次 AI 产出把字数累加进来；改过的字无法反推，故不做"当前有多少 AI 字"的判断。
+ */
+export interface AiAssistStat {
+  /** 各类来源的累计产出字数 */
+  chars: { generated: number; rewritten: number; continued: number; polished: number }
+  /** 各类来源被触发次数 */
+  times: { generated: number; rewritten: number; continued: number; polished: number }
+  /** 最近一次记录时间 */
+  updatedAt: number
+}
+
 export interface Chapter {
   id: string
   projectId: string
@@ -129,6 +145,12 @@ export interface Chapter {
   updatedAt: number
   /** 不计入序号（1.9.2）：序章 / 番外 / 后记等不占正文号，但仍按真实位置参与叙事排序 */
   excludeFromNumbering?: boolean
+  /**
+   * AI 辅助统计（2.4.1 · B3）—— **可选**：老数据没有这个字段，语义上就是「没记录到 AI 产出」，
+   * 因此**不需要迁移**（`undefined` 与"全 0"等价，`normalizeAiAssist()` 会归一）。
+   * 🔴 只由 `lib/aiAssist.ts` 的 `withAiAssist()` 写入，别在别处手搓。
+   */
+  aiAssist?: AiAssistStat
 }
 
 export interface CardRecord {
