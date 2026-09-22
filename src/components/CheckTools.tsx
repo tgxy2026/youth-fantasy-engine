@@ -9,6 +9,7 @@ import HelpPopover from './HelpPopover'
 import ManuscriptCheckPanel from './ManuscriptCheckPanel'
 import PaceAnalysisPanel from './PaceAnalysisPanel'
 import ChapterCheckPanel from './ChapterCheckPanel'
+import PlatformCheckPanel from './PlatformCheckPanel'
 import AIDataSourceNote from './AIDataSourceNote'
 import AutoTextarea from './AutoTextarea'
 import { confirmDialog, showToast } from './dialogs'
@@ -232,7 +233,7 @@ export default function CheckTools() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">检查工具</h1>
           <HelpPopover title="检查工具怎么用" width="22rem" size={14}>
-            {'五个发布前自检能力：\n\n· 敏感词检测：系统词库扫描（始终可用）+ 可选 AI 复核（需接入 AI）；\n· AI 一致性深度自查：对照设定资料查人名/时间脉络/能力的前后矛盾（需 AI）；\n· 数据体检：机械确定性扫描引用断链/编号重复/必填空/酒馆列表残留，不靠 AI，离线可用，每条可忽略或清除忽略。\n· 投稿前自检：行文分布（句长/段长离散度、过渡语密度、重复用词）与全书节奏（章节字数分布、更新节奏），外加复用连续性与伏笔引擎的汇总数字。全部本地统计，不发 AI 请求。\n· 节奏与章末钩子：挑一章看爆点落在前 / 中 / 后哪几段、章末有没有留钩子（需 AI）。段位由程序按原文位置算，只给观察不给分。\n· 本章体检：对选中的一章串五个确定性引擎（连续性 / 伏笔 / 敏感词 / 错别字 / 文风），全部本地计算，手动触发。\n\n建议改动过名称/删过条目后跑一次数据体检，发布前至少跑一次敏感词与数据体检。\n\n说明：「投稿前自检」给的是分布事实与参考区间，帮你看平时注意不到的倾向，不做评分也不判"像不像机器写的"——具体怎么改由你定。'}
+            {'五个发布前自检能力：\n\n· 敏感词检测：系统词库扫描（始终可用）+ 可选 AI 复核（需接入 AI）；\n· AI 一致性深度自查：对照设定资料查人名/时间脉络/能力的前后矛盾（需 AI）；\n· 数据体检：机械确定性扫描引用断链/编号重复/必填空/酒馆列表残留，不靠 AI，离线可用，每条可忽略或清除忽略。\n· 投稿前自检：行文分布（句长/段长离散度、过渡语密度、重复用词）与全书节奏（章节字数分布、更新节奏），外加复用连续性与伏笔引擎的汇总数字。全部本地统计，不发 AI 请求。\n· 节奏与章末钩子：挑一章看爆点落在前 / 中 / 后哪几段、章末有没有留钩子（需 AI）。段位由程序按原文位置算，只给观察不给分。\n· 本章体检：对选中的一章串五个确定性引擎（连续性 / 伏笔 / 敏感词 / 错别字 / 文风），全部本地计算，手动触发。\n· 分平台投稿预检：挑晋江 / 起点档位，看哪些命中属于该平台重点关注的类别，以及分章字数事实；只摆事实不判定。\n\n建议改动过名称/删过条目后跑一次数据体检，发布前至少跑一次敏感词与数据体检。\n\n说明：「投稿前自检」给的是分布事实与参考区间，帮你看平时注意不到的倾向，不做评分也不判"像不像机器写的"——具体怎么改由你定。'}
           </HelpPopover>
         </div>
         <p className="mt-1 text-13 text-ink-300">敏感词检测 · AI 一致性深度自查 · 数据体检 · 本章体检</p>
@@ -517,6 +518,10 @@ export default function CheckTools() {
         {/* ============ 投稿前自检（B2 · 2.4.1）：行文分布与节奏，纯本地统计 ============
             独立组件而非继续在本文件堆 —— 本文件已 500+ 行、是既定的「巨型组件收尾」对象。 */}
         <ManuscriptCheckPanel />
+
+        {/* ============ 分平台投稿预检（C4 · 2.4.2）：按平台档位看命中与分章事实 ============
+            与上面的「本章体检」分工：那个是单章确定性检查，这个按**平台**分档看全书。 */}
+        <PlatformCheckPanel />
 
         {/* ============ 本章体检（C3 · 2.4.2）：单章串五个确定性引擎，全部本地 ============
             与上面「投稿前自检」分工：那个看全书分布，这个看单章确定性检查；与「节奏与章末钩子」分工：那个需 AI，这个纯本地。 */}
