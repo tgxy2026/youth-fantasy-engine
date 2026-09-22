@@ -115,6 +115,22 @@ export interface Volume {
 
 export type ChapterStatus = '构思' | '细纲' | '草稿' | '修改' | '完稿' | '已发布'
 
+/**
+ * AI 辅助统计（2.4.1 · B3）—— **纯类型定义放这里**（`types.ts` 不依赖任何业务模块，
+ * 放 `aiAssist.ts` 会与之循环依赖：那边要 import `Chapter`）。
+ * 口径说明、记账与统计函数都在 `lib/aiAssist.ts`。
+ *
+ * 只记「过程量」：每次 AI 产出把字数累加进来；改过的字无法反推，故不做"当前有多少 AI 字"的判断。
+ */
+export interface AiAssistStat {
+  /** 各类来源的累计产出字数 */
+  chars: { generated: number; rewritten: number; continued: number; polished: number }
+  /** 各类来源被触发次数 */
+  times: { generated: number; rewritten: number; continued: number; polished: number }
+  /** 最近一次记录时间 */
+  updatedAt: number
+}
+
 export interface Chapter {
   id: string
   projectId: string
@@ -129,6 +145,12 @@ export interface Chapter {
   updatedAt: number
   /** 不计入序号（1.9.2）：序章 / 番外 / 后记等不占正文号，但仍按真实位置参与叙事排序 */
   excludeFromNumbering?: boolean
+  /**
+   * AI 辅助统计（2.4.1 · B3）—— **可选**：老数据没有这个字段，语义上就是「没记录到 AI 产出」，
+   * 因此**不需要迁移**（`undefined` 与"全 0"等价，`normalizeAiAssist()` 会归一）。
+   * 🔴 只由 `lib/aiAssist.ts` 的 `withAiAssist()` 写入，别在别处手搓。
+   */
+  aiAssist?: AiAssistStat
 }
 
 export interface CardRecord {
@@ -145,6 +167,18 @@ export interface CardRecord {
    * 🔴 刻意**不做迁移补值**：给老卡补一个"当前时间"就是编造历史，界面显示「时间未知」即可。
    */
   createdAt?: number
+  /**
+   * 角色立绘（2.4.1 · B7）—— **可选**：老卡没有这个字段，语义就是「还没传立绘」。
+   *
+   * 🔴 存的是**已压缩的 dataURL**（由 `lib/imagePortrait.ts` 处理：等比缩放**不裁切**、
+   *    WebP q0.9、超过 200KB 才逐档降质量）。**别把原图直接塞进来** ——
+   *    桌面版整库就是一个 JSON、云同步载荷也是整库，几张几 MB 的原图就能让同步明显变沉。
+   * 🔴 因为可选，所以**不需要迁移**（`undefined` 与「没传」同义）。
+   * ⚠️ 与酒馆头像（`imageAvatar.ts` 的 256×256 方形）是**两条管线**，别混用。
+   */
+  portrait?: string
+  /** 第二张立绘（可选；2026-09-22 起右侧上下两格）—— 可选字段 ⇒ 老数据无需迁移 */
+  portrait2?: string
 }
 
 export interface TableRow {

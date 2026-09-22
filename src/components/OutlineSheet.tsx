@@ -10,7 +10,7 @@ import AutoTextarea from './AutoTextarea'
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import TemplateLibrary from './TemplateLibrary'
-import { foldVh } from '../lib/theme'
+import { contentMinH, OUTLINE_SHEET_CHROME_PX } from '../lib/theme'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
@@ -224,7 +224,7 @@ export default function OutlineSheet({ tab }: Props) {
   return (
     <div className="w-full page-enter">
       {/* 头部 */}
-      <header className="mb-5 sticky top-0 z-10 bg-ink-900/95 backdrop-blur py-3 -mt-3">
+      <header className="mb-5 sticky top-0 z-20 bg-ink-900/95 backdrop-blur py-3">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -273,7 +273,7 @@ export default function OutlineSheet({ tab }: Props) {
       </header>
 
       {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`（原来手抄等价式，见 `CharacterSheet` 同处说明）。 */}
-      <div className="flex gap-5" style={{ minHeight: `calc(${foldVh('100vh')} - 200px)` }}>
+      <div className="flex gap-5" style={{ minHeight: contentMinH(OUTLINE_SHEET_CHROME_PX) }}>
         {/* 目录列表 */}
         <div className="w-52 shrink-0 space-y-1.5">
           {records.map((rec, i) => {

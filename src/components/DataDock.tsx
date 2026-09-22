@@ -1,9 +1,11 @@
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import CloudFileSyncBar from './CloudFileSyncBar'
 import { DesktopDataBar } from './Desktop'
 import { DESKTOP } from '../lib/desktop'
 import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
 import { foldVh } from '../lib/theme'
 import { Z } from '../lib/zLayer'
+import { usePersistedBool } from '../lib/uiPrefs'
 
 /**
  * 左下角统一「数据坞」—— 全应用**唯一允许**的全局浮层（#032 布局规范化）。
@@ -30,6 +32,11 @@ function Divider() {
 }
 
 export default function DataDock() {
+  // 🔴 B6（2026-09-22 老大新增）：折叠状态与项目内的 Sidebar Footer **共用同一个键**
+  //   （`dock-collapsed`）—— 两者是同一块「左下角工具栏」在"无侧栏 / 有侧栏"两种形态下的呈现。
+  //   ⚠️ hook 必须写在 early return **之前**（否则违反 hooks 规则）。
+  const [collapsed, setCollapsed] = usePersistedBool('dock-collapsed', false)
+
   // 桌面版是唯一目标平台；dev 预览下也照样渲染，便于界面验证
   if (!DESKTOP && !DEV) return null
 
@@ -37,24 +44,46 @@ export default function DataDock() {
   // 比 2560 屏的 12.4% 显眼得多。min(240px, 17vw) 经 foldVh 折算（vw 不随 zoom 缩，必须折）后
   // 小屏自动收窄、大屏仍走 240px 上限 —— 大屏观感不变。下限靠内容自身撑开，故不再设 min-width。
   return (
-    <div className="fixed bottom-4 left-4 flex flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 py-2 shadow-xl backdrop-blur" style={{ zIndex: Z.dock, width: foldVh('min(240px, 17vw)') }}>
-      {!DESKTOP && DEV && (
-        <div className="mb-1.5 rounded-md border border-amber/30 bg-amber/10 px-2 py-1 text-11 leading-snug text-amber">
-          开发预览环境：桌面版专属功能需在打包版中使用
-        </div>
-      )}
+    <div
+      className={`fixed left-4 flex flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 shadow-xl backdrop-blur transition-all duration-200 ${
+        // 收起＝贴到屏幕底边（bottom-0）+ 去掉下圆角，视觉上"缩进底边"；只留把手那一条
+        collapsed ? 'bottom-0 py-0.5 rounded-b-none' : 'bottom-4 py-2'
+      }`}
+      style={{ zIndex: Z.dock, width: foldVh('min(240px, 17vw)') }}
+    >
+      {/* 🔴 B6 折叠把手：收起时贴屏底、只显示这一条，箭头朝上提示「可展开」 */}
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        title={collapsed ? '展开左下角工具栏（本机存储 / 云盘同步）' : '收起到底边（只留这条箭头）'}
+        aria-label={collapsed ? '展开左下角工具栏' : '收起左下角工具栏'}
+        aria-expanded={!collapsed}
+        className="flex items-center justify-center py-0.5 -mx-1 rounded text-ink-500 hover:text-amber transition-colors"
+      >
+        {collapsed ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+      </button>
 
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-1.5 text-xs text-ink-300">
-          <span className="font-medium">本机存储</span>
-        </div>
-        <DesktopDataBar embedded />
-      </div>
-
-      {CLOUD_FILE_SYNC && (
+      {!collapsed && (
         <>
-          <Divider />
-          <CloudFileSyncBar variant="panel" />
+          {!DESKTOP && DEV && (
+            <div className="mb-1.5 rounded-md border border-amber/30 bg-amber/10 px-2 py-1 text-11 leading-snug text-amber">
+              开发预览环境：桌面版专属功能需在打包版中使用
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5 text-xs text-ink-300">
+              <span className="font-medium">本机存储</span>
+            </div>
+            <DesktopDataBar embedded />
+          </div>
+
+          {CLOUD_FILE_SYNC && (
+            <>
+              <Divider />
+              <CloudFileSyncBar variant="panel" />
+            </>
+          )}
         </>
       )}
     </div>

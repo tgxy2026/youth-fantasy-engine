@@ -773,7 +773,8 @@ export async function applyRewrite() {
   const r = snap.rewrite
   if (!r || r.running) return
   try {
-    const { words } = await applyChapterRewrite(r.chapterId, r.text)
+    // 🔴 B3：这是**创意写作**（从无到有产出正文），来源记 `generated` 而不是默认的 `rewritten`
+    const { words } = await applyChapterRewrite(r.chapterId, r.text, 'generated')
     // 🔴 最新章改完要补跑一轮设定同步（老大 2026-09-19 要求）：它后面还没有正文，
     //    这一章的新信息必须进设定表，否则下一次「接着写」会读到旧设定。
     //    历史章**不跑** —— 纪律上它就不该产生新设定（那会污染设定表）。

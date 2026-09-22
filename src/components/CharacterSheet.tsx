@@ -3,7 +3,9 @@ import type { TabDef, CardRecord } from '../lib/types'
 import { SABC_LABELS, CARD_TABLE_REF_FIELDS } from '../lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '../lib/db'
 import { uid } from '../lib/id'
-import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2 } from 'lucide-react'
+import { readPortraitFile, dataUrlBytes, PORTRAIT_ACCEPT } from '../lib/imagePortrait'
+import { PORTRAIT_HINT_SPEC } from '../lib/portraitSpec'
 import HelpPopover from './HelpPopover'
 import AutoTextarea from './AutoTextarea'
 import TableRefSelect from './TableRefSelect'
@@ -12,7 +14,7 @@ import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
-import { foldVh } from '../lib/theme'
+import { contentMinH, CARD_SHEET_CHROME_PX } from '../lib/theme'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
@@ -46,6 +48,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   // 当前编辑中的本地副本（dirty 状态）
   const [draft, setDraft] = useState<CardRecord | null>(null)
   const [saved, setSaved] = useState(false)
+  /** B7：立绘压缩中（压缩是异步的，要防重复点击） */
+  const [portraitBusy, setPortraitBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => () => clearTimeout(savedTimer.current), [])
@@ -208,6 +212,36 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
     }
   }
 
+  /**
+   * 🔴 B7（2.4.1）：角色立绘 —— **两个位**（`portrait` / `portrait2`）。
+   * 「两张」的由来（2026-09-22 老大）：右侧竖着一整列，只放一张时下边空着一块；
+   * 与其留白，不如再给一个位（正装 / 便装、或两个姿态）并排铺满。
+   * 走 `dirty`（整对象 JSON 比对）自动变"未保存"，无需额外标记。
+   * `undefined` = 删除该位立绘（字段可选，删了就回到"没传"的状态）。
+   */
+  const updatePortrait = async (file: File | null, slot: 1 | 2 = 1) => {
+    if (!file) {
+      setDraft(d => (d ? (slot === 2 ? { ...d, portrait2: undefined } : { ...d, portrait: undefined }) : d))
+      return
+    }
+    setPortraitBusy(true)
+    try {
+      const r = await readPortraitFile(file)
+      setDraft(d => (d ? (slot === 2 ? { ...d, portrait2: r.dataUrl } : { ...d, portrait: r.dataUrl }) : d))
+      const who = slot === 2 ? '立绘 2 ' : '立绘 '
+      showToast(
+        r.downscaled
+          ? `${who}已就绪（${Math.round(r.bytes / 1024)}KB · 为控制体积用了压缩档 ${r.quality}）`
+          : `${who}已就绪（${Math.round(r.bytes / 1024)}KB）`,
+        'success',
+      )
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '这张图不能用作立绘', 'error')
+    } finally {
+      setPortraitBusy(false)
+    }
+  }
+
   const updateField = (path: string, value: string) => {
     if (!draft) return
     setDraft({ ...draft, data: { ...draft.data, [path]: value } })
@@ -254,7 +288,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 
   return (
     <div className="page-enter">
-      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 z-10 bg-ink-900/95 backdrop-blur py-3 -mt-3">
+      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 z-20 bg-ink-900/95 backdrop-blur py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
@@ -311,7 +345,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 
       {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`，别手抄 `calc(100vh / var(--ui-zoom,1))` ——
           手抄的等价式在 token 名变一次就静默失效（本处原先是手写的）。 */}
-      <div className="flex gap-5" style={{ minHeight: `calc(${foldVh('100vh')} - 180px)` }}>
+      <div className="flex gap-5" style={{ minHeight: contentMinH(CARD_SHEET_CHROME_PX) }}>
         {/* 卡片列表 */}
         <div className="w-44 shrink-0 space-y-1.5">
           {visibleRecords.map(rec => {
@@ -362,22 +396,41 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                 </h2>
                 <span className="text-10 text-ink-500">点击姓名可改名 · 修改后点「保存」</span>
               </div>
-              {tab.modules!.map(mod => (
+              {tab.modules!.map(mod => {
+                // ⚠️ 模块名在 schema 里带序号（「一、基础信息」）—— 别用全等去比，
+                //    否则条件永远不成立、立绘位静默不渲染（2026-09-22 实机踩过）。
+                const isBasicMod = mod.name.includes('基础信息')
+                return (
                 <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
                   <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
                     <span className="w-1 h-3 rounded-full bg-amber/70" />
                     <h3 className="text-12 font-semibold text-ink-100">{mod.name}</h3>
                   </div>
-                  <div className="divide-y divide-ink-700/60">
+                  {/* 🔴 B7：只在「基础信息」模块里做左右分栏 ——
+                      这一模块的字段都极短（姓名 / 别称 / 保密等级 / 身份定位），
+                      输入框收窄后右侧会空出一大片，正好让立绘占住。
+                      ⚠️ 2026-09-22 返工两处：
+                        ① 立绘块必须在**字段区之后**（DOM 顺序 = 显示在右）。第一版写在字段区之前，
+                           于是立绘跑到**左侧**去了；
+                        ② 尺寸 144px → 256 / 288px（xl），文本框同时收窄（见下方 max-w）。
+                      其余模块（外貌 / 性格…）字段可长可短，一栏到底更合适，不动。 */}
+                  <div className={isBasicMod ? 'flex items-stretch' : ''}>
+                  {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
+                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-0 flex flex-col justify-center' : ''}`}>
                     {mod.fields.map(field => {
                       const key = `${mod.name}::${field.name}`
                       const val = draft.data[key] ?? ''
                       return (
-                        <div key={key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
+                        <div key={key} className={`px-4 py-3 grid gap-3 hover:bg-ink-800/40 transition-colors ${
+                          isBasicMod ? 'grid-cols-[104px_1fr]' : 'grid-cols-[140px_1fr]'
+                        }`}>
                           <div>
                             <div className="text-12 font-medium text-ink-100">{field.name}</div>
                             {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                           </div>
+                          {/* ⚠️ 2026-09-22 **二次返工**：上一版把这里收在 `max-w-[26rem]`，结果输入框与立绘
+                              之间空出一大块（老大原话「中间你打算放啥呢」）。正确做法是让输入框**吃满字段区**：
+                              它的宽度上限本来就由「卡片宽 − 立绘列」自然决定，不该再人为设一个更小的上限。 */}
                           <div>
                             {/* 所属势力 / 种族 等字段：从其他设定表取值，禁止手动输入（根治同名异写导致的归属错乱） */}
                             {CARD_TABLE_REF_FIELDS[field.name] ? (
@@ -418,8 +471,81 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                       )
                     })}
                   </div>
+                  {/* 立绘位列（B7）—— 🔴 必须在字段区**之后**：DOM 顺序决定它显示在右侧。
+                      与基础信息模块**融合**：只加一条左边框做分隔，不另立卡片。
+                      ⚠️ 2026-09-22 三次调整：1 张（144px）→ 1 张（256px）→ **2 张并排**
+                      （`w-80 / xl:w-[32rem]`；xl 下每张可视宽约 234px、高约 416px）。
+                      两张的用意是把这一列**竖向占满** —— 只放一张时下方会空着一块。 */}
+                  {isBasicMod && (
+                    <div className="w-[17.5rem] shrink-0 border-l border-ink-700 px-4 py-3 flex flex-col">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-11 text-ink-400">人物立绘</span>
+                        <span className="ml-auto text-10 text-ink-500">两张 · 9:16 不裁切</span>
+                      </div>
+                      {/* 🔴 **竖向**排列（不是并排）：右列是一整条竖空间（实测 894px 高），单张只占 415px、
+                          下边空一半；上下各一格才叫「竖向占满」。并排那版还试过 —— 列宽翻倍会把左列
+                          字段区挤扁（实测输入框只剩 382px）。 */}
+                      <div className="flex-1 min-h-0 flex flex-col gap-3 items-center">
+                        {([1, 2] as const).map(slot => {
+                          const src = slot === 2 ? draft.portrait2 : draft.portrait
+                          return (
+                            <div key={slot} className="flex-1 min-h-0 w-full flex flex-col items-center">
+                              {/* label：flex-1 定**高**、self-center 防被拉伸 ⇒ **宽**由 aspect-ratio 反推（9:16） */}
+                              <label
+                                className={`relative block flex-1 min-h-0 self-center max-w-full rounded-lg border border-dashed overflow-hidden cursor-pointer transition-colors ${
+                                  portraitBusy ? 'border-ink-600 opacity-60' : 'border-ink-600 hover:border-amber/60'
+                                }`}
+                                style={{ aspectRatio: '9 / 16' }}
+                                title={PORTRAIT_HINT_SPEC}
+                              >
+                                <input
+                                  type="file"
+                                  accept={PORTRAIT_ACCEPT}
+                                  className="hidden"
+                                  disabled={portraitBusy}
+                                  onChange={e => {
+                                    const f = e.target.files?.[0]
+                                    void updatePortrait(f ?? null, slot)
+                                    e.currentTarget.value = ''   // 允许连续选同一张
+                                  }}
+                                />
+                                {src ? (
+                                  <img src={src} alt={`${draft.name} 的立绘 ${slot}`} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-500">
+                                    {portraitBusy
+                                      ? <Loader2 size={18} className="animate-spin" />
+                                      : <ImagePlus size={18} />}
+                                    <span className="text-10">{portraitBusy ? '处理中…' : '点击上传'}</span>
+                                  </span>
+                                )}
+                              </label>
+                              <div className="mt-1.5 flex items-center gap-1.5 w-full shrink-0">
+                                <span className="text-10 text-ink-500 tabular-nums">
+                                  {src ? `${Math.round(dataUrlBytes(src) / 1024)}KB` : `立绘 ${slot}`}
+                                </span>
+                                {src && (
+                                  <Button
+                                    variant="icon-danger" iconOnly size="xs"
+                                    title={`移除立绘 ${slot}`} aria-label={`移除立绘 ${slot}`}
+                                    className="ml-auto shrink-0"
+                                    onClick={() => void updatePortrait(null, slot)}
+                                  >
+                                    <X size={11} />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {/* 闭合「基础信息」的左右分栏容器（其余模块这个 div 不生成，类名为空也无害） */}
+                  </div>
                 </section>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-ink-500 text-sm border border-dashed border-ink-700 rounded-xl">

@@ -362,7 +362,14 @@ onDesktopLocalSnapshot(async () => {
     try {
       // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
       // 落进同步通用载荷前断言成 SyncRow[] —— 形状由写入方保证
-      out[s] = (await desktopLocalStore.getAll(s)) as SyncRow[]
+      const rows = (await desktopLocalStore.getAll(s)) as SyncRow[]
+      // 🔴 2026-09-22 六维审计 P2：meta 要与 `mirrorDeleteExtra`（本文件 :211）**同口径过滤**
+      //    本地专属键（aiProviders 三键 / app.search / syncConflict:*）。
+      //    不过滤的后果不是密钥上云（上传侧 liveStores 还会再滤一道），而是这些键被灌进合并 cache，
+      //    让 `eqRecord` 每次都判出无意义的 diff。
+      out[s] = s === 'meta'
+        ? rows.filter(r => !isExcludedMetaKey(r?.key))
+        : rows
     } catch {
       // 🔴 读失败**绝不能**降级成 []（2026-09-20 六维审计 P2）：
       //    一份"少了几张表"的快照会被下游当成"本机就这些" —— 缺的那些记录从此被判成
@@ -382,6 +389,14 @@ onDesktopLocalSnapshot(async () => {
 if (CLOUD_FILE_SYNC) {
   void (async () => {
     try {
+      // 🔴 2026-09-22 六维审计 P1：启动自动恢复**必须与手动路径同口径**。
+      //    `enableDesktopCloudSync`（见本文件下半段）明确 `if (st.writeLocked) throw`，
+      //    理由写得很清楚：数据文件读不出来时本地存储是不可信的 —— 读快照会拿到一份空/残缺载荷，
+      //    一旦参与合并就可能把「本机删过」与「本机没见过」混淆，甚至反写覆盖云端快照。
+      //    而这条启动路径原先**不查**，等于给同一道红线开了个后门。
+      //    处理方式与手动路径不同（那里是抛给用户看，这里是**静默保持本地存储**）：
+      //    启动期没人看着界面，弹错反而更糟；不切过去、下次启动 / 文件恢复后可读时再试即可。
+      if (DESKTOP && getDesktopState().writeLocked) return
       const ok = await applyDesktopCloudFromPersisted()
       if (ok) {
         // ⓘ 「读本机数据文件快照」的回调已在**模块顶层**注册（见 desktopCloudFileStore 之后那段），

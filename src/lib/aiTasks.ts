@@ -28,6 +28,7 @@ import { REWRITE_PROMPTS } from './aiTasks/rewrite'
 import { EXTRACT_PROMPTS } from './aiTasks/extract'
 import { INLINE_PROMPTS } from './aiTasks/inline'
 import { CREATIVE_PROMPTS } from './aiTasks/creative'
+import { PACE_PROMPTS } from './aiTasks/pace'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
@@ -55,6 +56,10 @@ export {
 } from './aiTasks/creative'
 export type { BibleCounts, OutlineVolume, OutlineChapter, OutlineResult, PlanOutlineInput } from './aiTasks/creative'
 export { aiSummarizeFormSettings } from './aiTasks/formSummary'
+// 2026-09-22（2.4.1·B5）：节奏与章末钩子 —— 结构化输出，位置由 lib/paceAnalysis 本地换算
+export { aiPaceAnalysis, PACE_PROMPTS } from './aiTasks/pace'
+export { parsePaceReport, PACE_SEGMENTS, HOOK_KINDS, PACE_BEAT_KINDS } from './paceAnalysis'
+export type { PaceReport, PaceBeat, PaceDistribution, HookKind } from './paceAnalysis'
 
 /**
  * 提示词的**注册顺序**（🔴 有语义：`listPrompts()` 只按 group 稳定排序，组内保持登记顺序）。
@@ -87,6 +92,7 @@ const PROMPT_ORDER = [
   'continuation-advice',
   'pleasure-check',
   'opening-check',
+  'pace-analysis',
   'writing-briefing',
   'extract-entities',
   'deai-rule',
@@ -98,6 +104,7 @@ const PROMPT_SETS: PromptDef[][] = [
   SUGGEST_PROMPTS,
   AUDIT_PROMPTS,
   JIEWENJI_PROMPTS,
+  PACE_PROMPTS,
   REWRITE_PROMPTS,
   EXTRACT_PROMPTS,
   INLINE_PROMPTS,

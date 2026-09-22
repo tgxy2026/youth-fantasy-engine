@@ -20,6 +20,7 @@ import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import { useWordCountWithPunct } from '../lib/wordCountMode'
 import { countWords } from '../lib/textStats'
+import { buildWritingReview } from '../lib/writingReview'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -47,6 +48,9 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   // 🔴 落库的 `wordCount` 始终是**不含标点**的口径、不改动用户数据 —— 含标点模式只在显示层
   //    用 countWords(content, 'cjk-punct') 实时重算，所以开关随时可逆、历史数据不会被打脏。
   const [withPunct, setWithPunct] = useWordCountWithPunct()
+  /** B1 创作复盘：从每日字数提炼"跟之前比"的指标（纯本地） */
+  const review = useMemo(() => buildWritingReview(dailyStats), [dailyStats])
+
   const totalWords = useMemo(
     () => (withPunct
       ? chapters.reduce((s, c) => s + countWords(c.content || '', 'cjk-punct'), 0)
@@ -518,6 +522,90 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <CharacterDistribution onNavigate={onNavigate} />
       </section>
       )}
+
+      {/* 创作复盘（B1 · 2.4.1）
+          ⚠️ 刻意**不做**第三个字数图表：上方热力图与近 7 日柱状图回答的是"现在怎么样"，
+          这里回答的是"**跟之前比**怎么样" —— 全是对比与记录类指标，重复画图只会更挤。 */}
+      <section className="bg-ink-850 border border-ink-700 rounded-xl p-5 mt-6">
+        <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
+          <TrendingUp size={14} className="text-amber" /> 创作复盘
+          <HelpPopover title="创作复盘怎么看" width="23rem" className="ml-auto">
+            {'回顾「跟之前比」的情况，与上方热力图 / 近 7 日柱状图（看「当前状态」）互补：\n\n· 本周 vs 上周：近 7 天与前 7 天的净字数对比（上周为 0 时不编造增幅，只标「上周还没开始」）；\n· 连续写作：历史最长与当前连续天数 —— 今天还没动笔不算断，不用凌晨赶工；\n· 最高产的一天 / 本月产量。\n\n数据来自软件本就记录的每日字数净增量（增删都记，所以删字那天会显示负数，是如实的）。纯本地计算，不联网。'}
+          </HelpPopover>
+        </h2>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* 本周 vs 上周 */}
+          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+            <div className="text-10 text-ink-500">本周（近 7 天）</div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-16 font-bold text-ink-100 tabular-nums">{review.thisWeek.toLocaleString('zh-CN')}</span>
+              <span className="text-10 text-ink-500">字</span>
+            </div>
+            <div className={`mt-0.5 text-10 ${
+              review.weekTrend === 'up' ? 'text-rose-400'
+              : review.weekTrend === 'down' ? 'text-emerald-400'
+              : 'text-ink-500'
+            }`}>
+              {review.weekTrend === 'new' ? '上周还没开始'
+                : review.weekTrend === 'none' ? '暂无对比数据'
+                : review.weekDeltaPct === null ? '—'
+                : `较上周 ${review.weekDeltaPct > 0 ? '+' : ''}${review.weekDeltaPct}%`}
+            </div>
+          </div>
+
+          {/* 连续写作 */}
+          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+            <div className="text-10 text-ink-500">连续写作</div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-16 font-bold text-ink-100 tabular-nums">{review.currentStreak}</span>
+              <span className="text-10 text-ink-500">天</span>
+            </div>
+            <div className="mt-0.5 text-10 text-ink-500">
+              历史最长 {review.longestStreak} 天
+              {review.longestStreakRange ? `（${review.longestStreakRange.from.slice(5)} ~ ${review.longestStreakRange.to.slice(5)}）` : ''}
+            </div>
+          </div>
+
+          {/* 最高产的一天 */}
+          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+            <div className="text-10 text-ink-500">最高产的一天</div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-16 font-bold text-ink-100 tabular-nums">
+                {review.bestDay ? review.bestDay.words.toLocaleString('zh-CN') : '—'}
+              </span>
+              {review.bestDay && <span className="text-10 text-ink-500">字</span>}
+            </div>
+            <div className="mt-0.5 text-10 text-ink-500">{review.bestDay ? review.bestDay.date : '还没有记录'}</div>
+          </div>
+
+          {/* 本月产量 */}
+          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+            <div className="text-10 text-ink-500">本月产量</div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-16 font-bold text-ink-100 tabular-nums">{review.thisMonth.toLocaleString('zh-CN')}</span>
+              <span className="text-10 text-ink-500">字</span>
+            </div>
+            <div className="mt-0.5 text-10 text-ink-500">
+              {totalWords > 0 ? `占全书约 ${Math.round((review.thisMonth / totalWords) * 100)}%` : '—'}
+            </div>
+          </div>
+        </div>
+
+        {review.insights.length > 0 && (
+          <ul className="mt-3 space-y-1">
+            {review.insights.map((s, i) => (
+              <li key={i} className="text-11 leading-relaxed text-ink-400">· {s}</li>
+            ))}
+          </ul>
+        )}
+
+        <div className="mt-3 text-10 text-ink-500">
+          共动笔 {review.activeDays} 天
+          {review.firstDay ? ` · 首次 ${review.firstDay}` : ''}
+          {review.lastDay ? ` · 最近 ${review.lastDay}` : ''}
+        </div>
+      </section>
     </div>
   )
 }

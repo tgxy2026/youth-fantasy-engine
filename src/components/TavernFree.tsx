@@ -102,6 +102,8 @@ export default function TavernFree() {
     reviseOpen, setReviseOpen, openRevise, revising, applyingRev, reviseError, proposals, picked, setPicked, applyPicked,
     // 多角色接话
     speakNext, setSpeakNext,
+    // 🔴 AI 就绪（2026-09-22 六维审计 F1）
+    aiReady, aiReadyLabel,
     // 弹窗与抽屉
     usageOpen, setUsageOpen, directorOpen, setDirectorOpen, exportOpen, setExportOpen,
     // 其他
@@ -451,7 +453,14 @@ export default function TavernFree() {
                   <div className="flex gap-2">
                     {streaming || assistBusy
                       ? <Button variant="secondary" size="md" onClick={stop}>停止</Button>
-                      : <Button variant="primary" size="md" disabled={!input.trim()} onClick={() => void send()}>发送</Button>}
+                      /* 🔴 2026-09-22 六维审计 F1：未配模型时**直接禁用并说明原因**，
+                         而不是让作者点下去才看到 toast（send 里也有一道兜底提示）。 */
+                      : <Button variant="primary" size="md"
+                          disabled={!input.trim() || !aiReady}
+                          title={!aiReady
+                            ? '还没配置可用的模型 —— 请先到「模型设置」里配好'
+                            : (aiReadyLabel ? `发送（当前模型：${aiReadyLabel}）` : '发送')}
+                          onClick={() => void send()}>发送</Button>}
                   </div>
                 </div>
                 </>

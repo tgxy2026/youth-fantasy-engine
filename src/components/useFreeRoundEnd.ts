@@ -18,6 +18,7 @@
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { showToast, confirmDialog } from './dialogs'
+import { useTavernReady } from './useTavernReady'
 import * as store from '../lib/tavern/store'
 import { unloadOllamaModel } from '../lib/ai'
 import { resolveTavernProvider } from '../lib/tavern/provider'
@@ -51,6 +52,13 @@ export function useFreeRoundEnd({
   session, setSession, setMems, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions,
   setReviseOpen, setProposals, setPicked, setReviseError,
 }: FreeRoundEndDeps) {
+  // 🔴 2026-09-22 六维审计 F1：收尾靠 AI 整理记忆，未配模型时给出明确指引。
+  //    判据走**酒馆自己的 provider 链**，且**用收尾真正会用的那个模型**：
+  //    收尾请求传的是 `summaryProviderId || undefined`（总结模型 → 面板默认 → 全局活动模型），
+  //    所以这里也用 summaryProviderId 当会话级 ref —— 判据与真实调用链严格同源。
+  //    🔴🔴 绝不能用全局那个就绪 Hook：会把「全局留空、只在面板指定模型」的有效配置误禁。
+  const tavernReady = useTavernReady(summaryProviderId || undefined, tavernSettings?.common.defaultProviderId)
+  const aiReadyNow = tavernReady.ready
   /**
    * 「结束本轮对话」进行中。
    * 注意与旧的 `summarizing` 不同：那玩意儿是**每轮都在后台跑**，作者看得见它卡；
@@ -116,6 +124,12 @@ export function useFreeRoundEnd({
     const pending = pendingMessages(s)
     if (pending.length === 0 && s.messages.length === 0) {
       showToast('这个对话还是空的', 'info')
+      return
+    }
+    // 🔴 2026-09-22 六维审计 F1：收尾要靠 AI 整理记忆，未配模型时先拦下 ——
+    //    否则会走完整套确认弹窗、跑到模型层才失败，作者白等一场（且收尾失败不推进水位线）。
+    if (!aiReadyNow) {
+      showToast('还没配置可用的模型 —— 收尾要用它整理记忆，请先到「模型设置」里配好', 'info')
       return
     }
 
@@ -222,7 +236,7 @@ export function useFreeRoundEnd({
       setEnding(false)
       setEndStage(null)
     }
-  }, [session, ending, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions, unloadLocalModels, setSession, setMems, setReviseOpen, setProposals, setPicked, setReviseError])
+  }, [session, ending, aiReadyNow, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions, unloadLocalModels, setSession, setMems, setReviseOpen, setProposals, setPicked, setReviseError])
 
   /** 中止收尾（已产出的部分不落库，见 endRound 的 catch 说明） */
   const stopEndRound = useCallback(() => { endCtlRef.current?.abort() }, [])

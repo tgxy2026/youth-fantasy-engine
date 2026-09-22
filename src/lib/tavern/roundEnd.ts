@@ -125,7 +125,12 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
    *   ⚠️ 只对**用户扮演的那一位**生效；AI 扮演的角色照旧写日记（`computed[].journal` 用得上）。
    */
   const warnings: string[] = []
-  const computed: { memory: FreeMemory; journal: string }[] = []
+  // 🔴🔴 2026-09-22 六维审计 P0：**必须定长**，不能 push ——
+  //    下面读记忆失败会 `continue`，push 版会让数组比 `cards` 短，而落库循环按 `cards[i]`
+  //    取 `computed[i]` ⇒ **把一个角色的记忆写进另一个角色的档案**（不可逆），末位还越界抛错。
+  //    定长赋值（`computed[i] = ...`）后两数组永远等长；`undefined` 项在落库时被跳过。
+  const computed: ({ memory: FreeMemory; journal: string } | undefined)[] =
+    new Array(cards.length).fill(undefined)
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i]
     onProgress?.({ stage: 'memory', cur: i + 1, total, name: c.name || '未命名角色' })
@@ -164,7 +169,7 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
     const got = c.id === session.userCharId
       ? { memory: await summarizeMemory(shared), journal: '' }
       : await summarizeRound(shared)
-    computed.push({ memory: got.memory, journal: got.journal.trim() })
+    computed[i] = { memory: got.memory, journal: got.journal.trim() }
   }
 
   // 全部成功 → 一次性落库（记忆 + 日记成对写，避免出现"有记忆没日记"的中间态）
@@ -173,6 +178,8 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i]
     const got = computed[i]
+    // 读记忆失败的那位：本轮跳过（已计入 warnings），不写、也不记进 memories
+    if (!got) continue
     await store.saveMemory(got.memory)
     memories.push(got.memory)
     if (got.journal) {

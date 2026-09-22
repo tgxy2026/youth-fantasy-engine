@@ -22,6 +22,7 @@ import { writerBudgetFor } from './aiWriterBudget'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { requireActiveProvider, isCancelled, stripThink } from './ai'
+import { withAiAssist } from './aiAssist'
 // 🔴 「补写 / 压缩到目标字数」的校准逻辑已抽到 `lib/wordRange.ts`（整章改写侧也要用它，
 //    而那边不能 import 本文件 —— 会与 aiTasks 门面形成循环）。这里再导出一次常量，
 //    只为**保持既有 import 路径可用**（面板仍从本文件取 `WORD_TOLERANCE`）。
@@ -267,12 +268,13 @@ async function createChapterAfter(
   if (!targetVolId) throw new Error('项目中还没有卷，请先到「正文写作」创建至少一个卷再续写。')
   const volChs = chs.filter(c => c.volumeId === targetVolId)
   const order = volChs.length
-  const ch: Chapter = {
+  // 🔴 B3（2.4.1）：整章正文由 AI 续写产出 —— 记账（纯函数返回新对象，后续改 title 不受影响）
+  const ch: Chapter = withAiAssist({
     id: uid(), projectId: pid, volumeId: targetVolId, order,
     title: title || '未命名章节', content, summary,
     status: '草稿', wordCount: countWords(content),
     createdAt: Date.now(), updatedAt: Date.now(),
-  }
+  }, 'continued', countWords(content))
   // 派生本章序号并写入标题，使 AI 取的章名自动延续编号（如「第12章 风云突变」）；
   // 防御：先剥离 AI 可能自带的前导「第X章」，避免双重编号
   const no = chapterSeqOf(vols, [...chs, ch], ch.id)
@@ -468,6 +470,10 @@ export async function runAutoContinue(
           last.content = filled
           last.wordCount = w1
           last.updatedAt = Date.now()
+          // 🔴 B3：AI 补字同样属于辅助产出，增量 = 真正补进去的那部分（w1 − w0）。
+          //    `withAiAssist` 返回**新对象**；这里 assign 回 `last` 是为了让后面的
+          //    `syncChapterMaster(last, …)` 等代码一行都不用改（保持原引用，改动面最小）。
+          Object.assign(last, withAiAssist(last, 'continued', w1 - w0))
           await db.saveChapter(last)
           lastBody = filled // 供下一章承接（第 22 章要接着补完的结尾写）
           await syncChapterMaster(last, chapterSeqOf(vols, await db.getAllChapters(), last.id))

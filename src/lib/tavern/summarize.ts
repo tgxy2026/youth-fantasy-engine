@@ -248,7 +248,10 @@ export type SummarizeArgs = {
 /** 把待总结的对话渲染成提示词片段（用户发言标〖对方〗，角色发言标名字） */
 export function renderTranscript(charName: string, messages: TavernMessage[]): string {
   return messages
-    .filter(m => m.role !== 'system' && m.content.trim())
+    // 🔴 2026-09-22 六维审计 P1：与 revise.ts 的 recentTranscript 保持**逐字同口径** ——
+    //    「隐藏 = 不进上下文」是本项目对作者的一致承诺。当前调用方传的都是已过滤的 pending，
+    //    所以这是防御性的；但本函数是导出的，将来任何新调用方直传 session.messages 就会漏。
+    .filter(m => m.role !== 'system' && !m.hidden && m.content.trim())
     .map(m => `${m.role === 'user' ? '〖对方〗' : `〖${charName}〗`}${m.content.trim()}`)
     .join('\n')
 }
@@ -478,7 +481,8 @@ export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ value
 /** 把这一段对话渲染成抽取用的片段（用户发言标〖对方〗，其余标说话人名字） */
 export function renderVarsTranscript(messages: TavernMessage[], nameOf?: (id?: string) => string): string {
   return messages
-    .filter(m => m.role !== 'system' && m.content.trim())
+    // 🔴 2026-09-22 六维审计 P1：同 renderTranscript —— 隐藏消息一律不进上下文
+    .filter(m => m.role !== 'system' && !m.hidden && m.content.trim())
     .map(m => `${m.role === 'user' ? '〖对方〗' : `〖${nameOf?.(m.speakerId) || '角色'}〗`}${m.content.trim()}`)
     .join('\n')
 }

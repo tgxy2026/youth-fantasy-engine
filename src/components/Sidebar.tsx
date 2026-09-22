@@ -1,5 +1,5 @@
 import { Z } from '../lib/zLayer'
-import { BookOpen, ChevronDown, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer } from 'lucide-react'
 import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
 import { confirmDialog } from './dialogs'
@@ -49,6 +49,13 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   //   · 首次安装（无记录）＝空集合＝全部分组展开，符合"第一眼看到全部功能"。
   const [collapsedGroups, updateCollapsedGroups] = usePersistedSet('sidebar-collapsed-groups')
   const [volOpen, setVolOpen] = usePersistedBool('sidebar-volume-open', true)
+  // 🔴 B6（2026-09-22 老大新增）：左下角工具栏可折叠。
+  //   与上面两条同一个原则 —— **存「偏离默认的那一侧」**：默认是展开，所以只记「用户把它收了」。
+  //   收起的收益：Footer 高度归零，上方 `<nav className="flex-1">` 自动吃掉释放的空间
+  //   （这就是老大要的"菜单栏自然延伸"，靠既有的 flex 布局天然实现，不需要额外量高度）。
+  //   ⚠️ 键与项目管理页的 `DataDock` **共用**（`dock-collapsed`）—— 两者是同一个「左下角工具栏」
+  //   在"有侧栏 / 无侧栏"两种形态下的呈现，共用一个记忆才符合直觉（在哪页收起，换页也是收起的）。
+  const [footerCollapsed, setFooterCollapsed] = usePersistedBool('dock-collapsed', false)
   // 主题与界面缩放（与 <html data-theme> / zoom 同步）
   const [theme, setTheme] = useState(getStoredTheme())
   const [zoom, setZoom] = useState(getStoredZoom())
@@ -269,7 +276,24 @@ style={{ zIndex: Z.pageBase }}
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-ink-700 shrink-0 space-y-2.5">
+      <div className="border-t border-ink-700 shrink-0">
+        {/* 🔴 B6（2026-09-22 老大新增）：左下角工具栏折叠把手。
+            收起后内容高度归零，上方页签区（`nav.flex-1`）自动吃掉释放的空间 —— 即"菜单栏自然延伸"。
+            把手带 title / aria-label / aria-expanded，键盘与读屏可达。 */}
+        <button
+          type="button"
+          onClick={() => setFooterCollapsed(!footerCollapsed)}
+          title={footerCollapsed ? '展开左下角工具栏（主题 / 界面缩放 / 存储 / 云同步）' : '收起左下角工具栏（收起后菜单区变高）'}
+          aria-label={footerCollapsed ? '展开左下角工具栏' : '收起左下角工具栏'}
+          aria-expanded={!footerCollapsed}
+          className="w-full flex items-center justify-center py-1 text-ink-500 hover:text-amber hover:bg-ink-800/40 transition-colors"
+        >
+          {footerCollapsed ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+        </button>
+        {/* 内容层：收起用 max-height 归零 —— 🔴 不写死 vh（<html> 的 zoom 变化时 vh 不随动，项目红线） */}
+        <div className={`px-4 space-y-2.5 overflow-hidden transition-[max-height,opacity] duration-200 ${
+          footerCollapsed ? 'max-h-0 opacity-0' : 'max-h-[30rem] opacity-100 pb-3'
+        }`}>
         {/* 主题切换 */}
         <div>
           <div className="flex items-center gap-1.5 mb-1.5">
@@ -329,6 +353,7 @@ style={{ zIndex: Z.pageBase }}
         {DESKTOP && <DesktopDataBar embedded />}
         {/* 云盘文件同步：项目内也能看到同步状态并随时开关 / 换目录 */}
         {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
+        </div>
       </div>
     </aside>
   )

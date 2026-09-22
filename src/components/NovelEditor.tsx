@@ -354,7 +354,9 @@ style={{ zIndex: Z.pageHandle }}
                     {/* 全屏透明遮罩：本页「点击外部关闭」就靠它（没有额外的 document 监听），
                         故有意 fixed inset-0。z 取页内局部层号 —— 与 JieWenJi:417 / 本文件 :1386 /
                         Sidebar:135 的页内面板同一约定；不取 Z 是因为这些是**页内**面板、非全站常驻角标。 */}
-                    <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setExportOpen(false)} />
+                    {/* 点外部关闭的遮罩：纯装饰性，给 aria-hidden 让朗读器忽略
+                        （不要求键盘可达 —— 关闭功能本身由 Esc / 再点按钮提供，见 2026-09-22 六维审计 U5） */}
+                    <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setExportOpen(false)} aria-hidden />
                     <div className="absolute right-0 top-full mt-1 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 overflow-y-auto"
 style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       <Button variant="bare"
@@ -640,7 +642,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                   <div
                     ref={highlightRef}
                     aria-hidden
-                  className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent px-6 md:px-8 pt-6"
+                  className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent pl-6 md:pl-8 pr-[calc(1.5rem+8px)] md:pr-[calc(2rem+8px)] pt-6"
                   style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'rgb(var(--ink-100))', paddingBottom: foldVh('40vh') }}
                     dangerouslySetInnerHTML={{ __html: highlightHTML }}
                   />
@@ -653,7 +655,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                   <div
                     ref={ghostRef}
                     aria-hidden
-                    className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent px-6 md:px-8 pt-6"
+                    className="novel-textarea absolute inset-0 z-0 overflow-hidden pointer-events-none border border-transparent pl-6 md:pl-8 pr-[calc(1.5rem+8px)] md:pr-[calc(2rem+8px)] pt-6"
                     style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingBottom: foldVh('40vh') }}
                   >
                     {/* 三段必须分行写：JSX 会吃掉"含换行的空白"，不会插入多余空格而把 ghost 挤偏一个字宽 */}

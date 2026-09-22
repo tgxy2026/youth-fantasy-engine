@@ -5,7 +5,7 @@ import HelpPopover from './HelpPopover'
 import { showToast } from './dialogs'
 import NumberField from './NumberField'
 import {
-  DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS, getWriterBudget, saveWriterBudget, previewAt,
+  DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS, WRITER_RECOMMEND, getWriterBudget, saveWriterBudget, previewAt,
   currentModelAdvice, budgetForKind,
 } from '../lib/aiWriterBudget'
 
@@ -103,7 +103,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
 那边还有记忆档、设定层占比等一整套。两边各管各的、「互不冲突」。`}
         </HelpPopover>
         <div className="flex-1" />
-        {dirty && <span className="text-11 text-amber">未保存</span>}
+        {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
         <Button variant="primary" size="sm" disabled={!dirty || saving} onClick={() => void commit(draft)}>
           {saving ? '保存中…' : '保存'}
         </Button>
@@ -118,10 +118,14 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
         <div className="mt-2 rounded border border-ink-700 bg-ink-900/40 px-3 py-2">
           <div className="text-11 text-ink-200">{modelDesc}</div>
           <div className="mt-0.5 text-10 text-ink-500">
+            {/* 🔴 数字一律从 WRITER_RECOMMEND 插值，禁写字面量（2026-09-22 六维审计 P1）——
+                原先这里硬编码「30%、48000」，而该比例已被调过一次（注释载 2026-09-18 放宽到 30% 档），
+                两处各写一份必然漂移：界面显示旧数字、实际换算已变，作者按说明估算占比就算错。
+                云端分支原先还省略了比例与上限，与本地分支信息量不对称，这里一并补齐。 */}
             {rec != null
               ? (localModel
-                ? `本地模型：随窗口按比例放大（推荐 ${rec} 字，资料取窗口的 30%、上限 48000 字，其余留给正文与输出）`
-                : `云端模型：可按窗口放大（推荐 ${rec} 字）`)
+                ? `本地模型：随窗口按比例放大（推荐 ${rec} 字，资料取窗口的 ${Math.round(WRITER_RECOMMEND.local.ratio * 100)}%、上限 ${WRITER_RECOMMEND.local.cap} 字，其余留给正文与输出）`
+                : `云端模型：可按窗口放大（推荐 ${rec} 字，资料取窗口的 ${Math.round(WRITER_RECOMMEND.cloud.ratio * 100)}%、上限 ${WRITER_RECOMMEND.cloud.cap} 字）`)
               : '未识别到当前模型'}
             {rec != null && rec !== base && <> · 当前为 {base} 字</>}
           </div>

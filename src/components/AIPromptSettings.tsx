@@ -148,7 +148,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
                             onClick={() => void reset(e)}>
                             <RotateCcw size={11} /> 还原出厂
                           </Button>
-                          {dirty && <span className="text-11 text-amber">未保存</span>}
+                          {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
                           <div className="flex-1" />
                           <span className="text-10 text-ink-600">
                             {draft.length} 字 · 出厂 {e.defaultText.length} 字

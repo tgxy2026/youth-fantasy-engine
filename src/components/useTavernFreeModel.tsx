@@ -42,6 +42,7 @@ import { useFreeTurn } from './useFreeTurn'
 import { useFreeRoundEnd } from './useFreeRoundEnd'
 import { useFreeRevise } from './useFreeRevise'
 import { primaryAiCharId } from '../lib/tavern/primaryChar'
+import { useTavernReady } from './useTavernReady'
 
 import { showToast, confirmDialog } from './dialogs'
 import { type FreeDraft } from './TavernFreeSetup'
@@ -137,6 +138,13 @@ export function useTavernFreeModel() {
   /** 设定更新：AI 读对话 → 列出「设定可能该改了」，由作者逐条裁决 */
   /** 控制面板设置（记忆与日常阈值都从这儿来）—— 读不到时用出厂默认，不含糊 */
   const [tavernSettings, setTavernSettings] = useState<TavernSettings | null>(null)
+  // ---------- AI 就绪（2026-09-22 六维审计 F1）----------
+  // 酒馆自由对话原先整条链路都没有就绪守卫，未配模型时点发送会一路走到 provider 抛错。
+  // 🔴 判据必须走酒馆自己的 provider 链（会话 model → 面板 defaultProviderId → 全局活动模型）：
+  //    直接套全局那个会禁掉「全局留空 + 面板指定模型」这一有效配置（tests/uiUxGuards 钉着）。
+  //    依赖两项 id 而非整个对象：id 变了才需要重算，免得每次渲染都触发一次异步解析。
+  //    ⚠️ 必须放在 `session` / `tavernSettings` 声明**之后**（JS 的 let/const 有 TDZ）。
+  const tavernReady = useTavernReady(session?.model?.providerId, tavernSettings?.common.defaultProviderId)
   /** 会话名内联编辑：列表里只显示标题，改不了就只能删了重开，所以给个直接改的入口 */
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -691,6 +699,10 @@ export function useTavernFreeModel() {
     reviseOpen, setReviseOpen, openRevise, revising, applyingRev, reviseError, proposals, picked, setPicked, applyPicked,
     // 多角色接话
     speakNext, setSpeakNext,
+    // 🔴 AI 就绪（2026-09-22 六维审计 F1）：未配模型时发送键要禁用并说明原因。
+    //    判据走**酒馆自己的 provider 链**（会话 → 面板默认 → 全局），绝不能用全局那个（见 useTavernReady 文件头）。
+    //    否则「全局留空、只在面板指定模型」这一有效配置会被误禁（见 useTavernReady 的文件头）。
+    aiReady: tavernReady.ready, aiReadyLabel: tavernReady.label,
     // 弹窗与抽屉
     usageOpen, setUsageOpen, directorOpen, setDirectorOpen, exportOpen, setExportOpen,
     // 其他

@@ -7,7 +7,7 @@
  *
  * engine 仍 re-export 它，既有调用点（summarize / revise / 各组件）不必改。
  */
-import { chat, loadProviders, requireActiveProvider, type AIProvider } from '../ai'
+import { chat, isProviderUsable, typeLabel, loadProviders, requireActiveProvider, type AIProvider } from '../ai'
 import { getTavernSettings } from './settings'
 
 /** 「调一次模型」的函数类型 —— 测试注入桩模型用的口子 */
@@ -43,4 +43,42 @@ export async function resolveTavernProvider(
     if (hit) return { provider: hit, fellBack: false }
   }
   return { provider: await requireActiveProvider(), fellBack: true }
+}
+
+/** 就绪判定的结果（与 `useAIReady` 的 `AIReadyInfo` 同形，但判据是**酒馆这一条链**） */
+export type TavernReadyInfo = {
+  /** 是否存在「配置完整、本轮真能用」的模型 */
+  ready: boolean
+  /** 当前模型的简短标识，如「本地 Ollama · qwen3:8b」；未就绪为空串 */
+  label: string
+  /** 是否回退到了「全局活动模型」（会话与面板都没指定，或指定的那个已被删除） */
+  fellBack: boolean
+}
+
+/**
+ * 酒馆侧的「模型就绪」判定 —— **判据必须与真实调用链一致**，否则守卫会误禁。
+ *
+ * 🔴 为什么不直接用全局的 `useAIReady`（2026-09-22 六维审计 F1 踩坑）：
+ *    `useAIReady` 只看**全局活动模型**（`getActiveProvider`）。而酒馆的模型来源是
+ *    「会话 model → 面板 `defaultProviderId` → 全局活动模型」这条三层兜底链
+ *    （见上面的 `resolveTavernProvider`）。作者完全可能把全局活动模型留空、
+ *    只在酒馆控制面板里指定一个模型 —— 那时全局判据说「未就绪」，
+ *    用它去禁用发送键，就把一个**本来能正常跑**的场景禁掉了（比不加守卫更糟）。
+ *
+ * 所以这里复用同一条解析链，只把「拿不到就抛」换成「返回 false」。
+ * 未配置时**不要**抛 —— 调用方是渲染期的守卫，抛会炸掉整个组件。
+ */
+export async function checkTavernReady(ref?: { providerId?: string }): Promise<TavernReadyInfo> {
+  try {
+    const { provider, fellBack } = await resolveTavernProvider(ref)
+    return { ready: isProviderUsable(provider), label: providerLabel(provider), fellBack }
+  } catch {
+    // requireActiveProvider 在「全局活动模型也没配」时抛 —— 这正是「未就绪」本身
+    return { ready: false, label: '', fellBack: true }
+  }
+}
+
+/** 模型简短标识（与 `ai.ts` 内部 `aiReadySnapshot` 的口径一致：`名称或类型 · 模型名`） */
+function providerLabel(p: AIProvider): string {
+  return `${p.name || typeLabel(p)} · ${p.model}`
 }

@@ -164,7 +164,9 @@ export default function WelcomeWizard({ onDone }: Props) {
             )}
 
             <div className="mt-7 flex items-center gap-3">
-              <Button variant="ghost" size="md" onClick={() => finish(null)} disabled={busy}>
+              {/* 🔴 静止态带文字的按钮走 secondary，不用 ghost（2026-09-22 六维审计 P2）：
+                  ghost 无边框，在这一屏上会被当成"普通文字"而不是"可点的次要操作" */}
+              <Button variant="secondary" size="md" onClick={() => finish(null)} disabled={busy}>
                 跳过，直接进入项目管理
               </Button>
               <Button

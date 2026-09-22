@@ -166,7 +166,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: '颉文姬 · OOC 人设检查',
     sources: [
       { group: '本章正文', items: [] },
-      { group: '角色卡与设定资料', items: ['主要角色', '次要角色', 'NPC 角色', '人物关系', '世界设定', '名词术语'], note: '约 10000 字预算 —— 颉文姬各模式里「读角色卡最全」的一项' },
+      { group: '角色卡与设定资料', items: ['主要角色', '次要角色', 'NPC角色', '人物关系', '世界设定', '名词术语'], note: '约 10000 字预算 —— 颉文姬各模式里「读角色卡最全」的一项' },
     ],
   },
   'jiewenji-advice': {
@@ -194,7 +194,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: '颉文姬 · 本章写作简报',
     sources: [
       { group: '本章正文', items: [] },
-      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态', '世界设定', '名词术语'], note: '约 8000 字预算，带锚点（只到本章）' },
+      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态（这两项是程序汇总的派生数据，不是某张表）', '世界设定', '名词术语'], note: '约 8000 字预算，带锚点（只到本章）' },
     ],
   },
   'jiewenji-ledger': {
@@ -237,6 +237,15 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     sources: [{ group: '命中词 + 该词附近约 120 字的上下文', items: [], note: '只发命中的片段，不发全篇' }],
     excludes: ['项目设定表 —— 它只判断"这个词在当前语境里是否有风险"'],
   },
+  // 检查工具页 · 节奏与章末钩子（2.4.1·B5 新增）
+  'pace-analysis': {
+    label: '节奏与章末钩子',
+    sources: [
+      { group: '本章正文', items: [], note: '全章参与判断；章末 12% 单列为钩子区' },
+      { group: '设定资料包', items: [], note: '与其它审读共用同一份打包资料，额度见「模型设置」' },
+    ],
+    excludes: ['不做行文质量与错别字判断 —— 那是「文风体检」与「校对」的事'],
+  },
   'name-suggest': {
     label: 'AI 取名',
     sources: [{ group: '项目设定资料', items: ['作品定位', '世界设定', '力量体系'], note: '约 3000 字预算' }],
@@ -248,7 +257,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   'plot-canvas': {
     label: '情节推演画布',
     sources: [
-      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态', '世界设定', '名词术语'], note: '约 6000 字预算' },
+      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态（这两项是程序汇总的派生数据，不是某张表）', '世界设定', '名词术语'], note: '约 6000 字预算' },
       { group: '你勾选章节的上下文', items: [] },
     ],
   },

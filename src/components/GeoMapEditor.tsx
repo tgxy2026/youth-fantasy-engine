@@ -1,11 +1,15 @@
+import { useEffect } from 'react'
 import type { PointerEvent as RPointerEvent } from 'react'
-import { Maximize2, ZoomIn, ZoomOut, MapPin, Pencil } from 'lucide-react'
+import { Maximize2, ZoomIn, ZoomOut, MapPin, Pencil, ImagePlus, X } from 'lucide-react'
 import type { TabDef } from '../lib/types'
 import HelpPopover from './HelpPopover'
 import { Button } from './Button'
 import { useGeoMapModel } from './useGeoMapModel'
 import { GeoMapList, DrawDialog, AddMarkerForm, DetailPanel } from './GeoMapParts'
 import { LAYER_COLORS, G, CELL_KM_STEPS } from './geoMapGeometry'
+import * as db from '../lib/db'
+import { showToast } from './dialogs'
+import { readMapImageFile, MAP_IMAGE_ACCEPT, MAP_IMAGE_HINT_SPEC } from '../lib/mapImage'
 
 export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   // 视图侧「同名解构」：JSX 一个字都没改 —— 拆分只把状态与交互挪进了 useGeoMapModel。
@@ -19,7 +23,49 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
     hover, setHover, selected, addPos, setAddPos, layers,
     setLayers, cellKm, painting, selRect, drawDialogOpen, setDrawDialogOpen,
     vp,
+    // 🔴 B8：图片底图
+    mapMode, mapImage, mapImageSize, setMapImageSize,
   } = useGeoMapModel()
+
+  /**
+   * 🔴 B8：上传 / 更换 / 清除底图。
+   * `file = null` ⇒ 切回「格子」模式（底图数据一并清掉，避免留一份没用的 dataURL 占体积）。
+   */
+  const onPickMapImage = async (file: File | null) => {
+    const row = maps.find(m => m.id === mapId)
+    if (!row) { showToast('先选一张地图', 'error'); return }
+    try {
+      if (!file) {
+        await db.saveTableRow({ ...row, data: { ...row.data, '底图模式': '格子', '底图': '' } })
+        showToast('已切回格子模式（底图已清除）', 'success')
+        load()
+        return
+      }
+      const r = await readMapImageFile(file)
+      await db.saveTableRow({
+        ...row,
+        data: { ...row.data, '底图模式': '图片', '底图': r.dataUrl },
+      })
+      showToast(
+        `底图已就绪（${r.w}×${r.h} · ${Math.round(r.bytes / 1024)}KB${r.downscaled ? ' · 为控制体积已压缩' : ''}）`,
+        'success',
+      )
+      load()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '这张图不能用作底图', 'error')
+    }
+  }
+
+  // 底图尺寸必须**解码后**才知道；`SVGImageElement` 没有 `naturalWidth`，
+  // 所以用一张 HTMLImage 预加载来测，再把尺寸回报给 model（fitView 要用）。
+  useEffect(() => {
+    if (!mapImage) { setMapImageSize(null); return }
+    const img = new Image()
+    img.onload = () => setMapImageSize({ w: img.naturalWidth || 1600, h: img.naturalHeight || 900 })
+    img.onerror = () => setMapImageSize(null)
+    img.src = mapImage
+  }, [mapImage, setMapImageSize])
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* 顶部工具条（通栏） */}
@@ -66,9 +112,43 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
               <Button variant="bare" onClick={exitPaint} className="ml-0.5 text-ink-300 hover:text-ink-100" title="右键画布也可取消">完成</Button>
             </span>
           )}
-          <Button variant="bare" onClick={() => setDrawDialogOpen(true)} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors" title="选择一个地理范围，用格子画出它的形状">
-            <Pencil size={11} /> 绘制地图
-          </Button>
+          {/* 🔴 B8：图片底图 —— 只保留格子模式下可用的「绘制地图」；
+              图片模式下改成「换底图 / 切回格子」，两种模式互斥（不能在图上叠加涂格）。 */}
+          {mapMode === '格子' ? (
+            <Button variant="bare" onClick={() => setDrawDialogOpen(true)} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors" title="选择一个地理范围，用格子画出它的形状">
+              <Pencil size={11} /> 绘制地图
+            </Button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-amber/40 bg-amber/10 text-11 text-amber" title="当前为图片底图模式：滚轮缩放、拖动平移；地点标记照常可加">
+              图片底图
+            </span>
+          )}
+          <label
+            className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors cursor-pointer"
+            title={MAP_IMAGE_HINT_SPEC}
+          >
+            <input
+              type="file"
+              accept={MAP_IMAGE_ACCEPT}
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                if (f) void onPickMapImage(f)
+                e.currentTarget.value = ''
+              }}
+            />
+            <ImagePlus size={11} /> {mapMode === '图片' ? '换底图' : '上传底图'}
+          </label>
+          {mapMode === '图片' && (
+            <Button
+              variant="bare"
+              onClick={() => void onPickMapImage(null)}
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors"
+              title="清掉底图，回到用格子画地图的模式"
+            >
+              <X size={11} /> 切回格子
+            </Button>
+          )}
           <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-400 select-none" title="当前格子档位：每个格子的边长所代表的真实公里数（1 = 精细 / 10 = 粗略）。用旁边的「精 / 粗」按钮切换。">
             <span className="text-ink-500">每格</span>
             <span className="text-amber font-medium">1:{cellKm}</span>
@@ -125,6 +205,22 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
             <rect width="100%" height="100%" fill="transparent" onPointerDown={e => onPointerDown(e as RPointerEvent<SVGElement>, 'pan')} />
 
             <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
+              {/* 🔴 B8：图片底图 —— 放在格子层**之前**（图在下、格子与标记在上）。
+                  世界坐标 = 图片像素尺寸（1px = 1 世界单位），与地点标记共用同一坐标系，
+                  所以滚轮缩放 / 拖动平移**完全复用外层这个 <g> 的 transform**，
+                  不另搞一套 pan/zoom（也就天然满足了"滚轮位移要按界面缩放折算"这条红线 ——
+                  折算逻辑在既有的 pan/zoom 里已经处理过了）。 */}
+              {mapMode === '图片' && mapImage && (
+                <image
+                  href={mapImage}
+                  x={0}
+                  y={0}
+                  width={mapImageSize?.w || 1600}
+                  height={mapImageSize?.h || 900}
+                  preserveAspectRatio="none"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
               {/* 格子地图：按层级深度从浅到深分层渲染——父空间格子铺底，子空间作为「另一图层」叠涂其上。
                   颜色由系统按层级自动调配（父子高对比）；渲染按当前档位聚合（满 n×n 块=大格，零散=1km 小格）。 */}
               {[...markers]

@@ -47,10 +47,15 @@ type GhostArgs = {
   draftRef: MutableRefObject<string>
   /** 采纳建议的唯一写入口：走受控组件的 onContentChange，保住自动保存链路 */
   onContentChange: (v: string) => void
+  /**
+   * 采纳时回报「这次 AI 产出了多少字」（B3 补做 · 2.4.1）——
+   * 由编辑器模型挂起，随该章下次落库写进 `aiAssist`。不传则完全不记账（本 hook 仍可独立使用）。
+   */
+  onAiAssist?: (chars: number) => void
 }
 
 export function useNovelEditorGhost({
-  activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange,
+  activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange, onAiAssist,
 }: GhostArgs) {
   // ---- 2.2.0 AI 伴写（ghost 逐句续写）----
   // 默认关闭：写作者主导权优先。开启后停笔自动在光标后透出一句浅灰建议；Ctrl+Enter 采纳才落进正文，继续打字即丢弃。
@@ -247,8 +252,10 @@ export function useNovelEditorGhost({
     const at = Math.min(ghost.at, draftContent.length)
     const next = draftContent.slice(0, at) + ghost.text + draftContent.slice(at)
     const pos = at + ghost.text.length
+    const produced = ghost.text.length   // 先取长度：下面 setGhost(null) 之后这个建议就没了
     setGhost(null)
     onContentChange(next)
+    onAiAssist?.(produced)
     // 受控组件：要等 React 把新 value 写回 textarea 之后才能设光标位置
     requestAnimationFrame(() => {
       const ta = taRef.current
