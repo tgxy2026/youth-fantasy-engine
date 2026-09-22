@@ -29,7 +29,9 @@
 - 🔴 审计四条（详规见 skill `novel-studio-audit-fix`）：语料净化／`KEEP` 白名单／死代码回查 `docs/` 判决／**工具的结构假设会静默失明**（闸只查 `description`、`tips` 会漏）。
 
 ## 存储·同步
-- 🔴🔴 云盘同步「删了会复活」：修＝墓碑 `syncTombstone.ts`＋`localHasContent` 闸。
+- 🔴🔴 云盘同步「删了会复活」是**家族不是单条路径**：修＝墓碑 `syncTombstone.ts`＋`localHasContent` 闸。
+  ⚠️ **修这类必须一次找齐同一个病的所有路径**（09-21 修两条，09-22 又挖出第三条：兜底镜像 `overwrite=false` 的 `missing` 只按「本地有没有」算 → 把本机删过的补回，而 desktop `bulkPut` **顺手 `clearDeleted()` 清墓碑** ⇒ 复活；判据要用墓碑）。
+- 🔴 同步排除表 `EXCLUDED_META_KEYS` 管「含密钥的全局 meta」：现含 `aiProviders` 三键 + **`app.search`**（检索密钥，UI 承诺"不上传"）。加新的敏感 meta 记得同步这里。
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步它。
 - 🔴 `backups` 本地专属→`makeCloudStoreWrapper` 短路。🔴🔴 桌面读数据失败**必须锁写盘**（`main.cjs` 三态＋`DesktopWriteLockBanner`）。
 - 🔴🔴 服务器已**彻底清理**（09-21）→ 跨设备同步只剩云盘文件夹。`createIdleTransport`＝未开启占位（🔴 绝不返回空库）。
