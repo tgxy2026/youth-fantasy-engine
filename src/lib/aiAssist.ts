@@ -88,6 +88,31 @@ export function withAiAssist(ch: Chapter, kind: AiSourceKind, chars: number): Ch
   return { ...ch, aiAssist: next }
 }
 
+/** 编辑器挂起的一笔 AI 产出记账（带章节 id —— 只有保存"同一章"时才消费它） */
+export interface PendingAiNote {
+  chapterId: string
+  kind: AiSourceKind
+  chars: number
+}
+
+/**
+ * 把挂起记账里属于这一章的部分合并进章节对象（B3 补做 · 2.4.1）。
+ * 返回合并后的章节 + **未消费的剩余记账**（别的章的账要继续留着）。
+ *
+ * 🔴 为什么抽成纯函数：编辑器里「采纳那一刻挂账、保存时合并」是两条路径（伴写采纳 / 选区改稿）
+ *    共用的逻辑，写在 hook 里就没法单测；抽出来之后 hook 只做编排，tests 直接验合并与消费语义。
+ */
+export function foldPendingAi(
+  notes: PendingAiNote[], ch: Chapter,
+): { chapter: Chapter; rest: PendingAiNote[] } {
+  const mine = notes.filter(n => n.chapterId === ch.id)
+  const rest = notes.filter(n => n.chapterId !== ch.id)
+  if (!mine.length) return { chapter: ch, rest }
+  let out = ch
+  for (const m of mine) out = withAiAssist(out, m.kind, m.chars)
+  return { chapter: out, rest }
+}
+
 export interface AiRatio {
   /** AI 累计产出字数 */
   aiChars: number

@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import {
   AI_SOURCE_KINDS, emptyAiAssist, normalizeAiAssist,
-  withAiAssist, aiRatio, summarizeAiAssist, buildAiDisclosureDraft,
+  withAiAssist, foldPendingAi, aiRatio, summarizeAiAssist, buildAiDisclosureDraft,
 } from '../src/lib/aiAssist'
 import type { Chapter } from '../src/lib/types'
 
@@ -129,17 +129,80 @@ console.log('\n▶ aiAssist')
   ok('无 AI 记录时也有草稿（且写明未记录到）', emptyDraft.includes('未记录到 AI 辅助产出'))
 }
 
+// ---------- 5.5) foldPendingAi：编辑器挂账的合并与消费（B3 补做 · 2.4.1）----------
+{
+  const chA = { id: 'A' } as Chapter
+
+  const r0 = foldPendingAi([], chA)
+  ok('无记账时原样返回（同一对象）', r0.chapter === chA && r0.rest.length === 0)
+
+  const r1 = foldPendingAi([{ chapterId: 'B', kind: 'continued', chars: 100 }], chA)
+  ok('别的章的记账不被消费，原样留着', r1.chapter === chA && r1.rest.length === 1)
+
+  const r2 = foldPendingAi([{ chapterId: 'A', kind: 'continued', chars: 120 }], chA)
+  ok('同章记账被合并进 aiAssist', r2.chapter.aiAssist?.chars.continued === 120)
+  ok('合并后该条不再留在 rest', r2.rest.length === 0)
+  ok('合并记 1 次', r2.chapter.aiAssist?.times.continued === 1)
+
+  const r3 = foldPendingAi([
+    { chapterId: 'A', kind: 'continued', chars: 100 },
+    { chapterId: 'A', kind: 'polished', chars: 50 },
+    { chapterId: 'A', kind: 'continued', chars: 30 },
+  ], chA)
+  ok('多笔同章累加（continued 100+30=130）', r3.chapter.aiAssist?.chars.continued === 130)
+  ok('不同类分别计入（polished=50）', r3.chapter.aiAssist?.chars.polished === 50)
+  ok('次数按笔数累加（continued 2 次）', r3.chapter.aiAssist?.times.continued === 2)
+  ok('三笔全部消费掉', r3.rest.length === 0)
+
+  const r4 = foldPendingAi([
+    { chapterId: 'A', kind: 'generated', chars: 200 },
+    { chapterId: 'B', kind: 'continued', chars: 9 },
+  ], chA)
+  ok('混合场景：只消费 A 的账', r4.chapter.aiAssist?.chars.generated === 200 && r4.rest.length === 1)
+  ok('混合场景：留下的是 B 的账', r4.rest[0].chapterId === 'B')
+
+  const r5 = foldPendingAi([{ chapterId: 'A', kind: 'continued', chars: 0 }], chA)
+  ok('字数为 0 不产生 aiAssist（该条仍被消费掉）', r5.chapter.aiAssist === undefined && r5.rest.length === 0)
+
+  const withPrev = withAiAssist(chA, 'rewritten', 500)
+  const r6 = foldPendingAi([{ chapterId: 'A', kind: 'continued', chars: 40 }], withPrev)
+  ok('已有记账时是叠加而不是覆盖（rewritten 保留）', r6.chapter.aiAssist?.chars.rewritten === 500)
+  ok('叠加后新类也在（continued=40）', r6.chapter.aiAssist?.chars.continued === 40)
+  // ⚠️ 注意：withAiAssist 会先 normalize（把未涉及的类填 0），所以这里判 0 而不是 undefined
+  ok('原章节对象不被改动（纯函数）', chA.aiAssist === undefined && (withPrev.aiAssist?.chars.continued ?? 0) === 0)
+}
+
 // ---------- 6) 🔴 守门：AI 主路径必须记账 ----------
 {
   const paths: Array<[string, string]> = [
     ['整章改写', 'src/lib/chapterRewrite.ts'],
     ['自动续写', 'src/lib/autoContinue.ts'],
     ['创意写作', 'src/lib/creativeSession.ts'],
+    ['编辑器（伴写采纳 / 选区改稿）', 'src/components/useNovelEditorModel.ts'],
   ]
   for (const [label, f] of paths) {
     let src = ''
     try { src = readFileSync(f, 'utf8') } catch { /* 文件改名就让断言红，正是目的 */ }
-    ok(`🔴 守门：${label} 路径有 AI 记账痕迹`, /withAiAssist|applyChapterRewrite/.test(src))
+    ok(`🔴 守门：${label} 路径有 AI 记账痕迹`, /withAiAssist|applyChapterRewrite|foldPendingAi/.test(src))
+  }
+
+  // 🔴 编辑器两条路径（B3 补做 · 2.4.1）：采纳那一刻挂账，落库时合并进该章。
+  {
+    const model = readFileSync('src/components/useNovelEditorModel.ts', 'utf8')
+    const ghost = readFileSync('src/components/useNovelEditorGhost.ts', 'utf8')
+    ok('🔴 编辑器：有挂账函数 noteAiAssist', /noteAiAssist\s*=/.test(model))
+    ok('🔴 编辑器：落库统一走 saveChapterWithAi', /const saveChapterWithAi\s*=/.test(model))
+    // ⚠️ 防"绕过"：saveChapterWithAi 内部那两处 db.saveChapter 是**允许的**（它就是唯一落库出口）；
+    //    禁区是 helper **之外**又冒出直接落库 —— 那会让挂起的 AI 账静默漏掉。
+    {
+      const start = model.indexOf('const saveChapterWithAi')
+      const endRaw = start < 0 ? -1 : model.indexOf('\n  }\n', start)
+      const outside = start < 0 || endRaw < 0 ? model : model.slice(0, start) + model.slice(endRaw)
+      const leaks = (outside.match(/db\.saveChapter\(/g) ?? []).length
+      ok('🔴 编辑器：saveChapterWithAi 之外没有直连落库（漏账口子）', leaks === 0, `实得 ${leaks}`)
+    }
+    ok('🔴 伴写采纳回报了产出字数（onAiAssist 链路完整）',
+      /onAiAssist\?\.\(/.test(ghost) && /onAiAssist/.test(model))
   }
 
   // 🔴 创意写作走的是共用的 `applyChapterRewrite`（那条默认记 rewritten）——

@@ -219,7 +219,7 @@ export default function TrajectoryPanel() {
         </div>
 
         <p className="mt-2 text-10 leading-relaxed text-ink-500">
-          数字由软件在 AI 产出时自动记录（整章改写 / 自动续写 / 创意写作 / 局部润色），非手工填写。
+          数字由软件在 AI 产出时自动记录（整章改写 / 自动续写 / 伴写采纳 / 创意写作 / 选区改稿），非手工填写。
           {aiSummary.cappedChapters > 0 && (
             <span className="text-amber"> 有 {aiSummary.cappedChapters} 章经人工大幅删改，实际留存比例低于此数字。</span>
           )}

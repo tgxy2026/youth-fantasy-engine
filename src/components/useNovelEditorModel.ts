@@ -26,6 +26,7 @@ import { uid } from '../lib/id'
 import { countWords } from '../lib/textStats'
 import { todayKey } from '../lib/date'
 import { useResizable } from '../lib/useResizable'
+import { foldPendingAi, type AiSourceKind, type PendingAiNote } from '../lib/aiAssist'
 
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 
@@ -213,6 +214,36 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     return max + 1
   }, [chapterSeqs])
 
+  // ============ 2.4.1 · B3 补做：编辑器内的 AI 产出记账 ============
+  //
+  // 「伴写采纳」（acceptGhost）与「选区改稿」（insertAdvice）都不直接写正文库，
+  // 而是改草稿 → 由本文件各条保存路径统一落库。所以在**采纳那一刻**先把账挂起（带章节 id），
+  // 到保存这一章时再用 withAiAssist 合并进去。
+  //
+  // 🔴 口径＝「本次 AI 产出的字数」，不是"当前正文里有多少 AI 字"：
+  //    作者随后怎么删改无法反推 —— 与整章改写 / 续写同一口径，界面上也如实写明。
+  const aiPendingRef = useRef<PendingAiNote[]>([])
+
+  /** 挂一笔 AI 产出（供伴写采纳 / 选区改稿调用） */
+  const noteAiAssist = (kind: AiSourceKind, chars: number) => {
+    const id = activeRef.current?.id
+    if (!id || chars <= 0) return
+    aiPendingRef.current.push({ chapterId: id, kind, chars })
+  }
+
+  /**
+   * 落库章节 —— **本文件所有保存路径都走它**（原先 10 处 `db.saveChapter` 已统一改名）。
+   * 顺手把该章挂起的 AI 记账合并进去并消费掉。
+   * 🔴 之所以包一层而不是各处手写：以后新增保存路径也自动带上记账，
+   *    不会出现"新增一条路忘了记"的静默漏账。
+   */
+  const saveChapterWithAi = (ch: Chapter): Promise<void> => {
+    const { chapter, rest } = foldPendingAi(aiPendingRef.current, ch)
+    // 只在真的消费掉了记账时才换数组（没消费就保持原引用，省一次分配）
+    if (rest.length !== aiPendingRef.current.length) aiPendingRef.current = rest
+    return db.saveChapter(chapter)
+  }
+
   /** 章节定位：序号取全局派生序号（与标题无关），0 = 不计入序号 */
   const locate = (ch: Chapter) => {
     const vol = volumes.find(v => v.id === ch.volumeId)
@@ -224,7 +255,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     const next: Chapter = { ...ch, excludeFromNumbering: !ch.excludeFromNumbering, updatedAt: Date.now() }
     const nextChs = chapters.map(c => (c.id === ch.id ? next : c))
     setChapters(nextChs)
-    await db.saveChapter(next)
+    await saveChapterWithAi(next)
     // 一章进出计数会牵动其后所有章的号，故全量重排
     await resyncChapterMasterNumbers(volumes, nextChs)
     showToast(
@@ -247,7 +278,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
         const next: Chapter = { ...leaving, content: text, wordCount: countWords(text), updatedAt: Date.now() }
         // 🔴 切章冲刷失败必须可见（2026-09-19 六维审计 P2-10）：原先没有 catch，
         //    落库失败时这段稿子静默丢失，作者只看到字数没变。
-        void db.saveChapter(next)
+        void saveChapterWithAi(next)
           .then(() => onStatsChangeRef.current?.())
           .catch((e: unknown) => showToast('自动保存失败：' + (e instanceof Error ? e.message : String(e)), 'error'))
         // 同步内存态，避免快速切回时读到陈旧内容把刚落库的稿子覆盖掉
@@ -277,7 +308,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     if (ch && draftRef.current !== ch.content) {
       const text = draftRef.current
       const next: Chapter = { ...ch, content: text, wordCount: countWords(text), updatedAt: Date.now() }
-      void db.saveChapter(next)
+      void saveChapterWithAi(next)
     }
   }, [])
 
@@ -302,7 +333,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     setSaving(true)
     try {
       const { no } = locate(next)
-      await Promise.all([db.saveChapter(next), syncChapterMaster(next, no)])
+      await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
       setChapters(prev => prev.map(c => (c.id === next.id ? next : c)))
       setSavedFlash(true)
       clearTimeout(flashTimer.current)
@@ -375,7 +406,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     draftRef.current = content
     setDraftContent(content)
     const { no } = locate(next)
-    Promise.all([db.saveChapter(next), syncChapterMaster(next, no)])
+    Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
       .then(() => {
         setSavedFlash(true)
         clearTimeout(flashTimer.current)
@@ -395,7 +426,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     setChapters(prev => prev.map(c => (c.id === next.id ? next : c)))
     const { no } = locate(next)
     const run = async () => {
-      await Promise.all([db.saveChapter(next), syncChapterMaster(next, no)])
+      await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
       onStatsChange?.()
     }
     // 🔴 P2-8：按章节 id 入账（同章覆盖、跨章共存），不再共用一个"最新那笔"
@@ -439,7 +470,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
           const s = await aiChapterSummary(c.content)
           if (s) {
             const next = { ...c, summary: s }
-            await db.saveChapter(next)
+            await saveChapterWithAi(next)
             // 🔴 台账的「一句话事件」是章节总表/情节推演本在读的字段，摘要变了必须同步登记，
             //    否则总表还显示旧摘要，用户会以为重生成没生效。
             await syncChapterMaster(next, chapterSeqOf(vols, all, next.id))
@@ -504,6 +535,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     styleNotePrompt, setStyleNotePrompt, ghost, ghostBusy, dismissGhost, onEditorKeyDown,
   } = useNovelEditorGhost({
     activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange,
+    // B3 补做：采纳即挂账一笔「续写」产出，随本章下次落库写进 aiAssist
+    onAiAssist: (chars: number) => noteAiAssist('continued', chars),
   })
 
   /** 建议段模式：AI 改稿以标记块写入原文下方，绝不动原文；作者自行取舍 */
@@ -525,6 +558,9 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     const block = `\n\n${ADVICE_START}\n${rewritten.trim()}\n${ADVICE_END}`
     const next = base.slice(0, insertAt) + block + base.slice(insertAt)
     updateContent(next)
+    // 🔴 B3 补做：选区改稿的产出也计入 —— 算**建议段正文**的字数（不含两端标记行）。
+    //    这段是 AI 生成的，作者采不采用由他定，但"产出过"这件事要如实记（口径同其它来源）。
+    noteAiAssist('polished', rewritten.trim().length)
     showToast('已写入建议段：请自行取舍，可用面板「清除全部建议段」一键清理', 'success')
   }
   const clearAdvice = () => {
@@ -562,7 +598,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
       id: uid(), projectId: db.getCurrentProjectId(), volumeId, order: volChs.length, title, content: '', summary: '',
       status: '构思', wordCount: 0, createdAt: Date.now(), updatedAt: Date.now(),
     }
-    await db.saveChapter(ch)
+    await saveChapterWithAi(ch)
     await load()
     setActiveId(ch.id)
     // 新章登记到对应卷的章节台账。序号取全局派生值——新章 order 为卷内最大值，
@@ -585,7 +621,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     const next = { ...ch, title }
     setChapters(prev => prev.map(x => (x.id === ch.id ? next : x)))
     const { no } = locate(next)
-    await Promise.all([db.saveChapter(next), syncChapterMaster(next, no)])
+    await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
   }
 
   const submitNamePrompt = async (v: string) => {
@@ -678,7 +714,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
         const changed = nextChapters.filter((c, i) => c.order !== chapters[i].order || c.volumeId !== chapters[i].volumeId)
         dirty = changed.length > 0
         if (dirty) {
-          await Promise.all(changed.map(c => db.saveChapter(c)))
+          await Promise.all(changed.map(c => saveChapterWithAi(c)))
           await resyncChapterMasterNumbers(volumes, nextChapters)
         }
       }

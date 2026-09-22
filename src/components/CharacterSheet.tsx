@@ -400,72 +400,31 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                     <span className="w-1 h-3 rounded-full bg-amber/70" />
                     <h3 className="text-12 font-semibold text-ink-100">{mod.name}</h3>
                   </div>
-                  {/* 🔴 B7：只有在「基础信息」模块里做左右分栏 ——
+                  {/* 🔴 B7：只在「基础信息」模块里做左右分栏 ——
                       这一模块的字段都极短（姓名 / 别称 / 保密等级 / 身份定位），
-                      右侧原本是一大片空白；把立绘位放这里，正好把注定空着的空间用起来。
+                      输入框收窄后右侧会空出一大片，正好让立绘占住。
+                      ⚠️ 2026-09-22 返工两处：
+                        ① 立绘块必须在**字段区之后**（DOM 顺序 = 显示在右）。第一版写在字段区之前，
+                           于是立绘跑到**左侧**去了；
+                        ② 尺寸 144px → 256 / 288px（xl），文本框同时收窄（见下方 max-w）。
                       其余模块（外貌 / 性格…）字段可长可短，一栏到底更合适，不动。 */}
-                  <div className={isBasicMod ? 'flex gap-4' : ''}>
-                  {isBasicMod && (
-                    <div className="w-36 shrink-0 px-3 py-3">
-                      <div className="text-11 text-ink-400 mb-1.5">人物立绘</div>
-                      <label
-                        className={`relative block w-full rounded-lg border border-dashed overflow-hidden cursor-pointer transition-colors ${
-                          portraitBusy ? 'border-ink-600 opacity-60' : 'border-ink-600 hover:border-amber/60'
-                        }`}
-                        style={{ aspectRatio: '9 / 16' }}
-                        title={PORTRAIT_HINT_SPEC}
-                      >
-                        <input
-                          type="file"
-                          accept={PORTRAIT_ACCEPT}
-                          className="hidden"
-                          disabled={portraitBusy}
-                          onChange={e => {
-                            const f = e.target.files?.[0]
-                            void updatePortrait(f ?? null)
-                            e.currentTarget.value = ''   // 允许连续选同一张
-                          }}
-                        />
-                        {draft.portrait ? (
-                          <img src={draft.portrait} alt={`${draft.name} 的立绘`} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-ink-500">
-                            {portraitBusy
-                              ? <Loader2 size={16} className="animate-spin" />
-                              : <ImagePlus size={16} />}
-                            <span className="text-10">{portraitBusy ? '处理中…' : '点击上传'}</span>
-                          </span>
-                        )}
-                      </label>
-                      {draft.portrait && (
-                        <div className="mt-1.5 flex items-center gap-1.5">
-                          <span className="text-10 text-ink-500 tabular-nums">
-                            {Math.round(dataUrlBytes(draft.portrait) / 1024)}KB
-                          </span>
-                          <Button
-                            variant="icon-danger" iconOnly size="xs"
-                            title="移除立绘" aria-label="移除立绘"
-                            className="ml-auto"
-                            onClick={() => void updatePortrait(null)}
-                          >
-                            <X size={11} />
-                          </Button>
-                        </div>
-                      )}
-                      <div className="mt-1 text-10 leading-relaxed text-ink-500">推荐 9:16 · 不裁切</div>
-                    </div>
-                  )}
-                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-0' : ''}`}>
+                  <div className={isBasicMod ? 'flex items-stretch' : ''}>
+                  {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
+                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-0 flex flex-col justify-center' : ''}`}>
                     {mod.fields.map(field => {
                       const key = `${mod.name}::${field.name}`
                       const val = draft.data[key] ?? ''
                       return (
-                        <div key={key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
+                        <div key={key} className={`px-4 py-3 grid gap-3 hover:bg-ink-800/40 transition-colors ${
+                          isBasicMod ? 'grid-cols-[104px_1fr]' : 'grid-cols-[140px_1fr]'
+                        }`}>
                           <div>
                             <div className="text-12 font-medium text-ink-100">{field.name}</div>
                             {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                           </div>
-                          <div>
+                          {/* 输入框收窄：基础信息这几个字段都是短值（姓名 / 别称 / 保密等级 / 身份定位），
+                              拉满整行只会留出长条空白 —— 收在 26rem 内，省下的宽度交给右侧立绘 */}
+                          <div className={isBasicMod ? 'max-w-[26rem]' : ''}>
                             {/* 所属势力 / 种族 等字段：从其他设定表取值，禁止手动输入（根治同名异写导致的归属错乱） */}
                             {CARD_TABLE_REF_FIELDS[field.name] ? (
                               <TableRefSelect
@@ -505,6 +464,63 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                       )
                     })}
                   </div>
+                  {/* 立绘位列（B7）—— 🔴 必须在字段区**之后**：DOM 顺序决定它显示在右侧。
+                      与基础信息模块**融合**：只加一条左边框做分隔，不另立卡片。
+                      w-64 / xl:w-72 ⇒ 图片可视宽 224 / 256px（原 144px 的 1.6~1.8 倍）。 */}
+                  {isBasicMod && (
+                    <div className="w-64 xl:w-72 shrink-0 border-l border-ink-700 px-4 py-3 flex flex-col">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-11 text-ink-400">人物立绘</span>
+                        {draft.portrait && (
+                          <span className="ml-auto text-10 text-ink-500 tabular-nums">
+                            {Math.round(dataUrlBytes(draft.portrait) / 1024)}KB
+                          </span>
+                        )}
+                      </div>
+                      <label
+                        className={`relative block w-full rounded-lg border border-dashed overflow-hidden cursor-pointer transition-colors ${
+                          portraitBusy ? 'border-ink-600 opacity-60' : 'border-ink-600 hover:border-amber/60'
+                        }`}
+                        style={{ aspectRatio: '9 / 16' }}
+                        title={PORTRAIT_HINT_SPEC}
+                      >
+                        <input
+                          type="file"
+                          accept={PORTRAIT_ACCEPT}
+                          className="hidden"
+                          disabled={portraitBusy}
+                          onChange={e => {
+                            const f = e.target.files?.[0]
+                            void updatePortrait(f ?? null)
+                            e.currentTarget.value = ''   // 允许连续选同一张
+                          }}
+                        />
+                        {draft.portrait ? (
+                          <img src={draft.portrait} alt={`${draft.name} 的立绘`} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-500">
+                            {portraitBusy
+                              ? <Loader2 size={20} className="animate-spin" />
+                              : <ImagePlus size={20} />}
+                            <span className="text-10">{portraitBusy ? '处理中…' : '点击上传'}</span>
+                          </span>
+                        )}
+                      </label>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-10 leading-relaxed text-ink-500">推荐 9:16 竖图 · 不裁切</span>
+                        {draft.portrait && (
+                          <Button
+                            variant="icon-danger" iconOnly size="xs"
+                            title="移除立绘" aria-label="移除立绘"
+                            className="ml-auto shrink-0"
+                            onClick={() => void updatePortrait(null)}
+                          >
+                            <X size={11} />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {/* 闭合「基础信息」的左右分栏容器（其余模块这个 div 不生成，类名为空也无害） */}
                   </div>
                 </section>
