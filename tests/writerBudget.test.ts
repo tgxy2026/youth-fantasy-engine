@@ -39,6 +39,8 @@ const LEGACY: Record<WriterBudgetKind, number> = {
   'jiewenji-pleasure': 8000,
   'jiewenji-opening': 8000,
   'jiewenji-brief': 8000,
+  // 节奏与章末钩子（2.4.1·B5 新增）：按 1.0 档，出厂即 8000
+  'pace-analysis': 8000,
   // 创意写作（2026-09-18 新增）：分卷大纲按 1.5 档，出厂即 12000
   'outline-generate': 12000,
 }

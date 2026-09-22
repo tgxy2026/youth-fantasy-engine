@@ -237,6 +237,15 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     sources: [{ group: '命中词 + 该词附近约 120 字的上下文', items: [], note: '只发命中的片段，不发全篇' }],
     excludes: ['项目设定表 —— 它只判断"这个词在当前语境里是否有风险"'],
   },
+  // 检查工具页 · 节奏与章末钩子（2.4.1·B5 新增）
+  'pace-analysis': {
+    label: '节奏与章末钩子',
+    sources: [
+      { group: '本章正文', items: [], note: '全章参与判断；章末 12% 单列为钩子区' },
+      { group: '设定资料包', items: [], note: '与其它审读共用同一份打包资料，额度见「模型设置」' },
+    ],
+    excludes: ['不做行文质量与错别字判断 —— 那是「文风体检」与「校对」的事'],
+  },
   'name-suggest': {
     label: 'AI 取名',
     sources: [{ group: '项目设定资料', items: ['作品定位', '世界设定', '力量体系'], note: '约 3000 字预算' }],
