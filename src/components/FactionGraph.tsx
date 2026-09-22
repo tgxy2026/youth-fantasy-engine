@@ -250,9 +250,9 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
         <div className="absolute right-3 top-12 bottom-3 w-64 bg-ink-850/95 backdrop-blur rounded-xl border border-ink-700 p-3 overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="text-13 font-semibold text-amber">{selected}</div>
-            <Button variant="icon-muted" onClick={() => setSelected(null)}>
-              <X size={16} />
-            </Button>
+                <Button variant="icon-muted" onClick={() => setSelected(null)} title="关闭详情" aria-label="关闭详情">
+                  <X size={16} />
+                </Button>
           </div>
           <Button variant="bare"
             onClick={() => onNavigate?.('nations')}

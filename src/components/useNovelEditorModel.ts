@@ -35,6 +35,8 @@ import { type VisCtx, refreshVolumeTabs } from '../lib/schema'
 import { chapterSeqOf, chapterSeqMap } from '../lib/chapterSeq'
 import { syncChapterMaster } from '../lib/chapterMaster'
 import { useAIReady } from '../lib/useAIReady'
+import { usePersistedBool, usePersistedEnum } from '../lib/uiPrefs'
+import { DEFAULT_INDENT_UNIT, INDENT_UNIT_IDS, type IndentUnit } from '../lib/indent'
 import { aiChapterSummary } from '../lib/aiTasks'
 import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
@@ -67,7 +69,19 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   const [focusMode, setFocusMode] = useState(false)
   const [showSearch, setShowSearch] = useState(true)
   const [loaded, setLoaded] = useState(false)
-  const [modal, setModal] = useState<null | 'sensitive' | 'history' | 'trash' | 'search' | 'lock' | 'foreshadow' | 'continuity' | 'typo' | 'style'>(null)
+  const [modal, setModal] = useState<null | 'sensitive' | 'history' | 'trash' | 'search' | 'lock' | 'foreshadow' | 'continuity' | 'typo' | 'style' | 'format'>(null)
+  /**
+   * 编辑器的缩进单位（2.4.0 · A5）：按 Tab 缩进一级、回车继承缩进、粘贴归一、以及
+   * 「统一为段首缩进」都用它。走 uiPrefs（`yfe-ui:` 命名空间）⇒ 只服务"这台机器上这个人的排版习惯"，
+   * 不进项目数据、不随导出 / 云同步走。
+   */
+  const [indentUnit, setIndentUnit] = usePersistedEnum<IndentUnit>('editor-indent-unit', INDENT_UNIT_IDS, DEFAULT_INDENT_UNIT)
+  // 粘贴归一开关（A5 遗留补全）：默认开 —— 从网页 / Word 粘进来的 2 空格会按当前单位归一；
+  // 关掉则**原样保留**（总有作者希望粘贴内容一字不动，尤其是要贴代码或表格时）。
+  const [pasteNormalize, setPasteNormalize] = usePersistedBool('editor-paste-normalize', true)
+  // 段首缩进参考线（A5 遗留补全）：默认关 —— 它只是视觉辅助，多数时候写作不需要；
+  // 开启后在每级缩进处画一条极淡的竖线，方便对齐多级缩进（对白 / 补充说明那一类）。
+  const [indentGuides, setIndentGuides] = usePersistedBool('editor-indent-guides', false)
 
   /** 光标位置（state 版）：点击/按键把光标挪到新位置时也要重新触发一次伴写 */
   const [caret, setCaret] = useState(0)
@@ -602,10 +616,10 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     onStatsChange?.()
   }
 
-  /** 时光机恢复：先把当前内容快照，再套用历史版本 */
+  /** 时光机恢复：先把当前内容快照（标成"手动回滚前的留档"），再套用历史版本 */
   const restoreSnapshot = async (content: string) => {
     if (!active) return
-    await db.createSnapshot(active)
+    await db.createSnapshot(active, 'manual-restore')
     updateContent(content)
   }
 
@@ -701,6 +715,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
     modal, setModal, exportOpen, setExportOpen, styleNotePrompt, setStyleNotePrompt, namePrompt, setNamePrompt, jieWenJiOpen, setJieWenJiOpen,
+    // 编辑器缩进（2.4.0 · A5）：单位是偏好，缩进动作本身在 NovelEditor 的键盘处理里
+    indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出
     aiReady, runExport,
   }

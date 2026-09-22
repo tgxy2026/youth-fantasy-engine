@@ -4,7 +4,6 @@
 import type { Volume, Chapter, TableRow } from '../types'
 import { ops, currentProjectId, touchProject } from './core'
 import type { Snapshot } from './chapters'
-import { getTableRows } from './tabs'
 
 // ============ 卷 ============
 export async function getAllVolumes(): Promise<Volume[]> {
@@ -40,13 +39,16 @@ export const VOL_LEDGER_PREFIX = 'chapter-vol-'
  * 返回打平的 TableRow[]，供伏笔引擎 / 一致性核查 / 全文检索 / 情节推演等需要"全卷视角"的地方使用。
  */
 export async function getAllChapterLedgerRows(): Promise<TableRow[]> {
-  const vols = await getAllVolumes()
-  const out: TableRow[] = []
-  for (const v of vols) {
-    const rows = await getTableRows(`${VOL_LEDGER_PREFIX}${v.id}`)
-    out.push(...rows)
-  }
-  return out
+  // 🔴 2026-09-22 六维审计 P2：原来是「逐卷调 `getTableRows`」。
+  //    `getTableRows` 走的是 `getAllByIndex('tableRows','tabId',…)` —— **只有 idb 端是真索引**，
+  //    portable / desktop / cloud 三端都是「读全表再按字段过滤」（见 `tabs.ts` 那句注释），
+  //    所以逐卷调用在文件型后端上 = **N 卷 N 次全表读**。
+  //    改为**一次全表读 + 内存按前缀过滤**，过滤/排序语义与 `getTableRows` 保持一致
+  //    （当前项目限定 + order 排序）—— 伏笔引擎 / 一致性核查 / 全文检索都吃这条路径。
+  const all = await ops.getAll<TableRow>('tableRows')
+  return all
+    .filter(r => String(r.tabId).startsWith(VOL_LEDGER_PREFIX) && r.projectId === currentProjectId)
+    .sort((a, b) => a.order - b.order)
 }
 
 /** 章节移动卷后，清理其在"其它卷台账表"里的孤儿行（行 id 形如 ch-<chapterId>，跨表唯一） */

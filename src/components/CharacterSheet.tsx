@@ -12,6 +12,7 @@ import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
+import { foldVh } from '../lib/theme'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
@@ -308,7 +309,9 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
         </div>
       </header>
 
-      <div className="flex gap-5" style={{ minHeight: 'calc(100vh / var(--ui-zoom, 1) - 180px)' }}>
+      {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`，别手抄 `calc(100vh / var(--ui-zoom,1))` ——
+          手抄的等价式在 token 名变一次就静默失效（本处原先是手写的）。 */}
+      <div className="flex gap-5" style={{ minHeight: `calc(${foldVh('100vh')} - 180px)` }}>
         {/* 卡片列表 */}
         <div className="w-44 shrink-0 space-y-1.5">
           {visibleRecords.map(rec => {

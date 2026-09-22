@@ -4,7 +4,7 @@ import type { ProjectBundle } from '../lib/db'
 import type { Project } from '../lib/types'
 import { createDemoProject } from '../lib/seedData'
 import {
-  Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff,
+  Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import Tooltip from './Tooltip'
@@ -25,6 +25,12 @@ import { Button } from './Button'
 
 interface Props {
   onOpen: (projectId: string) => void
+  /**
+   * 重新观看新手引导（A1 遗留补全）。
+   * 向导本来只弹一次（写过 `welcomeDone` 就不再出现），这里给一条**重看的路子**；
+   * 只切显示、不删任何数据 —— 重看时点「跳过，直接进入项目管理」即回到本页。
+   */
+  onReplayWelcome?: () => void
 }
 
 interface Row extends Project {
@@ -33,7 +39,7 @@ interface Row extends Project {
 
 type CreateType = 'full' | 'custom'
 
-export default function ProjectHub({ onOpen }: Props) {
+export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const [projects, setProjects] = useState<Row[]>([])
   const [loaded, setLoaded] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -54,7 +60,9 @@ export default function ProjectHub({ onOpen }: Props) {
 
   const load = useCallback(async () => {
     const list = await db.getAllProjects()
-    const withStats = await Promise.all(list.map(async p => ({ ...p, stats: await db.getProjectStats(p.id) })))
+    // 🔴 2026-09-22 六维审计 P2：改走批量版 —— 原先逐个 `getProjectStats` 是 N 项目 × 2 次全表读。
+    const statsMap = await db.getProjectsStats(list.map(p => p.id))
+    const withStats = list.map(p => ({ ...p, stats: statsMap[p.id] }))
     setProjects(withStats)
     setLoaded(true)
   }, [])
@@ -228,6 +236,13 @@ export default function ProjectHub({ onOpen }: Props) {
             >
               {mascotHidden ? <EyeOff size={13} /> : <Eye size={13} />} 看板娘
             </Button>
+            {onReplayWelcome && (
+              <Button variant="secondary" onClick={onReplayWelcome}
+                title="重新看一遍新手引导（三选一 + 顺手指引）—— 不会改动任何已有数据"
+                className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg transition-colors">
+                <Compass size={13} /> 新手引导
+              </Button>
+            )}
           </div>
         </div>
 
@@ -236,7 +251,7 @@ export default function ProjectHub({ onOpen }: Props) {
           <div className="mb-6 rounded-xl border border-amber/25 bg-ink-850 p-5 page-enter">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-13 font-semibold text-ink-100">新建小说项目</h3>
-              <Button variant="icon-muted" onClick={() => setCreating(false)}><X size={16} /></Button>
+              <Button variant="icon-muted" onClick={() => setCreating(false)} title="关闭" aria-label="关闭"><X size={16} /></Button>
             </div>
             <div className="flex gap-5">
               {/* 封面上传 */}

@@ -248,7 +248,12 @@ export default function TavernPlot() {
   /** 消息改动统一走这里：立刻落库（含索引同步）+ 刷新左栏 */
   const commit = async (next: TavernSession) => {
     setSession(next)
-    await store.saveSession(next).then(refreshList).catch(() => undefined)
+    // 🔴 2026-09-22 六维审计 P2：原来是 `.catch(() => undefined)` —— 落库失败被彻底吞掉，
+    //    编辑 / 隐藏 / 回滚 / 删消息看起来全都成功了，其实一个字节都没写进库（刷新后原样回来）。
+    //    这条路径是推演本的唯一写入口，失败必须让作者知道。
+    await store.saveSession(next).then(refreshList).catch(e => {
+      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    })
   }
 
   const saveEdited = (id: string, text: string) => {

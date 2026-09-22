@@ -10,6 +10,7 @@ import AutoTextarea from './AutoTextarea'
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import TemplateLibrary from './TemplateLibrary'
+import { foldVh } from '../lib/theme'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
@@ -271,7 +272,8 @@ export default function OutlineSheet({ tab }: Props) {
         )}
       </header>
 
-      <div className="flex gap-5" style={{ minHeight: 'calc(100vh / var(--ui-zoom, 1) - 200px)' }}>
+      {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`（原来手抄等价式，见 `CharacterSheet` 同处说明）。 */}
+      <div className="flex gap-5" style={{ minHeight: `calc(${foldVh('100vh')} - 200px)` }}>
         {/* 目录列表 */}
         <div className="w-52 shrink-0 space-y-1.5">
           {records.map((rec, i) => {
@@ -315,7 +317,10 @@ export default function OutlineSheet({ tab }: Props) {
                     <ChevronDown size={12} />
                   </Button>
                   <span className="flex-1" />
-                  <Button variant="icon-danger" onClick={e => { e.stopPropagation(); removeRecord(rec.id) }} className="p-0.5" title={`删除该${noun}`}>
+                  {/* 🔴 2026-09-22 六维审计 P2：与 `AIConfigPanel` 同一个病 —— `icon-danger` 没传 size
+                      ⇒ 走 ICON_SIZE.sm = h-8(32px)，而同一操作条左端的「上移 / 下移」是 `iconOnly size="xs"`(24px)，
+                      被 `<span className="flex-1" />` 撑到两端后**差 8px**。补 `iconOnly size="xs"` 对齐。 */}
+                  <Button variant="icon-danger" iconOnly size="xs" onClick={e => { e.stopPropagation(); removeRecord(rec.id) }} title={`删除该${noun}`}>
                     <Trash2 size={12} />
                   </Button>
                 </div>

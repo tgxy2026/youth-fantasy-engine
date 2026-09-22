@@ -145,12 +145,23 @@ ok('整章改写：写清了「改动前不写库、写前留快照」这条安�
 // 口径（与 aiDataSources 一致）：**发给「当前选定的那个模型」** ——
 // 本地不出本机，云端上传到该服务商。绝对化的「不外发 / 不上传 / 全程本地」一律不许写。
 // ⚠️ 只禁绝对承诺：正确口径里也会出现「本地模型不出本机」，所以不能用"不出本机"当判据。
+//
+// 🔴 2026-09-21（A4）修掉一处**闸自己的盲区**：原先只查 `description`，而 `tips`
+//    同样显示给作者（页签说明区）。写「创作轨迹」文案时实测 —— "也不上传任何数据"
+//    写在 tips 里，闸**一句都没报**。工具的结构假设会静默失明：它认 description，不认 tips。
+//    现在两者一起查。
 const ABSOLUTE_PROMISE = /全程本地|不外发|不上传|绝不外发|纯本地/
 for (const t of TABS) {
   const d = t.description ?? ''
-  if (!d.trim()) continue
-  ok(`🔴 页签说明 ${t.id}：不向作者作绝对化的"不外发"承诺`,
-    !ABSOLUTE_PROMISE.test(d), d.slice(0, 80))
+  if (d.trim()) {
+    ok(`🔴 页签说明 ${t.id}：不向作者作绝对化的"不外发"承诺`,
+      !ABSOLUTE_PROMISE.test(d), d.slice(0, 80))
+  }
+  const tipsText = (t.tips ?? []).join('\n')
+  if (tipsText.trim()) {
+    ok(`🔴 页签说明 tips ${t.id}：同样不作绝对化的"不外发"承诺`,
+      !ABSOLUTE_PROMISE.test(tipsText), tipsText.slice(0, 80))
+  }
 }
 
 // ============ 全局排除项（保密等级 D 级）必须真的渲染出来 ============

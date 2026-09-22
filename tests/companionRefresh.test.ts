@@ -1,4 +1,4 @@
-// ============ AI 伴写：默认关闭 + 「换一句」（Ctrl/Cmd+Enter）============
+// ============ AI 伴写：默认关闭 + 「换一句」（2.4.0 · A5 起改挂 Alt+/）============
 //
 // 两件事：
 //   ① **默认关闭** —— 老大明确要求"需要用户手动开启"。这里把它钉死：判据必须是
@@ -61,17 +61,24 @@ const editor = read('src/components/NovelEditor.tsx')
     /if \(before\.trim\(\)\.length < 12\) return/.test(ghost))
 }
 
-// ---------- ④ 🔴 按键接线 ----------
+// ---------- ④ 🔴 按键接线（2.4.0 · A5 换过键位，见下）----------
 {
-  ok('🔴 Ctrl/Cmd+Enter 接到 refreshGhost',
-    /e\.key === 'Enter' && \(e\.ctrlKey \|\| e\.metaKey\)/.test(ghost) && /refreshGhost\(\)/.test(ghost))
-  ok('🔴 按键先 preventDefault（不让它落成换行）',
-    /e\.preventDefault\(\)\s*\n\s*refreshGhost\(\)/.test(ghost))
+  // 🆕 A5：Tab 无条件让给编辑器缩进 ⇒ 采纳改由 Ctrl+Enter 承担
+  ok('🔴 Ctrl/Cmd+Enter 接到「采纳」（原 Tab 的职责）',
+    /e\.key === 'Enter' && \(e\.ctrlKey \|\| e\.metaKey\)/.test(ghost) && /acceptGhost\(\)/.test(ghost))
+  ok('🔴 采纳分支先 preventDefault（不让它落成换行）',
+    /e\.preventDefault\(\)\s*\n\s*if \(e\.nativeEvent\.isComposing\) return/.test(ghost))
+  ok('🔴 「换一句」改挂 Alt+/（原 Ctrl+Enter 让位给采纳）',
+    /e\.altKey && \(e\.key === '\/' \|\| e\.code === 'Slash'\)/.test(ghost))
   ok('原有的 Alt+\\ 手动触发保留（那是"首次触发"，与"换一句"分工不同）',
     /e\.altKey && \(e\.key === '\\\\' \|\| e\.code === 'Backslash'\)/.test(ghost))
-  ok('Tab 采纳与 → 采纳未被改动（换一句不抢这两个键）',
-    /e\.key === 'Tab' && ghost && !e\.shiftKey && acceptGhost\(\)/.test(ghost)
-    && /e\.key === 'ArrowRight' && ghost/.test(ghost))
+  ok('→ 采纳保留（光标已在正文末尾时）',
+    /e\.key === 'ArrowRight' && ghost/.test(ghost))
+  // 🔴 本用例的核心：Tab 必须**不再**出现在伴写的按键处理里 ——
+  //    它已无条件归编辑器缩进；一旦"有建议＝采纳、无建议＝缩进"的双态回来，
+  //    作者就无法预判按下去会发生什么（这正是 A5 换键位的理由）。
+  ok('🔴 Tab 已从伴写按键里移除（无条件归编辑器缩进，不再一键两义）',
+    !/['"]Tab['"]/.test(ghost))
 }
 
 // ---------- ⑤ 文案同步 ----------
@@ -81,6 +88,11 @@ const editor = read('src/components/NovelEditor.tsx')
     `共 ${(editor.match(/Ctrl\+Enter/g) ?? []).length} 处`)
   ok('文案说明了"会避开刚才那句"（让作者知道它不是重试、而是换一个）',
     /避开刚才那句/.test(editor))
+  // 🆕 A5：改键位必须连文案一起改，否则作者按帮助里写的旧键位会发现没反应
+  ok('🔴 帮助文案同步了「换一句」的新键 Alt+/',
+    /Alt\+\//.test(editor))
+  ok('🔴 帮助文案说明 Tab 归编辑器缩进（免得作者以为 Tab 还能采纳）',
+    /Tab \/ Shift\+Tab 归编辑器缩进/.test(editor))
 }
 
 console.log(`\n—— companionRefresh 用例结束：${pass} 通过 / ${fail} 失败`)

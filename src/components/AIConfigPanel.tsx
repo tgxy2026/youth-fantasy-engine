@@ -28,6 +28,7 @@ import {
   LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset,
   listOllamaModels, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
+  TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
 } from '../lib/ai'
 import { lookupWindow, FALLBACK_WINDOW } from '../lib/modelCapacity'
 import NumberField from './NumberField'
@@ -214,7 +215,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
         <div className="flex items-center gap-1.5">
           <h2 className="text-13 text-amber">模型配置</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
-            <p>全应用共用这一份模型配置 —— AI 辅助规划、一键续写、取名、校对、设定补全都按这里选中的「当前」模型走；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
+            <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
             <p className="mt-1.5">两类平台：</p>
             <ul className="list-disc pl-4 space-y-1">
               <li><b>本地模型</b>：Ollama / LM Studio 等，跑在你自己机器上，一般免密钥、不联网、数据不出本机。</li>
@@ -272,7 +273,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         {testingId === p.id ? '测试中…' : '测试'}
                       </Button>
                       <Button variant="bare" iconOnly size="xs" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
-                      <Button variant="icon-danger" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1"><Trash2 size={12} /></Button>
+                      {/* 🔴 2026-09-22 六维审计 P2：原来没传 size ⇒ `icon-danger` 走 ICON_SIZE.sm = h-8(32px)，
+                          与同排的编辑键（`iconOnly size="xs"` = h-6/24px）**差 8px**，违反「同排同 size」。
+                          补 `iconOnly size="xs"` 对齐；顺带去掉 `p-1`（ICON_SIZE 已定宽高，再加 padding 只会挤压图标）。 */}
+                      {/* 🔴 2026-09-22 六维审计 P2：原来没传 size ⇒ `icon-danger` 走 ICON_SIZE.sm = h-8(32px)，
+                          与同排的编辑键（`iconOnly size="xs"` = h-6/24px）**差 8px**，违反「同排同 size」。
+                          补 `iconOnly size="xs"` 对齐；顺带去掉 `p-1`（ICON_SIZE 已定宽高，再加 padding 只会挤压图标）。 */}
+                      <Button variant="icon-danger" iconOnly size="xs" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0"><Trash2 size={12} /></Button>
                     </div>
                     {testingId === p.id && (
                       <div className="px-3 pb-2 text-11 text-ink-400 flex items-center gap-1.5">
@@ -436,6 +443,37 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   </div>
                 )
               })()}
+
+              {/* 采样温度档位（2.4.0 · A1 遗留补全）：**按 provider 存、随模型走**。
+                  本地小模型与云端大模型合适的温度差别很大，做成全局常量必然两头都不合适
+                  （见 lib/ai.ts 的 AIProvider.temperature 与 TEMPERATURE_TIERS）。
+                  ⚠️ 只影响创意生成；结构化任务固定低温，不受这一项影响。 */}
+              <div>
+                <label className="block text-11 text-ink-500 mb-1">
+                  采样温度<span className="text-ink-600"> · 影响续写 / 取名这类创意生成</span>
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  {TEMPERATURE_TIERS.map(tier => (
+                    <Button
+                      key={tier.label}
+                      variant="toggle"
+                      selected={editing.temperature === tier.value}
+                      size="sm"
+                      onClick={() => setEditing({ ...editing, temperature: tier.value })}
+                      title={`${tier.value} —— ${tier.hint}`}
+                    >
+                      {tier.label}
+                    </Button>
+                  ))}
+                  <span className="text-10 text-ink-500">
+                    {TEMPERATURE_TIERS.find(x => x.value === editing.temperature)?.hint
+                      ?? `当前未设：创意生成按平台初值 ${editing.type === 'ollama' || editing.local ? LOCAL_DEFAULT_TEMPERATURE : CLOUD_DEFAULT_TEMPERATURE}`}
+                  </span>
+                </div>
+                <p className="text-10 text-ink-600 mt-1 leading-relaxed">
+                  校对、抽取这类结构化任务固定用 0.3 低温，不受这一项影响。
+                </p>
+              </div>
 
               {testing && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-12 bg-ink-800 border border-ink-700 text-ink-300">

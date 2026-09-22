@@ -16,7 +16,7 @@ import { DesktopWriteLockBanner } from './components/DesktopWriteLockBanner'
 import DataDock from './components/DataDock'
 import BackupReminder from './components/BackupReminder'
 import { markExported } from './lib/backupReminder'
-import { createDemoProject } from './lib/seedData'
+import WelcomeWizard from './components/WelcomeWizard'
 import FullTextSearch from './components/FullTextSearch'
 import JieWenJiSprite from './components/JieWenJiSprite'
 import GeoMapEditor from './components/GeoMapEditor'
@@ -46,6 +46,8 @@ const TavernFree = lazy(() => import('./components/TavernFree'))
 const TavernControl = lazy(() => import('./components/TavernControl'))
 const TavernScript = lazy(() => import('./components/TavernScript'))
 const TavernWorld = lazy(() => import('./components/TavernWorld'))
+// 创作轨迹（创作管理组，2.4.0 A4）：含轨迹时间线与证据包导出，按需懒加载
+const TrajectoryPanel = lazy(() => import('./components/TrajectoryPanel'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -56,6 +58,11 @@ export default function App() {
   const [booted, setBooted] = useState(false)
   /** 启动流程抛出的错误（非空则渲染错误页，而不是永远卡在黑屏上） */
   const [bootError, setBootError] = useState('')
+  /**
+   * 首启向导开关（2.4.0 · A1）：仅在「从没走过向导」且「库里一个项目都没有」时为 true。
+   * 走过一次即写全局 meta `welcomeDone`，此后不再出现。
+   */
+  const [needWelcome, setNeedWelcome] = useState(false)
   // 从其他页签（如章节总表）跳转正文编辑时，要直达打开的章节 id
   const [editorTarget, setEditorTarget] = useState<string | null>(null)
   // 数据体检 / 地图等跨组件跳转时，要直达高亮的具体行 id（detail 携带 rowId 时下发）
@@ -123,17 +130,19 @@ export default function App() {
       //    迁移抛错、读 meta 失败）都会让 setBooted(true) 执行不到 —— 界面永远黑屏，
       //    既不报错也没有重试入口。finally 保证一定会离开黑屏。
       try {
-      const last = await db.getMeta('lastProject', '')
       await db.migrateProjectTypes() // 清理历史遗留的 lite/minimal 项目形态（全局、幂等）
-      // 首次启动且存储为空：自动创建示范项目「吞天神脉（示范）」，引导新用户了解全模块功能
-      // 🔴 写盘被锁（数据文件没读出来）时**不播种**：此刻内存是空库，
-      //    播种只会制造"好像有数据"的假象，还可能被误存回去覆盖原文件。
+      // 🆕 2.4.0 · A1：这里原先会**静默自动创建**示范项目「吞天神脉」—— 软件替新用户做了决定，
+      //    他既看不到「还有别的选择」，也不知道那本不是自己的书。现在改为首启向导里的显式三选一
+      //    （写我的第一本书 / 先看看示例 / 我有备份），播种动作移到用户点选之后执行。
+      // 🔴 写盘被锁（数据文件没读出来）时**不弹向导**：此刻内存是空库，
+      //    「库里一个项目都没有」是假象，弹向导只会误导用户去建第二本书、还可能覆盖原文件。
       const desktopWriteLocked = DESKTOP && getDesktopState().writeLocked
-      if (!last && !desktopWriteLocked) {
-        const existing = await db.getAllProjects().catch(() => [])
-        if (existing.length === 0) {
-          try { await createDemoProject() } catch (e) { console.warn('[boot] 自动创建示范项目失败：', e) }
-        }
+      if (!desktopWriteLocked) {
+        const [welcomed, existing] = await Promise.all([
+          db.getMeta('welcomeDone', '').catch(() => '1'), // 读失败按「已走过」处理，不拿一次异常当首次
+          db.getAllProjects().catch(() => []),
+        ])
+        if (!welcomed && existing.length === 0) setNeedWelcome(true)
       }
       // AI 提示词的作者覆写要在任何 AI 调用之前生效（登记在各 lib 模块顶层，import 即完成）。
       // 它存在**全局 meta**（`ai.promptOverrides`，不是项目级 —— 与 lastProject 同一个 meta 区），
@@ -143,8 +152,8 @@ export default function App() {
       //    于是现在进项目只有一条路径 —— 作者在首页挑一个 → `openProject()`，
       //    那里的 runMigrations / refreshVolumeTabs / 自动备份 / setActiveTab('dashboard')
       //    本来就是主路径（点项目卡片走的就是它），不会漏步骤。
-      //    `lastProject` 这个 meta **仍然保留写入**，它现在只服务一件事：
-      //    判断"要不要给首次使用的用户播一个示范项目"（下面那段）。退出项目时会清空它。
+      //    `lastProject` 保留写入（退出项目时清空），但 2.4.0 起**不再**用它判断「是不是首次使用」——
+      //    那件事已交给首启向导与 `welcomeDone`。
       } catch (e) {
         console.error('[boot] 启动流程失败：', e)
         setBootError(e instanceof Error ? e.message : String(e))
@@ -238,6 +247,12 @@ export default function App() {
     setProjectName('')
   }, [])
 
+  /** 首启向导收尾：选定/导入了项目就直接进项目；跳过一次则留在项目管理页 */
+  const onWelcomeDone = useCallback((id: string | null) => {
+    setNeedWelcome(false)
+    if (id) void openProject(id)
+  }, [openProject])
+
   const exportCurrent = useCallback(async () => {
     if (!projectId) return
     const bundle = await db.exportProject(projectId)
@@ -305,12 +320,12 @@ export default function App() {
     )
   }
 
-  // 项目未打开 → 项目管理页
+  // 项目未打开：首次使用先走首启向导（2.4.0 · A1），其余情况进项目管理页
   if (!projectId) {
     return (
       <>
         <DesktopWriteLockBanner />
-        <ProjectHub onOpen={openProject} />
+        {needWelcome ? <WelcomeWizard onDone={onWelcomeDone} /> : <ProjectHub onOpen={openProject} onReplayWelcome={() => setNeedWelcome(true)} />}
         {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。
             此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
         <DataDock />
@@ -346,6 +361,9 @@ export default function App() {
     }
     if (activeTab === 'creative-writing') {
       return <CreativeWritingPanel />
+    }
+    if (activeTab === 'trajectory') {
+      return <TrajectoryPanel />
     }
     if (activeTab === 'tavern-world') {
       return <TavernWorld />

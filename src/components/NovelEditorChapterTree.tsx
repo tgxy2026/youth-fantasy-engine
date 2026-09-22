@@ -125,6 +125,8 @@ export default function NovelEditorChapterTree({
                     <GripVertical size={12} />
                   </span>
                   <Button variant="icon-muted"
+                    title={open ? '收起本卷章节' : '展开本卷章节'}
+                    aria-label={open ? '收起本卷章节' : '展开本卷章节'}
                     onClick={() => {
                       const next = new Set(expanded)
                       if (next.has(vol.id)) next.delete(vol.id); else next.add(vol.id)
@@ -148,6 +150,8 @@ export default function NovelEditorChapterTree({
                     <FilePlus2 size={12} />
                   </Button>
                   <Button variant="icon-danger"
+                    title="删除该卷"
+                    aria-label="删除该卷"
                     onClick={() => removeVolume(vol)}
                     className="opacity-40 group-hover:opacity-100 p-0.5 transition-all">
                     <Trash2 size={12} />
@@ -208,6 +212,8 @@ export default function NovelEditorChapterTree({
                               <Hash size={12} />
                             </Button>
                             <Button variant="icon-danger"
+                              title="删除该章节"
+                              aria-label="删除该章节"
                               onClick={e => { e.stopPropagation(); removeChapter(ch) }}
                               className="hidden group-hover:block p-0.5">
                               <Trash2 size={12} />

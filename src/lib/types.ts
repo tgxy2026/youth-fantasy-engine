@@ -55,6 +55,7 @@ export type TabType =
   | 'inspire'      // 灵感启发（随机取名生成器 + AI 辅助规划）
   | 'check'        // 检查工具（敏感词检测 + AI 一致性深度自查 + 数据体检）
   | 'material'     // 素材资料（内置只读写作参考库）
+  | 'trajectory'   // 创作轨迹（按章回看创作过程 + 导出证据包）
   | 'tavern-plot'   // 酒馆模式 · 剧情推演（角色扮演诊断台）
   | 'tavern-report' // 酒馆模式 · 推演报告（合理性报告列表与详情）
   | 'tavern-card'   // 酒馆模式 · 角色卡（自由模式角色卡管理）
@@ -137,6 +138,13 @@ export interface CardRecord {
   name: string
   data: Record<string, string>  // fieldPath -> value
   order: number
+  /**
+   * 卡片创建时间（2.4.0 · A4 遗留补全）。**可选** —— 老库里的卡没有这个字段。
+   *
+   * 用途：让「创作轨迹」的细纲节点能显示真实时间（此前细纲卡不记时间，时间线上只能当起点内容）。
+   * 🔴 刻意**不做迁移补值**：给老卡补一个"当前时间"就是编造历史，界面显示「时间未知」即可。
+   */
+  createdAt?: number
 }
 
 export interface TableRow {

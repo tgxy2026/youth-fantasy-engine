@@ -61,7 +61,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: 'AI 伴写',
     sources: [
       { group: '光标前约 2000 字正文', items: [], note: '最准的风格样本' },
-      { group: '精选设定（4 类）', items: ['作品定位', '世界观设定', '主要角色', '术语表'], note: '约 900 字预算，且不含章节目录' },
+      { group: '精选设定（4 类）', items: ['作品定位', '世界设定', '主要角色', '名词术语'], note: '约 900 字预算，且不含章节目录' },
       { group: '《写作规范》', items: ['坏习惯清单', '标点规范', '视角切换规则'], note: '可在伴写弹窗里关掉' },
       { group: '文风补充', items: [], note: '你在伴写弹窗里手写的那一句' },
     ],
@@ -98,7 +98,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       { group: '章节总表', items: ['章节标题', '埋设伏笔编号', '回收伏笔编号'] },
       { group: '时间脉络表', items: [] },
     ],
-    excludes: ['角色卡与世界观设定 —— 它只判"伏笔有没有回收"这一类闭环问题'],
+    excludes: ['角色卡与世界设定 —— 它只判"伏笔有没有回收"这一类闭环问题'],
   },
   'continuity-audit': {
     label: '连续性校验',
@@ -166,7 +166,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: '颉文姬 · OOC 人设检查',
     sources: [
       { group: '本章正文', items: [] },
-      { group: '角色卡与设定资料', items: ['主要角色', '次要角色', 'NPC 角色', '人物关系', '世界观设定', '术语表'], note: '约 10000 字预算 —— 颉文姬各模式里「读角色卡最全」的一项' },
+      { group: '角色卡与设定资料', items: ['主要角色', '次要角色', 'NPC 角色', '人物关系', '世界设定', '名词术语'], note: '约 10000 字预算 —— 颉文姬各模式里「读角色卡最全」的一项' },
     ],
   },
   'jiewenji-advice': {
@@ -194,7 +194,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: '颉文姬 · 本章写作简报',
     sources: [
       { group: '本章正文', items: [] },
-      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态', '世界观设定', '术语表'], note: '约 8000 字预算，带锚点（只到本章）' },
+      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态', '世界设定', '名词术语'], note: '约 8000 字预算，带锚点（只到本章）' },
     ],
   },
   'jiewenji-ledger': {
@@ -229,8 +229,8 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   },
   'term-dedup': {
     label: '术语 AI 查重归一',
-    sources: [{ group: '术语表（本表 3 列）', items: ['名称', '类别', '定义（一句话）'] }],
-    excludes: ['其它任何表 —— 它只扫术语表'],
+    sources: [{ group: '名词术语（本表 3 列）', items: ['名称', '类别', '定义（一句话）'] }],
+    excludes: ['其它任何表 —— 它只扫名词术语'],
   },
   'sensitive-check': {
     label: '敏感词 AI 检测',
@@ -239,7 +239,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   },
   'name-suggest': {
     label: 'AI 取名',
-    sources: [{ group: '项目设定资料', items: ['作品定位', '世界观设定', '力量体系'], note: '约 3000 字预算' }],
+    sources: [{ group: '项目设定资料', items: ['作品定位', '世界设定', '力量体系'], note: '约 3000 字预算' }],
   },
   'ai-assist': {
     label: 'AI 辅助规划（脑暴）',
@@ -248,7 +248,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   'plot-canvas': {
     label: '情节推演画布',
     sources: [
-      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态', '世界观设定', '术语表'], note: '约 6000 字预算' },
+      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态', '世界设定', '名词术语'], note: '约 6000 字预算' },
       { group: '你勾选章节的上下文', items: [] },
     ],
   },

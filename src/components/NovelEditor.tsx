@@ -1,13 +1,17 @@
+import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent } from 'react'
 import { foldVh } from '../lib/theme'
 import { Z } from '../lib/zLayer'
 
 import type { ChapterStatus } from '../lib/types'
 import { countWords } from '../lib/textStats'
+import { useWordCountWithPunct, wordCountModeOf } from '../lib/wordCountMode'
 import SettingSearch from './SettingSearch'
 import { SensitiveCheck, VersionHistory, TrashBin, GlobalSearch, FocusLock, ProofreadCheck } from './EditorModals'
 import { ForeshadowBoard, ContinuityCheck, StyleAudit } from './AuditModals'
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
-import { formatNovelText } from '../lib/textTools'
+// 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
+import FormatModal from './FormatModal'
+import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '../lib/indent'
 import {
   FolderPlus, Trash2, PenLine, ChevronDown,
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
@@ -19,7 +23,7 @@ import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
 import PromptModal from './PromptModal'
 import JieWenJi, { } from './JieWenJi'
-import { confirmDialog, showToast } from './dialogs'
+import { showToast } from './dialogs'
 import { type VisCtx, } from '../lib/schema'
 import { flattenChapters } from '../lib/chapterSeq'
 import { INLINE_SUGGEST_LIMITS, type InlineSuggestLength } from '../lib/aiTasks'
@@ -79,11 +83,137 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
     modal, setModal, exportOpen, setExportOpen, styleNotePrompt, setStyleNotePrompt, namePrompt, setNamePrompt, jieWenJiOpen, setJieWenJiOpen,
+    // 编辑器缩进（2.4.0 · A5）：缩进单位偏好；缩进动作见下方 onIndentKeyDown / applyIndent
+    indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出
     aiReady, runExport,
   } = model
 
+  // 字数口径（#004）：面板与编辑器**共用同一份偏好**（`lib/wordCountMode` 是单一来源）——
+  // 在写作面板切了口径，这里立刻跟着变。只影响显示，落库 `wordCount` 不受影响。
+  const [withPunct] = useWordCountWithPunct()
+  // 段首缩进参考线的间距：按当前单位换算（全角 ≈ 1em / 半角 ≈ 0.5em / Tab ≈ 2em）
+  const indentUnitEm = INDENT_UNITS.find(u => u.id === indentUnit)?.emWidth ?? 2
+
   if (!loaded) return <LoadingState />
+
+  /**
+   * 用「原生编辑命令」整体替换正文（一键排版这类整篇重写走它）。
+   *
+   * 🔴 为什么不直接 `updateContent(next)`：那是改 React state → 改 textarea 的 value，
+   *    浏览器**不把程序化赋值记进撤销栈**，作者按 Ctrl+Z 回不来（还常会跳掉好几步）。
+   *    先把选区铺成全文、再 `execCommand('insertText')` ⇒ 算一次真实编辑，Ctrl+Z 能整体撤销。
+   *    ⚠️ 受控组件：插完必须主动把 DOM 里的新值同步回 state，
+   *    否则 React 下次渲染会拿旧 state 把 DOM 改回去（正文"闪一下又变回来"）。
+   */
+  const replaceAllText = (next: string) => {
+    const ta = taRef.current
+    if (!ta) { updateContent(next); return }
+    const caretBefore = ta.selectionStart ?? 0
+    ta.focus()
+    ta.setSelectionRange(0, ta.value.length)
+    let ok = false
+    try { ok = document.execCommand('insertText', false, next) } catch { ok = false }
+    // 兜底：个别环境禁用了 execCommand —— 宁可牺牲撤销栈，也要保证内容真的写进去
+    if (!ok) ta.setRangeText(next, 0, ta.value.length, 'end')
+    // 光标尽量留在原处（排版后行首变化不大），并夹在新长度内
+    const pos = Math.min(caretBefore, ta.value.length)
+    ta.setSelectionRange(pos, pos)
+    selRef.current = { start: pos, end: pos }
+    onContentChange(ta.value)
+  }
+
+  /**
+   * 缩进 / 反缩进（2.4.0 · A5）：Tab 进一级，Shift+Tab 退一级；选中多行时整块处理。
+   *
+   * 🔴 与伴写的分工：伴写键位已让开（采纳改 `Ctrl+Enter`），所以 Tab **无条件**归缩进 ——
+   *    不再有"有建议时 Tab 是采纳、没建议时才是缩进"这种作者无法预判的双态。
+   * 走 execCommand ⇒ 一次缩进 = 一次撤销单元，Ctrl+Z 整块回退、不跳段。
+   */
+  const applyIndent = (dir: 'in' | 'out') => {
+    const ta = taRef.current
+    if (!ta) return
+    const v = ta.value
+    const s0 = ta.selectionStart, s1 = ta.selectionEnd
+    // 涉及的行范围：选区起点所在行的行首 → 选区终点所在行的行尾
+    const blockStart = v.lastIndexOf('\n', s0 - 1) + 1
+    let blockEnd = v.indexOf('\n', s1)
+    if (blockEnd === -1) blockEnd = v.length
+    // 选区终点正好落在某行行首时不带上那一行（与主流编辑器一致：选中到行尾不会多缩一行）
+    if (s1 > s0 && v[s1 - 1] === '\n') blockEnd = s1 - 1
+    const block = v.slice(blockStart, blockEnd)
+    const next = dir === 'in' ? indentBlock(block, indentUnit) : outdentBlock(block, indentUnit)
+    if (next === block) return   // 已经顶格，或已无缩进可删 —— 不白记一次撤销
+    ta.focus()
+    ta.setSelectionRange(blockStart, blockEnd)
+    let ok = false
+    try { ok = document.execCommand('insertText', false, next) } catch { ok = false }
+    if (!ok) ta.setRangeText(next, blockStart, blockEnd, 'end')
+    // 整块选中：便于连按 Tab 继续加深，也让作者看清这次动的是哪几行
+    ta.setSelectionRange(blockStart, blockStart + next.length)
+    selRef.current = { start: blockStart, end: blockStart + next.length }
+    onContentChange(ta.value)
+  }
+
+  /**
+   * 回车自动继承缩进（2.4.0 · A5）。
+   * 判定只看**光标之前的那一段**（在缩进行中间回车，新行同样继承该级），
+   * 而"当前行没有正文时回到段首层"的规则在 `indentForNewLine` 里（防止连按回车越缩越右）。
+   */
+  const insertNewlineWithIndent = () => {
+    const ta = taRef.current
+    if (!ta) return
+    const v = ta.value
+    const s0 = ta.selectionStart, s1 = ta.selectionEnd
+    const lineStart = v.lastIndexOf('\n', s0 - 1) + 1
+    const indent = indentForNewLine(v.slice(lineStart, s0))
+    const text = '\n' + indent
+    ta.focus()
+    let ok = false
+    try { ok = document.execCommand('insertText', false, text) } catch { ok = false }
+    if (!ok) ta.setRangeText(text, s0, s1, 'end')
+    onContentChange(ta.value)
+  }
+
+  /**
+   * 粘贴归一（2.4.0 · A5）：多行粘贴时把行首空白按当前缩进单位统一，
+   * 免得从网页 / Word 粘进来的 2 空格与作者自己的全角缩进混在一章里。
+   * 单行不拦 —— 随手粘一句话不该被改动。
+   */
+  const handlePaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    if (!pasteNormalize) return // 开关关掉 → 粘什么就是什么，一个字符都不动
+    const text = e.clipboardData.getData('text/plain')
+    if (!text || !text.includes('\n')) return
+    const ta = taRef.current
+    if (!ta) return
+    const normalized = normalizePastedText(text, indentUnit)
+    if (normalized === text) return
+    e.preventDefault()
+    let ok = false
+    try { ok = document.execCommand('insertText', false, normalized) } catch { ok = false }
+    if (!ok) ta.setRangeText(normalized, ta.selectionStart, ta.selectionEnd, 'end')
+    onContentChange(ta.value)
+  }
+
+  /**
+   * 编辑器按键总入口：**伴写先挑**（采纳 / 丢弃 / 手动触发，它处理时会 preventDefault），
+   * 没被接手的键才轮到缩进。两层靠 `defaultPrevented` 分流，彼此不需要知道对方存在。
+   */
+  const handleEditorKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    onEditorKeyDown(e)
+    if (e.defaultPrevented) return
+    // 输入法选字期间不抢键（中文写作的常态，抢了会打断候选词上屏）
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      applyIndent(e.shiftKey ? 'out' : 'in')
+      return
+    }
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      insertNewlineWithIndent()
+    }
+  }
 
   return (
     <div className="flex h-full page-enter overflow-hidden">
@@ -176,9 +306,9 @@ style={{ zIndex: Z.pageHandle }}
                 <ShieldAlert size={14} />
               </Button>
               <Button variant="icon-amber"
-                onClick={async () => { if (await confirmDialog({ title: '一键排版', message: '统一段落首行缩进（两个全角空格）并规范空行？' })) updateContent(formatNovelText(draftContent)) }}
+                onClick={() => setModal('format')}
                 className="p-1 shrink-0"
-                title="一键排版（首行缩进+空行规范）">
+                title="排版：设置缩进单位 + 一键排版（默认保留你已有的缩进，不再抹平）">
                 <AlignLeft size={14} />
               </Button>
               <div className="w-px h-4 bg-ink-700" />
@@ -369,7 +499,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     ? 'AI 伴写：已开启（点击查看说明、档位与开关）'
                     : 'AI 伴写：已关闭（点击查看说明、档位与开关）'}
               >
-                {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Tab 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· 对建议不满意 → 按 Ctrl+Enter 换一句（会避开刚才那句，不会给你同一句）；\n· Alt+\\ 可随时手动触发一次。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面这句自定义补充。\n\n'}
+                {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Ctrl+Enter 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· 对建议不满意 → 按 Alt+/ 换一句（会避开刚才那句，不会给你同一句）；\n· Alt+\\ 可随时手动触发一次；\n· Tab / Shift+Tab 归编辑器缩进，与伴写无关。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面这句自定义补充。\n\n'}
                 <AIDataSourceNote feature="inline-suggest" />
                 <div className="mt-1.5 space-y-1.5">
                   <div className="flex items-center gap-1.5">
@@ -424,7 +554,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                   </div>
                 </div>
               </HelpPopover>
-              <Button variant="icon-amber" onClick={() => onNavigate?.('chapter-outline')} className="p-1 shrink-0" title="前往本章大纲（章节细纲）">
+              <Button variant="icon-amber" onClick={() => onNavigate?.('chapter-outline')} className="p-1 shrink-0" title="前往本章细纲">
                 <BookOpen size={14} />
               </Button>
               <Button variant="icon-amber" onClick={() => setModal('search')} className="p-1 shrink-0" title="全文搜索替换（本书）">
@@ -448,7 +578,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：一键排版，统一段落首行缩进两个全角空格并规范空行；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Tab 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Ctrl+Enter 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章大纲（章节细纲）；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
             </div>
 
@@ -482,6 +612,20 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden" ref={scrollRef}>
               {/* 页宽：默认铺满窗口；关闭"铺满"时回到舒适阅读宽度（隐藏检索栏/专注模式下更宽） */}
               <div className={`${pageWide ? 'w-full' : focusMode || !showSearch ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative flex-1 min-h-0 flex flex-col overflow-hidden transition-[max-width] duration-300`}>
+                {/* 段首缩进参考线（2.4.0 · A5 遗留补全）：极淡竖线标出每级缩进的位置，方便对齐多级缩进。
+                    纯视觉辅助 —— pointer-events:none + aria-hidden，不参与任何交互与朗读。
+                    垫在最底层（z-0）：正文 textarea 背景透明，线能透出来又不会压住文字。
+                    间距按当前缩进单位的视觉宽度换算（INDENT_UNITS.emWidth），与「缩进单位」设置联动。 */}
+                {indentGuides && active && (
+                  <div aria-hidden className="absolute inset-0 z-0 pointer-events-none overflow-hidden px-6 md:px-8 pt-6">
+                    <div
+                      className="h-full"
+                      style={{
+                        backgroundImage: `repeating-linear-gradient(to right, rgb(var(--ink-500) / 0.18) 0 1px, transparent 1px ${indentUnitEm}em)`,
+                      }}
+                    />
+                  </div>
+                )}
                 {/* 打字机模式测量层（不可见，用于计算光标纵向位置；内容起点与 textarea 严格一致：top-6 + px-6/8，无纵向 padding，否则光标纵向偏移） */}
                 <div
                   ref={mirrorRef}
@@ -528,7 +672,8 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                   value={draftContent}
                   onChange={e => onContentChange(e.target.value)}
                   onKeyUp={() => { syncTypewriter(draftContent); syncSel() }}
-                  onKeyDown={onEditorKeyDown}
+                  onKeyDown={handleEditorKeyDown}
+                  onPaste={handlePaste}
                   onClick={() => { syncTypewriter(draftContent); syncSel() }}
                   onSelect={syncSel}
                   onMouseUp={syncSel}
@@ -543,10 +688,11 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
 
             {/* 底部状态栏：实时字数 / 今日码字 / 保存状态 / 打字机模式 / 字号 */}
             <div className="h-8 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-4 px-5 text-11 text-ink-400">
-              <span className="flex items-center gap-1">
-                <Hash size={10} />{countWords(draftContent)} 字
+              {/* 本章实时字数：跟随「字数口径」偏好（#004）—— 与写作面板共用同一个开关 */}
+              <span className="flex items-center gap-1" title={`本章字数（${withPunct ? '汉字＋标点' : '只算汉字'}口径 · 可在写作面板的「字数口径」里切换）`}>
+                <Hash size={10} />{countWords(draftContent, wordCountModeOf(withPunct))} 字
               </span>
-              <span className="flex items-center gap-1 text-amber/80" title="今日码字量（自动统计）">
+              <span className="flex items-center gap-1 text-amber/80" title="今日码字量（按增删自动累计，固定「只算汉字」口径 —— 它记的是当天净增量，换口径也无法重算历史）">
                 <Flame size={10} />今日 {todayWords} 字
               </span>
               <span className={`flex items-center gap-1 transition-colors ${savedFlash ? 'text-emerald-400' : ''}`}>
@@ -585,7 +731,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                 </Button>
               </div>
               <HelpPopover title="状态栏 · 码字体验设置" width="23rem" size={12} className="shrink-0">
-                {'左侧三项是实时状态：\n· 字数：本章当前字数（中文按字计，不含空格换行）；\n· 今日 xx 字：今天的净产出，按增删自动累计，写作面板的码字日历用的就是它；\n· 自动保存已开启：停止输入 2 秒自动保存，也可 Ctrl+S 立即保存。\n\n右侧三项是可调设置（本机记忆，换章不重置）：\n· 铺满 / 限宽：铺满 = 码字区宽度跟随窗口铺满；限宽 = 回到舒适阅读宽度居中显示；\n· 打字机：开启后当前输入行始终保持在屏幕中部，眼睛不用一直往下追；\n· 字号 −/＋：正文字号 14–28px。'}
+                {'左侧三项是实时状态：\n· 字数：本章当前字数（中文按字计）；跟随「字数口径」设置 —— 默认「只算汉字」，可在写作面板切到「汉字＋标点」以对齐平台计费口径；\n· 今日 xx 字：今天的净产出，按增删自动累计（固定「只算汉字」口径，历史增量无法换口径重算），写作面板的码字日历用的就是它；\n· 自动保存已开启：停止输入 2 秒自动保存，也可 Ctrl+S 立即保存。\n\n右侧三项是可调设置（本机记忆，换章不重置）：\n· 铺满 / 限宽：铺满 = 码字区宽度跟随窗口铺满；限宽 = 回到舒适阅读宽度居中显示；\n· 打字机：开启后当前输入行始终保持在屏幕中部，眼睛不用一直往下追；\n· 字号 −/＋：正文字号 14–28px。'}
               </HelpPopover>
             </div>
 
@@ -655,7 +801,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
         <SensitiveCheck content={draftContent} onApply={updateContent} onClose={() => setModal(null)} />
       )}
       {modal === 'history' && active && (
-        <VersionHistory chapterId={active.id} onRestore={restoreSnapshot} onClose={() => setModal(null)} />
+        <VersionHistory chapterId={active.id} current={draftContent} onRestore={restoreSnapshot} onClose={() => setModal(null)} />
       )}
       {modal === 'trash' && (
         <TrashBin onChanged={() => { load(); onStatsChange?.() }} onClose={() => setModal(null)} />
@@ -691,6 +837,23 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
       )}
       {modal === 'style' && active && !isLite && (
         <StyleAudit content={draftContent} onClose={() => setModal(null)} />
+      )}
+      {/* 排版：缩进单位设置 + 一键排版（2.4.0 · A5）。
+          排版结果走 replaceAllText 而不是 updateContent —— 前者用原生编辑命令写回，
+          作者按 Ctrl+Z 能整体撤销（后者直接改 state，撤销栈里没有这一步）。
+          ⚠️ active 判空不能省：排版最终要写回正文。 */}
+      {modal === 'format' && active && (
+        <FormatModal
+          content={draftContent}
+          unit={indentUnit}
+          onUnitChange={setIndentUnit}
+          pasteNormalize={pasteNormalize}
+          onPasteNormalizeChange={setPasteNormalize}
+          indentGuides={indentGuides}
+          onIndentGuidesChange={setIndentGuides}
+          onApply={replaceAllText}
+          onClose={() => setModal(null)}
+        />
       )}
       {/* 颉文姬 · AI 编辑抽屉（v1.6 收官功能） */}
       {jieWenJiOpen && active && (

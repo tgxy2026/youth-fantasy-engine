@@ -178,7 +178,9 @@ export default function InspireTools() {
                 {favorites.map(f => (
                   <span key={f} className="inline-flex items-center gap-1 px-2 py-1 bg-ink-800 border border-ink-700 rounded-md text-12 text-ink-200">
                     {f}
-                    <Button variant="icon-danger" onClick={() => toggleFavorite(f)}><Trash2 size={10} /></Button>
+                    {/* ⚠️ 待核（2026-09-22 审计）：图标是 Trash2（垃圾桶）但回调叫 `toggleFavorite` ——
+                        两者语义对不上，可能是图标选错或函数复用。此处只补可访问性，语义问题单独记录。 */}
+                    <Button variant="icon-danger" onClick={() => toggleFavorite(f)} title="删除" aria-label="删除"><Trash2 size={10} /></Button>
                   </span>
                 ))}
               </div>

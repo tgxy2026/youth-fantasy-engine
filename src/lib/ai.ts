@@ -50,6 +50,17 @@ export interface AIProvider {
    * 且没有统一的查询接口 —— 所以允许手填。留空时按 model 名去预设表里认，认不出走保守兜底。
    */
   contextWindow?: number
+  /**
+   * 该模型的**生成温度**（选填）。
+   *
+   * 为什么按 provider 存（2.4.0 · A1 遗留补全）：本地小模型与云端大模型合适的温度差别很大
+   * （小模型偏高温才不呆板、大模型偏低温才不跑偏），做成一个全局常量必然"两头都不合适"。
+   * 留空时回落到 {@link DEFAULT_TEMPERATURE}。
+   *
+   * ⚠️ **结构化 JSON 任务不受它影响** —— 那类固定走 {@link JSON_TASK_TEMPERATURE}（0.3），
+   *    那是「解析稳定性」的红线，不能让显示偏好把它顶掉。
+   */
+  temperature?: number
 }
 
 export interface ChatMessage {
@@ -66,6 +77,23 @@ export const TEST_TIMEOUT_MS = 90_000
 
 /** 创意类生成（续写 / 取名 / 灵感）默认温度 */
 export const DEFAULT_TEMPERATURE = 0.85
+/**
+ * 采样温度的**三档**（2.4.0 · A1 遗留补全）。
+ *
+ * 为什么给档位而不是让作者填数字：对写小说的人来说「稳 / 标准 / 活」比 0.85 直观得多；
+ * 且本项目 `NumberField` 会 `Math.round` 掉小数，温度这种 0.85 的值根本填不进去。
+ * 存进 provider 的仍是**具体数值**（见 AIProvider.temperature），换档即换值。
+ */
+export const TEMPERATURE_TIERS = [
+  { label: '稳', value: 0.7, hint: '更贴前文、少出意外 —— 适合正剧，或需要严丝合缝的段落' },
+  { label: '标准', value: 0.85, hint: '默认档：创意与稳定的平衡点' },
+  { label: '活', value: 1.0, hint: '更跳脱多变 —— 适合脑洞段落，但更容易跑偏' },
+] as const
+
+/** 本地小模型的建议档位值：参数小、容易写得呆板，给「活」一档 */
+export const LOCAL_DEFAULT_TEMPERATURE = 1.0
+/** 云端大模型的建议档位值：创作力强但容易跑偏，用「标准」档 */
+export const CLOUD_DEFAULT_TEMPERATURE = 0.85
 /** 结构化 JSON 任务（校对 / 审读 / 改稿 / 抽取）专用：低温换取格式稳定 */
 export const JSON_TASK_TEMPERATURE = 0.3
 
@@ -118,6 +146,7 @@ export const ONLINE_PRESETS: PlatformPreset[] = [
 export function providerFromPreset(p: PlatformPreset): AIProvider {
   const id = 'p_' + Math.random().toString(36).slice(2, 9)
   const isOllama = p.type === 'ollama'
+  const local = p.local ?? isOllama
   const name = (p.label.replace(/（本地）|（联网）|\(local\)/gi, '').trim()) || (isOllama ? '本地 Ollama' : '联网模型')
   return {
     id,
@@ -126,7 +155,11 @@ export function providerFromPreset(p: PlatformPreset): AIProvider {
     baseUrl: p.baseUrl,
     apiKey: '',
     model: '',
-    local: p.local ?? isOllama,
+    local,
+    // 「一键套用采样」的落点（2.4.0 · A1 遗留补全）：按模型体量给一个合适的初始温度 ——
+    // 本地小模型给高一点（不然呆板）、云端大模型给稳一点（不然跑偏）。
+    // 只是初值，作者可在「模型设置 → 模型配置」里按自己的手感改。
+    temperature: local ? LOCAL_DEFAULT_TEMPERATURE : CLOUD_DEFAULT_TEMPERATURE,
   }
 }
 
@@ -395,7 +428,9 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   // 注意：opts.think 默认 undefined → ollamaChatRaw 不传 think 字段，思考型模型保持思考。
   // 温度在此处统一解析（唯一真源）：显式 temperature 优先；否则按是否 JSON 任务取默认值。
   // 下游 ollamaChatRaw / openaiChat 只管用 o.temperature，不再各自做缺省判断。
-  const temperature = opts.temperature ?? (opts.json ? JSON_TASK_TEMPERATURE : DEFAULT_TEMPERATURE)
+  // 2.4.0：创意生成的默认温度可由 provider 自带（见 AIProvider.temperature）——
+  // 本地小模型与云端大模型合适值差别很大；JSON 任务仍固定低温，不受影响。
+  const temperature = opts.temperature ?? (opts.json ? JSON_TASK_TEMPERATURE : (config.temperature ?? DEFAULT_TEMPERATURE))
   return (await chatRaw(config, messages, {
     timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
     think: opts.think,
@@ -514,6 +549,47 @@ function openaiSampling(o: CallOpts): Record<string, number> {
   return out
 }
 
+/**
+ * 把云端 API 的失败响应翻译成「一句话原因 + 该怎么办」（2.4.0 · A1 错误映射）。
+ *
+ * 为什么要连服务商原话一起给：同样是 401，「密钥过期」与「少粘了一段」的处置完全不同，
+ * 而各家返回体格式并不统一（`error.message` / `message` / `msg` / 纯文本都有）。
+ * 所以两样都给 —— 按状态码能推出建议时给建议，抠得出原话时一并附上，作者才好定位。
+ *
+ * ⚠️ 这里解析的是 **HTTP 响应体**（传输层），不是「模型正文 → 结构化数据」，故不走 aiParse。
+ */
+function describeApiError(status: number, raw: string): string {
+  let detail = ''
+  try {
+    const j = JSON.parse(raw) as { error?: { message?: string }; message?: string; msg?: string }
+    detail = String(j?.error?.message ?? j?.message ?? j?.msg ?? '').trim()
+  } catch {
+    detail = raw.trim()
+  }
+  const tail = detail ? `\n服务商原话：${detail.slice(0, 160)}` : ''
+  switch (status) {
+    case 400:
+      return `请求被平台拒绝（HTTP 400）：最常见的原因是模型名不在该账户已开通的清单里，也可能是参数不被接受。${tail}`
+    case 401:
+      return `API 密钥无效或缺失（HTTP 401）：检查密钥是否复制完整、有没有夹带空格、是否已过期或被重置。${tail}`
+    case 402:
+      return `账户余额不足（HTTP 402）：请前往平台充值后重试。${tail}`
+    case 403:
+      return `密钥无权访问（HTTP 403）：确认这个 Key 已开通对应模型，或平台是否要求先实名 / 绑定。${tail}`
+    case 404:
+      return `接口地址或模型名不对（HTTP 404）：确认 baseUrl 指到 …/v1 这类 chat/completions 前缀，并核对模型名拼写。${tail}`
+    case 429:
+      return `请求过于频繁或已达配额上限（HTTP 429）：稍后重试，或检查账户额度是否已用尽。${tail}`
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return `服务商端异常（HTTP ${status}）：这不是你本地配置的问题，稍后重试即可；持续报错可以换个平台。${tail}`
+    default:
+      return `API 调用失败（HTTP ${status}）：${detail.slice(0, 200) || '平台未返回可读原因。'}`
+  }
+}
+
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<string> {
   const { timeoutMs } = o
   const rawBase = stripSlash(config.baseUrl || '')
@@ -553,16 +629,12 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     }
   } catch (e) {
     if (isCancelled(e)) throw e
-    if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒），请检查网络或稍后重试。`)
-    throw new Error('无法连接该 API 地址，请检查网络与接口地址（浏览器/桌面端可能因 CORS 拦截跨域请求）。')
+    if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
+    throw new Error('无法连接该 API 地址：请检查网络与接口地址；若连的是本机 / 局域网服务，确认它已启动（浏览器 / 桌面端也可能因 CORS 拦下跨域请求）。')
   }
   if (!res.ok) {
     const txt = await res.text().catch(() => '')
-    if (res.status === 401) throw new Error('API 密钥无效或缺失（HTTP 401）。')
-    if (res.status === 402) throw new Error('账户余额不足（HTTP 402），请前往平台充值后重试。')
-    if (res.status === 404) throw new Error('接口地址或路径不正确（HTTP 404），请确认 baseUrl 指向 …/v1 之类的 chat/completions 前缀。')
-    if (res.status === 429) throw new Error('请求过于频繁或已达配额上限（HTTP 429），请稍后重试。')
-    throw new Error(`API 调用失败（HTTP ${res.status}）：${txt.slice(0, 200)}`)
+    throw new Error(describeApiError(res.status, txt))
   }
   // 流式：边收边回调（联网模型首字出来即可见，本地慢模型不再整轮转圈）
   if (o.onToken) {
@@ -575,7 +647,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
       }, () => clearTimer?.())
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
-      if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒），请检查网络或稍后重试。`)
+      if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
       throw e
     }
     if (!content.trim()) throw new Error('API 未返回内容，请确认模型名称正确且账户有额度。')

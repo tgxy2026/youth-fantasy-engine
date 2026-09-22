@@ -1,7 +1,8 @@
 /**
  * 正文编辑器 · **AI 伴写 ghost 逐句续写**（从 `useNovelEditorModel.ts` 拆出来的，2026-09-19 D4-2）。
  *
- * 【交互】对齐 WPS AI 伴写：停笔 800ms → 光标后透出一句浅灰建议 → Tab / → 采纳，打字或 Esc 丢弃。
+ * 【交互】停笔 800ms → 光标后透出一句浅灰建议 → Ctrl+Enter（或光标在末尾时按 →）采纳，打字或 Esc 丢弃。
+ *   ⚠️ 2026-09-21 · A5：采纳键由 `Tab` 改为 `Ctrl+Enter` —— Tab 已无条件让给编辑器缩进。
  *
  * 【三条工程约束（原文照录）】
  *   · 采纳之前**正文一个字都没被改过**（ghost 只是画在叠层上的字），所以拒绝永远零破坏；
@@ -9,7 +10,7 @@
  *   · **光标后已有正文时不显示** —— ghost 没有"宽度"，压到后面的字上会糊成一片。
  *
  * 🔴 最难踩的两条：
- *   ① **切章必须清 ghost**（`[activeId]` 那个 effect）—— 跨章残留会让 Tab 把上一章的建议插进新章的
+ *   ① **切章必须清 ghost**（`[activeId]` 那个 effect）—— 跨章残留会让 Ctrl+Enter 把上一章的建议插进新章的
  *      同一偏移处，属数据事故；
  *   ② **`ghostDismissed`**（Esc 抑制）—— 自动保存一提交 `chapters` 就换新对象、effect 白跑一轮，
  *      没有它刚被 Esc 拒掉的建议会立刻弹回来（作者会觉得"Esc 根本没用"）。
@@ -52,7 +53,7 @@ export function useNovelEditorGhost({
   activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange,
 }: GhostArgs) {
   // ---- 2.2.0 AI 伴写（ghost 逐句续写）----
-  // 默认关闭：写作者主导权优先。开启后停笔自动在光标后透出一句浅灰建议；Tab 采纳才落进正文，继续打字即丢弃。
+  // 默认关闭：写作者主导权优先。开启后停笔自动在光标后透出一句浅灰建议；Ctrl+Enter 采纳才落进正文，继续打字即丢弃。
   const [companion, setCompanion] = useState(() => localStorage.getItem('novel-companion') === '1')
   const [companionLen, setCompanionLen] = useState<InlineSuggestLength>(() => {
     const v = localStorage.getItem('novel-companion-len')
@@ -85,7 +86,7 @@ export function useNovelEditorGhost({
 
   // ============ 2.2.0 AI 伴写（ghost 逐句续写）============
   //
-  // 交互对齐 WPS AI 伴写：停笔 → 光标后透出一句浅灰建议 → Tab 采纳 / 打字即丢弃。
+  // 交互对齐 WPS AI 伴写：停笔 → 光标后透出一句浅灰建议 → Ctrl+Enter 采纳 / 打字即丢弃。
   // 三条工程约束：
   //   · 采纳之前**正文一个字都没被改过**（ghost 只是画在叠层上的字），所以拒绝永远零破坏；
   //   · ghost 叠层与高亮叠层同层（均 z-0 + 透明基），盒模型逐项照抄高亮层，否则两图层必然错位；
@@ -216,7 +217,7 @@ export function useNovelEditorGhost({
 
   /**
    * 切章 / 卸载时必须清干净：ghost 是「针对某一章某个位置」算出来的，
-   * 跨章残留会让 Tab 把上一章的建议插进新章的同一偏移处 —— 属于数据事故，别删这段。
+   * 跨章残留会让 Ctrl+Enter 把上一章的建议插进新章的同一偏移处 —— 属于数据事故，别删这段。
    */
   useEffect(() => () => {
     ghostAbort.current?.abort()
@@ -260,13 +261,14 @@ export function useNovelEditorGhost({
   }
 
   /**
-   * 「换一句」（Ctrl/Cmd+Enter）：对当前建议不满意，让 AI 换一个写法重新生成。
+   * 「换一句」（2026-09-21 · A5 起改用 **Alt+/**）：对当前建议不满意，让 AI 换一个写法重新生成。
    *
-   * 与 Alt+\（手动触发）的分工：
+   * 与「手动触发」的分工：
    *   · Alt+\ ＝ 我还没看到建议，叫它现在就算（命中缓存就直接复用，省 token）；
-   *   · Ctrl+Enter ＝ 这句我看过了、不满意，换一个 —— **必须绕开缓存**，并把上一句作为
+   *   · Alt+/ ＝ 这句我看过了、不满意，换一个 —— **必须绕开缓存**，并把上一句作为
    *     「避免重复」喂回去。不绕缓存的话，同前文 + 同参数必然返回一字不差的同一句
    *     （作者会以为按键坏了，这正是这个功能要解决的问题）。
+   * ⚠️ 键位变更：`Ctrl+Enter` 已让给「采纳建议」—— A5 把 Tab 交给缩进后，采纳需要一个新家。
    */
   const refreshGhost = () => {
     const at = taRef.current?.selectionStart ?? caret
@@ -283,14 +285,23 @@ export function useNovelEditorGhost({
   /** 编辑器按键：先处理伴写的采纳/丢弃/手动触发，其余按键原样放行 */
   const onEditorKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Escape' && ghost) { dismissGhost(taRef.current?.selectionStart ?? caret); return }
-    // Ctrl/Cmd+Enter 换一句（必须 preventDefault：不让它落成换行）
+    // Ctrl/Cmd+Enter 采纳建议（2.4.0 · A5：接手原 Tab 的职责 —— Tab 已让给缩进）
+    // 必须 preventDefault：不让它落成换行。
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      if (e.nativeEvent.isComposing) return      // 输入法选字期间不抢键
+      if (ghost && acceptGhost()) return         // 有建议 → 采纳
+      if (companion && aiReady) refreshGhost()   // 没建议 → 主动要一句（与 Alt+\ 同款手感）
+      return
+    }
+    // Alt+/ 换一句（原 Ctrl+Enter 让位给「采纳」；用 e.code 判键，避免不同键盘布局下 e.key 不一致）
+    if (e.altKey && (e.key === '/' || e.code === 'Slash')) {
       e.preventDefault()
       refreshGhost()
       return
     }
-    // Tab 采纳（必须 preventDefault，否则 textarea 默认会跳焦点）
-    if (e.key === 'Tab' && ghost && !e.shiftKey && acceptGhost()) { e.preventDefault(); return }
+    // ⚠️ Tab 不再由伴写处理（2.4.0 · A5）：Tab / Shift+Tab 无条件归「缩进」——
+    //    同一个键在有/无建议时含义不同，作者无法预判按下去会发生什么。
     // → 采纳：仅当光标已在正文末尾（避免与"向右移光标"的日常操作打架）
     if (e.key === 'ArrowRight' && ghost) {
       const ta = taRef.current

@@ -63,6 +63,14 @@ export type DocBlock =
   | { type: 'para'; text: string }
   | { type: 'items'; items: DocItem[] }
   | { type: 'note'; text: string }
+  /**
+   * **原文块**：保留行首缩进与换行，原样呈现。
+   *
+   * 🔴 为什么不能拿 `para` 装正文：`para` 会逐行 `trim()` —— 那正好抹掉作者手写的
+   *    段首缩进（2026-09-21 A5 在导出侧刚踩过同一个坑）。正文、旧稿这类**排版本身是内容**
+   *    的文本，必须走这里。`label` 是可选的块标题（如「初稿 · 2026-09-20 11:30」）。
+   */
+  | { type: 'pre'; text: string; label?: string }
   | { type: 'msg'; speaker: string; side: 'user' | 'ai'; lines: string[]; hidden?: boolean; edited?: boolean }
 
 export type DocModel = {
@@ -307,6 +315,12 @@ export function toMarkdown(doc: DocModel): string {
         // 段落里的换行按「多行引用块」不成立 —— 逐行成段，避免 Markdown 把相邻行并成一段
         for (const l of String(b.text).split('\n').map(s => s.trim()).filter(Boolean)) out.push(mdSafe(l))
         break
+      case 'pre':
+        // 原文块：逐行**原样**输出，不 trim（行首缩进是内容的一部分）。
+        // 刻意不加代码围栏：正文里完全可能出现 ``` ，撞上会把后面的内容全吃进代码块。
+        if (b.label) out.push(`**${mdSafe(b.label)}**`)
+        out.push(...String(b.text).split('\n'))
+        break
       case 'note':
         out.push(`_${mdSafe(b.text)}_`)
         break
@@ -396,7 +410,13 @@ ul.items li{margin:.55rem 0}
 .tag{font-family:ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:.68rem;border:1px solid var(--rule);border-radius:.25rem;padding:.02rem .35rem;margin-right:.4rem;color:var(--soft)}
 .sub{display:block;color:var(--soft);font-size:.94em;margin-top:.15rem}
 footer{margin-top:3rem;border-top:1px solid var(--rule);padding-top:1rem;color:var(--soft);font-family:ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:.74rem;line-height:1.9}
-@media print{body{background:#fff;color:#000}.wrap{max-width:none;padding:0}.meta{display:none}.msg.user{background:transparent}}
+.rawLabel{font-family:ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:.76rem;font-weight:600;color:var(--accent);margin:1.6rem 0 .45rem}
+pre.raw{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;font-family:inherit;font-size:.95em;line-height:1.9;background:var(--ubg);border-left:3px solid var(--rule);border-radius:0 .4rem .4rem 0;padding:.7rem 1rem;margin:0 0 1.1rem}
+@media print{body{background:#fff;color:#000}.wrap{max-width:none;padding:0}.meta{display:none}.msg.user{background:transparent}
+pre.raw{background:transparent;border-left-color:#d8d2c8;padding-left:.9rem}
+pre.raw,.msg,li{break-inside:avoid}
+h2,.rawLabel{break-after:avoid}
+}
 `.trim()
 
 export function toHtml(doc: DocModel): string {
@@ -416,6 +436,12 @@ export function toHtml(doc: DocModel): string {
         for (const l of String(b.text).split('\n').map(s => s.trim()).filter(Boolean)) {
           body.push(`<p class="para">${esc(l)}</p>`)
         }
+        break
+      case 'pre':
+        // 原文块：靠 CSS 的 white-space:pre-wrap 保真 —— 换行与行首缩进都不动。
+        // 🖨 打印时也要保住（分页规则见 DOC_CSS 的 @media print）。
+        if (b.label) body.push(`<div class="rawLabel">${esc(b.label)}</div>`)
+        body.push(`<pre class="raw">${esc(b.text)}</pre>`)
         break
       case 'note':
         body.push(`<p class="note">${esc(b.text)}</p>`)

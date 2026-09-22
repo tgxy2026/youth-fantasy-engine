@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import HelpPopover from './HelpPopover'
 import AIConfigPanel from './AIConfigPanel'
+import AIDisabledNotice from './AIDisabledNotice'
 import AIWriterBudgetPanel from './AIWriterBudgetPanel'
 import SearchSettingsPanel from './SearchSettingsPanel'
 import AIPromptSettings from './AIPromptSettings'
@@ -33,6 +34,10 @@ export default function ModelSettingsPanel() {
       </header>
 
       <div className="space-y-4">
+        {/* 未接入模型时先把「哪些会灰、为什么灰、灰了还剩什么」说清楚（2.4.0 · A1）——
+            模型配置就在正下方，看完即可直接配。已就绪时本组件自行返回 null。 */}
+        <AIDisabledNotice />
+
         {/* 模型配置（全局）：决定下面几块跟着谁走，所以放最上面 */}
         <AIConfigPanel onChange={() => setCfgVer(v => v + 1)} />
 

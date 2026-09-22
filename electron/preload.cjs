@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('electronStore', {
   saveSync: text => ipcRenderer.sendSync('store:save-sync', text),
   /** 导出全部数据到用户选择的位置（U 盘），返回文件路径或 null（取消） */
   exportFile: text => ipcRenderer.invoke('store:export', text),
+  /** 把 HTML 渲染成 PDF 并保存（中文走 Chromium 打印引擎），返回文件路径或 null（取消） */
+  exportPdf: (html, defaultName) => ipcRenderer.invoke('export:pdf', html, defaultName),
   /** 从用户选择的文件导入（便携版数据文件），返回文件文本或 null（取消） */
   importFile: () => ipcRenderer.invoke('store:import'),
   /** 在资源管理器中显示本地数据文件 */

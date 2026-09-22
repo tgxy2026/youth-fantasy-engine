@@ -99,7 +99,8 @@ export async function applyChapterRewrite(chapterId: string, text: string): Prom
   const ch = chs.find(c => c.id === chapterId)
   if (!ch) throw new Error('这一章已经不在项目里了')
   // 🔴 先留旧稿，再覆盖（顺序不能反：反了就丢原文）
-  await db.createSnapshot(ch)
+  // 标成 AI 来源：裁剪时优先牺牲定时快照，保住这一版（2.4.0 · A3）
+  await db.createSnapshot(ch, 'ai-rewrite')
   const words = countWords(body)
   const next: Chapter = { ...ch, content: body, wordCount: words, updatedAt: Date.now() }
   const [vols, all] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])

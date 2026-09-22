@@ -5,7 +5,7 @@ import { uid } from '../id'
 import type { TavernReport } from '../tavern/types'
 import { ops, currentProjectId } from './core'
 import { VOL_LEDGER_PREFIX } from './volumes'
-import type { Snapshot } from './chapters'
+import { type Snapshot, isAISnapshot } from './chapters'
 import type { DailyStat } from './meta'
 
 // ============ 项目 ============
@@ -98,14 +98,36 @@ export async function deleteProject(id: string) {
 }
 
 // ============ 项目统计（项目列表页用，不依赖 currentProjectId） ============
-export async function getProjectStats(id: string): Promise<{ chapters: number; words: number; volumes: number }> {
+export type ProjectStats = { chapters: number; words: number; volumes: number }
+
+export async function getProjectStats(id: string): Promise<ProjectStats> {
+  return (await getProjectsStats([id]))[id] ?? { chapters: 0, words: 0, volumes: 0 }
+}
+
+/**
+ * 批量统计（一次读全表 + 内存分组）。
+ *
+ * 🔴 2026-09-22 六维审计 P2：项目管理页原先是 `list.map(p => getProjectStats(p.id))` ——
+ *    而单项目版**每次都要读全表 chapters + volumes**，N 个项目就是 **2N 次全表读**。
+ *    项目一多（或库进了云盘目录）打开首页就会明显卡；改成一次全表读、内存里按 projectId 归组。
+ */
+export async function getProjectsStats(ids: string[]): Promise<Record<string, ProjectStats>> {
+  const out: Record<string, ProjectStats> = {}
+  for (const id of ids) out[id] = { chapters: 0, words: 0, volumes: 0 }
+  if (!ids.length) return out
+
   const [chs, vols] = await Promise.all([ops.getAll<Chapter>('chapters'), ops.getAll<Volume>('volumes')])
-  const mine = chs.filter(c => c.projectId === id)
-  return {
-    chapters: mine.length,
-    words: mine.reduce((s, c) => s + (c.wordCount || 0), 0),
-    volumes: vols.filter(v => v.projectId === id).length,
+  for (const c of chs) {
+    const s = out[c.projectId]
+    if (!s) continue
+    s.chapters++
+    s.words += c.wordCount || 0
   }
+  for (const v of vols) {
+    const s = out[v.projectId]
+    if (s) s.volumes++
+  }
+  return out
 }
 
 // ============ 导出 / 导入（JSON 备份） ============
@@ -125,9 +147,24 @@ export interface ProjectBundle {
   customOptions?: { key: string; value: unknown }[]
   /** 酒馆模式 · 推演报告（可选字段：旧备份没有，导入时按向后兼容处理） */
   tavernReports?: TavernReport[]
+  /**
+   * 章节快照（2.4.0 · A3，可选字段：旧备份没有）。
+   *
+   * 🔴 **只带 AI 来源的快照**（改写 / 续写 / 生成前留的旧稿）。定时快照的价值主要在
+   *    "本机写坏了能回退"，跨设备意义小；全带会让 300 章的书备份 JSON 胀到 20MB+、导入导出都变慢。
+   */
+  snapshots?: Snapshot[]
 }
 
-export async function exportProject(id: string): Promise<ProjectBundle> {
+/**
+ * 导出项目为备份包。
+ *
+ * ⚠️ `includeSnapshots`（2.4.0 · A3）：**自动备份必须传 false**。
+ *    快照在 `backups.ts` 里会随全量备份每 5 分钟写一次，若带上 AI 快照（长篇可达几十 MB），
+ *    高频备份会迅速把本地存储撑大。手动「导出备份」保持默认 true —— 那是给用户带走、换设备用的。
+ */
+export async function exportProject(id: string, opts: { includeSnapshots?: boolean } = {}): Promise<ProjectBundle> {
+  const includeSnapshots = opts.includeSnapshots !== false
   const project = await ops.get<Project>('projects', id)
   if (!project) throw new Error('项目不存在')
   const [volumes, chapters, formData, tableRows, cardRecords, dailyStats, settingsKV, tavernReports] = await Promise.all([
@@ -136,6 +173,8 @@ export async function exportProject(id: string): Promise<ProjectBundle> {
     ops.getAll<DailyStat>('dailyStats'), ops.getAll<{ key: string; value: unknown }>('settingsKV'),
     ops.getAll<TavernReport>('tavernReports'),
   ])
+  // 快照按 projectId 索引取（不扫全表）
+  const snapshots = includeSnapshots ? await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', id) : []
   const prefix = `${id}::`
   const customOptPrefix = `customOption::${id}::`
   return {
@@ -158,6 +197,8 @@ export async function exportProject(id: string): Promise<ProjectBundle> {
       .filter(s => s.key.startsWith(customOptPrefix))
       .map(s => ({ key: s.key.slice(customOptPrefix.length), value: s.value })),
     tavernReports: tavernReports.filter(r => r.projectId === id),
+    // 只带 AI 快照（理由见 ProjectBundle.snapshots 的注释）
+    snapshots: snapshots.filter(s => isAISnapshot(s)),
   }
 }
 
@@ -186,6 +227,15 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
     const nid = uid()
     map.set(c.id, nid)
     await ops.put('chapters', { ...c, id: nid, projectId: newPid, volumeId: volMap.get(c.volumeId) ?? c.volumeId })
+  }
+  // 章节快照（2.4.0 · A3，可选字段）：chapterId **必须跟着换成新 id** ——
+  // 否则导入后的快照指向已不存在的章节，表现为「时光机里一片空白」且从界面上查不出原因。
+  if (bundle.snapshots) {
+    for (const s of bundle.snapshots) {
+      const ncid = map.get(s.chapterId)
+      if (!ncid) continue // 该章没在这次导入里 → 跳过，别留孤儿快照
+      await ops.put('snapshots', { ...s, id: uid(), projectId: newPid, chapterId: ncid })
+    }
   }
   for (const f of bundle.formData) {
     await ops.put('formData', { tabId: `${newPid}::${f.tabId}`, data: f.data })

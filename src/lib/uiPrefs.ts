@@ -102,3 +102,46 @@ export function usePersistedBool(key: string, def: boolean): [boolean, (v: boole
   }, [key])
   return [pair.v, update]
 }
+
+/** 写一个自由字符串偏好（读取侧一律走带校验的 readEnumPref，别直接 getItem） */
+export function writeStringPref(key: string, v: string): void {
+  try {
+    localStorage.setItem(PREFIX + key, v)
+  } catch {
+    /* 同 writeBoolPref：写不进去只影响跨会话记忆，不影响本次会话 */
+  }
+}
+
+/**
+ * 读「枚举字符串」偏好：无记录、或值**不在允许清单内** → fallback。
+ *
+ * 🔴 为什么一定要校验：存量值可能是旧版本写下的（枚举改过名），用户也可能手改过 localStorage。
+ *    这类值一旦被当成合法值喂进业务逻辑（如拿去查缩进单位的实际字符），
+ *    拿回来的就是 undefined —— 表现为"按 Tab 没反应"，且极难定位。
+ *    偏好不好用不该让功能静默失效，所以非法值一律退回默认。
+ */
+export function readEnumPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const raw = localStorage.getItem(PREFIX + key)
+    return allowed.includes(raw as T) ? (raw as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+/** 持久化的枚举字符串偏好（如编辑器的缩进单位）；默认值由调用方给，模块不替它猜 */
+export function usePersistedEnum<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): [T, (v: T) => void] {
+  const [pair, setPair] = useState<{ key: string; v: T }>(() => ({ key, v: readEnumPref(key, allowed, fallback) }))
+  if (pair.key !== key) {
+    setPair({ key, v: readEnumPref(key, allowed, fallback) })
+  }
+  const update = useCallback((v: T) => {
+    writeStringPref(key, v)
+    setPair({ key, v })
+  }, [key])
+  return [pair.v, update]
+}
