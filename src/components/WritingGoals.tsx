@@ -31,10 +31,18 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
   }, [])
 
   const recentPace = useMemo(() => {
-    const last7 = [...dailyStats].slice(-7)
-    if (last7.length === 0) return 0
-    const sum = last7.reduce((s, d) => s + d.words, 0)
-    return Math.round(sum / last7.length)
+    // 🔴 2026-09-22 六维审计 P2：原来取「最近 7 **条**有记录的天」而不是「最近 7 个自然日」——
+    //    `dailyStats` 只会在真的写了字的那天落一条，所以断更时这 7 条的区间能跨远超 7 天，
+    //    算出来的「日均」被**系统性高估**（写在 UI 上却叫「近 7 日日均」）。
+    //    改为按日期键回填近 7 个自然日（缺日按 0 计），与下方燃尽图用同一套写法。
+    const byDate = new Map(dailyStats.map(d => [d.date, d.words]))
+    const now = new Date()
+    let sum = 0
+    for (let i = 6; i >= 0; i--) {
+      const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
+      sum += byDate.get(todayKey(dt)) ?? 0
+    }
+    return Math.round(sum / 7)
   }, [dailyStats])
 
   // v1.6.1：燃尽图数据 —— 近 14 天逐日累计「实际 / 目标」曲线（缺写字的天按 0 计）

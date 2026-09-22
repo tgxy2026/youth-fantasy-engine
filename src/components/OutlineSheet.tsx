@@ -10,6 +10,7 @@ import AutoTextarea from './AutoTextarea'
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import TemplateLibrary from './TemplateLibrary'
+import { foldVh } from '../lib/theme'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
@@ -271,7 +272,8 @@ export default function OutlineSheet({ tab }: Props) {
         )}
       </header>
 
-      <div className="flex gap-5" style={{ minHeight: 'calc(100vh / var(--ui-zoom, 1) - 200px)' }}>
+      {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`（原来手抄等价式，见 `CharacterSheet` 同处说明）。 */}
+      <div className="flex gap-5" style={{ minHeight: `calc(${foldVh('100vh')} - 200px)` }}>
         {/* 目录列表 */}
         <div className="w-52 shrink-0 space-y-1.5">
           {records.map((rec, i) => {

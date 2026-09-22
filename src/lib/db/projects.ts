@@ -98,14 +98,36 @@ export async function deleteProject(id: string) {
 }
 
 // ============ 项目统计（项目列表页用，不依赖 currentProjectId） ============
-export async function getProjectStats(id: string): Promise<{ chapters: number; words: number; volumes: number }> {
+export type ProjectStats = { chapters: number; words: number; volumes: number }
+
+export async function getProjectStats(id: string): Promise<ProjectStats> {
+  return (await getProjectsStats([id]))[id] ?? { chapters: 0, words: 0, volumes: 0 }
+}
+
+/**
+ * 批量统计（一次读全表 + 内存分组）。
+ *
+ * 🔴 2026-09-22 六维审计 P2：项目管理页原先是 `list.map(p => getProjectStats(p.id))` ——
+ *    而单项目版**每次都要读全表 chapters + volumes**，N 个项目就是 **2N 次全表读**。
+ *    项目一多（或库进了云盘目录）打开首页就会明显卡；改成一次全表读、内存里按 projectId 归组。
+ */
+export async function getProjectsStats(ids: string[]): Promise<Record<string, ProjectStats>> {
+  const out: Record<string, ProjectStats> = {}
+  for (const id of ids) out[id] = { chapters: 0, words: 0, volumes: 0 }
+  if (!ids.length) return out
+
   const [chs, vols] = await Promise.all([ops.getAll<Chapter>('chapters'), ops.getAll<Volume>('volumes')])
-  const mine = chs.filter(c => c.projectId === id)
-  return {
-    chapters: mine.length,
-    words: mine.reduce((s, c) => s + (c.wordCount || 0), 0),
-    volumes: vols.filter(v => v.projectId === id).length,
+  for (const c of chs) {
+    const s = out[c.projectId]
+    if (!s) continue
+    s.chapters++
+    s.words += c.wordCount || 0
   }
+  for (const v of vols) {
+    const s = out[v.projectId]
+    if (s) s.volumes++
+  }
+  return out
 }
 
 // ============ 导出 / 导入（JSON 备份） ============

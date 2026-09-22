@@ -66,14 +66,6 @@ export function trimHistory<T extends { content: string }>(messages: T[], budget
   return { kept: [first, ...rest], dropped }
 }
 
-export type BudgetState = { used: number; total: number; pct: number }
-
-/** 供 UI 画占用条 */
-export function budgetState(used: number, total: number): BudgetState {
-  const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0
-  return { used, total, pct }
-}
-
 /**
  * 算出「留给对话历史」的额度 = 总预算 − 安全余量 − 整条 system − 未含在 system 里的记忆。
  * 结果下限为 0（额度不足时只保留开场）。

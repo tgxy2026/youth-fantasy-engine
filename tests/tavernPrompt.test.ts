@@ -11,7 +11,7 @@ import {
 } from '../src/lib/tavern/prompt'
 import { PROTOCOL_CORE, PROTOCOL_VERSION } from '../src/lib/tavern/protocol'
 import { DEFAULT_COMMON_EXTRA } from '../src/lib/tavern/settings'
-import { trimHistory, historyBudget, budgetState, FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
+import { trimHistory, historyBudget, FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
 import { resolveParams, toOllamaOptions } from '../src/lib/tavern/params'
 import { hasCastSetting, EMPTY_CAST_SETTING } from '../src/lib/tavern/types'
 import type { TavernMessage, CastSetting } from '../src/lib/tavern/types'
@@ -234,9 +234,9 @@ function main() {
     ok('historyBudget 扣掉固定开销', historyBudget(8000, '', '') === 8000 - FIXED_OVERHEAD_CHARS)
     ok('historyBudget 再扣设定与记忆', historyBudget(8000, 'a'.repeat(100), 'b'.repeat(50)) === 8000 - FIXED_OVERHEAD_CHARS - 150)
     ok('额度不足时下限为 0（不出现负数）', historyBudget(100, 'x'.repeat(500), '') === 0)
-    ok('budgetState 算百分比', budgetState(4000, 8000).pct === 50)
-    ok('budgetState 封顶 100%', budgetState(99999, 8000).pct === 100)
-    ok('total 为 0 时不除零', budgetState(10, 0).pct === 0)
+    // 2026-09-22 六维审计：`budgetState` / `BudgetState` 属「只为测试而活」的死导出
+    // （生产代码零引用，注释说"供 UI 画占用条"但 UI 后来改走 summarizeUsage），
+    // 已连同这三条断言一并删除 —— 它死于"没有调用方"，不是死于"测不出问题"。
   }
 
   // ---------- 10) 参数继承 ----------

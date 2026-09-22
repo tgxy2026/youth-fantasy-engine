@@ -164,7 +164,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       icon: <BookOpen size={16} />, color: 'text-amber',
       help: withPunct
         ? '正文编辑器里全部章节的字数之和。当前口径＝汉字＋标点（网文平台计费口径），按正文实时重算，不改动已保存的数据。'
-        : '正文编辑器里全部章节的字数之和（中文按字计，不含标点与空格）。保存章节时自动更新，无需手工登记。',
+        : '正文编辑器里全部章节的字数之和（汉字按字计、英文按词计，不含标点与空格）。保存章节时自动更新，无需手工登记。',
     },
     {
       label: '完稿章节',
@@ -500,7 +500,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <TrendingUp size={14} className="text-amber" /> 写作目标与完稿预估
           <HelpPopover title="写作目标与完稿预估" width="21rem" className="ml-auto">
-            {'设定每日目标字数 / 全书目标字数 / 完稿截止日（自动保存），系统会：\n\n· 实时显示当前总字数、近 7 日日均、距目标差额；\n· 按「近 7 日日均 × 剩余字数」预估完稿日期；\n· 若按当前节奏赶不上截止日，给出红色提醒。\n\n日均取自「写作进度 / 自动码字记录」近 7 天，没有产量记录时无法预估。'}
+            {'设定每日目标字数 / 全书目标字数 / 完稿截止日（自动保存），系统会：\n\n· 实时显示当前总字数、近 7 日日均、距目标差额；\n· 按「剩余字数 ÷ 近 7 日日均」预估所需天数；\n· 若按当前节奏赶不上截止日，给出红色提醒。\n\n日均取自「写作进度 / 自动码字记录」近 7 天，没有产量记录时无法预估。'}
           </HelpPopover>
         </h2>
         <WritingGoals totalWords={totalWords} dailyStats={dailyStats} />

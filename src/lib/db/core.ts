@@ -128,6 +128,16 @@ onDesktopSyncConflict((info: SyncConflictInfo) => {
  * 返回 Promise —— 「关闭同步」必须**等它写完**再切 ops 并 reload，否则写了一半就被打断。
  * 异常兜底那条路（pagehide/关窗）仍是 fire-and-forget，与原先一致。
  */
+/**
+ * 兜底镜像这条路上的写失败**不能抛**（会打断关窗/切后端流程），
+ * 但也不能像原来那样 `.catch(() => {})` 一声不响 ——
+ * 🔴 2026-09-22 六维审计 P2：静默吞掉写失败时，用户以为已经保存、实际没落盘，
+ *    排查时又完全没有线索。这里统一留一行痕（口径与 `useTavernCardModel` 的失败明细一致）。
+ */
+const warnMirrorFail = (what: string) => (e: unknown) => {
+  console.warn(`[db] ${what}失败（兜底路径，已忽略，不阻断流程）：`, e)
+}
+
 async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Promise<void> {
   const tasks: Promise<unknown>[] = []
   for (const [store, rows] of Object.entries(cache)) {
@@ -141,7 +151,7 @@ async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Pro
       //    旧实现把 `if (!list.length) continue` 排在 overwrite 分支之前，整个空 store 被跳过
       //    ⇒ 本地旧记录一条不删 ⇒ 关同步后立刻「复活」；
       //    更糟的是下次开同步时 seedFromLocal 会把它**当本地数据播种回云端** —— 删除被彻底撤销。
-      if (list.length) tasks.push(desktopLocalStore.bulkPut(store, list).catch(() => {}))
+      if (list.length) tasks.push(desktopLocalStore.bulkPut(store, list).catch(warnMirrorFail(`镜像 ${store} 入本地`)))
       // 🔴 镜像的另一半：还要删掉「本地有、这份 cache 里没有」的记录（2026-09-20 六维审计 P1-1）。
       //    云模式下 `store.del` 只是把记录从云端 cache 摘掉，**本机数据文件没动**
       //    （读写都走 cache，本地库自开启同步那一刻起就不再更新）。
@@ -174,7 +184,7 @@ async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Pro
       if (isDeleted(store, k)) return false
       return !have.has(String(k ?? ''))
     })
-    if (missing.length) tasks.push(desktopLocalStore.bulkPut(store, missing).catch(() => {}))
+    if (missing.length) tasks.push(desktopLocalStore.bulkPut(store, missing).catch(warnMirrorFail(`兜底补 ${store} 入本地`)))
   }
   await Promise.all(tasks)
 }
@@ -528,7 +538,7 @@ export async function disableDesktopCloudSync() {
     console.warn('[sync] 云端不可用，关闭同步时以本地数据为准（未用旧快照覆盖本地新改动）')
   }
   // 3) 落盘（桌面版走 JSON 文件；非桌面是空操作），确保 reload 前已持久化
-  await flushDesktop().catch(() => {})
+  await flushDesktop().catch(warnMirrorFail('flushDesktop'))
   // 4) 清标记、复位传输层，切回本地
   disableDesktopCloud()
   setStoreOps(desktopLocalStore)
@@ -538,6 +548,14 @@ export async function disableDesktopCloudSync() {
 // 🔴 touchProject 放在底座、而不是 ./projects：卷 / 章 / 页签 / 备份都要「顺手刷新项目更新时间」，
 //    留在 projects 里会让它们全部反向依赖 projects 并绕成环。
 export async function touchProject(id: string) {
-  const old = await ops.get<Project>('projects', id)
-  if (old) await ops.put('projects', { ...old, updatedAt: Date.now() })
+  // 🔴 2026-09-22 六维审计 P2：这是「顺手刷新项目更新时间」的**附带动作**
+  //    （卷 / 章 / 页签 / 备份写完都会调它），失败不该影响本次主写入 ——
+  //    但它内部不兜错时，那几处**浮动调用**（`touchProject(id)` 不 await）会变成**未处理拒绝**，
+  //    严重点会在控制台炸一片、且没有任何上下文。在源头兜住，调用方就能安心 fire-and-forget。
+  try {
+    const old = await ops.get<Project>('projects', id)
+    if (old) await ops.put('projects', { ...old, updatedAt: Date.now() })
+  } catch (e) {
+    console.warn('[db] 刷新项目更新时间失败（不影响本次写入）：', e)
+  }
 }

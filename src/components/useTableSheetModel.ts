@@ -176,6 +176,10 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const colWidthsRef = useRef(colWidths)
   colWidthsRef.current = colWidths
   const dragRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
+  /** 🔴 2026-09-22 六维审计 P2：拖拽期间挂上的 window 监听，卸载时也要能摘掉
+   *  （原来只在 `onUp` 里 removeEventListener —— 拖到一半切页签/组件被卸载时 `onUp` 永不触发，
+   *   这对监听就永久留在 window 上，越拖越积）。 */
+  const dragCleanupRef = useRef<(() => void) | null>(null)
   // 表头筛选：每列一个关键字，行内该列命中即保留
   const [colFilters, setColFilters] = useState<Record<string, string>>({})
   /**
@@ -219,6 +223,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     }
     const onUp = () => {
       dragRef.current = null
+      dragCleanupRef.current = null
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
       // 列宽属纯 UI 偏好，存不进 localStorage（隐私模式/配额满）也不影响数据，
@@ -227,9 +232,17 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    // 记录清理函数：正常松手走 onUp，拖拽途中被卸载则由下面的卸载 effect 兜底
+    dragCleanupRef.current = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
   }
 
-  useEffect(() => () => clearTimeout(savedTimer.current), [])
+  useEffect(() => () => {
+    clearTimeout(savedTimer.current)
+    dragCleanupRef.current?.()   // 🔴 拖拽途中被卸载时的兜底（见 dragCleanupRef 声明处）
+  }, [])
 
   useEffect(() => {
     // 切到别的页签前，把当前页签未保存的表格草稿逐行落库（之前会静默丢弃）

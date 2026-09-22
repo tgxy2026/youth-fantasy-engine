@@ -89,7 +89,10 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
       if (systemChars >= total) {
         warnings.push('system 已经吃满整份预算（历史额度为 0）—— 只能靠精简设定层或提高总预算解决。')
       } else {
-        const h = summarizeUsage({ total, systemChars, parts, warnings }).historyChars
+        // 🔴 2026-09-22 六维审计 P2：必须把**作者在控制面板改过的**固定开销预留传进去。
+        //    不传时 `summarizeUsage` 会回落到内置常量 400，而引擎实际用的是 `st.common.fixedOverheadChars`
+        //    ⇒ 面板一改预留，这份「用量明细」算出来的历史额度就与实际不符（数字对不上，作者会怀疑谁在说谎）。
+        const h = summarizeUsage({ total, systemChars, parts, warnings, overhead: st.common.fixedOverheadChars }).historyChars
         if (h < 800) {
           warnings.push(`留给对话历史的额度只剩 ${fmt(h)} 字 —— 再聊几轮，早前的原文就会被裁掉（记忆里已有的不受影响）。`)
         }
@@ -98,7 +101,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
         warnings.push(`背景设定已到 ${fmt(WORLD_MAX_CHARS)} 字上限并被截断 —— 超出的部分不会进上下文，建议在「背景设定」页精简。`)
       }
 
-      setSummary(summarizeUsage({ total, systemChars, parts, warnings }))
+      setSummary(summarizeUsage({ total, systemChars, parts, warnings, overhead: st.common.fixedOverheadChars }))
       setTone(label)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

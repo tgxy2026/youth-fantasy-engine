@@ -60,7 +60,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
 
   const load = useCallback(async () => {
     const list = await db.getAllProjects()
-    const withStats = await Promise.all(list.map(async p => ({ ...p, stats: await db.getProjectStats(p.id) })))
+    // 🔴 2026-09-22 六维审计 P2：改走批量版 —— 原先逐个 `getProjectStats` 是 N 项目 × 2 次全表读。
+    const statsMap = await db.getProjectsStats(list.map(p => p.id))
+    const withStats = list.map(p => ({ ...p, stats: statsMap[p.id] }))
     setProjects(withStats)
     setLoaded(true)
   }, [])
@@ -249,7 +251,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
           <div className="mb-6 rounded-xl border border-amber/25 bg-ink-850 p-5 page-enter">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-13 font-semibold text-ink-100">新建小说项目</h3>
-              <Button variant="icon-muted" onClick={() => setCreating(false)}><X size={16} /></Button>
+              <Button variant="icon-muted" onClick={() => setCreating(false)} title="关闭" aria-label="关闭"><X size={16} /></Button>
             </div>
             <div className="flex gap-5">
               {/* 封面上传 */}
