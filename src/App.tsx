@@ -436,10 +436,17 @@ export default function App() {
         onExport={exportCurrent}
         ctx={visCtx}
       />
-      <main className={`flex-1 overflow-y-auto ${isEditor ? '!overflow-hidden' : 'p-6 lg:p-8'}`}>
-        <Suspense fallback={<div className="h-full w-full flex items-center justify-center text-ink-500 text-sm">加载中…</div>}>
-          {renderContent()}
-        </Suspense>
+      {/* 🔴 2026-09-22：padding 必须放在**内层**，不能放在滚动容器 main 上 ——
+          滚动容器一旦自带 padding-top，sticky 表头只会贴到 padding 的**内边缘**（实测停在 32px 处），
+          那一段就成了「卡片 / 表格从页头上面穿过去」的通道。挪到内层后表头才贴得住 main 顶部（gap=0）。
+          ⚠️ 改 header 的负 margin 是没用的 —— margin 不参与 sticky 的约束计算（这轮先猜错过一次）。 */}
+      <main className={`flex-1 overflow-y-auto ${isEditor ? '!overflow-hidden' : ''}`}>
+        <div className={isEditor ? '' : 'p-6 lg:p-8'}>
+          {/* fallback 用 min-h-* 而不是 h-full：多包了一层 div 后父高不再确定，h-full 会塌成 0 */}
+          <Suspense fallback={<div className="min-h-[50vh] w-full flex items-center justify-center text-ink-500 text-sm">加载中…</div>}>
+            {renderContent()}
+          </Suspense>
+        </div>
       </main>
       {/* 本机存储 / 云盘同步状态在「项目内」由 Sidebar Footer 内嵌承载，
           不再使用全局 fixed 浮层——避免压住侧栏底部的「界面缩放 / 主题」等控件。 */}
