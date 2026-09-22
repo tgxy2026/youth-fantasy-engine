@@ -18,6 +18,7 @@ import {
   type SyncConflictInfo, type SyncDirHandle,
 } from '../desktopCloudSync'
 import { SYNC_STORES, totalRecords, type SyncStores, type SyncRow } from '../syncCore'
+import { isDeleted } from '../syncTombstone'
 import {
   migrateFreshInstall, migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5,
   migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10,
@@ -162,7 +163,17 @@ async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Pro
     if (localRows === null) continue
     const kp = KEY_PATHS[store] ?? 'id'
     const have = new Set((localRows as Record<string, unknown>[]).map(r => String(r[kp] ?? '')))
-    const missing = list.filter(r => !have.has(String((r as Record<string, unknown>)[kp] ?? '')))
+    // 🔴🔴 2026-09-22 六维审计 P0：**本机删过的记录绝不能补回**。
+    //    `desktopLocalStore.bulkPut` 会顺手 `clearDeleted()` 抹掉同 key 的墓碑（`desktop.ts:484`）——
+    //    于是「闩锁期删掉 → 兜底镜像从旧 cache 补回 → 墓碑被清掉」三步走完，
+    //    下次开同步时 `seedFromLocal` 就会把这条当本地数据**播种回云端**，删除被彻底撤销。
+    //    这与 overwrite 分支要防的「删了会复活」是同一个病，只是这条兜底路径漏了防。
+    //    判据用墓碑而不是「本地有没有」：闩锁期的删除只记在本地库 + 墓碑里，旧 cache 并不知情。
+    const missing = list.filter(r => {
+      const k = (r as Record<string, unknown>)[kp]
+      if (isDeleted(store, k)) return false
+      return !have.has(String(k ?? ''))
+    })
     if (missing.length) tasks.push(desktopLocalStore.bulkPut(store, missing).catch(() => {}))
   }
   await Promise.all(tasks)

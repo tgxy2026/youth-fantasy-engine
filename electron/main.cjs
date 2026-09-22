@@ -70,16 +70,37 @@ function readDataFileSync() {
  * 刻意不留 .bak：同步目录里多一份副本会让云盘流量翻倍，
  * 且应用内已有快照（snapshots）机制兜底，不需要再叠一层。
  */
+/**
+ * 🔴 2026-09-22 六维审计 P1：tmp 名必须**每次唯一**。
+ *
+ * 原来两条写路径共用 `file + '.tmp'`：关窗时防抖中的异步写（`store:save`）仍在途，
+ * 同步写（`store:save-sync`）又进来写同一个 tmp —— rename 可能把**写了一半的内容**搬成正文件，
+ * 恰好破坏这两个函数本来要防的「截断 JSON」。加 pid + 递增序号即可：
+ * 同进程内不会重名，跨进程靠 pid 区分（且同步/异步两条路径各自独立）。
+ */
+let __tmpSeq = 0
+const tmpNameOf = (file) => `${file}.${process.pid}.${++__tmpSeq}.tmp`
+
 function writeAtomicSync(file, text) {
-  const tmp = file + '.tmp'
-  fs.writeFileSync(tmp, text, 'utf-8')
-  fs.renameSync(tmp, file)
+  const tmp = tmpNameOf(file)
+  try {
+    fs.writeFileSync(tmp, text, 'utf-8')
+    fs.renameSync(tmp, file)
+  } catch (e) {
+    try { fs.unlinkSync(tmp) } catch { /* 清理失败无所谓：名字唯一，不会污染后续写 */ }
+    throw e
+  }
 }
 
 async function writeAtomic(file, text) {
-  const tmp = file + '.tmp'
-  await fsp.writeFile(tmp, String(text), 'utf-8')
-  await fsp.rename(tmp, file)
+  const tmp = tmpNameOf(file)
+  try {
+    await fsp.writeFile(tmp, String(text), 'utf-8')
+    await fsp.rename(tmp, file)
+  } catch (e) {
+    try { await fsp.unlink(tmp) } catch { /* 同上 */ }
+    throw e
+  }
 }
 
 app.whenReady().then(() => {

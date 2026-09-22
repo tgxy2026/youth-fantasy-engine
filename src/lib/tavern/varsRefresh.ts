@@ -97,7 +97,12 @@ export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSessio
       await a.persistCharVars(a.primaryCharId, cardVars)
     }
     return nextSession
-  } catch {
-    return session // 静默：数值算不出来不该拦着这一轮对话
+  } catch (e) {
+    // 🔴 2026-09-22 六维审计：**保持「不打断对话」这条设计**（数值是锦上添花，绝不能让它的失败把这一轮弄没），
+    //    但补一行留痕 —— 原来完全静默，数值一直不动时无从判断是「这几轮真没变化」还是「每轮都在失败」。
+    //    刻意只用 console.warn 不弹 toast：它每轮都跑，弹窗会盖住正在进行的对话。
+    //    （同类写法见 `useTavernCardModel.ts` 的角色卡导入失败明细。）
+    console.warn('[tavern] 本场数值刷新失败（已跳过，不影响本轮对话）：', e)
+    return session
   }
 }

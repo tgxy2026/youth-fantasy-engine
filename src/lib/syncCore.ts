@@ -36,9 +36,16 @@ export const KEY_FIELD: Record<string, string> = {
   formData: 'tabId', meta: 'key', settingsKV: 'key', dailyStats: 'key',
 }
 
-// 不同步的敏感 meta（AI 模型配置含 apiKey；UI 已承诺「仅本地保存，不上传」）
+// 不同步的敏感 meta（含密钥；UI 已承诺「仅本地保存，不上传」）
+//
+// 🔴 2026-09-22 六维审计 P1：加入 `app.search`。
+//    检索设置里有搜索服务的 apiKey，而 UI 明确写着「存在本机数据文件里，**不会上传到任何服务器**」
+//    （SearchSettingsPanel 密钥栏 hint）。但同步是**整条 key-value** 写出，没法只排除某个字段，
+//    原来的排除表只挡了 AI 那三个键 ⇒ 开启云盘同步后检索密钥会随 `.yfe` 文件落到网盘。
+//    与 `aiProviders` 完全同构：整条本地专属，换设备需要重填一次（安全上这是正确取舍）。
 export const EXCLUDED_META_KEYS = new Set<string>([
   'aiProviders', 'aiActiveProviderId', 'aiConfigMigratedToGlobal',
+  'app.search',
 ])
 
 export const CONFLICT_KEY_PREFIX = 'syncConflict:'
@@ -197,9 +204,16 @@ function sameStores(a: SyncStores, b: SyncStores): boolean {
     const av = a?.[k] ?? []
     const bv = b?.[k] ?? []
     if (av.length !== bv.length) return false
-    const bm = new Map<unknown, SyncRow>(bv.map(r => [r?.id ?? r?.key, r] as const))
+    // 🔴 2026-09-22 六维审计 P1：主键必须走 `KEY_FIELD`，不能只认 `id ?? key`。
+    //    本文件别处（830/842/852/861/878/890）都用 `KEY_FIELD[store] ?? 'id'`，只有这里手写 `id ?? key` ——
+    //    `formData` 的主键是 **tabId**（见第 36 行），既没有 `id` 也没有 `key`，
+    //    于是它的每一条都被映射成 `undefined`，Map 里互相覆盖只剩最后一条：
+    //    formData ≥2 条时本函数**恒返回 false** ⇒ `backgroundPull` 恒判 drifted ⇒ `schedulePush`，
+    //    两端都持有 formData 时会形成「收到即回推」的同步乒乓、rev 持续自增。
+    const kf = KEY_FIELD[k] ?? 'id'
+    const bm = new Map<unknown, SyncRow>(bv.map(r => [(r as SyncRow)?.[kf], r] as const))
     for (const r of av) {
-      const other = bm.get(r?.id ?? r?.key)
+      const other = bm.get((r as SyncRow)?.[kf])
       if (!other || !eqRecord(r, other)) return false
     }
   }

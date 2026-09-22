@@ -6,7 +6,6 @@ import { uid } from '../id'
 import { ops, touchProject } from './core'
 import { exportProject, type ProjectBundle } from './projects'
 import { VOL_LEDGER_PREFIX } from './volumes'
-import type { Snapshot } from './chapters'
 
 // ============ 自动备份（v1.3 备份策略加固） ============
 // 每个项目一份独立「备份夹」（逻辑上按 projectId 归组），删除项目不掉备份；
@@ -117,8 +116,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   const prefix = `${targetPid}::`
   const forms = await ops.getAll<FormData>('formData')
   const formKeys = forms.filter(f => f.tabId.startsWith(prefix)).map(f => f.tabId)
-  // 快照按 projectId 索引取，避免全表扫
-  const snapKeys = (await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', targetPid)).map(s => s.id)
+  // 快照**不参与**恢复流程（见下方「不删快照」的说明）—— 此处刻意不收集 snapKeys
   const statKeys: string[] = []
   const setKeys: string[] = []
   const daily = await ops.getAll<{ key: string }>('dailyStats')
@@ -193,7 +191,14 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   for (const [name, keys] of Object.entries(delKeys)) await ops.bulkDel(name, keys)
   const staleForms = formKeys.filter(k => !newFormKeys.has(k))
   if (staleForms.length) await ops.bulkDel('formData', staleForms)
-  if (snapKeys.length) await ops.bulkDel('snapshots', snapKeys)
+  // 🔴🔴 2026-09-22 六维审计 P1：**不删快照**（原来这里是 `if (snapKeys.length) bulkDel('snapshots', snapKeys)`）。
+  //    三条事实叠起来就是"恢复一次备份 = 时光机被清空且永不复原"：
+  //      ① 本函数上面的写入段只恢复 volumes/chapters/formData/tableRows/cardRecords，**没有任何快照写入**；
+  //      ② 自动备份恒定 `includeSnapshots:false`（A3 的决策：自动备份不带快照），故 bundle 里本来就没有快照；
+  //      ③ 这行是**无条件全删** —— 对比相邻的 dailyStats / settingsKV 都用 `stale* = 差集`，
+  //         只有快照这一行是"全删"，明显不对称。
+  //    「恢复备份」的语义是"把备份里的内容还原"，不是"把备份没覆盖的也一并清掉"。
+  //    （手动导出包带快照时走 `importProject`，那条路会按新 chapterId 重映射写入，不受此处影响。）
   const staleStats = statKeys.filter(k => !newStatKeys.has(k))
   if (staleStats.length) await ops.bulkDel('dailyStats', staleStats)
   const staleSets = setKeys.filter(k => !newSetKeys.has(k))
