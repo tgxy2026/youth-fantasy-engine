@@ -69,7 +69,7 @@ export const CARD_TABLE_REF_FIELDS: Record<string, { tabId: string; col: string 
  * 实现分别见 lib/aiContext.ts 的 sortBySecrecy（顺序）与渲染时的 hideAuthorFields（可见性）。
  * 原来的口径只写了"保密"，于是 9 张表的大半数据标了也用不上 —— 这次把后半句（重要度/预算）补实。
  */
-export const SABC_DESC = '信息档位：决定「谁看得到」与「谁先占上下文预算」。S=绝密（角色视角看不到）／A=重要（主线）／B=次要（支线）／C=琐碎（日常）／D=终结（弃用）：已用完或不再使用的数据，任何情况下都不提供给 AI'
+export const SABC_DESC = '信息档位：决定「谁看得到」与「谁先占上下文预算」。S=绝密（角色视角看不到）／D=终结（弃用）：已用完或不再使用的数据，任何情况下都不提供给 AI'
 
 /**
  * 保密等级的**五个档位**（单一源）。

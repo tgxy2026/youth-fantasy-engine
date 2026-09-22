@@ -422,9 +422,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                             <div className="text-12 font-medium text-ink-100">{field.name}</div>
                             {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                           </div>
-                          {/* 输入框收窄：基础信息这几个字段都是短值（姓名 / 别称 / 保密等级 / 身份定位），
-                              拉满整行只会留出长条空白 —— 收在 26rem 内，省下的宽度交给右侧立绘 */}
-                          <div className={isBasicMod ? 'max-w-[26rem]' : ''}>
+                          {/* ⚠️ 2026-09-22 **二次返工**：上一版把这里收在 `max-w-[26rem]`，结果输入框与立绘
+                              之间空出一大块（老大原话「中间你打算放啥呢」）。正确做法是让输入框**吃满字段区**：
+                              它的宽度上限本来就由「卡片宽 − 立绘列」自然决定，不该再人为设一个更小的上限。 */}
+                          <div>
                             {/* 所属势力 / 种族 等字段：从其他设定表取值，禁止手动输入（根治同名异写导致的归属错乱） */}
                             {CARD_TABLE_REF_FIELDS[field.name] ? (
                               <TableRefSelect
