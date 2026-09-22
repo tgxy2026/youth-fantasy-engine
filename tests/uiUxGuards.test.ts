@@ -46,16 +46,30 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   }
 }
 
-// ---------- ② 不该加守卫的两处 —— 防"顺手补上"造成误禁 ----------
+// ---------- ② 不该加全局守卫的两处 —— 防"顺手补上"造成误禁 ----------
 //
 // 🔴 这两处的模型来源**不是全局活动模型**，用 useAIReady 守卫会把「配置有效」的场景禁掉：
 //    · InterviewChat：实际发请求的是调用方给的 `callChat`（酒馆用会话指定的模型）；
 //    · TavernFree：酒馆可指定自己的面板默认模型（defaultProviderId）而全局活动模型为空。
+//
+// ⚠️ 但「不许用全局判据」不等于「干脆别加守卫」—— 那会退回 F1 原意（点了才知道不行）。
+//    所以这里同时要求：酒馆这条链**必须有一个同源的替身判据**（`useTavernReady`），
+//    并有自己的单测（tests/tavernReady.test.ts，含负面对照）证明它读的是酒馆那条链。
 {
   ok('🔴 InterviewChat 不加全局就绪守卫（模型由调用方 callChat 决定，加会误禁酒馆场景）',
     !/useAIReady/.test(read('src/components/InterviewChat.tsx')))
   ok('🔴 TavernFree 不加全局就绪守卫（酒馆可指定自身 provider，加会误禁）',
     !/useAIReady/.test(read('src/components/TavernFree.tsx')))
+  // ⚠️ 只查 `useTavernReady.ts` 里**有没有 import** 全局 hook（而不是全文出现该词）——
+  //    它的文件头注释**必须**能解释"为什么不要用那个"，写成全文禁词会把说明本身判违规。
+  const readyHook = read('src/components/useTavernReady.ts')
+  ok('🔴 酒馆就绪守卫走的是**自己的** provider 链（useTavernReady），而非删掉守卫了事',
+    /useTavernReady/.test(read('src/components/useTavernFreeModel.tsx'))
+    && /export function useTavernReady/.test(readyHook)
+    && !/from '[^']*useAIReady'/.test(readyHook))
+  ok('🔴 就绪判据与真实发请求同源（都经 resolveTavernProvider 的三层兜底链）',
+    /resolveTavernProvider/.test(read('src/lib/tavern/provider.ts'))
+    && /export async function checkTavernReady/.test(read('src/lib/tavern/provider.ts')))
 }
 
 // ---------- ③ 文案一致性 ----------

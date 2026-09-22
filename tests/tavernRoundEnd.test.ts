@@ -11,7 +11,7 @@
 //      AI 写不好「别人扮演的角色」的第一人称回顾，硬写只会得到视角错乱的文字；
 //      改成走 `summarizeMemory`：记忆照记，日记不生成也不落库（顺带省掉一次白生成）
 import * as store from '../src/lib/tavern/store'
-import { __resetMockStores } from './mock-memory'
+import { __resetMockStores, __failReads } from './mock-memory'
 import { saveProviders, saveActiveId, type ChatMessage } from '../src/lib/ai'
 import { runRoundEnd, pendingMessages } from '../src/lib/tavern/roundEnd'
 import { JOURNAL_HEAD } from '../src/lib/tavern/summarize'
@@ -277,6 +277,84 @@ async function main() {
     ok('用户角色的整理提示词不含日记段落（走 summarizeMemory，不白生成）',
       !sysU.includes(JOURNAL_HEAD))
     ok('AI 角色的整理提示词仍含日记段落', String(calls[0].messages.find(m => m.role === 'system')?.content ?? '').includes(JOURNAL_HEAD))
+  }
+
+  // ---------- 6.5) 读记忆失败的那位不能连累别人（2026-09-22 六维审计 P0）----------
+  //
+  // 🔴 原先 `computed` 只 push 成功项，而落库循环按 `cards[i]` 取 `computed[i]` ——
+  //    读记忆失败会 `continue`（不占位），于是**数组比 cards 短、下标整体前移**：
+  //    中间那位失败 ⇒ 后面那位的记忆被写进前一位的档案（不可逆），末位还越界抛 TypeError。
+  //    下面用「3 位角色、只让中间那位读失败」精确锁住这个错位：
+  //    末尾那位的内容必须落在末尾那位身上，且第 1 位的记忆不能被第 3 位覆盖。
+  {
+    const M1 = await mkChar('田青')
+    const M2 = await mkChar('陆迟')
+    const M3 = await mkChar('白露')
+    let s = await store.createFreeSession([M1.id, M2.id, M3.id], '三人错位局', { providerId: STUB_PROVIDER.id }, {})
+    s = await push(s, [
+      { role: 'user', content: '都到齐了？' },
+      { role: 'assistant', speakerId: M1.id, content: '「到了。」' },
+      { role: 'assistant', speakerId: M2.id, content: '「嗯。」' },
+      { role: 'assistant', speakerId: M3.id, content: '「刚到。」' },
+    ])
+
+    // 打桩：只让 M2 的记忆读取抛错（其余照常）。
+    // 🔴 不能 `store.getMemory = …` —— ESM 命名空间对象只有 getter，赋值会 `TypeError`；
+    //    从最底层 StoreOps 注入，上面的每一层都会如实把异常抛上来（2026-09-22 实测）。
+    __failReads((s, key) => s === 'meta' && key === `tavern.free.mem.${M2.id}`)
+
+    // 模型按被问的角色名回不同内容 —— 这样才能分辨"谁的记忆进了谁的档案"
+    const { chatFn } = (() => {
+      const chatFn: ChatFn = async (_cfg, messages) => {
+        const sys = String(messages.find(m => m.role === 'system')?.content ?? '')
+        if (sys.includes('审查员')) return '{"changes":[]}'
+        if (sys.includes('田青')) return replyWith('田青记住了这一晚。', '田青的日记。')
+        if (sys.includes('白露')) return replyWith('白露记住了这一晚。', '白露的日记。')
+        return replyWith('不该有人拿到这段。', '不该有人拿到这段。')
+      }
+      return { chatFn }
+    })()
+
+    let res: Awaited<ReturnType<typeof runRoundEnd>> | undefined
+    let threw = ''
+    try {
+      res = await runRoundEnd({
+        session: s, cards: [M1, M2, M3], providerId: STUB_PROVIDER.id,
+        varKeys: [], vars: undefined, maxStep: 5,
+        nameOf: (id?: string) => [M1, M2, M3].find(c => c.id === id)?.name ?? '角色',
+        chatFn,
+      })
+    } catch (e) {
+      threw = e instanceof Error ? e.message : String(e)
+    } finally {
+      __failReads(null)
+    }
+
+    ok('读记忆失败不抛错（跳过那一位即可）', threw === '', threw || '(抛错了)')
+    ok('失败那一位被如实上报', (res?.warnings ?? []).some(w => w.includes('陆迟')))
+    ok('只有 2 位成功（失败的陆迟不在结果里）',
+      (res?.memories.length ?? -1) === 2 && !res?.memories.some(m => m.charId === M2.id))
+
+    // 🔴 核心断言：内容与角色必须一一对应（错位的话这两条必红）
+    const m1 = res?.memories.find(m => m.charId === M1.id)
+    const m3 = res?.memories.find(m => m.charId === M3.id)
+    ok('🔴 第 1 位的记忆是自己的（没被后面那位冲掉）',
+      !!m1 && m1.longTerm.includes('田青') && !m1.longTerm.includes('白露'))
+    ok('🔴 第 3 位的记忆是自己的（没被写到第 2 位名下）',
+      !!m3 && m3.longTerm.includes('白露'))
+
+    // 落库侧同样一一对应
+    const dbM1 = await store.getMemory(M1.id)
+    const dbM3 = await store.getMemory(M3.id)
+    ok('🔴 落库后第 1 位档案里是自己的内容',
+      dbM1.longTerm.includes('田青') && !dbM1.longTerm.includes('白露'))
+    ok('🔴 落库后第 3 位档案里是自己的内容（未错位到别人的 key）',
+      dbM3.longTerm.includes('白露'))
+    ok('失败那一位的日记没被写（也没被别人的日记顶上）',
+      (await store.getJournal(M2.id)).entries.length === 0)
+    ok('另外两位的日记各归各位',
+      (await store.getJournal(M1.id)).entries.length === 1 &&
+      (await store.getJournal(M3.id)).entries.length === 1)
   }
 
   // ---------- 设定审查：解析失败必须与「真的没有变更」区分开（2026-09-20 六维审计 P2） ----------

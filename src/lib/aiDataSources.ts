@@ -166,7 +166,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: '颉文姬 · OOC 人设检查',
     sources: [
       { group: '本章正文', items: [] },
-      { group: '角色卡与设定资料', items: ['主要角色', '次要角色', 'NPC 角色', '人物关系', '世界设定', '名词术语'], note: '约 10000 字预算 —— 颉文姬各模式里「读角色卡最全」的一项' },
+      { group: '角色卡与设定资料', items: ['主要角色', '次要角色', 'NPC角色', '人物关系', '世界设定', '名词术语'], note: '约 10000 字预算 —— 颉文姬各模式里「读角色卡最全」的一项' },
     ],
   },
   'jiewenji-advice': {
@@ -194,7 +194,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: '颉文姬 · 本章写作简报',
     sources: [
       { group: '本章正文', items: [] },
-      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态', '世界设定', '名词术语'], note: '约 8000 字预算，带锚点（只到本章）' },
+      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态（这两项是程序汇总的派生数据，不是某张表）', '世界设定', '名词术语'], note: '约 8000 字预算，带锚点（只到本章）' },
     ],
   },
   'jiewenji-ledger': {
@@ -257,7 +257,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   'plot-canvas': {
     label: '情节推演画布',
     sources: [
-      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态', '世界设定', '名词术语'], note: '约 6000 字预算' },
+      { group: '项目设定资料', items: ['未回收伏笔', '出场角色状态（这两项是程序汇总的派生数据，不是某张表）', '世界设定', '名词术语'], note: '约 6000 字预算' },
       { group: '你勾选章节的上下文', items: [] },
     ],
   },

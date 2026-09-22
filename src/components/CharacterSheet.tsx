@@ -14,7 +14,7 @@ import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
-import { foldVh } from '../lib/theme'
+import { contentMinH, CARD_SHEET_CHROME_PX } from '../lib/theme'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
@@ -288,7 +288,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 
   return (
     <div className="page-enter">
-      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 z-20 bg-ink-900/95 backdrop-blur py-3 -mt-3">
+      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 z-20 bg-ink-900/95 backdrop-blur py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
@@ -345,7 +345,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 
       {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`，别手抄 `calc(100vh / var(--ui-zoom,1))` ——
           手抄的等价式在 token 名变一次就静默失效（本处原先是手写的）。 */}
-      <div className="flex gap-5" style={{ minHeight: `calc(${foldVh('100vh')} - 180px)` }}>
+      <div className="flex gap-5" style={{ minHeight: contentMinH(CARD_SHEET_CHROME_PX) }}>
         {/* 卡片列表 */}
         <div className="w-44 shrink-0 space-y-1.5">
           {visibleRecords.map(rec => {

@@ -13,7 +13,7 @@ import { useMemo, useState } from 'react'
 import { Copy, Download, Check } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
-import { showToast } from './dialogs'
+import { showToast, copyText } from './dialogs'
 import { downloadBlob } from '../lib/zip'
 import {
   buildAiDisclosureDraft, AI_SOURCE_LABELS, AI_SOURCE_KINDS,
@@ -40,14 +40,13 @@ export default function AiDisclosureDialog({
   const used = AI_SOURCE_KINDS.filter(k => summary.chars[k] > 0)
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(draft)
-      setCopied(true)
-      showToast('申报说明已复制到剪贴板', 'success')
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      showToast('复制失败，可手动选中文本复制', 'error')
-    }
+    // 🔴 走统一入口（2026-09-22 六维审计 P2）：原先裸调 `navigator.clipboard`，
+    //    非安全上下文（file:// 便携版）下它直接不可用 ⇒ 「复制申报说明」失败，
+    //    而该功能的定位正是「可直接粘贴到平台申报入口」，失败等于整块作废。
+    //    copyText 内部有 execCommand 兜底 + 统一 toast，失败也不静默。
+    await copyText(draft, '申报说明已复制到剪贴板')
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   const saveTxt = () => {

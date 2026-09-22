@@ -70,6 +70,7 @@
 - 🔴 归属：剧情会话/扮演设定/报告/背景**随项目**；自由会话/角色卡/记忆/面板设置/剧本库**跨项目**（`tavernReports` 勿漏 `deleteProject`）。
 - 🔴🔴 预算三数：`historyBudget`＝预算−400−整条 system；contextBudget **24000**；numCtx **32768** 别动。
 - 🔴 最易踩：①会话存**快照非引用**；②角色卡小项只能「名：内容」同行＋**全角冒号**。协议 **v1.11**。
+- 🔴🔴 **就绪判据必须同源**：酒馆模型来源＝`resolveTavernProvider` 三层兜底（会话 model → 面板 `defaultProviderId` → 全局活动模型）⇒ 就绪判定走 `checkTavernReady`／`useTavernReady`，🔴 **绝不给 `InterviewChat`／`TavernFree` 及酒馆链路加全局 `useAIReady`**（`uiUxGuards` 明文禁；注释里也不许出现该字面量，闸按全文正则）。
 
 ## 出厂数据·示范项目
 - 🧪 dev 数据放仓库外或 `dev-seed/`（🔴 import 必带 `?时间戳`）。📥 卡走 skill `tavern-cards-batch`。🚫 原生不预填自由示范卡（闸 `tavernSeedPolicy`；**老库卡只留不删**）。

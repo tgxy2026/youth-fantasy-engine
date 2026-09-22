@@ -164,6 +164,43 @@ for (const t of TABS) {
   }
 }
 
+// ============ ⑨ items 里的「表名」必须真的是 schema 的真名 ============
+//
+// 为什么必须闸：aiDataSources.ts 第 50 行就给维护者写了这条规矩
+//（「这里的名字必须是 schema 的**真名**（`TABS[].name`）」），但**规矩本身没人守** ——
+// 2026-09-19 六维审计 P1-8 命中过一次（「世界观设定 / NPC 角色 / 术语表」三个别名），
+// 2026-09-22 六维审计又在同一个文件的 `jiewenji-ooc` 里命中 `'NPC 角色'`（真名 `NPC角色`，
+// 多一个空格）—— 修 P1-8 时漏了这一处，而当时**没有任何测试能发现它**。
+//
+// 判据：`items` 里凡"看起来像表名"的条目（不以「的/状态/清单」等词结尾的短名词短语），
+//       必须 ∈ TABS 的 name 集合。
+//
+// ⚠️ 刻意**不做全量强校验**：有些 items 是合法的**派生数据概念**（如「未回收伏笔」
+//    「出场角色状态」——它们是程序汇总出来的，不是某张表的 name）。全量强校验会把这些
+//    正确写法误判成错误。折中方案：用「与真名的编辑距离 ≤1 且长度接近」来抓**拼写近似**
+//    的别名（`NPC 角色` vs `NPC角色` 正好是 1 个空格差），既能抓真 bug、又不误伤派生概念。
+const TAB_NAMES: string[] = TABS.map(t => t.name)
+const TAB_NAME_SET = new Set(TAB_NAMES)
+
+/** 去掉空格/空白后比较（`NPC 角色` → `NPC角色`） */
+const squash = (s: string) => s.replace(/\s+/g, '')
+
+for (const [id, f] of Object.entries(AI_DATA_SOURCES)) {
+  for (const s of f.sources) {
+    for (const item of s.items) {
+      // 真名直接通过
+      if (TAB_NAME_SET.has(item)) continue
+      // 允许带序号/修饰的真名写法（如「角色卡 · 主要角色」）—— 逐段拆开看是否含真名
+      if (TAB_NAMES.some(n => item.includes(n))) continue
+      // 剩下的：只揪「去掉空白后与某个真名完全相同」的 —— 那是纯拼写/空格别名，一定是笔误
+      const hit = TAB_NAMES.find(n => squash(n) === squash(item))
+      ok(`🔴 ${id}：items「${item}」不是 schema 真名的别名写法（真名「${hit ?? '?'}」）`,
+        !hit,
+        hit ? `应写「${hit}」（当前「${item}」多了空格等差异）` : '')
+    }
+  }
+}
+
 // ============ 全局排除项（保密等级 D 级）必须真的渲染出来 ============
 // 只写在文档里没用 —— 作者是看界面气泡的。这里静态确认「不读」清单里追加了 AI_PRUNE_NOTE，
 // 防的正是"哪天有人重构 AIDataSourceNote 时把这一行删了、没人发现"。

@@ -23,7 +23,7 @@ import GeoMapEditor from './components/GeoMapEditor'
 import PlotCanvas from './components/PlotCanvas'
 import { showToast } from './components/dialogs'
 import { Button } from './components/Button'
-import { applyTheme, applyZoom, getStoredTheme, getStoredZoom, isZoomAuto } from './lib/theme'
+import { applyTheme, applyZoom, foldVh, getStoredTheme, getStoredZoom, isZoomAuto } from './lib/theme'
 import { loadPromptOverrides } from './lib/promptSettings'
 import { LS_SPRITE_ENABLED } from './lib/constants'
 import { downloadBlob } from './lib/zip'
@@ -443,7 +443,9 @@ export default function App() {
       <main className={`flex-1 overflow-y-auto ${isEditor ? '!overflow-hidden' : ''}`}>
         <div className={isEditor ? '' : 'p-6 lg:p-8'}>
           {/* fallback 用 min-h-* 而不是 h-full：多包了一层 div 后父高不再确定，h-full 会塌成 0 */}
-          <Suspense fallback={<div className="min-h-[50vh] w-full flex items-center justify-center text-ink-500 text-sm">加载中…</div>}>
+          {/* 🔴 2026-09-22 六维审计 P2：`50vh` 走 foldVh（界面缩放后 vh 不随 zoom 缩，
+              132% 时会溢出视口）；这也是全项目唯一残留的内联 vh 任意值类。 */}
+          <Suspense fallback={<div className="w-full flex items-center justify-center text-ink-500 text-sm" style={{ minHeight: foldVh('50vh') }}>加载中…</div>}>
             {renderContent()}
           </Suspense>
         </div>

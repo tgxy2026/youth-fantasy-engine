@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>novel-studio 2.4.1 六维审计报告 · 2026-09-22</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441;
+    --text:#e6edf3; --dim:#8b98a5; --dim2:#6b7683;
+    --p0:#f85149; --p1:#f0883e; --p2:#d29922; --ok:#3fb950; --info:#58a6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.75;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:13.5px;margin-bottom:28px}
+  h2{font-size:19px;margin:44px 0 16px;padding-bottom:9px;border-bottom:1px solid var(--border)}
+  h3{font-size:16px;margin:26px 0 10px}
+  code{background:var(--panel2);padding:1.5px 6px;border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;font-size:12.5px;color:#79c0ff}
+  pre{background:var(--panel2);border:1px solid var(--border);border-radius:8px;
+    padding:12px 14px;overflow-x:auto;font-size:12.5px;line-height:1.6;margin:10px 0}
+  pre code{background:none;padding:0;color:#c9d1d9}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:18px 0}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+  .stat .n{font-size:23px;font-weight:700}
+  .stat .l{font-size:12px;color:var(--dim);margin-top:2px}
+  .card{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--border);
+    border-radius:8px;padding:15px 18px;margin:13px 0}
+  .card.p0{border-left-color:var(--p0)}
+  .card.p1{border-left-color:var(--p1)}
+  .card.p2{border-left-color:var(--p2)}
+  .card.ok{border-left-color:var(--ok)}
+  .card.na{border-left-color:var(--dim2)}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;
+    margin-right:8px;vertical-align:2px;letter-spacing:.4px}
+  .tag.p0{background:rgba(248,81,73,.16);color:var(--p0)}
+  .tag.p1{background:rgba(240,136,62,.16);color:var(--p1)}
+  .tag.p2{background:rgba(210,153,34,.16);color:var(--p2)}
+  .tag.ok{background:rgba(63,185,80,.16);color:var(--ok)}
+  .tag.na{background:rgba(139,152,165,.16);color:var(--dim)}
+  .title{font-weight:600;font-size:15px}
+  .loc{font-size:12.5px;color:var(--dim);margin:4px 0 8px;font-family:monospace}
+  .card p{margin:6px 0}
+  .card b{color:#ffd479}
+  .lbl{display:inline-block;min-width:64px;color:var(--dim);font-size:13px}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{border:1px solid var(--border);padding:8px 11px;text-align:left}
+  th{background:var(--panel2);font-weight:600;color:var(--dim)}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:4px 0}
+  .verdict{background:var(--panel2);border-radius:8px;padding:12px 16px;margin:14px 0;font-size:14px}
+  .muted{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>novel-studio 2.4.1 · 六维审计报告</h1>
+<div class="sub">审计日期 2026-09-22 ｜ 版本 2.4.1 ｜ 提交基线 <code>3a9575c</code> ｜ 方式：八支扫描器 + 两闸 + 四路子代理 + 逐条验尸<br>
+<b>修复轮（同日）</b>：除「判定不改」外全部处置完毕 → 基线由 96/96 升至 <b>97/97 全绿</b>（新增 <code>tavernReady</code> 入口）</div>
+
+<div class="grid">
+  <div class="stat"><div class="n" style="color:var(--ok)">18</div><div class="l">已修复</div></div>
+  <div class="stat"><div class="n" style="color:var(--ok)">8</div><div class="l">判定不改</div></div>
+  <div class="stat"><div class="n" style="color:var(--p2)">+2</div><div class="l">新增防回退入口</div></div>
+  <div class="stat"><div class="n" style="color:var(--ok)">0</div><div class="l">基线回归</div></div>
+  <div class="stat"><div class="n" style="color:var(--ok)">97<span style="font-size:13px;color:var(--dim)">/97</span></div><div class="l">测试全绿</div></div>
+</div>
+
+<div class="verdict">
+<b>总评</b>：本轮基线 <b>tsc 0 错 / eslint 0 problem / 测试 96/96 全绿 / 两闸全绿</b>，扫描器红线项（markdown 星号、ghost 文字按钮、isComposing、z-index 魔数、SVG 属性色）<b>基本归零</b>。唯一 P0 集中在酒馆收尾的记忆落库下标错位——它会<b>静默写错角色档案</b>，且现有测试闸不住。其余多为本轮 B 系列改动引入或历史遗留的口径不一致。
+<br><br>
+<b>修复后</b>：P0 ×1 + P1 ×9 + P2 ×8 + UX 项均<b>已处置</b>，<b>判定不改</b> 8 项（其中 F1 两项在写码时暴露为「加了反而误禁」的既存设计约束，已改用同源替身判据，见④）。收尾基线 <b>tsc 0 错 / eslint 0 problem / 测试 97/97 全绿 / 两闸全绿</b>。
+</div>
+
+<h2>① P0 · 必须修</h2>
+
+<div class="card p0">
+  <span class="tag p0">P0</span><span class="title">酒馆收尾：记忆落库下标错位，会张冠李戴写错角色档案</span>
+  <div class="loc">src/lib/tavern/roundEnd.ts:167 → :175</div>
+  <p><span class="lbl">问题</span><code>computed</code> 数组只 push <b>成功项</b>，但第 129 行的 <code>continue</code> 跳过读记忆失败的角色后不做占位，落库循环（第 173 行）却按 <code>cards[i]</code> 取 <code>computed[i]</code> — 两数组不再对齐。</p>
+  <pre><code>// :164-167  只 push 成功项
+const got = c.id === session.userCharId ? {...} : await summarizeRound(shared)
+computed.push({ memory: got.memory, journal: got.journal.trim() })
+
+// :173-176  落库却按 cards 下标取
+for (let i = 0; i < cards.length; i++) {
+  const c = cards[i]
+  const got = computed[i]        // ← 错位源头
+  await store.saveMemory(got.memory)</code></pre>
+  <p><span class="lbl">触发</span>多角色收尾时，<b>任一非末位</b>角色的 <code>store.getMemory</code> 抛错（存储读失败 / writeLocked / 云同步瞬时失败）。</p>
+  <p><span class="lbl">影响</span>① <b>数据错位</b>：cards=[A,B,C]、B 读失败 → <code>computed</code>=[A记忆, C记忆]，落库时把 <b>C 的记忆写进 B 的档案</b>，B 的原记忆被不可逆覆盖。② 末位越界 <code>computed[i]</code> 为 undefined → <code>TypeError</code> 中断收尾，水位线与 <code>endedAt</code> 都不推进。</p>
+  <p><span class="lbl">为何测试没抓到</span><code>tests/tavernRoundEnd.test.ts</code> 只覆盖「模型抛错」，未覆盖「getMemory 读失败」这条 continue 路径。</p>
+  <p><span class="lbl">修复</span><code>computed[i] = {...}</code> 改成定长赋值（与 <code>cards</code> 等长），落库前加 <code>if (!got) continue</code>；并补一条多角色读失败的单测。</p>
+</div>
+
+<h2>② P1 · 应修</h2>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">推演报告正文未过滤隐藏消息，作者「藏起来」的内容反成判定依据</span>
+  <div class="loc">src/lib/tavern/report.ts:181</div>
+  <p>报告的对话正文只过滤 <code>role !== 'system'</code>，<b>漏了 <code>!m.hidden</code></b>。而其余七条上下文通路（<code>prompt.ts:368</code> / <code>memory.ts:298,343</code> / <code>revise.ts:163</code> / <code>summarize.ts</code>）都是「隐藏＝不进上下文」。</p>
+  <pre><code>const transcript = session.messages
+  .filter(m => m.role !== 'system')      // ← 缺 !m.hidden
+  .map(m => `${m.role === 'user' ? '〖作者〗' : '〖AI〗'}${m.content}`)</code></pre>
+  <p><span class="lbl">影响</span>与报告提示词自己的 <code>〖信息边界〗沉浸推演 —— 请按「角色当场能知道的信息」判断合理性</code>（:192）自相矛盾：作者特意隐藏的内容，成了判定合理性的依据。</p>
+  <p><span class="lbl">修复</span>改为 <code>.filter(m => m.role !== 'system' && !m.hidden)</code>，与 <code>revise.ts</code> 对齐。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">aiDataSources 表名写成别名，与自己第 50 行的规则打架</span>
+  <div class="loc">src/lib/aiDataSources.ts:169</div>
+  <p>items 写 <code>'NPC 角色'</code>（<b>带空格</b>），schema 真名是 <code>NPC角色</code>（<code>schema.ts:432</code>）。同一文件第 54 行 <code>CORE_TABLES</code> 写的是正确形式，第 269 行也是对的 —— <b>只此一处写错</b>。</p>
+  <p><span class="lbl">影响</span>用户展开「颉文姬 · OOC 人设检查」问号气泡，看到「NPC 角色」照名字去侧栏找，找不到（侧栏是「NPC角色」）。这正是第 52 行注释点名禁止的事（原注释还在提 2026-09-19 修过的同类问题）。</p>
+  <p><span class="lbl">修复</span>改为 <code>'NPC角色'</code>；并给 <code>tests/aiDataSources.test.ts</code> 补断言：各 items 中形如表名的条目必须 ∈ <code>TABS.map(t=>t.name)</code>（当前测试只查 excludes 口径，<b>没查名字真伪</b>，所以一路绿灯）。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">启动自动恢复云同步路径不查 writeLocked，与手动路径不对称</span>
+  <div class="loc">src/lib/db/core.ts:382-411</div>
+  <p>模块顶层 <code>if (CLOUD_FILE_SYNC)</code> 块直接 <code>applyDesktopCloudFromPersisted()</code> → <code>pullDesktopSnapshot()</code>，<b>不检查 <code>writeLocked</code></b>；而手动开启路径（<code>core.ts:488-493</code>）明确 <code>if (st.writeLocked) throw</code>。</p>
+  <p><span class="lbl">影响</span>桌面读数据失败（文件被占用/损坏）时，<code>writeLocked</code> 语义是「绝不落盘」，但这条路径仍会切到云端、参与合并 —— 与红线「桌面读数据失败必须锁写盘」的口径不一致。</p>
+  <p class="muted"><b>验尸修正</b>：子代理原报「启动期读空 snapshot 导致删记录复活」——该结论<b>不成立</b>。顶层注册（<code>core.ts:357</code>）本就是 2026-09-20 修复的成果，且 <code>desktopLocalStore.getAll</code> 会自行触发文件读、不是空默认库。真正缺的只有 <code>writeLocked</code> 这一道闸。</p>
+  <p><span class="lbl">修复</span>该块开头复用 <code>getDesktopState().writeLocked</code> 判断，与手动路径同口径；或改为在 <code>initDesktopStore</code> 之后串行执行。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">摘要渲染函数未过滤 hidden，是「同一概念两套过滤」的隐患</span>
+  <div class="loc">src/lib/tavern/summarize.ts:251 / :481</div>
+  <p><code>renderTranscript</code> / <code>renderVarsTranscript</code> 只过滤 <code>role !== 'system'</code>，未过滤 <code>hidden</code>。</p>
+  <p><span class="lbl">影响</span>当前调用方（<code>roundEnd.ts:148</code> / <code>varsRefresh.ts:65</code>）传的都是已过滤的 <code>pending</code>，<b>现在不出问题</b>；但这两个是导出函数，将来任何新调用方直接传 <code>session.messages</code> 就会漏进隐藏消息。与 P1-① report.ts 同源。</p>
+  <p><span class="lbl">修复</span>两处补 <code>!m.hidden</code>，与 <code>revise.ts:163</code> 的 <code>recentTranscript</code> 统一（同一概念不写两套过滤条件）。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">schema 页签说明残留 markdown 星号（本轮 B8 自己带进来的）</span>
+  <div class="loc">src/lib/schema.ts:982</div>
+  <p><code>GEO_MAPS_TAB.description</code> 含 <code>**自 2.4.1（B8）起支持两种底图模式**</code>。HelpPopover 是纯文本渲染，星号会原样显示。</p>
+  <p><span class="lbl">修复</span>去掉星号，改为「自 2.4.1（B8）起支持两种底图模式：」。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">写作预算面板把常量数字硬编码进文案，与真源各写一份</span>
+  <div class="loc">src/components/AIWriterBudgetPanel.tsx:123</div>
+  <pre><code>// 面板（硬编码）
+`本地模型：随窗口按比例放大（推荐 ${rec} 字，资料取窗口的 30%、上限 48000 字，其余留给正文与输出）`
+// 真源 src/lib/aiWriterBudget.ts:42
+local: { ratio: 0.30, cap: 48000 },  cloud: { ratio: 0.30, cap: 120000 },</code></pre>
+  <p><span class="lbl">影响</span>该比例<b>已被调过一次</b>（注释记「2026-09-18 放宽到 30% 档」）。下次再调，界面继续显示旧数字，作者按说明估算资料占比会算错。另：云端分支（:124）只说「可按窗口放大」，省略了 30% 与 120000，与本地分支信息不对称。</p>
+  <p><span class="lbl">修复</span>把 ratio/cap 从 <code>WRITER_RECOMMEND</code> 插值进文案，云端同样补上。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">sticky 页头依赖 <code>-mt-3</code> 与 <code>p-6</code> 的巧合平衡，是脆弱点</span>
+  <div class="loc">TableSheet.tsx:74 / CharacterSheet.tsx:291 / FormSheet.tsx:151 / OutlineSheet.tsx:227</div>
+  <p>四个 Sheet 的 <code>header</code> 都写 <code>sticky top-0 ... py-3 -mt-3</code>。本轮已把 <code>p-6</code> 从滚动容器 <code>main</code> 挪到内层 div（<code>App.tsx:442</code>，注释自证为此修复）。</p>
+  <p><span class="lbl">影响</span><code>-mt-3</code>（12px）使页头顶边侵入 <code>p-6</code>（24px）的 padding 区。<b>当前恰好还能贴住</b>（剩 12px 余量），但谁把 <code>p-6</code> 调成 <code>p-8</code>（32px）、或把 padding 挪回 <code>main</code>，就会<b>复现「卡片从页头上面穿过去」</b>。margin 不参与 sticky 约束——这条本轮刚踩过一次。</p>
+  <p><span class="lbl">修复</span>删掉 header 的 <code>-mt-3</code>，改由内层容器统一负责间距（不要让 margin 参与约束计算）。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">编辑器双图层与 textarea 横向盒模型差一个滚动条宽</span>
+  <div class="loc">src/components/NovelEditor.tsx:643 / :656 / :682</div>
+  <p>三层 <code>px-6 md:px-8 pt-6</code> 与 <code>paddingBottom: foldVh('40vh')</code> 逐项一致（这部分正确，符合双图层红线）。但 textarea 用 <code>overflow-y-auto</code>（<b>占约 15px 滚动条宽</b>），高亮层 / ghost 层用 <code>overflow-hidden</code>（不占）——长行 <code>pre-wrap</code> 换行时，高亮文字的右缘与正文会<b>偏一位</b>。</p>
+  <p><span class="lbl">修复</span>两叠层补 <code>pr-[calc(1.5rem+15px)]</code>，或给 textarea 加 <code>scrollbar-gutter: stable</code> 并三层同用。</p>
+</div>
+
+<div class="card p1">
+  <span class="tag p1">P1</span><span class="title">AI 申报说明的复制绕过统一入口，便携版会直接失败</span>
+  <div class="loc">src/components/AiDisclosureDialog.tsx:44</div>
+  <pre><code>await navigator.clipboard.writeText(draft)   // ← 裸调用，无 execCommand 兜底</code></pre>
+  <p>对照 <code>AboutPage.tsx:134</code> / <code>AIAssist.tsx:199</code> / <code>InspireTools.tsx:67</code> 均已走 <code>copyText()</code>。</p>
+  <p><span class="lbl">影响</span>非安全上下文（<code>file://</code>）下 <code>navigator.clipboard</code> 不可用 → 复制申报说明直接失败，而该功能的定位正是「可直接粘贴到平台申报入口」。</p>
+  <p><span class="lbl">修复</span>改 <code>await copyText(draft, '申报说明已复制到剪贴板')</code>。</p>
+</div>
+
+<h2>③ P2 · 建议修</h2>
+
+<div class="card p2">
+  <span class="tag p2">P2</span><span class="title">模糊命中用双向子串匹配，与「整行整词」红线不一致</span>
+  <div class="loc">src/lib/tavern/report.ts:67</div>
+  <p><code>return v === needle || v.includes(needle) || needle.includes(v)</code> —— <code>needle.includes(v)</code> 这个方向会让「label 是长句、记录名是其子串」也命中。有 <code>hits.length === 1</code> 兜底（<code>:69</code>）不会静默指错，但可能把作者引到一条并非模型所指的记录上。</p>
+  <p><span class="lbl">修复</span>收紧为「全等优先 + <code>v.startsWith(needle)</code>」，保留唯一性闸。</p>
+</div>
+
+<div class="card p2">
+  <span class="tag p2">P2</span><span class="title">术语不一致：「未保存」vs「有未保存的改动」</span>
+  <div class="loc">AIWriterBudgetPanel.tsx:106 / AIPromptSettings.tsx:151</div>
+  <p>两处写裸「未保存」，全站其余 10+ 处是「有未保存的改动」（<code>CharacterSheet.tsx:366</code> / <code>TavernCard.tsx</code> / <code>TavernWorld.tsx</code>…）。</p>
+  <p><span class="lbl">修复</span>统一为「有未保存的改动」。</p>
+</div>
+
+<div class="card p2">
+  <span class="tag p2">P2</span><span class="title">Suspense fallback 的内联 50vh 未走 foldVh</span>
+  <div class="loc">src/App.tsx:446</div>
+  <p><code>className="min-h-[50vh] ..."</code> —— 是全项目<b>唯一</b>残留的内联 vh 任意值类，132% 界面缩放下会溢出视口。本轮为修 fallback 塌陷（<code>h-full</code> → <code>min-h-*</code>）时引入。</p>
+  <p><span class="lbl">修复</span>改用 <code>style={{ minHeight: foldVh('50vh') }}</code>。</p>
+</div>
+
+<div class="card p2">
+  <span class="tag p2">P2</span><span class="title">欢迎向导的「跳过」是带文字的 ghost 按钮</span>
+  <div class="loc">src/components/WelcomeWizard.tsx:167</div>
+  <p><code>&lt;Button variant="ghost" size="md"&gt;跳过，直接进入项目管理&lt;/Button&gt;</code> —— 带可见文字，静止态应为 <code>secondary</code>（扫描器 §14 亦命中）。</p>
+  <p><span class="lbl">修复</span>改 <code>variant="secondary"</code>。</p>
+</div>
+
+<div class="card p2">
+  <span class="tag p2">P2</span><span class="title">编辑器两个图标键缺 title、一处可点击 div 无 role/tabIndex</span>
+  <div class="loc">src/components/NovelEditor.tsx:335 / :451 / :357</div>
+  <p>两处纯图标 <code>Button iconOnly</code> 缺 <code>title</code>（朗读器读不出用途）；<code>:357</code> 的 <code>fixed inset-0</code> 遮罩是 <code>div</code> + <code>onClick</code>，无 <code>role</code>/<code>tabIndex</code>（键盘不可达）。</p>
+  <p><span class="lbl">修复</span>补 title；遮罩可加 <code>aria-hidden</code>（它只是点击外部关闭，属装饰性，可不要求键盘可达）。</p>
+</div>
+
+<div class="card p2">
+  <span class="tag p2">P2</span><span class="title">localSnapshotProvider 未过滤敏感 meta，与 mirrorDeleteExtra 口径不一致</span>
+  <div class="loc">src/lib/db/core.ts:365 vs :211</div>
+  <p>provider 读 <code>desktopLocalStore.getAll('meta')</code> <b>未过滤</b> <code>isExcludedMetaKey</code>，而 <code>mirrorDeleteExtra</code> 滤掉了本地专属键。</p>
+  <p><span class="lbl">影响</span><code>aiProviders</code>/<code>app.search</code>/冲突副本会被注入合并 cache。上传侧 <code>liveStores</code> 会滤掉，<b>密钥不会上云（红线成立）</b>；只是会给 <code>eqRecord</code> 制造无意义的 diff 噪声。</p>
+</div>
+
+<div class="card p2">
+  <span class="tag p2">P2</span><span class="title">两处 min-height 用裸算式耦合页头高度</span>
+  <div class="loc">CharacterSheet.tsx:348 / OutlineSheet.tsx:276</div>
+  <p><code>minHeight: calc(${foldVh('100vh')} - 180px)</code> / <code>- 200px</code> —— 嵌套 calc 语法合法、功能正常，但 180/200 两个魔数与页头高度强耦合且注释无出处，页头一改就静默失效。</p>
+  <p><span class="lbl">修复</span>抽 <code>contentMinH(deductPx)</code> helper 或 CSS 变量。</p>
+</div>
+
+<div class="card p2">
+  <span class="tag p2">P2</span><span class="title">aiDataSources 混入非 schema 真名的语义标签</span>
+  <div class="loc">src/lib/aiDataSources.ts:197 / :260</div>
+  <p>items 含 <code>'未回收伏笔'</code>「出场角色状态」，二者既非 <code>TABS[].name</code> 也非字段名，而是派生数据概念（与 P1-② 同源，程度较轻）。</p>
+  <p><span class="lbl">修复</span>加 <code>note</code> 说明「这两项是程序汇总的派生数据」，或改为真名。</p>
+</div>
+
+<h2>④ 判定不改（下轮勿重复提案）</h2>
+
+<div class="card na">
+  <span class="tag na">不改</span><span class="title">Desktop.tsx 非 embedded 分支（潜在第二个左下角浮层）</span>
+  <div class="loc">src/components/Desktop.tsx:177</div>
+  <p><span class="lbl">理由</span>文件头注释（:174-176）已<b>显式声明</b>它是兼容保留分支，两个调用点（<code>DataDock.tsx:78</code> / <code>Sidebar.tsx:353</code>）都传 <code>embedded</code>，当前不可能触发。层号已收敛到 <code>Z.dock</code>。删它属于「为洁癖动兼容代码」，收益为零。</p>
+</div>
+
+<div class="card na">
+  <span class="tag na">不改</span><span class="title">6 处空 catch / 只 log 的 catch</span>
+  <div class="loc">dataHealth.ts:243 / db/core.ts:558 / seedData.ts:1455,1496 / syncTransport.ts:334 / tavern/varsRefresh.ts:100</div>
+  <p><span class="lbl">理由</span>逐个看过，全部是<b>有意的不打断设计</b>且各有明确理由：① <code>dataHealth</code> 酒馆成对性检查失败＝跳过这一类、不拖垮其余检查；② <code>core:558</code> 刷新项目更新时间失败不影响本次写入；③ <code>seedData</code> 只影响示范内容播种（弹窗反成噪声）；④ <code>syncTransport</code> 损坏备份失败时外层已有「同步失败」态 + toast；⑤ <code>varsRefresh:100</code> 本轮刚补了 <code>console.warn</code> 留痕，注释明说「刻意不弹 toast（每轮都跑，会盖住对话）」。</p>
+</div>
+
+<div class="card na">
+  <span class="tag na">不改</span><span class="title">FactionGraph 的十六进制语义色（79 处硬编码色的大头）</span>
+  <div class="loc">src/components/FactionGraph.tsx:15-26</div>
+  <p><span class="lbl">理由</span>「同盟=绿 / 敌对=红 / 中立=灰」是<b>语义色</b>，本就该固定、不该随主题变（同 2026-09-19 判定）。我的检测器分不清「该随主题变」和「该固定」两类，属已知局限。</p>
+</div>
+
+<div class="card na">
+  <span class="tag na">不改</span><span class="title">Button.tsx 的 text-white</span>
+  <div class="loc">src/components/Button.tsx:66 / :74</div>
+  <p><span class="lbl">理由</span>白字配实心色底（如 <code>bg-red-500 text-white</code>），改 ink token 会破坏对比度。属着色态的合法用法。</p>
+</div>
+
+<div class="card na">
+  <span class="tag na">不改</span><span class="title">NovelEditor 的 dangerouslySetInnerHTML</span>
+  <div class="loc">src/components/NovelEditor.tsx:645</div>
+  <p><span class="lbl">理由</span>那是编辑器高亮叠层，内容由 <code>scanRefHighlight</code> 生成且<b>逐段 <code>escapeHtml</code></b>，不是 XSS 面。</p>
+</div>
+
+<div class="card na">
+  <span class="tag na">不改</span><span class="title">F1 报的「缺 AI 就绪守卫」界面单元（含 InterviewChat / TavernControl 等）</span>
+  <div class="loc">AIConfigPanel / InterviewChat / TavernControl / WelcomeAISetup + 酒馆自由对话链路</div>
+  <p><span class="lbl">理由</span>回源码逐个确认：<b>每一个都有 catch → toast / setError 反馈</b>，未配模型时点下去用户<b>看得见报错</b>，不是「点了没反应」。属 UX 优化（预先禁用按钮），不是 bug。守卫也可能来自父组件 props（本文件看不到）。</p>
+</div>
+
+<div class="card na">
+  <span class="tag na">不改</span><span class="title">🔴 InterviewChat / TavernFree 的「全局就绪守卫」—— 加了反而误禁</span>
+  <div class="loc">tests/uiUxGuards.test.ts:49-58（产品闸明文禁止）</div>
+  <p><span class="lbl">理由</span>实际写码时才暴露的<b>既存设计约束</b>：酒馆两个入口的模型来源<b>不是全局活动模型</b>。</p>
+  <ul>
+    <li><b>InterviewChat</b>：真正发请求的是调用方给的 <code>callChat</code>（酒馆用<b>会话指定的</b>模型）。</li>
+    <li><b>TavernFree</b>：酒馆可在控制面板指定自己的默认模型（<code>defaultProviderId</code>），而<b>全局活动模型为空</b>。</li>
+  </ul>
+  <p>这两种配置都<b>完全有效、跑得动</b>，却会被全局判据（只看 <code>getActiveProvider</code>）判成「未配置」→ 把发送键禁掉。
+  那比不加守卫更糟：作者会以为功能坏了。<code>uiUxGuards</code> 因此明文钉死「这两处不许出现全局就绪 Hook」。</p>
+  <p><span class="lbl">本轮实际处置</span>不是「就此不管」，而是给酒馆补了一个<b>判据同源</b>的替身：</p>
+  <ul>
+    <li>新增 <code>lib/tavern/provider.ts → checkTavernReady()</code>：复用真实调用链 <code>resolveTavernProvider</code> 的三层兜底（会话 model → 面板 <code>defaultProviderId</code> → 全局活动模型），只把「拿不到就抛」换成「返回 false」（渲染期守卫抛会炸组件）。</li>
+    <li>新增 <code>components/useTavernReady.ts</code>：给那条异步链套订阅壳，并订阅全局模型配置变更（兜底链最后一层）。</li>
+    <li><code>useFreeTurn</code> / <code>useFreeRoundEnd</code> / <code>useTavernFreeModel</code> 三处改用新判据。</li>
+  </ul>
+  <p><span class="lbl">防回退</span><code>tests/tavernReady.test.ts</code>（<b>8 项</b>，含<b>负面对照</b>）+ <code>uiUxGuards</code> 追加 2 项「必须用自己那条链、而不是删掉守卫了事」。</p>
+</div>
+
+<div class="card na">
+  <span class="tag na">不改</span><span class="title">C1 报的 3 个「页级标题缺 HelpPopover」</span>
+  <div class="loc">AIDisabledNotice / WelcomeAISetup / WelcomeWizard</div>
+  <p><span class="lbl">理由</span>三者都是<b>引导/提示类子组件</b>，不是页签主体，无页级标题。属合法豁免。</p>
+</div>
+
+<h2>⑤ 扫描器与闸的原始数据（基线留档）</h2>
+
+<table>
+<tr><th>通道</th><th>结果</th><th>判读</th></tr>
+<tr><td><code>tsc --noEmit</code></td><td>0 错</td><td>✅ 基线</td></tr>
+<tr><td><code>eslint src</code></td><td>0 problem</td><td>✅ 基线（exhaustive-deps 已在上轮清到 0）</td></tr>
+<tr><td><code>tests/run-all.mjs</code></td><td>96/96 全绿（修复后 <b>97/97</b>）</td><td>✅ 基线</td></tr>
+<tr><td>feature-deps-check</td><td>绿</td><td>✅ 功能门 ↔ 页签 id</td></tr>
+<tr><td>seed-schema-check</td><td>绿</td><td>✅ 种子键 ↔ schema 列名</td></tr>
+<tr><td>audit-graph</td><td>1 组环（含 type-only 边）</td><td>✅ 运行时不成立；分层违规 0；扇入 0 模块 0</td></tr>
+<tr><td>audit-scan §6–§17</td><td>星号 ↑、clipboard 1、vh 1、ghost 1、isComposing 0、z 魔数 0、SVG 属性色 0</td><td>星号多为提示词常量（合法）；实质问题见 P1/P2</td></tr>
+<tr><td>audit-arch</td><td>重复块 29 / 门面 2 / 空 catch 6</td><td>已声明门面 2 个（db / aiTasks）符合设计</td></tr>
+<tr><td>audit-content</td><td>C1 3 / C2 2 / C3 6 组术语 / C5 0</td><td>C3 属产品决策，A/B/C 混合口径见下轮</td></tr>
+<tr><td>audit-prompt</td><td>53 处 / 15.6K tok；P4 全齐、P8 全齐、死提示词 0</td><td>✅ 无死提示词、结构化输出都有闭嘴条款</td></tr>
+<tr><td>audit-ui</td><td>U1 11 / U2 79 / U3 90 处任意值</td><td>U2 大头是语义色；U3 缺的是字号/间距阶梯，非逐处改</td></tr>
+<tr><td>audit-func</td><td>F1 6/27、F2 2（NUM/RangeGuide）、F3 界面层 0</td><td>F2 两个是 className 常量与同文件子组件（多余 export，非死代码）</td></tr>
+</table>
+
+<h2>⑥ 验尸记录（子代理误报修正）</h2>
+
+<table>
+<tr><th>子代理结论</th><th>验尸结果</th></tr>
+<tr><td>P0 启动期读空 snapshot → 删记录复活</td><td><b>降级 P1</b>。顶层注册（core.ts:357）是既有修复成果，<code>getAll</code> 会自行触发文件读。真正缺的只有 <code>writeLocked</code> 一道闸。</td></tr>
+<tr><td>P1 bulkPut clearDeleted 会清墓碑致复活</td><td><b>不成立</b>。兜底路径（core.ts:176-186）已用 <code>isDeleted</code> 过滤，注释明写「2026-09-22 六维审计 P0」——已在本轮之前修过。</td></tr>
+<tr><td>P1 enableDesktopCloudSync 推空窗口</td><td><b>部分成立</b>：<code>captureSyncData</code> 读失败会 throw（守住）；真正缺口是 <code>empty===false</code> 时不校验云端数据归属（误选目录直接切）。列为 P1 下限 / 建议确认。</td></tr>
+<tr><td>P2 Desktop 非 embedded 分支</td><td><b>判定不改</b>（注释已显式声明，无调用方）。</td></tr>
+</table>
+
+<h2>⑥ 修复轮记录（2026-09-22 同日）</h2>
+
+<table>
+<tr><th>类别</th><th>处置</th><th>验证</th></tr>
+<tr><td><b>P0</b> 收尾下标错位</td><td><code>roundEnd.ts</code>：<code>computed</code> 改<b>定长数组</b>（下标对齐原数组）+ 读失败那位 <code>if (!got) continue</code></td><td>新增 6.5 节 <b>10 项</b>断言（读失败那位不写、内容对应不错位）；<b>负面对照 7 红</b></td></tr>
+<tr><td>P1 report hidden</td><td><code>report.ts</code> 过滤补 <code>!m.hidden</code></td><td>既有 tavernReport 用例</td></tr>
+<tr><td>P1 summarize hidden ×2</td><td><code>summarize.ts</code> 两处渲染函数补 <code>!m.hidden && m.content.trim()</code></td><td>既有 tavernMemory 用例</td></tr>
+<tr><td>P1 aiDataSources 别名</td><td><code>'NPC 角色'</code> → <code>'NPC角色'</code></td><td>🔴 新增「表名真名闸」在 <b>15 个功能 id</b> 上暴露了同类写法（手工 grep 只找到 1 处）</td></tr>
+<tr><td>P1 writeLocked 不对称</td><td><code>db/core.ts</code> 启动恢复路径加 <code>getDesktopState().writeLocked</code> 早退</td><td>既有 core 用例</td></tr>
+<tr><td>P1 其余 4 条</td><td>schema 去星号 / 预算面板数字改由常量插值 / 四个 Sheet 去 <code>-mt-3</code> / 编辑器叠层盒模型对齐 / 复制走 <code>copyText</code></td><td>三基线 + <code>uiUxGuards</code> 文案闸</td></tr>
+<tr><td>P2 ×8</td><td>模糊命中收紧 <code>startsWith</code> / 术语统一 / <code>WelcomeWizard</code> ghost→secondary / 新增 <code>contentMinH()</code> 收敛魔法数 / 派生数据注明 / meta 过滤排除键 / App 兜底走 <code>foldVh</code> / 编辑器叠层 <code>aria-hidden</code></td><td>三基线</td></tr>
+<tr><td>UX F2</td><td><code>TavernFieldKit</code> 两个多余 <code>export</code> 收回</td><td><code>audit-func</code> 复扫 0</td></tr>
+<tr><td>UX F1（酒馆）</td><td>新增 <code>checkTavernReady</code> + <code>useTavernReady</code>，三处改用同源判据</td><td>新增 <code>tavernReady</code> 入口 <b>8 项</b>含负面对照；<code>uiUxGuards</code> +2 项</td></tr>
+<tr><td>扫描器自身缺陷</td><td><code>audit-ui.mjs</code> U5 用 <code>s.indexOf(l)</code> 定位窗口 → 命中文件首个同文行致误报；改为按行号切片</td><td>复扫后 2 处图标按钮误报消失</td></tr>
+</table>
+
+<div class="verdict" style="margin-top:16px">
+<b>🔴 本轮最值钱的两条教训</b>：<br>
+① <b>「写闸 → 让闸自己枚举」远胜手工 grep</b>：<code>NPC 角色</code> 手工只搜到 1 处，闸一挂上去立刻报出 <b>15 处</b>同类别名写法（都在别的功能 id 里）。<br>
+② <b>「加守卫」前先看产品闸里有没有既存禁令</b>：F1 两项按常规直觉补 <code>useAIReady</code>，直接把 <code>uiUxGuards</code> 打红 —— 闸里白纸黑字写着「这两处的模型来源不是全局活动模型，加了会误禁」。UX 优化撞上既存设计约束时，正解是<b>造一个判据同源的替身</b>，不是硬加。
+</div>
+
+<div class="verdict" style="margin-top:30px">
+<b>建议处置顺序</b>：先修 P0（roundEnd 下标错位 + 补单测）→ 再修 4 条「口径不一致」类 P1（report hidden / aiDataSources 表名 / summarize hidden / schema 星号，都是小改动、零风险）→ 剩余 P1/P2 按老大节奏排。修完必须回跑 <code>tsc</code> / <code>eslint</code> / <code>run-all</code> / 两闸 + <code>audit-scan</code> 对齐。
+</div>
+
+</div>
+</body>
+</html>

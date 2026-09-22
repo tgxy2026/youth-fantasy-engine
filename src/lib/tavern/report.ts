@@ -64,7 +64,11 @@ function fuzzyUnique<T>(rows: T[], pick: (r: T) => string, needle: string): T | 
   const hits = rows.filter(r => {
     const v = pick(r)
     if (!v) return false
-    return v === needle || v.includes(needle) || needle.includes(v)
+    // 🔴 2026-09-22 六维审计 P2：只允许「记录名以 label 开头」或全等，去掉 `needle.includes(v)`
+    //    —— 那个方向会把「label 是长句、某条记录名恰是其子串」也判成命中，
+    //    于是作者被引到一条**并非模型所指**的记录上（虽有唯一性闸兜底，但闸只看命中条数）。
+    //    与红线「判定/匹配一律整行・整词，禁子串」同口径。
+    return v === needle || v.startsWith(needle)
   })
   return hits.length === 1 ? hits[0] : undefined
 }
@@ -178,7 +182,11 @@ export async function generateReport(session: TavernSession, opts: ReportOptions
   ].filter(Boolean).join(' · ')
   const castLine = session.cast.map(c => `${c.name}（${c.role === 'user' ? '作者扮演' : c.role === 'ai' ? 'AI 扮演' : '在场不出声'}）`).join('、')
   const transcript = session.messages
-    .filter(m => m.role !== 'system')
+    // 🔴 2026-09-22 六维审计 P1：**必须同滤 hidden**。
+    //    「隐藏 = 不进上下文」是本项目对作者的一致承诺（prompt.ts / memory.ts / revise.ts 都这么滤），
+    //    报告只滤 system 会漏 —— 作者特意藏起来的内容反倒成了判定合理性的依据，
+    //    与下面「请按角色当场能知道的信息判断」的〖信息边界〗自相矛盾。
+    .filter(m => m.role !== 'system' && !m.hidden)
     .map(m => `${m.role === 'user' ? '〖作者〗' : '〖AI〗'}${m.content}`)
     .join('\n')
   const body = transcript.length > cap ? transcript.slice(-cap) : transcript

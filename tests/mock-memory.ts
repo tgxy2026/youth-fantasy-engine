@@ -21,6 +21,26 @@ function storeOf(name: string): Map<string, unknown> {
 
 export function __resetMockStores() { stores.clear() }
 
+/**
+ * 让指定 store 的「读」故意抛错，模拟真实的存储读失败（writeLocked / 云同步瞬时失败 / 磁盘错误）。
+ *
+ * 为什么需要它：ESM 的命名空间对象（`import * as store from '…/store'`）**只有 getter、不可赋值**，
+ * 所以测试里没法 `store.getMemory = …` 打桩（会 `TypeError: has only a getter`）。
+ * 从最底层的 StoreOps 注入才是唯一可靠的位置 —— 它上面的每一层（db.getMeta → store.getMemory）
+ * 都会如实把异常往上抛。
+ *
+ * 用法：`__failReads('meta', key => key.includes(':memory:'))` 后记得 `__failReads(null)` 复位。
+ */
+let failReadMatcher: ((store: string, key: string) => boolean) | null = null
+
+export function __failReads(matcher: ((store: string, key: string) => boolean) | null): void {
+  failReadMatcher = matcher
+}
+
+function checkReadFailure(store: string, key: string): void {
+  if (failReadMatcher?.(store, key)) throw new Error(`模拟存储读失败：${store}/${key}`)
+}
+
 /** 全库快照（幂等性对比用）：按 store 名 → 排序后的 JSON 行 */
 export function __dumpAll(): string {
   const out: string[] = []
@@ -36,6 +56,7 @@ export const memoryOps = {
     return [...storeOf(store).values()] as T[]
   },
   async get<T>(store: string, key: string): Promise<T | undefined> {
+    checkReadFailure(store, key)
     return storeOf(store).get(key) as T | undefined
   },
   async put(store: string, value: unknown): Promise<void> {

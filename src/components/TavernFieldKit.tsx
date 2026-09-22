@@ -19,7 +19,8 @@ import { bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
 
 /** 输入框外观（不含字号——字号由 AutoTextarea 的 textClass / input 自己带，避免两处各写一个 size 类打架） */
 export const BOX = 'bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50'
-export const NUM = `${BOX} w-full`
+// 2026-09-22 六维审计 F2：本文件内部使用，无需 export（原先多余导出被审计列为「未被引用」）
+const NUM = `${BOX} w-full`
 
 /**
  * 段内数值组。
@@ -83,7 +84,8 @@ export function Field({ label, hint, footer, children }: {
  * 【为什么数字也在这张表里出】范围与文案收在 `paramGuide.ts`，min/max/step 也由它给 ——
  * 说明与输入框范围若各写一份，日子久了就会对不上，而**说明写错比没写更坏**（测试锁了分段完整性）。
  */
-export function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
+// 2026-09-22 六维审计 F2：同上，仅本文件内 NumField 用
+function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
   const show = useContext(ShowBands)
   if (!show) return null
   const cur = bandOf(guide, value)

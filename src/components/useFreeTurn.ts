@@ -35,6 +35,7 @@ import { primaryAiCharId } from '../lib/tavern/primaryChar'
 import { DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '../lib/tavern/settings'
 import type { PostApplied } from '../lib/tavern/postRules'
 import type { FreeCharacter, FreeSession, CharVars } from '../lib/tavern/types'
+import { useTavernReady } from './useTavernReady'
 
 /** 入参一律来自 `useTavernFreeModel` 的同一次渲染作用域（状态值 + setter / useCallback） */
 type FreeTurnDeps = {
@@ -62,6 +63,14 @@ export function useFreeTurn({
   setCharCard, setCastCards, setPostNotice, setGreeting,
   varKeys, tavernSettings, summaryProviderId, nameOf, refreshSessions,
 }: FreeTurnDeps) {
+  // 🔴 2026-09-22 六维审计 F1：酒馆自由对话原先整条链路没有 AI 就绪守卫。
+  //    判据走**酒馆自己的 provider 链**（会话 model → 面板 defaultProviderId → 全局活动模型），
+  //    与真实发请求时 `resolveTavernProvider` 的解析完全同源 ——
+  //    🔴🔴 绝不能用全局那个就绪 Hook：那会把「全局留空、只在面板指定模型」的有效配置误禁
+  //    （tests/uiUxGuards 专门钉了这条）。会话模型来自本 hook 的 `session` 入参。
+  const tavernReady = useTavernReady(session?.model?.providerId, tavernSettings?.common.defaultProviderId)
+  // 提成标量再进依赖数组：直接写 `tavernReady.ready` 会被 exhaustive-deps 判成缺依赖
+  const aiReadyNow = tavernReady.ready
   const [streaming, setStreaming] = useState(false)
   /** 润色/自动回复生成中（与 streaming 互斥但同属「正在生成」，期间禁用快捷条与发送） */
   const [assistBusy, setAssistBusy] = useState(false)
@@ -121,6 +130,14 @@ export function useFreeTurn({
     // 🔴 归档后只读：这一场已经整理归档再去改它，记忆与日记就会和正文对不上
     if (session.endedAt) {
       showToast('本轮对话已结束 —— 想接着聊请新开一场', 'info')
+      return
+    }
+    // 🔴 2026-09-22 六维审计 F1：**没配模型时不能"点了没反应"**。
+    //    沿用上面「生成中」那条的范式（toast 明说原因，而不是静默失败）。
+    //    酒馆自由对话原先整条链路都没有就绪守卫，未配模型时点发送会走到 provider 里抛错，
+    //    报错还可能被流式状态机吞掉 —— 作者只会觉得"这个功能坏了"。
+    if (!aiReadyNow) {
+      showToast('还没配置可用的模型 —— 请先到「模型设置」里配好，再来聊', 'info')
       return
     }
     if (!preset) {
@@ -208,7 +225,7 @@ export function useFreeTurn({
         streamingHintRef.current = false
       }
     }
-  }, [input, session, charCard, streaming, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf, persistCharVars, setSession, setInput, setSpeakNext, setPostNotice, setGreeting])
+  }, [input, session, charCard, streaming, aiReadyNow, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf, persistCharVars, setSession, setInput, setSpeakNext, setPostNotice, setGreeting])
   const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
   /**
    * 重说：多角色同场时**保持原来的说话人** —— 同一轮换个人接话，观感很怪。
