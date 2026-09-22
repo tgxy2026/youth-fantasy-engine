@@ -315,7 +315,10 @@ export default function OutlineSheet({ tab }: Props) {
                     <ChevronDown size={12} />
                   </Button>
                   <span className="flex-1" />
-                  <Button variant="icon-danger" onClick={e => { e.stopPropagation(); removeRecord(rec.id) }} className="p-0.5" title={`删除该${noun}`}>
+                  {/* 🔴 2026-09-22 六维审计 P2：与 `AIConfigPanel` 同一个病 —— `icon-danger` 没传 size
+                      ⇒ 走 ICON_SIZE.sm = h-8(32px)，而同一操作条左端的「上移 / 下移」是 `iconOnly size="xs"`(24px)，
+                      被 `<span className="flex-1" />` 撑到两端后**差 8px**。补 `iconOnly size="xs"` 对齐。 */}
+                  <Button variant="icon-danger" iconOnly size="xs" onClick={e => { e.stopPropagation(); removeRecord(rec.id) }} title={`删除该${noun}`}>
                     <Trash2 size={12} />
                   </Button>
                 </div>

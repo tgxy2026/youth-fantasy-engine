@@ -273,7 +273,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         {testingId === p.id ? '测试中…' : '测试'}
                       </Button>
                       <Button variant="bare" iconOnly size="xs" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
-                      <Button variant="icon-danger" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0 p-1"><Trash2 size={12} /></Button>
+                      {/* 🔴 2026-09-22 六维审计 P2：原来没传 size ⇒ `icon-danger` 走 ICON_SIZE.sm = h-8(32px)，
+                          与同排的编辑键（`iconOnly size="xs"` = h-6/24px）**差 8px**，违反「同排同 size」。
+                          补 `iconOnly size="xs"` 对齐；顺带去掉 `p-1`（ICON_SIZE 已定宽高，再加 padding 只会挤压图标）。 */}
+                      {/* 🔴 2026-09-22 六维审计 P2：原来没传 size ⇒ `icon-danger` 走 ICON_SIZE.sm = h-8(32px)，
+                          与同排的编辑键（`iconOnly size="xs"` = h-6/24px）**差 8px**，违反「同排同 size」。
+                          补 `iconOnly size="xs"` 对齐；顺带去掉 `p-1`（ICON_SIZE 已定宽高，再加 padding 只会挤压图标）。 */}
+                      <Button variant="icon-danger" iconOnly size="xs" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0"><Trash2 size={12} /></Button>
                     </div>
                     {testingId === p.id && (
                       <div className="px-3 pb-2 text-11 text-ink-400 flex items-center gap-1.5">
