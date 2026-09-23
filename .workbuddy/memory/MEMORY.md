@@ -105,10 +105,10 @@
   （tabId `worldbase-sub`/`power-sub`，**不在 TABS**）+ 活跃态在 `settingsKV`；🔴 **只喂活跃子项**、
   **单世界零变化**、离开页签必落库草稿。
 - 🔴 发布链＝skill `novel-studio-packaging`＋`gitee-publish`；🔴 快照 sync 后**必 `git checkout -- .gitignore`**（每轮被覆盖丢密钥防护）。
-- 2.4.0/2.4.1 详情见 `docs/2.4.0-开发记录.md`。
+- 2.4.0/2.4.1 见 `docs/2.4.0-开发记录.md`。
 
 ## 对外推广
-- 🔴 文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→「口令」）；链接压最末＋后有缓冲（见 `docs/小黑盒推广帖/`）。
-- 🔴 **发帖顺序**：稿里承诺的版本号须**先在夸克盘＋Gitee 上架**再发帖。第 0/1/2 篇已发、第 3 篇待发、第 4 篇＝世界构建。
-- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。对外：Gitee **2.4.3**／`1162649`；⚠️ 夸克盘只到 **2.4.0**（09-23 核）。截图按篇号。
-- 🔴 Gitee 令牌常驻 `G:/AI软件/.gitee-token.txt`。🔴 push 只需 `GIT_CONFIG_NOSYSTEM=1`；🔴🔴 **绝不可再加 `GIT_CONFIG_GLOBAL=NUL`**（屏蔽 GCM ⇒ 静默挂死）。
+- 🔴 文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→「口令」）；链接压最末＋后有缓冲。
+- 🔴 **发帖顺序**：承诺的版本号须**先在夸克盘＋Gitee 上架**再发帖。第 0/1/2 篇已发、第 3 篇待发、第 4 篇＝世界构建。
+- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。对外：Gitee **2.4.3**／`1162649`；夸克也有 **2.4.3**（🔴 在「2.4.0版本」目录里——该盘习惯＝主版本目录放系列最新补丁，核版本看**文件名**别信目录名）。
+- 🔴 令牌 `G:/AI软件/.gitee-token.txt`。🔴 push 只需 `GIT_CONFIG_NOSYSTEM=1`；🔴🔴 **绝不可再加 `GIT_CONFIG_GLOBAL=NUL`**（屏蔽 GCM ⇒ 静默挂死）。
