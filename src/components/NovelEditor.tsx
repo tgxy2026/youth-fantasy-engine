@@ -30,6 +30,7 @@ import { INLINE_SUGGEST_LIMITS, type InlineSuggestLength } from '../lib/aiTasks'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import NovelEditorChapterTree from './NovelEditorChapterTree'
+import ExportFormatDialog from './ExportFormatDialog'
 
 interface Props {
   onStatsChange?: () => void
@@ -83,6 +84,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
     modal, setModal, exportOpen, setExportOpen, styleNotePrompt, setStyleNotePrompt, namePrompt, setNamePrompt, jieWenJiOpen, setJieWenJiOpen,
+    // C6 导出格式弹窗
+    exportFormatTab, setExportFormatTab,
     // 编辑器缩进（2.4.0 · A5）：缩进单位偏好；缩进动作见下方 onIndentKeyDown / applyIndent
     indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出
@@ -374,7 +377,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       <div className="my-1 mx-2 border-t border-ink-700" />
                       <div className="px-3 py-1 text-10 text-ink-500">导出全文（多格式）</div>
                       <Button variant="bare"
-                        onClick={() => runExport(m => m.exportBookMD(projectName, volumes, chapters))}
+                        onClick={() => { setExportOpen(false); setExportFormatTab('markdown') }}
                         className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（Markdown）
@@ -392,9 +395,9 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                         <Upload size={11} className="text-amber" /> 导出全书（DOCX）
                       </Button>
                       <Button variant="bare"
-                        onClick={() => runExport(m => m.exportBookPlatformText(projectName, volumes, chapters))}
+                        onClick={() => { setExportOpen(false); setExportFormatTab('platform') }}
                         className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                        title="干净纯文本，适配起点 / 番茄等网文平台粘贴"
+                        title="干净纯文本，可配章节标题样式 / 段落间距 / 卷标题 / 附设定集"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（平台粘贴版）
                       </Button>
@@ -899,6 +902,15 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
           showToast(val ? '已设置伴写文风补充' : '已清空伴写文风补充', 'success')
         }}
         onCancel={() => setStyleNotePrompt(false)}
+      />
+      {/* C6（2.4.2）导出格式：平台粘贴版参数 + Markdown 标题层级 */}
+      <ExportFormatDialog
+        open={exportFormatTab !== null}
+        onClose={() => setExportFormatTab(null)}
+        projectName={projectName}
+        volumes={volumes}
+        chapters={chapters}
+        initialTab={exportFormatTab ?? 'platform'}
       />
     </div>
   )

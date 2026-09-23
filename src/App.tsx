@@ -1,14 +1,17 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import { Z } from './lib/zLayer'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import NovelEditor from './components/NovelEditor'
 import FormSheet from './components/FormSheet'
+import WorldSetSheet from './components/WorldSetSheet'
 import TableSheet from './components/TableSheet'
 import CharacterSheet from './components/CharacterSheet'
 import OutlineSheet from './components/OutlineSheet'
 import ProjectHub from './components/ProjectHub'
 import AboutPage from './components/AboutPage'
 import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
+import { isWorldSetTab } from './lib/worldSets'
 import * as db from './lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from './lib/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop } from './lib/desktop'
@@ -393,7 +396,11 @@ export default function App() {
     if (!tab) return <div className="p-8">页签不存在</div>
     switch (tab.type) {
       case 'form':
-        return <FormSheet key={tab.id} tab={tab} />
+        // 世界观 / 力量体系是「母子结构」表（C10 · 2.4.2）：母级（全书统一）+ 可多建的子世界。
+        // 其余表单型页签仍然是一页一份的 FormSheet。
+        return isWorldSetTab(tab.id)
+          ? <WorldSetSheet key={tab.id} tab={tab} />
+          : <FormSheet key={tab.id} tab={tab} />
       case 'table':
         return <TableSheet key={tab.id} tab={tab} onNavigate={navigate} ctx={visCtx} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
       case 'card':
@@ -421,10 +428,10 @@ export default function App() {
       {/* v1.3 幻想工作台背景：纯线条浅金线稿，透明底、若隐若现。
           负 z-index 子元素绘制于 body 背景之上、半透明面板之下，故可从面板后透出；
           父容器设为 bg-transparent，避免不透明背景把装饰层盖住；
-          主题色由 CSS 变量驱动，切换主题时底色随变；pointer-events-none 不挡交互，层级远低于弹窗(z-50) */}
+          主题色由 CSS 变量驱动，切换主题时底色随变；pointer-events-none 不挡交互，层号走 Z.pageBackdrop */}
       <div
-        className="absolute inset-0 -z-10 pointer-events-none bg-cover bg-center bg-no-repeat opacity-100"
-        style={{ backgroundImage: `url(${workbenchBg})` }}
+        className="absolute inset-0 pointer-events-none bg-cover bg-center bg-no-repeat opacity-100"
+        style={{ backgroundImage: `url(${workbenchBg})`, zIndex: Z.pageBackdrop }}
         aria-hidden
       />
       <Sidebar

@@ -14,7 +14,7 @@
 //
 // ⚠️ 这些断言无法靠 tsc 或端到端点击可靠覆盖（需要一个已开启云同步的环境），故必须先锁死。
 import * as db from '../src/lib/db'
-import { createCloudStore, SYNC_STORES } from '../src/lib/syncCore'
+import { createCloudStore, SYNC_STORES, LOCAL_ONLY_STORES } from '../src/lib/syncCore'
 import type { StoreOps } from '../src/lib/storeOps'
 import type { SyncTransport } from '../src/lib/syncTransport'
 import { memoryOps, __resetMockStores } from './mock-memory'
@@ -129,6 +129,26 @@ async function main() {
     await down.put('backups', { id: 'b2' })
     const after = local.calls.filter(c => c === 'local:put:backups').length
     ok('云端不可用 + backups：仍落本地且只落一次（短路优先于回退，不重复写）', after - before === 1, `增量=${after - before}`)
+
+    // C2（2.4.2）：backupPayloads 与 backups 同属本地专属，短路行为必须一模一样
+    const p0 = local.calls.filter(c => c === 'local:put:backupPayloads').length
+    await down.put('backupPayloads', { id: 'pl1', projectId: 'p1', bundle: {} })
+    const p1 = local.calls.filter(c => c === 'local:put:backupPayloads').length
+    ok('云端不可用 + backupPayloads：仍落本地且只落一次', p1 - p0 === 1, `增量=${p1 - p0}`)
+    ok('backupPayloads 的读写没有走云端', !cloud.calls.some(c => c.includes('backupPayloads')), cloud.calls.join(','))
+  }
+
+  // ---------- 4b) 云端可用时，本地专属 store 也必须落本地（C2 关键：否则载荷进内存 cache 刷新即丢） ----------
+  {
+    const cloud = stubCloud('cloud')
+    const local = spyLocal('local')
+    const up = db.makeCloudStoreWrapper(cloud.ops, local.ops, () => false)
+
+    await up.put('backupPayloads', { id: 'pl2', projectId: 'p1', bundle: {} })
+    ok('云端可用 + backupPayloads：仍短路落本地', local.has('local:put:backupPayloads'))
+    ok('云端可用 + backupPayloads：一条都没进云端', !cloud.calls.some(c => c.includes('backupPayloads')), cloud.calls.join(','))
+    await up.getAll('backupPayloads')
+    ok('读也走本地', local.has('local:getAll:backupPayloads'))
   }
 
   // ---------- 5) 播种口径：seedFromLocal 不再白读 backups ----------
@@ -144,8 +164,12 @@ async function main() {
       // 而 seen 在 push 之前就已填充完毕，故忽略之（不影响结论）。
     }
     ok('seedFromLocal 不读 backups（本地专属，读了也没有下游消费者）', !seen.includes('backups'), seen.join(','))
-    ok('seedFromLocal 仍遍历其余全部 store（未误伤）', seen.length === SYNC_STORES.length - 1,
-      `实际=${seen.length} 期望=${SYNC_STORES.length - 1}`)
+    // C2（2.4.2）：本地专属 store 从一个变两个 —— 断言改用**单一判据常量**，
+    // 以后再新增本地专属 store 时这里自动跟上（原先写死 `- 1`，本轮就红了）
+    ok('seedFromLocal 也不读 backupPayloads（C2 新增的本地专属 store）', !seen.includes('backupPayloads'), seen.join(','))
+    ok('seedFromLocal 仍遍历其余全部 store（未误伤）',
+      seen.length === SYNC_STORES.length - LOCAL_ONLY_STORES.length,
+      `实际=${seen.length} 期望=${SYNC_STORES.length - LOCAL_ONLY_STORES.length}`)
   }
 
   console.log(`\ncloudStoreWrapper: ${pass} passed, ${fail} failed`)

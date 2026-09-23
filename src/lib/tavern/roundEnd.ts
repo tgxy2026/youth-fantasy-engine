@@ -24,6 +24,8 @@ import { proposeCardRevisions, type CardRevision } from './revise'
 import { recordVarChanges, turnSeqOf, emptyVars, manualPinnedKeys } from './vars'
 import type { SummaryLimits } from './summarize'
 import { renderFreeCharacter } from './engine'
+// isCancelled 从 '../ai' 取（与 revise.ts 同源）：它不是「酒馆专属」概念，别从 ./provider 绕
+import { isCancelled } from '../ai'
 import type { ChatFn } from './provider'
 import type {
   FreeSession, FreeCharacter, FreeMemory, TavernMessage,
@@ -57,6 +59,13 @@ export type RoundEndResult = {
    *    「本轮已结束 —— N 位角色的记忆已更新」，作者以为收尾是完整的。
    */
   warnings: string[]
+  /**
+   * 是否**有任何一位角色**的记忆被判「整份退化」而回退了旧档案。
+   * 🔴 有它时调用方**不许推进水位线**（2026-09-23 六维审计 P1）：退化意味着这段对话没被总结，
+   *    推进水位等于把它永久越过 —— 下次 `messagesAfterWatermark` 拿到空数组，那一段再也不进记忆。
+   *    刻意与 `warnings` 分开：warnings 是给人看的文案，措辞随时会改，不能拿来当判据。
+   */
+  memoryDegraded: boolean
   endedAt: number
 }
 
@@ -125,6 +134,8 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
    *   ⚠️ 只对**用户扮演的那一位**生效；AI 扮演的角色照旧写日记（`computed[].journal` 用得上）。
    */
   const warnings: string[] = []
+  /** 与 warnings 分开记（见 RoundEndResult.memoryDegraded 的说明） */
+  let memoryDegraded = false
   // 🔴🔴 2026-09-22 六维审计 P0：**必须定长**，不能 push ——
   //    下面读记忆失败会 `continue`，push 版会让数组比 `cards` 短，而落库循环按 `cards[i]`
   //    取 `computed[i]` ⇒ **把一个角色的记忆写进另一个角色的档案**（不可逆），末位还越界抛错。
@@ -164,7 +175,10 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
       chatFn,
       signal,
       // 记忆被判「整份退化」时如实上报（档案已回退旧值，见 memory.ts 的 isMemoryDegraded）
-      onDegraded: (reason: string) => warnings.push(`${c.name || '一位角色'}的记忆：${reason}`),
+      onDegraded: (reason: string) => {
+        memoryDegraded = true
+        warnings.push(`${c.name || '一位角色'}的记忆：${reason}`)
+      },
     }
     const got = c.id === session.userCharId
       ? { memory: await summarizeMemory(shared), journal: '' }
@@ -232,6 +246,10 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
         await store.saveFreeChar({ ...primary, vars: cardVars })
       }
     } catch (e) {
+      // 🔴 中止必须**向上抛**（2026-09-23 六维审计）：原先与「算不出来」合并处理 ⇒ runRoundEnd
+      //    照常返回、调用方照常推进水位线并打上 endedAt，会话被归档只读，而作者以为自己已经停下了。
+      //    这与界面承诺的「中止时没有写入任何内容」直接冲突（见 useFreeRoundEnd 的 catch）。
+      if (isCancelled(e)) throw e
       // 数值算不出来，这一场照样归档 —— 但**必须如实说**（2026-09-19 六维审计 P0-1）
       varChanges = []
       warnings.push('本场数值未算出：' + (e instanceof Error ? e.message : String(e)))
@@ -257,13 +275,14 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
       }
       proposals = out
     } catch (e) {
+      if (isCancelled(e)) throw e // 同上：中止不吞，交给调用方按「中止」处理
       proposals = []
       warnings.push('设定审查未完成：' + (e instanceof Error ? e.message : String(e)))
     }
   }
 
   onProgress?.({ stage: 'done', cur: total, total })
-  return { memories, journals, vars: nextVars, varChanges, proposals, warnings, endedAt: Date.now() }
+  return { memories, journals, vars: nextVars, varChanges, proposals, warnings, memoryDegraded, endedAt: Date.now() }
 }
 
 /** 组装一条日记：记的是「这一场发生了什么」，供作者回头翻，不进任何提示词 */

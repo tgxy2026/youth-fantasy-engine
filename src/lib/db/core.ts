@@ -17,15 +17,16 @@ import {
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo, type SyncDirHandle,
 } from '../desktopCloudSync'
-import { SYNC_STORES, totalRecords, type SyncStores, type SyncRow } from '../syncCore'
+import { SYNC_STORES, totalRecords, isLocalOnlyStore, type SyncStores, type SyncRow } from '../syncCore'
 import { isDeleted } from '../syncTombstone'
 import {
   migrateFreshInstall, migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5,
   migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10,
+  migrateV10toV11,
 } from './idbMigrations'
 
 const DB_NAME = 'novel-studio'
-const DB_VERSION = 10
+const DB_VERSION = 11
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 /** 当前打开的项目 id（App 切换项目时设置） */
@@ -54,6 +55,7 @@ function getDB() {
         if (oldVersion < 8) migrateV7toV8(tx)
         if (oldVersion < 9) migrateV8toV9(tx)
         if (oldVersion < 10) migrateV9toV10(db)
+        if (oldVersion < 11) migrateV10toV11(db)
       },
     }).catch(err => {
       // 失败时重置缓存，避免 rejected promise 被永久缓存（如隐私模式下打开失败后所有后续调用都失败）
@@ -138,10 +140,17 @@ const warnMirrorFail = (what: string) => (e: unknown) => {
   console.warn(`[db] ${what}失败（兜底路径，已忽略，不阻断流程）：`, e)
 }
 
-async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Promise<void> {
+/**
+ * 把云端 cache 镜像到本地。
+ * 🔴 `overwrite` **刻意不给默认值**（2026-09-23 六维审计）：原来的 `= true`（整体覆盖本地）
+ *    语义正好是「闩锁期用旧快照盖掉本地新稿」，而它恰恰是最危险的那个方向。
+ *    去掉默认值后，每个调用点都必须显式说清「这次是覆盖还是只补缺失」——
+ *    新增调用点时编译器会替你问这个问题。
+ */
+async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite: boolean): Promise<void> {
   const tasks: Promise<unknown>[] = []
   for (const [store, rows] of Object.entries(cache)) {
-    if (store === 'backups') continue
+    if (isLocalOnlyStore(store)) continue
     const list = store === 'meta'
       ? rows.filter(r => !isExcludedMetaKey(r?.key))
       : rows
@@ -267,11 +276,12 @@ export function makeCloudStoreWrapper(cloud: StoreOps, local: StoreOps, isUnavai
   type OpFn = (...a: unknown[]) => Promise<unknown>
 
   async function cloudOrLocal(op: keyof StoreOps, ...args: unknown[]): Promise<unknown> {
-    // 🔴 backups 是「本地专属保险」(#026)：syncCore.liveStores 上传前会把它从载荷里剔除
-    // （云端永不参与备份的增删）。因此这里必须直接落本地——否则会出现「云端不要、本地不写」
-    // 的两头不靠：备份只存在于云端实例的内存 cache 里，刷新/关页即丢，备份列表还会显示为空。
-    // 与下面「敏感 meta 走本地」同构，故在唯一入口处统一短路，覆盖 getAll/get/put/del/bulkPut/bulkDel。
-    if (args[0] === 'backups') return (local[op] as OpFn)(...args)
+    // 🔴 本地专属 store（backups / backupPayloads，判据见 syncCore.LOCAL_ONLY_STORES）：
+    //    syncCore.liveStores 上传前会把它从载荷里剔除（云端永不参与其增删）。
+    //    因此这里必须直接落本地——否则会出现「云端不要、本地不写」的两头不靠：
+    //    记录只存在于云端实例的内存 cache 里，刷新/关页即丢。
+    //    与下面「敏感 meta 走本地」同构，故在唯一入口处统一短路，覆盖 getAll/get/put/del/bulkPut/bulkDel。
+    if (isLocalOnlyStore(String(args[0]))) return (local[op] as OpFn)(...args)
     if (isUnavailable()) return (local[op] as OpFn)(...args)
     const r = await (cloud[op] as OpFn)(...args)
     return isUnavailable() ? (local[op] as OpFn)(...args) : r
@@ -358,7 +368,8 @@ onDesktopLocalSnapshot(async () => {
   const out: SyncStores = {}
   const failed: string[] = []
   for (const s of SYNC_STORES) {
-    if (s === 'backups') continue
+    // 本地专属 store（backups / backupPayloads）不进本机快照：它们本就在本机，同步层不消费
+    if (isLocalOnlyStore(s)) continue
     try {
       // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
       // 落进同步通用载荷前断言成 SyncRow[] —— 形状由写入方保证
@@ -477,7 +488,7 @@ async function captureSyncData(): Promise<SyncStores> {
   const out: SyncStores = {}
   const failed: string[] = []
   for (const s of SYNC_STORES) {
-    if (s === 'backups') continue
+    if (isLocalOnlyStore(s)) continue
     try {
       out[s] = (await ops.getAll(s)) || []
     } catch {

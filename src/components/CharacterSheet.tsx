@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { Z } from '../lib/zLayer'
 import type { TabDef, CardRecord } from '../lib/types'
 import { SABC_LABELS, CARD_TABLE_REF_FIELDS } from '../lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '../lib/db'
@@ -288,7 +289,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 
   return (
     <div className="page-enter">
-      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 z-20 bg-ink-900/95 backdrop-blur py-3">
+      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>

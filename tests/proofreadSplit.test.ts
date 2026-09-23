@@ -88,7 +88,14 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 // ---------- ⑤ 界面：两处入口都拆开 ----------
 {
   const ed = read('src/components/EditorModals.tsx')
-  const jw = read('src/components/JieWenJi.tsx')
+  // C1（2.4.2）拆分后，颉文姬的诊断/校对实现分散在四处（主文件 + 共用小件 + 状态 hook + 诊室面板）。
+  // 断言口径不变 —— 只是把素材来源扩成一组文件；以后再拆只需往这个数组加路径。
+  const jw = [
+    'src/components/JieWenJi.tsx',
+    'src/components/jieWenJiParts.tsx',
+    'src/components/useJieWenJiModel.ts',
+    'src/components/JieWenJiClinic.tsx',
+  ].map(read).join('\n')
 
   ok('编辑器校对弹窗两个按钮分开跑',
     /SCOPE_ORDER\.map/.test(ed) && /查错别字与语病/.test(ed) && /查逻辑与设定矛盾/.test(ed))

@@ -25,7 +25,7 @@ import {
   FACTS_MAX_LINES,
   MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
   SUMMARY_LOCK_TTL_MS,
-  type FreeMemory, type FreeSession,
+  type FreeMemory, type FreeSession, type TavernWatermark,
 } from './types'
 
 /** 六栏的键（收窄成「只有这六栏」，避免索引赋值时把 charId / updatedAt 混进来） */
@@ -298,6 +298,24 @@ export function nextWatermark(session: Pick<FreeSession, 'messages'>): { message
   const msgs = session.messages.filter(m => m.role !== 'system' && !m.hidden)
   const last = msgs[msgs.length - 1]
   return last ? { messageId: last.id, at: Date.now() } : null
+}
+
+/**
+ * 收尾之后该落哪个水位线。
+ *
+ * 🔴 **有角色记忆被判「整份退化」时必须保留旧水位**（2026-09-23 六维审计 P1）：
+ *    退化意味着那段对话**没被总结进去**（summarizeMemory 返回的是旧档案）；此时若照常推进，
+ *    下一轮 `messagesAfterWatermark` / `pendingMessages` 就拿到空数组 —— 那一段**永久不再进记忆**
+ *    （静默失忆）。而界面还提示「本次未覆盖旧档案」暗示可以重试，实际已无重试入口。
+ *
+ * 两处调用方（自由对话 / 剧情推演）共用本函数 —— 原先各自手写一遍，是同一口径的两份拷贝。
+ */
+export function watermarkAfterRoundEnd(
+  prev: TavernWatermark | undefined,
+  next: TavernWatermark | null,
+  degraded: boolean,
+): TavernWatermark | undefined {
+  return degraded ? prev : (next ?? prev)
 }
 
 // ==================== 跨实例锁（方案 §4.6 的②③） ====================

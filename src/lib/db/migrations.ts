@@ -209,6 +209,15 @@ export async function migrateMiscSettingsToCards(): Promise<number> {
  *       请自行再调 schema.refreshVolumeTabs()——db 层不引用 schema，以免形成循环依赖。
  */
 export async function runMigrations(): Promise<void> {
+  // 🔴 备份载荷分离（C2 · 2.4.2）放在守卫**之前**：backups / backupPayloads 是**跨项目的本地专属**
+  //    store，与「当前打开哪个项目」无关；放在守卫之后，只剩孤儿备份的库就永远迁移不到 ——
+  //    而备份列表在项目管理页也会用到。
+  //    〔2026-09-23 更正〕原文那句「从不打开项目的用户」在当前调用图上不成立（唯一调用点是
+  //    openProject，届时 currentProjectId 已就位）。位置本身是对的 —— 它让迁移函数不依赖任何
+  //    项目上下文，也为将来可能出现的启动期调用点留了余地。
+  await migrateBackupPayloads()
+  // 老库里的检索密钥残留：同样与「当前项目」无关，故也在守卫之前
+  await migrateLegacySearchKey()
   if (!currentProjectId) return
   await migrateProjectTypes()
   await migrateChapterLedger()
@@ -216,4 +225,50 @@ export async function runMigrations(): Promise<void> {
   await migrateGeoMaps()
   // 与上面几步互不相干（只碰 misc-settings 一张表），故放最后，不参与既有的顺序约束
   await migrateMiscSettingsToCards()
+}
+
+/**
+ * 清掉老库里 `tavern.settings` 下的 `search` 残留（2026-09-23 六维审计 P1）。
+ *
+ * 【为什么必须清】云盘同步是**整条 key-value** 写出，没法只排除某个字段；`EXCLUDED_META_KEYS`
+ * 里已经有 `app.search`，但这个密钥在**老库里还有第二份载体** —— 2026-09-15 搬家前它挂在
+ * `tavern.settings.search` 上。写入侧（`saveTavernSettings`）与升级路径
+ * （`upgradeLegacyDefaults`）都会剔它，唯独「从没保存过酒馆设置」的老库会一直留着 ⇒
+ * 开启云盘同步后 apiKey 随 `.yfe` 落到网盘，而检索设置面板的密钥栏明确承诺「只存本机、不上传」。
+ *
+ * 幂等：没有 search 字段直接返回 0；清理失败也不阻断流程（最坏情况与修复前等价）。
+ *
+ * ⚠️ 两个键名写成字面量是**有意**的：`searchSettings.ts` 会 import `./db`（门面），
+ *    本文件若 import 它会直接成环（tests/importCycles 会红）。
+ *    真源：`searchSettings.ts` 的 `K_APP_SEARCH`、`tavern/settings.ts` 的 `K_TAVERN_SETTINGS`。
+ */
+export async function migrateLegacySearchKey(): Promise<number> {
+  const rec = await ops.get<{ key: string; value: Record<string, unknown> }>('meta', 'tavern.settings')
+  const v = rec?.value
+  if (!v || typeof v !== 'object' || !('search' in v)) return 0
+  const { search: _drop, ...rest } = v
+  await ops.put('meta', { key: 'tavern.settings', value: rest })
+  return 1
+}
+
+/**
+ * 备份「元数据 / 载荷」分离（C2 · 2.4.2）：把老记录里的 bundle 搬到 backupPayloads，
+ * backups 只留元数据 + 体积。**幂等**（没有 bundle 的记录直接跳过），可反复跑。
+ *
+ * 🔴 顺序：先写载荷、再改元数据 —— 中途失败最多留下「载荷已搬、元数据还带 bundle」的中间态，
+ *    读取侧两种形态都能吃（见 `withBytes` / `getBackupPayload`），不会丢备份。
+ */
+export async function migrateBackupPayloads(): Promise<number> {
+  const all = await ops.getAll<Record<string, unknown>>('backups')
+  let moved = 0
+  for (const rec of all) {
+    const bundle = rec.bundle as { project?: unknown } | undefined
+    const id = String(rec.id ?? '')
+    if (!bundle || !id) continue
+    await ops.put('backupPayloads', { id, projectId: String(rec.projectId ?? ''), bundle })
+    const { bundle: _drop, ...rest } = rec
+    await ops.put('backups', { ...rest, bytes: JSON.stringify(bundle).length })
+    moved++
+  }
+  return moved
 }

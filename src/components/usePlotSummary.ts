@@ -20,7 +20,7 @@ import { splitCast } from '../lib/tavern/engine'
 import { getTavernSettings, type TavernSettings } from '../lib/tavern/settings'
 import { summarizeMemory } from '../lib/tavern/summarize'
 import {
-  messagesAfterWatermark, nextWatermark, memoryToText, parseMemoryText,
+  messagesAfterWatermark, nextWatermark, watermarkAfterRoundEnd, memoryToText, parseMemoryText,
   limitsOf, acquireSummaryLock, releaseSummaryLock,
 } from '../lib/tavern/memory'
 import type { TavernSession } from '../lib/tavern/types'
@@ -98,11 +98,12 @@ export function usePlotSummary({ setSession }: PlotSummaryArgs) {
         onDegraded: (reason: string) => degraded.push(reason),
         signal: ctl.signal,
       })
-      const wm = nextWatermark(s)
+      // 🔴 退化则**保留旧水位** —— 决策收在 `memory.watermarkAfterRoundEnd`（两处调用方共用一份口径）。
+      //    写成 `nextWatermark() ?? s.watermark` 会把那段没被总结的对话永久越过。
       const updated: TavernSession = {
         ...s,
         memory: memoryToText(mem),
-        watermark: wm ?? s.watermark,
+        watermark: watermarkAfterRoundEnd(s.watermark, nextWatermark(s), degraded.length > 0),
         updatedAt: Date.now(),
       }
       await store.saveSession(updated)

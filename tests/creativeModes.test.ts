@@ -24,6 +24,21 @@ const read = (rel: string) => {
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
 }
 
+/**
+ * C1（2.4.2）拆分后：创意写作的实现分散在 7 个文件（主文件 + 共用小件 + 状态 hook + 四个子区块）。
+ * 断言口径不变 —— 只是把素材来源扩成一组文件；以后再拆只需往这个数组加路径。
+ */
+const CWP_FILES = [
+  'src/components/CreativeWritingPanel.tsx',
+  'src/components/creativeWritingParts.tsx',
+  'src/components/useCreativeWritingModel.ts',
+  'src/components/CreativeSetupSection.tsx',
+  'src/components/CreativeFlowSections.tsx',
+  'src/components/CreativeRewriteSection.tsx',
+  'src/components/CreativeDialogs.tsx',
+]
+const readCwp = () => CWP_FILES.map(read).join('\n')
+
 console.log('\n—— creativeModes 用例开始 ——')
 
 // ============ ① 阶段表：两阶段各自跑什么（2026-09-20 长篇分批改造后） ============
@@ -90,7 +105,7 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('会话层存在（切页签不丢状态的根）', session.length > 0)
 
   // ---------- 产出目标（2026-09-19 起：开口就分清"只要规划"还是"连正文一起写"）----------
-  const panel = read('src/components/CreativeWritingPanel.tsx')
+  const panel = readCwp()
   ok('🔴 先选篇幅、再选「这一次要产出什么」',
     /LENGTH_META/.test(panel) && /TARGETS_BY_LENGTH/.test(panel) && /updateInputs\(\{ target: k \}\)/.test(panel))
   // ---------- 长篇分批（2026-09-20 老大要求）----------
@@ -186,7 +201,7 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('🔴 提示条文案不含 markdown 星号（界面是纯文本渲染，星号会原样露出）',
     !/\*\*/.test(dealText), (dealText.match(/\*\*[^*]{0,20}/) || [''])[0])
   const bb = read('src/components/BookBreakPanel.tsx')
-  const cwp = read('src/components/CreativeWritingPanel.tsx')
+  const cwp = readCwp()
   ok('🔴 拆书页挂了提示条', bb.includes('<NewProjectAdvice kind="bookbreak" />'))
   ok('🔴 创意写作页挂了提示条', cwp.includes('<NewProjectAdvice kind="creative-writing" />'))
   ok('两个提示条都点名了「完整项目」（老大要求的"开启全部功能"的准确说法）',

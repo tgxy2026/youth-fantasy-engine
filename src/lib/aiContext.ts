@@ -15,6 +15,7 @@ import { readAliases } from './aliases'
 import { splitNames } from './audit'
 import { clipText } from './textClip'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
+import { composeSubSetsBlock, isWorldSetTab, splitActive } from './worldSets'
 import type { Chapter, TabDef, Volume } from './types'
 
 export interface ProjectContextOptions {
@@ -336,6 +337,32 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
   return lines.join('\n')
 }
 
+/**
+ * 子世界段（C10 · 2.4.2）：**只有活跃的子项才进上下文**。
+ *
+ * 返回 `null` 表示「这张表还没建过任何子项」⇒ 调用方按老样子只渲染母级，
+ * 于是**单世界用户的上下文与改动前一字不差**（这是本次最要紧的回归保护）。
+ *
+ * 🔴 末尾必须写「另有 N 个已完结的子世界，未发送」—— 与 `BY_BUDGET`（按预算裁剪并注明被略过）
+ *    同一个诚实口径。不写的话，作者会以为 AI 读过全部子世界，进而误判模型"怎么没记住那个副本"。
+ * 🔴 子项正文复用 `renderForm`：字段键格式与母级完全相同（都是 `模块名::字段名`），
+ *    所以口径天然一致，不会出现「母级按模块顺序、子级按字典序」这种偏差。
+ */
+async function renderActiveSubSets(tab: TabDef, o: RenderOpts = {}): Promise<string | null> {
+  try {
+    const subs = await db.getSubSets(tab.id)
+    if (subs.length === 0) return null
+    const { active, closed } = splitActive(subs, await db.getActiveSubIds(tab.id))
+    return composeSubSetsBlock(
+      active.map(s => ({ name: s.name, body: renderForm(tab, s.data ?? {}, o) })),
+      active.length + closed.length,
+    )
+  } catch {
+    // 单段读取失败就当这张表没建过子项（与 sectionOf 同口径：拿不到就少带一段，绝不报错）
+    return null
+  }
+}
+
 /** 卡片型（角色卡 / 分卷大纲 / 章节细纲）：每条一段 */
 function renderCards(tab: TabDef, recs: { name: string; data: Record<string, string> }[], o: RenderOpts = {}): string {
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
@@ -400,7 +427,15 @@ async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
 /** 单个页签的资料段（空数据返回空串） */
 async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): Promise<string> {
   try {
-    if (tab.type === 'form') return renderForm(tab, await db.getFormData(tab.id), o)
+    if (tab.type === 'form') {
+      const main = renderForm(tab, await db.getFormData(tab.id), o)
+      // 世界观 / 力量体系是「母子结构」表（C10）：建过子项才引入母／子两层标题。
+      // 🔴 没建过子项 ⇒ 原样返回（单世界用户的上下文与改动前**一字不差**）。
+      if (!isWorldSetTab(tab.id)) return main
+      const sub = await renderActiveSubSets(tab, o)
+      if (sub === null) return main
+      return [`〖全书统一〗${main ? '\n' + main : '\n（尚未填写）'}`, sub].join('\n\n')
+    }
     if (tab.type === 'card') return renderCards(tab, await db.getCardRecords(tab.id), o)
     if (tab.type === 'table') {
       const rows = await db.getTableRows(tab.id)

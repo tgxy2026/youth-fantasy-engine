@@ -8,7 +8,7 @@
 import {
   MEMORY_SECTIONS, emptyMemory, memoryToText, memoryChars, isMemoryEmpty,
   parseMemoryText, rollDiaries, trimMemory,
-  nextWatermark, acquireSummaryLock, releaseSummaryLock,
+  nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, releaseSummaryLock,
 } from '../src/lib/tavern/memory'
 import { summarizeMemory, buildSummarySystem, renderTranscript, buildColdStartSystem, coldStartMemory, draftMemoryFromCard } from '../src/lib/tavern/summarize'
 import { formatDate } from '../src/lib/date'
@@ -19,6 +19,7 @@ import {
 } from '../src/lib/tavern/types'
 import type { ChatFn } from '../src/lib/tavern/provider'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
+import fs from 'node:fs'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0
@@ -334,6 +335,33 @@ async function main() {
     ok('冷启动提示词要求日记留空', sys.includes('最近日记：留空'))
     ok('冷启动写明「还没有事件可记」，关键事实留占位（不抄定义性属性）',
       sys.includes('还没有任何事件可记') && sys.includes('还没有发生过任何事'))
+  }
+
+  // ---------- 收尾后水位线的决策：退化则保留旧值（2026-09-23 六维审计 P1）----------
+  //
+  // 退化 = 那段对话**没被总结进去**（summarizeMemory 返回旧档案）。此时推进水位线会让下一轮
+  // `messagesAfterWatermark` 拿到空数组 —— 那一段永久不再进记忆（静默失忆），而界面还提示
+  // 「本次未覆盖旧档案」暗示可重试。决策收在 `watermarkAfterRoundEnd`，两处调用方共用。
+  {
+    const w1 = { messageId: 'm1', at: 1 }
+    const w2 = { messageId: 'm2', at: 2 }
+
+    ok('🔴 退化 ⇒ 保留旧水位（那段没被总结的对话下次还会被算进去）',
+      watermarkAfterRoundEnd(w1, w2, true) === w1)
+    ok('未退化 ⇒ 推进到新水位', watermarkAfterRoundEnd(w1, w2, false) === w2)
+    ok('未退化但算不出新水位 ⇒ 退回旧值（不写成 undefined 把水位线擦掉）',
+      watermarkAfterRoundEnd(w1, null, false) === w1)
+    ok('退化 + 本来就没有旧水位 ⇒ 仍是 undefined', watermarkAfterRoundEnd(undefined, w2, true) === undefined)
+    ok('两边都没有 ⇒ undefined', watermarkAfterRoundEnd(undefined, null, false) === undefined)
+
+    // 🔴 接线：两处调用方必须**真的**用它 —— 抽了不用等于白抽，而上面的单测看不出来
+    const plotHook = fs.readFileSync('src/components/usePlotSummary.ts', 'utf8')
+    const freeHook = fs.readFileSync('src/components/useFreeRoundEnd.ts', 'utf8')
+    ok('接线：剧情推演侧走 watermarkAfterRoundEnd', plotHook.includes('watermarkAfterRoundEnd('))
+    ok('接线：自由对话侧走 watermarkAfterRoundEnd', freeHook.includes('watermarkAfterRoundEnd('))
+    const stillHandwritten = plotHook.includes('? undefined : nextWatermark') || freeHook.includes('memoryDegraded ? s.watermark')
+    ok('接线：两处都不再手写三元判断（口径只留一份）', !stillHandwritten,
+      'plotHandwritten=' + plotHook.includes('? undefined : nextWatermark') + ' freeHandwritten=' + freeHook.includes('memoryDegraded ? s.watermark'))
   }
 
   console.log(`\ntavernMemory: ${pass} passed, ${fail} failed`)

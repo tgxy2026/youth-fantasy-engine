@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Database, ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from './Button'
-import { sourcesOf, summarizeSources, AI_PRUNE_NOTE } from '../lib/aiDataSources'
+import { sourcesOf, summarizeSources, AI_PRUNE_NOTE, AI_WORLD_SET_NOTE, mentionsWorldSet } from '../lib/aiDataSources'
 
 interface Props {
   /** `AI_DATA_SOURCES` 里的功能 id */
@@ -61,6 +61,11 @@ export default function AIDataSourceNote({ feature, compact = false, className =
               </li>
             ))}
           </ul>
+          {/* 母子结构表（C10）：这两张表按「母级 + 活跃子世界」发送。
+              与「不读」清单同理，这句只写在这里一处，免得各功能文案漂移（口径必须与实现同源）。 */}
+          {mentionsWorldSet(f) && (
+            <div className="mt-1.5 text-ink-500 leading-relaxed">{AI_WORLD_SET_NOTE}</div>
+          )}
           {/* 「不读」清单：各功能自己的排除项 + **全局那条**（D 级一律不读，见 AI_PRUNE_NOTE）。
               全局条固定追加，不放进各 feature 的 excludes —— 14 处重复早晚漏改。 */}
           <div className="mt-1.5 border-t border-ink-700/60 pt-1.5">

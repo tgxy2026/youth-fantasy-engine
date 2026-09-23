@@ -15,14 +15,38 @@ import { VOL_LEDGER_PREFIX } from './volumes'
 // #012：每日备份此前不限量，写一年即 365 份全量快照，便携版（单 JSON 全量写盘）会持续膨胀。
 export type BackupKind = 'auto5min' | 'daily' | 'manual'
 
-export interface BackupRecord {
+/**
+ * 备份**元数据**（backups store 从 C2 起只存它）。
+ *
+ * 🔴 为什么拆（C2 · 2.4.2）：原先元数据与整包 bundle 同条记录 ⇒ 列个备份清单就要把每份备份
+ * 全文读出来（UI 还得对每份 `JSON.stringify` 一次算体积）。拆开后列表零成本，
+ * 只有「恢复」与「导出单份备份」才去读 `backupPayloads`。
+ */
+export interface BackupMeta {
   id: string
   projectId: string
   kind: BackupKind
   label: string
   createdAt: number
+  /** 载荷字节数（UTF-8 近似，写入时算一次；列表直接读，不再 stringify） */
+  bytes: number
+}
+
+/** 备份**载荷**（backupPayloads store）：一份整包项目数据 */
+export interface BackupPayload {
+  id: string
+  projectId: string
   bundle: ProjectBundle
 }
+
+/**
+ * v11 之前的老形态：元数据与 bundle 同一条。
+ * ⚠️ 只用于**兼容读取**，绝不写入 —— 数据迁移见 `db/migrations.ts` 的 migrateBackupPayloads。
+ */
+type LegacyBackupRecord = Omit<BackupMeta, 'bytes'> & { bytes?: number; bundle?: ProjectBundle }
+
+/** 兼容别名：界面与旧代码里的 `BackupRecord` 现即元数据（不再含 bundle） */
+export type BackupRecord = BackupMeta
 
 /** 5 分钟自动备份滚动保留上限（#012：60 → 30） */
 export const MAX_AUTO_BACKUPS = 30
@@ -35,59 +59,91 @@ function backupLimit(kind: BackupKind): number {
   return 0 // manual：用户主动留档，永不自动删
 }
 
+/** 载荷字节数（与旧 UI 的 `JSON.stringify(bundle).length` 同口径，保持数字可比） */
+export function payloadBytes(bundle: ProjectBundle): number {
+  return JSON.stringify(bundle).length
+}
+
+/** 老记录补 bytes（未迁移的库里列表仍要显示体积）；已带 bytes 的原样返回 */
+function withBytes(rec: BackupMeta | LegacyBackupRecord): BackupMeta {
+  const b = (rec as LegacyBackupRecord).bytes
+  const bytes = typeof b === 'number' ? b : ((rec as LegacyBackupRecord).bundle ? payloadBytes((rec as LegacyBackupRecord).bundle!) : 0)
+  // 剥掉 legacy 的 bundle —— 元数据出库就只该是元数据，防止调用方误用整包
+  return { id: rec.id, projectId: rec.projectId, kind: rec.kind, label: rec.label, createdAt: rec.createdAt, bytes }
+}
+
 /** 创建一次全量自动备份（默认上限由调用方保证） */
-export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string): Promise<BackupRecord> {
+export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string): Promise<BackupMeta> {
   // 🔴 自动备份**不带**章节快照（2.4.0 · A3）：它是每 5 分钟一次的高频全量，
   //    快照随它走会把本地存储迅速撑大。要带走快照的是「手动导出备份」，那条路径走默认值。
   const bundle = await exportProject(projectId, { includeSnapshots: false })
   const now = Date.now()
-  const rec: BackupRecord = {
-    id: uid(),
+  const id = uid()
+  const meta: BackupMeta = {
+    id,
     projectId,
     kind,
     label: label ?? (kind === 'daily' ? `每日自动备份` : `自动备份`),
     createdAt: now,
-    bundle,
+    bytes: payloadBytes(bundle),
   }
-  await ops.put('backups', rec)
-  // 滚动淘汰：超过该类型上限则删除最早的。手动备份（limit=0）不淘汰。
+  // 先写载荷再写元数据：元数据是「列表看得见的东西」，载荷缺失时列表会立刻暴露（而不是留一份空壳）
+  await ops.put('backupPayloads', { id, projectId, bundle } satisfies BackupPayload)
+  await ops.put('backups', meta)
+  // 滚动淘汰：超过该类型上限则删除最早的（元数据与载荷一起删，避免留下孤儿载荷）。手动备份（limit=0）不淘汰。
   const limit = backupLimit(kind)
   if (limit > 0) {
-    const all = (await ops.getAll<BackupRecord>('backups'))
+    const all = (await ops.getAll<BackupMeta>('backups'))
       .filter(b => b.projectId === projectId && b.kind === kind)
       .sort((a, b) => b.createdAt - a.createdAt)
-    if (all.length > limit) {
-      for (const drop of all.slice(limit)) await ops.del('backups', drop.id)
-    }
+    for (const drop of all.slice(limit)) await deleteBackup(drop.id)
   }
-  return rec
+  return meta
 }
 
-/** 列出某项目的全部备份（按时间倒序） */
-export async function listBackups(projectId: string): Promise<BackupRecord[]> {
-  const all = await ops.getAll<BackupRecord>('backups')
-  return all.filter(b => b.projectId === projectId).sort((a, b) => b.createdAt - a.createdAt)
+/** 列出某项目的全部备份元数据（按时间倒序）—— **不读载荷** */
+export async function listBackups(projectId: string): Promise<BackupMeta[]> {
+  const all = await ops.getAll<BackupMeta | LegacyBackupRecord>('backups')
+  return all
+    .filter(b => b.projectId === projectId)
+    .map(withBytes)
+    .sort((a, b) => b.createdAt - a.createdAt)
 }
 
-async function getBackup(id: string): Promise<BackupRecord | undefined> {
-  return ops.get<BackupRecord>('backups', id)
+/** 读取某份备份的载荷（恢复 / 导出单份备份时才调用）。找不到返回 undefined。 */
+export async function getBackupPayload(id: string): Promise<ProjectBundle | undefined> {
+  const p = await ops.get<BackupPayload>('backupPayloads', id)
+  if (p?.bundle) return p.bundle
+  // 兼容：尚未迁移的老库里，bundle 仍躺在 backups 记录里
+  const legacy = await ops.get<LegacyBackupRecord>('backups', id)
+  return legacy?.bundle
 }
 
+/** 备份总占用（字节）—— 支持按项目子集过滤（孤儿备份统计用） */
+export async function backupsTotalBytes(projectIds?: Set<string>): Promise<number> {
+  const all = await ops.getAll<BackupMeta | LegacyBackupRecord>('backups')
+  return all
+    .filter(b => !projectIds || projectIds.has(b.projectId))
+    .reduce((s, b) => s + withBytes(b).bytes, 0)
+}
+
+/** 删除一份备份：**元数据与载荷一起删**（只删一边就是孤儿载荷，白占空间） */
 export async function deleteBackup(id: string) {
   await ops.del('backups', id)
+  await ops.del('backupPayloads', id)
 }
 
 /** 孤儿备份：备份记录存在但其项目已被删除（删除项目时按约定保留备份，导致此类记录积累） */
-export async function listOrphanBackups(): Promise<BackupRecord[]> {
-  const [all, projs] = await Promise.all([ops.getAll<BackupRecord>('backups'), ops.getAll<{ id: string }>('projects')])
+export async function listOrphanBackups(): Promise<BackupMeta[]> {
+  const [all, projs] = await Promise.all([ops.getAll<BackupMeta | LegacyBackupRecord>('backups'), ops.getAll<{ id: string }>('projects')])
   const pids = new Set(projs.map(p => p.id))
-  return all.filter(b => !pids.has(b.projectId)).sort((a, b) => b.createdAt - a.createdAt)
+  return all.filter(b => !pids.has(b.projectId)).map(withBytes).sort((a, b) => b.createdAt - a.createdAt)
 }
 
 /** 删除全部孤儿备份，返回删除条数 */
 export async function deleteOrphanBackups(): Promise<number> {
   const orphans = await listOrphanBackups()
-  for (const o of orphans) await ops.del('backups', o.id)
+  for (const o of orphans) await deleteBackup(o.id)
   return orphans.length
 }
 
@@ -97,9 +153,61 @@ export async function deleteOrphanBackups(): Promise<number> {
  * 并将书名、封面、类型、简介同步为备份当时的快照。
  */
 export async function restoreBackup(id: string): Promise<void> {
-  const rec = await getBackup(id)
+  const rec = await ops.get<BackupMeta>('backups', id)
   if (!rec) throw new Error('备份不存在')
-  await applyBundleToProject(rec.projectId, rec.bundle)
+  const bundle = await getBackupPayload(id)
+  // 元数据还在、载荷没了（被外部清理过 / 写到一半断电）：必须明确报错，不能"恢复成功"却什么都没恢复
+  if (!bundle) throw new Error('这份备份的数据已经找不到了（元数据仍在，载荷缺失），无法恢复')
+  await applyBundleToProject(rec.projectId, bundle)
+}
+
+// ============ 备份外置（C2 · 2.4.2）============
+//
+// 目的：自动备份只活在软件自己的数据文件里（本机、单点）。把某一份备份**导成磁盘上的独立文件**，
+// 就能丢进云盘 / 移动硬盘，换机或数据文件损坏时还有一条独立退路。
+// ⚠️ 与「迁移包」的分工：迁移包导的是**当前项目**（用于换机搬运）；备份文件导的是**某一份历史备份**。
+
+/** 备份外置文件的格式标记（解析时据此识别，避免把迁移包当备份文件吃进来） */
+export const BACKUP_FILE_KIND = 'yfe-backup'
+export const BACKUP_FILE_VERSION = 1
+
+export interface BackupFile {
+  kind: typeof BACKUP_FILE_KIND
+  version: number
+  exportedAt: number
+  meta: Omit<BackupMeta, 'bytes'>
+  bundle: ProjectBundle
+}
+
+/** 把某份备份打包成外置文件的内容（含元数据 + 载荷）。备份或载荷缺失时返回 null。 */
+export async function buildBackupFile(id: string): Promise<{ filename: string; content: string } | null> {
+  const rec = await ops.get<BackupMeta>('backups', id)
+  const bundle = await getBackupPayload(id)
+  if (!rec || !bundle) return null
+  const file: BackupFile = {
+    kind: BACKUP_FILE_KIND,
+    version: BACKUP_FILE_VERSION,
+    exportedAt: Date.now(),
+    meta: { id: rec.id, projectId: rec.projectId, kind: rec.kind, label: rec.label, createdAt: rec.createdAt },
+    bundle,
+  }
+  const stamp = new Date(rec.createdAt).toISOString().slice(0, 19).replace(/[:T]/g, '-')
+  const name = bundle.project?.name ?? '未命名'
+  return { filename: `青春幻想引擎-备份-${name}-${stamp}.json`, content: JSON.stringify(file, null, 2) }
+}
+
+/** 解析外置备份文件；格式不符（如迁移包）抛出可读错误。 */
+export function parseBackupFile(text: string): BackupFile {
+  const parsed = JSON.parse(text) as Partial<BackupFile> & { project?: unknown }
+  if (parsed?.kind !== BACKUP_FILE_KIND || !parsed.bundle?.project) {
+    throw new Error('这不是备份文件（可能选到了迁移包 —— 迁移包请用「导入迁移包」）')
+  }
+  return parsed as BackupFile
+}
+
+/** 把外置备份文件里的数据包覆盖写回**当前项目**（file 恢复入口用；区别于导入迁移包=新建项目） */
+export async function restoreBundleToProject(projectId: string, bundle: ProjectBundle): Promise<void> {
+  await applyBundleToProject(projectId, bundle)
 }
 
 async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): Promise<void> {

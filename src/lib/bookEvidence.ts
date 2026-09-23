@@ -129,7 +129,7 @@ export function buildBookEvidencePack(input: BookEvidenceInput): BookEvidencePac
       '本证据包由青春幻想引擎在本机生成，内容全部取自该软件内的创作记录（章节时间戳、章节快照、每日字数）。',
       '软件不采集键盘输入内容；导出只写入你选择的本机位置。',
       '软件不提供、也不参与任何「绕过 AI 检测」的功能；此处仅如实记录写作过程。',
-      `「版本数」是**本机保留**的数量（每章上限 ${MAX_SNAPSHOTS_PER_CHAPTER} 个）；达到上限的章节，更早版本已被自动清理。`,
+      `「版本数」是本机保留的数量（每章上限 ${MAX_SNAPSHOTS_PER_CHAPTER} 个）；达到上限的章节，更早版本已被自动清理。`,
     ],
   }
 }
@@ -186,7 +186,7 @@ export function bookPackToDocModel(pack: BookEvidencePack, opts: BookEvidenceVie
     } else {
       blocks.push({
         type: 'note',
-        text: '口径说明：每日统计记录的是**本项目当天写的总字数**，软件不按章节拆分；' +
+        text: '口径说明：每日统计记录的是本项目当天写的总字数，软件不按章节拆分；' +
           '因此这里不能用来说明「某一章当天写了多少」。',
       })
       blocks.push({ type: 'pre', text: pack.daily.map(d => `${d.date}　${d.words} 字`).join('\n') })

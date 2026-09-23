@@ -131,7 +131,16 @@ await db.saveChapter(chap('c3', 'v2', 0, '第二章 承', '原文二。'.repeat(
   ok('精简却越改越长（目标 1200 给 4200）判为异常', isSuspectRewrite(2886, 4200, at('condense', 2886, 1200)))
   ok('短章不套用该保护（原文 600 字以内不判异常）', !isSuspectRewrite(400, 50, at('polish', 400)))
 
-  const panel = fs.readFileSync('src/components/CreativeWritingPanel.tsx', 'utf8')
+  // C1（2.4.2）拆分后：实现分散在 7 个文件 —— 拼接后再断言（口径不变）
+  const panel = [
+    'src/components/CreativeWritingPanel.tsx',
+    'src/components/creativeWritingParts.tsx',
+    'src/components/useCreativeWritingModel.ts',
+    'src/components/CreativeSetupSection.tsx',
+    'src/components/CreativeFlowSections.tsx',
+    'src/components/CreativeRewriteSection.tsx',
+    'src/components/CreativeDialogs.tsx',
+  ].map(f => fs.readFileSync(f, 'utf8')).join('\n')
   ok('🔴 异常结果在界面上被锁住替换（不是只弹个提示就放开）',
     /disabled=\{!!s\.rewrite\.suspect\}/.test(panel))
 }

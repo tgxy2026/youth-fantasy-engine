@@ -237,3 +237,16 @@ export function migrateV9toV10(db: Vdb) {
   // 按 projectId 建索引：报告列表按当前项目过滤，避免列个清单就全表扫
   store.createIndex('projectId', 'projectId', { unique: false })
 }
+
+/** v10 → v11 迁移（C2 · 2.4.2）：备份「元数据 / 载荷」分离 —— 新增 backupPayloads 独立存储 */
+export function migrateV10toV11(db: Vdb) {
+  // 🔴 为什么分表：原先每份备份把整包 bundle 存在同一条记录里，**列个备份清单就要把每份备份
+  //    的全文读出来**（BackupManager 曾为此对每份做一次 JSON.stringify 算体积）。
+  //    拆开后 backups 只存元数据（id / 项目 / 类型 / 时间 / 体积），列表零成本；
+  //    只有「恢复」与「导出」才去读 backupPayloads。
+  const store = db.createObjectStore('backupPayloads', { keyPath: 'id' })
+  // 按 projectId 建索引：删除项目 / 清理孤儿备份时按项目批量删载荷，避免全表扫
+  store.createIndex('projectId', 'projectId', { unique: false })
+  // ⚠️ 老记录（backups 里仍带 bundle）由 `db/migrations.ts` 的 migrateBackupPayloads 搬过来 ——
+  //    那是**数据**迁移、依赖 ops 层（可能在桌面 JSON 后端上跑），与这里的**建表**分开。
+}

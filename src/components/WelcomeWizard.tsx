@@ -17,6 +17,7 @@
  * 随数据文件走（换设备也认）；导入备份的路径不再进 AI 步骤 —— 备份里通常已经带着模型配置。
  */
 import { useRef, useState, type ReactNode } from 'react'
+import { Z } from '../lib/zLayer'
 import { BookPlus, Sparkles, Upload, ArrowRight, Check, Loader2 } from 'lucide-react'
 import * as db from '../lib/db'
 import type { ProjectBundle } from '../lib/db'
@@ -105,11 +106,11 @@ export default function WelcomeWizard({ onDone }: Props) {
   return (
     <div className="min-h-screen bg-transparent overflow-y-auto relative">
       <div
-        className="absolute inset-0 -z-10 pointer-events-none bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url(${workbenchBg})` }}
+        className="absolute inset-0 pointer-events-none bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: `url(${workbenchBg})`, zIndex: Z.pageBackdrop }}
         aria-hidden
       />
-      <div className="relative z-10 w-full max-w-[860px] mx-auto px-6 py-12 page-enter">
+      <div className="relative w-full max-w-[860px] mx-auto px-6 py-12 page-enter" style={{ zIndex: Z.pageHandle }}>
         <header className="mb-9 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber/15 border border-amber/30 mb-4">
             <BrandMark size={26} className="text-amber" />

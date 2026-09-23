@@ -23,6 +23,7 @@
  */
 
 import HelpPopover from './HelpPopover'
+import { Z } from '../lib/zLayer'
 import AIDataSourceNote from './AIDataSourceNote'
 import TavernEchoHints from './TavernEchoHints'
 import { ChevronDown, Pencil } from 'lucide-react'
@@ -380,7 +381,7 @@ export default function TavernFree() {
                   type="button"
                   onClick={() => scrollToBottom()}
                   title="回到底部（看历史时一键回到最新消息）"
-                  className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-11 text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700"
+                  className="absolute bottom-3 right-3 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-11 text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700" style={{ zIndex: Z.pageHandle }}
                 >
                   <ChevronDown className="h-3.5 w-3.5" /> 回到底部
                 </button>

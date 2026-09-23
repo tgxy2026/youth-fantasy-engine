@@ -10,6 +10,7 @@
 //
 // 这三条都靠端到端点不出来（需要一个真出错的云盘目录），所以必须先锁死。
 import { createCloudStore } from '../src/lib/syncCore'
+import { isDeleted } from '../src/lib/syncTombstone'
 import fs from 'node:fs'
 import path from 'node:path'
 import { SAVE_DEBOUNCE_MS } from '../src/lib/constants'
@@ -385,6 +386,51 @@ async function main() {
     ok('🔴 全文件只有这一处注册（两处＝两处会各自漂移的口径，漏的那处单测看不出来）',
       (core.match(/onDesktopLocalSnapshot\(/g) ?? []).length === 1,
       String((core.match(/onDesktopLocalSnapshot\(/g) ?? []).length))
+  }
+
+  // ---------- ⑬ 幽灵项目的第三条路径：本机删过 + **云端改过它** ----------
+  //
+  // ⑧ 与 ⑪ 覆盖的都是「基线里也没有它」（`b === undefined`）那一支；而
+  // `lo === undefined && b !== undefined && sv !== b`（基线有、云端改过）走的是另一支 ——
+  // 2026-09-23 六维审计发现那里**漏了墓碑判断**，于是「本机删过、云端又改过」的记录照样复活。
+  // 三条路径（另一条 `sv === undefined` 已在 2026-09-21 补上墓碑）必须口径一致。
+  {
+    __resetMockStores()
+    __resetLocalStorage()
+
+    // —— 先用一个实例造出「云端已把 p2 改过」的载荷 ——
+    const { t: tA, pushes: pushesA } = scriptedTransport({})
+    const cloudA = createCloudStore(tA)
+    cloudA.configure('ghost-path3')
+    await cloudA.pullSnapshot()
+    await cloudA.seedFromLocal(async (s) => (s === 'projects'
+      ? [{ id: 'p1' }, { id: 'p2', title: '云端改过的新标题' }] : []))
+    const encChanged = pushesA[pushesA.length - 1]?.enc
+    ok('前置：造出「p2 已被云端改过」的载荷', !!encChanged, String(pushesA.length))
+
+    // —— 另一个实例：基线里 p2 是**旧值**，本机删掉它 ——
+    __resetMockStores()
+    __resetLocalStorage()
+    let pullRes: { status: number; rev?: number; enc?: string | null } = { status: 200, rev: 0, enc: null }
+    const { t: tB } = scriptedTransport({ pull: () => pullRes })
+    const cloudB = createCloudStore(tB)
+    cloudB.configure('ghost-path3')
+    await cloudB.pullSnapshot()
+    await cloudB.seedFromLocal(async (s) => (s === 'projects'
+      ? [{ id: 'p1' }, { id: 'p2', title: '旧标题' }] : []))
+    // 本地库有内容（p1）⇒ localHasContent 为真，墓碑闸才有机会生效
+    cloudB.onLocalSnapshot(async () => ({ projects: [{ id: 'p1' }] }))
+    await cloudB.store.del('projects', 'p2')
+    ok('前置：本机已删掉 p2（墓碑已记）', isDeleted('projects', 'p2'))
+
+    // 云端推出**改了 p2** 的新版本 —— 基线里 p2 仍是旧值 ⇒ 命中 `b !== undefined && sv !== b` 那一支
+    // ⚠️ 必须走 `backgroundPull()` 而不是 `pullSnapshot()`：后者只保证 init 完成并返回当前 cache，
+    //    新载荷**不会**触发三路合并 —— 那样写出来的用例新旧代码都通过，完全没有判别力（本轮踩过）。
+    pullRes = { status: 200, rev: 9, enc: encChanged }
+    await cloudB.backgroundPull()
+    const rows = await cloudB.store.getAll<{ id: string }>('projects')
+    ok('🔴 本机删过 + 云端改过：照样尊重删除，p2 不被云端新版本复活（第三条路径）',
+      rows.length === 1 && rows[0].id === 'p1', JSON.stringify(rows))
   }
 
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)

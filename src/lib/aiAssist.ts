@@ -234,7 +234,7 @@ export function buildAiDisclosureDraft(
     })
     lines.push('')
     lines.push(`三、说明`)
-    lines.push(`上述"AI 辅助产出字数"为**写作过程中的累计产出量**。作者对 AI 产出内容均做了人工取舍与修改，`)
+    lines.push(`上述"AI 辅助产出字数"为写作过程中的累计产出量。作者对 AI 产出内容均做了人工取舍与修改，`)
     lines.push(`故它与"最终成稿中由 AI 直接形成的比例"并不等同 —— 最终成稿由作者本人定稿并负责。`)
     if (s.cappedChapters > 0) {
       lines.push(`（有 ${s.cappedChapters} 章出现"AI 累计产出多于现存正文"，即作者做了大幅删改，其实际留存比例低于上表数字。）`)
@@ -242,6 +242,6 @@ export function buildAiDisclosureDraft(
   }
   lines.push('')
   lines.push(`四、工具说明`)
-  lines.push(`本说明由写作软件依据**写作过程中自动记录的操作日志**生成，非手工填写。`)
+  lines.push(`本说明由写作软件依据写作过程中自动记录的操作日志生成，非手工填写。`)
   return lines.join('\n')
 }

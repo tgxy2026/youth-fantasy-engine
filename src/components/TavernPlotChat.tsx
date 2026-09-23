@@ -10,6 +10,7 @@
  *   拆分轮宁可多传 4 个 props，也不动执行时序。
  */
 import { useRef, type RefObject } from 'react'
+import { Z } from '../lib/zLayer'
 import { Button } from './Button'
 import Avatar from './Avatar'
 import TavernMessageBody from './TavernMessageBody'
@@ -136,7 +137,7 @@ export function PlotChat({
                 type="button"
                 onClick={() => scrollToBottom()}
                 title="回到底部（看历史时一键回到最新消息）"
-                className="absolute bottom-3 right-3 z-10 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-11 text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700"
+                className="absolute bottom-3 right-3 flex items-center gap-1 rounded-full border border-ink-600 bg-ink-800/90 px-3 py-1.5 text-11 text-ink-100 shadow-lg backdrop-blur hover:bg-ink-700" style={{ zIndex: Z.pageHandle }}
               >
                 ↓ 回到底部
               </button>

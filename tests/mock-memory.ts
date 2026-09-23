@@ -8,6 +8,8 @@
 export const KEY_PATHS: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id',
+  // C2：备份元数据与载荷分开存（须与 src/lib/desktop.ts 逐项一致）
+  backups: 'id', backupPayloads: 'id',
   formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
 }
 
