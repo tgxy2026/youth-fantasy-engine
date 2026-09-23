@@ -8,7 +8,7 @@
 - 禁删 `release/eb-cache/`；禁原生 `prompt/confirm/alert`。清单 `docs/2.3.1-Bug与待优化清单.md` 只记录、明说「处理」才动。提交含 `!`/换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
-- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.4.2**）。
+- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.4.3**）。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。基线：主 exe 181,097,984B、包 80.96MB。
 - 🔴 **环境两坑**：脚本内 `spawnSync`/`execFileSync` 起子进程被拦成 **EBUSY**（改用「清单外层生成」）；`fs.rmSync` 走 safe-delete（>10MB ETIMEDOUT）⇒ 清产物用 `unlinkSync` 深搜。
 - 🔴 启动**默认停项目管理首页**（首启先过「向导三选一」）；删项目时一并清 `lastProject`。
@@ -93,7 +93,7 @@
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖）；用 `Read`／`test -f`。
 
 ## 2.4 开发（规划 `docs/2.4.0-版本规划.md`；记录 `docs/2.4.2-开发记录.md`）
-- ✅ **2.4.2 已封装发布（09-23）**，全项完成并实机验证：见 `docs/2.4.2-开发记录.md`＋`2.4.2-C1-*拆分记录.md`；**C8 本批跳过**。
+- ✅ **2.4.3 已封装发布（09-23，补丁版：修撑满型页面塌掉）**，全项完成并实机验证：见 `docs/2.4.2-开发记录.md`＋`2.4.2-C1-*拆分记录.md`；**C8 本批跳过**。
 - ✅ **六维审计完成（修 44 处/20 文件）**：`docs/2.4.2-六维审计修复记录-2026-09-23.md`。
   P1＝裸 clipboard／**记忆退化仍推水位线**（新 `memoryDegraded`）／老库 `tavern.settings.search` 密钥残留。
   🔴 同步层测试**必须用 `backgroundPull()`**（`pullSnapshot` 不触发三路合并 ⇒ 用例会「新旧都通过」）。
@@ -110,5 +110,5 @@
 ## 对外推广
 - 🔴 文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→「口令」）；链接压最末＋后有缓冲文字（见 `docs/小黑盒推广帖/`）。
 - 🔴 **发帖顺序**：稿里承诺的版本号须**先在夸克盘＋Gitee Release 上架**再发帖。第 0/1/2 篇已发、第 3 篇待发、第 4 篇＝世界构建。
-- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。Gitee 现对外 **2.4.2**（`v2.4.2`/`1162581`）；⚠️ 夸克盘未核实。截图按篇号分组。
+- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。Gitee 现对外 **2.4.3**（`v2.4.3`/`1162649`）；⚠️ 夸克盘未核实。截图按篇号分组。
 - 🔴 Gitee 令牌常驻 `G:/AI软件/.gitee-token.txt`。🔴 push 只需 `GIT_CONFIG_NOSYSTEM=1`；🔴🔴 **绝不可再加 `GIT_CONFIG_GLOBAL=NUL`**（屏蔽 GCM ⇒ 静默挂死）。
