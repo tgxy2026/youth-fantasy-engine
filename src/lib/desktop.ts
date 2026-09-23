@@ -291,8 +291,11 @@ export function flushDesktopSync(): void {
     // 🔴 主进程写失败时返回 { ok:false } 而**不抛异常** —— 旧实现不查返回值，
     //    写失败也照样把 dirty 清掉，等于静默丢掉最后一次编辑。
     const r = api().saveSync(JSON.stringify(data))
-    if (r && r.ok === false) {
-      lastError = '写入本地数据文件失败：' + (r.error ?? '未知错误')
+    // ⚠️ `r === undefined`（IPC 没有返回值）同样是**没写成功**（2026-09-23 六维审计）：
+    //    旧写法 `r && r.ok === false` 会让 undefined 落进成功分支、顺手清掉 dirty，
+    //    等于静默丢掉关窗前的最后一次编辑。
+    if (!r || r.ok === false) {
+      lastError = '写入本地数据文件失败：' + (!r ? 'IPC 未返回值' : (r.error ?? '未知错误'))
       return // 保留 dirty，供下次启动补救
     }
     dirty = false

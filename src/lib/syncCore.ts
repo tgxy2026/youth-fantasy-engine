@@ -307,6 +307,13 @@ function mergeCaches(
           continue
         }
         if (!eqRecord(sv, b)) {
+          // 🔴 云端改过、而本机删过它（2026-09-23 六维审计）：这一支原先无条件采用云端，
+          //    与上面那支（本地删过 + 本地没有 + 云端有）**不对称**，是第三条「删了会复活」路径 ——
+          //    尊重删除，但把云端的改动记进冲突，作者在冲突面板里仍能捞回来。
+          if (localHasContent && isDeleted(s, k)) {
+            note(null, sv)
+            continue
+          }
           arr.push(sv)
           note(null, sv)
         }

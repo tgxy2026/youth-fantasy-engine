@@ -27,5 +27,5 @@ export const PORTRAIT_ACCEPT = 'image/png,image/jpeg,image/webp'
  */
 export const PORTRAIT_HINT_SPEC =
   `推荐 9:16 竖图（如 ${PORTRAIT_SIZE.w}×${PORTRAIT_SIZE.h} 或更高）· PNG / JPG / WebP · 单张 ≤ ${PORTRAIT_MAX_INPUT_BYTES / 1024 / 1024}MB。`
-  + `上传后按原比例缩放到不超过 ${PORTRAIT_SIZE.w}×${PORTRAIT_SIZE.h}，**不裁切、不拉伸**（人物不会缺胳膊少腿）；`
+  + `上传后按原比例缩放到不超过 ${PORTRAIT_SIZE.w}×${PORTRAIT_SIZE.h}，「不裁切、不拉伸」（人物不会缺胳膊少腿）；`
   + `体积优先保画质，超过 ${Math.round(PORTRAIT_TARGET_BYTES / 1024)}KB 时才逐档降低压缩质量 —— 竖图比横图更合适，横图两侧会留空。`

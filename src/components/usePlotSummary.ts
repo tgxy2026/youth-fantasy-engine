@@ -98,7 +98,12 @@ export function usePlotSummary({ setSession }: PlotSummaryArgs) {
         onDegraded: (reason: string) => degraded.push(reason),
         signal: ctl.signal,
       })
-      const wm = nextWatermark(s)
+      // 🔴 记忆被判「整份退化」时**不推进水位线**（2026-09-23 六维审计 P1）：
+      //    退化时 summarizeMemory 返回的是**旧档案**（见 memory.ts 的 isMemoryDegraded），
+      //    若照常推进 watermark，这段没被总结的对话就被越过 —— 下一轮 messagesAfterWatermark
+      //    拿到空数组，那些内容**永久不会进记忆**（静默失忆）。而界面提示还写着「本次未覆盖旧档案」，
+      //    暗示可以重试，实际已经没有重试入口了。保留旧水位 ⇒ 下次整理会重算这一段。
+      const wm = degraded.length ? undefined : nextWatermark(s)
       const updated: TavernSession = {
         ...s,
         memory: memoryToText(mem),

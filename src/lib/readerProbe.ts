@@ -80,10 +80,6 @@ export const READER_QUESTIONS: ReaderQuestion[] = [
   },
 ]
 
-export function readerQuestionLabel(key: string): string {
-  return READER_QUESTIONS.find(q => q.key === key)?.label ?? '其他'
-}
-
 /** 一条反馈：读者在说什么 + 他说的是正文哪一处 */
 export interface ReaderNote {
   /** 问题 key（bored / lost / want） */

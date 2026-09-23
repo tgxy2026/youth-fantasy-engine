@@ -17,7 +17,6 @@
 import type { DocModel, DocBlock } from './tavern/exportDoc'
 import type { SnapshotSource } from './db'
 import { MAX_SNAPSHOTS_PER_CHAPTER } from './db/chapters'
-import { formatDate } from './date'
 import { APP_VERSION_LABEL } from './env'
 import { docFileName } from './tavern/exportDoc'
 import type { ChapterTrajectory, TrajectoryDailyPoint } from './trajectory'
@@ -309,9 +308,4 @@ export function shortDate(date: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
   if (!m) return date
   return `${parseInt(m[2], 10)}月${parseInt(m[3], 10)}日`
-}
-
-/** 今天是不是在跨度内（页签里提示"今天还没写字"用） */
-export function isToday(date: string, now: number = Date.now()): boolean {
-  return date === formatDate(now)
 }

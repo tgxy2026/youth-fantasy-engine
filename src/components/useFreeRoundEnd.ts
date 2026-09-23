@@ -177,9 +177,12 @@ export function useFreeRoundEnd({
       })
 
       // 水位线推进到最后一条 + 写回数值 + 打上归档戳
+      // 🔴 有角色记忆被判「整份退化」时**不推进水位线**（2026-09-23 六维审计 P1）：
+      //    退化 = 这段对话没被总结，推进水位等于把它永久越过（下次 pendingMessages 为空）；
+      //    而界面还提示「本次未覆盖旧档案」，暗示可重试 —— 实际已无重试入口。
       const updated: FreeSession = {
         ...s,
-        watermark: nextWatermark(s) ?? s.watermark,
+        watermark: res.memoryDegraded ? s.watermark : (nextWatermark(s) ?? s.watermark),
         vars: res.vars,
         endedAt: res.endedAt,
         updatedAt: Date.now(),

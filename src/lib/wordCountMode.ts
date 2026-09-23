@@ -23,11 +23,6 @@ export function useWordCountWithPunct(): [boolean, (v: boolean) => void] {
   return usePersistedBool(WORD_COUNT_PUNCT_KEY, false)
 }
 
-/** 当前口径的短标签（开关与工具提示共用同一份措辞，避免两处文案不一致） */
-export function wordCountModeLabel(withPunct: boolean): string {
-  return withPunct ? '汉字＋标点' : '只算汉字'
-}
-
 /** 当前偏好对应的 `countWords` 模式参数 */
 export function wordCountModeOf(withPunct: boolean): WordCountMode {
   return withPunct ? 'cjk-punct' : 'cjk'

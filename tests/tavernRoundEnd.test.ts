@@ -393,6 +393,40 @@ async function main() {
       Array.isArray(empty) && empty.length === 0, JSON.stringify(empty))
   }
 
+  // ---------- N) 记忆「整份退化」：回退旧档案 + 必须打上 memoryDegraded ----------
+  //
+  // 2026-09-23 六维审计 P1：退化时 summarizeMemory 返回的是**旧档案**（不覆盖），
+  // 但调用方原先照常推进水位线 ⇒ 这段没被总结的对话被**永久越过**（下次 pendingMessages 为空，
+  // 它再也不进记忆），而界面提示还写着「本次未覆盖旧档案」暗示可以重试。
+  // 这里钉住「退化必须被**结构化标记**出来」（不能只靠 warnings 的文案）；
+  // 「标记了就保留旧水位」分别在 useFreeRoundEnd（自由对话）与 usePlotSummary（剧情推演）里。
+  {
+    const LONG = '这是旧档案里的长期摘要，应当被保住。'.repeat(64)   // 1000+ 字：先把分母抬高
+    await store.saveMemory({ ...store.emptyMemory(A.id), longTerm: LONG })
+    const before = await store.getMemory(A.id)
+    ok('前置：旧档案确实很长（退化判据的分母）', before.longTerm.length > 800, String(before.longTerm.length))
+
+    let s = await store.createFreeSession([A.id], '退化判定场', { providerId: STUB_PROVIDER.id }, {})
+    s = await push(s, [{ role: 'user', content: '今天怎么样？' }, { role: 'assistant', speakerId: A.id, content: '「还行。」' }])
+    const cards = [A]
+    // 模型这次只吐了极短的六栏 ⇒ 相对旧档案不足 40% ⇒ 判退化
+    const { chatFn } = makeFakeChat(replyWith('短。', '短。'))
+
+    const res = await runRoundEnd({
+      session: s, cards, providerId: STUB_PROVIDER.id,
+      varKeys: [], vars: undefined, maxStep: 5,
+      nameOf: (id?: string) => cards.find(c => c.id === id)?.name ?? '角色',
+      chatFn,
+    })
+
+    ok('🔴 退化被标记出来（memoryDegraded，供调用方决定是否推进水位线）',
+      res.memoryDegraded === true, String(res.memoryDegraded))
+    ok('退化时产出的是**旧档案**（短输出没有覆盖它）',
+      res.memories[0].longTerm.includes('应当被保住'), String(res.memories[0].longTerm.length))
+    ok('退化也如实上报（warnings 里有可读说明，不能静默）',
+      res.warnings.some(w => w.includes('未覆盖') || w.includes('退化')), JSON.stringify(res.warnings))
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`)
   if (fail > 0) process.exit(1)
 }

@@ -238,12 +238,12 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   },
   'feedback-ai': {
     label: '读者反馈 AI 分析',
-    sources: [{ group: '读者反馈表（本表 7 列）', items: ['数据周期 / 日期', '追读', '均订', '留存', '高频吐槽', '流失点章节', '流失原因分析'] }],
+    sources: [{ group: '读者反馈表（读本表 7 列）', items: ['数据周期 / 日期', '追读', '均订', '留存', '高频吐槽', '流失点章节', '流失原因分析'] }],
     excludes: ['其它任何表 —— 它只分析这张反馈表'],
   },
   'term-dedup': {
     label: '术语 AI 查重归一',
-    sources: [{ group: '名词术语（本表 3 列）', items: ['名称', '类别', '定义（一句话）'] }],
+    sources: [{ group: '名词术语（读本表 3 列）', items: ['名称', '类别', '定义（一句话）'] }],
     excludes: ['其它任何表 —— 它只扫名词术语'],
   },
   'sensitive-check': {
@@ -295,7 +295,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       { group: '角色卡扮演设定', items: ['参演角色各自的卡面'], note: '谁演谁由你在开场时指定' },
       { group: '你的档位与补充要求', items: ['风格提示', '本场额外提示'] },
     ],
-    excludes: ['🔒 沉浸档下会「排除作者侧页签」（结局走向 / 真相 / 未来剧情等约 13 类）与"未来向"字段，避免 AI 剧透给你；导演档才全给。'],
+    excludes: ['🔒 沉浸档下会「排除作者侧页签」（结局走向 / 真相 / 未来剧情等）与"未来向"字段，避免 AI 剧透给你；导演档才全给。'],
   },
   'tavern-memory': {
     label: '本场记忆整理',

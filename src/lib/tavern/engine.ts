@@ -148,7 +148,9 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
   const worldSetting = await getWorldSetting()
   const worldText = contextSource !== 'raw' && shouldInjectWorld(worldSetting, worldHaystack(
     [session.title, session.anchorChapterLabel, session.scene?.place, session.scene?.time, session.scene?.description],
-    session.messages.slice(-6).map(m => m.content),
+    // 🔴 与全项目「隐藏 / system 消息不进上下文」的口径对齐（2026-09-23 六维审计）：
+    //    原写法没有过滤 ⇒ 作者特意藏起来的内容仍会影响「是否注入背景设定」的判定。
+    session.messages.filter(m => m.role !== 'system' && !m.hidden).slice(-6).map(m => m.content),
   )) ? worldToText(worldSetting) : ''
 
   const system = buildSystemPrompt({
@@ -305,7 +307,6 @@ export async function runPlotTurn(
   const { temperature, ...extraOptions } = toOllamaOptions(p)
 
   cb.onPhase?.('组装上下文')
-  const { system } = await buildPlotSystem(session, st)
 
   // 用户这条先并进历史，保证模型看到的是「含本轮输入」的完整对话。
   // userText === null 是**重说**：不追加用户消息，并先丢掉末尾那条 assistant（它正是要被替换的那条）。
@@ -317,6 +318,11 @@ export async function runPlotTurn(
   const withUser: TavernMessage[] = userText === null
     ? baseMsgs
     : [...baseMsgs, { id: uid(), role: 'user', content: userText, at: Date.now() }]
+
+  // 🔴 组装 system 放在这里（2026-09-23 六维审计）：它内部按「最近 6 条消息」抽背景设定的**注入关键词**，
+  //    原先在本轮输入并进历史**之前**调用 ⇒ 关键词漏掉本轮 user 输入，一个新关键词要等下一轮才生效。
+  //    把 withUser 交给它即可，无需改签名（内部仍是 session.messages.slice(-6)）。
+  const { system } = await buildPlotSystem({ ...session, messages: withUser }, st)
 
   // 🔴 第三参传 '' —— 本场记忆**已经拼在 system 里**了（buildSystemPrompt 干的），
   //    再单独传一遍等于扣两次额度（2026-09-14 修，C 档）。

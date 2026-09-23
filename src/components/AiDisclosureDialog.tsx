@@ -115,7 +115,7 @@ export default function AiDisclosureDialog({
       {summary.cappedChapters > 0 && (
         <div className="mb-3 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-11 leading-relaxed text-amber">
           有 {summary.cappedChapters} 章出现「AI 累计产出多于现存正文」—— 说明你对 AI 产出做过大幅删改，
-          这些章的实际留存比例**低于**上表数字。说明正文里已如实注明这一点。
+          这些章的实际留存比例低于上表数字。说明正文里已如实注明这一点。
         </div>
       )}
 

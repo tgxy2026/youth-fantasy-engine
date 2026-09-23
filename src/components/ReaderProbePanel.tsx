@@ -15,7 +15,7 @@ import { Copy, Eye, Loader2, Sparkles, UserRound } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter } from '../lib/types'
 import { Button } from './Button'
-import { showToast } from './dialogs'
+import { showToast, copyText } from './dialogs'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { buildProjectContext } from '../lib/aiContext'
@@ -79,12 +79,9 @@ export default function ReaderProbePanel() {
 
   const copyAll = async () => {
     if (!res.data) return
-    try {
-      await navigator.clipboard.writeText(readerProbeToText(res.data, active?.title || '（未命名）', lens.name))
-      showToast('已复制这一份读者反馈', 'success')
-    } catch {
-      showToast('复制失败（系统剪贴板不可用）', 'error')
-    }
+    // 🔴 走 dialogs.copyText 而非裸 navigator.clipboard：后者在非安全上下文（file:// 便携版）
+    //    直接不可用且无 execCommand 兜底，而「复制这一份」是这个面板唯一的对外出口 —— 失败等于整块作废。
+    await copyText(readerProbeToText(res.data, active?.title || '（未命名）', lens.name), '已复制这一份读者反馈')
   }
 
   if (loading) {
@@ -102,11 +99,11 @@ export default function ReaderProbePanel() {
         <span className="text-13 font-medium text-ink-100">读者视角审问</span>
         <span className="text-10 text-ink-500">单章 · 扮成一个具体读者 · 主观反应</span>
         <HelpPopover title="读者视角审问怎么用">
-          {'用途：让 AI **扮成一位读者**把这一章读一遍，回答三个问题 —— 哪里看不下去 / 哪里没看懂 / 最想知道什么。\n\n'
+          {'用途：让 AI 扮成一位读者把这一章读一遍，回答三个问题 —— 哪里看不下去 / 哪里没看懂 / 最想知道什么。\n\n'
             + '· 和「审稿」不是一回事：它不说语法、标点、结构、设定矛盾（那些交给校对、文风体检、本章体检）。'
             + '它说的是「有人读到这里会走神 / 会停下来 / 会被勾住」。\n'
             + '· 「以谁的身份读」会改变结论：追更读者盯着爽感与钩子，新读者盯着有没有讲清楚，老书虫盯着是不是又走老路。建议三个都试一遍。\n'
-            + '· 读者提到的每一处都会标出**段号** —— 段号不是模型报的，是拿它引用的原文在正文里查出来算的（查不到会标「未定位」）。\n'
+            + '· 读者提到的每一处都会标出段号 —— 段号不是模型报的，是拿它引用的原文在正文里查出来算的（查不到会标「未定位」）。\n'
             + '· 只呈现读者反应，不给分、不排名、不说"能不能发"。改不改、怎么改，由你判断。'}
           <AIDataSourceNote feature="reader-probe" />
         </HelpPopover>

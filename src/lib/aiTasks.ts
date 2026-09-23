@@ -64,7 +64,7 @@ export type { PaceReport, PaceBeat, PaceDistribution, HookKind } from './paceAna
 // 2026-09-23（2.4.2·C5）：读者视角审问 —— 扮演一个具体读者读这一章，三问；位置由本地换算
 export { aiReaderProbe, READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
 export {
-  READER_LENSES, READER_QUESTIONS, readerLensOf, readerQuestionLabel,
+  READER_LENSES, READER_QUESTIONS, readerLensOf,
   parseReaderProbe, groupNotes, paragraphAt, readerProbeToText,
 } from './readerProbe'
 export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from './readerProbe'

@@ -140,7 +140,14 @@ const warnMirrorFail = (what: string) => (e: unknown) => {
   console.warn(`[db] ${what}失败（兜底路径，已忽略，不阻断流程）：`, e)
 }
 
-async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite = true): Promise<void> {
+/**
+ * 把云端 cache 镜像到本地。
+ * 🔴 `overwrite` **刻意不给默认值**（2026-09-23 六维审计）：原来的 `= true`（整体覆盖本地）
+ *    语义正好是「闩锁期用旧快照盖掉本地新稿」，而它恰恰是最危险的那个方向。
+ *    去掉默认值后，每个调用点都必须显式说清「这次是覆盖还是只补缺失」——
+ *    新增调用点时编译器会替你问这个问题。
+ */
+async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite: boolean): Promise<void> {
   const tasks: Promise<unknown>[] = []
   for (const [store, rows] of Object.entries(cache)) {
     if (isLocalOnlyStore(store)) continue

@@ -407,7 +407,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
                 onClick={() => backupFileInput.current?.click()}
                 disabled={busy}
                 className="flex items-center gap-1 px-3 py-1.5 text-12 text-ink-100 border border-ink-600 rounded-lg hover:bg-ink-800 disabled:opacity-50"
-                title="从「导出」出来的单份备份文件恢复**当前项目**（覆盖式）"
+                title="从「导出」出来的单份备份文件恢复当前项目（覆盖式）"
               >
                 <FileDown size={12} /> 从备份文件恢复本项
               </Button>
