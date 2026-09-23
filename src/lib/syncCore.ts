@@ -21,19 +21,32 @@ import { isDeleted, markDeleted, clearDeleted, resetTombs } from './syncTombston
 import { webcrypto, hasWebCrypto } from './webcrypto'
 
 // 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
-// ⚠️ 注意 'backups' 是**本地专属**：上传侧 liveStores() 会把它从载荷里剔除，
-//    读取侧 db/core.ts 的 makeCloudStoreWrapper 也把它的读写短路到本地 store（#026）。
-//    因此「云端载荷」实际不含它——真正会被同步的是除 backups 外的其余 store。
+// ⚠️ 注意 'backups' / 'backupPayloads' 是**本地专属**（详见下方 LOCAL_ONLY_STORES）。
 export const SYNC_STORES = [
   'projects', 'volumes', 'chapters', 'formData', 'tableRows', 'cardRecords',
-  'meta', 'snapshots', 'dailyStats', 'settingsKV', 'trash', 'backups', 'tavernReports',
+  'meta', 'snapshots', 'dailyStats', 'settingsKV', 'trash', 'backups', 'backupPayloads', 'tavernReports',
 ] as const
 
 // 各 store 的主键字段（keyPath）
 export const KEY_FIELD: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
-  cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', tavernReports: 'id',
+  cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', backupPayloads: 'id', tavernReports: 'id',
   formData: 'tabId', meta: 'key', settingsKV: 'key', dailyStats: 'key',
+}
+
+/**
+ * **本地专属 store**（云端永不参与其增删）—— 唯一判据，所有路径都从这里取。
+ *
+ * 🔴 为什么要收成一个常量（C2 · 2.4.2）：原先「backups 是本地专属」这件事被**写死在 6 处**
+ *    （上传侧剔除 / 合并读取 / 播种跳过 / 落盘快照跳过 / 云包装层短路 ×2），
+ *    每加一个本地专属 store 就要把这 6 处**一处不落地**找齐 —— 漏一处的后果是静默的：
+ *    记录进了云端 cache 被上传，或本地写被挡在云端而刷新即丢。
+ *    （2026-09-22 六维审计那条「同一个病的所有路径要一次找齐」就是这类。）
+ *    ⇒ 现在新增本地专属 store 只需往这里加一个名字。
+ */
+export const LOCAL_ONLY_STORES = ['backups', 'backupPayloads'] as const
+export function isLocalOnlyStore(store: string): boolean {
+  return (LOCAL_ONLY_STORES as readonly string[]).includes(store)
 }
 
 // 不同步的敏感 meta（含密钥；UI 已承诺「仅本地保存，不上传」）
@@ -251,8 +264,8 @@ function mergeCaches(
   const localHasContent = Object.keys(local || {}).some((k) => ((local || {})[k] || []).length > 0)
 
   for (const s of stores) {
-    // #026：backups 是本地专属保险，云端永不参与其增删
-    if (s === 'backups') {
+    // #026：本地专属 store（backups / backupPayloads）云端永不参与其增删，一律以本机为准
+    if (isLocalOnlyStore(s)) {
       out[s] = (local && local[s]) || []
       continue
     }
@@ -422,11 +435,11 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     }
   }
 
-  // 仅含活数据（排除本地专属的 backups 与敏感 meta）
+  // 仅含活数据（排除本地专属 store 与敏感 meta）
   function liveStores(src: SyncStores): SyncStores {
     const out: SyncStores = {}
     for (const s of Object.keys(src || {})) {
-      if (s === 'backups') continue
+      if (isLocalOnlyStore(s)) continue
       out[s] = (src[s] || []).slice()
     }
     if (out.meta) out.meta = out.meta.filter((r) => !isExcludedMetaKey(r.key))
@@ -637,10 +650,11 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     const next: SyncStores = {}
     const failed: string[] = []
     for (const s of SYNC_STORES) {
-      // backups 是本地专属保险（#026）：上传侧 liveStores 会剔除它，读取侧 db/core.ts 的包装层
-      // 也把它短路到本地 store——读进 cache 没有任何下游消费者，纯属无用功。
+      // 本地专属 store（backups / backupPayloads，判据见 LOCAL_ONLY_STORES）：
+      // 上传侧 liveStores 会剔除它们，读取侧 db/core.ts 的包装层也把读写短路到本地 store
+      // ——读进 cache 没有任何下游消费者，纯属无用功。
       // 而备份体量不小（每份是一整份项目副本，最多 30 份滚动），播种时白读一次的代价真实可感。
-      if (s === 'backups') continue
+      if (isLocalOnlyStore(s)) continue
       try {
         // StoreOps.getAll 的签名是 Promise<unknown[]>（各业务域的记录类型），
         // 落进同步通用 cache 前断言成 SyncRow[] —— 形状由写入方（put/bulkPut）保证

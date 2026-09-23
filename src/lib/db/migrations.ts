@@ -209,6 +209,10 @@ export async function migrateMiscSettingsToCards(): Promise<number> {
  *       请自行再调 schema.refreshVolumeTabs()——db 层不引用 schema，以免形成循环依赖。
  */
 export async function runMigrations(): Promise<void> {
+  // 🔴 备份载荷分离（C2 · 2.4.2）放在守卫**之前**：backups / backupPayloads 是**跨项目的本地专属**
+  //    store，与「当前打开哪个项目」无关。若放在守卫之后，一个从不打开项目的用户（或只剩孤儿备份的
+  //    库）就永远不会迁移 —— 而列表页恰恰在项目管理页也会用到。
+  await migrateBackupPayloads()
   if (!currentProjectId) return
   await migrateProjectTypes()
   await migrateChapterLedger()
@@ -216,4 +220,26 @@ export async function runMigrations(): Promise<void> {
   await migrateGeoMaps()
   // 与上面几步互不相干（只碰 misc-settings 一张表），故放最后，不参与既有的顺序约束
   await migrateMiscSettingsToCards()
+}
+
+/**
+ * 备份「元数据 / 载荷」分离（C2 · 2.4.2）：把老记录里的 bundle 搬到 backupPayloads，
+ * backups 只留元数据 + 体积。**幂等**（没有 bundle 的记录直接跳过），可反复跑。
+ *
+ * 🔴 顺序：先写载荷、再改元数据 —— 中途失败最多留下「载荷已搬、元数据还带 bundle」的中间态，
+ *    读取侧两种形态都能吃（见 `withBytes` / `getBackupPayload`），不会丢备份。
+ */
+export async function migrateBackupPayloads(): Promise<number> {
+  const all = await ops.getAll<Record<string, unknown>>('backups')
+  let moved = 0
+  for (const rec of all) {
+    const bundle = rec.bundle as { project?: unknown } | undefined
+    const id = String(rec.id ?? '')
+    if (!bundle || !id) continue
+    await ops.put('backupPayloads', { id, projectId: String(rec.projectId ?? ''), bundle })
+    const { bundle: _drop, ...rest } = rec
+    await ops.put('backups', { ...rest, bytes: JSON.stringify(bundle).length })
+    moved++
+  }
+  return moved
 }

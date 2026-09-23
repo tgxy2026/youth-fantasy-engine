@@ -45,7 +45,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
   useEffect(() => {
     void db.listOrphanBackups().then(setOrphans).catch(() => {})
   }, [])
-  const orphansMB = useMemo(() => orphans.reduce((s, b) => s + JSON.stringify(b.bundle).length, 0) / 1024 / 1024, [orphans])
+  const orphansMB = useMemo(() => orphans.reduce((s, b) => s + b.bytes, 0) / 1024 / 1024, [orphans])
   const cleanOrphans = async () => {
     if (busy || orphans.length === 0) return
     if (!await confirmDialog({
@@ -97,6 +97,26 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       // #012：手动备份用独立类型，不参与自动滚动淘汰（用户主动留档不该被系统删掉）
       await db.createAutoBackup(projectId, 'manual', `手动备份 ${new Date().toLocaleString()}`)
       await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * C2：把某一份备份导出成**磁盘上的独立文件**。
+   * 自动备份只活在软件自己的数据文件里（本机、单点），导成文件才能丢进云盘 / 移动硬盘。
+   */
+  const exportFile = async (b: db.BackupMeta) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const f = await db.buildBackupFile(b.id)
+      if (!f) { showToast('这份备份的数据已缺失，无法导出', 'error'); return }
+      downloadBlob(f.filename, new Blob([f.content], { type: 'application/json' }))
+      markExported()
+      showToast(`已导出 ${f.filename}`)
+    } catch (e) {
+      showToast('导出备份文件失败：' + (e as Error).message, 'error')
     } finally {
       setBusy(false)
     }
@@ -193,23 +213,46 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     }
   }
 
+  /**
+   * C2：从**外置备份文件**恢复**当前项目**。
+   * 与「导入迁移包」的区别：迁移包是「换机搬运 → 新建一个项目」，这里是把备份覆盖回本项目。
+   */
+  const backupFileInput = useRef<HTMLInputElement>(null)
+  const onBackupFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || busy) return
+    setBusy(true)
+    try {
+      const parsed = db.parseBackupFile(await file.text())
+      const when = new Date(parsed.meta.createdAt).toLocaleString()
+      if (!await confirmDialog({
+        title: '从备份文件恢复',
+        message: `将用文件里的备份（${parsed.meta.label} · ${when}）覆盖当前项目「${projectName}」的全部数据。\n\n`
+          + '覆盖后不可撤销，建议先「立即备份」一份当前版本。确定恢复？',
+        confirmText: '恢复', danger: true,
+      })) { setBusy(false); return }
+      await db.restoreBundleToProject(projectId, parsed.bundle)
+      onRestored()
+    } catch (err) {
+      showToast('恢复失败：' + (err as Error).message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const daily = backups.filter(b => b.kind === 'daily')
   const auto = backups.filter(b => b.kind === 'auto5min')
   const manual = backups.filter(b => b.kind === 'manual')
 
-  // #020：备份 bundle 体积较大，每次渲染都对每份 backup 做 JSON.stringify 很浪费。
-  // 用 useMemo 缓存「id → bundle 字节数」映射，仅在备份列表变化时重算。
-  const sizeMap = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const b of backups) m.set(b.id, JSON.stringify(b.bundle).length)
-    return m
-  }, [backups])
-  const sizeOf = (b: db.BackupRecord) => {
-    const kb = (sizeMap.get(b.id) ?? 0) / 1024
+  // C2：体积直接读元数据里的 bytes（写入备份时算好并存下来）——
+  //     不再对每份备份做一次 JSON.stringify 算体积（那是列表页最重的一步）。
+  const sizeOf = (b: db.BackupMeta) => {
+    const kb = (b.bytes ?? 0) / 1024
     return kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(0)} KB`
   }
-  // #012：份数过多会让数据文件变大、开关与保存变慢（便携版单 JSON 全量写盘尤其明显）
-  const totalMB = [...sizeMap.values()].reduce((s, n) => s + n, 0) / 1024 / 1024
+  // #012：份数过多会让数据文件变大、开关与保存变慢
+  const totalMB = backups.reduce((s, b) => s + (b.bytes ?? 0), 0) / 1024 / 1024
   // 折叠状态（只对 collapsible 的分组有意义；默认全收起 = 两组自动备份默认折叠）
   const [openGroup, setOpenGroup] = useState<Record<string, boolean>>({})
   const MANY_BACKUPS = 40
@@ -267,6 +310,15 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               >
                 <RotateCcw size={11} /> 恢复
               </Button>
+              {/* C2：把这一份导成磁盘文件 —— 自动备份只在本机数据文件里，导出来才有一份独立退路 */}
+              <Button variant="icon-muted"
+                onClick={() => void exportFile(b)}
+                disabled={busy}
+                className="p-1.5"
+                title="把这份备份导出成文件（可放进云盘 / 移动硬盘）"
+              >
+                <Upload size={12} />
+              </Button>
               <Button variant="icon-danger" onClick={() => remove(b.id)} disabled={busy} className="p-1.5" title="删除备份">
                 <Trash2 size={12} />
               </Button>
@@ -302,6 +354,8 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
           <div className="text-11 text-ink-400 leading-relaxed bg-ink-850 border border-ink-700 rounded-lg px-3 py-2">
             打开项目时每 5 分钟自动滚动备份（最多 {db.MAX_AUTO_BACKUPS} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.MAX_DAILY_BACKUPS} 份）；
             <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
+            <br />
+            这些备份都只存在这台电脑的软件数据文件里。想多一层保险，可用每行的 <span className="text-ink-200">↑ 导出</span> 把某一份存成独立文件，放进云盘或移动硬盘。
           </div>
 
           {/* #012：份数过多时的体验提示 —— 便携版是单 JSON 全量写盘，膨胀会直接拖慢保存 */}
@@ -344,9 +398,18 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
                 onClick={() => fileInput.current?.click()}
                 disabled={busy}
                 className="flex items-center gap-1 px-3 py-1.5 text-12 text-ink-100 border border-ink-600 rounded-lg hover:bg-ink-800 disabled:opacity-50"
-                title="从迁移包文件恢复项目"
+                title="从迁移包文件恢复项目（会新建一个项目）"
               >
                 <FileDown size={12} /> 导入迁移包
+              </Button>
+              {/* C2：备份外置 —— 恢复回**当前项目**（与上面「导入迁移包=新建项目」不同） */}
+              <Button variant="bare"
+                onClick={() => backupFileInput.current?.click()}
+                disabled={busy}
+                className="flex items-center gap-1 px-3 py-1.5 text-12 text-ink-100 border border-ink-600 rounded-lg hover:bg-ink-800 disabled:opacity-50"
+                title="从「导出」出来的单份备份文件恢复**当前项目**（覆盖式）"
+              >
+                <FileDown size={12} /> 从备份文件恢复本项
               </Button>
             </div>
           </div>
@@ -380,6 +443,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
           )}
         </div>
         <input ref={fileInput} type="file" accept=".json,application/json" className="hidden" onChange={onFile} />
+        <input ref={backupFileInput} type="file" accept=".json,application/json" className="hidden" onChange={onBackupFile} />
       </Modal>
 
       {/* v1.6：应用内输入弹窗（替代浏览器 prompt，桌面端可用） */}
