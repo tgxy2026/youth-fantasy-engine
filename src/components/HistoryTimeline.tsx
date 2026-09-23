@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import type { TableRow, TabDef, CalendarDef } from '../lib/types'
-import { storyDateKey } from './StoryDateInput'
-import { Calendar, Users, X } from 'lucide-react'
+import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, storyDateKey, storyDateYear, storySpanDays } from '../lib/storyDate'
+import { Calendar, Users, X, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 
@@ -19,7 +19,12 @@ interface Evt {
   code: string
   title: string
   calName: string
+  /** 发生时间（起点） */
   time: string
+  /** 结束时间（终点；与起点相同 = 瞬时事件） */
+  end: string
+  /** 持续天数：0=同一天；null=填不全算不出；负数=填反了（要警示，不静默纠正） */
+  span: number | null
   ago: string
   truth: string
   legend: string
@@ -36,7 +41,14 @@ interface Props {
   rows: TableRow[]
   tab: TabDef
   calendars: CalendarDef[]
+  /** 一年几个月 / 每月几天 —— 持续天数按它换算（不给则按默认 12×30） */
+  calendarRule?: CalendarRule
 }
+
+/** 时长横条的最大像素长度（等距布局下留出的上限，避免一条超长事件盖住半个轴） */
+const SPAN_BAR_MAX = 384
+/** 有跨度但换算出来极短时，也给一个看得见的最小长度 */
+const SPAN_BAR_MIN = 10
 
 const STATUS_STYLE: Record<string, string> = {
   '已定稿': 'bg-emerald-500/15 text-emerald-300',
@@ -52,16 +64,17 @@ const TOP = 30
 const POINT_R = 9
 const CARD_W = 210
 
-export default function HistoryTimeline({ rows, calendars }: Props) {
+export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
   const [hover, setHover] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = useState<'all' | '已定稿' | '待补充' | '已变更'>('all')
   const [selected, setSelected] = useState<Evt | null>(null)
 
-  const yearOf = (t: string) => {
-    const k = storyDateKey(t)
-    return isFinite(k) ? Math.floor(k / 10000) : NaN
+  const yearOf = (t: string) => storyDateYear(t) ?? NaN
+  /** 起止展示串：只填了起点就只显示起点，两端都有则显示区间 */
+  const rangeLabel = (e: Pick<Evt, 'time' | 'end'>, cal: string) => {
+    const s = formatStoryRange(e.time, e.end)
+    return cal ? `${cal} ${s}` : s
   }
-  const dateLabel = (t: string, cal: string) => (cal ? `${cal} ${t}` : t)
 
   const data = useMemo(() => {
     // 历法权重查表：只在 memo 内部使用，就地定义可让依赖收敛到实际读到的 calendars
@@ -76,7 +89,8 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
     return filtered
       .map(r => {
         const calName = r.data['历法'] ?? ''
-        const time = r.data['故事内时间'] ?? ''
+        const time = r.data['发生时间'] ?? ''
+        const end = r.data['结束时间'] ?? ''
         const tk = storyDateKey(time)
         const key = calValueOf(calName) * 1e10 + (isFinite(tk) ? tk : Number.POSITIVE_INFINITY)
         return {
@@ -85,6 +99,8 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
           title: r.data['事件名称'] ?? '',
           calName,
           time,
+          end,
+          span: storySpanDays(calendarRule, time, end),
           ago: r.data['距今时长'] ?? '',
           truth: r.data['事件经过（真相）'] ?? '',
           legend: r.data['民间流传版本（vs真相）'] ?? '',
@@ -98,7 +114,22 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
         } as Evt
       })
       .sort((a, b) => a.key - b.key)
-  }, [rows, filterStatus, calendars])
+  }, [rows, filterStatus, calendars, calendarRule])
+
+  /**
+   * 时长横条的像素比例尺：**本轴最长的一段 → SPAN_BAR_MAX**。
+   * 为什么用相对比例而不是固定 px/天：事件时长跨好几个量级（三百年 vs 三天），
+   * 固定比例下短的那批会缩成一条看不见的线；相对比例至少保证"最长那根最显眼、
+   * 其余按比例排"。真实天数一律写在卡片上，不靠横条长度读数。
+   */
+  const maxSpan = useMemo(
+    () => data.reduce((mx, d) => Math.max(mx, d.span ?? 0), 0),
+    [data],
+  )
+  const barWidthOf = (span: number | null): number => {
+    if (span === null || span <= 0 || maxSpan <= 0) return 0
+    return Math.max(SPAN_BAR_MIN, Math.round((span / maxSpan) * SPAN_BAR_MAX))
+  }
 
   const calLegend = [...calendars].sort((a, b) => a.value - b.value)
     .map(c => `${c.name}(${c.value})`).join(' → ')
@@ -107,7 +138,7 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
     return (
       <div className="p-10 text-center text-ink-400 text-sm">
         <Calendar size={32} className="mx-auto mb-2 text-ink-600" />
-        暂无历史事件数据。请先在「表格视图」中录入事件（含「历法」与「故事内时间」），切换回「时间轴视图」即可看到。
+        暂无历史事件数据。请先在「表格视图」中录入事件（含「历法」与「发生时间」），切换回「时间轴视图」即可看到。
       </div>
     )
   }
@@ -132,7 +163,9 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
     ([
       e.code && ['编号', e.code],
       e.calName && ['历法', e.calName],
-      e.time && ['故事内时间', e.time],
+      e.time && ['发生时间', e.time],
+      e.end && ['结束时间', e.end],
+      (e.span !== null && e.span !== 0) && ['持续时长', `${formatSpanDays(e.span)}${e.span < 0 ? '（结束早于开始，请核对）' : ''}`],
       e.ago && ['距今时长', e.ago],
       e.status && ['状态', e.status],
       e.truth && ['真相', e.truth],
@@ -154,6 +187,11 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
         </div>
         {calendars.length > 1 && (
           <span className="text-10 text-ink-500">（虚线段 = 相邻事件时间跨度超过 5 年）</span>
+        )}
+        {maxSpan > 0 && (
+          <span className="text-10 text-ink-500">
+            （圆点后的横条 = 持续时长；起止填同一天则仍是一个圆点。具体天数写在卡片上，横条只比长短）
+          </span>
         )}
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-11 text-ink-500 mr-1">状态筛选：</span>
@@ -186,6 +224,23 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
             ))}
           </svg>
 
+          {/* 时长横条（2.4.4）：起点圆 → 终点，长度按持续天数换算；起止同一天则不画（仍是一个圆点） */}
+          {data.map((d, i) => {
+            const w = barWidthOf(d.span)
+            if (w <= 0) return null
+            const x = pointX(i), y = pointY(i)
+            const color = COLORS[i % COLORS.length]
+            const on = hover === d.id || selected?.id === d.id
+            return (
+              <div
+                key={`span-${d.id}`}
+                className={`absolute rounded-full ${color.dot} ${on ? 'opacity-70' : 'opacity-35'}`}
+                style={{ left: x, top: y - 3, width: w, height: 6, zIndex: 5 }}
+                title={`${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(d.span ?? 0)}）`}
+              />
+            )
+          })}
+
           {/* 节点卡片（摘要，点击弹窗看全部） */}
           {data.map((d, i) => {
             const x = pointX(i), y = pointY(i)
@@ -205,11 +260,18 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
                     ${active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
                 >
                   <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
-                    <Calendar size={9} /> {d.time ? dateLabel(d.time, d.calName) : '时间未定'}
+                    <Calendar size={9} /> {d.time ? rangeLabel(d, d.calName) : '时间未定'}
                   </div>
                   <div className="text-12 text-ink-100 font-semibold leading-snug line-clamp-2">
                     {d.title || '（未命名事件）'}
                   </div>
+                  {/* 持续时长：填反了（负数）也照实显示并标红 —— 那是设定冲突，要让人看见 */}
+                  {d.span !== null && d.span !== 0 && (
+                    <div className={`mt-1 text-10 flex items-center gap-1 ${d.span < 0 ? 'text-rose-300' : 'text-ink-400'}`}>
+                      <AlarmClock size={9} />
+                      {d.span < 0 ? `结束早于开始 ${formatSpanDays(Math.abs(d.span))}（请核对）` : `持续 ${formatSpanDays(d.span)}`}
+                    </div>
+                  )}
                   {d.who && (
                     <div className="mt-1.5 text-10 text-ink-400 flex items-center gap-1">
                       <Users size={9} /> <span className="truncate">{d.who}</span>
@@ -246,7 +308,7 @@ export default function HistoryTimeline({ rows, calendars }: Props) {
         <Modal open onClose={() => setSelected(null)} hideHeader width={480} maxHeight="85vh" bodyClassName="!p-0">
               <div className="flex-1 min-w-0">
                 <div className="text-10 text-amber font-semibold mb-0.5">
-                  {selected.time ? dateLabel(selected.time, selected.calName) : '时间未定'}
+                  {selected.time ? rangeLabel(selected, selected.calName) : '时间未定'}
                   {selected.calName && <span className="text-ink-500"> · {selected.calName}</span>}
                 </div>
                 <h3 className="text-16 font-semibold text-ink-50 leading-snug">{selected.title || '（未命名事件）'}</h3>

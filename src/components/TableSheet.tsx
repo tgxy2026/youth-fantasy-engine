@@ -4,11 +4,12 @@
  * 本文件**只负责长相**：状态、effect、派生值与动作全部在 `useTableSheetModel()`（2026-09-19 拆出）。
  * 下面那行同名解构是刻意的 —— 让 JSX 保持原样、零改动，把「搬家」与「改造」分开做。
  */
+import { useState } from 'react'
 import type { TabDef } from '../lib/types'
 import { Z } from '../lib/zLayer'
 import { deleteTableRow } from '../lib/db'
 import { SABC_LABELS, type VisCtx } from '../lib/schema'
-import { Plus, Trash2, Info, Save, Check, Calendar, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch } from 'lucide-react'
+import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch } from 'lucide-react'
 import HistoryTimeline from './HistoryTimeline'
 import StoryTimeline from './StoryTimeline'
 import StorylineView from './StorylineView'
@@ -21,6 +22,7 @@ import AIOrganize from './AIOrganize'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import FeedbackAIPanel from './FeedbackAIPanel'
 import TermDedupPanel from './TermDedupPanel'
+import CalendarRuleModal from './CalendarRuleModal'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
@@ -43,6 +45,8 @@ interface Props {
 
 export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', features: [] }, focusRowId, onFocusConsumed }: Props) {
   const model = useTableSheetModel({ tab, focusRowId, onFocusConsumed })
+  /** 「历法规则」弹窗（一年几个月 / 每月几天） */
+  const [showCalRule, setShowCalRule] = useState(false)
 
   const {
     // 落库与装载
@@ -62,7 +66,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 人物关系分组
     relationGroups, 
     // 历法
-    calendars, 
+    calendars, calendarRule, setCalendarRule,
     // AI 入口
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize,
   } = model
@@ -86,6 +90,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 • 带「编号 / 章节号」的表按编号自动排序，空白沉底（章节总表例外：按创建时间倒序，最新写的章节在最上面）；编号不可重复、删除后不复用。
 • 单元格里出现 F01 / H01 这类编号，会自动生成跳转按钮，直达伏笔表 / 历史事件。
 • 历史事件、时间脉络页签可在右上「表格 ⇄ 时间轴」切换视图；时间轴按「历法」列的数值判定跨历法先后顺序，可在表格的「历法」列填写（项目级多历法配置，支持新增 / 改名 / 改数值）。
+• 这两张表的时间是「发生时间 / 结束时间」两端：一天内的事两端填同一天，持续性的事件填上结束时间，时间轴会用一段横条画出这段时长。年份可填负数与 0（如 -300 = 公元前 300 年）；「一年几个月、每月几天」在页头「历法规则」里改（默认 12 月 × 30 天）。
 • 人物关系按「人物A / 人物B」自动归入双方文件夹，便于按人查阅；右上「表格 ⇄ 关系图」可切换关系图。
 • 关系图交互（v1.6）：「拖动节点」微调布局、「拖拽空白处平移」画布、「滚轮缩放」（0.4x–3x）、「点击节点收起/展开」其关系边；工具栏有放大/缩小/重置视图；底部图例按关系类型着色——自定义的关系类型也有专属颜色。
 • 伏笔追踪可切到「剧情线」视图（v1.6.1）：自动聚合伏笔（埋设/回收）、爽点、时间脉络事件，按章节串成一条叙事主线；顶部统计悬空伏笔与「已到点未回收」的警示。
@@ -156,6 +161,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                 <Calendar size={11} /> 时间轴
               </Button>
             </div>
+          )}
+          {/* 历法规则：只有带「故事内时间」列的表（历史事件 / 时间脉络）才需要它。
+              ⚠️ 刻意挂在时间轴切换旁边 —— 这两件事本来就是同一件事的两半（排序口径）。 */}
+          {isTimelineCapable && (
+            <Button variant="secondary" onClick={() => setShowCalRule(true)}
+              className="flex items-center gap-1.5 px-3 h-9 rounded-lg text-12 font-medium shrink-0"
+              title={`当前：一年 ${calendarRule.monthsPerYear} 个月 × 每月 ${calendarRule.daysPerMonth} 天（共 ${calendarRule.monthsPerYear * calendarRule.daysPerMonth} 天）。点这里修改 —— 月份与日期的下拉、时间轴的持续时长都按它算`}
+            >
+              <CalendarClock size={12} /> 历法规则
+            </Button>
           )}
           {isGraphCapable && (
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
@@ -242,9 +257,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       ) : viewMode === 'storyline' && tab.id === 'foreshadow' ? (
         <StorylineView />
       ) : viewMode === 'timeline' && tab.id === 'history' ? (
-        <HistoryTimeline rows={rows} tab={tab} calendars={calendars} />
+        <HistoryTimeline rows={rows} tab={tab} calendars={calendars} calendarRule={calendarRule} />
       ) : viewMode === 'timeline' && tab.id === 'timeline' ? (
-        <StoryTimeline rows={rows} tab={tab} calendars={calendars} />
+        <StoryTimeline rows={rows} tab={tab} calendars={calendars} calendarRule={calendarRule} />
       ) : tab.id === 'relations' ? (
         /* ============ 人物关系：按人物分组的文件夹视图（实现已拆到 TableRelationGroups） ============ */
         <TableRelationGroups tab={tab} model={model} ctx={ctx} />
@@ -338,6 +353,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {showFill && (
         <AITemplateFill
           fields={tableFields}
+          draftScope={`table::${tab.id}`}
           title={`AI 补全 · ${tab.name}`}
           sketchPlaceholder="例如：北境最大的商盟，掌控三条主干商路，与皇室关系微妙，暗中资助主角……"
           onSubmit={handleFill}
@@ -349,6 +365,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         <AITemplateFill
           fields={tableFields}
           existing={fillRow.data}
+          draftScope={`row::${tab.id}::${fillRow.id}`}
           title={`AI 补全本行空白 · ${tab.name}`}
           sketchPlaceholder="补充这一行已填内容的背景 / 细节，让 AI 补全其余空白字段（已填的不会动）…"
           onSubmit={values => handleFillRow(fillRow, values)}
@@ -371,6 +388,15 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       )}
       {showDedupAI && (
         <TermDedupPanel rows={rows.map(r => r.data)} onClose={() => setShowDedupAI(false)} />
+      )}
+      {/* 条件渲染而非常挂：弹窗内部的两个输入框初值来自 props，常挂会拿到规则异步加载前的旧值 */}
+      {showCalRule && (
+        <CalendarRuleModal
+          open
+          rule={calendarRule}
+          onSave={next => { setCalendarRule(next); setShowCalRule(false) }}
+          onClose={() => setShowCalRule(false)}
+        />
       )}
     </div>
   )

@@ -12,7 +12,11 @@ interface Props {
   minRows?: number
   /** 最小高度（px），保证空字段也有合适的点击区域。给了它就以它为准，忽略 minRows */
   minHeight?: number
-  /** 最大高度（px），超过后内部滚动，避免超长文本把页面撑得过长 */
+  /**
+   * 最大高度（px），超过后内部滚动，避免超长文本把页面撑得过长。
+   * **传 0 = 不设上限**：框子随文本一路长高，永不出现内部滚动条
+   * （「设定草稿箱」这类"想到多少写多少"的场合要的就是这个手感）。
+   */
   maxHeight?: number
   /**
    * 字号类。默认 12px —— 需要别的字号时**从这里传**，别塞进 className：
@@ -54,7 +58,9 @@ export default function AutoTextarea({
     const box = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)
       + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
     const min = minHeight ?? (minRows ? Math.round(lh * minRows + box) : 32)
-    ta.style.height = Math.max(min, Math.min(ta.scrollHeight, maxHeight)) + 'px'
+    // maxHeight=0 ⇒ 不封顶（见 props 注释）
+    const cap = maxHeight > 0 ? maxHeight : Number.MAX_SAFE_INTEGER
+    ta.style.height = Math.max(min, Math.min(ta.scrollHeight, cap)) + 'px'
   }, [value, minRows, minHeight, maxHeight, textClass])
 
   return (

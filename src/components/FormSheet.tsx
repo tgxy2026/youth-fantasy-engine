@@ -221,6 +221,7 @@ export default function FormSheet({ tab }: Props) {
         <AITemplateFill
           fields={formFields}
           existing={data}
+          draftScope={`form::${tab.id}`}
           title={`AI 补全 · ${tab.name}`}
           sketchPlaceholder="例如：这是一个以「灵气复苏」为背景的东方玄幻世界，主角走吞噬进化路线……"
           onSubmit={handleFill}

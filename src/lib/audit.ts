@@ -1,4 +1,6 @@
 // ============ 审计通用类型与工具（伏笔/连续性/错别字/文风 四引擎共用） ============
+import type { CalendarRule } from './types'
+import { DEFAULT_CALENDAR_RULE } from './types'
 
 export type IssueSeverity = 'error' | 'warn' | 'info'
 
@@ -64,15 +66,28 @@ export function cnNumToArabic(s: string): number {
   return map[s] ?? NaN
 }
 
-/** 解析严格故事内日期 "3024年3月9日" / "4年1月1日" → 可比较整数；无法解析返回 null */
-export function parseStoryDateKey(s: string | undefined): number | null {
+/**
+ * 解析严格故事内日期 "3024年3月9日" / "4年1月1日" → 可比较整数；无法解析返回 null。
+ *
+ * 🔴 2.4.4：① 年份**可为负、可为 0**（架空世界要写「公元前」）；
+ * ② 月 / 日的合法范围按 `CalendarRule` 判定 —— 硬编码 1~12 月 / 1~31 日 的话，
+ * 作者把历法改成「一年 18 个月」后，第 13 月会被判成非法、连续性检查**静默失效**
+ * （不报错、只是查不出来，属于最难发现的那种坏）。
+ * 不传 rule 时按默认 12×30 —— 于是旧用例「13 月 → null」的判据不变。
+ */
+export function parseStoryDateKey(
+  s: string | undefined,
+  rule: CalendarRule = DEFAULT_CALENDAR_RULE,
+): number | null {
   if (!s) return null
-  const m = s.trim().match(/(\d+)\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/)
+  const m = s.trim().match(/(-?\d+)\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/)
   if (!m) return null
   const y = parseInt(m[1], 10)
   const mo = parseInt(m[2], 10)
   const d = parseInt(m[3], 10)
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null
+  if (!Number.isFinite(y)) return null
+  if (mo < 1 || mo > rule.monthsPerYear) return null
+  if (d < 1 || d > rule.daysPerMonth) return null
   return y * 10000 + mo * 100 + d
 }
 

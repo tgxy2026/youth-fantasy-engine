@@ -573,6 +573,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
       {showFill && (
         <AITemplateFill
           fields={cardFields}
+          // 草稿本按「这张卡」存：换到另一张角色卡时，攒的草稿不会跟错人
+          draftScope={`card::${tab.id}::${draft?.id ?? 'new'}`}
           title={`AI 补全 · ${tab.name}`}
           sketchPlaceholder="例如：一个叫叶昭的少年，是没落剑派最后一名弟子，性格倔强但重情义，想复兴门派……"
           onSubmit={handleFill}

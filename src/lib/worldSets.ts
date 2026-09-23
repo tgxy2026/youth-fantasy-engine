@@ -24,6 +24,26 @@
  * ① 哪些页签是「多套表」；② 子级挂在哪个 tabId 下；③ 活跃 / 已完结怎么切分。
  */
 
+/**
+ * 「设定草稿箱」的存储键（2.4.4 · 社区反馈）。
+ *
+ * 形态：母级与**每个子世界各一份**，就存在该层自己的 data 里（键即本常量），
+ * 于是切层 / 落库 / 云同步全部自动跟着走，不用再开一张表。
+ *
+ * 🔴 为什么键要以**双下划线**开头：表单数据的键一向是「模块名::字段名」，
+ *    渲染进 AI 上下文时有一道「兼容历史遗留 key」的兜底循环（`renderForm` 末尾）——
+ *    它会把任何没在 schema 里登记过的键都当字段渲染出来。
+ *    没有统一前缀的话，草稿箱那几千字就会顺着这道兜底混进提示词，
+ *    而界面上明明写着「不发给 AI」（口径自相矛盾，比不写更糟）。
+ *    故约定：**`__` 前缀 = 内部字段，一律不进 AI**，判据见 `isInternalFieldKey`。
+ */
+export const FREE_DRAFT_KEY = '__freeDraft__'
+
+/** 内部字段键判据（双下划线前缀）：不渲染进 AI 上下文、不进设定集导出、不计入"已填 N 项" */
+export function isInternalFieldKey(key: string): boolean {
+  return key.startsWith('__')
+}
+
 /** 支持母子结构的页签（🔴 单一判据：以后要多支持一张表，只往这里加名字） */
 export const WORLD_SET_TABS: readonly string[] = ['worldbase', 'power']
 

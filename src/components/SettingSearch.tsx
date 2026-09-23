@@ -9,6 +9,7 @@ import CharacterSelect from './CharacterSelect'
 import TableRefSelect from './TableRefSelect'
 import StoryDateInput from './StoryDateInput'
 import CalendarSelect from './CalendarSelect'
+import { useCalendarRule } from '../lib/useCalendarRule'
 import { Button } from './Button'
 
 type DocKind = 'card' | 'table' | 'relation'
@@ -91,6 +92,8 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
 
   // 历法配置（项目级，历史事件 / 时间脉络「历法」列的下拉来源）
   const [calendars, setCalendars] = useState<CalendarDef[]>([{ name: '灵历', value: 0 }])
+  // 历法规则（一年几个月 / 每月几天）：这里改设定也要按它出月/日候选，否则与表格页口径不一致
+  const { rule: calendarRule } = useCalendarRule()
   useEffect(() => {
     db.getSetting<CalendarDef[]>('calendars', []).then(v => { if (v && v.length > 0) setCalendars(v) })
   }, [])
@@ -503,10 +506,11 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                       />
                                     </div>
                                   ) : f.type === 'date' ? (
-                                    /* 故事内时间：结构化 某年某月某日 输入，与原表一致 */
+                                    /* 故事内时间：结构化 某年某月某日 输入，与原表一致（月/日候选按项目历法规则） */
                                     <div className="mt-0.5">
                                       <StoryDateInput
                                         value={draft}
+                                        rule={calendarRule}
                                         onChange={v => { setDraft(v); saveField(doc, f, v) }}
                                       />
                                     </div>

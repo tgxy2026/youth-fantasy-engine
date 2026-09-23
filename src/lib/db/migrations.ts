@@ -225,6 +225,42 @@ export async function runMigrations(): Promise<void> {
   await migrateGeoMaps()
   // 与上面几步互不相干（只碰 misc-settings 一张表），故放最后，不参与既有的顺序约束
   await migrateMiscSettingsToCards()
+  // 故事内时间 → 发生时间（2.4.4）：同样只碰 history / timeline 两张表，与上面互不依赖
+  await migrateStoryTimeColumns()
+}
+
+/**
+ * 「故事内时间」→「发生时间」（2.4.4 · 社区反馈）：历史事件 / 时间脉络两张表把单个时间点
+ * 拆成了「发生时间 / 结束时间」两端。
+ *
+ * 为什么必须迁移：schema 改列名**不会**自动搬数据 —— 表还是那张表、行还是那些行，
+ * 只是渲染时按新列名去取值，于是老数据全部变成空白格（数据其实还在，界面上看不见了）。
+ *
+ * 口径：
+ *  · **只补不删** —— 老键「故事内时间」原样保留（万一作者降级回旧版，数据还在）；
+ *  · 「结束时间」**留空**：老数据只有一个时间点，凭空造一个终点等于替作者编设定；
+ *    留空后该事件在时间轴上就是一个圆点（瞬时事件），正是它原本的样子。
+ *
+ * 幂等：`发生时间` 已有值（无论是否为空串）的行跳过；跑第二遍零改动。
+ */
+export async function migrateStoryTimeColumns(): Promise<number> {
+  const pid = currentProjectId
+  if (!pid) return 0
+  const OLD = '故事内时间'
+  const START = '发生时间'
+  let moved = 0
+  for (const tabId of ['history', 'timeline']) {
+    const rows = await getTableRows(tabId)
+    for (const r of rows) {
+      const old = (r.data?.[OLD] ?? '').trim()
+      if (!old) continue
+      // 🔴 用 `in` 判断而不是取值判空：老行"本来就没填"时不该被反复写库
+      if (START in (r.data ?? {})) continue
+      await saveTableRow({ ...r, data: { ...r.data, [START]: old } })
+      moved++
+    }
+  }
+  return moved
 }
 
 /**

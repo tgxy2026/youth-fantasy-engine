@@ -28,6 +28,7 @@ import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
 import { uid } from '../lib/id'
 import { aiCapabilityOf } from '../lib/aiScope'
 import { useAIReady } from '../lib/useAIReady'
+import { useCalendarRule } from '../lib/useCalendarRule'
 import { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
 import { usePersistedSet } from '../lib/uiPrefs'
 import { showToast, confirmDialog } from './dialogs'
@@ -291,6 +292,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     setCalendars(next)
     setSetting('calendars', next)
   }
+
+  // 历法规则（一年几个月 / 每月几天）—— 项目级，月/日下拉与"持续时长"都按它算
+  const { rule: calendarRule, setRule: setCalendarRule } = useCalendarRule()
 
   const dirtyKeys = Object.keys(drafts)
 
@@ -698,6 +702,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     relationGroups, relGroupOpen, setRelGroupOpen, relRowOpen, setRelRowOpen,
     // 历法
     calendars, saveCalendars,
+    // 历法规则（一年几个月 / 每月几天）
+    calendarRule, setCalendarRule,
     // AI 入口
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize,
   }

@@ -19,6 +19,31 @@ export interface CalendarDef {
   value: number
 }
 
+/**
+ * **历法规则**：一年几个月、一个月几天（2.4.4 · 社区反馈）。
+ *
+ * 为什么要有它：此前「故事内时间」被硬编码成地球公历（12 月、大小月、闰年）——
+ * 写架空世界的作者根本套不上（"这个历法一年 18 个月、每月 40 天"是家常便饭），
+ * 只能乱填一个数，时间轴排序随即失效。改成规则驱动后，月 / 日的下拉按它生成。
+ *
+ * 口径：**项目级统一**（不是每个历法各一套）—— 一个故事里换历法通常只是换纪元起点，
+ * 一年几个月不会跟着变；做成两套还得在排序时处理"跨历法的天数怎么比"，复杂且没收益。
+ */
+export interface CalendarRule {
+  /** 一年有多少个月（1~60，默认 12） */
+  monthsPerYear: number
+  /** 一个月有多少天（1~99，默认 30） */
+  daysPerMonth: number
+}
+
+/**
+ * 默认历法规则：一年 12 个月、每月 30 天（一年 360 天）。
+ *
+ * ⚠️ 刻意**放在 types.ts**（本文件不依赖任何模块）：`audit.ts` 这类底层工具也要用它当默认值，
+ *     而 `storyDate.ts` 依赖 db —— 让 audit 去 import 它，等于给底层工具挂上一整条存储依赖链。
+ */
+export const DEFAULT_CALENDAR_RULE: CalendarRule = { monthsPerYear: 12, daysPerMonth: 30 }
+
 /** 表格列 */
 export interface TableColumn {
   name: string
