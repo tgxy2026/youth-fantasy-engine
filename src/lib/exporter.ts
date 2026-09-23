@@ -9,6 +9,7 @@
 import type { Volume, Chapter } from './types'
 import * as db from './db'
 import { TABS } from './schema'
+import { isWorldSetTab, splitActive } from './worldSets'
 import { ZipBuilder, downloadBlob } from './zip'
 import { chapterSeqMap } from './chapterSeq'
 
@@ -342,15 +343,34 @@ async function buildSettingCompendium(projectName: string): Promise<string> {
     if (tab.type === 'dashboard' || tab.type === 'guide' || tab.type === 'about' || tab.id === 'editor') continue
     if (tab.type === 'form') {
       const data = await db.getFormData(tab.id)
-      if (!hasContent(data)) continue
-      lines.push(`## ${tab.name}`, '')
-      for (const mod of tab.modules ?? []) {
-        lines.push(`### ${mod.name}`, '')
-        for (const f of mod.fields) {
-          const v = data[`${mod.name}::${f.name}`]
-          if (v && v.trim()) lines.push(`- **${f.name}**：${v}`)
+      // 母子结构表（C10）：母级 + 子世界各自成节。**导出是存档，已完结的也要出**（标出来即可），
+      // 与「AI 上下文只喂活跃」是两个口径 —— 别把这里的过滤照抄过去。
+      const subs = isWorldSetTab(tab.id) ? await db.getSubSets(tab.id).catch(() => []) : []
+      if (!hasContent(data) && subs.length === 0) continue
+      // 母级字段段（键为 `模块名::字段名`）——与下面子世界复用同一段渲染
+      const formSection = (d: Record<string, string>) => {
+        for (const mod of tab.modules ?? []) {
+          lines.push(`### ${mod.name}`, '')
+          for (const f of mod.fields) {
+            const v = d[`${mod.name}::${f.name}`]
+            if (v && v.trim()) lines.push(`- **${f.name}**：${v}`)
+          }
+          lines.push('')
         }
-        lines.push('')
+      }
+      lines.push(`## ${tab.name}`, '')
+      if (subs.length === 0) {
+        formSection(data)
+      } else {
+        // 有子世界时才引入层级标题（没建子项的书导出格式与改动前一字不差）
+        const { active } = splitActive(subs, await db.getActiveSubIds(tab.id).catch(() => []))
+        const isActive = new Set(active.map(s => s.id))
+        lines.push(`### 全书统一（母级）`, '')
+        formSection(data)
+        for (const s of subs) {
+          lines.push(`### 子世界 · ${s.name || '未命名'}（${isActive.has(s.id) ? '活跃' : '已完结'}）`, '')
+          formSection(s.data ?? {})
+        }
       }
     } else if (tab.type === 'table') {
       const rows = await db.getTableRows(tab.id)

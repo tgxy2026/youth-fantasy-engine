@@ -30,6 +30,9 @@ export * from './db/projects'
 export { getAllVolumes, saveVolume, deleteVolume, getAllChapterLedgerRows, purgeLedgerRowEverywhere } from './db/volumes'
 export * from './db/chapters'
 export * from './db/tabs'
+// 世界观 · 力量体系的「子级」（C10 · 2.4.2）：子项增删改 + 活跃开关。
+// 母级不在这里 —— 它就是 tabs 的 formData 那一份，位置与 API 都没变。
+export * from './db/worldSets'
 export type { DailyStat } from './db/meta'
 export { getMeta, setMeta, getDailyStats, putDailyStat, getSetting, setSetting } from './db/meta'
 export * from './db/tavernReports'

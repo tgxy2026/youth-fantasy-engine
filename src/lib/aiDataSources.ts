@@ -55,6 +55,20 @@ const CORE_TABLES = ['作品定位', '世界设定', '力量体系', '主要角�
 /** 按预算裁剪的统一说明 */
 const BY_BUDGET = '按当前上下文预算裁剪，装不下的部分不发送（并在发送内容里注明被略过）'
 
+/**
+ * 「世界设定 / 力量体系」走**母子结构**（C10 · 2.4.2）时的一条口径说明。
+ *
+ * 🔴 必须与实现同源：`aiContext` 只喂「母级 + 活跃子世界」，所以这里也要这么说 ——
+ *    否则作者会以为 AI 读过全部子世界（包括那些已完结的副本），然后困惑「它怎么没记住」。
+ */
+export const AI_WORLD_SET_NOTE = '「世界设定」「力量体系」按「全书统一（母级）+ 当前活跃的子世界」发送；'
+  + '已完结的子世界不发送（导出存档时仍会带上）'
+
+/** 这次要读的数据里是否含这两张母子结构表（含则补一句上面的口径说明） */
+export function mentionsWorldSet(f: AIFeatureSources): boolean {
+  return f.sources.some(s => s.items.some(n => n === '世界设定' || n === '力量体系'))
+}
+
 export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   // ==================== 正文写作 ====================
   'inline-suggest': {

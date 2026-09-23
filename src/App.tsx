@@ -3,12 +3,14 @@ import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import NovelEditor from './components/NovelEditor'
 import FormSheet from './components/FormSheet'
+import WorldSetSheet from './components/WorldSetSheet'
 import TableSheet from './components/TableSheet'
 import CharacterSheet from './components/CharacterSheet'
 import OutlineSheet from './components/OutlineSheet'
 import ProjectHub from './components/ProjectHub'
 import AboutPage from './components/AboutPage'
 import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
+import { isWorldSetTab } from './lib/worldSets'
 import * as db from './lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from './lib/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop } from './lib/desktop'
@@ -393,7 +395,11 @@ export default function App() {
     if (!tab) return <div className="p-8">页签不存在</div>
     switch (tab.type) {
       case 'form':
-        return <FormSheet key={tab.id} tab={tab} />
+        // 世界观 / 力量体系是「母子结构」表（C10 · 2.4.2）：母级（全书统一）+ 可多建的子世界。
+        // 其余表单型页签仍然是一页一份的 FormSheet。
+        return isWorldSetTab(tab.id)
+          ? <WorldSetSheet key={tab.id} tab={tab} />
+          : <FormSheet key={tab.id} tab={tab} />
       case 'table':
         return <TableSheet key={tab.id} tab={tab} onNavigate={navigate} ctx={visCtx} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
       case 'card':
