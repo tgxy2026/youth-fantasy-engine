@@ -76,19 +76,28 @@ export default function ExportFormatDialog({
     void import('../lib/exporter').then(setMod).catch(() => setMod(null))
   }, [open])
 
-  // 打开时读一次偏好（跨项目共享，跟人走）
+  // 打开时读一次偏好（跨项目共享，跟人走）——只读一次，避免每次开窗都从库拉一遍
   useEffect(() => {
     if (!open || loaded) return
     void (async () => {
       const saved = await db.getSetting<Partial<ExportPrefs>>(PREFS_KEY, {})
-      setPrefs({
-        tab: initialTab,
+      setPrefs(prev => ({
+        ...prev,
         platform: { ...DEFAULT_PREFS.platform, ...(saved.platform ?? {}) },
         headingOffset: saved.headingOffset ?? DEFAULT_PREFS.headingOffset,
-      })
+      }))
       setLoaded(true)
     })()
-  }, [open, loaded, initialTab])
+  }, [open, loaded])
+
+  // 🔴 每次打开都按**入口**定位页签（2026-09-23 实机抓出的缺陷）：
+  //    原先 tab 只在「首次读偏好」那一次被写上 initialTab，于是第二次从菜单点「Markdown」
+  //    会**停在「平台粘贴版」**——用户点的入口与看到的页面对不上。
+  //    选项（间距/标题/层级）仍按人记忆，只有"停在哪一页"跟随入口。
+  useEffect(() => {
+    if (!open) return
+    setPrefs(prev => (prev.tab === initialTab ? prev : { ...prev, tab: initialTab }))
+  }, [open, initialTab])
 
   const patch = (p: Partial<ExportPrefs>) => setPrefs(prev => {
     const next = { ...prev, ...p }
