@@ -1,5 +1,5 @@
 # novel-studio 长期记忆
-> 只记「该做什么／禁什么」；**为什么与踩坑经过一律指向 `docs/2.x.x-*` 与 skill**（那边不限字数）。事件留 `YYYY-MM-DD.md`。
+> 只记「该做什么／禁什么」；**为什么与踩坑经过一律指向 `docs/2.x.x-*` 与 skill**。事件留 `YYYY-MM-DD.md`。
 
 ## 红线
 - 🔴 产品立场：AI 只做辅助。**绝不做反检测/洗 AI 痕迹**；只做「创作主权存证＋质量自检＋如实申报」。
@@ -8,8 +8,9 @@
 - 禁删 `release/eb-cache/`；禁原生 `prompt/confirm/alert`。清单 `docs/2.3.1-Bug与待优化清单.md` 只记录、明说「处理」才动。提交含 `!`/换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
-- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本走 `env.ts:APP_VERSION_LABEL`。现 **2.4.2**（`package.json` 唯一源）。
-- 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。
+- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.4.2**）。
+- 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。基线：主 exe 181,097,984B、包 80.96MB。
+- 🔴 **环境两坑**：脚本内 `spawnSync`/`execFileSync` 起子进程被拦成 **EBUSY**（改用「清单外层生成」）；`fs.rmSync` 走 safe-delete（>10MB ETIMEDOUT）⇒ 清产物用 `unlinkSync` 深搜。
 - 🔴 启动**默认停项目管理首页**（首启先过「向导三选一」）；删项目时一并清 `lastProject`。
 
 ## 创作链路
@@ -26,11 +27,11 @@
 - 🔴 编辑器双图层：盒模型逐项一致；叠层重建归零 scrollTop→`useLayoutEffect` 回填；只走 `scanRefHighlight`。
 - 🔴 长任务状态放模块级 store（`lib/creativeSession.ts`）；lib 层禁 import components。
 - 🗺 多地图：新表 `geomaps`＋geography 的 `所属地图`；🔴 删图不删地点、改图名连带改归属。
-- 🔴 审计四条（详规见 skill `novel-studio-audit-fix`）：语料净化／`KEEP` 白名单／死代码回查 `docs/` 判决／**工具的结构假设会静默失明**（闸只查 `description`、`tips` 会漏）。
+- 🔴 审计四条（详规见 skill `novel-studio-audit-fix`）：语料净化／`KEEP` 白名单／死代码回查 `docs/` 判决／**工具的结构假设会静默失明**（闸只查 `description`，`tips` 漏）。
 
 ## 存储·同步
-- 🔴🔴 云盘同步「删了会复活」是**家族不是单条路径**：修＝墓碑 `syncTombstone.ts`＋`localHasContent` 闸。⚠️ **一次找齐同一个病的所有路径**（判据用墓碑，别只看「本地有没有」—— desktop `bulkPut` 会 `clearDeleted()`）。
-- 🔴 同步排除表 `EXCLUDED_META_KEYS` 管「含密钥的全局 meta」：现含 `aiProviders` 三键 + **`app.search`**。⚠️ 老库还有**第二载体** `tavern.settings.search`（由 `migrateLegacySearchKey` 清）—— 搬过家的密钥要连旧位置一起排查。
+- 🔴🔴 云盘同步「删了会复活」是**家族不是单条路径**：修＝墓碑 `syncTombstone.ts`＋`localHasContent` 闸。⚠️ **一次找齐同一个病的所有路径**（判据用墓碑；desktop `bulkPut` 会 `clearDeleted()`）。
+- 🔴 同步排除表 `EXCLUDED_META_KEYS` 管「含密钥的全局 meta」：现含 `aiProviders` 三键 + **`app.search`**。⚠️ 老库还有**第二载体** `tavern.settings.search`（由 `migrateLegacySearchKey` 清）（搬过家的密钥要连旧位置排查）。
 - 桌面整库一 JSON；🔴 图片先压缩再入库；⚠️ 别让云盘同步它。
 - 🔴🔴 **本地专属 store 有单一判据**：`syncCore.LOCAL_ONLY_STORES` + `isLocalOnlyStore()`
   （现含 `backups`、`backupPayloads`）—— 原 6 处硬编码已全改用它，**新增只往数组加名字**。
@@ -68,18 +69,18 @@
 - 🔴 实机走 skill `novel-studio-ui-livecheck`（脚本与全部踩坑都在里面）；**子代理结论必回源码验**；断言「落库」须直读 IDB。
 - 🔴 **拆巨型组件＝机械拆分器 + 实机指纹 + 负面对照**（脚本在 skill assets，坑写在文件头）；**拆完四件套**
   ＝`vite build`＋grep `tests/` 路径引用＋负面对照＋主文件头写明哪几层 DOM 不能动。
-- 🔴🔴 实机三条硬伤：①正文须 `textarea.novel-textarea`（页面有 4 个同名 div）；②播完种禁 reload；③**退出码须与断言一致**（关浏览器抛 `TargetClosedError`）。
-- 🔴🔴 **改启动路径/首启行为＝改了所有实机脚本的前置条件** → 必须先跑全量脚本、区分「产品回归」与「资产落后」。⚠️ 旧脚本的 `.catch(()=>{})` 会**静默伪装**成"功能坏了"；补丁插入点＝`goto()` 后**第一个 sleep 之后**。
+- 🔴🔴 实机三条硬伤：①正文须 `textarea.novel-textarea`；②播完种禁 reload；③**退出码须与断言一致**（关浏览器抛 `TargetClosedError`）。
+- 🔴🔴 **改启动路径/首启行为＝改了所有实机脚本的前置条件** → 必须先跑全量脚本、区分「产品回归」与「资产落后」。⚠️ 旧脚本 `.catch(()=>{})` 会**静默伪装**成"功能坏了"；补丁插在 `goto()` 后第一个 sleep 之后。
 
 ## 酒馆模式（动前必读 `docs/酒馆模式-工程红线.md`）
 - 🔴 归属：剧情会话/扮演设定/报告/背景**随项目**；自由会话/角色卡/记忆/面板设置/剧本库**跨项目**（`tavernReports` 勿漏 `deleteProject`）。
 - 🔴🔴 预算三数：`historyBudget`＝预算−400−整条 system；contextBudget **24000**；numCtx **32768** 别动。
 - 🔴 最易踩：①会话存**快照非引用**；②角色卡小项只能「名：内容」同行＋**全角冒号**。协议 **v1.11**。
-- 🔴🔴 **就绪判据必须同源**：酒馆模型来源＝`resolveTavernProvider` 三层兜底（会话 model → 面板 `defaultProviderId` → 全局活动模型）⇒ 走 `checkTavernReady`／`useTavernReady`；🔴 **绝不给酒馆链路加全局 `useAIReady`**（`uiUxGuards` 禁，注释里也不许出现该字面量）。
+- 🔴🔴 **就绪判据必须同源**：酒馆模型来源＝`resolveTavernProvider` 三层兜底（会话→面板→全局）⇒ 走 `checkTavernReady`／`useTavernReady`；🔴 **绝不给酒馆链路加全局 `useAIReady`**（`uiUxGuards` 禁，注释也不许出现）。
 - 🔴 `TavernControl` 拆分后：左右列 div 必须留主组件 —— 协议窗高度同步量它们的**直接子节点**（左恒 5、右恒 3），子组件一律返回 Fragment。
 
 ## 出厂数据·示范项目
-- 🧪 dev 数据放仓库外或 `dev-seed/`（🔴 import 必带 `?时间戳`）。📥 卡走 skill `tavern-cards-batch`。🚫 原生不预填自由示范卡（闸 `tavernSeedPolicy`；**老库卡只留不删**）。
+- 🧪 dev 数据放仓库外或 `dev-seed/`（🔴 import 必带 `?时间戳`）。📥 卡走 skill `tavern-cards-batch`。🚫 原生不预填自由示范卡（闸 `tavernSeedPolicy`；老库卡只留不删）。
 - 示范项目《吞天神脉》三卷 21 章（卷三 **剑锁中州**）；改正文同步 `seedContent.ts`→`seedData.ts`。
 - 🔴 闸：seed-schema-check＋`tests/seedRef`＋细纲卡核对。
 
@@ -91,25 +92,23 @@
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖）；用 `Read`／`test -f`。
 
 ## 2.4 开发（规划 `docs/2.4.0-版本规划.md`；记录 `docs/2.4.0/2.4.2-开发记录.md`）
-- 现版本 **2.4.2**（开发期即升）。顺序 C3→C6→C4→C2→C1→C9→C5→C7→C10；**C8（ima）本批跳过**。
-- ✅ **C1~C6 + C9 已完成并实机验证（09-23）**，落点/踩坑/数据见 `docs/2.4.2-开发记录.md`
-  与 `docs/2.4.2-C1-*拆分记录.md`。
+- ✅ **2.4.2 已封装发布（09-23）**；顺序 C3→C6→C4→C2→C1→C9→C5→C7→C10；**C8 本批跳过**。
+- ✅ **全项完成并实机验证**：见 `docs/2.4.2-开发记录.md`＋`2.4.2-C1-*拆分记录.md`。
 - ✅ **六维审计完成（09-23，修 44 处/20 文件）**：`docs/2.4.2-六维审计修复记录-2026-09-23.md`。
   P1＝裸 clipboard／**记忆退化仍推水位线**（新 `memoryDegraded`）／老库 `tavern.settings.search` 密钥残留。
   🔴 同步层测试**必须用 `backgroundPull()`**（`pullSnapshot` 不触发三路合并 ⇒ 用例会「新旧都通过」）。
-- 🔴 **新增 AI 功能要四处注册**（漏一处就静默半残）：`aiTasks` 门面（import + export +
-  `PROMPT_ORDER` + `PROMPT_SETS`）、`aiDataSources`、`aiWriterBudget`（加 budget kind 会让
-  `tests/writerBudget` 的 LEGACY 表缺项报错，须同步）。
-- 🔴 `exportBookPlatformText` 已 **async**；exporter 仍动态 import。⏳ C2「附设定集」分支未实机点过。
+- 🔴 **新增 AI 功能要四处注册**（漏一处静默半残）：`aiTasks` 门面（import+export+`PROMPT_ORDER`+
+  `PROMPT_SETS`）、`aiDataSources`、`aiWriterBudget`（加 budget kind 会让 `tests/writerBudget` 报错）。
+- 🔴 `exportBookPlatformText` 已 **async**；exporter 仍动态 import。
 - **C7 由另一个窗口负责**（不在本线推进）。
 - ✅ **C10 已完成（09-23）**：世界观/力量体系「**母子结构**」—— 母级不动（仍 form 型、永远喂 AI）；
   子级外挂 `cardRecords`（tabId `worldbase-sub`/`power-sub`，**不在 TABS**）+ 活跃态在 `settingsKV`。
-  🔴 **只喂活跃子项**、**单世界零变化**、离开页签必落库草稿。详录 `docs/2.4.2-C10-世界观多套方案.md`。
-- 2.4.0/2.4.1 详情见 `docs/2.4.0-开发记录.md`（A1 向导三选一／A2 性能基线闸／A3 快照时光机／
-  A4 轨迹＋证据包／A5 编辑缩进）。三目标：转化／长篇／可信。
+  🔴 **只喂活跃子项**、**单世界零变化**、离开页签必落库草稿。详录 `docs/2.4.2-C10-*方案.md`。
+- 🔴 发布链＝skill `novel-studio-packaging`＋`gitee-publish`；🔴 快照 sync 后**必 `git checkout -- .gitignore`**（每轮被覆盖丢密钥防护）。
+- 2.4.0/2.4.1 详情见 `docs/2.4.0-开发记录.md`。
 
 ## 对外推广
 - 🔴 文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→「口令」）；链接压最末＋后有缓冲文字（见 `docs/小黑盒推广帖/`）。
 - 🔴 **发帖顺序**：稿里承诺的版本号须**先在夸克盘＋Gitee Release 上架**再发帖。第 0/1/2 篇已发、第 3 篇待发、第 4 篇＝世界构建。
-- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。现对外 **2.4.0**（`v2.4.0`/`1159489`）。截图按篇号分组。
-- 🔴 Gitee 令牌常驻 `G:/AI软件/.gitee-token.txt`（只此一库用、到期自弃）。🔴 push 只需 `GIT_CONFIG_NOSYSTEM=1`（踢掉 helper-selector GUI）；🔴🔴 **绝不可再加 `GIT_CONFIG_GLOBAL=NUL`**（会屏蔽 GCM ⇒ 无凭据 ⇒ 静默挂死）。
+- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。Gitee 现对外 **2.4.2**（`v2.4.2`/`1162581`）；⚠️ 夸克盘未核实。截图按篇号分组。
+- 🔴 Gitee 令牌常驻 `G:/AI软件/.gitee-token.txt`。🔴 push 只需 `GIT_CONFIG_NOSYSTEM=1`；🔴🔴 **绝不可再加 `GIT_CONFIG_GLOBAL=NUL`**（屏蔽 GCM ⇒ 静默挂死）。
