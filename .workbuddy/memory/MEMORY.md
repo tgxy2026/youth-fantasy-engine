@@ -44,7 +44,8 @@
 - 🔴 按对侧高度定高：flex item 加 `overflow-hidden`；别同写 `flex-1`+`height`。图表柱子给 `max-w`（纯 `flex-1` 会拉满整行）。
 - 🔴 按钮：静止无框 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；🔴 **尺寸＝弹窗 md／主操作 sm／工具 xs；同排同 size**。
 - 🔴 页头 `HelpPopover` 问号**须与标题同行**；文案禁 markdown 星号→用「」。Enter 发送挡 `isComposing`。
-- 🔴 数值输入走 `NumberField`（**它 `Math.round` 抹小数**——温度改用档位按钮）；界面偏好走 `lib/uiPrefs.ts`（`yfe-ui:`，**存「偏离默认的那一侧」**）；字数口径走 `lib/wordCountMode.ts`（面板与编辑器共用）。
+- 🔴 z 层号：页内定位走 `Z.pageBackdrop/pageHandle/pageBase`；**判定不收三类见 zLayer 注释**。
+- 🔴 数值输入走 `NumberField`（**`Math.round` 抹小数**——温度改用档位按钮）；界面偏好走 `lib/uiPrefs.ts`（**存「偏离默认的那一侧」**）；字数口径走 `lib/wordCountMode.ts`。
 - 🔴 新增页签**四处**必同步：`TabType`／`TABS`／`App.renderContent`／`FEATURE_TIER`；**资料型**另须 `aiContext.PRIORITY`。
 
 ## AI 层
@@ -65,9 +66,8 @@
 - 三步基线：`tsc --noEmit`／`eslint src`／`node tests/run-all.mjs`（别用 `npm run verify`，沙箱拦）。
 - 🔴 闸 `tests/structureGates`（行数/归属/禁裸 `JSON.parse`/原生弹窗/**any 账本只准降**）。
 - 🔴 实机走 skill `novel-studio-ui-livecheck`（脚本与全部踩坑都在里面）；**子代理结论必回源码验**；断言「落库」须直读 IDB。
-- 🔴 **拆巨型组件＝机械拆分器 + 实机指纹 + 负面对照**（脚本在 skill assets，**坑写在文件头**）：
-  指纹量文本哈希＋控件计数＋DOM 层级；🔴 **拆完四件套**＝`vite build`＋grep `tests/` 路径引用
-  ＋负面对照＋主文件头写明哪几层 DOM 不能动。
+- 🔴 **拆巨型组件＝机械拆分器 + 实机指纹 + 负面对照**（脚本在 skill assets，坑写在文件头）；**拆完四件套**
+  ＝`vite build`＋grep `tests/` 路径引用＋负面对照＋主文件头写明哪几层 DOM 不能动。
 - 🔴🔴 实机三条硬伤：①正文须 `textarea.novel-textarea`（页面有 4 个同名 div）；②播完种禁 reload；③**退出码须与断言一致**（关浏览器抛 `TargetClosedError`）。
 - 🔴🔴 **改启动路径/首启行为＝改了所有实机脚本的前置条件** → 必须先跑全量脚本、区分「产品回归」与「资产落后」。⚠️ 旧脚本的 `.catch(()=>{})` 会**静默伪装**成"功能坏了"；补丁插入点＝`goto()` 后**第一个 sleep 之后**。
 
@@ -88,7 +88,7 @@
 - 🔴 **G 盘元数据极慢**（删 49ms／建 25ms 每文件）→ 大批小文件**单进程挂后台慢跑**、**禁并行**；判「删除慢」先跨盘对照。
 - 🔴 `git ls-files` 中文路径须 `-c core.quotepath=false ls-files -z` 按 `\0` 切。
 - 🔴🔴 同消息对同一文件发多个 Edit 会相互覆盖→串行改、改完即 grep。
-- 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖）；用 `Read`／`test -f`；`memory/*.md` 只准 append。
+- 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖）；用 `Read`／`test -f`。
 
 ## 2.4 开发（规划 `docs/2.4.0-版本规划.md`；记录 `docs/2.4.0/2.4.2-开发记录.md`）
 - 现版本 **2.4.2**（开发期即升）。顺序 C3→C6→C4→C2→C1→C9→C5→C7→C10；**C8（ima）本批跳过**。

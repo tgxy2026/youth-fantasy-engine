@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { Z } from '../lib/zLayer'
 import * as db from '../lib/db'
 import type { Chapter, CardRecord } from '../lib/types'
 import { Button } from './Button'
@@ -77,7 +78,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
         <table className="border-collapse text-10">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 bg-ink-850 text-left text-ink-400 font-medium px-2 py-1.5 pr-3 whitespace-nowrap">角色 \\ 章节</th>
+              <th className="sticky left-0 bg-ink-850 text-left text-ink-400 font-medium px-2 py-1.5 pr-3 whitespace-nowrap" style={{ zIndex: Z.pageHandle }}>角色 \\ 章节</th>
               {topChapters.map(ch => (
                 <th key={ch.id} className="text-ink-500 font-normal px-0.5 py-1.5 align-bottom" style={{ width: 22 }}>
                   <div className="whitespace-nowrap" style={{ writingMode: 'vertical-rl' }} title={`${ch.title}（点单元格跳转）`}>
@@ -90,7 +91,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
           <tbody>
             {topChars.map(r => (
               <tr key={r.name}>
-                <td className="sticky left-0 z-10 bg-ink-850 text-ink-200 font-medium px-2 py-1 pr-3 whitespace-nowrap">{r.name}</td>
+                <td className="sticky left-0 bg-ink-850 text-ink-200 font-medium px-2 py-1 pr-3 whitespace-nowrap" style={{ zIndex: Z.pageHandle }}>{r.name}</td>
                 {topChapters.map(ch => {
                   const c = r.counts[ch.id] ?? 0
                   return (

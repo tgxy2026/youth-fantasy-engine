@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Z } from '../lib/zLayer'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { Maximize2, ZoomIn, ZoomOut, MapPin, Pencil, ImagePlus, X } from 'lucide-react'
 import type { TabDef } from '../lib/types'
@@ -175,9 +176,9 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
         <div ref={wrapRef} className="flex-1 min-w-0 relative overflow-hidden" style={{ background: 'rgb(var(--ink-900))' }}>
           {/* 空态提示必须 pointer-events-none，否则会挡住「单击空白新增」 */}
           {loading ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center text-ink-500 text-sm pointer-events-none">加载地理数据…</div>
+            <div className="absolute inset-0 flex items-center justify-center text-ink-500 text-sm pointer-events-none" style={{ zIndex: Z.pageHandle }}>加载地理数据…</div>
           ) : rows.length === 0 ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center text-ink-500 text-sm px-8 text-center pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center text-ink-500 text-sm px-8 text-center pointer-events-none" style={{ zIndex: Z.pageHandle }}>
               <span>还没有《地理风物》数据。可以直接<strong className="text-ink-300">单击这里的空白处</strong>就地新增地点，也可以先去「地理风物」登记，回来用「绘制地图」给它画形状。</span>
             </div>
           ) : null}

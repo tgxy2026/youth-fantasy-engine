@@ -16,6 +16,7 @@
  * 拆书与创意写作共用；后续新增流程只要走 `lib/flow` 就能直接复用。
  */
 import { CheckCircle2, Circle, CircleDashed, Loader2, MinusCircle, XCircle } from 'lucide-react'
+import { Z } from '../lib/zLayer'
 import type { FlowProgress, StageStatus } from '../lib/flow/types'
 
 const NODE: Record<StageStatus, { icon: typeof Circle; cls: string }> = {
@@ -116,7 +117,7 @@ export default function WorkflowTimeline({ progress, running, summaries = {}, cl
             <li key={s.id} className="relative flex gap-2 pb-2 last:pb-0">
               {/* 连接线（最后一个节点不画） */}
               {!isLast && <span className="absolute left-[7px] top-4 h-full w-px bg-ink-700" aria-hidden />}
-              <span className="relative z-10 mt-[2px] shrink-0">
+              <span className="relative mt-[2px] shrink-0" style={{ zIndex: Z.pageHandle }}>
                 <Icon size={15} className={`${n.cls} ${s.status === 'running' ? 'animate-spin' : ''}`} />
               </span>
               <span className="min-w-0 flex-1">

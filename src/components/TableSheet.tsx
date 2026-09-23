@@ -5,6 +5,7 @@
  * 下面那行同名解构是刻意的 —— 让 JSX 保持原样、零改动，把「搬家」与「改造」分开做。
  */
 import type { TabDef } from '../lib/types'
+import { Z } from '../lib/zLayer'
 import { deleteTableRow } from '../lib/db'
 import { SABC_LABELS, type VisCtx } from '../lib/schema'
 import { Plus, Trash2, Info, Save, Check, Calendar, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch } from 'lucide-react'
@@ -71,7 +72,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   return (
     <div className="page-enter">
       {/* 头部 */}
-      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 z-20 bg-ink-900/95 backdrop-blur py-3">
+      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>

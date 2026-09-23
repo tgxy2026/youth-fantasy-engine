@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import { Z } from './lib/zLayer'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import NovelEditor from './components/NovelEditor'
@@ -427,10 +428,10 @@ export default function App() {
       {/* v1.3 幻想工作台背景：纯线条浅金线稿，透明底、若隐若现。
           负 z-index 子元素绘制于 body 背景之上、半透明面板之下，故可从面板后透出；
           父容器设为 bg-transparent，避免不透明背景把装饰层盖住；
-          主题色由 CSS 变量驱动，切换主题时底色随变；pointer-events-none 不挡交互，层级远低于弹窗(z-50) */}
+          主题色由 CSS 变量驱动，切换主题时底色随变；pointer-events-none 不挡交互，层号走 Z.pageBackdrop */}
       <div
-        className="absolute inset-0 -z-10 pointer-events-none bg-cover bg-center bg-no-repeat opacity-100"
-        style={{ backgroundImage: `url(${workbenchBg})` }}
+        className="absolute inset-0 pointer-events-none bg-cover bg-center bg-no-repeat opacity-100"
+        style={{ backgroundImage: `url(${workbenchBg})`, zIndex: Z.pageBackdrop }}
         aria-hidden
       />
       <Sidebar

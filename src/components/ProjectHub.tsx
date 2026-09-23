@@ -176,12 +176,12 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
     <div className="min-h-screen bg-transparent overflow-y-auto relative">
       {/* 与项目内页一致：金色线稿背景，透明底、置于最底层从半透明面板后透出 */}
       <div
-        className="absolute inset-0 -z-10 pointer-events-none bg-cover bg-center bg-no-repeat opacity-100"
-        style={{ backgroundImage: `url(${workbenchBg})` }}
+        className="absolute inset-0 pointer-events-none bg-cover bg-center bg-no-repeat opacity-100"
+        style={{ backgroundImage: `url(${workbenchBg})`, zIndex: Z.pageBackdrop }}
         aria-hidden
       />
       {/* 右侧预留 gutter（sm+）：为右下角看板娘腾出空间，保证卡片不进入该区域，互不遮挡 */}
-      <div className="relative z-10 w-full max-w-[1400px] mx-auto px-6 lg:px-10 py-10 page-enter">
+      <div className="relative w-full max-w-[1400px] mx-auto px-6 lg:px-10 py-10 page-enter" style={{ zIndex: Z.pageHandle }}>
         {/* 品牌区 */}
         <header className="mb-10 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber/15 border border-amber/30 mb-4">

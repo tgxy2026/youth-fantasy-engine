@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { Z } from '../lib/zLayer'
 import type { TabDef } from '../lib/types'
 import { getFormData, saveFormData } from '../lib/db'
 import { Save, RotateCcw, Info, Check, Sparkles } from 'lucide-react'
@@ -148,7 +149,7 @@ export default function FormSheet({ tab }: Props) {
     // 所有表单页一律 100% 宽度，跟随窗口自适应（模块列数按断点变化）
     <div className="w-full page-enter">
       {/* 头部 */}
-      <header className="mb-5 sticky top-0 z-20 bg-ink-900/95 backdrop-blur py-3">
+      <header className="mb-5 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
