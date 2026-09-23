@@ -446,10 +446,16 @@ export default function App() {
       {/* 🔴 2026-09-22：padding 必须放在**内层**，不能放在滚动容器 main 上 ——
           滚动容器一旦自带 padding-top，sticky 表头只会贴到 padding 的**内边缘**（实测停在 32px 处），
           那一段就成了「卡片 / 表格从页头上面穿过去」的通道。挪到内层后表头才贴得住 main 顶部（gap=0）。
-          ⚠️ 改 header 的负 margin 是没用的 —— margin 不参与 sticky 的约束计算（这轮先猜错过一次）。 */}
+          ⚠️ 改 header 的负 margin 是没用的 —— margin 不参与 sticky 的约束计算（这轮先猜错过一次）。
+          🔴🔴 2026-09-23：内层 div **必须带 `h-full`**。包了这一层之后父高对子元素不再「确定」，
+          `renderContent()` 里那些 `flex h-full` 的页面（编辑器 / 剧情推演 / 自由对话 / 角色卡 / 地图…）
+          的 `h-full` 会退化成 auto ⇒ 撑不满：短内容的页面**下方留一大块空白**（实测剧情推演/自由对话
+          各留 ~490px），长内容的页面则**高出窗口被 main 裁掉且滚不到**（实测编辑器根高 1391 而可用仅 926）。
+          补 `h-full` 后与「padding 还在 main 上」时的几何完全一致（内容高 = main 高 − 上下 padding）。 */}
       <main className={`flex-1 overflow-y-auto ${isEditor ? '!overflow-hidden' : ''}`}>
-        <div className={isEditor ? '' : 'p-6 lg:p-8'}>
-          {/* fallback 用 min-h-* 而不是 h-full：多包了一层 div 后父高不再确定，h-full 会塌成 0 */}
+        <div className={`h-full ${isEditor ? '' : 'p-6 lg:p-8'}`}>
+          {/* fallback 用 min-h-* 而不是 h-full：它是**加载占位**，只需撑住视觉高度；
+              用 min-h 可避免在某些中间态下被压成 0 */}
           {/* 🔴 2026-09-22 六维审计 P2：`50vh` 走 foldVh（界面缩放后 vh 不随 zoom 缩，
               132% 时会溢出视口）；这也是全项目唯一残留的内联 vh 任意值类。 */}
           <Suspense fallback={<div className="w-full flex items-center justify-center text-ink-500 text-sm" style={{ minHeight: foldVh('50vh') }}>加载中…</div>}>
