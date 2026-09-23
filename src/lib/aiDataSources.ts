@@ -246,6 +246,15 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     ],
     excludes: ['不做行文质量与错别字判断 —— 那是「文风体检」与「校对」的事'],
   },
+  // 检查工具页 · 读者视角审问（2.4.2·C5 新增）
+  'reader-probe': {
+    label: '读者视角审问',
+    sources: [
+      { group: '本章正文', items: [], note: '全章参与；读者提到的原文片段由本地在正文里定位段号' },
+      { group: '设定资料包', items: [], note: '与其它审读共用同一份打包资料，额度见「模型设置」（用于判断"哪些信息其实交代过"）' },
+    ],
+    excludes: ['不谈语法、标点、结构与设定矛盾 —— 那是「校对」「文风体检」「本章体检」的事'],
+  },
   'name-suggest': {
     label: 'AI 取名',
     sources: [{ group: '项目设定资料', items: ['作品定位', '世界设定', '力量体系'], note: '约 3000 字预算' }],

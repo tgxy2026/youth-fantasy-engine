@@ -29,6 +29,7 @@ import { EXTRACT_PROMPTS } from './aiTasks/extract'
 import { INLINE_PROMPTS } from './aiTasks/inline'
 import { CREATIVE_PROMPTS } from './aiTasks/creative'
 import { PACE_PROMPTS } from './aiTasks/pace'
+import { READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
@@ -60,6 +61,13 @@ export { aiSummarizeFormSettings } from './aiTasks/formSummary'
 export { aiPaceAnalysis, PACE_PROMPTS } from './aiTasks/pace'
 export { parsePaceReport, PACE_SEGMENTS, HOOK_KINDS, PACE_BEAT_KINDS } from './paceAnalysis'
 export type { PaceReport, PaceBeat, PaceDistribution, HookKind } from './paceAnalysis'
+// 2026-09-23（2.4.2·C5）：读者视角审问 —— 扮演一个具体读者读这一章，三问；位置由本地换算
+export { aiReaderProbe, READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
+export {
+  READER_LENSES, READER_QUESTIONS, readerLensOf, readerQuestionLabel,
+  parseReaderProbe, groupNotes, paragraphAt, readerProbeToText,
+} from './readerProbe'
+export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from './readerProbe'
 
 /**
  * 提示词的**注册顺序**（🔴 有语义：`listPrompts()` 只按 group 稳定排序，组内保持登记顺序）。
@@ -93,6 +101,7 @@ const PROMPT_ORDER = [
   'pleasure-check',
   'opening-check',
   'pace-analysis',
+  'reader-probe',
   'writing-briefing',
   'extract-entities',
   'deai-rule',
@@ -105,6 +114,7 @@ const PROMPT_SETS: PromptDef[][] = [
   AUDIT_PROMPTS,
   JIEWENJI_PROMPTS,
   PACE_PROMPTS,
+  READER_PROBE_PROMPTS,
   REWRITE_PROMPTS,
   EXTRACT_PROMPTS,
   INLINE_PROMPTS,

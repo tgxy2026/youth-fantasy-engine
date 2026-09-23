@@ -69,6 +69,7 @@ export const WRITER_BUDGET_KINDS = {
   'jiewenji-opening': 1.0,        //  8000 黄金三章
   'jiewenji-brief': 1.0,          //  8000 本章写作简报
   'pace-analysis': 1.0,           //  8000 节奏与章末钩子（检查工具；与爽点检查同档）
+  'reader-probe': 1.0,            //  8000 读者视角审问（检查工具；要正文 + 设定，与节奏同档）
   //  12000 创意写作 · 分卷大纲（要较全的设定才编得动；设定奠基的输入是「种子」本身，不占额度）
   'outline-generate': 1.5,
 } as const
@@ -96,6 +97,7 @@ export const WRITER_BUDGET_LABELS: Record<WriterBudgetKind, string> = {
   'jiewenji-opening': '颉文姬 · 黄金三章',
   'jiewenji-brief': '颉文姬 · 本章写作简报',
   'pace-analysis': '节奏与章末钩子（检查工具）',
+  'reader-probe': '读者视角审问（检查工具）',
   'outline-generate': '创意写作 · 分卷大纲',
 }
 
