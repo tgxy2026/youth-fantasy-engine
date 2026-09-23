@@ -28,7 +28,7 @@ import {
   type TavernSettings,
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
-import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack } from './world'
+import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack, keywordHaystackMessages } from './world'
 import { scriptToText } from './script'
 import { applyPostRules, type PostApplied } from './postRules'
 import { PROTOCOL_CORE } from './protocol'
@@ -148,9 +148,8 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
   const worldSetting = await getWorldSetting()
   const worldText = contextSource !== 'raw' && shouldInjectWorld(worldSetting, worldHaystack(
     [session.title, session.anchorChapterLabel, session.scene?.place, session.scene?.time, session.scene?.description],
-    // 🔴 与全项目「隐藏 / system 消息不进上下文」的口径对齐（2026-09-23 六维审计）：
-    //    原写法没有过滤 ⇒ 作者特意藏起来的内容仍会影响「是否注入背景设定」的判定。
-    session.messages.filter(m => m.role !== 'system' && !m.hidden).slice(-6).map(m => m.content),
+    // 取材口径收在 world.ts（滤 system / hidden + 取最近若干条）—— 调用方不必记着过滤
+    keywordHaystackMessages(session.messages),
   )) ? worldToText(worldSetting) : ''
 
   const system = buildSystemPrompt({

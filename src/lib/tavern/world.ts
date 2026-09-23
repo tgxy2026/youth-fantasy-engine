@@ -34,6 +34,7 @@ import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './provider'
 import { prepareDraftMaterial, type DraftSource } from './draft'
 import { webSearch, type SearchSettings } from '../webSearch'
+import type { TavernMessage } from './types'
 
 export type WorldSection = { id: string; title: string; body: string }
 
@@ -122,6 +123,22 @@ export function shouldInjectWorld(w: WorldSetting | null | undefined, haystack: 
   if (keys.length === 0) return true
   const h = String(haystack ?? '')
   return keys.some(k => h.includes(k))
+}
+
+/**
+ * 关键词判定取材的「最近消息」部分：**只取真正会进上下文的消息**。
+ *
+ * 🔴 必须滤掉 `system` 与作者**隐藏**的消息（2026-09-23 六维审计 P1）：
+ *    原先 engine 那边直接 `messages.slice(-6).map(m => m.content)`，与全项目口径
+ *    （prompt.ts / memory.ts / report.ts / revise.ts / summarize.ts 都滤）不一致 ——
+ *    作者特意藏起来的内容仍会影响「要不要注入背景设定」的判定。
+ *    收进这里而不是留在调用点：让「滤什么」与 `shouldInjectWorld` 放在一起，调用方不必记。
+ */
+export function keywordHaystackMessages(messages: readonly TavernMessage[], take = 6): string[] {
+  return messages
+    .filter(m => m.role !== 'system' && !m.hidden)
+    .slice(-take)
+    .map(m => m.content)
 }
 
 /** 关键词命中判定的取材：会话标题 + 场景 + 最近几条消息（别扫全史，太贵也没必要） */

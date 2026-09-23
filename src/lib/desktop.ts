@@ -283,19 +283,38 @@ export async function flushDesktop(): Promise<boolean> {
 }
 
 /** 窗口关闭前同步写盘（beforeunload 中调用，阻塞式保证写入完成） */
+/**
+ * 解读一次「同步写盘」的返回值。
+ *
+ * 🔴 这是**三态**语义，不是两态：
+ *    · `{ ok:true }`  → 写成功；
+ *    · `{ ok:false }` → 主进程明确报失败（**返回而不抛异常**）；
+ *    · `undefined`    → **IPC 根本没返回值**（主进程监听缺失 / `sendSync` 取不到 returnValue），
+ *                       同样是没写成功。
+ *    旧写法 `if (r && r.ok === false)` 会让 undefined 落进成功分支、顺手清掉 `dirty`
+ *    ⇒ 关窗前的最后一次编辑被静默丢弃（2026-09-23 六维审计 P2）。
+ *
+ * 抽成独立函数只是为了**能单独测**：真正容易写错的是这条三态语义，
+ * 而它原先埋在 `flushDesktopSync` 里，测一次要模拟整个 Electron 环境。
+ */
+export function interpretSaveSyncResult(
+  r: { ok: boolean; error: string | null } | undefined,
+): { ok: boolean; error?: string } {
+  if (!r) return { ok: false, error: 'IPC 未返回值' }
+  if (r.ok === false) return { ok: false, error: r.error ?? '未知错误' }
+  return { ok: true }
+}
+
 export function flushDesktopSync(): void {
   if (!DESKTOP || !inited || (!dirty && !saving)) return
   if (writeLocked) return // 🔴 锁定期绝不落盘
   data.savedAt = Date.now()
   try {
-    // 🔴 主进程写失败时返回 { ok:false } 而**不抛异常** —— 旧实现不查返回值，
-    //    写失败也照样把 dirty 清掉，等于静默丢掉最后一次编辑。
-    const r = api().saveSync(JSON.stringify(data))
-    // ⚠️ `r === undefined`（IPC 没有返回值）同样是**没写成功**（2026-09-23 六维审计）：
-    //    旧写法 `r && r.ok === false` 会让 undefined 落进成功分支、顺手清掉 dirty，
-    //    等于静默丢掉关窗前的最后一次编辑。
-    if (!r || r.ok === false) {
-      lastError = '写入本地数据文件失败：' + (!r ? 'IPC 未返回值' : (r.error ?? '未知错误'))
+    // 🔴 判定走 interpretSaveSyncResult（三态都算清）—— 失败时**必须保留 dirty**，
+    //    否则关窗前的最后一次编辑就没了。
+    const verdict = interpretSaveSyncResult(api().saveSync(JSON.stringify(data)))
+    if (!verdict.ok) {
+      lastError = '写入本地数据文件失败：' + verdict.error
       return // 保留 dirty，供下次启动补救
     }
     dirty = false

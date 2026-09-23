@@ -9,6 +9,7 @@ import * as store from '../src/lib/tavern/store'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
 import {
   EMPTY_WORLD_SETTING, WORLD_MAX_CHARS, isEmptyWorld, worldToText, shouldInjectWorld, worldHaystack,
+  keywordHaystackMessages,
   parseWorldDraft, buildWorldDraftSystem, draftWorldSetting, getWorldSetting, saveWorldSetting,
   type WorldSetting,
 } from '../src/lib/tavern/world'
@@ -17,6 +18,7 @@ import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { createStory, saveStory, snapshotStorySetting } from '../src/lib/tavern/story'
 import { buildFreeSystem } from '../src/lib/tavern/engine'
 import type { ChatMessage } from '../src/lib/ai'
+import type { TavernMessage } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -255,6 +257,44 @@ async function main() {
       rf.system.includes('老槐树路') && !rf.system.includes('改过之后的新设定'))
     const rl = await buildFreeSystem(session, [c])
     ok('没快照（老会话）→ 实时读，读到改过之后的', rl.system.includes('改过之后的新设定'))
+  }
+
+  // ---------- 关键词取材：隐藏消息与 system 不得参与「是否注入背景设定」的判定 ----------
+  //
+  // 2026-09-23 六维审计 P1：engine 原先直接 `messages.slice(-6).map(m => m.content)`，
+  // 与全项目「hidden / system 不进上下文」的口径不一致 ⇒ 作者特意藏起来的内容
+  // 仍会影响注入判定。口径已收进 `world.keywordHaystackMessages`，这里直接钉住它。
+  {
+    const msgs = [
+      { id: 'm1', role: 'system', content: '系统提示：老槐树路', at: 1 },
+      { id: 'm2', role: 'user', content: '普通人说了一句', at: 2 },
+      { id: 'm3', role: 'assistant', content: '被作者隐藏的内容：老槐树路', at: 3, hidden: true },
+      { id: 'm4', role: 'user', content: '最后一条正常消息', at: 4 },
+    ] as unknown as TavernMessage[]
+
+    const out = keywordHaystackMessages(msgs)
+    ok('🔴 system 消息不进关键词取材', !out.some(t => t.includes('系统提示')), out.join(' | '))
+    ok('🔴 作者隐藏的消息不进关键词取材', !out.some(t => t.includes('被作者隐藏')), out.join(' | '))
+    ok('正常消息照常参与', out.includes('普通人说了一句') && out.includes('最后一条正常消息'))
+
+    const many = keywordHaystackMessages([...msgs, ...msgs, ...msgs])
+    ok('默认最多取最近 6 条', many.length === 6, String(many.length))
+    ok('取的是**最近**的（老的被丢掉）', many[5] === '最后一条正常消息', JSON.stringify(many.slice(0, 2)))
+
+    // 🔴 反面：同一个 haystack 喂给 shouldInjectWorld —— 只出现在**隐藏内容**里的关键词不该触发注入
+    const hay = worldHaystack(['会话标题'], keywordHaystackMessages(msgs))
+    const wHide = { ...EMPTY_WORLD_SETTING, brief: '背景', keywords: ['老槐树路'] } as WorldSetting
+    ok('🔴 关键词只出现在被隐藏的内容里 ⇒ 不该注入背景设定', !shouldInjectWorld(wHide, hay), hay)
+
+    // ✅ 对照：同样一条消息但**没被隐藏**时，就该正常注入（否则上面那条可能只是「haystack 恰好为空」）
+    const shown = msgs.map(m => ({ ...m, hidden: false }))
+    const hayShown = worldHaystack(['会话标题'], keywordHaystackMessages(shown))
+    ok('对照：同一条消息不隐藏时 ⇒ 正常注入（证明上面不是「空了所以不注入」）',
+      shouldInjectWorld(wHide, hayShown), hayShown)
+
+    // 对照 2：关键词只在 system 里出现，同样不该注入
+    const wSys = { ...EMPTY_WORLD_SETTING, brief: '背景', keywords: ['系统提示'] } as WorldSetting
+    ok('🔴 关键词只出现在 system 里 ⇒ 也不该注入', !shouldInjectWorld(wSys, hay), hay)
   }
 
   console.log(`\ntavernWorld: ${pass} passed, ${fail} failed`)

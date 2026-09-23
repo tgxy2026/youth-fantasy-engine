@@ -22,7 +22,7 @@ import { useTavernReady } from './useTavernReady'
 import * as store from '../lib/tavern/store'
 import { unloadOllamaModel } from '../lib/ai'
 import { resolveTavernProvider } from '../lib/tavern/provider'
-import { nextWatermark, acquireSummaryLock, releaseSummaryLock } from '../lib/tavern/memory'
+import { nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, releaseSummaryLock } from '../lib/tavern/memory'
 import { primaryAiCharId } from '../lib/tavern/primaryChar'
 import { DEFAULT_TAVERN_SETTINGS, memoryLimitsOf, type TavernSettings } from '../lib/tavern/settings'
 import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult } from '../lib/tavern/roundEnd'
@@ -177,12 +177,10 @@ export function useFreeRoundEnd({
       })
 
       // 水位线推进到最后一条 + 写回数值 + 打上归档戳
-      // 🔴 有角色记忆被判「整份退化」时**不推进水位线**（2026-09-23 六维审计 P1）：
-      //    退化 = 这段对话没被总结，推进水位等于把它永久越过（下次 pendingMessages 为空）；
-      //    而界面还提示「本次未覆盖旧档案」，暗示可重试 —— 实际已无重试入口。
+      // 🔴 退化则保留旧水位（决策收在 memory.watermarkAfterRoundEnd，两处调用方共用）
       const updated: FreeSession = {
         ...s,
-        watermark: res.memoryDegraded ? s.watermark : (nextWatermark(s) ?? s.watermark),
+        watermark: watermarkAfterRoundEnd(s.watermark, nextWatermark(s), res.memoryDegraded),
         vars: res.vars,
         endedAt: res.endedAt,
         updatedAt: Date.now(),
