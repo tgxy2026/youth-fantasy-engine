@@ -40,13 +40,14 @@
 - 🔴🔴 服务器已**彻底清理**（09-21）→ 跨设备同步只剩云盘文件夹。`createIdleTransport`＝未开启占位（🔴 绝不返回空库）。
 
 ## UI·布局尺寸
-- 🔴🔴 `<html>` 界面缩放：①量尺寸用 `offsetHeight`/`clientWidth`，禁 `getBoundingClientRect()`；②vh/vw 不随 zoom→内联长度走 `foldVh()`；③SVG 滚轮/拖拽除 zoom。
+- 🔴🔴 `<html>` 界面缩放：①量尺寸用 `offsetHeight`/`clientWidth`（禁 rect 绝对值）；②vh/vw 不随 zoom→内联走 `foldVh()`；③SVG 滚轮/拖拽除 zoom。
 - 🔴 光标/选区同步不能只靠 `onKeyUp`→有 `onChange` 就在里面同步。判「琥珀开启态」按 class 词元比。
-- 🔴 按对侧高度定高：flex item 加 `overflow-hidden`；别同写 `flex-1`+`height`。图表柱子给 `max-w`（纯 `flex-1` 会拉满整行）。
+- 🔴 按对侧高度定高：flex item 加 `overflow-hidden`，别同写 `flex-1`+`height`；图表柱子给 `max-w`。
+- 🔴🔴 往 DOM 里**插包裹层**必回看子元素 `h-full`（父高须**确定**；父 auto ⇒ 退化成 auto ⇒ 撑不满：短页留白／长页被裁）。`App.tsx` 的 `main > div.h-full` 是撑满链的关键一层。
 - 🔴 按钮：静止无框 `secondary`（非 `ghost`）；分段 `toggle`+`selected`；🔴 **尺寸＝弹窗 md／主操作 sm／工具 xs；同排同 size**。
 - 🔴 页头 `HelpPopover` 问号**须与标题同行**；文案禁 markdown 星号→用「」。Enter 发送挡 `isComposing`。
 - 🔴 z 层号：页内定位走 `Z.pageBackdrop/pageHandle/pageBase`；**判定不收三类见 zLayer 注释**。
-- 🔴 数值输入走 `NumberField`（**`Math.round` 抹小数**——温度改用档位按钮）；界面偏好走 `lib/uiPrefs.ts`（**存「偏离默认的那一侧」**）；字数口径走 `lib/wordCountMode.ts`。
+- 🔴 数值输入走 `NumberField`（**抹小数**——温度改用档位按钮）；偏好走 `lib/uiPrefs.ts`（**存「偏离默认的那一侧」**）；字数口径走 `lib/wordCountMode.ts`。
 - 🔴 新增页签**四处**必同步：`TabType`／`TABS`／`App.renderContent`／`FEATURE_TIER`；**资料型**另须 `aiContext.PRIORITY`。
 
 ## AI 层
@@ -91,19 +92,18 @@
 - 🔴🔴 同消息对同一文件发多个 Edit 会相互覆盖→串行改、改完即 grep。
 - 🔴🔴 **判文件是否存在禁用 Glob 塞绝对路径**（返空→误判→覆盖）；用 `Read`／`test -f`。
 
-## 2.4 开发（规划 `docs/2.4.0-版本规划.md`；记录 `docs/2.4.0/2.4.2-开发记录.md`）
-- ✅ **2.4.2 已封装发布（09-23）**；顺序 C3→C6→C4→C2→C1→C9→C5→C7→C10；**C8 本批跳过**。
-- ✅ **全项完成并实机验证**：见 `docs/2.4.2-开发记录.md`＋`2.4.2-C1-*拆分记录.md`。
-- ✅ **六维审计完成（09-23，修 44 处/20 文件）**：`docs/2.4.2-六维审计修复记录-2026-09-23.md`。
+## 2.4 开发（规划 `docs/2.4.0-版本规划.md`；记录 `docs/2.4.2-开发记录.md`）
+- ✅ **2.4.2 已封装发布（09-23）**，全项完成并实机验证：见 `docs/2.4.2-开发记录.md`＋`2.4.2-C1-*拆分记录.md`；**C8 本批跳过**。
+- ✅ **六维审计完成（修 44 处/20 文件）**：`docs/2.4.2-六维审计修复记录-2026-09-23.md`。
   P1＝裸 clipboard／**记忆退化仍推水位线**（新 `memoryDegraded`）／老库 `tavern.settings.search` 密钥残留。
   🔴 同步层测试**必须用 `backgroundPull()`**（`pullSnapshot` 不触发三路合并 ⇒ 用例会「新旧都通过」）。
 - 🔴 **新增 AI 功能要四处注册**（漏一处静默半残）：`aiTasks` 门面（import+export+`PROMPT_ORDER`+
   `PROMPT_SETS`）、`aiDataSources`、`aiWriterBudget`（加 budget kind 会让 `tests/writerBudget` 报错）。
 - 🔴 `exportBookPlatformText` 已 **async**；exporter 仍动态 import。
 - **C7 由另一个窗口负责**（不在本线推进）。
-- ✅ **C10 已完成（09-23）**：世界观/力量体系「**母子结构**」—— 母级不动（仍 form 型、永远喂 AI）；
-  子级外挂 `cardRecords`（tabId `worldbase-sub`/`power-sub`，**不在 TABS**）+ 活跃态在 `settingsKV`。
-  🔴 **只喂活跃子项**、**单世界零变化**、离开页签必落库草稿。详录 `docs/2.4.2-C10-*方案.md`。
+- ✅ **C10 已完成**：世界观/力量体系「**母子结构**」—— 母级不动（仍 form、永远喂 AI）；子级外挂 `cardRecords`
+  （tabId `worldbase-sub`/`power-sub`，**不在 TABS**）+ 活跃态在 `settingsKV`；🔴 **只喂活跃子项**、
+  **单世界零变化**、离开页签必落库草稿。
 - 🔴 发布链＝skill `novel-studio-packaging`＋`gitee-publish`；🔴 快照 sync 后**必 `git checkout -- .gitignore`**（每轮被覆盖丢密钥防护）。
 - 2.4.0/2.4.1 详情见 `docs/2.4.0-开发记录.md`。
 
