@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, storyDateKey, storyDateYear, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, resolveCardOverlaps, spanBracketPath, storyDateKey, storySpanDays } from '../lib/storyDate'
 import { Calendar, Users, X, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -45,31 +45,26 @@ interface Props {
   calendarRule?: CalendarRule
 }
 
-/** 时长横条的最大像素长度（等距布局下留出的上限，避免一条超长事件盖住半个轴） */
-const SPAN_BAR_MAX = 384
-/** 有跨度但换算出来极短时，也给一个看得见的最小长度 */
-const SPAN_BAR_MIN = 10
-
 const STATUS_STYLE: Record<string, string> = {
   '已定稿': 'bg-emerald-500/15 text-emerald-300',
   '待补充': 'bg-amber/15 text-amber',
   '已变更': 'bg-rose-500/15 text-rose-300',
 }
 
-// 蛇形布局常量：3 条水平带上下穿梭，节点等距分布，相邻带之间用曲线过渡形成 S 形
-const SLOT_W = 240
-const BAND_H = 140
-const BANDS = 3
-const TOP = 30
+// 单行水平轴布局常量（2026-09-24 · 主人哥哥定版：蛇形取消，全部水平）
+const SLOT_W = 240      // 相邻事件点的间距（等距；区间端点在相邻两点间按时间比例插值）
+const AXIS_Y = 44       // 水平轴的 y
 const POINT_R = 9
 const CARD_W = 210
+const BRACKET_DEPTH = 18
+/** 卡片最大高度估算（标题两行 + 区间 + 时长 + 人物 + 状态），用于画布总高 */
+const CARD_MAX_H = 118
 
 export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
   const [hover, setHover] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = useState<'all' | '已定稿' | '待补充' | '已变更'>('all')
   const [selected, setSelected] = useState<Evt | null>(null)
 
-  const yearOf = (t: string) => storyDateYear(t) ?? NaN
   /** 起止展示串：只填了起点就只显示起点，两端都有则显示区间 */
   const rangeLabel = (e: Pick<Evt, 'time' | 'end'>, cal: string) => {
     const s = formatStoryRange(e.time, e.end)
@@ -117,19 +112,61 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
   }, [rows, filterStatus, calendars, calendarRule])
 
   /**
-   * 时长横条的像素比例尺：**本轴最长的一段 → SPAN_BAR_MAX**。
-   * 为什么用相对比例而不是固定 px/天：事件时长跨好几个量级（三百年 vs 三天），
-   * 固定比例下短的那批会缩成一条看不见的线；相对比例至少保证"最长那根最显眼、
-   * 其余按比例排"。真实天数一律写在卡片上，不靠横条长度读数。
+   * 括号方案（主人哥哥 2026-09-24 定版，替掉第一版"横条"）：
+   * 持续事件的括号挂在轴下方，两端尖角向上分别指着起止在轴上的位置，
+   * 详情卡片挂在括号底边下方、水平居中（空间不够时贪心往右收，不硬挤）。
    */
-  const maxSpan = useMemo(
-    () => data.reduce((mx, d) => Math.max(mx, d.span ?? 0), 0),
+  const pointX = (i: number) => i * SLOT_W + SLOT_W / 2
+
+  /** 插值基准点：只取**有可解析时间**的事件（无时间者 key=Infinity，不能当插值锚） */
+  const dots = useMemo(
+    () => data
+      .map((d, i) => ({ key: d.key, x: pointX(i) }))
+      .filter(p => Number.isFinite(p.key)),
     [data],
   )
-  const barWidthOf = (span: number | null): number => {
-    if (span === null || span <= 0 || maxSpan <= 0) return 0
-    return Math.max(SPAN_BAR_MIN, Math.round((span / maxSpan) * SPAN_BAR_MAX))
-  }
+  /** 末尾虚拟锚：结束时间晚于最后一个事件时，括号仍能往右延（按 10 万年 ≈ 一格的比例） */
+  const dotsWithTail = useMemo(() => {
+    if (dots.length === 0) return dots
+    const last = dots[dots.length - 1]
+    return [...dots, { key: last.key + 1e9, x: last.x + SLOT_W }]
+  }, [dots])
+
+  /** 每个事件的括号几何（无跨度 / 起止同日 → null，只画圆点） */
+  const brackets = useMemo(() => {
+    return data.map((d, i) => {
+      if (d.span === null || d.span === 0) return null
+      const x0 = pointX(i)
+      // d.key = 历法权重*1e10 + tk(发生时间)，减去 tk(发生) 再加 tk(结束) ⇒ 同历法的结束键
+      const endKey = d.key - storyDateKey(d.time) + storyDateKey(d.end)
+      const rawEnd = interpolateX(dotsWithTail, endKey)
+      if (rawEnd === null) return null
+      // 负跨度（填反了）：括号照样画（min~max），颜色在渲染处标红
+      const lo = Math.min(x0, rawEnd)
+      const hi = Math.max(x0, rawEnd)
+      const right = Math.max(hi, lo + 24)   // 太短看不清，给最小可视宽度
+      const mid = (lo + right) / 2
+      return { id: d.id, x0, path: spanBracketPath(x0, right, AXIS_Y, BRACKET_DEPTH), mid, neg: d.span < 0, span: d.span, label: `${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(Math.abs(d.span))}）` }
+    })
+  }, [data, dotsWithTail])
+  const bracketById = useMemo(
+    () => new Map(brackets.filter(Boolean).map(b => [b!.id, b!])),
+    [brackets],
+  )
+
+  /**
+   * 卡片防重叠：期望位置 = 括号中点（无括号 = 圆点正下），
+   * 同一行内贪心右移，不与前一卡重叠；再夹回画布范围。
+   */
+  const cardLefts = useMemo(() => {
+    const wants = data.map((d, i) => {
+      const b = bracketById.get(d.id)
+      return ((b ? b.mid : pointX(i)) - CARD_W / 2)
+    })
+    const lefts = resolveCardOverlaps(wants, CARD_W)
+    const maxLeft = Math.max(4, data.length * SLOT_W - CARD_W - 4)
+    return lefts.map(l => Math.min(Math.max(l, 4), maxLeft))
+  }, [data, bracketById])
 
   const calLegend = [...calendars].sort((a, b) => a.value - b.value)
     .map(c => `${c.name}(${c.value})`).join(' → ')
@@ -145,19 +182,8 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
 
   const n = data.length
   const totalW = Math.max(n, 1) * SLOT_W
-  const totalH = TOP * 2 + BANDS * BAND_H
-  const pointX = (i: number) => i * SLOT_W + SLOT_W / 2
-  const pointY = (i: number) => TOP + (i % BANDS) * BAND_H + BAND_H / 2
-
-  const segments = data.slice(0, n - 1).map((d, i) => {
-    const x0 = pointX(i), y0 = pointY(i)
-    const x1 = pointX(i + 1), y1 = pointY(i + 1)
-    const ya = yearOf(d.time), yb = yearOf(data[i + 1].time)
-    const span = isFinite(ya) && isFinite(yb) ? Math.abs(ya - yb) : Infinity
-    const dashed = span > 5
-    const mx = x0 + (x1 - x0) / 2
-    return { i, x0, y0, x1, y1, mx, dashed }
-  })
+  // 单行水平轴：轴 + 括号 + 卡片，全部在一条水平带上
+  const totalH = AXIS_Y + BRACKET_DEPTH + CARD_MAX_H + 24
 
   const detail = (e: Evt) =>
     ([
@@ -186,13 +212,11 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
           {calLegend && <>，历法顺序：<span className="text-ink-200">{calLegend}</span></>}
         </div>
         {calendars.length > 1 && (
-          <span className="text-10 text-ink-500">（虚线段 = 相邻事件时间跨度超过 5 年）</span>
+          <span className="text-10 text-ink-500">（历法顺序：按「历法」列数值排列）</span>
         )}
-        {maxSpan > 0 && (
-          <span className="text-10 text-ink-500">
-            （圆点后的横条 = 持续时长；起止填同一天则仍是一个圆点。具体天数写在卡片上，横条只比长短）
-          </span>
-        )}
+        <span className="text-10 text-ink-500">
+          （轴下的括号 = 持续时段，两端尖角指着起止在轴上的位置；起止同一天则是一个圆点。卡片挂在括号下方）
+        </span>
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-11 text-ink-500 mr-1">状态筛选：</span>
           {(['all', '已定稿', '待补充', '已变更'] as const).map(s => (
@@ -207,50 +231,49 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
         </div>
       </div>
 
-      {/* 时间轴画布（整页留给蛇形曲线，横向 / 纵向可滚动；点击节点弹窗看详情） */}
-      <div className="relative overflow-auto" style={{ maxHeight: totalH + 60 }}>
+      {/* 时间轴画布（单行水平轴：横向滚动；点击括号 / 卡片 / 圆点弹窗看详情） */}
+      <div className="relative overflow-auto" style={{ maxHeight: totalH + 40 }}>
         <div className="relative" style={{ width: totalW, height: totalH }}>
-          {/* 主轴线（S 形蛇道） */}
+          {/* 水平主轴 + 时长括号 */}
           <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
-            {segments.map(seg => (
-              <path
-                key={seg.i}
-                d={`M ${seg.x0} ${seg.y0} C ${seg.mx} ${seg.y0}, ${seg.mx} ${seg.y1}, ${seg.x1} ${seg.y1}`}
-                fill="none"
-                stroke={seg.dashed ? 'rgba(120,130,150,0.55)' : 'rgba(245,158,11,0.5)'}
-                strokeWidth={2}
-                strokeDasharray={seg.dashed ? '6 5' : undefined}
-              />
-            ))}
+            <line x1={20} y1={AXIS_Y} x2={totalW - 20} y2={AXIS_Y} stroke="rgba(128,130,150,0.4)" strokeWidth={1.5} />
+            {brackets.map(b => {
+              if (!b) return null
+              const on = hover === b.id || selected?.id === b.id
+              return (
+                <path
+                  key={`bk-${b.id}`}
+                  d={b.path}
+                  fill="none"
+                  className={b.neg ? 'stroke-rose-400' : 'stroke-amber'}
+                  strokeWidth={on ? 2.5 : 2}
+                  strokeOpacity={on ? 0.95 : 0.6}
+                  strokeLinecap="round"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    const hit = data.find(x => x.id === b.id)
+                    if (hit) setSelected(hit)
+                  }}
+                  onMouseEnter={() => setHover(b.id)}
+                  onMouseLeave={() => setHover(null)}
+                >
+                  <title>{b.label}</title>
+                </path>
+              )
+            })}
           </svg>
 
-          {/* 时长横条（2.4.4）：起点圆 → 终点，长度按持续天数换算；起止同一天则不画（仍是一个圆点） */}
+          {/* 节点卡片：挂在括号底边下方（居中），时间点事件挂在圆点正下；同行贪心防重叠 */}
           {data.map((d, i) => {
-            const w = barWidthOf(d.span)
-            if (w <= 0) return null
-            const x = pointX(i), y = pointY(i)
-            const color = COLORS[i % COLORS.length]
-            const on = hover === d.id || selected?.id === d.id
-            return (
-              <div
-                key={`span-${d.id}`}
-                className={`absolute rounded-full ${color.dot} ${on ? 'opacity-70' : 'opacity-35'}`}
-                style={{ left: x, top: y - 3, width: w, height: 6, zIndex: 5 }}
-                title={`${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(d.span ?? 0)}）`}
-              />
-            )
-          })}
-
-          {/* 节点卡片（摘要，点击弹窗看全部） */}
-          {data.map((d, i) => {
-            const x = pointX(i), y = pointY(i)
+            const b = bracketById.get(d.id)
             const color = COLORS[i % COLORS.length]
             const active = hover === d.id || selected?.id === d.id
+            const top = b ? AXIS_Y + BRACKET_DEPTH + 6 : AXIS_Y + 10
             return (
               <div
                 key={d.id}
                 className="absolute"
-                style={{ left: x - CARD_W / 2, top: y + 16, width: CARD_W, zIndex: 10 }}
+                style={{ left: cardLefts[i], top, width: CARD_W, zIndex: 10 }}
                 onMouseEnter={() => setHover(d.id)}
                 onMouseLeave={() => setHover(null)}
               >
@@ -287,16 +310,16 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
             )
           })}
 
-          {/* 节点圆点（落在轴线上） */}
+          {/* 节点圆点（落在水平轴线上） */}
           {data.map((d, i) => {
-            const x = pointX(i), y = pointY(i)
+            const x = pointX(i)
             const color = COLORS[i % COLORS.length]
             return (
               <div
                 key={`dot-${d.id}`}
                 className={`absolute rounded-full ${color.dot} ring-4 ring-ink-900 transition-all
                   ${hover === d.id || selected?.id === d.id ? 'scale-125' : ''}`}
-                style={{ left: x - POINT_R, top: y - POINT_R, width: POINT_R * 2, height: POINT_R * 2, zIndex: 11 }}
+                style={{ left: x - POINT_R, top: AXIS_Y - POINT_R, width: POINT_R * 2, height: POINT_R * 2, zIndex: 11 }}
               />
             )
           })}

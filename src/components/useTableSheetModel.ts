@@ -299,10 +299,22 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const dirtyKeys = Object.keys(drafts)
 
   const setCellDraft = (rowId: string, colName: string, value: string) => {
-    setDrafts(prev => ({
-      ...prev,
-      [rowId]: { ...(prev[rowId] ?? rows.find(r => r.id === rowId)?.data ?? {}), [colName]: value },
-    }))
+    setDrafts(prev => {
+      const prevData = prev[rowId] ?? rows.find(r => r.id === rowId)?.data ?? {}
+      const base = { ...prevData, [colName]: value }
+      // 🔴 2.4.4 时间口径（主人哥哥定版）：**时间点事件也要发生=结束**。
+      //    填「发生时间」时「结束时间」跟随，直到作者手动改过它。判定"没手动改过"：
+      //    ① 结束时间为空（还没填）；② 结束时间 === 改动前的发生时间（是上一轮自动跟随的结果）。
+      //    ②是关键 —— 发生时间是"年→月→日"渐进写回的，若只判空，第一次联动就会把
+      //    结束时间锁死在「3024年」这种中间态（实机抓到过）。
+      //    作者把结束时间改成别的值后，联动立刻停止，绝不覆盖他的意图。
+      if (colName === '发生时间' && value) {
+        const oldStart = String(prevData['发生时间'] ?? '')
+        const curEnd = String(base['结束时间'] ?? '')
+        if (!curEnd.trim() || curEnd === oldStart) base['结束时间'] = value
+      }
+      return { ...prev, [rowId]: base }
+    })
     setSaved(false)
     // 用户修改了编号相关内容时清除上次的校验错误提示
     if (codeError) setCodeError(null)

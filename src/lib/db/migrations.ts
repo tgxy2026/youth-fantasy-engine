@@ -236,27 +236,30 @@ export async function runMigrations(): Promise<void> {
  * 为什么必须迁移：schema 改列名**不会**自动搬数据 —— 表还是那张表、行还是那些行，
  * 只是渲染时按新列名去取值，于是老数据全部变成空白格（数据其实还在，界面上看不见了）。
  *
- * 口径：
- *  · **只补不删** —— 老键「故事内时间」原样保留（万一作者降级回旧版，数据还在）；
- *  · 「结束时间」**留空**：老数据只有一个时间点，凭空造一个终点等于替作者编设定；
- *    留空后该事件在时间轴上就是一个圆点（瞬时事件），正是它原本的样子。
- *
- * 幂等：`发生时间` 已有值（无论是否为空串）的行跳过；跑第二遍零改动。
+ * 口径（2.4.4 · 主人哥哥定版：**时间点事件也要发生=结束**）：
+ *  · 老键「故事内时间」→ 复制到「发生时间」，**同时把「结束时间」补成同一天**（时间点事件）；
+ *  · 只有发生时间、没有结束时间的行 → 同样补结束时间=发生时间；
+ *  · 幂等判据用 `'结束时间' in data`（键存在即视为作者已表态 —— 他后来刻意清空的行不会被反复覆盖）；
+ *  · **只补不删** —— 老键「故事内时间」原样保留（万一作者降级回旧版，数据还在）。
  */
 export async function migrateStoryTimeColumns(): Promise<number> {
   const pid = currentProjectId
   if (!pid) return 0
   const OLD = '故事内时间'
   const START = '发生时间'
+  const END = '结束时间'
   let moved = 0
   for (const tabId of ['history', 'timeline']) {
     const rows = await getTableRows(tabId)
     for (const r of rows) {
-      const old = (r.data?.[OLD] ?? '').trim()
-      if (!old) continue
-      // 🔴 用 `in` 判断而不是取值判空：老行"本来就没填"时不该被反复写库
-      if (START in (r.data ?? {})) continue
-      await saveTableRow({ ...r, data: { ...r.data, [START]: old } })
+      const data = { ...(r.data ?? {}) }
+      const old = String(data[OLD] ?? '').trim()
+      const start = String(data[START] ?? '').trim()
+      if (old && !(START in data)) data[START] = old
+      // 两端补齐：有起点、没结束（键不存在）⇒ 补成同一天（时间点事件口径）
+      if (!(END in data) && start) data[END] = start
+      if (data === r.data) continue
+      await saveTableRow({ ...r, data })
       moved++
     }
   }

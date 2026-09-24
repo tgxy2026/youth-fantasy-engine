@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, storyDateKey, storyDateYear, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, resolveCardOverlaps, spanBracketPath, storyDateKey, storySpanDays } from '../lib/storyDate'
 import { Calendar, X, AlertTriangle, Layers, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -48,23 +48,23 @@ interface Props {
   calendarRule?: CalendarRule
 }
 
-/** 时长横条的最大像素长度（等距布局下的上限，避免一条超长章节盖住半个泳道） */
-const SPAN_BAR_MAX = 384
-const SPAN_BAR_MIN = 10
-
 const CHECK_STYLE: Record<string, string> = {
   '正常': 'bg-emerald-500/15 text-emerald-300',
   '已修正': 'bg-sky-500/15 text-sky-300',
   '待核对': 'bg-amber/15 text-amber',
 }
 
-// 多泳道布局常量
+// 多泳道布局常量（2026-09-24 · 括号方案：泳道线即水平轴，置于泳道顶部，
+// 括号与卡片挂轴下方 —— 主人哥哥定版，与历史事件轴同一套视觉）
 const SLOT_W = 240
-const LANE_H = 150
+const LANE_H = 176
 const TOP = 24
 const POINT_R = 9
 const CARD_W = 210
 const LANE_LABEL_W = 88
+const BRACKET_DEPTH = 18
+/** 泳道轴在泳道内的 y 偏移（泳道线以下要装得下：括号 18 + 卡片 ~112） */
+const LANE_AXIS_OFFSET = 16
 
 export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
   const [hover, setHover] = useState<string | null>(null)
@@ -72,7 +72,6 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
   const [hiddenTracks, setHiddenTracks] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<Evt | null>(null)
 
-  const yearOf = (t: string) => storyDateYear(t) ?? NaN
   /** 起止展示串：只填了起点就只显示起点，两端都有则显示区间 */
   const rangeLabel = (e: Pick<Evt, 'time' | 'end'>, cal: string) => {
     const s = formatStoryRange(e.time, e.end)
@@ -132,16 +131,6 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
     return { data, regressed: [...reg] }
   }, [rows, filterStatus, calendars, calendarRule])
 
-  /**
-   * 时长横条的比例尺：本轴最长的一段 → SPAN_BAR_MAX（相对比例，理由同 HistoryTimeline）。
-   * 真实天数写在卡片上，横条只用来比长短。
-   */
-  const maxSpan = useMemo(() => data.reduce((mx, d) => Math.max(mx, d.span ?? 0), 0), [data])
-  const barWidthOf = (span: number | null): number => {
-    if (span === null || span <= 0 || maxSpan <= 0) return 0
-    return Math.max(SPAN_BAR_MIN, Math.round((span / maxSpan) * SPAN_BAR_MAX))
-  }
-
   // 出现的轨道（按固定顺序排列）
   const allTracks = useMemo(
     () => TRACK_ORDER.filter(t => data.some(d => d.track === t)),
@@ -149,7 +138,69 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
   )
   const visibleTracks = allTracks.filter(t => !hiddenTracks.has(t))
   const laneIndex = (t: string) => visibleTracks.indexOf(t)
-  const laneY = (idx: number) => TOP + idx * LANE_H + LANE_H / 2
+  /** 泳道**轴线**的 y（泳道顶部往下一点 —— 括号与卡片挂轴下方，见常量注释） */
+  const laneY = (idx: number) => TOP + idx * LANE_H + LANE_AXIS_OFFSET
+
+  /**
+   * 括号几何（全局插值，同 HistoryTimeline）：dots 只取时间可解析的事件，
+   * 末尾加虚拟锚让「结束晚于最后事件」的括号仍能往右延。
+   * 🔴 插值基于**全部数据**的 x（隐藏轨道的事件点不渲染但仍占位，x 口径不能变）。
+   */
+  const dotsWithTail = useMemo(() => {
+    const pts = data
+      .map((d, i) => ({ key: d.key, x: i * SLOT_W + SLOT_W / 2 }))
+      .filter(p => Number.isFinite(p.key))
+    if (pts.length === 0) return pts
+    const last = pts[pts.length - 1]
+    return [...pts, { key: last.key + 1e9, x: last.x + SLOT_W }]
+  }, [data])
+
+  /** 每个事件的括号（无跨度 / 起止同日 → null；负跨度标红）。y 直接落到所在泳道的轴上 */
+  const brackets = useMemo(() => {
+    return data.map(d => {
+      if (d.span === null || d.span === 0) return null
+      const idx = visibleTracks.indexOf(d.track)
+      if (idx < 0) return null
+      const axisY = TOP + idx * LANE_H + LANE_AXIS_OFFSET
+      const x0 = (data.indexOf(d)) * SLOT_W + SLOT_W / 2
+      const endKey = d.key - storyDateKey(d.time) + storyDateKey(d.end)
+      const rawEnd = interpolateX(dotsWithTail, endKey)
+      if (rawEnd === null) return null
+      const lo = Math.min(x0, rawEnd)
+      const hi = Math.max(x0, rawEnd)
+      const right = Math.max(hi, lo + 24)
+      return {
+        id: d.id,
+        path: spanBracketPath(x0, right, axisY, BRACKET_DEPTH),
+        left: lo, right, mid: (lo + right) / 2,
+        neg: d.span < 0,
+        label: `${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(Math.abs(d.span))}）`,
+      }
+    })
+  }, [data, dotsWithTail, visibleTracks])
+  const bracketById = useMemo(
+    () => new Map(brackets.filter(Boolean).map(b => [b!.id, b!])),
+    [brackets],
+  )
+
+  /**
+   * 卡片防重叠：**按泳道分组**各自贪心（不同泳道的卡片互不干扰），
+   * 期望位置 = 括号中点（无括号 = 圆点正下）。
+   */
+  const cardLefts = useMemo(() => {
+    const lefts = new Map<string, number>()
+    for (const t of visibleTracks) {
+      const arr = data.filter(d => d.track === t)
+      const wants = arr.map(d => {
+        const b = bracketById.get(d.id)
+        const x = (data.indexOf(d)) * SLOT_W + SLOT_W / 2
+        return (b ? b.mid : x) - CARD_W / 2
+      })
+      const solved = resolveCardOverlaps(wants, CARD_W)
+      arr.forEach((d, i) => lefts.set(d.id, solved[i]))
+    }
+    return lefts
+  }, [data, visibleTracks, bracketById])
 
   const calLegend = [...calendars].sort((a, b) => a.value - b.value)
     .map(c => `${c.name}(${c.value})`).join(' → ')
@@ -167,20 +218,6 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
   const totalW = Math.max(n, 1) * SLOT_W
   const numLanes = Math.max(visibleTracks.length, 1)
   const totalH = TOP * 2 + numLanes * LANE_H
-  const giOf = new Map(data.map((d, i) => [d.id, i]))
-  const xOf = (d: Evt) => (giOf.get(d.id) ?? 0) * SLOT_W + SLOT_W / 2
-
-  // 每条轨道内，按全局故事时间顺序连线
-  const laneSegments: { x0: number; y0: number; x1: number; y1: number; dashed: boolean }[] = []
-  visibleTracks.forEach((t, idx) => {
-    const arr = data.filter(d => d.track === t)
-    for (let i = 0; i < arr.length - 1; i++) {
-      const a = arr[i], b = arr[i + 1]
-      const ya = yearOf(a.time), yb = yearOf(b.time)
-      const span = isFinite(ya) && isFinite(yb) ? Math.abs(ya - yb) : Infinity
-      laneSegments.push({ x0: xOf(a), y0: laneY(idx), x1: xOf(b), y1: laneY(idx), dashed: span > 5 })
-    }
-  })
 
   const detail = (e: Evt) =>
     ([
@@ -284,51 +321,55 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                   style={{ top: TOP + idx * LANE_H, height: LANE_H }}
                 />
               ))}
-              {/* 轨道内连线（共享横向故事时间轴） */}
-              <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
-                {laneSegments.map((seg, i) => (
-                  <path
-                    key={i}
-                    d={`M ${seg.x0} ${seg.y0} L ${seg.x1} ${seg.y1}`}
-                    fill="none"
-                    stroke={seg.dashed ? 'rgba(120,130,150,0.5)' : 'rgba(245,158,11,0.45)'}
-                    strokeWidth={2}
-                    strokeDasharray={seg.dashed ? '6 5' : undefined}
+              {/* 各泳道的水平轴线 + 时长括号 */}
+              <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
+                {visibleTracks.map((t, idx) => (
+                  <line
+                    key={`axis-${t}`}
+                    x1={8} y1={laneY(idx)} x2={totalW - 8} y2={laneY(idx)}
+                    stroke="rgba(128,130,150,0.35)" strokeWidth={1.5}
                   />
                 ))}
+                {data.filter(d => !hiddenTracks.has(d.track)).map(d => {
+                  const b = bracketById.get(d.id)
+                  if (!b) return null
+                  const on = hover === d.id || selected?.id === d.id
+                  return (
+                    <path
+                      key={`bk-${d.id}`}
+                      d={b.path}
+                      fill="none"
+                      className={b.neg ? 'stroke-rose-400' : 'stroke-amber'}
+                      strokeWidth={on ? 2.5 : 2}
+                      strokeOpacity={on ? 0.95 : 0.6}
+                      strokeLinecap="round"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setSelected(d)}
+                      onMouseEnter={() => setHover(d.id)}
+                      onMouseLeave={() => setHover(null)}
+                    >
+                      <title>{b.label}</title>
+                    </path>
+                  )
+                })}
               </svg>
 
-              {/* 时长横条（2.4.4）：起点圆 → 终点，长度按持续天数换算；起止同一天则不画（仍是一个圆点） */}
-              {data.filter(d => !hiddenTracks.has(d.track)).map(d => {
-                const w = barWidthOf(d.span)
-                if (w <= 0) return null
-                const idx = laneIndex(d.track)
-                if (idx < 0) return null
-                const x = xOf(d), y = laneY(idx)
-                const color = COLORS[idx % COLORS.length]
-                const on = hover === d.id || selected?.id === d.id
-                return (
-                  <div
-                    key={`span-${d.id}`}
-                    className={`absolute rounded-full ${color.dot} ${on ? 'opacity-70' : 'opacity-35'}`}
-                    style={{ left: x, top: y - 3, width: w, height: 6, zIndex: 5 }}
-                    title={`${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(d.span ?? 0)}）`}
-                  />
-                )
-              })}
-
-              {/* 节点卡片（摘要，点击弹窗看全部） */}
+              {/* 节点卡片：挂在括号底边下方（居中），时间点事件挂在圆点正下；泳道内贪心防重叠 */}
               {data.filter(d => !hiddenTracks.has(d.track)).map(d => {
                 const idx = laneIndex(d.track)
                 if (idx < 0) return null
-                const x = xOf(d), y = laneY(idx)
+                const b = bracketById.get(d.id)
                 const color = COLORS[idx % COLORS.length]
                 const active = hover === d.id || selected?.id === d.id
                 return (
                   <div
                     key={d.id}
                     className="absolute"
-                    style={{ left: x - CARD_W / 2, top: y + 14, width: CARD_W, zIndex: 10 }}
+                    style={{
+                      left: Math.min(Math.max(cardLefts.get(d.id) ?? 4, 4), Math.max(4, totalW - CARD_W - 4)),
+                      top: laneY(idx) + (b ? BRACKET_DEPTH + 6 : 10),
+                      width: CARD_W, zIndex: 10,
+                    }}
                     onMouseEnter={() => setHover(d.id)}
                     onMouseLeave={() => setHover(null)}
                   >
@@ -369,11 +410,12 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                 )
               })}
 
-              {/* 节点圆点（落在轴线上） */}
+              {/* 节点圆点（落在所在泳道的水平轴线上） */}
               {data.filter(d => !hiddenTracks.has(d.track)).map(d => {
                 const idx = laneIndex(d.track)
                 if (idx < 0) return null
-                const x = xOf(d), y = laneY(idx)
+                const x = data.indexOf(d) * SLOT_W + SLOT_W / 2
+                const y = laneY(idx)
                 const color = COLORS[idx % COLORS.length]
                 return (
                   <div

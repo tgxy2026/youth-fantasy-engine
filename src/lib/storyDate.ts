@@ -164,3 +164,65 @@ export function formatStoryRange(start?: string, end?: string): string {
   if (!e || e === s) return s
   return `${s} → ${e}`
 }
+
+/**
+ * 在「等距排布的时间点序列」上，把任意时间键映射为 x 坐标（相邻两点间线性插值）。
+ *
+ * 为什么用它而不是把整条轴改成时间比例：跨度悬殊的数据（三千年 vs 三天）在纯比例轴上
+ * 会把晚近的事件挤成一团；等距轴保住可读性，**相邻两点之间**仍按时间比例插值 ——
+ * 「整轴一年、事件在 3~5 月」这类局部区间依然标得准（社区反馈 2.4.4 的括号方案靠它定位）。
+ *
+ * `dots` 必须按 key 升序；key 相同（同一天多条）时返回靠右那个的 x（除零防御）。
+ */
+export function interpolateX(dots: { key: number; x: number }[], key: number): number | null {
+  if (dots.length === 0) return null
+  if (key <= dots[0].key) return dots[0].x
+  const last = dots[dots.length - 1]
+  if (key >= last.key) return last.x
+  for (let i = 1; i < dots.length; i++) {
+    if (key <= dots[i].key) {
+      const a = dots[i - 1]
+      const b = dots[i]
+      if (b.key <= a.key) return b.x
+      const t = (key - a.key) / (b.key - a.key)
+      return a.x + (b.x - a.x) * t
+    }
+  }
+  return last.x
+}
+
+/**
+ * 时长括号的 SVG 路径：挂在轴线下方、两端尖角**向上兜起**（指向轴上的起点/终点），
+ * 底边水平 —— 卡片就挂在这条底边下面（主人哥哥 2026-09-24 定的样式，
+ * 替掉第一版"圆点后横着一条"的时长横条）。
+ */
+export function spanBracketPath(x0: number, x1: number, axisY: number, depth = 18): string {
+  const a = Math.min(x0, x1)
+  const b = Math.max(x0, x1)
+  const y0 = axisY + 3          // 尖角顶：贴着轴（圆点下缘）
+  const y1 = axisY + depth      // 底边
+  const r = 4                   // 底角小圆弧（纯直角太硬）
+  return `M ${a} ${y0}`
+    + ` L ${a} ${y1 - r} Q ${a} ${y1} ${a + r} ${y1}`
+    + ` L ${b - r} ${y1} Q ${b} ${y1} ${b} ${y1 - r}`
+    + ` L ${b} ${y0}`
+}
+
+/**
+ * 卡片防重叠的**贪心排布**：按期望左边界排序，逐张把重叠的往右推。
+ *
+ * 为什么是贪心而不是整体最优：时间轴卡片一行可能有几十张，整体最优是区间调度难题；
+ * 贪心在这里足够 —— 卡片宽度一致、期望位置只被括号中点轻微偏移。
+ * 返回值与入参同序：`lefts[i]` 是第 i 张卡的最终左边界。
+ */
+export function resolveCardOverlaps(wants: number[], cardWidth: number, gap = 8): number[] {
+  const order = wants.map((w, i) => ({ w, i })).sort((a, b) => a.w - b.w)
+  const out = new Array<number>(wants.length).fill(0)
+  let prevRight = Number.NEGATIVE_INFINITY
+  for (const { w, i } of order) {
+    const left = Math.max(w, prevRight + gap)
+    out[i] = left
+    prevRight = left + cardWidth
+  }
+  return out
+}
