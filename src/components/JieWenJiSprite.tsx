@@ -87,16 +87,12 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
   }
 
   return (
+    // 🔴 2.4.4 交互修复：事件全部绑在**平移层**上，外层 pointer-events-none ——
+    // 此前外层是 150×150 的固定盒子，图片平移收进后，**视觉上看不见的那 100px 透明区
+    // 也在接收鼠标**，导致"稍微挪过去就触发"（社区反馈：卡手）。现在热区 = 图片可见部分。
     <div
       className="fixed right-0 select-none"
-      style={{ top: `${topPct}%`, transform: 'translateY(-50%)', zIndex: Z.sprite }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onDoubleClick={() => { setTucked(t => !t); setMini(false) }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => { setHover(false); if (!mini) setMini(false) }}
-      title={isEditor ? '颉文姬 · AI 编辑（点击打开 / 拖拽换位 / 双击收边）' : '颉文姬 · AI 编辑助手'}
+      style={{ top: `${topPct}%`, transform: 'translateY(-50%)', zIndex: Z.sprite, pointerEvents: 'none' }}
     >
       {/* 悬停气泡 */}
       {!tucked && hover && !mini && (
@@ -122,10 +118,17 @@ style={{ zIndex: Z.pageTip }}
         </div>
       )}
 
-      {/* 精灵本体：横向滑出/收进 + 上下浮动 + 点击弹跳 */}
+      {/* 精灵本体：横向滑出/收进 + 上下浮动 + 点击弹跳（交互热区 = 本层可见部分） */}
       <div
-        className="transition-transform duration-300 ease-out"
+        className="transition-transform duration-300 ease-out pointer-events-auto"
         style={{ width: SPRITE, height: SPRITE, transform: `translateX(${translateX}px)` }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onDoubleClick={() => { setTucked(t => !t); setMini(false) }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => { setHover(false); if (!mini) setMini(false) }}
+        title={isEditor ? '颉文姬 · AI 编辑（点击打开 / 拖拽换位 / 双击收边）' : '颉文姬 · AI 编辑助手'}
       >
         <div
           className="w-full h-full"

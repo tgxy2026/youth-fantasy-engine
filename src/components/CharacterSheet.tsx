@@ -440,6 +440,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                                 onChange={v => updateField(key, v)}
                                 refTabId={CARD_TABLE_REF_FIELDS[field.name].tabId}
                                 refCol={CARD_TABLE_REF_FIELDS[field.name].col}
+                                multi={CARD_TABLE_REF_FIELDS[field.name].multi}
                                 placeholder={`选择${field.name}`}
                               />
                             ) : CARD_SELECT_OPTIONS[field.name] ? (

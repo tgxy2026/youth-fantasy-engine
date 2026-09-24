@@ -22,9 +22,10 @@ interface DocField {
   /** 'select' = 原表单里该字段是下拉选择；'characters' = 多选角色卡；'date' = 结构化故事内时间；'calendar-select' = 历法列；'tableRef' = 跨表引用（从别的设定表取值） */
   type?: 'text' | 'select' | 'characters' | 'date' | 'calendar-select' | 'tableRef'
   options?: string[]
-  /** tableRef 类型携带来源表与列 */
+  /** tableRef 类型携带来源表与列（multi = 多选，与角色卡同口径） */
   refTab?: string
   refCol?: string
+  multi?: boolean
 }
 
 /** 角色卡里以下拉形式填写的字段（与 CharacterSheet 保持一致） */
@@ -133,7 +134,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                   const label = fieldName ?? k
                   const opts = CARD_SELECT_FIELDS[label]
                   const ref = CARD_TABLE_REF_FIELDS[label]
-                  if (ref) return { label, value: v, dataKey: k, type: 'tableRef' as const, refTab: ref.tabId, refCol: ref.col }
+                  if (ref) return { label, value: v, dataKey: k, type: 'tableRef' as const, refTab: ref.tabId, refCol: ref.col, multi: ref.multi }
                   return opts
                     ? { label, value: v, dataKey: k, type: 'select' as const, options: opts }
                     : { label, value: v, dataKey: k }
@@ -463,6 +464,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                       <TableRefSelect
                                         refTabId={f.refTab!}
                                         refCol={f.refCol!}
+                                        multi={f.multi}
                                         value={draft}
                                         onChange={v => { setDraft(v); saveField(doc, f, v) }}
                                         placeholder={`选择${f.label}`}
