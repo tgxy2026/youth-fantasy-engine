@@ -51,10 +51,10 @@ export default function StorylineView() {
           return n
         }
 
-        // 时间线 → 每章关键事件（有故事内时间的优先按时间排序，兜底按章节号）
+        // 时间线 → 每章关键事件（有发生时间的优先按时间排序，兜底按章节号）
         const tlSorted = [...tlRows].sort((a, b) => {
-          const ta = String(a.data['故事内时间'] ?? '').trim()
-          const tb = String(b.data['故事内时间'] ?? '').trim()
+          const ta = String(a.data['发生时间'] ?? '').trim()
+          const tb = String(b.data['发生时间'] ?? '').trim()
           if (ta && tb && ta !== tb) return ta < tb ? -1 : 1
           return noOf(a.data['章节号']) - noOf(b.data['章节号'])
         })

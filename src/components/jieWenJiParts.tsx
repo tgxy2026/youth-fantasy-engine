@@ -63,7 +63,7 @@ export const blankProof = (): ProofState => ({
 })
 
 /** 轻量 markdown 渲染：支持 ## 小标题 / 数字与 - 列表 / **加粗**，其余按段落展示 */
-export function renderInline(s: string) {
+function renderInline(s: string) {
   const parts = s.split(/(\*\*[^*]+\*\*)/g)
   return parts.map((p, i) =>
     p.startsWith('**') && p.endsWith('**') && p.length > 4
@@ -105,7 +105,7 @@ export const STATUS_META: Record<MatchStatus, { label: string; cls: string }> = 
   new: { label: '待补登', cls: 'bg-red-500/15 text-red-300 border-red-500/30' },
 }
 
-export const SEV_BADGE: Record<string, string> = {
+const SEV_BADGE: Record<string, string> = {
   error: 'bg-red-500/15 text-red-300 border-red-500/30',
   warn: 'bg-amber/15 text-amber border-amber/30',
   info: 'bg-sky-500/15 text-sky-300 border-sky-500/30',

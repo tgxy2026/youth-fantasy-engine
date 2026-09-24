@@ -52,6 +52,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
     calendars,
     collapsed,
     setFillRow,
+    calendarRule,
   } = model
 
     const row = entry.row
@@ -139,9 +140,10 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
           return (
             <td key={col.name} className="px-1 py-1 align-middle" style={{ width: widthOf(col.name) }}>
               {col.type === 'date' ? (
-                /* 严格"某年某月某日"日期输入 */
+                /* 严格"某年某月某日"日期输入（月/日候选按项目历法规则生成） */
                 <StoryDateInput
                   value={val}
+                  rule={calendarRule}
                   onChange={v => setCellDraft(row.id, col.name, v)}
                 />
               ) : col.type === 'calendar' ? (

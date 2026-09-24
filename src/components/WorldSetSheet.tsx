@@ -17,16 +17,17 @@
  *      删除子项时清理活跃列表的逻辑在存储层，绕过去就会留下幽灵 id。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Check, Globe2, Layers, Pencil, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
+import { BookOpen, Check, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import type { CardRecord, TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
-import { splitActive } from '../lib/worldSets'
+import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '../lib/worldSets'
 import { POWER_NUMERIC_HINTS } from '../lib/schema'
 import { useAIReady } from '../lib/useAIReady'
 import type { TemplateField } from '../lib/ai'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
+import AutoTextarea from './AutoTextarea'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
 import SchemaFieldGrid from './SchemaFieldGrid'
@@ -56,6 +57,8 @@ export default function WorldSetSheet({ tab }: Props) {
   const [saved, setSaved] = useState(false)
   const [naming, setNaming] = useState<'new' | 'rename' | null>(null)
   const [showFill, setShowFill] = useState(false)
+  /** 「AI 整理」= 拿草稿箱里那一段去填上方字段（与 showFill 的区别只是草稿已备好） */
+  const [showOrganize, setShowOrganize] = useState(false)
 
   // 包一层 useMemo：`tab.modules ?? []` 每次渲染都是新数组，直接当下游 useMemo 的依赖会次次失效
   const modules = useMemo(() => tab.modules ?? [], [tab.modules])
@@ -71,7 +74,12 @@ export default function WorldSetSheet({ tab }: Props) {
     [modules, tab.id],
   )
   const totalFields = templates.length
-  const filledCount = Object.values(draft).filter(v => v && v.trim()).length
+  // 草稿箱是内部字段（__` 前缀），不算"已填"——它本来就不是这张表要填的东西
+  const filledCount = Object.entries(draft)
+    .filter(([k, v]) => !isInternalFieldKey(k) && v && v.trim()).length
+  /** 当前层的草稿箱文本 */
+  const freeDraft = draft[FREE_DRAFT_KEY] ?? ''
+  const freeDraftChars = freeDraft.trim().length
 
   const load = useCallback(async () => {
     const [m, s, a] = await Promise.all([
@@ -354,6 +362,48 @@ export default function WorldSetSheet({ tab }: Props) {
             <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} />
           </div>
 
+          {/* ---------- 设定草稿箱（本层一份，不发给 AI） ---------- */}
+          <div className="mt-4 overflow-hidden rounded-xl border border-ink-600 bg-ink-850/40">
+            <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">
+              <NotebookPen size={12} className="shrink-0 text-ink-300" />
+              <span className="text-12 text-ink-100">设定草稿箱</span>
+              <span className="rounded border border-ink-600 bg-ink-800 px-1 py-px text-10 text-ink-300"
+                title="这块内容不会进入 AI 上下文，也不会进设定集导出"
+              >不发给 AI</span>
+              <HelpPopover title="设定草稿箱 · 怎么用" width="22rem" size={13}>
+                {`还没想好上面那些字段怎么填时，先把想法堆在这儿 —— 一句话、一大段、杂乱无章都行，不做任何格式要求，框子会跟着文字一路长高。\n\n`
+                  + `· 🔴 这块内容「不发给 AI」：它只是你自己的落档处，不会进模型上下文、也不会进设定集导出。\n`
+                  + `· 想让它变成真正的设定 → 点「AI 整理到上方字段」：AI 读这段草稿，把内容整理进上面还没填的字段（已填的不动），你可以逐条改完再采用。\n`
+                  + `· 母级与每个子世界「各有一份」草稿箱，切层时各自独立保存。\n`
+                  + `· 整理进字段之后，那份内容才会被 AI 读到 —— 所以「填了草稿箱但 AI 不知道」是正常的。\n`}
+              </HelpPopover>
+              <span className="ml-auto text-10 text-ink-500 tabular-nums">{freeDraftChars} 字</span>
+              <Button variant="secondary" size="xs"
+                onClick={() => setShowOrganize(true)}
+                disabled={!aiReady || freeDraftChars === 0}
+                className="flex items-center gap-1"
+                title={aiReady
+                  ? (freeDraftChars === 0 ? '先在草稿箱里写点什么，再让 AI 整理' : '让 AI 读这段草稿，整理进上方未填的字段')
+                  : '还没接入模型'}
+              >
+                <Wand2 size={11} /> AI 整理到上方字段
+              </Button>
+            </div>
+            <div className="p-3">
+              <AutoTextarea
+                value={freeDraft}
+                onChange={v => setField(FREE_DRAFT_KEY, v)}
+                placeholder="想到什么就往这儿丢：一段没理顺的世界规则、几个互相打架的点子、跟朋友聊出来的碎片……先落档，之后再整理成上面那些字段。"
+                className="text-13 leading-relaxed"
+                minRows={7}
+                maxHeight={0}
+              />
+              <div className="mt-1.5 text-10 leading-relaxed text-ink-400">
+                随内容自动增高，无字数上限；改完点顶部的「保存」落库（切层 / 离开页签也会自动保存）。
+              </div>
+            </div>
+          </div>
+
           {tab.tips && tab.tips.length > 0 && (
             <div className="mt-4 rounded-xl border border-amber/20 bg-amber/5 p-4">
               <div className="text-11 text-ink-300 leading-relaxed">
@@ -394,6 +444,23 @@ export default function WorldSetSheet({ tab }: Props) {
             setShowFill(false)
           }}
           onClose={() => setShowFill(false)}
+        />
+      )}
+
+      {showOrganize && (
+        <AITemplateFill
+          fields={templates}
+          // 已填字段照样发给模型当"别再生成一遍"的依据，但弹窗里会标成「已填」不可改
+          existing={draft}
+          initialSketch={freeDraft}
+          sketchLabel="待整理的草稿（来自草稿箱，可随手改）"
+          title={`AI 整理 · ${isMain ? '全书统一（母级）' : `子世界「${selSub?.name ?? ''}」`}`}
+          onSubmit={values => {
+            // 与 FormSheet 同款：只采纳非空值（AI 没填的字段保持原样）
+            for (const [k, v] of Object.entries(values)) if (v && v.trim()) setField(k, v)
+            setShowOrganize(false)
+          }}
+          onClose={() => setShowOrganize(false)}
         />
       )}
     </div>

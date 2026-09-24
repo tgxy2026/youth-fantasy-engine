@@ -194,6 +194,16 @@ async function mirrorCloudCacheToLocal(cache: SyncStores, overwrite: boolean): P
       return !have.has(String(k ?? ''))
     })
     if (missing.length) tasks.push(desktopLocalStore.bulkPut(store, missing).catch(warnMirrorFail(`兜底补 ${store} 入本地`)))
+    // 🔴 2.4.4 六维审计 P1：**用户删过的记录**要在这条兜底路径上一并从本地清掉。
+    //    旧实现只防了「补回」（上面的 missing 过滤），但那些记录仍留在本地文件里；
+    //    随后关闭同步的 configure('') 会 resetTombs() 清空墓碑 ⇒ 重开同步时 seedFromLocal
+    //    把它们当本地数据播种回云端 —— 删除被彻底撤销（「删了会复活」家族的最后一条路径）。
+    //    墓碑命中 ⇒ 用户明确删过的数据，删它不违反「绝不覆盖本地新稿」（新稿没有墓碑）。
+    //    注意 meta 的 excluded keys（本地专属密钥）不在 list 里，但它们从没被删过 ⇒ isDeleted=false，不受影响。
+    const haveKeys = new Set((list as Record<string, unknown>[]).map(r => String((r as Record<string, unknown>)[kp] ?? '')))
+    const stale = (localRows as Record<string, unknown>[])
+      .filter(r => { const k = String(r[kp] ?? ''); return !haveKeys.has(k) && isDeleted(store, k) })
+    if (stale.length) tasks.push(desktopLocalStore.bulkDel(store, stale.map(r => r[kp] as string | number)).catch(warnMirrorFail(`兜底清墓碑 ${store} 入本地`)))
   }
   await Promise.all(tasks)
 }

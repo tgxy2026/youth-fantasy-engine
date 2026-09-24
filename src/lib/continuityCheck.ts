@@ -72,7 +72,7 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
 
   // ---------- 1) 时间倒流 ----------
   const tlSorted = [...timeline]
-    .map(r => ({ r, no: seqByTlTitle(r.data['章节标题']) || extractChapterNo(r.data['章节号']) || 0, date: parseStoryDateKey(r.data['故事内时间']) }))
+    .map(r => ({ r, no: seqByTlTitle(r.data['章节标题']) || extractChapterNo(r.data['章节号']) || 0, date: parseStoryDateKey(r.data['发生时间']) }))
     .filter(x => x.no > 0)
     .sort((a, b) => a.no - b.no)
   for (let i = 1; i < tlSorted.length; i++) {
@@ -81,7 +81,7 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
       issues.push({
         id: nid(), severity: 'error', category: '连续性',
         title: `时间倒流：第${cur.no}章早于第${prev.no}章`,
-        detail: `第${prev.no}章故事内时间为「${tlSorted[i - 1].r.data['故事内时间']}」，第${cur.no}章却是「${cur.r.data['故事内时间']}」，时间线倒流。请核对两章的「故事内时间」。`,
+        detail: `第${prev.no}章发生时间为「${tlSorted[i - 1].r.data['发生时间']}」，第${cur.no}章却是「${cur.r.data['发生时间']}」，时间线倒流。请核对两章的「发生时间」。`,
         location: { kind: 'tab', tabId: 'timeline', hint: '时间脉络' },
       })
     }

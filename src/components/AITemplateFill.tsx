@@ -23,13 +23,15 @@
  */
 import { foldVh } from '../lib/theme'
 import AIDataSourceNote from './AIDataSourceNote'
-import { useCallback, useMemo, useState } from 'react'
-import { Sparkles, Check, Loader2, AlertCircle, RefreshCw, MessagesSquare } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Sparkles, Check, Loader2, AlertCircle, RefreshCw, MessagesSquare, NotebookPen } from 'lucide-react'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
 import { aiChatJson, aiCompleteTemplate, buildWorldContext, type TemplateField } from '../lib/ai'
 import { prepareDraftMaterial, type DraftSource } from '../lib/draftMaterial'
 import { deriveTopics, filledToText, type InterviewSpec } from '../lib/interview'
+import { loadFreeDraft, saveFreeDraft } from '../lib/freeDraft'
+import { isInternalFieldKey } from '../lib/worldSets'
 import { DEFAULT_SEARCH_SETTINGS } from '../lib/webSearch'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import InterviewChat from './InterviewChat'
@@ -46,6 +48,30 @@ interface Props {
   withWorldContext?: boolean
   /** 草图输入框占位提示 */
   sketchPlaceholder?: string
+  /**
+   * 预填进「粗略设定」框的内容（2.4.4 · 设定草稿箱的「AI 整理」用）。
+   *
+   * 为什么走 props 而不是让它自己读草稿箱：本弹窗被全项目多处复用，
+   * 让它知道「草稿箱」这个具体概念会把通用组件钉死在一处业务上；
+   * 由调用方把已写好的大段草稿直接递进来，语义就只是「这次带着一段现成的材料来」。
+   *
+   * ⚠️ 与 `draftScope` **二选一**：传了它就不显示草稿本区块（材料已经在了，
+   *    再摆一个草稿本就成了两处同质文本，作者会不知道该改哪一处）。
+   */
+  initialSketch?: string
+  /** 「粗略设定」输入框的标题文案（默认面向"写一句话"；整理草稿时要改成"待整理的草稿"） */
+  sketchLabel?: string
+  /**
+   * **草稿本的作用域**（2.4.4）：给了就在弹窗里挂出一块「草稿本」——
+   * 一段随内容长高、自动存盘的自由文本，作者可以攒着、也可以一键带进本次补全。
+   *
+   * 刻意做成**全局能力**而不是世界设定页签的专属：需要"抱着一大段没整理的文字去补全"
+   * 的场合到处都是（角色卡、表格行、表单页签……），把它钉死在两个页签上太可惜。
+   * 调用方只需给一个稳定的 scope（页签 / 记录 / 行的维度自定），存读与口径都在本组件内。
+   *
+   * 存盘：`lib/freeDraft.ts`（项目级 settingsKV，随项目走）。
+   */
+  draftScope?: string
   /** 弹窗标题 */
   title?: string
   /** 采用时回调：仅回传 AI 补全（非锁定、非已填）字段的 key->value */
@@ -60,6 +86,9 @@ export default function AITemplateFill({
   existing,
   withWorldContext = true,
   sketchPlaceholder,
+  initialSketch,
+  sketchLabel,
+  draftScope,
   title = 'AI 补全设定',
   onSubmit,
   onClose,
@@ -70,7 +99,7 @@ export default function AITemplateFill({
   //    判据不同，会误禁（见下条注释）。
   const { ready: aiReady } = useAIReady()
   const [mode, setMode] = useState<Mode>('fill')
-  const [sketch, setSketch] = useState('')
+  const [sketch, setSketch] = useState(initialSketch ?? '')
   const [refs, setRefs] = useState('')
   const [useCtx, setUseCtx] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -80,10 +109,73 @@ export default function AITemplateFill({
   const [source, setSource] = useState<DraftSource | null>(null)
   const search = useSearchSettings()
 
+  // ---------- 草稿本（全局能力，见 props.draftScope） ----------
+  // 只在**没传 initialSketch** 时才启用：两者都是"带进来的材料"，同时出现会变成两个同质输入框。
+  const draftOn = !!draftScope && initialSketch === undefined
+  const [draftText, setDraftText] = useState('')
+  const [draftOpen, setDraftOpen] = useState(false)
+  const [draftSaved, setDraftSaved] = useState(false)
+  const draftTimer = useRef<ReturnType<typeof setTimeout>>()
+  /** 草稿是否已被带进输入框（只影响按钮文案；重复点「带入」会覆盖，不追加） */
+  const [brought, setBrought] = useState(false)
+
+  // 挂载时读一次。**刻意不自动填进输入框** —— 作者攒的草稿可能很长，
+  // 每次开弹窗都静默塞进「一句话补全」的框里会污染他真正想写的那句；
+  // 展开出来让他自己点「带入」，才是可预期的（且草稿本内容就在眼前，一点即可）。
+  useEffect(() => {
+    if (!draftOn || !draftScope) return
+    let alive = true
+    void loadFreeDraft(draftScope).then(t => {
+      if (!alive || !t.trim()) return
+      setDraftText(t)
+      setDraftOpen(true)
+    })
+    return () => { alive = false }
+  }, [draftOn, draftScope])
+
+  // 卸载前（切走 / 关弹窗）把未落盘的草稿收尾 —— 与 TableSheet 的「卸载冲刷草稿」同范式
+  useEffect(() => () => {
+    if (draftTimer.current) clearTimeout(draftTimer.current)
+    if (draftScope && draftText.trim()) void saveFreeDraft(draftScope, draftText)
+  }, [draftScope, draftText])
+
+  const onDraftChange = (v: string) => {
+    setDraftText(v)
+    setDraftSaved(false)
+    if (draftTimer.current) clearTimeout(draftTimer.current)
+    draftTimer.current = setTimeout(() => {
+      if (!draftScope) return
+      // 🔴 2.4.4 六维审计 P1：保存失败（false）绝不亮「已存」—— 否则作者以为存上了，关弹窗即丢稿
+      void saveFreeDraft(draftScope, v).then(ok => { if (ok) setDraftSaved(true) })
+    }, 600)
+  }
+
+  /** 把草稿带进「粗略设定」框：非空则换行追加（作者可能已经敲了一句） */
+  const bringDraftIn = () => {
+    const t = draftText.trim()
+    if (!t) return
+    setSketch(prev => (prev.trim() ? `${prev.trim()}\n${t}` : t))
+    setBrought(true)
+  }
+
+  /**
+   * 剥掉「内部字段」（`__` 前缀，如设定草稿箱）后的已填值。
+   *
+   * 🔴 为什么必须剥：`existing` 会被摊平进 `existingText` 发给模型（对话引导的起点、
+   *    补全的"已有什么"）。草稿箱是作者明确标注「不发给 AI」的那一段，
+   *    顺着这条路漏出去，界面上的承诺就成了空话 —— 且它是**静默**的，谁也看不出来。
+   */
+  const safeExisting = useMemo(() => {
+    if (!existing) return undefined
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(existing)) if (!isInternalFieldKey(k)) out[k] = v
+    return out
+  }, [existing])
+
   // 锁定 / 已填字段不发给模型；其余才是 AI 真正补全的对象
   const sendFields = useMemo(
-    () => fields.filter(f => !f.locked && !(existing?.[f.key]?.trim())),
-    [fields, existing],
+    () => fields.filter(f => !f.locked && !(safeExisting?.[f.key]?.trim())),
+    [fields, safeExisting],
   )
 
   /** 「主要角色」这类称谓 —— 从标题里摘出来，给对话引导当主语（标题形如 `AI 补全 · 主要角色`） */
@@ -94,10 +186,10 @@ export default function AITemplateFill({
 
   /** 已填字段摊平成文本：给对话引导当起点（「只追问缺口」），也给补全当「补完」依据 */
   const existingText = useMemo(() => {
-    if (!existing) return ''
+    if (!safeExisting) return ''
     const labels = Object.fromEntries(fields.map(f => [f.key, f.label]))
-    return filledToText(existing, labels)
-  }, [existing, fields])
+    return filledToText(safeExisting, labels)
+  }, [safeExisting, fields])
 
   /** 对话引导的「纲」：字段清单是动态的，所以提纲按字段顺序切话题 */
   const spec = useMemo<InterviewSpec>(() => ({
@@ -206,9 +298,48 @@ export default function AITemplateFill({
           </div>
         ) : (
           <>
+            {draftOn && (
+              <div className="rounded-lg border border-ink-700 bg-ink-850/50">
+                <button
+                  type="button"
+                  onClick={() => setDraftOpen(o => !o)}
+                  className="w-full flex items-center gap-1.5 px-3 py-2 text-12 text-ink-200 hover:text-ink-100 transition-colors"
+                >
+                  <NotebookPen size={12} className="shrink-0 text-ink-400" />
+                  草稿本
+                  {draftText.trim() && <span className="text-10 text-ink-500">（{draftText.trim().length} 字）</span>}
+                  <span className="ml-auto text-10 text-ink-500">{draftOpen ? '收起' : '展开'}</span>
+                </button>
+                {draftOpen && (
+                  <div className="px-3 pb-3">
+                    <AutoTextarea
+                      value={draftText}
+                      onChange={onDraftChange}
+                      placeholder="想到什么就往这儿丢：一段没整理的设定、聊天记录里攒的灵感、写了一半的大纲……怎么写都行，不做任何格式要求。"
+                      className="text-12"
+                      minRows={5}
+                      maxHeight={0}
+                    />
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                        <span className="text-10 text-ink-400">
+                        只存在本项目里、自动存盘；<b className="text-ink-300">默认不发给 AI</b>，点「带入」才会随本次请求发出。
+                      </span>
+                      <span className={`text-10 transition-opacity ${draftSaved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>已存</span>
+                      <Button variant="secondary" size="xs" onClick={bringDraftIn} disabled={!draftText.trim()}
+                        className="ml-auto"
+                        title="把草稿本内容填进下方输入框（已敲过内容则追加在后面）"
+                      >
+                        {brought ? '重新带入' : '带入本次补全'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <label className="block text-12 text-ink-300 mb-1">
-                你的粗略设定（名字 / 身份 / 定位等，越具体补全越准）
+                {sketchLabel ?? '你的粗略设定（名字 / 身份 / 定位等，越具体补全越准）'}
               </label>
               <AutoTextarea
                 value={sketch}
@@ -256,8 +387,8 @@ export default function AITemplateFill({
                 <div className="space-y-3 overflow-y-auto pr-1"
 style={{ maxHeight: foldVh('42vh') }}>
                   {fields.map(f => {
-                    const isProduced = !f.locked && !(existing?.[f.key]?.trim())
-                    const val = isProduced ? (result[f.key] ?? '') : (existing?.[f.key] ?? '')
+                    const isProduced = !f.locked && !(safeExisting?.[f.key]?.trim())
+                    const val = isProduced ? (result[f.key] ?? '') : (safeExisting?.[f.key] ?? '')
                     const filled = isProduced && aiFilled.includes(f.key)
                     return (
                       <div key={f.key}>

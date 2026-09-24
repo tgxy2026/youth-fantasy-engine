@@ -17,6 +17,11 @@ interface Props {
   placeholder?: string
   /** 下拉中隐藏的名字（自引用父级时排除自身 + 子孙，防止把祖先挂到自己下面形成环） */
   excludeNames?: string[]
+  /**
+   * 多选（2.4.4）：可同时选多个值，以「，」连接存储（与 CharacterSelect multi 同格式）。
+   * 多选模式下点选项**不关闭下拉**，方便连续勾选；手动输入为追加（去重）。
+   */
+  multi?: boolean
 }
 
 /**
@@ -26,7 +31,7 @@ interface Props {
  * 当来源表为空 / 被项目形态隐藏（如极简项目砍掉世界构建）无法选择时，
  * 允许在搜索框中手动输入，保证字段不被完全锁死（三形态兼容）。
  */
-export default function TableRefSelect({ value, onChange, refTabId, refCol, placeholder = '选择', excludeNames }: Props) {
+export default function TableRefSelect({ value, onChange, refTabId, refCol, placeholder = '选择', excludeNames, multi = false }: Props) {
   const [names, setNames] = useState<string[]>([])
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -79,14 +84,33 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
   }, [open])
 
   const close = () => { setOpen(false); setQ('') }
-  const isSel = (n: string) => value === n
-  const toggle = (n: string) => { onChange(n); close() }
+  const selectedNames = multi
+    ? (value || '').split(/[，,]/).map(x => x.trim()).filter(Boolean)
+    : (value ? [value] : [])
+  const isSel = (n: string) => selectedNames.includes(n)
+  const toggle = (n: string) => {
+    if (!multi) { onChange(n); close(); return }
+    const set = new Set(selectedNames)
+    if (set.has(n)) set.delete(n); else set.add(n)
+    onChange([...set].join('，'))
+  }
   // 内置搜索：按输入过滤下拉项；来源表为空 / 被项目形态隐藏（如极简项目）时允许手动输入
   const ql = q.trim().toLowerCase()
   const list0 = excludeNames && excludeNames.length ? names.filter(n => !excludeNames.includes(n)) : names
   const filtered = ql ? list0.filter(n => n.toLowerCase().includes(ql)) : list0
   const exact = ql !== '' && names.some(n => n.toLowerCase() === ql)
-  const useManual = () => { const v = q.trim(); if (v) { onChange(v); close() } }
+  const applyManualInput = () => {
+    const v = q.trim()
+    if (!v) return
+    if (multi) {
+      const set = new Set([...selectedNames, v])
+      onChange([...set].join('，'))
+    } else {
+      onChange(v)
+    }
+    close()
+  }
+  const display = multi ? selectedNames.join('，') : value
 
   return (
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
@@ -96,7 +120,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
         onClick={() => setOpen(o => !o)}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
-        <span className={value ? 'text-ink-100 truncate' : 'text-ink-500 truncate'}>{value || placeholder}</span>
+        <span className={display ? 'text-ink-100 truncate' : 'text-ink-500 truncate'}>{display || placeholder}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
       </Button>
       {open && pos && createPortal(
@@ -117,13 +141,23 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
               autoFocus
               value={q}
               onChange={e => setQ(e.target.value)}
+              onKeyDown={e => {
+                // 🔴 2.4.4 六维审计：下拉键盘可达 —— Esc 关闭；Enter 确认（精确匹配选中之，
+                //    否则按「使用手动输入」走，与下方按钮同语义）
+                if (e.key === 'Escape') { e.stopPropagation(); close() }
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  if (exact) toggle(names.find(n => n.toLowerCase() === ql)!)
+                  else applyManualInput()
+                }
+              }}
               placeholder="搜索或手动输入…"
               className="w-full !py-0.5 text-12"
             />
           </div>
           {q.trim() && !exact && (
             <Button type="button"
-              onClick={useManual} variant="secondary" size="md" className="w-full text-left text-11 border-b flex items-center">
+              onClick={applyManualInput} variant="secondary" size="md" className="w-full text-left text-11 border-b flex items-center">
               <Plus size={11} /> 使用「{q.trim()}」
             </Button>
           )}
@@ -141,6 +175,11 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
               <span className="truncate flex-1">{n}</span>
             </Button>
           ))}
+          {multi && selectedNames.length > 0 && (
+            <div className="px-2.5 py-1 text-10 text-ink-500 border-t border-ink-700 leading-relaxed">
+              已选 {selectedNames.length} 项（点选项可取消；⚠️ 多个势力可能让 AI 对人物从属关系判断不清）
+            </div>
+          )}
         </div>,
         document.body
       )}

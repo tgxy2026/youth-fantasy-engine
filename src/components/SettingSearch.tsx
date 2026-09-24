@@ -9,6 +9,7 @@ import CharacterSelect from './CharacterSelect'
 import TableRefSelect from './TableRefSelect'
 import StoryDateInput from './StoryDateInput'
 import CalendarSelect from './CalendarSelect'
+import { useCalendarRule } from '../lib/useCalendarRule'
 import { Button } from './Button'
 
 type DocKind = 'card' | 'table' | 'relation'
@@ -21,9 +22,10 @@ interface DocField {
   /** 'select' = 原表单里该字段是下拉选择；'characters' = 多选角色卡；'date' = 结构化故事内时间；'calendar-select' = 历法列；'tableRef' = 跨表引用（从别的设定表取值） */
   type?: 'text' | 'select' | 'characters' | 'date' | 'calendar-select' | 'tableRef'
   options?: string[]
-  /** tableRef 类型携带来源表与列 */
+  /** tableRef 类型携带来源表与列（multi = 多选，与角色卡同口径） */
   refTab?: string
   refCol?: string
+  multi?: boolean
 }
 
 /** 角色卡里以下拉形式填写的字段（与 CharacterSheet 保持一致） */
@@ -91,6 +93,8 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
 
   // 历法配置（项目级，历史事件 / 时间脉络「历法」列的下拉来源）
   const [calendars, setCalendars] = useState<CalendarDef[]>([{ name: '灵历', value: 0 }])
+  // 历法规则（一年几个月 / 每月几天）：这里改设定也要按它出月/日候选，否则与表格页口径不一致
+  const { rule: calendarRule } = useCalendarRule()
   useEffect(() => {
     db.getSetting<CalendarDef[]>('calendars', []).then(v => { if (v && v.length > 0) setCalendars(v) })
   }, [])
@@ -130,7 +134,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                   const label = fieldName ?? k
                   const opts = CARD_SELECT_FIELDS[label]
                   const ref = CARD_TABLE_REF_FIELDS[label]
-                  if (ref) return { label, value: v, dataKey: k, type: 'tableRef' as const, refTab: ref.tabId, refCol: ref.col }
+                  if (ref) return { label, value: v, dataKey: k, type: 'tableRef' as const, refTab: ref.tabId, refCol: ref.col, multi: ref.multi }
                   return opts
                     ? { label, value: v, dataKey: k, type: 'select' as const, options: opts }
                     : { label, value: v, dataKey: k }
@@ -460,6 +464,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                       <TableRefSelect
                                         refTabId={f.refTab!}
                                         refCol={f.refCol!}
+                                        multi={f.multi}
                                         value={draft}
                                         onChange={v => { setDraft(v); saveField(doc, f, v) }}
                                         placeholder={`选择${f.label}`}
@@ -503,10 +508,11 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                       />
                                     </div>
                                   ) : f.type === 'date' ? (
-                                    /* 故事内时间：结构化 某年某月某日 输入，与原表一致 */
+                                    /* 故事内时间：结构化 某年某月某日 输入，与原表一致（月/日候选按项目历法规则） */
                                     <div className="mt-0.5">
                                       <StoryDateInput
                                         value={draft}
+                                        rule={calendarRule}
                                         onChange={v => { setDraft(v); saveField(doc, f, v) }}
                                       />
                                     </div>

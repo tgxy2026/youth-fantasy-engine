@@ -109,6 +109,9 @@ export const KEY_PATHS: Record<string, string> = {
   // C2：备份元数据与载荷分开存（都是本地专属，不进同步）
   backups: 'id', backupPayloads: 'id',
   formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
+  // 2.4.4 六维审计：与 syncCore.KEY_FIELD 对齐（后者有 tavernReports，这里漏了 ——
+  // 虽有 ?? 'id' 兜底，但两份口径应逐项一致，避免下一个新表再漂移）
+  tavernReports: 'id',
 }
 
 export interface DesktopState {

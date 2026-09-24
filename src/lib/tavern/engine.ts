@@ -184,7 +184,8 @@ async function buildCastBlock(casts: ReturnType<typeof splitCast>): Promise<stri
   const load = async (list: typeof casts.ai, kind: 'ai' | 'user') => {
     const rows = await Promise.all(list.map(async c => ({
       name: c.name,
-      cs: await store.getCastSetting(c.cardId).catch(() => null),
+      // 🔴 2.4.4 六维审计 P2：读失败折叠成 null = 该角色的扮演块整层静默消失，至少留痕
+      cs: await store.getCastSetting(c.cardId).catch(e => { console.warn(`[tavern] 读取 ${c.name || '角色'} 扮演设定失败（本轮按未填写处理）：`, e); return null }),
     })))
     return rows.filter(r => r.cs && hasCastSetting(r.cs))
       .map(r => renderCastSetting(r.name, r.cs!, kind))
@@ -584,7 +585,13 @@ export async function buildFreeSystem(
   //   还容易演成「替你说出你私下想的事」。Ta 的处境光靠角色卡说明就够了。
   const blocks = await Promise.all(aiChars.map(async c => {
     let m: FreeMemory | null = null
-    try { m = await store.getMemory(c.id) } catch { m = null }
+    try { m = await store.getMemory(c.id) } catch (e) {
+      // 🔴 2.4.4 六维审计 P2：读失败 ≠ 没有记忆（getMemory 对「没有」返回空记忆对象）。
+      //    折叠成 null 会让这块记忆整块静默消失（当轮失忆、无从排查）。不打断对话
+      //    （构建 system 抛错会毁掉整轮），但必须留痕 —— 与 roundEnd 的同款修法对齐。
+      console.warn(`[tavern] 读取 ${c.name || '角色'} 记忆失败（本轮按无记忆处理）：`, e)
+      m = null
+    }
     // 空档案不输出：六栏全写「（暂无）」既占上下文又干扰模型，不如整块不出现
     const text = m && !isMemoryEmpty(m) ? memoryToText(m).trim() : ''
     // 挂短码的规则与角色卡一致：同名才挂，免得平时多出无意义的标记

@@ -15,7 +15,7 @@ import { readAliases } from './aliases'
 import { splitNames } from './audit'
 import { clipText } from './textClip'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
-import { composeSubSetsBlock, isWorldSetTab, splitActive } from './worldSets'
+import { composeSubSetsBlock, isInternalFieldKey, isWorldSetTab, splitActive } from './worldSets'
 import type { Chapter, TabDef, Volume } from './types'
 
 export interface ProjectContextOptions {
@@ -329,6 +329,10 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
   // 兼容历史遗留 key（schema 改过字段名的老项目），不丢数据
   for (const [k, v] of Object.entries(data)) {
     if (used.has(k) || !v?.trim()) continue
+    // 🔴 内部字段（`__` 前缀，如「设定草稿箱」）**必须在这里挡掉**：
+    //    本循环本就是「schema 里没登记过的键也照样渲染」的兜底，不挡就等于把作者
+    //    标明「不发给 AI」的整段草稿塞进提示词（见 worldSets.ts 的 FREE_DRAFT_KEY）。
+    if (isInternalFieldKey(k)) continue
     const fn = fieldName(k)
     if (SYSTEM_META_FIELDS.has(fn)) continue
     if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(fn)) continue

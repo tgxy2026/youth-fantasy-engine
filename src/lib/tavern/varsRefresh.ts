@@ -18,6 +18,7 @@
  *
  * 🔴 失败一律静默（返回原会话）：数值是锦上添花，绝不能让它的失败把这一轮对话弄没。
  */
+import { isCancelled } from '../ai'
 import { extractSessionVars } from './summarize'
 import { varsOf, recordVarChanges, turnSeqOf, manualPinnedKeys } from './vars'
 import type { ChatFn } from './provider'
@@ -98,6 +99,9 @@ export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSessio
     }
     return nextSession
   } catch (e) {
+    // 🔴 2.4.4 六维审计：中止（作者主动停）必须向上抛 —— 与 roundEnd 同纪律；
+    //    把「用户取消」记成「数值刷新失败」会误导排查。
+    if (isCancelled(e)) throw e
     // 🔴 2026-09-22 六维审计：**保持「不打断对话」这条设计**（数值是锦上添花，绝不能让它的失败把这一轮弄没），
     //    但补一行留痕 —— 原来完全静默，数值一直不动时无从判断是「这几轮真没变化」还是「每轮都在失败」。
     //    刻意只用 console.warn 不弹 toast：它每轮都跑，弹窗会盖住正在进行的对话。

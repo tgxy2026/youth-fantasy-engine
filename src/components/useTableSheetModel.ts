@@ -28,6 +28,8 @@ import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
 import { uid } from '../lib/id'
 import { aiCapabilityOf } from '../lib/aiScope'
 import { useAIReady } from '../lib/useAIReady'
+import { clearFreeDraft } from '../lib/freeDraft'
+import { useCalendarRule } from '../lib/useCalendarRule'
 import { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
 import { usePersistedSet } from '../lib/uiPrefs'
 import { showToast, confirmDialog } from './dialogs'
@@ -292,13 +294,28 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     setSetting('calendars', next)
   }
 
+  // 历法规则（一年几个月 / 每月几天）—— 项目级，月/日下拉与"持续时长"都按它算
+  const { rule: calendarRule, setRule: setCalendarRule } = useCalendarRule()
+
   const dirtyKeys = Object.keys(drafts)
 
   const setCellDraft = (rowId: string, colName: string, value: string) => {
-    setDrafts(prev => ({
-      ...prev,
-      [rowId]: { ...(prev[rowId] ?? rows.find(r => r.id === rowId)?.data ?? {}), [colName]: value },
-    }))
+    setDrafts(prev => {
+      const prevData = prev[rowId] ?? rows.find(r => r.id === rowId)?.data ?? {}
+      const base = { ...prevData, [colName]: value }
+      // 🔴 2.4.4 时间口径（主人哥哥定版）：**时间点事件也要发生=结束**。
+      //    填「发生时间」时「结束时间」跟随，直到作者手动改过它。判定"没手动改过"：
+      //    ① 结束时间为空（还没填）；② 结束时间 === 改动前的发生时间（是上一轮自动跟随的结果）。
+      //    ②是关键 —— 发生时间是"年→月→日"渐进写回的，若只判空，第一次联动就会把
+      //    结束时间锁死在「3024年」这种中间态（实机抓到过）。
+      //    作者把结束时间改成别的值后，联动立刻停止，绝不覆盖他的意图。
+      if (colName === '发生时间' && value) {
+        const oldStart = String(prevData['发生时间'] ?? '')
+        const curEnd = String(base['结束时间'] ?? '')
+        if (!curEnd.trim() || curEnd === oldStart) base['结束时间'] = value
+      }
+      return { ...prev, [rowId]: base }
+    })
     setSaved(false)
     // 用户修改了编号相关内容时清除上次的校验错误提示
     if (codeError) setCodeError(null)
@@ -410,6 +427,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     if (!await confirmDialog({ title: '删除这一行', message: '确定删除这一行？', danger: true })) return
     const target = rows.find(r => r.id === rowId)
     if (target) await retireCodes([target])  // 编号登记进退役池，防止复用
+    // 🔴 2.4.4 六维审计：删行清掉该行的 AI 补全草稿（row::页签::行id），防孤儿残留
+    void clearFreeDraft(`row::${tab.id}::${rowId}`)
     await deleteTableRow(rowId)
     setRows(rows.filter(r => r.id !== rowId))
     setDrafts(prev => {
@@ -698,6 +717,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     relationGroups, relGroupOpen, setRelGroupOpen, relRowOpen, setRelRowOpen,
     // 历法
     calendars, saveCalendars,
+    // 历法规则（一年几个月 / 每月几天）
+    calendarRule, setCalendarRule,
     // AI 入口
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize,
   }

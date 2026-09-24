@@ -173,7 +173,7 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
               className="w-full !py-1.5 text-13 mb-1"
             />
             <div className="text-10 text-ink-500 mb-3">
-              用于跨历法先后顺序与延续性判断：时间轴先按数值排序，再按故事内时间。
+              用于跨历法先后顺序与延续性判断：时间轴先按数值排序，再按发生时间。
             </div>
             <div className="flex gap-2 justify-end">
               <Button onClick={closeEditor} variant="secondary" size="md" className="text-12">取消</Button>

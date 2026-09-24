@@ -6,6 +6,7 @@
 //    2026-09-18 实测：这里原先漏了 `formData: 'tabId'` —— 于是**所有表单型页签在测试里都读回空**，
 //    依赖表单数据的断言全在空跑（`tests/antiSpoiler.test.ts` 的排查中顺出来的）。
 export const KEY_PATHS: Record<string, string> = {
+  tavernReports: 'id',
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id',
   // C2：备份元数据与载荷分开存（须与 src/lib/desktop.ts 逐项一致）
