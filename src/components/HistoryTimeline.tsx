@@ -1,16 +1,16 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, spanBracketPath, storyDateKey, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
 import { Calendar, Users, X, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 
 /**
- * 事件配色（2.4.4 括号方案）：
- * · `dot/ring/text` 供圆点与卡片沿用；`stroke` 给 SVG 括号、`bar` 给卡片左缘色条。
+ * 事件配色（2.4.4 线条方案）：
+ * · `dot/ring/text` 供圆点与卡片沿用；`stroke` 给 SVG 线条、`bar` 给卡片左缘色条。
  * 🔴 全部写成**字面量类名** —— Tailwind JIT 只认源码里出现的类，`'bg-' + x` 拼出来的
  *    类不会被生成（规则同 components 里"字号从 props 传"那条红线）。
- * `j` = 同一时间点组内的序号：同起点多条括号按 j 依次换色 + 下移，区分多个时段。
+ * `j` = 同一时间点组内的序号：同起点多条线条按 j 依次换色 + 下移，区分多个时段。
  */
 const COLORS = [
   { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber', stroke: 'stroke-amber', bar: 'border-amber' },
@@ -58,13 +58,13 @@ const STATUS_STYLE: Record<string, string> = {
   '已变更': 'bg-rose-500/15 text-rose-300',
 }
 
-// 单行水平轴布局常量（2026-09-24 · 主人哥哥定版：蛇形取消，全部水平）
+// 单行水平轴布局常量（2026-09-24 · 主人哥哥定版：蛇形取消，全部水平；
+// 二次定版：持续线条移到**轴上方**、尖角向下指轴，卡片留在轴下，靠同色对应）
 const SLOT_W = 240      // 相邻时间点组的间距（等距；区间端点在相邻组之间按时间比例插值）
-const AXIS_Y = 44       // 水平轴的 y
 const POINT_R = 9
 const CARD_W = 210
 const BRACKET_DEPTH = 18
-/** 同一起点多条括号之间的深度间隔（第 j 条 = DEPTH + j*STEP，避免相互重叠） */
+/** 同一起点多条线条之间的深度间隔（第 j 条 = DEPTH + j*STEP，向轴上方依次外扩） */
 const BRACKET_STEP = 12
 /** 单张卡片估高（标题两行 + 区间 + 时长 + 人物 + 状态），用于竖排堆叠的画布总高 */
 const CARD_MAX_H = 126
@@ -145,18 +145,17 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
       .filter(p => Number.isFinite(p.key))
     if (pts.length === 0) return pts
     const last = pts[pts.length - 1]
-    // 末尾虚拟锚：结束时间晚于最后一个事件时，括号仍能往右延（按 10 万年 ≈ 一格的比例）
+    // 末尾虚拟锚：结束时间晚于最后一个事件时，线条仍能往右延（按 10 万年 ≈ 一格的比例）
     return [...pts, { key: last.key + 1e9, x: last.x + SLOT_W }]
   }, [groups])
 
   /**
-   * 括号（主人哥哥 2026-09-24 定版）：挂在轴下、两端尖角向上兜起，
-   * 分别指着起止在轴上的位置；**同起点多条括号按组内序 j 换色 + 下移**，
-   * 与竖排卡片一一对应（卡片左缘色条同色）—— 同一天发生、结束时间不同的
-   * 多个事件，就是轴上从同一点伸出的一把彩色括号。
+   * 持续时长线段（主人哥哥 2026-09-24 三次定版）：画在轴**上方**，
+   * 两端小刻度指着起止在轴上的位置；**同起点多条线按组内序 j 换色 + 上移分层**，
+   * 与竖排卡片一一对应（卡片左缘色条同色）。
    */
   const brackets = useMemo(() => {
-    const out: { id: string; gi: number; j: number; path: string; neg: boolean; label: string }[] = []
+    const out: { id: string; gi: number; j: number; x0: number; right: number; neg: boolean; label: string }[] = []
     groups.forEach((g, gi) => {
       const x0 = groupX(gi)
       g.items.forEach((d, j) => {
@@ -169,8 +168,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
         const hi = Math.max(x0, rawEnd)
         const right = Math.max(hi, lo + 24)   // 太短看不清，给最小可视宽度
         out.push({
-          id: d.id, gi, j,
-          path: spanBracketPath(x0, right, AXIS_Y, BRACKET_DEPTH + j * BRACKET_STEP),
+          id: d.id, gi, j, x0, right,
           neg: d.span < 0,
           label: `${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(Math.abs(d.span))}）`,
         })
@@ -178,27 +176,20 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
     })
     return out
   }, [groups, dotsWithTail])
-  const bracketById = useMemo(
-    () => new Map(brackets.map(b => [b.id, b])),
-    [brackets],
-  )
-  void bracketById   // 详情弹窗未来可能按 id 反查括号；先保位避免误删
 
   const calLegend = [...calendars].sort((a, b) => a.value - b.value)
     .map(c => `${c.name}(${c.value})`).join(' → ')
 
-  /** 每组的卡片堆顶：组内最深括号的底边 + 6（无括号的组 = 轴下 10） */
-  const groupTops = useMemo(() => groups.map((_g, gi) => {
-    const js = brackets.filter(b => b.gi === gi).map(b => b.j)
-    const maxJ = js.length ? Math.max(...js) : -1
-    return AXIS_Y + (maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 6 : 10)
-  }), [groups, brackets])
+  /**
+   * 轴的 y 位置：轴**上方**要给分层线条留出空间（第 j 条 = DEPTH + j*STEP），
+   * 线移到轴上之后，卡片堆顶统一回到轴下 10px，不再按线条深度错开。
+   */
+  const maxJ = brackets.reduce((m, b) => Math.max(m, b.j), -1)
+  const axisY = maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 12 : 14
 
   const totalW = Math.max(groups.length, 1) * SLOT_W
   const maxStack = groups.reduce((m, grp) => Math.max(m, grp.items.length), 1)
-  const maxJ = brackets.reduce((m, b) => Math.max(m, b.j), -1)
-  const stackTop = maxJ >= 0 ? AXIS_Y + BRACKET_DEPTH + maxJ * BRACKET_STEP + 6 : AXIS_Y + 10
-  const totalH = stackTop + maxStack * CARD_MAX_H + 16
+  const totalH = axisY + 10 + maxStack * CARD_MAX_H + 16
 
   const detail = (e: Evt) =>
     ([
@@ -230,7 +221,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
           <span className="text-10 text-ink-500">（历法顺序：按「历法」列数值排列）</span>
         )}
         <span className="text-10 text-ink-500">
-          （同一时间点的事件共用一个圆点、卡片竖排；持续时段用彩色括号标在轴下，括号颜色与卡片左缘色条对应）
+          （同一时间点的事件共用一个圆点、卡片竖排；持续时段用彩色线条标在轴上方，线条颜色与卡片左缘色条对应）
         </span>
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-11 text-ink-500 mr-1">状态筛选：</span>
@@ -246,19 +237,20 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
         </div>
       </div>
 
-      {/* 时间轴画布（单行水平轴：横向滚动；点击括号 / 卡片 / 圆点弹窗看详情） */}
+      {/* 时间轴画布（单行水平轴：横向滚动；点击线条 / 卡片 / 圆点弹窗看详情） */}
       <div className="relative overflow-auto" style={{ maxHeight: totalH + 40 }}>
         <div className="relative" style={{ width: totalW, height: totalH }}>
-          {/* 水平主轴 + 时长括号 */}
+          {/* 水平主轴 + 时长线条（轴上方，分层换色） */}
           <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
-            <line x1={20} y1={AXIS_Y} x2={totalW - 20} y2={AXIS_Y} stroke="rgba(128,130,150,0.4)" strokeWidth={1.5} />
+            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} stroke="rgba(128,130,150,0.4)" strokeWidth={1.5} />
             {brackets.map(b => {
               const on = hover === b.id || selected?.id === b.id
               const color = COLORS[b.j % COLORS.length]
+              const path = spanLinePath(b.x0, b.right, axisY, BRACKET_DEPTH + b.j * BRACKET_STEP, 'up')
               return (
                 <path
                   key={`bk-${b.id}`}
-                  d={b.path}
+                  d={path}
                   fill="none"
                   className={b.neg ? 'stroke-rose-400' : color.stroke}
                   strokeWidth={on ? 2.5 : 2}
@@ -278,24 +270,27 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
             })}
           </svg>
 
-          {/* 事件卡片：同一时间点一组、竖向堆叠；左缘色条与该事件的括号同色 */}
+          {/* 事件卡片：同一时间点一组、竖向堆叠；有持续时段的卡片，左缘色条与它的轴上线条同色 */}
           {groups.map((g, gi) => (
             <div
               key={`grp-${gi}-${g.key}`}
               className="absolute flex flex-col gap-2"
               style={{
                 left: Math.min(Math.max(groupX(gi) - CARD_W / 2, 4), Math.max(4, totalW - CARD_W - 4)),
-                top: groupTops[gi],
+                top: axisY + 10,
                 width: CARD_W, zIndex: 10,
               }}
             >
               {g.items.map((d, j) => {
+                const hasLine = brackets.some(b => b.id === d.id)
                 const color = COLORS[j % COLORS.length]
+                const barCls = hasLine ? color.bar : 'border-ink-600'
+                const textCls = hasLine ? color.text : 'text-ink-300'
                 const active = hover === d.id || selected?.id === d.id
                 return (
                   <div
                     key={d.id}
-                    className={`border-l-4 ${color.bar}`}
+                    className={`border-l-4 ${barCls}`}
                     onMouseEnter={() => setHover(d.id)}
                     onMouseLeave={() => setHover(null)}
                   >
@@ -304,7 +299,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
                       className={`bg-ink-850 border border-l-0 rounded-lg p-2.5 cursor-pointer transition-all
                         ${active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
                     >
-                      <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
+                      <div className={`text-10 ${textCls} font-semibold mb-0.5 flex items-center gap-1`}>
                         <Calendar size={9} /> {d.time ? rangeLabel(d, d.calName) : '时间未定'}
                       </div>
                       <div className="text-12 text-ink-100 font-semibold leading-snug line-clamp-2">
@@ -341,7 +336,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
               <div
                 key={`dot-${gi}-${g.key}`}
                 className={`absolute rounded-full bg-amber ring-4 ring-ink-900 transition-all ${active ? 'scale-125' : ''}`}
-                style={{ left: groupX(gi) - POINT_R, top: AXIS_Y - POINT_R, width: POINT_R * 2, height: POINT_R * 2, zIndex: 11 }}
+                style={{ left: groupX(gi) - POINT_R, top: axisY - POINT_R, width: POINT_R * 2, height: POINT_R * 2, zIndex: 11 }}
               />
             )
           })}

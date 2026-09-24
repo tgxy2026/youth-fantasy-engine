@@ -192,20 +192,25 @@ export function interpolateX(dots: { key: number; x: number }[], key: number): n
 }
 
 /**
- * 时长括号的 SVG 路径：挂在轴线下方、两端尖角**向上兜起**（指向轴上的起点/终点），
- * 底边水平 —— 卡片就挂在这条底边下面（主人哥哥 2026-09-24 定的样式，
- * 替掉第一版"圆点后横着一条"的时长横条）。
+ * 持续时长**线段**的 SVG 路径（2.4.4 三次定版：主人哥哥「不要尖角了」）：
+ * 一条水平线画在轴的一侧，两端各带一小段**界线刻度**标出起止位置；
+ * 多条重叠时由调用方按 j 递增 depth 分层（向各自方向越伸越远）并换色。
+ *
+ * · `dir: 'down'`（默认）＝线画在轴**下方**；
+ * · `dir: 'up'` ＝线画在轴**上方**（当前定版：持续线条放轴上边，卡片留在轴下，靠同色对应）。
  */
-export function spanBracketPath(x0: number, x1: number, axisY: number, depth = 18): string {
+export function spanLinePath(
+  x0: number, x1: number, axisY: number, depth = 18,
+  dir: 'up' | 'down' = 'down',
+): string {
   const a = Math.min(x0, x1)
   const b = Math.max(x0, x1)
-  const y0 = axisY + 3          // 尖角顶：贴着轴（圆点下缘）
-  const y1 = axisY + depth      // 底边
-  const r = 4                   // 底角小圆弧（纯直角太硬）
-  return `M ${a} ${y0}`
-    + ` L ${a} ${y1 - r} Q ${a} ${y1} ${a + r} ${y1}`
-    + ` L ${b - r} ${y1} Q ${b} ${y1} ${b} ${y1 - r}`
-    + ` L ${b} ${y0}`
+  const s = dir === 'up' ? -1 : 1
+  const yEdge = axisY + depth * s      // 水平线
+  const t = 5                           // 端点刻度长（朝轴方向）
+  return `M ${a} ${yEdge} L ${b} ${yEdge}`
+    + ` M ${a} ${yEdge} L ${a} ${yEdge - t * s}`
+    + ` M ${b} ${yEdge} L ${b} ${yEdge - t * s}`
 }
 
 /**

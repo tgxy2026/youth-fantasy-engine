@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, spanBracketPath, storyDateKey, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
 import { Calendar, X, AlertTriangle, Layers, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 
 /**
- * 轨道配色（2.4.4 括号方案）：`dot/ring/text` 供圆点与卡片沿用；
- * `stroke` 给 SVG 括号、`bar` 给卡片左缘色条。
+ * 轨道配色（2.4.4 线条方案）：`dot/ring/text` 供圆点与卡片沿用；
+ * `stroke` 给 SVG 线条、`bar` 给卡片左缘色条。
  * 🔴 全部写成**字面量类名** —— Tailwind JIT 只认源码里出现的类，运行时拼接的类不会被生成。
- * `j`（同时间点组内序）决定括号颜色：同起点多条括号换色 + 下移，与竖排卡片一一对应。
+ * `j`（同时间点组内序）决定线条颜色：同起点多条线条换色 + 下移，与竖排卡片一一对应。
  */
 const COLORS = [
   { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber', stroke: 'stroke-amber', bar: 'border-amber' },
@@ -60,15 +60,15 @@ const CHECK_STYLE: Record<string, string> = {
   '待核对': 'bg-amber/15 text-amber',
 }
 
-// 多泳道布局常量（2026-09-24 · 括号方案：泳道线即水平轴，置于泳道顶部，
-// 括号与卡片挂轴下方 —— 主人哥哥定版，与历史事件轴同一套视觉）
+// 多泳道布局常量（2026-09-24 · 线条方案：泳道线即水平轴，置于泳道顶部，
+// 线条与卡片挂轴下方 —— 主人哥哥定版，与历史事件轴同一套视觉）
 const SLOT_W = 240
 const TOP = 24
 const POINT_R = 9
 const CARD_W = 210
 const LANE_LABEL_W = 88
 const BRACKET_DEPTH = 18
-/** 同一起点多条括号之间的深度间隔（第 j 条 = DEPTH + j*STEP） */
+/** 同一起点多条线条之间的深度间隔（第 j 条 = DEPTH + j*STEP） */
 const BRACKET_STEP = 12
 /** 泳道轴在泳道内的 y 偏移 */
 const LANE_AXIS_OFFSET = 16
@@ -177,8 +177,8 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
   }, [groups])
 
   /**
-   * 时段（括号几何，不含 y —— y 依赖泳道高，泳道高依赖本表，解掉这个环在渲染处落 y）：
-   * 同起点多条括号按**全局组内序 j** 换色 + 下移（同一天、结束不同的多张卡各有自己的括号）。
+   * 时段（线条几何，不含 y —— y 依赖泳道高，泳道高依赖本表，解掉这个环在渲染处落 y）：
+   * 同起点多条线条按**全局组内序 j** 换色 + 下移（同一天、结束不同的多张卡各有自己的线条）。
    */
   const spans = useMemo(() => {
     const out: { id: string; gi: number; j: number; x0: number; right: number; neg: boolean; label: string; track: string }[] = []
@@ -204,27 +204,33 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
   }, [groups, dotsWithTail])
 
   /**
-   * 泳道**动态高度**：要装下该泳道内最深的分层括号 + 最高的卡片竖堆。
+   * 泳道**动态高度**（2.4.4 三次定版：持续线条画在轴**上方**）：
+   * 每条泳道 = 上部线条区（最深分层线）+ 轴 + 下部卡片竖堆。
    * 之前固定 LANE_H，同一天三章竖排就直接溢出到下一条泳道了。
    */
-  const laneHeights = useMemo(() => {
-    return visibleTracks.map(t => {
-      const laneSpans = spans.filter(s => s.track === t)
-      const maxJ = laneSpans.length ? Math.max(...laneSpans.map(s => s.j)) : -1
-      let stack = 1
-      for (const g of groups) {
-        const cnt = g.items.filter(d => d.track === t).length
-        if (cnt > stack) stack = cnt
-      }
-      const topOffset = maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 6 : 10
-      return Math.max(LANE_MIN_H, LANE_AXIS_OFFSET + topOffset + stack * CARD_MAX_H + 12)
-    })
-  }, [visibleTracks, spans, groups])
+  const laneBracketSpace = useMemo(() => visibleTracks.map(t => {
+    const laneSpans = spans.filter(s => s.track === t)
+    const maxJ = laneSpans.length ? Math.max(...laneSpans.map(s => s.j)) : -1
+    return maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 8 : 8
+  }), [visibleTracks, spans])
+  const laneHeights = useMemo(() => visibleTracks.map((t, idx) => {
+    let stack = 1
+    for (const g of groups) {
+      const cnt = g.items.filter(d => d.track === t).length
+      if (cnt > stack) stack = cnt
+    }
+    return Math.max(LANE_MIN_H, laneBracketSpace[idx] + LANE_AXIS_OFFSET + stack * CARD_MAX_H + 12)
+  }), [visibleTracks, groups, laneBracketSpace])
 
-  /** 泳道轴线的 y：各泳道高度累加（laneHeights[0] 从 TOP 起） */
+  /** 泳道轴线的 y：各泳道高度累加；轴线在本泳道「上部线条区」之下 */
   const laneY = (idx: number) => {
     const base = laneHeights.slice(0, idx).reduce((a, b) => a + b, 0)
-    return TOP + base + LANE_AXIS_OFFSET
+    return TOP + base + laneBracketSpace[idx]
+  }
+  /** 泳道顶（背景分隔的 top） */
+  const laneTop = (idx: number) => {
+    const base = laneHeights.slice(0, idx).reduce((a, b) => a + b, 0)
+    return TOP + base
   }
 
   const calLegend = [...calendars].sort((a, b) => a.value - b.value)
@@ -280,7 +286,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
           {calLegend && <>，历法顺序：<span className="text-ink-200">{calLegend}</span></>}
         </div>
         <span className="text-10 text-ink-500">
-          （同一发生时间的章节共用一个圆点、卡片竖排；持续时段用彩色括号标在轴下，颜色与卡片左缘色条对应）
+          （同一发生时间的章节共用一个圆点、卡片竖排；持续时段用彩色线条标在泳道轴上方，线条颜色与卡片左缘色条对应）
         </span>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
           <span className="text-11 text-ink-500 mr-1 inline-flex items-center gap-1">
@@ -346,10 +352,10 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                 <div
                   key={`lane-${t}`}
                   className="absolute left-0 right-0 border-b border-ink-800/60"
-                  style={{ top: laneY(idx) - LANE_AXIS_OFFSET, height: laneHeights[idx] }}
+                  style={{ top: laneTop(idx), height: laneHeights[idx] }}
                 />
               ))}
-              {/* 各泳道的水平轴线 + 时长括号 */}
+              {/* 各泳道的水平轴线 + 时长线条 */}
               <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
                 {visibleTracks.map((t, idx) => (
                   <line
@@ -364,7 +370,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                   const idx = visibleTracks.indexOf(s.track)
                   const on = hover === d.id || selected?.id === d.id
                   const color = COLORS[s.j % COLORS.length]
-                  const path = spanBracketPath(s.x0, s.right, laneY(idx), BRACKET_DEPTH + s.j * BRACKET_STEP)
+                  const path = spanLinePath(s.x0, s.right, laneY(idx), BRACKET_DEPTH + s.j * BRACKET_STEP, 'up')
                   return (
                     <path
                       key={`bk-${d.id}`}
@@ -385,17 +391,13 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                 })}
               </svg>
 
-              {/* 事件卡片：同一发生时间一组、竖向堆叠；左缘色条与该事件的括号同色 */}
+              {/* 事件卡片：同一发生时间一组、竖向堆叠；左缘色条与该事件的线条同色 */}
               {groups.map((g, gi) => visibleTracks.map(t => {
                 const items = g.items.filter(d => d.track === t)
                 if (items.length === 0) return null
                 const idx = visibleTracks.indexOf(t)
-                // 堆顶 = 本组本泳道**最深括号**的底边 + 6（无括号 = 轴下 10）
-                const js = items
-                  .filter(d => d.span !== null && d.span !== 0)
-                  .map(d => g.items.indexOf(d))
-                const maxJ = js.length ? Math.max(...js) : -1
-                const top = laneY(idx) + (maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 6 : 10)
+                // 线条已移到轴上方，卡片堆统一挂轴下 10px（对应关系靠同色色条）
+                const top = laneY(idx) + 10
                 return (
                   <div
                     key={`stack-${gi}-${t}`}
