@@ -1,19 +1,25 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, resolveCardOverlaps, spanBracketPath, storyDateKey, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, spanBracketPath, storyDateKey, storySpanDays } from '../lib/storyDate'
 import { Calendar, X, AlertTriangle, Layers, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 
+/**
+ * 轨道配色（2.4.4 括号方案）：`dot/ring/text` 供圆点与卡片沿用；
+ * `stroke` 给 SVG 括号、`bar` 给卡片左缘色条。
+ * 🔴 全部写成**字面量类名** —— Tailwind JIT 只认源码里出现的类，运行时拼接的类不会被生成。
+ * `j`（同时间点组内序）决定括号颜色：同起点多条括号换色 + 下移，与竖排卡片一一对应。
+ */
 const COLORS = [
-  { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber' },
-  { dot: 'bg-sky-400', ring: 'ring-sky-400/40', text: 'text-sky-300' },
-  { dot: 'bg-emerald-400', ring: 'ring-emerald-400/40', text: 'text-emerald-300' },
-  { dot: 'bg-rose-400', ring: 'ring-rose-400/40', text: 'text-rose-300' },
-  { dot: 'bg-violet-400', ring: 'ring-violet-400/40', text: 'text-violet-300' },
-  { dot: 'bg-orange-400', ring: 'ring-orange-400/40', text: 'text-orange-300' },
-  { dot: 'bg-cyan-400', ring: 'ring-cyan-400/40', text: 'text-cyan-300' },
-  { dot: 'bg-pink-400', ring: 'ring-pink-400/40', text: 'text-pink-300' },
+  { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber', stroke: 'stroke-amber', bar: 'border-amber' },
+  { dot: 'bg-sky-400', ring: 'ring-sky-400/40', text: 'text-sky-300', stroke: 'stroke-sky-400', bar: 'border-sky-400' },
+  { dot: 'bg-emerald-400', ring: 'ring-emerald-400/40', text: 'text-emerald-300', stroke: 'stroke-emerald-400', bar: 'border-emerald-400' },
+  { dot: 'bg-rose-400', ring: 'ring-rose-400/40', text: 'text-rose-300', stroke: 'stroke-rose-400', bar: 'border-rose-400' },
+  { dot: 'bg-violet-400', ring: 'ring-violet-400/40', text: 'text-violet-300', stroke: 'stroke-violet-400', bar: 'border-violet-400' },
+  { dot: 'bg-orange-400', ring: 'ring-orange-400/40', text: 'text-orange-300', stroke: 'stroke-orange-400', bar: 'border-orange-400' },
+  { dot: 'bg-cyan-400', ring: 'ring-cyan-400/40', text: 'text-cyan-300', stroke: 'stroke-cyan-400', bar: 'border-cyan-400' },
+  { dot: 'bg-pink-400', ring: 'ring-pink-400/40', text: 'text-pink-300', stroke: 'stroke-pink-400', bar: 'border-pink-400' },
 ]
 
 // 轨道固定顺序（与 schema 中「线/轨道」列选项一致）；未填字段归入「主线」
@@ -57,14 +63,19 @@ const CHECK_STYLE: Record<string, string> = {
 // 多泳道布局常量（2026-09-24 · 括号方案：泳道线即水平轴，置于泳道顶部，
 // 括号与卡片挂轴下方 —— 主人哥哥定版，与历史事件轴同一套视觉）
 const SLOT_W = 240
-const LANE_H = 176
 const TOP = 24
 const POINT_R = 9
 const CARD_W = 210
 const LANE_LABEL_W = 88
 const BRACKET_DEPTH = 18
-/** 泳道轴在泳道内的 y 偏移（泳道线以下要装得下：括号 18 + 卡片 ~112） */
+/** 同一起点多条括号之间的深度间隔（第 j 条 = DEPTH + j*STEP） */
+const BRACKET_STEP = 12
+/** 泳道轴在泳道内的 y 偏移 */
 const LANE_AXIS_OFFSET = 16
+/** 单张卡片估高（章节号标题 + 区间 + 时长 + 事件两行 + 状态徽章） */
+const CARD_MAX_H = 132
+/** 泳道最小高度（只有一两张卡时也别太扁） */
+const LANE_MIN_H = 150
 
 export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
   const [hover, setHover] = useState<string | null>(null)
@@ -137,70 +148,84 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
     [data]
   )
   const visibleTracks = allTracks.filter(t => !hiddenTracks.has(t))
-  const laneIndex = (t: string) => visibleTracks.indexOf(t)
-  /** 泳道**轴线**的 y（泳道顶部往下一点 —— 括号与卡片挂轴下方，见常量注释） */
-  const laneY = (idx: number) => TOP + idx * LANE_H + LANE_AXIS_OFFSET
 
   /**
-   * 括号几何（全局插值，同 HistoryTimeline）：dots 只取时间可解析的事件，
-   * 末尾加虚拟锚让「结束晚于最后事件」的括号仍能往右延。
-   * 🔴 插值基于**全部数据**的 x（隐藏轨道的事件点不渲染但仍占位，x 口径不能变）。
+   * 🔴 时间点分组（与 HistoryTimeline 同口径，2.4.4）：
+   * **相同发生时间（同历法 + 同发生时间键）的事件共用轴上同一个点** —— 且跨轨道合并：
+   * 主线和暗线同一天发生，就该在轴上同一个位置（各在自己的泳道竖排卡片）。
+   * 之前每事件占一格，同一天的章节被画成前后相邻的"假时间点"。
    */
+  const groups = useMemo(() => {
+    const gs: { key: number; items: Evt[] }[] = []
+    for (const d of data) {
+      const last = gs[gs.length - 1]
+      if (last && last.key === d.key) last.items.push(d)
+      else gs.push({ key: d.key, items: [d] })
+    }
+    return gs
+  }, [data])
+
+  const groupX = (gi: number) => gi * SLOT_W + SLOT_W / 2
+
   const dotsWithTail = useMemo(() => {
-    const pts = data
-      .map((d, i) => ({ key: d.key, x: i * SLOT_W + SLOT_W / 2 }))
+    const pts = groups
+      .map((g, gi) => ({ key: g.key, x: groupX(gi) }))
       .filter(p => Number.isFinite(p.key))
     if (pts.length === 0) return pts
     const last = pts[pts.length - 1]
     return [...pts, { key: last.key + 1e9, x: last.x + SLOT_W }]
-  }, [data])
-
-  /** 每个事件的括号（无跨度 / 起止同日 → null；负跨度标红）。y 直接落到所在泳道的轴上 */
-  const brackets = useMemo(() => {
-    return data.map(d => {
-      if (d.span === null || d.span === 0) return null
-      const idx = visibleTracks.indexOf(d.track)
-      if (idx < 0) return null
-      const axisY = TOP + idx * LANE_H + LANE_AXIS_OFFSET
-      const x0 = (data.indexOf(d)) * SLOT_W + SLOT_W / 2
-      const endKey = d.key - storyDateKey(d.time) + storyDateKey(d.end)
-      const rawEnd = interpolateX(dotsWithTail, endKey)
-      if (rawEnd === null) return null
-      const lo = Math.min(x0, rawEnd)
-      const hi = Math.max(x0, rawEnd)
-      const right = Math.max(hi, lo + 24)
-      return {
-        id: d.id,
-        path: spanBracketPath(x0, right, axisY, BRACKET_DEPTH),
-        left: lo, right, mid: (lo + right) / 2,
-        neg: d.span < 0,
-        label: `${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(Math.abs(d.span))}）`,
-      }
-    })
-  }, [data, dotsWithTail, visibleTracks])
-  const bracketById = useMemo(
-    () => new Map(brackets.filter(Boolean).map(b => [b!.id, b!])),
-    [brackets],
-  )
+  }, [groups])
 
   /**
-   * 卡片防重叠：**按泳道分组**各自贪心（不同泳道的卡片互不干扰），
-   * 期望位置 = 括号中点（无括号 = 圆点正下）。
+   * 时段（括号几何，不含 y —— y 依赖泳道高，泳道高依赖本表，解掉这个环在渲染处落 y）：
+   * 同起点多条括号按**全局组内序 j** 换色 + 下移（同一天、结束不同的多张卡各有自己的括号）。
    */
-  const cardLefts = useMemo(() => {
-    const lefts = new Map<string, number>()
-    for (const t of visibleTracks) {
-      const arr = data.filter(d => d.track === t)
-      const wants = arr.map(d => {
-        const b = bracketById.get(d.id)
-        const x = (data.indexOf(d)) * SLOT_W + SLOT_W / 2
-        return (b ? b.mid : x) - CARD_W / 2
+  const spans = useMemo(() => {
+    const out: { id: string; gi: number; j: number; x0: number; right: number; neg: boolean; label: string; track: string }[] = []
+    groups.forEach((g, gi) => {
+      const x0 = groupX(gi)
+      g.items.forEach((d, j) => {
+        if (d.span === null || d.span === 0) return
+        const endKey = d.key - storyDateKey(d.time) + storyDateKey(d.end)
+        const rawEnd = interpolateX(dotsWithTail, endKey)
+        if (rawEnd === null) return
+        const lo = Math.min(x0, rawEnd)
+        const hi = Math.max(x0, rawEnd)
+        const right = Math.max(hi, lo + 24)
+        out.push({
+          id: d.id, gi, j, x0, right,
+          neg: d.span < 0,
+          label: `${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(Math.abs(d.span))}）`,
+          track: d.track,
+        })
       })
-      const solved = resolveCardOverlaps(wants, CARD_W)
-      arr.forEach((d, i) => lefts.set(d.id, solved[i]))
-    }
-    return lefts
-  }, [data, visibleTracks, bracketById])
+    })
+    return out
+  }, [groups, dotsWithTail])
+
+  /**
+   * 泳道**动态高度**：要装下该泳道内最深的分层括号 + 最高的卡片竖堆。
+   * 之前固定 LANE_H，同一天三章竖排就直接溢出到下一条泳道了。
+   */
+  const laneHeights = useMemo(() => {
+    return visibleTracks.map(t => {
+      const laneSpans = spans.filter(s => s.track === t)
+      const maxJ = laneSpans.length ? Math.max(...laneSpans.map(s => s.j)) : -1
+      let stack = 1
+      for (const g of groups) {
+        const cnt = g.items.filter(d => d.track === t).length
+        if (cnt > stack) stack = cnt
+      }
+      const topOffset = maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 6 : 10
+      return Math.max(LANE_MIN_H, LANE_AXIS_OFFSET + topOffset + stack * CARD_MAX_H + 12)
+    })
+  }, [visibleTracks, spans, groups])
+
+  /** 泳道轴线的 y：各泳道高度累加（laneHeights[0] 从 TOP 起） */
+  const laneY = (idx: number) => {
+    const base = laneHeights.slice(0, idx).reduce((a, b) => a + b, 0)
+    return TOP + base + LANE_AXIS_OFFSET
+  }
 
   const calLegend = [...calendars].sort((a, b) => a.value - b.value)
     .map(c => `${c.name}(${c.value})`).join(' → ')
@@ -214,10 +239,8 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
     )
   }
 
-  const n = data.length
-  const totalW = Math.max(n, 1) * SLOT_W
-  const numLanes = Math.max(visibleTracks.length, 1)
-  const totalH = TOP * 2 + numLanes * LANE_H
+  const totalW = Math.max(groups.length, 1) * SLOT_W
+  const totalH = TOP * 2 + laneHeights.reduce((a, b) => a + b, 0)
 
   const detail = (e: Evt) =>
     ([
@@ -234,6 +257,8 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
       e.check && ['时间线检查', e.check],
       e.remark && ['备注', e.remark],
     ].filter(Boolean) as [string, string][])
+
+  const visibleItems = data.filter(d => !hiddenTracks.has(d.track))
 
   return (
     <div className="page-enter">
@@ -254,6 +279,9 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
           共 <span className="text-amber font-semibold">{data.length}</span> 章
           {calLegend && <>，历法顺序：<span className="text-ink-200">{calLegend}</span></>}
         </div>
+        <span className="text-10 text-ink-500">
+          （同一发生时间的章节共用一个圆点、卡片竖排；持续时段用彩色括号标在轴下，颜色与卡片左缘色条对应）
+        </span>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
           <span className="text-11 text-ink-500 mr-1 inline-flex items-center gap-1">
             <Layers size={11} /> 轨道：
@@ -304,7 +332,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
             {visibleTracks.map((t, idx) => {
               const color = COLORS[idx % COLORS.length]
               return (
-                <div key={t} className="flex items-start px-2 pt-2" style={{ height: LANE_H }}>
+                <div key={t} className="flex items-start px-2 pt-2" style={{ height: laneHeights[idx] }}>
                   <span className={`text-11 font-semibold ${color.text} leading-tight`}>{t}</span>
                 </div>
               )
@@ -313,12 +341,12 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
           {/* 右：可横向滚动的时间轴画布 */}
           <div className="relative flex-1 overflow-x-auto">
             <div className="relative" style={{ width: totalW, height: totalH }}>
-              {/* 泳道背景分隔 */}
+              {/* 泳道背景分隔（高度 = 各泳道动态高） */}
               {visibleTracks.map((t, idx) => (
                 <div
                   key={`lane-${t}`}
                   className="absolute left-0 right-0 border-b border-ink-800/60"
-                  style={{ top: TOP + idx * LANE_H, height: LANE_H }}
+                  style={{ top: laneY(idx) - LANE_AXIS_OFFSET, height: laneHeights[idx] }}
                 />
               ))}
               {/* 各泳道的水平轴线 + 时长括号 */}
@@ -330,16 +358,19 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                     stroke="rgba(128,130,150,0.35)" strokeWidth={1.5}
                   />
                 ))}
-                {data.filter(d => !hiddenTracks.has(d.track)).map(d => {
-                  const b = bracketById.get(d.id)
-                  if (!b) return null
+                {visibleItems.map(d => {
+                  const s = spans.find(x => x.id === d.id)
+                  if (!s) return null
+                  const idx = visibleTracks.indexOf(s.track)
                   const on = hover === d.id || selected?.id === d.id
+                  const color = COLORS[s.j % COLORS.length]
+                  const path = spanBracketPath(s.x0, s.right, laneY(idx), BRACKET_DEPTH + s.j * BRACKET_STEP)
                   return (
                     <path
                       key={`bk-${d.id}`}
-                      d={b.path}
+                      d={path}
                       fill="none"
-                      className={b.neg ? 'stroke-rose-400' : 'stroke-amber'}
+                      className={s.neg ? 'stroke-rose-400' : color.stroke}
                       strokeWidth={on ? 2.5 : 2}
                       strokeOpacity={on ? 0.95 : 0.6}
                       strokeLinecap="round"
@@ -348,84 +379,95 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                       onMouseEnter={() => setHover(d.id)}
                       onMouseLeave={() => setHover(null)}
                     >
-                      <title>{b.label}</title>
+                      <title>{s.label}</title>
                     </path>
                   )
                 })}
               </svg>
 
-              {/* 节点卡片：挂在括号底边下方（居中），时间点事件挂在圆点正下；泳道内贪心防重叠 */}
-              {data.filter(d => !hiddenTracks.has(d.track)).map(d => {
-                const idx = laneIndex(d.track)
-                if (idx < 0) return null
-                const b = bracketById.get(d.id)
-                const color = COLORS[idx % COLORS.length]
-                const active = hover === d.id || selected?.id === d.id
+              {/* 事件卡片：同一发生时间一组、竖向堆叠；左缘色条与该事件的括号同色 */}
+              {groups.map((g, gi) => visibleTracks.map(t => {
+                const items = g.items.filter(d => d.track === t)
+                if (items.length === 0) return null
+                const idx = visibleTracks.indexOf(t)
+                // 堆顶 = 本组本泳道**最深括号**的底边 + 6（无括号 = 轴下 10）
+                const js = items
+                  .filter(d => d.span !== null && d.span !== 0)
+                  .map(d => g.items.indexOf(d))
+                const maxJ = js.length ? Math.max(...js) : -1
+                const top = laneY(idx) + (maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 6 : 10)
                 return (
                   <div
-                    key={d.id}
-                    className="absolute"
+                    key={`stack-${gi}-${t}`}
+                    className="absolute flex flex-col gap-2"
                     style={{
-                      left: Math.min(Math.max(cardLefts.get(d.id) ?? 4, 4), Math.max(4, totalW - CARD_W - 4)),
-                      top: laneY(idx) + (b ? BRACKET_DEPTH + 6 : 10),
+                      left: Math.min(Math.max(groupX(gi) - CARD_W / 2, 4), Math.max(4, totalW - CARD_W - 4)),
+                      top,
                       width: CARD_W, zIndex: 10,
                     }}
-                    onMouseEnter={() => setHover(d.id)}
-                    onMouseLeave={() => setHover(null)}
                   >
-                    <div
-                      onClick={() => setSelected(d)}
-                      className={`bg-ink-850 border rounded-lg p-2.5 cursor-pointer transition-all relative
-                        ${regressed.includes(d.id) ? 'border-rose-500/60 ring-2 ring-rose-500/30'
-                          : active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
-                    >
-                      {regressed.includes(d.id) && (
-                        <span className="absolute -top-1.5 -right-1.5 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-rose-500 text-white text-9 font-bold shadow" title="时间倒流：发生时间早于前序事件">
-                          <AlertTriangle size={8} /> 倒流
-                        </span>
-                      )}
-                      <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
-                        <Calendar size={9} /> {d.time ? rangeLabel(d, d.calName) : '时间未定'}
-                      </div>
-                      {/* 持续时长：填反了也照实显示并标红（设定冲突，不静默纠正） */}
-                      {d.span !== null && d.span !== 0 && (
-                        <div className={`mt-0.5 text-10 flex items-center gap-1 ${d.span < 0 ? 'text-rose-300' : 'text-ink-400'}`}>
-                          <AlarmClock size={9} />
-                          {d.span < 0 ? `结束早于开始 ${formatSpanDays(Math.abs(d.span))}（请核对）` : `持续 ${formatSpanDays(d.span)}`}
+                    {items.map(d => {
+                      const j = g.items.indexOf(d)
+                      const color = COLORS[j % COLORS.length]
+                      const active = hover === d.id || selected?.id === d.id
+                      return (
+                        <div key={d.id} className={`border-l-4 ${color.bar}`}
+                          onMouseEnter={() => setHover(d.id)}
+                          onMouseLeave={() => setHover(null)}
+                        >
+                          <div
+                            onClick={() => setSelected(d)}
+                            className={`bg-ink-850 border border-l-0 rounded-lg p-2.5 cursor-pointer transition-all relative
+                              ${regressed.includes(d.id) ? 'border-rose-500/60 ring-2 ring-rose-500/30'
+                                : active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
+                          >
+                            {regressed.includes(d.id) && (
+                              <span className="absolute -top-1.5 -right-1.5 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-rose-500 text-white text-9 font-bold shadow" title="时间倒流：发生时间早于前序事件">
+                                <AlertTriangle size={8} /> 倒流
+                              </span>
+                            )}
+                            <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
+                              <Calendar size={9} /> {d.time ? rangeLabel(d, d.calName) : '时间未定'}
+                            </div>
+                            {/* 持续时长：填反了也照实显示并标红（设定冲突，不静默纠正） */}
+                            {d.span !== null && d.span !== 0 && (
+                              <div className={`mt-0.5 text-10 flex items-center gap-1 ${d.span < 0 ? 'text-rose-300' : 'text-ink-400'}`}>
+                                <AlarmClock size={9} />
+                                {d.span < 0 ? `结束早于开始 ${formatSpanDays(Math.abs(d.span))}（请核对）` : `持续 ${formatSpanDays(d.span)}`}
+                              </div>
+                            )}
+                            <div className="text-12 text-ink-100 font-semibold leading-snug line-clamp-2">
+                              {d.chapter ? `${d.chapter} ` : ''}{d.title || '（未命名章节）'}
+                            </div>
+                            {d.event && (
+                              <div className="mt-1 text-10 text-ink-400 line-clamp-2">{d.event}</div>
+                            )}
+                            {d.check && (
+                              <div className="mt-1.5">
+                                <span className={`text-9 px-1.5 py-0.5 rounded ${CHECK_STYLE[d.check] ?? 'bg-ink-700 text-ink-300'}`}>{d.check}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
-                      <div className="text-12 text-ink-100 font-semibold leading-snug line-clamp-2">
-                        {d.chapter ? `${d.chapter} ` : ''}{d.title || '（未命名章节）'}
-                      </div>
-                      {d.event && (
-                        <div className="mt-1 text-10 text-ink-400 line-clamp-2">{d.event}</div>
-                      )}
-                      {d.check && (
-                        <div className="mt-1.5">
-                          <span className={`text-9 px-1.5 py-0.5 rounded ${CHECK_STYLE[d.check] ?? 'bg-ink-700 text-ink-300'}`}>{d.check}</span>
-                        </div>
-                      )}
-                    </div>
+                      )
+                    })}
                   </div>
                 )
-              })}
+              }))}
 
-              {/* 节点圆点（落在所在泳道的水平轴线上） */}
-              {data.filter(d => !hiddenTracks.has(d.track)).map(d => {
-                const idx = laneIndex(d.track)
-                if (idx < 0) return null
-                const x = data.indexOf(d) * SLOT_W + SLOT_W / 2
-                const y = laneY(idx)
-                const color = COLORS[idx % COLORS.length]
+              {/* 时间点圆点（每组 × 每个有事件的泳道一个，落在该泳道轴线上） */}
+              {groups.map((g, gi) => visibleTracks.map(t => {
+                if (!g.items.some(d => d.track === t)) return null
+                const idx = visibleTracks.indexOf(t)
+                const active = g.items.some(d => d.track === t && (hover === d.id || selected?.id === d.id))
                 return (
                   <div
-                    key={`dot-${d.id}`}
-                    className={`absolute rounded-full ${color.dot} ring-4 ring-ink-900 transition-all
-                      ${hover === d.id || selected?.id === d.id ? 'scale-125' : ''}`}
-                    style={{ left: x - POINT_R, top: y - POINT_R, width: POINT_R * 2, height: POINT_R * 2, zIndex: 11 }}
+                    key={`dot-${gi}-${t}`}
+                    className={`absolute rounded-full bg-amber ring-4 ring-ink-900 transition-all ${active ? 'scale-125' : ''}`}
+                    style={{ left: groupX(gi) - POINT_R, top: laneY(idx) - POINT_R, width: POINT_R * 2, height: POINT_R * 2, zIndex: 11 }}
                   />
                 )
-              })}
+              }))}
             </div>
           </div>
         </div>
@@ -449,11 +491,6 @@ onClick={() => setSelected(null)}
                 className="shrink-0 rounded-lg p-1 text-ink-500 hover:text-ink-200 hover:bg-ink-700 transition-colors"
               ><X size={16} /></Button>
             <div className="p-4 space-y-2.5">
-              {regressed.includes(selected.id) && (
-                <div className="flex items-center gap-1.5 text-11 text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-md px-2 py-1.5">
-                  <AlertTriangle size={11} /> 时间倒流：本章发生时间早于其前序事件，请核对是否为有意倒叙。
-                </div>
-              )}
               {detail(selected).map(([label, value]) => (
                 <div key={label} className="text-12 leading-relaxed">
                   <span className="text-amber/80 font-semibold">{label}：</span>

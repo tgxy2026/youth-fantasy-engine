@@ -1,17 +1,24 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, resolveCardOverlaps, spanBracketPath, storyDateKey, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, spanBracketPath, storyDateKey, storySpanDays } from '../lib/storyDate'
 import { Calendar, Users, X, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 
+/**
+ * 事件配色（2.4.4 括号方案）：
+ * · `dot/ring/text` 供圆点与卡片沿用；`stroke` 给 SVG 括号、`bar` 给卡片左缘色条。
+ * 🔴 全部写成**字面量类名** —— Tailwind JIT 只认源码里出现的类，`'bg-' + x` 拼出来的
+ *    类不会被生成（规则同 components 里"字号从 props 传"那条红线）。
+ * `j` = 同一时间点组内的序号：同起点多条括号按 j 依次换色 + 下移，区分多个时段。
+ */
 const COLORS = [
-  { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber' },
-  { dot: 'bg-sky-400', ring: 'ring-sky-400/40', text: 'text-sky-300' },
-  { dot: 'bg-emerald-400', ring: 'ring-emerald-400/40', text: 'text-emerald-300' },
-  { dot: 'bg-rose-400', ring: 'ring-rose-400/40', text: 'text-rose-300' },
-  { dot: 'bg-violet-400', ring: 'ring-violet-400/40', text: 'text-violet-300' },
-  { dot: 'bg-orange-400', ring: 'ring-orange-400/40', text: 'text-orange-300' },
+  { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber', stroke: 'stroke-amber', bar: 'border-amber' },
+  { dot: 'bg-sky-400', ring: 'ring-sky-400/40', text: 'text-sky-300', stroke: 'stroke-sky-400', bar: 'border-sky-400' },
+  { dot: 'bg-emerald-400', ring: 'ring-emerald-400/40', text: 'text-emerald-300', stroke: 'stroke-emerald-400', bar: 'border-emerald-400' },
+  { dot: 'bg-rose-400', ring: 'ring-rose-400/40', text: 'text-rose-300', stroke: 'stroke-rose-400', bar: 'border-rose-400' },
+  { dot: 'bg-violet-400', ring: 'ring-violet-400/40', text: 'text-violet-300', stroke: 'stroke-violet-400', bar: 'border-violet-400' },
+  { dot: 'bg-orange-400', ring: 'ring-orange-400/40', text: 'text-orange-300', stroke: 'stroke-orange-400', bar: 'border-orange-400' },
 ]
 
 interface Evt {
@@ -21,7 +28,7 @@ interface Evt {
   calName: string
   /** 发生时间（起点） */
   time: string
-  /** 结束时间（终点；与起点相同 = 瞬时事件） */
+  /** 结束时间（终点；与起点相同 = 时间点事件） */
   end: string
   /** 持续天数：0=同一天；null=填不全算不出；负数=填反了（要警示，不静默纠正） */
   span: number | null
@@ -52,13 +59,15 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 // 单行水平轴布局常量（2026-09-24 · 主人哥哥定版：蛇形取消，全部水平）
-const SLOT_W = 240      // 相邻事件点的间距（等距；区间端点在相邻两点间按时间比例插值）
+const SLOT_W = 240      // 相邻时间点组的间距（等距；区间端点在相邻组之间按时间比例插值）
 const AXIS_Y = 44       // 水平轴的 y
 const POINT_R = 9
 const CARD_W = 210
 const BRACKET_DEPTH = 18
-/** 卡片最大高度估算（标题两行 + 区间 + 时长 + 人物 + 状态），用于画布总高 */
-const CARD_MAX_H = 118
+/** 同一起点多条括号之间的深度间隔（第 j 条 = DEPTH + j*STEP，避免相互重叠） */
+const BRACKET_STEP = 12
+/** 单张卡片估高（标题两行 + 区间 + 时长 + 人物 + 状态），用于竖排堆叠的画布总高 */
+const CARD_MAX_H = 126
 
 export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
   const [hover, setHover] = useState<string | null>(null)
@@ -112,78 +121,84 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
   }, [rows, filterStatus, calendars, calendarRule])
 
   /**
-   * 括号方案（主人哥哥 2026-09-24 定版，替掉第一版"横条"）：
-   * 持续事件的括号挂在轴下方，两端尖角向上分别指着起止在轴上的位置，
-   * 详情卡片挂在括号底边下方、水平居中（空间不够时贪心往右收，不硬挤）。
+   * 🔴 时间点分组（2.4.4 · 主人哥哥反馈"同一时间点多个卡片接续排列"的根治）：
+   * **相同发生时间（同历法 + 同发生时间键）的事件共用轴上同一个点**，卡片在该点下竖向堆叠 ——
+   * 之前每个事件各占一格，同一天的两个事件被画成两个前后相邻的点，看起来像时间上接续，纯属误导。
+   * 分组依赖 data 已按 key 排序（相同 key 必然相邻）。
    */
-  const pointX = (i: number) => i * SLOT_W + SLOT_W / 2
+  const groups = useMemo(() => {
+    const gs: { key: number; items: Evt[] }[] = []
+    for (const d of data) {
+      const last = gs[gs.length - 1]
+      if (last && last.key === d.key) last.items.push(d)
+      else gs.push({ key: d.key, items: [d] })
+    }
+    return gs
+  }, [data])
 
-  /** 插值基准点：只取**有可解析时间**的事件（无时间者 key=Infinity，不能当插值锚） */
-  const dots = useMemo(
-    () => data
-      .map((d, i) => ({ key: d.key, x: pointX(i) }))
-      .filter(p => Number.isFinite(p.key)),
-    [data],
-  )
-  /** 末尾虚拟锚：结束时间晚于最后一个事件时，括号仍能往右延（按 10 万年 ≈ 一格的比例） */
+  const groupX = (gi: number) => gi * SLOT_W + SLOT_W / 2
+
+  /** 插值锚 = 时间点组（组内共享 x）；只取时间可解析的组（key=Infinity 的不能当锚） */
   const dotsWithTail = useMemo(() => {
-    if (dots.length === 0) return dots
-    const last = dots[dots.length - 1]
-    return [...dots, { key: last.key + 1e9, x: last.x + SLOT_W }]
-  }, [dots])
-
-  /** 每个事件的括号几何（无跨度 / 起止同日 → null，只画圆点） */
-  const brackets = useMemo(() => {
-    return data.map((d, i) => {
-      if (d.span === null || d.span === 0) return null
-      const x0 = pointX(i)
-      // d.key = 历法权重*1e10 + tk(发生时间)，减去 tk(发生) 再加 tk(结束) ⇒ 同历法的结束键
-      const endKey = d.key - storyDateKey(d.time) + storyDateKey(d.end)
-      const rawEnd = interpolateX(dotsWithTail, endKey)
-      if (rawEnd === null) return null
-      // 负跨度（填反了）：括号照样画（min~max），颜色在渲染处标红
-      const lo = Math.min(x0, rawEnd)
-      const hi = Math.max(x0, rawEnd)
-      const right = Math.max(hi, lo + 24)   // 太短看不清，给最小可视宽度
-      const mid = (lo + right) / 2
-      return { id: d.id, x0, path: spanBracketPath(x0, right, AXIS_Y, BRACKET_DEPTH), mid, neg: d.span < 0, span: d.span, label: `${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(Math.abs(d.span))}）` }
-    })
-  }, [data, dotsWithTail])
-  const bracketById = useMemo(
-    () => new Map(brackets.filter(Boolean).map(b => [b!.id, b!])),
-    [brackets],
-  )
+    const pts = groups
+      .map((g, gi) => ({ key: g.key, x: groupX(gi) }))
+      .filter(p => Number.isFinite(p.key))
+    if (pts.length === 0) return pts
+    const last = pts[pts.length - 1]
+    // 末尾虚拟锚：结束时间晚于最后一个事件时，括号仍能往右延（按 10 万年 ≈ 一格的比例）
+    return [...pts, { key: last.key + 1e9, x: last.x + SLOT_W }]
+  }, [groups])
 
   /**
-   * 卡片防重叠：期望位置 = 括号中点（无括号 = 圆点正下），
-   * 同一行内贪心右移，不与前一卡重叠；再夹回画布范围。
+   * 括号（主人哥哥 2026-09-24 定版）：挂在轴下、两端尖角向上兜起，
+   * 分别指着起止在轴上的位置；**同起点多条括号按组内序 j 换色 + 下移**，
+   * 与竖排卡片一一对应（卡片左缘色条同色）—— 同一天发生、结束时间不同的
+   * 多个事件，就是轴上从同一点伸出的一把彩色括号。
    */
-  const cardLefts = useMemo(() => {
-    const wants = data.map((d, i) => {
-      const b = bracketById.get(d.id)
-      return ((b ? b.mid : pointX(i)) - CARD_W / 2)
+  const brackets = useMemo(() => {
+    const out: { id: string; gi: number; j: number; path: string; neg: boolean; label: string }[] = []
+    groups.forEach((g, gi) => {
+      const x0 = groupX(gi)
+      g.items.forEach((d, j) => {
+        if (d.span === null || d.span === 0) return
+        // d.key = 历法权重*1e10 + tk(发生时间)，减 tk(发生) 加 tk(结束) ⇒ 同历法的结束键
+        const endKey = d.key - storyDateKey(d.time) + storyDateKey(d.end)
+        const rawEnd = interpolateX(dotsWithTail, endKey)
+        if (rawEnd === null) return
+        const lo = Math.min(x0, rawEnd)
+        const hi = Math.max(x0, rawEnd)
+        const right = Math.max(hi, lo + 24)   // 太短看不清，给最小可视宽度
+        out.push({
+          id: d.id, gi, j,
+          path: spanBracketPath(x0, right, AXIS_Y, BRACKET_DEPTH + j * BRACKET_STEP),
+          neg: d.span < 0,
+          label: `${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(Math.abs(d.span))}）`,
+        })
+      })
     })
-    const lefts = resolveCardOverlaps(wants, CARD_W)
-    const maxLeft = Math.max(4, data.length * SLOT_W - CARD_W - 4)
-    return lefts.map(l => Math.min(Math.max(l, 4), maxLeft))
-  }, [data, bracketById])
+    return out
+  }, [groups, dotsWithTail])
+  const bracketById = useMemo(
+    () => new Map(brackets.map(b => [b.id, b])),
+    [brackets],
+  )
+  void bracketById   // 详情弹窗未来可能按 id 反查括号；先保位避免误删
 
   const calLegend = [...calendars].sort((a, b) => a.value - b.value)
     .map(c => `${c.name}(${c.value})`).join(' → ')
 
-  if (data.length === 0) {
-    return (
-      <div className="p-10 text-center text-ink-400 text-sm">
-        <Calendar size={32} className="mx-auto mb-2 text-ink-600" />
-        暂无历史事件数据。请先在「表格视图」中录入事件（含「历法」与「发生时间」），切换回「时间轴视图」即可看到。
-      </div>
-    )
-  }
+  /** 每组的卡片堆顶：组内最深括号的底边 + 6（无括号的组 = 轴下 10） */
+  const groupTops = useMemo(() => groups.map((_g, gi) => {
+    const js = brackets.filter(b => b.gi === gi).map(b => b.j)
+    const maxJ = js.length ? Math.max(...js) : -1
+    return AXIS_Y + (maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 6 : 10)
+  }), [groups, brackets])
 
-  const n = data.length
-  const totalW = Math.max(n, 1) * SLOT_W
-  // 单行水平轴：轴 + 括号 + 卡片，全部在一条水平带上
-  const totalH = AXIS_Y + BRACKET_DEPTH + CARD_MAX_H + 24
+  const totalW = Math.max(groups.length, 1) * SLOT_W
+  const maxStack = groups.reduce((m, grp) => Math.max(m, grp.items.length), 1)
+  const maxJ = brackets.reduce((m, b) => Math.max(m, b.j), -1)
+  const stackTop = maxJ >= 0 ? AXIS_Y + BRACKET_DEPTH + maxJ * BRACKET_STEP + 6 : AXIS_Y + 10
+  const totalH = stackTop + maxStack * CARD_MAX_H + 16
 
   const detail = (e: Evt) =>
     ([
@@ -215,7 +230,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
           <span className="text-10 text-ink-500">（历法顺序：按「历法」列数值排列）</span>
         )}
         <span className="text-10 text-ink-500">
-          （轴下的括号 = 持续时段，两端尖角指着起止在轴上的位置；起止同一天则是一个圆点。卡片挂在括号下方）
+          （同一时间点的事件共用一个圆点、卡片竖排；持续时段用彩色括号标在轴下，括号颜色与卡片左缘色条对应）
         </span>
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-11 text-ink-500 mr-1">状态筛选：</span>
@@ -238,14 +253,14 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
           <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
             <line x1={20} y1={AXIS_Y} x2={totalW - 20} y2={AXIS_Y} stroke="rgba(128,130,150,0.4)" strokeWidth={1.5} />
             {brackets.map(b => {
-              if (!b) return null
               const on = hover === b.id || selected?.id === b.id
+              const color = COLORS[b.j % COLORS.length]
               return (
                 <path
                   key={`bk-${b.id}`}
                   d={b.path}
                   fill="none"
-                  className={b.neg ? 'stroke-rose-400' : 'stroke-amber'}
+                  className={b.neg ? 'stroke-rose-400' : color.stroke}
                   strokeWidth={on ? 2.5 : 2}
                   strokeOpacity={on ? 0.95 : 0.6}
                   strokeLinecap="round"
@@ -263,63 +278,70 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
             })}
           </svg>
 
-          {/* 节点卡片：挂在括号底边下方（居中），时间点事件挂在圆点正下；同行贪心防重叠 */}
-          {data.map((d, i) => {
-            const b = bracketById.get(d.id)
-            const color = COLORS[i % COLORS.length]
-            const active = hover === d.id || selected?.id === d.id
-            const top = b ? AXIS_Y + BRACKET_DEPTH + 6 : AXIS_Y + 10
-            return (
-              <div
-                key={d.id}
-                className="absolute"
-                style={{ left: cardLefts[i], top, width: CARD_W, zIndex: 10 }}
-                onMouseEnter={() => setHover(d.id)}
-                onMouseLeave={() => setHover(null)}
-              >
-                <div
-                  onClick={() => setSelected(d)}
-                  className={`bg-ink-850 border rounded-lg p-2.5 cursor-pointer transition-all
-                    ${active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
-                >
-                  <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
-                    <Calendar size={9} /> {d.time ? rangeLabel(d, d.calName) : '时间未定'}
+          {/* 事件卡片：同一时间点一组、竖向堆叠；左缘色条与该事件的括号同色 */}
+          {groups.map((g, gi) => (
+            <div
+              key={`grp-${gi}-${g.key}`}
+              className="absolute flex flex-col gap-2"
+              style={{
+                left: Math.min(Math.max(groupX(gi) - CARD_W / 2, 4), Math.max(4, totalW - CARD_W - 4)),
+                top: groupTops[gi],
+                width: CARD_W, zIndex: 10,
+              }}
+            >
+              {g.items.map((d, j) => {
+                const color = COLORS[j % COLORS.length]
+                const active = hover === d.id || selected?.id === d.id
+                return (
+                  <div
+                    key={d.id}
+                    className={`border-l-4 ${color.bar}`}
+                    onMouseEnter={() => setHover(d.id)}
+                    onMouseLeave={() => setHover(null)}
+                  >
+                    <div
+                      onClick={() => setSelected(d)}
+                      className={`bg-ink-850 border border-l-0 rounded-lg p-2.5 cursor-pointer transition-all
+                        ${active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
+                    >
+                      <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
+                        <Calendar size={9} /> {d.time ? rangeLabel(d, d.calName) : '时间未定'}
+                      </div>
+                      <div className="text-12 text-ink-100 font-semibold leading-snug line-clamp-2">
+                        {d.title || '（未命名事件）'}
+                      </div>
+                      {/* 持续时长：填反了（负数）也照实显示并标红 —— 那是设定冲突，要让人看见 */}
+                      {d.span !== null && d.span !== 0 && (
+                        <div className={`mt-1 text-10 flex items-center gap-1 ${d.span < 0 ? 'text-rose-300' : 'text-ink-400'}`}>
+                          <AlarmClock size={9} />
+                          {d.span < 0 ? `结束早于开始 ${formatSpanDays(Math.abs(d.span))}（请核对）` : `持续 ${formatSpanDays(d.span)}`}
+                        </div>
+                      )}
+                      {d.who && (
+                        <div className="mt-1.5 text-10 text-ink-400 flex items-center gap-1">
+                          <Users size={9} /> <span className="truncate">{d.who}</span>
+                        </div>
+                      )}
+                      {d.status && (
+                        <div className="mt-1.5">
+                          <span className={`text-9 px-1.5 py-0.5 rounded ${STATUS_STYLE[d.status] ?? 'bg-ink-700 text-ink-300'}`}>{d.status}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-12 text-ink-100 font-semibold leading-snug line-clamp-2">
-                    {d.title || '（未命名事件）'}
-                  </div>
-                  {/* 持续时长：填反了（负数）也照实显示并标红 —— 那是设定冲突，要让人看见 */}
-                  {d.span !== null && d.span !== 0 && (
-                    <div className={`mt-1 text-10 flex items-center gap-1 ${d.span < 0 ? 'text-rose-300' : 'text-ink-400'}`}>
-                      <AlarmClock size={9} />
-                      {d.span < 0 ? `结束早于开始 ${formatSpanDays(Math.abs(d.span))}（请核对）` : `持续 ${formatSpanDays(d.span)}`}
-                    </div>
-                  )}
-                  {d.who && (
-                    <div className="mt-1.5 text-10 text-ink-400 flex items-center gap-1">
-                      <Users size={9} /> <span className="truncate">{d.who}</span>
-                    </div>
-                  )}
-                  {d.status && (
-                    <div className="mt-1.5">
-                      <span className={`text-9 px-1.5 py-0.5 rounded ${STATUS_STYLE[d.status] ?? 'bg-ink-700 text-ink-300'}`}>{d.status}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                )
+              })}
+            </div>
+          ))}
 
-          {/* 节点圆点（落在水平轴线上） */}
-          {data.map((d, i) => {
-            const x = pointX(i)
-            const color = COLORS[i % COLORS.length]
+          {/* 时间点圆点（每组一个，落在水平轴线上） */}
+          {groups.map((g, gi) => {
+            const active = g.items.some(d => hover === d.id || selected?.id === d.id)
             return (
               <div
-                key={`dot-${d.id}`}
-                className={`absolute rounded-full ${color.dot} ring-4 ring-ink-900 transition-all
-                  ${hover === d.id || selected?.id === d.id ? 'scale-125' : ''}`}
-                style={{ left: x - POINT_R, top: AXIS_Y - POINT_R, width: POINT_R * 2, height: POINT_R * 2, zIndex: 11 }}
+                key={`dot-${gi}-${g.key}`}
+                className={`absolute rounded-full bg-amber ring-4 ring-ink-900 transition-all ${active ? 'scale-125' : ''}`}
+                style={{ left: groupX(gi) - POINT_R, top: AXIS_Y - POINT_R, width: POINT_R * 2, height: POINT_R * 2, zIndex: 11 }}
               />
             )
           })}
