@@ -19,7 +19,7 @@ declare const __APP_VERSION__: string | undefined
 const APP_VERSION: string = typeof __APP_VERSION__ === 'undefined' ? '开发版' : __APP_VERSION__
 
 /**
- * 版本号展示文本：正式版为 `v2.4.3`，回退态为「开发版」（**不带 v 前缀**）。
+ * 版本号展示文本：正式版为 `v2.4.4`，回退态为「开发版」（**不带 v 前缀**）。
  * 各 UI（关于页 / 侧栏 / 项目中心）一律用它，避免各自 `v{APP_VERSION}` 拼出「v开发版」。
  */
 export const APP_VERSION_LABEL: string = APP_VERSION === '开发版' ? '开发版' : `v${APP_VERSION}`

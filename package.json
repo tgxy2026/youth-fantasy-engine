@@ -1,7 +1,7 @@
 {
   "name": "novel-studio",
   "private": true,
-  "version": "2.4.3",
+  "version": "2.4.4",
   "type": "module",
   "description": "青春幻想引擎 · 小说创作管理应用（Windows 桌面版）",
   "author": "青春幻想引擎开发组",
