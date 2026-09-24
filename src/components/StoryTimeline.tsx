@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
 import { Calendar, X, AlertTriangle, Layers, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -200,7 +200,15 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
         })
       })
     })
-    return out
+    // 贪心着色：**按泳道独立** —— 不同泳道的线条本来就分行，无需互相区分；
+    // 同一泳道内相互重叠的线段拿到不同颜色（同时间点跨轨道的多条线各自在自己的泳道，色号允许重置）
+    const colors = new Map<string, number>()
+    for (const t of TRACK_ORDER) {
+      const laneGeo = out.filter(x => x.track === t)
+      const idxs = assignOverlapColors(laneGeo.map(x => ({ x0: Math.min(x.x0, x.right), right: Math.max(x.x0, x.right) })))
+      laneGeo.forEach((x, i) => { colors.set(x.id, idxs[i] ?? 0) })
+    }
+    return out.map(x => ({ ...x, colorIdx: colors.get(x.id) ?? 0 }))
   }, [groups, dotsWithTail])
 
   /**
@@ -369,7 +377,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                   if (!s) return null
                   const idx = visibleTracks.indexOf(s.track)
                   const on = hover === d.id || selected?.id === d.id
-                  const color = COLORS[s.j % COLORS.length]
+                  const color = COLORS[s.colorIdx % COLORS.length]
                   const path = spanLinePath(s.x0, s.right, laneY(idx), BRACKET_DEPTH + s.j * BRACKET_STEP, 'up')
                   return (
                     <path
@@ -409,11 +417,11 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                     }}
                   >
                     {items.map(d => {
-                      const j = g.items.indexOf(d)
-                      const color = COLORS[j % COLORS.length]
+                      const sp = spans.find(x => x.id === d.id)
+                      const color = sp ? COLORS[sp.colorIdx % COLORS.length] : null
                       const active = hover === d.id || selected?.id === d.id
                       return (
-                        <div key={d.id} className={`border-l-4 ${color.bar}`}
+                        <div key={d.id} className={`border-l-4 ${color ? color.bar : 'border-ink-600'}`}
                           onMouseEnter={() => setHover(d.id)}
                           onMouseLeave={() => setHover(null)}
                         >
@@ -421,14 +429,14 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                             onClick={() => setSelected(d)}
                             className={`bg-ink-850 border border-l-0 rounded-lg p-2.5 cursor-pointer transition-all relative
                               ${regressed.includes(d.id) ? 'border-rose-500/60 ring-2 ring-rose-500/30'
-                                : active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
+                                : active && color ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
                           >
                             {regressed.includes(d.id) && (
                               <span className="absolute -top-1.5 -right-1.5 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-rose-500 text-white text-9 font-bold shadow" title="时间倒流：发生时间早于前序事件">
                                 <AlertTriangle size={8} /> 倒流
                               </span>
                             )}
-                            <div className={`text-10 ${color.text} font-semibold mb-0.5 flex items-center gap-1`}>
+                            <div className={`text-10 ${color ? color.text : 'text-ink-300'} font-semibold mb-0.5 flex items-center gap-1`}>
                               <Calendar size={9} /> {d.time ? rangeLabel(d, d.calName) : '时间未定'}
                             </div>
                             {/* 持续时长：填反了也照实显示并标红（设定冲突，不静默纠正） */}

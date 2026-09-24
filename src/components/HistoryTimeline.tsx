@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
 import { Calendar, Users, X, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -151,11 +151,14 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
 
   /**
    * 持续时长线段（主人哥哥 2026-09-24 三次定版）：画在轴**上方**，
-   * 两端小刻度指着起止在轴上的位置；**同起点多条线按组内序 j 换色 + 上移分层**，
-   * 与竖排卡片一一对应（卡片左缘色条同色）。
+   * 两端小刻度指着起止在轴上的位置；分层深度按组内序 j（同起点的线依次外扩）。
+   *
+   * 🔴 颜色 = `assignOverlapColors`（区间图着色）：**相互重叠的线必然不同色**，
+   *    互不重叠的线复用色板 —— 此前按组内序取色，示范数据里几根互不重叠的线
+   *    全部落到第一色，看起来"颜色根本没区分"（主人哥哥验收指出的正是这个）。
    */
   const brackets = useMemo(() => {
-    const out: { id: string; gi: number; j: number; x0: number; right: number; neg: boolean; label: string }[] = []
+    const geo: { id: string; gi: number; j: number; x0: number; right: number; neg: boolean; label: string }[] = []
     groups.forEach((g, gi) => {
       const x0 = groupX(gi)
       g.items.forEach((d, j) => {
@@ -167,15 +170,21 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
         const lo = Math.min(x0, rawEnd)
         const hi = Math.max(x0, rawEnd)
         const right = Math.max(hi, lo + 24)   // 太短看不清，给最小可视宽度
-        out.push({
+        geo.push({
           id: d.id, gi, j, x0, right,
           neg: d.span < 0,
           label: `${formatStoryRange(d.time, d.end)}（持续 ${formatSpanDays(Math.abs(d.span))}）`,
         })
       })
     })
-    return out
+    // 贪心着色：重叠线不同色（输入顺序与 geo 对齐）
+    const colors = assignOverlapColors(geo.map(s => ({ x0: Math.min(s.x0, s.right), right: Math.max(s.x0, s.right) })))
+    return geo.map((s, i) => ({ ...s, colorIdx: colors[i] }))
   }, [groups, dotsWithTail])
+  const bracketById = useMemo(
+    () => new Map(brackets.map(b => [b.id, b])),
+    [brackets],
+  )
 
   const calLegend = [...calendars].sort((a, b) => a.value - b.value)
     .map(c => `${c.name}(${c.value})`).join(' → ')
@@ -245,7 +254,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
             <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} stroke="rgba(128,130,150,0.4)" strokeWidth={1.5} />
             {brackets.map(b => {
               const on = hover === b.id || selected?.id === b.id
-              const color = COLORS[b.j % COLORS.length]
+              const color = COLORS[b.colorIdx % COLORS.length]
               const path = spanLinePath(b.x0, b.right, axisY, BRACKET_DEPTH + b.j * BRACKET_STEP, 'up')
               return (
                 <path
@@ -281,11 +290,11 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
                 width: CARD_W, zIndex: 10,
               }}
             >
-              {g.items.map((d, j) => {
-                const hasLine = brackets.some(b => b.id === d.id)
-                const color = COLORS[j % COLORS.length]
-                const barCls = hasLine ? color.bar : 'border-ink-600'
-                const textCls = hasLine ? color.text : 'text-ink-300'
+              {g.items.map((d) => {
+                const bk = bracketById.get(d.id)
+                const color = bk ? COLORS[bk.colorIdx % COLORS.length] : null
+                const barCls = color ? color.bar : 'border-ink-600'
+                const textCls = color ? color.text : 'text-ink-300'
                 const active = hover === d.id || selected?.id === d.id
                 return (
                   <div
@@ -297,7 +306,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
                     <div
                       onClick={() => setSelected(d)}
                       className={`bg-ink-850 border border-l-0 rounded-lg p-2.5 cursor-pointer transition-all
-                        ${active ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
+                        ${active && color ? `${color.ring} ring-2 border-amber/40` : 'border-ink-700 hover:border-ink-600'}`}
                     >
                       <div className={`text-10 ${textCls} font-semibold mb-0.5 flex items-center gap-1`}>
                         <Calendar size={9} /> {d.time ? rangeLabel(d, d.calName) : '时间未定'}

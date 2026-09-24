@@ -156,6 +156,36 @@ export function formatSpanDays(n: number): string {
   return `${n} 天`
 }
 
+/**
+ * 重叠区间的**贪心着色**：相互重叠的线段拿到不同的颜色索引。
+ *
+ * 为什么不是"每条线按全局序轮流取色"：不重叠的两条线用同色完全无碍（视觉上分离），
+ * 轮流取色反而把颜色稀释掉；真正要区分的是**重叠**的那几条 —— 这正是区间图着色，
+ * 区间图是完美图，按左端点排序贪心即可得到最优解。
+ *
+ * 算法：按左端点扫；新线出现时，右端点 ≤ 新线左端点的活跃线全部释放（共端点不算重叠），
+ * 新线取「未被当前活跃线占用」的最小颜色索引。
+ * 返回与入参同序的 colorIdx 数组（调用方取 `COLORS[idx % 色板长]`）。
+ */
+export function assignOverlapColors(spans: { x0: number; right: number }[]): number[] {
+  const order = spans
+    .map((s, i) => ({ x0: s.x0, right: s.right, i }))
+    .sort((a, b) => a.x0 - b.x0 || a.right - b.right)
+  const out = new Array<number>(spans.length).fill(0)
+  const active: { right: number; color: number }[] = []
+  for (const s of order) {
+    for (let k = active.length - 1; k >= 0; k--) {
+      if (active[k].right <= s.x0) active.splice(k, 1)
+    }
+    const used = new Set(active.map(a => a.color))
+    let c = 0
+    while (used.has(c)) c++
+    out[s.i] = c
+    active.push({ right: s.right, color: c })
+  }
+  return out
+}
+
 /** 起止时间的展示串：只填了开始就只显示开始；两端都有则显示区间 */
 export function formatStoryRange(start?: string, end?: string): string {
   const s = (start ?? '').trim()
