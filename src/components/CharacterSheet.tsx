@@ -3,6 +3,7 @@ import { Z } from '../lib/zLayer'
 import type { TabDef, CardRecord } from '../lib/types'
 import { SABC_LABELS, CARD_TABLE_REF_FIELDS } from '../lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '../lib/db'
+import { clearFreeDraft } from '../lib/freeDraft'
 import { uid } from '../lib/id'
 import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2 } from 'lucide-react'
 import { readPortraitFile, dataUrlBytes, PORTRAIT_ACCEPT } from '../lib/imagePortrait'
@@ -205,6 +206,9 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
     const rec = records.find(r => r.id === id)
     if (!rec) return
     if (!await confirmDialog({ title: `删除${nounCard}`, message: `确定删除「${rec.name}」的${nounCard}？`, danger: true })) return
+    // 🔴 2.4.4 六维审计：草稿本按「记录 id」存（card::页签::记录id），卡删了草稿必须跟着走，
+    //    否则孤儿草稿永久留在 settingsKV 里并随备份 / 云同步搬运
+    void clearFreeDraft(`card::${tab.id}::${id}`)
     await deleteCardRecord(id)
     const next = records.filter(r => r.id !== id)
     setRecords(next)

@@ -67,7 +67,9 @@ const BRACKET_DEPTH = 18
 /** 同一起点多条线条之间的深度间隔（第 j 条 = DEPTH + j*STEP，向轴上方依次外扩） */
 const BRACKET_STEP = 12
 /** 单张卡片估高（标题两行 + 区间 + 时长 + 人物 + 状态），用于竖排堆叠的画布总高 */
-const CARD_MAX_H = 126
+// 🔴 2.4.4 六维审计：估高要**保守**（实卡含历法名+区间行可换行）——估小了画布总高不足，
+// 外层 overflow-auto 会把最后一张卡的底部裁掉。宁可多留白。
+const CARD_MAX_H = 150
 
 export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
   const [hover, setHover] = useState<string | null>(null)
@@ -355,6 +357,9 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
       {/* 事件详情弹窗 */}
       {selected && (
         <Modal open onClose={() => setSelected(null)} hideHeader width={480} maxHeight="85vh" bodyClassName="!p-0">
+          {/* 🔴 2.4.4 六维审计：Modal 的 body 不是 flex 容器 —— 自绘头部必须自带 flex 行，
+              否则 flex-1 / shrink-0 全部失效（关闭按钮换行、长标题不截断） */}
+          <div className="flex items-start gap-2 p-3">
               <div className="flex-1 min-w-0">
                 <div className="text-10 text-amber font-semibold mb-0.5">
                   {selected.time ? rangeLabel(selected, selected.calName) : '时间未定'}
@@ -367,6 +372,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
 onClick={() => setSelected(null)}
                 className="shrink-0 rounded-lg p-1 text-ink-500 hover:text-ink-200 hover:bg-ink-700 transition-colors"
               ><X size={16} /></Button>
+          </div>
             <div className="p-4 space-y-2.5">
               {detail(selected).map(([label, value]) => (
                 <div key={label} className="text-12 leading-relaxed">

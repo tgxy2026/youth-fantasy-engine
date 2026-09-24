@@ -145,7 +145,8 @@ export default function AITemplateFill({
     if (draftTimer.current) clearTimeout(draftTimer.current)
     draftTimer.current = setTimeout(() => {
       if (!draftScope) return
-      void saveFreeDraft(draftScope, v).then(() => setDraftSaved(true))
+      // 🔴 2.4.4 六维审计 P1：保存失败（false）绝不亮「已存」—— 否则作者以为存上了，关弹窗即丢稿
+      void saveFreeDraft(draftScope, v).then(ok => { if (ok) setDraftSaved(true) })
     }, 600)
   }
 

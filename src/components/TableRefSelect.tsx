@@ -99,7 +99,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
   const list0 = excludeNames && excludeNames.length ? names.filter(n => !excludeNames.includes(n)) : names
   const filtered = ql ? list0.filter(n => n.toLowerCase().includes(ql)) : list0
   const exact = ql !== '' && names.some(n => n.toLowerCase() === ql)
-  const useManual = () => {
+  const applyManualInput = () => {
     const v = q.trim()
     if (!v) return
     if (multi) {
@@ -141,13 +141,23 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
               autoFocus
               value={q}
               onChange={e => setQ(e.target.value)}
+              onKeyDown={e => {
+                // 🔴 2.4.4 六维审计：下拉键盘可达 —— Esc 关闭；Enter 确认（精确匹配选中之，
+                //    否则按「使用手动输入」走，与下方按钮同语义）
+                if (e.key === 'Escape') { e.stopPropagation(); close() }
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  if (exact) toggle(names.find(n => n.toLowerCase() === ql)!)
+                  else applyManualInput()
+                }
+              }}
               placeholder="搜索或手动输入…"
               className="w-full !py-0.5 text-12"
             />
           </div>
           {q.trim() && !exact && (
             <Button type="button"
-              onClick={useManual} variant="secondary" size="md" className="w-full text-left text-11 border-b flex items-center">
+              onClick={applyManualInput} variant="secondary" size="md" className="w-full text-left text-11 border-b flex items-center">
               <Plus size={11} /> 使用「{q.trim()}」
             </Button>
           )}

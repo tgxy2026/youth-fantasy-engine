@@ -154,6 +154,9 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
     try {
       prev = await store.getMemory(c.id)
     } catch {
+      // 🔴 2.4.4 六维审计 P1：读失败跳过 ⇒ 本轮记忆结果**不完整**，与「整份退化」同构 ——
+      //    必须置 memoryDegraded，否则水位线照常推进、这段对话被永久越过（不可逆失忆）。
+      memoryDegraded = true
       warnings.push(`${c.name || '一位角色'}：读取现有记忆失败，本次跳过记忆更新（避免用残缺结果覆盖）`)
       continue
     }

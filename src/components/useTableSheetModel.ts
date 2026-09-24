@@ -28,6 +28,7 @@ import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
 import { uid } from '../lib/id'
 import { aiCapabilityOf } from '../lib/aiScope'
 import { useAIReady } from '../lib/useAIReady'
+import { clearFreeDraft } from '../lib/freeDraft'
 import { useCalendarRule } from '../lib/useCalendarRule'
 import { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
 import { usePersistedSet } from '../lib/uiPrefs'
@@ -426,6 +427,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     if (!await confirmDialog({ title: '删除这一行', message: '确定删除这一行？', danger: true })) return
     const target = rows.find(r => r.id === rowId)
     if (target) await retireCodes([target])  // 编号登记进退役池，防止复用
+    // 🔴 2.4.4 六维审计：删行清掉该行的 AI 补全草稿（row::页签::行id），防孤儿残留
+    void clearFreeDraft(`row::${tab.id}::${rowId}`)
     await deleteTableRow(rowId)
     setRows(rows.filter(r => r.id !== rowId))
     setDrafts(prev => {

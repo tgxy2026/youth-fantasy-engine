@@ -242,22 +242,3 @@ export function spanLinePath(
     + ` M ${a} ${yEdge} L ${a} ${yEdge - t * s}`
     + ` M ${b} ${yEdge} L ${b} ${yEdge - t * s}`
 }
-
-/**
- * 卡片防重叠的**贪心排布**：按期望左边界排序，逐张把重叠的往右推。
- *
- * 为什么是贪心而不是整体最优：时间轴卡片一行可能有几十张，整体最优是区间调度难题；
- * 贪心在这里足够 —— 卡片宽度一致、期望位置只被括号中点轻微偏移。
- * 返回值与入参同序：`lefts[i]` 是第 i 张卡的最终左边界。
- */
-export function resolveCardOverlaps(wants: number[], cardWidth: number, gap = 8): number[] {
-  const order = wants.map((w, i) => ({ w, i })).sort((a, b) => a.w - b.w)
-  const out = new Array<number>(wants.length).fill(0)
-  let prevRight = Number.NEGATIVE_INFINITY
-  for (const { w, i } of order) {
-    const left = Math.max(w, prevRight + gap)
-    out[i] = left
-    prevRight = left + cardWidth
-  }
-  return out
-}

@@ -552,6 +552,14 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
               //    而这两种判反的代价并不对称（误判成删除会丢云端数据，误判成新增会让删掉的项目复活）。
               // 本机实况已在上面取过一次（失败就在这里之前中止了）—— 复用，不再重复调用
               cache = mergeCaches(baseCache, serverCache, localSnapPre ?? cache)
+            } else if (totalRecords(liveStores(baseCache)) > 0) {
+              // 🔴 2.4.4 六维审计 P1：200 + 空载荷（.yfe 被网盘客户端截断/缺失时 parseRev 会当成空库）
+              //    绝不能把 cache/baseCache 清成空 —— 中途自愈路径（tryRecoverFromTransient 重入
+              //    ensureInit）没有启动路径那道 totalRecords 空库守卫：清空后 adoptBaseline 会把
+              //    baseCache 一并归零，空推守卫随之失效，未推送改动全部蒸发、空载荷成为云端新基线。
+              //    「另一端合法清空」会被那端的空推守卫拦下，走不到这里 ⇒ enc 为空且本机有基线
+              //    只可能是异常，按读失败处理（走下面的 catch：状态 offline、cache 原样保留）。
+              throw new Error('sync pull returned empty payload while local baseline is non-empty')
             } else {
               cache = {}
             }

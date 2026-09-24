@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import jiewenjiPng from '../assets/jiewenji.png'
 import { Button } from './Button'
 import { Z } from '../lib/zLayer'
@@ -108,7 +109,13 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
 style={{ zIndex: Z.pageTip }}
           onPointerDown={e => e.stopPropagation()}
         >
-          <div className="text-12 font-semibold text-amber mb-1">颉文姬 · AI 编辑助手</div>
+          {/* 🔴 2.4.4 六维审计：面板此前只有「前往编辑器」和双击精灵两条关闭路 —— 补一个明确的关闭键 */}
+          <div className="flex items-center gap-1 mb-1">
+            <div className="text-12 font-semibold text-amber flex-1">颉文姬 · AI 编辑助手</div>
+            <Button variant="bare" iconOnly size="xs" onClick={() => setMini(false)} title="收起"
+              className="text-ink-400 hover:text-ink-200"
+            ><X size={12} /></Button>
+          </div>
           <div className="text-11 text-ink-300 leading-relaxed mb-2">
             本地校对、AI 校对（文字层 / 逻辑层）、选区润色、审读建议、爽点毒点、续写方向、写作简报、本章设定补登……都在正文编辑器里。
           </div>

@@ -43,8 +43,11 @@ function load(): Tombs {
       out[store] = inner
     }
     return out
-  } catch {
-    /* 配额满 / 隐私模式 / 数据损坏：当空处理（最多退回旧行为，绝不拖垮同步） */
+  } catch (e) {
+    /* 配额满 / 隐私模式 / 数据损坏：当空处理（最多退回旧行为，绝不拖垮同步）。
+       🔴 2.4.4 六维审计：但必须留痕 —— 墓碑不可知时「删了会复活」的闸整个失效，
+       静默当空会让幽灵项目回归时无人知道为什么。 */
+    console.warn('[tombstone] 墓碑读取失败（删除记忆暂不可用）：', e)
     return {}
   }
 }
@@ -54,8 +57,9 @@ let tombs: Tombs = load()
 function persist(): void {
   try {
     localStorage.setItem(TOMB_KEY, JSON.stringify(tombs))
-  } catch {
-    /* 同上：落盘失败不影响同步主流程 */
+  } catch (e) {
+    /* 同上：落盘失败不影响同步主流程；🔴 2.4.4 留痕（下次启动墓碑全丢，必须能查到原因） */
+    console.warn('[tombstone] 墓碑落盘失败（新增删除记忆未持久化）：', e)
   }
 }
 

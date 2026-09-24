@@ -44,12 +44,17 @@ export async function loadFreeDraft(scope: string): Promise<string> {
   }
 }
 
-export async function saveFreeDraft(scope: string, text: string): Promise<void> {
-  if (!scope) return
+/** 保存草稿。返回**是否真的存上了** —— 调用方（AI 补全弹窗）据此决定亮不亮「已存」。
+ *  🔴 2.4.4 六维审计 P1：失败只留痕不抛（草稿不是关键数据），但「没存上却报已存」
+ *  比失败本身更糟 —— 作者关弹窗即丢稿且零痕迹。 */
+export async function saveFreeDraft(scope: string, text: string): Promise<boolean> {
+  if (!scope) return false
   try {
     await setSetting(freeDraftKeyOf(scope), text)
-  } catch {
-    /* 草稿没存上不构成错误：提示作者即可，不抛 */
+    return true
+  } catch (e) {
+    console.warn('[freeDraft] 草稿保存失败（本次改动未落库）：', e)
+    return false
   }
 }
 
@@ -58,7 +63,8 @@ export async function clearFreeDraft(scope: string): Promise<void> {
   if (!scope) return
   try {
     await setSetting(freeDraftKeyOf(scope), '')
-  } catch {
-    /* 同上 */
+  } catch (e) {
+    /* 同上：不构成错误，但留痕（孤儿草稿会一直躺在 settingsKV 里） */
+    console.warn('[freeDraft] 草稿清理失败：', e)
   }
 }

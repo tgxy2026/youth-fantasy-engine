@@ -65,7 +65,13 @@ const COVERED_BY_PANEL = new Set([
 
 for (const [id] of Object.entries(AI_DATA_SOURCES)) {
   if (NOT_YET_MOUNTED.has(id) || COVERED_BY_PANEL.has(id)) continue
+  // 2.4.4 六维审计：worldbase / power 由 WorldSetSheet 以 feature={tab.id} **动态**传入
+  // （tab.id 限定在 WORLD_SET_TABS 内），源码里没有 feature="worldbase" 字面量 —— 特例放行，
+  // 判据改为「页签组件存在且其 feature 取值落在 worldSet 页签里」。
+  const dynamicWorldSet = (id === 'worldbase' || id === 'power')
+    && componentSrc.some(c => c.name === 'WorldSetSheet.tsx' && c.text.includes('AIDataSourceNote feature={tab.id}'))
   const where = componentSrc.find(c => c.text.includes(`feature="${id}"`))?.name
+    ?? (dynamicWorldSet ? 'WorldSetSheet.tsx（feature={tab.id} 动态）' : undefined)
   ok(`🔴 ${id}：已被界面引用（否则作者根本看不到）`, !!where, where ?? '未被任何组件引用')
 }
 

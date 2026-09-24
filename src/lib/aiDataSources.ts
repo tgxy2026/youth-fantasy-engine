@@ -105,12 +105,35 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     ],
     excludes: ['错别字 / 语病 / 标点 —— 那些归文字层，这一层只判「讲不讲得通、跟设定冲不冲突」'],
   },
+  // 🔴 2.4.4 六维审计 P2：worldbase / power 此前没登记 —— WorldSetSheet 里的
+  //    <AIDataSourceNote feature={tab.id}> 一直静默不渲染（sourcesOf 返回 null）。
+  //    「母级永远发、子世界只有活跃的才发」的口径从此在说明气泡里可见。
+  'worldbase': {
+    label: '世界设定（母子结构）',
+    sources: [
+      { group: '世界设定 · 母级（全书统一）', items: [], note: '表单全部字段整份发出' },
+      { group: '世界设定 · 子世界', items: [], note: '只有标为「活跃」的那个子世界会发（整份字段）；已完结 / 未激活的不发' },
+    ],
+    excludes: ['「设定草稿箱」—— 不发给 AI；只有点「AI 整理」整理进字段后才发'],
+  },
+  'power': {
+    label: '力量体系（母子结构）',
+    sources: [
+      { group: '力量体系 · 母级（全书统一）', items: [], note: '表单全部字段整份发出' },
+      { group: '力量体系 · 子体系', items: [], note: '只有标为「活跃」的那个子体系会发（整份字段）；已完结 / 未激活的不发' },
+    ],
+    excludes: ['「设定草稿箱」—— 不发给 AI；只有点「AI 整理」整理进字段后才发'],
+  },
   'foreshadow-review': {
     label: '伏笔闭环 AI 审查',
     sources: [
-      { group: '伏笔追踪表', items: ['编号', '名称', '状态', '埋设章 / 回收章'] },
-      { group: '章节总表', items: ['章节标题', '埋设伏笔编号', '回收伏笔编号'] },
-      { group: '时间脉络表', items: [] },
+      // 🔴 2.4.4 六维审计 P1：renderTable 发的是**整表全部列**（只滤系统列）——
+      //    items 列子集会让作者误以为只发那几列（本文件自己的维护约定：列了就代表确实会发）。
+      //    故走 renderTable 的表格组一律 items: [] + note 写「整表全部列」，
+      //    口径由 aiContext 的实现兜底，不再手抄列名（手抄必然漂移——「名称」「埋设章」都不是真列名）。
+      { group: '伏笔追踪表', items: [], note: '整表全部列（除「保密等级」）逐行发出，行数按预算截断' },
+      { group: '章节总表', items: [], note: '整表全部列（除「保密等级」）逐行发出，行数按预算截断' },
+      { group: '时间脉络表', items: [], note: '整表全部列（除「保密等级」）逐行发出，行数按预算截断' },
     ],
     excludes: ['角色卡与世界设定 —— 它只判"伏笔有没有回收"这一类闭环问题'],
   },

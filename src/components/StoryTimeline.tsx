@@ -73,7 +73,8 @@ const BRACKET_STEP = 12
 /** 泳道轴在泳道内的 y 偏移 */
 const LANE_AXIS_OFFSET = 16
 /** 单张卡片估高（章节号标题 + 区间 + 时长 + 事件两行 + 状态徽章） */
-const CARD_MAX_H = 132
+// 🔴 2.4.4 六维审计：估高要**保守**（实卡含历法名+区间行可换行）——估小了卡片底部被裁（同 HistoryTimeline）
+const CARD_MAX_H = 156
 /** 泳道最小高度（只有一两张卡时也别太扁） */
 const LANE_MIN_H = 150
 
@@ -486,6 +487,8 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
       {/* 章节详情弹窗 */}
       {selected && (
         <Modal open onClose={() => setSelected(null)} hideHeader width={480} maxHeight="85vh" bodyClassName="!p-0">
+          {/* 🔴 2.4.4 六维审计：Modal 的 body 不是 flex 容器 —— 自绘头部必须自带 flex 行（同 HistoryTimeline） */}
+          <div className="flex items-start gap-2 p-3">
               <div className="flex-1 min-w-0">
                 <div className="text-10 text-amber font-semibold mb-0.5">
                   {selected.time ? rangeLabel(selected, selected.calName) : '时间未定'}
@@ -500,6 +503,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
 onClick={() => setSelected(null)}
                 className="shrink-0 rounded-lg p-1 text-ink-500 hover:text-ink-200 hover:bg-ink-700 transition-colors"
               ><X size={16} /></Button>
+          </div>
             <div className="p-4 space-y-2.5">
               {detail(selected).map(([label, value]) => (
                 <div key={label} className="text-12 leading-relaxed">
