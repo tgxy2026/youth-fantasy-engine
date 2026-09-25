@@ -12,6 +12,7 @@ import { clearCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun,
 import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '../lib/aiTasks'
 import { DEAI_TEMPLATES } from '../lib/autoContinue'
 import { MAX_CHAPTERS } from '../lib/writingPace'
+import { STORY_TEMPLATES } from '../lib/storyStructures'
 import { NUM_INPUT, fmtSavedAt, LENGTH_META, LENGTHS, TARGET_META, STRATEGY_META, STRATEGIES } from './creativeWritingParts'
 import type { CreativeWritingModel } from './useCreativeWritingModel'
 
@@ -125,6 +126,21 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                     : `每卷多少章：1 ~ ${MAX_CHAPTERS_PER_VOLUME}（硬指标，超出范围会调回最近的边界）`}
                   onChange={v => updateInputs({ chaptersPerVolume: v ?? 20 })} className={NUM_INPUT} />
               </label>
+              {/* 2.5.0 · A1 结构模板：给大纲规划注入「全书结构参考」（选「不使用」＝行为与旧版一致）。
+                  🔴 缺口补齐模式下不显示 —— 缺口批次不注入结构参考（走向已被既有卷约束）。 */}
+              {!gap && (
+                <label className="flex items-center gap-1.5">参考结构
+                  <select value={inp.structureId} disabled={s.running}
+                    onChange={e => updateInputs({ structureId: e.target.value })}
+                    title="给大纲规划注入一套全书结构参考（节拍占比按总章数折算，AI 会贴合但不会机械对齐）；选「不使用」则与以前完全一致。缺口补齐批次不生效。"
+                    className="bg-ink-800 border border-ink-700 rounded-md text-ink-100 text-11 px-2 py-1 outline-none focus:border-amber/40 disabled:opacity-60">
+                    <option value="">不使用</option>
+                    {STORY_TEMPLATES.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}（{t.beats.length} 拍）</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {/* 🔴 缺口模式：本次产出多少章由**缺口**决定，「卷数 × 每卷章数」不参与 —— 必须如实说明 */}
               {gap ? (
                 <span className="text-10 text-amber">

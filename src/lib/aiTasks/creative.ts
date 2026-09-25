@@ -204,6 +204,8 @@ let PLAN_OUTLINE_BASE = `你是网文大纲师，负责产出**分卷大纲**与
 
 const planOutlineSys = (o: {
   volumes: number; perVolume: number; extending: boolean; fromVolumeNo: number; cap: number
+  /** 结构模板注入文本（可选；来自 `storyStructures.formatStructureHint`） */
+  structureHint?: string
 }) => `${PLAN_OUTLINE_BASE}
 
 铁律：
@@ -219,7 +221,7 @@ const planOutlineSys = (o: {
 10. **接续**：这是接着作者已有的大纲往下排 —— 延续已有分卷大纲的走向、已有细纲里的冲突线与伏笔、人物当前状态；不要把已经发生过的事件再演一遍。
 11. 本次的第一卷是全书**第 ${o.fromVolumeNo} 卷**，它必须接住上一卷结尾留下的钩子。
 12. **这是长篇连载的其中一段，不是全书结局**（重要）—— 不要写大结局、不要收束所有主线、不要让主角"功成名就 / 开启新纪元 / 尘埃落定"；本批结尾要留下**新的**悬而未决，给下一批留出推进空间。` : ''}
-
+${o.structureHint ? `\n${o.structureHint}\n` : ''}
 JSON 结构：
 {
   "volumes":[{"title":"","positioning":"本卷一句话定位","stage":"主角境界区间","scope":"舞台范围","opening":"卷首状态","climax1":"第一大高潮","turn":"卷中转折","climax2":"卷末高潮","ending":"卷末状态","events":"事件链 起→承→转→合","subplots":"支线事件"}],
@@ -321,6 +323,12 @@ export interface PlanOutlineInput {
    * `fromNo` 应等于 `sealing.gapFrom`，本批章数由 `gapTo - gapFrom + 1` 决定。
    */
   sealing?: OutlineSealing
+  /**
+   * 「全书结构参考」文本（2.5.0 · A1，可选）—— 由调用方从结构模板生成
+   * （`storyStructures.formatStructureHint`），只进 `planOutlineSys`（从零排 / 续排）；
+   * **缺口补齐（sealing）不注入**——本批只补几章，全书尺度的节拍表对它没有意义。
+   */
+  structureHint?: string
 }
 
 /**
@@ -371,9 +379,10 @@ export async function aiPlanOutline(
         ? `请接着往下排：本次从全书第 ${volNoStart} 卷起，共 ${volCount} 卷、每卷 ${perVolume} 章（对应第 ${start} 章起）。`
         : `请产出分卷大纲与逐章细纲：共 ${volCount} 卷，每卷 ${perVolume} 章。`
     // 提示词三选一：缺口补齐 / 接续 / 从零（缺口那支不产出卷，见 planSealingSys）
+    // 🔴 结构参考只在「从零排 / 接续排」注入；缺口补齐（sealing）不收这个参数。
     const sys = sealing
       ? planSealingSys({ sealing, cap })
-      : planOutlineSys({ volumes: volCount, perVolume, extending, fromVolumeNo: volNoStart, cap })
+      : planOutlineSys({ volumes: volCount, perVolume, extending, fromVolumeNo: volNoStart, cap, structureHint: opts.structureHint })
     const text = await chat(
       cfg,
       [

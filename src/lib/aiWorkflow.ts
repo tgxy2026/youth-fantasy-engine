@@ -36,6 +36,7 @@ import {
   type OutlineResult, type OutlineVolume,
 } from './aiTasks'
 import { sortChapters } from './chapterSeq'
+import { getStoryTemplate, formatStructureHint } from './storyStructures'
 import { writerBudgetFor } from './aiWriterBudget'
 import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from './autoContinue'
 import * as db from './db'
@@ -518,6 +519,12 @@ export interface CreativeWritingOptions {
    * 传 `false` 关闭。
    */
   topUpLast?: boolean
+  /**
+   * 结构模板 id（2.5.0 · A1）：大纲规划时注入「全书结构参考」。
+   * `''`/缺省 = 不使用；🔴 **缺口补齐（sealing）模式不注入**——本批只补几章，
+   * 全书尺度的节拍表对它没有意义（见 `storyStructures.ts` 说明）。
+   */
+  structureId?: string
   /** 闸门①：设定草稿审阅。返回用户勾选的条目；**返回 null = 放弃整条流程** */
   onBibleGate?: (bundle: DraftBundle) => Promise<DraftRow[] | null>
   /**
@@ -718,6 +725,9 @@ export async function runCreativeWriting(
         : `规划 ${plannedVolumes} 卷 × ${perVolume} 章…`)
     // 收字回调同时就是**流式开关**（不传会撞 180s 总超时墙，见 aiTasks 的 longStream 注释）
     let got = 0
+    // 2.5.0 · A1 结构模板：作者选了模板且**不是缺口补齐**时，注入「全书结构参考」当骨架约束。
+    // 🔴 缺口补齐不注入（见 CreativeWritingOptions.structureId 注释）。
+    const structureTpl = sealing ? null : getStoryTemplate(opts.structureId)
     const raw = await aiPlanOutline(material, {
       volumes: plannedVolumes,
       chaptersPerVolume: perVolume,
@@ -725,6 +735,7 @@ export async function runCreativeWriting(
       fromVolumeNo,
       extending,
       ...(sealing ? { sealing } : {}),
+      ...(structureTpl ? { structureHint: formatStructureHint(structureTpl) } : {}),
       signal: ctx.signal,
       onToken: d => {
         got += d.length
