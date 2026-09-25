@@ -127,7 +127,7 @@ export default function CustomThemeDialog({ open, onClose, onApplied }: Props) {
         <div className="flex w-full items-center justify-between">
           <div>
             {saved && (
-              <Button variant="ghost" size="sm" onClick={handleClear} title="删除自定义主题参数，回到母版原色">
+              <Button variant="secondary" size="sm" onClick={handleClear} title="删除自定义主题参数，回到母版原色">
                 清除自定义
               </Button>
             )}

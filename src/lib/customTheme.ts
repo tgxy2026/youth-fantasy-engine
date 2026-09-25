@@ -59,7 +59,7 @@ export const CONTRAST_RULES: { token: string; min: number; bg: string[] }[] = [
   { token: '--amber-soft', min: ACCENT_SOFT_MIN, bg: ['--ink-900'] },
 ]
 
-export interface CustomThemeInput {
+interface CustomThemeInput {
   /** 用户自选强调色（'#rrggbb'）；**空串 = 不换强调色**（用母版 amber 参与色相旋转） */
   accent: string
   /** 色相偏移（度），−180 ~ 180 */
