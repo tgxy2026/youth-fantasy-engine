@@ -8,7 +8,7 @@
 - 禁删 `release/eb-cache/`；禁原生 `prompt/confirm/alert`。清单 `docs/2.3.1-Bug与待优化清单.md` 只记录、明说「处理」才动。提交含 `!`/换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
-- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.4.3**）。
+- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.5.0**，09-25 已封装发布 Gitee：Release 1165942）。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。基线：主 exe 181,097,984B、包 80.96MB。
 - 🔴 **环境两坑**：脚本内 `spawnSync`/`execFileSync` 起子进程被拦成 **EBUSY**（改用「清单外层生成」）；`fs.rmSync` 走 safe-delete（>10MB ETIMEDOUT）⇒ 清产物用 `unlinkSync` 深搜。
 - 🔴 启动**默认停项目管理首页**（首启先过「向导三选一」）；删项目时一并清 `lastProject`。
@@ -107,9 +107,16 @@
 - 🔴 发布链＝skill `novel-studio-packaging`＋`gitee-publish`；🔴 快照 sync 后**必 `git checkout -- .gitignore`**（每轮被覆盖丢密钥防护）。
 - 2.4.0/2.4.1 见 `docs/2.4.0-开发记录.md`。
 
+## 2.5 开发（规划 `docs/2.5.0-版本规划.md`，含第十段封装验收）
+- ✅ **2.5.0 已封装发布（09-25）**：A1 结构模板库（4 套，文案全自撰）＋A2 全书配比对照（章数位置轴归属＋字数 share 度量，防同义反复）＋B1 安装目录可选（三路径静默实测过，不回滚）＋C1 自定义主题（三参数派生＋WCAG 守卫；预览/生效分离、快照回滚）。
+- 🔴 **配比归属看章数位置轴、度量用字数 share**（字数轴中点＝同义反复，量不出偏差）；舍入用最大余数法。
+- 🔴 bump-version.mjs 假设三处同旧版本号——package.json 先行升级后再跑会断言失败，改内联替换 lock 前 2 处。
+- 🔴 Gitee `POST /releases` 必须带 `target_commitish`（400 否则）；NSIS 默认装目录名＝package.json `name`（novel-studio）非 productName。
+- 后续 2.5.1＝A3 灵感转化＋D1 导师预设。
+
 ## 对外推广
 - 🔴 文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→「口令」）；链接压最末＋后有缓冲。
 - 🔴 **发帖顺序**：承诺的版本号须**先在夸克盘＋Gitee 上架**再发帖。系列稿第 0/1/2/3 篇**全部发布完毕**（09-24 收官）。
 - 🔴 **本窗口职能（09-24 起）**：只输出**版本更新说明**，不再写项目介绍帖。介绍稿与截图已清理，仅留 `docs/小黑盒推广帖/截图/99-封面-青春幻想引擎.png`（2.4.0 封面）＋同目录 `封面源-青春幻想引擎.html`（改版本号只改 `.subtitle` 一行）；《小黑盒项目推广帖写法学习笔记.md》仍保留。
-- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。对外：Gitee **2.4.3**／`1162649`；夸克也有 **2.4.3**（🔴 在「2.4.0版本」目录里——该盘习惯＝主版本目录放系列最新补丁，核版本看**文件名**别信目录名）。
+- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。对外：Gitee **2.5.0**／`1165942`（09-25）；夸克还停在 **2.4.3**（🔴 在「2.4.0版本」目录里——该盘习惯＝主版本目录放系列最新补丁，核版本看**文件名**别信目录名；2.5.0 夸克未传，等主人哥哥）。
 - 🔴 令牌 `G:/AI软件/.gitee-token.txt`。🔴 push 只需 `GIT_CONFIG_NOSYSTEM=1`；🔴🔴 **绝不可再加 `GIT_CONFIG_GLOBAL=NUL`**（屏蔽 GCM ⇒ 静默挂死）。
