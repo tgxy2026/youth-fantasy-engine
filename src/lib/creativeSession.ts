@@ -96,6 +96,13 @@ export interface CreativeInputs {
    * 只补最后一章（最新章可放开、历史章冻结），只动正文与字数。
    */
   topUpLast: boolean
+  /**
+   * 结构模板（2.5.0 · A1）：大纲规划时给 AI 的「全书结构参考」。
+   * `''` = 不使用（默认，行为与旧版完全一致）；合法 id 见 `storyStructures.STORY_TEMPLATES`。
+   * 🔴 仅在「从零排 / 续排」时注入；**缺口补齐模式不注入**（走向已被既有卷约束，全书尺度的
+   * 节拍表对补几章没有意义，硬塞反而让模型两头为难）。
+   */
+  structureId: string
 }
 
 export const DEFAULT_INPUTS: CreativeInputs = {
@@ -114,6 +121,7 @@ export const DEFAULT_INPUTS: CreativeInputs = {
   useOutline: true,
   reviewEach: true,
   topUpLast: true,
+  structureId: '',
 }
 
 /** 结果摘要（落盘用；完整结果里的草稿行可达几十条，没必要存） */
@@ -293,6 +301,15 @@ export function updateInputs(patch: Partial<CreativeInputs>) {
 export async function saveInputsNow() {
   const ok = await flushPersist()
   notice(ok ? '已保存' : '保存失败：当前没有打开的项目', ok ? 'success' : 'error')
+}
+
+/**
+ * 静默落盘当前输入（不弹 notice）—— 供**其他页签**的轻量写入用
+ * （如检查工具的「全书结构配比」面板改 `structureId`）：那边没有消费 notice 的组件，
+ * 走 `saveInputsNow` 的 toast 会延迟到下次打开创意写作面板才弹出来，反而莫名其妙。
+ */
+export async function saveInputsQuiet() {
+  await flushPersist()
 }
 
 /**
@@ -524,6 +541,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         deAi: { enabled: inp.deAiOn, prompt: deAiPromptOf(inp) },
         useOutline: inp.useOutline,
         topUpLast: inp.topUpLast,
+        structureId: inp.structureId,
         signal: ctl.signal,
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => {

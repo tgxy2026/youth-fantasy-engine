@@ -31,7 +31,11 @@ win:
 nsis:
   oneClick: false                # 非一键安装：可自选安装目录
   perMachine: false              # 按用户安装，无需管理员权限
-  allowToChangeInstallationDirectory: false   # 锁定到当前用户目录，杜绝误装 Program Files 再次引入管理员需求
+  # 2.5.0 · B1 恢复自定义安装目录（社区反馈）。默认路径不变（仍是当前用户目录，无需管理员）；
+  # 风险兜底 = 发布说明写明「装到无写权限的目录（如 Program Files）会因权限不足失败」，
+  # 不做向导内权限探测（明确不做）。🔴 出包须实测三路径（默认装 / 自定义目录装 / 老版本覆盖升级），
+  # 若覆盖升级路径漂移或卸载残留恶化 → 回滚本行为 false（见 docs/2.5.0-版本规划.md · B1 中止判据）。
+  allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: 青春幻想引擎

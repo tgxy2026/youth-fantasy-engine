@@ -128,8 +128,10 @@ __resetMockStores()
   ok('章节清单：孤儿章归入未分卷', digestFull.includes('未分卷') && digestFull.includes('无主孤章'))
 
   // ---------- H. 连续性检查：畸形标题互含 + 特殊字符 ----------
-  await memoryOps.put('tableRows', { id: 'tl1', projectId: pid, tabId: 'timeline', order: 0, data: { '章节号': '第1章', '章节标题': '修炼', '故事内时间': '3024年3月9日', '主角当前境界/年龄': '淬体一重/15岁' } })
-  await memoryOps.put('tableRows', { id: 'tl2', projectId: pid, tabId: 'timeline', order: 1, data: { '章节号': '第2章', '章节标题': '修炼后续与" quoted"｜竖线', '故事内时间': '3024年3月1日', '主角当前境界/年龄': '淬体三重/15岁' } })
+  // ⚠️ 2.4.4 起时间脉络「故事内时间」拆为「发生时间 / 结束时间」，连续性检查读的是「发生时间」
+  //     （continuityCheck.ts 第 1 类）—— 喂旧字段名日期解析为 null，「时间倒流」会静默检不出。
+  await memoryOps.put('tableRows', { id: 'tl1', projectId: pid, tabId: 'timeline', order: 0, data: { '章节号': '第1章', '章节标题': '修炼', '发生时间': '3024年3月9日', '主角当前境界/年龄': '淬体一重/15岁' } })
+  await memoryOps.put('tableRows', { id: 'tl2', projectId: pid, tabId: 'timeline', order: 1, data: { '章节号': '第2章', '章节标题': '修炼后续与" quoted"｜竖线', '发生时间': '3024年3月1日', '主角当前境界/年龄': '淬体三重/15岁' } })
   await memoryOps.put('tableRows', { id: 'fs1', projectId: pid, tabId: 'foreshadow', order: 0, data: { '编号': 'F0001', '状态': '未回收', '伏笔内容': '测试｜含竖线' } })
   await memoryOps.put('tableRows', { id: 'ms1', projectId: pid, tabId: 'chapter-master', order: 0, data: { '章节号': '第1章', '章节标题': '标题含｜竖线与"引号', '出场人物': '陈渊、无名氏', '埋设伏笔编号': 'F0001, F9999', '回收伏笔编号': '' } })
   // 节奏预警用例：爽点 第1章→第5章 间隔 4（超 3 预警线）；存稿缓冲最新一天为 2（低于 3）

@@ -32,6 +32,14 @@ const CARD_SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = 
   '保密等级': Object.entries(SABC_LABELS).map(([value, label]) => ({ value, label })),
 }
 
+/**
+ * 长文本字段**不封顶**的卡片页签（单一判据）：名单内的页签，其文本字段随内容一路长高、
+ * 永不出现内部滚动条（AutoTextarea 传 maxHeight=0）；不在名单内的仍走默认 360px 封顶。
+ * 「其他设定」是兜底页、一条卡就是一段长短不一的设定说明，写多长都该完整摊开（2026-09-25 社区反馈）。
+ * 🔴 新页签想要同样手感 → **只往这个 Set 加 tab.id**，别在渲染处加 if。
+ */
+const UNBOUNDED_CARD_TABS = new Set(['misc-settings'])
+
 interface Props {
   tab: TabDef
   /**
@@ -464,6 +472,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                                 placeholder="点击填写…"
                                 className="text-12"
                                 minHeight={32}
+                                maxHeight={UNBOUNDED_CARD_TABS.has(tab.id) ? 0 : undefined}
                               />
                             )}
                             {!val && field.example && (

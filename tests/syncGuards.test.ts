@@ -128,9 +128,22 @@ async function main() {
   // 覆盖本地新记录 —— 编辑先落本地生效、随即被静默回滚并写盘（磁盘不可逆丢失）。
   {
     let pushDown = false
+    // 🔴 mock 必须模拟「真云」状态机：push 成功后云端要**真的持有** rev+载荷。
+    //    2.4.4 六维审计 P1 的空载荷守卫（syncCore ensureInit）把「200 + 空载荷 + 本机基线非空」
+    //    定为异常（按读失败处理，防文件截断清空基线）—— 旧 mock 的 pull 恒返回 enc:null，
+    //    首跑 init 时基线为空没事，但 p1 推成功后基线非空，自愈重入 ensureInit 就会被守卫
+    //    拦下 throw → 闩锁永远清不掉。那是 mock 与真实协议不符，不是自愈路径坏了：
+    //    真实云端只要文件没截断，pull 必然带得回 push 上去的载荷。
+    let cloudRev = 0
+    let cloudEnc: string | null = null
     const { t } = scriptedTransport({
-      pull: () => ({ status: 200, rev: 1, enc: null }),
-      push: () => (pushDown ? Promise.reject(new Error('disk busy')) : { status: 200, rev: 2 }),
+      pull: () => ({ status: 200, rev: cloudRev, enc: cloudEnc }),
+      push: (baseRev, enc) => {
+        if (pushDown) return Promise.reject(new Error('disk busy'))
+        cloudRev = baseRev + 1
+        cloudEnc = enc
+        return { status: 200, rev: cloudRev }
+      },
     })
     const cloud = createCloudStore(t)
     cloud.onFallback(() => { /* 用例只关心闩锁状态，兜底回调不必做事 */ })

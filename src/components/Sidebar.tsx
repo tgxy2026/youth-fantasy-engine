@@ -1,5 +1,5 @@
 import { Z } from '../lib/zLayer'
-import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer } from 'lucide-react'
 import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
 import { confirmDialog } from './dialogs'
@@ -8,7 +8,7 @@ import { GROUPS, TABS, EDITOR_TAB, tabVisible, getVolumeTabs, getVolumeLedgerTab
 import type { TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
-import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom, isZoomAuto } from '../lib/theme'
+import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom, isZoomAuto, getStoredCustomTheme } from '../lib/theme'
 import { DESKTOP } from '../lib/desktop'
 import { DesktopDataBar } from './Desktop'
 import CloudFileSyncBar from './CloudFileSyncBar'
@@ -17,6 +17,7 @@ import { useResizable } from '../lib/useResizable'
 import { usePersistedBool, usePersistedSet } from '../lib/uiPrefs'
 import { APP_VERSION_LABEL } from '../lib/env'
 import { Button } from './Button'
+import CustomThemeDialog from './CustomThemeDialog'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
   '工作面板': <LayoutDashboard size={15} />,
@@ -61,6 +62,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   const [zoom, setZoom] = useState(getStoredZoom())
   // 「跟随窗口」模式：窗口尺寸变化时缩放会被自动重算（见 App.tsx 的 resize 监听）
   const [zoomAuto, setZoomAuto] = useState(isZoomAuto())
+  const [customThemeOpen, setCustomThemeOpen] = useState(false)
   const changeTheme = (id: typeof theme) => setTheme(applyTheme(id))
   /** 手动调整即退出跟随模式，此后只认这个值 */
   const changeZoom = (d: number) => {
@@ -299,14 +301,30 @@ style={{ zIndex: Z.pageBase }}
           <div className="flex items-center gap-1.5 mb-1.5">
             <Palette size={11} />
             <span>主题</span>
+            {/* 自定义主题入口（2.5.0 · C1）：总是打开弹窗（已存参数则载入当前参数继续调） */}
+            <Button
+              variant="ghost" iconOnly size="xs" type="button"
+              onClick={() => setCustomThemeOpen(true)}
+              title="自定义主题（母版 + 强调色 + 色相偏移）"
+              aria-label="自定义主题"
+              className="ml-auto -mr-1"
+            >
+              <SlidersHorizontal size={11} />
+            </Button>
           </div>
-          {/* 允许换行：主题增至 8 套后单行会挤压色块，侧栏偏窄时自动折行 */}
+          {/* 允许换行：主题增至 9 套后单行会挤压色块，侧栏偏窄时自动折行 */}
           <div className="flex flex-wrap gap-1.5">
             {THEMES.map(t => (
               <Button variant="bare"
                 key={t.id}
-                title={`${t.name}（${t.desc}）`}
-                onClick={() => changeTheme(t.id)}
+                title={t.id === 'custom'
+                  ? `${t.name}（${t.desc}）—— 点这里${getStoredCustomTheme() ? '切换，旁边的滑杆图标可调整参数' : '开始配置'}`
+                  : `${t.name}（${t.desc}）`}
+                onClick={() => {
+                  // custom 圆点：已有参数直接切换生效；首次（无参数）打开配置弹窗
+                  if (t.id === 'custom' && !getStoredCustomTheme()) setCustomThemeOpen(true)
+                  else changeTheme(t.id)
+                }}
                 className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${theme === t.id ? 'border-amber ring-1 ring-amber/50' : 'border-ink-600'}`}
                 style={{ background: t.swatch }}
               />
@@ -355,6 +373,14 @@ style={{ zIndex: Z.pageBase }}
         {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
         </div>
       </div>
+      {/* 自定义主题弹窗（2.5.0 · C1）：
+          · 关闭未应用 → 弹窗内部已回滚，这里读回真实主题同步 state；
+          · 应用 → yfe-theme 已落盘 'custom'，直接对齐。 */}
+      <CustomThemeDialog
+        open={customThemeOpen}
+        onClose={() => { setCustomThemeOpen(false); setTheme(getStoredTheme()) }}
+        onApplied={() => { setTheme('custom'); setCustomThemeOpen(false) }}
+      />
     </aside>
   )
 }

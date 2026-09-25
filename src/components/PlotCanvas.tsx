@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import type { PointerEvent as RPointerEvent } from 'react'
-import { Loader2, Eraser, Sparkles, GitBranch, Check, X, Move } from 'lucide-react'
+import { Loader2, Eraser, Sparkles, GitBranch, Check, X, Move, LayoutGrid } from 'lucide-react'
 import * as db from '../lib/db'
 import type { TableRow, TabDef } from '../lib/types'
 import { aiBriefing } from '../lib/aiTasks'
 import { buildProjectContext } from '../lib/aiContext'
+import { STORY_TEMPLATES, getStoryTemplate } from '../lib/storyStructures'
 import { useAIReady } from '../lib/useAIReady'
 import { showToast } from './dialogs'
 import HelpPopover from './HelpPopover'
@@ -13,7 +14,9 @@ import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 
 
-type CardType = 'foreshadow' | 'hook' | 'character' | 'next'
+// 🔴 'beat'（结构节拍）只由「按模板铺节点」本地生成（2.5.0 · A1），**不进 HEADER_TO_TYPE**
+//    —— AI 章节简报解析永远不产 beat 卡，两套来源互不污染。
+type CardType = 'foreshadow' | 'hook' | 'character' | 'next' | 'beat'
 interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number }
 type Conn = [string, string]
 interface PlotPersist { selected: string[]; cards: CardItem[]; conns: Conn[] }
@@ -23,6 +26,7 @@ const TYPE_META: Record<CardType, { label: string; color: string }> = {
   hook: { label: '钩子爽点', color: '#e8b36a' },
   character: { label: '角色状态', color: '#8fd0c4' },
   next: { label: '下一章衔接', color: '#8fb4e8' },
+  beat: { label: '结构节拍', color: '#b9a7e8' },
 }
 const HEADER_TO_TYPE: Record<string, CardType> = {
   '待办伏笔': 'foreshadow', '钩子与爽点': 'hook', '角色状态提醒': 'character', '下一章衔接': 'next',
@@ -65,6 +69,8 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   const [generating, setGenerating] = useState<{ i: number; total: number } | null>(null)
   /** 推演信息密度：完整=章节全要素（准/慢/费 token）；简略=只喂「章节压缩摘要」（约原文 1/10，快/省 token） */
   const [briefMode, setBriefMode] = useState(false)
+  /** 2.5.0 · A1：结构模板铺节点的临时选择（一次性动作不持久化 —— 铺出的卡片已进 plotCanvas 快照） */
+  const [beatTplId, setBeatTplId] = useState('')
   /** 滚动容器可视尺寸（画布默认就这么大，不再固定硬撑滚动条） */
   const [vp, setVp] = useState({ w: 1200, h: 800 })
   const [panning, setPanning] = useState(false)
@@ -194,6 +200,30 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
     if (el) { el.scrollLeft = 0; el.scrollTop = 0 }
   }
 
+  /**
+   * 2.5.0 · A1「按模板铺节点」：把所选结构的节拍铺成卡片 —— **纯本地零 AI**。
+   * 与推演卡可混排、可连线：作者常用法＝先铺节拍骨架，再连出全书走向，最后对照排细纲。
+   * 布局：接在现有卡片最右侧（与 generate 同口径），每行 3 张网格排列；STC 15 拍＝3×5。
+   */
+  const layBeats = () => {
+    const tpl = getStoryTemplate(beatTplId)
+    if (!tpl) return
+    const baseX = cards.length ? Math.max(...cards.map(c => c.x)) + 360 : CARD_W / 2 + 40
+    const PER_ROW = 3
+    const stepX = 300
+    const stepY = 170
+    const newCards: CardItem[] = tpl.beats.map((b, i) => ({
+      id: `b${Date.now()}_${i}`,
+      chapter: tpl.name,
+      type: 'beat',
+      text: `${b.name}（${b.from}%-${b.to}%）：${b.brief}`,
+      x: Math.min(MAX_W - 40, baseX + (i % PER_ROW) * stepX),
+      y: Math.min(MAX_H - 40, 110 + Math.floor(i / PER_ROW) * stepY),
+    }))
+    setCards(prev => [...prev, ...newCards])
+    showToast(`已铺出「${tpl.name}」${tpl.beats.length} 个节拍卡（紫色）`, 'success')
+  }
+
   const removeCard = (id: string) => {
     setCards(prev => prev.filter(c => c.id !== id))
     setConns(prev => prev.filter(([a, b]) => a !== id && b !== id))
@@ -274,6 +304,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
           >
             {'把本章写作简报升级成可拖拽、可连线的结构化推演画布\n\n'
               + '· 左侧勾选章节 → 点「生成推演」，复用颉文姬「本章写作简报」同一 AI 管线，每章生成一列卡片（待办伏笔 / 钩子爽点 / 角色状态 / 下一章衔接）。\n'
+              + '· 结构模板：左下角选一套叙事结构，点「按模板铺节点」把节拍铺成紫色卡片（纯本地、不耗 AI）；与推演卡混排连线，可以对着骨架推演全书走向。\n'
               + '· 拖动卡片自由排布；按住空白处左键拖动可平移画布，卡片多到超出一屏时画布自动扩展并出现滚动条。\n'
               + '· 连接模式：依次点两张卡即可连成一条推演链；鼠标移到连线上点「×」可取消该连线。\n'
               + '· 推演内容会自动保存为项目快照（切换页面 / 重启都不丢失）。「清空推演本」可一键复位。'}
@@ -334,6 +365,25 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
               {generating ? <><Loader2 size={12} className="animate-spin" /> 生成中 {generating.i}/{generating.total}</> : <><Sparkles size={12} /> 生成推演</>}
             </Button>
             <Button onClick={clearCanvas} variant="danger" size="md" className="w-full flex items-center justify-center text-11"><Eraser size={11} /> 清空推演本</Button>
+
+            {/* 2.5.0 · A1 结构模板铺节点：纯本地零 AI；选择不持久化（铺出的卡片已进快照） */}
+            <div className="flex items-center gap-1.5 text-10 text-ink-500 px-0.5 pt-1">
+              <LayoutGrid size={10} /> 结构模板
+            </div>
+            <select value={beatTplId} onChange={e => setBeatTplId(e.target.value)}
+              className="w-full bg-ink-800 border border-ink-700 rounded-md text-ink-100 text-11 px-2 py-1 outline-none focus:border-amber/40"
+              title="选一套叙事结构模板，把节拍一键铺成画布卡片（纯本地，不耗 AI）；可与推演卡混排、连线">
+              <option value="">选择模板…</option>
+              {STORY_TEMPLATES.map(t => (
+                <option key={t.id} value={t.id}>{t.name}（{t.beats.length} 拍）</option>
+              ))}
+            </select>
+            <Button variant="secondary" disabled={!beatTplId} onClick={layBeats}
+              className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-11 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="把所选模板的全部节拍铺成结构卡（卡片右上角显示模板名）；已铺的推演卡不受影响">
+              <LayoutGrid size={11} /> 按模板铺节点
+            </Button>
+
             {!ai.ready && <div className="text-10 text-ink-500 text-center">未配置 AI 模型，生成按钮已禁用</div>}
           </div>
         </div>
