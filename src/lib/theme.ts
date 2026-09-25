@@ -2,6 +2,12 @@
 // 主题通过给 <html> 设置 data-theme，配合 index.css 中按 [data-theme] 重定义的 CSS 变量生效；
 // 由于全项目颜色都走 Tailwind 的 ink/amber 调色板（已改为 CSS 变量驱动），切换主题无需改动任何组件。
 
+import { deriveCustomTheme, ALL_THEME_VAR_KEYS, INK_VAR_KEYS, GRAPH_NEUTRAL_KEYS, GRAPH_ACCENT_KEYS, type ThemeBase, type CustomThemeVars } from './customTheme'
+
+// 门面显式再导出（勿 export *）：弹窗等消费方统一从本模块取主题相关类型
+// （CustomThemeParams / ThemeId 本文件已声明并导出，此处只补 CustomThemeVars）
+export type { CustomThemeVars }
+
 export type ThemeId =
   | 'dark'
   | 'eye-care'
@@ -11,6 +17,7 @@ export type ThemeId =
   | 'porcelain'
   | 'pine-ink'
   | 'peach-note'
+  | 'custom'
 
 export interface ThemeDef {
   id: ThemeId
@@ -29,7 +36,11 @@ export const THEMES: ThemeDef[] = [
   { id: 'porcelain', name: '青花', desc: '青白瓷·浅色', swatch: '#e4ecf4' },
   { id: 'pine-ink', name: '松烟墨', desc: '墨绿松烟·深色', swatch: '#0a1212' },
   { id: 'peach-note', name: '桃笺', desc: '暖粉胭脂·浅色', swatch: '#faecee' },
+  { id: 'custom', name: '自定义', desc: '母版派生 · 可调色', swatch: 'conic-gradient(#e88, #ec8, #8c8, #8cc, #88c, #c8c, #e88)' },
 ]
+
+/** 深浅基调（决定 color-scheme 与 graph 色是否参与派生）——与 index.css 各块的 color-scheme 声明保持一致 */
+const DARK_THEMES = new Set<string>(['dark', 'midnight', 'dusk-violet', 'pine-ink'])
 
 const THEME_KEY = 'yfe-theme'
 const ZOOM_KEY = 'yfe-ui-zoom'
@@ -46,17 +57,107 @@ function safeGet(key: string): string | null {
   try { return localStorage.getItem(key) } catch { return null }
 }
 
+// ============ 自定义主题（2.5.0 · C1：母版 + 强调色 + 色相偏移，三参数派生）============
+
+export interface CustomThemeParams {
+  baseId: Exclude<ThemeId, 'custom'>
+  /** 用户强调色（'#rrggbb'）；空串 = 不换强调色（用母版 amber 参与色相旋转） */
+  accent: string
+  hueShift: number
+}
+
+const CUSTOM_KEY = 'yfe-custom-theme'
+
+export function getStoredCustomTheme(): CustomThemeParams | null {
+  const raw = safeGet(CUSTOM_KEY)
+  if (!raw) return null
+  try {
+    // 🔴 断言放宽为 unknown 再手动收窄：脏 localStorage 可能存任何东西（包括 baseId:'custom'、
+    //    数字、对象）。若直接断言 Partial<CustomThemeParams>，baseId 类型不含 'custom'，
+    //    防御比较会被 TS 判 TS2367 拦下——但那道运行时防御恰恰是必须的。
+    const p = JSON.parse(raw) as { baseId?: unknown; accent?: unknown; hueShift?: unknown }
+    if (!p || typeof p.baseId !== 'string' || p.baseId === 'custom') return null
+    if (!THEMES.some(t => t.id === p.baseId)) return null
+    return {
+      baseId: p.baseId as CustomThemeParams['baseId'],
+      accent: typeof p.accent === 'string' ? p.accent : '',
+      hueShift: Number.isFinite(p.hueShift) ? Math.max(-180, Math.min(180, Number(p.hueShift))) : 0,
+    }
+  } catch { return null }
+}
+
+/**
+ * 清掉所有内联主题变量。🔴 离开 custom 时必须逐个清 —— 内联 style 优先级高于任何选择器，
+ * 残留一条就会悄悄覆盖内置主题的那一档。清单与写入同用 `ALL_THEME_VAR_KEYS`（写什么删什么）。
+ */
+function clearCustomInlineVars(): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  for (const key of ALL_THEME_VAR_KEYS) root.style.removeProperty(key)
+  root.style.colorScheme = ''
+}
+
+/**
+ * 应用自定义主题：切到母版 → 读母版变量 → 派生 → 内联写入 → 存参数。
+ * 🔴 **存参数不存派生值**：以后改进派生算法，所有用户的自定义主题自动升级。
+ * 🔴 读母版前必须先清内联变量并切 data-theme，否则 getComputedStyle 读到的是 custom 自己的值；
+ *    浅色母版的 --graph-* 是 var() 引用（且只在浅色覆盖段里定义），不读 —— ink 变了引用自动跟随。
+ * 🔴 本函数不写 THEME_KEY：只负责「算 + 生效 + 存参数」；把 yfe-theme 切到 'custom' 归 applyTheme 管
+ *    （弹窗实时预览时调用本函数，确认选用才走 applyTheme('custom') 落盘）。
+ * 返回派生结果（弹窗展示「强调色被守卫微调」提示用）；document 不可用时返回 null。
+ */
+export function applyCustomTheme(params: CustomThemeParams): CustomThemeVars | null {
+  if (typeof document === 'undefined') return null
+  const root = document.documentElement
+  clearCustomInlineVars()
+  root.dataset.theme = params.baseId
+  const cs = getComputedStyle(root)
+  const read = (keys: readonly string[]) => {
+    const out: Record<string, string> = {}
+    for (const k of keys) {
+      const v = cs.getPropertyValue(k).trim()
+      if (v && !v.includes('var(')) out[k] = v
+    }
+    return out
+  }
+  const isDark = DARK_THEMES.has(params.baseId)
+  const base: ThemeBase = {
+    vars: {
+      ...read(INK_VAR_KEYS),
+      ...(isDark ? read(GRAPH_NEUTRAL_KEYS) : {}),
+      ...(isDark ? read(GRAPH_ACCENT_KEYS) : {}),
+    },
+    colorScheme: isDark ? 'dark' : 'light',
+  }
+  const derived = deriveCustomTheme(base, { accent: params.accent, hueShift: params.hueShift })
+  for (const [k, v] of Object.entries(derived.vars)) root.style.setProperty(k, v)
+  root.style.colorScheme = derived.colorScheme
+  root.dataset.theme = 'custom'
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(params)) } catch { /* 忽略隐私模式写失败 */ }
+  return derived
+}
+
 export function getStoredTheme(): ThemeId {
   const v = safeGet(THEME_KEY)
   return THEMES.some(t => t.id === v) ? (v as ThemeId) : 'eye-care'
 }
 
 export function applyTheme(id: ThemeId): ThemeId {
+  if (id === 'custom') {
+    const params = getStoredCustomTheme()
+    if (params) {
+      applyCustomTheme(params)
+      try { localStorage.setItem(THEME_KEY, 'custom') } catch { /* 忽略隐私模式写失败 */ }
+      return 'custom'
+    }
+    id = 'eye-care' // 无参数兜底（存储被清 / 首次异常）：回默认主题而不是黑屏
+  }
+  clearCustomInlineVars()
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.theme = id
   }
   try { localStorage.setItem(THEME_KEY, id) } catch { /* 忽略隐私模式写失败 */ }
-  return id
+  return id as ThemeId
 }
 
 /** 界面缩放范围：80% ~ 160% */
@@ -77,8 +178,8 @@ export function isZoomAuto(): boolean {
  * 界面缩放取值：**手动调过就用存储值，否则按窗口宽度自动适配**。
  *
  * 🔴 旧实现是「存储里有值就永远用它」—— 大屏作者首次运行明明自动算出了 132%，
- *    可只要手动碰过一次（哪怕只为临时看清某处调到 110%），这个值就被永久钉死：
- *    之后换更大屏 / 全屏，字号偏小且再也不会自适应。故补 manual 标记区分两种情况。
+ * 可只要手动碰过一次（哪怕只为临时看清某处调到 110%），这个值就被永久钉死：
+ * 之后换更大屏 / 全屏，字号偏小且再也不会自适应。故补 manual 标记区分两种情况。
  */
 export function getStoredZoom(): number {
   if (isZoomAuto()) return autoZoom()
