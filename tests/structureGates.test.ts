@@ -172,11 +172,18 @@ if (!SRC) {
   }
   // ③-b `src/lib/**` 下不得再冒出「纯数据文件」：没有任何函数/箭头赋值、却超过 200 行的导出字面量。
   //     判据取「无 function / 无 => / 无 class」——`lib/seedData.ts` 有 12 处工厂函数，故不会误伤。
+  //     ⚠️ 但纯**类型**文件（interface/type 为主）也天然没有函数，行数一涨就会被误伤
+  //     （2026-09-25：types.ts 涨到 222 行后中招）—— 类型声明是代码结构不是数据，用具名豁免登记
+  //     （同 ④ 的 JSON_PARSE_OK 手法：例外必须写清理由，否则就是给自己开后门）。
+  const TYPE_FILE_OK: Record<string, string> = {
+    'src/lib/types.ts': '类型定义文件：15 个 interface/type + 1 个单行默认值常量（DEFAULT_CALENDAR_RULE，随 CalendarRule 类型走才内聚），不是数据表',
+  }
   {
     const bad: string[] = []
     for (const f of files) {
       const r = rel(f)
       if (!r.startsWith('src/lib/')) continue
+      if (TYPE_FILE_OK[r]) continue
       const t = clean.get(f)!
       const hasLogic = /\bfunction\b|=>|\bclass\b/.test(t)
       const lines = text.get(f)!.split('\n').length
