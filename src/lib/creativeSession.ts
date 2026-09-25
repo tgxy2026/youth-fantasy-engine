@@ -304,6 +304,15 @@ export async function saveInputsNow() {
 }
 
 /**
+ * 静默落盘当前输入（不弹 notice）—— 供**其他页签**的轻量写入用
+ * （如检查工具的「全书结构配比」面板改 `structureId`）：那边没有消费 notice 的组件，
+ * 走 `saveInputsNow` 的 toast 会延迟到下次打开创意写作面板才弹出来，反而莫名其妙。
+ */
+export async function saveInputsQuiet() {
+  await flushPersist()
+}
+
+/**
  * 「清空」按钮：清空一句话想法，并立刻落盘。
  *
  * 🔴 清空后必须**立刻写盘**：若仍走 1 秒防抖，作者清完马上刷新/切页签，
