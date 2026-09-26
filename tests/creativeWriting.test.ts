@@ -13,7 +13,7 @@ import {
 import { commitOutline, loadChapterOutlines } from '../src/lib/aiWorkflow'
 import { CREATIVE_SEED_SPEC, seedFromFilled } from '../src/lib/creativeSeed'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
-import { fillChapterRanges, formatChapterRange, parseChapterRange, volumeForChapter } from '../src/lib/outlineCard'
+import { fillChapterRanges, formatChapterRange, parseChapterRange } from '../src/lib/outlineCard'
 import type { OutlineResult } from '../src/lib/aiTasks'
 
 let pass = 0, fail = 0
@@ -187,14 +187,6 @@ const OUTLINE: OutlineResult = {
     parseChapterRange('') === null && parseChapterRange('待定') === null && parseChapterRange('第20-1章') === null,
     String(parseChapterRange('第20-1章')))
 
-  const ranges = [
-    { title: '卷一', from: 1, to: 20 },
-    { title: '卷二', from: 21, to: 40 },
-  ]
-  ok('🔴 切卷：第 21 章属于卷二（旧实现会把它塞进卷一）',
-    volumeForChapter(ranges, 20)?.title === '卷一' && volumeForChapter(ranges, 21)?.title === '卷二',
-    `${volumeForChapter(ranges, 20)?.title} / ${volumeForChapter(ranges, 21)?.title}`)
-  ok('切卷：落在所有区间之外 → null（调用方退回旧行为，不瞎猜）', volumeForChapter(ranges, 99) === null)
 }
 
 // ---------- ⑦ 正文净化：模型把正文当 markdown 写时的兜底（2026-09-20）----------

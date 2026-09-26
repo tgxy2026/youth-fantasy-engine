@@ -4,7 +4,7 @@
 // 切错了不会报错，只会让后续「抽取」少抽几章、或把标题混进正文。
 // 更危险的是 charStart/charEnd 算错：抽取出的实体带原文引用，引用核对靠它回定位，
 // 算了错区间就会把「原文有据」判成「无据」，置信度静默掉档。
-import { chunkText, cnToNum, estTokens, isVolumeTitle, splitNovelText } from '../src/lib/bookbreak/split'
+import { chunkText, estTokens, isVolumeTitle, splitNovelText } from '../src/lib/bookbreak/split'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -12,16 +12,7 @@ function ok(name: string, cond: boolean, extra = '') {
   else { fail++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`) }
 }
 
-// ---------- ① 中文数字归一 ----------
-ok('中文数字：一 → 1', cnToNum('一') === 1, String(cnToNum('一')))
-ok('中文数字：十 → 10（单独出现按 10 算）', cnToNum('十') === 10, String(cnToNum('十')))
-ok('中文数字：十八 → 18', cnToNum('十八') === 18, String(cnToNum('十八')))
-ok('中文数字：二十 → 20', cnToNum('二十') === 20, String(cnToNum('二十')))
-ok('中文数字：三十一 → 31', cnToNum('三十一') === 31, String(cnToNum('三十一')))
-ok('中文数字：壹佰 → 100（大写）', cnToNum('壹佰') === 100, String(cnToNum('壹佰')))
-ok('中文数字：两千一百 → 2100', cnToNum('两千一百') === 2100, String(cnToNum('两千一百')))
-ok('阿拉伯数字直通：123 → 123', cnToNum('123') === 123, String(cnToNum('123')))
-ok('空串 → NaN', Number.isNaN(cnToNum('')))
+// ---------- ① estTokens（字数估算） ----------
 ok('estTokens：2 个汉字 → 2', estTokens('你好') === 2, String(estTokens('你好')))
 
 // ---------- ② 章节识别（主流格式） ----------

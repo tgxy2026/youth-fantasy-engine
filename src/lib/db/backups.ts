@@ -119,13 +119,6 @@ export async function getBackupPayload(id: string): Promise<ProjectBundle | unde
   return legacy?.bundle
 }
 
-/** 备份总占用（字节）—— 支持按项目子集过滤（孤儿备份统计用） */
-export async function backupsTotalBytes(projectIds?: Set<string>): Promise<number> {
-  const all = await ops.getAll<BackupMeta | LegacyBackupRecord>('backups')
-  return all
-    .filter(b => !projectIds || projectIds.has(b.projectId))
-    .reduce((s, b) => s + withBytes(b).bytes, 0)
-}
 
 /** 删除一份备份：**元数据与载荷一起删**（只删一边就是孤儿载荷，白占空间） */
 export async function deleteBackup(id: string) {

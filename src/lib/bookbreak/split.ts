@@ -83,35 +83,6 @@ export function isVolumeTitle(line: string): boolean {
   return VOLUME_TITLE_RE.test(line ?? '')
 }
 
-const CN_DIGIT: Record<string, number> = {
-  零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
-  壹: 1, 贰: 2, 叁: 3, 肆: 4, 伍: 5, 陆: 6, 柒: 7, 捌: 8, 玖: 9,
-}
-const CN_UNIT: Record<string, number> = { 十: 10, 百: 100, 千: 1000, 拾: 10, 佰: 100, 仟: 1000 }
-
-/**
- * 中文数字 → 阿拉伯数字（0–9999）。
- * 「十」单独出现按 10 处理（「十八章」→18、「二十章」→20）。
- * 非中文数字（纯阿拉伯）直接 parseInt。
- */
-export function cnToNum(s: string): number {
-  const t = (s ?? '').trim()
-  if (!t) return NaN
-  if (/^\d+$/.test(t)) return parseInt(t, 10)
-  let section = 0
-  let num = 0
-  for (const ch of t) {
-    if (ch in CN_DIGIT) { num = CN_DIGIT[ch] }
-    else if (ch in CN_UNIT) {
-      const u = CN_UNIT[ch]
-      if (num === 0) num = 1
-      section += num * u
-      num = 0
-    }
-  }
-  return section + num
-}
-
 /** 估算 token 数：中文字 ≈1 token/字，英文词 ≈1.3 token/词 */
 export function estTokens(s: string): number {
   const cn = (s.match(/[\u4e00-\u9fff]/g) || []).length
