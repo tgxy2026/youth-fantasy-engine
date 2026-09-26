@@ -106,6 +106,14 @@ export interface ContinueCallbacks {
    */
   outlineFor?: (chapterNo: number) => string | undefined
   /**
+   * 「创意写作」用（2.5.2 · A2）：本批选中的**作者灵感**（来自灵感夹，启动时快照的文本数组）。
+   * 有则以「作者灵感」段注入本章 prompt（细纲段**之前**——细纲钉在末段权重最高）。
+   * 🔴 口径：灵感是作者手记，段头明确「供参考、不要求全部体现、与细纲冲突以细纲为准」，
+   *    防止模型机械硬凑灵感原文（与 2.5.1 A3「融合≠拼接」同源的风险）。
+   * 不传 / 返回空 = 完全不注入（老行为不受影响）。
+   */
+  inspirationsFor?: () => string[]
+  /**
    * 「创意写作」长篇分批用：给出**第几章**该落进哪个卷（卷记录 id）。
    *
    * 🔴 为什么必须由调用方给：`createChapterAfter` 默认把新章塞进**锚点所在的卷** ——
@@ -392,6 +400,19 @@ async function applySettingUpdates(body: string, title: string, signal?: AbortSi
 
 // ============ 顶层编排（L2 多章循环） ============
 
+/**
+ * 「作者灵感」注入段（2.5.2 · A2）——**纯函数**，单测直接喂字符串。
+ *
+ * 段头口径是产品决定：灵感是作者手记，注入时明确「供参考、不要求全部体现、
+ * 与细纲冲突以细纲为准」——防模型机械硬凑（与 2.5.1 A3「融合≠拼接」同源风险）。
+ * 空数组 / 全空串 → 返回空串（整段不出现，不产生空标题）。
+ */
+export function inspirationBlock(inspirations: string[]): string {
+  const items = inspirations.map(s => (s ?? '').trim()).filter(Boolean)
+  if (items.length === 0) return ''
+  return `\n【作者灵感（供参考，不要求全部体现；与本章细纲冲突时以细纲为准）】\n${items.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
+}
+
 export async function runAutoContinue(
   opts: {
     chapters: number; targetWords: number; strategy: ContinueStrategy; intent?: string;
@@ -505,6 +526,11 @@ export async function runAutoContinue(
         (() => {
           const o = cb.outlineFor?.(ordered.length + i + 1)
           return o ? `\n【本章细纲（按此写，不要自行改主线）】\n${o}` : ''
+        })(),
+        // 2.5.2 · A2：作者灵感段（细纲**之前**——细纲仍是最末、权重最高）。空则整段不出现。
+        (() => {
+          const ins = cb.inspirationsFor?.() ?? []
+          return inspirationBlock(ins)
         })(),
       ].filter(Boolean).join('\n')
 

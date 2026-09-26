@@ -8,6 +8,7 @@ import NumberField from './NumberField'
 import { Eraser, Loader2, Play, Save, Sparkles, Square, Wand2 } from 'lucide-react'
 import { Button } from './Button'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
+import InspirationPicker from './InspirationPicker'
 import { clearCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun, updateInputs } from '../lib/creativeSession'
 import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '../lib/aiTasks'
 import { DEAI_TEMPLATES } from '../lib/autoContinue'
@@ -245,6 +246,10 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                 title="开启时：开写新章之前，若最后一章明显没写完（字数低于目标），先把它补到目标字数再往下写。只补最后一章，历史章一个字不动">
                 先补完最后一章：{inp.topUpLast ? '已开启' : '已关闭'}
               </Button>
+              {/* 2.5.2 · A2：作者灵感（灵感夹只读勾选 → 注入本章提示词「作者灵感」段） */}
+              <InspirationPicker disabled={s.running}
+                selected={inp.inspirations ?? []}
+                onChange={v => updateInputs({ inspirations: v })} />
             </div>
 
             {inp.deAiOn && (
