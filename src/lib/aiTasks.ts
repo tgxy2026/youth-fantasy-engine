@@ -62,9 +62,10 @@ export { aiPaceAnalysis, PACE_PROMPTS } from './aiTasks/pace'
 export { parsePaceReport, PACE_SEGMENTS, HOOK_KINDS, PACE_BEAT_KINDS } from './paceAnalysis'
 export type { PaceReport, PaceBeat, PaceDistribution, HookKind } from './paceAnalysis'
 // 2026-09-23（2.4.2·C5）：读者视角审问 —— 扮演一个具体读者读这一章，三问；位置由本地换算
+// 2026-09-26（2.5.1·D1）：身份可带自己的问题集（写作导师四问），questionsOf 是问题集单一源
 export { aiReaderProbe, READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
 export {
-  READER_LENSES, READER_QUESTIONS, readerLensOf,
+  READER_LENSES, READER_QUESTIONS, readerLensOf, questionsOf,
   parseReaderProbe, groupNotes, paragraphAt, readerProbeToText,
 } from './readerProbe'
 export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from './readerProbe'

@@ -22,7 +22,7 @@ import { buildProjectContext } from '../lib/aiContext'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { isCancelled } from '../lib/ai'
 import {
-  aiReaderProbe, groupNotes, readerLensOf, readerProbeToText, READER_LENSES,
+  aiReaderProbe, groupNotes, questionsOf, readerLensOf, readerProbeToText, READER_LENSES,
   type ReaderProbeResult,
 } from '../lib/aiTasks'
 import { countWords } from '../lib/textStats'
@@ -50,13 +50,15 @@ export default function ReaderProbePanel() {
   // 卸载时中断在飞的请求（切页签别留着它跑）
   useEffect(() => () => ctrl.current?.abort(), [])
 
-  // 换章就丢掉上一章的结果 —— 否则会拿着 A 章的读者反应看 B 章
-  useEffect(() => { setRes({ loading: false }) }, [activeId])
+  // 换章或换身份就丢掉上一份结果 —— 否则会拿着 A 章读者三问的结果套在导师四问的分组上（key 对不上全变「没提」）
+  useEffect(() => { setRes({ loading: false }) }, [activeId, lensKey])
 
   const active = useMemo(() => chapters.find(c => c.id === activeId), [chapters, activeId])
   const content = active?.content ?? ''
   const words = useMemo(() => (content ? countWords(content) : 0), [content])
   const lens = readerLensOf(lensKey)
+  const isMentor = lensKey === 'mentor'
+  const questions = questionsOf(lens)
   const canRun = aiReady && !!content.trim() && !res.loading
 
   const run = async () => {
@@ -81,7 +83,7 @@ export default function ReaderProbePanel() {
     if (!res.data) return
     // 🔴 走 dialogs.copyText 而非裸 navigator.clipboard：后者在非安全上下文（file:// 便携版）
     //    直接不可用且无 execCommand 兜底，而「复制这一份」是这个面板唯一的对外出口 —— 失败等于整块作废。
-    await copyText(readerProbeToText(res.data, active?.title || '（未命名）', lens.name), '已复制这一份读者反馈')
+    await copyText(readerProbeToText(res.data, active?.title || '（未命名）', lens.name, questions), '已复制这一份反馈')
   }
 
   if (loading) {
@@ -97,14 +99,15 @@ export default function ReaderProbePanel() {
       <div className="flex items-center gap-2 px-4 py-3 border-b border-ink-700">
         <UserRound size={14} className="text-amber" />
         <span className="text-13 font-medium text-ink-100">读者视角审问</span>
-        <span className="text-10 text-ink-500">单章 · 扮成一个具体读者 · 主观反应</span>
+        <span className="text-10 text-ink-500">单章 · 扮一个具体身份来读 · 主观反应</span>
         <HelpPopover title="读者视角审问怎么用">
-          {'用途：让 AI 扮成一位读者把这一章读一遍，回答三个问题 —— 哪里看不下去 / 哪里没看懂 / 最想知道什么。\n\n'
-            + '· 和「审稿」不是一回事：它不说语法、标点、结构、设定矛盾（那些交给校对、文风体检、本章体检）。'
+          {'用途：让 AI 扮成一个具体身份把这一章读一遍，逐条给出反应与依据。\n\n'
+            + '· 和「审稿」不是一回事：读者身份不说语法、标点、设定矛盾（那些交给校对、文风体检、本章体检）。'
             + '它说的是「有人读到这里会走神 / 会停下来 / 会被勾住」。\n'
-            + '· 「以谁的身份读」会改变结论：追更读者盯着爽感与钩子，新读者盯着有没有讲清楚，老书虫盯着是不是又走老路。建议三个都试一遍。\n'
-            + '· 读者提到的每一处都会标出段号 —— 段号不是模型报的，是拿它引用的原文在正文里查出来算的（查不到会标「未定位」）。\n'
-            + '· 只呈现读者反应，不给分、不排名、不说"能不能发"。改不改、怎么改，由你判断。'}
+            + '· 「以谁的身份读」会改变结论：追更读者盯着爽感与钩子，新读者盯着有没有讲清楚，老书虫盯着是不是又走老路；'
+            + '「写作导师」则不谈口味，用编剧的尺子看主题句、核心冲突、人物弧光、代价这四样 —— 想判断这一章立不立得住时用它。\n'
+            + '· 提到的每一处都会标出段号 —— 段号不是模型报的，是拿它引用的原文在正文里查出来算的（查不到会标「未定位」）。\n'
+            + '· 只呈现反应与依据，不给分、不排名、不说"能不能发"。改不改、怎么改，由你判断。'}
           <AIDataSourceNote feature="reader-probe" />
         </HelpPopover>
         <div className="ml-auto flex items-center gap-2">
@@ -112,7 +115,7 @@ export default function ReaderProbePanel() {
           <Button variant="secondary" size="sm" disabled={!canRun} onClick={() => void run()}>
             {res.loading
               ? <><Loader2 size={12} className="animate-spin" /> 读这一章…</>
-              : <><Sparkles size={12} /> 请读者读一遍</>}
+              : <><Sparkles size={12} /> 请{isMentor ? '导师' : '读者'}读一遍</>}
           </Button>
         </div>
       </div>
@@ -159,20 +162,20 @@ export default function ReaderProbePanel() {
         {words > 0 && !d && !res.error && !res.loading && (
           <div className="text-11 text-ink-500">
             <Eye size={11} className="inline -mt-0.5 mr-1" />
-            点右上「请读者读一遍」，看看这一章在「{lens.name}」眼里是什么样。
+            点右上「请{isMentor ? '导师' : '读者'}读一遍」，看看这一章在「{lens.name}」眼里是什么样。
           </div>
         )}
 
         {d && (
           <div className="space-y-3">
-            {groupNotes(d.notes).map(({ q, items }) => (
+            {groupNotes(d.notes, questions).map(({ q, items }) => (
               <div key={q.key} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
                 <div className="flex items-baseline gap-2">
                   <span className="text-11 font-medium text-ink-200">{q.label}</span>
                   <span className="text-10 text-ink-600">{items.length ? `${items.length} 处` : '没提'}</span>
                 </div>
                 {items.length === 0
-                  ? <div className="mt-1 text-11 text-ink-500">读者没提这一项（这一章在这一项上没让他有话想说）。</div>
+                  ? <div className="mt-1 text-11 text-ink-500">{isMentor ? '导师没提这一项（在这一项上没话说）。' : '读者没提这一项（这一章在这一项上没让他有话想说）。'}</div>
                   : (
                     <div className="mt-1.5 space-y-2">
                       {items.map((it, i) => (
@@ -216,7 +219,7 @@ export default function ReaderProbePanel() {
               <Button variant="secondary" size="xs" onClick={() => void copyAll()}>
                 <Copy size={11} /> 复制这份反馈
               </Button>
-              <span className="text-10 text-ink-600">换个读者身份再读一遍，对比着看更有用</span>
+              <span className="text-10 text-ink-600">换个身份再读一遍，对比着看更有用</span>
             </div>
           </div>
         )}

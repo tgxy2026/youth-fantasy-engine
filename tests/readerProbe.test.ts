@@ -27,7 +27,7 @@ console.log('\n▶ readerProbe')
     READER_QUESTIONS.map(q => q.key).join(','))
   ok('每个问题都有具体问法（不是只有标题）',
     READER_QUESTIONS.every(q => q.ask.length >= 15 && q.label.length >= 4))
-  ok('三档读者视角齐全', READER_LENSES.length === 3, READER_LENSES.map(l => l.key).join(','))
+  ok('三档读者视角 + 写作导师（D1）齐全', READER_LENSES.length === 4, READER_LENSES.map(l => l.key).join(','))
   ok('每个视角都写了「你是谁」与「最在意什么」',
     READER_LENSES.every(l => l.brief.length >= 20 && l.care.length >= 10))
   ok('readerLensOf 认未知 key 时兜底到第一个（不返回 undefined）',
@@ -143,7 +143,61 @@ console.log('\n▶ readerProbe')
   ok('没意见的那一组在导出文本里也写明（不是空白）', out.includes('（读者没提这一项）'))
 }
 
-// ---------- 6. 🔴 立场与技术约定（读源码全文） ----------
+// ---------- 6. D1（2.5.1）写作导师：自带问题集 ----------
+{
+  const mentor = readerLensOf('mentor')
+  const mqs = mentor.questions ?? []
+  const text = '风起了。\n他握紧了剑。\n远处的城门缓缓打开。'
+
+  ok('导师身份存在且带自己的问题集', mentor.key === 'mentor' && mqs.length === 4, mqs.map(q => q.key).join(','))
+  ok('导师四问：主题句 / 核心冲突 / 人物弧光 / 代价',
+    mqs.map(q => q.key).join(',') === 'theme,conflict,arc,cost')
+  ok('读者三问的 lens 不带自定义问题集（缺省走 READER_QUESTIONS，行为零变化）',
+    READER_LENSES.filter(l => l.key !== 'mentor').every(l => !l.questions))
+
+  // 解析：导师模式下认四问 key；按 mentor 的问题集分组
+  const good = JSON.stringify({
+    notes: [
+      { q: 'theme', quote: '风起了。', comment: '主题在这里立住了一半。' },
+      { q: 'cost', quote: '他握紧了剑。', comment: '代价还没显出来。' },
+      { q: 'conflict', quote: '远处的城门缓缓打开。', comment: '冲突偏口头。' },
+      { q: 'arc', quote: '他握紧了剑。', comment: '变化落在这个动作上。' },
+    ],
+    summary: '骨架在，代价感不足。',
+  })
+  const rm = parseReaderProbe(good, text, mqs)
+  ok('导师模式：四条意见的 key 原样认出（不落回 bored）',
+    rm.notes.every(n => mqs.some(q => q.key === n.q)), rm.notes.map(n => n.q).join(','))
+  const gm = groupNotes(rm.notes, mqs)
+  ok('导师模式：分组按四问顺序、每组各归其位',
+    gm.map(g => g.q.key).join(',') === 'theme,conflict,arc,cost'
+    && gm.every(g => g.items.length === 1))
+  const outM = readerProbeToText(rm, '第1章', '写作导师', mqs)
+  ok('导师模式：导出文本含四问 label', ['主题句', '核心冲突', '人物弧光', '代价'].every(s => outM.includes(s)))
+
+  // 兜底：认不出的 key 落到问题集第一个（导师 = theme；读者三问 = bored，与旧行为一致）
+  const weird = JSON.stringify({ notes: [{ q: '莫名其妙', quote: '风起了。', comment: '说不上来。' }], summary: '' })
+  ok('导师模式：认不出的 key 兜底到第一问（theme）',
+    parseReaderProbe(weird, text, mqs).notes[0].q === 'theme')
+  ok('读者三问：认不出的 key 兜底到第一问（bored，旧行为不变）',
+    parseReaderProbe(weird, text).notes[0].q === 'bored')
+
+  // 🔴 读者三问路径零回归：不传问题集时，解析与分组结果与 D1 之前完全一致
+  const legacy = JSON.stringify({
+    notes: [
+      { q: 'bored', quote: '他握紧了剑。', comment: '想快进。' },
+      { q: 'lost', quote: '风起了。', comment: '没看懂。' },
+      { q: 'want', quote: '远处的城门缓缓打开。', comment: '想知道门后是谁。' },
+    ],
+    summary: '会点下一章。',
+  })
+  const rl = parseReaderProbe(legacy, text)
+  const gl = groupNotes(rl.notes)
+  ok('🔴 读者三问零回归：分组仍是三组、key 照旧、每组一条',
+    gl.length === 3 && gl.map(g => g.q.key).join(',') === 'bored,lost,want' && gl.every(g => g.items.length === 1))
+}
+
+// ---------- 7. 🔴 立场与技术约定（读源码全文） ----------
 {
   const read = (p: string) => {
     try { return readFileSync(p, 'utf8') } catch { return '' }
@@ -158,11 +212,11 @@ console.log('\n▶ readerProbe')
     ok(`🔴 立场：${name} 不含反检测/通过与否类表述`, hit.length === 0, hit.join('/'))
   }
 
-  ok('提示词要求「扮演」而不是「评估」', srcTask.includes('扮演') && srcTask.includes('不是编辑'))
+  ok('提示词要求「扮演」驱动（而不是评估腔）', srcTask.includes('扮演') && srcTask.includes('按用户消息里给你的身份'))
   ok('提示词明确要求 quote 逐字照抄（段号靠它算）', srcTask.includes('逐字照抄') || srcTask.includes('逐字照抄原文'))
   ok('提示词明确「不评分、不给等级、不排名」', srcTask.includes('不评分') && srcTask.includes('不给等级'))
-  ok('🔴 三问措辞只有一处源：任务文件从 READER_QUESTIONS 取，不重抄一份',
-    srcTask.includes('READER_QUESTIONS.map') && !srcTask.includes('哪里看不下去：'))
+  ok('🔴 问题措辞只有一处源：任务文件经 questionsOf 取问题集，不重抄一份',
+    srcTask.includes('questionsOf(lens)') && !srcTask.includes('哪里看不下去：'))
   ok('面板注明了段号由本地算（不是模型报的）', srcPanel.includes('段号') && srcPanel.includes('本地'))
   ok('面板对「未定位」有显式展示分支', srcPanel.includes('未定位'))
   ok('提示词已在门面登记（否则设置页看不到它）',
