@@ -8,7 +8,7 @@
 - 禁删 `release/eb-cache/`；禁原生 `prompt/confirm/alert`。清单 `docs/2.3.1-Bug与待优化清单.md` 只记录、明说「处理」才动。提交含 `!`/换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
-- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.5.1**，09-26 已封装发布 Gitee：Release 1167232）。
+- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.5.2**，09-26 已封装发布 Gitee：Release 1167571）。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。基线：主 exe 181,097,984B、包 80.96MB。
 - 🔴 **环境两坑**：脚本内 `spawnSync`/`execFileSync` 起子进程被拦成 **EBUSY**（改用「清单外层生成」）；`fs.rmSync` 走 safe-delete（>10MB ETIMEDOUT）⇒ 清产物用 `unlinkSync` 深搜。
 - 🔴 启动**默认停项目管理首页**（首启先过「向导三选一」）；删项目时一并清 `lastProject`。
