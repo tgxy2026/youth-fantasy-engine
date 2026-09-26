@@ -26,7 +26,7 @@ import { syncWriterBudgetToModel } from '../lib/aiWriterBudget'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
   LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset,
-  listOllamaModels, testProvider,
+  listOllamaModels, listOpenAIModels, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
 } from '../lib/ai'
@@ -74,6 +74,8 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [editing, setEditing] = useState<AIProvider | null>(null)
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [openaiModels, setOpenaiModels] = useState<string[]>([])
+  const [fetchingOpenAI, setFetchingOpenAI] = useState(false)
   const [testing, setTesting] = useState(false)
   const [editResult, setEditResult] = useState<AITestResult | null>(null)
   const [saving, setSaving] = useState(false)
@@ -165,6 +167,26 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
       if (editing && !editing.model) setEditing({ ...editing, model: models[0] })
     } catch (e) {
       setEditResult(fail(e instanceof Error ? e.message : String(e)))
+    }
+  }
+
+  /** 2.5.2：拉 OpenAI 兼容端点（官方 / 中转站 / 本地兼容服务）的可用模型清单。失败只报原因，不破坏手动填写。 */
+  const fetchOpenAIModels = async () => {
+    if (!editing) return
+    setFetchingOpenAI(true)
+    try {
+      const models = await listOpenAIModels(editing)
+      setOpenaiModels(models)
+      if (models.length === 0) {
+        setEditResult(fail('端点已连通，但模型列表为空：请核对该接口地址是否正确，或手动填写模型名。'))
+        return
+      }
+      setEditResult(null)
+      if (!editing.model) setEditing({ ...editing, model: models[0] })
+    } catch (e) {
+      setEditResult(fail(e instanceof Error ? e.message : String(e)))
+    } finally {
+      setFetchingOpenAI(false)
     }
   }
 
@@ -397,8 +419,21 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   </div>
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">API 接口地址（baseUrl）</label>
-                    <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="https://api.deepseek.com/v1" />
+                    <div className="flex gap-2">
+                      <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="https://api.deepseek.com/v1" />
+                      <Button variant="secondary" size="sm" disabled={fetchingOpenAI || !editing.baseUrl.trim()} onClick={() => void fetchOpenAIModels()} className="shrink-0" title="按当前接口地址拉取该端点可用的模型清单（官方平台 / 中转站 / 本地兼容服务均支持）">{fetchingOpenAI ? '获取中…' : '获取可用模型'}</Button>
+                    </div>
                   </div>
+                  {openaiModels.length > 0 && (
+                    <div>
+                      <label className="block text-11 text-ink-500 mb-1">从端点获取的可用模型（{openaiModels.length} 个）</label>
+                      <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={openaiModels.includes(editing.model) ? editing.model : ''} onChange={e => setEditing({ ...editing, model: e.target.value })}>
+                        <option value="">— 请选择 —</option>
+                        {openaiModels.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <p className="text-10 text-ink-500 mt-1">列表较长时可在选择框内直接键入模型名前缀定位；也可在下方手动填写。</p>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">API 密钥</label>
                     <input type="password" className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 font-mono placeholder:text-ink-600" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} placeholder="仅本地保存，不上传" />

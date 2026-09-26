@@ -212,6 +212,57 @@ export function isCancelled(e: unknown): boolean {
 }
 
 /**
+ * OpenAI 兼容端点的 baseUrl 归一：剥掉误粘的 `/chat/completions` 尾段（中转站商家
+ * 常给完整接口地址），得到「chat/completions 的前缀」——`/chat/completions` 与
+ * `/models` 的拼接都从这里走（2.5.2 中转站兼容）。
+ */
+export function openaiBaseOf(raw: string): string {
+  const base = stripSlash(raw || '')
+  return base.endsWith('/chat/completions') ? base.slice(0, -'/chat/completions'.length) : base
+}
+
+/** 明显不是对话模型的条目（列模型时剔除）：向量化 / 画图 / 语音 / 审核类与退役补全引擎 */
+const NON_CHAT_MODEL_RE = /embedding|dall-e|whisper|tts|moderation|babbage|davinci|-ada|rerank|guard|ocr|image|video|audio|sora/i
+
+/**
+ * 拉 OpenAI 兼容端点的可用模型清单（2.5.2）：`GET {base}/models`。
+ * OpenAI 事实标准返回 `data[].id`；容错再认 `data[].name` 与 `models[].name` 两种形态。
+ * 中转站的清单可能上百条且混入非对话模型 → 按 NON_CHAT_MODEL_RE 剔除后原序返回。
+ * 失败抛中文可读原因（调用方 toast 展示，UI 保留手动填写，不阻塞配置）。
+ */
+export async function listOpenAIModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey'>): Promise<string[]> {
+  const base = openaiBaseOf(config.baseUrl)
+  if (!base) throw new Error('未填写 API 接口地址（baseUrl）：先填地址再获取模型列表。')
+  let res: Response
+  try {
+    res = await fetchWithTimeout(`${base}/models`, {
+      headers: { ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) },
+    }, 10_000)
+  } catch (e) {
+    if (isAbortError(e)) throw new Error('获取模型列表超时（10 秒）：请检查接口地址与网络。')
+    throw new Error('无法获取模型列表：请检查接口地址与网络；浏览器 / 桌面端也可能因 CORS 拦下跨域请求。')
+  }
+  if (!res.ok) throw new Error(describeApiError(res.status, await res.text().catch(() => '')))
+  const data = await res.json().catch(() => ({}))
+  const rows: Array<Record<string, unknown>> =
+    (Array.isArray(data?.data) && data.data) ||
+    (Array.isArray(data?.models) && data.models) ||
+    []
+  const names = rows
+    .map(r => String(r?.id ?? r?.name ?? '').trim())
+    .filter(Boolean)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const n of names) {
+    if (NON_CHAT_MODEL_RE.test(n)) continue
+    if (seen.has(n)) continue
+    seen.add(n)
+    out.push(n)
+  }
+  return out
+}
+
+/**
  * 带超时的 fetch：
  * - 超时 → 内部 ctrl.abort()，调用方把 AbortError 翻译成友好超时提示；
  * - 外部 signal 触发 → 视为用户主动取消（抛 AICancelled）；
@@ -592,11 +643,8 @@ function describeApiError(status: number, raw: string): string {
 
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<string> {
   const { timeoutMs } = o
-  const rawBase = stripSlash(config.baseUrl || '')
-  if (!rawBase) throw new Error('未填写 API 接口地址（baseUrl）。')
-  // 🔴 2.5.2 中转站兼容：很多用户从中转站商家复制的是**完整接口地址**（以 /chat/completions 结尾），
-  //    原样再拼一段会变成 /chat/completions/chat/completions → 404「跑不通」——这里剥掉重复尾段。
-  const base = rawBase.endsWith('/chat/completions') ? rawBase.slice(0, -'/chat/completions'.length) : rawBase
+  const base = openaiBaseOf(config.baseUrl || '')
+  if (!base) throw new Error('未填写 API 接口地址（baseUrl）。')
   if (!config.model) throw new Error('未填写模型名称。')
   let res: Response
   let clearTimer: (() => void) | null = null
