@@ -154,7 +154,7 @@ export default function InspirationBox() {
         <div className="mt-3 flex items-center gap-2">
           <span className="text-11 text-ink-400">已勾选 <b className="text-ink-200 tabular-nums">{checked.size}</b> 条</span>
           {checked.size > 0 && (
-            <Button variant="ghost" size="xs" onClick={() => setChecked(new Set())}>清空勾选</Button>
+            <Button variant="secondary" size="xs" onClick={() => setChecked(new Set())}>清空勾选</Button>
           )}
           {aiReady ? (
             <Button variant="primary" size="sm" className="ml-auto" disabled={fusing || checked.size < 2}
