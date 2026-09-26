@@ -8,7 +8,7 @@
 - 禁删 `release/eb-cache/`；禁原生 `prompt/confirm/alert`。清单 `docs/2.3.1-Bug与待优化清单.md` 只记录、明说「处理」才动。提交含 `!`/换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
-- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.5.0**，09-25 已封装发布 Gitee：Release 1165942）。
+- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.5.1**，09-26 已封装发布 Gitee：Release 1167232）。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。基线：主 exe 181,097,984B、包 80.96MB。
 - 🔴 **环境两坑**：脚本内 `spawnSync`/`execFileSync` 起子进程被拦成 **EBUSY**（改用「清单外层生成」）；`fs.rmSync` 走 safe-delete（>10MB ETIMEDOUT）⇒ 清产物用 `unlinkSync` 深搜。
 - 🔴 启动**默认停项目管理首页**（首启先过「向导三选一」）；删项目时一并清 `lastProject`。
@@ -113,6 +113,13 @@
 - 🔴 bump-version.mjs 假设三处同旧版本号——package.json 先行升级后再跑会断言失败，改内联替换 lock 前 2 处。
 - 🔴 Gitee `POST /releases` 必须带 `target_commitish`（400 否则）；NSIS 默认装目录名＝package.json `name`（novel-studio）非 productName。
 - 后续 2.5.1＝A3 灵感转化＋D1 导师预设。
+
+## 2.5 开发第二批（2.5.1 第一批 ✅ 09-26：B2 + D1 + A3，112/112）
+- ✅ **B2 F11 真·全屏**（9820ca9）：main.cjs 三 IPC + 状态推送；preload electronWindow 桥；desktop.ts helpers **运行时探测**（node 单测才能注入 mock）；F11 切换、ESC 仅全屏态退出；Sidebar 开关仅桌面渲染；启动行为不变。🔴 preload 接口命名随 Electron 官方大写 S（setFullScreen），单测抓到过不一致。
+- ✅ **D1 写作导师预设**（582c0c1）：ReaderLens 加可选 questions?（缺省=读者三问**零变化**）；questionsOf 问题集单一源；四问 theme/conflict/arc/cost；🔴 换身份必清结果（旧 key 套新分组全变「没提」）。
+- ✅ **A3 灵感夹+融合**（6e56e46）：🔴 侦察发现灵感页**本无灵感卡数据结构**（比「成本高」更上游），主人哥哥拍板新建灵感夹（settingsKV 随项目、200 条上限、逐字去重）；aiFuseInspiration 融合≠拼接+basedOn 溯源+空重试；PlotCanvas 加 'idea' 卡型（🔴 不进 HEADER_TO_TYPE）；四处注册齐全（aiWriterBudget 加 kind 必须同步 tests LEGACY）。
+- 遗留（出包验收）：B2 实机 F11、A3「换汤不换药」对比测试、D1 无污染实机验。
+- 提醒：showToast 类型只有 success/error/info。
 
 ## 对外推广
 - 🔴 文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→「口令」）；链接压最末＋后有缓冲。
