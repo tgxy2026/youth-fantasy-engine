@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { AI_STREAM_LABEL } from '../lib/constants'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import * as db from '../lib/db'
 import { genName, type NameType, STYLES as NAME_STYLES } from '../lib/nameGen'
@@ -171,7 +172,7 @@ export default function InspireTools() {
           </div>
           {aiNameLoading && streamText && (
             <div className="mt-3">
-              <div className="text-11 text-ink-500 mb-1">AI 实时输出</div>
+              <div className="text-11 text-ink-500 mb-1">{AI_STREAM_LABEL}</div>
               <pre className="whitespace-pre-wrap text-11 text-ink-300 bg-ink-900/60 border border-ink-700 rounded-lg p-2.5 max-h-48 overflow-auto">{streamText}</pre>
             </div>
           )}

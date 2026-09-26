@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { MessageSquareCode, RotateCcw } from 'lucide-react'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
@@ -148,7 +149,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
                             onClick={() => void reset(e)}>
                             <RotateCcw size={11} /> 还原出厂
                           </Button>
-                          {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
+                          {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
                           <div className="flex-1" />
                           <span className="text-10 text-ink-600">
                             {draft.length} 字 · 出厂 {e.defaultText.length} 字

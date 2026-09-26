@@ -145,7 +145,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
                 // 🔴 2.4.4 六维审计：下拉键盘可达 —— Esc 关闭；Enter 确认（精确匹配选中之，
                 //    否则按「使用手动输入」走，与下方按钮同语义）
                 if (e.key === 'Escape') { e.stopPropagation(); close() }
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   if (exact) toggle(names.find(n => n.toLowerCase() === ql)!)
                   else applyManualInput()

@@ -11,6 +11,7 @@
  * 🔴 立场：读者反应天然主观，这里不出分数、不出等级、不判"能不能发"。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { EMPTY_CHAPTER_HINT } from '../lib/constants'
 import { Copy, Eye, Loader2, Sparkles, UserRound } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter } from '../lib/types'
@@ -151,7 +152,7 @@ export default function ReaderProbePanel() {
       <div className="px-4 py-3">
         <div className="mb-2 text-10 text-ink-500">{lens.care}</div>
 
-        {words === 0 && <div className="text-11 text-ink-500">这一章还没有正文，换一章看看。</div>}
+        {words === 0 && <div className="text-11 text-ink-500">{EMPTY_CHAPTER_HINT}</div>}
 
         {words > 0 && res.error && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-11 text-red-300">

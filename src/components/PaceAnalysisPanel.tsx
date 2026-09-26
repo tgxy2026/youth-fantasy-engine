@@ -10,6 +10,7 @@
  * 🔴 立场：只给结构观察与建议，不评分、不排名、不判定"是否达标"。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { EMPTY_CHAPTER_HINT } from '../lib/constants'
 import { Activity, Loader2, Sparkles, Eye } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter } from '../lib/types'
@@ -121,7 +122,7 @@ export default function PaceAnalysisPanel() {
 
       {/* 结果区 */}
       <div className="px-4 py-3">
-        {words === 0 && <div className="text-11 text-ink-500">这一章还没有正文，换一章看看。</div>}
+        {words === 0 && <div className="text-11 text-ink-500">{EMPTY_CHAPTER_HINT}</div>}
 
         {words > 0 && res.error && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-11 text-red-300">

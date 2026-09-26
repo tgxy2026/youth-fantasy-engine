@@ -20,3 +20,12 @@ export const LS_SPRITE_ENABLED = 'yfe-sprite-enabled'
 export const SAVE_DEBOUNCE_MS = 800
 /** 云盘文件中转模式的远端变更轮询间隔 */
 export const SYNC_POLL_MS = 8000
+
+// ---------- 共享 UI 文案（同一句话只此一处源，改文案改这里；audit-content C2 的正解） ----------
+
+/** 章节为空时的提示（本章体检 / 节奏审读 / 读者视角审问三个面板共用） */
+export const EMPTY_CHAPTER_HINT = '这一章还没有正文，换一章看看。'
+/** AI 流式输出的区块小标题（本章体检 / 节奏审读 / 取名的流式展示共用） */
+export const AI_STREAM_LABEL = 'AI 实时输出'
+/** 草稿有改动未落库时的提示（各页签的角标 / 角点 / 状态位共用） */
+export const UNSAVED_CHANGES_HINT = '有未保存的改动'

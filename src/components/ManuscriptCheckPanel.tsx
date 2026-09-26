@@ -12,6 +12,7 @@
  * 本面板**不发任何 AI 请求**（按钮文案里也如实写明）。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { EMPTY_CHAPTER_HINT } from '../lib/constants'
 import { ClipboardCheck, Loader2, RefreshCw, FileDown } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter } from '../lib/types'
@@ -148,7 +149,7 @@ export default function ManuscriptCheckPanel() {
         </div>
 
         {!fp || fp.words === 0 ? (
-          <div className="text-11 text-ink-500">这一章还没有正文，换一章看看。</div>
+          <div className="text-11 text-ink-500">{EMPTY_CHAPTER_HINT}</div>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
             {observations.map(o => (
