@@ -571,7 +571,9 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
       </div>
 
       {/* 底部：去填写 */}
-      <div className="px-3 py-2 border-t border-ink-700 shrink-0">
+      {/* 🔴 底部状态条统一 h-10：与编辑器状态条（NovelEditor）/ 侧栏左下角把手（Sidebar）
+          三条上边框横线对齐（2.5.2 UI 修复，以本条为基准统一高度） */}
+      <div className="h-10 px-3 flex items-center border-t border-ink-700 shrink-0">
         <Button variant="bare"
           onClick={() => onNavigate?.('guide')}
           className="flex items-center gap-1.5 text-11 text-ink-500 hover:text-amber transition-colors"

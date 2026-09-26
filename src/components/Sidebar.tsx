@@ -278,7 +278,9 @@ style={{ zIndex: Z.pageBase }}
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-ink-700 shrink-0">
+      {/* 🔴 收起态整体固定 h-10（border-box 含 border-t 自身 1px）——露出的上边框与编辑器状态条 /
+          检索栏底条三条横线对齐（2.5.2 UI 修复）；展开态高度由内容撑，不用管 */}
+      <div className={`border-t border-ink-700 shrink-0 flex flex-col ${footerCollapsed ? 'h-10' : ''}`}>
         {/* 🔴 B6（2026-09-22 老大新增）：左下角工具栏折叠把手。
             收起后内容高度归零，上方页签区（`nav.flex-1`）自动吃掉释放的空间 —— 即"菜单栏自然延伸"。
             把手带 title / aria-label / aria-expanded，键盘与读屏可达。 */}
@@ -288,7 +290,9 @@ style={{ zIndex: Z.pageBase }}
           title={footerCollapsed ? '展开左下角工具栏（主题 / 界面缩放 / 存储 / 云同步）' : '收起左下角工具栏（收起后菜单区变高）'}
           aria-label={footerCollapsed ? '展开左下角工具栏' : '收起左下角工具栏'}
           aria-expanded={!footerCollapsed}
-          className="w-full flex items-center justify-center py-1 text-ink-500 hover:text-amber hover:bg-ink-800/40 transition-colors"
+          className={`w-full flex items-center justify-center text-ink-500 hover:text-amber hover:bg-ink-800/40 transition-colors ${
+            footerCollapsed ? 'flex-1' : 'py-1'
+          }`}
         >
           {footerCollapsed ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
         </button>
