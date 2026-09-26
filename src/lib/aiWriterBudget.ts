@@ -59,6 +59,7 @@ export const WRITER_BUDGET_KINDS = {
   'organize-rows': 1.125,         //  9000 AI 整理（批量补条目）
   'ai-assist': 0.5,               //  4000 AI 辅助规划
   'name-suggest': 0.375,          //  3000 AI 取名
+  'inspiration-fuse': 0.5,        //  4000 灵感融合（灵感夹 → 情节卡；灵感条目本身很短，设定摘要同脑暴档）
   'plot-canvas': 0.75,            //  6000 情节推演画布
   'jiewenji-proofread': 0.75,     //  6000 颉文姬 · 深度校对
   'jiewenji-diagnosis': 1.0,      //  8000 综合诊断
@@ -87,6 +88,7 @@ export const WRITER_BUDGET_LABELS: Record<WriterBudgetKind, string> = {
   'organize-rows': 'AI 整理（批量补条目）',
   'ai-assist': 'AI 辅助规划',
   'name-suggest': 'AI 取名',
+  'inspiration-fuse': '灵感融合为情节卡（灵感工具）',
   'plot-canvas': '情节推演画布',
   'jiewenji-proofread': '颉文姬 · 校对（文字层 / 逻辑层）',
   'jiewenji-diagnosis': '颉文姬 · 综合诊断',

@@ -30,6 +30,8 @@ const LEGACY: Record<WriterBudgetKind, number> = {
   'organize-rows': 9000,
   'ai-assist': 4000,
   'name-suggest': 3000,
+  // 灵感融合（2.5.1·A3 新增）：按 0.5 档，出厂即 4000（灵感条目短，设定摘要同脑暴档）
+  'inspiration-fuse': 4000,
   'plot-canvas': 6000,
   'jiewenji-proofread': 6000,
   'jiewenji-diagnosis': 8000,

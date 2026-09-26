@@ -296,6 +296,15 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     label: 'AI 取名',
     sources: [{ group: '项目设定资料', items: ['作品定位', '世界设定', '力量体系'], note: '约 3000 字预算' }],
   },
+  // 灵感工具页 · 灵感融合（2.5.1·A3 新增）
+  'inspiration-fuse': {
+    label: '灵感融合为情节卡',
+    sources: [
+      { group: '你勾选的灵感条目', items: [], note: '原样逐条列出，编号即卡片上「基于灵感 #N」的来源' },
+      { group: '项目设定资料', items: ['作品定位', '世界设定', '力量体系'], note: '约 4000 字预算，用于让创意贴合设定' },
+    ],
+    excludes: ['不直接搬运灵感原文 —— 融合要求几条灵感互相服务形成新情节'],
+  },
   'ai-assist': {
     label: 'AI 辅助规划（脑暴）',
     sources: [{ group: '项目设定资料', items: CORE_TABLES, note: '约 4000 字预算；勾选「带入项目资料」才发送，不勾就是纯对话' }],

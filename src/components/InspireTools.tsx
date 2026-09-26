@@ -9,6 +9,7 @@ import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
 import { copyText } from './dialogs'
 import AIAssist from './AIAssist'
+import InspirationBox from './InspirationBox'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiSuggestNames } from '../lib/aiTasks'
@@ -87,13 +88,16 @@ export default function InspireTools() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">灵感启发</h1>
           <HelpPopover title="灵感启发怎么用" width="24rem" size={14}>
-            {'这一页是「灵感与创意」的两件套，都从「灵感启发」这个动作出发。\n\n【随机取名生成器】按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 题材风格批量出名字：点名字即复制，点星标收藏；纯本地能力，没有模型也能用。\n\n【AI 辅助规划】多轮对话式脑暴（剧情 / 人物 / 世界观 / 一致性自查），可结合你的世界观设定给建议。\n\n需要模型 —— 未接入时按钮禁用并给出提示。'}
+            {'这一页是「灵感与创意」的三件套，都从「灵感启发」这个动作出发。\n\n【灵感夹】随手记下点子攒起来，勾选几条让 AI 融合成情节卡，直接放到推演画布上。\n\n【随机取名生成器】按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 题材风格批量出名字：点名字即复制，点星标收藏；纯本地能力，没有模型也能用。\n\n【AI 辅助规划】多轮对话式脑暴（剧情 / 人物 / 世界观 / 一致性自查），可结合你的世界观设定给建议。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-13 text-ink-300">随机取名生成器 · AI 辅助规划</p>
+        <p className="mt-1 text-13 text-ink-300">灵感夹 · 随机取名生成器 · AI 辅助规划</p>
       </header>
 
       <div className="space-y-4">
+        {/* ============ 灵感夹（2.5.1 · A3）：记灵感 → 融合 → 落画布 ============ */}
+        <InspirationBox />
+
         {/* ============ ③ 随机取名（本地能力，无需模型）============ */}
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
