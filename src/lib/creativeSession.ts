@@ -86,6 +86,8 @@ export interface CreativeInputs {
   deAiOn: boolean
   deAiTpl: string
   deAiCustom: string
+  /** 本批选中的作者灵感（2.5.2 · A2，来自灵感夹的文本数组；空 = 不注入）。随会话输入持久化 */
+  inspirations?: string[]
   /** 是否按已落库的《章节细纲》写 */
   useOutline: boolean
   /** 每章初稿先交作者确认（关掉＝全自动跑量） */
@@ -542,6 +544,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         useOutline: inp.useOutline,
         topUpLast: inp.topUpLast,
         structureId: inp.structureId,
+        ...(inp.inspirations?.length ? { inspirations: inp.inspirations } : {}),
         signal: ctl.signal,
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => {

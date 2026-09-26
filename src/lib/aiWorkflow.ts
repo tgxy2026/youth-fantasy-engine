@@ -512,6 +512,12 @@ export interface CreativeWritingOptions {
   /** 连写时是否按已落库的《章节细纲》写（默认是；没有细纲卡时自动退回自由发挥） */
   useOutline?: boolean
   /**
+   * 本批选中的**作者灵感**（2.5.2 · A2，来自灵感夹；启动时快照的文本数组）。
+   * 有则逐章 prompt 注入「作者灵感」段（供参考、不要求全部体现，细纲优先）。
+   * 空 / 不传 = 完全不注入。
+   */
+  inspirations?: string[]
+  /**
    * 🔴 **正文缺口优先**（默认**开**，2026-09-20）：开写新章之前，先把**最后一章**补到目标字数。
    *
    * 长篇是分批写的：上一批可能因模型收尾过早只落库半章（实测 4000 字目标只写了 2200），
@@ -836,6 +842,8 @@ export async function runCreativeWriting(
           opts.onChapterSaved?.(ch)
         },
         ...(opts.onChapterDraft ? { onChapterDraft: opts.onChapterDraft } : {}),
+        // 2.5.2 · A2：作者灵感注入（🔴 必须在 cb——autoContinue 从回调对象读）
+        ...(opts.inspirations?.length ? { inspirationsFor: () => opts.inspirations as string[] } : {}),
         ...(opts.onSettingsCandidates ? { onSettingsCandidates: opts.onSettingsCandidates } : {}),
         ...(outlines.size ? { outlineFor: (no: number) => outlines.get(no) } : {}),
         // 🔴 按大纲**切卷**（2026-09-20）：读分卷大纲卡的「本卷章号范围」，建"章号 → 卷 id"查询。

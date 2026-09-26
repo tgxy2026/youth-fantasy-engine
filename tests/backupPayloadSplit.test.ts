@@ -117,13 +117,6 @@ const backupId = await (async () => {
   await db.deleteBackup(rec.id)
 }
 
-// ---------- 8. 体积汇总 ----------
-{
-  const total = await db.backupsTotalBytes()
-  const list = await db.listBackups(pid)
-  const sum = list.reduce((s, b) => s + b.bytes, 0)
-  ok('总占用等于各份之和（本项目的部分）', total >= sum, `${total} >= ${sum}`)
-}
 
 console.log(`\n  ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

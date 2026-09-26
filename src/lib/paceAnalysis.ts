@@ -104,14 +104,6 @@ export function segmentAt(textLength: number, at: number): PaceSegment | typeof 
   return '后段'
 }
 
-/** 章末钩子区（最后 HOOK_ZONE_RATIO）的原文 —— 供 UI 展示与 AI 参考 */
-export function hookZoneSnippet(text: string, limit = 300): string {
-  const t = (text || '').trim()
-  if (!t) return ''
-  const start = Math.max(0, Math.floor(t.length * (1 - HOOK_ZONE_RATIO)))
-  return t.slice(start).slice(-limit)
-}
-
 /** 把爆点列表补上本地定位（kind/quote 保持不变；segment 与 at 一律本地覆盖） */
 export function locateBeats(text: string, beats: Array<{ kind: string; quote: string; note?: string }>): PaceBeat[] {
   return beats.map(b => {

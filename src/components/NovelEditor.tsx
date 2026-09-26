@@ -691,8 +691,9 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
               </div>
             </div>
 
-            {/* 底部状态栏：实时字数 / 今日码字 / 保存状态 / 打字机模式 / 字号 */}
-            <div className="h-8 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-4 px-5 text-11 text-ink-400">
+            {/* 底部状态栏：实时字数 / 今日码字 / 保存状态 / 打字机模式 / 字号
+                🔴 h-10 与检索栏底条（SettingSearch）/ 侧栏左下角把手（Sidebar）统一高度，三条上边框对齐 */}
+            <div className="h-10 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-4 px-5 text-11 text-ink-400">
               {/* 本章实时字数：跟随「字数口径」偏好（#004）—— 与写作面板共用同一个开关 */}
               <span className="flex items-center gap-1" title={`本章字数（${withPunct ? '汉字＋标点' : '只算汉字'}口径 · 可在写作面板的「字数口径」里切换）`}>
                 <Hash size={10} />{countWords(draftContent, wordCountModeOf(withPunct))} 字

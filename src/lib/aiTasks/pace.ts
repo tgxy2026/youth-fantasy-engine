@@ -10,6 +10,7 @@
 // 的立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
 import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { PACE_BEAT_KINDS } from '../paceAnalysis'
 import type { PromptDef } from '../promptSettings'
 // 解析与位置换算都在本地纯函数层（tests 只 import 那边，不会把传输层拉进 Node 测试）
 import { parsePaceReport, type PaceReport } from '../paceAnalysis'
@@ -28,7 +29,7 @@ let P_pace_analysis = `你是网文节奏编辑。网文按章连载，读者是
     "note": "这句话为什么算/不算钩子（一句话）"
   },
   "beats": [
-    { "kind": "打脸|升级|获宝|逆转|扬名|复仇|揭秘|温情", "quote": "该处原文片段，逐字照抄，20~40 字", "note": "这里给了读者什么情绪" }
+    { "kind": "${PACE_BEAT_KINDS.join('|')}", "quote": "该处原文片段，逐字照抄，20~40 字", "note": "这里给了读者什么情绪" }
   ],
   "increments": ["本章推进/揭示了什么新信息（每条一句，最多 5 条）"],
   "observations": ["节奏观察（每条一句，最多 4 条）"],

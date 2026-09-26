@@ -431,6 +431,14 @@ if (CLOUD_FILE_SYNC) {
         try {
           const snap = await pullDesktopSnapshot()
           empty = totalRecords(snap.stores) === 0
+          // 🔴 2026-09-26：与手动开启路径同款缓解——网盘「按需下载 / 未同步完成」时首拉为空
+          //    是**瞬态**，3s 后重拉一次，两次都空才认「云端为空」并清标记（避免网盘就绪前
+          //    每次启动都被要求重新选择文件夹）。
+          if (empty) {
+            await new Promise(r => setTimeout(r, 3000))
+            const snap2 = await pullDesktopSnapshot()
+            empty = totalRecords(snap2.stores) === 0
+          }
         } catch {
           // 拉取失败（文件损坏 / 网盘未就绪）→ 保持本地存储，绝不把界面切空。
           // 🔴 **不再清「已开启」标记**（2026-09-19 六维审计 P1-7）：拉不到 ≠ 云端是空的。
@@ -534,8 +542,29 @@ export async function enableDesktopCloudSync(handle: SyncDirHandle) {
   const carry = await captureSyncData()
   await enableDesktopCloud(handle)
   const snap = await pullDesktopSnapshot()
-  const empty = totalRecords(snap.stores) === 0
+  let empty = totalRecords(snap.stores) === 0
+  // 🔴 2026-09-26 社区反馈（双电脑数据覆盖事故）：网盘客户端「按需下载 / 未同步完成」时，
+  //    .yfe 可能**还没下载**（文件缺失）或只有**占位/残缺头部**（用户实测仅 1KB）——
+  //    首拉读到空 ≠ 云端真没数据。此时「空则播种」会把本机（可能为空的）数据推上去，
+  //    **直接覆盖原电脑的全量快照**（固定文件名，无 rev 协商），两台电脑一起丢数据；
+  //    且本机重开后云端是空库 → 清「已开启」标记 → 又提示重新选择（用户报告的现象）。
+  //    缓解：间隔 3s 重拉一次，两次都空才认「云端为空」。
   if (empty) {
+    await new Promise(r => setTimeout(r, 3000))
+    const snap2 = await pullDesktopSnapshot()
+    empty = totalRecords(snap2.stores) === 0
+  }
+  if (empty) {
+    // 🔴 云端空 + 本机也几乎没有数据 → **拒绝开启**（这是「新电脑抢先开启」的事故形态：
+    //    播种会把空库推上去覆盖另一台电脑的全量）。本机有数据 → 播种上传（新盘初始化的合法场景）。
+    if (totalRecords(carry) < 5) {
+      await disableDesktopCloud()
+      throw new Error(
+        '同步文件夹里没有检测到同步数据，本机也几乎没有数据 —— 已阻止开启，以免空数据覆盖另一台电脑的备份。' +
+          '如果你是想在另一台电脑上继续写作：请先在原电脑上开启一次云同步，并确认网盘客户端已把' +
+          '「青春幻想引擎-同步数据.yfe」**完整下载**到这个文件夹（百度网盘等可能需要右键手动下载），再重新选择。',
+      )
+    }
     // 新目录还是空的 → 用刚才抓下来的数据播种（不能用「此刻的 ops」，它可能已被清空）
     await seedDesktopFromLocal((s) => Promise.resolve(carry[s] ?? []))
   }

@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs'
 import {
   PACE_SEGMENTS, PACE_SEG_UNKNOWN, HOOK_KINDS, HOOK_ZONE_RATIO, PACE_BEAT_KINDS,
-  locateQuote, segmentAt, locateBeats, buildDistribution, hookZoneSnippet, hookZoneStats,
+  locateQuote, segmentAt, locateBeats, buildDistribution, hookZoneStats,
   normalizeBeats, toStringList, normalizeHookKind, parsePaceReport,
   type PaceBeat,
 } from '../src/lib/paceAnalysis'
@@ -124,8 +124,6 @@ const TEXT = P1 + P2 + P3
   ok('钩子区字符数 = 末段长度', st.chars === TEXT.length - expect, String(st.chars))
   ok('钩子区有内容', st.hasContent)
   ok('空正文 → 钩子区为空', hookZoneStats('').tail === '' && !hookZoneStats('').hasContent)
-  ok('hookZoneSnippet 只取末尾片段', hookZoneSnippet(TEXT, 30).length <= 30)
-  ok('hookZoneSnippet 落在正文末段', TEXT.endsWith(hookZoneSnippet(TEXT, 30)))
 }
 
 // ---------- 6) 宽松校验：normalizeBeats / toStringList / normalizeHookKind ----------

@@ -122,16 +122,6 @@ export interface VolumeRange {
   to: number
 }
 
-/**
- * 按章号找它属于哪一卷；找不到返回 null（调用方退回旧行为，不要瞎猜）。
- *
- * 区间是**闭区间**且允许重叠时取最先命中的那卷 —— 重叠只可能来自作者手改，
- * 此时"先写的那一卷"更接近他的本意。
- */
-export function volumeForChapter(ranges: VolumeRange[], no: number): VolumeRange | null {
-  return ranges.find(r => no >= r.from && no <= r.to) ?? null
-}
-
 // ==================== 「未排满的卷」检测（缺口优先，2026-09-20）====================
 //
 // 这一组函数服务一件事：**长篇分批排纲时，先把没排满的卷补齐，再谈开新卷**。
