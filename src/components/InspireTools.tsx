@@ -103,7 +103,7 @@ export default function InspireTools() {
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Sparkles size={14} className="text-amber" /> 随机取名生成器
-            <HelpPopover title="随机取名怎么用" width="21rem" className="ml-auto">
+            <HelpPopover title="随机取名怎么用" width="21rem">
               {'三步出名字：\n\n1. 选类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）；\n2. 选题材风格（仙侠、玄幻、科幻…），切换类型时会自动带上该类型的常用风格；\n3. 点「换一批」刷新 10 个候选。\n\n· 点名字本身即复制到剪贴板；\n· 点右侧星标收藏，收藏区会列在下方，可随时删除；\n· 定稿的名字记得回「名词术语」或角色卡登记，避免后面重名。'}
               <AIDataSourceNote feature="name-suggest" />
             </HelpPopover>

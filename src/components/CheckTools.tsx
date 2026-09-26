@@ -247,7 +247,7 @@ export default function CheckTools() {
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <ShieldAlert size={14} className="text-red-400" /> 敏感词检测
-            <HelpPopover title="敏感词检测怎么用" width="22rem" className="ml-auto">
+            <HelpPopover title="敏感词检测怎么用" width="22rem">
               {'两个能力：\n\n· 系统扫描（始终可用）：内置基础违禁词库 + 你的自定义词，逐章检查并列出命中词、次数与上下文；\n· AI 检测（需接入 AI）：让模型结合上下文判断每个命中词是误报还是真有风险，并给出替换建议。无 AI 时该按钮禁用，本地扫描不受影响。\n\n· 添加：输入框支持逗号 / 顿号 / 换行批量粘贴；\n· 一键导入文件：支持 .txt（一行一词）/.csv/.tsv/.json 数组，井号 # 开头视为注释。\n只做提示不自动改字——是否规避请自行判断（编辑器工具栏也有单章版敏感词检测，可直接替换）。'}
               <AIDataSourceNote feature="sensitive-check" />
             </HelpPopover>
@@ -377,7 +377,7 @@ export default function CheckTools() {
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <ScanSearch size={14} className="text-sky-400" /> AI 一致性深度自查
-            <HelpPopover title="AI 一致性深度自查怎么用" width="22rem" className="ml-auto">
+            <HelpPopover title="AI 一致性深度自查怎么用" width="22rem">
               {'把你的世界观 / 角色 / 时间脉络设定交给 AI，对照检查前后矛盾与逻辑硬伤。\n\n· 上方文本框可粘贴一段正文（可选），AI 会同时核对正文与设定；留空则只在设定资料内部互查；\n· 结果按 严重 / 中等 / 提示 分级，并给出冲突依据与涉及位置；\n· 需先接入 AI 模型，未接入时按钮禁用；本地能力不受影响。'}
               <AIDataSourceNote feature="continuity-audit" />
             </HelpPopover>
@@ -445,7 +445,7 @@ export default function CheckTools() {
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <Stethoscope size={14} className="text-emerald-400" /> 数据体检
-            <HelpPopover title="数据体检怎么用" width="23rem" className="ml-auto">
+            <HelpPopover title="数据体检怎么用" width="23rem">
               {'与上方「AI 一致性深度自查」互补：AI 查"故事通不通"（语义矛盾），本工具查"链接断没断"（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖 AI 模型，离线可用；\n· 五类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空、酒馆列表残留（酒馆列表项指向的正文已不在，列表里看得见、点开是空的；此类不会自动清理，需要你在那条结果上点「清理」），另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
             </HelpPopover>
           </h2>
