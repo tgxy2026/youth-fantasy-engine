@@ -241,7 +241,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             <div className={`flex items-center gap-2 ${card.color}`}>
               {card.icon}
               <span className="text-11 text-ink-400">{card.label}</span>
-              <HelpPopover title={card.label} width="18rem" size={11} className="ml-auto">
+              <HelpPopover title={card.label} width="18rem" size={11}>
                 {card.help}
               </HelpPopover>
             </div>
@@ -315,7 +315,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <TrendingUp size={14} className="text-amber" /> 近 7 日写作字数
-            <HelpPopover title="近 7 日写作字数" width="20rem" className="ml-auto">
+            <HelpPopover title="近 7 日写作字数" width="20rem">
               {'柱子高度 = 「写作进度」里当天登记的实际字数，需要手工登记（可写目标字数与实际字数做对比复盘）。\n\n· 和上方「码字日历」的区别：日历是编辑器自动记录，这里是你自己登记的计划完成情况；\n· 点下方「去登记今日字数」直接跳到进度表。'}
             </HelpPopover>
           </h2>
@@ -352,7 +352,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Flame size={14} className="text-amber" /> 快捷入口
-            <HelpPopover title="快捷入口" width="19rem" className="ml-auto">
+            <HelpPopover title="快捷入口" width="19rem">
               {'连载期间使用频率最高的 6 个页签，点一下直达：\n\n· 正文编辑：码字主战场；\n· 章节总表：全书章节台账（字数/伏笔/出场人物）；\n· 伏笔追踪：挖坑填坑总账；\n· 时间脉络：剧情日期与事件对照，防穿帮；\n· 爽点节奏：每章爽点分布，防"太平淡"；\n· 灵感素材：素材随手入库，卡文时来翻。'}
             </HelpPopover>
           </h2>
@@ -375,7 +375,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
             <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
               <BookOpen size={14} className="text-amber" /> 分卷进度
-              <HelpPopover title="分卷进度" width="19rem" className="ml-auto">
+              <HelpPopover title="分卷进度" width="19rem">
                 {'每卷的完稿率 = （完稿 + 已发布）章节数 ÷ 该卷总章节数。\n\n卷与章在正文编辑器左侧目录里新建/改名；章节状态（构思/细纲/草稿/修改/完稿/已发布）在编辑器工具栏切换，这里会立刻反映。'}
               </HelpPopover>
             </h2>
@@ -414,7 +414,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               {diagLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 诊断
             </Button>
-            <HelpPopover title="创作健康提醒" width="20rem" className="ml-auto">
+            <HelpPopover title="创作健康提醒" width="20rem">
               {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品定位与全书总纲再动笔。\n\n全部指标健康时会显示"保持节奏继续写"。'}
               <AIDataSourceNote feature="project-diagnose" />
             </HelpPopover>
@@ -503,7 +503,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       <section className="bg-ink-850 border border-ink-700 rounded-xl p-5 mt-6">
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <TrendingUp size={14} className="text-amber" /> 写作目标与完稿预估
-          <HelpPopover title="写作目标与完稿预估" width="21rem" className="ml-auto">
+          <HelpPopover title="写作目标与完稿预估" width="21rem">
             {'设定每日目标字数 / 全书目标字数 / 完稿截止日（自动保存），系统会：\n\n· 实时显示当前总字数、近 7 日日均、距目标差额；\n· 按「剩余字数 ÷ 近 7 日日均」预估所需天数；\n· 若按当前节奏赶不上截止日，给出红色提醒。\n\n日均取自「写作进度 / 自动码字记录」近 7 天，没有产量记录时无法预估。'}
           </HelpPopover>
         </h2>
@@ -515,7 +515,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       <section className="bg-ink-850 border border-ink-700 rounded-xl p-5 mt-6">
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <Users size={14} className="text-amber" /> 角色出场分布
-          <HelpPopover title="角色出场分布" width="22rem" className="ml-auto">
+          <HelpPopover title="角色出场分布" width="22rem">
             {'自动扫描各章正文，统计每位角色（主要 / 次要，不含 NPC 与已退场）在每章的出现次数，用热力矩阵呈现：\n\n· 颜色越亮 = 该章出场越多；\n· 展示全部（主要 / 次要，不含 NPC 与已退场）角色与全部章节；\n· 点任意单元格直达对应章节。\n\n用来发现"某角色写了三卷没再出场"或"主角某章莫名消失"这类失衡。'}
           </HelpPopover>
         </h2>
@@ -529,7 +529,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       <section className="bg-ink-850 border border-ink-700 rounded-xl p-5 mt-6">
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <TrendingUp size={14} className="text-amber" /> 创作复盘
-          <HelpPopover title="创作复盘怎么看" width="23rem" className="ml-auto">
+          <HelpPopover title="创作复盘怎么看" width="23rem">
             {'回顾「跟之前比」的情况，与上方热力图 / 近 7 日柱状图（看「当前状态」）互补：\n\n· 本周 vs 上周：近 7 天与前 7 天的净字数对比（上周为 0 时不编造增幅，只标「上周还没开始」）；\n· 连续写作：历史最长与当前连续天数 —— 今天还没动笔不算断，不用凌晨赶工；\n· 最高产的一天 / 本月产量。\n\n数据来自软件本就记录的每日字数净增量（增删都记，所以删字那天会显示负数，是如实的）。纯本地计算，不联网。'}
           </HelpPopover>
         </h2>

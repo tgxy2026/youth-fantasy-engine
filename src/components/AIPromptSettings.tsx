@@ -92,7 +92,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
             已改 {changedCount} 条
           </span>
         )}
-        <HelpPopover title="AI 提示词怎么改" width="24rem" className="ml-auto">
+        <HelpPopover title="AI 提示词怎么改" width="24rem">
           {'这里列出各 AI 功能「内置的提示词全文」 —— 它们原本写死在程序里，现在可以直接改。\n\n【能改什么】语气、称呼、输出详略、额外的禁忌与偏好。比如让「章节审读」多说节奏、少说人设；让「AI 整理」只登记重要条目。\n\n【改完怎么生效】点该条的「保存」后，下一次调用该功能即生效，不用重启。\n\n【改坏了怎么办】每条都有「还原出厂」；右上「全部还原」一次恢复所有。保存的只是「你改过的那些」，出厂原文永远在程序里，不会被覆盖。\n\n⚠️ 两件事别在这里改：\n· 「酒馆模式的扮演协议」 —— 在「酒馆模式 → 控制面板」里改（那边有版本与出厂对照）；\n· 「提示词的骨架结构」（比如要求返回 JSON 的格式约定）—— 那与解析代码是绑定的，改坏了会解析不出结果。想大改先小步试一次。'}
         </HelpPopover>
       </h2>

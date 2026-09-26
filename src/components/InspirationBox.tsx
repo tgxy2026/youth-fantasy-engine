@@ -101,7 +101,7 @@ export default function InspirationBox() {
     <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
       <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
         <Lightbulb size={14} className="text-amber" /> 灵感夹
-        <HelpPopover title="灵感夹怎么用" width="24rem" className="ml-auto">
+        <HelpPopover title="灵感夹怎么用" width="24rem">
           {'随手把一闪而过的点子记在这里 —— 一条一句话就够，攒着不用急着用。\n\n勾选 2 条以上，点「融合为情节卡」：AI 会让这几条灵感互相服务，形成新的情节创意，直接放到「情节推演」的画布上（每张卡会标注用了哪几条灵感）。\n\n· 灵感夹跟着项目走，换项目看到的是那一本书的夹子；\n· 融合结果在画布上随便拖、随便删，这里不锁任何东西。'}
           <AIDataSourceNote feature="inspiration-fuse" />
         </HelpPopover>

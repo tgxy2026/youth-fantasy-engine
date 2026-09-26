@@ -57,7 +57,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
         <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <ListOrdered size={14} className="text-amber" />
           <h2 className="text-13 font-semibold text-ink-100">推荐填写顺序</h2>
-          <HelpPopover title="推荐填写顺序" width="21rem" className="ml-auto">
+          <HelpPopover title="推荐填写顺序" width="21rem">
             {'这是"从零开书"的标准路径：\n\n1-3 先定位与世界底层（赛道/读者/卖点、世界法则、力量体系）；\n4-5 立住主角与核心配角；\n6 用倒推法把历史事件从结局倒推回开篇；\n7-8 写全书总纲与分卷规划；\n9-10 落到章节总表与章节细纲，然后就可以动笔了。\n\n不必一次填满：每卷开写前补一轮，写完一卷回看修订一轮。'}
           </HelpPopover>
         </div>
@@ -85,7 +85,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
         <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <BookOpen size={14} className="text-amber" />
           <h2 className="text-13 font-semibold text-ink-100">全部功能页签</h2>
-          <HelpPopover title="全部功能页签" width="21rem" className="ml-auto">
+          <HelpPopover title="全部功能页签" width="21rem">
             {'软件里每个页签的职责一览，点任意条目直接跳转。\n\n· 表单型页签（作品定位、世界设定、全书总纲…）：一栏一栏填，Ctrl+S 保存；\n· 表格型页签（伏笔、时间脉络、爽点、设定变更…）：一行一条记录，随写随登记；\n· 卡片型页签（角色卡、分卷大纲、章节细纲）：一张卡一个对象，左侧目录切换；\n· 正文编辑：真正码字的地方，左侧带设定检索栏可边写边查；\n· 颉文姬 · AI 编辑：右下角的 Q 版精灵（或编辑器工具栏魔杖图标）——诊室（校对·文字层 / 校对·逻辑层 / 综合诊断）、编辑（选区润色改稿）、审读（六维打分 / OOC / 续写方向 / 爽点毒点 / 黄金三章）、简报（开写前的本章写作简报）、补登（抽出本章新设定，一键登记进设定表或角色卡），未配置模型时本地功能照常。\n· 自定义项目：本页列出全部页签，未启用的功能以灰色显示且不可跳转；要启用请回到项目管理页编辑项目功能清单。'}
           </HelpPopover>
         </div>
@@ -134,7 +134,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
         <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <Lightbulb size={14} className="text-amber" />
           <h2 className="text-13 font-semibold text-ink-100">核心创作方法论</h2>
-          <HelpPopover title="核心创作方法论" width="21rem" className="ml-auto">
+          <HelpPopover title="核心创作方法论" width="21rem">
             {'12 条从网文实战里提炼的规则，对应软件里的具体动作：\n\n· 开书前：先定位 → 再总纲 → 再世界观三层填法；\n· 连载中：随写随登记（新设定当天回表）、每章结尾留钩子、伏笔写清前置条件；\n· 改设定：必须先过「设定变更」，冲突未处理前不要发布后续章节。\n\n卡文时优先翻「灵感素材」而不是硬编。'}
           </HelpPopover>
         </div>
