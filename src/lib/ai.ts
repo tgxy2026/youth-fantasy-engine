@@ -212,6 +212,57 @@ export function isCancelled(e: unknown): boolean {
 }
 
 /**
+ * OpenAI 兼容端点的 baseUrl 归一：剥掉误粘的 `/chat/completions` 尾段（中转站商家
+ * 常给完整接口地址），得到「chat/completions 的前缀」——`/chat/completions` 与
+ * `/models` 的拼接都从这里走（2.5.2 中转站兼容）。
+ */
+export function openaiBaseOf(raw: string): string {
+  const base = stripSlash(raw || '')
+  return base.endsWith('/chat/completions') ? base.slice(0, -'/chat/completions'.length) : base
+}
+
+/** 明显不是对话模型的条目（列模型时剔除）：向量化 / 画图 / 语音 / 审核类与退役补全引擎 */
+const NON_CHAT_MODEL_RE = /embedding|dall-e|whisper|tts|moderation|babbage|davinci|-ada|rerank|guard|ocr|image|video|audio|sora/i
+
+/**
+ * 拉 OpenAI 兼容端点的可用模型清单（2.5.2）：`GET {base}/models`。
+ * OpenAI 事实标准返回 `data[].id`；容错再认 `data[].name` 与 `models[].name` 两种形态。
+ * 中转站的清单可能上百条且混入非对话模型 → 按 NON_CHAT_MODEL_RE 剔除后原序返回。
+ * 失败抛中文可读原因（调用方 toast 展示，UI 保留手动填写，不阻塞配置）。
+ */
+export async function listOpenAIModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey'>): Promise<string[]> {
+  const base = openaiBaseOf(config.baseUrl)
+  if (!base) throw new Error('未填写 API 接口地址（baseUrl）：先填地址再获取模型列表。')
+  let res: Response
+  try {
+    res = await fetchWithTimeout(`${base}/models`, {
+      headers: { ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) },
+    }, 10_000)
+  } catch (e) {
+    if (isAbortError(e)) throw new Error('获取模型列表超时（10 秒）：请检查接口地址与网络。')
+    throw new Error('无法获取模型列表：请检查接口地址与网络；浏览器 / 桌面端也可能因 CORS 拦下跨域请求。')
+  }
+  if (!res.ok) throw new Error(describeApiError(res.status, await res.text().catch(() => '')))
+  const data = await res.json().catch(() => ({}))
+  const rows: Array<Record<string, unknown>> =
+    (Array.isArray(data?.data) && data.data) ||
+    (Array.isArray(data?.models) && data.models) ||
+    []
+  const names = rows
+    .map(r => String(r?.id ?? r?.name ?? '').trim())
+    .filter(Boolean)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const n of names) {
+    if (NON_CHAT_MODEL_RE.test(n)) continue
+    if (seen.has(n)) continue
+    seen.add(n)
+    out.push(n)
+  }
+  return out
+}
+
+/**
  * 带超时的 fetch：
  * - 超时 → 内部 ctrl.abort()，调用方把 AbortError 翻译成友好超时提示；
  * - 外部 signal 触发 → 视为用户主动取消（抛 AICancelled）；
@@ -577,7 +628,7 @@ function describeApiError(status: number, raw: string): string {
     case 403:
       return `密钥无权访问（HTTP 403）：确认这个 Key 已开通对应模型，或平台是否要求先实名 / 绑定。${tail}`
     case 404:
-      return `接口地址或模型名不对（HTTP 404）：确认 baseUrl 指到 …/v1 这类 chat/completions 前缀，并核对模型名拼写。${tail}`
+      return `接口地址或模型名不对（HTTP 404）：确认 baseUrl 指到 …/v1 这类 chat/completions 前缀（中转站请按其文档给的接口前缀填），并核对模型名拼写。${tail}`
     case 429:
       return `请求过于频繁或已达配额上限（HTTP 429）：稍后重试，或检查账户额度是否已用尽。${tail}`
     case 500:
@@ -592,15 +643,17 @@ function describeApiError(status: number, raw: string): string {
 
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<string> {
   const { timeoutMs } = o
-  const rawBase = stripSlash(config.baseUrl || '')
-  if (!rawBase) throw new Error('未填写 API 接口地址（baseUrl）。')
-  const base = rawBase
+  const base = openaiBaseOf(config.baseUrl || '')
+  if (!base) throw new Error('未填写 API 接口地址（baseUrl）。')
   if (!config.model) throw new Error('未填写模型名称。')
   let res: Response
   let clearTimer: (() => void) | null = null
   // 云端 Qwen3 系：思考开着就拿不到 content，等于静默废掉所有 AI 功能 —— 默认关掉（`think:true` 可显式保留）
   const thinkToggle = !config.local && o.think !== true && HYBRID_THINKING_RE.test(config.model)
-  const doFetch = (withToggle: boolean) => fetchWithTimeout(
+  // 三级请求体：full（含 enable_thinking + temperature + 采样）→ noToggle（去 enable_thinking）
+  //   → bare（再去 temperature 与采样惩罚——推理系模型（o1 / deepseek-r1 等）对 temperature ≠ 1 会直接 400；
+  //     部分中转站也会拒绝不认识的字段。每级只在上一级 400 时才降）
+  const doFetch = (variant: 'full' | 'noToggle' | 'bare') => fetchWithTimeout(
     `${base}/chat/completions`,
     {
       method: 'POST',
@@ -609,10 +662,10 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
         ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       },
       body: JSON.stringify({
-        model: config.model, messages, temperature: o.temperature,
-        ...openaiSampling(o),
+        model: config.model, messages,
+        ...(variant !== 'bare' ? { temperature: o.temperature, ...openaiSampling(o) } : {}),
         stream: !!o.onToken,
-        ...(withToggle ? { enable_thinking: false } : {}),
+        ...(variant === 'full' && thinkToggle ? { enable_thinking: false } : {}),
       }),
     },
     timeoutMs,
@@ -620,12 +673,17 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     o.onToken ? (ct) => { clearTimer = ct } : undefined,
   )
   try {
-    res = await doFetch(thinkToggle)
+    res = await doFetch(thinkToggle ? 'full' : 'noToggle')
     // 该端点不认 enable_thinking（返回 400）→ 丢掉这个字段重试一次。
     // 宁可少一个优化，也绝不因为多发一个字段把功能弄坏。
     if (res.status === 400 && thinkToggle) {
       await res.text().catch(() => '')
-      res = await doFetch(false)
+      res = await doFetch('noToggle')
+    }
+    // 🔴 中转站兼容：部分端点 / 推理系模型对 temperature、采样字段校验严格（HTTP 400）→ 再降一级重试
+    if (res.status === 400) {
+      await res.text().catch(() => '')
+      res = await doFetch('bare')
     }
   } catch (e) {
     if (isCancelled(e)) throw e
@@ -650,7 +708,37 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
       if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
       throw e
     }
-    if (!content.trim()) throw new Error('API 未返回内容，请确认模型名称正确且账户有额度。')
+    if (!content.trim()) {
+      // 🔴 2.5.2 中转站兼容：部分中转对流式返回**非标准体**（每行 JSON.parse 失败被 readSSE
+      //    静默跳过）→ content 恒为空，用户看到的就是「跑不通」。自动降级**非流式**重试一次——
+      //    宁可多等一整轮，也要把「跑不通」变成「慢一点但能跑」。
+      const retry = await fetchWithTimeout(
+        `${base}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model: config.model, messages, temperature: o.temperature,
+            ...openaiSampling(o), stream: false,
+            ...(thinkToggle ? { enable_thinking: false } : {}),
+          }),
+        },
+        timeoutMs, o.signal,
+      )
+      if (retry.ok) {
+        const data = await retry.json().catch(() => ({}))
+        const c = data?.choices?.[0]?.message?.content
+        if (typeof c === 'string' && c.trim()) {
+          const out = stripThink(c)
+          o.onToken?.(out)
+          return out
+        }
+      }
+      throw new Error('API 未返回内容（流式响应体无法解析，非流式重试也失败）：该接口地址可能不兼容 OpenAI 流式格式——请确认中转站文档给出的接口地址与模型名，或换官方接口测试。')
+    }
     return stripThink(content)
   }
   const data = await res.json().catch(() => ({}))
