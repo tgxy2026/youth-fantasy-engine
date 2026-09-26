@@ -56,10 +56,24 @@ export interface ElectronNetAPI {
   }): Promise<NetFetchResult>
 }
 
+/**
+ * preload 注入的「窗口控制」（2.5.1 · B2 真·全屏切换）。
+ * 只有三个受控口子：设置 / 查询 / 状态推送；F11 与 ESC 的按键判定在渲染层（见 installFullscreenShortcuts）。
+ */
+export interface ElectronWindowAPI {
+  /** 设置真全屏（无边框）；返回实际全屏态。命名随 Electron 官方 `win.setFullScreen`（大写 S） */
+  setFullScreen(on: boolean): Promise<boolean>
+  /** 查询当前全屏态 */
+  isFullscreen(): Promise<boolean>
+  /** 订阅全屏态变化（主进程推送，系统级全屏变化也会来）；返回退订函数 */
+  onFullscreenChange(cb: (on: boolean) => void): () => void
+}
+
 declare global {
   interface Window {
     electronStore?: ElectronStoreAPI
     electronNet?: ElectronNetAPI
+    electronWindow?: ElectronWindowAPI
   }
 }
 
@@ -73,6 +87,40 @@ export const DESKTOP: boolean =
  */
 export const HAS_NET_BRIDGE: boolean =
   typeof window !== 'undefined' && typeof window.electronNet === 'object' && window.electronNet !== null
+
+/** 是否有窗口控制桥（B2 真·全屏）：桌面版 preload 注入；浏览器 / 便携版没有 */
+export const HAS_WINDOW_BRIDGE: boolean =
+  typeof window !== 'undefined' && typeof window.electronWindow === 'object' && window.electronWindow !== null
+
+/** 运行时取窗口桥（供 helper 用 —— 不用模块级常量，测试里才能注入 mock window） */
+function windowApi(): ElectronWindowAPI | null {
+  if (typeof window === 'undefined') return null
+  return window.electronWindow ?? null
+}
+
+/** 切换真·全屏；无窗口桥（浏览器 / 便携版）时返回 null（调用方应隐藏入口） */
+export async function toggleFullscreen(): Promise<boolean | null> {
+  const w = windowApi()
+  if (!w) return null
+  return w.setFullScreen(!(await w.isFullscreen()))
+}
+
+/** 安装 F11 / ESC 快捷键（仅桌面；浏览器有自己的 F11/ESC 语义，不接管）。返回卸载函数。 */
+export function installFullscreenShortcuts(): () => void {
+  const w = windowApi()
+  if (!w) return () => {}
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'F11') {
+      e.preventDefault() // 桌面版接管 F11，避免浏览器语义（webview 场景）叠加
+      void toggleFullscreen()
+    } else if (e.key === 'Escape') {
+      // ESC 只在全屏时退出（与浏览器一致）；非全屏时不动它，免得干扰弹窗关闭等既有语义
+      void w.isFullscreen().then(on => { if (on) void w.setFullScreen(false) })
+    }
+  }
+  window.addEventListener('keydown', onKey)
+  return () => window.removeEventListener('keydown', onKey)
+}
 
 /**
  * 由主进程代发一次请求。**永不抛** —— 不可用时返回 ok:false，让调用方把原因如实报给作者，

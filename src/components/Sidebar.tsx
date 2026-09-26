@@ -1,5 +1,5 @@
 import { Z } from '../lib/zLayer'
-import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2 } from 'lucide-react'
 import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
 import { confirmDialog } from './dialogs'
@@ -9,7 +9,7 @@ import type { TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
 import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom, isZoomAuto, getStoredCustomTheme } from '../lib/theme'
-import { DESKTOP } from '../lib/desktop'
+import { DESKTOP, HAS_WINDOW_BRIDGE, toggleFullscreen } from '../lib/desktop'
 import { DesktopDataBar } from './Desktop'
 import CloudFileSyncBar from './CloudFileSyncBar'
 import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
@@ -366,6 +366,8 @@ style={{ zIndex: Z.pageBase }}
             </Button>
           </div>
         </div>
+        {/* 真·全屏（2.5.1 · B2）：F11 进出无边框全屏；开关跟随实际态（含系统级变化推送）。仅桌面版显示 */}
+        {HAS_WINDOW_BRIDGE && <FullscreenToggle />}
         {/* 本机存储：数据文件保存 / 导出 / 导入。
             内嵌进侧栏而非全局 fixed 浮层，避免压住左下角（#032 布局规范化）。 */}
         {DESKTOP && <DesktopDataBar embedded />}
@@ -382,5 +384,32 @@ style={{ zIndex: Z.pageBase }}
         onApplied={() => { setTheme('custom'); setCustomThemeOpen(false) }}
       />
     </aside>
+  )
+}
+
+/** 真·全屏开关（2.5.1 · B2）：仅桌面版渲染；状态跟随实际全屏态（F11 直按 / 系统级全屏变化都会推送回来）。 */
+function FullscreenToggle() {
+  const [on, setOn] = useState(false)
+  useEffect(() => {
+    const w = window.electronWindow
+    if (!w) return
+    let alive = true
+    void w.isFullscreen().then(v => { if (alive) setOn(v) })
+    const unsub = w.onFullscreenChange(v => setOn(v))
+    return () => { alive = false; unsub() }
+  }, [])
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex items-center gap-1"><Maximize2 size={11} />全屏
+        <HelpPopover title="全屏模式" width="20rem" size={11}>
+          {'进入无边框全屏，再按 F11 或 ESC 退出（ESC 仅在全屏时生效，不影响弹窗关闭）。\n\n· 旁边的开关与实际状态实时同步 —— 直接按 F11 它也会跟着变；\n· 启动时不会自动进入全屏，仍是常规的最大化窗口；\n· 该设置不跨启动记忆，重启后恢复普通窗口。'}
+        </HelpPopover>
+      </span>
+      <Button variant="toggle" size="xs" selected={on} className="ml-auto shrink-0"
+        onClick={() => { void toggleFullscreen() }}
+        title={on ? '退出全屏（F11 / ESC）' : '进入无边框全屏（F11）'}>
+        {on ? '已开' : '关'}
+      </Button>
+    </div>
   )
 }

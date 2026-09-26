@@ -292,9 +292,24 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     ],
     excludes: ['不谈语法、标点、结构与设定矛盾 —— 那是「校对」「文风体检」「本章体检」的事'],
   },
+  // 颉文姬「本章设定补登」（拆书 / 设定补登共用）：从正文抽专名候选（2.5.1 补登记，此前漏了）
+  'extract-entities': {
+    label: '设定实体抽取',
+    sources: [{ group: '本章正文', items: [], note: '全章参与；只从正文抽专名候选，候选是否已登记由本地对照判断' }],
+    excludes: ['不读设定表 —— 候选与库内已有项的去重是本地逻辑，不发模型'],
+  },
   'name-suggest': {
     label: 'AI 取名',
     sources: [{ group: '项目设定资料', items: ['作品定位', '世界设定', '力量体系'], note: '约 3000 字预算' }],
+  },
+  // 灵感工具页 · 灵感融合（2.5.1·A3 新增）
+  'inspiration-fuse': {
+    label: '灵感融合为情节卡',
+    sources: [
+      { group: '你勾选的灵感条目', items: [], note: '原样逐条列出，编号即卡片上「基于灵感 #N」的来源' },
+      { group: '项目设定资料', items: ['作品定位', '世界设定', '力量体系'], note: '约 4000 字预算，用于让创意贴合设定' },
+    ],
+    excludes: ['不直接搬运灵感原文 —— 融合要求几条灵感互相服务形成新情节'],
   },
   'ai-assist': {
     label: 'AI 辅助规划（脑暴）',

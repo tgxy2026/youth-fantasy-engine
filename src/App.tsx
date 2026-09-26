@@ -14,7 +14,7 @@ import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema
 import { isWorldSetTab } from './lib/worldSets'
 import * as db from './lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from './lib/backup'
-import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop } from './lib/desktop'
+import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from './lib/desktop'
 import { DesktopWriteLockBanner } from './components/DesktopWriteLockBanner'
 import DataDock from './components/DataDock'
 import BackupReminder from './components/BackupReminder'
@@ -109,6 +109,9 @@ export default function App() {
     window.addEventListener('beforeunload', onLeave)
     return () => { window.removeEventListener('beforeunload', onLeave) }
   }, [])
+
+  // 真·全屏快捷键（2.5.1 · B2）：F11 进出无边框全屏、全屏态下 ESC 退出。仅桌面版安装；返回卸载函数。
+  useEffect(() => installFullscreenShortcuts(), [])
 
   // 磁盘写盘失败时把原本静默吞掉的错误暴露给用户，避免无提示丢稿
   useEffect(() => {

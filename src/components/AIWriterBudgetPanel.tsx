@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { Database, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
@@ -103,7 +104,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
 那边还有记忆档、设定层占比等一整套。两边各管各的、「互不冲突」。`}
         </HelpPopover>
         <div className="flex-1" />
-        {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
+        {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
         <Button variant="primary" size="sm" disabled={!dirty || saving} onClick={() => void commit(draft)}>
           {saving ? '保存中…' : '保存'}
         </Button>

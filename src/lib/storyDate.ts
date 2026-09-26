@@ -86,11 +86,6 @@ export function parseStoryDateParts(s: string | undefined | null): StoryDatePart
   return { y: Number(m[1]), m: m[2] ? Number(m[2]) : undefined, d: m[3] ? Number(m[3]) : undefined }
 }
 
-/** 只取年份（时间轴的"跨度几年"用）；解析不出返回 null */
-export function storyDateYear(s: string | undefined | null): number | null {
-  return parseStoryDateParts(s)?.y ?? null
-}
-
 /**
  * 解析为可比较的排序键（见文件头口径）。
  * 兼容旧格式的自由文本（"800 年前" → 远古负值；"1000-03-15" → 取首个数字），
@@ -108,11 +103,6 @@ export function storyDateKey(s: string | undefined | null): number {
   }
   const m = raw.match(/(-?\d+)/)
   return m ? Number(m[1]) * 10000 : Number.POSITIVE_INFINITY
-}
-
-/** 当月天数（自定义历法下就是「每月天数」，不再有大小月与闰年） */
-export function daysInMonth(rule: CalendarRule, _m: number): number {
-  return rule.daysPerMonth
 }
 
 /** 月序号取值范围：1 ~ monthsPerYear */

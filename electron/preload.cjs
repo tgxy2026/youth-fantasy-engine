@@ -44,3 +44,17 @@ contextBridge.exposeInMainWorld('electronNet', {
    */
   fetch: (url, init) => ipcRenderer.invoke('net:fetch', url, init),
 })
+
+// 窗口控制（2.5.1 · B2）：只暴露全屏切换三个口子，按键判定（F11/ESC）在渲染层。
+contextBridge.exposeInMainWorld('electronWindow', {
+  /** 设置真全屏（无边框）；返回实际全屏态 */
+  setFullScreen: (on) => ipcRenderer.invoke('window:setFullscreen', on),
+  /** 查询当前全屏态 */
+  isFullscreen: () => ipcRenderer.invoke('window:isFullscreen'),
+  /** 订阅全屏态变化（主进程 enter/leave-full-screen 推送）；返回退订函数 */
+  onFullscreenChange: (cb) => {
+    const h = (_e, on) => cb(on)
+    ipcRenderer.on('window:fullscreen-changed', h)
+    return () => ipcRenderer.removeListener('window:fullscreen-changed', h)
+  },
+})

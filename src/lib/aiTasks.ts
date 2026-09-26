@@ -30,6 +30,7 @@ import { INLINE_PROMPTS } from './aiTasks/inline'
 import { CREATIVE_PROMPTS } from './aiTasks/creative'
 import { PACE_PROMPTS } from './aiTasks/pace'
 import { READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
+import { INSPIRATION_PROMPTS } from './aiTasks/inspiration'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
@@ -39,6 +40,9 @@ export { aiProofreadText, aiProofreadLogic } from './aiTasks/proofread'
 export type { ProofreadIssue, ProofreadOptions, ProofreadResult } from './aiTasks/proofread'
 export { aiSuggestNames, aiReviewSensitive } from './aiTasks/suggest'
 export type { NameSuggestRequest, NameSuggestion, SensitiveHitInput, SensitiveReview } from './aiTasks/suggest'
+// 2026-09-26（2.5.1·A3）：灵感融合 —— 勾选灵感夹条目 → 融合成情节创意卡落推演画布；basedOn 溯源
+export { aiFuseInspiration, parseFusedIdeas, INSPIRATION_PROMPTS } from './aiTasks/inspiration'
+export type { FuseIdeaRequest, FusedIdea } from './aiTasks/inspiration'
 export { aiContinuityAudit, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReview, aiDedupTerms, aiStyleCheck } from './aiTasks/audit'
 export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from './aiTasks/audit'
 export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from './aiTasks/jieWenJi'
@@ -62,9 +66,10 @@ export { aiPaceAnalysis, PACE_PROMPTS } from './aiTasks/pace'
 export { parsePaceReport, PACE_SEGMENTS, HOOK_KINDS, PACE_BEAT_KINDS } from './paceAnalysis'
 export type { PaceReport, PaceBeat, PaceDistribution, HookKind } from './paceAnalysis'
 // 2026-09-23（2.4.2·C5）：读者视角审问 —— 扮演一个具体读者读这一章，三问；位置由本地换算
+// 2026-09-26（2.5.1·D1）：身份可带自己的问题集（写作导师四问），questionsOf 是问题集单一源
 export { aiReaderProbe, READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
 export {
-  READER_LENSES, READER_QUESTIONS, readerLensOf,
+  READER_LENSES, READER_QUESTIONS, readerLensOf, questionsOf,
   parseReaderProbe, groupNotes, paragraphAt, readerProbeToText,
 } from './readerProbe'
 export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from './readerProbe'
@@ -82,6 +87,7 @@ const PROMPT_ORDER = [
   'proofread-text',
   'proofread-logic',
   'name-suggest',
+  'inspiration-fuse',
   'sensitive-recheck',
   'continuity-audit',
   'feedback-analysis',
@@ -111,6 +117,7 @@ const PROMPT_SETS: PromptDef[][] = [
   ORGANIZE_PROMPTS,
   PROOFREAD_PROMPTS,
   SUGGEST_PROMPTS,
+  INSPIRATION_PROMPTS,
   AUDIT_PROMPTS,
   JIEWENJI_PROMPTS,
   PACE_PROMPTS,

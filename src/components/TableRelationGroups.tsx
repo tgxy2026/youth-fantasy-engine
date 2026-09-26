@@ -7,6 +7,7 @@
  * 状态一律来自 `model`（同名解构，JSX 保持原样）；本组件不持有任何状态。
  */
 import type { VisCtx } from '../lib/schema'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import type { TabDef } from '../lib/types'
 import { SABC_LABELS } from '../lib/schema'
 import { Button } from './Button'
@@ -93,7 +94,7 @@ export default function TableRelationGroups({ tab, model, ctx }: {
                             <span className="px-1.5 py-px text-10 rounded bg-ink-800 text-ink-300 border border-ink-700 shrink-0">{type}</span>
                           )}
                           {!rOpen && status && <span className="text-11 text-ink-500 truncate">{status}</span>}
-                          {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存的改动" />}
+                          {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title={UNSAVED_CHANGES_HINT} />}
                         </Button>
                         <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1 shrink-0" title="删除此条关系">
                           <Trash2 size={12} />

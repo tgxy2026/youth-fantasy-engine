@@ -68,13 +68,6 @@ export interface BeatAlignment {
   chapters: { no: number; title: string }[]
 }
 
-export interface PaceAlignmentResult {
-  shares: ChapterShare[]
-  alignments: BeatAlignment[]
-  /** 参与统计的总字数（words>0 的章） */
-  totalWords: number
-}
-
 const round1 = (n: number) => Math.round(n * 10) / 10
 
 /**

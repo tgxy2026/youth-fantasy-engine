@@ -28,6 +28,7 @@
  */
 
 import HelpPopover from './HelpPopover'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 import { Modal } from './Modal'
@@ -206,7 +207,7 @@ export default function TavernCard() {
                 {/* 操作 */}
                 <div className="flex items-center justify-between border-t border-ink-800 pt-3">
                   <span className="text-11 text-ink-500">
-                    {dirty ? '有未保存的改动' : `上次保存：${new Date(draft.updatedAt).toLocaleString('zh-CN')}`}
+                    {dirty ? UNSAVED_CHANGES_HINT : `上次保存：${new Date(draft.updatedAt).toLocaleString('zh-CN')}`}
                   </span>
                   {/* 与卡面顶部那组是**同一份 JSX**（`actionButtons`）—— 两处按钮不可能走样 */}
                   <div className="flex gap-2">{actionButtons}</div>

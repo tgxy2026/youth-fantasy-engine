@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { Z } from '../lib/zLayer'
 import type { TabDef, CardRecord } from '../lib/types'
 import { SABC_LABELS, CARD_TABLE_REF_FIELDS } from '../lib/schema'
@@ -376,7 +377,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                 <div className="flex items-center gap-2">
                   <UserRound size={13} className="shrink-0" />
                   <span className="text-13 font-medium truncate flex-1">{rec.name}</span>
-                  {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title="有未保存的改动" />}
+                  {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title={UNSAVED_CHANGES_HINT} />}
                   <Button variant="icon-danger" onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-40 group-hover:opacity-100 transition-all">
                     <Trash2 size={12} />
                   </Button>

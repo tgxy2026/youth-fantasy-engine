@@ -16,7 +16,9 @@ import { Button } from './Button'
 
 // 🔴 'beat'（结构节拍）只由「按模板铺节点」本地生成（2.5.0 · A1），**不进 HEADER_TO_TYPE**
 //    —— AI 章节简报解析永远不产 beat 卡，两套来源互不污染。
-type CardType = 'foreshadow' | 'hook' | 'character' | 'next' | 'beat'
+// 🔴 'idea'（灵感融合，2.5.1 · A3）只由灵感夹的「融合为情节卡」生成（同 beat 规则），
+//    **不进 HEADER_TO_TYPE** —— AI 简报解析永远不会产 idea 卡。
+type CardType = 'foreshadow' | 'hook' | 'character' | 'next' | 'beat' | 'idea'
 interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number }
 type Conn = [string, string]
 interface PlotPersist { selected: string[]; cards: CardItem[]; conns: Conn[] }
@@ -27,6 +29,7 @@ const TYPE_META: Record<CardType, { label: string; color: string }> = {
   character: { label: '角色状态', color: '#8fd0c4' },
   next: { label: '下一章衔接', color: '#8fb4e8' },
   beat: { label: '结构节拍', color: '#b9a7e8' },
+  idea: { label: '灵感融合', color: '#7fd18b' },
 }
 const HEADER_TO_TYPE: Record<string, CardType> = {
   '待办伏笔': 'foreshadow', '钩子与爽点': 'hook', '角色状态提醒': 'character', '下一章衔接': 'next',
