@@ -434,9 +434,14 @@ app.whenReady().then(() => {
   ipcMain.handle('window:isFullscreen', () => (win.isDestroyed() ? false : win.isFullScreen()))
   // 状态推送：用户直接按 F11（渲染层 toggle）之外，系统也可能改变全屏态
   //（如 Win+Shift+Enter 的系统级全屏）—— 界面开关必须跟随实际状态，不能只信自己的写入。
+  // 🔴 Windows 实测坑：enter-full-screen 事件触发瞬间 win.isFullScreen() **还没翻转成 true**
+  //（事件先于状态更新，读到的是旧值 false）——所以事件只当「状态可能变了」的信号，
+  // 延迟一拍读实际值再推；快速连按时多次推送无妨，最终一次的读数就是终态。
   const pushFullscreen = () => {
-    if (win.isDestroyed()) return
-    win.webContents.send('window:fullscreen-changed', win.isFullScreen())
+    setTimeout(() => {
+      if (win.isDestroyed()) return
+      win.webContents.send('window:fullscreen-changed', win.isFullScreen())
+    }, 120)
   }
   win.on('enter-full-screen', pushFullscreen)
   win.on('leave-full-screen', pushFullscreen)
