@@ -422,6 +422,25 @@ app.whenReady().then(() => {
   // 否则用户面对的是「进程起来了但什么都没出现」，比小窗糟糕得多。
   setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) showMaximized() }, 5000)
 
+  // ---- 真·全屏切换（2.5.1 · B2）----
+  // F11 进出无边框全屏，与浏览器同语义；启动行为不变（仍是上面的最大化窗口）。
+  // 主进程只提供「设置 / 查询 / 状态推送」三个受控口子，按键判定在渲染层做 ——
+  // 这样 F11 与 ESC 的语义只写一处，且不会与系统级全局快捷键打架。
+  ipcMain.handle('window:setFullscreen', (_e, on) => {
+    if (win.isDestroyed()) return false
+    win.setFullScreen(!!on)
+    return win.isFullScreen()
+  })
+  ipcMain.handle('window:isFullscreen', () => (win.isDestroyed() ? false : win.isFullScreen()))
+  // 状态推送：用户直接按 F11（渲染层 toggle）之外，系统也可能改变全屏态
+  //（如 Win+Shift+Enter 的系统级全屏）—— 界面开关必须跟随实际状态，不能只信自己的写入。
+  const pushFullscreen = () => {
+    if (win.isDestroyed()) return
+    win.webContents.send('window:fullscreen-changed', win.isFullScreen())
+  }
+  win.on('enter-full-screen', pushFullscreen)
+  win.on('leave-full-screen', pushFullscreen)
+
   // 所有 target="_blank" 的外链一律交给系统浏览器打开。
   // 未配置时 Electron 会在应用内再开一个无地址栏、无法登录/下载的 BrowserWindow，
   // 用户根本意识不到那是网页（B 站主页、网盘下载页都会踩这个坑）。
