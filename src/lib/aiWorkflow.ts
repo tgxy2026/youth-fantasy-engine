@@ -818,7 +818,6 @@ export async function runCreativeWriting(
         strategy: opts.strategy ?? 'add-only',
         ...(inp.intent.trim() ? { intent: inp.intent.trim() } : {}),
         ...(opts.deAi ? { deAi: opts.deAi } : {}),
-        ...(opts.inspirations?.length ? { inspirationsFor: () => opts.inspirations as string[] } : {}),
         // 🔴 正文缺口优先（默认开）：先把最后一章补到目标字数，再往下写新章。
         //    库里还没有正文时 `last` 为 null，那段自然跳过（从零创作不受影响）。
         ...(opts.topUpLast === false ? {} : { topUpLast: {} }),
@@ -843,6 +842,8 @@ export async function runCreativeWriting(
           opts.onChapterSaved?.(ch)
         },
         ...(opts.onChapterDraft ? { onChapterDraft: opts.onChapterDraft } : {}),
+        // 2.5.2 · A2：作者灵感注入（🔴 必须在 cb——autoContinue 从回调对象读）
+        ...(opts.inspirations?.length ? { inspirationsFor: () => opts.inspirations as string[] } : {}),
         ...(opts.onSettingsCandidates ? { onSettingsCandidates: opts.onSettingsCandidates } : {}),
         ...(outlines.size ? { outlineFor: (no: number) => outlines.get(no) } : {}),
         // 🔴 按大纲**切卷**（2026-09-20）：读分卷大纲卡的「本卷章号范围」，建"章号 → 卷 id"查询。
