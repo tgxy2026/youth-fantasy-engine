@@ -1,5 +1,6 @@
 import { useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import { Button } from './Button'
+import SelectRow from './SelectRow'
 import Avatar from './Avatar'
 import { cardStoryId, type TavernCharIndexItem, type TavernStoryIndexItem } from '../lib/tavern/types'
 import { storyDisplayName } from '../lib/tavern/story'
@@ -74,16 +75,16 @@ export default function TavernCardList({
   /** 左栏的一张卡（不管挂在哪个分组下，长相一致 —— 免得作者以为两种卡不一样） */
   const charRow = (c: TavernCharIndexItem) => (
     <li key={c.id}>
-      <button
-        type="button"
-        onClick={() => void onOpenCard(c.id)}
-        className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
-          draft?.id === c.id ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800/60'
-        }`}
-      >
-        <Avatar src={c.avatar} name={c.name} size={24} />
-        <span className="min-w-0 flex-1 truncate text-12 text-ink-100">{c.name || '未命名角色'}</span>
-      </button>
+        <SelectRow
+          type="button"
+          selected={draft?.id === c.id}
+          variant="outline"
+          onClick={() => void onOpenCard(c.id)}
+          className="items-center gap-2 rounded-md px-2 py-1.5"
+        >
+          <Avatar src={c.avatar} name={c.name} size={24} />
+          <span className="min-w-0 flex-1 truncate text-12 text-ink-100">{c.name || '未命名角色'}</span>
+        </SelectRow>
     </li>
   )
 

@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import { getTavernSettings, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
 import { Button } from './Button'
+import SelectRow from './SelectRow'
 import { Modal } from './Modal'
 import Avatar from './Avatar'
 import TavernScriptDialog from './TavernScriptDialog'
@@ -135,12 +136,10 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
             const used = usedBy[o.id]
             const disabled = used !== undefined && o.id !== currentId
             return (
-              <button
-                key={o.id} type="button" disabled={disabled} onClick={() => setCardId(o.id)}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
-                  disabled ? 'cursor-not-allowed opacity-40'
-                    : cardId === o.id ? 'bg-amber/15' : 'hover:bg-ink-800/60'
-                }`}
+              <SelectRow
+                key={o.id} type="button" disabled={disabled} selected={cardId === o.id}
+                onClick={() => setCardId(o.id)}
+                className={`items-center gap-2 px-3 py-2 ${disabled ? 'cursor-not-allowed' : ''}`}
               >
                 <Avatar src={o.avatar} name={o.name} size={20} />
                 <span className={`min-w-0 shrink-0 text-12 ${cardId === o.id ? 'text-amber' : 'text-ink-200'}`}>
@@ -149,7 +148,7 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
                 <span className="min-w-0 flex-1 truncate text-right text-10 text-ink-500">
                   {disabled ? `已在位置 ${used}` : o.core}
                 </span>
-              </button>
+              </SelectRow>
             )
           })}
           {rows.length === 0 && (

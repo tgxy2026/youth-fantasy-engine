@@ -13,6 +13,7 @@ import AIDataSourceNote from './AIDataSourceNote'
 import * as store from '../lib/tavern/store'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
+import SelectRow from './SelectRow'
 import TavernExportDialog from './TavernExportDialog'
 import { reportDocModel } from '../lib/tavern/exportDoc'
 import { TABS } from '../lib/schema'
@@ -139,13 +140,13 @@ export default function TavernReport() {
                 const active = activeId === it.id
                 const total = it.counts['矛盾'] + it.counts['漏洞'] + it.counts['存疑']
                 return (
-                  <button
+                  <SelectRow
                     key={it.id}
                     type="button"
+                    selected={active}
+                    variant="outline"
                     onClick={() => setActiveId(it.id)}
-                    className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-                      active ? 'border-amber/40 bg-amber/15' : 'border-transparent hover:bg-ink-800/60'
-                    }`}
+                    className="rounded-md px-2 py-1.5"
                   >
                     <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>
                       {reportName(it.sessionTitle)}
@@ -158,7 +159,7 @@ export default function TavernReport() {
                       {total === 0 && <span className="text-ink-500">未发现问题</span>}
                       <span className="ml-auto shrink-0 text-ink-600">{new Date(it.createdAt).toLocaleDateString()}</span>
                     </div>
-                  </button>
+                  </SelectRow>
                 )
               })}
               {rows.length === 0 && (
