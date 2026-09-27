@@ -19,7 +19,7 @@ import { Button } from './Button'
 // 🔴 'idea'（灵感融合，2.5.1 · A3）只由灵感夹的「融合为情节卡」生成（同 beat 规则），
 //    **不进 HEADER_TO_TYPE** —— AI 简报解析永远不会产 idea 卡。
 type CardType = 'foreshadow' | 'hook' | 'character' | 'next' | 'beat' | 'idea'
-interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number }
+interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number; /** 灵感融合卡（idea）的溯源编号（1 起，指向融合时勾选的灵感条目）；旧快照无此字段 */ basedOn?: number[] }
 type Conn = [string, string]
 interface PlotPersist { selected: string[]; cards: CardItem[]; conns: Conn[] }
 
@@ -307,7 +307,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
           >
             {'把本章写作简报升级成可拖拽、可连线的结构化推演画布\n\n'
               + '· 左侧勾选章节 → 点「生成推演」，复用颉文姬「本章写作简报」同一 AI 管线，每章生成一列卡片（待办伏笔 / 钩子爽点 / 角色状态 / 下一章衔接）。\n'
-              + '· 结构模板：左下角选一套叙事结构，点「按模板铺节点」把节拍铺成紫色卡片（纯本地、不耗 AI）；与推演卡混排连线，可以对着骨架推演全书走向。\n'
+              + '· 结构模板：左下角选一套叙事结构，点「按模板铺节点」把节拍铺成紫色卡片（不耗 AI）；与推演卡混排连线，可以对着骨架推演全书走向。\n'
               + '· 拖动卡片自由排布；按住空白处左键拖动可平移画布，卡片多到超出一屏时画布自动扩展并出现滚动条。\n'
               + '· 连接模式：依次点两张卡即可连成一条推演链；鼠标移到连线上点「×」可取消该连线。\n'
               + '· 推演内容会自动保存为项目快照（切换页面 / 重启都不丢失）。「清空推演本」可一键复位。'}
@@ -323,7 +323,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
           </span>
           <Button variant="bare"
             onClick={() => { setConnectMode(v => !v); setPendingConn(null) }}
-            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-11 transition-colors ${connectMode ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-11 transition-colors ${connectMode ? 'border-amber/40 text-amber bg-amber/15' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
             title="连接模式：依次点两张卡连成推演链；鼠标移到连线上点 × 取消"
           >
             <GitBranch size={11} /> {connectMode ? '连接中…' : '连接模式'}
@@ -347,7 +347,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                 <Button variant="bare"
                   key={id}
                   onClick={() => toggleChapter(id)}
-                  className={`w-full text-left !justify-start px-2 py-1.5 rounded-md border text-12 flex items-center gap-2 transition-colors ${on ? 'bg-amber/10 border-amber/30 text-amber' : 'border-ink-700 text-ink-300 hover:text-ink-100 hover:bg-ink-800'}`}
+                  className={`w-full text-left !justify-start px-2 py-1.5 rounded-md border text-12 flex items-center gap-2 transition-colors ${on ? 'bg-amber/15 border-amber/30 text-amber' : 'border-ink-700 text-ink-300 hover:text-ink-100 hover:bg-ink-800'}`}
                 >
                   <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${on ? 'bg-amber border-amber text-ink-900' : 'border-ink-600'}`}>{on && <Check size={10} />}</span>
                   <span className="truncate"><span className="text-ink-500">{ch.data['章节号'] || ''} </span>{ch.data['章节标题'] || '（未命名）'}</span>
@@ -367,7 +367,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
             <Button variant="primary" disabled={!ai.ready || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-12 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
               {generating ? <><Loader2 size={12} className="animate-spin" /> 生成中 {generating.i}/{generating.total}</> : <><Sparkles size={12} /> 生成推演</>}
             </Button>
-            <Button onClick={clearCanvas} variant="danger" size="md" className="w-full flex items-center justify-center text-11"><Eraser size={11} /> 清空推演本</Button>
+            <Button onClick={clearCanvas} variant="danger" size="md" className="w-full flex items-center justify-center"><Eraser size={11} /> 清空推演本</Button>
 
             {/* 2.5.0 · A1 结构模板铺节点：纯本地零 AI；选择不持久化（铺出的卡片已进快照） */}
             <div className="flex items-center gap-1.5 text-10 text-ink-500 px-0.5 pt-1">
@@ -375,7 +375,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
             </div>
             <select value={beatTplId} onChange={e => setBeatTplId(e.target.value)}
               className="w-full bg-ink-800 border border-ink-700 rounded-md text-ink-100 text-11 px-2 py-1 outline-none focus:border-amber/40"
-              title="选一套叙事结构模板，把节拍一键铺成画布卡片（纯本地，不耗 AI）；可与推演卡混排、连线">
+              title="选一套叙事结构模板，把节拍一键铺成画布卡片（不耗 AI）；可与推演卡混排、连线">
               <option value="">选择模板…</option>
               {STORY_TEMPLATES.map(t => (
                 <option key={t.id} value={t.id}>{t.name}（{t.beats.length} 拍）</option>
@@ -438,12 +438,18 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                     <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-ink-700" style={{ borderTopColor: meta.color }}>
                       <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: meta.color }} />
                       <span className="text-10 font-medium" style={{ color: meta.color }}>{meta.label}</span>
-                      <span className="text-9 text-ink-500 ml-auto truncate">{c.chapter}</span>
+                      {/* C-1 · 2.6.0：灵感融合卡兑现「每张卡标注用了哪几条灵感」——溯源编号显示在头部右侧（idea 卡 chapter 恒空）；
+                          旧快照的 idea 卡没有 basedOn 字段 → 明示「未记录」，不留空白让人以为坏了 */}
+                      <span className="text-9 text-ink-500 ml-auto truncate">
+                        {c.type === 'idea'
+                          ? (c.basedOn?.length ? `基于灵感 ${c.basedOn.map(n => '#' + n).join(' ')}` : '（未记录灵感来源）')
+                          : c.chapter}
+                      </span>
                     </div>
                     <div className="px-2.5 py-2 text-12 text-ink-200 leading-snug">{c.text}</div>
                     <Button variant="bare"
                       onPointerDown={e => { e.stopPropagation(); removeCard(c.id) }}
-                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-ink-800 border border-ink-600 text-ink-400 hover:text-red-300 hover:border-red-400 items-center justify-center hidden group-hover:flex"
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-ink-800 border border-ink-600 text-ink-400 hover:text-danger hover:border-red-400 items-center justify-center hidden group-hover:flex"
                       title="删除该卡"
                     ><X size={11} /></Button>
                   </div>
@@ -459,7 +465,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                     key={`del-${i}`}
                     onPointerDown={e => { e.stopPropagation(); removeConn(i) }}
                     title="取消这条推演链"
-                    className={`absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-800 border border-ink-600 text-ink-300 hover:text-red-300 hover:border-red-400 flex items-center justify-center ${connectMode ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}
+                    className={`absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-800 border border-ink-600 text-ink-300 hover:text-danger hover:border-red-400 flex items-center justify-center ${connectMode ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}
                     style={{ left: mx, top: my, pointerEvents: 'auto' }}
                   ><X size={11} /></Button>
                 )

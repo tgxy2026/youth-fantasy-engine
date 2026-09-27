@@ -161,10 +161,10 @@ export default function FormSheet({ tab }: Props) {
             <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
-            <span className={`text-11 transition-opacity duration-300 ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+            <span className={`text-11 transition-opacity duration-300 ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
-            <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-13 text-red-400">
+            <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-danger">
               <RotateCcw size={12} /> 清空
             </Button>
           <Button variant="toggle" selected={dirty}

@@ -114,7 +114,7 @@ export function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disable
           const on = m.id === mapId
           return (
             <div key={m.id}
-              className={'group flex items-center gap-0.5 rounded-md border px-1.5 py-1 transition-colors ' + (on ? 'border-amber/40 bg-amber/10' : 'border-ink-700 hover:border-ink-600')}>
+              className={'group flex items-center gap-0.5 rounded-md border px-1.5 py-1 transition-colors ' + (on ? 'border-amber/40 bg-amber/15' : 'border-ink-700 hover:border-ink-600')}>
               <button type="button" onClick={() => onPick(m.id)}
                 title={'切到「' + nm + '」（' + rowCountOf(nm) + ' 个地点）'}
                 className={'flex-1 min-w-0 text-left text-11 truncate ' + (on ? 'text-amber' : 'text-ink-300')}>
@@ -128,7 +128,7 @@ export function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disable
               </button>
               <button type="button" disabled={busy} onClick={() => void delMap(m)}
                 title="删除这张地图（地点不会被删，会退回第一张图）"
-                className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-ink-500 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity">
+                className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-ink-500 opacity-0 group-hover:opacity-100 hover:text-danger transition-opacity">
                 <Trash2 size={10} />
               </button>
             </div>
@@ -173,7 +173,7 @@ function MapInfoModal({ open, title, name, note, onSubmit, onCancel }: {
             className="w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50 resize-y leading-relaxed" />
         </Field>
         <div className="flex justify-end gap-2 pt-1">
-          <Button onClick={onCancel} variant="secondary" size="md" className="text-12">取消</Button>
+          <Button onClick={onCancel} variant="secondary" size="md">取消</Button>
           <Button onClick={() => { if (n.trim()) onSubmit(n.trim(), d.trim()) }} disabled={!n.trim()}
             variant="bare"
             className="px-3 py-1.5 rounded-md bg-amber/20 text-amber border border-amber/40 text-12 hover:bg-amber/30 disabled:opacity-40 transition-colors">
@@ -279,7 +279,7 @@ style={{ maxHeight: foldVh('52vh') }}>
             <span className="text-12 text-ink-100 truncate">{it.name}</span>
             <span className="shrink-0 text-10 text-ink-500">{it.category}</span>
             {it.drawn > 0
-              ? <span className="ml-auto shrink-0 text-10 text-emerald-400/90">已画 {it.drawn} 格</span>
+              ? <span className="ml-auto shrink-0 text-10 text-success/90">已画 {it.drawn} 格</span>
               : <span className="ml-auto shrink-0 text-10 text-ink-600">未画</span>}
           </button>
         ))}
@@ -310,7 +310,7 @@ export function AddMarkerForm({ categories, parentOptions, onCancel, onCreate }:
       </Field>
       <div className="flex gap-2 pt-1">
         <Button variant="bare" disabled={!name.trim()} onClick={() => onCreate(name, category, parent)} className="flex-1 px-3 py-1.5 rounded-md bg-amber/20 text-amber border border-amber/40 text-12 hover:bg-amber/30 disabled:opacity-40 transition-colors">新增地点</Button>
-        <Button onClick={onCancel} variant="secondary" size="md" className="text-12">取消</Button>
+        <Button onClick={onCancel} variant="secondary" size="md">取消</Button>
       </div>
       <p className="text-10 text-ink-500 leading-relaxed">新增后会同时出现在《地理风物》里，其余字段（地貌、势力归属、行程时间等）可到表格补全。</p>
     </div>
@@ -332,7 +332,7 @@ export function DetailPanel({ marker, linked, cells, categories, parentOptions, 
       <div className="flex items-center gap-2 text-ink-100 font-medium"><MapPin size={14} className="text-amber" /> {marker.name}</div>
       <div className="text-11 text-ink-400">当前形状：<span className="text-amber">{cells} 格</span>{painting && <span className="text-ink-500">（绘制中：左键涂/擦 · 右键退出）</span>}</div>
       <Button onClick={onPaint}
-        disabled={painting} variant="primary" size="md" className="w-full flex items-center justify-center text-12">
+        disabled={painting} variant="primary" size="md" className="w-full flex items-center justify-center">
         <Pencil size={12} /> {cells > 0 ? '继续绘制此范围' : '绘制此范围'}
       </Button>
       <Field label="名称"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => name.trim() && name !== marker.name && commit({ '名称': name.trim() })} className="w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50" /></Field>
@@ -349,7 +349,7 @@ export function DetailPanel({ marker, linked, cells, categories, parentOptions, 
         </select>
       </Field>
       <Button variant="bare" onClick={() => commit({ '地图格子': '' })} title="清掉这个范围画好的所有格子，《地理风物》档案保留" className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-ink-700 text-12 text-ink-200 hover:text-amber hover:border-amber/40 transition-colors"><Eraser size={12} /> 清空此范围的绘制</Button>
-      <Button onClick={onGotoTable} variant="secondary" size="md" className="w-full flex items-center justify-center text-12"><ExternalLink size={12} /> 在《地理风物》中编辑</Button>
+      <Button onClick={onGotoTable} variant="secondary" size="md" className="w-full flex items-center justify-center"><ExternalLink size={12} /> 在《地理风物》中编辑</Button>
 
       {/* 关联列表 */}
       {linked && (linked.foreshadow.length > 0 || linked.character.length > 0 || linked.timeline.length > 0) && (
@@ -362,8 +362,8 @@ export function DetailPanel({ marker, linked, cells, categories, parentOptions, 
       )}
 
       <div className="flex gap-2 pt-2 border-t border-ink-700">
-        <Button onClick={onClearPainted} title="清掉这个范围画好的所有格子，《地理风物》档案保留" variant="danger" size="md" className="flex-1 flex items-center justify-center text-11"><Eraser size={11} /> 清空绘制</Button>
-        <Button onClick={onDelete} title="连《地理风物》档案一起删除，不可撤销" variant="danger" size="md" className="flex-1 flex items-center justify-center text-11"><Trash2 size={11} /> 删除地点</Button>
+        <Button onClick={onClearPainted} title="清掉这个范围画好的所有格子，《地理风物》档案保留" variant="danger" size="md" className="flex-1 flex items-center justify-center"><Eraser size={11} /> 清空绘制</Button>
+        <Button onClick={onDelete} title="连《地理风物》档案一起删除，不可撤销" variant="danger" size="md" className="flex-1 flex items-center justify-center"><Trash2 size={11} /> 删除地点</Button>
       </div>
       <p className="text-10 text-ink-500 leading-relaxed">「清空绘制」= 只擦掉画好的格子，档案保留；「删除地点」= 《地理风物》条目连档案一起删除，不可撤销。</p>
     </div>

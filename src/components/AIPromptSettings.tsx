@@ -142,7 +142,8 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
                           style={{ height: foldVh('32vh'), minHeight: 140 }}
                         />
                         <div className="mt-2 flex items-center gap-2">
-                          <Button size="xs" variant="primary" disabled={!dirty || busy} onClick={() => void save(e)}>
+                          {/* U-10 · 2.6.0：保存是主操作，xs→sm（xs 只给行内工具键） */}
+                          <Button size="sm" variant="primary" disabled={!dirty || busy} onClick={() => void save(e)}>
                             保存
                           </Button>
                           <Button size="xs" variant="secondary" disabled={!e.overridden || busy}

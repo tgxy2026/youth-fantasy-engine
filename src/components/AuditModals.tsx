@@ -57,15 +57,18 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
   const countBy = (s: ForeshadowStatus) => board.filter(b => b.status === s).length
 
   return (
-    <ToolModal title="伏笔闭环看板" icon={<GitBranch size={16} />} onClose={onClose} wide>
-      <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-11 text-ink-500">
-          从「章节总表」反推每条伏笔的生命周期，对照「伏笔追踪」状态，自动发现跨度过大、孤儿、前置未铺就、状态未同步等问题。
-        </span>
+    <ToolModal title="伏笔闭环看板" icon={<GitBranch size={16} />} onClose={onClose} wide
+      help={
         <HelpPopover title="伏笔闭环怎么用" width="22rem">
-          {'章节总表每章的「埋设/回收伏笔编号」是引擎的数据源；伏笔追踪是登记面。\n\n· 看板按状态分列：埋设中 / 进行中 / 已回收 / 孤儿；\n· 某条伏笔在总表埋了、在追踪表也标了，闭环就完整；\n· 标红的"孤儿"=追踪表有、但总表从没埋设，读者无从知晓；\n· "状态未同步"=总表已登记回收，追踪表却还写着未回收。\n建议：每写完一卷，打开本看板点检一次，防烂尾。'}
+          {'章节总表每章的「埋设/回收伏笔编号」是引擎的数据源；伏笔追踪是登记面。\n\n· 看板按状态分列：埋设中 / 进行中 / 已回收 / 孤儿；\n· 某条伏笔在总表埋了、在追踪表也标了，闭环就完整；\n· 标红的「孤儿」=追踪表有、但总表从没埋设，读者无从知晓；\n· 「状态未同步」=总表已登记回收，追踪表却还写着未回收。\n建议：每写完一卷，打开本看板点检一次，防烂尾。'}
           <AIDataSourceNote feature="foreshadow-review" />
         </HelpPopover>
+      }
+    >
+      <div className="mb-3">
+        <span className="text-11 text-ink-500">
+          从「章节总表」反推每条伏笔的生命周期，对照「伏笔追踪」状态，自动发现跨度过大、孤儿、前置未铺就、状态未同步等问题。
+        </span>
       </div>
 
       {loading ? <div className="text-12 text-ink-400 py-8 text-center">分析伏笔网络…</div> : (
@@ -106,14 +109,14 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
               <Button onClick={runAiReview}
                 disabled={!aiReady || aiLoading}
                 
-                title={!aiReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
+                title={!aiReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
                 {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                 AI 深度分析
               </Button>
             </div>
             <AuditPanel issues={issues} emptyText="伏笔网络健康 ✓ 无跨度/孤儿/状态异常" onNavigateTab={onNavigateTab} />
             {aiError && (
-              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                 <span>{aiError}</span>
               </div>
@@ -176,15 +179,18 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
   }, [])
 
   return (
-    <ToolModal title="连续性校验器" icon={<Link2 size={16} />} onClose={onClose} wide>
-      <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-11 text-ink-500">
-          基于章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡 / 爽点节奏 / 写作进度，做 10 类确定性冲突与节奏检测。
-        </span>
+    <ToolModal title="连续性校验器" icon={<Link2 size={16} />} onClose={onClose} wide
+      help={
         <HelpPopover title="连续性校验怎么用" width="22rem">
           {'全书级静态体检，覆盖 10 类常见问题：\n\n1. 时间倒流（时间线日期前后矛盾）\n2. 境界回退（主角境界不升反降）\n3. 死者复活（已死亡角色仍出场）\n4. 人名未登记（出场人物不在角色卡）\n5. 伏笔编号孤儿（章节引用了不存在的伏笔）\n6. 伏笔状态不一致（已回收但表未同步）\n7. 术语重复（同一名词定义了两次）\n8. 章节缺时间脉络登记\n9. 爽点断档（相邻爽点间隔超 3 章）\n10. 存稿缓冲告急（低于 3 章预警线）\n\n点击问题可跳转到对应章节或设定表修正。'}
           <AIDataSourceNote feature="continuity-audit" />
         </HelpPopover>
+      }
+    >
+      <div className="mb-3">
+        <span className="text-11 text-ink-500">
+          基于章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡 / 爽点节奏 / 写作进度，做 10 类确定性冲突与节奏检测。
+        </span>
       </div>
       {loading ? <div className="text-12 text-ink-400 py-8 text-center">逐表对账中…</div> : (
         <>
@@ -193,7 +199,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
             <Button onClick={runAiAudit}
               disabled={!aiReady || aiLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
+              title={!aiReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 深度审计
             </Button>
@@ -205,7 +211,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
             onOpenChapter={onOpenChapter}
           />
           {aiError && (
-            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{aiError}</span>
             </div>
@@ -265,15 +271,18 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
   }, [content])
 
   return (
-    <ToolModal title="文风体检（本章）" icon={<Feather size={16} />} onClose={onClose}>
-      <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-11 text-ink-500">
-          读取《写作规范》表的"个人坏习惯清单"与"标点规范"，对本章正文做静态体检。
-        </span>
+    <ToolModal title="文风体检（本章）" icon={<Feather size={16} />} onClose={onClose}
+      help={
         <HelpPopover title="文风体检怎么用" width="22rem">
-          {'建立在《写作规范》数据模型之上（竞品普遍缺失）：\n\n· 坏习惯词：自动抽取你"已知坏习惯清单"里的词（如"顿时""瞬间"），统计本章命中次数；\n· 省略号：检测正文是否误用三个英文句点"..."代替中文"……"；\n· 视角规则：列出你立的视角切换规则，提醒人工核对（正文视角无法直接自动分析）。\n\n提示：先去《写作规范》填好你的坏习惯清单，本体检才精准。'}
+          {'建立在《写作规范》数据模型之上（竞品普遍缺失）：\n\n· 坏习惯词：自动抽取你「已知坏习惯清单」里的词（如「顿时」「瞬间」），统计本章命中次数；\n· 省略号：检测正文是否误用三个英文句点「...」代替中文「……」；\n· 视角规则：列出你立的视角切换规则，提醒人工核对（正文视角无法直接自动分析）。\n\n提示：先去《写作规范》填好你的坏习惯清单，本体检才精准。'}
           <AIDataSourceNote feature="style-check" />
         </HelpPopover>
+      }
+    >
+      <div className="mb-3">
+        <span className="text-11 text-ink-500">
+          读取《写作规范》表的「个人坏习惯清单」与「标点规范」，对本章正文做静态体检。
+        </span>
       </div>
       {loading ? <div className="text-12 text-ink-400 py-8 text-center">对照写作规范…</div> : (
         <>
@@ -282,14 +291,14 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
             <Button onClick={runAiStyle}
               disabled={!aiReady || aiLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
+              title={!aiReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 文风体检
             </Button>
           </div>
           <AuditPanel issues={issues} emptyText="本章文风体检通过 ✓" />
           {aiError && (
-            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{aiError}</span>
             </div>
@@ -300,7 +309,7 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
               {aiStyle.map((f, i) => (
                 <div key={i} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className={`px-1.5 py-px rounded text-10 ${f.level === '严重' ? 'bg-red-500/15 text-red-300' : f.level === '中等' ? 'bg-amber/15 text-amber' : 'bg-sky-500/15 text-sky-300'}`}>{f.level}</span>
+                    <span className={`px-1.5 py-px rounded text-10 ${f.level === '严重' ? 'bg-danger/15 text-danger' : f.level === '中等' ? 'bg-amber/15 text-amber' : 'bg-info/15 text-info'}`}>{f.level}</span>
                     <span className="text-11 text-ink-400">{f.type}</span>
                   </div>
                   {f.quote && <div className="text-12 text-ink-200 mb-0.5">「{f.quote}」</div>}

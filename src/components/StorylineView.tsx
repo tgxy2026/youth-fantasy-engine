@@ -149,7 +149,7 @@ export default function StorylineView() {
                 <span className="text-13 font-bold text-ink-100">第 {n.no} 章</span>
                 {n.title && <span className="text-12 text-ink-400">{n.title}</span>}
                 {n.planted.length > 0 && <span className="text-10 px-1.5 py-px rounded bg-amber/10 text-amber border border-amber/25">埋 {n.planted.join(' ')}</span>}
-                {n.reaped.length > 0 && <span className="text-10 px-1.5 py-px rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">收 {n.reaped.join(' ')}</span>}
+                {n.reaped.length > 0 && <span className="text-10 px-1.5 py-px rounded bg-success/10 text-success border border-success/25">收 {n.reaped.join(' ')}</span>}
               </div>
               {empty ? (
                 <div className="text-11 text-ink-500 italic">（本章无登记事件 / 爽点 / 伏笔）</div>
@@ -179,7 +179,7 @@ export default function StorylineView() {
       </div>
 
       {stats.overdue > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-11 text-red-300 leading-relaxed">
+        <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-11 text-danger leading-relaxed">
           <AlertTriangle size={13} className="mt-0.5 shrink-0" />
           <span>
             有 <b>{stats.overdue}</b> 条伏笔的「计划回收位置」已到章（当前剧情已进行到对应章节），但状态仍是未回收——
@@ -192,7 +192,7 @@ export default function StorylineView() {
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: 'amber' | 'green' | 'red' }) {
-  const cls = tone === 'amber' ? 'text-amber' : tone === 'green' ? 'text-emerald-400' : 'text-red-400'
+  const cls = tone === 'amber' ? 'text-amber' : tone === 'green' ? 'text-success' : 'text-danger'
   return (
     <div className="bg-ink-800 rounded-lg px-3 py-2">
       <div className="text-10 text-ink-500">{label}</div>

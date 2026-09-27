@@ -21,12 +21,12 @@ import HelpPopover from './HelpPopover'
 
 // 与 CheckTools 的 sevBadge 同款配色（三处局部实现已核对一致，避免为三行样式新建共享模块）
 const sevBadge = (s: 'error' | 'warn' | 'info') =>
-  s === 'error' ? 'bg-red-500/15 text-red-300 border border-red-500/30'
+  s === 'error' ? 'bg-danger/15 text-danger border border-danger/30'
   : s === 'warn' ? 'bg-amber/15 text-amber border border-amber/30'
   : 'bg-ink-700 text-ink-300 border border-ink-600'
 
 function IssueList({ issues }: { issues: AuditIssue[] }) {
-  if (issues.length === 0) return <div className="text-11 text-emerald-400">本章无相关问题 ✓</div>
+  if (issues.length === 0) return <div className="text-11 text-success">本章无相关问题 ✓</div>
   return (
     <div className="space-y-1.5">
       {issues.map(issue => (
@@ -85,7 +85,7 @@ export default function ChapterCheckPanel() {
   return (
     <section className="rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-ink-700">
-        <ClipboardCheck size={14} className="text-emerald-400" />
+        <ClipboardCheck size={14} className="text-success" />
         <span className="text-13 font-medium text-ink-100">本章体检</span>
         <span className="text-10 text-ink-500">单章 · 五项确定性检查 · 全部本地</span>
         <HelpPopover title="本章体检怎么用">
@@ -131,7 +131,7 @@ export default function ChapterCheckPanel() {
 
         {report && (
           <div className="space-y-4">
-            <div className={`text-12 ${actionable > 0 ? 'text-amber/80' : 'text-emerald-400'}`}>
+            <div className={`text-12 ${actionable > 0 ? 'text-amber/80' : 'text-success'}`}>
               {actionable > 0
                 ? `检出 ${actionable} 处需关注，逐组确认后发布更稳`
                 : '本章干净，五项检查均无需处理 ✓'}
@@ -154,11 +154,11 @@ export default function ChapterCheckPanel() {
             {/* ③ 敏感词 */}
             <div>
               <div className="mb-1.5 text-11 text-ink-400">敏感词</div>
-              {report.sensitive.length === 0 ? <div className="text-11 text-emerald-400">未命中 ✓</div> : (
+              {report.sensitive.length === 0 ? <div className="text-11 text-success">未命中 ✓</div> : (
                 <div className="space-y-1.5">
                   {report.sensitive.map(h => (
                     <div key={h.word} className="text-11 text-ink-300 flex items-start gap-2">
-                      <span className="px-1.5 py-0.5 bg-red-500/15 text-red-300 rounded shrink-0">{h.word} ×{h.count}</span>
+                      <span className="px-1.5 py-0.5 bg-danger/15 text-danger rounded shrink-0">{h.word} ×{h.count}</span>
                       <span className="text-ink-500 min-w-0">{h.context}</span>
                     </div>
                   ))}
@@ -169,7 +169,7 @@ export default function ChapterCheckPanel() {
             {/* ④ 错别字 */}
             <div>
               <div className="mb-1.5 text-11 text-ink-400">错别字</div>
-              {report.typos.length === 0 ? <div className="text-11 text-emerald-400">未命中 ✓</div> : (
+              {report.typos.length === 0 ? <div className="text-11 text-success">未命中 ✓</div> : (
                 <div className="space-y-1.5">
                   {report.typos.map(h => (
                     <div key={h.word} className="text-11 text-ink-300 flex items-start gap-2">

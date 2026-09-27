@@ -293,7 +293,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                     }}
                     className="flex-1 !py-0.5 text-12 min-w-0"
                   />
-                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="md" className="text-11 rounded">保存</Button>
+                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="md" className=" rounded">保存</Button>
                 </div>
                 <div className="mt-1 text-10 text-ink-500">原名：{item?.display}</div>
               </div>
@@ -314,7 +314,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   }}
                   className="flex-1 !py-0.5 text-12 min-w-0"
                 />
-                <Button type="button" onClick={submitEditUser} variant="primary" size="md" className="text-11 rounded">保存</Button>
+                <Button type="button" onClick={submitEditUser} variant="primary" size="md" className=" rounded">保存</Button>
               </div>
             </div>
           )}
@@ -406,7 +406,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 className="flex-1 !py-0.5 text-12 min-w-0"
               />
               <Button type="button"
-                onClick={submitDraft} variant="primary" size="md" className="text-11 rounded">保存</Button>
+                onClick={submitDraft} variant="primary" size="md" className=" rounded">保存</Button>
             </div>
           ) : (
             <Button variant="bare"

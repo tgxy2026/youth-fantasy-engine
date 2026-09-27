@@ -305,7 +305,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               <Button variant="bare"
                 onClick={() => restore(b)}
                 disabled={busy}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-11 text-emerald-400 border border-emerald-500/30 rounded-md hover:bg-emerald-500/10 disabled:opacity-50"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-11 text-success border border-success/30 rounded-md hover:bg-success/10 disabled:opacity-50"
                 title="用此版本覆盖当前项目"
               >
                 <RotateCcw size={11} /> 恢复
@@ -417,7 +417,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
           {/* v1.6.1：孤儿备份清理（删除项目时按约定保留备份，项目没了备份仍在，需定期清理） */}
           <div className="rounded-lg border border-ink-700 bg-ink-850 px-3 py-3">
             <div className="flex items-center gap-2 mb-1.5">
-              <Trash2 size={13} className="text-red-400" />
+              <Trash2 size={13} className="text-danger" />
               <span className="text-13 font-semibold text-ink-100">孤儿备份清理</span>
               <HelpPopover title="什么是孤儿备份？" width="21rem" size={12}>
                 删除项目时，其自动备份按约定会保留（防止误删后无法找回）。但项目已删除后，这些备份在软件里看不到、也无法恢复项目，只会持续占用存储。
@@ -426,13 +426,13 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
             </div>
             <div className="text-11 text-ink-400 leading-relaxed mb-2.5">
               {orphans.length > 0
-                ? <>检测到 <span className="text-red-300 font-semibold">{orphans.length} 份</span> 属于已删除项目的备份（约 {orphansMB.toFixed(1)} MB），点击下方按钮一键清理。</>
+                ? <>检测到 <span className="text-danger font-semibold">{orphans.length} 份</span> 属于已删除项目的备份（约 {orphansMB.toFixed(1)} MB），点击下方按钮一键清理。</>
                 : '没有孤儿备份——当前全部备份都属于现存项目，无需清理。'}
             </div>
             <Button onClick={cleanOrphans}
               disabled={busy || orphans.length === 0}
               
-              title="删除所有属于已删除项目的备份" variant="danger" size="md" className="flex items-center text-12 text-red-400">
+              title="删除所有属于已删除项目的备份" variant="danger" size="md" className="flex items-center text-danger">
               <Trash2 size={12} /> 清理孤儿备份
             </Button>
           </div>

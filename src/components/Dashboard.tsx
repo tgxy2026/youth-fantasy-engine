@@ -174,14 +174,14 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       label: '完稿章节',
       value: `${doneCount}`,
       sub: `已发布 ${publishedCount} · 草稿中 ${draftCount}`,
-      icon: <FileText size={16} />, color: 'text-emerald-400',
+      icon: <FileText size={16} />, color: 'text-success',
       help: '统计状态为「完稿」+「已发布」的章节数。章节状态在正文编辑器工具栏的下拉里改，会同步到章节总表。',
     },
     {
       label: '未回收伏笔',
       value: `${unf.length}`,
       sub: unf.length > 5 ? '注意点检防烂尾' : '健康范围',
-      icon: <GitBranch size={16} />, color: unf.length > 5 ? 'text-red-400' : 'text-sky-400',
+      icon: <GitBranch size={16} />, color: unf.length > 5 ? 'text-danger' : 'text-info',
       help: '来自「伏笔追踪」中状态为「未回收」的条目。超过 5 条会转红提醒——挖坑速度快于填坑速度是烂尾的头号信号，可到编辑器的伏笔闭环看板逐条点检。',
     },
     {
@@ -257,7 +257,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2">
             <CalendarDays size={14} className="text-amber" /> 码字日历
             <HelpPopover title="码字日历怎么看" width="21rem">
-              {'完全自动记录：只要在正文编辑器里写字并保存，当天产出就会计入（删字也算变动量）。\n\n· 今日 xx 字：今天的净产出；\n· 连续码字：从今天（今天还没写则从昨天）往前数连续有产出的天数，断一天归零；\n· 热力图：近 26 周 × 7 天，颜色越亮当天写得越多（<500 / <1500 / <3000 / 3000+ 四档），鼠标悬停看具体字数。\n\n用它盯"手感"和断更风险，比看总字数更有用。'}
+              {'完全自动记录：只要在正文编辑器里写字并保存，当天产出就会计入（删字也算变动量）。\n\n· 今日 xx 字：今天的净产出；\n· 连续码字：从今天（今天还没写则从昨天）往前数连续有产出的天数，断一天归零；\n· 热力图：近 26 周 × 7 天，颜色越亮当天写得越多（<500 / <1500 / <3000 / 3000+ 四档），鼠标悬停看具体字数。\n\n用它盯「手感」和断更风险，比看总字数更有用。'}
             </HelpPopover>
           </h2>
           {/* 今日产出 */}
@@ -301,9 +301,9 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <div className="flex items-center gap-1.5 mt-2 text-9 text-ink-500">
           <span>少</span>
           <span className="w-[11px] h-[11px] rounded-[2px] bg-ink-800 inline-block" />
-          <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/20 inline-block" />
           <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/40 inline-block" />
           <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/60 inline-block" />
+          <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/80 inline-block" />
           <span className="w-[11px] h-[11px] rounded-[2px] bg-amber inline-block" />
           <span>多</span>
           <span className="ml-3">近 26 周 · 数据来自编辑器自动记录（进/减字数都计入当日）</span>
@@ -353,7 +353,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Flame size={14} className="text-amber" /> 快捷入口
             <HelpPopover title="快捷入口" width="19rem">
-              {'连载期间使用频率最高的 6 个页签，点一下直达：\n\n· 正文编辑：码字主战场；\n· 章节总表：全书章节台账（字数/伏笔/出场人物）；\n· 伏笔追踪：挖坑填坑总账；\n· 时间脉络：剧情日期与事件对照，防穿帮；\n· 爽点节奏：每章爽点分布，防"太平淡"；\n· 灵感素材：素材随手入库，卡文时来翻。'}
+              {'连载期间使用频率最高的 6 个页签，点一下直达：\n\n· 正文编辑：码字主战场；\n· 章节总表：全书章节台账（字数/伏笔/出场人物）；\n· 伏笔追踪：挖坑填坑总账；\n· 时间脉络：剧情日期与事件对照，防穿帮；\n· 爽点节奏：每章爽点分布，防「太平淡」；\n· 灵感素材：素材随手入库，卡文时来翻。'}
             </HelpPopover>
           </h2>
           <div className="grid grid-cols-3 gap-2">
@@ -410,24 +410,24 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             <Button onClick={runDiag}
               disabled={!aiReady || diagLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded text-11">
+              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded">
               {diagLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 诊断
             </Button>
             <HelpPopover title="创作健康提醒" width="20rem">
-              {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品定位与全书总纲再动笔。\n\n全部指标健康时会显示"保持节奏继续写"。'}
+              {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品定位与全书总纲再动笔。\n\n全部指标健康时会显示「一切健康，保持节奏继续写」。'}
               <AIDataSourceNote feature="project-diagnose" />
             </HelpPopover>
           </h2>
           <div className="space-y-2.5 text-12">
             {showForeshadowCard && unf.length > 5 && (
-              <div className="flex items-start gap-2 text-red-400">
+              <div className="flex items-start gap-2 text-danger">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
                 <span>未回收伏笔 {unf.length} 条，超过 5 条建议点检一次防烂尾</span>
               </div>
             )}
             {showForeshadowCard && unf.length > 0 && unf.length <= 5 && (
-              <div className="flex items-start gap-2 text-sky-400">
+              <div className="flex items-start gap-2 text-info">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
                 <span>未回收伏笔 {unf.length} 条，处于健康范围</span>
               </div>
@@ -441,7 +441,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             {weekTotal === 0 && (
               <div className="flex items-start gap-2 text-ink-300">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
-                <span>近 7 日无产量记录——在进度看板登记每日字数</span>
+                <span>近 7 日无产量记录——在写作进度登记每日字数</span>
               </div>
             )}
             {chapters.length === 0 && (
@@ -451,7 +451,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               </div>
             )}
             {unf.length === 0 && unusedIdeas.length === 0 && weekTotal > 0 && chapters.length > 0 && (
-              <div className="flex items-start gap-2 text-emerald-400">
+              <div className="flex items-start gap-2 text-success">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                 <span>一切健康，保持节奏继续写</span>
               </div>
@@ -459,7 +459,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           </div>
 
           {diagError && (
-            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{diagError}</span>
             </div>
@@ -516,7 +516,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <Users size={14} className="text-amber" /> 角色出场分布
           <HelpPopover title="角色出场分布" width="22rem">
-            {'自动扫描各章正文，统计每位角色（主要 / 次要，不含 NPC 与已退场）在每章的出现次数，用热力矩阵呈现：\n\n· 颜色越亮 = 该章出场越多；\n· 展示全部（主要 / 次要，不含 NPC 与已退场）角色与全部章节；\n· 点任意单元格直达对应章节。\n\n用来发现"某角色写了三卷没再出场"或"主角某章莫名消失"这类失衡。'}
+            {'自动扫描各章正文，统计每位角色（主要 / 次要，不含 NPC 与已退场）在每章的出现次数，用热力矩阵呈现：\n\n· 颜色越亮 = 该章出场越多；\n· 展示全部（主要 / 次要，不含 NPC 与已退场）角色与全部章节；\n· 点任意单元格直达对应章节。\n\n用来发现「某角色写了三卷没再出场」或「主角某章莫名消失」这类失衡。'}
           </HelpPopover>
         </h2>
         <CharacterDistribution onNavigate={onNavigate} />
@@ -544,7 +544,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             </div>
             <div className={`mt-0.5 text-10 ${
               review.weekTrend === 'up' ? 'text-rose-400'
-              : review.weekTrend === 'down' ? 'text-emerald-400'
+              : review.weekTrend === 'down' ? 'text-success'
               : 'text-ink-500'
             }`}>
               {review.weekTrend === 'new' ? '上周还没开始'

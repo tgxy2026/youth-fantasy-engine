@@ -13,8 +13,8 @@ import { Button } from './Button'
  */
 const COLORS = [
   { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber', stroke: 'stroke-amber', bar: 'border-amber' },
-  { dot: 'bg-sky-400', ring: 'ring-sky-400/40', text: 'text-sky-300', stroke: 'stroke-sky-400', bar: 'border-sky-400' },
-  { dot: 'bg-emerald-400', ring: 'ring-emerald-400/40', text: 'text-emerald-300', stroke: 'stroke-emerald-400', bar: 'border-emerald-400' },
+  { dot: 'bg-sky-400', ring: 'ring-info/40', text: 'text-info', stroke: 'stroke-sky-400', bar: 'border-sky-400' },
+  { dot: 'bg-emerald-400', ring: 'ring-success/40', text: 'text-success', stroke: 'stroke-emerald-400', bar: 'border-emerald-400' },
   { dot: 'bg-rose-400', ring: 'ring-rose-400/40', text: 'text-rose-300', stroke: 'stroke-rose-400', bar: 'border-rose-400' },
   { dot: 'bg-violet-400', ring: 'ring-violet-400/40', text: 'text-violet-300', stroke: 'stroke-violet-400', bar: 'border-violet-400' },
   { dot: 'bg-orange-400', ring: 'ring-orange-400/40', text: 'text-orange-300', stroke: 'stroke-orange-400', bar: 'border-orange-400' },
@@ -55,8 +55,8 @@ interface Props {
 }
 
 const CHECK_STYLE: Record<string, string> = {
-  '正常': 'bg-emerald-500/15 text-emerald-300',
-  '已修正': 'bg-sky-500/15 text-sky-300',
+  '正常': 'bg-success/15 text-success',
+  '已修正': 'bg-info/15 text-info',
   '待核对': 'bg-amber/15 text-amber',
 }
 
@@ -370,7 +370,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                   <line
                     key={`axis-${t}`}
                     x1={8} y1={laneY(idx)} x2={totalW - 8} y2={laneY(idx)}
-                    stroke="rgba(128,130,150,0.35)" strokeWidth={1.5}
+                    style={{ stroke: 'rgb(var(--ink-600) / 0.35)' }} strokeWidth={1.5}
                   />
                 ))}
                 {visibleItems.map(d => {

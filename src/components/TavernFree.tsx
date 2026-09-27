@@ -123,13 +123,13 @@ export default function TavernFree() {
         <HelpPopover title="自由对话怎么用" width="24rem" size={14}>
   这里的对话不绑小说项目：换一本书，角色卡与记忆照样在。
 
-  • 顶部几件：Ta最近几天（每日小结）、结束本轮对话（整理记忆、写日记、结算本场数值、检查要不要改设定，
+  · 顶部几件：Ta最近几天（每日小结）、结束本轮对话（整理记忆、写日记、结算本场数值、检查要不要改设定，
     然后这一场归档为只读）、导出。
-  • 右侧常驻「本场状态」：好感 / 信任 / 精神 / 心情 / 地点 这些即时数值（可直接改，改完回车生效），以及在场由 AI 扮演的角色。
-  • 多角色同场时点头像可指定下一位接话；「在场调度」里能静音某个人、调健谈度。
-  • 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它只在点「结束本轮对话」时才整理，
+  · 右侧常驻「本场状态」：好感 / 信任 / 精神 / 心情 / 地点 这些即时数值（可直接改，改完回车生效），以及在场由 AI 扮演的角色。
+  · 多角色同场时点头像可指定下一位接话；「在场调度」里能静音某个人、调健谈度。
+  · 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它只在点「结束本轮对话」时才整理，
     所以聊天过程中不会被整理任务卡住；整理好的记忆与日记在「角色卡片」页里看。
-  • 想给这一场一个具体处境，就在新建对话时选一份剧本（「故事剧本」里写，要先有故事）。
+  · 想给这一场一个具体处境，就在新建对话时选一份剧本（「故事剧本」里写，要先有故事）。
   <AIDataSourceNote feature="tavern-free" />
 </HelpPopover>
         {session && <span className="max-w-[28rem] truncate text-12 text-ink-400" title={session.title}>{session.title}</span>}
@@ -526,7 +526,7 @@ export default function TavernFree() {
                                   onClick={() => setStatusCharId(c.id)}
                                   title={`看 ${c.name || 'Ta'} 这几天的生活`}
                                   className={`w-full flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${
-                                    on ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                                    on ? 'border-amber/40 bg-amber/15' : 'border-transparent hover:bg-ink-800/60'
                                   }`}
                                 >
                                   <Avatar src={c.avatar} name={c.name} size={18} />
@@ -560,7 +560,7 @@ export default function TavernFree() {
                                   onClick={() => setVarsCharId(c.id)}
                                   title={`看 ${c.name || 'Ta'} 的本卡数值`}
                                   className={`w-full flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${
-                                    on ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                                    on ? 'border-amber/40 bg-amber/15' : 'border-transparent hover:bg-ink-800/60'
                                   }`}
                                 >
                                   <Avatar src={c.avatar} name={c.name} size={18} />

@@ -207,7 +207,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             <Button onClick={createDemo}
               disabled={busy}
               
-              title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center text-13">
+              title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center">
               <BookPlus size={13} /> 创建示范项目
             </Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg transition-colors">
@@ -350,7 +350,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   />
                 </div>
                 <Button onClick={create}
-                  disabled={busy} variant="primary" solid size="md" className="w-full text-13">
+                  disabled={busy} variant="primary" solid size="md" className="w-full">
                   {busy ? '创建中…' : '创建并进入项目'}
                 </Button>
               </div>
@@ -433,7 +433,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                       <div className="mt-4">
                         <div className="text-11 text-ink-400 mb-1.5 flex items-center gap-1">功能模块
                           <HelpPopover title="自定义项目功能" width="20rem" size={11}>
-                            {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作、灵感工具）与依赖自动带入的模块不可取消；其余模块自由调整。修改后点击「保存修改」生效。'}
+                            {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作，及灵感工具下的灵感启发 / 素材资料 / 检查工具）与依赖自动带入的模块不可取消；其余模块（含拆书、创意写作）自由调整。修改后点击「保存修改」生效。'}
                           </HelpPopover>
                         </div>
                         <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })} className="flex items-center gap-1.5 px-3 h-9 text-12 rounded-lg transition-colors">
@@ -443,7 +443,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                     )}
                     <div className="mt-4 flex items-center gap-2">
                       <Button onClick={saveEdit}
-                        disabled={busy} variant="primary" size="md" className="flex items-center text-12">
+                        disabled={busy} variant="primary" size="md" className="flex items-center">
                         <Check size={13} /> 保存修改
                       </Button>
                       <Button variant="secondary" onClick={() => setEditingId(null)} className="px-3 py-1.5 text-12 border-ink-600 rounded-lg hover:border-ink-500 transition-colors">
@@ -526,7 +526,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                           <Tooltip label="删除项目" side="bottom">
                             <Button variant="icon-danger" iconOnly
                               onClick={() => removeProject(p)}
-                              className="hover:bg-red-500/10"
+                              className="hover:bg-danger/10"
                               title="删除项目"
                               aria-label="删除项目"
                             >

@@ -31,6 +31,7 @@ import { summarizeAiAssist, AI_SOURCE_LABELS, AI_SOURCE_KINDS } from '../lib/aiA
 import AiDisclosureDialog from './AiDisclosureDialog'
 import HelpPopover from './HelpPopover'
 import { Button } from './Button'
+import SelectRow from './SelectRow'
 import { showToast } from './dialogs'
 import EvidenceExportDialog from './EvidenceExportDialog'
 
@@ -237,17 +238,16 @@ export default function TrajectoryPanel() {
               <div key={g.title}>
                 <div className="px-3 pt-2.5 pb-1 text-10 text-ink-500">{g.title}</div>
                 {g.items.map(ch => (
-                  <button
+                  <SelectRow
                     key={ch.id}
+                    selected={ch.id === activeId}
                     onClick={() => setActiveId(ch.id)}
-                    className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
-                      ch.id === activeId ? 'bg-amber/10 text-amber' : 'text-ink-300 hover:bg-ink-800/60'
-                    }`}
+                    className="px-3 py-1.5 items-center gap-2 text-12"
                   >
                     <span className="shrink-0 w-7 text-10 text-ink-500 tabular-nums">{seqs.get(ch.id) || ''}</span>
-                    <span className="flex-1 truncate text-12">{ch.title || '（未命名）'}</span>
+                    <span className="flex-1 truncate">{ch.title || '（未命名）'}</span>
                     <span className="shrink-0 text-10 text-ink-500 tabular-nums">{ch.wordCount}</span>
-                  </button>
+                  </SelectRow>
                 ))}
               </div>
             ))}

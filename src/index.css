@@ -41,6 +41,9 @@
   --graph-accent-strong: 245 158 11; /* 选中（原 #f59e0b） */
   --graph-accent-text: 244 194 102;  /* 高亮文字（原 #f4c266） */
   color-scheme: dark;
+  --danger: 252 165 165;  /* red-300 */
+  --success: 110 231 183;  /* emerald-300 */
+  --info: 125 211 252;  /* sky-300 */
 }
 
 /* 护眼：浅绿柔光，低对比、不刺眼 */
@@ -60,6 +63,9 @@
   --amber: 68 118 78;
   --amber-soft: 99 140 91;
   color-scheme: light;
+  --danger: 185 28 28;  /* red-700 */
+  --success: 21 128 61;  /* emerald-700 */
+  --info: 7 89 133;  /* sky-700 */
 }
 
 /* 午夜蓝：冷色调深色，与默认暖暗形成区分 */
@@ -79,6 +85,9 @@
   --amber: 90 169 214;
   --amber-soft: 140 200 235;
   color-scheme: dark;
+  --danger: 252 165 165;  /* red-300 */
+  --success: 110 231 183;  /* emerald-300 */
+  --info: 125 211 252;  /* sky-300 */
 }
 
 /* 羊皮卷：暖棕浅色，适合长时间阅读 */
@@ -98,6 +107,9 @@
   --amber: 142 93 49;
   --amber-soft: 157 120 80;
   color-scheme: light;
+  --danger: 185 28 28;  /* red-700 */
+  --success: 21 128 61;  /* emerald-700 */
+  --info: 7 89 133;  /* sky-700 */
 }
 
 /* 暮山紫：紫罗兰深色，古风奇幻，与午夜蓝（冷蓝）/暗夜（暖灰）拉开色相差 */
@@ -117,6 +129,9 @@
   --amber: 167 139 250;
   --amber-soft: 196 175 255;
   color-scheme: dark;
+  --danger: 252 165 165;  /* red-300 */
+  --success: 110 231 183;  /* emerald-300 */
+  --info: 125 211 252;  /* sky-300 */
 }
 
 /* 青花：青白瓷浅色，冷调洁净，适合长时间校对与表格作业 */
@@ -136,6 +151,9 @@
   --amber: 45 100 165;
   --amber-soft: 80 135 195;
   color-scheme: light;
+  --danger: 185 28 28;  /* red-700 */
+  --success: 21 128 61;  /* emerald-700 */
+  --info: 7 89 133;  /* sky-700 */
 }
 
 /* 松烟墨：墨绿松烟深色，冷绿护眼，与午夜蓝同属冷色但色相明显区分 */
@@ -155,6 +173,9 @@
   --amber: 94 214 190;
   --amber-soft: 134 230 212;
   color-scheme: dark;
+  --danger: 252 165 165;  /* red-300 */
+  --success: 110 231 183;  /* emerald-300 */
+  --info: 125 211 252;  /* sky-300 */
 }
 
 /* 桃笺：桃花笺暖粉浅色，柔和暖调，与护眼（绿）/羊皮卷（棕）形成第三种暖色 */
@@ -174,6 +195,9 @@
   --amber: 178 63 93;
   --amber-soft: 205 100 127;
   color-scheme: light;
+  --danger: 185 28 28;  /* red-700 */
+  --success: 21 128 61;  /* emerald-700 */
+  --info: 7 89 133;  /* sky-700 */
 }
 
 /* ---- 浅色主题 · 图谱界面色覆盖 ----
@@ -328,6 +352,7 @@ button:disabled { cursor: not-allowed; }
 }
 .card-hover:hover {
   @apply border-amber/40 -translate-y-0.5;
-  box-shadow: 0 4px 24px rgba(217, 160, 74, 0.08);
+  /* U-8 · 2.6.0：阴影色走 amber 变量（原写死默认主题 217,160,74，自定义主题下不跟随） */
+  box-shadow: 0 4px 24px rgb(var(--amber) / 0.08);
 }
 

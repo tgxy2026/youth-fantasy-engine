@@ -319,7 +319,7 @@ export function useJieWenJiModel(props: Props) {
   }
 
   const aiBtnCls = 'w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-12 border transition-colors disabled:opacity-45 disabled:cursor-not-allowed'
-  const scoreCls = (s: number) => (s >= 75 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : s >= 60 ? 'bg-amber/15 text-amber border-amber/30' : 'bg-red-500/15 text-red-300 border-red-500/30')
+  const scoreCls = (s: number) => (s >= 75 ? 'bg-success/15 text-success border-success/30' : s >= 60 ? 'bg-amber/15 text-amber border-amber/30' : 'bg-danger/15 text-danger border-danger/30')
 
   return {
     ...props,

@@ -17,11 +17,20 @@ import { confirmDialog } from './dialogs'
 import { Modal as BaseModal } from './Modal'
 
 // ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
-export function ToolModal({ title, icon, onClose, children, wide }: {
+export function ToolModal({ title, icon, onClose, children, wide, help }: {
   title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean
+  /** C-9 · 2.6.0：问号提示——传了就渲染在标题行紧跟功能名（红线：问号必须紧跟功能名，不得被 flex-1 描述挤到行尾） */
+  help?: React.ReactNode
 }) {
   return (
-    <BaseModal open onClose={onClose} title={title} icon={icon} width={wide ? 768 : 560}>
+    <BaseModal open onClose={onClose} icon={icon} width={wide ? 768 : 560} title={title}
+      titleSlot={help ? (
+        <span className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-14 font-semibold text-ink-50 truncate">{title}</h3>
+          {help}
+        </span>
+      ) : undefined}
+    >
       {children}
     </BaseModal>
   )
@@ -42,16 +51,16 @@ export function SensitiveCheck({ content, onApply, onClose }: {
   return (
     <ToolModal title="敏感词检测（本章）" icon={<ShieldAlert size={16} />} onClose={onClose}>
       {!checked ? <div className="text-12 text-ink-400">检测中…</div> : hits.length === 0 ? (
-        <div className="py-8 text-center text-13 text-emerald-400">本章未检出敏感词 ✓（词库可在「检查工具」页扩充）</div>
+        <div className="py-8 text-center text-13 text-success">本章未检出敏感词 ✓（词库可在「检查工具」页扩充）</div>
       ) : (
         <>
-          <div className="text-12 text-red-300 mb-3">
+          <div className="text-12 text-danger mb-3">
             检出 {hits.length} 个敏感词、共 {hits.reduce((s, h) => s + h.count, 0)} 处：
           </div>
           <div className="space-y-2 mb-4">
             {hits.map(h => (
               <div key={h.word} className="flex items-start gap-2 text-12 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
-                <span className="px-1.5 py-0.5 bg-red-500/15 text-red-300 rounded shrink-0">{h.word} ×{h.count}</span>
+                <span className="px-1.5 py-0.5 bg-danger/15 text-danger rounded shrink-0">{h.word} ×{h.count}</span>
                 <span className="text-ink-400 flex-1">{h.context}</span>
               </div>
             ))}
@@ -78,8 +87,8 @@ import NumberField from './NumberField'
 /** 各类型对应的色标签 */
 const PTF_BADGE: Record<string, string> = {
   错别字: 'bg-amber/15 text-amber border-amber/30',
-  语病: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-  逻辑: 'bg-red-500/15 text-red-300 border-red-500/30',
+  语病: 'bg-info/15 text-info border-info/30',
+  逻辑: 'bg-danger/15 text-danger border-danger/30',
   设定矛盾: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
   标点: 'bg-ink-700 text-ink-300 border-ink-600',
 }
@@ -214,16 +223,19 @@ export function ProofreadCheck({ content, onApply, onClose }: {
   const typoTotal = typoHits.reduce((s, h) => s + h.count, 0)
 
   return (
-    <ToolModal title="校对（本章）" icon={<span className="text-amber">校</span>} onClose={onClose} wide>
-      <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-11 text-ink-500">
-          错别字由内置词库本地直接查（无需模型）；AI 校验拆成两块 —— 文字层（错别字 / 语病 / 标点）不读设定资料、出结果更快，逻辑层（逻辑 / 设定矛盾）才读设定资料。
-        </span>
+    <ToolModal title="校对（本章）" icon={<span className="text-amber">校</span>} onClose={onClose} wide
+      help={
         <HelpPopover title="校对怎么用" width="22rem">
-          {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「查错别字与语病」：接入模型后逐字逐句读本章正文，找错别字、语病、标点问题；不读设定资料，所以更快。\n· 「查逻辑与设定矛盾」：读项目设定资料，判前后矛盾、时间与空间错乱、与既有设定冲突。\n· 两块互相独立：可以只跑一块、分别看结果；点「替换此条」会直接改进正文，另一块的定位会自动跟着位移。\n· 未接入模型时两块按钮都禁用，但本地错别字检测与本章所有手动功能不受影响。'}
+          {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「查错别字与语病」：接入模型后逐字逐句读本章正文，找错别字、语病、标点问题；不读设定资料，所以更快。\n· 「查逻辑与设定矛盾」：读项目设定资料，判前后矛盾、时间与空间错乱、与既有设定冲突。\n· 两块互相独立：可以只跑一块、分别看结果；点「替换此条」会直接改正文，另一块的定位会自动跟着位移。\n· 未接入模型时两块按钮都禁用，但本地错别字检测与本章所有手动功能不受影响。'}
           <AIDataSourceNote feature="proofread" />
           <AIDataSourceNote feature="proofread-logic" />
         </HelpPopover>
+      }
+    >
+      <div className="mb-3">
+        <span className="text-11 text-ink-500">
+          错别字由内置词库本地直接查（无需模型）；AI 校验拆成两块 —— 文字层（错别字 / 语病 / 标点）不读设定资料、出结果更快，逻辑层（逻辑 / 设定矛盾）才读设定资料。
+        </span>
       </div>
 
       {/* 本地错别字结果 */}
@@ -233,7 +245,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
           <span className="text-10 font-normal text-ink-500">（无需模型）</span>
         </div>
         {!checked ? <div className="text-12 text-ink-400">检测中…</div> : typoHits.length === 0 ? (
-          <div className="py-3 text-center text-12 text-emerald-400">本章未检出常见错别字 ✓</div>
+          <div className="py-3 text-center text-12 text-success">本章未检出常见错别字 ✓</div>
         ) : (
           <>
             <div className="text-12 text-amber/80 mb-2">检出 {typoHits.length} 类、共 {typoTotal} 处：</div>
@@ -246,7 +258,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
               ))}
             </div>
             <div className="flex gap-2 justify-end">
-              <Button onClick={replaceTypoAll} variant="primary" size="md" className="text-12">
+              <Button onClick={replaceTypoAll} variant="primary" size="md">
                 一键替换错别字（{typoTotal} 处）
               </Button>
             </div>
@@ -268,7 +280,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
             if (!aiReady) {
               return (
                 <Button key={scope} disabled title={AI_DISABLED_HINT}
-                  variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
+                  variant="secondary" size="md" className="flex items-center cursor-not-allowed">
                   <Sparkles size={13} /> {meta.label}
                 </Button>
               )
@@ -316,7 +328,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
               </div>
 
               {st.error && (
-                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-11 text-red-300 mb-2">
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger mb-2">
                   <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{st.error}</span>
                 </div>
               )}
@@ -326,7 +338,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
                 </div>
               )}
               {st.done && !st.error && st.issues.length === 0 && (
-                <div className="py-2 text-12 text-emerald-400">
+                <div className="py-2 text-12 text-success">
                   {scope === 'text' ? '未发现错别字 / 语病 / 标点问题 ✓' : '未发现逻辑矛盾或设定冲突 ✓'}
                 </div>
               )}
@@ -337,7 +349,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
                       <span className={`px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap text-10 ${badgeOf(iss.type)}`}>{iss.type}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-ink-200">
-                          「<span className="text-amber/90">{iss.quote}</span>」→「<span className="text-emerald-300">{iss.fix}</span>」
+                          「<span className="text-amber/90">{iss.quote}</span>」→「<span className="text-success">{iss.fix}</span>」
                         </div>
                         {iss.why && <div className="text-ink-500 mt-0.5">{iss.why}</div>}
                       </div>
@@ -417,7 +429,7 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                 <Button variant="bare"
                   key={s.id}
                   onClick={() => setPreview(s)}
-                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/10' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/15' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
                 >
                   <span className="text-12 text-ink-200 shrink-0">{fmt(s.createdAt)}</span>
                   <span className={`shrink-0 px-1.5 py-px rounded text-10 ${isAI ? 'bg-amber/15 text-amber' : 'bg-ink-700/60 text-ink-400'}`}>
@@ -468,8 +480,8 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                       <div
                         key={i}
                         className={`whitespace-pre-wrap px-1.5 rounded ${
-                          l.kind === 'add' ? 'bg-emerald-500/10 text-emerald-300'
-                            : l.kind === 'del' ? 'bg-red-500/10 text-red-300/80'
+                          l.kind === 'add' ? 'bg-success/10 text-success'
+                            : l.kind === 'del' ? 'bg-danger/10 text-danger/80'
                               : 'text-ink-400'
                         }`}
                       >
@@ -529,8 +541,8 @@ export function TrashBin({ onChanged, onClose }: { onChanged: () => void; onClos
                     {!volumes.some(v => v.id === t.volumeId) && <span className="text-amber ml-1">（原卷已删，恢复后放入「已恢复章节」卷）</span>}
                   </div>
                 </div>
-                <Button variant="bare" onClick={() => restore(t.id)} className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-md text-11 hover:bg-emerald-500/20 transition-colors">恢复</Button>
-                <Button variant="bare" onClick={() => purge(t.id)} className="px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/25 rounded-md text-11 hover:bg-red-500/20 transition-colors">彻底删除</Button>
+                <Button variant="bare" onClick={() => restore(t.id)} className="px-2.5 py-1 bg-success/10 text-success border border-success/25 rounded-md text-11 hover:bg-success/20 transition-colors">恢复</Button>
+                <Button variant="bare" onClick={() => purge(t.id)} className="px-2.5 py-1 bg-danger/10 text-danger border border-danger/25 rounded-md text-11 hover:bg-danger/20 transition-colors">彻底删除</Button>
               </div>
             ))}
           </div>
@@ -538,7 +550,7 @@ export function TrashBin({ onChanged, onClose }: { onChanged: () => void; onClos
             <div className="mt-4 text-right">
               <Button variant="bare"
                 onClick={async () => { if (await confirmDialog({ title: '清空回收站', message: `彻底清空 ${items.length} 个章节？不可恢复！`, danger: true })) { await db.emptyTrash(); setItems([]); } }}
-                className="px-3 py-1.5 text-11 text-red-400 hover:text-red-300 transition-colors"
+                className="px-3 py-1.5 text-11 text-danger hover:text-danger transition-colors"
               >清空回收站</Button>
             </div>
           )}
@@ -605,7 +617,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
           className="flex-1 !py-1.5 text-13"
           autoFocus
         />
-        <Button onClick={doSearch} variant="primary" size="md" className="text-12">搜索</Button>
+        <Button onClick={doSearch} variant="primary" size="md">搜索</Button>
       </div>
       <div className="flex gap-2 items-center mb-4">
         <input
@@ -615,7 +627,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
           className="flex-1 !py-1.5 text-12"
         />
         <Button onClick={replaceAll}
-          disabled={!searched || results.length === 0} variant="secondary" size="md" className="text-12">全部替换</Button>
+          disabled={!searched || results.length === 0} variant="secondary" size="md">全部替换</Button>
       </div>
       {searched && (
         results.length === 0 ? (
@@ -708,7 +720,7 @@ style={{ maxWidth: foldVh('90vw') }}>
             <div className="flex items-center gap-2">
               <NumberField value={goalMinutes} min={5} max={1440} step={5} onChange={v => setGoalMinutes(v ?? 30)}
                 title="目标时长（分钟）：5 ~ 1440（超出范围会调回最近的边界）" className="!py-2 text-13 w-32" />
-              <Button variant="bare" onClick={() => start('minutes')} className="flex-1 py-2.5 bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded-lg text-13 hover:bg-sky-500/25 transition-colors">按时长锁定（分钟）</Button>
+              <Button variant="bare" onClick={() => start('minutes')} className="flex-1 py-2.5 bg-info/15 text-info border border-info/30 rounded-lg text-13 hover:bg-info/25 transition-colors">按时长锁定（分钟）</Button>
             </div>
             <Button variant="bare" onClick={() => tryExit()} className="w-full py-2 text-12 text-ink-500 hover:text-ink-300 transition-colors">不设目标，直接退出</Button>
           </div>
@@ -730,7 +742,7 @@ style={{ maxWidth: foldVh('90vw') }}>
           {mode === 'words' ? `+${written} / ${goalWords} 字` : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')} / ${goalMinutes}:00`}
         </span>
         {goalMet ? (
-          <span className="text-11 text-emerald-400">目标达成 ✓</span>
+          <span className="text-11 text-success">目标达成 ✓</span>
         ) : (
           <span className="text-11 text-ink-500">未达成前退出需确认</span>
         )}

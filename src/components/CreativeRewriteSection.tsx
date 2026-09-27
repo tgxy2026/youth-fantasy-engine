@@ -72,7 +72,7 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
             别让作者改完旧章才发现设定对不上，也别让人以为"最新章"就能放开润色 */}
         {pickInfo && (() => {
           const isLatest = pickInfo.chapter.id === latestId
-          const tone = isLatest ? 'text-emerald-300' : (rwAction === 'polish' ? 'text-ink-400' : 'text-amber')
+          const tone = isLatest ? 'text-success' : (rwAction === 'polish' ? 'text-ink-400' : 'text-amber')
           return (
             <p className={`mt-1 text-10 leading-relaxed ${tone}`}>
               {isLatest ? RW_SCOPE_NOTE[rwAction].latest : RW_SCOPE_NOTE[rwAction].history}
@@ -117,7 +117,7 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
               </span>
               {s.rewrite.running
                 ? <span className="text-ink-400"><Loader2 size={11} className="inline animate-spin" /> 正在改写…</span>
-                : <span className={s.rewrite.suspect ? 'text-amber' : 'text-emerald-300'}>
+                : <span className={s.rewrite.suspect ? 'text-amber' : 'text-success'}>
                     {s.rewrite.fromWords} → {countWords(s.rewrite.text)} 字{s.rewrite.suspect ? ' · 结果异常' : ''}
                   </span>}
             </div>

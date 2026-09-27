@@ -14,8 +14,8 @@ import { Button } from './Button'
  */
 const COLORS = [
   { dot: 'bg-amber', ring: 'ring-amber/40', text: 'text-amber', stroke: 'stroke-amber', bar: 'border-amber' },
-  { dot: 'bg-sky-400', ring: 'ring-sky-400/40', text: 'text-sky-300', stroke: 'stroke-sky-400', bar: 'border-sky-400' },
-  { dot: 'bg-emerald-400', ring: 'ring-emerald-400/40', text: 'text-emerald-300', stroke: 'stroke-emerald-400', bar: 'border-emerald-400' },
+  { dot: 'bg-sky-400', ring: 'ring-info/40', text: 'text-info', stroke: 'stroke-sky-400', bar: 'border-sky-400' },
+  { dot: 'bg-emerald-400', ring: 'ring-success/40', text: 'text-success', stroke: 'stroke-emerald-400', bar: 'border-emerald-400' },
   { dot: 'bg-rose-400', ring: 'ring-rose-400/40', text: 'text-rose-300', stroke: 'stroke-rose-400', bar: 'border-rose-400' },
   { dot: 'bg-violet-400', ring: 'ring-violet-400/40', text: 'text-violet-300', stroke: 'stroke-violet-400', bar: 'border-violet-400' },
   { dot: 'bg-orange-400', ring: 'ring-orange-400/40', text: 'text-orange-300', stroke: 'stroke-orange-400', bar: 'border-orange-400' },
@@ -53,7 +53,7 @@ interface Props {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  '已定稿': 'bg-emerald-500/15 text-emerald-300',
+  '已定稿': 'bg-success/15 text-success',
   '待补充': 'bg-amber/15 text-amber',
   '已变更': 'bg-rose-500/15 text-rose-300',
 }
@@ -253,7 +253,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
         <div className="relative" style={{ width: totalW, height: totalH }}>
           {/* 水平主轴 + 时长线条（轴上方，分层换色） */}
           <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
-            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} stroke="rgba(128,130,150,0.4)" strokeWidth={1.5} />
+            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} style={{ stroke: 'rgb(var(--ink-600) / 0.4)' }} strokeWidth={1.5} />
             {brackets.map(b => {
               const on = hover === b.id || selected?.id === b.id
               const color = COLORS[b.colorIdx % COLORS.length]

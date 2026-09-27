@@ -146,7 +146,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
   const send = async () => {
     if (!aiReady || !prompt.trim() || loading) return
     const cfg = await requireActiveProvider().catch(() => null)
-    if (!cfg) { setError('尚未配置可用模型，请先在上方「模型配置」里添加。'); return }
+    if (!cfg) { setError('尚未配置可用模型，请先到「工作面板 → 模型设置」里添加。'); return }
     const text0 = prompt.trim()
     const userMsg: ChatMsg = { id: uid(), role: 'user', content: text0, ts: Date.now() }
     const base: ChatSession = activeSession ?? { id: uid(), title: truncateTitle(text0), messages: [], updatedAt: Date.now() }
@@ -212,7 +212,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
         <Sparkles size={14} className="text-amber" />
         <h2 className="text-13 font-semibold text-ink-100">AI 辅助规划</h2>
         <HelpPopover title="AI 辅助规划怎么用" width="23rem" className="ml-0.5">
-          {'多轮对话式辅助：左侧可新建 / 切换 / 重命名 / 删除多个规划会话；右侧与模型连续对话。\n\n· 勾选「带入项目资料」可让模型参考你的世界观与角色设定，给出的建议更贴设定；\n· 灵感激发 / 剧情人物世界观规划 / 一致性自查（不生成正文）；\n· 首次使用先到上方「模型配置」添加并选择模型，未接入时对话按钮禁用。'}
+          {'多轮对话式辅助：左侧可新建 / 切换 / 重命名 / 删除多个规划会话；右侧与模型连续对话。\n\n· 勾选「带入项目资料」可让模型参考你的世界观与角色设定，给出的建议更贴设定；\n· 灵感激发 / 剧情人物世界观规划 / 一致性自查（不生成正文）；\n· 首次使用先到「工作面板 → 模型设置」添加并选择模型，未接入时对话按钮禁用。'}
           <AIDataSourceNote feature="ai-assist" />
         </HelpPopover>
       </div>
@@ -220,7 +220,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
       {/* 当前模型状态条 */}
       {active ? (
         <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-ink-800/70 border border-ink-700/70 text-12">
-          <span className={`px-1.5 py-0.5 rounded text-10 ${active.type === 'ollama' || active.local ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-400'}`}>
+          <span className={`px-1.5 py-0.5 rounded text-10 ${active.type === 'ollama' || active.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
             {typeLabel(active)}
           </span>
           <span className="text-ink-200">{active.name}</span>
@@ -229,7 +229,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
         </div>
       ) : (
         <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber/10 border border-amber/25 text-12 text-amber">
-          <AlertCircle size={13} /> 尚未配置模型：请先在上方「模型配置」里添加本地或联网模型。
+          <AlertCircle size={13} /> 尚未配置模型：请先到「工作面板 → 模型设置」里添加本地或联网模型。
         </div>
       )}
 
@@ -239,7 +239,7 @@ style={{ height: foldVh('60vh') }}>
         {/* 左：历史会话 */}
         <div className="w-44 shrink-0 flex flex-col bg-ink-900/40 border border-ink-700 rounded-lg overflow-hidden">
           <div className="p-2 border-b border-ink-700">
-            <Button onClick={newSession} variant="primary" size="md" className="w-full flex items-center justify-center text-12">
+            <Button onClick={newSession} variant="primary" size="md" className="w-full flex items-center justify-center">
               <Plus size={12} /> 新建对话
             </Button>
           </div>
@@ -251,7 +251,7 @@ style={{ height: foldVh('60vh') }}>
                 <div
                   key={s.id}
                   onClick={() => switchSession(s.id)}
-                  className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer transition-colors ${s.id === activeSessionId ? 'bg-amber/10 border border-amber/30' : 'border border-transparent hover:bg-ink-800'}`}
+                  className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer transition-colors ${s.id === activeSessionId ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800'}`}
                 >
                   <MessageSquarePlus size={12} className={`shrink-0 ${s.id === activeSessionId ? 'text-amber' : 'text-ink-500'}`} />
                   <span className={`flex-1 text-11 truncate ${s.id === activeSessionId ? 'text-amber' : 'text-ink-300'}`}>{s.title}</span>
@@ -278,7 +278,7 @@ style={{ height: foldVh('60vh') }}>
                     {m.content}
                     {m.role === 'assistant' && (
                       <Button variant="icon-muted" onClick={() => copyMsg(m.id, m.content)} className="ml-2 align-middle" title="复制">
-                        {copied === m.id ? <Check size={11} className="text-emerald-400 inline" /> : <Copy size={11} className="inline" />}
+                        {copied === m.id ? <Check size={11} className="text-success inline" /> : <Copy size={11} className="inline" />}
                       </Button>
                     )}
                   </div>
@@ -290,7 +290,7 @@ style={{ height: foldVh('60vh') }}>
           {/* 输入区 */}
           <div className="border-t border-ink-700 p-2.5 space-y-2">
             {error && (
-              <div className="flex items-start gap-2 px-2 py-1.5 rounded-lg bg-red-500/10 border border-red-500/25 text-11 text-red-300">
+              <div className="flex items-start gap-2 px-2 py-1.5 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger">
                 <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{error}</span>
               </div>
             )}
@@ -322,7 +322,7 @@ style={{ height: foldVh('60vh') }}>
                 className="!px-3 !py-2 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 focus:border-amber/40 outline-none placeholder:text-ink-600 flex-1"
               />
               {loading ? (
-                <Button onClick={stop} variant="danger" size="md" className="shrink-0 flex items-center text-12">
+                <Button onClick={stop} variant="danger" size="md" className="shrink-0 flex items-center">
                   <AlertCircle size={13} /> 停止
                 </Button>
               ) : (

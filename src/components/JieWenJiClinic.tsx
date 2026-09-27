@@ -29,7 +29,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                 if (st.loading) {
                   return (
                     <Button key={scope} variant="bare" onClick={stopProofread}
-                      className={`${aiBtnCls} bg-red-500/15 border-red-500/30 text-red-300 hover:bg-red-500/25`}
+                      className={`${aiBtnCls} bg-danger/15 border-danger/30 text-danger hover:bg-danger/25`}
                       title="点击停止（已查出的结果会保留）">
                       <Loader2 size={12} className="animate-spin" /> 停止（{st.progress.done}/{st.progress.total}）
                     </Button>
@@ -65,7 +65,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                       <div className="h-full bg-amber transition-all" style={{ width: `${st.progress.total ? (st.progress.done / st.progress.total) * 100 : 0}%` }} />
                     </div>
                   )}
-                  {st.error && <div className="text-11 text-red-300 px-1">{st.error}</div>}
+                  {st.error && <div className="text-11 text-danger px-1">{st.error}</div>}
                   {st.done && st.cancelled && (
                     <div className="text-11 text-ink-300 px-1">已停止（保留已查出的 {st.issues.length} 处）</div>
                   )}
@@ -80,14 +80,14 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                         <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
-                            <span className="text-11 text-red-300 line-through">{iss.quote}</span>
+                            <span className="text-11 text-danger line-through">{iss.quote}</span>
                             <span className="text-10 text-ink-500">→</span>
-                            <span className="text-11 text-emerald-300">{iss.fix}</span>
+                            <span className="text-11 text-success">{iss.fix}</span>
                           </div>
                           {iss.why && <div className="text-10 text-ink-400 mt-0.5">{iss.why}</div>}
                           <Button variant="bare"
                             onClick={() => replaceOne(scope, iss)}
-                            className="mt-1 px-2 py-0.5 rounded-md text-10 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
+                            className="mt-1 px-2 py-0.5 rounded-md text-10 bg-success/10 text-success border border-success/25 hover:bg-success/20 transition-colors"
                           >
                             替换此条
                           </Button>
@@ -96,7 +96,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                     </div>
                   )}
                   {st.done && !st.cancelled && st.issues.length === 0 && (
-                    <div className="text-center text-11 text-emerald-300 py-1">
+                    <div className="text-center text-11 text-success py-1">
                       <CheckCircle2 size={13} className="inline mr-1" /> 未发现问题
                     </div>
                   )}
@@ -131,7 +131,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
             </Button>
             {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
 
-            {diag.error && <div className="text-11 text-red-300 px-1">{diag.error}</div>}
+            {diag.error && <div className="text-11 text-danger px-1">{diag.error}</div>}
             {diag.data && (
               <div className="rounded-lg border border-amber/25 bg-amber/5 px-3 py-2.5">
                 {renderReport(diag.data.report)}

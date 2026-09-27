@@ -176,8 +176,8 @@ export default function CalendarSelect({ value, onChange, calendars, onCalendars
               用于跨历法先后顺序与延续性判断：时间轴先按数值排序，再按发生时间。
             </div>
             <div className="flex gap-2 justify-end">
-              <Button onClick={closeEditor} variant="secondary" size="md" className="text-12">取消</Button>
-              <Button onClick={saveEditor} variant="primary" size="md" className="text-12">保存</Button>
+              <Button onClick={closeEditor} variant="secondary" size="md">取消</Button>
+              <Button onClick={saveEditor} variant="primary" size="md">保存</Button>
             </div>
         </Modal>
       )}

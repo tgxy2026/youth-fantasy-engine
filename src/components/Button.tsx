@@ -29,6 +29,18 @@ const SIZE: Record<Size, string> = {
   md: 'h-9 px-4 text-13',
   lg: 'h-10 px-5 text-14',
 }
+// 🔴 U-2 · 2.6.0 口径明令：SIZE 已含字号，**禁止在 className 再叠 text-\***——
+//    fontSize 档按 9→17 升序生成 CSS，.text-13 恒在 .text-12 之后 ⇒ 叠加的 text-12 从不生效
+//    （2026-09-27 实证；历史 42 处无效叠加已批量清除）。要更小字号请降 size 档位。
+//
+// 🔴 U-4 · 2.6.0 裸 <button> 收编口径（巡检 48 处的判决，防下轮重复提案）：
+//    · 行选择 → 用 `SelectRow.tsx`（选中态令牌真源 /15，已迁移 4 处，其余可渐进迁移）；
+//    · 分段选中 /10 漂移 → 已统一 /15（2026-09-27，27 处）；
+//    · **豁免**（保留裸 button，勿再提案）：① 行内微图标键（h-3~h-5，如 WorldSetSheet 活跃圆点
+//      w-3 h-3——Button 最小 h-6 会撑坏行高）；② 容器式分段选择器（ExportFormatDialog /
+//      PlatformCheckPanel 的 inline-flex 分段，与 Button toggle 形态不同但令牌已一致）；
+//      ③ DataDock / Sidebar 自身把手（实现内部件）；④ 行内纯文字微键（裸文字无盒模型，
+//      加 Button 会引入 h-6 高度盒改变行高）。
 // 图标专用：去掉横向 padding，定宽定高
 const ICON_SIZE: Record<Size, string> = {
   xs: 'h-6 w-6',
@@ -64,21 +76,21 @@ function variantClass(v: Variant, solid: boolean, selected: boolean): string {
     case 'danger':
       return solid
         ? 'bg-red-500 text-white border border-red-500 hover:bg-red-600 shadow-lg'
-        : 'bg-red-500/10 text-red-300 border border-red-500/30 hover:bg-red-500/20'
+        : 'bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20'
     case 'success':
       return solid
         ? 'bg-emerald-500 text-ink-950 border border-emerald-500 hover:bg-emerald-400'
-        : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20'
+        : 'bg-success/15 text-success border border-success/30 hover:bg-success/20'
     case 'info':
       return solid
         ? 'bg-sky-500 text-white border border-sky-500 hover:bg-sky-600'
-        : 'bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/20'
+        : 'bg-info/15 text-info border border-info/30 hover:bg-info/20'
     case 'icon':
       return 'text-ink-400 hover:text-ink-100 hover:bg-ink-800/60 rounded-md border border-transparent'
     case 'icon-amber':
       return 'text-ink-400 hover:text-amber'
     case 'icon-danger':
-      return 'text-ink-500 hover:text-red-400'
+      return 'text-ink-500 hover:text-danger'
     case 'icon-muted':
       return 'text-ink-500 hover:text-ink-200'
     case 'icon-ghost':

@@ -16,6 +16,10 @@ import { contentMinH, OUTLINE_SHEET_CHROME_PX } from '../lib/theme'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
+// R4a · 2.6.0：结构模板节拍对照条（只读）。模板选择的单一来源在 creativeSession，
+// 与创意写作 / 检查工具「全书结构配比」共用同一份（hydrate 幂等，本页可能从未打开过创意写作）。
+import { hydrateCreativeSession, useCreativeSession } from '../lib/creativeSession'
+import { getStoryTemplate } from '../lib/storyStructures'
 
 interface Props {
   tab: TabDef
@@ -48,6 +52,40 @@ export default function OutlineSheet({ tab }: Props) {
   useEffect(() => () => clearTimeout(savedTimer.current), [])
   const [tplOpen, setTplOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+
+  // ---- R4a · 2.6.0 结构模板节拍对照（章节细纲页只读展示） ----
+  useEffect(() => { hydrateCreativeSession() }, [])
+  const structureId = useCreativeSession().inputs.structureId
+  const structureTpl = !isVolume ? getStoryTemplate(structureId) : null
+  /** 从卡片名解析章号（与 nextChapterNo 同一口径；解析不到的卡不参与折算） */
+  const chapterNos = useMemo(
+    () => records.map(r => Number(r.name.match(/第(\d+)章/)?.[1] ?? 0)),
+    [records]
+  )
+  const beatRanges = useMemo(() => {
+    if (!structureTpl || records.length === 0) return null
+    // 全书尺度：细纲卡数与最大手填章号取大（作者可能跳着排章号）
+    const maxNo = chapterNos.reduce((s, n) => Math.max(s, n), 0)
+    const m = Math.max(records.length, maxNo, 1)
+    // 与归属公式互逆的反推：章 N 的位置 = ((N−0.5)/M)×100 ∈ [from,to)
+    //  ⟺ N ≥ from·M/100 + 0.5 且 N < to·M/100 + 0.5
+    const ranges = structureTpl.beats.map(b => ({
+      name: b.name,
+      brief: b.brief,
+      from: Math.max(1, Math.ceil((b.from * m) / 100 + 0.5)),
+      to: Math.min(m, Math.ceil((b.to * m) / 100 + 0.5) - 1),
+    }))
+    return { m, ranges }
+  }, [structureTpl, records.length, chapterNos])
+  // 当前编辑章落在哪一拍（高亮用；名字里没有章号就不高亮）
+  const activeBeatIdx = useMemo(() => {
+    if (!beatRanges || !draft) return -1
+    const no = Number(draft.name.match(/第(\d+)章/)?.[1] ?? 0)
+    if (!no) return -1
+    const pos = ((no - 0.5) / beatRanges.m) * 100
+    const tplBeats = structureTpl?.beats ?? []
+    return tplBeats.findIndex(b => pos >= b.from && pos < b.to)
+  }, [beatRanges, draft, structureTpl])
 
   useEffect(() => {
     getCardRecords(tab.id).then(r => {
@@ -148,7 +186,8 @@ export default function OutlineSheet({ tab }: Props) {
   const removeRecord = async (id: string) => {
     const rec = records.find(r => r.id === id)
     if (!rec) return
-    if (!await confirmDialog({ title: `删除${noun}大纲`, message: `确定删除「${rec.name}」的${noun}大纲？`, danger: true })) return
+    // C-8 · 2.6.0：弹窗用页签实名（章节细纲 / 分卷大纲）——原来拼「${noun}大纲」会在细纲页写出「章节大纲」
+    if (!await confirmDialog({ title: `删除${tab.name}`, message: `确定删除「${rec.name}」的这份${tab.name}？`, danger: true })) return
     await deleteCardRecord(id)
     const next = records.filter(r => r.id !== id)
     setRecords(next)
@@ -233,16 +272,16 @@ export default function OutlineSheet({ tab }: Props) {
               <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
               <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{`这是「${tab.name}」大纲，按${noun}拆分规划：
 
-• 左侧目录用「新建${noun}」新增；悬停可上移 / 下移排序、删除、复制。
-• 编辑「卷名 / 章节号·标题」时会自动同步左侧目录名。
-• 右侧按模块（定位 / 核心 / 钩子……）双栏铺开，长文自动撑高。
-• 顶部进度条显示当前${noun}已填字段比例；修改后点「保存」或 Ctrl+S。`}</HelpPopover>
+· 左侧目录用「新建${noun}」新增；悬停可上移 / 下移排序、删除、复制。
+· 编辑「卷名 / 章节号·标题」时会自动同步左侧目录名。
+· 右侧按模块（定位 / 核心 / 钩子……）双栏铺开，长文自动撑高。
+· 顶部进度条显示当前${noun}已填字段比例；修改后点「保存」或 Ctrl+S。`}</HelpPopover>
             </div>
             <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-none">{tab.description}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
             <span className="text-11 text-ink-500">{records.length} 个{noun}</span>
-            <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+            <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
             <Button variant="toggle" selected={dirty}
@@ -256,7 +295,7 @@ export default function OutlineSheet({ tab }: Props) {
             <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
               <Layers size={14} /> 模板库
             </Button>
-            <Button onClick={addRecord} variant="primary" size="md" className="flex items-center text-13">
+            <Button onClick={addRecord} variant="primary" size="md" className="flex items-center">
               <Plus size={14} /> 新建{noun}
             </Button>
           </div>
@@ -274,6 +313,35 @@ export default function OutlineSheet({ tab }: Props) {
         )}
       </header>
 
+      {/* R4a · 2.6.0 结构模板节拍对照条（章节细纲页 · 只读）：按细纲卡数折算各拍章号范围，
+          当前编辑章所在拍高亮。模板选择跟随创意写作 / 全书结构配比（单一来源），此处不提供切换。 */}
+      {!isVolume && beatRanges && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-850/60 px-3 py-2">
+          <span className="text-10 text-ink-500 shrink-0">结构对照 · {structureTpl!.name}</span>
+          {/* 🔴 问号紧跟功能名（红线）：必须排在标签之后、chips 之前，否则被 flex-wrap 的 chips 挤到行尾 */}
+          <HelpPopover title="结构对照 · 怎么用" width="22rem">
+            {'只读参考条：把所选结构模板的节拍按全书章数折算成章号范围，'
+              + '写细纲时可以对着看「这一章落在故事的哪一拍」——当前编辑章所在的拍会高亮。\n\n'
+              + '· 模板在「创意写作」面板或检查工具「全书结构配比」里选择，这里跟随同一份选择、不单独存；\n'
+              + '· 折算依据是细纲卡数（以及手填章节号里的最大值），选「不使用结构模板」时本条不显示；\n'
+              + '· 分卷大纲页不显示——模板是全书章数口径，对卷数折算没有参考意义。'}
+          </HelpPopover>
+          {beatRanges.ranges.map((r, i) => (
+            <span
+              key={r.name}
+              className={`px-2 py-0.5 rounded-md border text-11 ${
+                i === activeBeatIdx
+                  ? 'bg-amber/15 border-amber/40 text-amber'
+                  : 'bg-ink-800 border-ink-700 text-ink-300'
+              }`}
+              title={`${r.name}：${r.brief}`}
+            >
+              {r.name} {r.to >= r.from ? (r.to > r.from ? `${r.from}-${r.to}` : `${r.from}`) : '—'} 章
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`（原来手抄等价式，见 `CharacterSheet` 同处说明）。 */}
       <div className="flex gap-5" style={{ minHeight: contentMinH(OUTLINE_SHEET_CHROME_PX) }}>
         {/* 目录列表 */}
@@ -287,7 +355,7 @@ export default function OutlineSheet({ tab }: Props) {
                 onClick={() => setActiveId(rec.id)}
                 className={`group cursor-pointer rounded-lg border px-2.5 py-2.5 transition-all duration-150
                   ${isActive
-                    ? 'bg-amber/10 border-amber/30 text-amber'
+                    ? 'bg-amber/15 border-amber/30 text-amber'
                     : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'}`}
               >
                 <div className="flex items-center gap-1.5">
@@ -353,7 +421,7 @@ export default function OutlineSheet({ tab }: Props) {
                 <span className="flex-1" />
                 <Button onClick={duplicateRecord}
                   
-                  title={`复制当前${noun}大纲为新${noun}`} variant="secondary" size="md" className="flex items-center text-11">
+                  title={`复制当前${noun}大纲为新${noun}`} variant="secondary" size="md" className="flex items-center">
                   <Copy size={11} /> 复制
                 </Button>
               </div>

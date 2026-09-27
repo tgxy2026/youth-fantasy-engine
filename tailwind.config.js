@@ -19,6 +19,10 @@ export default {
           100: 'rgb(var(--ink-100) / <alpha-value>)',
           50: 'rgb(var(--ink-50) / <alpha-value>)'
         },
+        // U-3 · 2.6.0：状态语义色（值在 index.css 按主题定义；浅色主题覆盖为 700 级保对比度）
+        danger: "rgb(var(--danger) / <alpha-value>)",
+        success: "rgb(var(--success) / <alpha-value>)",
+        info: "rgb(var(--info) / <alpha-value>)",
         amber: {
           DEFAULT: 'rgb(var(--amber) / <alpha-value>)',
           soft: 'rgb(var(--amber-soft) / <alpha-value>)'

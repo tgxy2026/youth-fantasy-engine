@@ -13,13 +13,14 @@ import AIDataSourceNote from './AIDataSourceNote'
 import * as store from '../lib/tavern/store'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
+import SelectRow from './SelectRow'
 import TavernExportDialog from './TavernExportDialog'
 import { reportDocModel } from '../lib/tavern/exportDoc'
 import { TABS } from '../lib/schema'
 import type { TavernReport as Report, TavernFinding, TavernReportIndexItem } from '../lib/tavern/types'
 
 const LEVEL_STYLE: Record<TavernFinding['level'], string> = {
-  矛盾: 'text-red-400 border-red-400/30 bg-red-400/10',
+  矛盾: 'text-danger border-danger/30 bg-danger/10',
   漏洞: 'text-amber border-amber/30 bg-amber/10',
   存疑: 'text-ink-400 border-ink-600 bg-ink-800',
 }
@@ -98,14 +99,9 @@ export default function TavernReport() {
           <h1 className="text-lg font-bold text-ink-50">推演报告</h1>
 
           <HelpPopover title="推演报告怎么看" width="22rem" size={14}>
-  每场推演结束后的合理性诊断 —— 只在推演里跑，不会写回你的小说。
-
-  • 左栏是历次报告（可筛选），右边是当前这份的正文。
-  • 每条问题尽量指向具体角色卡或表格条目，点「定位」直接跳过去核对。
-  • 「导出」可以把报告存成 Markdown 或单文件 HTML。
-  • 报告只是建议：它说的是「这里可能不合理」，改不改由你定。
-  <AIDataSourceNote feature="tavern-report" />
-</HelpPopover>
+            {'每场推演结束后的合理性诊断 —— 只在推演里跑，不会写回你的小说。\n\n· 左栏是历次报告（可筛选），右边是当前这份的正文；\n· 每条问题尽量指向具体角色卡或表格条目，点「定位」直接跳过去核对；\n· 「导出」可以把报告存成 Markdown 或单文件 HTML；\n· 报告只是建议：它说的是「这里可能不合理」，改不改由你定。'}
+            <AIDataSourceNote feature="tavern-report" />
+          </HelpPopover>
 
         </div>
         <p className="text-12 text-ink-400 mt-1">
@@ -139,26 +135,26 @@ export default function TavernReport() {
                 const active = activeId === it.id
                 const total = it.counts['矛盾'] + it.counts['漏洞'] + it.counts['存疑']
                 return (
-                  <button
+                  <SelectRow
                     key={it.id}
                     type="button"
+                    selected={active}
+                    variant="outline"
                     onClick={() => setActiveId(it.id)}
-                    className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-                      active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
-                    }`}
+                    className="rounded-md px-2 py-1.5"
                   >
                     <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>
                       {reportName(it.sessionTitle)}
                     </div>
                     <div className="mt-0.5 truncate text-10 text-ink-500">{it.anchorChapterLabel || '（无锚点）'}</div>
                     <div className="mt-0.5 flex items-center gap-2 text-10">
-                      {it.counts['矛盾'] > 0 && <span className="text-red-400">矛盾 {it.counts['矛盾']}</span>}
+                      {it.counts['矛盾'] > 0 && <span className="text-danger">矛盾 {it.counts['矛盾']}</span>}
                       {it.counts['漏洞'] > 0 && <span className="text-amber">漏洞 {it.counts['漏洞']}</span>}
                       {it.counts['存疑'] > 0 && <span className="text-ink-400">存疑 {it.counts['存疑']}</span>}
                       {total === 0 && <span className="text-ink-500">未发现问题</span>}
                       <span className="ml-auto shrink-0 text-ink-600">{new Date(it.createdAt).toLocaleDateString()}</span>
                     </div>
-                  </button>
+                  </SelectRow>
                 )
               })}
               {rows.length === 0 && (
@@ -189,7 +185,7 @@ export default function TavernReport() {
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <Button
-                      variant="secondary" size="md" className="text-12"
+                      variant="secondary" size="md"
                       onClick={() => setExportOpen(true)}
                       title="把这份报告导出成 Markdown 或带样式的单文件 HTML"
                     >
@@ -231,7 +227,7 @@ export default function TavernReport() {
                                 )}
                               </div>
                               {f.targetTabId && f.targetRecordId && (
-                                <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => jumpTo(f)}>
+                                <Button variant="secondary" size="md" className="shrink-0" onClick={() => jumpTo(f)}>
                                   定位
                                 </Button>
                               )}

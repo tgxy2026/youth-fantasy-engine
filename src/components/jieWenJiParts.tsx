@@ -100,21 +100,21 @@ export const LEDGER_TYPES: SettingEntityType[] = ['人物', '势力', '地点', 
 
 /** 补登：三档比对结果的徽标样式 */
 export const STATUS_META: Record<MatchStatus, { label: string; cls: string }> = {
-  registered: { label: '已登记', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
+  registered: { label: '已登记', cls: 'bg-success/15 text-success border-success/30' },
   duplicate: { label: '疑似重复', cls: 'bg-amber/15 text-amber border-amber/30' },
-  new: { label: '待补登', cls: 'bg-red-500/15 text-red-300 border-red-500/30' },
+  new: { label: '待补登', cls: 'bg-danger/15 text-danger border-danger/30' },
 }
 
 const SEV_BADGE: Record<string, string> = {
-  error: 'bg-red-500/15 text-red-300 border-red-500/30',
+  error: 'bg-danger/15 text-danger border-danger/30',
   warn: 'bg-amber/15 text-amber border-amber/30',
-  info: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-  high: 'bg-red-500/15 text-red-300 border-red-500/30',
+  info: 'bg-info/15 text-info border-info/30',
+  high: 'bg-danger/15 text-danger border-danger/30',
   medium: 'bg-amber/15 text-amber border-amber/30',
-  low: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-  '严重': 'bg-red-500/15 text-red-300 border-red-500/30',
+  low: 'bg-success/15 text-success border-success/30',
+  '严重': 'bg-danger/15 text-danger border-danger/30',
   '中等': 'bg-amber/15 text-amber border-amber/30',
-  '提示': 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+  '提示': 'bg-info/15 text-info border-info/30',
 }
 
 export function SevBadge({ s }: { s: string }) {

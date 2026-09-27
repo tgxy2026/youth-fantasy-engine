@@ -167,7 +167,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
     <div className={inSidebar ? 'flex flex-col gap-1.5' : 'flex flex-col gap-1.5'}>
       {/* 标题行 */}
       <div className={headCls}>
-        <Cloud size={13} className="text-sky-300/90" />
+        <Cloud size={13} className="text-info/90" />
         <span className="font-medium">云盘文件同步</span>
         {connected && (
           <span className="ml-auto flex items-center gap-1.5 text-11 text-ink-300">
@@ -198,7 +198,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
             title="选择一个网盘同步目录来开启跨设备同步（如 OneDrive / WPS 云盘 / 坚果云的文件夹）"
             className={
               rowBtn +
-              'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-60'
+              'border-success/40 bg-success/10 text-success hover:bg-success/20 disabled:opacity-60'
             }
           >
             <FolderOpen size={14} />
@@ -246,7 +246,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
               onClick={onRestore}
               disabled={busy}
               title={`每日备份（${backupDay}）· 点击回滚到该检查点`}
-              className={rowBtn + 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'}
+              className={rowBtn + 'border-success/30 bg-success/10 text-success hover:bg-success/20'}
             >
               <History size={13} />
               从备份恢复（{backupDay}）

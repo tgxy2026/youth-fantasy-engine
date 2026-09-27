@@ -155,7 +155,7 @@ export default function ReaderProbePanel() {
         {words === 0 && <div className="text-11 text-ink-500">{EMPTY_CHAPTER_HINT}</div>}
 
         {words > 0 && res.error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-11 text-red-300">
+          <div className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger">
             审问失败：{res.error}
           </div>
         )}

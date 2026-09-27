@@ -143,8 +143,8 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
       </p>
 
       {error ? (
-        <div className="mt-4 rounded-md border border-red-400/30 bg-red-400/5 p-4">
-          <p className="text-12 text-red-400">量不出来</p>
+        <div className="mt-4 rounded-md border border-danger/30 bg-danger/5 p-4">
+          <p className="text-12 text-danger">量不出来</p>
           <p className="mt-1 break-all text-11 text-ink-300 leading-relaxed">{error}</p>
           <div className="mt-3 flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => void measure()}>再量一次</Button>

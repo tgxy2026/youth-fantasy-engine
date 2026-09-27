@@ -28,17 +28,17 @@ import { Button } from './Button'
 // 风险 / 严重度色标签
 const riskBadge = (r: string) =>
   r === '误报' ? 'bg-ink-700 text-ink-300 border border-ink-600'
-  : r === '高' ? 'bg-red-500/15 text-red-300 border border-red-500/30'
+  : r === '高' ? 'bg-danger/15 text-danger border border-danger/30'
   : r === '中' ? 'bg-amber/15 text-amber border border-amber/30'
-  : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+  : 'bg-success/15 text-success border border-success/30'
 const levelBadge = (l: string) =>
-  l === '严重' ? 'bg-red-500/15 text-red-300 border border-red-500/30'
+  l === '严重' ? 'bg-danger/15 text-danger border border-danger/30'
   : l === '中等' ? 'bg-amber/15 text-amber border border-amber/30'
   : 'bg-ink-700 text-ink-300 border border-ink-600'
 
 // 数据体检严重度色标签（复用 audit.ts 的 SEVERITY_LABEL 文案）
 const sevBadge = (s: 'error' | 'warn' | 'info') =>
-  s === 'error' ? 'bg-red-500/15 text-red-300 border border-red-500/30'
+  s === 'error' ? 'bg-danger/15 text-danger border border-danger/30'
   : s === 'warn' ? 'bg-amber/15 text-amber border border-amber/30'
   : 'bg-ink-700 text-ink-300 border border-ink-600'
 
@@ -236,17 +236,17 @@ export default function CheckTools() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">检查工具</h1>
           <HelpPopover title="检查工具怎么用" width="22rem" size={14}>
-            {'九个发布前自检能力：\n\n· 敏感词检测：系统词库扫描（始终可用）+ 可选 AI 复核（需接入 AI）；\n· AI 一致性深度自查：对照设定资料查人名/时间脉络/能力的前后矛盾（需 AI）；\n· 数据体检：机械确定性扫描引用断链/编号重复/必填空/酒馆列表残留，不靠 AI，离线可用，每条可忽略或清除忽略。\n· 投稿前自检：行文分布（句长/段长离散度、过渡语密度、重复用词）与全书节奏（章节字数分布、更新节奏），外加复用连续性与伏笔引擎的汇总数字。全部本地统计，不发 AI 请求。\n· 全书结构配比：把结构模板（三幕式 / 十五拍等）的理想节拍占比与实际各拍承载的字数占比对照，看哪一拍写多了、哪一拍写少了。纯本地统计。与「节奏与章末钩子」分工：这个看全书卷章结构，那个看单章内部节奏。\n· 节奏与章末钩子：挑一章看爆点落在前 / 中 / 后哪几段、章末有没有留钩子（需 AI）。段位由程序按原文位置算，只给观察不给分。\n· 本章体检：对选中的一章串五个确定性引擎（连续性 / 伏笔 / 敏感词 / 错别字 / 文风），全部本地计算，手动触发。\n· 分平台投稿预检：挑晋江 / 起点档位，看哪些命中属于该平台重点关注的类别，以及分章字数事实；只摆事实不判定。\n· 读者视角审问：让 AI 扮成一个具体读者（追更读者 / 新读者 / 老书虫）读这一章，回答「哪里看不下去 / 哪里没看懂 / 最想知道什么」（需 AI）。读者提到的位置会标出段号，是程序按原文查出来的。\n\n建议改动过名称/删过条目后跑一次数据体检，发布前至少跑一次敏感词与数据体检。\n\n说明：「投稿前自检」给的是分布事实与参考区间，帮你看平时注意不到的倾向，不做评分也不判"像不像机器写的"——具体怎么改由你定。'}
+            {'九个发布前自检能力：\n\n· 敏感词检测：系统词库扫描（始终可用）+ 可选 AI 复核（需接入 AI）；\n· AI 一致性深度自查：对照设定资料查人名/时间脉络/能力的前后矛盾（需 AI）；\n· 数据体检：机械确定性扫描引用断链/编号重复/必填空/酒馆列表残留，不靠 AI，离线可用，每条可忽略或清除忽略。\n· 投稿前自检：行文分布（句长/段长离散度、过渡语密度、重复用词）与全书节奏（章节字数分布、更新节奏），外加复用连续性与伏笔引擎的汇总数字。全部本地统计，不发 AI 请求。\n· 全书结构配比：把结构模板（三幕式 / 十五拍等）的理想节拍占比与实际各拍承载的字数占比对照，看哪一拍写多了、哪一拍写少了。纯本地统计。与「节奏与章末钩子」分工：这个看全书卷章结构，那个看单章内部节奏。\n· 节奏与章末钩子：挑一章看爆点落在前 / 中 / 后哪几段、章末有没有留钩子（需 AI）。段位由程序按原文位置算，只给观察不给分。\n· 本章体检：对选中的一章串五个确定性引擎（连续性 / 伏笔 / 敏感词 / 错别字 / 文风），全部本地计算，手动触发。\n· 分平台投稿预检：挑晋江 / 起点档位，看哪些命中属于该平台重点关注的类别，以及分章字数事实；只摆事实不判定。\n· 读者视角审问：让 AI 扮成一个具体读者（追更读者 / 新读者 / 老书虫）读这一章，回答「哪里看不下去 / 哪里没看懂 / 最想知道什么」（需 AI）。读者提到的位置会标出段号，是程序按原文查出来的。\n\n建议改动过名称/删过条目后跑一次数据体检，发布前至少跑一次敏感词与数据体检。\n\n说明：「投稿前自检」给的是分布事实与参考区间，帮你看平时注意不到的倾向，不做评分也不判「像不像机器写的」——具体怎么改由你定。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-13 text-ink-300">敏感词检测 · AI 一致性 · 数据体检 · 投稿前自检 · 全书结构配比 · 节奏与钩子 · 本章体检 · 分平台预检 · 读者视角审问</p>
+        <p className="mt-1 text-13 text-ink-300">敏感词检测 · AI 一致性深度自查 · 数据体检 · 投稿前自检 · 全书结构配比 · 节奏与章末钩子 · 本章体检 · 分平台投稿预检 · 读者视角审问</p>
       </header>
 
       <div className="space-y-4">
         {/* ============ 敏感词 ============ */}
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
-            <ShieldAlert size={14} className="text-red-400" /> 敏感词检测
+            <ShieldAlert size={14} className="text-danger" /> 敏感词检测
             <HelpPopover title="敏感词检测怎么用" width="22rem">
               {'两个能力：\n\n· 系统扫描（始终可用）：内置基础违禁词库 + 你的自定义词，逐章检查并列出命中词、次数与上下文；\n· AI 检测（需接入 AI）：让模型结合上下文判断每个命中词是误报还是真有风险，并给出替换建议。无 AI 时该按钮禁用，本地扫描不受影响。\n\n· 添加：输入框支持逗号 / 顿号 / 换行批量粘贴；\n· 一键导入文件：支持 .txt（一行一词）/.csv/.tsv/.json 数组，井号 # 开头视为注释。\n只做提示不自动改字——是否规避请自行判断（编辑器工具栏也有单章版敏感词检测，可直接替换）。'}
               <AIDataSourceNote feature="sensitive-check" />
@@ -265,7 +265,7 @@ export default function CheckTools() {
               placeholder="输入自定义敏感词，支持用逗号/换行分隔批量添加…"
               className="flex-1 min-w-[200px] !py-1.5 text-12"
             />
-            <Button onClick={addWord} variant="secondary" size="md" className="text-12">添加</Button>
+            <Button onClick={addWord} variant="secondary" size="md">添加</Button>
             <input
               ref={fileInputRef}
               type="file"
@@ -277,17 +277,17 @@ export default function CheckTools() {
                 if (fileInputRef.current) fileInputRef.current.value = ''
               }}
             />
-            <Button variant="danger" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 border-red-500/25 rounded-lg text-12 transition-colors" title="支持 .txt（一行一词）/ .csv / .json 数组 / .tsv">
+            <Button variant="danger" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 border-danger/25 rounded-lg text-12 transition-colors" title="支持 .txt（一行一词）/ .csv / .json 数组 / .tsv">
               <FileDown size={12} /> 一键导入文件
             </Button>
             {customWords.length > 0 && (
               <>
                 <Button onClick={exportWords}
                   
-                  title="导出为 .txt" variant="secondary" size="md" className="flex items-center text-12">
+                  title="导出为 .txt" variant="secondary" size="md" className="flex items-center">
                   <Upload size={12} /> 导出
                 </Button>
-                <Button onClick={clearCustom} variant="secondary" size="md" className="flex items-center text-12">
+                <Button onClick={clearCustom} variant="secondary" size="md" className="flex items-center">
                   <Trash2 size={12} /> 清空
                 </Button>
               </>
@@ -297,27 +297,27 @@ export default function CheckTools() {
             <div className="flex flex-wrap gap-1.5 mb-3 max-h-32 overflow-y-auto p-2 bg-ink-900/40 rounded border border-ink-700/50">
               <span className="text-10 text-ink-500 py-1">自定义 {customWords.length} 词：</span>
               {customWords.map(w => (
-                <span key={w} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded-md text-11 text-red-300">
+                <span key={w} className="inline-flex items-center gap-1 px-2 py-0.5 bg-danger/10 border border-danger/20 rounded-md text-11 text-danger">
                   {w}
-                  <Button variant="bare" onClick={() => removeWord(w)} className="hover:text-red-400"><Trash2 size={9} /></Button>
+                  <Button variant="bare" onClick={() => removeWord(w)} className="hover:text-danger"><Trash2 size={9} /></Button>
                 </span>
               ))}
             </div>
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="danger" onClick={() => scanBook()} disabled={scanning} className="flex items-center gap-1.5 px-4 py-2 border-red-500/25 rounded-lg text-12 transition-colors disabled:opacity-50">
+            <Button variant="danger" onClick={() => scanBook()} disabled={scanning} className="flex items-center gap-1.5 px-4 py-2 border-danger/25 rounded-lg text-12 transition-colors disabled:opacity-50">
               <ScanSearch size={13} /> {scanning ? '扫描中…' : '系统扫描全书'}
             </Button>
             {aiReady ? (
               <Button onClick={aiDetect}
                 disabled={reviewLoading}
-                title="AI 结合上下文判断每个命中词是误报还是真有风险" variant="secondary" size="md" className="flex items-center text-12">
+                title="AI 结合上下文判断每个命中词是误报还是真有风险" variant="secondary" size="md" className="flex items-center">
                 <Sparkles size={13} /> {reviewLoading ? 'AI 检测中…' : 'AI 检测'}
               </Button>
             ) : (
               <Button disabled
-                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center cursor-not-allowed">
                 <Sparkles size={13} /> AI 检测
               </Button>
             )}
@@ -325,7 +325,7 @@ export default function CheckTools() {
 
           {scanResult.length > 0 && (
             <div className="mt-4 space-y-3">
-              <div className={`text-12 ${totalWords > 0 ? 'text-red-300' : 'text-emerald-400'}`}>
+              <div className={`text-12 ${totalWords > 0 ? 'text-danger' : 'text-success'}`}>
                 {totalWords > 0
                   ? `系统扫描检出 ${scanResult.length} 章共 ${totalWords} 处命中，发布前建议逐处确认`
                   : '全书干净，未检出敏感词 ✓'}
@@ -336,7 +336,7 @@ export default function CheckTools() {
                   <div className="space-y-1.5">
                     {r.hits.map(h => (
                       <div key={h.word} className="text-11 text-ink-300 flex items-start gap-2">
-                        <span className="px-1.5 py-0.5 bg-red-500/15 text-red-300 rounded shrink-0">{h.word} ×{h.count}</span>
+                        <span className="px-1.5 py-0.5 bg-danger/15 text-danger rounded shrink-0">{h.word} ×{h.count}</span>
                         <span className="text-ink-500 truncate">{h.context}</span>
                       </div>
                     ))}
@@ -353,7 +353,7 @@ export default function CheckTools() {
             </div>
           )}
           {reviewErr && (
-            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <ShieldAlert size={13} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{reviewErr}</span>
             </div>
           )}
@@ -364,7 +364,7 @@ export default function CheckTools() {
                 <div key={i} className="flex items-start gap-2 text-11 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
                   <span className={`px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap text-10 ${riskBadge(r.risk)}`}>{r.risk}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-ink-200">「{r.word}」{r.suggestion && <span> → 建议「<span className="text-emerald-300">{r.suggestion}</span>」</span>}</div>
+                    <div className="text-ink-200">「{r.word}」{r.suggestion && <span> → 建议「<span className="text-success">{r.suggestion}</span>」</span>}</div>
                     {r.reason && <div className="text-ink-500 mt-0.5">{r.reason}</div>}
                   </div>
                 </div>
@@ -376,7 +376,7 @@ export default function CheckTools() {
         {/* ============ AI 一致性深度自查 ============ */}
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
-            <ScanSearch size={14} className="text-sky-400" /> AI 一致性深度自查
+            <ScanSearch size={14} className="text-info" /> AI 一致性深度自查
             <HelpPopover title="AI 一致性深度自查怎么用" width="22rem">
               {'把你的世界观 / 角色 / 时间脉络设定交给 AI，对照检查前后矛盾与逻辑硬伤。\n\n· 上方文本框可粘贴一段正文（可选），AI 会同时核对正文与设定；留空则只在设定资料内部互查；\n· 结果按 严重 / 中等 / 提示 分级，并给出冲突依据与涉及位置；\n· 需先接入 AI 模型，未接入时按钮禁用；本地能力不受影响。'}
               <AIDataSourceNote feature="continuity-audit" />
@@ -400,7 +400,7 @@ export default function CheckTools() {
               </Button>
             ) : (
               <Button disabled
-                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center cursor-not-allowed">
                 <Sparkles size={13} /> AI 深度自查
               </Button>
             )}
@@ -417,12 +417,12 @@ export default function CheckTools() {
             </div>
           )}
           {auditErr && (
-            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <ShieldAlert size={13} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{auditErr}</span>
             </div>
           )}
           {auditRun && !auditLoading && findings.length === 0 && (
-            <div className="mt-4 py-3 text-center text-12 text-emerald-400">AI 自查完成，未发现明显的前后矛盾 ✓</div>
+            <div className="mt-4 py-3 text-center text-12 text-success">AI 自查完成，未发现明显的前后矛盾 ✓</div>
           )}
           {findings.length > 0 && (
             <div className="mt-4 space-y-2">
@@ -444,9 +444,9 @@ export default function CheckTools() {
         {/* ============ 数据体检（机械扫描，与 AI 一致性自查互补） ============ */}
         <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
-            <Stethoscope size={14} className="text-emerald-400" /> 数据体检
+            <Stethoscope size={14} className="text-success" /> 数据体检
             <HelpPopover title="数据体检怎么用" width="23rem">
-              {'与上方「AI 一致性深度自查」互补：AI 查"故事通不通"（语义矛盾），本工具查"链接断没断"（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖 AI 模型，离线可用；\n· 五类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空、酒馆列表残留（酒馆列表项指向的正文已不在，列表里看得见、点开是空的；此类不会自动清理，需要你在那条结果上点「清理」），另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
+              {'与上方「AI 一致性深度自查」互补：AI 查「故事通不通」（语义矛盾），本工具查「链接断没断」（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖 AI 模型，离线可用；\n· 五类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空、酒馆列表残留（酒馆列表项指向的正文已不在，列表里看得见、点开是空的；此类不会自动清理，需要你在那条结果上点「清理」），另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
             </HelpPopover>
           </h2>
           <p className="text-11 text-ink-500 mb-3">
@@ -458,7 +458,7 @@ export default function CheckTools() {
             </Button>
             <Button onClick={clearIgnored}
               disabled={ignoredIds.length === 0}
-              title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'} variant="danger" size="md" className="flex items-center text-12">
+              title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'} variant="danger" size="md" className="flex items-center">
               <RotateCcw size={12} /> 清除忽略{ignoredIds.length > 0 ? `（${ignoredIds.length}）` : ''}
             </Button>
             {healthScanning && (
@@ -468,7 +468,7 @@ export default function CheckTools() {
             )}
           </div>
           {healthRun && !healthScanning && visibleIssues.length === 0 && (
-            <div className="mt-4 py-3 text-center text-12 text-emerald-400">
+            <div className="mt-4 py-3 text-center text-12 text-success">
               {healthIssues.length === 0 ? '数据健康，未发现引用断链 / 编号重复 / 必填空 / 酒馆列表残留 ✓' : '已忽略全部冲突，数据干净 ✓'}
             </div>
           )}

@@ -22,6 +22,10 @@ interface Props {
   min?: number
   max?: number
   step?: number
+  /** 小数位（0 = 整数，默认）。🔴 不传默认 0 是刻意的：历史调用方全是整数量级（卷数/章数/字数/缩放），
+   *  接小数场景（温度 0.7、repeatPenalty 1.05）**必须显式传**，否则 Math.round 会静默吃掉小数
+   *  —— 2.6.0 巡检 P0：TavernFieldKit 接入时漏传导致温度填不进小数（六维审计 2026-09-27）。 */
+  precision?: number
   disabled?: boolean
   className?: string
   title?: string
@@ -35,7 +39,7 @@ interface Props {
 }
 
 export default function NumberField({
-  value, onChange, min, max, step, disabled, className, title, placeholder, allowEmpty, onClamped, onCommit,
+  value, onChange, min, max, step, precision, disabled, className, title, placeholder, allowEmpty, onClamped, onCommit,
 }: Props) {
   const textOf = (v: number | undefined) => (v === undefined ? '' : String(v))
   const [text, setText] = useState(textOf(value))
@@ -47,7 +51,8 @@ export default function NumberField({
   }, [value, editing])
 
   const clamp = (n: number): { v: number; dir: 'min' | 'max' | null } => {
-    let v = Math.round(n)
+    const pow = 10 ** (precision ?? 0)
+    let v = Math.round(n * pow) / pow
     let dir: 'min' | 'max' | null = null
     if (min !== undefined && v < min) { v = min; dir = 'min' }
     if (max !== undefined && v > max) { v = max; dir = 'max' }

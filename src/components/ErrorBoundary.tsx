@@ -33,9 +33,9 @@ export default class ErrorBoundary extends React.Component<
     const stack = String(error.stack || error.message || error)
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-ink-950 p-6">
-        <div className="w-full max-w-2xl rounded-xl border border-red-500/30 bg-ink-900 shadow-2xl overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-red-500/20 bg-red-500/10">
-            <span className="text-red-300 font-semibold text-sm">⚠ 页面渲染出错</span>
+        <div className="w-full max-w-2xl rounded-xl border border-danger/30 bg-ink-900 shadow-2xl overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-danger/20 bg-danger/10">
+            <span className="text-danger font-semibold text-sm">⚠ 页面渲染出错</span>
           </div>
           <div className="px-4 py-3">
             <p className="text-12 text-ink-300 leading-relaxed mb-3">
@@ -46,7 +46,7 @@ export default class ErrorBoundary extends React.Component<
 {stack}
             </pre>
             <div className="mt-4 flex gap-2">
-              <Button onClick={this.handleReload} variant="primary" solid size="md" className="text-12">
+              <Button onClick={this.handleReload} variant="primary" solid size="md">
                 重新加载页面
               </Button>
               <Button variant="bare"

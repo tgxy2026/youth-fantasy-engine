@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import { getTavernSettings, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
 import { Button } from './Button'
+import SelectRow from './SelectRow'
 import { Modal } from './Modal'
 import Avatar from './Avatar'
 import TavernScriptDialog from './TavernScriptDialog'
@@ -135,12 +136,10 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
             const used = usedBy[o.id]
             const disabled = used !== undefined && o.id !== currentId
             return (
-              <button
-                key={o.id} type="button" disabled={disabled} onClick={() => setCardId(o.id)}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
-                  disabled ? 'cursor-not-allowed opacity-40'
-                    : cardId === o.id ? 'bg-amber/10' : 'hover:bg-ink-800/60'
-                }`}
+              <SelectRow
+                key={o.id} type="button" disabled={disabled} selected={cardId === o.id}
+                onClick={() => setCardId(o.id)}
+                className={`items-center gap-2 px-3 py-2 ${disabled ? 'cursor-not-allowed' : ''}`}
               >
                 <Avatar src={o.avatar} name={o.name} size={20} />
                 <span className={`min-w-0 shrink-0 text-12 ${cardId === o.id ? 'text-amber' : 'text-ink-200'}`}>
@@ -149,7 +148,7 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
                 <span className="min-w-0 flex-1 truncate text-right text-10 text-ink-500">
                   {disabled ? `已在位置 ${used}` : o.core}
                 </span>
-              </button>
+              </SelectRow>
             )
           })}
           {rows.length === 0 && (
@@ -373,8 +372,8 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                                 <option value="ai">AI 演</option>
                                 <option value="user">我演</option>
                               </select>
-                              <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => setPickerIdx(i)}>更换</Button>
-                              <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => clearSlot(i)}>清空</Button>
+                              <Button variant="secondary" size="md" className="shrink-0" onClick={() => setPickerIdx(i)}>更换</Button>
+                              <Button variant="secondary" size="md" className="shrink-0" onClick={() => clearSlot(i)}>清空</Button>
                             </>
                           ) : (
                             <>
@@ -389,7 +388,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                               </Button>
                               <span className="shrink-0 text-10 text-ink-500">拟：{s.role === 'user' ? '我演' : 'AI 演'}</span>
                               {slots.length > 1 && (
-                                <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => removeSlot(i)}>移除位置</Button>
+                                <Button variant="secondary" size="md" className="shrink-0" onClick={() => removeSlot(i)}>移除位置</Button>
                               )}
                             </>
                           )}
@@ -397,7 +396,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                       ))}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
-                      <Button variant="secondary" size="md" className="text-12" disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
+                      <Button variant="secondary" size="md" disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
                         ＋ 增加位置（最多 {MAX_SLOTS} 个）
                       </Button>
                       <span className="text-11 text-ink-500">

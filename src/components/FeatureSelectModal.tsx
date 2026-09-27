@@ -93,12 +93,13 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
       footer={
         <>
           <div className="flex gap-2">
-            <Button onClick={selectAll} variant="secondary" size="sm" className="text-12">全选可选</Button>
-            <Button onClick={reset} variant="secondary" size="sm" className="text-12">重置</Button>
+            <Button onClick={selectAll} variant="secondary" size="sm" className="">全选可选</Button>
+            <Button onClick={reset} variant="secondary" size="sm" className="">重置</Button>
           </div>
           <div className="flex gap-2">
-            <Button onClick={onClose} variant="secondary" size="md" className="text-13">取消</Button>
-            <Button variant="bare" onClick={() => onConfirm(resolveFeatures(selected))} className="px-4 h-9 text-13 font-medium bg-amber/20 text-amber border border-amber/40 rounded-lg hover:bg-amber/30 transition-colors">确认</Button>
+            <Button onClick={onClose} variant="secondary" size="md">取消</Button>
+            {/* U-9 · 2.6.0：确认键改 primary 令牌（原 bare 手搓 amber/20 系样式与真源漂移）；与同排取消统一 md */}
+            <Button variant="primary" size="md" onClick={() => onConfirm(resolveFeatures(selected))}>确认</Button>
           </div>
         </>
       }
@@ -121,7 +122,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                         onClick={() => toggle(e)}
                         className={`text-left rounded-lg border px-3 py-2 min-h-[68px] transition-colors ${locked
                           ? 'border-ink-700 bg-ink-800/60 cursor-not-allowed'
-                          : checked ? 'border-amber/40 bg-amber/10 cursor-pointer'
+                          : checked ? 'border-amber/40 bg-amber/15 cursor-pointer'
                           : 'border-ink-700 bg-ink-800/40 hover:border-ink-500 cursor-pointer'}`}
                       >
                         <div className="w-full text-left">
@@ -132,7 +133,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                             <span className="text-13 text-ink-100 flex items-center gap-1.5 whitespace-nowrap">
                               {e.name}
                               {e.tier === 'locked' && <Lock size={11} className="text-amber/70" />}
-                              {e.tier === 'default' && <span className="text-10 text-emerald-300/80">默认</span>}
+                              {e.tier === 'default' && <span className="text-10 text-success/80">默认</span>}
                             </span>
                           </div>
                           <div className="mt-1 text-11 text-ink-400 leading-snug line-clamp-2">{e.desc}</div>

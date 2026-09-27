@@ -63,11 +63,11 @@ export default function PromptModal({
       layer={Z.prompt}
       footer={
         <>
-          <Button onClick={onCancel} variant="secondary" size="md" className="text-12">
+          <Button onClick={onCancel} variant="secondary" size="md">
             {cancelText}
           </Button>
           <Button onClick={submit}
-            disabled={!allowEmpty && !val.trim()} variant="primary" size="md" className="text-12">
+            disabled={!allowEmpty && !val.trim()} variant="primary" size="md">
             {confirmText}
           </Button>
         </>

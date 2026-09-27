@@ -166,8 +166,8 @@ export default function NovelEditorChapterTree({
                           key={ch.id}
                           onClick={() => openChapter(ch.id)}
                           className={`group flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-colors
-                            ${isActive ? 'bg-amber/10 text-amber' : 'text-ink-300 hover:bg-ink-800'}
-                            ${overKey?.kind === 'ch' && overKey.id === ch.id ? (overKey.pos === 'before' ? 'shadow-[inset_0_2px_0_0_rgba(245,158,11,0.7)]' : 'shadow-[inset_0_-2px_0_0_rgba(245,158,11,0.7)]') : ''}`}
+                            ${isActive ? 'bg-amber/15 text-amber' : 'text-ink-300 hover:bg-ink-800'}
+                            ${overKey?.kind === 'ch' && overKey.id === ch.id ? (overKey.pos === 'before' ? 'shadow-[inset_0_2px_0_0_rgb(var(--amber)/0.7)]' : 'shadow-[inset_0_-2px_0_0_rgb(var(--amber)/0.7)]') : ''}`}
                           onDragOver={e => {
                             if (dragKind !== 'ch') return
                             e.preventDefault(); e.stopPropagation()

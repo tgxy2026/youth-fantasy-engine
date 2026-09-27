@@ -125,7 +125,7 @@ export default function PaceAnalysisPanel() {
         {words === 0 && <div className="text-11 text-ink-500">{EMPTY_CHAPTER_HINT}</div>}
 
         {words > 0 && res.error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-11 text-red-300">
+          <div className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger">
             分析失败：{res.error}
           </div>
         )}
@@ -144,7 +144,7 @@ export default function PaceAnalysisPanel() {
               <div className="flex items-center gap-2">
                 <span className="text-11 text-ink-300">章末钩子</span>
                 <span className={`rounded px-1.5 py-0.5 text-10 border ${
-                  d.hookPresent ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-600 text-ink-400 bg-ink-800'
+                  d.hookPresent ? 'border-amber/40 text-amber bg-amber/15' : 'border-ink-600 text-ink-400 bg-ink-800'
                 }`}>
                   {d.hookPresent ? d.hookKind : '未识别到钩子'}
                 </span>

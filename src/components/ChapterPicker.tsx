@@ -10,6 +10,7 @@
  * - **最新章单独标出来**：改它的纪律和历史章完全不同（可放开改写、落库后要同步设定）。
  */
 import { useMemo, useState } from 'react'
+import SelectRow from './SelectRow'
 import { ChevronDown, ChevronRight, Search } from 'lucide-react'
 import type { RewriteCandidateGroup } from '../lib/chapterRewrite'
 
@@ -96,25 +97,24 @@ export default function ChapterPicker({ groups, value, onChange, disabled, lates
                 {g.items.map(c => {
                   const on = c.chapter.id === value
                   return (
-                    <button
+                    <SelectRow
                       key={c.chapter.id}
+                      selected={on}
                       onClick={() => onChange(c.chapter.id)}
                       disabled={disabled}
                       title={c.chapter.title}
-                      className={`flex w-full items-center gap-1.5 py-1 pl-6 pr-2 text-left text-11 disabled:opacity-60 ${
-                        on ? 'bg-amber/15 text-amber' : 'text-ink-200 hover:bg-ink-800/60'
-                      }`}
+                      className="items-center gap-1.5 py-1 pl-6 pr-2 text-11"
                     >
                       <span className="shrink-0 tabular-nums">{c.no > 0 ? `第${c.no}章` : '（不计号）'}</span>
                       {/* 标题里已带「第N章」就不重复显示（示范项目的标题本身就带） */}
                       <span className="truncate">{c.chapter.title.replace(/^第\s*\d+\s*章\s*/, '')}</span>
                       <span className="ml-auto flex shrink-0 items-center gap-1.5">
                         {c.chapter.id === latestId && (
-                          <span className="rounded border border-emerald-500/40 px-1 text-10 text-emerald-300">最新章</span>
+                          <span className="rounded border border-success/40 px-1 text-10 text-success">最新章</span>
                         )}
                         <span className="text-ink-500">{c.chapter.content ? `${c.chapter.wordCount} 字` : '空章'}</span>
                       </span>
-                    </button>
+                    </SelectRow>
                   )
                 })}
               </div>

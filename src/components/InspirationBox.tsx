@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Lightbulb, Loader2, Sparkles, X } from 'lucide-react'
 import * as db from '../lib/db'
-import { addItem, loadBox, removeItem, type InspirationItem } from '../lib/inspirationBox'
+import { addItem, loadBox, removeItem, INSPIRATION_MAX, type InspirationItem } from '../lib/inspirationBox'
 import { aiFuseInspiration, type FusedIdea } from '../lib/aiTasks'
 import { buildProjectContext } from '../lib/aiContext'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
@@ -48,7 +48,7 @@ export default function InspirationBox() {
     const r = await addItem(newText, items)
     if (!r.added) {
       if (r.reason === 'dup') showToast('这条灵感已经在夹子里了', 'info')
-      else if (r.reason === 'full') showToast(`灵感夹最多存 ${200} 条，先转化或清掉一些吧`, 'info')
+      else if (r.reason === 'full') showToast(`灵感夹最多存 ${INSPIRATION_MAX} 条，先转化或清掉一些吧`, 'info')
       else return
     }
     setItems(r.items)
@@ -85,7 +85,8 @@ export default function InspirationBox() {
       const base = persist.cards?.length ?? 0
       const newCards = ideas.map((idea, i) => {
         const pos = ideaCardPos(base + i)
-        return { id: `idea-${Date.now()}-${i}`, chapter: '', type: 'idea', text: idea.text, x: pos.x, y: pos.y }
+        // C-1 · 2.6.0：basedOn 随卡落快照 —— 兑现帮助里「每张卡标注用了哪几条灵感」的承诺（画布卡头部渲染）
+        return { id: `idea-${Date.now()}-${i}`, chapter: '', type: 'idea', text: idea.text, basedOn: idea.basedOn, x: pos.x, y: pos.y }
       })
       await db.setSetting('plotCanvas', { ...persist, cards: [...(persist.cards ?? []), ...newCards] })
       setFused(ideas)
@@ -102,7 +103,7 @@ export default function InspirationBox() {
       <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
         <Lightbulb size={14} className="text-amber" /> 灵感夹
         <HelpPopover title="灵感夹怎么用" width="24rem">
-          {'随手把一闪而过的点子记在这里 —— 一条一句话就够，攒着不用急着用。\n\n勾选 2 条以上，点「融合为情节卡」：AI 会让这几条灵感互相服务，形成新的情节创意，直接放到「情节推演」的画布上（每张卡会标注用了哪几条灵感）。\n\n· 灵感夹跟着项目走，换项目看到的是那一本书的夹子；\n· 融合结果在画布上随便拖、随便删，这里不锁任何东西。'}
+          {'随手把一闪而过的点子记在这里 —— 一条一句话就够，攒着不用急着用。\n\n勾选 2 条以上，点「融合为情节卡」：AI 会让这几条灵感互相服务，形成新的情节创意，直接放到「情节推演」的画布上（每张卡会标注用了哪几条灵感）。注意是创作管理组的「情节推演」画布，不是酒馆模式里的「剧情推演」——那边是酒馆会话的推演，两回事。\n\n· 灵感夹跟着项目走，换项目看到的是那一本书的夹子；\n· 融合结果在画布上随便拖、随便删，这里不锁任何东西。'}
           <AIDataSourceNote feature="inspiration-fuse" />
         </HelpPopover>
         <span className="ml-auto text-10 text-ink-500 font-normal">{items.length} 条</span>
@@ -172,7 +173,7 @@ export default function InspirationBox() {
 
       {/* 融合失败 */}
       {error && (
-        <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+        <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
           <Sparkles size={13} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{error}</span>
         </div>
       )}
@@ -184,7 +185,7 @@ export default function InspirationBox() {
           <div className="space-y-1.5">
             {fused.map((f, i) => (
               <div key={i} className="text-11 text-ink-300 leading-relaxed">
-                <span className="text-10 text-emerald-400/80 mr-1.5 shrink-0">灵感融合 #{i + 1}{f.basedOn.length ? ` · 基于灵感 ${f.basedOn.map(n => '#' + n).join(' ')}` : ''}</span>
+                <span className="text-10 text-success/80 mr-1.5 shrink-0">灵感融合 #{i + 1}{f.basedOn.length ? ` · 基于灵感 ${f.basedOn.map(n => '#' + n).join(' ')}` : ''}</span>
                 {f.text}
               </div>
             ))}

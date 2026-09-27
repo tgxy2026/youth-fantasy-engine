@@ -11,6 +11,7 @@
  */
 import { useMemo, useState } from 'react'
 import { Button } from './Button'
+import SelectRow from './SelectRow'
 import { talkBandOf, talkativityOf, type TavernSession, type TavernSessionIndexItem } from '../lib/tavern/types'
 import type { splitCast } from '../lib/tavern/engine'
 
@@ -56,22 +57,22 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
             {sessionRows.map(s => {
               const active = s.id === activeId
               return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setActiveId(s.id)}
-                  className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-                    active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
-                  }`}
-                >
-                  <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-200'}`}>{s.title}</div>
+                  <SelectRow
+                    key={s.id}
+                    type="button"
+                    selected={active}
+                    variant="outline"
+                    onClick={() => setActiveId(s.id)}
+                    className="rounded-md px-2 py-1.5"
+                  >
+                    <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-200'}`}>{s.title}</div>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
                     <span className="truncate text-10 text-ink-500">
                       {s.mode === 'immersive' ? '沉浸' : '导演'} · {s.castBrief || '未分配角色'}
                     </span>
                     <span className="shrink-0 text-10 text-ink-600">{fmtDay(s.updatedAt)}</span>
                   </div>
-                </button>
+                </SelectRow>
               )
             })}
             {sessionRows.length === 0 && (
@@ -200,7 +201,7 @@ export function PlotInfoPanel({
                 ) : (
                   <p className="mt-1 text-10 text-ink-600 leading-relaxed">
                     还没有本场记忆。点上面的「整理本场记忆」才会生成 —— 不会自动整理。
-                    它会随检查点与回滚一起还原，分支时按分叉点重算 —— 所以分支不会"记得还没发生的事"。
+                    它会随检查点与回滚一起还原，分支时按分叉点重算 —— 所以分支不会「记得还没发生的事」。
                   </p>
                 )}
               </div>

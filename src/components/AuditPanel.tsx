@@ -11,9 +11,9 @@ interface Props {
 }
 
 const META: Record<IssueSeverity, { icon: React.ReactNode; cls: string; dot: string }> = {
-  error: { icon: <AlertTriangle size={13} />, cls: 'text-red-300 border-red-500/30 bg-red-500/10', dot: 'text-red-400' },
+  error: { icon: <AlertTriangle size={13} />, cls: 'text-danger border-danger/30 bg-danger/10', dot: 'text-danger' },
   warn: { icon: <AlertCircle size={13} />, cls: 'text-amber border-amber/30 bg-amber/10', dot: 'text-amber' },
-  info: { icon: <Info size={13} />, cls: 'text-sky-300 border-sky-500/25 bg-sky-500/10', dot: 'text-sky-400' },
+  info: { icon: <Info size={13} />, cls: 'text-info border-info/25 bg-info/10', dot: 'text-info' },
 }
 
 export default function AuditPanel({ issues, emptyText, onNavigateTab, onOpenChapter }: Props) {
@@ -26,7 +26,7 @@ export default function AuditPanel({ issues, emptyText, onNavigateTab, onOpenCha
 
   if (issues.length === 0) {
     return (
-      <div className="py-10 text-center text-13 text-emerald-400">
+      <div className="py-10 text-center text-13 text-success">
         {emptyText ?? '未发现可定位问题 ✓'}
       </div>
     )
@@ -35,9 +35,9 @@ export default function AuditPanel({ issues, emptyText, onNavigateTab, onOpenCha
   return (
     <div>
       <div className="flex gap-2 mb-3 text-11">
-        <span className="px-2 py-0.5 rounded bg-red-500/10 text-red-300 border border-red-500/25">冲突 {counts.error}</span>
+        <span className="px-2 py-0.5 rounded bg-danger/10 text-danger border border-danger/25">冲突 {counts.error}</span>
         <span className="px-2 py-0.5 rounded bg-amber/10 text-amber border border-amber/25">注意 {counts.warn}</span>
-        <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/25">提示 {counts.info}</span>
+        <span className="px-2 py-0.5 rounded bg-info/10 text-info border border-info/25">提示 {counts.info}</span>
       </div>
       <div className="space-y-2">
         {sorted.map(issue => {

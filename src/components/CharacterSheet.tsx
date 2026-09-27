@@ -308,23 +308,23 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
             <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{isCharTab ? `这是「${tab.name}」角色卡，按模块填写人物设定：
 
-• 左侧列表切换 / 新建 / 删除角色；点击上方姓名可直接改名（保存后生效）。
-• 右侧按模块（基础信息、外貌、性格……）分栏填写，长文会自动撑高输入框。
-• 「人物状态」用下拉选择：未登场 / 已登场 / 已退场，便于统计登场进度。
-• 字段带「示例」时可参考填法；修改后点右上「保存」或按 Ctrl+S。
-• 右上「隐藏已退场」开关：开启后列表与统计隐藏「人物状态 = 已退场」的角色，角色过多时方便聚焦。`
+· 左侧列表切换 / 新建 / 删除角色；点击上方姓名可直接改名（保存后生效）。
+· 右侧按模块（基础信息、外貌、性格……）分栏填写，长文会自动撑高输入框。
+· 「人物状态」用下拉选择：未登场 / 已登场 / 已退场，便于统计登场进度。
+· 字段带「示例」时可参考填法；修改后点右上「保存」或按 Ctrl+S。
+· 右上「隐藏已退场」开关：开启后列表与统计隐藏「人物状态 = 已退场」的角色，角色过多时方便聚焦。`
 : `这是「${tab.name}」，一条一张卡：
 
-• 左侧列表切换 / 新建 / 删除设定；点击上方标题可直接改名（保存后生效）。
-• 卡名就是这条设定的名字 —— 正文编辑器会把它做引用高亮，所以名字起得越具体越好。
-• 右侧按字段填写，长文会自动撑高输入框；字段带「示例」时可参考填法。
-• 修改后点右上「保存」或按 Ctrl+S；存不下的内容可分段，不必挤在一行里。
-• 这里的内容同样会进 AI 的设定资料，模型写正文时读得到。`}</HelpPopover>
+· 左侧列表切换 / 新建 / 删除设定；点击上方标题可直接改名（保存后生效）。
+· 卡名就是这条设定的名字 —— 正文编辑器会把它做引用高亮，所以名字起得越具体越好。
+· 右侧按字段填写，长文会自动撑高输入框；字段带「示例」时可参考填法。
+· 修改后点右上「保存」或按 Ctrl+S；存不下的内容可分段，不必挤在一行里。
+· 这里的内容同样会进 AI 的设定资料，模型写正文时读得到。`}</HelpPopover>
           </div>
           <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+          <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
           <Button variant="toggle" selected={dirty}
@@ -335,7 +335,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
           >
             <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
           </Button>
-          <Button onClick={addCard} variant="primary" size="md" className="flex items-center text-13">
+          <Button onClick={addCard} variant="primary" size="md" className="flex items-center">
             <Plus size={14} /> 新建{noun}
           </Button>
           {aiCap !== 'none' && (
@@ -371,7 +371,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                 onClick={() => setActiveId(rec.id)}
                 className={`group cursor-pointer rounded-lg border px-3 py-2.5 transition-all duration-150
                   ${isActive
-                    ? 'bg-amber/10 border-amber/30 text-amber'
+                    ? 'bg-amber/15 border-amber/30 text-amber'
                     : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'}`}
               >
                 <div className="flex items-center gap-2">

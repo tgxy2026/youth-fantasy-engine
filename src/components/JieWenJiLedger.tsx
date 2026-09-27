@@ -23,7 +23,7 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
                 </div>
                 <Button onClick={runLedger}
                   disabled={!aiReady || ledger.loading || !content.trim()}
-                  title={!aiReady ? AI_DISABLED_HINT : ledger.scannedAt ? '重新扫描本章正文' : '扫描本章正文'} variant="primary" size="md" className="shrink-0 flex items-center rounded text-11">
+                  title={!aiReady ? AI_DISABLED_HINT : ledger.scannedAt ? '重新扫描本章正文' : '扫描本章正文'} variant="primary" size="md" className="shrink-0 flex items-center rounded">
                   {ledger.loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                   {ledger.loading ? '扫描中' : ledger.scannedAt ? '重新扫描' : '扫描本章'}
                 </Button>
@@ -31,7 +31,7 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
               {!aiReady && <div className="mt-1.5 text-10 text-ink-500">{AI_DISABLED_HINT}</div>}
             </div>
 
-            {ledger.error && <div className="text-11 text-red-300 px-1">{ledger.error}</div>}
+            {ledger.error && <div className="text-11 text-danger px-1">{ledger.error}</div>}
 
             {!ledger.loading && ledger.scannedAt > 0 && ledger.items.length === 0 && (
               <div className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-4 text-center text-11 text-ink-500">
@@ -125,7 +125,7 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
 
             {ledger.items.length > 0 && (
               <Button onClick={commitLedger}
-                disabled={ledgerSaving || ledgerPicked.size === 0} variant="primary" size="md" className="w-full flex items-center justify-center text-11">
+                disabled={ledgerSaving || ledgerPicked.size === 0} variant="primary" size="md" className="w-full flex items-center justify-center">
                 {ledgerSaving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
                 {ledgerSaving ? '写入中' : `补登选中的 ${ledgerPicked.size} 项`}
               </Button>

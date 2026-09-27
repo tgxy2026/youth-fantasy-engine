@@ -36,7 +36,7 @@ export default function CreativeDialogs({ m }: { m: CreativeWritingModel }) {
           return (
             <>
               <div className="mb-3 flex items-center gap-3 text-12">
-                <span className={ok ? 'text-emerald-400' : 'text-amber'}>
+                <span className={ok ? 'text-success' : 'text-amber'}>
                   {d.words} 汉字 {ok ? '· 已达标' : '· 超出容差'}
                 </span>
                 <span className="text-ink-500">目标 {d.target} ± {WORD_TOLERANCE}（{lo}~{hi}）</span>
@@ -85,7 +85,7 @@ export default function CreativeDialogs({ m }: { m: CreativeWritingModel }) {
                 <div className="flex items-center gap-2">
                   <span className="text-13 text-ink-50 font-medium">{c.name}</span>
                   <span className="text-11 text-ink-400">{c.type}</span>
-                  <span className={`text-11 px-1 rounded ${c.status === 'new' ? 'bg-emerald-900/40 text-emerald-300' : 'bg-amber-900/40 text-amber-300'}`}>
+                  <span className={`text-11 px-1 rounded ${c.status === 'new' ? 'bg-emerald-900/40 text-success' : 'bg-amber-900/40 text-amber-300'}`}>
                     {c.status === 'new' ? '新设定' : '疑似重复'}
                   </span>
                 </div>

@@ -47,14 +47,14 @@ const CARDS: { key: Choice; icon: ReactNode; iconCls: string; title: string; bod
   {
     key: 'demo',
     icon: <Sparkles size={16} />,
-    iconCls: 'bg-emerald-500/15 text-emerald-400',
+    iconCls: 'bg-success/15 text-success',
     title: '先看看示例',
     body: '载入示范项目《吞天神脉》：整套范例宇宙（正文、设定表、角色卡、伏笔、时间脉络、码字统计），用来摸清各功能怎么用，看完可以直接删。',
   },
   {
     key: 'import',
     icon: <Upload size={16} />,
-    iconCls: 'bg-sky-500/15 text-sky-400',
+    iconCls: 'bg-info/15 text-info',
     title: '我有备份',
     body: '导入之前用本软件导出的 .json 备份，把整本书原样还原回来。',
   },

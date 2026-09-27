@@ -11,7 +11,7 @@
  */
 import { STORY_TEMPLATES, getStoryTemplate } from '../src/lib/storyStructures'
 import {
-  buildChapterShares, alignBeats, PACE_MIN_CHAPTERS, PACE_LEVEL_LABEL,
+  buildChapterShares, alignBeats, alignHooks, PACE_MIN_CHAPTERS, PACE_LEVEL_LABEL,
   type PaceChapterInput, type ChapterShare,
 } from '../src/lib/structurePace'
 
@@ -158,3 +158,27 @@ for (const tpl of STORY_TEMPLATES) {
 
 console.log(`\n  结果：${pass} pass / ${fail} fail`)
 if (fail > 0) process.exit(1)
+
+// ---------- 6) alignHooks：爽点分布逐拍归属（R4b · 2.6.0） ----------
+{
+  const tpl = getStoryTemplate('three-act')!
+  // 基本归属：M = 已写 10 章；章 1(pos 5)→建置 / 章 5(pos 45)→对抗 / 章 9(pos 85)→解决
+  const r1 = alignHooks(tpl, [
+    { no: 1, kind: '打脸' }, { no: 5, kind: '升级' }, { no: 9, kind: '打脸' },
+  ], 10)
+  ok('爽点归属·建置 1 个', r1[0].count === 1, `got ${r1[0].count}`)
+  ok('爽点归属·对抗 1 个', r1[1].count === 1, `got ${r1[1].count}`)
+  ok('爽点归属·解决 1 个', r1[2].count === 1, `got ${r1[2].count}`)
+  ok('爽点 pct = 行数占比', r1[0].pct === 33.3, `got ${r1[0].pct}`)
+  ok('爽点 kinds 保序去重', r1[0].kinds.length === 1 && r1[0].kinds[0] === '打脸'
+    && r1[2].kinds[0] === '打脸')
+  // 尺度扩展：爽点表排到章 15 > 已写 10 ⇒ M 取 15，pos(15)≈96.7 → 解决（不溢出丢失）
+  const r2 = alignHooks(tpl, [{ no: 15, kind: '逆转' }], 10)
+  ok('爽点表领先正文·M 取最大章号', r2[2].count === 1 && r2[0].count === 0 && r2[1].count === 0)
+  // 空：无爽点行 ⇒ 全 0（面板据此不渲染爽点带）
+  const r3 = alignHooks(tpl, [], 10)
+  ok('无爽点行·全 0', r3.every(b => b.count === 0 && b.pct === 0))
+  // 立场：归属覆盖 [0,100) 无缝 —— 任何章号都不丢（抽 30 个章号全落进某一拍）
+  const r4 = alignHooks(tpl, Array.from({ length: 30 }, (_, i) => ({ no: i + 1, kind: '升级' })), 30)
+  ok('30 行爽点全部归位不丢', r4.reduce((s, b) => s + b.count, 0) === 30)
+}

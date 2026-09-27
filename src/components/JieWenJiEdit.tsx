@@ -47,7 +47,7 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
               {rewrite.loading ? '改稿中…' : `让颉文姬${instruction}选区`}
             </Button>
 
-            {rewrite.error && <div className="text-11 text-red-300 px-1">{rewrite.error}</div>}
+            {rewrite.error && <div className="text-11 text-danger px-1">{rewrite.error}</div>}
 
             {rewrite.data && (rewrite.data.rewritten ? (
               <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2.5 space-y-2">
@@ -55,7 +55,7 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
                   <CheckCircle2 size={12} /> 改稿完成{rewrite.data.notes ? `：${rewrite.data.notes}` : ''}
                 </div>
                 <div className="text-11 text-ink-100 leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">{rewrite.data.rewritten}</div>
-                <Button onClick={applyAdvice} variant="primary" size="md" className="w-full flex items-center justify-center text-12">
+                <Button onClick={applyAdvice} variant="primary" size="md" className="w-full flex items-center justify-center">
                   <PenLine size={12} /> 写入原文下方（建议段）
                 </Button>
                 <div className="text-10 text-ink-500 leading-relaxed">
@@ -63,8 +63,8 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
                 </div>
               </div>
             ) : (
-              <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2.5 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-11 text-red-300">
+              <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-11 text-danger">
                   <AlertTriangle size={12} /> 本次未取到有效内容
                 </div>
                 <div className="text-10 text-ink-400 leading-relaxed">
@@ -76,7 +76,7 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
 
             <Button variant="bare"
               onClick={() => onClearAdvice?.()}
-              className={`${aiBtnCls} bg-ink-800 border-ink-600 text-ink-300 hover:border-red-400/40 hover:text-red-300`}
+              className={`${aiBtnCls} bg-ink-800 border-ink-600 text-ink-300 hover:border-danger/40 hover:text-danger`}
             >
               <Trash2 size={12} /> 清除全部建议段
             </Button>

@@ -52,8 +52,8 @@ export default function TavernRevisionDialog({
       </p>
 
       {error && !loading ? (
-        <div className="mt-4 rounded-md border border-red-400/30 bg-red-400/5 p-4">
-          <p className="text-12 text-red-400">检查失败</p>
+        <div className="mt-4 rounded-md border border-danger/30 bg-danger/5 p-4">
+          <p className="text-12 text-danger">检查失败</p>
           <p className="mt-1 break-all text-11 text-ink-300 leading-relaxed">{error}</p>
           <p className="mt-1.5 text-11 text-ink-500 leading-relaxed">
             常见原因：没配模型、模型服务没开、或超时。修好后点「重新检查」即可 —— 对话与角色卡都没动。

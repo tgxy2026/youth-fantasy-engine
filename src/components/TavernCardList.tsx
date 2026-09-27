@@ -1,5 +1,6 @@
 import { useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import { Button } from './Button'
+import SelectRow from './SelectRow'
 import Avatar from './Avatar'
 import { cardStoryId, type TavernCharIndexItem, type TavernStoryIndexItem } from '../lib/tavern/types'
 import { storyDisplayName } from '../lib/tavern/story'
@@ -74,16 +75,16 @@ export default function TavernCardList({
   /** 左栏的一张卡（不管挂在哪个分组下，长相一致 —— 免得作者以为两种卡不一样） */
   const charRow = (c: TavernCharIndexItem) => (
     <li key={c.id}>
-      <button
-        type="button"
-        onClick={() => void onOpenCard(c.id)}
-        className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
-          draft?.id === c.id ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800/60'
-        }`}
-      >
-        <Avatar src={c.avatar} name={c.name} size={24} />
-        <span className="min-w-0 flex-1 truncate text-12 text-ink-100">{c.name || '未命名角色'}</span>
-      </button>
+        <SelectRow
+          type="button"
+          selected={draft?.id === c.id}
+          variant="outline"
+          onClick={() => void onOpenCard(c.id)}
+          className="items-center gap-2 rounded-md px-2 py-1.5"
+        >
+          <Avatar src={c.avatar} name={c.name} size={24} />
+          <span className="min-w-0 flex-1 truncate text-12 text-ink-100">{c.name || '未命名角色'}</span>
+        </SelectRow>
     </li>
   )
 
@@ -95,14 +96,14 @@ export default function TavernCardList({
       {/* 两个 AI 入口：想清楚了用一句话起草，只有个感觉就用对话引导 */}
       <div className="flex gap-1.5">
         <Button
-          variant="secondary" size="sm" className="flex-1 text-11"
+          variant="secondary" size="sm" className="flex-1"
           disabled={!draft} onClick={onAiDraft}
           title="一句话（或粘一段素材）→ AI 按四章模板填写"
         >
           AI 起草
         </Button>
         <Button
-          variant="secondary" size="sm" className="flex-1 text-11"
+          variant="secondary" size="sm" className="flex-1"
           disabled={!draft} onClick={onInterview}
           title="AI 按模板提纲一轮一轮地问，边聊边把这张卡塑出来"
         >
@@ -168,23 +169,23 @@ export default function TavernCardList({
       )}
 
       <div className="pt-2 border-t border-ink-800 space-y-1.5">
-        <Button variant="secondary" size="sm" className="w-full text-11" onClick={onImportNovel}>
+        <Button variant="secondary" size="sm" className="w-full" onClick={onImportNovel}>
           从小说角色导入
         </Button>
         <div className="flex gap-1.5">
           <Button
-            variant="secondary" size="sm" className="flex-1 text-11"
+            variant="secondary" size="sm" className="flex-1"
             onClick={() => fileRef.current?.click()}
             title="支持单卡文件、整批文件（一个文件里多张卡），也可以一次选中多个文件"
           >
             导入 JSON
           </Button>
-          <Button variant="secondary" size="sm" className="flex-1 text-11" disabled={!draft} onClick={onExportCard}>
+          <Button variant="secondary" size="sm" className="flex-1" disabled={!draft} onClick={onExportCard}>
             导出 JSON
           </Button>
         </div>
         <Button
-          variant="secondary" size="sm" className="w-full text-11"
+          variant="secondary" size="sm" className="w-full"
           disabled={list.length === 0}
           onClick={onExportAll}
           title="把全部角色卡打包成一个文件（整批备份 / 分享给同好），与「导入 JSON」的批量入口对称"

@@ -300,11 +300,11 @@ export default function TavernScript() {
           <HelpPopover title="故事与剧本怎么配合" width="26rem" size={14}>
   先有「故事」，再有「剧本」 —— 一个故事下可以有多份剧本，左边树里折叠展示。
 
-  • 故事写「这个世界什么样」：规则、地理、势力、常识。它取代了原先角色卡第1章的世界设定 ——
+  · 故事写「这个世界什么样」：规则、地理、势力、常识。它取代了原先角色卡第1章的世界设定 ——
     以前每张卡抄一份，改一处要改 N 处；现在只写这一份，卡片里只留「角色与设定的关系」。
-  • 剧本写「这一场发生什么事」：六栏（名称 / 情境 / 开场白 / 你的位置 / 目标 / 不要发生）。
+  · 剧本写「这一场发生什么事」：六栏（名称 / 情境 / 开场白 / 你的位置 / 目标 / 不要发生）。
     情境只管此刻，别把历史重抄一遍。
-  • 角色卡必须归属某个故事，对话时才有世界观可用 —— 所以「建故事」是使用自由对话的第一步。
+  · 角色卡必须归属某个故事，对话时才有世界观可用 —— 所以「建故事」是使用自由对话的第一步。
 
   写不动就点「AI 起草」：一句话生成剧本六栏，或让 AI 引导你一轮轮聊出来。
 </HelpPopover>
@@ -385,7 +385,7 @@ export default function TavernScript() {
                         type="button" onClick={() => void openStory(st.id)}
                         title={st.settingBrief || '（还没写世界设定）'}
                         className={`min-w-0 flex-1 rounded-md border px-2.5 py-2 text-left transition-colors ${st.id === story?.id && kind === 'story'
-                          ? 'border-amber/50 bg-amber/10'
+                          ? 'border-amber/50 bg-amber/15'
                           : 'border-ink-800 bg-ink-850/30 hover:border-ink-600'}`}
                       >
                         <div className={`truncate text-12 ${st.id === story?.id && kind === 'story' ? 'text-amber' : 'text-ink-200'}`}>
@@ -407,7 +407,7 @@ export default function TavernScript() {
                               type="button" onClick={() => void openScript(sc.id)}
                               title={sc.goalBrief || '（还没写目标）'}
                               className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${sc.id === cur?.id && kind === 'script'
-                                ? 'border-amber/50 bg-amber/10'
+                                ? 'border-amber/50 bg-amber/15'
                                 : 'border-ink-800 bg-ink-850/20 hover:border-ink-600'}`}
                             >
                               <div className={`truncate text-12 ${sc.id === cur?.id && kind === 'script' ? 'text-amber' : 'text-ink-200'}`}>

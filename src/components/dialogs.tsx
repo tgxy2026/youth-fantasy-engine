@@ -37,7 +37,7 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
 
 function ConfirmView({ title, message, confirmText = '确定', cancelText = '取消', danger = false, onResult }: ConfirmOptions & { onResult: (r: boolean) => void }) {
   const icon = danger ? (
-    <span className="text-red-400">
+    <span className="text-danger">
       <AlertTriangle size={18} />
     </span>
   ) : (
@@ -142,10 +142,10 @@ function ToastItem({ message, type }: { message: string; type: ToastType }) {
     type === 'success' ? <CheckCircle2 size={14} /> : type === 'error' ? <AlertCircle size={14} /> : <Info size={14} />
   const cls =
     type === 'success'
-      ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
+      ? 'text-success border-success/30 bg-success/10'
       : type === 'error'
-        ? 'text-red-300 border-red-500/30 bg-red-500/10'
-        : 'text-sky-300 border-sky-500/30 bg-sky-500/10'
+        ? 'text-danger border-danger/30 bg-danger/10'
+        : 'text-info border-info/30 bg-info/10'
   return (
     <div className={`pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-lg border shadow-2xl text-12 ${cls} animate-[fadeInUp_0.2s_ease]`}>
       {icon}

@@ -12,7 +12,8 @@
  * 🔴 `ShowBands` 是 **context 实例本身**（不是新建一个）—— 表格原子件从这里 useContext，
  *    父组件的 `<ShowBands.Provider>` 必须用同一个对象，否则开关会静默失效。
  */
-import { createContext, useContext, useEffect, useState } from 'react'
+import NumberField from './NumberField'
+import { createContext, useContext } from 'react'
 import AutoTextarea from './AutoTextarea'
 import { Button } from './Button'
 import { bandOf, type ParamGuide } from '../lib/tavern/paramGuide'
@@ -101,7 +102,7 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
             <li
               key={`${b.from}-${b.to}`}
               className={`border-t border-ink-800/60 px-2 py-1.5 text-10 leading-relaxed first:border-t-0 ${
-                on ? 'bg-amber/10' : ''
+                on ? 'bg-amber/15' : ''
               }`}
             >
               <span className={`tabular-nums ${on ? 'text-amber' : 'text-ink-500'}`}>
@@ -134,8 +135,6 @@ export function NumField({ label, hint, guide, value, onCommit, recommend }: {
    */
   recommend?: number | null
 }) {
-  const [draft, setDraft] = useState(String(value))
-  useEffect(() => { setDraft(String(value)) }, [value])
   const band = bandOf(guide, value)
   const stale = typeof recommend === 'number' && recommend !== value
   return (
@@ -161,16 +160,17 @@ export function NumField({ label, hint, guide, value, onCommit, recommend }: {
       hint={hint}
       footer={<RangeGuide guide={guide} value={value} />}
     >
-      <input
-        type="number" min={guide.min} max={guide.max} step={guide.step} value={draft} className={NUM}
-        onChange={e => {
-          setDraft(e.target.value)
-          const n = Number(e.target.value)
-          if (e.target.value.trim() !== '' && Number.isFinite(n)) {
-            onCommit(Math.min(guide.max, Math.max(guide.min, n)))
-          }
-        }}
-        onBlur={() => setDraft(String(value))}
+      {/* U-1 · 2.6.0：改走 NumberField —— 原 onChange 直接钳制正是 NumberField 注释点名的老毛病
+          （打不出超范围值、边界输入被裁）；现在范围内即时同步、超范围提交时钳到边界。
+          precision 从 step 推导（0.05→2 位）：🔴 不传默认按整数 round，温度 0.7 会被吃成 1（审计 P0） */}
+      <NumberField
+        value={value}
+        onChange={v => { if (typeof v === 'number') onCommit(v) }}
+        min={guide.min}
+        max={guide.max}
+        step={guide.step}
+        precision={String(guide.step).split('.')[1]?.length ?? 0}
+        className={NUM}
       />
       {/* 这一行**常驻**（表格收起时它是唯一线索）：当前值 → 落在哪一段、那一段的范围 */}
       <div className="mt-1 text-10 text-ink-600">

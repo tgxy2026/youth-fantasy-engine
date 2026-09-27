@@ -32,6 +32,13 @@ export const Z = {
   dock: 40,
   /** 侧边看板娘：结文记精灵 / 项目中心右下角那位 */
   sprite: 40,
+  /**
+   * U-5 · 2.6.0：桌面写入锁横幅（DesktopWriteLockBanner）—— 常驻级**顶部状态条**。
+   * 高于页面常驻（fab/dock/sprite），但**低于 modal**：它是持久状态条而非交互弹层，
+   * 弹窗打开时被盖住可接受（弹窗操作本来也写不了盘）；原先错借 Z.dropdown(9999)
+   * 会压住所有弹窗与 toast，属语义错位（2026-09-27 巡检 U-5）。
+   */
+  banner: 60,
 
   // ---- 以下为「浮层」层，全部 createPortal 到 body ----
   //

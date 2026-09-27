@@ -112,7 +112,7 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
         <div className="relative h-2 w-full overflow-hidden rounded-full bg-ink-700/60" title={`${shown} / ${def.max}（0 为中点）`}>
           {num !== 0 && (
             <span
-              className={`absolute inset-y-0 ${good ? 'left-1/2 bg-emerald-500/80' : 'right-1/2 bg-rose-500/80'}`}
+              className={`absolute inset-y-0 ${good ? 'left-1/2 bg-success/80' : 'right-1/2 bg-rose-500/80'}`}
               style={{ width: `${mag}%` }}
             />
           )}

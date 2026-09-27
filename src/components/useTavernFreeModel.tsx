@@ -290,7 +290,9 @@ export function useTavernFreeModel() {
         if (g) { setGreeting(g); break }
       }
     } catch {
-      setCastCards([])
+      // 审计 P2：读失败≠角色不存在 —— 必须把上一会话的 charCard/mems 一并清掉，
+      // 否则 send() 的兜底 castCards.length ? castCards : [charCard] 会拿错卡当上下文
+      setCastCards([]); setCharCard(null); setMems({})
     }
     // 不再依赖 advanceIfNeeded —— 日常推进已移到右栏那个 effect（审计 P1-6）
   }, [])
@@ -620,7 +622,7 @@ export function useTavernFreeModel() {
         type="button"
         onClick={() => void openSession(s.id)}
         className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-          active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+          active ? 'border-amber/40 bg-amber/15' : 'border-transparent hover:bg-ink-800/60'
         }`}
       >
         <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>
