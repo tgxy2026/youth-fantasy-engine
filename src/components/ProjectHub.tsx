@@ -17,11 +17,12 @@ import BrandMark from './BrandMark'
 import { downloadBlob } from '../lib/zip'
 import { markExported } from '../lib/backupReminder'
 import { APP_VERSION_LABEL } from '../lib/env'
-import { usePersistedBool } from '../lib/uiPrefs'
+import { readBoolPref, readStringPref } from '../lib/uiPrefs'
 import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
 import workbenchBg from '../assets/workbench-bg.png'
 import jiewenjiGufeng from '../assets/jiewenji-gufeng.png'
 import { Button } from './Button'
+import MascotSettingsDialog from './MascotSettingsDialog'
 
 interface Props {
   onOpen: (projectId: string) => void
@@ -55,7 +56,16 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const [backupPid, setBackupPid] = useState<string | null>(null)
   // #002 看板娘显示开关：默认「显示」，故按 uiPrefs 的约定存「偏离默认的那一侧」＝存「已隐藏」。
   // 走 yfe-ui: 命名空间 → 只服务「这台机器上这个人的界面习惯」，不进项目数据、不随导出/同步走。
-  const [mascotHidden, setMascotHidden] = usePersistedBool('home-mascot-hidden', false)
+  // 🔴 2.6.1 · R1：hidden 不能用 usePersistedBool（hook 内部 state 不跨组件同步——弹窗里切了开关
+  //    首页的立绘不会动）。改自持 state + 弹窗 onSaved 时统一重读 localStorage。
+  const [mascotHidden, setMascotHiddenState] = useState(() => readBoolPref('home-mascot-hidden', false))
+  // 2.6.1 · R1：看板娘设置弹窗 + 自定义图（uiPrefs `yfe-ui:home-mascot-custom`，本机偏好不进云同步）
+  const [mascotSettingOpen, setMascotSettingOpen] = useState(false)
+  const [mascotCustom, setMascotCustom] = useState<string | null>(() => readStringPref('home-mascot-custom'))
+  const reloadMascotPrefs = () => {
+    setMascotHiddenState(readBoolPref('home-mascot-hidden', false))
+    setMascotCustom(readStringPref('home-mascot-custom'))
+  }
   const [backupName, setBackupName] = useState('')
 
   const load = useCallback(async () => {
@@ -227,14 +237,15 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors">
               <BookPlus size={14} /> 新建小说项目
             </Button>
+            {/* 2.6.1 · R1：按钮升级为「看板娘设置」——开关与自定义图都进弹窗（原直接 toggle 行为收进弹窗内开关） */}
             <Button
               variant="toggle"
               selected={!mascotHidden}
-              onClick={() => setMascotHidden(!mascotHidden)}
-              title={mascotHidden ? '显示右下角看板娘' : '隐藏右下角看板娘'}
+              onClick={() => setMascotSettingOpen(true)}
+              title="看板娘设置：显示 / 隐藏、更换自定义图片"
               className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg"
             >
-              {mascotHidden ? <EyeOff size={13} /> : <Eye size={13} />} 看板娘
+              {mascotHidden ? <EyeOff size={13} /> : <Eye size={13} />} 看板娘设置
             </Button>
             {onReplayWelcome && (
               <Button variant="secondary" onClick={onReplayWelcome}
@@ -577,15 +588,21 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
           380px 占比从 19.6% 翻到 29.7%、纵向吃掉 82% 屏高，实测压住右上角「创建/新建项目」按钮。
           min(380px, 20vw) 经 foldVh 折算（vw 在 zoom 下不缩，必须折）后视觉占比恒为 20%；
           大屏仍走 380px 上限 → 观感与改动前完全一致。 */}
-      {/* #002 看板娘显示开关：默认显示；用户在操作条可切（偏好走 yfe-ui:） */}
+      {/* #002 看板娘显示开关：默认显示；设置弹窗可切（偏好走 yfe-ui:）。2.6.1 · R1 起支持自定义图（本机偏好优先于内置） */}
       {!mascotHidden && (
       <img
-        src={jiewenjiGufeng}
+        src={mascotCustom || jiewenjiGufeng}
         alt="古风看板娘"
         draggable={false}
         className="fixed bottom-4 right-4 hidden sm:block h-auto pointer-events-none select-none drop-shadow-2xl"
         style={{ zIndex: Z.sprite, width: foldVh('min(380px, 20vw)'), maxHeight: foldVh('82vh') }} // vw/vh 都要折算，否则缩放 ≠100% 时占比失真
       />
+      )}
+      {mascotSettingOpen && (
+        <MascotSettingsDialog
+          onClose={() => setMascotSettingOpen(false)}
+          onSaved={reloadMascotPrefs}
+        />
       )}
     </div>
   )

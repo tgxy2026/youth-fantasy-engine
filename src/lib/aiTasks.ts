@@ -31,6 +31,7 @@ import { CREATIVE_PROMPTS } from './aiTasks/creative'
 import { PACE_PROMPTS } from './aiTasks/pace'
 import { READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
 import { INSPIRATION_PROMPTS } from './aiTasks/inspiration'
+import { BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
@@ -43,6 +44,9 @@ export type { NameSuggestRequest, NameSuggestion, SensitiveHitInput, SensitiveRe
 // 2026-09-26（2.5.1·A3）：灵感融合 —— 勾选灵感夹条目 → 融合成情节创意卡落推演画布；basedOn 溯源
 export { aiFuseInspiration, parseFusedIdeas, INSPIRATION_PROMPTS } from './aiTasks/inspiration'
 export type { FuseIdeaRequest, FusedIdea } from './aiTasks/inspiration'
+// 2026-09-27（2.6.1·R2）：拆书 AI 章节边界识别 —— 本地正则认不出标题时按作者示例挑行；严格采信在 bookbreak/aiSplit
+export { aiBookBreakSplitChapters, parseChapterLines, BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
+export type { BookBreakSplitRequest } from './aiTasks/bookBreakSplit'
 export { aiContinuityAudit, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReview, aiDedupTerms, aiStyleCheck } from './aiTasks/audit'
 export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from './aiTasks/audit'
 export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from './aiTasks/jieWenJi'
@@ -110,6 +114,7 @@ const PROMPT_ORDER = [
   'reader-probe',
   'writing-briefing',
   'extract-entities',
+  'bookbreak-split',
   'deai-rule',
 ]
 
@@ -124,6 +129,7 @@ const PROMPT_SETS: PromptDef[][] = [
   READER_PROBE_PROMPTS,
   REWRITE_PROMPTS,
   EXTRACT_PROMPTS,
+  BOOKBREAK_SPLIT_PROMPTS,
   INLINE_PROMPTS,
   CREATIVE_PROMPTS,
 ]

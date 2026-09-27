@@ -91,8 +91,8 @@ export function estTokens(s: string): number {
   return cn + Math.ceil(en * 1.3) + Math.max(0, Math.floor(other * 0.3))
 }
 
-/** 按行扫描：返回每行的起始偏移与文本（\r 已剥） */
-function scanLines(raw: string): { start: number; text: string }[] {
+/** 按行扫描：返回每行的起始偏移与文本（\r 已剥）——R2 起导出，AI 切分回定位（aiSplit.ts）复用 */
+export function scanLinesOf(raw: string): { start: number; text: string }[] {
   const out: { start: number; text: string }[] = []
   let pos = 0
   while (pos <= raw.length) {
@@ -107,7 +107,7 @@ function scanLines(raw: string): { start: number; text: string }[] {
 
 /** 按空行切段落（保留每段在原文本中的起点） */
 function splitParagraphs(text: string): { start: number; text: string }[] {
-  return scanLines(text).filter(l => l.text.trim().length > 0)
+  return scanLinesOf(text).filter(l => l.text.trim().length > 0)
 }
 
 /** 句末标点（含紧随的收尾引号/括号）——硬切时用它把切口退到句子边界 */
@@ -194,6 +194,41 @@ export function chunkText(text: string, opts: SplitOptions = {}): TextChunk[] {
 }
 
 /**
+ * 由「章节起始行标记」重建章节列表（R2 起导出：AI 切分回定位后复用同一套重建口径）。
+ * marks 无须有序（内部会排序）；超过 maxChunks 截断并置 truncated。
+ */
+export function buildChaptersFromMarks(
+  text: string,
+  marks: { start: number; title: string }[],
+  maxChunks: number,
+): SplitResult {
+  const sorted = [...marks].sort((a, b) => a.start - b.start)
+  const chapters: RawChapter[] = []
+  for (let i = 0; i < sorted.length; i++) {
+    const s = sorted[i].start
+    const e = i + 1 < sorted.length ? sorted[i + 1].start : text.length
+    // 正文：标题行之后到下一章标题之前
+    const firstNl = text.indexOf('\n', s)
+    const bodyStart = firstNl < 0 ? e : Math.min(firstNl + 1, e)
+    chapters.push({
+      index: chapters.length + 1,
+      title: sorted[i].title,
+      text: text.slice(bodyStart, e).trim(),
+      charStart: s,
+      charEnd: e,
+    })
+  }
+  let truncated = false
+  let out = chapters
+  if (out.length > maxChunks) { out = out.slice(0, maxChunks); truncated = true }
+  return {
+    chapters: out,
+    mode: 'chapters',
+    stats: { count: chapters.length, chars: text.length, estTokens: estTokens(text), truncated },
+  }
+}
+
+/**
  * 切分整本原文。命中 ≥2 个章节标题走章节模式，否则兜底分块。
  */
 export function splitNovelText(raw: string, opts: SplitOptions = {}): SplitResult {
@@ -204,38 +239,18 @@ export function splitNovelText(raw: string, opts: SplitOptions = {}): SplitResul
 
   // 找章节标题行
   const marks: { start: number; title: string }[] = []
-  for (const line of scanLines(text)) {
+  for (const line of scanLinesOf(text)) {
     if (CHAPTER_TITLE_RE.test(line.text)) marks.push({ start: line.start, title: line.text.trim() })
   }
 
-  let chapters: RawChapter[] = []
   if (marks.length >= 2) {
-    for (let i = 0; i < marks.length; i++) {
-      const s = marks[i].start
-      const e = i + 1 < marks.length ? marks[i + 1].start : text.length
-      // 正文：标题行之后到下一章标题之前
-      const firstNl = text.indexOf('\n', s)
-      const bodyStart = firstNl < 0 ? e : Math.min(firstNl + 1, e)
-      chapters.push({
-        index: chapters.length + 1,
-        title: marks[i].title,
-        text: text.slice(bodyStart, e).trim(),
-        charStart: s,
-        charEnd: e,
-      })
-    }
-    let truncated = false
-    if (chapters.length > maxChunks) { chapters = chapters.slice(0, maxChunks); truncated = true }
-    return {
-      chapters,
-      mode: 'chapters',
-      stats: { count: chapters.length, chars, estTokens: totalTok, truncated },
-    }
+    const r = buildChaptersFromMarks(text, marks, maxChunks)
+    return { ...r, stats: { ...r.stats, chars, estTokens: totalTok } }
   }
 
   // 兜底：整文分块
   const chunks = chunkText(text, opts)
-  chapters = chunks.map((c, i) => ({
+  const chapters = chunks.map((c, i) => ({
     index: i + 1,
     title: `第${i + 1}段`,
     text: c.text.trim(),
@@ -243,10 +258,11 @@ export function splitNovelText(raw: string, opts: SplitOptions = {}): SplitResul
     charEnd: c.end,
   }))
   let truncated = false
-  if (chapters.length > maxChunks) { chapters = chapters.slice(0, maxChunks); truncated = true }
+  let out = chapters
+  if (out.length > maxChunks) { out = out.slice(0, maxChunks); truncated = true }
   return {
-    chapters,
+    chapters: out,
     mode: 'chunks',
-    stats: { count: chapters.length, chars, estTokens: totalTok, truncated },
+    stats: { count: out.length, chars, estTokens: totalTok, truncated },
   }
 }

@@ -19,6 +19,7 @@ import { showToast } from './dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '../lib/ai'
 import { adviseImport, type ImportAdvice } from '../lib/bookbreak/recommend'
 import { estimateCalls, previewSplit, runBookBreak, type BookBreakResume } from '../lib/bookbreak/run'
+import { readStringPref, writeStringPref } from '../lib/uiPrefs'
 import type { RelationTabOutcome } from '../lib/bookbreak/relations'
 import {
   DEFAULT_RELATION_LIMITS, RELATION_LIMIT_META, clampRelationLimits, getRelationLimits,
@@ -46,6 +47,8 @@ export default function BookBreakPanel() {
   const { ready: aiReady } = useAIReady()
   const [raw, setRaw] = useState('')
   const [preview, setPreview] = useState<SplitResult | null>(null)
+  // 2.6.1 · R2：章节标题示例 —— 填了且本地规则认不出章节时，拆书先用 AI 按示例识别边界（run.ts 阶段 1）
+  const [titleSamples, setTitleSamples] = useState(() => readStringPref('bookbreak-title-samples') ?? '')
   const [progress, setProgress] = useState<FlowProgress | null>(null)
   const [bundle, setBundle] = useState<DraftBundle | null>(null)
   const [running, setRunning] = useState(false)
@@ -166,6 +169,8 @@ export default function BookBreakPanel() {
         persistToChapters: writeToChapters,
         summarizeForms,
         organizeRelations,
+        // 2.6.1 · R2：章节标题示例（非空才传；空 = 与旧行为完全一致）
+        ...(titleSamples.trim() ? { titleSamples } : {}),
         // 材料上限（界面可调，持久保存）—— 只影响「整理关系」这一步
         relationMaterial: limits,
         // 续跑：把上次的断点原样传回（阶段内断点 + 已完成阶段的产物）
@@ -289,6 +294,33 @@ export default function BookBreakPanel() {
           placeholder="把小说原文粘贴到这里（支持整本），或点右上角「导入 .txt / .md / .docx」。"
           className="mt-2 h-56 w-full resize-y rounded border border-ink-700 bg-ink-900 px-3 py-2 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
         />
+        {/* 2.6.1 · R2：章节标题示例 —— 本地规则认不出章节时的 AI 识别引导（拍板：有示例则 AI 优先） */}
+        <div className="mt-2 rounded border border-ink-700 bg-ink-900/60 p-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-11 font-medium text-ink-200">章节标题示例</span>
+            <HelpPopover title="章节标题示例怎么用" width="22rem">
+              {'原文的章节标题写法不标准（如「01|风起」「风起（一）」），本地规则认不出来时在这里帮忙：照原文里的标题样式抄几行进来（一行一条，3~5 条为宜）。\n\n· 填了示例：拆书时本地规则先认一遍，认不出就交给 AI 按示例找出章节起始行（识别结果会逐字回原文核对，对不上就放弃）；\n· 不填：按原来的方式处理 —— 本地规则认不出就按字数分块；\n· 本地规则已经认出章节时示例不会被用到（不耗模型调用）。'}
+            </HelpPopover>
+          </div>
+          <textarea
+            value={titleSamples}
+            onChange={e => { setTitleSamples(e.target.value); writeStringPref('bookbreak-title-samples', e.target.value) }}
+            disabled={running}
+            spellCheck={false}
+            placeholder={'一行一条，照原文里的标题样式抄，例如：\n01|风起\n02|逆流'}
+            className="mt-1.5 h-14 w-full resize-y rounded border border-ink-700 bg-ink-900 px-2.5 py-1.5 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
+          />
+          <div className="mt-1 text-10 text-ink-500">
+            {preview
+              ? preview.mode === 'chapters'
+                ? `本地规则已识别出 ${preview.stats.count} 章，示例不会被用到。`
+                : titleSamples.trim()
+                  ? '本地规则未识别到章节标题——拆书时将先用 AI 按你的示例识别章节边界（识别失败自动回到按字数分块）。'
+                  : '本地规则未识别到章节标题，将按字数分块。想让 AI 按章节切分？在上面照原文标题样式抄几行示例。'
+              : '先在上方粘贴或导入原文，这里会告诉你切分方式。'}
+          </div>
+          <AIDataSourceNote feature="bookbreak-split" />
+        </div>
         <label className="mt-2 flex items-start gap-1.5 text-11 text-ink-300">
           <input
             type="checkbox"

@@ -32,6 +32,8 @@ const LEGACY: Record<WriterBudgetKind, number> = {
   'name-suggest': 3000,
   // 灵感融合（2.5.1·A3 新增）：按 0.5 档，出厂即 4000（灵感条目短，设定摘要同脑暴档）
   'inspiration-fuse': 4000,
+  // 拆书 AI 章节识别（2.6.1·R2 新增）：按 0.75 档，出厂即 6000（原文采样 ≤9000 字 + 标题示例）
+  'bookbreak-split': 6000,
   'plot-canvas': 6000,
   'jiewenji-proofread': 6000,
   'jiewenji-diagnosis': 8000,

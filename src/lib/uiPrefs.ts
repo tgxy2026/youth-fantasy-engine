@@ -112,6 +112,16 @@ export function writeStringPref(key: string, v: string): void {
   }
 }
 
+/** 读一个自由字符串偏好（无记录返回 null）。仅用于**不需要枚举校验**的内容 ——
+ *  如 2.6.1 的看板娘自定义图（dataURL）与拆书标题示例（自由文本）；有固定取值的一律走 readEnumPref。 */
+export function readStringPref(key: string): string | null {
+  try {
+    return localStorage.getItem(PREFIX + key)
+  } catch {
+    return null
+  }
+}
+
 /**
  * 读「枚举字符串」偏好：无记录、或值**不在允许清单内** → fallback。
  *
