@@ -8,7 +8,7 @@
 - 禁删 `release/eb-cache/`；禁原生 `prompt/confirm/alert`。清单 `docs/2.3.1-Bug与待优化清单.md` 只记录、明说「处理」才动。提交含 `!`/换行用 `git commit -F`。main 无远程。
 
 ## 身份·版本·封装
-- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.5.2**，09-26 已封装发布 Gitee：Release 1167571）。
+- Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`（127.0.0.1→302＝两份库）；🔴 只做桌面版，版本源 `package.json`（现 **2.6.0**，09-27 已封装发布 Gitee：Release **1169453**）。
 - 🔴🔴 封装**全程无沙箱跑**；rcedit 间歇失败（退出码仍 0，只认 stderr）由 `after-pack.cjs` 重试根治；验收查 exe 含 `青春幻想引擎开发组`。基线：主 exe 181,097,984B、包 80.96MB。
 - 🔴 **环境两坑**：脚本内 `spawnSync`/`execFileSync` 起子进程被拦成 **EBUSY**（改用「清单外层生成」）；`fs.rmSync` 走 safe-delete（>10MB ETIMEDOUT）⇒ 清产物用 `unlinkSync` 深搜。
 - 🔴 启动**默认停项目管理首页**（首启先过「向导三选一」）；删项目时一并清 `lastProject`。
@@ -125,5 +125,5 @@
 - 🔴 文末**禁裸链**（禁 `https://`／`pan.quark.cn` 连写／「提取码」→「口令」）；链接压最末＋后有缓冲。
 - 🔴 **发帖顺序**：承诺的版本号须**先在夸克盘＋Gitee 上架**再发帖。系列稿第 0/1/2/3 篇**全部发布完毕**（09-24 收官）。
 - 🔴 **本窗口职能（09-24 起）**：只输出**版本更新说明**，不再写项目介绍帖。介绍稿与截图已清理，仅留 `docs/小黑盒推广帖/截图/99-封面-青春幻想引擎.png`（2.4.0 封面）＋同目录 `封面源-青春幻想引擎.html`（改版本号只改 `.subtitle` 一行）；《小黑盒项目推广帖写法学习笔记.md》仍保留。
-- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。对外：Gitee **2.5.0**／`1165942`（09-25）；夸克还停在 **2.4.3**（🔴 在「2.4.0版本」目录里——该盘习惯＝主版本目录放系列最新补丁，核版本看**文件名**别信目录名；2.5.0 夸克未传，等主人哥哥）。
+- 入口：Gitee `tgxy2026/youth-fantasy-engine`；夸克 `pan.quark.cn/s/8ae0eb718cf5` 口令 `QfAm`。对外：Gitee **2.6.0**／`1169453`（09-27）；夸克还停在 **2.4.3**（🔴 在「2.4.0版本」目录里——该盘习惯＝主版本目录放系列最新补丁，核版本看**文件名**别信目录名；2.5.0 夸克未传，等主人哥哥）。
 - 🔴 令牌 `G:/AI软件/.gitee-token.txt`。🔴 push 只需 `GIT_CONFIG_NOSYSTEM=1`；🔴🔴 **绝不可再加 `GIT_CONFIG_GLOBAL=NUL`**（屏蔽 GCM ⇒ 静默挂死）。
