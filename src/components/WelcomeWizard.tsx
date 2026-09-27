@@ -18,6 +18,7 @@
  */
 import { useRef, useState, type ReactNode } from 'react'
 import { Z } from '../lib/zLayer'
+import { usePersistedBool } from '../lib/uiPrefs'
 import { BookPlus, Sparkles, Upload, ArrowRight, Check, Loader2 } from 'lucide-react'
 import * as db from '../lib/db'
 import type { ProjectBundle } from '../lib/db'
@@ -63,6 +64,7 @@ const CARDS: { key: Choice; icon: ReactNode; iconCls: string; title: string; bod
 export default function WelcomeWizard({ onDone }: Props) {
   const [step, setStep] = useState<'start' | 'ai'>('start')
   const [choice, setChoice] = useState<Choice>('new')
+  const [bgHidden] = usePersistedBool('workbench-bg-hidden', false)
   const [bookName, setBookName] = useState('')
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -105,11 +107,14 @@ export default function WelcomeWizard({ onDone }: Props) {
 
   return (
     <div className="min-h-screen bg-transparent overflow-y-auto relative">
+      {/* 2.6.1 起受侧栏「背景」开关控制（首启向导通常还没关过，默认显示） */}
+      {!bgHidden && (
       <div
         className="absolute inset-0 pointer-events-none bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: `url(${workbenchBg})`, zIndex: Z.pageBackdrop }}
         aria-hidden
       />
+      )}
       <div className="relative w-full max-w-[860px] mx-auto px-6 py-12 page-enter" style={{ zIndex: Z.pageHandle }}>
         <header className="mb-9 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber/15 border border-amber/30 mb-4">

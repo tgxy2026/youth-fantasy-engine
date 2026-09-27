@@ -18,7 +18,7 @@
  *
  * 只读失败（隐私模式 / 配额满 / 脏数据）一律静默退回默认值 —— 界面偏好坏掉不该让页面崩。
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 const PREFIX = 'yfe-ui:'
 
@@ -90,15 +90,35 @@ export function usePersistedSet(
   return [pair.set, update]
 }
 
-/** 持久化的布尔开关（用于"整块展开 / 收起"这类非集合状态） */
+/**
+ * 持久化的布尔开关（用于"整块展开 / 收起"这类非集合状态）。
+ *
+ * 🔴 2.6.1 起带**跨实例同步**：写侧派发 `yfe-ui-pref` CustomEvent，其它挂载中的同键 hook
+ *   收到后重读 —— 没有它，弹窗里改开关、别的组件（如首页看板娘 / 全局背景层）是不知道的
+ *   （2.6.1 R1 实测踩坑：弹窗切看板娘开关、首页立绘纹丝不动）。
+ *   ⚠️ 只同步「挂载中的同键 hook」；用 `readBoolPref` 直读的自持 state（如 MascotSettingsDialog
+ *   的调用方）仍需回调里手动重读。
+ */
+const PREF_EVENT = 'yfe-ui-pref'
+
 export function usePersistedBool(key: string, def: boolean): [boolean, (v: boolean) => void] {
   const [pair, setPair] = useState<{ key: string; v: boolean }>(() => ({ key, v: readBoolPref(key, def) }))
   if (pair.key !== key) {
     setPair({ key, v: readBoolPref(key, def) })
   }
+  useEffect(() => {
+    const onPref = (e: Event) => {
+      const k = (e as CustomEvent<{ key: string }>).detail?.key
+      if (k !== key) return
+      setPair({ key, v: readBoolPref(key, def) })
+    }
+    window.addEventListener(PREF_EVENT, onPref)
+    return () => window.removeEventListener(PREF_EVENT, onPref)
+  }, [key, def])
   const update = useCallback((v: boolean) => {
     writeBoolPref(key, v)
     setPair({ key, v })
+    window.dispatchEvent(new CustomEvent(PREF_EVENT, { detail: { key } }))
   }, [key])
   return [pair.v, update]
 }
