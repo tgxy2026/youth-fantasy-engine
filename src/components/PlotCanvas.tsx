@@ -19,7 +19,7 @@ import { Button } from './Button'
 // 🔴 'idea'（灵感融合，2.5.1 · A3）只由灵感夹的「融合为情节卡」生成（同 beat 规则），
 //    **不进 HEADER_TO_TYPE** —— AI 简报解析永远不会产 idea 卡。
 type CardType = 'foreshadow' | 'hook' | 'character' | 'next' | 'beat' | 'idea'
-interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number }
+interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number; /** 灵感融合卡（idea）的溯源编号（1 起，指向融合时勾选的灵感条目）；旧快照无此字段 */ basedOn?: number[] }
 type Conn = [string, string]
 interface PlotPersist { selected: string[]; cards: CardItem[]; conns: Conn[] }
 
@@ -438,7 +438,10 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                     <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-ink-700" style={{ borderTopColor: meta.color }}>
                       <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: meta.color }} />
                       <span className="text-10 font-medium" style={{ color: meta.color }}>{meta.label}</span>
-                      <span className="text-9 text-ink-500 ml-auto truncate">{c.chapter}</span>
+                      {/* C-1 · 2.6.0：灵感融合卡兑现「每张卡标注用了哪几条灵感」——溯源编号显示在头部右侧（idea 卡 chapter 恒空） */}
+                      <span className="text-9 text-ink-500 ml-auto truncate">
+                        {c.type === 'idea' && c.basedOn?.length ? `基于灵感 ${c.basedOn.map(n => '#' + n).join(' ')}` : c.chapter}
+                      </span>
                     </div>
                     <div className="px-2.5 py-2 text-12 text-ink-200 leading-snug">{c.text}</div>
                     <Button variant="bare"

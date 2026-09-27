@@ -17,11 +17,20 @@ import { confirmDialog } from './dialogs'
 import { Modal as BaseModal } from './Modal'
 
 // ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
-export function ToolModal({ title, icon, onClose, children, wide }: {
+export function ToolModal({ title, icon, onClose, children, wide, help }: {
   title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean
+  /** C-9 · 2.6.0：问号提示——传了就渲染在标题行紧跟功能名（红线：问号必须紧跟功能名，不得被 flex-1 描述挤到行尾） */
+  help?: React.ReactNode
 }) {
   return (
-    <BaseModal open onClose={onClose} title={title} icon={icon} width={wide ? 768 : 560}>
+    <BaseModal open onClose={onClose} icon={icon} width={wide ? 768 : 560} title={title}
+      titleSlot={help ? (
+        <span className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-14 font-semibold text-ink-50 truncate">{title}</h3>
+          {help}
+        </span>
+      ) : undefined}
+    >
       {children}
     </BaseModal>
   )
@@ -214,16 +223,19 @@ export function ProofreadCheck({ content, onApply, onClose }: {
   const typoTotal = typoHits.reduce((s, h) => s + h.count, 0)
 
   return (
-    <ToolModal title="校对（本章）" icon={<span className="text-amber">校</span>} onClose={onClose} wide>
-      <div className="flex items-center gap-1.5 mb-3">
-        <span className="flex-1 text-11 text-ink-500">
-          错别字由内置词库本地直接查（无需模型）；AI 校验拆成两块 —— 文字层（错别字 / 语病 / 标点）不读设定资料、出结果更快，逻辑层（逻辑 / 设定矛盾）才读设定资料。
-        </span>
+    <ToolModal title="校对（本章）" icon={<span className="text-amber">校</span>} onClose={onClose} wide
+      help={
         <HelpPopover title="校对怎么用" width="22rem">
-          {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「查错别字与语病」：接入模型后逐字逐句读本章正文，找错别字、语病、标点问题；不读设定资料，所以更快。\n· 「查逻辑与设定矛盾」：读项目设定资料，判前后矛盾、时间与空间错乱、与既有设定冲突。\n· 两块互相独立：可以只跑一块、分别看结果；点「替换此条」会直接改进正文，另一块的定位会自动跟着位移。\n· 未接入模型时两块按钮都禁用，但本地错别字检测与本章所有手动功能不受影响。'}
+          {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「查错别字与语病」：接入模型后逐字逐句读本章正文，找错别字、语病、标点问题；不读设定资料，所以更快。\n· 「查逻辑与设定矛盾」：读项目设定资料，判前后矛盾、时间与空间错乱、与既有设定冲突。\n· 两块互相独立：可以只跑一块、分别看结果；点「替换此条」会直接改正文，另一块的定位会自动跟着位移。\n· 未接入模型时两块按钮都禁用，但本地错别字检测与本章所有手动功能不受影响。'}
           <AIDataSourceNote feature="proofread" />
           <AIDataSourceNote feature="proofread-logic" />
         </HelpPopover>
+      }
+    >
+      <div className="mb-3">
+        <span className="text-11 text-ink-500">
+          错别字由内置词库本地直接查（无需模型）；AI 校验拆成两块 —— 文字层（错别字 / 语病 / 标点）不读设定资料、出结果更快，逻辑层（逻辑 / 设定矛盾）才读设定资料。
+        </span>
       </div>
 
       {/* 本地错别字结果 */}

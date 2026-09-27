@@ -248,7 +248,7 @@ export default function BookBreakPanel() {
         <h1 className="text-15 font-medium text-ink-100">一键拆书</h1>
         <HelpPopover title="一键拆书怎么用" pin>
           <div className="space-y-1.5 text-11 leading-relaxed text-ink-300">
-            <p>粘贴或导入一整本小说原文（文件支持 <b>.txt / .docx</b>，上限 20MB；.docx 内的批注、脚注、图片、公式读不到，导入时会如实告诉你），AI 会<b>先按识别出的结构把原文写进「正文编辑」</b>（卷 / 章），再逐章抽取其中的<b>人物 / 势力 / 地点 / 种族 / 物品 / 术语</b>，并尽量补全各类的设定字段（身份定位、外貌特征、实力境界、功法技能、类别、剧情作用…），整理成草稿供你勾选。</p>
+            <p>粘贴或导入一整本小说原文（文件支持 <b>.txt / .md / .docx</b>，上限 20MB；.docx 内的批注、脚注、图片、公式读不到，导入时会如实告诉你），AI 会<b>先按识别出的结构把原文写进「正文编辑」</b>（卷 / 章），再逐章抽取其中的<b>人物 / 势力 / 地点 / 种族 / 物品 / 术语</b>，并尽量补全各类的设定字段（身份定位、外貌特征、实力境界、功法技能、类别、剧情作用…），整理成草稿供你勾选。</p>
             <p>抽出的每条都带<b>原文引用</b>与<b>置信度</b>，并会与项目里已有的设定比对：已登记过的标为「疑似已有」、默认不勾选。</p>
             <p>同一实体在不同章节抽出的字段若出现<b>互相矛盾</b>的值（如境界一处是「废脉」、一处是「淬体一重」），会标为「冲突」并把两边的值都列出来，由你决定留哪个 —— 系统不替你猜。人物性格、外貌、人际关系这类可以累积的字段不做冲突判定，只取更完整的一份。</p>
             <p>两处写库要分清：<b>原文结构会直接写进正文编辑</b>（只追加、不动已有卷章，可用下方开关关掉）；<b>设定草稿不会自动落库</b>，要你点「写入项目」才写，且已有同名条目默认分毫不动。</p>
@@ -268,7 +268,7 @@ export default function BookBreakPanel() {
           <span className="text-11 text-ink-500">{raw.length.toLocaleString()} 字</span>
           <div className="flex-1" />
           <Button size="xs" variant="secondary" disabled={running} onClick={() => fileRef.current?.click()}>
-            <FileUp size={12} /> 导入 .txt / .docx
+            <FileUp size={12} /> 导入 .txt / .md / .docx
           </Button>
           <Button size="xs" variant="secondary" disabled={running || !raw}
             onClick={() => { setRaw(''); setBundle(null); setPreview(null); setProgress(null); setPersistInfo(null); setSummaries({}); setFormRows([]); setRelationRows([]); setRelationTabs([]) }}>
@@ -286,7 +286,7 @@ export default function BookBreakPanel() {
           onChange={e => setRaw(e.target.value)}
           disabled={running}
           spellCheck={false}
-          placeholder="把小说原文粘贴到这里（支持整本），或点右上角「导入 .txt / .docx」。"
+          placeholder="把小说原文粘贴到这里（支持整本），或点右上角「导入 .txt / .md / .docx」。"
           className="mt-2 h-56 w-full resize-y rounded border border-ink-700 bg-ink-900 px-3 py-2 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
         />
         <label className="mt-2 flex items-start gap-1.5 text-11 text-ink-300">

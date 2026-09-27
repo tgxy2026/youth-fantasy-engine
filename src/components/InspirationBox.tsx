@@ -85,7 +85,8 @@ export default function InspirationBox() {
       const base = persist.cards?.length ?? 0
       const newCards = ideas.map((idea, i) => {
         const pos = ideaCardPos(base + i)
-        return { id: `idea-${Date.now()}-${i}`, chapter: '', type: 'idea', text: idea.text, x: pos.x, y: pos.y }
+        // C-1 · 2.6.0：basedOn 随卡落快照 —— 兑现帮助里「每张卡标注用了哪几条灵感」的承诺（画布卡头部渲染）
+        return { id: `idea-${Date.now()}-${i}`, chapter: '', type: 'idea', text: idea.text, basedOn: idea.basedOn, x: pos.x, y: pos.y }
       })
       await db.setSetting('plotCanvas', { ...persist, cards: [...(persist.cards ?? []), ...newCards] })
       setFused(ideas)

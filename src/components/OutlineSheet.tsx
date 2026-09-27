@@ -186,7 +186,8 @@ export default function OutlineSheet({ tab }: Props) {
   const removeRecord = async (id: string) => {
     const rec = records.find(r => r.id === id)
     if (!rec) return
-    if (!await confirmDialog({ title: `删除${noun}大纲`, message: `确定删除「${rec.name}」的${noun}大纲？`, danger: true })) return
+    // C-8 · 2.6.0：弹窗用页签实名（章节细纲 / 分卷大纲）——原来拼「${noun}大纲」会在细纲页写出「章节大纲」
+    if (!await confirmDialog({ title: `删除${tab.name}`, message: `确定删除「${rec.name}」的这份${tab.name}？`, danger: true })) return
     await deleteCardRecord(id)
     const next = records.filter(r => r.id !== id)
     setRecords(next)

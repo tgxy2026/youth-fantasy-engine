@@ -433,7 +433,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                       <div className="mt-4">
                         <div className="text-11 text-ink-400 mb-1.5 flex items-center gap-1">功能模块
                           <HelpPopover title="自定义项目功能" width="20rem" size={11}>
-                            {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作、灵感工具）与依赖自动带入的模块不可取消；其余模块自由调整。修改后点击「保存修改」生效。'}
+                            {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作，及灵感工具下的灵感启发 / 素材资料 / 检查工具）与依赖自动带入的模块不可取消；其余模块（含拆书、创意写作）自由调整。修改后点击「保存修改」生效。'}
                           </HelpPopover>
                         </div>
                         <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })} className="flex items-center gap-1.5 px-3 h-9 text-12 rounded-lg transition-colors">

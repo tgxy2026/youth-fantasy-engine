@@ -441,7 +441,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             {weekTotal === 0 && (
               <div className="flex items-start gap-2 text-ink-300">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
-                <span>近 7 日无产量记录——在进度看板登记每日字数</span>
+                <span>近 7 日无产量记录——在写作进度登记每日字数</span>
               </div>
             )}
             {chapters.length === 0 && (
