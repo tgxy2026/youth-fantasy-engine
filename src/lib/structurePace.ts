@@ -139,3 +139,51 @@ export function alignBeats(tpl: StoryTemplate, shares: ChapterShare[]): BeatAlig
     }
   })
 }
+
+// ============ 爽点分布逐拍归属（R4b · 2.6.0，竞品调研建议 2 的收尾） ============
+
+/** 爽点行输入（`hookpoints` 爽点节奏表一行的最小信息） */
+export interface HookRowInput {
+  /** 作者手填「章节号」里解析出的数字（解析失败的行由组件层过滤，不进这里） */
+  no: number
+  /** 爽点类型（该表「爽点类型」列的原文，如「打脸」「升级」） */
+  kind: string
+}
+
+export interface HookBeatStat {
+  name: string
+  /** 归属到这一拍的爽点行数 */
+  count: number
+  /** 该拍出现过的爽点类型（保序去重） */
+  kinds: string[]
+  /** 该拍爽点行数占全部爽点行的百分比（一位小数；无行时 0） */
+  pct: number
+}
+
+/**
+ * 爽点分布逐拍归属 —— 纯本地，零 AI。
+ *
+ * 🔴 与 `alignBeats` 同一**章数位置轴**归属语义（章中点落哪拍归哪拍），但**全书尺度独立**：
+ *    M = max(已写章数, 爽点表最大章号)。爽点常在写细纲时就排好（表描述原话），
+ *    排到的章号往往领先已写正文 —— 只按已写章数折算会把未写章的爽点全部溢出 >100% 丢掉。
+ * 🔴 度量口径是**爽点行数占比**，不是字数 —— 爽点是离散事件，按字数摊没有意义；
+ *    与上方两条字数带的刻度差异由面板文案写明（爽点带含「排了还没写」的章）。
+ * 🔴 立场同本模块总则：只给分布观察，不给分、不判定「爽点够不够」——间隔预警是爽点节奏表自己的职责。
+ */
+export function alignHooks(tpl: StoryTemplate, hooks: HookRowInput[], writtenCount: number): HookBeatStat[] {
+  const maxHookNo = hooks.reduce((s, h) => Math.max(s, h.no), 0)
+  const m = Math.max(writtenCount, maxHookNo, 1)
+  const buckets = tpl.beats.map(b => ({ name: b.name, from: b.from, to: b.to, rows: [] as HookRowInput[] }))
+  for (const h of hooks) {
+    const pos = ((h.no - 0.5) / m) * 100
+    const beat = buckets.find(b => pos >= b.from && pos < b.to) ?? buckets[buckets.length - 1]
+    beat.rows.push(h)
+  }
+  const total = hooks.length
+  return buckets.map(b => ({
+    name: b.name,
+    count: b.rows.length,
+    kinds: [...new Set(b.rows.map(r => r.kind).filter(Boolean))],
+    pct: total > 0 ? round1((b.rows.length / total) * 100) : 0,
+  }))
+}

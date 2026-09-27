@@ -16,6 +16,10 @@ import { contentMinH, OUTLINE_SHEET_CHROME_PX } from '../lib/theme'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
+// R4a · 2.6.0：结构模板节拍对照条（只读）。模板选择的单一来源在 creativeSession，
+// 与创意写作 / 检查工具「全书结构配比」共用同一份（hydrate 幂等，本页可能从未打开过创意写作）。
+import { hydrateCreativeSession, useCreativeSession } from '../lib/creativeSession'
+import { getStoryTemplate } from '../lib/storyStructures'
 
 interface Props {
   tab: TabDef
@@ -48,6 +52,40 @@ export default function OutlineSheet({ tab }: Props) {
   useEffect(() => () => clearTimeout(savedTimer.current), [])
   const [tplOpen, setTplOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+
+  // ---- R4a · 2.6.0 结构模板节拍对照（章节细纲页只读展示） ----
+  useEffect(() => { hydrateCreativeSession() }, [])
+  const structureId = useCreativeSession().inputs.structureId
+  const structureTpl = !isVolume ? getStoryTemplate(structureId) : null
+  /** 从卡片名解析章号（与 nextChapterNo 同一口径；解析不到的卡不参与折算） */
+  const chapterNos = useMemo(
+    () => records.map(r => Number(r.name.match(/第(\d+)章/)?.[1] ?? 0)),
+    [records]
+  )
+  const beatRanges = useMemo(() => {
+    if (!structureTpl || records.length === 0) return null
+    // 全书尺度：细纲卡数与最大手填章号取大（作者可能跳着排章号）
+    const maxNo = chapterNos.reduce((s, n) => Math.max(s, n), 0)
+    const m = Math.max(records.length, maxNo, 1)
+    // 与归属公式互逆的反推：章 N 的位置 = ((N−0.5)/M)×100 ∈ [from,to)
+    //  ⟺ N ≥ from·M/100 + 0.5 且 N < to·M/100 + 0.5
+    const ranges = structureTpl.beats.map(b => ({
+      name: b.name,
+      brief: b.brief,
+      from: Math.max(1, Math.ceil((b.from * m) / 100 + 0.5)),
+      to: Math.min(m, Math.ceil((b.to * m) / 100 + 0.5) - 1),
+    }))
+    return { m, ranges }
+  }, [structureTpl, records.length, chapterNos])
+  // 当前编辑章落在哪一拍（高亮用；名字里没有章号就不高亮）
+  const activeBeatIdx = useMemo(() => {
+    if (!beatRanges || !draft) return -1
+    const no = Number(draft.name.match(/第(\d+)章/)?.[1] ?? 0)
+    if (!no) return -1
+    const pos = ((no - 0.5) / beatRanges.m) * 100
+    const tplBeats = structureTpl?.beats ?? []
+    return tplBeats.findIndex(b => pos >= b.from && pos < b.to)
+  }, [beatRanges, draft, structureTpl])
 
   useEffect(() => {
     getCardRecords(tab.id).then(r => {
@@ -273,6 +311,34 @@ export default function OutlineSheet({ tab }: Props) {
           </div>
         )}
       </header>
+
+      {/* R4a · 2.6.0 结构模板节拍对照条（章节细纲页 · 只读）：按细纲卡数折算各拍章号范围，
+          当前编辑章所在拍高亮。模板选择跟随创意写作 / 全书结构配比（单一来源），此处不提供切换。 */}
+      {!isVolume && beatRanges && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-850/60 px-3 py-2">
+          <span className="text-10 text-ink-500 shrink-0">结构对照 · {structureTpl!.name}</span>
+          {beatRanges.ranges.map((r, i) => (
+            <span
+              key={r.name}
+              className={`px-2 py-0.5 rounded-md border text-11 ${
+                i === activeBeatIdx
+                  ? 'bg-amber/15 border-amber/40 text-amber'
+                  : 'bg-ink-800 border-ink-700 text-ink-300'
+              }`}
+              title={`${r.name}：${r.brief}`}
+            >
+              {r.name} {r.to >= r.from ? (r.to > r.from ? `${r.from}-${r.to}` : `${r.from}`) : '—'} 章
+            </span>
+          ))}
+          <HelpPopover title="结构对照 · 怎么用" width="22rem">
+            {'只读参考条：把所选结构模板的节拍按全书章数折算成章号范围，'
+              + '写细纲时可以对着看「这一章落在故事的哪一拍」——当前编辑章所在的拍会高亮。\n\n'
+              + '· 模板在「创意写作」面板或检查工具「全书结构配比」里选择，这里跟随同一份选择、不单独存；\n'
+              + '· 折算依据是细纲卡数（以及手填章节号里的最大值），选「不使用结构模板」时本条不显示；\n'
+              + '· 分卷大纲页不显示——模板是全书章数口径，对卷数折算没有参考意义。'}
+          </HelpPopover>
+        </div>
+      )}
 
       {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`（原来手抄等价式，见 `CharacterSheet` 同处说明）。 */}
       <div className="flex gap-5" style={{ minHeight: contentMinH(OUTLINE_SHEET_CHROME_PX) }}>

@@ -15,12 +15,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart3, Loader2 } from 'lucide-react'
 import * as db from '../lib/db'
-import type { Chapter } from '../lib/types'
+import type { Chapter, TableRow } from '../lib/types'
 import { hydrateCreativeSession, updateInputs, useCreativeSession, saveInputsQuiet } from '../lib/creativeSession'
 import { getStoryTemplate } from '../lib/storyStructures'
 import {
-  buildChapterShares, alignBeats, PACE_MIN_CHAPTERS, PACE_LEVEL_LABEL,
-  type BeatAlignment, type PaceLevel,
+  buildChapterShares, alignBeats, alignHooks, PACE_MIN_CHAPTERS, PACE_LEVEL_LABEL,
+  type BeatAlignment, type PaceLevel, type HookRowInput,
 } from '../lib/structurePace'
 import { STORY_TEMPLATES } from '../lib/storyStructures'
 import HelpPopover from './HelpPopover'
@@ -59,10 +59,38 @@ function BandStrip({ alignments, mode }: { alignments: BeatAlignment[]; mode: 'i
   )
 }
 
+/**
+ * 爽点分布带（R4b · 2.6.0）：每拍一格，宽＝该拍爽点行数占比。
+ * 与字数带的差异在行首标签写明（「爽点」）——度量是行数不是字数，且含「排了还没写」的章。
+ */
+function HookStrip({ stats }: { stats: { name: string; count: number; kinds: string[]; pct: number }[] }) {
+  return (
+    <div className="flex h-7 w-full overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
+      {stats.map((s, i) => {
+        if (s.count <= 0) return null
+        const kinds = s.kinds.length > 0 ? `（${s.kinds.join('、')}）` : ''
+        return (
+          <div
+            key={s.name}
+            style={{ width: `${s.pct}%`, background: `${beatColor(i)}2e`, borderRight: '1px solid rgba(255,255,255,0.06)' }}
+            className="flex items-center justify-center overflow-hidden whitespace-nowrap"
+            title={`${s.name}：${s.count} 个爽点${kinds}`}
+          >
+            {s.pct >= 8 && <span className="px-1 text-10" style={{ color: beatColor(i) }}>{s.name} ×{s.count}</span>}
+            {s.pct >= 4 && s.pct < 8 && <span className="text-9" style={{ color: beatColor(i) }}>·</span>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function StructurePacePanel() {
   const session = useCreativeSession()
   const structureId = session.inputs.structureId
   const [chapters, setChapters] = useState<Chapter[]>([])
+  /** 爽点节奏表原始行（R4b · 2.6.0）—— 解析见 hookInputs */
+  const [hookRows, setHookRows] = useState<TableRow[]>([])
   const [loading, setLoading] = useState(true)
 
   // 先 hydrate 再读：structureId 的单一来源在 creativeSession（幂等，重复调用无害）
@@ -71,6 +99,9 @@ export default function StructurePacePanel() {
   const load = useCallback(async () => {
     const chs = await db.getAllChapters().catch(() => [] as Chapter[])
     setChapters([...chs].sort((a, b) => a.order - b.order))
+    // R4b：爽点节奏表（hookpoints）随章节一并读取；读失败静默为空（爽点带是附赠视角，不挡主面板）
+    const rows = await db.getTableRows('hookpoints').catch(() => [])
+    setHookRows(rows)
     setLoading(false)
   }, [])
   useEffect(() => { void load() }, [load])
@@ -79,12 +110,28 @@ export default function StructurePacePanel() {
   const writtenCount = chapters.filter(c => (c.wordCount || 0) > 0).length
   const enough = writtenCount >= PACE_MIN_CHAPTERS
 
+  // 爽点行 → 位置轴输入：章节号解析出数字才算（自由文本如「第12章」「12」都认，纯文字不硬算）
+  const hookInputs: HookRowInput[] = useMemo(() => {
+    const out: HookRowInput[] = []
+    for (const r of hookRows) {
+      const m = (r.data['章节号'] || '').match(/(\d+)/)
+      if (m) out.push({ no: Number(m[1]), kind: r.data['爽点类型'] || '' })
+    }
+    return out
+  }, [hookRows])
+
   const result = useMemo(() => {
     if (!tpl || !enough) return null
     const inputs = chapters.map(c => ({ id: c.id, title: c.title || '未命名章节', words: c.wordCount || 0 }))
     const { shares, totalWords } = buildChapterShares(inputs)
     return { shares, totalWords, alignments: alignBeats(tpl, shares) }
   }, [tpl, enough, chapters])
+
+  // 爽点逐拍统计：只依赖模板与爽点行（不依赖字数门槛——爽点带是独立视角）
+  const hookStats = useMemo(
+    () => (tpl && hookInputs.length > 0 ? alignHooks(tpl, hookInputs, writtenCount) : null),
+    [tpl, hookInputs, writtenCount]
+  )
 
   const pickTemplate = (id: string) => {
     updateInputs({ structureId: id })
@@ -103,6 +150,7 @@ export default function StructurePacePanel() {
           {'把结构模板（三幕式 / 十五拍 / 起承转合 / 网文三卷式）的理想节拍占比，\n'
             + '与实际每一拍承载的字数占比对照，看哪一拍写得多、哪一拍写得少。\n\n'
             + '· 归属：按章在整个故事里的位置归到对应节拍；占比按各章字数算 —— 少数章承载了不成比例的字数时能看出来；\n'
+            + '· 第三条「爽点」带：把「爽点节奏」表里排好的爽点按章节号折算到各拍，宽度是该拍爽点个数占比 —— 看的是离散事件的分布，不是字数；含「排了细纲还没写」的章，所以刻度与上两条字数带不必逐格对齐；\n'
             + '· 三档只是观察（贴合 / 轻微偏移 / 明显偏移），不是评分 —— 作者有意压缩或展开某一拍是完全正当的选择；\n'
             + '· 模板选择与创意写作共用：在这里换模板，「创意写作」的大纲规划也会用同一套；\n'
             + '· 与「节奏与章末钩子」分工：这个看全书卷章结构（纯本地），那个看单章内部节奏（需 AI）。\n\n'
@@ -159,7 +207,18 @@ export default function StructurePacePanel() {
               <BandStrip alignments={result.alignments} mode="ideal" />
               <span className="text-10 text-ink-500 text-right">实际</span>
               <BandStrip alignments={result.alignments} mode="actual" />
+              {hookStats && (
+                <>
+                  <span className="text-10 text-ink-500 text-right" title="爽点节奏表按章节号折算的分布（行数占比，非字数）">爽点</span>
+                  <HookStrip stats={hookStats} />
+                </>
+              )}
             </div>
+            {tpl && !hookStats && (
+              <div className="text-10 text-ink-500">
+                想看各拍承载的爽点分布？在大纲「爽点节奏」表里排好爽点（章节号填数字），这里会自动加一条爽点带。
+              </div>
+            )}
 
             {offLevel.length === 0 ? (
               <div className="text-11 text-emerald-400">
