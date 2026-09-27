@@ -31,7 +31,7 @@ const beatColor = (i: number) => BEAT_COLORS[i % BEAT_COLORS.length]
 
 /** 三档徽章配色（与 CheckTools 的 sevBadge 同族；文案本身是中性描述，不含判定语气） */
 const levelBadge = (l: PaceLevel) =>
-  l === 'notable' ? 'bg-red-500/15 text-red-300 border border-red-500/30'
+  l === 'notable' ? 'bg-danger/15 text-danger border border-danger/30'
   : l === 'slight' ? 'bg-amber/15 text-amber border border-amber/30'
   : 'bg-ink-700 text-ink-300 border border-ink-600'
 
@@ -221,7 +221,7 @@ export default function StructurePacePanel() {
             )}
 
             {offLevel.length === 0 ? (
-              <div className="text-11 text-emerald-400">
+              <div className="text-11 text-success">
                 全部 {result.alignments.length} 拍与「{tpl.name}」的理想占比基本贴合 ✓
               </div>
             ) : (

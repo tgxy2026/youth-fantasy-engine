@@ -48,7 +48,7 @@ export function DesktopWriteLockBanner() {
   return (
     <div
       role="alert"
-      className="fixed inset-x-0 top-0 flex items-start gap-3 border-b-2 border-red-400/70 bg-red-700/97 px-4 py-2.5 text-white shadow-lg backdrop-blur-sm"
+      className="fixed inset-x-0 top-0 flex items-start gap-3 border-b-2 border-danger/70 bg-red-700/97 px-4 py-2.5 text-white shadow-lg backdrop-blur-sm"
       style={{ zIndex: Z.banner }}
     >
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

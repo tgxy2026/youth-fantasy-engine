@@ -220,7 +220,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
       {/* 当前模型状态条 */}
       {active ? (
         <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-ink-800/70 border border-ink-700/70 text-12">
-          <span className={`px-1.5 py-0.5 rounded text-10 ${active.type === 'ollama' || active.local ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-400'}`}>
+          <span className={`px-1.5 py-0.5 rounded text-10 ${active.type === 'ollama' || active.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
             {typeLabel(active)}
           </span>
           <span className="text-ink-200">{active.name}</span>
@@ -278,7 +278,7 @@ style={{ height: foldVh('60vh') }}>
                     {m.content}
                     {m.role === 'assistant' && (
                       <Button variant="icon-muted" onClick={() => copyMsg(m.id, m.content)} className="ml-2 align-middle" title="复制">
-                        {copied === m.id ? <Check size={11} className="text-emerald-400 inline" /> : <Copy size={11} className="inline" />}
+                        {copied === m.id ? <Check size={11} className="text-success inline" /> : <Copy size={11} className="inline" />}
                       </Button>
                     )}
                   </div>
@@ -290,7 +290,7 @@ style={{ height: foldVh('60vh') }}>
           {/* 输入区 */}
           <div className="border-t border-ink-700 p-2.5 space-y-2">
             {error && (
-              <div className="flex items-start gap-2 px-2 py-1.5 rounded-lg bg-red-500/10 border border-red-500/25 text-11 text-red-300">
+              <div className="flex items-start gap-2 px-2 py-1.5 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger">
                 <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{error}</span>
               </div>
             )}

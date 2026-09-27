@@ -173,7 +173,7 @@ export default function InspirationBox() {
 
       {/* 融合失败 */}
       {error && (
-        <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+        <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
           <Sparkles size={13} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{error}</span>
         </div>
       )}
@@ -185,7 +185,7 @@ export default function InspirationBox() {
           <div className="space-y-1.5">
             {fused.map((f, i) => (
               <div key={i} className="text-11 text-ink-300 leading-relaxed">
-                <span className="text-10 text-emerald-400/80 mr-1.5 shrink-0">灵感融合 #{i + 1}{f.basedOn.length ? ` · 基于灵感 ${f.basedOn.map(n => '#' + n).join(' ')}` : ''}</span>
+                <span className="text-10 text-success/80 mr-1.5 shrink-0">灵感融合 #{i + 1}{f.basedOn.length ? ` · 基于灵感 ${f.basedOn.map(n => '#' + n).join(' ')}` : ''}</span>
                 {f.text}
               </div>
             ))}

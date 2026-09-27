@@ -174,14 +174,14 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       label: '完稿章节',
       value: `${doneCount}`,
       sub: `已发布 ${publishedCount} · 草稿中 ${draftCount}`,
-      icon: <FileText size={16} />, color: 'text-emerald-400',
+      icon: <FileText size={16} />, color: 'text-success',
       help: '统计状态为「完稿」+「已发布」的章节数。章节状态在正文编辑器工具栏的下拉里改，会同步到章节总表。',
     },
     {
       label: '未回收伏笔',
       value: `${unf.length}`,
       sub: unf.length > 5 ? '注意点检防烂尾' : '健康范围',
-      icon: <GitBranch size={16} />, color: unf.length > 5 ? 'text-red-400' : 'text-sky-400',
+      icon: <GitBranch size={16} />, color: unf.length > 5 ? 'text-danger' : 'text-info',
       help: '来自「伏笔追踪」中状态为「未回收」的条目。超过 5 条会转红提醒——挖坑速度快于填坑速度是烂尾的头号信号，可到编辑器的伏笔闭环看板逐条点检。',
     },
     {
@@ -421,13 +421,13 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           </h2>
           <div className="space-y-2.5 text-12">
             {showForeshadowCard && unf.length > 5 && (
-              <div className="flex items-start gap-2 text-red-400">
+              <div className="flex items-start gap-2 text-danger">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
                 <span>未回收伏笔 {unf.length} 条，超过 5 条建议点检一次防烂尾</span>
               </div>
             )}
             {showForeshadowCard && unf.length > 0 && unf.length <= 5 && (
-              <div className="flex items-start gap-2 text-sky-400">
+              <div className="flex items-start gap-2 text-info">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
                 <span>未回收伏笔 {unf.length} 条，处于健康范围</span>
               </div>
@@ -451,7 +451,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               </div>
             )}
             {unf.length === 0 && unusedIdeas.length === 0 && weekTotal > 0 && chapters.length > 0 && (
-              <div className="flex items-start gap-2 text-emerald-400">
+              <div className="flex items-start gap-2 text-success">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                 <span>一切健康，保持节奏继续写</span>
               </div>
@@ -459,7 +459,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           </div>
 
           {diagError && (
-            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{diagError}</span>
             </div>
@@ -544,7 +544,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             </div>
             <div className={`mt-0.5 text-10 ${
               review.weekTrend === 'up' ? 'text-rose-400'
-              : review.weekTrend === 'down' ? 'text-emerald-400'
+              : review.weekTrend === 'down' ? 'text-success'
               : 'text-ink-500'
             }`}>
               {review.weekTrend === 'new' ? '上周还没开始'

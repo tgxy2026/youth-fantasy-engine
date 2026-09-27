@@ -173,7 +173,7 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
           className="flex-col items-start gap-1 p-4 h-auto text-left"
         >
           <span className="flex items-center gap-1.5 text-13 font-medium">
-            <Cpu size={14} className="text-emerald-400" /> 本地模型
+            <Cpu size={14} className="text-success" /> 本地模型
           </span>
           <span className="text-11 text-ink-400 leading-relaxed whitespace-normal">
             跑在你自己机器上（Ollama / LM Studio）。一般免密钥、不用联网，数据不出本机。
@@ -186,7 +186,7 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
           className="flex-col items-start gap-1 p-4 h-auto text-left"
         >
           <span className="flex items-center gap-1.5 text-13 font-medium">
-            <Globe size={14} className="text-sky-400" /> 云端模型
+            <Globe size={14} className="text-info" /> 云端模型
           </span>
           <span className="text-11 text-ink-400 leading-relaxed whitespace-normal">
             国内主流平台（DeepSeek / 硅基流动 / 通义 / 智谱 / Kimi）。需要 API 密钥，按量计费。
@@ -208,7 +208,7 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
                   onClick={() => pick(p)}
                   className={`flex items-center gap-1.5 ${pickedLabel === p.label ? 'border-amber/40 text-amber' : ''}`}
                 >
-                  {mode === 'local' ? <Cpu size={12} className="text-emerald-400" /> : <Globe size={12} className="text-sky-400" />}
+                  {mode === 'local' ? <Cpu size={12} className="text-success" /> : <Globe size={12} className="text-info" />}
                   {p.label}
                 </Button>
               ))}
@@ -293,8 +293,8 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
                 <div
                   className={`flex items-start gap-2 px-3 py-2 rounded-lg text-11 ${
                     result.ok
-                      ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-300'
-                      : 'bg-red-500/10 border border-red-500/25 text-red-300'
+                      ? 'bg-success/10 border border-success/25 text-success'
+                      : 'bg-danger/10 border border-danger/25 text-danger'
                   }`}
                 >
                   {result.ok
@@ -307,7 +307,7 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
                       {budget !== null && (
                         <> · 已按该模型把写作额度设为 <span className="text-emerald-200">{budget}</span> 字</>
                       )}
-                      <span className="block mt-0.5 text-emerald-400/80">
+                      <span className="block mt-0.5 text-success/80">
                         已保存为当前使用的模型，可在「模型设置」里随时增删改。
                       </span>
                     </span>

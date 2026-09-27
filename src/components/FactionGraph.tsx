@@ -256,7 +256,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
           </div>
           <Button variant="bare"
             onClick={() => onNavigate?.('nations')}
-            className="text-11 text-sky-400 hover:text-sky-300 mb-3 inline-flex items-center gap-1"
+            className="text-11 text-info hover:text-info mb-3 inline-flex items-center gap-1"
           >
             <ArrowUpRight size={11} /> 在《国家势力》查看
           </Button>

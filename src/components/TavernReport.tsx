@@ -19,7 +19,7 @@ import { TABS } from '../lib/schema'
 import type { TavernReport as Report, TavernFinding, TavernReportIndexItem } from '../lib/tavern/types'
 
 const LEVEL_STYLE: Record<TavernFinding['level'], string> = {
-  矛盾: 'text-red-400 border-red-400/30 bg-red-400/10',
+  矛盾: 'text-danger border-danger/30 bg-danger/10',
   漏洞: 'text-amber border-amber/30 bg-amber/10',
   存疑: 'text-ink-400 border-ink-600 bg-ink-800',
 }
@@ -152,7 +152,7 @@ export default function TavernReport() {
                     </div>
                     <div className="mt-0.5 truncate text-10 text-ink-500">{it.anchorChapterLabel || '（无锚点）'}</div>
                     <div className="mt-0.5 flex items-center gap-2 text-10">
-                      {it.counts['矛盾'] > 0 && <span className="text-red-400">矛盾 {it.counts['矛盾']}</span>}
+                      {it.counts['矛盾'] > 0 && <span className="text-danger">矛盾 {it.counts['矛盾']}</span>}
                       {it.counts['漏洞'] > 0 && <span className="text-amber">漏洞 {it.counts['漏洞']}</span>}
                       {it.counts['存疑'] > 0 && <span className="text-ink-400">存疑 {it.counts['存疑']}</span>}
                       {total === 0 && <span className="text-ink-500">未发现问题</span>}

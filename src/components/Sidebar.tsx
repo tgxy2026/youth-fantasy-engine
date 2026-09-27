@@ -3,6 +3,7 @@ import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity,
 import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
 import { confirmDialog } from './dialogs'
+import NumberField from './NumberField'
 import { useState, useEffect } from 'react'
 import { GROUPS, TABS, EDITOR_TAB, tabVisible, getVolumeTabs, getVolumeLedgerTabId, getVolumeIdFromLedgerTab, refreshVolumeTabs, type VisCtx } from '../lib/schema'
 import type { TabDef } from '../lib/types'
@@ -74,9 +75,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
     setZoom(applyZoom(autoZoom(), { manual: false }))
     setZoomAuto(true)
   }
-  // 界面缩放：支持手动输入百分比（80% ~ 160%），回车或失焦生效
-  const [zoomText, setZoomText] = useState(String(zoom))
-  useEffect(() => { setZoomText(String(zoom)) }, [zoom])
+  // 界面缩放的手动输入已改走 NumberField（U-1 · 2.6.0）——原 zoomText/commitZoom 中间态随之删除
   // 缩放在别处被自动重算时（跟随窗口），让本组件的显示同步过来
   useEffect(() => {
     const onZoom = (e: Event) => {
@@ -86,13 +85,6 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
     window.addEventListener('yfe:zoom-changed', onZoom)
     return () => window.removeEventListener('yfe:zoom-changed', onZoom)
   }, [])
-  const commitZoom = () => {
-    const v = Number(zoomText)
-    if (Number.isFinite(v) && v > 0) {
-      setZoom(applyZoom(v, { manual: true }))
-      setZoomAuto(false)
-    } else setZoomText(String(zoom))
-  }
   // 侧栏宽度可拖拽调整
   const sidebar = useResizable({ key: 'yfe-sidebar-w', initial: 224, initialWide: 300, min: 200, max: 560, side: 'right' })
 
@@ -241,7 +233,7 @@ style={{ zIndex: Z.pageBase }}
                                   <Button variant="bare"
                                     onClick={() => removeVolume(v)}
                                     title="删除该卷"
-                                    className="shrink-0 px-1.5 py-1 rounded-md text-ink-500 hover:text-red-400 hover:bg-ink-800 transition-colors"
+                                    className="shrink-0 px-1.5 py-1 rounded-md text-ink-500 hover:text-danger hover:bg-ink-800 transition-colors"
                                   >
                                     <Trash2 size={13} />
                                   </Button>
@@ -352,14 +344,12 @@ style={{ zIndex: Z.pageBase }}
               <ZoomOut size={12} />
             </Button>
             <span className="flex items-center gap-0.5">
-              <input
-                type="number"
+              {/* U-1 · 2.6.0：改走 NumberField（允许自由输入、提交时钳到 80~160），替换手写 type=number + blur 提交 */}
+              <NumberField
+                value={zoom}
+                onChange={(v) => { if (typeof v === 'number') { setZoom(applyZoom(v, { manual: true })); setZoomAuto(false) } }}
                 min={80}
                 max={160}
-                value={zoomText}
-                onChange={(e) => setZoomText(e.target.value)}
-                onBlur={commitZoom}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { commitZoom(); (e.target as HTMLInputElement).blur() } }}
                 title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
                 className="w-12 rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-center text-ink-200 tabular-nums outline-none focus:border-amber"
               />

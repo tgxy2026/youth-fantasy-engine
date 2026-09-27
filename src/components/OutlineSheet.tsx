@@ -281,7 +281,7 @@ export default function OutlineSheet({ tab }: Props) {
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
             <span className="text-11 text-ink-500">{records.length} 个{noun}</span>
-            <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+            <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
             <Button variant="toggle" selected={dirty}

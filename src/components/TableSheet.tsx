@@ -103,7 +103,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>
+          <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
           <span className="text-10 text-ink-500">
@@ -243,9 +243,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 
       {/* 编号校验错误：存在重复/退役编号时阻止保存并提示修改 */}
       {codeError && (
-        <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-3.5 py-2.5 flex items-start gap-2 animate-pulse">
-          <AlertTriangle size={12} className="mt-0.5 shrink-0 text-red-400" />
-          <span className="text-11 text-red-300 leading-relaxed">
+        <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3.5 py-2.5 flex items-start gap-2 animate-pulse">
+          <AlertTriangle size={12} className="mt-0.5 shrink-0 text-danger" />
+          <span className="text-11 text-danger leading-relaxed">
             <b>编号校验未通过，无法保存：</b>{codeError}。请修改编号后重新保存。
           </span>
         </div>

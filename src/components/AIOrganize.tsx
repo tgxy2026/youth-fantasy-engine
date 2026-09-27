@@ -273,7 +273,7 @@ style={{ maxHeight: foldVh('26vh') }}>
           )}
 
           {error && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>

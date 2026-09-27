@@ -133,7 +133,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                             <span className="text-13 text-ink-100 flex items-center gap-1.5 whitespace-nowrap">
                               {e.name}
                               {e.tier === 'locked' && <Lock size={11} className="text-amber/70" />}
-                              {e.tier === 'default' && <span className="text-10 text-emerald-300/80">默认</span>}
+                              {e.tier === 'default' && <span className="text-10 text-success/80">默认</span>}
                             </span>
                           </div>
                           <div className="mt-1 text-11 text-ink-400 leading-snug line-clamp-2">{e.desc}</div>

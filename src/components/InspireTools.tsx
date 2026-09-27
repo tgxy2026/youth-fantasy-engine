@@ -132,7 +132,7 @@ export default function InspireTools() {
                 <Button variant="bare"
                   key={s}
                   onClick={() => setStyle(s)}
-                  className={`h-8 px-3 text-12 rounded-lg transition-colors ${style === s ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30' : 'bg-ink-800 text-ink-400 border border-ink-700'}`}
+                  className={`h-8 px-3 text-12 rounded-lg transition-colors ${style === s ? 'bg-info/15 text-info border border-info/30' : 'bg-ink-800 text-ink-400 border border-ink-700'}`}
                   title={`题材风格：${s}`}
                 >{s}</Button>
               ))}
@@ -162,7 +162,7 @@ export default function InspireTools() {
                   className="text-13 text-ink-100 cursor-pointer hover:text-amber transition-colors"
                   title="点击复制"
                 >
-                  {copied === n ? <span className="text-emerald-400 flex items-center gap-1"><Check size={11} />已复制</span> : n}
+                  {copied === n ? <span className="text-success flex items-center gap-1"><Check size={11} />已复制</span> : n}
                 </span>
                 <Button variant="bare" onClick={() => toggleFavorite(n)} className={`p-0.5 transition-colors ${favorites.includes(n) ? 'text-amber' : 'text-ink-600 hover:text-amber'}`} title="收藏">
                   <Star size={12} fill={favorites.includes(n) ? 'currentColor' : 'none'} />
@@ -193,7 +193,7 @@ export default function InspireTools() {
           )}
 
           {aiNameErr && (
-            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <Sparkles size={13} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{aiNameErr}</span>
             </div>
           )}
@@ -204,7 +204,7 @@ export default function InspireTools() {
                 {aiNames.map((n, i) => (
                   <Button variant="bare" key={i} onClick={() => copy(n.name)} className="text-left flex items-start justify-between gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded-lg hover:border-amber/40 transition-colors">
                     <span>
-                      <span className="text-13 text-ink-100">{copied === n.name ? <span className="text-emerald-400 flex items-center gap-1"><Check size={11} />已复制</span> : n.name}</span>
+                      <span className="text-13 text-ink-100">{copied === n.name ? <span className="text-success flex items-center gap-1"><Check size={11} />已复制</span> : n.name}</span>
                       {n.meaning && <span className="block text-10 text-ink-500 mt-0.5">{n.meaning}</span>}
                     </span>
                   </Button>

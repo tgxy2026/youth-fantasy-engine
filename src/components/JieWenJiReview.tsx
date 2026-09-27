@@ -23,7 +23,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
               {rev.loading ? '审读中…' : '章节编辑意见（节奏 / 钩子 / 水文 / 对话）'}
             </Button>
 
-            {rev.error && <div className="text-11 text-red-300 px-1">{rev.error}</div>}
+            {rev.error && <div className="text-11 text-danger px-1">{rev.error}</div>}
             {rev.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5 space-y-2">
                 <div className="flex items-center gap-2">
@@ -45,7 +45,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
                 </div>
                 {rev.data.highlights.length > 0 && (
                   <div>
-                    <div className="text-10 text-emerald-400 mb-1">亮点</div>
+                    <div className="text-10 text-success mb-1">亮点</div>
                     <ul className="space-y-1">
                       {rev.data.highlights.map((h, i) => <li key={i} className="text-11 text-ink-200 leading-snug">· {h}</li>)}
                     </ul>
@@ -72,11 +72,11 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
               {ooc.loading ? '检查中…' : 'OOC 人设偏离检查'}
             </Button>
 
-            {ooc.error && <div className="text-11 text-red-300 px-1">{ooc.error}</div>}
+            {ooc.error && <div className="text-11 text-danger px-1">{ooc.error}</div>}
             {ooc.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
                 {ooc.data.length === 0 ? (
-                  <div className="text-center text-11 text-emerald-300 py-2"><CheckCircle2 size={13} className="inline mr-1" /> 未发现明显 OOC</div>
+                  <div className="text-center text-11 text-success py-2"><CheckCircle2 size={13} className="inline mr-1" /> 未发现明显 OOC</div>
                 ) : (
                   <div className="space-y-2">
                     {ooc.data.map((f, i) => (
@@ -105,7 +105,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
               {adv.loading ? '思考中…' : '续写方向（只给思路，不生成正文）'}
             </Button>
 
-            {adv.error && <div className="text-11 text-red-300 px-1">{adv.error}</div>}
+            {adv.error && <div className="text-11 text-danger px-1">{adv.error}</div>}
             {adv.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5 space-y-2">
                 <div>
@@ -147,7 +147,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
               {plea.loading ? '检查中…' : '爽点 / 毒点检查（YY·代入感·金手指）'}
             </Button>
 
-            {plea.error && <div className="text-11 text-red-300 px-1">{plea.error}</div>}
+            {plea.error && <div className="text-11 text-danger px-1">{plea.error}</div>}
             {plea.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
                 {renderReport(plea.data.report)}
@@ -164,7 +164,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
               {open.loading ? '检查中…' : '黄金三章检查（开篇定生死）'}
             </Button>
 
-            {open.error && <div className="text-11 text-red-300 px-1">{open.error}</div>}
+            {open.error && <div className="text-11 text-danger px-1">{open.error}</div>}
             {open.data && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
                 {renderReport(open.data.report)}

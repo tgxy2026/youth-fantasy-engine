@@ -237,6 +237,14 @@ export function deriveCustomTheme(base: ThemeBase, input: CustomThemeInput): Cus
   }
   vars['--amber'] = formatTriple(amber)
 
+  // ②' U-3 · 2.6.0：状态语义色三件套——自定义主题也要带，否则掉回 :root 暗色值、浅色自定义主题下对比度失效。
+  //    不随强调色旋转（语义色有自己的识别度），只按母版明暗取 index.css 同款基准值。
+  const STATUS_TRIPLETS: Record<'dark' | 'light', Record<string, string>> = {
+    dark: { '--danger': '252 165 165', '--success': '110 231 183', '--info': '125 211 252' },
+    light: { '--danger': '185 28 28', '--success': '21 128 61', '--info': '7 89 133' },
+  }
+  Object.assign(vars, STATUS_TRIPLETS[base.colorScheme])
+
   // ③ amber-soft：提亮淡化，再守卫（soft 阈值更低；不达标沿反方向压也行，简化为同 guard）
   const [ah, as, al] = rgbToHsl(amber)
   let soft = hslToRgb([ah, Math.min(100, as * 0.92), Math.min(96, al * 1.15)])

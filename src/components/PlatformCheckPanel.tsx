@@ -73,7 +73,7 @@ export default function PlatformCheckPanel() {
   return (
     <section className="rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-ink-700">
-        <Building2 size={14} className="text-sky-400" />
+        <Building2 size={14} className="text-info" />
         <span className="text-13 font-medium text-ink-100">分平台投稿预检</span>
         <span className="text-10 text-ink-500">晋江 / 起点 · 只摆事实不判定</span>
         <HelpPopover title="分平台投稿预检怎么用">
@@ -137,12 +137,12 @@ export default function PlatformCheckPanel() {
             {/* ② 命中 */}
             <div>
               <div className="mb-1.5 text-11 text-ink-400">敏感词命中（按关注度排序）</div>
-              {report.hits.length === 0 ? <div className="text-11 text-emerald-400">未检出 ✓</div> : (
+              {report.hits.length === 0 ? <div className="text-11 text-success">未检出 ✓</div> : (
                 <div className="space-y-1.5">
                   {report.hits.map(h => (
                     <div key={`${h.category}-${h.word}`} className="flex items-start gap-2 text-11">
                       <span className={`px-1.5 py-0.5 rounded shrink-0 ${
-                        h.focused ? 'bg-red-500/15 text-red-300' : 'bg-ink-700 text-ink-300'
+                        h.focused ? 'bg-danger/15 text-danger' : 'bg-ink-700 text-ink-300'
                       }`}>{h.category}</span>
                       <span className="px-1.5 py-0.5 bg-ink-800 border border-ink-600 rounded shrink-0 text-ink-200">{h.word} ×{h.count}</span>
                       <span className="text-ink-500 min-w-0">{h.context}</span>
@@ -157,7 +157,7 @@ export default function PlatformCheckPanel() {
               <div className="mb-1.5 text-11 text-ink-400">
                 参考区间外的章节{outside.length > 0 ? `（${outside.length} 章${outside.length > shown.length ? `，列出前 ${shown.length} 章` : ''}）` : ''}
               </div>
-              {outside.length === 0 ? <div className="text-11 text-emerald-400">全部章节都在参考区间内 ✓</div> : (
+              {outside.length === 0 ? <div className="text-11 text-success">全部章节都在参考区间内 ✓</div> : (
                 <div className="space-y-1">
                   {shown.map(f => (
                     <div key={f.chapterId} className="flex items-center gap-2 text-11 text-ink-300">

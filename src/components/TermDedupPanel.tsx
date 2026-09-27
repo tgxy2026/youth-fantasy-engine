@@ -74,7 +74,7 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
       )}
 
       {error && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300 mt-3">
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger mt-3">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -82,7 +82,7 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
 
       {done && (
         groups.length === 0 ? (
-          <div className="text-12 text-emerald-400 py-6 text-center">未发现明显重复 / 同义的术语 ✓</div>
+          <div className="text-12 text-success py-6 text-center">未发现明显重复 / 同义的术语 ✓</div>
         ) : (
           <div className="space-y-3 mt-2">
             <div className="text-12 text-ink-400">AI 找到 {groups.length} 组可能重复 / 同义的术语：</div>

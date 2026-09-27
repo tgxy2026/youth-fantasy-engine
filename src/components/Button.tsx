@@ -64,21 +64,21 @@ function variantClass(v: Variant, solid: boolean, selected: boolean): string {
     case 'danger':
       return solid
         ? 'bg-red-500 text-white border border-red-500 hover:bg-red-600 shadow-lg'
-        : 'bg-red-500/10 text-red-300 border border-red-500/30 hover:bg-red-500/20'
+        : 'bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20'
     case 'success':
       return solid
         ? 'bg-emerald-500 text-ink-950 border border-emerald-500 hover:bg-emerald-400'
-        : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20'
+        : 'bg-success/15 text-success border border-success/30 hover:bg-success/20'
     case 'info':
       return solid
         ? 'bg-sky-500 text-white border border-sky-500 hover:bg-sky-600'
-        : 'bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/20'
+        : 'bg-info/15 text-info border border-info/30 hover:bg-info/20'
     case 'icon':
       return 'text-ink-400 hover:text-ink-100 hover:bg-ink-800/60 rounded-md border border-transparent'
     case 'icon-amber':
       return 'text-ink-400 hover:text-amber'
     case 'icon-danger':
-      return 'text-ink-500 hover:text-red-400'
+      return 'text-ink-500 hover:text-danger'
     case 'icon-muted':
       return 'text-ink-500 hover:text-ink-200'
     case 'icon-ghost':

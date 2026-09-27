@@ -446,7 +446,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                     <div className="px-2.5 py-2 text-12 text-ink-200 leading-snug">{c.text}</div>
                     <Button variant="bare"
                       onPointerDown={e => { e.stopPropagation(); removeCard(c.id) }}
-                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-ink-800 border border-ink-600 text-ink-400 hover:text-red-300 hover:border-red-400 items-center justify-center hidden group-hover:flex"
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-ink-800 border border-ink-600 text-ink-400 hover:text-danger hover:border-red-400 items-center justify-center hidden group-hover:flex"
                       title="删除该卡"
                     ><X size={11} /></Button>
                   </div>
@@ -462,7 +462,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                     key={`del-${i}`}
                     onPointerDown={e => { e.stopPropagation(); removeConn(i) }}
                     title="取消这条推演链"
-                    className={`absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-800 border border-ink-600 text-ink-300 hover:text-red-300 hover:border-red-400 flex items-center justify-center ${connectMode ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}
+                    className={`absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-800 border border-ink-600 text-ink-300 hover:text-danger hover:border-red-400 flex items-center justify-center ${connectMode ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}
                     style={{ left: mx, top: my, pointerEvents: 'auto' }}
                   ><X size={11} /></Button>
                 )

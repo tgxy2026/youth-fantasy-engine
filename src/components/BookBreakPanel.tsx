@@ -404,7 +404,7 @@ export default function BookBreakPanel() {
           </div>
           {/* 导入量 / 耗时建议：口径是「逐章抽取，导入量不撞窗口，受限的是调用次数与耗时」 */}
           {advice && (
-            <div className={advice.level === 'ok' ? 'text-emerald-400' : 'text-amber'}>
+            <div className={advice.level === 'ok' ? 'text-success' : 'text-amber'}>
               {advice.level === 'ok' ? '✓ ' : '⚠️ '}{advice.note}
               <span className="text-ink-400"> 推荐单次导入不超过 {fmtNum(advice.recommendedChars)} 字（约 {advice.recommendedChapters} 章）。</span>
             </div>

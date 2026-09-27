@@ -128,7 +128,7 @@ export function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disable
               </button>
               <button type="button" disabled={busy} onClick={() => void delMap(m)}
                 title="删除这张地图（地点不会被删，会退回第一张图）"
-                className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-ink-500 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity">
+                className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-ink-500 opacity-0 group-hover:opacity-100 hover:text-danger transition-opacity">
                 <Trash2 size={10} />
               </button>
             </div>
@@ -279,7 +279,7 @@ style={{ maxHeight: foldVh('52vh') }}>
             <span className="text-12 text-ink-100 truncate">{it.name}</span>
             <span className="shrink-0 text-10 text-ink-500">{it.category}</span>
             {it.drawn > 0
-              ? <span className="ml-auto shrink-0 text-10 text-emerald-400/90">已画 {it.drawn} 格</span>
+              ? <span className="ml-auto shrink-0 text-10 text-success/90">已画 {it.drawn} 格</span>
               : <span className="ml-auto shrink-0 text-10 text-ink-600">未画</span>}
           </button>
         ))}

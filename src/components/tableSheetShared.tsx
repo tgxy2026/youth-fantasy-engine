@@ -23,29 +23,29 @@ export function rowBadgeClass(tabId: string, data: Record<string, string>): stri
   }
   if (tabId === 'relations') {
     const t = get('关系类型')
-    if (t.includes('敌对') || t.includes('恩怨')) return 'bg-red-500/5'
+    if (t.includes('敌对') || t.includes('恩怨')) return 'bg-danger/5'
     if (t.includes('CP') || t.includes('感情')) return 'bg-pink-500/5'
-    if (t.includes('盟友')) return 'bg-emerald-500/5'
-    if (t.includes('亲属') || t.includes('师徒')) return 'bg-sky-500/5'
+    if (t.includes('盟友')) return 'bg-success/5'
+    if (t.includes('亲属') || t.includes('师徒')) return 'bg-info/5'
   }
   if (tabId === 'foreshadow') {
     const s = get('状态'), imp = get('重要度')
-    if (s === '已回收') return 'bg-emerald-500/5'
+    if (s === '已回收') return 'bg-success/5'
     if (imp === '全书级') return 'bg-amber/5'
   }
   if (tabId === 'changelog') {
     const s = get('已发布章节冲突')
-    if (s === '有-未处理') return 'bg-red-500/10'
+    if (s === '有-未处理') return 'bg-danger/10'
   }
   if (tabId === 'secrets') {
     const r = get('泄露风险')
-    if (r === '高') return 'bg-red-500/10'
+    if (r === '高') return 'bg-danger/10'
     if (r === '中') return 'bg-amber/10'
   }
   if (tabId === 'progress') {
     const s = get('完成状态')
-    if (s === '断更') return 'bg-red-500/10'
-    if (s === '超额') return 'bg-emerald-500/5'
+    if (s === '断更') return 'bg-danger/10'
+    if (s === '超额') return 'bg-success/5'
   }
   return null
 }
@@ -75,7 +75,7 @@ export function CellTextarea({ value, onChange, invalid, title }: {
       onChange={e => onChange(e.target.value)}
       rows={1}
       title={title ?? value}
-      className={`!py-1 text-12 w-full whitespace-pre-wrap break-words resize-none overflow-hidden bg-transparent ${invalid ? '!border-red-500/60 text-red-300' : ''}`}
+      className={`!py-1 text-12 w-full whitespace-pre-wrap break-words resize-none overflow-hidden bg-transparent ${invalid ? '!border-danger/60 text-danger' : ''}`}
     />
   )
 }

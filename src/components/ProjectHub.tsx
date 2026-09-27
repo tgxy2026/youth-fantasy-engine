@@ -526,7 +526,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                           <Tooltip label="删除项目" side="bottom">
                             <Button variant="icon-danger" iconOnly
                               onClick={() => removeProject(p)}
-                              className="hover:bg-red-500/10"
+                              className="hover:bg-danger/10"
                               title="删除项目"
                               aria-label="删除项目"
                             >

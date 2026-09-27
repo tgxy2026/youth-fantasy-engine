@@ -126,7 +126,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
         </div>
         <div className="bg-ink-800 rounded-lg px-3 py-2.5">
           <div className="text-10 text-ink-500">预估完稿</div>
-          <div className="text-15 font-bold text-emerald-400 mt-0.5">
+          <div className="text-15 font-bold text-success mt-0.5">
             {total > 0 ? (estDate ? estDate.toLocaleDateString() : '—') : '设目标'}
           </div>
         </div>
@@ -176,8 +176,8 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
             {(() => {
               const diff = burndown[BURNDOWN_DAYS - 1].actualCum - burndown[BURNDOWN_DAYS - 1].targetCum
               return diff >= 0
-                ? <span className="text-emerald-400"> · 超出目标 {diff.toLocaleString()} 字，节奏良好</span>
-                : <span className="text-red-400"> · 落后目标 {(-diff).toLocaleString()} 字，加把劲</span>
+                ? <span className="text-success"> · 超出目标 {diff.toLocaleString()} 字，节奏良好</span>
+                : <span className="text-danger"> · 落后目标 {(-diff).toLocaleString()} 字，加把劲</span>
             })()}
           </div>
         </div>
@@ -190,7 +190,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
             const dl = new Date(deadline).getTime()
             if (isNaN(dl) || daysNeeded === 0) return null
             const diff = Math.round((dl - Date.now()) / 86400000)
-            if (diff < daysNeeded) return <span className="text-red-400"> · 注意：截止日只剩 {diff} 天，按当前节奏恐难如期完稿</span>
+            if (diff < daysNeeded) return <span className="text-danger"> · 注意：截止日只剩 {diff} 天，按当前节奏恐难如期完稿</span>
             return null
           })()}
         </div>

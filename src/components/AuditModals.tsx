@@ -116,7 +116,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
             </div>
             <AuditPanel issues={issues} emptyText="伏笔网络健康 ✓ 无跨度/孤儿/状态异常" onNavigateTab={onNavigateTab} />
             {aiError && (
-              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                 <span>{aiError}</span>
               </div>
@@ -211,7 +211,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
             onOpenChapter={onOpenChapter}
           />
           {aiError && (
-            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{aiError}</span>
             </div>
@@ -298,7 +298,7 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
           </div>
           <AuditPanel issues={issues} emptyText="本章文风体检通过 ✓" />
           {aiError && (
-            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+            <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>{aiError}</span>
             </div>
@@ -309,7 +309,7 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
               {aiStyle.map((f, i) => (
                 <div key={i} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className={`px-1.5 py-px rounded text-10 ${f.level === '严重' ? 'bg-red-500/15 text-red-300' : f.level === '中等' ? 'bg-amber/15 text-amber' : 'bg-sky-500/15 text-sky-300'}`}>{f.level}</span>
+                    <span className={`px-1.5 py-px rounded text-10 ${f.level === '严重' ? 'bg-danger/15 text-danger' : f.level === '中等' ? 'bg-amber/15 text-amber' : 'bg-info/15 text-info'}`}>{f.level}</span>
                     <span className="text-11 text-ink-400">{f.type}</span>
                   </div>
                   {f.quote && <div className="text-12 text-ink-200 mb-0.5">「{f.quote}」</div>}

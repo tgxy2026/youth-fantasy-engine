@@ -36,13 +36,13 @@ interface Props {
 }
 
 const STATUS_TAG: Record<DraftRow['status'], { text: string; cls: string }> = {
-  new: { text: '新建', cls: 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' },
+  new: { text: '新建', cls: 'border-success/30 bg-success/15 text-success' },
   duplicate: { text: '疑似已有', cls: 'border-ink-600 bg-ink-700/60 text-ink-300' },
   conflict: { text: '冲突', cls: 'border-amber/30 bg-amber/15 text-amber' },
 }
 
 function confCls(c: number): string {
-  return c >= 0.8 ? 'text-emerald-300' : c >= DRAFT_PICK_THRESHOLD ? 'text-ink-300' : 'text-amber'
+  return c >= 0.8 ? 'text-success' : c >= DRAFT_PICK_THRESHOLD ? 'text-ink-300' : 'text-amber'
 }
 
 const EDIT_INPUT = 'w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-11 text-ink-100 outline-none hover:border-ink-700 focus:border-amber/50 focus:bg-ink-900'

@@ -31,7 +31,7 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
               {!aiReady && <div className="mt-1.5 text-10 text-ink-500">{AI_DISABLED_HINT}</div>}
             </div>
 
-            {ledger.error && <div className="text-11 text-red-300 px-1">{ledger.error}</div>}
+            {ledger.error && <div className="text-11 text-danger px-1">{ledger.error}</div>}
 
             {!ledger.loading && ledger.scannedAt > 0 && ledger.items.length === 0 && (
               <div className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-4 text-center text-11 text-ink-500">

@@ -95,8 +95,8 @@ export default function CreativeFlowSections({ m }: { m: CreativeWritingModel })
 
       {/* 结果 */}
       {s.result && (
-        <section className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
-          <div className="text-13 text-emerald-300">
+        <section className="mt-4 rounded-lg border border-success/30 bg-success/5 p-4">
+          <div className="text-13 text-success">
             {s.result.wrote > 0 || s.result.outlineOnly ? '本次完成' : '本次结束'}
           </div>
           <ul className="mt-1.5 space-y-0.5 text-11 text-ink-300">

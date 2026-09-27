@@ -18,6 +18,7 @@ import CustomSelect from './CustomSelect'
 import CharacterSelect from './CharacterSelect'
 import TableRefSelect from './TableRefSelect'
 import CalendarSelect from './CalendarSelect'
+import NumberField from './NumberField'
 import StoryDateInput from './StoryDateInput'
 import { CellTextarea, rowBadgeClass } from './tableSheetShared'
 import type { TableSheetModel } from './useTableSheetModel'
@@ -68,7 +69,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
       <tr
         key={row.id}
         ref={el => { rowRefs.current[row.id] = el }}
-        className={`group hover:bg-ink-800/60 transition-colors ${bg ?? ''} ${rowDirty ? 'bg-amber/5' : ''} ${hlRowId === row.id ? 'ring-2 ring-emerald-400/80 bg-emerald-500/10' : ''}`}
+        className={`group hover:bg-ink-800/60 transition-colors ${bg ?? ''} ${rowDirty ? 'bg-amber/5' : ''} ${hlRowId === row.id ? 'ring-2 ring-success/80 bg-success/10' : ''}`}
       >
         <td className="px-2 py-1 text-center text-ink-500 text-10 relative">
           {index + 1}
@@ -208,10 +209,10 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
                   fixedOptions={col.fixedOptions}
                 />
               ) : col.type === 'number' ? (
-                <input
-                  type="number"
-                  value={val}
-                  onChange={e => setCellDraft(row.id, col.name, e.target.value)}
+                /* U-1 · 2.6.0：数值格改走 NumberField（提交时钳制/回车失焦提交），替换手写 type=number */
+                <NumberField
+                  value={Number.isFinite(Number(val)) && val !== '' ? Number(val) : undefined}
+                  onChange={v => setCellDraft(row.id, col.name, v === undefined ? '' : String(v))}
                   className="!py-1 text-12 w-full bg-ink-900 border border-ink-700 rounded px-2 outline-none focus:border-amber/50"
                 />
               ) : (

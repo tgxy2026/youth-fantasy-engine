@@ -305,7 +305,7 @@ style={{ zIndex: Z.pageHandle }}
               </select>
               <div className="w-px h-4 bg-ink-700" />
               {/* 工具组：敏感词 / 排版 / 导出 / 时光机 / 回收站 / 全文搜索 / 小黑屋 */}
-              <Button variant="bare" iconOnly size="sm" onClick={() => setModal('sensitive')} className="text-ink-400 hover:text-red-400 transition-colors shrink-0" title="敏感词检测（本章）">
+              <Button variant="bare" iconOnly size="sm" onClick={() => setModal('sensitive')} className="text-ink-400 hover:text-danger transition-colors shrink-0" title="敏感词检测（本章）">
                 <ShieldAlert size={14} />
               </Button>
               <Button variant="icon-amber"
@@ -326,7 +326,7 @@ style={{ zIndex: Z.pageHandle }}
                 <Link2 size={14} />
               </Button>
               )}
-              <Button variant="bare" iconOnly size="sm" onClick={() => setModal('typo')} className="text-ink-400 hover:text-red-400 transition-colors shrink-0" title="校对（本章）：本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型">
+              <Button variant="bare" iconOnly size="sm" onClick={() => setModal('typo')} className="text-ink-400 hover:text-danger transition-colors shrink-0" title="校对（本章）：本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型">
                 <SpellCheck size={14} />
               </Button>
               {!isLite && (
@@ -701,7 +701,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
               <span className="flex items-center gap-1 text-amber/80" title="今日码字量（按增删自动累计，固定「只算汉字」口径 —— 它记的是当天净增量，换口径也无法重算历史）">
                 <Flame size={10} />今日 {todayWords} 字
               </span>
-              <span className={`flex items-center gap-1 transition-colors ${savedFlash ? 'text-emerald-400' : ''}`}>
+              <span className={`flex items-center gap-1 transition-colors ${savedFlash ? 'text-success' : ''}`}>
                 <Save size={10} />{saving ? '保存中…' : savedFlash ? '已保存' : '自动保存已开启'}
               </span>
               <div className="flex-1" />

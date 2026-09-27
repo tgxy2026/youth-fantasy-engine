@@ -27,7 +27,7 @@ export default function JieWenJiBrief({ m }: { m: JieWenJiModel }) {
             </div>
             {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
 
-            {brief.error && <div className="text-11 text-red-300 px-1">{brief.error}</div>}
+            {brief.error && <div className="text-11 text-danger px-1">{brief.error}</div>}
             {brief.data && (
               <div className="rounded-lg border border-amber/25 bg-amber/5 px-3 py-2.5">
                 {renderReport(brief.data.report)}

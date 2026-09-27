@@ -110,7 +110,7 @@ export default function ChapterPicker({ groups, value, onChange, disabled, lates
                       <span className="truncate">{c.chapter.title.replace(/^第\s*\d+\s*章\s*/, '')}</span>
                       <span className="ml-auto flex shrink-0 items-center gap-1.5">
                         {c.chapter.id === latestId && (
-                          <span className="rounded border border-emerald-500/40 px-1 text-10 text-emerald-300">最新章</span>
+                          <span className="rounded border border-success/40 px-1 text-10 text-success">最新章</span>
                         )}
                         <span className="text-ink-500">{c.chapter.content ? `${c.chapter.wordCount} 字` : '空章'}</span>
                       </span>

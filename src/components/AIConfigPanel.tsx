@@ -46,15 +46,15 @@ function TestResultBar({ r }: { r: AITestResult }) {
     <div
       className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg text-11 ${
         r.ok
-          ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-300'
-          : 'bg-red-500/10 border border-red-500/25 text-red-300'
+          ? 'bg-success/10 border border-success/25 text-success'
+          : 'bg-danger/10 border border-danger/25 text-danger'
       }`}
     >
       {r.ok ? <CheckCircle2 size={12} className="mt-0.5 shrink-0" /> : <AlertCircle size={12} className="mt-0.5 shrink-0" />}
       {r.ok ? (
         <span>
           配置可用 · 耗时 {cost}
-          {loadHint && <span className="text-emerald-400/70">{loadHint}</span>}
+          {loadHint && <span className="text-success/70">{loadHint}</span>}
           {' · 模型回复「'}
           <span className="text-emerald-200">{r.reply.slice(0, 40)}</span>
           {r.reply.length > 40 ? '…' : ''}」
@@ -273,7 +273,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 {providers.map(p => (
                   <div key={p.id} className="rounded-lg bg-ink-800 border border-ink-700">
                     <div className="flex items-center gap-2 px-3 py-2">
-                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${p.type === 'ollama' || p.local ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-400'}`}>
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${p.type === 'ollama' || p.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
                         {typeLabel(p)}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -281,7 +281,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
                       </div>
                       {activeId === p.id ? (
-                        <span className="shrink-0 flex items-center gap-1 text-11 text-emerald-400"><CheckCircle2 size={12} /> 当前</span>
+                        <span className="shrink-0 flex items-center gap-1 text-11 text-success"><CheckCircle2 size={12} /> 当前</span>
                       ) : (
                         <Button variant="bare" onClick={() => setActive(p.id)} className="shrink-0 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</Button>
                       )}
@@ -315,10 +315,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 ))}
               </div>
               <div className="flex gap-2">
-                <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 rounded-lg text-12 hover:bg-emerald-500/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），运行在本机，一般免密钥、无需联网">
+                <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-success/10 text-success border border-success/25 rounded-lg text-12 hover:bg-success/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），运行在本机，一般免密钥、无需联网">
                   <Cpu size={13} /> 添加本地模型
                 </Button>
-                <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-sky-500/10 text-sky-300 border border-sky-500/25 rounded-lg text-12 hover:bg-sky-500/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
+                <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-info/10 text-info border border-info/25 rounded-lg text-12 hover:bg-info/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
                   <Globe size={13} /> 添加联网模型
                 </Button>
               </div>
@@ -332,10 +332,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {(pickMode === 'local' ? LOCAL_PRESETS : ONLINE_PRESETS).map(p => (
-                      <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 text-12 hover:text-emerald-300 hover:border-emerald-400/40 transition-colors text-left">
+                      <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 text-12 hover:text-success hover:border-success/40 transition-colors text-left">
                         {pickMode === 'local'
-                          ? <Cpu size={12} className="text-emerald-400 shrink-0" />
-                          : <Globe size={12} className="text-sky-400 shrink-0" />}
+                          ? <Cpu size={12} className="text-success shrink-0" />
+                          : <Globe size={12} className="text-info shrink-0" />}
                         <span className="truncate">{p.label}</span>
                       </Button>
                     ))}
@@ -352,11 +352,11 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-12">
                 {editing.type === 'ollama' ? (
-                  <span className="flex items-center gap-1 text-emerald-400"><Cpu size={13} /> 本地 Ollama</span>
+                  <span className="flex items-center gap-1 text-success"><Cpu size={13} /> 本地 Ollama</span>
                 ) : editing.local ? (
-                  <span className="flex items-center gap-1 text-emerald-400"><Cpu size={13} /> 本地 OpenAI 兼容</span>
+                  <span className="flex items-center gap-1 text-success"><Cpu size={13} /> 本地 OpenAI 兼容</span>
                 ) : (
-                  <span className="flex items-center gap-1 text-sky-400"><Globe size={13} /> 联网 OpenAI 兼容</span>
+                  <span className="flex items-center gap-1 text-info"><Globe size={13} /> 联网 OpenAI 兼容</span>
                 )}
               </div>
 

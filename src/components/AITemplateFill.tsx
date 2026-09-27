@@ -324,7 +324,7 @@ export default function AITemplateFill({
                         <span className="text-10 text-ink-400">
                         只存在本项目里、自动存盘；<b className="text-ink-300">默认不发给 AI</b>，点「带入」才会随本次请求发出。
                       </span>
-                      <span className={`text-10 transition-opacity ${draftSaved ? 'opacity-100 text-emerald-400' : 'opacity-0'}`}>已存</span>
+                      <span className={`text-10 transition-opacity ${draftSaved ? 'opacity-100 text-success' : 'opacity-0'}`}>已存</span>
                       <Button variant="secondary" size="xs" onClick={bringDraftIn} disabled={!draftText.trim()}
                         className="ml-auto"
                         title="把草稿本内容填进下方输入框（已敲过内容则追加在后面）"
@@ -372,7 +372,7 @@ export default function AITemplateFill({
             )}
 
             {error && (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-12 text-red-300">
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                 <span>{error}</span>
               </div>

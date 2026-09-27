@@ -22,9 +22,9 @@ import type { FlowProgress, StageStatus } from '../lib/flow/types'
 const NODE: Record<StageStatus, { icon: typeof Circle; cls: string }> = {
   pending: { icon: Circle, cls: 'text-ink-600' },
   running: { icon: Loader2, cls: 'text-amber' },
-  done: { icon: CheckCircle2, cls: 'text-emerald-400' },
+  done: { icon: CheckCircle2, cls: 'text-success' },
   skipped: { icon: MinusCircle, cls: 'text-ink-500' },
-  failed: { icon: XCircle, cls: 'text-red-400' },
+  failed: { icon: XCircle, cls: 'text-danger' },
   cancelled: { icon: CircleDashed, cls: 'text-ink-500' },
 }
 
@@ -40,9 +40,9 @@ const STATUS_TEXT: Record<StageStatus, string> = {
 const STATUS_TEXT_CLS: Record<StageStatus, string> = {
   pending: 'text-ink-600',
   running: 'text-amber',
-  done: 'text-emerald-400',
+  done: 'text-success',
   skipped: 'text-ink-500',
-  failed: 'text-red-400',
+  failed: 'text-danger',
   cancelled: 'text-ink-500',
 }
 
@@ -132,7 +132,7 @@ export default function WorkflowTimeline({ progress, running, summaries = {}, cl
                     {s.status === 'running' && !s.detail && '…'}
                   </span>
                 )}
-                {s.error && <span className="mt-0.5 block text-10 text-red-400">{s.error}</span>}
+                {s.error && <span className="mt-0.5 block text-10 text-danger">{s.error}</span>}
               </span>
             </li>
           )

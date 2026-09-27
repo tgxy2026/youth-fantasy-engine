@@ -81,7 +81,7 @@ export function DraftSourceLine({ source }: { source: DraftSource | null }) {
   const cls = v.tone === 'warn'
     ? 'border-amber/40 bg-amber/8 text-amber'
     : v.tone === 'ok'
-      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+      ? 'border-success/30 bg-success/10 text-success'
       : 'border-ink-700 bg-ink-900/50 text-ink-400'
   return (
     <div className={`mt-1.5 rounded border px-2 py-1.5 text-10 leading-relaxed ${cls}`}>
