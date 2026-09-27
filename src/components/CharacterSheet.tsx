@@ -335,7 +335,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
           >
             <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
           </Button>
-          <Button onClick={addCard} variant="primary" size="md" className="flex items-center text-13">
+          <Button onClick={addCard} variant="primary" size="md" className="flex items-center">
             <Plus size={14} /> 新建{noun}
           </Button>
           {aiCap !== 'none' && (

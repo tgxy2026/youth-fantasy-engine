@@ -161,13 +161,15 @@ export function NumField({ label, hint, guide, value, onCommit, recommend }: {
       footer={<RangeGuide guide={guide} value={value} />}
     >
       {/* U-1 · 2.6.0：改走 NumberField —— 原 onChange 直接钳制正是 NumberField 注释点名的老毛病
-          （打不出超范围值、边界输入被裁）；现在范围内即时同步、超范围提交时钳到边界 */}
+          （打不出超范围值、边界输入被裁）；现在范围内即时同步、超范围提交时钳到边界。
+          precision 从 step 推导（0.05→2 位）：🔴 不传默认按整数 round，温度 0.7 会被吃成 1（审计 P0） */}
       <NumberField
         value={value}
         onChange={v => { if (typeof v === 'number') onCommit(v) }}
         min={guide.min}
         max={guide.max}
         step={guide.step}
+        precision={String(guide.step).split('.')[1]?.length ?? 0}
         className={NUM}
       />
       {/* 这一行**常驻**（表格收起时它是唯一线索）：当前值 → 落在哪一段、那一段的范围 */}

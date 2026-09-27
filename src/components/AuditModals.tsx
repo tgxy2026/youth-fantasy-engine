@@ -109,7 +109,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
               <Button onClick={runAiReview}
                 disabled={!aiReady || aiLoading}
                 
-                title={!aiReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
+                title={!aiReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
                 {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                 AI 深度分析
               </Button>
@@ -199,7 +199,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
             <Button onClick={runAiAudit}
               disabled={!aiReady || aiLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
+              title={!aiReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 深度审计
             </Button>
@@ -291,7 +291,7 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
             <Button onClick={runAiStyle}
               disabled={!aiReady || aiLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded text-11">
+              title={!aiReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 文风体检
             </Button>

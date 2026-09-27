@@ -365,7 +365,7 @@ export default function AITemplateFill({
 
             {!result && (
               <Button onClick={run}
-                disabled={loading || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center text-13">
+                disabled={loading || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? '正在生成补全…' : '生成补全'}
               </Button>
@@ -421,7 +421,7 @@ style={{ maxHeight: foldVh('42vh') }}>
                   })}
                 </div>
                 <div className="flex items-center gap-2 pt-1">
-                  <Button onClick={apply} variant="primary" size="md" className="flex items-center text-13">
+                  <Button onClick={apply} variant="primary" size="md" className="flex items-center">
                     <Check size={13} /> 采用并创建
                   </Button>
                   <Button

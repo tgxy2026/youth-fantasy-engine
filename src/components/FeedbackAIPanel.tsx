@@ -70,7 +70,7 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
         <Button onClick={run}
           disabled={!aiReady || loading}
           
-          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center text-13">
+          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '分析中…' : `开始分析（${entries.length} 条记录）`}
         </Button>

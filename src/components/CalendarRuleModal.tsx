@@ -81,15 +81,15 @@ export default function CalendarRuleModal({ open, rule, onSave, onClose }: Props
       </div>
 
       <div className="flex items-center gap-2 pt-1">
-        <Button onClick={save} variant="primary" size="md" className="text-13">保存</Button>
+        <Button onClick={save} variant="primary" size="md" className="">保存</Button>
         <Button
           onClick={() => { setMonths(DEFAULT_CALENDAR_RULE.monthsPerYear); setDays(DEFAULT_CALENDAR_RULE.daysPerMonth) }}
-          variant="secondary" size="md" className="flex items-center gap-1.5 text-13"
+          variant="secondary" size="md" className="flex items-center gap-1.5"
           title="恢复默认：一年 12 个月、每月 30 天（共 360 天）"
         >
           <RotateCcw size={12} /> 恢复默认
         </Button>
-        <Button onClick={onClose} variant="secondary" size="md" className="ml-auto text-13">取消</Button>
+        <Button onClick={onClose} variant="secondary" size="md" className="ml-auto">取消</Button>
       </div>
       {changed && (
         <div className="text-10 text-amber">改完记得保存。</div>

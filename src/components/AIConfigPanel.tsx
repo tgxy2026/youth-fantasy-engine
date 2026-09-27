@@ -436,7 +436,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   )}
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">API 密钥</label>
-                    <input type="password" className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 font-mono placeholder:text-ink-600" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} placeholder="仅本地保存，不上传" />
+                    <input type="password" className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 font-mono placeholder:text-ink-600" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} placeholder="密钥只存本机，不随云盘同步" />
                   </div>
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">模型名称</label>

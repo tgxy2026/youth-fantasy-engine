@@ -257,7 +257,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2">
             <CalendarDays size={14} className="text-amber" /> 码字日历
             <HelpPopover title="码字日历怎么看" width="21rem">
-              {'完全自动记录：只要在正文编辑器里写字并保存，当天产出就会计入（删字也算变动量）。\n\n· 今日 xx 字：今天的净产出；\n· 连续码字：从今天（今天还没写则从昨天）往前数连续有产出的天数，断一天归零；\n· 热力图：近 26 周 × 7 天，颜色越亮当天写得越多（<500 / <1500 / <3000 / 3000+ 四档），鼠标悬停看具体字数。\n\n用它盯"手感"和断更风险，比看总字数更有用。'}
+              {'完全自动记录：只要在正文编辑器里写字并保存，当天产出就会计入（删字也算变动量）。\n\n· 今日 xx 字：今天的净产出；\n· 连续码字：从今天（今天还没写则从昨天）往前数连续有产出的天数，断一天归零；\n· 热力图：近 26 周 × 7 天，颜色越亮当天写得越多（<500 / <1500 / <3000 / 3000+ 四档），鼠标悬停看具体字数。\n\n用它盯「手感」和断更风险，比看总字数更有用。'}
             </HelpPopover>
           </h2>
           {/* 今日产出 */}
@@ -410,7 +410,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             <Button onClick={runDiag}
               disabled={!aiReady || diagLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded text-11">
+              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded">
               {diagLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 诊断
             </Button>

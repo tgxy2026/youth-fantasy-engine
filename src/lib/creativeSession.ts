@@ -426,8 +426,11 @@ let hydratedFor: string | null = null
  * 面板挂载时调用：读回**当前项目**的上次会话。
  * 同一个项目重复调用会被跳过（多组件挂载不会重复读）。
  */
-export function hydrateCreativeSession() {
-  void loadSession(db.getCurrentProjectId() ?? '')
+/** 幂等触发按项目载入；返回内部 promise —— 需要「等 hydrate 完成再写盘」的调用方（如检查工具的
+ *  结构配比面板改 structureId）可 await 它，避免 hydration 未完成时 persistNow 把默认快照整份写盘
+ *  覆盖已存会话（六维审计 2026-09-27 P2）。既有「发射后不管」的调用方不受影响。 */
+export function hydrateCreativeSession(): Promise<void> {
+  return loadSession(db.getCurrentProjectId() ?? '')
 }
 
 async function loadSession(pid: string) {

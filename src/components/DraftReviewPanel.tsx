@@ -225,7 +225,7 @@ export default function DraftReviewPanel({
                                   疑似同物「{r.variantOf}」
                                 </span>
                               )}
-                              <Button variant="secondary" size="xs" className="shrink-0 text-10"
+                              <Button variant="secondary" size="xs" className="shrink-0"
                                 onClick={() => setExpanded(open ? null : r.key)}>
                                 {open ? '收起' : '详情'}
                               </Button>

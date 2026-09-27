@@ -295,7 +295,7 @@ export default function OutlineSheet({ tab }: Props) {
             <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
               <Layers size={14} /> 模板库
             </Button>
-            <Button onClick={addRecord} variant="primary" size="md" className="flex items-center text-13">
+            <Button onClick={addRecord} variant="primary" size="md" className="flex items-center">
               <Plus size={14} /> 新建{noun}
             </Button>
           </div>
@@ -318,6 +318,14 @@ export default function OutlineSheet({ tab }: Props) {
       {!isVolume && beatRanges && (
         <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-850/60 px-3 py-2">
           <span className="text-10 text-ink-500 shrink-0">结构对照 · {structureTpl!.name}</span>
+          {/* 🔴 问号紧跟功能名（红线）：必须排在标签之后、chips 之前，否则被 flex-wrap 的 chips 挤到行尾 */}
+          <HelpPopover title="结构对照 · 怎么用" width="22rem">
+            {'只读参考条：把所选结构模板的节拍按全书章数折算成章号范围，'
+              + '写细纲时可以对着看「这一章落在故事的哪一拍」——当前编辑章所在的拍会高亮。\n\n'
+              + '· 模板在「创意写作」面板或检查工具「全书结构配比」里选择，这里跟随同一份选择、不单独存；\n'
+              + '· 折算依据是细纲卡数（以及手填章节号里的最大值），选「不使用结构模板」时本条不显示；\n'
+              + '· 分卷大纲页不显示——模板是全书章数口径，对卷数折算没有参考意义。'}
+          </HelpPopover>
           {beatRanges.ranges.map((r, i) => (
             <span
               key={r.name}
@@ -331,13 +339,6 @@ export default function OutlineSheet({ tab }: Props) {
               {r.name} {r.to >= r.from ? (r.to > r.from ? `${r.from}-${r.to}` : `${r.from}`) : '—'} 章
             </span>
           ))}
-          <HelpPopover title="结构对照 · 怎么用" width="22rem">
-            {'只读参考条：把所选结构模板的节拍按全书章数折算成章号范围，'
-              + '写细纲时可以对着看「这一章落在故事的哪一拍」——当前编辑章所在的拍会高亮。\n\n'
-              + '· 模板在「创意写作」面板或检查工具「全书结构配比」里选择，这里跟随同一份选择、不单独存；\n'
-              + '· 折算依据是细纲卡数（以及手填章节号里的最大值），选「不使用结构模板」时本条不显示；\n'
-              + '· 分卷大纲页不显示——模板是全书章数口径，对卷数折算没有参考意义。'}
-          </HelpPopover>
         </div>
       )}
 
@@ -420,7 +421,7 @@ export default function OutlineSheet({ tab }: Props) {
                 <span className="flex-1" />
                 <Button onClick={duplicateRecord}
                   
-                  title={`复制当前${noun}大纲为新${noun}`} variant="secondary" size="md" className="flex items-center text-11">
+                  title={`复制当前${noun}大纲为新${noun}`} variant="secondary" size="md" className="flex items-center">
                   <Copy size={11} /> 复制
                 </Button>
               </div>

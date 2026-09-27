@@ -260,7 +260,7 @@ style={{ maxHeight: foldVh('26vh') }}>
           {!result && (
             <div className="flex items-center gap-2">
               <Button onClick={run}
-                disabled={loading || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center text-13">
+                disabled={loading || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? (phase || '正在整理…') : '开始整理'}
               </Button>
@@ -348,7 +348,7 @@ style={{ maxHeight: foldVh('26vh') }}>
               <div className="flex items-center gap-2 pt-1">
                 {result.rows.length > 0 && (
                   <Button onClick={apply}
-                    disabled={adding || checked.size === 0} variant="primary" size="md" className="flex items-center text-13">
+                    disabled={adding || checked.size === 0} variant="primary" size="md" className="flex items-center">
                     {adding ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                     添加选中 {checked.size} 条
                   </Button>

@@ -209,10 +209,14 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
                   fixedOptions={col.fixedOptions}
                 />
               ) : col.type === 'number' ? (
-                /* U-1 · 2.6.0：数值格改走 NumberField（提交时钳制/回车失焦提交），替换手写 type=number */
+                /* U-1 · 2.6.0：数值格改走 NumberField（提交时钳制/回车失焦提交），替换手写 type=number。
+                   allowEmpty 与原手写 input 的「可清空」对齐（审计 P2：不传则清空不可达）；
+                   precision=2：数值格允许小数（原 input 不 round） */
                 <NumberField
                   value={Number.isFinite(Number(val)) && val !== '' ? Number(val) : undefined}
                   onChange={v => setCellDraft(row.id, col.name, v === undefined ? '' : String(v))}
+                  allowEmpty
+                  precision={2}
                   className="!py-1 text-12 w-full bg-ink-900 border border-ink-700 rounded px-2 outline-none focus:border-amber/50"
                 />
               ) : (

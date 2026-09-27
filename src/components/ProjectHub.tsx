@@ -207,7 +207,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             <Button onClick={createDemo}
               disabled={busy}
               
-              title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center text-13">
+              title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center">
               <BookPlus size={13} /> 创建示范项目
             </Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg transition-colors">
@@ -350,7 +350,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   />
                 </div>
                 <Button onClick={create}
-                  disabled={busy} variant="primary" solid size="md" className="w-full text-13">
+                  disabled={busy} variant="primary" solid size="md" className="w-full">
                   {busy ? '创建中…' : '创建并进入项目'}
                 </Button>
               </div>

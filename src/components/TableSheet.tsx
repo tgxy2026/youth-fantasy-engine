@@ -209,7 +209,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </div>
           )}
           {!isMaster && (
-          <Button onClick={addRow} variant="primary" size="md" className="flex items-center text-13 shrink-0">
+          <Button onClick={addRow} variant="primary" size="md" className="flex items-center shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
           </Button>
           )}

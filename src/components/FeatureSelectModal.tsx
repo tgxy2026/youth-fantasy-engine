@@ -93,8 +93,8 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
       footer={
         <>
           <div className="flex gap-2">
-            <Button onClick={selectAll} variant="secondary" size="sm" className="text-12">全选可选</Button>
-            <Button onClick={reset} variant="secondary" size="sm" className="text-12">重置</Button>
+            <Button onClick={selectAll} variant="secondary" size="sm" className="">全选可选</Button>
+            <Button onClick={reset} variant="secondary" size="sm" className="">重置</Button>
           </div>
           <div className="flex gap-2">
             <Button onClick={onClose} variant="secondary" size="md">取消</Button>

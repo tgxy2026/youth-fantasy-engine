@@ -67,7 +67,7 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
         <Button onClick={run}
           disabled={!aiReady || loading}
           
-          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的术语做 AI 查重'} variant="primary" size="md" className="flex items-center text-13">
+          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的术语做 AI 查重'} variant="primary" size="md" className="flex items-center">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '查重中…' : `开始查重（${terms.length} 个术语）`}
         </Button>

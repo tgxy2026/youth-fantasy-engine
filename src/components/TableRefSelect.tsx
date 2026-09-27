@@ -157,7 +157,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
           </div>
           {q.trim() && !exact && (
             <Button type="button"
-              onClick={applyManualInput} variant="secondary" size="md" className="w-full text-left text-11 border-b flex items-center">
+              onClick={applyManualInput} variant="secondary" size="md" className="w-full text-left border-b flex items-center">
               <Plus size={11} /> 使用「{q.trim()}」
             </Button>
           )}
