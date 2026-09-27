@@ -328,6 +328,7 @@ button:disabled { cursor: not-allowed; }
 }
 .card-hover:hover {
   @apply border-amber/40 -translate-y-0.5;
-  box-shadow: 0 4px 24px rgba(217, 160, 74, 0.08);
+  /* U-8 · 2.6.0：阴影色走 amber 变量（原写死默认主题 217,160,74，自定义主题下不跟随） */
+  box-shadow: 0 4px 24px rgb(var(--amber) / 0.08);
 }
 

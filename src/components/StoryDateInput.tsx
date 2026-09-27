@@ -5,6 +5,11 @@ import {
   dayOptions, monthOptions, parseStoryDateParts,
 } from '../lib/storyDate'
 
+// 🔴 NumberField 豁免声明（U-11 · 2.6.0 巡检留痕）：本组件的年/月/日三段 <input type="number">
+//    **刻意不走 NumberField** —— 它是三段联动分段输入（年→月→日逐级补全、闰年联动、缺年整体清空），
+//    NumberField 的单值 + 提交时钳制模型不适配；各段的 min/max 由历法规则动态决定且本就逐段即时约束。
+//    没有此注释的话，每轮「type=number 违例」审计都会重复提案本文件。
+
 interface Props {
   value: string
   onChange: (v: string) => void

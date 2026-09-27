@@ -253,7 +253,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
         <div className="relative" style={{ width: totalW, height: totalH }}>
           {/* 水平主轴 + 时长线条（轴上方，分层换色） */}
           <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
-            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} stroke="rgba(128,130,150,0.4)" strokeWidth={1.5} />
+            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} style={{ stroke: 'rgb(var(--ink-600) / 0.4)' }} strokeWidth={1.5} />
             {brackets.map(b => {
               const on = hover === b.id || selected?.id === b.id
               const color = COLORS[b.colorIdx % COLORS.length]

@@ -97,8 +97,9 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
             <Button onClick={reset} variant="secondary" size="sm" className="text-12">重置</Button>
           </div>
           <div className="flex gap-2">
-            <Button onClick={onClose} variant="secondary" size="md" className="text-13">取消</Button>
-            <Button variant="bare" onClick={() => onConfirm(resolveFeatures(selected))} className="px-4 h-9 text-13 font-medium bg-amber/20 text-amber border border-amber/40 rounded-lg hover:bg-amber/30 transition-colors">确认</Button>
+            <Button onClick={onClose} variant="secondary" size="md">取消</Button>
+            {/* U-9 · 2.6.0：确认键改 primary 令牌（原 bare 手搓 amber/20 系样式与真源漂移）；与同排取消统一 md */}
+            <Button variant="primary" size="md" onClick={() => onConfirm(resolveFeatures(selected))}>确认</Button>
           </div>
         </>
       }

@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Lightbulb, Loader2, Sparkles, X } from 'lucide-react'
 import * as db from '../lib/db'
-import { addItem, loadBox, removeItem, type InspirationItem } from '../lib/inspirationBox'
+import { addItem, loadBox, removeItem, INSPIRATION_MAX, type InspirationItem } from '../lib/inspirationBox'
 import { aiFuseInspiration, type FusedIdea } from '../lib/aiTasks'
 import { buildProjectContext } from '../lib/aiContext'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
@@ -48,7 +48,7 @@ export default function InspirationBox() {
     const r = await addItem(newText, items)
     if (!r.added) {
       if (r.reason === 'dup') showToast('这条灵感已经在夹子里了', 'info')
-      else if (r.reason === 'full') showToast(`灵感夹最多存 ${200} 条，先转化或清掉一些吧`, 'info')
+      else if (r.reason === 'full') showToast(`灵感夹最多存 ${INSPIRATION_MAX} 条，先转化或清掉一些吧`, 'info')
       else return
     }
     setItems(r.items)
@@ -103,7 +103,7 @@ export default function InspirationBox() {
       <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
         <Lightbulb size={14} className="text-amber" /> 灵感夹
         <HelpPopover title="灵感夹怎么用" width="24rem">
-          {'随手把一闪而过的点子记在这里 —— 一条一句话就够，攒着不用急着用。\n\n勾选 2 条以上，点「融合为情节卡」：AI 会让这几条灵感互相服务，形成新的情节创意，直接放到「情节推演」的画布上（每张卡会标注用了哪几条灵感）。\n\n· 灵感夹跟着项目走，换项目看到的是那一本书的夹子；\n· 融合结果在画布上随便拖、随便删，这里不锁任何东西。'}
+          {'随手把一闪而过的点子记在这里 —— 一条一句话就够，攒着不用急着用。\n\n勾选 2 条以上，点「融合为情节卡」：AI 会让这几条灵感互相服务，形成新的情节创意，直接放到「情节推演」的画布上（每张卡会标注用了哪几条灵感）。注意是创作管理组的「情节推演」画布，不是酒馆模式里的「剧情推演」——那边是酒馆会话的推演，两回事。\n\n· 灵感夹跟着项目走，换项目看到的是那一本书的夹子；\n· 融合结果在画布上随便拖、随便删，这里不锁任何东西。'}
           <AIDataSourceNote feature="inspiration-fuse" />
         </HelpPopover>
         <span className="ml-auto text-10 text-ink-500 font-normal">{items.length} 条</span>

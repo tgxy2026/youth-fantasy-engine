@@ -370,7 +370,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                   <line
                     key={`axis-${t}`}
                     x1={8} y1={laneY(idx)} x2={totalW - 8} y2={laneY(idx)}
-                    stroke="rgba(128,130,150,0.35)" strokeWidth={1.5}
+                    style={{ stroke: 'rgb(var(--ink-600) / 0.35)' }} strokeWidth={1.5}
                   />
                 ))}
                 {visibleItems.map(d => {

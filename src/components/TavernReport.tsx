@@ -100,10 +100,10 @@ export default function TavernReport() {
           <HelpPopover title="推演报告怎么看" width="22rem" size={14}>
   每场推演结束后的合理性诊断 —— 只在推演里跑，不会写回你的小说。
 
-  • 左栏是历次报告（可筛选），右边是当前这份的正文。
-  • 每条问题尽量指向具体角色卡或表格条目，点「定位」直接跳过去核对。
-  • 「导出」可以把报告存成 Markdown 或单文件 HTML。
-  • 报告只是建议：它说的是「这里可能不合理」，改不改由你定。
+  · 左栏是历次报告（可筛选），右边是当前这份的正文。
+  · 每条问题尽量指向具体角色卡或表格条目，点「定位」直接跳过去核对。
+  · 「导出」可以把报告存成 Markdown 或单文件 HTML。
+  · 报告只是建议：它说的是「这里可能不合理」，改不改由你定。
   <AIDataSourceNote feature="tavern-report" />
 </HelpPopover>
 

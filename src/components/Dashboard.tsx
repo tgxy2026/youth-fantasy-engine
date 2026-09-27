@@ -301,9 +301,9 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <div className="flex items-center gap-1.5 mt-2 text-9 text-ink-500">
           <span>少</span>
           <span className="w-[11px] h-[11px] rounded-[2px] bg-ink-800 inline-block" />
-          <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/20 inline-block" />
           <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/40 inline-block" />
           <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/60 inline-block" />
+          <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/80 inline-block" />
           <span className="w-[11px] h-[11px] rounded-[2px] bg-amber inline-block" />
           <span>多</span>
           <span className="ml-3">近 26 周 · 数据来自编辑器自动记录（进/减字数都计入当日）</span>
@@ -353,7 +353,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Flame size={14} className="text-amber" /> 快捷入口
             <HelpPopover title="快捷入口" width="19rem">
-              {'连载期间使用频率最高的 6 个页签，点一下直达：\n\n· 正文编辑：码字主战场；\n· 章节总表：全书章节台账（字数/伏笔/出场人物）；\n· 伏笔追踪：挖坑填坑总账；\n· 时间脉络：剧情日期与事件对照，防穿帮；\n· 爽点节奏：每章爽点分布，防"太平淡"；\n· 灵感素材：素材随手入库，卡文时来翻。'}
+              {'连载期间使用频率最高的 6 个页签，点一下直达：\n\n· 正文编辑：码字主战场；\n· 章节总表：全书章节台账（字数/伏笔/出场人物）；\n· 伏笔追踪：挖坑填坑总账；\n· 时间脉络：剧情日期与事件对照，防穿帮；\n· 爽点节奏：每章爽点分布，防「太平淡」；\n· 灵感素材：素材随手入库，卡文时来翻。'}
             </HelpPopover>
           </h2>
           <div className="grid grid-cols-3 gap-2">
@@ -415,7 +415,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               AI 诊断
             </Button>
             <HelpPopover title="创作健康提醒" width="20rem">
-              {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品定位与全书总纲再动笔。\n\n全部指标健康时会显示"保持节奏继续写"。'}
+              {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品定位与全书总纲再动笔。\n\n全部指标健康时会显示「一切健康，保持节奏继续写」。'}
               <AIDataSourceNote feature="project-diagnose" />
             </HelpPopover>
           </h2>
@@ -516,7 +516,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <Users size={14} className="text-amber" /> 角色出场分布
           <HelpPopover title="角色出场分布" width="22rem">
-            {'自动扫描各章正文，统计每位角色（主要 / 次要，不含 NPC 与已退场）在每章的出现次数，用热力矩阵呈现：\n\n· 颜色越亮 = 该章出场越多；\n· 展示全部（主要 / 次要，不含 NPC 与已退场）角色与全部章节；\n· 点任意单元格直达对应章节。\n\n用来发现"某角色写了三卷没再出场"或"主角某章莫名消失"这类失衡。'}
+            {'自动扫描各章正文，统计每位角色（主要 / 次要，不含 NPC 与已退场）在每章的出现次数，用热力矩阵呈现：\n\n· 颜色越亮 = 该章出场越多；\n· 展示全部（主要 / 次要，不含 NPC 与已退场）角色与全部章节；\n· 点任意单元格直达对应章节。\n\n用来发现「某角色写了三卷没再出场」或「主角某章莫名消失」这类失衡。'}
           </HelpPopover>
         </h2>
         <CharacterDistribution onNavigate={onNavigate} />
