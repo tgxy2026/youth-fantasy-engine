@@ -323,7 +323,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
           </span>
           <Button variant="bare"
             onClick={() => { setConnectMode(v => !v); setPendingConn(null) }}
-            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-11 transition-colors ${connectMode ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-11 transition-colors ${connectMode ? 'border-amber/40 text-amber bg-amber/15' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
             title="连接模式：依次点两张卡连成推演链；鼠标移到连线上点 × 取消"
           >
             <GitBranch size={11} /> {connectMode ? '连接中…' : '连接模式'}
@@ -347,7 +347,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                 <Button variant="bare"
                   key={id}
                   onClick={() => toggleChapter(id)}
-                  className={`w-full text-left !justify-start px-2 py-1.5 rounded-md border text-12 flex items-center gap-2 transition-colors ${on ? 'bg-amber/10 border-amber/30 text-amber' : 'border-ink-700 text-ink-300 hover:text-ink-100 hover:bg-ink-800'}`}
+                  className={`w-full text-left !justify-start px-2 py-1.5 rounded-md border text-12 flex items-center gap-2 transition-colors ${on ? 'bg-amber/15 border-amber/30 text-amber' : 'border-ink-700 text-ink-300 hover:text-ink-100 hover:bg-ink-800'}`}
                 >
                   <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${on ? 'bg-amber border-amber text-ink-900' : 'border-ink-600'}`}>{on && <Check size={10} />}</span>
                   <span className="truncate"><span className="text-ink-500">{ch.data['章节号'] || ''} </span>{ch.data['章节标题'] || '（未命名）'}</span>

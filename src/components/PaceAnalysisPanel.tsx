@@ -144,7 +144,7 @@ export default function PaceAnalysisPanel() {
               <div className="flex items-center gap-2">
                 <span className="text-11 text-ink-300">章末钩子</span>
                 <span className={`rounded px-1.5 py-0.5 text-10 border ${
-                  d.hookPresent ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-600 text-ink-400 bg-ink-800'
+                  d.hookPresent ? 'border-amber/40 text-amber bg-amber/15' : 'border-ink-600 text-ink-400 bg-ink-800'
                 }`}>
                   {d.hookPresent ? d.hookKind : '未识别到钩子'}
                 </span>

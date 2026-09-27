@@ -206,7 +206,7 @@ style={{ zIndex: Z.pageBase }}
                             onClick={() => { setVolOpen(!volOpen); onNavigate(tab.id) }}
                             className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
                               ${active
-                                ? 'bg-amber/10 text-amber font-medium border border-amber/25'
+                                ? 'bg-amber/15 text-amber font-medium border border-amber/25'
                                 : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
                           >
                             {tab.name}
@@ -215,7 +215,7 @@ style={{ zIndex: Z.pageBase }}
                           {volOpen && (
                             <div className="mt-0.5 space-y-0.5">
                               {volumeTabs.length === 0 && (
-                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left text-12 flex items-center">
+                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left flex items-center">
                                   <FolderPlus size={11} /> 新建第一卷
                                 </Button>
                               )}
@@ -225,7 +225,7 @@ style={{ zIndex: Z.pageBase }}
                                     onClick={() => onNavigate(v.id)}
                                     className={`flex-1 text-left !justify-start px-2.5 py-1 pl-12 rounded-md text-13 transition-all duration-150
                                       ${v.id === activeTab
-                                        ? 'bg-amber/10 text-amber font-medium border border-amber/25'
+                                        ? 'bg-amber/15 text-amber font-medium border border-amber/25'
                                         : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
                                   >
                                     {v.name}
@@ -240,7 +240,7 @@ style={{ zIndex: Z.pageBase }}
                                 </div>
                               ))}
                               {volumeTabs.length > 0 && (
-                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left text-12 flex items-center">
+                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left flex items-center">
                                   <FolderPlus size={11} /> 新建卷
                                 </Button>
                               )}
@@ -255,7 +255,7 @@ style={{ zIndex: Z.pageBase }}
                         onClick={() => onNavigate(tab.id)}
                         className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150
                           ${active
-                            ? 'bg-amber/10 text-amber font-medium border border-amber/25'
+                            ? 'bg-amber/15 text-amber font-medium border border-amber/25'
                             : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
                       >
                         {tab.name}

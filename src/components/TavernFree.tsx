@@ -526,7 +526,7 @@ export default function TavernFree() {
                                   onClick={() => setStatusCharId(c.id)}
                                   title={`看 ${c.name || 'Ta'} 这几天的生活`}
                                   className={`w-full flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${
-                                    on ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                                    on ? 'border-amber/40 bg-amber/15' : 'border-transparent hover:bg-ink-800/60'
                                   }`}
                                 >
                                   <Avatar src={c.avatar} name={c.name} size={18} />
@@ -560,7 +560,7 @@ export default function TavernFree() {
                                   onClick={() => setVarsCharId(c.id)}
                                   title={`看 ${c.name || 'Ta'} 的本卡数值`}
                                   className={`w-full flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors ${
-                                    on ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                                    on ? 'border-amber/40 bg-amber/15' : 'border-transparent hover:bg-ink-800/60'
                                   }`}
                                 >
                                   <Avatar src={c.avatar} name={c.name} size={18} />

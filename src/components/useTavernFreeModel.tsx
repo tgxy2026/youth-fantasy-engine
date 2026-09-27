@@ -620,7 +620,7 @@ export function useTavernFreeModel() {
         type="button"
         onClick={() => void openSession(s.id)}
         className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-          active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+          active ? 'border-amber/40 bg-amber/15' : 'border-transparent hover:bg-ink-800/60'
         }`}
       >
         <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>{s.title}</div>

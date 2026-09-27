@@ -385,7 +385,7 @@ export default function TavernScript() {
                         type="button" onClick={() => void openStory(st.id)}
                         title={st.settingBrief || '（还没写世界设定）'}
                         className={`min-w-0 flex-1 rounded-md border px-2.5 py-2 text-left transition-colors ${st.id === story?.id && kind === 'story'
-                          ? 'border-amber/50 bg-amber/10'
+                          ? 'border-amber/50 bg-amber/15'
                           : 'border-ink-800 bg-ink-850/30 hover:border-ink-600'}`}
                       >
                         <div className={`truncate text-12 ${st.id === story?.id && kind === 'story' ? 'text-amber' : 'text-ink-200'}`}>
@@ -407,7 +407,7 @@ export default function TavernScript() {
                               type="button" onClick={() => void openScript(sc.id)}
                               title={sc.goalBrief || '（还没写目标）'}
                               className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${sc.id === cur?.id && kind === 'script'
-                                ? 'border-amber/50 bg-amber/10'
+                                ? 'border-amber/50 bg-amber/15'
                                 : 'border-ink-800 bg-ink-850/20 hover:border-ink-600'}`}
                             >
                               <div className={`truncate text-12 ${sc.id === cur?.id && kind === 'script' ? 'text-amber' : 'text-ink-200'}`}>

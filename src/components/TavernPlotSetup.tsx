@@ -197,7 +197,7 @@ function CharacterPicker({ open, title, options, usedBy, initialCardId, initialR
                 onClick={() => setCardId(o.id)}
                 className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
                   disabled ? 'cursor-not-allowed opacity-40'
-                    : cardId === o.id ? 'bg-amber/10' : 'hover:bg-ink-800/60'
+                    : cardId === o.id ? 'bg-amber/15' : 'hover:bg-ink-800/60'
                 }`}
               >
                 <span className={`min-w-0 flex-1 truncate text-12 ${cardId === o.id ? 'text-amber' : 'text-ink-200'}`}>
@@ -402,7 +402,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                       onChange={e => setAnchorQ(e.target.value)}
                     />
                     {anchorId && (
-                      <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => setAnchorId('')}>
+                      <Button variant="secondary" size="md" className="shrink-0" onClick={() => setAnchorId('')}>
                         清除已选
                       </Button>
                     )}
@@ -414,7 +414,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                         <button
                           key={r.c.id} type="button" onClick={() => setAnchorId(r.c.id)}
                           className={`flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors ${
-                            active ? 'bg-amber/10' : 'hover:bg-ink-800/60'
+                            active ? 'bg-amber/15' : 'hover:bg-ink-800/60'
                           }`}
                         >
                           <span className={`min-w-0 flex-1 truncate text-12 ${active ? 'text-amber' : 'text-ink-200'}`}>
@@ -476,8 +476,8 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                                 <option value="user">我演</option>
                                 <option value="silent">在场不出声</option>
                               </select>
-                              <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => setPickerIdx(i)}>更换</Button>
-                              <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => clearSlot(i)}>清空</Button>
+                              <Button variant="secondary" size="md" className="shrink-0" onClick={() => setPickerIdx(i)}>更换</Button>
+                              <Button variant="secondary" size="md" className="shrink-0" onClick={() => clearSlot(i)}>清空</Button>
                             </>
                           ) : (
                             <>
@@ -492,7 +492,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                               </Button>
                               <span className="shrink-0 text-10 text-ink-500">拟：{ROLE_LABEL[s.role]}</span>
                               {slots.length > 1 && (
-                                <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => removeSlot(i)}>移除位置</Button>
+                                <Button variant="secondary" size="md" className="shrink-0" onClick={() => removeSlot(i)}>移除位置</Button>
                               )}
                             </>
                           )}
@@ -501,7 +501,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                     })}
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3">
-                    <Button variant="secondary" size="md" className="text-12"
+                    <Button variant="secondary" size="md"
                       disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
                       ＋ 增加位置（最多 {MAX_SLOTS} 个）
                     </Button>

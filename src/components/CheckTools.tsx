@@ -265,7 +265,7 @@ export default function CheckTools() {
               placeholder="输入自定义敏感词，支持用逗号/换行分隔批量添加…"
               className="flex-1 min-w-[200px] !py-1.5 text-12"
             />
-            <Button onClick={addWord} variant="secondary" size="md" className="text-12">添加</Button>
+            <Button onClick={addWord} variant="secondary" size="md">添加</Button>
             <input
               ref={fileInputRef}
               type="file"
@@ -284,10 +284,10 @@ export default function CheckTools() {
               <>
                 <Button onClick={exportWords}
                   
-                  title="导出为 .txt" variant="secondary" size="md" className="flex items-center text-12">
+                  title="导出为 .txt" variant="secondary" size="md" className="flex items-center">
                   <Upload size={12} /> 导出
                 </Button>
-                <Button onClick={clearCustom} variant="secondary" size="md" className="flex items-center text-12">
+                <Button onClick={clearCustom} variant="secondary" size="md" className="flex items-center">
                   <Trash2 size={12} /> 清空
                 </Button>
               </>
@@ -312,12 +312,12 @@ export default function CheckTools() {
             {aiReady ? (
               <Button onClick={aiDetect}
                 disabled={reviewLoading}
-                title="AI 结合上下文判断每个命中词是误报还是真有风险" variant="secondary" size="md" className="flex items-center text-12">
+                title="AI 结合上下文判断每个命中词是误报还是真有风险" variant="secondary" size="md" className="flex items-center">
                 <Sparkles size={13} /> {reviewLoading ? 'AI 检测中…' : 'AI 检测'}
               </Button>
             ) : (
               <Button disabled
-                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center cursor-not-allowed">
                 <Sparkles size={13} /> AI 检测
               </Button>
             )}
@@ -400,7 +400,7 @@ export default function CheckTools() {
               </Button>
             ) : (
               <Button disabled
-                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center cursor-not-allowed">
                 <Sparkles size={13} /> AI 深度自查
               </Button>
             )}
@@ -458,7 +458,7 @@ export default function CheckTools() {
             </Button>
             <Button onClick={clearIgnored}
               disabled={ignoredIds.length === 0}
-              title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'} variant="danger" size="md" className="flex items-center text-12">
+              title={ignoredIds.length === 0 ? '暂无被忽略的冲突' : '清空全部忽略记录，下次体检会重新汇报'} variant="danger" size="md" className="flex items-center">
               <RotateCcw size={12} /> 清除忽略{ignoredIds.length > 0 ? `（${ignoredIds.length}）` : ''}
             </Button>
             {healthScanning && (

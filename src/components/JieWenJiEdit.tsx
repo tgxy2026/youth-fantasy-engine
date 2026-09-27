@@ -55,7 +55,7 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
                   <CheckCircle2 size={12} /> 改稿完成{rewrite.data.notes ? `：${rewrite.data.notes}` : ''}
                 </div>
                 <div className="text-11 text-ink-100 leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">{rewrite.data.rewritten}</div>
-                <Button onClick={applyAdvice} variant="primary" size="md" className="w-full flex items-center justify-center text-12">
+                <Button onClick={applyAdvice} variant="primary" size="md" className="w-full flex items-center justify-center">
                   <PenLine size={12} /> 写入原文下方（建议段）
                 </Button>
                 <div className="text-10 text-ink-500 leading-relaxed">

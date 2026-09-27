@@ -239,7 +239,7 @@ style={{ height: foldVh('60vh') }}>
         {/* 左：历史会话 */}
         <div className="w-44 shrink-0 flex flex-col bg-ink-900/40 border border-ink-700 rounded-lg overflow-hidden">
           <div className="p-2 border-b border-ink-700">
-            <Button onClick={newSession} variant="primary" size="md" className="w-full flex items-center justify-center text-12">
+            <Button onClick={newSession} variant="primary" size="md" className="w-full flex items-center justify-center">
               <Plus size={12} /> 新建对话
             </Button>
           </div>
@@ -251,7 +251,7 @@ style={{ height: foldVh('60vh') }}>
                 <div
                   key={s.id}
                   onClick={() => switchSession(s.id)}
-                  className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer transition-colors ${s.id === activeSessionId ? 'bg-amber/10 border border-amber/30' : 'border border-transparent hover:bg-ink-800'}`}
+                  className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer transition-colors ${s.id === activeSessionId ? 'bg-amber/15 border border-amber/30' : 'border border-transparent hover:bg-ink-800'}`}
                 >
                   <MessageSquarePlus size={12} className={`shrink-0 ${s.id === activeSessionId ? 'text-amber' : 'text-ink-500'}`} />
                   <span className={`flex-1 text-11 truncate ${s.id === activeSessionId ? 'text-amber' : 'text-ink-300'}`}>{s.title}</span>
@@ -322,7 +322,7 @@ style={{ height: foldVh('60vh') }}>
                 className="!px-3 !py-2 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 focus:border-amber/40 outline-none placeholder:text-ink-600 flex-1"
               />
               {loading ? (
-                <Button onClick={stop} variant="danger" size="md" className="shrink-0 flex items-center text-12">
+                <Button onClick={stop} variant="danger" size="md" className="shrink-0 flex items-center">
                   <AlertCircle size={13} /> 停止
                 </Button>
               ) : (

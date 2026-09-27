@@ -34,6 +34,7 @@ import SchemaFieldGrid from './SchemaFieldGrid'
 import AITemplateFill from './AITemplateFill'
 import AIDataSourceNote from './AIDataSourceNote'
 import { LoadingState } from './LoadingState'
+import SelectRow from './SelectRow'
 // 界面缩放（<html> zoom）下 vh 不缩水 ⇒ 内联长度一律走 foldVh（项目红线）
 import { foldVh } from '../lib/theme'
 
@@ -268,17 +269,17 @@ export default function WorldSetSheet({ tab }: Props) {
             再来一个同为 aside 的容器，无论是无障碍语义还是脚本/调试都会互相混淆。 */}
         <div className="w-full lg:w-56 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
           <div className="px-3 py-2 text-10 text-ink-500 border-b border-ink-700">全书统一（母级）</div>
-          <button
+          {/* U-4 · 2.6.0：母级行改 SelectRow（行选择收编件，选中态令牌 /15 与 Button toggle 真源一致） */}
+          <SelectRow
+            selected={isMain}
             onClick={() => void selectLayer(MAIN)}
             title="编辑全书统一的设定（这一层永远发给 AI）"
-            className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-12 transition-colors ${
-              isMain ? 'bg-amber/10 text-amber' : 'text-ink-200 hover:bg-ink-800'
-            }`}
+            className="items-center gap-2 px-3 py-2.5 text-12"
           >
             <BookOpen size={13} className="shrink-0" />
             <span className="truncate">{tab.name}</span>
             <span className="ml-auto shrink-0 rounded border border-amber/40 bg-amber/10 px-1 text-9 text-amber">全书</span>
-          </button>
+          </SelectRow>
 
           <div className="px-3 py-2 text-10 text-ink-500 border-y border-ink-700 flex items-center gap-1">
             子世界

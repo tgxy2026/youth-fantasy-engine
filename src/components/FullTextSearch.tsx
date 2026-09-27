@@ -130,7 +130,7 @@ style={{ maxHeight: foldVh('60vh') }}>
                       onMouseEnter={() => setSel(idx)}
                       onClick={() => open(r)}
                       className={`w-full text-left !justify-start px-4 py-2 flex items-start gap-2.5 transition-colors
-                        ${active ? 'bg-amber/10' : 'hover:bg-ink-800/60'}`}
+                        ${active ? 'bg-amber/15' : 'hover:bg-ink-800/60'}`}
                     >
                       <span className={`mt-0.5 text-10 px-1.5 py-px rounded shrink-0 border
                         ${type === 'chapter' ? 'border-info/30 text-info' : type === 'character' ? 'border-violet-400/30 text-violet-300' : 'border-success/30 text-success'}`}>

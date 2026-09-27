@@ -265,7 +265,7 @@ style={{ maxHeight: foldVh('26vh') }}>
                 {loading ? (phase || '正在整理…') : '开始整理'}
               </Button>
               {loading && (
-                <Button onClick={stop} variant="secondary" size="md" className="flex items-center text-12">
+                <Button onClick={stop} variant="secondary" size="md" className="flex items-center">
                   <CircleStop size={12} /> 停止
                 </Button>
               )}

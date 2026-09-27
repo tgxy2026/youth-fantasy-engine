@@ -443,7 +443,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                     )}
                     <div className="mt-4 flex items-center gap-2">
                       <Button onClick={saveEdit}
-                        disabled={busy} variant="primary" size="md" className="flex items-center text-12">
+                        disabled={busy} variant="primary" size="md" className="flex items-center">
                         <Check size={13} /> 保存修改
                       </Button>
                       <Button variant="secondary" onClick={() => setEditingId(null)} className="px-3 py-1.5 text-12 border-ink-600 rounded-lg hover:border-ink-500 transition-colors">

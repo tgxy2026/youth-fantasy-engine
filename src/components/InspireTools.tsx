@@ -137,19 +137,19 @@ export default function InspireTools() {
                 >{s}</Button>
               ))}
             </div>
-            <Button onClick={rollNames} variant="primary" size="md" className="ml-auto flex items-center text-12">
+            <Button onClick={rollNames} variant="primary" size="md" className="ml-auto flex items-center">
               <RefreshCw size={12} /> 换一批
             </Button>
             {aiReady ? (
               <Button onClick={aiName}
                 disabled={aiNameLoading}
                 
-                title="让 AI 结合你的世界观设定生成更贴设定的候选名" variant="secondary" size="md" className="flex items-center text-12">
+                title="让 AI 结合你的世界观设定生成更贴设定的候选名" variant="secondary" size="md" className="flex items-center">
                 <Sparkles size={12} /> {aiNameLoading ? 'AI 取名中…' : 'AI 取名'}
               </Button>
             ) : (
               <Button disabled
-                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
+                title={AI_DISABLED_HINT} variant="secondary" size="md" className="flex items-center cursor-not-allowed">
                 <Sparkles size={12} /> AI 取名
               </Button>
             )}

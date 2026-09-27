@@ -258,7 +258,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
               ))}
             </div>
             <div className="flex gap-2 justify-end">
-              <Button onClick={replaceTypoAll} variant="primary" size="md" className="text-12">
+              <Button onClick={replaceTypoAll} variant="primary" size="md">
                 一键替换错别字（{typoTotal} 处）
               </Button>
             </div>
@@ -280,7 +280,7 @@ export function ProofreadCheck({ content, onApply, onClose }: {
             if (!aiReady) {
               return (
                 <Button key={scope} disabled title={AI_DISABLED_HINT}
-                  variant="secondary" size="md" className="flex items-center text-12 cursor-not-allowed">
+                  variant="secondary" size="md" className="flex items-center cursor-not-allowed">
                   <Sparkles size={13} /> {meta.label}
                 </Button>
               )
@@ -429,7 +429,7 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                 <Button variant="bare"
                   key={s.id}
                   onClick={() => setPreview(s)}
-                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/10' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/15' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
                 >
                   <span className="text-12 text-ink-200 shrink-0">{fmt(s.createdAt)}</span>
                   <span className={`shrink-0 px-1.5 py-px rounded text-10 ${isAI ? 'bg-amber/15 text-amber' : 'bg-ink-700/60 text-ink-400'}`}>
@@ -617,7 +617,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
           className="flex-1 !py-1.5 text-13"
           autoFocus
         />
-        <Button onClick={doSearch} variant="primary" size="md" className="text-12">搜索</Button>
+        <Button onClick={doSearch} variant="primary" size="md">搜索</Button>
       </div>
       <div className="flex gap-2 items-center mb-4">
         <input
@@ -627,7 +627,7 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
           className="flex-1 !py-1.5 text-12"
         />
         <Button onClick={replaceAll}
-          disabled={!searched || results.length === 0} variant="secondary" size="md" className="text-12">全部替换</Button>
+          disabled={!searched || results.length === 0} variant="secondary" size="md">全部替换</Button>
       </div>
       {searched && (
         results.length === 0 ? (

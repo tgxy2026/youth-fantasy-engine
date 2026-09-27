@@ -122,7 +122,7 @@ export default function FeatureSelectModal({ title = '选择项目功能', initi
                         onClick={() => toggle(e)}
                         className={`text-left rounded-lg border px-3 py-2 min-h-[68px] transition-colors ${locked
                           ? 'border-ink-700 bg-ink-800/60 cursor-not-allowed'
-                          : checked ? 'border-amber/40 bg-amber/10 cursor-pointer'
+                          : checked ? 'border-amber/40 bg-amber/15 cursor-pointer'
                           : 'border-ink-700 bg-ink-800/40 hover:border-ink-500 cursor-pointer'}`}
                       >
                         <div className="w-full text-left">

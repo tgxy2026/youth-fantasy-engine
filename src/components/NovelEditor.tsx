@@ -346,7 +346,7 @@ style={{ zIndex: Z.pageHandle }}
               <div className="relative shrink-0">
                 <Button variant="bare" iconOnly size="sm"
                   onClick={() => setExportOpen(o => !o)}
-                  className={`flex items-center p-1 rounded transition-colors ${exportOpen ? 'text-amber bg-amber/10' : 'text-ink-400 hover:text-amber'}`}
+                  className={`flex items-center p-1 rounded transition-colors ${exportOpen ? 'text-amber bg-amber/15' : 'text-ink-400 hover:text-amber'}`}
                   title="导出 TXT（本章 / 按卷 / 按章 / 全本）"
                 >
                   <Upload size={14} />

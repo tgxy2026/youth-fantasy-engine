@@ -432,7 +432,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
             <Button onClick={cleanOrphans}
               disabled={busy || orphans.length === 0}
               
-              title="删除所有属于已删除项目的备份" variant="danger" size="md" className="flex items-center text-12 text-danger">
+              title="删除所有属于已删除项目的备份" variant="danger" size="md" className="flex items-center text-danger">
               <Trash2 size={12} /> 清理孤儿备份
             </Button>
           </div>

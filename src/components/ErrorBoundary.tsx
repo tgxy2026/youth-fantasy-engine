@@ -46,7 +46,7 @@ export default class ErrorBoundary extends React.Component<
 {stack}
             </pre>
             <div className="mt-4 flex gap-2">
-              <Button onClick={this.handleReload} variant="primary" solid size="md" className="text-12">
+              <Button onClick={this.handleReload} variant="primary" solid size="md">
                 重新加载页面
               </Button>
               <Button variant="bare"

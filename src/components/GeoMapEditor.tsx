@@ -100,7 +100,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
             <Button variant="bare"
               key={key}
               onClick={() => setLayers(l => ({ ...l, [key]: !l[key] }))}
-              className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md border text-11 transition-colors ${layers[key] ? 'border-amber/40 text-amber bg-amber/10' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
+              className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md border text-11 transition-colors ${layers[key] ? 'border-amber/40 text-amber bg-amber/15' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
               title={key === 'foreshadow' ? '叠加伏笔关联' : key === 'character' ? '叠加角色关联' : '叠加时间脉络关联'}
             >
               <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS[key] }} />

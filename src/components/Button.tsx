@@ -29,6 +29,18 @@ const SIZE: Record<Size, string> = {
   md: 'h-9 px-4 text-13',
   lg: 'h-10 px-5 text-14',
 }
+// 🔴 U-2 · 2.6.0 口径明令：SIZE 已含字号，**禁止在 className 再叠 text-\***——
+//    fontSize 档按 9→17 升序生成 CSS，.text-13 恒在 .text-12 之后 ⇒ 叠加的 text-12 从不生效
+//    （2026-09-27 实证；历史 42 处无效叠加已批量清除）。要更小字号请降 size 档位。
+//
+// 🔴 U-4 · 2.6.0 裸 <button> 收编口径（巡检 48 处的判决，防下轮重复提案）：
+//    · 行选择 → 用 `SelectRow.tsx`（选中态令牌真源 /15，已迁移 4 处，其余可渐进迁移）；
+//    · 分段选中 /10 漂移 → 已统一 /15（2026-09-27，27 处）；
+//    · **豁免**（保留裸 button，勿再提案）：① 行内微图标键（h-3~h-5，如 WorldSetSheet 活跃圆点
+//      w-3 h-3——Button 最小 h-6 会撑坏行高）；② 容器式分段选择器（ExportFormatDialog /
+//      PlatformCheckPanel 的 inline-flex 分段，与 Button toggle 形态不同但令牌已一致）；
+//      ③ DataDock / Sidebar 自身把手（实现内部件）；④ 行内纯文字微键（裸文字无盒模型，
+//      加 Button 会引入 h-6 高度盒改变行高）。
 // 图标专用：去掉横向 padding，定宽定高
 const ICON_SIZE: Record<Size, string> = {
   xs: 'h-6 w-6',

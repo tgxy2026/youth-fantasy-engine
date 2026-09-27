@@ -102,7 +102,7 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
             <li
               key={`${b.from}-${b.to}`}
               className={`border-t border-ink-800/60 px-2 py-1.5 text-10 leading-relaxed first:border-t-0 ${
-                on ? 'bg-amber/10' : ''
+                on ? 'bg-amber/15' : ''
               }`}
             >
               <span className={`tabular-nums ${on ? 'text-amber' : 'text-ink-500'}`}>

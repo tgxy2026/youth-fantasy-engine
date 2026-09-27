@@ -144,7 +144,7 @@ export default function TavernReport() {
                     type="button"
                     onClick={() => setActiveId(it.id)}
                     className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
-                      active ? 'border-amber/40 bg-amber/10' : 'border-transparent hover:bg-ink-800/60'
+                      active ? 'border-amber/40 bg-amber/15' : 'border-transparent hover:bg-ink-800/60'
                     }`}
                   >
                     <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>
@@ -189,7 +189,7 @@ export default function TavernReport() {
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <Button
-                      variant="secondary" size="md" className="text-12"
+                      variant="secondary" size="md"
                       onClick={() => setExportOpen(true)}
                       title="把这份报告导出成 Markdown 或带样式的单文件 HTML"
                     >
@@ -231,7 +231,7 @@ export default function TavernReport() {
                                 )}
                               </div>
                               {f.targetTabId && f.targetRecordId && (
-                                <Button variant="secondary" size="md" className="shrink-0 text-12" onClick={() => jumpTo(f)}>
+                                <Button variant="secondary" size="md" className="shrink-0" onClick={() => jumpTo(f)}>
                                   定位
                                 </Button>
                               )}

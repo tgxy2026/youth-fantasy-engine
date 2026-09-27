@@ -354,7 +354,7 @@ export default function OutlineSheet({ tab }: Props) {
                 onClick={() => setActiveId(rec.id)}
                 className={`group cursor-pointer rounded-lg border px-2.5 py-2.5 transition-all duration-150
                   ${isActive
-                    ? 'bg-amber/10 border-amber/30 text-amber'
+                    ? 'bg-amber/15 border-amber/30 text-amber'
                     : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'}`}
               >
                 <div className="flex items-center gap-1.5">
