@@ -5,6 +5,7 @@ import AIDisabledNotice from './AIDisabledNotice'
 import AIWriterBudgetPanel from './AIWriterBudgetPanel'
 import SearchSettingsPanel from './SearchSettingsPanel'
 import AIPromptSettings from './AIPromptSettings'
+import NetworkProxyPanel from './NetworkProxyPanel'
 
 /**
  * 「模型设置」页签（2026-09-19 新增，老大要求）。
@@ -27,10 +28,10 @@ export default function ModelSettingsPanel() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">模型设置</h1>
           <HelpPopover title="模型设置怎么用" width="24rem" size={14}>
-            {'这一页集中管「AI 怎么跑」，四块内容从上到下：\n\n【模型配置】全应用用哪个模型 —— 本地 Ollama / 云端 OpenAI 兼容服务，以及每个模型的上下文窗口等参数。换模型后下面几块会跟着推荐值调整。\n\n【正文写作 AI 额度】编辑器、颉文姬、检查工具、灵感工具这些「正文写作」类功能，一次带多少项目设定资料给模型的「总闸门」（各功能按系数取用）。\n\n【联网检索】起草 / 补全时要不要联网找素材（可用博查或自建 SearXNG）。\n\n【AI 提示词】把各 AI 功能的内置提示词全部摆到前台：可按功能板块查看、逐条修改、保存，也可以一键还原成出厂设置。改错了随时还原，不影响手动写作。\n\n⚠️ 酒馆模式（剧情推演 / 自由对话）的额度与扮演协议「不在这里」 —— 在「酒馆模式 → 控制面板」单独设置，两边各管各的、互不冲突。'}
+            {'这一页集中管「AI 怎么跑」，五块内容从上到下：\n\n【模型配置】全应用用哪个模型 —— 本地 Ollama / 云端 OpenAI 兼容服务，以及每个模型的上下文窗口等参数。换模型后下面几块会跟着推荐值调整。\n\n【网络代理】需要统一网络出口的环境（内网网关 / 自建中转）可在此填写出口地址，默认关闭、跟随系统网络设置。\n\n【正文写作 AI 额度】编辑器、颉文姬、检查工具、灵感工具这些「正文写作」类功能，一次带多少项目设定资料给模型的「总闸门」（各功能按系数取用）。\n\n【联网检索】起草 / 补全时要不要联网找素材（可用博查或自建 SearXNG）。\n\n【AI 提示词】把各 AI 功能的内置提示词全部摆到前台：可按功能板块查看、逐条修改、保存，也可以一键还原成出厂设置。改错了随时还原，不影响手动写作。\n\n⚠️ 酒馆模式（剧情推演 / 自由对话）的额度与扮演协议「不在这里」 —— 在「酒馆模式 → 控制面板」单独设置，两边各管各的、互不冲突。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-13 text-ink-300">模型配置 · 正文写作 AI 额度 · 联网检索 · AI 提示词</p>
+        <p className="mt-1 text-13 text-ink-300">模型配置 · 网络代理 · 正文写作 AI 额度 · 联网检索 · AI 提示词</p>
       </header>
 
       <div className="space-y-4">
@@ -40,6 +41,10 @@ export default function ModelSettingsPanel() {
 
         {/* 模型配置（全局）：决定下面几块跟着谁走，所以放最上面 */}
         <AIConfigPanel onChange={() => setCfgVer(v => v + 1)} />
+
+        {/* 网络代理（2026-09-28 · 社区需求）：内网网关 / 自建中转等统一出口环境按需开启；
+            默认关闭跟随系统，配置仅存本机。合规口径见组件头注释 —— 文案不得写「绕过限制」。 */}
+        <NetworkProxyPanel />
 
         {/* 正文写作链路的额度总闸门：跟着模型走，紧贴模型配置便于一起调。
             ⚠️ 与酒馆模式的额度互不冲突（酒馆那两个数在「酒馆模式 → 控制面板」）。 */}

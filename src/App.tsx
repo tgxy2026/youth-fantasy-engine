@@ -28,6 +28,7 @@ import { showToast } from './components/dialogs'
 import { Button } from './components/Button'
 import { applyTheme, applyZoom, foldVh, getStoredTheme, getStoredZoom, isZoomAuto } from './lib/theme'
 import { applyStoredFontPrefs } from './lib/fontPrefs'
+import { applyStoredNetProxy } from './lib/netPrefs'
 import { loadPromptOverrides } from './lib/promptSettings'
 import { LS_SPRITE_ENABLED } from './lib/constants'
 import { downloadBlob } from './lib/zip'
@@ -178,6 +179,7 @@ export default function App() {
     applyTheme(getStoredTheme())
     applyZoom(getStoredZoom())
     applyStoredFontPrefs()   // 2026-09-28 · 字体配置：--font-editor / --font-ui（fontPrefs.ts）
+    void applyStoredNetProxy()   // 2026-09-28 · 网络代理：主进程 session 代理每次启动由渲染层重推（仅桌面）
   }, [])
 
   // 🔴 自动备份失败必须让用户看见（2026-09-19 六维审计修复）

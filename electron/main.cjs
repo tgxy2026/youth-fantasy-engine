@@ -331,6 +331,37 @@ app.whenReady().then(() => {
   //   · 永不 throw —— Electron 跨 IPC 的异常会被重新包装、原始信息丢失，一律返回结构化结果
   const NET_TIMEOUT_MS = 30000
   const NET_MAX_BYTES = 2 * 1024 * 1024
+
+  // 网络代理设置（2026-09-28 · 社区需求）：由渲染层推送配置，主进程对整个默认 session 生效——
+  // 渲染层 fetch（Chromium 栈）与主进程 net.fetch 两条链路同时覆盖。
+  // 🔴 只接受渲染层「用户自填的出口地址」，主进程不存储任何配置（每次启动由渲染层重推）；
+  //    规则串白名单清洗（host/port/逗号分号/尖括号 local 标记），防注入到 Chromium 代理解析器。
+  ipcMain.handle('net:set-proxy', async (_e, cfg) => {
+    try {
+      const c = cfg || {}
+      if (typeof session.defaultSession.setProxy !== 'function') {
+        return { ok: false, error: '当前 Electron 版本不支持设置代理' }
+      }
+      const clean = (v, max) => String(v ?? '')
+        .replace(/[^a-zA-Z0-9.\-_:,;=<>\s*]/g, '').slice(0, max)
+      if (!c.enabled) {
+        await session.defaultSession.setProxy({ mode: 'direct' })
+        return { ok: true }
+      }
+      const rules = clean(c.rules, 300)
+      if (!rules) return { ok: false, error: '代理地址为空或包含非法字符' }
+      const bypass = clean(c.bypass, 300)
+      await session.defaultSession.setProxy({
+        mode: 'fixed_servers',
+        proxyRules: rules,
+        ...(bypass ? { proxyBypassRules: bypass } : {}),
+      })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
   ipcMain.handle('net:fetch', async (_e, url, init) => {
     const opts = init || {}
     try {

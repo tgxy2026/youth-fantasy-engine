@@ -54,6 +54,14 @@ export interface ElectronNetAPI {
     headers?: Record<string, string>
     body?: string
   }): Promise<NetFetchResult>
+  /** 推送网络代理配置（2026-09-28 · 网络代理设置）：仅桌面版可用 */
+  setProxy(cfg: {
+    enabled: boolean
+    /** 代理规则串（如 http://127.0.0.1:7890）；主进程白名单清洗 */
+    rules?: string
+    /** 直连名单（逗号分隔，如 localhost,127.0.0.1） */
+    bypass?: string
+  }): Promise<{ ok: true } | { ok: false; error: string }>
 }
 
 /**
@@ -135,6 +143,25 @@ export async function netFetch(
   }
   try {
     return await (window.electronNet as ElectronNetAPI).fetch(url, init)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * 推送网络代理配置（2026-09-28 · 网络代理设置）。**永不抛** —— 与 netFetch 同口径：
+ * 不可用（便携版 / 浏览器 dev）返回 ok:false，由调用方把原因如实告诉作者。
+ */
+export async function setNetProxy(cfg: {
+  enabled: boolean
+  rules?: string
+  bypass?: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!HAS_NET_BRIDGE) {
+    return { ok: false, error: '当前版本没有「设置代理」能力（便携版跑在浏览器里，配置仅在桌面版生效）' }
+  }
+  try {
+    return await (window.electronNet as ElectronNetAPI).setProxy(cfg)
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
