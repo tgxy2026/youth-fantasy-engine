@@ -17,7 +17,8 @@ import {
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
   ShieldAlert, History, Search, Lock, AlignLeft, Upload, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
-  Command, Highlighter, BookOpen, Users, X, Sparkles, Loader2, Wand2, Layers, PenTool
+  Command, Highlighter, BookOpen, Users, X, Sparkles, Loader2, Wand2, Layers, PenTool,
+  Undo2, Redo2
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
@@ -304,6 +305,23 @@ style={{ zIndex: Z.pageHandle }}
                 {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               <div className="w-px h-4 bg-ink-700" />
+              {/* E1（2.6.2）撤销 / 恢复：直接调 execCommand 驱动**原生撤销栈** —— 与 Ctrl+Z / Ctrl+Y
+                  完全同一栈，不另建自绘撤销栈（AI 插入 / 一键排版 / 缩进都走 execCommand('insertText')，
+                  天然在栈里）。点击先把焦点还给正文 textarea：execCommand 的作用对象是聚焦的可编辑元素。 */}
+              <Button variant="bare" iconOnly size="sm"
+                onClick={() => { taRef.current?.focus(); document.execCommand('undo') }}
+                className="text-ink-400 hover:text-ink-100 transition-colors shrink-0"
+                title="撤销（与 Ctrl+Z 同一撤销栈）"
+              >
+                <Undo2 size={14} />
+              </Button>
+              <Button variant="bare" iconOnly size="sm"
+                onClick={() => { taRef.current?.focus(); document.execCommand('redo') }}
+                className="text-ink-400 hover:text-ink-100 transition-colors shrink-0"
+                title="恢复（与 Ctrl+Y 同一撤销栈）"
+              >
+                <Redo2 size={14} />
+              </Button>
               {/* 工具组：敏感词 / 排版 / 导出 / 时光机 / 回收站 / 全文搜索 / 小黑屋 */}
               <Button variant="bare" iconOnly size="sm" onClick={() => setModal('sensitive')} className="text-ink-400 hover:text-danger transition-colors shrink-0" title="敏感词检测（本章）">
                 <ShieldAlert size={14} />
@@ -389,10 +407,11 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                         <Upload size={11} className="text-amber" /> 导出全书（EPUB）
                       </Button>
                       <Button variant="bare"
-                        onClick={() => runExport(m => m.exportDOCX(projectName, volumes, chapters))}
+                        onClick={() => { setExportOpen(false); setExportFormatTab('docx') }}
                         className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        title="Word 文档（DOCX）：可选排版（字号 / 对齐 / 缩进 / 行距 / 字体），也可一键导出投稿稿件（书名 + 简介 + 选定章节）"
                       >
-                        <Upload size={11} className="text-amber" /> 导出全书（DOCX）
+                        <Upload size={11} className="text-amber" /> 导出全书（Word · 可排版 / 投稿稿）
                       </Button>
                       <Button variant="bare"
                         onClick={() => { setExportOpen(false); setExportFormatTab('platform') }}
@@ -583,7 +602,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品定位〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
             </div>
 

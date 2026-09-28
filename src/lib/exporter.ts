@@ -291,17 +291,78 @@ export function exportEPUB(projectName: string, volumes: Volume[], chapters: Cha
 }
 
 // ============ DOCX ============
-function docxRun(text: string, bold = false): string {
-  const t = escapeXml(text)
-  return bold
-    ? `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${t}</w:t></w:r>`
-    : `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`
-}
-function docxPara(inner: string): string {
-  return `<w:p>${inner}</w:p>`
+
+/**
+ * DOCX 排版选项（E2 · 2.6.2）。
+ *
+ * 🔴 **零变化红线**：`layout` 为 undefined 时，exportDOCX 走与旧版**完全相同**的渲染路径
+ *    （标题只有加粗、正文无任何 rPr / pPr）——这是结构性保证（空 opts 不生成节点），
+ *    不是「默认值恰好等于现状」。传了 layout 才开始附加样式。
+ */
+export interface DocxLayoutOptions {
+  /** 正文字号（pt）：12 = 小四（投稿默认），10.5 = 五号，14 = 四号 */
+  fontSizePt: number
+  /** 正文对齐：'left'（不写 jc，Word 默认即左对齐）| 'justify'（两端对齐） */
+  align: 'left' | 'justify'
+  /** 首行缩进字符数：2 = 缩进两字，0 = 不缩进 */
+  firstLineChars: number
+  /** 行距倍数：1 = 单倍（不写 spacing，与现状一致），1.5 = 1.5 倍 */
+  lineSpacing: 1 | 1.5
+  /** 正文中文字体（标题恒黑体） */
+  bodyFont: string
 }
 
-export function exportDOCX(projectName: string, volumes: Volume[], chapters: Chapter[]) {
+interface DocxRunOpts { bold?: boolean; halfPt?: number; font?: string }
+interface DocxParaOpts { align?: 'left' | 'justify' | 'center'; firstLineChars?: number; fontSizePt?: number; lineSpacing?: 1 | 1.5 }
+
+/** rPr 子元素顺序按 OOXML schema（CT_RPr）：rFonts → b → sz → szCs。全空不生成节点（零变化红线）。 */
+function docxRPr(o: DocxRunOpts): string {
+  if (!o.bold && !o.halfPt && !o.font) return ''
+  const parts: string[] = []
+  if (o.font) parts.push(`<w:rFonts w:ascii="${o.font}" w:eastAsia="${o.font}" w:hAnsi="${o.font}"/>`)
+  if (o.bold) parts.push('<w:b/>')
+  if (o.halfPt) {
+    parts.push(`<w:sz w:val="${o.halfPt}"/>`)
+    parts.push(`<w:szCs w:val="${o.halfPt}"/>`)
+  }
+  return `<w:rPr>${parts.join('')}</w:rPr>`
+}
+
+function docxRun(text: string, opts: DocxRunOpts = {}): string {
+  const t = escapeXml(text)
+  const rPr = docxRPr(opts)
+  return rPr
+    ? `<w:r>${rPr}<w:t xml:space="preserve">${t}</w:t></w:r>`
+    : `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`
+}
+
+/**
+ * pPr 子元素顺序按 OOXML schema（CT_PPrBase）：spacing → ind → jc。全空不生成节点（零变化红线）。
+ * - 行距：w:line = 240 × 倍数 + lineRule="auto"（倍数行距）；单倍**不写**（与现状一致）
+ * - 首行缩进**双写**：w:firstLineChars（Word / WPS 认，单位 1/100 字符，随字号自适应）
+ *   + w:firstLine（twips = pt × 20 × 字符数，给不认 Chars 的阅读器兜底）
+ * - 对齐：'left' 不写（Word 默认即左对齐，与现状一致）
+ */
+function docxPPr(o: DocxParaOpts): string {
+  const parts: string[] = []
+  if (o.lineSpacing && o.lineSpacing !== 1) {
+    parts.push(`<w:spacing w:line="${Math.round(240 * o.lineSpacing)}" w:lineRule="auto"/>`)
+  }
+  if (o.firstLineChars && o.firstLineChars > 0) {
+    const twips = Math.round((o.fontSizePt ?? 12) * 20 * o.firstLineChars)
+    parts.push(`<w:ind w:firstLine="${twips}" w:firstLineChars="${o.firstLineChars * 100}"/>`)
+  }
+  if (o.align === 'justify' || o.align === 'center') parts.push(`<w:jc w:val="${o.align}"/>`)
+  return parts.length ? `<w:pPr>${parts.join('')}</w:pPr>` : ''
+}
+
+function docxPara(inner: string, opts: DocxParaOpts = {}): string {
+  const pPr = docxPPr(opts)
+  return pPr ? `<w:p>${pPr}${inner}</w:p>` : `<w:p>${inner}</w:p>`
+}
+
+/** DOCX 骨架四件套（Content_Types / rels / document rels / 空壳 styles）—— 全书与投稿稿共用 */
+function newDocxZip(): ZipBuilder {
   const zip = new ZipBuilder()
   zip.add('[Content_Types].xml',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')
@@ -311,25 +372,104 @@ export function exportDOCX(projectName: string, volumes: Volume[], chapters: Cha
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
   zip.add('word/styles.xml',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:styles>')
+  return zip
+}
+
+function docxDocumentXml(body: string[]): string {
+  return `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body.join('')}<w:sectPr/></w:body></w:document>`
+}
+
+function saveDocx(zip: ZipBuilder, body: string[], filename: string) {
+  zip.add('word/document.xml', docxDocumentXml(body))
+  downloadBlob(filename, new Blob([zip.build() as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }))
+}
+
+/**
+ * 全书 DOCX 正文段组装（纯函数，测试直接断言产物；exportDOCX 负责打包下载）。
+ * 有 layout 时：书名黑体 18pt 加粗居中，卷 / 章标题黑体 14pt 加粗左对齐，正文按选项。
+ */
+export function buildDocxBody(projectName: string, volumes: Volume[], chapters: Chapter[], layout?: DocxLayoutOptions): string[] {
+  const L = layout
+  // 🔴 零变化红线：L 为 undefined 时三个样式对象全空 —— 生成的 XML 与旧版逐字节一致
+  const bookRun: DocxRunOpts = L ? { bold: true, halfPt: 36, font: '黑体' } : { bold: true }   // 书名 18pt
+  const headRun: DocxRunOpts = L ? { bold: true, halfPt: 28, font: '黑体' } : { bold: true }   // 卷 / 章标题 14pt
+  const bodyRun: DocxRunOpts = L ? { halfPt: L.fontSizePt * 2, font: L.bodyFont } : {}
+  const titlePara: DocxParaOpts = L ? { align: 'center' } : {}
+  const bodyPara: DocxParaOpts = L
+    ? { align: L.align, firstLineChars: L.firstLineChars, fontSizePt: L.fontSizePt, lineSpacing: L.lineSpacing }
+    : {}
 
   const body: string[] = []
-  body.push(docxPara(docxRun(projectName, true)))
+  body.push(docxPara(docxRun(projectName, bookRun), titlePara))
   for (const vol of volumes) {
     const chs = chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.order - b.order)
     if (chs.length === 0) continue
-    body.push(docxPara(docxRun(vol.title, true)))
+    body.push(docxPara(docxRun(vol.title, headRun)))
     for (const ch of chs) {
-      body.push(docxPara(docxRun(ch.title, true)))
+      body.push(docxPara(docxRun(ch.title, headRun)))
       // 与 TXT / 平台粘贴版同一口径：保留行首缩进（2.4.0 · A5）
       const paras = splitParagraphs(ch.content)
-      for (const p of paras) body.push(docxPara(docxRun(p)))
+      for (const p of paras) body.push(docxPara(docxRun(p, bodyRun), bodyPara))
     }
   }
-  const document = `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body.join('')}<w:sectPr/></w:body></w:document>`
-  zip.add('word/document.xml', document)
+  return body
+}
 
-  const blob = new Blob([zip.build() as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-  downloadBlob(sanitize(`${projectName}.docx`), blob)
+export function exportDOCX(projectName: string, volumes: Volume[], chapters: Chapter[], layout?: DocxLayoutOptions) {
+  saveDocx(newDocxZip(), buildDocxBody(projectName, volumes, chapters, layout), sanitize(`${projectName}.docx`))
+}
+
+/** 投稿稿件输入（E2 · 2.6.2） */
+export interface SubmissionDocxInput {
+  /** 书名（黑体 22pt 加粗居中） */
+  bookTitle: string
+  /** 简介（空串 / 纯空白则跳过简介节） */
+  intro: string
+  /** 选定章节 id —— 输出按全书卷章顺序重排，与选择顺序无关 */
+  chapterIds: string[]
+  /** 排版选项（投稿稿必须带排版，调用方一般传「网文投稿标准」预设） */
+  layout: DocxLayoutOptions
+}
+
+/**
+ * 投稿稿件正文段组装（纯函数）：书名（大号居中）→ 简介 → 选定章节正文。
+ * 结构约定：书名黑体二号（22pt）加粗居中；「简介」与各章标题黑体四号（14pt）加粗左对齐；
+ * 正文按排版选项。未分卷的选定章节垫底（与 chaptersToTxt 的 orphan 口径一致）。
+ */
+export function buildSubmissionDocxBody(input: SubmissionDocxInput, volumes: Volume[], chapters: Chapter[]): string[] {
+  const { bookTitle, intro, chapterIds, layout } = input
+  const picked = new Set(chapterIds)
+  const ordered = [
+    ...volumes.flatMap(vol => chapters
+      .filter(c => c.volumeId === vol.id && picked.has(c.id))
+      .sort((a, b) => a.order - b.order)),
+    ...chapters.filter(c => picked.has(c.id) && !volumes.some(v => v.id === c.volumeId)),
+  ]
+
+  const L = layout
+  const titleRun: DocxRunOpts = { bold: true, halfPt: 44, font: '黑体' }   // 书名 22pt
+  const headRun: DocxRunOpts = { bold: true, halfPt: 28, font: '黑体' }    // 简介 / 章标题 14pt
+  const bodyRun: DocxRunOpts = { halfPt: L.fontSizePt * 2, font: L.bodyFont }
+  const bodyPara: DocxParaOpts = {
+    align: L.align, firstLineChars: L.firstLineChars, fontSizePt: L.fontSizePt, lineSpacing: L.lineSpacing,
+  }
+
+  const body: string[] = []
+  body.push(docxPara(docxRun(bookTitle, titleRun), { align: 'center' }))
+  if (intro.trim()) {
+    body.push(docxPara(docxRun('简介', headRun)))
+    for (const p of splitParagraphs(intro)) body.push(docxPara(docxRun(p, bodyRun), bodyPara))
+  }
+  for (const ch of ordered) {
+    body.push(docxPara(docxRun(ch.title, headRun)))
+    const paras = splitParagraphs(ch.content)
+    for (const p of paras) body.push(docxPara(docxRun(p, bodyRun), bodyPara))
+  }
+  return body
+}
+
+export function exportSubmissionDocx(input: SubmissionDocxInput, volumes: Volume[], chapters: Chapter[]) {
+  saveDocx(newDocxZip(), buildSubmissionDocxBody(input, volumes, chapters), sanitize(`${input.bookTitle}-投稿稿.docx`))
 }
 
 // ============ 设定集导出（汇总全部世界观 / 人物 / 设定） ============
