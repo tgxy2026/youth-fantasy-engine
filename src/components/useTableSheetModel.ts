@@ -592,10 +592,17 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     if (active.length === 0) return sortedRows
     return sortedRows.filter(r => active.every(([col, v]) => {
       const cell = (cellVal(r, col) ?? '').trim()
-      if (selectColNames.has(col)) return cell === v.trim() // 下拉列：精确匹配选中项
+      if (selectColNames.has(col)) {
+        // 下拉列：候选值是「显示名」（内置项可能已被用户改名，见 resolveOptions），
+        // 而单元格里存的仍是原名 —— 必须先把存储值转成显示名再比，
+        // 否则选中改名后的项会一行都筛不出来（2026-09-29 社区反馈修复）。
+        const renamed = customOpts[col]?.renamed ?? {}
+        const shown = renamed[cell] ?? cell
+        return shown === v.trim() || cell === v.trim()   // 兼容旧版把值写成新名的脏数据
+      }
       return cell.toLowerCase().includes(v.trim().toLowerCase()) // 文本列：包含匹配
     }))
-  }, [sortedRows, colFilters, selectColNames, cellVal])
+  }, [sortedRows, colFilters, selectColNames, cellVal, customOpts])
 
   /**
    * 自引用父级列（同一表内的上下级隶属）：国家势力·上级 / 地理风物·层级归属。

@@ -144,6 +144,13 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     .map(o => ({ original: o, display: labelMap?.[o] ?? renamedMap[o] ?? o }))
   const userItems = payload.items
 
+  /**
+   * 任意取值 → 展示文案（labelMap > renamed > 原值）。
+   * 🔴 按钮（单元格当前值）必须与列表项用同一套口径 —— 2026-09-29 社区反馈：
+   *    重命名内置项后下拉列表显示新名，但按钮仍显示原名，看起来像「改了没保存」。
+   */
+  const displayOf = (v: string) => labelMap?.[v] ?? renamedMap[v] ?? v
+
   // 完整显示列表（保持稳定：先内置后用户项；同名去重）
   type Item = { key: string; original: string; display: string; kind: 'builtin' | 'user' }
   const list: Item[] = []
@@ -203,7 +210,10 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     }
     const next = await renameBuiltinItem(tabId, colName, renaming, v)
     applyPayload(next)
-    if (value === (renamedMap[renaming] ?? renaming)) onChange(v)
+    // 🔴 2026-09-29 社区反馈修复：**不动存储值**（原名仍写在数据里，显示走 renamed 映射）。
+    //    旧实现在这里 onChange(v) 把当前格的值改成新名 —— 于是同一列里有的行存原名、有的行存新名，
+    //    存新名的行不在内置 options 里 ⇒ 选中态丢失、下拉里还同时出现两个同名项。
+    //    需要「连数据一起换」的上层自己传 onRenameBuiltin 做全表替换（目前没有上层这么做）。
     onRenameBuiltin?.(renaming, v)
     setRenaming(null); setRenameDraft('')
   }
@@ -245,7 +255,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
         onClick={() => setOpen(o => !o)}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
-        <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? (labelMap?.[value] ?? value) : '—'}</span>
+        <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? displayOf(value) : '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
       </Button>
       {open && pos && createPortal(
@@ -296,6 +306,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="md" className=" rounded">保存</Button>
                 </div>
                 <div className="mt-1 text-10 text-ink-500">原名：{item?.display}</div>
+                <div className="mt-0.5 text-10 text-ink-600">改名只改显示名；表里已填的数据仍保存原名，筛选按显示名匹配。</div>
               </div>
             )
           })()}
@@ -316,13 +327,15 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 />
                 <Button type="button" onClick={submitEditUser} variant="primary" size="md" className=" rounded">保存</Button>
               </div>
+              <div className="mt-0.5 text-10 text-ink-600">改名只同步当前格；其它行若已填旧值，需自行改为新值。</div>
             </div>
           )}
 
           {filtered.map(item => {
             if (renaming && item.original === renaming) return null
             if (editing && item.original === editing) return null
-            const selected = value === item.original
+            // 选中态：正常是「存储值 === 内置原名」；也接受 display —— 兼容旧版把值写成新名的脏数据
+            const selected = value === item.original || value === item.display
             return (
               <div
                 key={item.key}
