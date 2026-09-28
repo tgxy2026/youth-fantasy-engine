@@ -8,7 +8,10 @@ import { splitNovelText } from '../src/lib/bookbreak/split'
 
 // 构造一篇「非标标题」原文：正则认不出，但人类一眼能看出章节
 const chap = (no: number) => `${String(no).padStart(2, '0')}|第${no}章风雨`
-const body = (no: number) => Array.from({ length: 6 }, (_, i) => `这是第${no}章的第${i + 1}段正文，讲一些剧情。`).join('\n')
+// ⚠️ 每章 14 段而非更少：applyAiSplit 有 MIN_GAP=200（相邻章起点的最小字符间距，
+// 防 AI 密集误报的现实防御参数）。段数太少时章间距会跌破 200，合法短章被间距闸
+// 静默丢弃 —— 那是测试数据尺度失真，不是实现缺陷（真实章节远长于 200 字符）。
+const body = (no: number) => Array.from({ length: 14 }, (_, i) => `这是第${no}章的第${i + 1}段正文，讲一些剧情。`).join('\n')
 const RAW = Array.from({ length: 5 }, (_, i) => `${chap(i + 1)}\n${body(i + 1)}`).join('\n\n')
 
 // ---------- ① 采样：短文原样返回 ----------

@@ -61,6 +61,10 @@ const COVERED_BY_PANEL = new Set([
   'jiewenji-proofread', 'jiewenji-diagnosis', 'jiewenji-rewrite', 'jiewenji-review',
   'jiewenji-ooc', 'jiewenji-advice', 'jiewenji-pleasure', 'jiewenji-opening',
   'jiewenji-brief', 'jiewenji-ledger',
+  // 设定实体抽取：颉文姬「本章设定补登」的第一步（2.5.1 补登记时漏加白名单）——
+  // 数据源与 jiewenji-panel 第 4 条「设定补登模式（例外）」同一口径（AI 只读本章正文），
+  // 拆书链路的抽取说明则由 bookbreak 条目覆盖，本条无独立界面位。
+  'extract-entities',
 ])
 
 for (const [id] of Object.entries(AI_DATA_SOURCES)) {
