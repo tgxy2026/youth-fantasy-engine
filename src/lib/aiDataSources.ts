@@ -311,6 +311,15 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     ],
     excludes: ['不直接搬运灵感原文 —— 融合要求几条灵感互相服务形成新情节'],
   },
+  // 拆书工具 · AI 章节边界识别（2.6.1·R2 新增）
+  'bookbreak-split': {
+    label: '拆书 · AI 章节识别',
+    sources: [
+      { group: '导入的原文采样', items: [], note: '只采样头部 / 中部 / 尾部约 9000 字，不是整本' },
+      { group: '你填的章节标题示例', items: [], note: '原样逐条列出，AI 按这些行的格式规律找章节起始行' },
+    ],
+    excludes: ['AI 报出的行必须在原文里逐字命中才采信，命中不足 2 行整体弃用回退本地切分'],
+  },
   'ai-assist': {
     label: 'AI 辅助规划（脑暴）',
     sources: [{ group: '项目设定资料', items: CORE_TABLES, note: '约 4000 字预算；勾选「带入项目资料」才发送，不勾就是纯对话' }],

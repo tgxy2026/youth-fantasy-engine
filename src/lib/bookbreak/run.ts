@@ -21,6 +21,8 @@
  *    B2 会换成「两遍全字段抽取」，届时只需替换 extract 阶段的实现，draft/commit/UI 全不用改。
  */
 import { aiExtractSettingEntities, aiSummarizeFormSettings } from '../aiTasks'
+import { aiBookBreakSplitChapters } from '../aiTasks/bookBreakSplit'
+import { isCancelled } from '../ai'
 import { buildDraftBundle, bundleOf, type EntityBatch } from '../flow/draft'
 import { formDraftRows } from '../flow/formMap'
 import { createFlow, firstUnfinishedStage, type StageCtx } from '../flow/pipeline'
@@ -30,6 +32,7 @@ import { persistSplitToChapters, planVolumes, type PersistResult } from './persi
 import { buildRelationDrafts, type RelationDraftResult, type RelationTabOutcome } from './relations'
 import type { RelationMaterialLimits } from './relationMaterial'
 import { chunkText, splitNovelText, type RawChapter, type SplitResult } from './split'
+import { applyAiSplit, sampleTextForSplit } from './aiSplit'
 
 /** 阶段声明（weight 按实测耗时给：抽取占绝大部分；写入正文是纯 IO，给 1） */
 export const BOOKBREAK_STAGES: FlowStage[] = [
@@ -80,6 +83,9 @@ export interface BookBreakOptions {
   maxUnits?: number
   /** 兜底分块的块大小（token） */
   chunkTokens?: number
+  /** 2.6.1 · R2：作者填的「章节标题示例」（一行一条）。非空且本地正则没认出章节时，
+   *  先走 AI 边界识别（aiTasks/bookBreakSplit）；识别失败回退本地结果，绝不阻塞拆书 */
+  titleSamples?: string
   /**
    * 是否把切分结果写入正文编辑的卷/章（**默认 true**）。
    * 关掉即退化成旧行为：只抽设定、不动正文。
@@ -232,6 +238,29 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
       ...(opts.maxChunks !== undefined ? { maxChunks: opts.maxChunks } : {}),
       ...(opts.chunkTokens !== undefined ? { chunkTokens: opts.chunkTokens } : {}),
     })
+    // 2.6.1 · R2：本地正则没认出章节 + 作者填了标题示例 → 先走 AI 边界识别（拍板：示例优先于字数兜底）。
+    // AI 报的行在 aiSplit.applyAiSplit 里逐字回原文核对，命中 <2 整体弃用 —— 失败就保持本地字数兜底结果。
+    const samples = (opts.titleSamples ?? '').split('\n').map(s => s.trim()).filter(Boolean)
+    if (r.mode === 'chunks' && samples.length > 0) {
+      ctx.report(1, '本地规则未识别到章节，按示例用 AI 识别章节边界…')
+      try {
+        const aiLines = await aiBookBreakSplitChapters({
+          sampleText: sampleTextForSplit(raw),
+          samples,
+          ...(opts.signal ? { signal: opts.signal } : {}),
+        })
+        const aiRes = applyAiSplit(raw, aiLines, opts.maxChunks !== undefined ? Math.max(1, opts.maxChunks) : 60)
+        if (aiRes) {
+          ctx.report(1, `AI 按示例识别到 ${aiRes.chapters.length} 章`)
+          return aiRes
+        }
+        ctx.report(1, 'AI 识别结果与原文核对未通过，保持按字数分块处理')
+      } catch (e) {
+        if (isCancelled(e)) throw e
+        // AI 切分失败不挡拆书 —— 字数兜底的结果已经在手上，如实上报原因即可
+        ctx.report(1, `AI 识别失败（${e instanceof Error ? e.message.slice(0, 60) : '未知原因'}），保持按字数分块处理`)
+      }
+    }
     ctx.report(1, r.mode === 'chapters' ? `识别到 ${r.chapters.length} 章` : `未识别到章节，按 ${r.chapters.length} 块处理`)
     return r
   })

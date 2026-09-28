@@ -31,6 +31,7 @@ import { loadPromptOverrides } from './lib/promptSettings'
 import { LS_SPRITE_ENABLED } from './lib/constants'
 import { downloadBlob } from './lib/zip'
 import workbenchBg from './assets/workbench-bg.png'
+import { usePersistedBool } from './lib/uiPrefs'
 
 // 次级页签按需懒加载：把向导页 / 灵感启发·检查工具（含 AI 组件与大量交互）从首屏主包拆出去，
 // 仅在用户切到对应页签时才加载对应 chunk。Sidebar/仪表盘/编辑器保持常驻以保证首屏速度。
@@ -54,6 +55,8 @@ const TrajectoryPanel = lazy(() => import('./components/TrajectoryPanel'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
+  // 内置背景开关（2.6.1）：必须在所有早退 return 之前调（rules-of-hooks）
+  const [bgHidden] = usePersistedBool('workbench-bg-hidden', false)
   const [projectName, setProjectName] = useState('')
   const [visCtx, setVisCtx] = useState<VisCtx>({ type: 'full', features: [] })
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -432,11 +435,14 @@ export default function App() {
           负 z-index 子元素绘制于 body 背景之上、半透明面板之下，故可从面板后透出；
           父容器设为 bg-transparent，避免不透明背景把装饰层盖住；
           主题色由 CSS 变量驱动，切换主题时底色随变；pointer-events-none 不挡交互，层号走 Z.pageBackdrop */}
+      {/* 内置背景（2.6.1）：金色书本与房子线条图案 —— 侧栏弹窗「背景」开关可整体隐藏（跨实例同步的 usePersistedBool） */}
+      {!bgHidden && (
       <div
         className="absolute inset-0 pointer-events-none bg-cover bg-center bg-no-repeat opacity-100"
         style={{ backgroundImage: `url(${workbenchBg})`, zIndex: Z.pageBackdrop }}
         aria-hidden
       />
+      )}
       <Sidebar
         activeTab={activeTab}
         onNavigate={navigate}

@@ -36,7 +36,7 @@ import { type VisCtx, refreshVolumeTabs } from '../lib/schema'
 import { chapterSeqOf, chapterSeqMap } from '../lib/chapterSeq'
 import { syncChapterMaster } from '../lib/chapterMaster'
 import { useAIReady } from '../lib/useAIReady'
-import { usePersistedBool, usePersistedEnum } from '../lib/uiPrefs'
+import { readSetPref, writeSetPref, readStringPref, writeStringPref, usePersistedBool, usePersistedEnum } from '../lib/uiPrefs'
 import { DEFAULT_INDENT_UNIT, INDENT_UNIT_IDS, type IndentUnit } from '../lib/indent'
 import { aiChapterSummary } from '../lib/aiTasks'
 import {
@@ -62,6 +62,33 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // ---- 卷展开/折叠态的持久化（2.6.1 社区反馈：新增章节会把已折叠的卷强制展开）----
+  // 现状病灶：load() 每次都 setExpanded(全部卷)，而增删卷章 / 改名都走 load()，
+  // 用户手动折叠的卷会被整体掀开；切页签（编辑器卸载重挂）也一样中招。
+  // 修法：折叠偏好按项目存 localStorage（uiPrefs 红线：存「偏离默认的那一侧」＝已折叠集合），
+  // 重载只并入新出现的卷，绝不整体重置。
+  const expandedRef = useRef<Set<string>>(new Set())
+  const volumesRef = useRef<Volume[]>([])
+  volumesRef.current = volumes
+  /** 见过的卷 id 集合：区分「新出现的卷」（应默认展开）与「用户手动折叠的卷」（必须保留折叠）。
+   *  null = load 首跑还没完成，展开态初始化交给 load。 */
+  const seenVolIdsRef = useRef<Set<string> | null>(null)
+  // 挂载即锁定项目 id（App.tsx 以 key={proj-${projectId}} 挂整树，切项目必重挂 ⇒ 键不会串项目）
+  const projectId = db.getCurrentProjectId()
+  const collapsedPrefKey = `editor-vol-collapsed:${projectId}`
+  const lastChapterPrefKey = `editor-last-chapter:${projectId}`
+  /** 把最终展开态写回持久化（写的是补集＝已折叠集合，死卷 id 顺手清掉） */
+  const persistCollapsed = useCallback((next: Set<string>, allVolIds: string[]) => {
+    writeSetPref(collapsedPrefKey, allVolIds.filter(id => !next.has(id)))
+  }, [collapsedPrefKey])
+  /** setExpanded 的持久化包装：签名保持 Dispatch 兼容，树组件的折叠按钮零改动。
+   *  用 expandedRef 镜像而非 updater 内写盘 —— load 场景下 volumes state 尚未提交，拿不到全集。 */
+  const setExpandedPersist = useCallback((action: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+    const next = typeof action === 'function' ? action(expandedRef.current) : action
+    expandedRef.current = next
+    setExpanded(next)
+    persistCollapsed(next, volumesRef.current.map(v => v.id))
+  }, [persistCollapsed])
   // 拖拽排序状态：分卷 / 章节拖动时记录源与目标位置（v1.6.3）
   const [dragKind, setDragKind] = useState<null | 'vol' | 'ch'>(null)
   const [dragId, setDragId] = useState<string | null>(null)
@@ -160,24 +187,83 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     return [vols, chs]
   }, [])
 
+  /** 打开项目时的落点章：上次编辑位置 > 最近更新的章 > null（调用方兜底第一卷第一章）。
+   *  2.6.1 社区反馈：每次打开项目都落在第一卷第一章，写到第三卷的作者每次都得手动翻回去。 */
+  const pickInitialChapter = useCallback((chs: Chapter[]): Chapter | null => {
+    if (chs.length === 0) return null
+    const remembered = readStringPref(lastChapterPrefKey)
+    if (remembered) {
+      const hit = chs.find(c => c.id === remembered)
+      if (hit) return hit
+    }
+    let latest = chs[0]
+    for (const c of chs) if (c.updatedAt > latest.updatedAt) latest = c
+    return latest
+  }, [lastChapterPrefKey])
+
   const load = useCallback(async () => {
     const [vols, chs] = await reloadVolumes()
     if (vols.length > 0) {
-      setExpanded(new Set(vols.map(v => v.id)))
+      const allVolIds = vols.map(v => v.id)
+      const targetCh = pickInitialChapter(chs)
+      const targetVolId = targetCh?.volumeId ?? null
+      // 🔴 展开态分两条路（2.6.1 社区反馈：新增章节会把已折叠的卷强制展开）：
+      //   · 首次加载（挂载后第一跑）→ 以持久化的「已折叠集合」为准（没记录 = 全展开，
+      //     与旧版首次行为一致）；落点章所在卷强制展开，保证树上看得到高亮；
+      //   · 后续重载（增删卷章 / 改名都会走这里）→ **保留当前展开态**，只把新出现的卷
+      //     默认展开，绝不整体重置 —— 否则用户手动折叠的卷会被 load 无条件掀开。
+      if (!seenVolIdsRef.current) {
+        const collapsed = new Set(readSetPref(collapsedPrefKey) ?? [])
+        const next = new Set(allVolIds.filter(id => !collapsed.has(id)))
+        if (targetVolId) next.add(targetVolId)
+        expandedRef.current = next
+        setExpanded(next)
+        persistCollapsed(next, allVolIds)
+      } else {
+        // 重载只展开「新出现的卷」；落点章所在卷**不**在此处强制展开 ——
+        // 否则「折叠当前编辑章所在卷 → 改名别的卷 → load」会把刚折叠的卷又掀开（同一 bug 换入口复发）。
+        // 需要定位展开的场景（新建章 / 跨页签跳转）由各自入口显式处理。
+        const seen = seenVolIdsRef.current
+        const fresh = allVolIds.filter(id => !seen.has(id))
+        if (fresh.length > 0) {
+          const next = new Set(expandedRef.current)
+          for (const id of fresh) next.add(id)
+          expandedRef.current = next
+          setExpanded(next)
+          persistCollapsed(next, allVolIds)
+        }
+      }
+      seenVolIdsRef.current = new Set(allVolIds)
       if (chs.length > 0) {
-        // 函数式更新：避免闭包中的过期 activeId 导致新增卷后当前章节被重置回第一章
-        setActiveId(cur => cur ?? chs.filter(c => c.volumeId === vols[0].id)[0]?.id ?? null)
+        // 函数式更新：避免闭包中的过期 activeId 导致新增卷后当前章节被重置
+        setActiveId(cur => cur ?? targetCh?.id ?? null)
       }
     }
     setLoaded(true)
-  }, [reloadVolumes])
+  }, [reloadVolumes, pickInitialChapter, collapsedPrefKey, persistCollapsed])
 
   // 跨视图联动：在「章节总表」侧栏增/删/改卷后，本编辑器章节管理需同步刷新卷列表
   useEffect(() => {
-    const onVol = () => { void reloadVolumes() }
+    const onVol = () => {
+      void reloadVolumes().then(([vols]) => {
+        // 总表侧新增的卷在树里默认展开（seen 里没有 = 新卷）。用 seen 而非 expandedRef 判定，
+        // 否则「用户在树里折叠了卷 → 总表改个名」会把折叠的卷误判成新卷再掀开。
+        const seen = seenVolIdsRef.current
+        if (!seen) return // load 首跑还没完成，初始化交给 load
+        const fresh = vols.filter(v => !seen.has(v.id))
+        if (fresh.length > 0) {
+          for (const v of fresh) seen.add(v.id)
+          setExpandedPersist(prev => {
+            const n = new Set(prev)
+            for (const v of fresh) n.add(v.id)
+            return n
+          })
+        }
+      })
+    }
     window.addEventListener('yfe:volumes-changed', onVol)
     return () => window.removeEventListener('yfe:volumes-changed', onVol)
-  }, [reloadVolumes])
+  }, [reloadVolumes, setExpandedPersist])
 
   // 今日码字量（保存后刷新）
   const loadTodayWords = useCallback(async () => {
@@ -194,8 +280,19 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   useEffect(() => {
     if (openChapterId && chapters.some(c => c.id === openChapterId)) {
       setActiveId(openChapterId)
+      // 目标卷被折叠时展开它，否则树上找不到高亮落点（全文检索 / 跨页签跳转常见）
+      const ch = chapters.find(c => c.id === openChapterId)
+      if (ch && !expandedRef.current.has(ch.volumeId)) {
+        setExpandedPersist(prev => new Set(prev).add(ch.volumeId))
+      }
     }
-  }, [openChapterId, chapters])
+  }, [openChapterId, chapters, setExpandedPersist])
+
+  // 记住上次编辑位置：下次打开项目直接回到这里（2.6.1 社区反馈）。null 不写——
+  // 删章置空后保留旧记录，读回时本来就有存在性校验。
+  useEffect(() => {
+    if (activeId) writeStringPref(lastChapterPrefKey, activeId)
+  }, [activeId, lastChapterPrefKey])
 
   const active = useMemo(() => chapters.find(c => c.id === activeId) ?? null, [chapters, activeId])
   const { ready: aiReady } = useAIReady()
@@ -601,6 +698,9 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
       status: '构思', wordCount: 0, createdAt: Date.now(), updatedAt: Date.now(),
     }
     await saveChapterWithAi(ch)
+    // 目标卷可能是折叠状态下点的「新建章」：展开它，否则 load 后树上找不到新章高亮
+    //（2.6.1 修复配套：load 不再无条件展开所有卷，这里要显式补上定位展开）
+    setExpandedPersist(prev => new Set(prev).add(volumeId))
     await load()
     setActiveId(ch.id)
     // 新章登记到对应卷的章节台账。序号取全局派生值——新章 order 为卷内最大值，
@@ -735,8 +835,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   return {
     // 结构数据（卷 / 章 / 当前章 / 序号）
     isLite, loaded, volumes, chapters, activeId, active, flat, activeIdx, nextChapterNo, chapterSeqs,
-    // 章节树交互（改名 / 增删 / 拖拽重排）
-    expanded, setExpanded, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering,
+    // 章节树交互（改名 / 增删 / 拖拽重排）；setExpanded 已是持久化包装（签名兼容 Dispatch）
+    expanded, setExpanded: setExpandedPersist, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering,
     // 正文与保存
     draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, todayWords, load,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）

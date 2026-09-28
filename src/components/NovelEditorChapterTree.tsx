@@ -4,6 +4,7 @@ import HelpPopover from './HelpPopover'
 import type { Volume, Chapter, ChapterStatus } from '../lib/types'
 import { BookMarked, Upload, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash } from 'lucide-react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
+import { useEffect, useRef } from 'react'
 
 /**
  * 正文编辑页的**左侧章节树**（2026-09-19 从 NovelEditor.tsx 抽出，原 1113~1287 行）。
@@ -59,6 +60,14 @@ export default function NovelEditorChapterTree({
   setNamePrompt, nextChapterNo, activeId, openChapter, chapterSeqs,
   removeVolume, removeChapter, toggleExcludeNumbering, runExport,
 }: Props) {
+  // 2.6.1 配套：打开项目恢复到上次章节（可能在很深的卷里）时，把高亮行滚进可视区，
+  // 否则长列表里落点根本看不见。block:'nearest' 保证用户手动点选时（本就在可视区内）零滚动。
+  const listRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!activeId || !listRef.current) return
+    const el = listRef.current.querySelector(`[data-chapter-id="${CSS.escape(activeId)}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [activeId])
   return (
       <div
         className="relative shrink-0 border-r border-ink-700 bg-ink-900 flex flex-col"
@@ -91,7 +100,7 @@ export default function NovelEditorChapterTree({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2 px-2">
+        <div ref={listRef} className="flex-1 overflow-y-auto py-2 px-2">
           {volumes.length === 0 && (
             <div className="text-center py-14 text-ink-500 text-12 border border-dashed border-ink-700 rounded-lg mx-1">
               <FolderPlus size={18} className="mx-auto mb-2 text-ink-600" />
@@ -164,6 +173,7 @@ export default function NovelEditorChapterTree({
                       return (
                         <div
                           key={ch.id}
+                          data-chapter-id={ch.id}
                           onClick={() => openChapter(ch.id)}
                           className={`group flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-colors
                             ${isActive ? 'bg-amber/15 text-amber' : 'text-ink-300 hover:bg-ink-800'}

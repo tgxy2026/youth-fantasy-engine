@@ -26,6 +26,7 @@ export type PromptGroup =
   | '设定与资料'
   | '项目诊断'
   | '灵感工具'
+  | '拆书工具'
   | '酒馆模式'
   | '其它'
 
@@ -48,7 +49,7 @@ export interface PromptEntry extends PromptMeta {
   overridden: boolean
 }
 
-const GROUPS: PromptGroup[] = ['正文写作', '编辑与审校', '设定与资料', '项目诊断', '灵感工具', '酒馆模式', '其它']
+const GROUPS: PromptGroup[] = ['正文写作', '编辑与审校', '设定与资料', '项目诊断', '灵感工具', '拆书工具', '酒馆模式', '其它']
 
 /**
  * 一条可注册提示词的「三件套」。
