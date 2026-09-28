@@ -41,6 +41,7 @@ import { DEFAULT_INDENT_UNIT, INDENT_UNIT_IDS, type IndentUnit } from '../lib/in
 import { aiChapterSummary } from '../lib/aiTasks'
 import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
+  GHOST_CONTEXT_CHARS, orderedChapters,
 } from './novelEditorHelpers'
 import { useNovelEditorHighlight } from './useNovelEditorHighlight'
 import { useNovelEditorGhost } from './useNovelEditorGhost'
@@ -628,6 +629,14 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   }
 
   // ---- AI 伴写（D4-2 拆出，同名解构接回；下游代码一个字没改）----
+  // 上一章末尾（≤2000 字，全书卷章顺序的前一章；跨卷＝上一卷最后一章）——伴写前文不足
+  // GHOST_CONTEXT_CHARS 时拿它补齐（2026-09-28 · 章首语境）。章节列表含正文本就在内存，
+  // 同步派生零读库；产出是字符串，上一章内容没变时 useMemo 引用稳定，不会让 ghost effect 白跑。
+  const prevChapterTail = useMemo(() => {
+    const ordered = orderedChapters(volumes, chapters)
+    const idx = ordered.findIndex(c => c.id === activeId)
+    return idx > 0 ? (ordered[idx - 1].content || '').slice(-GHOST_CONTEXT_CHARS) : ''
+  }, [volumes, chapters, activeId])
   const {
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi,
     companionStyleNote, setCompanionStyleNote, companionStyleSpec, setCompanionStyleSpec,
@@ -636,6 +645,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange,
     // B3 补做：采纳即挂账一笔「续写」产出，随本章下次落库写进 aiAssist
     onAiAssist: (chars: number) => noteAiAssist('continued', chars),
+    // 章首语境：当前章前文不足 2000 字时，伴写拿上一章末尾补齐
+    prevChapterTail,
   })
 
   /** 建议段模式：AI 改稿以标记块写入原文下方，绝不动原文；作者自行取舍 */

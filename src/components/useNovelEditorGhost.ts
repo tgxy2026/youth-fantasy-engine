@@ -26,7 +26,7 @@ import { aiInlineSuggest, type InlineSuggestLength } from '../lib/aiTasks'
 import { buildInlineBriefing } from '../lib/aiContext'
 import { isCancelled } from '../lib/ai'
 import {
-  GHOST_DEBOUNCE_MS, GHOST_CONTEXT_CHARS, GHOST_MAX_FAILS, GHOST_CACHE_MAX,
+  GHOST_DEBOUNCE_MS, GHOST_CONTEXT_CHARS, GHOST_MAX_FAILS, GHOST_CACHE_MAX, stitchGhostBefore,
 } from './novelEditorHelpers'
 
 type GhostArgs = {
@@ -45,6 +45,12 @@ type GhostArgs = {
   ghostDismissed: MutableRefObject<{ at: number; len: number } | null>
   /** 最新草稿镜像（ghost 取前文 / 记长度都读它，保证拿到本帧最新值） */
   draftRef: MutableRefObject<string>
+  /**
+   * 上一章末尾内容（≤ GHOST_CONTEXT_CHARS 字，按全书卷章顺序取的前一章；跨卷＝上一卷最后一章）。
+   * 当前章光标前文不足 GHOST_CONTEXT_CHARS 时拿它补齐差额 —— 章首也能带稳上一章的语境。
+   * 空串 / 不传＝维持旧行为（纯当前章前文；第一卷第一章、上一章无正文时本就为空）。
+   */
+  prevChapterTail?: string
   /** 采纳建议的唯一写入口：走受控组件的 onContentChange，保住自动保存链路 */
   onContentChange: (v: string) => void
   /**
@@ -55,7 +61,7 @@ type GhostArgs = {
 }
 
 export function useNovelEditorGhost({
-  activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange, onAiAssist,
+  activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange, onAiAssist, prevChapterTail = '',
 }: GhostArgs) {
   // ---- 2.2.0 AI 伴写（ghost 逐句续写）----
   // 默认关闭：写作者主导权优先。开启后停笔自动在光标后透出一句浅灰建议；Ctrl+Enter 采纳才落进正文，继续打字即丢弃。
@@ -97,8 +103,13 @@ export function useNovelEditorGhost({
   //   · ghost 叠层与高亮叠层同层（均 z-0 + 透明基），盒模型逐项照抄高亮层，否则两图层必然错位；
   //   · **光标后已有正文时不显示** —— ghost 没有"宽度"，压到后面的字上会糊成一片。
 
-  /** 取光标前 GHOST_CONTEXT_CHARS 字作前文（从 draftRef 读最新内容，避免闭包拿到旧值） */
-  const ghostBefore = useCallback((at: number) => draftRef.current.slice(Math.max(0, at - GHOST_CONTEXT_CHARS), at), [draftRef])
+  /** 取光标前 GHOST_CONTEXT_CHARS 字作前文（从 draftRef 读最新内容，避免闭包拿到旧值）。
+   *  当前章前文不足时用上一章末尾补齐（2026-09-28）：章首几行字也能带稳上一章的语气、人称与情节惯性，
+   *  新章刚开（前文 <12 字）原本不发请求，补齐后也能正常出建议 —— 拼接逻辑在 stitchGhostBefore（可单测）。 */
+  const ghostBefore = useCallback((at: number) => {
+    const cur = draftRef.current.slice(Math.max(0, at - GHOST_CONTEXT_CHARS), at)
+    return stitchGhostBefore(cur, prevChapterTail)
+  }, [draftRef, prevChapterTail])
 
   /** 拼 ghost 用的请求 key：同前文 + 同参数才复用缓存（useCallback：它是唯一依赖 state 的取值函数，
    *  进 effect 依赖数组才不会让伴写闭包读到旧的档位/开关） */
