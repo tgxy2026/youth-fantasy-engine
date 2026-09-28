@@ -9,7 +9,7 @@ import {
   restoreBuiltinItem,
   type CustomOptionPayload,
 } from '../lib/db'
-import { Plus, Check, ChevronDown, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
+import { Plus, Check, ChevronDown, ChevronRight, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { EmptyState } from './EmptyState'
@@ -60,6 +60,8 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   const [editing, setEditing] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [q, setQ] = useState('')
+  /** 「已移除的内置项」是否展开（默认折叠 —— 2026-09-29：移除后下拉里不再挂着一串删除线） */
+  const [showRemoved, setShowRemoved] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
@@ -135,6 +137,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     setRenaming(null); setRenameDraft('')
     setEditing(null); setEditDraft('')
     setQ('')
+    setShowRemoved(false)
   }
 
   // 内置项 → 应用 renamed 替换；过滤 hidden
@@ -226,7 +229,11 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   }
 
   const onHideBuiltin = async (orig: string) => {
-    if (!await confirmDialog({ title: '移除内置项', message: `确定从下拉中移除内置项「${orig}」？\n（已使用此值的数据不会被改动，但下拉里不再出现）`, danger: true })) return
+    if (!await confirmDialog({
+      title: '移除内置项',
+      message: `确定从下拉中移除内置项「${orig}」？\n（已使用此值的数据不会被改动；需要时可在下拉底部「已移除 N 项」里展开还原）`,
+      danger: true,
+    })) return
     const next = await hideBuiltinItem(tabId, colName, orig)
     applyPayload(next)
     if (value === (renamedMap[orig] ?? orig)) onChange('')
@@ -382,21 +389,38 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             )
           })}
 
-          {/* 已隐藏的内置项可还原（固定选项列不会出现这种情况，一并省略） */}
+          {/* 已移除的内置项可还原（固定选项列不会出现这种情况，一并省略）。
+              🔴 2026-09-29：**默认折叠** —— 移除后下拉里只留一行「已移除 N 项（展开可还原）」，
+              不再挂着一串带删除线的条目（看着像没删干净）；需要还原时点开，反悔通道仍在。 */}
           {!fixedOptions && payload.hidden.length > 0 && (
             <div className="border-t border-ink-700 mt-1 pt-1">
-              <div className="px-2.5 py-0.5 text-10 text-ink-500">已移除的内置项（可还原）</div>
-              {payload.hidden.map(h => (
-                <div key={`h-${h}`} className="group flex items-center px-1 py-0.5 text-12 text-ink-500 hover:bg-ink-700">
-                  <span className="flex-1 px-1.5 py-0.5 line-through truncate">{h}</span>
-                  <Button variant="bare" iconOnly size="xs"
-                    type="button"
-                    onClick={() => onRestoreBuiltin(h)}
-                    className="opacity-40 group-hover:opacity-100 hover:text-amber"
-                    title="还原"
-                  ><RotateCcw size={10} /></Button>
-                </div>
-              ))}
+              {showRemoved ? (
+                <>
+                  <Button variant="bare" size="xs" type="button"
+                    onClick={() => setShowRemoved(false)}
+                    className="w-full !justify-start px-2.5 py-0.5 text-10 text-ink-500 hover:text-amber">
+                    <ChevronDown size={10} /> 已移除的内置项（{payload.hidden.length}）· 收起
+                  </Button>
+                  {payload.hidden.map(h => (
+                    <div key={`h-${h}`} className="group flex items-center px-1 py-0.5 text-12 text-ink-500 hover:bg-ink-700">
+                      <span className="flex-1 px-1.5 py-0.5 line-through truncate">{h}</span>
+                      <Button variant="bare" iconOnly size="xs"
+                        type="button"
+                        onClick={() => onRestoreBuiltin(h)}
+                        className="opacity-40 group-hover:opacity-100 hover:text-amber"
+                        title="还原"
+                      ><RotateCcw size={10} /></Button>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <Button variant="bare" size="xs" type="button"
+                  onClick={() => setShowRemoved(true)}
+                  title="展开可把移除过的内置项还原回来"
+                  className="w-full !justify-start px-2.5 py-1 text-10 text-ink-500 hover:text-amber">
+                  <ChevronRight size={10} /> 已移除 {payload.hidden.length} 项（展开可还原）
+                </Button>
+              )}
             </div>
           )}
 
