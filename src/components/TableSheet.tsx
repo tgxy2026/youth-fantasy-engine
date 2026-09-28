@@ -60,7 +60,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 树形层级
     bodyRows, 
     // 编号
-    retireCodes, codeError,
+    codeError,
     // 视图与高亮
     viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isMaster, aiCap, aiReady, 
     // 人物关系分组
@@ -133,9 +133,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <Button variant="danger" // 破坏性操作用 danger 令牌（原为 bare + 手写红样式，与 danger 输出等价）
               onClick={async () => {
                 if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
-                retireCodes(rows).then(() => {  // 全部编号登记进退役池，防止复用
-                  rows.forEach(row => { void deleteTableRow(row.id) })
-                })
+                rows.forEach(row => { void deleteTableRow(row.id) })
                 setRows([])
                 setDrafts({})
               }}

@@ -17,10 +17,15 @@ const CODE_PREFIX: Record<string, string> = {
 }
 
 /**
- * 计算某表「编号」列的下一个自动编号：
- * 保留原字母前缀，数字部分统一 4 位补零、从 0001 起，续接已有最大序号。
- * - 表内已有编号：取最大数字 +1（如 F0001~F0005 → F0006）
- * - 空表：用该表默认前缀 + 0001（如 N0001）
+ * 计算某表「编号」列的下一个自动编号：**补最小的空号**（2026-09-29 改）。
+ *
+ * 旧规则是「最大序号 +1」＋退役池不复用，社区的反馈是删错了想补回来却补不回来；
+ * 现改为顺序补缺：
+ * - 0001~0005 全在 → 0006
+ * - 删掉末尾 0005 → 新增仍是 0005（补末尾空位）
+ * - 删掉中间 0003 → 新增是 0003（补中间缺口）
+ * 编号复用可能让别处的旧引用指向新条目，所以删除时另有引用检查提示（lib/codeRefs.ts）。
+ *
  * @param drafts 未落盘的草稿值优先于已保存值；不传则只读已保存数据
  */
 export function nextAutoCode(
@@ -30,7 +35,7 @@ export function nextAutoCode(
   codeCol = '编号',
 ): string {
   const prefix = CODE_PREFIX[tabId] ?? ''
-  let maxNum = 0
+  const used = new Set<number>()
   let usedPrefix = prefix
   for (const r of rows) {
     const raw = ((drafts[r.id]?.[codeCol] ?? r.data[codeCol] ?? '') as string).trim()
@@ -38,9 +43,10 @@ export function nextAutoCode(
     const m = raw.match(/^(\D*)(\d+)$/)
     if (m) {
       if (!usedPrefix) usedPrefix = m[1]
-      const n = parseInt(m[2], 10)
-      if (n > maxNum) maxNum = n
+      used.add(parseInt(m[2], 10))
     }
   }
-  return usedPrefix + String(maxNum + 1).padStart(4, '0')
+  let n = 1
+  while (used.has(n)) n++
+  return usedPrefix + String(n).padStart(4, '0')
 }

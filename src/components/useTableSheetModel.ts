@@ -25,6 +25,7 @@ import {
   getSetting, getTableRows, saveTableRow, setSetting, type CustomOptionPayload,
 } from '../lib/db'
 import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
+import { countCodeRefs, codeRefWarning } from '../lib/codeRefs'
 import { uid } from '../lib/id'
 import { aiCapabilityOf } from '../lib/aiScope'
 import { useAIReady } from '../lib/useAIReady'
@@ -107,8 +108,6 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   // 人物关系分组视图：分组（人物名）与关系行的展开状态
   const [relGroupOpen, setRelGroupOpen] = useState<Set<string>>(new Set())
   const [relRowOpen, setRelRowOpen] = useState<Set<string>>(new Set())
-  // 编号防重复：已删除不复用的编号（按项目+页签持久化）
-  const [retiredCodes, setRetiredCodes] = useState<Set<string>>(new Set())
   // 编号校验错误提示（保存时校验，展示在页签顶部）
   const [codeError, setCodeError] = useState<string | null>(null)
   // 编号列名（仅「编号」列参与防重复校验；「章节号」由系统自动生成，不校验）
@@ -270,9 +269,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     setRelRowOpen(new Set())
     setCodeError(null)
     setDrafts({}) // 新页签从干净草稿开始（旧草稿已落库）
-    if (codeCol) {
-      getSetting<string[]>(`retiredCodes::${tab.id}`, []).then(list => setRetiredCodes(new Set(list)))
-    }
+    // 🔴 2026-09-29：不再加载「退役编号池」（retiredCodes）—— 编号改为补最小空号，删除后的编号允许复用。
+    //    旧库里残留的 retiredCodes::<tabId> 数据无害（不再读写），无需迁移清理。
     if (tab.id === 'history' || tab.id === 'timeline') {
       // 加载历法配置；兼容旧版单值 calendarName：若存在则迁移为多历法
       getSetting<CalendarDef[]>('calendars', []).then(list => {
@@ -287,7 +285,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
         })
       })
     }
-  }, [tab.id]) // eslint-disable-line
+    // 🔴 依赖只写 tab.id：本 effect 是「切页签时重置」，故意不跟 rows/drafts 等联动
+  }, [tab.id])
 
   const saveCalendars = (next: CalendarDef[]) => {
     setCalendars(next)
@@ -322,9 +321,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   }
 
   /**
-   * 编号唯一性校验（保存前调用）：
-   * - 合并 draft 后逐行提取编号，检测多行重复
-   * - 编号若命中「已删除不复用」的退役编号池，同样阻止保存
+   * 编号唯一性校验（保存前调用）：合并 draft 后逐行提取编号，检测多行重复。
+   * 🔴 2026-09-29：删掉了「命中退役编号池也阻止保存」那条 —— 编号改为补最小空号，
+   *    已删除条目的编号**允许**被重新使用（删除时另有引用提示）。只保留真正的重复检测。
    * 返回错误信息（null 表示通过）
    */
   const validateCodes = useCallback((): string | null => {
@@ -337,28 +336,10 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     }
     const errs: string[] = []
     for (const [code, count] of owner) {
-      if (retiredCodes.has(code)) {
-        errs.push(`「${code}」是已删除条目用过的编号（编号不复用），请换一个`)
-      } else if (count > 1) {
-        errs.push(`「${code}」被 ${count} 行重复使用`)
-      }
+      if (count > 1) errs.push(`「${code}」被 ${count} 行重复使用`)
     }
     return errs.length > 0 ? errs.join('；') : null
-  }, [codeCol, rows, drafts, retiredCodes])
-
-  /** 行删除时，将其编号登记进「退役编号池」（不复用）。支持批量，避免多次写入互相覆盖 */
-  const retireCodes = async (targets: TableRow[]) => {
-    if (!codeCol) return
-    const next = new Set(retiredCodes)
-    let changed = false
-    for (const row of targets) {
-      const code = ((drafts[row.id]?.[codeCol] ?? row.data[codeCol] ?? '') as string).trim()
-      if (code && !next.has(code)) { next.add(code); changed = true }
-    }
-    if (!changed) return
-    setRetiredCodes(next)
-    await setSetting(`retiredCodes::${tab.id}`, [...next])
-  }
+  }, [codeCol, rows, drafts])
 
   const saveAll = useCallback(async () => {
     if (dirtyKeys.length === 0) return
@@ -424,9 +405,23 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   }
 
   const removeRow = async (rowId: string) => {
-    if (!await confirmDialog({ title: '删除这一行', message: '确定删除这一行？', danger: true })) return
+    // 🔴 编号改为「补最小空号」后（2026-09-29），被删编号可能被新条目重新占用 ——
+    //    删除前先如实告诉作者「这个编号在别处出现了几处」，由他自己判断有没有引用。
+    //    无引用就是无风险删除；有引用也只提示、不拦（作者可以自行确认后删除）。
     const target = rows.find(r => r.id === rowId)
-    if (target) await retireCodes([target])  // 编号登记进退役池，防止复用
+    const code = codeCol && target
+      ? ((drafts[target.id]?.[codeCol] ?? target.data[codeCol] ?? '') as string).trim()
+      : ''
+    let warn = ''
+    if (code) {
+      const refs = await countCodeRefs(code, { tabId: tab.id, rowId: target?.id })
+      warn = codeRefWarning(code, refs)
+    }
+    if (!await confirmDialog({
+      title: '删除这一行',
+      message: `确定删除这一行？${warn}`,
+      danger: true,
+    })) return
     // 🔴 2.4.4 六维审计：删行清掉该行的 AI 补全草稿（row::页签::行id），防孤儿残留
     void clearFreeDraft(`row::${tab.id}::${rowId}`)
     await deleteTableRow(rowId)
@@ -695,12 +690,12 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   const isRowDirty = (r: TableRow) => !!drafts[r.id] && Object.keys(drafts[r.id]).length > 0
 
-  /** 编号是否无效（重复或已退役）：输入时即红框提示 */
+  /** 编号是否无效（与同表其它行重复）：输入时即红框提示。
+   *  🔴 2026-09-29：去掉「命中退役编号池也判无效」—— 编号改为补最小空号，删除后的编号允许复用。 */
   const isInvalidCode = (row: TableRow): boolean => {
     if (!codeCol) return false
     const code = cellVal(row, codeCol).trim()
     if (!code) return false
-    if (retiredCodes.has(code)) return true
     const same = rows.filter(r => (drafts[r.id]?.[codeCol] ?? r.data[codeCol] ?? '').trim() === code)
     return same.length > 1
   }
@@ -717,7 +712,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     // 树形层级
     parentCol, collapsed, toggleCollapse, tree, bodyRows, addChild,
     // 编号
-    codeCol, retireCodes, codeError,
+    codeCol, codeError,
     // 视图与高亮
     viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isMaster, aiCap, aiReady, hlRowId, rowRefs,
     // 人物关系分组
