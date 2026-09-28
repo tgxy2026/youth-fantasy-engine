@@ -1,5 +1,5 @@
 import { Z } from '../lib/zLayer'
-import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type } from 'lucide-react'
 import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
 import { confirmDialog } from './dialogs'
@@ -19,6 +19,7 @@ import { usePersistedBool, usePersistedSet } from '../lib/uiPrefs'
 import { APP_VERSION_LABEL } from '../lib/env'
 import { Button } from './Button'
 import CustomThemeDialog from './CustomThemeDialog'
+import FontSettingsDialog from './FontSettingsDialog'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
   '工作面板': <LayoutDashboard size={15} />,
@@ -64,6 +65,8 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   // 「跟随窗口」模式：窗口尺寸变化时缩放会被自动重算（见 App.tsx 的 resize 监听）
   const [zoomAuto, setZoomAuto] = useState(isZoomAuto())
   const [customThemeOpen, setCustomThemeOpen] = useState(false)
+  // 字体设置弹窗（2026-09-28 · 社区需求）：正文编辑器 + 界面全站两口
+  const [fontOpen, setFontOpen] = useState(false)
   const changeTheme = (id: typeof theme) => setTheme(applyTheme(id))
   /** 手动调整即退出跟随模式，此后只认这个值 */
   const changeZoom = (d: number) => {
@@ -297,13 +300,23 @@ style={{ zIndex: Z.pageBase }}
           <div className="flex items-center gap-1.5 mb-1.5">
             <Palette size={11} />
             <span>主题</span>
+            {/* 字体设置入口（2026-09-28 · 社区需求）：正文编辑器 + 界面全站两口 */}
+            <Button
+              variant="ghost" iconOnly size="xs" type="button"
+              onClick={() => setFontOpen(true)}
+              title="字体设置（正文编辑器与界面）"
+              aria-label="字体设置"
+              className="ml-auto -mr-1"
+            >
+              <Type size={11} />
+            </Button>
             {/* 自定义主题入口（2.5.0 · C1）：总是打开弹窗（已存参数则载入当前参数继续调） */}
             <Button
               variant="ghost" iconOnly size="xs" type="button"
               onClick={() => setCustomThemeOpen(true)}
               title="自定义主题（母版 + 强调色 + 色相偏移）"
               aria-label="自定义主题"
-              className="ml-auto -mr-1"
+              className="-mr-1"
             >
               <SlidersHorizontal size={11} />
             </Button>
@@ -378,6 +391,9 @@ style={{ zIndex: Z.pageBase }}
         onClose={() => { setCustomThemeOpen(false); setTheme(getStoredTheme()) }}
         onApplied={() => { setTheme('custom'); setCustomThemeOpen(false) }}
       />
+      {/* 字体设置弹窗（2026-09-28）：应用/取消都在弹窗内部完成（CSS 变量即时生效，
+          不影响 React 状态），关闭无需同步任何 state。 */}
+      <FontSettingsDialog open={fontOpen} onClose={() => setFontOpen(false)} />
     </aside>
   )
 }

@@ -1,7 +1,7 @@
 // Electron 主进程：窗口 + 本地数据文件读写（IPC）
 // 数据文件保存在系统用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\青春幻想引擎\），
 // 格式与便携（U 盘）版完全一致 —— 可互相导出导入。
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsp = require('fs/promises')
@@ -104,6 +104,15 @@ async function writeAtomic(file, text) {
 }
 
 app.whenReady().then(() => {
+  // 字体枚举权限（2026-09-28 · 社区需求）：渲染层 navigator.queryLocalFonts() 需要
+  // local-fonts 权限。Chromium 把它归为需授权能力，Electron 无授权 UI、无 handler 时
+  // 对该权限默认拒绝 —— 必须显式放行。其余权限 callback(true) 与「未设 handler」的
+  // 默认批准行为一致，不放宽也不收紧现有安全面。
+  try {
+    session.defaultSession.setPermissionRequestHandler((_e, _permission, callback) => callback(true))
+    session.defaultSession.setPermissionCheckHandler(() => true)
+  } catch { /* 权限注册失败不挡启动：字体枚举降级为预置清单 + 自定义输入 */ }
+
   loadCustomPath() // 恢复用户自定义的数据文件位置（若有）
   // ---- 存储相关 IPC ----
   // 启动时读取本地数据文件
