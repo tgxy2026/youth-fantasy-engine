@@ -78,7 +78,9 @@ export const GHOST_CACHE_MAX = 20
  * 伴写取「上一章」必须走这个顺序 —— 跨卷时上一章＝上一卷的最后一章，而不是同卷的上一章。
  */
 export function orderedChapters(vols: Volume[], chs: Chapter[]): Chapter[] {
-  return vols.flatMap(v => chs.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order))
+  // 未分卷章节（无 volumeId / 卷已删）垫底 —— 与 ExportFormatDialog.flattenAll 同一口径（审计 2026-09-28 修正）
+  const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId)).sort((a, b) => a.order - b.order)
+  return [...vols.flatMap(v => chs.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order)), ...orphans]
 }
 
 /**

@@ -126,6 +126,20 @@ const SUBMISSION: DocxLayoutOptions = { fontSizePt: 12, align: 'left', firstLine
   ok('投稿稿：纯空白简介 → 无简介节，第二节直接是第一章',
     !body.some(s => s.includes('>简介</w:t>')) && body[1].includes('第一章 初入'))
 }
+{
+  // orphan 段按 order 排序（审计 2026-09-28 修正：原先只 filter 不 sort，数组顺序会泄漏进文档）
+  const o0 = mkCh('c90', 'v-none', 0, '外传零', '外传零的内容。')
+  const o1 = mkCh('c91', 'v-none', 1, '外传一', '外传一的内容。')
+  const o2 = mkCh('c92', 'v-none', 2, '外传二', '外传二的内容。')
+  const body = buildSubmissionDocxBody(
+    { bookTitle: '测试书', intro: '', chapterIds: ['c92', 'c90', 'c91'], layout: SUBMISSION },
+    volumes, [o2, o0, o1],   // 数组顺序与 order 相反
+  )
+  const idx = (t: string) => body.findIndex(s => s.includes(`>${t}</w:t>`))
+  ok('投稿稿：orphan 段按 order 排序（与传入数组顺序无关）',
+    idx('外传零') < idx('外传一') && idx('外传一') < idx('外传二'),
+    `零@${idx('外传零')} 一@${idx('外传一')} 二@${idx('外传二')}`)
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

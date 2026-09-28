@@ -108,7 +108,7 @@ export default function MascotSettingsDialog({ onClose, onSaved }: {
           <Button size="sm" variant="secondary" disabled={busy} onClick={() => fileRef.current?.click()}>
             {busy ? '处理中…' : '上传图片'}
           </Button>
-          <Button size="sm" variant="ghost" disabled={!custom || busy} onClick={() => save(null)}>
+          <Button size="sm" variant="secondary" disabled={!custom || busy} onClick={() => save(null)}>
             恢复默认
           </Button>
           {custom && <span className="text-10 text-success">已使用自定义图片</span>}

@@ -34,6 +34,11 @@ const mkCh = (id: string, volumeId: string, order: number, content = ''): Chapte
     flat.map(c => c.id).join(',') === 'c11,c12,c21,c22', flat.map(c => c.id).join(','))
   ok('跨卷「上一章」＝上一卷最后一章（c21 的上一章是 c12）', flat[flat.findIndex(c => c.id === 'c21') - 1].id === 'c12')
   ok('第一卷第一章没有上一章（idx=0）', flat.findIndex(c => c.id === 'c11') === 0)
+
+  // orphan（卷已删 / 无卷）垫底，与 ExportFormatDialog.flattenAll 同口径（审计 2026-09-28 修正）
+  const flat2 = orderedChapters(vols, [...chs, mkCh('c99', 'v-gone', 5, '孤儿章')])
+  ok('未分卷章节（指向已删卷）垫底在末尾', flat2[flat2.length - 1].id === 'c99')
+  ok('orphan 垫底不影响卷内顺序', flat2.map(c => c.id).join(',') === 'c11,c12,c21,c22,c99', flat2.map(c => c.id).join(','))
 }
 
 // ---------- stitchGhostBefore：拼接规则 ----------

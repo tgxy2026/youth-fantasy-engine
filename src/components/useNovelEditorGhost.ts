@@ -189,7 +189,10 @@ export function useNovelEditorGhost({
         showToast(`AI 伴写已连续失败 ${GHOST_MAX_FAILS} 次，已自动停用（点工具栏钢笔键，在弹窗里重新开启）`, 'error')
       }
     } finally {
-      if (!ac.signal.aborted) setGhostBusy(false)
+      // 复位条件是「当前请求的所有权」：被新请求顶掉时不抢（新请求的 finally 会复位）；
+      // 被 Esc/打字 dismiss 中止时 ghostAbort.current 仍指向自己 → 必须复位，
+      // 否则 busy 永久卡 true、钢笔键一直转圈（审计 2026-09-28 抓出）。
+      if (!ac.signal.aborted || ghostAbort.current === ac) setGhostBusy(false)
     }
   }, [activeId, companionLen, companionDeAi, companionStyleNote, loadGhostContext])
 
@@ -313,7 +316,9 @@ export function useNovelEditorGhost({
       return
     }
     // Alt+/ 换一句（原 Ctrl+Enter 让位给「采纳」；用 e.code 判键，避免不同键盘布局下 e.key 不一致）
+    // 与 Ctrl+Enter / Alt+\ 同口径：输入法选字期间不抢键；未开启伴写/模型未就绪时不发请求
     if (e.altKey && (e.key === '/' || e.code === 'Slash')) {
+      if (e.nativeEvent.isComposing || !companion || !aiReady) return
       e.preventDefault()
       refreshGhost()
       return
@@ -345,7 +350,8 @@ export function useNovelEditorGhost({
    */
   useLayoutEffect(() => {
     if (taRef.current && ghostRef.current) ghostRef.current.scrollTop = taRef.current.scrollTop
-  }, [ghost, taRef, ghostRef])
+    // companion 是叠层的条件渲染开关（deps 必须含开关变量——与 useNovelEditorHighlight 同一条红线）
+  }, [ghost, companion, taRef, ghostRef])
 
   return {
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi,

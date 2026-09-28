@@ -443,7 +443,10 @@ export function buildSubmissionDocxBody(input: SubmissionDocxInput, volumes: Vol
     ...volumes.flatMap(vol => chapters
       .filter(c => c.volumeId === vol.id && picked.has(c.id))
       .sort((a, b) => a.order - b.order)),
-    ...chapters.filter(c => picked.has(c.id) && !volumes.some(v => v.id === c.volumeId)),
+    // 未分卷的选定章节垫底，与卷内同按 order 排序（审计 2026-09-28 修正：原先漏排序）
+    ...chapters
+      .filter(c => picked.has(c.id) && !volumes.some(v => v.id === c.volumeId))
+      .sort((a, b) => a.order - b.order),
   ]
 
   const L = layout

@@ -101,14 +101,20 @@ export default function ExportFormatDialog({
   const [mod, setMod] = useState<typeof import('../lib/exporter') | null>(null)
   useEffect(() => {
     if (!open) return
-    void import('../lib/exporter').then(setMod).catch(() => setMod(null))
+    // 加载失败必须说出来 —— 静默 setMod(null) 会让「导出」点了没反应（审计 2026-09-28 修正）
+    void import('../lib/exporter').then(setMod).catch(() => {
+      setMod(null)
+      showToast('导出模块加载失败，请重启软件后重试', 'error')
+    })
   }, [open])
 
   // 打开时读一次偏好（跨项目共享，跟人走）——只读一次，避免每次开窗都从库拉一遍
   useEffect(() => {
     if (!open || loaded) return
     void (async () => {
-      const saved = await db.getSetting<Partial<ExportPrefs>>(PREFS_KEY, {})
+      // 🔴 用 getMeta（全局 meta，键不带项目前缀）而非 getSetting（settingsKV 键是
+      //    `projectId::key`，按项目隔离）——导出排版偏好是应用级偏好，跨项目共享（审计 2026-09-28 修正）
+      const saved = await db.getMeta<Partial<ExportPrefs>>(PREFS_KEY, {})
       setPrefs(prev => ({
         ...prev,
         platform: { ...DEFAULT_PREFS.platform, ...(saved.platform ?? {}) },
@@ -144,7 +150,7 @@ export default function ExportFormatDialog({
 
   const patch = (p: Partial<ExportPrefs>) => setPrefs(prev => {
     const next = { ...prev, ...p }
-    void db.setSetting(PREFS_KEY, next).catch(() => {}) // 记不住也不挡导出
+    void db.setMeta(PREFS_KEY, next).catch(() => {}) // 记不住也不挡导出
     return next
   })
   const patchPlatform = (p: Partial<ExportPrefs['platform']>) => patch({ platform: { ...prefs.platform, ...p } })
@@ -221,8 +227,8 @@ export default function ExportFormatDialog({
         <>
           <Button variant="secondary" size="sm" onClick={onClose}>取消</Button>
           <Button variant="primary" size="sm" onClick={() => void doExport()}
-            disabled={busy || !hasContent || (prefs.tab === 'docx' && prefs.docxKind === 'submission' && picked.size === 0)}
-            title={hasContent ? undefined : '还没有任何章节内容'}>
+            disabled={busy || !mod || !hasContent || (prefs.tab === 'docx' && prefs.docxKind === 'submission' && picked.size === 0)}
+            title={!mod ? '导出模块加载中，稍候片刻' : hasContent ? undefined : '还没有任何章节内容'}>
             {busy ? '导出中…' : prefs.tab === 'platform' ? '导出粘贴版'
               : prefs.tab === 'markdown' ? '导出 Markdown'
               : prefs.docxKind === 'submission' ? '导出投稿稿' : '导出 DOCX'}
