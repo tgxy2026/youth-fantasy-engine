@@ -9,8 +9,8 @@ import {
   restoreBuiltinItem,
   type CustomOptionPayload,
 } from '../lib/db'
-import { Plus, Check, ChevronDown, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
-import { confirmDialog } from './dialogs'
+import { Plus, Check, ChevronDown, ChevronRight, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
+import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
 import { EmptyState } from './EmptyState'
 import { Z } from '../lib/zLayer'
@@ -60,6 +60,8 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   const [editing, setEditing] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [q, setQ] = useState('')
+  /** 「已移除的内置项」是否展开（默认折叠 —— 2026-09-29：移除后下拉里不再挂着一串删除线） */
+  const [showRemoved, setShowRemoved] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
@@ -72,6 +74,10 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   // 加载
   useEffect(() => {
     let alive = true
+    // 🔴 换列/换页签时先清空再读：异步读取返回前短暂显示上一列的 items/hidden 会造成错位假象
+    setPayload({ items: [], hidden: [] })
+    setShowRemoved(false)
+    setQ('')
     getCustomOptions(tabId, colName).then(p => { if (alive) setPayload(p) })
     return () => { alive = false }
   }, [tabId, colName])
@@ -135,6 +141,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     setRenaming(null); setRenameDraft('')
     setEditing(null); setEditDraft('')
     setQ('')
+    setShowRemoved(false)
   }
 
   // 内置项 → 应用 renamed 替换；过滤 hidden
@@ -143,6 +150,13 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     .filter(o => !payload.hidden.includes(o))
     .map(o => ({ original: o, display: labelMap?.[o] ?? renamedMap[o] ?? o }))
   const userItems = payload.items
+
+  /**
+   * 任意取值 → 展示文案（labelMap > renamed > 原值）。
+   * 🔴 按钮（单元格当前值）必须与列表项用同一套口径 —— 2026-09-29 社区反馈：
+   *    重命名内置项后下拉列表显示新名，但按钮仍显示原名，看起来像「改了没保存」。
+   */
+  const displayOf = (v: string) => labelMap?.[v] ?? renamedMap[v] ?? v
 
   // 完整显示列表（保持稳定：先内置后用户项；同名去重）
   type Item = { key: string; original: string; display: string; kind: 'builtin' | 'user' }
@@ -172,10 +186,14 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     const v = draft.trim()
     if (!v) { setAdding(false); return }
     if (list.some(i => i.display === v)) { onChange(v); closeAll(); return }
-    const next = await addCustomItem(tabId, colName, v)
-    applyPayload(next)
-    onChange(v)
-    closeAll()
+    try {
+      const next = await addCustomItem(tabId, colName, v)
+      applyPayload(next)
+      onChange(v)
+      closeAll()
+    } catch (e) {
+      showToast(`新增选项失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const submitEditUser = async () => {
@@ -183,15 +201,21 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     if (!v || !editing) { setEditing(null); return }
     if (v === editing) { setEditing(null); return }
     if (list.some(i => i.display === v && i.original !== editing)) {
-      setEditing(null); return
+      // 🔴 重名冲突必须说出来：静默关面板会让作者以为保存成功了
+      showToast(`「${v}」已存在，换一个名称`, 'info')
+      return
     }
     // 用删除+新增实现改名
-    await removeCustomItem(tabId, colName, editing)
-    const next = await addCustomItem(tabId, colName, v)
-    applyPayload(next)
-    if (value === editing) onChange(v)
-    onRenameBuiltin?.(editing, v)
-    setEditing(null); setEditDraft('')
+    try {
+      await removeCustomItem(tabId, colName, editing)
+      const next = await addCustomItem(tabId, colName, v)
+      applyPayload(next)
+      if (value === editing) onChange(v)
+      onRenameBuiltin?.(editing, v)
+      setEditing(null); setEditDraft('')
+    } catch (e) {
+      showToast(`改名失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const submitRenameBuiltin = async () => {
@@ -199,32 +223,57 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     const v = renameDraft.trim()
     if (!v || !renaming) { setRenaming(null); return }
     if (list.some(i => i.display === v && i.original !== renaming)) {
-      setRenaming(null); return
+      // 🔴 同上：重名冲突要提示，且留在编辑态让作者改
+      showToast(`「${v}」已存在，换一个名称`, 'info')
+      return
     }
-    const next = await renameBuiltinItem(tabId, colName, renaming, v)
-    applyPayload(next)
-    if (value === (renamedMap[renaming] ?? renaming)) onChange(v)
-    onRenameBuiltin?.(renaming, v)
-    setRenaming(null); setRenameDraft('')
+    try {
+      const next = await renameBuiltinItem(tabId, colName, renaming, v)
+      applyPayload(next)
+      // 🔴 2026-09-29 社区反馈修复：**不动存储值**（原名仍写在数据里，显示走 renamed 映射）。
+      //    旧实现在这里 onChange(v) 把当前格的值改成新名 —— 于是同一列里有的行存原名、有的行存新名，
+      //    存新名的行不在内置 options 里 ⇒ 选中态丢失、下拉里还同时出现两个同名项。
+      //    需要「连数据一起换」的上层自己传 onRenameBuiltin 做全表替换（目前没有上层这么做）。
+      onRenameBuiltin?.(renaming, v)
+      setRenaming(null); setRenameDraft('')
+    } catch (e) {
+      showToast(`重命名失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const onDeleteUser = async (v: string) => {
     if (!await confirmDialog({ title: '删除自定义项', message: `确定删除自定义项「${v}」？`, danger: true })) return
-    const next = await removeCustomItem(tabId, colName, v)
-    applyPayload(next)
-    if (value === v) onChange('')
+    try {
+      const next = await removeCustomItem(tabId, colName, v)
+      applyPayload(next)
+      if (value === v) onChange('')
+    } catch (e) {
+      showToast(`删除失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const onHideBuiltin = async (orig: string) => {
-    if (!await confirmDialog({ title: '移除内置项', message: `确定从下拉中移除内置项「${orig}」？\n（已使用此值的数据不会被改动，但下拉里不再出现）`, danger: true })) return
-    const next = await hideBuiltinItem(tabId, colName, orig)
-    applyPayload(next)
-    if (value === (renamedMap[orig] ?? orig)) onChange('')
+    if (!await confirmDialog({
+      title: '移除内置项',
+      message: `确定从下拉中移除内置项「${orig}」？\n（已使用此值的数据不会被改动；需要时可在下拉底部「已移除 N 项」里展开还原）`,
+      danger: true,
+    })) return
+    try {
+      const next = await hideBuiltinItem(tabId, colName, orig)
+      applyPayload(next)
+      if (value === (renamedMap[orig] ?? orig)) onChange('')
+    } catch (e) {
+      showToast(`移除失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const onRestoreBuiltin = async (orig: string) => {
-    const next = await restoreBuiltinItem(tabId, colName, orig)
-    applyPayload(next)
+    try {
+      const next = await restoreBuiltinItem(tabId, colName, orig)
+      applyPayload(next)
+    } catch (e) {
+      showToast(`还原失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const onStartRename = (orig: string, display: string) => {
@@ -242,10 +291,15 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
       <Button variant="bare"
         ref={btnRef}
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => {
+          // 🔴 关闭走 closeAll（清掉添加/重命名/编辑/已移除展开/搜索词的残留态）——
+          //    只 setOpen(false) 的话，再点开时会直接呈现上一轮没退出的输入面板
+          if (open) closeAll()
+          else setOpen(true)
+        }}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
-        <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? (labelMap?.[value] ?? value) : '—'}</span>
+        <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? displayOf(value) : '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
       </Button>
       {open && pos && createPortal(
@@ -293,9 +347,10 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                     }}
                     className="flex-1 !py-0.5 text-12 min-w-0"
                   />
-                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="md" className=" rounded">保存</Button>
+                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="xs">保存</Button>
                 </div>
-                <div className="mt-1 text-10 text-ink-500">原名：{item?.display}</div>
+                <div className="mt-1 text-10 text-ink-500">原名：{item?.original}</div>
+                <div className="mt-0.5 text-10 text-ink-600">改名只改显示名；表里已填的数据仍保存原名，筛选按显示名匹配。</div>
               </div>
             )
           })()}
@@ -314,15 +369,17 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   }}
                   className="flex-1 !py-0.5 text-12 min-w-0"
                 />
-                <Button type="button" onClick={submitEditUser} variant="primary" size="md" className=" rounded">保存</Button>
+                <Button type="button" onClick={submitEditUser} variant="primary" size="xs">保存</Button>
               </div>
+              <div className="mt-0.5 text-10 text-ink-600">改名只同步当前格；其它行若已填旧值，需自行改为新值。</div>
             </div>
           )}
 
           {filtered.map(item => {
             if (renaming && item.original === renaming) return null
             if (editing && item.original === editing) return null
-            const selected = value === item.original
+            // 选中态：正常是「存储值 === 内置原名」；也接受 display —— 兼容旧版把值写成新名的脏数据
+            const selected = value === item.original || value === item.display
             return (
               <div
                 key={item.key}
@@ -369,21 +426,38 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             )
           })}
 
-          {/* 已隐藏的内置项可还原（固定选项列不会出现这种情况，一并省略） */}
+          {/* 已移除的内置项可还原（固定选项列不会出现这种情况，一并省略）。
+              🔴 2026-09-29：**默认折叠** —— 移除后下拉里只留一行「已移除 N 项（展开可还原）」，
+              不再挂着一串带删除线的条目（看着像没删干净）；需要还原时点开，反悔通道仍在。 */}
           {!fixedOptions && payload.hidden.length > 0 && (
             <div className="border-t border-ink-700 mt-1 pt-1">
-              <div className="px-2.5 py-0.5 text-10 text-ink-500">已移除的内置项（可还原）</div>
-              {payload.hidden.map(h => (
-                <div key={`h-${h}`} className="group flex items-center px-1 py-0.5 text-12 text-ink-500 hover:bg-ink-700">
-                  <span className="flex-1 px-1.5 py-0.5 line-through truncate">{h}</span>
-                  <Button variant="bare" iconOnly size="xs"
-                    type="button"
-                    onClick={() => onRestoreBuiltin(h)}
-                    className="opacity-40 group-hover:opacity-100 hover:text-amber"
-                    title="还原"
-                  ><RotateCcw size={10} /></Button>
-                </div>
-              ))}
+              {showRemoved ? (
+                <>
+                  <Button variant="bare" size="xs" type="button"
+                    onClick={() => setShowRemoved(false)}
+                    className="w-full !justify-start px-2.5 py-0.5 text-10 text-ink-500 hover:text-amber">
+                    <ChevronDown size={10} /> 已移除的内置项（{payload.hidden.length}）· 收起
+                  </Button>
+                  {payload.hidden.map(h => (
+                    <div key={`h-${h}`} className="group flex items-center px-1 py-0.5 text-12 text-ink-500 hover:bg-ink-700">
+                      <span className="flex-1 px-1.5 py-0.5 line-through truncate">{h}</span>
+                      <Button variant="bare" iconOnly size="xs"
+                        type="button"
+                        onClick={() => onRestoreBuiltin(h)}
+                        className="opacity-40 group-hover:opacity-100 hover:text-amber"
+                        title="还原"
+                      ><RotateCcw size={10} /></Button>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <Button variant="bare" size="xs" type="button"
+                  onClick={() => setShowRemoved(true)}
+                  title="展开可把移除过的内置项还原回来"
+                  className="w-full !justify-start px-2.5 py-1 text-10 text-ink-500 hover:text-amber">
+                  <ChevronRight size={10} /> 已移除 {payload.hidden.length} 项（展开可还原）
+                </Button>
+              )}
             </div>
           )}
 
@@ -406,7 +480,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 className="flex-1 !py-0.5 text-12 min-w-0"
               />
               <Button type="button"
-                onClick={submitDraft} variant="primary" size="md" className=" rounded">保存</Button>
+                onClick={submitDraft} variant="primary" size="xs">保存</Button>
             </div>
           ) : (
             <Button variant="bare"

@@ -60,7 +60,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 树形层级
     bodyRows, 
     // 编号
-    retireCodes, codeError,
+    codeError,
     // 视图与高亮
     viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isMaster, aiCap, aiReady, 
     // 人物关系分组
@@ -87,8 +87,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 · 表头筛选（v1.9.1）：每列标题下方都有筛选框——文本列输入关键字按「包含」匹配；下拉列点开选值按「精确」匹配，候选值与行内下拉完全一致（含你自己新增的自定义值，以及被隐藏 / 改名后的内置项），在行内改动选项后表头会立即同步。
 · 下拉类型的列（如状态、关系类型）点击即弹出选项，可自定义 / 重命名。
 · 部分列是专用控件：真实日期列（如发布日期、写作进度日期）点开弹出月历选择；人物关系的「人物A / 人物B」从已创建角色卡中选择、不可手填。
-· 带「编号 / 章节号」的表按编号自动排序，空白沉底（章节总表例外：按创建时间倒序，最新写的章节在最上面）；编号不可重复、删除后不复用。
-· 单元格里出现 F01 / H01 这类编号，会自动生成跳转按钮，直达伏笔表 / 历史事件。
+· 带「编号 / 章节号」的表按编号自动排序，空白沉底（章节总表例外：按创建时间倒序，最新写的章节在最上面）；编号不可重复，删除后的编号会被后续新增的条目补上（补最小的空号），删除前有引用检查提示。
+· 单元格里出现 F0001 / H0001 这类编号，会自动生成跳转按钮，直达伏笔表 / 历史事件。
 · 历史事件、时间脉络页签可在右上「表格 ⇄ 时间轴」切换视图；时间轴按「历法」列的数值判定跨历法先后顺序，可在表格的「历法」列填写（项目级多历法配置，支持新增 / 改名 / 改数值）。
 · 这两张表的时间是「发生时间 / 结束时间」两端：一天内的事两端填同一天，持续性的事件填上结束时间，时间轴会用一段横条画出这段时长。年份可填负数与 0（如 -300 = 公元前 300 年）；「一年几个月、每月几天」在页头「历法规则」里改（默认 12 月 × 30 天）。
 · 人物关系按「人物A / 人物B」自动归入双方文件夹，便于按人查阅；右上「表格 ⇄ 关系图」可切换关系图。
@@ -133,9 +133,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <Button variant="danger" // 破坏性操作用 danger 令牌（原为 bare + 手写红样式，与 danger 输出等价）
               onClick={async () => {
                 if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
-                retireCodes(rows).then(() => {  // 全部编号登记进退役池，防止复用
-                  rows.forEach(row => { void deleteTableRow(row.id) })
-                })
+                rows.forEach(row => { void deleteTableRow(row.id) })
                 setRows([])
                 setDrafts({})
               }}
@@ -241,7 +239,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         </div>
       )}
 
-      {/* 编号校验错误：存在重复/退役编号时阻止保存并提示修改 */}
+      {/* 编号校验错误：存在重复编号时阻止保存并提示修改 */}
       {codeError && (
         <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3.5 py-2.5 flex items-start gap-2 animate-pulse">
           <AlertTriangle size={12} className="mt-0.5 shrink-0 text-danger" />

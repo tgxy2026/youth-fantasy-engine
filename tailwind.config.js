@@ -29,8 +29,11 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['"Noto Sans SC"', 'Outfit', 'system-ui', 'sans-serif'],
-        serif: ['"Noto Serif SC"', 'Georgia', 'serif']
+        // 2026-09-28 字体配置：栈首挂 CSS 变量（fontPrefs.ts 按需写入 --font-ui / --font-editor）。
+        // 🔴 变量未定义时求值为括号内默认名 → 与旧版栈完全一致（零变化红线）；
+        //    变量值是「字体栈段」（可含多个家族名与别名），找不到的家族自动落后续兜底。
+        sans: ['var(--font-ui, "Noto Sans SC")', 'Outfit', 'system-ui', 'sans-serif'],
+        serif: ['var(--font-editor, "Noto Serif SC")', 'Georgia', 'serif']
       },
       // 界面字号阶梯（2026-09-19 六维审计补立）
       // 此前全靠 `text-[12px]` 这类任意值，实测 1495 处用了 **15 种** px（含 9.5/10.5/11.5/12.5/13.5 半像素），

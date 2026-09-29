@@ -73,6 +73,26 @@ export const GHOST_MAX_FAILS = 3
 /** 同前文缓存上限（LRU） */
 export const GHOST_CACHE_MAX = 20
 
+/**
+ * 全书顺序的章节平铺：卷按 order、卷内章按 order（同一口径也见于编辑器模型的 flat）。
+ * 伴写取「上一章」必须走这个顺序 —— 跨卷时上一章＝上一卷的最后一章，而不是同卷的上一章。
+ */
+export function orderedChapters(vols: Volume[], chs: Chapter[]): Chapter[] {
+  // 未分卷章节（无 volumeId / 卷已删）垫底 —— 与 ExportFormatDialog.flattenAll 同一口径（审计 2026-09-28 修正）
+  const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId)).sort((a, b) => a.order - b.order)
+  return [...vols.flatMap(v => chs.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order)), ...orphans]
+}
+
+/**
+ * 伴写前文拼上一章（2026-09-28 · 章首语境补齐）：当前章光标前不足 limit 字时，
+ * 用上一章末尾补齐差额，凑满 limit 字作上文 —— 章首几行字也能带稳上一章的语气、人称与情节惯性。
+ * 当前章前文够长 / 上一章无正文（第一卷第一章、上一章还没写）时原样返回，行为与旧版零差异。
+ */
+export function stitchGhostBefore(currentBefore: string, prevTail: string, limit = GHOST_CONTEXT_CHARS): string {
+  if (currentBefore.length >= limit || !prevTail) return currentBefore
+  return prevTail.slice(-(limit - currentBefore.length)) + currentBefore
+}
+
 
 /**
  * v1.6.3：卷/章拖拽排序的纯计算函数（不触碰状态/存储，便于复用）。

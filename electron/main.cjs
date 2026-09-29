@@ -1,7 +1,7 @@
 // Electron 主进程：窗口 + 本地数据文件读写（IPC）
 // 数据文件保存在系统用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\青春幻想引擎\），
 // 格式与便携（U 盘）版完全一致 —— 可互相导出导入。
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsp = require('fs/promises')
@@ -104,6 +104,15 @@ async function writeAtomic(file, text) {
 }
 
 app.whenReady().then(() => {
+  // 字体枚举权限（2026-09-28 · 社区需求）：渲染层 navigator.queryLocalFonts() 需要
+  // local-fonts 权限。Chromium 把它归为需授权能力，Electron 无授权 UI、无 handler 时
+  // 对该权限默认拒绝 —— 必须显式放行。其余权限 callback(true) 与「未设 handler」的
+  // 默认批准行为一致，不放宽也不收紧现有安全面。
+  try {
+    session.defaultSession.setPermissionRequestHandler((_e, _permission, callback) => callback(true))
+    session.defaultSession.setPermissionCheckHandler(() => true)
+  } catch { /* 权限注册失败不挡启动：字体枚举降级为预置清单 + 自定义输入 */ }
+
   loadCustomPath() // 恢复用户自定义的数据文件位置（若有）
   // ---- 存储相关 IPC ----
   // 启动时读取本地数据文件
@@ -322,6 +331,46 @@ app.whenReady().then(() => {
   //   · 永不 throw —— Electron 跨 IPC 的异常会被重新包装、原始信息丢失，一律返回结构化结果
   const NET_TIMEOUT_MS = 30000
   const NET_MAX_BYTES = 2 * 1024 * 1024
+
+  // 网络代理设置（2026-09-28 · 社区需求）：由渲染层推送配置，主进程对整个默认 session 生效——
+  // 渲染层 fetch（Chromium 栈）与主进程 net.fetch 两条链路同时覆盖。
+  // 🔴 只接受渲染层「用户自填的出口地址」，主进程不存储任何配置（每次启动由渲染层重推）；
+  //    规则串白名单清洗（host/port/逗号分号/尖括号 local 标记），防注入到 Chromium 代理解析器。
+  ipcMain.handle('net:set-proxy', async (_e, cfg) => {
+    try {
+      const c = cfg || {}
+      if (typeof session.defaultSession.setProxy !== 'function') {
+        return { ok: false, error: '当前 Electron 版本不支持设置代理' }
+      }
+      const clean = (v, max) => String(v ?? '')
+        .replace(/[^a-zA-Z0-9.\-_:,;=<>\s*]/g, '').slice(0, max)
+      if (!c.enabled) {
+        // 🔴 停用必须回到 mode:'system'（跟随系统代理/PAC）而不是 'direct'——
+        //    Electron 默认就是 system；推 direct 会把「系统挂了代理」的用户的全部请求
+        //    （含 AI 与云同步）改成绕过代理直连，与界面承诺的「跟随系统网络设置」相反。
+        await session.defaultSession.setProxy({ mode: 'system' })
+        return { ok: true }
+      }
+      const rules = clean(c.rules, 300)
+      // 主进程侧按「单条 scheme://host:port」再校验一次（纵深防御：渲染层 normalizeProxyInput
+      // 之外的第二道；白名单字符过滤防不住 Chromium 的多规则语法 http=a:80;https=b:80）
+      if (!/^(https?|socks5?):\/\/[a-zA-Z0-9.\-]+(:\d{1,5})?$/.test(rules)
+        && !/^[a-zA-Z0-9.\-]+(:\d{1,5})?$/.test(rules)) {
+        return { ok: false, error: '代理地址格式不正确' }
+      }
+      if (!rules) return { ok: false, error: '代理地址为空或包含非法字符' }
+      const bypass = clean(c.bypass, 300)
+      await session.defaultSession.setProxy({
+        mode: 'fixed_servers',
+        proxyRules: rules,
+        ...(bypass ? { proxyBypassRules: bypass } : {}),
+      })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
   ipcMain.handle('net:fetch', async (_e, url, init) => {
     const opts = init || {}
     try {

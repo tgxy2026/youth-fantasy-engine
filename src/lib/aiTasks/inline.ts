@@ -13,7 +13,11 @@ import type { PromptDef } from '../promptSettings'
 //
 // 三条实现依据都来自本项目已实测结论，别随手改：
 //   1. 🔴 反重复 / 去 AI 味的提示词**只有钉在 system 末尾才有效**，埋中段≈0（酒馆模式实测）。
-//   2. 🔴 采样沿用 repeat_last_n=512 + frequency_penalty=0.1（手部率 28.9%→13.4%）；
+//   2. 🔴 采样治重复三旋钮（2026-09-28 第二轮，主人反馈伴写仍复读前文）：
+//      repeat_last_n=1024（射程翻倍 ≈800 汉字，跨段复读进射程；窗口不施罚、只决定罚谁，纯扩覆盖）
+//      + presence_penalty=0.2（出现过即一次性降温，不随词频累积——专治整句复述/换皮前文，不伤「的/了」高频字）
+//      + frequency_penalty=0.1（**保持不动**：它按出现次数累积扣分，再拉高会把高频字罚到漏字；
+//        下一档锚点 0.2 —— tests/live-repeat.ts C 组实测过的值）。
 //      **绝不调高 repeat_penalty** —— 1.4 实测动作行 2.08→0.43/轮且括号不闭合
 //      （`（`/`）` 本身就在回看窗口里，惩罚会打在格式符上）。
 //   3. 文风锚定不靠"文风枚举标签"，而走三层：①前文样本（必带、最准）②《写作规范》摘录（可关）
@@ -38,7 +42,9 @@ export const INLINE_SUGGEST_LIMITS: Record<InlineSuggestLength, { label: string;
 let DEAI_INLINE_RULE = `【文风纪律 · 最重要】
 不要用「仿佛 / 似乎 / 宛如 / 不禁 / 然而 / 值得一提的是 / 不知为何」这类 AI 高频套话开头；
 不要堆四字成语与对称排比；不要写空泛的总结、升华或哲理感慨；
-不要滥用破折号与省略号；多给具体的动作、对白、感官细节，句子长短错落，像活人顺手写下来的。`
+不要滥用破折号与省略号；
+不要复述或换皮重复前文已经写过的句子、动作、意象与比喻——同一表达只用一次，直接推进新的内容；
+多给具体的动作、对白、感官细节，句子长短错落，像活人顺手写下来的。`
 
 /**
  * 伴写结果后处理（**纯函数，可单测**）。
@@ -146,11 +152,13 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
         // OpenAI 兼容端点的白名单只放行 top_p / presence_penalty / frequency_penalty，
         // 该字段会被 openaiSampling() 丢弃 —— 那边靠 prompt 约束 + 客户端句末截断兜底。
         num_predict: limit.numPredict,
-        // 两把「治复读」的旋钮必须显式下发才生效（见 docs/酒馆模式-工程红线.md）：
-        // repeat_last_n 默认仅 64 词元≈50 汉字，是三种惩罚共用的回看窗口，射程半句 → 跨句复读罚不到；
-        // frequency_penalty 不传则默认 0，按词频扣分这件事根本没发生。
-        repeat_last_n: 512,
+        // 「治复读」三旋钮必须显式下发才生效（依据见文件头第 2 条，2026-09-28 第二轮）：
+        // repeat_last_n 默认仅 64 词元≈50 汉字，是三种惩罚共用的回看窗口——1024 射程 ≈800 汉字，跨段复读罚得到；
+        // frequency_penalty 不传则默认 0，按词频扣分这件事根本没发生（保持 0.1，勿拉高——累积扣分会罚到高频字）；
+        // presence_penalty 一次性扣分不随词频累积，专治整句复述/换皮前文，OpenAI 白名单本就放行该字段。
+        repeat_last_n: 1024,
         frequency_penalty: 0.1,
+        presence_penalty: 0.2,
       },
     },
   )

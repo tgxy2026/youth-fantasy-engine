@@ -87,7 +87,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
             </Button>
           )}
           {!isMaster && (
-          <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1" title="删除此行">
+          <Button variant="icon-danger" size="xs" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all" title="删除此行">
             <Trash2 size={12} />
           </Button>
           )}
@@ -234,7 +234,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
                         value={val}
                         onChange={v => setCellDraft(row.id, col.name, v)}
                         invalid={col.name === codeCol && isInvalidCode(row)}
-                        title={col.name === codeCol && isInvalidCode(row) ? '编号重复或已被删除条目占用（编号不复用），保存前请修改' : undefined}
+                        title={col.name === codeCol && isInvalidCode(row) ? '编号与同表其它行重复，保存前请修改' : undefined}
                       />
                       {/* 编号联动：F01 → 伏笔追踪，H01 → 历史事件 */}
                       {tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/) && (
@@ -259,7 +259,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
                     value={val}
                     onChange={v => setCellDraft(row.id, col.name, v)}
                     invalid={col.name === codeCol && isInvalidCode(row)}
-                    title={col.name === codeCol && isInvalidCode(row) ? '编号重复或已被删除条目占用（编号不复用），保存前请修改' : undefined}
+                    title={col.name === codeCol && isInvalidCode(row) ? '编号与同表其它行重复，保存前请修改' : undefined}
                   />
                   {/* 编号联动：F01 → 伏笔追踪，H01 → 历史事件 */}
                   {tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/) && (

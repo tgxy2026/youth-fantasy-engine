@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld('electronNet', {
    *          **永不 reject** —— 失败以 ok:false 返回，调用方必须如实告诉作者（别静默退化成瞎编）。
    */
   fetch: (url, init) => ipcRenderer.invoke('net:fetch', url, init),
+  /**
+   * 推送网络代理配置（2026-09-28）：用户在「模型设置 → 网络代理」自填的出口地址。
+   * 配置持久化在渲染层 localStorage（仅本机、不进云盘同步），主进程不落盘 —— 每次启动由渲染层重推。
+   * @returns {Promise<{ok:true}|{ok:false,error:string}>}
+   */
+  setProxy: (cfg) => ipcRenderer.invoke('net:set-proxy', cfg),
 })
 
 // 窗口控制（2.5.1 · B2）：只暴露全屏切换三个口子，按键判定（F11/ESC）在渲染层。
