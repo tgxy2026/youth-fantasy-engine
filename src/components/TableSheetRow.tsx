@@ -87,7 +87,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
             </Button>
           )}
           {!isMaster && (
-          <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1" title="删除此行">
+          <Button variant="icon-danger" size="xs" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all" title="删除此行">
             <Trash2 size={12} />
           </Button>
           )}

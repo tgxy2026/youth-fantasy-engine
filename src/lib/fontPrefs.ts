@@ -75,7 +75,9 @@ export function getStoredFontPrefs(): FontPrefs {
     const p = JSON.parse(raw) as { editor?: unknown; ui?: unknown }
     const clean = (v: unknown): string => {
       if (typeof v !== 'string' || v.length > 200) return ''
-      return sanitizeFontStack(v) === '' ? '' : v
+      // 🔴 返回清洗后的值而不是原值：脏数据里的「;」「}」必须剥掉才能进 setProperty
+      //    （48 行注释自己点名的「; 截断声明」注入面——守卫声明了就得真的生效）
+      return sanitizeFontStack(v)
     }
     return { editor: clean(p.editor), ui: clean(p.ui) }
   } catch { return { ...DEFAULT_FONT_PREFS } }
@@ -99,9 +101,9 @@ export function applyStoredFontPrefs(): void {
   applyFontPrefs(getStoredFontPrefs())
 }
 
-/** 落盘偏好（「应用」按钮用；写失败静默 —— 隐私模式不挡导出/写作主流程） */
-export function storeFontPrefs(p: FontPrefs): void {
-  try { localStorage.setItem(FONT_KEY, JSON.stringify(p)) } catch { /* 忽略隐私模式写失败 */ }
+/** 落盘偏好（「应用」按钮用）。@returns 是否写成功（隐私模式 / 配额满为 false，调用方须如实提示） */
+export function storeFontPrefs(p: FontPrefs): boolean {
+  try { localStorage.setItem(FONT_KEY, JSON.stringify(p)); return true } catch { return false }
 }
 
 // ---------- 系统字体枚举（路线 B：Electron 桌面版；浏览器 dev 不可用返回 null） ----------

@@ -10,7 +10,7 @@ import {
   type CustomOptionPayload,
 } from '../lib/db'
 import { Plus, Check, ChevronDown, ChevronRight, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
-import { confirmDialog } from './dialogs'
+import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
 import { EmptyState } from './EmptyState'
 import { Z } from '../lib/zLayer'
@@ -74,6 +74,10 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   // 加载
   useEffect(() => {
     let alive = true
+    // 🔴 换列/换页签时先清空再读：异步读取返回前短暂显示上一列的 items/hidden 会造成错位假象
+    setPayload({ items: [], hidden: [] })
+    setShowRemoved(false)
+    setQ('')
     getCustomOptions(tabId, colName).then(p => { if (alive) setPayload(p) })
     return () => { alive = false }
   }, [tabId, colName])
@@ -182,10 +186,14 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     const v = draft.trim()
     if (!v) { setAdding(false); return }
     if (list.some(i => i.display === v)) { onChange(v); closeAll(); return }
-    const next = await addCustomItem(tabId, colName, v)
-    applyPayload(next)
-    onChange(v)
-    closeAll()
+    try {
+      const next = await addCustomItem(tabId, colName, v)
+      applyPayload(next)
+      onChange(v)
+      closeAll()
+    } catch (e) {
+      showToast(`新增选项失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const submitEditUser = async () => {
@@ -193,15 +201,21 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     if (!v || !editing) { setEditing(null); return }
     if (v === editing) { setEditing(null); return }
     if (list.some(i => i.display === v && i.original !== editing)) {
-      setEditing(null); return
+      // 🔴 重名冲突必须说出来：静默关面板会让作者以为保存成功了
+      showToast(`「${v}」已存在，换一个名称`, 'info')
+      return
     }
     // 用删除+新增实现改名
-    await removeCustomItem(tabId, colName, editing)
-    const next = await addCustomItem(tabId, colName, v)
-    applyPayload(next)
-    if (value === editing) onChange(v)
-    onRenameBuiltin?.(editing, v)
-    setEditing(null); setEditDraft('')
+    try {
+      await removeCustomItem(tabId, colName, editing)
+      const next = await addCustomItem(tabId, colName, v)
+      applyPayload(next)
+      if (value === editing) onChange(v)
+      onRenameBuiltin?.(editing, v)
+      setEditing(null); setEditDraft('')
+    } catch (e) {
+      showToast(`改名失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const submitRenameBuiltin = async () => {
@@ -209,23 +223,33 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     const v = renameDraft.trim()
     if (!v || !renaming) { setRenaming(null); return }
     if (list.some(i => i.display === v && i.original !== renaming)) {
-      setRenaming(null); return
+      // 🔴 同上：重名冲突要提示，且留在编辑态让作者改
+      showToast(`「${v}」已存在，换一个名称`, 'info')
+      return
     }
-    const next = await renameBuiltinItem(tabId, colName, renaming, v)
-    applyPayload(next)
-    // 🔴 2026-09-29 社区反馈修复：**不动存储值**（原名仍写在数据里，显示走 renamed 映射）。
-    //    旧实现在这里 onChange(v) 把当前格的值改成新名 —— 于是同一列里有的行存原名、有的行存新名，
-    //    存新名的行不在内置 options 里 ⇒ 选中态丢失、下拉里还同时出现两个同名项。
-    //    需要「连数据一起换」的上层自己传 onRenameBuiltin 做全表替换（目前没有上层这么做）。
-    onRenameBuiltin?.(renaming, v)
-    setRenaming(null); setRenameDraft('')
+    try {
+      const next = await renameBuiltinItem(tabId, colName, renaming, v)
+      applyPayload(next)
+      // 🔴 2026-09-29 社区反馈修复：**不动存储值**（原名仍写在数据里，显示走 renamed 映射）。
+      //    旧实现在这里 onChange(v) 把当前格的值改成新名 —— 于是同一列里有的行存原名、有的行存新名，
+      //    存新名的行不在内置 options 里 ⇒ 选中态丢失、下拉里还同时出现两个同名项。
+      //    需要「连数据一起换」的上层自己传 onRenameBuiltin 做全表替换（目前没有上层这么做）。
+      onRenameBuiltin?.(renaming, v)
+      setRenaming(null); setRenameDraft('')
+    } catch (e) {
+      showToast(`重命名失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const onDeleteUser = async (v: string) => {
     if (!await confirmDialog({ title: '删除自定义项', message: `确定删除自定义项「${v}」？`, danger: true })) return
-    const next = await removeCustomItem(tabId, colName, v)
-    applyPayload(next)
-    if (value === v) onChange('')
+    try {
+      const next = await removeCustomItem(tabId, colName, v)
+      applyPayload(next)
+      if (value === v) onChange('')
+    } catch (e) {
+      showToast(`删除失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const onHideBuiltin = async (orig: string) => {
@@ -234,14 +258,22 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
       message: `确定从下拉中移除内置项「${orig}」？\n（已使用此值的数据不会被改动；需要时可在下拉底部「已移除 N 项」里展开还原）`,
       danger: true,
     })) return
-    const next = await hideBuiltinItem(tabId, colName, orig)
-    applyPayload(next)
-    if (value === (renamedMap[orig] ?? orig)) onChange('')
+    try {
+      const next = await hideBuiltinItem(tabId, colName, orig)
+      applyPayload(next)
+      if (value === (renamedMap[orig] ?? orig)) onChange('')
+    } catch (e) {
+      showToast(`移除失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const onRestoreBuiltin = async (orig: string) => {
-    const next = await restoreBuiltinItem(tabId, colName, orig)
-    applyPayload(next)
+    try {
+      const next = await restoreBuiltinItem(tabId, colName, orig)
+      applyPayload(next)
+    } catch (e) {
+      showToast(`还原失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   const onStartRename = (orig: string, display: string) => {
@@ -259,7 +291,12 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
       <Button variant="bare"
         ref={btnRef}
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => {
+          // 🔴 关闭走 closeAll（清掉添加/重命名/编辑/已移除展开/搜索词的残留态）——
+          //    只 setOpen(false) 的话，再点开时会直接呈现上一轮没退出的输入面板
+          if (open) closeAll()
+          else setOpen(true)
+        }}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
         <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? displayOf(value) : '—'}</span>
@@ -310,9 +347,9 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                     }}
                     className="flex-1 !py-0.5 text-12 min-w-0"
                   />
-                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="md" className=" rounded">保存</Button>
+                  <Button type="button" onClick={submitRenameBuiltin} variant="primary" size="xs">保存</Button>
                 </div>
-                <div className="mt-1 text-10 text-ink-500">原名：{item?.display}</div>
+                <div className="mt-1 text-10 text-ink-500">原名：{item?.original}</div>
                 <div className="mt-0.5 text-10 text-ink-600">改名只改显示名；表里已填的数据仍保存原名，筛选按显示名匹配。</div>
               </div>
             )
@@ -332,7 +369,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   }}
                   className="flex-1 !py-0.5 text-12 min-w-0"
                 />
-                <Button type="button" onClick={submitEditUser} variant="primary" size="md" className=" rounded">保存</Button>
+                <Button type="button" onClick={submitEditUser} variant="primary" size="xs">保存</Button>
               </div>
               <div className="mt-0.5 text-10 text-ink-600">改名只同步当前格；其它行若已填旧值，需自行改为新值。</div>
             </div>
@@ -443,7 +480,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 className="flex-1 !py-0.5 text-12 min-w-0"
               />
               <Button type="button"
-                onClick={submitDraft} variant="primary" size="md" className=" rounded">保存</Button>
+                onClick={submitDraft} variant="primary" size="xs">保存</Button>
             </div>
           ) : (
             <Button variant="bare"

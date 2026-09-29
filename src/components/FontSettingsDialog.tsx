@@ -17,6 +17,7 @@ import { Type } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
+import { showToast } from './dialogs'
 import { DESKTOP } from '../lib/desktop'
 import {
   PRESET_FONTS, getStoredFontPrefs, applyFontPrefs, storeFontPrefs,
@@ -24,8 +25,10 @@ import {
   type FontPrefs,
 } from '../lib/fontPrefs'
 
-/** 系统字体枚举缓存（一个会话内字体不会变；open 反复触发不重复拉全量列表） */
-let systemFontsCache: string[] | null | undefined
+/** 系统字体枚举缓存：缓存的是 **Promise 本身**（并发重开弹窗不会重复发起全量枚举） */
+let systemFontsCache: Promise<string[] | null> | undefined
+/** 系统字体下拉的渲染上限（字体管理器用户可能装几千字族，全量塞 select 会卡） */
+const MAX_SYSTEM_FONT_OPTIONS = 500
 
 /** 当前值落在哪个选项上（select 的受控 value） */
 function matchOption(stack: string, systemFonts: string[] | null): string {
@@ -80,8 +83,10 @@ function FontSlot(props: {
           ))}
         </optgroup>
         {systemFonts && systemFonts.length > 0 && (
-          <optgroup label="系统字体（本机全部）">
-            {systemFonts.map(f => (
+          <optgroup label={systemFonts.length > MAX_SYSTEM_FONT_OPTIONS
+            ? `系统字体（本机共 ${systemFonts.length} 项，仅列前 ${MAX_SYSTEM_FONT_OPTIONS} 项，其余请用自定义输入直接填名称）`
+            : '系统字体（本机全部）'}>
+            {systemFonts.slice(0, MAX_SYSTEM_FONT_OPTIONS).map(f => (
               <option key={f} value={`sys:${f}`}>{f}</option>
             ))}
           </optgroup>
@@ -124,10 +129,9 @@ export default function FontSettingsDialog({ open, onClose }: Props) {
     setDraft(snap)
     if (systemFontsCache === undefined) {
       // 便携版走同一份 dist 但无窗口桥 → DESKTOP 为 false，不白发一次必被拒的请求
-      if (DESKTOP) void listSystemFonts().then(r => { systemFontsCache = r; setSystemFonts(r) })
-      else systemFontsCache = null
+      systemFontsCache = DESKTOP ? listSystemFonts() : Promise.resolve(null)
     }
-    setSystemFonts(systemFontsCache ?? null)
+    void systemFontsCache.then(r => setSystemFonts(r))
   }, [open])
 
   /** 即时预览（弹窗开着才有效果，关闭时由回滚兜底） */
@@ -138,8 +142,12 @@ export default function FontSettingsDialog({ open, onClose }: Props) {
   }
 
   const handleApply = () => {
-    storeFontPrefs(draft)
+    const storedOk = storeFontPrefs(draft)
     applyFontPrefs(draft)   // 已在预览中生效，这里幂等
+    if (!storedOk) {
+      // 写盘失败必须说出来：本次会话预览仍生效，但重启后不会恢复（隐私模式 / 配额满）
+      showToast('字体偏好未能保存到本机（存储不可写），本次会话内仍然生效', 'info')
+    }
     onClose()
   }
 

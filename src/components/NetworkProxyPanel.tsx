@@ -29,9 +29,13 @@ export default function NetworkProxyPanel() {
 
   useEffect(() => { setDraft(getStoredNetProxy()) }, [])
 
+  /** 改动后与已存值比对：改回原值时 dirty 自动熄灭（否则保存键常亮失真） */
   const patch = (p: Partial<NetProxyPrefs>) => {
-    setDraft(prev => ({ ...prev, ...p }))
-    setDirty(true)
+    setDraft(prev => {
+      const next = { ...prev, ...p }
+      setDirty(JSON.stringify(next) !== JSON.stringify(getStoredNetProxy()))
+      return next
+    })
   }
 
   const save = async () => {
@@ -40,15 +44,19 @@ export default function NetworkProxyPanel() {
       return
     }
     setSaving(true)
-    const next: NetProxyPrefs = { ...draft, rules: draft.enabled ? normalizeProxyInput(draft.rules) : draft.rules, bypass: sanitizeBypassList(draft.bypass) || DEFAULT_BYPASS }
-    storeNetProxy(next)
-    const r = await applyNetProxy(next)
-    setSaving(false)
-    setDirty(false)
-    if (r.ok) {
-      showToast(next.enabled ? '网络代理已生效' : '已恢复默认：跟随系统网络设置', 'success')
-    } else {
-      showToast(`设置已保存，但当前环境暂不生效：${r.error}`, 'info')
+    try {
+      const next: NetProxyPrefs = { ...draft, rules: draft.enabled ? normalizeProxyInput(draft.rules) : draft.rules, bypass: sanitizeBypassList(draft.bypass) || DEFAULT_BYPASS }
+      storeNetProxy(next)
+      const r = await applyNetProxy(next)
+      setDirty(false)
+      if (r.ok) {
+        showToast(next.enabled ? '网络代理已生效' : '已恢复默认：跟随系统网络设置', 'success')
+      } else {
+        showToast(`设置已保存，但当前环境暂不生效：${r.error}`, 'info')
+      }
+    } finally {
+      // 🔴 复位放 finally：applyNetProxy 链路任何未预期异常都不能让按钮停在「应用中…」
+      setSaving(false)
     }
   }
 

@@ -36,16 +36,20 @@ export function nextAutoCode(
 ): string {
   const prefix = CODE_PREFIX[tabId] ?? ''
   const used = new Set<number>()
-  let usedPrefix = prefix
+  const rowPrefixes = new Set<string>()
   for (const r of rows) {
     const raw = ((drafts[r.id]?.[codeCol] ?? r.data[codeCol] ?? '') as string).trim()
     if (!raw) continue
     const m = raw.match(/^(\D*)(\d+)$/)
     if (m) {
-      if (!usedPrefix) usedPrefix = m[1]
+      rowPrefixes.add(m[1])
       used.add(parseInt(m[2], 10))
     }
   }
+  // 前缀沿用：用户把整表编号改成了自定义前缀（如「北域001」）时，新增行应跟随表内前缀，
+  // 而不是回到出厂默认（旧版这里是个永假的死分支 —— 默认前缀非空，`if (!usedPrefix)` 永不成立）。
+  // 表内前缀不一致（混用）时退回出厂默认，由重复校验兜底。
+  const usedPrefix = rowPrefixes.size === 1 ? [...rowPrefixes][0] : (rowPrefixes.size === 0 ? prefix : prefix)
   let n = 1
   while (used.has(n)) n++
   return usedPrefix + String(n).padStart(4, '0')

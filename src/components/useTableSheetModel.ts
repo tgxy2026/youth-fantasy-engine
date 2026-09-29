@@ -15,7 +15,8 @@
  *     「prevId !== tab.id」那条守卫恒假；唯一与 key 无关的落点是卸载清理（见下）。
  *   · **Ctrl/Cmd+S** 只在本页签有草稿时生效，绝不拦全局快捷键。
  *   · **列宽记忆**写 localStorage 是纯 UI 偏好：写失败（隐私模式/配额满）静默忽略。
- *   · **编号退役池**按项目+页签持久化，删除的编号永不复用。
+ *   · **编号 = 补最小空号**（见 lib/autoCode.ts）：删除的编号允许被新增条目复用，
+ *     删除前经 lib/codeRefs.ts 做引用检查并在确认弹窗里如实提示（只提示、不拦截）。
  *   · 列宽拖拽的位移必须按界面缩放折算（clientX 是视口像素，列宽是 CSS 像素）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
@@ -424,7 +425,13 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     })) return
     // 🔴 2.4.4 六维审计：删行清掉该行的 AI 补全草稿（row::页签::行id），防孤儿残留
     void clearFreeDraft(`row::${tab.id}::${rowId}`)
-    await deleteTableRow(rowId)
+    try {
+      await deleteTableRow(rowId)
+    } catch (e) {
+      // 删除落库失败必须说出来：行其实还在，界面别假装删掉了（与 saveAll 的失败口径一致）
+      showToast(`删除失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+      return
+    }
     setRows(rows.filter(r => r.id !== rowId))
     setDrafts(prev => {
       const next = { ...prev }

@@ -16,6 +16,8 @@ export interface CodeRefResult {
   total: number
   /** 最多 3 条出处提示，形如「《国家势力》·地理位置」「第 3 章（正文）」 */
   hints: string[]
+  /** 🔴 扫描期间有数据源读取失败 ⇒ 结果偏少（不能当成「无引用」的事实） */
+  incomplete?: boolean
 }
 
 const MAX_HINTS = 3
@@ -33,6 +35,7 @@ export async function countCodeRefs(
   if (!target) return { total: 0, hints: [] }
   let total = 0
   const hints: string[] = []
+  let incomplete = false
 
   // ① 各表的行：逐格文本匹配（跨表引用列与自由文本里都可能写编号）
   for (const tab of TABS) {
@@ -40,7 +43,7 @@ export async function countCodeRefs(
     let rows
     try {
       rows = await db.getTableRows(tab.id)
-    } catch { continue }
+    } catch { incomplete = true; continue }
     for (const r of rows) {
       if (exclude.rowId && r.id === exclude.rowId) continue
       for (const [col, v] of Object.entries(r.data ?? {})) {
@@ -60,7 +63,7 @@ export async function countCodeRefs(
     let recs
     try {
       recs = await db.getCardRecords(tab.id)
-    } catch { continue }
+    } catch { incomplete = true; continue }
     for (const rec of recs) {
       for (const v of Object.values(rec.data ?? {})) {
         if (typeof v === 'string' && v.includes(target)) {
@@ -78,7 +81,7 @@ export async function countCodeRefs(
     let data
     try {
       data = await db.getFormData(tab.id)
-    } catch { continue }
+    } catch { incomplete = true; continue }
     for (const [k, v] of Object.entries(data ?? {})) {
       if (typeof v === 'string' && v.includes(target)) {
         total++
@@ -96,13 +99,16 @@ export async function countCodeRefs(
         if (hints.length < MAX_HINTS) hints.push(`第 ${ch.order + 1} 章 ${ch.title}（正文）`)
       }
     }
-  } catch { /* 读不到正文不算错，前面的引用照常report */ }
+  } catch { incomplete = true /* 读不到正文：结果偏少，必须标注 */ }
 
-  return { total, hints }
+  return { total, hints, incomplete }
 }
 
-/** 把引用结果拼成删除确认弹窗里的提示文案（无引用则返回空串） */
+/** 把引用结果拼成删除确认弹窗里的提示文案（无引用且扫描完整则返回空串） */
 export function codeRefWarning(code: string, r: CodeRefResult): string {
+  if (r.incomplete) {
+    return `\n\n⚠️ 引用检查未完整执行（部分数据读取失败），无法确认「${code}」是否被引用 —— 请自行在相关表格与正文中核对后再删除。`
+  }
   if (!r.total) return ''
   const where = r.hints.length ? `（如 ${r.hints.join('、')}）` : ''
   return `\n\n检测到「${code}」在 ${r.total} 处出现过${where}：如果该编号确实被别处引用，删除后这些引用会指向空号（之后新增条目还可能补上这个号）。请确认无引用后再删除；确认过的可直接删除。`

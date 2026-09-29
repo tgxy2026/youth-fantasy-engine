@@ -345,10 +345,19 @@ app.whenReady().then(() => {
       const clean = (v, max) => String(v ?? '')
         .replace(/[^a-zA-Z0-9.\-_:,;=<>\s*]/g, '').slice(0, max)
       if (!c.enabled) {
-        await session.defaultSession.setProxy({ mode: 'direct' })
+        // 🔴 停用必须回到 mode:'system'（跟随系统代理/PAC）而不是 'direct'——
+        //    Electron 默认就是 system；推 direct 会把「系统挂了代理」的用户的全部请求
+        //    （含 AI 与云同步）改成绕过代理直连，与界面承诺的「跟随系统网络设置」相反。
+        await session.defaultSession.setProxy({ mode: 'system' })
         return { ok: true }
       }
       const rules = clean(c.rules, 300)
+      // 主进程侧按「单条 scheme://host:port」再校验一次（纵深防御：渲染层 normalizeProxyInput
+      // 之外的第二道；白名单字符过滤防不住 Chromium 的多规则语法 http=a:80;https=b:80）
+      if (!/^(https?|socks5?):\/\/[a-zA-Z0-9.\-]+(:\d{1,5})?$/.test(rules)
+        && !/^[a-zA-Z0-9.\-]+(:\d{1,5})?$/.test(rules)) {
+        return { ok: false, error: '代理地址格式不正确' }
+      }
       if (!rules) return { ok: false, error: '代理地址为空或包含非法字符' }
       const bypass = clean(c.bypass, 300)
       await session.defaultSession.setProxy({
