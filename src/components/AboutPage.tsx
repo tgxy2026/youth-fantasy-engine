@@ -2,28 +2,20 @@ import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy } from 'luc
 import payWechat from '../assets/pay-wechat.png'
 import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
+import { useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { APP_VERSION_LABEL } from '../lib/env'
 import { copyText } from './dialogs'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
+import UpdateDialog from './UpdateDialog'
+import { QUARK_URL, QUARK_CODE, QUARK_TOKEN } from '../lib/downloadLinks'
+import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '../lib/versionCheck'
+import { usePersistedBool } from '../lib/uiPrefs'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
 const BILI_URL = 'https://b23.tv/zl4vqyw'
 const BILI_NAME = '铁骨咸鱼'
-
-// 最新版本安装包下载地址（夸克网盘分享）。
-// 发新版流程：上传安装包到网盘 → 把新的链接/提取码/口令填到这里 → 重新打包发版。
-// 刻意不做联网版本检测：不依赖任何服务器，更新公告由作者在 B站/公众号/QQ群发布。
-// 留空则不渲染「获取最新版本」区块，避免出现点了没反应的死链。
-//
-// ⚠️ 换版本时若网盘仍是同一个「文件夹分享」，只传新安装包即可，链接与提取码不变、不必改代码。
-//    只有当分享链接本身失效/重建时，才需要同步改下面三个常量并重新发版。
-const LATEST_VERSION_URL = 'https://pan.quark.cn/s/8ae0eb718cf5?pwd=QfAm'
-/** 网盘提取码（网页端 URL 已带 pwd 参数会自动填；手机端/客户端常需手填，故在此明示） */
-const LATEST_VERSION_CODE = 'QfAm'
-/** 夸克 APP 口令：复制整段文本后打开夸克 APP 会自动识别跳转（手机端最省事的路径） */
-const LATEST_VERSION_TOKEN =
-  '我用夸克网盘给你分享了「青春幻想引擎」，点击链接或复制整段内容，打开「夸克APP」即可获取。\n/~bb863abBGY~:/'
 
 // 致谢名单（支持者墙）—— 示例占位：借用知名网络小说主角的名号排排站，后续由作者替换为真实读者 / 金主 / 贡献者记录
 const THANKS: { name: string; work: string }[] = [
@@ -63,8 +55,26 @@ function SectionTitle({ icon, children }: { icon: React.ReactNode; children: Rea
 }
 
 export default function AboutPage() {
+  // 检查更新（2.6.3）：手动按钮 + 「启动时自动检查」开关（默认开）
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState<{ hasUpdate: boolean; latest: LatestRelease | null; skipped?: boolean } | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [autoCheck, setAuto] = usePersistedBool('update-auto-check', isAutoCheckOn())
+
+  const runCheck = async () => {
+    setChecking(true)
+    try {
+      const r = await checkUpdate(true)   // 手动：不受「每天一次」节流限制
+      setResult({ hasUpdate: r.hasUpdate, latest: r.latest, skipped: r.skipped })
+      if (r.hasUpdate) setDialogOpen(true)
+    } finally {
+      setChecking(false)
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto">
+      <UpdateDialog open={dialogOpen} latest={result?.latest ?? null} onClose={() => setDialogOpen(false)} />
       <div className="max-w-5xl mx-auto px-6 py-8">
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-1">
@@ -107,7 +117,7 @@ export default function AboutPage() {
             </section>
 
             {/* 获取最新版本：只给网盘链接 + 版本号，不联网检测 */}
-            {LATEST_VERSION_URL && (
+            {QUARK_URL && (
               <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
                 <SectionTitle icon={<Download size={15} className="text-amber" />}>获取最新版本</SectionTitle>
                 <p className="text-ink-400 text-xs leading-relaxed mb-4">
@@ -120,9 +130,37 @@ export default function AboutPage() {
                   <span className="font-medium text-amber">安装提示：</span>
                   若你电脑上已安装过旧版（装在 C 盘「Program Files」目录下），请先用「右键 → 以管理员身份运行」打开本安装包完成一次升级；升级后会迁移为「当前用户安装」，之后重装都不再需要管理员权限。
                 </div>
+                {/* 检查更新：查 Gitee 上的最新 Release（只提示、不下载、不安装） */}
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <Button variant="secondary" disabled={checking} onClick={() => void runCheck()} className="gap-1.5">
+                    <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+                    {checking ? '检查中…' : '检查更新'}
+                  </Button>
+                  <label className="flex items-center gap-1.5 text-11 text-ink-400 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={autoCheck}
+                      onChange={e => { setAuto(e.target.checked); setAutoCheck(e.target.checked) }}
+                      className="accent-amber"
+                    />
+                    启动时自动检查
+                  </label>
+                  {result && !checking && (
+                    <span className="text-11 text-ink-500">
+                      {result.hasUpdate
+                        ? `有新版本 v${result.latest?.version}`
+                        : result.skipped
+                          ? `已跳过 v${result.latest?.version}（有新版本，但你选过跳过）`
+                          : result.latest
+                            ? '已是最新版本'
+                            : '暂时查不到版本信息'}
+                    </span>
+                  )}
+                </div>
+
                 <div className="flex flex-wrap gap-2">
                   <a
-                    href={LATEST_VERSION_URL}
+                    href={QUARK_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 rounded-lg bg-amber px-3 py-2 text-sm font-medium text-ink-950 hover:opacity-90 transition-opacity"
@@ -131,7 +169,7 @@ export default function AboutPage() {
                   </a>
                   <Button
                     variant="secondary"
-                    onClick={() => copyText(LATEST_VERSION_TOKEN, '已复制 APP 口令，打开夸克 APP 即可识别')}
+                    onClick={() => copyText(QUARK_TOKEN, '已复制 APP 口令，打开夸克 APP 即可识别')}
                     className="gap-2"
                   >
                     <Copy size={15} /> 复制 APP 口令
@@ -141,12 +179,12 @@ export default function AboutPage() {
                 <div className="mt-3 flex items-center gap-2">
                   <span className="text-11 text-ink-500">提取码</span>
                   <code className="rounded bg-ink-900/60 border border-ink-700 px-2 py-0.5 text-xs text-ink-100 tracking-wider">
-                    {LATEST_VERSION_CODE}
+                    {QUARK_CODE}
                   </code>
                   <Button
                     variant="bare"
                     size="xs"
-                    onClick={() => copyText(LATEST_VERSION_CODE, '提取码已复制')}
+                    onClick={() => copyText(QUARK_CODE, '提取码已复制')}
                     className="gap-1 text-11 text-ink-400 hover:text-amber"
                   >
                     <Copy size={12} /> 复制

@@ -10,6 +10,8 @@ import CharacterSheet from './components/CharacterSheet'
 import OutlineSheet from './components/OutlineSheet'
 import ProjectHub from './components/ProjectHub'
 import AboutPage from './components/AboutPage'
+import UpdateDialog from './components/UpdateDialog'
+import { checkUpdate, isAutoCheckOn, type LatestRelease } from './lib/versionCheck'
 import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
 import { isWorldSetTab } from './lib/worldSets'
 import * as db from './lib/db'
@@ -64,6 +66,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
   const [booted, setBooted] = useState(false)
+  // 2.6.3 · 启动自动检查到的更新（有则弹一次说明）
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [updateLatest, setUpdateLatest] = useState<LatestRelease | null>(null)
   /** 启动流程抛出的错误（非空则渲染错误页，而不是永远卡在黑屏上） */
   const [bootError, setBootError] = useState('')
   /**
@@ -159,6 +164,20 @@ export default function App() {
       // 它存在**全局 meta**（`ai.promptOverrides`，不是项目级 —— 与 lastProject 同一个 meta 区），
       // 所以放在这里调用、与「有没有打开项目」无关。
       await loadPromptOverrides()
+
+      // 2.6.3 · 启动后自动检查更新：**延迟 3 秒 + 完全静默**（失败不弹任何东西），
+      // 只有真的查到更高版本才弹一次更新说明。开关默认开，关于页可关。
+      void (async () => {
+        try {
+          await new Promise(r => setTimeout(r, 3000))
+          if (!isAutoCheckOn()) return
+          const r = await checkUpdate(false)
+          if (r.hasUpdate && r.latest) {
+            setUpdateLatest(r.latest)
+            setUpdateOpen(true)
+          }
+        } catch { /* 🔴 静默：断网 / 限流 / 解析失败都不打扰作者 */ }
+      })()
       // 🔴 2026-09-19 老大要求：**启动后默认停在「项目管理首页」**，不再自动打开上次的项目。
       //    于是现在进项目只有一条路径 —— 作者在首页挑一个 → `openProject()`，
       //    那里的 runMigrations / refreshVolumeTabs / 自动备份 / setActiveTab('dashboard')
@@ -339,6 +358,8 @@ export default function App() {
       <>
         <DesktopWriteLockBanner />
         {needWelcome ? <WelcomeWizard onDone={onWelcomeDone} /> : <ProjectHub onOpen={openProject} onReplayWelcome={() => setNeedWelcome(true)} />}
+        {/* 2.6.3 · 启动自动检查到的新版本（在首页这一支挂载即可：启动默认停在这里） */}
+        <UpdateDialog open={updateOpen} latest={updateLatest} onClose={() => setUpdateOpen(false)} />
         {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。
             此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
         <DataDock />

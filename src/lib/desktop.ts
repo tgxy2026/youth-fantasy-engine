@@ -55,6 +55,8 @@ export interface ElectronNetAPI {
     body?: string
   }): Promise<NetFetchResult>
   /** 推送网络代理配置（2026-09-28 · 网络代理设置）：仅桌面版可用 */
+  /** 用系统默认浏览器打开一个 http/https 链接（2.6.3 · 检查更新下载入口） */
+  openExternal(url: string): Promise<{ ok: true } | { ok: false; error: string }>
   setProxy(cfg: {
     enabled: boolean
     /** 代理规则串（如 http://127.0.0.1:7890）；主进程白名单清洗 */
@@ -143,6 +145,25 @@ export async function netFetch(
   }
   try {
     return await (window.electronNet as ElectronNetAPI).fetch(url, init)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * 用系统默认浏览器打开外部链接（2026-09-30 · 检查更新的「去下载」）。
+ * 🔴 只接受 **http/https** —— 主进程侧还有一道校验，这里再挡一次，防止将来被拿去打开
+ *    `file://` 或自定义协议。**永不抛**：不可用返回 ok:false，调用方降级 window.open。
+ */
+export async function openExternalUrl(url: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!HAS_NET_BRIDGE) {
+    return { ok: false, error: '当前版本没有「打开外部链接」能力（浏览器里请手动复制地址）' }
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    return { ok: false, error: '只允许打开 http / https 链接' }
+  }
+  try {
+    return await (window.electronNet as ElectronNetAPI).openExternal(url)
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
