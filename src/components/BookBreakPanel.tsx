@@ -214,6 +214,9 @@ export default function BookBreakPanel() {
       ownerTab: OWNER_TAB,
       kind: TASK_KIND,
       title: '一键拆书',
+      // 拆书产物最终会写进正文（勾了 persistToChapters 时）与设定草稿 ——
+      // 与别的写这两处的任务撞上时，任务中心会轻提示一次（真并行的必然代价，见 3-1）
+      writes: ['chapters', 'settings'],
       run: async ctx => {
         const res = await runBookBreak(rawText, {
           signal: ctx.signal,

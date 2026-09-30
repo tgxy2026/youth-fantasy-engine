@@ -23,7 +23,7 @@
  *    `DraftBundle` 体积都可能很大（整本原文 / 几十条草稿），贸然落进 meta 会拖垮存储；
  *    要落盘得先定「存什么、存多大、放哪」，这是一件需要单独设计的事（见方案文档）。
  */
-import { useSyncExternalStore } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 import { uid } from './id'
 
 export type AiTaskStatus = 'running' | 'done' | 'failed' | 'aborted'
@@ -55,6 +55,12 @@ export interface AiTask<TResult = unknown, TProgress = unknown> {
   notified: boolean
   /** 中止时拿到的续跑断点（形状由调用方定义，如 `BookBreakResume`） */
   resume: unknown
+  /**
+   * 本任务会写入的资源标识（如 `chapters` / `table:characters` / `meta:sessions`）。
+   * 用于**并发冲突轻提示**：两个 running 任务写了同一份资源时提醒作者别互相覆盖。
+   * 只读任务留空数组即可。
+   */
+  writes: string[]
 }
 
 /** 交给 `run` 的执行上下文：进度上报 / 断点回传 / 中止探测 */
@@ -83,6 +89,11 @@ export interface StartTaskDef<TResult = unknown, TProgress = unknown> {
    */
   notify?: (info: { status: Exclude<AiTaskStatus, 'running'>; result: TResult | null; error: string }) =>
     { text: string; kind: AiTaskNotice['kind'] } | null
+  /**
+   * 本任务会写哪些资源（见 `AiTask.writes`）。与另一个 running 任务有交集时**轻提示**，不阻断。
+   * 🔴 真并行是拍板决策（不做全局队列），这是它必须付的代价：写同一处要提醒，不许静默互相覆盖。
+   */
+  writes?: string[]
 }
 
 export interface AiTaskNotice {
@@ -188,6 +199,12 @@ export function startTask<TResult = unknown, TProgress = unknown>(def: StartTask
     console.warn(`[aiTaskCenter] 「${def.title}」已在运行，忽略重复发起`)
     return null
   }
+  // 🔴 真并行的必然代价：与另一个 running 任务写同一处资源 → **轻提示**（绝不阻断、不排队）
+  const writes = def.writes ?? []
+  if (writes.length) {
+    const clash = snap.tasks.find(t => t.status === 'running' && t.writes.some(w => writes.includes(w)))
+    if (clash) notice(`注意：「${def.title}」与正在进行中的「${clash.title}」会写到同一处内容，建议错开写入以免互相覆盖`, 'info')
+  }
   const id = uid()
   const ctl = new AbortController()
   ctls.set(id, ctl)
@@ -205,6 +222,7 @@ export function startTask<TResult = unknown, TProgress = unknown>(def: StartTask
     unread: false,
     notified: false,
     resume: null,
+    writes,
   }
   const kept = snap.tasks.filter(
     t => !(t.ownerTab === def.ownerTab && t.kind === def.kind && t.status !== 'running'),
@@ -311,4 +329,96 @@ export function takeUnnotifiedRunning(): AiTask[] {
 export function resetTaskCenter(): void {
   abortAllTasks()
   set({ tasks: [], notice: null })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 面板侧的**统一接线**：`useTaskRunner` 把一个「弹窗 / 面板内的 AI 任务」接到任务中心，
+// 让面板从「自己拿 useState 存 loading/result」退化为「提交 + 订阅 + 展示」。
+//
+// 为什么抽出来：B 类面板（AIOrganize / AuditModals / 校对…）形态高度相似——都是
+// 「按钮起一次请求 → 期间显示进度 → 成功后渲染结果」。若每处各写一遍
+// `useAiTask` + `startTask` + 结果同步，既啰嗦又容易漂移（有的忘了把结果写回、
+// 有的把 error 吞了）。这里把口径收成一处。
+//
+// ⚠️ **结果回填的时机**：`result` 直接读 `task.result`，因此**面板重新挂载**（切页签回来、
+//    弹窗重开）时，只要任务中心还留着那条记录，结果就是现成的 —— 这是「切走不丢」的关键。
+//    组件若要把它同步进本地 state（如勾选集要跟着结果重置），用 `useEffect` 监听 `result` 即可。
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TaskRunnerOpts {
+  /** 发起它的页签 id（结果回填 / 指示器「点回去看」都靠它） */
+  ownerTab: string
+  /** 任务类别 —— 同一页签可并有多类（如编辑器里的 diagnosis / proofread / review…） */
+  kind: string
+  /** 界面显示名（指示器与完成提示里用） */
+  title: string
+  /** 本任务最终会写哪些资源（见 `AiTask.writes`）；只读任务不传 */
+  writes?: string[]
+}
+
+export interface TaskRunner<TResult = unknown, TProgress = unknown> {
+  /** 当前任务（含 status / progress / resume），组件订阅它即可 */
+  task: AiTask<TResult, TProgress> | null
+  /** 结果（`task.result` 的便捷取用；未完成 / 失败 / 中止时为 null） */
+  result: TResult | null
+  /** 失败原因（非空即展示；中止与正常结束都是空串） */
+  error: string
+  /** 是否在跑（按钮禁用 / 显示「进行中」用） */
+  running: boolean
+  /** 起任务：同名同 kind 已在跑则**忽略**（`startTask` 内兜底，避免白烧一次额度） */
+  run: (
+    fn: (ctx: AiTaskCtx<TProgress>) => Promise<TResult>,
+    /** 可选：自定义完成提示文案（缺省用通用文案） */
+    notify?: StartTaskDef<TResult, TProgress>['notify'],
+  ) => void
+  /** 显式中止（**只有用户点「停止」才调它** —— 切页签绝不中止） */
+  stop: () => void
+  /** 清掉这条**已结束**的记录（「重新整理」等按钮用，让结果区回到初始态）；运行中无效 */
+  clear: () => void
+}
+
+/**
+ * 把面板内的 AI 请求接到任务中心的最小钩子。
+ *
+ * ```tsx
+ * const t = useTaskRunner<MyResult>({ ownerTab: tab.id, kind: 'organize', title: 'AI 整理' })
+ * // 发起：
+ * t.run(ctx => doAiWork({ signal: ctx.signal, onProgress: ctx.progress }))
+ * // 展示：
+ * if (t.running) …  else if (t.error) …  else if (t.result) …
+ * ```
+ */
+export function useTaskRunner<TResult = unknown, TProgress = unknown>(
+  opts: TaskRunnerOpts,
+): TaskRunner<TResult, TProgress> {
+  const { ownerTab, kind, title, writes } = opts
+  const task = useAiTask<TResult, TProgress>(ownerTab, kind)
+
+  const run = useCallback(
+    (
+      fn: (ctx: AiTaskCtx<TProgress>) => Promise<TResult>,
+      notify?: StartTaskDef<TResult, TProgress>['notify'],
+    ) => {
+      startTask<TResult, TProgress>({ ownerTab, kind, title, run: fn, notify, writes })
+    },
+    [ownerTab, kind, title, writes],
+  )
+
+  const taskId = task?.id
+  const stop = useCallback(() => {
+    if (taskId) abortTask(taskId)
+  }, [taskId])
+  const clear = useCallback(() => {
+    if (taskId) dismissTask(taskId)
+  }, [taskId])
+
+  return {
+    task,
+    result: task?.result ?? null,
+    error: task?.error ?? '',
+    running: task?.status === 'running',
+    run,
+    stop,
+    clear,
+  }
 }

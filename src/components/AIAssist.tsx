@@ -13,10 +13,11 @@ import { confirmDialog, copyText } from './dialogs'
 import {
   type AIProvider, type ChatMessage,
   chat, loadProviders, loadActiveId, saveActiveId, typeLabel,
-  requireActiveProvider, isCancelled, composeSystemPrompt,
+  requireActiveProvider, composeSystemPrompt,
 } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
+import { useTaskRunner } from '../lib/aiTaskCenter'
 import { buildProjectContext } from '../lib/aiContext'
 import { getSetting, setSetting } from '../lib/db'
 import { uid } from '../lib/id'
@@ -67,14 +68,25 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  /** 本地错误（未配置模型等界面问题）；AI 请求失败由任务中心报 */
+  const [localError, setLocalError] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
   const [bringContext, setBringContext] = useState(false)
   /** 流式输出时累计的临时回文（未落库，仅用于边出边显） */
   const [streamingText, setStreamingText] = useState('')
-  const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // 🔴 接到任务中心（清单 #009）：AI 回复耗时可达数十秒，切页签时 **loading 状态与完成提示**都不再丢，
+  //    也避免切回来后误判「没在跑」而重复发送（同一会话并发两条回复会串序）。
+  //    ⚠️ 流式回文**刻意不放进任务中心**：每个 token 都推一次全局快照会把指示器拖垮；
+  //       它留在组件本地、丢失也无妨 —— 完整回复会落库，切回来照样能看到。
+  const t = useTaskRunner<ChatSession>({
+    ownerTab: 'inspire-tools', kind: 'ai-assist', title: 'AI 辅助规划',
+    // 回复会写进本项目的会话清单 —— 与别的写同一份 meta 的任务撞上时会轻提示一次
+    writes: ['meta:ai-assist-sessions'],
+  })
+  const loading = t.running
+  const error = localError || t.error
 
   const active = providers.find(p => p.id === activeId) ?? null
   const activeSession = sessions.find(s => s.id === activeSessionId) ?? null
@@ -116,10 +128,10 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
     persist(upsert(sessions, s))
     setActiveSessionId(s.id)
     setPrompt('')
-    setError('')
+    setLocalError('')
   }
 
-  const switchSession = (id: string) => { setActiveSessionId(id); setError(''); setPrompt('') }
+  const switchSession = (id: string) => { setActiveSessionId(id); setLocalError(''); setPrompt('') }
 
   // v1.6：对话改名走应用内 PromptModal（浏览器 prompt 在 Electron 桌面端无实现、点击无反应）
   const [renameTarget, setRenameTarget] = useState<ChatSession | null>(null)
@@ -146,7 +158,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
   const send = async () => {
     if (!aiReady || !prompt.trim() || loading) return
     const cfg = await requireActiveProvider().catch(() => null)
-    if (!cfg) { setError('尚未配置可用模型，请先到「工作面板 → 模型设置」里添加。'); return }
+    if (!cfg) { setLocalError('尚未配置可用模型，请先到「工作面板 → 模型设置」里添加。'); return }
     const text0 = prompt.trim()
     const userMsg: ChatMsg = { id: uid(), role: 'user', content: text0, ts: Date.now() }
     const base: ChatSession = activeSession ?? { id: uid(), title: truncateTitle(text0), messages: [], updatedAt: Date.now() }
@@ -156,17 +168,18 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
       messages: [...base.messages, userMsg],
       updatedAt: Date.now(),
     }
+    // 作者的话立刻落库 —— 即便后面回复失败也不丢
     persist(upsert(sessions, session0))
     setActiveSessionId(session0.id)
     setPrompt('')
-    setLoading(true)
-    setError('')
+    setLocalError('')
     setStreamingText('')
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
-    try {
+    // 会话清单在**发起时快照**：任务在 store 里跑，完成时组件可能已卸载，不能依赖那时的 `sessions`
+    const sessionsSnapshot = sessions
+    const bringCtx = bringContext
+    t.run(async job => {
       let sys = composeSystemPrompt(SYSTEM_PROMPT, cfg)
-      if (bringContext) {
+      if (bringCtx) {
         try {
           const ctx = await buildProjectContext({ budget: await writerBudgetFor('ai-assist') })
           if (ctx.text) sys += `\n\n【项目资料（供参考：人名 / 设定 / 时间线 / 势力，可据此约束你的建议）】\n${ctx.text}`
@@ -177,20 +190,29 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
         ...session0.messages.map(m => ({ role: m.role, content: m.content })),
       ]
       const reply = await chat(cfg, msgs, {
-        signal: ctrl.signal,
+        signal: job.signal,
+        // 边出边显只在组件活着时有意义（卸载后 setState 是 no-op，无害）
         onToken: (d) => setStreamingText(prev => prev + d),
       })
       const assistantMsg: ChatMsg = { id: uid(), role: 'assistant', content: reply, ts: Date.now() }
-      persist(upsert(sessions, { ...session0, messages: [...session0.messages, assistantMsg], updatedAt: Date.now() }))
-    } catch (e) {
-      if (!isCancelled(e)) setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      abortRef.current = null
-    }
+      const nextSession: ChatSession = { ...session0, messages: [...session0.messages, assistantMsg], updatedAt: Date.now() }
+      // 🔴 落库放在**任务内**（不依赖组件存活）：切页签跑完的回复，回来重新加载会话就能看到
+      void setSetting(SESSIONS_KEY, upsert(sessionsSnapshot, nextSession))
+      return nextSession
+    })
   }
 
-  const stop = () => abortRef.current?.abort()
+  // 任务完成 → 把新会话同步进本地清单（含切回页签后从任务中心读回）
+  useEffect(() => {
+    const s = t.result
+    if (!s) return
+    setSessions(prev => {
+      const i = prev.findIndex(x => x.id === s.id)
+      return i >= 0 ? prev.map(x => (x.id === s.id ? s : x)) : [...prev, s]
+    })
+  }, [t.result])
+
+  const stop = () => t.stop()
 
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => () => clearTimeout(copiedTimer.current), [])

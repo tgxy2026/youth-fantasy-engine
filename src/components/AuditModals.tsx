@@ -12,6 +12,10 @@ import { auditStyle } from '../lib/styleAudit'
 import type { AuditIssue } from '../lib/audit'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
+import { useTaskRunner } from '../lib/aiTaskCenter'
+
+/** AI 深度分析返回的条目形状（伏笔 / 连续性两个弹窗共用） */
+type AiFinding = { level: string; title: string; detail: string; where: string }
 import { buildProjectContext, getRecentChapterTexts } from '../lib/aiContext'
 import { aiForeshadowReview, aiContinuityAudit, aiStyleCheck } from '../lib/aiTasks'
 import { getFormData } from '../lib/db'
@@ -23,18 +27,17 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
   const [board, setBoard] = useState<ForeshadowBoardItem[]>([])
   const [issues, setIssues] = useState<AuditIssue[]>([])
   const { ready: aiReady } = useAIReady()
-  const [aiFindings, setAiFindings] = useState<{ level: string; title: string; detail: string; where: string }[]>([])
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
+  // 🔴 接到任务中心（清单 #009）：AI 深度分析耗时数十秒，切页签 / 关弹窗都不再掐断，结果也不蒸发。
+  const t = useTaskRunner<AiFinding[]>({ ownerTab: 'editor', kind: 'foreshadow-review', title: 'AI 伏笔深度分析' })
+  const aiFindings = t.result ?? []
+  const aiLoading = t.running
+  const aiError = t.error || null
 
-  const runAiReview = async () => {
-    setAiLoading(true); setAiError(null); setAiFindings([])
-    try {
+  const runAiReview = () => {
+    t.run(async () => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('foreshadow-review'), onlyTabIds: ['foreshadow', 'chapter-master', 'timeline'] })
-      const r = await aiForeshadowReview(ctx.text)
-      setAiFindings(r)
-    } catch (e) { setAiError(e instanceof Error ? e.message : String(e)) }
-    finally { setAiLoading(false) }
+      return aiForeshadowReview(ctx.text)
+    })
   }
 
   useEffect(() => {
@@ -152,20 +155,19 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
   const [loading, setLoading] = useState(true)
   const [issues, setIssues] = useState<AuditIssue[]>([])
   const { ready: aiReady } = useAIReady()
-  const [aiFindings, setAiFindings] = useState<{ level: string; title: string; detail: string; where: string }[]>([])
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
+  // 🔴 接到任务中心（清单 #009）：AI 深度审计耗时数十秒，切页签 / 关弹窗都不再掐断，结果也不蒸发。
+  const t = useTaskRunner<AiFinding[]>({ ownerTab: 'editor', kind: 'continuity-audit', title: 'AI 连续性深度审计' })
+  const aiFindings = t.result ?? []
+  const aiLoading = t.running
+  const aiError = t.error || null
 
-  const runAiAudit = async () => {
-    setAiLoading(true); setAiError(null); setAiFindings([])
-    try {
+  const runAiAudit = () => {
+    t.run(async () => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('continuity-audit') })
       // 喂最近 6 章正文：一致性冲突最常出现在临近章节；空串时 prompt 会自动退化为仅查设定内部矛盾
       const texts = await getRecentChapterTexts(6).catch(() => '')
-      const r = await aiContinuityAudit(ctx.text, texts)
-      setAiFindings(r)
-    } catch (e) { setAiError(e instanceof Error ? e.message : String(e)) }
-    finally { setAiLoading(false) }
+      return aiContinuityAudit(ctx.text, texts)
+    })
   }
 
   useEffect(() => {
@@ -242,22 +244,22 @@ export function StyleAudit({ content, onClose }: { content: string; onClose: () 
   const [loading, setLoading] = useState(true)
   const [issues, setIssues] = useState<AuditIssue[]>([])
   const { ready: aiReady } = useAIReady()
-  const [aiStyle, setAiStyle] = useState<{ type: string; quote: string; issue: string; suggestion: string; level: string }[]>([])
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
+  // 🔴 接到任务中心（清单 #009）：AI 文风体检耗时数十秒，切页签 / 关弹窗都不再掐断，结果也不蒸发。
+  const t = useTaskRunner<{ type: string; quote: string; issue: string; suggestion: string; level: string }[]>(
+    { ownerTab: 'editor', kind: 'style-audit', title: 'AI 文风体检' })
+  const aiStyle = t.result ?? []
+  const aiLoading = t.running
+  const aiError = t.error || null
 
-  const runAiStyle = async () => {
-    setAiLoading(true); setAiError(null); setAiStyle([])
-    try {
+  const runAiStyle = () => {
+    t.run(async () => {
       const style = await getFormData('style').catch(() => ({} as Record<string, string>))
       const styleCtx = Object.entries(style)
         .map(([k, v]) => `${k.replace(/^.*::/, '')}：${(v ?? '').toString().slice(0, 200)}`)
         .filter(s => s.length > 2)
         .join('\n')
-      const r = await aiStyleCheck(content, styleCtx)
-      setAiStyle(r)
-    } catch (e) { setAiError(e instanceof Error ? e.message : String(e)) }
-    finally { setAiLoading(false) }
+      return aiStyleCheck(content, styleCtx)
+    })
   }
 
   useEffect(() => {

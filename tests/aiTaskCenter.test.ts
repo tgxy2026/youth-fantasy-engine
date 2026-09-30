@@ -267,6 +267,29 @@ async function main() {
     ok('消费后清空', takeNotice() === null)
   }
 
+  // ---------- 并发冲突轻提示（3-1：真并行的必然代价）----------
+  {
+    resetTaskCenter()
+    const d1 = deferred<void>()
+    startTask({ ownerTab: 'a', kind: 'k1', title: '任务甲', writes: ['chapters', 'settings'], run: async () => d1.promise })
+    ok('首发任务不提示冲突', takeNotice() === null)
+
+    const d2 = deferred<void>()
+    startTask({ ownerTab: 'b', kind: 'k2', title: '任务乙', writes: ['chapters'], run: async () => d2.promise })
+    const n = takeNotice()
+    ok('🔴 两任务写同一处资源 → 轻提示（点名双方）', !!n && n.text.includes('任务乙') && n.text.includes('任务甲'), n?.text)
+    ok('冲突**不阻断**：两个任务都在跑（真并行）', runningTaskCount() === 2)
+
+    const d3 = deferred<void>()
+    startTask({ ownerTab: 'c', kind: 'k3', title: '任务丙', writes: ['meta:sessions'], run: async () => d3.promise })
+    ok('资源无交集 → 不提示', takeNotice() === null)
+    ok('只读任务（不传 writes）也照常跑', runningTaskCount() === 3)
+
+    d1.resolve(); d2.resolve(); d3.resolve()
+    await tick()
+    resetTaskCenter()
+  }
+
   // ---------- 订阅：变更会通知 ----------
   {
     resetTaskCenter()

@@ -1,5 +1,5 @@
 import { foldVh } from '../lib/theme'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Sparkles, Check, Loader2, AlertCircle, RefreshCw, CircleStop,
   CheckSquare, Square, BookOpen, ClipboardPaste, Database,
@@ -11,8 +11,9 @@ import { getChapterTexts } from '../lib/aiContext'
 import { flattenChapters } from '../lib/chapterSeq'
 import type { OrganizeResult } from '../lib/aiTasks'
 import type { VisCtx } from '../lib/schema'
-import { isCancelled } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
+import { useTaskRunner } from '../lib/aiTaskCenter'
+import { showToast } from './dialogs'
 import { organizeHint, AI_DISABLED_HINT } from '../lib/aiScope'
 import { organizeKeyColsOf, organizeRows, organizeUnorderedOf } from '../lib/organizeRows'
 import AutoTextarea from './AutoTextarea'
@@ -50,13 +51,27 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   const [paste, setPaste] = useState('')
   const [useCtx, setUseCtx] = useState(true)
 
-  const [loading, setLoading] = useState(false)
-  const [phase, setPhase] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<OrganizeResult | null>(null)
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [adding, setAdding] = useState(false)
-  const abortRef = useRef<AbortController | null>(null)
+  /** apply（写入表格）自身的失败 —— 与 AI 任务的 error 分开存，共用同一个提示框展示 */
+  const [applyErr, setApplyErr] = useState<string | null>(null)
+
+  // 🔴 接到任务中心（清单 #009）：切页签 / 关弹窗都不会再掐断请求，结果也不会蒸发。
+  //    弹窗重开时 `result` 直接从任务中心读回，因此「切走再回来」结果仍在。
+  const t = useTaskRunner<OrganizeResult, string>({
+    ownerTab: tab.id, kind: 'organize', title: `AI 整理 · ${tab.name}`,
+    // 整理结果会写进这张表 —— 若别的任务同时也在写它，任务中心会轻提示一次（不阻断）
+    writes: [`table:${tab.id}`],
+  })
+  const loading = t.running
+  const phase = t.task?.progress ?? ''
+  const result = t.result
+  const error = t.error || applyErr
+
+  // 结果一到（含重新挂载后从任务中心读回）就默认全选 —— 与迁移前行为一致
+  useEffect(() => {
+    if (t.result) setChecked(new Set(t.result.rows.map((_, i) => i)))
+  }, [t.result])
 
   const keyCols = useMemo(() => organizeKeyColsOf(tab), [tab])
   const unordered = organizeUnorderedOf(tab)
@@ -82,49 +97,45 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
 
   const written = useMemo(() => chapters.filter(c => c.content.trim()), [chapters])
 
-  const stop = () => abortRef.current?.abort()
+  const stop = () => t.stop()
 
-  const run = async () => {
-    setLoading(true)
-    setError(null)
-    setResult(null)
+  const run = () => {
+    // 前置校验放在**起任务之前** —— 「没勾章节」这类问题当场提示即可，不该起一个必然失败的任务
+    if (mode === 'chapters' && picked.size === 0) {
+      showToast('请至少勾选一章正文，或切换到「仅依据已有设定」/「手动粘贴」。', 'info')
+      return
+    }
+    if (mode === 'paste' && !paste.trim()) { showToast('请先粘贴要整理的文本。', 'info'); return }
+    setApplyErr(null)
     setChecked(new Set())
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
-    try {
+    // 输入在**发起时快照进闭包**：任务在 store 里跑，用户切走 / 关弹窗后不应再受界面影响
+    const srcMode = mode, srcPicked = [...picked], srcPaste = paste, srcUseCtx = useCtx
+    // ⚠️ 闭包参数**不能叫 `ctx`** —— 会遮蔽组件的 `props.ctx`（VisCtx），
+    //    传进 organizeRows 的就不是项目可见性上下文了（tsc 当场抓到过）。
+    t.run(async job => {
       let src = ''
-      if (mode === 'chapters') {
-        if (picked.size === 0) throw new Error('请至少勾选一章正文，或切换到「仅依据已有设定」/「手动粘贴」。')
-        setPhase('正在读取章节正文…')
-        src = await getChapterTexts([...picked], 16000)
+      if (srcMode === 'chapters') {
+        job.progress('正在读取章节正文…')
+        src = await getChapterTexts(srcPicked, 16000)
         if (!src.trim()) throw new Error('勾选的章节还没有正文内容。')
-      } else if (mode === 'paste') {
-        if (!paste.trim()) throw new Error('请先粘贴要整理的文本。')
-        src = paste
+      } else if (srcMode === 'paste') {
+        src = srcPaste
       }
 
       // 执行体在 lib/organizeRows.ts —— 与「一键拆书」末尾的「整理关系」阶段共用同一套口径
       // （候选值注入 / 项目资料打包 / 本地判重），不让两处各写一份导致漂移。
-      const r = await organizeRows(tab, {
+      return organizeRows(tab, {
         existing,
         sourceText: src,
-        useCtx,
-        includeChapterList: mode !== 'chapters',
+        useCtx: srcUseCtx,
+        includeChapterList: srcMode !== 'chapters',
         maxRows: 12,
-        signal: ctrl.signal,
+        signal: job.signal,
         ctx,
         calendars,
-        onPhase: setPhase,
+        onPhase: job.progress,
       })
-      setResult(r)
-      setChecked(new Set(r.rows.map((_, i) => i)))
-    } catch (e) {
-      if (!isCancelled(e)) setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setPhase('')
-      abortRef.current = null
-    }
+    })
   }
 
   const apply = async () => {
@@ -136,7 +147,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
       await onAdd(rows)
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setApplyErr(e instanceof Error ? e.message : String(e))
     } finally {
       setAdding(false)
     }
@@ -354,7 +365,7 @@ style={{ maxHeight: foldVh('26vh') }}>
                   </Button>
                 )}
                 <Button
-                  onClick={() => { setResult(null); setChecked(new Set()) }}
+                  onClick={() => { t.clear(); setChecked(new Set()) }}
                   variant="secondary" size="md"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-12 hover:bg-ink-600"
                 >

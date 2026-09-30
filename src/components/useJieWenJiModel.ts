@@ -1,9 +1,21 @@
 /**
- * 颉文姬 · 状态与 AI 链路（C1 · 2.4.2 自 JieWenJi.tsx 拆出）
+ * 颉文姬 · 状态与 AI 链路（C1 · 2.4.2 自 JieWenJi.tsx 拆出。
+ *   2026-09-30 · 2.6.3 接入「跨页签任务中心」，见下）
  *
- * 🔴 纯搬家：state / handler 一字未改，只是把「组件体」搬成了 hook。
- *    组件侧 `const m = useJieWenJiModel(props)`；五个模式面板只收 `m`。
- *    红线段照旧：无模型时 AI 入口全部 disabled。
+ * 🔴 纯搬家（C1）：state / handler 一字未改，只是把「组件体」搬成了 hook。
+ *    组件侧 `const m = useJieWenJiModel(props)`；五个模式面板只收 `m`。红线段照旧：无模型时 AI 入口全部 disabled。
+ *
+ * 🔴🔴 2026-09-30（清单 #009 · 跨页签任务存活）：
+ *    原先 11 个 AI 入口**共用一个 `abortRef`**，且 `useEffect(() => () => abortRef.current?.abort(), [])`
+ *    —— 面板一卸载就 abort ⇒ 切页签 = 任务当场被杀（A 类失败模式的教科书案例）。
+ *    现在全部改走 `useTaskRunner`（`lib/aiTaskCenter`）：
+ *      · 任务在 **store 里**执行，与组件是否挂载无关 —— **切页签绝不中止**；
+ *      · 结果落在任务中心，切回来（或重开面板）**照样在**，不会蒸发；
+ *      · 只有作者点「停止」才 `stop()`。
+ *    ⚠️ **对外形状零改动**：`m` 上暴露的字段名与类型与迁移前完全一致，5 个面板组件一字未改。
+ *    ⚠️ `proofs` / `ledger` 仍是本地 state（它们要被 `replaceOne` / `setLedgerTargetTab` 就地改写），
+ *       由 effect 把任务状态**按块**同步进来；同步按「任务引用是否变化」判定，避免 A 块进度
+ *       更新时把 B 块 `replaceOne` 的重锚定结果覆盖掉。
  */
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { useEffect, useRef, useState } from 'react'
@@ -11,12 +23,17 @@ import { buildProjectContext } from '../lib/aiContext'
 import { getFormData } from '../lib/db'
 import { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '../lib/aiTasks'
 import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '../lib/settingLedger'
-import { isCancelled } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { LS_SPRITE_ENABLED } from '../lib/constants'
+import { useTaskRunner } from '../lib/aiTaskCenter'
 import { showToast } from './dialogs'
 import type { Props } from './jieWenJiParts'
 import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof } from './jieWenJiParts'
+
+/** 校对返回（文字层 / 逻辑层同形状）：逐条问题 + 已扫 / 跳过数 */
+type ProofreadOutcome = { issues: ProofreadIssue[]; scanned: number; skipped: number }
+/** 校对进度（喂给 `onProgress`） */
+type ProofProgress = { done: number; total: number }
 
 export function useJieWenJiModel(props: Props) {
   const { content, openingText, getSelectionText, getSelectionRange, onApplyAdvice, onApplyContent, summary, chapterTitle, onLedgerCommitted, focusChapterId } = props
@@ -37,10 +54,13 @@ export function useJieWenJiModel(props: Props) {
   const [diagMode, setDiagMode] = useState<'full' | 'brief'>('full')
 
   // ============ 诊室：AI 综合诊断 ============
-  const [diag, setDiag] = useState<{ loading: boolean; data?: EditorDiagnosis; error?: string }>({ loading: false })
+  const diagT = useTaskRunner<EditorDiagnosis>({ ownerTab: 'editor', kind: 'jiewenji-diagnosis', title: '颉文姬 · AI 综合诊断' })
+  const diag: { loading: boolean; data?: EditorDiagnosis; error?: string } = {
+    loading: diagT.running, data: diagT.result ?? undefined, error: diagT.error || undefined,
+  }
 
-  const runDiag = async () => {
-    if (!aiReady || diag.loading) return
+  const runDiag = () => {
+    if (!aiReady || diagT.running) return
     const useBrief = diagMode === 'brief'
     const diagText = useBrief ? (summary?.trim() || '') : content
     let brief = useBrief
@@ -50,43 +70,117 @@ export function useJieWenJiModel(props: Props) {
       brief = false // 已回退到完整正文，后续按 full 处理，不能用已被异步改掉的 useBrief
     }
     showToast('AI 综合诊断已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
-    setDiag({ loading: true })
-    try {
+    const text = brief ? diagText : content
+    const textKind: 'summary' | 'full' = brief ? 'summary' : 'full'
+    diagT.run(async job => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-diagnosis'), focusChapterId })
-      const text = brief ? diagText : content
-      const r = await withCtrl(signal => aiEditorDiagnosis(ctx.text, text, { signal, textKind: brief ? 'summary' : 'full' }))
-      setDiag({ loading: false, data: r })
-    } catch (e) {
-      setDiag({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      return aiEditorDiagnosis(ctx.text, text, { signal: job.signal, textKind })
+    })
   }
 
   // ============ 诊室：AI 校对（文字层 / 逻辑层两块） ============
   // 两块结果各存一份：分别跑、分别看，一块的进度与报错不影响另一块。
-  // ⚠️ 但**同一时刻只允许跑一块** —— 本面板所有 AI 请求共用 `abortRef` 一个取消器
-  //    （面板卸载时 abort），并发跑两块会让后发的那次把前一次的 signal 顶掉。
+  // 迁移前「同一时刻只跑一块」是因为共用 `abortRef`；现在每块自带独立任务，互不干扰。
   const [proofs, setProofs] = useState<Record<ProofScope, ProofState>>({
     text: blankProof(), logic: blankProof(),
   })
-  const patchProof = (s: ProofScope, patch: Partial<ProofState>) =>
-    setProofs(prev => ({ ...prev, [s]: { ...prev[s], ...patch } }))
-  const propsRunning = PROOF_ORDER.some(s => proofs[s].loading)
-  const abortRef = useRef<AbortController | null>(null)
-  /** 统一取消器：所有 AI 请求共用，面板卸载时 abort（省 token、防卸载后 setState） */
-  const withCtrl = async <T,>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
-    try {
-      return await fn(ctrl.signal)
-    } finally {
-      if (abortRef.current === ctrl) abortRef.current = null
+  const textProofT = useTaskRunner<ProofreadOutcome, ProofProgress>({ ownerTab: 'editor', kind: 'jiewenji-proof-text', title: '颉文姬 · 文字校对' })
+  const logicProofT = useTaskRunner<ProofreadOutcome, ProofProgress>({ ownerTab: 'editor', kind: 'jiewenji-proof-logic', title: '颉文姬 · 逻辑审校' })
+  const propsRunning = textProofT.running || logicProofT.running
+
+  /**
+   * 把两块校对任务的状态**按块**同步进 `proofs`。
+   * 🔴 只在「该块任务引用变化」时才重写那一块 —— 否则 A 块进度更新会把 B 块
+   *    `replaceOne` 刚做完的重锚定结果覆盖掉（切到另一块再点就成了「定位失败」）。
+   */
+  const lastProofTask = useRef<Record<ProofScope, unknown>>({ text: null, logic: null })
+  const textProofTask = textProofT.task
+  const logicProofTask = logicProofT.task
+  useEffect(() => {
+    const patches: Partial<Record<ProofScope, ProofState>> = {}
+    for (const scope of PROOF_ORDER) {
+      const task = scope === 'text' ? textProofTask : logicProofTask
+      if (lastProofTask.current[scope] === task) continue
+      lastProofTask.current[scope] = task
+      if (!task) continue
+      if (task.status === 'running') {
+        patches[scope] = { ...blankProof(), loading: true, progress: (task.progress as ProofProgress | null) ?? { done: 0, total: 0 } }
+      } else if (task.status === 'done') {
+        const r = task.result
+        patches[scope] = { ...blankProof(), done: true, issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0 }
+      } else if (task.status === 'failed') {
+        patches[scope] = { ...blankProof(), done: true, error: task.error }
+      } else {
+        // 作者主动停止：与迁移前一致 —— 不当作失败（中止时逐条结果本就尚未回传，issues 必为空）
+        patches[scope] = { ...blankProof(), done: true, cancelled: true }
+      }
     }
+    if (Object.keys(patches).length) setProofs(prev => ({ ...prev, ...patches }))
+  }, [textProofTask, logicProofTask])
+
+  /**
+   * 替换单条校对结果：优先用 AI 标注位置，替换后把**两块**的其余问题都按位移重锚定
+   *  （重叠/失效的置空，走全文定位兜底）。只重锚定自己那块的话，切到另一块再点就是"定位失败"。
+   */
+  const replaceOne = (scope: ProofScope, iss: ProofreadIssue) => {
+    let idx = -1
+    if (iss.at != null && content.slice(iss.at, iss.at + iss.quote.length) === iss.quote) idx = iss.at
+    else idx = content.indexOf(iss.quote)
+    if (idx < 0) { showToast('定位失败：原文可能已改动', 'error'); return }
+    const delta = iss.fix.length - iss.quote.length
+    const next = content.slice(0, idx) + iss.fix + content.slice(idx + iss.quote.length)
+    onApplyContent?.(next)
+    setProofs(prev => {
+      const out = { ...prev }
+      for (const k of PROOF_ORDER) {
+        out[k] = {
+          ...prev[k],
+          issues: prev[k].issues
+            .filter(i => !(k === scope && i === iss))
+            .map(i => {
+              if (i.at == null) return i
+              // 替换点之后的坐标整体位移；之前或重叠的按新文本校验，失效则置空，下次替换走 indexOf 兜底
+              const na = i.at > idx ? i.at + delta : i.at
+              return next.slice(na, na + i.quote.length) === i.quote ? { ...i, at: na } : { ...i, at: undefined }
+            })
+            .sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
+        }
+      }
+      return out
+    })
   }
-  // 面板关闭/卸载：中止一切进行中的 AI 请求
-  useEffect(() => () => abortRef.current?.abort(), [])
+
+  const runProofread = (scope: ProofScope) => {
+    if (!aiReady || propsRunning) return
+    // 只校对完整正文。曾经提供过「喂压缩摘要」的简略模式，但校对结果要按 quote
+    // 在正文里定位替换，摘要文字在正文里定位不到、还会误替换无辜同文——已移除。
+    const text = content
+    showToast(`AI 校对已启动（${PROOF_META[scope].label}），篇幅较大时耗时数十秒属正常，并非卡死，请耐心等待`, 'info')
+    const tk = scope === 'text' ? textProofT : logicProofT
+    tk.run(async job => {
+      // 🔴 逻辑层才读设定资料；文字层不读 —— 少注入几千字，出结果更快，
+      //    也避免模型"拿设定去猜人名是不是写错"这类误报。
+      let ctxText = ''
+      if (scope === 'logic') {
+        try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('jiewenji-proofread'), focusChapterId })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
+      }
+      const run = scope === 'text' ? aiProofreadText : aiProofreadLogic
+      const res = await run(text, {
+        context: ctxText,
+        signal: job.signal,
+        onProgress: (d, t) => job.progress({ done: d, total: t }),
+      })
+      return { issues: res.issues, scanned: res.scanned, skipped: res.skipped }
+    })
+  }
+  const stopProofread = () => { textProofT.stop(); logicProofT.stop() }
 
   // ============ 补登：本章新增设定实体 ============
   // AI 只负责「从正文抽候选」，是否已登记一律交给 settingLedger 做确定性比对。
+  const ledgerT = useTaskRunner<LedgerItem[]>({
+    ownerTab: 'editor', kind: 'jiewenji-ledger', title: '颉文姬 · 设定补登抽取',
+    writes: ['settings'], // 抽出的实体最终会补登进设定表
+  })
   const [ledger, setLedger] = useState<{
     loading: boolean; items: LedgerItem[]; error: string; scannedAt: number
   }>({ loading: false, items: [], error: '', scannedAt: 0 })
@@ -94,23 +188,36 @@ export function useJieWenJiModel(props: Props) {
   const [ledgerPicked, setLedgerPicked] = useState<Set<string>>(new Set())
   const [ledgerSaving, setLedgerSaving] = useState(false)
 
-  const runLedger = async () => {
-    if (!aiReady || ledger.loading) return
-    if (!content.trim()) { showToast('本章正文还是空的，没有可抽取的内容', 'info'); return }
-    setLedger({ loading: true, items: [], error: '', scannedAt: 0 })
-    try {
-      const entities = await withCtrl(signal =>
-        aiExtractSettingEntities(content, chapterTitle ?? '', { signal }))
-      const reg = await loadRegistry()
-      const items = classify(entities, reg)
+  /** 任务状态 → `ledger`（只在任务引用变化时写；items 之后可被作者就地改写归属） */
+  const lastLedgerTask = useRef<unknown>(null)
+  useEffect(() => {
+    const task = ledgerT.task
+    if (lastLedgerTask.current === task) return
+    lastLedgerTask.current = task
+    if (!task) return
+    if (task.status === 'running') { setLedger({ loading: true, items: [], error: '', scannedAt: 0 }); return }
+    if (task.status === 'done') {
+      const items = task.result ?? []
       // 默认只勾「待补登」：已登记和疑似重复不该被重复写入
-      setLedgerPicked(new Set(items.filter(i => i.status === 'new').map(i => i.key)))
       setLedger({ loading: false, items, error: '', scannedAt: Date.now() })
+      setLedgerPicked(new Set(items.filter(i => i.status === 'new').map(i => i.key)))
       if (items.length === 0) showToast('本章没有抽出需要登记的设定实体', 'success')
-    } catch (e) {
-      if (isCancelled(e)) { setLedger(s => ({ ...s, loading: false })); return }
-      setLedger({ loading: false, items: [], error: e instanceof Error ? e.message : String(e), scannedAt: 0 })
+      return
     }
+    if (task.status === 'failed') { setLedger({ loading: false, items: [], error: task.error, scannedAt: 0 }); return }
+    // 已中止：保留原有条目，仅收掉 loading
+    setLedger(s => ({ ...s, loading: false }))
+  }, [ledgerT.task])
+
+  const runLedger = () => {
+    if (!aiReady || ledgerT.running) return
+    if (!content.trim()) { showToast('本章正文还是空的，没有可抽取的内容', 'info'); return }
+    const title = chapterTitle ?? ''
+    ledgerT.run(async job => {
+      const entities = await aiExtractSettingEntities(content, title, { signal: job.signal })
+      const reg = await loadRegistry()
+      return classify(entities, reg)
+    })
   }
 
   /** 人物专用：改一下要归入哪张角色卡（AI 只是建议，作者说了算） */
@@ -146,86 +253,31 @@ export function useJieWenJiModel(props: Props) {
     }))
   }
 
-  const runProofread = async (scope: ProofScope) => {
-    if (!aiReady || propsRunning) return
-    // 只校对完整正文。曾经提供过「喂压缩摘要」的简略模式，但校对结果要按 quote
-    // 在正文里定位替换，摘要文字在正文里定位不到、还会误替换无辜同文——已移除。
-    const text = content
-    showToast(`AI 校对已启动（${PROOF_META[scope].label}），篇幅较大时耗时数十秒属正常，并非卡死，请耐心等待`, 'info')
-    patchProof(scope, { ...blankProof(), loading: true })
-    try {
-      // 🔴 逻辑层才读设定资料；文字层不读 —— 少注入几千字，出结果更快，
-      //    也避免模型"拿设定去猜人名是不是写错"这类误报。
-      let ctxText = ''
-      if (scope === 'logic') {
-        try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('jiewenji-proofread'), focusChapterId })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
-      }
-      const run = scope === 'text' ? aiProofreadText : aiProofreadLogic
-      const res = await withCtrl(signal => run(text, {
-        context: ctxText,
-        signal,
-        onProgress: (d, t) => patchProof(scope, { progress: { done: d, total: t } }),
-      }))
-      patchProof(scope, { loading: false, issues: res.issues, scanned: res.scanned, skipped: res.skipped, done: true })
-    } catch (e) {
-      const cancelled = isCancelled(e)
-      patchProof(scope, {
-        loading: false, done: true, cancelled,
-        error: cancelled ? '' : e instanceof Error ? e.message : String(e),
-      })
-    }
-  }
-  const stopProofread = () => abortRef.current?.abort()
-
-  /** 替换单条校对结果：优先用 AI 标注位置，替换后把**两块**的其余问题都按位移重锚定
-   *  （重叠/失效的置空，走全文定位兜底）。只重锚定自己那块的话，切到另一块再点就是"定位失败"。 */
-  const replaceOne = (scope: ProofScope, iss: ProofreadIssue) => {
-    let idx = -1
-    if (iss.at != null && content.slice(iss.at, iss.at + iss.quote.length) === iss.quote) idx = iss.at
-    else idx = content.indexOf(iss.quote)
-    if (idx < 0) { showToast('定位失败：原文可能已改动', 'error'); return }
-    const delta = iss.fix.length - iss.quote.length
-    const next = content.slice(0, idx) + iss.fix + content.slice(idx + iss.quote.length)
-    onApplyContent?.(next)
-    setProofs(prev => {
-      const out = { ...prev }
-      for (const k of PROOF_ORDER) {
-        out[k] = {
-          ...prev[k],
-          issues: prev[k].issues
-            .filter(i => !(k === scope && i === iss))
-            .map(i => {
-              if (i.at == null) return i
-              // 替换点之后的坐标整体位移；之前或重叠的按新文本校验，失效则置空，下次替换走 indexOf 兜底
-              const na = i.at > idx ? i.at + delta : i.at
-              return next.slice(na, na + i.quote.length) === i.quote ? { ...i, at: na } : { ...i, at: undefined }
-            })
-            .sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
-        }
-      }
-      return out
-    })
-  }
-
   // ============ 编辑：选区改稿 → 建议段 ============
   const selText = getSelectionText?.() ?? null
   const [instruction, setInstruction] = useState('润色')
-  const [rewrite, setRewrite] = useState<{ loading: boolean; data?: RewriteResult; error?: string; selText?: string | null }>({ loading: false })
+  // 结果连同**选区快照**一起存（写入前要比对，避免 AI 请求期间正文已改、建议段插错位置）
+  const rewriteT = useTaskRunner<{ data: RewriteResult; selText: string | null }>({
+    ownerTab: 'editor', kind: 'jiewenji-rewrite', title: '颉文姬 · 选区改稿',
+    writes: ['chapters'], // 建议段最终会写进正文
+  })
+  const rewrite: { loading: boolean; data?: RewriteResult; error?: string; selText?: string | null } = {
+    loading: rewriteT.running, data: rewriteT.result?.data, error: rewriteT.error || undefined, selText: rewriteT.result?.selText,
+  }
 
-  const runRewrite = async () => {
-    if (!aiReady || !selText || rewrite.loading) return
-    setRewrite({ loading: true })
-    try {
+  const runRewrite = () => {
+    if (!aiReady || !selText || rewriteT.running) return
+    const snapSel = selText
+    const snapInstruction = instruction
+    rewriteT.run(async job => {
       const style = await getFormData('style').catch(() => ({} as Record<string, string>))
       const styleCtx = Object.entries(style)
         .map(([k, v]) => `${k.replace(/^.*::/, '')}：${(v ?? '').toString().slice(0, 200)}`)
         .filter(s => s.length > 2)
         .join('\n')
-      const r = await withCtrl(signal => aiRewritePassage(selText, instruction, styleCtx, { signal }))
-      setRewrite({ loading: false, data: r, selText })
-    } catch (e) {
-      setRewrite({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      const data = await aiRewritePassage(snapSel, snapInstruction, styleCtx, { signal: job.signal })
+      return { data, selText: snapSel }
+    })
   }
 
   const applyAdvice = () => {
@@ -239,83 +291,66 @@ export function useJieWenJiModel(props: Props) {
     onApplyAdvice?.(rewrite.data.rewritten, getSelectionRange?.() ?? null)
   }
 
-  // ============ 审读：编辑意见 / OOC / 续写方向 ============
-  const [rev, setRev] = useState<{ loading: boolean; data?: ChapterReview; error?: string }>({ loading: false })
-  const [ooc, setOoc] = useState<{ loading: boolean; data?: OocFinding[]; error?: string }>({ loading: false })
-  const [adv, setAdv] = useState<{ loading: boolean; data?: ContinuationAdvice; error?: string }>({ loading: false })
-  const [plea, setPlea] = useState<{ loading: boolean; data?: PleasureReport; error?: string }>({ loading: false })
-  const [open, setOpen] = useState<{ loading: boolean; data?: OpeningReport; error?: string }>({ loading: false })
+  // ============ 审读：编辑意见 / OOC / 续写方向 / 爽点毒点 / 黄金三章 ============
+  const revT = useTaskRunner<ChapterReview>({ ownerTab: 'editor', kind: 'jiewenji-review', title: '颉文姬 · 章节编辑意见' })
+  const oocT = useTaskRunner<OocFinding[]>({ ownerTab: 'editor', kind: 'jiewenji-ooc', title: '颉文姬 · OOC 人设检查' })
+  const advT = useTaskRunner<ContinuationAdvice>({ ownerTab: 'editor', kind: 'jiewenji-advice', title: '颉文姬 · 续写方向' })
+  const pleaT = useTaskRunner<PleasureReport>({ ownerTab: 'editor', kind: 'jiewenji-pleasure', title: '颉文姬 · 爽点毒点检查' })
+  const openT = useTaskRunner<OpeningReport>({ ownerTab: 'editor', kind: 'jiewenji-opening', title: '颉文姬 · 黄金三章检查' })
 
-  const runReview = async () => {
-    if (!aiReady || rev.loading) return
+  const rev: { loading: boolean; data?: ChapterReview; error?: string } = { loading: revT.running, data: revT.result ?? undefined, error: revT.error || undefined }
+  const ooc: { loading: boolean; data?: OocFinding[]; error?: string } = { loading: oocT.running, data: oocT.result ?? undefined, error: oocT.error || undefined }
+  const adv: { loading: boolean; data?: ContinuationAdvice; error?: string } = { loading: advT.running, data: advT.result ?? undefined, error: advT.error || undefined }
+  const plea: { loading: boolean; data?: PleasureReport; error?: string } = { loading: pleaT.running, data: pleaT.result ?? undefined, error: pleaT.error || undefined }
+  const open: { loading: boolean; data?: OpeningReport; error?: string } = { loading: openT.running, data: openT.result ?? undefined, error: openT.error || undefined }
+
+  const runReview = () => {
+    if (!aiReady || revT.running) return
     showToast('AI 审读已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
-    setRev({ loading: true })
-    try {
+    revT.run(async job => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-review'), focusChapterId })
-      const r = await withCtrl(signal => aiChapterReview(ctx.text, content, { signal }))
-      setRev({ loading: false, data: r })
-    } catch (e) {
-      setRev({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      return aiChapterReview(ctx.text, content, { signal: job.signal })
+    })
   }
-  const runOoc = async () => {
-    if (!aiReady || ooc.loading) return
-    setOoc({ loading: true })
-    try {
+  const runOoc = () => {
+    if (!aiReady || oocT.running) return
+    oocT.run(async job => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-ooc'), focusChapterId })
-      const r = await withCtrl(signal => aiOocCheck(ctx.text, content, { signal }))
-      setOoc({ loading: false, data: r })
-    } catch (e) {
-      setOoc({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      return aiOocCheck(ctx.text, content, { signal: job.signal })
+    })
   }
-  const runAdvice = async () => {
-    if (!aiReady || adv.loading) return
-    setAdv({ loading: true })
-    try {
+  const runAdvice = () => {
+    if (!aiReady || advT.running) return
+    advT.run(async job => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-advice'), focusChapterId })
-      const r = await withCtrl(signal => aiContinuationAdvice(ctx.text, content, { signal }))
-      setAdv({ loading: false, data: r })
-    } catch (e) {
-      setAdv({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      return aiContinuationAdvice(ctx.text, content, { signal: job.signal })
+    })
   }
-  const runPleasure = async () => {
-    if (!aiReady || plea.loading) return
-    setPlea({ loading: true })
-    try {
+  const runPleasure = () => {
+    if (!aiReady || pleaT.running) return
+    pleaT.run(async job => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-pleasure'), focusChapterId })
-      const r = await withCtrl(signal => aiPleasureCheck(ctx.text, content, { signal }))
-      setPlea({ loading: false, data: r })
-    } catch (e) {
-      setPlea({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      return aiPleasureCheck(ctx.text, content, { signal: job.signal })
+    })
   }
-  const runOpening = async () => {
-    if (!aiReady || open.loading) return
-    setOpen({ loading: true })
-    try {
+  const runOpening = () => {
+    if (!aiReady || openT.running) return
+    openT.run(async job => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-opening'), focusChapterId })
-      const r = await withCtrl(signal => aiOpeningCheck(ctx.text, openingText ?? content, { signal }))
-      setOpen({ loading: false, data: r })
-    } catch (e) {
-      setOpen({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      return aiOpeningCheck(ctx.text, openingText ?? content, { signal: job.signal })
+    })
   }
 
   // ============ 简报：开写前本章待办（v1.6.1） ============
-  const [brief, setBrief] = useState<{ loading: boolean; data?: BriefingReport; error?: string }>({ loading: false })
-  const runBrief = async () => {
-    if (!aiReady || brief.loading) return
+  const briefT = useTaskRunner<BriefingReport>({ ownerTab: 'editor', kind: 'jiewenji-brief', title: '颉文姬 · 本章写作简报' })
+  const brief: { loading: boolean; data?: BriefingReport; error?: string } = { loading: briefT.running, data: briefT.result ?? undefined, error: briefT.error || undefined }
+  const runBrief = () => {
+    if (!aiReady || briefT.running) return
     showToast('AI 简报已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
-    setBrief({ loading: true })
-    try {
+    briefT.run(async job => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-brief'), focusChapterId })
-      const r = await withCtrl(signal => aiBriefing(ctx.text, content, { signal }))
-      setBrief({ loading: false, data: r })
-    } catch (e) {
-      setBrief({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      return aiBriefing(ctx.text, content, { signal: job.signal })
+    })
   }
 
   const aiBtnCls = 'w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-12 border transition-colors disabled:opacity-45 disabled:cursor-not-allowed'
@@ -323,7 +358,12 @@ export function useJieWenJiModel(props: Props) {
 
   return {
     ...props,
-    aiReady, spriteOn, setSpriteOn, toggleSprite, mode, setMode, diagMode, setDiagMode, diag, setDiag, runDiag, proofs, setProofs, patchProof, propsRunning, abortRef, withCtrl, ledger, setLedger, ledgerPicked, setLedgerPicked, ledgerSaving, setLedgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry, runProofread, stopProofread, replaceOne, selText, instruction, setInstruction, rewrite, setRewrite, runRewrite, applyAdvice, rev, setRev, ooc, setOoc, adv, setAdv, plea, setPlea, open, setOpen, runReview, runOoc, runAdvice, runPleasure, runOpening, brief, setBrief, runBrief, aiBtnCls, scoreCls,
+    aiReady, spriteOn, setSpriteOn, toggleSprite, mode, setMode, diagMode, setDiagMode, diag, runDiag,
+    proofs, propsRunning, runProofread, stopProofread, replaceOne,
+    ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry,
+    selText, instruction, setInstruction, rewrite, runRewrite, applyAdvice,
+    rev, ooc, adv, plea, open, runReview, runOoc, runAdvice, runPleasure, runOpening,
+    brief, runBrief, aiBtnCls, scoreCls,
   }
 }
 
