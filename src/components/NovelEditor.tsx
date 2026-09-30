@@ -858,10 +858,10 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
         />
       )}
       {modal === 'typo' && active && (
-        <ProofreadCheck content={draftContent} onApply={updateContent} onClose={() => setModal(null)} />
+        <ProofreadCheck content={draftContent} chapterId={active.id} onApply={updateContent} onClose={() => setModal(null)} />
       )}
       {modal === 'style' && active && !isLite && (
-        <StyleAudit content={draftContent} onClose={() => setModal(null)} />
+        <StyleAudit content={draftContent} chapterId={active.id} onClose={() => setModal(null)} />
       )}
       {/* 排版：缩进单位设置 + 一键排版（2.4.0 · A5）。
           排版结果走 replaceAllText 而不是 updateContent —— 前者用原生编辑命令写回，

@@ -7,6 +7,21 @@ import * as db from './db'
 import { AuditIssue } from './audit'
 import { contextSnippet } from './contextSnippet'
 
+/**
+ * 把《写作规范》（`style` 表）压成一段「字段：值」上下文，供文风类 AI 任务注入。
+ * 🔴 单一源（2026-10-01 六维审计 · 扫描器对齐）：文风体检（`runAiStyle`）与颉文姬「选区改稿」
+ *    （`runRewrite`）原先各写一份**逐字相同**的格式化逻辑 —— 口径一旦要改（如截断长度），
+ *    两处必然漂移。这里收敛成一处。
+ *    规则：键名去掉 `模块::` 前缀、每值截 200 字、丢掉长度 ≤2 的空壳项。
+ */
+export async function styleContextForAI(): Promise<string> {
+  const style = await db.getFormData('style').catch(() => ({} as Record<string, string>))
+  return Object.entries(style)
+    .map(([k, v]) => `${k.replace(/^.*::/, '')}：${(v ?? '').toString().slice(0, 200)}`)
+    .filter(s => s.length > 2)
+    .join('\n')
+}
+
 export async function auditStyle(content: string): Promise<AuditIssue[]> {
   const issues: AuditIssue[] = []
   if (!content || !content.trim()) {

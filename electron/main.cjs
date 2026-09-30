@@ -371,6 +371,21 @@ app.whenReady().then(() => {
     }
   })
 
+  // 2.6.3 · 检查更新：用系统默认浏览器打开下载链接。
+  // 🔴 只放行 http/https —— 防止这个口子将来被拿去打开 file:// 或自定义协议。
+  ipcMain.handle('net:open-external', async (_e, url) => {
+    try {
+      const target = new URL(String(url))
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+        return { ok: false, error: '不允许的协议：' + target.protocol }
+      }
+      await shell.openExternal(target.href)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
   ipcMain.handle('net:fetch', async (_e, url, init) => {
     const opts = init || {}
     try {

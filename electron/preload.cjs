@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('electronNet', {
    * @returns {Promise<{ok:true}|{ok:false,error:string}>}
    */
   setProxy: (cfg) => ipcRenderer.invoke('net:set-proxy', cfg),
+  // 2.6.3 · 检查更新：用系统默认浏览器打开下载链接（主进程侧只放行 http/https）
+  openExternal: (url) => ipcRenderer.invoke('net:open-external', url),
 })
 
 // 窗口控制（2.5.1 · B2）：只暴露全屏切换三个口子，按键判定（F11/ESC）在渲染层。

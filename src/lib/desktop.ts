@@ -55,6 +55,8 @@ export interface ElectronNetAPI {
     body?: string
   }): Promise<NetFetchResult>
   /** 推送网络代理配置（2026-09-28 · 网络代理设置）：仅桌面版可用 */
+  /** 用系统默认浏览器打开一个 http/https 链接（2.6.3 · 检查更新下载入口） */
+  openExternal(url: string): Promise<{ ok: true } | { ok: false; error: string }>
   setProxy(cfg: {
     enabled: boolean
     /** 代理规则串（如 http://127.0.0.1:7890）；主进程白名单清洗 */
@@ -143,6 +145,25 @@ export async function netFetch(
   }
   try {
     return await (window.electronNet as ElectronNetAPI).fetch(url, init)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * 用系统默认浏览器打开外部链接（2026-09-30 · 检查更新的「去下载」）。
+ * 🔴 只接受 **http/https** —— 主进程侧还有一道校验，这里再挡一次，防止将来被拿去打开
+ *    `file://` 或自定义协议。**永不抛**：不可用返回 ok:false，调用方降级 window.open。
+ */
+export async function openExternalUrl(url: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!HAS_NET_BRIDGE) {
+    return { ok: false, error: '当前版本没有「打开外部链接」能力（浏览器里请手动复制地址）' }
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    return { ok: false, error: '只允许打开 http / https 链接' }
+  }
+  try {
+    return await (window.electronNet as ElectronNetAPI).openExternal(url)
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
@@ -261,6 +282,32 @@ export function unlockDesktopWrite(): void {
  *   但没有任何代码实现这个承诺 —— 内存空库照样会在几百毫秒后覆盖真实文件。
  *   现在"锁"是真的锁：flushDesktop / flushDesktopSync 都会直接返回。
  */
+/**
+ * 「本地数据文件已加载完成」的等待口。
+ *
+ * 🔴 为什么需要它（2026-10-01 六维审计 P1）：`db/core.ts` 的云盘自动恢复块是在**模块求值期**
+ *    就启动的，而数据文件是稍后由 `initDesktopStore()`（App 的 effect）读进来的。在它完成之前，
+ *    本模块的 `data` 还是那份**空库** —— 于是两条红线同时被绕过：
+ *      ① 云同步首次合并据此算出 `localHasContent=false` ⇒ **墓碑闸被短路**，
+ *         「本机删掉的记录」被云端快照原样带回来（幽灵项目的启动路径）；
+ *      ② `writeLocked` 恒为 false ⇒ 那道「读不出来就别切云同步」的守卫成了**死代码**。
+ *    ⇒ 任何「依赖本地数据文件已就绪」的启动逻辑，都必须先 await 这个口子。
+ *    ⚠️ 带超时兜底：万一哪天有入口没有调 `initDesktopStore`，也不能把启动流程永久挂住。
+ */
+const readyGate = (() => {
+  let resolve!: () => void
+  const p = new Promise<void>(r => { resolve = r })
+  return { p, resolve }
+})()
+/** 等本地数据文件加载完成（非桌面环境、或已加载完成时立即返回） */
+export function desktopStoreReady(timeoutMs = 10000): Promise<void> {
+  if (!DESKTOP || inited) return Promise.resolve()
+  return Promise.race([
+    readyGate.p,
+    new Promise<void>(r => { setTimeout(r, timeoutMs) }),
+  ])
+}
+
 export async function initDesktopStore(): Promise<void> {
   if (!DESKTOP || inited) return
   const lock = (why: string, msg: string) => {
@@ -324,6 +371,7 @@ export async function initDesktopStore(): Promise<void> {
     )
   } finally {
     inited = true
+    readyGate.resolve() // 放行所有「等数据文件就绪」的启动逻辑（见 desktopStoreReady）
     emit()
   }
 }

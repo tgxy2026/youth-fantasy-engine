@@ -10,7 +10,7 @@
  * 🔴 段号由本地算：AI 只出「逐字引文 + 读者反应」，段号拿引文在正文里查出来（查不到标「未定位」）。
  * 🔴 立场：读者反应天然主观，这里不出分数、不出等级、不判"能不能发"。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { EMPTY_CHAPTER_HINT } from '../lib/constants'
 import { Copy, Eye, Loader2, Sparkles, UserRound } from 'lucide-react'
 import * as db from '../lib/db'
@@ -21,7 +21,6 @@ import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { buildProjectContext } from '../lib/aiContext'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
-import { isCancelled } from '../lib/ai'
 import {
   aiReaderProbe, groupNotes, questionsOf, readerLensOf, readerProbeToText, READER_LENSES,
   type ReaderProbeResult,
@@ -29,6 +28,21 @@ import {
 import { countWords } from '../lib/textStats'
 import AIDataSourceNote from './AIDataSourceNote'
 import HelpPopover from './HelpPopover'
+import { markTaskSeen, startTask, useAiTask } from '../lib/aiTaskCenter'
+
+/** 本面板在任务中心里的身份（`ownerTab` 需与 TABS 里的页签 id 一致 —— 指示器靠它跳回来） */
+const OWNER_TAB = 'check-tools'
+const TASK_KIND = 'reader-probe'
+
+/**
+ * 任务产物 / 进度：**都带上「章节 + 读者身份」**。
+ *
+ * 🔴 两者都要带：换章、换身份都必须丢弃上一份结果 —— 否则会拿 A 章读者三问的结果
+ *    套在导师四问的分组上（key 对不上，全变「没提」）。任务跨页签存活，归属只能由界面自己判断。
+ *    进度里也放一份，是为了**失败时也认得出属于哪一章 / 哪个身份**（失败没有 result）。
+ */
+interface ReaderProbeTaskResult { chapterId: string; lensKey: string; result: ReaderProbeResult }
+interface ReaderProbeTaskProgress { chapterId: string; lensKey: string }
 
 export default function ReaderProbePanel() {
   // ⚠️ 它返回 { ready, label } 对象，不是布尔 —— 写成布尔会让按钮永不禁用、提示永不显示。
@@ -37,8 +51,24 @@ export default function ReaderProbePanel() {
   const [activeId, setActiveId] = useState('')
   const [lensKey, setLensKey] = useState(READER_LENSES[0].key)
   const [loading, setLoading] = useState(true)
-  const [res, setRes] = useState<{ loading: boolean; data?: ReaderProbeResult; error?: string }>({ loading: false })
-  const ctrl = useRef<AbortController | null>(null)
+
+  /**
+   * 🔴 2.6.3 · 跨页签任务存活：**运行态与结果都在任务中心**，本组件只是「提交 + 订阅 + 展示」。
+   *    原实现把结果存在本组件 `useState`、并在卸载时 `abort()` —— 切去别的页签整理设定，
+   *    审问要么被当场杀掉、要么请求跑完却把结果写进已卸载组件（白烧一次额度）。
+   */
+  const task = useAiTask<ReaderProbeTaskResult, ReaderProbeTaskProgress>(OWNER_TAB, TASK_KIND)
+  const running = task?.status === 'running'
+  /** 这份任务属于哪一章 / 哪个身份（成功看 result，失败看 progress —— 失败没有 result） */
+  const taskChapter = task?.result?.chapterId ?? task?.progress?.chapterId ?? ''
+  const taskLens = task?.result?.lensKey ?? task?.progress?.lensKey ?? ''
+  /** 🔴 只显示**当前章 + 当前身份**的结果（与迁移前一致）；切回来还在（迁移前会永久丢） */
+  const owned = taskChapter === activeId && taskLens === lensKey
+  const d = task?.status === 'done' && owned ? task.result?.result : undefined
+  const err = task?.status === 'failed' && owned ? task.error : ''
+  const taskId = task?.id ?? ''
+  const taskUnread = task?.unread ?? false
+  const taskStatus = task?.status
 
   const load = useCallback(async () => {
     const chs = await db.getAllChapters().catch(() => [] as Chapter[])
@@ -48,11 +78,11 @@ export default function ReaderProbePanel() {
     setLoading(false)
   }, [])
   useEffect(() => { void load() }, [load])
-  // 卸载时中断在飞的请求（切页签别留着它跑）
-  useEffect(() => () => ctrl.current?.abort(), [])
 
-  // 换章或换身份就丢掉上一份结果 —— 否则会拿着 A 章读者三问的结果套在导师四问的分组上（key 对不上全变「没提」）
-  useEffect(() => { setRes({ loading: false }) }, [activeId, lensKey])
+  // 结果被看到即清「未查看」标记（指示器上的「待查看 N」据此收敛）
+  useEffect(() => {
+    if (taskId && taskStatus === 'done' && taskUnread && owned) markTaskSeen(taskId)
+  }, [taskId, taskStatus, taskUnread, owned])
 
   const active = useMemo(() => chapters.find(c => c.id === activeId), [chapters, activeId])
   const content = active?.content ?? ''
@@ -60,31 +90,39 @@ export default function ReaderProbePanel() {
   const lens = readerLensOf(lensKey)
   const isMentor = lensKey === 'mentor'
   const questions = questionsOf(lens)
-  const canRun = aiReady && !!content.trim() && !res.loading
+  const canRun = aiReady && !!content.trim() && !running
 
-  const run = async () => {
+  const run = () => {
     if (!aiReady) { showToast('还没接入模型，无法审问', 'info'); return }
-    if (res.loading) return
+    if (running) return
     if (!content.trim()) { showToast('这一章还没有正文', 'info'); return }
-    ctrl.current?.abort()
-    const c = new AbortController()
-    ctrl.current = c
-    setRes({ loading: true })
-    try {
-      const ctx = await buildProjectContext({ budget: await writerBudgetFor('reader-probe'), focusChapterId: activeId })
-      const r = await aiReaderProbe(ctx.text, content, lensKey, { signal: c.signal })
-      setRes({ loading: false, data: r })
-    } catch (e) {
-      if (isCancelled(e)) { setRes({ loading: false }); return }
-      setRes({ loading: false, error: e instanceof Error ? e.message : String(e) })
-    }
+    // 🔴 输入在发起时**快照**进闭包：任务跑在 store 里，跑的过程中组件可能已经卸载
+    const chapterId = activeId
+    const lensK = lensKey
+    const text = content
+    startTask<ReaderProbeTaskResult, ReaderProbeTaskProgress>({
+      ownerTab: OWNER_TAB,
+      kind: TASK_KIND,
+      title: '读者视角审问',
+      run: async ctx => {
+        // 先把章节 / 身份记进进度：失败时面板仍能认出这份失败属于谁
+        ctx.progress({ chapterId, lensKey: lensK })
+        const pctx = await buildProjectContext({ budget: await writerBudgetFor('reader-probe'), focusChapterId: chapterId })
+        const result = await aiReaderProbe(pctx.text, text, lensK, { signal: ctx.signal })
+        return { chapterId, lensKey: lensK, result }
+      },
+      // 失败要说出来（作者可能已经切走了，面板上的红字他看不到）；成功不弹 —— 结果就在本页
+      notify: ({ status, error }) => (status === 'failed'
+        ? { text: '读者视角审问失败：' + (error || '未知原因'), kind: 'error' }
+        : null),
+    })
   }
 
   const copyAll = async () => {
-    if (!res.data) return
+    if (!d) return
     // 🔴 走 dialogs.copyText 而非裸 navigator.clipboard：后者在非安全上下文（file:// 便携版）
     //    直接不可用且无 execCommand 兜底，而「复制这一份」是这个面板唯一的对外出口 —— 失败等于整块作废。
-    await copyText(readerProbeToText(res.data, active?.title || '（未命名）', lens.name, questions), '已复制这一份反馈')
+    await copyText(readerProbeToText(d, active?.title || '（未命名）', lens.name, questions), '已复制这一份反馈')
   }
 
   if (loading) {
@@ -92,8 +130,6 @@ export default function ReaderProbePanel() {
       <Loader2 size={14} className="inline animate-spin" /> 正在读取…
     </div>
   }
-
-  const d = res.data
 
   return (
     <section className="rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
@@ -114,7 +150,7 @@ export default function ReaderProbePanel() {
         <div className="ml-auto flex items-center gap-2">
           <AIDataSourceNote feature="reader-probe" compact />
           <Button variant="secondary" size="sm" disabled={!canRun} onClick={() => void run()}>
-            {res.loading
+            {running
               ? <><Loader2 size={12} className="animate-spin" /> 读这一章…</>
               : <><Sparkles size={12} /> 请{isMentor ? '导师' : '读者'}读一遍</>}
           </Button>
@@ -154,13 +190,13 @@ export default function ReaderProbePanel() {
 
         {words === 0 && <div className="text-11 text-ink-500">{EMPTY_CHAPTER_HINT}</div>}
 
-        {words > 0 && res.error && (
+        {words > 0 && err && (
           <div className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger">
-            审问失败：{res.error}
+            审问失败：{err}
           </div>
         )}
 
-        {words > 0 && !d && !res.error && !res.loading && (
+        {words > 0 && !d && !err && !running && (
           <div className="text-11 text-ink-500">
             <Eye size={11} className="inline -mt-0.5 mr-1" />
             点右上「请{isMentor ? '导师' : '读者'}读一遍」，看看这一章在「{lens.name}」眼里是什么样。

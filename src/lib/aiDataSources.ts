@@ -261,7 +261,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   },
   'feedback-ai': {
     label: '读者反馈 AI 分析',
-    sources: [{ group: '读者反馈表（读本表 7 列）', items: ['数据周期 / 日期', '追读', '均订', '留存', '高频吐槽', '流失点章节', '流失原因分析'] }],
+    sources: [{ group: '读者反馈表（读本表 8 列）', items: ['数据周期', '日期', '追读', '均订', '留存', '高频吐槽', '流失点章节', '流失原因分析'] }],
     excludes: ['其它任何表 —— 它只分析这张反馈表'],
   },
   'term-dedup': {

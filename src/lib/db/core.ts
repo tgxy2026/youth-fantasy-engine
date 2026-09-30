@@ -8,7 +8,7 @@
 import { openDB, type IDBPDatabase } from 'idb'
 import type { Project } from '../types'
 import type { StoreOps } from '../storeOps'
-import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState } from '../desktop'
+import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState, desktopStoreReady } from '../desktop'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
@@ -417,6 +417,14 @@ if (CLOUD_FILE_SYNC) {
       //    而这条启动路径原先**不查**，等于给同一道红线开了个后门。
       //    处理方式与手动路径不同（那里是抛给用户看，这里是**静默保持本地存储**）：
       //    启动期没人看着界面，弹错反而更糟；不切过去、下次启动 / 文件恢复后可读时再试即可。
+      //
+      // 🔴🔴 2026-10-01 六维审计 P1：**上面那句判定原先排在数据文件加载之前** —— 本块是在
+      //    模块求值期就启动的，而数据文件要到 `initDesktopStore()`（App 的 effect）才读进来。
+      //    在那一刻 `writeLocked` 恒为 false（守卫等于死代码），**更糟的是** `localSnapshotProvider`
+      //    读到的还是空库 ⇒ 首次合并算出 `localHasContent=false` ⇒ 墓碑闸被短路 ⇒
+      //    「本机删掉的记录」被云端快照原样带回来（幽灵项目的又一条启动路径）。
+      //    ⇒ 必须**先等数据文件就绪**再判、再切。
+      await desktopStoreReady()
       if (DESKTOP && getDesktopState().writeLocked) return
       const ok = await applyDesktopCloudFromPersisted()
       if (ok) {
@@ -562,7 +570,7 @@ export async function enableDesktopCloudSync(handle: SyncDirHandle) {
       throw new Error(
         '同步文件夹里没有检测到同步数据，本机也几乎没有数据 —— 已阻止开启，以免空数据覆盖另一台电脑的备份。' +
           '如果你是想在另一台电脑上继续写作：请先在原电脑上开启一次云同步，并确认网盘客户端已把' +
-          '「青春幻想引擎-同步数据.yfe」**完整下载**到这个文件夹（百度网盘等可能需要右键手动下载），再重新选择。',
+          '「青春幻想引擎-同步数据.yfe」「完整下载」到这个文件夹（百度网盘等可能需要右键手动下载），再重新选择。',
       )
     }
     // 新目录还是空的 → 用刚才抓下来的数据播种（不能用「此刻的 ops」，它可能已被清空）

@@ -10,6 +10,8 @@ import CharacterSheet from './components/CharacterSheet'
 import OutlineSheet from './components/OutlineSheet'
 import ProjectHub from './components/ProjectHub'
 import AboutPage from './components/AboutPage'
+import UpdateDialog from './components/UpdateDialog'
+import { checkUpdate, isAutoCheckOn, type LatestRelease } from './lib/versionCheck'
 import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
 import { isWorldSetTab } from './lib/worldSets'
 import * as db from './lib/db'
@@ -26,6 +28,7 @@ import GeoMapEditor from './components/GeoMapEditor'
 import PlotCanvas from './components/PlotCanvas'
 import { showToast } from './components/dialogs'
 import { Button } from './components/Button'
+import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from './lib/aiTaskCenter'
 import { applyTheme, applyZoom, foldVh, getStoredTheme, getStoredZoom, isZoomAuto } from './lib/theme'
 import { applyStoredFontPrefs } from './lib/fontPrefs'
 import { applyStoredNetProxy } from './lib/netPrefs'
@@ -64,6 +67,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
   const [booted, setBooted] = useState(false)
+  // 2.6.3 · 启动自动检查到的更新（有则弹一次说明）
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [updateLatest, setUpdateLatest] = useState<LatestRelease | null>(null)
   /** 启动流程抛出的错误（非空则渲染错误页，而不是永远卡在黑屏上） */
   const [bootError, setBootError] = useState('')
   /**
@@ -98,6 +104,20 @@ export default function App() {
   const backupStop = useRef<(() => void) | null>(null)
   // 本地数据文件加载完成状态（未加载完不出主界面，避免闪一下空库）
   const [fileReady, setFileReady] = useState(!DESKTOP)
+  /**
+   * 当前页签的 ref 镜像（2.6.3 · 跨页签任务存活）：
+   * `navigate` 里要判断「是不是真的换了页签」，但把 `activeTab` 放进 useCallback 依赖
+   * 会让 `navigate` 每次切页签都换引用（下发给 Sidebar 与各页签，徒增重渲染）。
+   * 用 ref 镜像读最新值，依赖数组保持 `[visCtx]` 不变。
+   */
+  const activeTabRef = useRef(activeTab)
+  useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
+  /**
+   * 上一个打开过的项目 id（用于「换项目才清后台任务」）。
+   * 退出项目**不清**任务：被中止的拆书任务带着断点留在内存里，重新打开同一个项目即可「继续抽取」；
+   * 只有打开了**另一个项目**才清（那些任务属于上一个项目，留着会串味）。
+   */
+  const lastProjectRef = useRef<string | null>(null)
 
   // 从本地用户数据目录加载数据
   useEffect(() => {
@@ -159,6 +179,20 @@ export default function App() {
       // 它存在**全局 meta**（`ai.promptOverrides`，不是项目级 —— 与 lastProject 同一个 meta 区），
       // 所以放在这里调用、与「有没有打开项目」无关。
       await loadPromptOverrides()
+
+      // 2.6.3 · 启动后自动检查更新：**延迟 3 秒 + 完全静默**（失败不弹任何东西），
+      // 只有真的查到更高版本才弹一次更新说明。开关默认开，关于页可关。
+      void (async () => {
+        try {
+          await new Promise(r => setTimeout(r, 3000))
+          if (!isAutoCheckOn()) return
+          const r = await checkUpdate(false)
+          if (r.hasUpdate && r.latest) {
+            setUpdateLatest(r.latest)
+            setUpdateOpen(true)
+          }
+        } catch { /* 🔴 静默：断网 / 限流 / 解析失败都不打扰作者 */ }
+      })()
       // 🔴 2026-09-19 老大要求：**启动后默认停在「项目管理首页」**，不再自动打开上次的项目。
       //    于是现在进项目只有一条路径 —— 作者在首页挑一个 → `openProject()`，
       //    那里的 runMigrations / refreshVolumeTabs / 自动备份 / setActiveTab('dashboard')
@@ -233,6 +267,9 @@ export default function App() {
   const openProject = useCallback(async (id: string) => {
     const p = await db.getProject(id)
     if (!p) return
+    // 2.6.3 · 跨页签任务存活：换项目才清后台任务（同项目重开则保留 —— 被中止的任务可「继续」）
+    if (lastProjectRef.current !== id) resetTaskCenter()
+    lastProjectRef.current = id
     db.setCurrentProject(id)
     // 结构迁移统一入口（幂等），与「启动恢复上次项目」共用同一个入口，
     // 杜绝两条路径跑的迁移集合不一致（审计 P1-7）。
@@ -252,6 +289,9 @@ export default function App() {
   }, [])
 
   const exitProject = useCallback(() => {
+    // 2.6.3 · 跨页签任务存活：退出项目 → **中止**所有在跑的后台任务
+    //（🔴 不中止就会在项目已关闭后继续烧额度；任务记录保留，重开同项目能接着「继续」）
+    abortAllTasks()
     backupStop.current?.()
     backupStop.current = null
     db.setMeta('lastProject', '')
@@ -279,6 +319,19 @@ export default function App() {
   const navigate = useCallback((id: string, chapterId?: string) => {
     const t = getTab(id)
     if (t && !tabVisible(t.id, visCtx)) return
+    /**
+     * 2.6.3 · 跨页签任务存活：真的换了页签、且还有后台任务在跑 → **轻提示一次**。
+     * 🔴 三条纪律：不阻断切页签（只是 toast）；同一任务只提示一次（`takeUnnotifiedRunning`
+     *    取走即标记）；没有任务时不提示。
+     */
+    if (id !== activeTabRef.current) {
+      const pending = takeUnnotifiedRunning()
+      if (pending.length === 1) {
+        showToast(`「${pending[0].title}」仍在后台进行 —— 可从左下角「后台任务」查看或中止`, 'info')
+      } else if (pending.length > 1) {
+        showToast(`还有 ${pending.length} 个任务在后台进行 —— 可从左下角「后台任务」查看或中止`, 'info')
+      }
+    }
     setActiveTab(id)
     if (id === 'editor' && chapterId) setEditorTarget(chapterId)
   }, [visCtx])
@@ -339,6 +392,8 @@ export default function App() {
       <>
         <DesktopWriteLockBanner />
         {needWelcome ? <WelcomeWizard onDone={onWelcomeDone} /> : <ProjectHub onOpen={openProject} onReplayWelcome={() => setNeedWelcome(true)} />}
+        {/* 2.6.3 · 启动自动检查到的新版本（在首页这一支挂载即可：启动默认停在这里） */}
+        <UpdateDialog open={updateOpen} latest={updateLatest} onClose={() => setUpdateOpen(false)} />
         {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。
             此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
         <DataDock />
