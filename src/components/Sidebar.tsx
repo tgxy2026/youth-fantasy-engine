@@ -20,6 +20,7 @@ import { APP_VERSION_LABEL } from '../lib/env'
 import { Button } from './Button'
 import CustomThemeDialog from './CustomThemeDialog'
 import FontSettingsDialog from './FontSettingsDialog'
+import TaskIndicator from './TaskIndicator'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
   '工作面板': <LayoutDashboard size={15} />,
@@ -295,6 +296,9 @@ style={{ zIndex: Z.pageBase }}
         <div className={`px-4 space-y-2.5 overflow-hidden transition-[max-height,opacity] duration-200 ${
           footerCollapsed ? 'max-h-0 opacity-0' : 'max-h-[30rem] opacity-100 pb-3'
         }`}>
+        {/* 后台任务（2.6.3 · 跨页签任务存活）：有任务才渲染，无任务时整节不占位。
+            🔴 内嵌进这块既有工具栏，**不新开浮层**（项目红线：左下角只准一个浮层）。 */}
+        <TaskIndicator onNavigate={onNavigate} activeTab={activeTab} />
         {/* 主题切换 */}
         <div>
           <div className="flex items-center gap-1.5 mb-1.5">

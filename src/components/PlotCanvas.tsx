@@ -85,6 +85,9 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   >(null)
   const loadedRef = useRef(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>()
+  /** 最新待落库快照 + 是否有未落库改动 —— 卸载冲刷用（不能读卸载那一刻闭包里的 state，那是旧值） */
+  const snapRef = useRef<PlotPersist>({ selected: [], cards: [], conns: [] })
+  const dirtyRef = useRef(false)
 
   // 载入章节 + 从项目库恢复推演快照（切页 / 重启后内容不丢）
   useEffect(() => {
@@ -103,12 +106,31 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   // 任何改动后（载入完成后）自动落库，形成持久化的推演快照
   useEffect(() => {
     if (!loadedRef.current) return
+    snapRef.current = { selected: [...selected], cards, conns }
+    dirtyRef.current = true
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
-      void db.setSetting('plotCanvas', { selected: [...selected], cards, conns })
+      saveTimer.current = undefined
+      dirtyRef.current = false
+      void db.setSetting('plotCanvas', snapRef.current)
     }, 300)
     return () => clearTimeout(saveTimer.current)
   }, [selected, cards, conns])
+
+  /**
+   * 2.6.3 · 跨页签草稿存活：**卸载时把还没落库的快照冲刷掉**。
+   *
+   * 🔴 上面那个 effect 的清理只做了 `clearTimeout` —— 而 `App.tsx` 是「切页签即卸载组件」，
+   *    若正好在 300ms 防抖窗口内改过（拖完卡片 / 连完线立刻切走），这次改动就**再也写不进去**。
+   *    这里补一次立即写入；取 ref 里的最新快照，不能读 state（卸载时闭包拿到的是旧值）。
+   */
+  useEffect(() => () => {
+    if (!dirtyRef.current) return
+    clearTimeout(saveTimer.current)
+    saveTimer.current = undefined
+    dirtyRef.current = false
+    void db.setSetting('plotCanvas', snapRef.current)
+  }, [])
 
   // 可视尺寸实测（容器变化时跟随）
   useEffect(() => {

@@ -6,6 +6,13 @@
  *
  * 写库边界：**原文结构会写进正文编辑**（卷/章，可用下方开关关掉）；
  * **设定草稿不自动落库**，仍由用户在这一步勾选后写入。
+ *
+ * 🔴 2.6.3 · 跨页签任务存活：**任务本体跑在 `lib/aiTaskCenter` 的模块级 store 里**，
+ *    本组件只是「提交 + 订阅 + 展示」的壳。
+ *    原先运行态（running / progress / bundle / resume / summaries / persistInfo）全在本组件
+ *    `useState` 里，而 `App.tsx` 是「切页签即卸载组件」——切去别的页签整理设定，
+ *    拆书的结果就写进了已卸载组件的 setState，白烧一次额度还拿不到东西。
+ *    现在切页签不影响任务，回到本页结果与断点原样都在。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileUp, Loader2, Play, X } from 'lucide-react'
@@ -35,50 +42,89 @@ import { adviseCapacity, type CapacityAdvice } from '../lib/modelCapacity'
 import { getTavernSettings } from '../lib/tavern/settings'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
+import { abortTask, dismissTask, markTaskSeen, startTask, useAiTask } from '../lib/aiTaskCenter'
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024
 
+/** 本页签在任务中心里的身份（`ownerTab` 需与 `TABS` 里的页签 id 一致，指示器靠它跳回来） */
+const OWNER_TAB = 'bookbreak'
+const TASK_KIND = 'bookbreak'
+
+/**
+ * 拆书任务的**结果载荷**（只在内存里）。
+ *
+ * ⚠️ 这里装的是"跑完之后界面要显示的东西"——它是**任务产物**，不是输入参数；
+ *    输入参数（原文 / 开关 / 材料上限）由发起时的闭包捕获，跑的过程中不再读组件状态
+ *    （组件很可能已经卸载了）。
+ */
+interface BookBreakTaskResult {
+  split: SplitResult
+  /** 抽取批次（只用到条数统计，不深依赖其形状） */
+  batches: { entities: unknown[] }[]
+  bundle: DraftBundle
+  formRows: DraftRow[]
+  relationRows: DraftRow[]
+  relationTabs: RelationTabOutcome[]
+  relationMaterialChars: number
+  persist: PersistResult | null
+  /** 各阶段的产物摘要（`FlowProgress.stages[].detail` 会被下一阶段覆盖，产物摘要得自己留） */
+  summaries: Record<string, string>
+  /** 完成时的一句话交代（提示文案，含"请审阅后写入"这类下一步指引） */
+  doneText: string
+  doneKind: 'success' | 'info'
+  /** 中止时的一句话交代（如"已写入的正文卷章保留在正文编辑里"） */
+  abortText: string
+}
+
 const fmtNum = (n: number) => n.toLocaleString('zh-CN')
+
+/** 稳定的空值常量：无结果时复用同一引用，避免下游 useMemo / 依赖数组每帧白跑 */
+const EMPTY_ROWS: DraftRow[] = []
+const EMPTY_TABS: RelationTabOutcome[] = []
+const EMPTY_SUMMARIES: Record<string, string> = {}
 
 export default function BookBreakPanel() {
   // 🔴 未配置模型时**预先禁用**「开始抽取」（2026-09-20 六维审计 F1）。
   //    判据与真实调用一致：拆书链路（aiExtractSettingEntities / aiSummarizeFormSettings）
   //    都走 requireActiveProvider。选文件 / 预览分章是纯本地步骤，仍照常可用。
   const { ready: aiReady } = useAIReady()
+  // 订阅任务中心（切页签重挂载后，任务与结果原样还在 —— 本组件不持有运行态）
+  const task = useAiTask<BookBreakTaskResult, FlowProgress>(OWNER_TAB, TASK_KIND)
+  const running = task?.status === 'running'
+  const progress = task?.progress ?? null
+  const bundle = task?.result?.bundle ?? null
+  const formRows = task?.result?.formRows ?? EMPTY_ROWS
+  const relationRows = task?.result?.relationRows ?? EMPTY_ROWS
+  const relationTabs = task?.result?.relationTabs ?? EMPTY_TABS
+  const relationChars = task?.result?.relationMaterialChars ?? 0
+  const persistInfo = task?.result?.persist ?? null
+  const summaries = task?.result?.summaries ?? EMPTY_SUMMARIES
+  /** 中断后拿到的续跑断点（沿用原语义：显示「继续抽取」按钮） */
+  const resume = (task?.resume ?? null) as BookBreakResume | null
+  // 供下面那两个 effect 用的原始量：**只依赖原始值**，不依赖 task 对象本身
+  // （task 的引用每次 store 变更都会换，直接当依赖会让 effect 无谓重跑）
+  const taskId = task?.id ?? ''
+  const taskStatus = task?.status
+  const taskUnread = task?.unread ?? false
+
+  // 结果被看到即清「未查看」标记（指示器上的「待查看 N」据此收敛）
+  useEffect(() => {
+    if (taskId && taskStatus === 'done' && taskUnread) markTaskSeen(taskId)
+  }, [taskId, taskStatus, taskUnread])
+
   const [raw, setRaw] = useState('')
   const [preview, setPreview] = useState<SplitResult | null>(null)
   // 2.6.1 · R2：章节标题示例 —— 填了且本地规则认不出章节时，拆书先用 AI 按示例识别边界（run.ts 阶段 1）
   const [titleSamples, setTitleSamples] = useState(() => readStringPref('bookbreak-title-samples') ?? '')
-  const [progress, setProgress] = useState<FlowProgress | null>(null)
-  const [bundle, setBundle] = useState<DraftBundle | null>(null)
-  const [running, setRunning] = useState(false)
   /** 是否把原文写进正文编辑（老大 2026-09-18 需求：切分后立刻形成卷/章框架）。默认开。 */
   const [writeToChapters, setWriteToChapters] = useState(true)
   const [summarizeForms, setSummarizeForms] = useState(true)
   /** 末尾是否整理关系（人物关系 / 势力关系，两张表各一次调用）。默认开：关系是逐章抽取产不出来的那块。 */
   const [organizeRelations, setOrganizeRelations] = useState(true)
-  /** 末尾汇总出的「全书设定」草稿行（已并入 bundle，这里单留一份只用于文案说明） */
-  const [formRows, setFormRows] = useState<DraftRow[]>([])
-  /** 末尾整理出的「人物关系 / 势力关系」草稿行（同样已并入 bundle，这里只用于文案说明） */
-  const [relationRows, setRelationRows] = useState<DraftRow[]>([])
-  /** 关系整理逐表结果（哪张表几条、有没有失败）——失败要如实说，并指向表格页的「AI 整理」 */
-  const [relationTabs, setRelationTabs] = useState<RelationTabOutcome[]>([])
-  /** 关系整理实际用掉的材料字数（作者调过上限，跑完得看得见调完是多少字） */
-  const [relationChars, setRelationChars] = useState(0)
   /** 「整理关系」的材料上限（持久保存；见 lib/bookbreak/relationMaterial.ts 里每项为什么） */
   const [limits, setLimits] = useState<RelationMaterialLimits>(DEFAULT_RELATION_LIMITS)
   const [showLimits, setShowLimits] = useState(false)
-  /**
-   * 中止后拿到的续跑信息（界面存住它 → 显示「继续」按钮）。
-   * 🔴 断点装在**阶段内**：`extract` 抽到第 3 块时中止，继续时从第 4 块接着抽，
-   *    前面抽好的不重跑（60 章书抽到一半中止，从阶段头重跑＝白跑 30 章）。
-   */
-  const [resume, setResume] = useState<BookBreakResume | null>(null)
   const [cap, setCap] = useState<CapacityAdvice | null>(null)
-  const [persistInfo, setPersistInfo] = useState<PersistResult | null>(null)
-  /** 各阶段的产物摘要（`FlowProgress.stages[].detail` 会被下一阶段覆盖，产物摘要得自己留） */
-  const [summaries, setSummaries] = useState<Record<string, string>>({})
-  const abortRef = useRef<AbortController | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   // 切分预览防抖：粘贴几十万字时不能每敲一个键就跑一次全文正则
@@ -147,104 +193,115 @@ export default function BookBreakPanel() {
     }
   }
 
-  const start = async (fromScratch = false) => {
+  /**
+   * 开始 / 继续抽取。
+   *
+   * 🔴 输入参数在这里**快照**进闭包：任务跑在 store 里，跑的过程中组件可能已经卸载，
+   *    绝不能在 `run` 里读组件 state（那时拿到的是过期 / 已卸载的值）。
+   */
+  const start = (fromScratch = false) => {
     if (!raw.trim()) { showToast('请先粘贴或导入原文', 'info'); return }
-    const ctl = new AbortController()
-    abortRef.current = ctl
+    const rawText = raw
+    const persistToChapters = writeToChapters
+    const formsOn = summarizeForms
+    const relationsOn = organizeRelations
+    const samples = titleSamples
+    const material = limits
     // 「从头重跑」= 丢掉断点；否则有断点就接着抽
     const useResume = fromScratch ? null : resume
-    if (fromScratch) setResume(null)
-    setRunning(true)
-    setBundle(null)
-    setFormRows([])
-    setRelationRows([])
-    setRelationTabs([])
-    setProgress(null)
-    setPersistInfo(null)
-    setSummaries({})
-    try {
-      const res = await runBookBreak(raw, {
-        signal: ctl.signal,
-        onProgress: setProgress,
-        persistToChapters: writeToChapters,
-        summarizeForms,
-        organizeRelations,
-        // 2.6.1 · R2：章节标题示例（非空才传；空 = 与旧行为完全一致）
-        ...(titleSamples.trim() ? { titleSamples } : {}),
-        // 材料上限（界面可调，持久保存）—— 只影响「整理关系」这一步
-        relationMaterial: limits,
-        // 续跑：把上次的断点原样传回（阶段内断点 + 已完成阶段的产物）
-        ...(useResume ? { resume: useResume } : {}),
-        onResume: r => setResume(r),
-      })
-      // 🔴 中止时要如实说明：写入正文发生在抽取之前，中止时正文可能**已经写进去一部分**
-      if (!res) {
-        showToast(
-          (writeToChapters
-            ? '已中止：设定草稿未产出；已写入的正文卷章保留在「正文编辑」里'
-            : '已中止，未写入任何数据') + '；可点「继续抽取」接着跑，已抽过的块不会重跑',
-          'info',
-        )
-        return
-      }
-      setBundle(res.bundle)
-      setFormRows(res.formRows)
-      setRelationRows(res.relationRows)
-      setRelationTabs(res.relationTabs)
-      setRelationChars(res.relationMaterialChars)
-      setResume(null) // 跑完了，断点作废（下次是从头开始的新任务）
-      setPersistInfo(res.persist)
-      // 阶段产物摘要：让跑完之后也看得见每一步做了什么（否则 detail 会被下一阶段覆盖）
-      const sum: Record<string, string> = {
-        split: `识别到 ${res.split.chapters.length} ${res.split.mode === 'chapters' ? '章' : '块'} · ${fmtNum(res.split.stats.chars)} 字`,
-        extract: res.batches.length
-          ? `从 ${res.batches.length} 个批次抽到 ${res.batches.reduce((n, b) => n + b.entities.length, 0)} 条实体`
-          : '没有抽到实体',
-        // ⚠️ 扣掉全书设定那几行：它们是"汇总"出来的，不是逐章"整理"出来的，
-        //    算进这里会让作者以为抽到了更多条目
-        draft: `整理出 ${Math.max(0, res.bundle.stats.total - res.formRows.length)} 条草稿`,
-        ...(summarizeForms
-          ? { worldview: res.formRows.length ? `汇总出 ${res.formRows.length} 张表的全书设定` : '没汇总出可用的全书设定' }
-          : {}),
-        // 关系整理逐表交代（含失败原因）：失败了却只字不提，作者会以为"这本书没有关系"
-        ...(organizeRelations && res.relationTabs.length
-          ? {
-              // 带上材料字数：作者刚在面板上调过上限，跑完总得看见"调完是多少字"
-              relations: `材料 ${fmtNum(res.relationMaterialChars)} 字 · ` + res.relationTabs
-                .map(t => {
-                  if (t.note) return `《${t.tabName}》失败：${t.note}`
-                  const discard = t.dropped + t.unproven
-                  return `《${t.tabName}》${t.count} 条${discard ? `（丢弃 ${discard} 条：名字不在名单里或给不出原文依据）` : ''}`
-                })
-                .join(' · '),
-            }
-          : {}),
-      }
-      if (res.persist) {
-        sum.persist = res.persist.alreadyImported
-          ? '已导入过，跳过写入'
-          : res.persist.aborted
-            ? `写入中止：已写入 ${res.persist.chaptersCreated} 章`
-            : `写入 ${res.persist.volumes.length} 卷 ${res.persist.chaptersCreated} 章 · ${fmtNum(res.persist.words)} 字`
-      }
-      setSummaries(sum)
-      const parts: string[] = []
-      if (res.persist) {
-        parts.push(res.persist.alreadyImported
-          ? '正文已导入过，跳过'
-          : `正文：${res.persist.volumes.length} 卷 ${res.persist.chaptersCreated} 章`)
-      }
-      parts.push(res.bundle.stats.total > 0 ? `设定草稿 ${res.bundle.stats.total} 条` : '未抽到可登记的实体')
-      showToast(
-        parts.join(' · ') + (res.bundle.stats.total > 0 ? '，请审阅后写入' : ''),
-        res.bundle.stats.total > 0 ? 'success' : 'info',
-      )
-    } catch (e) {
-      showToast('拆书失败：' + (e instanceof Error ? e.message : String(e)), 'error')
-    } finally {
-      setRunning(false)
-      abortRef.current = null
-    }
+
+    startTask<BookBreakTaskResult, FlowProgress>({
+      ownerTab: OWNER_TAB,
+      kind: TASK_KIND,
+      title: '一键拆书',
+      run: async ctx => {
+        const res = await runBookBreak(rawText, {
+          signal: ctx.signal,
+          onProgress: p => ctx.progress(p),
+          persistToChapters,
+          summarizeForms: formsOn,
+          organizeRelations: relationsOn,
+          // 2.6.1 · R2：章节标题示例（非空才传；空 = 与旧行为完全一致）
+          ...(samples.trim() ? { titleSamples: samples } : {}),
+          // 材料上限（界面可调，持久保存）—— 只影响「整理关系」这一步
+          relationMaterial: material,
+          // 续跑：把上次的断点原样传回（阶段内断点 + 已完成阶段的产物）
+          ...(useResume ? { resume: useResume } : {}),
+          onResume: r => ctx.setResume(r),
+        })
+        // `null` = 被中止（run.ts 的约定）。抛一个 AbortError，让任务中心如实记为「已中止」
+        // 而不是「完成但没结果」。
+        if (!res) {
+          const e = new Error('已中止')
+          e.name = 'AbortError'
+          throw e
+        }
+        // 阶段产物摘要：让跑完之后也看得见每一步做了什么（否则 detail 会被下一阶段覆盖）
+        const sum: Record<string, string> = {
+          split: `识别到 ${res.split.chapters.length} ${res.split.mode === 'chapters' ? '章' : '块'} · ${fmtNum(res.split.stats.chars)} 字`,
+          extract: res.batches.length
+            ? `从 ${res.batches.length} 个批次抽到 ${res.batches.reduce((n, b) => n + b.entities.length, 0)} 条实体`
+            : '没有抽到实体',
+          // ⚠️ 扣掉全书设定那几行：它们是"汇总"出来的，不是逐章"整理"出来的，
+          //    算进这里会让作者以为抽到了更多条目
+          draft: `整理出 ${Math.max(0, res.bundle.stats.total - res.formRows.length)} 条草稿`,
+          ...(formsOn
+            ? { worldview: res.formRows.length ? `汇总出 ${res.formRows.length} 张表的全书设定` : '没汇总出可用的全书设定' }
+            : {}),
+          // 关系整理逐表交代（含失败原因）：失败了却只字不提，作者会以为"这本书没有关系"
+          ...(relationsOn && res.relationTabs.length
+            ? {
+                // 带上材料字数：作者刚在面板上调过上限，跑完总得看见"调完是多少字"
+                relations: `材料 ${fmtNum(res.relationMaterialChars)} 字 · ` + res.relationTabs
+                  .map(t => {
+                    if (t.note) return `《${t.tabName}》失败：${t.note}`
+                    const discard = t.dropped + t.unproven
+                    return `《${t.tabName}》${t.count} 条${discard ? `（丢弃 ${discard} 条：名字不在名单里或给不出原文依据）` : ''}`
+                  })
+                  .join(' · '),
+              }
+            : {}),
+        }
+        if (res.persist) {
+          sum.persist = res.persist.alreadyImported
+            ? '已导入过，跳过写入'
+            : res.persist.aborted
+              ? `写入中止：已写入 ${res.persist.chaptersCreated} 章`
+              : `写入 ${res.persist.volumes.length} 卷 ${res.persist.chaptersCreated} 章 · ${fmtNum(res.persist.words)} 字`
+        }
+        const parts: string[] = []
+        if (res.persist) {
+          parts.push(res.persist.alreadyImported
+            ? '正文已导入过，跳过'
+            : `正文：${res.persist.volumes.length} 卷 ${res.persist.chaptersCreated} 章`)
+        }
+        parts.push(res.bundle.stats.total > 0 ? `设定草稿 ${res.bundle.stats.total} 条` : '未抽到可登记的实体')
+        return {
+          split: res.split,
+          batches: res.batches,
+          bundle: res.bundle,
+          formRows: res.formRows,
+          relationRows: res.relationRows,
+          relationTabs: res.relationTabs,
+          relationMaterialChars: res.relationMaterialChars,
+          persist: res.persist,
+          summaries: sum,
+          doneText: parts.join(' · ') + (res.bundle.stats.total > 0 ? '，请审阅后写入' : ''),
+          doneKind: res.bundle.stats.total > 0 ? 'success' : 'info',
+          // 🔴 中止时要如实说明：写入正文发生在抽取之前，中止时正文可能**已经写进去一部分**
+          abortText:
+            (persistToChapters
+              ? '已中止：设定草稿未产出；已写入的正文卷章保留在「正文编辑」里'
+              : '已中止，未写入任何数据') + '；可点「继续抽取」接着跑，已抽过的块不会重跑',
+        }
+      },
+      notify: ({ status, result, error }) => {
+        if (status === 'done' && result) return { text: `拆书完成 —— ${result.doneText}`, kind: result.doneKind }
+        if (status === 'failed') return { text: '拆书失败：' + (error || '未知原因'), kind: 'error' }
+        if (status === 'aborted') return { text: '已中止：可点「继续抽取」接着跑', kind: 'info' }
+        return null
+      },
+    })
   }
 
   return (
@@ -276,7 +333,12 @@ export default function BookBreakPanel() {
             <FileUp size={12} /> 导入 .txt / .md / .docx
           </Button>
           <Button size="xs" variant="secondary" disabled={running || !raw}
-            onClick={() => { setRaw(''); setBundle(null); setPreview(null); setProgress(null); setPersistInfo(null); setSummaries({}); setFormRows([]); setRelationRows([]); setRelationTabs([]) }}>
+            onClick={() => {
+              // 清空原文与预览；顺手把已结束的拆书结果记录也撤掉（结果 UI 随之消失）。
+              // 🔴 只撤「已结束」的记录 —— 运行中的不允许撤（dismissTask 会拒绝）。
+              setRaw(''); setPreview(null)
+              if (task && task.status !== 'running') dismissTask(task.id)
+            }}>
             <X size={12} /> 清空
           </Button>
         </div>
@@ -458,17 +520,17 @@ export default function BookBreakPanel() {
 
       {/* 运行 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" solid disabled={running || !raw.trim() || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} onClick={() => void start()}>
+        <Button size="sm" variant="primary" solid disabled={running || !raw.trim() || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} onClick={() => start()}>
           {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
           {running ? '抽取中…' : resume ? '继续抽取' : '开始抽取'}
         </Button>
         {!running && resume && (
-          <Button size="sm" variant="secondary" onClick={() => void start(true)}>
+          <Button size="sm" variant="secondary" onClick={() => start(true)}>
             从头重跑（丢弃断点）
           </Button>
         )}
-        {running && (
-          <Button size="sm" variant="danger" onClick={() => abortRef.current?.abort()}>中止</Button>
+        {running && task && (
+          <Button size="sm" variant="danger" onClick={() => abortTask(task.id)}>中止</Button>
         )}
         {running && <span className="text-11 text-ink-400">{progress?.message ?? ''}</span>}
       </div>

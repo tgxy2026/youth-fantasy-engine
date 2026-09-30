@@ -28,6 +28,7 @@ import GeoMapEditor from './components/GeoMapEditor'
 import PlotCanvas from './components/PlotCanvas'
 import { showToast } from './components/dialogs'
 import { Button } from './components/Button'
+import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from './lib/aiTaskCenter'
 import { applyTheme, applyZoom, foldVh, getStoredTheme, getStoredZoom, isZoomAuto } from './lib/theme'
 import { applyStoredFontPrefs } from './lib/fontPrefs'
 import { applyStoredNetProxy } from './lib/netPrefs'
@@ -103,6 +104,20 @@ export default function App() {
   const backupStop = useRef<(() => void) | null>(null)
   // 本地数据文件加载完成状态（未加载完不出主界面，避免闪一下空库）
   const [fileReady, setFileReady] = useState(!DESKTOP)
+  /**
+   * 当前页签的 ref 镜像（2.6.3 · 跨页签任务存活）：
+   * `navigate` 里要判断「是不是真的换了页签」，但把 `activeTab` 放进 useCallback 依赖
+   * 会让 `navigate` 每次切页签都换引用（下发给 Sidebar 与各页签，徒增重渲染）。
+   * 用 ref 镜像读最新值，依赖数组保持 `[visCtx]` 不变。
+   */
+  const activeTabRef = useRef(activeTab)
+  useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
+  /**
+   * 上一个打开过的项目 id（用于「换项目才清后台任务」）。
+   * 退出项目**不清**任务：被中止的拆书任务带着断点留在内存里，重新打开同一个项目即可「继续抽取」；
+   * 只有打开了**另一个项目**才清（那些任务属于上一个项目，留着会串味）。
+   */
+  const lastProjectRef = useRef<string | null>(null)
 
   // 从本地用户数据目录加载数据
   useEffect(() => {
@@ -252,6 +267,9 @@ export default function App() {
   const openProject = useCallback(async (id: string) => {
     const p = await db.getProject(id)
     if (!p) return
+    // 2.6.3 · 跨页签任务存活：换项目才清后台任务（同项目重开则保留 —— 被中止的任务可「继续」）
+    if (lastProjectRef.current !== id) resetTaskCenter()
+    lastProjectRef.current = id
     db.setCurrentProject(id)
     // 结构迁移统一入口（幂等），与「启动恢复上次项目」共用同一个入口，
     // 杜绝两条路径跑的迁移集合不一致（审计 P1-7）。
@@ -271,6 +289,9 @@ export default function App() {
   }, [])
 
   const exitProject = useCallback(() => {
+    // 2.6.3 · 跨页签任务存活：退出项目 → **中止**所有在跑的后台任务
+    //（🔴 不中止就会在项目已关闭后继续烧额度；任务记录保留，重开同项目能接着「继续」）
+    abortAllTasks()
     backupStop.current?.()
     backupStop.current = null
     db.setMeta('lastProject', '')
@@ -298,6 +319,19 @@ export default function App() {
   const navigate = useCallback((id: string, chapterId?: string) => {
     const t = getTab(id)
     if (t && !tabVisible(t.id, visCtx)) return
+    /**
+     * 2.6.3 · 跨页签任务存活：真的换了页签、且还有后台任务在跑 → **轻提示一次**。
+     * 🔴 三条纪律：不阻断切页签（只是 toast）；同一任务只提示一次（`takeUnnotifiedRunning`
+     *    取走即标记）；没有任务时不提示。
+     */
+    if (id !== activeTabRef.current) {
+      const pending = takeUnnotifiedRunning()
+      if (pending.length === 1) {
+        showToast(`「${pending[0].title}」仍在后台进行 —— 可从左下角「后台任务」查看或中止`, 'info')
+      } else if (pending.length > 1) {
+        showToast(`还有 ${pending.length} 个任务在后台进行 —— 可从左下角「后台任务」查看或中止`, 'info')
+      }
+    }
     setActiveTab(id)
     if (id === 'editor' && chapterId) setEditorTarget(chapterId)
   }, [visCtx])
