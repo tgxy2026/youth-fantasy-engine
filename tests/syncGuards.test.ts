@@ -446,6 +446,53 @@ async function main() {
       rows.length === 1 && rows[0].id === 'p1', JSON.stringify(rows))
   }
 
+  // ---------- ⑭ 幽灵项目的第四条路径：本机删过 + **两端一致**（`lo === sv`） ----------
+  //
+  // ⑧/⑪/⑬ 覆盖的都是「某一侧是 undefined」或「云端改过」的分支；而 `lo` 与 `sv` **逐字相同**
+  // 那一支（合并里的 `eqRecord(lo, sv)`）最容易被当成"无害、不用判墓碑"，2026-10-01 六维审计
+  // 实测它也没查墓碑 —— 于是留下第四条「删了会复活」的路径：
+  //   记录 Y 在开启同步前就存在（冻结的本机数据文件里有它、云端也有它，内容相同）；
+  //   开启同步后本机删掉 Y（记墓碑），但这次 push 没成功（断网 / 网盘占住目录 / 防抖窗口内关窗）；
+  //   重启后 baseCache 为空，而 lo 与 sv 都还留着 Y 且相等 ⇒ 原实现无条件 arr.push(lo)
+  //   ⇒ 删除被撤销、还会被推回云端，此后每次启动稳定复现。
+  // 本用例走 `backgroundPull()`（见 ⑬ 的说明：`pullSnapshot()` 不触发三路合并，写了等于没测）。
+  {
+    __resetMockStores()
+    __resetLocalStorage()
+
+    // —— 造出「云端有 p1 / p2」的载荷 ——
+    const { t: tA, pushes: pushesA } = scriptedTransport({})
+    const cloudA = createCloudStore(tA)
+    cloudA.configure('ghost-path4')
+    await cloudA.pullSnapshot()
+    await cloudA.seedFromLocal(async (s) => (s === 'projects' ? [{ id: 'p1' }, { id: 'p2' }] : []))
+    const encSame = pushesA[pushesA.length - 1]?.enc
+    ok('前置：云端已有含 p1 / p2 的载荷', !!encSame, String(pushesA.length))
+
+    // —— 另一个实例：本机删掉 p2（墓碑落在 localStorage）——
+    __resetMockStores()
+    __resetLocalStorage()
+    const { t: tB } = scriptedTransport({})
+    const cloudB = createCloudStore(tB)
+    cloudB.configure('ghost-path4')
+    await cloudB.pullSnapshot()
+    await cloudB.seedFromLocal(async (s) => (s === 'projects' ? [{ id: 'p1' }, { id: 'p2' }] : []))
+    await cloudB.store.del('projects', 'p2')
+    ok('前置：本机已删掉 p2（墓碑已记）', isDeleted('projects', 'p2'))
+
+    // —— 重启：基线归零、墓碑仍在；本机「冻结的数据文件」仍含 p1 / p2（与云端**逐字相同**）——
+    const tC = scriptedTransport({ pull: () => ({ status: 200, rev: 9, enc: encSame }) })
+    const cloudC = createCloudStore(tC.t)
+    cloudC.configure('ghost-path4')
+    cloudC.onLocalSnapshot(async () => ({ projects: [{ id: 'p1' }, { id: 'p2' }] }))
+    await cloudC.backgroundPull()
+    const rows = await cloudC.store.getAll<{ id: string }>('projects')
+    ok('🔴 本机删过 + 两端一致（lo===sv）也不得复活（第四条路径）',
+      rows.length === 1 && rows[0].id === 'p1', JSON.stringify(rows))
+    ok('🔴 同一分支里**没有墓碑**的记录照旧保留（闸不能误伤普通记录）',
+      rows.some(r => r.id === 'p1'), JSON.stringify(rows))
+  }
+
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

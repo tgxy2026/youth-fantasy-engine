@@ -7,6 +7,9 @@
 export const DESKTOP = true
 export { memoryOps as desktopStore } from './mock-memory'
 export function initDesktopStore() { return Promise.resolve() }
+// 与 src/lib/desktop.ts 同形：db/core.ts 的云盘自动恢复块要先 await 它再判 writeLocked。
+// 桩里「数据文件」是现成的内存库，没有加载窗口 ⇒ 立即就绪。
+export function desktopStoreReady() { return Promise.resolve() }
 export function flushDesktopSync() { return Promise.resolve(false) }
 // db.ts 关闭云盘同步时会 await flushDesktop() 再切存储（内存桩无需真落盘，直接成功）
 export function flushDesktop() { return Promise.resolve(true) }

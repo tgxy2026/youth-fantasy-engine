@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { foldVh } from '../lib/theme'
 import { Download, Copy, ExternalLink } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -89,7 +90,7 @@ export default function UpdateDialog({
         </p>
 
         {/* 更新说明：Gitee 原文经 mdLite 切块 —— 🔴 纯文本渲染，外部输入不走 innerHTML */}
-        <div className="max-h-[46vh] overflow-y-auto rounded-lg border border-ink-700 bg-ink-900/50 p-3 space-y-1.5">
+        <div className="overflow-y-auto rounded-lg border border-ink-700 bg-ink-900/50 p-3 space-y-1.5" style={{ maxHeight: foldVh('46vh') }}>
           {blocks.length === 0 ? (
             <p className="text-12 text-ink-500">（这个版本没有填写更新说明）</p>
           ) : (

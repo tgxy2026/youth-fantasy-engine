@@ -174,8 +174,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
     setPrompt('')
     setLocalError('')
     setStreamingText('')
-    // 会话清单在**发起时快照**：任务在 store 里跑，完成时组件可能已卸载，不能依赖那时的 `sessions`
-    const sessionsSnapshot = sessions
+    // 会话清单**不在这里快照**（见下方落库处）：任务跑在 store 里，完成时要读**最新**清单再合并
     const bringCtx = bringContext
     t.run(async job => {
       let sys = composeSystemPrompt(SYSTEM_PROMPT, cfg)
@@ -196,8 +195,13 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
       })
       const assistantMsg: ChatMsg = { id: uid(), role: 'assistant', content: reply, ts: Date.now() }
       const nextSession: ChatSession = { ...session0, messages: [...session0.messages, assistantMsg], updatedAt: Date.now() }
-      // 🔴 落库放在**任务内**（不依赖组件存活）：切页签跑完的回复，回来重新加载会话就能看到
-      void setSetting(SESSIONS_KEY, upsert(sessionsSnapshot, nextSession))
+      // 🔴 落库放在**任务内**（不依赖组件存活）：切页签跑完的回复，回来重新加载会话就能看到。
+      // 🔴🔴 2026-10-01 六维审计 P2：这里必须**先读回最新清单再合并**，不能用发起时的快照。
+      //    发起时会话快照给不了"期间发生了什么"：作者在等回复时点「新建对话」/「切换会话」
+      //    都会**立刻落库**（见 newSession / persist），拿旧快照覆盖就会把那段时间新建的会话
+      //    从磁盘上抹掉（内存里还在，一重载就没了）。`upsert` 按 id 合并 ⇒ 读最新是无损的。
+      const latest = (await getSetting<ChatSession[]>(SESSIONS_KEY, [])) ?? []
+      void setSetting(SESSIONS_KEY, upsert(latest, nextSession))
       return nextSession
     })
   }

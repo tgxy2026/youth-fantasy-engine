@@ -63,7 +63,7 @@ export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (
         <span>后台任务</span>
         {/* 🔴 问号紧跟标题（项目 UI 约定：不甩到行尾） */}
         <HelpPopover title="后台任务是什么" width="21rem" size={11}>
-          {'切到别的页签时，正在跑的 AI 任务**不会被中断**——它在这里继续跑，完成后结果留在发起它的页签里，切回去就能接着看 / 写入。\n\n· 运行中：可以随时点「中止」（只有你点才会停，切页签不会）；\n· 已完成 / 失败：点「查看」直接跳回那个页签；\n· 多个任务可以同时跑，各自独立。'}
+          {'切到别的页签时，正在跑的 AI 任务不会被中断——它在这里继续跑，完成后结果留在发起它的页签里，切回去就能接着看 / 写入。\n\n· 运行中：可以随时点「中止」（只有你点才会停，切页签不会）；\n· 已完成 / 失败：点「查看」直接跳回那个页签；\n· 多个任务可以同时跑，各自独立。'}
         </HelpPopover>
         <span className="ml-auto text-10 text-ink-500 tabular-nums">
           {running > 0 ? `运行中 ${running}` : ''}
@@ -73,7 +73,11 @@ export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (
         </span>
       </div>
 
-      <div className="space-y-1">
+      {/* 🔴 自己带滚动条（2026-10-01 六维审计 P2）：这一节内嵌在 Sidebar Footer 的
+          `overflow-hidden + max-h-[30rem]` 内容层里，任务一行行累积后会**被裁掉且不可见/不可点**
+          （连下面的「清空已结束的记录」一起消失）。给自己加 max-height + overflow-y-auto
+          就能在固定高度里滚，不动 Footer 的展开/收起动画。 */}
+      <div className="space-y-1 max-h-[7.5rem] overflow-y-auto pr-0.5">
         {tasks.map(t => {
           const msg = t.status === 'running' ? progressMessage(t.progress) : ''
           const showJump = t.status !== 'running' && (t.ownerTab !== activeTab || t.unread)

@@ -10,8 +10,8 @@ import { diffLines, diffStats } from '../lib/textDiff'
 import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { aiProofreadText, aiProofreadLogic, type ProofreadIssue } from '../lib/aiTasks'
-import { isCancelled } from '../lib/ai'
+import { aiProofreadText, aiProofreadLogic, type ProofreadIssue, type ProofreadResult } from '../lib/aiTasks'
+import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '../lib/aiTaskCenter'
 import { buildProjectContext } from '../lib/aiContext'
 import { confirmDialog } from './dialogs'
 import { Modal as BaseModal } from './Modal'
@@ -124,15 +124,19 @@ interface ScopeState {
   scanned: number
   error: string
 }
+/** 任务中心的进度载荷（`ProofreadOptions.onProgress(done,total)` + 章节归属戳） */
+type ProofProgress = ChProgress & { done: number; total: number }
 const blankScope = (): ScopeState => ({
   issues: [], loading: false, done: false, cancelled: false,
   progress: { done: 0, total: 0 }, skipped: 0, scanned: 0, error: '',
 })
 
-export function ProofreadCheck({ content, onApply, onClose }: {
-  content: string; onApply: (next: string) => void; onClose: () => void
+export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
+  content: string; chapterId?: string; onApply: (next: string) => void; onClose: () => void
 }) {
   const { ready: aiReady } = useAIReady()
+  /** 章节归属键 —— 任务中心按 (ownerTab,kind) 取最近一条，结果必须盖章节戳（见 aiTaskCenter「章节归属」） */
+  const ch = chapterId ?? ''
 
   // 本地错别字词库（始终可用，无需模型）
   const [checked, setChecked] = useState(false)
@@ -145,17 +149,60 @@ export function ProofreadCheck({ content, onApply, onClose }: {
   const [scopes, setScopes] = useState<Record<ProofScope, ScopeState>>({
     text: blankScope(), logic: blankScope(),
   })
-  const abortRef = useRef<Partial<Record<ProofScope, AbortController>>>({})
 
-  const patchScope = (s: ProofScope, patch: Partial<ScopeState>) =>
-    setScopes(prev => ({ ...prev, [s]: { ...prev[s], ...patch } }))
+  /**
+   * 🔴🔴 2026-10-01 六维审计（清单 #009 的**漏网 B 类**）：两块校对原先把结果存在本组件
+   *     `useState` 里，且**没有卸载保护** —— 点完「查错别字与语病」切去别的页签（NovelEditor
+   *     被条件渲染卸载）时，请求照旧在后台跑完（**照烧额度**），结果却写进已卸载组件的
+   *     `setState`（no-op）⇒ 白烧一次，结果蒸发。正是 #009 要根治的那一类。
+   *     现改走 `useTaskRunner`：任务在 store 里跑，切页签不中止、结果切回来（或重开弹窗）还在。
+   *     ⚠️ `text`（本地可编辑副本）与本地错别字词库仍是组件自己的 state，不受影响。
+   */
+  const textT = useTaskRunner<ChOwned<ProofreadResult>, ProofProgress>({
+    ownerTab: 'editor', kind: 'proofread-text', title: 'AI 校对 · 文字层',
+  })
+  const logicT = useTaskRunner<ChOwned<ProofreadResult>, ProofProgress>({
+    ownerTab: 'editor', kind: 'proofread-logic', title: 'AI 校对 · 逻辑层',
+  })
+  const runnerOf = (scope: ProofScope) => (scope === 'text' ? textT : logicT)
 
-  const runScope = async (scope: ProofScope) => {
-    if (!aiReady || scopes[scope].loading) return
-    const ctrl = new AbortController()
-    abortRef.current[scope] = ctrl
-    patchScope(scope, { ...blankScope(), loading: true })
-    try {
+  /** 任务状态 → `scopes`（只在「该块任务引用或章节变化」时重写那一块，避免互相覆盖） */
+  const lastScopeTask = useRef<Record<ProofScope, { task: unknown; ch: string }>>({
+    text: { task: null, ch: '' }, logic: { task: null, ch: '' },
+  })
+  const textTask = textT.task
+  const logicTask = logicT.task
+  useEffect(() => {
+    const patches: Partial<Record<ProofScope, ScopeState>> = {}
+    for (const scope of SCOPE_ORDER) {
+      const task = scope === 'text' ? textTask : logicTask
+      const sig = lastScopeTask.current[scope]
+      if (sig.task === task && sig.ch === ch) continue
+      lastScopeTask.current[scope] = { task, ch }
+      // 🔴 归属键：不是本章的任务 ⇒ 本块当作没跑过（换章后不显示上一章的结果 / 进度）
+      if (!task || taskChapter(task) !== ch) { patches[scope] = blankScope(); continue }
+      if (task.status === 'running') {
+        patches[scope] = { ...blankScope(), loading: true, progress: (task.progress as ProofProgress | null) ?? { ch, done: 0, total: 0 } }
+      } else if (task.status === 'done') {
+        const r = task.result?.v
+        patches[scope] = { ...blankScope(), done: true, issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0 }
+      } else if (task.status === 'failed') {
+        patches[scope] = { ...blankScope(), done: true, error: task.error }
+      } else {
+        // 作者主动停止：保留已查出的部分结果，不当作失败
+        patches[scope] = { ...blankScope(), done: true, cancelled: true }
+      }
+    }
+    if (Object.keys(patches).length) setScopes(prev => ({ ...prev, ...patches }))
+  }, [textTask, logicTask, ch])
+
+  const runScope = (scope: ProofScope) => {
+    const tk = runnerOf(scope)
+    if (!aiReady || tk.running) return
+    // 校对的目标文本在发起时**快照**进闭包（任务跑在 store 里，期间组件可能已卸载）
+    const target = text
+    tk.run(async job => {
+      job.progress({ ch, done: 0, total: 0 }) // 🔴 章节戳第一行盖（失败/中止时没有 result 可查）
       // 🔴 逻辑层才读设定资料；文字层刻意不读 —— 省掉每块几千字的注入，出结果更快，
       //    也避免模型"拿设定去猜人名是不是写错"这类误报（见 aiTasks/proofread.ts 的文字层提示词）。
       let ctxText = ''
@@ -163,25 +210,18 @@ export function ProofreadCheck({ content, onApply, onClose }: {
         try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('proofread') })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
       }
       const run = scope === 'text' ? aiProofreadText : aiProofreadLogic
-      const res = await run(text, {
-        context: ctxText, signal: ctrl.signal,
-        onProgress: (d, t) => patchScope(scope, { progress: { done: d, total: t } }),
+      const res = await run(target, {
+        context: ctxText, signal: job.signal,
+        onProgress: (d, t) => job.progress({ ch, done: d, total: t }), // ⚠️ 带 ch，别把章节戳冲掉
       })
-      patchScope(scope, { issues: res.issues, scanned: res.scanned, skipped: res.skipped, done: true })
-    } catch (e) {
-      if (isCancelled(e)) {
-        // 用户主动停止：保留已查出的部分结果，不当作失败
-        patchScope(scope, { done: true, cancelled: true })
-      } else {
-        patchScope(scope, { done: true, error: e instanceof Error ? e.message : String(e) })
-      }
-    } finally {
-      patchScope(scope, { loading: false })
-      delete abortRef.current[scope]
-    }
+      return { ch, v: res }
+    }, ({ status, error }) => (status === 'failed'
+      // 失败要说出来 —— 作者此刻可能已经切走了，面板上的红字他看不见
+      ? { text: 'AI 校对失败：' + (error || '未知原因'), kind: 'error' }
+      : null))
   }
 
-  const stopScope = (scope: ProofScope) => abortRef.current[scope]?.abort()
+  const stopScope = (scope: ProofScope) => runnerOf(scope).stop()
 
   /** 替换单条 AI 校对结果。
    * 优先用 AI 标注的精确位置 iss.at 定位——正文里同一句话重复出现时，

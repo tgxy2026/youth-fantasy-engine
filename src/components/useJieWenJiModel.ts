@@ -20,12 +20,12 @@
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { useEffect, useRef, useState } from 'react'
 import { buildProjectContext } from '../lib/aiContext'
-import { getFormData } from '../lib/db'
+import { styleContextForAI } from '../lib/styleAudit'
 import { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '../lib/aiTasks'
 import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '../lib/settingLedger'
 import { useAIReady } from '../lib/useAIReady'
 import { LS_SPRITE_ENABLED } from '../lib/constants'
-import { useTaskRunner } from '../lib/aiTaskCenter'
+import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '../lib/aiTaskCenter'
 import { showToast } from './dialogs'
 import type { Props } from './jieWenJiParts'
 import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof } from './jieWenJiParts'
@@ -33,11 +33,19 @@ import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof } fro
 /** 校对返回（文字层 / 逻辑层同形状）：逐条问题 + 已扫 / 跳过数 */
 type ProofreadOutcome = { issues: ProofreadIssue[]; scanned: number; skipped: number }
 /** 校对进度（喂给 `onProgress`） */
-type ProofProgress = { done: number; total: number }
+type ProofProgress = ChProgress & { done: number; total: number }
 
 export function useJieWenJiModel(props: Props) {
   const { content, openingText, getSelectionText, getSelectionRange, onApplyAdvice, onApplyContent, summary, chapterTitle, onLedgerCommitted, focusChapterId } = props
   const { ready: aiReady } = useAIReady()
+  /**
+   * 🔴🔴 章节归属键（2026-10-01 六维审计 P1）：`useTaskRunner` 按 (ownerTab, kind) 取**最近一条**任务
+   *    （任务中心不支持按业务键取历史）—— 于是 A 章跑完诊断再切到 B 章，B 章面板会把 A 章的报告
+   *    当成本章的（跨章串报告）。对策：**发起时把章节戳盖进 progress/result**，取值只放行「归属
+   *    == 当前章」的那份。`focusChapterId` 即 `active.id`（本章），单章场景恒定 ⇒ 零变化。
+   *    ⚠️ 中途上报进度必须带上 `ch`，否则会把章节戳冲掉（见 aiTaskCenter 的「章节归属」段）。
+   */
+  const ch = focusChapterId ?? ''
   // 右侧 Q 版精灵开关（全局，localStorage 持久化 + 事件通知 App）
   const [spriteOn, setSpriteOn] = useState(() => localStorage.getItem(LS_SPRITE_ENABLED) !== '0')
   const toggleSprite = () => {
@@ -54,10 +62,8 @@ export function useJieWenJiModel(props: Props) {
   const [diagMode, setDiagMode] = useState<'full' | 'brief'>('full')
 
   // ============ 诊室：AI 综合诊断 ============
-  const diagT = useTaskRunner<EditorDiagnosis>({ ownerTab: 'editor', kind: 'jiewenji-diagnosis', title: '颉文姬 · AI 综合诊断' })
-  const diag: { loading: boolean; data?: EditorDiagnosis; error?: string } = {
-    loading: diagT.running, data: diagT.result ?? undefined, error: diagT.error || undefined,
-  }
+  const diagT = useTaskRunner<ChOwned<EditorDiagnosis>, ChProgress>({ ownerTab: 'editor', kind: 'jiewenji-diagnosis', title: '颉文姬 · AI 综合诊断' })
+  const diag: { loading: boolean; data?: EditorDiagnosis; error?: string } = chapterOwned(diagT, ch)
 
   const runDiag = () => {
     if (!aiReady || diagT.running) return
@@ -73,8 +79,9 @@ export function useJieWenJiModel(props: Props) {
     const text = brief ? diagText : content
     const textKind: 'summary' | 'full' = brief ? 'summary' : 'full'
     diagT.run(async job => {
+      job.progress({ ch })
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-diagnosis'), focusChapterId })
-      return aiEditorDiagnosis(ctx.text, text, { signal: job.signal, textKind })
+      return { ch, v: await aiEditorDiagnosis(ctx.text, text, { signal: job.signal, textKind }) }
     })
   }
 
@@ -84,8 +91,8 @@ export function useJieWenJiModel(props: Props) {
   const [proofs, setProofs] = useState<Record<ProofScope, ProofState>>({
     text: blankProof(), logic: blankProof(),
   })
-  const textProofT = useTaskRunner<ProofreadOutcome, ProofProgress>({ ownerTab: 'editor', kind: 'jiewenji-proof-text', title: '颉文姬 · 文字校对' })
-  const logicProofT = useTaskRunner<ProofreadOutcome, ProofProgress>({ ownerTab: 'editor', kind: 'jiewenji-proof-logic', title: '颉文姬 · 逻辑审校' })
+  const textProofT = useTaskRunner<ChOwned<ProofreadOutcome>, ProofProgress>({ ownerTab: 'editor', kind: 'jiewenji-proof-text', title: '颉文姬 · 文字校对' })
+  const logicProofT = useTaskRunner<ChOwned<ProofreadOutcome>, ProofProgress>({ ownerTab: 'editor', kind: 'jiewenji-proof-logic', title: '颉文姬 · 逻辑审校' })
   const propsRunning = textProofT.running || logicProofT.running
 
   /**
@@ -93,20 +100,24 @@ export function useJieWenJiModel(props: Props) {
    * 🔴 只在「该块任务引用变化」时才重写那一块 —— 否则 A 块进度更新会把 B 块
    *    `replaceOne` 刚做完的重锚定结果覆盖掉（切到另一块再点就成了「定位失败」）。
    */
-  const lastProofTask = useRef<Record<ProofScope, unknown>>({ text: null, logic: null })
+  const lastProofTask = useRef<Record<ProofScope, { task: unknown; ch: string }>>({
+    text: { task: null, ch: '' }, logic: { task: null, ch: '' },
+  })
   const textProofTask = textProofT.task
   const logicProofTask = logicProofT.task
   useEffect(() => {
     const patches: Partial<Record<ProofScope, ProofState>> = {}
     for (const scope of PROOF_ORDER) {
       const task = scope === 'text' ? textProofTask : logicProofTask
-      if (lastProofTask.current[scope] === task) continue
-      lastProofTask.current[scope] = task
-      if (!task) continue
+      const sig = lastProofTask.current[scope]
+      if (sig.task === task && sig.ch === ch) continue
+      lastProofTask.current[scope] = { task, ch }
+      // 🔴 归属键：不是本章的任务 ⇒ 本块当作没跑过（换章后不显示上一章的结果 / 进度）
+      if (!task || taskChapter(task) !== ch) { patches[scope] = blankProof(); continue }
       if (task.status === 'running') {
-        patches[scope] = { ...blankProof(), loading: true, progress: (task.progress as ProofProgress | null) ?? { done: 0, total: 0 } }
+        patches[scope] = { ...blankProof(), loading: true, progress: (task.progress as ProofProgress | null) ?? { ch, done: 0, total: 0 } }
       } else if (task.status === 'done') {
-        const r = task.result
+        const r = task.result?.v
         patches[scope] = { ...blankProof(), done: true, issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0 }
       } else if (task.status === 'failed') {
         patches[scope] = { ...blankProof(), done: true, error: task.error }
@@ -116,7 +127,7 @@ export function useJieWenJiModel(props: Props) {
       }
     }
     if (Object.keys(patches).length) setProofs(prev => ({ ...prev, ...patches }))
-  }, [textProofTask, logicProofTask])
+  }, [textProofTask, logicProofTask, ch])
 
   /**
    * 替换单条校对结果：优先用 AI 标注位置，替换后把**两块**的其余问题都按位移重锚定
@@ -158,6 +169,7 @@ export function useJieWenJiModel(props: Props) {
     showToast(`AI 校对已启动（${PROOF_META[scope].label}），篇幅较大时耗时数十秒属正常，并非卡死，请耐心等待`, 'info')
     const tk = scope === 'text' ? textProofT : logicProofT
     tk.run(async job => {
+      job.progress({ ch, done: 0, total: 0 }) // 🔴 章节戳第一行盖（失败/中止时没有 result 可查）
       // 🔴 逻辑层才读设定资料；文字层不读 —— 少注入几千字，出结果更快，
       //    也避免模型"拿设定去猜人名是不是写错"这类误报。
       let ctxText = ''
@@ -168,16 +180,16 @@ export function useJieWenJiModel(props: Props) {
       const res = await run(text, {
         context: ctxText,
         signal: job.signal,
-        onProgress: (d, t) => job.progress({ done: d, total: t }),
+        onProgress: (d, t) => job.progress({ ch, done: d, total: t }), // ⚠️ 带 ch，别把章节戳冲掉
       })
-      return { issues: res.issues, scanned: res.scanned, skipped: res.skipped }
+      return { ch, v: res }
     })
   }
   const stopProofread = () => { textProofT.stop(); logicProofT.stop() }
 
   // ============ 补登：本章新增设定实体 ============
   // AI 只负责「从正文抽候选」，是否已登记一律交给 settingLedger 做确定性比对。
-  const ledgerT = useTaskRunner<LedgerItem[]>({
+  const ledgerT = useTaskRunner<ChOwned<LedgerItem[]>, ChProgress>({
     ownerTab: 'editor', kind: 'jiewenji-ledger', title: '颉文姬 · 设定补登抽取',
     writes: ['settings'], // 抽出的实体最终会补登进设定表
   })
@@ -189,15 +201,19 @@ export function useJieWenJiModel(props: Props) {
   const [ledgerSaving, setLedgerSaving] = useState(false)
 
   /** 任务状态 → `ledger`（只在任务引用变化时写；items 之后可被作者就地改写归属） */
-  const lastLedgerTask = useRef<unknown>(null)
+  const lastLedgerTask = useRef<{ task: unknown; ch: string }>({ task: null, ch: '' })
   useEffect(() => {
     const task = ledgerT.task
-    if (lastLedgerTask.current === task) return
-    lastLedgerTask.current = task
-    if (!task) return
+    const sig = lastLedgerTask.current
+    if (sig.task === task && sig.ch === ch) return
+    lastLedgerTask.current = { task, ch }
+    // 🔴 归属键：不是本章的任务 ⇒ 补登结果当空（换章后不列出上一章抽出的实体）
+    if (!task || taskChapter(task) !== ch) {
+      setLedger({ loading: false, items: [], error: '', scannedAt: 0 }); setLedgerPicked(new Set()); return
+    }
     if (task.status === 'running') { setLedger({ loading: true, items: [], error: '', scannedAt: 0 }); return }
     if (task.status === 'done') {
-      const items = task.result ?? []
+      const items = task.result?.v ?? []
       // 默认只勾「待补登」：已登记和疑似重复不该被重复写入
       setLedger({ loading: false, items, error: '', scannedAt: Date.now() })
       setLedgerPicked(new Set(items.filter(i => i.status === 'new').map(i => i.key)))
@@ -207,16 +223,17 @@ export function useJieWenJiModel(props: Props) {
     if (task.status === 'failed') { setLedger({ loading: false, items: [], error: task.error, scannedAt: 0 }); return }
     // 已中止：保留原有条目，仅收掉 loading
     setLedger(s => ({ ...s, loading: false }))
-  }, [ledgerT.task])
+  }, [ledgerT.task, ch])
 
   const runLedger = () => {
     if (!aiReady || ledgerT.running) return
     if (!content.trim()) { showToast('本章正文还是空的，没有可抽取的内容', 'info'); return }
     const title = chapterTitle ?? ''
     ledgerT.run(async job => {
+      job.progress({ ch })
       const entities = await aiExtractSettingEntities(content, title, { signal: job.signal })
       const reg = await loadRegistry()
-      return classify(entities, reg)
+      return { ch, v: classify(entities, reg) }
     })
   }
 
@@ -257,12 +274,13 @@ export function useJieWenJiModel(props: Props) {
   const selText = getSelectionText?.() ?? null
   const [instruction, setInstruction] = useState('润色')
   // 结果连同**选区快照**一起存（写入前要比对，避免 AI 请求期间正文已改、建议段插错位置）
-  const rewriteT = useTaskRunner<{ data: RewriteResult; selText: string | null }>({
+  const rewriteT = useTaskRunner<ChOwned<{ data: RewriteResult; selText: string | null }>, ChProgress>({
     ownerTab: 'editor', kind: 'jiewenji-rewrite', title: '颉文姬 · 选区改稿',
     writes: ['chapters'], // 建议段最终会写进正文
   })
+  const rewriteView = chapterOwned(rewriteT, ch)
   const rewrite: { loading: boolean; data?: RewriteResult; error?: string; selText?: string | null } = {
-    loading: rewriteT.running, data: rewriteT.result?.data, error: rewriteT.error || undefined, selText: rewriteT.result?.selText,
+    loading: rewriteView.loading, data: rewriteView.data?.data, error: rewriteView.error, selText: rewriteView.data?.selText,
   }
 
   const runRewrite = () => {
@@ -270,13 +288,10 @@ export function useJieWenJiModel(props: Props) {
     const snapSel = selText
     const snapInstruction = instruction
     rewriteT.run(async job => {
-      const style = await getFormData('style').catch(() => ({} as Record<string, string>))
-      const styleCtx = Object.entries(style)
-        .map(([k, v]) => `${k.replace(/^.*::/, '')}：${(v ?? '').toString().slice(0, 200)}`)
-        .filter(s => s.length > 2)
-        .join('\n')
+      job.progress({ ch })
+      const styleCtx = await styleContextForAI()
       const data = await aiRewritePassage(snapSel, snapInstruction, styleCtx, { signal: job.signal })
-      return { data, selText: snapSel }
+      return { ch, v: { data, selText: snapSel } }
     })
   }
 
@@ -292,64 +307,70 @@ export function useJieWenJiModel(props: Props) {
   }
 
   // ============ 审读：编辑意见 / OOC / 续写方向 / 爽点毒点 / 黄金三章 ============
-  const revT = useTaskRunner<ChapterReview>({ ownerTab: 'editor', kind: 'jiewenji-review', title: '颉文姬 · 章节编辑意见' })
-  const oocT = useTaskRunner<OocFinding[]>({ ownerTab: 'editor', kind: 'jiewenji-ooc', title: '颉文姬 · OOC 人设检查' })
-  const advT = useTaskRunner<ContinuationAdvice>({ ownerTab: 'editor', kind: 'jiewenji-advice', title: '颉文姬 · 续写方向' })
-  const pleaT = useTaskRunner<PleasureReport>({ ownerTab: 'editor', kind: 'jiewenji-pleasure', title: '颉文姬 · 爽点毒点检查' })
-  const openT = useTaskRunner<OpeningReport>({ ownerTab: 'editor', kind: 'jiewenji-opening', title: '颉文姬 · 黄金三章检查' })
+  const revT = useTaskRunner<ChOwned<ChapterReview>, ChProgress>({ ownerTab: 'editor', kind: 'jiewenji-review', title: '颉文姬 · 章节编辑意见' })
+  const oocT = useTaskRunner<ChOwned<OocFinding[]>, ChProgress>({ ownerTab: 'editor', kind: 'jiewenji-ooc', title: '颉文姬 · OOC 人设检查' })
+  const advT = useTaskRunner<ChOwned<ContinuationAdvice>, ChProgress>({ ownerTab: 'editor', kind: 'jiewenji-advice', title: '颉文姬 · 续写方向' })
+  const pleaT = useTaskRunner<ChOwned<PleasureReport>, ChProgress>({ ownerTab: 'editor', kind: 'jiewenji-pleasure', title: '颉文姬 · 爽点毒点检查' })
+  const openT = useTaskRunner<ChOwned<OpeningReport>, ChProgress>({ ownerTab: 'editor', kind: 'jiewenji-opening', title: '颉文姬 · 黄金三章检查' })
 
-  const rev: { loading: boolean; data?: ChapterReview; error?: string } = { loading: revT.running, data: revT.result ?? undefined, error: revT.error || undefined }
-  const ooc: { loading: boolean; data?: OocFinding[]; error?: string } = { loading: oocT.running, data: oocT.result ?? undefined, error: oocT.error || undefined }
-  const adv: { loading: boolean; data?: ContinuationAdvice; error?: string } = { loading: advT.running, data: advT.result ?? undefined, error: advT.error || undefined }
-  const plea: { loading: boolean; data?: PleasureReport; error?: string } = { loading: pleaT.running, data: pleaT.result ?? undefined, error: pleaT.error || undefined }
-  const open: { loading: boolean; data?: OpeningReport; error?: string } = { loading: openT.running, data: openT.result ?? undefined, error: openT.error || undefined }
+  const rev: { loading: boolean; data?: ChapterReview; error?: string } = chapterOwned(revT, ch)
+  const ooc: { loading: boolean; data?: OocFinding[]; error?: string } = chapterOwned(oocT, ch)
+  const adv: { loading: boolean; data?: ContinuationAdvice; error?: string } = chapterOwned(advT, ch)
+  const plea: { loading: boolean; data?: PleasureReport; error?: string } = chapterOwned(pleaT, ch)
+  const open: { loading: boolean; data?: OpeningReport; error?: string } = chapterOwned(openT, ch)
 
   const runReview = () => {
     if (!aiReady || revT.running) return
     showToast('AI 审读已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
     revT.run(async job => {
+      job.progress({ ch })
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-review'), focusChapterId })
-      return aiChapterReview(ctx.text, content, { signal: job.signal })
+      return { ch, v: await aiChapterReview(ctx.text, content, { signal: job.signal }) }
     })
   }
   const runOoc = () => {
     if (!aiReady || oocT.running) return
     oocT.run(async job => {
+      job.progress({ ch })
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-ooc'), focusChapterId })
-      return aiOocCheck(ctx.text, content, { signal: job.signal })
+      return { ch, v: await aiOocCheck(ctx.text, content, { signal: job.signal }) }
     })
   }
   const runAdvice = () => {
     if (!aiReady || advT.running) return
     advT.run(async job => {
+      job.progress({ ch })
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-advice'), focusChapterId })
-      return aiContinuationAdvice(ctx.text, content, { signal: job.signal })
+      return { ch, v: await aiContinuationAdvice(ctx.text, content, { signal: job.signal }) }
     })
   }
   const runPleasure = () => {
     if (!aiReady || pleaT.running) return
     pleaT.run(async job => {
+      job.progress({ ch })
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-pleasure'), focusChapterId })
-      return aiPleasureCheck(ctx.text, content, { signal: job.signal })
+      return { ch, v: await aiPleasureCheck(ctx.text, content, { signal: job.signal }) }
     })
   }
   const runOpening = () => {
     if (!aiReady || openT.running) return
     openT.run(async job => {
+      job.progress({ ch })
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-opening'), focusChapterId })
-      return aiOpeningCheck(ctx.text, openingText ?? content, { signal: job.signal })
+      return { ch, v: await aiOpeningCheck(ctx.text, openingText ?? content, { signal: job.signal }) }
     })
   }
 
   // ============ 简报：开写前本章待办（v1.6.1） ============
-  const briefT = useTaskRunner<BriefingReport>({ ownerTab: 'editor', kind: 'jiewenji-brief', title: '颉文姬 · 本章写作简报' })
-  const brief: { loading: boolean; data?: BriefingReport; error?: string } = { loading: briefT.running, data: briefT.result ?? undefined, error: briefT.error || undefined }
+  const briefT = useTaskRunner<ChOwned<BriefingReport>, ChProgress>({ ownerTab: 'editor', kind: 'jiewenji-brief', title: '颉文姬 · 本章写作简报' })
+  const brief: { loading: boolean; data?: BriefingReport; error?: string } = chapterOwned(briefT, ch)
   const runBrief = () => {
     if (!aiReady || briefT.running) return
     showToast('AI 简报已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
     briefT.run(async job => {
+      job.progress({ ch })
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-brief'), focusChapterId })
-      return aiBriefing(ctx.text, content, { signal: job.signal })
+      return { ch, v: await aiBriefing(ctx.text, content, { signal: job.signal }) }
     })
   }
 

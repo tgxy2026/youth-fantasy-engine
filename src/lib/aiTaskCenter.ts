@@ -422,3 +422,48 @@ export function useTaskRunner<TResult = unknown, TProgress = unknown>(
     clear,
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 章节归属（2026-10-01 六维审计 P1）
+//
+// 🔴🔴 为什么必须有：`useTaskRunner` 按 `(ownerTab, kind)` 取**最近一条**任务
+//    （见 `useAiTask`）——任务中心**不支持按业务键取历史**。于是同一个面板
+//    「A 章跑完 → 关掉/切页签 → 换到 B 章再打开」时，会把 A 章那一份当成 B 章的
+//    （跨章串报告：拿 A 章的诊断看 B 章）。
+//    对策只有一条：**发起时把章节戳盖进 progress / result**，取值时只放行
+//    「归属 == 当前章」的那一份，其余一律当作「没跑过」。
+//
+// ⚠️ 章节戳必须写进 `progress`（且放在 `run` 的**第一行**）：只要任务起得来就一定盖得上，
+//    成功 / 失败 / 中止三种结局都能据此判归属（失败时没有 result 可查）。
+//    `progress` 在跑完后**不清空**（见 `startTask` 的说明），所以判据一直有效。
+//    ⚠️ 若 `run` 里要中途上报进度，**必须把 `ch` 带上**（`job.progress({ ch, ... })`），
+//       否则会把章节戳冲掉 —— 这一刻起该任务就不再被认作本章的了。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 带章节归属的任务结果：`ch` = 发起时的章节 id，`v` = 真正的载荷 */
+export interface ChOwned<T> { ch: string; v: T }
+/** 带章节戳的任务进度（发起时第一时间写入） */
+export interface ChProgress { ch: string }
+
+/** 读一条任务的「发起章节」。没有章节戳（旧记录 / 非章节级任务）返回空串 */
+export function taskChapter(task: { progress?: unknown } | null | undefined): string {
+  return (task?.progress as ChProgress | null | undefined)?.ch ?? ''
+}
+
+/**
+ * 把「章节级 runner」收成**本章视图** —— 直接喂给面板的 `{ loading, data?, error? }`。
+ * 非本章的结果 / 进度一律当没跑过；单章场景（`ch` 恒定）零变化。
+ */
+export function chapterOwned<T>(
+  tk: TaskRunner<ChOwned<T>, ChProgress>,
+  ch: string,
+): { loading: boolean; data?: T; error?: string } {
+  const task = tk.task
+  const owned = taskChapter(task) === ch
+  const r = tk.result
+  return {
+    loading: tk.running && owned,
+    data: task?.status === 'done' && r?.ch === ch ? r.v : undefined,
+    error: task?.status === 'failed' && owned ? (tk.error || undefined) : undefined,
+  }
+}
