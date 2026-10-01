@@ -55,7 +55,7 @@ export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput, stripInline
 export type { ChapterRewriteAction, ChapterRewriteOpts } from './aiTasks/rewrite'
 export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, parseExtractedEntities } from './aiTasks/extract'
 export type { SettingEntityType, ExtractedEntity } from './aiTasks/extract'
-export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest } from './aiTasks/inline'
+export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest, foldGhostNewlines } from './aiTasks/inline'
 export type { InlineSuggestLength, InlineSuggestOptions } from './aiTasks/inline'
 // 2026-09-20：`aiGenerateOutline`（从零排）与 `aiExtendOutline`（接着排）**合并为 `aiPlanOutline`** ——
 // 差别只剩「材料装的是什么」，两条路产出的都是 `OutlineResult`（卷 + 章），落库走同一个 `commitOutline`。

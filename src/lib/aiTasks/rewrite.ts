@@ -8,6 +8,7 @@ import type { PromptDef } from '../promptSettings'
 // 🔴 字数硬校准与容差：从 `lib/wordRange.ts` 取（与逐章连写共用同一常量与同一条校准逻辑）
 import { enforceWordRange, WORD_TOLERANCE } from '../wordRange'
 import { countWords } from '../textStats'
+import { deAiGenerateRule } from '../deAiStyle'
 
 // ---------- 整章改写（润色 / 扩写 / 精简 / 续写 / 改写） ----------
 //
@@ -119,7 +120,9 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
   const fenceId = newAuthorFence()
   // 历史章 / 最新章纪律不同（见上面两条 RULE 的说明）
   const scopeRule = o.isLatest ? CHAPTER_REWRITE_LATEST_RULE : CHAPTER_REWRITE_HISTORY_RULE
-  const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action], scopeRule].join('\n\n')
+  // 🔴 去 AI 味纪律**必须钉在最末**（埋中段效果约等于 0，见 lib/deAiStyle.ts 文件头）——
+  //    整章改写产出的同样是正文，与续写、伴写共用同一份真源。
+  const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action], scopeRule, deAiGenerateRule('full')].join('\n\n')
 
   // ── 🔴 续写：原文由**我们自己保留**，模型只吐"新增片段" ──
   //    「原文一字不动」靠提示词是**做不到**的（模型总会顺手把原段润色一遍）；

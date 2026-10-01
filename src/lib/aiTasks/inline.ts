@@ -2,6 +2,7 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #24 段）。
 // 🔴 去 AI 味纪律（DEAI_INLINE_RULE）必须钉在 system **末尾**才有效。
 import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { deAiGenerateRule } from '../deAiStyle'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
 
@@ -39,12 +40,39 @@ export const INLINE_SUGGEST_LIMITS: Record<InlineSuggestLength, { label: string;
  * 放进"生成"场景会让模型先去找正文再改写，甚至输出「以下是修改后的内容：」这类前言。
  * 这里只抽它们的共性，写成生成向的短约束——针对"一句话"这个粒度，不用长清单。
  */
-let DEAI_INLINE_RULE = `【文风纪律 · 最重要】
-不要用「仿佛 / 似乎 / 宛如 / 不禁 / 然而 / 值得一提的是 / 不知为何」这类 AI 高频套话开头；
-不要堆四字成语与对称排比；不要写空泛的总结、升华或哲理感慨；
-不要滥用破折号与省略号；
-不要复述或换皮重复前文已经写过的句子、动作、意象与比喻——同一表达只用一次，直接推进新的内容；
-多给具体的动作、对白、感官细节，句子长短错落，像活人顺手写下来的。`
+/**
+ * 取 `deAiGenerateRule('brief')`：伴写一次只续一两句话，规则必须短 ——
+ * 给完整版会把「只输出正文本身」这类硬要求挤没，反而更容易跑偏。
+ * 真源在 `lib/deAiStyle.ts`（2.6.4 起所有去味儿规则只在那一份里改）。
+ */
+let DEAI_INLINE_RULE = deAiGenerateRule('brief')
+
+/** 句中标点：断处已经是这些，就不必再补 */
+const GHOST_MID_PUNCT = '，,、；;：:—…'
+/** 句末标点 */
+const GHOST_END_PUNCT = '。！？!?…」』”’）)'
+
+/**
+ * 折掉换行（ghost 只占一行），并在**断处补回句中标点**。
+ *
+ * 🔴 为什么必须补：模型给的「一句话」里偶尔自带换行（它按小句分段在吐），
+ *    而下面直接把 \n 抹成空会把两个小句**粘成一串** ——
+ *    社区反馈「伴写输出的一句话中间漏了逗号」（2026-10-02）的一条根因就在这儿。
+ *
+ * 判据：断处**前一个字符**若不是任何标点（句中标点与句末标点都算），就补一个「，」；
+ * 已经是「，」「。」这类则原样折掉 —— 绝不重复加标点（重复标点比漏标点更难看）。
+ * 行首就是换行时没有「上一句」，不补。
+ *
+ * 纯函数、可单测。
+ */
+export function foldGhostNewlines(s: string): string {
+  return s.replace(/\n+/g, (_m, idx: number) => {
+    const before = s[idx - 1] ?? ''
+    if (!before) return ''
+    if (GHOST_MID_PUNCT.includes(before) || GHOST_END_PUNCT.includes(before)) return ''
+    return '，'
+  })
+}
 
 /**
  * 伴写结果后处理（**纯函数，可单测**）。
@@ -56,7 +84,8 @@ export function trimInlineSuggestion(raw: string, maxChars: number): string {
   if (!s) return ''
   s = s.replace(/```[a-zA-Z]*\n?/g, '')                       // 去掉 markdown 代码围栏
   s = (s.split(/\n{2,}/)[0] ?? '').trim()                     // 只要第一段（模型偶尔会多续一段）
-  s = s.replace(/\n+/g, '')                                   // ghost 是"一句话"，不落换行
+  // ghost 是「一句话」，不落换行 —— 但**断处要补回标点**，否则两个小句会粘成一串（见上方函数注释）
+  s = foldGhostNewlines(s)
   s = s.replace(/^["'“”]+/, '').replace(/["'“”]+$/, '')       // 整段被引号包裹
   s = s.replace(/^(?:好的|明白)[，,]\s*/, '')                  // 「好的，…」开场
   s = s.replace(/^(?:以下[是为][^：:]{0,14}[：:]|续写[：:]|接续[：:]|接下来[^：:]{0,8}[：:])\s*/u, '')
@@ -120,7 +149,8 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
 1. 直接给正文。不要解释、不要说"好的"、不要引号、不要 markdown、不要标题、不要分点、不要换行。
 2. 严格顺着前文的语气、人称、视角、时态、称呼与叙事节奏往下写，衔接自然到看不出接缝。
 3. 不要复述或改写前文的最后一句，从它的下一步写起。
-4. 不写总结、不写升华、不预告后文、不替作者收尾。`,
+4. 不写总结、不写升华、不预告后文、不替作者收尾。
+5. 标点必须完整：一句话中间的逗号、停顿一个都不要省，绝不能输出一长串连在一起、中间没有标点的字；末尾要有句号 / 问号 / 感叹号。`,
   ]
   if (opts.projectContext?.trim()) layers.push(`【设定资料（仅用于核对专名、身份、称谓，不要照抄内容）】\n${opts.projectContext.trim()}`)
   if (opts.styleSpec?.trim()) layers.push(`【作者的《写作规范》· 必须遵守】\n${opts.styleSpec.trim()}`)

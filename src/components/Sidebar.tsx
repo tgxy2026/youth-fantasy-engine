@@ -2,13 +2,14 @@ import { Z } from '../lib/zLayer'
 import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type } from 'lucide-react'
 import BrandMark from './BrandMark'
 import HelpPopover from './HelpPopover'
-import { confirmDialog } from './dialogs'
+import { confirmDialog, showToast } from './dialogs'
 import NumberField from './NumberField'
 import { useState, useEffect } from 'react'
 import { GROUPS, TABS, EDITOR_TAB, tabVisible, getVolumeTabs, getVolumeLedgerTabId, getVolumeIdFromLedgerTab, refreshVolumeTabs, type VisCtx } from '../lib/schema'
 import type { TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
+import { nextVolumeNo, nextVolumeOrder, isFreeVolume } from '../lib/freeVolume'
 import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom, isZoomAuto, getStoredCustomTheme } from '../lib/theme'
 import { DESKTOP, HAS_WINDOW_BRIDGE, toggleFullscreen } from '../lib/desktop'
 import { DesktopDataBar } from './Desktop'
@@ -105,8 +106,11 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
 
   /** 在「章节总表」下新建一卷（= 一张新的章节台账表），建完直接跳进该卷 */
   const createVolume = async () => {
-    const n = volumeTabs.length + 1
-    const vol = { id: uid(), projectId: db.getCurrentProjectId(), order: volumeTabs.length, title: `第${n}卷`, description: '', createdAt: Date.now() }
+    // 🔴 序号 / order 只数真卷：自由卷不占卷号，且它 order 是哨兵值（恒排最后），
+    //    拿 volumeTabs.length 当基准会让新卷排到自由卷后面（见 lib/freeVolume.ts）
+    const vols = await db.getAllVolumes()
+    const n = nextVolumeNo(vols)
+    const vol = { id: uid(), projectId: db.getCurrentProjectId(), order: nextVolumeOrder(vols), title: `第${n}卷`, description: '', createdAt: Date.now() }
     await db.saveVolume(vol)
     await refreshVolumeTabs()
     setVolumeTabs(getVolumeTabs())
@@ -118,6 +122,11 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   const removeVolume = async (vol: TabDef) => {
     // vol.id 是卷台账 tabId（chapter-vol-<真实卷id>），须反解出真实卷库 id 再删，否则按 tabId 查 volumes 库会查无此键、静默失败
     const volumeId = getVolumeIdFromLedgerTab(vol.id)
+    // 🔴 自由卷是系统保留的托管卷：删它会级联把里面的自由章节全推进回收站（卷删除在存储层是级联的）
+    if (isFreeVolume((await db.getAllVolumes()).find(v => v.id === volumeId))) {
+      showToast('「自由章节」是托管未归类章节的系统保留卷，不能删除', 'error')
+      return
+    }
     if (!await confirmDialog({ title: '删除分卷', message: `此操作会同时删除【章节总表】与【正文编辑·章节管理】两处的分卷「${vol.name}」及其全部章节，数据将移入回收站（可恢复）。确定要删除吗？`, danger: true })) return
     await db.deleteVolume(volumeId)
     await refreshVolumeTabs()

@@ -45,12 +45,29 @@ export function normalizeProxyInput(input: string): string {
   return s
 }
 
+/**
+ * 单段直连名单是否合法。
+ *
+ * 🔴 判据：得**像个主机**才放行 —— 含「.」（域名 / IP）或「*」（通配），
+ *    或者是 Chromium 认的两个特殊标记 `<local>` / `localhost`。
+ *    否则「a」「b」这种单字也会被当成合法段喂给主进程，名单越长越容易解析出错。
+ */
+function isBypassSegment(seg: string): boolean {
+  if (!seg) return false
+  if (seg === '<local>' || seg === 'localhost') return true
+  if (!/^[a-zA-Z0-9.\-:*]+$/.test(seg)) return false
+  return seg.includes('.') || seg.includes('*')
+}
+
 /** 清洗直连名单：逐段过 normalize 的宽松版（允许 `<local>` 标记），非法段丢弃 */
 export function sanitizeBypassList(input: string): string {
   return (input ?? '')
-    .split(/[;，\s]+/)          // 容错：分号 / 全角逗号 / 空白都能当分隔符
+    // 🔴 分隔符必须**四种都认**：半角/全角的分号与逗号，外加空白。
+    //    旧版漏了半角逗号与全角分号 —— 于是「localhost,127.0.0.1」整串被当成一段、
+    //    又因含非法字符被整体丢弃，作者填的名单直接失效。
+    .split(/[;,，；\s]+/)
     .map(seg => seg.trim())
-    .filter(seg => seg === '<local>' || /^[a-zA-Z0-9.\-:*\s]+$/.test(seg))
+    .filter(isBypassSegment)
     .join(',')
 }
 

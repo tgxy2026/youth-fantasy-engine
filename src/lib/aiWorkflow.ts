@@ -36,6 +36,7 @@ import {
   type OutlineResult, type OutlineVolume,
 } from './aiTasks'
 import { sortChapters } from './chapterSeq'
+import { nextVolumeOrder } from './freeVolume'
 import { getStoryTemplate, formatStructureHint } from './storyStructures'
 import { writerBudgetFor } from './aiWriterBudget'
 import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from './autoContinue'
@@ -327,11 +328,13 @@ export async function commitOutline(
 
   // ① 建卷
   const existingVols = await db.getAllVolumes().catch(() => [] as Volume[])
+  // 🔴 起始 order 只数真卷：自由卷 order 是哨兵值（恒排最后），拿 existingVols.length 当基准会盖过它
+  let volOrder = nextVolumeOrder(existingVols)
   for (const v of result.volumes) {
     if (opts.signal?.aborted) break
     if (existingVols.some(x => x.title.trim() === v.title.trim())) continue
     const vol: Volume = {
-      id: uid(), projectId: pid, order: existingVols.length + out.volumesCreated,
+      id: uid(), projectId: pid, order: volOrder++,
       title: v.title, description: v.positioning || '', createdAt: Date.now(),
     }
     try { await db.saveVolume(vol); out.volumesCreated++ }

@@ -136,6 +136,8 @@ export interface Volume {
   title: string
   description: string
   createdAt: number
+  /** 2.6.4：系统保留的「自由卷」标记 —— 托管未归类的自由章节，不参与卷计数、不可删除。判定只认本字段、不认标题（见 `lib/freeVolume.ts`） */
+  isFree?: boolean
 }
 
 export type ChapterStatus = '构思' | '细纲' | '草稿' | '修改' | '完稿' | '已发布'

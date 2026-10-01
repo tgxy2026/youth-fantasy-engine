@@ -43,6 +43,7 @@ import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
   GHOST_CONTEXT_CHARS, orderedChapters,
 } from './novelEditorHelpers'
+import { isFreeVolume, realVolumes, ensureFreeVolume, findFreeVolume, nextVolumeOrder } from '../lib/freeVolume'
 import { useNovelEditorHighlight } from './useNovelEditorHighlight'
 import { useNovelEditorGhost } from './useNovelEditorGhost'
 
@@ -602,7 +603,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
 
   // ---- 卷/章操作 ----
   // v1.6：新建/改名改走应用内 PromptModal（浏览器 prompt 在 Electron 桌面端无实现、点击无反应）
-  const [namePrompt, setNamePrompt] = useState<null | { kind: 'addVol' | 'addCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>(null)
+  const [namePrompt, setNamePrompt] = useState<null | { kind: 'addVol' | 'addCh' | 'addFreeCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>(null)
 
   // ============ 颉文姬 · AI 编辑（v1.6 收官功能） ============
   const [jieWenJiOpen, setJieWenJiOpen] = useState(false)
@@ -639,7 +640,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   }, [volumes, chapters, activeId])
   const {
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi,
-    companionStyleNote, setCompanionStyleNote, companionStyleSpec, setCompanionStyleSpec,
+    companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims,
+    companionStyleSpec, setCompanionStyleSpec,
     styleNotePrompt, setStyleNotePrompt, ghost, ghostBusy, dismissGhost, onEditorKeyDown,
   } = useNovelEditorGhost({
     activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange,
@@ -695,7 +697,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
 
   const doAddVolume = async (title: string) => {
     if (!title) return
-    const vol: Volume = { id: uid(), projectId: db.getCurrentProjectId(), order: volumes.length, title, description: '', createdAt: Date.now() }
+    // 🔴 order 只数真卷：自由卷不占号，否则「第N卷」的默认名会被它挤偏一位（见 lib/freeVolume.ts）
+    const vol: Volume = { id: uid(), projectId: db.getCurrentProjectId(), order: nextVolumeOrder(volumes), title, description: '', createdAt: Date.now() }
     await db.saveVolume(vol)
     await load()
     window.dispatchEvent(new Event('yfe:volumes-changed')) // 通知章节总表侧栏同步新增
@@ -722,6 +725,19 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     await syncChapterMaster(ch, chapterSeqOf(lv, lc, ch.id))
   }
 
+  /**
+   * 新建「自由章节」—— 作者不必先建卷：托管卷不存在时自动建（lazy，不预建空卷），
+   * 随后复用 doAddChapter 的完整链路（展开该分组 / 定位高亮 / 登记章节台账 / 派生正文序号）。
+   */
+  const doAddFreeChapter = async (title: string) => {
+    if (!title) return
+    const wasMissing = !findFreeVolume(volumes)
+    const vol = await ensureFreeVolume(volumes)
+    await doAddChapter(vol.id, title)
+    // 托管卷是本次新建的才算「多了一个卷」，要通知章节总表侧栏同步（已存在时不必）
+    if (wasMissing) window.dispatchEvent(new Event('yfe:volumes-changed'))
+  }
+
   const doRenameVolume = async (vol: Volume, title: string) => {
     if (!title || title === vol.title) return
     await db.saveVolume({ ...vol, title })
@@ -743,11 +759,14 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     if (!v || !p) return
     if (p.kind === 'addVol') await doAddVolume(v)
     else if (p.kind === 'addCh') await doAddChapter(p.payload as string, v)
+    else if (p.kind === 'addFreeCh') await doAddFreeChapter(v)
     else if (p.kind === 'renVol') await doRenameVolume(p.payload as Volume, v)
     else if (p.kind === 'renCh') await doRenameChapter(p.payload as Chapter, v)
   }
 
   const removeVolume = async (vol: Volume) => {
+    // 🔴 自由卷是系统保留的托管卷：删它会级联把里面的自由章节全推进回收站（卷删除在存储层是级联的）
+    if (isFreeVolume(vol)) { showToast('「自由章节」是托管未归类章节的系统保留卷，不能删除', 'error'); return }
     const count = chapters.filter(c => c.volumeId === vol.id).length
     if (!await confirmDialog({ title: '删除分卷', message: `此操作会同时删除【正文编辑·章节管理】与【章节总表】两处的分卷「${vol.title}」及其全部 ${count} 章，数据将移入回收站（可恢复）。确定要删除吗？`, danger: true })) return
     await db.deleteVolume(vol.id)  // 内部级联移入回收站、删除总表联动行
@@ -791,7 +810,12 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     let dirty = false
     try {
       if (dragKind === 'vol' && overKey.kind === 'vol') {
-        const next = reorderVolumes(volumes, dragId, overKey.id, overKey.pos)
+        // 🔴 自由卷不参与卷序重排：它的 order 是哨兵值，而 reorderVolumes 会把传入的卷重编成 0..n-1，
+        //    一并传进去就会把哨兵冲掉、自由章节被排进正文序列中段（导出 / 正文序号 / 上下章全乱）
+        const next = [
+          ...reorderVolumes(realVolumes(volumes), dragId, overKey.id, overKey.pos),
+          ...volumes.filter(v => isFreeVolume(v)),
+        ]
         dirty = next.some(v => v.order !== (volumes.find(x => x.id === v.id)?.order ?? -1))
         setVolumes(next)
         if (dirty) {
@@ -855,7 +879,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     // 编辑区 refs 与光标同步
     scrollRef, taRef, mirrorRef, ghostRef, selRef, syncSel, getSelText, syncTypewriter,
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
-    companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
+    companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
     summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）

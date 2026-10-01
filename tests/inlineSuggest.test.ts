@@ -3,7 +3,7 @@
 // 它守着一条体验底线——**ghost 绝不能以半句悬空收尾**（作者采纳后半截话悬在那里最恼人），
 // 以及"宁缺毋滥"——洗出来不足 4 字就当没有建议，不往界面上透垃圾。
 // 故此处用精确断言（而非只要求不炸的软断言）锁死行为。
-import { trimInlineSuggestion, INLINE_SUGGEST_LIMITS } from '../src/lib/aiTasks'
+import { trimInlineSuggestion, foldGhostNewlines, INLINE_SUGGEST_LIMITS } from '../src/lib/aiTasks'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -59,6 +59,20 @@ function ok(name: string, cond: boolean, extra = '') {
   ok('numPredict 与字数上限同向递增',
     INLINE_SUGGEST_LIMITS.short.numPredict <= INLINE_SUGGEST_LIMITS.sentence.numPredict
     && INLINE_SUGGEST_LIMITS.sentence.numPredict <= INLINE_SUGGEST_LIMITS.two.numPredict)
+}
+
+// ---------- 5. 折换行时补回句中标点（社区反馈：输出的一句话中间漏逗号） ----------
+{
+  const got = trimInlineSuggestion('他转过身\n看向门外', 40)
+  ok('断处无标点 → 补逗号（不把两个小句粘成一串）', got === '他转过身，看向门外', got)
+  ok('断处已有逗号 → 不重复补', trimInlineSuggestion('他转过身，\n看向门外。', 40) === '他转过身，看向门外。')
+  ok('断处是句号 → 只折行不补', trimInlineSuggestion('他转过身。\n看向门外。', 40) === '他转过身。看向门外。')
+  // 双换行是**段落**分隔（模型多续了一段）→ 走「只取第一段」，不把第二段粘进来
+  ok('连续双换行按段落只取第一段', trimInlineSuggestion('他转过身\n\n看向门外', 40) === '他转过身')
+  ok('行首换行不补标点（没有上一句）', trimInlineSuggestion('\n他抬起头。', 40) === '他抬起头。')
+  ok('foldGhostNewlines 可单独单测', foldGhostNewlines('甲\n乙') === '甲，乙', foldGhostNewlines('甲\n乙'))
+  // 反例守卫：证明第一条不是「恰好没走到折行那段代码」
+  ok('反例：确有换行需要折叠（证明用例有效）', '他转过身\n看向门外'.includes('\n'))
 }
 
 console.log(`\ninlineSuggest: ${pass} passed, ${fail} failed`)

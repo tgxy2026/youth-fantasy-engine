@@ -27,6 +27,10 @@ export { KEY_PATHS } from './mock-memory'
 // 也因此单测里 SearXNG 会被判成「会被跨域拦」。
 // 真·主进程代发那一段由桌面版实机验证覆盖（node 里没有 window.electronNet）。
 export const HAS_NET_BRIDGE = false
+/** 代理设置的桌面端落库：测试桩没有真实会话，按「无桥接」口径返回（与 desktop.ts 同形） */
+export function setNetProxy(_cfg: { enabled: boolean; rules?: string; bypass?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  return Promise.resolve({ ok: false, error: '测试桩没有「设置代理」能力' })
+}
 export function netFetch(): Promise<{ ok: false; error: string }> {
   return Promise.resolve({ ok: false, error: '测试环境没有主进程代发能力' })
 }

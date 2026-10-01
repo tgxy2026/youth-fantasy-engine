@@ -75,9 +75,11 @@ export function getStoredFontPrefs(): FontPrefs {
     const p = JSON.parse(raw) as { editor?: unknown; ui?: unknown }
     const clean = (v: unknown): string => {
       if (typeof v !== 'string' || v.length > 200) return ''
-      // 🔴 返回清洗后的值而不是原值：脏数据里的「;」「}」必须剥掉才能进 setProperty
-      //    （48 行注释自己点名的「; 截断声明」注入面——守卫声明了就得真的生效）
-      return sanitizeFontStack(v)
+      // 🔴 含声明截断符（; { } 以及其它被剥掉的字符）时**整段回默认**，而不是留着剥剩下的残骸：
+      //    'x;' 剥成 'x' 仍是一段没意义的值，而这条路径本来就是注入面 ——
+      //    （48 行注释自己点名的「; 截断声明」—— 守卫声明了就得真的生效）
+      const s = sanitizeFontStack(v)
+      return s === v.trim() ? s : ''
     }
     return { editor: clean(p.editor), ui: clean(p.ui) }
   } catch { return { ...DEFAULT_FONT_PREFS } }
