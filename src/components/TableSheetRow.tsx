@@ -40,7 +40,6 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
     aiCap,
     aiReady,
     widthOf,
-    saveCalendars,
     setCellDraft,
     removeRow,
     cellVal,
@@ -171,12 +170,11 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
                   ctx={ctx}
                 />
               ) : col.calendar ? (
-                /* 历法列：选项来自项目级历法配置，支持新增/删改/数值 */
+                /* 历法列：只从项目级历法配置里选（新增/改名/删除都在页头「历法规则」弹窗，见 CalendarSelect 头注） */
                 <CalendarSelect
                   value={val}
                   onChange={v => setCellDraft(row.id, col.name, v)}
                   calendars={calendars}
-                  onCalendarsChange={saveCalendars}
                 />
               ) : col.type === 'tableRef' ? (
                 /* 跨表引用：从来源设定表取值，禁止手动输入；自引用父级列排除自身+子孙防成环 */

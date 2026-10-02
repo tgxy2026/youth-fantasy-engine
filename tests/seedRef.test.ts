@@ -156,10 +156,13 @@ for (const t of TABS) {
 }
 ok(`「人物」列的值都是真角色（共校验 ${personChecked} 处）`, personErrors.length === 0, personErrors.slice(0, 6).join(' | '))
 
-// ---------- ⑥ 关系表不该有重复条目（A-B 与 B-A 视为同一条）----------
+// ---------- ⑥ 关系表不该有重复条目（有向对 + 关系类型）----------
 // 2026-09-19：「陈渊 ↔ 血鸦（敌对）」在示范项目里被登记了两遍。
 // 设计上「已有关系不会重复生成」，手录也不该重复 —— 重复行会让关系图谱出现两条同向边，
 // 也会让「按关系类型着色 / 点边看详情」这类联动看起来像坏了。
+// 🔴 2.7.2：判重口径＝**有向对 + 关系类型** —— A→B 与 B→A 各算一条（视角不同），
+//    同一对还能并存多种关系类型，只有「同向 + 同类型」才算重复。
+//    ⚠️ 这里原来用 `[a, b].sort()` 把方向抹平，会把**合法的反向关系**误判成重复（静默隐患），已去掉。
 const dupErrors: string[] = []
 for (const tabId of ['relations', 'faction-rels']) {
   const rows = rowsByTab[tabId] ?? []
@@ -172,12 +175,12 @@ for (const tabId of ['relations', 'faction-rels']) {
     const a = (r.data[ac.name] ?? '').trim()
     const b = (r.data[bc.name] ?? '').trim()
     if (!a || !b) return
-    const key = [a, b].sort().join('↔') + '|' + (tc ? (r.data[tc.name] ?? '') : '')
-    if (seen.has(key)) dupErrors.push(`${tabId} 第 ${seen.get(key)! + 1} 行与第 ${i + 1} 行重复：${a} ↔ ${b}`)
+    const key = `${a}↔${b}|${tc ? (r.data[tc.name] ?? '') : ''}`
+    if (seen.has(key)) dupErrors.push(`${tabId} 第 ${seen.get(key)! + 1} 行与第 ${i + 1} 行重复：${a} → ${b}`)
     else seen.set(key, i)
   })
 }
-ok('关系表无重复条目（无序对）', dupErrors.length === 0, dupErrors.join(' | '))
+ok('关系表无重复条目（有向对 + 关系类型）', dupErrors.length === 0, dupErrors.join(' | '))
 
 if (errors.length) {
   console.log('\n—— 引用问题明细 ——')

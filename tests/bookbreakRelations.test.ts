@@ -153,19 +153,22 @@ db.setCurrentProject('rel-test')
     out5.created === 1 && rows5.length === 4, `created=${out5.created} rows=${rows5.length}`)
 }
 
-// ---------- ⑤ 判重口径：A-B 与 B-A 同指纹 ----------
+// ---------- ⑤ rowFingerprint 的 unordered 参数（关系表已不再使用 true）----------
+// 🔴 2.7.2：人物关系 / 势力关系改为**有向对 + 关系类型**，整理链路恒传 unordered=false
+//    （见 `aiScope.isDirectedPairTab`）。这一节只验证通用函数的两种模式语义，
+//    不再断言「关系表按无序对判重」—— 那与第 ④ 节（反向是另一条）互相矛盾。
 {
   const keys = ['人物A', '人物B']
-  const a = rowFingerprint({ 人物A: '萧景行', 人物B: '萧景炎' }, keys, true)
-  const b = rowFingerprint({ 人物A: '萧景炎', 人物B: '萧景行' }, keys, true)
-  const c = rowFingerprint({ 人物A: '萧景行', 人物B: '陈渊' }, keys, true)
-  ok('🔴 无序对：A-B 与 B-A 指纹相同（否则每次整理都会把同一条关系反着再写一遍）', a === b, `${a} vs ${b}`)
+  const a = rowFingerprint({ 人物A: '萧景行', 人物B: '萧景炎' }, keys, false)
+  const b = rowFingerprint({ 人物A: '萧景炎', 人物B: '萧景行' }, keys, false)
+  const c = rowFingerprint({ 人物A: '萧景行', 人物B: '陈渊' }, keys, false)
+  ok('🔴 有序模式（关系表当前口径）：A-B 与 B-A 指纹不同（有向对，反向算另一条）', a !== b, `${a} vs ${b}`)
   ok('换一个人指纹就不同（判重不是恒真）', a !== c)
-  const ordered = rowFingerprint({ 人物A: '萧景行', 人物B: '萧景炎' }, keys, false)
-  ok('有序模式下 A-B 与 B-A 指纹不同（证明上一条不是"判重恒真"造成的假象）',
-    ordered !== rowFingerprint({ 人物A: '萧景炎', 人物B: '萧景行' }, keys, false))
+  const unorderedAB = rowFingerprint({ 人物A: '萧景行', 人物B: '萧景炎' }, keys, true)
+  ok('通用函数保留无序模式：unordered=true 时 A-B 与 B-A 指纹相同（供将来真正无序对的表复用）',
+    unorderedAB === rowFingerprint({ 人物A: '萧景炎', 人物B: '萧景行' }, keys, true))
   ok('空白差异不影响判重（全角空格 / 顿号等标点被归一）',
-    rowFingerprint({ 人物A: '萧 景行', 人物B: '萧景炎' }, keys, true) === a)
+    rowFingerprint({ 人物A: '萧 景行', 人物B: '萧景炎' }, keys, false) === a)
 }
 
 // ---------- ⑥ 短路：没有材料 / 已中止时不调模型 ----------

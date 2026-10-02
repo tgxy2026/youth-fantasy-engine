@@ -291,10 +291,56 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     // 🔴 依赖只写 tab.id：本 effect 是「切页签时重置」，故意不跟 rows/drafts 等联动
   }, [tab.id])
 
-  const saveCalendars = (next: CalendarDef[]) => {
+  /**
+   * 保存历法清单（2.7.2：改由页头「历法规则」弹窗统一提交，见 `CalendarRuleModal`）。
+   *
+   * 🔴 `renames` ＝「改名」的连带更新。历法是**项目级**的，历史事件 / 时间脉络两张表的
+   *    「历法」列都引用它。若只改配置不改行，那些行就成了下拉里查不到的孤儿值
+   *    （时间轴上还会因取不到历法权重而排序错乱）。所以改名要一次性把两张表里
+   *    所有引用旧名的行改成新名。
+   * ⚠️ **删除不在这里处理**：按定版口径，删除只把历法从清单移除，已填的行保留旧名文本
+   *    （清空行＝销毁作者数据，交给他自己决定要不要改）。
+   */
+  const saveCalendars = useCallback(async (
+    next: CalendarDef[],
+    renames: Array<{ from: string; to: string }> = [],
+  ) => {
     setCalendars(next)
-    setSetting('calendars', next)
-  }
+    void setSetting('calendars', next)
+    if (renames.length === 0) return
+
+    const map = new Map(renames.map(r => [r.from, r.to]))
+    const hit: string[] = []
+    for (const tid of ['history', 'timeline']) {
+      const list = await getTableRows(tid)
+      let changed = 0
+      for (const row of list) {
+        const cur = (row.data['历法'] ?? '').trim()
+        const to = map.get(cur)
+        if (!to) continue
+        await saveTableRow({ ...row, data: { ...row.data, '历法': to } })
+        changed++
+      }
+      if (changed === 0) continue
+      hit.push(`${tid === 'history' ? '历史事件' : '时间脉络'} ${changed} 行`)
+      // 当前页签就是这张表 ⇒ 内存态（含未保存草稿）一起改，否则界面仍显示旧名、一保存又写回去
+      if (tab.id === tid) {
+        setRows(prev => prev.map(r => {
+          const to2 = map.get((r.data['历法'] ?? '').trim())
+          return to2 ? { ...r, data: { ...r.data, '历法': to2 } } : r
+        }))
+        setDrafts(prev => {
+          const out: Record<string, Record<string, string>> = {}
+          for (const [rid, fields] of Object.entries(prev)) {
+            const to2 = map.get((fields['历法'] ?? '').trim())
+            out[rid] = to2 ? { ...fields, '历法': to2 } : fields
+          }
+          return out
+        })
+      }
+    }
+    if (hit.length > 0) showToast(`历法改名已同步：${hit.join('、')}`)
+  }, [tab.id])
 
   // 历法规则（一年几个月 / 每月几天）—— 项目级，月/日下拉与"持续时长"都按它算
   const { rule: calendarRule, setRule: setCalendarRule } = useCalendarRule()

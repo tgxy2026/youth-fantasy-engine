@@ -48,7 +48,7 @@ interface Props {
 
 export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', features: [] }, focusRowId, onFocusConsumed }: Props) {
   const model = useTableSheetModel({ tab, focusRowId, onFocusConsumed })
-  /** 「历法规则」弹窗（一年几个月 / 每月几天） */
+  /** 「历法规则」弹窗（历法清单 + 一年几个月 / 每月几天） */
   const [showCalRule, setShowCalRule] = useState(false)
 
   const {
@@ -69,7 +69,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 人物关系分组
     relationGroups, 
     // 历法
-    calendars, calendarRule, setCalendarRule,
+    calendars, saveCalendars, calendarRule, setCalendarRule,
     // AI 入口
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, showImport, setShowImport, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize, handleImport,
   } = model
@@ -102,7 +102,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 · 部分列是专用控件：真实日期列（如发布日期、写作进度日期）点开弹出月历选择；人物关系的「人物A / 人物B」从已创建角色卡中选择、不可手填。
 · 带「编号 / 章节号」的表按编号自动排序，空白沉底（章节总表例外：按创建时间倒序，最新写的章节在最上面）；编号不可重复，删除后的编号会被后续新增的条目补上（补最小的空号），删除前有引用检查提示。
 · 单元格里出现 F0001 / H0001 这类编号，会自动生成跳转按钮，直达伏笔表 / 历史事件。
-· 历史事件、时间脉络页签可在右上「表格 ⇄ 时间轴」切换视图；时间轴按「历法」列的数值判定跨历法先后顺序，可在表格的「历法」列填写（项目级多历法配置，支持新增 / 改名 / 改数值）。
+· 历史事件、时间脉络页签可在右上「表格 ⇄ 时间轴」切换视图；时间轴按「历法」列的数值判定跨历法先后顺序。历法的全部设置都在页头「历法规则」里统一管理（新增 / 改名 / 删除 / 改数值），表格的「历法」列只做选择 —— 改名会连带更新两张表里已引用旧名的行，删除则只把历法从清单移除、已填的行保留旧名文本。
 · 这两张表的时间是「发生时间 / 结束时间」两端：一天内的事两端填同一天，持续性的事件填上结束时间，时间轴会用一段横条画出这段时长。年份可填负数与 0（如 -300 = 公元前 300 年）；「一年几个月、每月几天」在页头「历法规则」里改（默认 12 月 × 30 天）。
 · 时间轴的「间距」可切「等距」（默认）与「按时间」：按真实时间差排布；遇到超长空档会自动压缩，并在轴上画断裂符 ⟋⟋ 标出真实跨度（悬停看详情），避免整条轴被一个空档撑爆。
 · 人物关系按「人物A / 人物B」自动归入双方文件夹，便于按人查阅；右上「表格 ⇄ 关系图」可切换关系图。同一对人物 / 势力可登记多条关系（「人物A → 人物B」为有向，A 是视角主体；如既「盟友」又「暗中提防」），只有「同对 + 同关系类型」才算重复。
@@ -421,12 +421,18 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {showDedupAI && (
         <TermDedupPanel rows={rows.map(r => r.data)} onClose={() => setShowDedupAI(false)} />
       )}
-      {/* 条件渲染而非常挂：弹窗内部的两个输入框初值来自 props，常挂会拿到规则异步加载前的旧值 */}
+      {/* 条件渲染而非常挂：弹窗内部的输入框初值来自 props，常挂会拿到历法异步加载前的旧值 */}
       {showCalRule && (
         <CalendarRuleModal
           open
           rule={calendarRule}
-          onSave={next => { setCalendarRule(next); setShowCalRule(false) }}
+          calendars={calendars}
+          onSave={({ rule: nextRule, calendars: nextCalendars, renames }) => {
+            setCalendarRule(nextRule)
+            // 改名要连带更新已引用旧名的行（历史事件 / 时间脉络），见 saveCalendars 的注释
+            void saveCalendars(nextCalendars, renames)
+            setShowCalRule(false)
+          }}
           onClose={() => setShowCalRule(false)}
         />
       )}

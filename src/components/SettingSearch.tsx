@@ -517,13 +517,12 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                       />
                                     </div>
                                   ) : f.type === 'calendar-select' ? (
-                                    /* 历法列：从项目级历法配置选择，可新增/删改/数值，与设定表完全一致 */
+                                    /* 历法列：只从项目级历法配置里选；新增/改名/删除都在时间轴页头的「历法规则」弹窗 */
                                     <div className="mt-0.5">
                                       <CalendarSelect
                                         value={draft}
                                         onChange={v => { setDraft(v); saveField(doc, f, v) }}
                                         calendars={calendars}
-                                        onCalendarsChange={next => { setCalendars(next); db.setSetting('calendars', next) }}
                                       />
                                     </div>
                                   ) : (
