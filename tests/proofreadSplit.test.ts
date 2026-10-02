@@ -108,8 +108,11 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('编辑器里文字层不请求设定资料、逻辑层才请求（与任务层一致）',
     /if \(scope === 'logic'\)/.test(ed) && /buildProjectContext/.test(ed))
   ok('颉文姬里同样是「逻辑层才读设定」', /if \(scope === 'logic'\)/.test(jw))
-  ok('🔴 颉文姬标注了"同一时刻只跑一块"（本面板共用一个取消器，并发会互相顶掉）',
-    /同一时刻只允许跑一块/.test(jw) && /propsRunning/.test(jw))
+  // 🔴 2.6.4：颉文姬迁到任务中心后是**真并行**，不再是「同一时刻只跑一块」的互斥模型 ——
+  //    所以口径换成并发安全：每块都必须带**章节归属键**，
+  //    否则 A 章跑完切到 B 章，会把 A 章的报告显示成 B 章的。
+  ok('🔴 颉文姬每块都带章节归属键（真并行下防跨章串报告）',
+    /focusChapterId/.test(jw) && /chapterOwned\(/.test(jw))
 }
 
 // ---------- ⑥ 数据源声明与额度说明 ----------

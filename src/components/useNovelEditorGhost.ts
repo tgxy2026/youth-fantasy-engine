@@ -24,6 +24,7 @@ import * as db from '../lib/db'
 import { showToast } from './dialogs'
 import { aiInlineSuggest, type InlineSuggestLength } from '../lib/aiTasks'
 import { buildInlineBriefing } from '../lib/aiContext'
+import { buildStyleNote, loadStyleDims, saveStyleDims } from '../lib/companionStyle'
 import { isCancelled } from '../lib/ai'
 import {
   GHOST_DEBOUNCE_MS, GHOST_CONTEXT_CHARS, GHOST_MAX_FAILS, GHOST_CACHE_MAX, stitchGhostBefore,
@@ -73,6 +74,13 @@ export function useNovelEditorGhost({
   const [companionDeAi, setCompanionDeAi] = useState(() => localStorage.getItem('novel-companion-deai') !== '0')
   /** ③ 作者自定义风格补充（本机记忆，默认空）——不设文风枚举，只留这一个自由口子 */
   const [companionStyleNote, setCompanionStyleNote] = useState(() => localStorage.getItem('novel-companion-style') || '')
+  /** 2.6.4 文风补充·**多维多选**（本机全局记忆，与上面那句自定义并存、合成后一起注入） */
+  const [companionStyleDims, setDimsRaw] = useState<string[]>(loadStyleDims)
+  /** setter 顺带落盘 —— 调用方（设置窗）只管给新值，别让它自己操心 localStorage */
+  const setCompanionStyleDims = useCallback((next: string[]) => {
+    setDimsRaw(next)
+    saveStyleDims(next)
+  }, [])
   /**
    * ② 是否把《写作规范》（坏习惯清单 / 标点规范 / 视角规则）锚进伴写。
    * 默认开 —— 它比任何「文风枚举」都准；但有的作者不希望对白被自己列的规矩绑住，所以给一个关的入口。
@@ -114,8 +122,9 @@ export function useNovelEditorGhost({
   /** 拼 ghost 用的请求 key：同前文 + 同参数才复用缓存（useCallback：它是唯一依赖 state 的取值函数，
    *  进 effect 依赖数组才不会让伴写闭包读到旧的档位/开关） */
   const ghostKey = useCallback(
-    (before: string) => `${companionLen}|${companionDeAi}|${companionStyleNote}|${before.slice(-600)}`,
-    [companionLen, companionDeAi, companionStyleNote],
+    // 维度也必须入 key：改了侧重再在同一位置停笔，要重新问一次模型而不是复用旧缓存
+    (before: string) => `${companionLen}|${companionDeAi}|${companionStyleNote}|${companionStyleDims.join(',')}|${before.slice(-600)}`,
+    [companionLen, companionDeAi, companionStyleNote, companionStyleDims],
   )
 
   /**
@@ -166,7 +175,8 @@ export function useNovelEditorGhost({
       const text = await aiInlineSuggest(before, {
         projectContext: ctx.projectContext,
         styleSpec: ctx.styleSpec,       // ② 《写作规范》负面清单（可关时上面已置空）
-        styleNote: companionStyleNote,  // ③ 作者自定义补充
+        // ③ 作者自定义补充：勾选的维度 + 一句话原话合成（两项都空时返回空串 ⇒ 整层不注入）
+        styleNote: buildStyleNote(companionStyleDims, companionStyleNote),
         length: companionLen,
         deAiFlavor: companionDeAi,
         // 「换一句」才传：把上一句喂回去要求换个写法（不传＝首次建议）
@@ -194,7 +204,7 @@ export function useNovelEditorGhost({
       // 否则 busy 永久卡 true、钢笔键一直转圈（审计 2026-09-28 抓出）。
       if (!ac.signal.aborted || ghostAbort.current === ac) setGhostBusy(false)
     }
-  }, [activeId, companionLen, companionDeAi, companionStyleNote, loadGhostContext])
+  }, [activeId, companionLen, companionDeAi, companionStyleNote, companionStyleDims, loadGhostContext])
 
   /**
    * 伴写主循环：光标 / 正文变化 → 800ms 防抖 → 请求 → 透出 ghost。
@@ -355,7 +365,8 @@ export function useNovelEditorGhost({
 
   return {
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi,
-    companionStyleNote, setCompanionStyleNote, companionStyleSpec, setCompanionStyleSpec,
+    companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims,
+    companionStyleSpec, setCompanionStyleSpec,
     styleNotePrompt, setStyleNotePrompt, ghost, ghostBusy, dismissGhost, refreshGhost, onEditorKeyDown,
   }
 }

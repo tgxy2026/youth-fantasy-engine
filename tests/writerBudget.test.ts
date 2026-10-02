@@ -28,6 +28,8 @@ const LEGACY: Record<WriterBudgetKind, number> = {
   'consistency-selfcheck': 8000,
   'project-diagnose': 12000,
   'organize-rows': 9000,
+  // 表格导入 · AI 智能拆分（2.7.0 新增）：与整理同档 1.125 ⇒ 出厂 9000
+  'table-import': 9000,
   'ai-assist': 4000,
   'name-suggest': 3000,
   // 灵感融合（2.5.1·A3 新增）：按 0.5 档，出厂即 4000（灵感条目短，设定摘要同脑暴档）

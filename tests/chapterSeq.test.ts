@@ -3,6 +3,7 @@
 // 时光机全都依赖它。派生逻辑一旦出错，症状是"顺序莫名乱了"，作者极难察觉根因。
 // 故此处用精确断言（而非只要求不炸的软断言）锁死语义。
 import { flattenChapters, chapterSeqMap, chapterSeqOf, sortChapters } from '../src/lib/chapterSeq'
+import { FREE_VOLUME_ORDER } from '../src/lib/freeVolume'
 import type { Chapter, Volume } from '../src/lib/types'
 
 let pass = 0, fail = 0
@@ -93,6 +94,23 @@ const ch = (id: string, volumeId: string, order: number, extra: Partial<Chapter>
   ok('空输入返回空数组', flattenChapters([], []).length === 0)
   const chs = [ch('orphan', '不存在的卷', 0)]
   ok('章节所属卷不存在时被丢弃（不进入叙事序）', flattenChapters([vol('v1', 0)], chs).length === 0)
+}
+
+// ---------- 9. 自由卷：排最前但不占正文序号（2.6.4）----------
+{
+  const vols: Volume[] = [vol('v1', 0), { ...vol('vf', FREE_VOLUME_ORDER), isFree: true }]
+  const chs = [ch('free1', 'vf', 0), ch('free2', 'vf', 1), ch('c1', 'v1', 0), ch('c2', 'v1', 1)]
+  // ① 自由卷排最前（哨兵 order 为负）
+  const order = flattenChapters(vols, chs).map(c => c.id).join(',')
+  ok('自由卷章节排在正文之前', order === 'free1,free2,c1,c2', order)
+  // ② 但自由章不占号：正片仍从 1 起
+  const m = chapterSeqMap(vols, chs)
+  ok('自由章返回 0（不占号）', m.get('free1') === 0 && m.get('free2') === 0, `${m.get('free1')},${m.get('free2')}`)
+  ok('正片仍从第1章起（自由卷不挤占序号）', m.get('c1') === 1 && m.get('c2') === 2, `${m.get('c1')},${m.get('c2')}`)
+  ok('哨兵值恒小于真卷 order（0）', FREE_VOLUME_ORDER < 0, String(FREE_VOLUME_ORDER))
+  // 反面守卫：不排除自由卷时正片序号会被顶成 3/4 —— 证明本用例有效
+  const naive = flattenChapters(vols, chs).map((c, i) => [c.id, i + 1] as const)
+  ok('反面：不排除自由卷会顶号（本用例有效性证明）', naive[2][1] === 3, String(naive[2][1]))
 }
 
 console.log(`\nchapterSeq: ${pass} passed, ${fail} failed`)

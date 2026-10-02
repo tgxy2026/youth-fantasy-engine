@@ -66,10 +66,12 @@ ok('parseStoryDateKey 边界', parseStoryDateKey('3024年3月9日') === 30240309
 
 // ---------- C. autoCode ----------
 ok('自动编号：空表续 0001', nextAutoCode('secrets', []) === 'S0001')
-ok('自动编号：乱序取最大+1', nextAutoCode('secrets', [
+// ⚠️ 规则已于 2026-09-29 由「最大 +1」改为**顺序补缺**（删错了能补回来），
+//    口径以 tests/autoCode.test.ts 为准 —— 这里额外钉住「与传入顺序无关」。
+ok('自动编号：乱序也能正确补缺（最大+1 已退役）', nextAutoCode('secrets', [
   { id: 'r1', projectId: 'p', tabId: 'secrets', order: 0, data: { '编号': 'S0003' } },
   { id: 'r2', projectId: 'p', tabId: 'secrets', order: 1, data: { '编号': 'S0001' } },
-] as TableRow[]) === 'S0004')
+] as TableRow[]) === 'S0002')
 ok('自动编号：非标编号不干扰默认续号', nextAutoCode('secrets', [
   { id: 'r1', projectId: 'p', tabId: 'secrets', order: 0, data: { '编号': 'X9!' } },
 ] as TableRow[]) === 'S0001')

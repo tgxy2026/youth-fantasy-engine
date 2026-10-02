@@ -12,13 +12,14 @@ import { ForeshadowBoard, ContinuityCheck, StyleAudit } from './AuditModals'
 // 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
 import FormatModal from './FormatModal'
 import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '../lib/indent'
+import { nextVolumeNo } from '../lib/freeVolume'
 import {
   FolderPlus, Trash2, PenLine, ChevronDown,
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
   ShieldAlert, History, Search, Lock, AlignLeft, Upload, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
   Command, Highlighter, BookOpen, Users, X, Sparkles, Loader2, Wand2, Layers, PenTool,
-  Undo2, Redo2
+  Undo2, Redo2, FilePlus2
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
@@ -32,6 +33,8 @@ import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import NovelEditorChapterTree from './NovelEditorChapterTree'
 import ExportFormatDialog from './ExportFormatDialog'
+import { CompanionStyleDialog } from './CompanionStyleDialog'
+import { dimLabels } from '../lib/companionStyle'
 
 interface Props {
   onStatsChange?: () => void
@@ -76,7 +79,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // 编辑区 refs 与光标同步
     scrollRef, taRef, mirrorRef, ghostRef, selRef, syncSel, getSelText, syncTypewriter,
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
-    companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
+    companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
     summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
@@ -523,7 +526,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     ? 'AI 伴写：已开启（点击查看说明、档位与开关）'
                     : 'AI 伴写：已关闭（点击查看说明、档位与开关）'}
               >
-                {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Ctrl+Enter 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· 对建议不满意 → 按 Alt+/ 换一句（会避开刚才那句，不会给你同一句）；\n· Alt+\\ 可随时手动触发一次；\n· Tab / Shift+Tab 归编辑器缩进，与伴写无关。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面这句自定义补充。\n\n'}
+                {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Ctrl+Enter 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· 对建议不满意 → 按 Alt+/ 换一句（会避开刚才那句，不会给你同一句）；\n· Alt+\\ 可随时手动触发一次；\n· Tab / Shift+Tab 归编辑器缩进，与伴写无关。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面的文风补充（可勾选本次想补的方面，也可一句话描述）。\n\n'}
                 <AIDataSourceNote feature="inline-suggest" />
                 <div className="mt-1.5 space-y-1.5">
                   <div className="flex items-center gap-1.5">
@@ -556,11 +559,15 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-ink-400 shrink-0">文风补充</span>
-                    <Button variant="toggle" size="xs" selected={!!companionStyleNote}
+                    <Button variant="toggle" size="xs" selected={!!companionStyleNote || companionStyleDims.length > 0}
                       onClick={() => setStyleNotePrompt(true)}
                       className="max-w-[13rem]"
-                      title={companionStyleNote || '点一句话描述你想要的文风，例如"冷硬白描，少心理活动，多用短对白"'}>
-                      <span className="truncate">{companionStyleNote || '未设置（点击填写）'}</span>
+                      title={companionStyleDims.length
+                        ? `已选 ${companionStyleDims.length} 项：${dimLabels(companionStyleDims)}${companionStyleNote ? '\n原话：' + companionStyleNote : ''}`
+                        : (companionStyleNote || '点开勾选本次想补的方面（可多选），也可一句话描述，例如「冷硬白描，少心理活动，多用短对白」')}>
+                      <span className="truncate">{companionStyleDims.length
+                        ? `已选 ${companionStyleDims.length} 项${companionStyleNote ? ' + 原话' : ''}`
+                        : (companionStyleNote || '未设置（点击选择）')}</span>
                     </Button>
                   </div>
                   {/* 总开关：按老大要求放在设置下面，并掉与它重复的那个独立开关图标 */}
@@ -813,9 +820,14 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             <PenLine size={32} className="text-ink-700" />
             <div className="text-sm">选择左侧章节，或新建一卷开始创作</div>
             {volumes.length === 0 && (
-              <Button variant="primary" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} className="px-4 py-2 rounded-lg text-13 transition-colors">
-                <FolderPlus size={14} className="inline mr-1.5" />新建第一卷
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="primary" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} className="px-4 py-2 rounded-lg text-13 transition-colors">
+                  <FolderPlus size={14} className="inline mr-1.5" />新建第一卷
+                </Button>
+                <Button variant="secondary" onClick={() => setNamePrompt({ kind: 'addFreeCh', title: '新建自由章节', def: `第${nextChapterNo}章` })} className="px-4 py-2 rounded-lg text-13 transition-colors">
+                  <FilePlus2 size={14} className="inline mr-1.5" />新建自由章节
+                </Button>
+              </div>
             )}
           </div>
         )}
@@ -904,24 +916,20 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
         onSubmit={submitNamePrompt}
         onCancel={() => setNamePrompt(null)}
       />
-      {/* 2.2.0 伴写：自定义文风补充（本机记忆，只影响 AI 伴写的建议口吻） */}
-      <PromptModal
+      {/* 2.6.4 伴写：文风补充 = 多维多选 + 一句话自定义（本机记忆，只影响 AI 伴写的建议口吻） */}
+      <CompanionStyleDialog
         open={styleNotePrompt}
-        title="伴写文风补充"
-        label="用一句话描述你想要的文风（留空 = 只用前文与《写作规范》锚定）"
-        defaultValue={companionStyleNote}
-        placeholder="例如：冷硬白描，少心理活动，多用短对白"
-        allowEmpty
-        confirmText="保存"
-        onSubmit={v => {
-          const val = (v || '').trim()
-          setCompanionStyleNote(val)
-          if (val) localStorage.setItem('novel-companion-style', val)
+        value={{ dims: companionStyleDims, note: companionStyleNote }}
+        onSave={v => {
+          const note = v.note.trim()
+          setCompanionStyleDims(v.dims)
+          setCompanionStyleNote(note)
+          if (note) localStorage.setItem('novel-companion-style', note)
           else localStorage.removeItem('novel-companion-style')
           setStyleNotePrompt(false)
-          showToast(val ? '已设置伴写文风补充' : '已清空伴写文风补充', 'success')
+          showToast(v.dims.length || note ? '已保存伴写文风补充' : '已清空伴写文风补充', 'success')
         }}
-        onCancel={() => setStyleNotePrompt(false)}
+        onClose={() => setStyleNotePrompt(false)}
       />
       {/* C6（2.4.2）导出格式：平台粘贴版参数 + Markdown 标题层级 */}
       <ExportFormatDialog

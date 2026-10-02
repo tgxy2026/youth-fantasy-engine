@@ -22,13 +22,21 @@ export function flattenChapters(vols: Volume[], chs: Chapter[]): Chapter[] {
 
 /**
  * 章节 id → 全局连续序号（从 1 起）。
- * 标了「不计入序号」的章节返回 0 —— 它们仍参与排序，只是不占号。
+ *
+ * 返回 0 ＝ **不占号**（仍参与排序，只是不编号），两种来源：
+ *   ① 作者标了「不计入序号」（`excludeFromNumbering`）；
+ *   ② 章节所在卷是「自由章节」托管卷 —— 自由卷排在全书最前，但它的章节**不占正文序号**，
+ *      正片仍从「第1章」起（口径见 lib/freeVolume.ts 的 FREE_VOLUME_ORDER）。
+ *
+ * ⚠️ 这里**内联判定** `isFree`、不 import `lib/freeVolume`：本章在 db 层之下（db/migrations 依赖它），
+ *    反向引 freeVolume（它引 ./db）会成环、违反分层。判定口径与 freeVolume.isFreeVolume 一致（只认字段）。
  */
 export function chapterSeqMap(vols: Volume[], chs: Chapter[]): Map<string, number> {
   const out = new Map<string, number>()
+  const freeVolIds = new Set(vols.filter(v => v.isFree === true).map(v => v.id))
   let no = 0
   for (const c of flattenChapters(vols, chs)) {
-    if (c.excludeFromNumbering) { out.set(c.id, 0); continue }
+    if (c.excludeFromNumbering || freeVolIds.has(c.volumeId)) { out.set(c.id, 0); continue }
     no++
     out.set(c.id, no)
   }

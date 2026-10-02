@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
+import { realVolumes } from '../lib/freeVolume'
 import * as db from '../lib/db'
 import type { Volume, Chapter, TableRow } from '../lib/types'
 import {
@@ -164,7 +165,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
     {
       label: '累计字数',
       value: totalWords > 10000 ? `${(totalWords / 10000).toFixed(2)} 万` : `${totalWords}`,
-      sub: `${chapters.length} 章 · ${volumes.length} 卷`,
+      sub: `${chapters.length} 章 · ${realVolumes(volumes).length} 卷`,
       icon: <BookOpen size={16} />, color: 'text-amber',
       help: withPunct
         ? '正文编辑器里全部章节的字数之和。当前口径＝汉字＋标点（网文平台计费口径），按正文实时重算，不改动已保存的数据。'

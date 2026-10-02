@@ -2,8 +2,9 @@ import { Z } from '../lib/zLayer'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import type { Volume, Chapter, ChapterStatus } from '../lib/types'
-import { BookMarked, Upload, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash } from 'lucide-react'
+import { BookMarked, Upload, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
+import { isFreeVolume, realVolumes, nextVolumeNo } from '../lib/freeVolume'
 import { useEffect, useRef } from 'react'
 
 /**
@@ -43,7 +44,7 @@ interface Props {
   setDragId: Dispatch<SetStateAction<string | null>>
   resetDrag: () => void
   handleDrop: () => void
-  setNamePrompt: Dispatch<SetStateAction<null | { kind: 'addVol' | 'addCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>>
+  setNamePrompt: Dispatch<SetStateAction<null | { kind: 'addVol' | 'addCh' | 'addFreeCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>>
   nextChapterNo: number
   activeId: string | null
   openChapter: (id: string) => void
@@ -84,7 +85,7 @@ export default function NovelEditorChapterTree({
           <span className="text-12 font-semibold text-ink-200 flex items-center gap-1.5">
             <BookMarked size={13} className="text-amber" /> 章节
             <HelpPopover title="卷章目录怎么用" width="22rem" side="right">
-              {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「下载」图标一键导出全书 TXT。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
+              {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 不想归卷的章节走右上「新建自由章节」—— 它们统一收进「自由章节」托管卷（默认折叠、不可删除、排全书最后），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「下载」图标一键导出全书 TXT。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
             </HelpPopover>
           </span>
           <div className="flex gap-1">
@@ -94,21 +95,26 @@ export default function NovelEditorChapterTree({
               title="导出全书 TXT">
               <Upload size={14} />
             </Button>
-            <Button variant="icon-amber" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${volumes.length + 1}卷` })} title="新建卷" className="p-1 shrink-0">
+            <Button variant="icon-amber" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} title="新建卷" className="p-1 shrink-0">
               <FolderPlus size={13} />
+            </Button>
+            <Button variant="icon-amber" onClick={() => setNamePrompt({ kind: 'addFreeCh', title: '新建自由章节', def: `第${nextChapterNo}章` })} title="新建自由章节（不归入任何卷，收进「自由章节」托管卷）" className="p-1 shrink-0">
+              <FilePlus2 size={13} />
             </Button>
           </div>
         </div>
 
         <div ref={listRef} className="flex-1 overflow-y-auto py-2 px-2">
-          {volumes.length === 0 && (
+          {realVolumes(volumes).length === 0 && (
             <div className="text-center py-14 text-ink-500 text-12 border border-dashed border-ink-700 rounded-lg mx-1">
               <FolderPlus size={18} className="mx-auto mb-2 text-ink-600" />
-              点击右上角新建第一卷
+              点击右上角「新建卷」开始，或直接「新建自由章节」
             </div>
           )}
           {volumes.map(vol => {
             const chs = chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.order - b.order)
+            // 自由卷＝托管「未归类章节」的系统保留卷：不可拖、不可删，样式与真卷区分（见 lib/freeVolume.ts）
+            const free = isFreeVolume(vol)
             const open = expanded.has(vol.id)
             const volWords = chs.reduce((s, c) => s + c.wordCount, 0)
             return (
@@ -125,11 +131,11 @@ export default function NovelEditorChapterTree({
                   onDrop={e => { e.preventDefault(); handleDrop() }}
                 >
                   <span
-                    draggable
-                    onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', vol.id); setDragKind('vol'); setDragId(vol.id) }}
+                    draggable={!free}
+                    onDragStart={e => { if (free) { e.preventDefault(); return } e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', vol.id); setDragKind('vol'); setDragId(vol.id) }}
                     onDragEnd={() => resetDrag()}
-                    className="opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0"
-                    title="拖动重排分卷"
+                    className={free ? 'opacity-25 shrink-0 text-ink-600' : 'opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0'}
+                    title={free ? '「自由章节」卷固定在全书最前，不参与重排' : '拖动重排分卷'}
                   >
                     <GripVertical size={12} />
                   </span>
@@ -143,10 +149,11 @@ export default function NovelEditorChapterTree({
                     }}>
                     {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   </Button>
+                  {free && <Inbox size={11} className="text-ink-500 shrink-0" />}
                   <span
                     onClick={() => setNamePrompt({ kind: 'renVol', title: '修改卷名', def: vol.title, payload: vol })}
-                    className="text-12 font-semibold text-ink-100 cursor-pointer hover:text-amber transition-colors flex-1 truncate"
-                    title="点击改卷名"
+                    className={`text-12 font-semibold cursor-pointer hover:text-amber transition-colors flex-1 truncate ${free ? 'text-ink-400' : 'text-ink-100'}`}
+                    title={free ? '「自由章节」：托管未归类章节的系统保留卷（可改名，不可删除）' : '点击改卷名'}
                   >
                     {vol.title}
                   </span>
@@ -158,13 +165,15 @@ export default function NovelEditorChapterTree({
                   >
                     <FilePlus2 size={12} />
                   </Button>
-                  <Button variant="icon-danger"
-                    title="删除该卷"
-                    aria-label="删除该卷"
-                    onClick={() => removeVolume(vol)}
-                    className="opacity-40 group-hover:opacity-100 p-0.5 transition-all">
-                    <Trash2 size={12} />
-                  </Button>
+                  {!free && (
+                    <Button variant="icon-danger"
+                      title="删除该卷"
+                      aria-label="删除该卷"
+                      onClick={() => removeVolume(vol)}
+                      className="opacity-40 group-hover:opacity-100 p-0.5 transition-all">
+                      <Trash2 size={12} />
+                    </Button>
+                  )}
                 </div>
                 {open && (
                   <div className="ml-3 border-l border-ink-700 pl-1 mt-0.5 space-y-0.5">

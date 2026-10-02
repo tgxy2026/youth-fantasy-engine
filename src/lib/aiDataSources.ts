@@ -77,7 +77,8 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       { group: '光标前约 2000 字正文', items: [], note: '最准的风格样本' },
       { group: '精选设定（4 类）', items: ['作品定位', '世界设定', '主要角色', '名词术语'], note: '约 900 字预算，且不含章节目录' },
       { group: '《写作规范》', items: ['坏习惯清单', '标点规范', '视角切换规则'], note: '可在伴写弹窗里关掉' },
-      { group: '文风补充', items: [], note: '你在伴写弹窗里手写的那一句' },
+      { group: '去 AI 味文风纪律', items: [], note: '固定附加（可在伴写弹窗里关掉），钉在提示词末尾才有效' },
+      { group: '文风补充', items: [], note: '你在伴写弹窗里勾选的侧重维度（可多选）+ 手写的一句话；都没填则整层不注入' },
     ],
     excludes: ['除上面 4 类之外的设定表（国家势力 / 地理风物 / 物品资源等）', '其它章节的正文'],
   },
@@ -251,6 +252,16 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       { group: '本表已登记条目', items: [], note: '用于判重，模型不会重复生成已有的' },
     ],
   },
+  // 表格批量导入 · AI 智能拆分（2.7.0 · 社区反馈）
+  'table-import-split': {
+    label: '表格导入 · AI 智能拆分',
+    sources: [
+      { group: '你粘贴的那段内容（表格 / 散文设定）', items: [], note: '主要依据；长文会自动分段多次解析，分段之间不重叠' },
+      { group: '项目设定资料', items: CORE_TABLES, note: '约 9000 字预算；用于对齐人名 / 势力名，会排除本表；可在导入弹窗里关掉' },
+      { group: '候选值清单（程序算好，只发名称）', items: ['下拉列的可选值', '跨表引用表里已有的名称', '角色姓名'], note: '让模型从固定名单里挑，避免编出不存在的名称' },
+    ],
+    excludes: ['不读章节正文 —— 它只解析你粘贴的那段内容，不去全书里翻找'],
+  },
   'fill-template': {
     label: 'AI 补全（设定 / 角色卡）',
     sources: [
@@ -315,7 +326,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   'bookbreak-split': {
     label: '拆书 · AI 章节识别',
     sources: [
-      { group: '导入的原文采样', items: [], note: '只采样头部 / 中部 / 尾部约 9000 字，不是整本' },
+      { group: '导入的原文采样', items: [], note: '只采样头部 / 中部 / 尾部共约 7500 字，不是整本' },
       { group: '你填的章节标题示例', items: [], note: '原样逐条列出，AI 按这些行的格式规律找章节起始行' },
     ],
     excludes: ['AI 报出的行必须在原文里逐字命中才采信，命中不足 2 行整体弃用回退本地切分'],

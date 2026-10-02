@@ -27,6 +27,12 @@ win:
       arch:
         - x64
   icon: build/icon.ico
+  # 主 exe 的图标与版本资源由 afterPack 钩子写入（见上方 afterPack 说明与 scripts/after-pack.cjs）。
+  # 🔴 跳过 electron-builder 内置的 rcedit：本机它写主 exe 资源必报 `Fatal error: Unable to commit changes`，
+  #    且 electron-builder 24.13.3 在重试 4 次耗尽后**直接中止整个构建（exit 1）**、NSIS 阶段不再执行
+  #    （2026-10-02 实测连续 3 次；历史记录「失败但继续打包」已不成立）。本项目不做代码签名，
+  #    跳过该步无副作用；主 exe 元数据由 afterPack 保证（实测体积 181,097,984 逐字节一致、含开发组名与版本串）。
+  signAndEditExecutable: false
 
 nsis:
   oneClick: false                # 非一键安装：可自选安装目录

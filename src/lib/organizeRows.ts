@@ -78,17 +78,31 @@ export function organizeUnorderedOf(tab: TabDef): boolean {
  * 双重保险防重复：prompt 里明确告知已有条目（`existingKeys`）+ 返回后本地按关键列再去一遍重
  * （后者在 `aiOrganizeRows` 内实现）。
  */
-export async function organizeRows(tab: TabDef, o: OrganizeRunOptions): Promise<OrganizeResult> {
-  const keyCols = organizeKeyColsOf(tab)
-  const unordered = organizeUnorderedOf(tab)
-  // 编号列由系统自动续号，不让模型插手
-  const aiCols = (tab.columns ?? []).filter(c => c.name !== '编号')
+/**
+ * 逐列算出「模型填这一列时该用哪些候选值」。
+ *
+ * 🔴 这段逻辑**必须只此一份**：任何让模型"从固定清单里挑"的链路（AI 整理、拆书末尾整理、
+ *    表格导入的 AI 智能拆分）都走它 —— 各写一份的后果很具体：界面下拉里有的值，模型说没有；
+ *    模型编出一个下拉里不存在的值，写回去就成了幽灵选项 / 悬空引用。
+ */
+export interface CandidateOpts {
+  /** 目标表（select 列要按它读自定义选项） */
+  tab: TabDef
+  /** 日历定义（日期型列的候选取日历名） */
+  calendars?: CalendarDef[]
+  /** 角色可见性上下文（决定 NPC 页签的姓名是否纳入候选值） */
+  ctx?: VisCtx
+  /** 按列覆盖候选值（列名 → 允许值列表）。给了就以它为准，不再按列类型去库里算 */
+  allowedOverride?: Record<string, string[]>
+  /** 界面阶段提示（「正在读取下拉选项…」这类） */
+  onPhase?: (text: string) => void
+}
 
-  /**
-   * 下拉列的合法取值。
-   * 必须用与行内下拉完全一致的口径（resolveOptions）：直接给 col.options 会漏掉
-   * 用户自定义的选项，还会把已被隐藏 / 改名的旧内置项继续喂给模型。
-   */
+export async function resolveColumnCandidates(
+  cols: TableColumn[],
+  o: CandidateOpts,
+): Promise<(string[] | undefined)[]> {
+  const tab = o.tab
   // 跨表引用列的候选值缓存：同一张来源表在本次整理里只读一次（势力关系有 A/B 两列都引用《国家势力》）
   const refCache = new Map<string, string[]>()
   const charNames = await loadCharacterNames(o.ctx ?? { type: 'full', features: [] }).catch(() => [] as string[])
@@ -114,6 +128,20 @@ export async function organizeRows(tab: TabDef, o: OrganizeRunOptions): Promise<
     if (c.type === 'character' || c.type === 'characters') return charNames
     return undefined
   }
+  /**
+   * 下拉列的合法取值。
+   * 必须用与行内下拉完全一致的口径（resolveOptions）：直接给 col.options 会漏掉
+   * 用户自定义的选项，还会把已被隐藏 / 改名的旧内置项继续喂给模型。
+   */
+  o.onPhase?.('正在读取下拉选项…')
+  return Promise.all(cols.map(c => allowedOf(c)))
+}
+
+export async function organizeRows(tab: TabDef, o: OrganizeRunOptions): Promise<OrganizeResult> {
+  const keyCols = organizeKeyColsOf(tab)
+  const unordered = organizeUnorderedOf(tab)
+  // 编号列由系统自动续号，不让模型插手
+  const aiCols = (tab.columns ?? []).filter(c => c.name !== '编号')
 
   let ctx = ''
   if (o.useCtx !== false) {
@@ -129,8 +157,13 @@ export async function organizeRows(tab: TabDef, o: OrganizeRunOptions): Promise<
     ctx = built.text
   }
 
-  o.onPhase?.('正在读取下拉选项…')
-  const allowedList = await Promise.all(aiCols.map(c => allowedOf(c)))
+  const allowedList = await resolveColumnCandidates(aiCols, {
+    tab,
+    calendars: o.calendars,
+    ctx: o.ctx,
+    allowedOverride: o.allowedOverride,
+    onPhase: o.onPhase,
+  })
   const cols: OrganizeColumn[] = aiCols.map((c, i) => ({ name: c.name, desc: c.tip, allowed: allowedList[i] }))
   // 🔴 D 级（终结 / 弃用）不进判重清单 —— 它同样属于"不提供给模型"的数据：
   //    带上它，模型会以为"这条已登记过"从而跳过本该登记的新内容。

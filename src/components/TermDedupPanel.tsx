@@ -54,13 +54,13 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
     <ToolModal title="名词术语 AI 查重" icon={<Layers size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-11 text-ink-500">
-          让 AI 扫描术语表，找出同义 / 重复的概念并建议合并归一，避免"同一事物两个名字"的前后矛盾。未配置模型不影响手动录入。
+          让 AI 扫描「名词术语」表，找出同义 / 重复的概念并建议合并归一，避免"同一事物两个名字"的前后矛盾。未配置模型不影响手动录入。
         </span>
       </div>
       <AIDataSourceNote feature="term-dedup" />
 
       {terms.length === 0 && !done && (
-        <div className="text-12 text-ink-400 py-6 text-center">术语表还是空的，先登记一些术语再来查重。</div>
+        <div className="text-12 text-ink-400 py-6 text-center">「名词术语」表还是空的，先登记一些术语再来查重。</div>
       )}
 
       {terms.length > 0 && !done && (

@@ -38,12 +38,17 @@ export function nextAutoCode(
   const used = new Set<number>()
   const rowPrefixes = new Set<string>()
   for (const r of rows) {
-    const raw = ((drafts[r.id]?.[codeCol] ?? r.data[codeCol] ?? '') as string).trim()
-    if (!raw) continue
-    const m = raw.match(/^(\D*)(\d+)$/)
-    if (m) {
-      rowPrefixes.add(m[1])
-      used.add(parseInt(m[2], 10))
+    // 🔴 原值与草稿值**都算已占用**：草稿还没落库，库里那个编号仍然占着。
+    //    只按草稿算会把库里的编号「释放」掉 —— 新增行就可能抢用别人正在改的那个号。
+    const orig = ((r.data[codeCol] ?? '') as string).trim()
+    const draft = ((drafts[r.id]?.[codeCol] ?? '') as string).trim()
+    for (const raw of [orig, draft]) {
+      if (!raw) continue
+      const m = raw.match(/^(\D*)(\d+)$/)
+      if (m) {
+        rowPrefixes.add(m[1])
+        used.add(parseInt(m[2], 10))
+      }
     }
   }
   // 前缀沿用：用户把整表编号改成了自定义前缀（如「北域001」）时，新增行应跟随表内前缀，

@@ -32,6 +32,7 @@ import { PACE_PROMPTS } from './aiTasks/pace'
 import { READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
 import { INSPIRATION_PROMPTS } from './aiTasks/inspiration'
 import { BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
+import { TABLE_IMPORT_PROMPTS } from './aiTasks/tableImport'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
@@ -47,6 +48,10 @@ export type { FuseIdeaRequest, FusedIdea } from './aiTasks/inspiration'
 // 2026-09-27（2.6.1·R2）：拆书 AI 章节边界识别 —— 本地正则认不出标题时按作者示例挑行；严格采信在 bookbreak/aiSplit
 export { aiBookBreakSplitChapters, parseChapterLines, BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
 export type { BookBreakSplitRequest } from './aiTasks/bookBreakSplit'
+// 2026-10-02（2.7.0·社区反馈）：表格批量导入 · AI 智能拆分 —— 把粘贴的表格/散文解析成多条表格行，供导入预览勾选
+// 与「AI 整理」分工：整理是「从正文抽尚未登记的事实」（判重+增量），本任务是「把粘进来的内容解析成行」（不判重）
+export { aiSplitTableRows } from './aiTasks/tableImport'
+export type { ImportSplitColumn, ImportSplitRequest, ImportSplitResult } from './aiTasks/tableImport'
 export { aiContinuityAudit, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReview, aiDedupTerms, aiStyleCheck } from './aiTasks/audit'
 export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from './aiTasks/audit'
 export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from './aiTasks/jieWenJi'
@@ -55,7 +60,7 @@ export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput, stripInline
 export type { ChapterRewriteAction, ChapterRewriteOpts } from './aiTasks/rewrite'
 export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, parseExtractedEntities } from './aiTasks/extract'
 export type { SettingEntityType, ExtractedEntity } from './aiTasks/extract'
-export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest } from './aiTasks/inline'
+export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest, foldGhostNewlines } from './aiTasks/inline'
 export type { InlineSuggestLength, InlineSuggestOptions } from './aiTasks/inline'
 // 2026-09-20：`aiGenerateOutline`（从零排）与 `aiExtendOutline`（接着排）**合并为 `aiPlanOutline`** ——
 // 差别只剩「材料装的是什么」，两条路产出的都是 `OutlineResult`（卷 + 章），落库走同一个 `commitOutline`。
@@ -116,6 +121,8 @@ const PROMPT_ORDER = [
   'extract-entities',
   'bookbreak-split',
   'deai-rule',
+  // 2.7.0 追加在末尾：既可读又不动其它条目的既有顺序（数组先后 = 组内 UI 顺序）
+  'table-import-split',
 ]
 
 const PROMPT_SETS: PromptDef[][] = [
@@ -132,6 +139,7 @@ const PROMPT_SETS: PromptDef[][] = [
   BOOKBREAK_SPLIT_PROMPTS,
   INLINE_PROMPTS,
   CREATIVE_PROMPTS,
+  TABLE_IMPORT_PROMPTS,
 ]
 
 const byId = new Map<string, PromptDef>()

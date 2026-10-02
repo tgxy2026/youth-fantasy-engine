@@ -271,6 +271,8 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                 <p className="text-10 leading-relaxed text-ink-500">
                   内置 3 套去味儿提示词（即网络常见「去 AI 味儿 skill」的本地化版本），可切换或自定义；
                   润色结果异常时自动保留原稿。
+                  另外：**初稿生成时就已经带上同一套文风纪律**（模板词 / 句式 / 节奏三类判据），
+                  不是「先写出一股 AI 腔、再回头洗」 —— 两道一起才洗得干净。
                 </p>
               </div>
             )}
