@@ -4,7 +4,8 @@
 //   ① **10 包全覆盖**：每个题材包在 worldbase / power 两张表都有成套模块（漏一个包 = 打开就空白）；
 //   ② **共享键跨包一致**：9 个非默认包的共享模块「同名同键」⇒ 作者切包时这部分内容原样保留
 //      （这是「切包保留」承诺的**唯一技术根基**，所以要用字段键逐字比对，不能只看模块名）；
-//   ③ **题材显隐矩阵**：默认显示集与 §8.4 定案一致（历史全开、修真全关 ⇒ 老项目零变化）；
+//   ③ **题材显隐矩阵**：默认显示集按 §8.4 定案（修真全关 ⇒ 老项目零变化；力量体系与制度页签
+//      同等待遇 —— 只列有超凡的题材，无超凡三包默认隐藏、可由「页签」控件补开）；
 //   ④ **东方修真零破坏**：默认包模块是改造前现状的超集（老项目 / 示范项目字段一个不少）。
 //
 // 另把纯函数（别名归位 / 显示名弱替 / 子项称谓）与 modulesFor 的一致性一并钉住。
@@ -195,17 +196,30 @@ const moduleMap = (mods: FormModule[]) =>
 
 // ---------- 9. 题材显隐矩阵（tabVisible 的题材维度） ----------
 {
-  // 历史古代：六页签全开
-  ok('历史古代默认显示全部六个题材页签', PACK_TAB_IDS.every(t => packShowsTab('历史古代', t)),
-    PACK_TAB_IDS.filter(t => !packShowsTab('历史古代', t)).join('、') || '（全开）')
+  // 🔴 力量体系与四个制度页签同等待遇：只列有超凡 / 等级体系的题材
+  const POWER_ON: readonly GenrePack[] = ['东方修真', '西方奇幻', '都市异能', '科幻末世', '武侠江湖', '悬疑灵异', '游戏竞技']
+  const POWER_OFF: readonly GenrePack[] = ['都市现实', '历史古代', '女频言情']
+  ok('🔴 力量体系：7 个有超凡的题材默认显示', POWER_ON.every(p => packShowsTab(p, 'power')),
+    POWER_ON.filter(p => !packShowsTab(p, 'power')).join('、') || '（全开）')
+  ok('🔴 力量体系：无超凡的 3 个题材默认隐藏（可手动补开）', POWER_OFF.every(p => !packShowsTab(p, 'power')),
+    POWER_OFF.filter(p => packShowsTab(p, 'power')).join('、') || '（全关）')
+  ok('力量体系仍是受题材页签（在 PACK_TAB_IDS 内 ⇒ 可被「页签」控件补开）',
+    (PACK_TAB_IDS as readonly string[]).includes('power'))
+
   // 东方修真：只开世界总览 + 力量体系（四制度页签全关 ⇒ 老项目界面零变化）
   ok('🔴 东方修真只默认显示 worldbase + power（制度页签全关）',
     packShowsTab('东方修真', 'worldbase') && packShowsTab('东方修真', 'power')
     && !packShowsTab('东方修真', 'politics') && !packShowsTab('东方修真', 'economy')
     && !packShowsTab('东方修真', 'belief') && !packShowsTab('东方修真', 'justice'))
-  // 都市现实：worldbase/power/politics/economy 开，belief/justice 关
-  ok('都市现实：politics/economy 开、belief/justice 关',
+  // 历史古代：worldbase + 四制度开，力量体系关（可补开）
+  ok('历史古代默认显示 worldbase + 四制度（力量体系关、可补开）',
+    packShowsTab('历史古代', 'worldbase') && !packShowsTab('历史古代', 'power')
+    && packShowsTab('历史古代', 'politics') && packShowsTab('历史古代', 'economy')
+    && packShowsTab('历史古代', 'belief') && packShowsTab('历史古代', 'justice'))
+  // 都市现实：worldbase/politics/economy 开，power/belief/justice 关
+  ok('都市现实：politics/economy 开，力量体系/belief/justice 关',
     packShowsTab('都市现实', 'politics') && packShowsTab('都市现实', 'economy')
+    && !packShowsTab('都市现实', 'power')
     && !packShowsTab('都市现实', 'belief') && !packShowsTab('都市现实', 'justice'))
   // 非题材驱动的页签恒 true（不受题材矩阵影响）
   ok('非题材页签恒显示（如 master / char-main）',
@@ -270,8 +284,14 @@ const moduleMap = (mods: FormModule[]) =>
   // OR 而非 XOR：题材本来就给的页签，不受 features 影响
   ok('🔴 OR 而非 XOR：题材已显示的页签照常显示',
     tabVisible('worldbase', full('东方修真', [])) && tabVisible('power', full('东方修真', ['politics'])))
-  // 历史古代矩阵已全开，features 空也都在
-  ok('历史古代无需补开（矩阵已经全给）', PACK_TAB_IDS.every(t => tabVisible(t, full('历史古代'))))
+  // 🔴 力量体系与制度页签同等待遇：历史古代下 power 也默认隐藏、需补开
+  ok('🔴 历史古代：四制度已给，力量体系默认隐藏 → 可补开',
+    ['worldbase', 'politics', 'economy', 'belief', 'justice'].every(t => tabVisible(t, full('历史古代')))
+    && !tabVisible('power', full('历史古代'))
+    && tabVisible('power', full('历史古代', ['power'])))
+  // 东方修真：worldbase + power 是矩阵给的（无需补开）
+  ok('东方修真矩阵已给 worldbase + power（无需补开）',
+    tabVisible('worldbase', full('东方修真')) && tabVisible('power', full('东方修真')))
   // 非题材页签不受补开逻辑影响
   ok('非题材页签恒显示（补开逻辑不影响它们）',
     tabVisible('master', full('东方修真', [])) && tabVisible('chapter-master', full('东方修真', ['politics'])))

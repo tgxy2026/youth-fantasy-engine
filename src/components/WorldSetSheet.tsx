@@ -290,10 +290,14 @@ export default function WorldSetSheet({ tab }: Props) {
               + `${tab.description ?? ''}`}
             <AIDataSourceNote feature={tab.id} />
           </HelpPopover>
-          {/* 题材包切换（2.7.1）：老项目事后改题材的入口，六个受题材驱动的页签都有 */}
-          <GenrePackSwitcher onSwitched={onPackSwitched} />
-          {/* 页签显示（2.7.1 · B 案）：完整项目手动补开被题材隐藏的页签；自定义项目自身不渲染 */}
-          <TabVisibilityControl pack={pack} />
+          {/* 题材包切换 + 页签显示（2.7.1）：**只在「世界设定」**出现 —— 它是开书定位的总览页，
+              集中放作品级开关；力量体系与四个制度页签不再各自重复这两个控件。 */}
+          {tab.id === 'worldbase' && (
+            <>
+              <GenrePackSwitcher onSwitched={onPackSwitched} />
+              <TabVisibilityControl pack={pack} />
+            </>
+          )}
           <div className="ml-auto flex items-center gap-2">
             <Button variant="toggle" selected={dirty} disabled={!dirty || saving}
               onClick={() => void flush()} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"

@@ -110,16 +110,20 @@ export const PACK_TAB_IDS = ['worldbase', 'power', 'politics', 'economy', 'belie
 export type PackTabId = (typeof PACK_TAB_IDS)[number]
 
 /**
- * 「默认显示」矩阵（按 §8.4 定案）。**只列 ● 的包**，未列出的包 = 默认隐藏
- * （自定义项目仍可手动勾选开启 —— 见 schema.tabVisible 的 custom 分支）。
+ * 「默认显示」矩阵（按 §8.4 定案；2.7.1 收口时把 `power` 一格也收敛了）。**只列 ● 的包**，
+ * 未列出的包 = 默认隐藏，但**完整项目可用「页签」控件补开**（见 schema.tabVisible）。
  *
  * 🔴 为什么默认值要按题材收紧：这一格一旦全开，10 个题材包都会显示 7 个页签 ⇒
  *    又回到「历史作者看到境界阶梯」的老问题。`东方修真` **一个都不显示** ⇒
  *    老项目 / 示范项目连界面都不变（§8.8 甲案）。
+ *
+ * 🔴 `power` 与四个制度页签**同等待遇**：只列有超凡 / 等级体系的题材；无超自然的三包
+ *    （都市现实 / 历史古代 / 女频言情）改为默认隐藏、按需补开 —— 不再强制占用侧栏。
+ *    补开后仍走 §4.5 弱替名（见 POWER_TAB_NAME）。
  */
 const PACK_TAB_DEFAULT: Record<PackTabId, readonly GenrePack[]> = {
   worldbase: GENRE_PACKS,                                        // 所有题材都要世界总览
-  power: GENRE_PACKS,                                            // 无超自然题材用「弱替」而非隐藏（§4.5）
+  power: ['东方修真', '西方奇幻', '都市异能', '科幻末世', '武侠江湖', '悬疑灵异', '游戏竞技'],
   politics: ['西方奇幻', '都市现实', '历史古代', '科幻末世'],
   economy: ['都市现实', '历史古代', '科幻末世'],
   belief: ['西方奇幻', '历史古代', '悬疑灵异'],
@@ -138,6 +142,7 @@ export function packShowsTab(pack: GenrePack, tabId: string): boolean {
 /**
  * 「力量体系」在无超自然题材下**语义弱替**（§4.5）：
  * 页签结构、稳定 id（恒为 `power`）、15 个共享字段**全都不动**，只换显示名与模块内容。
+ * 🔴 收口后这三个题材里 power **默认隐藏**（可补开）；补开即按此弱替名显示。
  */
 const POWER_TAB_NAME: Partial<Record<GenrePack, string>> = {
   都市现实: '能力资源',
