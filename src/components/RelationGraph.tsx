@@ -1,16 +1,28 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { RotateCcw, EyeOff, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
 import type { TableRow } from '../lib/types'
 import { Button } from './Button'
 import { useSvgPanZoom } from '../lib/useSvgPanZoom'
 import { foldVh } from '../lib/theme'
+import { getCardRecords } from '../lib/db'
+import { forceLayout } from '../lib/forceLayout'
+import { convexHull, hullPath, curvedEdge, curveMidpoint, groupColor, groupBy } from '../lib/graphGrouping'
 
 interface Props {
   rows: TableRow[]
 }
 
-interface Node { name: string; x: number; y: number; degree: number }
-interface Edge { a: string; b: string; type: string }
+interface Node { name: string; x: number; y: number; degree: number; faction: string; status: string; identity: string }
+interface Edge {
+  id: string
+  a: string
+  b: string
+  type: string
+  /** 关系现状（悬停详情用） */
+ 现状: string
+  /** 知情度（悬停详情用） */
+ 知情度: string
+}
 
 const W = 1000
 const H = 640
@@ -41,15 +53,68 @@ function edgeColor(t: string): string {
 }
 
 /**
- * 人物关系力导向图（v1.6 视觉重构）
- * - 力导向初始布局（确定性收敛，纯 SVG 无外部依赖）
- * - 交互：拖动节点微调布局；拖拽空白处平移画布；滚轮缩放；点击节点收起/展开（与拖动按位移阈值区分）
- * - 视觉：弧线边按关系类型着色、节点径向渐变+投影、名称药丸底、关系类型徽标、点阵背景、图例
+ * 边线型：把「关系的性质」作为第二维编码 —— 颜色说「什么关系」，线型说「这关系是什么质地」。
+ * 敌对 / 恩怨用虚线（一眼分辨冲突关系），竞争用点线，其余实线。
+ * 🔴 线型只是**第二编码**，不是唯一编码 —— 色盲用户仍可从颜色与标签读出类型。
+ */
+function edgeDash(t: string): string | undefined {
+  if (t === '敌对' || t === '恩怨') return '7 5'
+  if (t === '竞争') return '2 4'
+  return undefined
+}
+
+const CHAR_TABS = ['char-main', 'char-secondary', 'char-npc']
+
+interface CharMeta { faction: string; status: string; identity: string }
+
+/** 悬停目标：节点或边（两者共用一块信息条，避免各自飘一块浮层） */
+type Hovered = { kind: 'node'; name: string } | { kind: 'edge'; id: string } | null
+
+/**
+ * 人物关系力导向图（v2.0 视觉重构 · 2026-10-02）
+ *
+ * 相比改造前新增的三件事（全部消费**现有字段**，不新增表/列）：
+ *  ① **节点按「所属势力」着色** + 同势力节点画**圆角凸包**并标势力名
+ *     —— 来源：角色卡「所属势力」。这是行业范例（G6 哈利波特关系图）的标准手法，
+ *     解决「所有节点同色、看不出阵营分布」的最大短板。
+ *  ② **人物状态标记**：「未登场」的人物用虚线描边（来源：角色卡「人物状态」）。
+ *  ③ **边线型双编码** + **悬停详情条**（关系现状 / 知情度，来源：关系表现有列）。
+ *
+ * 交互不变：拖动节点微调布局；拖拽空白处平移画布；滚轮缩放；点击节点收起/展开。
+ * 布局改用公共 `forceLayout`（确定性圆环播种，同一份数据每次打开长得一样）。
  */
 export default function RelationGraph({ rows }: Props) {
-  const [hover, setHover] = useState<string | null>(null)
-  // v1.3：收起（折叠）节点 —— 点击某人物可隐藏其本人与所有关系边，便于在超大关系网里聚焦
+  const [hoverName, setHoverName] = useState<Hovered>(null)
+  // 收起（折叠）节点：点击某人物可隐藏其本人与所有关系边，便于在超大关系网里聚焦
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  // 角色卡元数据（所属势力 / 人物状态 / 身份定位）—— 异步读取，缺失时优雅降级为「无阵营」
+  const [chars, setChars] = useState<Map<string, CharMeta>>(new Map())
+  useEffect(() => {
+    let alive = true
+    Promise.all(CHAR_TABS.map(t => getCardRecords(t))).then(lists => {
+      if (!alive) return
+      const m = new Map<string, CharMeta>()
+      for (const recs of lists) {
+        for (const rec of recs) {
+          const name = (rec.name || '').trim()
+          if (!name) continue
+          let faction = ''
+          let status = ''
+          let identity = ''
+          for (const [k, v] of Object.entries(rec.data)) {
+            const val = (v || '').trim()
+            if (k.endsWith('所属势力') && !faction) faction = val
+            else if (k === '人物状态' && !status) status = val
+            else if ((k.endsWith('身份定位') || k === '身份') && !identity) identity = val
+          }
+          m.set(name, { faction, status, identity })
+        }
+      }
+      setChars(m)
+    })
+    return () => { alive = false }
+  }, [])
 
   // 定义须在 hook 之前：下面要把它作为 onNodeClick 传进去（const 箭头有 TDZ，不能后置引用）
   const toggleCollapse = (name: string) =>
@@ -60,8 +125,6 @@ export default function RelationGraph({ rows }: Props) {
     })
 
   // 平移 / 缩放 / 节点拖拽统一走公共 hook（2026-09-14 审计 P1-4）。
-  // 此前本文件与 FactionGraph 各写一份，且已实质性分叉——节点拖拽是否钳制、滚轮是平滑还是阶梯、
-  // 点击阈值、指针捕获目标全都不同。差异明细与统一取舍见 useSvgPanZoom 的注释。
   const { view, dragged, svgRef, onPointerDown, onPointerMove, onPointerUp, zoomBy, resetView } =
     useSvgPanZoom({ world: { w: W, h: H, pad: 30 }, reattachKey: rows, onNodeClick: toggleCollapse })
 
@@ -77,86 +140,102 @@ export default function RelationGraph({ rows }: Props) {
       if (!a && !b) continue
       if (a) ensure(a).degree++
       if (b && b !== a) ensure(b).degree++
-      if (a && b) ensure(a).edges.push({ a, b, type: r.data['关系类型'] || '关系' })
+      if (a && b) {
+        ensure(a).edges.push({
+          id: r.id, a, b,
+          type: r.data['关系类型'] || '关系',
+          现状: r.data['关系现状'] || '',
+          知情度: r.data['知情度（互相知道什么）'] || '',
+        })
+      }
     }
     // 取度数最高的前 80 个节点，避免超大图卡顿
     let names = [...adj.keys()].sort((x, y) => adj.get(y)!.degree - adj.get(x)!.degree)
     if (names.length > 80) names = names.slice(0, 80)
     const subAdj = new Map(names.map(n => [n, adj.get(n)!]))
     const allEdges = names.flatMap(n => subAdj.get(n)!.edges)
-    const n = names.length
-    const k = Math.sqrt((W * H) / Math.max(n, 1))
-    const pos = new Map<string, { x: number; y: number }>()
-    names.forEach((nm, i) => {
-      const ang = (i / Math.max(n, 1)) * Math.PI * 2
-      pos.set(nm, { x: W / 2 + Math.cos(ang) * (W / 3), y: H / 2 + Math.sin(ang) * (H / 3) })
-    })
-    let temp = W / 8
-    const disp = new Map<string, { x: number; y: number }>()
-    for (let iter = 0; iter < 320; iter++) {
-      for (const nm of names) disp.set(nm, { x: 0, y: 0 })
-      // 斥力
-      for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-          const u = names[i], v = names[j]
-          const pu = pos.get(u)!, pv = pos.get(v)!
-          let dx = pu.x - pv.x, dy = pu.y - pv.y
-          let dist = Math.sqrt(dx * dx + dy * dy) || 0.01
-          const f = (k * k) / dist
-          const fx = (dx / dist) * f, fy = (dy / dist) * f
-          const du = disp.get(u)!, dv = disp.get(v)!
-          du.x += fx; du.y += fy; dv.x -= fx; dv.y -= fy
-        }
-      }
-      // 引力（边）
-      for (const e of allEdges) {
-        const pu = pos.get(e.a), pv = pos.get(e.b)
-        if (!pu || !pv) continue
-        let dx = pu.x - pv.x, dy = pu.y - pv.y
-        let dist = Math.sqrt(dx * dx + dy * dy) || 0.01
-        const f = (dist * dist) / k
-        const fx = (dx / dist) * f, fy = (dy / dist) * f
-        const du = disp.get(e.a)!, dv = disp.get(e.b)!
-        du.x -= fx; du.y -= fy; dv.x += fx; dv.y += fy
-      }
-      // 位移并限制
-      for (const nm of names) {
-        const p = pos.get(nm)!, d = disp.get(nm)!
-        const len = Math.sqrt(d.x * d.x + d.y * d.y) || 0.01
-        const step = Math.min(len, temp)
-        p.x += (d.x / len) * step
-        p.y += (d.y / len) * step
-        p.x = Math.max(30, Math.min(W - 30, p.x))
-        p.y = Math.max(30, Math.min(H - 30, p.y))
-      }
-      temp *= 0.95
-    }
-    const nodeList: Node[] = names.map(nm => ({ name: nm, x: pos.get(nm)!.x, y: pos.get(nm)!.y, degree: subAdj.get(nm)!.degree }))
-    return { nodes: nodeList, edges: allEdges, init: pos }
+    const kept = new Set(names)
+    const visibleEdges = allEdges.filter(e => kept.has(e.a) && kept.has(e.b))
+    const pos = forceLayout(names, visibleEdges, { w: W, h: H, pad: 30 })
+    const nodeList: Node[] = names.map(nm => ({
+      name: nm,
+      x: pos.get(nm)!.x,
+      y: pos.get(nm)!.y,
+      degree: subAdj.get(nm)!.degree,
+      faction: '',
+      status: '',
+      identity: '',
+    }))
+    return { nodes: nodeList, edges: visibleEdges, init: pos }
   }, [rows])
+
+  // 把角色卡元数据合并进节点（依赖 chars，故与布局 memo 分开）
+  const nodesWithMeta = useMemo(
+    () => nodes.map(n => {
+      const m = chars.get(n.name)
+      return m ? { ...n, faction: m.faction, status: m.status, identity: m.identity } : n
+    }),
+    [nodes, chars],
+  )
+
+  // 收起：被折叠的节点及其关联边不渲染（布局坐标仍由全部节点算得，展开后位置稳定）
+  const visibleNodes = useMemo(
+    () => (collapsed.size ? nodesWithMeta.filter(n => !collapsed.has(n.name)) : nodesWithMeta),
+    [nodesWithMeta, collapsed],
+  )
+  const visibleEdges = useMemo(
+    () => (collapsed.size ? edges.filter(e => !collapsed.has(e.a) && !collapsed.has(e.b)) : edges),
+    [edges, collapsed],
+  )
+
+  // 节点最终位置：拖拽覆盖优先，否则用初始布局
+  const posMap = useMemo(() => {
+    const m = new Map<string, { x: number; y: number }>()
+    for (const n of nodesWithMeta) m.set(n.name, dragged.get(n.name) ?? init.get(n.name)!)
+    return m
+  }, [nodesWithMeta, dragged, init])
+
+  // 分组凸包：同「所属势力」的可见节点外包一层圆角轮廓（< 2 人的组不画，避免小圆圈噪音）
+  const hulls = useMemo(() => {
+    const byFaction = groupBy(
+      visibleNodes.filter(n => n.faction),
+      n => n.faction,
+    )
+    const out: { faction: string; path: string; color: string; labelX: number; labelY: number }[] = []
+    for (const [faction, list] of byFaction) {
+      if (list.length < 2) continue
+      const pts = list.map(n => posMap.get(n.name) ?? { x: n.x, y: n.y })
+      const hull = convexHull(pts)
+      if (hull.length < 3) continue
+      const topY = Math.min(...hull.map(p => p.y))
+      const avgX = hull.reduce((s, p) => s + p.x, 0) / hull.length
+      out.push({
+        faction,
+        path: hullPath(hull, 22, 26),
+        color: groupColor(faction),
+        labelX: avgX,
+        labelY: topY - 30,
+      })
+    }
+    return out
+  }, [visibleNodes, posMap])
 
   if (rows.length === 0) {
     return <div className="rounded-xl border border-ink-700 bg-ink-850 px-4 py-16 text-center text-ink-500">还没有人物关系，先到「表格」视图新增关系记录。</div>
   }
 
-  // 收起：被折叠的节点及其关联边不渲染（布局坐标仍由全部节点算得，展开后位置稳定）
-  const isCollapsed = (name: string) => collapsed.has(name)
-  const visibleNodes = collapsed.size ? nodes.filter(n => !isCollapsed(n.name)) : nodes
-  const visibleEdges = collapsed.size ? edges.filter(e => !isCollapsed(e.a) && !isCollapsed(e.b)) : edges
-
-  const maxDeg = Math.max(1, ...nodes.map(n => n.degree))
+  const maxDeg = Math.max(1, ...nodesWithMeta.map(n => n.degree))
   const radius = (d: number) => 7 + (d / maxDeg) * 13
 
-  // 节点最终位置：拖拽覆盖优先，否则用初始布局
-  const posMap = new Map<string, { x: number; y: number }>()
-  for (const n of nodes) posMap.set(n.name, dragged.get(n.name) ?? init.get(n.name)!)
-
   const legendTypes = [...new Set(visibleEdges.map(e => e.type))]
+
+  const hoverEdge = hoverName?.kind === 'edge' ? visibleEdges.find(e => e.id === hoverName.id) : undefined
+  const hoverNode = hoverName?.kind === 'node' ? visibleNodes.find(n => n.name === hoverName.name) : undefined
 
   return (
     <div className="rounded-xl border border-ink-700 bg-ink-900 overflow-hidden select-none">
       <div className="px-4 py-2 text-11 text-ink-500 border-b border-ink-700 flex items-center justify-between gap-2 flex-wrap">
-        <span>节点越大 = 关系越多；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开</span>
+        <span>节点颜色 = 所属势力，外框 = 阵营范围；线色 = 关系类型，虚线 = 敌对/恩怨；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开</span>
         <span className="flex items-center gap-2">
           {collapsed.size > 0 && (
             <Button variant="bare"
@@ -201,58 +280,94 @@ export default function RelationGraph({ rows }: Props) {
         {/* 空白处拖拽平移 */}
         <rect width="100%" height="100%" fill="transparent" onPointerDown={e => onPointerDown(e, 'pan')} />
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-          {visibleEdges.map((e, i) => {
+          {/* 分组凸包（最底层：垫在边与节点之下，不拦指针） */}
+          {hulls.map(h => (
+            <g key={`hull-${h.faction}`} pointerEvents="none">
+              <path d={h.path} fill={h.color} fillOpacity={0.09} stroke={h.color} strokeOpacity={0.4} strokeWidth={1.2} strokeDasharray="1 0" />
+              <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: h.color }}>{h.faction}</text>
+            </g>
+          ))}
+          {/* 关系边（弧线 + 类型色 + 性质线型） */}
+          {visibleEdges.map(e => {
             const a = posMap.get(e.a)
             const b = posMap.get(e.b)
             if (!a || !b) return null
-            const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
-            const active = hover === e.a || hover === e.b
-            const dim = hover && !active
+            const active = hoverName?.kind === 'node'
+              ? (hoverName.name === e.a || hoverName.name === e.b)
+              : hoverName?.kind === 'edge' && hoverName.id === e.id
+            const dim = hoverName?.kind === 'node' && !active
             const col = edgeColor(e.type)
+            const mid = curveMidpoint(a.x, a.y, b.x, b.y)
             const labelW = e.type.length * 9.5 + 8
             return (
-              <g key={i} opacity={dim ? 0.12 : 1}>
-                <line
-                  x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              <g key={e.id} opacity={dim ? 0.12 : 1}>
+                <path
+                  d={curvedEdge(a.x, a.y, b.x, b.y)}
+                  fill="none"
                   stroke={col}
-                  strokeWidth={active ? 2 : 1.2}
-                  strokeOpacity={active ? 0.95 : 0.45}
+                  strokeWidth={active ? 2.4 : 1.3}
+                  strokeOpacity={active ? 0.95 : 0.5}
                   strokeLinecap="round"
+                  strokeDasharray={edgeDash(e.type)}
                 />
-                <g opacity={active ? 1 : 0.55}>
-                  {/* ⚠️ 原写作 fill="rgb(var(--ink-850))" —— 表现属性不解析 var()，
-                      该值一直无效并回退为黑色底板。改用 style 后变量才真正生效。 */}
-                  <rect x={mx - labelW / 2} y={my - 8.5} width={labelW} height={15} rx={7.5}
+                <g
+                  opacity={active ? 1 : 0.6}
+                  style={{ cursor: 'pointer' }}
+                  onMouseEnter={() => setHoverName({ kind: 'edge', id: e.id })}
+                  onMouseLeave={() => setHoverName(null)}
+                >
+                  <rect x={mid.x - labelW / 2} y={mid.y - 8.5} width={labelW} height={15} rx={7.5}
                     style={{ fill: 'rgb(var(--ink-850))' }} stroke={col} strokeOpacity={0.45} strokeWidth={0.6} />
-                  <text x={mx} y={my + 3.4} style={{ fill: active ? col : 'rgb(var(--graph-edge-label))' }} fontSize={9.5} textAnchor="middle">{e.type}</text>
+                  <text x={mid.x} y={mid.y + 3.4} style={{ fill: active ? col : 'rgb(var(--graph-edge-label))' }} fontSize={9.5} textAnchor="middle">{e.type}</text>
                 </g>
               </g>
             )
           })}
+          {/* 节点（颜色 = 所属势力；未登场 = 虚线描边） */}
           {visibleNodes.map(n => {
             const p = posMap.get(n.name)!
             const r = radius(n.degree)
-            const active = hover === n.name
-            const dim = hover && !active
-            // 主题化：这两个色值含 var()，故下游一律用 style 而非表现属性
-            const col = active ? 'rgb(var(--graph-accent))' : 'rgb(var(--graph-label))'
+            const active = hoverName?.kind === 'node' && hoverName.name === n.name
+            const dim = hoverName?.kind === 'node' && !active
+            const col = n.faction ? groupColor(n.faction) : 'rgb(var(--graph-label))'
+            const notYet = n.status === '未登场'
             return (
               <g
                 key={n.name}
-                opacity={dim ? 0.3 : 1}
-                onMouseEnter={() => setHover(n.name)}
-                onMouseLeave={() => setHover(null)}
+                opacity={dim ? 0.28 : 1}
+                onMouseEnter={() => setHoverName({ kind: 'node', name: n.name })}
+                onMouseLeave={() => setHoverName(null)}
                 onPointerDown={e => onPointerDown(e, 'node', n.name, p)}
                 style={{ cursor: 'grab' }}
               >
-                <circle cx={p.x} cy={p.y} r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: col }} strokeWidth={active ? 3 : 2} />
-                <circle cx={p.x} cy={p.y} r={r * 0.42} style={{ fill: col }} />
+                <circle cx={p.x} cy={p.y} r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: active ? 'rgb(var(--graph-accent))' : col }}
+                  strokeWidth={active ? 3 : 2} strokeDasharray={notYet ? '3 3' : undefined} />
+                <circle cx={p.x} cy={p.y} r={r * 0.42} style={{ fill: active ? 'rgb(var(--graph-accent))' : col }} />
                 <text x={p.x} y={p.y + r + 15} style={{ fill: active ? 'rgb(var(--graph-accent-text))' : 'rgb(var(--graph-node-text))' }} fontSize={10} textAnchor="middle">{n.name}</text>
               </g>
             )
           })}
         </g>
       </svg>
+      {/* 悬停详情条（节点 → 身份/状态；边 → 关系现状/知情度） */}
+      <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap min-h-[30px]">
+        {hoverNode ? (
+          <>
+            <span className="text-11 text-amber font-semibold">{hoverNode.name}</span>
+            {hoverNode.faction && <span className="text-10 text-ink-400">势力：{hoverNode.faction}</span>}
+            {hoverNode.identity && <span className="text-10 text-ink-400 truncate max-w-[32%]">身份：{hoverNode.identity}</span>}
+            {hoverNode.status && <span className="text-10 text-ink-400">状态：{hoverNode.status}</span>}
+          </>
+        ) : hoverEdge ? (
+          <>
+            <span className="text-11 font-semibold" style={{ color: edgeColor(hoverEdge.type) }}>{hoverEdge.a} — {hoverEdge.type} — {hoverEdge.b}</span>
+            {hoverEdge.现状 && <span className="text-10 text-ink-400 truncate max-w-[38%]">现状：{hoverEdge.现状}</span>}
+            {hoverEdge.知情度 && <span className="text-10 text-ink-400 truncate max-w-[38%]">知情度：{hoverEdge.知情度}</span>}
+          </>
+        ) : (
+          <span className="text-10 text-ink-500">悬停节点看身份与状态，悬停连线看关系现状与知情度</span>
+        )}
+      </div>
       {/* 图例：关系类型色板 */}
       {legendTypes.length > 0 && (
         <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap">

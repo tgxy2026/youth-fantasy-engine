@@ -227,8 +227,8 @@ console.log('\n—— creativeModes 用例开始 ——')
   //    这条断言就是钉住"四处措辞必须同源"，别再出现两处约束打架。
   ok('🔴 缺口模式「要不要产出卷」的措辞四处同源（system 规则 / JSON 结构 / 任务陈述 / 末尾硬约束）',
     (cr.match(/needVolumeOutline/g) ?? []).length >= 4
-    && /并顺带把\*\*这一卷\*\*的卷大纲补全/.test(cr)
-    && /只放\*\*这一卷\*\*/.test(cr),
+    && /并顺带把「这一卷」的卷大纲补全/.test(cr)
+    && /只放「这一卷」/.test(cr),
     String((cr.match(/needVolumeOutline/g) ?? []).length) + ' 处')
   ok('🔴 卷大纲「完整性」只看四个卷级走向字段（伏笔 / 角色那类不算"没规划好"）',
     /VOLUME_CORE_SLOTS = \['第一大高潮', '卷中转折', '卷末高潮', '本卷结尾（卷末状态）'\]/.test(ol))

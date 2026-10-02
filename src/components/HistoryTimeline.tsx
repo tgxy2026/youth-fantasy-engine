@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
 import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
-import { Calendar, Users, X, AlarmClock } from 'lucide-react'
+import { Calendar, Users, X, AlarmClock, Layers } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 
@@ -32,6 +32,8 @@ interface Evt {
   end: string
   /** 持续天数：0=同一天；null=填不全算不出；负数=填反了（要警示，不静默纠正） */
   span: number | null
+  /** 上级事件（来源：《历史事件》「上级」列）—— 在卡片上标出隶属关系 */
+  upper: string
   ago: string
   truth: string
   legend: string
@@ -107,6 +109,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
           time,
           end,
           span: storySpanDays(calendarRule, time, end),
+          upper: r.data['上级'] ?? '',
           ago: r.data['距今时长'] ?? '',
           truth: r.data['事件经过（真相）'] ?? '',
           legend: r.data['民间流传版本（vs真相）'] ?? '',
@@ -210,6 +213,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
       e.end && ['结束时间', e.end],
       (e.span !== null && e.span !== 0) && ['持续时长', `${formatSpanDays(e.span)}${e.span < 0 ? '（结束早于开始，请核对）' : ''}`],
       e.ago && ['距今时长', e.ago],
+      e.upper && ['上级事件', e.upper],
       e.status && ['状态', e.status],
       e.truth && ['真相', e.truth],
       e.legend && ['民间流传（vs 真相）', e.legend],
@@ -253,7 +257,14 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
         <div className="relative" style={{ width: totalW, height: totalH }}>
           {/* 水平主轴 + 时长线条（轴上方，分层换色） */}
           <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
-            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} style={{ stroke: 'rgb(var(--ink-600) / 0.4)' }} strokeWidth={1.5} />
+            {/* 轴体升级（2026-10-02）：底层浅色宽带 + 上层亮线 —— 旧版只有一条 1.5px 灰线，
+                轴几乎没有存在感；双层让「时间轴」本身立起来。 */}
+            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} style={{ stroke: 'rgb(var(--ink-600) / 0.18)' }} strokeWidth={8} strokeLinecap="round" />
+            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} style={{ stroke: 'rgb(var(--ink-500) / 0.6)' }} strokeWidth={2} strokeLinecap="round" />
+            {/* 时间刻度：每个时间点组一根短竖线，让轴有「可丈量」的质感 */}
+            {groups.map((_, gi) => (
+              <line key={`tick-${gi}`} x1={groupX(gi)} y1={axisY - 6} x2={groupX(gi)} y2={axisY + 6} style={{ stroke: 'rgb(var(--ink-400) / 0.4)' }} strokeWidth={1} />
+            ))}
             {brackets.map(b => {
               const on = hover === b.id || selected?.id === b.id
               const color = COLORS[b.colorIdx % COLORS.length]
@@ -326,6 +337,11 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
                       {d.who && (
                         <div className="mt-1.5 text-10 text-ink-400 flex items-center gap-1">
                           <Users size={9} /> <span className="truncate">{d.who}</span>
+                        </div>
+                      )}
+                      {d.upper && (
+                        <div className="mt-1 text-10 text-ink-500 flex items-center gap-1">
+                          <Layers size={9} /> <span className="truncate">隶属：{d.upper}</span>
                         </div>
                       )}
                       {d.status && (

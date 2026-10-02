@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getCardRecords } from '../lib/db'
+import { getCardRecords, getTableRows } from '../lib/db'
 import type { TableRow } from '../lib/types'
 import { Network, Users, X, ArrowUpRight } from 'lucide-react'
 import { Button } from './Button'
 import { useSvgPanZoom } from '../lib/useSvgPanZoom'
 import { foldVh } from '../lib/theme'
+import { forceLayout } from '../lib/forceLayout'
+import { curvedEdge, curveMidpoint, groupColor, groupBy, convexHull, hullPath } from '../lib/graphGrouping'
 
 interface Props {
   rows: TableRow[]
@@ -34,61 +36,140 @@ function relColor(t: string): string {
 const W = 900
 const H = 600
 
-interface FNode { name: string; x: number; y: number; degree: number }
-interface FEdge { a: string; b: string; type: string; id: string }
+interface FNode { name: string; x: number; y: number; degree: number; category: string; parent: string }
+interface FEdge { a: string; b: string; type: string; id: string; status: string }
+
+/** 悬停目标：节点或边 */
+type Hovered = { kind: 'node'; name: string } | { kind: 'edge'; id: string } | null
 
 /**
- * 势力关系力导向图（Phase 2）：节点 = 《国家势力》中的势力，边 = 《势力关系》表登记的
- * 同盟/敌对/贸易/从属/中立。点击节点展开右侧面板，列出「所属势力」=该势力的角色卡成员
- * （直接消费角色卡 ↔ 国家势力的 tableRef 联动）。节点可跳转《国家势力》。
+ * 势力关系力导向图（v2.0 视觉重构 · 2026-10-02）
+ *
+ * 改造前后差异（全部消费**现有字段**）：
+ *  ① **布局：圆环 → 力导向**。旧版把势力均匀排在圆周上，势力一多就挤成一圈糖葫芦、
+ *     也看不出「谁跟谁抱团」。改用公共 `forceLayout`（边界钳制保证节点不飘出视野），与人物关系图统一。
+ *  ② **节点按《国家势力》「类别」着色**（王朝/宗门/世家/商会/魔道/隐秘组织/神族/城池）
+ *     + 同类别画圆角凸包并标类别名 —— 一眼看出势力集团。
+ *  ③ **「上级」层级吸附**：`nations.上级` 链上加一根弱弹簧，子势力自然靠向父势力。
+ *  ④ 边改弧线 + 药丸标签（旧版是裸文字），与人物图统一视觉语言；悬停边显示「关系现状」。
+ *
+ * 交互不变：拖拽平移/节点、滚轮缩放、点击节点展开右侧成员面板、跳转《国家势力》。
+ * 节点尺寸仍按**度数**映射 —— 不按《国家势力》「实力等级」映射：那是自由文本（"一流""九品"），
+ * 解析不可靠，宁可保持简单可靠的口径。
  */
 export default function FactionGraph({ rows, onNavigate }: Props) {
-  const [hover, setHover] = useState<string | null>(null)
+  const [hoverName, setHoverName] = useState<Hovered>(null)
   const [selected, setSelected] = useState<string | null>(null)
 
+  // 《国家势力》元数据（类别 / 上级）—— 异步读取，缺失时优雅降级（无类别 = 中性色）
+  const [nationMeta, setNationMeta] = useState<Map<string, { category: string; parent: string }>>(new Map())
+  useEffect(() => {
+    let alive = true
+    getTableRows('nations').then(list => {
+      if (!alive) return
+      const m = new Map<string, { category: string; parent: string }>()
+      for (const r of list) {
+        const name = (r.data['名称'] || '').trim()
+        if (!name) continue
+        m.set(name, {
+          category: (r.data['类别'] || '').trim(),
+          parent: (r.data['上级'] || '').trim(),
+        })
+      }
+      setNationMeta(m)
+    })
+    return () => { alive = false }
+  }, [])
+
   // 平移 / 缩放 / 节点拖拽统一走公共 hook（2026-09-14 审计 P1-4）。
-  // ⚠️ 本次迁移带来三处**行为变化**（统一到更稳妥的一套，详见 useSvgPanZoom 注释）：
-  //    ① 节点拖拽新增画布边界钳制（此前不钳制，节点可被拖出视野后「消失」）；
-  //    ② 滚轮缩放由阶梯步进（±10%）改为平滑指数，触控板手感更连续；
-  //    ③ 点击判定由曼哈顿距离改为欧氏距离，斜向轻拖不再被误判为拖动。
   const { view, dragged, svgRef, onPointerDown, onPointerMove, onPointerUp } = useSvgPanZoom({
     world: { w: W, h: H, pad: 30 },
     reattachKey: rows,
     onNodeClick: name => setSelected(sel => (sel === name ? null : name)),
   })
 
-  const { nodes, edges, init } = useMemo(() => {
+  const { nodes, edges } = useMemo(() => {
     const adj = new Map<string, { degree: number; edges: FEdge[] }>()
     const ensure = (n: string) => {
       if (!adj.has(n)) adj.set(n, { degree: 0, edges: [] })
       return adj.get(n)!
     }
-    rows.forEach(r => {
+    for (const r of rows) {
       const a = (r.data['势力A'] || '').trim()
       const b = (r.data['势力B'] || '').trim()
       const type = r.data['关系类型'] || '中立'
-      if (!a && !b) return
+      if (!a && !b) continue
       if (a) ensure(a).degree++
       if (b && b !== a) ensure(b).degree++
-      if (a && b) ensure(a).edges.push({ a, b, type, id: r.id })
-    })
+      if (a && b) {
+        ensure(a).edges.push({
+          a, b, type, id: r.id,
+          status: r.data['关系现状'] || '',
+        })
+      }
+    }
     const names = [...adj.keys()]
-    const n = names.length
-    const pos = new Map<string, { x: number; y: number }>()
-    const radius = Math.min(W, H) * 0.36
-    names.forEach((nm, i) => {
-      const ang = (i / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2
-      pos.set(nm, { x: W / 2 + Math.cos(ang) * radius, y: H / 2 + Math.sin(ang) * radius })
-    })
+    const allEdges: FEdge[] = names.flatMap(nm => adj.get(nm)!.edges)
+    const kept = new Set(names)
+    const visibleEdges = allEdges.filter(e => kept.has(e.a) && kept.has(e.b))
     const nodeList: FNode[] = names.map(nm => ({
       name: nm,
-      x: pos.get(nm)!.x,
-      y: pos.get(nm)!.y,
+      x: 0, y: 0,
       degree: adj.get(nm)!.degree,
+      category: '',
+      parent: '',
     }))
-    const allEdges: FEdge[] = names.flatMap(nm => adj.get(nm)!.edges)
-    return { nodes: nodeList, edges: allEdges, init: pos }
+    return { nodes: nodeList, edges: visibleEdges }
   }, [rows])
+
+  // 布局依赖「上级」层级（来自异步读到的 nationMeta），故与建图分开算
+  const layout = useMemo(() => {
+    const names = nodes.map(n => n.name)
+    if (names.length === 0) return new Map<string, { x: number; y: number }>()
+    const extraLinks: { a: string; b: string; strength: number }[] = []
+    for (const n of names) {
+      const p = nationMeta.get(n)?.parent
+      if (p && names.includes(p) && p !== n) extraLinks.push({ a: n, b: p, strength: 0.3 })
+    }
+    return forceLayout(names, edges, { w: W, h: H, pad: 30, extraLinks })
+  }, [nodes, edges, nationMeta])
+
+  const nodesWithMeta = useMemo(
+    () => nodes.map(n => {
+      const m = nationMeta.get(n.name)
+      const p = layout.get(n.name)
+      return { ...n, category: m?.category ?? '', parent: m?.parent ?? '', x: p?.x ?? W / 2, y: p?.y ?? H / 2 }
+    }),
+    [nodes, nationMeta, layout],
+  )
+
+  const posOf = (nm: string) => dragged.get(nm) ?? layout.get(nm) ?? { x: W / 2, y: H / 2 }
+
+  const posMap = useMemo(() => {
+    const m = new Map<string, { x: number; y: number }>()
+    for (const n of nodesWithMeta) m.set(n.name, dragged.get(n.name) ?? layout.get(n.name) ?? { x: W / 2, y: H / 2 })
+    return m
+  }, [nodesWithMeta, dragged, layout])
+
+  // 类别凸包
+  const hulls = useMemo(() => {
+    const byCat = groupBy(nodesWithMeta.filter(n => n.category), n => n.category)
+    const out: { cat: string; path: string; color: string; labelX: number; labelY: number }[] = []
+    for (const [cat, list] of byCat) {
+      if (list.length < 2) continue
+      const pts = list.map(n => posMap.get(n.name) ?? { x: n.x, y: n.y })
+      const hull = convexHull(pts)
+      if (hull.length < 3) continue
+      out.push({
+        cat,
+        path: hullPath(hull, 24, 28),
+        color: groupColor(cat),
+        labelX: hull.reduce((s, p) => s + p.x, 0) / hull.length,
+        labelY: Math.min(...hull.map(p => p.y)) - 32,
+      })
+    }
+    return out
+  }, [nodesWithMeta, posMap])
 
   // 成员角色：消费角色卡「所属势力」联动（手输没了，归属准确率 100%）
   const [members, setMembers] = useState<{ name: string; type: string; role: string }[]>([])
@@ -130,10 +211,6 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
     }
   }, [selected])
 
-  // 滚轮缩放 / 拖拽平移 / 节点拖拽均由 useSvgPanZoom 提供，此处不再重复实现
-
-  const posOf = (nm: string) => dragged.get(nm) ?? init.get(nm)!
-
   if (nodes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center text-ink-500 gap-2"
@@ -144,6 +221,12 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
       </div>
     )
   }
+
+  const maxDeg = Math.max(1, ...nodesWithMeta.map(n => n.degree))
+  const radius = (d: number) => 9 + (d / maxDeg) * 11
+
+  const hoverEdge = hoverName?.kind === 'edge' ? edges.find(e => e.id === hoverName.id) : undefined
+  const hoverNodeMeta = hoverName?.kind === 'node' ? nationMeta.get(hoverName.name) : undefined
 
   return (
     <div className="relative w-full bg-ink-900 rounded-xl border border-ink-700 overflow-hidden" style={{ height: foldVh('68vh') }}>
@@ -156,63 +239,81 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
         onPointerLeave={onPointerUp}
       >
         <defs>
-          <pattern id="fg-dots" width="22" height="22" patternUnits="userSpaceOnUse">
-            {/* 主题化网格。此处原为实心 #2a2620；统一改用与关系图谱相同的网格变量并补 0.28 透明度，
-                暗色下实际渲染差值约 2%（肉眼无感），换来两图风格一致 + 浅色主题下可见。 */}
-            <circle cx="1" cy="1" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity="0.28" />
+          <pattern id="fg-dots" width="26" height="26" patternUnits="userSpaceOnUse">
+            {/* 主题化网格（与人物关系图统一：同变量、同透明度） */}
+            <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity="0.28" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#fg-dots)" />
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
-          {/* 边 */}
+          {/* 类别凸包（垫底） */}
+          {hulls.map(h => (
+            <g key={`hull-${h.cat}`} pointerEvents="none">
+              <path d={h.path} fill={h.color} fillOpacity={0.09} stroke={h.color} strokeOpacity={0.38} strokeWidth={1.2} />
+              <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: h.color }}>{h.cat}</text>
+            </g>
+          ))}
+          {/* 边（弧线 + 药丸标签） */}
           {edges.map(e => {
             const pa = posOf(e.a)
             const pb = posOf(e.b)
             if (!pa || !pb) return null
-            const mx = (pa.x + pb.x) / 2
-            const my = (pa.y + pb.y) / 2
             const color = relColor(e.type)
-            const active = hover === e.a || hover === e.b || selected === e.a || selected === e.b
+            const active = hoverName?.kind === 'node'
+              ? (hoverName.name === e.a || hoverName.name === e.b)
+              : hoverName?.kind === 'edge' && hoverName.id === e.id
+            const dim = hoverName?.kind === 'node' && !active
+            const mid = curveMidpoint(pa.x, pa.y, pb.x, pb.y)
+            const labelW = e.type.length * 12 + 12
             return (
-              <g key={e.id}>
+              <g key={e.id} opacity={dim ? 0.12 : 1}>
                 <path
-                  d={`M ${pa.x} ${pa.y} Q ${mx} ${my - 28} ${pb.x} ${pb.y}`}
+                  d={curvedEdge(pa.x, pa.y, pb.x, pb.y)}
                   fill="none"
                   stroke={color}
                   strokeWidth={active ? 3 : 1.6}
                   strokeOpacity={active ? 0.95 : 0.55}
+                  strokeLinecap="round"
                 />
-                <text x={mx} y={my - 32} textAnchor="middle" className="fill-ink-300" style={{ fontSize: 11 }}>
-                  {e.type}
-                </text>
+                <g
+                  opacity={active ? 1 : 0.7}
+                  style={{ cursor: 'pointer' }}
+                  onPointerEnter={() => setHoverName({ kind: 'edge', id: e.id })}
+                  onPointerLeave={() => setHoverName(h => (h?.kind === 'edge' && h.id === e.id ? null : h))}
+                >
+                  <rect x={mid.x - labelW / 2} y={mid.y - 9.5} width={labelW} height={17} rx={8.5}
+                    style={{ fill: 'rgb(var(--ink-850))' }} stroke={color} strokeOpacity={0.45} strokeWidth={0.6} />
+                  <text x={mid.x} y={mid.y + 4} textAnchor="middle" fontSize={11}
+                    style={{ fill: active ? color : 'rgb(var(--graph-edge-label))' }}>{e.type}</text>
+                </g>
               </g>
             )
           })}
-          {/* 节点 */}
-          {nodes.map(nd => {
-            const pa = posOf(nd.name)
+          {/* 节点（颜色 = 势力类别） */}
+          {nodesWithMeta.map(nd => {
+            const pa = posMap.get(nd.name) ?? { x: nd.x, y: nd.y }
             const isSel = selected === nd.name
-            const isHov = hover === nd.name
-            const r = 14 + Math.min(nd.degree, 8) * 2.2
-            // 主题化的选中/悬停/常态三态色（含 var()，故下游用 style 而非表现属性）
-            const color = isSel ? 'rgb(var(--graph-accent-strong))' : isHov ? 'rgb(var(--graph-accent))' : 'rgb(var(--graph-label))'
-            // 注：hook 内部已对 'node' 做 stopPropagation（避免同时触发背景平移），此处不必重复
+            const isHov = hoverName?.kind === 'node' && hoverName.name === nd.name
+            const r = radius(nd.degree)
+            const dim = hoverName?.kind === 'node' && !isHov
+            const base = nd.category ? groupColor(nd.category) : 'rgb(var(--graph-label))'
+            const color = isSel ? 'rgb(var(--graph-accent-strong))' : isHov ? 'rgb(var(--graph-accent))' : base
             return (
               <g
                 key={nd.name}
+                opacity={dim ? 0.28 : 1}
                 transform={`translate(${pa.x},${pa.y})`}
-                onPointerDown={e => onPointerDown(e, 'node', nd.name, posOf(nd.name))}
-                onPointerEnter={() => setHover(nd.name)}
-                onPointerLeave={() => setHover(h => (h === nd.name ? null : h))}
+                onPointerDown={e => onPointerDown(e, 'node', nd.name, pa)}
+                onPointerEnter={() => setHoverName({ kind: 'node', name: nd.name })}
+                onPointerLeave={() => setHoverName(h => (h?.kind === 'node' && h.name === nd.name ? null : h))}
                 className="cursor-pointer"
               >
                 <circle r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: color }} strokeWidth={isSel ? 3 : 2} />
                 <circle r={r * 0.42} style={{ fill: color }} />
                 <text
-                  y={r + 14}
+                  y={r + 15}
                   textAnchor="middle"
-                  className="fill-ink-100"
-                  style={{ fontSize: 12, fontWeight: isSel ? 700 : 400 }}
+                  style={{ fill: isHov ? 'rgb(var(--graph-accent-text))' : 'rgb(var(--graph-node-text))', fontSize: 12, fontWeight: isSel ? 700 : 400 }}
                 >
                   {nd.name}
                 </text>
@@ -222,8 +323,8 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
         </g>
       </svg>
 
-      {/* 图例：系统预设关系类型 + 作者自定义关系类型（自定义标"自定义"） */}
-      <div className="absolute left-3 top-3 flex flex-wrap gap-2 max-w-[70%] bg-ink-850/80 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
+      {/* 图例：关系类型（边色） */}
+      <div className="absolute left-3 top-3 flex flex-wrap gap-2 max-w-[60%] bg-ink-850/80 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
         {(() => {
           const present = [...new Set(edges.map(e => e.type))]
           const ordered = [
@@ -239,6 +340,24 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
           ))
         })()}
       </div>
+
+      {/* 悬停详情（边 → 关系现状；节点 → 类别 / 上级） */}
+      {(hoverEdge || hoverName?.kind === 'node') && (
+        <div className="absolute left-3 bottom-3 right-3 flex items-center gap-3 flex-wrap bg-ink-850/85 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
+          {hoverEdge ? (
+            <>
+              <span className="text-11 font-semibold" style={{ color: relColor(hoverEdge.type) }}>{hoverEdge.a} — {hoverEdge.type} — {hoverEdge.b}</span>
+              {hoverEdge.status && <span className="text-10 text-ink-400 truncate max-w-[50%]">现状：{hoverEdge.status}</span>}
+            </>
+          ) : (
+            <>
+              <span className="text-11 text-amber font-semibold">{hoverName && hoverName.kind === 'node' ? hoverName.name : ''}</span>
+              {hoverNodeMeta?.category && <span className="text-10 text-ink-400">类别：{hoverNodeMeta.category}</span>}
+              {hoverNodeMeta?.parent && <span className="text-10 text-ink-400">上级：{hoverNodeMeta.parent}</span>}
+            </>
+          )}
+        </div>
+      )}
 
       {/* 缩放提示 */}
       <div className="absolute right-3 top-3 text-10 text-ink-500 bg-ink-850/70 rounded px-2 py-0.5">

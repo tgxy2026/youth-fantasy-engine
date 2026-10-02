@@ -347,7 +347,8 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
             {visibleTracks.map((t, idx) => {
               const color = COLORS[idx % COLORS.length]
               return (
-                <div key={t} className="flex items-start px-2 pt-2" style={{ height: laneHeights[idx] }}>
+                <div key={t} className="flex items-start gap-1.5 px-2 pt-2" style={{ height: laneHeights[idx] }}>
+                  <span className={`mt-1 w-[3px] h-3.5 rounded-full shrink-0 ${color.dot}`} />
                   <span className={`text-11 font-semibold ${color.text} leading-tight`}>{t}</span>
                 </div>
               )
@@ -360,19 +361,35 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
               {visibleTracks.map((t, idx) => (
                 <div
                   key={`lane-${t}`}
-                  className="absolute left-0 right-0 border-b border-ink-800/60"
+                  className={`absolute left-0 right-0 border-b border-ink-800/60 ${idx % 2 === 0 ? 'bg-ink-850/25' : ''}`}
                   style={{ top: laneTop(idx), height: laneHeights[idx] }}
                 />
               ))}
               {/* 各泳道的水平轴线 + 时长线条 */}
               <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
+                {/* 轴体升级（2026-10-02）：底层浅色宽带 + 上层亮线 + 时间刻度 —— 与历史事件轴同一套语言 */}
+                {visibleTracks.map((t, idx) => (
+                  <line
+                    key={`axis-band-${t}`}
+                    x1={8} y1={laneY(idx)} x2={totalW - 8} y2={laneY(idx)}
+                    style={{ stroke: 'rgb(var(--ink-600) / 0.16)' }} strokeWidth={8} strokeLinecap="round"
+                  />
+                ))}
                 {visibleTracks.map((t, idx) => (
                   <line
                     key={`axis-${t}`}
                     x1={8} y1={laneY(idx)} x2={totalW - 8} y2={laneY(idx)}
-                    style={{ stroke: 'rgb(var(--ink-600) / 0.35)' }} strokeWidth={1.5}
+                    style={{ stroke: 'rgb(var(--ink-500) / 0.55)' }} strokeWidth={2} strokeLinecap="round"
                   />
                 ))}
+                {groups.map((g, gi) => visibleTracks.map(t => {
+                  const idx = visibleTracks.indexOf(t)
+                  if (!g.items.some(d => d.track === t)) return null
+                  return (
+                    <line key={`tick-${gi}-${t}`} x1={groupX(gi)} y1={laneY(idx) - 6} x2={groupX(gi)} y2={laneY(idx) + 6}
+                      style={{ stroke: 'rgb(var(--ink-400) / 0.4)' }} strokeWidth={1} />
+                  )
+                }))}
                 {visibleItems.map(d => {
                   const s = spans.find(x => x.id === d.id)
                   if (!s) return null
