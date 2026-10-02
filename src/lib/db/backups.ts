@@ -4,7 +4,7 @@
 import type { Project, FormData } from '../types'
 import { uid } from '../id'
 import { ops, touchProject } from './core'
-import { exportProject, type ProjectBundle } from './projects'
+import { exportProject, remapSettingValue, type ProjectBundle } from './projects'
 import { VOL_LEDGER_PREFIX } from './volumes'
 
 // ============ 自动备份（v1.3 备份策略加固） ============
@@ -255,8 +255,13 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
       : r.tabId
     await ops.put('tableRows', { ...r, id: nid, tabId, projectId: targetPid })
   }
+  // 🔴 与 importProject 同：cardRecords 换 id 后，settingsKV 里的子项活跃态数组必须跟着重映射，
+  //    否则恢复备份后所有多套条目集体退化为「已完结」、AI 一条都读不到（2026-10-02 六维审计 P0）。
+  const cardIdMap = new Map<string, string>()
   for (const r of bundle.cardRecords) {
-    await ops.put('cardRecords', { ...r, id: uid(), projectId: targetPid })
+    const nid = uid()
+    cardIdMap.set(r.id, nid)
+    await ops.put('cardRecords', { ...r, id: nid, projectId: targetPid })
   }
   if (bundle.dailyStats) {
     for (const s of bundle.dailyStats) {
@@ -265,7 +270,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   }
   if (bundle.settings) {
     for (const s of bundle.settings) {
-      await ops.put('settingsKV', { key: `${targetPid}::${s.key}`, value: s.value })
+      await ops.put('settingsKV', { key: `${targetPid}::${s.key}`, value: remapSettingValue(s.key, s.value, cardIdMap) })
     }
   }
   if (bundle.customOptions) {

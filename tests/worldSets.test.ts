@@ -15,6 +15,8 @@ import {
   WORLD_SET_TABS, PARALLEL_SET_TABS, MULTI_SET_TABS,
 } from '../src/lib/worldSets'
 import { __resetMockStores } from './mock-memory'
+import { remapSettingValue } from '../src/lib/db/projects'
+import type { CardRecord } from '../src/lib/types'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {
@@ -254,6 +256,59 @@ await createDemoProject()
     t2.includes('另有 1 个已完结的政权，未发送'), t2.split('\n').pop())
 
   // 🔴 负面对照：删掉 sectionOf 里的 isParallelSetTab 分支 ⇒ 上面那条「没有『全书统一』」必红
+}
+
+// ---------- 8. 导入 / 恢复备份后活跃态必须重映射（2026-10-02 六维审计 P0） ----------
+{
+  // 🔴 真 bug：备份里 `settings` 存着「哪些条目活跃」（值是 cardRecords 的 id 数组），
+  //    而导入时 cardRecords **全部换新 id**（uid()）。若原样搬 value ⇒ 数组里全是悬空 id
+  //    ⇒ splitActive 全部丢弃 ⇒ 所有条目集体退化为「已完结」，AI 一条都读不到、且无任何报错。
+  // 负面对照：把 remapSettingValue 的 map 传空（模拟「忘了重映射」），下面两条必红。
+  const map = new Map([['old-a', 'new-a'], ['old-b', 'new-b']])
+
+  const good = remapSettingValue('worldSubActive::politics', ['old-a', 'old-b', 'ghost'], map)
+  ok('🔴 导入时活跃态数组按旧→新映射重写（悬空 id 被丢弃）',
+    Array.isArray(good) && good.join() === 'new-a,new-b', JSON.stringify(good))
+
+  const empty = remapSettingValue('worldSubActive::politics', ['old-a'], new Map())
+  ok('🔴 负面对照：忘了重映射 ⇒ 数组全空（条目集体退化为已完结）',
+    Array.isArray(empty) && empty.length === 0, JSON.stringify(empty))
+
+  // 非活跃态键不得被改（别去猜别的键里有没有 id）
+  const other = remapSettingValue('app.search', { hits: 3 }, map)
+  ok('非活跃态键原样搬（不误伤）',
+    typeof other === 'object' && (other as { hits: number }).hits === 3, JSON.stringify(other))
+
+  const notArray = remapSettingValue('worldSubActive::politics', 'oops', map)
+  ok('值不是数组时原样搬（老库脏数据不炸）', notArray === 'oops', String(notArray))
+
+  // 🔴 端到端：导入后条目仍算「活跃」，AI 段落里能读到它
+  __resetMockStores()
+  await createDemoProject()
+  const pid = db.getCurrentProjectId()
+  const rec: CardRecord = { id: uid(), projectId: pid ?? '', tabId: 'politics-sub', name: '测试政权', data: { '政权概览::国号': '大燕' }, order: 0 }
+  await db.saveSubSet('politics', rec)
+  await db.setSubActive('politics', rec.id, true)
+
+  // 模拟「导入到新项目」：cardRecords 换 id，settingsKV 的活跃数组按映射搬
+  const importedId = uid()
+  const remapped = remapSettingValue(
+    activeKeyOf('politics'),
+    [rec.id],
+    new Map([[rec.id, importedId]]),
+  ) as string[]
+  await db.setSetting(activeKeyOf('politics'), remapped)
+  // 把条目真的换成新 id（与导入时的写入顺序一致）
+  await db.saveSubSet('politics', { ...rec, id: importedId })
+  await db.deleteSubSet('politics', rec.id).catch(() => {})
+
+  const activeAfter = await db.getActiveSubIds('politics')
+  ok('🔴 端到端：导入后条目仍是「活跃」（没退化成已完结）',
+    activeAfter.includes(importedId), `active=${activeAfter.join() || '（空）'} want=${importedId}`)
+
+  const ctx = await buildProjectContext({ budget: 400000, onlyTabIds: ['politics'], includeChapterList: false })
+  ok('🔴 端到端：导入后 AI 上下文里读得到那条政权',
+    ctx.text.includes('大燕'), ctx.text.slice(0, 120).replace(/\n/g, ' | '))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

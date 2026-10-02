@@ -93,7 +93,7 @@ export default function ExportFormatDialog({
   const [prefs, setPrefs] = useState<ExportPrefs>(DEFAULT_PREFS)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
-  // 投稿稿件：简介（每次打开按「作品定位·正式简介」预填，仅本次生效 —— 简介是项目数据，不进跨项目偏好）
+  // 投稿稿件：简介（每次打开按「作品信息·正式简介」预填，仅本次生效 —— 简介是项目数据，不进跨项目偏好）
   const [intro, setIntro] = useState('')
   // 投稿稿件：选中的章节 id（默认 = 有正文的章）
   const [picked, setPicked] = useState<Set<string>>(() => new Set())
@@ -127,7 +127,7 @@ export default function ExportFormatDialog({
     })()
   }, [open, loaded])
 
-  // 投稿稿件数据：简介从〈作品定位〉的「正式简介」预填；章节默认勾选有正文的章。每次打开都重置。
+  // 投稿稿件数据：简介从〈作品信息〉的「正式简介」预填；章节默认勾选有正文的章。每次打开都重置。
   useEffect(() => {
     if (!open) return
     void db.getFormData('positioning').then(d => {

@@ -816,7 +816,7 @@ export interface TemplateFillResult {
 
 /**
  * 构建世界观上下文摘要，供补全时保证一致性。
- * v1：抽取表单型「世界设定 / 力量体系 / 作品定位」的关键字段，作为模型补全的约束。
+ * v1：抽取表单型「世界设定 / 力量体系 / 作品信息」的关键字段，作为模型补全的约束。
  */
 export async function buildWorldContext(): Promise<string> {
   const pick = (data: Record<string, string> | undefined, names: string[]): string[] => {

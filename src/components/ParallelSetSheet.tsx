@@ -31,7 +31,7 @@ import type { CardRecord, TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
 import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '../lib/worldSets'
-import { addButtonLabel, modulesFor, subItemLabel, getActivePack } from '../lib/schemaTemplates'
+import { addButtonLabel, modulesFor, subItemLabel, getActivePack, type GenrePack } from '../lib/schemaTemplates'
 import AutoTextarea from './AutoTextarea'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
@@ -60,22 +60,98 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   // 🔴 2.7.2：题材改在**新建项目**时选，页签内不再提供切换 ⇒ 不需要 setState，
   //    `getActivePack()` 读一次即可（App 打开项目时会按 `Project.genre` 设好全局值）。
   const pack = getActivePack()
-  const aiReady = useAIReady()
+  // 🔴 useAIReady() 返回的是 `{ ready, label }` **对象**，不是布尔 ——
+  //    写成 `const aiReady = useAIReady()` 会让 `disabled={!aiReady}` 恒为 false（对象恒真值），
+  //    没配模型也能点开弹窗、走进内部才炸。全仓 27 处调用点都是解构写法，别写回。
+  const { ready: aiReady } = useAIReady()
 
   /** 条目总称（政治页→「政权」、经济→「行业」…）—— 用于列表标题、AI 段标题、帮助文案 */
   const subLabel = subItemLabel(tab.id, pack)
   /** 「新增」按钮文案：制度四页签一律「新增」（主人 2.7.2 定案） */
   const addLabel = addButtonLabel(tab.id)
-  /** 新建时的输入框举例（按条目总称给 Examples，避免笼统的「名称」） */
-  const namePlaceholder = `例：${tab.id === 'politics' ? '大燕 / 魏 / 蜀' : tab.id === 'economy' ? '江南商会 / 北境盐业' : tab.id === 'belief' ? '正一教 / 影宗' : '大魏律 / 宗族法'}`
   /**
-   * 问号气泡里的举例句（2.7.2）：原先硬编码「政治页可以建魏蜀吴」，
-   * 拿到经济 / 信仰 / 司法页就不贴切了 ⇒ 改成**按页签**各给一句。
+   * 新建时的输入框举例 + 气泡里的举例句，**都随题材走**（2.7.2 审计 P1）。
+   *
+   * 🔴 原来两处硬编码「魏 / 蜀 / 吴」「江南商会」，而同一气泡下方正在承诺
+   *    「示例会随你选的题材变化（现在是科幻末世）」—— 写科幻的作者被告知已按科幻调整，
+   *    转头看到「魏蜀吴」，等于承诺自相矛盾。与 institutions 的 EXAMPLES_BY_PACK 同一个病因。
    */
-  const itemExample = tab.id === 'politics' ? '比如建「魏」「蜀」「吴」，各自写自己的权力结构。'
-    : tab.id === 'economy' ? '比如建「江南商会」「北境盐业」，各自写自己的生意与盘子。'
-    : tab.id === 'belief' ? '比如建「正一教」「影宗」，各自写自己的教义与组织。'
-    : '比如建「大魏律」「某宗族法」，各自写自己那套规矩。'
+  const EXAMPLES_BY_PACK: Partial<Record<GenrePack, Record<string, [string, string]>>> = {
+    //  [输入框举例, 气泡举例句]
+    东方修真: {
+      politics: ['大燕 / 魏 / 蜀', '比如建「魏」「蜀」「吴」，各自写自己的权力结构。'],
+      economy: ['江南商会 / 北境盐业', '比如建「江南商会」「北境盐业」，各自写自己的生意与盘子。'],
+      belief: ['正一教 / 影宗', '比如建「正一教」「影宗」，各自写自己的教义与组织。'],
+      justice: ['大魏律 / 宗族法', '比如建「大魏律」「某宗族法」，各自写自己那套规矩。'],
+    },
+    历史古代: {
+      politics: ['大燕 / 魏 / 蜀', '比如建「魏」「蜀」「吴」，各自写自己的权力结构。'],
+      economy: ['江南商会 / 北境盐业', '比如建「江南商会」「北境盐业」，各自写自己的生意与盘子。'],
+      belief: ['正一教 / 影宗', '比如建「正一教」「影宗」，各自写自己的教义与组织。'],
+      justice: ['大魏律 / 宗族法', '比如建「大魏律」「某宗族法」，各自写自己那套规矩。'],
+    },
+    西方奇幻: {
+      politics: ['王国 / 自由城邦 / 部落', '比如建「维瑟王国」「灰港城邦」，各自写自己的权力结构。'],
+      economy: ['王室商队 / 灰港商会', '比如建「王室商队」「灰港商会」，各自写自己的买卖与盘子。'],
+      belief: ['光明教会 / 德鲁伊团', '比如建「光明教会」「德鲁伊团」，各自写自己的教义与组织。'],
+      justice: ['王国法 / 教区法', '比如建「王国法」「教区法」，各自写自己那套规矩。'],
+    },
+    武侠江湖: {
+      politics: ['朝廷 / 江湖门派 / 帮会', '比如建「朝廷」「华山派」「漕帮」，各自写自己的权力结构。'],
+      economy: ['漕帮 / 药商行会', '比如建「漕帮」「药商行会」，各自写自己的买卖与盘子。'],
+      belief: ['道门 / 佛宗 / 民间神祇', '比如建「道门」「佛宗」，各自写自己的教义与组织。'],
+      justice: ['大明律 / 武林规矩', '比如建「大明律」「武林规矩」，各自写自己那套规矩。'],
+    },
+    都市现实: {
+      politics: ['市议会 / 巨头财阀 / 選委会', '比如建「市议会」「瑞康财阀」，各自写自己的权力结构。'],
+      economy: ['瑞康集团 / 城南小商户', '比如建「瑞康集团」「城南小商户」，各自写自己的买卖与盘子。'],
+      belief: ['主流教会 / 民间信仰 / 无神论社群', '比如建「第一教会」「数据教派」，各自写自己的教义与组织。'],
+      justice: ['联邦法 / 公司合规条例', '比如建「联邦法」「平台条例」，各自写自己那套规矩。'],
+    },
+    都市异能: {
+      politics: ['异能管理局 / 三大财阀', '比如建「异能管理局」「曜石财阀」，各自写自己的权力结构。'],
+      economy: ['曜石集团 / 地下钱庄', '比如建「曜石集团」「地下钱庄」，各自写自己的买卖与盘子。'],
+      belief: ['异能协会 / 民间祟神', '比如建「异能协会」「祟神教」，各自写自己的教义与组织。'],
+      justice: ['异能特法 / 普通人刑法', '比如建「异能特法」「刑法典」，各自写自己那套规矩。'],
+    },
+    科幻末世: {
+      politics: ['联交所 / 巨型企业城邦 / 军事管制区', '比如建「联交所」「方舟城邦」，各自写自己的权力结构。'],
+      economy: ['回收站经济 / 合成食品配给', '比如建「回收站联盟」「合成食品厂」，各自写自己的供给与盘子。'],
+      belief: ['数据教 / 机械弥赛亚会', '比如建「数据教」「弥赛亚会」，各自写自己的教义与组织。'],
+      justice: ['联统法 / 殖民法 / 企业自治法', '比如建「联统法」「方舟法」，各自写自己那套规矩。'],
+    },
+    悬疑灵异: {
+      politics: ['市局 / 家族 / 隐秘组织', '比如建「市局」「陈家」「观澜会」，各自写自己的权力结构。'],
+      economy: ['旧货行 / 典当 / 地方小吃', '比如建「荣昌旧货行」「巷口小吃」，各自写自己的买卖与盘子。'],
+      belief: ['城隍庙 / 西方教会 / 无形契', '比如建「城隍庙」「圣心堂」，各自写自己的教义与组织。'],
+      justice: ['刑法 / 宗族家规 / 镇规', '比如建「刑法」「陈家家规」，各自写自己那套规矩。'],
+    },
+    游戏竞技: {
+      politics: ['俱乐部联盟 / 赛事委员会', '比如建「联赛委员会」「电竞俱乐部联盟」，各自写自己的权力结构。'],
+      economy: ['赞助商 / 转会市场 / 直播平台', '比如建「星火赞助」「转会市场」，各自写自己的盘子。'],
+      belief: ['粉丝社群 / 战队文化 / 竞技信仰', '比如建「粉丝社群」「老战队传统」，各自写自己的教义与组织。'],
+      justice: ['赛事规则 / 仲裁条例', '比如建「联赛规则」「仲裁条例」，各自写自己那套规矩。'],
+    },
+    女频言情: {
+      politics: ['家族 / 公司 / 豪门', '比如建「林家」「盛宏集团」，各自写自己的权力结构。'],
+      economy: ['家族生意 / 独立小店', '比如建「林家生意」「自己的小店」，各自写自己的买卖与盘子。'],
+      belief: ['家风 / 传统 / 个人信念', '比如建「林家家风」「独立信仰」，各自写自己的教义与组织。'],
+      justice: ['家规 / 公司制度 / 法律', '比如建「林家家规」「集团制度」，各自写自己那套规矩。'],
+    },
+  }
+  /** 通用兜底（未列入的题材）：只给条目总称，不给具体例子 —— 宁可空着也不给错题材的例子 */
+  const GENERIC_EXAMPLE: Record<string, [string, string]> = {
+    politics: ['第一个政权 / 邦国', '比如建「第一个政权」「另一个邦国」，各自写自己的权力结构。'],
+    economy: ['第一个地区 / 行业', '比如建「第一个地区」「另一个行业」，各自写自己的经济运转。'],
+    belief: ['第一个教派 / 神系', '比如建「第一个教派」「另一个神系」，各自写自己的信仰体系。'],
+    justice: ['第一套律法 / 地区', '比如建「第一套律法」「另一个地区」，各自写自己那套规矩。'],
+  }
+  const [phName, phSentence] =
+    EXAMPLES_BY_PACK[pack]?.[tab.id] ?? GENERIC_EXAMPLE[tab.id] ?? ['', '']
+  /** 新建时的输入框举例（按题材 + 页签给，避免笼统的「名称」或错题材的例子） */
+  const namePlaceholder = phName ? `例：${phName}` : ''
+  /** 问号气泡里的举例句（同样按题材走） */
+  const itemExample = phSentence
 
   // 包一层 useMemo：模块随题材包变，依赖 [tab.id, pack]（不是 `tab.modules` —— 那是个 getter，每次读都是活值）
   // 🔴 `?? []` 兜底：`modulesFor` 返回 `FormModule[] | undefined`（页面下方另有「没有可填字段」的空态）
@@ -156,9 +232,18 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   const addSub = async (name: string) => {
     const n = name.trim()
     if (!n) return
+    // 🔴 先把当前条目的草稿落库再切走 —— 与 selectSub / delSub 同范式。
+    //    漏了这一步：填了一半的条目在点「新增」后内容全消失，且下面 setDirty(false)
+    //    把卸载兜底也一起拆了 ⇒ 彻底静默丢数据（2026-10-02 六维审计 P1）。
+    await flush(true)
     const rec: CardRecord = { id: uid(), projectId: '', tabId: '', name: n, data: {}, order: subs.length } as CardRecord
-    await db.saveSubSet(tab.id, rec)
-    await db.setSubActive(tab.id, rec.id, true)   // 新建即活跃
+    try {
+      await db.saveSubSet(tab.id, rec)
+      await db.setSubActive(tab.id, rec.id, true)   // 新建即活跃
+    } catch (e) {
+      showToast(`新增失败：${e instanceof Error ? e.message : String(e)}`, 'error', 8000)
+      return
+    }
     setSubs(prev => [...prev, rec])
     setActiveIds(await db.getActiveSubIds(tab.id))
     setSel(rec.id)
@@ -175,10 +260,16 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
     showToast(`已改名为「${n}」`, 'success')
   }
 
-  const delSub = async () => {
-    if (!selSub) return
+  /**
+   * 删除一条。@param targetId 要删的条目 id —— 行内按钮必须传进来，
+   *   否则会删掉「当前选中项」而不是用户点的那一行（点 A 删 B，且不可撤销）。
+   */
+  const delSub = async (targetId?: string) => {
+    const id = targetId ?? sel
+    const target = subs.find(s => s.id === id)
+    if (!target) return
     const ok = await confirmDialog({
-      title: `删除「${selSub.name}」`,
+      title: `删除「${target.name}」`,
       message: [
         `删掉之后这一条的设定内容也会一起没了，且无法撤销。`,
         `（如果只是想让它不再发给 AI，把它标成「已完结」就够了 —— 内容还留着。）`,
@@ -186,15 +277,23 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
       danger: true,
     })
     if (!ok) return
-    await flush(true)                              // 🔴 先把草稿落库（它即将随这条一起被删）
-    await db.deleteSubSet(tab.id, selSub.id)
+    // 只在删的是当前选中项时才 flush（它的草稿即将随这条一起消失）
+    if (id === sel) await flush(true)
+    try {
+      await db.deleteSubSet(tab.id, id)
+    } catch (e) {
+      // 🔴 删除不可撤销，失败必须让作者知道 —— 静默 escape 会让他以为删掉了（内容其实还在）
+      showToast(`删除失败：${e instanceof Error ? e.message : String(e)}`, 'error', 8000)
+      return
+    }
     const rest = await db.getSubSets(tab.id)
     setSubs(rest)
     setActiveIds(await db.getActiveSubIds(tab.id))
-    setSel(rest[0]?.id ?? '')
-    setDraft(rest[0]?.data ?? {})
+    const nextSel = id === sel ? (rest[0]?.id ?? '') : sel
+    setSel(nextSel)
+    setDraft(rest.find(s => s.id === nextSel)?.data ?? {})
     setDirty(false)
-    showToast(`已删除「${selSub.name}」`, 'success')
+    showToast(`已删除「${target.name}」`, 'success')
   }
 
   const toggleActive = async (id: string, on: boolean) => {
@@ -245,14 +344,14 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
           <HelpPopover title={`${tab.name} · 怎么用`} width="24rem" size={14}>
-            {`这个页签是**并列**结构 —— 没有「全书统一」那一层，直接一条一条建：\n\n`
+            {`这个页签是「并列」结构 —— 没有「全书统一」那一层，直接一条一条建：\n\n`
               + `· 点下面的「${addLabel}」新建一条，每条一个名称 + 一份表单。`
               + `${itemExample}各自写各自的。\n`
               + `· 每条有一个开关：「活跃」（当前故事聚焦在它）或「已完结」（写过、不再聚焦）。\n`
               + `· 🔴 只有活跃的条目才会发给 AI。已完结的留在库里随时可查，但不再占用模型的注意力 —— `
               + `多条设定就不会互相打架。\n`
               + `· 左列点一下切换编辑对象，右列表单顶部标着你现在在填哪一条。\n\n`
-              + `📌 字段说明与示例会随你在新建项目时选的**作品题材**变化（现在这套是「${pack}」）。\n\n`
+              + `📌 字段说明与示例会随你在新建项目时选的「作品题材」变化（现在这套是「${pack}」）。\n\n`
               + `${tab.description ?? ''}\n\n`
               /* 🔴 2.7.2：把 INSTITUTION_META.tips 真正显示出来（此前它挂在 TabDef 上却没人读） */
               + (tab.tips ?? []).map(t => `${t}\n`).join('\n')}
@@ -271,7 +370,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
           </div>
 
           <button onClick={() => void createFromWorldbase()}
-            title="把《世界设定》里已有的条目在这里建出空壳（只补缺，不动已有条目，内容各自填）"
+            title="把《世界设定》里已有的条目名在这里建出空壳（只补缺，已有同名条目不动；内容各自填）"
             className="w-full flex items-center gap-1.5 px-3 py-1.5 text-10 text-ink-400 hover:bg-ink-800 border-b border-ink-700 transition-colors"
           >
             <Layers size={11} /> 从《世界设定》新建
@@ -308,14 +407,17 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
                   </button>
                   {/* U-4 · 2.6.0：hover 显形的一组行内小按钮（对齐 SelectRow 的做法） */}
                   <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                    <button onClick={() => setNaming('rename')}
-                      title="改名"
+                    {/* 🔴 必须先切到本行再动作：这两个按钮在 map 里，闭包里有 s，
+                        但 setNaming / delSub 作用于「当前选中项」。不传 id ⇒ 点 A 行删掉 B 行，
+                        且删除不可撤销。2026-10-02 六维审计 P0。 */}
+                    <button onClick={() => { setSel(s.id); setDraft(s.data ?? {}); setDirty(false); setNaming('rename') }}
+                      title={`改名「${s.name}」`}
                       className="rounded p-0.5 text-ink-500 hover:text-ink-200"
                     >
                       <Pencil size={11} />
                     </button>
-                    <button onClick={() => void delSub()}
-                      title="删除这一条"
+                    <button onClick={() => void delSub(s.id)}
+                      title={`删除「${s.name}」`}
                       className="rounded p-0.5 text-ink-500 hover:text-red-400"
                     >
                       <Trash2 size={11} />

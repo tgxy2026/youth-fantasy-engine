@@ -197,7 +197,12 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
     computed[i] = { memory: got.memory, journal: got.journal.trim() }
   }
 
-  // 全部成功 → 一次性落库（记忆 + 日记成对写，避免出现"有记忆没日记"的中间态）
+  // ① 算完先只收集，**不落库** —— 落库推迟到 ③ 之后的统一提交点（见文件头「事务边界」）。
+  // 🔴 2026-10-02 六维审计 P0：`store.saveMemory` 的键是 `tavern.free.mem.<charId>`，
+  //    **不带 sessionId，是跨会话的全局键** —— 记忆与 ②b 的角色卡一样属于「会话之外的持久状态」。
+  //    早先版本在①段末尾就写，③ 中止时会留下「记忆已并入本场、水位线却没推」的状态：
+  //    作者重试 ⇒ ① 拿到与上次完全相同的那批消息、而 prev 已是含这批事件的档案
+  //    ⇒ 同一段剧情被并进档案**第二次**（日记有 sessionId 幂等兜着，记忆没有 ⇒ 不可逆）。
   const memories: FreeMemory[] = []
   const journals: Record<string, string> = {}
   for (let i = 0; i < cards.length; i++) {
@@ -205,11 +210,9 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
     const got = computed[i]
     // 读记忆失败的那位：本轮跳过（已计入 warnings），不写、也不记进 memories
     if (!got) continue
-    await store.saveMemory(got.memory)
     memories.push(got.memory)
     if (got.journal) {
       journals[c.id] = got.journal
-      await store.appendJournalEntry(c.id, journalEntry(session, cards, got.journal))
     }
   }
 
@@ -302,17 +305,21 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
     }
   }
 
-  // ---- 事务提交点：③ 也跑完了，现在才把 ②b 的待回写真正落卡 ----
+  // ---- 事务提交点：①②③ 全部跑完，现在才把三笔持久写入真正落库 ----
   //
-  // 🔴 为什么必须等到这里（2026-10-02 六维审计待办 · 主角色卡数值重复累加）：
-  //    主角色卡的 vars 是**跨会话持久累积**的（反馈 #4：状态存卡）。若在 ② 阶段就写，
-  //    而 ③ 设定审查被作者中止（`isCancelled` 向上抛）⇒ 卡片已被改成新数值、备注已叠加一层，
+  // 🔴 为什么必须等到这里（2026-10-02 六维审计）：
+  //    ① 的记忆（`tavern.free.mem.<charId>`）、① 的日记（`tavern.free.journal.<charId>`）、
+  //    ②b 的主角色卡 vars —— **三者都是跨会话持久累积的**。若在 ①② 阶段就写，
+  //    而 ③ 设定审查被作者中止（`isCancelled` 向上抛）⇒ 这些全局键已被并入本场内容，
   //    但会话没归档（endedAt 未写、水位线未推进）。作者重试「结束本轮对话」时，
-  //    ② 会拿同一段对话再抽一次、再叠一层备注 —— 每重试一次数值就滚一格，且不可逆。
+  //    ① 拿到的是**与上次完全相同的那批消息**、而 prev 已是含这批事件的档案
+  //    ⇒ 同一段剧情被并进档案**第二次**（记忆无幂等机制，直接落库、不可逆）。
   //    现在 ①②③ 任一中止 ⇒ 一条都不落 ⇒ 重试从零重算，干净。
-  //
-  //    记忆 / 日记的落库同样在 ① 段末尾（那里是「全算完才写」），本处只补 ②b 这一笔 ——
-  //    因为 ①②③ 里只有 ②b 会写**会话之外**的持久状态（角色卡），记忆与日记都写在本会话内。
+  for (const m of memories) await store.saveMemory(m)
+  for (const c of cards) {
+    const j = journals[c.id]
+    if (j) await store.appendJournalEntry(c.id, journalEntry(session, cards, j))
+  }
   if (pendingCardWrite) await store.saveFreeChar(pendingCardWrite)
 
   onProgress?.({ stage: 'done', cur: total, total })

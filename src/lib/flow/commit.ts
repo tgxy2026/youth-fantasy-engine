@@ -23,6 +23,7 @@ import { nextAutoCode } from '../autoCode'
 import * as db from '../db'
 import { uid } from '../id'
 import { TABS } from '../schema'
+import { isParallelSetTab } from '../worldSets'
 import { normName } from '../settingLedger'
 import { formFieldNames } from './formMap'
 import type { CardRecord, TableRow } from '../types'
@@ -173,6 +174,18 @@ export async function commitDraftRows(rows: DraftRow[], opts: CommitOptions = {}
       if (!tab) { out.failed.push(row.name); continue }
 
       if (tab.type === 'form') {
+        // 🔴 2026-10-02 六维审计 P1：并列结构页签（政治 / 经济基础 / 宗教信仰 / 司法制度）
+        //    在 schema 里也是 `type:'form'`，但 2.7.2 起它们**没有母级 formData** ——
+        //    aiContext / exporter / ParallelSetSheet 三处都不读那一层。
+        //    若照常写进去：界面报告「已更新 N 条」、作者重开页面一个字都没变（静默失效，比报错更坏）。
+        //    ⇒ 这里明确跳过并计入 skipped，让作者在报告里看到「这四张不支持末尾汇总」。
+        if (isParallelSetTab(row.tabId)) {
+          // CommitOutcome 只有 created/updated/failed 三个字段，没有「跳过」这一档；
+          // 放进 failed 会让界面弹「N 条失败」的红字，语气过重。折中：计入 failed 但
+          // 条目名自带说明，作者一眼能看出是「不支持」而不是「出错」。
+          out.failed.push(`${row.name}（并列结构页签暂不支持末尾汇总）`)
+          continue
+        }
         // 表单型是**整项目单份**，没有"同名条目"这回事 —— 冲突策略直接作用在**字段**上：
         // · keep-existing / fill-empty：**只填空字段**（作者手改过的内容一律不动）
         // · use-incoming：覆盖（危险，界面须二次确认）
@@ -288,6 +301,13 @@ export async function previewCommit(rows: DraftRow[], conflict: ConflictPolicy =
     let exists = false
     try {
       if (tab.type === 'form') {
+        // 🔴 与 commitDraftRows 同因（2026-10-02 六维审计 P1）：并列结构页签没有母级 formData，
+        //    写进去也是黑洞 ⇒ 预览必须一并跳过，否则界面说「会更新 N 条」而实际不写。
+        if (isParallelSetTab(row.tabId)) {
+          out.skip++
+          out.items.push({ name: row.name, tabId: row.tabId, tabName: row.tabName, action: 'skip' })
+          continue
+        }
         // 表单型要预览的是"**有没有字段真会被写**"，而不是"有没有同名条目"——
         // 表单永远"存在"（它有默认值），按条目型那套判断会把每一张都算成"跳过"。
         const cur = await db.getFormData(row.tabId).catch(() => ({} as Record<string, string>))

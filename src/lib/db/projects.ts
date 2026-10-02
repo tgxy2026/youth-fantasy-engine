@@ -14,6 +14,28 @@ import type { DailyStat } from './meta'
 function isLegacyProjectType(t: unknown): t is 'lite' | 'minimal' {
   return t === 'lite' || t === 'minimal'
 }
+
+/**
+ * 导入 / 恢复备份时，重映射 `settingsKV` 里存的 **cardRecords id 数组**。
+ *
+ * 🔴 2026-10-02 六维审计 P0：备份里的 `settings` 含「子项活跃态」（键 `worldSubActive::<tabId>`，
+ *    值是 cardRecords 的 id 数组）。而 cardRecords 落到新项目时**全部换新 id**（`uid()`）——
+ *    若原样搬 value，数组里 100% 是悬空 id ⇒ `splitActive` 全部丢弃 ⇒
+ *    所有多套条目（世界总览的子世界、力量体系的子体系、制度四页签的条目）
+ *    **集体退化为「已完结」**，AI 上下文只剩一行「当前没有活跃的…」，且无任何报错。
+ *
+ * 只重映射**已知的活跃态键**；其余 settings 值原样搬（别去猜别的键里有没有 id）。
+ * 映射表里没有的旧 id 一律丢弃（对应记录没进这次导入，留着也只是悬空）。
+ */
+export function remapSettingValue(
+  key: string,
+  value: unknown,
+  cardIdMap: ReadonlyMap<string, string>,
+): unknown {
+  if (!key.startsWith('worldSubActive::')) return value
+  if (!Array.isArray(value)) return value
+  return value.map(id => (typeof id === 'string' ? cardIdMap.get(id) : undefined)).filter((v): v is string => !!v)
+}
 function normalizeProject(p: Project): Project {
   if (isLegacyProjectType(p.projectType)) return { ...p, projectType: 'full' }
   return p
@@ -252,8 +274,15 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
       : r.tabId
     await ops.put('tableRows', { ...r, id: nid, tabId, projectId: newPid })
   }
+  // 🔴 cardRecords 换新 id 时**必须记下旧→新映射**：settingsKV 里的「子项活跃态」
+  //    （`worldSubActive::<tabId>`，值是 cardRecords 的 id 数组）要跟着一起搬。
+  //    否则导入后数组里全是悬空 id ⇒ splitActive 全部丢弃 ⇒ 所有条目退化为「已完结」，
+  //    AI 上下文只剩一行「当前没有活跃的…」，且**无任何报错**（2026-10-02 六维审计 P0）。
+  const cardIdMap = new Map<string, string>()
   for (const r of bundle.cardRecords) {
-    await ops.put('cardRecords', { ...r, id: uid(), projectId: newPid })
+    const nid = uid()
+    cardIdMap.set(r.id, nid)
+    await ops.put('cardRecords', { ...r, id: nid, projectId: newPid })
   }
   // 每日统计与设置（可选字段，向后兼容旧备份）
   if (bundle.dailyStats) {
@@ -263,7 +292,7 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
   }
   if (bundle.settings) {
     for (const s of bundle.settings) {
-      await ops.put('settingsKV', { key: `${newPid}::${s.key}`, value: s.value })
+      await ops.put('settingsKV', { key: `${newPid}::${s.key}`, value: remapSettingValue(s.key, s.value, cardIdMap) })
     }
   }
   if (bundle.customOptions) {

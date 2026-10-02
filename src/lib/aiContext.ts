@@ -396,11 +396,16 @@ async function renderActiveSubSets(tab: TabDef, o: RenderOpts = {}): Promise<str
     const subs = await db.getSubSets(tab.id)
     if (subs.length === 0) return null
     const { active, closed } = splitActive(subs, await db.getActiveSubIds(tab.id))
+    // 角色视角：标了 S 的条目整段剔除；D 级任何视角都不带（与 renderCards / renderTable 同口径）
+    // 🔴 2026-10-02 六维审计 P1：这里原来只判 S 不判 D —— 同一份过滤逻辑复制四遍时漏了一处。
+    const shown = active.filter(s => !isPrunedForAI(s.data) && !(o.hideSecretRows && isSecretRow(s.data)))
+    // 🔴 2026-10-02 六维审计 P1：`total` 必须用**过滤后**的真实集合。
+    //    原来传过滤前的 active.length + closed.length，而 compose 内部按 `total - shown.length`
+    //    算「已完结」⇒ 被 S 拦掉的活跃条目被文案的「已完结」指认。
+    //    那句「另有 N 个已完结」是作者判断「AI 到底读了什么」的唯一依据，撒谎等于误导。
     return composeSubSetsBlock(
-      // 角色视角：标了 S 的子世界整段剔除（与 sectionOf 的母级同口径）
-      active.filter(s => !(o.hideSecretRows && isSecretRow(s.data)))
-        .map(s => ({ name: s.name, body: renderForm(tab, s.data ?? {}, o) })),
-      active.length + closed.length,
+      shown.map(s => ({ name: s.name, body: renderForm(tab, s.data ?? {}, o) })),
+      shown.length + closed.length,
     )
   } catch {
     // 单段读取失败就当这张表没建过子项（与 sectionOf 同口径：拿不到就少带一段，绝不报错）
@@ -423,11 +428,12 @@ async function renderActiveParallelSets(tab: TabDef, o: RenderOpts = {}): Promis
     if (subs.length === 0) return null
     const { active, closed } = splitActive(subs, await db.getActiveSubIds(tab.id))
     const label = subItemLabel(tab.id, getActivePack())
+    // 角色视角：标了 S 的条目整段剔除；D 级任何视角都不带（与 renderCards/renderTable 同口径）
+    const shown = active.filter(s => !isPrunedForAI(s.data) && !(o.hideSecretRows && isSecretRow(s.data)))
+    // 🔴 total 用过滤后口径：否则被 S 拦掉的活跃条目会被「已完结」文案指认（与母子版同因，见 B7）
     return composeParallelSetBlock(
-      // 角色视角：标了 S 的条目整段剔除（与母子版母级同口径）
-      active.filter(s => !(o.hideSecretRows && isSecretRow(s.data)))
-        .map(s => ({ name: s.name, body: renderForm(tab, s.data ?? {}, o) })),
-      active.length + closed.length,
+      shown.map(s => ({ name: s.name, body: renderForm(tab, s.data ?? {}, o) })),
+      shown.length + closed.length,
       label,
     )
   } catch {
@@ -464,12 +470,17 @@ function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: R
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
   // 🔴 D 级（任何视角）与 S 级（仅角色视角）都先剔除（同 renderCards：正文与「另有 N 行未列出」的计数都不算它）
   const usable = rows.filter(r => !isPrunedForAI(r.data) && !(o.hideSecretRows && isSecretRow(r.data)))
-  // 2.2.0：同 renderCards —— 先按「保密等级」排预算优先级再截断（同等级保持录入序）
-  const use = sortBySecrecy(usable).slice(0, cap).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
+  // 2.2.0：先按「保密等级」排预算优先级（同等级保持录入序）
+  // 🔴 2026-10-02 六维审计 P1：**空行过滤必须在 slice 之前**。
+  //    原来先 slice(cap) 再滤「本行可见列全空」⇒ 排在那样的行之后的有效行**不递补**，
+  //    明明 60 行有效数据只输出 25 行；且计数 `usable.length - cap` 系统性偏小，
+  //    模型会以为「剩下的都读过了」（renderCards 没这问题，两份复制品已漂移）。
+  const filled = sortBySecrecy(usable).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
+  const use = filled.slice(0, cap)
   if (use.length === 0) return ''
   const out = [cols.join(' ｜ ')]
   for (const r of use) out.push(cols.map(c => clip(r.data[c] ?? '', cellCap(c))).join(' ｜ '))
-  if (usable.length > cap) out.push(`（另有 ${usable.length - cap} 行未列出）`)
+  if (filled.length > cap) out.push(`（另有 ${filled.length - cap} 行未列出）`)
   return out.join('\n')
 }
 
@@ -510,6 +521,10 @@ async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): 
       }
       const formData = await db.getFormData(tab.id)
       // 角色视角：整条记录标了 S（绝密 / 剧透）⇒ 整段不带（含它的子世界）
+      // 🔴 2026-10-02 六维审计 P1：母级整段原来只判 S、不判 D。
+      //    `isPrunedForAI`（D＝终结，任何视角都不进 AI）的契约是「凡是把项目数据交给模型的入口都要过」，
+      //    而 renderCards / renderTable 都接了、这里与两个子集渲染器没接 —— 同一份逻辑复制四遍时漏改。
+      if (isPrunedForAI(formData)) return ''
       if (o.hideSecretRows && isSecretRow(formData)) return ''
       const main = renderForm(tab, formData, o)
       // 母子结构表（世界设定 / 力量体系）：建过子项才引入母／子两层标题。
@@ -524,7 +539,14 @@ async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): 
       const rows = await db.getTableRows(tab.id)
       // 酒馆模式：知情权限只带「该角色是知情者」的条目（方案 §6.5 事实边界的自动推断）
       if (tab.id === 'secrets' && knowerName) {
-        const mine = rows.filter(r => String(r.data?.['知情者'] ?? '').includes(knowerName))
+        // 🔴 2026-10-02 六维审计 P1：`knowerName` 是把多个 AI 角色用「、」拼成的**整串**，
+        //    一次 `includes(整串)` 是「整串包含」而非 engine.ts 注释承诺的「任一命中」——
+        //    只要 ≥2 个 AI 角色（buildMultiCharRule 明确支持），知情者列就几乎全不匹配
+        //    ⇒ 整张「谁不知道什么」的事实边界被静默丢弃。改成按分隔符拆开后 some()。
+        const names = knowerName.split(/[、,，;；\s]+/).map(s => s.trim()).filter(Boolean)
+        const mine = names.length
+          ? rows.filter(r => names.some(n => String(r.data?.['知情者'] ?? '').includes(n)))
+          : rows
         return renderTable(tab, mine, o)
       }
       return renderTable(tab, rows, o)
@@ -858,7 +880,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
  *   默认口径下，2000 预算会被**章节清单（目录）**和"相关章节召回"吃掉大半 ——
  *   可伴写已经拿到了光标前正文，再给卷/章目录纯属重复，真正的设定反而挤不进来。
  * 故此处：① 关掉章节清单；② 只带这四类 ——
- *   作品定位（是不是这本书）/ 世界设定 / 主要角色（身份称谓别写错）/ 名词术语（专名别漂移）。
+ *   作品信息（是不是这本书）/ 世界设定 / 主要角色（身份称谓别写错）/ 名词术语（专名别漂移）。
  *   《写作规范》由调用方单独摘取（只取 3 个字段，比整表带过来更省更准），故不在此重复。
  */
 export async function buildInlineBriefing(budget = 900): Promise<string> {

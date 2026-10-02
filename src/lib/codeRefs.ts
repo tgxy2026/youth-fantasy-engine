@@ -75,7 +75,7 @@ export async function countCodeRefs(
     }
   }
 
-  // ③ 表单型设定（作品定位 / 世界设定 / 力量体系 / 全书总纲 / 写作规范）
+  // ③ 表单型设定（作品信息 / 世界设定 / 力量体系 / 全书总纲 / 写作规范）
   for (const tab of TABS) {
     if (tab.type !== 'form') continue
     let data
