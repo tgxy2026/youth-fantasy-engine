@@ -220,7 +220,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           </Button>
           )}
           {!isMaster && (
-          <Button variant="secondary" onClick={() => setShowImport(true)} title="批量导入：粘贴表格 / CSV / 纯文本，或上传文件" className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0">
+          <Button variant="secondary" onClick={() => setShowImport(true)} title="批量导入：粘贴表格 / CSV / 纯文本并上传文件；散文式设定可用「AI 智能拆分」自动解析成多条" className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0">
             <Upload size={14} /> 导入
           </Button>
           )}

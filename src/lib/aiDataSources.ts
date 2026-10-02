@@ -252,6 +252,16 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       { group: '本表已登记条目', items: [], note: '用于判重，模型不会重复生成已有的' },
     ],
   },
+  // 表格批量导入 · AI 智能拆分（2.7.0 · 社区反馈）
+  'table-import-split': {
+    label: '表格导入 · AI 智能拆分',
+    sources: [
+      { group: '你粘贴的那段内容（表格 / 散文设定）', items: [], note: '主要依据；长文会自动分段多次解析，分段之间不重叠' },
+      { group: '项目设定资料', items: CORE_TABLES, note: '约 9000 字预算；用于对齐人名 / 势力名，会排除本表；可在导入弹窗里关掉' },
+      { group: '候选值清单（程序算好，只发名称）', items: ['下拉列的可选值', '跨表引用表里已有的名称', '角色姓名'], note: '让模型从固定名单里挑，避免编出不存在的名称' },
+    ],
+    excludes: ['不读章节正文 —— 它只解析你粘贴的那段内容，不去全书里翻找'],
+  },
   'fill-template': {
     label: 'AI 补全（设定 / 角色卡）',
     sources: [

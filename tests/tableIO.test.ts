@@ -10,7 +10,7 @@
 import {
   splitCsvLine, splitMdRow, isMdSeparator, parseImportText, mapHeaders, matrixToRows,
   mainColumn, textToRows, validateImport, buildImportRows, exportRowsCsv, exportTemplateCsv,
-  csvCell, buildImportGuide, type ImportContext,
+  csvCell, buildImportGuide, splitIntoChunks, type ImportContext,
 } from '../src/lib/tableIO'
 import type { TabDef, TableRow } from '../src/lib/types'
 
@@ -149,12 +149,41 @@ function row(id: string, data: Record<string, string>, order = 0, tabId = 'natio
   ok('数据导出：表头 + 含逗号字段被引号包裹', data.split('\n')[0] === '编号,名称,上级,类别' && data.includes('"青,云宗"'), data)
 }
 
-// ---------- 9. 导入说明（给外部 AI 的提示词包）----------
+// ---------- 9. 导入说明（三种方式 + 给外部 AI 的提示词包）----------
 {
   const guide = buildImportGuide(nations)
   ok('说明含表头行（可复制）', guide.includes('编号,名称,上级,类别'))
   ok('说明含给外部 AI 的提示词', guide.includes('请把下面的设定整理成一张 CSV 表格'))
   ok('说明标注必填列', guide.includes('**必填**'))
+  // 2.7.0：三种导入方式必须逐一说清「什么时候用哪一种」
+  ok('说明讲了方式一（照着模板填）', guide.includes('方式一') && guide.includes('Excel'))
+  ok('说明讲了方式二（交给别的 AI 整理）', guide.includes('方式二') && guide.includes('别的 AI'))
+  ok('说明讲了方式三（AI 智能拆分）', guide.includes('方式三') && guide.includes('AI 智能拆分'))
+  ok('说明重申勾稽靠名称一致（不会失效）', guide.includes('勾稽关系'))
+  ok('外部 AI 提示词里加了「不合并成一行」的约束', guide.includes('不要把一个对象拆成多行'))
+}
+
+// ---------- 10. 长文分批（AI 智能拆分用）----------
+{
+  ok('短文本不分批', splitIntoChunks('一段很短的设定').length === 1)
+  ok('空白串不分批（返回 0 段）', splitIntoChunks('   \n  ').length === 0)
+
+  // 12 个由空行隔开的条目块，总长明显超过 1000
+  const blocks = Array.from({ length: 12 }, (_, i) => `第${i + 1}条设定：${'填充'.repeat(200)}`).join('\n\n')
+  const chunks = splitIntoChunks(blocks, 1000)
+  ok('长文被切成多段', chunks.length > 1, String(chunks.length))
+  ok('每段都非空', chunks.every(c => c.trim().length > 0))
+  ok('🔴 每段都不超过预算上限（保证单次喂给模型的量可控）',
+    chunks.every(c => c.length <= 1000), chunks.map(c => c.length).join(','))
+  ok('分段不重叠：去掉空白后总字数基本不减',
+    chunks.join('').replace(/\s/g, '').length >= blocks.replace(/\s/g, '').length * 0.98,
+    `${chunks.join('').replace(/\s/g, '').length} vs ${blocks.replace(/\s/g, '').length}`)
+
+  // 无换行的超长单段：必须按字数硬切，不能一整坨塞给模型
+  const oneLine = 'x'.repeat(5000)
+  const oneChunks = splitIntoChunks(oneLine, 1000)
+  ok('无空行的超长单段也会被硬切', oneChunks.length === 5, String(oneChunks.length))
+  ok('硬切结果可直接拼回原文', oneChunks.join('') === oneLine)
 }
 
 console.log(`\ntableIO: ${pass} passed, ${fail} failed`)

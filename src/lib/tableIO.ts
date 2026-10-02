@@ -114,6 +114,46 @@ export function parseImportText(raw: string): ParsedInput {
   return { format: 'text', text, note: `纯文本 · ${lines.length} 行（按「列名：值」块或逐行拆分）` }
 }
 
+/**
+ * 把长文本切成多段，供「AI 智能拆分」分批调用（每段独立喂模型 ⇒ 单次上下文小、拆分更准，
+ * 也顺带突破「一次 12 条」的旧上限）。
+ *
+ * 切分规则（贪心装填，保证**每段长度 ≤ maxChars**）：
+ *   · 逐行累加，装不下就在**这一行之前**收口；
+ *   · 单行本身就超预算（如一大坨没有换行的散文）→ 按字数硬切；
+ *   · 段首的空行丢弃，段与段之间**不重叠** —— 重叠会让同一条记录被解析两次、在预览里变成"重复"。
+ */
+export function splitIntoChunks(text: string, maxChars = 3000): string[] {
+  const t = (text ?? '').replace(/\r\n?/g, '\n').trim()
+  if (!t) return []
+  const per = Math.max(200, Math.floor(maxChars))
+  if (t.length <= per) return [t]
+
+  const chunks: string[] = []
+  let buf: string[] = []
+  let size = 0
+  const flush = () => {
+    const s = buf.join('\n').trim()
+    if (s) chunks.push(s)
+    buf = []
+    size = 0
+  }
+
+  for (const line of t.split('\n')) {
+    if (line.length > per) {
+      flush()
+      for (let i = 0; i < line.length; i += per) chunks.push(line.slice(i, i + per))
+      continue
+    }
+    if (size > 0 && size + line.length + 1 > per) flush()
+    if (buf.length === 0 && line.trim() === '') continue // 段首空行丢弃
+    buf.push(line)
+    size += line.length + 1
+  }
+  flush()
+  return chunks
+}
+
 // ============ B. 映射与行对象 ============
 
 /** 表头 → schema 列名（null = 该列忽略）。按列名精确匹配，不按位置 */
@@ -363,17 +403,49 @@ function colTip(c: TableColumn, tab: TabDef): string {
 }
 
 /**
- * 生成《导入说明.md》—— 列头含义 + 可复制的表头行 + 一段**可直接粘给外部 AI** 的提示词。
- * 场景：作者已有一份设定，想让别的 AI 整理成表格再导回本项目。
+ * 生成《导入说明.md》—— 三种导入方式各适用什么情况 + 列头含义 + 可复制的表头行 +
+ * 一段**可直接粘给外部 AI** 的提示词。
+ *
+ * 🔴 这份文件的读者是「已经有一份现成设定、想搬进项目」的作者，和「把这个文件交给别的 AI」的外部模型
+ *    —— 所以三种方式必须先讲清「什么时候用哪一种」，否则作者会拿最笨的方式做最简单的事。
  */
 export function buildImportGuide(tab: TabDef): string {
   const cols = (tab.columns ?? []).filter(c => !c.hidden)
   const headers = cols.map(c => c.name)
+  const main = mainColumn(tab)
   const L: string[] = []
   L.push(`# 《${tab.name}》导入说明`)
   L.push('')
-  L.push('把本节「表头行」复制到 Excel / 在线表格的第一行，逐行填写，另存为 CSV（UTF-8）后，')
-  L.push('回到本页点「导入」粘贴或选择该文件即可。也可以用 Markdown 表格、或直接从 Excel 复制粘贴。')
+  L.push('你手上已经有一份现成设定（Excel 表 / 文档里的文字 / 别的 AI 帮你整理好的清单），想整批搬进本项目。')
+  L.push('本项目提供**三种**导入方式，按你的材料形态挑一种即可：')
+  L.push('')
+  L.push('## 方式一 · 照着模板填（最简单、最确定）')
+  L.push('')
+  L.push('**什么时候用**：你的设定本来就条理清晰，或者你愿意手动整理。')
+  L.push('**怎么做**：把下面「表头行」复制到 Excel / 在线表格的第一行，逐行填写，')
+  L.push('回到本页点「导入」——粘贴表格、或选择另存好的 CSV（UTF-8）文件都行。')
+  L.push('Markdown 表格、以及从 Excel 直接「复制 → 粘贴」过来的制表符表格，同样能识别。')
+  L.push('**特点**：完全本地解析，**不消耗任何 AI 额度**，结果可预期。')
+  L.push('')
+  L.push('## 方式二 · 交给别的 AI 整理成表（适合散文式设定）')
+  L.push('')
+  L.push('**什么时候用**：你的设定是文档/散文式的，人懒得逐条誊，但想让**别的 AI**（如网页版对话模型）帮你整理。')
+  L.push('**怎么做**：把本文件「交给其他 AI 整理用的提示词」整段复制、连同你的设定原文一起发给那个 AI，')
+  L.push('让它输出表格；拿到结果后回到本页「导入」，粘贴进来即可（走方式一的解析）。')
+  L.push('**特点**：不消耗本项目的额度；由你选定的那个 AI 出力。')
+  L.push('')
+  L.push('## 方式三 · 直接粘贴，用本项目已接入的 AI 智能拆分（最省事）')
+  L.push('')
+  L.push('**什么时候用**：你懒得手动整理、也不想另开一个 AI；希望**粘贴完点一下就自动拆成多条**。')
+  L.push('**怎么做**：把表格内容或散文式设定直接粘到本页文本框，点「AI 智能拆分」，')
+  L.push('本项目会用你**当前配置的模型**把内容解析成多条记录，拆完进预览、逐条勾选后导入。')
+  L.push('**特点**：会用你配置的模型（本地 Ollama / 联网模型），**长文会自动分批**，突破一次十几条的限制；')
+  L.push('效果取决于模型能力，拆完务必在预览里过一眼再导入。')
+  L.push('')
+  L.push('---')
+  L.push('')
+  L.push('> 无论哪种方式，导入**不会破坏表之间的勾稽关系**：跨表引用按「名称逐字一致」关联，')
+  L.push('> 只要名称与目标表里已有的写法一致，导入后关系就成立。预览会把「对不上的名称」单独标出来提示你。')
   L.push('')
   L.push('## 列说明')
   L.push('')
@@ -387,11 +459,13 @@ export function buildImportGuide(tab: TabDef): string {
   L.push(headers.join(','))
   L.push('```')
   L.push('')
-  L.push('## 交给其他 AI 整理用的提示词（可选）')
+  L.push('## 交给其他 AI 整理用的提示词（方式二用）')
   L.push('')
   L.push('```')
   L.push(`请把下面的设定整理成一张 CSV 表格。第一行表头必须逐字为：${headers.join(',')}。`)
-  L.push('每一行是一条记录；不要增删列；无法确定的单元格留空；不要输出解释文字，只输出 CSV。')
+  L.push('每一行是一条记录；**不要把一个对象拆成多行，也不要把多个对象合并成一行**；')
+  L.push('不要增删列；无法确定的单元格留空；不要输出解释文字，只输出 CSV。')
+  L.push(`其中「${main}」这一列是必填（每条记录的核心名称）。`)
   L.push('（在此粘贴你的设定原文）')
   L.push('```')
   return L.join('\n')
