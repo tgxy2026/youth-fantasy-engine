@@ -283,8 +283,8 @@ async function main() {
     //    实测 8000 − 2600 − 8237 − 0 → 历史额度 0（21 条消息只剩开场一条）。
     //    这条断言防止有人把余量调回「给协议留位」的大值。
     ok('🔴 默认预算下历史额度必须为正（system 8237 是实测值）',
-      historyBudget(d.common.contextBudget, 'a'.repeat(8237), '', d.common.fixedOverheadChars) > 0,
-      `预算=${d.common.contextBudget} 余量=${d.common.fixedOverheadChars} 额度=${historyBudget(d.common.contextBudget, 'a'.repeat(8237), '', d.common.fixedOverheadChars)}`)
+      historyBudget(d.common.contextBudget, 'a'.repeat(8237), d.common.fixedOverheadChars) > 0,
+      `预算=${d.common.contextBudget} 余量=${d.common.fixedOverheadChars} 额度=${historyBudget(d.common.contextBudget, 'a'.repeat(8237), d.common.fixedOverheadChars)}`)
     ok('通用：固定开销预留 = budget.ts 的常量',
       d.common.fixedOverheadChars === FIXED_OVERHEAD_CHARS, String(d.common.fixedOverheadChars))
     ok('通用：默认关闭思考链（engine 原本恒传 think:false）', d.common.disableThink === true)

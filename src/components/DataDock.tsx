@@ -75,7 +75,7 @@ export default function DataDock() {
             <div className="flex items-center gap-1.5 text-xs text-ink-300">
               <span className="font-medium">本机存储</span>
             </div>
-            <DesktopDataBar embedded />
+            <DesktopDataBar />
           </div>
 
           {CLOUD_FILE_SYNC && (

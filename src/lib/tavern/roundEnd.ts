@@ -16,6 +16,14 @@
  * 最后拿这些结果审查设定）。拆开只会让人漏点某一项，得到一个「记得不全」的角色。
  *
  * 本文件只做编排；单次能力在 summarize.ts / revise.ts，落库在 store.ts。
+ *
+ * 【事务边界：①②③ 全跑完才落「会话之外」的持久状态】
+ *   ① 记忆 + 日记：段内「全算完才写」，任一角色失败 ⇒ 一条不落、直接抛（界面按「整场失败」处理）。
+ *   ② 本场数值 + ②b 回写主角色卡：②b 只**算**，真正的 `saveFreeChar` 推迟到 ③ 之后（见函数末尾「事务提交点」）。
+ *   ③ 设定审查：只产建议，不落卡。
+ *   🔴 ②b 延后落卡的原因：主角色卡 vars 是**跨会话持久累积**的。若在 ② 就写、而 ③ 被作者中止，
+ *      卡片已被改但会话没归档 → 重试时 ② 拿同一段对话再抽一次、备注再叠一层 ⇒ **数值重复累加**（不可逆）。
+ *      延后之后，①②③ 任一中止 ⇒ 一条不落 ⇒ 重试从零重算，干净。
  */
 import * as store from './store'
 import { messagesAfterWatermark } from './memory'
@@ -212,6 +220,13 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   //    这里用 `emptyVars(varKeys)` 兜底，第一场收尾就能把初始值 + 变化写进会话。
   let nextVars = args.vars
   let varChanges: VarChange[] = []
+  /**
+   * ②b 算出的「待回写主角色卡」载荷 —— **延到 ③ 跑完才落库**。
+   * 🔴 2026-10-02 六维审计待办：原先在 ② 阶段就 `saveFreeChar`，而 ③ 设定审查可被中止
+   *    （`isCancelled` 向上抛）⇒ 卡片已被改、但会话没归档（endedAt 未写、水位线未推）。
+   *    作者重试时 ② 会拿同一段对话再抽一次，备注一层层叠加 ⇒ **数值重复累加**。
+   */
+  let pendingCardWrite: FreeCharacter | null = null
   // 主角色卡（回写落点）；拿它的当前备注当抽取上下文，并作为回写时的备注基底
   const primary = args.primaryCharId ? cards.find(c => c.id === args.primaryCharId) : undefined
   const primaryNotes = primary?.vars?.notes
@@ -240,13 +255,16 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
         ? recordVarChanges({ ...base, values: ex.values }, ex.changes, turnSeqOf(session.messages))
         : base
       varChanges = ex.changes
-      // ②b 回写主角色卡（反馈 #4：状态存卡、跨会话累积）。备注沿用旧的、叠加这一轮新写的
+      // ②b 算出「要回写到主角色卡的那一份」，但**此处不落库**（见文件头「事务边界」说明）。
+      //    落卡推迟到 ③ 也跑完之后的统一落库点。
       if (primary && ex.changes.length > 0) {
-        const cardVars: CharVars = {
-          values: ex.values as CharVars['values'],
-          notes: { ...(primaryNotes ?? {}), ...(ex.notes ?? {}) },
+        pendingCardWrite = {
+          ...primary,
+          vars: {
+            values: ex.values as CharVars['values'],
+            notes: { ...(primaryNotes ?? {}), ...(ex.notes ?? {}) },
+          },
         }
-        await store.saveFreeChar({ ...primary, vars: cardVars })
       }
     } catch (e) {
       // 🔴 中止必须**向上抛**（2026-09-23 六维审计）：原先与「算不出来」合并处理 ⇒ runRoundEnd
@@ -283,6 +301,19 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
       warnings.push('设定审查未完成：' + (e instanceof Error ? e.message : String(e)))
     }
   }
+
+  // ---- 事务提交点：③ 也跑完了，现在才把 ②b 的待回写真正落卡 ----
+  //
+  // 🔴 为什么必须等到这里（2026-10-02 六维审计待办 · 主角色卡数值重复累加）：
+  //    主角色卡的 vars 是**跨会话持久累积**的（反馈 #4：状态存卡）。若在 ② 阶段就写，
+  //    而 ③ 设定审查被作者中止（`isCancelled` 向上抛）⇒ 卡片已被改成新数值、备注已叠加一层，
+  //    但会话没归档（endedAt 未写、水位线未推进）。作者重试「结束本轮对话」时，
+  //    ② 会拿同一段对话再抽一次、再叠一层备注 —— 每重试一次数值就滚一格，且不可逆。
+  //    现在 ①②③ 任一中止 ⇒ 一条都不落 ⇒ 重试从零重算，干净。
+  //
+  //    记忆 / 日记的落库同样在 ① 段末尾（那里是「全算完才写」），本处只补 ②b 这一笔 ——
+  //    因为 ①②③ 里只有 ②b 会写**会话之外**的持久状态（角色卡），记忆与日记都写在本会话内。
+  if (pendingCardWrite) await store.saveFreeChar(pendingCardWrite)
 
   onProgress?.({ stage: 'done', cur: total, total })
   return { memories, journals, vars: nextVars, varChanges, proposals, warnings, memoryDegraded, endedAt: Date.now() }

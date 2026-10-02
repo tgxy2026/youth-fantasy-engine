@@ -231,9 +231,11 @@ function main() {
 
   // ---------- 9) 预算计算 ----------
   {
-    ok('historyBudget 扣掉固定开销', historyBudget(8000, '', '') === 8000 - FIXED_OVERHEAD_CHARS)
-    ok('historyBudget 再扣设定与记忆', historyBudget(8000, 'a'.repeat(100), 'b'.repeat(50)) === 8000 - FIXED_OVERHEAD_CHARS - 150)
-    ok('额度不足时下限为 0（不出现负数）', historyBudget(100, 'x'.repeat(500), '') === 0)
+    ok('historyBudget 扣掉固定开销', historyBudget(8000, '') === 8000 - FIXED_OVERHEAD_CHARS)
+    // 🔴 2026-10-02：签名已删掉「记忆」形参（记忆恒在 system 里，单独传会重复扣额度）——
+    //    「设定 + 记忆」的扣减现在只体现为 system 变长。
+    ok('historyBudget 再扣 system（设定与记忆都在里面）', historyBudget(8000, 'a'.repeat(100) + 'b'.repeat(50)) === 8000 - FIXED_OVERHEAD_CHARS - 150)
+    ok('额度不足时下限为 0（不出现负数）', historyBudget(100, 'x'.repeat(500)) === 0)
     // 2026-09-22 六维审计：`budgetState` / `BudgetState` 属「只为测试而活」的死导出
     // （生产代码零引用，注释说"供 UI 画占用条"但 UI 后来改走 summarizeUsage），
     // 已连同这三条断言一并删除 —— 它死于"没有调用方"，不是死于"测不出问题"。

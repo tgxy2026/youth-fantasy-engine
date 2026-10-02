@@ -324,10 +324,11 @@ export async function runPlotTurn(
   //    把 withUser 交给它即可，无需改签名（内部仍是 session.messages.slice(-6)）。
   const { system } = await buildPlotSystem({ ...session, messages: withUser }, st)
 
-  // 🔴 第三参传 '' —— 本场记忆**已经拼在 system 里**了（buildSystemPrompt 干的），
-  //    再单独传一遍等于扣两次额度（2026-09-14 修，C 档）。
+  // 🔴 记忆**已经拼在 system 里**了（buildSystemPrompt 干的）—— 所以这里**没有也不该有**
+  //    「记忆长度」参数：historyBudget 早把那形参删了（2026-10-02 六维审计待办），
+  //    签名上就不给「重复扣两遍」留口子（2026-09-14 修 C 档的加强版）。
   const historyBudgetChars = historyBudget(
-    totalBudget(p.contextBudget), system, '', st.common.fixedOverheadChars)
+    totalBudget(p.contextBudget), system, st.common.fixedOverheadChars)
   const { messages } = buildPlotMessages({ ...session, messages: withUser }, historyBudgetChars)
 
   cb.onPhase?.('生成中')
@@ -736,7 +737,7 @@ export async function runFreeTurn(
 
   const p = resolveParamsOf('free', st, session.params)
   const { temperature, ...extraOptions } = toOllamaOptions(p)
-  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, '', st.common.fixedOverheadChars)
+  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, st.common.fixedOverheadChars)
   const { messages } = buildFreeMessages(withUser, session, chars, historyBudgetChars, cb.speakerId)
 
   cb.onPhase?.('生成中')
@@ -858,7 +859,7 @@ export async function runFreeAssist(
   // 覆盖，润色/自动回复的历史额度就会与正常对话不一致（审计 P2-14）。
   const p = resolveParamsOf('free', st, session.params)
   // 历史只取 session.messages（不含用户的"待润色原文"作为 committed 消息）
-  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, '', st.common.fixedOverheadChars)
+  const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, st.common.fixedOverheadChars)
   const { messages } = buildFreeMessages(session.messages, session, chars, historyBudgetChars)
 
   const instruction = mode === 'polish'

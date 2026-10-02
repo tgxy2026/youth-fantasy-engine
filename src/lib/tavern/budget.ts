@@ -67,27 +67,26 @@ export function trimHistory<T extends { content: string }>(messages: T[], budget
 }
 
 /**
- * 算出「留给对话历史」的额度 = 总预算 − 安全余量 − 整条 system − 未含在 system 里的记忆。
+ * 算出「留给对话历史」的额度 = 总预算 − 安全余量 − 整条 system。
  * 结果下限为 0（额度不足时只保留开场）。
  *
- * 🔴 `system` 传的是**整条 system**（buildSystemPrompt 的输出，已含协议与记忆）——
- * 所以第三个参数别再单独传记忆（那会扣两遍）。酒馆两条线现在都传空串。
+ * 🔴 `system` 传的是**整条 system**（buildSystemPrompt 的输出，**已含协议与记忆**）。
+ *
+ * 🔴🔴 2026-10-02 六维审计待办：原先这里有第三个形参 `memory`（"未含在 system 里的记忆"），
+ *    但**酒馆两条线全都传空串** —— 记忆恒在 system 里，那个参数永远等于 0，是纯陷阱：
+ *    谁按字面理解传了真记忆，就会被**扣两遍额度**。
+ *    2026-09-14 实测过这个坑：示范项目算出 `8000 − 2600 − 8237` 为负 → 历史额度归零，
+ *    21 条消息只剩开场一条。
+ *    现在**直接删掉该形参** —— 「记忆不该重复计入」从口头约定升级为**签名层面的强制**：
+ *    少传一个参数编译就红，误传记忆在类型上就不成立。
  */
 export function historyBudget(
   total: number,
   system: string,
-  /**
-   * 未包含在 `system` 里的记忆长度（字）。
-   *
-   * 🔴 酒馆两条线**都传空串** —— 记忆已经拼进 `system` 了，再传一遍就会**扣两遍**。
-   * 2026-09-14 实测过这个坑：示范项目算出 `8000 − 2600 − 8237 − 0` 为负 → 历史额度归零，
-   * 21 条消息只剩开场一条。真要传之前，先确认那份内容确实**不在** `system` 里。
-   */
-  memory: string,
   /** 额外安全余量（控制面板可调）；不传即内置默认 */
   fixedOverhead = FIXED_OVERHEAD_CHARS,
 ): number {
-  return Math.max(0, total - fixedOverhead - textLen(system) - textLen(memory))
+  return Math.max(0, total - fixedOverhead - textLen(system))
 }
 
 // ==================== 用量明细（2026-09-14；老大问「额度到底怎么分的」）====================
@@ -139,7 +138,7 @@ export function summarizeUsage(a: {
       note: '协议正文 · 身份层 · 场景/档位提示 —— 这部分没有单独量，按差额计入',
     })
   }
-  const historyChars = historyBudget(a.total, 'x'.repeat(a.systemChars), '', overhead)
+  const historyChars = historyBudget(a.total, 'x'.repeat(a.systemChars), overhead)
   return {
     parts,
     systemChars: a.systemChars,

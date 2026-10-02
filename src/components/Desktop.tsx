@@ -7,7 +7,6 @@ import {
 } from '../lib/desktop'
 import { confirmDialog, showToast } from './dialogs'
 import { isDesktopCloudSyncActive } from '../lib/db'
-import { Z } from '../lib/zLayer'
 import { Button } from './Button'
 
 /**
@@ -20,14 +19,12 @@ import { Button } from './Button'
  * ⚠️ 只搬数据文件本身，绝不能把整个 userData 目录交给云盘 —— 里面混着
  * Chromium 的 Local Storage（leveldb 带独占锁）与十几 MB 缓存，跨设备覆盖会损坏。
  *
- * 两种形态：
- * - embedded=false（默认）：独立固定浮层（左下角）。当前版本已不直接使用——
- *   #032 起统一由 DataDock（项目管理页）与 Sidebar Footer（项目内）以 embedded 形态承载，
- *   避免多个浮层各定各位、互相遮挡。
- * - embedded=true：内嵌形态，去掉浮层阴影/毛玻璃，供 DataDock / Sidebar 底部直接承载。
- *   在桌面端尤其必要：全局 fixed 浮层会压住左侧栏的「界面缩放 / 主题」等控件。
+ * 🔴 只有**内嵌**一种形态（2026-10-02 六维审计待办）：原先还有一个 `embedded=false` 的
+ *   「左下角独立 fixed 浮层」分支，但两个调用方（DataDock / Sidebar Footer）**都传 embedded**，
+ *   该分支无任何调用方 —— 死代码，且与红线「左下角只准 DataDock 一个浮层」相冲。
+ *   现已删除：组件恒以内嵌形态渲染，不再有 fixed 浮层，也不再需要 `embedded` 形参。
  */
-export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
+export function DesktopDataBar() {
   const [state, setState] = useState(getDesktopState())
   const [busy, setBusy] = useState<'export' | 'import' | 'relocate' | 'reset' | null>(null)
   useEffect(() => subscribeDesktop(() => setState(getDesktopState())), [])
@@ -159,23 +156,15 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
   const dataDir = state.dataPath ? state.dataPath.replace(/[\\/][^\\/]*$/, '') : ''
 
   const iconBtn =
-    'flex items-center justify-center w-8 h-8 rounded-full border transition-colors hover:border-amber/50 hover:text-amber disabled:opacity-50 ' +
-    (embedded
-      ? 'border-ink-600/60 bg-ink-800/60 text-ink-300'
-      : 'border-ink-600/80 bg-ink-900/90 text-ink-300 shadow-lg backdrop-blur')
+    'flex items-center justify-center w-8 h-8 rounded-full border border-ink-600/60 bg-ink-800/60 text-ink-300 ' +
+    'transition-colors hover:border-amber/50 hover:text-amber disabled:opacity-50'
 
   const smallIconBtn =
-    'flex items-center justify-center w-7 h-7 shrink-0 rounded-full border transition-colors hover:border-amber/50 hover:text-amber disabled:opacity-50 ' +
-    (embedded
-      ? 'border-ink-600/60 bg-ink-800/60 text-ink-300'
-      : 'border-ink-600/80 bg-ink-900/90 text-ink-300 shadow-lg backdrop-blur')
+    'flex items-center justify-center w-7 h-7 shrink-0 rounded-full border border-ink-600/60 bg-ink-800/60 text-ink-300 ' +
+    'transition-colors hover:border-amber/50 hover:text-amber disabled:opacity-50'
 
   return (
-    // 🔴 非内嵌分支当前无调用方（两个调用点都传 embedded，见文件头注释），
-    //    但它是一条「左下角全局浮层」，与红线「左下角只准 DataDock」相冲 —— 保留仅为兼容，
-    //    层号统一走 Z.dock，别再写 z-50。
-    <div className={embedded ? 'flex flex-col gap-1.5 pt-1' : 'fixed bottom-3 left-3 flex flex-col gap-1.5'}
-      style={embedded ? undefined : { zIndex: Z.dock }}>
+    <div className="flex flex-col gap-1.5 pt-1">
       {/* 第一行：保存状态 + 导出 / 导入 */}
       <div className="flex items-center gap-1.5">
         <Button variant="bare"
@@ -187,12 +176,7 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
                 ? `数据文件：${state.dataPath}\n最后保存：${time}${state.dirty ? '（有未保存的改动）' : ''}（点击立即保存）`
                 : `最后保存：${time}（点击立即保存到本地数据文件）`
           }
-          className={
-            'flex h-8 items-center gap-2 rounded-full border px-3 text-12 text-ink-300 transition-colors hover:border-amber/50 hover:text-ink-100 ' +
-            (embedded
-              ? 'border-ink-700 bg-ink-800/60'
-              : 'border-ink-600/80 bg-ink-900/90 shadow-lg backdrop-blur')
-          }
+          className="flex h-8 items-center gap-2 rounded-full border border-ink-700 bg-ink-800/60 px-3 text-12 text-ink-300 transition-colors hover:border-amber/50 hover:text-ink-100"
         >
           <Save size={12} className="text-amber/80" />
           <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
@@ -212,12 +196,7 @@ export function DesktopDataBar({ embedded = false }: { embedded?: boolean }) {
         <Button variant="bare"
           onClick={() => void revealDesktopDataFile()}
           title={state.dataPath ? `数据文件：${state.dataPath}\n点击在资源管理器中打开该文件夹` : '点击打开数据文件夹'}
-          className={
-            'flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-full border px-2.5 text-11 text-ink-400 transition-colors hover:border-amber/50 hover:text-ink-200 ' +
-            (embedded
-              ? 'border-ink-700 bg-ink-800/60'
-              : 'border-ink-600/80 bg-ink-900/90 shadow-lg backdrop-blur')
-          }
+          className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-full border border-ink-700 bg-ink-800/60 px-2.5 text-11 text-ink-400 transition-colors hover:border-amber/50 hover:text-ink-200"
         >
           <FolderOpen size={11} className="shrink-0" />
           <span className="truncate">{dataDir || '默认位置'}</span>

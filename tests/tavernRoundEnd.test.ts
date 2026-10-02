@@ -18,7 +18,7 @@ import { JOURNAL_HEAD } from '../src/lib/tavern/summarize'
 import { memoryToText } from '../src/lib/tavern/memory'
 import { proposeCardRevisions } from '../src/lib/tavern/revise'
 import type { ChatFn } from '../src/lib/tavern/provider'
-import { JOURNAL_KEEP, type FreeCharacter, type FreeSession, type TavernMessage } from '../src/lib/tavern/types'
+import { JOURNAL_KEEP, type FreeCharacter, type FreeSession, type TavernMessage, type VarKey } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -425,6 +425,81 @@ async function main() {
       res.memories[0].longTerm.includes('应当被保住'), String(res.memories[0].longTerm.length))
     ok('退化也如实上报（warnings 里有可读说明，不能静默）',
       res.warnings.some(w => w.includes('未覆盖') || w.includes('退化')), JSON.stringify(res.warnings))
+  }
+
+  // ---------- 6) 事务边界：②b 回写主角色卡必须等 ③ 跑完（2026-10-02 六维审计待办）----------
+  //
+  // 【为什么盯这条】主角色卡的 vars 是**跨会话持久累积**的（反馈 #4：状态存卡）。
+  //   原先 ② 阶段算完数值就 `saveFreeChar`，而 ③ 设定审查可被作者中止（`isCancelled` 上抛）——
+  //   卡片已被改成新数值、备注已叠加一层，但会话没归档（endedAt 未写、水位线未推）。
+  //   作者重试「结束本轮对话」时，② 拿同一段对话再抽一次、再叠一层 ⇒ **数值重复累加**（不可逆）。
+  //   现在 ①②③ 全跑完才落 ②b ⇒ 任一中止 ⇒ 一条不落 ⇒ 重试从零重算。
+  {
+    const VAR_KEYS = ['affection'] as VarKey[]
+    // 让 A 当主角色卡（primaryCharId），这样 ②b 才会回写它
+    const A2 = await mkChar('事务主角')
+    let s = await store.createFreeSession([A2.id], '事务边界场', { providerId: STUB_PROVIDER.id }, {})
+    s = await push(s, [
+      { role: 'user', content: '今天心情如何？' },
+      { role: 'assistant', speakerId: A2.id, content: '「还行。」' },
+    ])
+    const cards = [A2]
+
+    /**
+     * 按 system 内容把一次调用分流到三个阶段：
+     *   - 含「状态记录员」 ⇒ ② 数值抽取（回一个有变化的 ops，让 ②b 真有东西要写）
+     *   - 含「审查员」     ⇒ ③ 设定审查
+     *   - 其余             ⇒ ① 记忆整理
+     *
+     * @param reviseThrows ③ 阶段抛什么（模拟作者点了「中止收尾」）
+     */
+    const stageChat = (reviseThrows?: Error): ChatFn => async (_cfg, messages) => {
+      const sys = String(messages.find(m => m.role === 'system')?.content ?? '')
+      if (sys.includes('状态记录员')) return '〔数值〕好感 +5'    // ②：产出非空 changes（协议行以 〔数值〕 开头）
+      if (sys.includes('审查员')) {
+        if (reviseThrows) throw reviseThrows
+        return '{"changes":[]}'
+      }
+      return replyWith('她把伞收进柜台底下。', '她嘴上说只是顺便。')  // ①
+    }
+
+    const opts = {
+      session: s, cards, providerId: STUB_PROVIDER.id,
+      varKeys: VAR_KEYS, vars: undefined, maxStep: 5,
+      primaryCharId: A2.id,                                  // ★ 让 ②b 的回写目标是 A2
+      nameOf: (id?: string) => cards.find(c => c.id === id)?.name ?? '角色',
+    }
+
+    // ---- 负面对照：③ 被中止 ⇒ 抛错 + 卡片 vars 零写入 ----
+    //    旧实现（② 阶段就落卡）在这里会红：卡片的好感已经被改成 +5 了。
+    // 🔴 桩必须抛 `name === 'AICancelled'` 的错误 —— `isCancelled` 只认这个 name（见 lib/ai.ts）。
+    //    抛普通 Error 会被当成「审查算不出来」吞掉，流程照常走到提交点，测的就不是「中止」了。
+    const cancelErr = Object.assign(new Error('已取消'), { name: 'AICancelled' })
+    let threwOnCancel = false
+    try {
+      await runRoundEnd({ ...opts, chatFn: stageChat(cancelErr) })
+    } catch {
+      threwOnCancel = true
+    }
+    ok('🔴 ③ 被中止时 runRoundEnd 向上抛（不吞 —— 会话不得被归档）', threwOnCancel)
+
+    // 角色卡 / 会话都是刚 create 出来的，取不到才是真异常 —— 这里 `!` 是安全的
+    const afterCancel = (await store.getFreeChar(A2.id))!
+    ok('🔴 ③ 中止后主角色卡 vars **零写入**（事务未提交 ⇒ 重试从零、无重复累加）',
+      !afterCancel.vars, afterCancel.vars ? JSON.stringify(afterCancel.vars) : '(undefined)')
+    const sessAfterCancel = (await store.getFreeSession(s.id))!
+    ok('🔴 ③ 中止后会话未归档（endedAt 未写、水位线未推 ⇒ 可干净重试）',
+      sessAfterCancel.endedAt === undefined && sessAfterCancel.watermark == null,
+      `endedAt=${String(sessAfterCancel.endedAt)} watermark=${JSON.stringify(sessAfterCancel.watermark)}`)
+
+    // ---- 正面：③ 正常跑完 ⇒ 这时才落卡 ----
+    const res = await runRoundEnd({ ...opts, chatFn: stageChat() })
+    ok('③ 正常完成时本场数值有变更（桩确实产出了 changes）', res.varChanges.length > 0, JSON.stringify(res.varChanges))
+    const afterOk = (await store.getFreeChar(A2.id))!
+    const affection = afterOk.vars?.values?.affection
+    ok('✅ ③ 通过后主角色卡才被回写（提交点在 ③ 之后）',
+      typeof affection === 'number' && affection > 0,
+      JSON.stringify(afterOk.vars))
   }
 
   console.log(`\n${pass} passed, ${fail} failed`)

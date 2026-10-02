@@ -48,7 +48,7 @@ async function main() {
       s.parts.some(p => p.key === 'other' && p.chars === 1000 && !!p.note),
       JSON.stringify(s.parts.map(p => [p.key, p.chars])))
     ok('历史额度 = 总额 − 余量 − system（与 historyBudget 同一口径）',
-      s.historyChars === historyBudget(16000, 'x'.repeat(10000), '', FIXED_OVERHEAD_CHARS),
+      s.historyChars === historyBudget(16000, 'x'.repeat(10000), FIXED_OVERHEAD_CHARS),
       String(s.historyChars))
     ok('历史额度 5600（16000 − 400 − 10000）', s.historyChars === 5600, String(s.historyChars))
     ok('给出历史占比（5600/16000 = 35%）', s.historyPct === 35, String(s.historyPct))
@@ -113,8 +113,8 @@ async function main() {
     await saveWorldSetting(FULL_WORLD)
     const full = await buildPlotSystem(session, { ...base, plot: { ...base.plot, contextSource: 'both' } })
 
-    const hEmpty = historyBudget(total, empty.system, '', FIXED_OVERHEAD_CHARS)
-    const hFull = historyBudget(total, full.system, '', FIXED_OVERHEAD_CHARS)
+    const hEmpty = historyBudget(total, empty.system, FIXED_OVERHEAD_CHARS)
+    const hFull = historyBudget(total, full.system, FIXED_OVERHEAD_CHARS)
 
     ok('背景设定为空时，system 里一个字符都不占（worldToText 返回空串）',
       worldToText(EMPTY_WORLD) === '')

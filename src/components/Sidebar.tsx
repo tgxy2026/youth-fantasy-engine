@@ -391,7 +391,7 @@ style={{ zIndex: Z.pageBase }}
         <AppearanceToggles />
         {/* 本机存储：数据文件保存 / 导出 / 导入。
             内嵌进侧栏而非全局 fixed 浮层，避免压住左下角（#032 布局规范化）。 */}
-        {DESKTOP && <DesktopDataBar embedded />}
+        {DESKTOP && <DesktopDataBar />}
         {/* 云盘文件同步：项目内也能看到同步状态并随时开关 / 换目录 */}
         {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
         </div>
