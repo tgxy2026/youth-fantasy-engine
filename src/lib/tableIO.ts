@@ -205,6 +205,12 @@ export function textToRows(text: string, tab: TabDef): { rows: Record<string, st
 
   for (const block of blocks) {
     const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
+    // 🔴 2026-10-02 六维审计 P2：只有一行、且被分隔符切开的每一段都命中列名 —— 这是作者把「模板表头行」
+    //    单独粘进来了，不是数据。跳过它，免得凭空生成一条名叫「名称」的幽灵记录（还会被默认勾选）。
+    if (lines.length === 1) {
+      const parts = lines[0].split(/[,\t]/).map(s => s.trim()).filter(Boolean)
+      if (parts.length >= 2 && parts.every(p => colNames.has(p))) continue
+    }
     const kvLines = lines.filter(l => {
       const m = l.match(/^([^：:]{1,14})[：:]/)
       return !!m && colNames.has(m[1].trim())
@@ -288,6 +294,10 @@ export function validateImport(
   const main = mainColumn(tab)
   const refCols = cols.filter(c => c.type === 'tableRef' && c.refTab)
   const batchKeys = new Set<string>()
+  // 🔴 2026-10-02 六维审计 P2：编号冲突也要看**同批**。原先只比库内已有编号 ⇒ 一批里两行填了同一个
+  //    显式编号时不报冲突；而空行的自动补号（buildImportRows 的 nextAutoCode）会补到一个已被同批
+  //    占用的号上，落库后才在表格里爆「编号重复」红色告警 —— 问题被推迟到用户看不见的下一步。
+  const batchCodes = new Set<string>()
 
   return rows.map((data, i) => {
     // 判重键全空的行不参与判重（否则整批空行会互相判成重复）
@@ -313,6 +323,10 @@ export function validateImport(
       }
     }
 
+    const code = codeCol ? (data[codeCol] ?? '').trim() : ''
+    const codeConflict = !!codeCol && !!code && (existingCodes.has(code) || batchCodes.has(code))
+    if (code) batchCodes.add(code)
+
     return {
       data,
       index: i + 1,
@@ -320,7 +334,7 @@ export function validateImport(
       dupInBatch,
       missing,
       dangling,
-      codeConflict: !!codeCol && existingCodes.has((data[codeCol] ?? '').trim()),
+      codeConflict,
     }
   })
 }
@@ -432,15 +446,15 @@ export function buildImportGuide(tab: TabDef): string {
   L.push('**什么时候用**：你的设定是文档/散文式的，人懒得逐条誊，但想让**别的 AI**（如网页版对话模型）帮你整理。')
   L.push('**怎么做**：把本文件「交给其他 AI 整理用的提示词」整段复制、连同你的设定原文一起发给那个 AI，')
   L.push('让它输出表格；拿到结果后回到本页「导入」，粘贴进来即可（走方式一的解析）。')
-  L.push('**特点**：不消耗本项目的额度；由你选定的那个 AI 出力。')
+  L.push('**特点**：不消耗本项目的额度；由你挑选的**外部 AI**（网页版对话模型等）出力，与本项目已接入的模型无关。')
   L.push('')
   L.push('## 方式三 · 直接粘贴，用本项目已接入的 AI 智能拆分（最省事）')
   L.push('')
   L.push('**什么时候用**：你懒得手动整理、也不想另开一个 AI；希望**粘贴完点一下就自动拆成多条**。')
   L.push('**怎么做**：把表格内容或散文式设定直接粘到本页文本框，点「AI 智能拆分」，')
   L.push('本项目会用你**当前配置的模型**把内容解析成多条记录，拆完进预览、逐条勾选后导入。')
-  L.push('**特点**：会用你配置的模型（本地 Ollama / 联网模型），**长文会自动分批**，突破一次十几条的限制；')
-  L.push('效果取决于模型能力，拆完务必在预览里过一眼再导入。')
+  L.push('**特点**：会用你配置的模型（本地 Ollama / 联网模型），**会消耗该模型的额度**（本地不花钱、联网按量计费）；')
+  L.push('**长文会自动分批**，突破一次十几条的限制；效果取决于模型能力，拆完务必在预览里过一眼再导入。')
   L.push('')
   L.push('---')
   L.push('')

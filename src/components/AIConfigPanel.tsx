@@ -240,7 +240,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
             <p className="mt-1.5">两类平台：</p>
             <ul className="list-disc pl-4 space-y-1">
-              <li><b>本地模型</b>：Ollama / LM Studio 等，跑在你自己机器上，一般免密钥、不联网、数据不出本机。</li>
+              <li><b>本地模型</b>：Ollama / LM Studio 等，跑在你自己机器（或局域网内你自己的机器）上，一般免密钥、不需要联网；请求只发给这个地址，不经过任何第三方。</li>
               <li><b>联网模型</b>：硅基流动 / DeepSeek / 通义 / 智谱 等，需要 API 密钥，只有填了才发出请求。</li>
             </ul>
             <p className="mt-1.5">

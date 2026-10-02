@@ -17,13 +17,18 @@ import { writerBudgetFor } from './aiWriterBudget'
 import { organizeHint } from './aiScope'
 import { resolveColumnCandidates } from './organizeRows'
 import { splitIntoChunks } from './tableIO'
-import type { TabDef } from './types'
+import type { VisCtx } from './schema'
+import type { CalendarDef, TabDef } from './types'
 
 export interface TableImportRunOptions {
   /** 作者粘贴的原始内容（表格或散文） */
   sourceText: string
   /** 是否带入项目资料上下文（世界观 / 角色卡 / 各类设定），默认 true */
   useCtx?: boolean
+  /** 日历定义（日期型列的候选取日历名）—— 🔴 与 AI 整理同口径，缺了模型就会编历法名 */
+  calendars?: CalendarDef[]
+  /** 角色可见性上下文（决定 NPC 页签的姓名是否纳入候选值） */
+  ctx?: VisCtx
   /** 全部批次加起来的条数上限（防止模型在超长输入上无限吐行） */
   maxRows?: number
   signal?: AbortSignal
@@ -67,7 +72,12 @@ export async function tableImportSplit(
   // 编号列由系统自动续号，不让模型插手；隐藏列也不让它填
   const aiCols = (tab.columns ?? []).filter(c => c.name !== '编号' && !c.hidden)
 
-  const allowedList = await resolveColumnCandidates(aiCols, { tab, onPhase: o.onPhase })
+  const allowedList = await resolveColumnCandidates(aiCols, {
+    tab,
+    calendars: o.calendars,
+    ctx: o.ctx,
+    onPhase: o.onPhase,
+  })
   const cols: ImportSplitColumn[] = aiCols.map((c, i) => ({ name: c.name, desc: c.tip, allowed: allowedList[i] }))
 
   let ctx = ''

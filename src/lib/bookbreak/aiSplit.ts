@@ -8,7 +8,7 @@
  */
 import { scanLinesOf, buildChaptersFromMarks, type RawChapter, type SplitResult } from './split'
 
-/** 单段采样上限（字符）——中文 1 字 ≈ 1 token，四段合计 ≤9000 token，压在常见 num_ctx 内 */
+/** 单段采样上限（字符）——中文 1 字 ≈ 1 token，四段合计 ≤7500 字（≈7500 token），压在常见 num_ctx 内 */
 const HEAD_CHARS = 3000
 const MID_CHARS = 1500
 const MID_TAKES = 2

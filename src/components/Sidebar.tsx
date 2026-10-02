@@ -292,7 +292,7 @@ style={{ zIndex: Z.pageBase }}
         <button
           type="button"
           onClick={() => setFooterCollapsed(!footerCollapsed)}
-          title={footerCollapsed ? '展开左下角工具栏（主题 / 界面缩放 / 存储 / 云同步）' : '收起左下角工具栏（收起后菜单区变高）'}
+          title={footerCollapsed ? '展开左下角工具栏（主题 / 界面缩放 / 存储 / 云盘文件同步）' : '收起左下角工具栏（收起后菜单区变高）'}
           aria-label={footerCollapsed ? '展开左下角工具栏' : '收起左下角工具栏'}
           aria-expanded={!footerCollapsed}
           className={`w-full flex items-center justify-center text-ink-500 hover:text-amber hover:bg-ink-800/40 transition-colors ${

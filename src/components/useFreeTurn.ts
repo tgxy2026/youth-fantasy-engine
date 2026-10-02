@@ -160,6 +160,9 @@ export function useFreeTurn({
     setSession(optimistic)
     const ctrl = new AbortController()
     abortRef.current = ctrl
+    // 🔴 2026-10-02 六维审计 P1：记下「已显示、尚未落库」的那一份回复 —— 结算期（refreshSessionVars
+    //    还在跑）作者按了停止时，据此判断该不该回滚（见 catch）。
+    let shownReply: FreeSession | null = null
     try {
       const cast = castCards.length ? castCards : [charCard]
       const res = await runFreeTurn(session, cast, text, {
@@ -175,6 +178,7 @@ export function useFreeTurn({
       setStreamText('')
       // 反馈 #5：先把这一轮完整回复作为消息立刻显示，文字常驻不闪退；后面的数值结算在后台跑（只更新右栏），不再清空正文导致「文字消失再重现」。
       setSession(res.session)
+      shownReply = res.session
       /**
        * 每轮刷新本场数值（2026-09-16 老大反馈 #4）。
        * 这一步还要再等一次小调用 —— 先把阶段提示换上，否则正文都出来了界面还卡着，像死机。
@@ -207,7 +211,18 @@ export function useFreeTurn({
       // 🔴 已切走（或主动停止）：绝不能回滚到旧会话 —— setSession(session) 会把界面拽回去，
       //    setInput(text) 还会把上一场没发出去的文字塞进新会话的输入框（审计 P1-2 原文场景）
       if (abortRef.current !== ctrl) return
-      // 回滚：这句话没送出去，把它还回输入框，别让作者白打一遍
+      // 🔴 2026-10-02 六维审计 P1：**结算期停止**不能回滚。此刻回复已经 setSession 显示给作者了，
+      //    若执行下面的回滚（setSession(session) + setInput(text)）会把刚生成的回复凭空抹掉、
+      //    还把发出去的话塞回输入框 —— 观感像「AI 白说了」。改为：照常把这一份（未结算的）回复
+      //    落库（数值不刷新，等同结算失败），只让 finally 清流式态。
+      if (isCancelled(e) && shownReply) {
+        try {
+          await store.saveFreeSession(shownReply)
+          await refreshSessions()
+        } catch { /* 落库失败不阻断：界面已保留这句回复，作者重开项目仍可再见 */ }
+        return
+      }
+      // 回滚：这句话**没送出去**（生成阶段就失败 / 停止），把它还回输入框，别让作者白打一遍
       setSession(session)
       setInput(text)
       showToast(`生成失败：${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -246,6 +261,7 @@ export function useFreeTurn({
     setPhase('')
     const ctrl = new AbortController()
     abortRef.current = ctrl
+    let shownReply: FreeSession | null = null   // 同上：结算期停止时按它决定是否照常落库
     try {
       const cast = (castCards.length ? castCards : (charCard ? [charCard] : [])) as FreeCharacter[]
       const res = await runFreeTurn(session, cast, null, {
@@ -261,6 +277,7 @@ export function useFreeTurn({
       setStreamText('')
       // 反馈 #5：重说也先把新回复作为消息立刻显示，文字常驻；数值结算在后台跑（只更新右栏）。
       setSession(res.session)
+      shownReply = res.session
       // 重说同样要刷新数值（反馈 #4）：回复换了，这一轮的关系走向也就跟着换
       setPhase('正在结算本场数值…')
       const withVars = await refreshSessionVars({
@@ -284,6 +301,18 @@ export function useFreeTurn({
       if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
     } catch (e) {
       if (abortRef.current !== ctrl) return   // 已切走：不报「失败」，也不回滚界面
+      // 🔴 2026-10-02 六维审计 P1：结算期停止 —— 新回复已 setSession 显示，却没走到
+      //    store.saveFreeSession，会留下「界面是新回复、库里还是旧回复」。改为照常落库那一份
+      //    （数值不刷新），且**不报错**（是作者自己按的停止，不是失败）。
+      if (isCancelled(e)) {
+        if (shownReply) {
+          try {
+            await store.saveFreeSession(shownReply)
+            await refreshSessions()
+          } catch { /* 落库失败不阻断：界面已保留 */ }
+        }
+        return
+      }
       showToast(`重说失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       // 🔴 同上（P1-5）：只有还是自己那一代时才复位

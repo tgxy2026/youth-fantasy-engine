@@ -88,6 +88,11 @@ function row(id: string, data: Record<string, string>, order = 0, tabId = 'natio
 
   const line = textToRows('青云宗\n大炎王朝', nations)
   ok('逐行拆分 → 内容进主列', line.rows.length === 2 && line.rows[0]['名称'] === '青云宗' && line.rows[1]['名称'] === '大炎王朝', JSON.stringify(line.rows))
+
+  // 2026-10-02 六维审计 P2：作者只把「模板表头行」粘进来时，不能凭空生成一条名叫「名称」的幽灵记录
+  ok('只有一行表头 → 不产生任何记录', textToRows('编号,名称,上级,类别', nations).rows.length === 0,
+    JSON.stringify(textToRows('编号,名称,上级,类别', nations).rows))
+  ok('单行普通文本仍照常拆成一行（不误杀）', textToRows('青云宗，立派千年的宗门', nations).rows.length === 1)
 }
 
 // ---------- 5. validateImport：判重 / 无序对 ----------
@@ -124,6 +129,17 @@ function row(id: string, data: Record<string, string>, order = 0, tabId = 'natio
   ok('tableRef 悬空标出', res[1].dangling.length === 1 && res[1].dangling[0].value === '不存在的势力', JSON.stringify(res[1].dangling))
   ok('有效引用不报警', validateImport([{ 名称: 'X', 上级: '青云宗' }], nations, ctx)[0].dangling.length === 0)
   ok('编号与库内冲突标出', res[2].codeConflict === true)
+
+  // 2026-10-02 六维审计 P2：编号冲突也要查**同批** —— 否则自动补号会撞上同批已占用的号
+  const dupCode = validateImport(
+    [{ 编号: 'N0009', 名称: '甲' }, { 编号: 'N0009', 名称: '乙' }],
+    nations, { existing: [], refValues: new Map() },
+  )
+  ok('同批两行同一编号 → 第 2 行标冲突、第 1 行不标',
+    dupCode[0].codeConflict === false && dupCode[1].codeConflict === true,
+    `${dupCode[0].codeConflict},${dupCode[1].codeConflict}`)
+  ok('编号留空不算冲突（交给自动补号）',
+    validateImport([{ 名称: 'A' }, { 名称: 'B' }], nations, { existing: [], refValues: new Map() }).every(r => !r.codeConflict))
 }
 
 // ---------- 7. buildImportRows：编号补号 + order ----------
@@ -161,6 +177,9 @@ function row(id: string, data: Record<string, string>, order = 0, tabId = 'natio
   ok('说明讲了方式三（AI 智能拆分）', guide.includes('方式三') && guide.includes('AI 智能拆分'))
   ok('说明重申勾稽靠名称一致（不会失效）', guide.includes('勾稽关系'))
   ok('外部 AI 提示词里加了「不合并成一行」的约束', guide.includes('不要把一个对象拆成多行'))
+  // 2.7.0 审计：方式二 / 三「消耗谁的额度」必须写清（否则作者会以为同为本项目免费额度）
+  ok('方式二注明由「外部 AI」出力（不与本项目已接入模型混淆）', guide.includes('外部 AI'))
+  ok('方式三点明会消耗所配模型的额度', guide.includes('会消耗该模型的额度'))
 }
 
 // ---------- 10. 长文分批（AI 智能拆分用）----------

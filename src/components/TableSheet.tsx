@@ -74,9 +74,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, showImport, setShowImport, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize, handleImport,
   } = model
 
-  /** 导出本表为 CSV（UTF-8 BOM，Excel 直接打开不乱码） */
+  /**
+   * 导出本表为 CSV（UTF-8 BOM，Excel 直接打开不乱码）。
+   * 🔴 用 `sortedRows` 而不是 `rows`（2026-10-02 六维审计 P2）：它才是屏幕上这份视图 ——
+   *    与表格排序一致、且已并入未保存草稿。旧实现导出的是裸库数据：作者刚改完还没保存就导出，
+   *    导出的文件里**看不到自己的改动**，而屏幕上明明有。
+   */
   const exportCsv = () => {
-    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportRowsCsv(tab, rows)], { type: 'text/csv;charset=utf-8' }))
+    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportRowsCsv(tab, sortedRows)], { type: 'text/csv;charset=utf-8' }))
   }
 
   if (!loaded) return <LoadingState />
@@ -220,29 +225,29 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           </Button>
           )}
           {!isMaster && (
-          <Button variant="secondary" onClick={() => setShowImport(true)} title="批量导入：粘贴表格 / CSV / 纯文本并上传文件；散文式设定可用「AI 智能拆分」自动解析成多条" className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0">
+          <Button variant="secondary" onClick={() => setShowImport(true)} title="批量导入：粘贴表格 / CSV / 纯文本并上传文件；散文式设定可用「AI 智能拆分」自动解析成多条" className="flex items-center gap-1.5 transition-colors shrink-0">
             <Upload size={14} /> 导入
           </Button>
           )}
           {!isMaster && (
-          <Button variant="secondary" onClick={exportCsv} title="导出本表数据为 CSV（Excel 可直接打开）" className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0">
+          <Button variant="secondary" onClick={exportCsv} title="导出本表数据为 CSV（Excel 可直接打开）" className="flex items-center gap-1.5 transition-colors shrink-0">
             <Download size={14} /> 导出
           </Button>
           )}
           {aiCap !== 'none' && !isMaster && (
-            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : '新建一行，并提供粗略设定由 AI 补全（不影响已有行 / 其他表）' }>
+            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : '新建一行，并提供粗略设定由 AI 补全（不影响已有行 / 其他表）' }>
               <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 补全'}
             </Button>
           )}
           {/* 读者反馈：AI 分析（运营维护组，不接补全/整理，单独开分析入口） */}
           {tab.id === 'feedback' && (
-            <Button variant="secondary" onClick={() => setShowFeedbackAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}>
+            <Button variant="secondary" onClick={() => setShowFeedbackAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}>
               <Sparkles size={14} /> AI 分析反馈
             </Button>
           )}
           {/* 名词术语：AI 查重（在「AI 补全」之外，额外提供同义/重复归一入口） */}
           {tab.id === 'terms' && (
-            <Button variant="secondary" onClick={() => setShowDedupAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}>
+            <Button variant="secondary" onClick={() => setShowDedupAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}>
               <Sparkles size={14} /> AI 查重
             </Button>
           )}
@@ -393,6 +398,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         <TableImportDialog
           tab={tab}
           existing={sortedRows}
+          calendars={calendars}
+          visCtx={ctx}
           onAdd={handleImport}
           onClose={() => setShowImport(false)}
         />

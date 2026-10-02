@@ -279,9 +279,14 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
       //    写后回读 rev 不匹配 → 上层走 409 重试 → 重试耗尽后 pushNow 返回 conflict（不抛）
       //    → 界面状态永远停在「同步中」，而目录里一个字都没写进去（目录不可写/磁盘满时最常见）。
       const raw: unknown = await eb.syncWrite(p, text)
-      if (raw && typeof raw === 'object') {
+      // 🔴 2026-10-02 六维审计 P1：口径三态化。主进程新契约恒返回 `{ok:true}` / `{ok:false}`，
+      //    但「什么都没返回」时旧实现**静默当成功** —— 与读侧自相矛盾（nodeRead 拿不到后端会如实
+      //    报错，写侧却假装写成功）。一次没写进去的 push 被当成成功 ⇒ 上层不再重试、界面停在
+      //    「同步中」，而目录里一个字都没有（目录不可写 / 磁盘满 / IPC 桥异常时最常见）。
+      if (raw == null) throw new Error('sync write failed: 主进程未返回结果')
+      if (typeof raw === 'object') {
         const r = raw as { ok?: boolean; error?: unknown }
-        if (r.ok === false) throw new Error('sync write failed: ' + (r.error || '未知原因'))
+        if (r.ok !== true) throw new Error('sync write failed: ' + (r.error || '未知原因'))
       }
       return
     }

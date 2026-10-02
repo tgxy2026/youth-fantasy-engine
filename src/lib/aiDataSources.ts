@@ -326,7 +326,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   'bookbreak-split': {
     label: '拆书 · AI 章节识别',
     sources: [
-      { group: '导入的原文采样', items: [], note: '只采样头部 / 中部 / 尾部约 9000 字，不是整本' },
+      { group: '导入的原文采样', items: [], note: '只采样头部 / 中部 / 尾部共约 7500 字，不是整本' },
       { group: '你填的章节标题示例', items: [], note: '原样逐条列出，AI 按这些行的格式规律找章节起始行' },
     ],
     excludes: ['AI 报出的行必须在原文里逐字命中才采信，命中不足 2 行整体弃用回退本地切分'],

@@ -7,9 +7,9 @@ import AIDataSourceNote from './AIDataSourceNote'
 import AutoTextarea from './AutoTextarea'
 import { showToast } from './dialogs'
 import { foldVh } from '../lib/theme'
-import type { TabDef, TableRow } from '../lib/types'
+import type { CalendarDef, TabDef, TableRow } from '../lib/types'
 import { getTableRows } from '../lib/db'
-import { TABS } from '../lib/schema'
+import { TABS, type VisCtx } from '../lib/schema'
 import { downloadBlob } from '../lib/zip'
 import { useAIReady } from '../lib/useAIReady'
 import { useTaskRunner } from '../lib/aiTaskCenter'
@@ -24,6 +24,14 @@ interface Props {
   tab: TabDef
   /** 库里已有的行（判重 + 编号冲突；含未保存草稿更好，但至少要给库里的） */
   existing: TableRow[]
+  /**
+   * 日历定义 / 角色可见性上下文 —— 透传给「AI 智能拆分」做候选值注入。
+   * 🔴 必须与「AI 整理」（`AIOrganize` 的 calendars / ctx）**同一口径**：少传一项，
+   *    模型就会自己编历法名、或把用户已隐藏的 NPC 名字当候选，写回去成幽灵值。
+   * 注：属性名用 `visCtx` 而非 `ctx` —— 组件内已有同名局部量 `ctx`（导入校验上下文）。
+   */
+  calendars?: CalendarDef[]
+  visCtx?: VisCtx
   /** 采用：把勾选的行交给父组件落库（父组件走 buildImportRows + saveTableRow，与 AI 整理同口径） */
   onAdd: (picked: ImportRowResult[]) => Promise<void> | void
   onClose: () => void
@@ -45,7 +53,7 @@ interface Props {
  *   2. **不擅自替作者决定**：AI 拆出来的行与本地解析的行走**同一套校验与预览**，
  *      重复 / 缺必填 / 悬空都标出来，勾不勾、导不导由作者定。
  */
-export default function TableImportDialog({ tab, existing, onAdd, onClose }: Props) {
+export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, onAdd, onClose }: Props) {
   const [raw, setRaw] = useState('')
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [adding, setAdding] = useState(false)
@@ -93,13 +101,17 @@ export default function TableImportDialog({ tab, existing, onAdd, onClose }: Pro
    * 弹窗被切页签卸载又重挂时，组件本地的原文已经丢了 —— 若任务中心里还有一份结果，
    * 用它的原文快照把输入恢复回来，免得"结果在、原文没了、白跑一趟"。
    */
-  const restoredRef = useRef('')
+  // 🔴 2026-10-02 六维审计 P2：**只在挂载时恢复一次**（有意不把 t.result 放进依赖）。
+  //    旧实现依赖 `[t.result, raw]`、且用「已恢复过的 sourceText」当闸 —— 后果是：作者跑完一次拆分后
+  //    再手动清空输入框（不是点「清空」按钮）时，只要这道闸没记过这一段，原文会被**自动填回**，
+  //    表现为「删不掉」。挂载时输入框必为空，此刻恢复才正是「卸载重挂丢原文」要补的那一次。
+  const restoredRef = useRef(false)
   useEffect(() => {
-    if (t.result && !raw && restoredRef.current !== t.result.sourceText) {
-      restoredRef.current = t.result.sourceText
-      setRaw(t.result.sourceText)
-    }
-  }, [t.result, raw])
+    if (restoredRef.current) return
+    restoredRef.current = true
+    if (t.result?.sourceText) setRaw(t.result.sourceText)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const parsed = useMemo(() => (raw.trim() ? parseImportText(raw) : null), [raw])
 
@@ -135,19 +147,22 @@ export default function TableImportDialog({ tab, existing, onAdd, onClose }: Pro
   useEffect(() => {
     const okIdx = new Set<number>()
     results.forEach((r, i) => {
-      if (!r.dupExisting && !r.dupInBatch && r.missing.length === 0) okIdx.add(i)
+      // 🔴 编号冲突的**不默认勾**（2026-10-02 六维审计 P2）：勾了就落库出一个「编号重复」的行，
+      //    而表格保存时会被编号校验拦下 —— 等于替作者造了一个存不下去的状态。
+      if (!r.dupExisting && !r.dupInBatch && !r.codeConflict && r.missing.length === 0) okIdx.add(i)
     })
     setChecked(okIdx)
   }, [results])
 
   const stat = useMemo(() => {
-    let dup = 0, dangling = 0, missing = 0
+    let dup = 0, dangling = 0, missing = 0, code = 0
     for (const r of results) {
       if (r.dupExisting || r.dupInBatch) dup++
       if (r.dangling.length) dangling++
       if (r.missing.length) missing++
+      if (r.codeConflict) code++
     }
-    return { total: results.length, dup, dangling, missing }
+    return { total: results.length, dup, dangling, missing, code }
   }, [results])
 
   const cols = useMemo(() => (tab.columns ?? []).filter(c => !c.hidden), [tab])
@@ -199,6 +214,9 @@ export default function TableImportDialog({ tab, existing, onAdd, onClose }: Pro
     t.run(job => tableImportSplit(tab, {
       sourceText: src,
       useCtx,
+      // 🔴 候选值口径与「AI 整理」一致（2026-10-02 六维审计 P1）：日历名 + 角色可见性
+      calendars,
+      ctx: visCtx,
       signal: job.signal,
       onPhase: job.progress,
     }))
@@ -221,12 +239,12 @@ export default function TableImportDialog({ tab, existing, onAdd, onClose }: Pro
               + '② 交给别的 AI 整理成表\n'
               + '适用：你的设定是文档/散文式的，想让别的 AI（如网页版对话模型）帮你誊。\n'
               + '做法：把「导入说明 / AI 提示词」整段复制给那个 AI，连设定原文一起发；拿回表格后粘到这里。\n'
-              + '特点：不消耗本项目额度，由你选定的那个 AI 出力。\n\n'
+              + '特点：不消耗本项目的额度；由你挑选的「外部 AI」（网页版对话模型等）出力，与本项目已接入的模型无关。\n\n'
               + '③ 用本项目已接入的 AI 智能拆分\n'
               + '适用：不想手动整理、也不想另开 AI，粘贴完点一下就好。\n'
               + '做法：把表格或散文直接粘进来，点「AI 智能拆分」；长文会自动分批，突破一次十几条的限制。\n'
-              + '特点：会调用你配置的模型；效果取决于模型能力，拆完请在预览里过一眼再导入。\n\n'
-              + '三种方式导入的行，都要经过同一套预览校验（重复 / 缺必填 / 名称对不上）。'}
+              + '特点：会消耗你在「模型设置」里所配模型的额度（本地模型不花钱，联网模型按量计费）；效果取决于模型能力，拆完请在预览里过一眼再导入。\n\n'
+              + '三种方式导入的行，都要经过同一套预览校验（重复 / 缺必填 / 名称对不上 / 编号冲突）。'}
             <AIDataSourceNote feature="table-import-split" />
           </HelpPopover>
         </p>
@@ -243,7 +261,7 @@ export default function TableImportDialog({ tab, existing, onAdd, onClose }: Pro
             <FileDown size={12} /> 导入说明 / AI 提示词
           </Button>
           {raw && (
-            <Button variant="bare" size="sm" onClick={() => { setRaw(''); t.clear() }} className="ml-auto flex items-center gap-1 text-ink-400 hover:text-danger">
+            <Button variant="bare" size="sm" onClick={() => { setRaw(''); t.running ? t.stop() : t.clear() }} className="ml-auto flex items-center gap-1 text-ink-400 hover:text-danger">
               <Trash2 size={12} /> 清空
             </Button>
           )}
@@ -307,6 +325,7 @@ export default function TableImportDialog({ tab, existing, onAdd, onClose }: Pro
             <div className="flex items-center gap-3 flex-wrap text-12">
               <span className="text-ink-400">共 <span className="text-ink-100">{stat.total}</span> 行</span>
               {stat.dup > 0 && <span className="text-amber/80">与已有重复 {stat.dup}</span>}
+              {stat.code > 0 && <span className="text-amber/80">编号冲突 {stat.code}</span>}
               {stat.dangling > 0 && <span className="text-amber/80">名称对不上 {stat.dangling}</span>}
               {stat.missing > 0 && <span className="text-amber/80">缺必填 {stat.missing}</span>}
               <span className="ml-auto flex items-center gap-2">
@@ -334,8 +353,13 @@ export default function TableImportDialog({ tab, existing, onAdd, onClose }: Pro
                         : <Square size={13} className="text-ink-600 shrink-0" />}
                       <span className="text-11 text-ink-500 shrink-0">#{r.index}</span>
                       <span className="text-12 font-medium text-ink-100 truncate">{mainVal || '（未命名）'}</span>
-                      {dup && <span className="ml-auto text-11 text-amber/80 shrink-0">与已有重复</span>}
-                      {r.missing.length > 0 && <span className="ml-auto text-11 text-danger shrink-0">缺 {r.missing.join('、')}</span>}
+                      {(dup || r.codeConflict || r.missing.length > 0) && (
+                        <span className="ml-auto flex items-center gap-2 shrink-0">
+                          {dup && <span className="text-11 text-amber/80">与已有重复</span>}
+                          {r.codeConflict && <span className="text-11 text-amber/80">编号冲突</span>}
+                          {r.missing.length > 0 && <span className="text-11 text-danger">缺 {r.missing.join('、')}</span>}
+                        </span>
+                      )}
                     </div>
                     <div className="pl-5 space-y-0.5">
                       {cols.filter(c => c.name !== main && (r.data[c.name] ?? '').trim() && !c.hidden).map(c => (
