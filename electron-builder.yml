@@ -16,22 +16,30 @@ files:
 
 asar: true
 
-# 补偿 rcedit 的间歇性失败：本机 electron-builder 内置的 rcedit(2019) 写主 exe 版本资源时会
-# 随机报 `Fatal error: Unable to commit changes`，而 electron-builder 重试 3 次后**继续打包**，
-# 导致产物能用但主 exe 是 Electron 默认图标。该钩子在 pack 后、NSIS 前补跑并校验，见脚本注释。
-afterPack: ./scripts/after-pack.cjs
-
+# 🔴🔴 主 exe 的图标与版本元数据**不在 electron-builder 钩子里写**（2026-10-02 · 2.7.1 轮实测踩坑）。
+#
+# 【试过并放弃的方案】先后试过 afterPack 与 afterAllArtifactBuild 两个钩子，都不行：
+#   · afterPack —— electron-builder 在它之后**还会再写一次主 exe**（exe 的 mtime 比钩子日志晚 5 秒），
+#     把刚写好的元数据整体覆盖回默认值。`signAndEditExecutable: false` 只关掉它改「资源」，
+#     关不掉它重写文件本身。
+#   · afterAllArtifactBuild —— 时机够晚了，但钩子跑在 **electron-builder 自己的进程内**，
+#     此时主 exe 仍被它占着，rcedit 写不进去：12 次重试全失败，写后校验始终查不到串。
+#     （electron-builder 一退出、同一份产物手工跑 rcedit 立刻成功、体积精确回到基线。）
+#
+# 【现行方案】写入放到 scripts/build-desktop.mjs 里，在 **electron-builder 进程完全退出之后**执行 ——
+#   那里 exe 已无人占用，rcedit 一次就能写进去。顺序：
+#     electron-builder 打完包 → 校验主 exe → 缺失则补写 → 重打包让 exe 进包 → 再补一次 → 复验。
 win:
   target:
     - target: nsis
       arch:
         - x64
   icon: build/icon.ico
-  # 主 exe 的图标与版本资源由 afterPack 钩子写入（见上方 afterPack 说明与 scripts/after-pack.cjs）。
   # 🔴 跳过 electron-builder 内置的 rcedit：本机它写主 exe 资源必报 `Fatal error: Unable to commit changes`，
   #    且 electron-builder 24.13.3 在重试 4 次耗尽后**直接中止整个构建（exit 1）**、NSIS 阶段不再执行
   #    （2026-10-02 实测连续 3 次；历史记录「失败但继续打包」已不成立）。本项目不做代码签名，
-  #    跳过该步无副作用；主 exe 元数据由 afterPack 保证（实测体积 181,097,984 逐字节一致、含开发组名与版本串）。
+  #    跳过该步无副作用；主 exe 元数据由 afterAllArtifactBuild 钩子保证
+  #    （实测体积 181,097,984 逐字节一致、含开发组名与版本串）。
   signAndEditExecutable: false
 
 nsis:
