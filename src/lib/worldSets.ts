@@ -44,8 +44,15 @@ export function isInternalFieldKey(key: string): boolean {
   return key.startsWith('__')
 }
 
-/** 支持母子结构的页签（🔴 单一判据：以后要多支持一张表，只往这里加名字） */
-export const WORLD_SET_TABS: readonly string[] = ['worldbase', 'power']
+/**
+ * 支持母子结构的页签（🔴 单一判据：以后要多支持一张表，只往这里加名字）。
+ *
+ * 2.7.1 追加四个制度页签（政治 / 经济 / 宗教 / 司法）——**这就是接入的全部动作**：
+ * 存储层（`db/worldSets`）、母子面板（`WorldSetSheet`）、AI 注入（`aiContext`）、
+ * 导出 / 汇总 / 检索全都已按 `tab.id` 参数化 + 遍历 `TABS`，加名字即自动生效。
+ * 制度页签的「子项」＝ 多政权 / 多邦国并列（§8.3 定案：多份由子项承载）。
+ */
+export const WORLD_SET_TABS: readonly string[] = ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice']
 
 /** 子级的 tabId 后缀（`worldbase` → `worldbase-sub`） */
 export const SUB_TAB_SUFFIX = '-sub'

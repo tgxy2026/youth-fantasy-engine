@@ -5,6 +5,15 @@ export interface FormField {
   name: string
   desc: string
   example: string
+  /**
+   * 字段类型标记（2.7.1 · 题材模板化）。
+   *
+   * 目前只有 `'numeric'`：**数值型字段** —— AI 补全时锁死，不让模型凭空编数字。
+   * 改造前这一步靠「字段名包含 境界/等级/战力…」的关键字猜（见 schema.POWER_NUMERIC_HINTS），
+   * 模板化后新题材的字段未必含这些字（如「段位」「品级与阶序」）⇒ 会失锁。故升级为
+   * **显式声明**，关键字判据退化为兜底。两条判据并存，见 components/FormSheet.tsx。
+   */
+  kind?: 'numeric'
 }
 
 /** 表单模块（分组） */

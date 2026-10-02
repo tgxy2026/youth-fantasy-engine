@@ -4,7 +4,7 @@ import type { TabDef } from '../lib/types'
 import { getFormData, saveFormData } from '../lib/db'
 import { Save, RotateCcw, Info, Check, Sparkles } from 'lucide-react'
 import HelpPopover from './HelpPopover'
-import { POWER_NUMERIC_HINTS } from '../lib/schema'
+import { isNumericPowerField } from '../lib/schema'
 import SchemaFieldGrid from './SchemaFieldGrid'
 import AITemplateFill from './AITemplateFill'
 import type { TemplateField } from '../lib/ai'
@@ -40,7 +40,7 @@ export default function FormSheet({ tab }: Props) {
       desc: f.desc,
       example: f.example,
       // 力量体系：数值/境界类字段锁定，避免 AI 编崩"宪法"
-      locked: tab.id === 'power' && POWER_NUMERIC_HINTS.some(h => f.name.includes(h)),
+      locked: tab.id === 'power' && isNumericPowerField(f),
     }))),
     // 🔴 同 CharacterSheet：读 tab.modules 就得依赖 tab 本身，只写 tab.id 会在
     //    字段结构变化时沿用旧字段表。

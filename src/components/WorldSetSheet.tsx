@@ -17,12 +17,14 @@
  *      删除子项时清理活跃列表的逻辑在存储层，绕过去就会留下幽灵 id。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Check, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2, Wand2 } from 'lucide-react'
+import { BookOpen, Check, Copy, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import type { CardRecord, TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
 import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '../lib/worldSets'
-import { POWER_NUMERIC_HINTS } from '../lib/schema'
+import { isNumericPowerField } from '../lib/schema'
+import { getActivePack, modulesFor, subItemLabel, type GenrePack } from '../lib/schemaTemplates'
+import { GenrePackSwitcher } from './GenrePackSelect'
 import { useAIReady } from '../lib/useAIReady'
 import type { TemplateField } from '../lib/ai'
 import { confirmDialog, showToast } from './dialogs'
@@ -60,17 +62,25 @@ export default function WorldSetSheet({ tab }: Props) {
   const [showFill, setShowFill] = useState(false)
   /** 「AI 整理」= 拿草稿箱里那一段去填上方字段（与 showFill 的区别只是草稿已备好） */
   const [showOrganize, setShowOrganize] = useState(false)
+  /**
+   * 当前题材包（2.7.1）：作为 state 而不是只读全局 —— 切换后 setPack 直接触发重渲染，
+   * 下面 `modules` 的 useMemo 依赖 pack 精确重算，不依赖「全局副作用 + 恰好的重渲染」。
+   * 与 `tab.name` / `tab.description`（走 getter 读全局）读的是同一份 pack，不会漂移。
+   */
+  const [pack, setPack] = useState<GenrePack>(getActivePack())
+  /** 子项称谓随题材（Q15）：修真包→「子世界」、历史包→「政权」、武侠包→「门派」…纯文案层 */
+  const subLabel = subItemLabel(tab.id, pack)
 
-  // 包一层 useMemo：`tab.modules ?? []` 每次渲染都是新数组，直接当下游 useMemo 的依赖会次次失效
-  const modules = useMemo(() => tab.modules ?? [], [tab.modules])
+  // 包一层 useMemo：模块随题材包变，依赖 [tab.id, pack]（不是 `tab.modules` —— 那是个 getter，每次读都是活值）
+  const modules = useMemo(() => modulesFor(tab.id, pack) ?? [], [tab.id, pack])
   const templates = useMemo<TemplateField[]>(
     () => modules.flatMap(m => m.fields.map(f => ({
       key: `${m.name}::${f.name}`,
       label: f.name,
       desc: f.desc,
       example: f.example,
-      // 与母级同一套判据：境界/数值类字段锁死（见 lib/schema 的 POWER_NUMERIC_HINTS）
-      locked: tab.id === 'power' && POWER_NUMERIC_HINTS.some(h => f.name.includes(h)),
+      // 与母级同一套判据：数值类字段锁死（kind 显式声明 or 关键字兜底，见 lib/schema）
+      locked: tab.id === 'power' && isNumericPowerField(f),
     }))),
     [modules, tab.id],
   )
@@ -149,6 +159,13 @@ export default function WorldSetSheet({ tab }: Props) {
     }
   }, [dirty, isMain, selSub, sel, draft, tab.id])
 
+  /**
+   * 题材包已切换（GenrePackSwitcher 内部已落库 + setActivePack + 派发事件）——
+   * 这里只需让本组件换到新包的模板。**不需要重读数据**：字段键是 `模块::字段`，与题材包无关，
+   * 换包只是「不再渲染那些键」；子项也存在同一批 `tabId-sub` 下，语义不变。
+   */
+  const onPackSwitched = useCallback((next: GenrePack) => { setPack(next) }, [])
+
   const selectLayer = async (key: string) => {
     if (key === sel) return
     await flush(true)     // 🔴 先落库再切（否则这一层刚改的字会丢）
@@ -177,7 +194,7 @@ export default function WorldSetSheet({ tab }: Props) {
     setSel(rec.id)
     setDraft({})
     setDirty(false)
-    showToast(`已新增子世界「${n}」（已设为活跃，会一起发给 AI）`, 'success')
+    showToast(`已新增${subLabel}「${n}」（已设为活跃，会一起发给 AI）`, 'success')
   }
 
   const renameSub = async (name: string) => {
@@ -191,7 +208,7 @@ export default function WorldSetSheet({ tab }: Props) {
   const dropSub = async () => {
     if (!selSub) return
     const yes = await confirmDialog({
-      title: '删除子世界',
+      title: `删除${subLabel}`,
       message: `确定删除「${selSub.name}」？\n它的全部设定会一起删掉，且不可撤销。`,
       confirmText: '删除',
       danger: true,
@@ -210,6 +227,48 @@ export default function WorldSetSheet({ tab }: Props) {
     setActiveIds(await db.getActiveSubIds(tab.id))
   }
 
+  /**
+   * Q14「同步子项清单」（2.7.1）：以《世界设定》的子项清单为**基准**，把本页签的清单对齐过来。
+   *
+   * 为什么需要它：子项清单**按页签各存各**（`worldSubActive::politics` 与 `::economy` 是两份，
+   * `<tabId>-sub` 也是两批记录）⇒ 历史作者要在 4 个制度页签里各建一遍「魏 / 蜀 / 吴」（12 次），
+   * 还容易对不齐（政治里加了大燕、经济里忘了加）。
+   *
+   * 🔴 只对齐**清单（名称 / 顺序 / 活跃态）**，页面内容**各存各**：同名子项一律不动其内容，
+   *    缺哪个补哪个 ⇒ 存储语义零改动、可回退（把补出来的删掉即还原）。
+   */
+  const syncFromWorldbase = async () => {
+    const base = await db.getSubSets('worldbase').catch(() => [] as CardRecord[])
+    if (!base.length) {
+      showToast('《世界设定》还没有子项 —— 先在那里把清单建好，再来同步', 'info')
+      return
+    }
+    const baseActive = await db.getActiveSubIds('worldbase').catch(() => [] as string[])
+    const mine = await db.getSubSets(tab.id)
+    const byName = new Map(mine.map(s => [s.name, s]))
+    let created = 0
+    for (const b of base) {
+      if (byName.has(b.name)) continue          // 同名已存在 ⇒ 不动它的内容
+      const rec = { id: uid(), projectId: '', tabId: '', name: b.name, data: {}, order: b.order } as CardRecord
+      await db.saveSubSet(tab.id, rec)
+      byName.set(b.name, rec)
+      created++
+    }
+    // 活跃态对齐（按名字对应）——清单层面的对齐，不碰内容
+    for (const b of base) {
+      const s = byName.get(b.name)
+      if (s) await db.setSubActive(tab.id, s.id, baseActive.includes(b.id))
+    }
+    setSubs(await db.getSubSets(tab.id))
+    setActiveIds(await db.getActiveSubIds(tab.id))
+    showToast(
+      created > 0
+        ? `已从《世界设定》同步：新增 ${created} 个${subLabel}，活跃态一并对齐`
+        : '清单已一致，无需新增（活跃态已对齐）',
+      'success',
+    )
+  }
+
   if (loading) return <LoadingState />
   if (!modules.length) return <div className="p-8 text-13 text-ink-400">这个页签没有可填的字段。</div>
 
@@ -222,14 +281,16 @@ export default function WorldSetSheet({ tab }: Props) {
             {`这个页签分两层：\n\n`
               + `· 【母级】全书统一 —— 整本书只有一个，写这套设定的顶层规则（世界底层法则 / 统一等级总纲）。`
               + `它永远会发给 AI。\n`
-              + `· 【子世界】—— 每个副本 / 剧本 / 世界线一套，可以建多项。每项有一个开关：`
+              + `· 【${subLabel}】—— 每个副本 / 剧本 / 世界线一套，可以建多项。每项有一个开关：`
               + `「活跃」（当前故事聚焦在它）或「已完结」（写过、不再聚焦）。\n`
-              + `· 🔴 只有活跃的子世界才会发给 AI。已完结的留在库里随时可查，但不再占用模型的注意力 —— 多套设定就不会互相打架。\n`
+              + `· 🔴 只有活跃的${subLabel}才会发给 AI。已完结的留在库里随时可查，但不再占用模型的注意力 —— 多套设定就不会互相打架。\n`
               + `· 左列点一下就切换编辑对象；右列表单顶部始终标着你现在在填哪一层，`
               + `两层的字段是一样的，别填错层。\n\n`
               + `${tab.description ?? ''}`}
             <AIDataSourceNote feature={tab.id} />
           </HelpPopover>
+          {/* 题材包切换（2.7.1）：老项目事后改题材的入口，六个受题材驱动的页签都有 */}
+          <GenrePackSwitcher onSwitched={onPackSwitched} />
           <div className="ml-auto flex items-center gap-2">
             <Button variant="toggle" selected={dirty} disabled={!dirty || saving}
               onClick={() => void flush()} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
@@ -250,14 +311,14 @@ export default function WorldSetSheet({ tab }: Props) {
         <div className="mt-2">
           {active.length >= 3 ? (
             <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2 text-11 leading-relaxed text-ink-200">
-              当前有 <b className="text-amber">{active.length}</b> 个子世界处于活跃状态，会一起发给 AI。
+              当前有 <b className="text-amber">{active.length}</b> 个{subLabel}处于活跃状态，会一起发给 AI。
               套数越多越容易写串 —— 写完这一卷，记得把已完结的关掉。
             </div>
           ) : (
             <div className="text-11 text-ink-500">
               {active.length === 0
-                ? '当前没有活跃子世界，AI 只会读到「全书统一」这一层。'
-                : `AI 会读到：全书统一 + 当前活跃的 ${active.length} 个子世界（${active.map(s => s.name).join('、')}）。`}
+                ? `当前没有活跃${subLabel}，AI 只会读到「全书统一」这一层。`
+                : `AI 会读到：全书统一 + 当前活跃的 ${active.length} 个${subLabel}（${active.map(s => s.name).join('、')}）。`}
             </div>
           )}
         </div>
@@ -282,15 +343,24 @@ export default function WorldSetSheet({ tab }: Props) {
           </SelectRow>
 
           <div className="px-3 py-2 text-10 text-ink-500 border-y border-ink-700 flex items-center gap-1">
-            子世界
+            {subLabel}
             <span className="text-ink-600">（{subs.length}）</span>
             <span className="ml-auto text-ink-600">活跃 {active.length}</span>
           </div>
 
+          {tab.id !== 'worldbase' && (
+            <button onClick={() => void syncFromWorldbase()}
+              title="以《世界设定》的子项清单为基准，把名称 / 顺序 / 活跃态同步过来（只对齐清单，内容各存各）"
+              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-10 text-ink-400 hover:bg-ink-800 border-b border-ink-700 transition-colors"
+            >
+              <Copy size={11} /> 同步《世界设定》的子项
+            </button>
+          )}
+
           <div className="overflow-y-auto" style={{ maxHeight: foldVh('46vh') }}>
             {subs.length === 0 && (
               <div className="px-3 py-3 text-11 text-ink-600 leading-relaxed">
-                还没有子世界。<br />如果这本书只在一个世界里发生，就不用建。
+                还没有{subLabel}。<br />如果这本书只在一个世界里发生，就不用建。
               </div>
             )}
             {subs.map(s => {
@@ -325,7 +395,7 @@ export default function WorldSetSheet({ tab }: Props) {
           <button onClick={() => setNaming('new')}
             className="w-full flex items-center gap-1.5 px-3 py-2.5 text-12 text-ink-300 hover:bg-ink-800 border-t border-ink-700 transition-colors"
           >
-            <Plus size={12} /> 新增子世界
+            <Plus size={12} /> 新增{subLabel}
           </button>
         </div>
 
@@ -336,7 +406,7 @@ export default function WorldSetSheet({ tab }: Props) {
           }`}>
             {isMain ? <BookOpen size={12} className="text-amber" /> : <Globe2 size={12} className="text-ink-300" />}
             <span className="text-11 text-ink-200">
-              {isMain ? <>正在填：<b className="text-amber">【母级】全书统一</b>（永远发给 AI）</> : <>正在填：<b className="text-ink-100">【子世界】{selSub?.name}</b>（{activeIds.includes(sel || '') ? '活跃 · 会发给 AI' : '已完结 · 不发给 AI'}）</>}
+              {isMain ? <>正在填：<b className="text-amber">【母级】全书统一</b>（永远发给 AI）</> : <>正在填：<b className="text-ink-100">【{subLabel}】{selSub?.name}</b>（{activeIds.includes(sel || '') ? '活跃 · 会发给 AI' : '已完结 · 不发给 AI'}）</>}
             </span>
             <span className="ml-auto text-10 text-ink-500 tabular-nums">{filledCount} / {totalFields} 项已填</span>
             {!isMain && selSub && (
@@ -344,7 +414,7 @@ export default function WorldSetSheet({ tab }: Props) {
                 <Button variant="icon-muted" size="sm" onClick={() => setNaming('rename')} title="改名字">
                   <Pencil size={11} />
                 </Button>
-                <Button variant="icon-danger" size="sm" onClick={() => void dropSub()} title="删除这个子世界">
+                <Button variant="icon-danger" size="sm" onClick={() => void dropSub()} title={`删除这个${subLabel}`}>
                   <Trash2 size={11} />
                 </Button>
               </>
@@ -354,7 +424,7 @@ export default function WorldSetSheet({ tab }: Props) {
           {!isMain && selSub && !activeIds.includes(selSub.id) && (
             <div className="mb-3 flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-850/50 px-3 py-2 text-11 text-ink-400">
               <Layers size={11} className="shrink-0" />
-              这个子世界是「已完结」——留档可查，但不会发给 AI。要让它参与，点左列它左边的圆点。
+              这个{subLabel}是「已完结」——留档可查，但不会发给 AI。要让它参与，点左列它左边的圆点。
             </div>
           )}
 
@@ -416,10 +486,10 @@ export default function WorldSetSheet({ tab }: Props) {
 
       <PromptModal
         open={naming !== null}
-        title={naming === 'rename' ? '改子世界名字' : '新增子世界'}
-        label="子世界名称"
+        title={naming === 'rename' ? `改${subLabel}名字` : `新增${subLabel}`}
+        label={`${subLabel}名称`}
         defaultValue={naming === 'rename' ? selSub?.name ?? '' : ''}
-        placeholder="例：主神空间 / 三国乱世 / 末日废土"
+        placeholder="例：大燕 / 主神空间 / 玄天宗 / 末日废土"
         onSubmit={name => {
           // ⚠️ PromptModal 自己不关弹窗，必须在这里关（漏了会挡住后续点击）
           const mode = naming

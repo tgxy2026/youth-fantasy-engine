@@ -64,7 +64,9 @@ async function doCreateDemoProject(): Promise<string> {
   if (old) await db.deleteProject(old.id)
   // 示范项目必须保持「完整项目」形态（projectType='full'）：完整项目下所有功能默认开启，
   // 才能完整演示卷章正文、设定表单、角色卡、伏笔、时间线、运营维护等全模块。切勿改为 'custom'。
-  const p = await db.createProject('吞天神脉（示范）', '东方玄幻', '废脉？我吞的就是天！', '', 'full')
+  // 题材包（2.7.1）：示范项目《吞天神脉》绑「东方修真」——其模块内容＝改造前的 schema 逐字，
+  // 故示范项目零影响。老值 '东方玄幻' 亦会被 normalizeGenrePack 归位到同一包。
+  const p = await db.createProject('吞天神脉（示范）', '东方修真', '废脉？我吞的就是天！', '', 'full')
   db.setCurrentProject(p.id)
 
   // 1) 表单型页签：全部填入 Excel 示例行内容

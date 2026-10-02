@@ -16,6 +16,7 @@ import { splitNames } from './audit'
 import { clipText } from './textClip'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
 import { composeSubSetsBlock, isInternalFieldKey, isWorldSetTab, splitActive } from './worldSets'
+import { normalizeGenrePack } from './schemaTemplates'
 import type { Chapter, TabDef, Volume } from './types'
 
 export interface ProjectContextOptions {
@@ -98,6 +99,12 @@ const PRIORITY: string[] = [
   'positioning',      // 作品定位
   'worldbase',        // 世界设定
   'power',            // 力量体系
+  // 制度页签（2026-10-02 · 2.7.1 §8.4）：紧贴世界设定/力量体系 —— 它们是「这个世界怎么运转」，
+  // 与前三者同属"开书定位"层的顶层档案，比角色/势力更该先占预算。
+  'politics',         // 政治架构
+  'economy',          // 经济体系
+  'belief',           // 宗教信仰
+  'justice',          // 司法制度
   'master',           // 全书总纲
   'char-main',        // 主要角色
   'relations',        // 人物关系
@@ -179,6 +186,10 @@ const AUTHOR_SIDE_FIELDS = new Set([
   '金手指的成长路线', '顶端模糊地带',   // 力量体系：分段解锁计划 / 最高境界之上的悬念
   '流转轨迹',                          // 物品资源：谁给谁、怎么给、何时给
   '与主线关系',                        // 种族生物：指向未来的主线关联
+  // 制度页签（2026-10-02 · 2.7.1）：新题材模板里的未来向 / 作者底牌字段。
+  // 老字段名（如「世界终极真相」「体系的隐藏层级」）在各题材模板里**同名保留** ⇒
+  // 上面已登记的条目自动覆盖它们，这里只补**新出现**的字段名。
+  '信仰与真相的落差',                  // 宗教信仰：官方教义与真相之间的落差，是作者底牌
 ])
 
 /** 渲染选项：角色视角下隐藏作者侧字段 */
@@ -689,7 +700,9 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
       const st = await db.getProjectStats(pid).catch(() => ({ chapters: 0, words: 0, volumes: 0 }))
       const head = [
         `书名：${proj.name}`,
-        proj.genre ? `类型：${proj.genre}` : '',
+        // 类型＝题材包（2.7.1）：值就是四字包名 ⇒ 直接可读，无需额外映射。
+        // 老数据里的自由文本（'东方玄幻' 等）经别名表归位；为空则整行不输出（与改造前一致）。
+        proj.genre ? `类型：${normalizeGenrePack(proj.genre)}` : '',
         proj.intro ? `简介：${clip(proj.intro, 200)}` : '',
         `体量：${st.volumes} 卷 / ${st.chapters} 章 / ${st.words} 字`,
       ]

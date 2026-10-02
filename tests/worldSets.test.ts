@@ -25,11 +25,15 @@ console.log('\n▶ worldSets')
 
 // ---------- 1. 判据（单一常量） ----------
 {
-  ok('只认这两张表', WORLD_SET_TABS.length === 2 && isWorldSetTab('worldbase') && isWorldSetTab('power'))
+  // 2.7.1：母子结构从 2 张表扩到 6 张（世界总览 / 力量体系 + 政治 / 经济 / 宗教 / 司法）——
+  // 「接入动作＝往 WORLD_SET_TABS 加名字」，故这条断言就是「四链路零改动生效」的第一道门。
+  ok('认这六张表', WORLD_SET_TABS.length === 6
+    && ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice'].every(isWorldSetTab))
   ok('别的页签不算多套表', !isWorldSetTab('master') && !isWorldSetTab('char-main') && !isWorldSetTab(''))
-  ok('子级 tabId 派生成 <tabId>-sub', subTabIdOf('worldbase') === 'worldbase-sub' && subTabIdOf('power') === 'power-sub')
+  ok('子级 tabId 派生成 <tabId>-sub',
+    subTabIdOf('worldbase') === 'worldbase-sub' && subTabIdOf('politics') === 'politics-sub')
   ok('能反认出子级 tabId（用于遍历时跳过）',
-    isSubTabId('worldbase-sub') && isSubTabId('power-sub') && !isSubTabId('worldbase'))
+    isSubTabId('worldbase-sub') && isSubTabId('justice-sub') && !isSubTabId('worldbase'))
   ok('活跃键带表名（settingsKV 会自动再加 pid 前缀）',
     activeKeyOf('worldbase') === 'worldSubActive::worldbase')
 }

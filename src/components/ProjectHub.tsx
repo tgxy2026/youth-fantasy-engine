@@ -19,6 +19,8 @@ import { markExported } from '../lib/backupReminder'
 import { APP_VERSION_LABEL } from '../lib/env'
 import { usePersistedBool, readBoolPref, readStringPref } from '../lib/uiPrefs'
 import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
+import { DEFAULT_PACK, type GenrePack } from '../lib/schemaTemplates'
+import { GenrePackSelect } from './GenrePackSelect'
 import workbenchBg from '../assets/workbench-bg.png'
 import jiewenjiGufeng from '../assets/jiewenji-gufeng.png'
 import { Button } from './Button'
@@ -44,7 +46,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const [projects, setProjects] = useState<Row[]>([])
   const [loaded, setLoaded] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState<{ name: string; cover: string; projectType: CreateType; features: string[] }>({ name: '', cover: '', projectType: 'full', features: [] })
+  const [form, setForm] = useState<{ name: string; cover: string; projectType: CreateType; features: string[]; genre: GenrePack }>({ name: '', cover: '', projectType: 'full', features: [], genre: DEFAULT_PACK })
   const [busy, setBusy] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<{ name: string; cover: string; projectType: CreateType; features: string[] }>({ name: '', cover: '', projectType: 'full', features: [] })
@@ -123,12 +125,14 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
     if (form.projectType === 'custom' && form.features.length === 0) { showToast('请先选择要启用的功能模块', 'error'); return }
     setBusy(true)
     try {
+      // 题材（2.7.1）：写进 Project.genre ⇒ 决定「世界设定 / 力量体系 / 制度页签」用哪套模板。
+      // 值就是四字包名（见 lib/schemaTemplates），故 AI 注入「类型：东方修真」天然可读。
       const p = await db.createProject(
-        form.name.trim(), '', '', form.cover, form.projectType,
+        form.name.trim(), form.genre, '', form.cover, form.projectType,
         form.projectType === 'custom' ? form.features : undefined,
       )
       setCreating(false)
-      setForm({ name: '', cover: '', projectType: 'full', features: [] })
+      setForm({ name: '', cover: '', projectType: 'full', features: [], genre: DEFAULT_PACK })
       onOpen(p.id)
     } catch (e) {
       showToast('创建失败：' + (e instanceof Error ? e.message : String(e)), 'error')
@@ -352,6 +356,15 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                       )}
                     </div>
                   )}
+                </div>
+                {/* 作品题材（2.7.1）：决定世界设定 / 力量体系 / 制度页签用哪套模板；创建后仍可在页签头部切换 */}
+                <div>
+                  <label className="text-11 text-ink-400 mb-1 flex items-center gap-1">作品题材
+                    <HelpPopover title="作品题材怎么选" width="23rem" size={11}>
+                      {'决定「世界设定 / 力量体系 / 政治 / 经济 / 宗教 / 司法」这几个页签用哪一套填写模板。\n\n· 写都市现实 / 历史古代这类没有超自然力量的作品时，选对应题材就不会再看到「境界 / 灵根 / 寿元」这类对不上的表；\n· 选错了没关系：在页签头部随时能改 —— 换模板只隐藏、不删除，切回即恢复。'}
+                    </HelpPopover>
+                  </label>
+                  <GenrePackSelect value={form.genre} onChange={g => setForm(f => ({ ...f, genre: g }))} className="w-full" />
                 </div>
                 <div className="flex-1">
                   <label className="text-11 text-ink-400 mb-1 block">书名 *</label>

@@ -29,6 +29,8 @@ import BrandMark from './BrandMark'
 import { APP_VERSION_LABEL } from '../lib/env'
 import workbenchBg from '../assets/workbench-bg.png'
 import WelcomeAISetup from './WelcomeAISetup'
+import { GenrePackSelect } from './GenrePackSelect'
+import { DEFAULT_PACK, type GenrePack } from '../lib/schemaTemplates'
 
 type Choice = 'new' | 'demo' | 'import'
 
@@ -66,6 +68,8 @@ export default function WelcomeWizard({ onDone }: Props) {
   const [choice, setChoice] = useState<Choice>('new')
   const [bgHidden] = usePersistedBool('workbench-bg-hidden', false)
   const [bookName, setBookName] = useState('')
+  /** 作品题材（2.7.1）：决定开书定位那几个页签用哪套模板 */
+  const [genre, setGenre] = useState<GenrePack>(DEFAULT_PACK)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -81,7 +85,7 @@ export default function WelcomeWizard({ onDone }: Props) {
     try {
       const id = choice === 'demo'
         ? await createDemoProject()
-        : (await db.createProject(bookName.trim() || '未命名作品')).id
+        : (await db.createProject(bookName.trim() || '未命名作品', genre)).id
       await finish(id)
     } catch (e) {
       showToast('创建失败：' + (e instanceof Error ? e.message : String(e)), 'error')
@@ -166,6 +170,14 @@ export default function WelcomeWizard({ onDone }: Props) {
                   autoFocus
                   className="w-full text-13"
                 />
+                {/* 作品题材（2.7.1）：开书第一步就对齐模板，省得写历史/都市时看到境界阶梯 */}
+                <div className="mt-4">
+                  <label className="block text-11 text-ink-400 mb-1">作品题材</label>
+                  <GenrePackSelect value={genre} onChange={setGenre} className="w-full" />
+                  <div className="mt-1 text-10 leading-relaxed text-ink-500">
+                    决定「世界设定 / 力量体系 / 政治 / 经济 / 宗教 / 司法」用哪套填写模板；进去后还能随时改。
+                  </div>
+                </div>
               </div>
             )}
 

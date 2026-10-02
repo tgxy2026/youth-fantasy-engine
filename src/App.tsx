@@ -13,6 +13,7 @@ import AboutPage from './components/AboutPage'
 import UpdateDialog from './components/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from './lib/versionCheck'
 import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
+import { DEFAULT_PACK, normalizeGenrePack, setActivePack } from './lib/schemaTemplates'
 import { isWorldSetTab } from './lib/worldSets'
 import * as db from './lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from './lib/backup'
@@ -63,7 +64,7 @@ export default function App() {
   // 内置背景开关（2.6.1）：必须在所有早退 return 之前调（rules-of-hooks）
   const [bgHidden] = usePersistedBool('workbench-bg-hidden', false)
   const [projectName, setProjectName] = useState('')
-  const [visCtx, setVisCtx] = useState<VisCtx>({ type: 'full', features: [] })
+  const [visCtx, setVisCtx] = useState<VisCtx>({ type: 'full', features: [], pack: DEFAULT_PACK })
   const [activeTab, setActiveTab] = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
   const [booted, setBooted] = useState(false)
@@ -282,10 +283,15 @@ export default function App() {
     // 内部顺序：项目形态归一化 → ledger 拆表 → 全局连续编号（numbering 依赖 ledger 的结果）
     await db.runMigrations()
     await refreshVolumeTabs() // UI 侧缓存刷新，db 层不引用 schema 以免循环依赖
+    // 题材包（2.7.1）：决定「世界设定 / 力量体系 / 四个制度页签」用哪套模板、哪些页签可见。
+    // 🔴 必须在任何页签渲染之前设好 —— TABS 里那六个页签的 name/modules 是 getter，读的就是这里。
+    //    （故在 setVisCtx / setActiveTab 之前调用，避开「renderContent 先跑、包还没设」的竞态。）
+    const pack = normalizeGenrePack(p.genre)
+    setActivePack(pack)
     db.setMeta('lastProject', id)
     setProjectId(id)
     setProjectName(p.name)
-    setVisCtx({ type: p.projectType ?? 'full', features: p.features ?? [] })
+    setVisCtx({ type: p.projectType ?? 'full', features: p.features ?? [], pack })
     setActiveTab('dashboard')
     setRefreshKey(k => k + 1)
     // 备份策略加固：每天首次打开自动备一份；打开期间每 5 分钟滚动备一份
@@ -302,6 +308,10 @@ export default function App() {
     backupStop.current = null
     db.setMeta('lastProject', '')
     db.setCurrentProject('')
+    // 题材包归位（2.7.1）：退回项目管理首页后，TABS 的 getter 应回到默认包，
+    // 免得「上个项目的题材」还挂在模块级状态上（首页若渲染任何页签名会露馅）。
+    setActivePack(DEFAULT_PACK)
+    setVisCtx(c => ({ ...c, pack: DEFAULT_PACK }))
     setProjectId(null)
     setProjectName('')
   }, [])
@@ -360,6 +370,26 @@ export default function App() {
     window.addEventListener('yfe:navigate', onNav as EventListener)
     return () => window.removeEventListener('yfe:navigate', onNav as EventListener)
   }, [navigate])
+
+  /**
+   * 题材包切换（2.7.1）：由页签头部的「切换题材包」控件派发 `yfe:pack-changed`。
+   *
+   * 🔴 为什么要绕一圈事件而不是回调：切换入口在**页签组件内部**（WorldSetSheet / FormSheet
+   *    都能改），而 activePack 是模块级状态、visCtx 在 App —— 事件是既有的跨组件通信范式
+   *    （同 `yfe:navigate`），避免把 setState 一层层透传过 7 个页签。
+   * 三件事一起做：① 落模块级 activePack（TABS 的 getter 读它）；② 更新 visCtx.pack（tabVisible 读它）；
+   * ③ bump refreshKey 触发当前页签重渲染。
+   */
+  useEffect(() => {
+    const onPack = (e: Event) => {
+      const pack = normalizeGenrePack((e as CustomEvent).detail)
+      setActivePack(pack)
+      setVisCtx(c => ({ ...c, pack }))
+      setRefreshKey(k => k + 1)
+    }
+    window.addEventListener('yfe:pack-changed', onPack as EventListener)
+    return () => window.removeEventListener('yfe:pack-changed', onPack as EventListener)
+  }, [])
 
   const onStatsChange = useCallback(() => {
     setRefreshKey(k => k + 1)
