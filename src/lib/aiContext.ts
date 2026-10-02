@@ -193,7 +193,19 @@ const AUTHOR_SIDE_FIELDS = new Set([
 ])
 
 /** 渲染选项：角色视角下隐藏作者侧字段 */
-type RenderOpts = { hideAuthorFields?: boolean }
+type RenderOpts = {
+  /** 角色视角：整列剔除「作者侧字段」（见 AUTHOR_SIDE_FIELDS） */
+  hideAuthorFields?: boolean
+  /**
+   * 角色视角：整行剔除「保密等级 = S」的条目（S 是绝密 / 剧透，演员不该看到结局）。
+   *
+   * 🔴 2026-10-02 六维审计 P0：SABC_DESC 一直写着「S=绝密（角色视角看不到）」，
+   *    但实现只做了「按页签 / 字段名排除作者侧资料」——**从没有按 S 级剔行**，
+   *    等于文案长期在承诺一件没做的事（作者给条目标了 S，演员照样看得到结局）。
+   *    本字段把承诺落地：与 D 级同层的**行级**过滤，且同样不进「另有 N 条未列出」的计数。
+   */
+  hideSecretRows?: boolean
+}
 
 /** 各表最多带入的条目数（防止长篇几百行表格直接吃满预算） */
 const ROW_CAP: Record<string, number> = {
@@ -212,15 +224,20 @@ const DEFAULT_ROW_CAP = 40
  * 数值越小越先塞：S 必带 → A 优先 → B 常规 → C 最先丢，**D 永不进**（见 isPrunedForAI）。
  *
  * 🔴 它同时是「可见性」的依据（角色视角排除 S 级），但那一步在渲染层做，不在这里 ——
- *   本文件里它只管顺序与 D 档剔除，不管角色视角可见性，两件事分开放，免得日后改一处忘另一处。
+ *   本文件里它只管顺序与 D 档剔除；角色视角的 S 级剔除落在**渲染层**（`RenderOpts.hideSecretRows`
+ *   → `isSecretRow`，见 sectionOf / renderCards / renderTable / renderActiveSubSets），
+ *   两件事分开放，免得日后改一处忘另一处。
  * 🔴 未填 / 未知值一律按中性（= B 档）。**绝不能当 C** —— 否则历史数据会因为当年没标等级
  *   而被排到最后优先丢弃，等于用一个新功能把老项目的数据静默降级。
  */
 const SECRECY_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3, D: 99 }
 const DEFAULT_RANK = 2
 
-/** D 档 = 终结 / 弃用 */
+/** D 档 = 终结 / 弃用（**任何视角**都不进 AI） */
 const PRUNED_LEVEL = 'D'
+
+/** S 档 = 绝密 / 剧透（仅**角色视角**剔除，见 isSecretRow） */
+const SECRET_LEVEL = 'S'
 
 /**
  * 取一条记录的保密等级原文（大写；读不到给空串）。
@@ -257,6 +274,17 @@ function secrecyOf(data: Record<string, string> | undefined): string {
  */
 export function isPrunedForAI(data: Record<string, string> | undefined): boolean {
   return secrecyOf(data) === PRUNED_LEVEL
+}
+
+/**
+ * 🔴 **S 级（绝密 / 剧透）：角色视角下不进 AI。**
+ *
+ * 与 D 级的区别：D 是「任何视角、任何功能都不给」（作者侧也排除）；S 只对**角色视角**
+ * （酒馆沉浸档的剧情推演 / 扮演）生效 —— 作者 / 导演视角照常带上（那是他自己的底牌）。
+ * 判据与 `isPrunedForAI` 同源（都走 `secrecyOf`），所以表格的裸列名键与卡片的复合键都认。
+ */
+export function isSecretRow(data: Record<string, string> | undefined): boolean {
+  return secrecyOf(data) === SECRET_LEVEL
 }
 
 /** 取一条记录的预算优先级（读不到等级时给中性档） */
@@ -369,7 +397,9 @@ async function renderActiveSubSets(tab: TabDef, o: RenderOpts = {}): Promise<str
     if (subs.length === 0) return null
     const { active, closed } = splitActive(subs, await db.getActiveSubIds(tab.id))
     return composeSubSetsBlock(
-      active.map(s => ({ name: s.name, body: renderForm(tab, s.data ?? {}, o) })),
+      // 角色视角：标了 S 的子世界整段剔除（与 sectionOf 的母级同口径）
+      active.filter(s => !(o.hideSecretRows && isSecretRow(s.data)))
+        .map(s => ({ name: s.name, body: renderForm(tab, s.data ?? {}, o) })),
       active.length + closed.length,
     )
   } catch {
@@ -382,7 +412,8 @@ async function renderActiveSubSets(tab: TabDef, o: RenderOpts = {}): Promise<str
 function renderCards(tab: TabDef, recs: { name: string; data: Record<string, string> }[], o: RenderOpts = {}): string {
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
   // 🔴 D 级（终结 / 弃用）先剔除：它不进正文，也不该出现在「另有 N 条未列出」的计数里
-  const usable = recs.filter(r => !isPrunedForAI(r.data))
+  // 🔴 D 级（任何视角）与 S 级（仅角色视角）都先剔除：都不进正文，也不该出现在「另有 N 条未列出」的计数里
+  const usable = recs.filter(r => !isPrunedForAI(r.data) && !(o.hideSecretRows && isSecretRow(r.data)))
   const out: string[] = []
   // 2.2.0：先按「保密等级」排预算优先级、再截断（同等级保持录入序）。
   // 原来是纯录入序 slice —— 长篇后段会"琐碎的先占位、重要的进不来"。
@@ -403,8 +434,8 @@ function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: R
     .filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
   if (cols.length === 0) return ''
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
-  // 🔴 D 级先剔除（同 renderCards：正文与「另有 N 行未列出」的计数都不算它）
-  const usable = rows.filter(r => !isPrunedForAI(r.data))
+  // 🔴 D 级（任何视角）与 S 级（仅角色视角）都先剔除（同 renderCards：正文与「另有 N 行未列出」的计数都不算它）
+  const usable = rows.filter(r => !isPrunedForAI(r.data) && !(o.hideSecretRows && isSecretRow(r.data)))
   // 2.2.0：同 renderCards —— 先按「保密等级」排预算优先级再截断（同等级保持录入序）
   const use = sortBySecrecy(usable).slice(0, cap).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
   if (use.length === 0) return ''
@@ -443,7 +474,10 @@ async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
 async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): Promise<string> {
   try {
     if (tab.type === 'form') {
-      const main = renderForm(tab, await db.getFormData(tab.id), o)
+      const formData = await db.getFormData(tab.id)
+      // 角色视角：整条记录标了 S（绝密 / 剧透）⇒ 整段不带（含它的子世界）
+      if (o.hideSecretRows && isSecretRow(formData)) return ''
+      const main = renderForm(tab, formData, o)
       // 世界设定 / 力量体系 / 四个制度页签都是「母子结构」表（C10；2.7.1 扩到六表）：建过子项才引入母／子两层标题。
       // 🔴 没建过子项 ⇒ 原样返回（单世界用户的上下文与改动前**一字不差**）。
       if (!isWorldSetTab(tab.id)) return main
@@ -728,7 +762,11 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   }
 
   // 角色视角下再过滤一层「作者侧字段」（段落级排除管不到表内的未来向列，见 AUTHOR_SIDE_FIELDS 说明）
-  const renderOpts: RenderOpts = { hideAuthorFields: opts.viewMode === 'character-view' }
+  const renderOpts: RenderOpts = {
+    hideAuthorFields: opts.viewMode === 'character-view',
+    // S 级（绝密 / 剧透）在角色视角下整行剔除 —— 见 RenderOpts.hideSecretRows 的说明
+    hideSecretRows: opts.viewMode === 'character-view',
+  }
 
   for (const id of ordered) {
     if (only && !only.has(id)) continue

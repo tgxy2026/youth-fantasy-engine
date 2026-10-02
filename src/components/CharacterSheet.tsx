@@ -339,7 +339,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
             <Plus size={14} /> 新建{noun}
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全其余字段'}>
+            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全其余字段'}>
               <Sparkles size={14} /> AI 补全
             </Button>
           )}

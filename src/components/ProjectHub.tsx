@@ -242,7 +242,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 e.target.value = ''
               }}
             />
-            <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors">
+            <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 font-medium transition-colors">
               <BookPlus size={14} /> 新建小说项目
             </Button>
             {/* 2.6.1 · R1：按钮升级为「看板娘设置」——开关与自定义图都进弹窗（原直接 toggle 行为收进弹窗内开关） */}

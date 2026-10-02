@@ -66,7 +66,7 @@ export function SensitiveCheck({ content, onApply, onClose }: {
             ))}
           </div>
           <div className="flex gap-2 justify-end">
-            <Button variant="primary" onClick={() => { onApply(replaceHits(content, hits)); setReplaced(true); onClose() }} className="px-4 py-2 rounded-lg text-12 transition-colors">
+            <Button variant="primary" onClick={() => { onApply(replaceHits(content, hits)); setReplaced(true); onClose() }} className="transition-colors">
               一键替换为 ■■（{replaced ? '已' : '未'}替换）
             </Button>
           </div>
@@ -531,7 +531,7 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                     ))}
                   </div>
                 )}
-                <Button variant="primary" onClick={() => { onRestore(preview.content); onClose() }} className="mt-3 px-3 py-2 rounded-lg text-12 transition-colors">
+                <Button variant="primary" onClick={() => { onRestore(preview.content); onClose() }} className="mt-3 transition-colors">
                   恢复到此版本（当前内容会先自动留档）
                 </Button>
               </>

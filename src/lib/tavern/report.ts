@@ -128,8 +128,10 @@ export async function normalizeFindings(
       || /(无|没有|没|未|不)[^，。；、]{0,6}(矛盾|漏洞|问题)/.test(levelRaw)
     let level: TavernFindingLevel
     if (negated) level = '存疑'
-    else if (levelRaw.includes('矛盾')) level = '矛盾'
-    else if (levelRaw.includes('漏洞')) level = '漏洞'
+    // 2026-10-02 六维审计 P2：与上面的 fuzzyUnique 及项目红线同口径 —— 判定一律整词，不用 includes 子串
+    //    （「逻辑漏洞较多」这类长句会被 includes 判成「漏洞」，与模型原意可能背离；命不中就保守落「存疑」）。
+    else if (levelRaw === '矛盾' || levelRaw.startsWith('矛盾')) level = '矛盾'
+    else if (levelRaw === '漏洞' || levelRaw.startsWith('漏洞')) level = '漏洞'
     else level = '存疑'
     const targetTabId = asText(it.targetTabId ?? it.表 ?? '').trim()
     const targetLabel = asText(it.targetLabel ?? it.条目 ?? it.指向 ?? '').trim()

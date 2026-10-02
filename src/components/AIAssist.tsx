@@ -352,7 +352,7 @@ style={{ height: foldVh('60vh') }}>
                   <AlertCircle size={13} /> 停止
                 </Button>
               ) : (
-                <Button variant="primary" onClick={() => void send()} disabled={!aiReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-12 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!aiReady ? AI_DISABLED_HINT : '发送'}>
+                <Button variant="primary" onClick={() => void send()} disabled={!aiReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!aiReady ? AI_DISABLED_HINT : '发送'}>
                   <Send size={13} /> 发送
                 </Button>
               )}

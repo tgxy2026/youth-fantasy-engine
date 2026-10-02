@@ -277,7 +277,7 @@ export default function CheckTools() {
                 if (fileInputRef.current) fileInputRef.current.value = ''
               }}
             />
-            <Button variant="danger" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 border-danger/25 rounded-lg text-12 transition-colors" title="支持 .txt（一行一词）/ .csv / .json 数组 / .tsv">
+            <Button variant="danger" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 border-danger/25 transition-colors" title="支持 .txt（一行一词）/ .csv / .json 数组 / .tsv">
               <FileDown size={12} /> 一键导入文件
             </Button>
             {customWords.length > 0 && (
@@ -306,7 +306,7 @@ export default function CheckTools() {
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="danger" onClick={() => scanBook()} disabled={scanning} className="flex items-center gap-1.5 px-4 py-2 border-danger/25 rounded-lg text-12 transition-colors disabled:opacity-50">
+            <Button variant="danger" onClick={() => scanBook()} disabled={scanning} className="flex items-center gap-1.5 border-danger/25 transition-colors disabled:opacity-50">
               <ScanSearch size={13} /> {scanning ? '扫描中…' : '系统扫描全书'}
             </Button>
             {aiReady ? (

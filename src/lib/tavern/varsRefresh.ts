@@ -63,7 +63,12 @@ export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSessio
    * 为什么不喂整段历史：① 每轮重算全史纯属浪费；② 同一件事会在后续每一轮被反复记一次，
    * 数值会自己漂走。要紧的是「这一轮里关系/状态动了没有」。
    */
-  const tail = (a.messages ?? session.messages).slice(-2)
+  // 🔴 2026-10-02 六维审计 P2：取「本轮两条」前先按统一点径过滤（role !== 'system' && !m.hidden）——
+  //    直接 slice(-2) 会把 system / 隐藏消息算进「本轮」，与 toChatMessages / nextWatermark /
+  //    messagesAfterWatermark 的口径不一致（同一份数据的过滤条件必须逐字一致）。
+  const tail = (a.messages ?? session.messages)
+    .filter(m => m.role !== 'system' && !m.hidden)
+    .slice(-2)
   if (tail.length === 0) return session
 
   try {

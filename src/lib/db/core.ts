@@ -424,7 +424,12 @@ if (CLOUD_FILE_SYNC) {
       //    读到的还是空库 ⇒ 首次合并算出 `localHasContent=false` ⇒ 墓碑闸被短路 ⇒
       //    「本机删掉的记录」被云端快照原样带回来（幽灵项目的又一条启动路径）。
       //    ⇒ 必须**先等数据文件就绪**再判、再切。
-      await desktopStoreReady()
+      // 🔴 2026-10-02 六维审计 P2：**超时不能当「已就绪」放行** —— 那一刻 writeLocked 仍是 false、
+      //    本地快照还是空库 ⇒ 首次合并算出 localHasContent = false ⇒ 墓碑闸被短路 ⇒
+      //    「本机删掉的记录」被云端带回来。超时就本次不切云同步，下次启动再试
+      //    （与下面 writeLocked 的处理同口径：静默保持本地存储）。
+      const storeReady = await desktopStoreReady()
+      if (!storeReady) return
       if (DESKTOP && getDesktopState().writeLocked) return
       const ok = await applyDesktopCloudFromPersisted()
       if (ok) {

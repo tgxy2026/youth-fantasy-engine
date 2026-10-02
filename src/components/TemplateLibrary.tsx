@@ -132,7 +132,7 @@ export default function TemplateLibrary({ tabId, isVolume, onApplied, onClose }:
                   <div className="text-13 font-semibold text-ink-100">{tpl.name}</div>
                   <div className="text-11 text-ink-400 mt-1 leading-relaxed">{tpl.desc}</div>
                 </div>
-                <Button variant="primary" disabled={busy} onClick={() => apply(tpl)} className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-12 font-medium disabled:opacity-50">
+                <Button variant="primary" disabled={busy} onClick={() => apply(tpl)} className="shrink-0 flex items-center gap-1 font-medium disabled:opacity-50">
                   <Plus size={12} /> 套用（{tpl.items.length}）
                 </Button>
               </div>

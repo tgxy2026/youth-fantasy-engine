@@ -185,7 +185,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
             {organizeHint(tab.id)}
             <br />
             判重依据：<span className="text-amber/80">{keyCols.join(' + ') || '（首列）'}</span>
-            {directed && '（A→B 为有向关系；同一对可登记多种关系，仅「同向 + 同类型」才算重复）'}，已登记 {existing.length} 条，模型不会重复生成。
+            {directed && '（A→B 为有向关系；同一对可登记多种关系，仅「同对同向 + 同类型」才算重复）'}，已登记 {existing.length} 条，模型不会重复生成。
           </p>
 
           {/* 数据来源 */}

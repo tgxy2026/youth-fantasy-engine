@@ -574,7 +574,7 @@ export default function BookBreakPanel() {
             {relationRows.length > 0 && (
               <span className="text-11 text-ink-400">
                 含末尾整理的 {relationRows.length} 条关系（人物关系 / 势力关系）—— 依据 {fmtNum(relationChars)} 字的材料，
-                已与已有条目比对过（有向对 + 关系类型：同向且同类型才算重复，A→B 与 B→A 各算一条）。
+                已与已有条目比对过（有向对 + 关系类型：同对同向 + 同类型才算重复，A→B 与 B→A 各算一条）。
               </span>
             )}
             {relationTabs.some(t => t.note) && (

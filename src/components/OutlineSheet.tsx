@@ -292,7 +292,7 @@ export default function OutlineSheet({ tab }: Props) {
             >
               <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
             </Button>
-            <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
+            <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
               <Layers size={14} /> 模板库
             </Button>
             <Button onClick={addRecord} variant="primary" size="md" className="flex items-center">

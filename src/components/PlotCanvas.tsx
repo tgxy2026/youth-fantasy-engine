@@ -356,7 +356,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
       {/* 主体：左章节选择 + 右推演画布（两列等高） */}
       <div className="flex-1 flex min-h-0">
         {/* 左侧：章节选择 */}
-        <div className="w-64 shrink-0 border-r border-ink-700 bg-ink-850/60 flex flex-col h-full min-h-0">
+        <div className="w-64 shrink-0 border-r border-ink-700 bg-ink-850/60 flex flex-col min-h-0">
           <div className="px-3 py-2.5 border-b border-ink-700">
             <div className="flex items-center gap-2 text-ink-100 font-medium"><GitBranch size={14} className="text-amber" /> 选择章节</div>
             <div className="text-10 text-ink-500 mt-0.5">多选后点「生成推演」，复用颉文姬「本章写作简报」同一 AI 管线</div>
@@ -386,7 +386,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                 <Button variant="toggle" size="xs" selected={briefMode} onClick={() => setBriefMode(true)} title="只喂「章节压缩摘要」（约原文 1/10）：速度快、省 token，适合快速过方向">简略</Button>
               </div>
             </div>
-            <Button variant="primary" disabled={!ai.ready || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-12 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            <Button variant="primary" disabled={!ai.ready || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
               {generating ? <><Loader2 size={12} className="animate-spin" /> 生成中 {generating.i}/{generating.total}</> : <><Sparkles size={12} /> 生成推演</>}
             </Button>
             <Button onClick={clearCanvas} variant="danger" size="md" className="w-full flex items-center justify-center"><Eraser size={11} /> 清空推演本</Button>
@@ -414,7 +414,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         </div>
 
         {/* 右侧：推演本画布 */}
-        <div className="flex-1 min-w-0 h-full min-h-0">
+        <div className="flex-1 min-w-0 min-h-0">
           <div
             ref={scrollRef}
             className={`h-full bg-ink-900 relative ${scrollable ? 'overflow-auto' : 'overflow-hidden'}`}

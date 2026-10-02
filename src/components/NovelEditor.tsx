@@ -821,10 +821,10 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             <div className="text-sm">选择左侧章节，或新建一卷开始创作</div>
             {volumes.length === 0 && (
               <div className="flex items-center gap-2">
-                <Button variant="primary" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} className="px-4 py-2 rounded-lg text-13 transition-colors">
+                <Button variant="primary" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} className="transition-colors">
                   <FolderPlus size={14} className="inline mr-1.5" />新建第一卷
                 </Button>
-                <Button variant="secondary" onClick={() => setNamePrompt({ kind: 'addFreeCh', title: '新建自由章节', def: `第${nextChapterNo}章` })} className="px-4 py-2 rounded-lg text-13 transition-colors">
+                <Button variant="secondary" onClick={() => setNamePrompt({ kind: 'addFreeCh', title: '新建自由章节', def: `第${nextChapterNo}章` })} className="transition-colors">
                   <FilePlus2 size={14} className="inline mr-1.5" />新建自由章节
                 </Button>
               </div>

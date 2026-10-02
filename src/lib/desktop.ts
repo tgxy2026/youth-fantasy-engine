@@ -299,12 +299,20 @@ const readyGate = (() => {
   const p = new Promise<void>(r => { resolve = r })
   return { p, resolve }
 })()
-/** 等本地数据文件加载完成（非桌面环境、或已加载完成时立即返回） */
-export function desktopStoreReady(timeoutMs = 10000): Promise<void> {
-  if (!DESKTOP || inited) return Promise.resolve()
+/**
+ * 等本地数据文件加载完成（非桌面环境、或已加载完成时立即返回）。
+ *
+ * 🔴 2026-10-02 六维审计 P2：返回 **boolean** —— `false` ＝ 超时（**数据文件还没就绪**）。
+ *    旧版超时后照样 resolve ⇒ 调用方以为「就绪了」，而那一刻 `writeLocked` 仍是 false、
+ *    本地快照还是空库 ⇒ 首次合并算出 `localHasContent = false` ⇒ 墓碑闸被短路 ⇒
+ *    「本机删掉的记录」被云端快照带回来（幽灵项目又一条启动路径）。
+ *    ⚠️ 超时**不等于**就绪，调用方必须自己决定要不要放弃这次动作。
+ */
+export function desktopStoreReady(timeoutMs = 10000): Promise<boolean> {
+  if (!DESKTOP || inited) return Promise.resolve(true)
   return Promise.race([
-    readyGate.p,
-    new Promise<void>(r => { setTimeout(r, timeoutMs) }),
+    readyGate.p.then(() => true),
+    new Promise<boolean>(r => { setTimeout(() => r(false), timeoutMs) }),
   ])
 }
 

@@ -14,7 +14,8 @@
  *   · **卸载冲刷草稿**：`App.tsx` 给表格页签加了 `key={tab.id}`，切页签时组件整体重挂 →
  *     「prevId !== tab.id」那条守卫恒假；唯一与 key 无关的落点是卸载清理（见下）。
  *   · **Ctrl/Cmd+S** 只在本页签有草稿时生效，绝不拦全局快捷键。
- *   · **列宽记忆**写 localStorage 是纯 UI 偏好：写失败（隐私模式/配额满）静默忽略。
+ *   · **列宽记忆**走 uiPrefs（`yfe-ui:` 命名空间）的纯 UI 偏好：写失败（隐私模式/配额满）静默忽略；
+ *     老键 `yfe-colw::<表 id>` 首次读取时一次性迁移过来（不迁移＝老用户调过的列宽静默回默认）。
  *   · **编号 = 补最小空号**（见 lib/autoCode.ts）：删除的编号允许被新增条目复用，
  *     删除前经 lib/codeRefs.ts 做引用检查并在确认弹窗里如实提示（只提示、不拦截）。
  *   · 列宽拖拽的位移必须按界面缩放折算（clientX 是视口像素，列宽是 CSS 像素）。
@@ -34,7 +35,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { clearFreeDraft } from '../lib/freeDraft'
 import { useCalendarRule } from '../lib/useCalendarRule'
 import { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
-import { usePersistedSet } from '../lib/uiPrefs'
+import { usePersistedSet, readStringPref, writeStringPref } from '../lib/uiPrefs'
 import { showToast, confirmDialog } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 
@@ -47,6 +48,29 @@ function codeSortKey(s: string | undefined): string | null {
   const raw = s.trim()
   if (!/\d/.test(raw)) return null
   return raw.replace(/\d+/g, m => m.padStart(8, '0'))
+}
+
+/** 列宽偏好的 uiPrefs 键（`yfe-ui:colw.<表 id>`）；旧键 `yfe-colw::<表 id>` 见 migrateColWidths */
+function colWidthsKey(tabId: string): string {
+  return `colw.${tabId}`
+}
+
+/**
+ * 一次性迁移旧键 `yfe-colw::<表 id>` → uiPrefs 的 `yfe-ui:colw.<表 id>`。
+ *
+ * 🔴 为什么不直接换键：换键而不迁移＝老用户调过的列宽**静默回到默认**
+ *    （界面上看不出是「迁移失败」还是「本来就没调过」）。所以首次读取时搬一次并删旧键。
+ */
+function migrateColWidths(tabId: string): string | null {
+  try {
+    const legacy = localStorage.getItem(`yfe-colw::${tabId}`)
+    if (!legacy) return null
+    writeStringPref(colWidthsKey(tabId), legacy)
+    localStorage.removeItem(`yfe-colw::${tabId}`)
+    return legacy
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -175,7 +199,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   // 列宽（按表独立记忆）：表头可拖拽调整，默认列宽更合理
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
-    try { return JSON.parse(localStorage.getItem(`yfe-colw::${tab.id}`) || '{}') } catch { return {} }
+    const raw = readStringPref(colWidthsKey(tab.id)) ?? migrateColWidths(tab.id)
+    try { return raw ? (JSON.parse(raw) as Record<string, number>) : {} } catch { return {} }
   })
   const colWidthsRef = useRef(colWidths)
   colWidthsRef.current = colWidths
@@ -230,9 +255,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       dragCleanupRef.current = null
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
-      // 列宽属纯 UI 偏好，存不进 localStorage（隐私模式/配额满）也不影响数据，
-      // 故此处刻意不提示、不降级——刷新后回到默认列宽即可。
-      try { localStorage.setItem(`yfe-colw::${tab.id}`, JSON.stringify(colWidthsRef.current)) } catch { /* 见上：可安全忽略 */ }
+      // 列宽属纯 UI 偏好，写不进去（隐私模式/配额满）也不影响数据 —— writeStringPref 内部已静默兜底，
+      // 故此处刻意不提示、不降级：刷新后回到默认列宽即可。
+      writeStringPref(colWidthsKey(tab.id), JSON.stringify(colWidthsRef.current))
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -311,33 +336,45 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
     const map = new Map(renames.map(r => [r.from, r.to]))
     const hit: string[] = []
-    for (const tid of ['history', 'timeline']) {
-      const list = await getTableRows(tid)
-      let changed = 0
-      for (const row of list) {
-        const cur = (row.data['历法'] ?? '').trim()
-        const to = map.get(cur)
-        if (!to) continue
-        await saveTableRow({ ...row, data: { ...row.data, '历法': to } })
-        changed++
+    // 🔴 2026-10-02 六维审计 P2：这条级联是异步 fire-and-forget（调用方 void）——
+    //    不兜底的话，中途写失败会留下「配置已改、行还是旧名」的孤儿值（正是本功能要根治的问题），
+    //    还会产生 unhandled rejection、界面上一个字都不说。
+    try {
+      for (const tid of ['history', 'timeline']) {
+        const list = await getTableRows(tid)
+        let changed = 0
+        for (const row of list) {
+          const cur = (row.data['历法'] ?? '').trim()
+          const to = map.get(cur)
+          if (!to) continue
+          await saveTableRow({ ...row, data: { ...row.data, '历法': to } })
+          changed++
+        }
+        if (changed === 0) continue
+        hit.push(`${tid === 'history' ? '历史事件' : '时间脉络'} ${changed} 行`)
+        // 当前页签就是这张表 ⇒ 内存态（含未保存草稿）一起改，否则界面仍显示旧名、一保存又写回去
+        if (tab.id === tid) {
+          setRows(prev => prev.map(r => {
+            const to2 = map.get((r.data['历法'] ?? '').trim())
+            return to2 ? { ...r, data: { ...r.data, '历法': to2 } } : r
+          }))
+          setDrafts(prev => {
+            const out: Record<string, Record<string, string>> = {}
+            for (const [rid, fields] of Object.entries(prev)) {
+              const to2 = map.get((fields['历法'] ?? '').trim())
+              out[rid] = to2 ? { ...fields, '历法': to2 } : fields
+            }
+            return out
+          })
+        }
       }
-      if (changed === 0) continue
-      hit.push(`${tid === 'history' ? '历史事件' : '时间脉络'} ${changed} 行`)
-      // 当前页签就是这张表 ⇒ 内存态（含未保存草稿）一起改，否则界面仍显示旧名、一保存又写回去
-      if (tab.id === tid) {
-        setRows(prev => prev.map(r => {
-          const to2 = map.get((r.data['历法'] ?? '').trim())
-          return to2 ? { ...r, data: { ...r.data, '历法': to2 } } : r
-        }))
-        setDrafts(prev => {
-          const out: Record<string, Record<string, string>> = {}
-          for (const [rid, fields] of Object.entries(prev)) {
-            const to2 = map.get((fields['历法'] ?? '').trim())
-            out[rid] = to2 ? { ...fields, '历法': to2 } : fields
-          }
-          return out
-        })
-      }
+    } catch (e) {
+      showToast(
+        `历法改名未能全部同步（${hit.length ? `已改：${hit.join('、')}；` : ''}请打开这两张表核对后重存一次）：`
+        + (e instanceof Error ? e.message : String(e)),
+        'error', 8000,
+      )
+      return
     }
     if (hit.length > 0) showToast(`历法改名已同步：${hit.join('、')}`)
   }, [tab.id])

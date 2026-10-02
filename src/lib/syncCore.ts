@@ -659,6 +659,14 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     // #027：备份为空时拒绝回滚——否则会把空备份当最新状态推上去，反而清空整库。
     if (totalRecords(restored) === 0) return false
     cache = restored
+    // 🔴 2026-10-02 六维审计 P2：这条路径直接给 cache 赋值，**绕过了 put / bulkPut 的 clearDeleted** ——
+    //    本机删过（有墓碑）、而备份里还留着的那条记录，恢复后会在下一次 backgroundPull 的三路合并里
+    //    被判「本机删过」而 continue 丢弃 → drifted 回推 → **恢复被静默撤销**（与墓碑家族同根）。
+    //    恢复本就是从检查点整体回滚（作者显式动作），语义上等于「把这些记录请回来」⇒ 一并清墓碑。
+    for (const [store, rows] of Object.entries(restored)) {
+      const kf = KEY_FIELD[store] ?? 'id'
+      clearDeleted(store, rows.map(r => r?.[kf]))
+    }
     adoptBaseline()
     const r = await pushNow(() => rev)
     // 🔴 pushNow 在重试耗尽时是**返回** `{conflict:true}` 而不是抛（2026-09-20 六维审计 P2）：

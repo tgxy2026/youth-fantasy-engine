@@ -83,6 +83,57 @@ async function main() {
     dvMissing.length === 0,
     '缺=' + dvMissing.map(c => c.field).join('、'))
 
+  // ---------- 4) S 级（绝密 / 剧透）：角色视角**整行剔除**，作者侧照带 ----------
+  //
+  // 审计 2026-10-02（P0）：`SABC_DESC` 一直承诺「S=绝密（角色视角看不到）」，而实现只按
+  //   页签 / 字段名排除作者侧资料 —— **从没按 S 级剔行**（文档也记着「按 S 级过滤」属未做）。
+  //   本组把承诺钉住，三条通路各测一份：表格行（renderTable）/ 卡片（renderCards）/
+  //   表单整条（sectionOf 的 form 分支）。
+  // 🔴 负面对照：把 `aiContext.ts` 里三处 `!(o.hideSecretRows && isSecretRow(...))` 的 S 判断
+  //   临时删掉，本组前 3 条必须变红（第 4 条「非 S 照常可见」不受影响）。
+  const S_TABLE = 'ZZMARK_S_表格行'
+  const S_CARD = 'ZZMARK_S_卡片'
+  const S_FORM = 'ZZMARK_S_表单段'
+  const OK_TABLE = 'ZZMARK_非S_表格行'   // 对照：等级不是 S ⇒ 角色视角照常看得见
+
+  await db.saveTableRow({
+    id: 's-level-table', tabId: 'items', projectId: pid,
+    data: { 编号: 'ZZS001', 名称: S_TABLE, 保密等级: 'S' }, order: 9998,
+  } as any)
+  await db.saveTableRow({
+    id: 'ok-level-table', tabId: 'items', projectId: pid,
+    data: { 编号: 'ZZB001', 名称: OK_TABLE, 保密等级: 'B' }, order: 9997,
+  } as any)
+  await db.saveCardRecord({
+    id: 's-level-card', tabId: 'char-secondary', projectId: pid,
+    name: S_CARD, data: { 保密等级: 'S' }, order: 9998,
+  })
+  {
+    // 表单整段：把「作品定位」标成 S。标记值要落在**同一个字段名**的所有键形态上，
+    // 否则会被 demo 里已有的「模块::字段」复合键顶掉（renderForm 优先读复合键）。
+    const cur = await db.getFormData('positioning')
+    const next: Record<string, string> = { ...cur }
+    let wrote = false
+    for (const k of Object.keys(next)) {
+      if (k === '核心卖点' || k.endsWith('::核心卖点')) { next[k] = S_FORM; wrote = true }
+    }
+    if (!wrote) next['核心卖点'] = S_FORM
+    next['保密等级'] = 'S'
+    await db.saveFormData('positioning', next)
+  }
+
+  const cv2 = await buildProjectContext({ budget: BIG, viewMode: 'character-view' })
+  ok('🔴 S 级表格行在角色视角下被整行剔除', !cv2.text.includes(S_TABLE))
+  ok('🔴 S 级卡片在角色视角下被整行剔除', !cv2.text.includes(S_CARD))
+  ok('🔴 标了 S 的表单（作品定位）整段不带', !cv2.text.includes(S_FORM))
+  ok('对照：非 S（B 级）的表格行在角色视角下**照常可见**（证明过滤没误伤）',
+    cv2.text.includes(OK_TABLE))
+
+  const dv2 = await buildProjectContext({ budget: BIG, viewMode: 'director-view' })
+  ok('导演视角下 S 级内容照常带上（作者自己的底牌自己要看得见）',
+    dv2.text.includes(S_TABLE) && dv2.text.includes(S_CARD) && dv2.text.includes(S_FORM),
+    `表=${dv2.text.includes(S_TABLE)} 卡=${dv2.text.includes(S_CARD)} 表单=${dv2.text.includes(S_FORM)}`)
+
   console.log(`\nantiSpoiler: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }
