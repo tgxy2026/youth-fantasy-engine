@@ -391,6 +391,26 @@ export default function App() {
     return () => window.removeEventListener('yfe:pack-changed', onPack as EventListener)
   }, [])
 
+  /**
+   * 页签补开（2.7.1 · B 案）：由页签头部的 TabVisibilityControl 落库后派发。
+   *
+   * 与题材切换同理要绕事件：入口在**页签组件内部**，而 `visCtx` 在 App —— 避免把 setState
+   * 透传过 7 个页签。这里重读当前项目的 `features`（完整项目里它只装「补开的页签 id」），
+   * 更新 `visCtx`（`tabVisible` 读它）并 bump refreshKey，让侧栏与页面立刻重算可见性。
+   */
+  useEffect(() => {
+    const onTabs = async () => {
+      const id = db.getCurrentProjectId?.()
+      if (!id) return
+      const p = await db.getProject(id)
+      if (!p) return
+      setVisCtx(c => ({ ...c, features: p.features ?? [] }))
+      setRefreshKey(k => k + 1)
+    }
+    window.addEventListener('yfe:tabs-changed', onTabs as EventListener)
+    return () => window.removeEventListener('yfe:tabs-changed', onTabs as EventListener)
+  }, [])
+
   const onStatsChange = useCallback(() => {
     setRefreshKey(k => k + 1)
   }, [])

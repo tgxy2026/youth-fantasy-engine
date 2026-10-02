@@ -25,6 +25,7 @@ import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '../lib/worldSet
 import { isNumericPowerField } from '../lib/schema'
 import { getActivePack, modulesFor, subItemLabel, type GenrePack } from '../lib/schemaTemplates'
 import { GenrePackSwitcher } from './GenrePackSelect'
+import TabVisibilityControl from './TabVisibilityControl'
 import { useAIReady } from '../lib/useAIReady'
 import type { TemplateField } from '../lib/ai'
 import { confirmDialog, showToast } from './dialogs'
@@ -291,6 +292,8 @@ export default function WorldSetSheet({ tab }: Props) {
           </HelpPopover>
           {/* 题材包切换（2.7.1）：老项目事后改题材的入口，六个受题材驱动的页签都有 */}
           <GenrePackSwitcher onSwitched={onPackSwitched} />
+          {/* 页签显示（2.7.1 · B 案）：完整项目手动补开被题材隐藏的页签；自定义项目自身不渲染 */}
+          <TabVisibilityControl pack={pack} />
           <div className="ml-auto flex items-center gap-2">
             <Button variant="toggle" selected={dirty} disabled={!dirty || saving}
               onClick={() => void flush()} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"

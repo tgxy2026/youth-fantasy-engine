@@ -14,6 +14,7 @@ import {
   setActivePack, subItemLabel, tabDisplayName, worldbaseModules,
   type GenrePack,
 } from '../src/lib/schemaTemplates'
+import { tabVisible } from '../src/lib/schema'
 import type { FormModule } from '../src/lib/types'
 
 let pass = 0, fail = 0
@@ -252,6 +253,36 @@ const moduleMap = (mods: FormModule[]) =>
   ok('设置后能读到', getActivePack() === '历史古代')
   setActivePack('不存在的包' as GenrePack)
   ok('🔴 非法值回落默认包（不让脏值污染全局）', getActivePack() === DEFAULT_PACK)
+}
+
+// ---------- 14. 完整项目手动补开页签（2.7.1 · B 案） ----------
+{
+  const full = (pack: GenrePack, features: string[] = []) => ({ type: 'full' as const, features, pack })
+  const custom = (pack: GenrePack, features: string[]) => ({ type: 'custom' as const, features, pack })
+
+  // 基线（老项目零变更的回归线）：完整项目 + 东方修真 ⇒ 四制度页签全关
+  ok('🔴 完整项目 · 东方修真默认不显示政治架构', !tabVisible('politics', full('东方修真')))
+  // 补开：features 里有 ⇒ 显示
+  ok('🔴 完整项目 · features 补开 politics ⇒ 显示', tabVisible('politics', full('东方修真', ['politics'])))
+  // 只开列出来的那个，不越权
+  ok('补开不越权（只开列出的那一个）',
+    tabVisible('politics', full('东方修真', ['politics'])) && !tabVisible('justice', full('东方修真', ['politics'])))
+  // OR 而非 XOR：题材本来就给的页签，不受 features 影响
+  ok('🔴 OR 而非 XOR：题材已显示的页签照常显示',
+    tabVisible('worldbase', full('东方修真', [])) && tabVisible('power', full('东方修真', ['politics'])))
+  // 历史古代矩阵已全开，features 空也都在
+  ok('历史古代无需补开（矩阵已经全给）', PACK_TAB_IDS.every(t => tabVisible(t, full('历史古代'))))
+  // 非题材页签不受补开逻辑影响
+  ok('非题材页签恒显示（补开逻辑不影响它们）',
+    tabVisible('master', full('东方修真', [])) && tabVisible('chapter-master', full('东方修真', ['politics'])))
+  // 🔴 自定义项目仍只看 features —— 题材矩阵不得插手，否则自定义项目的勾选会失效
+  ok('🔴 自定义项目仍只看 features（题材矩阵不插手）',
+    tabVisible('politics', custom('东方修真', ['politics']))
+    && !tabVisible('politics', custom('历史古代', [])))
+  // 老调用方不传 pack ⇒ 回落默认包（向后兼容，不炸）
+  ok('ctx 无 pack 时回落默认包',
+    !tabVisible('politics', { type: 'full', features: [] })
+    && tabVisible('politics', { type: 'full', features: ['politics'] }))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

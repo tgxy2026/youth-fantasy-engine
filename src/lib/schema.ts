@@ -1183,5 +1183,9 @@ export function tabVisible(tabId: string, ctx: VisCtx): boolean {
   //    历史作者又得面对「境界阶梯」那类对不上的表（本次改造要解决的核心问题）。
   // 非受题材驱动的页签在 packShowsTab 里恒 true ⇒ 这次改动对它们零影响。
   const pack = ctx.pack ?? DEFAULT_PACK
-  return packShowsTab(pack, tabId)
+  // 「手动补开」（2.7.1 · B 案）：题材矩阵之外，**完整项目**还能把被隐藏的页签按需打开。
+  // 🔴 `features` 在完整项目里只承载「补开的页签 id」一种含义（写入方只有 TabVisibilityControl），
+  //    与自定义项目里那份「功能全集」同字段不同语义 —— 两者被 ctx.type 分流，永不混读。
+  //    只 OR、不 XOR：完整项目的语义是「功能最全」，不想填的页签空着即可，无需显式关闭。
+  return packShowsTab(pack, tabId) || ctx.features.includes(tabId)
 }
