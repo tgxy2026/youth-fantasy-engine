@@ -73,7 +73,7 @@ export function rowFingerprint(row: Record<string, string>, keyCols: string[], u
   return vals.join('||')
 }
 
-let ORGANIZE_SYS = `你是「青春幻想引擎」的小说资料整理助手。作者已经写好了正文与设定，你的工作是把其中**已经明确写出来**的信息，整理登记进指定表格。
+let ORGANIZE_SYS = `你是「青春幻想引擎」的小说资料整理助手。作者已经写好了正文与设定，你的工作是把其中「已经明确写出来」的信息，整理登记进指定表格。
 
 铁律：
 1. 只登记原文/设定中确有依据的内容。严禁虚构、严禁推测、严禁"合理补全"——这是资料整理，不是创作。
@@ -124,7 +124,7 @@ ${req.projectContext.trim() || '（无）'}
 ${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) : '（作者未指定正文，请仅依据上方项目资料整理其中已明确写出、但尚未登记进本表的条目）'}
 
 请返回最多 ${max} 条新条目的 JSON 数组，优先返回最重要、最确定的。${req.evidenceField ? `
-每条还必须带一个「${req.evidenceField}」字段：从【待整理文本】里**逐字**摘一句能证明这条的原文（40 字以内，不要改写、不要拼接）。摘不出原文的条目**一律不要输出** —— 宁可少给，也不要编。` : ''}`
+每条还必须带一个「${req.evidenceField}」字段：从【待整理文本】里「逐字」摘一句能证明这条的原文（40 字以内，不要改写、不要拼接）。摘不出原文的条目「一律不要输出」 —— 宁可少给，也不要编。` : ''}`
 
   const text = await chat(
     cfg,

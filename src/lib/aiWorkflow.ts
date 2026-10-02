@@ -721,7 +721,7 @@ export async function runCreativeWriting(
     const task = sealing
       ? `【补完已有卷】作者已经规划了《${sealing.volumeTitle}》（全书第 ${sealing.volumeFrom} ~ ${sealing.volumeTo} 章），`
         + `其中第 ${sealing.volumeFrom} ~ ${sealing.doneTo} 章已有细纲。本次只补第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章，共 ${planCount} 章；`
-        + `**不要新建卷**，接着第 ${sealing.doneTo} 章的结尾往下走。`
+        + `「不要新建卷」，接着第 ${sealing.doneTo} 章的结尾往下走。`
       : extending
         ? `接着往下排：从全书第 ${fromVolumeNo} 卷起，本批共 ${plannedVolumes} 卷、每卷 ${perVolume} 章（对应第 ${fromNo} 章起）。`
         : `产出分卷大纲与逐章细纲：本批共 ${plannedVolumes} 卷、每卷 ${perVolume} 章。`

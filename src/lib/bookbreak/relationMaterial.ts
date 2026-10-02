@@ -67,7 +67,7 @@ export const RELATION_LIMIT_META: RelationLimitMeta[] = [
   },
   {
     key: 'rawHeadChars', label: '开篇原文样本', unit: '字', min: 0, max: 6000, step: 100,
-    why: '关系靠原文里的互动才看得出来，样本越长越准；但它和实体清单**抢同一份额度**' +
+    why: '关系靠原文里的互动才看得出来，样本越长越准；但它和实体清单「抢同一份额度」' +
       '（受「材料总字数」限制），长书里调大反而会挤掉实体清单。',
   },
   {

@@ -7,6 +7,7 @@
  *   任何一步都不允许「AI 说什么就是什么」。
  */
 import { scanLinesOf, buildChaptersFromMarks, type RawChapter, type SplitResult } from './split'
+import { stripEmphasis } from '../mdLite'
 
 /** 单段采样上限（字符）——中文 1 字 ≈ 1 token，四段合计 ≤7500 字（≈7500 token），压在常见 num_ctx 内 */
 const HEAD_CHARS = 3000
@@ -47,7 +48,13 @@ export function applyAiSplit(raw: string, aiLines: string[], maxChunks = 60): Sp
     for (const aiLine of aiLines) {
       const key = aiLine.trim()
       if (key.length < 2) continue
-      const found = lines.find(l => match(l.text.trim(), key))
+      let found = lines.find(l => match(l.text.trim(), key))
+      // 🔴 模型有时给行加了 markdown 强调（`**第三章 血月夜**`）—— 逐字比对会全落空、
+      //    命中 <2 就整体弃用（静默降级回本地兜底）。剥一次强调再试，仍要求逐字命中。
+      if (!found) {
+        const clean = stripEmphasis(key).trim()
+        if (clean !== key && clean.length >= 2) found = lines.find(l => match(l.text.trim(), clean))
+      }
       if (!found) continue
       // 同一行多次被报（模型重复）只收一次；与上一章起点太近的丢弃（MIN_GAP 防密集误判）
       if (hits.some(h => h.title === found.text.trim())) continue

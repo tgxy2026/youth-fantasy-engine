@@ -16,6 +16,7 @@
 import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
 import { authorBlock, newAuthorFence } from '../promptGuard'
+import { stripEmphasis } from '../mdLite'
 import { longStream } from './stream'
 import type { PromptDef } from '../promptSettings'
 
@@ -239,14 +240,24 @@ async function runProofread(
       const type = asText(it.type ?? it['类型']) || '其他'
       const why = asText(it.why ?? it['原因'] ?? it.reason)
       if (!quote || quote.length < 2) continue
-      // 必须能在原文里定位，否则作者点了也没法改
-      const rel = chunk.indexOf(quote)
+      // 必须能在原文里定位，否则作者点了也没法改。
+      // 🔴 模型有时给引文自行加了 markdown 强调（**…**）：先原样定位，不行再剥一次
+      //    （否则 quote 定位不到 → 这条问题被静默丢掉，白烧一轮 token）。
+      let q = quote
+      let rel = chunk.indexOf(q)
+      if (rel < 0) {
+        const clean = stripEmphasis(quote)
+        if (clean && clean !== quote && clean.length >= 2 && chunk.indexOf(clean) >= 0) {
+          q = clean
+          rel = chunk.indexOf(clean)
+        }
+      }
       if (rel < 0) continue
       const at = chunkStart + rel
-      const dedup = `${at}::${quote}`
+      const dedup = `${at}::${q}`
       if (seen.has(dedup)) continue
       seen.add(dedup)
-      issues.push({ type, quote, fix, why, at })
+      issues.push({ type, quote: q, fix, why, at })
     }
     opts.onProgress?.(i + 1, chunks.length)
   }

@@ -601,7 +601,11 @@ async function findRelatedChapters(focusChapterId: string, limit = 8): Promise<C
   } catch {
     return []
   }
-  const flat = flattenChapters(vols, chs)
+  // 🔴 孤儿章（volumeId 指向不存在的卷）必须并入叙事序，与 `buildChapterDigest` / `idsUpToAnchor`
+  //    口径一致：否则焦点章本身是孤儿时 `findIndex` 找不到、召回整体失效；
+  //    其他孤儿章也会被排除在候选之外（明明写过的章却永远不进"相关章节"）。
+  const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
+  const flat = [...flattenChapters(vols, chs), ...orphans]
   const idx = flat.findIndex(c => c.id === focusChapterId)
   if (idx < 0 || flat.length <= 1) return []
 

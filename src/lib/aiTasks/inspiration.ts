@@ -15,7 +15,7 @@ import { parseLooseObject, asText } from '../aiParse'
 import type { PromptDef } from '../promptSettings'
 
 /** 「灵感融合」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
-let P_inspiration_fuse = `你是小说的情节策划。作者在灵感夹里攒了几条互不相关的灵感，请你把它们**融合**成情节创意。
+let P_inspiration_fuse = `你是小说的情节策划。作者在灵感夹里攒了几条互不相关的灵感，请你把它们「融合」成情节创意。
 
 什么叫融合：让几条灵感互相服务 —— 一条提供的人物与另一条提供的处境碰上，事情才有得写。不要把灵感原文逐条改写一遍拼在一起交差，那是没有发生化学反应的拼接。
 

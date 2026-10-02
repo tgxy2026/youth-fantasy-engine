@@ -11,6 +11,7 @@
 //   显式标出「未定位」，而不是悄悄给一个错位置。
 
 import { parseObjectArray, parseLooseObject, asText, humanText } from './aiParse'
+import { stripEmphasis } from './mdLite'
 
 /** 章内三段（与 B5 规划口径一致：前段 / 中段 / 后段） */
 export const PACE_SEGMENTS = ['前段', '中段', '后段'] as const
@@ -58,14 +59,8 @@ function squeeze(s: string): string {
   return s.replace(/\s+/g, '')
 }
 
-/**
- * 在正文里定位一段引文，返回字符下标；找不到返回 -1。
- * 策略：① 精确匹配 → ② 去空白后匹配（换算回原下标）→ ③ 截取引文前 12 字再试。
- * 故意**不做**模糊相似度匹配 —— 宁可标「未定位」，也不要指到错的地方。
- */
-export function locateQuote(text: string, quote: string): number {
-  const q = (quote || '').trim()
-  if (!q || !text) return -1
+/** 定位内核：对给定的（已 trim 的）引文跑四级兜底 —— 原样/去空白/前 12 字/前 12 字去空白 */
+function locateRaw(text: string, q: string): number {
   const exact = text.indexOf(q)
   if (exact >= 0) return exact
 
@@ -92,6 +87,25 @@ export function locateQuote(text: string, quote: string): number {
     const h2 = buf.join('').indexOf(sh)
     if (h2 >= 0) return map[h2]
   }
+  return -1
+}
+
+/**
+ * 在正文里定位一段引文，返回字符下标；找不到返回 -1。
+ * 策略：① 精确匹配 → ② 去空白后匹配（换算回原下标）→ ③ 截取引文前 12 字再试。
+ * 故意**不做**模糊相似度匹配 —— 宁可标「未定位」，也不要指到错的地方。
+ *
+ * 🔴 兜底一层：模型有时给引文自行加上 markdown 强调（`**…**`）—— 先按原样找，
+ *    找不到再剥掉强调标记重找一次。不这么做的话，引文一旦带星号就定位失败、
+ *    爆点 / 读者反应的条目会被**静默丢弃**（净化见 `mdLite.stripEmphasis`）。
+ */
+export function locateQuote(text: string, quote: string): number {
+  const q = (quote || '').trim()
+  if (!q || !text) return -1
+  const direct = locateRaw(text, q)
+  if (direct >= 0) return direct
+  const clean = stripEmphasis(q).trim()
+  if (clean && clean !== q) return locateRaw(text, clean)
   return -1
 }
 

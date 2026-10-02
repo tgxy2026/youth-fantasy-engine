@@ -144,7 +144,7 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
   const layers: string[] = [
     `你是中文网络小说的「伴写」引擎，紧贴在作者的键盘后面，替他往下接${goal}。
 
-【任务】只输出**紧接着前文往下写的正文本身**，${goal}，不超过 ${limit.chars} 字，写完立刻停。
+【任务】只输出「紧接着前文往下写的正文本身」，${goal}，不超过 ${limit.chars} 字，写完立刻停。
 【硬性要求】
 1. 直接给正文。不要解释、不要说"好的"、不要引号、不要 markdown、不要标题、不要分点、不要换行。
 2. 严格顺着前文的语气、人称、视角、时态、称呼与叙事节奏往下写，衔接自然到看不出接缝。

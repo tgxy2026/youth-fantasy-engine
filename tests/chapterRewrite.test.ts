@@ -163,13 +163,13 @@ await db.saveChapter(chap('c3', 'v2', 0, '第二章 承', '原文二。'.repeat(
   // ⚠️ 2026-09-19 D1：三条改写纪律提示词已从 aiTasks.ts 拆到 aiTasks/rewrite.ts（随域走）。
   const src = fs.readFileSync('src/lib/aiTasks/rewrite.ts', 'utf8')
   ok('🔴 历史章纪律按动作分节（润色 / 扩写 / 精简 / 改写四档各有边界）',
-    ['**润色**：只换字不换事', '**扩写**：', '**精简**：', '**改写**：只改叙述方式'].every(s => src.includes(s)))
+    ['「润色」：只换字不换事', '「扩写」：', '「精简」：', '「改写」：只改叙述方式'].every(s => src.includes(s)))
   ok('🔴 历史章 · 扩写：描写层可加、信息层不可加（防"凭空造设定"）',
     src.includes('描写层可以加，信息层不可以加'))
   ok('🔴 历史章 · 精简：承载设定交代的句子一律保留（防"删掉来历"）',
     src.includes('承载设定交代的句子一律保留'))
   ok('🔴 最新章：只有「改写」档可放开，润色 / 扩写 / 精简仍守各自纪律（消除越权授权）',
-    src.includes('只有**改写**这一档可以放开手脚') && src.includes('不因「最新章」而放宽'))
+    src.includes('只有「改写」这一档可以放开手脚') && src.includes('不因「最新章」而放宽'))
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 共 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)

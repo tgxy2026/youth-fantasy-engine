@@ -165,7 +165,7 @@ export async function prepareDraftMaterial(a: DraftMaterialArgs): Promise<DraftM
       '〖现有内容（这是在已有基础上补完，不是从零开始）〗',
       authorBlock(fence, a.existing.trim()),
       '',
-      '要求：**已经写好且没问题的部分照原样保留**；只补空缺、只改与素材明显冲突的地方。',
+      '要求：「已经写好且没问题的部分照原样保留」；只补空缺、只改与素材明显冲突的地方。',
       '不要重写已经成立的设定 —— 作者认得出哪些字是他自己写的。',
     ].join('\n'))
   }

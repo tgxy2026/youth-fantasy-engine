@@ -893,7 +893,10 @@ ${sketch && sketch.trim() ? sketch.trim() : '（作者未提供草图，请基�
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, onToken: opts.onToken },
+    // 🔴 这是结构化任务（下面走 parseTemplateJSON）—— 必须传 `json: true`，
+    //    否则按创意档 0.85 采样，模型会自由发挥、JSON 更容易跑偏/夹带解释。
+    //    历史（2026-09-14 审计）已犯过一次同类"漏传低温"，别复发。
+    { timeoutMs: CHAT_TIMEOUT_MS, onToken: opts.onToken, json: true },
   )
 
   const parsed = parseTemplateJSON(text, send)

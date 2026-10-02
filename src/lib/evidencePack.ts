@@ -245,7 +245,7 @@ export function packToDocModel(pack: EvidencePack, opts: EvidenceViewOptions): D
     } else {
       blocks.push({
         type: 'note',
-        text: '口径说明：每日统计记录的是**本项目当天写的总字数**，软件不按章节拆分，' +
+        text: '口径说明：每日统计记录的是「本项目当天写的总字数」，软件不按章节拆分，' +
           '因此这里不能用来说明「这一章当天写了多少」。',
       })
       blocks.push({ type: 'pre', text: dailyLines(pack.daily).join('\n') })

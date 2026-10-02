@@ -36,12 +36,12 @@ const bibleSys = (c: BibleCounts) => `你是网文设定架构师。作者给了
 铁律：
 1. 只输出 JSON，不要任何解释文字，不要 markdown 代码块围栏。
 2. 每条设定都必须服务于这句话想法本身，不要偏离题材另起炉灶。
-3. **宁可少而准**：每条都要有存在理由（能撑起冲突 / 爽点 / 悬念 / 世界规则），凑数的不要。
-4. **留白**：不要把故事写死（例如"他最终成神"）；写到"够开写"就停下。
+3. 「宁可少而准」：每条都要有存在理由（能撑起冲突 / 爽点 / 悬念 / 世界规则），凑数的不要。
+4. 「留白」：不要把故事写死（例如"他最终成神"）；写到"够开写"就停下。
 5. 名字要像正经中文网文：人名 2~3 字、宗门地名带风格感；严禁"张三""某宗""XX城"这类占位名。
 6. desc 一句话（不超过 40 字），写清"它在故事里是什么 / 干什么"。
 7. tier 只给人物：主要（主角团 / 贯穿全书）/ 次要（宿敌 / 导师 / 重要配角）/ NPC（功能型）。
-8. 数量上限（**不得超过**）：主要角色 ${c.main}、次要角色 ${c.secondary}、NPC ${c.npc}、势力 ${c.faction}、地点 ${c.location}、术语 ${c.term}、物品 ${c.item}。
+8. 数量上限（「不得超过」）：主要角色 ${c.main}、次要角色 ${c.secondary}、NPC ${c.npc}、势力 ${c.faction}、地点 ${c.location}、术语 ${c.term}、物品 ${c.item}。
 9. 严格使用下面给定的键名，不得增删改名。
 
 JSON 结构：
@@ -113,7 +113,7 @@ export async function aiGenerateBible(
       [
         { role: 'system', content: composeSystemPrompt(bibleSys(counts), cfg) },
         // 同样把数量与体量约束重申在**消息末尾**（system 里的铁律容易被忽略）
-        { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，**宁少勿多**；每个字段 ≤ 40 字；只输出 JSON。` },
+        { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，「宁少勿多」；每个字段 ≤ 40 字；只输出 JSON。` },
       ],
       { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
     )
@@ -200,7 +200,7 @@ const outlineCharCap = (volumes: number, chapters: number) => 300 + volumes * 42
  * ⚠️ 提示词 id **沿用旧的 `extend-outline`**（2026-09-20 把「从零排」与「接着排」合并成一条
  *    路径时**故意没换 id**）：换了 id，作者此前在设置页改过的内容就会失效。
  */
-let PLAN_OUTLINE_BASE = `你是网文大纲师，负责产出**分卷大纲**与**逐章细纲**。接着已有内容往下排时，延续已有的走向、冲突线与伏笔。`
+let PLAN_OUTLINE_BASE = `你是网文大纲师，负责产出「分卷大纲」与「逐章细纲」。接着已有内容往下排时，延续已有的走向、冲突线与伏笔。`
 
 const planOutlineSys = (o: {
   volumes: number; perVolume: number; extending: boolean; fromVolumeNo: number; cap: number
@@ -210,17 +210,17 @@ const planOutlineSys = (o: {
 
 铁律：
 1. 只输出 JSON，不要解释文字，不要 markdown 代码块围栏。
-2. **本次产出 ${o.volumes} 卷，每卷 ${o.perVolume} 章，共 ${o.volumes * o.perVolume} 章**（每卷章数是硬指标，不得自行增减，也不得把一卷的章匀给另一卷）。
-3. **不许新造专名**：人物、地名、势力、功法只能用资料里已有的写法。新造的名字在设定表里对不上，会制造"未登记实体"。
+2. 「本次产出 ${o.volumes} 卷，每卷 ${o.perVolume} 章，共 ${o.volumes * o.perVolume} 章」（每卷章数是硬指标，不得自行增减，也不得把一卷的章匀给另一卷）。
+3. 「不许新造专名」：人物、地名、势力、功法只能用资料里已有的写法。新造的名字在设定表里对不上，会制造"未登记实体"。
 4. 每章都要有"事件 + 钩子"，严禁"过渡章""日常"这类空章。
 5. 事件链要有递进（起→承→转→合）；每卷结尾留钩子给下卷。
-6. title 只写章名本身，**不要带"第X章"前缀**（系统会自动编号）。
+6. title 只写章名本身，「不要带"第X章"前缀」（系统会自动编号）。
 7. 每章 scenes 给 2~3 条场景（地点+人物+发生什么）。
-8. **体量纪律（重要）**：这些都是**卡片摘要**，不是正文 —— 单字段不超过 40 字（events / subplots 不超过 60 字），scenes 每条不超过 30 字。整份 JSON 控制在 ${o.cap} 字以内。
-9. **严格按量输出**：只写 ${o.volumes} 卷、${o.volumes * o.perVolume} 章，多写出来的会被系统丢弃（白耗时间）。资料撑不满时，把每章写得更精练，而不是多写章。**务必把 ${o.volumes * o.perVolume} 章全部写出来再收尾** —— 写到一半就结束的会被判为不合格。${o.extending ? `
-10. **接续**：这是接着作者已有的大纲往下排 —— 延续已有分卷大纲的走向、已有细纲里的冲突线与伏笔、人物当前状态；不要把已经发生过的事件再演一遍。
-11. 本次的第一卷是全书**第 ${o.fromVolumeNo} 卷**，它必须接住上一卷结尾留下的钩子。
-12. **这是长篇连载的其中一段，不是全书结局**（重要）—— 不要写大结局、不要收束所有主线、不要让主角"功成名就 / 开启新纪元 / 尘埃落定"；本批结尾要留下**新的**悬而未决，给下一批留出推进空间。` : ''}
+8. 「体量纪律（重要）」：这些都是「卡片摘要」，不是正文 —— 单字段不超过 40 字（events / subplots 不超过 60 字），scenes 每条不超过 30 字。整份 JSON 控制在 ${o.cap} 字以内。
+9. 「严格按量输出」：只写 ${o.volumes} 卷、${o.volumes * o.perVolume} 章，多写出来的会被系统丢弃（白耗时间）。资料撑不满时，把每章写得更精练，而不是多写章。「务必把 ${o.volumes * o.perVolume} 章全部写出来再收尾」 —— 写到一半就结束的会被判为不合格。${o.extending ? `
+10. 「接续」：这是接着作者已有的大纲往下排 —— 延续已有分卷大纲的走向、已有细纲里的冲突线与伏笔、人物当前状态；不要把已经发生过的事件再演一遍。
+11. 本次的第一卷是全书「第 ${o.fromVolumeNo} 卷」，它必须接住上一卷结尾留下的钩子。
+12. 「这是长篇连载的其中一段，不是全书结局」（重要）—— 不要写大结局、不要收束所有主线、不要让主角"功成名就 / 开启新纪元 / 尘埃落定"；本批结尾要留下「新的」悬而未决，给下一批留出推进空间。` : ''}
 ${o.structureHint ? `\n${o.structureHint}\n` : ''}
 JSON 结构：
 {
@@ -268,8 +268,8 @@ const planSealingSys = (o: { sealing: OutlineSealing; cap: number }) => {
   /** 卷大纲不完整 → 顺带补全（老大 2026-09-20 口径）；完整 → 一个字都不碰 */
   const fillVolume = s.needVolumeOutline === true
   const volRule = fillVolume
-    ? `3. 🔴 **卷大纲一并补全**：这一卷的卷大纲目前只有骨架（多处还是「（待写）」）。请为这一卷给出一条**完整**的卷大纲 —— \`volumes\` 里**只放这一卷**，\`title\` 必须原样写「${s.volumeTitle}」（不要改名、不要额外给别的卷）。`
-    : `3. 🔴 **不要新建卷**：这一卷已经存在（作者自己规划的），卷大纲也已写全。\`volumes\` 一律返回**空数组 []**，只给 \`chapters\`。`
+    ? `3. 🔴 「卷大纲一并补全」：这一卷的卷大纲目前只有骨架（多处还是「（待写）」）。请为这一卷给出一条「完整」的卷大纲 —— \`volumes\` 里「只放这一卷」，\`title\` 必须原样写「${s.volumeTitle}」（不要改名、不要额外给别的卷）。`
+    : `3. 🔴 「不要新建卷」：这一卷已经存在（作者自己规划的），卷大纲也已写全。\`volumes\` 一律返回「空数组 []」，只给 \`chapters\`。`
   const chaptersShape = `"chapters":[{"title":"","event":"本章一句话事件","function":"推进主线/铺垫/爽点/情感","cast":"出场人物","hook":"章末钩子","scenes":["场景1","场景2"]}]`
   const jsonShape = fillVolume
     ? `{ "volumes":[{"title":"${s.volumeTitle}","positioning":"本卷一句话定位","stage":"主角境界区间","scope":"舞台范围","opening":"卷首状态","climax1":"第一大高潮","turn":"卷中转折","climax2":"卷末高潮","ending":"卷末状态","events":"事件链 起→承→转→合","subplots":"支线事件"}],
@@ -280,16 +280,16 @@ const planSealingSys = (o: { sealing: OutlineSealing; cap: number }) => {
 
 铁律：
 1. 只输出 JSON，不要解释文字，不要 markdown 代码块围栏。
-2. **本次是「补完已有卷」**：作者已经规划了《${s.volumeTitle}》这一卷，它包含全书第 ${s.volumeFrom} ~ ${s.volumeTo} 章；其中第 ${s.volumeFrom} ~ ${s.doneTo} 章已经有细纲了。你**只补第 ${s.gapFrom} ~ ${s.gapTo} 章**，共 ${count} 章，一章不多、一章不少。
+2. 『本次是「补完已有卷」』：作者已经规划了《${s.volumeTitle}》这一卷，它包含全书第 ${s.volumeFrom} ~ ${s.volumeTo} 章；其中第 ${s.volumeFrom} ~ ${s.doneTo} 章已经有细纲了。你「只补第 ${s.gapFrom} ~ ${s.gapTo} 章」，共 ${count} 章，一章不多、一章不少。
 ${volRule}
-4. **接着第 ${s.doneTo} 章的结尾往下走**：延续这一卷已有的冲突线、伏笔与人物状态，不要把已经发生过的事件再演一遍；也不要把本卷的卷末高潮草草收掉 —— 后面还要接到第 ${s.volumeTo} 章。
-5. **不许新造专名**：人物、地名、势力、功法只能用资料里已有的写法。新造的名字在设定表里对不上，会制造"未登记实体"。
+4. 「接着第 ${s.doneTo} 章的结尾往下走」：延续这一卷已有的冲突线、伏笔与人物状态，不要把已经发生过的事件再演一遍；也不要把本卷的卷末高潮草草收掉 —— 后面还要接到第 ${s.volumeTo} 章。
+5. 「不许新造专名」：人物、地名、势力、功法只能用资料里已有的写法。新造的名字在设定表里对不上，会制造"未登记实体"。
 6. 每章都要有"事件 + 钩子"，严禁"过渡章""日常"这类空章；事件链要有递进。
-7. title 只写章名本身，**不要带"第X章"前缀**（系统会自动编号）。
+7. title 只写章名本身，「不要带"第X章"前缀」（系统会自动编号）。
 8. 每章 scenes 给 2~3 条场景（地点+人物+发生什么）。
-9. **体量纪律（重要）**：这些都是**卡片摘要**，不是正文 —— 单字段不超过 40 字（events / subplots 不超过 60 字），scenes 每条不超过 30 字。整份 JSON 控制在 ${o.cap} 字以内。
-10. **严格按量输出**：只写 ${count} 章，**务必把 ${count} 章全部写出来再收尾** —— 写到一半就结束的会被判为不合格。
-11. **这是长篇连载的其中一段，不是全书结局** —— 不要写大结局、不要收束所有主线、不要让主角"功成名就 / 开启新纪元 / 尘埃落定"；本批结尾要留下**新的**悬而未决。
+9. 「体量纪律（重要）」：这些都是「卡片摘要」，不是正文 —— 单字段不超过 40 字（events / subplots 不超过 60 字），scenes 每条不超过 30 字。整份 JSON 控制在 ${o.cap} 字以内。
+10. 「严格按量输出」：只写 ${count} 章，「务必把 ${count} 章全部写出来再收尾」 —— 写到一半就结束的会被判为不合格。
+11. 「这是长篇连载的其中一段，不是全书结局」 —— 不要写大结局、不要收束所有主线、不要让主角"功成名就 / 开启新纪元 / 尘埃落定"；本批结尾要留下「新的」悬而未决。
 
 JSON 结构（${fillVolume ? 'volumes 只放这一卷、title 必须原样照抄' : '注意 volumes 是空数组'}）：
 ${jsonShape}`
@@ -373,8 +373,8 @@ export async function aiPlanOutline(
       //    与"卷大纲只剩骨架时顺带补全"直接打架（同一类"两处约束自相矛盾"的坑）。
       ? `请补完《${sealing.volumeTitle}》第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章（共 ${total} 章）；`
         + (sealing.needVolumeOutline
-            ? '并顺带把**这一卷**的卷大纲补全（不要额外开新卷）。'
-            : '**不要新建卷**。')
+            ? '并顺带把「这一卷」的卷大纲补全（不要额外开新卷）。'
+            : '「不要新建卷」。')
       : extending
         ? `请接着往下排：本次从全书第 ${volNoStart} 卷起，共 ${volCount} 卷、每卷 ${perVolume} 章（对应第 ${start} 章起）。`
         : `请产出分卷大纲与逐章细纲：共 ${volCount} 卷，每卷 ${perVolume} 章。`
@@ -400,12 +400,12 @@ export async function aiPlanOutline(
             //    而这里写死"volumes 为空数组"，模型照末尾执行 ⇒ 卷大纲永远补不上。
             (sealing
               ? `\n\n【必须遵守】只输出 JSON；\`volumes\` ${sealing.needVolumeOutline
-                  ? `只放**这一卷**（\`title\` 原样写「${sealing.volumeTitle}」，并把「（待写）」那些字段补全）`
-                  : '为**空数组**（这一卷已存在，不要再给卷）'}；只写第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章（共 ${total} 章），**一章不少、一章不多**；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`
-              : `\n\n【必须遵守】只输出 ${volCount} 卷、每卷 ${perVolume} 章（共 ${total} 章），**一章不少、一章不多**；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`) +
+                  ? `只放「这一卷」（\`title\` 原样写「${sealing.volumeTitle}」，并把「（待写）」那些字段补全）`
+                  : '为「空数组」（这一卷已存在，不要再给卷）'}；只写第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章（共 ${total} 章），「一章不少、一章不多」；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`
+              : `\n\n【必须遵守】只输出 ${volCount} 卷、每卷 ${perVolume} 章（共 ${total} 章），「一章不少、一章不多」；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`) +
             (tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : '') +
             (missing > 0 && missing < total
-              ? `\n【注意】上一次只写了 ${missing} 章就收尾了，**还差 ${total - missing} 章**。这一次务必把 ${total} 章全部写出来（每章可以更精练，但不能少写）。`
+              ? `\n【注意】上一次只写了 ${missing} 章就收尾了，「还差 ${total - missing} 章」。这一次务必把 ${total} 章全部写出来（每章可以更精练，但不能少写）。`
               : ''),
         },
       ],
