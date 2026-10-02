@@ -6,7 +6,11 @@ import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
 
-import { CH1, CH2, CH3, CH4, CH5, CH6, CH7, CH8, CH9, CH10, CH11, CH12, CH13, CH14, CH15, CH16, CH17, CH18, CH19, CH20, CH21 } from '../data/seedContent'
+// 🔴 2.7.3：示范正文 21 章（`../data/seedContent`，7664 行）**改成动态 import**（见 doCreateDemoProject 内）。
+//    原先是静态 import ⇒ 整部小说被打进**主 bundle**：社区反馈「点进 asar 想手动魔改，
+//    然后在一堆代码里看到 7000 行小说的绝望感」就是这么来的。
+//    改成动态 import 后，vite 会把它切成**独立 chunk**：主包立刻瘦身，翻包时也是一个
+//    一眼认得出是数据块的文件，不再混在业务代码里。
 function fieldKey(tabId: string, fieldName: string): string {
   const tab = TABS.find(t => t.id === tabId)
   if (!tab?.modules) throw new Error(`tab not found: ${tabId}`)
@@ -59,6 +63,8 @@ export function createDemoProject(): Promise<string> {
 }
 
 async function doCreateDemoProject(): Promise<string> {
+  // 只在**真的要建示范项目**时才把正文拉进来（7664 行 · 独立 chunk，不占主包）
+  const { CH1, CH2, CH3, CH4, CH5, CH6, CH7, CH8, CH9, CH10, CH11, CH12, CH13, CH14, CH15, CH16, CH17, CH18, CH19, CH20, CH21 } = await import('../data/seedContent')
   // 幂等重建：先按名删除已存在的同名示范项目，保证「创建示范项目」按钮每次都得到最新满血数据，不再叠加副本
   const old = (await db.getAllProjects()).find(x => x.name === '吞天神脉（示范）')
   if (old) await db.deleteProject(old.id)
