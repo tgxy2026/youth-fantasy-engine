@@ -128,10 +128,19 @@ export async function normalizeFindings(
       || /(无|没有|没|未|不)[^，。；、]{0,6}(矛盾|漏洞|问题)/.test(levelRaw)
     let level: TavernFindingLevel
     if (negated) level = '存疑'
-    // 2026-10-02 六维审计 P2：与上面的 fuzzyUnique 及项目红线同口径 —— 判定一律整词，不用 includes 子串
-    //    （「逻辑漏洞较多」这类长句会被 includes 判成「漏洞」，与模型原意可能背离；命不中就保守落「存疑」）。
-    else if (levelRaw === '矛盾' || levelRaw.startsWith('矛盾')) level = '矛盾'
-    else if (levelRaw === '漏洞' || levelRaw.startsWith('漏洞')) level = '漏洞'
+    /**
+     * 等级判定：**整词 + 前后缀**双向匹配（2026-10-02 六维审计 P2 修订）。
+     *
+     * 🔴 为什么不能只用 `startsWith`（上一版的错法）：模型实际输出的是**前缀式**等级 ——
+     *    「严重矛盾」「逻辑漏洞」而不是干净的「矛盾」「漏洞」；只判 `startsWith` 会全落进「存疑」，
+     *    报告里一个矛盾都看不到（`tavernReport` 测试就是钉这一条的）。
+     * 🔴 为什么又不能回到 `includes`：项目红线（同 `fuzzyUnique`、同六维审计口径）要求
+     *    **禁子串匹配** ——「逻辑漏洞较多」这种长句用 `includes` 会被判成「漏洞」，与模型原意背离。
+     * ⇒ 正解：**短等级词出现在开头或结尾就算命中**（长度受限、方向受限），
+     *    既接住「严重矛盾 / 逻辑漏洞」，又不让「逻辑漏洞较多」这种长句蒙混过关。
+     */
+    else if (levelRaw === '矛盾' || levelRaw.startsWith('矛盾') || levelRaw.endsWith('矛盾')) level = '矛盾'
+    else if (levelRaw === '漏洞' || levelRaw.startsWith('漏洞') || levelRaw.endsWith('漏洞')) level = '漏洞'
     else level = '存疑'
     const targetTabId = asText(it.targetTabId ?? it.表 ?? '').trim()
     const targetLabel = asText(it.targetLabel ?? it.条目 ?? it.指向 ?? '').trim()

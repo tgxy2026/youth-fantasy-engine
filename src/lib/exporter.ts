@@ -9,7 +9,7 @@
 import type { Volume, Chapter } from './types'
 import * as db from './db'
 import { TABS } from './schema'
-import { isWorldSetTab, splitActive } from './worldSets'
+import { isWorldSetTab, isParallelSetTab, splitActive } from './worldSets'
 import { ZipBuilder, downloadBlob } from './zip'
 import { chapterSeqMap } from './chapterSeq'
 
@@ -485,6 +485,30 @@ async function buildSettingCompendium(projectName: string): Promise<string> {
   for (const tab of TABS) {
     if (tab.type === 'dashboard' || tab.type === 'guide' || tab.type === 'about' || tab.id === 'editor') continue
     if (tab.type === 'form') {
+      /**
+       * 🔴 2.7.2 并列结构页签（政治 / 经济 / 信仰 / 司法）：**没有母级 formData**，
+       *    全部内容都在 `<tabId>-sub` 那批条目里 ⇒ 不读 formData、也不出「全书统一（母级）」标题，
+       *    直接一条条成节（与 AI 上下文的 `renderActiveParallelSets` 口径一致）。
+       */
+      if (isParallelSetTab(tab.id)) {
+        const subs = await db.getSubSets(tab.id).catch(() => [])
+        if (subs.length === 0) continue
+        const { active } = splitActive(subs, await db.getActiveSubIds(tab.id).catch(() => []))
+        const isActive = new Set(active.map(s => s.id))
+        lines.push(`## ${tab.name}`, '')
+        for (const s of subs) {
+          lines.push(`### ${s.name || '未命名'}（${isActive.has(s.id) ? '活跃' : '已完结'}）`, '')
+          for (const mod of tab.modules ?? []) {
+            lines.push(`#### ${mod.name}`, '')
+            for (const f of mod.fields) {
+              const v = (s.data ?? {})[`${mod.name}::${f.name}`]
+              if (v && v.trim()) lines.push(`- **${f.name}**：${v}`)
+            }
+            lines.push('')
+          }
+        }
+        continue
+      }
       const data = await db.getFormData(tab.id)
       // 母子结构表（C10）：母级 + 子世界各自成节。**导出是存档，已完结的也要出**（标出来即可），
       // 与「AI 上下文只喂活跃」是两个口径 —— 别把这里的过滤照抄过去。

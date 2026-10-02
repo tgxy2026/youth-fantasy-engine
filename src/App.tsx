@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard'
 import NovelEditor from './components/NovelEditor'
 import FormSheet from './components/FormSheet'
 import WorldSetSheet from './components/WorldSetSheet'
+import ParallelSetSheet from './components/ParallelSetSheet'
 import TableSheet from './components/TableSheet'
 import CharacterSheet from './components/CharacterSheet'
 import OutlineSheet from './components/OutlineSheet'
@@ -14,7 +15,7 @@ import UpdateDialog from './components/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from './lib/versionCheck'
 import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
 import { DEFAULT_PACK, normalizeGenrePack, setActivePack } from './lib/schemaTemplates'
-import { isWorldSetTab } from './lib/worldSets'
+import { isWorldSetTab, isParallelSetTab } from './lib/worldSets'
 import * as db from './lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from './lib/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from './lib/desktop'
@@ -517,11 +518,16 @@ export default function App() {
     if (!tab) return <div className="p-8">页签不存在</div>
     switch (tab.type) {
       case 'form':
-        // 世界设定 / 力量体系 / 四个制度页签都是「母子结构」表（C10 · 2.4.2；2.7.1 扩到六表）：母级（全书统一）+ 可多建的子项。
+        // 2.7.2 分两种结构（主人定案）：
+        // · 母子结构（世界设定 / 力量体系）：母级「全书统一」+ 可多建的子项。
+        // · 并列结构（政治 / 经济 / 信仰 / 司法 2.7.2 起）：**没有母级**，直接一条条平铺，
+        //   每条带「活跃 / 已完结」开关（见 ParallelSetSheet）。
         // 其余表单型页签仍然是一页一份的 FormSheet。
         return isWorldSetTab(tab.id)
           ? <WorldSetSheet key={tab.id} tab={tab} />
-          : <FormSheet key={tab.id} tab={tab} />
+          : isParallelSetTab(tab.id)
+            ? <ParallelSetSheet key={tab.id} tab={tab} />
+            : <FormSheet key={tab.id} tab={tab} />
       case 'table':
         return <TableSheet key={tab.id} tab={tab} onNavigate={navigate} ctx={visCtx} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
       case 'card':

@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { AI_DATA_SOURCES, sourcesOf, summarizeSources } from '../src/lib/aiDataSources'
 import { TABS } from '../src/lib/schema'
-import { WORLD_SET_TABS } from '../src/lib/worldSets'
+import { MULTI_SET_TABS } from '../src/lib/worldSets'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -71,14 +71,17 @@ const COVERED_BY_PANEL = new Set([
 for (const [id] of Object.entries(AI_DATA_SOURCES)) {
   if (NOT_YET_MOUNTED.has(id) || COVERED_BY_PANEL.has(id)) continue
   // 2.4.4 六维审计：worldbase / power 由 WorldSetSheet 以 feature={tab.id} **动态**传入
-  // （tab.id 限定在 WORLD_SET_TABS 内），源码里没有 feature="worldbase" 字面量 —— 特例放行，
-  // 判据改为「页签组件存在且其 feature 取值落在 worldSet 页签里」。
-  // 🆕 2.7.1：制度页签（politics / economy / belief / justice）同构，走 WorldSetSheet 动态传入 ⇒
-  //    判据从「写死两个 id」改成「凡属 WORLD_SET_TABS 皆可」——以后再加母子页签也不用改这里。
-  const dynamicWorldSet = (WORLD_SET_TABS as readonly string[]).includes(id)
-    && componentSrc.some(c => c.name === 'WorldSetSheet.tsx' && c.text.includes('AIDataSourceNote feature={tab.id}'))
+  // （tab.id 限定在多套结构页签内），源码里没有 feature="worldbase" 字面量 —— 特例放行，
+  // 判据改为「页签组件存在且其 feature 取值落在多套结构页签里」。
+  // 🆕 2.7.1：制度页签同构，走 WorldSetSheet 动态传入 ⇒ 判据从「写死两个 id」改成「凡属多套页签皆可」。
+  // 🆕 2.7.2：制度四页签改**并列结构**、移到 `ParallelSetSheet` 渲染 ⇒ 判据要用
+  //    `MULTI_SET_TABS`（母子 ∪ 并列）而不是 `WORLD_SET_TABS`，且要认**两个**组件文件名。
+  const dynamicMultiSet = (MULTI_SET_TABS as readonly string[]).includes(id)
+    && componentSrc.some(c =>
+      (c.name === 'WorldSetSheet.tsx' || c.name === 'ParallelSetSheet.tsx')
+      && c.text.includes('AIDataSourceNote feature={tab.id}'))
   const where = componentSrc.find(c => c.text.includes(`feature="${id}"`))?.name
-    ?? (dynamicWorldSet ? 'WorldSetSheet.tsx（feature={tab.id} 动态）' : undefined)
+    ?? (dynamicMultiSet ? 'WorldSetSheet / ParallelSetSheet（feature={tab.id} 动态）' : undefined)
   ok(`🔴 ${id}：已被界面引用（否则作者根本看不到）`, !!where, where ?? '未被任何组件引用')
 }
 

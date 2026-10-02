@@ -54,8 +54,23 @@ for (const job of jobs) {
   const body = lines.join('\n').trim()
   if (body) console.log(body)
 
-  const code = r.status ?? (r.signal ? 1 : 0)
-  results.push({ label: job.label, code, signal: r.signal })
+  /**
+   * 🔴🔴 退出码判据（2026-10-02 修）：`r.status` 为 null 有两种原因 ——
+   *   ① 被信号杀掉（`r.signal` 有值）⇒ 失败；
+   *   ② **本机环境的 EBUSY 拦截**（`r.error.code === 'EBUSY'`）⇒ 子进程压根没起来，
+   *      此时 `status` 与 `signal` **都是 null**，旧写法 `r.status ?? (r.signal ? 1 : 0)`
+   *      会把它判成 **0 = 通过** —— 实测踩过：`worldSets` 明明 FAIL，汇总却报「132 通过、0 失败」。
+   * ⇒ 现在只要 `status === null` 一律算失败，并打印原因，别让「没跑起来」冒充「跑过了」。
+   */
+  if (r.status === null) {
+    const why = r.error?.code === 'EBUSY'
+      ? 'EBUSY（子进程被本机拦截，没真跑起来）'
+      : r.signal ? `被信号 ${r.signal} 终止` : `未知原因：${r.error?.message ?? '无 status 无 signal'}`
+    console.log(`  ❌ 该入口没跑成功 —— ${why}`)
+    results.push({ label: job.label, code: 1, signal: r.signal })
+    continue
+  }
+  results.push({ label: job.label, code: r.status, signal: r.signal })
 }
 
 const failed = results.filter(r => r.code !== 0)

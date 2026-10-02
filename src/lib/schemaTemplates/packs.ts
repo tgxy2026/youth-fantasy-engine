@@ -186,6 +186,25 @@ const SUB_ITEM_LABELS: Record<string, Partial<Record<GenrePack, string>>> = {
 /** 四个制度页签下的子项默认称谓（历史门外的题材较少用，给通用兜底） */
 const INSTITUTION_SUB_FALLBACK = '政权'
 
+/**
+ * 「新增」按钮的文案分档（2026-10-02 主人定案）。
+ *
+ * 主人原话：「在开书定位组，除了作品定位以外的其他页签中，其实都有新增子项的功能。
+ *   1.『世界设定』保留新增按钮的功能为『新增子世界』；
+ *   2.『力量体系』保留新增按钮的功能为『新增子体系』；
+ *   3. 其他页签（政治、经济、宗教、司法）均改为『新增』。」
+ *
+ * ⇒ 制度四页签在 2.7.2 改成**并列结构**后，条目的身份从「某母级下的子项」变成「平铺的一条」，
+ *   再叫「新增政权 / 新增地区」会暗示它从属于什么，所以**按钮一律叫「新增」**；
+ *   而世界设定 / 力量体系仍是母子结构，条目确实是「子世界 / 子体系」，按钮保留原措辞。
+ */
+export function addButtonLabel(tabId: string): string {
+  if (tabId === 'worldbase') return '新增子世界'
+  if (tabId === 'power') return '新增子体系'
+  // 制度四页签：并列结构，按钮就叫「新增」（条目总称仍由 subItemLabel 提供，用于列表标题与 AI 段）
+  return '新增'
+}
+
 /** 子项称谓（tabId → 题材 → 文案）；缺省时按页签给通用兜底 */
 export function subItemLabel(tabId: string, pack: GenrePack): string {
   const byTab = SUB_ITEM_LABELS[tabId]

@@ -23,7 +23,7 @@ import * as db from '../lib/db'
 import { uid } from '../lib/id'
 import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '../lib/worldSets'
 import { isNumericPowerField } from '../lib/schema'
-import { getActivePack, modulesFor, subItemLabel, type GenrePack } from '../lib/schemaTemplates'
+import { addButtonLabel, getActivePack, modulesFor, subItemLabel, type GenrePack } from '../lib/schemaTemplates'
 import { GenrePackSwitcher } from './GenrePackSelect'
 import TabVisibilityControl from './TabVisibilityControl'
 import { useAIReady } from '../lib/useAIReady'
@@ -71,9 +71,13 @@ export default function WorldSetSheet({ tab }: Props) {
   const [pack, setPack] = useState<GenrePack>(getActivePack())
   /** 子项称谓随题材（Q15）：修真包→「子世界」、历史包→「政权」、武侠包→「门派」…纯文案层 */
   const subLabel = subItemLabel(tab.id, pack)
-  /** 母级说明里的举例随页签给（worldbase→世界底层法则；power→统一等级总纲；制度页→天下通例） */
-  const masterHint = tab.id === 'worldbase' ? '世界底层法则'
-    : tab.id === 'power' ? '统一等级总纲' : '天下通例'
+  /**
+   * 「新增」按钮文案（2.7.2 · 主人定案）：worldbase→「新增子世界」、power→「新增子体系」。
+   * 🔴 不再用 `新增{subLabel}` —— 那样历史包下会变成「新增政权」，而条目是**子级**、不是政权本身。
+   */
+  const addLabel = addButtonLabel(tab.id)
+  /** 母级说明里的举例随页签给（worldbase→世界底层法则；power→统一等级总纲） */
+  const masterHint = tab.id === 'worldbase' ? '世界底层法则' : '统一等级总纲'
 
   // 包一层 useMemo：模块随题材包变，依赖 [tab.id, pack]（不是 `tab.modules` —— 那是个 getter，每次读都是活值）
   const modules = useMemo(() => modulesFor(tab.id, pack) ?? [], [tab.id, pack])
@@ -232,43 +236,37 @@ export default function WorldSetSheet({ tab }: Props) {
   }
 
   /**
-   * Q14「同步子项清单」（2.7.1）：以《世界设定》的子项清单为**基准**，把本页签的清单对齐过来。
+   * 「从《世界设定》新建」（2.7.2 · 主人定案；原名「同步子项清单」，2.7.1 为 Q14 缓解措施）。
    *
-   * 为什么需要它：子项清单**按页签各存各**（`worldSubActive::politics` 与 `::economy` 是两份，
-   * `<tabId>-sub` 也是两批记录）⇒ 历史作者要在 4 个制度页签里各建一遍「魏 / 蜀 / 吴」（12 次），
-   * 还容易对不齐（政治里加了大燕、经济里忘了加）。
-   *
-   * 🔴 只对齐**清单（名称 / 顺序 / 活跃态）**，页面内容**各存各**：同名子项一律不动其内容，
-   *    缺哪个补哪个 ⇒ 存储语义零改动、可回退（把补出来的删掉即还原）。
+   * 🔴 **为什么收窄语义**（这是个真实的坑，本轮改掉）：
+   *   原实现做的是**双向对齐** —— 名称 / 顺序 / 活跃态全都跟着基准走。
+   *   在「制度四页签 = 母级 + 子项」的年代这看着合理（那套结构的本意就是「多政权要对齐」）；
+   *   但 2.7.2 制度页签改成**并列**之后，作者完全可能自己排了一套顺序、标了一组活跃态
+   *   （比如「魏蜀吴里只激活吴」），此时点一下同步按钮会被**静默改回基准的顺序与活跃态**。
+   *   ⇒ 现在只做**补缺**：把《世界设定》里本页签还没有的子项建出空壳（内容各存各），
+   *   已有子项一个都不碰（含它的名字、顺序、活跃态）。
    */
   const syncFromWorldbase = async () => {
     const base = await db.getSubSets('worldbase').catch(() => [] as CardRecord[])
     if (!base.length) {
-      showToast('《世界设定》还没有子项 —— 先在那里把清单建好，再来同步', 'info')
+      showToast('《世界设定》还没有子项 —— 先在那里把清单建好，再来新建', 'info')
       return
     }
-    const baseActive = await db.getActiveSubIds('worldbase').catch(() => [] as string[])
-    const mine = await db.getSubSets(tab.id)
-    const byName = new Map(mine.map(s => [s.name, s]))
+    const byName = new Map(subs.map(s => [s.name, s]))
     let created = 0
     for (const b of base) {
-      if (byName.has(b.name)) continue          // 同名已存在 ⇒ 不动它的内容
-      const rec = { id: uid(), projectId: '', tabId: '', name: b.name, data: {}, order: b.order } as CardRecord
+      if (byName.has(b.name)) continue          // 同名已存在 ⇒ 一个字节都不动它
+      const rec = { id: uid(), projectId: '', tabId: '', name: b.name, data: {}, order: subs.length + created } as CardRecord
       await db.saveSubSet(tab.id, rec)
       byName.set(b.name, rec)
       created++
-    }
-    // 活跃态对齐（按名字对应）——清单层面的对齐，不碰内容
-    for (const b of base) {
-      const s = byName.get(b.name)
-      if (s) await db.setSubActive(tab.id, s.id, baseActive.includes(b.id))
     }
     setSubs(await db.getSubSets(tab.id))
     setActiveIds(await db.getActiveSubIds(tab.id))
     showToast(
       created > 0
-        ? `已从《世界设定》同步：新增 ${created} 个${subLabel}，活跃态一并对齐`
-        : '清单已一致，无需新增（活跃态已对齐）',
+        ? `已从《世界设定》新建 ${created} 个子项（内容还是空的，逐个填）`
+        : '这里的子项都齐了，没有需要新建的',
       'success',
     )
   }
@@ -358,12 +356,15 @@ export default function WorldSetSheet({ tab }: Props) {
             <span className="ml-auto text-ink-600">活跃 {active.length}</span>
           </div>
 
+          {/* 🔴 2.7.2：制度四页签已改为并列结构、移到 `ParallelSetSheet` 渲染，
+              所以走到这里的只剩「力量体系」—— 按钮文案随之从「同步子项」改为「从《世界设定》新建」，
+              语义也从「双向对齐清单」收窄为「只补缺」（对齐会改回作者手动排过的顺序）。 */}
           {tab.id !== 'worldbase' && (
             <button onClick={() => void syncFromWorldbase()}
-              title="以《世界设定》的子项清单为基准，把名称 / 顺序 / 活跃态同步过来（只对齐清单，内容各存各）"
+              title="把《世界设定》里已有的子项在这里建出空壳（只补缺，不动已有子项，也不改它们的活跃态）"
               className="w-full flex items-center gap-1.5 px-3 py-1.5 text-10 text-ink-400 hover:bg-ink-800 border-b border-ink-700 transition-colors"
             >
-              <Copy size={11} /> 同步《世界设定》的子项
+              <Copy size={11} /> 从《世界设定》新建
             </button>
           )}
 
@@ -405,7 +406,7 @@ export default function WorldSetSheet({ tab }: Props) {
           <button onClick={() => setNaming('new')}
             className="w-full flex items-center gap-1.5 px-3 py-2.5 text-12 text-ink-300 hover:bg-ink-800 border-t border-ink-700 transition-colors"
           >
-            <Plus size={12} /> 新增{subLabel}
+            <Plus size={12} /> {addLabel}
           </button>
         </div>
 

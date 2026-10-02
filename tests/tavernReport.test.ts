@@ -99,6 +99,13 @@ async function main() {
     const d = await normalizeFindings(
       [{ level: '无矛盾', targetTabId: 'char-main', targetLabel: '李默', detail: 'x' }], resolve)
     ok('「无矛盾」不被误判为矛盾（降为存疑）', d[0].level === '存疑')
+    // 🔴 2026-10-02 修订负面对照：等级判定改成「整词 + 前后缀」后，
+    //    「逻辑漏洞较多」这种**长句**仍必须落「存疑」——
+    //    上一版用 `includes` 会把它判成「漏洞」（与模型原意背离），
+    //    改成只判 `startsWith` 又接不住「严重矛盾」。这里钉住两端。
+    const longPhrase = await normalizeFindings(
+      [{ level: '逻辑漏洞较多', targetTabId: 'char-main', targetLabel: '李默', detail: 'x' }], resolve)
+    ok('🔴 「逻辑漏洞较多」不被误判为漏洞（长句落存疑，不做子串匹配）', longPhrase[0].level === '存疑', longPhrase[0].level)
     const e = await normalizeFindings(
       [{ level: '没有漏洞', targetTabId: 'char-main', targetLabel: '李默', detail: 'x' }], resolve)
     ok('「没有漏洞」不被误判为漏洞（降为存疑）', e[0].level === '存疑')

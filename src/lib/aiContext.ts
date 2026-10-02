@@ -15,8 +15,8 @@ import { readAliases } from './aliases'
 import { splitNames } from './audit'
 import { clipText } from './textClip'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
-import { composeSubSetsBlock, isInternalFieldKey, isWorldSetTab, splitActive } from './worldSets'
-import { normalizeGenrePack } from './schemaTemplates'
+import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from './worldSets'
+import { getActivePack, normalizeGenrePack, subItemLabel } from './schemaTemplates'
 import type { Chapter, TabDef, Volume } from './types'
 
 export interface ProjectContextOptions {
@@ -408,6 +408,34 @@ async function renderActiveSubSets(tab: TabDef, o: RenderOpts = {}): Promise<str
   }
 }
 
+/**
+ * 并列条目段（2.7.2 · 政治 / 经济 / 信仰 / 司法）：**只有活跃的条目才进上下文**。
+ *
+ * 与 `renderActiveSubSets` 的差别是**没有母级那一层** —— 这四个页签在 2.7.2 起改成并列结构，
+ * 资料全部来自 `<tabId>-sub` 那批条目，标题也从「子世界」换成条目总称（政权 / 行业 / 教团…）。
+ *
+ * 返回 `''`（空串）表示「一个条目都没建」⇒ 调用方整段不带，
+ * 于是**没建条目的用户上下文与改动前一字不差**（与母子版同一条回归保护）。
+ */
+async function renderActiveParallelSets(tab: TabDef, o: RenderOpts = {}): Promise<string | null> {
+  try {
+    const subs = await db.getSubSets(tab.id)
+    if (subs.length === 0) return null
+    const { active, closed } = splitActive(subs, await db.getActiveSubIds(tab.id))
+    const label = subItemLabel(tab.id, getActivePack())
+    return composeParallelSetBlock(
+      // 角色视角：标了 S 的条目整段剔除（与母子版母级同口径）
+      active.filter(s => !(o.hideSecretRows && isSecretRow(s.data)))
+        .map(s => ({ name: s.name, body: renderForm(tab, s.data ?? {}, o) })),
+      active.length + closed.length,
+      label,
+    )
+  } catch {
+    // 单段读取失败就当这张表没建过条目（同口径：拿不到就少带一段，绝不报错）
+    return null
+  }
+}
+
 /** 卡片型（角色卡 / 分卷大纲 / 章节细纲）：每条一段 */
 function renderCards(tab: TabDef, recs: { name: string; data: Record<string, string> }[], o: RenderOpts = {}): string {
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
@@ -474,11 +502,17 @@ async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
 async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): Promise<string> {
   try {
     if (tab.type === 'form') {
+      // 🔴 2.7.2 并列结构页签（政治 / 经济 / 信仰 / 司法）：**没有母级 formData**，
+      //    资料全在 `<tabId>-sub` 那批条目里 ⇒ 直接渲染活跃条目段，**不读也不带「全书统一」层**。
+      //    （旧实现会读一份根本不存在的 formData、把空的「〖全书统一〗」喂给 AI。）
+      if (isParallelSetTab(tab.id)) {
+        return (await renderActiveParallelSets(tab, o)) ?? ''
+      }
       const formData = await db.getFormData(tab.id)
       // 角色视角：整条记录标了 S（绝密 / 剧透）⇒ 整段不带（含它的子世界）
       if (o.hideSecretRows && isSecretRow(formData)) return ''
       const main = renderForm(tab, formData, o)
-      // 世界设定 / 力量体系 / 四个制度页签都是「母子结构」表（C10；2.7.1 扩到六表）：建过子项才引入母／子两层标题。
+      // 母子结构表（世界设定 / 力量体系）：建过子项才引入母／子两层标题。
       // 🔴 没建过子项 ⇒ 原样返回（单世界用户的上下文与改动前**一字不差**）。
       if (!isWorldSetTab(tab.id)) return main
       const sub = await renderActiveSubSets(tab, o)
