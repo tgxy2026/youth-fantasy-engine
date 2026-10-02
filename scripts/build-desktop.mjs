@@ -218,17 +218,28 @@ if (existsSync(exePath)) {
         '--set-product-version', `${pkg.version}.0`,
         '--set-icon', '"' + path.join(root, 'build', 'icon.ico') + '"',
       ].join(' ')
-      console.error('\n[build:desktop] ✋ 主 exe 元数据/图标缺失，需从**外层**补写（本环境脚本内起子进程会被拦成 EBUSY）。')
-      console.error('[build:desktop] 请在 Git Bash 里执行下面这一行，然后**再跑一次本脚本**完成校验与交付：\n')
-      console.error(cmd + '\n')
-      // 🔴 把本轮产物目录记下来：外层补写后重跑本脚本会用**新的时间戳目录**，
-      //    导致「补了上轮、新的又没补」的死循环。故让外层用 NSIS 直打同一个目录（见 README 提示）。
+      // 🔴🔴 补写之后**必须用 `--prepackaged` 重打 NSIS**（2026-10-02 实测，这是唯一可行解）。
+      //   原因：electron-builder 每次运行都会在 packaging 阶段**从 electron 压缩包重新铺一遍 exe**，
+      //   把外层补写好的元数据与图标**整体覆盖回默认值**（实测 4 种调法都如此：afterPack /
+      //   afterAllArtifactBuild / 复用模式 / 补写后立刻 `--win nsis`，无一例外）。
+      //   而普通调用无法指定「沿用已铺好的 win-unpacked」。
+      //   `--prepackaged <dir>` 正是 electron-builder 提供的这个开关：**跳过解包、直接用现成的
+      //   win-unpacked 去做 NSIS** ⇒ exe 保持不动。实测打包后 exe 仍是 181,097,984。
+      const rebuildCmd = [
+        `"${process.execPath}" node_modules/electron-builder/cli.js --win nsis --x64`,
+        `--prepackaged "${path.join(desktopOut, 'win-unpacked')}"`,
+        `-c.directories.output="${desktopOut}"`,
+      ].join(' ')
+      console.error('\n[build:desktop] ✋ 主 exe 元数据/图标缺失，需从**外层**执行下面两步')
+      console.error('[build:desktop] （本环境脚本内起子进程一律被拦成 EBUSY；且 electron-builder 重跑会覆盖 exe）\n')
+      console.error('  ① 补写主 exe：\n     ' + cmd + '\n')
+      console.error('  ② 用 --prepackaged 重打安装包（保住刚补好的 exe）：\n     ' + rebuildCmd + '\n')
       writeFileSync(
         path.join(root, '.workbuddy', 'tmp', 'last-desktop-out.txt'),
-        `${desktopOut}\n${cmd}\n`,
+        `${desktopOut}\n${cmd}\n${rebuildCmd}\n`,
         'utf8',
       )
-      console.error(`[build:desktop] （本轮产物目录已记入 .workbuddy/tmp/last-desktop-out.txt）\n`)
+      console.error(`[build:desktop] （两步命令已记入 .workbuddy/tmp/last-desktop-out.txt）\n`)
       return false
     }
 
