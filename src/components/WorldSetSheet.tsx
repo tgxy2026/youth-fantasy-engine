@@ -25,6 +25,7 @@ import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '../lib/worldSet
 import { isNumericPowerField } from '../lib/schema'
 import { addButtonLabel, getActivePack, modulesFor, subItemLabel } from '../lib/schemaTemplates'
 import { useAIReady } from '../lib/useAIReady'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import type { TemplateField } from '../lib/ai'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
@@ -171,6 +172,10 @@ export default function WorldSetSheet({ tab }: Props) {
   // 🔴 2.7.2：原先这里有 `onPackSwitched`（题材切换后换模板）——
   //    题材改到「新建项目」时选了，页签里不再提供切换入口，该回调随之移除。
   //    `pack` state 本身**保留**：`subLabel` 与 `modules` 的 useMemo 仍按它取当前项目的题材。
+
+  // 🔴 Ctrl/Cmd+S 保存当前层（2.7.3 补：本面板此前压根没挂快捷键 ——
+  //    作者在世界设定 / 力量体系里按 Ctrl+S 毫无反应，只能去点按钮）
+  useSaveHotkey(() => void flush(), dirty)
 
   const selectLayer = async (key: string) => {
     if (key === sel) return

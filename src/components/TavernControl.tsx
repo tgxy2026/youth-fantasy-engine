@@ -12,6 +12,7 @@
  *   ③ 分段说明的显隐走 ShowBands.Provider，Provider 本身留在本组件。
  */
 import HelpPopover from './HelpPopover'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import PromptModal from './PromptModal'
 import TavernControlModes from './TavernControlModes'
 import { LoadingState } from './LoadingState'
@@ -24,6 +25,10 @@ import TavernControlProtocol from './TavernControlProtocol'
 export default function TavernControl() {
   const m = useTavernControlModel()
   // 前置数据未就绪：与拆分前一样先出 LoadingState（判断已随 hook 前移，语义不变）
+  // 🔴 必须挂在 `if (!m) return` **之前**：放在它后面会让 hooks 数量随 m 有无而变 ⇒ React 直接报错。
+  //    用可选链读 m —— 真正按下时 m 一定存在（那时面板早就渲染出来了）。
+  useSaveHotkey(() => void m?.save(), !!m?.dirty && !m?.saving)
+
   if (!m) return <LoadingState />
   const { s, showBands, setShowBands, dirty, saving, presetNaming, setPresetNaming, leftColRef, rightColRef, storePresetAs, setPlot, setFree, setVars, toggleVarKey, save, reset, pl, fr, modelOptions, rec, gSoft, gHard, gLong, gDiary } = m
   return (

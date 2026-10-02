@@ -17,6 +17,7 @@ import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { contentMinH, CARD_SHEET_CHROME_PX } from '../lib/theme'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { Button } from './Button'
@@ -286,17 +287,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
     }
   }, [draft, dirty, records])
 
-  // Ctrl/Cmd+S
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        if (dirty) save()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [dirty, save])
+  // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
+  useSaveHotkey(() => void save(), dirty)
 
   if (!loaded) return <LoadingState />
 

@@ -26,6 +26,7 @@ import { uid } from '../lib/id'
 import { countWords } from '../lib/textStats'
 import { todayKey } from '../lib/date'
 import { useResizable } from '../lib/useResizable'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { foldPendingAi, type AiSourceKind, type PendingAiNote } from '../lib/aiAssist'
 
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
@@ -413,17 +414,11 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     }
   }, [])
 
-  // Ctrl/Cmd+S 保存
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        if (active && draftContent !== active.content) commitContent()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [active, draftContent]) // eslint-disable-line
+  // Ctrl/Cmd+S 保存（2.7.3：收敛到 useSaveHotkey）
+  useSaveHotkey(
+    () => { if (active && draftContent !== active.content) void commitContent() },
+    !!active && draftContent !== active.content,
+  )
 
   // 手动保存（可传入内容，自动保存时用，避免闭包中的过期 state）
   const commitContent = async (content?: string) => {

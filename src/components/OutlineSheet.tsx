@@ -15,6 +15,7 @@ import TemplateLibrary from './TemplateLibrary'
 import { contentMinH, OUTLINE_SHEET_CHROME_PX } from '../lib/theme'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { LoadingState } from './LoadingState'
 // R4a · 2.6.0：结构模板节拍对照条（只读）。模板选择的单一来源在 creativeSession，
 // 与创意写作 / 检查工具「全书结构配比」共用同一份（hydrate 幂等，本页可能从未打开过创意写作）。
@@ -245,17 +246,8 @@ export default function OutlineSheet({ tab }: Props) {
     }
   }, [draft, dirty, records])
 
-  // Ctrl/Cmd+S
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        if (dirty) save()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [dirty, save])
+  // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
+  useSaveHotkey(() => void save(), dirty)
 
   if (!loaded) return <LoadingState />
 

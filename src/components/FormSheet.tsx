@@ -9,6 +9,7 @@ import SchemaFieldGrid from './SchemaFieldGrid'
 import AITemplateFill from './AITemplateFill'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
@@ -109,17 +110,8 @@ export default function FormSheet({ tab }: Props) {
     return () => window.removeEventListener('beforeunload', handler)
   }, [dirty])
 
-  // Ctrl/Cmd+S 触发保存
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        if (dirty) save()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [dirty, save])
+  // Ctrl/Cmd+S 触发保存（2.7.3：收敛到 useSaveHotkey —— 世界设定一类面板此前漏挂，按了没反应）
+  useSaveHotkey(() => void save(), dirty)
 
   const clearAll = useCallback(() => {
     void (async () => {

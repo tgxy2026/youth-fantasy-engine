@@ -286,6 +286,64 @@ if (!SRC) {
     const stale = Object.entries(ANY_LEDGER).filter(([r, cap]) => cap > 0 && (found[r] ?? 0) < cap)
     if (stale.length) note(`⑥ 账本可下调（实际已少于登记）：${stale.map(([r, c]) => `${r} ${c} → ${found[r] ?? 0}`).join('；')}`)
   }
+
+  // ============ ⑦ 保存类面板必须挂 Ctrl/Cmd+S ============
+  // 🔴 2.7.3 社区反馈：作者在「世界设定 / 力量体系」里按 Ctrl+S 毫无反应 —— 根因不是快捷键坏了，
+  //    而是「每个编辑面板各抄一份 keydown 监听」：2.4.2 的 WorldSetSheet、2.7.2 的 ParallelSetSheet、
+  //    酒馆的 TavernCard **一个都没抄**。「抄写型代码」的必然结局就是新增面板时漏一处，
+  //    故已把实现收敛到 `src/lib/useSaveHotkey.ts`；本条闸负责把「谁必须挂」钉死 ——
+  //    以后新增带「保存」按钮的面板，要么挂上，要么把文件名加进这张表并说清为什么不用挂。
+  const HOTKEY_PANELS = [
+    'src/components/FormSheet.tsx',          // 一页一份的表单（作品信息等）
+    'src/components/CharacterSheet.tsx',     // 角色卡（主要 / 次要 / NPC）
+    'src/components/OutlineSheet.tsx',        // 分卷大纲 / 章节细纲
+    'src/components/WorldSetSheet.tsx',      // 世界设定 / 力量体系（母子结构）← 本次反馈的漏挂处
+    'src/components/ParallelSetSheet.tsx',   // 政治 / 经济基础 / 信仰 / 司法（并列结构）
+    'src/components/TavernCard.tsx',         // 酒馆 · 角色卡片
+    'src/components/useTableSheetModel.ts',  // 所有表格页签
+    'src/components/useNovelEditorModel.ts', // 正文写作台
+    'src/components/TavernWorld.tsx',        // 酒馆 · 世界观设定
+    'src/components/TavernScript.tsx',       // 酒馆 · 剧本 / 故事
+    'src/components/TavernControl.tsx',      // 酒馆 · 控制面板
+    'src/components/AIPromptSettings.tsx',   // 模型设置 · 提示词（逐条存）
+    'src/components/AIWriterBudgetPanel.tsx',// 模型设置 · 额度
+    'src/components/NetworkProxyPanel.tsx',  // 模型设置 · 网络代理
+  ]
+  /**
+   * ⑦ 的**豁免表**：疑似扫描里不必再喊的，写清「为什么不用挂」。
+   * 🔴 这里的每一条都是一次显式决定 —— 加进来就要能说出理由，别当噪音过滤器用。
+   */
+  const HOTKEY_EXEMPT: Record<string, string> = {
+    'src/components/TableSheet.tsx': '表格页签的外壳 —— 保存逻辑在 useTableSheetModel（它已挂）',
+    'src/components/TavernCardMemoryPanel.tsx': '嵌在 TavernCard 里 —— 父级已挂；再挂一次会「存卡 + 存记忆」双写竞态',
+    'src/components/useTavernCardModel.ts': 'model 层 —— 快捷键挂在组件 TavernCard 上',
+    'src/components/useTavernControlModel.ts': 'model 层 —— 快捷键挂在组件 TavernControl 上',
+  }
+  {
+    const byRel = new Map<string, string>()
+    for (const f of files) byRel.set(rel(f), f)
+    const missing: string[] = []
+    for (const r of HOTKEY_PANELS) {
+      const f = byRel.get(r)
+      if (!f) { missing.push(`${r}（文件不存在 —— 改名/删除后请同步本表）`); continue }
+      if (!clean.get(f)!.includes('useSaveHotkey')) missing.push(r)
+    }
+    ok('⑦ 保存类面板全部挂了 Ctrl/Cmd+S（useSaveHotkey）', missing.length === 0, missing.join(' ｜ '))
+    // 软提示（不失败）：新出现的「有 dirty + 有保存动作、却没挂快捷键」的文件。
+    // 为什么要提示：漏挂的表现是「按了没反应」，不会报错、不会崩溃 —— 只能靠闸提前喊一声。
+    const suspect: string[] = []
+    for (const f of files) {
+      const r = rel(f)
+      if (r.startsWith('src/components/') === false) continue
+      const t = clean.get(f)!
+      if (!/dirty/i.test(t)) continue
+      if (!/\bsave\w*\(/.test(t)) continue
+      if (t.includes('useSaveHotkey')) continue
+      if (HOTKEY_PANELS.includes(r) || HOTKEY_EXEMPT[r]) continue
+      suspect.push(r)
+    }
+    if (suspect.length) note(`⑦ 疑似新增的保存面板（确认要不要挂 Ctrl+S）：${suspect.join('；')}`)
+  }
 }
 
 console.log(`\nstructureGates: ${pass} passed, ${fail} failed`)

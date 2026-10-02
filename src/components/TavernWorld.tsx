@@ -16,6 +16,7 @@
  * 这一条必须显式写在界面上。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
 import { showToast } from './dialogs'
@@ -100,6 +101,9 @@ export default function TavernWorld() {
   }
 
   const injectAlways = !w || w.keywords.filter(k => k.trim()).length === 0
+
+  // Ctrl/Cmd+S 保存世界观设定（2.7.3 补）
+  useSaveHotkey(() => void save(), dirty && !saving)
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">

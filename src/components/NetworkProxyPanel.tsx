@@ -11,6 +11,7 @@
  * 无主进程桥（便携版 / 浏览器 dev）时设置仍可保存（桌面版启动后自动生效），界面如实提示。
  */
 import { useEffect, useState } from 'react'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { Globe } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import { Button } from './Button'
@@ -59,6 +60,9 @@ export default function NetworkProxyPanel() {
       setSaving(false)
     }
   }
+
+  // Ctrl/Cmd+S 保存代理设置（2.7.3 补：本页是「改完点保存」，此前没挂快捷键）
+  useSaveHotkey(() => void save(), dirty && !saving)
 
   return (
     <section className="rounded-lg border border-ink-800 bg-ink-850/30">

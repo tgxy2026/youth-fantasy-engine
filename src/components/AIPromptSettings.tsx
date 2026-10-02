@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { MessageSquareCode, RotateCcw } from 'lucide-react'
 import { Button } from './Button'
@@ -29,6 +30,8 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
   // 空集合 = 全部收起（默认观感：一屏能扫到全部提示词的名字，想看哪条点哪条）。
   const [expandedPrompts, updateExpandedPrompts] = usePersistedSet('prompt-expanded')
   const [busy, setBusy] = useState(false)
+  /** 最近动过的那条提示词的 id —— Ctrl+S 就存它（本页是一条一条存，没有「全部保存」键） */
+  const [editingId, setEditingId] = useState('')
 
   // 重新读一遍（保存/还原后、或模型配置变了之后）
   const reload = () => {
@@ -83,6 +86,14 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
     } finally { setBusy(false) }
   }
 
+  // 🔴 本页是「一条一条存」（没有全局保存键）⇒ Ctrl+S 存**最近动过**的那条。
+  //    作者改完提示词顺手按 Ctrl+S 是极自然的动作，此前毫无反应。
+  const editingEntry = editingId ? entries.find(e => e.id === editingId) : undefined
+  const editingDirty = !!editingEntry
+    && drafts[editingEntry.id] !== undefined
+    && drafts[editingEntry.id] !== editingEntry.text
+  useSaveHotkey(() => { if (editingEntry) void save(editingEntry) }, editingDirty && !busy)
+
   return (
     <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
       <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
@@ -136,7 +147,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
                       <>
                         <textarea
                           value={draft}
-                          onChange={ev => setDrafts(d => ({ ...d, [e.id]: ev.target.value }))}
+                          onChange={ev => { setEditingId(e.id); setDrafts(d => ({ ...d, [e.id]: ev.target.value })) }}
                           spellCheck={false}
                           className="mt-2 w-full rounded-md border border-ink-700 bg-ink-950 px-2.5 py-2 text-12 text-ink-100 leading-relaxed outline-none focus:border-amber/50 font-mono"
                           style={{ height: foldVh('32vh'), minHeight: 140 }}

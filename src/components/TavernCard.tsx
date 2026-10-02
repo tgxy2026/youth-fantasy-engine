@@ -45,6 +45,7 @@ import TavernCardMemoryPanel from './TavernCardMemoryPanel'
 import TavernCardJournalPanel from './TavernCardJournalPanel'
 import TavernCardNovelImportDialog from './TavernCardNovelImportDialog'
 import { useTavernCardModel } from './useTavernCardModel'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 
 export default function TavernCard() {
   const {
@@ -74,6 +75,9 @@ export default function TavernCard() {
    *    ① 复制逻辑最容易出现「同一个动作、两个按钮行为不一致」；
    *    ② 两处必须共享同一份状态 —— `dirty`（没改动时一起变灰）与 `saving`（保存中一起变「保存中…」）。
    */
+  // 🔴 Ctrl/Cmd+S 保存整张卡（2.7.3 补：酒馆角色卡此前同样没挂快捷键）
+  useSaveHotkey(() => void save(), dirty && !saving)
+
   const actionButtons = (
     <>
       <Button

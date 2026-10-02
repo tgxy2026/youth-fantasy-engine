@@ -32,6 +32,7 @@ import { uid } from '../lib/id'
 import { aiCapabilityOf } from '../lib/aiScope'
 import { buildImportRows, type ImportRowResult } from '../lib/tableIO'
 import { useAIReady } from '../lib/useAIReady'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { clearFreeDraft } from '../lib/freeDraft'
 import { useCalendarRule } from '../lib/useCalendarRule'
 import { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
@@ -461,17 +462,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     // 此处不再重复列出（重复不影响正确性，但会让依赖表失真）。
   }, [dirtyKeys, drafts, rows, validateCodes])
 
-  // Ctrl/Cmd+S
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        if (dirtyKeys.length > 0) saveAll()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [dirtyKeys, saveAll])
+  // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
+  useSaveHotkey(() => void saveAll(), dirtyKeys.length > 0)
 
   const addRow = async () => {
     const data: Record<string, string> = {}

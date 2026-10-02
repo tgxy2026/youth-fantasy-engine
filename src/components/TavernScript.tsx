@@ -20,6 +20,7 @@
  * 🔴 会话引用剧本时存的是**快照**：后来改剧本，历史会话不会跟着变。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import HelpPopover from './HelpPopover'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
@@ -289,6 +290,9 @@ export default function TavernScript() {
       setDrafting(false)
     }
   }
+
+  // Ctrl/Cmd+S 保存剧本 / 故事（2.7.3 补）
+  useSaveHotkey(() => void save(), dirty && !saving)
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">

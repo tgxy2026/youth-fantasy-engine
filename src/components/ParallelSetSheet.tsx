@@ -42,6 +42,7 @@ import { LoadingState } from './LoadingState'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
 import { useAIReady } from '../lib/useAIReady'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import type { TemplateField } from '../lib/ai'
 import { foldVh } from '../lib/theme'
 
@@ -214,6 +215,9 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
       setSaving(false)
     }
   }, [dirty, selSub, sel, draft, tab.id])
+
+  // 🔴 Ctrl/Cmd+S 保存当前条目（2.7.3 补：与 WorldSetSheet 同一批漏挂）
+  useSaveHotkey(() => void flush(), dirty)
 
   const setField = (key: string, value: string) => {
     setDraft(prev => ({ ...prev, [key]: value }))

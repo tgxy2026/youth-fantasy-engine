@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { Database, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
 import { Button } from './Button'
@@ -86,6 +87,9 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
   // 数值由 NumberField 保证落在 [min, max]（超范围在失焦时钳回最近的边界），这里不必再自校验
   const dirty = draft !== base
   const preview = previewAt(draft)
+
+  // Ctrl/Cmd+S 保存额度设置（2.7.3 补）
+  useSaveHotkey(() => void commit(draft), dirty && !saving)
 
   return (
     <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
