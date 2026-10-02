@@ -174,16 +174,47 @@ export async function commitDraftRows(rows: DraftRow[], opts: CommitOptions = {}
       if (!tab) { out.failed.push(row.name); continue }
 
       if (tab.type === 'form') {
-        // 🔴 2026-10-02 六维审计 P1：并列结构页签（政治 / 经济基础 / 宗教信仰 / 司法制度）
-        //    在 schema 里也是 `type:'form'`，但 2.7.2 起它们**没有母级 formData** ——
-        //    aiContext / exporter / ParallelSetSheet 三处都不读那一层。
-        //    若照常写进去：界面报告「已更新 N 条」、作者重开页面一个字都没变（静默失效，比报错更坏）。
-        //    ⇒ 这里明确跳过并计入 skipped，让作者在报告里看到「这四张不支持末尾汇总」。
+        // 🔴 2026-10-02（2.7.2 并列结构）：制度四页签（政治 / 经济基础 / 宗教信仰 / 司法制度）
+        //    在 schema 里也是 `type:'form'`，但它们**没有母级 formData** —— 读取侧
+        //    （aiContext / exporter / ParallelSetSheet）走的全是「条目」（`cardRecords` 的 `<tabId>-sub`）。
+        //    所以这里**不能**走下面的 saveFormData（那会写进一个永不被读的黑洞）。
+        //    ⇒ 改成写条目：`formDraftRows` 已把模型的多套拆成「一行一套」（行名＝主体名 魏/蜀/吴）。
         if (isParallelSetTab(row.tabId)) {
-          // CommitOutcome 只有 created/updated/failed 三个字段，没有「跳过」这一档；
-          // 放进 failed 会让界面弹「N 条失败」的红字，语气过重。折中：计入 failed 但
-          // 条目名自带说明，作者一眼能看出是「不支持」而不是「出错」。
-          out.failed.push(`${row.name}（并列结构页签暂不支持末尾汇总）`)
+          const data: Record<string, string> = {}
+          const allowedP = formFieldNames(row.tabId)
+          let anyP = false
+          for (const f of row.fields) {
+            if (!f.value || !allowedP.has(f.label)) continue
+            data[f.key] = f.value
+            anyP = true
+          }
+          if (!anyP) { out.failed.push(`${row.name}（没有可落库的字段）`); continue }
+          const setName = row.name.trim() || `${tab.name}汇总`
+          const existing = await db.getSubSets(row.tabId).catch(() => [])
+          const hit = existing.find(s => s.name === setName)
+          if (hit) {
+            // 同名条目：按冲突策略合并（fill-empty / keep-existing 只填空，use-incoming 覆盖）
+            const nextData = { ...(hit.data ?? {}) }
+            let changed = false
+            for (const [k, v] of Object.entries(data)) {
+              if (policy === 'use-incoming') {
+                if ((nextData[k] ?? '') !== v) { nextData[k] = v; changed = true }
+              } else if (!(nextData[k] ?? '').trim()) {
+                nextData[k] = v
+                changed = true
+              }
+            }
+            if (changed) {
+              await db.saveSubSet(row.tabId, { ...hit, data: nextData })
+              out.updated++
+            }
+          } else {
+            // 新条目：落库 + 设为活跃（作者能看到它、也会随 AI 上下文发出去）
+            const rec = { id: uid(), projectId: '', tabId: `${row.tabId}-sub`, name: setName, data, order: existing.length }
+            await db.saveSubSet(row.tabId, rec)
+            await db.setSubActive(row.tabId, rec.id, true)
+            out.created++
+          }
           continue
         }
         // 表单型是**整项目单份**，没有"同名条目"这回事 —— 冲突策略直接作用在**字段**上：
@@ -301,11 +332,30 @@ export async function previewCommit(rows: DraftRow[], conflict: ConflictPolicy =
     let exists = false
     try {
       if (tab.type === 'form') {
-        // 🔴 与 commitDraftRows 同因（2026-10-02 六维审计 P1）：并列结构页签没有母级 formData，
-        //    写进去也是黑洞 ⇒ 预览必须一并跳过，否则界面说「会更新 N 条」而实际不写。
+        // 🔴 与 commitDraftRows 同规则（2026-10-02）：并列结构页签落点是「条目」而不是 formData，
+        //    预览必须按同一套判据算「新建 / 更新 / 跳过」，否则界面数字与实际落库不符。
         if (isParallelSetTab(row.tabId)) {
-          out.skip++
-          out.items.push({ name: row.name, tabId: row.tabId, tabName: row.tabName, action: 'skip' })
+          const allowedP = formFieldNames(row.tabId)
+          const fieldsP = row.fields.filter(f => f.value && allowedP.has(f.label))
+          if (fieldsP.length === 0) {
+            out.skip++
+            out.items.push({ name: row.name, tabId: row.tabId, tabName: row.tabName, action: 'skip' })
+            continue
+          }
+          const setName = row.name.trim() || `${tab.name}汇总`
+          const listP = await db.getSubSets(row.tabId).catch(() => [])
+          const hitP = listP.find(s => s.name === setName)
+          let actionP: 'create' | 'update' | 'skip' = 'create'
+          if (hitP) {
+            const curD = hitP.data ?? {}
+            const willFill = fieldsP.some(f =>
+              conflict === 'use-incoming'
+                ? (curD[f.key] ?? '') !== f.value
+                : !(curD[f.key] ?? '').trim())
+            actionP = willFill ? 'update' : 'skip'
+          }
+          out[actionP]++
+          out.items.push({ name: row.name, tabId: row.tabId, tabName: row.tabName, action: actionP })
           continue
         }
         // 表单型要预览的是"**有没有字段真会被写**"，而不是"有没有同名条目"——
