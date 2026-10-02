@@ -130,11 +130,27 @@ db.setCurrentProject('rel-test')
     again.created === 0 && again.updated === 0 && rows2.length === 2,
     `created=${again.created} rows=${rows2.length}`)
 
-  // 反过来：把同一条关系反着写（B-A 对调）也必须认出是同一条
+  // 🔴 2.7.2 改判重口径：配对表为**有向对 + 关系类型** —— 反向（B-A）是**另一条**关系（视角不同），
+  //    应当被登记；只有「同向 + 同类型」才算重复。（旧口径把 B-A 当同一条，已废弃。）
   const reversed = relationRowsToDrafts(rel, [{ 人物A: '萧景炎', 人物B: '萧景行', 关系类型: '竞争' }])
   const out3 = await commitDraftRows(reversed)
-  ok('🔴 反向写同一条（B-A 对调）也认出是同一条（无序对判重真的生效）',
-    out3.created === 0, `created=${out3.created}`)
+  const rows3 = await db.getTableRows('relations')
+  ok('🔴 反向写（B-A）现在是另一条关系（有向对判重真的生效）',
+    out3.created === 1 && rows3.length === 3, `created=${out3.created} rows=${rows3.length}`)
+
+  // 同向 + 同类型：仍必须被挡住（防「点两次写入项目」重复登记）
+  const sameAgain = relationRowsToDrafts(rel, [{ 人物A: '萧景炎', 人物B: '萧景行', 关系类型: '竞争' }])
+  const out4 = await commitDraftRows(sameAgain)
+  const rows4 = await db.getTableRows('relations')
+  ok('🔴 同向 + 同类型再写一次仍被挡住（不重复登记）',
+    out4.created === 0 && rows4.length === 3, `created=${out4.created} rows=${rows4.length}`)
+
+  // 同一对 + **不同**关系类型：可并存（本次改造的核心需求）
+  const multi = relationRowsToDrafts(rel, [{ 人物A: '萧景炎', 人物B: '萧景行', 关系类型: '盟友' }])
+  const out5 = await commitDraftRows(multi)
+  const rows5 = await db.getTableRows('relations')
+  ok('🔴 同一对（同向）不同关系类型可并存（同一对多条关系）',
+    out5.created === 1 && rows5.length === 4, `created=${out5.created} rows=${rows5.length}`)
 }
 
 // ---------- ⑤ 判重口径：A-B 与 B-A 同指纹 ----------

@@ -6,7 +6,8 @@ import { useSvgPanZoom } from '../lib/useSvgPanZoom'
 import { foldVh } from '../lib/theme'
 import { getCardRecords } from '../lib/db'
 import { forceLayout } from '../lib/forceLayout'
-import { convexHull, hullPath, curvedEdge, curveMidpoint, groupColor, groupBy } from '../lib/graphGrouping'
+import { convexHull, hullPath, curvedEdge, curveMidpoint, groupColor, groupBy, pairKey, edgeCurveRatios, curveArrow } from '../lib/graphGrouping'
+import { buildTypeColors, makeColorLookup } from '../lib/relationColors'
 
 interface Props {
   rows: TableRow[]
@@ -27,7 +28,7 @@ interface Edge {
 const W = 1000
 const H = 640
 
-/** 关系类型 → 线色（内置常见 8 类用精调色，与 ink/amber 主题协调） */
+/** 关系类型 → 线色（内置常见 8 类用精调色；自定义类型由 `relationColors.buildTypeColors` 哈希取色 + 撞色兜底） */
 const TYPE_COLORS: Record<string, string> = {
   '亲属': '#f0a4a4',
   '师徒': '#8fd0c4',
@@ -37,19 +38,6 @@ const TYPE_COLORS: Record<string, string> = {
   'CP感情线': '#e894c0',
   '主仆': '#a9a4f0',
   '恩怨': '#e57070',
-}
-
-/** 扩展色板：作者可自定义关系类型，未收录类型按名称哈希稳定取色（同类同色、异类尽量异色） */
-const EXTRA_PALETTE = [
-  '#e8918f', '#8fc8a9', '#8fb4e8', '#e8b36a', '#c894e8', '#e894c0',
-  '#8fd0d6', '#a9c48f', '#e8a48f', '#9fb0e8', '#d6a06a', '#a89fe8',
-  '#7fc9c0', '#c9b48f', '#e88fb4', '#8fd0a9',
-]
-function edgeColor(t: string): string {
-  if (TYPE_COLORS[t]) return TYPE_COLORS[t]
-  let h = 0
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0
-  return EXTRA_PALETTE[h % EXTRA_PALETTE.length]
 }
 
 /**
@@ -71,14 +59,15 @@ interface CharMeta { faction: string; status: string; identity: string }
 type Hovered = { kind: 'node'; name: string } | { kind: 'edge'; id: string } | null
 
 /**
- * 人物关系力导向图（v2.0 视觉重构 · 2026-10-02）
+ * 人物关系力导向图（v2.0 视觉重构 · 2026-10-02；v2.1 支持同对多关系）
  *
- * 相比改造前新增的三件事（全部消费**现有字段**，不新增表/列）：
- *  ① **节点按「所属势力」着色** + 同势力节点画**圆角凸包**并标势力名
- *     —— 来源：角色卡「所属势力」。这是行业范例（G6 哈利波特关系图）的标准手法，
- *     解决「所有节点同色、看不出阵营分布」的最大短板。
+ * 相比改造前新增（全部消费**现有字段**，不新增表/列）：
+ *  ① **节点按「所属势力」着色** + 同势力节点画**圆角凸包**并标势力名（来源：角色卡「所属势力」）。
  *  ② **人物状态标记**：「未登场」的人物用虚线描边（来源：角色卡「人物状态」）。
  *  ③ **边线型双编码** + **悬停详情条**（关系现状 / 知情度，来源：关系表现有列）。
+ *  ④ 🆕 **同一对多条关系**：关系表判重为**有向对 + 关系类型**（2.7.2）⇒ 同一对可并存多种关系；
+ *     渲染上把同一对的边**分弧**铺开、并加**箭头**标出每条的方向（A→B）。
+ *  ⑤ 🆕 自定义关系类型配色走公共 `relationColors`（哈希取色 + 同图撞色兜底）。
  *
  * 交互不变：拖动节点微调布局；拖拽空白处平移画布；滚轮缩放；点击节点收起/展开。
  * 布局改用公共 `forceLayout`（确定性圆环播种，同一份数据每次打开长得一样）。
@@ -128,18 +117,20 @@ export default function RelationGraph({ rows }: Props) {
   const { view, dragged, svgRef, onPointerDown, onPointerMove, onPointerUp, zoomBy, resetView } =
     useSvgPanZoom({ world: { w: W, h: H, pad: 30 }, reattachKey: rows, onNodeClick: toggleCollapse })
 
-  const { nodes, edges, init } = useMemo(() => {
-    const adj = new Map<string, { degree: number; edges: Edge[] }>()
+  const { nodes, edges, init, edgeCurve } = useMemo(() => {
+    const adj = new Map<string, { neighbors: Set<string>; edges: Edge[] }>()
     const ensure = (n: string) => {
-      if (!adj.has(n)) adj.set(n, { degree: 0, edges: [] })
+      if (!adj.has(n)) adj.set(n, { neighbors: new Set(), edges: [] })
       return adj.get(n)!
     }
     for (const r of rows) {
       const a = (r.data['人物A'] || '').trim()
       const b = (r.data['人物B'] || '').trim()
       if (!a && !b) continue
-      if (a) ensure(a).degree++
-      if (b && b !== a) ensure(b).degree++
+      if (a && b && b !== a) {
+        ensure(a).neighbors.add(b)
+        ensure(b).neighbors.add(a)
+      }
       if (a && b) {
         ensure(a).edges.push({
           id: r.id, a, b,
@@ -149,25 +140,43 @@ export default function RelationGraph({ rows }: Props) {
         })
       }
     }
-    // 取度数最高的前 80 个节点，避免超大图卡顿
-    let names = [...adj.keys()].sort((x, y) => adj.get(y)!.degree - adj.get(x)!.degree)
+    // 取度数最高的前 80 个节点（度数 = **不同邻居数**：同一对多条关系不再虚增权重）
+    let names = [...adj.keys()].sort((x, y) => adj.get(y)!.neighbors.size - adj.get(x)!.neighbors.size)
     if (names.length > 80) names = names.slice(0, 80)
     const subAdj = new Map(names.map(n => [n, adj.get(n)!]))
     const allEdges = names.flatMap(n => subAdj.get(n)!.edges)
     const kept = new Set(names)
     const visibleEdges = allEdges.filter(e => kept.has(e.a) && kept.has(e.b))
+    // 平行边分弧：同一对（含反向）的多条边按稳定序逐条外扩，避免完全重叠
+    const byPair = new Map<string, Edge[]>()
+    for (const e of visibleEdges) {
+      const k = pairKey(e.a, e.b)
+      const arr = byPair.get(k)
+      if (arr) arr.push(e); else byPair.set(k, [e])
+    }
+    const edgeCurve = new Map<string, { curve: number; multi: boolean }>()
+    for (const list of byPair.values()) {
+      const sorted = [...list].sort((x, y) =>
+        x.type < y.type ? -1 : x.type > y.type ? 1 : x.id < y.id ? -1 : x.id > y.id ? 1 : 0)
+      const ratios = edgeCurveRatios(sorted.length)
+      sorted.forEach((e, i) => edgeCurve.set(e.id, { curve: ratios[i], multi: sorted.length > 1 }))
+    }
     const pos = forceLayout(names, visibleEdges, { w: W, h: H, pad: 30 })
     const nodeList: Node[] = names.map(nm => ({
       name: nm,
       x: pos.get(nm)!.x,
       y: pos.get(nm)!.y,
-      degree: subAdj.get(nm)!.degree,
+      degree: subAdj.get(nm)!.neighbors.size,
       faction: '',
       status: '',
       identity: '',
     }))
-    return { nodes: nodeList, edges: visibleEdges, init: pos }
+    return { nodes: nodeList, edges: visibleEdges, init: pos, edgeCurve }
   }, [rows])
+
+  // 类型 → 颜色（内置精调色 + 自定义哈希取色 + 同图撞色兜底）。用**全部边**算，收起节点时颜色不跳。
+  const edgeTypes = useMemo(() => [...new Set(edges.map(e => e.type))], [edges])
+  const colorOf = useMemo(() => makeColorLookup(buildTypeColors(edgeTypes, TYPE_COLORS)), [edgeTypes])
 
   // 把角色卡元数据合并进节点（依赖 chars，故与布局 memo 分开）
   const nodesWithMeta = useMemo(
@@ -235,7 +244,7 @@ export default function RelationGraph({ rows }: Props) {
   return (
     <div className="rounded-xl border border-ink-700 bg-ink-900 overflow-hidden select-none">
       <div className="px-4 py-2 text-11 text-ink-500 border-b border-ink-700 flex items-center justify-between gap-2 flex-wrap">
-        <span>节点颜色 = 所属势力，外框 = 阵营范围；线色 = 关系类型，虚线 = 敌对/恩怨；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开</span>
+        <span>节点颜色 = 所属势力，外框 = 阵营范围；线色 = 关系类型，虚线 = 敌对/恩怨；同一对多条关系 → 分弧 + 箭头标方向；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开</span>
         <span className="flex items-center gap-2">
           {collapsed.size > 0 && (
             <Button variant="bare"
@@ -287,7 +296,7 @@ export default function RelationGraph({ rows }: Props) {
               <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: h.color }}>{h.faction}</text>
             </g>
           ))}
-          {/* 关系边（弧线 + 类型色 + 性质线型） */}
+          {/* 关系边（弧线 + 类型色 + 性质线型；同一对多条 → 分弧 + 箭头标方向） */}
           {visibleEdges.map(e => {
             const a = posMap.get(e.a)
             const b = posMap.get(e.b)
@@ -296,13 +305,15 @@ export default function RelationGraph({ rows }: Props) {
               ? (hoverName.name === e.a || hoverName.name === e.b)
               : hoverName?.kind === 'edge' && hoverName.id === e.id
             const dim = hoverName?.kind === 'node' && !active
-            const col = edgeColor(e.type)
-            const mid = curveMidpoint(a.x, a.y, b.x, b.y)
+            const col = colorOf(e.type)
+            const cv = edgeCurve.get(e.id)
+            const curve = cv?.curve ?? 0.18
+            const mid = curveMidpoint(a.x, a.y, b.x, b.y, curve)
             const labelW = e.type.length * 9.5 + 8
             return (
-              <g key={e.id} opacity={dim ? 0.12 : 1}>
+              <g key={e.id} data-edge-type={e.type} data-edge-curve={curve} data-edge-multi={cv?.multi ? '1' : '0'} opacity={dim ? 0.12 : 1}>
                 <path
-                  d={curvedEdge(a.x, a.y, b.x, b.y)}
+                  d={curvedEdge(a.x, a.y, b.x, b.y, curve)}
                   fill="none"
                   stroke={col}
                   strokeWidth={active ? 2.4 : 1.3}
@@ -310,6 +321,10 @@ export default function RelationGraph({ rows }: Props) {
                   strokeLinecap="round"
                   strokeDasharray={edgeDash(e.type)}
                 />
+                {/* 同一对出现多条关系时，用箭头标出本条方向（A→B）—— 区分「谁怎么看谁」 */}
+                {cv?.multi && (
+                  <path d={curveArrow(a.x, a.y, b.x, b.y, curve)} data-arrow="1" fill={col} opacity={active ? 0.95 : 0.62} />
+                )}
                 <g
                   opacity={active ? 1 : 0.6}
                   style={{ cursor: 'pointer' }}
@@ -360,7 +375,7 @@ export default function RelationGraph({ rows }: Props) {
           </>
         ) : hoverEdge ? (
           <>
-            <span className="text-11 font-semibold" style={{ color: edgeColor(hoverEdge.type) }}>{hoverEdge.a} — {hoverEdge.type} — {hoverEdge.b}</span>
+            <span className="text-11 font-semibold" style={{ color: colorOf(hoverEdge.type) }}>{hoverEdge.a} → {hoverEdge.type} → {hoverEdge.b}</span>
             {hoverEdge.现状 && <span className="text-10 text-ink-400 truncate max-w-[38%]">现状：{hoverEdge.现状}</span>}
             {hoverEdge.知情度 && <span className="text-10 text-ink-400 truncate max-w-[38%]">知情度：{hoverEdge.知情度}</span>}
           </>
@@ -373,12 +388,12 @@ export default function RelationGraph({ rows }: Props) {
         <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap">
           {legendTypes.map(t => (
             <span key={t} className="flex items-center gap-1.5 text-10 text-ink-400">
-              <span className="w-3 h-[3px] rounded-full inline-block" style={{ background: edgeColor(t) }} />
+              <span className="w-3 h-[3px] rounded-full inline-block" style={{ background: colorOf(t) }} />
               {t}
               {!TYPE_COLORS[t] && <span className="text-9 text-ink-500 border border-ink-700 rounded px-1 leading-none">自定义</span>}
             </span>
           ))}
-          <span className="text-10 text-ink-500 ml-auto">节点大小 = 关系数；边 = 一条关系记录</span>
+          <span className="text-10 text-ink-500 ml-auto">节点大小 = 交际面（不同关系人数）；同一对可并存多种关系（分弧 + 箭头标方向）</span>
         </div>
       )}
       {/* 收起的人物：点击单个可重新展开 */}

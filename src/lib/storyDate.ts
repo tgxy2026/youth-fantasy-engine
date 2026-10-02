@@ -232,3 +232,76 @@ export function spanLinePath(
     + ` M ${a} ${yEdge} L ${a} ${yEdge - t * s}`
     + ` M ${b} ${yEdge} L ${b} ${yEdge - t * s}`
 }
+
+/**
+ * 把一段时长写成人话（比 `formatSpanDays` 更粗粒度）：≥ 一年说「约 N 年」，≥ 一月说「约 N 个月」。
+ * 用于「等比时间轴」上被压缩的超长空档标注（三千年的空档写「1095000 天」没人看得下去）。
+ */
+export function formatDurationHuman(days: number, rule: CalendarRule): string {
+  const d = Math.abs(days)
+  const perYear = daysPerYear(rule)
+  const perMonth = Math.max(1, rule.daysPerMonth)
+  if (d >= perYear) return `约 ${Math.round(d / perYear)} 年`
+  if (d >= perMonth) return `约 ${Math.round(d / perMonth)} 个月`
+  return `约 ${d} 天`
+}
+
+export interface CappedScaleOpts {
+  /** 基准格宽：中位间隔占多少 px —— 与等距轴的 `SLOT_W` 对齐，切换模式时密度手感一致 */
+  slot?: number
+  /** 空档封顶：单个间隔的渲染宽度 ≤ 中位间隔 × capFactor（其余被压缩） */
+  capFactor?: number
+  /** 间隔宽度下限：中位间隔 × minFactor（防止紧密簇挤成一点、卡片叠死） */
+  minFactor?: number
+}
+
+export interface CappedScaleResult {
+  /** 与入参等长的 x 坐标（组中心） */
+  x: number[]
+  /** 被压缩的空档：`[i]` 表示第 i 组与第 i+1 组之间的间隔超长、已封顶（用于画断裂符） */
+  breaks: number[]
+}
+
+/**
+ * 「等比（按真实时间差）+ 空档封顶」的横轴定位 —— **纯函数，可单测**。
+ *
+ * 背景（2.7.2）：纯等比轴一旦遇到超长空档（主线密集在 1 年、中间夹一段「三千年前」的传说），
+ * 整条轴被这**一个**空档撑到几十倍长，密集段挤成一坨 —— 正是 `interpolateX` 注释里担心的
+ * 「三千年 vs 三天」。统计制图的标准解是 **axis break**：密集段保持等比，超长空档**压缩**并在
+ * 轴上画断裂符、标注真实跨度（诚实，不撒谎）。
+ *
+ * 算法：
+ *  ① 取相邻键的间隔，算**中位数**（对极端值稳健）；
+ *  ② `unit = slot / median`（每「键单位」多少 px）⇒ 中位间隔恰好占 `slot` px；
+ *  ③ 每个间隔的渲染宽度 = `clamp(gap, median×minFactor, median×capFactor) × unit`；
+ *  ④ 超过封顶的间隔记进 `breaks`（真实跨度由调用方按事件日期换算并标注）。
+ *
+ * @param keys 已按**升序**排好的时间键（调用方负责过滤掉无法解析的键）
+ */
+export function cappedPositions(keys: number[], opts: CappedScaleOpts = {}): CappedScaleResult {
+  const slot = opts.slot ?? 240
+  const capFactor = opts.capFactor ?? 6
+  const minFactor = opts.minFactor ?? 0.18
+  const n = keys.length
+  if (n === 0) return { x: [], breaks: [] }
+  if (n === 1) return { x: [slot / 2], breaks: [] }
+
+  const gaps: number[] = []
+  for (let i = 0; i < n - 1; i++) gaps.push(Math.max(0, keys[i + 1] - keys[i]))
+  const positive = gaps.filter(g => g > 0).sort((a, b) => a - b)
+  const median = positive.length ? positive[Math.floor(positive.length / 2)] : 1
+  const unit = median > 0 ? slot / median : slot
+  const capUnits = median * capFactor
+  const minUnits = median * minFactor
+
+  const x: number[] = [slot / 2]
+  const breaks: number[] = []
+  for (let i = 0; i < gaps.length; i++) {
+    const g = gaps[i]
+    if (g === 0) { x.push(x[i] + minUnits * unit); continue }
+    const clamped = Math.min(Math.max(g, minUnits), capUnits)
+    if (g > capUnits) breaks.push(i)
+    x.push(x[i] + clamped * unit)
+  }
+  return { x, breaks }
+}

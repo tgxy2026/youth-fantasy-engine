@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays, cappedPositions, formatDurationHuman } from '../lib/storyDate'
 import { Calendar, X, AlertTriangle, Layers, AlarmClock } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -83,6 +83,8 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
   const [filterStatus, setFilterStatus] = useState<'all' | '正常' | '已修正' | '待核对'>('all')
   const [hiddenTracks, setHiddenTracks] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<Evt | null>(null)
+  /** 横轴间距模式（2.7.2）：等距（默认，零回归）/ 等比（按真实时间差 + 超长空档封顶） */
+  const [scale, setScale] = useState<'even' | 'proportional'>('even')
 
   /** 起止展示串：只填了起点就只显示起点，两端都有则显示区间 */
   const rangeLabel = (e: Pick<Evt, 'time' | 'end'>, cal: string) => {
@@ -166,16 +168,54 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
     return gs
   }, [data])
 
-  const groupX = (gi: number) => gi * SLOT_W + SLOT_W / 2
+  /**
+   * 横轴定位（2.7.2 「等比」模式，与历史事件轴同口径）：
+   * · `even`（默认，零回归）= 等距槽位；`proportional` = 按真实时间差 + 超长空档封顶；
+   *   无法解析时间的组（key=Infinity）排在末尾、按等距兜底。
+   */
+  const { groupPositions, breakIdx } = useMemo(() => {
+    const n = groups.length
+    const even = () => ({ groupPositions: groups.map((_, gi) => gi * SLOT_W + SLOT_W / 2), breakIdx: [] as number[] })
+    if (scale === 'even' || n === 0) return even()
+    const keys: number[] = []
+    const back: number[] = []
+    groups.forEach((g, gi) => { if (Number.isFinite(g.key)) { keys.push(g.key); back.push(gi) } })
+    if (keys.length === 0) return even()
+    const { x, breaks } = cappedPositions(keys, { slot: SLOT_W })
+    const pos = new Array<number>(n).fill(0)
+    back.forEach((gi, j) => { pos[gi] = x[j] })
+    let cursor = x[x.length - 1]
+    for (let gi = 0; gi < n; gi++) if (!Number.isFinite(groups[gi].key)) { cursor += SLOT_W; pos[gi] = cursor }
+    return { groupPositions: pos, breakIdx: breaks.map(i => back[i]) }
+  }, [groups, scale])
+
+  const groupX = (gi: number) => groupPositions[gi] ?? 0
+
+  /** 被压缩空档的真实跨度（用两端事件的日期算） */
+  const breakTooltip = (bi: number): string => {
+    const a = groups[bi]?.items[groups[bi].items.length - 1]
+    const b = groups[bi + 1]?.items[0]
+    if (!a || !b) return '此处空档已压缩'
+    const days = a.calName === b.calName ? storySpanDays(calendarRule, a.time, b.time) : null
+    if (days !== null && days > 0) return `此处空档约 ${formatDurationHuman(days, calendarRule)}（已压缩，非按比例）`
+    return `此处空档跨度较大（${a.calName ? a.calName + ' ' : ''}${a.time || '时间未定'} → ${b.calName ? b.calName + ' ' : ''}${b.time || '时间未定'}），已压缩`
+  }
+  const breakText = (bi: number): string => {
+    const a = groups[bi]?.items[groups[bi].items.length - 1]
+    const b = groups[bi + 1]?.items[0]
+    if (!a || !b) return '⟋⟋'
+    const days = a.calName === b.calName ? storySpanDays(calendarRule, a.time, b.time) : null
+    return days !== null && days > 0 ? `⟋⟋ ${formatDurationHuman(days, calendarRule)}` : '⟋⟋ 跨度较大'
+  }
 
   const dotsWithTail = useMemo(() => {
     const pts = groups
-      .map((g, gi) => ({ key: g.key, x: groupX(gi) }))
+      .map((g, gi) => ({ key: g.key, x: groupPositions[gi] ?? 0 }))
       .filter(p => Number.isFinite(p.key))
     if (pts.length === 0) return pts
     const last = pts[pts.length - 1]
     return [...pts, { key: last.key + 1e9, x: last.x + SLOT_W }]
-  }, [groups])
+  }, [groups, groupPositions])
 
   /**
    * 时段（线条几何，不含 y —— y 依赖泳道高，泳道高依赖本表，解掉这个环在渲染处落 y）：
@@ -184,7 +224,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
   const spans = useMemo(() => {
     const out: { id: string; gi: number; j: number; x0: number; right: number; neg: boolean; label: string; track: string }[] = []
     groups.forEach((g, gi) => {
-      const x0 = groupX(gi)
+      const x0 = groupPositions[gi] ?? 0
       g.items.forEach((d, j) => {
         if (d.span === null || d.span === 0) return
         const endKey = d.key - storyDateKey(d.time) + storyDateKey(d.end)
@@ -210,7 +250,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
       laneGeo.forEach((x, i) => { colors.set(x.id, idxs[i] ?? 0) })
     }
     return out.map(x => ({ ...x, colorIdx: colors.get(x.id) ?? 0 }))
-  }, [groups, dotsWithTail])
+  }, [groups, dotsWithTail, groupPositions])
 
   /**
    * 泳道**动态高度**（2.4.4 三次定版：持续线条画在轴**上方**）：
@@ -254,7 +294,9 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
     )
   }
 
-  const totalW = Math.max(groups.length, 1) * SLOT_W
+  const totalW = groupPositions.length
+    ? groupPositions[groupPositions.length - 1] + SLOT_W / 2 + 20
+    : SLOT_W
   const totalH = TOP * 2 + laneHeights.reduce((a, b) => a + b, 0)
 
   const detail = (e: Evt) =>
@@ -297,6 +339,22 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
         <span className="text-10 text-ink-500">
           （同一发生时间的章节共用一个圆点、卡片竖排；持续时段用彩色线条标在泳道轴上方，线条颜色与卡片左缘色条对应）
         </span>
+        <div className="flex items-center gap-1">
+          <span className="text-11 text-ink-500 mr-1">间距：</span>
+          {([['even', '等距'], ['proportional', '按时间']] as const).map(([v, label]) => (
+            <Button variant="toggle" selected={scale === v}
+              key={v}
+              onClick={() => setScale(v)}
+              className="px-2.5 py-0.5 rounded-md text-11 border hover:text-ink-200"
+              title={v === 'proportional' ? '按真实时间差排布；超长空档会自动压缩并以 ⟋⟋ 标出' : '所有时间点等距排列'}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        {scale === 'proportional' && breakIdx.length > 0 && (
+          <span className="text-10 text-amber/80">已压缩 {breakIdx.length} 处超长空档</span>
+        )}
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
           <span className="text-11 text-ink-500 mr-1 inline-flex items-center gap-1">
             <Layers size={11} /> 轨道：
@@ -390,6 +448,29 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                       style={{ stroke: 'rgb(var(--ink-400) / 0.4)' }} strokeWidth={1} />
                   )
                 }))}
+                {/* 等比模式：被压缩的超长空档 —— 每条泳道的轴上画断裂符 ⟋⟋（时间轴共享，各泳道一致）；
+                    文字标注只画在第一条泳道上，避免多泳道重复刷屏 */}
+                {breakIdx.map(bi => {
+                  const xm = (groupX(bi) + groupX(bi + 1)) / 2
+                  const txt = breakText(bi)
+                  const w = txt.length * 6 + 12
+                  return visibleTracks.map((t, idx) => (
+                    <g key={`brk-${bi}-${t}`}>
+                      <title>{breakTooltip(bi)}</title>
+                      <path
+                        d={`M ${xm - 6} ${laneY(idx) + 6} L ${xm + 0.5} ${laneY(idx) - 6} M ${xm - 0.5} ${laneY(idx) + 6} L ${xm + 6} ${laneY(idx) - 6}`}
+                        fill="none" style={{ stroke: 'rgb(var(--graph-accent))' }} strokeWidth={1.4} strokeLinecap="round" pointerEvents="none"
+                      />
+                      {idx === 0 && (
+                        <>
+                          <rect x={xm - w / 2} y={laneY(0) - 21} width={w} height={12} rx={4} style={{ fill: 'rgb(var(--ink-900) / 0.85)' }} pointerEvents="none" />
+                          <text x={xm} y={laneY(0) - 11.5} textAnchor="middle" fontSize={8.5} style={{ fill: 'rgb(var(--ink-300))' }} pointerEvents="none">{txt}</text>
+                        </>
+                      )}
+                      <rect x={xm - 12} y={laneY(idx) - 16} width={24} height={30} fill="transparent" style={{ cursor: 'help' }} />
+                    </g>
+                  ))
+                })}
                 {visibleItems.map(d => {
                   const s = spans.find(x => x.id === d.id)
                   if (!s) return null

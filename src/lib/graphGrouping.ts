@@ -5,10 +5,13 @@
  * 节点一律同色纯圆 —— 看不出阵营分布。行业范例（如 AntV G6 官方哈利波特关系图）
  * 无一例外按「阵营 / 社群」给节点着色，并用凸包把同群组框起来。
  *
- * 本模块提供三件事：
+ * 本模块提供六件事：
  *   ① `groupColor` —— 按分组名稳定取色（同类同色、异类尽量异色）；
  *   ② `convexHull` —— Andrew 单调链求凸包（O(n log n)）；
- *   ③ `hullPath` —— 把凸包顶点外扩并圆角化，输出可直接用于 `<path d>` 的闭合路径。
+ *   ③ `hullPath` —— 把凸包顶点外扩并圆角化，输出可直接用于 `<path d>` 的闭合路径；
+ *   ④ `curvedEdge` / `curveMidpoint` —— 边弧线路径与中点（挂类型标签）；
+ *   ⑤ `pairKey` / `edgeCurveRatios` —— 2.7.2「同一对多条关系」：无序对键 + 平行边分弧序列；
+ *   ⑥ `curveArrow` —— 有向边终点的小箭头（标注「谁→谁」）。
  */
 
 export interface Pt {
@@ -176,4 +179,67 @@ export function curveMidpoint(x1: number, y1: number, x2: number, y2: number, cu
   const cxC = mx + (-dy / dist) * off
   const cyC = my + (dx / dist) * off
   return { x: (x1 + 2 * cxC + x2) / 4, y: (y1 + 2 * cyC + y2) / 4 }
+}
+
+/**
+ * 无序对键：同一对实体的**所有**关系（含反向 A→B / B→A）归到同一条「走廊」，
+ * 便于把平行边扇形铺开。2.7.2 起关系表的判重是**有向**的，但**视觉分组**仍按无序对 ——
+ * 反向边只是一对端点间的另一条边，理应与正向边一起排布、而非被当成两条独立走廊。
+ */
+export function pairKey(a: string, b: string): string {
+  return a <= b ? `${a}\u0000${b}` : `${b}\u0000${a}`
+}
+
+/**
+ * 平行边曲率序列：同一对端点之间有 k 条边时，按此序列**逐条外扩**，避免完全重叠。
+ *
+ * 🔴 为什么是**同号递增**而不是 `[-x, +x]` 对称分布：
+ *    `curvedEdge` 的法向由「入参端点顺序」决定 —— 反向边（B→A）的法向自带翻转。
+ *    因此**同号**会让「A→B 与 B→A」自然分居**两侧**（方向差异天然可见）；
+ *    同向的多条边则落在同一侧、靠幅度差分离。若改成对称正负号，反向边会被翻到**同侧**、反而重叠。
+ *
+ * @param k    同一对之间的边数
+ * @param base 首条曲率（约 0.18，与改造前单边视觉一致）
+ * @param step 每条递增的曲率
+ */
+export function edgeCurveRatios(k: number, base = 0.18, step = 0.17): number[] {
+  const n = Math.max(1, k)
+  const out: number[] = []
+  for (let i = 0; i < n; i++) out.push(Math.min(base + i * step, 0.75))
+  return out
+}
+
+/**
+ * 边终点（B 端）的**箭头三角形**路径 —— 用于「有向关系」标注方向。
+ *
+ * 取二次贝塞尔在 t=1 处的切向（B − 控制点），在离终点 `back` 处落一个指向该切向的小三角，
+ * 避开节点圆盘、又贴合弧线走向。返回可直接用于 `<path d>` 的闭合路径；用边色填充。
+ */
+export function curveArrow(
+  x1: number, y1: number, x2: number, y2: number,
+  curveRatio = 0.18, back = 10, size = 5,
+): string {
+  const mx = (x1 + x2) / 2
+  const my = (y1 + y2) / 2
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const dist = Math.hypot(dx, dy) || 1
+  const off = dist * curveRatio
+  const cx = mx + (-dy / dist) * off
+  const cy = my + (dx / dist) * off
+  let tx = x2 - cx
+  let ty = y2 - cy
+  const tl = Math.hypot(tx, ty) || 1
+  tx /= tl
+  ty /= tl
+  const tipx = x2 - tx * back
+  const tipy = y2 - ty * back
+  const basex = tipx - tx * size
+  const basey = tipy - ty * size
+  const px = -ty
+  const py = tx
+  const hw = size * 0.62
+  return `M ${tipx.toFixed(1)} ${tipy.toFixed(1)}`
+    + ` L ${(basex + px * hw).toFixed(1)} ${(basey + py * hw).toFixed(1)}`
+    + ` L ${(basex - px * hw).toFixed(1)} ${(basey - py * hw).toFixed(1)} Z`
 }

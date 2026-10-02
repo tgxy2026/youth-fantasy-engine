@@ -14,8 +14,8 @@ import type { VisCtx } from '../lib/schema'
 import { useAIReady } from '../lib/useAIReady'
 import { useTaskRunner } from '../lib/aiTaskCenter'
 import { showToast } from './dialogs'
-import { organizeHint, AI_DISABLED_HINT } from '../lib/aiScope'
-import { organizeKeyColsOf, organizeRows, organizeUnorderedOf } from '../lib/organizeRows'
+import { organizeHint, AI_DISABLED_HINT, isDirectedPairTab } from '../lib/aiScope'
+import { organizeKeyColsOf, organizeRows } from '../lib/organizeRows'
 import AutoTextarea from './AutoTextarea'
 import { Button } from './Button'
 
@@ -74,7 +74,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   }, [t.result])
 
   const keyCols = useMemo(() => organizeKeyColsOf(tab), [tab])
-  const unordered = organizeUnorderedOf(tab)
+  const directed = isDirectedPairTab(tab.id)
   // 编号列由系统自动续号，不让模型插手
   const aiCols = useMemo(() => (tab.columns ?? []).filter(c => c.name !== '编号'), [tab])
 
@@ -185,7 +185,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
             {organizeHint(tab.id)}
             <br />
             判重依据：<span className="text-amber/80">{keyCols.join(' + ') || '（首列）'}</span>
-            {unordered && '（A、B 对调视为同一条）'}，已登记 {existing.length} 条，模型不会重复生成。
+            {directed && '（A→B 为有向关系；同一对可登记多种关系，仅「同向 + 同类型」才算重复）'}，已登记 {existing.length} 条，模型不会重复生成。
           </p>
 
           {/* 数据来源 */}

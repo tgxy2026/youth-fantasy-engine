@@ -19,7 +19,7 @@
 //   · 文本：一段散文式设定 —— 走 `textToRows`，先按「列名：值」块或按行拆分。
 
 import type { TabDef, TableColumn, TableRow } from './types'
-import { organizeKeyColumns, isUnorderedPairTab } from './aiScope'
+import { organizeKeyColumns, isDirectedPairTab } from './aiScope'
 import { nextAutoCode, AUTONUM_GROUPS } from './autoCode'
 
 // ============ A. 文本 → 表格矩阵 ============
@@ -270,7 +270,7 @@ export interface ImportContext {
   refLabels?: Map<string, string>
 }
 
-/** 判重指纹：无序对表（人物关系 / 势力关系）A-B 与 B-A 视为同一条 */
+/** 判重指纹：`unordered` 为真时排序后比对。配对表（人物/势力关系）2.7.2 起为**有向对** ⇒ unordered=false。 */
 function dupKey(data: Record<string, string>, keys: string[], unordered: boolean): string {
   const vals = keys.map(k => (data[k] ?? '').trim())
   if (unordered) vals.sort()
@@ -285,7 +285,7 @@ export function validateImport(
 ): ImportRowResult[] {
   const cols = tab.columns ?? []
   const keys = organizeKeyColumns(tab)
-  const unordered = isUnorderedPairTab(tab.id)
+  const unordered = !isDirectedPairTab(tab.id)
   const existingKeys = new Set(ctx.existing.map(r => dupKey(r.data, keys, unordered)))
   const codeCol = cols.some(c => c.name === '编号') ? '编号' : ''
   const existingCodes = new Set(

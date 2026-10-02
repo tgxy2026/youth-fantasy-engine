@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays } from '../lib/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays, cappedPositions, formatDurationHuman } from '../lib/storyDate'
 import { Calendar, Users, X, AlarmClock, Layers } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
@@ -77,6 +77,8 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
   const [hover, setHover] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = useState<'all' | '已定稿' | '待补充' | '已变更'>('all')
   const [selected, setSelected] = useState<Evt | null>(null)
+  /** 横轴间距模式（2.7.2）：等距（默认，零回归）/ 等比（按真实时间差 + 超长空档封顶） */
+  const [scale, setScale] = useState<'even' | 'proportional'>('even')
 
   /** 起止展示串：只填了起点就只显示起点，两端都有则显示区间 */
   const rangeLabel = (e: Pick<Evt, 'time' | 'end'>, cal: string) => {
@@ -141,18 +143,57 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
     return gs
   }, [data])
 
-  const groupX = (gi: number) => gi * SLOT_W + SLOT_W / 2
+  /**
+   * 横轴定位（2.7.2 新增「等比」模式）：
+   * · `even`（默认，零回归）= 等距槽位（旧行为）；
+   * · `proportional` = 按真实时间差排布 + **超长空档封顶**（否则一个三千年空档会把轴撑爆）；
+   *   无法解析时间的组（key=Infinity）排在末尾、按等距兜底。
+   */
+  const { groupPositions, breakIdx } = useMemo(() => {
+    const n = groups.length
+    const even = () => ({ groupPositions: groups.map((_, gi) => gi * SLOT_W + SLOT_W / 2), breakIdx: [] as number[] })
+    if (scale === 'even' || n === 0) return even()
+    const keys: number[] = []
+    const back: number[] = []
+    groups.forEach((g, gi) => { if (Number.isFinite(g.key)) { keys.push(g.key); back.push(gi) } })
+    if (keys.length === 0) return even()
+    const { x, breaks } = cappedPositions(keys, { slot: SLOT_W })
+    const pos = new Array<number>(n).fill(0)
+    back.forEach((gi, j) => { pos[gi] = x[j] })
+    let cursor = x[x.length - 1]
+    for (let gi = 0; gi < n; gi++) if (!Number.isFinite(groups[gi].key)) { cursor += SLOT_W; pos[gi] = cursor }
+    return { groupPositions: pos, breakIdx: breaks.map(i => back[i]) }
+  }, [groups, scale])
+
+  const groupX = (gi: number) => groupPositions[gi] ?? 0
+
+  /** 被压缩空档的真实跨度（用两端事件的日期算，人话表达）—— 断裂符的悬停提示 */
+  const breakTooltip = (bi: number): string => {
+    const a = groups[bi]?.items[groups[bi].items.length - 1]
+    const b = groups[bi + 1]?.items[0]
+    if (!a || !b) return '此处空档已压缩'
+    const days = a.calName === b.calName ? storySpanDays(calendarRule, a.time, b.time) : null
+    if (days !== null && days > 0) return `此处空档约 ${formatDurationHuman(days, calendarRule)}（已压缩，非按比例）`
+    return `此处空档跨度较大（${a.calName ? a.calName + ' ' : ''}${a.time || '时间未定'} → ${b.calName ? b.calName + ' ' : ''}${b.time || '时间未定'}），已压缩`
+  }
+  const breakText = (bi: number): string => {
+    const a = groups[bi]?.items[groups[bi].items.length - 1]
+    const b = groups[bi + 1]?.items[0]
+    if (!a || !b) return '⟋⟋'
+    const days = a.calName === b.calName ? storySpanDays(calendarRule, a.time, b.time) : null
+    return days !== null && days > 0 ? `⟋⟋ ${formatDurationHuman(days, calendarRule)}` : '⟋⟋ 跨度较大'
+  }
 
   /** 插值锚 = 时间点组（组内共享 x）；只取时间可解析的组（key=Infinity 的不能当锚） */
   const dotsWithTail = useMemo(() => {
     const pts = groups
-      .map((g, gi) => ({ key: g.key, x: groupX(gi) }))
+      .map((g, gi) => ({ key: g.key, x: groupPositions[gi] ?? 0 }))
       .filter(p => Number.isFinite(p.key))
     if (pts.length === 0) return pts
     const last = pts[pts.length - 1]
     // 末尾虚拟锚：结束时间晚于最后一个事件时，线条仍能往右延（按 10 万年 ≈ 一格的比例）
     return [...pts, { key: last.key + 1e9, x: last.x + SLOT_W }]
-  }, [groups])
+  }, [groups, groupPositions])
 
   /**
    * 持续时长线段（主人哥哥 2026-09-24 三次定版）：画在轴**上方**，
@@ -165,7 +206,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
   const brackets = useMemo(() => {
     const geo: { id: string; gi: number; j: number; x0: number; right: number; neg: boolean; label: string }[] = []
     groups.forEach((g, gi) => {
-      const x0 = groupX(gi)
+      const x0 = groupPositions[gi] ?? 0
       g.items.forEach((d, j) => {
         if (d.span === null || d.span === 0) return
         // d.key = 历法权重*1e10 + tk(发生时间)，减 tk(发生) 加 tk(结束) ⇒ 同历法的结束键
@@ -185,7 +226,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
     // 贪心着色：重叠线不同色（输入顺序与 geo 对齐）
     const colors = assignOverlapColors(geo.map(s => ({ x0: Math.min(s.x0, s.right), right: Math.max(s.x0, s.right) })))
     return geo.map((s, i) => ({ ...s, colorIdx: colors[i] }))
-  }, [groups, dotsWithTail])
+  }, [groups, dotsWithTail, groupPositions])
   const bracketById = useMemo(
     () => new Map(brackets.map(b => [b.id, b])),
     [brackets],
@@ -201,7 +242,9 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
   const maxJ = brackets.reduce((m, b) => Math.max(m, b.j), -1)
   const axisY = maxJ >= 0 ? BRACKET_DEPTH + maxJ * BRACKET_STEP + 12 : 14
 
-  const totalW = Math.max(groups.length, 1) * SLOT_W
+  const totalW = groupPositions.length
+    ? groupPositions[groupPositions.length - 1] + SLOT_W / 2 + 20
+    : SLOT_W
   const maxStack = groups.reduce((m, grp) => Math.max(m, grp.items.length), 1)
   const totalH = axisY + 10 + maxStack * CARD_MAX_H + 16
 
@@ -238,6 +281,24 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
         <span className="text-10 text-ink-500">
           （同一时间点的事件共用一个圆点、卡片竖排；持续时段用彩色线条标在轴上方，线条颜色与卡片左缘色条对应）
         </span>
+        <div className="flex items-center gap-1">
+          <span className="text-11 text-ink-500 mr-1">间距：</span>
+          {([['even', '等距'], ['proportional', '按时间']] as const).map(([v, label]) => (
+            <Button variant="toggle" selected={scale === v}
+              key={v}
+              onClick={() => setScale(v)}
+              className="px-2.5 py-0.5 rounded-md text-11 border hover:text-ink-200"
+              title={v === 'proportional' ? '按真实时间差排布；超长空档会自动压缩并以 ⟋⟋ 标出' : '所有时间点等距排列'}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        {scale === 'proportional' && breakIdx.length > 0 && (
+          <span className="text-10 text-amber/80">
+            已压缩 {breakIdx.length} 处超长空档（轴上 ⟋⟋ 处，悬停看真实跨度）
+          </span>
+        )}
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-11 text-ink-500 mr-1">状态筛选：</span>
           {(['all', '已定稿', '待补充', '已变更'] as const).map(s => (
@@ -265,6 +326,24 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
             {groups.map((_, gi) => (
               <line key={`tick-${gi}`} x1={groupX(gi)} y1={axisY - 6} x2={groupX(gi)} y2={axisY + 6} style={{ stroke: 'rgb(var(--ink-400) / 0.4)' }} strokeWidth={1} />
             ))}
+            {/* 等比模式：被压缩的超长空档 —— 轴上画断裂符 ⟋⟋ + 真实跨度（诚实标注，不假装等比） */}
+            {breakIdx.map(bi => {
+              const xm = (groupX(bi) + groupX(bi + 1)) / 2
+              const txt = breakText(bi)
+              const w = txt.length * 6.4 + 12
+              return (
+                <g key={`brk-${bi}`}>
+                  <title>{breakTooltip(bi)}</title>
+                  <path
+                    d={`M ${xm - 7} ${axisY + 7} L ${xm + 0.5} ${axisY - 7} M ${xm - 0.5} ${axisY + 7} L ${xm + 7} ${axisY - 7}`}
+                    fill="none" style={{ stroke: 'rgb(var(--graph-accent))' }} strokeWidth={1.6} strokeLinecap="round" pointerEvents="none"
+                  />
+                  <rect x={xm - w / 2} y={axisY - 22} width={w} height={13} rx={4} style={{ fill: 'rgb(var(--ink-900) / 0.85)' }} pointerEvents="none" />
+                  <text x={xm} y={axisY - 12} textAnchor="middle" fontSize={9} style={{ fill: 'rgb(var(--ink-300))' }} pointerEvents="none">{txt}</text>
+                  <rect x={xm - w / 2} y={axisY - 24} width={w} height={20} fill="transparent" style={{ cursor: 'help' }} />
+                </g>
+              )
+            })}
             {brackets.map(b => {
               const on = hover === b.id || selected?.id === b.id
               const color = COLORS[b.colorIdx % COLORS.length]

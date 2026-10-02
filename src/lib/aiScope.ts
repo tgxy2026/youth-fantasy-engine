@@ -118,8 +118,10 @@ export const AI_DEPENDENT_GROUPS: AIDependentGroup[] = [
  * 未列出的表回退为「首个非编号列」。
  */
 const ORGANIZE_KEYS: Record<string, string[]> = {
-  relations: ['人物A', '人物B'],
-  'faction-rels': ['势力A', '势力B'],
+  // 🔴 2.7.2：判重键加入「关系类型」⇒ 同一对实体可并存多种关系（盟友 + 敌对的「明和暗斗」）。
+  //    配合 isDirectedPairTab（有向对，不排序）⇒ A→B 与 B→A 也算两条（视角不同）。
+  relations: ['人物A', '人物B', '关系类型'],
+  'faction-rels': ['势力A', '势力B', '关系类型'],
   foreshadow: ['伏笔内容'],
   timeline: ['章节号'],
   hookpoints: ['章节号', '爽点内容'],
@@ -140,9 +142,17 @@ export function organizeKeyColumns(tab: TabDef): string[] {
   return first ? [first.name] : []
 }
 
-/** 关系网这类「无序对」表：判重时 A-B 与 B-A 视为同一条关系 */
-export function isUnorderedPairTab(tabId: string): boolean {
-  // 势力关系同样是无序对：A-B 与 B-A 是同一条
+/**
+ * 配对表（人物关系 / 势力关系）在判重时是否**区分 A/B 顺序**。
+ *
+ * 🔴 2.7.2 起改为**有向对**：`A→B` 表示「A 视角下与 B 的关系」，`A-B` 与 `B-A` 是两条不同的
+ *    关系（如「A 视 B 为盟友」而「B 视 A 为仇敌」）。配合判重键里的「关系类型」，
+ *    同一对实体即可并存多种关系。故此处返回 **true** ⇒ 判重时**不排序**、按「有向对 + 类型」比对。
+ *
+ * ⚠️ 各调用点统一写成 `const unordered = !isDirectedPairTab(...)`，把「排序」这条老分支留着 ——
+ *    判重键比对（`dedupKeyOf` / `dupKey` / `rowFingerprint`）是通用工具，将来若有真正无序对的表可直接复用。
+ */
+export function isDirectedPairTab(tabId: string): boolean {
   return tabId === 'relations' || tabId === 'faction-rels'
 }
 
@@ -153,9 +163,9 @@ export function organizeHint(tabId: string): string {
   }
   switch (tabId) {
     case 'relations':
-      return '让 AI 读取角色卡与章节正文，整理出尚未登记的人物关系（已有关系不会重复生成）。'
+      return '让 AI 读取角色卡与章节正文，整理出尚未登记的人物关系。同一对人物可登记多种关系（按「关系类型」区分），「同对 + 同类型」才算重复、不会重复生成。'
     case 'faction-rels':
-      return '让 AI 读取《国家势力》与章节正文 / 已登记的人物与势力设定，整理出尚未登记的势力关系（势力名必须与《国家势力》逐字一致；已有关系不会重复生成）。'
+      return '让 AI 读取《国家势力》与章节正文 / 已登记的人物与势力设定，整理出尚未登记的势力关系（势力名必须与《国家势力》逐字一致）。同一对势力可登记多种关系（按「关系类型」区分），「同对 + 同类型」才算重复、不会重复生成。'
     case 'foreshadow':
       return '让 AI 从章节正文中找出已埋下但尚未登记的伏笔线索。'
     case 'timeline':

@@ -118,6 +118,8 @@ export function relationRowsToDrafts(
 ): DraftRow[] {
   const cols = (tab.columns ?? []).filter(c => c.name !== '编号')
   const [first = '', second = ''] = keyColsOf(tab)
+  // 判重键的第三维＝「关系类型」：同一对可并存多种关系（同对 + 同类型才算重复）。
+  const typeCol = cols.find(c => c.name === '关系类型')?.name
   return rows.map((r, i) => {
     const fields: DraftField[] = cols.map(c => ({
       key: c.name,
@@ -137,8 +139,10 @@ export function relationRowsToDrafts(
       nameKey: first,
       // 🔴 必须声明判重键：关系表没有「名称」列，`commit` 默认那套"按名称列找同名条目"对它们
       //    恒判"不存在" —— 不声明的话，作者在草稿页点两次「写入项目」就登记两条同样的关系
-      //    （图谱里直接多一条重复边）。无序对比较由 commit 侧按 isUnorderedPairTab 处理。
-      dedupKeys: [first, second].filter(Boolean),
+      //    （图谱里直接多一条重复边）。
+      // 🔴 2.7.2：配对表改为**有向对**（`isDirectedPairTab`），且判重键含「关系类型」——
+      //    同一对可并存多种关系，反向（B→A）也是另一条；只有「同向 + 同类型」才算重复。
+      dedupKeys: [first, second, typeCol].filter(Boolean) as string[],
       // 状态一律 new：能到这儿的都已经本地判过重（重复的根本没产出）。
       status: 'new',
       // 0.7：整本汇总的可信度 —— 高于默认勾选阈值（0.5），低于"原文逐字有据"的实体条目。

@@ -6,7 +6,8 @@ import { Button } from './Button'
 import { useSvgPanZoom } from '../lib/useSvgPanZoom'
 import { foldVh } from '../lib/theme'
 import { forceLayout } from '../lib/forceLayout'
-import { curvedEdge, curveMidpoint, groupColor, groupBy, convexHull, hullPath } from '../lib/graphGrouping'
+import { curvedEdge, curveMidpoint, groupColor, groupBy, convexHull, hullPath, pairKey, edgeCurveRatios, curveArrow } from '../lib/graphGrouping'
+import { buildTypeColors, makeColorLookup } from '../lib/relationColors'
 
 interface Props {
   rows: TableRow[]
@@ -21,18 +22,6 @@ const REL_COLORS: Record<string, string> = {
   '中立': '#94a3b8',
 }
 const REL_ORDER = ['同盟', '敌对', '贸易', '从属', '中立']
-
-/** 扩展色板：作者自定义关系类型（如"联姻""宿敌"）按名称哈希稳定取色，与边同色 */
-const REL_EXTRA = [
-  '#60a5fa', '#f472b6', '#2dd4bf', '#fb923c', '#a78bfa', '#f87171',
-  '#4ade80', '#c084fc', '#38bdf8', '#facc15', '#fb7185', '#34d399',
-]
-function relColor(t: string): string {
-  if (REL_COLORS[t]) return REL_COLORS[t]
-  let h = 0
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0
-  return REL_EXTRA[h % REL_EXTRA.length]
-}
 const W = 900
 const H = 600
 
@@ -52,6 +41,8 @@ type Hovered = { kind: 'node'; name: string } | { kind: 'edge'; id: string } | n
  *     + 同类别画圆角凸包并标类别名 —— 一眼看出势力集团。
  *  ③ **「上级」层级吸附**：`nations.上级` 链上加一根弱弹簧，子势力自然靠向父势力。
  *  ④ 边改弧线 + 药丸标签（旧版是裸文字），与人物图统一视觉语言；悬停边显示「关系现状」。
+ *  ⑤ 🆕 **同一对势力多条关系**：判重为有向对 + 关系类型（2.7.2）⇒ 分弧铺开 + 箭头标方向；
+ *     自定义关系类型配色走公共 `relationColors`（哈希 + 同图撞色兜底），与人物图同一套色板。
  *
  * 交互不变：拖拽平移/节点、滚轮缩放、点击节点展开右侧成员面板、跳转《国家势力》。
  * 节点尺寸仍按**度数**映射 —— 不按《国家势力》「实力等级」映射：那是自由文本（"一流""九品"），
@@ -88,10 +79,10 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
     onNodeClick: name => setSelected(sel => (sel === name ? null : name)),
   })
 
-  const { nodes, edges } = useMemo(() => {
-    const adj = new Map<string, { degree: number; edges: FEdge[] }>()
+  const { nodes, edges, edgeCurve } = useMemo(() => {
+    const adj = new Map<string, { neighbors: Set<string>; edges: FEdge[] }>()
     const ensure = (n: string) => {
-      if (!adj.has(n)) adj.set(n, { degree: 0, edges: [] })
+      if (!adj.has(n)) adj.set(n, { neighbors: new Set(), edges: [] })
       return adj.get(n)!
     }
     for (const r of rows) {
@@ -99,8 +90,10 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
       const b = (r.data['势力B'] || '').trim()
       const type = r.data['关系类型'] || '中立'
       if (!a && !b) continue
-      if (a) ensure(a).degree++
-      if (b && b !== a) ensure(b).degree++
+      if (a && b && b !== a) {
+        ensure(a).neighbors.add(b)
+        ensure(b).neighbors.add(a)
+      }
       if (a && b) {
         ensure(a).edges.push({
           a, b, type, id: r.id,
@@ -112,15 +105,33 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
     const allEdges: FEdge[] = names.flatMap(nm => adj.get(nm)!.edges)
     const kept = new Set(names)
     const visibleEdges = allEdges.filter(e => kept.has(e.a) && kept.has(e.b))
+    // 平行边分弧：同一对（含反向）多条关系逐条外扩
+    const byPair = new Map<string, FEdge[]>()
+    for (const e of visibleEdges) {
+      const k = pairKey(e.a, e.b)
+      const arr = byPair.get(k)
+      if (arr) arr.push(e); else byPair.set(k, [e])
+    }
+    const edgeCurve = new Map<string, { curve: number; multi: boolean }>()
+    for (const list of byPair.values()) {
+      const sorted = [...list].sort((x, y) =>
+        x.type < y.type ? -1 : x.type > y.type ? 1 : x.id < y.id ? -1 : x.id > y.id ? 1 : 0)
+      const ratios = edgeCurveRatios(sorted.length)
+      sorted.forEach((e, i) => edgeCurve.set(e.id, { curve: ratios[i], multi: sorted.length > 1 }))
+    }
     const nodeList: FNode[] = names.map(nm => ({
       name: nm,
       x: 0, y: 0,
-      degree: adj.get(nm)!.degree,
+      degree: adj.get(nm)!.neighbors.size,
       category: '',
       parent: '',
     }))
-    return { nodes: nodeList, edges: visibleEdges }
+    return { nodes: nodeList, edges: visibleEdges, edgeCurve }
   }, [rows])
+
+  // 类型 → 颜色（内置精调色 + 自定义哈希 + 撞色兜底；两图共用同一套）
+  const edgeTypes = useMemo(() => [...new Set(edges.map(e => e.type))], [edges])
+  const colorOf = useMemo(() => makeColorLookup(buildTypeColors(edgeTypes, REL_COLORS)), [edgeTypes])
 
   // 布局依赖「上级」层级（来自异步读到的 nationMeta），故与建图分开算
   const layout = useMemo(() => {
@@ -253,28 +264,33 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
               <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: h.color }}>{h.cat}</text>
             </g>
           ))}
-          {/* 边（弧线 + 药丸标签） */}
+          {/* 边（弧线 + 药丸标签；同一对多条 → 分弧 + 箭头标方向） */}
           {edges.map(e => {
             const pa = posOf(e.a)
             const pb = posOf(e.b)
             if (!pa || !pb) return null
-            const color = relColor(e.type)
+            const color = colorOf(e.type)
             const active = hoverName?.kind === 'node'
               ? (hoverName.name === e.a || hoverName.name === e.b)
               : hoverName?.kind === 'edge' && hoverName.id === e.id
             const dim = hoverName?.kind === 'node' && !active
-            const mid = curveMidpoint(pa.x, pa.y, pb.x, pb.y)
+            const cv = edgeCurve.get(e.id)
+            const curve = cv?.curve ?? 0.18
+            const mid = curveMidpoint(pa.x, pa.y, pb.x, pb.y, curve)
             const labelW = e.type.length * 12 + 12
             return (
-              <g key={e.id} opacity={dim ? 0.12 : 1}>
+              <g key={e.id} data-edge-type={e.type} data-edge-curve={curve} data-edge-multi={cv?.multi ? '1' : '0'} opacity={dim ? 0.12 : 1}>
                 <path
-                  d={curvedEdge(pa.x, pa.y, pb.x, pb.y)}
+                  d={curvedEdge(pa.x, pa.y, pb.x, pb.y, curve)}
                   fill="none"
                   stroke={color}
                   strokeWidth={active ? 3 : 1.6}
                   strokeOpacity={active ? 0.95 : 0.55}
                   strokeLinecap="round"
                 />
+                {cv?.multi && (
+                  <path d={curveArrow(pa.x, pa.y, pb.x, pb.y, curve, 12, 6)} data-arrow="1" fill={color} opacity={active ? 0.95 : 0.65} />
+                )}
                 <g
                   opacity={active ? 1 : 0.7}
                   style={{ cursor: 'pointer' }}
@@ -333,7 +349,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
           ]
           return ordered.map(t => (
             <span key={t} className="flex items-center gap-1 text-11 text-ink-300">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ background: relColor(t) }} />
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(t) }} />
               {t}
               {!REL_COLORS[t] && <span className="text-9 text-ink-500 bg-ink-900 px-1 rounded leading-none">自定义</span>}
             </span>
@@ -346,7 +362,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
         <div className="absolute left-3 bottom-3 right-3 flex items-center gap-3 flex-wrap bg-ink-850/85 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
           {hoverEdge ? (
             <>
-              <span className="text-11 font-semibold" style={{ color: relColor(hoverEdge.type) }}>{hoverEdge.a} — {hoverEdge.type} — {hoverEdge.b}</span>
+              <span className="text-11 font-semibold" style={{ color: colorOf(hoverEdge.type) }}>{hoverEdge.a} → {hoverEdge.type} → {hoverEdge.b}</span>
               {hoverEdge.status && <span className="text-10 text-ink-400 truncate max-w-[50%]">现状：{hoverEdge.status}</span>}
             </>
           ) : (

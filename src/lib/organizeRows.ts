@@ -16,7 +16,7 @@ import { writerBudgetFor } from './aiWriterBudget'
 import { resolveOptions } from './customOptions'
 import * as db from './db'
 import { isVolumeLedgerTab, type VisCtx } from './schema'
-import { isUnorderedPairTab, organizeHint, organizeKeyColumns } from './aiScope'
+import { isDirectedPairTab, organizeHint, organizeKeyColumns } from './aiScope'
 import type { CalendarDef, TableColumn, TabDef } from './types'
 
 export interface OrganizeRunOptions {
@@ -67,9 +67,9 @@ export function organizeKeyColsOf(tab: TabDef): string[] {
   return organizeKeyColumns(tab)
 }
 
-/** 该表在「AI 整理」里是否按无序对判重（A-B 与 B-A 算同一条） */
+/** 该表在「AI 整理」里是否按无序对判重（A-B 与 B-A 算同一条）。2.7.2 起配对表改为有向对 ⇒ 恒 false。 */
 export function organizeUnorderedOf(tab: TabDef): boolean {
-  return isUnorderedPairTab(tab.id)
+  return !isDirectedPairTab(tab.id)
 }
 
 /**

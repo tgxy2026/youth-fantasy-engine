@@ -9,8 +9,8 @@
  *
  * 🔴 「同一条」怎么认，有**两条路径**（别只想着第一条）：
  *   1. 有「名称」列的表 → 按名称 / 别称匹配（绝大多数表走这条）；
- *   2. **没有「名称」列的表**（人物关系 / 势力关系）→ 按草稿行声明的 `dedupKeys` 列值组合匹配，
- *      无序对表排序后比较（A-B 与 B-A 是同一条）。
+ *   2. **没有「名称」列的表**（人物关系 / 势力关系）→ 按草稿行声明的 `dedupKeys` 列值组合匹配。
+ *      2.7.2 起配对表是**有向对**且判重键含「关系类型」（A→B 与 B→A、以及同对不同类型都算不同关系）。
  *   第 2 条是 2026-09-19 补的：关系不是"条目"，它没有名字，`名称` 这个键在表里压根不存在 ——
  *   缺了它，判重恒判"不存在"，作者在草稿页点两次「写入项目」就登记两条同样的关系。
  *
@@ -18,7 +18,7 @@
  * 「所属势力」→ 国家势力），先建被引用者，引用才不会落空。B2 若新增更深的引用链，在此扩展拓扑。
  */
 import { readAliases } from '../aliases'
-import { isUnorderedPairTab } from '../aiScope'
+import { isDirectedPairTab } from '../aiScope'
 import { nextAutoCode } from '../autoCode'
 import * as db from '../db'
 import { uid } from '../id'
@@ -63,7 +63,9 @@ function nameMatches(display: string, aliases: string[], target: string): boolea
 
 /**
  * 「按列组合判重」用的键值：把指定列的值归一化后拼成一串。
- * 无序对表（人物关系 / 势力关系）把值**排序后**再拼 —— A-B 与 B-A 是同一条关系。
+ * `unordered` 为真时把值**排序后**再拼 —— A-B 与 B-A 视为同一条。
+ * 🔴 2.7.2 起人物关系 / 势力关系是**有向对**（`!isDirectedPairTab` 为假）⇒ 不再排序，
+ *    反向即视为两条不同关系（视角不同）。
  */
 function dedupKeyOf(data: Record<string, string>, keys: string[], unordered: boolean): string {
   const vals = keys.map(k => normName(data[k] ?? ''))
@@ -83,7 +85,7 @@ function fieldRecordOf(fields: DraftField[]): Record<string, string> {
  *
  * - **有「名称」列**（绝大多数表）→ 按名称 / 别称匹配（原有行为，未改）
  * - **没有「名称」列**（人物关系 / 势力关系这类）→ 按 `row.dedupKeys` 的列值组合匹配，
- *   无序对表排序后比较。
+ *   配对表为**有向对**（2.7.2 起，A→B 与 B→A 是两条），且判重键含「关系类型」。
  *
  * 🔴 第二条路径为什么必要：关系不是"条目"，它没有名字，`名称` 这个键在表里压根不存在。
  *    旧代码于是恒判"不存在"→ 作者在草稿页点两次「写入项目」就登记两条同样的关系
@@ -96,7 +98,7 @@ function findTableHit(list: TableRow[], row: DraftRow, cols: Set<string>, nameCo
   }
   const keys = (row.dedupKeys ?? []).filter(k => cols.has(k))
   if (keys.length === 0) return undefined
-  const unordered = isUnorderedPairTab(row.tabId)
+  const unordered = !isDirectedPairTab(row.tabId)
   const want = dedupKeyOf(fieldRecordOf(row.fields), keys, unordered)
   // 键值全空时**不判重** —— 否则所有"关键列没填"的行会互相当成同一条，第一条之后全被跳过
   if (!want.replace(/\|/g, '').trim()) return undefined

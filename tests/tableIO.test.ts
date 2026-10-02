@@ -4,7 +4,7 @@
 //   ① 四种输入的自动识别：Markdown 表格 / TSV（Excel 粘贴）/ CSV / 纯文本；
 //   ② 列名映射（不靠列位置）—— 作者在 Excel 里调换列序也能导对；
 //   ③ 纯文本两种拆法：「列名：值」块 与 逐行；
-//   ④ 校验：判重（无序对 A-B = B-A）/ 缺必填 / tableRef 悬空 / 编号冲突；
+//   ④ 校验：判重（配对表＝有向对 + 关系类型）/ 缺必填 / tableRef 悬空 / 编号冲突；
 //   ⑤ 落库行：编号走 nextAutoCode 补号（多行不撞号）；
 //   ⑥ 导出转义：含逗号/引号的单元格要正确包裹。
 import {
@@ -102,13 +102,18 @@ function row(id: string, data: Record<string, string>, order = 0, tabId = 'natio
   ok('与库内同名 → dupExisting', res[0].dupExisting === true)
   ok('不重名 → 不标重复', res[1].dupExisting === false)
 
-  // 无序对：A-B 与 B-A 视为同一条
+  // 🔴 2.7.2 改判重口径：配对表为「有向对 + 关系类型」——A→B 与 B→A 是两条不同关系；
+  //    只有「同向 + 同类型」才算重复。
   const relCtx: ImportContext = {
-    existing: [row('x1', { 人物A: '林清欢', 人物B: '陈渊' }, 0, 'relations')],
+    existing: [row('x1', { 人物A: '林清欢', 人物B: '陈渊', 关系类型: '竞争' }, 0, 'relations')],
     refValues: new Map(),
   }
-  const relRes = validateImport([{ 人物A: '陈渊', 人物B: '林清欢' }], relations, relCtx)
-  ok('人物关系无序对判重（A-B = B-A）', relRes[0].dupExisting === true)
+  const sameDir = validateImport([{ 人物A: '林清欢', 人物B: '陈渊', 关系类型: '竞争' }], relations, relCtx)
+  ok('🔴 同向 + 同类型 → 判为重复', sameDir[0].dupExisting === true)
+  const rev = validateImport([{ 人物A: '陈渊', 人物B: '林清欢', 关系类型: '竞争' }], relations, relCtx)
+  ok('🔴 反向（B-A）→ 不再判重，算另一条关系（有向对）', rev[0].dupExisting === false)
+  const otherType = validateImport([{ 人物A: '林清欢', 人物B: '陈渊', 关系类型: '盟友' }], relations, relCtx)
+  ok('🔴 同向 + 不同类型 → 算另一条关系（同一对可多条）', otherType[0].dupExisting === false)
   ok('批内重复也标出', validateImport([{ 名称: '甲' }, { 名称: '甲' }], nations, { existing: [], refValues: new Map() })[1].dupInBatch === true)
   ok('判重键全空的行不互相判重', validateImport([{ 名称: '' }, { 名称: '' }], nations, { existing: [], refValues: new Map() })[1].dupInBatch === false)
 }
