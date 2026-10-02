@@ -20,7 +20,7 @@ import type { FormModule } from '../types'
 import { DEFAULT_PACK, type GenrePack } from './packs'
 import { WORLDBASE_MODULES } from './worldbase'
 import { POWER_MODULES } from './power'
-import { INSTITUTION_META, INSTITUTION_MODULES } from './institutions'
+import { INSTITUTION_META, institutionModulesOf } from './institutions'
 
 // 枚举 / 判据 / 别名 / 题材矩阵 / 当前包 —— 全部从 packs 直达，调用方只认这一个入口
 export * from './packs'
@@ -35,9 +35,12 @@ export function powerModules(pack: GenrePack): FormModule[] {
   return POWER_MODULES[pack] ?? POWER_MODULES[DEFAULT_PACK]
 }
 
-/** 四个制度页签的模块（与题材无关，一套定义） */
-export function institutionModules(tabId: string): FormModule[] | undefined {
-  return INSTITUTION_MODULES[tabId]
+/**
+ * 四个制度页签的模块（**示例随题材变**，见 institutions.ts 的 EXAMPLES_BY_PACK）。
+ * @param pack 当前项目题材；不传则用默认包（东方修真）⇒ 字段定义里那套古史示例。
+ */
+export function institutionModules(tabId: string, pack?: GenrePack): FormModule[] | undefined {
+  return institutionModulesOf(tabId, pack ?? DEFAULT_PACK)
 }
 
 /**
@@ -50,7 +53,9 @@ export function institutionModules(tabId: string): FormModule[] | undefined {
 export function modulesFor(tabId: string, pack: GenrePack): FormModule[] | undefined {
   if (tabId === 'worldbase') return worldbaseModules(pack)
   if (tabId === 'power') return powerModules(pack)
-  return INSTITUTION_MODULES[tabId]
+  // 🔴 2.7.2：制度四页签的**示例也随题材变**（原先是一套古史 defaults 写死）——
+  //    desc（问什么）保持中性，只换 example（给什么样式）。见 institutions.ts 的 EXAMPLES_BY_PACK。
+  return institutionModulesOf(tabId, pack)
 }
 
 export function institutionMeta(tabId: string) {

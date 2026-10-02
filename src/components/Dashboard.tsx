@@ -416,7 +416,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               AI 诊断
             </Button>
             <HelpPopover title="创作健康提醒" width="20rem">
-              {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品定位与全书总纲再动笔。\n\n全部指标健康时会显示「一切健康，保持节奏继续写」。'}
+              {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品信息与全书总纲再动笔。\n\n全部指标健康时会显示「一切健康，保持节奏继续写」。'}
               <AIDataSourceNote feature="project-diagnose" />
             </HelpPopover>
           </h2>
@@ -448,7 +448,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             {chapters.length === 0 && (
               <div className="flex items-start gap-2 text-ink-300">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
-                <span>{isLite ? '还没有章节——先想清楚主要人物与核心设定，再开始动笔' : '还没有章节——建议先填「作品定位」与「全书总纲」再动笔'}</span>
+                <span>{isLite ? '还没有章节——先想清楚主要人物与核心设定，再开始动笔' : '还没有章节——建议先填「作品信息」与「全书总纲」再动笔'}</span>
               </div>
             )}
             {unf.length === 0 && unusedIdeas.length === 0 && weekTotal > 0 && chapters.length > 0 && (

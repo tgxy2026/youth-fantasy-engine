@@ -23,9 +23,7 @@ import * as db from '../lib/db'
 import { uid } from '../lib/id'
 import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '../lib/worldSets'
 import { isNumericPowerField } from '../lib/schema'
-import { addButtonLabel, getActivePack, modulesFor, subItemLabel, type GenrePack } from '../lib/schemaTemplates'
-import { GenrePackSwitcher } from './GenrePackSelect'
-import TabVisibilityControl from './TabVisibilityControl'
+import { addButtonLabel, getActivePack, modulesFor, subItemLabel } from '../lib/schemaTemplates'
 import { useAIReady } from '../lib/useAIReady'
 import type { TemplateField } from '../lib/ai'
 import { confirmDialog, showToast } from './dialogs'
@@ -64,11 +62,14 @@ export default function WorldSetSheet({ tab }: Props) {
   /** 「AI 整理」= 拿草稿箱里那一段去填上方字段（与 showFill 的区别只是草稿已备好） */
   const [showOrganize, setShowOrganize] = useState(false)
   /**
-   * 当前题材包（2.7.1）：作为 state 而不是只读全局 —— 切换后 setPack 直接触发重渲染，
-   * 下面 `modules` 的 useMemo 依赖 pack 精确重算，不依赖「全局副作用 + 恰好的重渲染」。
-   * 与 `tab.name` / `tab.description`（走 getter 读全局）读的是同一份 pack，不会漂移。
+   * 当前项目的题材包（2.7.2 起**只读**）。
+   *
+   * 🔴 题材改在「新建小说项目」时选，页签里不再提供切换 —— 所以这里不需要 setState，
+   *    `getActivePack()` 读一次即可（App 打开项目时会按 `Project.genre` 设好全局值）。
+   *    下面 `subLabel`（子项称谓）与 `modules`（字段模板）都按它取，与 `tab.name`
+   *    走 getter 读的是同一份 pack，不会漂移。
    */
-  const [pack, setPack] = useState<GenrePack>(getActivePack())
+  const pack = getActivePack()
   /** 子项称谓随题材（Q15）：修真包→「子世界」、历史包→「政权」、武侠包→「门派」…纯文案层 */
   const subLabel = subItemLabel(tab.id, pack)
   /**
@@ -167,12 +168,9 @@ export default function WorldSetSheet({ tab }: Props) {
     }
   }, [dirty, isMain, selSub, sel, draft, tab.id])
 
-  /**
-   * 题材包已切换（GenrePackSwitcher 内部已落库 + setActivePack + 派发事件）——
-   * 这里只需让本组件换到新包的模板。**不需要重读数据**：字段键是 `模块::字段`，与题材包无关，
-   * 换包只是「不再渲染那些键」；子项也存在同一批 `tabId-sub` 下，语义不变。
-   */
-  const onPackSwitched = useCallback((next: GenrePack) => { setPack(next) }, [])
+  // 🔴 2.7.2：原先这里有 `onPackSwitched`（题材切换后换模板）——
+  //    题材改到「新建项目」时选了，页签里不再提供切换入口，该回调随之移除。
+  //    `pack` state 本身**保留**：`subLabel` 与 `modules` 的 useMemo 仍按它取当前项目的题材。
 
   const selectLayer = async (key: string) => {
     if (key === sel) return
@@ -291,14 +289,14 @@ export default function WorldSetSheet({ tab }: Props) {
               + `${tab.description ?? ''}`}
             <AIDataSourceNote feature={tab.id} />
           </HelpPopover>
-          {/* 题材包切换 + 页签显示（2.7.1）：**只在「世界设定」**出现 —— 它是开书定位的总览页，
-              集中放作品级开关；力量体系与四个制度页签不再各自重复这两个控件。 */}
-          {tab.id === 'worldbase' && (
-            <>
-              <GenrePackSwitcher onSwitched={onPackSwitched} />
-              <TabVisibilityControl pack={pack} />
-            </>
-          )}
+          {/*
+            🔴 2.7.2 主人定案：**题材切换与页签勾选都不再放在这一页**。
+              · 题材改到「新建小说项目」时选（ProjectHub 表单 + 首启向导都已有该下拉），
+                进来之后题材是**只读**的 —— 页签里再放一个能改题材的控件，等于两个真相源。
+              · 页签显隐也不由这里管了：**完整项目全部显示**（不再按题材隐藏），
+                **自定义项目**在建项目时于「功能模块」弹窗里勾选。
+            ⇒ 原先挂在这里的 `GenrePackSwitcher` + `TabVisibilityControl` 已整体移除。
+          */}
           <div className="ml-auto flex items-center gap-2">
             <Button variant="toggle" selected={dirty} disabled={!dirty || saving}
               onClick={() => void flush()} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"

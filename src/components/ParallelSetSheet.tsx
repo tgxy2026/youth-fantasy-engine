@@ -31,7 +31,7 @@ import type { CardRecord, TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
 import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '../lib/worldSets'
-import { addButtonLabel, modulesFor, subItemLabel, getActivePack, type GenrePack } from '../lib/schemaTemplates'
+import { addButtonLabel, modulesFor, subItemLabel, getActivePack } from '../lib/schemaTemplates'
 import AutoTextarea from './AutoTextarea'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
@@ -57,7 +57,9 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   const [loading, setLoading] = useState(true)
   const [naming, setNaming] = useState<'new' | 'rename' | ''>('')
   const [showFill, setShowFill] = useState(false)
-  const [pack] = useState<GenrePack>(getActivePack())
+  // 🔴 2.7.2：题材改在**新建项目**时选，页签内不再提供切换 ⇒ 不需要 setState，
+  //    `getActivePack()` 读一次即可（App 打开项目时会按 `Project.genre` 设好全局值）。
+  const pack = getActivePack()
   const aiReady = useAIReady()
 
   /** 条目总称（政治页→「政权」、经济→「行业」…）—— 用于列表标题、AI 段标题、帮助文案 */
@@ -66,6 +68,14 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   const addLabel = addButtonLabel(tab.id)
   /** 新建时的输入框举例（按条目总称给 Examples，避免笼统的「名称」） */
   const namePlaceholder = `例：${tab.id === 'politics' ? '大燕 / 魏 / 蜀' : tab.id === 'economy' ? '江南商会 / 北境盐业' : tab.id === 'belief' ? '正一教 / 影宗' : '大魏律 / 宗族法'}`
+  /**
+   * 问号气泡里的举例句（2.7.2）：原先硬编码「政治页可以建魏蜀吴」，
+   * 拿到经济 / 信仰 / 司法页就不贴切了 ⇒ 改成**按页签**各给一句。
+   */
+  const itemExample = tab.id === 'politics' ? '比如建「魏」「蜀」「吴」，各自写自己的权力结构。'
+    : tab.id === 'economy' ? '比如建「江南商会」「北境盐业」，各自写自己的生意与盘子。'
+    : tab.id === 'belief' ? '比如建「正一教」「影宗」，各自写自己的教义与组织。'
+    : '比如建「大魏律」「某宗族法」，各自写自己那套规矩。'
 
   // 包一层 useMemo：模块随题材包变，依赖 [tab.id, pack]（不是 `tab.modules` —— 那是个 getter，每次读都是活值）
   // 🔴 `?? []` 兜底：`modulesFor` 返回 `FormModule[] | undefined`（页面下方另有「没有可填字段」的空态）
@@ -237,12 +247,15 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
           <HelpPopover title={`${tab.name} · 怎么用`} width="24rem" size={14}>
             {`这个页签是**并列**结构 —— 没有「全书统一」那一层，直接一条一条建：\n\n`
               + `· 点下面的「${addLabel}」新建一条，每条一个名称 + 一份表单。`
-              + `比如政治页可以建「魏」「蜀」「吴」，各自写自己的权力结构。\n`
+              + `${itemExample}各自写各自的。\n`
               + `· 每条有一个开关：「活跃」（当前故事聚焦在它）或「已完结」（写过、不再聚焦）。\n`
               + `· 🔴 只有活跃的条目才会发给 AI。已完结的留在库里随时可查，但不再占用模型的注意力 —— `
               + `多条设定就不会互相打架。\n`
               + `· 左列点一下切换编辑对象，右列表单顶部标着你现在在填哪一条。\n\n`
-              + `${tab.description ?? ''}`}
+              + `📌 字段说明与示例会随你在新建项目时选的**作品题材**变化（现在这套是「${pack}」）。\n\n`
+              + `${tab.description ?? ''}\n\n`
+              /* 🔴 2.7.2：把 INSTITUTION_META.tips 真正显示出来（此前它挂在 TabDef 上却没人读） */
+              + (tab.tips ?? []).map(t => `${t}\n`).join('\n')}
             <AIDataSourceNote feature={tab.id} />
           </HelpPopover>
         </div>

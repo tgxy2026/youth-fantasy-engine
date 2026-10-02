@@ -170,12 +170,13 @@ export default function WelcomeWizard({ onDone }: Props) {
                   autoFocus
                   className="w-full text-13"
                 />
-                {/* 作品题材（2.7.1）：开书第一步就对齐模板，省得写历史/都市时看到境界阶梯 */}
+                {/* 作品题材（2.7.1 建 · 2.7.2 改口径）：只决定各页签里的字段名与示例怎么写，
+                    不再决定页签显隐、也不在页签里提供切换。 */}
                 <div className="mt-4">
                   <label className="block text-11 text-ink-400 mb-1">作品题材</label>
                   <GenrePackSelect value={genre} onChange={setGenre} className="w-full" />
                   <div className="mt-1 text-10 leading-relaxed text-ink-500">
-                    决定「世界设定 / 力量体系 / 政治 / 经济 / 宗教 / 司法」用哪套模板、默认显示哪几个；进去后还能随时改。
+                    决定《开书定位》各页签里的字段说明与示例随哪一套走；不影响页签数量（完整项目六页签全有）。
                   </div>
                 </div>
               </div>

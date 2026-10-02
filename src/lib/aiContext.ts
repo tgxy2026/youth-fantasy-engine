@@ -96,13 +96,13 @@ export interface ProjectContextResult {
  *  🔴 凡新增资料型页签，务必登记进本表 —— 兜底机制只保证"不丢数据"，不保证"进得了预算"。
  */
 const PRIORITY: string[] = [
-  'positioning',      // 作品定位
+  'positioning',      // 作品信息
   'worldbase',        // 世界设定
   'power',            // 力量体系
   // 制度页签（2026-10-02 · 2.7.1 §8.4）：紧贴世界设定/力量体系 —— 它们是「这个世界怎么运转」，
   // 与前三者同属"开书定位"层的顶层档案，比角色/势力更该先占预算。
   'politics',         // 政治架构
-  'economy',          // 经济体系
+  'economy',          // 经济基础
   'belief',           // 宗教信仰
   'justice',          // 司法制度
   'master',           // 全书总纲

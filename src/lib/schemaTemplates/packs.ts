@@ -103,39 +103,18 @@ export function setActivePack(pack: GenrePack): void {
   _activePack = isGenrePack(pack) ? pack : DEFAULT_PACK
 }
 
-// ==================== 题材矩阵（= tabVisible 的题材维度）====================
-
-/** 受题材包驱动的六个页签（世界总览 / 力量体系 + 四个制度页签） */
-export const PACK_TAB_IDS = ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice'] as const
-export type PackTabId = (typeof PACK_TAB_IDS)[number]
+// ==================== 受题材驱动的页签名单 ====================
 
 /**
- * 「默认显示」矩阵（按 §8.4 定案；2.7.1 收口时把 `power` 一格也收敛了）。**只列 ● 的包**，
- * 未列出的包 = 默认隐藏，但**完整项目可用「页签」控件补开**（见 schema.tabVisible）。
+ * 受题材包驱动的六个页签（世界总览 / 力量体系 + 四个制度页签）。
  *
- * 🔴 为什么默认值要按题材收紧：这一格一旦全开，10 个题材包都会显示 7 个页签 ⇒
- *    又回到「历史作者看到境界阶梯」的老问题。`东方修真` **一个都不显示** ⇒
- *    老项目 / 示范项目连界面都不变（§8.8 甲案）。
- *
- * 🔴 `power` 与四个制度页签**同等待遇**：只列有超凡 / 等级体系的题材；无超自然的三包
- *    （都市现实 / 历史古代 / 女频言情）改为默认隐藏、按需补开 —— 不再强制占用侧栏。
- *    补开后仍走 §4.5 弱替名（见 POWER_TAB_NAME）。
+ * 🔴 2.7.2：**这里只列「哪几个页签的字段会随题材变」，不再用它决定「显不显示」。**
+ *   原先配套的 `PACK_TAB_DEFAULT` 矩阵 + `packShowsTab()`（按题材把页签藏起来）已整体删除 ——
+ *   主人定案「完整项目展示所有页签、自定义项目按勾选」，题材**只影响各页签里的字段名与说明**。
+ *   保留这个名单是因为：① 遍历「开书定位」组时要用；② 测试要断言「这六个都受题材驱动」。
  */
-const PACK_TAB_DEFAULT: Record<PackTabId, readonly GenrePack[]> = {
-  worldbase: GENRE_PACKS,                                        // 所有题材都要世界总览
-  power: ['东方修真', '西方奇幻', '都市异能', '科幻末世', '武侠江湖', '悬疑灵异', '游戏竞技'],
-  politics: ['西方奇幻', '都市现实', '历史古代', '科幻末世'],
-  economy: ['都市现实', '历史古代', '科幻末世'],
-  belief: ['西方奇幻', '历史古代', '悬疑灵异'],
-  justice: ['历史古代'],
-}
-
-/** 该题材包下，这个页签是否**默认**显示（非受控页签恒 true） */
-export function packShowsTab(pack: GenrePack, tabId: string): boolean {
-  const def = PACK_TAB_DEFAULT[tabId as PackTabId]
-  if (!def) return true          // 不在这六个里 ⇒ 与题材无关
-  return def.includes(pack)
-}
+export const PACK_TAB_IDS = ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice'] as const
+export type PackTabId = (typeof PACK_TAB_IDS)[number]
 
 // ==================== 显示名随题材 ====================
 

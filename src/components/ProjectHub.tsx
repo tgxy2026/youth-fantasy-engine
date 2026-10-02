@@ -19,7 +19,7 @@ import { markExported } from '../lib/backupReminder'
 import { APP_VERSION_LABEL } from '../lib/env'
 import { usePersistedBool, readBoolPref, readStringPref } from '../lib/uiPrefs'
 import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
-import { DEFAULT_PACK, type GenrePack } from '../lib/schemaTemplates'
+import { DEFAULT_PACK, normalizeGenrePack, setActivePack, type GenrePack } from '../lib/schemaTemplates'
 import { GenrePackSelect } from './GenrePackSelect'
 import workbenchBg from '../assets/workbench-bg.png'
 import jiewenjiGufeng from '../assets/jiewenji-gufeng.png'
@@ -49,7 +49,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const [form, setForm] = useState<{ name: string; cover: string; projectType: CreateType; features: string[]; genre: GenrePack }>({ name: '', cover: '', projectType: 'full', features: [], genre: DEFAULT_PACK })
   const [busy, setBusy] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<{ name: string; cover: string; projectType: CreateType; features: string[] }>({ name: '', cover: '', projectType: 'full', features: [] })
+  // 🔴 2.7.2：`genre` 加进编辑表单 —— 题材改到「新建项目 / 编辑项目」两处选了，
+  //    页签里不再提供切换 ⇒ 这里成了老项目改题材的**唯一入口**，不能缺。
+  const [editForm, setEditForm] = useState<{ name: string; cover: string; genre: GenrePack; projectType: CreateType; features: string[] }>({ name: '', cover: '', genre: '东方修真', projectType: 'full', features: [] })
   // 功能勾选弹窗：createFeatures / editFeatures 为初始勾选集合（不含锁定项），分别服务于"新建自定义"与"编辑自定义"
   const [featureModal, setFeatureModal] = useState<{ mode: 'create' | 'edit'; initial: string[] } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -99,7 +101,11 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
 
   const startEdit = (p: Row) => {
     const isCustom = (p.projectType ?? 'full') === 'custom'
-    setEditForm({ name: p.name, cover: p.cover ?? '', projectType: isCustom ? 'custom' : 'full', features: p.features ?? [] })
+    setEditForm({
+      name: p.name, cover: p.cover ?? '',
+      genre: normalizeGenrePack(p.genre),
+      projectType: isCustom ? 'custom' : 'full', features: p.features ?? [],
+    })
     setEditingId(p.id)
   }
 
@@ -109,6 +115,11 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
     setBusy(true)
     try {
       const patch: Partial<Project> & { id: string } = { id: editingId, name: editForm.name.trim(), cover: editForm.cover }
+      // 🔴 题材变更要落库（下次打开才知道用哪套示例）；顺带刷模块级状态，当前窗口立刻生效
+      if (editForm.genre) {
+        patch.genre = editForm.genre
+        setActivePack(editForm.genre)
+      }
       if (editForm.projectType === 'custom') patch.features = editForm.features
       await db.updateProject(patch)
       setEditingId(null)
@@ -357,11 +368,18 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                     </div>
                   )}
                 </div>
-                {/* 作品题材（2.7.1）：决定世界设定 / 力量体系 / 制度页签用哪套模板；创建后仍可在页签头部切换 */}
+                {/* 作品题材（2.7.1 建 · 2.7.2 改口径）：只决定各页签里的字段名与示例怎么写。
+                    🔴 2.7.2 主人定案：题材**不再决定页签显隐**（完整项目全部显示、自定义项目按勾选），
+                       也不在页签里提供切换（改题材回项目管理页「编辑项目」）。 */}
                 <div>
                   <label className="text-11 text-ink-400 mb-1 flex items-center gap-1">作品题材
                     <HelpPopover title="作品题材怎么选" width="23rem" size={11}>
-                      {'决定两件事：\n① 「世界设定 / 力量体系 / 政治 / 经济 / 宗教 / 司法」这几个页签用哪一套填写模板；\n② 它们默认显示哪几个 —— 例如选「历史古代」，力量体系页签默认不出现（可在《世界设定》页头部点「页签」按需开启）。\n\n· 写都市现实 / 历史古代这类没有超自然力量的作品时，选对应题材就不会再看到「境界 / 灵根 / 寿元」这类对不上的表；\n· 选错了没关系：在页签头部随时能改 —— 换模板只隐藏、不删除，切回即恢复。'}
+                      {'它只决定一件事：《开书定位》各页签里的**字段名、填写说明与示例**随哪一套走。\n\n'
+                        + '· 选「历史古代」，「政治架构」里的示例会是「九品十八级、府兵制、刑部大理寺」；\n'
+                        + '· 选「科幻末世」，同一批字段的示例会变成「联交所、行星防卫军、生态舱配给」。\n\n'
+                        + '📌 它**不影响页签数量** —— 完整项目的《开书定位》六个页签全部显示；'
+                        + '自定义项目则按你在「功能模块」里勾的来。\n'
+                        + '📌 选错了不要紧：回项目管理页「编辑项目」能改，填过的内容不会丢（换题材只换示例，不动字段名）。'}
                     </HelpPopover>
                   </label>
                   <GenrePackSelect value={form.genre} onChange={g => setForm(f => ({ ...f, genre: g }))} className="w-full" />
@@ -454,6 +472,14 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) saveEdit() }}
                           autoFocus
                           className="w-full text-13"
+                        />
+                        {/* 🔴 2.7.2：题材改到这里（页签里已没有切换入口，这里是老项目的唯一改法）。
+                            只影响各页签里的字段说明与示例怎么写，不影响页签数量；填过的内容不会丢。 */}
+                        <label className="text-11 text-ink-400 mt-2 mb-1 block">作品题材</label>
+                        <GenrePackSelect
+                          value={editForm.genre}
+                          onChange={g => setEditForm(f => ({ ...f, genre: g }))}
+                          className="w-full"
                         />
                       </div>
                     </div>

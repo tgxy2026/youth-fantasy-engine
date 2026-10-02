@@ -29,6 +29,20 @@ import { asText } from '../aiParse'
 import type { DraftField, DraftRow } from './types'
 
 /**
+ * 页签改过名时的**旧名映射**（id → 旧显示名）。
+ *
+ * 🔴 2.7.2：「作品定位」改名「作品信息」。改名只动显示层（存储键仍是 `positioning`），
+ *    但**模型的输出**可能还用旧名（尤其来自旧提示词 / 旧会话上下文 / 手写 JSON）。
+ *    `formDraftRows` 取值时按「新名 → id → 旧名」三级兜底，避免整张表被静默丢弃。
+ *
+ * ⚠️ 改名时**必须**在这里加一条 —— 否则模型返回旧名的那次汇总会整表落空，
+ *    界面只显示「没汇总出可用的全书级设定」，而作者完全看不出哪里错了。
+ */
+const LEGACY_TAB_NAMES: Record<string, string> = {
+  positioning: '作品定位',
+}
+
+/**
  * 「流程末尾汇总」覆盖的表单页签 id —— schema 里的**全部** form 型。
  * 传参可覆盖（测试或将来做"只汇总某几张"的选项时用）。
  */
@@ -137,7 +151,9 @@ export function formDraftRows(
   for (const tabId of tabIds) {
     const tab = TABS.find(t => t.id === tabId)
     if (tab?.type !== 'form' || !tab.modules) continue
-    const bag = values[tab.name] ?? values[tabId]
+    // 🔴 2.7.2：页签「作品定位」改名「作品信息」⇒ 模型（尤其旧提示词/旧会话上下文）很可能
+    //    仍按旧名输出。这里按「显示名 → id → 旧名」三级兜底取，避免改名后**静默丢掉整张表**。
+    const bag = values[tab.name] ?? values[tabId] ?? values[LEGACY_TAB_NAMES[tabId]]
     if (!bag || typeof bag !== 'object') continue
     // 模型可能按「页签 → 模块 → 字段」输出（提示词就是那么给的），先压平成「字段 → 值」
     const flat = flattenFormBag(bag)

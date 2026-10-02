@@ -1,8 +1,8 @@
 import type { TabDef, TableColumn, Volume } from './types'
 import { getAllVolumes } from './db'
 import {
-  getActivePack, institutionMeta, institutionModules, packShowsTab, powerDesc, powerModules, powerTips,
-  tabDisplayName, worldbaseDesc, worldbaseModules, worldbaseTips, DEFAULT_PACK,
+  getActivePack, institutionMeta, institutionModules, powerDesc, powerModules, powerTips,
+  tabDisplayName, worldbaseDesc, worldbaseModules, worldbaseTips,
   type GenrePack,
 } from './schemaTemplates'
 
@@ -146,16 +146,20 @@ const INSTITUTION_TABS = ['politics', 'economy', 'belief', 'justice'] as const
  * 构造一个制度页签（政治架构 / 经济体系 / 宗教信仰 / 司法制度，2.7.1 · §8.4）。
  *
  * 四个页签除 id 外结构完全一致 ⇒ 走工厂，避免四份几乎相同的字面量各自漂移。
- * 🔴 模块与题材无关（一套定义，见 schemaTemplates/institutions.ts）；**显隐**由
- *    `packShowsTab` 的题材矩阵决定（历史古代四个制度页签全开、东方修真全关），判据在 `tabVisible`。
+ * 🔴 **模块与 id 均与题材无关**（一套定义，见 schemaTemplates/institutions.ts）；
+ *    题材只影响各字段的 desc/example（文案随题材变）。
+ *    显隐判据在 `tabVisible`：**完整项目一律显示**（2.7.2 起不再按题材隐藏）。
  */
 function institutionTab(id: (typeof INSTITUTION_TABS)[number]): TabDef {
   const meta = institutionMeta(id)
   return {
     id, group: '开书定位', type: 'form',
-    name: meta?.name ?? id,
+    get name() { return institutionMeta(id)?.name ?? id },
     description: meta?.description ?? '',
-    modules: institutionModules(id),
+    // 🔴 2.7.2：改成 getter 读当前题材 —— 制度四页签的**示例**也随题材走了
+    //    （原先是一套古史 defaults 写死，写科幻的作者看到「笞杖徒流死」会一头雾水）。
+    //    与 worldbase / power 同一范式：字段名与 desc 不变，只换 example。
+    get modules() { return institutionModules(id, getActivePack()) },
     tips: meta?.tips,
   }
 }
@@ -165,12 +169,14 @@ export const TABS: TabDef[] = [
 // ==================== 表单型 ====================
 
 {
-  id: 'positioning', name: '作品定位', group: '开书定位', type: 'form',
+  // 🔴 2.7.2 主人定案改名「作品定位」→「作品信息」。**只改显示名，id 仍是 positioning**
+  //    （id 是 formData 的存储键，改了老项目已填的书名/卖点就找不回来了）。
+  id: 'positioning', name: '作品信息', group: '开书定位', type: 'form',
   description: '开书商业档案：动笔前第一个填——赛道、平台、读者、卖点没想清楚就动笔，多半会切书。',
   modules: [
     { name: '一、基本信息', fields: [
       f('书名', '暂定名与备选名，最好有记忆点', '《吞天神脉》/ 备选《混沌玄脉》'),
-      f('类型赛道', '自由写赛道描述（玄幻/都市/仙侠/科幻…越具体越好）。⚠️ 它是作品定位档案，≠ 开书时选的「作品题材」—— 后者决定各页签模板与默认显隐，在页签头部改。', '东方玄幻·升级流'),
+      f('类型赛道', '自由写赛道描述（玄幻/都市/仙侠/科幻…越具体越好）。⚠️ 它是这一页的档案内容，≠ 新建项目时选的「作品题材」—— 后者决定各页签里的字段名与说明文案怎么显示，在新建项目时选定。', '东方玄幻·升级流'),
       f('预计篇幅', '预计总字数与卷数，商业网文的体量规划', '约300万字，分七卷'),
       f('更新节奏', '日更字数目标与存稿策略', '日更4000字，保持15章存稿'),
     ]},
@@ -236,8 +242,8 @@ export const TABS: TabDef[] = [
 // 「这个世界怎么运转」的四个详情页签：政治架构 / 经济体系 / 宗教信仰 / 司法制度。
 // 🔴 它们**是 WORLD_SET_TABS 成员** ⇒ 自带母子结构：母级＝天下通例，子项＝各政权 / 各邦国
 //    （§8.3 定案：「多份并列」由子项承载，不复用已撤回的「可重复模块」方案）。
-// 🔴 模块与题材无关（一套定义，见 schemaTemplates/institutions.ts）；**显隐**由
-//    packs.packShowsTab 的题材矩阵决定（历史古代四个制度页签全开、东方修真全关）—— 见 tabVisible。
+// 🔴 模块与题材无关（一套定义，见 schemaTemplates/institutions.ts）；**显隐**由 `tabVisible` 决定 ——
+//    2.7.2 起**完整项目一律显示**（题材矩阵 `packShowsTab` 已删除），自定义项目按「功能模块」勾选。
 ...INSTITUTION_TABS.map(institutionTab),
 
 {
@@ -1089,11 +1095,10 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   // 它不是每个项目都需要的功能，也不带任何依赖（不动 STRONG_DEPS / ANY_DEPS）。
   // 写出来而不是省略，是为了让读 schema 的人知道这是有意为之，不是"忘了登记"。
   'misc-settings': 'optional',
-  // 制度页签（2026-10-02 · 2.7.1 §8.4）：政治 / 经济 / 宗教 / 司法 —— 显式标 optional。
-  // 🔴 完整项目里它们的显隐由**题材矩阵**（schemaTemplates.packShowsTab）决定，与本表无关；
-  //    本表只决定「自定义项目里能否被勾选」。显式登记的理由同 misc-settings：
-  //    不写虽然也走 getTier() 兜底 optional，但读的人会以为是忘了登记。
-  //    它们已进 WORLD_SET_TABS ⇒ 自带母子结构（子项＝各政权并列）。
+  // 制度页签（2026-10-02 · 2.7.1 建）：政治 / 经济基础 / 宗教信仰 / 司法制度 —— 显式标 optional。
+  // 🔴 2.7.2 起**完整项目一律显示**（题材矩阵已删），本表只决定「自定义项目里能否被勾选」。
+  //    显式登记的理由同 misc-settings：不写虽然也走 getTier() 兜底 optional，但读的人会以为是忘了登记。
+  //    它们是**并列结构**（`PARALLEL_SET_TABS`，多条平铺：一条＝一个政权 / 邦国 / 教派）。
   politics: 'optional',
   economy: 'optional',
   belief: 'optional',
@@ -1182,17 +1187,12 @@ export function forcedByDeps(enabled: Set<string>): Set<string> {
 export function tabVisible(tabId: string, ctx: VisCtx): boolean {
   // 卷台账（chapter-vol-*）跟随「章节总表」的可见性：自定义项目里启用了章节总表即显示各卷子表
   if (isVolumeLedgerTab(tabId)) tabId = 'chapter-master'
-  // 自定义项目按启用功能集合过滤：**用户显式勾选优先**（对应题材矩阵里的「○ 可手动开启」，
-  // 于是东方修真项目也能手动开政治架构页签）。
-  if (ctx.type === 'custom') return ctx.features.includes(tabId)
-  // 完整项目：叠一层**题材维度**（2.7.1 · §8.4）。
-  // 🔴 这是本轮唯一必改的可见性机制 —— 不加它，10 个题材包都会显示 7 个页签，
-  //    历史作者又得面对「境界阶梯」那类对不上的表（本次改造要解决的核心问题）。
-  // 非受题材驱动的页签在 packShowsTab 里恒 true ⇒ 这次改动对它们零影响。
-  const pack = ctx.pack ?? DEFAULT_PACK
-  // 「手动补开」（2.7.1 · B 案）：题材矩阵之外，**完整项目**还能把被隐藏的页签按需打开。
-  // 🔴 `features` 在完整项目里只承载「补开的页签 id」一种含义（写入方只有 TabVisibilityControl），
-  //    与自定义项目里那份「功能全集」同字段不同语义 —— 两者被 ctx.type 分流，永不混读。
-  //    只 OR、不 XOR：完整项目的语义是「功能最全」，不想填的页签空着即可，无需显式关闭。
-  return packShowsTab(pack, tabId) || ctx.features.includes(tabId)
+  // 🔴 完整项目：**全部页签一律显示**（2.7.2 主人定案）。
+  //    原先这里叠了一层题材矩阵（`packShowsTab`）—— 按题材把「政治 / 经济 / 宗教 / 司法」
+  //    藏起来，导致同一套开书定位在不同题材下少几页、作者还得去《世界设定》页里手动补开。
+  //    现在题材**只影响各页签里的字段名与说明文案**，不再决定「有没有这一页」，
+  //    所以完整项目直接放行（老项目同享此规则，无需迁移）。
+  if (ctx.type === 'full') return true
+  // 自定义项目按启用功能集合过滤：**用户在「功能模块」弹窗里勾什么就显示什么**。
+  return ctx.features.includes(tabId)
 }

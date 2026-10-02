@@ -11,7 +11,7 @@
 // 另把纯函数（别名归位 / 显示名弱替 / 子项称谓）与 modulesFor 的一致性一并钉住。
 import {
   DEFAULT_PACK, GENRE_PACKS, PACK_ALIASES, PACK_TAB_IDS, getActivePack,
-  institutionModules, modulesFor, normalizeGenrePack, packShowsTab, powerModules,
+  institutionModules, modulesFor, normalizeGenrePack, powerModules,
   setActivePack, subItemLabel, tabDisplayName, worldbaseModules,
   type GenrePack,
 } from '../src/lib/schemaTemplates'
@@ -170,15 +170,35 @@ const moduleMap = (mods: FormModule[]) =>
 
 // ---------- 7. modulesFor 与直取一致（组件走显式入口、TABS 走 getter，两条路不得漂移） ----------
 {
+  // 🔴 worldbase / power 仍是「同一引用」（它们直接返回包里的对象）。
   let same = true, detail = ''
   for (const pack of GENRE_PACKS) {
     if (modulesFor('worldbase', pack) !== worldbaseModules(pack)) { same = false; detail = `worldbase/${pack}`; break }
     if (modulesFor('power', pack) !== powerModules(pack)) { same = false; detail = `power/${pack}`; break }
   }
+  ok('modulesFor(worldbase/power) 与直取返回同一引用', same, detail)
+
+  // 🔴 2.7.2：制度四页签的**示例按题材现算**（`withExamples` 每次新建对象）⇒ 不能再比引用，
+  //    改钉「字段键集合一致」—— 这才是真正要防的漂移（少字段 / 改名会写坏老项目内容）。
+  const keysOf2 = (mods: { name: string; fields: { name: string }[] }[]) =>
+    mods.flatMap(m => m.fields.map(f => `${m.name}::${f.name}`)).sort()
+  let fieldDrift = false, driftDetail = ''
   for (const tabId of ['politics', 'economy', 'belief', 'justice']) {
-    if (modulesFor(tabId, '历史古代') !== institutionModules(tabId)) { same = false; detail = tabId; break }
+    const viaFor = modulesFor(tabId, '历史古代') ?? []
+    const viaDirect = institutionModules(tabId, '历史古代') ?? []
+    const a = keysOf2(viaFor).join('|')
+    const b = keysOf2(viaDirect).join('|')
+    if (a !== b) { fieldDrift = true; driftDetail = tabId; break }
   }
-  ok('modulesFor(tabId,pack) 与直取返回同一引用', same, detail)
+  ok('🔴 modulesFor(制度页签) 与直取的字段集合一致（不比引用：示例按题材现算）', !fieldDrift, driftDetail)
+
+  // 🔴 题材化真的生效：同一页签在不同题材下示例不同，但字段名一模一样（换题材不丢数据）
+  const cityEg = (modulesFor('politics', '都市现实') ?? []).flatMap(m => m.fields).find(x => x.name === '政体形式')?.example ?? ''
+  const histEg = (modulesFor('politics', '历史古代') ?? []).flatMap(m => m.fields).find(x => x.name === '政体形式')?.example ?? ''
+  ok('🔴 同一字段的示例随题材变（都市 vs 历史）', cityEg !== histEg, `${cityEg} | ${histEg}`)
+  const cityKeys = keysOf2(modulesFor('politics', '都市现实') ?? []).join('|')
+  const histKeys = keysOf2(modulesFor('politics', '历史古代') ?? []).join('|')
+  ok('🔴 但字段名与模块名完全一致（换题材不丢已填内容）', cityKeys === histKeys)
 }
 
 // ---------- 8. 数值字段显式声明 kind:'numeric' ----------
@@ -194,36 +214,20 @@ const moduleMap = (mods: FormModule[]) =>
     `体系总览数值字段=${powerModules('科幻末世')[0].fields.filter(f => f.kind === 'numeric').length}`)
 }
 
-// ---------- 9. 题材显隐矩阵（tabVisible 的题材维度） ----------
+// ---------- 9. 受题材驱动的页签名单（2.7.2：题材不再决定显隐） ----------
 {
-  // 🔴 力量体系与四个制度页签同等待遇：只列有超凡 / 等级体系的题材
-  const POWER_ON: readonly GenrePack[] = ['东方修真', '西方奇幻', '都市异能', '科幻末世', '武侠江湖', '悬疑灵异', '游戏竞技']
-  const POWER_OFF: readonly GenrePack[] = ['都市现实', '历史古代', '女频言情']
-  ok('🔴 力量体系：7 个有超凡的题材默认显示', POWER_ON.every(p => packShowsTab(p, 'power')),
-    POWER_ON.filter(p => !packShowsTab(p, 'power')).join('、') || '（全开）')
-  ok('🔴 力量体系：无超凡的 3 个题材默认隐藏（可手动补开）', POWER_OFF.every(p => !packShowsTab(p, 'power')),
-    POWER_OFF.filter(p => packShowsTab(p, 'power')).join('、') || '（全关）')
-  ok('力量体系仍是受题材页签（在 PACK_TAB_IDS 内 ⇒ 可被「页签」控件补开）',
-    (PACK_TAB_IDS as readonly string[]).includes('power'))
-
-  // 东方修真：只开世界总览 + 力量体系（四制度页签全关 ⇒ 老项目界面零变化）
-  ok('🔴 东方修真只默认显示 worldbase + power（制度页签全关）',
-    packShowsTab('东方修真', 'worldbase') && packShowsTab('东方修真', 'power')
-    && !packShowsTab('东方修真', 'politics') && !packShowsTab('东方修真', 'economy')
-    && !packShowsTab('东方修真', 'belief') && !packShowsTab('东方修真', 'justice'))
-  // 历史古代：worldbase + 四制度开，力量体系关（可补开）
-  ok('历史古代默认显示 worldbase + 四制度（力量体系关、可补开）',
-    packShowsTab('历史古代', 'worldbase') && !packShowsTab('历史古代', 'power')
-    && packShowsTab('历史古代', 'politics') && packShowsTab('历史古代', 'economy')
-    && packShowsTab('历史古代', 'belief') && packShowsTab('历史古代', 'justice'))
-  // 都市现实：worldbase/politics/economy 开，power/belief/justice 关
-  ok('都市现实：politics/economy 开，力量体系/belief/justice 关',
-    packShowsTab('都市现实', 'politics') && packShowsTab('都市现实', 'economy')
-    && !packShowsTab('都市现实', 'power')
-    && !packShowsTab('都市现实', 'belief') && !packShowsTab('都市现实', 'justice'))
-  // 非题材驱动的页签恒 true（不受题材矩阵影响）
-  ok('非题材页签恒显示（如 master / char-main）',
-    packShowsTab('东方修真', 'master') && packShowsTab('历史古代', 'char-main') && packShowsTab('科幻末世', 'timeline'))
+  // 🔴 2.7.2 删除了「题材显隐矩阵」（packs.packShowsTab）：完整项目**全部页签一律显示**、
+  //    自定义项目按「功能模块」勾选。题材**只影响各页签里的字段名与说明文案**。
+  //    这里改为钉住「哪几个页签的字段会随题材变」这份名单本身（遍历开书定位组时要用它）。
+  ok('🔴 受题材驱动的六个页签在名单内',
+    ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice']
+      .every(t => (PACK_TAB_IDS as readonly string[]).includes(t)))
+  ok('🔴 名单恰好是这六个（不多不少）', PACK_TAB_IDS.length === 6, String(PACK_TAB_IDS.length))
+  // 题材仍会改变字段内容（这是 2.7.2 保留的唯一用途）—— 拿东方修真 vs 都市现实的世界设定举例
+  const wbXianxia = modulesFor('worldbase', '东方修真') ?? []
+  const wbCity = modulesFor('worldbase', '都市现实') ?? []
+  ok('🔴 题材确实改变字段内容（东方修真 vs 都市现实的世界设定不同）',
+    JSON.stringify(wbXianxia) !== JSON.stringify(wbCity))
 }
 
 // ---------- 10. 别名归位 / 模糊匹配 / 兜底 ----------
@@ -269,40 +273,33 @@ const moduleMap = (mods: FormModule[]) =>
   ok('🔴 非法值回落默认包（不让脏值污染全局）', getActivePack() === DEFAULT_PACK)
 }
 
-// ---------- 14. 完整项目手动补开页签（2.7.1 · B 案） ----------
+// ---------- 14. 页签显隐（2.7.2 主人定案：题材不再决定显隐） ----------
 {
   const full = (pack: GenrePack, features: string[] = []) => ({ type: 'full' as const, features, pack })
-  const custom = (pack: GenrePack, features: string[]) => ({ type: 'custom' as const, features, pack })
+  const custom = (pack: GenrePack, features: string[] = []) => ({ type: 'custom' as const, features, pack })
 
-  // 基线（老项目零变更的回归线）：完整项目 + 东方修真 ⇒ 四制度页签全关
-  ok('🔴 完整项目 · 东方修真默认不显示政治架构', !tabVisible('politics', full('东方修真')))
-  // 补开：features 里有 ⇒ 显示
-  ok('🔴 完整项目 · features 补开 politics ⇒ 显示', tabVisible('politics', full('东方修真', ['politics'])))
-  // 只开列出来的那个，不越权
-  ok('补开不越权（只开列出的那一个）',
-    tabVisible('politics', full('东方修真', ['politics'])) && !tabVisible('justice', full('东方修真', ['politics'])))
-  // OR 而非 XOR：题材本来就给的页签，不受 features 影响
-  ok('🔴 OR 而非 XOR：题材已显示的页签照常显示',
-    tabVisible('worldbase', full('东方修真', [])) && tabVisible('power', full('东方修真', ['politics'])))
-  // 🔴 力量体系与制度页签同等待遇：历史古代下 power 也默认隐藏、需补开
-  ok('🔴 历史古代：四制度已给，力量体系默认隐藏 → 可补开',
-    ['worldbase', 'politics', 'economy', 'belief', 'justice'].every(t => tabVisible(t, full('历史古代')))
-    && !tabVisible('power', full('历史古代'))
-    && tabVisible('power', full('历史古代', ['power'])))
-  // 东方修真：worldbase + power 是矩阵给的（无需补开）
-  ok('东方修真矩阵已给 worldbase + power（无需补开）',
-    tabVisible('worldbase', full('东方修真')) && tabVisible('power', full('东方修真')))
-  // 非题材页签不受补开逻辑影响
-  ok('非题材页签恒显示（补开逻辑不影响它们）',
-    tabVisible('master', full('东方修真', [])) && tabVisible('chapter-master', full('东方修真', ['politics'])))
-  // 🔴 自定义项目仍只看 features —— 题材矩阵不得插手，否则自定义项目的勾选会失效
-  ok('🔴 自定义项目仍只看 features（题材矩阵不插手）',
-    tabVisible('politics', custom('东方修真', ['politics']))
-    && !tabVisible('politics', custom('历史古代', [])))
-  // 老调用方不传 pack ⇒ 回落默认包（向后兼容，不炸）
-  ok('ctx 无 pack 时回落默认包',
-    !tabVisible('politics', { type: 'full', features: [] })
-    && tabVisible('politics', { type: 'full', features: ['politics'] }))
+  // 🔴 核心：完整项目**一律全显示**，与题材无关（原先这里按题材矩阵藏页签）
+  ok('🔴 完整项目 · 东方修真也显示政治架构（题材不再隐藏页签）', tabVisible('politics', full('东方修真')))
+  ok('🔴 完整项目 · 历史古代也显示司法制度', tabVisible('justice', full('历史古代')))
+  ok('🔴 完整项目 · 都市现实也显示宗教信仰（原先是关的）', tabVisible('belief', full('都市现实')))
+  ok('🔴 示范项目（东方修真·完整）六页签全在',
+    ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice'].every(t => tabVisible(t, full('东方修真'))))
+  ok('非题材页签照常显示',
+    tabVisible('master', full('东方修真', [])) && tabVisible('chapter-master', full('东方修真', [])))
+  ok('🔴 完整项目忽略 features（勾不勾都在）',
+    tabVisible('politics', full('东方修真', []))
+    && tabVisible('politics', full('东方修真', ['politics']))
+    && tabVisible('master', full('东方修真')))
+
+  // 🔴 自定义项目**只看用户在「功能模块」弹窗里的勾选**
+  ok('🔴 自定义项目 · 勾了才显示', tabVisible('politics', custom('东方修真', ['politics'])))
+  ok('🔴 自定义项目 · 没勾就不显示（与题材无关）',
+    !tabVisible('politics', custom('历史古代', [])) && !tabVisible('justice', custom('历史古代', ['politics'])))
+  ok('🔴 自定义项目 · 题材不得越权（选修真也开不出历史才有的页）',
+    !tabVisible('justice', custom('历史古代', [])))
+  ok('ctx 无 pack 时不炸（pack 已不参与显隐）',
+    tabVisible('politics', { type: 'full', features: [] })
+    && !tabVisible('politics', { type: 'custom', features: [] }))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

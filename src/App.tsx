@@ -372,45 +372,13 @@ export default function App() {
     return () => window.removeEventListener('yfe:navigate', onNav as EventListener)
   }, [navigate])
 
-  /**
-   * 题材包切换（2.7.1）：由页签头部的「切换题材包」控件派发 `yfe:pack-changed`。
-   *
-   * 🔴 为什么要绕一圈事件而不是回调：切换入口在**页签组件内部**（WorldSetSheet / FormSheet
-   *    都能改），而 activePack 是模块级状态、visCtx 在 App —— 事件是既有的跨组件通信范式
-   *    （同 `yfe:navigate`），避免把 setState 一层层透传过 7 个页签。
-   * 三件事一起做：① 落模块级 activePack（TABS 的 getter 读它）；② 更新 visCtx.pack（tabVisible 读它）；
-   * ③ bump refreshKey 触发当前页签重渲染。
-   */
-  useEffect(() => {
-    const onPack = (e: Event) => {
-      const pack = normalizeGenrePack((e as CustomEvent).detail)
-      setActivePack(pack)
-      setVisCtx(c => ({ ...c, pack }))
-      setRefreshKey(k => k + 1)
-    }
-    window.addEventListener('yfe:pack-changed', onPack as EventListener)
-    return () => window.removeEventListener('yfe:pack-changed', onPack as EventListener)
-  }, [])
-
-  /**
-   * 页签补开（2.7.1 · B 案）：由页签头部的 TabVisibilityControl 落库后派发。
-   *
-   * 与题材切换同理要绕事件：入口在**页签组件内部**，而 `visCtx` 在 App —— 避免把 setState
-   * 透传过 7 个页签。这里重读当前项目的 `features`（完整项目里它只装「补开的页签 id」），
-   * 更新 `visCtx`（`tabVisible` 读它）并 bump refreshKey，让侧栏与页面立刻重算可见性。
-   */
-  useEffect(() => {
-    const onTabs = async () => {
-      const id = db.getCurrentProjectId?.()
-      if (!id) return
-      const p = await db.getProject(id)
-      if (!p) return
-      setVisCtx(c => ({ ...c, features: p.features ?? [] }))
-      setRefreshKey(k => k + 1)
-    }
-    window.addEventListener('yfe:tabs-changed', onTabs as EventListener)
-    return () => window.removeEventListener('yfe:tabs-changed', onTabs as EventListener)
-  }, [])
+  // 🔴 2.7.2 移除了两个事件监听（原先都还有派发方，现在都没有了）：
+  //   ① `yfe:pack-changed` —— 由《世界设定》页头的「切换题材」控件派发；
+  //      题材改在**新建项目**时选，页签内不再提供切换 ⇒ 该控件（`GenrePackSwitcher`）已删。
+  //   ② `yfe:tabs-changed` —— 由《世界设定》页头的「页签补开」控件（`TabVisibilityControl`）派发；
+  //      **完整项目现在全部页签一律显示**、自定义项目按建项目时勾选的「功能模块」显示，
+  //      页签内不再有显隐控件 ⇒ 该组件已删。
+  // 题材与项目类型在 `openProject` 时一次性算好写进 `visCtx`（见上面 :290-295）。
 
   const onStatsChange = useCallback(() => {
     setRefreshKey(k => k + 1)

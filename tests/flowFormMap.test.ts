@@ -81,7 +81,22 @@ const FORM_TABS = TABS.filter(t => t.type === 'form')
     力量体系: { '一、体系总览': { 体系类型: '修炼流' }, '二、修炼路径与资源': { 修炼资源体系: '青玉丹' } },
   }
   const rows = formDraftRows(real)
+  // 🔴 2.7.2：「作品定位」页签已改名「作品信息」，而这个用例的 real 里用的**仍是旧名**
+  //    —— 正好是「模型返回旧名」的真实场景。formMap 里有旧名兜底（LEGACY_TAB_NAMES），
+  //    所以三张表都必须读出来；少了兜底这里会红（只读到 2 张）。
   ok('🔴 三层结构也能读出草稿行', rows.length === 3, `${rows.length}：${rows.map(r => r.tabId).join(',')}`)
+  ok('🔴 页签改名后，模型仍返回旧名「作品定位」也能读到（向后兼容）',
+    !!rows.find(r => r.tabId === 'positioning'),
+    rows.map(r => r.tabId).join(','))
+  const pos = rows.find(r => r.tabId === 'positioning')
+  ok('  旧名那条的字段照样取到（不是空行）',
+    pos?.fields.length === 1 && pos.fields[0].key === '一、基本信息::类型赛道',
+    JSON.stringify(pos?.fields.map(f => f.key)))
+  // 新名也要能读（改名后的正常路径）
+  const byNewName = formDraftRows({ 作品信息: { '一、基本信息': { 类型赛道: '东方玄幻' } } })
+  ok('🔴 新名「作品信息」同样能读（改名后的正常路径）',
+    byNewName.length === 1 && byNewName[0].tabId === 'positioning',
+    byNewName.map(r => r.tabId).join(','))
   const world = rows.find(r => r.tabId === 'worldbase')
   ok('  字段值正确取出', world?.fields.map(f => f.label).join(',') === '世界名称,世界体量与格局',
     JSON.stringify(world?.fields.map(f => f.label)))

@@ -352,12 +352,12 @@ export default function ExportFormatDialog({
             {prefs.docxKind === 'submission' && (
               <>
                 <div>
-                  <div className="text-11 text-ink-500 mb-1">简介（默认取〈作品定位〉的「正式简介」，可在此临时修改）</div>
+                  <div className="text-11 text-ink-500 mb-1">简介（默认取〈作品信息〉的「正式简介」，可在此临时修改）</div>
                   <textarea
                     value={intro}
                     onChange={e => setIntro(e.target.value)}
                     rows={3}
-                    placeholder="还没有填写正式简介 —— 去〈作品定位〉表填一次，或直接在这里输入本次要用的简介。"
+                    placeholder="还没有填写正式简介 —— 去〈作品信息〉表填一次，或直接在这里输入本次要用的简介。"
                     className="w-full text-12 leading-relaxed bg-ink-900/60 border border-ink-700 rounded-lg p-2.5 text-ink-100 focus:border-amber/50 outline-none resize-none"
                   />
                 </div>
