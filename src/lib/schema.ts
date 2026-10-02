@@ -149,7 +149,7 @@ const INSTITUTION_TABS = ['politics', 'economy', 'belief', 'justice'] as const
  *
  * 四个页签除 id 外结构完全一致 ⇒ 走工厂，避免四份几乎相同的字面量各自漂移。
  * 🔴 模块与题材无关（一套定义，见 schemaTemplates/institutions.ts）；**显隐**由
- *    `packShowsTab` 的题材矩阵决定（历史古代全开、东方修真全关），判据在 `tabVisible`。
+ *    `packShowsTab` 的题材矩阵决定（历史古代四个制度页签全开、东方修真全关），判据在 `tabVisible`。
  */
 function institutionTab(id: (typeof INSTITUTION_TABS)[number]): TabDef {
   const meta = institutionMeta(id)
@@ -172,7 +172,7 @@ export const TABS: TabDef[] = [
   modules: [
     { name: '一、基本信息', fields: [
       f('书名', '暂定名与备选名，最好有记忆点', '《吞天神脉》/ 备选《混沌玄脉》'),
-      f('类型赛道', '玄幻/都市/仙侠/科幻/历史/悬疑等，越具体越好', '东方玄幻·升级流'),
+      f('类型赛道', '自由写赛道描述（玄幻/都市/仙侠/科幻…越具体越好）。⚠️ 它是作品定位档案，≠ 开书时选的「作品题材」—— 后者决定各页签模板与默认显隐，在页签头部改。', '东方玄幻·升级流'),
       f('预计篇幅', '预计总字数与卷数，商业网文的体量规划', '约300万字，分七卷'),
       f('更新节奏', '日更字数目标与存稿策略', '日更4000字，保持15章存稿'),
     ]},
@@ -223,9 +223,10 @@ export const TABS: TabDef[] = [
   /**
    * 力量体系 · 随题材包变化。
    *
-   * 🔴 无超自然题材（都市现实 / 历史古代 / 女频言情）下**语义弱替、不隐藏**（§4.5 定案）：
-   *    稳定 id **恒为 `power`**，只有显示名改（能力资源 / 权谋实力 / 关系地位），
-   *    模块换成现实向的「能力 / 权谋 / 关系」体系 ⇒ 结构、母子机制、AI 链路、导出全都不动。
+   * 2.7.1 收口后，`power` 与四个制度页签**同等待遇**：只对**有超凡 / 等级体系**的题材默认显示；
+   *    无超自然三包（都市现实 / 历史古代 / 女频言情）**默认隐藏**，可在「世界设定」页头部「页签」
+   *    控件**按需补开**（§4.5 的弱替机制未废）：补开后稳定 id **恒为 `power`**、只有显示名弱替
+   *    （能力资源 / 权谋实力 / 关系地位）、模块换成现实向的「能力 / 权谋 / 关系」体系 ⇒ 结构、母子机制、AI 链路、导出全都不动。
    */
   get name() { return tabDisplayName(getActivePack(), 'power', '力量体系') },
   get description() { return powerDesc(getActivePack()) },
@@ -238,7 +239,7 @@ export const TABS: TabDef[] = [
 // 🔴 它们**是 WORLD_SET_TABS 成员** ⇒ 自带母子结构：母级＝天下通例，子项＝各政权 / 各邦国
 //    （§8.3 定案：「多份并列」由子项承载，不复用已撤回的「可重复模块」方案）。
 // 🔴 模块与题材无关（一套定义，见 schemaTemplates/institutions.ts）；**显隐**由
-//    packs.packShowsTab 的题材矩阵决定（历史古代全开、东方修真全关）—— 见 tabVisible。
+//    packs.packShowsTab 的题材矩阵决定（历史古代四个制度页签全开、东方修真全关）—— 见 tabVisible。
 ...INSTITUTION_TABS.map(institutionTab),
 
 {

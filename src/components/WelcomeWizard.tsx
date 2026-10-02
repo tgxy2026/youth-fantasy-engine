@@ -175,7 +175,7 @@ export default function WelcomeWizard({ onDone }: Props) {
                   <label className="block text-11 text-ink-400 mb-1">作品题材</label>
                   <GenrePackSelect value={genre} onChange={setGenre} className="w-full" />
                   <div className="mt-1 text-10 leading-relaxed text-ink-500">
-                    决定「世界设定 / 力量体系 / 政治 / 经济 / 宗教 / 司法」用哪套填写模板；进去后还能随时改。
+                    决定「世界设定 / 力量体系 / 政治 / 经济 / 宗教 / 司法」用哪套模板、默认显示哪几个；进去后还能随时改。
                   </div>
                 </div>
               </div>

@@ -41,7 +41,7 @@ export function GenrePackSelect({
       value={value}
       onChange={e => onChange(e.target.value as GenrePack)}
       className={`${SELECT_CLS} ${className}`}
-      title="选择作品题材：决定「世界设定 / 力量体系 / 制度页签」用哪一套模板；事后可改。"
+      title="选择作品题材：决定「世界设定 / 力量体系 / 制度页签」用哪一套模板、默认显示哪几个；事后可改。"
     >
       {GENRE_PACKS.map(p => <option key={p} value={p}>{p}</option>)}
     </select>
@@ -110,7 +110,7 @@ export function GenrePackSwitcher({ onSwitched }: { onSwitched?: (pack: GenrePac
   }
 
   return (
-    <label className="flex items-center gap-1.5" title="切换作品题材：换模板只隐藏、不删除；切回即恢复。">
+    <label className="flex items-center gap-1.5" title="切换作品题材：同时决定用哪套模板与默认显示哪几个页签；换模板只隐藏、不删除，切回即恢复。">
       <span className="text-10 text-ink-500">题材</span>
       <select
         value={pack}

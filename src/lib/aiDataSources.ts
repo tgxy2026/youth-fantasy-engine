@@ -118,7 +118,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     excludes: ['「设定草稿箱」—— 不发给 AI；只有点「AI 整理」整理进字段后才发'],
   },
   'power': {
-    label: '力量体系（母子结构）',
+    label: '力量体系（母子结构 · 无超凡题材下补开时显示为能力资源 / 权谋实力 / 关系地位）',
     sources: [
       { group: '力量体系 · 母级（全书统一）', items: [], note: '表单全部字段整份发出' },
       { group: '力量体系 · 子体系', items: [], note: '只有标为「活跃」的那个子体系会发（整份字段）；已完结 / 未激活的不发' },

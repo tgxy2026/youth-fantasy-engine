@@ -517,7 +517,7 @@ export default function App() {
     if (!tab) return <div className="p-8">页签不存在</div>
     switch (tab.type) {
       case 'form':
-        // 世界观 / 力量体系是「母子结构」表（C10 · 2.4.2）：母级（全书统一）+ 可多建的子世界。
+        // 世界设定 / 力量体系 / 四个制度页签都是「母子结构」表（C10 · 2.4.2；2.7.1 扩到六表）：母级（全书统一）+ 可多建的子项。
         // 其余表单型页签仍然是一页一份的 FormSheet。
         return isWorldSetTab(tab.id)
           ? <WorldSetSheet key={tab.id} tab={tab} />

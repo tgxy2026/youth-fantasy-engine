@@ -127,7 +127,7 @@ export interface TabDef {
 export interface Project {
   id: string
   name: string
-  genre: string        // 类型赛道
+  genre: string        // 作品题材：2.7.1 起存「题材包名」（GenrePack，10 选 1，决定世界设定/力量体系/制度页签的模板与默认显隐）；2.7.0 前是自由文本「类型赛道」，老数据靠 schemaTemplates.PACK_ALIASES 归位。
   intro: string        // 一句话简介
   cover?: string       // 封面（dataURL）
   createdAt: number

@@ -71,6 +71,9 @@ export default function WorldSetSheet({ tab }: Props) {
   const [pack, setPack] = useState<GenrePack>(getActivePack())
   /** 子项称谓随题材（Q15）：修真包→「子世界」、历史包→「政权」、武侠包→「门派」…纯文案层 */
   const subLabel = subItemLabel(tab.id, pack)
+  /** 母级说明里的举例随页签给（worldbase→世界底层法则；power→统一等级总纲；制度页→天下通例） */
+  const masterHint = tab.id === 'worldbase' ? '世界底层法则'
+    : tab.id === 'power' ? '统一等级总纲' : '天下通例'
 
   // 包一层 useMemo：模块随题材包变，依赖 [tab.id, pack]（不是 `tab.modules` —— 那是个 getter，每次读都是活值）
   const modules = useMemo(() => modulesFor(tab.id, pack) ?? [], [tab.id, pack])
@@ -280,7 +283,7 @@ export default function WorldSetSheet({ tab }: Props) {
           <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
           <HelpPopover title={`${tab.name} · 母子结构怎么用`} width="24rem" size={14}>
             {`这个页签分两层：\n\n`
-              + `· 【母级】全书统一 —— 整本书只有一个，写这套设定的顶层规则（世界底层法则 / 统一等级总纲）。`
+              + `· 【母级】全书统一 —— 整本书只有一个，写这套设定的顶层规则（${masterHint}）。`
               + `它永远会发给 AI。\n`
               + `· 【${subLabel}】—— 每个副本 / 剧本 / 世界线一套，可以建多项。每项有一个开关：`
               + `「活跃」（当前故事聚焦在它）或「已完结」（写过、不再聚焦）。\n`

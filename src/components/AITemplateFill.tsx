@@ -356,7 +356,7 @@ export default function AITemplateFill({
             {withWorldContext && (
               <label className="flex items-center gap-2 text-12 text-ink-300 cursor-pointer select-none">
                 <input type="checkbox" checked={useCtx} onChange={e => setUseCtx(e.target.checked)} className="accent-amber" />
-                参照本项目世界观（提升一致性，补全更贴合已设的世界观 / 力量体系）
+                参照本项目世界观（提升一致性，补全更贴合已设的世界观 / 设定表）
               </label>
             )}
             <AIDataSourceNote feature="fill-template" />

@@ -444,7 +444,7 @@ async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): 
   try {
     if (tab.type === 'form') {
       const main = renderForm(tab, await db.getFormData(tab.id), o)
-      // 世界观 / 力量体系是「母子结构」表（C10）：建过子项才引入母／子两层标题。
+      // 世界设定 / 力量体系 / 四个制度页签都是「母子结构」表（C10；2.7.1 扩到六表）：建过子项才引入母／子两层标题。
       // 🔴 没建过子项 ⇒ 原样返回（单世界用户的上下文与改动前**一字不差**）。
       if (!isWorldSetTab(tab.id)) return main
       const sub = await renderActiveSubSets(tab, o)

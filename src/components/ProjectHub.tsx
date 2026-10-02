@@ -361,7 +361,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 <div>
                   <label className="text-11 text-ink-400 mb-1 flex items-center gap-1">作品题材
                     <HelpPopover title="作品题材怎么选" width="23rem" size={11}>
-                      {'决定「世界设定 / 力量体系 / 政治 / 经济 / 宗教 / 司法」这几个页签用哪一套填写模板。\n\n· 写都市现实 / 历史古代这类没有超自然力量的作品时，选对应题材就不会再看到「境界 / 灵根 / 寿元」这类对不上的表；\n· 选错了没关系：在页签头部随时能改 —— 换模板只隐藏、不删除，切回即恢复。'}
+                      {'决定两件事：\n① 「世界设定 / 力量体系 / 政治 / 经济 / 宗教 / 司法」这几个页签用哪一套填写模板；\n② 它们默认显示哪几个 —— 例如选「历史古代」，力量体系页签默认不出现（可在《世界设定》页头部点「页签」按需开启）。\n\n· 写都市现实 / 历史古代这类没有超自然力量的作品时，选对应题材就不会再看到「境界 / 灵根 / 寿元」这类对不上的表；\n· 选错了没关系：在页签头部随时能改 —— 换模板只隐藏、不删除，切回即恢复。'}
                     </HelpPopover>
                   </label>
                   <GenrePackSelect value={form.genre} onChange={g => setForm(f => ({ ...f, genre: g }))} className="w-full" />
