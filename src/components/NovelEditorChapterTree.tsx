@@ -135,7 +135,7 @@ export default function NovelEditorChapterTree({
                     onDragStart={e => { if (free) { e.preventDefault(); return } e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', vol.id); setDragKind('vol'); setDragId(vol.id) }}
                     onDragEnd={() => resetDrag()}
                     className={free ? 'opacity-25 shrink-0 text-ink-600' : 'opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0'}
-                    title={free ? '「自由章节」卷固定在全书最后，不参与重排' : '拖动重排分卷'}
+                    title={free ? '「自由章节」卷固定在全书最前，不参与重排' : '拖动重排分卷'}
                   >
                     <GripVertical size={12} />
                   </span>

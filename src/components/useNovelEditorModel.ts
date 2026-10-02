@@ -812,9 +812,10 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
       if (dragKind === 'vol' && overKey.kind === 'vol') {
         // 🔴 自由卷不参与卷序重排：它的 order 是哨兵值，而 reorderVolumes 会把传入的卷重编成 0..n-1，
         //    一并传进去就会把哨兵冲掉、自由章节被排进正文序列中段（导出 / 正文序号 / 上下章全乱）
+        // 🔴 自由卷恒排最前（2.6.4 起）：先拼自由卷，再接重排后的真卷
         const next = [
-          ...reorderVolumes(realVolumes(volumes), dragId, overKey.id, overKey.pos),
           ...volumes.filter(v => isFreeVolume(v)),
+          ...reorderVolumes(realVolumes(volumes), dragId, overKey.id, overKey.pos),
         ]
         dirty = next.some(v => v.order !== (volumes.find(x => x.id === v.id)?.order ?? -1))
         setVolumes(next)

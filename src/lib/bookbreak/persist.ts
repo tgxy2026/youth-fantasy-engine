@@ -158,7 +158,7 @@ export async function persistSplitToChapters(
   if (dup) return { ...empty, alreadyImported: true }
 
   // 接在已有内容之后：卷序、章节号（全局连续）、叙事位次
-  // 🔴 只数真卷：自由卷 order 是哨兵值（恒排最后），拿 volumes.length 当基准会把拆出来的卷排到它后面
+  // 🔴 只数真卷：自由卷 order 是哨兵值（恒排最前），拿 volumes.length 当基准会把拆出来的卷排到它后面
   let volOrder = nextVolumeOrder(volumes)
   let seq = Math.max(0, ...[...chapterSeqMap(volumes, chapters).values()])
   let narrative = flattenChapters(volumes, chapters).length

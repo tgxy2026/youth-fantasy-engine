@@ -165,8 +165,8 @@ export async function restoreFromTrash(id: string): Promise<Chapter | null> {
     const vols = (await ops.getAll<Volume>('volumes')).filter(v => v.projectId === currentProjectId)
     let vol = vols.find(v => v.title === '已恢复章节')
     if (!vol) {
-      // 🔴 只数真卷：自由卷 order 是哨兵值（恒排最后，见 lib/freeVolume.ts），
-      //    拿 vols.length 当基准会让这个兜底卷排到自由卷后面
+      // 🔴 只数真卷：自由卷 order 是哨兵值（恒排最前，见 lib/freeVolume.ts），
+      //    拿 vols.length 当基准会让这个兜底卷的序号偏大一位
       const realMax = vols.filter(v => v.isFree !== true).reduce((m, v) => Math.max(m, v.order ?? 0), -1)
       vol = { id: uid(), projectId: currentProjectId, order: realMax + 1, title: '已恢复章节', description: '回收站恢复的章节默认放这里', createdAt: Date.now() }
       await ops.put('volumes', vol)

@@ -106,7 +106,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
 
   /** 在「章节总表」下新建一卷（= 一张新的章节台账表），建完直接跳进该卷 */
   const createVolume = async () => {
-    // 🔴 序号 / order 只数真卷：自由卷不占卷号，且它 order 是哨兵值（恒排最后），
+    // 🔴 序号 / order 只数真卷：自由卷不占卷号，且它 order 是哨兵值（恒排最前），
     //    拿 volumeTabs.length 当基准会让新卷排到自由卷后面（见 lib/freeVolume.ts）
     const vols = await db.getAllVolumes()
     const n = nextVolumeNo(vols)

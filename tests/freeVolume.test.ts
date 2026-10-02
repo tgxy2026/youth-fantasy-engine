@@ -7,7 +7,7 @@
 //      这条靠点界面测不出来（要真去点删除按钮），所以改成**源码接线断言**（第 5 组）；
 //   ④ 建卷 order 也只数真卷（第 6 组，同上，防止有人改回 `volumes.length`）；
 //   ⑤ 默认标题常量存在且非空 —— 首次 lazy 创建时用它当显示名。
-import { isFreeVolume, realVolumes, nextVolumeNo, nextVolumeOrder, findFreeVolume, pushFreeVolumeLast, FREE_VOLUME_TITLE, FREE_VOLUME_ORDER } from '../src/lib/freeVolume'
+import { isFreeVolume, realVolumes, nextVolumeNo, nextVolumeOrder, findFreeVolume, pushFreeVolumeFirst, FREE_VOLUME_TITLE, FREE_VOLUME_ORDER } from '../src/lib/freeVolume'
 import type { Volume } from '../src/lib/types'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -82,25 +82,26 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'ut
   ok('建卷 order 走 nextVolumeOrder(volumes)', line.includes('nextVolumeOrder(volumes)'), line.trim().slice(0, 120))
 }
 
-// ---------- 7. order 哨兵值：自由卷恒排最后 ----------
+// ---------- 7. order 哨兵值：自由卷恒排最前 ----------
 {
   const withFree = [vol('v1', 0), vol('v2', 1), { ...vol('vf', FREE_VOLUME_ORDER), isFree: true }]
   const sorted = [...withFree].sort((a, b) => a.order - b.order)
-  ok('自由卷排全书最后', sorted[sorted.length - 1].id === 'vf', sorted.map(v => v.id).join(','))
+  ok('自由卷排全书最前', sorted[0].id === 'vf', sorted.map(v => v.id).join(','))
+  ok('哨兵值必须为负（真卷从 0 起）', FREE_VOLUME_ORDER < 0, String(FREE_VOLUME_ORDER))
   ok('nextVolumeOrder 不被哨兵值污染（仍得 2）', nextVolumeOrder(withFree) === 2, String(nextVolumeOrder(withFree)))
-  // 反面：老口径「全部卷最大 order + 1」会取到哨兵值，新卷直接排到 100 万位
-  const naive = withFree.reduce((m, v) => Math.max(m, v.order ?? 0), -1) + 1
-  ok('老口径（全卷最大+1）确实会踩坑 —— 哨兵必须排除', naive > 1_000_000, String(naive))
+  // 反面守卫：哨兵若被改回正数（旧口径），自由卷就会被真卷挤到后面 —— 锁死「必须是负数」
+  const minReal = Math.min(...withFree.filter(v => !v.isFree).map(v => v.order))
+  ok('哨兵恒小于任何真卷 order ⇒ 恒排之前', FREE_VOLUME_ORDER < minReal, `sentry=${FREE_VOLUME_ORDER} minReal=${minReal}`)
 }
 
-// ---------- 8. pushFreeVolumeLast：幂等 + 校正 ----------
+// ---------- 8. pushFreeVolumeFirst：幂等 + 校正 ----------
 {
   const noFree = [vol('v1', 0)]
-  ok('没有自由卷时原样返回（同一引用，不产生写盘）', pushFreeVolumeLast(noFree) === noFree)
+  ok('没有自由卷时原样返回（同一引用，不产生写盘）', pushFreeVolumeFirst(noFree) === noFree)
   const good = [vol('v1', 0), { ...vol('vf', FREE_VOLUME_ORDER), isFree: true }]
-  ok('已在末位时原样返回（同一引用）', pushFreeVolumeLast(good) === good)
+  ok('已在最前位时原样返回（同一引用）', pushFreeVolumeFirst(good) === good)
   const bad = [vol('v1', 0), { ...vol('vf', 1), isFree: true }]
-  const fixed = pushFreeVolumeLast(bad)
+  const fixed = pushFreeVolumeFirst(bad)
   ok('order 被冲掉时校正回哨兵值', fixed.find(v => v.id === 'vf')?.order === FREE_VOLUME_ORDER)
   ok('真卷 order 不受影响', fixed.find(v => v.id === 'v1')?.order === 0)
 }
@@ -139,6 +140,10 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'ut
   // reorderVolumes 会把传入的卷重编成 0..n-1 —— 自由卷一并传进去，哨兵值就被冲掉了
   ok('卷重排只对真卷调用 reorderVolumes', seg.includes('reorderVolumes(realVolumes(volumes)'), seg.slice(0, 160))
   ok('自由卷在重排后原样拼回清单', /volumes\.filter\(v => isFreeVolume\(v\)\)/.test(seg), seg.slice(0, 160))
+  // 🔴 2.6.4：自由卷恒排最前 ⇒ 拼接顺序必须是「自由卷在前、真卷在后」
+  const fIdx = seg.indexOf('volumes.filter(v => isFreeVolume(v))')
+  const rIdx = seg.indexOf('reorderVolumes(realVolumes(volumes)')
+  ok('自由卷拼在真卷之前（恒排最前）', fIdx >= 0 && rIdx >= 0 && fIdx < rIdx, `free=${fIdx} real=${rIdx}`)
 }
 
 console.log(`\nfreeVolume: ${pass} passed, ${fail} failed`)

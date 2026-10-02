@@ -29,6 +29,7 @@ import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
 import { countCodeRefs, codeRefWarning } from '../lib/codeRefs'
 import { uid } from '../lib/id'
 import { aiCapabilityOf } from '../lib/aiScope'
+import { buildImportRows, type ImportRowResult } from '../lib/tableIO'
 import { useAIReady } from '../lib/useAIReady'
 import { clearFreeDraft } from '../lib/freeDraft'
 import { useCalendarRule } from '../lib/useCalendarRule'
@@ -118,6 +119,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const { ready: aiReady } = useAIReady()
   const [showFill, setShowFill] = useState(false)
   const [showOrganize, setShowOrganize] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   /** 行级「AI 补全本行空白」：只针对这一行、只填仍为空的单元格，绝不越界到其他行/表 */
   const [fillRow, setFillRow] = useState<TableRow | null>(null)
   // 读者反馈 / 名词术语的专属 AI 入口（独立于补全/整理能力矩阵）
@@ -510,6 +512,16 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     }
   }
 
+  /**
+   * 批量导入落盘（2.6.4）：与 handleOrganize 同口径 —— 直接写库、不进 drafts；
+   * 行的构造（含编号补号）交给 lib/tableIO.buildImportRows（纯函数，可单测）。
+   */
+  const handleImport = async (picked: ImportRowResult[]) => {
+    const created = buildImportRows(picked, tab, rows, getCurrentProjectId(), uid, drafts)
+    for (const row of created) await saveTableRow(row)
+    setRows(prev => [...prev, ...created])
+  }
+
   // 自动排序：有编号列按编号升序（空白沉底），否则按最后编辑时间降序
   // 注意：必须在所有提前 return 之前调用，否则违反 Hooks 规则导致黑屏崩溃
   const sortedRows = useMemo(
@@ -729,7 +741,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     // 历法规则（一年几个月 / 每月几天）
     calendarRule, setCalendarRule,
     // AI 入口
-    tableFields, showFill, setShowFill, showOrganize, setShowOrganize, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize,
+    tableFields, showFill, setShowFill, showOrganize, setShowOrganize, showImport, setShowImport, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize, handleImport,
   }
 }
 

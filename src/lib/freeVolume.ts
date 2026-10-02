@@ -11,7 +11,7 @@
 //   3. **判定只认 `isFree` 字段、不认标题** —— 作者可以给这个卷随便改名，改名后判定依然有效。
 //   4. **计数与统计要排除它** —— 新建卷的默认序号、「N 卷」统计都只数真卷，
 //      否则作者看到「第2卷」会变成「第3卷」、卷数凭空多一个。
-//   5. **order 用哨兵值、恒排最后** —— 见下方 `FREE_VOLUME_ORDER` 的说明。
+//   5. **order 用哨兵值、恒排最前（且不占正文序号）** —— 见下方 `FREE_VOLUME_ORDER` 的说明。
 //
 // 📌 为什么它是「真卷」而不是复用「未分卷章节（orphan）」：
 //   orphan 在章节树里压根不渲染（树只 map volumes），且分不清「主动建的散章」与「卷被删后遗留的」。
@@ -25,18 +25,21 @@ import { uid } from './id'
 export const FREE_VOLUME_TITLE = '自由章节'
 
 /**
- * 自由卷的 order：**哨兵值**，远大于任何真卷（真卷是 0..n-1 的连续小整数）。
+ * 自由卷的 order：**哨兵值**，远小于任何真卷（真卷是 0..n-1 的连续小整数）。
  *
- * 为什么不用「最大 order + 1」：那样每当有新的建卷动作（侧栏建卷 / 拆书导入 / 创意写作建卷 /
- * 回收站恢复自动建卷），新卷的 order 就会盖过自由卷，把它挤到中间 —— 它的章节也就跟着插进
- * 正文序列中段，导出顺序、正文序号、上一章/下一章全会乱。而"每次建卷后再把自由卷顶回最后"
- * 是事后补救、漏一处就出 bug（2.6.4 影响面排查时确实漏了 4 处）。
+ * 🔴 口径（2.6.4 起）：自由卷**恒排全书最前** —— 作者把「灵感片段 / 人物小传 / 番外散篇」
+ * 这类还没想好归属的文本收在这里，放在正文之前更符合直觉（读起来像"楔子 / 设定区"）。
+ * 但它**不占正文序号**：章节号是全局派生的（`chapterSeq.chapterSeqMap`），自由卷内的章节一律
+ * 不编号，正片仍从「第1章」起。
  *
- * 用哨兵值之后：真卷 order 一律从 `nextVolumeOrder()` 取（只数真卷），永远撞不到哨兵，
- * 自由卷天然恒在末位，无需任何事后重排。唯一要守的是**卷拖拽重排必须排除自由卷**
+ * 为什么用哨兵值而不是「最小 order - 1」：每当有新的建卷动作（侧栏建卷 / 拆书导入 / 创意写作建卷 /
+ * 回收站恢复自动建卷），「最小 order - 1」就得重算一遍、漏一处就把自由卷挤到中段。
+ *
+ * 用哨兵值之后：真卷 order 一律从 `nextVolumeOrder()` 取（只数真卷，恒 ≥ 0），永远撞不到负数
+ * 哨兵，自由卷天然恒在首位，无需任何事后重排。唯一要守的是**卷拖拽重排必须排除自由卷**
  * （`reorderVolumes` 会把传入的卷重新编成 0..n-1，会把哨兵值冲掉）。
  */
-export const FREE_VOLUME_ORDER = 1_000_000
+export const FREE_VOLUME_ORDER = -1_000_000
 
 /** 是否「自由卷」（托管未归类章节的系统保留卷） */
 export function isFreeVolume(v?: { isFree?: boolean } | null): boolean {
@@ -71,7 +74,7 @@ export function findFreeVolume(vols: Volume[]): Volume | undefined {
  * 供「不确定上游有没有动过 order」的入口调用（如卷拖拽重排后）；纯函数，无变化则**原样返回同一引用**，
  * 调用方可用 `out === vols` 判断是否要落库。
  */
-export function pushFreeVolumeLast(vols: Volume[]): Volume[] {
+export function pushFreeVolumeFirst(vols: Volume[]): Volume[] {
   const free = findFreeVolume(vols)
   if (!free || free.order === FREE_VOLUME_ORDER) return vols
   return vols.map(v => (v.id === free.id ? { ...v, order: FREE_VOLUME_ORDER } : v))

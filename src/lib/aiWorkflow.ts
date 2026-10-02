@@ -328,7 +328,7 @@ export async function commitOutline(
 
   // ① 建卷
   const existingVols = await db.getAllVolumes().catch(() => [] as Volume[])
-  // 🔴 起始 order 只数真卷：自由卷 order 是哨兵值（恒排最后），拿 existingVols.length 当基准会盖过它
+  // 🔴 起始 order 只数真卷：自由卷 order 是哨兵值（恒排最前），拿 existingVols.length 当基准会盖过它
   let volOrder = nextVolumeOrder(existingVols)
   for (const v of result.volumes) {
     if (opts.signal?.aborted) break

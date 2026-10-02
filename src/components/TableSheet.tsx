@@ -9,7 +9,7 @@ import type { TabDef } from '../lib/types'
 import { Z } from '../lib/zLayer'
 import { deleteTableRow } from '../lib/db'
 import { SABC_LABELS, type VisCtx } from '../lib/schema'
-import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch } from 'lucide-react'
+import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, Upload, Download } from 'lucide-react'
 import HistoryTimeline from './HistoryTimeline'
 import StoryTimeline from './StoryTimeline'
 import StorylineView from './StorylineView'
@@ -19,7 +19,10 @@ import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
 import AITemplateFill from './AITemplateFill'
 import AIOrganize from './AIOrganize'
+import TableImportDialog from './TableImportDialog'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
+import { exportRowsCsv } from '../lib/tableIO'
+import { downloadBlob } from '../lib/zip'
 import FeedbackAIPanel from './FeedbackAIPanel'
 import TermDedupPanel from './TermDedupPanel'
 import CalendarRuleModal from './CalendarRuleModal'
@@ -68,8 +71,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 历法
     calendars, calendarRule, setCalendarRule,
     // AI 入口
-    tableFields, showFill, setShowFill, showOrganize, setShowOrganize, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize,
+    tableFields, showFill, setShowFill, showOrganize, setShowOrganize, showImport, setShowImport, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize, handleImport,
   } = model
+
+  /** 导出本表为 CSV（UTF-8 BOM，Excel 直接打开不乱码） */
+  const exportCsv = () => {
+    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportRowsCsv(tab, rows)], { type: 'text/csv;charset=utf-8' }))
+  }
 
   if (!loaded) return <LoadingState />
 
@@ -209,6 +217,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           {!isMaster && (
           <Button onClick={addRow} variant="primary" size="md" className="flex items-center shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
+          </Button>
+          )}
+          {!isMaster && (
+          <Button variant="secondary" onClick={() => setShowImport(true)} title="批量导入：粘贴表格 / CSV / 纯文本，或上传文件" className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0">
+            <Upload size={14} /> 导入
+          </Button>
+          )}
+          {!isMaster && (
+          <Button variant="secondary" onClick={exportCsv} title="导出本表数据为 CSV（Excel 可直接打开）" className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium transition-colors shrink-0">
+            <Download size={14} /> 导出
           </Button>
           )}
           {aiCap !== 'none' && !isMaster && (
@@ -371,6 +389,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         />
       )}
 
+      {showImport && (
+        <TableImportDialog
+          tab={tab}
+          existing={sortedRows}
+          onAdd={handleImport}
+          onClose={() => setShowImport(false)}
+        />
+      )}
       {showOrganize && (
         <AIOrganize
           tab={tab}
