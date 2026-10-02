@@ -228,7 +228,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center">
               <BookPlus size={13} /> 创建示范项目
             </Button>
-            <Button variant="secondary" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg transition-colors">
+            <Button variant="secondary" onClick={() => fileRef.current?.click()} className="transition-colors">
               <FileDown size={13} /> 导入项目
             </Button>
             <input
@@ -258,7 +258,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             {onReplayWelcome && (
               <Button variant="secondary" onClick={onReplayWelcome}
                 title="重新看一遍新手引导（三选一 + 顺手指引）—— 不会改动任何已有数据"
-                className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg transition-colors">
+                className="transition-colors">
                 <Compass size={13} /> 新手引导
               </Button>
             )}

@@ -170,7 +170,7 @@ export default function FormSheet({ tab }: Props) {
           <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
-            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
+            className="font-medium hover:bg-amber/25"
             title={dirty ? '保存（Ctrl+S）' : '无未保存的改动'}
           >
             <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}

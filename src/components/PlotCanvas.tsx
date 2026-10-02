@@ -404,7 +404,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
               ))}
             </select>
             <Button variant="secondary" disabled={!beatTplId} onClick={layBeats}
-              className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-11 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="w-full px-3 rounded-md disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title="把所选模板的全部节拍铺成结构卡（卡片右上角显示模板名）；已铺的推演卡不受影响">
               <LayoutGrid size={11} /> 按模板铺节点
             </Button>
@@ -423,7 +423,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
               className="relative"
               style={{
                 width: canvas.w, height: canvas.h,
-                backgroundImage: 'radial-gradient(circle, rgba(120,113,108,0.18) 1px, transparent 1px)',
+                backgroundImage: 'radial-gradient(circle, rgb(var(--graph-grid) / 0.18) 1px, transparent 1px)',
                 backgroundSize: '26px 26px',
                 cursor: panning ? 'grabbing' : 'grab',
               }}
@@ -455,7 +455,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                     key={c.id}
                     onPointerDown={e => onCardDown(e, c.id)}
                     className={`group absolute w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-ink-850 shadow-lg select-none ${connectMode ? 'cursor-pointer' : 'cursor-grab'}`}
-                    style={{ left: c.x, top: c.y, borderColor: isPending ? meta.color : 'rgb(63 63 58)', boxShadow: isPending ? `0 0 0 2px ${meta.color}` : undefined }}
+                    style={{ left: c.x, top: c.y, borderColor: isPending ? meta.color : 'rgb(var(--graph-grid))', boxShadow: isPending ? `0 0 0 2px ${meta.color}` : undefined }}
                   >
                     <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-ink-700" style={{ borderTopColor: meta.color }}>
                       <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: meta.color }} />

@@ -80,7 +80,7 @@ export default function AboutPage() {
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
           <HelpPopover title="这一页是什么" side="right">
-            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 打赏名单暂为示例（借用了若干知名作品的角色名），后续会更新为真实记录；\n· 页面内容全部来自本项目内置的静态资源，不依赖任何在线服务。'}
+            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 打赏名单暂为示例（借用了若干知名作品的角色名），后续会更新为真实记录；\n· 页面图文与链接均为内置静态资源；仅「检查更新」会向 Gitee 发一次只读请求。'}
           </HelpPopover>
         </div>
         <p className="text-ink-400 text-sm mb-8">

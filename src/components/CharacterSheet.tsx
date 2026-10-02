@@ -330,7 +330,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
           <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
-            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
+            className="font-medium hover:bg-amber/25"
             title={dirty ? '保存（Ctrl+S）' : '无未保存的改动'}
           >
             <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
@@ -348,7 +348,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
           {isCharTab && (
             <Button variant="toggle" selected={hideRetired}
               onClick={() => setHideRetired(v => !v)}
-              className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
+              className="font-medium hover:bg-amber/25"
               title="隐藏「人物状态 = 已退场」的角色，避免列表过长"
             >
               <EyeOff size={14} /> 隐藏已退场

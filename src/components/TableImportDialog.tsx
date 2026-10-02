@@ -391,7 +391,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
             导入选中 {checked.size} 条
           </Button>
           <span className="text-11 text-ink-500">导入后可继续在表格里编辑；编号留空会自动续号。</span>
-          <Button variant="secondary" onClick={onClose} className="ml-auto px-3 py-2 text-12">取消</Button>
+          <Button variant="secondary" onClick={onClose} className="ml-auto">取消</Button>
         </div>
       </div>
     </Modal>

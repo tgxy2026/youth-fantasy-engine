@@ -1,5 +1,5 @@
 // Electron 主进程：窗口 + 本地数据文件读写（IPC）
-// 数据文件保存在系统用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\青春幻想引擎\），
+// 数据文件保存在系统用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\<应用名>\），
 // 格式与便携（U 盘）版完全一致 —— 可互相导出导入。
 const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron')
 const path = require('path')
@@ -31,7 +31,7 @@ function loadCustomPath() {
 
 /**
  * 本地数据文件路径。
- * 默认在用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\novel-studio\），
+ * 默认在用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\<应用名>\），
  * 用户可改到云盘同步目录里（WPS 云盘 / OneDrive 等）实现跨设备同步。
  */
 function dataFile() {

@@ -43,7 +43,7 @@ export function RefsField({ value, onChange, minRows = 3 }: {
         onChange={onChange}
         minRows={minRows}
         maxHeight={200}
-        placeholder="粘一段资料进来（百科摘要、设定集、你写的备忘都行）—— 模型会优先依据它，而不是凭印象编。"
+        placeholder="粘一段资料进来（百科摘要、设定文档、你写的备忘都行）—— 模型会优先依据它，而不是凭印象编。"
       />
       <p className="mt-1 text-10 leading-relaxed text-ink-500">
         想写冷门或原创题材时最有用的就是这一栏：模型对知名题材很熟，对冷门设定只会一本正经地编。

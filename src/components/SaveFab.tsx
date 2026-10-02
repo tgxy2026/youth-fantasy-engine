@@ -31,7 +31,7 @@ export function SaveFab({
         solid
         size="md"
         title={title}
-        className="flex items-center text-13 text-ink-900 transition-all animate-pulse"
+        className="text-ink-900 transition-all animate-pulse"
       >
         <Save size={14} /> {label}
       </Button>

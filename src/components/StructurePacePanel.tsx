@@ -46,7 +46,7 @@ function BandStrip({ alignments, mode }: { alignments: BeatAlignment[]; mode: 'i
         return (
           <div
             key={a.name}
-            style={{ width: `${w}%`, background: `${beatColor(i)}2e`, borderRight: '1px solid rgba(255,255,255,0.06)' }}
+            style={{ width: `${w}%`, background: `${beatColor(i)}2e`, borderRight: '1px solid rgb(var(--ink-100) / 0.06)' }}
             className="flex items-center justify-center overflow-hidden whitespace-nowrap"
             title={`${a.name}：${label}`}
           >
@@ -72,7 +72,7 @@ function HookStrip({ stats }: { stats: { name: string; count: number; kinds: str
         return (
           <div
             key={s.name}
-            style={{ width: `${s.pct}%`, background: `${beatColor(i)}2e`, borderRight: '1px solid rgba(255,255,255,0.06)' }}
+            style={{ width: `${s.pct}%`, background: `${beatColor(i)}2e`, borderRight: '1px solid rgb(var(--ink-100) / 0.06)' }}
             className="flex items-center justify-center overflow-hidden whitespace-nowrap"
             title={`${s.name}：${s.count} 个爽点${kinds}`}
           >

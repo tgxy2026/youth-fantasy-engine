@@ -421,7 +421,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               <span className="text-13 font-semibold text-ink-100">孤儿备份清理</span>
               <HelpPopover title="什么是孤儿备份？" width="21rem" size={12}>
                 删除项目时，其自动备份按约定会保留（防止误删后无法找回）。但项目已删除后，这些备份在软件里看不到、也无法恢复项目，只会持续占用存储。
-                建议定期清理。位置：本机数据文件 AppData\Roaming\青春幻想引擎\novel-studio-data.json 的 backups 字段。
+                建议定期清理。位置：本机数据文件（左下角「本机存储」里可打开它所在的文件夹）的 backups 字段。
               </HelpPopover>
             </div>
             <div className="text-11 text-ink-400 leading-relaxed mb-2.5">

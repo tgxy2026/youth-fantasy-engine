@@ -91,7 +91,7 @@ export default function TabVisibilityControl({ pack }: { pack: GenrePack }) {
       {open && (
         <>
           {/* 点击遮罩：点空白处收起（页内层，避免盖住弹窗） */}
-          <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setOpen(false)} />
+          <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setOpen(false)} aria-hidden />
           <div
             className="absolute left-0 top-full mt-1.5 w-[20rem] rounded-lg border border-ink-700 bg-ink-850 shadow-xl p-3"
             style={{ zIndex: Z.pagePanelTop }}

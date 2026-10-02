@@ -395,7 +395,7 @@ export default function CheckTools() {
           />
           <div className="flex items-center gap-2">
             {aiReady ? (
-              <Button variant="info" onClick={aiAudit} disabled={auditLoading} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-12 transition-colors disabled:opacity-50">
+              <Button variant="info" onClick={aiAudit} disabled={auditLoading} className="transition-colors disabled:opacity-50">
                 <Sparkles size={13} /> {auditLoading ? '自查中…' : 'AI 深度自查'}
               </Button>
             ) : (
@@ -453,7 +453,7 @@ export default function CheckTools() {
             对照全项目设定，扫描引用断链 / 编号重复 / 必填空 / 酒馆列表残留（确定性检查，不靠 AI 推理）。
           </p>
           <div className="flex items-center gap-2">
-            <Button variant="success" onClick={runHealth} disabled={healthScanning} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-12 transition-colors disabled:opacity-50">
+            <Button variant="success" onClick={runHealth} disabled={healthScanning} className="transition-colors disabled:opacity-50">
               <RefreshCw size={13} className={healthScanning ? 'animate-spin' : ''} /> {healthScanning ? '体检中…' : '重新体检'}
             </Button>
             <Button onClick={clearIgnored}

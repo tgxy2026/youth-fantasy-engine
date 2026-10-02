@@ -540,7 +540,7 @@ export async function enableDesktopCloudSync(handle: SyncDirHandle) {
   if (DESKTOP) {
     const st = getDesktopState()
     if (st.writeLocked) {
-      throw new Error(st.writeLockReason || '本地数据文件当前不可读，已阻止开启云同步（以免把空数据推上云端）')
+      throw new Error(st.writeLockReason || '本地数据文件当前不可读，已阻止开启云盘同步（以免把空数据推上云端）')
     }
   }
   // 🔴 必须在 enableDesktopCloud() **之前**把当前数据抓下来：
@@ -569,7 +569,7 @@ export async function enableDesktopCloudSync(handle: SyncDirHandle) {
       await disableDesktopCloud()
       throw new Error(
         '同步文件夹里没有检测到同步数据，本机也几乎没有数据 —— 已阻止开启，以免空数据覆盖另一台电脑的备份。' +
-          '如果你是想在另一台电脑上继续写作：请先在原电脑上开启一次云同步，并确认网盘客户端已把' +
+          '如果你是想在另一台电脑上继续写作：请先在原电脑上开启一次云盘同步，并确认网盘客户端已把' +
           '「青春幻想引擎-同步数据.yfe」「完整下载」到这个文件夹（百度网盘等可能需要右键手动下载），再重新选择。',
       )
     }
