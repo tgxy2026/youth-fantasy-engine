@@ -96,9 +96,17 @@ export const LOCAL_BUDGET_OF_CTX = 24000 / 32768
  * 为什么不直接 import `PARAM_GUIDES`：本模块刻意保持**零运行时依赖**（只 `import type`），
  * 这样单测能直接跑、也不会和 tavern 那套形成环。一致性交给测试守。
  */
+// 🔴 2026-10-03 老大定案：**上限不再自己设小**，与「模型配置 → 上下文窗口」那个输入框一致（2097152 = 2M）。
+//    起因：本机实测四个模型窗口是 96K / 128K / 256K / 256K（差 2.7 倍），而原上限 131072（128K）
+//    会让 256K 的模型**根本调不上去**；再往上调到 2M 也是同理 —— 限制该由「模型能跑多少」决定，
+//    不该由这个文件替用户拍板。
+//    ⚠️ 上限放开 ≠ 风险消失，真正的守门在两处**必要提醒**：
+//      ① `adviseCapacity` 本地分支的「超窗口保护」：预算 > 窗口 × 出厂配比 ⇒ 会被 Ollama 静默截断（先裁协议与设定）；
+//      ② 分段说明（`paramGuide`）里写清「超出会加载失败或被截断，按你实测的上限填」。
+//    contextBudget 与 numCtx 保持同量级：配比 0.732 下两者必须匹配，否则会出现「窗口 2M、预算 26 万」的错配。
 export const TUNING_LIMITS = {
-  contextBudget: { min: 1000, max: 100000, step: 500 },
-  numCtx: { min: 2048, max: 131072, step: 1024 },
+  contextBudget: { min: 1000, max: 2097152, step: 500 },
+  numCtx: { min: 2048, max: 2097152, step: 1024 },
   softLimit: { min: 200, max: 10000, step: 100 },
   hardLimit: { min: 200, max: 20000, step: 100 },
   longTermLimit: { min: 100, max: 2000, step: 50 },
@@ -242,6 +250,13 @@ export interface CapacityAdvice {
   windowSource: 'user' | 'preset' | 'fallback'
   /** 预设标签（windowSource==='preset' 时给出，用于界面显示"识别为 Qwen3.5 系列"） */
   windowLabel?: string
+  /**
+   * 窗口数是否来自**模型配置里手填的那个数**（2026-10-03）。
+   *
+   * 🔴 这是「手填即真源」与「面板自定」两条路的分界：`syncTuningWithModel` 只在它为 true 时
+   *    把窗口写回酒馆设置，否则每次换模型都会把面板里调好的值冲掉。
+   */
+  numCtxFromUserWindow?: boolean
   /** 跟着当前模型走的**一整批**推荐值：上下文预算 + 记忆档四项 */
   suggest: TuningAdvice
   /** 按建议预算估算的每轮输入 token（≈ 字符数，中文场景 1 字 ≈ 1 token） */
@@ -284,10 +299,17 @@ export function adviseCapacity(
   }
 
   if (local) {
-    // 本地：numCtx 由显存决定，**不按模型标称放宽**；预算一般保持用户现值 —— 但有个例外：
-    // 见下面的「超窗口保护」。
-    const claim = windowTokens >= 1000 ? Math.round(windowTokens / 1024) + 'K' : windowTokens
-    const claimWhat = windowSource === 'user' ? '你手填的标称窗口' : '模型标称'
+    // 🔴🔴 2026-10-03 老大定案：**用户手填的窗口就是真源**（本地也一样），随模型走。
+    //
+    //    为什么改：原先本地一律沿用酒馆面板的 numCtx（出厂 32768），而模型配置页对本地
+    //    **禁填**窗口（`AIConfigPanel` 的 disabled）—— 理由是「单一真源」。但本机四个模型实测
+    //    窗口是 96K / 128K / 256K / 256K（差 2.7 倍），把「本地」当成一种模型就等于
+    //    永远 32K，**换任何模型都发挥不出能力**。
+    //    现在的口径：**手填 > 面板现值**；没手填才沿用面板现值（绝不按模型标称自动放宽，
+    //    那条显存安全阀的原则仍然留着）。
+    const userWindow = windowSource === 'user' ? windowTokens : 0
+    const effectiveCtx = userWindow || current.numCtx
+    const claim = effectiveCtx >= 1000 ? Math.round(effectiveCtx / 1024) + 'K' : effectiveCtx
 
     /**
      * 🔴 超窗口保护：预算也可能被云端放大过（云端可达 41 万），而 numCtx 是本地显存定的。
@@ -296,7 +318,7 @@ export function adviseCapacity(
      * 故以「出厂配比 × 当前窗口」为安全上限：**只有超限才给回落建议**，
      * 低于上限时一律尊重用户现值（他很可能是刻意调小的）。
      */
-    const safeMax = Math.floor(current.numCtx * LOCAL_BUDGET_OF_CTX)
+    const safeMax = Math.floor(effectiveCtx * LOCAL_BUDGET_OF_CTX)
     const overWindow = current.contextBudget > safeMax
     const budget = overWindow
       ? clampTo(snap(safeMax, TUNING_LIMITS.contextBudget.step), TUNING_LIMITS.contextBudget.min, TUNING_LIMITS.contextBudget.max)
@@ -304,17 +326,21 @@ export function adviseCapacity(
 
     return {
       local: true,
-      windowTokens: current.numCtx,
+      windowTokens: effectiveCtx,
       windowSource: 'user',
+      /** 🔴 本次窗口是不是来自「模型配置里手填的那个数」—— 决定要不要写回酒馆设置（见 tavern/settings 的 syncTuningWithModel） */
+      numCtxFromUserWindow: userWindow > 0,
       overWindow,
-      suggest: recommendTuning(budget, current.numCtx),
+      suggest: recommendTuning(budget, effectiveCtx),
       approxPromptTokens: budget,
-      headline: `本地 Ollama · 窗口 ${current.numCtx} 词元 · 预算 ${current.contextBudget} 字`
+      headline: `本地 Ollama · 窗口 ${effectiveCtx} 词元（${userWindow ? '按你手填的' : '面板现值'}）· 预算 ${current.contextBudget} 字`
         + (overWindow ? `（超窗口承载，建议 ${budget}）` : ''),
-      note: `本地部署：上下文窗口由显存决定（当前 ${current.numCtx}），不读模型配置里那一项；` +
-        `${claimWhat} ${claim} 属架构容量，单卡跑不到。记忆档按当前预算 ${budget} 字同比推荐。`
+      note: `本地部署：${userWindow
+        ? `**窗口以你在模型配置里手填的 ${effectiveCtx} 为准**（酒馆的窗口长度与上下文预算会跟着它变）。`
+        : `上下文窗口由显存决定（当前面板 ${effectiveCtx}）；想换模型就换窗口，请在模型配置里手填。`}` +
+        `模型标称 ${claim} 只作参考。记忆档按当前预算 ${budget} 字同比推荐。`
         + (overWindow
-          ? `⚠️ 当前预算 ${current.contextBudget} 字已超过本地窗口 ${current.numCtx} 的承载范围，`
+          ? `⚠️ 当前预算 ${current.contextBudget} 字已超过本地窗口 ${effectiveCtx} 的承载范围，`
             + `发给模型的资料会被静默截断（先裁协议与设定）。建议回落到 ${budget} 字。`
           : ''),
     }

@@ -452,10 +452,14 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               {(() => {
                 const isLocal = editing.type === 'ollama' || !!editing.local
                 const hit = lookupWindow(editing.model)
-                const hint = isLocal
-                  ? '本地部署不读这一项 —— 本地窗口由显存决定，请在酒馆控制面板调「上下文窗口长度（num_ctx）」。'
-                  : editing.contextWindow
-                    ? `已手填 ${editing.contextWindow} tokens：酒馆控制面板会按它算上下文预算与记忆档的建议值。`
+                const hint = editing.contextWindow
+                  ? `已手填 ${editing.contextWindow} tokens${isLocal
+                      ? '：**酒馆的窗口长度与上下文预算会跟着它变**（这是老大手填即真源的口径）'
+                      : '：酒馆控制面板会按它算上下文预算与记忆档的建议值'}。留空则${isLocal
+                      ? '沿用酒馆面板现值 —— 不按模型标称自动放宽。'
+                      : '按模型名自动识别'}。`
+                  : isLocal
+                    ? `留空 = 沿用酒馆面板当前的窗口。🔴 本地模型**建议手填你实测能跑的上限**（不同模型差 2.7 倍：96K / 128K / 256K），填了全项目跟着走。`
                     : hit
                       ? `留空 = 按模型名识别为 ${hit.window} tokens（${hit.label}）。识别得不对就手填覆盖。`
                       : `未识别到该模型名 —— 留空会按保守值 ${FALLBACK_WINDOW} tokens 估算，建议手填真实值。`
@@ -468,8 +472,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       value={editing.contextWindow}
                       min={1024} max={2097152} step={1024}
                       allowEmpty
-                      disabled={isLocal}
-                      className={`w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 ${isLocal ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600"
                       onChange={v => setEditing({ ...editing, contextWindow: v })}
                       onClamped={v => showToast(`上下文窗口已调回边界 ${v} tokens`, 'info')}
                       placeholder="留空 = 按模型名自动识别"

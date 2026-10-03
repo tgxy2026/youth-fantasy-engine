@@ -546,13 +546,22 @@ export async function syncTuningWithModel(): Promise<SyncTuningResult> {
     const nextCommon = { ...st.common, tunedFor: fingerprint }
     const nextFree = { ...st.free }
 
-    if (!cap.local || cap.overWindow) nextCommon.contextBudget = rec.contextBudget
+    // 🔴 2026-10-03 老大定案：**模型配置里手填的窗口 = 全项目真源**（含酒馆）。
+    //    原先这里只同步预算与记忆档，`numCtx` 从不写回 —— 于是「在模型配置里把窗口调大」
+    //    对酒馆毫无影响。两条规则：
+    //      ① 只有 `numCtxFromUserWindow`（真手填）才写回，避免每次换模型都冲掉面板里调好的值；
+    //      ② 手填的窗口比面板现值小也要落（主人可能主动收窄）。
+    if (cap.numCtxFromUserWindow && rec.numCtx && rec.numCtx !== st.common.numCtx) {
+      nextCommon.numCtx = rec.numCtx
+    }
+    if (!cap.local || cap.overWindow || cap.numCtxFromUserWindow) nextCommon.contextBudget = rec.contextBudget
     nextFree.softLimit = rec.softLimit
     nextFree.hardLimit = rec.hardLimit
     nextFree.longTermLimit = rec.longTermLimit
     nextFree.diaryDays = rec.diaryDays
 
-    const changed = nextCommon.contextBudget !== st.common.contextBudget
+    const changed = nextCommon.numCtx !== st.common.numCtx
+      || nextCommon.contextBudget !== st.common.contextBudget
       || nextFree.softLimit !== st.free.softLimit
       || nextFree.hardLimit !== st.free.hardLimit
       || nextFree.longTermLimit !== st.free.longTermLimit

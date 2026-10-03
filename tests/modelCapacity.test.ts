@@ -32,7 +32,40 @@ const local = adviseCapacity({ type: 'ollama', model: 'qwen3.5-27b' }, CUR)
 ok('本地：推荐 numCtx 保持用户现值（不按模型标称放宽）', local.suggest.numCtx === 32768, String(local.suggest.numCtx))
 ok('本地：建议预算保持现值', local.suggest.contextBudget === 24000, String(local.suggest.contextBudget))
 ok('本地：windowTokens 用 numCtx（不是模型标称）', local.windowTokens === 32768, String(local.windowTokens))
-ok('本地：note 说明显存决定、标称跑不到', /显存/.test(local.note) && /跑不到/.test(local.note), local.note)
+ok('本地（未手填窗口）：note 说明沿用面板现值、且提示去模型配置手填',
+  /面板/.test(local.note) && /手填/.test(local.note), local.note)
+ok('🔴 本地（未手填）：不算「手填真源」，同步链不会冲掉面板值',
+  local.numCtxFromUserWindow === false, String(local.numCtxFromUserWindow))
+
+// ---------- ①-b 本地 · 手填了窗口（2026-10-03 老大定案：手填即真源）----------
+{
+  const filled = adviseCapacity(
+    { type: 'ollama', local: true, model: 'gemma-4-31b-mm', contextWindow: 131072 },
+    { numCtx: 32768, contextBudget: 24000 },
+  )
+  ok('🔴 本地手填 128K：窗口以手填为准（不是面板的 32K）', filled.windowTokens === 131072, String(filled.windowTokens))
+  ok('🔴 手填后建议窗口 = 手填值（会写回酒馆设置）',
+    filled.suggest.numCtx === 131072 && filled.numCtxFromUserWindow === true, String(filled.suggest.numCtx))
+  ok('🔴 手填 128K 后安全上限按 128K 算（24000 预算不再算超限）',
+    filled.overWindow === false, String(filled.overWindow))
+  ok('🔴 手填后预算上限跟着放大（不再被 32K×0.732 卡在 23400）',
+    filled.overWindow === false && Math.floor(131072 * (24000 / 32768)) > 90000)
+  const shrink = adviseCapacity(
+    { type: 'ollama', local: true, model: 'qwen3.8-27b-write', contextWindow: 98304 },
+    { numCtx: 262144, contextBudget: 24000 },
+  )
+  ok('🔴 手填「比面板小」也照填（主人可能主动收窄）', shrink.windowTokens === 98304, String(shrink.windowTokens))
+}
+
+// ---------- ①-c 上限提到 256K（2026-10-03：实测有两个模型能跑 262144）----------
+ok('🔴 numCtx 上限与模型配置输入框一致（2097152 = 2M，不再自己拍小）', TUNING_LIMITS.numCtx.max === 2097152, String(TUNING_LIMITS.numCtx.max))
+ok('🔴 contextBudget 与 numCtx 同量级（避免「窗口 2M、预算 26 万」错配）', TUNING_LIMITS.contextBudget.max === TUNING_LIMITS.numCtx.max, String(TUNING_LIMITS.contextBudget.max))
+{
+  // 256K 窗口按出厂配比 ⇒ 建议预算约 19 万字；上限 100000 时会被截断，现在不会
+  const big = recommendTuning(191900, 262144)
+  ok('🔴 256K 窗口的配套预算（19 万字）不被截断',
+    big.contextBudget === 191900, String(big.contextBudget))
+}
 
 // ---------- ② 云端 · 硅基流动 Qwen3.5-35B-A3B（256K） ----------
 const qwen = adviseCapacity({ type: 'openai', local: false, model: 'Qwen/Qwen3.5-35B-A3B' }, CUR)
@@ -104,12 +137,21 @@ const huge = adviseCapacity({ type: 'openai', local: false, model: 'gpt-4.1' }, 
 ok('记忆档：1M 窗口模型下被静态上限顶住（记忆不该无限膨胀）',
   huge.suggest.hardLimit === TUNING_LIMITS.hardLimit.max &&
   huge.suggest.longTermLimit === TUNING_LIMITS.longTermLimit.max, JSON.stringify(huge.suggest))
-ok('记忆档：1M 窗口模型的建议预算仍远大于 contextBudget 静态上限',
-  huge.suggest.contextBudget > TUNING_LIMITS.contextBudget.max, String(huge.suggest.contextBudget))
+// 2026-10-03：上限从 100000 提到 2097152（与模型配置输入框一致）后，
+// 1M 云端窗口的建议预算（41 万）**不再被静态上限截断** —— 这正是当年「1M 模型可用到 41 万却被输入框卡住」的修复。
+ok('记忆档：1M 窗口模型的建议预算不再被静态上限截断（41 万能直接填）',
+  huge.suggest.contextBudget > 100000 && huge.suggest.contextBudget <= TUNING_LIMITS.contextBudget.max,
+  String(huge.suggest.contextBudget))
 
 // ---------- ⑨ 输入框范围动态放宽（scaleGuide）----------
-const stretched = scaleGuide(PARAM_GUIDES.contextBudget, huge.suggest.contextBudget)
-ok('scaleGuide：1M 窗口下上限确实被放宽', stretched.max > PARAM_GUIDES.contextBudget.max, `${stretched.max}`)
+// 上限已足够大 ⇒ 1M 窗口这条路上**用不到** scaleGuide 了；但它本身仍要能工作（更大窗口时兜底）。
+ok('scaleGuide：1M 窗口下无需放宽（上限已足够）',
+  scaleGuide(PARAM_GUIDES.contextBudget, huge.suggest.contextBudget).max === PARAM_GUIDES.contextBudget.max,
+  String(PARAM_GUIDES.contextBudget.max))
+const stretchedFar = scaleGuide(PARAM_GUIDES.contextBudget, 3_000_000)
+ok('scaleGuide：真的超上限时仍会放宽（自身逻辑没坏）',
+  stretchedFar.max > PARAM_GUIDES.contextBudget.max, `${stretchedFar.max}`)
+const stretched = stretchedFar
 ok('scaleGuide：min 与 step 不变',
   stretched.min === PARAM_GUIDES.contextBudget.min && stretched.step === PARAM_GUIDES.contextBudget.step, '')
 ok('scaleGuide：分段仍首尾相接、完整覆盖 [min,max]',
