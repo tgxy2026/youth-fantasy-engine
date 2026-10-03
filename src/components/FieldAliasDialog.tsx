@@ -83,7 +83,9 @@ export default function FieldAliasDialog({
   }
 
   return (
-    <Modal open onClose={onClose} icon={<Type size={14} />} title={title} width="md" maxHeight="80vh">
+    // 🔴 宽度 896px（原 md=448 的**两倍**）：一页动辄几十个字段，「原名 + 提示 + 输入框」挤在 448
+    //    里输入框太窄没法看全自己改的名字（2026-10-03 反馈）。窄屏仍由 Modal 的 max-w-[92vw] 兜底。
+    <Modal open onClose={onClose} icon={<Type size={14} />} title={title} width={896} maxHeight="80vh">
       <div className="space-y-3">
         <p className="text-12 text-ink-400 leading-relaxed">
           {intro}

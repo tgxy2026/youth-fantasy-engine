@@ -15,7 +15,9 @@ export default function FieldAliasButton({
   tabName,
   intro,
   targets,
-  size = 'sm',
+  // 🔴 默认 md（h-9）：这个键永远和页头的「保存 / AI 补全 / 新建」这些 md 按钮排在同一行，
+  //    之前默认 sm（h-8）比左邻右舍矮一截，看着歪（2026-10-03 反馈）。同排同 size 是本项目铁律。
+  size = 'md',
   variant = 'secondary',
 }: {
   tabId: string
