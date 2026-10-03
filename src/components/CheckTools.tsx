@@ -1,3 +1,4 @@
+import Panel from './Panel'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { AI_STREAM_LABEL } from '../lib/constants'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
@@ -244,7 +245,7 @@ export default function CheckTools() {
 
       <div className="space-y-4">
         {/* ============ 敏感词 ============ */}
-        <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+        <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <ShieldAlert size={14} className="text-danger" /> 敏感词检测
             <HelpPopover title="敏感词检测怎么用" width="22rem">
@@ -371,10 +372,10 @@ export default function CheckTools() {
               ))}
             </div>
           )}
-        </section>
+        </Panel>
 
         {/* ============ AI 一致性深度自查 ============ */}
-        <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+        <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <ScanSearch size={14} className="text-info" /> AI 一致性深度自查
             <HelpPopover title="AI 一致性深度自查怎么用" width="22rem">
@@ -439,10 +440,10 @@ export default function CheckTools() {
               ))}
             </div>
           )}
-        </section>
+        </Panel>
 
         {/* ============ 数据体检（机械扫描，与 AI 一致性自查互补） ============ */}
-        <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+        <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <Stethoscope size={14} className="text-success" /> 数据体检
             <HelpPopover title="数据体检怎么用" width="23rem">
@@ -516,7 +517,7 @@ export default function CheckTools() {
               ))}
             </div>
           )}
-        </section>
+        </Panel>
 
         {/* ============ 投稿前自检（B2 · 2.4.1）：行文分布与节奏，纯本地统计 ============
             独立组件而非继续在本文件堆 —— 本文件已 500+ 行、是既定的「巨型组件收尾」对象。 */}

@@ -1,3 +1,4 @@
+import Panel from './Panel'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { realVolumes } from '../lib/freeVolume'
@@ -253,7 +254,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
       </div>
 
       {/* 码字日历 · 打卡 */}
-      <section className="bg-ink-850 border border-ink-700 rounded-xl p-5 mb-6">
+      <Panel className="mb-6">
         <div className="flex flex-wrap items-center gap-6 mb-4">
           <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2">
             <CalendarDays size={14} className="text-amber" /> 码字日历
@@ -309,11 +310,11 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           <span>多</span>
           <span className="ml-3">近 26 周 · 数据来自编辑器自动记录（进/减字数都计入当日）</span>
         </div>
-      </section>
+      </Panel>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 近7日字数 */}
-        <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+        <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <TrendingUp size={14} className="text-amber" /> 近 7 日写作字数
             <HelpPopover title="近 7 日写作字数" width="20rem">
@@ -347,10 +348,10 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           <Button variant="icon-amber" onClick={() => onNavigate('progress')} className="mt-4 flex items-center gap-1 text-11">
             去登记今日字数 <ChevronRight size={11} />
           </Button>
-        </section>
+        </Panel>
 
         {/* 快捷入口 */}
-        <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+        <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Flame size={14} className="text-amber" /> 快捷入口
             <HelpPopover title="快捷入口" width="19rem">
@@ -369,11 +370,11 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               </Button>
             ))}
           </div>
-        </section>
+        </Panel>
 
         {/* 卷进度 */}
         {volumes.length > 0 && (
-          <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+          <Panel>
             <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
               <BookOpen size={14} className="text-amber" /> 分卷进度
               <HelpPopover title="分卷进度" width="19rem">
@@ -401,11 +402,11 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
             <Button variant="icon-amber" onClick={() => onNavigate('editor')} className="mt-4 flex items-center gap-1 text-11">
               去写作 <ChevronRight size={11} />
             </Button>
-          </section>
+          </Panel>
         )}
 
         {/* 待办提醒 */}
-        <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+        <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Clock size={14} className="text-amber" /> 创作健康提醒
             <Button onClick={runDiag}
@@ -497,11 +498,11 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               <Button variant="bare" onClick={() => setDiag(null)} className="text-11 text-ink-500 hover:text-ink-300">收起诊断</Button>
             </div>
           )}
-        </section>
+        </Panel>
       </div>
 
       {/* 写作目标与完稿预估 */}
-      <section className="bg-ink-850 border border-ink-700 rounded-xl p-5 mt-6">
+      <Panel className="mt-6">
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <TrendingUp size={14} className="text-amber" /> 写作目标与完稿预估
           <HelpPopover title="写作目标与完稿预估" width="21rem">
@@ -509,11 +510,11 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           </HelpPopover>
         </h2>
         <WritingGoals totalWords={totalWords} dailyStats={dailyStats} />
-      </section>
+      </Panel>
 
       {/* 角色出场分布 */}
       {!isLite && (
-      <section className="bg-ink-850 border border-ink-700 rounded-xl p-5 mt-6">
+      <Panel className="mt-6">
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <Users size={14} className="text-amber" /> 角色出场分布
           <HelpPopover title="角色出场分布" width="22rem">
@@ -521,13 +522,13 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           </HelpPopover>
         </h2>
         <CharacterDistribution onNavigate={onNavigate} />
-      </section>
+      </Panel>
       )}
 
       {/* 创作复盘（B1 · 2.4.1）
           ⚠️ 刻意**不做**第三个字数图表：上方热力图与近 7 日柱状图回答的是"现在怎么样"，
           这里回答的是"**跟之前比**怎么样" —— 全是对比与记录类指标，重复画图只会更挤。 */}
-      <section className="bg-ink-850 border border-ink-700 rounded-xl p-5 mt-6">
+      <Panel className="mt-6">
         <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
           <TrendingUp size={14} className="text-amber" /> 创作复盘
           <HelpPopover title="创作复盘怎么看" width="23rem">
@@ -606,7 +607,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
           {review.firstDay ? ` · 首次 ${review.firstDay}` : ''}
           {review.lastDay ? ` · 最近 ${review.lastDay}` : ''}
         </div>
-      </section>
+      </Panel>
     </div>
   )
 }

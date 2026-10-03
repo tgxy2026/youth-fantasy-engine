@@ -1,3 +1,4 @@
+import Panel from './Panel'
 import { foldVh } from '../lib/theme'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -233,7 +234,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
   }, [activeSession?.messages.length, loading, streamingText])
 
   return (
-    <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+    <Panel>
       <div className="flex items-center gap-2 mb-3">
         <Sparkles size={14} className="text-amber" />
         <h2 className="text-13 font-semibold text-ink-100">AI 辅助规划</h2>
@@ -370,7 +371,7 @@ style={{ height: foldVh('60vh') }}>
         onSubmit={submitRename}
         onCancel={() => setRenameTarget(null)}
       />
-    </section>
+    </Panel>
   )
 }
 

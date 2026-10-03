@@ -9,6 +9,7 @@
  * · 产出直接写 plotCanvas 快照（idea 卡），画布挂载时会重读 —— 两个页签不会同时挂载，无写冲突；
  * · 生成结果同时在下方列出并标「基于灵感 #N」，与画布里的卡一一对应（溯源红线）。
  */
+import Panel from './Panel'
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Lightbulb, Loader2, Sparkles, X } from 'lucide-react'
 import * as db from '../lib/db'
@@ -99,7 +100,7 @@ export default function InspirationBox() {
   }
 
   return (
-    <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+    <Panel>
       <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
         <Lightbulb size={14} className="text-amber" /> 灵感夹
         <HelpPopover title="灵感夹怎么用" width="24rem">
@@ -192,6 +193,6 @@ export default function InspirationBox() {
           </div>
         </div>
       )}
-    </section>
+    </Panel>
   )
 }

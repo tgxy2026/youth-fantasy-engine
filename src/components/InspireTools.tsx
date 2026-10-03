@@ -1,3 +1,4 @@
+import Panel from './Panel'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { AI_STREAM_LABEL } from '../lib/constants'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
@@ -100,7 +101,7 @@ export default function InspireTools() {
         <InspirationBox />
 
         {/* ============ ③ 随机取名（本地能力，无需模型）============ */}
-        <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+        <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Sparkles size={14} className="text-amber" /> 随机取名生成器
             <HelpPopover title="随机取名怎么用" width="21rem">
@@ -212,7 +213,7 @@ export default function InspireTools() {
               </div>
             </div>
           )}
-        </section>
+        </Panel>
 
         {/* ============ ④ AI 辅助规划（对话）============
              本组件只管对话；模型配置与联网检索是全局设置，不在这里。 */}

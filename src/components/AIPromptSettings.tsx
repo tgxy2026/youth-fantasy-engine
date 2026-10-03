@@ -1,3 +1,4 @@
+import Panel from './Panel'
 import { useEffect, useMemo, useState } from 'react'
 import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { UNSAVED_CHANGES_HINT } from '../lib/constants'
@@ -95,7 +96,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
   useSaveHotkey(() => { if (editingEntry) void save(editingEntry) }, editingDirty && !busy)
 
   return (
-    <section className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+    <Panel>
       <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
         <MessageSquareCode size={14} className="text-amber" /> AI 提示词
         {changedCount > 0 && (
@@ -189,6 +190,6 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
           共 {entries.length} 条提示词；保存的只有你改动过的那些，出厂原文始终保留在程序内。
         </span>
       </div>
-    </section>
+    </Panel>
   )
 }

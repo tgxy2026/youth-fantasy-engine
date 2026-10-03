@@ -1,3 +1,4 @@
+import { PANEL_CLS } from './Panel'
 import { useState, useMemo } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
 import { Button } from './Button'
@@ -66,7 +67,7 @@ export default function MaterialLibrary() {
         ))}
       </div>
 
-      <div className="bg-ink-850 border border-ink-700 rounded-xl p-5">
+      <div className={PANEL_CLS}>
         <BlockView block={activeBlock} />
       </div>
     </div>
