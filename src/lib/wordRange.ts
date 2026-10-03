@@ -95,6 +95,12 @@ export async function enforceWordRange(o: {
   onLog?: (msg: string) => void
   maxExpand?: number
   maxShrink?: number
+  /**
+   * 本次在写第几章（2026-10-03）。**只影响补写指令的措辞**：补写是章节越界的高发段
+   * （初稿差一截时，模型最容易靠「顺手把下一章也写了」凑字数），带上章号才能明确说
+   * 「补的仍然是第 N 章」。不传就只说「本章」。
+   */
+  chapterNo?: number
 }): Promise<string> {
   const fillSys = o.sys ?? DEFAULT_FILL_SYS
   const lo = o.target - WORD_TOLERANCE
@@ -113,6 +119,11 @@ export async function enforceWordRange(o: {
       '',
       `当前已写 ${words} 个汉字，距目标还差约 ${gap} 个汉字。请紧接着上文继续往下写，使全章总量落在 ${lo}~${hi} 汉字之间。`,
       '要求：不要重复或重述已写内容、不要重新开头、不要用形容词与心理独白注水；情节要实质推进；若剧情已近章末，则收束到章末钩子。只输出新增的正文片段。',
+      // 🔴 2026-10-03 社区反馈的预防性加固：补写是**越界高发段** ——
+      //    初稿差一截时，模型最容易靠「顺手把下一章也写了」来凑够字数。
+      (o.chapterNo
+        ? `🔴 补写仍属第 ${o.chapterNo} 章：只能在**本章范围内**展开（场景、对话、细节、心理描写），不得写出下一章的开头或提前展开下一章的事件。`
+        : '🔴 补写只能在**本章范围内**展开，不得写出下一章的开头或提前展开下一章的事件。'),
     ].join('\n'), { signal: o.signal, onToken: o.onToken })
     if (countWords(add) < 30) {
       // 无效增量：停止空转，接受偏短。🔴 但必须**说出来**（否则调用方只看到"字数没变"）

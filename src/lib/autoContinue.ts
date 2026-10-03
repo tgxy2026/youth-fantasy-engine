@@ -133,17 +133,25 @@ interface SettingUpdate { name: string; note: string }
 
 // ============ 提示词 ============
 
-function buildSysPrompt(target: number): string {
+function buildSysPrompt(target: number, chapterNo?: number): string {
   const lo = target - WORD_TOLERANCE
   const hi = target + WORD_TOLERANCE
+  /** 范围表述：带章号时明确「第 N 章」，否则泛指「这一章」（一键续写等无章号场景） */
+  const scope = chapterNo ? `第 ${chapterNo} 章` : '这一章'
   return [
     '你是长篇网络小说的续写助手。请基于作者已有的世界观、角色与剧情，续写下一章正文。',
     '硬性约束：',
     `1. 篇幅必须落在 ${lo}~${hi} 个汉字之间（按汉字个数计，不含标点与英文单词）。写得过长与过短同样视为不合格，请自行规划详略与场景数量：先估算要写几个场景，再分配篇幅。`,
     '2. 必须严格承接【上一章结尾】的场景、时间、地点、人物位置与情绪，从紧接着的下一刻写起。不得跳场景、不得另起新线、不得重述前情、不得写"数日后/数月后"这类大跨度跳跃（除非作者在续写意图中明确要求）。',
-    '3. 严格贴合已写章节的叙事视角、人称、文风与人设，保持既有爽文节奏，章末留一个能勾住读者点下一章的钩子。',
+    '3. 严格贴合已写章节的叙事视角、人称、文风与人设，保持既有爽文节奏；章末留一个能勾住读者的钩子，但**只留悬念、不写下一章的内容**。',
     '4. 只输出正文本身。不要任何解说、不要小标题、不要章节号、不要"以下是续写"之类的开场白，也不要输出思考过程。',
     '5. 若作者给了【续写意图】则优先沿其推进；未给则严格沿着上一章结尾的既有走向自然延续，聚焦当前尚未解决的冲突与悬念，不要凭空引入与前文无关的新地图、新势力或新金手指。',
+    // 🔴 6 这条是 2026-10-03 社区反馈（「只让写第 1 章，AI 却把第 2 章细纲的内容写了进来」）
+    //    的**预防性加固**：原先 5 条硬约束里没有一条限制章节边界，而第 3 条还在鼓励
+    //    「留个勾住读者点下一章的钩子」—— 模型在钩子处往前迈一步是迟早的事。
+    //    实机 4 轮（DeepSeek-V3.2 / Qwen3.5-35B-A3B，各 2 轮）**未能复现**越界，
+    //    但提示词缺护栏本身就是隐患：约束要写在明处，不能靠模型自觉。
+    `6. 🔴 本次只写${scope}：**写完本章就收尾**。不得写出下一章的任何内容 —— 不写下一章的开头、不提前展开下一章的事件 / 场景 / 人物动作、不让本章结尾的冲突直接跨进下一章。篇幅不够时，用本章内的场景展开、对话、细节与心理描写补足，绝不靠「推进下一章情节」来凑字数。`,
     // 🔴 去 AI 味纪律钉在最末（埋中段效果约等于 0）。它挂在**初稿**而不只是后置润色：
     //    先写出一股 AI 腔再去洗，不如一开始就按人的写法写（2.6.4 社区反馈「去味儿效果不理想」的主因）。
     '',
@@ -188,6 +196,8 @@ async function generateOneChapter(opts: {
   /** 最近 3 章的章节摘要（title+字数+summary 拼接），供 AI 把握整体剧情走向 */
   recentSummaries?: string
   targetWords: number
+  /** 本次要写的章号（写进提示词做范围限定；不传则只说「这一章」）。 */
+  chapterNo?: number
   signal?: AbortSignal
   onToken?: (d: string) => void
   onPhase?: (p: string) => void
@@ -195,7 +205,7 @@ async function generateOneChapter(opts: {
   onLog?: (s: string) => void
 }): Promise<string> {
   const cfg = await requireActiveProvider()
-  const sys = buildSysPrompt(opts.targetWords)
+  const sys = buildSysPrompt(opts.targetWords, opts.chapterNo)
   const lo = opts.targetWords - WORD_TOLERANCE
   const hi = opts.targetWords + WORD_TOLERANCE
   // 作者内容是「不可信文本」：统一用同一边界语言包裹（内容一字不改，见 promptGuard 头部说明）
@@ -213,7 +223,10 @@ async function generateOneChapter(opts: {
     '【续写意图】',
     opts.intent?.trim() || '（作者未指定：请严格沿着上一章结尾的既有走向自然延续，聚焦当前尚未解决的冲突与悬念，不要开新线）',
     '',
-    `请续写下一章正文，篇幅 ${lo}~${hi} 汉字。`,
+    `请续写下一章正文，篇幅 ${lo}~${hi} 汉字。` +
+    (opts.chapterNo
+      ? `\n🔴 本次只写第 ${opts.chapterNo} 章，写完这一章就收尾 —— 下一章的内容一个字都不要写。`
+      : '\n🔴 本次只写这一章，写完就收尾 —— 不要写出下一章的内容。'),
   ].join('\n')
 
   let body = await ask(cfg, sys, user, { signal: opts.signal, onToken: opts.onToken })
@@ -227,7 +240,7 @@ async function generateOneChapter(opts: {
   }
 
   return (await enforceWordRange({
-    cfg, body, target: opts.targetWords, sys,
+    cfg, body, target: opts.targetWords, sys, chapterNo: opts.chapterNo,
     signal: opts.signal, onToken: opts.onToken,
     onPhase: opts.onPhase, onBodyReplace: opts.onBodyReplace,
   })).trim()
@@ -533,8 +546,15 @@ export async function runAutoContinue(
         // 「创意写作」按大纲写：细纲钉在**末段**（越靠后的指令权重越高，与"反重复提示词只钉
         // system 末尾有效"同一道理）。不传 outlineFor 时这段为空，一键续写的老行为不受影响。
         (() => {
-          const o = cb.outlineFor?.(ordered.length + i + 1)
-          return o ? `\n【本章细纲（按此写，不要自行改主线）】\n${o}` : ''
+          // 🔴 2026-10-03：原来取不到就整块消失 —— 模型与作者都不知道「本次没有细纲」，
+          //    于是模型自由发挥，用户看到的就是「AI 没按细纲写 / 写了后面章节的内容」。
+          //    现在两种情况都**如实说明**（不传 outlineOf 时本就没有细纲，不加这句）。
+          if (!cb.outlineFor) return ''
+          const o = cb.outlineFor(ordered.length + i + 1)
+          return o
+            ? `\n【本章细纲（按此写，不要自行改主线）】\n${o}`
+            : '\n【本章细纲】**本次没读到本章细纲**（细纲卡缺失，或卡名不是「第N章」这类格式而无法识别章号）。' +
+              '请只依据上文的既有内容自然续写，不要凭空另起主线，也不要替作者规划后面的章节。'
         })(),
         // 2.5.2 · A2：作者灵感段（细纲**之前**——细纲仍是最末、权重最高）。空则整段不出现。
         (() => {
@@ -552,6 +572,7 @@ export async function runAutoContinue(
         cb.onPhase?.(`${tag}：AI 续写正文${attempt > 1 ? `（第 ${attempt} 稿）` : ''}`)
         body = await generateOneChapter({
           ctx, prevTail, intent: opts.intent, recentSummaries, targetWords: opts.targetWords,
+          chapterNo: ordered.length + i + 1, // 🔴 范围限定：只写这一章，别把下一章的内容带进来（社区反馈）
           signal: cb.signal, onToken: cb.onBodyToken,
           onPhase: p => cb.onPhase?.(`${tag}：${p}`),
           onBodyReplace: cb.onBodyReplace,

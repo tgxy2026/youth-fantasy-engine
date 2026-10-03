@@ -23,13 +23,44 @@ export function outlineCardName(no: number, title: string): string {
   return `第${no}章 ${(title ?? '').trim()}`.trim()
 }
 
+/** 中文数字 → 阿拉伯数字（细纲卡名写「第一章」时也能认出来） */
+const CN_DIGITS: Record<string, number> = {
+  零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
+}
+
+/**
+ * 中文数字字符串 → 数字。**只认得下的话返回 0**（一 / 十 / 十一 / 二十 / 三十五 …）。
+ * 🔴 出现不认识的字一律判失败 —— 章号宁可取不到（走「没找到细纲」的显式提示），
+ *    也绝不能猜出一个**错章号**把别章的细纲喂进本章。
+ */
+function cnToNum(text: string): number {
+  let total = 0, section = 0, num = 0
+  for (const ch of text) {
+    const v = CN_DIGITS[ch]
+    if (v !== undefined) { num = v; continue }
+    if (ch === '十') { section += (num || 1) * 10; num = 0; continue }
+    if (ch === '百') { section += (num || 1) * 100; total += section; section = 0; num = 0; continue }
+    return 0 // 认不出的字 → 整串判失败
+  }
+  return total + section + num
+}
+
 /**
  * 从细纲卡名取章号；取不到返回 0。
- * 卡名由 `outlineCardName()` 写入，故这里只认 `第N章` 一种形态（阿拉伯数字）。
+ *
+ * 🔴 2026-10-03 放宽（原只认阿拉伯数字）：作者手打「第一章」这类中文数字时，
+ *    解析失败会让**整张细纲表取不到**（`loadChapterOutlines` 静默返回空 map），
+ *    正文生成时提示词里那行细纲整块消失，模型变成自由发挥 ——
+ *    用户看到的就是「AI 没按细纲写，甚至写了后面章节的内容」，且界面零提示。
+ *    中文数字只是其中一种形态；写不出数字时仍返回 0，由调用方走显式提示。
  */
 export function chapterNoOf(cardName: string): number {
-  const m = (cardName ?? '').match(/第\s*(\d+)\s*章/)
-  return m ? parseInt(m[1], 10) : 0
+  const name = cardName ?? ''
+  const arabic = name.match(/第\s*(\d+)\s*章/)
+  if (arabic) return parseInt(arabic[1], 10)
+  const cn = name.match(/第\s*([零〇一二两三四五六七八九十百]+)\s*章/)
+  if (cn) return cnToNum(cn[1])
+  return 0
 }
 
 /**
