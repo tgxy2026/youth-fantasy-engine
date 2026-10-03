@@ -119,7 +119,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 · 伏笔追踪可切到「剧情线」视图（v1.6.1）：自动聚合伏笔（埋设/回收）、爽点、时间脉络事件，按章节串成一条叙事主线；顶部统计悬空伏笔与「已到点未回收」的警示。
 · 带「上级 / 层级归属」列的表（国家势力、地理风物、种族生物、物品资源、历史事件、名词术语等）支持「树形层级」：按隶属关系折叠 / 展开，行首的树形图标按钮可在某条下新增子条目（编号形如「父编号-001」，父级顺序号不变），父级下拉自动排除自身与子孙防成环。
 · 行首三个小按钮：删除此行、AI 补全本行空白（只填当前行未填字段，不影响其他行 / 表）、新增子条目；章节总表行首另有「打开正文」按钮。
-· 批量：右上角的 AI 按钮（不同表显示为「AI 整理」或「AI 补全」，部分表没有这个按钮）从章节正文 / 已有设定批量整理出尚未登记的条目并落盘（不重复生成）；人物关系 / 历史事件支持「清空全部」批量删除。`}
+· 批量：右上角的 AI 按钮（不同表显示为「AI 整理」或「AI 新增」，部分表没有这个按钮）——「AI 整理」从章节正文 / 已有设定批量整理出尚未登记的条目并落盘（不重复生成）；「AI 新增」则新建一行并由 AI 补全整行。人物关系 / 历史事件支持「清空全部」批量删除。`}
             <AIDataSourceNote feature="organize-rows" />
           </HelpPopover>
           </div>
@@ -253,8 +253,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           </Button>
           )}
           {aiCap !== 'none' && !isMaster && (
-            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : '新建一行，并提供粗略设定由 AI 补全（不影响已有行 / 其他表）' }>
-              <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 补全'}
+            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : 'AI 新增一行：提供粗略设定，由 AI 补全整行字段后落盘（不影响已有行 / 其他表）' }>
+              <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 新增'}
             </Button>
           )}
           {/* 读者反馈：AI 分析（运营维护组，不接补全/整理，单独开分析入口） */}
@@ -263,7 +263,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               <Sparkles size={14} /> AI 分析反馈
             </Button>
           )}
-          {/* 名词术语：AI 查重（在「AI 补全」之外，额外提供同义/重复归一入口） */}
+          {/* 名词术语：AI 查重（在「AI 新增」之外，额外提供同义/重复归一入口） */}
           {tab.id === 'terms' && (
             <Button variant="secondary" onClick={() => setShowDedupAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}>
               <Sparkles size={14} /> AI 查重
@@ -396,7 +396,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         <AITemplateFill
           fields={tableFields}
           draftScope={`table::${tab.id}`}
-          title={`AI 补全 · ${tab.name}`}
+          title={`AI 新增 · ${tab.name}`}
           sketchPlaceholder="例如：北境最大的商盟，掌控三条主干商路，与皇室关系微妙，暗中资助主角……"
           onSubmit={handleFill}
           onClose={() => setShowFill(false)}

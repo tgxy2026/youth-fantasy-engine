@@ -6,7 +6,7 @@ import { SABC_LABELS, CARD_TABLE_REF_FIELDS } from '../lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '../lib/db'
 import { clearFreeDraft } from '../lib/freeDraft'
 import { uid } from '../lib/id'
-import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2 } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2 } from 'lucide-react'
 import { readPortraitFile, dataUrlBytes, PORTRAIT_ACCEPT } from '../lib/imagePortrait'
 import { PORTRAIT_HINT_SPEC } from '../lib/portraitSpec'
 import HelpPopover from './HelpPopover'
@@ -67,8 +67,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   const [saving, setSaving] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => () => clearTimeout(savedTimer.current), [])
-  // AI 补全设定弹窗
+  // AI 新增弹窗（原「AI 补全」，2026-10-03 改名 —— 它实际是凭空建一张新卡）
   const [showFill, setShowFill] = useState(false)
+  // AI 补全弹窗（在**当前这张卡**上补空白字段，已填的保留）
+  const [showFillExisting, setShowFillExisting] = useState(false)
   // 筛选：开启后隐藏「人物状态 = 已退场」的角色，避免角色过多时难以定位
   const [hideRetired, setHideRetired] = useState(false)
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
@@ -181,7 +183,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 
   const addCard = () => setNamePrompt({ kind: 'add' })
 
-  // AI 补全：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
+  // AI 新增：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
   const handleFill = async (values: Record<string, string>) => {
     const nameKey = Object.keys(values).find(k => k.endsWith('::姓名'))
     const name = (nameKey ? values[nameKey] : '')?.trim() || `未命名${noun}`
@@ -198,6 +200,19 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
     setActiveId(rec.id)
     setDraft(rec)
     setShowFill(false)
+  }
+
+  /**
+   * AI 补全（已有卡）：只补**当前这张卡**未填的字段，已填的保留 —— 与 FormSheet / 表格行同一口径。
+   * 🔴 与 handleFill 的区别：那个是「AI 新增」（凭空建一张新卡），这个是「AI 补全」（在已有卡上补空白）。
+   * 采用后只写回 draft（不落库），由作者核对后点保存；dirty 是 draft 与库中记录的比对，会自动亮起。
+   */
+  const handleFillExisting = (values: Record<string, string>) => {
+    if (!draft) return
+    const next = { ...draft, data: { ...draft.data } }
+    for (const [k, v] of Object.entries(values)) if (v && v.trim()) next.data[k] = v
+    setDraft(next)
+    setShowFillExisting(false)
   }
 
   const submitNamePrompt = async (v: string) => {
@@ -345,9 +360,17 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
             <Plus size={14} /> 新建{noun}
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全其余字段'}>
-              <Sparkles size={14} /> AI 补全
-            </Button>
+            <>
+              {/* 🔴 2026-10-03 老大定案：这一组两个入口语义必须分清 ——
+                  「AI 新增」= 凭空建一张新卡（原「AI 补全」改名，它从来就是新建行为）；
+                  「AI 补全」= 在**当前这张卡**上补空白（与表单页 / 表格行同一口径，已填的保留）。 */}
+              <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : `提供粗略设定，让 AI 新建一张${noun}（不影响已有卡）`}>
+                <Sparkles size={14} /> AI 新增
+              </Button>
+              <Button variant="secondary" onClick={() => setShowFillExisting(true)} disabled={!aiReady || !draft} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : !draft ? '先选一张卡，再让 AI 补全它的空白字段' : `让 AI 补全「${draft.name}」未填写的字段（已填的会保留）`}>
+                <Wand2 size={14} /> AI 补全
+              </Button>
+            </>
           )}
           {/* 只看角色卡：非角色卡片表（世界构建的「其他设定」）没有「人物状态」字段，
               这个开关对它们点了也没有任何效果 —— 与其摆着让人困惑，不如不渲染 */}
@@ -599,10 +622,22 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
           fields={cardFields}
           // 草稿本按「这张卡」存：换到另一张角色卡时，攒的草稿不会跟错人
           draftScope={`card::${tab.id}::${draft?.id ?? 'new'}`}
-          title={`AI 补全 · ${tab.name}`}
+          title={`AI 新增 · ${tab.name}`}
           sketchPlaceholder="例如：一个叫叶昭的少年，是没落剑派最后一名弟子，性格倔强但重情义，想复兴门派……"
           onSubmit={handleFill}
           onClose={() => setShowFill(false)}
+        />
+      )}
+
+      {showFillExisting && draft && (
+        <AITemplateFill
+          fields={cardFields}
+          existing={draft.data}
+          draftScope={`card::${tab.id}::${draft.id}`}
+          title={`AI 补全 · ${draft.name}`}
+          sketchPlaceholder={`补充「${draft.name}」已填内容的背景 / 细节，让 AI 补全其余空白字段（已填的不会动）…`}
+          onSubmit={handleFillExisting}
+          onClose={() => setShowFillExisting(false)}
         />
       )}
 

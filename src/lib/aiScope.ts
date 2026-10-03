@@ -10,7 +10,7 @@ import type { TabDef } from './types'
 import { isVolumeLedgerTab } from './schema'
 
 export type AICapability =
-  /** AI 补全：把作者的粗略草图整理并补全成完整设定（用于凭空建档的实体） */
+  /** AI 补全 / AI 新增：把作者的粗略草图整理并补全成完整设定（已有条目补其空白，或凭空建档） */
   | 'fill'
   /** AI 整理：从已有数据 / 章节正文中抽取结构化条目，增量补充且不重复已有条目 */
   | 'organize'
@@ -90,7 +90,7 @@ export const AI_DEPENDENT_GROUPS: AIDependentGroup[] = [
   {
     title: '设定与资料',
     items: [
-      '表单页与角色卡的「AI 补全」',
+      '表单页与角色卡的「AI 新增」与「AI 补全」',
       '表格页的「AI 整理」（人物关系 / 势力关系 / 伏笔追踪 / 时间脉络 / 爽点节奏 / 支线剧情 / 知情权限 / 各卷章节台账）',
       '表格页的「批量导入 → AI 智能拆分」（把粘贴的表格/散文解析成多条；用本地解析导入则不受影响）',
     ],

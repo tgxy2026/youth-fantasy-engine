@@ -215,9 +215,9 @@ export default function AITemplateFill({
     return () => { alive = false }
   }, [mode, pickedCtx, withWorldContext, extraContextGroups])
 
-  /** 「主要角色」这类称谓 —— 从标题里摘出来，给对话引导当主语（标题形如 `AI 补全 · 主要角色`） */
+  /** 「主要角色」这类称谓 —— 从标题里摘出来，给对话引导当主语（标题形如 `AI 补全 · 主要角色` / `AI 新增 · 主要角色`） */
   const subjectLabel = useMemo(() => {
-    const t = title.replace(/^AI 补全(?:本行空白)?\s*·\s*/, '').trim()
+    const t = title.replace(/^AI (?:补全|新增)(?:本行空白)?\s*·\s*/, '').trim()
     return t || '这份设定'
   }, [title])
 

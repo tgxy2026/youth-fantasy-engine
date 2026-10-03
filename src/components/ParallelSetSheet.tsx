@@ -26,7 +26,7 @@
  * · **AI 补全 / AI 数据源说明**：都在，照挂。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Trash2, Wand2 } from 'lucide-react'
+import { Check, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
 import type { CardRecord, TabDef } from '../lib/types'
 import * as db from '../lib/db'
 import { uid } from '../lib/id'
@@ -371,13 +371,27 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
               + (tab.tips ?? []).map(t => `${t}\n`).join('\n')}
             <AIDataSourceNote feature={tab.id} />
           </HelpPopover>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <FieldAliasButton
               tabId={tab.id}
               tabName={tab.name}
               intro="给这一页的字段起你自己看得懂的名字（每一条用的是同一套字段）。"
               targets={moduleAliasTargets(modules)}
             />
+            {/* 🔴 2026-10-03：保存 + AI 补全从右栏底部挪到页头 —— 开书定位组四个页签的右上角取向必须一致
+                （世界设定 / 力量体系早已在页头，制度四页签此前压在右栏最底部，同组不同形）。 */}
+            <Button variant="toggle" selected={dirty} disabled={!selSub || !dirty || saving}
+              onClick={() => void flush()} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
+              title={!selSub ? '先从左列选一条来编辑' : dirty ? '保存（先落库再切换条目，不怕丢）' : '无未保存的改动'}
+            >
+              <Save size={13} /> {saving ? '保存中…' : saved ? <><Check size={13} /> 已保存</> : '保存'}
+            </Button>
+            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady || !selSub}
+              className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium disabled:opacity-40"
+              title={!selSub ? '先从左列选一条来编辑' : aiReady ? '提供粗略设定，让 AI 补全当前这一条未填的字段' : '还没接入模型'}
+            >
+              <Sparkles size={12} /> AI 补全
+            </Button>
           </div>
         </div>
       </header>
@@ -509,24 +523,6 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
                 )}
               </div>
 
-              {/* 底部：AI 补全 + 保存 */}
-              <div className="mt-3 flex items-center gap-2">
-                <Button size="sm" variant="secondary"
-                  onClick={() => setShowFill(true)}
-                  disabled={!aiReady}
-                  title={aiReady ? '让 AI 按字段模板给这一条补一份草稿' : '还没配置可用的模型'}
-                >
-                  <Wand2 size={12} /> AI 补全
-                </Button>
-                <Button size="sm" variant="primary"
-                  onClick={() => void flush()}
-                  disabled={!dirty || saving}
-                  title="把这一条的改动存进库"
-                >
-                  {saving ? <Save size={12} /> : saved ? <Check size={12} /> : <Save size={12} />}
-                  {saved ? '已保存' : dirty ? '保存这一条' : '已存'}
-                </Button>
-              </div>
             </>
           )}
         </div>
