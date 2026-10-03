@@ -20,6 +20,7 @@ import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
 import { type FreeMemory } from '../lib/tavern/types'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 
 interface Props {
   /** 六栏记忆（没有记忆时为 null —— 界面自己会走「还没有记忆」分支） */
@@ -69,7 +70,7 @@ export default function TavernCardMemoryPanel({
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      {memDirty && <span className="text-11 text-amber">有未保存的改动</span>}
+                      {memDirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
                       {(!mem || isMemoryEmpty(mem)) && (
                         <Button variant="secondary" size="sm" disabled={seedingMem} onClick={() => void genMemory()}
                           title="依据这张角色卡生成第一版六栏记忆（AI 优先，失败则直接摘录角色卡）">

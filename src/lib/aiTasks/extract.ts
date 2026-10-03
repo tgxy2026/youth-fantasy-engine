@@ -3,6 +3,7 @@
 // 🔴 字段键从 flow/fieldMap 的 KIND_MAP 派生（见 SLOT_HINT 注释）—— 只读，不改。
 import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
+import { newAuthorFence, authorBlock } from '../promptGuard'
 import { KIND_MAP } from '../flow/fieldMap'
 import { longStream } from './stream'
 import type { PromptDef } from '../promptSettings'
@@ -177,10 +178,12 @@ export async function aiExtractSettingEntities(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ExtractedEntity[]> {
   const cfg = await requireActiveProvider()
-  const user = `【章节】${chapterTitle || '（未命名章节）'}
+  // 🔴 章题与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
+  const fence = newAuthorFence()
+  const user = `【章节】${chapterTitle.trim() ? authorBlock(fence, chapterTitle.trim()) : '（未命名章节）'}
 
 【本章正文】
-${chapterText.trim() || '（空白）'}
+${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空白）'}
 
 请抽取本章出现的设定实体。`
   const text = await chat(

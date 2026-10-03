@@ -18,6 +18,7 @@ import TavernControlModes from './TavernControlModes'
 import { LoadingState } from './LoadingState'
 import { Button } from './Button'
 import { ShowBands } from './TavernFieldKit'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { useTavernControlModel } from './useTavernControlModel'
 import TavernControlBasics from './TavernControlBasics'
 import TavernControlAdvanced from './TavernControlAdvanced'
@@ -49,7 +50,7 @@ export default function TavernControl() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
+          {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
           <Button
             variant="secondary" size="sm" onClick={() => setShowBands(v => !v)}
             title="每个数值项下面的「取值范围 + 分段影响」表。全部摊开页面会很长，可以一键收起（当前值的档位仍会显示）"

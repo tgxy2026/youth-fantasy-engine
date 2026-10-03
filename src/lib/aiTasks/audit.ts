@@ -5,6 +5,7 @@
 // ⚠️ 六条提示词各自就地声明；注册顺序由门面的 PROMPT_ORDER 决定，**别在这里调整顺序**。
 import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText, humanText } from '../aiParse'
+import { newAuthorFence, authorBlock } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
 
 /** 「文风体检」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
@@ -91,12 +92,14 @@ export async function aiContinuityAudit(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ContinuityFinding[]> {
   const cfg = await requireActiveProvider()
+  // 🔴 作者资料与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
+  const fence = newAuthorFence()
   const sys = P_continuity_audit
   const user = `【设定资料】
-${projectContext.trim() || '（无）'}
+${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 【待审查正文】
-${chapterText.trim() || '（作者未指定正文，请仅在设定资料内部查找互相矛盾之处）'}
+${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（作者未指定正文，请仅在设定资料内部查找互相矛盾之处）'}
 
 请返回问题清单。`
   const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
@@ -167,10 +170,11 @@ export async function aiAnalyzeFeedback(
         .join('\n')
     : '（暂未登记任何读者反馈记录）'
 
+  const fence = newAuthorFence()
   const sys = P_feedback_analysis
 
   const user = `【读者反馈记录】
-${list}
+${entries.length ? authorBlock(fence, list) : list}
 
 请给出诊断。`
 
@@ -214,6 +218,7 @@ export async function aiDiagnoseProject(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ProjectDiagnosis> {
   const cfg = await requireActiveProvider()
+  const fence = newAuthorFence()
   const sys = P_project_diagnosis
 
   const user = `【关键统计】
@@ -221,7 +226,7 @@ export async function aiDiagnoseProject(
 - 未回收伏笔：${stats.unf} 条　闲置灵感素材：${stats.unusedIdeas} 条
 
 【项目资料】
-${projectContext.trim() || '（无）'}
+${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 请给出诊断。`
 
@@ -274,10 +279,11 @@ export async function aiForeshadowReview(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ForeshadowReviewFinding[]> {
   const cfg = await requireActiveProvider()
+  const fence = newAuthorFence()
   const sys = P_foreshadow_review
 
   const user = `【项目资料（含伏笔追踪与章节总表）】
-${projectContext.trim() || '（无）'}
+${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 请审查伏笔闭环健康度。`
 
@@ -323,13 +329,14 @@ export async function aiDedupTerms(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<{ groups: TermDupGroup[] }> {
   const cfg = await requireActiveProvider()
+  const fence = newAuthorFence()
   const list = terms
     .map((t, i) => `${i + 1}. ${t.term}${t.category ? `（${t.category}）` : ''}：${t.definition || '—'}`)
     .join('\n')
   const sys = P_term_dedup
 
   const user = `【名词术语】
-${list || '（空）'}
+${list.trim() ? authorBlock(fence, list) : '（空）'}
 
 请找出应合并的重复 / 同义术语。`
 
@@ -379,13 +386,15 @@ export async function aiStyleCheck(
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<StyleCheckFinding[]> {
   const cfg = await requireActiveProvider()
+  const fence = newAuthorFence()
+  // ⚠️【写作规范】是模型要**遵守**的规则（不是待处理素材），刻意不包裹；只有正文需要边界保护
   const sys = P_style_audit
 
   const user = `【写作规范】
 ${styleContext.trim() || '（作者尚未填写写作规范）'}
 
 【本章正文】
-${chapterText.trim() || '（空）'}
+${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
 
 请体检本章文风。`
 

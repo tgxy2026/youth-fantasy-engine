@@ -14,6 +14,7 @@
  */
 import { chat, requireActiveProvider, stripThink, isCancelled } from './ai'
 import { countWords } from './textStats'
+import { newAuthorFence, authorBlock } from './promptGuard'
 
 /** 字数容差（±）：成品必须落在 `目标 ± 它` 之内 —— 界面、连写、改写三处共用同一常量 */
 export const WORD_TOLERANCE = 300
@@ -102,6 +103,9 @@ export async function enforceWordRange(o: {
    */
   chapterNo?: number
 }): Promise<string> {
+  // 🔴 作者正文是**不可信文本**：补写与压缩两条路径都走边界块包裹（内容一字不改，
+  //    见 promptGuard 文件头；同一章的多次补写/压缩共用一套边界语言）
+  const fence = newAuthorFence()
   const fillSys = o.sys ?? DEFAULT_FILL_SYS
   const lo = o.target - WORD_TOLERANCE
   const hi = o.target + WORD_TOLERANCE
@@ -115,7 +119,7 @@ export async function enforceWordRange(o: {
     const gap = Math.max(0, (o.fillTarget ?? o.target) - words)
     const add = await askSoft(o.cfg, fillSys, [
       '【本章已写部分】',
-      body,
+      authorBlock(fence, body),
       '',
       `当前已写 ${words} 个汉字，距目标还差约 ${gap} 个汉字。请紧接着上文继续往下写，使全章总量落在 ${lo}~${hi} 汉字之间。`,
       '要求：不要重复或重述已写内容、不要重新开头、不要用形容词与心理独白注水；情节要实质推进；若剧情已近章末，则收束到章末钩子。只输出新增的正文片段。',
@@ -154,7 +158,7 @@ export async function enforceWordRange(o: {
         '5. 只输出精简后的完整正文，不要任何说明文字。',
         '',
         `【原文（${words} 汉字）】`,
-        body,
+        authorBlock(fence, body),
       ].join('\n'),
       // 🔴 `onToken` 是**流式开关**（不是"要不要显示"）：压缩要输出整章（几千字），
       //    非流式请求的响应头要等**整段生成完**才回来，必然撞 `CHAT_TIMEOUT_MS`(180s) ——

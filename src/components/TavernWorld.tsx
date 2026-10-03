@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSaveHotkey } from '../lib/useSaveHotkey'
 import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { showToast } from './dialogs'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
@@ -228,7 +229,7 @@ export default function TavernWorld() {
               <Button variant="secondary" size="md" disabled={!dirty} onClick={() => void load()}>
                 放弃改动
               </Button>
-              {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
+              {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
             </div>
           </div>
 

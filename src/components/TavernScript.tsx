@@ -25,6 +25,7 @@ import HelpPopover from './HelpPopover'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import TavernScriptFields from './TavernScriptFields'
 import TavernInterviewDialog from './TavernInterviewDialog'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
@@ -333,7 +334,7 @@ export default function TavernScript() {
           {saving ? '保存中…' : dirty ? '保存' : '已保存'}
         </Button>
         <span className="flex-1" />
-        {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
+        {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
         {kind && <Button variant="danger" size="md" onClick={() => void remove()}>删除这份</Button>}
       </div>
 
