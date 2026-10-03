@@ -13,6 +13,7 @@ import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
+import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
 
@@ -156,6 +157,12 @@ export default function FormSheet({ tab }: Props) {
             <span className={`text-11 transition-opacity duration-300 ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
+            <FieldAliasButton
+              tabId={tab.id}
+              tabName={tab.name}
+              intro="给这一页的字段起你自己看得懂的名字。"
+              targets={moduleAliasTargets(tab.modules)}
+            />
             <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-danger">
               <RotateCcw size={12} /> 清空
             </Button>
@@ -192,6 +199,7 @@ export default function FormSheet({ tab }: Props) {
         data={data}
         onFieldChange={setField}
         twoColumn={fullWidth}
+        tabId={tab.id}
       />
 
       {/* 底部提示 */}

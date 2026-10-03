@@ -18,6 +18,8 @@ import { confirmDialog, showToast } from './dialogs'
 import type { TemplateField } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { useSaveHotkey } from '../lib/useSaveHotkey'
+import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
+import { useFieldAliases } from '../lib/fieldAlias'
 import { contentMinH, CARD_SHEET_CHROME_PX } from '../lib/theme'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { Button } from './Button'
@@ -69,6 +71,12 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   const [showFill, setShowFill] = useState(false)
   // 筛选：开启后隐藏「人物状态 = 已退场」的角色，避免角色过多时难以定位
   const [hideRetired, setHideRetired] = useState(false)
+  /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
+  const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
+  const { labels: aliasLabels } = useFieldAliases(
+    tab.id,
+    useMemo(() => aliasTargets.map(t => t.key), [aliasTargets]),
+  )
   const statusOf = (rec: CardRecord) => {
     const k = Object.keys(rec.data).find(kk => kk.endsWith('::人物状态'))
     return k ? (rec.data[k] || '').trim() : ''
@@ -319,6 +327,12 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
           <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
+          <FieldAliasButton
+            tabId={tab.id}
+            tabName={tab.name}
+            intro="给这一页的字段起你自己看得懂的名字（每张卡用的是同一套字段）。"
+            targets={aliasTargets}
+          />
           <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
@@ -431,7 +445,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                           isBasicMod ? 'grid-cols-[104px_1fr]' : 'grid-cols-[140px_1fr]'
                         }`}>
                           <div>
-                            <div className="text-12 font-medium text-ink-100">{field.name}</div>
+                            <div
+                              className="text-12 font-medium text-ink-100"
+                              title={aliasLabels[key] === field.name ? undefined : `${field.name}（AI 仍按这个原字段名理解）`}
+                            >{aliasLabels[key]}</div>
                             {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                           </div>
                           {/* ⚠️ 2026-09-22 **二次返工**：上一版把这里收在 `max-w-[26rem]`，结果输入框与立绘

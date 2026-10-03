@@ -7,9 +7,11 @@
  *
  * 🔴 纯搬家：JSX 与 class 一字未改，只把 `setField` 换成外部传入的 `onFieldChange`。
  */
+import { useMemo } from 'react'
 import { Info } from 'lucide-react'
 import AutoTextarea from './AutoTextarea'
 import type { TabDef } from '../lib/types'
+import { useFieldAliases } from '../lib/fieldAlias'
 
 interface Props {
   /** schema 的模块清单 */
@@ -23,9 +25,20 @@ interface Props {
    * 开书定位 / 大纲规划 这类「字段多、屏幕宽」的页签开；嵌在窄栏里（如母级表单）时关掉。
    */
   twoColumn?: boolean
+  /**
+   * 所属页签 id：**传了才启用字段显示名**（2.7.3）。
+   * 别名只改界面上这行字，取值仍走 `模块名::字段名` 这个存储键 —— 已填数据不受影响。
+   */
+  tabId?: string
 }
 
-export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColumn = false }: Props) {
+export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColumn = false, tabId }: Props) {
+  /** 字段显示名（2.7.3）：母级表单、子世界、制度四页签都走这里，传 tabId 即自动生效 */
+  const keys = useMemo(
+    () => modules.flatMap(m => m.fields.map(f => `${m.name}::${f.name}`)),
+    [modules],
+  )
+  const { labels: aliasLabels } = useFieldAliases(tabId ?? '', keys)
   return (
     <div className={twoColumn
       ? 'grid grid-cols-1 xl:grid-cols-2 gap-5 items-start'
@@ -44,7 +57,10 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
               return (
                 <div key={key} className="px-5 py-4 grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-2 md:gap-4 hover:bg-ink-800/40 transition-colors">
                   <div>
-                    <div className="text-13 font-medium text-ink-100">{field.name}</div>
+                    <div
+                      className="text-13 font-medium text-ink-100"
+                      title={aliasLabels[key] === field.name ? undefined : `${field.name}（AI 仍按这个原字段名理解）`}
+                    >{aliasLabels[key]}</div>
                     {field.desc && <div className="field-desc mt-1">{field.desc}</div>}
                   </div>
                   <div>

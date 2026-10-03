@@ -16,6 +16,8 @@ import { contentMinH, OUTLINE_SHEET_CHROME_PX } from '../lib/theme'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { useSaveHotkey } from '../lib/useSaveHotkey'
+import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
+import { useFieldAliases } from '../lib/fieldAlias'
 import { LoadingState } from './LoadingState'
 // R4a · 2.6.0：结构模板节拍对照条（只读）。模板选择的单一来源在 creativeSession，
 // 与创意写作 / 检查工具「全书结构配比」共用同一份（hydrate 幂等，本页可能从未打开过创意写作）。
@@ -53,6 +55,13 @@ export default function OutlineSheet({ tab }: Props) {
   useEffect(() => () => clearTimeout(savedTimer.current), [])
   const [tplOpen, setTplOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+
+  /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
+  const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
+  const { labels: aliasLabels } = useFieldAliases(
+    tab.id,
+    useMemo(() => aliasTargets.map(t => t.key), [aliasTargets]),
+  )
 
   // ---- R4a · 2.6.0 结构模板节拍对照（章节细纲页只读展示） ----
   useEffect(() => { hydrateCreativeSession() }, [])
@@ -276,6 +285,12 @@ export default function OutlineSheet({ tab }: Props) {
             <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
+            <FieldAliasButton
+              tabId={tab.id}
+              tabName={tab.name}
+              intro={`给这一页的字段起你自己看得懂的名字（每张${noun}用的是同一套字段）。`}
+              targets={aliasTargets}
+            />
             <Button variant="toggle" selected={dirty}
               onClick={save}
               disabled={!dirty || saving}
@@ -432,7 +447,10 @@ export default function OutlineSheet({ tab }: Props) {
                         return (
                           <div key={key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
                             <div>
-                              <div className="text-12 font-medium text-ink-100">{field.name}</div>
+                              <div
+                                className="text-12 font-medium text-ink-100"
+                                title={aliasLabels[key] === field.name ? undefined : `${field.name}（AI 仍按这个原字段名理解）`}
+                              >{aliasLabels[key]}</div>
                               {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                             </div>
                             <div>

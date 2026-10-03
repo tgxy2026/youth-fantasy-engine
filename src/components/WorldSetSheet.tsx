@@ -33,6 +33,7 @@ import AutoTextarea from './AutoTextarea'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
 import SchemaFieldGrid from './SchemaFieldGrid'
+import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
 import AITemplateFill from './AITemplateFill'
 import AIDataSourceNote from './AIDataSourceNote'
 import { LoadingState } from './LoadingState'
@@ -303,6 +304,12 @@ export default function WorldSetSheet({ tab }: Props) {
             ⇒ 原先挂在这里的 `GenrePackSwitcher` + `TabVisibilityControl` 已整体移除。
           */}
           <div className="ml-auto flex items-center gap-2">
+            <FieldAliasButton
+              tabId={tab.id}
+              tabName={tab.name}
+              intro="给这一页的字段起你自己看得懂的名字（母级与每个子项用的是同一套字段）。"
+              targets={moduleAliasTargets(modules)}
+            />
             <Button variant="toggle" selected={dirty} disabled={!dirty || saving}
               onClick={() => void flush()} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
               title={dirty ? '保存（先落库再切换层，不怕丢）' : '无未保存的改动'}
@@ -443,7 +450,7 @@ export default function WorldSetSheet({ tab }: Props) {
           )}
 
           <div className={isMain ? 'border-l-2 border-amber/40 pl-3' : 'border-l-2 border-ink-600 pl-3'}>
-            <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} />
+            <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} tabId={tab.id} />
           </div>
 
           {/* ---------- 设定草稿箱（本层一份，不发给 AI） ---------- */}

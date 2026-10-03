@@ -36,6 +36,7 @@ import AutoTextarea from './AutoTextarea'
 import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
 import SchemaFieldGrid from './SchemaFieldGrid'
+import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
 import AITemplateFill from './AITemplateFill'
 import AIDataSourceNote from './AIDataSourceNote'
 import { LoadingState } from './LoadingState'
@@ -361,6 +362,14 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
               + (tab.tips ?? []).map(t => `${t}\n`).join('\n')}
             <AIDataSourceNote feature={tab.id} />
           </HelpPopover>
+          <div className="ml-auto">
+            <FieldAliasButton
+              tabId={tab.id}
+              tabName={tab.name}
+              intro="给这一页的字段起你自己看得懂的名字（每一条用的是同一套字段）。"
+              targets={moduleAliasTargets(modules)}
+            />
+          </div>
         </div>
       </header>
 
@@ -469,7 +478,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
                 </span>
               </div>
 
-              <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} />
+              <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} tabId={tab.id} />
 
               {/* 草稿箱（每条一份，与母子版同机制） */}
               <div className="mt-4 rounded-xl border border-ink-700 bg-ink-850/40 p-3">
