@@ -81,6 +81,7 @@
 - 🔴 长文必走流式（`aiTasks/stream.ts`）；失败原因经 `onLog` 转界面。
 - 🔴 AI「读哪些数据」＝`lib/aiDataSources.ts` 单一源（新条目须被组件 `feature="id"` 引用）；🔴🔴 禁写「全程本地/不外发」——口径＝发给**当前选定的**模型。
 - 🔴🔴 候选值注入只有一处：`organizeRows.resolveColumnCandidates()`；三条链路都**显式传 `calendars`/`ctx`**。
+- 🔴🔴 **AI 上下文「可挑选」原则**（10-03）：`buildWorldContext(onlyKeys?)` 按 `WORLD_CONTEXT_GROUPS` 分组，**不传 = 全取**（保持旧调用方行为）；对话引导面板默认只勾 worldbase，**禁全量灌注**。🔴 **通用组件不自己读库**（`InterviewChat` 只收 `context` 字符串 ＋ 可选 `headerSlot`），读什么由调用方备好。兄弟条目摘要走 `interview.buildSiblingContext()`（**必须截断**：每条 ≤14 行 / 整体 ≤56 行）。⚠️ 该函数字段名是**硬编码白名单**，schema 改名会静默取空 —— 有测试钉住（注意 `positioning` 的字段写在 `schemaTabs/part1.ts`，**不在** `schemaTemplates/`）。
 - 🔴 迁移只走 `db.runMigrations()`（不可换序）；作者原文进 prompt 走 `promptGuard.authorBlock()`；本地预算上限 32K。
 - 🔴 **新增 AI 功能四处注册**：`aiTasks`／`aiDataSources`／`aiWriterBudget`／界面挂 `AIDataSourceNote`。
 

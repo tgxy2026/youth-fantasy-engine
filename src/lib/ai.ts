@@ -815,10 +815,46 @@ export interface TemplateFillResult {
 }
 
 /**
+ * 世界观上下文的**可挑选分组**（2026-10-03）。
+ *
+ * 起因：对话引导模式原先**完全不带**母级设定（作者无感知，AI 会把母设定忘掉）；
+ * 而一次性全灌又会把作者的脑子一次掏空。折中做法＝**列成清单让作者自己勾**。
+ * 🔴 字段名是硬编码白名单：**schema 改字段名这里会静默取空**（新增字段请一并加进来）。
+ */
+export interface WorldContextGroup {
+  key: string
+  label: string
+  /** 面板上的一行说明：让作者知道带过去的是什么 */
+  hint: string
+  tabId: 'worldbase' | 'power' | 'positioning'
+  names: string[]
+}
+
+export const WORLD_CONTEXT_GROUPS: WorldContextGroup[] = [
+  {
+    key: 'worldbase', label: '世界设定（母级）', tabId: 'worldbase',
+    hint: '世界名称 / 一句话世界观 / 文明程度 / 时代背景 / 世界核心规则',
+    names: ['世界名称', '一句话世界观', '文明程度', '当前时代背景', '世界核心规则'],
+  },
+  {
+    key: 'power', label: '力量体系（母级）', tabId: 'power',
+    hint: '体系名称 / 体系类型 / 力量来源与路线 / 力量的限制规则',
+    names: ['体系名称', '体系类型', '力量来源与路线', '力量的限制规则'],
+  },
+  {
+    key: 'positioning', label: '作品信息', tabId: 'positioning',
+    hint: '书名 / 类型赛道 / 核心卖点 / 一句话简介',
+    names: ['书名', '类型赛道', '核心卖点', '一句话简介'],
+  },
+]
+
+/**
  * 构建世界观上下文摘要，供补全时保证一致性。
  * v1：抽取表单型「世界设定 / 力量体系 / 作品信息」的关键字段，作为模型补全的约束。
+ *
+ * @param onlyKeys 只取这些分组；**不传 = 全取**（保持「一次成稿」的既有行为不变）。
  */
-export async function buildWorldContext(): Promise<string> {
+export async function buildWorldContext(onlyKeys?: string[]): Promise<string> {
   const pick = (data: Record<string, string> | undefined, names: string[]): string[] => {
     if (!data) return []
     const out: string[] = []
@@ -830,15 +866,18 @@ export async function buildWorldContext(): Promise<string> {
     }
     return out
   }
+  const groups = onlyKeys?.length
+    ? WORLD_CONTEXT_GROUPS.filter(g => onlyKeys.includes(g.key))
+    : WORLD_CONTEXT_GROUPS
+  const need = new Set(groups.map(g => g.tabId))
   const [world, power, pos] = await Promise.all([
-    db.getFormData('worldbase').catch(() => undefined),
-    db.getFormData('power').catch(() => undefined),
-    db.getFormData('positioning').catch(() => undefined),
+    need.has('worldbase') ? db.getFormData('worldbase').catch(() => undefined) : Promise.resolve(undefined),
+    need.has('power') ? db.getFormData('power').catch(() => undefined) : Promise.resolve(undefined),
+    need.has('positioning') ? db.getFormData('positioning').catch(() => undefined) : Promise.resolve(undefined),
   ])
+  const byTab: Record<string, Record<string, string> | undefined> = { worldbase: world, power, positioning: pos }
   const lines: string[] = []
-  lines.push(...pick(world, ['世界名称', '一句话世界观', '文明程度', '当前时代背景', '世界核心规则']))
-  lines.push(...pick(power, ['体系名称', '体系类型', '力量来源与路线', '力量的限制规则']))
-  lines.push(...pick(pos, ['书名', '类型赛道', '核心卖点', '一句话简介']))
+  for (const g of groups) lines.push(...pick(byTab[g.tabId], g.names))
   return lines.join('\n')
 }
 

@@ -237,3 +237,45 @@ export async function runInterviewTurn(
   }
   return { state: next, reply }
 }
+
+/**
+ * 把**同页签其它活跃条目**的已填内容压成一段可带进对话的摘要（2026-10-03）。
+ *
+ * 起因：多套并行的页签（世界设定的多个子世界 / 制度四页签的多条制度）之间最容易撞车 ——
+ * 补全第 3 条时 AI 看不见第 1、2 条写了什么，作者明明都填过了。
+ *
+ * 🔴 **刻意截断**：这类摘要动辄几百行，全量带进对话既稀释注意力又白耗额度。
+ *    每条只取前 `perEntryLines` 行、整体不超过 `totalLines` 行，截断处明写「其余 N 项略」。
+ * @param entries 兄弟条目（**调用方须先滤掉当前正在编辑的那条**）
+ * @param itemLabel 条目在正文里的称呼（例：`子世界` / `制度`），只影响标题措辞
+ */
+export function buildSiblingContext(
+  entries: { name: string; data: Record<string, string> }[],
+  opts?: { itemLabel?: string; perEntryLines?: number; totalLines?: number },
+): string {
+  const itemLabel = opts?.itemLabel ?? '条目'
+  const perEntry = opts?.perEntryLines ?? 14
+  const total = opts?.totalLines ?? 56
+  const blocks: string[] = []
+  let used = 0
+  for (const e of entries) {
+    const filled = Object.entries(e.data ?? {})
+      .filter(([, v]) => v && v.trim())
+      .map(([k, v]) => (k.includes('::') ? `${k.split('::').pop()}：${v.trim()}` : `${k}：${v.trim()}`))
+    if (!filled.length) continue
+    if (used >= total) {
+      blocks.push(`（另有 ${entries.length - blocks.length} 个${itemLabel}未列入 —— 勾此项只带上面这些）`)
+      break
+    }
+    const room = Math.max(0, Math.min(perEntry, total - used))
+    const head = filled.slice(0, room)
+    used += head.length
+    const rest = filled.length - head.length
+    blocks.push([
+      `【${itemLabel}·${e.name}】`,
+      ...head,
+      rest > 0 ? `（本${itemLabel}其余 ${rest} 项略）` : '',
+    ].filter(Boolean).join('\n'))
+  }
+  return blocks.join('\n')
+}

@@ -37,6 +37,7 @@ import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
 import SchemaFieldGrid from './SchemaFieldGrid'
 import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
+import { buildSiblingContext } from '../lib/interview'
 import AITemplateFill from './AITemplateFill'
 import AIDataSourceNote from './AIDataSourceNote'
 import { LoadingState } from './LoadingState'
@@ -198,6 +199,14 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   }, [tab.id])
 
   const selSub = useMemo(() => subs.find(s => s.id === sel), [subs, sel])
+  /** 其它活跃条目的已填摘要（2026-10-03）—— 补全当前这条时可勾选带进对话上下文 */
+  const siblingCtx = useMemo(
+    () => buildSiblingContext(
+      subs.filter(s => s.id !== sel && activeIds.includes(s.id)).map(s => ({ name: s.name, data: s.data })),
+      { itemLabel: '制度' },
+    ),
+    [subs, activeIds, sel],
+  )
   // 活跃列表里可能残留已删除条目的 id（跨设备删除）⇒ 一律经 splitActive 过滤后再用
   const { active } = useMemo(() => splitActive(subs, activeIds), [subs, activeIds])
 
@@ -528,6 +537,12 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
         <AITemplateFill
           fields={templates}
           existing={draft}
+          extraContextGroups={siblingCtx ? [{
+            key: 'siblings',
+            label: `其它活跃制度（${activeIds.filter(id => id !== sel).length} 个）`,
+            hint: '多条制度之间最容易撞车 —— 勾上它，AI 会照着兄弟条目已有的设定来问',
+            text: siblingCtx,
+          }] : []}
           title={`AI 补全 · 「${selSub.name}」`}
           sketchPlaceholder={`例如：这是一个${subLabel}，它的权力结构、关键人物、与相邻${subLabel}的关系……`}
           onSubmit={values => {

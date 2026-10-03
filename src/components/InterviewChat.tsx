@@ -16,6 +16,7 @@
  * 不认识任何业务。**别在业务侧再写一份** —— 一处改了措辞另一处没改，两边就会长得不一样。
  */
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { ChatMessage } from '../lib/ai'
 import {
   emptyInterview, interviewProgress, filledToText, runInterviewTurn,
@@ -26,7 +27,7 @@ import { Button } from './Button'
 import { Modal } from './Modal'
 
 export default function InterviewChat({
-  subject, spec, existing, context, callChat, onClose, onApply, applyLabel = '生成草稿并填入',
+  subject, spec, existing, context, callChat, onClose, onApply, applyLabel = '生成草稿并填入', headerSlot,
 }: {
   /** 「角色卡」/「剧本」/「这份设定」—— 只用于文案 */
   subject: string
@@ -40,6 +41,11 @@ export default function InterviewChat({
   onClose: () => void
   onApply: (filled: Record<string, string>) => void
   applyLabel?: string
+  /**
+   * 标题栏下方的附加区（2026-10-03）—— 各调用方在这里放自己的「带哪些既有设定一起聊」选择面板。
+   * 🔴 本组件**不自己读库**：读什么、读多少一律由调用方决定后通过 `context` 递进来。
+   */
+  headerSlot?: ReactNode
 }) {
   const [state, setState] = useState<InterviewState>(() => emptyInterview())
   const [input, setInput] = useState('')
@@ -105,6 +111,7 @@ export default function InterviewChat({
         </div>
       }
     >
+      {headerSlot && <div className="mb-3">{headerSlot}</div>}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_15rem]">
         {/* 左：对话 */}
         <div className="flex h-[26rem] min-h-0 flex-col">

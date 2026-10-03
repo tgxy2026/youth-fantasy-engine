@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles, Check, Loader2, AlertCircle, RefreshCw, MessagesSquare, NotebookPen } from 'lucide-react'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
-import { aiChatJson, aiCompleteTemplate, buildWorldContext, type TemplateField } from '../lib/ai'
+import { aiChatJson, aiCompleteTemplate, buildWorldContext, WORLD_CONTEXT_GROUPS, type TemplateField } from '../lib/ai'
 import { prepareDraftMaterial, type DraftSource } from '../lib/draftMaterial'
 import { deriveTopics, filledToText, type InterviewSpec } from '../lib/interview'
 import { loadFreeDraft, saveFreeDraft } from '../lib/freeDraft'
@@ -35,6 +35,7 @@ import { isInternalFieldKey } from '../lib/worldSets'
 import { DEFAULT_SEARCH_SETTINGS } from '../lib/webSearch'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import InterviewChat from './InterviewChat'
+import InterviewContextPicker, { type ContextChoice } from './InterviewContextPicker'
 import { Button } from './Button'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
@@ -46,6 +47,12 @@ interface Props {
   existing?: Record<string, string>
   /** 是否提供「参照世界观」开关（默认 true） */
   withWorldContext?: boolean
+  /**
+   * **额外可带进对话引导的设定块**（2026-10-03）—— 由调用方备好文本，本组件只负责列出来让作者勾选。
+   * 典型用途：同页签**其它活跃条目**的已填摘要（多套并行时，兄弟条目之间最容易撞车）。
+   * 🔴 本组件**不自己读库**：读什么、读多少、怎么截断，一律由调用方决定。
+   */
+  extraContextGroups?: (ContextChoice & { text: string })[]
   /** 草图输入框占位提示 */
   sketchPlaceholder?: string
   /**
@@ -85,6 +92,7 @@ export default function AITemplateFill({
   fields,
   existing,
   withWorldContext = true,
+  extraContextGroups = [],
   sketchPlaceholder,
   initialSketch,
   sketchLabel,
@@ -102,6 +110,10 @@ export default function AITemplateFill({
   const [sketch, setSketch] = useState(initialSketch ?? '')
   const [refs, setRefs] = useState('')
   const [useCtx, setUseCtx] = useState(true)
+  /** 对话引导带哪些既有设定（默认只带母级世界设定 —— 最常需要保持一致的那组） */
+  const [pickedCtx, setPickedCtx] = useState<string[]>(['worldbase'])
+  const [interviewCtx, setInterviewCtx] = useState('')
+  const [ctxBusy, setCtxBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<Record<string, string> | null>(null)
@@ -177,6 +189,31 @@ export default function AITemplateFill({
     () => fields.filter(f => !f.locked && !(safeExisting?.[f.key]?.trim())),
     [fields, safeExisting],
   )
+
+  /**
+   * 对话引导的可选设定清单：母级三组（worldbase / power / positioning）＋ 调用方自备的额外块。
+   * 组装时按勾选拼成一段文本，交给 InterviewChat 的 `context`。
+   */
+  const ctxChoices = useMemo<ContextChoice[]>(() => [
+    ...(withWorldContext ? WORLD_CONTEXT_GROUPS.map(g => ({ key: g.key, label: g.label, hint: g.hint })) : []),
+    ...extraContextGroups.map(g => ({ key: g.key, label: g.label, hint: g.hint })),
+  ], [withWorldContext, extraContextGroups])
+
+  /** 勾选变化 / 进入对话引导时重建上下文文本（读库是异步的，故单独一个 state） */
+  useEffect(() => {
+    if (mode !== 'interview' || !withWorldContext) { setInterviewCtx(''); return }
+    let alive = true
+    setCtxBusy(true)
+    void (async () => {
+      const parts: string[] = []
+      if (pickedCtx.some(k => (WORLD_CONTEXT_GROUPS.find(g => g.key === k)))) {
+        try { parts.push(await buildWorldContext(pickedCtx)) } catch { /* 读不到就当没有 */ }
+      }
+      for (const g of extraContextGroups) if (pickedCtx.includes(g.key) && g.text.trim()) parts.push(g.text)
+      if (alive) setInterviewCtx(parts.filter(Boolean).join('\n'))
+    })().finally(() => { if (alive) setCtxBusy(false) })
+    return () => { alive = false }
+  }, [mode, pickedCtx, withWorldContext, extraContextGroups])
 
   /** 「主要角色」这类称谓 —— 从标题里摘出来，给对话引导当主语（标题形如 `AI 补全 · 主要角色`） */
   const subjectLabel = useMemo(() => {
@@ -256,6 +293,19 @@ export default function AITemplateFill({
         subject={subjectLabel}
         spec={spec}
         existing={existingText || undefined}
+        context={interviewCtx || undefined}
+        headerSlot={
+          withWorldContext ? (
+            <InterviewContextPicker
+              choices={ctxChoices}
+              picked={pickedCtx}
+              busy={ctxBusy}
+              onToggle={k => setPickedCtx(prev => (prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]))}
+              onAll={() => setPickedCtx(ctxChoices.map(c => c.key))}
+              onNone={() => setPickedCtx([])}
+            />
+          ) : undefined
+        }
         callChat={callChat}
         onClose={onClose}
         onApply={onSubmit}

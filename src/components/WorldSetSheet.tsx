@@ -34,6 +34,7 @@ import HelpPopover from './HelpPopover'
 import PromptModal from './PromptModal'
 import SchemaFieldGrid from './SchemaFieldGrid'
 import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
+import { buildSiblingContext } from '../lib/interview'
 import AITemplateFill from './AITemplateFill'
 import AIDataSourceNote from './AIDataSourceNote'
 import { LoadingState } from './LoadingState'
@@ -145,6 +146,17 @@ export default function WorldSetSheet({ tab }: Props) {
   }, [tab.id])
 
   const isMain = sel === MAIN
+  /**
+   * **其它活跃子世界**的已填摘要（2026-10-03）—— 多套并行时兄弟条目最容易撞车，
+   * 补全当前这条时把它们作为**可选项**交给作者挑（默认不带，勾了才进对话上下文）。
+   */
+  const siblingCtx = useMemo(
+    () => buildSiblingContext(
+      subs.filter(s => s.id !== sel && activeIds.includes(s.id)).map(s => ({ name: s.name, data: s.data })),
+      { itemLabel: subLabel },
+    ),
+    [subs, activeIds, sel, subLabel],
+  )
   const selSub = useMemo(() => subs.find(s => s.id === sel), [subs, sel])
   // 活跃列表里可能残留已删除子项的 id（跨设备删除）⇒ 一律经 splitActive 过滤后再用
   const { active } = useMemo(() => splitActive(subs, activeIds), [subs, activeIds])
@@ -525,6 +537,12 @@ export default function WorldSetSheet({ tab }: Props) {
         <AITemplateFill
           fields={templates}
           existing={draft}
+          extraContextGroups={siblingCtx ? [{
+            key: 'siblings',
+            label: `其它活跃${subLabel}（${activeIds.filter(id => id !== sel).length} 个）`,
+            hint: '同名条目之间最容易撞车 —— 勾上它，AI 会照着兄弟条目已有的设定来问',
+            text: siblingCtx,
+          }] : []}
           title={`AI 补全 · ${isMain ? '全书统一（母级）' : `子世界「${selSub?.name ?? ''}」`}`}
           sketchPlaceholder={isMain
             ? '例如：这是一个以「灵气复苏」为背景的东方玄幻世界，主角走吞噬进化路线……'
