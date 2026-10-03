@@ -40,6 +40,10 @@ async function fingerprint(p: string) {
 __resetMockStores()
 const pid = await createDemoProject()
 db.setCurrentProject(pid)
+// 🔴 2026-10-03 老大定案「示范项目不参与任何备份行为」，而本文件要验证的是**备份 → 篡改 → 恢复**往返。
+//    所以把这份示范数据**改名**成普通项目名：内容仍是满血的示范内容（21 章正文，章节数断言不受影响），
+//    但不再被备份链路跳过。示范项目本身不备份这件事由文件末尾那段专门断言。
+await db.updateProject({ id: pid, name: '备份测试用项目（示范内容副本）' })
 
 // ---------- 1. 恢复往返：备份 → 篡改 + 删章 → 恢复 → 与基线一致 ----------
 {
@@ -48,7 +52,7 @@ db.setCurrentProject(pid)
   ok('示范项目有足够章节可供测试', chapters0.length > 1, String(chapters0.length))
 
   const base = await fingerprint(pid)
-  const snap = await db.createAutoBackup(pid, 'manual', '往返测试基线')
+  const snap = (await db.createAutoBackup(pid, 'manual', '往返测试基线'))!
 
   const target = chapters0[0]
   const victim = chapters0[chapters0.length - 1]
@@ -106,11 +110,31 @@ db.setCurrentProject(pid)
 {
   const p2 = await createDemoProject()
   db.setCurrentProject(p2)
+  await db.updateProject({ id: p2, name: '孤儿测试用项目（示范内容副本）' }) // 同上：示范项目不备份
   const before = (await db.listOrphanBackups()).length
   await db.createAutoBackup(p2, 'manual', '孤儿测试备份')
   await db.deleteProject(p2)
   const after = (await db.listOrphanBackups()).length
   ok('删除项目后其备份成为孤儿且能被识别', after === before + 1, `${before}→${after}`)
+}
+
+// ---------- 示范项目不参与备份（2026-10-03 老大定案） ----------
+{
+  const { DEMO_PROJECT_NAME, isDemoProjectName } = await import('../src/lib/constants')
+  const demo = (await db.createProject(DEMO_PROJECT_NAME, '东方修真', '演示', '', 'full')).id
+  db.setCurrentProject(demo)
+  const before = (await db.listBackups(demo)).length
+  const made = await db.createAutoBackup(demo, 'manual', '示范项目不该被备份')
+  const after = (await db.listBackups(demo)).length
+  ok('🔴 示范项目：手动备份不生成任何记录', made === null && after === before, `${made ? '生成了' : '未生成'} / ${before}→${after}`)
+  await db.createAutoBackup(demo, 'auto5min', '自动备份也不该')
+  await db.createAutoBackup(demo, 'daily', '每日备份也不该')
+  ok('🔴 示范项目：自动与每日备份同样被跳过', (await db.listBackups(demo)).length === before)
+  ok('判定函数认得示范项目名', isDemoProjectName(DEMO_PROJECT_NAME))
+  ok('🔴 名字不同的项目照常备份（用户自建项目行为不变）', !isDemoProjectName('我的小说'))
+  const mine = (await db.createProject('我的小说', '东方修真', '', '', 'full')).id
+  const rec = await db.createAutoBackup(mine, 'manual', '普通项目照常')
+  ok('🔴 用户自建项目：备份照常生成', !!rec && (await db.listBackups(mine)).length === 1)
 }
 
 console.log(`\nbackup: ${pass} passed, ${fail} failed`)

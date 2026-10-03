@@ -4,7 +4,8 @@
 import type { Project, FormData } from '../types'
 import { uid } from '../id'
 import { ops, touchProject } from './core'
-import { exportProject, remapSettingValue, type ProjectBundle } from './projects'
+import { exportProject, remapSettingValue, type ProjectBundle, getProject } from './projects'
+import { isDemoProjectName } from '../constants'
 import { VOL_LEDGER_PREFIX } from './volumes'
 
 // ============ 自动备份（v1.3 备份策略加固） ============
@@ -72,8 +73,19 @@ function withBytes(rec: BackupMeta | LegacyBackupRecord): BackupMeta {
   return { id: rec.id, projectId: rec.projectId, kind: rec.kind, label: rec.label, createdAt: rec.createdAt, bytes }
 }
 
-/** 创建一次全量自动备份（默认上限由调用方保证） */
-export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string): Promise<BackupMeta> {
+/**
+ * 创建一次全量自动备份（默认上限由调用方保证）。
+ *
+ * 🔴 2026-10-03 老大定案：**示范项目不参与任何备份行为**。
+ *    拦截放在**这一层**（而不是各个调用点）是因为所有备份路径 —— 每日 / 5 分钟自动 / 手动 ——
+ *    都从这里过，将来新增入口也不会漏。示范项目是「创建示范项目」一键生成的演示数据、随时能重建，
+ *    为它每 5 分钟存一份全量纯属浪费磁盘（还会把备份列表塞满）。
+ *    ⚠️ 复制示范项目出来的副本名字不同 ⇒ 按普通项目对待，会正常备份（这是对的）。
+ * @returns 备份元信息；**示范项目返回 null**（什么也没写）。
+ */
+export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string): Promise<BackupMeta | null> {
+  const proj = await getProject(projectId).catch(() => undefined)
+  if (isDemoProjectName(proj?.name)) return null
   // 🔴 自动备份**不带**章节快照（2.4.0 · A3）：它是每 5 分钟一次的高频全量，
   //    快照随它走会把本地存储迅速撑大。要带走快照的是「手动导出备份」，那条路径走默认值。
   const bundle = await exportProject(projectId, { includeSnapshots: false })

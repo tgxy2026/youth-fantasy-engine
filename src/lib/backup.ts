@@ -7,6 +7,7 @@
 import * as db from './db'
 import { DESKTOP, flushDesktop, getDesktopState } from './desktop'
 import { todayKey } from './date'
+import { isDemoProjectName } from './constants'
 
 const FIVE_MIN = 5 * 60 * 1000
 
@@ -105,6 +106,14 @@ export function startAutoBackup(projectId: string): () => void {
       recordFailure('auto5min', e)
     }
   }
-  const timer = setInterval(tick, FIVE_MIN)
-  return () => clearInterval(timer)
+  // 🔴 2026-10-03：示范项目不参与任何备份行为 —— 这里**干脆不启计时器**（连 5 分钟一次的空转都省掉）。
+  //    db 层还有一道兜底拦截：这里是「不启动」，那里是「万一别处调了也不写」。
+  //    ⚠️ 判定要读库所以是异步的：万一 stop 先到（stopped 置位）就不再起；查失败则照常起，交给 db 层兜底。
+  let timer: ReturnType<typeof setInterval> | null = null
+  let stopped = false
+  void db.getProject(projectId).then(p => {
+    if (stopped || isDemoProjectName(p?.name)) return
+    timer = setInterval(tick, FIVE_MIN)
+  }).catch(() => { /* 读不到就照常启动，db 层有兜底 */ })
+  return () => { stopped = true; if (timer) clearInterval(timer) }
 }

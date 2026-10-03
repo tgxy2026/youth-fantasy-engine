@@ -29,3 +29,24 @@ export const EMPTY_CHAPTER_HINT = '这一章还没有正文，换一章看看。
 export const AI_STREAM_LABEL = 'AI 实时输出'
 /** 草稿有改动未落库时的提示（各页签的角标 / 角点 / 状态位共用） */
 export const UNSAVED_CHANGES_HINT = '有未保存的改动'
+
+// ============ 示范项目（2026-10-03 老大定案：不参与任何备份行为） ============
+
+/**
+ * 示范项目的名字，**唯一真源** —— `lib/seedData.ts` 建它、`db/backups.ts` 跳过它都引这里。
+ * 🔴 以前这个名字在 seedData 里硬编码一次，备份那边无从判断「这是不是示范项目」；
+ *    抽成常量后两处永远对得上。
+ */
+export const DEMO_PROJECT_NAME = '吞天神脉（示范）'
+
+/**
+ * 这个项目是不是示范项目。
+ *
+ * 判定**只认名字**（精确相等）：Project 结构里没有「是否示范」这类标记，而为一个
+ * 一次性种子项目去加字段 + 回填迁移，风险远大于收益 —— 而且示范项目是用按钮生成的，
+ * 作者不会去改它的名字（改了这套提示就认不出来了）。
+ * ⚠️ 复制示范项目出来的副本名字会不同 ⇒ 按**普通用户项目**对待，会正常备份。这是对的。
+ */
+export function isDemoProjectName(name: string | null | undefined): boolean {
+  return (name ?? '').trim() === DEMO_PROJECT_NAME
+}

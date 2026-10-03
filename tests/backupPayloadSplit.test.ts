@@ -20,6 +20,8 @@ console.log('\n▶ backupPayloadSplit')
 
 __resetMockStores()
 const pid = await createDemoProject()
+// 🔴 2026-10-03：示范项目不参与备份，本文件要验证载荷分离 ⇒ 改名成普通项目（内容仍是满血示范数据）。
+await db.updateProject({ id: pid, name: '载荷分离测试用项目' })
 db.setCurrentProject(pid)
 
 // ---------- 1. 本地专属 store 单一判据 ----------
@@ -33,7 +35,7 @@ db.setCurrentProject(pid)
 
 // ---------- 2. 写入即分离 ----------
 const backupId = await (async () => {
-  const rec = await db.createAutoBackup(pid, 'manual', '分离测试')
+  const rec = (await db.createAutoBackup(pid, 'manual', '分离测试'))!
   const metas = await memoryOps.getAll<Record<string, unknown>>('backups')
   const payloads = await memoryOps.getAll<Record<string, unknown>>('backupPayloads')
   const meta = metas.find(m => m.id === rec.id)
@@ -96,7 +98,7 @@ const backupId = await (async () => {
 
 // ---------- 7. 外置文件：往返 + 认得出迁移包 ----------
 {
-  const rec = await db.createAutoBackup(pid, 'manual', '外置测试')
+  const rec = (await db.createAutoBackup(pid, 'manual', '外置测试'))!
   const f = await db.buildBackupFile(rec.id)
   ok('能打出外置文件', !!f && f.content.length > 0)
   ok('文件名带书名与时间戳', !!f && f.filename.startsWith('青春幻想引擎-备份-') && f.filename.endsWith('.json'), f?.filename)
