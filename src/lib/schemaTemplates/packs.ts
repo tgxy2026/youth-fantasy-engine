@@ -85,11 +85,6 @@ export function normalizeGenrePack(v: unknown): GenrePack {
   return DEFAULT_PACK
 }
 
-/** 显示用短标签（当前＝包名，保留函数是为了将来要加缩写时只改这一处） */
-export function packLabel(pack: GenrePack): string {
-  return pack
-}
-
 // ==================== 模块级的「当前题材包」====================
 // 与 schema.getVolumeTabs 的缓存同范式：全局唯一项目在打开时才设定，未设定即默认包。
 // 🔴 之所以用模块级可变状态而不是 props 层层透传：TABS 的消费方有 20+ 处
@@ -114,7 +109,6 @@ export function setActivePack(pack: GenrePack): void {
  *   保留这个名单是因为：① 遍历「开书定位」组时要用；② 测试要断言「这六个都受题材驱动」。
  */
 export const PACK_TAB_IDS = ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice'] as const
-export type PackTabId = (typeof PACK_TAB_IDS)[number]
 
 // ==================== 显示名随题材 ====================
 

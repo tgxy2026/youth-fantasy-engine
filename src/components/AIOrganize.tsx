@@ -250,7 +250,7 @@ style={{ maxHeight: foldVh('26vh') }}>
                 value={paste}
                 onChange={setPaste}
                 placeholder="把要整理的文本粘贴进来（章节片段、大纲草稿、设定笔记都行）……"
-                className="text-13"
+                textClass="text-13"
                 minHeight={90}
                 maxHeight={240}
               />

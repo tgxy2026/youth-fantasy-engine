@@ -16,6 +16,7 @@ import { Button } from './Button'
 import { Modal } from './Modal'
 import HelpPopover from './HelpPopover'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '../lib/fieldAlias'
+import { foldVh } from '../lib/theme'
 
 /** 弹窗的一项＝一个可改名的字段 */
 export interface AliasTarget {
@@ -109,7 +110,9 @@ export default function FieldAliasDialog({
           </div>
         </div>
 
-        <div className="rounded-lg border border-ink-700 max-h-[42vh] overflow-y-auto">
+        {/* 🔴 高度走 foldVh（与 AIOrganize / AITemplateFill 的 42vh 同一口径）：
+            CSS 类里的 vh 不随界面 zoom 折算，132% 缩放下会顶出弹窗。 */}
+        <div className="rounded-lg border border-ink-700 overflow-y-auto" style={{ maxHeight: foldVh('42vh') }}>
           {groups.map(g => (
             <div key={g.name} className="border-b border-ink-800 last:border-b-0">
               {g.name && (

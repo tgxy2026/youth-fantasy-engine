@@ -1,6 +1,6 @@
 // 桌面（Electron 安装版）存储引擎
 // 数据以单个 JSON 文件保存在本机用户数据目录
-// （Windows: C:\Users\<用户>\AppData\Roaming\青春幻想引擎\novel-studio-data.json），
+// （Windows: C:\Users\<用户>\AppData\Roaming\novel-studio\novel-studio-data.json），
 // 通过 preload 注入的 window.electronStore IPC 读写。
 //
 // 数据格式（`PortableData`，kind='portable-data'）沿用自便携版，**名字不要改**：

@@ -108,24 +108,33 @@ export function useGeoMapModel() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [gRows, fsRows, tlRows, mapRowsAll, charTabs] = await Promise.all([
-      db.getTableRows('geography'),
-      db.getTableRows('foreshadow'),
-      db.getTableRows('timeline'),
-      db.getTableRows('geomaps'),
-      Promise.all(
-        TABS.filter(t => t.type === 'card' && t.group === '角色管理').map(t => db.getCardRecords(t.id)),
-      ),
-    ])
-    setAllRows(gRows)
-    setMaps(mapRowsAll)
-    // 默认选第一张；原选择若还在就保留（重新加载后不跳图）
-    setMapId(prev => (prev && mapRowsAll.some(m => m.id === prev) ? prev : (mapRowsAll[0]?.id ?? '')))
-    setFs(fsRows)
-    setTl(tlRows)
-    setChars(charTabs.flat())
-    await loadCategories()
-    setLoading(false)
+    // 🔴 2026-10-03 六维审计 P1：原先这里没有 try/catch/finally —— 任何一次读取 reject
+    //    （IndexedDB 打不开 / 写盘锁 / 迁移异常）都会让下面的 setLoading(false) 永不执行，
+    //    而 useEffect 里的 `void load()` 没人接 rejection ⇒ 地图页**永久停在加载态**。
+    //    与 useFreeTurn / AITemplateFill 等同型函数对齐：错误如实提示 + finally 必复位。
+    try {
+      const [gRows, fsRows, tlRows, mapRowsAll, charTabs] = await Promise.all([
+        db.getTableRows('geography'),
+        db.getTableRows('foreshadow'),
+        db.getTableRows('timeline'),
+        db.getTableRows('geomaps'),
+        Promise.all(
+          TABS.filter(t => t.type === 'card' && t.group === '角色管理').map(t => db.getCardRecords(t.id)),
+        ),
+      ])
+      setAllRows(gRows)
+      setMaps(mapRowsAll)
+      // 默认选第一张；原选择若还在就保留（重新加载后不跳图）
+      setMapId(prev => (prev && mapRowsAll.some(m => m.id === prev) ? prev : (mapRowsAll[0]?.id ?? '')))
+      setFs(fsRows)
+      setTl(tlRows)
+      setChars(charTabs.flat())
+      await loadCategories()
+    } catch (e) {
+      showToast('地图数据加载失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setLoading(false)
+    }
   }, [loadCategories])
   useEffect(() => { void load() }, [load])
 

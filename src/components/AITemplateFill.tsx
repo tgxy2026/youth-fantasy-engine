@@ -366,7 +366,6 @@ export default function AITemplateFill({
                       value={draftText}
                       onChange={onDraftChange}
                       placeholder="想到什么就往这儿丢：一段没整理的设定、聊天记录里攒的灵感、写了一半的大纲……怎么写都行，不做任何格式要求。"
-                      className="text-12"
                       minRows={5}
                       maxHeight={0}
                     />
@@ -395,7 +394,7 @@ export default function AITemplateFill({
                 value={sketch}
                 onChange={setSketch}
                 placeholder={sketchPlaceholder ?? '例如：一个叫叶昭的少年，是没落剑派最后一名弟子，性格倔强但重情义，想复兴门派……'}
-                className="text-13"
+                textClass="text-13"
                 minHeight={64}
                 maxHeight={200}
               />

@@ -159,10 +159,15 @@ export async function commitDraftRows(rows: DraftRow[], opts: CommitOptions = {}
     return v
   }
   // 表单型：一份表一条记录（`projectId::tabId`），同批量内也不复读
+  //
+  // 🔴 2026-10-03 六维审计 P1：这里**不许把读失败吞成 `{}`**。落库写的是 `{...cur, 本次草稿}`，
+  //    而 `saveFormData` 是**整份覆盖** —— 读失败时给 `{}` 等于拿一份只剩草稿字段的新对象
+  //    盖掉作者手填的整张表（作品信息 / 全书总纲 / 写作规范…），界面还报「已更新 N 条」。
+  //    读不出来就让它抛，由下面的 catch 如实记进 `out.failed`，这一行一个字都不写。
   const formCache = new Map<string, Record<string, string>>()
   const formOf = async (tabId: string): Promise<Record<string, string>> => {
     let v = formCache.get(tabId)
-    if (!v) { v = await db.getFormData(tabId).catch(() => ({} as Record<string, string>)); formCache.set(tabId, v) }
+    if (!v) { v = await db.getFormData(tabId); formCache.set(tabId, v) }
     return v
   }
 
@@ -190,7 +195,9 @@ export async function commitDraftRows(rows: DraftRow[], opts: CommitOptions = {}
           }
           if (!anyP) { out.failed.push(`${row.name}（没有可落库的字段）`); continue }
           const setName = row.name.trim() || `${tab.name}汇总`
-          const existing = await db.getSubSets(row.tabId).catch(() => [])
+          // 🔴 读失败不再降级成 `[]`（2026-10-03 六维审计 P2）：那会把「读不出来」当成
+          //    「一条都没有」⇒ 判重落空 ⇒ 同名条目被**再建一条**。读不出来就抛，由外层记入 failed。
+          const existing = await db.getSubSets(row.tabId)
           const hit = existing.find(s => s.name === setName)
           if (hit) {
             // 同名条目：按冲突策略合并（fill-empty / keep-existing 只填空，use-incoming 覆盖）

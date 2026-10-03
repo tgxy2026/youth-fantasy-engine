@@ -61,13 +61,11 @@ function ConfirmView({ title, message, confirmText = '确定', cancelText = '取
               口径：弹窗内 = md ／ 面板主操作 = sm ／ 面板工具 = xs。 */}
           <Button variant="secondary" size="md"
             onClick={() => onResult(false)}
-            className="text-12"
           >
             {cancelText}
           </Button>
           <Button variant={danger ? 'danger' : 'primary'} size="md"
             onClick={() => onResult(true)}
-            className="text-12"
           >
             {confirmText}
           </Button>

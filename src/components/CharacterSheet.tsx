@@ -503,7 +503,6 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                                 value={val}
                                 onChange={v => updateField(key, v)}
                                 placeholder="点击填写…"
-                                className="text-12"
                                 minHeight={32}
                                 maxHeight={UNBOUNDED_CARD_TABS.has(tab.id) ? 0 : undefined}
                               />

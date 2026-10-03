@@ -28,6 +28,7 @@ import {
   type TavernSettings,
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
+import { primaryAiCharId } from './primaryChar'
 import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack, keywordHaystackMessages } from './world'
 import { scriptToText } from './script'
 import { applyPostRules, type PostApplied } from './postRules'
@@ -672,8 +673,11 @@ export async function buildFreeSystem(
     tail: buildVarStateBlock({
       values: varsOf(session, varsEnabledKeys(st)).values,
       keys: varsEnabledKeys(st),
-      // 主角色卡上的持久备注（反馈 #4）：让模型知道「这个分背后是什么」，下一轮好据此推进
-      notes: found[0]?.vars?.notes,
+      // 主角色卡上的持久备注（反馈 #4）：让模型知道「这个分背后是什么」，下一轮好据此推进。
+      // 🔴 必须与**回写**同一张卡：回写侧取 `primaryAiCharId(session)`（AI 扮演的第一个角色），
+      //    而 `found[0]` 是 charIds[0] —— 作者把「我演」放在位置 1 时那是**用户卡**（备注通常为空）
+      //    ⇒ 每轮累积在主角色卡上的备注模型根本看不到（2026-10-03 六维审计 P1）。
+      notes: found.find(c => c.id === primaryAiCharId(session))?.vars?.notes,
     }),
     protocol: st.protocol,
   })

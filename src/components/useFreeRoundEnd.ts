@@ -6,7 +6,7 @@
  *
  * 🔴 搬动时逐条保住的红线：
  *   · **收尾可中止**（六维审计 P2-7）：`runRoundEnd` 全程下传 `signal`，中止 ≠ 失败
- *     （措辞按 /取消|abort/ 区分），中止时**一条都不落库**、水位线也不推进；
+ *     （判据 = `isCancelled`），中止时**一条都不落库**、水位线也不推进；
  *   · **取锁必须在 try 之外**（审计 P1-3）：`finally` 里无条件 release，取锁失败说明锁在
  *     别人手里，那时候 release 会删掉别人的锁，防并发形同虚设；
  *   · 有步骤没成必须**如实说**（审计 P0-1）：记忆 / 数值 / 设定审查失败原先被静默吞掉，
@@ -20,7 +20,7 @@ import { useCallback, useRef, useState, type Dispatch, type SetStateAction } fro
 import { showToast, confirmDialog } from './dialogs'
 import { useTavernReady } from './useTavernReady'
 import * as store from '../lib/tavern/store'
-import { unloadOllamaModel } from '../lib/ai'
+import { unloadOllamaModel, isCancelled } from '../lib/ai'
 import { resolveTavernProvider } from '../lib/tavern/provider'
 import { nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, releaseSummaryLock } from '../lib/tavern/memory'
 import { primaryAiCharId } from '../lib/tavern/primaryChar'
@@ -224,7 +224,10 @@ export function useFreeRoundEnd({
       // 🔴 中止 ≠ 失败（2026-09-19 六维审计 P2-7）：记忆走的是「全算完才统一落库」的设计
       //    （见 runRoundEnd 顶部说明），中止时一条都没写，水位线与 endedAt 也没推进 ——
       //    下次点「结束本轮对话」从零重算即可，不会留下半截记忆。
-      const aborted = /取消|abort/i.test(e instanceof Error ? e.message : String(e))
+      // 🔴 判据统一走 `isCancelled`（真源 lib/ai.ts：`e.name === 'AICancelled'`）。
+      //    原先用 message 正则 /取消|abort/ —— 任何 message 里带「取消 / cancel / abort」的
+      //    **真失败**都会被当成「已中止」显示成 info 灰字，把错误盖掉。
+      const aborted = isCancelled(e)
       showToast(
         aborted
           ? '已中止收尾 —— 没有写入任何内容，这一场仍是未结束状态'

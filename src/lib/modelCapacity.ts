@@ -336,7 +336,7 @@ export function adviseCapacity(
       headline: `本地 Ollama · 窗口 ${effectiveCtx} 词元（${userWindow ? '按你手填的' : '面板现值'}）· 预算 ${current.contextBudget} 字`
         + (overWindow ? `（超窗口承载，建议 ${budget}）` : ''),
       note: `本地部署：${userWindow
-        ? `**窗口以你在模型配置里手填的 ${effectiveCtx} 为准**（酒馆的窗口长度与上下文预算会跟着它变）。`
+        ? `窗口以你在模型配置里手填的 ${effectiveCtx} 为准（酒馆的窗口长度与上下文预算会跟着它变）。`
         : `上下文窗口由显存决定（当前面板 ${effectiveCtx}）；想换模型就换窗口，请在模型配置里手填。`}` +
         `模型标称 ${claim} 只作参考。记忆档按当前预算 ${budget} 字同比推荐。`
         + (overWindow

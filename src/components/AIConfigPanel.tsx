@@ -445,21 +445,21 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </>
               )}
 
-              {/* 上下文窗口（选填）：**只有云端端点读它**。
-                  本地 Ollama 的窗口由显存决定（面板里那个「上下文窗口长度」才是它），
-                  云端则由服务商决定、没有统一的查询接口 —— 所以允许手填。
-                  留空时按模型名去预设表里认，认不出走保守兜底（见 lib/modelCapacity.ts）。 */}
+              {/* 上下文窗口（选填）：**手填即全项目真源** —— 本地与云端都读它（见 lib/modelCapacity.ts）。
+                  本地：手填 > 酒馆面板现值；没手填才沿用面板值（不按模型标称自动放宽，显存安全阀仍留着）。
+                  云端：服务商没有统一的查询接口，也靠手填覆盖。
+                  留空时按模型名去预设表里认，认不出走保守兜底。 */}
               {(() => {
                 const isLocal = editing.type === 'ollama' || !!editing.local
                 const hit = lookupWindow(editing.model)
                 const hint = editing.contextWindow
                   ? `已手填 ${editing.contextWindow} tokens${isLocal
-                      ? '：**酒馆的窗口长度与上下文预算会跟着它变**（这是老大手填即真源的口径）'
+                      ? '：酒馆的窗口长度与上下文预算会跟着它变（手填值就是全项目的准）'
                       : '：酒馆控制面板会按它算上下文预算与记忆档的建议值'}。留空则${isLocal
                       ? '沿用酒馆面板现值 —— 不按模型标称自动放宽。'
                       : '按模型名自动识别'}。`
                   : isLocal
-                    ? `留空 = 沿用酒馆面板当前的窗口。🔴 本地模型**建议手填你实测能跑的上限**（不同模型差 2.7 倍：96K / 128K / 256K），填了全项目跟着走。`
+                    ? `留空 = 沿用酒馆面板当前的窗口。建议手填你实测能跑的上限（本机不同模型实测差 2.7 倍），填了全项目跟着走。`
                     : hit
                       ? `留空 = 按模型名识别为 ${hit.window} tokens（${hit.label}）。识别得不对就手填覆盖。`
                       : `未识别到该模型名 —— 留空会按保守值 ${FALLBACK_WINDOW} tokens 估算，建议手填真实值。`

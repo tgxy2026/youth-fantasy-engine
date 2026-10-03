@@ -17,6 +17,7 @@ import HelpPopover from './HelpPopover'
 import { Button } from './Button'
 import { showToast } from './dialogs'
 import { HAS_NET_BRIDGE } from '../lib/desktop'
+import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import {
   DEFAULT_BYPASS, getStoredNetProxy, storeNetProxy, applyNetProxy, normalizeProxyInput, sanitizeBypassList,
   type NetProxyPrefs,
@@ -93,7 +94,7 @@ export default function NetworkProxyPanel() {
           <span className="text-11 text-ink-400">
             {draft.enabled ? `请求将经由 ${draft.rules || '（待填写地址）'} 发出` : '跟随系统网络设置（默认）'}
           </span>
-          {dirty && <span className="text-11 text-amber">有未保存的改动</span>}
+          {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
         </div>
 
         {draft.enabled && (

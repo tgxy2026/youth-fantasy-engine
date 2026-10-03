@@ -359,7 +359,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   </div>
                   {form.projectType === 'custom' && (
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'create', initial: form.features.length ? form.features.filter(id => !LOCKED_IDS.includes(id)) : DEFAULT_IDS })} className="flex items-center gap-1.5 px-3 h-9 text-12 rounded-lg transition-colors">
+                      <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'create', initial: form.features.length ? form.features.filter(id => !LOCKED_IDS.includes(id)) : DEFAULT_IDS })} className="flex items-center gap-1.5 rounded-lg transition-colors">
                         <ListChecks size={13} /> {form.features.length ? `已选 ${form.features.length} 个功能 · 重新选择` : '选择功能模块'}
                       </Button>
                       {form.features.length > 0 && (
@@ -490,7 +490,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作，及灵感工具下的灵感启发 / 素材资料 / 检查工具）与依赖自动带入的模块不可取消；其余模块（含拆书、创意写作）自由调整。修改后点击「保存修改」生效。'}
                           </HelpPopover>
                         </div>
-                        <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })} className="flex items-center gap-1.5 px-3 h-9 text-12 rounded-lg transition-colors">
+                        <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })} className="flex items-center gap-1.5 rounded-lg transition-colors">
                           <ListChecks size={13} /> 已启用 {editForm.features.length} 个功能 · 编辑功能
                         </Button>
                       </div>
@@ -500,7 +500,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                         disabled={busy} variant="primary" size="md" className="flex items-center">
                         <Check size={13} /> 保存修改
                       </Button>
-                      <Button variant="secondary" onClick={() => setEditingId(null)} className="px-3 py-1.5 text-12 border-ink-600 rounded-lg hover:border-ink-500 transition-colors">
+                      <Button variant="secondary" onClick={() => setEditingId(null)} className="border-ink-600 hover:border-ink-500 transition-colors">
                         取消
                       </Button>
                     </div>

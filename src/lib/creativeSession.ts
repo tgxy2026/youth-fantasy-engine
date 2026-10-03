@@ -44,6 +44,7 @@ import {
   listRewriteCandidates,
 } from './chapterRewrite'
 import { countWords } from './textStats'
+import { isCancelled } from './ai'
 import type { LedgerItem } from './settingLedger'
 
 /** 创作起点：从一句话想法从零写 / 接着项目已有内容往下写 */
@@ -776,7 +777,9 @@ export async function startChapterRewrite(p: {
     if (cur) set({ rewrite: { ...cur, text: buf, running: false, suspect } })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    const aborted = /取消|abort/i.test(msg)
+    // 🔴 判据走 isCancelled（真源 lib/ai.ts）：原先的 message 正则会把含「取消 / abort」的真失败
+    //    显示成「已中止改写（没有写入任何内容）」，把错误盖成 info。
+    const aborted = isCancelled(e)
     notice(aborted ? '已中止改写（没有写入任何内容）' : '改写失败：' + msg, aborted ? 'info' : 'error')
     set({ rewrite: null })
   } finally {

@@ -146,7 +146,13 @@ export function fillChapterRanges<T extends { chapterRange: string }>(
   return out
 }
 
-/** 一卷的章号区间（含标题，正文切卷时要按标题找到真实的卷记录） */
+/**
+ * 一卷的章号区间（含标题，正文切卷时要按标题找到真实的卷记录）。
+ *
+ * ⚠️ 2026-10-02 六维审计判定**保留**：`audit-dead` 会一直把它列进「确定死代码」，别删。
+ *    「正文切卷」尚未落地 ⇒ 接口整体无消费者；但它是零运行时开销的导出类型，删掉只会让
+ *    `docs/2.5.2-开发记录.md` 等文档的引用悬空，收益为零。已在扫描器 `KEEP` 表登记。
+ */
 export interface VolumeRange {
   title: string
   from: number

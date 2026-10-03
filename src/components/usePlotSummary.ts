@@ -15,6 +15,7 @@
  */
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { showToast } from './dialogs'
+import { isCancelled } from '../lib/ai'
 import * as store from '../lib/tavern/store'
 import { splitCast } from '../lib/tavern/engine'
 import { getTavernSettings, type TavernSettings } from '../lib/tavern/settings'
@@ -116,7 +117,9 @@ export function usePlotSummary({ setSession }: PlotSummaryArgs) {
       )
     } catch (e) {
       // 总结失败 / 被中止**都保留旧档案**：绝不写入半截结果（与自由模式同一原则）
-      const aborted = /取消|abort/i.test(e instanceof Error ? e.message : String(e))
+      // 🔴 与 useFreeRoundEnd 同一判据（真源 lib/ai.ts 的 isCancelled）：
+      //    message 正则会把含「取消」的真失败误判成「已中止」。
+      const aborted = isCancelled(e)
       showToast(
         aborted ? '已中止整理 —— 本场记忆保持原样' : '整理本场记忆失败：' + (e instanceof Error ? e.message : String(e)),
         aborted ? 'info' : 'error',

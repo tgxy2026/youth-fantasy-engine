@@ -152,7 +152,7 @@ export default function CalendarRuleModal({ open, rule, calendars, onSave, onClo
           数值用于<b className="text-ink-200">跨历法的先后顺序与延续性判断</b>：时间轴先按数值排序，再按发生时间。
           如「上古历 = -1」早于「灵历 = 0」。
           <div className="mt-1">
-            🔴 <b className="text-ink-200">改名</b>会连带更新已引用旧名的行（历史事件 / 时间脉络），不留孤儿值；
+            <b className="text-ink-200">改名</b>会连带更新已引用旧名的行（历史事件 / 时间脉络），不留孤儿值；
             <b className="text-ink-200">删除</b>只把历法从清单移除，已填的行保留旧名文本（不会清空你的数据）。
           </div>
         </div>

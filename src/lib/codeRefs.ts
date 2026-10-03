@@ -10,6 +10,7 @@
 
 import * as db from './db'
 import { TABS } from './schema'
+import { MULTI_SET_TABS } from './worldSets'
 
 export interface CodeRefResult {
   /** 出现处数（不含被删行自身的编号格） */
@@ -100,6 +101,29 @@ export async function countCodeRefs(
       }
     }
   } catch { incomplete = true /* 读不到正文：结果偏少，必须标注 */ }
+
+  // ⑤ 「多套条目」页签：世界设定 / 力量体系（母子）与制度四页签（并列，2.7.2 起）。
+  //    它们的条目存在 `cardRecords` 的 `<tabId>-sub` 下，**这个 tabId 不在 TABS 里** ⇒
+  //    上面 ②③ 两个循环都扫不到（2026-10-03 六维审计 P1）。
+  //    🔴 这与本文件头「宁可多报不漏报」的口径直接冲突：漏报会让作者以为「没引用」而删掉编号，
+  //    旧引用静默指向空号甚至后来的新条目。判据与 aiContext / exporter 的 `getSubSets` 同一口径。
+  for (const tabId of MULTI_SET_TABS) {
+    let subs
+    try {
+      subs = await db.getSubSets(tabId)
+    } catch { incomplete = true; continue }
+    const label = TABS.find(t => t.id === tabId)?.name ?? tabId
+    for (const s of subs) {
+      if (exclude.rowId && s.id === exclude.rowId) continue
+      for (const v of Object.values(s.data ?? {})) {
+        if (typeof v === 'string' && v.includes(target)) {
+          total++
+          if (hints.length < MAX_HINTS) hints.push(`《${label}》·${s.name}`)
+          break
+        }
+      }
+    }
+  }
 
   return { total, hints, incomplete }
 }
