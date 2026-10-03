@@ -76,7 +76,8 @@
 - 🔴🔴 markdown 星号政策：喂模型／纯文本渲染／导出 HTML 一律禁 `**`（用「」，嵌套『』）；**仅导出 `.md` 保留**；`tavern/**` 另有净化器。
 - 🔴 逐字引用定位前**先剥强调**（`mdLite.stripEmphasis`）。
 - 🔴 孤儿章须并入叙事序：`buildChapterDigest`/`idsUpToAnchor`/`findRelatedChapters` 三处一致。
-- 🔴 采样： `repeat_last_n` 512＋`frequency_penalty` 0.1；🔴🔴 绝不调高 `repeat_penalty`；思考模型须关思考（本地 `think:false`／Qwen3 `enable_thinking:false`）。
+- 🔴 采样： `repeat_last_n` 512＋`frequency_penalty` 0.1；🔴🔴 绝不调高 `repeat_penalty`。
+- 🔴🔴 **思考模式默认口径（10-03 核实，旧记忆「思考模型须关思考」已作废）**：分三路 ——①**本地 Ollama**：`think` 默认 undefined ⇒ **不传该字段＝保持模型思考**（项目**刻意保留**，利于深度设定补全；`ai.ts` 注释明写）；②**云端 Qwen3/QwQ 混合**：`enable_thinking:false` **默认关**（开着就拿不到 content）；③**云端其它模型**：不下发任何开关＝服务端默认。**统一归中在 `chat()`：`opts.think ?? (opts.json ? false : undefined)`** —— JSON 任务一律关（32 处 `json:true` 此前只有十来处显式关，其余本地一直开着思考、会被截断成 271 字 ⇒ JSON 必残），长文任务保持思考，显式 `think:true` 是逃生口。⚠️ 已复核但**有意不动**：酒馆对话默认关（`disableThink:true`，面板可开回）、**创意生成也归关侧**（取舍备案在 `chat()` 注释里）。⚠️ 本地思考型模型走长文路径会保持思考，属设计（深度设定补全要它）。
 - 🔴🔴 额度跟模型走：`adviseCapacity()`→`recommendTuning()`；新增额度档同步 `tests/writerBudget` 的 LEGACY 表（键数相等）。
 - 🔴 长文必走流式（`aiTasks/stream.ts`）；失败原因经 `onLog` 转界面。
 - 🔴 AI「读哪些数据」＝`lib/aiDataSources.ts` 单一源（新条目须被组件 `feature="id"` 引用）；🔴🔴 禁写「全程本地/不外发」——口径＝发给**当前选定的**模型。

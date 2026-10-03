@@ -477,6 +477,18 @@ async function readSSE(res: Response, onJson: (obj: unknown) => void, onFirstByt
 /** 统一对话入口：按 provider.type 分发 */
 export async function chat(config: AIProvider, messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
   // 注意：opts.think 默认 undefined → ollamaChatRaw 不传 think 字段，思考型模型保持思考。
+  //
+  // 🔴🔴 2026-10-03 统一口径：**JSON 任务默认关思考**（显式 `think: true` 仍是逃生口）。
+  //   依据（本文件上方实测）：本地思考型模型思考开 ⇒ 50.5 秒 / 思考链 12687 字 /
+  //   **content 只剩 271 字且被截断** ⇒ JSON 必残。而调用点里 32 处 `json: true` 只有十来处
+  //   显式写了 `think: false`，其余在本地路径上一直开着思考 —— 「功能坏掉」的风险远大于
+  //   「多想一会儿」的收益。要推理的长文任务（正文续写 / 整章改写 / 伴写 / 深度设定深化）
+  //   不是 JSON 任务，保持 undefined、照旧让思考型模型思考。
+  // ⚠️ 一次「想给它开思考」的取舍备案在此：创意生成（`aiTasks/creative.ts`）也走 `json: true`
+  //   （要解析成结构化清单），因此同样落在「关」这一侧 —— 这是**有意为之**：思考型模型思考开
+  //   会把 content 截到几百字，那不是「创意少一点」，而是**整份 JSON 直接坏掉**。
+  //   想要更好的创意，走草图（作者自己多给几条线索）比赌截断靠谱。
+  const think = opts.think ?? (opts.json ? false : undefined)
   // 温度在此处统一解析（唯一真源）：显式 temperature 优先；否则按是否 JSON 任务取默认值。
   // 下游 ollamaChatRaw / openaiChat 只管用 o.temperature，不再各自做缺省判断。
   // 2.4.0：创意生成的默认温度可由 provider 自带（见 AIProvider.temperature）——
@@ -484,7 +496,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   const temperature = opts.temperature ?? (opts.json ? JSON_TASK_TEMPERATURE : (config.temperature ?? DEFAULT_TEMPERATURE))
   return (await chatRaw(config, messages, {
     timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
-    think: opts.think,
+    think,
     signal: opts.signal,
     onToken: opts.onToken,
     temperature,
@@ -496,8 +508,12 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
   const { timeoutMs, think } = o
   const base = stripSlash(config.baseUrl || OLLAMA_DEFAULT_URL)
   if (!config.model) throw new Error('未选择 Ollama 模型，请先到「模型设置 → 模型配置」拉取并选择本地模型。')
-  // 构建请求体：仅在显式要求关闭思考时传 think:false（连通性测试等极速反馈场景）。
-  // 正常创作生成不传该字段，由模型/平台默认——思考型模型（deepseek-r1 / gemma4 / qwen3.5）保持思考，利于深度设定补全。
+  // 构建请求体：**只有关思考时才传 think:false**。
+  // · JSON 任务：由 `chat()` 统一归一（`opts.think ?? (opts.json ? false : undefined)`）⇒ 这里会收到 false；
+  //   理由是思考型模型思考开会把 content 截到只剩几百字，JSON 必残。
+  // · 长文创作（正文续写 / 改写 / 伴写 / 深度设定深化）：think 为 undefined ⇒ **不下发该字段**，
+  //   由模型/平台默认 —— 思考型模型（deepseek-r1 / gemma4 / qwen3.5）保持思考，利于深度设定补全。
+  // · 显式 `think: true`：同样不下发（等于保持模型默认，也就是保留思考），是逃生口。
   const body: Record<string, unknown> = {
     model: config.model,
     messages,

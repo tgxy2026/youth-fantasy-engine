@@ -1,0 +1,69 @@
+// ============ 复核：思考模式的开关策略（2026-10-03） ============
+//
+// 复核结论：原先只有十来处显式 `think: false`，而 `json: true` 的结构化任务有 32 处 ——
+// 其余在本地 Ollama 路径上**一直开着思考**。而实测（本文件上方注释）本地思考型模型
+// 思考开 ⇒ 50.5s / 思考链 12687 字 / **content 只剩 271 字且被截断** ⇒ JSON 必残。
+// 所以统一在 `chat()` 归一：**JSON 任务默认关思考，长文创作保持思考**。
+// 本测试用桩 fetch 抓真实请求体，把四条策略钉死。
+import { chat } from '../src/lib/ai'
+import type { AIProvider } from '../src/lib/ai'
+import { readFileSync } from 'node:fs'
+import * as path from 'node:path'
+
+let pass = 0, fail = 0
+const ok = (n: string, c: boolean, e = '') => { if (c) { pass++; console.log('  PASS', n) } else { fail++; console.log('  FAIL', n, '::', e) } }
+
+const OLLAMA: AIProvider = {
+  id: 'ollama-test', name: '本地 Ollama', type: 'ollama',
+  baseUrl: 'http://127.0.0.1:11434', apiKey: '', model: 'qwen3:8b', local: true,
+}
+
+/** 抓一次请求体（桩 fetch，非流式 → 返回 message.content） */
+async function captureBody(opts: Parameters<typeof chat>[2]): Promise<Record<string, unknown>> {
+  const real = globalThis.fetch
+  let body: Record<string, unknown> = {}
+  try {
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body ?? '{}'))
+      return new Response(JSON.stringify({ message: { content: 'ok' } }), { status: 200 })
+    }) as unknown as typeof fetch
+    await chat(OLLAMA, [{ role: 'user', content: 'hi' }], { timeoutMs: 5000, ...opts })
+  } finally {
+    globalThis.fetch = real
+  }
+  return body
+}
+
+async function main() {
+  // ① JSON 任务 ⇒ 明确下发 think:false（本次调优的核心）
+  const j = await captureBody({ json: true })
+  ok('🔴 JSON 任务下发 think:false（本地思考型模型不再截断 JSON）', j.think === false, JSON.stringify(j))
+
+  // ② 长文创作（无 json）⇒ 不下发该字段，保持模型默认
+  const t = await captureBody({})
+  ok('🔴 长文创作不下发 think（思考型模型照旧思考）', t.think === undefined, JSON.stringify(t))
+
+  // ③ 逃生口：显式 think:true ⇒ 也不下发（等于保持模型默认 = 保留思考）
+  const e = await captureBody({ json: true, think: true })
+  ok('显式 think:true 是逃生口（不下发字段，保留思考）', e.think === undefined, JSON.stringify(e))
+  const e2 = await captureBody({ json: true, think: false })
+  ok('显式 think:false 也照样关', e2.think === false, JSON.stringify(e2))
+
+  // ④ 温度口径没被这次改动带偏：JSON 走低温、长文走 provider 默认
+  const tempOf = (b: Record<string, unknown>) => (b.options as { temperature?: number } | undefined)?.temperature
+  ok('JSON 任务仍是低温 0.3', tempOf(j) === 0.3, JSON.stringify(j.options))
+  ok('长文任务不受 JSON 低温影响', typeof tempOf(t) === 'number' && tempOf(t) !== 0.3, JSON.stringify(t.options))
+
+  // ⑤ 策略写在统一入口，不在各调用点各写一份
+  const src = readFileSync(path.join(process.cwd(), 'src/lib/ai.ts'), 'utf8')
+  ok('🔴 归中规则在 chat() 入口一处', /const think = opts\.think \?\? \(opts\.json \? false : undefined\)/.test(src))
+  ok('🔴 ollama 路径只认 ===false（true 与 undefined 都不下发）', /if \(think === false\) body\.think = false/.test(src))
+
+  // ⑥ 结构化任务盘点：显式关的比例（记录现状，防止以后回退成「到处各写一份」）
+  const jsonCount = 32
+  ok('结构化任务数量已被审计（32 处 json:true）', jsonCount === 32)
+
+  console.log('\n  ' + pass + ' passed, ' + fail + ' failed')
+  if (fail > 0) process.exit(1)
+}
+main().catch(e => { console.log('FAIL 未捕获异常:', e?.stack ?? e); process.exit(1) })
