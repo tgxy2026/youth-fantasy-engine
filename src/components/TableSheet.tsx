@@ -4,12 +4,12 @@
  * 本文件**只负责长相**：状态、effect、派生值与动作全部在 `useTableSheetModel()`（2026-09-19 拆出）。
  * 下面那行同名解构是刻意的 —— 让 JSX 保持原样、零改动，把「搬家」与「改造」分开做。
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { TabDef } from '../lib/types'
 import { Z } from '../lib/zLayer'
 import { deleteTableRow } from '../lib/db'
 import { SABC_LABELS, type VisCtx } from '../lib/schema'
-import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, Upload, Download } from 'lucide-react'
+import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, Upload, Download, Type } from 'lucide-react'
 import HistoryTimeline from './HistoryTimeline'
 import StoryTimeline from './StoryTimeline'
 import StorylineView from './StorylineView'
@@ -26,6 +26,8 @@ import { downloadBlob } from '../lib/zip'
 import FeedbackAIPanel from './FeedbackAIPanel'
 import TermDedupPanel from './TermDedupPanel'
 import CalendarRuleModal from './CalendarRuleModal'
+import FieldAliasDialog from './FieldAliasDialog'
+import { aliasCount, useFieldAliases } from '../lib/fieldAlias'
 import { confirmDialog } from './dialogs'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
@@ -50,6 +52,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const model = useTableSheetModel({ tab, focusRowId, onFocusConsumed })
   /** 「历法规则」弹窗（历法清单 + 一年几个月 / 每月几天） */
   const [showCalRule, setShowCalRule] = useState(false)
+  /** 字段显示名（2.7.3）：只改界面上的字，存储键一个字节都不碰 */
+  const aliasCols = useMemo(() => (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name), [tab])
+  const { map: aliasMap, labels: aliasLabels, save: saveAliasMap } = useFieldAliases(tab.id, aliasCols)
+  const aliasRenamed = aliasCount(aliasCols, aliasMap)
+  const [showAlias, setShowAlias] = useState(false)
 
   const {
     // 落库与装载
@@ -129,6 +136,18 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                   ? `共 ${filteredRows.length} 行 · 按编号排序`
                   : `共 ${filteredRows.length} 行 · 按编辑时间排序`}
           </span>
+          {aliasCols.length > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowAlias(true)}
+              title="给这一页的字段起你自己看得懂的名字（只改显示，不动已填内容）"
+              className="gap-1.5"
+            >
+              <Type size={12} /> 字段名
+              {aliasRenamed > 0 && <span className="text-amber">{aliasRenamed}</span>}
+            </Button>
+          )}
           {!isMaster && (
           <Button variant="bare"
             onClick={saveAll}
@@ -297,7 +316,10 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                 <th className="w-7 px-1 py-2.5 align-middle" />
                 {tab.columns!.filter(col => !col.hidden).map(col => (
                   <th key={col.name} className="px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
-                    <div className="truncate">{col.name}</div>
+                    <div
+                      className="truncate"
+                      title={aliasLabels[col.name] === col.name ? undefined : `${col.name}（原字段名）`}
+                    >{aliasLabels[col.name]}</div>
                     {col.type === 'select' && col.options ? (
                       <select
                         value={colFilters[col.name] ?? ''}
@@ -422,6 +444,15 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         <TermDedupPanel rows={rows.map(r => r.data)} onClose={() => setShowDedupAI(false)} />
       )}
       {/* 条件渲染而非常挂：弹窗内部的输入框初值来自 props，常挂会拿到历法异步加载前的旧值 */}
+      {showAlias && (
+        <FieldAliasDialog
+          tabName={tab.name}
+          cols={aliasCols}
+          initial={aliasMap}
+          onSave={saveAliasMap}
+          onClose={() => setShowAlias(false)}
+        />
+      )}
       {showCalRule && (
         <CalendarRuleModal
           open

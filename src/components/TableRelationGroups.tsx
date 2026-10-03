@@ -6,7 +6,9 @@
  *
  * 状态一律来自 `model`（同名解构，JSX 保持原样）；本组件不持有任何状态。
  */
+import { useMemo } from 'react'
 import type { VisCtx } from '../lib/schema'
+import { useFieldAliases } from '../lib/fieldAlias'
 import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import type { TabDef } from '../lib/types'
 import { SABC_LABELS } from '../lib/schema'
@@ -39,6 +41,10 @@ export default function TableRelationGroups({ tab, model, ctx }: {
     aiReady,
     setFillRow,
   } = model
+
+  /** 字段显示名（2.7.3）：与表格视图共用同一份别名映射 */
+  const aliasCols = useMemo(() => (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name), [tab])
+  const { labels: aliasLabels } = useFieldAliases(tab.id, aliasCols)
 
   return (
     <div className="space-y-2.5">
@@ -117,7 +123,7 @@ export default function TableRelationGroups({ tab, model, ctx }: {
                             const long = LONG_REL_COLS.has(col.name)
                             return (
                               <div key={col.name} className={long ? 'md:col-span-2' : ''}>
-                                <div className="text-10 text-ink-500 mb-1">{col.name}</div>
+                                <div className="text-10 text-ink-500 mb-1" title={aliasLabels[col.name] === col.name ? undefined : `${col.name}（原字段名）`}>{aliasLabels[col.name]}</div>
                                 {col.type === 'tableRef' ? (
                                   /* 跨表引用：从来源设定表取值，禁止手动输入 */
                                   <TableRefSelect
