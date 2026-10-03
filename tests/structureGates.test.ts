@@ -177,6 +177,13 @@ if (!SRC) {
   //     （同 ④ 的 JSON_PARSE_OK 手法：例外必须写清理由，否则就是给自己开后门）。
   const TYPE_FILE_OK: Record<string, string> = {
     'src/lib/types.ts': '类型定义文件：15 个 interface/type + 1 个单行默认值常量（DEFAULT_CALENDAR_RULE，随 CalendarRule 类型走才内聚），不是数据表',
+    // 2026-10-03：TABS 数组体按原顺序切到 schemaTabs/part1..3（schema.ts 一度 1199 行、离硬闸只差 1 行）。
+    // 它们**不是数据表**：靠 schemaShared 的构造器（c / cr / f…）与 getter 拼装，题材一变内容就变，
+    // 落到 src/data/ 会把「TabDef 组装逻辑」与「数据」搅在一起（且 src/data/ 内禁止运行时 import）。
+    // 判据「无 function / 箭头函数」对「纯字面量 + 构造器调用」这种写法失灵 —— 故在此登记豁免并写明理由。
+    'src/lib/schemaTabs/part1.ts': 'TABS 第 1 段：TabDef 字面量 + 构造器调用（c / f）+ 题材 getter，非数据表',
+    'src/lib/schemaTabs/part2.ts': 'TABS 第 2 段：同上（列定义为主）',
+    'src/lib/schemaTabs/part3.ts': 'TABS 第 3 段：同上（列定义为主）',
   }
   {
     const bad: string[] = []

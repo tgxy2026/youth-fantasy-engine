@@ -25,6 +25,17 @@ const read = (rel: string) => {
 }
 
 /**
+ * schema 的**全文视图**（门面 + TABS 三段）。
+ * 2026-10-03 起 TABS 数组体住在 `schemaTabs/part1..3`（schema.ts 一度 1199 行、贴着结构闸硬上限），
+ * 凡是断言「某个字段 / 某段 description 在 schema 里」的检查都改读这个合并视图 ——
+ * 🔴 否则扫描器会因文件搬了家而**静默失明**（断言变红还好，漏检才是真危险）。
+ */
+const readSchema = () =>
+  ['src/lib/schema.ts', 'src/lib/schemaTabs/part1.ts', 'src/lib/schemaTabs/part2.ts', 'src/lib/schemaTabs/part3.ts']
+    .map(read)
+    .join('\n')
+
+/**
  * C1（2.4.2）拆分后：创意写作的实现分散在 7 个文件（主文件 + 共用小件 + 状态 hook + 四个子区块）。
  * 断言口径不变 —— 只是把素材来源扩成一组文件；以后再拆只需往这个数组加路径。
  */
@@ -117,7 +128,7 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('🔴 旧的「先续排细纲」开关已删除（细纲必须先排好，正文只管写）',
     !/extendOutline/.test(panel) && !/extendOutline/.test(read('src/lib/creativeSession.ts')) && !/extendOutlineFirst/.test(read('src/lib/aiWorkflow.ts')))
   ok('🔴 分卷大纲卡带「本卷章号范围」字段（正文切卷的唯一依据）',
-    /f\('本卷章号范围'/.test(read('src/lib/schema.ts')))
+    /f\('本卷章号范围'/.test(readSchema()))
   ok('🔴 章号范围由系统算（fillChapterRanges 是纯函数，可测）',
     /export function fillChapterRanges/.test(read('src/lib/outlineCard.ts')))
   ok('🔴 切篇幅时把产出目标一起映射（否则会留下"当前篇幅下不存在的档"：按钮不亮、提示却在讲它）',
@@ -298,7 +309,7 @@ console.log('\n—— creativeModes 用例开始 ——')
 
 // ============ ⑥ 界面文案纪律：不许再承诺"开发中"的幽灵功能 ============
 {
-  const schema = read('src/lib/schema.ts')
+  const schema = readSchema()
   const cwDesc = (schema.match(/id: 'creative-writing'[\s\S]{0,200}?description: '([^']+)'/) || [])[1] ?? ''
   ok('创意写作页签说明已更新为「两阶段分批」',
     /只做大纲规划/.test(cwDesc) && /只生成正文/.test(cwDesc), cwDesc.slice(0, 60))

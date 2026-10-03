@@ -27,6 +27,8 @@
 
 ## 架构红线
 - 无 i18n；schema 列名即存储键。⚠️ 打包陷阱：tree-shake（门控用平台并集，删门控必 `vite build`）；`DESKTOP` 探测 dev 恒 false。
+- 🔴🔴 **schema 已三段拆开（10-03）**：`schema.ts` 只剩**门面**（拼 TABS ＋ 显式再导出 ＋ 其余工具，283 行）；字段构造器（`c/cr/ca/f`…）/SABC/卷台账/制度页签工厂在 **`schemaShared.ts`**；TABS 数组体按**原顺序**切到 **`schemaTabs/part1..3.ts`**。🔴 段文件**只许依赖 schemaShared 与 schemaTemplates，绝不许 import schema.ts**（循环依赖 ⇒ const 在 TDZ 里炸）。外部一律 `from './schema'`（门面**显式再导出，禁 `export *`**）。
+- 🔴🔴 **文件一搬，扫描器就失明**：断言「某字段在 schema 里」的测试改读 `readSchema()`（门面＋三段合并视图）；结构闸 ③-b「纯数据文件」判据对「字面量＋构造器调用」失灵 ⇒ 三段已登记豁免并写明理由。**搬文件前先 grep 谁在 `read()` 它**；拆分后必跑全量单测，红的往往就是扫描器。
 - 🔴 门面显式再导出（勿 `export *`）；`PROMPT_ORDER` 还原注册序（新提示词**追加末尾**）；`ops`/`currentProjectId` 须 `export let`。
 - 🔴 功能门：`FEATURE_TIER`＋`STRONG_DEPS`（双向）＋`ANY_DEPS`；拆书／创意写作＝optional。
 - 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**；左下角只准一个浮层 `DataDock`；种子键：卡片 `模块::字段`、表格＝列名。
