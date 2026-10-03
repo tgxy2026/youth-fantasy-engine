@@ -7,7 +7,7 @@ import HelpPopover from './HelpPopover'
 import { isNumericPowerField } from '../lib/schema'
 import SchemaFieldGrid from './SchemaFieldGrid'
 import AITemplateFill from './AITemplateFill'
-import type { TemplateField } from '../lib/ai'
+import type { TemplateField, FillContext } from '../lib/ai'
 import { useAIReady } from '../lib/useAIReady'
 import { useSaveHotkey } from '../lib/useSaveHotkey'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
@@ -33,8 +33,10 @@ export default function FormSheet({ tab }: Props) {
   const [saved, setSaved] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => () => clearTimeout(savedTimer.current), [])
-  // AI 补全设定弹窗
+  // AI 补全设定弹窗（只补空字段，已填保留）
   const [showFill, setShowFill] = useState(false)
+  // AI 新增弹窗（仅「全书总纲」：起草一整份新总纲，会替换已填内容 —— 见下方 openFillNew）
+  const [showFillNew, setShowFillNew] = useState(false)
   const formFields = useMemo<TemplateField[]>(
     () => (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
       key: `${m.name}::${f.name}`,
@@ -52,6 +54,15 @@ export default function FormSheet({ tab }: Props) {
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
   const aiCap = aiCapabilityOf(tab)
   const { ready: aiReady } = useAIReady()
+  /**
+   * 「全书总纲」是**单份表单**（不像分卷 / 章节那样一条一张卡），所以这里的「AI 新增」不是
+   * 「新建一条」，而是「让 AI 起草一整份新总纲」—— 与「AI 补全」的差别只在**已填字段会不会被替换**
+   * （补全：不动已填；新增：整体替换，故点按钮前先确认一次）。
+   * 🔴 只放 `master` 一个 id：其余表单页（作品信息 / 世界设定 / 力量体系 / 写作规范）维持原样，
+   *    它们没有「一整份都推倒重来」的语义。
+   */
+  const isOutlineMaster = tab.id === 'master'
+  const fillContext: FillContext = isOutlineMaster ? 'outline-master' : 'template'
 
   // 用 ref 持有最新状态，避免切换页签时因 effect 闭包过期而丢失未保存草稿
   const dataRef = useRef(data)
@@ -130,6 +141,30 @@ export default function FormSheet({ tab }: Props) {
     setShowFill(false)
   }
 
+  /**
+   * AI 新增（起草全份）：产出字段**整体写入**（已填的也会被替换）—— 与 handleFill 的差别就在这里。
+   * 采用后同样只是进本地草稿（要再点「保存」才落库），但切走页签会自动冲刷，所以点按钮前先确认一次。
+   */
+  const handleFillNew = (values: Record<string, string>) => {
+    const produced = Object.entries(values).filter(([, v]) => v && v.trim())
+    if (produced.length > 0) {
+      setData(prev => ({ ...prev, ...Object.fromEntries(produced) }))
+      setDirty(true)
+      setSaved(false)
+    }
+    setShowFillNew(false)
+  }
+
+  /** 已填内容非空时先确认（起草全份会替换它们，且本页没有撤销） */
+  const openFillNew = async () => {
+    const filled = Object.values(data).filter(v => v && v.trim()).length
+    if (filled > 0 && !await confirmDialog({
+      title: `AI 新增 · ${tab.name}`,
+      message: `AI 会起草一整份新的${tab.name}，采用后本页已填的 ${filled} 项内容会被替换（没有撤销）。继续？`,
+    })) return
+    setShowFillNew(true)
+  }
+
   if (!loaded) return <LoadingState />
 
   const filledCount = Object.values(data).filter(v => v && v.trim()).length
@@ -175,9 +210,18 @@ export default function FormSheet({ tab }: Props) {
             <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
           </Button>
           {aiCap !== 'none' && (
-            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}>
-              <Sparkles size={12} /> AI 补全
-            </Button>
+            <>
+              {/* 「全书总纲」多一个「AI 新增」（起草全份）—— 单份表单没有「新建一条」的语义，
+                  它与「AI 补全」的区别只在**已填字段会不会被替换**（见 openFillNew / handleFillNew）。 */}
+              {isOutlineMaster && (
+                <Button variant="secondary" onClick={() => void openFillNew()} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : `提供粗略想法，让 AI 起草一整份新的${tab.name}（采用后替换本页已填内容）`}>
+                  <Sparkles size={12} /> AI 新增
+                </Button>
+              )}
+              <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}>
+                <Sparkles size={12} /> AI 补全
+              </Button>
+            </>
           )}
           </div>
         </div>
@@ -220,12 +264,27 @@ export default function FormSheet({ tab }: Props) {
       {showFill && (
         <AITemplateFill
           fields={formFields}
+          context={fillContext}
           existing={data}
           draftScope={`form::${tab.id}`}
           title={`AI 补全 · ${tab.name}`}
           sketchPlaceholder="例如：这是一个以「灵气复苏」为背景的东方玄幻世界，主角走吞噬进化路线……"
           onSubmit={handleFill}
           onClose={() => setShowFill(false)}
+        />
+      )}
+
+      {showFillNew && (
+        <AITemplateFill
+          fields={formFields}
+          context={fillContext}
+          // 🔴 刻意**不传 existing** —— 这就是「起草全份」与「补全」的分界：
+          //    不传 ⇒ 全部字段都由模型产出，采用时整体写入（已填的会被替换；点按钮前 openFillNew 已确认过）。
+          draftScope={`form::${tab.id}`}
+          title={`AI 新增 · ${tab.name}`}
+          sketchPlaceholder="例如：一个废脉少年吞噬神体、逆天改命的故事，三卷走完「觉醒—复仇—封神」，反派按宗门 → 世家 → 神族逐层升级……"
+          onSubmit={handleFillNew}
+          onClose={() => setShowFillNew(false)}
         />
       )}
     </div>

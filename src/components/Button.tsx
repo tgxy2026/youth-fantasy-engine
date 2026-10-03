@@ -55,6 +55,15 @@ const ROUND_ICON_SIZE: Record<Size, string> = {
   lg: 'h-10 w-10 rounded-full',
 }
 
+/**
+ * 🔴 实心按钮（solid）的底色是**固定 500/600/700 级色**（不随主题变），所以字色只能用**固定色**。
+ * 2026-10-03 方案 ②：danger / success / info 三变体统一「深底 + 白字」，全部达 WCAG AA
+ * （正文级白字对比度 ≥ 4.5，实测：danger red-600 4.83 ✓　success emerald-700 5.48 ✓　info sky-700 5.93 ✓）。
+ *   ⚠️ emerald-600 只有 3.77、sky-600 只有 4.10 —— 这两支必须用 700 级才够，别"顺手统一成 600"。
+ * 🔴 别改回 `text-ink-950`：ink 是**主题变量** —— 深色主题下近黑，但浅色主题下它是浅色
+ *    （如 eye-care 的 230 240 224）⇒ 会变成「浅字 + 亮底」（success 原样仅约 2.1），跨主题翻车。
+ * 闸：`tests/themeContrast.test.ts` 钉死了这三支的类名与对比度。
+ */
 function variantClass(v: Variant, solid: boolean, selected: boolean): string {
   switch (v) {
     case 'toggle':
@@ -75,15 +84,15 @@ function variantClass(v: Variant, solid: boolean, selected: boolean): string {
       return 'text-ink-400 hover:text-ink-100 hover:bg-ink-800/60 border border-transparent'
     case 'danger':
       return solid
-        ? 'bg-red-500 text-white border border-red-500 hover:bg-red-600 shadow-lg'
+        ? 'bg-red-600 text-white border border-red-600 hover:bg-red-700 shadow-lg'
         : 'bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20'
     case 'success':
       return solid
-        ? 'bg-emerald-500 text-ink-950 border border-emerald-500 hover:bg-emerald-400'
+        ? 'bg-emerald-700 text-white border border-emerald-700 hover:bg-emerald-800'
         : 'bg-success/15 text-success border border-success/30 hover:bg-success/20'
     case 'info':
       return solid
-        ? 'bg-sky-500 text-white border border-sky-500 hover:bg-sky-600'
+        ? 'bg-sky-700 text-white border border-sky-700 hover:bg-sky-800'
         : 'bg-info/15 text-info border border-info/30 hover:bg-info/20'
     case 'icon':
       return 'text-ink-400 hover:text-ink-100 hover:bg-ink-800/60 rounded-md border border-transparent'

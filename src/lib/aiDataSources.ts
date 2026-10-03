@@ -299,7 +299,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     excludes: ['不读章节正文 —— 它只解析你粘贴的那段内容，不去全书里翻找'],
   },
   'fill-template': {
-    label: 'AI 补全 / AI 新增（设定 · 角色卡 · 表格行）',
+    label: 'AI 补全 / AI 新增（设定 · 角色卡 · 大纲 · 表格行）',
     sources: [
       { group: '设定上下文（3 张表的关键字段）', items: ['作品信息：书名 / 类型赛道 / 核心卖点 / 一句话简介', '世界设定：世界名称 / 一句话世界观 / 文明程度 / 当前时代 / 核心规则', '力量体系：体系名称 / 类型 / 力量来源 / 限制规则'], note: '范围「仅此三表」，不是全部设定' },
       { group: '字段清单与已填内容', items: [], note: '已填的字段会锁定、不被覆盖' },

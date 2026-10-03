@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles, Check, Loader2, AlertCircle, RefreshCw, MessagesSquare, NotebookPen } from 'lucide-react'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
-import { aiChatJson, aiCompleteTemplate, buildWorldContext, WORLD_CONTEXT_GROUPS, type TemplateField } from '../lib/ai'
+import { aiChatJson, aiCompleteTemplate, buildWorldContext, WORLD_CONTEXT_GROUPS, type TemplateField, type FillContext } from '../lib/ai'
 import { prepareDraftMaterial, type DraftSource } from '../lib/draftMaterial'
 import { deriveTopics, filledToText, type InterviewSpec } from '../lib/interview'
 import { loadFreeDraft, saveFreeDraft } from '../lib/freeDraft'
@@ -43,6 +43,11 @@ import { AI_DISABLED_HINT } from '../lib/aiScope'
 interface Props {
   /** 该实体的全部字段（key 约定见 TemplateField） */
   fields: TemplateField[]
+  /**
+   * 补全语境 —— 决定发哪条系统提示词（缺省 = 通用设定补全）。
+   * 大纲规划三页签（全书总纲 / 分卷大纲 / 章节细纲）各传自己那条；见 `lib/ai.ts` 的 `FillContext`。
+   */
+  context?: FillContext
   /** 已存在的值（表单型补全时传入）：这些字段视为已填，锁定不发给模型、不随补全写入 */
   existing?: Record<string, string>
   /** 是否提供「参照世界观」开关（默认 true） */
@@ -90,6 +95,7 @@ type Mode = 'fill' | 'interview'
 
 export default function AITemplateFill({
   fields,
+  context,
   existing,
   withWorldContext = true,
   extraContextGroups = [],
@@ -268,6 +274,7 @@ export default function AITemplateFill({
       const r = await aiCompleteTemplate(sendFields, sketch, {
         worldContext: ctx,
         material: material.blocks,
+        context,
       })
       setResult(r.values)
       setAiFilled(r.aiFilled)

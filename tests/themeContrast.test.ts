@@ -112,5 +112,31 @@ for (const t of themes) {
   ok(`主题「${t.id}」灰阶单调（50→600）`, up || down, ls.map(v => v.toFixed(3)).join(' '))
 }
 
+// ---------- 实心按钮（solid danger / success / info）的白字对比度（2026-10-03 · 方案 ②）----------
+//
+// 这三种 solid 的底色是**固定 500/600/700 级色**（不随主题变），字色统一 `text-white`。
+// 因此只有当底色足够深才达 WCAG AA（正文级 ≥ 4.5）—— 这正是「三变体统一深底白字」的判据。
+// 🔴 反面：`text-ink-950` 看上去是「深字」，但 ink 是**主题变量** —— 浅色主题下它是浅色
+//    （如 230 240 224），会变成「浅字 + 亮底」（success 原样仅约 2.1），跨主题翻车。
+// 本闸同时钉「类名」与「对比度」：只钉对比度会被"换个色名"绕过，只钉类名则算不出深浅。
+const TW_PALETTE: Record<string, Record<number, string>> = {
+  red: { 500: '#ef4444', 600: '#dc2626', 700: '#b91c1c', 800: '#991b1b' },
+  emerald: { 500: '#10b981', 600: '#059669', 700: '#047857', 800: '#065f46' },
+  sky: { 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1', 800: '#075985' },
+}
+const hexRgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
+const WHITE = [255, 255, 255]
+const buttonSrc = fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'Button.tsx'), 'utf8')
+const SOLID_VARIANTS: { variant: string; cls: string; color: string; shade: number }[] = [
+  { variant: 'danger', cls: "'bg-red-600 text-white border border-red-600 hover:bg-red-700", color: 'red', shade: 600 },
+  { variant: 'success', cls: "'bg-emerald-700 text-white border border-emerald-700 hover:bg-emerald-800", color: 'emerald', shade: 700 },
+  { variant: 'info', cls: "'bg-sky-700 text-white border border-sky-700 hover:bg-sky-800", color: 'sky', shade: 700 },
+]
+for (const v of SOLID_VARIANTS) {
+  ok(`solid ${v.variant}：底色类名与字色被钉死（${v.color}-${v.shade} + text-white）`, buttonSrc.includes(v.cls))
+  const c = contrast(hexRgb(TW_PALETTE[v.color][v.shade]), WHITE)
+  ok(`solid ${v.variant}：白字对比度 ≥ 4.5（实测 ${c.toFixed(2)}）`, c >= 4.5)
+}
+
 console.log(`\nthemeContrast: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1

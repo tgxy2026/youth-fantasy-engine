@@ -74,6 +74,57 @@ function main() {
   const org = read('src/components/AIOrganize.tsx')
   ok('整理弹窗辨义改为「AI 新增」（新增=凭空造，整理=抽已写）', org.includes('与「AI 新增」的本质区别'))
 
+  // ── ⑦ 大纲规划组（2026-10-03 老大解禁）：全书总纲 / 分卷大纲 / 章节细纲 也接 AI 新增 + AI 补全 ──
+  const scope2 = read('src/lib/aiScope.ts')
+  ok('🔴 aiScope 特批了三个大纲页签（只放 id、不按 group 放行）',
+    /const AI_OUTLINE_TAB_IDS = new Set\(\['master', 'volume-outline', 'chapter-outline'\]\)/.test(scope2))
+  // 先要求分支**存在**（indexOf ≥ 0）：否则把分支删掉时 indexOf 返回 -1，而 -1 < 正数 恒真 ⇒ 护栏假绿。
+  const iOutline = scope2.indexOf('AI_OUTLINE_TAB_IDS.has(tab.id)')
+  ok('🔴 放行分支排在「整组不接 AI」之前（排在后面等于没放）',
+    iOutline >= 0 && iOutline < scope2.indexOf('NO_AI_GROUPS.includes(tab.group)'))
+  ok('大纲规划仍留在 NO_AI_GROUPS 里（兜住该组其余页签）',
+    /const NO_AI_GROUPS = \['大纲规划', '运营维护'\]/.test(scope2))
+
+  const os = read('src/components/OutlineSheet.tsx')
+  ok('🔴 分卷大纲 / 章节细纲：两个入口并存（AI 新增 + AI 补全）',
+    os.includes('AI 新增') && os.includes('AI 补全'))
+  ok('🔴 AI 新增：独立状态 + 弹窗标题「AI 新增 · 页签名」',
+    os.includes('onClick={() => setShowFillNew(true)}') && os.includes('AI 新增 · ${tab.name}'))
+  ok('🔴 AI 补全：独立状态 setShowFillExisting(true) + 传 existing={draft.data}',
+    os.includes('onClick={() => setShowFillExisting(true)}') && os.includes('existing={draft.data}'))
+  ok('🔴 AI 补全：弹窗标题带当前条目名 + 未选条目时禁用',
+    os.includes('AI 补全 · ${draft.name}') && os.includes('disabled={!aiReady || !draft}'))
+  ok('🔴 AI 补全采用时只写非空字段（已填的保留，与 FormSheet / CharacterSheet 同口径）',
+    /for \(const \[k, v\] of Object\.entries\(values\)\) if \(v && v\.trim\(\)\) next\.data\[k\] = v/.test(os))
+  ok('🔴 AI 新增落在目录最上方（order = 最小 order − 1，与本页「新建」一致）',
+    os.includes('Math.min(...records.map(r => r.order)) - 1'))
+  ok('🔴 两条弹窗各带自己的补全语境（分卷 / 章节），且都透传给 AITemplateFill',
+    os.includes("isVolume ? 'outline-volume' : 'outline-chapter'") && (os.match(/context=\{fillContext\}/g) ?? []).length === 2)
+
+  const fs3 = read('src/components/FormSheet.tsx')
+  ok('🔴 全书总纲：表单页也给「AI 新增」（只挂 master 一个 id）',
+    fs3.includes("const isOutlineMaster = tab.id === 'master'") && fs3.includes('AI 新增'))
+  ok('🔴 全书总纲的 AI 新增：已填非空时先确认（起草全份不可逆）',
+    fs3.includes('onClick={() => void openFillNew()}') && /if \(filled > 0 && !await confirmDialog/.test(fs3))
+  ok('🔴 「起草全份」与「补全」的分界：全文只允许一条弹窗传 existing={data}',
+    (fs3.match(/existing=\{data\}/g) ?? []).length === 1)
+  ok('🔴 其余表单页不受影响：作品信息仍保持「AI 补全」且传 existing={data}',
+    fs3.includes('AI 补全 · ${tab.name}') && fs3.includes('existing={data}'))
+
+  const aiSrc = read('src/lib/ai.ts')
+  ok('🔴 三条大纲提示词各自就地声明（可单独在设置页微调）',
+    ['P_fill_outline_master', 'P_fill_outline_volume', 'P_fill_outline_chapter']
+      .every(v => new RegExp(`let ${v} = `).test(aiSrc)))
+  ok('🔴 三条都登记进「模型设置 → AI 提示词」',
+    ['fill-outline-master', 'fill-outline-volume', 'fill-outline-chapter']
+      .every(id => new RegExp(`registerPrompt\\(\\{ id: '${id}'`).test(aiSrc)))
+  ok('🔴 aiCompleteTemplate 按语境取提示词（不再恒取通用那条）',
+    /const sys = FILL_CONTEXT_SYS\[opts\.context \?\? 'template'\]\(\)/.test(aiSrc))
+  const outlineBodies = ['P_fill_outline_master', 'P_fill_outline_volume', 'P_fill_outline_chapter']
+    .map(v => (aiSrc.match(new RegExp(`let ${v} = \`([\\s\\S]*?)\``)) ?? [])[1] ?? '')
+  ok('🔴 三条正文都写足了（各 > 200 字）且不含 markdown 星号（星号会污染正文，项目红线）',
+    outlineBodies.every(b => b.length > 200 && !b.includes('**')))
+
   console.log(`\n  ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exit(1)
 }

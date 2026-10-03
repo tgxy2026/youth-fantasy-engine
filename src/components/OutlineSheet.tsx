@@ -5,7 +5,7 @@ import type { TabDef, CardRecord } from '../lib/types'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '../lib/db'
 import { uid } from '../lib/id'
 import {
-  Plus, Trash2, Info, Save, Check, Copy, ChevronUp, ChevronDown, BookOpen, FileText, Layers,
+  Plus, Trash2, Info, Save, Check, Copy, ChevronUp, ChevronDown, BookOpen, FileText, Layers, Sparkles, Wand2,
 } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import AutoTextarea from './AutoTextarea'
@@ -19,6 +19,10 @@ import { useSaveHotkey } from '../lib/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
 import { useFieldAliases } from '../lib/fieldAlias'
 import { LoadingState } from './LoadingState'
+import AITemplateFill from './AITemplateFill'
+import type { TemplateField, FillContext } from '../lib/ai'
+import { useAIReady } from '../lib/useAIReady'
+import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 // R4a · 2.6.0：结构模板节拍对照条（只读）。模板选择的单一来源在 creativeSession，
 // 与创意写作 / 检查工具「全书结构配比」共用同一份（hydrate 幂等，本页可能从未打开过创意写作）。
 import { hydrateCreativeSession, useCreativeSession } from '../lib/creativeSession'
@@ -39,6 +43,23 @@ export default function OutlineSheet({ tab }: Props) {
   // 编辑该字段时自动同步目录列表名
   const nameKey = isVolume ? '一、本卷定位::卷名' : '一、本章定位::章节号/标题'
 
+  /** 本页签的补全语境 —— 决定发哪条系统提示词（分卷大纲 / 章节细纲各一条；见 lib/ai.ts 的 FillContext） */
+  const fillContext: FillContext = isVolume ? 'outline-volume' : 'outline-chapter'
+  // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
+  const aiCap = aiCapabilityOf(tab)
+  const { ready: aiReady } = useAIReady()
+  /** AI 补全用的字段模板（key = `模块名::字段名`，与落库的键同名） */
+  const cardFields = useMemo<TemplateField[]>(
+    () => (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
+      key: `${m.name}::${f.name}`,
+      label: f.name,
+      desc: f.desc,
+      example: f.example,
+    }))),
+    // 🔴 同 CharacterSheet：读 tab.modules 就得依赖 tab 本身，只写 tab.id 会在字段结构变化时沿用旧字段表
+    [tab],
+  )
+
   const [records, setRecords] = useState<CardRecord[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -55,6 +76,9 @@ export default function OutlineSheet({ tab }: Props) {
   useEffect(() => () => clearTimeout(savedTimer.current), [])
   const [tplOpen, setTplOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  // AI 新增弹窗（凭空建一条新大纲）／AI 补全弹窗（在**当前这一条**上补空白，已填的保留）
+  const [showFillNew, setShowFillNew] = useState(false)
+  const [showFillExisting, setShowFillExisting] = useState(false)
 
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
@@ -230,6 +254,38 @@ export default function OutlineSheet({ tab }: Props) {
     setSaved(false)
   }
 
+  /**
+   * AI 新增：草图 → 模型补全全部字段 → 直接建一条新大纲（与 CharacterSheet 的「AI 新增」同口径）。
+   * 🔴 新条目排在目录**最上方**（order = 当前最小 order − 1），与本页「新建{分卷/章节}」一致
+   *    （本页是创建时间倒序）。名称取本页的名称字段，取不到才用「未命名」。
+   */
+  const handleFillNew = async (values: Record<string, string>) => {
+    const name = (values[nameKey] ?? '').trim() || `未命名${noun}`
+    const newOrder = records.length ? Math.min(...records.map(r => r.order)) - 1 : 0
+    const rec: CardRecord = {
+      id: uid(), projectId: getCurrentProjectId(), tabId: tab.id,
+      name, data: { ...values }, order: newOrder,
+    }
+    await saveCardRecord(rec)
+    setRecords([rec, ...records])
+    setActiveId(rec.id)
+    setDraft(rec)
+    setShowFillNew(false)
+  }
+
+  /**
+   * AI 补全（已有条目）：只补**当前这一条**未填的字段，已填的保留 —— 与角色卡 / 表单页同一口径。
+   * 🔴 与 handleFillNew 的区别：那个是「AI 新增」（凭空建一条），这个是「AI 补全」（在已有条目上补空白）。
+   * 采用后只写回 draft（不落库），由作者核对后点保存；dirty 是 draft 与库中记录的比对，会自动亮起。
+   */
+  const handleFillExisting = (values: Record<string, string>) => {
+    if (!draft) return
+    const next: CardRecord = { ...draft, data: { ...draft.data } }
+    for (const [k, v] of Object.entries(values)) if (v && v.trim()) next.data[k] = v
+    setDraft(next)
+    setShowFillExisting(false)
+  }
+
   // memo 化：避免每次渲染都对 draft 与源记录做两次完整 JSON 序列化
   const dirty = useMemo(
     () => !!draft && JSON.stringify(draft) !== JSON.stringify(records.find(r => r.id === draft.id)),
@@ -305,6 +361,19 @@ export default function OutlineSheet({ tab }: Props) {
             <Button onClick={addRecord} variant="primary" size="md" className="flex items-center">
               <Plus size={14} /> 新建{noun}
             </Button>
+            {aiCap !== 'none' && (
+              <>
+                {/* 🔴 2026-10-03 老大定案：与角色管理组同一组语义 ——
+                    「AI 新增」= 凭空建一条新大纲（不影响已有条目）；
+                    「AI 补全」= 在**当前这一条**上补空白（与表单页 / 表格行同一口径，已填的保留）。 */}
+                <Button variant="secondary" onClick={() => setShowFillNew(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : `提供粗略想法，让 AI 新建一份${tab.name}（不影响已有${noun}）`}>
+                  <Sparkles size={14} /> AI 新增
+                </Button>
+                <Button variant="secondary" onClick={() => setShowFillExisting(true)} disabled={!aiReady || !draft} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : !draft ? `先选一条${noun}，再让 AI 补全它的空白字段` : `让 AI 补全「${draft.name}」未填写的字段（已填的会保留）`}>
+                  <Wand2 size={14} /> AI 补全
+                </Button>
+              </>
+            )}
           </div>
         </div>
         {draft && (
@@ -504,6 +573,33 @@ export default function OutlineSheet({ tab }: Props) {
           isVolume={isVolume}
           onApplied={() => setReloadKey(k => k + 1)}
           onClose={() => setTplOpen(false)}
+        />
+      )}
+
+      {showFillNew && (
+        <AITemplateFill
+          fields={cardFields}
+          context={fillContext}
+          draftScope={`card::${tab.id}::new`}
+          title={`AI 新增 · ${tab.name}`}
+          sketchPlaceholder={isVolume
+            ? '例如：这一卷讲主角初入宗门、卷入内门争斗，卷末以「师父被害」收尾，逼他下山……'
+            : '例如：这一章主角第一次动用吞天魔功，在擂台上反杀挑衅的师兄，结尾被长老盯上……'}
+          onSubmit={handleFillNew}
+          onClose={() => setShowFillNew(false)}
+        />
+      )}
+
+      {showFillExisting && draft && (
+        <AITemplateFill
+          fields={cardFields}
+          context={fillContext}
+          existing={draft.data}
+          draftScope={`card::${tab.id}::${draft.id}`}
+          title={`AI 补全 · ${draft.name}`}
+          sketchPlaceholder={`补充「${draft.name}」已填内容的背景 / 细节，让 AI 补全其余空白字段（已填的不会动）…`}
+          onSubmit={handleFillExisting}
+          onClose={() => setShowFillExisting(false)}
         />
       )}
 

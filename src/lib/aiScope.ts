@@ -19,12 +19,25 @@ export type AICapability =
 
 /**
  * 不接 AI 写入的分组：
- * - 大纲规划（全书总纲 / 章节总表 / 分卷大纲 / 章节细纲）：属作者的核心创作决策，
- *   由 AI 代填反而绑手脚。需要脑暴时去「灵感启发 → AI 辅助规划」对话讨论更合适。
+ * - 大纲规划：**2026-10-03 老大解禁了其中三个页签**（见下方 `AI_OUTLINE_TAB_IDS`）——
+ *   全书总纲 / 分卷大纲 / 章节细纲 改为「AI 新增 + AI 补全」。本条只兜住该组剩下的页签
+ *   （章节总表与各卷章节台账走 `organize`，在本函数更上面的分支里已先返回）。
  * - 运营维护（写作规范 / 设定变更 / 灵感素材 / 读者反馈）：作者自己的规范与运营台账，
  *   AI 无从代笔。
  */
 const NO_AI_GROUPS = ['大纲规划', '运营维护']
+
+/**
+ * 「大纲规划」组里**特批接 AI 写入**的页签（2026-10-03，老大要求）：
+ * 参照角色管理组的「AI 新增 + AI 补全」——
+ *   · `master`           全书总纲（表单型，单份）
+ *   · `volume-outline`   分卷大纲（卡片型，一卡一卷）
+ *   · `chapter-outline`  章节细纲（卡片型，一卡一章）
+ *
+ * 🔴 只放这三个 id（**不按 group 放行**）：该组其余页签（章节总表、各卷章节台账）走 organize，
+ *    在本函数更上面的分支先返回；将来该组再添页签、要它接 AI 时，**显式**加到这里来。
+ */
+const AI_OUTLINE_TAB_IDS = new Set(['master', 'volume-outline', 'chapter-outline'])
 
 /**
  * 走「AI 整理」的表：内容本质是「从已写正文里沉淀出的叙事事实」，
@@ -52,6 +65,8 @@ export function aiCapabilityOf(tab: TabDef): AICapability {
   // 章节总表：虽属「大纲规划」组，但本质是串联伏笔/时间脉络/爽点的叙事主轴，
   // 适合从已写正文/细纲自动抽取「出场人物 / 埋设·回收伏笔编号」等，故特批为 organize。
   if (tab.id === 'chapter-master' || isVolumeLedgerTab(tab.id)) return 'organize'
+  // 大纲规划组特批的三个页签（2026-10-03）：必须在「整组不接 AI」之前放行
+  if (AI_OUTLINE_TAB_IDS.has(tab.id)) return 'fill'
   if (NO_AI_GROUPS.includes(tab.group)) return 'none'
   if (ORGANIZE_TAB_IDS.has(tab.id)) return 'organize'
   return 'fill'
@@ -90,7 +105,7 @@ export const AI_DEPENDENT_GROUPS: AIDependentGroup[] = [
   {
     title: '设定与资料',
     items: [
-      '表单页与角色卡的「AI 新增」与「AI 补全」',
+      '表单页 / 角色卡 / 大纲页（全书总纲 · 分卷大纲 · 章节细纲）的「AI 新增」与「AI 补全」',
       '表格页的「AI 整理」（人物关系 / 势力关系 / 伏笔追踪 / 时间脉络 / 爽点节奏 / 支线剧情 / 知情权限 / 各卷章节台账）',
       '表格页的「批量导入 → AI 智能拆分」（把粘贴的表格/散文解析成多条；用本地解析导入则不受影响）',
     ],
