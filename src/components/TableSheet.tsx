@@ -53,7 +53,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   /** 「历法规则」弹窗（历法清单 + 一年几个月 / 每月几天） */
   const [showCalRule, setShowCalRule] = useState(false)
   /** 字段显示名（2.7.3）：只改界面上的字，存储键一个字节都不碰 */
-  const aliasCols = useMemo(() => (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name), [tab])
+  const aliasTargets = useMemo(
+    () => (tab.columns ?? []).filter(c => !c.hidden).map(c => ({ key: c.name, options: c.options })),
+    [tab],
+  )
+  const aliasCols = useMemo(() => aliasTargets.map(t => t.key), [aliasTargets])
   const { map: aliasMap, labels: aliasLabels, save: saveAliasMap } = useFieldAliases(tab.id, aliasCols)
   const aliasRenamed = aliasCount(aliasCols, aliasMap)
   const [showAlias, setShowAlias] = useState(false)
@@ -141,7 +145,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               variant="secondary"
               size="sm"
               onClick={() => setShowAlias(true)}
-              title="给这一页的字段起你自己看得懂的名字（只改显示，不动已填内容）"
+              title="给这一页的字段起你自己看得懂的名字：只改表头显示，不动已填内容；AI 读表仍按原字段名理解"
               className="gap-1.5"
             >
               <Type size={12} /> 字段名
@@ -318,7 +322,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                   <th key={col.name} className="px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
                     <div
                       className="truncate"
-                      title={aliasLabels[col.name] === col.name ? undefined : `${col.name}（原字段名）`}
+                      title={aliasLabels[col.name] === col.name ? undefined : `${col.name}（AI 仍按这个原字段名理解）`}
                     >{aliasLabels[col.name]}</div>
                     {col.type === 'select' && col.options ? (
                       <select
@@ -447,7 +451,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {showAlias && (
         <FieldAliasDialog
           tabName={tab.name}
-          cols={aliasCols}
+          cols={aliasTargets}
           initial={aliasMap}
           onSave={saveAliasMap}
           onClose={() => setShowAlias(false)}

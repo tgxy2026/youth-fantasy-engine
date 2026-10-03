@@ -10,7 +10,7 @@
 
 ## 身份·版本·封装
 - Electron+React+TS+Vite+Tailwind；存储经 StoreOps；dev 5199 须 `localhost`；🔴 只做桌面版；版本源 `package.json`。
-- 🔴 版本口径：**2.6.4 从未发布＝并入 2.7.0**。已发布 2.7.0（Release 1179327 / tag v2.7.0）、2.7.1、2.7.2（Release 1180321）。开发线 2.7.3。
+- 🔴 版本口径：**2.6.4 从未发布＝并入 2.7.0**。已发布 2.7.0（Release 1179327 / tag v2.7.0）、2.7.1、2.7.2（Release 1180321）。🔴 版本源＝`package.json`，当前 **2.7.3**（10-03 升号，内容已提交、**尚未封装**）。
 - 🔴 近版细节 `docs/2.7.1-*`／`docs/2.7.2-*`；**会咬人的三条**：①**TABS 题材页签＝getter 读模块级 `activePack`**；②题材枚举复用废弃 `Project.genre`（值＝包名、发布后冻结、改名走 `PACK_ALIASES`、勿加 DB 列）；③关系表判重＝**有向对 + 关系类型**（真源 `aiScope.ORGANIZE_KEYS`+`isDirectedPairTab`）。
 - 🔴🔴 封装**全程无沙箱跑**；`electron-builder.yml` 须 `win.signAndEditExecutable:false`。
 - 🔴🔴 **封装只做三步：封装 + 同步 Gitee + 出更新说明。绝不主动清理 `release/desktop-out-*` / `dist`**（2026-10-02 明定）。
@@ -30,6 +30,7 @@
 - 🔴 门面显式再导出（勿 `export *`）；`PROMPT_ORDER` 还原注册序（新提示词**追加末尾**）；`ops`/`currentProjectId` 须 `export let`。
 - 🔴 功能门：`FEATURE_TIER`＋`STRONG_DEPS`（双向）＋`ANY_DEPS`；拆书／创意写作＝optional。
 - 🔴 **无「名称」列的表格草稿必须声明 `dedupKeys`**；左下角只准一个浮层 `DataDock`；种子键：卡片 `模块::字段`、表格＝列名。
+- 🔴🔴 **表格列名＝存储键**（`cellVal(row,col.name)`／`setCellDraft(row.id,col.name,v)`／`<th key>`）⇒ 想让作者改名**只能做显示名**：`lib/fieldAlias.ts` 的 `sanitizeAliases()` 是唯一口径（表头／关系分组／检索共用），存储键写 `fieldAlias::<tabId>`（进同步）。🔴 **AI 链路一律仍用存储键**，别把显示名喂给模型。表单类页签（`模块::字段`）尚未支持（清单 #011）。
 - 🔴🔴 **改数据结构必问「写入侧都改了吗」**：凡把某层改成「不读」，grep 全部写入入口。
 - 🔴🔴 **换 id 搬数据必带映射**：`settingsKV` 存 id 数组的键（如 `worldSubActive::<tab>`）必须过 `remapSettingValue()`。新增此类键要同步扩。
 - 🔴 **hook 返回对象 ≠ 布尔**：`useAIReady()` → `{ready,label}`；一律写 `const { ready: x } = useAIReady()`（已踩两次）。
@@ -103,3 +104,4 @@
 - 🔴 令牌 `G:/AI软件/.gitee-token.txt`；push 只需 `GIT_CONFIG_NOSYSTEM=1`；🔴🔴 **绝不加 `GIT_CONFIG_GLOBAL=NUL`**（屏蔽 GCM ⇒ 静默挂死）。
 - 🔴 附件配额：滚动保留最新 3 个 Setup.exe（配额 1GB，每版 ~81MB）。
 - 🔴 发布链＝skill `novel-studio-packaging`＋`gitee-publish`；快照 sync 后必 `git checkout -- .gitignore`。
+- 🔴🔴 **同步 Gitee＝开发源码仓库直接 `git push gitee main`**（自带 remote，URL 内嵌令牌）。🔴 开源快照仓库 `G:/AI软件/novel-studio-开源版` **已废弃停更**（停在 v2.7.0，与远端真分叉）⇒ **别再跑 sync-open-source 镜像链路**。同版本重打包＝删旧附件 + 传新附件 + PATCH body。
