@@ -69,6 +69,38 @@ export async function migrateProjectTypes(): Promise<number> {
   }
   return changed
 }
+/**
+ * 锁定项同步（2.8.0 · 2026-10-04）：把新增 / 升档的**必选模块**补进已有项目的 features。
+ *
+ * 【为什么需要】「关于打赏」由 default 升为 locked（必选、不可取消）。已经建好的项目 ——
+ *   尤其是当初在「自定义项目」里**取消勾选**过它的 —— features 数组里没有 `about`。
+ *   覆盖安装（保留旧数据、只换程序）之后，那个页签就永远不会出现，作者也无处可开。
+ *
+ * 口径：
+ *  · **只补不改**：仅把 `lockedIds` 里尚未出现的 id 合进去，**不动**其余任何 feature
+ *    （作者自己关掉的可选模块不会被强行打开）；
+ *  · 只处理 `projectType === 'custom'` 的项目 —— 完整项目的 `tabVisible` 恒为 true，补了没意义；
+ *  · **幂等**：已含全部锁定项的项目直接跳过（不写库、不计入返回值），可反复跑。
+ *
+ * ⚠️ `lockedIds` 由调用方（`App` 启动期）从 `schema.LOCKED_IDS` 传入，**本文件不 import schema** ——
+ *    `schemaShared` 会 import `./db`，db 层反向引用 schema 会直接成环（`tests/importCycles` 会红）。
+ */
+export async function migrateLockedFeatures(lockedIds: string[]): Promise<number> {
+  if (!lockedIds.length) return 0
+  const all = await ops.getAll<Project>('projects')
+  let changed = 0
+  for (const p of all) {
+    if (p.projectType !== 'custom') continue
+    const cur = p.features ?? []
+    const missing = lockedIds.filter(id => !cur.includes(id))
+    if (!missing.length) continue
+    // 锁定项前置，与 `resolveFeatures()` 产出的形态一致（`[...LOCKED_IDS, ...selected]`）
+    await ops.put('projects', { ...p, features: [...missing, ...cur] })
+    changed++
+  }
+  return changed
+}
+
 export async function createProject(name: string, genre = '', intro = '', cover = '', projectType: 'full' | 'custom' = 'full', features?: string[]): Promise<Project> {
   const now = Date.now()
   const p: Project = { id: uid(), name, genre, intro, ...(cover ? { cover } : {}), projectType, ...(features ? { features } : {}), createdAt: now, updatedAt: now }

@@ -95,6 +95,15 @@ console.log('\n—— uiUxGuards 用例开始 ——')
 
   ok('🔴 ProjectHub 的必选说明与 FEATURE_TIER 一致（拆书 / 创意写作可取消）',
     /拆书与创意写作默认不勾选/.test(read('src/components/ProjectHub.tsx')))
+
+  // 2.8.0：「关于打赏」由 default 升 locked —— 两处必选说明都要跟上（防「改了档位忘改文案」）
+  ok('🔴 ProjectHub 的两处必选说明都覆盖「关于打赏」',
+    /以及运营维护里的「关于打赏」为必选/.test(read('src/components/ProjectHub.tsx'))
+    && /以及运营维护下的关于打赏）与依赖/.test(read('src/components/ProjectHub.tsx')))
+
+  // 接线闸：迁移若不挂在启动期，老项目永远补不上（静默失效，界面上一辈子看不到那个页签）
+  ok('🔴 「必选模块同步」确实挂在 App 启动期（否则老项目永远补不上）',
+    /await db\.migrateLockedFeatures\(LOCKED_IDS\)/.test(read('src/App.tsx')))
 }
 
 // ---------- 2026-09-20 晚间：列宽拖拽崩溃（老大报障）+ 卡片文案参数化 ----------

@@ -125,6 +125,18 @@ ok('地图编辑仍带地理风物', R(['geography-map']).has('geography'))
   ok('空选择只含锁定项', got.size === LOCKED_IDS.length && LOCKED_IDS.every(id => got.has(id)), [...got].join(','))
 }
 
+// ── 9b) 必选模块的档位与可见性保障（2.8.0：「关于打赏」由 default 升 locked） ──
+// 为什么要专门钉：升档不只是改一个字 —— 老项目的 features 里没有 about，
+//   必须靠 tabVisible 对锁定项放行 + migrateLockedFeatures 补数据，两条都不能掉。
+ok('🔴「关于打赏」是必选模块（locked）', FEATURE_TIER['about'] === 'locked', `实际=${FEATURE_TIER['about']}`)
+ok('🔴「关于打赏」不在默认可选清单（DEFAULT_IDS）里', !DEFAULT_IDS.includes('about'), DEFAULT_IDS.join(','))
+ok('🔴 锁定项在自定义项目里恒可见（老项目 features 缺项也不消失）',
+  tabVisible('about', { type: 'custom', features: [] }) === true
+  && tabVisible('editor', { type: 'custom', features: [] }) === true)
+ok('🔴 锁定项放行不越权：没勾的可选模块仍不可见',
+  tabVisible('politics', { type: 'custom', features: [] }) === false
+  && tabVisible('tavern-free', { type: 'custom', features: [] }) === false)
+
 // ── 10) 未启用时 tabVisible 必须为 false（使用指南的置灰依赖它） ──
 {
   const ctx = { type: 'custom', features: [...R(['tavern-plot'])] }

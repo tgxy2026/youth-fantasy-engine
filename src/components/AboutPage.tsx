@@ -210,31 +210,14 @@ export default function AboutPage() {
             </section>
           </div>
 
-          {/* 右列：打赏支持（含致谢名单，拉长对齐） */}
+          {/* 右列：打赏支持（上＝致谢名单，下＝收款码，拉长对齐） */}
           <section className="lg:col-span-2 rounded-xl bg-ink-850 border border-ink-700 p-6 flex flex-col">
             <SectionTitle icon={<Heart size={15} className="text-amber" />}>打赏支持</SectionTitle>
             <p className="text-ink-500 text-xs mb-5">
               如果本软件对你有帮助，欢迎扫码支持作者。
             </p>
-            {/* 码图区：flex-1 撑满剩余高度，图片锁定纵横比（object-contain）上下贴边。
-                完整收款图自带品牌底色，可一眼分辨归属，无需文字标注 */}
-            <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
-              {[
-                { key: 'wechat', img: payWechat },
-                { key: 'alipay', img: payAlipay },
-              ].map(p => (
-                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex items-center justify-center overflow-hidden min-h-0">
-                  <img
-                    src={p.img}
-                    alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
-                    className="max-w-full max-h-full object-contain rounded-md"
-                  />
-                </div>
-              ))}
-            </div>
-
-            {/* 致谢名单 */}
-            <div className="mt-6 pt-5 border-t border-ink-700">
+            {/* 致谢名单（2.8.0：由右列下方**移到最上** —— 先谢支持过的人，再放收款码） */}
+            <div className="pb-5 mb-5 border-b border-ink-700">
               <h3 className="text-xs font-semibold text-ink-200 mb-1 flex items-center gap-2">
                 <Users size={14} className="text-amber" /> 致谢名单
               </h3>
@@ -252,6 +235,24 @@ export default function AboutPage() {
                   </span>
                 ))}
               </div>
+            </div>
+
+            {/* 码图区（2.8.0：移到致谢名单**下方**）：flex-1 撑满剩余高度，
+                图片锁定纵横比（object-contain）上下贴边；min-h 兜底 —— 名单再长也不会把二维码压没。
+                完整收款图自带品牌底色，可一眼分辨归属，无需文字标注 */}
+            <div className="grid grid-cols-2 gap-4 flex-1 min-h-[200px]">
+              {[
+                { key: 'wechat', img: payWechat },
+                { key: 'alipay', img: payAlipay },
+              ].map(p => (
+                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex items-center justify-center overflow-hidden min-h-0">
+                  <img
+                    src={p.img}
+                    alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
+                    className="max-w-full max-h-full object-contain rounded-md"
+                  />
+                </div>
+              ))}
             </div>
           </section>
         </div>

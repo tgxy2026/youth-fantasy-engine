@@ -13,7 +13,7 @@ import ProjectHub from './components/ProjectHub'
 import AboutPage from './components/AboutPage'
 import UpdateDialog from './components/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from './lib/versionCheck'
-import { getTab, tabVisible, refreshVolumeTabs, type VisCtx } from './lib/schema'
+import { getTab, tabVisible, refreshVolumeTabs, LOCKED_IDS, type VisCtx } from './lib/schema'
 import { DEFAULT_PACK, normalizeGenrePack, setActivePack } from './lib/schemaTemplates'
 import { isWorldSetTab, isParallelSetTab } from './lib/worldSets'
 import * as db from './lib/db'
@@ -164,6 +164,10 @@ export default function App() {
       //    既不报错也没有重试入口。finally 保证一定会离开黑屏。
       try {
       await db.migrateProjectTypes() // 清理历史遗留的 lite/minimal 项目形态（全局、幂等）
+      // 🆕 2.8.0：把**必选模块**（FEATURE_TIER 的 locked 项）同步进已有项目的 features ——
+      //    覆盖安装后首次启动时，此前在自定义项目里取消过的必选页签（如「关于打赏」）自动补回。
+      //    与「打开哪个项目」无关、遍历全库、幂等，故与上面几条一样放在启动期（项目守卫之前）。
+      await db.migrateLockedFeatures(LOCKED_IDS)
       // 🔴 2026-10-02 六维审计 P0（存储同步）：老库 `tavern.settings.search` 里的检索密钥残留
       //    必须**启动就清**。`runMigrations()` 里也有这一步，但它唯一的调用点是 `openProject()` ——
       //    而云盘同步在**没打开任何项目**的项目管理首页就能开（`CloudFileSyncBar` 就在那个分支）。

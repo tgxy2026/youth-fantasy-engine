@@ -107,5 +107,48 @@ ok('runMigrations 幂等（连跑两遍全库快照一致）', snap === __dumpAl
   ok('未设当前项目时 runMigrations 安全空转（不抛异常）', !threw)
 }
 
+// ---------- 必选模块同步 migrateLockedFeatures（2.8.0 · 「关于打赏」由 default 升 locked） ----------
+// 场景：老项目在「自定义项目」里取消勾选过「关于打赏」，features 里就没有 about。
+//   覆盖安装（保留旧数据、只换程序）后必须能补回来 —— 否则该页签永远不会出现，作者也无处可开。
+// ⚠️ 本测试不 import schema（schema 链会拉进 './db'，在 node 里要打桩）：
+//   锁定项 id 由调用方传入，这里直接给字面量，正好顺带验证「db 层不认识 schema」这一设计。
+{
+  __resetMockStores()
+  db.setCurrentProject('')
+  const LOCKED = ['editor', 'dashboard', 'about']
+
+  const pCustom = await db.createProject('老自定义', '', '', '', 'custom', ['politics', 'trajectory'])
+  const pDone = await db.createProject('新自定义', '', '', '', 'custom', ['editor', 'dashboard', 'about', 'politics'])
+  const pFull = await db.createProject('完整项目', '', '', '', 'full', ['dashboard'])
+
+  // 前置：确实缺 about（否则本用例什么都没测）
+  ok('前置：老自定义项目的 features 里确实没有 about',
+    !(await db.getProject(pCustom.id))!.features!.includes('about'))
+
+  const n = await db.migrateLockedFeatures(LOCKED)
+  ok('只改动「缺必选模块的自定义项目」1 个（另两个跳过，不计入）', n === 1, `实际=${n}`)
+
+  const c = (await db.getProject(pCustom.id))!
+  ok('缺的必选模块被补上（about）', c.features!.includes('about'), c.features!.join(','))
+  ok('原有可选模块一个不少（只补不改）',
+    c.features!.includes('politics') && c.features!.includes('trajectory'), c.features!.join(','))
+  ok('补入项不重复（原 2 + 新 3 = 5）', c.features!.length === 5, `实际=${c.features!.join(',')}`)
+
+  const o = (await db.getProject(pDone.id))!
+  ok('已含全部必选模块的项目不被改写', o.features!.length === 4, `实际=${o.features!.join(',')}`)
+
+  const f = (await db.getProject(pFull.id))!
+  ok('完整项目不在同步范围内（features 原样）', f.features!.join(',') === 'dashboard', f.features!.join(','))
+
+  // 幂等：再跑一遍应无事可做
+  const n2 = await db.migrateLockedFeatures(LOCKED)
+  ok('幂等：第二遍返回 0（无写差异）', n2 === 0, `实际=${n2}`)
+
+  // 与「当前打开哪个项目」无关 —— 这正是它挂在启动期、而非 runMigrations 项目段的原因
+  db.setCurrentProject('不存在的项目')
+  const n3 = await db.migrateLockedFeatures(LOCKED)
+  ok('与当前项目无关：currentProjectId 无效时照常工作', n3 === 0, `实际=${n3}`)
+}
+
 console.log(`\nmigrations: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1

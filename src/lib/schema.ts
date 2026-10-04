@@ -150,7 +150,7 @@ export const EDITOR_ID = 'editor'
 /** 功能档位：locked=必选不可取消；default=默认勾选但用户可取消；optional=自由勾选 */
 export type FeatureTier = 'locked' | 'default' | 'optional'
 
-/** 锁定项：必选、弹窗置灰不可取消的内置大模块（编辑器 + 工作面板 + 正文写作 + 灵感工具三个大模块下的子模块）。全局基础设施（备份与恢复 / 全文检索 / 设定检索）始终常开，不进入功能清单。default 项默认勾选但可取消（如运营维护下的「关于打赏」）。其余内容模块未列出者皆视为 optional。 */
+/** 锁定项：必选、弹窗置灰不可取消的内置大模块（编辑器 + 工作面板 + 正文写作 + 灵感工具三个大模块下的子模块）。全局基础设施（备份与恢复 / 全文检索 / 设定检索）始终常开，不进入功能清单。default 项默认勾选但可取消（如创作轨迹）。其余内容模块未列出者皆视为 optional。 */
 export const FEATURE_TIER: Record<string, FeatureTier> = {
   // 锁定项（必选，弹窗置灰不可取消）
   [EDITOR_ID]: 'locked',
@@ -161,8 +161,12 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   'inspire-tools': 'locked',
   'material-library': 'locked',
   'check-tools': 'locked',
+  // 关于打赏（2026-10-04 · 2.8.0）：由 default **升为 locked**（必选、不可取消）——
+  // 打赏页是支持作者的入口，不再允许在「自定义项目」里取消。
+  // 🔴 老项目（当初取消过本页的）由 `db.migrateLockedFeatures()` 在下次启动
+  //    （含覆盖安装后首次启动）补齐；`tabVisible()` 另对锁定项直接放行，双重保证可见。
+  about: 'locked',
   // 默认勾选（可取消）
-  about: 'default',
   // 创作轨迹（2026-09-21 · 2.4.0 A4）：**显式标 default**（与 about 同档），
   // 而不是留给 getTier() 兜底的 optional。理由：它是 2.4「可信」目标的唯一载体、
   // 也是对外主卖点之一（"创作过程可存证"），默认不带等于把卖点藏起来 ——
@@ -278,6 +282,10 @@ export function tabVisible(tabId: string, ctx: VisCtx): boolean {
   //    现在题材**只影响各页签里的字段名与说明文案**，不再决定「有没有这一页」，
   //    所以完整项目直接放行（老项目同享此规则，无需迁移）。
   if (ctx.type === 'full') return true
+  // 🔴 锁定项（必选模块）在自定义项目里同样**恒可见** —— 与 `resolveFeatures()` 的「锁定项恒在」
+  //    保持一致：即便某个老项目的 features 里没有它（如 2.8.0 之前取消过「关于打赏」），
+  //    页签也不会凭空消失，不必依赖 `migrateLockedFeatures()` 是否已经跑过。
+  if (LOCKED_IDS.includes(tabId)) return true
   // 自定义项目按启用功能集合过滤：**用户在「功能模块」弹窗里勾什么就显示什么**。
   return ctx.features.includes(tabId)
 }

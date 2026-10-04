@@ -329,7 +329,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 <div>
                   <label className="text-11 text-ink-400 mb-1 block flex items-center gap-1">项目形态
                     <HelpPopover title="项目形态怎么选" width="23rem" size={11}>
-                      {'决定项目初始开放哪些功能，新建时选定、创建后不可更改：\n\n· 完整项目：功能最全，适合中长篇连载——含全部设定表（力量体系、人物关系、国家 / 地理 / 种族 / 物品设定、历史事件、伏笔、时间脉络、知情权限、分卷大纲、设定变更等）与灵感 / 检查工具；\n· 自定义项目：从完整项目功能全集里自由勾选要启用的模块（工作面板、正文写作、灵感工具里的「灵感启发 / 素材资料 / 检查工具」为必选、不可取消，拆书与创意写作默认不勾选、需要时单独勾上；备份与恢复 / 全文检索 / 设定检索为全局基础设施、始终常开（不进入清单、不可取消）；其余模块自由勾选）。拿不准就选「完整项目」，用不到的模块不填即可。'}
+                      {'决定项目初始开放哪些功能，新建时选定、创建后不可更改：\n\n· 完整项目：功能最全，适合中长篇连载——含全部设定表（力量体系、人物关系、国家 / 地理 / 种族 / 物品设定、历史事件、伏笔、时间脉络、知情权限、分卷大纲、设定变更等）与灵感 / 检查工具；\n· 自定义项目：从完整项目功能全集里自由勾选要启用的模块（工作面板、正文写作、灵感工具里的「灵感启发 / 素材资料 / 检查工具」，以及运营维护里的「关于打赏」为必选、不可取消，拆书与创意写作默认不勾选、需要时单独勾上；备份与恢复 / 全文检索 / 设定检索为全局基础设施、始终常开（不进入清单、不可取消）；其余模块自由勾选）。拿不准就选「完整项目」，用不到的模块不填即可。'}
                     </HelpPopover>
                   </label>
                   <div className="flex gap-2">
@@ -489,7 +489,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                       <div className="mt-4">
                         <div className="text-11 text-ink-400 mb-1.5 flex items-center gap-1">功能模块
                           <HelpPopover title="自定义项目功能" width="20rem" size={11}>
-                            {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作，及灵感工具下的灵感启发 / 素材资料 / 检查工具）与依赖自动带入的模块不可取消；其余模块（含拆书、创意写作）自由调整。修改后点击「保存修改」生效。'}
+                            {'勾选 / 取消勾选要启用的功能模块。必选模块（工作面板、正文写作，灵感工具下的灵感启发 / 素材资料 / 检查工具，以及运营维护下的关于打赏）与依赖自动带入的模块不可取消；其余模块（含拆书、创意写作）自由调整。修改后点击「保存修改」生效。'}
                           </HelpPopover>
                         </div>
                         <Button variant="secondary" type="button" onClick={() => setFeatureModal({ mode: 'edit', initial: editForm.features.filter(id => !LOCKED_IDS.includes(id)) })} className="flex items-center gap-1.5 rounded-lg transition-colors">
