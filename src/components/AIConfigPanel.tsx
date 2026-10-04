@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
+import EmbeddingIndexPanel from './EmbeddingIndexPanel'
 import { confirmDialog, showToast } from './dialogs'
 import { syncTuningWithModel } from '../lib/tavern/settings'
 import { syncWriterBudgetToModel } from '../lib/aiWriterBudget'
@@ -449,6 +450,11 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   })}
                 </div>
               </div>
+
+              {/* 语义检索（2.8.0 · 台账 #013）：嵌入模型 + 向量索引状态。
+                  与上方的「AI 用途路由」同属**模型能力的分配** —— 走同一份 providers，
+                  只是换个用途（向量化而非对话）；故并列放在「模型配置」块内，不另开页签。 */}
+              <EmbeddingIndexPanel providers={providers} />
             </>
           ) : (
             <div className="space-y-3">

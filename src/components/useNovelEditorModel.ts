@@ -40,6 +40,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { readSetPref, writeSetPref, readStringPref, writeStringPref, usePersistedBool, usePersistedEnum } from '../lib/uiPrefs'
 import { DEFAULT_INDENT_UNIT, INDENT_UNIT_IDS, type IndentUnit } from '../lib/indent'
 import { aiChapterSummary } from '../lib/aiTasks'
+import { autoIndexChapter, chapterFingerprint } from '../lib/semantic/indexer'
 import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
   GHOST_CONTEXT_CHARS, orderedChapters,
@@ -326,6 +327,14 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   //    作者随后怎么删改无法反推 —— 与整章改写 / 续写同一口径，界面上也如实写明。
   const aiPendingRef = useRef<PendingAiNote[]>([])
 
+  /**
+   * 章节 → 上次自动索引时的内容指纹（台账 #013「保存后自动更新本章索引」用）。
+   * 🔴 存**哈希**不存正文：这个 map 会随项目章节数一直长（几千章），存原文就是几 MB 常驻内存。
+   * 🔴 也不是"记住已索引状态"的权威 —— 真权威在索引库里（`autoIndexChapter` 会逐块比对哈希）。
+   *    这里只是**省一次查库**的首道闸：没变就压根不发起。
+   */
+  const indexedFpRef = useRef(new Map<string, string>())
+
   /** 挂一笔 AI 产出（供伴写采纳 / 选区改稿调用） */
   const noteAiAssist = (kind: AiSourceKind, chars: number) => {
     const id = activeRef.current?.id
@@ -338,12 +347,25 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
    * 顺手把该章挂起的 AI 记账合并进去并消费掉。
    * 🔴 之所以包一层而不是各处手写：以后新增保存路径也自动带上记账，
    *    不会出现"新增一条路忘了记"的静默漏账。
+   * 2.8.0 起还在这里顺带触发「保存后自动更新本章索引」（默认关，见 `autoIndexChapter`）。
    */
   const saveChapterWithAi = (ch: Chapter): Promise<void> => {
     const { chapter, rest } = foldPendingAi(aiPendingRef.current, ch)
     // 只在真的消费掉了记账时才换数组（没消费就保持原引用，省一次分配）
     if (rest.length !== aiPendingRef.current.length) aiPendingRef.current = rest
-    return db.saveChapter(chapter)
+    const p = db.saveChapter(chapter)
+
+    // 自动索引：先记指纹再发起（同一份内容只在第一次发起，防抖窗口内的重复保存不重复触发）。
+    // 🔴 必须挂在 `db.saveChapter` **之后** —— `autoIndexChapter` 是从库里回读这一章的，
+    //    抢在落库前跑会读到改动前的旧正文，索引就停在上一版。
+    // 🔴 绝不 await：索引是"顺手做的事"，让它拖慢甚至阻断存稿是本末倒置；
+    //    发生任何差错都由 `autoIndexChapter` 内部吞掉（只留一行 console.warn）。
+    const fp = chapterFingerprint(chapter)
+    if (indexedFpRef.current.get(chapter.id) !== fp) {
+      indexedFpRef.current.set(chapter.id, fp)
+      void p.then(() => autoIndexChapter(chapter.id)).catch(() => { /* 存稿失败由调用方提示，这里不重复报 */ })
+    }
+    return p
   }
 
   /** 章节定位：序号取全局派生序号（与标题无关），0 = 不计入序号 */

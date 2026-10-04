@@ -17,6 +17,7 @@ import { clipText } from './textClip'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
 import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from './worldSets'
 import { getActivePack, normalizeGenrePack, subItemLabel } from './schemaTemplates'
+import { buildSemanticRecallBlock } from './semantic/inject'
 import type { Chapter, TabDef, Volume } from './types'
 
 export interface ProjectContextOptions {
@@ -41,6 +42,14 @@ export interface ProjectContextOptions {
   focusChapterId?: string
   /** 相关章节召回条数上限，默认 8 */
   relatedChapterLimit?: number
+  /**
+   * #013 语义召回：在「相关章节召回」之后**再补一段**〖语义召回〗。
+   * 需要作者配好嵌入模型、且已建过索引；任一条件不满足 ⇒ 静默跳过（零副作用）。
+   * 显式传 false 可关掉（留给"AI 整理"这类不需要语义召回的场合）。
+   */
+  semantic?: boolean
+  /** 语义召回条数上限，默认 6 */
+  semanticLimit?: number
   /**
    * 是否在正文尾部附一段「（注：以下资料因长度预算未带入…）」。默认 true。
    * 酒馆模式传 false —— 它把 dropped 交给 buildSystemPrompt 生成**独立的**
@@ -857,6 +866,22 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     } catch {
       /* 召回失败不阻断主流程，少带一段即可 */
     }
+  }
+
+  // #013 语义召回：把「当前章写到什么」用嵌入向量去全书捞意思相近的片段。
+  // 定位是**补一层**，不是替换 —— 上面的结构化选材与关键词召回仍是主干。
+  // 🔴 只在有焦点章时生效；`buildSemanticRecallBlock` 自身永不抛，且未配嵌入模型时零开销早退
+  //    （它先问 `aiEmbedding` 有没有配，没配就直接返回空串，连库都不读）。
+  // 🔴 角色视角下 S 级来源被剔除（`hideSecretRows`）；D 级在索引阶段就根本不存在了。
+  if (opts.semantic !== false && opts.focusChapterId && !opts.skeletonOnly) {
+    const semanticBlock = await buildSemanticRecallBlock({
+      projectId: db.getCurrentProjectId(),
+      focusChapterId: opts.focusChapterId,
+      hideSecretRows: opts.viewMode === 'character-view',
+      allowChapterIds: anchorAllow,
+      limit: opts.semanticLimit,
+    })
+    if (semanticBlock) push('语义召回', semanticBlock)
   }
 
   if (opts.includeChapterList !== false) {

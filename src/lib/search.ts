@@ -30,8 +30,15 @@ export interface SearchResult extends SearchDoc {
   snippet: string
 }
 
-/** 分词：CJK 拆成 单字 + 相邻二元；拉丁/数字按词 */
-function tokenize(text: string): string[] {
+/**
+ * 分词：CJK 拆成 单字 + 相邻二元；拉丁/数字按词。
+ *
+ * 🔬 导出供 `lib/semantic/recall.ts` 复用（2026-10-04）：语义召回在算余弦**之前**
+ * 要先用关键词把候选缩到几百条（否则全库逐条点积，大库下每次召回都是毫秒级起步的开销）。
+ * 那一步的分词口径必须与全文检索**完全一致** —— 各写一份迟早会漂移成
+ * "搜得到但召回不到"这种最难查的不一致，故直接复用本函数。
+ */
+export function tokenize(text: string): string[] {
   if (!text) return []
   const lower = text.toLowerCase()
   const tokens: string[] = []
