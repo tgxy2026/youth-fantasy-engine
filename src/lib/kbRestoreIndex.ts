@@ -20,7 +20,7 @@
  *   `db → kbRestoreIndex → semantic/settings → db`。（`importCycles` 闸会炸。）
  */
 import { startTask } from './aiTaskCenter'
-import { kbStats, reindexAll, type ReindexProgress } from './knowledgeBase'
+import { listDocsStrict, reindexAll, type ReindexProgress } from './knowledgeBase'
 import { embeddingStatus, resolveEmbedConfig } from './semantic/settings'
 
 /** 任务结果形状（与素材页「重建索引」一致，供任务中心展示） */
@@ -46,11 +46,26 @@ const TITLE = '建立参考资料索引'
 export async function rebuildKbIndexAfterRestore(projectId: string): Promise<void> {
   if (!projectId) return
 
-  let enabled = 0
+  let enabled: number
   try {
-    enabled = (await kbStats(projectId)).enabled
-  } catch {
-    return // 独立库尚未就绪 / 读不到 ⇒ 静默跳过：绝不让「恢复成功」看起来失败
+    enabled = (await listDocsStrict(projectId)).filter(d => d.enabled).length
+  } catch (e) {
+    // 🔴 读失败**不能当成「没有资料」静默返回**（2026-10-04 六维审计）：
+    //    那会把一次真实的库读取故障，伪装成「这次还原没有资料要建索引」，作者永远不知道索引没建上。
+    //    起一条 info 任务如实说明 —— 不阻断已完成的还原（调用方本来就是 void 调用）。
+    startTask<KbIndexTaskResult, ReindexProgress>({
+      ownerTab: OWNER_TAB, kind: KIND, title: TITLE, writes: ['kb'],
+      run: async () => ({
+        ok: false, docs: 0, chunks: 0, failed: 0,
+        error: '还原后读不到参考资料库，本次无法自动重建索引：'
+          + (e instanceof Error ? e.message : String(e))
+          + ' —— 带回来的参考资料可能尚未建立索引，稍后可在「素材资料」页点「重建索引」。',
+      }),
+      notify: info => (info.status === 'done' && !info.result?.ok)
+        ? { text: info.result?.error ?? '参考资料库读取失败', kind: 'info' as const }
+        : null,
+    })
+    return
   }
   if (!enabled) return
 

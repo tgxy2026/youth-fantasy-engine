@@ -365,7 +365,9 @@ export function toChatMessages(
 ): { role: 'user' | 'assistant'; content: string }[] {
   return msgs
     // 隐藏的消息不进上下文 —— 这是「别让 AI 看见」的**唯一出口**（剧情/自由两条线都走这里）
-    .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.hidden)
+    // 🔴 写法与 memory / report / summarize / world / varsRefresh 等 8 处逐字一致：
+    //    写成「role !== 'system'」而不是枚举 user/assistant —— 将来若新增 role，这里不会静默分叉。
+    .filter(m => m.role !== 'system' && !m.hidden)
     .map(m => ({
       role: m.role as 'user' | 'assistant',
       // 多角色同场：只在**输入历史**上标注说话人，方便模型分清谁在说

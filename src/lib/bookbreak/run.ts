@@ -244,10 +244,21 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     if (r.mode === 'chunks' && samples.length > 0) {
       ctx.report(1, '本地规则未识别到章节，按示例用 AI 识别章节边界…')
       try {
+        // 🔴 `onToken` 同时就是**流式开关**（与下面 extract / worldview 两处同口径）：
+        //    不传 ⇒ 这个请求走非流式，而它吃的是整篇原文采样，很容易撞 180s 总超时墙。
+        //    顺手把已收字节报到节点时间线上，避免进度卡在一行不动。
+        let splitGot = 0
+        let splitReported = 0
         const aiLines = await aiBookBreakSplitChapters({
           sampleText: sampleTextForSplit(raw),
           samples,
           ...(opts.signal ? { signal: opts.signal } : {}),
+          onToken: d => {
+            splitGot += d.length
+            if (splitGot - splitReported < 120 && splitGot < 4096) return
+            splitReported = splitGot
+            ctx.report(1, `AI 按示例识别章节边界… 已收到 ${splitGot} 字`)
+          },
         })
         const aiRes = applyAiSplit(raw, aiLines, opts.maxChunks !== undefined ? Math.max(1, opts.maxChunks) : 60)
         if (aiRes) {

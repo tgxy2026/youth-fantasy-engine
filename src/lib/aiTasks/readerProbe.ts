@@ -13,6 +13,7 @@
 //      立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { newAuthorFence, authorBlock } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
 import {
   parseReaderProbe, questionsOf, readerLensOf,
@@ -60,17 +61,19 @@ export async function aiReaderProbe(
   const text = chapterText.trim()
   // 问题措辞只有这一处源（见文件头 ①）
   const questionLines = questions.map((q, i) => `${i + 1}. ${q.label}（q 用 "${q.key}"）：${q.ask}`).join('\n')
+  // 🔴 设定与正文都是**不可信作者文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
+  const fence = newAuthorFence()
   const user = `【你是谁】
 ${lens.brief}
 
 【设定资料（摘要，供你判断"哪些信息其实交代过"）】
-${projectContext.trim() || '（无）'}
+${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 【要回答的问题】
 ${questionLines}
 
 【本章正文】
-${text || '（空）'}
+${text ? authorBlock(fence, text) : '（空）'}
 
 请以这个身份读完，按 JSON 结构回答。`
 

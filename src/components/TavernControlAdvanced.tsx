@@ -105,26 +105,26 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox" className="shrink-0 accent-amber" checked={r.enabled}
-                      onChange={e => setRule(i, { enabled: e.target.checked })}
+                      onChange={e => setRule(r.id, { enabled: e.target.checked })}
                       title="关掉这一条（其余规则照跑）"
                     />
                     <span className="shrink-0 text-10 text-ink-600">{i + 1}</span>
                     <input
-                      value={r.name} onChange={e => setRule(i, { name: e.target.value })}
+                      value={r.name} onChange={e => setRule(r.id, { name: e.target.value })}
                       className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
                       placeholder="规则名（对话页提示里显示的就是它）"
                     />
-                    <Button variant="danger" size="xs" className="shrink-0" onClick={() => dropRule(i)}>
+                    <Button variant="danger" size="xs" className="shrink-0" onClick={() => dropRule(r.id)}>
                       删除
                     </Button>
                   </div>
                   <input
-                    value={r.pattern} onChange={e => setRule(i, { pattern: e.target.value })}
+                    value={r.pattern} onChange={e => setRule(r.id, { pattern: e.target.value })}
                     className="mt-1.5 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-11 text-ink-200 outline-none focus:border-amber/50"
                     placeholder={`正则源码，例：${RULE_EXAMPLE}`}
                   />
                   <input
-                    value={r.replacement} onChange={e => setRule(i, { replacement: e.target.value })}
+                    value={r.replacement} onChange={e => setRule(r.id, { replacement: e.target.value })}
                     className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-1.5 py-1 font-mono text-11 text-ink-200 outline-none focus:border-amber/50"
                     placeholder="替换成（$1 = 第一个捕获组；留空 = 直接删掉）"
                   />

@@ -9,7 +9,7 @@
 import type { StoreOps, PortableData } from './storeOps'
 import { normalizePortableData, isPortableDataFile } from './storeOps'
 import { SAVE_DEBOUNCE_MS } from './constants'
-import { markDeleted, clearDeleted } from './syncTombstone'
+import { markDeleted, clearDeleted, resetTombs } from './syncTombstone'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
 export interface ElectronStoreAPI {
@@ -525,6 +525,10 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
   //    导入的数据根本落不了盘（用户只会看到「写入本地数据失败」，莫名其妙）。
   //    用户是拿合法文件主动覆盖，这份数据就是他要的 —— 显式解锁。
   if (writeLocked) unlockDesktopWrite()
+  // 🔴 导入 = 用这份文件**替换**本机全部数据 ⇒ 旧的删除记忆必须一并作废：
+  //    否则「导入前删过、而这份文件里恰好又有同 id 的记录」会被旧墓碑挡住 —— 记录明明导进来了，
+  //    却永远复活不了（删得掉、进不来的死记录）。与 `syncCore` 换云端时的 resetTombs 同口径。
+  resetTombs()
   const ok = await flushDesktop()
   return ok ? { ok: true } : { ok: false, error: lastError || '写入本地数据失败' }
 }
@@ -620,13 +624,17 @@ export const desktopStore: StoreOps = {
   },
   async del(store: string, key: string): Promise<void> {
     const st = data.stores[store]
-    if (st && key in st) {
-      delete st[key]
-      // 🔴 记墓碑：关闭同步期间（走本地库）的删除同样要记住，否则重开同步后
-      //    云端那份旧记录会在合并时被判成「另一端新增」而复活（幽灵项目，2026-09-19）。
-      if (store !== 'meta') markDeleted(store, [key])
-      scheduleSave()
-    }
+    const had = !!st && key in st
+    if (had && st) delete st[key]
+    // 🔴 记墓碑**不能以「本地此刻有这条记录」为前提**（2026-10-04 六维审计）：
+    //    · 关闭同步期间（走本地库）的删除必须记住，否则重开同步后云端那份旧记录会在合并时
+    //      被判成「另一端新增」而复活（幽灵项目，2026-09-19）；
+    //    · 云端闩锁期（云端不可用，`db/core` 的 cloudOrLocal 把 del 回退到本地）删一条
+    //      **只存在于云端、本地缓存里没有**的记录时，`key in st` 为假 —— 老写法整段跳过，
+    //      这次删除被静默吞掉，下次合并又把云端那份带回来。
+    //    meta 不记墓碑（它是配置载体、不是同步记录），但仍按是否真有改动决定落盘。
+    if (store !== 'meta') { markDeleted(store, [key]); scheduleSave() }
+    else if (had) scheduleSave()
   },
   async getAllByIndex<T>(store: string, indexName: string, value: unknown): Promise<T[]> {
     const all = Object.values((data.stores[store] ?? {}) as Record<string, Record<string, unknown>>)
@@ -644,14 +652,15 @@ export const desktopStore: StoreOps = {
   },
   async bulkDel(store: string, keys: (string | number)[]): Promise<void> {
     const st = data.stores[store]
-    if (!st) return
     let changed = false
-    for (const k of keys) {
-      if (k in st) { delete st[k]; changed = true }
+    if (st) {
+      for (const k of keys) {
+        if (k in st) { delete st[k]; changed = true }
+      }
     }
-    if (changed) {
-      if (store !== 'meta') markDeleted(store, keys)
-      scheduleSave()
-    }
+    // 🔴 同 `del`：墓碑不以「本地真删到了东西」为前提 ——
+    //    云端闩锁期批量删「只在云端的记录」同样要留痕，否则整批删除被静默吞掉。
+    if (store !== 'meta') { markDeleted(store, keys); scheduleSave() }
+    else if (changed) scheduleSave()
   },
 }

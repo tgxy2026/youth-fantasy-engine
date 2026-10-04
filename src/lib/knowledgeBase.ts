@@ -133,25 +133,51 @@ export function setKbBackend(b: KbBackend | null): void {
 
 // ============ 读接口（永不抛：资料读不出来不该阻断写作）============
 
-/** 列出项目内的参考资料（按导入时间倒序 —— 最近导入的排最前） */
+/**
+ * 列出项目内的参考资料（按导入时间倒序 —— 最近导入的排最前）。
+ * **永不抛**：资料读不出来不该阻断写作，调用方拿到空数组即可（展示型调用用它）。
+ */
 export async function listDocs(projectId: string): Promise<KbDoc[]> {
   if (!projectId) return []
   try {
-    const rows = await kbBackend.list(projectId)
-    return rows.sort((a, b) => b.importedAt - a.importedAt)
+    return await listDocsStrict(projectId)
   } catch {
     return []
   }
 }
 
-/** 取某一篇的正文（不存在返回空串） */
+/**
+ * `listDocs` 的**严格版**：读不出来就抛。
+ * 🔴 为什么必须有一份会抛的（2026-10-04 六维审计）：
+ *    吞错版把「独立库读失败」和「这个项目确实没有资料」压成同一个结果（空数组），
+ *    于是「还原后该不该重建索引」这类**判定型**调用会静默走错分支 —— 一次真实故障
+ *    被当成「本来就没资料」。判定型调用一律用本函数、并把失败如实说出来。
+ */
+export async function listDocsStrict(projectId: string): Promise<KbDoc[]> {
+  if (!projectId) return []
+  const rows = await kbBackend.list(projectId)
+  return rows.sort((a, b) => b.importedAt - a.importedAt)
+}
+
+/** 取某一篇的正文（**永不抛**：不存在 / 读失败都返回空串 —— 召回降级链路用） */
 export async function getDocText(id: string): Promise<string> {
   if (!id) return ''
   try {
-    return await kbBackend.getBody(id)
+    return await getDocTextStrict(id)
   } catch {
     return ''
   }
+}
+
+/**
+ * `getDocText` 的**严格版**：读不出来就抛。
+ * 🔴 建索引必须用它：吞错版会把「读失败」伪装成「这篇正文是空的」，
+ *    而 `reindexDoc` 拿到空文本会**清掉本篇已有向量块、还报成功** ——
+ *    一次读取故障就此变成一次静默的数据降级。
+ */
+export async function getDocTextStrict(id: string): Promise<string> {
+  if (!id) throw new Error('资料 id 为空')
+  return kbBackend.getBody(id)
 }
 
 /** 统计（界面状态行用） */
@@ -291,7 +317,14 @@ export async function reindexDoc(
 ): Promise<{ ok: boolean; chunks: number; error?: string }> {
   const doc = await findDoc(projectId, id)
   if (!doc) return { ok: false, chunks: 0, error: '资料不存在' }
-  const text = await getDocText(id)
+  // 🔴 用严格读（不用吞错的 `getDocText`）：读失败必须如实失败、**保留原索引**，
+  //    否则空文本会被当成「这篇是空的」→ 清掉已有向量块还报 ok，静默降级。
+  let text: string
+  try {
+    text = await getDocTextStrict(id)
+  } catch (e) {
+    return { ok: false, chunks: 0, error: `读取资料正文失败：${e instanceof Error ? e.message : String(e)}` }
+  }
   const r = await indexOneDoc(
     { kind: 'kb', refId: id, title: doc.title, text, secret: false },
     projectId, cfg, signal,
@@ -528,7 +561,11 @@ export async function collectDocsForBundle(projectId: string): Promise<KbBundleD
 export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBundleDoc[]): Promise<number> {
   if (!projectId) return 0
   const old = await listDocs(projectId)
-  await clearProjectDocs(projectId)
+  // 🔴 清空失败必须**中止**（不能吞掉继续往下写）：恢复的语义是「回到那一刻」，
+  //    旧资料没清干净就写新的，两边会混在一起 —— 而且界面上完全看不出哪条是哪条。
+  //    ⚠️ 与 `clearProjectDocs`（删项目用、刻意吞错）口径不同：那条路失败的代价只是残留占空间，
+  //    这条路的代价是**数据可信度**，所以这里直接走 backend、让异常往上抛。
+  await kbBackend.clearProject(projectId)
   for (const d of old) {
     // 逐篇按 ref 清（**不能**用 clearProjectVectors —— 那会连章节的语义索引一起清掉）
     try { await removeByRef(projectId, d.id) } catch { /* 清不掉也只是残留块，不阻断还原 */ }

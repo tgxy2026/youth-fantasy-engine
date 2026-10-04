@@ -486,12 +486,13 @@ export default function CheckTools() {
                     <span className="text-12 font-semibold text-ink-100">{issue.title}</span>
                     <div className="ml-auto flex items-center gap-1">
                       {/* 第 5 类（酒馆列表残留）才有这个键：其余几类靠改数据修，这一类靠清索引修。
-                          尺寸 class 刻意与同排的「忽略 / 跳转」一字不差 —— 换成 size="xs" 反而会比邻居高 2px。 */}
+                          与同排「忽略 / 跳转」同为 bare + 同一套尺寸 class（danger 只换配色），这样才真等高 ——
+                          ⚠️ 用 variant="danger" 而不传 size 时，SIZE 的 h-9 / px-4 / text-13 恒覆盖下面这串 class。 */}
                       {ghosts.filter(g => g.issueId === issue.id).map(g => (
-                        <Button key={g.group} variant="danger"
+                        <Button key={g.group} variant="bare"
                           onClick={() => void cleanGhosts(g)}
                           title={`把这 ${g.count} 条指向已不存在内容的列表项从索引里移除（只动索引，不碰正文）`}
-                          className="flex items-center gap-1 px-2 py-0.5 text-11 rounded-md transition-colors"
+                          className="flex items-center gap-1 px-2 py-0.5 text-11 rounded-md bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20 transition-colors"
                         >
                           <Trash2 size={11} /> 清理 {g.count} 条
                         </Button>

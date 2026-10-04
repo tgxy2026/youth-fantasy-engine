@@ -40,6 +40,7 @@ import { useAIReady } from '../lib/useAIReady'
 import { readSetPref, writeSetPref, readStringPref, writeStringPref, usePersistedBool, usePersistedEnum } from '../lib/uiPrefs'
 import { DEFAULT_INDENT_UNIT, INDENT_UNIT_IDS, type IndentUnit } from '../lib/indent'
 import { aiChapterSummary } from '../lib/aiTasks'
+import { useTaskRunner } from '../lib/aiTaskCenter'
 import { autoIndexChapter, chapterFingerprint } from '../lib/semantic/indexer'
 import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
@@ -568,24 +569,36 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     }
   }
 
-  /** 批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要），用于把旧的一句式摘要刷新为内容摘要 */
-  const [regenAll, setRegenAll] = useState(false)
+  /**
+   * 批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要），用于把旧的一句式摘要刷新为内容摘要。
+   *
+   * 🔴 状态**必须放任务中心（模块级 store）**，不能是组件内 useState（2026-10-04 六维审计 P1）：
+   *    切页签 = 卸载本组件 ⇒ 组件里的「正在跑」标记跟着消失，切回来按钮又是可点的 ——
+   *    同一批章节于是被两个循环同时重生成（白烧额度；且两边各自 `syncChapterMaster` 互相覆盖，
+   *    最后落库的是谁取决于谁后跑完）。`startTask` 对同 (ownerTab, kind) 的 running
+   *    天然忽略重复发起，任务还跨页签存活、可中止。
+   */
+  const regenT = useTaskRunner<{ done: number; total: number }>({
+    ownerTab: 'editor', kind: 'regen-summaries', title: '批量重生成章节摘要', writes: ['chapters'],
+  })
+  /** 视图侧仍叫 `regenAll`（按钮禁用 + 转圈）—— 语义没变，只是来源换成了任务中心的 running */
+  const regenAll = regenT.running
   const regenAllSummaries = async () => {
-    if (!aiReady || regenAll) return
+    if (!aiReady || regenT.running) return
     const ok = await confirmDialog({
       title: '批量重生成章节摘要',
       message: '将对全书所有「有正文」的章节，用 AI 重新生成约 1/10 长度的压缩摘要（覆盖现有摘要）。章节较多时耗时较长、会消耗较多调用，确定继续吗？',
     })
     if (!ok) return
-    setRegenAll(true)
-    try {
+    regenT.run(async ctx => {
       const all = await db.getAllChapters()
       const vols = await db.getAllVolumes()
       const targets = all.filter(c => (c.content || '').trim().length > 0)
       let done = 0
       for (const c of targets) {
+        if (ctx.isAborted()) break
         try {
-          const s = await aiChapterSummary(c.content)
+          const s = await aiChapterSummary(c.content, { signal: ctx.signal })
           if (s) {
             const next = { ...c, summary: s }
             await saveChapterWithAi(next)
@@ -593,16 +606,20 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
             //    否则总表还显示旧摘要，用户会以为重生成没生效。
             await syncChapterMaster(next, chapterSeqOf(vols, all, next.id))
           }
-        } catch { /* 单章失败跳过，继续其余 */ }
+        } catch {
+          // 单章失败跳过、继续其余；被中止就跳出（顶层 `ctx.isAborted()` 已覆盖正常路径）
+          if (ctx.isAborted()) break
+        }
         done++
+        ctx.progress({ done, total: targets.length })
         if (done % 8 === 0) showToast(`已重生成摘要 ${done}/${targets.length}`, 'info')
       }
-      showToast(`全书摘要重生成完成（共 ${targets.length} 章）`, 'success')
-    } catch (e) {
-      showToast('批量重生成失败：' + (e instanceof Error ? e.message : String(e)), 'error')
-    } finally {
-      setRegenAll(false)
-    }
+      return { done, total: targets.length }
+    }, info => {
+      if (info.status === 'done') return { text: `全书摘要重生成完成（共 ${info.result?.total ?? 0} 章）`, kind: 'success' as const }
+      if (info.status === 'aborted') return { text: '批量重生成已中止 —— 已完成的部分保持已更新', kind: 'info' as const }
+      return { text: '批量重生成失败：' + (info.error || '未知原因'), kind: 'error' as const }
+    })
   }
 
   // 摘要框自适应高度：内容变多时自动展开，完整显示 AI 压缩摘要（不再是一行窄框）

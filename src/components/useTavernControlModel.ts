@@ -257,8 +257,10 @@ export function useTavernControlModel() {
   // ---------- 输出后处理（B3）：规则是数组，所以不能用上面那套 [k]: v ----------
   const setPostFlag = (patch: Partial<Pick<TavernSettings, 'postRulesEnabled' | 'postRuleNotice'>>) =>
     edit(prev => ({ ...prev, ...patch }))
-  const setRule = (i: number, patch: Partial<PostRule>) =>
-    edit(prev => ({ ...prev, postRules: prev.postRules.map((r, k) => (k === i ? { ...r, ...patch } : r)) }))
+  // 🔴 按规则 **id** 定位，不按数组下标：规则可增可删，面板拿到的下标只是渲染那一刻的快照 ——
+  //    一次删除 / 重排之后它就可能指向另一条（「点 A 改到 B」「点 A 删 B」同一族坑）。
+  const setRule = (id: string, patch: Partial<PostRule>) =>
+    edit(prev => ({ ...prev, postRules: prev.postRules.map(r => (r.id === id ? { ...r, ...patch } : r)) }))
   const addRule = () =>
     edit(prev => ({
       ...prev,
@@ -266,8 +268,8 @@ export function useTavernControlModel() {
         id: `pr-${Date.now()}`, name: '新规则', pattern: '', replacement: '', flags: 'gm', enabled: true,
       }],
     }))
-  const dropRule = (i: number) =>
-    edit(prev => ({ ...prev, postRules: prev.postRules.filter((_, k) => k !== i) }))
+  const dropRule = (id: string) =>
+    edit(prev => ({ ...prev, postRules: prev.postRules.filter(r => r.id !== id) }))
   const resetRules = () =>
     edit(prev => ({ ...prev, postRules: DEFAULT_POST_RULES.map(r => ({ ...r })) }))
 

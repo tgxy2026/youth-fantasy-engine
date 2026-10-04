@@ -493,6 +493,26 @@ async function main() {
       rows.some(r => r.id === 'p1'), JSON.stringify(rows))
   }
 
+  // ============ ⑬ 桌面端删除必须留痕（2026-10-04 六维审计）============
+  //
+  // 病灶：`desktopStore.del` 老写法是 `if (st && key in st) { delete …; markDeleted(…) }` ——
+  // 把「记墓碑」挂在了「本地此刻有这条记录」上。云端闩锁期（云端不可用，`db/core` 的
+  // `cloudOrLocal` 会把 del 回退到桌面本地库）删一条**只存在于云端、本地缓存里没有**的记录时
+  // `key in st` 为假 ⇒ 既不删也不记墓碑，这次删除被**静默吞掉**，下次合并又把云端那份带回来。
+  // 这条路径端到端点不出来（需要一个「本地没有、云端有」的现成场景），故按源码闸钉住 ——
+  // 同本文件既有惯例：结构假设一旦漂移会静默失明，必须显式锁死。
+  {
+    const dsrc = read('src/lib/desktop.ts')
+    ok('⑬ desktop del 不依赖「key 是否在本机」—— 无条件记墓碑',
+      /async del\(store: string, key: string\)[\s\S]{0,1200}?if \(store !== 'meta'\) \{ markDeleted\(store, \[key\]\); scheduleSave\(\) \}/.test(dsrc))
+    ok('⑬ desktop bulkDel 同口径（批量删也不以「本地真删到了」为前提）',
+      dsrc.includes("if (store !== 'meta') { markDeleted(store, keys); scheduleSave() }"))
+    ok('⑬ 反例保护仍在：meta 不记墓碑（它是配置载体，不是同步记录）',
+      dsrc.includes("if (store !== 'meta')"))
+    ok('⑬ 导入整库替换后作废旧删除记忆（resetTombs）—— 否则「导进来的记录被旧墓碑永久挡住」',
+      dsrc.includes('resetTombs()'))
+  }
+
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }

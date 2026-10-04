@@ -395,7 +395,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {(pickMode === 'local' ? LOCAL_PRESETS : ONLINE_PRESETS).map(p => (
-                      <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 text-12 hover:text-success hover:border-success/40 transition-colors text-left">
+                      <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 hover:text-success hover:border-success/40 transition-colors text-left">
                         {pickMode === 'local'
                           ? <Cpu size={12} className="text-success shrink-0" />
                           : <Globe size={12} className="text-info shrink-0" />}

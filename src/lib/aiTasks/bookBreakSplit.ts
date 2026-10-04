@@ -10,6 +10,7 @@
 //      命中 <2 全部弃用 —— 这里（parse 层）只做宽松抽取，严格采信在 applyAiSplit。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseLooseObject, asText } from '../aiParse'
+import { newAuthorFence, authorBlock } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
 
 /** 「拆书 · AI 章节识别」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
@@ -51,7 +52,7 @@ export async function aiBookBreakSplitChapters(req: BookBreakSplitRequest): Prom
 ${numbered}
 
 【原文节选（可能是整篇的一部分，节选处用「……」标出）】
-${req.sampleText}
+${authorBlock(newAuthorFence(), req.sampleText)}
 
 请找出原文里的章节起始行。`
   const text = await chat(

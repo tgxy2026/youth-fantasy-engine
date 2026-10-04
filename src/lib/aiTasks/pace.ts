@@ -10,6 +10,7 @@
 // 的立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { newAuthorFence, authorBlock } from '../promptGuard'
 import { PACE_BEAT_KINDS } from '../paceAnalysis'
 import type { PromptDef } from '../promptSettings'
 // 解析与位置换算都在本地纯函数层（tests 只 import 那边，不会把传输层拉进 Node 测试）
@@ -53,11 +54,13 @@ export async function aiPaceAnalysis(
 ): Promise<PaceReport> {
   const cfg = await requireProviderFor('review')
   const text = chapterText.trim()
+  // 🔴 设定与正文都是**不可信作者文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
+  const fence = newAuthorFence()
   const user = `【设定资料（摘要）】
-${projectContext.trim() || '（无）'}
+${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 【本章正文】
-${text || '（空）'}
+${text ? authorBlock(fence, text) : '（空）'}
 
 请按结构观察本章节奏与章末钩子，输出 JSON。`
 

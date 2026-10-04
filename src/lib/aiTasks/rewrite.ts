@@ -158,7 +158,8 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
     `【本章标题】${o.title}`,
     // 🔴 取**尾部** 1200 字：这一段叫「上一章结尾」，衔接靠的就是末尾那几句。
     //    2026-09-19 修：原先写的是 slice(0, 1200) 取到开头，等于拿「上一章开头」当衔接参照。
-    o.contextTail?.trim() ? `【上一章结尾】（只作衔接参考，不要改写这一段）\n${o.contextTail.trim().slice(-1200)}` : '',
+    // 🔴 上一章结尾同样是**作者正文**：与下方「本章原文」共用同一个 fenceId，包成边界块
+    o.contextTail?.trim() ? `【上一章结尾】（只作衔接参考，不要改写这一段）\n${authorBlock(fenceId, o.contextTail.trim().slice(-1200))}` : '',
     o.requirement.trim() ? `【改写要求】\n${o.requirement.trim()}` : '',
     o.targetWords ? `【目标字数】必须落在 ${lo}~${hi} 个汉字之间（目标 ${o.targetWords}；「按汉字个数计，标点与空白不计」）` : '',
     '【本章原文】',

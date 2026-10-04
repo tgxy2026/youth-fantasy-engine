@@ -523,6 +523,23 @@ const multiPara = (n: number): string =>
   await waitIdle()
   ok('⑩③ 空 projectId ⇒ 不起任务', tasksSnapshot().length === 0)
 
+  // ④ 独立库**读失败** ⇒ 不能当成「没有资料」静默跳过（2026-10-04 六维审计）
+  //    吞错版把「读失败」和「确实没资料」压成同一个空数组 ⇒ 一次真实的库故障会被伪装成
+  //    「这次还原没有资料要建索引」，作者永远不知道索引没建上。必须**如实起一条任务说明**。
+  resetTaskCenter()
+  setKbBackend({ ...memKb(), list: async () => { throw new Error('独立库损坏') } })
+  await rebuildKbIndexAfterRestore('p2')
+  await waitIdle()
+  const ts4 = tasksSnapshot()
+  ok('⑩④ 🔴 库读失败 ⇒ 起一条任务如实报（不静默跳过）', ts4.length === 1, `tasks=${ts4.length}`)
+  const r4 = (ts4[0]?.result ?? null) as { ok?: boolean; error?: string } | null
+  ok('⑩④ 说明里点明「读不到库」+ 给了下一步（去哪重建）',
+    ts4[0]?.status === 'done' && r4?.ok === false
+      && /读不到参考资料库/.test(String(r4?.error ?? ''))
+      && /重建索引/.test(String(r4?.error ?? '')),
+    `status=${ts4[0]?.status} err=${String(r4?.error ?? '')}`)
+  setKbBackend(memKb()) // 还原后端，免得影响后续用例
+
   resetTaskCenter()
   db.setCurrentProject('')
 }
@@ -533,8 +550,12 @@ const multiPara = (n: number): string =>
   ok('⑪ 自动重建模块存在', helper.length > 0)
   ok('🔴 复用素材页同一任务槽位（同 ownerTab/kind ⇒ 与手动重建互斥）',
     helper.includes('material-library') && helper.includes('kb-index'))
-  ok('自动重建先读 kbStats.enabled（没有启用资料就不起任务）',
-    helper.includes('kbStats') && helper.includes('.enabled'))
+  // 🔴 2026-10-04 六维审计后改版：从吞错的 `kbStats` 换成 `listDocsStrict`。
+  //    原因是「读失败」和「本来就没资料」在吞错版里是同一个结果，判定型调用会静默走错分支。
+  ok('自动重建先读**严格版**列表、按启用数判断（没有启用资料就不起任务）',
+    helper.includes('listDocsStrict') && helper.includes('d.enabled') && helper.includes('if (!enabled) return'))
+  ok('🔴 读失败不静默跳过 —— 起 info 任务如实说明（不把故障伪装成「没资料」）',
+    helper.includes('catch') && helper.includes('读不到参考资料库'))
   ok('🔴 未配嵌入模型时走「如实说明」分支（不静默失败）',
     helper.includes('embeddingStatus') && helper.includes('未配置嵌入模型'))
   ok('🔴 全量重建走 reindexAll 且透传 ctx.signal（可中止）',
