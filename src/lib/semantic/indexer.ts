@@ -27,7 +27,7 @@ import { TABS } from '../schema'
 import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from './chunk'
 import { embedTexts, EMBED_BATCH, type EmbedConfig } from './embed'
 import {
-  makeVecRow, putVectors, removeByRef, clearProjectVectors, vectorIndex, vectorStats,
+  makeVecRow, putVectors, removeByRef, clearProjectVectors, vectorIndex, vectorIndexStrict, vectorStats,
   refKeyOf, splitRefKey,
   type VecIndex, type VecKind, type VecRow, type VecStats,
 } from './store'
@@ -131,23 +131,40 @@ export function collectIndexDocs(input: CollectInput): IndexDoc[] {
  * 从库里取数并收敛成索引条目。
  * 🔴 任一步读失败都**不吞**该来源之外的东西 —— 单个页签读失败跳过它，整体照常进行
  *    （索引是全量重建的活，不该因为一张表的异常就整件事失败）。
+ *
+ * 🔴🔴 但「读失败」必须与「确实没有数据」区分开 —— `incomplete` 就是那个信号。
+ *    把读失败直接当成空数组喂给孤儿清理，等于把**读不到**判成**已删除**、
+ *    静默删掉一整个来源的向量（详见 `rebuildIndex` 里孤儿清理那段）。
  */
-export async function loadIndexDocs(): Promise<IndexDoc[]> {
-  const chapters = (await db.getAllChapters().catch(() => [])) as CollectInput['chapters']
+export interface LoadDocsResult {
+  docs: IndexDoc[]
+  /** 只要有一个来源读失败就为 true —— 此时调用方**绝不能做孤儿清理** */
+  incomplete: boolean
+}
+
+export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
+  let incomplete = false
+  const onFail = (e: unknown): never[] => {
+    incomplete = true
+    console.warn('[semantic] 读取待索引来源失败（本轮视为「不确定」，不做孤儿清理）：', e)
+    return []
+  }
+
+  const chapters = (await db.getAllChapters().catch(onFail)) as CollectInput['chapters']
 
   const tables: CollectInput['tables'] = []
   const cards: CollectInput['cards'] = []
   for (const tab of TABS) {
     if (tab.type === 'table') {
-      const rows = await db.getTableRows(tab.id).catch(() => [])
+      const rows = await db.getTableRows(tab.id).catch(onFail)
       if (rows.length) tables.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, data: r.data })) })
     } else if (tab.type === 'card') {
-      const rows = await db.getCardRecords(tab.id).catch(() => [])
+      const rows = await db.getCardRecords(tab.id).catch(onFail)
       if (rows.length) cards.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, name: r.name, data: r.data })) })
     }
   }
   // 章节台账（按卷分表存在 chapter-vol-*）单独取一次 —— 它不在 TABS 的 table 里
-  const ledger = await db.getAllChapterLedgerRows().catch(() => [])
+  const ledger = await db.getAllChapterLedgerRows().catch(onFail)
   if (ledger.length) {
     tables.push({
       tabId: 'chapter-master',
@@ -156,7 +173,7 @@ export async function loadIndexDocs(): Promise<IndexDoc[]> {
     })
   }
 
-  return collectIndexDocs({ chapters, tables, cards })
+  return { docs: collectIndexDocs({ chapters, tables, cards }), incomplete }
 }
 
 export interface IndexProgress {
@@ -175,6 +192,8 @@ export interface RebuildResult {
   skipped: number
   /** 清理掉的孤儿来源数（章节/条目已删） */
   removed: number
+  /** 非致命提醒（如「有来源读失败，本轮跳过了孤儿清理」）—— 界面据此提示作者稍后重跑 */
+  warning?: string
   error?: string
 }
 
@@ -187,7 +206,8 @@ export interface RebuildOptions {
   full?: boolean
   /** 单测注入点（生产不传） */
   deps?: {
-    collectDocs?: () => Promise<IndexDoc[]>
+    /** 收集；返回数组＝视为「完整」，返回 `LoadDocsResult` 可带 `incomplete` 标记 */
+    collectDocs?: () => Promise<IndexDoc[] | LoadDocsResult>
     embed?: typeof embedTexts
     index?: (projectId: string) => Promise<VecIndex>
     clear?: (projectId: string) => Promise<void>
@@ -225,29 +245,70 @@ function sameAsOld(idx: VecIndex, doc: IndexDoc, chunks: Chunk[]): boolean {
  *    作者可以只重建一次就重试，不必担心把库搞坏（下一次 `full: true` 会清干净重来）。
  */
 export async function rebuildIndex(opts: RebuildOptions): Promise<RebuildResult> {
+  rebuildRunning = true
+  try {
+    return await rebuildIndexInner(opts)
+  } finally {
+    rebuildRunning = false
+  }
+}
+
+/**
+ * 是否有一次「重建索引」正在跑 —— 与「保存后自动索引」互斥用（见 `autoIndexChapterOnce`）。
+ * 🔴 两者并发时各自的 `removeByRef` / `putVectors` 会交错（`full` 时还会整库清空），
+ *    最终索引可能停在**旧内容**上；同时跑两遍也等于白烧一次嵌入额度。
+ */
+let rebuildRunning = false
+
+async function rebuildIndexInner(opts: RebuildOptions): Promise<RebuildResult> {
   const { projectId, cfg, signal, onProgress } = opts
   const full = opts.full === true
   const empty: RebuildResult = { ok: false, docs: 0, chunks: 0, skipped: 0, removed: 0 }
   if (!projectId) return { ...empty, error: '缺少项目 id' }
   if (!(cfg.model ?? '').trim()) return { ...empty, error: '未配置嵌入模型名' }
 
-  const collectDocs = opts.deps?.collectDocs ?? loadIndexDocs
+  const injectedCollect = opts.deps?.collectDocs
   const doEmbed = opts.deps?.embed ?? embedTexts
-  const doIndex = opts.deps?.index ?? vectorIndex
+  // 🔴 增量重建读旧索引用**严格版**：`vectorIndex` 读失败会吞成空表 ⇒「读不到」被当成
+  //    「没有旧索引」⇒ 全书逐块重新嵌入（白烧配额、毫无提示）。严格版失败即抛，下面如实报错。
+  const doIndex = opts.deps?.index ?? vectorIndexStrict
   const doClear = opts.deps?.clear ?? clearProjectVectors
   const doRemoveRef = opts.deps?.removeRef ?? removeByRef
   const doPut = opts.deps?.put ?? putVectors
 
   onProgress?.({ phase: '收集', done: 0, total: 0 })
   let docs: IndexDoc[] = []
+  let incomplete = false
   try {
-    docs = await collectDocs()
+    if (injectedCollect) {
+      const rr = await injectedCollect()
+      if (Array.isArray(rr)) docs = rr
+      else { docs = rr.docs; incomplete = rr.incomplete }
+    } else {
+      const r = await loadIndexDocsDetailed()
+      docs = r.docs
+      incomplete = r.incomplete
+    }
   } catch (e) {
     return { ...empty, error: `收集待索引资料失败：${e instanceof Error ? e.message : String(e)}` }
   }
-  if (docs.length === 0) return { ok: true, docs: 0, chunks: 0, skipped: 0, removed: 0 }
+  // 一条都没读到、而且确实有读失败 ⇒ 别谎报「这本书是空的」
+  if (docs.length === 0) {
+    return incomplete
+      ? { ...empty, error: '读取待索引资料时出错（没能读到任何来源），请重试' }
+      : { ok: true, docs: 0, chunks: 0, skipped: 0, removed: 0 }
+  }
 
-  const old: VecIndex = full ? { hashes: new Map(), refs: new Set() } : await doIndex(projectId)
+  let old: VecIndex
+  if (full) {
+    old = { hashes: new Map(), refs: new Set() }
+  } else {
+    try {
+      old = await doIndex(projectId)
+    } catch (e) {
+      return { ...empty, error: `读取旧索引失败，已中止重建（避免全书重新嵌入）：${e instanceof Error ? e.message : String(e)}` }
+    }
+  }
 
   // 切块 + 增量比对（🔴 切块只在过滤之后发生，见文件头说明）
   const pending: { doc: IndexDoc; chunks: Chunk[] }[] = []
@@ -266,8 +327,11 @@ export async function rebuildIndex(opts: RebuildOptions): Promise<RebuildResult>
 
   // 孤儿清理：旧索引里有、本次已不存在的来源（章节被删 / 条目被删）
   // 🔴 不清理的后果是**召回已删除的内容** —— 那是真 bug，不是浪费空间。
+  // 🔴🔴 但清理的前提是「本轮收集是完整的」：有来源读失败时 liveRefs 不完整，
+  //    此时清理 = 把「读不到」当成「已删除」，会静默删掉整章 / 整表的向量。宁可这轮不清。
   let removed = 0
-  if (!full) {
+  const skippedOrphanClean = !full && incomplete
+  if (!full && !incomplete) {
     for (const ref of old.refs) {
       if (liveRefs.has(ref)) continue
       const { kind, refId } = splitRefKey(ref)
@@ -342,7 +406,12 @@ export async function rebuildIndex(opts: RebuildOptions): Promise<RebuildResult>
   }
   onProgress?.({ phase: '写入', done: rows.length, total: rows.length })
 
-  return { ok: true, docs: docs.length, chunks: rows.length, skipped, removed }
+  return {
+    ok: true, docs: docs.length, chunks: rows.length, skipped, removed,
+    warning: skippedOrphanClean
+      ? '部分来源读取失败：本轮已跳过「清理已删除来源」，索引可能残留已删内容，建议稍后重跑一次'
+      : undefined,
+  }
 }
 
 // （`indexOneDoc` 已移到 `indexDoc.ts` —— 它对 db 零依赖，供知识库 #017 复用；
@@ -400,6 +469,9 @@ export async function autoIndexChapter(chapterId: string, deps?: AutoIndexDeps):
 /** 单轮：守卫 → 早退 → 真正重建这一章的索引（**永不抛**，见 `autoIndexChapter` 说明） */
 async function autoIndexChapterOnce(chapterId: string, deps?: AutoIndexDeps): Promise<void> {
   try {
+    // 🔴 有「重建索引」在跑就跳过这一轮：两者并发会交错写同一批向量块（见 `rebuildRunning`）。
+    //    重建本就是全书的活，跑完再存一次即入索引，不值得冒「索引停在旧内容」的险。
+    if (rebuildRunning) return
     const s = await (deps?.loadSettings ?? loadEmbeddingSettings)()
     if (!s.autoIndexOnSave) return
     const cfg = await (deps?.resolveConfig ?? resolveEmbedConfig)(s)

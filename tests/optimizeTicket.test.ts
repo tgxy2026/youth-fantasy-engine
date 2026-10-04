@@ -173,6 +173,18 @@ function mk(o: MkInput): TicketItem {
 
   ok('🔴 本轮不声称有 AI 诊断源（没实现就不许出现在 buildTicket 里）',
     !/aiChapterReview|aiOocCheck|aiPleasureCheck/.test(src))
+
+  // 面板侧：中止后「已改完的章」必须能恢复 ——
+  // 🔴 任务中心在中止时会把 result 清空（有意设计：中止＝不留可疑产物），
+  //    所以逐章产物要另走 ctx.setResume 回传，面板合并时两个来源都读。
+  const panel = readFileSync(path.join(process.cwd(), 'src/components/OptimizeTicketPanel.tsx'), 'utf8')
+  ok('🔴 逐章产物经 ctx.setResume 回传（中止 / 切页签后仍可恢复）',
+    panel.includes('ctx.setResume({ chapters: [...out] }'))
+  ok('🔴 合并时同时读 result 与 resume（只读 result 会让中止后已改章退回待处理）',
+    panel.includes('exe.result ?? (exe.task?.resume') && panel.includes('exe.result, exe.task?.resume'))
+  ok('🔴 诊断失败不再静默吞（改为 console.warn 上报）', src.includes('一章诊断失败（已跳过）'))
+  ok('🔴 最新章设定同步失败不再静默吞',
+    src.includes('设定同步失败（正文已落库，可去设定表手动补）'))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

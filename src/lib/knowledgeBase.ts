@@ -131,10 +131,6 @@ export function setKbBackend(b: KbBackend | null): void {
   kbBackend = b ?? idbKbBackend
 }
 
-export function getKbBackend(): KbBackend {
-  return kbBackend
-}
-
 // ============ 读接口（永不抛：资料读不出来不该阻断写作）============
 
 /** 列出项目内的参考资料（按导入时间倒序 —— 最近导入的排最前） */

@@ -10,7 +10,7 @@ import TableRefSelect from './TableRefSelect'
 import StoryDateInput from './StoryDateInput'
 import CalendarSelect from './CalendarSelect'
 import { useCalendarRule } from '../lib/useCalendarRule'
-import { useAliasRevision, loadAliases, sanitizeAliases, type AliasMap } from '../lib/fieldAlias'
+import { useAliasRevision, loadAliases, sanitizeAliases, defaultLabelOf, type AliasMap } from '../lib/fieldAlias'
 // 卡片页签的字段键与「字段名」按钮**同源**（moduleAliasTargets）—— 各算一份必然漂移
 import { moduleAliasTargets } from './FieldAliasButton'
 import { Button } from './Button'
@@ -153,8 +153,9 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
               fields: Object.entries(rec.data)
                 .filter(([, v]) => v && v.trim())
                 .map(([k, v]) => {
-                  const [, fieldName] = k.split('::')
-                  const label = fieldName ?? k
+                  // 🔴 显示名的默认值走单一真源 `defaultLabelOf`（取**最后**一段 `::`）——
+                  //    别在这里自己 split('::')[1]：键含多段 `::` 时两者会取到不同的段。
+                  const label = defaultLabelOf(k)
                   const alias = clean[k]
                   const opts = CARD_SELECT_FIELDS[label]
                   const ref = CARD_TABLE_REF_FIELDS[label]

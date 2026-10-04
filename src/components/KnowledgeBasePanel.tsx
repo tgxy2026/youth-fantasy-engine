@@ -164,16 +164,37 @@ export default function KnowledgeBasePanel() {
   const onToggle = async (doc: KbDoc, on: boolean) => {
     const pid = currentProject()
     if (!pid) return
+    // 🔴 索引正在建时不改启用状态：任务中心同一个 (ownerTab, kind) 只允许一个实例、
+    //    重复发起会被**静默忽略** ⇒「勾上了却没建索引」最难查。先等它跑完再来。
+    if (runner.running) { showToast('索引正在建立，等它跑完再改启用状态', 'info'); return }
     await setDocEnabled(pid, doc.id, on)
     if (on && doc.chunkCount === 0) {
       const cfg = await resolveEmbedConfig()
-      if (cfg) {
-        const r = await reindexDoc(pid, doc.id, cfg)
-        showToast(r.ok ? `已启用并建立索引（${r.chunks} 块）` : `已启用，但索引没建起来：${r.error ?? '未知原因'}`,
-          r.ok ? 'success' : 'error')
-      } else {
+      if (!cfg) {
+        setVer(v => v + 1)
         showToast('已启用。还没配嵌入模型，现在只走关键词匹配（效果差些）', 'success')
+        return
       }
+      // 🔴 长任务走任务中心：一篇长资料可能上千块、跑几十批嵌入 —— 要能切页签不中断、能中止，
+      //    并且与「重建索引」共用同一把锁（否则两者并发会让向量块互相交错）。
+      runner.run(
+        async ctx => {
+          ctx.progress({ done: 0, total: 1, title: doc.title })
+          const r = await reindexDoc(pid, doc.id, cfg, ctx.signal)
+          return { ok: r.ok, docs: 1, chunks: r.chunks, failed: r.ok ? 0 : 1, error: r.error }
+        },
+        info => {
+          const r = info.result
+          if (info.status === 'done' && r?.ok) {
+            return { text: `「${doc.title}」已启用并建立索引（${r.chunks} 块）`, kind: 'success' as const }
+          }
+          if (info.status === 'done' && r && !r.ok) {
+            return { text: `「${doc.title}」已启用，但索引没建起来：${r.error ?? '未知原因'}`, kind: 'error' as const }
+          }
+          return null
+        },
+      )
+      return
     }
     setVer(v => v + 1)
   }

@@ -466,6 +466,70 @@ function row(input: {
     ok('🔴 孤儿块不出现在库里（否则会召回已删内容）', !(await loadVectors('p1')).some(x => x.refId === 'c2'))
   }
 
+  // 🔴🔴 来源读失败（incomplete）⇒ **不得做孤儿清理**
+  //    （否则把「读不到」当「已删除」，静默删掉整章 / 整表的向量）
+  {
+    // 先回到「c1 + c2 都在库里」的干净状态
+    const seed = makeDeps([doc('c1', '第一章正文'), doc('c2', '第二章正文')])
+    await rebuildIndex({ projectId: 'p1', cfg: CFG, full: true, deps: seed.deps })
+    ok('前置：库里 c1 / c2 都在', (await loadVectors('p1')).length === 2)
+
+    // 本次收集：c1 正常、c2「读失败」⇒ 详细结果带 incomplete
+    const d = makeDeps([])
+    const deps2 = {
+      ...d.deps,
+      collectDocs: async () => ({ docs: [doc('c1', '第一章正文')], incomplete: true }),
+    }
+    const r = await rebuildIndex({ projectId: 'p1', cfg: CFG, deps: deps2 })
+    ok('🔴 读失败 ⇒ 一个孤儿都不清（removed 0）', r.ok === true && r.removed === 0 && !d.removed.includes('c2'))
+    ok('🔴 读失败 ⇒ c2 的向量仍在库里（没被误删）', (await loadVectors('p1')).some(x => x.refId === 'c2'))
+    ok('🔴 读失败 ⇒ 结果带 warning 让作者稍后重跑', typeof r.warning === 'string' && r.warning.includes('重跑'))
+
+    // 对照：完整收集 ⇒ 孤儿照常清理（证明上面不是「清理整体失灵」）
+    const d3 = makeDeps([doc('c1', '第一章正文')])
+    const r3 = await rebuildIndex({ projectId: 'p1', cfg: CFG, deps: d3.deps })
+    ok('对照：完整收集时孤儿照常被清（清理没失灵）', r3.removed >= 1 && d3.removed.includes('c2'))
+  }
+
+  // 🔴 一条来源都没读到、而且确实有读失败 ⇒ 不谎报「这本书是空的」
+  {
+    const d = makeDeps([])
+    const deps2 = { ...d.deps, collectDocs: async () => ({ docs: [], incomplete: true }) }
+    const r = await rebuildIndex({ projectId: 'p1', cfg: CFG, deps: deps2 })
+    ok('🔴 全读失败 → ok:false（不谎报空书）', r.ok === false && (r.error ?? '').includes('出错'))
+  }
+
+  // 🔴 读旧索引失败 ⇒ 中止，**不得**退化成全书重新嵌入（白烧配额）
+  {
+    const d = makeDeps([doc('c1', '读索引失败测试')])
+    const deps2 = { ...d.deps, index: async () => { throw new Error('索引库读失败') } }
+    const r = await rebuildIndex({ projectId: 'p1', cfg: CFG, deps: deps2 })
+    ok('🔴 读旧索引失败 → ok:false 且一次嵌入都没发',
+      r.ok === false && (r.error ?? '').includes('读取旧索引失败') && d.embedCount === 0)
+  }
+
+  // 🔴 同上，但走**真实默认路径**（不注入 deps.index）—— 这一条才有判别力地钉住 `vectorIndexStrict`
+  {
+    const d = makeDeps([doc('c1', '默认路径严格读')])
+    const bad = { ...be, index: async () => { throw new Error('后端读失败') } }
+    setVecBackend(bad)
+    const r = await rebuildIndex({ projectId: 'p1', cfg: CFG, deps: { ...d.deps, index: undefined } })
+    ok('🔴 默认走严格版：读旧索引失败 → ok:false / 不嵌入',
+      r.ok === false && (r.error ?? '').includes('读取旧索引失败') && d.embedCount === 0)
+    setVecBackend(be)
+  }
+
+  // 源码闸（这几条都是「改坏了测试也能立刻响」的判据）
+  {
+    const src = read('src/lib/semantic/indexer.ts')
+    ok('🔴 收集读失败有 incomplete 信号（不再静默吞成空数组）',
+      src.includes('loadIndexDocsDetailed') && src.includes('incomplete'))
+    ok('🔴 孤儿清理受 incomplete 保护', src.includes('if (!full && !incomplete)'))
+    ok('🔴 增量读旧索引用严格版（失败不再退化成全书重嵌）',
+      src.includes('opts.deps?.index ?? vectorIndexStrict'))
+    ok('🔴 自动索引与重建互斥（rebuildRunning）', src.includes('if (rebuildRunning) return'))
+  }
+
   // full = true ⇒ 清空重建
   {
     const d = makeDeps([doc('c1', '第一章改过了')])

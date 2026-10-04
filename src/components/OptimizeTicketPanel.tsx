@@ -24,6 +24,7 @@ import { showToast } from './dialogs'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { useTaskRunner } from '../lib/aiTaskCenter'
+import { foldVh } from '../lib/theme'
 import { SEVERITY_LABEL, type IssueSeverity } from '../lib/audit'
 import {
   SOURCE_LABEL, actionLabelOf, buildTicket, groupByChapter, runTicketChapter,
@@ -73,9 +74,11 @@ export default function OptimizeTicketPanel() {
     setItems((gen.result?.items ?? []).map(i => ({ ...i, picked: false })))
   }, [gen.result])
 
-  // 执行结果的状态合并回来（切页签后重挂载，靠这一步恢复「哪些已经改过」）
+  // 执行结果的状态合并回来（切页签后重挂载，靠这一步恢复「哪些已经改过」）。
+  // 🔴 两个来源都读：正常跑完看 `result`；**中止**时 `result` 被任务中心清空（有意设计），
+  //    已处理章走 `ctx.setResume` 回传（见上面 `executeNow` 里那行注释）。
   useEffect(() => {
-    const r = exe.result
+    const r = exe.result ?? (exe.task?.resume as RunResult | null | undefined)
     if (!r) return
     setItems(prev => {
       if (!prev.length) return prev
@@ -83,7 +86,7 @@ export default function OptimizeTicketPanel() {
       for (const ch of r.chapters) for (const it of ch.items) patch.set(it.id, it)
       return prev.map(i => { const p = patch.get(i.id); return p ? { ...p, picked: i.picked } : i })
     })
-  }, [exe.result])
+  }, [exe.result, exe.task?.resume])
 
   const picked = useMemo(() => items.filter(i => i.picked), [items])
   // 「需手动处理」的不进执行队列（连续性 / 伏笔的根子在设定表，改正文只会掩盖矛盾）
@@ -144,10 +147,18 @@ export default function OptimizeTicketPanel() {
         const r = await runTicketChapter(g.items, { signal: ctx.signal })
         out.push({ chapterId: r.chapterId, items: r.items, beforeText: r.beforeText, afterText: r.afterText })
         done++
+        // 🔴 每章跑完就把「已完成」的产物写进 resume：任务结束时 `result` 会被清掉
+        //    （中止 ⇒ 不留可疑产物，是任务中心的有意设计），但 `resume` 会保留。
+        //    不这么做，中止后已改完的章会退回「待处理」，作者再点一次就重复改写、重复烧额度。
+        ctx.setResume({ chapters: [...out] } as RunResult)
         ctx.progress({ done, total: plan.length, title: g.chapterTitle })
       }
       return { chapters: out }
     }, ({ status, result, error }) => {
+      if (status === 'aborted') {
+        // 已改完的章保留在列表里（走 resume 合并），如实说清以免作者以为白跑了
+        return { text: '已中止：已改完的章保持「已改」，剩下的没动', kind: 'info' as const }
+      }
       if (status === 'failed') return { text: `逐章修订失败：${error || '未知原因'}`, kind: 'error' as const }
       if (status === 'done' && result) {
         const ok = result.chapters.filter(c => c.afterText !== undefined).length
@@ -247,7 +258,7 @@ export default function OptimizeTicketPanel() {
             </div>
           </div>
 
-          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+          <div className="space-y-3 overflow-y-auto pr-1" style={{ maxHeight: foldVh('60vh') }}>
             {groups.map(g => (
               <div key={g.chapterId} className="rounded-lg border border-ink-700 bg-ink-900/40 overflow-hidden">
                 <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-1.5">

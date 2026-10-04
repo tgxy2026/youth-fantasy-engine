@@ -163,7 +163,12 @@ export async function buildTicket(opts: BuildTicketOpts = {}): Promise<TicketIte
     if (opts.signal?.aborted) break
     // 空章跳过（没正文没什么可诊断的），但仍然计入进度
     if ((c.chapter.content ?? '').trim()) {
-      const rep = await runChapterCheck(c.chapter).catch(() => null)
+      const rep = await runChapterCheck(c.chapter).catch(e => {
+        // 🔴 别静默吞：某章检查抛错时该章被跳过，工单会呈现成「诊断完成、没有问题」而掩盖漏检。
+        //    但一次读失败不该让整张工单中断 —— 记一行日志，继续诊断其余章。
+        console.warn(`[optimizeTicket] 一章诊断失败（已跳过）：${c.chapter.title}`, e)
+        return null
+      })
       if (rep) out.push(...issuesOf(c, rep, c.chapter.id === latestId))
     }
     done++
@@ -351,16 +356,12 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
   if (isLatest) {
     try {
       await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal)
-    } catch {
-      // 设定同步失败不影响正文（正文已落库）—— 由界面提示作者可去表格页补
+    } catch (e) {
+      // 🔴 别静默吞：正文已落库（不回滚），但「改完最新章却没同步出新设定」会让作者以为设定齐了。
+      //    至少留一行日志 —— 作者可去设定表手动补。
+      console.warn('[optimizeTicket] 最新章改写后设定同步失败（正文已落库，可去设定表手动补）：', e)
     }
   }
 
   return { chapterId, items: markAll(items, ids, 'done', ''), beforeText: body, afterText: text }
-}
-
-/** 单条执行（内部按章合并；界面主要用 `runTicketChapter`） */
-export async function runTicketItem(item: TicketItem, opts: RunTicketOpts = {}): Promise<TicketItem> {
-  const r = await runTicketChapter([item], opts)
-  return r.items[0] ?? item
 }

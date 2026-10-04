@@ -128,6 +128,7 @@ async function main() {
     const CASES: [string, string][] = [
       ['lib/autoContinue.ts', 'create'],
       ['lib/aiTasks/creative.ts', 'create'],
+      ['lib/aiTasks/inspiration.ts', 'create'],
       ['lib/aiTasks/rewrite.ts', 'create'],
       ['lib/aiTasks/inline.ts', 'create'],
       ['lib/aiCore/template.ts', 'create'],

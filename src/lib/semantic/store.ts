@@ -205,10 +205,6 @@ export function setVecBackend(b: VecBackend | null): void {
   backend = b ?? idbVecBackend
 }
 
-export function getVecBackend(): VecBackend {
-  return backend
-}
-
 // ============ 对外 API（薄封装，统一 try/catch 口径）============
 //
 // 🔴 所有读接口**永不抛**：语义检索是"补一层"，索引库坏了不该阻断写作。
@@ -248,6 +244,12 @@ export async function vectorStats(projectId: string): Promise<VecStats | null> {
   }
 }
 
+/**
+ * 轻量索引导读（只带 hash / refId 这类游标字段，不碰 vec buffer）。
+ * ⚠️ 读失败**吞成空表** —— 适合「索引坏了不影响干活」的场景（如保存后自动索引的守卫）。
+ *    但在「增量重建」里这个语义是危险的：空表 = 「没有旧索引」⇒ 全书重新嵌入。
+ *    那条路径请用 `vectorIndexStrict`。
+ */
 export async function vectorIndex(projectId: string): Promise<VecIndex> {
   if (!projectId) return { hashes: new Map(), refs: new Set() }
   try {
@@ -255,6 +257,16 @@ export async function vectorIndex(projectId: string): Promise<VecIndex> {
   } catch {
     return { hashes: new Map(), refs: new Set() }
   }
+}
+
+/**
+ * 严格版索引导读：读失败**抛出**。
+ * 🔴 给「增量重建」用 —— 那里必须把「读不到」与「确实没有索引」区分开，
+ *    否则一次瞬时读失败会静默退化成全书重新嵌入（白烧额度）。调用方 catch 后如实报错。
+ */
+export async function vectorIndexStrict(projectId: string): Promise<VecIndex> {
+  if (!projectId) return { hashes: new Map(), refs: new Set() }
+  return await backend.index(projectId)
 }
 
 /** 构造一行（把 id / refKey 这类"派生字段"收在一处，避免调用方各拼一遍拼错） */
