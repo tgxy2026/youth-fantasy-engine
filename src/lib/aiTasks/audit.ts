@@ -7,7 +7,6 @@ import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '
 import { parseObjectArray, asText, humanText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
-import { RULE_JSON_ARRAY_ONLY } from './shared'
 
 /** 「文风体检」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_style_audit = `你是文风编辑。作者提供了《写作规范》（个人坏习惯清单 / 标点规范 / 视角规则）和本章正文，请对照规范体检本章文风。
@@ -74,7 +73,7 @@ let P_continuity_audit = `你是长篇网络小说的设定校对与连续性审
 2. 只报「有据可查」的冲突：必须能指出资料/正文中的具体依据。不要报"建议加强描写"之类的写作建议。
 3. level 判定：影响读者理解或明显崩设定 = 严重；细节对不上 = 中等；疑似但不确定 = 提示。
 4. 最多返回 12 条，按严重程度排序。没发现问题就返回 []。
-5. ${RULE_JSON_ARRAY_ONLY}`
+5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
 
 // ---------- 一致性深度自查 ----------
 

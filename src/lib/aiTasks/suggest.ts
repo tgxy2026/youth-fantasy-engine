@@ -4,7 +4,6 @@
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
 import type { PromptDef } from '../promptSettings'
-import { RULE_JSON_ARRAY_ONLY } from './shared'
 
 /** 「敏感词复核」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_sensitive_recheck = `你是网络文学平台的审核经验丰富的编辑。作者用本地词库扫出了一批"疑似敏感词"命中，其中很多是误报（词库只匹配字面，不看语境）。请逐条判断真实风险。
@@ -14,7 +13,7 @@ let P_sensitive_recheck = `你是网络文学平台的审核经验丰富的编�
 2. 结合上下文判断：同一个词在不同语境里风险完全不同（如"血"在打斗描写中通常无风险）。
 3. suggestion 要保持原意与文风，不要改成不通顺的替代词。
 4. reason 控制在 25 字内。
-5. ${RULE_JSON_ARRAY_ONLY}`
+5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
 
 /** 「随机取名」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_name_suggest = `你是网络小说取名顾问。按作者要求生成候选名字，每个名字附一句寓意/来源说明。
@@ -23,7 +22,7 @@ let P_name_suggest = `你是网络小说取名顾问。按作者要求生成候�
 2. 名字要契合给定的世界观与风格，读音顺口、不拗口、不生僻到没人会念。
 3. 彼此之间风格统一但不重复雷同；不要和【世界观上下文】里已出现的名字重复。
 4. meaning 控制在 30 字内，说清取名依据即可。
-5. ${RULE_JSON_ARRAY_ONLY}`
+5. 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
 
 // ---------- AI 取名 ----------
 
