@@ -511,9 +511,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   <>
                     <div className="flex items-stretch gap-5 min-h-[184px]">
                       {p.cover ? (
-                        <img src={p.cover} alt={p.name} className="w-[128px] object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
+                        <img src={p.cover} alt={p.name} className="w-128px object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
                       ) : (
-                        <div className="w-[128px] rounded-md border border-dashed border-ink-600 bg-ink-800/60 shrink-0 self-stretch flex items-center justify-center">
+                        <div className="w-128px rounded-md border border-dashed border-ink-600 bg-ink-800/60 shrink-0 self-stretch flex items-center justify-center">
                           <Feather size={22} className="text-ink-600" />
                         </div>
                       )}

@@ -66,11 +66,11 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
                                   e.target.checked ? n.add(it.key) : n.delete(it.key)
                                   return n
                                 })}
-                                className="mt-[3px] shrink-0 accent-amber cursor-pointer"
+                                className="mt-3px shrink-0 accent-amber cursor-pointer"
                                 title="勾选后一键补登"
                               />
                             ) : (
-                              <span className="mt-[3px] w-3 shrink-0" />
+                              <span className="mt-3px w-3 shrink-0" />
                             )}
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 flex-wrap">

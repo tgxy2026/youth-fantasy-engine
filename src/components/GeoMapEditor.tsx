@@ -358,7 +358,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
       {/* 底部状态条：叠加图层 + 操作提示（颜色由系统按层级自动调配，不再按类别展示色卡） */}
       <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap text-10 text-ink-400 shrink-0">
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-[3px] rounded-full inline-block" style={{ background: MAP_SPACE_FALLBACK }} />
+          <span className="w-3 h-3px rounded-full inline-block" style={{ background: MAP_SPACE_FALLBACK }} />
           颜色按层级自动调配（父子高对比 · 兄弟错开）
         </span>
         <span className="ml-auto flex items-center gap-3">

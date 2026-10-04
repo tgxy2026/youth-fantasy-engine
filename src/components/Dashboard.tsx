@@ -282,17 +282,17 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         </div>
         {/* 热力图：26 周 × 7 天 */}
         <div className="overflow-x-auto pb-1">
-          <div className="flex gap-[3px] min-w-max">
+          <div className="flex gap-3px min-w-max">
             {Array.from({ length: 26 }, (_, w) => (
-              <div key={w} className="flex flex-col gap-[3px]">
+              <div key={w} className="flex flex-col gap-3px">
                 {Array.from({ length: 7 }, (_, dow) => {
                   const cell = heatDays[w * 7 + dow]
-                  if (!cell) return <div key={dow} className="w-[11px] h-[11px]" />
+                  if (!cell) return <div key={dow} className="w-11px h-11px" />
                   return (
                     <div
                       key={dow}
                       title={`${cell.date}：${cell.words} 字`}
-                      className={`w-[11px] h-[11px] rounded-[2px] ${heatColor(cell.words)} transition-colors hover:ring-1 hover:ring-amber/60`}
+                      className={`w-11px h-11px rounded-2 ${heatColor(cell.words)} transition-colors hover:ring-1 hover:ring-amber/60`}
                     />
                   )
                 })}
@@ -302,11 +302,11 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         </div>
         <div className="flex items-center gap-1.5 mt-2 text-9 text-ink-500">
           <span>少</span>
-          <span className="w-[11px] h-[11px] rounded-[2px] bg-ink-800 inline-block" />
-          <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/40 inline-block" />
-          <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/60 inline-block" />
-          <span className="w-[11px] h-[11px] rounded-[2px] bg-amber/80 inline-block" />
-          <span className="w-[11px] h-[11px] rounded-[2px] bg-amber inline-block" />
+          <span className="w-11px h-11px rounded-2 bg-ink-800 inline-block" />
+          <span className="w-11px h-11px rounded-2 bg-amber/40 inline-block" />
+          <span className="w-11px h-11px rounded-2 bg-amber/60 inline-block" />
+          <span className="w-11px h-11px rounded-2 bg-amber/80 inline-block" />
+          <span className="w-11px h-11px rounded-2 bg-amber inline-block" />
           <span>多</span>
           <span className="ml-3">近 26 周 · 数据来自编辑器自动记录（进/减字数都计入当日）</span>
         </div>

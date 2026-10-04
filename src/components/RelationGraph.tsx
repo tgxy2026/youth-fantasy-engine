@@ -381,7 +381,7 @@ export default function RelationGraph({ rows }: Props) {
         <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap">
           {legendTypes.map(t => (
             <span key={t} className="flex items-center gap-1.5 text-10 text-ink-400">
-              <span className="w-3 h-[3px] rounded-full inline-block" style={{ background: colorOf(t) }} />
+              <span className="w-3 h-3px rounded-full inline-block" style={{ background: colorOf(t) }} />
               {t}
               {!TYPE_COLORS[t] && <span className="text-9 text-ink-500 border border-ink-700 rounded px-1 leading-none">自定义</span>}
             </span>

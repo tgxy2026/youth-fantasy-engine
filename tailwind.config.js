@@ -50,6 +50,29 @@ export default {
         '15': '15px',
         '16': '16px',
         '17': '17px',
+      },
+      // U3 · 2.8.0：任意值高频项收口成具名档（audit-ui U3）
+      // 键名策略（🔴 新增档沿用同一策略，别乱塞）：
+      //   ① minWidth / maxWidth / borderRadius 无数字默认档 ⇒ 用数字键（min-w-90 / max-w-85 / rounded-2）；
+      //   ② spacing **已有**数字档（w-11 = 2.75rem=44px）⇒ 必须带单位键（w-11px），否则语义冲突。
+      // 低频任意值（z-[..]、grid-cols-[..]、单次 w-[Npx] 等）保留为例外，不做阶梯。
+      minWidth: {
+        '90': '90px',
+        '200': '200px'
+      },
+      maxWidth: {
+        '85': '85%'
+      },
+      borderRadius: {
+        '2': '2px',
+        '3': '3px'
+      },
+      spacing: {
+        '3px': '3px',
+        '10px': '10px',
+        '11px': '11px',
+        '14px': '14px',
+        '128px': '128px'
       }
     }
   },

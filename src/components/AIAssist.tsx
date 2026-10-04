@@ -301,7 +301,7 @@ style={{ height: foldVh('60vh') }}>
             ) : (
               [...activeSession.messages, ...(loading ? [{ id: '__stream__', role: 'assistant' as const, content: streamingText || '思考中…', ts: Date.now() }] : [])].map(m => (
                 <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-xl px-3 py-2 text-12 leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-amber/15 text-amber border border-amber/25' : 'bg-ink-800 text-ink-200 border border-ink-700'}`}>
+                  <div className={`max-w-85 rounded-xl px-3 py-2 text-12 leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-amber/15 text-amber border border-amber/25' : 'bg-ink-800 text-ink-200 border border-ink-700'}`}>
                     {m.content}
                     {m.role === 'assistant' && (
                       <Button variant="icon-muted" onClick={() => copyMsg(m.id, m.content)} className="ml-2 align-middle" title="复制">

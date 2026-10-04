@@ -65,12 +65,12 @@ export default function CalendarSelect({ value, onChange, calendars }: Props) {
   const choose = (name: string) => { onChange(name); setOpen(false) }
 
   return (
-    <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
+    <div ref={wrapRef} className="relative inline-block w-full min-w-90">
       <Button variant="bare"
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
+        className="w-full !py-1 text-12 min-w-90 bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
         <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value || '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
@@ -94,7 +94,7 @@ export default function CalendarSelect({ value, onChange, calendars }: Props) {
                 onClick={() => choose(cal.name)}
                 className={`w-full text-left !justify-start px-2.5 py-1 text-12 flex items-center gap-1.5 min-w-0 hover:bg-ink-700 ${selected ? 'text-amber' : 'text-ink-200'}`}
               >
-                {selected ? <Check size={10} className="shrink-0" /> : <span className="w-[10px] shrink-0" />}
+                {selected ? <Check size={10} className="shrink-0" /> : <span className="w-10px shrink-0" />}
                 <span className="truncate flex-1">{cal.name}</span>
                 <span className="text-10 text-ink-500 shrink-0">({cal.value})</span>
               </Button>

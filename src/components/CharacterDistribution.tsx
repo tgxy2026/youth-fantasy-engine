@@ -99,7 +99,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
                       <Button variant="bare"
                         onClick={() => onNavigate('editor', ch.id)}
                         title={`${r.name} 在《${ch.title}》出场 ${c} 次 · 点击直达`}
-                        className={`w-[20px] h-[20px] rounded-[3px] ${cellColor(c)} hover:ring-1 hover:ring-amber transition-all`}
+                        className={`w-[20px] h-[20px] rounded-3 ${cellColor(c)} hover:ring-1 hover:ring-amber transition-all`}
                       />
                     </td>
                   )
@@ -111,11 +111,11 @@ export default function CharacterDistribution({ onNavigate }: Props) {
       </div>
       <div className="flex items-center gap-1.5 mt-3 text-9 text-ink-500">
         <span>少</span>
-        <span className="w-[14px] h-[14px] rounded-[3px] bg-ink-800 inline-block" />
-        <span className="w-[14px] h-[14px] rounded-[3px] bg-amber/25 inline-block" />
-        <span className="w-[14px] h-[14px] rounded-[3px] bg-amber/45 inline-block" />
-        <span className="w-[14px] h-[14px] rounded-[3px] bg-amber/70 inline-block" />
-        <span className="w-[14px] h-[14px] rounded-[3px] bg-amber inline-block" />
+        <span className="w-14px h-14px rounded-3 bg-ink-800 inline-block" />
+        <span className="w-14px h-14px rounded-3 bg-amber/25 inline-block" />
+        <span className="w-14px h-14px rounded-3 bg-amber/45 inline-block" />
+        <span className="w-14px h-14px rounded-3 bg-amber/70 inline-block" />
+        <span className="w-14px h-14px rounded-3 bg-amber inline-block" />
         <span>多</span>
         <span className="ml-3">颜色越亮 = 该章出场次数越多 · 展示全部角色（主要/次要，不含 NPC 与已退场）/ 全部章节 · 点击单元格直达章节 · 容器可滚动</span>
       </div>

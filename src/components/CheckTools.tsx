@@ -265,7 +265,7 @@ export default function CheckTools() {
               onChange={e => setWordInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && addWord()}
               placeholder="输入自定义敏感词，支持用逗号/换行分隔批量添加…"
-              className="flex-1 min-w-[200px] !py-1.5 text-12"
+              className="flex-1 min-w-200 !py-1.5 text-12"
             />
             <Button onClick={addWord} variant="secondary" size="md">添加</Button>
             <input

@@ -225,7 +225,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
                         {collapsed.has(row.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                       </Button>
                     ) : (
-                      <span className="mt-1 w-[11px] shrink-0" />
+                      <span className="mt-1 w-11px shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
                       <CellTextarea
