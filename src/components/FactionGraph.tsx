@@ -8,19 +8,15 @@ import { foldVh } from '../lib/theme'
 import { forceLayout } from '../lib/forceLayout'
 import { curvedEdge, curveMidpoint, groupColor, groupBy, convexHull, hullPath, pairKey, edgeCurveRatios, curveArrow } from '../lib/graphGrouping'
 import { buildTypeColors, makeColorLookup } from '../lib/relationColors'
+import { FACTION_PRESET_COLORS } from '../lib/palette'
 
 interface Props {
   rows: TableRow[]
   onNavigate?: (tabId: string) => void
 }
 
-const REL_COLORS: Record<string, string> = {
-  '同盟': '#34d399',
-  '敌对': '#fb7185',
-  '贸易': '#fbbf24',
-  '从属': '#818cf8',
-  '中立': '#94a3b8',
-}
+/** 势力关系图内置 5 类语义色 —— 本体在 `lib/palette.ts`（2.8.0 · #045/#046） */
+const REL_COLORS: Record<string, string> = FACTION_PRESET_COLORS
 const REL_ORDER = ['同盟', '敌对', '贸易', '从属', '中立']
 const W = 900
 const H = 600

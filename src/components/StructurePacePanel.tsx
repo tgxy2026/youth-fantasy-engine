@@ -18,6 +18,7 @@ import * as db from '../lib/db'
 import type { Chapter, TableRow } from '../lib/types'
 import { hydrateCreativeSession, updateInputs, useCreativeSession, saveInputsQuiet } from '../lib/creativeSession'
 import { getStoryTemplate } from '../lib/storyStructures'
+import { BEAT_COLORS } from '../lib/palette'
 import {
   buildChapterShares, alignBeats, alignHooks, PACE_MIN_CHAPTERS, PACE_LEVEL_LABEL,
   type BeatAlignment, type PaceLevel, type HookRowInput,
@@ -25,8 +26,7 @@ import {
 import { STORY_TEMPLATES } from '../lib/storyStructures'
 import HelpPopover from './HelpPopover'
 
-/** 节拍色板（半透明叠在暗底上；与情节画布 beat 卡 #b9a7e8 同族的柔和色） */
-const BEAT_COLORS = ['#b9a7e8', '#8fb8e8', '#8fd0b0', '#e0c987', '#e0a5a5', '#a5d5e0', '#c9b0d8', '#b8d0a0']
+/** 节拍色板 —— 本体在单一真源 `lib/palette.ts`（2.8.0 · #045/#046） */
 const beatColor = (i: number) => BEAT_COLORS[i % BEAT_COLORS.length]
 
 /** 三档徽章配色（与 CheckTools 的 sevBadge 同族；文案本身是中性描述，不含判定语气） */

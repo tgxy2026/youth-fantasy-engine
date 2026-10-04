@@ -1,3 +1,5 @@
+import { GROUP_PALETTE, GROUP_NEUTRAL } from './palette'
+
 /**
  * 关系图的分组着色与凸包轮廓（纯函数，可单测）。
  *
@@ -22,15 +24,9 @@ export interface Pt {
 /**
  * 分组类别色板（节点色 = 阵营 / 类别）。
  * 🔴 与「关系类型」的边色板是两套语义：节点色说「你属于谁」，边色说「你们什么关系」。
- * 取色策略与既有 `TYPE_COLORS` / `REL_COLORS` 一致 —— 内置色精调、未收录的按名称哈希稳定取色。
+ * 🔴 色板本体已收口到单一真源 `lib/palette.ts`（2.8.0 · #045/#046）；本模块只再导出。
  */
-const GROUP_PALETTE = [
-  '#4f8ff7', '#e06c9f', '#3fb98f', '#e8a33d', '#9b7ff0', '#e07a5f',
-  '#3fa9c9', '#8fb04a', '#d46a8a', '#6f86e0', '#c9913f', '#5fae9b',
-]
-
-/** 无分组（不属于任何阵营）时的中性色 */
-export const GROUP_NEUTRAL = '#8b8680'
+export { GROUP_NEUTRAL }
 
 /** 按分组名稳定取色：同一分组名恒定同色 */
 export function groupColor(name: string): string {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
+import { PLOT_TYPE_COLORS } from '../lib/palette'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { Loader2, Eraser, Sparkles, GitBranch, Check, X, Move, LayoutGrid } from 'lucide-react'
 import * as db from '../lib/db'
@@ -24,12 +25,12 @@ type Conn = [string, string]
 interface PlotPersist { selected: string[]; cards: CardItem[]; conns: Conn[] }
 
 const TYPE_META: Record<CardType, { label: string; color: string }> = {
-  foreshadow: { label: '待办伏笔', color: '#f0a4a4' },
-  hook: { label: '钩子爽点', color: '#e8b36a' },
-  character: { label: '角色状态', color: '#8fd0c4' },
-  next: { label: '下一章衔接', color: '#8fb4e8' },
-  beat: { label: '结构节拍', color: '#b9a7e8' },
-  idea: { label: '灵感融合', color: '#7fd18b' },
+  foreshadow: { label: '待办伏笔', color: PLOT_TYPE_COLORS.foreshadow },
+  hook: { label: '钩子爽点', color: PLOT_TYPE_COLORS.hook },
+  character: { label: '角色状态', color: PLOT_TYPE_COLORS.character },
+  next: { label: '下一章衔接', color: PLOT_TYPE_COLORS.next },
+  beat: { label: '结构节拍', color: PLOT_TYPE_COLORS.beat },
+  idea: { label: '灵感融合', color: PLOT_TYPE_COLORS.idea },
 }
 const HEADER_TO_TYPE: Record<string, CardType> = {
   '待办伏笔': 'foreshadow', '钩子与爽点': 'hook', '角色状态提醒': 'character', '下一章衔接': 'next',

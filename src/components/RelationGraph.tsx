@@ -4,6 +4,7 @@ import type { TableRow } from '../lib/types'
 import { Button } from './Button'
 import { useSvgPanZoom } from '../lib/useSvgPanZoom'
 import { foldVh } from '../lib/theme'
+import { REL_PRESET_COLORS } from '../lib/palette'
 import { getCardRecords } from '../lib/db'
 import { forceLayout } from '../lib/forceLayout'
 import { convexHull, hullPath, curvedEdge, curveMidpoint, groupColor, groupBy, pairKey, edgeCurveRatios, curveArrow } from '../lib/graphGrouping'
@@ -29,16 +30,8 @@ const W = 1000
 const H = 640
 
 /** 关系类型 → 线色（内置常见 8 类用精调色；自定义类型由 `relationColors.buildTypeColors` 哈希取色 + 撞色兜底） */
-const TYPE_COLORS: Record<string, string> = {
-  '亲属': '#f0a4a4',
-  '师徒': '#8fd0c4',
-  '盟友': '#8fb4e8',
-  '敌对': '#e57070',
-  '竞争': '#e8b36a',
-  'CP感情线': '#e894c0',
-  '主仆': '#a9a4f0',
-  '恩怨': '#e57070',
-}
+/** 人物关系图内置 8 类语义色 —— 本体在 `lib/palette.ts`（2.8.0 · #045/#046） */
+const TYPE_COLORS: Record<string, string> = REL_PRESET_COLORS
 
 /**
  * 边线型：把「关系的性质」作为第二维编码 —— 颜色说「什么关系」，线型说「这关系是什么质地」。

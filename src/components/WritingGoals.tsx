@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import * as db from '../lib/db'
 import { todayKey } from '../lib/date'
 import NumberField from './NumberField'
+import { GOAL_ACTUAL_COLOR } from '../lib/palette'
 
 interface Props {
   totalWords: number
@@ -151,7 +152,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
             <span className="text-12 font-semibold text-ink-100">近 14 天燃尽图</span>
             <div className="flex items-center gap-3 text-10 text-ink-400">
               <span className="flex items-center gap-1"><i className="w-3.5 h-0.5 bg-amber/70 inline-block rounded" /> 目标累计</span>
-              <span className="flex items-center gap-1"><i className="w-3.5 h-0.5 inline-block rounded" style={{ background: '#34d399' }} /> 实际累计</span>
+              <span className="flex items-center gap-1"><i className="w-3.5 h-0.5 inline-block rounded" style={{ background: GOAL_ACTUAL_COLOR }} /> 实际累计</span>
             </div>
           </div>
           <svg viewBox={`0 0 ${bW} ${bH}`} className="w-full" style={{ maxHeight: bH }} role="img" aria-label="近14天码字燃尽图">
@@ -168,8 +169,8 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
               <text key={i} x={bX(i)} y={bH - 6} textAnchor={i === 0 ? 'start' : i === BURNDOWN_DAYS - 1 ? 'end' : 'middle'} fontSize={9} style={{ fill: 'rgb(var(--ink-500))' }}>{burndown[i].label}</text>
             ))}
             <path d={bPath('targetCum')} fill="none" style={{ stroke: 'rgb(var(--amber))' }} strokeOpacity={0.75} strokeWidth={1.6} strokeDasharray="5 4" />
-            <path d={bPath('actualCum')} fill="none" stroke="#34d399" strokeWidth={2} />
-            <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} fill="#34d399" />
+            <path d={bPath('actualCum')} fill="none" stroke={GOAL_ACTUAL_COLOR} strokeWidth={2} />
+            <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} fill={GOAL_ACTUAL_COLOR} />
           </svg>
           <div className="text-10 text-ink-500 mt-1">
             今日累计 {burndown[BURNDOWN_DAYS - 1].actualCum.toLocaleString()} / 目标 {burndown[BURNDOWN_DAYS - 1].targetCum.toLocaleString()} 字

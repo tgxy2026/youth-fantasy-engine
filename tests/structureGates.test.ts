@@ -69,6 +69,41 @@ function stripCommentsAndStrings(src: string): string {
   return out.join('')
 }
 
+/**
+ * 只剥注释、**保留字符串字面量** —— 与上者的唯一区别就在这一点。
+ * 用途：查「色值必须走 `lib/palette.ts`」（规则⑨）这类闸，要查的恰恰是**字符串里**的 `'#rrggbb'`；
+ *   若用上者（连字符串一起剥）就等于把要查的东西擦干净了 —— 闸会永远全绿，看着最舒服也最没用。
+ * 返回长度与原串一致的空白化文本（注释位置变成空白，字符串原样保留）。
+ */
+function stripComments(src: string): string {
+  const out: string[] = src.split('')
+  let i = 0
+  const n = src.length
+  let st: 'code' | 'line' | 'block' | 'sq' | 'dq' | 'tpl' = 'code'
+  while (i < n) {
+    const c = src[i], c2 = src[i + 1]
+    if (st === 'code') {
+      if (c === '/' && c2 === '/') { st = 'line'; out[i] = ' '; out[i + 1] = ' '; i += 2; continue }
+      if (c === '/' && c2 === '*') { st = 'block'; out[i] = ' '; out[i + 1] = ' '; i += 2; continue }
+      if (c === "'") { st = 'sq'; i++; continue }
+      if (c === '"') { st = 'dq'; i++; continue }
+      if (c === '`') { st = 'tpl'; i++; continue }
+      i++; continue
+    }
+    if (st === 'line') { if (c === '\n') st = 'code'; else out[i] = ' '; i++; continue }
+    if (st === 'block') {
+      if (c === '*' && c2 === '/') { out[i] = ' '; out[i + 1] = ' '; st = 'code'; i += 2; continue }
+      if (c !== '\n') out[i] = ' '
+      i++; continue
+    }
+    // 字符串态：内容**原样保留**（只整对吃掉转义）
+    if (c === '\\') { i += 2; continue }
+    if ((st === 'sq' && c === "'") || (st === 'dq' && c === '"') || (st === 'tpl' && c === '`')) { st = 'code'; i++; continue }
+    i++
+  }
+  return out.join('')
+}
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name)
@@ -370,6 +405,44 @@ if (!SRC) {
       if (hits) bad.push(`${rel(f)}（${hits} 处）`)
     }
     ok('⑧ 源码不含字面控制字符（NUL 会让 grep 把文件判为 binary、全仓扫描失明）', bad.length === 0, bad.join(' ｜ '))
+  }
+
+  /**
+   * ⑨ 色值单一真源（2.8.0 · 台账 #045/#046 · 2026-10-04）
+   *
+   * 🔴 为什么要有它：调色板散在各处时，改一个语义色要翻 N 个文件，漏一处就出现「同一含义两处不同色」
+   *    —— `lib/relationColors.ts` 的头注释记着一次真实事故：两张关系图**各自**维护内置色板，
+   *    同一「敌对」在人物图与势力图里颜色不同。现在全部收口到 `src/lib/palette.ts`，本闸防它再散开。
+   *
+   * ⚠️ 判定用 `stripComments`（**保留字符串**）而不是 `stripCommentsAndStrings`：
+   *    色值恰恰住在字符串里，连字符串一起剥就等于把要查的东西擦干净 —— 闸会永远全绿、最舒服也最没用。
+   *
+   * 允许出现裸色值的**且仅限**下面几处 —— 它们不是在「用色」，而是在「描述一套主题 / 文档」：
+   *   ① `src/lib/palette.ts`                —— 真源本体；
+   *   ② `src/components/CustomThemeDialog.tsx` —— 自定义主题预设（作者要自定义的就是色值本身）；
+   *   ③ `src/lib/theme.ts`                  —— 内置主题注册表 + 换肤预览色块；
+   *   ④ `src/lib/tavern/exportDoc.ts`       —— 导出文档自带的内联 CSS（必须自洽，不随 App 主题）。
+   * 其余任何 `.ts` / `.tsx` 里出现 `#rgb` / `#rrggbb` 一律失败 —— 请从 `lib/palette.ts` 取。
+   */
+  {
+    const HEX_ALLOW = new Set([
+      'src/lib/palette.ts',
+      'src/components/CustomThemeDialog.tsx',
+      'src/lib/theme.ts',
+      'src/lib/tavern/exportDoc.ts',
+    ])
+    // 3 / 4 / 6 / 8 位十六进制；后瞻避免把 `#A1B2C3D4` 这类长串切碎
+    const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9a-fA-F])/g
+    const bad: string[] = []
+    for (const f of files) {
+      const r = rel(f).replace(/\\/g, '/')
+      if (HEX_ALLOW.has(r)) continue
+      const src = stripComments(text.get(f)!)
+      // `#013` / `#017` 这类是台账编号（恰好全是 hex 字符），不是颜色
+      const hits = (src.match(HEX) ?? []).filter(h => !/^#0\d\d$/.test(h))
+      if (hits.length) bad.push(`${r}（${hits.length} 处：${[...new Set(hits)].slice(0, 5).join(' ')}）`)
+    }
+    ok('⑨ 裸色值只许出现在 lib/palette.ts 与三处「主题 / 文档定义」（调色板单一真源）', bad.length === 0, bad.join(' ｜ '))
   }
 }
 

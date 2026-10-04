@@ -3,11 +3,13 @@
  * 纯搬家：语句一字未改，只给原本私有的工具与类型补了 export。无 React 依赖，可单独测。
  */
 import type { CardRecord, TableRow } from '../lib/types'
+import { MAP_LAYER_COLORS } from '../lib/palette'
 
 /** 内置类别：必须与 schema.ts 中 geography 表「类别」列的内置选项保持一致 */
 export const BUILTIN_CATEGORIES = ['大陆', '区域', '国家', '城市', '秘境', '禁地', '遗迹', '山脉']
 
-export const LAYER_COLORS = { foreshadow: '#f0a4a4', character: '#8fd0c4', timeline: '#e8b36a' }
+// 🔴 值收口到单一真源 `lib/palette.ts`（2.8.0 · #045/#046）
+export const LAYER_COLORS = MAP_LAYER_COLORS
 
 /** 字符串 → 稳定数值（用于哈希色相） */
 export function hashNum(t: string): number {

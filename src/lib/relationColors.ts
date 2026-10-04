@@ -1,3 +1,5 @@
+import { REL_EXTRA_PALETTE } from './palette'
+
 /**
  * 关系边配色（人物关系图 / 势力关系图共用 · 纯函数，可单测）。
  *
@@ -16,13 +18,8 @@
  *    换来的是「同图绝不两两撞色」；且行的顺序稳定 ⇒ 同一份数据每次打开颜色一致。
  */
 
-/** 自定义类型扩展色板（20 色，色相均匀分布；与 ink/amber 主题协调）。两张图共用。 */
-export const REL_EXTRA_PALETTE = [
-  '#e8918f', '#8fc8a9', '#8fb4e8', '#e8b36a', '#c894e8',
-  '#e894c0', '#8fd0d6', '#a9c48f', '#e8a48f', '#9fb0e8',
-  '#d6a06a', '#a89fe8', '#7fc9c0', '#c9b48f', '#e88fb4',
-  '#8fd0a9', '#b4a3e8', '#e8c98f', '#8fb8a3', '#d68fa8',
-]
+// 🔴 色板本体已收口到单一真源 `lib/palette.ts`（2.8.0 · #045/#046）；本模块只再导出，既有引用不破。
+export { REL_EXTRA_PALETTE }
 
 /** 名称 → 稳定哈希（与既有实现同算法：同类同哈希） */
 export function typeHash(s: string): number {
