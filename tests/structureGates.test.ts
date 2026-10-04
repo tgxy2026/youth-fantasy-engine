@@ -351,6 +351,26 @@ if (!SRC) {
     }
     if (suspect.length) note(`⑦ 疑似新增的保存面板（确认要不要挂 Ctrl+S）：${suspect.join('；')}`)
   }
+
+  /**
+   * ⑧ 源码不得含**字面控制字符**（NUL 等）。
+   *
+   * 🔴 为什么值得单列一条闸：文件里只要有一个 NUL，**grep / ripgrep 就把整个文件判成 binary**，
+   *    只输出「Binary file xxx matches」而不给行号 —— 于是全仓一切靠 grep 做的检查
+   *    （本闸自己的排障、`docs/` 死代码回查、结构审计、AI 的改动前核实）在这一个文件上**静默失明**：
+   *    命令有输出、看着像命中了，实际拿不到任何位置信息。
+   *    2026-10-04 实证：`src/lib/fieldAlias.ts` 里 `cols.join('<NUL>')` 就是这么写的 —— 运行时值没错
+   *    （NUL 当分隔符甚至比空格更严谨），但**源码脏**。发现它的过程正是「grep 只报文件名、要不到行号」。
+   *    已改为等价的转义写法 `'\u0000'`。制表符与换行属正常源码字符，不在禁列。
+   */
+  {
+    const bad: string[] = []
+    for (const f of files) {
+      const hits = (text.get(f)!.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g) ?? []).length
+      if (hits) bad.push(`${rel(f)}（${hits} 处）`)
+    }
+    ok('⑧ 源码不含字面控制字符（NUL 会让 grep 把文件判为 binary、全仓扫描失明）', bad.length === 0, bad.join(' ｜ '))
+  }
 }
 
 console.log(`\nstructureGates: ${pass} passed, ${fail} failed`)

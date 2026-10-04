@@ -10,6 +10,9 @@ import TableRefSelect from './TableRefSelect'
 import StoryDateInput from './StoryDateInput'
 import CalendarSelect from './CalendarSelect'
 import { useCalendarRule } from '../lib/useCalendarRule'
+import { useAliasRevision, loadAliases, sanitizeAliases, type AliasMap } from '../lib/fieldAlias'
+// 卡片页签的字段键与「字段名」按钮**同源**（moduleAliasTargets）—— 各算一份必然漂移
+import { moduleAliasTargets } from './FieldAliasButton'
 import { Button } from './Button'
 
 type DocKind = 'card' | 'table' | 'relation'
@@ -17,6 +20,12 @@ type DocKind = 'card' | 'table' | 'relation'
 /** 字段（携带原表单的控件类型，保证在此编辑时与原表单一致：下拉仍是下拉） */
 interface DocField {
   label: string
+  /**
+   * 作者自定义的**显示名**（2.7.3 字段显示名）。
+   * 🔴 只用于「给人看」：展示一律 `f.alias ?? f.label`；存储键走 `dataKey`、一切按字段名的判定仍用 `label`。
+   *    本页**只读展示、不提供改名入口**（改名仍去对应页签的「字段名」按钮）。
+   */
+  alias?: string
   value: string
   dataKey: string
   /** 'select' = 原表单里该字段是下拉选择；'characters' = 多选角色卡；'date' = 结构化故事内时间；'calendar-select' = 历法列；'tableRef' = 跨表引用（从别的设定表取值） */
@@ -64,6 +73,8 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   const [loaded, setLoaded] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [reloadKey, setReloadKey] = useState(0)
+  /** 别名版本号：任何页签改了字段显示名 → +1 ⇒ 重建索引（否则检索里还印着旧字段名） */
+  const aliasRev = useAliasRevision()
   const [editing, setEditing] = useState<{ key: string; idx: number } | null>(null)
   const [draft, setDraft] = useState('')
   const [savingField, setSavingField] = useState(false)
@@ -103,6 +114,13 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
     let cancelled = false
     ;(async () => {
       const { tableRows, cardRecords } = await db.loadAllData()
+      // 别名表：一次并发读齐本页用得到的页签（缓存命中时近乎零成本），供下面逐字段取显示名。
+      const aliasOf = new Map<string, AliasMap>()
+      await Promise.all(
+        TABS.filter(t => !hiddenTabs.has(t.id)).map(async t => {
+          aliasOf.set(t.id, await loadAliases(t.id))
+        }),
+      )
       if (cancelled) return
       const out: Doc[] = []
       // 表单型：每个已填字段一条（不进入本检索，检索聚焦人物/世界/创作）
@@ -112,6 +130,11 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
         if (hiddenTabs.has(tab.id)) continue
         if (tab.type === 'card' && (tab.group === '角色管理' || tab.group === '世界构建' || tab.group === '创作管理')) {
           const recs: CardRecord[] = cardRecords.filter(r => r.tabId === tab.id)
+          // 卡片字段键（`模块名::字段名`）与「字段名」按钮同源，清洗后 key 即「生效的显示名」
+          const clean = sanitizeAliases(
+            moduleAliasTargets(tab.modules).map(t => t.key),
+            aliasOf.get(tab.id) ?? {},
+          )
           for (const rec of recs) {
             // 角色卡需要过滤："未登场"的角色不显示
             // （人物状态字段可能位于不同模块下，如"一、基础信息::人物状态"或"NPC档案::人物状态"，统一按字段名查找）
@@ -132,12 +155,13 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                 .map(([k, v]) => {
                   const [, fieldName] = k.split('::')
                   const label = fieldName ?? k
+                  const alias = clean[k]
                   const opts = CARD_SELECT_FIELDS[label]
                   const ref = CARD_TABLE_REF_FIELDS[label]
-                  if (ref) return { label, value: v, dataKey: k, type: 'tableRef' as const, refTab: ref.tabId, refCol: ref.col, multi: ref.multi }
+                  if (ref) return { label, alias, value: v, dataKey: k, type: 'tableRef' as const, refTab: ref.tabId, refCol: ref.col, multi: ref.multi }
                   return opts
-                    ? { label, value: v, dataKey: k, type: 'select' as const, options: opts }
-                    : { label, value: v, dataKey: k }
+                    ? { label, alias, value: v, dataKey: k, type: 'select' as const, options: opts }
+                    : { label, alias, value: v, dataKey: k }
                 }),
             })
           }
@@ -151,6 +175,8 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
         if (tab.id === 'relations') continue // 人物关系走下方"按人物汇总"逻辑
         const rows: TableRow[] = tableRows.filter(r => r.tabId === tab.id)
         const colNames = tab.columns?.map(c => c.name) ?? []
+        // 列名 → 作者自定义显示名（与表头「字段名」按钮同一份存储）
+        const clean = sanitizeAliases(colNames, aliasOf.get(tab.id) ?? {})
         // 列定义索引：用于让编辑时沿用原表格的控件类型（select 列仍走下拉）
         const colMap = new Map((tab.columns ?? []).map(c => [c.name, c]))
         const isPair = RELATION_PAIR_TAB_IDS.has(tab.id)
@@ -186,17 +212,19 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
               .filter(n => r.data[n] && r.data[n].trim())
               .map(n => {
                 const col = colMap.get(n)
+                const label = n
+                const alias = clean[n]
                 return col?.calendar
-                  ? { label: n, value: r.data[n], dataKey: n, type: 'calendar-select' as const }
+                  ? { label, alias, value: r.data[n], dataKey: n, type: 'calendar-select' as const }
                   : col?.type === 'tableRef'
-                  ? { label: n, value: r.data[n], dataKey: n, type: 'tableRef' as const, refTab: col.refTab, refCol: col.refCol }
+                  ? { label, alias, value: r.data[n], dataKey: n, type: 'tableRef' as const, refTab: col.refTab, refCol: col.refCol }
                   : col?.type === 'select' && col.options
-                  ? { label: n, value: r.data[n], dataKey: n, type: 'select' as const, options: col.options }
+                  ? { label, alias, value: r.data[n], dataKey: n, type: 'select' as const, options: col.options }
                   : col?.type === 'characters'
-                  ? { label: n, value: r.data[n], dataKey: n, type: 'characters' as const }
+                  ? { label, alias, value: r.data[n], dataKey: n, type: 'characters' as const }
                   : col?.type === 'date'
-                  ? { label: n, value: r.data[n], dataKey: n, type: 'date' as const }
-                  : { label: n, value: r.data[n], dataKey: n }
+                  ? { label, alias, value: r.data[n], dataKey: n, type: 'date' as const }
+                  : { label, alias, value: r.data[n], dataKey: n }
               }),
           })
         }
@@ -249,7 +277,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
     // hiddenTabs 的内容变化由 hiddenTabsKey 等价代表（见其定义处说明）；
     // 直接依赖 hiddenTabs 这个 Set 会因引用每次重建把 effect 拖进循环，故刻意不加。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reloadKey, hiddenTabsKey])
+  }, [reloadKey, hiddenTabsKey, aliasRev])
 
   // 切换一级页签时，把二级筛选重置为 'all'
   useEffect(() => { setActiveSub('all') }, [topGroup])
@@ -288,8 +316,11 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
         if (d.subtitle && d.subtitle.toLowerCase().includes(q)) {
           return { d, rank: 0, match: d.subtitle }
         }
-        const hit = d.fields.find(f => f.value.toLowerCase().includes(q) || f.label.toLowerCase().includes(q))
-        if (hit) return { d, rank: 1, match: `${hit.label}：${hit.value}` }
+        const hit = d.fields.find(f =>
+          f.value.toLowerCase().includes(q) ||
+          f.label.toLowerCase().includes(q) ||
+          (f.alias ?? '').toLowerCase().includes(q))
+        if (hit) return { d, rank: 1, match: `${hit.alias ?? hit.label}：${hit.value}` }
         return null
       })
       .filter((x): x is { d: Doc; rank: number; match: string } => x !== null)
@@ -340,7 +371,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
           <Search size={13} className="text-amber shrink-0" />
           <span className="text-12 font-semibold text-ink-200 flex-1">设定检索</span>
           <HelpPopover title="设定检索与联动编辑" width="23rem" side="right">
-            {'左侧是全书设定的实时速查索引，按角色 / 世界 / 创作三大类组织。\n\n· 输入关键词检索本组设定（角色名、伏笔、境界、地名…）；\n· 展开任意一条可查看全部字段，点字段右侧的 ✎ 就地修改，自动同步回对应角色卡 / 设定表，不必跳页重填；\n· 原表单里是下拉选择的字段（人物状态、伏笔状态、重要程度…），在这里同样是下拉，选项可增删改，选中即保存；\n· 角色类的多选字段（如《知情权限》的「知情者」）在这里同样从已创建角色卡中多选、不可手填，与设定表完全一致；\n· 真实日期字段（写作进度、读者反馈等）点开弹出月历选择；故事内时间（某年某月某日）用结构化下拉填写，避免时间轴排序错乱；\n· 纯文本字段改完点「保存」生效；\n· 「→ 跳转到」 直达该设定所在页签做大改；\n· 右上旋转箭头可重建索引（在别处新填的内容没出现时点一下）。\n\n注：已回收的伏笔、未登场的角色不进入索引，避免刷屏。'}
+            {'左侧是全书设定的实时速查索引，按角色 / 世界 / 创作三大类组织。\n\n· 输入关键词检索本组设定（角色名、伏笔、境界、地名…）；\n· 展开任意一条可查看全部字段，点字段右侧的 ✎ 就地修改，自动同步回对应角色卡 / 设定表，不必跳页重填；\n· 字段名显示的是你自定义的显示名（在对应页签点「字段名」改），这里只读不改；\n· 原表单里是下拉选择的字段（人物状态、伏笔状态、重要程度…），在这里同样是下拉，选项可增删改，选中即保存；\n· 角色类的多选字段（如《知情权限》的「知情者」）在这里同样从已创建角色卡中多选、不可手填，与设定表完全一致；\n· 真实日期字段（写作进度、读者反馈等）点开弹出月历选择；故事内时间（某年某月某日）用结构化下拉填写，避免时间轴排序错乱；\n· 纯文本字段改完点「保存」生效；\n· 「→ 跳转到」 直达该设定所在页签做大改；\n· 右上旋转箭头可重建索引（在别处新填的内容没出现时点一下）。\n\n注：已回收的伏笔、未登场的角色不进入索引，避免刷屏。'}
           </HelpPopover>
           <Button variant="bare" iconOnly size="xs"
             onClick={() => setReloadKey(k => k + 1)}
@@ -444,7 +475,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                           return (
                             <div key={i}>
                               <div className="flex items-center gap-1">
-                                {f.label && <div className="text-10 text-amber/70">{f.label}</div>}
+                                {f.label && <div className="text-10 text-amber/70">{f.alias ?? f.label}</div>}
                                 {doc.kind !== 'relation' && !isEditing && (
                                   <Button variant="bare" iconOnly size="xs"
                                     onClick={() => { setEditing({ key: doc.key, idx: i }); setDraft(f.value) }}
@@ -467,7 +498,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                         multi={f.multi}
                                         value={draft}
                                         onChange={v => { setDraft(v); saveField(doc, f, v) }}
-                                        placeholder={`选择${f.label}`}
+                                        placeholder={`选择${f.alias ?? f.label}`}
                                       />
                                     </div>
                                   ) : f.type === 'select' && f.options ? (
