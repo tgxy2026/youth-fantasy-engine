@@ -14,9 +14,9 @@ import FormatModal from './FormatModal'
 import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '../lib/indent'
 import { nextVolumeNo } from '../lib/freeVolume'
 import {
-  FolderPlus, Trash2, PenLine, ChevronDown,
+  FolderPlus, Trash2, PenLine,
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
-  ShieldAlert, History, Search, Lock, AlignLeft, Upload, Hash, AlignCenter, Flame,
+  ShieldAlert, History, Search, Lock, AlignLeft, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
   Command, Highlighter, BookOpen, Users, X, Sparkles, Loader2, Wand2, Layers, PenTool,
   Undo2, Redo2, FilePlus2
@@ -27,7 +27,6 @@ import PromptModal from './PromptModal'
 import JieWenJi, { } from './JieWenJi'
 import { showToast } from './dialogs'
 import { type VisCtx, } from '../lib/schema'
-import { flattenChapters } from '../lib/chapterSeq'
 import { INLINE_SUGGEST_LIMITS, type InlineSuggestLength } from '../lib/aiTasks'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
@@ -250,6 +249,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           removeChapter={removeChapter}
           toggleExcludeNumbering={toggleExcludeNumbering}
           runExport={runExport}
+          exportOpen={exportOpen}
+          setExportOpen={setExportOpen}
+          setExportFormatTab={setExportFormatTab}
         />
       )}
 
@@ -274,12 +276,12 @@ style={{ zIndex: Z.pageHandle }}
       <div className="flex-1 flex flex-col min-w-0 bg-ink-950/92 relative">
         {active ? (
           <>
-            {/* 工具栏：按钮较多（22 个），窄窗口下原本会溢出到屏幕外点不到（实测溢出 618px）。
-                改为横向可滚动 + 收紧间距，保证任何窗口宽度下按钮都可达 */}
-            {/* 🔴 菜单打开时要放开纵向裁剪：`overflow-x-auto` 会连 `overflow-y` 一起变成裁剪容器，
-                而导出菜单是工具栏内的绝对定位元素（`top-full`）—— 不放开的话它只在工具栏
-                那 44px 里可见，实际等于「点了不出现」。菜单本身不宽，放开后仍能回到横滚。 */}
-            <div className={`flex items-center gap-1.5 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50 ${exportOpen ? 'overflow-visible' : 'overflow-x-auto overflow-y-hidden'}`}>
+            {/* 工具栏：按钮较多（21 个），窄窗口下原本会溢出到屏幕外点不到（实测溢出 618px）。
+                改为横向可滚动 + 收紧间距，保证任何窗口宽度下按钮都可达。
+                ⚠️ 工具栏内**不再有**绝对定位下拉 —— 导出菜单 2.8.0 已迁到左侧章节树头部，
+                所以这里可以放心用 `overflow-y-hidden`。以后若再往工具栏塞菜单，必须先放开纵向裁剪
+                （`overflow-x-auto` 会连 `overflow-y` 一起变成裁剪容器 ⇒ 菜单只剩 44px 高、「点了不出现」）。 */}
+            <div className="flex items-center gap-1.5 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50 overflow-x-auto overflow-y-hidden">
               <div className="flex items-center gap-1">
                 <Button variant="ghost" disabled={activeIdx <= 0} onClick={() => openChapter(flat[activeIdx - 1].id)} iconOnly size="sm" className="p-1 disabled:opacity-30 transition-colors shrink-0" title="上一章">
                   <ArrowLeft size={14} />
@@ -363,116 +365,6 @@ style={{ zIndex: Z.pageHandle }}
               >
                 <Wand2 size={14} />
               </Button>
-              {/* 导出菜单：本章 / 按卷 / 按章节 / 全本（图标化，节省工具栏空间） */}
-              <div className="relative shrink-0">
-                <Button variant="bare" iconOnly size="sm"
-                  onClick={() => setExportOpen(o => !o)}
-                  className={`flex items-center p-1 rounded transition-colors ${exportOpen ? 'text-amber bg-amber/15' : 'text-ink-400 hover:text-amber'}`}
-                  title="导出 TXT（本章 / 按卷 / 按章 / 全本）"
-                >
-                  <Upload size={14} />
-                  <ChevronDown size={9} className="ml-0.5 opacity-70" />
-                </Button>
-                {exportOpen && (
-                  <>
-                    {/* 全屏透明遮罩：本页「点击外部关闭」就靠它（没有额外的 document 监听），
-                        故有意 fixed inset-0。z 取页内局部层号 —— 与 JieWenJi:417 / 本文件 :1386 /
-                        Sidebar:135 的页内面板同一约定；不取 Z 是因为这些是**页内**面板、非全站常驻角标。 */}
-                    {/* 点外部关闭的遮罩：纯装饰性，给 aria-hidden 让朗读器忽略
-                        （不要求键盘可达 —— 关闭功能本身由 Esc / 再点按钮提供，见 2026-09-22 六维审计 U5） */}
-                    <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setExportOpen(false)} aria-hidden />
-                    <div className="absolute right-0 top-full mt-1 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 overflow-y-auto"
-style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
-                      <Button variant="bare"
-                        onClick={() => runExport(m => m.exportChapter(projectName, active))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                      >
-                        <Upload size={11} className="text-amber" /> 导出本章（{active.title}）
-                      </Button>
-                      <Button variant="bare"
-                        onClick={() => runExport(m => m.exportWholeBook(projectName, volumes, chapters))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                      >
-                        <Upload size={11} className="text-amber" /> 导出全本（一卷一章）
-                      </Button>
-                      <div className="my-1 mx-2 border-t border-ink-700" />
-                      <div className="px-3 py-1 text-10 text-ink-500">导出全文（多格式）</div>
-                      <Button variant="bare"
-                        onClick={() => { setExportOpen(false); setExportFormatTab('markdown') }}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                      >
-                        <Upload size={11} className="text-amber" /> 导出全书（Markdown）
-                      </Button>
-                      <Button variant="bare"
-                        onClick={() => runExport(m => m.exportEPUB(projectName, volumes, chapters))}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                      >
-                        <Upload size={11} className="text-amber" /> 导出全书（EPUB）
-                      </Button>
-                      <Button variant="bare"
-                        onClick={() => { setExportOpen(false); setExportFormatTab('docx') }}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                        title="Word（DOCX）：可选排版（字号 / 对齐 / 缩进 / 行距 / 字体），也可一键导出投稿稿（书名 + 简介 + 选定章节）"
-                      >
-                        <Upload size={11} className="text-amber" /> 导出全书（Word · 可排版 / 投稿稿）
-                      </Button>
-                      <Button variant="bare"
-                        onClick={() => { setExportOpen(false); setExportFormatTab('platform') }}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                        title="干净纯文本，可配章节标题样式 / 段落间距 / 卷标题 / 附设定集"
-                      >
-                        <Upload size={11} className="text-amber" /> 导出全书（平台粘贴版）
-                      </Button>
-                      <div className="my-1 mx-2 border-t border-ink-700" />
-                      <div className="px-3 py-1 text-10 text-ink-500">按卷导出</div>
-                      {volumes.length === 0 ? (
-                        <div className="px-3 py-1.5 text-11 text-ink-500">暂无分卷</div>
-                      ) : volumes.map(vol => (
-                        <Button variant="bare"
-                          key={vol.id}
-                          onClick={() => runExport(m => m.exportVolume(projectName, vol, chapters))}
-                          className="w-full text-left !justify-start pl-5 pr-3 py-1 text-12 text-ink-200 hover:bg-ink-700 truncate"
-                          title={`导出「${vol.title}」`}
-                        >
-                          {vol.title}（{chapters.filter(c => c.volumeId === vol.id).length} 章）
-                        </Button>
-                      ))}
-                      <div className="my-1 mx-2 border-t border-ink-700" />
-                      <div className="px-3 py-1 text-10 text-ink-500">按章节导出</div>
-                      <Button variant="bare"
-                        onClick={async () => {
-                          // 每章一个文件——使用循环 setTimeout 避免浏览器拦截多个下载
-                          const m = await import('../lib/exporter')
-                          let i = 0
-                          const all = flattenChapters(volumes, chapters)
-                          const tick = () => {
-                            if (i >= all.length) return
-                            m.exportChapter(projectName, all[i++])
-                            setTimeout(tick, 250)
-                          }
-                          tick()
-                          setExportOpen(false)
-                        }}
-                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-200 hover:bg-ink-700 flex items-center gap-2"
-                      >
-                        <Upload size={11} /> 全部章节逐一导出（{chapters.length} 个文件）
-                      </Button>
-                      <div className="max-h-40 overflow-y-auto">
-                        {flattenChapters(volumes, chapters).map(ch => (
-                          <Button variant="bare"
-                            key={ch.id}
-                            onClick={() => runExport(m => m.exportChapter(projectName, ch))}
-                            className="w-full text-left !justify-start pl-5 pr-3 py-0.5 text-11 text-ink-300 hover:bg-ink-700 truncate"
-                            title={ch.title}
-                          >
-                            {ch.title}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
               <div className="w-px h-4 bg-ink-700" />
               {/* 保存：图标化，有未保存的改动时琥珀高亮+圆点 */}
               <Button variant="bare" iconOnly size="sm"
@@ -609,7 +501,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI 与导出】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n· 上传箭头：导出菜单（本章 / 全本 / 按卷 / 按章，支持 TXT / Markdown / EPUB / DOCX / 平台粘贴版）；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
             </div>
 

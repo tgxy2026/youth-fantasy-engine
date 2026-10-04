@@ -6,6 +6,8 @@ import { BookMarked, Upload, FolderPlus, GripVertical, ChevronDown, ChevronRight
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
 import { isFreeVolume, realVolumes, nextVolumeNo } from '../lib/freeVolume'
 import { useEffect, useRef } from 'react'
+import { foldVh } from '../lib/theme'
+import { flattenChapters } from '../lib/chapterSeq'
 
 /**
  * 正文编辑页的**左侧章节树**（2026-09-19 从 NovelEditor.tsx 抽出，原 1113~1287 行）。
@@ -53,6 +55,11 @@ interface Props {
   removeChapter: (ch: Chapter) => void
   toggleExcludeNumbering: (ch: Chapter) => void
   runExport: (fn: (m: typeof import('../lib/exporter')) => void) => void
+  /** 导出菜单开合 —— 状态留在 useNovelEditorModel（`runExport` 里要顺手关掉），此处只读用 */
+  exportOpen: boolean
+  setExportOpen: Dispatch<SetStateAction<boolean>>
+  /** 打开「导出全书（Markdown / Word / 平台粘贴版）」格式弹窗 —— 弹窗本体挂在 NovelEditor 上 */
+  setExportFormatTab: (t: 'platform' | 'markdown' | 'docx' | null) => void
 }
 
 export default function NovelEditorChapterTree({
@@ -60,6 +67,7 @@ export default function NovelEditorChapterTree({
   overKey, setOverKey, dragKind, setDragKind, setDragId, resetDrag, handleDrop,
   setNamePrompt, nextChapterNo, activeId, openChapter, chapterSeqs,
   removeVolume, removeChapter, toggleExcludeNumbering, runExport,
+  exportOpen, setExportOpen, setExportFormatTab,
 }: Props) {
   // 2.6.1 配套：打开项目恢复到上次章节（可能在很深的卷里）时，把高亮行滚进可视区，
   // 否则长列表里落点根本看不见。block:'nearest' 保证用户手动点选时（本就在可视区内）零滚动。
@@ -69,6 +77,9 @@ export default function NovelEditorChapterTree({
     const el = listRef.current.querySelector(`[data-chapter-id="${CSS.escape(activeId)}"]`)
     el?.scrollIntoView({ block: 'nearest' })
   }, [activeId])
+  // 与 useNovelEditorModel 的 `active` 同一派生（同一份 chapters / activeId）：`active` 那边是
+  // `chapters.find(c => c.id === activeId) ?? null`。此处自带一份，省得再往这棵树里传一个 prop。
+  const activeChapter = chapters.find(c => c.id === activeId) ?? null
   return (
       <div
         className="relative shrink-0 border-r border-ink-700 bg-ink-900 flex flex-col"
@@ -85,16 +96,124 @@ export default function NovelEditorChapterTree({
           <span className="text-12 font-semibold text-ink-200 flex items-center gap-1.5">
             <BookMarked size={13} className="text-amber" /> 章节
             <HelpPopover title="卷章目录怎么用" width="22rem" side="right">
-              {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 不想归卷的章节走右上「新建自由章节」—— 它们统一收进「自由章节」托管卷（默认折叠、不可删除、排全书最后），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「下载」图标一键导出全书 TXT。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
+              {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 不想归卷的章节走右上「新建自由章节」—— 它们统一收进「自由章节」托管卷（默认折叠、不可删除、排全书最后），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「导出」图标是全书导出的唯一入口：本章 / 全本 TXT / Markdown / EPUB / Word（可排版、可导投稿稿）/ 平台粘贴版 / 按卷 / 按章节逐一导出。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
             </HelpPopover>
           </span>
           <div className="flex gap-1">
-            <Button variant="icon-amber"
-              onClick={() => runExport(m => m.exportWholeBook(projectName, volumes, chapters))}
-              className="p-1 shrink-0"
-              title="导出全书 TXT">
-              <Upload size={14} />
-            </Button>
+            {/* 导出：本章 / 全本 / 多格式 / 按卷 / 按章节 —— 全书导出的**唯一入口**。
+                2.8.0 从编辑器工具栏迁来：原先工具栏与本处各挂一个导出按钮、功能重叠且不一致
+                （本处只导全本 TXT），现统一收在这里的富功能版。
+                按钮用 `bare` + 显式 `h-8`：要让「图标 + 折叠箭头」并排，不能用 icon-amber
+                （它是定宽 w-8，会被箭头挤破）；h-8 与同排两个 icon-amber 键等高。 */}
+            <div className="relative shrink-0">
+              <Button variant="bare"
+                onClick={() => setExportOpen(o => !o)}
+                className={`flex items-center p-1 h-8 shrink-0 rounded-lg transition-colors ${exportOpen ? 'text-amber bg-amber/15' : 'text-ink-400 hover:text-amber'}`}
+                title="导出全书：本章 / 全本 TXT / Markdown / EPUB / Word（可排版·投稿稿）/ 平台粘贴版 / 按卷 / 按章节"
+              >
+                <Upload size={14} />
+                <ChevronDown size={9} className="ml-0.5 opacity-70" />
+              </Button>
+              {exportOpen && (
+                <>
+                  {/* 点外部关闭的遮罩：纯装饰性，给 aria-hidden 让朗读器忽略
+                      （关闭功能本身由 Esc / 再点按钮提供，见 2026-09-22 六维审计 U5） */}
+                  <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setExportOpen(false)} aria-hidden />
+                  {/* left-0 而非 right-0：章节栏最窄只有 200px、菜单 min-w 220px，右对齐会越过屏幕左缘 */}
+                  <div className="absolute left-0 top-full mt-1 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 overflow-y-auto"
+style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
+                    {activeChapter && (
+                      <Button variant="bare"
+                        onClick={() => runExport(m => m.exportChapter(projectName, activeChapter))}
+                        className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                      >
+                        <Upload size={11} className="text-amber" /> 导出本章（{activeChapter.title}）
+                      </Button>
+                    )}
+                    <Button variant="bare"
+                      onClick={() => runExport(m => m.exportWholeBook(projectName, volumes, chapters))}
+                      className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                    >
+                      <Upload size={11} className="text-amber" /> 导出全本（一卷一章）
+                    </Button>
+                    <div className="my-1 mx-2 border-t border-ink-700" />
+                    <div className="px-3 py-1 text-10 text-ink-500">导出全文（多格式）</div>
+                    <Button variant="bare"
+                      onClick={() => { setExportOpen(false); setExportFormatTab('markdown') }}
+                      className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                    >
+                      <Upload size={11} className="text-amber" /> 导出全书（Markdown）
+                    </Button>
+                    <Button variant="bare"
+                      onClick={() => runExport(m => m.exportEPUB(projectName, volumes, chapters))}
+                      className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                    >
+                      <Upload size={11} className="text-amber" /> 导出全书（EPUB）
+                    </Button>
+                    <Button variant="bare"
+                      onClick={() => { setExportOpen(false); setExportFormatTab('docx') }}
+                      className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                      title="Word（DOCX）：可选排版（字号 / 对齐 / 缩进 / 行距 / 字体），也可一键导出投稿稿（书名 + 简介 + 选定章节）"
+                    >
+                      <Upload size={11} className="text-amber" /> 导出全书（Word · 可排版 / 投稿稿）
+                    </Button>
+                    <Button variant="bare"
+                      onClick={() => { setExportOpen(false); setExportFormatTab('platform') }}
+                      className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                      title="干净纯文本，可配章节标题样式 / 段落间距 / 卷标题 / 附设定集"
+                    >
+                      <Upload size={11} className="text-amber" /> 导出全书（平台粘贴版）
+                    </Button>
+                    <div className="my-1 mx-2 border-t border-ink-700" />
+                    <div className="px-3 py-1 text-10 text-ink-500">按卷导出</div>
+                    {volumes.length === 0 ? (
+                      <div className="px-3 py-1.5 text-11 text-ink-500">暂无分卷</div>
+                    ) : volumes.map(vol => (
+                      <Button variant="bare"
+                        key={vol.id}
+                        onClick={() => runExport(m => m.exportVolume(projectName, vol, chapters))}
+                        className="w-full text-left !justify-start pl-5 pr-3 py-1 text-12 text-ink-200 hover:bg-ink-700 truncate"
+                        title={`导出「${vol.title}」`}
+                      >
+                        {vol.title}（{chapters.filter(c => c.volumeId === vol.id).length} 章）
+                      </Button>
+                    ))}
+                    <div className="my-1 mx-2 border-t border-ink-700" />
+                    <div className="px-3 py-1 text-10 text-ink-500">按章节导出</div>
+                    <Button variant="bare"
+                      onClick={async () => {
+                        // 每章一个文件——使用循环 setTimeout 避免浏览器拦截多个下载
+                        const m = await import('../lib/exporter')
+                        let i = 0
+                        const all = flattenChapters(volumes, chapters)
+                        const tick = () => {
+                          if (i >= all.length) return
+                          m.exportChapter(projectName, all[i++])
+                          setTimeout(tick, 250)
+                        }
+                        tick()
+                        setExportOpen(false)
+                      }}
+                      className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-200 hover:bg-ink-700 flex items-center gap-2"
+                    >
+                      <Upload size={11} /> 全部章节逐一导出（{chapters.length} 个文件）
+                    </Button>
+                    <div className="max-h-40 overflow-y-auto">
+                      {flattenChapters(volumes, chapters).map(ch => (
+                        <Button variant="bare"
+                          key={ch.id}
+                          onClick={() => runExport(m => m.exportChapter(projectName, ch))}
+                          className="w-full text-left !justify-start pl-5 pr-3 py-0.5 text-11 text-ink-300 hover:bg-ink-700 truncate"
+                          title={ch.title}
+                        >
+                          {ch.title}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             <Button variant="icon-amber" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} title="新建卷" className="p-1 shrink-0">
               <FolderPlus size={13} />
             </Button>
