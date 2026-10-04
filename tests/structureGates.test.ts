@@ -206,7 +206,7 @@ if (!SRC) {
   //    aiParse 的「剥代码块 / 切最外层大括号」对它们没有意义）。
   //    故闸的作用域 = AI 链路模块 + `src/lib/ai*`；其余位置**不算违规**。
   const AI_CHAIN = (r: string) =>
-    /^src\/lib\/ai(Tasks|Workflow|Parse|Context)?\//.test(r) ||
+    /^src\/lib\/ai(Tasks|Workflow|Parse|Context|Core)?\//.test(r) ||
     /^src\/lib\/(ai|aiParse|aiTasks|aiWorkflow|autoContinue)\.ts$/.test(r) ||
     /^src\/lib\/(flow|bookbreak)\//.test(r) ||
     /^src\/lib\/tavern\/(engine|story|draft|vars)\.ts$/.test(r)
@@ -216,7 +216,7 @@ if (!SRC) {
    */
   const JSON_PARSE_OK: Record<string, string> = {
     'src/lib/aiParse.ts': '唯一合法出口 —— 本规则要保护的就是它，它自己当然要实现 JSON.parse',
-    'src/lib/ai.ts': 'SSE **行解析器**：解析的是传输信封（每行 `data:{…}` 或裸 JSON 增量），不是「模型正文 → 结构化数据」',
+    'src/lib/aiCore/transport.ts': '2.8.0 起由 `ai.ts` 迁来。传输层两处**信封解析**：① SSE 行解析器（每行 `data:{…}` 或裸 JSON 增量）；② 服务商 HTTP 错误体（describeApiError 抠 error.message）—— 都不是「模型正文 → 结构化数据」',
   }
   {
     const bad: string[] = []

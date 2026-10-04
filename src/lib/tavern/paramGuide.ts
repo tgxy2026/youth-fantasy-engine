@@ -189,42 +189,49 @@ export const GUIDE_TIMEOUT: ParamGuide = {
 
 export const GUIDE_NUM_CTX: ParamGuide = {
   min: 2048, max: 2097152, step: 1024, unit: '词元',
+  // 🔴 2026-10-04（2.8.0）老大定案：**档位不再按显存分级**。
+  //    这里默认就取「模型配置 → 上下文窗口」里填的那个值，讲显存只会让人不敢填真实值。
+  //    ⚠️ 唯一保留的风险提示放在最上一段（真会加载失败），其余各段只说「装得下多少内容」。
   bands: [
-    { from: 2048, to: 4096, name: '小显存', effect: '8G 显存跑 7B 的安全区；中文大约 3000~6000 字，所以「上下文预算」要明显小于它。' },
-    { from: 4096, to: 8192, name: '常规本地', effect: '12~16G 显存的常用档，也是本地 7B~14B 的舒适区。' },
-    { from: 8192, to: 32768, name: '大显存', effect: '24G 以上显存可用；显存占用随它近似线性增长，调大一档就要多留一份余量。', recommended: true },
-    { from: 32768, to: 131072, name: '服务器级', effect: '需要 48G+ 显存或量化后才可行；设得超过实际能承载的量，模型会直接加载失败。' },
-    { from: 131072, to: 2097152, name: '超大窗口（按模型实测填）', effect: '实测参考：RTX 5090 / 64GB 上 4B 与长文本模型能跑 256K，27B 级在 96K~128K 就吃满显存。⚠️ 超出模型能承载的量，Ollama 会直接加载失败或把内容静默截断（先裁协议与设定）——请按你自己实测的上限填，别照着标称想当然。' },
+    { from: 2048, to: 8192, name: '很小', effect: '只装得下几千字的中文内容：长一点的对话历史会被直接挤出去。' },
+    { from: 8192, to: 32768, name: '常规', effect: '本地模型的常见档位，也是本项目的出厂值（32768）；中文约两万字出头。', recommended: true },
+    { from: 32768, to: 131072, name: '大窗口', effect: '能一口气装下整场推演外加较完整的项目设定；占用随它近似线性增长。' },
+    { from: 131072, to: 524288, name: '超大窗口', effect: '长文本模型与量化模型跑得动的量级；设得太高会加载失败，按实测上限填。' },
+    { from: 524288, to: 2097152, name: '极端窗口', effect: '超过模型能承载的量，Ollama 会直接加载失败或把内容静默截断（先裁协议与设定）—— 只填你自己实测跑得动的值。' },
   ],
 }
 
+// 🔴 2026-10-04（2.8.0）：三项记忆上限的静态上界**跟着预算一起放宽**（与 TUNING_LIMITS 同源，
+//    单测逐项比对）。旧上界（1 万 / 2 万 / 2000）是按本地 32K 定的，1M 云端窗口下会把
+//    按比例算出的记忆（6.8 万）硬夹回 2 万 —— 窗口越大、记忆反而越不匹配。
+//    上界只作兜底，界面上的真实刻度由 `dynamicGuide()` 按当前模型的推荐值生成。
 export const GUIDE_SOFT_LIMIT: ParamGuide = {
-  min: 200, max: 10000, step: 100, unit: '字',
+  min: 200, max: 200000, step: 100, unit: '字',
   bands: [
     { from: 200, to: 800, name: '很紧', effect: '会频繁提醒超限、逼你去压缩，细小情节基本存不住。' },
     { from: 800, to: 2000, name: '常规', effect: '够放下六栏的要点，也不会和对话历史抢太多上下文。', recommended: true },
     { from: 2000, to: 5000, name: '宽松', effect: '细节更全，代价是每轮都多占上下文 —— 它和「上下文预算」是此消彼长的。' },
-    { from: 5000, to: 10000, name: '很大', effect: '单是记忆就能吃掉大半上下文预算，模型会被设定挤满、顾不上对话历史。' },
+    { from: 5000, to: 200000, name: '很大', effect: '单是记忆就能吃掉大半上下文预算，模型会被设定挤满、顾不上对话历史。（上界只作兜底，界面上的真实刻度按当前模型的推荐值动态生成）' },
   ],
 }
 
 export const GUIDE_HARD_LIMIT: ParamGuide = {
-  min: 200, max: 20000, step: 100, unit: '字',
+  min: 200, max: 400000, step: 100, unit: '字',
   bands: [
     { from: 200, to: 1200, name: '很紧', effect: '超过就压缩，日记与关系状态会被频繁砍短，长期看记忆会「越来越只剩骨架」。' },
     { from: 1200, to: 3000, name: '常规', effect: '在软上限之上留了一倍余量，够撑到下次整理。', recommended: true },
     { from: 3000, to: 8000, name: '宽松', effect: '长线陪伴（连着几个月）才需要；日常对话到这个量级说明该清一清了。' },
-    { from: 8000, to: 20000, name: '很大', effect: '单是记忆就接近或超过上下文预算，模型忙着记设定、记不住刚说过的话。' },
+    { from: 8000, to: 400000, name: '很大', effect: '单是记忆就接近或超过上下文预算，模型忙着记设定、记不住刚说过的话。（上界只作兜底，真实刻度按当前模型的推荐值动态生成）' },
   ],
 }
 
 export const GUIDE_LONGTERM_LIMIT: ParamGuide = {
-  min: 100, max: 2000, step: 50, unit: '字',
+  min: 100, max: 40000, step: 50, unit: '字',
   bands: [
     { from: 100, to: 200, name: '极简', effect: '长期摘要只剩几句话，久远的事容易被压没，角色会「忘了你们怎么认识的」。' },
     { from: 200, to: 500, name: '常规', effect: '能留住一个「她记得的过去」的轮廓，也留得住压缩空间。', recommended: true },
     { from: 500, to: 1200, name: '详细', effect: '久远经历更完整；但它是超限时「最先」被砍的一栏，写太长意义有限。' },
-    { from: 1200, to: 2000, name: '偏大', effect: '会明显挤占「关键事实」「未爆的雷」这两栏的空间 —— 那两栏才是不能丢的。' },
+    { from: 1200, to: 40000, name: '偏大', effect: '会明显挤占「关键事实」「未爆的雷」这两栏的空间 —— 那两栏才是不能丢的。（上界只作兜底，真实刻度按当前模型的推荐值动态生成）' },
   ],
 }
 
@@ -332,4 +339,142 @@ export const GUIDE_SAMPLING = {
 /** 找出某个值落在哪一段。找不到（越界）时返回最后一段，调用方不必先夹取 */
 export function bandOf(g: ParamGuide, v: number): ParamBand {
   return g.bands.find(b => v <= b.to) ?? g.bands[g.bands.length - 1]
+}
+
+// ============================================================
+// 动态五档（2.8.0）：档位围绕「当前模型的推荐值」生成
+// ============================================================
+//
+// 【为什么不再用固定档位】出厂那几档是按本地 32K 窗口定的。接上 128K / 256K / 1M 的模型后，
+// 推荐值早就跑到最后一档去了，界面却仍在高亮「超长 / 超大窗口配套」—— 作者看到的永远是
+// 「我怎么又拉过头了」。改成跟着推荐值走：换模型，整条刻度一起平移，推荐档永远在中间。
+//
+// 【口径】以推荐值 r 为中心，上下各两档，切点取档位之间的中点（0.625 / 0.875 / 1.25 / 1.75），
+// 于是「推荐值 ±25%」都还算推荐档 —— 手调一点点不会立刻跳档，手感更稳。
+
+/** 能按当前模型动态生成档位的项（都是字数 / 条数类；采样类语义与窗口无关，不在此列） */
+export const DYNAMIC_GUIDE_KEYS = [
+  'contextBudget', 'numCtx', 'fixedOverheadChars', 'softLimit', 'hardLimit', 'longTermLimit', 'diaryKeep',
+] as const
+export type DynamicGuideKey = (typeof DYNAMIC_GUIDE_KEYS)[number]
+
+/** 五档切点（相对推荐值的倍数） */
+const DYNAMIC_EDGES = [0.625, 0.875, 1.25, 1.75] as const
+
+type BandText = { name: string; effect: string }
+
+/**
+ * 五档文案：一律**按推荐值插值**，禁写字面量（审计纪律 —— 写死数字迟早与实际换算漂移）。
+ * `lo` / `hi` 是推荐段的真实上下界，文案里直接念它，作者看到的数字就是当前值会落进去的范围。
+ */
+const DYNAMIC_TEXTS: Record<DynamicGuideKey, (r: number, lo: number, hi: number) => BandText[]> = {
+  contextBudget: (r, lo, hi) => [
+    { name: '偏小', effect: `约为当前推荐值 ${r} 的一半：设定 + 记忆 + 对话历史挤在一起，聊到十几轮就会开始忘前文。` },
+    { name: '略小', effect: `低于推荐值 ${r}：能带进去的设定变少，角色容易忘了自己是谁、忘了刚聊过什么。` },
+    { name: '推荐', effect: `${lo} ~ ${hi}：按当前模型的上下文窗口折减得出，设定与对话历史都够用。` },
+    { name: '略大', effect: `高于推荐值 ${r}：设定带得更全，代价是每轮更慢、云端按量计费时更贵。` },
+    { name: '偏大', effect: `${hi} 以上：接近窗口承载上限 —— 本地模型会明显变慢、显存吃紧，超出承载量会被静默截断（先裁协议与设定）。` },
+  ],
+  numCtx: (r, lo, hi) => [
+    { name: '偏小', effect: `远低于模型配置里填的窗口：模型能装的内容被主动砍掉大半，长对话会早早被截断。` },
+    { name: '略小', effect: `低于模型配置窗口（${r}）：跑得更稳，但没用满模型能力 —— 空着的窗口并不会换来速度。` },
+    { name: '推荐', effect: `${lo} ~ ${hi}：与「模型配置 → 上下文窗口」里填的值一致，默认就取那里。` },
+    { name: '略大', effect: `高于模型配置窗口（${r}）：本地模型按这个数分配显存，超过能承载的量会直接加载失败。` },
+    { name: '偏大', effect: `${hi} 以上：显存占用近似随它线性增长，最常见的后果是模型加载不起来。` },
+  ],
+  fixedOverheadChars: (r, lo, hi) => [
+    { name: '偏小', effect: `几乎不留余量：模型端若比我们估的多吃一点，长对话里容易突然报超长。` },
+    { name: '略小', effect: `低于按当前预算推算的余量（${r}）：多数时候够用，长推演末尾可能顶到边界。` },
+    { name: '推荐', effect: `${lo} ~ ${hi}：按当前预算的约百分之一推算，够覆盖各层标题与少量未计入的内容。` },
+    { name: '略大', effect: `高于推算值 ${r}：每轮白扣一部分额度，可用的对话历史被无谓压缩。` },
+    { name: '偏大', effect: `${hi} 以上：历史额度被砍掉一大截 —— 长推演会「忽然失忆」，而且很难联想到是这个数造成的。` },
+  ],
+  softLimit: (r, lo, hi) => [
+    { name: '偏小', effect: `频繁提醒超限、逼你去压缩，细小情节基本存不住。` },
+    { name: '略小', effect: `低于推荐值 ${r}：要点记得住、细节会丢；对话一长就开始滚掉早期内容。` },
+    { name: '推荐', effect: `${lo} ~ ${hi}：按当前上下文预算同比推算，够放下六栏要点，也不和对话历史抢太多。` },
+    { name: '略大', effect: `高于推荐值 ${r}：细节更全，代价是每轮多占上下文 —— 它与「上下文预算」是此消彼长的。` },
+    { name: '偏大', effect: `${hi} 以上：单是记忆就吃掉大半预算，模型被设定挤满、顾不上刚说过的话。` },
+  ],
+  hardLimit: (r, lo, hi) => [
+    { name: '偏小', effect: `超过就压缩，日记与关系状态被频繁砍短，长期看记忆只会剩骨架。` },
+    { name: '略小', effect: `低于推荐值 ${r}：余量偏紧，撑不到下次整理就得先压一压。` },
+    { name: '推荐', effect: `${lo} ~ ${hi}：按当前预算同比推算，在软上限之上留了一倍余量，够撑到下次整理。` },
+    { name: '略大', effect: `高于推荐值 ${r}：长线陪伴（连着几个月）才需要这个量级；日常对话到这儿说明该清一清了。` },
+    { name: '偏大', effect: `${hi} 以上：记忆接近或超过整个上下文预算，模型忙着记设定、记不住对话。` },
+  ],
+  longTermLimit: (r, lo, hi) => [
+    { name: '偏小', effect: `长期摘要只剩几句话，久远的事容易被压没，角色会忘了你们怎么认识的。` },
+    { name: '略小', effect: `低于推荐值 ${r}：只留得下一个粗略轮廓，细节一压缩就没了。` },
+    { name: '推荐', effect: `${lo} ~ ${hi}：按记忆硬上限同比推算，留得住「她记得的过去」，也留得住压缩空间。` },
+    { name: '略大', effect: `高于推荐值 ${r}：久远经历更完整；但它是超限时最先被砍的一栏，写太长意义有限。` },
+    { name: '偏大', effect: `${hi} 以上：会明显挤占「关键事实」「未爆的雷」两栏 —— 那两栏才是不能丢的。` },
+  ],
+  diaryKeep: (r, lo, hi) => [
+    { name: '偏小', effect: `两三天前的日记就滚掉了，往前翻会发现断档。` },
+    { name: '略小', effect: `少于推荐值 ${r} 条：只记得住最近几天，角色回忆不起「前两天」做过什么。` },
+    { name: '推荐', effect: `${lo} ~ ${hi} 条：按预算开方缩放（涨得比预算慢），一周左右的生活痕迹都在。` },
+    { name: '略大', effect: `高于推荐值 ${r} 条：半个月到三周；占用随条数线性增长，每一条都是一小段文字。` },
+    { name: '偏大', effect: `${hi} 条以上：几乎等于又存了一份近期剧情，会和「最近对话」重复占额度。` },
+  ],
+}
+
+function snapTo(v: number, step: number): number {
+  return step > 0 ? Math.round(v / step) * step : Math.round(v)
+}
+
+/** 把候选切点整理成「严格递增、落在 (min,max) 内、彼此至少差一个 step」的边界序列 */
+function tidyEdges(cands: number[], min: number, max: number, step: number, keep: (v: number) => boolean): number[] {
+  const out: number[] = []
+  for (const raw of cands) {
+    const v = Math.min(max, Math.max(min, snapTo(raw, step)))
+    if (!keep(v)) continue
+    const lo = out.length ? out[out.length - 1] + step : min
+    if (v < lo) continue
+    if (out.length && v > max) continue
+    out.push(v)
+  }
+  return out
+}
+
+/**
+ * 以「当前模型的推荐值」为中心生成档位表。
+ *
+ * 🔴 三条不变量（与静态表同一套闸门，由单测锁住）：
+ *   ① 首段 from === min、末段 to === max，段与段首尾相接、无空隙无重叠；
+ *   ② **恰好一个** recommended 段，且**推荐值真的落在这一段里**（否则界面上的「推荐」是假的）；
+ *   ③ min / step 一律沿用静态表 —— 只有上界与分段被重算，输入框手感不变。
+ *
+ * 极窄的取值范围（推荐值贴着 min 或 max）会自动退化成三档 / 四档，不硬凑五档 ——
+ * 硬凑会造出 `from === to` 的空段，反而让「当前值落在哪一段」变得没有意义。
+ */
+export function dynamicGuide(key: DynamicGuideKey, rec: number): ParamGuide {
+  const g = PARAM_GUIDES[key]
+  const r = Math.min(g.max, Math.max(g.min, snapTo(rec, g.step)))
+  const max = Math.max(g.max, snapTo(r * 2.5, g.step))
+
+  const cands = DYNAMIC_EDGES.map(m => r * m)
+  // 下方两档必须**严格小于** r（`bandOf` 用 v <= to，边界值归下面那一段，
+  // 若下界正好等于 r，推荐值就会被判进「略小」档 —— 推荐档形同虚设）
+  const below = tidyEdges(cands, g.min, max, g.step, v => v < r && v > g.min)
+  const above = tidyEdges(cands, g.min, max, g.step, v => v >= r && v < max)
+
+  const bounds = [...below, ...above]
+  const froms = [g.min, ...bounds]
+  const tos = [...bounds, max]
+  const recIdx = below.length
+  const texts = DYNAMIC_TEXTS[key](r, froms[recIdx], tos[recIdx])
+
+  const bands: ParamBand[] = froms.map((from, i) => {
+    const t = texts[Math.min(i, texts.length - 1)]
+    return {
+      from,
+      to: Math.max(from, tos[i]),
+      name: t.name,
+      effect: t.effect,
+      ...(i === recIdx ? { recommended: true } : {}),
+    }
+  })
+
+  return { min: g.min, max, step: g.step, unit: g.unit, bands }
 }

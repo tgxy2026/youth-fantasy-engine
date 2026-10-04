@@ -13,10 +13,10 @@
 import * as presets from '../lib/tavern/presets'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadProviders, loadActiveId, AIProvider } from '../lib/ai'
-import { adviseCapacity, scaleGuide } from '../lib/modelCapacity'
+import { adviseCapacity, modelFingerprintOf } from '../lib/modelCapacity'
 import { showToast, confirmDialog } from './dialogs'
 import { TavernPreset } from '../lib/tavern/presets'
-import { PARAM_GUIDES } from '../lib/tavern/paramGuide'
+import { dynamicGuide } from '../lib/tavern/paramGuide'
 import { VarKey } from '../lib/tavern/types'
 import { DEFAULT_POST_RULES, previewPostRules, PostRule } from '../lib/tavern/postRules'
 import { getTavernSettings, saveTavernSettings, resetTavernSettings, DEFAULT_TAVERN_SETTINGS, TavernSettings, TavernProfile } from '../lib/tavern/settings'
@@ -355,15 +355,17 @@ export function useTavernControlModel() {
 
   // 「跟着模型走」的推荐值：预算 / 窗口（本地）/ 记忆三项 / 日记保留
   const rec = cap.suggest
-  // 输入框的上限同样是按本地设备定的（contextBudget 静态上限 100000）——
-  // 1M 窗口的云端模型本可用到 41 万却填不进去，所以按推荐值动态放宽。
-  // 推荐值没超过静态上限时 scaleGuide 原样返回，本地行为完全不变。
-  const gBudget = scaleGuide(PARAM_GUIDES.contextBudget, rec.contextBudget)
-  const gNumCtx = cap.local && rec.numCtx != null ? scaleGuide(PARAM_GUIDES.numCtx, rec.numCtx) : PARAM_GUIDES.numCtx
-  const gSoft = scaleGuide(PARAM_GUIDES.softLimit, rec.softLimit)
-  const gHard = scaleGuide(PARAM_GUIDES.hardLimit, rec.hardLimit)
-  const gLong = scaleGuide(PARAM_GUIDES.longTermLimit, rec.longTermLimit)
-  const gDiary = scaleGuide(PARAM_GUIDES.diaryKeep, rec.diaryDays)
+  // 🔴 2.8.0：档位不再固定 —— 以「当前模型的推荐值」为中心、上下各两档，
+  //    换模型时整条刻度一起平移（出厂那几档是按本地 32K 定的，大窗口模型会被永远判成「拉过头」）。
+  //    min / step 沿用静态表，只有上界与分段被重算；推荐值永远落在「推荐」那一段里。
+  const gBudget = dynamicGuide('contextBudget', rec.contextBudget)
+  // 窗口的推荐值 = 模型配置里的窗口（手填 > 识别）；云端 `numCtx` 为 null 时退回识别到的窗口值
+  const gNumCtx = dynamicGuide('numCtx', rec.numCtx ?? cap.windowTokens)
+  const gSoft = dynamicGuide('softLimit', rec.softLimit)
+  const gHard = dynamicGuide('hardLimit', rec.hardLimit)
+  const gLong = dynamicGuide('longTermLimit', rec.longTermLimit)
+  const gDiary = dynamicGuide('diaryKeep', rec.diaryDays)
+  const gFixed = dynamicGuide('fixedOverheadChars', rec.fixedOverhead)
 
   /**
    * 当前值里有几项偏离推荐（用于「采用推荐值」按钮的提示与禁用态）。
@@ -376,6 +378,7 @@ export function useTavernControlModel() {
    */
   const drift = [
     c.contextBudget !== rec.contextBudget,
+    c.fixedOverheadChars !== rec.fixedOverhead,
     fr.softLimit !== rec.softLimit,
     fr.hardLimit !== rec.hardLimit,
     fr.longTermLimit !== rec.longTermLimit,
@@ -387,6 +390,7 @@ export function useTavernControlModel() {
     // 预算：云端总是改；本地只在**超窗口**时回落 —— 本地窗口由显存决定，
     // 不该被"推荐"推着放大（放大就跑不动）。
     if (!cap.local || cap.overWindow) setCommon('contextBudget', rec.contextBudget)
+    setCommon('fixedOverheadChars', rec.fixedOverhead)
     setFree('softLimit', rec.softLimit)
     setFree('hardLimit', rec.hardLimit)
     setFree('longTermLimit', rec.longTermLimit)
@@ -400,22 +404,40 @@ export function useTavernControlModel() {
    *    直接写盘会让面板显示的值与草稿不一致，且用户点保存时会把同步结果覆盖回去。
    *    在别处换模型（模型配置页「设为当前」）走的是 `syncTuningWithModel()` 那条写盘路径。
    */
-  const onDefaultModelChange = (v: string) => {
-    setCommon('defaultProviderId', v)
-    if (c.autoTuneByModel === false) return
+  const onDefaultModelChange = async (v: string) => {
+    if (c.autoTuneByModel === false) {
+      setCommon('defaultProviderId', v)
+      return
+    }
     // 解析口径必须与上面的 activeProvider 一致：留空 = 跟随全局活动模型
     const p = providers.find(x => x.id === (v || activeProviderId)) ?? null
     const adv = adviseCapacity(p, { numCtx: c.numCtx, contextBudget: c.contextBudget })
     const r = adv.suggest
-    if (!adv.local || adv.overWindow) setCommon('contextBudget', r.contextBudget)
-    setFree('softLimit', r.softLimit)
-    setFree('hardLimit', r.hardLimit)
-    setFree('longTermLimit', r.longTermLimit)
-    setFree('diaryDays', r.diaryDays)
+    const nextCommon = { ...s.common, defaultProviderId: v, tunedFor: modelFingerprintOf(p) }
+    // 预算：云端总是跟随；本地只在「手填了窗口」或「已超窗口」时落 —— 未手填时窗口本就是面板现值，
+    // 该配比多少交给作者自己掌握（想让预算随模型放大，去模型配置里手填窗口）。
+    if (!adv.local || adv.overWindow || adv.numCtxFromUserWindow) nextCommon.contextBudget = r.contextBudget
+    if (adv.numCtxFromUserWindow && r.numCtx && r.numCtx !== c.numCtx) nextCommon.numCtx = r.numCtx
+    nextCommon.fixedOverheadChars = r.fixedOverhead
+    const nextFree = {
+      ...s.free,
+      softLimit: r.softLimit,
+      hardLimit: r.hardLimit,
+      longTermLimit: r.longTermLimit,
+      diaryDays: r.diaryDays,
+    }
+    try {
+      const saved = await saveTavernSettings({ ...s, common: nextCommon, free: nextFree })
+      setS(saved)
+      setDirty(false)
+      showToast('已按新模型套用额度并保存（上下文预算 / 记忆档 / 固定开销）')
+    } catch (e) {
+      showToast(`保存失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   return {
-    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gNumCtx, gSoft, gHard, gLong, gDiary, drift, applyRecommended, onDefaultModelChange,
+    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gNumCtx, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange,
   }
 }
 

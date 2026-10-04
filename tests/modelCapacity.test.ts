@@ -12,10 +12,12 @@
 //   ④ **记忆档推荐**（软/硬上限、长期摘要、日记保留）跟着预算走，且 24000 下正好复现出厂值
 //   ⑤ **输入框上限动态放宽**（scaleGuide）：1M 窗口的模型不该被 100000 的静态上限卡住，
 //      放宽后 paramGuide 的三条不变量（首尾相接 / 完整覆盖 / 唯一推荐段）仍须成立
+//   ⑥ **上下文窗口是必填项**（2026-10-04·2.8.0）：留空 / 疑似「把 K 当词元数」/ 超上限
+//      全部拦在保存前；校验函数与界面共用（checkContextWindow），识别表降级为老数据兜底
 import {
   adviseCapacity, isLocalProvider, recommendTuning, scaleGuide, TUNING_LIMITS, lookupWindow,
-  CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS, FALLBACK_WINDOW,
-  modelFingerprintOf, shouldApplyTuning,
+  CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS, FALLBACK_WINDOW, MIN_SANE_WINDOW, MAX_WINDOW,
+  checkContextWindow, modelFingerprintOf, shouldApplyTuning,
 } from '../src/lib/modelCapacity'
 import { PARAM_GUIDES, type ParamGuide } from '../src/lib/tavern/paramGuide'
 
@@ -134,14 +136,37 @@ ok('记忆档：8000 小预算下同步收紧（不是只有"放大"一条路）
   JSON.stringify(small))
 
 const huge = adviseCapacity({ type: 'openai', local: false, model: 'gpt-4.1' }, CUR)
-ok('记忆档：1M 窗口模型下被静态上限顶住（记忆不该无限膨胀）',
-  huge.suggest.hardLimit === TUNING_LIMITS.hardLimit.max &&
-  huge.suggest.longTermLimit === TUNING_LIMITS.longTermLimit.max, JSON.stringify(huge.suggest))
+// 🔴 2.8.0：上界已放宽 —— 记忆档必须**按比例跟着预算走**，否则「窗口越大、记忆越不匹配」。
+//    旧的 20000 / 2000 会把 1M 窗口下算出的 7.75 万硬夹回去，这条断言就是要盯住它不再发生。
+ok('记忆档：1M 窗口模型下按比例放大（不再被旧的 20000 上界顶住）',
+  huge.suggest.hardLimit > 20000 && huge.suggest.longTermLimit > 2000,
+  JSON.stringify(huge.suggest))
+ok('记忆档：放大后仍在放宽后的静态上界内（不是无限膨胀）',
+  huge.suggest.hardLimit <= TUNING_LIMITS.hardLimit.max &&
+  huge.suggest.longTermLimit <= TUNING_LIMITS.longTermLimit.max, JSON.stringify(huge.suggest))
 // 2026-10-03：上限从 100000 提到 2097152（与模型配置输入框一致）后，
 // 1M 云端窗口的建议预算（41 万）**不再被静态上限截断** —— 这正是当年「1M 模型可用到 41 万却被输入框卡住」的修复。
 ok('记忆档：1M 窗口模型的建议预算不再被静态上限截断（41 万能直接填）',
   huge.suggest.contextBudget > 100000 && huge.suggest.contextBudget <= TUNING_LIMITS.contextBudget.max,
   String(huge.suggest.contextBudget))
+
+// ---------- ⑧-b 本地手填窗口 ⇒ 预算与记忆档一起放大（2.8.0 老大定案）----------
+{
+  const b128 = adviseCapacity(
+    { type: 'ollama', local: true, model: 'qwen3.8-27b-write', contextWindow: 131072 },
+    { numCtx: 32768, contextBudget: 24000 },
+  )
+  ok('🔴 本地手填 128K：建议预算按窗口放大到约 9.6 万（此前恒定 24000）',
+    Math.abs(b128.suggest.contextBudget - Math.floor(131072 * (24000 / 32768))) <= 500,
+    String(b128.suggest.contextBudget))
+  ok('🔴 本地手填 128K：记忆档按放大后的预算同比放大（硬上限 > 出厂 3000）',
+    b128.suggest.hardLimit > 3000 && b128.suggest.softLimit > 2000, JSON.stringify(b128.suggest))
+  ok('🔴 固定开销预留：出厂 24000 预算下仍是 400（默认行为不变）',
+    recommendTuning(24000, 32768).fixedOverhead === 400, String(recommendTuning(24000, 32768).fixedOverhead))
+  ok('🔴 固定开销预留：大预算下跟着涨（1M 云端 → 数千字）',
+    huge.suggest.fixedOverhead > 400 && huge.suggest.fixedOverhead <= TUNING_LIMITS.fixedOverhead.max,
+    String(huge.suggest.fixedOverhead))
+}
 
 // ---------- ⑨ 输入框范围动态放宽（scaleGuide）----------
 // 上限已足够大 ⇒ 1M 窗口这条路上**用不到** scaleGuide 了；但它本身仍要能工作（更大窗口时兜底）。
@@ -217,10 +242,12 @@ const atEdge = adviseCapacity({ type: 'ollama', model: 'qwen3.5-27b' }, { numCtx
 ok('超窗口：正好等于安全上限时不触发（出厂配置零变化）',
   !atEdge.overWindow && atEdge.suggest.contextBudget === 24000)
 
-// 用户刻意调小预算 → 不该被"推荐"顶回去
+// 🔴 2.8.0 语义变更：本地改为**按窗口主动放大**，建议值一律取「窗口 × 出厂配比」
+//    （出厂 32K ⇒ 正好 24000，默认行为不变）。用户手调的值仍然留得住 ——
+//    因为自动套用只在「换模型」时发生，判据见 ⑬ 的指纹判定链。
 const lowered = adviseCapacity({ type: 'ollama', model: 'qwen3.5-27b' }, { numCtx: 32768, contextBudget: 12000 })
-ok('超窗口：低于上限时尊重用户现值（不往上顶）',
-  !lowered.overWindow && lowered.suggest.contextBudget === 12000, String(lowered.suggest.contextBudget))
+ok('超窗口：低于上限时同样按窗口给出建议值（本地也主动放大）',
+  !lowered.overWindow && lowered.suggest.contextBudget === 24000, String(lowered.suggest.contextBudget))
 
 // 小显存设备：窗口 8192 → 安全上限同步变小
 const smallCtx = adviseCapacity({ type: 'ollama', model: 'llama3-8b' }, { numCtx: 8192, contextBudget: 24000 })
@@ -251,6 +278,60 @@ ok('判定：换了模型 → apply',
   shouldApplyTuning({ autoTune: true, tunedFor: 'y', fingerprint: 'z' }) === 'apply')
 ok('判定：tunedFor 为空串按"未登记"处理（真实指纹不会是空串，故不会误判）',
   shouldApplyTuning({ autoTune: true, tunedFor: '', fingerprint: 'y' }) === 'registered')
+
+// ---------- ⑥ 「把 K 当词元」的误填（2026-10-04 新增，MIN_SANE_WINDOW）----------
+// 真实来路：作者在模型配置里把「128K」写成 128、「96K」写成 96。
+// 若照单全收，窗口就成了 128 个词元 —— 预算与记忆档全塌成下限值，而作者还以为配对了。
+{
+  ok('常量：可信下限在 2K 量级（与 TUNING_LIMITS.numCtx.min 同档）', MIN_SANE_WINDOW >= 2000, String(MIN_SANE_WINDOW))
+
+  const localSlip = adviseCapacity({ type: 'ollama', model: 'm-x', contextWindow: 128 }, { numCtx: 32768, contextBudget: 24000 })
+  ok('🔴 本地填 128（疑似 128K）→ 不采纳，窗口回落面板现值',
+    localSlip.windowTokens === 32768, String(localSlip.windowTokens))
+  ok('🔴 本地填 128 → numCtxFromUserWindow 为假（不会把这值写回酒馆设置）',
+    localSlip.numCtxFromUserWindow === false)
+
+  const cloudSlip = adviseCapacity({ type: 'openai', local: false, model: 'qwen3-max', contextWindow: 96 }, { numCtx: 32768, contextBudget: 24000 })
+  ok('🔴 云端填 96（疑似 96K）→ 不采纳，改按模型名识别',
+    cloudSlip.windowSource === 'preset', cloudSlip.windowSource)
+  ok('云端填 96 → 落地的是识别值 131072（Qwen3 系列）',
+    cloudSlip.windowTokens === 131072, String(cloudSlip.windowTokens))
+
+  const okValue = adviseCapacity({ type: 'openai', local: false, model: 'qwen3-max', contextWindow: 98304 }, { numCtx: 32768, contextBudget: 24000 })
+  ok('对照：填 98304（真词元数）照常采纳',
+    okValue.windowSource === 'user' && okValue.windowTokens === 98304, `${okValue.windowSource}/${okValue.windowTokens}`)
+}
+
+// ---------- ⑭ 必填校验（2026-10-04 老大定案：这一项从选填改必填）----------
+// 背景：原先留空时按模型名去识别表猜窗口 —— 那张表要跟着各家发布节奏常年维护，
+// 且本地 / 自建 / 冷门模型永远认不出。改成必填 + 强制换算提示后，"猜错"这条路就不存在了。
+// 🔴 界面（模型配置页的实时提示与保存拦截）与这里**共用同一个函数**，不得各写一套。
+{
+  ok('常量：输入框上限与面板 numCtx 上限同源（不两套标准）',
+    MAX_WINDOW === TUNING_LIMITS.numCtx.max, `${MAX_WINDOW} vs ${TUNING_LIMITS.numCtx.max}`)
+
+  const empty = checkContextWindow(undefined)
+  ok('必填：未填 → 不通过，且给出中文原因（可直接显示）',
+    !empty.ok && /必填/.test(empty.error ?? ''), empty.error)
+  ok('必填：null / NaN 同样不通过',
+    !checkContextWindow(null).ok && !checkContextWindow(Number.NaN).ok)
+
+  const slip = checkContextWindow(128)
+  ok('🔴 必填：填 128（疑似把 K 当词元）→ 不通过，并给出换算建议 131072',
+    !slip.ok && slip.suggest === 131072, JSON.stringify(slip))
+  ok('必填：原因文案里带上应填的数（界面会直接显示）',
+    (slip.error ?? '').includes('131072'), slip.error)
+
+  ok('必填：正常值通过（98304 / 131072）',
+    checkContextWindow(98304).ok && checkContextWindow(131072).ok)
+  ok('必填：正好等于可信下限算通过（边界不误伤）',
+    checkContextWindow(MIN_SANE_WINDOW).ok)
+  ok('必填：超上限不通过（多打一位要拦下来）',
+    !checkContextWindow(MAX_WINDOW + 1).ok)
+  ok('必填：校验与算法同源 —— 通过的值一定被 adviseCapacity 采纳为用户窗口',
+    checkContextWindow(131072).ok &&
+    adviseCapacity({ type: 'openai', local: false, model: 'x', contextWindow: 131072 }, CUR).windowSource === 'user')
+}
 
 console.log(`\n—— modelCapacity 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

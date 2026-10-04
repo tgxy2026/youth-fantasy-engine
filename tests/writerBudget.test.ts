@@ -5,13 +5,13 @@
 //   ① 🔴 **出厂基准下逐项等于改造前的硬编码值** —— 这是「升级后零行为变化」的保证，
 //      也是整次改造最容易悄悄破掉的地方（系数手滑改一位，默认行为就变了）；
 //   ② 基准可调时按系数等比换算（且对齐到 100，避免界面上出现 6375 这种数）；
-//   ③ 推荐值：本地**不放大**、云端按窗口放大且有上下限；
+//   ③ 推荐值：本地与云端都**按窗口放大**，且不再有固定封顶（2.8.0）；
 //   ④ 系数表与展示名表**键集合一致**（漏一个 label 会让面板明细里少一行）。
 import {
   WRITER_BUDGET_KINDS, WRITER_BUDGET_LABELS, DEFAULT_WRITER_BASE, DEFAULT_WRITER_BUDGET, WRITER_BASE_LIMITS,
-  budgetForKind, previewAt, recommendWriterBase, type WriterBudgetKind,
+  WRITER_RECOMMEND, budgetForKind, previewAt, recommendWriterBase, type WriterBudgetKind,
 } from '../src/lib/aiWriterBudget'
-import { adviseCapacity } from '../src/lib/modelCapacity'
+import { adviseCapacity, CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS } from '../src/lib/modelCapacity'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -86,11 +86,18 @@ ok('本地小窗口（8192）：推荐基准跟着收紧到 2500',
   recommendWriterBase(smallLocal) === 2500, String(recommendWriterBase(smallLocal)))
 
 const cloudCap = adviseCapacity({ type: 'openai', local: false, model: 'Qwen/Qwen3.5-35B-A3B' }, CUR)
-ok('云端 256K：推荐基准 29000（可用窗口 96665 × 30%）',
-  recommendWriterBase(cloudCap) === 29000, String(recommendWriterBase(cloudCap)))
+// 🔴 2.8.0：云端有效系数 0.4 → 0.6 ⇒ 256K 的可用额度从 9.6 万抬到 14.9 万，基准同步抬高。
+//    期望值一律由常量插值算出 —— 写死数字的话，下次调系数又是白改一轮。
+const cloudExpect = Math.round(((Math.floor(262144 * CLOUD_EFFECTIVE_RATIO) - REPLY_RESERVE_TOKENS)
+  * WRITER_RECOMMEND.cloud.ratio) / 100) * 100
+ok(`云端 256K：推荐基准 ${cloudExpect}（可用窗口 × ${WRITER_RECOMMEND.cloud.ratio * 100}%，不封顶）`,
+  recommendWriterBase(cloudCap) === cloudExpect, String(recommendWriterBase(cloudCap)))
 
 const hugeCap = adviseCapacity({ type: 'openai', local: false, model: 'gpt-4.1' }, CUR)
-ok('1M 窗口：推荐基准被封顶 120000', recommendWriterBase(hugeCap) === 120000, String(recommendWriterBase(hugeCap)))
+// 🔴 2.8.0：旧的 120000 封顶已取消（256K 以上模型本该吃更多，被砍到 12 万就是白给窗口）
+ok('1M 窗口：推荐基准不再被封顶（旧的 120000 上限已取消）',
+  recommendWriterBase(hugeCap) > 120000 && recommendWriterBase(hugeCap) <= WRITER_BASE_LIMITS.max,
+  String(recommendWriterBase(hugeCap)))
 ok('推荐基准永远 ≥ 出厂值（云端不会比本地还小）', [cloudCap, hugeCap].every(c => recommendWriterBase(c) >= DEFAULT_WRITER_BASE))
 ok('🔴 基准输入框上限 ≥ 云端推荐上限（否则推荐值填不进去）',
   WRITER_BASE_LIMITS.max >= recommendWriterBase(hugeCap), `${WRITER_BASE_LIMITS.max} vs ${recommendWriterBase(hugeCap)}`)
@@ -117,6 +124,22 @@ ok('出厂：默认开启「跟随模型自动调整」', DEFAULT_WRITER_BUDGET.
 ok('出厂：tunedFor 未登记（首次同步只登记指纹、不改值 —— 不动老用户已调好的基准）',
   DEFAULT_WRITER_BUDGET.tunedFor === undefined)
 ok('出厂基准 = 出厂常量（面板与同步口径同源）', DEFAULT_WRITER_BUDGET.base === DEFAULT_WRITER_BASE)
+
+// ---------- ⑦ 🔴 换模型的方向性（2026-10-04 回归）----------
+// 真实 bug：本机两个本地模型手填窗口 128K / 96K，切到 96K 后**填进去的**却是 128K 的推荐值、
+// 面板上显示的推荐反而是 96K 的 —— 看着像"两个模型的值反了"。
+// 数值算法没错（29500 / 39300 都是对的），错在 `AIConfigPanel` 让「写盘」与「面板重读」并发，
+// 面板读到了写盘**之前**的旧值。这里锁住**算法侧**的方向性，免得以后把锅甩给公式。
+const local96 = adviseCapacity({ type: 'ollama', model: 'm-96k', contextWindow: 98304 }, { numCtx: 32768, contextBudget: 24000 })
+const local128 = adviseCapacity({ type: 'ollama', model: 'm-128k', contextWindow: 131072 }, { numCtx: 32768, contextBudget: 24000 })
+const rec96 = recommendWriterBase(local96)
+const rec128 = recommendWriterBase(local128)
+ok('🔴 换模型：本地窗口越大、正文基准推荐越大（96K < 128K）', rec96 < rec128, `96K=${rec96} / 128K=${rec128}`)
+ok('🔴 换模型：不同窗口必须给出不同的推荐值（相同 = 窗口根本没被读到）', rec96 !== rec128, `${rec96} / ${rec128}`)
+ok('换模型：推荐值 = 窗口 × 比例并对齐 100（96K）',
+  rec96 === Math.round(98304 * WRITER_RECOMMEND.local.ratio / 100) * 100, String(rec96))
+ok('换模型：推荐值 = 窗口 × 比例并对齐 100（128K）',
+  rec128 === Math.round(131072 * WRITER_RECOMMEND.local.ratio / 100) * 100, String(rec128))
 
 console.log(`\n—— writerBudget 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

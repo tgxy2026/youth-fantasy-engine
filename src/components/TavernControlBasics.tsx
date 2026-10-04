@@ -12,7 +12,7 @@ import { GRID2, Section, NumField, TextField, SelectField, ToggleField } from '.
 import type { TavernControlModel } from './useTavernControlModel'
 
 export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
-  const { setCommon, setProfile, c, pr, modelOptions, cap, rec, gBudget, gNumCtx, drift, applyRecommended, onDefaultModelChange } = m
+  const { setCommon, setProfile, c, pr, modelOptions, cap, rec, gBudget, gNumCtx, gFixed, drift, applyRecommended, onDefaultModelChange } = m
   return (
     <>
           {/* ---------- 一、通用设置 ---------- */}
@@ -38,9 +38,9 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
                   <div className="text-11 text-ink-200 leading-relaxed">{cap.headline}</div>
                   <div className="mt-0.5 text-10 text-ink-500 leading-relaxed">{cap.note}</div>
                   <div className="mt-1 text-10 text-ink-600 leading-relaxed">
-                    下面「记忆三项 / 日记保留」的推荐值按当前预算同比推算（预算跟着所选模型走，它们也就跟着变）。
-                    窗口不代为更改 —— 本地由显存决定、云端由服务商决定，所以它没有推荐值；
-                    预算在云端会跟随模型放宽，本地只在「超过窗口承载」时才回落（否则会被静默截断）。
+                    下面「记忆三项 / 日记保留 / 固定开销」的推荐值按当前预算同比推算（预算跟着所选模型走，它们也就跟着变）。
+                    窗口默认取「模型配置 → 上下文窗口」填的值；预算与记忆档都按它缩放，
+                    本地只在「超过窗口承载」时才回落（否则会被静默截断）。
                     正文续写等其它模式的额度不在这里，仍是后台内置值。
                   </div>
                 </div>
@@ -70,8 +70,8 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
                 value={c.contextBudget} onCommit={v => setCommon('contextBudget', v)}
               />
               <NumField
-                label="固定开销预留" guide={PARAM_GUIDES.fixedOverheadChars}
-                hint="纯余量，不是「替协议占位」。协议与记忆已经算在 system 里了，这里不再重复预留；调大它就等于压缩可分配给对话历史的额度。"
+                label="固定开销预留" guide={gFixed} recommend={rec.fixedOverhead}
+                hint="纯余量，不是「替协议占位」。协议与记忆已经算在 system 里了，这里不再重复预留；调大它就等于压缩可分配给对话历史的额度。推荐值按当前上下文预算的约百分之一推算。"
                 value={c.fixedOverheadChars} onCommit={v => setCommon('fixedOverheadChars', v)}
               />
               <NumField
@@ -85,10 +85,10 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
               <NumField
                 label="上下文窗口长度" guide={gNumCtx}
                 hint={cap.local
-                  ? '显式告诉本地模型能装多少内容。不指定的话它会按全局设置（可能 128K）加载，显存占用会远超预期。本地窗口由显存决定，别照模型标称值往大调。'
+                  ? '默认取「模型配置 → 上下文窗口」里填的值：那里填多少，这里就是多少（换模型时会自动带过来）。它决定本地模型一次能装多少内容，调大会同步抬高上面的「上下文预算」，显存占用也跟着涨 —— 跑不动就把窗口调小。'
                   : '此参数只对本地 Ollama 生效 —— 当前接的是云端模型，设了也不生效，所以这里没有推荐值。'
                     + (cap.windowSource === 'fallback'
-                      ? `没能识别这个模型的窗口（现按保守值 ${cap.windowTokens} tokens 估算）—— 可去「工作面板 → 模型设置 → 模型配置」手填「上下文窗口」，推荐值就准了。`
+                      ? `「模型配置」里还没填这个模型的「上下文窗口」—— 现在按保守值 ${cap.windowTokens} tokens 估算。去「工作面板 → 模型设置 → 模型配置」把窗口填上（必填项，1K = 1024 tokens），推荐值就准了。`
                       : `该模型窗口为 ${cap.windowTokens} tokens，要让模型多读内容请调大上面的「上下文预算」。`)}
                 value={c.numCtx} onCommit={v => setCommon('numCtx', v)}
               />

@@ -38,9 +38,19 @@ export const WRITER_BASE_LIMITS = { min: 1000, max: 200000, step: 500 } as const
  *  · 本地写成 `min(出厂值 8000, numCtx×0.25)` —— 出厂值成了天花板，numCtx 提到 131072 也不动；
  *  · 云端只用 12%（256K 窗口才给 11600，128K 窗口几乎不放大）。
  */
+/**
+ * 「按模型推荐」的比例（2026-09-18 放宽，老大选 30% 档）。
+ *
+ * 为什么是 30%：资料之外还要放正文片段（本章 / 上一章）与模型输出，
+ * 给资料留不到三分之一才合理。
+ *
+ * 🔴 2026-10-04（2.8.0）：**取消固定封顶**（原本地 48000 / 云端 120000）。
+ *    256K 本地模型按 30% 该给 7.8 万却被砍到 4.8 万 —— 窗口越大越吃亏。
+ *    现在完全由窗口决定，只受输入框自身的 [min,max] 兜底。
+ */
 export const WRITER_RECOMMEND = {
-  local: { ratio: 0.30, cap: 48000 },
-  cloud: { ratio: 0.30, cap: 120000 },
+  local: { ratio: 0.30 },
+  cloud: { ratio: 0.30 },
 } as const
 
 /**
@@ -174,9 +184,9 @@ export function recommendWriterBase(cap: CapacityAdvice): number {
   const snap100 = (v: number) => Math.round(v / 100) * 100
   const R = WRITER_RECOMMEND
   if (cap.local) {
-    return Math.max(WRITER_BASE_LIMITS.min, Math.min(R.local.cap, snap100(cap.windowTokens * R.local.ratio)))
+    return Math.max(WRITER_BASE_LIMITS.min, Math.min(WRITER_BASE_LIMITS.max, snap100(cap.windowTokens * R.local.ratio)))
   }
-  return Math.max(DEFAULT_WRITER_BASE, Math.min(R.cloud.cap, snap100(cap.approxPromptTokens * R.cloud.ratio)))
+  return Math.max(DEFAULT_WRITER_BASE, Math.min(WRITER_BASE_LIMITS.max, snap100(cap.approxPromptTokens * R.cloud.ratio)))
 }
 
 /** 按模型推荐值时，各功能会变成多少（面板上展开明细用） */
@@ -237,9 +247,12 @@ export async function syncWriterBudgetToModel(): Promise<WriterSyncResult> {
 
     const verdict = shouldApplyTuning({ autoTune: true, tunedFor: st.tunedFor, fingerprint: info.fingerprint })
     if (verdict === 'same-model') return { changed: false, reason: 'same-model' }
+    // 🔴 2.8.0 老大定案：**首次也直接套用**（原来是「只登记指纹、不改值」—— 老用户升级后
+    //    第一次切模型界面毫无反应，作者看到的正是「推荐值要手点才生效」）。
+    //    判定链其余两条不变：关开关不动、同模型不动（手调的基准必须留住）。
     if (verdict === 'registered') {
-      await saveWriterBudget({ ...st, tunedFor: info.fingerprint })
-      return { changed: false, reason: 'registered' }
+      await saveWriterBudget({ ...st, base: info.recommended, tunedFor: info.fingerprint })
+      return { changed: info.recommended !== st.base, reason: 'applied', base: info.recommended }
     }
     const changed = info.recommended !== st.base
     await saveWriterBudget({ ...st, base: info.recommended, tunedFor: info.fingerprint })

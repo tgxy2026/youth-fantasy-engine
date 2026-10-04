@@ -15,7 +15,8 @@
  *  ① **本地绝不放宽**：numCtx 是显存安全阀 —— 不能因为"模型标称很大"就跟着放大，放大就跑不动。
  *  ② **云端按「标称窗口 × 有效系数」**：标称窗口不是可靠推理长度（RULER/NIAH-2 实测有效值
  *     通常只有标称的 30~65%，多针检索还要再低 15~40 分）；酒馆又是典型"多针"场景
- *     （设定 + 记忆 + 对话历史要同时命中），故取**偏保守的 0.4**。
+ *     （设定 + 记忆 + 对话历史要同时命中），故取 **0.6**（2026-10-04 老大定案：原 0.4
+ *     偏保守 —— 128K 模型只给 4.4 万字预算，作者反馈「取值和赋值过于保守」）。
  *
  * 【2026-09-17 扩展：从"只管预算"到"管一整批跟着模型走的数"】
  * 老大的原话是「取值范围和推荐都是基于我的设备定的，能不能跟着模型变」。
@@ -36,8 +37,15 @@ export function isLocalProvider(p: Pick<AIProvider, 'type' | 'local'> | null | u
 
 /**
  * 已知模型的上下文窗口（tokens）。
- * ⚠️ 只收录**能确认**的；查不到就走保守兜底（见 FALLBACK_WINDOW），并把 windowSource 标成 fallback，
- *    让 UI 能如实告诉用户"这是猜的，你可以在模型配置里手填"。
+ *
+ * 🔴 2026-10-04（2.8.0）**已降级为老数据兜底**：模型配置里的「上下文窗口」改成**必填**之后，
+ *    识别表不再是推荐路径 —— 它只为**老库里还没填窗口的模型**兜住底线
+ *    （免得升级瞬间把它们的预算与记忆档从"识别值"塌成 32K）。
+ *
+ * 🔴 所以**不要再往里补数值**（老大明确：不必常年跟着各家发布节奏维护这张表）。
+ *    某个模型的窗口要修正，让作者在「模型配置」里手填 —— 那是唯一真源。
+ *
+ * ⚠️ 仍然只收录**能确认**的；查不到就走保守兜底（见 FALLBACK_WINDOW），并把 windowSource 标成 fallback。
  * 顺序敏感：先匹配先生效（更具体的写在前面）。
  */
 const KNOWN_WINDOWS: { re: RegExp; window: number; label: string }[] = [
@@ -60,10 +68,76 @@ const KNOWN_WINDOWS: { re: RegExp; window: number; label: string }[] = [
 export const FALLBACK_WINDOW = 32768
 
 /**
+ * 「上下文窗口」输入框的**可信下限**（词元）。
+ *
+ * 🔴 2026-10-04（2.8.0）老大定案：填小于它的值，几乎只有一种来路 ——
+ *    作者把「128K」写成了 `128`（把 K 当成了词元数）。真实模型里窗口最小的也在 32K 量级
+ *    （Qwen3-0.6B 与 gemma3:1b 都是 32K），2K 以下的窗口已属罕见。
+ *
+ * 这类值**一律不采纳**（不当作手填，继续走「按模型名识别 → 保守兜底」）：
+ *    否则 128 会被当成「只有 128 个词元的窗口」，把预算与记忆档全塌成下限值，
+ *    而作者还以为自己配对了个大窗口模型 —— 这种错**在界面上看不出来**，最危险。
+ *
+ * 🔴 界面侧（`AIConfigPanel`）必须复用**这一个**常量去给换算提示（「128K 应填 131072」），
+ *    别在组件里另写一个阈值 —— 两处各写一份必然漂移。
+ */
+export const MIN_SANE_WINDOW = 2000
+
+/**
+ * 上下文窗口输入框的**上限**（tokens）= 2M。
+ *
+ * 与 `TUNING_LIMITS.numCtx.max` **同一真源**（单测比对，漂了就红）——
+ * 免得出现"模型配置允许填的数"与"酒馆面板允许填的数"两套标准。
+ */
+export const MAX_WINDOW = 2097152
+
+export interface WindowCheck {
+  ok: boolean
+  /** 不合法时的**中文原因**（可直接显示，界面不必再拼文案） */
+  error?: string
+  /** 疑似「把 K 当词元数」时给出的换算建议（`K × 1024`），界面据此渲染一键换算 */
+  suggest?: number
+}
+
+/**
+ * 校验「模型配置 → 上下文窗口」的输入。
+ *
+ * 🔴 2026-10-04（2.8.0）老大定案：这一项由**选填**改为**必填**。
+ *    原先留空时靠上面的识别表按模型名猜窗口，而那张表得跟着各家发布节奏常年维护
+ *    （同一个模型不同版本窗口能差一倍），本地 / 自建 / 冷门模型更是永远认不出。
+ *    改成必填 + 强制换算提示后，作者按自己的部署填一次（**1K = 1024 tokens**），
+ *    全项目读同一个数，"猜错"这条路就不存在了。
+ *
+ * 🔴 界面（`AIConfigPanel`）的实时提示与保存拦截**必须共用这一个函数** ——
+ *    两边各写一套阈值必然漂移（这是本项目反复踩过的老坑）。
+ *
+ * @param v 输入框里的原始值（可能未填 / 非数）
+ */
+export function checkContextWindow(v: number | null | undefined): WindowCheck {
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    return { ok: false, error: '请填写上下文窗口（tokens）—— 这一栏是必填：填模型标称的 token 数，1K = 1024。' }
+  }
+  if (v < MIN_SANE_WINDOW) {
+    const k = v * 1024
+    return {
+      ok: false,
+      suggest: k,
+      error: `${v} tokens 太小了 —— 这一栏填的是 token 数量，不是「${v}K」：`
+        + `要表达 ${v}K 请填 ${k}（${v} × 1024）。`,
+    }
+  }
+  if (v > MAX_WINDOW) {
+    return { ok: false, error: `超出上限 ${MAX_WINDOW}（2M tokens）—— 请核对是否多打了一位。` }
+  }
+  return { ok: true }
+}
+
+/**
  * 查「这个模型名能认出多大窗口」——认不出返回 null。
  *
- * 供模型配置页做「留空时会自动识别成什么」的实时提示（与 `adviseCapacity` 共用**同一份**预设表，
- * 免得两处各写一套、日子久了说法不一）。
+ * ⚠️ 2026-10-04 起**不再用于界面提示**（窗口已改必填）：模型配置页那句
+ *    「留空会识别成什么」的实时提示已随之移除。现在只有 `adviseCapacity`
+ *    在「老库里的模型没填窗口」时调它兜底 —— 界面不再向作者承诺任何自动识别。
  */
 export function lookupWindow(model: string | undefined | null): { window: number; label: string } | null {
   const hit = KNOWN_WINDOWS.find(k => k.re.test(String(model ?? '')))
@@ -71,7 +145,7 @@ export function lookupWindow(model: string | undefined | null): { window: number
 }
 
 /** 云端有效系数：标称窗口 × 它 ≈ 可靠推理长度。依据见文件头注释。 */
-export const CLOUD_EFFECTIVE_RATIO = 0.4
+export const CLOUD_EFFECTIVE_RATIO = 0.6
 
 /** 给回复预留的 token（本地与云端都留 —— 预算算的是"输入能放多少"） */
 export const REPLY_RESERVE_TOKENS = 8192
@@ -105,12 +179,17 @@ export const LOCAL_BUDGET_OF_CTX = 24000 / 32768
 //      ② 分段说明（`paramGuide`）里写清「超出会加载失败或被截断，按你实测的上限填」。
 //    contextBudget 与 numCtx 保持同量级：配比 0.732 下两者必须匹配，否则会出现「窗口 2M、预算 26 万」的错配。
 export const TUNING_LIMITS = {
-  contextBudget: { min: 1000, max: 2097152, step: 500 },
-  numCtx: { min: 2048, max: 2097152, step: 1024 },
-  softLimit: { min: 200, max: 10000, step: 100 },
-  hardLimit: { min: 200, max: 20000, step: 100 },
-  longTermLimit: { min: 100, max: 2000, step: 50 },
+  contextBudget: { min: 1000, max: MAX_WINDOW, step: 500 },
+  numCtx: { min: 2048, max: MAX_WINDOW, step: 1024 },
+  // 🔴 2026-10-04（2.8.0）：三项记忆上限的**静态上界必须跟着预算一起放宽** ——
+  //    1M 云端窗口的预算约 54 万字 ⇒ 硬上限按 12.5% 该是 6.8 万，却被旧上界 20000 夹住，
+  //    结果是「窗口越大、记忆反而越不匹配」。上界只作兜底，真实刻度交给动态五档。
+  softLimit: { min: 200, max: 200000, step: 100 },
+  hardLimit: { min: 200, max: 400000, step: 100 },
+  longTermLimit: { min: 100, max: 40000, step: 50 },
   diaryDays: { min: 1, max: 30, step: 1 },
+  /** 与 `paramGuide.fixedOverheadChars` 同源（min/max/step 由单测比对，漂了就红） */
+  fixedOverhead: { min: 0, max: 20000, step: 100 },
 } as const
 
 /**
@@ -125,6 +204,13 @@ const MEM_HARD_RATIO = 3000 / 24000      // = 12.5% 的预算
 const MEM_LONGTERM_OF_HARD = 500 / 3000  // ≈ 16.7% 的硬上限
 const DIARY_BASE = 7
 const DIARY_BASE_BUDGET = 24000
+
+/**
+ * 固定开销预留（字）：按预算的约 1% 给，**下限锁在出厂值 400** ——
+ * 出厂 24000 预算算出来是 240，仍取 400 ⇒ 默认行为一字不变。
+ */
+const FIXED_OVERHEAD_RATIO = 0.01
+export const FIXED_OVERHEAD_FLOOR = 400
 
 /** 对齐到 step 的最近倍数：推出来的值带着零头的话，用户改一下就对不齐输入框步长 */
 function snap(v: number, step: number): number {
@@ -145,6 +231,8 @@ export interface TuningAdvice {
   hardLimit: number
   longTermLimit: number
   diaryDays: number
+  /** 固定开销预留（字）：预算的约 1%，下限为出厂值 400 */
+  fixedOverhead: number
 }
 
 /**
@@ -178,7 +266,15 @@ export function recommendTuning(budget: number, numCtx: number | null): TuningAd
     L.diaryDays.max,
   )
 
-  return { contextBudget: B, numCtx, softLimit, hardLimit, longTermLimit, diaryDays }
+  // 🔴 下限用 FIXED_OVERHEAD_FLOOR（出厂 400）而不是 L.fixedOverhead.min（0）：
+  //    小预算下 1% 只算出几十字，那点余量挡不住「模型端比我们估的多吃一点」。
+  const fixedOverhead = clampTo(
+    snap(B * FIXED_OVERHEAD_RATIO, L.fixedOverhead.step),
+    FIXED_OVERHEAD_FLOOR,
+    L.fixedOverhead.max,
+  )
+
+  return { contextBudget: B, numCtx, softLimit, hardLimit, longTermLimit, diaryDays, fixedOverhead }
 }
 
 /**
@@ -289,7 +385,9 @@ export function adviseCapacity(
   let windowSource: CapacityAdvice['windowSource'] = 'fallback'
   let windowLabel: string | undefined
   const userSet = p?.contextWindow
-  if (typeof userSet === 'number' && userSet > 0) {
+  // 🔴 小于 MIN_SANE_WINDOW 的值判为「疑似把 K 当词元」（见该常量的注释）⇒ **不采纳**，
+  //    继续走「按模型名识别 → 保守兜底」，绝不让 128 这种值变成"窗口只有 128 个词元"。
+  if (typeof userSet === 'number' && userSet >= MIN_SANE_WINDOW) {
     windowTokens = Math.floor(userSet)
     windowSource = 'user'
   } else {
@@ -318,11 +416,20 @@ export function adviseCapacity(
      * 故以「出厂配比 × 当前窗口」为安全上限：**只有超限才给回落建议**，
      * 低于上限时一律尊重用户现值（他很可能是刻意调小的）。
      */
+    /**
+     * 🔴 2026-10-04（2.8.0）老大定案：**本地也按窗口主动放大**（此前只在「超窗口」时回落）。
+     *    出厂 32K 窗口下 `窗口 × 出厂配比` 正好 = 24000 —— 与出厂预算**逐字相同**，
+     *    所以默认行为不变；手填 128K ⇒ 95,952、256K ⇒ 187,432，窗口一放大预算立刻跟上。
+     *    ⚠️ 本地放大 = 显存放大，加载失败就调小窗口 —— 这句提醒必须留在界面上。
+     */
     const safeMax = Math.floor(effectiveCtx * LOCAL_BUDGET_OF_CTX)
+    const budget = clampTo(
+      snap(safeMax, TUNING_LIMITS.contextBudget.step),
+      TUNING_LIMITS.contextBudget.min,
+      TUNING_LIMITS.contextBudget.max,
+    )
+    /** 预算超过窗口承载（多为「云端用过再切回本地」）⇒ 会被 Ollama 静默截断，界面要提示回落 */
     const overWindow = current.contextBudget > safeMax
-    const budget = overWindow
-      ? clampTo(snap(safeMax, TUNING_LIMITS.contextBudget.step), TUNING_LIMITS.contextBudget.min, TUNING_LIMITS.contextBudget.max)
-      : current.contextBudget
 
     return {
       local: true,
@@ -334,11 +441,12 @@ export function adviseCapacity(
       suggest: recommendTuning(budget, effectiveCtx),
       approxPromptTokens: budget,
       headline: `本地 Ollama · 窗口 ${effectiveCtx} 词元（${userWindow ? '按你手填的' : '面板现值'}）· 预算 ${current.contextBudget} 字`
-        + (overWindow ? `（超窗口承载，建议 ${budget}）` : ''),
+        + (overWindow ? `（超窗口承载，建议 ${budget}）` : (budget !== current.contextBudget ? ` · 建议 ${budget}` : '')),
       note: `本地部署：${userWindow
-        ? `窗口以你在模型配置里手填的 ${effectiveCtx} 为准（酒馆的窗口长度与上下文预算会跟着它变）。`
-        : `上下文窗口由显存决定（当前面板 ${effectiveCtx}）；想换模型就换窗口，请在模型配置里手填。`}` +
-        `模型标称 ${claim} 只作参考。记忆档按当前预算 ${budget} 字同比推荐。`
+        ? `窗口以你在模型配置里手填的 ${effectiveCtx} 为准（酒馆的窗口长度、上下文预算与记忆档都跟着它变）。`
+        : `窗口取面板现值 ${effectiveCtx}（模型配置里还没手填）；想让预算跟着模型放大，去那里填上窗口。`}` +
+        `预算按窗口承载上限给出 ${budget} 字 —— 窗口放大它也放大，显存占用同步上升，` +
+        `加载失败就把窗口调小（模型标称 ${claim} 只作参考）。记忆档按 ${budget} 字同比推荐。`
         + (overWindow
           ? `⚠️ 当前预算 ${current.contextBudget} 字已超过本地窗口 ${effectiveCtx} 的承载范围，`
             + `发给模型的资料会被静默截断（先裁协议与设定）。建议回落到 ${budget} 字。`

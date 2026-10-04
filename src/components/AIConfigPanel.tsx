@@ -30,7 +30,7 @@ import {
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
 } from '../lib/ai'
-import { lookupWindow, FALLBACK_WINDOW } from '../lib/modelCapacity'
+import { checkContextWindow, MAX_WINDOW } from '../lib/modelCapacity'
 import NumberField from './NumberField'
 
 function fmtMs(ms: number) {
@@ -100,18 +100,26 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   /**
    * 换过模型后，把酒馆模式的「上下文预算 + 记忆档」同步成新模型的推荐值。
    *
-   * 为什么不 await：切模型的手感不该被几次本地读写拖住。安全性由 sync 自己保证 ——
-   * 它按**模型指纹**判定，"没换模型"时什么都不做（同模型下用户手调的值不会被改回去），
-   * 异常也已吞掉；「额度跟随模型自动调整」可在控制面板关闭。
+   * 🔴🔴 2026-10-04（2.8.0 补）：**必须 await 到落盘之后，调用方才能触发界面刷新（`onChange`）**。
+   *    原先这里 fire-and-forget 地与 `onChange()` 并发：额度面板在写盘**之前**就重读了设置，
+   *    读到的是**上一个模型**的基准，而推荐值已按新模型算好 —— 于是界面出现
+   *    「自动填的数是上一个模型的、推荐值反而是当前模型的」这种**看着像反了**的倒挂，
+   *    且「采用推荐值」按钮一直亮着（因为 base !== rec）。数值本身没错，是读写竞态。
+   *
+   * 为什么两条链路**串行**而不是 Promise.all：它们读写**同一份**酒馆设置
+   *    （酒馆那条还会把窗口写回 `numCtx`），并发会互相覆盖；串行后正文那条也能读到同步后的状态。
+   *
+   * 其余安全性仍由 sync 自己保证：按**模型指纹**判定，"没换模型"时什么都不做
+   *   （同模型下用户手调的值不会被改回去），异常也已吞掉；「额度跟随模型自动调整」可关闭。
    */
-  const syncTavernTuning = () => {
-    void syncTuningWithModel().then(r => {
-      if (r.changed) showToast('酒馆模式的上下文额度已按新模型调整，可在控制面板查看', 'success')
-    })
-    // 正文写作链路的额度也跟模型走 —— 两边各按自己的口径算，互不冲突
-    void syncWriterBudgetToModel().then(r => {
-      if (r.changed) showToast(`正文写作额度已按新模型调整为基准 ${r.base} 字`, 'success')
-    })
+  const syncTavernTuning = async (): Promise<void> => {
+    // 两条链路各按自己的口径算，但**只弹一条** toast —— 换一次模型连弹两条太吵（2.8.0）
+    const tav = await syncTuningWithModel()
+    const w = await syncWriterBudgetToModel()
+    const parts: string[] = []
+    if (tav.changed) parts.push('酒馆额度（上下文预算 / 记忆档 / 固定开销）')
+    if (w.changed) parts.push(`正文写作基准 ${w.base} 字`)
+    if (parts.length) showToast(`已按新模型套用：${parts.join('；')}`, 'success')
   }
 
   const persist = async (list: AIProvider[], aid: string | null) => {
@@ -119,15 +127,18 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     if (aid !== null) await saveActiveId(aid)
     setProviders(list)
     setActiveId(aid)
+    // 🔴 先落盘、再刷新：编辑 provider 时可能改过 model / 上下文窗口（两者都在指纹里）。
+    //    若先 onChange，额度面板会读到写盘前的旧基准（详见 syncTavernTuning 的注释）。
+    await syncTavernTuning()
     onChange?.()
-    syncTavernTuning() // 编辑 provider 时可能改过 model / 上下文窗口 —— 两者都在指纹里
   }
 
   const setActive = async (id: string) => {
     await saveActiveId(id)
     setActiveId(id)
+    // 🔴 先落盘、再刷新（同上）：否则额度面板显示的是上一个模型的基准
+    await syncTavernTuning()
     onChange?.()
-    syncTavernTuning()
   }
 
   /** 配置变动后旧测试结论即失效，清掉避免误导 */
@@ -212,6 +223,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     if (!editing) return
     if (!editing.name.trim()) { setEditResult(fail('请填写显示名称。')); return }
     if (!editing.model.trim()) { setEditResult(fail('请选择 / 填写模型名称。')); return }
+    // 🔴 上下文窗口**必填**（2026-10-04）：额度、记忆档、酒馆窗口全按它推算，
+    //    没有它整个预算体系就只能瞎猜。校验与提示文案统一走 modelCapacity（单一真源）。
+    const winCheck = checkContextWindow(editing.contextWindow)
+    if (!winCheck.ok) { setEditResult(fail(winCheck.error ?? '请填写上下文窗口（tokens）。')); return }
     setSaving(true)
     const exists = providers.some(p => p.id === editing.id)
     const next = exists ? providers.map(p => p.id === editing.id ? editing : p) : [...providers, editing]
@@ -250,10 +265,16 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             <p className="mt-1.5">
               没配模型也不影响任何手动填写功能 —— 只是各处 AI 按钮会禁用并给出提示。
             </p>
+            <p className="mt-1.5">
+              每条配置都要填「上下文窗口（tokens）」—— 酒馆的上下文预算、记忆档、正文写作额度都按它推算。
+              <b>1K = 1024 tokens</b>：模型标称 128K 就填 131072、96K 填 98304。
+              填错的后果不是报错，而是所有推荐值一起偏大或偏小，所以这一栏不让留空。
+            </p>
           </HelpPopover>
         </div>
         <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">
           全局设置：全应用的 AI 功能都按这里选中的「当前」模型执行。改完即存，不需要另找保存按钮。
+          每条配置必填「上下文窗口（tokens）」（1K = 1024）—— 额度与记忆档都按它推算。
         </p>
       </div>
 
@@ -280,6 +301,14 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         <div className="text-12 text-ink-100 truncate">{p.name}</div>
                         <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
                       </div>
+                      {!checkContextWindow(p.contextWindow).ok && (
+                        <span
+                          className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-amber/15 text-amber"
+                          title="这条配置还没填「上下文窗口」—— 额度与记忆档会按保守值估算。点右侧铅笔补填（1K = 1024 tokens）。"
+                        >
+                          未填窗口
+                        </span>
+                      )}
                       {activeId === p.id ? (
                         <span className="shrink-0 flex items-center gap-1 text-11 text-success"><CheckCircle2 size={12} /> 当前</span>
                       ) : (
@@ -445,39 +474,51 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </>
               )}
 
-              {/* 上下文窗口（选填）：**手填即全项目真源** —— 本地与云端都读它（见 lib/modelCapacity.ts）。
-                  本地：手填 > 酒馆面板现值；没手填才沿用面板值（不按模型标称自动放宽，显存安全阀仍留着）。
-                  云端：服务商没有统一的查询接口，也靠手填覆盖。
-                  留空时按模型名去预设表里认，认不出走保守兜底。 */}
+              {/* 上下文窗口（tokens）· **必填**（2026-10-04 老大定案，校验见 lib/modelCapacity.checkContextWindow）：
+                  原先选填、留空时按模型名去识别表里猜 —— 但那张表得跟着各家发布节奏常年维护，
+                  本地 / 自建 / 冷门模型更永远认不出。改成必填 + 强制换算提示后，
+                  作者按自己的部署填一次（1K = 1024 tokens），全项目读同一个数，"猜错"这条路就没了。
+                  ⚠️ 数据层仍允许缺失（老库里的模型没这个字段）：`adviseCapacity` 保留兜底只为
+                     不把老配置一夜塌成 32K，界面上则以「未填窗口」标出、引导补填。 */}
               {(() => {
                 const isLocal = editing.type === 'ollama' || !!editing.local
-                const hit = lookupWindow(editing.model)
-                const hint = editing.contextWindow
-                  ? `已手填 ${editing.contextWindow} tokens${isLocal
-                      ? '：酒馆的窗口长度与上下文预算会跟着它变（手填值就是全项目的准）'
-                      : '：酒馆控制面板会按它算上下文预算与记忆档的建议值'}。留空则${isLocal
-                      ? '沿用酒馆面板现值 —— 不按模型标称自动放宽。'
-                      : '按模型名自动识别'}。`
-                  : isLocal
-                    ? `留空 = 沿用酒馆面板当前的窗口。建议手填你实测能跑的上限（本机不同模型实测差 2.7 倍），填了全项目跟着走。`
-                    : hit
-                      ? `留空 = 按模型名识别为 ${hit.window} tokens（${hit.label}）。识别得不对就手填覆盖。`
-                      : `未识别到该模型名 —— 留空会按保守值 ${FALLBACK_WINDOW} tokens 估算，建议手填真实值。`
+                const cwNow = editing.contextWindow
+                const cwText = typeof cwNow === 'number' ? String(cwNow) : ''
+                const check = checkContextWindow(cwNow)
+                /** 疑似「把 K 当词元数」⇒ 给一键换算；其余不合法情形只说明原因 */
+                const sug = check.suggest
+                const kSlip = !check.ok && typeof sug === 'number'
+                const hint = check.ok
+                  ? `${cwText} tokens —— 换算：K × 1024（128K 填 131072、96K 填 98304）。${isLocal
+                      ? '酒馆的「上下文窗口长度」与「上下文预算」跟着它走：填大了预算变松、显存占用同步上升，跑不动就调小。'
+                      : '酒馆控制面板会按它算上下文预算与记忆档的建议值。'}`
+                  : check.error
                 return (
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">
-                      上下文窗口（tokens）<span className="text-ink-600"> · 选填</span>
+                      上下文窗口（tokens）<span className="text-ink-600"> · 必填</span>
                     </label>
+                    {/* 🔴 min 保持 1（2026-10-04）：填「128」若被静默钳成 2000，作者看到的是一个
+                        「合法却完全不对」的值，反而失去纠错机会。现在让它留在框里被看见，
+                        再由下面的琥珀条给出换算与一键修正；能不能保存由 checkContextWindow 把关。 */}
                     <NumberField
                       value={editing.contextWindow}
-                      min={1024} max={2097152} step={1024}
-                      allowEmpty
+                      min={1} max={MAX_WINDOW} step={1024}
                       className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600"
                       onChange={v => setEditing({ ...editing, contextWindow: v })}
                       onClamped={v => showToast(`上下文窗口已调回边界 ${v} tokens`, 'info')}
-                      placeholder="留空 = 按模型名自动识别"
+                      placeholder="填 token 数：128K 写 131072"
                     />
-                    <p className="text-10 text-ink-500 mt-1 leading-relaxed">{hint}</p>
+                    {kSlip && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-amber/40 bg-amber/10 px-2 py-1">
+                        <span className="text-10 text-amber">看着像把「K」写成了词元数？{cwText}K 应为 {sug}</span>
+                        <Button variant="secondary" size="xs"
+                          onClick={() => setEditing({ ...editing, contextWindow: sug })}>
+                          按 ×1024 换算为 {sug}
+                        </Button>
+                      </div>
+                    )}
+                    <p className={`text-10 mt-1 leading-relaxed ${check.ok ? 'text-ink-500' : 'text-amber'}`}>{hint}</p>
                   </div>
                 )
               })()}

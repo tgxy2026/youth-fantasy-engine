@@ -1,0 +1,173 @@
+/**
+ * AI 接入层 · 共享内核（2.8.0 从 `lib/ai.ts` 拆出，见 `lib/ai.ts` 顶部说明）。
+ *
+ * 这里放的是被 aiCore 各模块**共同引用**的叶子内容：Provider 数据模型、超时与温度常量、
+ * 平台预设、系统提示词拼接、调用前的配置校验。
+ * 🔴 本文件**不 import 任何兄弟模块** —— 它是依赖图的叶子，循环依赖的风险在这里归零。
+ */
+
+export type AIProviderType = 'ollama' | 'openai'
+
+export interface AIProvider {
+  id: string
+  /** 用户自定义显示名 */
+  name: string
+  type: AIProviderType
+  /** Ollama 默认 http://localhost:11434；OpenAI 兼容填到 …/v1 之类前缀 */
+  baseUrl: string
+  apiKey: string
+  /** Ollama 用 /api/tags 拉到的本地模型名；OpenAI 兼容自由填写（如 deepseek-chat） */
+  model: string
+  /**
+   * 是否为本机 / 局域网 OpenAI 兼容服务（LM Studio / LocalAI / GPT4All / Jan 等）。
+   * true 时 precheck 不强制要求 apiKey（本地服务大多免密钥）；并与 ollama 一并标记为「本地」。
+   */
+  local?: boolean
+  /** 用户自定义系统提示词：追加到各功能自带系统提示词之后，不覆盖、不影响原指令与格式约束 */
+  systemPrompt?: string
+  /**
+   * 该模型的上下文窗口（tokens）。🔴 **模型配置里为必填**（2026-10-04）：酒馆上下文预算与记忆档、
+   * 正文写作额度都按它推算，留空保存不了（校验统一走 `modelCapacity.checkContextWindow()`）。
+   * 不按模型名猜的理由：各家版本窗口能差一倍，本地/自建/冷门模型永远认不出 —— 让作者填一次最准。
+   * ⚠️ 类型仍可选（老库里的配置没这个字段）：`adviseCapacity` 兜底，界面标「未填窗口」引导补填。
+   */
+  contextWindow?: number
+  /**
+   * 该模型的**生成温度**（选填）。
+   *
+   * 为什么按 provider 存（2.4.0 · A1 遗留补全）：本地小模型与云端大模型合适的温度差别很大
+   * （小模型偏高温才不呆板、大模型偏低温才不跑偏），做成一个全局常量必然"两头都不合适"。
+   * 留空时回落到 {@link DEFAULT_TEMPERATURE}。
+   *
+   * ⚠️ **结构化 JSON 任务不受它影响** —— 那类固定走 {@link JSON_TASK_TEMPERATURE}（0.3），
+   *    那是「解析稳定性」的红线，不能让显示偏好把它顶掉。
+   */
+  temperature?: number
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export const OLLAMA_DEFAULT_URL = 'http://localhost:11434'
+
+/** 正文生成默认超时：本地大参数模型首字延迟可能很久，给足时间 */
+export const CHAT_TIMEOUT_MS = 180_000
+/** 连通性测试超时：只让模型回两个字，但本地模型可能要先加载进显存 */
+export const TEST_TIMEOUT_MS = 90_000
+
+/** 创意类生成（续写 / 取名 / 灵感）默认温度 */
+export const DEFAULT_TEMPERATURE = 0.85
+/**
+ * 采样温度的**三档**（2.4.0 · A1 遗留补全）。
+ *
+ * 为什么给档位而不是让作者填数字：对写小说的人来说「稳 / 标准 / 活」比 0.85 直观得多；
+ * 且本项目 `NumberField` 会 `Math.round` 掉小数，温度这种 0.85 的值根本填不进去。
+ * 存进 provider 的仍是**具体数值**（见 AIProvider.temperature），换档即换值。
+ */
+export const TEMPERATURE_TIERS = [
+  { label: '稳', value: 0.7, hint: '更贴前文、少出意外 —— 适合正剧，或需要严丝合缝的段落' },
+  { label: '标准', value: 0.85, hint: '默认档：创意与稳定的平衡点' },
+  { label: '活', value: 1.0, hint: '更跳脱多变 —— 适合脑洞段落，但更容易跑偏' },
+] as const
+
+/** 本地小模型的建议档位值：参数小、容易写得呆板，给「活」一档 */
+export const LOCAL_DEFAULT_TEMPERATURE = 1.0
+/** 云端大模型的建议档位值：创作力强但容易跑偏，用「标准」档 */
+export const CLOUD_DEFAULT_TEMPERATURE = 0.85
+/** 结构化 JSON 任务（校对 / 审读 / 改稿 / 抽取）专用：低温换取格式稳定 */
+export const JSON_TASK_TEMPERATURE = 0.3
+
+/** 国内 / 国际 OpenAI 兼容平台预设（baseUrl 为 chat/completions 的前缀） */
+export interface PlatformPreset {
+  label: string
+  baseUrl: string
+  /** 是否为本机 / 局域网服务（免密钥） */
+  local?: boolean
+  /** 该预设对应的 provider 类型：'ollama' 走原生 /api/chat；'openai'（默认）走 OpenAI 兼容 */
+  type?: AIProviderType
+}
+
+/** Ollama 本地预设：原生 API，单独用 type:'ollama' 走 /api/chat 路径 */
+export const OLLAMA_PRESET: PlatformPreset = { label: 'Ollama（本地）', baseUrl: OLLAMA_DEFAULT_URL, local: true, type: 'ollama' }
+
+/** 本地 OpenAI 兼容服务预设（baseUrl 为本机端口，一般无需密钥，type 默认 openai）。
+ *  这些服务都暴露 OpenAI 兼容的 /v1 接口，走与「联网模型」完全相同的调用路径，
+ *  仅用 local 标记免除密钥要求并归类为「本地」。 */
+export const LOCAL_OPENAI_PRESETS: PlatformPreset[] = [
+  { label: 'LM Studio（本地）', baseUrl: 'http://localhost:1234/v1', local: true },
+  { label: 'LocalAI（本地）', baseUrl: 'http://localhost:8080/v1', local: true },
+  { label: 'GPT4All（本地）', baseUrl: 'http://localhost:4891/v1', local: true },
+  { label: 'Jan（本地）', baseUrl: 'http://localhost:1337/v1', local: true },
+  { label: 'TextGen WebUI（本地）', baseUrl: 'http://localhost:5000/v1', local: true },
+]
+
+/** 全部本地平台预设（Ollama + 本地 OpenAI 兼容），用于绿色「添加本地模型」按钮 */
+export const LOCAL_PRESETS: PlatformPreset[] = [OLLAMA_PRESET, ...LOCAL_OPENAI_PRESETS]
+
+/** 联网 OpenAI 兼容平台预设（需 API 密钥，baseUrl 为 chat/completions 前缀） */
+export const ONLINE_PRESETS: PlatformPreset[] = [
+  { label: '硅基流动 SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1' },
+  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+  { label: '通义千问 Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  { label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+  { label: '豆包 Doubao', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+  { label: 'Kimi 月之暗面', baseUrl: 'https://api.moonshot.cn/v1' },
+  { label: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1' },
+  { label: '腾讯混元', baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1' },
+  { label: '百川智能', baseUrl: 'https://api.baichuan-ai.com/v1' },
+  { label: '零一万物', baseUrl: 'https://api.lingyiwanwu.com/v1' },
+  { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
+  { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
+  { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+  { label: '自定义', baseUrl: '' },
+]
+
+/** 由平台预设生成一条未保存的 provider 草稿（类型 / 本地标记自动带好） */
+export function providerFromPreset(p: PlatformPreset): AIProvider {
+  const id = 'p_' + Math.random().toString(36).slice(2, 9)
+  const isOllama = p.type === 'ollama'
+  const local = p.local ?? isOllama
+  const name = (p.label.replace(/（本地）|（联网）|\(local\)/gi, '').trim()) || (isOllama ? '本地 Ollama' : '联网模型')
+  return {
+    id,
+    name,
+    type: isOllama ? 'ollama' : 'openai',
+    baseUrl: p.baseUrl,
+    apiKey: '',
+    model: '',
+    local,
+    // 「一键套用采样」的落点（2.4.0 · A1 遗留补全）：按模型体量给一个合适的初始温度 ——
+    // 本地小模型给高一点（不然呆板）、云端大模型给稳一点（不然跑偏）。
+    // 只是初值，作者可在「模型设置 → 模型配置」里按自己的手感改。
+    temperature: local ? LOCAL_DEFAULT_TEMPERATURE : CLOUD_DEFAULT_TEMPERATURE,
+  }
+}
+
+/**
+ * 组合系统提示词：把「用户自定义系统提示词」追加到「功能自带的系统提示词」之后。
+ * 设计要点（用户要求）：
+ * - 用户没填 → 仅用功能预设，行为与原先完全一致；
+ * - 用户填了 → 附加在原本指令之后，作为「总体补充」，不覆盖、不破坏各功能的格式约束与铁律；
+ * - 因此无论用户写什么，校对 / 补全 / 整理 / 对话等原有功能都不会受影响。
+ */
+export function composeSystemPrompt(featureSys: string, provider?: AIProvider | null): string {
+  const base = featureSys || ''
+  const custom = provider?.systemPrompt?.trim()
+  if (!custom) return base
+  return `${base}\n\n【作者自定义系统提示词（请在遵循以上全部规则的前提下一并考虑）】\n${custom}`
+}
+
+/** 测试前的本地校验：缺字段就别浪费一次网络往返（`aiCore/chat.ts` 与 `aiCore/session.ts` 共用） */
+export function precheck(config: AIProvider): string {
+  if (config.type === 'ollama') {
+    if (!config.model.trim()) return '未选择模型：请先「获取本地模型」并选择一个，或手动填写模型名。'
+    return ''
+  }
+  if (!config.baseUrl.trim()) return '未填写 API 接口地址（baseUrl）。'
+  if (!config.model.trim()) return '未填写模型名称。'
+  // 本地 OpenAI 兼容服务（LM Studio / LocalAI 等）大多免密钥，故仅联网模型强制要求密钥
+  if (!config.local && !config.apiKey.trim()) return '未填写 API 密钥（本地兼容服务可留空）。'
+  return ''
+}

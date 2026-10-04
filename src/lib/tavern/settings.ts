@@ -536,11 +536,8 @@ export async function syncTuningWithModel(): Promise<SyncTuningResult> {
     })
     if (verdict === 'off') return { changed: false, reason: 'off' }
     if (verdict === 'same-model') return { changed: false, reason: 'same-model' }
-    if (verdict === 'registered') {
-      await saveTavernSettings({ ...st, common: { ...st.common, tunedFor: fingerprint } })
-      return { changed: false, reason: 'registered' }
-    }
-
+    // 🔴 2.8.0 老大定案：**首次也直接套用**（原来是「只登记指纹、不改值」—— 老用户升级后
+    //    第一次切模型界面毫无反应）。判定链其余两条不变：关开关不动、同模型不动（手调的值必须留住）。
     const cap = adviseCapacity(p, { numCtx: st.common.numCtx, contextBudget: st.common.contextBudget })
     const rec = cap.suggest
     const nextCommon = { ...st.common, tunedFor: fingerprint }
@@ -555,6 +552,7 @@ export async function syncTuningWithModel(): Promise<SyncTuningResult> {
       nextCommon.numCtx = rec.numCtx
     }
     if (!cap.local || cap.overWindow || cap.numCtxFromUserWindow) nextCommon.contextBudget = rec.contextBudget
+    nextCommon.fixedOverheadChars = rec.fixedOverhead
     nextFree.softLimit = rec.softLimit
     nextFree.hardLimit = rec.hardLimit
     nextFree.longTermLimit = rec.longTermLimit
@@ -562,6 +560,7 @@ export async function syncTuningWithModel(): Promise<SyncTuningResult> {
 
     const changed = nextCommon.numCtx !== st.common.numCtx
       || nextCommon.contextBudget !== st.common.contextBudget
+      || nextCommon.fixedOverheadChars !== st.common.fixedOverheadChars
       || nextFree.softLimit !== st.free.softLimit
       || nextFree.hardLimit !== st.free.hardLimit
       || nextFree.longTermLimit !== st.free.longTermLimit

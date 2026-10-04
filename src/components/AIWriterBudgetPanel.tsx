@@ -40,20 +40,26 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
   const [tunedFor, setTunedFor] = useState<string | undefined>(undefined)
 
   useEffect(() => {
+    // 🔴 竞态守卫：连点切换会并发起两次读取，**乱序返回**会把旧值盖回去
+    //    （表现同样是"填进去的数跟推荐值对不上"）。只有最后一次发起的作数。
+    let cancelled = false
     void (async () => {
       const st = await getWriterBudget()
+      // 与「自动跟随」共用同一口径（currentModelAdvice）—— 免得面板显示的推荐值与实际套用的值算得不一样
+      const info = await currentModelAdvice()
+      if (cancelled) return
+      // 🔴 读完**一起** setState：base 与 rec 必须来自同一次快照，分两次写会出现"旧基准 + 新推荐"的错位
       setBase(st.base)
       setDraft(st.base)
       setAutoTune(st.autoTuneByModel !== false)
       setTunedFor(st.tunedFor)
-      // 与「自动跟随」共用同一口径（currentModelAdvice）—— 免得面板显示的推荐值与实际套用的值算得不一样
-      const info = await currentModelAdvice()
       if (info) {
         setRec(info.recommended)
         setModelDesc(info.cap.headline)
         setLocalModel(info.cap.local)
       }
     })()
+    return () => { cancelled = true }
   }, [refreshKey])
 
   const commit = async (v: number) => {
@@ -129,8 +135,8 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
                 云端分支原先还省略了比例与上限，与本地分支信息量不对称，这里一并补齐。 */}
             {rec != null
               ? (localModel
-                ? `本地模型：随窗口按比例放大（推荐 ${rec} 字，资料取窗口的 ${Math.round(WRITER_RECOMMEND.local.ratio * 100)}%、上限 ${WRITER_RECOMMEND.local.cap} 字，其余留给正文与输出）`
-                : `云端模型：可按窗口放大（推荐 ${rec} 字，资料取窗口的 ${Math.round(WRITER_RECOMMEND.cloud.ratio * 100)}%、上限 ${WRITER_RECOMMEND.cloud.cap} 字）`)
+                ? `本地模型：随窗口按比例放大（推荐 ${rec} 字，资料取窗口的 ${Math.round(WRITER_RECOMMEND.local.ratio * 100)}%，其余留给正文与输出；窗口填得越大给得越多）`
+                : `云端模型：按窗口放大（推荐 ${rec} 字，资料取该窗口可用额度的 ${Math.round(WRITER_RECOMMEND.cloud.ratio * 100)}%）`)
               : '未识别到当前模型'}
             {rec != null && rec !== base && <> · 当前为 {base} 字</>}
           </div>
@@ -146,7 +152,8 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
         <HelpPopover title="额度跟随模型自动调整" width="21rem" size={12}>
           {`开启后：「换模型时」自动把基准套用成新模型的推荐值 —— 云端大窗口模型会自动多带资料，本地模型上限更低（别把正文挤没了）。
 
-⚠️ 只在「换模型」时生效：同一个模型下你手调的基准「不会被改回去」（想完全手工就关掉这个开关，
+⚠️ 只在「换模型」时生效 —— 换完**直接写进上面的基准并自动保存**，不用再点一下；
+同一个模型下你手调的基准「不会被改回去」（想完全手工就关掉这个开关，
 面板上仍可随时点「采用推荐值」手动套一次）。`}
         </HelpPopover>
         {!autoTune && <span className="text-10 text-ink-500">（当前为手工模式，换模型不会自动改）</span>}
