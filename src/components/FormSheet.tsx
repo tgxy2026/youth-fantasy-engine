@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { Z } from '../lib/zLayer'
 import type { TabDef } from '../lib/types'
 import { getFormData, saveFormData } from '../lib/db'
-import { Save, RotateCcw, Info, Check, Sparkles } from 'lucide-react'
+import { Save, RotateCcw, Info, Check, Sparkles, Radar } from 'lucide-react'
 import HelpPopover from './HelpPopover'
 import { isNumericPowerField } from '../lib/schema'
 import SchemaFieldGrid from './SchemaFieldGrid'
@@ -16,6 +16,7 @@ import { Button } from './Button'
 import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
+import MarketRadarDialog from './MarketRadarDialog'
 
 // 力量体系是升级流的"宪法"：境界/数值类字段绝不能让 AI 凭空编造 ——
 // 常量已提到 lib/schema（C10 起母子面板共用同一套锁定判据，见 POWER_NUMERIC_HINTS 注释）。
@@ -37,6 +38,8 @@ export default function FormSheet({ tab }: Props) {
   const [showFill, setShowFill] = useState(false)
   // AI 新增弹窗（仅「全书总纲」：起草一整份新总纲，会替换已填内容 —— 见下方 openFillNew）
   const [showFillNew, setShowFillNew] = useState(false)
+  // 市场雷达弹窗（仅「作品信息」：联网检索 + 模型归纳，给选题做参考 —— 台账 #018）
+  const [showRadar, setShowRadar] = useState(false)
   const formFields = useMemo<TemplateField[]>(
     () => (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
       key: `${m.name}::${f.name}`,
@@ -50,6 +53,28 @@ export default function FormSheet({ tab }: Props) {
     //    字段结构变化时沿用旧字段表。
     [tab],
   )
+
+  /** 仅「作品信息」页提供市场雷达（选题阶段的功能，挂到别的表单页没有意义） */
+  const isPositioning = tab.id === 'positioning'
+
+  /**
+   * 「作品信息」里已有的方向 → 市场雷达的预填。
+   * 🔴 按**字段名含关键词**取（「类型赛道」/「目标平台」），不写死「模块::字段」全称 ——
+   *    模块名改过一次（「作品定位」→「作品信息」），写死就会静默取空。
+   */
+  const radarDefaults = useMemo(() => {
+    const pick = (kw: string) => {
+      for (const m of tab.modules ?? []) {
+        for (const f of m.fields) {
+          if (!f.name.includes(kw)) continue
+          const v = data[`${m.name}::${f.name}`]
+          if (v && v.trim()) return v.trim()
+        }
+      }
+      return ''
+    }
+    return { genre: pick('赛道'), platform: pick('平台') }
+  }, [tab, data])
 
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
   const aiCap = aiCapabilityOf(tab)
@@ -223,6 +248,13 @@ export default function FormSheet({ tab }: Props) {
               </Button>
             </>
           )}
+          {/* 市场雷达（2.8.0 · 台账 #018）：选题参考工具 —— 只查公开网络 + 模型归纳，只读不写项目数据。
+              不放进 aiCap 分支：它不看「本页签是否接 AI 填写」，只看模型是否已配置（弹窗内自行判断）。 */}
+          {isPositioning && (
+            <Button variant="secondary" onClick={() => setShowRadar(true)} className="flex items-center gap-1.5 font-medium" title="按题材 / 平台去公开网络检索，归纳趋势与机会点（仅供参考，不代写内容）">
+              <Radar size={12} /> 市场雷达
+            </Button>
+          )}
           </div>
         </div>
         {/* 进度条 */}
@@ -285,6 +317,16 @@ export default function FormSheet({ tab }: Props) {
           sketchPlaceholder="例如：一个废脉少年吞噬神体、逆天改命的故事，三卷走完「觉醒—复仇—封神」，反派按宗门 → 世家 → 神族逐层升级……"
           onSubmit={handleFillNew}
           onClose={() => setShowFillNew(false)}
+        />
+      )}
+
+      {/* 市场雷达：输入预填作品信息已有的赛道 / 平台（打开后作者仍可改） */}
+      {isPositioning && (
+        <MarketRadarDialog
+          open={showRadar}
+          onClose={() => setShowRadar(false)}
+          defaultGenre={radarDefaults.genre}
+          defaultPlatform={radarDefaults.platform}
         />
       )}
     </div>

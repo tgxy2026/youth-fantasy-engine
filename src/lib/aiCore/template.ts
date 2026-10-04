@@ -8,7 +8,7 @@
 import * as db from '../db'
 import { parsePlainObject } from '../aiParse'
 import { chat } from './chat'
-import { requireActiveProvider } from './session'
+import { requireProviderFor } from '../aiRouting'
 import { composeSystemPrompt, CHAT_TIMEOUT_MS, type ChatMessage } from './core'
 import { FILL_CONTEXT_SYS, type FillContext } from './prompts'
 
@@ -118,7 +118,7 @@ export async function aiCompleteTemplate(
     onToken?: (delta: string) => void
   } = {},
 ): Promise<TemplateFillResult> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('create')
   const send = fields.filter(f => !f.locked)
 
   const fieldList = send
@@ -181,7 +181,7 @@ export async function aiChatJson(
   messages: ChatMessage[],
   opts: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<string> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('create')
   return chat(cfg, messages, {
     timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
     signal: opts.signal,

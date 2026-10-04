@@ -29,6 +29,8 @@ import {
   listOllamaModels, listOpenAIModels, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
+  TASK_ROLES, ROLE_LABEL, ROLE_HINT, DEFAULT_ROUTING, loadRouting, saveRouting, rolesOf,
+  type TaskRole, type RoutingMap,
 } from '../lib/ai'
 import { checkContextWindow, MAX_WINDOW } from '../lib/modelCapacity'
 import NumberField from './NumberField'
@@ -85,14 +87,18 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   const [pickMode, setPickMode] = useState<'none' | 'local' | 'online'>('none')
   /** 列表页：各模型最近一次测试结果 */
   const [rowResults, setRowResults] = useState<Record<string, AITestResult>>({})
+  /** AI 用途路由（2.8.0 · #014）：三格留空 = 全部跟随当前模型 */
+  const [routing, setRouting] = useState<RoutingMap>({ ...DEFAULT_ROUTING })
 
   const fail = (msg: string): AITestResult => ({ ok: false, latencyMs: 0, loadMs: 0, reply: '', error: msg })
 
   const refresh = useCallback(async () => {
     const list = await loadProviders()
     const aid = await loadActiveId()
+    const rt = await loadRouting()
     setProviders(list)
     setActiveId(list.some(p => p.id === aid) ? aid : (list[0]?.id ?? null))
+    setRouting(rt)
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
@@ -138,6 +144,23 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     setActiveId(id)
     // 🔴 先落盘、再刷新（同上）：否则额度面板显示的是上一个模型的基准
     await syncTavernTuning()
+    onChange?.()
+  }
+
+  /**
+   * 改某一用途的路由（2.8.0 · #014）。
+   * 🔴 与「换模型」同一套时序：**先落盘、再刷新界面**，否则额度面板会读到写盘前的旧基准。
+   *    「创作」用途直接决定正文写作额度的口径（见 `aiWriterBudget.currentModelAdvice`），
+   *    改完顺带同步一次正文基准；审校 / 批量整理不参与正文额度，无需同步。
+   */
+  const changeRouting = async (role: TaskRole, id: string) => {
+    const next: RoutingMap = { ...routing, [role]: id }
+    setRouting(next)
+    await saveRouting(next)
+    if (role === 'create') {
+      const w = await syncWriterBudgetToModel()
+      if (w.changed) showToast(`正文写作基准已按「创作」模型调整为 ${w.base} 字`, 'success')
+    }
     onChange?.()
   }
 
@@ -301,6 +324,16 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         <div className="text-12 text-ink-100 truncate">{p.name}</div>
                         <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
                       </div>
+                      {/* 用途徽标（2.8.0 · #014）：一眼看出这条配置被哪些用途指定了 */}
+                      {rolesOf(routing, p.id).map(r => (
+                        <span
+                          key={r}
+                          className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-info/15 text-info"
+                          title={`被「${ROLE_LABEL[r]}」用途指定 —— ${ROLE_HINT[r]}`}
+                        >
+                          {ROLE_LABEL[r]}
+                        </span>
+                      ))}
                       {!checkContextWindow(p.contextWindow).ok && (
                         <span
                           className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-amber/15 text-amber"
@@ -376,6 +409,46 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   </p>
                 </div>
               )}
+
+              {/* AI 用途路由（2.8.0 · #014）：三类任务各指定模型，留空 = 跟随当前模型。
+                  刻意放在模型列表正下方 —— 它是「模型配置」的延伸（同一份 providers 的分配），
+                  不另开页签（新增页签要四处同步，得不偿失）。 */}
+              <div className="mt-5 pt-4 border-t border-ink-800">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <h3 className="text-12 text-ink-200">AI 用途路由</h3>
+                  <HelpPopover title="AI 用途路由怎么用" width="23rem" size={13}>
+                    <p>给不同用途的 AI 任务分别指定模型：<b>创作</b>写好正文、<b>审校</b>材料读得多、<b>批量整理</b>调用最频繁。</p>
+                    <p className="mt-1.5">三格全部留空 ⇒ 所有功能都跟随上面的「当前模型」，与你从没设过它时完全一样。</p>
+                    <p className="mt-1.5">指定的模型被删除、或没填全配置 ⇒ 自动回落到当前模型，不会报错。</p>
+                    <p className="mt-1.5">典型用法：正文用质量最好的模型，「批量整理」指向一个便宜 / 快的模型，几十次整理调用就不必都烧大模型。</p>
+                  </HelpPopover>
+                </div>
+                <p className="text-11 text-ink-500 mb-2.5 leading-relaxed">
+                  留空即跟随当前模型。悬停每一项可看它在管哪些功能。
+                </p>
+                <div className="space-y-2">
+                  {TASK_ROLES.map(role => {
+                    // 指向已删除的模型时，界面按「跟随当前模型」显示 —— 与真实解析行为一致（回落）
+                    const val = providers.some(p => p.id === routing[role]) ? routing[role] : ''
+                    return (
+                      <div key={role} className="flex items-center gap-2">
+                        <span className="w-14 shrink-0 text-12 text-ink-300">{ROLE_LABEL[role]}</span>
+                        <select
+                          className="min-w-0 flex-1 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40"
+                          value={val}
+                          onChange={e => void changeRouting(role, e.target.value)}
+                          title={ROLE_HINT[role]}
+                        >
+                          <option value="">（跟随当前模型）</option>
+                          {providers.map(p => (
+                            <option key={p.id} value={p.id}>{p.name} · {p.model || '未设模型'}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </>
           ) : (
             <div className="space-y-3">

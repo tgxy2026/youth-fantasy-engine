@@ -8,7 +8,7 @@
 //   ① AI 只能**从给出的原文里挑行**，提示词明令不得改写、不得编造；
 //   ② 程序侧（bookbreak/aiSplit.applyAiSplit）把 AI 报的行在原文里逐字回定位，
 //      命中 <2 全部弃用 —— 这里（parse 层）只做宽松抽取，严格采信在 applyAiSplit。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseLooseObject, asText } from '../aiParse'
 import type { PromptDef } from '../promptSettings'
 
@@ -44,7 +44,8 @@ export function parseChapterLines(raw: string): string[] {
 }
 
 export async function aiBookBreakSplitChapters(req: BookBreakSplitRequest): Promise<string[]> {
-  const cfg = await requireActiveProvider()
+  // #014 用途路由：拆书章节边界识别属「批量整理」
+  const cfg = await requireProviderFor('utility')
   const numbered = req.samples.map((t, i) => `${i + 1}. ${t}`).join('\n')
   const user = `【章节标题示例（按这些行的格式规律识别）】
 ${numbered}

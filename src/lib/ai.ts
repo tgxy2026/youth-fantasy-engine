@@ -55,3 +55,11 @@ export {
   isProviderUsable, getActiveProvider, requireActiveProvider, aiReadySnapshot, subscribeAIReady,
 } from './aiCore/session'
 export type { AIReadyInfo } from './aiCore/session'
+
+// ---- AI 用途路由（2.8.0 · 台账 #014）：创作 / 审校 / 批量整理各自指定模型 ----
+// 🔴 aiRouting 只依赖 `./aiCore/session`（**不 import 本门面**），故此处再导出不成环。
+export {
+  TASK_ROLES, ROLE_LABEL, ROLE_HINT, DEFAULT_ROUTING,
+  loadRouting, saveRouting, resolveProviderFor, requireProviderFor, rolesOf,
+} from './aiRouting'
+export type { TaskRole, RoutingMap } from './aiRouting'

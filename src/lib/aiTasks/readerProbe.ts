@@ -12,7 +12,7 @@
 //   ③ 立场：不评分、不给等级、不谈"像不像模型写的"——由 tests/readerProbe.test.ts 的
 //      立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import type { PromptDef } from '../promptSettings'
 import {
   parseReaderProbe, questionsOf, readerLensOf,
@@ -54,7 +54,7 @@ export async function aiReaderProbe(
   lensKey: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ReaderProbeResult> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   const lens = readerLensOf(lensKey)
   const questions = questionsOf(lens) // 问题集单一源：读者三问（缺省）或导师四问
   const text = chapterText.trim()

@@ -12,7 +12,7 @@
 //   · 本任务 = 把**作者粘进来的一段内容**解析成表行；**不判重、不做增量判断** ——
 //     重复与否交给导入预览的本地校验去标（`validateImport`），作者看得见、可勾选、可放弃。
 //   若在这里也做判重，预览里就再也不会出现「与已有重复」这一状态，作者会以为导入行被吞了。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
@@ -69,7 +69,8 @@ let TABLE_IMPORT_SPLIT_SYS = `你是「青春幻想引擎」的资料录入助�
  * 「与已有重复 / 缺必填 / 悬空引用」，怎么处理由作者勾选决定。
  */
 export async function aiSplitTableRows(req: ImportSplitRequest): Promise<ImportSplitResult> {
-  const cfg = await requireActiveProvider()
+  // #014 用途路由：表格批量拆分属「批量整理」
+  const cfg = await requireProviderFor('utility')
   const max = req.maxRows ?? 60
 
   const colList = req.columns

@@ -1,7 +1,7 @@
 // ============ AI 任务层 · 灵感 / 审核类小工具（取名 · 敏感词复核）============
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #5 + #6 段）。
 // 为什么合成一个文件：两段各 40~50 行，单独成文件太碎；同为「小工具型」调用，内聚且零新耦合。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
 import type { PromptDef } from '../promptSettings'
 
@@ -48,7 +48,8 @@ export interface NameSuggestion {
 }
 
 export async function aiSuggestNames(req: NameSuggestRequest): Promise<NameSuggestion[]> {
-  const cfg = await requireActiveProvider()
+  // #014 用途路由：取名属「批量整理」（短输出、常反复试）
+  const cfg = await requireProviderFor('utility')
   const n = req.count ?? 10
   const sys = P_name_suggest
   const user = `【取名对象】${req.target}
@@ -95,7 +96,8 @@ export interface SensitiveReview {
 }
 
 export async function aiReviewSensitive(hits: SensitiveHitInput[], opts?: { signal?: AbortSignal; onToken?: (delta: string) => void }): Promise<SensitiveReview[]> {
-  const cfg = await requireActiveProvider()
+  // #014 用途路由：敏感词复核属「批量整理」（逐条判断、调用频繁）
+  const cfg = await requireProviderFor('utility')
   const sys = P_sensitive_recheck
   const list = hits
     .slice(0, 40)

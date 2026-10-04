@@ -2,7 +2,7 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #17 段）。
 // 🔴 「动作 × 章位置」纪律矩阵（详规 docs/2.2.1-续排细纲*）：历史章冻结、最新章仅改写档放开。
 //    三条纪律提示词（BASE / HISTORY_RULE / LATEST_RULE）都是可编辑项，就地声明在本文件。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
 // 🔴 字数硬校准与容差：从 `lib/wordRange.ts` 取（与逐章连写共用同一常量与同一条校准逻辑）
@@ -116,7 +116,7 @@ export interface ChapterRewriteOpts {
  * @returns 清洗后的正文；**返回空串表示模型没吐出可用正文**（调用方提示重试）
  */
 export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('create')
   const fenceId = newAuthorFence()
   // 历史章 / 最新章纪律不同（见上面两条 RULE 的说明）
   const scopeRule = o.isLatest ? CHAPTER_REWRITE_LATEST_RULE : CHAPTER_REWRITE_HISTORY_RULE

@@ -9,7 +9,7 @@
 // 提示词里也不谈"这段文字出自人手还是模型"这类话题 —— 这条由 tests/paceAnalysis.test.ts
 // 的立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { PACE_BEAT_KINDS } from '../paceAnalysis'
 import type { PromptDef } from '../promptSettings'
 // 解析与位置换算都在本地纯函数层（tests 只 import 那边，不会把传输层拉进 Node 测试）
@@ -51,7 +51,7 @@ export async function aiPaceAnalysis(
   chapterText: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<PaceReport> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   const text = chapterText.trim()
   const user = `【设定资料（摘要）】
 ${projectContext.trim() || '（无）'}

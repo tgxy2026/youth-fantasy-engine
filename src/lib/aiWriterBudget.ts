@@ -18,6 +18,7 @@
 import * as db from './db'
 import { adviseCapacity, modelFingerprintOf, shouldApplyTuning, type CapacityAdvice } from './modelCapacity'
 import { loadProviders, loadActiveId, type AIProvider } from './ai'
+import { loadRouting, DEFAULT_ROUTING } from './aiRouting'
 import { getTavernSettings } from './tavern/settings'
 
 const K_WRITER_BUDGET = 'ai.writerBudget'
@@ -203,17 +204,26 @@ export function previewAt(base: number): { kind: WriterBudgetKind; label: string
 /**
  * 当前生效模型的能力与推荐基准 —— **面板与自动跟随共用同一个口径**，
  * 免得"面板显示的推荐值"与"实际自动套用的值"算得不一样。
+ *
+ * 🔴 2.8.0 · #014：正文写作额度按**「创作」用途**的模型算。
+ *    `create` 留空 ⇒ 回落到当前模型，与改造前**逐字一致**（升级零行为变化）。
+ *    为什么不是「当前模型」而是「创作模型的模型」：正文写作链路的调用点已改走 `create` 路由
+ *    （见 `resolveProviderFor('create')`），额度必须与真正发出去的那个模型同源，否则
+ *    「按 A 算额度、发给 B」—— B 的窗口更小时会被静默截断。
  */
 export async function currentModelAdvice(): Promise<
   { cap: CapacityAdvice; recommended: number; fingerprint: string } | null
 > {
   try {
-    const [providers, activeId, tav] = await Promise.all([
+    const [providers, activeId, routing, tav] = await Promise.all([
       loadProviders().catch(() => [] as AIProvider[]),
       loadActiveId().catch(() => null),
+      loadRouting().catch(() => ({ ...DEFAULT_ROUTING })),
       getTavernSettings().catch(() => null),
     ])
-    const p = providers.find(x => x.id === activeId) ?? null
+    // 「创作」用途留空 / 指向已删除的模型 ⇒ 回落当前模型（与改造前一致）
+    const createId = routing.create || activeId
+    const p = providers.find(x => x.id === createId) ?? null
     // 本地窗口由显存决定 —— 取酒馆那边设的 numCtx（同一个模型，窗口也是同一个）
     const numCtx = tav?.common.numCtx ?? 32768
     const cap = adviseCapacity(p, { numCtx, contextBudget: tav?.common.contextBudget ?? 24000 })

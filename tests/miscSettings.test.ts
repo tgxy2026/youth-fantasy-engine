@@ -23,6 +23,7 @@ import {
   TABS, FEATURE_TIER, DEFAULT_IDS, STRONG_DEPS, ANY_DEPS, SETTING_SUBTABS, getTab, tierOf,
 } from '../src/lib/schema'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
+import { readSchemaModule } from './sourceScan'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -98,7 +99,8 @@ const tab = getTab(MIS)
   ok('🔴 CODE_PREFIX 里**已无** misc-settings（改卡片后不编号，留着就是一条死配置）',
     !/'misc-settings':/.test(read('src/lib/autoCode.ts')))
   ok('schema 里也不再承诺 MISC 编号（codeRule 已删）',
-    !/编号规则：MISC/.test(read('src/lib/schema.ts')))
+    // 🔴 读**整个 schema 模块**（门面 + 段文件）：只读门面时这条「不含」断言恒真 = 什么都没测
+    !/编号规则：MISC/.test(readSchemaModule()))
 
   // 侧栏 / 功能勾选弹窗 / 指南页 / 数据健康都从 TABS 派生，自动生效 —— 这里确认派生方式没被改掉
   ok('侧栏仍从 TABS 派生（新页签自动出现在世界构建组，无需手工登记）',

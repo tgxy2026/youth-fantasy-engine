@@ -7,8 +7,7 @@
 // 本测试用桩 fetch 抓真实请求体，把四条策略钉死。
 import { chat } from '../src/lib/ai'
 import type { AIProvider } from '../src/lib/ai'
-import { readFileSync } from 'node:fs'
-import * as path from 'node:path'
+import { readAiModule } from './sourceScan'
 
 let pass = 0, fail = 0
 const ok = (n: string, c: boolean, e = '') => { if (c) { pass++; console.log('  PASS', n) } else { fail++; console.log('  FAIL', n, '::', e) } }
@@ -55,7 +54,9 @@ async function main() {
   ok('长文任务不受 JSON 低温影响', typeof tempOf(t) === 'number' && tempOf(t) !== 0.3, JSON.stringify(t.options))
 
   // ⑤ 策略写在统一入口，不在各调用点各写一份
-  const src = readFileSync(path.join(process.cwd(), 'src/lib/ai.ts'), 'utf8')
+  // 🔴 读**整个 ai 模块**（门面 + aiCore/*）：think 归中规则随拆分搬进了 aiCore/chat.ts，
+  //    只读门面会静默失明（2026-10-04 踩过）。
+  const src = readAiModule()
   ok('🔴 归中规则在 chat() 入口一处', /const think = opts\.think \?\? \(opts\.json \? false : undefined\)/.test(src))
   ok('🔴 ollama 路径只认 ===false（true 与 undefined 都不下发）', /if \(think === false\) body\.think = false/.test(src))
 

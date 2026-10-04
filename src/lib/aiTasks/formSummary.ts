@@ -3,7 +3,7 @@
 // 🔴 字段清单从 schema 现查（flow/formMap）—— 模型看到的字段名与落库键同源，避免 schema 漂移。
 // 🔴 只收「值确实是对象」的页签，**不在这里摊平**：模型按「页签 → 模块 → 字段」输出，
 //    这层拍平会把嵌套对象当空值全丢（2026-09-18 实测 5 张表全丢）。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseLooseObject } from '../aiParse'
 import { formFieldsPrompt, summaryFormTabs } from '../flow/formMap'
 import { longStream } from './stream'
@@ -49,7 +49,8 @@ export async function aiSummarizeFormSettings(
   material: string,
   opts: { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void } = {},
 ): Promise<Record<string, Record<string, unknown>>> {
-  const cfg = await requireActiveProvider()
+  // #014 用途路由：表单汇总属「批量整理」
+  const cfg = await requireProviderFor('utility')
   const tabIds = summaryFormTabs()
   const fieldList = formFieldsPrompt(tabIds)
   const askOnce = async (tighten = false): Promise<Record<string, Record<string, unknown>>> => {

@@ -33,6 +33,7 @@ import { READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
 import { INSPIRATION_PROMPTS } from './aiTasks/inspiration'
 import { BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
 import { TABLE_IMPORT_PROMPTS } from './aiTasks/tableImport'
+import { MARKET_RADAR_PROMPTS } from './marketRadar'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
@@ -82,6 +83,9 @@ export {
   parseReaderProbe, groupNotes, paragraphAt, readerProbeToText,
 } from './readerProbe'
 export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from './readerProbe'
+// 2026-10-04（2.8.0 · #018）：市场雷达 —— 选题趋势参考。复用现成联网检索（webSearch），**只读不写项目数据**。
+export { runMarketRadar, buildRadarQueries, RADAR_DISCLAIMER, RADAR_MAX_QUERIES, MARKET_RADAR_PROMPTS } from './marketRadar'
+export type { RadarInput, RadarReport, RadarTrendItem, RadarSource } from './marketRadar'
 
 /**
  * 提示词的**注册顺序**（🔴 有语义：`listPrompts()` 只按 group 稳定排序，组内保持登记顺序）。
@@ -123,6 +127,8 @@ const PROMPT_ORDER = [
   'deai-rule',
   // 2.7.0 追加在末尾：既可读又不动其它条目的既有顺序（数组先后 = 组内 UI 顺序）
   'table-import-split',
+  // 2.8.0 追加在末尾：市场雷达（#018）—— 只往末尾加，不动其它条目的既有 UI 顺序
+  'market-radar',
 ]
 
 const PROMPT_SETS: PromptDef[][] = [
@@ -140,6 +146,7 @@ const PROMPT_SETS: PromptDef[][] = [
   INLINE_PROMPTS,
   CREATIVE_PROMPTS,
   TABLE_IMPORT_PROMPTS,
+  MARKET_RADAR_PROMPTS,
 ]
 
 const byId = new Map<string, PromptDef>()

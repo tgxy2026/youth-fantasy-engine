@@ -1,7 +1,7 @@
 // ============ AI 任务层 · AI 整理（抽取成表）============
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #3 段）。
 // 提示词 ORGANIZE_SYS 就地声明在本文件（promptSettings 要求「提示词 ↔ 用法」同处）。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
@@ -95,7 +95,8 @@ let ORGANIZE_SYS = `你是「青春幻想引擎」的小说资料整理助手。
  * 双重保险防重复：prompt 里明确告知已有条目 + 返回后本地按关键列再去一遍重。
  */
 export async function aiOrganizeRows(req: OrganizeRequest): Promise<OrganizeResult> {
-  const cfg = await requireActiveProvider()
+  // #014 用途路由：批量补条目属「批量整理」—— 建议指向便宜 / 快的模型
+  const cfg = await requireProviderFor('utility')
   const max = req.maxRows ?? 12
 
   const colList = req.columns

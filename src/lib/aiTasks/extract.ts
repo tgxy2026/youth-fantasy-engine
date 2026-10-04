@@ -1,7 +1,7 @@
 // ============ AI 任务层 · 设定实体抽取（拆书 / 设定补登共用）============
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #23 段）。
 // 🔴 字段键从 flow/fieldMap 的 KIND_MAP 派生（见 SLOT_HINT 注释）—— 只读，不改。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import { KIND_MAP } from '../flow/fieldMap'
@@ -177,7 +177,8 @@ export async function aiExtractSettingEntities(
   chapterTitle: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ExtractedEntity[]> {
-  const cfg = await requireActiveProvider()
+  // #014 用途路由：从正文抽取设定属「批量整理」
+  const cfg = await requireProviderFor('utility')
   // 🔴 章题与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
   const fence = newAuthorFence()
   const user = `【章节】${chapterTitle.trim() ? authorBlock(fence, chapterTitle.trim()) : '（未命名章节）'}

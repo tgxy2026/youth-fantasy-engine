@@ -3,7 +3,7 @@
 // 收编：连续性自查 / 读者反馈分析 / 项目健康诊断 / 伏笔闭环 / 术语去重 / 文风体检。
 // ⚠️ #9 项目诊断用到 #7 的 `ContinuityFinding` 类型 —— 同文件内引用，不再跨模块。
 // ⚠️ 六条提示词各自就地声明；注册顺序由门面的 PROMPT_ORDER 决定，**别在这里调整顺序**。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText, humanText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
@@ -91,7 +91,7 @@ export async function aiContinuityAudit(
   chapterText: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ContinuityFinding[]> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   // 🔴 作者资料与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
   const fence = newAuthorFence()
   const sys = P_continuity_audit
@@ -154,7 +154,7 @@ export async function aiAnalyzeFeedback(
   entries: FeedbackEntry[],
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<FeedbackAnalysis> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   const list = entries.length
     ? entries
         .map((e, i) => {
@@ -217,7 +217,7 @@ export async function aiDiagnoseProject(
   stats: { chapters: number; words: number; volumes: number; unf: number; unusedIdeas: number },
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ProjectDiagnosis> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const sys = P_project_diagnosis
 
@@ -278,7 +278,7 @@ export async function aiForeshadowReview(
   projectContext: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ForeshadowReviewFinding[]> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const sys = P_foreshadow_review
 
@@ -328,7 +328,7 @@ export async function aiDedupTerms(
   terms: { term: string; category: string; definition: string }[],
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<{ groups: TermDupGroup[] }> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const list = terms
     .map((t, i) => `${i + 1}. ${t.term}${t.category ? `（${t.category}）` : ''}：${t.definition || '—'}`)
@@ -385,7 +385,7 @@ export async function aiStyleCheck(
   styleContext: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<StyleCheckFinding[]> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   // ⚠️【写作规范】是模型要**遵守**的规则（不是待处理素材），刻意不包裹；只有正文需要边界保护
   const sys = P_style_audit

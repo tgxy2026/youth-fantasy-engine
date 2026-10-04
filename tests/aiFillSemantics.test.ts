@@ -11,6 +11,7 @@
 // 本测试把这三组的分工与文案钉死，防止以后又被改混。
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
+import { readAiModule } from './sourceScan'
 
 let pass = 0, fail = 0
 const ok = (n: string, c: boolean, e = '') => { if (c) { pass++; console.log('  PASS', n) } else { fail++; console.log('  FAIL', n, '::', e) } }
@@ -111,7 +112,9 @@ function main() {
   ok('🔴 其余表单页不受影响：作品信息仍保持「AI 补全」且传 existing={data}',
     fs3.includes('AI 补全 · ${tab.name}') && fs3.includes('existing={data}'))
 
-  const aiSrc = read('src/lib/ai.ts')
+  // 🔴 读**整个 ai 模块**（门面 + aiCore/*）：三条大纲提示词与 FILL_CONTEXT_SYS 随拆分
+  //    搬进了 aiCore/prompts.ts / aiCore/template.ts，只读门面会静默失明（2026-10-04 踩过）。
+  const aiSrc = readAiModule()
   ok('🔴 三条大纲提示词各自就地声明（可单独在设置页微调）',
     ['P_fill_outline_master', 'P_fill_outline_volume', 'P_fill_outline_chapter']
       .every(v => new RegExp(`let ${v} = `).test(aiSrc)))

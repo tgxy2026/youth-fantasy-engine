@@ -7,6 +7,7 @@
 // （回退后不会有任何报错，界面照常工作）。静态断言成本极低，所以钉住。
 import fs from 'node:fs'
 import path from 'node:path'
+import { readSchemaModule } from './sourceScan'
 
 const ROOT = process.cwd()
 const read = (rel: string) => {
@@ -86,7 +87,8 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     !/灵感简报/.test(read('src/components/PlotCanvas.tsx')))
 
   ok('🔴 用户可见处不再出现「占位 / 待替换」这类开发期字样',
-    !/占位|待替换/.test(read('src/lib/schema.ts'))
+    // 🔴 读**整个 schema 模块**（门面 + 段文件）：只读门面时这条「不含」断言恒真 = 什么都没测
+    !/占位|待替换/.test(readSchemaModule())
     && !/占位内容/.test(read('src/components/AboutPage.tsx'))
     && !/待作者替换/.test(read('src/components/AboutPage.tsx'))
     && !/示例占位（/.test(read('src/components/AboutPage.tsx')))

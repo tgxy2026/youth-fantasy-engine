@@ -21,7 +21,7 @@ import * as db from './db'
 import { writerBudgetFor } from './aiWriterBudget'
 import { uid } from './id'
 import { countWords } from './textStats'
-import { requireActiveProvider, isCancelled, stripThink } from './ai'
+import { requireProviderFor, isCancelled, stripThink } from './ai'
 import { withAiAssist } from './aiAssist'
 // 🔴 「补写 / 压缩到目标字数」的校准逻辑已抽到 `lib/wordRange.ts`（整章改写侧也要用它，
 //    而那边不能 import 本文件 —— 会与 aiTasks 门面形成循环）。这里再导出一次常量，
@@ -204,7 +204,7 @@ async function generateOneChapter(opts: {
   onBodyReplace?: (s: string) => void
   onLog?: (s: string) => void
 }): Promise<string> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('create')
   const sys = buildSysPrompt(opts.targetWords, opts.chapterNo)
   const lo = opts.targetWords - WORD_TOLERANCE
   const hi = opts.targetWords + WORD_TOLERANCE
@@ -273,7 +273,7 @@ async function selfRefine(body: string, ctx: ProjectContextResult, signal?: Abor
 }
 
 async function suggestTitle(body: string, signal?: AbortSignal): Promise<string> {
-  const cfg = await requireActiveProvider().catch(() => null)
+  const cfg = await requireProviderFor('create').catch(() => null)
   if (!cfg) return '未命名章节'
   const snippet = body.slice(0, 1500)
   const sys = '你是网文编辑。请给这一章起一个简洁、有吸引力、不剧透的章节标题。要求：不含"第N章"前缀，不超过 15 个汉字，只输出标题本身，不要标点、不要引号、不要解释。'
@@ -363,7 +363,7 @@ export async function extractAndCommitSettings(
 // ============ C 策略：对已登记实体的变化做安全写回 ============
 
 async function extractSettingUpdates(body: string, title: string, signal?: AbortSignal): Promise<SettingUpdate[]> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('create')
   const sys = P_setting_update_detect
   const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, { signal, json: true })
   // 统一走 aiParse：旧实现是裸 JSON.parse——不剥代码块、不切最外层，
@@ -460,7 +460,7 @@ export async function runAutoContinue(
   },
   cb: ContinueCallbacks = {},
 ): Promise<{ created: { id: string; title: string; no: number }[] }> {
-  await requireActiveProvider() // 提前校验，无模型直接抛中文提示
+  await requireProviderFor('create') // 提前校验，无模型直接抛中文提示
   const vols = await db.getAllVolumes()
   const ordered = sortChapters(vols, await db.getAllChapters())
   const last = ordered.length ? ordered[ordered.length - 1] : null
@@ -495,7 +495,7 @@ export async function runAutoContinue(
       cb.onPhase?.(`补齐最后一章（${w0} → ${opts.targetWords} 汉字）…`)
       try {
         const filled = cleanChapterOutput(await enforceWordRange({
-          cfg: await requireActiveProvider(),
+          cfg: await requireProviderFor('create'),
           body: last.content || '',
           target: opts.targetWords,
           sys: buildSysPrompt(opts.targetWords),
@@ -600,7 +600,7 @@ export async function runAutoContinue(
           cb.onBodyReplace?.('')
           // 去 AI 味儿也是模型产出，同样可能带回 markdown 标记 —— 一并净化后再量字数
           const def = cleanChapterOutput(await deAiFlavor({
-            cfg: await requireActiveProvider(), body, instruction: opts.deAi.prompt,
+            cfg: await requireProviderFor('create'), body, instruction: opts.deAi.prompt,
             signal: cb.signal, onToken: cb.onBodyToken, onBodyReplace: cb.onBodyReplace,
           }).catch(() => ''))
           const dw = countWords(def)
@@ -634,7 +634,7 @@ export async function runAutoContinue(
       // ---- 采纳后：编辑自检 → 修正 → 二次字数校准 ----
       body = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`))
       body = await enforceWordRange({
-        cfg: await requireActiveProvider(), body, target: opts.targetWords,
+        cfg: await requireProviderFor('create'), body, target: opts.targetWords,
         sys: buildSysPrompt(opts.targetWords), signal: cb.signal,
         onPhase: p => cb.onPhase?.(`${tag}：${p}`), onBodyReplace: cb.onBodyReplace,
         ...(cb.onLog ? { onLog: cb.onLog } : {}),

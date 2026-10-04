@@ -1,7 +1,7 @@
 // ============ AI 任务层 · AI 伴写（inline ghost 逐句续写）============
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #24 段）。
 // 🔴 去 AI 味纪律（DEAI_INLINE_RULE）必须钉在 system **末尾**才有效。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { deAiGenerateRule } from '../deAiStyle'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
@@ -136,7 +136,7 @@ export interface InlineSuggestOptions {
 export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggestOptions = {}): Promise<string> {
   const body = (contextBefore ?? '').trim()
   if (body.length < 8) return ''            // 前文太短（还没起句），无从"接着写"
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('create')
   const limit = INLINE_SUGGEST_LIMITS[opts.length ?? 'sentence']
   const goal = opts.length === 'short' ? '一个短句' : opts.length === 'two' ? '一到两句' : '一句话'
 

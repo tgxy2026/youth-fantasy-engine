@@ -3,7 +3,7 @@
 // 方案见 docs/2.2.0-全自动AI小说创作工作流方案.md。
 // 🔴 生成与落库严格分离：本文件只产出内存对象，**绝不触达 db**；写库一律由用户在草稿界面上确认。
 // 🔴 输出与「一键拆书」的 ExtractedEntity[] 同形状（复用 lib/flow 的判重→草稿→审阅→落库管线）。
-import { chat, requireActiveProvider, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseLooseObject, asText } from '../aiParse'
 import { longStream } from './stream'
 import { authorBlock, newAuthorFence } from '../promptGuard'
@@ -104,7 +104,7 @@ export async function aiGenerateBible(
   seed: string,
   opts: { signal?: AbortSignal; onToken?: (d: string) => void; counts?: Partial<BibleCounts>; onRaw?: (raw: string) => void } = {},
 ): Promise<ExtractedEntity[]> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('create')
   const counts = { ...DEFAULT_BIBLE_COUNTS, ...(opts.counts ?? {}) }
 
   const askOnce = async (): Promise<ExtractedEntity[]> => {
@@ -348,7 +348,7 @@ export async function aiPlanOutline(
   material: string,
   opts: PlanOutlineInput & { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void },
 ): Promise<OutlineResult> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('create')
   const volCount = Math.max(1, Math.min(MAX_OUTLINE_VOLUMES, Math.round(opts.volumes) || 1))
   const perVolume = Math.max(1, Math.min(MAX_CHAPTERS_PER_VOLUME, Math.round(opts.chaptersPerVolume) || 1))
   // 🔴 缺口补齐（2026-09-20）：本批只补这一卷缺的那几章 —— 章数由缺口定，卷数参数不参与。

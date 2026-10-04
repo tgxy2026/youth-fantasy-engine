@@ -13,7 +13,7 @@
 //      定位不到的条目会被直接丢弃（作者点了也改不了），见 promptGuard 的说明。
 //   ② 提示词里**不写 markdown 星号**：模型会模仿输出格式，正文里就会混进 `**`。
 //      要强调就用「」（本项目文案规范同此）。
-import { chat, requireActiveProvider, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
+import { chat, requireProviderFor, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
 import { parseObjectArray, asText } from '../aiParse'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import { stripEmphasis } from '../mdLite'
@@ -188,7 +188,7 @@ async function runProofread(
   withContext: boolean,
   chunkTarget: number,
 ): Promise<ProofreadResult> {
-  const cfg = await requireActiveProvider()
+  const cfg = await requireProviderFor('review')
   const all = chunkText(text, chunkTarget)
   const maxChunks = opts.maxChunks ?? 8
   const chunks = all.slice(0, maxChunks)
