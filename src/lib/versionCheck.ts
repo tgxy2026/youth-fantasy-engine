@@ -74,7 +74,7 @@ export function setAutoCheck(on: boolean): void {
 }
 
 /** 被「跳过此版本」点掉的版本（该版本不再提示） */
-export function getSkippedVersion(): string | null {
+function getSkippedVersion(): string | null {
   return readStringPref(KEY_SKIP)
 }
 export function setSkippedVersion(v: string): void {
@@ -119,7 +119,7 @@ export function pickInstallerUrl(assets: unknown): string {
  * 查 Gitee 上的最新 Release。
  * 🔴 失败（断网 / 限流 / 结构变了）一律返回 null —— 调用方据此什么都不做。
  */
-export async function fetchLatestRelease(): Promise<LatestRelease | null> {
+async function fetchLatestRelease(): Promise<LatestRelease | null> {
   const raw = await getJson(LATEST_API)
   if (!raw || typeof raw !== 'object') return null
   const r = raw as { tag_name?: unknown; name?: unknown; body?: unknown; assets?: unknown }

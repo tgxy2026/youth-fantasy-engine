@@ -213,7 +213,7 @@ export const KB_IN_BACKUP_KEY = 'kbInBackup'
  *    `currentProjectId`，而 `exportProject(id)` 的 id 是**任意**项目
  *    （项目管理页导出别的项目时，currentProjectId 根本不是它，开关会读错）。
  */
-export async function kbInBackupOf(projectId: string): Promise<boolean> {
+async function kbInBackupOf(projectId: string): Promise<boolean> {
   try {
     const rec = await ops.get<{ key: string; value: unknown }>('settingsKV', `${projectId}::${KB_IN_BACKUP_KEY}`)
     return rec?.value === true

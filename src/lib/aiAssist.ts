@@ -39,7 +39,7 @@ export const AI_SOURCE_LABELS: Record<AiSourceKind, string> = {
 }
 
 /** 每类来源「用在什么环节」的白话说明（申报草稿直接用） */
-export const AI_SOURCE_WHERE: Record<AiSourceKind, string> = {
+const AI_SOURCE_WHERE: Record<AiSourceKind, string> = {
   generated: '创意写作 / 从无到有产出正文草稿',
   rewritten: '对已有正文做整章改写',
   continued: '在已有正文后自动续写',

@@ -34,9 +34,9 @@ export interface EmbedResult {
 /** 单次请求最多带多少条文本。Ollama 与主流 OpenAI 兼容端都能接受 32，再大就有被拒的风险 */
 export const EMBED_BATCH = 32
 /** 嵌入请求超时（毫秒）。它与对话不同 —— 不流式、通常 1~3 秒返回，30 秒已很宽裕 */
-export const EMBED_TIMEOUT_MS = 30_000
+const EMBED_TIMEOUT_MS = 30_000
 /** 极端情况下单条文本的字符上限（防某个畸形超长块把请求撑爆） */
-export const EMBED_TEXT_CAP = 4000
+const EMBED_TEXT_CAP = 4000
 
 function stripSlash(s: string): string {
   return (s ?? '').trim().replace(/\/+$/, '')

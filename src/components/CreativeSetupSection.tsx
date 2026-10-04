@@ -134,7 +134,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                 <label className="flex items-center gap-1.5">参考结构
                   <select value={inp.structureId} disabled={s.running}
                     onChange={e => updateInputs({ structureId: e.target.value })}
-                    title="给大纲规划注入一套全书结构参考（节拍占比按总章数折算，AI 会贴合但不会机械对齐）；选「不使用」则与以前完全一致。缺口补齐批次不生效。"
+                    title="给大纲规划注入全书结构参考（节拍占比按总章数折算，AI 贴合但不硬对齐）；缺口补齐不生效。"
                     className="bg-ink-800 border border-ink-700 rounded-md text-ink-100 text-11 px-2 py-1 outline-none focus:border-amber/40 disabled:opacity-60">
                     <option value="">不使用</option>
                     {STORY_TEMPLATES.map(t => (

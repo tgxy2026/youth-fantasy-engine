@@ -52,9 +52,9 @@ export interface SplitOptions {
   maxChunks?: number
 }
 
-export const DEFAULT_CHUNK_TOKENS = 1200
-export const DEFAULT_OVERLAP_TOKENS = 100
-export const DEFAULT_MAX_CHUNKS = 60
+const DEFAULT_CHUNK_TOKENS = 1200
+const DEFAULT_OVERLAP_TOKENS = 100
+const DEFAULT_MAX_CHUNKS = 60
 
 /** 中文数字字符表 */
 const CN_NUM = '0-9零一二两三四五六七八九十百千壹贰叁肆伍陆柒捌玖拾佰仟'

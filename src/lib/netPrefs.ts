@@ -22,7 +22,7 @@ export interface NetProxyPrefs {
 
 export const DEFAULT_BYPASS = 'localhost,127.0.0.1,<local>'
 
-export const DEFAULT_NET_PROXY: NetProxyPrefs = { enabled: false, rules: '', bypass: DEFAULT_BYPASS }
+const DEFAULT_NET_PROXY: NetProxyPrefs = { enabled: false, rules: '', bypass: DEFAULT_BYPASS }
 
 const NET_KEY = 'yfe-net-proxy'
 

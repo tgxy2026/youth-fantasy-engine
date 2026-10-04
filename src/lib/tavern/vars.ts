@@ -69,7 +69,7 @@ export function parseVarNotes(text: string, keys?: VarKey[]): Partial<Record<Var
 }
 
 /** 变动历史保留条数（状态栏回看用） */
-export const VAR_LOG_KEEP = 50
+const VAR_LOG_KEEP = 50
 
 // ==================== 解析 ====================
 

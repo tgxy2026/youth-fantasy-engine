@@ -16,7 +16,7 @@ export function stripCodeFence(raw: string): string {
 }
 
 /** 剥围栏后截取最外层 JSON 片段（从首个 open 到最后一个 close） */
-export function sliceJSON(raw: string, open: '[' | '{'): string {
+function sliceJSON(raw: string, open: '[' | '{'): string {
   const close = open === '[' ? ']' : '}'
   let s = stripCodeFence(raw)
   const a = s.indexOf(open)

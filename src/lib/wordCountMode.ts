@@ -22,7 +22,7 @@ import { usePersistedBool } from './uiPrefs'
 import type { WordCountMode } from './textStats'
 
 /** 偏好 key（落在 `yfe-ui:` 命名空间 —— 本机偏好、不进项目数据、不随导出 / 云同步走） */
-export const WORD_COUNT_PUNCT_KEY = 'word-count-with-punct'
+const WORD_COUNT_PUNCT_KEY = 'word-count-with-punct'
 
 /**
  * 字数口径偏好。

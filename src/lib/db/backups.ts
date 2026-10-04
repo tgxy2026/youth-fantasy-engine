@@ -62,7 +62,7 @@ function backupLimit(kind: BackupKind): number {
 }
 
 /** 载荷字节数（与旧 UI 的 `JSON.stringify(bundle).length` 同口径，保持数字可比） */
-export function payloadBytes(bundle: ProjectBundle): number {
+function payloadBytes(bundle: ProjectBundle): number {
   return JSON.stringify(bundle).length
 }
 
@@ -176,7 +176,7 @@ export async function restoreBackup(id: string): Promise<void> {
 // ⚠️ 与「迁移包」的分工：迁移包导的是**当前项目**（用于换机搬运）；备份文件导的是**某一份历史备份**。
 
 /** 备份外置文件的格式标记（解析时据此识别，避免把迁移包当备份文件吃进来） */
-export const BACKUP_FILE_KIND = 'yfe-backup'
+const BACKUP_FILE_KIND = 'yfe-backup'
 export const BACKUP_FILE_VERSION = 1
 
 export interface BackupFile {

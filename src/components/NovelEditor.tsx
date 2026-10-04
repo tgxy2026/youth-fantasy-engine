@@ -359,7 +359,7 @@ style={{ zIndex: Z.pageHandle }}
               <Button variant="bare" iconOnly size="sm"
                 onClick={() => setJieWenJiOpen(o => !o)}
                 className={`p-1 transition-colors shrink-0 ${jieWenJiOpen ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
-                title="颉文姬 · AI 编辑：校对（文字层 / 逻辑层） / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配置模型）"
+                title="颉文姬 · AI 编辑：校对 / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配模型）"
               >
                 <Wand2 size={14} />
               </Button>
@@ -412,7 +412,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       <Button variant="bare"
                         onClick={() => { setExportOpen(false); setExportFormatTab('docx') }}
                         className="w-full text-left !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                        title="Word 文档（DOCX）：可选排版（字号 / 对齐 / 缩进 / 行距 / 字体），也可一键导出投稿稿件（书名 + 简介 + 选定章节）"
+                        title="Word（DOCX）：可选排版（字号 / 对齐 / 缩进 / 行距 / 字体），也可一键导出投稿稿（书名 + 简介 + 选定章节）"
                       >
                         <Upload size={11} className="text-amber" /> 导出全书（Word · 可排版 / 投稿稿）
                       </Button>

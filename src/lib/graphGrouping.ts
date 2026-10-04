@@ -24,7 +24,7 @@ export interface Pt {
  * 🔴 与「关系类型」的边色板是两套语义：节点色说「你属于谁」，边色说「你们什么关系」。
  * 取色策略与既有 `TYPE_COLORS` / `REL_COLORS` 一致 —— 内置色精调、未收录的按名称哈希稳定取色。
  */
-export const GROUP_PALETTE = [
+const GROUP_PALETTE = [
   '#4f8ff7', '#e06c9f', '#3fb98f', '#e8a33d', '#9b7ff0', '#e07a5f',
   '#3fa9c9', '#8fb04a', '#d46a8a', '#6f86e0', '#c9913f', '#5fae9b',
 ]

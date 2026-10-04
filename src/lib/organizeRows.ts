@@ -68,7 +68,7 @@ export function organizeKeyColsOf(tab: TabDef): string[] {
 }
 
 /** 该表在「AI 整理」里是否按无序对判重（A-B 与 B-A 算同一条）。2.7.2 起配对表改为有向对 ⇒ 恒 false。 */
-export function organizeUnorderedOf(tab: TabDef): boolean {
+function organizeUnorderedOf(tab: TabDef): boolean {
   return !isDirectedPairTab(tab.id)
 }
 

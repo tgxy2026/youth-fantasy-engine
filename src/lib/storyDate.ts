@@ -26,9 +26,9 @@ import { getSetting, setSetting } from './db'
 export { DEFAULT_CALENDAR_RULE }
 
 /** 取值上下限（同时也是排序键不串位的保证，见文件头） */
-export const MONTHS_PER_YEAR_MIN = 1
+const MONTHS_PER_YEAR_MIN = 1
 export const MONTHS_PER_YEAR_MAX = 60
-export const DAYS_PER_MONTH_MIN = 1
+const DAYS_PER_MONTH_MIN = 1
 export const DAYS_PER_MONTH_MAX = 99
 
 const CALENDAR_RULE_KEY = 'calendarRule'
@@ -119,7 +119,7 @@ export function dayOptions(rule: CalendarRule): number[] {
  * 把「某年某月某日」换算成**从 0 年 1 月 1 日 起的绝对天数**（可为负）。
  * 缺月按 1 月、缺日按 1 日（渐进填写中也要能算，只是精度低一些）。
  */
-export function absDay(rule: CalendarRule, p: StoryDateParts): number {
+function absDay(rule: CalendarRule, p: StoryDateParts): number {
   const m = Math.min(Math.max(p.m ?? 1, 1), rule.monthsPerYear)
   const d = Math.min(Math.max(p.d ?? 1, 1), rule.daysPerMonth)
   return p.y * daysPerYear(rule) + (m - 1) * rule.daysPerMonth + (d - 1)

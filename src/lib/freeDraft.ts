@@ -29,7 +29,7 @@ import { getSetting, setSetting } from './db'
 /** 存储键前缀（`__` 之外的第二重保险：与 `draft::` 组合后不可能与业务键撞车） */
 const PREFIX = 'draft::'
 
-export function freeDraftKeyOf(scope: string): string {
+function freeDraftKeyOf(scope: string): string {
   return `${PREFIX}${scope}`
 }
 

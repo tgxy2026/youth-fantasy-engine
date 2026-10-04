@@ -20,7 +20,7 @@ import type { AIProvider } from '../aiCore/core'
 import type { EmbedConfig } from './embed'
 
 /** 存储键（落 `meta`，全局共享 —— 与模型配置同理，不随小说项目切换） */
-export const K_EMBEDDING = 'aiEmbedding'
+const K_EMBEDDING = 'aiEmbedding'
 
 export interface EmbeddingSettings {
   /** 用的哪个已配置模型（`providers` 里的 id）；空串 = 未配置 ⇒ 语义检索整体关闭 */

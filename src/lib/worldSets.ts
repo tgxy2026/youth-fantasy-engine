@@ -90,7 +90,7 @@ export const PARALLEL_SET_TABS: readonly string[] = ['politics', 'economy', 'bel
 export const MULTI_SET_TABS: readonly string[] = [...WORLD_SET_TABS, ...PARALLEL_SET_TABS]
 
 /** 子级的 tabId 后缀（`worldbase` → `worldbase-sub`；并列页签同理，如 `politics-sub`） */
-export const SUB_TAB_SUFFIX = '-sub'
+const SUB_TAB_SUFFIX = '-sub'
 
 /** 该页签是「母子结构」（有母级 formData + 子项） */
 export function isWorldSetTab(tabId: string): boolean {

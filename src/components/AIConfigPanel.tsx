@@ -378,7 +378,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 ))}
               </div>
               <div className="flex gap-2">
-                <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-success/10 text-success border border-success/25 rounded-lg text-12 hover:bg-success/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），运行在本机，一般免密钥、无需联网">
+                <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-success/10 text-success border border-success/25 rounded-lg text-12 hover:bg-success/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），跑在本机，一般免密钥、免联网">
                   <Cpu size={13} /> 添加本地模型
                 </Button>
                 <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-info/10 text-info border border-info/25 rounded-lg text-12 hover:bg-info/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">

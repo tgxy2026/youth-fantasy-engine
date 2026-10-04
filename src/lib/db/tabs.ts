@@ -69,7 +69,7 @@ export async function getCustomOptions(tabId: string, colName: string): Promise<
   return rec?.value ?? { items: [], hidden: [] }
 }
 
-export async function saveCustomOptions(tabId: string, colName: string, payload: CustomOptionPayload) {
+async function saveCustomOptions(tabId: string, colName: string, payload: CustomOptionPayload) {
   await ops.put('settingsKV', { key: `${CUSTOM_OPTION_PREFIX}${currentProjectId}::${tabId}::${colName}`, value: payload })
 }
 

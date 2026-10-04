@@ -149,7 +149,7 @@ const JUSTICE: FormModule[] = [
 ]
 
 /** 制度页签 id → 该页签的字段定义 */
-export const INSTITUTION_MODULES: Record<string, FormModule[]> = {
+const INSTITUTION_MODULES: Record<string, FormModule[]> = {
   politics: POLITICS,
   economy: ECONOMY,
   belief: BELIEF,

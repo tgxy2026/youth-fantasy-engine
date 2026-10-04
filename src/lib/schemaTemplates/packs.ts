@@ -27,7 +27,7 @@ export type GenrePack = (typeof GENRE_PACKS)[number]
 /** 默认包：老项目 / 未设置 / 无法识别时一律落这里（＝改造前的现状） */
 export const DEFAULT_PACK: GenrePack = '东方修真'
 
-export function isGenrePack(v: unknown): v is GenrePack {
+function isGenrePack(v: unknown): v is GenrePack {
   return typeof v === 'string' && (GENRE_PACKS as readonly string[]).includes(v)
 }
 

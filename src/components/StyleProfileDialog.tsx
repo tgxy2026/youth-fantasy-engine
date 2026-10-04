@@ -212,7 +212,7 @@ export function StyleProfileDialog({ open, onClose, ownerTab, onChanged }: {
         <div className="space-y-1.5">
           <div className="flex items-baseline gap-1.5">
             <span className="text-ink-200 text-12">我的文风档</span>
-            <span className="text-ink-500 text-10">全局保存，换项目也在；一次只启用一份</span>
+            <span className="text-ink-500 text-10">按当前项目保存，换书各用各的；一次只启用一份</span>
           </div>
           {!list.length && (
             <div className="text-ink-500 text-11 rounded border border-dashed border-ink-700 px-3 py-3 text-center">

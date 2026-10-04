@@ -92,7 +92,7 @@ function pickGiven(style: string): string {
   }
 }
 
-export function genPersonName(style: string): string {
+function genPersonName(style: string): string {
   switch (style) {
     // 西幻：双段式 "姓·名"
     case '西幻':
@@ -132,7 +132,7 @@ const SECT_SUFFIX_KEHUAN = ['舰队', '联盟', '议会', '总署', '局', '公�
 const SECT_PREFIX_XIHUAN = ['圣光', '暗影', '银月', '黑铁', '荆棘', '烈焰', '寒霜', '翡翠', '黄金', '白银', '紫水晶', '红龙', '苍鹰', '狮心', '双刃', '破晓', '黄昏']
 const SECT_SUFFIX_XIHUAN = ['骑士团', '兄弟会', '圣殿', '议会', '商会', '佣兵团', '教团', '守护者', '审判庭', '远征军']
 
-export function genSectName(style = '仙侠'): string {
+function genSectName(style = '仙侠'): string {
   switch (style) {
     case '都市': return pick(SECT_PREFIX_DUSHI) + pick(SECT_SUFFIX_DUSHI)
     case '科幻': return pick(SECT_PREFIX_KEHUAN) + pick(SECT_SUFFIX_KEHUAN)
@@ -156,7 +156,7 @@ const SKILL_SUFFIX_XUANYI = ['七式', '九斩', '十三刺', '百解', '杀招'
 const SKILL_PREFIX_DUSHI = ['博弈', '运筹', '商战', '翻云', '覆雨', '纵横', '破局', '逆袭', '点金', '腾挪']
 const SKILL_SUFFIX_DUSHI = ['三十六计', '心法', '手札', '商道', '博弈论', '实战录']
 
-export function genSkillName(style = '仙侠'): string {
+function genSkillName(style = '仙侠'): string {
   switch (style) {
     case '科幻': return pick(SKILL_PREFIX_KEHUAN) + pick(SKILL_SUFFIX_KEHUAN)
     case '军事': return pick(SKILL_PREFIX_JUNSHI) + pick(SKILL_SUFFIX_JUNSHI)
@@ -177,7 +177,7 @@ const PLACE_SUFFIX_KEHUAN = ['星系', '星云', '空间站', '殖民地', '基�
 const PLACE_PREFIX_XIHUAN = ['银月', '烈焰', '寒霜', '翡翠', '黄金', '暮光', '黎明', '黑铁', '紫晶', '龙脊']
 const PLACE_SUFFIX_XIHUAN = ['堡', '城', '王国', '公国', '领', '郡', '要塞', '港', '塔']
 
-export function genPlaceName(style = '仙侠'): string {
+function genPlaceName(style = '仙侠'): string {
   switch (style) {
     case '都市': return pick(PLACE_PREFIX_DUSHI) + pick(PLACE_SUFFIX_DUSHI)
     case '科幻': return pick(PLACE_PREFIX_KEHUAN) + pick(PLACE_SUFFIX_KEHUAN)
@@ -200,7 +200,7 @@ const ITEM_SUFFIX_XIHUAN = ['长剑', '重剑', '法杖', '盾牌', '战甲', '�
 const ITEM_PREFIX_DUSHI = ['黑卡', '御风', '星耀', '尊享', '量子', '极光', '云端', '凌霄']
 const ITEM_SUFFIX_DUSHI = ['座驾', '腕表', '套装', '手札', '酒', '雪茄', '典藏版']
 
-export function genItemName(style = '仙侠'): string {
+function genItemName(style = '仙侠'): string {
   switch (style) {
     case '科幻': return pick(ITEM_PREFIX_KEHUAN) + pick(ITEM_SUFFIX_KEHUAN)
     case '西幻':

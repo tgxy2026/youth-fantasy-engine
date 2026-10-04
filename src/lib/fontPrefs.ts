@@ -9,9 +9,9 @@
 //    **禁止只在 textarea 上内联 fontFamily**，否则伴写 ghost 与高亮层全部错位。
 
 /** 正文编辑器字体变量（.novel-textarea → font-serif 栈首） */
-export const FONT_EDITOR_VAR = '--font-editor'
+const FONT_EDITOR_VAR = '--font-editor'
 /** 界面全站字体变量（body → font-sans 栈首） */
-export const FONT_UI_VAR = '--font-ui'
+const FONT_UI_VAR = '--font-ui'
 
 export interface FontPrefs {
   /** 正文编辑器字体栈段；空串 = 跟随默认（不写变量） */
@@ -20,7 +20,7 @@ export interface FontPrefs {
   ui: string
 }
 
-export const DEFAULT_FONT_PREFS: FontPrefs = { editor: '', ui: '' }
+const DEFAULT_FONT_PREFS: FontPrefs = { editor: '', ui: '' }
 
 const FONT_KEY = 'yfe-font-prefs'
 

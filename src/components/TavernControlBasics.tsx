@@ -113,7 +113,7 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
           <div>
           <Section
             title="二、我的档案"
-            desc="你本人是谁 —— 全局设置，跨项目生效，每轮都进 system。自由对话靠它知道你是谁（称呼、亲疏、语气）；剧情推演不用它。三栏全空 = 不注入。"
+            desc="你本人是谁 —— 跨项目生效，每轮进 system。自由对话靠它知道你是谁；剧情推演不用。三栏全空＝不注入。"
           >
             <div className="mb-1">
               <AvatarPicker

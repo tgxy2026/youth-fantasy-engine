@@ -77,7 +77,7 @@ export const RADAR_DISCLAIMER = '以上为「联网检索结果 + 模型归纳�
 /** 一次雷达最多发多少条检索词（控制成本：每条检索 + 最后 1 次归纳） */
 export const RADAR_MAX_QUERIES = 6
 /** 报告里最多列多少条来源 */
-export const RADAR_MAX_SOURCES = 30
+const RADAR_MAX_SOURCES = 30
 
 /**
  * 由作品方向组合出检索词（纯函数，可脱离网络单测）。

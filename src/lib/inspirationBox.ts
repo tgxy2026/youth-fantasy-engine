@@ -21,14 +21,14 @@ export interface InspirationItem {
   createdAt: number
 }
 
-export const INSPIRATION_BOX_KEY = 'inspirationBox'
+const INSPIRATION_BOX_KEY = 'inspirationBox'
 export const INSPIRATION_MAX = 200
 
 export async function loadBox(): Promise<InspirationItem[]> {
   return (await db.getSetting<InspirationItem[]>(INSPIRATION_BOX_KEY, [])) ?? []
 }
 
-export async function saveBox(items: InspirationItem[]): Promise<void> {
+async function saveBox(items: InspirationItem[]): Promise<void> {
   await db.setSetting(INSPIRATION_BOX_KEY, items)
 }
 

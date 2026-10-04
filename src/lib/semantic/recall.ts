@@ -62,10 +62,10 @@ export interface RecallOptions {
   indexFn?: (projectId: string) => Promise<VecIndex>
 }
 
-export const RECALL_TOP_K = 6
-export const RECALL_MIN_SCORE = 0.35
-export const RECALL_PER_REF_CAP = 2
-export const RECALL_PREFILTER_AT = 1200
+const RECALL_TOP_K = 6
+const RECALL_MIN_SCORE = 0.35
+const RECALL_PER_REF_CAP = 2
+const RECALL_PREFILTER_AT = 1200
 
 /**
  * 余弦相似度。

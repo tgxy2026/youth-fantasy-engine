@@ -18,7 +18,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
           {/* ---------- 三、预设方案（A4） ---------- */}
           <Section
             title="三、预设方案"
-            desc="把整套设置存成命名快照，一键切换。预设包含协议全文，所以换预设等于把参数与格式契约一起换掉 —— 只换一半的话，格式规则还是上一套的。"
+            desc="把整套设置存成命名快照，一键切换。预设含协议全文，换预设会连格式契约一起换。"
           >
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="primary" size="md" onClick={() => setPresetNaming(true)}>＋ 存为预设</Button>
@@ -84,7 +84,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
           {/* ---------- 四、输出后处理（B3） ---------- */}
           <Section
             title="四、输出后处理"
-            desc="生成后按下面规则依次修一遍再落库。协议已写死格式，模型常不听话，用规则兜住更划算。先去 markdown 再处理单星号动作，否则「动作」会被拆成 *（动作）*。"
+            desc="生成后按规则依次修一遍再落库。模型常不守格式，用规则兜住更划算；先去 markdown 再处理单星号动作。"
           >
             <ToggleField
               label="启用输出后处理"

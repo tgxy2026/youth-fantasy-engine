@@ -59,7 +59,7 @@ export const SCRIPT_TOPICS: InterviewTopic[] = [
  * 故事提纲：先「叫什么」，再把这个世界的骨架问全。
  * 刻意**不问人物与情节** —— 那是角色卡与剧本的活儿，混进来就成了三处重复的设定源。
  */
-export const STORY_TOPICS: InterviewTopic[] = [
+const STORY_TOPICS: InterviewTopic[] = [
   { key: 'name', label: '故事名', ask: '先给这个世界起个短名（列表里认得出的那种）', fields: ['name'] },
   {
     key: 'setting', label: '这个世界', fields: ['setting'],
@@ -69,7 +69,7 @@ export const STORY_TOPICS: InterviewTopic[] = [
   },
 ]
 
-export function topicsOf(kind: InterviewKind): InterviewTopic[] {
+function topicsOf(kind: InterviewKind): InterviewTopic[] {
   if (kind === 'card') return CARD_TOPICS
   if (kind === 'story') return STORY_TOPICS
   return SCRIPT_TOPICS
@@ -82,16 +82,16 @@ export function fieldKeysOf(kind: InterviewKind): string[] {
 }
 
 /** 栏名 → 中文名（界面摊平、提示词都靠它） */
-export const CARD_LABELS: Record<string, string> = {
+const CARD_LABELS: Record<string, string> = {
   name: '名字', world: '角色与设定的关系', externals: '外在', core: '内核', speech: '语言特征', relations: '关系',
   cannot: '做不到的事', knowledge: '知识边界', perspective: '视角与人称', bottomLine: '底线清单',
   paceLock: '进度锁', rating: '尺度', examples: '示例对话',
 }
-export const SCRIPT_LABELS: Record<string, string> = {
+const SCRIPT_LABELS: Record<string, string> = {
   name: '名称', situation: '情境', opening: '开场白', playerRole: '你的位置', goal: '这一场的目标', taboo: '不要发生',
 }
 
-export const STORY_LABELS: Record<string, string> = {
+const STORY_LABELS: Record<string, string> = {
   name: '故事名', setting: '世界设定',
 }
 

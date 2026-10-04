@@ -16,7 +16,7 @@ import { recallRelevant, type RecallHit } from './recall'
 import { resolveEmbedConfig } from './settings'
 
 /** 查询文本取焦点章正文的前多少字（摘要已给出主题，正文前段补"当下的语感与场景"） */
-export const SEMANTIC_QUERY_CHARS = 900
+const SEMANTIC_QUERY_CHARS = 900
 
 export interface SemanticInjectOptions {
   projectId: string

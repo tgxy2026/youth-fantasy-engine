@@ -108,7 +108,7 @@ export interface CreativeInputs {
   structureId: string
 }
 
-export const DEFAULT_INPUTS: CreativeInputs = {
+const DEFAULT_INPUTS: CreativeInputs = {
   length: 'short',
   seed: '',
   intent: '',
@@ -258,13 +258,13 @@ function set(patch: Partial<CreativeSession>) {
   schedulePersist()
 }
 
-export function subscribeCreative(fn: () => void): () => void {
+function subscribeCreative(fn: () => void): () => void {
   listeners.add(fn)
   return () => {
     listeners.delete(fn)
   }
 }
-export function creativeSnapshot(): CreativeSession {
+function creativeSnapshot(): CreativeSession {
   return snap
 }
 /** 组件订阅点：切页签重挂载后拿到的就是原样状态（任务还在跑） */
@@ -275,7 +275,7 @@ export function useCreativeSession(): CreativeSession {
 // ============ 派生工具 ============
 
 /** 当前输入对应的去 AI 味儿提示词（自定义模板取输入框，其余取内置） */
-export function deAiPromptOf(inp: CreativeInputs): string {
+function deAiPromptOf(inp: CreativeInputs): string {
   if (inp.deAiTpl === 'custom') return inp.deAiCustom.trim()
   return DEAI_TEMPLATES.find(t => t.id === inp.deAiTpl)?.prompt ?? ''
 }

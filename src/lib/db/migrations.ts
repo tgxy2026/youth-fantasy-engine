@@ -102,7 +102,7 @@ export async function migrateChapterNumbering(): Promise<void> {
  * 幂等：已有地图行时不再新建，只回填「所属地图」为空的地理行。
  * 格档沿用旧的全局设置 `geoMapCellKm`（原实现把每格公里存在 setting 里）。
  */
-export async function migrateGeoMaps(): Promise<number> {
+async function migrateGeoMaps(): Promise<number> {
   const pid = currentProjectId
   if (!pid) return 0
   const rows = await ops.getAll<TableRow>('tableRows')
@@ -242,7 +242,7 @@ export async function runMigrations(): Promise<void> {
  *  · 幂等判据用 `'结束时间' in data`（键存在即视为作者已表态 —— 他后来刻意清空的行不会被反复覆盖）；
  *  · **只补不删** —— 老键「故事内时间」原样保留（万一作者降级回旧版，数据还在）。
  */
-export async function migrateStoryTimeColumns(): Promise<number> {
+async function migrateStoryTimeColumns(): Promise<number> {
   const pid = currentProjectId
   if (!pid) return 0
   const OLD = '故事内时间'

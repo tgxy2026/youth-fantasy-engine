@@ -157,7 +157,7 @@ export const REPLY_RESERVE_TOKENS = 8192
  * 出厂值就是按这个比例配的，故用它当**安全上限**：超过它说明这份预算多半来自云端
  * （云端可到 41 万），切回本地后需要回落。
  */
-export const LOCAL_BUDGET_OF_CTX = 24000 / 32768
+const LOCAL_BUDGET_OF_CTX = 24000 / 32768
 
 // ============================================================
 // 记忆档：跟着预算走的推荐
@@ -210,7 +210,7 @@ const DIARY_BASE_BUDGET = 24000
  * 出厂 24000 预算算出来是 240，仍取 400 ⇒ 默认行为一字不变。
  */
 const FIXED_OVERHEAD_RATIO = 0.01
-export const FIXED_OVERHEAD_FLOOR = 400
+const FIXED_OVERHEAD_FLOOR = 400
 
 /** 对齐到 step 的最近倍数：推出来的值带着零头的话，用户改一下就对不齐输入框步长 */
 function snap(v: number, step: number): number {

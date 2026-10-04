@@ -21,7 +21,7 @@ export const MAP_IMAGE_MAX_INPUT_BYTES = 16 * 1024 * 1024
 /** 处理后长边上限 */
 export const MAP_IMAGE_MAX_SIDE = 1600
 /** 处理后体积上限 */
-export const MAP_IMAGE_TARGET_BYTES = 800 * 1024
+const MAP_IMAGE_TARGET_BYTES = 800 * 1024
 /** 质量阶梯：先保画质，超限才降 */
 export const MAP_IMAGE_QUALITY_STEPS = [0.88, 0.8, 0.7] as const
 export const MAP_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp'

@@ -41,7 +41,7 @@ export const RELATION_TAB_IDS = ['relations', 'faction-rels']
  *    逼它逐字摘一句原文（+ 本地核对那句话确实在材料里），是唯一确定性的兜底。
  *    摘不出原文的条目一律丢掉，并如实报给界面。
  */
-export const EVIDENCE_FIELD = '依据'
+const EVIDENCE_FIELD = '依据'
 
 /**
  * 引文是否真的出现在材料里（**纯函数，可单测**）。

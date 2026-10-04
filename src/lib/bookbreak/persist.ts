@@ -24,7 +24,7 @@ import type { Chapter, Volume } from '../types'
 import { isVolumeTitle, type SplitResult } from './split'
 
 /** 导入章节的初始状态：原文本来就是写完的文本，标「完稿」最贴切（改这里要同步面板说明） */
-export const IMPORTED_CHAPTER_STATUS = '完稿' as const
+const IMPORTED_CHAPTER_STATUS = '完稿' as const
 
 export interface PlannedChapter {
   title: string
@@ -44,7 +44,7 @@ export interface PersistPlan {
   words: number
 }
 
-export const DEFAULT_IMPORT_VOLUME_TITLE = '导入原文'
+const DEFAULT_IMPORT_VOLUME_TITLE = '导入原文'
 
 /**
  * 剥掉章标题里的「第N章/回/节」「Chapter N」前缀，只留章名。

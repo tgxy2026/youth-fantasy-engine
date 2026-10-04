@@ -150,7 +150,7 @@ export function readStringPref(key: string): string | null {
  *    拿回来的就是 undefined —— 表现为"按 Tab 没反应"，且极难定位。
  *    偏好不好用不该让功能静默失效，所以非法值一律退回默认。
  */
-export function readEnumPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+function readEnumPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
     const raw = localStorage.getItem(PREFIX + key)
     return allowed.includes(raw as T) ? (raw as T) : fallback

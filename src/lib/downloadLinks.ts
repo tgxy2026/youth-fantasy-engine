@@ -16,5 +16,5 @@ export const QUARK_TOKEN =
   '我用夸克网盘给你分享了「青春幻想引擎」，点击链接或复制整段内容，打开「夸克APP」即可获取。\n/~bb863abBGY~:/'
 
 /** Gitee 仓库主页 / Release 页（Web 端兜底：打不开直链时给人看的页面） */
-export const GITEE_REPO_URL = 'https://gitee.com/tgxy2026/youth-fantasy-engine'
+const GITEE_REPO_URL = 'https://gitee.com/tgxy2026/youth-fantasy-engine'
 export const GITEE_RELEASES_URL = `${GITEE_REPO_URL}/releases`

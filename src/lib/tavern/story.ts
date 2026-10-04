@@ -171,7 +171,7 @@ export type StoryDraftFields = Pick<TavernStory, 'name' | 'setting'>
 
 export const EMPTY_STORY_FIELDS: StoryDraftFields = { name: '', setting: '' }
 
-export function buildStoryDraftSystem(): string {
+function buildStoryDraftSystem(): string {
   return [
     '你在为一个角色扮演世界写「故事」的基本设定。作者会给一句粗略的想法，你把它补成两栏。',
     '',

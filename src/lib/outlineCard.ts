@@ -16,7 +16,7 @@ import { resolveSlot } from './flow/fieldMap'
 export const OUTLINE_TAB_ID = 'chapter-outline'
 
 /** 「本章一句话事件」的**语义**槽位名；真键（`模块::字段`）用 `outlineEventKey()` 现查 */
-export const OUTLINE_EVENT_SLOT = '本章一句话事件'
+const OUTLINE_EVENT_SLOT = '本章一句话事件'
 
 /** 细纲卡的标准卡名：`第3章 风云`（标题为空时退化为 `第3章`） */
 export function outlineCardName(no: number, title: string): string {
@@ -81,7 +81,7 @@ export function outlineEventKey(): string | null {
 export const VOLUME_OUTLINE_TAB_ID = 'volume-outline'
 
 /** 「本卷章号范围」的**语义**槽位名（真键用 `volumeRangeKey()` 现查） */
-export const VOLUME_RANGE_SLOT = '本卷章号范围'
+const VOLUME_RANGE_SLOT = '本卷章号范围'
 
 /** 「本卷章号范围」的真实存储键；schema 里没这一列时返回 null */
 export function volumeRangeKey(): string | null {

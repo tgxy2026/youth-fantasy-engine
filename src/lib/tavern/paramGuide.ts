@@ -50,7 +50,7 @@ export type ParamGuide = {
 }
 
 /** 采样类参数：剧情推演与自由对话**语义完全相同**，共用一份（差异写在各自那条 hint 里） */
-export const GUIDE_TEMPERATURE: ParamGuide = {
+const GUIDE_TEMPERATURE: ParamGuide = {
   min: 0, max: 2, step: 0.05,
   bands: [
     { from: 0, to: 0.4, name: '死板', effect: '几乎每次都给同一个回答，角色像在念设定稿 —— 措辞不变，同一句话总是同样的反应。只在「必须严格照设定走、不许发挥」时用。' },
@@ -61,7 +61,7 @@ export const GUIDE_TEMPERATURE: ParamGuide = {
   ],
 }
 
-export const GUIDE_TOP_P: ParamGuide = {
+const GUIDE_TOP_P: ParamGuide = {
   min: 0, max: 1, step: 0.01,
   bands: [
     { from: 0, to: 0.2, name: '掐死长尾', effect: '每步只从最可能的一两个词里挑，回复极度重复模板化（「嗯。」「好。」），几乎没有新的表达方式。' },
@@ -72,7 +72,7 @@ export const GUIDE_TOP_P: ParamGuide = {
   ],
 }
 
-export const GUIDE_TOP_K: ParamGuide = {
+const GUIDE_TOP_K: ParamGuide = {
   min: 0, max: 200, step: 1,
   bands: [
     { from: 0, to: 0, name: '关闭', effect: '不做这一步筛选，候选完全交给温度和核采样决定 —— 范围最宽，也最难预料。' },
@@ -83,7 +83,7 @@ export const GUIDE_TOP_K: ParamGuide = {
   ],
 }
 
-export const GUIDE_REPEAT_PENALTY: ParamGuide = {
+const GUIDE_REPEAT_PENALTY: ParamGuide = {
   min: 0.5, max: 2, step: 0.01,
   bands: [
     { from: 0.5, to: 1, name: '鼓励重复', effect: '低于 1 等于「奖励」重复用词 —— 口头禅、整句复读都会明显变多。只有想强化「这个人就爱说这句」时才用。' },
@@ -94,7 +94,7 @@ export const GUIDE_REPEAT_PENALTY: ParamGuide = {
   ],
 }
 
-export const GUIDE_PRESENCE_PENALTY: ParamGuide = {
+const GUIDE_PRESENCE_PENALTY: ParamGuide = {
   min: -2, max: 2, step: 0.05,
   bands: [
     { from: -2, to: -1, name: '死守老话题', effect: '强烈倾向重复出现过的话题与用词 —— 对话明显绕圈，角色会反复问同一件事。' },
@@ -144,7 +144,7 @@ export const GUIDE_FREQUENCY_PENALTY: ParamGuide = {
   ],
 }
 
-export const GUIDE_SETTING_RATIO: ParamGuide = {
+const GUIDE_SETTING_RATIO: ParamGuide = {
   min: 10, max: 95, step: 5, unit: '%',
   bands: [
     { from: 10, to: 35, name: '历史优先', effect: '设定被大幅压缩，项目资料只能带进一小部分 —— 角色容易「忘设定」（性格、口癖、关系都可能走样）。' },
@@ -155,7 +155,7 @@ export const GUIDE_SETTING_RATIO: ParamGuide = {
   ],
 }
 
-export const GUIDE_CONTEXT_BUDGET: ParamGuide = {
+const GUIDE_CONTEXT_BUDGET: ParamGuide = {
   min: 1000, max: 2097152, step: 500, unit: '字',
   bands: [
     { from: 1000, to: 4000, name: '极小', effect: '只记得住最近几轮；协议 + 角色卡 + 背景设定本身就吃掉大半，角色会反复问已经答过的事。' },
@@ -166,7 +166,7 @@ export const GUIDE_CONTEXT_BUDGET: ParamGuide = {
   ],
 }
 
-export const GUIDE_FIXED_OVERHEAD: ParamGuide = {
+const GUIDE_FIXED_OVERHEAD: ParamGuide = {
   min: 0, max: 20000, step: 100, unit: '字',
   // 2026-09-14 语义变更：协议与记忆已经算在 system 里，不再重复预留，这一项降到纯余量。
   bands: [
@@ -177,7 +177,7 @@ export const GUIDE_FIXED_OVERHEAD: ParamGuide = {
   ],
 }
 
-export const GUIDE_TIMEOUT: ParamGuide = {
+const GUIDE_TIMEOUT: ParamGuide = {
   min: 10, max: 900, step: 10, unit: '秒',
   bands: [
     { from: 10, to: 30, name: '只够快模型', effect: '云端小模型勉强可用；本地模型几乎必然中途超时，表现为「每次都报错」。' },
@@ -187,7 +187,7 @@ export const GUIDE_TIMEOUT: ParamGuide = {
   ],
 }
 
-export const GUIDE_NUM_CTX: ParamGuide = {
+const GUIDE_NUM_CTX: ParamGuide = {
   min: 2048, max: 2097152, step: 1024, unit: '词元',
   // 🔴 2026-10-04（2.8.0）老大定案：**档位不再按显存分级**。
   //    这里默认就取「模型配置 → 上下文窗口」里填的那个值，讲显存只会让人不敢填真实值。
@@ -205,7 +205,7 @@ export const GUIDE_NUM_CTX: ParamGuide = {
 //    单测逐项比对）。旧上界（1 万 / 2 万 / 2000）是按本地 32K 定的，1M 云端窗口下会把
 //    按比例算出的记忆（6.8 万）硬夹回 2 万 —— 窗口越大、记忆反而越不匹配。
 //    上界只作兜底，界面上的真实刻度由 `dynamicGuide()` 按当前模型的推荐值生成。
-export const GUIDE_SOFT_LIMIT: ParamGuide = {
+const GUIDE_SOFT_LIMIT: ParamGuide = {
   min: 200, max: 200000, step: 100, unit: '字',
   bands: [
     { from: 200, to: 800, name: '很紧', effect: '会频繁提醒超限、逼你去压缩，细小情节基本存不住。' },
@@ -215,7 +215,7 @@ export const GUIDE_SOFT_LIMIT: ParamGuide = {
   ],
 }
 
-export const GUIDE_HARD_LIMIT: ParamGuide = {
+const GUIDE_HARD_LIMIT: ParamGuide = {
   min: 200, max: 400000, step: 100, unit: '字',
   bands: [
     { from: 200, to: 1200, name: '很紧', effect: '超过就压缩，日记与关系状态会被频繁砍短，长期看记忆会「越来越只剩骨架」。' },
@@ -225,7 +225,7 @@ export const GUIDE_HARD_LIMIT: ParamGuide = {
   ],
 }
 
-export const GUIDE_LONGTERM_LIMIT: ParamGuide = {
+const GUIDE_LONGTERM_LIMIT: ParamGuide = {
   min: 100, max: 40000, step: 50, unit: '字',
   bands: [
     { from: 100, to: 200, name: '极简', effect: '长期摘要只剩几句话，久远的事容易被压没，角色会「忘了你们怎么认识的」。' },
@@ -235,7 +235,7 @@ export const GUIDE_LONGTERM_LIMIT: ParamGuide = {
   ],
 }
 
-export const GUIDE_DIARY_KEEP: ParamGuide = {
+const GUIDE_DIARY_KEEP: ParamGuide = {
   min: 1, max: 30, step: 1, unit: '条',
   bands: [
     { from: 1, to: 3, name: '只留最近', effect: '两三天前的日记就滚掉了，往前翻会发现「断档」。' },
@@ -245,7 +245,7 @@ export const GUIDE_DIARY_KEEP: ParamGuide = {
   ],
 }
 
-export const GUIDE_SUMMARY_LOCK: ParamGuide = {
+const GUIDE_SUMMARY_LOCK: ParamGuide = {
   min: 1, max: 1440, step: 10, unit: '分钟',
   bands: [
     { from: 1, to: 10, name: '太短', effect: '一次整理还没跑完锁就过期，另一个窗口可能抢走它 —— 两份结果互相覆盖。' },
@@ -255,7 +255,7 @@ export const GUIDE_SUMMARY_LOCK: ParamGuide = {
   ],
 }
 
-export const GUIDE_DAILY_ADVANCE: ParamGuide = {
+const GUIDE_DAILY_ADVANCE: ParamGuide = {
   min: 1, max: 168, step: 1, unit: '小时',
   bands: [
     { from: 1, to: 4, name: '很勤', effect: '隔一两个小时就补一段「这几天的生活」，日常会被流水账填满、缺少「过了一阵子」的分量。' },
@@ -265,7 +265,7 @@ export const GUIDE_DAILY_ADVANCE: ParamGuide = {
   ],
 }
 
-export const GUIDE_DAILY_KEEP: ParamGuide = {
+const GUIDE_DAILY_KEEP: ParamGuide = {
   min: 1, max: 30, step: 1, unit: '条',
   bands: [
     { from: 1, to: 3, name: '只留最近', effect: '往前翻两天就没了，日常看起来只有零碎的两笔。' },
@@ -283,7 +283,7 @@ export const GUIDE_DAILY_KEEP: ParamGuide = {
  */
 /** 本场数值：多久请求一次增量 */
 /** 本场数值：单次允许的最大变化幅度（给模型的刹车） */
-export const GUIDE_VAR_MAX_STEP: ParamGuide = {
+const GUIDE_VAR_MAX_STEP: ParamGuide = {
   min: 1, max: 30, step: 1, unit: '点',
   bands: [
     { from: 1, to: 3, name: '很保守', effect: '推进极慢：−100~+100 的刻度上要走很久才有感觉，适合"关系本来就稳"的长线陪伴。' },
@@ -353,7 +353,7 @@ export function bandOf(g: ParamGuide, v: number): ParamBand {
 // 于是「推荐值 ±25%」都还算推荐档 —— 手调一点点不会立刻跳档，手感更稳。
 
 /** 能按当前模型动态生成档位的项（都是字数 / 条数类；采样类语义与窗口无关，不在此列） */
-export const DYNAMIC_GUIDE_KEYS = [
+const DYNAMIC_GUIDE_KEYS = [
   'contextBudget', 'numCtx', 'fixedOverheadChars', 'softLimit', 'hardLimit', 'longTermLimit', 'diaryKeep',
 ] as const
 export type DynamicGuideKey = (typeof DYNAMIC_GUIDE_KEYS)[number]

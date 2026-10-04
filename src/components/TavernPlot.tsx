@@ -549,7 +549,7 @@ export default function TavernPlot() {
         onToggleMute={(id, next) => { if (session) void applyDirection(store.setMuted(session, id, next)) }}
         onSetTalkativity={(id, v) => { if (session) void applyDirection(store.setTalkativity(session, id, v)) }}
         onClose={() => setDirectorOpen(false)}
-        note="只影响这一场的发言安排：不改角色卡，也不删记忆 —— 静音的人依然算在场，只是这一轮不发言。「下一位」点名在自由对话里。"
+        note="只影响这一场：不改角色卡、不删记忆 —— 静音的人依然在场，只是这轮不发言。「下一位」点名在自由对话里。"
       />
 
       {/* 检查点命名：留空就用「第 N 条」（allowEmpty 让它能直接回车） */}
