@@ -17,24 +17,10 @@ import { usePersistedBool } from '../lib/uiPrefs'
 const BILI_URL = 'https://b23.tv/zl4vqyw'
 const BILI_NAME = '铁骨咸鱼'
 
-// 致谢名单（支持者墙）—— 示例占位：借用知名网络小说主角的名号排排站，后续由作者替换为真实读者 / 金主 / 贡献者记录
-const THANKS: { name: string; work: string }[] = [
-  { name: '萧炎', work: '斗破苍穹' },
-  { name: '唐三', work: '斗罗大陆' },
-  { name: '林动', work: '武动乾坤' },
-  { name: '牧尘', work: '大主宰' },
-  { name: '叶凡', work: '遮天' },
-  { name: '石昊', work: '完美世界' },
-  { name: '楚风', work: '圣墟' },
-  { name: '韩立', work: '凡人修仙传' },
-  { name: '王林', work: '仙逆' },
-  { name: '孟浩', work: '我欲封天' },
-  { name: '白小纯', work: '一念永恒' },
-  { name: '方源', work: '蛊真人' },
-  { name: '徐凤年', work: '雪中悍刀行' },
-  { name: '陈平安', work: '剑来' },
-  { name: '许七安', work: '大奉打更人' },
-  { name: '宁毅', work: '赘婿' },
+// 致谢名单（支持者墙）—— 按打赏时间排序，由作者手工维护：新打赏者追加到数组末尾即可，数组顺序＝展示顺序
+const THANKS: string[] = [
+  '神秘鱼先生',
+  'Ryan',
 ]
 
 // 联系方式（导出供本地数据提醒弹窗复用，避免两处各写一份导致不同步）
@@ -80,7 +66,7 @@ export default function AboutPage() {
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
           <HelpPopover title="这一页是什么" side="right">
-            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 打赏名单暂为示例（借用了若干知名作品的角色名），后续会更新为真实记录；\n· 页面图文与链接均为内置静态资源；仅「检查更新」会向 Gitee 发一次只读请求。'}
+            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；仅「检查更新」会向 Gitee 发一次只读请求。'}
           </HelpPopover>
         </div>
         <p className="text-ink-400 text-sm mb-8">
@@ -222,16 +208,15 @@ export default function AboutPage() {
                 <Users size={14} className="text-amber" /> 致谢名单
               </h3>
               <p className="text-ink-500 text-11 mb-3">
-                名单暂为示例（借用各位知名网络小说主角的名号排排站），后续会更新为真实打赏记录——你的名字也会出现在这里。
+                致谢名单按照打赏时间排序，您的支持是我持续更新和维护项目的最大动力！
               </p>
               <div className="flex flex-wrap gap-2 content-start">
-                {THANKS.map(t => (
+                {THANKS.map(name => (
                   <span
-                    key={t.name}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-ink-800 border border-ink-700 px-3 py-1 text-xs text-ink-300"
+                    key={name}
+                    className="inline-flex items-center rounded-full bg-ink-800 border border-ink-700 px-3 py-1 text-xs text-ink-100"
                   >
-                    <span className="text-ink-100">{t.name}</span>
-                    <span className="text-10 text-ink-500">《{t.work}》</span>
+                    {name}
                   </span>
                 ))}
               </div>

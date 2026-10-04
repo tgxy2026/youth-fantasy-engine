@@ -93,6 +93,12 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     && !/待作者替换/.test(read('src/components/AboutPage.tsx'))
     && !/示例占位（/.test(read('src/components/AboutPage.tsx')))
 
+  // 2.8.0：致谢名单换成真实打赏者 —— 防「示例小说角色名被抄回去」+ 钉住排序说明。
+  // 🔴 不断言具体人名：名单会随打赏增长，钉死名字会让「加一位打赏者」变成改测试。
+  ok('🔴 致谢名单为真实名单（不再出现示例小说角色名），说明写「按打赏时间排序」',
+    !/萧炎|韩立|徐凤年|斗破苍穹|凡人修仙传/.test(read('src/components/AboutPage.tsx'))
+    && /致谢名单按照打赏时间排序/.test(read('src/components/AboutPage.tsx')))
+
   ok('🔴 ProjectHub 的必选说明与 FEATURE_TIER 一致（拆书 / 创意写作可取消）',
     /拆书与创意写作默认不勾选/.test(read('src/components/ProjectHub.tsx')))
 
