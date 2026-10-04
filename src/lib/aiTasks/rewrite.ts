@@ -9,6 +9,7 @@ import type { PromptDef } from '../promptSettings'
 import { enforceWordRange, WORD_TOLERANCE } from '../wordRange'
 import { countWords } from '../textStats'
 import { deAiGenerateRule } from '../deAiStyle'
+import { activeFingerprintNote } from '../styleFingerprint'
 
 // ---------- 整章改写（润色 / 扩写 / 精简 / 续写 / 改写） ----------
 //
@@ -122,7 +123,10 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
   const scopeRule = o.isLatest ? CHAPTER_REWRITE_LATEST_RULE : CHAPTER_REWRITE_HISTORY_RULE
   // 🔴 去 AI 味纪律**必须钉在最末**（埋中段效果约等于 0，见 lib/deAiStyle.ts 文件头）——
   //    整章改写产出的同样是正文，与续写、伴写共用同一份真源。
-  const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action], scopeRule, deAiGenerateRule('full')].join('\n\n')
+  // 🔴 文风档（#015）插在去 AI 味纪律**之前**（deAi 必须钉在最末，见上一条注释）。
+  //    空档时 `fpNote` 为空串 ⇒ 数组里连这一段都没有，行为与改造前逐字一致。
+  const fpNote = await activeFingerprintNote()
+  const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action], scopeRule, ...(fpNote ? [fpNote] : []), deAiGenerateRule('full')].join('\n\n')
 
   // ── 🔴 续写：原文由**我们自己保留**，模型只吐"新增片段" ──
   //    「原文一字不动」靠提示词是**做不到**的（模型总会顺手把原段润色一遍）；

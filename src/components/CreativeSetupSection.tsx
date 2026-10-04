@@ -9,6 +9,7 @@ import { Eraser, Loader2, Play, Save, Sparkles, Square, Wand2 } from 'lucide-rea
 import { Button } from './Button'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import InspirationPicker from './InspirationPicker'
+import { StyleProfilePicker } from './StyleProfilePicker'
 import { clearCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun, updateInputs } from '../lib/creativeSession'
 import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '../lib/aiTasks'
 import { DEAI_TEMPLATES } from '../lib/autoContinue'
@@ -276,6 +277,10 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                 </p>
               </div>
             )}
+
+            {/* 文风档（#015）：与「去 AI 味儿」并列 —— 那条管「别像 AI」，这条管「像作者自己」 */}
+            <StyleProfilePicker ownerTab="creative-writing"
+              hint="按你提炼的文风落笔；与去 AI 味儿、灵感并列，互不覆盖" />
           </div>
         </details>
         )}

@@ -34,6 +34,7 @@ import { INSPIRATION_PROMPTS } from './aiTasks/inspiration'
 import { BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
 import { TABLE_IMPORT_PROMPTS } from './aiTasks/tableImport'
 import { MARKET_RADAR_PROMPTS } from './marketRadar'
+import { STYLE_FINGERPRINT_PROMPTS } from './styleFingerprint'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
@@ -86,6 +87,16 @@ export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from '
 // 2026-10-04（2.8.0 · #018）：市场雷达 —— 选题趋势参考。复用现成联网检索（webSearch），**只读不写项目数据**。
 export { runMarketRadar, buildRadarQueries, RADAR_DISCLAIMER, RADAR_MAX_QUERIES, MARKET_RADAR_PROMPTS } from './marketRadar'
 export type { RadarInput, RadarReport, RadarTrendItem, RadarSource } from './marketRadar'
+// 2026-10-04（2.8.0 · #015）：文风指纹 —— 从参考文本提炼可命名文风档，续写 / 整章改写 / 伴写三处自动注入。
+// 🔴 它只产出「注入文本」，**不写任何项目数据**（档存在全局 meta）。
+export {
+  extractFingerprint, analyzeStyleMetrics, buildFingerprintNote, metricsLine,
+  loadFingerprints, saveFingerprints, loadActiveFingerprint, loadActiveFingerprintId,
+  saveActiveFingerprintId, upsertFingerprint, removeFingerprint, activeFingerprintNote,
+  invalidateFingerprintCache, countPunctuation, countFourCharRuns, countDialogueWords,
+  MIN_SAMPLE_WORDS, STYLE_FINGERPRINT_PROMPTS,
+} from './styleFingerprint'
+export type { StyleProfile, StyleMetrics, ExtractOptions } from './styleFingerprint'
 
 /**
  * 提示词的**注册顺序**（🔴 有语义：`listPrompts()` 只按 group 稳定排序，组内保持登记顺序）。
@@ -129,6 +140,8 @@ const PROMPT_ORDER = [
   'table-import-split',
   // 2.8.0 追加在末尾：市场雷达（#018）—— 只往末尾加，不动其它条目的既有 UI 顺序
   'market-radar',
+  // 2.8.0 追加在末尾：文风指纹（#015）
+  'style-fingerprint',
 ]
 
 const PROMPT_SETS: PromptDef[][] = [
@@ -147,6 +160,7 @@ const PROMPT_SETS: PromptDef[][] = [
   CREATIVE_PROMPTS,
   TABLE_IMPORT_PROMPTS,
   MARKET_RADAR_PROMPTS,
+  STYLE_FINGERPRINT_PROMPTS,
 ]
 
 const byId = new Map<string, PromptDef>()

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
+import { StyleProfilePicker } from './StyleProfilePicker'
 import {
   STYLE_GROUPS, STYLE_DIM_BY_ID, conflictsOf, activeConflicts, isDiluted,
   STYLE_DILUTE_AT, dimLabels, type StyleGroup,
@@ -24,11 +25,13 @@ export interface CompanionStyleValue {
  *   · 互斥项**只提示不禁用** —— 有人就是想要「整体白描、关键处铺陈」，硬拦住他没法表达；
  *   · 提示文案用「」，不用 markdown 星号 —— 这些文本在若干处是纯文本渲染的。
  */
-export function CompanionStyleDialog({ open, value, onSave, onClose }: {
+export function CompanionStyleDialog({ open, value, onSave, onClose, ownerTab = 'editor' }: {
   open: boolean
   value: CompanionStyleValue
   onSave: (v: CompanionStyleValue) => void
   onClose: () => void
+  /** 发起「提炼文风档」任务的页签 id（默认 `editor` —— 本窗基本是从正文编辑器打开的） */
+  ownerTab?: string
 }) {
   const [dims, setDims] = useState<string[]>(value.dims)
   const [note, setNote] = useState(value.note)
@@ -50,11 +53,15 @@ export function CompanionStyleDialog({ open, value, onSave, onClose }: {
   const dirty = dims.join(',') !== value.dims.join(',') || note !== value.note
 
   return (
+    <>
     <Modal open={open} onClose={onClose} title="伴写文风补充" width="md">
       <div className="space-y-3">
         <p className="text-ink-400 text-12 leading-relaxed">
           勾选本次想让 AI 帮你补的方面 —— 伴写会往这些方向落笔。没勾的方面保持前文既有写法，不会刻意加戏。
         </p>
+
+        {/* 文风档（#015）：与下面的「本次侧重」互不覆盖 —— 一条管「作者一贯什么味道」，一条管「这次往哪偏」 */}
+        <StyleProfilePicker ownerTab={ownerTab} hint="按你提炼的文风落笔；与下面的侧重互不覆盖" />
 
         {STYLE_GROUPS.map((g: StyleGroup) => (
           <div key={g.id} className="space-y-1.5">
@@ -131,5 +138,6 @@ export function CompanionStyleDialog({ open, value, onSave, onClose }: {
         </div>
       </div>
     </Modal>
+    </>
   )
 }

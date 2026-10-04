@@ -38,6 +38,7 @@ import {
 import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from './settingLedger'
 import { sortChapters, chapterSeqOf } from './chapterSeq'
 import { deAiGenerateRule, deAiPolishClause } from './deAiStyle'
+import { activeFingerprintNote } from './styleFingerprint'
 import { syncChapterMaster } from './chapterMaster'
 import type { Chapter } from './types'
 import { registerPrompt } from './promptSettings'
@@ -133,7 +134,7 @@ interface SettingUpdate { name: string; note: string }
 
 // ============ 提示词 ============
 
-function buildSysPrompt(target: number, chapterNo?: number): string {
+function buildSysPrompt(target: number, chapterNo?: number, fpNote?: string): string {
   const lo = target - WORD_TOLERANCE
   const hi = target + WORD_TOLERANCE
   /** 范围表述：带章号时明确「第 N 章」，否则泛指「这一章」（一键续写等无章号场景） */
@@ -152,6 +153,9 @@ function buildSysPrompt(target: number, chapterNo?: number): string {
     //    实机 4 轮（DeepSeek-V3.2 / Qwen3.5-35B-A3B，各 2 轮）**未能复现**越界，
     //    但提示词缺护栏本身就是隐患：约束要写在明处，不能靠模型自觉。
     `6. 🔴 本次只写${scope}：**写完本章就收尾**。不得写出下一章的任何内容 —— 不写下一章的开头、不提前展开下一章的事件 / 场景 / 人物动作、不让本章结尾的冲突直接跨进下一章。篇幅不够时，用本章内的场景展开、对话、细节与心理描写补足，绝不靠「推进下一章情节」来凑字数。`,
+    // 🔴 文风档（#015）插在去 AI 味纪律**之前**（deAi 必须钉在最末）。
+    //    空档时不塞这一段（数组里连空串都没有），初稿 system 与改造前逐字一致。
+    ...(fpNote ? ['', fpNote] : []),
     // 🔴 去 AI 味纪律钉在最末（埋中段效果约等于 0）。它挂在**初稿**而不只是后置润色：
     //    先写出一股 AI 腔再去洗，不如一开始就按人的写法写（2.6.4 社区反馈「去味儿效果不理想」的主因）。
     '',
@@ -205,7 +209,7 @@ async function generateOneChapter(opts: {
   onLog?: (s: string) => void
 }): Promise<string> {
   const cfg = await requireProviderFor('create')
-  const sys = buildSysPrompt(opts.targetWords, opts.chapterNo)
+  const sys = buildSysPrompt(opts.targetWords, opts.chapterNo, await activeFingerprintNote())
   const lo = opts.targetWords - WORD_TOLERANCE
   const hi = opts.targetWords + WORD_TOLERANCE
   // 作者内容是「不可信文本」：统一用同一边界语言包裹（内容一字不改，见 promptGuard 头部说明）
@@ -498,7 +502,7 @@ export async function runAutoContinue(
           cfg: await requireProviderFor('create'),
           body: last.content || '',
           target: opts.targetWords,
-          sys: buildSysPrompt(opts.targetWords),
+          sys: buildSysPrompt(opts.targetWords, undefined, await activeFingerprintNote()),
           ...(cb.signal ? { signal: cb.signal } : {}),
           onPhase: p => cb.onPhase?.(`补齐最后一章：${p}`),
           onBodyReplace: cb.onBodyReplace,
@@ -635,7 +639,7 @@ export async function runAutoContinue(
       body = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`))
       body = await enforceWordRange({
         cfg: await requireProviderFor('create'), body, target: opts.targetWords,
-        sys: buildSysPrompt(opts.targetWords), signal: cb.signal,
+        sys: buildSysPrompt(opts.targetWords, undefined, await activeFingerprintNote()), signal: cb.signal,
         onPhase: p => cb.onPhase?.(`${tag}：${p}`), onBodyReplace: cb.onBodyReplace,
         ...(cb.onLog ? { onLog: cb.onLog } : {}),
         maxExpand: 2, maxShrink: 2,

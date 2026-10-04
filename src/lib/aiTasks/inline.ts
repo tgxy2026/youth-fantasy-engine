@@ -5,6 +5,7 @@ import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '
 import { deAiGenerateRule } from '../deAiStyle'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
+import { activeFingerprintNote } from '../styleFingerprint'
 
 // ---------- 颉文姬⑦：AI 伴写（inline ghost 逐句续写 · 2.2.0） ----------
 //
@@ -155,6 +156,10 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
   if (opts.projectContext?.trim()) layers.push(`【设定资料（仅用于核对专名、身份、称谓，不要照抄内容）】\n${opts.projectContext.trim()}`)
   if (opts.styleSpec?.trim()) layers.push(`【作者的《写作规范》· 必须遵守】\n${opts.styleSpec.trim()}`)
   if (opts.styleNote?.trim()) layers.push(`【作者本次追加的文风要求】\n${opts.styleNote.trim()}`)
+  // 🔴 文风档（#015）：与上面的「本次文风要求」并列、互不覆盖 —— 一条管"这次往哪偏"，一条管"作者一贯什么味道"。
+  //    无档时返回空串 ⇒ 整层不注入。位置在去 AI 味规则**之前**（那条必须钉在末尾，见文件头第 1 条依据）。
+  const fpNote = await activeFingerprintNote()
+  if (fpNote) layers.push(fpNote)
   // 「换一句」：上一句必须**整段**给出来，模型才认得出要避开什么。
   // ⚠️ 位置在去 AI 味规则**之前** —— 那条纪律必须钉在 system 末尾才有效（见文件头第 1 条依据）。
   if (opts.avoid?.trim()) {
