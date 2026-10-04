@@ -117,7 +117,7 @@ export default function AboutPage() {
                   若你电脑上已安装过旧版（装在 C 盘「Program Files」目录下），请先用「右键 → 以管理员身份运行」打开本安装包完成一次升级；升级后会迁移为「当前用户安装」，之后重装都不再需要管理员权限。
                 </div>
                 {/* 检查更新：查 Gitee 上的最新 Release（只提示、不下载、不安装） */}
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
                   <Button variant="secondary" disabled={checking} onClick={() => void runCheck()} className="gap-1.5">
                     <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
                     {checking ? '检查中…' : '检查更新'}
@@ -144,14 +144,17 @@ export default function AboutPage() {
                   )}
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                {/* 下载入口排：原先是紧贴上一排的（这个 div 没有 mt）⇒ 两排按钮视觉上黏成一坨。
+                    现在 mt-4 + pt-4 + 细分隔线分组；<a> 也改成与 Button md 同一套尺寸口径
+                    （h-9 px-4 text-13 —— 原来是 py-2 text-sm，与旁边 Button 差 2px 高 / 1px 字号，并排不齐） */}
+                <div className="mt-4 pt-4 border-t border-ink-700/60 flex flex-wrap gap-2.5">
                   <a
                     href={QUARK_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-lg bg-amber px-3 py-2 text-sm font-medium text-ink-950 hover:opacity-90 transition-opacity"
+                    className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-lg bg-amber text-13 font-medium text-ink-950 hover:opacity-90 transition-opacity"
                   >
-                    <ExternalLink size={16} /> 打开网盘下载页
+                    <ExternalLink size={15} /> 打开网盘下载页
                   </a>
                   <Button
                     variant="secondary"
