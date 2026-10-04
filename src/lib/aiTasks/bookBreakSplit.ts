@@ -44,7 +44,7 @@ export function parseChapterLines(raw: string): string[] {
 }
 
 export async function aiBookBreakSplitChapters(req: BookBreakSplitRequest): Promise<string[]> {
-  // #014 用途路由：拆书章节边界识别属「批量整理」
+  // #014 用途路由：拆书章节边界识别属「整理」
   const cfg = await requireProviderFor('utility')
   const numbered = req.samples.map((t, i) => `${i + 1}. ${t}`).join('\n')
   const user = `【章节标题示例（按这些行的格式规律识别）】

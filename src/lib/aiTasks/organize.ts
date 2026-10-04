@@ -95,7 +95,7 @@ let ORGANIZE_SYS = `你是「青春幻想引擎」的小说资料整理助手。
  * 双重保险防重复：prompt 里明确告知已有条目 + 返回后本地按关键列再去一遍重。
  */
 export async function aiOrganizeRows(req: OrganizeRequest): Promise<OrganizeResult> {
-  // #014 用途路由：批量补条目属「批量整理」—— 建议指向便宜 / 快的模型
+  // #014 用途路由：批量补条目属「整理」—— 建议指向便宜 / 快的模型
   const cfg = await requireProviderFor('utility')
   const max = req.maxRows ?? 12
 

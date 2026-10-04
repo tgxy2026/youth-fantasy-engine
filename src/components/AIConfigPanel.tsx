@@ -152,7 +152,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
    * 改某一用途的路由（2.8.0 · #014）。
    * 🔴 与「换模型」同一套时序：**先落盘、再刷新界面**，否则额度面板会读到写盘前的旧基准。
    *    「创作」用途直接决定正文写作额度的口径（见 `aiWriterBudget.currentModelAdvice`），
-   *    改完顺带同步一次正文基准；审校 / 批量整理不参与正文额度，无需同步。
+   *    改完顺带同步一次正文基准；审校 / 整理不参与正文额度，无需同步。
    */
   const changeRouting = async (role: TaskRole, id: string) => {
     const next: RoutingMap = { ...routing, [role]: id }
@@ -418,10 +418,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 <div className="flex items-center gap-1.5 mb-1">
                   <h3 className="text-12 text-ink-200">AI 用途路由</h3>
                   <HelpPopover title="AI 用途路由怎么用" width="23rem" size={13}>
-                    <p>给不同用途的 AI 任务分别指定模型：<b>创作</b>写好正文、<b>审校</b>材料读得多、<b>批量整理</b>调用最频繁。</p>
+                    <p>给不同用途的 AI 任务分别指定模型：<b>创作</b>写好正文、<b>审校</b>材料读得多、<b>整理</b>调用最频繁。</p>
                     <p className="mt-1.5">三格全部留空 ⇒ 所有功能都跟随上面的「当前模型」，与你从没设过它时完全一样。</p>
                     <p className="mt-1.5">指定的模型被删除、或没填全配置 ⇒ 自动回落到当前模型，不会报错。</p>
-                    <p className="mt-1.5">典型用法：正文用质量最好的模型，「批量整理」指向一个便宜 / 快的模型，几十次整理调用就不必都烧大模型。</p>
+                    <p className="mt-1.5">典型用法：正文用质量最好的模型，「整理」指向一个便宜 / 快的模型，几十次整理调用就不必都烧大模型。</p>
                   </HelpPopover>
                 </div>
                 <p className="text-11 text-ink-500 mb-2.5 leading-relaxed">

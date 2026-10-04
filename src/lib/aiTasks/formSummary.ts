@@ -49,7 +49,7 @@ export async function aiSummarizeFormSettings(
   material: string,
   opts: { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void } = {},
 ): Promise<Record<string, Record<string, unknown>>> {
-  // #014 用途路由：表单汇总属「批量整理」
+  // #014 用途路由：表单汇总属「整理」
   const cfg = await requireProviderFor('utility')
   const tabIds = summaryFormTabs()
   const fieldList = formFieldsPrompt(tabIds)

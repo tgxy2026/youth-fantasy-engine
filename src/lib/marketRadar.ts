@@ -219,7 +219,7 @@ export async function runMarketRadar(
       return { ok: false, error: errors[0] || '没查到可用的公开信息 —— 换一组检索词，或检查「联网检索」配置。' }
     }
 
-    // AI 归纳（走「批量整理」用途路由：这是工具型分析，不必烧最好的模型）
+    // AI 归纳（走「整理」用途路由：这是工具型分析，不必烧最好的模型）
     const cfg = await requireProviderFor('utility')
     const callChat = opts.chatFn ?? chat
     const text = await callChat(

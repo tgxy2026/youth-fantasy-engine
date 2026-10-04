@@ -48,7 +48,7 @@ export interface NameSuggestion {
 }
 
 export async function aiSuggestNames(req: NameSuggestRequest): Promise<NameSuggestion[]> {
-  // #014 用途路由：取名属「批量整理」（短输出、常反复试）
+  // #014 用途路由：取名属「整理」（短输出、常反复试）
   const cfg = await requireProviderFor('utility')
   const n = req.count ?? 10
   const sys = P_name_suggest
@@ -96,7 +96,7 @@ export interface SensitiveReview {
 }
 
 export async function aiReviewSensitive(hits: SensitiveHitInput[], opts?: { signal?: AbortSignal; onToken?: (delta: string) => void }): Promise<SensitiveReview[]> {
-  // #014 用途路由：敏感词复核属「批量整理」（逐条判断、调用频繁）
+  // #014 用途路由：敏感词复核属「整理」（逐条判断、调用频繁）
   const cfg = await requireProviderFor('utility')
   const sys = P_sensitive_recheck
   const list = hits

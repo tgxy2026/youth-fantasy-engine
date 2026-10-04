@@ -69,7 +69,7 @@ let TABLE_IMPORT_SPLIT_SYS = `你是「青春幻想引擎」的资料录入助�
  * 「与已有重复 / 缺必填 / 悬空引用」，怎么处理由作者勾选决定。
  */
 export async function aiSplitTableRows(req: ImportSplitRequest): Promise<ImportSplitResult> {
-  // #014 用途路由：表格批量拆分属「批量整理」
+  // #014 用途路由：表格批量拆分属「整理」
   const cfg = await requireProviderFor('utility')
   const max = req.maxRows ?? 60
 

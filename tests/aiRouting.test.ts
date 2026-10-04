@@ -1,6 +1,6 @@
 // ============ AI 用途路由（2.8.0 · 台账 #014）============
 //
-// 三用途（创作 / 审校 / 批量整理）各存一个 providerId 引用，留空 = 跟随当前模型。
+// 三用途（创作 / 审校 / 整理）各存一个 providerId 引用，留空 = 跟随当前模型。
 // 本用例盯四件事：
 //   ① 🔴 **三格全空 ⇒ 解析结果 === 当前模型** —— 这是「升级零行为变化」的保证；
 //   ② 指定 ⇒ 解析到指定模型（且不影响其它用途）；
@@ -101,7 +101,7 @@ async function main() {
   // ---------- ⑦ rolesOf：归属查询 ----------
   {
     const rt = { create: 'a', review: 'b', utility: 'a' }
-    ok('rolesOf：a 被创作与批量整理引用', rolesOf(rt, 'a').join() === 'create,utility', rolesOf(rt, 'a').join())
+    ok('rolesOf：a 被创作与整理引用', rolesOf(rt, 'a').join() === 'create,utility', rolesOf(rt, 'a').join())
     ok('rolesOf：b 只被审校引用', rolesOf(rt, 'b').join() === 'review', rolesOf(rt, 'b').join())
     ok('rolesOf：未被引用 ⇒ 空数组', rolesOf(rt, 'z').length === 0)
     ok('出厂路由 ⇒ rolesOf 对任何 id 恒空（不会误标用途徽标）',

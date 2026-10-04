@@ -204,7 +204,7 @@ export async function extractFingerprint(texts: string[], opts: ExtractOptions =
   }
   const metrics = await analyzeStyleMetrics(texts)
 
-  // AI 归纳：走「批量整理」用途路由 —— 它是一次性分析，不必烧最好的模型
+  // AI 归纳：走「整理」用途路由 —— 它是一次性分析，不必烧最好的模型
   const cfg = await requireProviderFor('utility')
   const callChat = opts.chatFn ?? chat
   const user = [

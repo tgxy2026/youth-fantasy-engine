@@ -177,7 +177,7 @@ export async function aiExtractSettingEntities(
   chapterTitle: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ExtractedEntity[]> {
-  // #014 用途路由：从正文抽取设定属「批量整理」
+  // #014 用途路由：从正文抽取设定属「整理」
   const cfg = await requireProviderFor('utility')
   // 🔴 章题与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
   const fence = newAuthorFence()

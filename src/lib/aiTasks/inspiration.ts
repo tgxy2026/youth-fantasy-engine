@@ -67,7 +67,7 @@ export function parseFusedIdeas(raw: string, itemCount: number): FusedIdea[] {
 
 export async function aiFuseInspiration(req: FuseIdeaRequest): Promise<FusedIdea[]> {
   // 🔴 走「创作」路由（与 creative / rewrite 同类）—— 之前漏网用了全局活动模型，
-  //    结果「批量整理设了便宜模型」时这一处仍烧主模型额度。#014 已把它补进 tests/aiRouting 的清单。
+  //    结果「整理设了便宜模型」时这一处仍烧主模型额度。#014 已把它补进 tests/aiRouting 的清单。
   const cfg = await requireProviderFor('create')
   const numbered = req.items.map((t, i) => `${i + 1}. ${t}`).join('\n')
   const user = `【灵感清单（共 ${req.items.length} 条）】

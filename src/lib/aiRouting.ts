@@ -1,7 +1,7 @@
 /**
  * AI 用途路由（2.8.0 · 台账 #014）。
  *
- * 【要解决的问题】全应用只有一个「当前模型」，于是「创作用好模型」与「批量整理用便宜模型」
+ * 【要解决的问题】全应用只有一个「当前模型」，于是「创作用好模型」与「整理用便宜模型」
  * 只能二选一：要么为了省钱让正文写得差，要么为了正文质量让几十次批量调用都烧最好的模型。
  *
  * 【设计】三类用途各存一个 providerId **引用**（照酒馆 `TavernModelRef` 的既有做法，**不复制配置**）：
@@ -25,7 +25,7 @@ export const TASK_ROLES: readonly TaskRole[] = ['create', 'review', 'utility'] a
 export const ROLE_LABEL: Record<TaskRole, string> = {
   create: '创作',
   review: '审校',
-  utility: '批量整理',
+  utility: '整理',
 }
 
 export const ROLE_HINT: Record<TaskRole, string> = {
