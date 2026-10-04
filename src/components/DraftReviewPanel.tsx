@@ -165,7 +165,7 @@ export default function DraftReviewPanel({
         <div className="flex-1" />
         <Button size="xs" variant="secondary" onClick={pickNew}>全选新建</Button>
         <Button size="xs" variant="secondary" onClick={pickHigh}>仅高可信</Button>
-        <Button size="xs" variant="secondary" onClick={clearPick}>全不选</Button>
+        <Button size="xs" variant="secondary" onClick={clearPick}>全部清空</Button>
       </div>
 
       <div className="mt-3 space-y-2">

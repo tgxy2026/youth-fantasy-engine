@@ -64,7 +64,7 @@ export default function UpdateDialog({
             <Download size={14} /> Gitee 下载
           </Button>
           <Button variant="secondary" disabled={busy} onClick={() => void openUrl(QUARK_URL, '夸克网盘')} className="gap-1.5">
-            <ExternalLink size={14} /> 夸克网盘（备选）
+            <ExternalLink size={14} /> 夸克网盘
           </Button>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="secondary" disabled={busy} onClick={onClose}>稍后提醒</Button>

@@ -250,7 +250,7 @@ export default function CheckTools() {
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <ShieldAlert size={14} className="text-danger" /> 敏感词检测
             <HelpPopover title="敏感词检测怎么用" width="22rem">
-              {'两个能力：\n\n· 系统扫描（始终可用）：内置基础违禁词库 + 你的自定义词，逐章检查并列出命中词、次数与上下文；\n· AI 检测（需接入 AI）：让模型结合上下文判断每个命中词是误报还是真有风险，并给出替换建议。无 AI 时该按钮禁用，本地扫描不受影响。\n\n· 添加：输入框支持逗号 / 顿号 / 换行批量粘贴；\n· 一键导入文件：支持 .txt（一行一词）/.csv/.tsv/.json 数组，井号 # 开头视为注释。\n只做提示不自动改字——是否规避请自行判断（编辑器工具栏也有单章版敏感词检测，可直接替换）。'}
+              {'两个能力：\n\n· 系统扫描（始终可用）：内置基础违禁词库 + 你的自定义词，逐章检查并列出命中词、次数与上下文；\n· AI 检测（需接入 AI）：让模型结合上下文判断每个命中词是误报还是真有风险，并给出替换建议。无 AI 时该按钮禁用，本地扫描不受影响。\n\n· 添加：输入框支持逗号 / 顿号 / 换行批量粘贴；\n· 导入：支持 .txt（一行一词）/.csv/.tsv/.json 数组，井号 # 开头视为注释。\n只做提示不自动改字——是否规避请自行判断（编辑器工具栏也有单章版敏感词检测，可直接替换）。'}
               <AIDataSourceNote feature="sensitive-check" />
             </HelpPopover>
           </h2>
@@ -280,7 +280,7 @@ export default function CheckTools() {
               }}
             />
             <Button variant="danger" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 border-danger/25 transition-colors" title="支持 .txt（一行一词）/ .csv / .json 数组 / .tsv">
-              <FileDown size={12} /> 一键导入文件
+              <FileDown size={12} /> 导入
             </Button>
             {customWords.length > 0 && (
               <>

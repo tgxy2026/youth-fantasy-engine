@@ -234,7 +234,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
           <HelpPopover title="三种导入方式怎么选" width="26rem" className="ml-0.5" size={12}>
             {'① 照着模板填（最简单、最确定）\n'
               + '适用：设定本来就条理清晰，或你愿意手动整理。\n'
-              + '做法：把「下载空白模板」的表头填好，粘贴回来或选 CSV 文件；Markdown 表格、从 Excel 直接复制也认。\n'
+              + '做法：把「下载模板」的表头填好，粘贴回来或选 CSV 文件；Markdown 表格、从 Excel 直接复制也认。\n'
               + '特点：完全本地解析，不消耗任何 AI 额度。\n\n'
               + '② 交给别的 AI 整理成表\n'
               + '适用：你的设定是文档/散文式的，想让别的 AI（如网页版对话模型）帮你誊。\n'
@@ -255,7 +255,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
           </Button>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,.md,text/plain" className="hidden" onChange={onFile} />
           <Button variant="secondary" size="sm" onClick={downloadTemplate} className="flex items-center gap-1.5">
-            <FileDown size={12} /> 下载空白模板
+            <FileDown size={12} /> 下载模板
           </Button>
           <Button variant="secondary" size="sm" onClick={downloadGuide} className="flex items-center gap-1.5">
             <FileDown size={12} /> 导入说明 / AI 提示词
@@ -330,7 +330,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
               {stat.missing > 0 && <span className="text-amber/80">缺必填 {stat.missing}</span>}
               <span className="ml-auto flex items-center gap-2">
                 <Button variant="bare" size="sm" onClick={() => setAll(true)} className="px-2 py-0.5 rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">全选</Button>
-                <Button variant="bare" size="sm" onClick={() => setAll(false)} className="px-2 py-0.5 rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">全不选</Button>
+                <Button variant="bare" size="sm" onClick={() => setAll(false)} className="px-2 py-0.5 rounded bg-ink-800 border border-ink-700 hover:bg-ink-700">清空</Button>
               </span>
             </div>
 

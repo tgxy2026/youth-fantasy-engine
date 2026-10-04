@@ -104,7 +104,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
               )
             })}
 
-            {/* 诊断范围：完整（正文）/ 简略（压缩摘要） */}
+            {/* 诊断范围：完整（正文）/ 简略（摘要） */}
             <div className="flex items-center gap-1.5 text-10 text-ink-500">
               <span>诊断范围</span>
               <div className="flex rounded-md overflow-hidden border border-ink-700">
@@ -117,7 +117,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                   onClick={() => setDiagMode('brief')}
                   className={`px-2 py-0.5 transition-colors ${diagMode === 'brief' ? 'bg-amber/20 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
                   title="只喂「章节压缩摘要」（约原文 1/10）：速度快、省 token"
-                >简略（压缩摘要）</Button>
+                >简略（摘要）</Button>
               </div>
             </div>
             <Button variant="bare"

@@ -114,7 +114,7 @@ export default function FormatModal({ content, unit, onUnitChange, pasteNormaliz
             <div className="flex gap-2">
               <Button variant="toggle" selected={pasteNormalize} size="sm"
                 onClick={() => onPasteNormalizeChange(true)}
-                title="从网页 / Word 粘进来的行首空白，按上面的单位统一">按单位归一</Button>
+                title="从网页 / Word 粘进来的行首空白，按上面的单位统一">单位归一</Button>
               <Button variant="toggle" selected={!pasteNormalize} size="sm"
                 onClick={() => onPasteNormalizeChange(false)}
                 title="粘什么就是什么，一个字符都不动（贴代码、表格、别人的原文时用它）">原样保留</Button>

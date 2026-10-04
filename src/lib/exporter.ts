@@ -427,7 +427,7 @@ export interface SubmissionDocxInput {
   intro: string
   /** 选定章节 id —— 输出按全书卷章顺序重排，与选择顺序无关 */
   chapterIds: string[]
-  /** 排版选项（投稿稿必须带排版，调用方一般传「网文投稿标准」预设） */
+  /** 排版选项（投稿稿必须带排版，调用方一般传「投稿标准」预设） */
   layout: DocxLayoutOptions
 }
 

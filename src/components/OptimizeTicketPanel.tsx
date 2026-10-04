@@ -254,7 +254,7 @@ export default function OptimizeTicketPanel() {
               <Button variant="toggle" size="xs" selected={onlyError} onClick={() => setOnlyError(v => !v)}
                 title="只列出「冲突」级的条目">只看冲突</Button>
               <Button variant="secondary" size="xs" onClick={() => setAll(true)}>全选</Button>
-              <Button variant="secondary" size="xs" onClick={() => setAll(false)}>全不选</Button>
+              <Button variant="secondary" size="xs" onClick={() => setAll(false)}>清空</Button>
             </div>
           </div>
 

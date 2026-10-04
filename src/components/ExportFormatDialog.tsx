@@ -201,7 +201,7 @@ export default function ExportFormatDialog({
         const layout: DocxLayoutOptions | undefined = prefs.docxPreset === 'default' ? undefined : prefs.docxLayout
         if (prefs.docxKind === 'submission') {
           if (picked.size === 0) { showToast('请先选择要放进投稿稿的章节', 'error'); return }
-          // 投稿稿必须有排版：预设停在「跟随默认」时按「网文投稿标准」兜底
+          // 投稿稿必须有排版：预设停在「跟随默认」时按「投稿标准」兜底
           mod.exportSubmissionDocx(
             { bookTitle: projectName, intro, chapterIds: [...picked], layout: layout ?? DOCX_PRESET_LAYOUTS.submission },
             volumes, chapters,
@@ -251,22 +251,22 @@ export default function ExportFormatDialog({
                 <span className="text-ink-200 text-12">段落间距</span>
                 <SegGroup value={prefs.platform.paragraphGap} onChange={v => patchPlatform({ paragraphGap: v })} options={[
                   { label: '段间空行', value: 'blank' as const, title: '主流网文后台的常见预览效果' },
-                  { label: '单换行（紧凑）', value: 'compact' as const, title: '部分平台后台段落间不空行' },
+                  { label: '单换行', value: 'compact' as const, title: '部分平台后台段落间不空行' },
                 ]} />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-ink-200 text-12">章节标题</span>
                 <SegGroup value={prefs.platform.chapterTitle} onChange={v => patchPlatform({ chapterTitle: v })} options={[
                   { label: '原样', value: 'as-is' as const },
-                  { label: '补「第N章」', value: 'numbered' as const, title: '按叙事顺序补全局序号；标记「不计入序号」的章保留原题' },
+                  { label: '补序号', value: 'numbered' as const, title: '按叙事顺序补全局序号；标记「不计入序号」的章保留原题' },
                   { label: '不带标题', value: 'none' as const },
                 ]} />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-ink-200 text-12">卷标题行</span>
                 <SegGroup value={prefs.platform.includeVolumeTitle} onChange={v => patchPlatform({ includeVolumeTitle: v })} options={[
-                  { label: '包含', value: true as const },
-                  { label: '不包含', value: false as const, title: '平台按章发布时通常用不到卷标题' },
+                  { label: '显示', value: true as const },
+                  { label: '隐藏', value: false as const, title: '平台按章发布时通常用不到卷标题' },
                 ]} />
               </div>
               <div className="flex items-center justify-between gap-3">
@@ -289,7 +289,7 @@ export default function ExportFormatDialog({
           <>
             <SegGroup value={prefs.docxKind} onChange={v => patch({ docxKind: v })} options={[
               { label: '全书导出', value: 'book' as const, title: '书名 → 各卷 → 各章，全部内容' },
-              { label: '投稿稿件（书名 + 简介 + 选章）', value: 'submission' as const, title: '书名大号居中、简介、选定章节按全书顺序输出' },
+              { label: '投稿稿件', value: 'submission' as const, title: '书名大号居中、简介、选定章节按全书顺序输出' },
             ]} />
 
             <div className="space-y-3">
@@ -297,14 +297,14 @@ export default function ExportFormatDialog({
                 <span className="text-ink-200 text-12">排版预设</span>
                 <SegGroup value={prefs.docxPreset} onChange={applyPreset} options={[
                   { label: '跟随默认', value: 'default' as const, title: '不附加任何排版，与旧版导出完全一致' },
-                  { label: '网文投稿标准', value: 'submission' as const, title: '宋体小四 + 首行缩进 2 字 + 1.5 倍行距，标题黑体（起点 / 晋江等投稿通用口径）' },
+                  { label: '投稿标准', value: 'submission' as const, title: '宋体小四 + 首行缩进 2 字 + 1.5 倍行距，标题黑体（起点 / 晋江等投稿通用口径）' },
                   { label: '紧凑阅读', value: 'compact' as const, title: '五号字 + 无缩进 + 单倍行距，适合自己打印阅读' },
                   ...(prefs.docxPreset === 'custom' ? [{ label: '自定义', value: 'custom' as const }] : []),
                 ]} />
               </div>
               {prefs.docxPreset === 'default' ? (
                 <p className="text-10 leading-relaxed text-ink-500">
-                  当前不附加任何排版（与旧版导出观感完全一致）。选一个预设后可再逐项微调；投稿稿件即使停在这个档位也会按「网文投稿标准」排版。
+                  当前不附加任何排版（与旧版导出观感完全一致）。选一个预设后可再逐项微调；投稿稿件即使停在这个档位也会按「投稿标准」排版。
                 </p>
               ) : (
                 <>

@@ -397,7 +397,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
                 className="flex items-center gap-1 px-3 py-1.5 text-12 text-amber border border-amber/30 rounded-lg hover:bg-amber/10 disabled:opacity-50"
                 title="导出整个项目为迁移包（可加密）"
               >
-                <Upload size={12} /> 导出迁移包（可选加密）
+                <Upload size={12} /> 导出迁移包
               </Button>
               <Button variant="bare"
                 onClick={() => fileInput.current?.click()}
@@ -414,7 +414,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
                 className="flex items-center gap-1 px-3 py-1.5 text-12 text-ink-100 border border-ink-600 rounded-lg hover:bg-ink-800 disabled:opacity-50"
                 title="从「导出」出来的单份备份文件恢复当前项目（覆盖式）"
               >
-                <FileDown size={12} /> 从备份文件恢复本项
+                <FileDown size={12} /> 恢复当前项目
               </Button>
             </div>
           </div>
@@ -454,13 +454,13 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       {/* v1.6：应用内输入弹窗（替代浏览器 prompt，桌面端可用） */}
       <PromptModal
         open={!!pwdPrompt}
-        title={pwdPrompt?.kind === 'export' ? '设置迁移包密码（可选）' : '输入迁移包密码'}
+        title={pwdPrompt?.kind === 'export' ? '设置迁移包密码' : '输入迁移包密码'}
         label={pwdPrompt?.kind === 'export'
           ? '留空 = 不加密，直接导出明文迁移包；加密后对方需输入同一密码才能导入。'
           : '该迁移包已加密，请输入导出时设置的密码。'}
         password
         allowEmpty={pwdPrompt?.kind === 'export'}
-        confirmText={pwdPrompt?.kind === 'export' ? '导出' : '解密导入'}
+        confirmText={pwdPrompt?.kind === 'export' ? '导出' : '导入'}
         onSubmit={pwdPrompt?.kind === 'export' ? submitExportPwd : submitImportPwd}
         onCancel={() => setPwdPrompt(null)}
       />

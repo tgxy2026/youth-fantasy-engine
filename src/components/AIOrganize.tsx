@@ -317,7 +317,7 @@ style={{ maxHeight: foldVh('26vh') }}>
                       onClick={() => setChecked(new Set())}
                       className="px-2 py-1 rounded bg-ink-800 border border-ink-700 text-11 text-ink-300 hover:bg-ink-700"
                     >
-                      全不选
+                      清空
                     </Button>
                     <span className="text-11 text-ink-500">取消勾选即不写入；写入后仍可在表格里继续编辑。</span>
                   </div>

@@ -61,7 +61,7 @@ export default function InterviewContextPicker({
             className="text-10 text-ink-400 hover:text-ink-200 transition-colors"
             title="不带任何既有设定（AI 只会照你当场说的写）"
           >
-            全不选
+            清空
           </button>
         </span>
       </div>

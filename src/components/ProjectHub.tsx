@@ -231,7 +231,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             <Sparkles size={14} className="text-amber" /> 我的作品 ({projects.length})
             <span className="text-12 font-normal text-ink-400">每本书是一个独立项目 · 打开后进入完整创作面板</span>
             <HelpPopover title="项目管理怎么用" width="22rem" size={13}>
-              {'一本书 = 一个独立项目，设定 / 大纲 / 正文 / 统计互不干扰。\n\n· 新建小说项目：只需书名即可开工，封面与其他信息随时可补；\n· 创建示范项目：一键写入完整范例数据（卷章正文、设定表单、角色卡、伏笔、时间脉络、码字统计），用来快速摸清各功能怎么用，体验完可直接删除；\n· 导入项目：选择之前导出的 .json 备份即可还原全部内容；\n· 备份：把某本书导出成 .json 文件，换设备或重装前务必先导一份；导入项目可选择之前的 .json 备份还原；\n· 设定集：一键导出汇总全书世界观 / 人物 / 设定表的 Markdown 文档；\n· 备份与恢复：查看打开项目时自动生成的备份（每 5 分钟 / 每日首次打开各一类），可一键恢复历史版本；\n· 打开项目：进入该书的完整创作面板。'}
+              {'一本书 = 一个独立项目，设定 / 大纲 / 正文 / 统计互不干扰。\n\n· 新建小说项目：只需书名即可开工，封面与其他信息随时可补；\n· 创建示范项目：一键写入完整范例数据（卷章正文、设定表单、角色卡、伏笔、时间脉络、码字统计），用来快速摸清各功能怎么用，体验完可直接删除；\n· 导入已有项目：选择之前导出的 .json 备份即可还原全部内容；\n· 备份：把某本书导出成 .json 文件，换设备或重装前务必先导一份；导入项目可选择之前的 .json 备份还原；\n· 设定集：一键导出汇总全书世界观 / 人物 / 设定表的 Markdown 文档；\n· 备份与恢复：查看打开项目时自动生成的备份（每 5 分钟 / 每日首次打开各一类），可一键恢复历史版本；\n· 打开项目：进入该书的完整创作面板。'}
             </HelpPopover>
           </h2>
           <div className="flex gap-2 items-stretch shrink-0">
@@ -242,7 +242,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               <BookPlus size={13} /> 创建示范项目
             </Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()} className="transition-colors">
-              <FileDown size={13} /> 导入项目
+              <FileDown size={13} /> 导入已有项目
             </Button>
             <input
               ref={fileRef}

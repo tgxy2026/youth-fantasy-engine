@@ -88,7 +88,7 @@ export default function TavernRevisionDialog({
             <Button variant="secondary" size="xs"
               onClick={() => onToggleAll(!allPicked)}
             >
-              {allPicked ? '全不选' : '全选'}
+              {allPicked ? '清空' : '全选'}
             </Button>
             <span className="text-11 text-ink-500">
               共 {proposals.length} 处建议 · 已选 {picked.size} 处

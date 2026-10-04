@@ -762,7 +762,7 @@ style={{ maxWidth: foldVh('90vw') }}>
             <div className="flex items-center gap-2">
               <NumberField value={goalMinutes} min={5} max={1440} step={5} onChange={v => setGoalMinutes(v ?? 30)}
                 title="目标时长（分钟）：5 ~ 1440（超出范围会调回最近的边界）" className="!py-2 text-13 w-32" />
-              <Button variant="bare" onClick={() => start('minutes')} className="flex-1 py-2.5 bg-info/15 text-info border border-info/30 rounded-lg text-13 hover:bg-info/25 transition-colors">按时长锁定（分钟）</Button>
+              <Button variant="bare" onClick={() => start('minutes')} className="flex-1 py-2.5 bg-info/15 text-info border border-info/30 rounded-lg text-13 hover:bg-info/25 transition-colors">按时长锁定</Button>
             </div>
             <Button variant="bare" onClick={() => tryExit()} className="w-full py-2 text-12 text-ink-500 hover:text-ink-300 transition-colors">不设目标，直接退出</Button>
           </div>
