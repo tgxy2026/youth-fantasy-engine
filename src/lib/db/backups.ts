@@ -5,6 +5,7 @@ import type { Project, FormData } from '../types'
 import { uid } from '../id'
 import { ops, touchProject } from './core'
 import { exportProject, remapSettingValue, type ProjectBundle, getProject } from './projects'
+import { restoreDocsFromBundle } from '../knowledgeBase'
 import { isDemoProjectName } from '../constants'
 import { VOL_LEDGER_PREFIX } from './volumes'
 
@@ -88,7 +89,9 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
   if (isDemoProjectName(proj?.name)) return null
   // 🔴 自动备份**不带**章节快照（2.4.0 · A3）：它是每 5 分钟一次的高频全量，
   //    快照随它走会把本地存储迅速撑大。要带走快照的是「手动导出备份」，那条路径走默认值。
-  const bundle = await exportProject(projectId, { includeSnapshots: false })
+  // 🔴 自动备份**也不带**参考资料（2.8.0 · #017）：同一条理由 —— 长文档单篇可达 40 万字，
+  //    每 5 分钟重写一遍等于让数据文件持续膨胀。作者勾的「随包走」开关只作用于**手动导出**。
+  const bundle = await exportProject(projectId, { includeSnapshots: false, includeKnowledgeBase: false })
   const now = Date.now()
   const id = uid()
   const meta: BackupMeta = {
@@ -321,6 +324,15 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   if (staleStats.length) await ops.bulkDel('dailyStats', staleStats)
   const staleSets = setKeys.filter(k => !newSetKeys.has(k))
   if (staleSets.length) await ops.bulkDel('settingsKV', staleSets)
+
+  // 3.5 参考资料（2.8.0 · #017，可选字段）。
+  // 🔴 **只在 bundle 真的带了资料时才动**：没开开关的备份里根本没有这个字段，
+  //    若无条件清空，会把作者现有资料清干净 ——「恢复备份」的语义是"把备份里的内容还原"，
+  //    不是"把备份没覆盖的也一并清掉"（与上面「不删快照」那条同口径）。
+  // ⚠️ 成功/失败都不影响本次恢复的成败判定：它在独立库里，写不进去也只是资料没跟着回来。
+  if (bundle.knowledgeBase) {
+    await restoreDocsFromBundle(targetPid, bundle.knowledgeBase).catch(() => 0)
+  }
 
   // 4. 同步项目元数据（成为该历史版本）
   const old = await ops.get<Project>('projects', targetPid)

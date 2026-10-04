@@ -161,7 +161,7 @@ async function main() {
     ok('提示词登记 id 为 style-fingerprint', STYLE_FINGERPRINT_PROMPTS[0].meta.id === 'style-fingerprint')
   }
 
-  // ---------- ⑥ 存储与启用（全局 meta + 内存缓存） ----------
+  // ---------- ⑥ 存储与启用（**按项目** settingsKV + 内存缓存） ----------
   {
     __resetMockStores()
     invalidateFingerprintCache()
@@ -193,6 +193,30 @@ async function main() {
     await saveActiveFingerprintId('p3')
     await removeFingerprint('p3')
     ok('删掉当前启用档后自动停用', (await loadActiveFingerprintId()) === '')
+
+    // 🔴 按项目隔离（2026-10-04 拍板：从「全局」改为「跟项目走」）。
+    //    本段刻意**不调** invalidateFingerprintCache —— 要验证的正是
+    //    「缓存自带 pid、切项目自动失效」，而不是靠调用方记得手动清。
+    db.setCurrentProject('proj-A')
+    await saveFingerprints([mk({ id: 'a1', name: 'A 书档' })])
+    await saveActiveFingerprintId('a1')
+    ok('A 书：当前档取到 A 书档', (await loadActiveFingerprint())?.name === 'A 书档') // 这一步把缓存填上
+
+    db.setCurrentProject('proj-B')
+    ok('换项目后读不到上一本的档', (await loadFingerprints()).length === 0)
+    ok('🔴 换项目后当前档不跟过来（缓存按 pid 自动失效）', (await loadActiveFingerprint()) === null)
+
+    await saveFingerprints([mk({ id: 'b1', name: 'B 书档' })])
+    ok('B 书没启用任何档（各书互不干扰）', (await loadActiveFingerprintId()) === '')
+    ok('B 书读到自己那套（1 份，且是 B 的）',
+      (await loadFingerprints()).length === 1 && (await loadFingerprints())[0].name === 'B 书档')
+
+    db.setCurrentProject('proj-A')
+    const backA = await loadFingerprints()
+    ok('切回 A 书仍是它自己那一套', backA.length === 1 && backA[0].name === 'A 书档',
+      JSON.stringify(backA.map(x => x.name)))
+    ok('切回 A 书自动恢复启用的档', (await loadActiveFingerprint())?.name === 'A 书档')
+    db.setCurrentProject('')
   }
 
   // ---------- ⑥b upsert 覆盖而非追加 ----------

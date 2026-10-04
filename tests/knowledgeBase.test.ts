@@ -19,9 +19,11 @@ import * as db from '../src/lib/db'
 import {
   setKbBackend, listDocs, getDocText, kbStats, importDoc, removeDoc,
   setDocEnabled, renameDoc, reindexAll, recallKnowledge, renderKbHits,
-  clearProjectDocs, KB_TOP_K, KB_MAX_CHARS, KB_MAX_DOCS, KB_HIT_CHARS,
+  clearProjectDocs,
+  KB_TOP_K, KB_MAX_CHARS, KB_MAX_DOCS, KB_HIT_CHARS,
   type KbDoc, type KbBackend,
 } from '../src/lib/knowledgeBase'
+import { memoryOps, __resetMockStores } from './mock-memory'
 import { buildKbBlock } from '../src/lib/kbInject'
 import {
   setVecBackend, makeVecRow, putVectors, loadVectors, summarize, refKeyOf,
@@ -381,6 +383,90 @@ const multiPara = (n: number): string =>
   ok('删项目时清理了知识库资料', proj.includes('clearProjectDocs'))
   ok('🔴 删项目时同时清理向量索引（补 #013 遗漏的孤儿清理）',
     proj.includes('clearProjectVectors'))
+}
+
+// ============ ⑨ 随导出 / 备份搬运（#017 的**可选项**，2026-10-04 主人拍板）============
+//
+// 盯四件事：
+//   · 默认**不带**（开关没开时导出包里根本没有 knowledgeBase 字段）；
+//   · 开关打开后带**正文 + 启用态**，且**自动备份恒定不带**（源码断言，同快照口径）；
+//   · 导入 / 恢复后资料跟着回来、id 换新、启用态保持；
+//   · 🔴🔴 负面对照：**不带资料的包去恢复时，现有资料一根汗毛都不能动**
+//     （否则"恢复一份没开开关的旧备份"会静默清空作者全部资料 —— 这是本组最重要的一条）。
+{
+  __resetMockStores()
+  const kb = memKb(); const vec = memVec()
+  setKbBackend(kb); setVecBackend(vec)
+  db.setCurrentProject('p1')
+  await memoryOps.put('projects', { id: 'p1', name: '测试书', projectType: 'full', createdAt: 1, updatedAt: 1 })
+  await memoryOps.put('volumes', { id: 'v1', projectId: 'p1', name: '卷一', order: 0 })
+  await memoryOps.put('chapters', {
+    id: 'c1', projectId: 'p1', volumeId: 'v1', title: '第1章', content: '正文内容',
+    wordCount: 4, order: 0, number: 1,
+  })
+
+  const da = await importDoc({ projectId: 'p1', title: '设定集', text: '雪山剑修设定。'.repeat(30), sourceType: 'txt' })
+  const db2 = await importDoc({ projectId: 'p1', title: '随手笔记', text: '写作用的小笔记。'.repeat(30), sourceType: 'md' })
+  await setDocEnabled('p1', da.doc!.id, true)
+  ok('准备：项目里 2 篇资料（1 篇启用）',
+    (await listDocs('p1')).length === 2 && (await listDocs('p1')).filter(d => d.enabled).length === 1)
+
+  // ① 默认不带
+  const noKb = await db.exportProject('p1', { includeSnapshots: false })
+  ok('🔴 开关未开 ⇒ 导出包里**没有** knowledgeBase 字段（老格式完全兼容）', noKb.knowledgeBase === undefined)
+
+  // ② 打开开关 ⇒ 带上正文与启用态
+  await db.setSetting(db.KB_IN_BACKUP_KEY, true)
+  const withKb = await db.exportProject('p1', { includeSnapshots: false })
+  ok('开关打开 ⇒ 包里有 2 篇资料', (withKb.knowledgeBase?.length ?? 0) === 2)
+  ok('包里带的是**正文**（不是只有元数据）',
+    (withKb.knowledgeBase ?? []).every(d => d.text.length > 0))
+  ok('启用态随包带走', (withKb.knowledgeBase ?? []).filter(d => d.enabled).length === 1)
+  ok('包里不带旧 id（导入时另生成，防同机二次导入互相覆盖）',
+    (withKb.knowledgeBase ?? []).every(d => !('id' in (d as object))))
+
+  // ③ 自动备份恒定不带（源码断言 —— 走全链路太重，且这条是"口径"而非"行为"）
+  const bsrc = read('src/lib/db/backups.ts')
+  ok('🔴 自动备份显式传 includeKnowledgeBase: false（同快照口径）',
+    /includeKnowledgeBase:\s*false/.test(bsrc))
+  ok('🔴 恢复备份时只在包带了资料才动（否则会清空作者现有资料）',
+    /if\s*\(bundle\.knowledgeBase\)/.test(bsrc))
+
+  // ④ 导入成新项目 ⇒ 资料跟着回来
+  const newPid = await db.importProject(withKb)
+  const imported = await listDocs(newPid)
+  ok('导入项目后资料跟着回来（2 篇）', imported.length === 2)
+  ok('🔴 导入后 id 全部换新（不覆盖本机已有资料）',
+    imported.every(d => d.id !== da.doc!.id && d.id !== db2.doc!.id))
+  ok('导入后启用态保持（1 篇启用）', imported.filter(d => d.enabled).length === 1)
+  ok('导入后正文完好',
+    (await getDocText(imported.find(d => d.title === '设定集')!.id)).includes('雪山剑修设定'))
+
+  // ⑤ 🔴 负面对照：不带资料的包，恢复后现有资料**一根汗毛都不动**
+  const beforeCount = (await listDocs('p1')).length
+  const beforeIds = (await listDocs('p1')).map(d => d.id).sort().join(',')
+  await db.restoreBundleToProject('p1', noKb)
+  const afterCount = (await listDocs('p1')).length
+  ok('🔴🔴 不带资料的包恢复时**不清**现有资料', afterCount === beforeCount, `${beforeCount} → ${afterCount}`)
+  ok('🔴🔴 且资料 id 完全没变（是"没碰"，不是"删了又建"）',
+    (await listDocs('p1')).map(d => d.id).sort().join(',') === beforeIds)
+
+  // ⑥ 包带资料 ⇒ 恢复 = 回到包里那一刻（先清后写）
+  await removeDoc('p1', (await listDocs('p1'))[0].id) // 先人为删一篇，制造"现状与包不同"
+  await db.restoreBundleToProject('p1', withKb)
+  const restored = await listDocs('p1')
+  ok('带资料的包恢复 ⇒ 还原成包里的样子（2 篇）', restored.length === 2)
+  ok('恢复后启用态按包走', restored.filter(d => d.enabled).length === 1)
+  ok('恢复后标题都在', ['设定集', '随手笔记'].every(t => restored.some(d => d.title === t)))
+
+  // ⑦ 界面：勾选与文案
+  const panel = read('src/components/KnowledgeBasePanel.tsx')
+  ok('面板提供「随导出 / 备份带走」勾选（读同一设置键）', panel.includes('db.KB_IN_BACKUP_KEY'))
+  ok('面板写明「自动备份不含资料」（否则作者会以为备份也带上了）', panel.includes('自动备份'))
+  ok('源码闸：导出侧读的是**按项目**的设置键，不是全局',
+    read('src/lib/db/projects.ts').includes('kbInBackup'))
+
+  db.setCurrentProject('')
 }
 
 console.log(`\n—— knowledgeBase 用例结束：${pass} 通过 / ${fail} 失败`)

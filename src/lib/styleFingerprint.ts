@@ -16,8 +16,11 @@
  *   ③ **立场红线**：这是文风质量功能，**不是反检测功能** —— 不许出现"过检测 / 降 AI 率"这类话术
  *      （`tests/deAiStyle.test.ts` 第 3 组守的就是这条，本模块另有单测同守）。
  *
- * 🔴 本模块**不 import 任何 UI**，也不新增存储表 —— 文风档是**全局**设定（作者文风跨书复用），
- *    存 `db.meta` 的 `styleFingerprints` + `activeStyleFingerprint` 两个键（与 `aiRouting` 同理）。
+ * 🔴 本模块**不 import 任何 UI**，也不新增存储表 —— 文风档**按项目存**（2026-10-04 主人拍板：
+ *    从「全局」改成「跟项目走」—— 不同题材 / 不同笔名的书本来就该有各自的文风档，
+ *    全局一套会让「写仙侠的档」污染「写都市的书」）。落在 `settingsKV` 的 `styleFingerprints`
+ *    + `activeStyleFingerprint` 两个键上，经 `getSetting` / `setSetting` 自动带 `${currentProjectId}::` 前缀
+ *    （与自定义敏感词 / 取名收藏同一套机制）；删项目时由 `deleteProject` 的前缀清理顺带带走。
  *
  * ⚠️ 命名说明：本模块的 `StyleProfile` 与 `manuscriptCheck.ts` 的 `StyleFingerprint`（**单章**行文
  *    统计）**不是一回事** —— 后者是"这一章写得怎么样"的一次性体检，前者是"作者一贯什么味道"的可命名档案。
@@ -256,7 +259,7 @@ export function buildFingerprintNote(fp: StyleProfile | null): string {
   return lines.join('\n')
 }
 
-// ============ 存储（全局 meta） ============
+// ============ 存储（按项目 · settingsKV 前缀键） ============
 
 /** 脏数据归一：任何字段缺失 / 类型不对都不该让整个档挂掉 */
 function normProfile(raw: unknown): StyleProfile | null {
@@ -289,10 +292,14 @@ function normProfile(raw: unknown): StyleProfile | null {
   }
 }
 
-/** 读全部文风档。空库 / 异常一律回退空数组 —— 文风档读不出来不该让任何 AI 功能挂掉 */
+/**
+ * 读当前项目的全部文风档。空库 / 异常 / 未开项目一律回退空数组 ——
+ * 文风档读不出来不该让任何 AI 功能挂掉。
+ * 🔴 用 `getSetting`（**按项目**）而不是 `getMeta`（全局）：换项目就该读到另一套。
+ */
 export async function loadFingerprints(): Promise<StyleProfile[]> {
   try {
-    const raw = await db.getMeta<unknown>(K_LIST, [])
+    const raw = await db.getSetting<unknown>(K_LIST, [])
     if (!Array.isArray(raw)) return []
     return raw.map(normProfile).filter((x): x is StyleProfile => x !== null)
   } catch {
@@ -300,16 +307,16 @@ export async function loadFingerprints(): Promise<StyleProfile[]> {
   }
 }
 
-/** 写全部文风档（同时让当前启用档的内存缓存失效） */
+/** 写当前项目的全部文风档（同时让当前启用档的内存缓存失效） */
 export async function saveFingerprints(list: StyleProfile[]): Promise<void> {
-  await db.setMeta(K_LIST, list)
+  await db.setSetting(K_LIST, list)
   invalidateFingerprintCache()
 }
 
-/** 读当前启用的文风档 id（空串 = 未启用） */
+/** 读当前项目启用的文风档 id（空串 = 未启用） */
 export async function loadActiveFingerprintId(): Promise<string> {
   try {
-    return asText(await db.getMeta<unknown>(K_ACTIVE, ''))
+    return asText(await db.getSetting<unknown>(K_ACTIVE, ''))
   } catch {
     return ''
   }
@@ -317,7 +324,7 @@ export async function loadActiveFingerprintId(): Promise<string> {
 
 /** 启用 / 停用某个文风档（传空串 = 停用） */
 export async function saveActiveFingerprintId(id: string): Promise<void> {
-  await db.setMeta(K_ACTIVE, id || '')
+  await db.setSetting(K_ACTIVE, id || '')
   invalidateFingerprintCache()
 }
 
@@ -342,22 +349,28 @@ export async function removeFingerprint(id: string): Promise<StyleProfile[]> {
 // ============ 当前启用档（带内存缓存） ============
 
 /**
- * 缓存当前启用档。`undefined` = 还没读过。
+ * 缓存当前启用档。`undefined` = 还没读过；**带 pid** 是为了切项目时自动失效。
  *
  * 为什么要缓存：三处注入点（续写 / 整章改写 / 伴写）都在**热路径**上 —— 伴写每停笔一次都调，
- * 每次去 IndexedDB 读一遍全局 meta 纯属浪费（本地模型本来就慢，不该再叠一次读盘）。
+ * 每次去读一遍存储纯属浪费（本地模型本来就慢，不该再叠一次读盘）。
  * 失效时机＝任何一次写入（`saveFingerprints` / `saveActiveFingerprintId`）。
+ *
+ * 🔴 **还要按项目失效** —— 文风档改按项目存之后，换项目必须重新读，
+ *    否则会把上一本书的档带到这一本（比"没档"更糟：静默用了错的文风）。
+ *    做法是缓存里带 pid、读时比对，而**不是**去 `App.tsx` 的切项目处补一行调用 ——
+ *    那等于多一个"将来新增入口会漏"的地方（本项目在别处已经踩过这个坑）。
  */
-let activeCache: StyleProfile | null | undefined = undefined
+let activeCache: { pid: string; fp: StyleProfile | null } | undefined = undefined
 
 /** 让缓存失效（写盘后自动调用；单测里手动调用以隔离用例） */
 export function invalidateFingerprintCache(): void {
   activeCache = undefined
 }
 
-/** 取当前启用的文风档；未启用 / 已删除 / 异常一律返回 null */
+/** 取**当前项目**启用的文风档；未启用 / 已删除 / 异常一律返回 null */
 export async function loadActiveFingerprint(): Promise<StyleProfile | null> {
-  if (activeCache !== undefined) return activeCache
+  const pid = db.getCurrentProjectId()
+  if (activeCache !== undefined && activeCache.pid === pid) return activeCache.fp
   let fp: StyleProfile | null = null
   try {
     const id = await loadActiveFingerprintId()
@@ -368,7 +381,7 @@ export async function loadActiveFingerprint(): Promise<StyleProfile | null> {
   } catch {
     fp = null
   }
-  activeCache = fp
+  activeCache = { pid, fp }
   return fp
 }
 

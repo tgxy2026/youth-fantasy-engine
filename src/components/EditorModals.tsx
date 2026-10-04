@@ -514,7 +514,9 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                   <div className="flex-1 overflow-y-auto max-h-64 font-serif text-12 leading-relaxed">
                     <div className="mb-1.5 text-11 text-ink-500">
                       {baseLabel} → {fmt(preview.createdAt)}：新增 {stats.added} 行 · 删除 {stats.deleted} 行
-                      {stats.added === 0 && stats.deleted === 0 && ' —— 两版完全一致'}
+                      {stats.added === 0 && stats.deleted === 0
+                        ? ' —— 两版完全一致'
+                        : '（配色与 #016 前后对照同口径：新增＝绿 / 删除＝红，与行情涨跌红绿无关）'}
                     </div>
                     {diff.map((l, i) => (
                       <div

@@ -13,7 +13,9 @@ import type { DailyStat } from './meta'
 //    ⚠️ 依赖方向已核对：这两个模块都**不 import db**（`knowledgeBase` 的 projectId 由调用方传，
 //       `semantic/store` 是纯存储层），故不会形成 `deleteProject → kb → db` 的环。
 import { clearProjectVectors } from '../semantic/store'
-import { clearProjectDocs } from '../knowledgeBase'
+import {
+  clearProjectDocs, collectDocsForBundle, restoreDocsFromBundle, type KbBundleDoc,
+} from '../knowledgeBase'
 
 // ============ 项目 ============
 // 旧版项目形态 'lite'(精简) / 'minimal'(极简) 已移除；把存储中残留的旧值归一化为 'full'
@@ -189,6 +191,35 @@ export interface ProjectBundle {
    *    "本机写坏了能回退"，跨设备意义小；全带会让 300 章的书备份 JSON 胀到 20MB+、导入导出都变慢。
    */
   snapshots?: Snapshot[]
+  /**
+   * 挂载的参考资料（2.8.0 · #017，**可选字段**）。
+   *
+   * 🔴 默认**不带**（2026-10-04 主人拍板「加可选项」）：长文档单篇可到 40 万字，
+   *    塞进迁移包 / 备份会迅速膨胀。作者在「素材资料 → 我的参考资料」里勾选后才随包走，
+   *    该选择存**按项目**的设置键 `kbInBackup`（见 `kbInBackupOf`）。
+   * 🔴 **自动备份恒定不带** —— 它是每 5 分钟一次的全量，带上长文档等于反复重写几 MB
+   *    （与上面 `snapshots` 同一条理由，`createAutoBackup` 里显式传 false）。
+   */
+  knowledgeBase?: KbBundleDoc[]
+}
+
+/** 项目设置键：参考资料是否随导出 / 导出备份文件一起走（默认 false = 不带） */
+export const KB_IN_BACKUP_KEY = 'kbInBackup'
+
+/**
+ * 读「参考资料随包走」开关。
+ *
+ * 🔴 这里用 `ops.get('settingsKV', …)` 而**不是** `db.getSetting` —— 后者读的是
+ *    `currentProjectId`，而 `exportProject(id)` 的 id 是**任意**项目
+ *    （项目管理页导出别的项目时，currentProjectId 根本不是它，开关会读错）。
+ */
+export async function kbInBackupOf(projectId: string): Promise<boolean> {
+  try {
+    const rec = await ops.get<{ key: string; value: unknown }>('settingsKV', `${projectId}::${KB_IN_BACKUP_KEY}`)
+    return rec?.value === true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -197,9 +228,15 @@ export interface ProjectBundle {
  * ⚠️ `includeSnapshots`（2.4.0 · A3）：**自动备份必须传 false**。
  *    快照在 `backups.ts` 里会随全量备份每 5 分钟写一次，若带上 AI 快照（长篇可达几十 MB），
  *    高频备份会迅速把本地存储撑大。手动「导出备份」保持默认 true —— 那是给用户带走、换设备用的。
+ * ⚠️ `includeKnowledgeBase`（2.8.0 · #017）：不传 ⇒ 读作者在该项目里勾的开关（`kbInBackup`）；
+ *    自动备份**显式传 false**（同 `includeSnapshots` 的理由）。
  */
-export async function exportProject(id: string, opts: { includeSnapshots?: boolean } = {}): Promise<ProjectBundle> {
+export async function exportProject(
+  id: string,
+  opts: { includeSnapshots?: boolean; includeKnowledgeBase?: boolean } = {},
+): Promise<ProjectBundle> {
   const includeSnapshots = opts.includeSnapshots !== false
+  const includeKb = opts.includeKnowledgeBase ?? await kbInBackupOf(id)
   const project = await ops.get<Project>('projects', id)
   if (!project) throw new Error('项目不存在')
   const [volumes, chapters, formData, tableRows, cardRecords, dailyStats, settingsKV, tavernReports] = await Promise.all([
@@ -210,6 +247,8 @@ export async function exportProject(id: string, opts: { includeSnapshots?: boole
   ])
   // 快照按 projectId 索引取（不扫全表）
   const snapshots = includeSnapshots ? await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', id) : []
+  // 参考资料（#017）：勾了开关才收集正文（`collectDocsForBundle` 会逐篇读正文，不勾就别读）
+  const kb = includeKb ? await collectDocsForBundle(id) : []
   const prefix = `${id}::`
   const customOptPrefix = `customOption::${id}::`
   return {
@@ -234,6 +273,9 @@ export async function exportProject(id: string, opts: { includeSnapshots?: boole
     tavernReports: tavernReports.filter(r => r.projectId === id),
     // 只带 AI 快照（理由见 ProjectBundle.snapshots 的注释）
     snapshots: snapshots.filter(s => isAISnapshot(s)),
+    // 参考资料（#017）：没勾开关 / 一篇都没有 ⇒ **整个字段不出现**（与 snapshots 同为可选字段，
+    // 旧格式 / 老客户端读到的是"没有这个字段"，向后兼容零成本）
+    ...(kb.length ? { knowledgeBase: kb } : {}),
   }
 }
 
@@ -320,6 +362,12 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
     for (const r of bundle.tavernReports) {
       await ops.put('tavernReports', { ...r, id: uid(), projectId: newPid })
     }
+  }
+  // 参考资料（2.8.0 · #017，可选字段）：随包带来的资料写进**独立知识库**。
+  // ⚠️ 放在**最后**、且失败不阻断：它是另一个库，写不进去不该推翻"项目已经导进来了"。
+  //    新项目本来没有资料，`restoreDocsFromBundle` 的"先清空"是空操作，直接写即可。
+  if (bundle.knowledgeBase?.length) {
+    await restoreDocsFromBundle(newPid, bundle.knowledgeBase).catch(() => 0)
   }
   return newPid
 }

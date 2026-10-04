@@ -44,6 +44,8 @@ export default function KnowledgeBasePanel() {
   const [ready, setReady] = useState(false)
   const [ver, setVer] = useState(0)
   const [busy, setBusy] = useState(false)
+  /** 是否随导出 / 迁移包带走（按项目存；默认关）—— 2026-10-04 主人拍板加的可选项 */
+  const [inBackup, setInBackup] = useState(false)
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteTitle, setPasteTitle] = useState('')
   const [pasteText, setPasteText] = useState('')
@@ -62,6 +64,7 @@ export default function KnowledgeBasePanel() {
   const refresh = useCallback(async () => {
     // ⚠️ 项目 id 现取：面板可能跨项目存活（切项目后不能拿旧 id 去读）
     setDocs(await listDocs(db.getCurrentProjectId()))
+    setInBackup(await db.getSetting<boolean>(db.KB_IN_BACKUP_KEY, false))
     const st = await embeddingStatus()
     setReady(st.ready)
     setHint(st.ready ? st.label : st.reason)
@@ -187,6 +190,17 @@ export default function KnowledgeBasePanel() {
     setVer(v => v + 1)
   }
 
+  /**
+   * 「随导出 / 备份带走」开关（**按项目存**）。
+   * 🔴 先 `await` 写盘再 `setState` —— 本项目踩过「写盘前就读、界面与落盘不一致」的坑
+   *    （见 MEMORY 里 AIConfigPanel 那次倒挂事故）。
+   */
+  const onToggleInBackup = async (v: boolean) => {
+    if (!currentProject()) { showToast('请先打开一个项目', 'error'); return }
+    await db.setSetting(db.KB_IN_BACKUP_KEY, v)
+    setInBackup(v)
+  }
+
   /** 重建索引（只对**已启用**的资料）—— 长任务，走任务中心 */
   const onReindex = async () => {
     const pid = currentProject()
@@ -242,7 +256,7 @@ export default function KnowledgeBasePanel() {
           <p className="mt-1.5">与「一键拆书」的区别：拆书是把一本书<b>一次性</b>抽成设定、抽完就散；这里是<b>长期挂着</b>、随时可用。</p>
           <p className="mt-1.5">🔴 <b>导入不会自动生效</b>：要你在列表里勾选「启用」，它才会参与召回。导入本身也不消耗额度。</p>
           <p className="mt-1.5">配好嵌入模型走语义匹配（更准）；没配则退化为关键词匹配（还能用，只是差些）。</p>
-          <p className="mt-1.5">📁 资料只存在本机：<b>不参与云盘同步，也不打进备份 / 导出</b>（换机器要重新导入一次）。</p>
+          <p className="mt-1.5">📁 资料只存在本机：<b>不参与云盘同步</b>。默认也不打进备份 / 导出 —— 要连资料一起搬走，就在列表下方勾选「随导出 / 备份带走」。</p>
           <AIDataSourceNote feature="kb-recall" />
         </HelpPopover>
       </div>
@@ -415,6 +429,25 @@ export default function KnowledgeBasePanel() {
           </div>
         )}
       </div>
+
+      {/* 随导出 / 备份带走（按项目存；默认关）—— 2026-10-04 主人拍板加的可选项 */}
+      {docs.length > 0 && (
+        <label className="mt-3 flex items-start gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="accent-amber mt-0.5 shrink-0"
+            checked={inBackup}
+            disabled={running || busy}
+            onChange={e => void onToggleInBackup(e.target.checked)}
+          />
+          <span className="text-11 text-ink-400">
+            导出迁移包 / 导出备份文件时，连这些资料一起带走
+            <span className="block text-10 text-ink-500">
+              自动备份（每 5 分钟 / 每日）恒定不含资料 —— 长文档反复写进高频备份会让数据文件迅速变大；资料本身始终不参与云盘同步。
+            </span>
+          </span>
+        </label>
+      )}
 
       {/* 空态 */}
       {docs.length === 0 && !pasteOpen && (

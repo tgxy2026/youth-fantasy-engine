@@ -175,6 +175,12 @@ export interface ImportDocInput {
   title: string
   text: string
   sourceType: KbSourceType
+  /**
+   * 是否直接启用（默认 **false**）。
+   * 界面上的「导入」一律不传 ⇒ 不切块、不嵌入，等作者显式勾选；
+   * 只有**从导出包还原**（`restoreDocsFromBundle`）才按包里的原状态传 —— 还原要还原成一模一样。
+   */
+  enabled?: boolean
 }
 
 export interface ImportDocResult {
@@ -217,7 +223,7 @@ export async function importDoc(input: ImportDocInput): Promise<ImportDocResult>
     chars: text.length,
     chunkCount: 0,
     importedAt: Date.now(),
-    enabled: false,
+    enabled: input.enabled === true,
   }
   try {
     await kbBackend.put(doc)
@@ -473,4 +479,74 @@ export async function clearProjectDocs(projectId: string): Promise<void> {
   } catch {
     /* 清理失败不阻断删除项目 */
   }
+}
+
+// ============ 随导出 / 备份搬运（可选功能，默认关闭）============
+//
+// 2026-10-04 主人拍板：参考资料**默认不随备份 / 导出走**（长文档几 MB，塞进迁移包会迅速膨胀），
+// 但给一个**可选项** —— 作者在「我的参考资料」面板勾上，导出 / 导出备份文件时就一并带走。
+// 🔴 **自动备份（每 5 分钟 / 每日）恒定不带**（与快照那条同口径），否则高频全量会迅速撑大本地数据文件。
+//
+// ⚠️ 为什么 `KbBundleDoc` 不复用 `KbDoc`：包里的资料**不带 id / projectId** ——
+//    导入时必须换新 id（与 volumes / chapters / cardRecords 同一套纪律），
+//    留着旧 id 会在「同一台机器导入两份」时互相覆盖。
+
+/** 导出包里的单篇资料（含正文；id 由导入方重新生成） */
+export interface KbBundleDoc {
+  title: string
+  sourceType: KbSourceType
+  chars: number
+  importedAt: number
+  enabled: boolean
+  text: string
+}
+
+/** 收集项目内全部资料（含正文），供「随导出 / 备份带走」用。读不出就返回空数组，永不抛。 */
+export async function collectDocsForBundle(projectId: string): Promise<KbBundleDoc[]> {
+  const docs = await listDocs(projectId)
+  const out: KbBundleDoc[] = []
+  for (const d of docs) {
+    const text = await getDocText(d.id)
+    out.push({
+      title: d.title,
+      sourceType: d.sourceType,
+      chars: d.chars,
+      importedAt: d.importedAt,
+      enabled: d.enabled,
+      text,
+    })
+  }
+  return out
+}
+
+/**
+ * 把导出包里的资料写回项目（导入项目 / 恢复备份时用）。
+ *
+ * 🔴 **先清空**：恢复的语义是「回到那一刻」，不清就会新旧混在一起。
+ *    因此调用方**必须先确认 bundle 真的带了资料**才调它 —— 否则「没开开关的备份」
+ *    会把作者现有的资料清干净（`applyBundleToProject` 里有这道守卫）。
+ * 🔴 清空时**连向量块一起清**：正文都换了，旧块仍留在索引里就会变成"指向已删资料的幽灵块"，
+ *    召回时混进上下文（且从界面上完全看不出原因）。
+ * @returns 成功写回的篇数（单篇失败不中断 —— 走 `importDoc` 的上限 / 截断规则）
+ */
+export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBundleDoc[]): Promise<number> {
+  if (!projectId) return 0
+  const old = await listDocs(projectId)
+  await clearProjectDocs(projectId)
+  for (const d of old) {
+    // 逐篇按 ref 清（**不能**用 clearProjectVectors —— 那会连章节的语义索引一起清掉）
+    try { await removeByRef(projectId, d.id) } catch { /* 清不掉也只是残留块，不阻断还原 */ }
+  }
+  let n = 0
+  for (const d of bundleDocs ?? []) {
+    const r = await importDoc({
+      projectId,
+      title: d.title,
+      text: d.text,
+      sourceType: d.sourceType,
+      enabled: d.enabled === true,
+    })
+    if (r.ok) n++
+  }
+  return n
 }

@@ -88,7 +88,7 @@ export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from '
 export { runMarketRadar, buildRadarQueries, RADAR_DISCLAIMER, RADAR_MAX_QUERIES, MARKET_RADAR_PROMPTS } from './marketRadar'
 export type { RadarInput, RadarReport, RadarTrendItem, RadarSource } from './marketRadar'
 // 2026-10-04（2.8.0 · #015）：文风指纹 —— 从参考文本提炼可命名文风档，续写 / 整章改写 / 伴写三处自动注入。
-// 🔴 它只产出「注入文本」，**不写任何项目数据**（档存在全局 meta）。
+// 🔴 它只产出「注入文本」，**不写任何项目数据**（档按项目存在 settingsKV 前缀键里，不碰 volumes/chapters 那些）。
 export {
   extractFingerprint, analyzeStyleMetrics, buildFingerprintNote, metricsLine,
   loadFingerprints, saveFingerprints, loadActiveFingerprint, loadActiveFingerprintId,
