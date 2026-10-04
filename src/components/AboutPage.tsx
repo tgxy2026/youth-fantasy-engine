@@ -154,7 +154,7 @@ export default function AboutPage() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-lg bg-amber text-13 font-medium text-ink-950 hover:opacity-90 transition-opacity"
                   >
-                    <ExternalLink size={15} /> 打开网盘下载页
+                    <ExternalLink size={15} /> 打开网盘下载
                   </a>
                   <Button
                     variant="secondary"
