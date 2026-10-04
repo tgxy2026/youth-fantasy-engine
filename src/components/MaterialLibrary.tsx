@@ -13,6 +13,7 @@ import {
   type ToolboxSection,
 } from '../lib/materialRef'
 import { MATERIAL_CATEGORIES } from '../data/materialData'
+import KnowledgeBasePanel from './KnowledgeBasePanel'
 
 export default function MaterialLibrary() {
   const [catId, setCatId] = useState(MATERIAL_CATEGORIES[0].id)
@@ -70,6 +71,10 @@ export default function MaterialLibrary() {
       <div className={PANEL_CLS}>
         <BlockView block={activeBlock} />
       </div>
+
+      {/* 我的参考资料（2.8.0 · 台账 #017）—— 挂在本页末尾，刻意**不新增页签**：
+          上面是「人看的只读素材」，这里是「给 AI 读的挂载资料」，同属"手边能翻的东西"。 */}
+      <KnowledgeBasePanel />
     </div>
   )
 }

@@ -7,6 +7,13 @@ import { ops, currentProjectId } from './core'
 import { VOL_LEDGER_PREFIX } from './volumes'
 import { type Snapshot, isAISnapshot } from './chapters'
 import type { DailyStat } from './meta'
+// 🔴 语义向量索引（#013）与知识库资料（#017）住在**独立 IDB 库**里，上面这批 store 管不到 ——
+//    删项目时必须各自显式清理，否则会留下「界面上看不到、却一直占空间」的孤儿
+//    （#013 当初就漏了这一步，2026-10-04 随 #017 一并补上）。
+//    ⚠️ 依赖方向已核对：这两个模块都**不 import db**（`knowledgeBase` 的 projectId 由调用方传，
+//       `semantic/store` 是纯存储层），故不会形成 `deleteProject → kb → db` 的环。
+import { clearProjectVectors } from '../semantic/store'
+import { clearProjectDocs } from '../knowledgeBase'
 
 // ============ 项目 ============
 // 旧版项目形态 'lite'(精简) / 'minimal'(极简) 已移除；把存储中残留的旧值归一化为 'full'
@@ -117,6 +124,12 @@ export async function deleteProject(id: string) {
   if (snapKeys.length) await ops.bulkDel('snapshots', snapKeys)
   if (statKeys.length) await ops.bulkDel('dailyStats', statKeys)
   if (setKeys.length) await ops.bulkDel('settingsKV', setKeys)
+
+  // 独立库里的项目级数据：语义向量块（#013）+ 挂载的参考资料（#017）。
+  // 上面那批走 `ops.bulkDel` 的 store 在同一个库里，这两个不是 —— 必须各自显式调。
+  // 一律不抛：独立库暂时不可用不该让「删项目」失败（projects 记录已经删了，重删一遍也无害）。
+  await clearProjectVectors(id).catch(() => { /* 忽略：删不掉也只是占空间，不影响已删除的事实 */ })
+  await clearProjectDocs(id).catch(() => { /* 忽略 */ })
 }
 
 // ============ 项目统计（项目列表页用，不依赖 currentProjectId） ============

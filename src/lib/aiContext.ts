@@ -18,6 +18,7 @@ import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
 import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from './worldSets'
 import { getActivePack, normalizeGenrePack, subItemLabel } from './schemaTemplates'
 import { buildSemanticRecallBlock } from './semantic/inject'
+import { buildKbBlock } from './kbInject'
 import type { Chapter, TabDef, Volume } from './types'
 
 export interface ProjectContextOptions {
@@ -50,6 +51,15 @@ export interface ProjectContextOptions {
   semantic?: boolean
   /** 语义召回条数上限，默认 6 */
   semanticLimit?: number
+  /**
+   * #017 知识库：在〖语义召回〗之后再补一段〖参考资料〗（作者挂载的外部文档）。
+   * 🔴 不传也算**开** —— 判定权交给「有没有已启用的资料」（作者在素材页勾选启用即视为显式开启）。
+   *    为什么不加一层"必须传 true"的默认关：只要有一个调用点漏传，这功能就**静默死掉**了，
+   *    而那种 bug 比"多带一段文字"难查得多。显式传 false 仍然可以关掉。
+   */
+  kb?: boolean
+  /** 参考资料召回条数上限，默认 4 */
+  kbLimit?: number
   /**
    * 是否在正文尾部附一段「（注：以下资料因长度预算未带入…）」。默认 true。
    * 酒馆模式传 false —— 它把 dropped 交给 buildSystemPrompt 生成**独立的**
@@ -882,6 +892,14 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
       limit: opts.semanticLimit,
     })
     if (semanticBlock) push('语义召回', semanticBlock)
+  }
+
+  // #017 知识库：作者挂载的外部参考资料，按需召回片段注入。
+  // 🔴 与语义召回同一前置（要有焦点章）—— 没有"当前写到哪"，"按需检索"就无从谈起。
+  // 🔴 buildKbBlock 自身永不抛；没有启用的资料时零开销早退（只读一次元数据表，不碰向量库）。
+  if (opts.kb !== false && opts.focusChapterId && !opts.skeletonOnly) {
+    const kbBlock = await buildKbBlock({ focusChapterId: opts.focusChapterId, limit: opts.kbLimit })
+    if (kbBlock) push('参考资料', kbBlock)
   }
 
   if (opts.includeChapterList !== false) {

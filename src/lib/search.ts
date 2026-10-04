@@ -9,7 +9,13 @@
  */
 import * as db from './db'
 import { TABS, tabVisible, type VisCtx } from './schema'
+import { tokenize } from './tokenize'
 import type { CardRecord, TableRow } from './types'
+
+// 🔬 分词口径的**单一真源**已移到 `./tokenize`（纯函数，不 import db）——
+//    好让「知识库」的关键词降级召回也能用它而不与 db 成环。
+//    这里原样再导出，既有的 `from './search'` 调用点无需改动。
+export { tokenize }
 
 export type SearchDocType = 'chapter' | 'character' | 'setting'
 
@@ -30,31 +36,6 @@ export interface SearchResult extends SearchDoc {
   snippet: string
 }
 
-/**
- * 分词：CJK 拆成 单字 + 相邻二元；拉丁/数字按词。
- *
- * 🔬 导出供 `lib/semantic/recall.ts` 复用（2026-10-04）：语义召回在算余弦**之前**
- * 要先用关键词把候选缩到几百条（否则全库逐条点积，大库下每次召回都是毫秒级起步的开销）。
- * 那一步的分词口径必须与全文检索**完全一致** —— 各写一份迟早会漂移成
- * "搜得到但召回不到"这种最难查的不一致，故直接复用本函数。
- */
-export function tokenize(text: string): string[] {
-  if (!text) return []
-  const lower = text.toLowerCase()
-  const tokens: string[] = []
-  const latin = lower.match(/[a-z0-9]+/g)
-  if (latin) for (const w of latin) tokens.push(w)
-  const cjkRuns = lower.match(/[㐀-䶿ㆠ-㏿一-鿿豈-﫿]+/g)
-  if (cjkRuns) {
-    for (const run of cjkRuns) {
-      for (let i = 0; i < run.length; i++) {
-        tokens.push(run[i]) // 单字
-        if (i + 1 < run.length) tokens.push(run[i] + run[i + 1]) // 二元
-      }
-    }
-  }
-  return tokens
-}
 
 /** 从命中位置截取带上下文的摘要 */
 function makeSnippet(body: string, query: string): string {

@@ -10,7 +10,9 @@
 //      这样 `aiContext` 可以安全地 import 它，不会形成环。
 //   3. **S 级过滤在召回侧**（`hideSecretRows`）。
 
-import { tokenize } from '../search'
+// 🔴 分词取 `../tokenize`（纯函数）而**不是** `../search` —— 后者 import db，
+//    而知识库（`lib/knowledgeBase.ts`）要复用本模块且必须对 db 零依赖，否则成环。
+import { tokenize } from '../tokenize'
 import { fromVectorBuffer } from './chunk'
 import { embedOne, type EmbedConfig } from './embed'
 import { loadVectors, vectorIndex, type VecIndex, type VecKind, type VecRow } from './store'

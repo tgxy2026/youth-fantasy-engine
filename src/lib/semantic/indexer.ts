@@ -33,17 +33,12 @@ import {
 } from './store'
 // ⚠️ 方向：indexer → settings → aiCore/session → db，不回头 import indexer ⇒ 不成环。
 import { loadEmbeddingSettings, resolveEmbedConfig } from './settings'
-
-/** 一个「来源」：一章正文 / 一条设定行 / 一张角色卡 */
-export interface IndexDoc {
-  kind: VecKind
-  refId: string
-  /** 展示用标题（UI 里说"正在索引哪一条"） */
-  title: string
-  text: string
-  /** 来源行被标为 S 级（绝密）—— 角色视角召回时整条剔除 */
-  secret: boolean
-}
+// 单来源索引的编排住在 `indexDoc.ts` —— 它对 `lib/db` **零依赖**，
+// 好让知识库（#017）在不 import db 的前提下复用它（否则 deleteProject → knowledgeBase → db 成环）。
+// 这里**原样再导出**，既有的 `from './indexer'` 调用点一个都不用改。
+import { indexOneDoc, type IndexDoc } from './indexDoc'
+export { indexOneDoc }
+export type { IndexDoc }
 
 export interface CollectInput {
   chapters: { id: string; title: string; summary?: string; content: string }[]
@@ -350,55 +345,8 @@ export async function rebuildIndex(opts: RebuildOptions): Promise<RebuildResult>
   return { ok: true, docs: docs.length, chunks: rows.length, skipped, removed }
 }
 
-/**
- * 单条来源的索引重写（章节保存后增量更新它用）。
- *
- * 与 `rebuildIndex` 共用同一套切块 / 建行逻辑，只是范围收窄到一条来源。
- * 🔴 内部先 `removeByRef` 再 `putVectors`：章节被改短时旧的长块不会被留成孤儿
- *    （孤儿 = 召回得到**已经删掉的内容**，那是真 bug，见 `rebuildIndex` 的同类说明）。
- */
-export async function indexOneDoc(
-  doc: IndexDoc,
-  projectId: string,
-  cfg: EmbedConfig,
-  signal?: AbortSignal,
-): Promise<{ ok: boolean; chunks: number; error?: string }> {
-  const chunks = chunkChapter(doc.text)
-  if (chunks.length === 0) {
-    // 正文被清空 ⇒ 把旧块一并清掉，否则会一直召回那段不存在的文字
-    try { await removeByRef(projectId, doc.refId) } catch { /* 清理失败不影响保存 */ }
-    return { ok: true, chunks: 0 }
-  }
-  let r
-  try {
-    r = await embedTexts(chunks.map(c => c.text), cfg, signal)
-  } catch (e) {
-    return { ok: false, chunks: 0, error: e instanceof Error ? e.message : String(e) }
-  }
-  if (!r.ok || !r.vectors) return { ok: false, chunks: 0, error: r.error ?? '嵌入失败' }
-
-  const rows: VecRow[] = []
-  for (let i = 0; i < chunks.length; i++) {
-    const vec = r.vectors[i]
-    if (!vec || vec.length === 0) continue
-    rows.push(makeVecRow({
-      projectId,
-      kind: doc.kind,
-      refId: doc.refId,
-      chunkIdx: chunks[i].idx,
-      text: chunks[i].text,
-      title: doc.title,
-      hash: hashOf(chunks[i].text),
-      vec: toVectorBuffer(vec),
-      dim: vec.length,
-      model: cfg.model.trim(),
-      secret: doc.secret,
-    }))
-  }
-  await removeByRef(projectId, doc.refId)
-  await putVectors(rows)
-  return { ok: true, chunks: rows.length }
-}
+// （`indexOneDoc` 已移到 `indexDoc.ts` —— 它对 db 零依赖，供知识库 #017 复用；
+//   本文件顶部已 import 并原样再导出，调用点无需改动。）
 
 /** `autoIndexChapter` 的注入点（生产不传；单测用来绕开真实库与真实嵌入） */
 export interface AutoIndexDeps {
