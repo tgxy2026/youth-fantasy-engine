@@ -19,6 +19,7 @@ import { authorBlock, newAuthorFence } from '../promptGuard'
 import { stripEmphasis } from '../mdLite'
 import { longStream } from './stream'
 import type { PromptDef } from '../promptSettings'
+import { RULE_JSON_ARRAY_ONLY } from './shared'
 
 // ---------- 校对 · 文字层（错别字 / 语病 / 标点） ----------
 
@@ -71,7 +72,7 @@ let PROOFREAD_TEXT_SYS = `你是中文出版级的文字校对员，负责逐字
 - fix 只给 quote 对应位置改好后的完整片段，长度尽量与 quote 接近。
 - type 只能是：错别字 / 语病 / 标点。
 - 没有发现问题就返回 []。
-- 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+- ${RULE_JSON_ARRAY_ONLY}`
 
 // ---------- 校对 · 逻辑层（逻辑 / 设定矛盾） ----------
 
@@ -105,7 +106,7 @@ let PROOFREAD_LOGIC_SYS = `你是中文网络小说的一致性审校员，负�
 - fix 给「改成什么才不矛盾」的完整片段；若在不改情节的前提下无法改好，就把你的修改建议写进 fix，它同样会被替换到 quote 的位置。
 - type 只能是：逻辑 / 设定矛盾。
 - 没有发现问题就返回 []。
-- 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+- ${RULE_JSON_ARRAY_ONLY}`
 
 export interface ProofreadIssue {
   type: string

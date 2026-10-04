@@ -5,7 +5,7 @@ import type { Volume, Chapter, ChapterStatus } from '../lib/types'
 import { BookMarked, Upload, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
 import { isFreeVolume, realVolumes, nextVolumeNo } from '../lib/freeVolume'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { foldVh } from '../lib/theme'
 import { flattenChapters } from '../lib/chapterSeq'
 
@@ -80,6 +80,19 @@ export default function NovelEditorChapterTree({
   // 与 useNovelEditorModel 的 `active` 同一派生（同一份 chapters / activeId）：`active` 那边是
   // `chapters.find(c => c.id === activeId) ?? null`。此处自带一份，省得再往这棵树里传一个 prop。
   const activeChapter = chapters.find(c => c.id === activeId) ?? null
+  // 按卷分组的章节（2026-10-04 六维审计 A5）：原先在 `volumes.map` 回调里对每卷 filter+sort 一次
+  // （O(卷 × 章)，每次重渲染都重算）。这里提到渲染外算一次 —— 🔴 map 回调里不能调 hook，故必须先预分组。
+  // 组内按 order 升序，与原先「每卷就地 filter + sort」的结果逐项一致。
+  const chaptersByVolume = useMemo(() => {
+    const m = new Map<string, Chapter[]>()
+    for (const c of chapters) {
+      const arr = m.get(c.volumeId)
+      if (arr) arr.push(c)
+      else m.set(c.volumeId, [c])
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a.order - b.order)
+    return m
+  }, [chapters])
   return (
       <div
         className="relative shrink-0 border-r border-ink-700 bg-ink-900 flex flex-col"
@@ -231,7 +244,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             </div>
           )}
           {volumes.map(vol => {
-            const chs = chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.order - b.order)
+            const chs = chaptersByVolume.get(vol.id) ?? []
             // 自由卷＝托管「未归类章节」的系统保留卷：不可拖、不可删，样式与真卷区分（见 lib/freeVolume.ts）
             const free = isFreeVolume(vol)
             const open = expanded.has(vol.id)

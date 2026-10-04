@@ -9,7 +9,7 @@
  * 【入口】剧情推演页左栏「角色分配」里，每个 user / ai 角色旁一个按钮；
  * 存 `tavern.cast.<cardId>`，属项目级 settingsKV（随项目走、导出自动带走）。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import { EMPTY_CAST_SETTING, type CastSetting } from '../lib/tavern/types'
 import { Modal } from './Modal'
@@ -75,7 +75,8 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
   }, [open, cardId])
 
   const set = (k: keyof CastSetting, v: string) => setCs(prev => ({ ...prev, [k]: v }))
-  const filled = Object.values(cs).filter(v => v.trim()).length
+  // 渲染期派生（2026-10-04 六维审计 A5）：输入时 focus/其它 state 变化都会重渲染，包 useMemo 免跟着重算。
+  const filled = useMemo(() => Object.values(cs).filter(v => v.trim()).length, [cs])
 
   const save = async () => {
     setSaving(true)

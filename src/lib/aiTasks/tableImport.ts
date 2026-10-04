@@ -16,6 +16,7 @@ import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '
 import { parseObjectArray, asText } from '../aiParse'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
+import { RULE_TABLE_COLUMN_KEYS, RULE_JSON_ARRAY_BARE } from './shared'
 
 export interface ImportSplitColumn {
   name: string
@@ -54,13 +55,13 @@ let TABLE_IMPORT_SPLIT_SYS = `你是「青春幻想引擎」的资料录入助�
 1. 一条记录 = 一个独立对象（一个人物 / 一个地点 / 一种物品 / 一条关系 / 一个势力……）。
    「绝不把多个对象合并成一条」，也不要硬把一个对象拆成多条。作者最怕的就是"十几条设定被合成一条"。
 2. 只依据作者粘贴的内容。内容里没写到的列，给空字符串 ""，严禁虚构、严禁推测、严禁"合理补全"。
-3. 返回一个 JSON 数组，每个元素是一个对象，key 必须严格使用【列清单】中给出的列名原文。
+3. ${RULE_TABLE_COLUMN_KEYS}
 4. 某列标注了"可选值"时，必须从可选值中「逐字」挑选；涉及人物、势力、地点等跨表引用的列，
    也必须从可选值里逐字挑选，不要自己造名字、不要改写简称或别名。
 5. 若粘贴内容本身就是一张表（带表头），按表头把单元格对齐到对应列（列名可能不在同一位置、也可能带空格）。
    若没有表头，就按每段语义判断该填哪些列。
 6. 内容很短、确实只有一条时，也返回只含一条的数组；确实没有任何可解析内容时，返回空数组 []。
-7. 只输出 JSON 数组本身：不要解释、不要前言后语、不要 markdown 代码块标记。`
+7. ${RULE_JSON_ARRAY_BARE}`
 
 /**
  * 「AI 智能拆分」：把作者粘贴的内容解析成多条表格行。

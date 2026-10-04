@@ -190,10 +190,11 @@ export default function FormSheet({ tab }: Props) {
     setShowFillNew(true)
   }
 
-  if (!loaded) return <LoadingState />
+  // 渲染期派生（2026-10-04 六维审计 A5）：提到 `if (!loaded) return` **之前**（hook 不能条件调用）。
+  const filledCount = useMemo(() => Object.values(data).filter(v => v && v.trim()).length, [data])
+  const totalFields = useMemo(() => tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0, [tab])
 
-  const filledCount = Object.values(data).filter(v => v && v.trim()).length
-  const totalFields = tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0
+  if (!loaded) return <LoadingState />
 
   // 开书定位 / 大纲规划（章节总表为表格类型不受影响）模块并排铺开；其余表单在超宽屏才分两列
   const fullWidth = tab.group === '开书定位' || tab.group === '大纲规划'

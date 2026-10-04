@@ -79,19 +79,24 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   const [diagLoading, setDiagLoading] = useState(false)
   const [diagError, setDiagError] = useState<string | null>(null)
 
-  if (!loaded) return <LoadingState />
-
-  const publishedCount = chapters.filter(c => c.status === '已发布').length
-  const doneCount = chapters.filter(c => c.status === '完稿' || c.status === '已发布').length
-  const draftCount = chapters.filter(c => c.status === '草稿' || c.status === '修改').length
-  const unf = foreshadows.filter(r => {
+  // 渲染期统计与筛选（2026-10-04 六维审计 A5）：数据量随项目增长（章节 / 伏笔 / 灵感表），
+  // 包 useMemo 免每次渲染重算（如切换字数口径、诊断弹窗状态变化引起的重渲染）。
+  // 🔴 必须放在下面 `if (!loaded) return` **之前** —— hook 不能条件调用。
+  const { publishedCount, doneCount, draftCount } = useMemo(() => ({
+    publishedCount: chapters.filter(c => c.status === '已发布').length,
+    doneCount: chapters.filter(c => c.status === '完稿' || c.status === '已发布').length,
+    draftCount: chapters.filter(c => c.status === '草稿' || c.status === '修改').length,
+  }), [chapters])
+  const unf = useMemo(() => foreshadows.filter(r => {
     const s = Object.entries(r.data).find(([k]) => k.includes('状态'))
     return s ? s[1] === '未回收' : true
-  })
-  const unusedIdeas = ideas.filter(r => {
+  }), [foreshadows])
+  const unusedIdeas = useMemo(() => ideas.filter(r => {
     const s = Object.entries(r.data).find(([k]) => k.includes('状态'))
     return s ? s[1] === '未用' : true
-  })
+  }), [ideas])
+
+  if (!loaded) return <LoadingState />
 
   // AI 健康诊断：读项目实际资料 + 关键统计，输出健康分 + 风险 + 下一步建议
   const runDiag = async () => {

@@ -175,7 +175,7 @@ export async function getDocText(id: string): Promise<string> {
  *    而 `reindexDoc` 拿到空文本会**清掉本篇已有向量块、还报成功** ——
  *    一次读取故障就此变成一次静默的数据降级。
  */
-export async function getDocTextStrict(id: string): Promise<string> {
+async function getDocTextStrict(id: string): Promise<string> {
   if (!id) throw new Error('资料 id 为空')
   return kbBackend.getBody(id)
 }

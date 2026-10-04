@@ -15,7 +15,7 @@
  * 它只认 `InterviewSpec`（提纲 + 字段清单 + 中文名）与一个 `callChat`（发给哪个模型由调用方定），
  * 不认识任何业务。**别在业务侧再写一份** —— 一处改了措辞另一处没改，两边就会长得不一样。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { ChatMessage } from '../lib/ai'
 import {
@@ -81,8 +81,12 @@ export default function InterviewChat({
     if (el) el.scrollTop = el.scrollHeight
   }, [state.turns.length, busy])
 
-  const progress = interviewProgress(state, spec.allowedKeys)
-  const filledRows = Object.entries(state.filled).filter(([, v]) => String(v ?? '').trim())
+  // 渲染期派生（2026-10-04 六维审计 A5）：输入框每敲一键都会重渲染，包 useMemo 免跟着重算。
+  const progress = useMemo(() => interviewProgress(state, spec.allowedKeys), [state, spec.allowedKeys])
+  const filledRows = useMemo(
+    () => Object.entries(state.filled).filter(([, v]) => String(v ?? '').trim()),
+    [state.filled],
+  )
 
   return (
     <Modal

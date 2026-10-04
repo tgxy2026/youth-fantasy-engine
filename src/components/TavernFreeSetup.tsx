@@ -282,8 +282,16 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   }
 
   const pickerCurrent = pickerIdx === null ? '' : slots[pickerIdx]?.charId ?? ''
-  const aiNames = aiIds.map(nameOf).filter(Boolean)
-  const userNames = slots.filter(s => s.role === 'user' && s.charId).map(s => nameOf(s.charId)).filter(Boolean)
+  // 渲染期派生（2026-10-04 六维审计 A5）：依赖写成 `slots` / `scoped`，**不写**每渲染都重建的 `aiIds` / `nameOf`
+  // —— 否则依赖恒变、memo 形同虚设。收敛后：标题输入等无关 state 变化时不再重算 `scoped.find`。
+  const aiNames = useMemo(
+    () => slots.filter(s => s.role === 'ai' && s.charId).map(s => scoped.find(o => o.id === s.charId)?.name ?? '').filter(Boolean),
+    [slots, scoped],
+  )
+  const userNames = useMemo(
+    () => slots.filter(s => s.role === 'user' && s.charId).map(s => scoped.find(o => o.id === s.charId)?.name ?? '').filter(Boolean),
+    [slots, scoped],
+  )
 
   return (
     <>

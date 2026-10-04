@@ -349,8 +349,10 @@ export async function deleteSession(id: string): Promise<void> {
   //    于是「推演报告」页里留下一份孤儿，点开是一场空，作者也没有入口删它。
   try {
     await cleanReportsOfSession(db.getCurrentProjectId(), id)
-  } catch {
-    /* 报告清理失败不该影响会话删除本身 */
+  } catch (e) {
+    // 🔴 别静默吞（2026-10-04 六维审计 A5）：静默吞掉后，「推演报告」页会留下一份点开一场空的
+    //    孤儿报告，作者无从知道为什么 —— lib 层不能弹窗，至少留一行日志，下次排查有据可查。
+    console.warn('[tavern] 删除会话时清理推演报告失败（报告页可能留有孤儿）：', e)
   }
 }
 

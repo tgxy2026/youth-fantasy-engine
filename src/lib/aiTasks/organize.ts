@@ -5,6 +5,7 @@ import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '
 import { parseObjectArray, asText } from '../aiParse'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
+import { RULE_TABLE_COLUMN_KEYS, RULE_JSON_ARRAY_BARE } from './shared'
 
 // ---------- AI 整理（从已有资料 / 正文中抽取结构化条目） ----------
 
@@ -84,11 +85,11 @@ let ORGANIZE_SYS = `你是「青春幻想引擎」的小说资料整理助手。
 1. 只登记原文/设定中确有依据的内容。严禁虚构、严禁推测、严禁"合理补全"——这是资料整理，不是创作。
 2. 绝不重复【已登记条目】里已有的条目。判断重复以【判重列】为准：这几列的值组合相同才算同一条（措辞不同也算同一条）。
    ⚠️ 配对类表格（人物关系 / 势力关系）的判重列是「A + B + 关系类型」⇒ **同一对实体可以有多种关系**：只要「关系类型」不同就不是重复，必须照常输出；绝不能因为「A 与 B 已经出现过」就跳过。
-3. 返回一个 JSON 数组，每个元素是一个对象，key 必须严格使用【列清单】中给出的列名原文。
+3. ${RULE_TABLE_COLUMN_KEYS}
 4. 某列标注了"可选值"时，必须从可选值中挑选；涉及人物的列必须使用与角色卡完全一致的正式姓名，不要用代称、绰号、"他/她"；涉及跨表引用的列（如势力A / 势力B）必须从可选值里逐字挑选，不要自己造名字、也不要改写简称。
 5. 拿不准或原文未写明的列，给空字符串 ""，不要编造。
 6. 没有任何可新增的条目时，返回空数组 []。
-7. 只输出 JSON 数组本身：不要解释、不要前言后语、不要 markdown 代码块标记。`
+7. ${RULE_JSON_ARRAY_BARE}`
 
 /**
  * AI 整理：把正文/设定里已经写明的事实抽成表格行。
