@@ -24,6 +24,8 @@ import {
   type KbDoc, type KbBackend,
 } from '../src/lib/knowledgeBase'
 import { memoryOps, __resetMockStores } from './mock-memory'
+import { resetTaskCenter, tasksSnapshot } from '../src/lib/aiTaskCenter'
+import { rebuildKbIndexAfterRestore } from '../src/lib/kbRestoreIndex'
 import { buildKbBlock } from '../src/lib/kbInject'
 import {
   setVecBackend, makeVecRow, putVectors, loadVectors, summarize, refKeyOf,
@@ -467,6 +469,91 @@ const multiPara = (n: number): string =>
     read('src/lib/db/projects.ts').includes('kbInBackup'))
 
   db.setCurrentProject('')
+}
+
+// ============ ⑩ 还原 / 导入后**自动重建索引**（#017 收尾，2026-10-04）============
+//
+// 背景：`restoreDocsFromBundle` 恢复时会把旧资料连同向量块一起清空（正确），写回的新文档
+//   `enabled` 按包还原但 `chunkCount: 0` ⇒ 「界面显示已启用、检索却捞不到」的**静默降级**。
+// 本组盯三件事：
+//   · 没有「已启用」资料 ⇒ **不起任务**（静默 no-op，不给作者添噪音）；
+//   · 有「已启用」资料但未配嵌入模型 ⇒ 起一条任务并**如实说明**（静默失败＝本项目 P0）；
+//   · 任务挂在素材页同一 (ownerTab, kind) ⇒ 与手动「重建索引」天然互斥，不白烧两遍额度。
+{
+  __resetMockStores()
+  setKbBackend(memKb()); setVecBackend(memVec())
+  db.setCurrentProject('p2')
+  await memoryOps.put('projects', { id: 'p2', name: '还原测试', projectType: 'full', createdAt: 1, updatedAt: 1 })
+
+  /** 等任务中心跑空（`startTask` 是同步建记录 + 异步执行，这里轮询到没有 running 为止） */
+  const waitIdle = async (ms = 3000) => {
+    const t0 = Date.now()
+    while (Date.now() - t0 < ms) {
+      if (!tasksSnapshot().some(t => t.status === 'running')) return
+      await new Promise(r => setTimeout(r, 10))
+    }
+  }
+
+  // ① 无启用资料 ⇒ 静默 no-op
+  resetTaskCenter()
+  await rebuildKbIndexAfterRestore('p2')
+  await waitIdle()
+  ok('⑩① 没有已启用资料 ⇒ 不产生任何任务（静默 no-op）', tasksSnapshot().length === 0, `tasks=${tasksSnapshot().length}`)
+
+  // ② 有启用资料 + 未配嵌入模型 ⇒ 起一条任务并如实说明
+  const d = await importDoc({ projectId: 'p2', title: '设定集', text: '雪山剑修的设定。'.repeat(50), sourceType: 'txt' })
+  await setDocEnabled('p2', d.doc!.id, true)
+  resetTaskCenter()
+  await rebuildKbIndexAfterRestore('p2')
+  await waitIdle()
+  const ts = tasksSnapshot()
+  ok('⑩② 有已启用资料 ⇒ 起了一条任务', ts.length === 1, `tasks=${ts.length}`)
+  ok('⑩② 任务挂在素材页的 kb-index 槽位（同键 ⇒ 与手动重建互斥）',
+    ts[0]?.ownerTab === 'material-library' && ts[0]?.kind === 'kb-index')
+  const r2 = (ts[0]?.result ?? null) as { ok?: boolean; error?: string } | null
+  ok('⑩② 🔴 未配嵌入模型时**如实报**（不假装成功、不静默）',
+    ts[0]?.status === 'done' && r2?.ok === false && /未配置嵌入模型/.test(String(r2?.error ?? '')),
+    `status=${ts[0]?.status} ok=${r2?.ok}`)
+  ok('⑩② 如实说明里给了下一步（去哪配 / 去哪重建）',
+    /语义检索/.test(String(r2?.error ?? '')) && /重建索引/.test(String(r2?.error ?? '')))
+
+  // ③ 空 projectId ⇒ 直接返回（防「没开项目也去建索引」）
+  resetTaskCenter()
+  await rebuildKbIndexAfterRestore('')
+  await waitIdle()
+  ok('⑩③ 空 projectId ⇒ 不起任务', tasksSnapshot().length === 0)
+
+  resetTaskCenter()
+  db.setCurrentProject('')
+}
+
+// ============ ⑪ 源码闸：自动重建的接线与边界 ============
+{
+  const helper = read('src/lib/kbRestoreIndex.ts')
+  ok('⑪ 自动重建模块存在', helper.length > 0)
+  ok('🔴 复用素材页同一任务槽位（同 ownerTab/kind ⇒ 与手动重建互斥）',
+    helper.includes('material-library') && helper.includes('kb-index'))
+  ok('自动重建先读 kbStats.enabled（没有启用资料就不起任务）',
+    helper.includes('kbStats') && helper.includes('.enabled'))
+  ok('🔴 未配嵌入模型时走「如实说明」分支（不静默失败）',
+    helper.includes('embeddingStatus') && helper.includes('未配置嵌入模型'))
+  ok('🔴 全量重建走 reindexAll 且透传 ctx.signal（可中止）',
+    helper.includes('reindexAll') && helper.includes('ctx.signal'))
+  ok('🔴 本模块不 import lib/db（否则 db → kbRestoreIndex → semantic/settings → db 成环）',
+    !/from\s+['"]\.\.?\/db['"]/.test(helper) && !/from\s+['"]\.\.\/db\//.test(helper))
+  ok('🔴 也没有反向：lib/db 下任何文件都不 import kbRestoreIndex（环的另一半）',
+    ['projects', 'backups', 'chapters', 'tabs', 'migrations', 'worldSets', 'tavernReports']
+      .every(f => !read(`src/lib/db/${f}.ts`).includes('kbRestoreIndex')))
+
+  for (const [file, n, why] of [
+    ['src/components/BackupManager.tsx', 3, '恢复历史备份 / 从备份文件恢复 / 导入迁移包'],
+    ['src/components/ProjectHub.tsx', 1, '项目管理页导入迁移包'],
+    ['src/components/WelcomeWizard.tsx', 1, '首启向导导入备份'],
+  ] as const) {
+    const src = read(file)
+    const hits = (src.match(/rebuildKbIndexAfterRestore\(/g) ?? []).length
+    ok(`🔴 ${file}：${why} 都接上了自动重建`, hits === n, `实际 ${hits} / 期望 ${n}`)
+  }
 }
 
 console.log(`\n—— knowledgeBase 用例结束：${pass} 通过 / ${fail} 失败`)

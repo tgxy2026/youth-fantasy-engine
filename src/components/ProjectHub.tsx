@@ -16,6 +16,7 @@ import { confirmDialog, showToast } from './dialogs'
 import BrandMark from './BrandMark'
 import { downloadBlob } from '../lib/zip'
 import { markExported } from '../lib/backupReminder'
+import { rebuildKbIndexAfterRestore } from '../lib/kbRestoreIndex'
 import { APP_VERSION_LABEL } from '../lib/env'
 import { usePersistedBool, readBoolPref, readStringPref } from '../lib/uiPrefs'
 import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
@@ -188,6 +189,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       const text = await file.text()
       const bundle = JSON.parse(text) as ProjectBundle
       const id = await db.importProject(bundle)
+      void rebuildKbIndexAfterRestore(id)
       showToast(`项目「${bundle.project?.name ?? ''}」导入成功`)
       onOpen(id)
     } catch (e) {

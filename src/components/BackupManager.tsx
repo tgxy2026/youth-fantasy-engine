@@ -9,6 +9,7 @@ import { markExported } from '../lib/backupReminder'
 import HelpPopover from './HelpPopover'
 import { Modal } from './Modal'
 import { Button } from './Button'
+import { rebuildKbIndexAfterRestore } from '../lib/kbRestoreIndex'
 
 interface Props {
   projectId: string
@@ -76,6 +77,8 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     setBusy(true)
     try {
       await db.restoreBackup(b.id)
+      // #017 收尾：包里带回来的「已启用」资料是没索引的，不重建＝静默降级（详见 kbRestoreIndex）
+      void rebuildKbIndexAfterRestore(projectId)
       onRestored()
     } catch (e) {
       showToast('恢复失败：' + (e as Error).message, 'error')
@@ -168,6 +171,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
   const finishImport = async (bundle: db.ProjectBundle) => {
     try {
       const newPid = await db.importProject(bundle)
+      void rebuildKbIndexAfterRestore(newPid)
       showToast('导入成功！即将打开该项目。')
       onImported?.(newPid)
       onClose()
@@ -233,6 +237,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
         confirmText: '恢复', danger: true,
       })) { setBusy(false); return }
       await db.restoreBundleToProject(projectId, parsed.bundle)
+      void rebuildKbIndexAfterRestore(projectId)
       onRestored()
     } catch (err) {
       showToast('恢复失败：' + (err as Error).message, 'error')

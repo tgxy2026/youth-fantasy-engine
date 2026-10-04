@@ -18,6 +18,7 @@
  */
 import { useRef, useState, type ReactNode } from 'react'
 import { Z } from '../lib/zLayer'
+import { rebuildKbIndexAfterRestore } from '../lib/kbRestoreIndex'
 import { usePersistedBool } from '../lib/uiPrefs'
 import { BookPlus, Sparkles, Upload, ArrowRight, Check, Loader2 } from 'lucide-react'
 import * as db from '../lib/db'
@@ -100,6 +101,7 @@ export default function WelcomeWizard({ onDone }: Props) {
     try {
       const bundle = JSON.parse(await file.text()) as ProjectBundle
       const id = await db.importProject(bundle)
+      void rebuildKbIndexAfterRestore(id)
       showToast(`项目「${bundle.project?.name ?? ''}」导入成功`)
       await finish(id)
     } catch (e) {
