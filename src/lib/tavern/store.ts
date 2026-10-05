@@ -325,17 +325,94 @@ export function rewindAfterReroll(s: TavernSession, droppedId?: string): TavernS
 }
 
 /**
+ * 分支后缀 —— 与 `branchTitle()` 写进去的命名约定**一字对应**。
+ *
+ * 🔴 **单一真源**：`branchTitle` 的「剥离」与 `groupSessionsByBranch` 的「父子反推」**共用这一个正则**。
+ *    改命名约定只动这里。（若两处各写一份，改一处漏一处会**静默错位**：标题照旧生成、
+ *    但左栏分组全部认不出来 —— 界面上看起来「就是没有分支」，不会报错。）
+ */
+const BRANCH_SUFFIX = / ·分支(\d+)$/
+
+/** 取分支号（非分支返回 0）。同级排序用：`·分支2` 要排在 `·分支10` 前面。 */
+export function branchNoOf(title: string): number {
+  const m = BRANCH_SUFFIX.exec(title)
+  return m ? Number(m[1]) : 0
+}
+
+/** 这个标题是不是分支（`·分支N` 结尾）。左栏据此决定「分支树」开关要不要出现。 */
+export function isBranchTitle(title: string): boolean {
+  return BRANCH_SUFFIX.test(title)
+}
+
+/**
  * 分支名避重：`原题 ·分支2`、`原题 ·分支3`…
  * 序号从 2 起（第 1 份就是原题本身），并**跳过已被占用的号** —— 删掉分支再建不会撞名。
  * 已有「·分支N」后缀的标题先剥掉，免得出现「… ·分支2 ·分支2」。
  */
 export function branchTitle(title: string, existingTitles: string[] = []): string {
-  const base = title.replace(/ ·分支\d+$/, '')
+  const base = title.replace(BRANCH_SUFFIX, '')
   for (let i = 2; i < 1000; i++) {
     const t = `${base} ·分支${i}`
     if (!existingTitles.includes(t)) return t
   }
   return `${base} ·分支${existingTitles.length + 1}`
+}
+
+/** 左栏场次列表的一行（分支树视图用，2026-10-05 S1a） */
+export type SessionTreeRow = {
+  s: TavernSessionIndexItem
+  /** 缩进层级：0 = 根场次；1 = 某个根场次的分支 */
+  depth: 0 | 1
+  /** 父场次不在此次传入的列表里（被筛选词滤掉 / 根已删）—— 界面据此给一句说明 */
+  missingParent: boolean
+}
+
+/**
+ * 把场次索引排成左栏要显示的顺序（S1a 分支树视图）。
+ *
+ * · `tree === false` ⇒ **原样平铺**（与加这个功能之前逐行一致 ⇒ 老行为零漂移）。
+ * · `tree === true`  ⇒ 每个根场次后面**紧跟**它自己的分支（缩进一级）。
+ *
+ * 【父子从哪来】**不存 `parentId`**，完全由 `branchTitle()` 写的「 ·分支N」后缀反推 ——
+ *   所以本函数与 `branchTitle` 是一对，改命名约定必须同时改两处（正则已共用 `BRANCH_SUFFIX`）。
+ * 【为什么只有两层】`branchTitle` 会**先把标题里已有的 ` ·分支N` 剥掉再编号**
+ *   （`'A ·分支2'` 的基名仍是 `'A'`）⇒「分支的分支」拿到的是同一个根，不可能出现三级。
+ * 【孤儿分支】父不在此次列表里时**照样返回**（`missingParent: true`）——
+ *   否则「加个筛选词，分支就凭空消失」，作者会以为数据丢了。
+ */
+export function groupSessionsByBranch(
+  list: TavernSessionIndexItem[],
+  tree: boolean,
+): SessionTreeRow[] {
+  if (!tree) return list.map(s => ({ s, depth: 0, missingParent: false }))
+
+  const roots: TavernSessionIndexItem[] = []
+  const kids = new Map<string, TavernSessionIndexItem[]>()
+  for (const s of list) {
+    const m = BRANCH_SUFFIX.exec(s.title)
+    if (!m) { roots.push(s); continue }
+    const base = s.title.slice(0, m.index)
+    const arr = kids.get(base)
+    if (arr) arr.push(s)
+    else kids.set(base, [s])
+  }
+
+  const out: SessionTreeRow[] = []
+  const shown = new Set<string>()
+  for (const r of roots) {
+    out.push({ s: r, depth: 0, missingParent: false })
+    shown.add(r.id)
+    const children = kids.get(r.title)
+    if (!children) continue
+    children.sort((a, b) => branchNoOf(a.title) - branchNoOf(b.title))
+    for (const c of children) { out.push({ s: c, depth: 1, missingParent: false }); shown.add(c.id) }
+  }
+  // 剩下的都是「父不在此次列表里」的分支（根被筛掉 / 根已删）：仍要显示，别让它凭空消失
+  for (const children of kids.values()) {
+    children.sort((a, b) => branchNoOf(a.title) - branchNoOf(b.title))
+    for (const c of children) if (!shown.has(c.id)) out.push({ s: c, depth: 1, missingParent: true })
+  }
+  return out
 }
 
 /** 在场内打个检查点（连记忆一起存 —— 回滚要还原的是「那一刻的完整状态」） */

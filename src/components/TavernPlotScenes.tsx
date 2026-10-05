@@ -14,6 +14,8 @@ import { Button } from './Button'
 import SelectRow from './SelectRow'
 import { talkBandOf, talkativityOf, type TavernSession, type TavernSessionIndexItem } from '../lib/tavern/types'
 import type { splitCast } from '../lib/tavern/engine'
+// S1a 分支树视图（2026-10-05）：父子推断是**纯函数**、住在 store（与 branchTitle 相邻），组件只渲染结果
+import { groupSessionsByBranch, isBranchTitle } from '../lib/tavern/store'
 
 // ⚠️ 下面两个展示件内部是从原文件**逐行搬**过来的 JSX，缩进保留原样（8 / 12 空格），
 //    这样才能用「逐行区间核对」证明一个字没改 —— 别为了好看去重排缩进。
@@ -36,6 +38,17 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
       `${s.title} ${s.castBrief} ${s.anchorTitle}`.toLowerCase().includes(q))
   }, [list, pickQuery])
 
+  /** 分支树视图开关（S1a，2026-10-05）：**纯显示开关、零数据改动** ——
+   *  不新增字段、不存 `parentId`，父子关系由 `branchTitle` 写进去的「 ·分支N」后缀反推。
+   *  推断逻辑在 `store.groupSessionsByBranch()`（纯函数、有单测），组件这边只拿结果渲染。 */
+  const [treeMode, setTreeMode] = useState(false)
+
+  /** 有多少场是分支 —— 一场分支都没有时不必显示这个开关（少一个控点） */
+  const branchCount = useMemo(() => list.filter(s => isBranchTitle(s.title)).length, [list])
+
+  /** 展示行：平铺 = 保持原顺序；树形 = 每个根场次**紧跟**它自己的分支（缩进一级）。 */
+  const rows = useMemo(() => groupSessionsByBranch(sessionRows, treeMode), [sessionRows, treeMode])
+
   /** 列表里的日期小字（只到「几月几日」，同年不写年） */
   const fmtDay = (ts: number) => {
     const d = new Date(ts)
@@ -54,7 +67,7 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
             />
           )}
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-            {sessionRows.map(s => {
+            {rows.map(({ s, depth, missingParent }) => {
               const active = s.id === activeId
               return (
                   <SelectRow
@@ -63,9 +76,15 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
                     selected={active}
                     variant="outline"
                     onClick={() => setActiveId(s.id)}
-                    className="rounded-md px-2 py-1.5"
+                    className={`rounded-md px-2 py-1.5 ${depth ? 'ml-3' : ''}`}
                   >
-                    <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-200'}`}>{s.title}</div>
+                    <div className={`flex items-center gap-1 text-12 ${active ? 'text-amber' : 'text-ink-200'}`}>
+                      {depth ? (
+                        <span className="shrink-0 text-ink-600"
+                          title={missingParent ? '它的父场次不在当前列表里' : '分支'}>{'└'}</span>
+                      ) : null}
+                      <span className="truncate">{s.title}</span>
+                    </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
                     <span className="truncate text-10 text-ink-500">
                       {s.mode === 'immersive' ? '沉浸' : '导演'} · {s.castBrief || '未分配角色'}
@@ -75,13 +94,22 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
                 </SelectRow>
               )
             })}
-            {sessionRows.length === 0 && (
+            {rows.length === 0 && (
               <p className="px-1 py-2 text-11 leading-relaxed text-ink-500">
                 {list.length === 0 ? '还没有推演 —— 点上面「新建推演」开一场。' : '没有匹配的推演。'}
               </p>
             )}
           </div>
-          <div className="shrink-0 border-t border-ink-800 pt-2 text-10 text-ink-500">共 {list.length} 场</div>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-ink-800 pt-2 text-10 text-ink-500">
+            <span>共 {list.length} 场{branchCount > 0 ? ` · ${branchCount} 个分支` : ''}</span>
+            {branchCount > 0 && (
+              <Button variant="toggle" size="xs" selected={treeMode}
+                onClick={() => setTreeMode(v => !v)}
+                title="按「·分支N」后缀推断父子关系并缩进显示（纯显示开关，不改动任何数据）">
+                分支树
+              </Button>
+            )}
+          </div>
         </aside>
   )
 }

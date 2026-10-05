@@ -307,6 +307,69 @@ async function main() {
     ok('回滚到不存在的检查点 → null（调用方好判断）', store.rollbackToCheckpoint(s3, 'nope') === null)
   }
 
+  // ---------- 分支树视图：父子推断（S1a，2026-10-05） ----------
+  //
+  // 这一节钉住「**不存 parentId**、父子完全由 ` ·分支N` 后缀反推」这条约定 ——
+  // 它与 `branchTitle` 是一对：命名约定改了而这里没跟着改，左栏会**静默**失去分组
+  // （不报错、只是看着「就是没有分支」），所以必须两处一起被断言看住。
+  {
+    const item = (id: string, title: string, updatedAt = 0): TavernSessionIndexItem =>
+      ({ id, title, mode: 'immersive', castBrief: '', anchorTitle: '', updatedAt })
+
+    const list = [
+      item('a', '山门夜谈'),
+      item('b1', '山门夜谈 ·分支2'),
+      item('b2', '山门夜谈 ·分支3'),
+      item('c', '海边别院'),
+    ]
+
+    // ① 平铺：与加这个功能之前**逐行一致**（老行为零漂移，这是开关关掉时的契约）
+    const flat = store.groupSessionsByBranch(list, false)
+    ok('🔴 平铺模式：顺序与输入逐行一致、全部 depth=0（老行为零漂移）',
+      flat.map(r => r.s.id).join(',') === 'a,b1,b2,c' && flat.every(r => r.depth === 0),
+      flat.map(r => r.s.id).join(','))
+
+    // ② 树形：根后面紧跟它自己的分支
+    const tree = store.groupSessionsByBranch(list, true)
+    ok('🔴 树形：根场次后面紧跟它的分支',
+      tree.map(r => r.s.id).join(',') === 'a,b1,b2,c', tree.map(r => r.s.id).join(','))
+    ok('树形：根 depth=0、分支 depth=1',
+      tree.map(r => r.depth).join(',') === '0,1,1,0', tree.map(r => r.depth).join(','))
+    ok('树形：行数守恒（不多不少，一个场次一行）', tree.length === list.length)
+
+    // ②b 输入乱序也能归位（分支排在根前面时，树形要把它挪到根后面）
+    const shuffled = store.groupSessionsByBranch(
+      [item('b1', '山门夜谈 ·分支2'), item('a', '山门夜谈'), item('c', '海边别院')], true)
+    ok('🔴 输入乱序也能归位：分支被挪到它的根后面',
+      shuffled.map(r => r.s.id).join(',') === 'a,b1,c', shuffled.map(r => r.s.id).join(','))
+
+    // ③ 同级按**数字**排序（·分支2 要在 ·分支10 前面 —— 别用字符串序）
+    const manyTree = store.groupSessionsByBranch([
+      item('a', '山门夜谈'), item('x10', '山门夜谈 ·分支10'), item('x2', '山门夜谈 ·分支2'),
+    ], true)
+    ok('🔴 同级按分支号**数字**排序（·分支2 在 ·分支10 前）',
+      manyTree.map(r => r.s.id).join(',') === 'a,x2,x10', manyTree.map(r => r.s.id).join(','))
+
+    // ④ 🔴 孤儿分支：父不在列表里（被筛选词滤掉 / 根已删）**仍要显示**，否则「一筛选分支就失踪」
+    const orphan = store.groupSessionsByBranch([item('b1', '山门夜谈 ·分支2')], true)
+    ok('🔴 孤儿分支仍然返回、并标 missingParent（父不在列表也别丢数据）',
+      orphan.length === 1 && orphan[0].s.id === 'b1' && orphan[0].missingParent === true,
+      JSON.stringify(orphan.map(r => ({ id: r.s.id, mp: r.missingParent }))))
+    ok('正常分支的 missingParent 为 false（只在父缺席时才标）', tree[1].missingParent === false)
+
+    // ⑤ 🔴「分支的分支」仍落在同一个根上 ⇒ 树**不可能出现三级**（branchTitle 先剥后缀再编号）
+    const nested = store.branchTitle('山门夜谈 ·分支2', ['山门夜谈', '山门夜谈 ·分支2'])
+    ok('🔴 对分支再分支 ⇒ 得到同根的新分支（·分支3），不会出现三级',
+      nested === '山门夜谈 ·分支3', nested)
+
+    // ⑥ 与 branchTitle 的**往返**：真产出的标题必须能被认出来（两处共用 BRANCH_SUFFIX 单一真源）
+    const t2 = store.branchTitle('海边别院', ['海边别院'])
+    ok('🔴 branchTitle 产出的标题能被 isBranchTitle/branchNoOf 认出（正则单一真源）',
+      store.isBranchTitle(t2) && store.branchNoOf(t2) === 2, t2)
+    ok('非分支标题不被误认', !store.isBranchTitle('海边别院') && store.branchNoOf('海边别院') === 0)
+    ok('标题中段的「分支」字样不算分支（只在结尾才算）', !store.isBranchTitle('分支机构的夜谈'))
+  }
+
   // ---------- 分支：水位线重算（这批最容易埋雷的地方） ----------
   {
     __resetMockStores()
