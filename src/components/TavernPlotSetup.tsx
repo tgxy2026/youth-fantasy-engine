@@ -12,7 +12,7 @@
  *    改成**位置（槽位）**模型：默认给 3 个位置，点空位 → 弹窗选角色（同样支持搜索与按分组筛选）
  *    → 在弹窗里定「由谁演出」。约束两条：
  *      · 「我演」至多 1 个，**可以为 0**（整场交给 AI）；
- *      · 「AI 演」至多 `MAX_AI_ROLES` 个 —— 再多，一轮里要分饰太多人，角色容易串味、
+ *      · 「AI 演」至多 `MAX_AI_CAST` 个 —— 再多，一轮里要分饰太多人，角色容易串味、
  *        等待也明显变长；两个通常是推演效果与输出效率的平衡点。
  *
  * 校验：锚点必选；至少一个位置是「AI 演」。
@@ -26,7 +26,7 @@ import SelectRow from './SelectRow'
 import { Modal } from './Modal'
 import AutoTextarea from './AutoTextarea'
 import type { Chapter, Volume, CardRecord } from '../lib/types'
-import type { CastRole, TavernCast, TavernMode } from '../lib/tavern/types'
+import { MAX_AI_CAST, MAX_CAST_SLOTS, type CastRole, type TavernCast, type TavernMode } from '../lib/tavern/types'
 
 export type TavernDraft = {
   title: string
@@ -49,21 +49,16 @@ interface Props {
 const CHAR_TABS = ['char-main', 'char-secondary', 'char-npc'] as const
 
 /** 默认位置数 = `DEFAULT_SLOT_ROLES` 的长度（1 个你演 + 2 个 AI 演） */
-/** 位置总数上限（含你演 / 在场不出声） */
-const MAX_SLOTS = 4
-/**
- * AI 同时扮演的角色上限。
- * 这不是随手定的：一轮里让模型分饰 N 个人，N 越大越容易串味（语气、称谓、信息边界互相污染），
- * 单轮输出也越长、等待越久。3 是「还能分清谁在说话」的上限，2 是效果与效率的平衡点。
- */
-const MAX_AI_ROLES = 3
+// 🔴 位置总数上限与 AI 名额上限**不在本文件定义** —— 单一真源在 `lib/tavern/types.ts`
+//    （`MAX_CAST_SLOTS` / `MAX_AI_CAST`）。原先这里写死 4 与 3，而自由侧与
+//    `store.planFreeSessionCast` 各自又写了一份，三处数字互不相干 ⇒ 改一处漏一处会静默丢角色。
 /** 默认位置的演出方式：位置 1 = 你演，其余 = AI 演 */
 const DEFAULT_SLOT_ROLES: CastRole[] = ['user', 'ai', 'ai']
 
 const ROLE_LABEL: Record<CastRole, string> = { user: '我演', ai: 'AI 演', silent: '在场不出声' }
 const ROLE_DESC: Record<CastRole, string> = {
   user: '这个角色由你自己掌控言行，AI 不会代写。整场至多一个 —— 也可以一个都不要（全部由 AI 演）。',
-  ai: `由 AI 扮演。同时最多 ${MAX_AI_ROLES} 个：再多，一轮里要分饰太多人，角色容易串味、等待也明显变长。`,
+  ai: `由 AI 扮演。同时最多 ${MAX_AI_CAST} 个：再多，一轮里要分饰太多人，角色容易串味、等待也明显变长。`,
   silent: '在场但这一场不开口：AI 知道他在场，但不会替他说话。',
 }
 
@@ -166,7 +161,7 @@ function CharacterPicker({ open, title, options, usedBy, initialCardId, initialR
           </div>
           <p className="mt-1 text-11 leading-relaxed text-ink-500">
             {ROLE_DESC[role]}
-            {aiFull && <span className="text-amber"> （{MAX_AI_ROLES} 个 AI 名额已被其它位置占满）</span>}
+            {aiFull && <span className="text-amber"> （{MAX_AI_CAST} 个 AI 名额已被其它位置占满）</span>}
           </p>
         </div>
 
@@ -315,8 +310,23 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
     : ''
 
   // ---------- 位置操作 ----------
-  const addSlot = () => setSlots(prev =>
-    (prev.length >= MAX_SLOTS ? prev : [...prev, { key: `slot-${prev.length}-${Date.now()}`, cardId: '', role: 'ai' as CastRole }]))
+  /**
+   * AI 名额按「**标了 AI 演的位置数**」封顶（与自由侧同一条纪律），不是按"已选角色的"。
+   * 🔴 新增位置默认是「AI 演」，只数已选的会出现：6 个已选 + 2 个空位（都标着 AI 演）
+   *   → 填满就成了 8 个 AI —— 越过上限，而界面上一点提示都没有。
+   *
+   * AI 名额满了**不禁止加位置**（按钮上写着「最多 N 个」，点不动会让人以为坏了）——
+   * 改成让新位置**默认落在「在场不出声」**：这类角色本来就有用（在场、可被提到、不占发言），
+   * 作者想用就留着，想改成 AI 演时那个选项自然是被禁用的灰色。
+   */
+  const addSlot = () => setSlots(prev => (
+    prev.length >= MAX_CAST_SLOTS
+      ? prev
+      : [...prev, {
+        key: `slot-${prev.length}-${Date.now()}`,
+        cardId: '',
+        role: (prev.filter(x => x.role === 'ai').length >= MAX_AI_CAST ? 'silent' : 'ai') as CastRole,
+      }]))
 
   const removeSlot = (i: number) => setSlots(prev => (prev.length <= 1 ? prev : prev.filter((_, k) => k !== i)))
 
@@ -364,7 +374,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
 
   const pickerSlot = pickerIdx === null ? null : slots[pickerIdx]
   const pickerAiFull = pickerIdx !== null
-    && slots.filter((s, k) => k !== pickerIdx && s.cardId && s.role === 'ai').length >= MAX_AI_ROLES
+    && slots.filter((s, k) => k !== pickerIdx && s.cardId && s.role === 'ai').length >= MAX_AI_CAST
 
   return (
     <>
@@ -446,14 +456,16 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                 <>
                   <p className="mb-2 text-11 leading-relaxed text-ink-500">
                     空位置点一下就能选角色，选完在弹窗里定「由谁演出」。
-                    AI 同时最多演 {MAX_AI_ROLES} 个 —— 再多，一轮里要分饰太多人，角色容易串味、等待也明显变长；
-                    两个通常是推演效果与输出效率的平衡点。「我演」可以留空（整场交给 AI），也至多一个。
+                    AI 同时最多演 {MAX_AI_CAST} 个 —— 一轮里只让其中一个开口，所以人多也不会「抢话」，
+                    但分饰的人越多越考较模型，等待也相应变长；三四个通常是效果与效率的平衡点。
+                    用不上的角色挂到「在场不出声」就行（Ta 依然在场、可被提到，只是不占发言）。
+                    「我演」可以留空（整场交给 AI），也至多一个。
                   </p>
                   <div className="space-y-2">
                     {slots.map((s, i) => {
                       const card = s.cardId ? cardById.get(s.cardId) : undefined
                       const aiOther = slots.filter((x, k) => k !== i && x.cardId && x.role === 'ai').length
-                      const aiLocked = aiOther >= MAX_AI_ROLES
+                      const aiLocked = aiOther >= MAX_AI_CAST
                       return (
                         <div key={s.key} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-3 py-2">
                           <span className="w-12 shrink-0 text-11 text-ink-500">位置 {i + 1}</span>
@@ -499,8 +511,8 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <Button variant="secondary" size="md"
-                      disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
-                      ＋ 增加位置（最多 {MAX_SLOTS} 个）
+                      disabled={slots.length >= MAX_CAST_SLOTS} onClick={addSlot}>
+                      ＋ 增加位置（最多 {MAX_CAST_SLOTS} 个）
                     </Button>
                     <span className="text-11 text-ink-500">
                       当前：AI 演 {aiCount} 个 · 我演 {userCount} 个{userCount === 0 ? '（整场由 AI 扮演）' : ''}

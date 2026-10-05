@@ -23,6 +23,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
+import { MAX_AI_CAST, MAX_CAST_SLOTS } from '../lib/tavern/types'
 import { getTavernSettings, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
 import { Button } from './Button'
 import SelectRow from './SelectRow'
@@ -60,8 +61,9 @@ interface Props {
   onCancel: () => void
 }
 
-/** 位置上限 = 多角色同场上限（引擎侧同样按 3 处理） */
-const MAX_SLOTS = 3
+// 🔴 位置上限 / AI 名额上限**不在这里定义** —— 单一真源是 `lib/tavern/types.ts` 的
+//    `MAX_CAST_SLOTS` / `MAX_AI_CAST`（store.planFreeSessionCast 的截断也用同一个数）。
+//    原先这里写死 3、store 那边又写死 3，两处独立 ⇒ 改了界面不改 store 会静默丢角色。
 
 const inputCls = 'w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-sm text-ink-100 outline-none focus:border-amber/50'
 const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50'
@@ -257,12 +259,22 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   const charIds = slots.map(s => s.charId).filter(Boolean)
   const userCharId = slots.find(s => s.role === 'user' && s.charId)?.charId ?? ''
   const aiIds = slots.filter(s => s.role === 'ai' && s.charId).map(s => s.charId)
+  /**
+   * AI 名额按「**标了 AI 演的位置数**」算 —— 不是按"已选角色的"算。
+   * 🔴 为什么必须这样：新增位置默认就是「AI 演」，若只数已选的，就会出现
+   *   「6 个已选 + 2 个空位（都是 AI 演）」→ 再填满 → 8 个 AI → `planFreeSessionCast`
+   *   按 `MAX_AI_CAST` 截断 ⇒ **静默丢掉两个角色**（界面还显示 8 个）。
+   *   按位置数封顶则根本到不了那个状态。
+   */
+  const aiSlotCount = slots.filter(s => s.role === 'ai').length
+  const aiSlotsFull = aiSlotCount >= MAX_AI_CAST
   const canStart = !!storyId && aiIds.length >= 1
   const hint = !storyId
     ? '先选一个故事（世界观由它提供）'
     : (canStart ? '' : (charIds.length === 0 ? '给位置 1 选一个角色' : '至少要有一个位置是「AI 演」'))
 
-  const addSlot = () => setSlots(prev => (prev.length >= MAX_SLOTS ? prev : [...prev, { charId: '', role: 'ai' }]))
+  const addSlot = () => setSlots(prev => (
+    prev.length >= MAX_CAST_SLOTS || aiSlotsFull ? prev : [...prev, { charId: '', role: 'ai' }]))
   const removeSlot = (i: number) => setSlots(prev => (prev.length <= 1 ? prev : prev.filter((_, k) => k !== i)))
   const clearSlot = (i: number) => setSlots(prev => prev.map((s, k) => (k === i ? { ...s, charId: '' } : s)))
   const applyPick = (i: number, id: string) => {
@@ -359,9 +371,10 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                       每个位置先选角色，再定由谁演。默认你演你自己；把某个位置改成「我演」，
                       AI 就会知道自己在跟谁对话（不会再把对面当成一个模糊的「用户」），
                       而且不会代写那个人的言行。「我演」最多一个。
-                      多个 AI 角色则同场：一次只让一个说话，轮到谁由语境决定，
-                      也能在会话顶部点头像指定下一位（最多 {MAX_SLOTS} 个 —— 再多，一轮里要分饰太多人，
-                      角色容易串味、等待也明显变长）。记忆按角色共享：换个会话不会重来。
+                      多个 AI 角色则同场（最多 {MAX_AI_CAST} 个 AI）：一次只让一个说话，
+                      轮到谁由语境决定，也能在会话顶部点头像指定下一位。
+                      分饰的人越多越考较模型、等待也相应变长 —— 三四个通常是平衡点。
+                      记忆按角色共享：换个会话不会重来。
                     </p>
                     <div className="space-y-2">
                       {slots.map((s, i) => (
@@ -377,7 +390,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                                 className={selCls} value={s.role}
                                 onChange={e => setSlotRole(i, e.target.value as Slot['role'])}
                               >
-                                <option value="ai">AI 演</option>
+                                <option value="ai" disabled={aiSlotsFull && s.role !== 'ai'}>AI 演</option>
                                 <option value="user">我演</option>
                               </select>
                               <Button variant="secondary" size="md" className="shrink-0" onClick={() => setPickerIdx(i)}>更换</Button>
@@ -404,13 +417,18 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                       ))}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
-                      <Button variant="secondary" size="md" disabled={slots.length >= MAX_SLOTS} onClick={addSlot}>
-                        ＋ 增加位置（最多 {MAX_SLOTS} 个）
+                      <Button variant="secondary" size="md"
+                        disabled={slots.length >= MAX_CAST_SLOTS || aiSlotsFull}
+                        title={aiSlotsFull ? `AI 演的名额已满（最多 ${MAX_AI_CAST} 个）` : ''}
+                        onClick={addSlot}>
+                        ＋ 增加位置（最多 {MAX_CAST_SLOTS} 个）
                       </Button>
                       <span className="text-11 text-ink-500">
-                        {userNames.length
-                          ? `你演 ${userNames.join('、')} · AI 演 ${aiNames.join('、') || '（还没定）'}`
-                          : `${callName ? `你以「${callName}」的身份说话` : '你演你自己'} · AI 演 ${aiNames.join('、') || '（还没定）'}`}
+                        {aiSlotsFull
+                          ? `AI 演名额已满（${MAX_AI_CAST} 个）—— 想再加人，先把某个位置改成「我演」或删掉一个`
+                          : (userNames.length
+                            ? `你演 ${userNames.join('、')} · AI 演 ${aiNames.join('、') || '（还没定）'}`
+                            : `${callName ? `你以「${callName}」的身份说话` : '你演你自己'} · AI 演 ${aiNames.join('、') || '（还没定）'}`)}
                       </span>
                     </div>
                     {/* 没设「我演」时说清后果 —— 老大明确问过「AI 到底在跟谁说话」 */}

@@ -21,7 +21,7 @@
 import * as db from '../db'
 import { uid } from '../id'
 import { DESKTOP, getDesktopState } from '../desktop'
-import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP } from './types'
+import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP, MAX_AI_CAST } from './types'
 import { structSpecOf, normalizeStructMarkup } from './cardFields'
 import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
@@ -770,7 +770,9 @@ export function planFreeSessionCast(
   fallbackId: string,
   resolveName: (id: string) => string | undefined,
 ): { charIds: string[]; title: string } {
-  const ids = (pickedIds.length ? pickedIds : [fallbackId].filter(Boolean)).slice(0, 3)
+  // 🔴 截断用 `MAX_AI_CAST`（单一真源），**不再写死 3** —— 原先这里与界面各自写一个 3，
+  //    改了界面上限而忘了这里 → 选了 5 个只存 3 个，界面还显示 5 个（静默丢角色）。
+  const ids = (pickedIds.length ? pickedIds : [fallbackId].filter(Boolean)).slice(0, MAX_AI_CAST)
   if (ids.length === 0) return { charIds: [], title: '新对话' }
   const names = ids.map(id => (resolveName(id) || '').trim() || '?')
   const title = names.length > 1 ? `与${names.join('、')}的对话` : `和${names[0]}的对话`

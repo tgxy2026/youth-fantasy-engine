@@ -7,6 +7,7 @@ import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import type { TavernSession, TavernSessionIndexItem, TavernReport, TavernMessage } from '../src/lib/tavern/types'
+import { MAX_AI_CAST, MAX_CAST_SLOTS } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -177,11 +178,29 @@ async function main() {
     const none = store.planFreeSessionCast([], B.id, nameOf)
     ok('弹窗一个都没选时回退到左栏当前角色', none.charIds.join(',') === B.id && none.title === '和苏念的对话', none.title)
 
-    const many = store.planFreeSessionCast(['c1', 'c2', 'c3', 'c4'], 'c1', id => id)
-    ok('超过 3 个只取前 3（与界面上限一致）', many.charIds.length === 3, String(many.charIds.length))
+    // 🔴 截断口径**不许写死数字** —— 用单一真源 `MAX_AI_CAST`：
+    //    写死 3 的话，改了上限这条测试还会绿（尺子失准，正是本轮修掉的那类问题）。
+    const many = store.planFreeSessionCast(['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'], 'c1', id => id)
+    ok('超过 AI 名额上限只取前 N（与界面同源，不再是写死的 3）',
+      many.charIds.length === MAX_AI_CAST, `${many.charIds.length} vs MAX_AI_CAST=${MAX_AI_CAST}`)
+    ok('🔴 没到上限时一个不少（截断不是"总是截 3"）',
+      store.planFreeSessionCast(['c1', 'c2', 'c3', 'c4'], 'c1', id => id).charIds.length === 4)
 
     const unknown = store.planFreeSessionCast(['zz'], 'zz', () => undefined)
     ok('角色名取不到时不崩（退化为 ?）', unknown.title === '和?的对话', unknown.title)
+  }
+
+  // ---------- 同场角色数量上限：单一真源（2026-10-05 由 3 提到 6） ----------
+  //
+  // 这一节钉「两个常量之间的关系」，**不钉具体数字**（数字会变、关系不该变）：
+  // 界面槽位上限、`planFreeSessionCast` 的截断都必须读同一对常量 ——
+  // 任何一处再写死一个数字，就是「静默丢角色」的起点（本轮修掉的正是这种）。
+  {
+    ok('🔴 AI 名额 ≤ 位置总数（否则位置还没用满，AI 就先被截了）',
+      MAX_AI_CAST <= MAX_CAST_SLOTS, `${MAX_AI_CAST} vs ${MAX_CAST_SLOTS}`)
+    ok('🔴 位置总数至少留得出「AI 全满 + 一个我演」',
+      MAX_CAST_SLOTS >= MAX_AI_CAST + 1, `${MAX_CAST_SLOTS} vs ${MAX_AI_CAST}+1`)
+    ok('上限已放宽（本轮 3 → 6；再调请同步这条与两处界面文案）', MAX_AI_CAST === 6, String(MAX_AI_CAST))
   }
 
   // ---------- 数据归属（老大明确要求，用断言钉死，别在重构里被改掉） ----------
