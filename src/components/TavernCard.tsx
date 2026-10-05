@@ -126,9 +126,10 @@ export default function TavernCard() {
       </header>
 
       {loading ? <div className="min-h-0 flex-1 overflow-y-auto pt-3"><LoadingState /></div> : (
-        <div className="min-h-0 flex-1 overflow-y-auto pt-3">
-        <div className="flex gap-4 min-h-0">
-          {/* 左：角色列表（已抽成独立组件，见 TavernCardList.tsx） */}
+        /* 🔴 2026-10-05：去掉外层共享滚动容器，改为两栏各自滚（左栏见 TavernCardList，
+           右栏见下方 overflow-y-auto）—— 原先两栏共用一个滚动条，左栏卡一多就带动右栏滑走。 */
+        <div className="flex gap-4 min-h-0 flex-1 pt-3">
+          {/* 左：角色列表（已抽成独立组件，见 TavernCardList.tsx；自带独立滚动） */}
           <TavernCardList
             list={list}
             stories={stories}
@@ -146,8 +147,8 @@ export default function TavernCard() {
             onImportCards={p => void importCards(p)}
           />
 
-          {/* 右：编辑区 */}
-          <div className="flex-1 min-w-0">
+          {/* 右：编辑区（独立滚动） */}
+          <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
             {!draft ? (
               <div className="rounded-lg border border-ink-700 bg-ink-850/60 px-6 py-12 text-center">
                 <p className="text-13 text-ink-300">选一张角色卡开始编辑</p>
@@ -219,7 +220,6 @@ export default function TavernCard() {
               </div>
             )}
           </div>
-        </div>
         </div>
       )}
 

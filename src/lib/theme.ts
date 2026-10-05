@@ -244,6 +244,20 @@ export function contentMinH(deductPx: number): string {
   return `calc(${foldVh('100vh')} - ${deductPx}px)`
 }
 
+/**
+ * 内容区「恰好一屏」的**锁定高度**（与 `contentMinH` 同源，但用 `height` 而非 `minHeight`）。
+ *
+ * 2026-10-05：主从双栏页签（左列表 + 右详情）需要**锁高**才能让两栏各自 `overflow-y-auto`
+ * 独立滚动；只给 `minHeight` 时子元素无滚动上限，左栏条目一多就撑高整页、右栏被迫跟着滚。
+ * `minHeight` ⇒ `height` 的区别是本函数存在的**唯一理由**，两者参数口径保持一致。
+ *
+ * 🔴 布局前提：调用方必须给**容器补 `overflow-hidden`**，并把 `flex-1 min-h-0` 链传下去，
+ *    否则子元素仍会溢出（`flex` 子项默认 `min-height:auto`）。
+ */
+export function contentHeight(deductPx: number): string {
+  return `calc(${foldVh('100vh')} - ${deductPx}px)`
+}
+
 /** 卡片型页签（角色卡）页头 + 工具条的高度，供 contentMinH 使用 */
 export const CARD_SHEET_CHROME_PX = 180
 /** 大纲型页签（细纲卡）页头 + 工具条的高度 */

@@ -1,7 +1,9 @@
 import { useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
+import { Search } from 'lucide-react'
 import { Button } from './Button'
 import SelectRow from './SelectRow'
 import Avatar from './Avatar'
+import { useMasterQuery } from './MasterDetail'
 import { cardStoryId, type TavernCharIndexItem, type TavernStoryIndexItem } from '../lib/tavern/types'
 import { storyDisplayName } from '../lib/tavern/story'
 
@@ -72,6 +74,38 @@ export default function TavernCardList({
   const toggleStory = (id: string) =>
     setOpenIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
 
+  // 搜索：卡一多才需要；命中后展示其所属故事（不必先展开），所以按卡过滤、再重算分组
+  const [query, setQuery] = useMasterQuery()
+  const matchedIds = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return null
+    return new Set(list.filter(c => (c.name || '').toLowerCase().includes(q)).map(c => c.id))
+  }, [list, query])
+  const shown = useMemo(
+    () => (matchedIds ? list.filter(c => matchedIds.has(c.id)) : list),
+    [list, matchedIds],
+  )
+  const displayGroups = useMemo(() => {
+    if (!matchedIds) return groups
+    // 过滤后仍按故事分组，但全部展开（用户来搜就是为了看结果）
+    const byStory = new Map<string, TavernCharIndexItem[]>()
+    const free: TavernCharIndexItem[] = []
+    for (const c of shown) {
+      const sid = cardStoryId(c)
+      if (!sid) { free.push(c); continue }
+      const arr = byStory.get(sid) ?? []
+      arr.push(c)
+      byStory.set(sid, arr)
+    }
+    const knownIds = new Set(stories.map(s => s.id))
+    const known = stories
+      .map(s => ({ id: s.id, name: s.name, chars: byStory.get(s.id) ?? [] }))
+      .filter(g => g.chars.length > 0)
+    const orphan: TavernCharIndexItem[] = []
+    for (const [sid, arr] of byStory) if (!knownIds.has(sid)) orphan.push(...arr)
+    return { known, unbound: [...free, ...orphan] }
+  }, [matchedIds, shown, groups, stories])
+
   /** 左栏的一张卡（不管挂在哪个分组下，长相一致 —— 免得作者以为两种卡不一样） */
   const charRow = (c: TavernCharIndexItem) => (
     <li key={c.id}>
@@ -89,7 +123,9 @@ export default function TavernCardList({
   )
 
   return (
-    <aside className="w-56 shrink-0 space-y-2">
+    <aside className="w-56 shrink-0 flex flex-col min-h-0">
+      {/* 固定头：按钮 + 搜索，不参与滚动 */}
+      <div className="shrink-0 space-y-2">
       {/* 同栏其余按钮都是 sm（2026-09-19 六维审计 P2-15）：面板主操作取 sm 基线，别单独高一档 */}
       <Button variant="primary" size="sm" className="w-full" onClick={onNewCard}>新建角色卡</Button>
 
@@ -111,14 +147,28 @@ export default function TavernCardList({
         </Button>
       </div>
 
+      {/* 搜索（A+C 的 C 项）：卡多时按名定位；命中后自动展开其所属故事 */}
+      <div className="relative">
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="搜角色卡名…"
+          className="w-full !pl-7 text-12"
+        />
+        <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none" />
+      </div>
+      </div>
+
+      {/* 独立滚动区（A+C）：卡一多时本栏自己滚，不带动右侧编辑区 */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mr-1 pr-1 mt-2">
       {list.length === 0 ? (
         <p className="text-11 text-ink-500 leading-relaxed px-1 pt-1">
           还没有角色卡。点上面「新建」开始 —— 新建时要先选这张卡属于哪个故事。
         </p>
       ) : (
         <div className="space-y-1">
-          {groups.known.map(g => {
-            const open = openIds.includes(g.id)
+          {displayGroups.known.map(g => {
+            const open = matchedIds ? true : openIds.includes(g.id)
             return (
               <div key={g.id}>
                 <button
@@ -143,8 +193,8 @@ export default function TavernCardList({
           })}
 
           {/* 未归属（自由状态）：删故事留下的卡都在这儿，等着被重新归类 —— 不能让它凭空没地方去 */}
-          {groups.unbound.length > 0 && (() => {
-            const open = openIds.includes(FREE_GROUP)
+          {displayGroups.unbound.length > 0 && (() => {
+            const open = matchedIds ? true : openIds.includes(FREE_GROUP)
             return (
               <div>
                 <button
@@ -155,20 +205,25 @@ export default function TavernCardList({
                 >
                   <span className={`text-10 text-ink-500 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
                   <span className="min-w-0 flex-1 truncate text-12 font-medium text-amber/80">未归属</span>
-                  <span className="text-10 text-ink-500 shrink-0">{groups.unbound.length}</span>
+                  <span className="text-10 text-ink-500 shrink-0">{displayGroups.unbound.length}</span>
                 </button>
                 {open && (
                   <ul className="ml-2 pl-1.5 border-l border-amber/25 space-y-0.5 mt-0.5">
-                    {groups.unbound.map(charRow)}
+                    {displayGroups.unbound.map(charRow)}
                   </ul>
                 )}
               </div>
             )
           })()}
+          {matchedIds && shown.length === 0 && (
+            <p className="text-11 text-ink-500 leading-relaxed px-1 pt-2">没有匹配的角色卡</p>
+          )}
         </div>
       )}
+      </div>
 
-      <div className="pt-2 border-t border-ink-800 space-y-1.5">
+      {/* 固定尾：导入导出，不参与滚动 */}
+      <div className="shrink-0 pt-2 border-t border-ink-800 space-y-1.5 mt-2">
         <Button variant="secondary" size="sm" className="w-full" onClick={onImportNovel}>
           从小说角色导入
         </Button>

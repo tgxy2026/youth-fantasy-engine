@@ -20,7 +20,8 @@ import { useAIReady } from '../lib/useAIReady'
 import { useSaveHotkey } from '../lib/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from './FieldAliasButton'
 import { useFieldAliases } from '../lib/fieldAlias'
-import { contentMinH, CARD_SHEET_CHROME_PX } from '../lib/theme'
+import { contentHeight, CARD_SHEET_CHROME_PX } from '../lib/theme'
+import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from './MasterDetail'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '../lib/aiScope'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
@@ -94,6 +95,18 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   const noun = isCharTab ? '角色' : '设定'
   const nounCard = isCharTab ? '角色卡' : '设定'
   const visibleRecords = hideRetired ? records.filter(r => statusOf(r) !== '已退场') : records
+
+  // 左栏搜索（A+C 的 C 项）：角色一多时，滚只解决「翻得到」、搜才解决「定位快」
+  const [listQuery, setListQuery] = useMasterQuery()
+  const { filtered: shownRecords, isFiltering } = useMasterFilter(
+    visibleRecords, listQuery, r => r.name,
+  )
+  // 空态语义：0 张卡 / 全被「已退场」隐藏 / 搜索无结果 —— 三者文案不同
+  const listEmptyHint = records.length === 0
+    ? `点击右上角新建${noun}`
+    : isFiltering
+      ? '没有匹配的角色'
+      : '已退场的角色已隐藏'
   const cardFields = useMemo<TemplateField[]>(
     () => (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
       key: `${m.name}::${f.name}`,
@@ -388,16 +401,30 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 
       {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`，别手抄 `calc(100vh / var(--ui-zoom,1))` ——
           手抄的等价式在 token 名变一次就静默失效（本处原先是手写的）。 */}
-      <div className="flex gap-5" style={{ minHeight: contentMinH(CARD_SHEET_CHROME_PX) }}>
-        {/* 卡片列表 */}
-        <div className="w-44 shrink-0 space-y-1.5">
-          {visibleRecords.map(rec => {
+      {/* 🔴 2026-10-05：`minHeight` → **锁定 `height`** + 两栏各自滚动。
+          原先只有 minHeight，左栏角色一多就把整页撑高、右栏被拖着一起滚到底
+          （社区反馈：批量改某栏数据要上下来回滚）。见 `MasterDetail.tsx` 说明。 */}
+      <MasterDetail height={contentHeight(CARD_SHEET_CHROME_PX)}>
+        {/* 卡片列表（含搜索 + 独立滚动） */}
+        <MasterList
+          widthClass="w-44 lg:w-52"
+          query={listQuery}
+          onQueryChange={setListQuery}
+          placeholder="搜角色名…"
+          searchHint={isFiltering
+            ? <span className="text-10 text-ink-500">筛出 {shownRecords.length} / 共 {records.length}</span>
+            : undefined}
+          emptyHint={listEmptyHint}
+          isEmpty={shownRecords.length === 0}
+        >
+          {shownRecords.map(rec => {
             const isActive = activeId === rec.id
             const isDirty = isActive && dirty
             return (
               <div
                 key={rec.id}
                 onClick={() => setActiveId(rec.id)}
+                title={rec.name}
                 className={`group cursor-pointer rounded-lg border px-3 py-2.5 transition-all duration-150
                   ${isActive
                     ? 'bg-amber/15 border-amber/30 text-amber'
@@ -417,16 +444,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
               </div>
             )
           })}
-          {visibleRecords.length === 0 && (
-            <div className="text-center text-ink-500 text-12 py-12 border border-dashed border-ink-700 rounded-lg">
-              {/* 后一支只在角色卡可达（开关仅角色卡渲染、且过滤依据是「人物状态」），故保留「角色」字样 */}
-              {records.length === 0 ? `点击右上角新建${noun}` : '已退场的角色已隐藏'}
-            </div>
-          )}
-        </div>
+        </MasterList>
 
-        {/* 编辑区 */}
-        <div className="flex-1 min-w-0">
+        {/* 编辑区（独立滚动） */}
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {draft ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
@@ -600,7 +621,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
             </div>
           )}
         </div>
-      </div>
+      </MasterDetail>
 
       {tab.tips && tab.tips.length > 0 && (
         <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4 space-y-1.5">

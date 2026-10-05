@@ -12,7 +12,8 @@ import AutoTextarea from './AutoTextarea'
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import TemplateLibrary from './TemplateLibrary'
-import { contentMinH, OUTLINE_SHEET_CHROME_PX } from '../lib/theme'
+import { contentHeight, OUTLINE_SHEET_CHROME_PX } from '../lib/theme'
+import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from './MasterDetail'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { useSaveHotkey } from '../lib/useSaveHotkey'
@@ -42,6 +43,9 @@ export default function OutlineSheet({ tab }: Props) {
   const noun = isVolume ? '分卷' : '章节'
   // 编辑该字段时自动同步目录列表名
   const nameKey = isVolume ? '一、本卷定位::卷名' : '一、本章定位::章节号/标题'
+
+  // 左栏搜索（A+C 的 C 项）：与 CharacterSheet 同口径
+  const [listQuery, setListQuery] = useMasterQuery()
 
   /** 本页签的补全语境 —— 决定发哪条系统提示词（分卷大纲 / 章节细纲各一条；见 lib/ai.ts 的 FillContext） */
   const fillContext: FillContext = isVolume ? 'outline-volume' : 'outline-chapter'
@@ -120,6 +124,9 @@ export default function OutlineSheet({ tab }: Props) {
     const tplBeats = structureTpl?.beats ?? []
     return tplBeats.findIndex(b => pos >= b.from && pos < b.to)
   }, [beatRanges, draft, structureTpl])
+
+  // 左栏按名称筛选（A+C 的 C 项）
+  const { filtered: shownRecords, isFiltering } = useMasterFilter(records, listQuery, r => r.name)
 
   useEffect(() => {
     getCardRecords(tab.id).then(r => {
@@ -419,16 +426,29 @@ export default function OutlineSheet({ tab }: Props) {
       )}
 
       {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`（原来手抄等价式，见 `CharacterSheet` 同处说明）。 */}
-      <div className="flex gap-5" style={{ minHeight: contentMinH(OUTLINE_SHEET_CHROME_PX) }}>
-        {/* 目录列表 */}
-        <div className="w-52 shrink-0 space-y-1.5">
-          {records.map((rec, i) => {
+      {/* 🔴 2026-10-05：`minHeight` → **锁定 `height`** + 两栏各自滚动（与 CharacterSheet 同批）。
+          原先只有 minHeight，卷/章大纲条目一多就把整页撑高、右栏被拖着一起滚到底。 */}
+      <MasterDetail height={contentHeight(OUTLINE_SHEET_CHROME_PX)}>
+        {/* 目录列表（含搜索 + 独立滚动） */}
+        <MasterList
+          widthClass="w-52 lg:w-56"
+          query={listQuery}
+          onQueryChange={setListQuery}
+          placeholder={`搜${noun}名…`}
+          searchHint={isFiltering
+            ? <span className="text-10 text-ink-500">筛出 {shownRecords.length} / 共 {records.length}</span>
+            : undefined}
+          emptyHint={records.length === 0 ? `还没有${noun}大纲` : '没有匹配的条目'}
+          isEmpty={shownRecords.length === 0}
+        >
+          {shownRecords.map((rec, i) => {
             const isActive = activeId === rec.id
             const isDirty = isActive && dirty
             return (
               <div
                 key={rec.id}
                 onClick={() => setActiveId(rec.id)}
+                title={rec.name}
                 className={`group cursor-pointer rounded-lg border px-2.5 py-2.5 transition-all duration-150
                   ${isActive
                     ? 'bg-amber/15 border-amber/30 text-amber'
@@ -473,16 +493,10 @@ export default function OutlineSheet({ tab }: Props) {
               </div>
             )
           })}
-          {records.length === 0 && (
-            <div className="text-center text-ink-500 text-12 py-10 border border-dashed border-ink-700 rounded-lg leading-relaxed">
-              还没有{noun}大纲<br />
-              <span className="text-11">点击右上角「新建{noun}」开始</span>
-            </div>
-          )}
-        </div>
+        </MasterList>
 
-        {/* 编辑区：全宽双栏 */}
-        <div className="flex-1 min-w-0">
+        {/* 编辑区：全宽双栏（独立滚动） */}
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {draft ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 flex-wrap">
@@ -551,7 +565,7 @@ export default function OutlineSheet({ tab }: Props) {
             </div>
           )}
         </div>
-      </div>
+      </MasterDetail>
 
       {tab.tips && tab.tips.length > 0 && (
         <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4 space-y-1.5">
