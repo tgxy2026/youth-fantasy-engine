@@ -138,6 +138,13 @@ export type TavernFreeSettings = {
    * 默认 standard；关掉即回到「只写对白与动作」的旧行为。
    */
   sceneDescription: SceneDescLevel
+  /**
+   * 自由对话的**语义召回**（T2，2026-10-05）：从本场早先的消息里按语义捞回被预算裁掉的片段。
+   *
+   * 默认**关** —— 它要发嵌入请求（云端嵌入模型是要花钱的），与全书语义检索同一口径。
+   * 开了之后两件事都做：给本场建索引（`autoIndexFreeSession`）+ 每轮注入〖相关对话召回〗。
+   */
+  semanticRecall: boolean
   /** 自由对话专属补充要求 */
   extraPrompt: string
   /** 记忆软上限（字）：超过就在界面上提醒 */
@@ -469,6 +476,8 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     // 老大要的沉浸感：出场写穿着/姿态、转场补环境、情绪落到外在细节上。
     // 嫌吵或嫌占字数就在面板上降到 light / 关掉。
     sceneDescription: 'standard',
+    // T2：语义召回默认**关**（要发嵌入请求；与全书语义检索同一口径）
+    semanticRecall: false,
     extraPrompt: '',
     softLimit: MEMORY_SOFT_LIMIT,
     hardLimit: MEMORY_HARD_LIMIT,

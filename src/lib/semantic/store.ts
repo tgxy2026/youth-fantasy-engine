@@ -19,7 +19,14 @@
 import { openDB, type IDBPDatabase } from 'idb'
 import { chunkKey, vectorRowId } from './chunk'
 
-export type VecKind = 'chapter' | 'summary' | 'setting' | 'kb'
+/**
+ * 向量行的来源类别。
+ *
+ * 🔴 `'tavern'`（2026-10-05，T2）是**唯一一个不随项目走**的类别 ——
+ *   自由对话是全局数据（`db.getMeta`，不绑项目），所以它的索引写在
+ *   `lib/tavern/recall.ts` 的固定分区 `TAVERN_VEC_PROJECT` 下，而不是某个 `projectId`。
+ */
+export type VecKind = 'chapter' | 'summary' | 'setting' | 'kb' | 'tavern'
 
 export interface VecRow {
   /** `${projectId}::${kind}::${refId}::${chunkIdx}`（见 chunk.vectorRowId） */

@@ -47,6 +47,8 @@ import { useTavernReady } from './useTavernReady'
 import { showToast, confirmDialog } from './dialogs'
 import { type FreeDraft } from './TavernFreeSetup'
 import * as store from '../lib/tavern/store'
+// T2：本场索引的自动更新（永不抛、不阻塞对话）
+import { autoIndexFreeSession } from '../lib/tavern/recall'
 import { varsEnabledKeys } from '../lib/tavern/engine'
 import type { PostApplied } from '../lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
@@ -434,6 +436,9 @@ export function useTavernFreeModel() {
   const commit = async (next: FreeSession) => {
     setSession(next)
     await store.saveFreeSession(next).then(refreshSessions).catch(() => undefined)
+    // T2：会话落库后**不 await** 地更新本场索引（与 `saveChapterWithAi` 的既有做法一致）。
+    // 默认关（`st.free.semanticRecall`）；内部有节流与全量守卫，失败只留一行 warn、绝不影响对话。
+    void autoIndexFreeSession(next)
   }
 
   // ---------- 检查点 / 回滚（F1 自由模式分支，2026-10-05） ----------

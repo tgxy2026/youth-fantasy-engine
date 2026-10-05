@@ -30,6 +30,8 @@ import {
 import { memoryToText, isMemoryEmpty } from './memory'
 import { primaryAiCharId } from './primaryChar'
 import { getWorldSetting, buildPlotWorldBook, worldHaystack, keywordHaystackMessages } from './world'
+// T2（2026-10-05）：自由对话的语义召回（查询文本 / 分区 / 索引节流都在那里）
+import { buildFreeRecallBlock } from './recall'
 import { dynamicQuotaOf } from './quotas'
 // 🔴 story.ts 里的世界书入口是 **静态 import**：engine 已经动态 import 它做 `resolveSessionStorySetting`，
 //    但 `buildStoryWorldBook` 是纯函数（不碰 db / provider）—— 静态引入不会加环，
@@ -674,6 +676,12 @@ export async function buildFreeSystem(
     keywordHaystackMessages(session.messages),
   ), { maxChars: dynamicQuotaOf(opts?.windowTokens, st.dynamicQuotaPct) }).text
 
+  // T2（2026-10-05）：本场早先消息的**语义召回** —— 长会话里早期内容会被预算裁掉，
+  //   这一层按"与当下话题的相关性"把它们补回来。默认关（要发嵌入请求），且**永不抛**。
+  const recallText = st.free.semanticRecall
+    ? await buildFreeRecallBlock({ session }).catch(() => '')
+    : ''
+
   const system = buildSystemPrompt({
     tone: FREE_TONE,
     setting,
@@ -684,6 +692,8 @@ export async function buildFreeSystem(
     memory,
     // 每块自己带「〖长期记忆 · 角色名〗」，不再套一层「〖长期记忆〗」
     memoryTitle: null,
+    // T2：紧跟在记忆层之后（记忆是压缩过的，这里是原文片段）
+    recall: recallText,
     self,
     dropped: [],
     styleHint: st.free.styleHint,

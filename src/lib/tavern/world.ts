@@ -177,6 +177,18 @@ export function shouldInjectWorld(w: WorldSetting | null | undefined, haystack: 
 }
 
 /**
+ * 这条消息算不算「可取材」的那批（会进上下文的）—— **单一真源**。
+ *
+ * 🔴 `system` 不进上下文（它是装配出来的，不是历史），作者**隐藏**的也不进
+ *   （`prompt.ts` 的 `toChatMessages` 与 `memory.ts` 的水位线都跳它们）。
+ *   凡是"拿历史消息做判定/做文本"的地方都要过这里 —— 别在各自调用点再判一次：
+ *   判漏一处，作者特意藏起来的内容就会从那儿漏出去（世界书关键词 / 语义索引都是这个道理）。
+ */
+export function isUsableMessage(m: TavernMessage): boolean {
+  return m.role !== 'system' && !m.hidden
+}
+
+/**
  * 关键词判定取材的「最近消息」部分：**只取真正会进上下文的消息**。
  *
  * 🔴 必须滤掉 `system` 与作者**隐藏**的消息（2026-09-23 六维审计 P1）：
@@ -186,10 +198,7 @@ export function shouldInjectWorld(w: WorldSetting | null | undefined, haystack: 
  *    收进这里而不是留在调用点：让「滤什么」与 `shouldInjectWorld` 放在一起，调用方不必记。
  */
 export function keywordHaystackMessages(messages: readonly TavernMessage[], take = 6): string[] {
-  return messages
-    .filter(m => m.role !== 'system' && !m.hidden)
-    .slice(-take)
-    .map(m => m.content)
+  return messages.filter(isUsableMessage).slice(-take).map(m => m.content)
 }
 
 /** 关键词命中判定的取材：会话标题 + 场景 + 最近几条消息（别扫全史，太贵也没必要） */

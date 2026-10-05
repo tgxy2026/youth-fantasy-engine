@@ -13,7 +13,7 @@ import { DYNAMIC_QUOTA_PCT, fixedQuotaOf, dynamicQuotaOf, fmtWindow } from '../l
 import type { TavernControlModel } from './useTavernControlModel'
 
 export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) {
-  const { s, ruleTry, setRuleTry, presetList, setPresetNaming, presetFileRef, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, rulePreview, activeProvider } = m
+  const { s, ruleTry, setRuleTry, presetList, setPresetNaming, presetFileRef, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, setPostFlag, setMultiVariant, setDynamicQuotaPct, setFree, setRule, addRule, dropRule, resetRules, rulePreview, activeProvider } = m
   return (
     <>
           {/* ---------- 三、预设方案（A4） ---------- */}
@@ -106,6 +106,14 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
               hint="开启后「重说」不再覆盖原回复，而是存成候选，消息上出现 ‹ 1/2 › 翻页可来回对照（每条约 5 个版本）。两种模式都生效；关掉则与以前完全一样。注意：开着会让库明显变大。"
               value={s.multiVariant}
               onChange={setMultiVariant}
+            />
+
+            {/* T2 语义召回（2026-10-05）：自由对话专属。默认关 = 要发嵌入请求 */}
+            <ToggleField
+              label="自由对话的语义召回"
+              hint="长对话聊久了，早期消息会因上下文预算被裁掉、Ta 就「忘了」。开启后系统给本场建一份小索引，每轮按当下话题把被裁掉的旧片段捞回来（界面会显示为〖相关对话召回〗）。默认关：它要发嵌入请求，云端嵌入模型会花钱 —— 需要先在「语义检索」里配好嵌入模型。只在自由对话生效；剧情推演本来就有全书召回。"
+              value={s.free.semanticRecall}
+              onChange={v => setFree('semanticRecall', v)}
             />
 
             {/* 世界书额度（2026-10-05 · 对齐 ST 的 world_info_budget）：固定层跟着窗口自动算，动态层可调 */}

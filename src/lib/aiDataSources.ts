@@ -435,6 +435,8 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     sources: [
       { group: '角色卡', items: ['角色卡四章全文'] },
       { group: '按角色的记忆', items: ['六栏记忆（跨会话共享）'] },
+      // T2（2026-10-05）：默认关 —— 开了才建索引、才注入
+      { group: '本场早先的对话', items: [], note: '语义召回：只捞**本场**被预算裁掉的旧片段（不会读到别的对话）。默认关；开它要发嵌入请求' },
       { group: '故事世界设定', items: [], note: '你为该故事写的背景' },
       { group: '剧本', items: [], note: '选了剧本才带' },
       { group: '你的档案与档位', items: ['称呼 / 自我设定 / 场景描写档位'] },

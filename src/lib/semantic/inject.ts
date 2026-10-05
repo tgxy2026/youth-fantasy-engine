@@ -13,7 +13,13 @@
 import * as db from '../db'
 import { clipText } from '../textClip'
 import { recallRelevant, type RecallHit } from './recall'
+import type { VecKind } from './store'
 import { resolveEmbedConfig } from './settings'
+
+/** 命中类别的显示名（渲染召回段时标「这条来自哪儿」） */
+const RECALL_KIND_LABEL: Record<VecKind, string> = {
+  chapter: '章节', setting: '设定', summary: '摘要', kb: '资料', tavern: '对话',
+}
 
 /** 查询文本取焦点章正文的前多少字（摘要已给出主题，正文前段补"当下的语感与场景"） */
 const SEMANTIC_QUERY_CHARS = 900
@@ -50,12 +56,15 @@ export function focusQueryOf(
   return [head, body].filter(Boolean).join('\n').trim()
 }
 
-/** 命中 → 可注入文本（**纯函数**，渲染格式改动只在这里） */
-export function renderRecallHits(hits: RecallHit[]): string {
+/** 命中 → 可注入文本（**纯函数**，渲染格式改动只在这里）。`header` 可换（自由对话用的是另一句话） */
+export function renderRecallHits(
+  hits: RecallHit[],
+  header = '（按语义相似度从全书捞出的片段，供判断前文与设定是否一致）',
+): string {
   if (hits.length === 0) return ''
-  const lines = ['（按语义相似度从全书捞出的片段，供判断前文与设定是否一致）']
+  const lines = [header]
   for (const h of hits) {
-    const label = h.kind === 'chapter' ? '章节' : '设定'
+    const label = RECALL_KIND_LABEL[h.kind] ?? '资料'
     const name = (h.title || '未命名').trim()
     lines.push(`◆ ${label}｜${name}（相似度 ${h.score.toFixed(2)}）`)
     lines.push(clipText(h.text, 400, true))

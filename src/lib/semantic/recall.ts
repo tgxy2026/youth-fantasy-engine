@@ -51,6 +51,11 @@ export interface RecallOptions {
    * 对所有类别生效。
    */
   excludeRefIds?: Set<string> | null
+  /**
+   * **只**在这些来源里找（`excludeRefIds` 的对称能力）。null / 不传 = 不裁剪。
+   * 对所有类别生效 —— 自由对话靠它把召回限定在**本会话**（见 `lib/tavern/recall.ts`）。
+   */
+  allowRefIds?: Set<string> | null
   signal?: AbortSignal
   /** 同一个来源最多保留几块（防某一章把召回名额刷满），默认 2 */
   perRefCap?: number
@@ -170,6 +175,10 @@ export async function recallRelevant(query: string, opts: RecallOptions): Promis
   const allowKinds = opts.kinds && opts.kinds.length > 0 ? new Set<VecKind>(opts.kinds) : null
   const candidates = rows.filter(r => {
     if (allowKinds && !allowKinds.has(r.kind)) return false
+    // 🔴 来源白名单（`excludeRefIds` 的对称能力，2026-10-05 T2 加）：
+    //    自由对话要**只召回本场**的消息，而它和别的会话共用一个全局分区 ——
+    //    没有这道闸就会把别场戏的内容召回进来（跨世界观串味）。
+    if (opts.allowRefIds && !opts.allowRefIds.has(r.refId)) return false
     if (opts.excludeRefIds?.has(r.refId)) return false
     if (opts.hideSecretRows && r.secret) return false
     // 锚点白名单只裁章节（设定条目没有"发生在哪一章"这个维度）

@@ -61,6 +61,12 @@ export type PromptLayers = {
    * 再加一层「〖长期记忆〗」纯属重复）。不传即默认「长期记忆」。
    */
   memoryTitle?: string | null
+  /**
+   * 相关对话召回（T2，2026-10-05）：从**本场早先的消息**里按语义捞回被预算裁掉的片段。
+   * 紧跟在记忆层之后 —— 两者都是"补记性"，记忆是压缩过的、这里是原文片段。
+   * 空串 = 整层不出现（与其它层同一条纪律：不留空标题占位置）。
+   */
+  recall?: string
   /** 你在戏里的身份与知识边界 */
   self?: string
   /**
@@ -129,6 +135,10 @@ export function buildSystemPrompt(layers: PromptLayers): string {
   if (layers.memory?.trim()) {
     parts.push(memTitle === null ? layers.memory.trim() : `〖${memTitle}〗\n${layers.memory.trim()}`)
   }
+
+  // ②b 相关对话召回（T2，自由模式）：记忆是**压缩过**的六栏，这一层是**原文片段** ——
+  //     长对话里早期内容会被预算裁掉，这里按"与当下话题的相关性"把该记得的补回来。
+  if (layers.recall?.trim()) parts.push(`〖相关对话召回〗\n${layers.recall.trim()}`)
 
   // ③ 你在戏里的身份与知识边界
   if (layers.self?.trim()) parts.push(`〖你在戏里的身份与知识边界〗\n${layers.self.trim()}`)
