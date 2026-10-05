@@ -227,6 +227,13 @@ await createDemoProject()
   __resetMockStores()
   await createDemoProject()
 
+  // 🔴 2026-10-05 起示范项目**已给四个制度页签补了种子**（政治/经济/信仰/司法各 2-3 条）——
+  //    本条测的是「并列结构的渲染与活跃切分」这件**机制**，必须在一个**受控**的库上跑，
+  //    不能依赖"示范项目恰好是空的"这个外部前提。故先清掉本页签的种子条目与活跃记录，
+  //    再按本用例自己的剧本建两条。
+  for (const s of await db.getSubSets('politics')) await db.deleteSubSet('politics', s.id)
+  await db.setSetting('worldSubActive::politics', [])
+
   // 一个条目都没建 ⇒ 整段不带（回归保护：没建过的用户上下文与改动前一字不差）
   const empty = await buildProjectContext({ budget: 400000, onlyTabIds: ['politics'], includeChapterList: false })
   ok('🔴 并列页签没建条目 ⇒ 整段不带，也不出现「全书统一」',

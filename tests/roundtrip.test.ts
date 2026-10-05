@@ -75,7 +75,32 @@ function semCompare(b1: AnyRec, b2: AnyRec): string | null {
   const ds = (b: AnyRec) => J(((b.dailyStats ?? []) as AnyRec[]).map(s => [s.date, s.words]).sort((a, z) => String(a[0]).localeCompare(String(z[0]))))
   if (ds(b1) !== ds(b2)) return '码字统计不一致'
   // 8) 项目级设置
-  const st = (b: AnyRec) => J(((b.settingsKV ?? b.settings ?? []) as AnyRec[]).map(s => [s.key, s.value]).sort((a, z) => String(a[0]).localeCompare(String(z[0]))))
+  // 🔴 id 归一化（2026-10-05 补）：`worldSubActive::<tabId>` 的值是 **cardRecords 的 id 数组**，
+  //    导入时会整体重发 id（`remapSettingValue` 负责把旧 id 映射到新 id，防悬空）。
+  //    故这里必须像上面处理 `ch-<chapterId>` 行 id 那样，把 id 归一为**条目位次**再比 ——
+  //    否则每轮往返都因 id 换代而假报「不一致」，而真正的语义（哪些条目活跃）其实是一致的。
+  const activeIdRank = (b: AnyRec) => {
+    const cards = [...((b.cardRecords ?? []) as AnyRec[])].map(r => `${r.tabId}\u0000${r.name}`).sort()
+    const rank = new Map<string, number>()
+    cards.forEach((k, i) => rank.set(k, i))
+    const byId = new Map<string, string>()
+    for (const r of (b.cardRecords ?? []) as AnyRec[]) byId.set(String(r.id), `${r.tabId}\u0000${r.name}`)
+    return { rank, byId }
+  }
+  const st = (b: AnyRec) => {
+    const { rank, byId } = activeIdRank(b)
+    return J(((b.settingsKV ?? b.settings ?? []) as AnyRec[]).map(s => {
+      const key = String(s.key)
+      if (key.includes('worldSubActive::') && Array.isArray(s.value)) {
+        // 归一为「条目位次」集合（排序后比，避免活跃序本身带来的噪声）
+        const ranks = (s.value as unknown[])
+          .map(id => { const k = byId.get(String(id)); return k === undefined ? -1 : rank.get(k) ?? -2 })
+          .sort((a, z) => a - z)
+        return [key, ranks]
+      }
+      return [key, s.value]
+    }).sort((a, z) => String(a[0]).localeCompare(String(z[0]))))
+  }
   if (st(b1) !== st(b2)) return `项目设置不一致: ${firstDiff(st(b1), st(b2))}`
   return null
 }

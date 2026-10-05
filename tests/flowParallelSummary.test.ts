@@ -20,6 +20,11 @@ const ok = (n: string, c: boolean, e = '') => { if (c) { pass++; console.log('  
 async function main() {
   __resetMockStores()
   await createDemoProject()
+  // 🔴 2026-10-05：示范项目已给四个制度页签补了种子条目（便于界面示范「已完结」开关）。
+  //    本测试要验的是「在一张空表上做多套汇总」的语义 ⇒ 先把政治架构清空，
+  //    否则下面 `subs.length === 3` 这类断言会被种子的 3 条（青岚宗/血魔教/中州皇朝）顶掉。
+  for (const s of await db.getSubSets('politics')) await db.deleteSubSet('politics', s.id)
+  await db.setSetting('worldSubActive::politics', [])
 
   // ① 提示词：这四张表带「可按主体名分块」说明，其余表没有
   const fp = formFieldsPrompt()

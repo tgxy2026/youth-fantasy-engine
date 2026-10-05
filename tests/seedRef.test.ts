@@ -16,7 +16,7 @@
 import * as db from '../src/lib/db'
 import { createDemoProject } from '../src/lib/seedData'
 import { __resetMockStores } from './mock-memory'
-import { TABS, CARD_TABLE_REF_FIELDS } from '../src/lib/schema'
+import { TABS, CARD_TABLE_REF_FIELDS, GEO_MAPS_TAB } from '../src/lib/schema'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -32,7 +32,15 @@ db.setCurrentProject(pid)
 type Row = { tabId: string; data: Record<string, string> }
 const rowsByTab: Record<string, Row[]> = {}
 
-for (const t of TABS) {
+// 🔴 遍历清单＝TABS ∪ {GEO_MAPS_TAB}。
+//    为什么必须显式并进《地图》：它**刻意不在 TABS 里**（见 schema.ts 的 GEO_MAPS_TAB 注释 ——
+//    进了 TABS 侧栏就会多出「地图」页签，与「地图编辑」重复）。但《地理风物》的
+//    「所属地图」列正是 cr(…, 'geomaps', '名称')，于是**只遍历 TABS 会让这张引用表凭空消失**，
+//    校验它时池子恒为空 ⇒ 要么把所有有效引用误报成"目标不存在"，要么（若池子为空就跳过）
+//    整条引用链**静默失明**。这正是本用例存在的意义，故显式并入。
+const SCAN_TABS = [...TABS, GEO_MAPS_TAB]
+
+for (const t of SCAN_TABS) {
   if (t.type !== 'table' && t.type !== 'map') continue
   const rows = await db.getTableRows(t.id)
   if (rows.length) rowsByTab[t.id] = rows.map(r => ({ tabId: t.id, data: r.data as Record<string, string> }))
@@ -47,7 +55,8 @@ const errors: string[] = []
 let checked = 0
 
 // ---------- ① 表格的跨表引用列 ----------
-for (const t of TABS) {
+// 用 SCAN_TABS（含 geomaps 等 TABS 之外的独立数据表）—— 理由见上方 SCAN_TABS 定义处的注释。
+for (const t of SCAN_TABS) {
   const rows = rowsByTab[t.id]
   if (!rows || !t.columns) continue
   for (const col of t.columns) {
@@ -106,11 +115,14 @@ const facRefs = (rowsByTab['faction-rels'] ?? []).map(r => r.data['势力A']).fi
 ok('势力关系有力数据（势力图谱才演示得出来）', facRefs.length >= 5, String(facRefs.length))
 
 // ---------- ④ 功能覆盖：每个需要种子的表格页签都不该是空的 ----------
-// 排除三类：只读汇总视图（chapter-master 由卷台账聚合）、地图（geomaps 由迁移建、格子需作者手绘）、
-// 画布（plot-canvas 靠 AI 现场生成）。
-const SKIP_TABS = new Set(['chapter-master', 'geomaps', 'geography-map', 'plot-canvas'])
+// 排除三类：只读汇总视图（chapter-master 由卷台账聚合）、地图画布（geography-map 的形状要作者手绘）、
+// 情节推演画布（plot-canvas 存的是 settingsKV 快照，不是表格行 ⇒ 天然取不到；其覆盖由 ④b 单断）。
+// 🔴 `geomaps` **不再**排除：它确实有行（种子会建两张地图），且《地理风物》的「所属地图」
+//    以它为引用池 —— 排除它会让 ① 的引用校验失明（2026-10-05 补种时踩到，已并入 SCAN_TABS）。
+const SKIP_TABS = new Set(['chapter-master', 'geography-map', 'plot-canvas'])
 const emptyTabs: string[] = []
-for (const t of TABS) {
+// 用 SCAN_TABS 的理由同 ①；注意 `geography-map` / `plot-canvas` 仍按类型（map/canvas）自然跳过。
+for (const t of SCAN_TABS) {
   if (t.type !== 'table') continue
   if (SKIP_TABS.has(t.id)) continue
   if (!(await db.getTableRows(t.id)).length) emptyTabs.push(`${t.id}（${t.name}）`)
@@ -128,6 +140,44 @@ ok('  · 卡片的存储键是 `设定内容::内容`（schema / 迁移 / 这里
 ok('  · 卡名非空（卡名就是设定名，设定检索与引用高亮都取它）',
   miscCards.length > 0 && miscCards.every(c => !!c.name?.trim()))
 
+// ---------- ④b 制度四页签（并列结构）也要有种子 ----------
+// 2026-10-05：政治 / 经济 / 信仰 / 司法在原示范项目里**一条都没有**（2.7.1 新建、示范项目没跟上），
+// 作者进去看到四张空表。它们也是④盖不到的：子项存在 `cardRecords` 的 `<tabId>-sub` 下，
+// tabId 不在 TABS 里 ⇒ 既不是表格行、也不会被 getCardRecords('<tabId>') 取到。
+// 🔴 这里同时闸两件事，缺一不可：
+//   ① 每条都在 `cardRecords` 里（`getSubSets`）；
+//   ② **至少有一条是活跃的**（`getActiveSubIds`）—— 只落库不记活跃的话，界面全显示「已完结」、
+//      AI 也一条都收不到，等于白种（`splitActive` 只挑活跃项）。
+for (const tid of ['politics', 'economy', 'belief', 'justice']) {
+  const subs = await db.getSubSets(tid)
+  ok(`制度页签 ${tid} 有种子条目（并列结构，存 cardRecords['${tid}-sub']）`, subs.length >= 2, `${subs.length} 条`)
+  const activeIds = await db.getActiveSubIds(tid)
+  const activeNames = subs.filter(s => activeIds.includes(s.id)).map(s => s.name)
+  ok(`  · ${tid} 至少一条活跃（活跃项才喂 AI；不活跃＝界面显示已完结）`,
+    activeNames.length >= 1, `活跃 ${activeNames.length} 条：${activeNames.join('、')}`)
+  ok(`  · ${tid} 条目的模块键是「模块名::字段名」且非空`,
+    subs.length > 0 && subs.every(s => Object.entries(s.data).some(([k, v]) => k.includes('::') && String(v).trim())),
+    JSON.stringify(Object.keys(subs[0]?.data ?? {}).slice(0, 2)))
+}
+
+// ---------- ④c 地图 / 画布（不落表格行，单独断）----------
+// 《地图》：geomaps 有行 + 《地理风物》真有地点被指派到这些图上 + 真有格子（空 = 未绘制，画布上看不见）。
+const geoMaps = await db.getTableRows('geomaps')
+ok('「地图」数据表有种子地图（>=2 张，演示同一项目多张独立画布）', geoMaps.length >= 2, `${geoMaps.length} 张`)
+const mapNames = new Set(geoMaps.map(m => m.data['名称'] ?? ''))
+const painted = (rowsByTab['geography'] ?? []).filter(r => (r.data['地图格子'] ?? '').trim())
+ok('《地理风物》有地点被指派到地图上且画了格子（地图编辑页打开就有内容）',
+  painted.length >= 6, `已涂格 ${painted.length} 个地点`)
+ok('  · 涂了格的地点其「所属地图」指向的都是真实地图（不悬空）',
+  painted.every(r => mapNames.has(r.data['所属地图'] ?? '')), '')
+
+// 《情节推演画布》：快照在 settingsKV 的 `plotCanvas`，不是表格行 ⇒ 单独断。
+const canvas = await db.getSetting<{ selected: string[]; cards: unknown[]; conns: unknown[] }>(
+  'plotCanvas', { selected: [], cards: [], conns: [] })
+ok('情节推演画布有种子卡片（打开就有内容，不必先跑 AI 简报）', canvas.cards.length >= 5, `${canvas.cards.length} 张卡`)
+ok('  · 画布选了章节（不选章节，卡片无法定位到章）', canvas.selected.length >= 5, `${canvas.selected.length} 章`)
+ok('  · 画布有连线（连线是「情节推演」的核心表现）', canvas.conns.length >= 3, `${canvas.conns.length} 条`)
+
 // ---------- ⑤ 「人物」列必须是真人物 ----------
 // 2026-09-19：示范项目《人物关系》里出现过「萧景行 ↔ 中州萧家」—— 中州萧家是《国家势力》里的世家。
 // 这类错误界面上**不会报错**（就是一格文本，下拉也不校验），但语义是错的：
@@ -141,7 +191,7 @@ ok('确实读到了角色卡（前置条件）', cardNames.size >= 5, String(car
 
 const personErrors: string[] = []
 let personChecked = 0
-for (const t of TABS) {
+for (const t of SCAN_TABS) {
   const rows = rowsByTab[t.id]
   if (!rows || !t.columns) continue
   for (const col of t.columns) {

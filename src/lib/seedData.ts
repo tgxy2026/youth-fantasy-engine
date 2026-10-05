@@ -5,6 +5,12 @@ import { TABS } from './schema'
 import { uid } from './id'
 import { countWords } from './textStats'
 import { todayKey } from './date'
+// 制度四页签 / 地图 / 情节推演画布的**纯数据**（2.8.1 迁出，见文件头注释）——
+// 🔴 `src/data/` 不许运行时 import，故这几块只导出字面量，id/order 在本文件生成。
+import {
+  INSTITUTION_SEED, GEO_MAP_SEED, GEO_CELL_SEED,
+  CANVAS_CARD_SEED, CANVAS_CONN_SEED,
+} from '../data/seedInstitutions'
 
 // 🔴 2.7.3：示范正文 21 章（`../data/seedContent`，7664 行）**改成动态 import**（见 doCreateDemoProject 内）。
 //    原先是静态 import ⇒ 整部小说被打进**主 bundle**：社区反馈「点进 asar 想手动魔改，
@@ -1333,6 +1339,9 @@ async function doCreateDemoProject(): Promise<string> {
 
     ['geography', { '编号': 'G0001-001-009', '名称': '青岚山', '别称': '', '保密等级': 'C', '类别': '山脉', '层级归属': '云州', '地理位置': '云州中部', '距离与行程时间': '云州城→青岚山：马车三日', '范围与面积': '九座主峰，方圆百里', '相对地理位置': '云州城以北', '地貌与气候': '多雾，四季分明', '势力归属': '青岚宗', '特色资源/特产': '青岚雾茶、灵田', '危险等级': '低', '风土人情（一句话）': '青岚宗立派之地，山下即云州城', '剧情作用': '第1-8章主舞台', '备注': '后山禁地与演武场皆在其上' }],
     ['geography', { '编号': 'G0001-003', '名称': '东洲', '别称': '', '保密等级': 'B', '类别': '区域', '层级归属': '苍澜大陆', '地理位置': '大陆东部，临海', '距离与行程时间': '东洲→中州：飞舟约三十日', '范围与面积': '四洲之一', '相对地理位置': '中州以东', '地貌与气候': '临海多雨，灵气略薄', '势力归属': '东洲万象宗', '特色资源/特产': '海贸、渔获', '危险等级': '中', '风土人情（一句话）': '宗门林立，万象宗执牛耳', '剧情作用': '云州所属大区；南荒在其南', '备注': '青岚宗名义上依附万象宗' }],
+    // 2026-10-05 补：北渊此前只被「卷六北渊真相」等伏笔反复引用，**地理风物里却没有条目**（引用悬空）。
+    // 补上后：① 伏笔的「计划回收位置」有真实落点；② 地图总图能把北渊画进大陆北境。
+    ['geography', { '编号': 'G0001-005', '名称': '北渊', '别称': '北渊之地', '保密等级': 'S', '类别': '秘境', '层级归属': '苍澜大陆', '地理位置': '大陆最北，极寒绝地', '距离与行程时间': '中州→北渊：飞舟月余，入渊后无路可循', '范围与面积': '四域中最神秘的一域，与世隔绝', '相对地理位置': '中州以北', '地貌与气候': '万年冰渊，寒气刺骨，天光不达渊底', '势力归属': '', '特色资源/特产': '上古封印遗迹、封仙路尽头', '危险等级': '极高', '风土人情（一句话）': '人迹罕至，唯古人足迹与封仙路之战遗痕尚存', '剧情作用': '卷六终局舞台·封仙路真相揭晓地', '备注': 'F0001/F0002/F0007 的终极回收点' }],
     ['geography', { '编号': 'G0001-004', '名称': '南荒', '别称': '南荒之地', '保密等级': 'B', '类别': '区域', '层级归属': '东洲', '地理位置': '东洲最南，秘境深处', '距离与行程时间': '青岚山→南荒秘境入口：飞舟七日', '范围与面积': '上古战场碎片遍布', '相对地理位置': '东洲之南', '地貌与气候': '荒芜，血煞沉积', '势力归属': '血魔教', '特色资源/特产': '上古传承、灵药', '危险等级': '极高', '风土人情（一句话）': '机缘与埋骨之地', '剧情作用': '第9-15章主舞台', '备注': '南荒秘境在其深处' }],
     ['nations', { '编号': 'N0008', '名称': '中州皇朝', '上级': '', '别称': '皇朝', '保密等级': 'B', '类别': '王朝', '地理位置': '中州', '实力等级': '名义共主（实权衰微）', '镇派功法/核心武力': '皇室供奉与中州各宗', '掌权者': '中州皇帝', '内部派系与权力斗争': '皇室与宗门共治，互相牵制', '历史沿革': '三千年前立国，承封仙路之战后的秩序', '经济来源': '中州赋税、灵矿', '对外关系': '对四洲名义共主，实管不到边陲', '与主角关系': '中后期舞台背景', '剧情作用': '苍澜名义中心+中州秩序代表', '备注': '第19-20章中州段的背景' }],
 
@@ -1351,6 +1360,85 @@ async function doCreateDemoProject(): Promise<string> {
   for (const [tabId, data] of rows) {
     await db.saveTableRow(row(tabId, order++, data))
   }
+
+  // 5b) 制度四页签（政治架构 / 经济基础 / 宗教信仰 / 司法制度，2.7.1 建 · 2.7.2 改**并列结构**）
+  //
+  // 🔴 三个坑（2.7.2 定案，改前必读）：
+  //   ① 它们是**并列结构**（`PARALLEL_SET_TABS`）—— 存储走 `saveSubSet`，tabId 是 `<页签>-sub`
+  //      且**刻意不在 TABS 里**；「一条＝一个政权／地区」，没有「全书统一」那一层。
+  //      绝不能用 `saveFormData('politics', …)` —— 那条链路在本结构下压根不存在（会写出孤儿母级）。
+  //   ② 光写还不够，**必须把 id 记进活跃列表**（`setSubActive`）—— 否则界面显示「已完结」、
+  //      AI 注入也不带它（`splitActive` 只挑活跃的）。
+  //   ③ 落库键仍是「模块名::字段名」（与表单型同口径），写错界面就一片空白
+  //      ⇒ 由 `tests/seed-schema-check.mjs` 与 `tests/seedRef.test.ts` 双向闸住。
+  //
+  // 🔴 纯数据在 `../data/seedInstitutions`（2.8.1 迁出）——`lib/seedData.ts` 有 1600 行冻结账本，
+  //    纯字面量按纪律落 `src/data/`；此处只留装配逻辑（生成 id / order / 记活跃）。
+  const instOrder: Record<string, number> = {}
+  for (const [tabId, name, data, active] of INSTITUTION_SEED) {
+    // order 按**每页签独立计数** —— 同一页签下多条按插入序排列（`getSubSets` 按 order 排）。
+    const o = instOrder[tabId] ?? 0
+    instOrder[tabId] = o + 1
+    const rec: CardRecord = { id: uid(), projectId: '', tabId: '', name, data, order: o }
+    await db.saveSubSet(tabId, rec)
+    if (active) await db.setSubActive(tabId, rec.id, true)
+  }
+
+  // 5c) 地图（geomaps ＝ 独立数据表，**不在 TABS 里**，故不出现于侧栏）
+  //
+  // 🔴 与《地理风物》的分工：geomaps 只存「地图清单」（名称 / 每格公里 / 说明），
+  //    每个地点的形状存在 geography 的 `地图格子` 列（格式 `"gx,gy;gx,gy;…"`，绝对格坐标）。
+  //    地点靠 geography 的「所属地图」列（引用 geomaps.名称）挂到某张图上。
+  // 🔴 形状约束：**子范围必须完全画在父范围之内**（无飞地），否则地图编辑会报错。
+  // 🔴 引用完整性由 `tests/seedRef.test.ts` 闸住：地理风物的「所属地图」必须能在 geomaps.名称 里找到。
+  for (const [mapName, kmPerCell, note] of GEO_MAP_SEED) {
+    await db.saveTableRow({
+      id: uid(), projectId: p.id, tabId: 'geomaps',
+      order: GEO_MAP_SEED.findIndex(m => m[0] === mapName),
+      data: { '编号': `MAP${String(GEO_MAP_SEED.findIndex(m => m[0] === mapName) + 1).padStart(4, '0')}`, '名称': mapName, '每格公里': kmPerCell, '说明': note },
+    })
+  }
+
+  /**
+   * 造一个「实心矩形」的格子串（左上角 gx,gy 起，宽 w 高 h）—— 比手写几百个坐标可读得多。
+   * 🔴 父包住子：调用处保证子矩形的四个边界都落在父矩形内。
+   */
+  const rectCells = (gx: number, gy: number, w: number, h: number): string => {
+    const out: string[] = []
+    for (let x = gx; x < gx + w; x++) for (let y = gy; y < gy + h; y++) out.push(`${x},${y}`)
+    return out.join(';')
+  }
+
+  /**
+   * 把建好的地点行补上「所属地图」与「地图格子」（`GEO_CELL_SEED` ＝ `[地点名, 地图名, [gx,gy,w,h]]`）。
+   * 🔴 该段在 `rows` 已全部落库之后执行 —— 按**名称**回查并改行，而非构造 `rows` 时顺手写，
+   *    免得那 200+ 行字面量再膨胀。
+   */
+  const geoRows = await db.getTableRows('geography')
+  const geoByName = new Map(geoRows.map(r => [r.data['名称'] ?? '', r]))
+  for (const [name, mapName, [gx, gy, w, h]] of GEO_CELL_SEED) {
+    const r = geoByName.get(name)
+    if (!r) { console.warn(`[seed] 地图涂格：地理风物里没有「${name}」，跳过`); continue }
+    await db.saveTableRow({ ...r, data: { ...r.data, '所属地图': mapName, '地图格子': rectCells(gx, gy, w, h) } })
+  }
+
+  // 5d) 情节推演画布（plot-canvas）—— 快照走**项目级 settingsKV**（键 `plotCanvas`）
+  //
+  // 🔴 形态（PlotCanvas.tsx）：`{ selected: 章id[], cards: CardItem[], conns: [id,id][] }`
+  //    · cards 的字段：`{ id, chapter, type, text, x, y }`，type ∈ foreshadow/hook/character/next/beat/idea
+  //    · `selected` 是「被勾选入推演的章节行 id」—— 章节行 id 由下方 `ch-${章节id}` 规则生成，
+  //      故必须等 `chs` 建好、且用与章节总表联动行**同一套 id**，否则画布打开时选中态全空。
+  //    · 卡片坐标是画布逻辑像素；CARD_W=260 ⇒ x 间隔给 300 才不重叠。
+  // 🔴 纯数据在 `../data/seedInstitutions` 的 `CANVAS_CARD_SEED` / `CANVAS_CONN_SEED`。
+  const canvasIdOf = (i: number) => `cv-${i}`
+  await db.setSetting('plotCanvas', {
+    selected: chs.slice(0, 21).map(c => `ch-${c.id}`),   // 21 章全部纳入推演
+    cards: CANVAS_CARD_SEED.map(([ch, type, text, x, y], i) => ({
+      id: canvasIdOf(i), chapter: `第${ch + 1}章`, type, text, x, y,
+    })),
+    conns: CANVAS_CONN_SEED.map(([a, b]) => [canvasIdOf(a), canvasIdOf(b)]) as Array<[string, string]>,
+  })
+
 
   // 《其他设定》是**卡片型**（2026-09-20 晚间形态改定，最初做的是表格）：一条一张卡，
   // 卡名＝这条设定的名字，卡内「内容」放正文。示范项目里必须有示例数据 ——

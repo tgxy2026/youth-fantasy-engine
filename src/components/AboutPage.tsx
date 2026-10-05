@@ -199,14 +199,38 @@ export default function AboutPage() {
             </section>
           </div>
 
-          {/* 右列：打赏支持（上＝致谢名单，下＝收款码，拉长对齐） */}
+          {/* 右列：打赏支持（上＝收款码，下＝致谢名单；名单下方留白，供以后加人）
+              布局口径（2026-10-05 主人定稿）：
+                · 收款码紧贴标题下方，**高度贴合内容**（不再 flex-1 撑满 —— 那会让码被拉高、
+                  上下留大片空白，正是主人要回退的那版）；
+                · 致谢名单排在码下方；名单下方**刻意留白**（`flex-1` 空占位吸收剩余高度），
+                  以后加人自然向下生长，不会顶动上面的码；
+                · 底部对齐由外层 grid 的 `items-stretch` 保证（左列「联系方式」flex-1 撑满）。 */}
           <section className="lg:col-span-2 rounded-xl bg-ink-850 border border-ink-700 p-6 flex flex-col">
             <SectionTitle icon={<Heart size={15} className="text-amber" />}>打赏支持</SectionTitle>
             <p className="text-ink-500 text-xs mb-5">
               如果本软件对你有帮助，欢迎扫码支持作者。
             </p>
-            {/* 致谢名单（2.8.0：由右列下方**移到最上** —— 先谢支持过的人，再放收款码） */}
-            <div className="pb-5 mb-5 border-b border-ink-700">
+
+            {/* 码图区：宽度撑满、高度由 2:3 纵横比自然定出（两码等宽等高、并排居中）。
+                完整收款图自带品牌底色，可一眼分辨归属，无需文字标注 */}
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { key: 'wechat', img: payWechat },
+                { key: 'alipay', img: payAlipay },
+              ].map(p => (
+                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex items-center justify-center overflow-hidden">
+                  <img
+                    src={p.img}
+                    alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
+                    className="w-full aspect-[2/3] object-contain rounded-md"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* 致谢名单（排在码下方） */}
+            <div className="pt-5 mt-5 border-t border-ink-700">
               <h3 className="text-xs font-semibold text-ink-200 mb-1 flex items-center gap-2">
                 <Users size={14} className="text-amber" /> 致谢名单
               </h3>
@@ -225,23 +249,9 @@ export default function AboutPage() {
               </div>
             </div>
 
-            {/* 码图区（2.8.0：移到致谢名单**下方**）：flex-1 撑满剩余高度，
-                图片锁定纵横比（object-contain）上下贴边；min-h 兜底 —— 名单再长也不会把二维码压没。
-                完整收款图自带品牌底色，可一眼分辨归属，无需文字标注 */}
-            <div className="grid grid-cols-2 gap-4 flex-1 min-h-[200px]">
-              {[
-                { key: 'wechat', img: payWechat },
-                { key: 'alipay', img: payAlipay },
-              ].map(p => (
-                <div key={p.key} className="rounded-lg bg-ink-900/60 border border-ink-700 p-3 flex items-center justify-center overflow-hidden min-h-0">
-                  <img
-                    src={p.img}
-                    alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
-                    className="max-w-full max-h-full object-contain rounded-md"
-                  />
-                </div>
-              ))}
-            </div>
+            {/* 名单下方留白：吸收右列剩余高度（空占位，不渲染任何可见内容）——
+                底部对齐靠它 + 外层 items-stretch 共同保证 */}
+            <div className="flex-1" aria-hidden />
           </section>
         </div>
       </div>
