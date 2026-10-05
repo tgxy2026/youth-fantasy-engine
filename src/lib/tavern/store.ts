@@ -29,7 +29,7 @@ import type {
   FreeCharacter, FreeSession, FreeMemory, DailyState,
   CharJournal, CharJournalEntry,
   TavernCharIndexItem, FreeSessionIndexItem, TavernMessage, TavernCheckpoint,
-  TavernDirectorNote, CardFieldPath,
+  TavernDirectorNote, CardFieldPath, TavernWatermark,
 } from './types'
 
 // ==================== 存储键 ====================
@@ -157,6 +157,93 @@ export function lastAssistantId(messages: TavernMessage[]): string {
     if (messages[i].role === 'assistant') return messages[i].id
   }
   return ''
+}
+
+// ==================== 多候选（T3 swipe，2026-10-05） ====================
+//
+// 【为什么不改引擎】`runPlotTurn` / `runFreeTurn` 的 `userText === null` 契约就是「重说」——
+//   先丢掉末尾 assistant、再生成一条替换它。引擎**一个字不改**，多候选只在**组件层**做：
+//   拿到新文本后，把它**记进**消息的 `variants` 里。这样：
+//     · 引擎的「重说」语义原样保留（不破坏既有调用与单测）；
+//     · 关闭开关时 `variants` 恒为 undefined，行为与现在**逐字一致**；
+//     · 剧情 / 自由两模式共用 store 与组件，一次改完两边都有。
+//
+// 🔴 与记忆水位线的交互（关键）：切换候选**不改消息 id**，所以 `rewindAfterReroll`（它按
+//   「末尾消息 id 被替换」判断）在这里**不适用**。但候选换了确实意味着「这一轮的走向变了」——
+//   必须把已总结进记忆的内容重判，否则模型会记得一条已经不存在的候选说的话
+//   （症状与 branchSession 那条注释描述的一致：「Ta 记得还没发生的事」）。
+
+/** 候选上限：超过就丢最早的那份（只保留最近 N 个版本，避免存储无限膨胀） */
+export const MAX_VARIANTS = 5
+
+/**
+ * 把一份新生成的文本记成消息的候选（追加到末尾并选中）。
+ *
+ * 首次调用时 `variants` 为 undefined ⇒ 用**原来的 content** 作为第 0 个候选，
+ * 于是「重说」第一次点下去就有 [原版, 新版] 两份，可以直接翻回原版对照 —— 这正是 swipe 的用法。
+ * `content` 同步为新选中的那份（它是唯一被渲染 / 进上下文的值）。
+ */
+export function appendVariant<T extends MsgHost>(s: T, id: string, text: string): T {
+  const t = text.trim()
+  if (!t) return s   // 空回复不记（同引擎「空回复不落库」的口径）
+  if (!s.messages.some(m => m.id === id)) return s   // 找不到目标 ⇒ 原样返回，不空刷 updatedAt
+  return {
+    ...s,
+    messages: s.messages.map(m => {
+      if (m.id !== id) return m
+      const base = m.variants?.length ? m.variants : [m.content]
+      const next = [...base, t].slice(-MAX_VARIANTS)
+      return { ...m, content: t, variants: next, variantIdx: next.length - 1, edited: m.edited }
+    }),
+    updatedAt: Date.now(),
+  }
+}
+
+/**
+ * 选中某个候选（`content` 跟着切）。
+ *
+ * ⚠️ 下标越界 / 没有候选时原样返回 —— 调用方不必先判。
+ * 🔴 调用方（组件）必须在切换后处理记忆水位线：见 `rewindForVariantSwitch`。
+ */
+export function selectVariant<T extends MsgHost>(s: T, id: string, idx: number): T {
+  const m = s.messages.find(x => x.id === id)
+  const vs = m?.variants ?? []
+  if (!m || idx < 0 || idx >= vs.length || idx === (m.variantIdx ?? 0)) return s
+  return {
+    ...s,
+    messages: s.messages.map(x => (x.id === id ? { ...x, content: vs[idx], variantIdx: idx } : x)),
+    updatedAt: Date.now(),
+  }
+}
+
+/**
+ * 切换候选后回收记忆与水位线。
+ *
+ * 判据与 `branchSession` / `rewindAfterReroll` **同源**：只要「已总结进记忆的范围」
+ * 覆盖到这条被改的消息，那份记忆里就含了一条已经不作数的候选 ⇒ 清记忆 + 水位线退到这条之前。
+ *
+ * 传 `undefined`（没有水位线 / 水位线在更早处）⇒ 什么都不动。
+ *
+ * 🔴 写成泛型：剧情模式传 `TavernSession`、自由模式传 `FreeSession` —— 两者都有
+ *    `messages` / `watermark`（自由模式的会话级记忆没用到，但字段定义一致）。
+ *    两模式各写一份必然漂移，「水位线该退到哪」这套判据在项目里已经有三处（branch / reroll / 这里），
+ *    再加一处就会失控。
+ */
+export function rewindForVariantSwitch<T extends { messages: TavernMessage[]; watermark?: TavernWatermark; memory?: string; updatedAt: number }>(
+  s: T, messageId: string,
+): T {
+  const wm = s.watermark
+  if (!wm) return s
+  const wmIdx = s.messages.findIndex(m => m.id === wm.messageId)
+  const at = s.messages.findIndex(m => m.id === messageId)
+  if (wmIdx < 0 || at < 0 || wmIdx < at) return s   // 水位线还没走到这条 ⇒ 记忆不含它，安全
+  const prev = at > 0 ? s.messages[at - 1] : undefined
+  return {
+    ...s,
+    watermark: prev ? { messageId: prev.id, at: Date.now() } : undefined,
+    memory: undefined,
+    updatedAt: Date.now(),
+  }
 }
 
 // ==================== 分支 / 检查点 / 回滚（2026-09-14，路线图第 3 批） ====================

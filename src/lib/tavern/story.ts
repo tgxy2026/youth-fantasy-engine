@@ -28,6 +28,7 @@ import { prepareDraftMaterial, type DraftSource } from './draft'
 import { webSearch, type SearchSettings } from '../webSearch'
 import type { TavernStory, TavernStoryIndexItem, StorySettingSnapshot } from './types'
 import { sessionStoryId } from './types'
+import { buildWorldBookText, normalizeEntry, type WorldEntry } from './worldBook'
 
 // 全局 meta 键（无项目前缀）
 const G = {
@@ -73,7 +74,54 @@ export async function getStory(id: string): Promise<TavernStory | null> {
  * 此后作者改故事设定，这一场不跟着变 —— 理由与剧本快照一致（见 types 的 `ScriptSnapshot`）。
  */
 export function snapshotStorySetting(s: TavernStory): StorySettingSnapshot {
-  return { storyId: s.id, name: s.name, setting: (s.setting ?? '').trim(), at: Date.now() }
+  const snap: StorySettingSnapshot = { storyId: s.id, name: s.name, setting: (s.setting ?? '').trim(), at: Date.now() }
+  // 🔴 只在有词条时才带这个键 —— 老故事快照的形状保持原样（不动已有会话的落盘形状）
+  if (s.entries?.length) snap.entries = s.entries
+  return snap
+}
+
+/**
+ * 「故事的一份设定」→ 世界书词条池（W3，2026-10-05）。
+ *
+ * 🔴 **老故事的退化路径**：没有 `entries` ⇒ 把整段 `setting` 当成**一个总是注入**的词条。
+ *    于是老数据的注入结果与升级前逐字一致（等价性红线）。
+ * 🔴 **两条都写时以 `entries` 为准** —— `setting` 只在没有词条时才当兜底。
+ *
+ * 传入的是 `{setting, entries}` 的最小形状（故事本体与会话快照都满足），
+ * 这样 engine 那边不必先判断「拿到的是故事还是快照」。
+ */
+export function storyEntriesOf(src: { setting?: string; entries?: WorldEntry[] } | null | undefined): WorldEntry[] {
+  if (!src) return []
+  const entries = Array.isArray(src.entries) ? src.entries : []
+  if (entries.length) {
+    return entries
+      .map((e, i) => normalizeEntry(e, i))
+      .filter((e): e is WorldEntry => !!e)
+  }
+  const setting = String(src.setting ?? '').trim()
+  if (!setting) return []
+  // 整段退化成一个常驻词条：不设标题（保持与 worldToText 的 brief-only 情形同形）
+  return [{
+    id: 'story-setting', title: '', body: setting,
+    keys: [], prob: 1, order: 0, recursive: false, constant: true,
+  }]
+}
+
+/**
+ * 故事世界书入口（自由模式）：选 + 渲染，一步到位。
+ *
+ * `haystack` 由调用方给（会话标题 + 剧本 + 最近消息）—— 与剧情模式同一套取材口径。
+ * 池为空 ⇒ 返回空串（整层不出现）。
+ */
+export function buildStoryWorldBook(
+  src: { setting?: string; entries?: WorldEntry[] } | null | undefined,
+  haystack: string,
+  opts: { rand?: () => number; maxChars?: number } = {},
+): { text: string; hits: WorldEntry[]; skippedByProb: string[]; dropped: WorldEntry[] } {
+  const pool = storyEntriesOf(src)
+  if (!pool.length) return { text: '', hits: [], skippedByProb: [], dropped: [] }
+  const r = buildWorldBookText(pool, haystack, { ...opts, maxChars: opts.maxChars ?? STORY_SETTING_MAX })
+  return { text: r.text, hits: r.hits, skippedByProb: r.skippedByProb, dropped: r.dropped }
 }
 
 /**
@@ -90,16 +138,18 @@ export function snapshotStorySetting(s: TavernStory): StorySettingSnapshot {
 export async function resolveSessionStorySetting(
   session: { storyId?: string; charIds: string[]; storySetting?: StorySettingSnapshot },
   charIndex: { id: string; storyId?: string }[],
-): Promise<{ name: string; setting: string; from: 'snapshot' | 'live' | 'none' }> {
+): Promise<{ name: string; setting: string; entries?: WorldEntry[]; from: 'snapshot' | 'live' | 'none' }> {
   const snap = session.storySetting
-  if (snap) return { name: snap.name ?? '', setting: (snap.setting ?? '').trim(), from: 'snapshot' }
+  if (snap) {
+    return { name: snap.name ?? '', setting: (snap.setting ?? '').trim(), entries: snap.entries, from: 'snapshot' }
+  }
   // 老会话（这场功能上线前建的）没有快照：按会话 → 角色卡反推故事 id，再实时读
   const id = sessionStoryId(session, charIndex)
   if (!id) return { name: '', setting: '', from: 'none' }
   try {
     const s = await getStory(id)
     if (!s) return { name: '', setting: '', from: 'none' }
-    return { name: s.name, setting: (s.setting ?? '').trim(), from: 'live' }
+    return { name: s.name, setting: (s.setting ?? '').trim(), entries: s.entries, from: 'live' }
   } catch {
     return { name: '', setting: '', from: 'none' }
   }

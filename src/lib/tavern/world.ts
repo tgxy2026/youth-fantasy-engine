@@ -35,8 +35,38 @@ import { resolveTavernProvider, type ChatFn } from './provider'
 import { prepareDraftMaterial, type DraftSource } from './draft'
 import { webSearch, type SearchSettings } from '../webSearch'
 import type { TavernMessage } from './types'
+import { buildWorldBookText, type WorldEntry, type EntryState } from './worldBook'
 
-export type WorldSection = { id: string; title: string; body: string }
+/**
+ * 一节背景设定。
+ *
+ * 【2026-10-05 W3：升级为「词条」，可选的四个字段 = 世界书能力】
+ *   原本只有 `id/title/body`，整份设定共用一个 `keywords`（命中才整份注入）。
+ *   现在每节可以**自己**带关键词与概率 —— 这就是 ST 世界书的条目级粒度。
+ *
+ * 🔴 **四个新字段全部可选**：老数据读出来仍是 `{id,title,body}`，
+ *    `keys` 缺省 = 空 = **总是注入**，于是「老数据」的行为与升级前**逐字一致**。
+ *    这条是等价性红线 —— 见 `worldBook.ts` 文件头的说明。
+ */
+export type WorldSection = {
+  id: string
+  title: string
+  body: string
+  /** 本节自己的触发关键词；为空 = 总是注入（缺省即如此 ⇒ 老数据行为不变） */
+  keys?: string[]
+  /** 触发概率 0–1（缺省 1 = 必中） */
+  prob?: number
+  /** 排序权重（缺省 = 数组下标） */
+  order?: number
+  /** 是否允许激活别的节（缺省 true） */
+  recursive?: boolean
+  /** 常驻标记（等价于 keys 为空，但语义更明确） */
+  constant?: boolean
+  /** 四色灯（缺省按 keys/constant/recursive 推断；显式给了就以它为准） */
+  state?: EntryState
+  /** 休眠（等价于 state:'off'，保留字段以免老数据丢失意图） */
+  off?: boolean
+}
 
 export type WorldSetting = {
   /** 一句话总纲：时代 / 地点 / 基调 */
@@ -56,8 +86,10 @@ export const EMPTY_WORLD_SETTING: WorldSetting = {
   brief: '', sections: [], keywords: [], seed: '', draftedAt: 0, updatedAt: 0,
 }
 
-/** 注入上限（字符）。超了截断并注明 —— 宁可少给，也不能把对话历史挤没。
- *  2026-09-15 由 1800 提到 2400：上下文预算同时提到 24000，这一层多占的额度从预算里出得起。 */
+/** 注入上限（字符）。超了**逐条取舍**并注明 —— 宁可少给，也不能把对话历史挤没。
+ *  2026-09-15 由 1800 提到 2400：上下文预算同时提到 24000，这一层多占的额度从预算里出得起。
+ *  2026-10-05：改为**按当前模型窗口动态计算**（见 `quotas.ts` 的 `fixedQuotaOf`）。
+ *  下面这个常量降级为「拿不到窗口时的兜底」，不再直接用于截断。 */
 export const WORLD_MAX_CHARS = 2400
 
 const K = 'tavern.world'
@@ -77,7 +109,26 @@ export async function getWorldSetting(): Promise<WorldSetting> {
       sections: Array.isArray(raw.sections)
         ? raw.sections
           .filter(s => s && typeof s === 'object')
-          .map(s => ({ id: String(s.id ?? uid()), title: String(s.title ?? ''), body: String(s.body ?? '') }))
+          .map((s): WorldSection => {
+            const r = s as Record<string, unknown>
+            const out: WorldSection = {
+              id: String(r.id ?? uid()),
+              title: String(r.title ?? ''),
+              body: String(r.body ?? ''),
+            }
+            // 🔴 世界书字段**只在原数据里存在时才回填** —— 老数据不该被塞进新键
+            //    （否则「没填过关键词」会变成「填了空数组」，两者在本文件语义相同但落盘不同，
+            //     会让后续的「是否升级过」判断失真）。
+            if (Array.isArray(r.keys)) out.keys = r.keys.map(k => String(k)).filter(Boolean)
+            if (typeof r.prob === 'number' && Number.isFinite(r.prob)) out.prob = r.prob
+            if (typeof r.order === 'number' && Number.isFinite(r.order)) out.order = r.order
+            if (r.recursive !== undefined) out.recursive = !!r.recursive
+            if (r.constant !== undefined) out.constant = !!r.constant
+            // 四色灯：只在原数据里存在时回填（同上面的「不凭空塞新键」原则）
+            if (r.state === 'on' || r.state === 'hit' || r.state === 'ref' || r.state === 'off') out.state = r.state
+            if (r.off !== undefined) out.off = !!r.off
+            return out
+          })
         : [],
       keywords: Array.isArray(raw.keywords) ? raw.keywords.map(k => String(k)).filter(Boolean) : [],
       seed: String(raw.seed ?? ''),
@@ -144,6 +195,90 @@ export function keywordHaystackMessages(messages: readonly TavernMessage[], take
 /** 关键词命中判定的取材：会话标题 + 场景 + 最近几条消息（别扫全史，太贵也没必要） */
 export function worldHaystack(parts: (string | undefined)[], recent: string[] = []): string {
   return [...parts.filter(Boolean), ...recent].join('\n')
+}
+
+// ==================== 世界书（W3，2026-10-05） ====================
+//
+// 【本模式的世界书有两种粒度，同时生效】
+//   ① **整份开关**（既有）：`WorldSetting.keywords` 为空 = 总是注入；否则命中才整份注入。
+//      这是「不每次喂一大堆」的第一道闸，老作者已经按这个用法填了数据，**必须保留**。
+//   ② **词条级开关**（本轮新增）：每节自己的 `keys` / `prob` / `order` / `recursive`。
+//      粒度更细 —— 提到「城南」只带城南那一节，不是整份。
+//
+// 【两道的合成规则（关键，别搞混）】
+//   · ① 判「整份要不要带」：`shouldInjectWorld` 为 false ⇒ 一条都不带（省下全部额度）
+//   · ① 通过后，② 已在 `worldEntriesOf` 里**把整份开关折算进每条词条**：
+//     一份「有整份 keywords 的设定」在通过①之后，其内部**没有自己 keys 的节**
+//     仍然要全带（否则作者设了整份闸、内部又没设词条闸 → 结果一条都不带，是明显的退化）。
+//   折算方式：整份 keywords 非空时，把缺失自身 keys 的节补成「常驻」—— 因为它们已经在
+//   ①那一层被筛过一次了，进到这里就该出现。
+//
+// 【老数据的行为】sections 里没有 keys / 整份 keywords 为空 ⇒ 全部节常驻 ⇒
+//   渲染结果与升级前的 `worldToText` 逐字一致（等价性红线）。
+
+/** `WorldSetting.sections` → `WorldEntry[]`（供世界书判据用） */
+export function worldEntriesOf(w: WorldSetting | null | undefined): WorldEntry[] {
+  if (!w) return []
+  const hasGlobalKeys = w.keywords.map(k => k.trim()).filter(Boolean).length > 0
+  const out: WorldEntry[] = []
+
+  // 🔴 `brief`（一句话总纲）必须进池，且**总是注入**、排在最前。
+  //    它是这一层最高优先级的定调（时代 / 地点 / 基调），旧 `worldToText` 也是先渲染它。
+  //    漏掉它会静默丢掉整份设定 —— 2026-10-05 实测踩过：只填 brief 的设定会渲染成空串，
+  //    连带 budget 的「背景设定占 1800 字」分配全部归零（tavernUsage 三条断言当场变红）。
+  //    `order: -1` 保证它排在任何 section 之前（作者没显式给 order 时）。
+  const brief = String(w.brief ?? '').trim()
+  if (brief) {
+    out.push({
+      id: 'world-brief', title: '', body: brief,
+      keys: [], prob: 1, order: -1, recursive: false, constant: true,
+    })
+  }
+
+  w.sections.forEach((s, i) => {
+    const body = (s.body ?? '').trim()
+    const title = (s.title ?? '').trim()
+    if (!body && !title) return
+    // 🔴 折算整份闸：整份设了 keywords ⇒ 没自己 keys 的节视为常驻（已过①那一层）
+    const ownKeys = (s.keys ?? []).map(k => String(k ?? '').trim()).filter(Boolean)
+    const constant = s.constant ?? (hasGlobalKeys && ownKeys.length === 0 ? true : undefined)
+    out.push({
+      id: s.id || `sec${i}`,
+      title,
+      body,
+      keys: ownKeys,
+      prob: typeof s.prob === 'number' && Number.isFinite(s.prob) ? Math.max(0, Math.min(1, s.prob)) : 1,
+      order: typeof s.order === 'number' && Number.isFinite(s.order) ? s.order : i,
+      recursive: s.recursive === undefined ? true : !!s.recursive,
+      constant,
+      // 🔴 四色灯：**只在作者显式设过时才透传**。没设 = `undefined` ⇒ `entryStateOf` 按老语义推断
+      //    （keys 空 → 常驻；recursive 关 → 引荐；其余 → 触发）。老数据行为逐字不变。
+      state: s.state,
+      off: s.off,
+    })
+  })
+  return out
+}
+
+/**
+ * 世界书入口（剧情模式）：整份闸 ① + 词条闸 ②，一步到位。
+ *
+ * 返回空串的情形（都等价于「这一层不出现」）：
+ *   · 设定为空 / ① 整份关键词未命中
+ *   · ② 之后一条都没选中
+ */
+export function buildPlotWorldBook(
+  w: WorldSetting | null | undefined,
+  haystack: string,
+  opts: { rand?: () => number; maxChars?: number } = {},
+): { text: string; hits: WorldEntry[]; skippedByProb: string[]; dropped: WorldEntry[] } {
+  const empty = { text: '', hits: [], skippedByProb: [], dropped: [] }
+  if (!w || isEmptyWorld(w)) return empty
+  if (!shouldInjectWorld(w, haystack)) return empty
+  const pool = worldEntriesOf(w)
+  if (!pool.length) return empty
+  const r = buildWorldBookText(pool, haystack, { ...opts, maxChars: opts.maxChars ?? WORLD_MAX_CHARS })
+  return { text: r.text, hits: r.hits, skippedByProb: r.skippedByProb, dropped: r.dropped }
 }
 
 // ==================== 一键录入 ====================

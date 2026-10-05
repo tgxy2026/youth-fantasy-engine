@@ -28,7 +28,7 @@ import type { splitCast } from '../lib/tavern/engine'
 export function PlotChat({
   session, casts, castNameOf, lastAiId, streaming, streamText, phase, postNotice,
   input, setInput, dialogChars, scrollRef, atBottom, updateAtBottom, scrollToBottom,
-  reroll, saveEdited, toggleHidden, removeMsg, branchAt, applyDirectorNote, send, stop, setUsageOpen,
+  reroll, saveEdited, toggleHidden, removeMsg, branchAt, selectVariant, applyDirectorNote, send, stop, setUsageOpen,
 }: {
   session: TavernSession
   casts: ReturnType<typeof splitCast>
@@ -51,6 +51,8 @@ export function PlotChat({
   toggleHidden: (id: string) => void
   removeMsg: (id: string) => void | Promise<void>
   branchAt: (messageId: string) => void | Promise<void>
+  /** T3 多候选：选中某条消息的某个候选（切换后 content 跟着变） */
+  selectVariant: (id: string, idx: number) => void
   applyDirectorNote: (note: TavernDirectorNote | null) => void | Promise<void>
   send: (preset?: string) => void | Promise<void>
   stop: () => void
@@ -119,6 +121,10 @@ export function PlotChat({
                         onToggleHidden: () => toggleHidden(m.id),
                         onDelete: () => void removeMsg(m.id),
                         onBranch: () => void branchAt(m.id),
+                        // T3 多候选：关掉开关时 variants 恒为 undefined ⇒ count=1 ⇒ 不渲染翻页
+                        variantIdx: m.variantIdx,
+                        variantCount: m.variants?.length,
+                        onSelectVariant: idx => selectVariant(m.id, idx),
                       }}
                     />
                   </div>

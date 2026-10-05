@@ -53,6 +53,11 @@ export type TavernReadyInfo = {
   label: string
   /** 是否回退到了「全局活动模型」（会话与面板都没指定，或指定的那个已被删除） */
   fellBack: boolean
+  /**
+   * 当前生效模型的上下文窗口（tokens）。**没填就是 undefined**（老库里的模型配置可能没这个字段）。
+   * 界面据此算世界书注入额度（`quotas.quotaProfileOf`）—— 与引擎侧同源，不重复实现解析链。
+   */
+  windowTokens?: number
 }
 
 /**
@@ -71,7 +76,12 @@ export type TavernReadyInfo = {
 export async function checkTavernReady(ref?: { providerId?: string }): Promise<TavernReadyInfo> {
   try {
     const { provider, fellBack } = await resolveTavernProvider(ref)
-    return { ready: isProviderUsable(provider), label: providerLabel(provider), fellBack }
+    return {
+      ready: isProviderUsable(provider),
+      label: providerLabel(provider),
+      fellBack,
+      windowTokens: provider.contextWindow,
+    }
   } catch {
     // requireActiveProvider 在「全局活动模型也没配」时抛 —— 这正是「未就绪」本身
     return { ready: false, label: '', fellBack: true }

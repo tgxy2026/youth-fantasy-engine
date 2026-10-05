@@ -21,6 +21,7 @@ import { VarKey } from '../lib/tavern/types'
 import { DEFAULT_POST_RULES, previewPostRules, PostRule } from '../lib/tavern/postRules'
 import { getTavernSettings, saveTavernSettings, resetTavernSettings, DEFAULT_TAVERN_SETTINGS, TavernSettings, TavernProfile } from '../lib/tavern/settings'
 import { COL_GAP, PROTO_MIN_HEIGHT } from './tavernControlParts'
+import { DYNAMIC_QUOTA_PCT } from '../lib/tavern/quotas'
 
 export function useTavernControlModel() {
   const [s, setS] = useState<TavernSettings | null>(null)
@@ -257,6 +258,13 @@ export function useTavernControlModel() {
   // ---------- 输出后处理（B3）：规则是数组，所以不能用上面那套 [k]: v ----------
   const setPostFlag = (patch: Partial<Pick<TavernSettings, 'postRulesEnabled' | 'postRuleNotice'>>) =>
     edit(prev => ({ ...prev, ...patch }))
+  /** T3 多候选开关（与输出后处理同层，都是「生成后怎么处理」的开关） */
+  const setMultiVariant = (v: boolean) => edit(prev => ({ ...prev, multiVariant: v }))
+  /** 世界书动态层额度（占窗口百分比，5~35）。超范围的值在读取侧（quotas）还会再夹一次，这里先夹住避免界面显示越界值。 */
+  const setDynamicQuotaPct = (v: number) => edit(prev => ({
+    ...prev,
+    dynamicQuotaPct: Math.max(DYNAMIC_QUOTA_PCT.min, Math.min(DYNAMIC_QUOTA_PCT.max, Math.round(v))),
+  }))
   // 🔴 按规则 **id** 定位，不按数组下标：规则可增可删，面板拿到的下标只是渲染那一刻的快照 ——
   //    一次删除 / 重排之后它就可能指向另一条（「点 A 改到 B」「点 A 删 B」同一族坑）。
   const setRule = (id: string, patch: Partial<PostRule>) =>
@@ -439,7 +447,7 @@ export function useTavernControlModel() {
   }
 
   return {
-    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gNumCtx, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange,
+    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gNumCtx, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange,
   }
 }
 

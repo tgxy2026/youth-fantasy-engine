@@ -41,6 +41,7 @@ import { plotDocModel } from '../lib/tavern/exportDoc'
 import { messagesLen } from '../lib/tavern/budget'
 import { uid } from '../lib/id'
 import { hasCastSetting } from '../lib/tavern/types'
+import { getTavernSettings, DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '../lib/tavern/settings'
 import type { TavernSession, TavernSessionIndexItem, TavernMessage, TavernDirectorNote } from '../lib/tavern/types'
 import type { PostApplied } from '../lib/tavern/postRules'
 import { usePlotSummary } from './usePlotSummary'
@@ -245,6 +246,13 @@ export default function TavernPlot() {
   /** 只有**末尾那条 AI 回复**能重说 —— 中间那条改了，后面是按旧版接的，必然打架 */
   const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
 
+  /**
+   * 控制面板设置（T3 多候选开关要用）。
+   * 每次进页面读一次；设置页改完回来会因组件重新挂载而刷新（页签切换即卸载，项目既有行为）。
+   */
+  const [st, setSt] = useState<TavernSettings>(DEFAULT_TAVERN_SETTINGS)
+  useEffect(() => { void getTavernSettings().then(setSt) }, [])
+
   /** 消息改动统一走这里：立刻落库（含索引同步）+ 刷新左栏 */
   const commit = async (next: TavernSession) => {
     setSession(next)
@@ -318,7 +326,11 @@ export default function TavernPlot() {
 
   /**
    * 重说：`runPlotTurn(session, null)` = 不追加用户消息、先丢掉末尾那条 assistant，
-   * 于是新生成的结果**天然替换**掉那一条。只出一个结果，不做多候选（老大 2026-09-14 定）。
+   * 于是新生成的结果**天然替换**掉那一条。
+   *
+   * T3（2026-10-05）：控制面板「多候选」**开着**时，替换之后再把新文本**记进候选**
+   *   （旧的那份已在 variants[0]，所以能翻回原版对照）；**关着**时 `variants` 恒为 undefined，
+   *   行为与 2.8.1 逐字一致。引擎一个字不改 —— 候选全在组件层处理。
    */
   const reroll = async () => {
     if (!session || streaming) return
@@ -328,15 +340,21 @@ export default function TavernPlot() {
     setPhase('')
     const ac = new AbortController()
     abortRef.current = ac
+    /** 重说前这条回复的 id —— 多候选要记在它身上（引擎返回的是同一条被替换的新消息） */
+    const targetId = lastAiId
     try {
       const res = await runPlotTurn(session, null, {
         signal: ac.signal,
         onToken: d => setStreamText(t => t + d),
         onPhase: setPhase,
       })
-      setSession(res.session)
+      // 多候选：把新文本追加为候选（开关关着时 store 层不写 variants，等于什么都没发生）
+      const withVariant = st.multiVariant && res.reply.trim()
+        ? store.appendVariant(res.session, targetId, res.reply)
+        : res.session
+      setSession(withVariant)
       setStreamText('')
-      await store.saveSession(res.session)
+      await store.saveSession(withVariant)
       await refreshList()
       if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
     } catch (e) {
@@ -347,6 +365,18 @@ export default function TavernPlot() {
       setStreamText('')
       abortRef.current = null
     }
+  }
+
+  /**
+   * T3：切换某条消息的候选。切完 `content` 变成选中的那一份；
+   * 🔴 同时要按 `rewindForVariantSwitch` 回收记忆与水位线（判据与分支/重说同源）——
+   *    否则模型会记得一条已经不存在的候选说的话。
+   */
+  const selectVariant = (id: string, idx: number) => {
+    if (!session || streaming) return
+    const next = store.selectVariant(session, id, idx)
+    if (next === session) return
+    void commit(store.rewindForVariantSwitch(next, id))
   }
 
   const stop = () => {
@@ -509,6 +539,7 @@ export default function TavernPlot() {
             toggleHidden={toggleHidden}
             removeMsg={removeMsg}
             branchAt={branchAt}
+            selectVariant={selectVariant}
             applyDirectorNote={applyDirectorNote}
             send={send}
             stop={stop}

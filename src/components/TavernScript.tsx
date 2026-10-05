@@ -26,6 +26,7 @@ import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
 import { UNSAVED_CHANGES_HINT } from '../lib/constants'
+import { uid } from '../lib/id'
 import TavernScriptFields from './TavernScriptFields'
 import TavernInterviewDialog from './TavernInterviewDialog'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
@@ -39,9 +40,14 @@ import {
 import {
   listStories, getStory, saveStory, createStory, deleteStory, storyDisplayName,
   draftStory, flattenStoryFields, mergeStoryDraft, isEmptyStoryFields,
-  EMPTY_STORY_FIELDS, STORY_SETTING_MAX, STORY_NAME_MAX, type StoryDraftFields,
+  EMPTY_STORY_FIELDS, STORY_NAME_MAX, buildStoryWorldBook,
+  type StoryDraftFields,
 } from '../lib/tavern/story'
 import { listCharsByStory } from '../lib/tavern/store'
+import { emptyWorldEntry, entryStateOf } from '../lib/tavern/worldBook'
+import EntryStatePicker from './EntryStatePicker'
+import { useTavernQuota } from './useTavernQuota'
+import { fmtWindow } from '../lib/tavern/quotas'
 import type { DraftSource } from '../lib/tavern/draft'
 import type { TavernScript, TavernScriptIndexItem, TavernStory, TavernStoryIndexItem } from '../lib/tavern/types'
 
@@ -70,6 +76,9 @@ export default function TavernScript() {
   /** 当前故事下的角色卡张数（右栏显示用 —— 让作者知道删故事会影响到多少卡） */
   const [storyCharCount, setStoryCharCount] = useState(0)
   const search = useSearchSettings()
+  // 🔴 额度体系（2026-10-05）：世界设定是**每轮全量注入**的固定层 ⇒ 受固定额度约束；
+  //    世界书词条是动态层 ⇒ 受动态额度约束、超了逐条取舍。窗口与引擎同源（见 useTavernQuota）。
+  const quota = useTavernQuota(undefined, undefined)
 
   const refresh = useCallback(async () => {
     const [sts, scs] = await Promise.all([listStories(), listScripts()])
@@ -160,6 +169,15 @@ export default function TavernScript() {
   }
 
   const save = async () => {
+    // 🔴 世界设定超固定额度**不允许保存**（主人 2026-10-05 明定）：它是每轮全量注入的定调内容，
+    //    超额度就是实打实挤占对话历史。只有一个例外 —— **已拆成词条**时上面那段只是"素材"，
+    //    实际注入走词条（动态层、逐条取舍），此时不再拿固定额度卡它。
+    if (kind === 'story' && story && !(story.entries ?? []).length
+      && story.setting.trim().length > quota.fixed) {
+      showToast(`世界设定 ${story.setting.trim().length} 字，超过固定额度 ${quota.fixed} 字 —— `
+        + '请精简，或拆成带触发词的「世界书词条」（那样按命中注入、还能逐条取舍）', 'error')
+      return
+    }
     setSaving(true)
     try {
       if (kind === 'story' && story) {
@@ -307,6 +325,8 @@ export default function TavernScript() {
 
   · 故事写「这个世界什么样」：规则、地理、势力、常识。它取代了原先角色卡第1章的世界设定 ——
     以前每张卡抄一份，改一处要改 N 处；现在只写这一份，卡片里只留「角色与设定的关系」。
+  · 世界书词条：把整段设定拆成若干条，每条留自己的触发词 —— 提到才带上，不再整段每轮都占额度。
+    没有词条时，整段设定按「总是注入」处理（跟以前一样）。
   · 剧本写「这一场发生什么事」：六栏（名称 / 情境 / 开场白 / 你的位置 / 目标 / 不要发生）。
     情境只管此刻，别把历史重抄一遍。
   · 角色卡必须归属某个故事，对话时才有世界观可用 —— 所以「建故事」是使用自由对话的第一步。
@@ -466,6 +486,132 @@ export default function TavernScript() {
                     placeholder={'例：\n云州多山，灵脉自北向南枯竭已有百年。\n修行者分三派：守脉、夺脉、弃脉。\n凡人不知灵脉之事，只说山上的人都不下山。'}
                   />
                 </div>
+
+                {/* 世界书（W3）：把整段设定拆成词条 —— 每条自己的触发词，提到才带上 */}
+                <div className="mt-3 rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-12 text-ink-200">世界书词条（{(story.entries ?? []).length}）</div>
+                    <Button variant="secondary" size="xs"
+                      onClick={() => {
+                        setStory({
+                          ...story,
+                          entries: [...(story.entries ?? []), { ...emptyWorldEntry(), id: uid() }],
+                        })
+                        setStoryDirty(true)
+                      }}
+                    >
+                      ＋ 加词条
+                    </Button>
+                  </div>
+                  <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
+                    把上面那段拆成若干词条：每条留自己的触发词，只有提到它时才带上这一条。
+                    <span className="text-ink-600">没有词条时，上面整段设定按「总是注入」处理。</span>
+                  </p>
+
+                  {(story.entries ?? []).length === 0 ? (
+                    <p className="rounded border border-dashed border-ink-700 p-2.5 text-center text-11 text-ink-500">
+                      还没有词条 —— 上面整段设定会一直带上。想省额度就拆成词条。
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(story.entries ?? []).map((e, i) => (
+                        <div key={e.id} className="rounded-md border border-ink-800 bg-ink-900/40 p-2.5">
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={e.title}
+                              onChange={ev => {
+                                const v = ev.target.value
+                                setStory(prev => prev ? {
+                                  ...prev,
+                                  entries: (prev.entries ?? []).map(x => x.id === e.id ? { ...x, title: v } : x),
+                                } : prev)
+                                setStoryDirty(true)
+                              }}
+                              placeholder="词条名（如「守脉三派」）"
+                              className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50"
+                            />
+                            <Button variant="danger" size="xs" title="删掉这一条" className="shrink-0"
+                              onClick={() => {
+                                setStory(prev => prev ? {
+                                  ...prev,
+                                  entries: (prev.entries ?? []).filter(x => x.id !== e.id),
+                                } : prev)
+                                setStoryDirty(true)
+                              }}
+                            >
+                              删除
+                            </Button>
+                          </div>
+                          <div className="mt-1.5">
+                            <AutoTextarea
+                              value={e.body}
+                              onChange={v => {
+                                setStory(prev => prev ? {
+                                  ...prev,
+                                  entries: (prev.entries ?? []).map(x => x.id === e.id ? { ...x, body: v } : x),
+                                } : prev)
+                                setStoryDirty(true)
+                              }}
+                              minRows={2}
+                              maxHeight={200}
+                              placeholder={`第 ${i + 1} 条内容…`}
+                            />
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                              value={e.keys.join('，')}
+                              onChange={ev => {
+                                const keys = ev.target.value.split(/[,，\n]/).map(x => x.trim()).filter(Boolean)
+                                setStory(prev => prev ? {
+                                  ...prev,
+                                  entries: (prev.entries ?? []).map(x => x.id === e.id ? { ...x, keys } : x),
+                                } : prev)
+                                setStoryDirty(true)
+                              }}
+                              placeholder="触发词（留空 = 总是带上）"
+                              className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
+                            />
+                            <label className="flex shrink-0 items-center gap-1 text-10 text-ink-400" title="命中后还要过这道随机闸：1 = 必中，0.5 = 一半概率">
+                              <span>概率</span>
+                              <input
+                                type="number" min={0} max={1} step={0.1}
+                                value={e.prob}
+                                onChange={ev => {
+                                  const n = Number(ev.target.value)
+                                  const prob = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1
+                                  setStory(prev => prev ? {
+                                    ...prev,
+                                    entries: (prev.entries ?? []).map(x => x.id === e.id ? { ...x, prob } : x),
+                                  } : prev)
+                                  setStoryDirty(true)
+                                }}
+                                className="w-14 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
+                              />
+                            </label>
+                          </div>
+                          {/* 四色灯（2026-10-05）：显式设过就以它为准，没设过按老语义推断 */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <EntryStatePicker
+                              value={e.state}
+                              inferred={entryStateOf(e)}
+                              size="sm"
+                              onChange={next => {
+                                setStory(prev => prev ? {
+                                  ...prev,
+                                  entries: (prev.entries ?? []).map(x => x.id === e.id ? { ...x, state: next } : x),
+                                } : prev)
+                                setStoryDirty(true)
+                              }}
+                            />
+                            <span className="text-10 text-ink-600">
+                              {entryStateOf(e) === 'on' ? '每轮都带' : e.keys.length ? `自带 ${e.keys.length} 个触发词` : '按触发词命中'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ) : kind === 'script' && cur ? (
@@ -534,24 +680,49 @@ export default function TavernScript() {
 
               <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
                 <div className="text-12 text-ink-200">注入情况</div>
-                <div className="mt-1.5 space-y-1 text-11 text-ink-400">
-                  <div>
-                    每轮注入 <span className={story.setting.trim().length > STORY_SETTING_MAX ? 'text-amber' : 'text-ink-200'}>
-                      {story.setting.trim().length}
-                    </span>
-                    <span className="text-ink-600"> / 上限 {STORY_SETTING_MAX} 字</span>
-                  </div>
-                  {story.setting.trim().length > STORY_SETTING_MAX && (
-                    <div className="text-amber leading-relaxed">
-                      超了 —— 它每轮都进上下文。把细节挪到背景设定（命中才注入）去。
+                {(() => {
+                  // 🔴 两种形态分开算（2026-10-05）：
+                  //   · 没有词条 ⇒ 整段世界设定退化成一个常驻词条，受**固定额度**约束（这里是"全量注入"）
+                  //   · 有词条   ⇒ 逐条按触发词命中，受**动态额度**约束、超了逐条取舍
+                  const hasEntries = (story.entries ?? []).length > 0
+                  const settingChars = story.setting.trim().length
+                  const cap = hasEntries ? quota.dynamic : quota.fixed
+                  // 「本轮最少注入」= 空上下文下必带的那些（常驻词条 / 整段设定）
+                  const minChars = buildStoryWorldBook(
+                    hasEntries ? { setting: '', entries: story.entries } : { setting: story.setting },
+                    '', { maxChars: 0 },
+                  ).text.length
+                  const over = minChars > cap
+                  return (
+                    <div className="mt-1.5 space-y-1 text-11 text-ink-400">
+                      <div>
+                        {hasEntries ? '词条写下来共 ' : '世界设定 '}
+                        <span className="text-ink-200">{(story.entries ?? []).reduce((n, x) => n + (x.body ?? '').length + (x.title ?? '').length, 0) || settingChars}</span> 字
+                      </div>
+                      <div>
+                        每轮最少注入 <span className={over ? 'text-amber' : 'text-ink-200'}>{minChars}</span> 字
+                        <span className="text-ink-600"> / {hasEntries ? `动态额度 ${quota.dynamic}` : `固定额度 ${quota.fixed}`}</span>
+                      </div>
+                      {over && (
+                        <div className="text-amber leading-relaxed">
+                          {hasEntries
+                            ? `常驻词条已超动态额度 ${quota.dynamic} 字 —— 超出部分按优先级逐条取舍（先留常驻、再留直接命中，最后才砍被引荐的）。给它们加触发词最省。`
+                            : `世界设定已超固定额度 ${quota.fixed} 字，保存会被拦下 —— 请精简，或拆成带触发词的「世界书词条」（那样按命中注入、更省）。`}
+                        </div>
+                      )}
+                      <div className="text-ink-600">
+                        额度按 {quota.ready ? `「${quota.modelLabel || '当前模型'}」` : '当前模型'}的
+                        {' '}{fmtWindow(quota.windowTokens)} 窗口算
+                        {quota.windowFallback && '（模型没填窗口，按 32K 估）'}
+                      </div>
+                      <div className="leading-relaxed">
+                        旗下剧本 <span className="text-ink-200">{scripts.filter(s => s.storyId === story.id).length}</span> 份，
+                        角色卡 <span className="text-ink-200">{storyCharCount}</span> 张
+                      </div>
+                      {!settingChars && !hasEntries && <div className="text-ink-600">（还没写设定，扮演时会缺世界观）</div>}
                     </div>
-                  )}
-                  <div className="leading-relaxed">
-                    旗下剧本 <span className="text-ink-200">{scripts.filter(s => s.storyId === story.id).length}</span> 份，
-                    角色卡 <span className="text-ink-200">{storyCharCount}</span> 张
-                  </div>
-                  {!story.setting.trim() && <div className="text-ink-600">（还没写设定，扮演时会缺世界观）</div>}
-                </div>
+                  )
+                })()}
               </div>
             </>
           ) : kind === 'script' && cur ? (

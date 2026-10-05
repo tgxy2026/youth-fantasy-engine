@@ -29,7 +29,13 @@ import {
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
 import { primaryAiCharId } from './primaryChar'
-import { getWorldSetting, shouldInjectWorld, worldToText, worldHaystack, keywordHaystackMessages } from './world'
+import { getWorldSetting, buildPlotWorldBook, worldHaystack, keywordHaystackMessages } from './world'
+import { dynamicQuotaOf } from './quotas'
+// 🔴 story.ts 里的世界书入口是 **静态 import**：engine 已经动态 import 它做 `resolveSessionStorySetting`，
+//    但 `buildStoryWorldBook` 是纯函数（不碰 db / provider）—— 静态引入不会加环，
+//    而且放这里比再包一层动态 import 更清楚。story.ts 不反向 import engine（它从 ./provider 取真源）。
+import { buildStoryWorldBook } from './story'
+import type { WorldEntry } from './worldBook'
 import { scriptToText } from './script'
 import { applyPostRules, type PostApplied } from './postRules'
 import { PROTOCOL_CORE } from './protocol'
@@ -79,7 +85,13 @@ export type PlotSystemResult = {
  * 关键在 viewMode：沉浸档 → character-view（排除作者侧资料，防剧透）；
  * 导演档 → director-view（作者侧照带，但锚点仍然生效）。
  */
-export async function buildPlotSystem(session: TavernSession, settings?: TavernSettings): Promise<PlotSystemResult> {
+export async function buildPlotSystem(
+  session: TavernSession,
+  settings?: TavernSettings,
+  /** 当前模型的上下文窗口（tokens）。给了就按 `quotas.fixedQuotaOf/dynamicQuotaOf` 算注入额度；
+   *  不给 ⇒ 兜底 32K 档（老调用点 / 单测不必改）。 */
+  windowTokens?: number | null,
+): Promise<PlotSystemResult> {
   const st = settings ?? await getTavernSettings()
   // 参数优先级：会话参数 → 控制面板（通用层 + 模式层）→ TAVERN_DEFAULTS 兜底
   const p = resolveParamsOf('plot', st, session.params)
@@ -146,12 +158,21 @@ export async function buildPlotSystem(session: TavernSession, settings?: TavernS
   // ⑤ 本场背景设定（第 5 批）：作者**提炼**过的那份世界资料，**命中关键词才注入**。
   //    这是「不每次喂一大堆」的落点：与上面的设定层（项目原始资料）是两件事。
   // 'raw' 档 = 作者明确只要项目原始资料 → 背景设定整层不出现
+  //
+  // W3（2026-10-05）：注入判据升级为**世界书**（词条级）—— 见 world.ts 的 buildPlotWorldBook。
+  //   它内部仍是「整份闸 ① → 词条闸 ②」两道，老数据（sections 无 keys、整份 keywords 为空）
+  //   走出来的文本与升级前**逐字一致**。
   const worldSetting = await getWorldSetting()
-  const worldText = contextSource !== 'raw' && shouldInjectWorld(worldSetting, worldHaystack(
+  const worldHay = worldHaystack(
     [session.title, session.anchorChapterLabel, session.scene?.place, session.scene?.time, session.scene?.description],
     // 取材口径收在 world.ts（滤 system / hidden + 取最近若干条）—— 调用方不必记着过滤
     keywordHaystackMessages(session.messages),
-  )) ? worldToText(worldSetting) : ''
+  )
+  const worldText = contextSource !== 'raw'
+    ? buildPlotWorldBook(worldSetting, worldHay, {
+      maxChars: dynamicQuotaOf(windowTokens, st.dynamicQuotaPct),
+    }).text
+    : ''
 
   const system = buildSystemPrompt({
     tone: PLOT_TONE,
@@ -323,7 +344,7 @@ export async function runPlotTurn(
   // 🔴 组装 system 放在这里（2026-09-23 六维审计）：它内部按「最近 6 条消息」抽背景设定的**注入关键词**，
   //    原先在本轮输入并进历史**之前**调用 ⇒ 关键词漏掉本轮 user 输入，一个新关键词要等下一轮才生效。
   //    把 withUser 交给它即可，无需改签名（内部仍是 session.messages.slice(-6)）。
-  const { system } = await buildPlotSystem({ ...session, messages: withUser }, st)
+  const { system } = await buildPlotSystem({ ...session, messages: withUser }, st, provider.contextWindow)
 
   // 🔴 记忆**已经拼在 system 里**了（buildSystemPrompt 干的）—— 所以这里**没有也不该有**
   //    「记忆长度」参数：historyBudget 早把那形参删了（2026-10-02 六维审计待办），
@@ -478,10 +499,10 @@ export type FreeSystemResult = {
 async function loadSessionStory(
   session: FreeSession,
   chars: FreeCharacter[],
-): Promise<{ name: string; setting: string }> {
+): Promise<{ name: string; setting: string; entries?: WorldEntry[] }> {
   // 会话里存了快照就直接用（新建会话时拍的，作者后来改故事不影响这一场）
   const snap = session.storySetting
-  if (snap) return { name: snap.name ?? '', setting: (snap.setting ?? '').trim() }
+  if (snap) return { name: snap.name ?? '', setting: (snap.setting ?? '').trim(), entries: snap.entries }
   try {
     const { resolveSessionStorySetting } = await import('./story')
     return await resolveSessionStorySetting(
@@ -489,7 +510,7 @@ async function loadSessionStory(
       chars.map(c => ({ id: c.id, storyId: cardStoryId(c) })),
     )
   } catch {
-    return { name: '', setting: '' }
+    return { name: '', setting: '', entries: undefined }
   }
 }
 
@@ -503,7 +524,7 @@ export async function buildFreeSystem(
   chars: FreeCharacter[],
   settings?: TavernSettings,
   /** assist 模式：润色/自动回复时翻转「不要代写」措辞，让模型代用户扮演的角色写这一轮发言 */
-  opts?: { assist?: 'polish' | 'auto' },
+  opts?: { assist?: 'polish' | 'auto'; windowTokens?: number | null },
 ): Promise<FreeSystemResult> {
   const st = settings ?? await getTavernSettings()
   const found: FreeCharacter[] = []
@@ -644,12 +665,20 @@ export async function buildFreeSystem(
   //    挂在「背景设定」那一层的位置（设定之后、这一场之前）：先知道世界如何，再知道这一场是什么。
   const story = await loadSessionStory(session, found)
 
+  // W3（2026-10-05）：故事设定升级为**世界书**（词条级：各自的关键词 / 概率 / 顺序 / 递归）。
+  //   老故事（只有 `setting`、没有 `entries`）退化成一个总是注入的词条 ⇒ 与升级前逐字一致。
+  //   取材用与剧情模式同一套口径（标题 + 剧本 + 最近消息，滤 system/hidden）。
+  const storyWorldText = buildStoryWorldBook(story, worldHaystack(
+    [session.title, session.script?.name, session.script?.situation, session.script?.playerRole, session.script?.goal],
+    keywordHaystackMessages(session.messages),
+  ), { maxChars: dynamicQuotaOf(opts?.windowTokens, st.dynamicQuotaPct) }).text
+
   const system = buildSystemPrompt({
     tone: FREE_TONE,
     setting,
     // 故事设定层：空串则整层不出现（不占额度、不留空标题）
-    world: story.setting,
-    worldTitle: story.setting ? `故事的世界设定${story.name ? ` · ${story.name}` : ''}` : undefined,
+    world: storyWorldText,
+    worldTitle: storyWorldText ? `故事的世界设定${story.name ? ` · ${story.name}` : ''}` : undefined,
     scene: scriptText,
     memory,
     // 每块自己带「〖长期记忆 · 角色名〗」，不再套一层「〖长期记忆〗」
@@ -727,7 +756,7 @@ export async function runFreeTurn(
   const st = deps.settings ?? await getTavernSettings()
   const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
   const runChat = deps.chatFn ?? chat
-  const { system } = await buildFreeSystem(session, chars, st)
+  const { system } = await buildFreeSystem(session, chars, st, { windowTokens: provider.contextWindow })
 
   // 与剧情模式同一条约定：null = 重说（不追加用户消息、先丢掉末尾那条 AI 回复）
   const baseMsgs = userText === null ? dropTrailingAssistant(session.messages) : session.messages
@@ -856,7 +885,7 @@ export async function runFreeAssist(
   const st = deps.settings ?? await getTavernSettings()
   const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
   const runChat = deps.chatFn ?? chat
-  const { system } = await buildFreeSystem(session, chars, st, { assist: mode })
+  const { system } = await buildFreeSystem(session, chars, st, { assist: mode, windowTokens: provider.contextWindow })
 
   // 参数解析先做（下面算历史额度要用到 contextBudget）—— 与 runFreeTurn 同口径：
   // 会话级覆盖优先，否则回落面板默认。此前这里直接读 st.common.contextBudget，一旦启用会话级

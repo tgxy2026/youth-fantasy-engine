@@ -5,9 +5,11 @@
  * 但**正文渲染与工具条必须完全一致** —— 各写一份必然慢慢漂移，这是本项目的反复教训。
  *
  * 【五个动作的语义，别搞混】
- *   · 重说：用**同一段历史**让 AI 再生成一次（只出一个结果，不做多候选）。
+ *   · 重说：用**同一段历史**让 AI 再生成一次。
  *     ★ 只给**末尾那条 AI 回复**提供入口 —— 重说中间某条，后面的内容是按旧版接的，
  *       改了必然互相打架；中间想改就用「编辑」。
+ *     · 控制面板「多候选」**关**（默认）= 新结果**替换**旧的那条（旧行为，2.8.1 及以前）。
+ *     · 控制面板「多候选」**开** = 新结果**存成候选**，工具条出现 `‹ 2/3 ›` 翻页可对照。
  *   · 编辑：就地改正文（AI 的和自己的都能改）。改完**不会自动重跑** ——
  *     如果是最后一轮的输入，改完点「重说」让 AI 重新接一次。
  *   · 隐藏：**不进上下文**（组装时跳过），但界面留着、可随时恢复。
@@ -39,6 +41,14 @@ export type MessageOps = {
    *    灰着还挂在 hover 里，作者会以为"多点点也许能通"。直接不渲染最不容易误解。
    */
   locked?: boolean
+  /**
+   * T3 多候选：本条已生成的版本数与当前选中下标。
+   * `count <= 1` 时**不渲染翻页控件**（只有一份候选，翻页没有意义）——
+   * 所以「关掉开关时 `variants` 恒为 undefined」⇒ 这里恒不渲染，与旧版逐字一致。
+   */
+  variantIdx?: number
+  variantCount?: number
+  onSelectVariant?: (idx: number) => void
 }
 
 export function TavernMessageBody({ content, hidden, edited, ops }: {
@@ -91,11 +101,33 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
             {ops.canReroll && (
               <Button
                 variant="secondary" size="xs" disabled={ops.busy}
-                title="用同一段历史让 AI 重说这一条（只出一个结果）"
+                title="用同一段历史让 AI 重说这一条"
                 onClick={ops.onReroll}
               >
                 重说
               </Button>
+            )}
+            {/* 多候选翻页（T3）：只在真有 ≥2 份候选时出现 */}
+            {(ops.variantCount ?? 0) > 1 && (
+              <span className="flex items-center gap-0.5 rounded border border-ink-800 px-1 py-0.5">
+                <button
+                  type="button"
+                  className="px-0.5 text-11 text-ink-400 hover:text-amber disabled:opacity-30"
+                  disabled={ops.busy || (ops.variantIdx ?? 0) <= 0}
+                  title="上一个版本"
+                  onClick={() => ops.onSelectVariant?.((ops.variantIdx ?? 0) - 1)}
+                >‹</button>
+                <span className="min-w-[2.2rem] text-center text-10 tabular-nums text-ink-500">
+                  {(ops.variantIdx ?? 0) + 1}/{ops.variantCount}
+                </span>
+                <button
+                  type="button"
+                  className="px-0.5 text-11 text-ink-400 hover:text-amber disabled:opacity-30"
+                  disabled={ops.busy || (ops.variantIdx ?? 0) >= (ops.variantCount ?? 1) - 1}
+                  title="下一个版本"
+                  onClick={() => ops.onSelectVariant?.((ops.variantIdx ?? 0) + 1)}
+                >›</button>
+              </span>
             )}
             <Button
               variant="secondary" size="xs" disabled={ops.busy}

@@ -26,6 +26,19 @@ export type TavernMessage = {
    * ⚠️ 排除的唯一出口在 prompt.ts 的 toChatMessages 与 memory.ts 的水位线，别在别处再判一次。
    */
   hidden?: boolean
+  /**
+   * 多候选（T3 swipe，2026-10-05）。**只在控制面板开关打开时才写**，否则恒为 undefined。
+   *
+   * 语义：这条回复生成过的所有版本，按生成顺序排列；`content` **始终等于**
+   * `variants[variantIdx]` 的那一份（即「当前选中的候选」）。长度 ≤1 时界面不显示翻页。
+   *
+   * 为什么挂在消息上而不是另开一张表：候选的生命周期与它所属的消息**完全一致** ——
+   * 消息被删/被分支截断/被回滚，候选就该跟着走。另存一份必然要做孤儿清理，
+   * 而项目已有「迁移只走 runMigrations」的纪律，能不引入新表就不引入。
+   */
+  variants?: string[]
+  /** 当前选中的候选下标（缺省视为 0，兼容只有单一 content 的老数据） */
+  variantIdx?: number
 }
 
 export type TavernModelRef = {
@@ -771,6 +784,17 @@ export type TavernStory = {
   name: string
   /** 世界设定：这个世界的基本样貌 —— 规则、地理、势力、常识……角色卡不再重复写它 */
   setting: string
+  /**
+   * 世界书词条（W3，2026-10-05）：把 `setting` 这一整段拆成**条目级**，
+   * 每条自己的关键词 / 概率 / 顺序 / 是否递归激活 —— 与剧情模式的 `WorldSetting.sections` 同构。
+   *
+   * 🔴 **可选**：老故事没有这个字段 ⇒ 由 `setting` 退化成一个「总是注入」的条目，
+   *    注入结果与升级前**逐字一致**（等价性红线，见 `worldBook.ts` 文件头）。
+   * 🔴 两条都写时**以 `entries` 为准**（`setting` 仍保留，便于作者切回整段模式与 AI 起草）。
+   *
+   * @see src/lib/tavern/worldBook.ts
+   */
+  entries?: import('./worldBook').WorldEntry[]
   /** 上次 AI 起草的时间（0 = 从没跑过） */
   draftedAt: number
   createdAt: number
@@ -849,6 +873,12 @@ export type StorySettingSnapshot = {
   storyId: string
   name: string
   setting: string
+  /**
+   * 世界书词条快照（W3，2026-10-05）。与 `setting` 一样**拍在会话里**：
+   * 作者后来改故事，老会话不跟着变（与剧本快照同一条纪律）。
+   * 🔴 可选：老会话没有 ⇒ 由 `setting` 退化成一个总是注入的条目（等价性红线）。
+   */
+  entries?: import('./worldBook').WorldEntry[]
   /** 快照时间 */
   at: number
 }

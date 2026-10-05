@@ -201,7 +201,7 @@ export function useTavernFreeModel() {
   })
   const {
     streaming, streamText, setStreamText, phase, assistBusy,
-    send, stop, reroll, quickActions, fillInput, inputRef, lastAiId,
+    send, stop, reroll, quickActions, fillInput, inputRef, lastAiId, selectVariant,
     cancelInFlight, persistCharVars,
   } = turn
 
@@ -690,7 +690,7 @@ export function useTavernFreeModel() {
     // 消息与输入
     inputRef, setInput, fillInput, send, stop, streaming, phase, streamText, assistBusy, quickActions, applyDirectorNote, directorRows,
     // 消息操作（编辑 / 重生成 / 隐藏 / 删除）
-    saveEdited, toggleHidden, removeMsg, reroll, lastAiId, saveTitle, editingTitle, setEditingTitle, titleDraft, setTitleDraft, removeSession, updateAtBottom,
+    saveEdited, toggleHidden, removeMsg, reroll, lastAiId, selectVariant, saveTitle, editingTitle, setEditingTitle, titleDraft, setTitleDraft, removeSession, updateAtBottom,
     // 滚动
     scrollRef, scrollToBottom, atBottom, usedChars,
     // 数值与状态

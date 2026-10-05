@@ -7,12 +7,13 @@
  */
 import AutoTextarea from './AutoTextarea'
 import { Button } from './Button'
-import { Section, ToggleField } from './TavernFieldKit'
+import { Section, ToggleField, NumField } from './TavernFieldKit'
 import { RULE_EXAMPLE } from './tavernControlParts'
+import { DYNAMIC_QUOTA_PCT, fixedQuotaOf, dynamicQuotaOf, fmtWindow } from '../lib/tavern/quotas'
 import type { TavernControlModel } from './useTavernControlModel'
 
 export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) {
-  const { s, ruleTry, setRuleTry, presetList, setPresetNaming, presetFileRef, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, setPostFlag, setRule, addRule, dropRule, resetRules, rulePreview } = m
+  const { s, ruleTry, setRuleTry, presetList, setPresetNaming, presetFileRef, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, rulePreview, activeProvider } = m
   return (
     <>
           {/* ---------- 三、预设方案（A4） ---------- */}
@@ -97,6 +98,31 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
               hint="关掉 = 静默修正：规则照跑，只是不在输入框上方告诉你改了哪几条。正则写错仍会提示 —— 那是配置问题，不该被静默。"
               value={s.postRuleNotice}
               onChange={v => setPostFlag({ postRuleNotice: v })}
+            />
+
+            {/* T3 多候选（swipe）：两种模式都生效。默认关 = 与旧版行为完全一致 */}
+            <ToggleField
+              label="多候选（重说保留旧版）"
+              hint="开启后「重说」不再覆盖原回复，而是存成候选，消息上出现 ‹ 1/2 › 翻页可来回对照（每条约 5 个版本）。两种模式都生效；关掉则与以前完全一样。注意：开着会让库明显变大。"
+              value={s.multiVariant}
+              onChange={setMultiVariant}
+            />
+
+            {/* 世界书额度（2026-10-05 · 对齐 ST 的 world_info_budget）：固定层跟着窗口自动算，动态层可调 */}
+            <NumField
+              label="世界书动态额度（占窗口 %）"
+              hint={`世界书里「按触发词命中」的词条能占多少上下文 —— 固定层（一句话总纲 / 世界设定，${fixedQuotaOf(activeProvider?.contextWindow)} 字）之外的这部分。默认 ${DYNAMIC_QUOTA_PCT.default}%，留更多给对话历史；词条多、细节密可以调高。超额度时不会切断某条，而是按优先级逐条取舍（常驻 → 直接命中 → 引荐命中）。按当前模型 ${fmtWindow(activeProvider?.contextWindow ?? 0)} 窗口算，本档 ≈ ${dynamicQuotaOf(activeProvider?.contextWindow, s.dynamicQuotaPct)} 字。`}
+              guide={{
+                min: DYNAMIC_QUOTA_PCT.min, max: DYNAMIC_QUOTA_PCT.max, step: DYNAMIC_QUOTA_PCT.step,
+                bands: [
+                  { from: DYNAMIC_QUOTA_PCT.min, to: 10, name: '最省', effect: '词条基本只留常驻，触发命中常被取舍 —— 适合小窗口模型或已经很长的对话。' },
+                  { from: 10, to: 20, name: '默认', effect: `出厂档位（当前 ${DYNAMIC_QUOTA_PCT.default}%）：留足对话历史，世界书也够用。`, recommended: true },
+                  { from: 20, to: 28, name: '偏宽', effect: '世界书给得比较宽，接近 ST 的出厂值（25%）。词条多、细节密时用。' },
+                  { from: 28, to: DYNAMIC_QUOTA_PCT.max, name: '最宽', effect: '世界书优先，对话历史会被明显压缩 —— 只建议大窗口（128K 以上）模型用。' },
+                ],
+              }}
+              value={s.dynamicQuotaPct}
+              onCommit={setDynamicQuotaPct}
             />
 
             <div className="space-y-2">

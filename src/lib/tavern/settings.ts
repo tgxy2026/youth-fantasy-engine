@@ -42,6 +42,7 @@ import {
   adviseCapacity, modelFingerprintOf, shouldApplyTuning, type TuningAdvice,
 } from '../modelCapacity'
 import { loadProviders, loadActiveId, type AIProvider } from '../ai'
+import { DYNAMIC_QUOTA_PCT } from './quotas' // quotas 是纯常量/纯函数层，不会成环
 
 /** 设置存储键（全局 meta） */
 export const K_TAVERN_SETTINGS = 'tavern.settings'
@@ -250,6 +251,27 @@ export type TavernSettings = {
   postRulesEnabled: boolean
   /** 命中规则时是否在对话页提示一句（关掉 = 静默修正） */
   postRuleNotice: boolean
+  /**
+   * 多候选（T3 swipe，2026-10-05）——**总开关，两种模式都生效**。
+   *
+   * 开启后「重说」不再**替换**末尾那条回复，而是把新结果**记为候选**（`TavernMessage.variants`），
+   * 消息工具条上出现 `‹ 2/3 ›` 翻页，可以来回对照几个版本。
+   *
+   * 🔴 **默认关**（老大 2026-10-05 定）：关掉时 `variants` 恒为 undefined，
+   *    「重说」的行为与 2.8.1 及以前**逐字一致** —— 这是等价性红线，不是可选的优化。
+   *    开着的代价：每条消息最多个存 5 份正文，长对话的库会明显变大。
+   */
+  multiVariant: boolean
+  /**
+   * 世界书**动态层**额度：占模型上下文窗口的百分比（2026-10-05，对齐 ST 的 `world_info_budget`）。
+   *
+   * 这一层的含义：固定层（一句话总纲 + 世界设定，上限见 `quotas.ts` 的 `fixedQuotaOf`）
+   * **之外**，还能给「触发命中」的词条多少空间。ST 默认 25%，我方取 15%（留更多给对话历史），
+   * 允许在控制面板按需调到 5%–35%。
+   *
+   * 🔴 默认 15。改这里只影响**注入额度**，不动任何已存数据。
+   */
+  dynamicQuotaPct: number
 }
 
 /**
@@ -447,6 +469,11 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
   postRules: DEFAULT_POST_RULES.map(r => ({ ...r })),
   postRulesEnabled: true,
   postRuleNotice: true,
+  // T3 多候选：默认**关** —— 关掉时的行为与 2.8.1 完全一致（等价性红线），
+  // 想用 swipe 的作者自己去控制面板打开。
+  multiVariant: false,
+  // 世界书动态层额度：占窗口 15%（ST 出厂 25%，我方留更多给对话历史）。可调 5%–35%。
+  dynamicQuotaPct: DYNAMIC_QUOTA_PCT.default,
 }
 
 /** 深合并（只对普通对象递归，数组与标量直接覆盖） */

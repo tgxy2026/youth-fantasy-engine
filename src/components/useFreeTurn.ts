@@ -295,7 +295,12 @@ export function useFreeTurn({
       const saved = await store.saveFreeSession(withVars)
       // 🔴 结算期间又切了会话：照常落库，但界面不接管（同 send）
       if (abortRef.current !== ctrl) { void refreshSessions(); return }
-      setSession(saved)
+      // T3 多候选（2026-10-05）：开关开着时把新文本记成候选（旧版已在 variants[0]，可翻回对照）。
+      // 放在落库**之后**再补一次：候选不该干扰上面「数值结算」那条链路（它读的是 res.session）。
+      const useVariant = (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).multiVariant && !!res.reply.trim()
+      const finalSession = useVariant ? store.appendVariant(saved, lastAiId, res.reply) : saved
+      if (finalSession !== saved) await store.saveFreeSession(finalSession)
+      setSession(finalSession)
       setPostNotice({ applied: res.postApplied, errors: res.postErrors })
       await refreshSessions()
       if (!res.reply) showToast('这次没生成出内容，原来那条已保留', 'info')
@@ -427,11 +432,26 @@ export function useFreeTurn({
 
   const stop = () => { abortRef.current?.abort() }
 
+  /**
+   * T3 多候选：切换某条消息的候选。与剧情模式同一套判据 ——
+   * 切完 `content` 变选中的那份，并按 `rewindForVariantSwitch` 回收记忆与水位线。
+   * 自由模式的记忆是**按角色分条存**的、且只在「结束本轮对话」时整理，所以这里只需处理
+   * 会话级的 `watermark`（`rewindForVariantSwitch` 会连带清掉 `session.memory`，自由模式本就没用它）。
+   */
+  const selectVariant = (id: string, idx: number) => {
+    if (!session || streaming) return
+    const next = store.selectVariant(session, id, idx)
+    if (next === session) return
+    const rewound = store.rewindForVariantSwitch(next, id)
+    setSession(rewound)
+    void store.saveFreeSession(rewound).then(refreshSessions).catch(() => undefined)
+  }
+
   return {
     // 流式状态（页面直接读；setStreamText 是 openSession 切会话后的兜底清屏）
     streaming, streamText, setStreamText, phase, assistBusy,
     // 三个生成入口 + 输入框
-    send, stop, reroll, quickActions, fillInput, inputRef, lastAiId,
+    send, stop, reroll, quickActions, fillInput, inputRef, lastAiId, selectVariant,
     // 会话切换要用的流式复位 + 数值回写卡（openSession / createFromDraft / setVar 系列都用）
     cancelInFlight, persistCharVars,
   }

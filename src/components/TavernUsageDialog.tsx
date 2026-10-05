@@ -16,9 +16,9 @@ import { LoadingState } from './LoadingState'
 import { buildPlotSystem, buildFreeSystem } from '../lib/tavern/engine'
 import { summarizeUsage, type UsagePart, type UsageSummary } from '../lib/tavern/budget'
 import { getTavernSettings, effectiveContextBudget } from '../lib/tavern/settings'
-import { WORLD_MAX_CHARS } from '../lib/tavern/world'
-import { STORY_SETTING_MAX } from '../lib/tavern/story'
+import { dynamicQuotaOf, fmtWindow } from '../lib/tavern/quotas'
 import type { FreeCharacter, FreeSession, TavernSession } from '../lib/tavern/types'
+import { useTavernQuota } from './useTavernQuota'
 
 const fmt = (n: number) => n.toLocaleString('zh-CN')
 
@@ -34,6 +34,8 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
   const [error, setError] = useState('')
   const [summary, setSummary] = useState<UsageSummary | null>(null)
   const [tone, setTone] = useState('')
+  // 🔴 注入额度按**当前模型窗口**算（2026-10-05）—— 与引擎侧同源，不再用写死的 2400。
+  const quota = useTavernQuota(undefined, undefined)
 
   const measure = useCallback(async () => {
     if (!session) return
@@ -49,7 +51,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
 
       if (mode === 'plot') {
         const s = session as TavernSession
-        const r = await buildPlotSystem(s, st)
+        const r = await buildPlotSystem(s, st, quota.windowTokens)
         systemChars = r.system.length
         total = effectiveContextBudget('plot', st, s.params)
         label = s.mode === 'immersive' ? '沉浸推演' : '导演推演'
@@ -66,7 +68,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
       } else {
         const s = session as FreeSession
         const list = chars ?? []
-        const r = await buildFreeSystem(s, list, st)
+        const r = await buildFreeSystem(s, list, st, { windowTokens: quota.windowTokens })
         systemChars = r.system.length
         total = effectiveContextBudget('free', st, s.params)
         label = '自由对话'
@@ -80,9 +82,9 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
         if (r.missing.length > 0) {
           warnings.push(`这场对话引用了 ${r.missing.length} 张已被删掉的角色卡 —— 设定层少了这部分，建议在左栏换掉或重新选角。`)
         }
-        // 故事设定有硬上限（STORY_SETTING_MAX）：到顶说明被截断了，得让作者看见
-        if (r.storyChars >= STORY_SETTING_MAX) {
-          warnings.push(`故事的世界设定已到 ${fmt(STORY_SETTING_MAX)} 字上限并被截断 —— 超出的部分不会进上下文，建议在「故事」页精简。`)
+        // 故事设定走世界书：命中多少受**动态额度**约束，超了逐条取舍（不再是整段截断）
+        if (r.storyChars > 0 && r.storyChars >= dynamicQuotaOf(quota.windowTokens, quota.dynamicPct)) {
+          warnings.push(`故事的世界设定已到动态额度 ${fmt(dynamicQuotaOf(quota.windowTokens, quota.dynamicPct))} 字（窗口 ${fmtWindow(quota.windowTokens)} × ${quota.dynamicPct}%）—— 超出的词条被逐条取舍掉，建议给它们加触发词或在「故事」页精简。`)
         }
       }
 
@@ -97,8 +99,8 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
           warnings.push(`留给对话历史的额度只剩 ${fmt(h)} 字 —— 再聊几轮，早前的原文就会被裁掉（记忆里已有的不受影响）。`)
         }
       }
-      if (parts.some(p => p.key === 'world' && p.chars >= WORLD_MAX_CHARS)) {
-        warnings.push(`背景设定已到 ${fmt(WORLD_MAX_CHARS)} 字上限并被截断 —— 超出的部分不会进上下文，建议在「背景设定」页精简。`)
+      if (parts.some(p => p.key === 'world' && p.chars >= dynamicQuotaOf(quota.windowTokens, quota.dynamicPct))) {
+        warnings.push(`背景设定已到动态额度（窗口 ${fmtWindow(quota.windowTokens)} × ${quota.dynamicPct}% = ${fmt(dynamicQuotaOf(quota.windowTokens, quota.dynamicPct))} 字）—— 超出的词条被逐条取舍掉，建议在「背景设定」页精简或给常驻条目加触发词。`)
       }
 
       setSummary(summarizeUsage({ total, systemChars, parts, warnings, overhead: st.common.fixedOverheadChars }))
@@ -108,7 +110,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
     } finally {
       setLoading(false)
     }
-  }, [mode, session, chars])
+  }, [mode, session, chars, quota.windowTokens, quota.dynamicPct])
 
   useEffect(() => {
     if (!open) { setSummary(null); setError(''); return }

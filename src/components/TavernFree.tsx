@@ -92,7 +92,7 @@ export default function TavernFree() {
     // 消息与输入
     inputRef, setInput, fillInput, send, stop, streaming, phase, streamText, assistBusy, quickActions, applyDirectorNote, directorRows,
     // 消息操作（编辑 / 重生成 / 隐藏 / 删除）
-    saveEdited, toggleHidden, removeMsg, reroll, lastAiId, saveTitle, editingTitle, setEditingTitle, titleDraft, setTitleDraft, removeSession, updateAtBottom,
+    saveEdited, toggleHidden, removeMsg, reroll, lastAiId, selectVariant, saveTitle, editingTitle, setEditingTitle, titleDraft, setTitleDraft, removeSession, updateAtBottom,
     // 滚动
     scrollRef, scrollToBottom, atBottom, usedChars,
     // 数值与状态
@@ -358,6 +358,10 @@ export default function TavernFree() {
                             onSaveEdit: t => saveEdited(m.id, t),
                             onToggleHidden: () => toggleHidden(m.id),
                             onDelete: () => void removeMsg(m.id),
+                            // T3 多候选：关掉开关时 variants 恒为 undefined ⇒ count=1 ⇒ 不渲染翻页
+                            variantIdx: m.variantIdx,
+                            variantCount: m.variants?.length,
+                            onSelectVariant: idx => selectVariant(m.id, idx),
                           }}
                         />
                       </div>
