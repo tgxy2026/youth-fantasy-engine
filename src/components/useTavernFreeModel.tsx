@@ -122,7 +122,9 @@ export function useTavernFreeModel() {
    * 「角色状态」是整理完才长出来的（关系与计数），看一眼就切回去，没必要抢默认位。
    * 用了会话级 state（不落库）：它跟「作者此刻想看什么」有关，不是项目的持久设置。
    */
-  const [statusTab, setStatusTab] = useState<'status' | 'vars'>('vars')
+  const [statusTab, setStatusTab] = useState<'status' | 'vars' | 'cp'>('vars')
+  /** 「存检查点」的命名弹窗（null = 关着）—— F1 自由模式分支 */
+  const [cpNaming, setCpNaming] = useState(false)
   /** 用量明细弹窗（额度怎么分的） */
   const [usageOpen, setUsageOpen] = useState(false)
   /** 很久没来时Ta留着的一句话（§7.5），展示后清除 */
@@ -434,6 +436,80 @@ export function useTavernFreeModel() {
     await store.saveFreeSession(next).then(refreshSessions).catch(() => undefined)
   }
 
+  // ---------- 检查点 / 回滚（F1 自由模式分支，2026-10-05） ----------
+  //
+  // 🔴 与剧情模式的结构差异：剧情模式的记忆（`session.memory`）就在会话对象里，
+  //    `store.rollbackToCheckpoint` 是个纯改对象的动作；自由模式的记忆**按角色分条存在独立存储**
+  //    （`store.getMemory(charId)`）⇒ 存点要读齐 N 份、回滚要把 N 份**写回存储**。
+  //    纯函数在 `store.*FreeCheckpoint/rollbackFreeToCheckpoint`，这里只做编排与落盘。
+
+  /** 读齐这一场所有在场角色的记忆（含用户扮演那位 —— Ta 也有自己的记忆条目） */
+  const readAllMemories = async (s: FreeSession) => {
+    const list = await Promise.all(s.charIds.map(id => store.getMemory(id).catch(() => null)))
+    return list.filter((m): m is NonNullable<typeof m> => !!m)
+  }
+
+  /** 把一组记忆写回存储 —— 🔴 回滚链路上**必须先于会话落库**，理由见 rollbackToCp 的注释 */
+  const writeMemories = async (list: Awaited<ReturnType<typeof readAllMemories>>) => {
+    await Promise.all(list.map(m => store.saveMemory(m).catch(() => undefined)))
+  }
+
+  const saveCheckpoint = () => {
+    if (session) setCpNaming(true)
+  }
+
+  const commitCheckpoint = (label: string) => {
+    setCpNaming(false)
+    if (!session) return
+    const s = session
+    void (async () => {
+      const memories = await readAllMemories(s)
+      await commit(store.addFreeCheckpoint(s, memories, label))
+      showToast(`已存检查点（第 ${s.messages.length} 条，含 ${memories.length} 位角色的记忆）`, 'info')
+    })()
+  }
+
+  const rollbackToCp = async (cpId: string) => {
+    if (!session || streaming) return
+    const s = session
+    const cp = (s.checkpoints ?? []).find(c => c.id === cpId)
+    if (!cp) return
+    const name = cp.label || `第 ${cp.messageCount} 条`
+    const okGo = await confirmDialog({
+      title: `回到「${name}」？`,
+      message: [
+        `消息会截回 ${cp.messageCount} 条；${cp.memories.length} 位角色的记忆与本场数值也一并还原到那一刻。`,
+        // 🔴 必须明说：自由模式的记忆是**角色级、跨会话共享**的 —— 回滚会连带改动其他对话里同一角色记得的事
+        '注意：角色记忆是跨会话共享的，这次回滚也会影响这位角色在别的对话里的记忆。',
+        '回滚前会自动留一份当前进度 —— 不满意可以点「撤销上次回滚」退回来。',
+      ].join('\n'),
+      confirmText: '回到这里',
+    })
+    if (!okGo) return
+    const cur = await readAllMemories(s)
+    const r = store.rollbackFreeToCheckpoint(s, cpId, cur)
+    if (!r) return
+    // 🔴 顺序有讲究：**先写记忆、再落会话**。反过来的话，中途失败会留下
+    //    「会话已退回去、记忆没退」——Ta 会记得那些已经不存在的事（比反过来更难发现）。
+    await writeMemories(r.restore)
+    await commit(r.session)
+    showToast(`已回到「${name}」（可撤销）`)
+  }
+
+  const undoRollbackCp = async () => {
+    if (!session?.undoSnapshot) return
+    const r = store.undoFreeRollback(session)
+    if (!r) return
+    await writeMemories(r.restore)
+    await commit(r.session)
+    showToast('已撤销这次回滚')
+  }
+
+  const dropCp = (cpId: string) => {
+    if (!session) return
+    void commit(store.dropFreeCheckpoint(session, cpId))
+  }
+
   // ---------- 本场数值（C2 第二步）：作者手改 + 回写角色卡 ----------
 
   /**
@@ -691,6 +767,8 @@ export function useTavernFreeModel() {
     inputRef, setInput, fillInput, send, stop, streaming, phase, streamText, assistBusy, quickActions, applyDirectorNote, directorRows,
     // 消息操作（编辑 / 重生成 / 隐藏 / 删除）
     saveEdited, toggleHidden, removeMsg, reroll, lastAiId, selectVariant, saveTitle, editingTitle, setEditingTitle, titleDraft, setTitleDraft, removeSession, updateAtBottom,
+    // 检查点 / 回滚（F1）
+    cpNaming, setCpNaming, saveCheckpoint, commitCheckpoint, rollbackToCp, undoRollbackCp, dropCp,
     // 滚动
     scrollRef, scrollToBottom, atBottom, usedChars,
     // 数值与状态

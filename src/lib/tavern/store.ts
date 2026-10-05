@@ -29,7 +29,7 @@ import type {
   FreeCharacter, FreeSession, FreeMemory, DailyState,
   CharJournal, CharJournalEntry,
   TavernCharIndexItem, FreeSessionIndexItem, TavernMessage, TavernCheckpoint,
-  TavernDirectorNote, CardFieldPath, TavernWatermark,
+  TavernDirectorNote, CardFieldPath, TavernWatermark, FreeCheckpoint,
 } from './types'
 
 // ==================== 存储键 ====================
@@ -461,6 +461,91 @@ export function undoRollback(s: TavernSession): TavernSession {
     memory: u.memory,
     undoSnapshot: undefined,
     updatedAt: now(),
+  }
+}
+
+// ==================== 自由模式 · 检查点 / 回滚（F1，2026-10-05）====================
+//
+// 【与剧情模式那套的关系】下面四个函数与 `addCheckpoint` / `dropCheckpoint` /
+//   `rollbackToCheckpoint` / `undoRollback` **一一对应**，但有一个本质差别：
+//   · 剧情模式的记忆（`session.memory`）就在会话对象里 ⇒ 回滚是**纯改对象**的动作；
+//   · 自由模式的记忆**按角色分条存在独立存储**（`G.memory(charId)`），不在会话里 ⇒
+//     ① 存点要**一次快照 N 份**（由调用方读好传进来）；
+//     ② 回滚要**把这 N 份写回存储**，所以回滚函数额外返回 `restore` 交给调用方落盘。
+//   ⇒ 这四个仍是**纯函数**（不碰 db），落盘编排在 `useTavernFreeModel` 里。
+//
+// 🔴 为什么必须回滚记忆：不回滚的话「消息退回去了、Ta 却记得那些没发生的事」——
+//   这正是自由模式独有的坑（剧情模式只有一份记忆，跟着会话一起回滚，不会分家）。
+
+/** 存点（纯）：把「此刻的会话态 + N 份记忆」打包成一个检查点 */
+export function makeFreeCheckpoint(s: FreeSession, memories: FreeMemory[], label = ''): FreeCheckpoint {
+  return {
+    id: uid(),
+    label: label.trim(),
+    messageCount: s.messages.length,
+    watermark: s.watermark,
+    memories,
+    vars: s.vars,
+    at: now(),
+  }
+}
+
+/** 把检查点挂到会话上（纯） */
+export function addFreeCheckpoint(s: FreeSession, memories: FreeMemory[], label = ''): FreeSession {
+  return {
+    ...s,
+    checkpoints: [...(s.checkpoints ?? []), makeFreeCheckpoint(s, memories, label)],
+    updatedAt: now(),
+  }
+}
+
+export function dropFreeCheckpoint(s: FreeSession, cpId: string): FreeSession {
+  return { ...s, checkpoints: (s.checkpoints ?? []).filter(c => c.id !== cpId), updatedAt: now() }
+}
+
+/**
+ * 回到某个检查点（纯）。返回新会话 + **要写回存储的记忆**。
+ *
+ * `currentMemories` = 此刻的 N 份记忆（调用方读好传进来）—— 它得进 `undoSnapshot`，
+ * 否则「撤销上次回滚」无处可取（记忆不在会话对象里，这是与剧情模式最大的实现差异）。
+ */
+export function rollbackFreeToCheckpoint(
+  s: FreeSession,
+  cpId: string,
+  currentMemories: FreeMemory[],
+): { session: FreeSession; restore: FreeMemory[] } | null {
+  const cp = (s.checkpoints ?? []).find(c => c.id === cpId)
+  if (!cp) return null
+  return {
+    session: {
+      ...s,
+      messages: s.messages.slice(0, cp.messageCount),
+      watermark: cp.watermark,
+      vars: cp.vars,
+      // 只留一层：再回滚一次就覆盖它 —— 与剧情模式同一条纪律（不做无限套娃）
+      undoSnapshot: {
+        messages: s.messages, watermark: s.watermark, memories: currentMemories, vars: s.vars, at: now(),
+      },
+      updatedAt: now(),
+    },
+    restore: cp.memories,
+  }
+}
+
+/** 撤销上一次回滚（纯）。返回新会话 + 要写回存储的记忆；没有快照时返回 null（调用方按 `undoSnapshot` 显示按钮） */
+export function undoFreeRollback(s: FreeSession): { session: FreeSession; restore: FreeMemory[] } | null {
+  const u = s.undoSnapshot
+  if (!u) return null
+  return {
+    session: {
+      ...s,
+      messages: u.messages,
+      watermark: u.watermark,
+      vars: u.vars,
+      undoSnapshot: undefined,
+      updatedAt: now(),
+    },
+    restore: u.memories,
   }
 }
 

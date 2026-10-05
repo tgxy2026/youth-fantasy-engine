@@ -484,9 +484,44 @@ export type FreeSession = {
    * 加枚举会让所有读会话的地方都要处理一类永远用不上的中间态。
    */
   endedAt?: number
+  /**
+   * 检查点（F1 自由模式分支，2026-10-05）。**可选** ⇒ 老会话读不到就当作「没有检查点」。
+   *
+   * 🔴 与剧情模式（`TavernSession.checkpoints`）最大的不同：剧情模式的记忆是会话里的
+   * **一份字符串**，所以检查点顺手就存下了；自由模式的记忆是**按角色分条的独立存储**
+   * （`store.getMemory(charId)`），不在会话里 ⇒ 检查点必须一次快照 **N 份**，
+   * 回滚也必须**把这 N 份写回存储**（不能像剧情那样只改会话对象）。
+   */
+  checkpoints?: FreeCheckpoint[]
+  /** 回滚前的自动备份（**只留一层**）—— 让自由模式的「回滚」同样可一键撤销 */
+  undoSnapshot?: FreeRollbackUndo
   lastActiveAt: number
   createdAt: number
   updatedAt: number
+}
+
+/** 自由模式的检查点：会话态 + **所有在场角色的记忆**（见 `FreeSession.checkpoints` 的说明） */
+export type FreeCheckpoint = {
+  id: string
+  /** 用户起的名字（留空则界面显示「第 N 条」） */
+  label: string
+  /** 存点时的消息条数：回到这里 = 截到这里 */
+  messageCount: number
+  watermark?: TavernWatermark
+  /** 存点时的**全部在场角色记忆**（含用户扮演那位 —— Ta 也有自己的记忆条目） */
+  memories: FreeMemory[]
+  /** 存点时的本场变量（会话级、也会变；不回滚它就会出现"消息退回去了、好感没退"） */
+  vars?: TavernVars
+  at: number
+}
+
+/** 自由模式回滚前的自动备份（只留一层） */
+export type FreeRollbackUndo = {
+  messages: TavernMessage[]
+  watermark?: TavernWatermark
+  memories: FreeMemory[]
+  vars?: TavernVars
+  at: number
 }
 
 /** 六栏记忆（方案 4.5）。注意六栏行为不同：会缩 / 只增 / 重写 */

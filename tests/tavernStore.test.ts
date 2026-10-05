@@ -6,7 +6,7 @@ import * as db from '../src/lib/db'
 import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
-import type { TavernSession, TavernSessionIndexItem, TavernReport, TavernMessage } from '../src/lib/tavern/types'
+import type { TavernSession, TavernSessionIndexItem, TavernReport, TavernMessage, FreeSession, FreeMemory, TavernVars } from '../src/lib/tavern/types'
 import { MAX_AI_CAST, MAX_CAST_SLOTS } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
@@ -201,6 +201,73 @@ async function main() {
     ok('🔴 位置总数至少留得出「AI 全满 + 一个我演」',
       MAX_CAST_SLOTS >= MAX_AI_CAST + 1, `${MAX_CAST_SLOTS} vs ${MAX_AI_CAST}+1`)
     ok('上限已放宽（本轮 3 → 6；再调请同步这条与两处界面文案）', MAX_AI_CAST === 6, String(MAX_AI_CAST))
+  }
+
+  // ---------- 自由模式检查点 / 回滚（F1，2026-10-05） ----------
+  //
+  // 🔴 与剧情模式那套最大的差别：自由模式的记忆**不在会话对象里**（按角色分条独立存储），
+  //    所以纯函数必须把「要写回存储的记忆」随会话一起交还给调用方（`restore`）。
+  //    这一节把这条契约钉死 —— 漏了 `restore`，回滚后 Ta 会记得那些已经不存在的事。
+  {
+    const mkMsg = (n: number, role: 'user' | 'assistant'): TavernMessage =>
+      ({ id: `fm${n}`, role, content: `第 ${n} 条`, at: n })
+    const mem = (charId: string, relation: string): FreeMemory => ({
+      charId, longTerm: '', facts: '', relation, mines: '', anniversaries: '', diaries: '', updatedAt: 0,
+    })
+    const mkVars = (affection: number) => ({ values: { affection }, turnSeq: 0, log: [] }) as TavernVars
+
+    const base: FreeSession = {
+      id: 'fs-probe', charIds: ['c1', 'c2'], title: '探针场',
+      messages: [mkMsg(1, 'user'), mkMsg(2, 'assistant')],
+      model: { providerId: '' }, params: {}, lastActiveAt: 0, createdAt: 0, updatedAt: 0,
+    }
+    const memAtCp = [mem('c1', '刚认识'), mem('c2', '刚认识')]
+
+    // ① 存点：快照 N 份记忆 + 消息条数 + 本场变量
+    const withCp = store.addFreeCheckpoint({ ...base, vars: mkVars(10) }, memAtCp, '初识')
+    const cp = withCp.checkpoints![0]
+    ok('存点：记下消息条数与名字', withCp.checkpoints?.length === 1 && cp.label === '初识' && cp.messageCount === 2,
+      `n=${cp.messageCount}`)
+    ok('🔴 存点：一次快照**所有在场角色的记忆**（自由模式的核心差异）',
+      cp.memories.length === 2 && cp.memories[0].charId === 'c1', String(cp.memories.length))
+    ok('存点：本场变量一起存（否则会出现「消息退回去了、好感没退」）',
+      (cp.vars as TavernVars | undefined)?.values?.affection === 10)
+
+    // ② 之后又聊了两条，记忆与变量都变了
+    const later: FreeSession = {
+      ...withCp,
+      messages: [...withCp.messages, mkMsg(3, 'user'), mkMsg(4, 'assistant')],
+      vars: mkVars(80),
+    }
+    const memLater = [mem('c1', '已经在一起了'), mem('c2', '闹翻了')]
+
+    // ③ 回滚
+    const r = store.rollbackFreeToCheckpoint(later, cp.id, memLater)!
+    ok('🔴 回滚：消息截回那一刻', r.session.messages.length === 2, String(r.session.messages.length))
+    ok('🔴 回滚：`restore` 就是**存点那一刻**的记忆（调用方据此写回存储）',
+      r.restore.length === 2 && r.restore[0].relation === '刚认识', r.restore.map(m => m.relation).join(','))
+    ok('回滚：本场变量一并还原', (r.session.vars as TavernVars).values?.affection === 10)
+    ok('🔴 回滚：undoSnapshot 留的是**此刻的**记忆（否则「撤销」无处可取）',
+      r.session.undoSnapshot?.memories[0].relation === '已经在一起了',
+      String(r.session.undoSnapshot?.memories[0].relation))
+    ok('回滚：undoSnapshot 同时留了此刻的消息与变量',
+      r.session.undoSnapshot?.messages.length === 4
+      && (r.session.undoSnapshot?.vars as TavernVars | undefined)?.values?.affection === 80)
+
+    // ④ 撤销回滚
+    const u = store.undoFreeRollback(r.session)!
+    ok('🔴 撤销回滚：消息回到回滚前', u.session.messages.length === 4, String(u.session.messages.length))
+    ok('🔴 撤销回滚：`restore` 是「回滚前那份」记忆',
+      u.restore[0].relation === '已经在一起了', u.restore.map(m => m.relation).join(','))
+    ok('撤销回滚：变量也回去', (u.session.vars as TavernVars).values?.affection === 80)
+    ok('撤销回滚：快照被清掉（只留一层，不做无限套娃）', u.session.undoSnapshot === undefined)
+    ok('没有快照时返回 null（调用方据此决定按钮显不显示）', store.undoFreeRollback(u.session) === null)
+
+    // ⑤ 找不到检查点 / 删检查点 / 老会话
+    ok('回到不存在的检查点 ⇒ null', store.rollbackFreeToCheckpoint(base, 'nope', []) === null)
+    ok('删检查点', (store.dropFreeCheckpoint(withCp, cp.id).checkpoints ?? []).length === 0)
+    ok('老会话没有 checkpoints 字段 ⇒ 当作没有（不炸）', (base.checkpoints ?? []).length === 0)
+    ok('老会话没有 undoSnapshot ⇒ 撤销返回 null（不炸）', store.undoFreeRollback(base) === null)
   }
 
   // ---------- 数据归属（老大明确要求，用断言钉死，别在重构里被改掉） ----------

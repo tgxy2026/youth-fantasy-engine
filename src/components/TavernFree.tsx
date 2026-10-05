@@ -32,6 +32,7 @@ import { Button } from './Button'
 import { Modal } from './Modal'
 import { LoadingState } from './LoadingState'
 import TavernFreeSetup, { } from './TavernFreeSetup'
+import PromptModal from './PromptModal'
 import TavernCastDirector from './TavernCastDirector'
 import TavernRevisionDialog from './TavernRevisionDialog'
 import TavernExportDialog from './TavernExportDialog'
@@ -93,6 +94,8 @@ export default function TavernFree() {
     inputRef, setInput, fillInput, send, stop, streaming, phase, streamText, assistBusy, quickActions, applyDirectorNote, directorRows,
     // 消息操作（编辑 / 重生成 / 隐藏 / 删除）
     saveEdited, toggleHidden, removeMsg, reroll, lastAiId, selectVariant, saveTitle, editingTitle, setEditingTitle, titleDraft, setTitleDraft, removeSession, updateAtBottom,
+    // 检查点 / 回滚（F1 自由模式分支）
+    cpNaming, setCpNaming, saveCheckpoint, commitCheckpoint, rollbackToCp, undoRollbackCp, dropCp,
     // 滚动
     scrollRef, scrollToBottom, atBottom, usedChars,
     // 数值与状态
@@ -498,10 +501,66 @@ export default function TavernFree() {
                 >
                   本场状态
                 </Button>
+                <Button
+                  variant="toggle" size="sm" className="flex-1 justify-center"
+                  selected={statusTab === 'cp'} onClick={() => setStatusTab('cp')}
+                  title="在这一场存一个检查点，之后一键回到那一刻（消息 + 角色记忆 + 本场数值一起还原）"
+                >
+                  检查点
+                </Button>
               </div>
 
               <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {statusTab === 'status' ? (
+                {statusTab === 'cp' ? (
+                  <>
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-11 text-ink-500">检查点（{(session.checkpoints ?? []).length}）</span>
+                        <Button variant="secondary" size="xs" onClick={() => saveCheckpoint()}>＋ 存一个</Button>
+                      </div>
+                      {(session.checkpoints ?? []).length === 0 ? (
+                        <p className="mt-1 text-10 leading-relaxed text-ink-600">
+                          还没有检查点。存一个之后，后面无论聊成什么样都能回到那一刻 ——
+                          消息、「在场角色的记忆」与本场数值一起还原，而且可以撤销。
+                        </p>
+                      ) : (
+                        <ul className="mt-1 space-y-1">
+                          {[...(session.checkpoints ?? [])].sort((a, b) => b.at - a.at).map(cp => (
+                            <li key={cp.id} className="flex items-center gap-1.5">
+                              <span
+                                className="min-w-0 flex-1 truncate text-11 text-ink-300"
+                                title={`第 ${cp.messageCount} 条 · ${cp.memories.length} 位角色的记忆 · ${new Date(cp.at).toLocaleString()}`}
+                              >
+                                {cp.label || `第 ${cp.messageCount} 条`}
+                              </span>
+                              <Button variant="secondary" size="xs" className="shrink-0"
+                                onClick={() => void rollbackToCp(cp.id)}>
+                                回到这里
+                              </Button>
+                              <Button variant="danger" size="xs" className="shrink-0"
+                                title="删掉这个检查点（不影响对话）"
+                                onClick={() => dropCp(cp.id)}>
+                                ×
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {session.undoSnapshot && (
+                        <Button variant="secondary" size="xs" className="mt-1.5 w-full"
+                          onClick={() => void undoRollbackCp()}>
+                          ↩ 撤销上次回滚（{new Date(session.undoSnapshot.at).toLocaleTimeString()}）
+                        </Button>
+                      )}
+                    </div>
+                    {/* 🔴 自由模式的记忆是**角色级、跨会话共享**的 —— 回滚会动到别处，必须写在看得见的地方 */}
+                    <p className="border-t border-ink-800 pt-2 text-10 leading-relaxed text-ink-600">
+                      与剧情推演不同：这里的记忆按角色存、**跨会话共享** ——
+                      所以回滚会把这位角色在别的对话里记得的事一起退回去。
+                      只想丢消息、不动记忆的话，用「重说」或删单条。
+                    </p>
+                  </>
+                ) : statusTab === 'status' ? (
                   <>
                     <TavernStatusBar
                       model={statusModel}
@@ -617,6 +676,17 @@ export default function TavernFree() {
       </div>
 
       <TavernFreeSetup open={setupOpen} onCreate={createFromDraft} onCancel={() => setSetupOpen(false)} />
+
+      {/* 检查点命名：留空就用「第 N 条」（allowEmpty 让它能直接回车）—— F1 */}
+      <PromptModal
+        open={cpNaming}
+        title="给这个检查点起个名字"
+        label="名字（可以留空）"
+        placeholder="例：表白之前 / 搬走那天"
+        allowEmpty
+        onSubmit={commitCheckpoint}
+        onCancel={() => setCpNaming(false)}
+      />
 
       <TavernRevisionDialog
         open={reviseOpen}
