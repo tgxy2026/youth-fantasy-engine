@@ -119,7 +119,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
             {/* 世界书额度（2026-10-05 · 对齐 ST 的 world_info_budget）：固定层跟着窗口自动算，动态层可调 */}
             <NumField
               label="世界书动态额度（占窗口 %）"
-              hint={`世界书里「按触发词命中」的词条能占多少上下文 —— 固定层（一句话总纲 / 世界设定，${fixedQuotaOf(activeProvider?.contextWindow)} 字）之外的这部分。默认 ${DYNAMIC_QUOTA_PCT.default}%，留更多给对话历史；词条多、细节密可以调高。超额度时不会切断某条，而是按优先级逐条取舍（常驻 → 直接命中 → 引荐命中）。按当前模型 ${fmtWindow(activeProvider?.contextWindow ?? 0)} 窗口算，本档 ≈ ${dynamicQuotaOf(activeProvider?.contextWindow, s.dynamicQuotaPct)} 字。`}
+              hint={`世界书上「按触发词命中」的词条单独能占多少上下文 —— 与固定层（一句话总纲 / 世界设定，${fixedQuotaOf(activeProvider?.contextWindow)} 字）分开各算、互不挤占。默认 ${DYNAMIC_QUOTA_PCT.default}%，留更多给对话历史；词条多、细节密可以调高。超额度时不会切断某条，而是按优先级逐条取舍（常驻 → 直接命中 → 引荐命中）。按当前模型 ${fmtWindow(activeProvider?.contextWindow ?? 0)} 窗口算，本档 ≈ ${dynamicQuotaOf(activeProvider?.contextWindow, s.dynamicQuotaPct)} 字。`}
               guide={{
                 min: DYNAMIC_QUOTA_PCT.min, max: DYNAMIC_QUOTA_PCT.max, step: DYNAMIC_QUOTA_PCT.step,
                 bands: [

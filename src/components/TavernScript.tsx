@@ -688,9 +688,13 @@ export default function TavernScript() {
                   const settingChars = story.setting.trim().length
                   const cap = hasEntries ? quota.dynamic : quota.fixed
                   // 「本轮最少注入」= 空上下文下必带的那些（常驻词条 / 整段设定）
+                  // 🔴 两个 0 都是「不限额、原样返回」（见 worldBook.renderEntries 的 `max <= 0` 分支）——
+                  //    这一行的语义是「空上下文下**必带的那些**的完整长度」。
+                  //    漏传 `fixedMaxChars` 会让固定层回落到 2400 而把整段设定截断，
+                  //    于是 `over` 恒为 false、「超额度」告警永不出现（2026-10-05 实机 audit-q D2 抓到）。
                   const minChars = buildStoryWorldBook(
                     hasEntries ? { setting: '', entries: story.entries } : { setting: story.setting },
-                    '', { maxChars: 0 },
+                    '', { maxChars: 0, fixedMaxChars: 0 },
                   ).text.length
                   const over = minChars > cap
                   return (

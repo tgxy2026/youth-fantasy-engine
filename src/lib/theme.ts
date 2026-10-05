@@ -231,20 +231,6 @@ export function foldVh(v?: string): string | undefined {
 }
 
 /**
- * 内容区「至少撑满一屏」的最小高度：`100vh（折过 zoom） − 减去的高度`。
- *
- * 2026-09-22 六维审计 P2：原先 CharacterSheet / OutlineSheet 各自内联
- * `calc(${foldVh('100vh')} - 180px)` 与 `- 200px` —— 两个魔数**与页头高度强耦合**、
- * 又散在两处，页头一改就静默失效（而且没人知道那 180/200 是从哪来的）。
- * 集中到这里 + 具名常量，改一处即可、也有地方写清来源。
- *
- * @param deductPx 页头 / 工具条等占据的高度（px）
- */
-export function contentMinH(deductPx: number): string {
-  return `calc(${foldVh('100vh')} - ${deductPx}px)`
-}
-
-/**
  * 内容区「恰好一屏」的**锁定高度**（与 `contentMinH` 同源，但用 `height` 而非 `minHeight`）。
  *
  * 2026-10-05：主从双栏页签（左列表 + 右详情）需要**锁高**才能让两栏各自 `overflow-y-auto`
@@ -258,7 +244,7 @@ export function contentHeight(deductPx: number): string {
   return `calc(${foldVh('100vh')} - ${deductPx}px)`
 }
 
-/** 卡片型页签（角色卡）页头 + 工具条的高度，供 contentMinH 使用 */
+/** 卡片型页签（角色卡）页头 + 工具条的高度，供 contentHeight 使用 */
 export const CARD_SHEET_CHROME_PX = 180
 /** 大纲型页签（细纲卡）页头 + 工具条的高度 */
 export const OUTLINE_SHEET_CHROME_PX = 200

@@ -10,10 +10,11 @@
 //
 // ⚠️ 窗口没填（老库里的模型配置）时 `quotas` 会兜底到 32K 档，`windowFallback` 为 true ——
 //    界面据此提示「模型没填窗口，额度按 32K 估」。这不是错，是保守。
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useTavernReady } from './useTavernReady'
 import { quotaProfileOf, type QuotaProfile } from '../lib/tavern/quotas'
+import { getTavernSettings } from '../lib/tavern/settings'
 
 export interface TavernQuota extends QuotaProfile {
   /** 当前模型是否就绪（没就绪时额度仍是兜底值，界面该提示「先配模型」） */
@@ -25,7 +26,8 @@ export interface TavernQuota extends QuotaProfile {
 /**
  * @param sessionProviderId 会话自己指定的模型 id（空 = 跟随面板默认 / 全局）
  * @param panelProviderId   控制面板的默认模型 id（空 = 跟随全局活动模型）
- * @param dynamicPct        控制面板里的动态层百分比（5~35）；不传用默认 15
+ * @param dynamicPct        控制面板里的动态层百分比（5~35）；**不传 = 自动读当前酒馆设置**
+ *                         —— 调用方不必记得传，避免「界面按 15% 显示、引擎按作者设的 30% 注入」
  */
 export function useTavernQuota(
   sessionProviderId?: string,
@@ -33,16 +35,23 @@ export function useTavernQuota(
   dynamicPct?: number,
 ): TavernQuota {
   const info = useTavernReady(sessionProviderId, panelProviderId)
-  return useMemo(() => {
-    const p = quotaProfileOf(info.windowTokens, dynamicPct)
-    return { ...p, ready: info.ready, modelLabel: info.label }
-  }, [info.windowTokens, info.ready, info.label, dynamicPct])
-}
 
-/**
- * 不带订阅的同步版本 —— 给**非组件**（如对话框内部已有 ready 信息）用。
- * 组件里请用 `useTavernQuota`，别自己调这个再手写 useEffect。
- */
-export function quotaFromWindow(windowTokens: number | null | undefined, dynamicPct?: number): QuotaProfile {
-  return quotaProfileOf(windowTokens, dynamicPct)
+  // 🔴 百分比自己读，不靠调用方传：三个消费方都只关心「窗口 → 额度」，
+  //    若让它们各记得传一次，早晚会漏 —— 漏了就是「界面按 15% 显示并卡保存，引擎却按作者设的 30% 注入」。
+  //    显式传参仍优先（给「按某个特定比例算」的场景）。切页签会卸载组件 ⇒ 重进必读最新值。
+  const [pct, setPct] = useState<number | undefined>(dynamicPct)
+
+  useEffect(() => {
+    if (dynamicPct !== undefined) { setPct(dynamicPct); return }
+    let cancelled = false
+    void getTavernSettings()
+      .then(st => { if (!cancelled) setPct(st.dynamicQuotaPct) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [dynamicPct])
+
+  return useMemo(() => {
+    const p = quotaProfileOf(info.windowTokens, pct)
+    return { ...p, ready: info.ready, modelLabel: info.label }
+  }, [info.windowTokens, info.ready, info.label, pct])
 }

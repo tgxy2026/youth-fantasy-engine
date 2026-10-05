@@ -41,6 +41,12 @@ export const STORY_NAME_MAX = 20
 /** 世界设定长度上限：每轮都要注入，写太长会把对话历史挤没 */
 export const STORY_SETTING_MAX = 2400
 
+/**
+ * 「整段世界设定」退化成的那个条目 id —— **固定层**的判据（见 `buildStoryWorldBook`）。
+ * 🔴 全项目唯一真源：`storyEntriesOf` 用它造条目，`buildStoryWorldBook` 用它分层。
+ */
+export const STORY_SETTING_ID = 'story-setting'
+
 export function emptyStory(): TavernStory {
   return { id: '', name: '', setting: '', draftedAt: 0, createdAt: 0, updatedAt: 0 }
 }
@@ -102,7 +108,7 @@ export function storyEntriesOf(src: { setting?: string; entries?: WorldEntry[] }
   if (!setting) return []
   // 整段退化成一个常驻词条：不设标题（保持与 worldToText 的 brief-only 情形同形）
   return [{
-    id: 'story-setting', title: '', body: setting,
+    id: STORY_SETTING_ID, title: '', body: setting,
     keys: [], prob: 1, order: 0, recursive: false, constant: true,
   }]
 }
@@ -116,11 +122,32 @@ export function storyEntriesOf(src: { setting?: string; entries?: WorldEntry[] }
 export function buildStoryWorldBook(
   src: { setting?: string; entries?: WorldEntry[] } | null | undefined,
   haystack: string,
-  opts: { rand?: () => number; maxChars?: number } = {},
+  opts: { rand?: () => number; maxChars?: number; fixedMaxChars?: number } = {},
 ): { text: string; hits: WorldEntry[]; skippedByProb: string[]; dropped: WorldEntry[] } {
   const pool = storyEntriesOf(src)
   if (!pool.length) return { text: '', hits: [], skippedByProb: [], dropped: [] }
-  const r = buildWorldBookText(pool, haystack, { ...opts, maxChars: opts.maxChars ?? STORY_SETTING_MAX })
+  // 🔴 两层分开渲染，与剧情模式同一口径（见 `world.buildPlotWorldBook`）：
+  //    固定层 = 整段世界设定（`STORY_SETTING_ID`，没拆词条时的形态）；
+  //    动态层 = 各家词条（含被标「常驻」的 —— 它们是词条，仍吃动态额度）。
+  const rf = renderStoryLayer(pool.filter(e => e.id === STORY_SETTING_ID), haystack, opts.fixedMaxChars, opts)
+  const rd = renderStoryLayer(pool.filter(e => e.id !== STORY_SETTING_ID), haystack, opts.maxChars, opts)
+  return {
+    text: [rf.text, rd.text].filter(Boolean).join('\n\n'),
+    hits: [...rf.hits, ...rd.hits],
+    skippedByProb: [...rf.skippedByProb, ...rd.skippedByProb],
+    dropped: [...rf.dropped, ...rd.dropped],
+  }
+}
+
+/** 单层渲染（空池 ⇒ 空结果） */
+function renderStoryLayer(
+  entries: WorldEntry[],
+  haystack: string,
+  maxChars: number | undefined,
+  opts: { rand?: () => number },
+): { text: string; hits: WorldEntry[]; skippedByProb: string[]; dropped: WorldEntry[] } {
+  if (!entries.length) return { text: '', hits: [], skippedByProb: [], dropped: [] }
+  const r = buildWorldBookText(entries, haystack, { ...opts, maxChars: maxChars ?? STORY_SETTING_MAX })
   return { text: r.text, hits: r.hits, skippedByProb: r.skippedByProb, dropped: r.dropped }
 }
 

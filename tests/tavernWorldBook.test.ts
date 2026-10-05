@@ -258,11 +258,25 @@ async function main() {
       onlySouth.includes('南'.repeat(100)) && !onlySouth.includes('北'.repeat(100)), '')
     ok('🔴 三条都提到 ⇒ 三条都在（总长明显更大）', all.length > onlySouth.length * 1.5,
       `${all.length} vs ${onlySouth.length}`)
-    // 🔴 2026-10-05：超额度行为从「一刀切断字符串」改为「逐条取舍」—— 不再切出半条，只整条剔除
-    const big = buildPlotWorldBook(w, '城南', { maxChars: 200 })
-    ok('🔴 超额度时逐条取舍：不出现被切一半的正文', !big.text.includes('南'.repeat(150)), big.text.slice(0, 60))
+    // 🔴 2026-10-05：超额度行为从「一刀切断字符串」改为「逐条取舍」—— 不再切出半条，只整条剔除。
+    // 2026-10-05 晚（审计 B3）：额度拆成**固定层（一句话总纲）+ 动态层（词条）**，`maxChars` 只管动态层。
+    //   要测「词条逐条剔除」得让动态层**至少两条** —— 只剩一条时无处可剔、只能兜底截断（dropped 恒空）。
+    const big = buildPlotWorldBook(w, '城南\n北境', { maxChars: 700 })
+    ok('🔴 超额度时词条整条剔除（留下的那条是完整的，不是半条）',
+      big.dropped.length === 1
+      && (big.text.includes('南'.repeat(600)) || big.text.includes('北'.repeat(600))),
+      `dropped=${big.dropped.length}`)
     ok('🔴 超额度时如实报告 dropped（不静默丢）', big.dropped.length >= 1,
       `dropped=${big.dropped.length}`)
+    // 🔴 B3 的核心行为：固定层独立 —— 小窗口下（8K：dynamic≈1229 < fixed 下限 2400）
+    //    作者按提示存了 2400 字总纲，注入时不再被词条挤掉（改造前会「存得下、注不进」）。
+    const wTiny = world({
+      brief: '纲'.repeat(2400),
+      sections: [sec('h', '关键词节', 'K'.repeat(3000), { keys: ['城'] })],
+    })
+    const tiny = buildPlotWorldBook(wTiny, '城', { maxChars: 1229, fixedMaxChars: 2400 })
+    ok('🔴 固定层独立：小窗口下 2400 字总纲完整注入（「存得下、注不进」已修）',
+      tiny.text.includes('纲'.repeat(2400)), `${tiny.text.length}`)
     ok('故事侧上限常量仍在（降级为兜底值）', STORY_SETTING_MAX === 2400)
   }
 

@@ -254,8 +254,10 @@ async function migrateStoryTimeColumns(): Promise<number> {
     for (const r of rows) {
       const data = { ...(r.data ?? {}) }
       const old = String(data[OLD] ?? '').trim()
-      const start = String(data[START] ?? '').trim()
       if (old && !(START in data)) data[START] = old
+      // 🔴 `start` 必须在回填 START **之后**再读 —— 纯老行（只有 OLD 键）在回填前 start 是空串，
+      //    拿它去判会当成「没有起点」而漏补「结束时间」（要等第二次打开才自愈）。
+      const start = String(data[START] ?? '').trim()
       // 两端补齐：有起点、没结束（键不存在）⇒ 补成同一天（时间点事件口径）
       if (!(END in data) && start) data[END] = start
       if (data === r.data) continue

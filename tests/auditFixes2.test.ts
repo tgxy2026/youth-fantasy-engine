@@ -76,7 +76,9 @@ console.log('\n—— auditFixes2 用例开始 ——')
   ok('🔴 overwrite 分支同时做 put 与 delExtra（原来只 put ⇒ 同步期间删掉的记录关同步后复活）',
     /if \(overwrite\) \{[\s\S]{0,600}?bulkPut\(store, list\)[\s\S]{0,400}?mirrorDeleteExtra\(store, list\)/.test(core))
   ok('  · delExtra 读失败时不删（宁可多留一条，也不能因读失败误删）',
-    /async function mirrorDeleteExtra[\s\S]{0,900}?catch \{/.test(core))
+    // ⚠️ 只断言「有 catch」—— 别写死 `catch {` 这种空形态：那条 catch 后来加了留痕日志
+    //    （2026-10-05 六维审计 E-2），语义没变（仍是不删 extra），但写死形态的正则会假红。
+    /async function mirrorDeleteExtra[\s\S]{0,900}?catch\s*\(?\w*\)?\s*\{/.test(core))
   ok('  · meta 的本地专属键在删除时被排除',
     /mirrorDeleteExtra[\s\S]{0,900}?isExcludedMetaKey/.test(core))
 }

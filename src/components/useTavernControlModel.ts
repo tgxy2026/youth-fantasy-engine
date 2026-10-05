@@ -95,6 +95,8 @@ export function useTavernControlModel() {
   }, [layoutReady])
 
   useEffect(() => {
+    // 🔴 卸载守卫（与同批其它面板一致）：加载途中关掉面板时别再写 state
+    let alive = true
     void (async () => {
       try {
         const [st, ps, actId] = await Promise.all([
@@ -102,14 +104,17 @@ export function useTavernControlModel() {
           loadProviders().catch(() => [] as AIProvider[]),
           loadActiveId().catch(() => null),
         ])
+        if (!alive) return
         setS(st)
         setProviders(ps)
         setActiveProviderId(actId)
       } catch (e) {
+        if (!alive) return
         showToast(`读取设置失败：${e instanceof Error ? e.message : String(e)}`, 'error')
         setS(DEFAULT_TAVERN_SETTINGS)
       }
     })()
+    return () => { alive = false }
   }, [])
 
   // ---------- 预设方案（A4）：整套设置（含协议）的命名快照 ----------

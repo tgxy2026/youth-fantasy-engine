@@ -68,7 +68,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
       } else {
         const s = session as FreeSession
         const list = chars ?? []
-        const r = await buildFreeSystem(s, list, st, { windowTokens: quota.windowTokens })
+        const r = await buildFreeSystem(s, list, st, { windowTokens: quota.windowTokens, skipRecall: true })
         systemChars = r.system.length
         total = effectiveContextBudget('free', st, s.params)
         label = '自由对话'

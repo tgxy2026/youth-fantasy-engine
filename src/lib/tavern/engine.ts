@@ -32,7 +32,7 @@ import { primaryAiCharId } from './primaryChar'
 import { getWorldSetting, buildPlotWorldBook, worldHaystack, keywordHaystackMessages } from './world'
 // T2（2026-10-05）：自由对话的语义召回（查询文本 / 分区 / 索引节流都在那里）
 import { buildFreeRecallBlock } from './recall'
-import { dynamicQuotaOf } from './quotas'
+import { quotaProfileOf } from './quotas'
 // 🔴 story.ts 里的世界书入口是 **静态 import**：engine 已经动态 import 它做 `resolveSessionStorySetting`，
 //    但 `buildStoryWorldBook` 是纯函数（不碰 db / provider）—— 静态引入不会加环，
 //    而且放这里比再包一层动态 import 更清楚。story.ts 不反向 import engine（它从 ./provider 取真源）。
@@ -170,9 +170,11 @@ export async function buildPlotSystem(
     // 取材口径收在 world.ts（滤 system / hidden + 取最近若干条）—— 调用方不必记着过滤
     keywordHaystackMessages(session.messages),
   )
+  // 两层额度一次算清（见 quotas.ts）：固定层给一句话总纲，动态层给各节词条。
+  const wQuota = quotaProfileOf(windowTokens, st.dynamicQuotaPct)
   const worldText = contextSource !== 'raw'
     ? buildPlotWorldBook(worldSetting, worldHay, {
-      maxChars: dynamicQuotaOf(windowTokens, st.dynamicQuotaPct),
+      maxChars: wQuota.dynamic, fixedMaxChars: wQuota.fixed,
     }).text
     : ''
 
@@ -526,7 +528,7 @@ export async function buildFreeSystem(
   chars: FreeCharacter[],
   settings?: TavernSettings,
   /** assist 模式：润色/自动回复时翻转「不要代写」措辞，让模型代用户扮演的角色写这一轮发言 */
-  opts?: { assist?: 'polish' | 'auto'; windowTokens?: number | null },
+  opts?: { assist?: 'polish' | 'auto'; windowTokens?: number | null; skipRecall?: boolean },
 ): Promise<FreeSystemResult> {
   const st = settings ?? await getTavernSettings()
   const found: FreeCharacter[] = []
@@ -671,14 +673,17 @@ export async function buildFreeSystem(
   // W3（2026-10-05）：故事设定升级为**世界书**（词条级：各自的关键词 / 概率 / 顺序 / 递归）。
   //   老故事（只有 `setting`、没有 `entries`）退化成一个总是注入的词条 ⇒ 与升级前逐字一致。
   //   取材用与剧情模式同一套口径（标题 + 剧本 + 最近消息，滤 system/hidden）。
+  const fQuota = quotaProfileOf(opts?.windowTokens, st.dynamicQuotaPct)
   const storyWorldText = buildStoryWorldBook(story, worldHaystack(
     [session.title, session.script?.name, session.script?.situation, session.script?.playerRole, session.script?.goal],
     keywordHaystackMessages(session.messages),
-  ), { maxChars: dynamicQuotaOf(opts?.windowTokens, st.dynamicQuotaPct) }).text
+  ), { maxChars: fQuota.dynamic, fixedMaxChars: fQuota.fixed }).text
 
   // T2（2026-10-05）：本场早先消息的**语义召回** —— 长会话里早期内容会被预算裁掉，
   //   这一层按"与当下话题的相关性"把它们补回来。默认关（要发嵌入请求），且**永不抛**。
-  const recallText = st.free.semanticRecall
+  // 🔴 `skipRecall`：用量明细那种**只读统计**不该触发嵌入请求 ——
+  //    它会花钱/联网，而且召回结果会改变 system 长度，让「量出来的字数」每次都不一样。
+  const recallText = st.free.semanticRecall && !opts?.skipRecall
     ? await buildFreeRecallBlock({ session }).catch(() => '')
     : ''
 

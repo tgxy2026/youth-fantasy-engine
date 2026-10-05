@@ -21,6 +21,7 @@
 import * as db from '../db'
 import { uid } from '../id'
 import { DESKTOP, getDesktopState } from '../desktop'
+import { isDesktopCloudUnavailable } from '../desktopCloudSync'
 import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP, MAX_AI_CAST } from './types'
 import { structSpecOf, normalizeStructMarkup } from './cardFields'
 import type {
@@ -1102,8 +1103,16 @@ function ghostOpsOf(group: TavernGhostGroup): GhostOps {
 export function ghostPruneBlockedReason(): string {
   if (!DESKTOP) return ''
   const st = getDesktopState()
-  if (!st.writeLocked) return ''
-  return st.writeLockReason || '本地数据文件当前不可读，已阻止清理（此时读不到的内容可能只是暂时读不出来）'
+  if (st.writeLocked) {
+    return st.writeLockReason || '本地数据文件当前不可读，已阻止清理（此时读不到的内容可能只是暂时读不出来）'
+  }
+  // 🔴 云同步闩锁期（云端不可用）**同样要拒绝**：此时 `getSession` 等读到的是「开启同步那一刻
+  //    冻结的本地库」，而分条其实在云端 ⇒ 一律读成 null ⇒ 被判成幽灵、索引被删掉 ⇒
+  //    云端恢复后那场会话成孤儿（列表里永久消失）。属「读失败的默认值被当成事实」。
+  if (isDesktopCloudUnavailable()) {
+    return '云同步暂时不可用，已阻止清理（此时读不到的内容可能只是云端暂时读不出来）'
+  }
+  return ''
 }
 
 /**

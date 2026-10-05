@@ -72,9 +72,6 @@ export function emptyWorldEntry(init: Partial<WorldEntry> = {}): WorldEntry {
 /** 递归扫描轮数上限（ST 默认 2）。 */
 export const MAX_RECURSION_ROUNDS = 2
 
-/** 单个词条的正文长度上限（防一条把额度吃光）。 */
-export const ENTRY_MAX_CHARS = 1200
-
 // ============================================================
 // 四色灯（2026-10-05）
 // ============================================================
@@ -352,31 +349,32 @@ export function renderEntries(hits: readonly WorldEntry[], opts: RenderOptions =
   if (full.length <= max) return { text: full, dropped: [] }
 
   const note = opts.truncateNote ?? '\n（世界书较长，此处已截断 —— 建议精简词条或收紧关键词）'
-  // 逐条剔除：从优先级最低的开始砍
+  // 逐条剔除：**从优先级最低的开始，累进地砍**，一装下就停。
+  // 🔴 为什么是「累进」而不是「逐条单独试删」（2026-10-05 六维审计 D6）：
+  //    旧写法对每条单独试删（试删后仍超就 `continue` 去试更高优先级那条），
+  //    会出现**优先级反转** —— 低优先级但很大的条目留着、高优先级但很小的条目被砍掉，
+  //    与 `dropOrder` 承诺的「常驻 → 直接命中 → 引荐」正好相反。
+  //    累进删保证：被砍的永远是最低优先级那一批。
   const order = dropOrder(hits, opts.origin)
   const dropped: WorldEntry[] = []
   const kept = new Set(hits)
+  const renderSet = (set: Set<WorldEntry>) => [...set]
+    .map(x => {
+      const b = (x.body ?? '').trim()
+      const t = (x.title ?? '').trim()
+      return t ? `〖${t}〗\n${b}` : b
+    })
+    .filter(Boolean)
+    .join('\n\n')
   let text = full
   for (let i = order.length - 1; i >= 0; i--) {
     const e = order[i]
-    // 常驻条目砍到就剩它一条时仍超——那就只能截断（下面兜底），不再继续砍
     if (!kept.has(e)) continue
-    const nextKept = [...kept].filter(x => x !== e)
-    if (!nextKept.length) break
-    const trial = nextKept
-      .map(x => {
-        const b = (x.body ?? '').trim()
-        const t = (x.title ?? '').trim()
-        return t ? `〖${t}〗\n${b}` : b
-      })
-      .filter(Boolean)
-      .join('\n\n')
-    // 砍掉这条之后装得下 ⇒ 真砍
-    if (trial.length + note.length <= max + note.length) {
-      kept.delete(e)
-      dropped.push(e)
-      text = trial
-    }
+    // 至少保留一条：只剩它就停（下面兜底截断）
+    if (kept.size <= 1) break
+    kept.delete(e)
+    dropped.push(e)
+    text = renderSet(kept)
     if (text.length <= max) break
   }
   // 兜底：全部砍完（或只剩常驻）仍超 ⇒ 只能截断（并注明是截断而非取舍）

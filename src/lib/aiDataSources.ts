@@ -436,7 +436,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       { group: '角色卡', items: ['角色卡四章全文'] },
       { group: '按角色的记忆', items: ['六栏记忆（跨会话共享）'] },
       // T2（2026-10-05）：默认关 —— 开了才建索引、才注入
-      { group: '本场早先的对话', items: [], note: '语义召回：只捞**本场**被预算裁掉的旧片段（不会读到别的对话）。默认关；开它要发嵌入请求' },
+      { group: '本场早先的对话', items: [], note: '语义召回：只捞「本场」被预算裁掉的旧片段（不会读到别的对话）。默认关；开它要发嵌入请求' },
       { group: '故事世界设定', items: [], note: '你为该故事写的背景' },
       { group: '剧本', items: [], note: '选了剧本才带' },
       { group: '你的档案与档位', items: ['称呼 / 自我设定 / 场景描写档位'] },
@@ -587,7 +587,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       {
         group: '程序在本地算出的量化特征',
         items: ['平均句长', '句长离散度', '对话占比', '标点密度', '四字格密度', '高频重复词'],
-        note: '本地统计（不外发），与参考文本一起交给模型，让它把数字翻译成「人话特征」',
+        note: '这些数字在本地算出，会与参考文本一起交给模型，让它把数字翻译成「人话特征」',
       },
     ],
     excludes: [

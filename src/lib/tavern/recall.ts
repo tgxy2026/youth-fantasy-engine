@@ -21,6 +21,7 @@
  */
 
 import { indexOneDoc, type IndexDoc } from '../semantic/indexDoc'
+import { removeByRef } from '../semantic/store'
 import { recallRelevant } from '../semantic/recall'
 import { renderRecallHits } from '../semantic/inject'
 import { resolveEmbedConfig } from '../semantic/settings'
@@ -92,6 +93,8 @@ export interface AutoIndexFreeDeps {
   loadSettings?: (() => Promise<{ free?: { semanticRecall?: boolean } } | null>) | null
   resolveConfig?: typeof resolveEmbedConfig
   indexOne?: typeof indexOneDoc
+  /** 清掉本场索引（回滚变少且不值得重建时用；默认走 `removeByRef`） */
+  removeRef?: ((refId: string) => Promise<void>) | null
 }
 
 export async function autoIndexFreeSession(
@@ -105,12 +108,23 @@ export async function autoIndexFreeSession(
     if (!st?.free?.semanticRecall) return
 
     const usable = (session.messages ?? []).filter(isUsableMessage)
+    const prev = lastIndexedCount.get(session.id) ?? 0
+
+    // 🔴 消息数**变少** = 作者回滚了检查点（F1）⇒ 索引必须跟着退。
+    //    ⚠️ 这一条必须排在下面那条「太少就不建」**之前** —— 否则回滚到不足
+    //    INDEX_MIN_MESSAGES 条时会直接 return，旧索引原封不动，召回继续把
+    //    「已经退回去、不曾发生」的片段捞回来（比不召回更糟）。
+    //    短到不值得重建 ⇒ 清掉旧索引，让本场不再有可召回内容。
+    if (prev > 0 && usable.length < prev && usable.length < INDEX_MIN_MESSAGES) {
+      await (deps?.removeRef ?? ((id: string) => removeByRef(TAVERN_VEC_PROJECT, id)))(session.id)
+        .catch(() => undefined)
+      lastIndexedCount.delete(session.id)
+      return
+    }
+
     if (usable.length < INDEX_MIN_MESSAGES) return
 
-    const prev = lastIndexedCount.get(session.id) ?? 0
-    // 🔴 只在「没变少、且新增不够」时跳过。
-    //    消息数变少＝作者回滚了检查点（F1）⇒ **必须重建**，否则索引停在旧内容上，
-    //    召回会把「已经退回去、不曾发生」的对话片段捞回来 —— 比不召回更糟。
+    // 没变少、且新增不够 ⇒ 跳过（省一次嵌入请求）
     if (prev > 0 && usable.length >= prev && usable.length - prev < INDEX_MIN_NEW) return
 
     const cfg = await (deps?.resolveConfig ?? resolveEmbedConfig)().catch(() => null)

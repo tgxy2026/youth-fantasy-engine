@@ -92,6 +92,12 @@ export const EMPTY_WORLD_SETTING: WorldSetting = {
  *  下面这个常量降级为「拿不到窗口时的兜底」，不再直接用于截断。 */
 export const WORLD_MAX_CHARS = 2400
 
+/**
+ * 一句话总纲的条目 id —— **固定层**的判据（见 `buildPlotWorldBook` 的两层渲染）。
+ * 🔴 全项目唯一真源：`worldEntriesOf` 用它造条目，`buildPlotWorldBook` 用它分层。
+ */
+export const WORLD_BRIEF_ID = 'world-brief'
+
 const K = 'tavern.world'
 
 export function isEmptyWorld(w: WorldSetting | null | undefined): boolean {
@@ -172,8 +178,11 @@ export function shouldInjectWorld(w: WorldSetting | null | undefined, haystack: 
   if (!w || isEmptyWorld(w)) return false
   const keys = w.keywords.map(k => k.trim()).filter(Boolean)
   if (keys.length === 0) return true
-  const h = String(haystack ?? '')
-  return keys.some(k => h.includes(k))
+  // 🔴 大小写口径必须与词条层（`worldBook.entryHits` 两侧都 toLowerCase）一致 ——
+  //    否则同一个关键词可能在「整份闸」判不中、在「词条闸」判中（或反之），
+  //    作者会看到「明明提到了却一条都不注入」。
+  const h = String(haystack ?? '').toLowerCase()
+  return keys.some(k => h.includes(k.toLowerCase()))
 }
 
 /**
@@ -239,7 +248,7 @@ export function worldEntriesOf(w: WorldSetting | null | undefined): WorldEntry[]
   const brief = String(w.brief ?? '').trim()
   if (brief) {
     out.push({
-      id: 'world-brief', title: '', body: brief,
+      id: WORLD_BRIEF_ID, title: '', body: brief,
       keys: [], prob: 1, order: -1, recursive: false, constant: true,
     })
   }
@@ -279,14 +288,37 @@ export function worldEntriesOf(w: WorldSetting | null | undefined): WorldEntry[]
 export function buildPlotWorldBook(
   w: WorldSetting | null | undefined,
   haystack: string,
-  opts: { rand?: () => number; maxChars?: number } = {},
+  opts: { rand?: () => number; maxChars?: number; fixedMaxChars?: number } = {},
 ): { text: string; hits: WorldEntry[]; skippedByProb: string[]; dropped: WorldEntry[] } {
   const empty = { text: '', hits: [], skippedByProb: [], dropped: [] }
   if (!w || isEmptyWorld(w)) return empty
   if (!shouldInjectWorld(w, haystack)) return empty
   const pool = worldEntriesOf(w)
   if (!pool.length) return empty
-  const r = buildWorldBookText(pool, haystack, { ...opts, maxChars: opts.maxChars ?? WORLD_MAX_CHARS })
+  // 🔴 两层**分开渲染**（对齐 `quotas.ts` 的额度设计）：
+  //    · 固定层 = 一句话总纲（`WORLD_BRIEF_ID`）—— 保存时已卡过 8% 额度，注入时不该再被词条挤掉；
+  //    · 动态层 = 各节词条 —— 四色灯控制，按动态层额度逐条取舍。
+  //    合池渲染的坏处很具体：小窗口下 `dynamic`（8K 时约 1229）< `fixed` 下限 2400，
+  //    作者按界面提示存了 2400 字总纲，进上下文时却被砍掉一半 —— 「存得下、注不进」。
+  const rf = renderLayer(pool.filter(e => e.id === WORLD_BRIEF_ID), haystack, opts.fixedMaxChars, opts)
+  const rd = renderLayer(pool.filter(e => e.id !== WORLD_BRIEF_ID), haystack, opts.maxChars, opts)
+  return {
+    text: [rf.text, rd.text].filter(Boolean).join('\n\n'),
+    hits: [...rf.hits, ...rd.hits],
+    skippedByProb: [...rf.skippedByProb, ...rd.skippedByProb],
+    dropped: [...rf.dropped, ...rd.dropped],
+  }
+}
+
+/** 单层渲染（空池 ⇒ 空结果，整层不出现，与既有「空设定不注入」一致） */
+function renderLayer(
+  entries: WorldEntry[],
+  haystack: string,
+  maxChars: number | undefined,
+  opts: { rand?: () => number },
+): { text: string; hits: WorldEntry[]; skippedByProb: string[]; dropped: WorldEntry[] } {
+  if (!entries.length) return { text: '', hits: [], skippedByProb: [], dropped: [] }
+  const r = buildWorldBookText(entries, haystack, { ...opts, maxChars: maxChars ?? WORLD_MAX_CHARS })
   return { text: r.text, hits: r.hits, skippedByProb: r.skippedByProb, dropped: r.dropped }
 }
 

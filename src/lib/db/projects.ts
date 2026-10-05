@@ -162,8 +162,8 @@ export async function deleteProject(id: string) {
   // 独立库里的项目级数据：语义向量块（#013）+ 挂载的参考资料（#017）。
   // 上面那批走 `ops.bulkDel` 的 store 在同一个库里，这两个不是 —— 必须各自显式调。
   // 一律不抛：独立库暂时不可用不该让「删项目」失败（projects 记录已经删了，重删一遍也无害）。
-  await clearProjectVectors(id).catch(() => { /* 忽略：删不掉也只是占空间，不影响已删除的事实 */ })
-  await clearProjectDocs(id).catch(() => { /* 忽略 */ })
+  await clearProjectVectors(id).catch((e) => { console.warn('[db] 删项目后清理语义向量失败（残留只占空间，不影响已删除）：', e) })
+  await clearProjectDocs(id).catch((e) => { console.warn('[db] 删项目后清理参考资料失败（残留只占空间，不影响已删除）：', e) })
 }
 
 // ============ 项目统计（项目列表页用，不依赖 currentProjectId） ============
@@ -249,7 +249,10 @@ async function kbInBackupOf(projectId: string): Promise<boolean> {
   try {
     const rec = await ops.get<{ key: string; value: unknown }>('settingsKV', `${projectId}::${KB_IN_BACKUP_KEY}`)
     return rec?.value === true
-  } catch {
+  } catch (e) {
+    // 🔴 读失败不能静默当成「作者没勾选」—— 那样导出会**悄悄剔掉**参考资料，作者却以为备份里有。
+    //    这里仍返回 false（保守：不带），但必须留痕，让排查有据。
+    console.warn('[db] 读「参考资料随包走」开关失败，本次按未勾选导出（备份可能不含资料）：', e)
     return false
   }
 }

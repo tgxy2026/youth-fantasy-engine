@@ -555,7 +555,7 @@ export default function TavernFree() {
                     </div>
                     {/* 🔴 自由模式的记忆是**角色级、跨会话共享**的 —— 回滚会动到别处，必须写在看得见的地方 */}
                     <p className="border-t border-ink-800 pt-2 text-10 leading-relaxed text-ink-600">
-                      与剧情推演不同：这里的记忆按角色存、**跨会话共享** ——
+                      与剧情推演不同：这里的记忆按角色存、跨会话共享 ——
                       所以回滚会把这位角色在别的对话里记得的事一起退回去。
                       只想丢消息、不动记忆的话，用「重说」或删单条。
                     </p>

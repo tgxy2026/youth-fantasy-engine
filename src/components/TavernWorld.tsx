@@ -75,7 +75,9 @@ export default function TavernWorld() {
   const hitChars = useMemo(() => {
     if (!w) return 0
     // 空上下文 ⇒ 只命中的是常驻条目（brief + 无触发词的节）—— 正是「最低消耗」那一档
-    return buildPlotWorldBook(w, '', { maxChars: 0 }).text.length
+    // 🔴 两个 0 都是「不限额、原样返回」—— 语义是「空上下文下必带的那些的完整长度」，
+    //    任一层限额都会把它量小（与 TavernScript 那处同源，改一处要改两处）。
+    return buildPlotWorldBook(w, '', { maxChars: 0, fixedMaxChars: 0 }).text.length
   }, [w])
   const overLimit = hitChars > quota.dynamic
 
@@ -146,15 +148,15 @@ export default function TavernWorld() {
   · 摘要：这个项目最关键的世界观骨架。
   · 分节 + 关键词：命中了关键词才带上这一节 —— 这是「不必每次喂一大堆」的关键。
     关键词留空 = 这一节总是注入。
-  · 世界书（每节自己的触发词）：除了上面那组「整份关键词」，每一节还能写**自己的**触发词 ——
+  · 世界书（每节自己的触发词）：除了上面那组「整份关键词」，每一节还能写「自己的」触发词 ——
     提到它才带上这一条，粒度更细。命中后还过一道「概率」闸（1 = 必中，0.5 = 一半概率）。
     一条被带进来后，它正文里提到的词还能再激活别的节（递归 2 轮、不重复）。
   · 只对剧情推演生效，随项目（换书就是另一份）。自由对话不读它 —— 那里可能混着不同世界观的角色，
     自由对话的世界观由角色卡「所属的故事」提供（卡里只写角色与它的关系）。
-  · 额度：上限**跟着模型窗口走** —— 一句话总纲（每轮全量注入）现在 {quota.fixed} 字
+  · 额度：上限「跟着模型窗口走」 —— 一句话总纲（每轮全量注入）现在 {quota.fixed} 字
     （按 {fmtWindow(quota.windowTokens)} 窗口 × 8%，下限 2400、上限 12000），超了不许保存；
     分节命中注入走动态层 {quota.dynamic} 字（窗口 × {quota.dynamicPct}%，可在控制面板调），
-    超了按优先级**逐条取舍**（先留常驻，再留直接命中，最后才是被引荐拉进来的），不会把某条切一半。
+    超了按优先级「逐条取舍」（先留常驻，再留直接命中，最后才是被引荐拉进来的）；只有「单条本身就超额度」这种极端情况才会截断。
   · 四色灯：常驻（每轮都带）/ 触发（命中触发词才带）/ 引荐（只在被别的词条递归带出时出现）/ 休眠（本次不参与）。
     没显式设的按老语义推断 —— 触发词留空就是「常驻」，等于升级前的行为。
   <AIDataSourceNote feature="tavern-world-draft" />
@@ -418,7 +420,7 @@ export default function TavernWorld() {
                 <span className="text-10 text-ink-600">（空上下文时实际会注入的部分）</span>
               </div>
               <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
-                {buildPlotWorldBook(w, '', { maxChars: quota.dynamic }).text || '（空）'}
+                {buildPlotWorldBook(w, '', { maxChars: quota.dynamic, fixedMaxChars: quota.fixed }).text || '（空）'}
               </pre>
             </div>
           </aside>

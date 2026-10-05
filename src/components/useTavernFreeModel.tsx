@@ -211,6 +211,8 @@ export function useTavernFreeModel() {
 
   // ---------- 加载 ----------
   useEffect(() => {
+    // 🔴 卸载守卫：加载途中切页签/关面板很常见（数据慢时尤其），无守卫会往已卸载组件 setState
+    let alive = true
     void (async () => {
       try {
         // 模型与总结模型统一由控制面板管（原先那个「模型设置」面板已下线）
@@ -218,17 +220,20 @@ export function useTavernFreeModel() {
           store.listFreeChars(),
           getTavernSettings().catch(() => DEFAULT_TAVERN_SETTINGS),
         ])
+        if (!alive) return
         setChars(cs)
         setTavernSettings(st)
         setSummaryProviderId(st.free.summaryProviderId)
         setSessions(await store.listFreeSessions())
+        if (!alive) return
         await refreshStories()
       } catch (e) {
-        showToast(`读取失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+        if (alive) showToast(`读取失败：${e instanceof Error ? e.message : String(e)}`, 'error')
       } finally {
-        setLoading(false)
+        if (alive) setLoading(false)
       }
     })()
+    return () => { alive = false }
   }, [refreshStories])
 
   // ---------- 日常推进与主动留言（§4.7 / §7.5） ----------

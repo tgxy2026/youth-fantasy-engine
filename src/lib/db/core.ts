@@ -231,8 +231,11 @@ async function mirrorDeleteExtra(store: string, cloudRows: SyncRow[]): Promise<v
       .map(r => r[kp])
       .filter((k): k is string | number => typeof k === 'string' || typeof k === 'number')
     if (extra.length) await desktopLocalStore.bulkDel(store, extra)
-  } catch {
-    /* 兜底镜像：读/删失败都保持现状（下次关同步或再开同步还有机会纠正），绝不向上抛 */
+  } catch (e) {
+    /* 兜底镜像：读/删失败都保持现状（下次关同步或再开同步还有机会纠正），绝不向上抛。
+       但**必须留痕** —— 镜像删不掉 = 本地多余记录残留，下次开同步可能被当成「本机新增」播回云端
+       （正是「删了会复活」那个家族）。静默吞掉会让这个现象完全无迹可查。 */
+    console.warn('[db] 镜像删除失败（下次同步可能把它当本机新增播回云端）：', e)
   }
 }
 
@@ -259,11 +262,13 @@ async function saveConflictCopy(info: SyncConflictInfo) {
       window.dispatchEvent(
         new CustomEvent('yfe:sync-conflict', { detail: { store: info.store, key: info.key } }),
       )
-    } catch {
-      /* 忽略 */
+    } catch (e) {
+      console.warn('[sync] 冲突提示派发失败（不影响同步结果）：', e)
     }
-  } catch {
-    /* 副本保存失败绝不影响主同步流程 */
+  } catch (e) {
+    /* 副本保存失败绝不影响主同步流程 —— 但必须留痕：副本存在的**唯一意义**就是
+       「云端那一版不再被静默丢弃」，连副本都存不下还不吭声，等于又回到了静默丢弃。 */
+    console.warn('[sync] 冲突副本保存失败（云端那一版可能已丢失，请检查磁盘空间与文件权限）：', e)
   }
 }
 
@@ -615,8 +620,13 @@ export async function disableDesktopCloudSync() {
     // 如实告知（只记日志：lib 层不能 import components 弹 toast，会形成反向依赖）
     console.warn('[sync] 云端不可用，关闭同步时以本地数据为准（未用旧快照覆盖本地新改动）')
   }
-  // 3) 落盘（桌面版走 JSON 文件；非桌面是空操作），确保 reload 前已持久化
-  await flushDesktop().catch(warnMirrorFail('flushDesktop'))
+  // 3) 落盘（桌面版走 JSON 文件；非桌面是空操作），确保 reload 前已持久化。
+  // 🔴 不能只 `.catch()` —— `flushDesktop()` 写失败时是 **return false**（不 reject），
+  //    只挂 catch 会把「没落盘」整个漏掉，而下一步就要切回本地 ops 并准备 reload。
+  const flushed = await flushDesktop().catch(() => false)
+  if (!flushed) {
+    console.warn('[sync] 关闭云同步前落盘未完成：数据可能仍在内存，请稍后确认已写入磁盘')
+  }
   // 4) 清标记、复位传输层，切回本地
   disableDesktopCloud()
   setStoreOps(desktopLocalStore)

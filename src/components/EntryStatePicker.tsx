@@ -19,8 +19,8 @@ import { ENTRY_STATE_LABEL, ENTRY_STATE_HINT, type EntryState } from '../lib/tav
 
 /** 四色灯的视觉：色点 + 选中态描边。色值走主题 token（闸 ⑨），不写裸色值。 */
 const DOT: Record<EntryState, string> = {
-  on: 'bg-sky-400',
-  hit: 'bg-emerald-400',
+  on: 'bg-info',
+  hit: 'bg-success',
   ref: 'bg-amber',
   off: 'bg-ink-600',
 }
@@ -30,8 +30,8 @@ const ORDER: EntryState[] = ['on', 'hit', 'ref', 'off']
 
 /** 单选态下的选中样式：不同灯给不同描边，避免「四个长得一样」看不出选了谁 */
 const SELECTED: Record<EntryState, string> = {
-  on: 'border-sky-400/70 bg-sky-400/10 text-ink-100',
-  hit: 'border-emerald-400/70 bg-emerald-400/10 text-ink-100',
+  on: 'border-info/70 bg-info/10 text-ink-100',
+  hit: 'border-success/70 bg-success/10 text-ink-100',
   ref: 'border-amber/70 bg-amber/10 text-ink-100',
   off: 'border-ink-600 bg-ink-800 text-ink-300',
 }
