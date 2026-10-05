@@ -19,7 +19,7 @@ import { TavernPreset } from '../lib/tavern/presets'
 import { dynamicGuide } from '../lib/tavern/paramGuide'
 import { VarKey } from '../lib/tavern/types'
 import { DEFAULT_POST_RULES, previewPostRules, PostRule } from '../lib/tavern/postRules'
-import { getTavernSettings, saveTavernSettings, resetTavernSettings, DEFAULT_TAVERN_SETTINGS, TavernSettings, TavernProfile } from '../lib/tavern/settings'
+import { getTavernSettings, saveTavernSettings, resetTavernSettings, DEFAULT_TAVERN_SETTINGS, TavernSettings, TavernProfile, withActiveProfile, addProfileTo, removeProfileFrom, selectProfileIn, activeProfileOf } from '../lib/tavern/settings'
 import { COL_GAP, PROTO_MIN_HEIGHT } from './tavernControlParts'
 import { DYNAMIC_QUOTA_PCT } from '../lib/tavern/quotas'
 
@@ -238,9 +238,19 @@ export function useTavernControlModel() {
   }
   const setCommon = (k: keyof TavernSettings['common'], v: number | string | boolean) =>
     edit(prev => ({ ...prev, common: { ...prev.common, [k]: v } as TavernSettings['common'] }))
-  /** 「我的档案」三栏都是文本 */
+  /**
+   * 「我的档案」四栏都是文本 —— 🔴 改的是**当前生效那份**（分派逻辑在 `settings.withActiveProfile`：
+   * 老库写 `profile`、多套写选中那份并同步镜像）。这里**不许**直接展开 `prev.profile`，
+   * 否则多套档案时改的永远是第一份，而界面显示的是选中的那份（静默改错人）。
+   */
   const setProfile = (k: keyof TavernProfile, v: string) =>
-    edit(prev => ({ ...prev, profile: { ...prev.profile, [k]: v } }))
+    edit(prev => withActiveProfile(prev, { [k]: v } as Partial<TavernProfile>))
+  /** 新建一套空白档案并切过去（第一次新建会把现有 `profile` 提升为第一份） */
+  const addProfile = () => edit(addProfileTo)
+  /** 删掉一套（**至少留一份**，只有一份时原样返回） */
+  const removeProfile = (id: string) => edit(prev => removeProfileFrom(prev, id))
+  /** 切到某一套 */
+  const selectProfile = (id: string) => edit(prev => selectProfileIn(prev, id))
   const setPlot = (k: keyof TavernSettings['plot'], v: number | string) =>
     edit(prev => ({ ...prev, plot: { ...prev.plot, [k]: v } as TavernSettings['plot'] }))
   // 自由段里也有开关键（#11 的「卸载本地模型」），所以取值放宽到 boolean（与 setCommon 一致）
@@ -345,7 +355,9 @@ export function useTavernControlModel() {
   if (!s) return null
 
   const c = s.common
-  const pr = s.profile
+  // 🔴 走 `activeProfileOf` 而不是 `s.profile` —— 多套档案时前者才是「当前选中那份」。
+  //    （写入侧有同步镜像，两者通常相等；但不靠镜像、显式取，才不会因某处漏镜像而静默显示错人）
+  const pr = activeProfileOf(s)
   const pl = s.plot
   const fr = s.free
   const modelOptions = providers.map(p => ({ id: p.id, label: `${p.name} · ${p.model}` }))
@@ -447,7 +459,7 @@ export function useTavernControlModel() {
   }
 
   return {
-    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gNumCtx, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange,
+    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, addProfile, removeProfile, selectProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gNumCtx, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange,
   }
 }
 

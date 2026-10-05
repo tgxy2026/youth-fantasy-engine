@@ -189,6 +189,12 @@ export type TavernFreeSettings = {
  * 头像是图片（不占字数），与角色头像共用同一套上传组件（批次 8 已落地）。
  */
 export type TavernProfile = {
+  /**
+   * 档案 id（**可选**）。
+   * 🔴 老库只有一份档案、且没有这个字段 ⇒ 读取侧一律视为「默认档案」，
+   *   不写进老库、也不靠它做任何必要判断（判断一律走 `activeProfileOf`）。
+   */
+  id?: string
   /** 你的名字 */
   name: string
   /** 希望被怎么称呼（留空 = 直呼名字） */
@@ -233,8 +239,20 @@ export const DEFAULT_TAVERN_VARS: TavernVarsSettings = {
 
 export type TavernSettings = {
   common: TavernCommonSettings
-  /** 我的档案：用户本人是谁（全局，跨项目） */
+  /**
+   * 我的档案：用户本人是谁（全局，跨项目）。
+   * 🔴 **始终是「当前生效那份」的镜像** —— 老库（没有 `profiles`）它就是唯一真源；
+   *   启用多套后它仍跟着当前选中那份走，好让任何还没改成 `activeProfileOf()` 的读取点拿到对的内容。
+   *   **读取请一律走 `activeProfileOf(s)`**，别直接读这个字段（否则多套时拿到的是镜像、容易与选择不同步）。
+   */
   profile: TavernProfile
+  /**
+   * 多套档案（**可选**）。空/缺省 ⇒ 只有 `profile` 那一套，**老库行为逐字不变**。
+   * 启用后由 `activeProfileId` 决定当前生效哪一份 —— 见 `activeProfileOf` / `withActiveProfile` 等助手。
+   */
+  profiles?: TavernProfile[]
+  /** 当前选中的档案 id（对应 `profiles[].id`）。空或找不到 ⇒ 回落第一份 */
+  activeProfileId?: string
   plot: TavernPlotSettings
   free: TavernFreeSettings
   /** 本场变量（C2 第二步）：自由对话专用 */
@@ -599,6 +617,81 @@ export async function syncTuningWithModel(): Promise<SyncTuningResult> {
   } catch {
     return { changed: false, reason: 'error' }
   }
+}
+
+// ==================== 我的档案 · 多套（S3，2026-10-05）====================
+//
+// 【为什么要有这套助手】档案有**两份来源**：老库的 `profile`（单份）与新库的 `profiles[]`（多套）。
+//   「读哪一份、写哪一份」的判断**只能有一处**，否则每个调用点各判一次必然漂移
+//   （典型症状：切换了档案，但引擎还在用第一份 —— 界面看着对、实际喂错了人）。
+//   ⇒ 读取一律 `activeProfileOf(s)`；写入一律走 `withActiveProfile` / `addProfileTo` /
+//      `removeProfileFrom` / `selectProfileIn`。**调用方不许自己碰 `s.profile` / `s.profiles`**。
+//
+// 【老库行为零漂移】`profiles` 缺省 ⇒ `activeProfileOf` 返回 `profile` 本身、
+//   `withActiveProfile` 写回 `profile`、不凭空造出 `profiles` 键。
+
+/** 全部档案（老库只有一份 ⇒ 返回长度 1 的数组，界面不必为「单份」写分支） */
+export function profileListOf(s: TavernSettings): TavernProfile[] {
+  const list = (s.profiles ?? []).filter(p => p && typeof p === 'object')
+  return list.length ? list : [s.profile]
+}
+
+/**
+ * **当前生效的那份档案** —— 读取侧唯一入口（引擎、界面、新建会话都用它）。
+ * 找不到 `activeProfileId` 对应项时**回落第一份**（而不是回落老 `profile`）：
+ * 档案被删/ id 写坏时，作者看到的是"第一套"，不是一份谁都没在用的旧数据。
+ */
+export function activeProfileOf(s: TavernSettings): TavernProfile {
+  const list = (s.profiles ?? []).filter(p => p && typeof p === 'object')
+  if (!list.length) return s.profile
+  return list.find(p => !!p.id && p.id === s.activeProfileId) ?? list[0]
+}
+
+/** 改**当前这份**档案（分派：老库写 `profile`，多套写选中那份并把 `profile` 同步成镜像） */
+export function withActiveProfile(s: TavernSettings, patch: Partial<TavernProfile>): TavernSettings {
+  const list = (s.profiles ?? []).filter(p => p && typeof p === 'object')
+  if (!list.length) return { ...s, profile: { ...s.profile, ...patch } }
+  const cur = activeProfileOf(s)
+  const merged = { ...cur, ...patch }
+  return {
+    ...s,
+    profiles: list.map(p => (p.id && p.id === cur.id ? merged : p)),
+    profile: merged,                       // 镜像：兜底任何还没改成 activeProfileOf 的读取点
+  }
+}
+
+/**
+ * 新增一套**空白**档案并切过去。
+ * 🔴 第一次新增时会把现有 `profile` **提升为第一份**（id `pf-default`）——
+ *   否则作者会以为「原来填的那份丢了」。此时 `activeProfileId` 指向新那份（符合"点了新建就该在新的一份上写"）。
+ */
+export function addProfileTo(s: TavernSettings): TavernSettings {
+  const list = (s.profiles ?? []).filter(p => p && typeof p === 'object')
+  const base = list.length ? list : [{ ...s.profile, id: 'pf-default' }]
+  const fresh: TavernProfile = { ...DEFAULT_TAVERN_PROFILE, id: `pf-${Date.now().toString(36)}` }
+  return {
+    ...s,
+    profiles: [...base, fresh],
+    activeProfileId: fresh.id,
+    profile: fresh,
+  }
+}
+
+/** 删掉一套。**至少留一份**（只有一份时原样返回，界面也据此禁用按钮） */
+export function removeProfileFrom(s: TavernSettings, id: string): TavernSettings {
+  const list = (s.profiles ?? []).filter(p => p && typeof p === 'object')
+  if (list.length <= 1) return s
+  const next = list.filter(p => p.id !== id)
+  if (next.length === list.length) return s          // 没这份（id 写错）⇒ 原样返回，别静默改选择
+  const active = s.activeProfileId === id ? next[0] : activeProfileOf(s)
+  return { ...s, profiles: next, activeProfileId: active.id, profile: active }
+}
+
+/** 切到某一套（id 不存在时原样返回，不把选择清空） */
+export function selectProfileIn(s: TavernSettings, id: string): TavernSettings {
+  const hit = (s.profiles ?? []).find(p => p && p.id === id)
+  if (!hit) return s
+  return { ...s, activeProfileId: id, profile: hit }
 }
 
 // ==================== 给引擎用的派生量 ====================

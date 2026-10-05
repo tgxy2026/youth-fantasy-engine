@@ -60,7 +60,7 @@ import {
 import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf, migrateVarScale, VAR_SCALE, setCharNote, emptyVars } from '../lib/tavern/vars'
 import { snapshotOf, openingToMessage } from '../lib/tavern/script'
 import { getScript } from '../lib/tavern/script'
-import { getTavernSettings, memoryLimitsOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
+import { getTavernSettings, memoryLimitsOf, activeProfileOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
 import { listStories, storyDisplayName, getStory, snapshotStorySetting } from '../lib/tavern/story'
 import { type SpeakerInfo } from '../lib/tavern/exportDoc'
 import { buildStatusModel, agoText } from '../lib/tavern/status'
@@ -660,8 +660,8 @@ export function useTavernFreeModel() {
     memories: mems,
   }), [castCards, session, mems])
 
-  /** 我的档案（全局）：目前只用来给「你」这一侧挂头像 */
-  const myProfile = tavernSettings?.profile ?? DEFAULT_TAVERN_PROFILE
+  /** 我的档案（全局）：目前只用来给「你」这一侧挂头像。🔴 走 activeProfileOf（多套档案时取选中的那份） */
+  const myProfile = tavernSettings ? activeProfileOf(tavernSettings) : DEFAULT_TAVERN_PROFILE
   /**
    * 右栏「Ta这几天的生活 / 心情」跟着 statusCharId 走（角色级数据，换人换一份）。
    *

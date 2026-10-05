@@ -24,7 +24,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import { MAX_AI_CAST, MAX_CAST_SLOTS } from '../lib/tavern/types'
-import { getTavernSettings, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
+import { getTavernSettings, activeProfileOf, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
 import { Button } from './Button'
 import SelectRow from './SelectRow'
 import { Modal } from './Modal'
@@ -214,7 +214,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         setScripts([])  // 故事定了再按它拉剧本
         // 「我的档案」有名字 → 界面可以明确讲「AI 已经知道你是谁」。
         // 这正是「默认『我演』的角色」被去掉之后的补偿：**不用选角色也有身份**。
-        setCallName(st.profile.address.trim() || st.profile.name.trim())
+        setCallName(activeProfileOf(st).address.trim() || activeProfileOf(st).name.trim())
       } catch {
         if (alive) setOptions([])
       } finally {

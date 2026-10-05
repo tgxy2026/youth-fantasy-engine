@@ -10,6 +10,7 @@ import {
   getTavernSettings, saveTavernSettings, resetTavernSettings,
   commonParamsLayer, modeParamsLayer, memoryLimitsOf, timeoutMsOf,
   DEFAULT_PROTOCOL, thinkOptOf, summaryLockTtlOf,
+  activeProfileOf, profileListOf, withActiveProfile, addProfileTo, removeProfileFrom, selectProfileIn,
 } from '../src/lib/tavern/settings'
 import { FIXED_OVERHEAD_CHARS, historyBudget } from '../src/lib/tavern/budget'
 import { PROTOCOL_CORE, PROTOCOL_VERSION, LEGACY_PROTOCOLS } from '../src/lib/tavern/protocol'
@@ -249,6 +250,69 @@ async function main() {
     const half = await getTavernSettings()
     ok('半份档案：缺的栏位回落空串（不是 undefined）',
       half.profile.name === '只有名字' && half.profile.address === '' && half.profile.persona === '')
+  }
+
+  // ---------- 3d) 「我的档案」多套（S3，2026-10-05） ----------
+  //
+  // 这一节钉的是「**读哪一份、写哪一份只能有一处判断**」——
+  // 老库只有 `profile` 一份、新库有 `profiles[]` + `activeProfileId`；
+  // 判断散到各调用点就会漂移（典型症状：界面切了档案，引擎还在喂第一份）。
+  {
+    const base = { ...DEFAULT_TAVERN_SETTINGS, profile: { name: '老巴迪', address: '巴迪哥', persona: '编剧', avatar: '' } }
+
+    // ① 老库（无 profiles）：读到的就是 profile 本身，行为逐字不变
+    ok('🔴 老库：activeProfileOf 返回 profile 本身', activeProfileOf(base).name === '老巴迪')
+    ok('老库：profileListOf 返回长度 1 的数组（界面不必写「单份」分支）',
+      profileListOf(base).length === 1 && profileListOf(base)[0].name === '老巴迪')
+
+    // ② 老库写：只动 profile，**不凭空造出 profiles 键**（老数据形态不漂移）
+    const w1 = withActiveProfile(base, { name: '老巴迪2' })
+    ok('🔴 老库写：改的是 profile，且不凭空造出 profiles 键',
+      w1.profile.name === '老巴迪2' && w1.profiles === undefined, JSON.stringify(w1.profiles))
+
+    // ③ 新建：现有 profile 被**提升为第一份**（不能让作者以为原来那份丢了）
+    const a1 = addProfileTo(base)
+    ok('🔴 新建第一套：原 profile 提升为 profiles[0]（内容一字不丢）',
+      a1.profiles?.length === 2 && a1.profiles[0].name === '老巴迪', JSON.stringify(a1.profiles?.map(p => p.name)))
+    ok('新建后切到新那份（点了新建就该在新的一份上写）',
+      activeProfileOf(a1).name === '' && !!a1.activeProfileId)
+    ok('新建的那份是空档案（不继承上一份的名字/称呼）',
+      activeProfileOf(a1).address === '' && activeProfileOf(a1).persona === '')
+
+    // ④ 多套写：只改**选中那份**，另一份一字不动，且 profile 镜像跟着走
+    const a2 = withActiveProfile(a1, { name: '新笔名' })
+    ok('🔴 多套写：只改选中那份，另一份不动',
+      a2.profiles?.[1].name === '新笔名' && a2.profiles?.[0].name === '老巴迪',
+      JSON.stringify(a2.profiles?.map(p => p.name)))
+    ok('🔴 多套写：profile 镜像同步成当前那份（兜底还没改读取点的调用方）',
+      a2.profile.name === '新笔名')
+
+    // ⑤ 切换：切回去读到旧那份
+    const a3 = selectProfileIn(a2, a2.profiles![0].id!)
+    ok('🔴 切换到第一套：读到的是它自己的内容（不是被覆盖过的）',
+      activeProfileOf(a3).name === '老巴迪' && a3.profile.name === '老巴迪')
+    ok('切到不存在的 id ⇒ 原样返回（不把选择清空）',
+      selectProfileIn(a3, 'nope') === a3)
+
+    // ⑥ 删除：至少留一份
+    const a4 = removeProfileFrom(a3, a3.profiles![1].id!)
+    ok('删掉一套后只剩一份，且选择自动落到还活着的那份',
+      a4.profiles?.length === 1 && activeProfileOf(a4).name === '老巴迪', JSON.stringify(a4.profiles?.length))
+    ok('🔴 只剩一份时再删 ⇒ 原样返回（至少留一份）',
+      removeProfileFrom(a4, a4.profiles![0].id!) === a4)
+
+    // ⑦ activeProfileId 写坏时的回落：**回落第一份**（不是回落老 profile —— 那可能是一份谁都没在用的旧数据）
+    const broken = { ...a2, activeProfileId: 'missing-id' }
+    ok('🔴 activeProfileId 对不上时回落第一份（不是回落可能过期的 profile 镜像）',
+      activeProfileOf(broken).name === a1.profiles![0].name)
+
+    // ⑧ 存能读回：多套链路过一遍存储
+    __resetMockStores()
+    await saveTavernSettings(a2)
+    const backMulti = await getTavernSettings()
+    ok('多套档案能存能读回（profiles 与 activeProfileId 都在）',
+      backMulti.profiles?.length === 2 && backMulti.activeProfileId === a2.activeProfileId,
+      JSON.stringify({ n: backMulti.profiles?.length, act: backMulti.activeProfileId }))
   }
 
   // ---------- 4) 派生量 ----------

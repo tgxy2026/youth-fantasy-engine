@@ -24,7 +24,7 @@ import * as store from './store'
 import { trimHistory, historyBudget } from './budget'
 import { toOllamaOptions } from './params'
 import {
-  getTavernSettings, resolveParamsOf, timeoutMsOf, thinkOptOf,
+  getTavernSettings, resolveParamsOf, timeoutMsOf, thinkOptOf, activeProfileOf,
   type TavernSettings,
 } from './settings'
 import { memoryToText, isMemoryEmpty } from './memory'
@@ -599,7 +599,8 @@ export async function buildFreeSystem(
       }))
     }
     // 「我的档案」：描述**屏幕后面那个人**（用户本人）。空档案返回空串，不占位置。
-    parts.push(buildUserProfileBlock(st.profile, userChar?.name))
+    // 🔴 走 `activeProfileOf`（不是 st.profile）—— 多套档案时才是"当前选中的那份"
+    parts.push(buildUserProfileBlock(activeProfileOf(st), userChar?.name))
     return parts.filter(Boolean).join('\n\n')
   })()
 

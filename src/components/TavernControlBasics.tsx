@@ -10,9 +10,16 @@ import { Button } from './Button'
 import { PARAM_GUIDES } from '../lib/tavern/paramGuide'
 import { GRID2, Section, NumField, TextField, SelectField, ToggleField } from './TavernFieldKit'
 import type { TavernControlModel } from './useTavernControlModel'
+import { profileListOf, activeProfileOf, type TavernProfile } from '../lib/tavern/settings'
+
+/** 下拉里显示什么：优先档案自己的名字；没名字就用序号兜底（否则两个空档案长得一模一样） */
+const profileOptionLabel = (p: TavernProfile, i: number) => p.name.trim() || `未命名档案 ${i + 1}`
 
 export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
-  const { setCommon, setProfile, c, pr, modelOptions, cap, rec, gBudget, gNumCtx, gFixed, drift, applyRecommended, onDefaultModelChange } = m
+  const { setCommon, setProfile, addProfile, removeProfile, selectProfile, s, c, pr, modelOptions, cap, rec, gBudget, gNumCtx, gFixed, drift, applyRecommended, onDefaultModelChange } = m
+  /** 全部档案（老库只有一份 ⇒ 数组长度 1）+ 当前生效那份的 id（老库没有 id ⇒ 空串，选项值也用它） */
+  const profiles = profileListOf(s)
+  const curProfileId = activeProfileOf(s).id ?? ''
   return (
     <>
           {/* ---------- 一、通用设置 ---------- */}
@@ -113,8 +120,32 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
           <div>
           <Section
             title="二、我的档案"
-            desc="你本人是谁 —— 跨项目生效，每轮进 system。自由对话靠它知道你是谁；剧情推演不用。三栏全空＝不注入。"
+            desc="你本人是谁 —— 跨项目生效，每轮进 system。自由对话靠它知道你是谁；剧情推演不用。四栏全空＝不注入。可以建多套：同一个人在不同书里换身份（笔名、性别、脾气）时，切换即可。"
           >
+            {/* 档案切换（S3）：只有一份时下拉只有一个选项 —— 不禁用，让作者一眼看到「可以建多套」 */}
+            <div className="mb-3 rounded-md border border-ink-800 bg-ink-900/40 p-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="shrink-0 text-11 text-ink-400">档案</span>
+                <select
+                  className="min-w-0 flex-1 rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50"
+                  value={curProfileId}
+                  onChange={e => selectProfile(e.target.value)}
+                >
+                  {profiles.map((p, i) => (
+                    <option key={p.id ?? `legacy-${i}`} value={p.id ?? ''}>{profileOptionLabel(p, i)}</option>
+                  ))}
+                </select>
+                <Button variant="secondary" size="sm" onClick={addProfile}>＋ 新建档案</Button>
+                {profiles.length > 1 && (
+                  <Button variant="secondary" size="sm" onClick={() => removeProfile(curProfileId)}>删除这份</Button>
+                )}
+              </div>
+              <p className="mt-1.5 text-10 leading-relaxed text-ink-500">
+                下面四栏改的是「当前选中的这份」。多套档案的用处：同一个你，在不同书里换身份
+                —— 比如写仙侠用一套、写都市用另一套，切换后模型立刻按新的称呼与关系说话。
+                {profiles.length === 1 && '（现在只有一份 —— 点「＋ 新建档案」就能加。）'}
+              </p>
+            </div>
             <div className="mb-1">
               <AvatarPicker
                 src={pr.avatar}
