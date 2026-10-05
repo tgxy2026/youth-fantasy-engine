@@ -9,7 +9,7 @@ import {
   buildSystemPrompt, buildOpeningMessage, buildMultiCharRule, toChatMessages, renderCastSetting,
   buildSameNameNote, buildSceneDescriptionRule,
 } from '../src/lib/tavern/prompt'
-import { PROTOCOL_CORE, PROTOCOL_VERSION } from '../src/lib/tavern/protocol'
+import { PROTOCOL_CORE, PROTOCOL_VERSION, LEGACY_PROTOCOLS } from '../src/lib/tavern/protocol'
 import { DEFAULT_COMMON_EXTRA } from '../src/lib/tavern/settings'
 import { trimHistory, historyBudget, FIXED_OVERHEAD_CHARS } from '../src/lib/tavern/budget'
 import { resolveParams, toOllamaOptions } from '../src/lib/tavern/params'
@@ -43,6 +43,31 @@ function main() {
     // v1.5：给「动作必须进括号」补一条**一眼能自查的判据**（罗列要求不如给判定标准）
     ok('「最后提醒」里也留了这条判据（贴着生成点再压一次）',
       PROTOCOL_CORE.includes('没有（ ）的行，只能是被说出口的话'))
+
+    // ---------- 1b) v1.12：参考 SillyTavern 内置 sysprompt 后吸收的条款（2026-10-06） ----------
+    // 删掉这些就等于把吸收成果丢了 —— 用断言钉住。
+    ok('v1.12 含「专业演员」心态定位（ST Actor 预设的思路）',
+      PROTOCOL_CORE.includes('专业演员'))
+    ok('v1.12 含抗出戏（被问「是不是 AI」也不出戏、不承认自己是模型）',
+      PROTOCOL_CORE.includes('你是不是 AI') && PROTOCOL_CORE.includes('不承认自己是模型'))
+    ok('v1.12 含「慢下来」（ST：Develop the plot slowly / naturally slow pace）',
+      PROTOCOL_CORE.includes('慢下来') && PROTOCOL_CORE.includes('一步一顿好过一步到位'))
+    ok('v1.12 含节奏起伏与五感（ST：burstiness / sensory perceptions）',
+      PROTOCOL_CORE.includes('节奏有起伏') && PROTOCOL_CORE.includes('调动五感'))
+    ok('v1.12 含「额外知识可丰富角色、角色卡定义绝对优先」（ST enhanceDefinitions）',
+      PROTOCOL_CORE.includes('角色卡写定的部分绝对优先'))
+    ok('v1.12 含「资料不是台词」防复读（ST：Do not repeat this message）',
+      PROTOCOL_CORE.includes('不是台词') && PROTOCOL_CORE.includes('别把它们写进回复'))
+    ok('v1.12 的 R2 加了正向表述（把对方留给对方 —— ST 文档：正向优于禁令）',
+      PROTOCOL_CORE.includes('把对方留给对方'))
+
+    // ---------- 1c) 老数据升级锚点（2026-10-06 拆到 src/data/protocolLegacy.ts） ----------
+    // 拆文件后「老用户自动升级」这条链路最容易静默失效，用断言钉住。
+    ok('LEGACY 已含 v1.11（本次被替换掉的那一版）',
+      LEGACY_PROTOCOLS.some(p => p.includes('协议 · v1.11 ════')))
+    ok('LEGACY 版本数 = 11（v1.1 ~ v1.11）', LEGACY_PROTOCOLS.length === 11, String(LEGACY_PROTOCOLS.length))
+    ok('LEGACY 里不含当前版 v1.12（当前版只应在 PROTOCOL_CORE 里）',
+      !LEGACY_PROTOCOLS.some(p => p.includes('协议 · v1.12 ════')))
     ok('协议含防代笔主句（R2 守住彼此的边界）', PROTOCOL_CORE.includes('守住彼此的边界') && PROTOCOL_CORE.includes('不替用户决定'))
     ok('协议含篇幅硬约束（60–160 字 / 最多 2 行 / 最多 2 句）',
       PROTOCOL_CORE.includes('60–160 字') && PROTOCOL_CORE.includes('最多 2 行') && PROTOCOL_CORE.includes('最多 2 句'))

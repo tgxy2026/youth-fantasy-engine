@@ -156,7 +156,7 @@ if (!SRC) {
     'src/data/seedContent.ts': { max: 8300, why: '纯正文数据（示范项目三卷 21 章全文），无逻辑' },
     'src/data/materialData.ts': { max: 6300, why: '纯资料数据（素材库条目），无逻辑' },
     'src/lib/seedData.ts': { max: 1600, why: '示范项目种子工厂：工厂码与卷章数据混排，⚠️ 已列 2.3.0 待拆分（纯数据应落 src/data/）' },
-    'src/lib/tavern/protocol.ts': { max: 1600, why: '酒馆协议常量 + 旧版协议冻存（LEGACY_PROTOCOLS），属数据/协议表' },
+    'src/data/protocolLegacy.ts': { max: 2400, why: '纯数据：历代协议全文冻存（每版约 140 行，随协议版本单调增长）' },
   }
   const over: string[] = []
   const soft: string[] = []

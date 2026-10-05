@@ -366,8 +366,15 @@ function upgradeLegacyDefaults(raw: Partial<TavernSettings> | null): Partial<Tav
   if (out.common && out.common.extraPrompt === LEGACY_DEFAULT_COMMON_EXTRA) {
     out = { ...out, common: { ...out.common, extraPrompt: DEFAULT_COMMON_EXTRA } }
   }
-  if (typeof out.protocol === 'string' && LEGACY_PROTOCOLS.includes(out.protocol)) {
-    out = { ...out, protocol: PROTOCOL_CORE }
+  // 🔴 比对前先归一化换行：协议字符串可能经版本库（autocrlf）与打包两条路进来，
+  //    换行是 CRLF 还是 LF 取决于文件字节 —— **只差换行不该被当成「作者改过的协议」而放弃升级**
+  //    （那种失败是完全静默的：老用户升级后协议纹丝不动）。2026-10-06 随协议实体拆文件一并加固。
+  const normProtocol = (s: string) => s.replace(/\r\n/g, '\n')
+  if (typeof out.protocol === 'string') {
+    const curProtocol = out.protocol
+    if (LEGACY_PROTOCOLS.some(p => normProtocol(p) === normProtocol(curProtocol))) {
+      out = { ...out, protocol: PROTOCOL_CORE }
+    }
   }
   // ⑤ 出厂参数放宽（2026-09-15）：上下文预算 / 超时 / 采样面 / 记忆三档上限整体上移。
   //    🔴 与上面各条同一条纪律：**只升级「还等于旧出厂值」的字段**，手动调过的一个都不动。
