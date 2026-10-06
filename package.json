@@ -1,7 +1,7 @@
 {
   "name": "novel-studio",
   "private": true,
-  "version": "2.8.3",
+  "version": "2.9.0",
   "type": "module",
   "description": "青春幻想引擎 · 小说创作管理应用（Windows 桌面版）",
   "author": "青春幻想引擎开发组",
@@ -21,10 +21,11 @@
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
+    "@vitejs/plugin-react": "^6.1.2",
     "autoprefixer": "^10.4.19",
     "electron": "^31.3.0",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^15.15.0",
@@ -36,7 +37,7 @@
     "tailwindcss": "^3.4.6",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.70.0",
-    "vite": "^5.3.4",
+    "vite": "^8.3.3",
     "vite-plugin-singlefile": "^2.3.3"
   }
 }

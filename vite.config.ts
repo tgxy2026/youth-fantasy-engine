@@ -83,8 +83,11 @@ export default defineConfig(() => ({
     chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
+        // ⚠️ vite 8 内核已换成 rolldown，它**只接受函数形式**的 manualChunks。
+        //    旧的对象写法（`{ 'react-vendor': ['react','react-dom'] }`）会直接构建失败：
+        //    `TypeError: manualChunks is not a function`（2026-10-07 实测）。
+        manualChunks(id: string) {
+          if (/[\\/]node_modules[\\/](?:react|react-dom)[\\/]/.test(id)) return 'react-vendor'
         },
       },
     },
