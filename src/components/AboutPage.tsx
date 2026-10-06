@@ -12,6 +12,7 @@ import UpdateDialog from './UpdateDialog'
 import { QUARK_URL, QUARK_CODE, QUARK_TOKEN } from '../lib/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '../lib/versionCheck'
 import { usePersistedBool } from '../lib/uiPrefs'
+import { collectDiagnostics } from '../lib/diagnostics'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
 const BILI_URL = 'https://b23.tv/zl4vqyw'
@@ -46,6 +47,8 @@ export default function AboutPage() {
   const [result, setResult] = useState<{ hasUpdate: boolean; latest: LatestRelease | null; skipped?: boolean } | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [autoCheck, setAuto] = usePersistedBool('update-auto-check', isAutoCheckOn())
+  // 诊断信息（2026-10-06 补 · 可观测性）：反馈问题时一键复制环境与规模摘要
+  const [diagBusy, setDiagBusy] = useState(false)
 
   const runCheck = async () => {
     setChecking(true)
@@ -55,6 +58,19 @@ export default function AboutPage() {
       if (r.hasUpdate) setDialogOpen(true)
     } finally {
       setChecking(false)
+    }
+  }
+
+  /**
+   * 复制诊断信息：版本 / 系统 / 数据规模 / AI 配置概况。
+   * 🔴 内容口径见 `lib/diagnostics.ts` 顶部三条红线 —— 不含作品内容、密钥、文件路径。
+   */
+  const copyDiag = async () => {
+    setDiagBusy(true)
+    try {
+      await copyText(await collectDiagnostics(), '诊断信息已复制，粘贴给作者即可')
+    } finally {
+      setDiagBusy(false)
     }
   }
 
@@ -196,6 +212,18 @@ export default function AboutPage() {
                   </li>
                 ))}
               </ul>
+
+              {/* 诊断信息（2026-10-06 补）：反馈问题时附上这段，省去来回问「什么系统 / 多少章 / 哪个版本」 */}
+              <div className="mt-4 pt-4 border-t border-ink-700">
+                <Button variant="secondary" size="sm" disabled={diagBusy} onClick={() => void copyDiag()} className="gap-1.5">
+                  <Copy size={13} />
+                  {diagBusy ? '采集中…' : '复制诊断信息'}
+                </Button>
+                <p className="mt-2 text-10 leading-relaxed text-ink-500">
+                  反馈问题时附上这段：版本、系统、数据规模与 AI 配置概况。
+                  不含任何作品内容、密钥与文件路径，可放心粘贴。
+                </p>
+              </div>
             </section>
           </div>
 

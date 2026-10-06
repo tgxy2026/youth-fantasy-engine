@@ -32,7 +32,10 @@ import { chaptersToTxt, bookToMarkdown, bookToPlatformText } from '../src/lib/ex
 import { buildChapterDigest } from '../src/lib/aiContext'
 import { buildBookEvidencePack } from '../src/lib/bookEvidence'
 import { countWords } from '../src/lib/textStats'
-import type { Chapter, Volume, TableRow, CardRecord } from '../src/lib/types'
+import { chunkChapter } from '../src/lib/semantic/chunk'
+import { parseImportText, mapHeaders, matrixToRows } from '../src/lib/tableIO'
+import { scanText } from '../src/lib/sensitiveWords'
+import type { Chapter, Volume, TableRow, CardRecord, TabDef } from '../src/lib/types'
 
 let pass = 0, fail = 0
 /**
@@ -103,6 +106,12 @@ const LIMIT = {
   table: 300,
   digest: 300,
   bookPack: 1500,  // 整书证据包（含 900 份快照的归类）
+  // ── 2.7~2.8 新增路径（2026-10-06 补入：语义切块 / 表格导入 / 敏感词扫描）──
+  chunk: 200,       // 全书切块（100 万字 → 数千块）
+  importParse: 200, // 表格导入：文本 → 表格（3000 行）
+  importMap: 200,   // 表格导入：表头映射 → 行对象
+  scan: 1500,       // 敏感词扫描（100 万字 × 千余词）：纯算法、复杂度 O(词数×字数)，
+                    //   本项余量天然比别的项小（实测 ≈256ms）—— 阈值按本文件口径「实测 × ≈6」定
 }
 
 const PID = 'p-perf'
@@ -239,6 +248,49 @@ async function main() {
   })
   ok(`🔴 ⑧ 整书证据包（${snaps.length} 份快照）≤ ${LIMIT.bookPack}ms`, tPack <= LIMIT.bookPack, pct(tPack, LIMIT.bookPack))
   ok('⑧ 快照数对得上（900）', snaps.length === CHAPTERS * SNAPS_PER_CHAPTER, String(snaps.length))
+
+  // ══════════ ⑨ 语义切块（2.8.0 新增；索引链路里最重的一段纯算法） ══════════
+  {
+    let chunks = 0
+    const t = await msOf(() => { for (const c of chs) chunks += chunkChapter(c.content).length })
+    ok(`⑨ 全书切块（${chs.length} 章 → ${chunks} 块）≤ ${LIMIT.chunk}ms`, t <= LIMIT.chunk, pct(t, LIMIT.chunk))
+    // 规模自检：块数与字数强相关，掉了说明切块参数被改动过（4 千块级是 100 万字的正常量）
+    ok('⑨ 块数在合理区间（100 万字 ≈ 3~6 千块）', chunks >= 1500 && chunks <= 9000, String(chunks))
+  }
+
+  // ══════════ ⑩ 表格导入（2.7 新增；「粘表格文本 → 落库」的真实链路） ══════════
+  //   链路＝ parseImportText（认格式）→ mapHeaders（表头→schema 列）→ matrixToRows（出记录）。
+  //   ⚠️ 别用 textToRows 当这条路：它是「纯文本兜底」（整段塞主列、逐行一条），不是 TSV 表格映射器。
+  {
+    const rowsAll = await db.getTableRows('characters')
+    const probeTab = {
+      id: 'characters', name: '角色', columns: [
+        { name: '名称', type: 'text' }, { name: '简介', type: 'textarea' }, { name: '等级', type: 'number' },
+      ],
+    } as unknown as TabDef
+    const tsv = ['名称\t简介\t等级', ...rowsAll.map((_r, i) => `条目${i}\t这是用来占位的简介文字${i}\t${i % 10}`)].join('\n')
+    let parsedFormat = ''
+    const tParse = await msOf(() => { parsedFormat = parseImportText(tsv).format })
+    let mapped = 0
+    const tMap = await msOf(() => {
+      const parsed = parseImportText(tsv)
+      if (parsed.table) mapped = matrixToRows(parsed.table, mapHeaders(parsed.table.headers, probeTab), probeTab).length
+    })
+    ok(`⑩a 表格导入·解析（${rowsAll.length} 行 TSV）≤ ${LIMIT.importParse}ms`, tParse <= LIMIT.importParse, pct(tParse, LIMIT.importParse))
+    ok('⑩a2 认出了制表符格式', parsedFormat === 'tsv', parsedFormat)
+    ok(`⑩b 表格导入·映射 → ${mapped} 行 ≤ ${LIMIT.importMap}ms`, tMap <= LIMIT.importMap, pct(tMap, LIMIT.importMap))
+    // 表头行被 mapHeaders 消耗掉，所以出参行数应等于源数据行数（多一条少一条都说明映射漏/重了）
+    ok('⑩b2 映射行数与源数据行数一致（表头不计入）', mapped === rowsAll.length, `${mapped} vs ${rowsAll.length}`)
+  }
+
+  // ══════════ ⑪ 敏感词扫描（发布前自检的确定性项，全本地、不花额度） ══════════
+  {
+    const words = Array.from({ length: 500 }, (_, i) => `禁用词${i}`)
+    // ⚠️ 拼接必须在计时之外 —— 否则量到的是「拼串 + 扫描」，不是扫描本身
+    const whole = chs.map(c => c.content).join('\n')
+    const t = await msOf(() => { scanText(whole, words) })
+    ok(`⑪ 敏感词扫描（100 万字 × ${words.length} 词）≤ ${LIMIT.scan}ms`, t <= LIMIT.scan, pct(t, LIMIT.scan))
+  }
 
   console.log(`\n—— perfBaseline：${pass} 通过 / ${fail} 失败 ——`)
   console.log('（口径：内存存储桩，无真实 IndexedDB IO；反映算法与数据量，非真机耗时）\n')
