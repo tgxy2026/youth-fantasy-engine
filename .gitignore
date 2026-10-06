@@ -30,3 +30,9 @@ Desktop.ini
 
 # 临时脚本与中间产物（审计/修复用的一次性补丁器、报告草稿）
 .workbuddy/tmp/
+
+# 工作记录与本地工具 —— 不进版本库：
+#   memory/ 是 AI 的工作日志与长期记忆（非产品源码，历史提交已确认一律不带）
+#   tools/  含与本项目无关的脚本（如战锤截图），只在本机用
+.workbuddy/memory/
+.workbuddy/tools/
