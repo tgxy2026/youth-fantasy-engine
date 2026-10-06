@@ -18,7 +18,7 @@ import PlatformCheckPanel from './PlatformCheckPanel'
 import AIDataSourceNote from './AIDataSourceNote'
 import AutoTextarea from './AutoTextarea'
 import { confirmDialog, showToast } from './dialogs'
-import { downloadBlob } from '../lib/zip'
+import { downloadText } from '../lib/zip'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiReviewSensitive, aiContinuityAudit, type SensitiveReview, type ContinuityFinding } from '../lib/aiTasks'
@@ -82,7 +82,7 @@ export default function CheckTools() {
     await setCustomSensitiveWords([])
   }
   const exportWords = () => {
-    downloadBlob('custom-sensitive-words.txt', new Blob([customWords.join('\n')], { type: 'text/plain;charset=utf-8' }))
+    downloadText('custom-sensitive-words.txt', customWords.join('\n'))
   }
   const onFile = async (file: File) => {
     const text = await file.text()

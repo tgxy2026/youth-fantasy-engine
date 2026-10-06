@@ -14,7 +14,7 @@ import { Copy, Download, Check } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import { showToast, copyText } from './dialogs'
-import { downloadBlob } from '../lib/zip'
+import { downloadText } from '../lib/zip'
 import {
   buildAiDisclosureDraft, AI_SOURCE_LABELS, AI_SOURCE_KINDS,
   type AiAssistSummary,
@@ -51,9 +51,7 @@ export default function AiDisclosureDialog({
 
   const saveTxt = () => {
     try {
-      // ⚠️ 签名是 (filename, blob) —— 别把顺序写反（tsc 会拦，但先记住）
-      downloadBlob(`AI使用情况说明-${(bookName || '本书').trim()}.txt`,
-        new Blob([draft], { type: 'text/plain;charset=utf-8' }))
+      downloadText(`AI使用情况说明-${(bookName || '本书').trim()}.txt`, draft)
     } catch {
       showToast('导出失败', 'error')
     }

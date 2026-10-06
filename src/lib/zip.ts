@@ -105,3 +105,16 @@ export function downloadBlob(filename: string, blob: Blob) {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+/**
+ * 下载**纯文本**文件（自动加 UTF-8 BOM）。
+ *
+ * 🔴 为什么必须有这个统一入口：Excel 与旧版 Windows 记事本会把「无 BOM 的 UTF-8」按本地编码读
+ *    ⇒ 中文全乱码。项目里各处的文本导出原本各写各的 `new Blob([content])`，于是**有的加了 BOM、有的漏了**
+ *    （2026-10-06 六维审计「编码兼容」盲区实测：章节导出 / 表格 CSV 有，AI 使用说明 / 敏感词 / 投稿前自检 / 故事剧本 四处漏）。
+ *    ⇒ **凡中文纯文本导出，一律走这里**，别再手写 Blob。
+ * ⚠️ JSON / .docx / .epub 不要走这里 —— BOM 会破坏解析。
+ */
+export function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
+  downloadBlob(filename, new Blob(['\uFEFF' + content], { type: mime }))
+}

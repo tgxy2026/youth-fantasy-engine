@@ -31,7 +31,7 @@ import TavernScriptFields from './TavernScriptFields'
 import TavernInterviewDialog from './TavernInterviewDialog'
 import TavernScriptImportDialog from './TavernScriptImportDialog'
 import { serializeStoryImport } from '../lib/tavern/storyImport'
-import { downloadBlob } from '../lib/zip'
+import { downloadText } from '../lib/zip'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import { interviewToScript, interviewToStory } from '../lib/tavern/interview'
 import {
@@ -198,7 +198,7 @@ export default function TavernScript() {
     const text = serializeStoryImport({
       name: s.name, setting: s.setting, entries: s.entries ?? [], scripts: full,
     })
-    downloadBlob(`${storyDisplayName(s)}.txt`, new Blob([text], { type: 'text/plain;charset=utf-8' }))
+    downloadText(`${storyDisplayName(s)}.txt`, text)
     showToast(`已导出「${storyDisplayName(s)}」—— 词条 ${s.entries?.length ?? 0} 条 · 剧本 ${full.length} 份`)
   }
 

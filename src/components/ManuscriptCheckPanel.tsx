@@ -18,7 +18,7 @@ import * as db from '../lib/db'
 import type { Chapter } from '../lib/types'
 import { Button } from './Button'
 import { showToast } from './dialogs'
-import { downloadBlob } from '../lib/zip'
+import { downloadText } from '../lib/zip'
 import { auditContinuity } from '../lib/continuityCheck'
 import { auditForeshadow } from '../lib/foreshadowEngine'
 import {
@@ -86,8 +86,7 @@ export default function ManuscriptCheckPanel() {
       chapterTitle: active?.title,
     })
     try {
-      downloadBlob(`投稿前自检-${(bookName || '本书').trim()}.txt`,
-        new Blob([txt], { type: 'text/plain;charset=utf-8' }))
+      downloadText(`投稿前自检-${(bookName || '本书').trim()}.txt`, txt)
     } catch {
       showToast('导出失败', 'error')
     }
