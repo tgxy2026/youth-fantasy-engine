@@ -7,6 +7,7 @@
  */
 import * as db from '../src/lib/db'
 import { collectDiagnostics } from '../src/lib/diagnostics'
+import { recordError, clearErrors } from '../src/lib/errorLog'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -70,6 +71,21 @@ async function main() {
     const strip = (s: string) => s.replace(/^生成时间：.*$/m, '')
     ok('5a 两次采集除时间外完全一致（无随机/无序字段）', strip(again) === strip(text))
     ok('5b 采集不抛异常且可重复调用', typeof again === 'string' && again.length > 0)
+  }
+
+  // ---------- 6) 与 errorLog 的闭环：出错时诊断文本要带上线索 ----------
+  {
+    clearErrors()
+    const clean = await collectDiagnostics()
+    ok('6a 一次都没出错时，整段不出现（不占篇幅）', !/最近错误/.test(clean))
+
+    recordError('window', new Error('测试用错误 A'), 'App.tsx:12')
+    const dirty = await collectDiagnostics()
+    ok('6b 有错误时出现「最近错误」段', /最近错误（1 条/.test(dirty), (dirty.match(/最近错误.*/) || [])[0])
+    ok('6c 错误消息与来源都在（能定位）', dirty.includes('测试用错误 A') && dirty.includes('App.tsx:12'))
+    ok('6d 🔴 错误段也不带盘符路径（来源只有文件名）', !/[A-Za-z]:\\/.test(dirty))
+    ok('6e 提示了「可自行删掉这一段」（把选择权交给作者）', /粘贴前可自行删掉这一段/.test(dirty))
+    clearErrors()
   }
 
   console.log(`\ndiagnostics: ${pass} passed, ${fail} failed`)

@@ -1,6 +1,7 @@
 
 import React from 'react'
 import { Button } from './Button'
+import { recordError } from '../lib/errorLog'
 
 /**
  * 生产级错误边界：渲染期任何组件抛错都会被这里兜住，
@@ -19,6 +20,8 @@ export default class ErrorBoundary extends React.Component<
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     // 同时打到控制台，方便开发者在 F12 里看到完整链路
     console.error('[YFE] 渲染期错误被边界捕获：', error, info)
+    // 留痕供「复制诊断信息」带上（内存环形缓冲，不落盘不外发 —— 见 lib/errorLog.ts）
+    recordError('render', error)
   }
 
   handleReload = () => {

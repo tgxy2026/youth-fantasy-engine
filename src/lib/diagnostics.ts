@@ -17,6 +17,7 @@ import * as db from './db'
 import { APP_VERSION_LABEL, DESKTOP } from './env'
 import { loadProviders } from './ai'
 import { countWords } from './textStats'
+import { recentErrors } from './errorLog'
 
 /** 采集一段可粘贴的诊断信息（失败的部分降级为「未知」，绝不因为一项取不到就整体失败） */
 export async function collectDiagnostics(): Promise<string> {
@@ -77,6 +78,19 @@ export async function collectDiagnostics(): Promise<string> {
       if (n > 0) put('语义索引', `${n} 个来源已建索引`)
     }
   } catch { /* 未启用语义检索时不显示，属正常 */ }
+
+  // ── 最近错误（内存留痕，刷新即清；一次都没出错就整段不出现） ──
+  //   🔴 消息已在 errorLog 侧截断到 200 字、来源只留文件名 —— 这里不再加工，免得两处口径打架。
+  const errs = recentErrors()
+  if (errs.length > 0) {
+    L.push('')
+    L.push(`最近错误（${errs.length} 条 · 仅本次运行，重启即清）：`)
+    for (const e of errs.slice(0, 5)) {
+      const t = new Date(e.at)
+      L.push(`  · [${e.kind}] ${p2(t.getHours())}:${p2(t.getMinutes())} ${e.message}${e.source ? `（${e.source}）` : ''}`)
+    }
+    L.push('（错误消息可能含少量原文片段，粘贴前可自行删掉这一段）')
+  }
 
   L.push('')
   L.push('（以上不含任何作品内容、密钥与文件路径，可放心粘贴）')
