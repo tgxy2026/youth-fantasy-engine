@@ -10,7 +10,9 @@
 import {
   splitCsvLine, splitMdRow, isMdSeparator, parseImportText, mapHeaders, matrixToRows,
   mainColumn, textToRows, validateImport, buildImportRows, exportRowsCsv, exportTemplateCsv,
-  csvCell, buildImportGuide, splitIntoChunks, type ImportContext,
+  csvCell, buildImportGuide, splitIntoChunks,
+  buildImportPrepared, summarizeImportResults, defaultCheckedIndexes, refColumnTargets,
+  type ImportContext, type ImportRowResult,
 } from '../src/lib/tableIO'
 import type { TabDef, TableRow } from '../src/lib/types'
 
@@ -208,6 +210,84 @@ function row(id: string, data: Record<string, string>, order = 0, tabId = 'natio
   const oneChunks = splitIntoChunks(oneLine, 1000)
   ok('无空行的超长单段也会被硬切', oneChunks.length === 5, String(oneChunks.length))
   ok('硬切结果可直接拼回原文', oneChunks.join('') === oneLine)
+}
+
+// ---------- 11. 导入预览的准备层（2026-10-06 自 TableImportDialog 抽出）----------
+//
+// 抽出来的动因：这几段原是弹窗里的 `useMemo`，**纯函数住在组件里就测不了**。
+// 而它们恰好是「错了也不报错」的高发区 —— 少报一列、默认勾了不该勾的行，界面上都看不出来。
+{
+  // --- buildImportPrepared：三种来源 ---
+  const ai = buildImportPrepared(null, nations, { rows: [{ 名称: '青云宗' }], rawCount: 3, chunks: 1 })
+  ok('11a AI 结果优先（即使没有本地解析）', ai.rows.length === 1 && ai.rows[0].名称 === '青云宗')
+  ok('11b AI 文案带模型原始条数', ai.note.includes('模型原始返回 3 条'), ai.note)
+  ok('11c 单段时文案不写段数', !ai.note.includes('段解析'), ai.note)
+  const aiMulti = buildImportPrepared(null, nations, { rows: [], rawCount: 5, chunks: 3 })
+  ok('11d 多段时文案写出段数', aiMulti.note.includes('分 3 段解析'), aiMulti.note)
+
+  const none = buildImportPrepared(null, nations, null)
+  ok('11e 既无解析也无 AI → 空行 + 空说明', none.rows.length === 0 && none.note === '')
+
+  const mdParsed = parseImportText('| 名称 | 类别 | 未知名 |\n| --- | --- | --- |\n| 青云宗 | 宗门 | x |')
+  const t = buildImportPrepared(mdParsed, nations, null)
+  ok('11f 表格：匹配列数写进说明', t.note.includes('匹配到 2/3 列'), t.note)
+  ok('11g 🔴 未识别的列必须报出来（否则是静默丢列）', t.note.includes('未识别的列已忽略：未知名'), t.note)
+  ok('11h 表格行按列名取值（不靠列位置）', t.rows[0].名称 === '青云宗' && t.rows[0].类别 === '宗门',
+    JSON.stringify(t.rows[0]))
+
+  const tx = buildImportPrepared(parseImportText('名称：青云宗\n类别：宗门'), nations, null)
+  ok('11i 纯文本走本地拆分（仍产出待校验行）', tx.rows.length >= 1 && tx.note.length > 0, tx.note)
+
+  // --- summarizeImportResults ---
+  const mk = (o: Partial<ImportRowResult>): ImportRowResult => ({
+    data: {}, index: 1, dupExisting: false, dupInBatch: false,
+    missing: [], dangling: [], codeConflict: false, ...o,
+  })
+  const sum = summarizeImportResults([
+    mk({ dupExisting: true }),
+    mk({ dupInBatch: true }),
+    mk({ codeConflict: true }),
+    mk({ missing: ['名称'] }),
+    mk({ dangling: [{ col: '上级', value: 'X', refTab: 'nations', refLabel: '国家势力' }] }),
+    mk({}),
+  ])
+  ok('11j 统计：总数', sum.total === 6, String(sum.total))
+  ok('11k 统计：库内重复 + 批内重复**合成一个** dup', sum.dup === 2, String(sum.dup))
+  ok('11l 统计：编号冲突单独计数', sum.code === 1, String(sum.code))
+  ok('11m 统计：缺必填与悬空各自计数', sum.missing === 1 && sum.dangling === 1, `${sum.missing}/${sum.dangling}`)
+  const clean = summarizeImportResults([mk({})])
+  ok('11n 干净行不计入任何一类', clean.dup === 0 && clean.dangling === 0 && clean.missing === 0 && clean.code === 0)
+
+  // --- defaultCheckedIndexes（四条判据，全过才默认勾）---
+  ok('11o 干净行默认勾', defaultCheckedIndexes([mk({}), mk({})]).join(',') === '0,1')
+  ok('11p 🔴 库内重复不默认勾', defaultCheckedIndexes([mk({ dupExisting: true })]).length === 0)
+  ok('11q 🔴 批内重复不默认勾', defaultCheckedIndexes([mk({ dupInBatch: true })]).length === 0)
+  ok('11r 🔴 编号冲突不默认勾（勾了就会落库一个存不下去的行）',
+    defaultCheckedIndexes([mk({ codeConflict: true })]).length === 0)
+  ok('11s 🔴 缺必填不默认勾', defaultCheckedIndexes([mk({ missing: ['名称'] })]).length === 0)
+  ok('11t 悬空引用**不影响**默认勾选（只提示，作者可能就是要先导入再补目标行）',
+    defaultCheckedIndexes([mk({ dangling: [{ col: 'x', value: 'y', refTab: 't', refLabel: 'z' }] })]).join(',') === '0')
+  ok('11u 混合时只勾干净的那些，且下标是**原下标**',
+    defaultCheckedIndexes([mk({ codeConflict: true }), mk({}), mk({ dupExisting: true })]).join(',') === '1')
+
+  // --- refColumnTargets（悬空校验要读哪些表）---
+  ok('11v 无跨表引用 → 空', refColumnTargets({ ...nations, columns: [{ name: '名称' }] }).length === 0)
+  const targets = refColumnTargets(nations)
+  ok('11w 取到目标表与取值列',
+    targets.length === 1 && targets[0].tabId === 'nations' && targets[0].refCol === '名称',
+    JSON.stringify(targets))
+  const dupTargets = refColumnTargets({
+    ...nations,
+    columns: [
+      { name: '上级', type: 'tableRef', refTab: 'nations', refCol: '名称' },
+      { name: '宗主', type: 'tableRef', refTab: 'nations', refCol: '别称' },
+      { name: '所属', type: 'tableRef', refTab: 'regions' },
+    ],
+  })
+  ok('11x 同一目标表只取**第一个**列的取值列（去重且保序）',
+    dupTargets.length === 2 && dupTargets[0].refCol === '名称' && dupTargets[1].tabId === 'regions',
+    JSON.stringify(dupTargets))
+  ok('11y refCol 缺省为「名称」', dupTargets[1].refCol === '名称', dupTargets[1].refCol)
 }
 
 console.log(`\ntableIO: ${pass} passed, ${fail} failed`)

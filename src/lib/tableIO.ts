@@ -484,3 +484,105 @@ export function buildImportGuide(tab: TabDef): string {
   L.push('```')
   return L.join('\n')
 }
+
+// ============ 导入预览的准备层（2026-10-06 自 `TableImportDialog` 抽出）============
+//
+// 🔴 为什么抽出来：下面这几段原先长在弹窗组件里 —— 400 行的组件、8 个 `useMemo`，
+//    而**纯函数住在组件里就等于测不了**（要 DOM 环境才跑得起）。抽到这里之后，
+//    「三种来源的行为一致」「默认勾选哪几行」这类**错了也不报错**的地方才钉得住。
+//    搬家时行为一字未改，组件改为调用这里。
+
+/**
+ * 把「本地解析结果」或「AI 拆分结果」统一成**待校验的行 + 一句说明**。
+ *
+ * 三种来源（AI / 表格 / 纯文本）在预览里必须**长得一样**：都产出 `Record<列名, 值>[]`，
+ * 再交给 `validateImport` 走同一套判重 / 缺必填 / 悬空 —— 这正是「不擅自替作者决定」的实现方式。
+ *
+ * @param ai 非空时**优先**用它（作者刚跑完 AI 拆分、原文还没改过）
+ */
+export function buildImportPrepared(
+  parsed: ParsedInput | null,
+  tab: TabDef,
+  ai?: { rows: Record<string, string>[]; rawCount: number; chunks: number } | null,
+): { rows: Record<string, string>[]; note: string } {
+  if (ai) {
+    const rawN = ai.rawCount ?? ai.rows.length
+    const chunkN = ai.chunks ?? 1
+    return {
+      rows: ai.rows,
+      note: `AI 智能拆分 · 解析出 ${ai.rows.length} 条（模型原始返回 ${rawN} 条）`
+        + (chunkN > 1 ? ` · 分 ${chunkN} 段解析` : ''),
+    }
+  }
+  if (!parsed) return { rows: [], note: '' }
+  if (parsed.table) {
+    const mapping = mapHeaders(parsed.table.headers, tab)
+    const hit = mapping.filter(Boolean).length
+    const lostCols = parsed.table.headers.filter((_, i) => !mapping[i])
+    // 🔴 「未识别的列已忽略」必须**报出来**：不报的话，作者会以为整份表都导进来了，
+    //    实际少了几列却毫无提示 —— 这类静默丢数据是导入功能最不该有的表现。
+    const lost = lostCols.length ? `；未识别的列已忽略：${lostCols.join('、')}` : ''
+    return {
+      rows: matrixToRows(parsed.table, mapping, tab),
+      note: `${parsed.note} · 匹配到 ${hit}/${mapping.length} 列${lost}`,
+    }
+  }
+  const tx = textToRows(parsed.text ?? '', tab)
+  return { rows: tx.rows, note: `${parsed.note} · ${tx.note}` }
+}
+
+/** 导入预览的统计（界面顶部那行「共 N 行 / 与已有重复 N / …」） */
+export interface ImportSummary {
+  total: number
+  /** 与库内重复 **+** 批内重复（两者都叫「重复」，界面合成一个数显示） */
+  dup: number
+  /** 悬空引用：名称在目标表里找不到 */
+  dangling: number
+  /** 缺必填（主列 / displayCol） */
+  missing: number
+  /** 编号冲突（库内已有 **或** 同批占用） */
+  code: number
+}
+
+/** 逐行累加预览统计。纯函数，输入与输出的对应关系一眼可测。 */
+export function summarizeImportResults(results: ImportRowResult[]): ImportSummary {
+  let dup = 0, dangling = 0, missing = 0, code = 0
+  for (const r of results) {
+    if (r.dupExisting || r.dupInBatch) dup++
+    if (r.dangling.length) dangling++
+    if (r.missing.length) missing++
+    if (r.codeConflict) code++
+  }
+  return { total: results.length, dup, dangling, missing, code }
+}
+
+/**
+ * 默认勾选哪些行（返回**下标**）；名单之外的靠作者自己勾。
+ *
+ * 🔴 四条全过才默认勾：不重复（库内 / 批内）、不缺必填、**编号不冲突**。
+ *    最后那条是 2026-10-02 六维审计 P2 补的：原先默认勾上 ⇒ 一按「导入」就落库出一个
+ *    「编号重复」的行，而表格保存时会被编号校验拦下 —— 等于**替作者造了个存不下去的状态**。
+ */
+export function defaultCheckedIndexes(results: ImportRowResult[]): number[] {
+  const out: number[] = []
+  results.forEach((r, i) => {
+    if (!r.dupExisting && !r.dupInBatch && !r.codeConflict && r.missing.length === 0) out.push(i)
+  })
+  return out
+}
+
+/**
+ * 本表需要做「悬空校验」的跨表引用目标：`{ 目标表, 取值列 }`，**按首次出现顺序去重**。
+ *
+ * 同一张目标表可能被多列引用（如「上级」与「宗主」都指向人物表），只取**第一个**列的 refCol
+ * 当「名称列」—— 与校验口径一致（校验只问「这个名字在那张表里存不存在」）。
+ * `refCol` 缺省为「名称」：多数表的主列就叫这个名。
+ */
+export function refColumnTargets(tab: TabDef): { tabId: string; refCol: string }[] {
+  const seen = new Map<string, string>()
+  for (const c of tab.columns ?? []) {
+    if (c.type !== 'tableRef' || !c.refTab) continue
+    if (!seen.has(c.refTab)) seen.set(c.refTab, c.refCol || '名称')
+  }
+  return [...seen.entries()].map(([tabId, refCol]) => ({ tabId, refCol }))
+}

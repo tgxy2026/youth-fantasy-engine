@@ -14,10 +14,11 @@ import { downloadBlob } from '../lib/zip'
 import { useAIReady } from '../lib/useAIReady'
 import { useTaskRunner } from '../lib/aiTaskCenter'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { tableImportSplit, type TableImportSplitOutcome } from '../lib/tableImportAI'
+import { tableImportSplit, usableAiRows, type TableImportSplitOutcome } from '../lib/tableImportAI'
 import {
-  parseImportText, mapHeaders, matrixToRows, textToRows, validateImport, mainColumn,
-  exportTemplateCsv, buildImportGuide, type ImportRowResult, type ImportContext,
+  parseImportText, validateImport, mainColumn,
+  exportTemplateCsv, buildImportGuide, buildImportPrepared, summarizeImportResults,
+  defaultCheckedIndexes, refColumnTargets, type ImportRowResult, type ImportContext,
 } from '../lib/tableIO'
 
 interface Props {
@@ -71,31 +72,26 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
 
   // 收集本表所有跨表引用列的候选值（校验悬空用）—— 只读，不写库
   useEffect(() => {
-    const refCols = (tab.columns ?? []).filter(c => c.type === 'tableRef' && c.refTab)
-    const tabs = [...new Set(refCols.map(c => c.refTab!))]
-    if (tabs.length === 0) return
+    const targets = refColumnTargets(tab)
+    if (targets.length === 0) return
     let alive = true
-    Promise.all(tabs.map(async tid => {
-      const refCol = refCols.find(c => c.refTab === tid)?.refCol ?? '名称'
+    Promise.all(targets.map(async ({ tabId, refCol }) => {
       try {
-        const list = await getTableRows(tid)
-        return [tid, new Set(list.map(r => (r.data[refCol] ?? '').trim()).filter(Boolean))] as const
+        const list = await getTableRows(tabId)
+        return [tabId, new Set(list.map(r => (r.data[refCol] ?? '').trim()).filter(Boolean))] as const
       } catch {
-        return [tid, new Set<string>()] as const
+        return [tabId, new Set<string>()] as const
       }
     })).then(pairs => {
       if (!alive) return
       setRefValues(new Map(pairs))
-      setRefLabels(new Map(tabs.map(tid => [tid, TABS.find(t => t.id === tid)?.name ?? tid])))
+      setRefLabels(new Map(targets.map(({ tabId }) => [tabId, TABS.find(t => t.id === tabId)?.name ?? tabId])))
     }).catch(() => { /* 读不到就不做悬空校验，不阻断导入 */ })
     return () => { alive = false }
   }, [tab])
 
-  /**
-   * AI 结果只在「原文没被改过」时才用 —— 结果里存了发起时的原文快照，逐字比对。
-   * 作者改过原文后，旧的拆分结果一律作废（否则会拿旧结果去导新内容）。
-   */
-  const aiRows = t.result && t.result.sourceText === raw ? t.result.rows : null
+  // AI 结果只在「原文没被改过」时才用（结果里存着发起时的原文快照，逐字比对）—— 判据已抽到 usableAiRows
+  const aiRows = usableAiRows(t.result, raw)
 
   /**
    * 弹窗被切页签卸载又重挂时，组件本地的原文已经丢了 —— 若任务中心里还有一份结果，
@@ -115,27 +111,11 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
 
   const parsed = useMemo(() => (raw.trim() ? parseImportText(raw) : null), [raw])
 
-  /** 解析 → 行对象（AI 结果优先；否则表格走矩阵映射、纯文本走本地拆分） */
-  const prepared = useMemo(() => {
-    if (aiRows) {
-      const rawN = t.result?.rawCount ?? aiRows.length
-      const chunkN = t.result?.chunks ?? 1
-      return {
-        rows: aiRows,
-        note: `AI 智能拆分 · 解析出 ${aiRows.length} 条（模型原始返回 ${rawN} 条）${chunkN > 1 ? ` · 分 ${chunkN} 段解析` : ''}`,
-      }
-    }
-    if (!parsed) return { rows: [] as Record<string, string>[], note: '' }
-    if (parsed.table) {
-      const mapping = mapHeaders(parsed.table.headers, tab)
-      const hit = mapping.filter(Boolean).length
-      const lostCols = parsed.table.headers.filter((_, i) => !mapping[i])
-      const lost = lostCols.length ? `；未识别的列已忽略：${lostCols.join('、')}` : ''
-      return { rows: matrixToRows(parsed.table, mapping, tab), note: `${parsed.note} · 匹配到 ${hit}/${mapping.length} 列${lost}` }
-    }
-    const tx = textToRows(parsed.text ?? '', tab)
-    return { rows: tx.rows, note: `${parsed.note} · ${tx.note}` }
-  }, [parsed, tab, aiRows, t.result])
+  /** 解析 → 行对象（AI 结果优先；否则表格走矩阵映射、纯文本走本地拆分）—— 构造已抽到 buildImportPrepared */
+  const prepared = useMemo(
+    () => buildImportPrepared(parsed, tab, aiRows ? t.result : null),
+    [parsed, tab, aiRows, t.result],
+  )
 
   const ctx: ImportContext = useMemo(() => ({ existing, refValues, refLabels }), [existing, refValues, refLabels])
   const results = useMemo(
@@ -143,27 +123,18 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
     [prepared, tab, ctx],
   )
 
-  // 校验结果变化时，默认勾选「非重复且不缺必填」的行
+  // 校验结果变化时，默认勾选「可安全落库」的行（四条判据见 defaultCheckedIndexes，含「编号冲突不勾」）
+  //
+  // 🔴 依赖只放 `prepared`（行集合），**不放 `results`** —— 2026-10-06 抽取时发现的真缺陷：
+  //    `results` 还会因「跨表候选值加载完成」而重算（`ctx.refValues` 从空 Map 变成满 Map），
+  //    那时重设勾选会把作者**已经手动勾好的选择抹掉**，表现是「勾着勾着突然全变回默认」。
+  //    候选值只影响「悬空提示」，不影响该不该默认勾（dangling 不在四条判据里）⇒ 不必跟着它重置。
   useEffect(() => {
-    const okIdx = new Set<number>()
-    results.forEach((r, i) => {
-      // 🔴 编号冲突的**不默认勾**（2026-10-02 六维审计 P2）：勾了就落库出一个「编号重复」的行，
-      //    而表格保存时会被编号校验拦下 —— 等于替作者造了一个存不下去的状态。
-      if (!r.dupExisting && !r.dupInBatch && !r.codeConflict && r.missing.length === 0) okIdx.add(i)
-    })
-    setChecked(okIdx)
-  }, [results])
+    setChecked(new Set(defaultCheckedIndexes(results)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepared])
 
-  const stat = useMemo(() => {
-    let dup = 0, dangling = 0, missing = 0, code = 0
-    for (const r of results) {
-      if (r.dupExisting || r.dupInBatch) dup++
-      if (r.dangling.length) dangling++
-      if (r.missing.length) missing++
-      if (r.codeConflict) code++
-    }
-    return { total: results.length, dup, dangling, missing, code }
-  }, [results])
+  const stat = useMemo(() => summarizeImportResults(results), [results])
 
   const cols = useMemo(() => (tab.columns ?? []).filter(c => !c.hidden), [tab])
   const main = useMemo(() => mainColumn(tab), [tab])

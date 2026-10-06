@@ -9,7 +9,7 @@ import { TABLE_IMPORT_PROMPTS, aiSplitTableRows } from '../src/lib/aiTasks/table
 import { listPrompts } from '../src/lib/promptSettings'
 import { AI_DATA_SOURCES } from '../src/lib/aiDataSources'
 import { budgetForKind, WRITER_BUDGET_KINDS } from '../src/lib/aiWriterBudget'
-import { tableImportSplit } from '../src/lib/tableImportAI'
+import { tableImportSplit, usableAiRows } from '../src/lib/tableImportAI'
 import '../src/lib/aiTasks' // 触发门面注册（必须在 listPrompts 之前）
 import type { TabDef } from '../src/lib/types'
 
@@ -76,6 +76,24 @@ function ok(name: string, cond: boolean, extra = '') {
 
   // 导出确实存在（门面再导出，防止被 tree-shake 掉调用入口）
   ok('aiSplitTableRows 可导入', typeof aiSplitTableRows === 'function')
+}
+
+// ---------- ⑤ 结果可用性判定（2026-10-06 自 TableImportDialog 抽出）----------
+//
+// 判据只有一条，但极易写错：**原文快照必须逐字相符**。
+// 写错的后果是「预览里显示的是新内容、导进去的却是旧结果」—— 自查几乎发现不了，
+// 而且它只在「跑完 AI 又改了原文」这个特定顺序下才出现。
+{
+  const rows = [{ 名称: '青云宗' }]
+  const outcome = { sourceText: '原文A', rows }
+
+  ok('⑤a 原文未变 → 结果可用', usableAiRows(outcome, '原文A') === rows)
+  ok('⑤b 🔴 原文改过 → 结果作废（返回 null，回落本地解析）', usableAiRows(outcome, '原文B') === null)
+  ok('⑤c 只差一个尾空格也算「改过」（逐字比对，不做 trim 宽容）', usableAiRows(outcome, '原文A ') === null)
+  ok('⑤d 还没有结果 → null', usableAiRows(null, '原文A') === null)
+  ok('⑤e undefined → null', usableAiRows(undefined, '原文A') === null)
+  ok('⑤f 空数组结果仍算「可用」（是否为空交给界面去提示）',
+    Array.isArray(usableAiRows({ sourceText: 'X', rows: [] }, 'X')))
 }
 
 console.log(`\ntableImportAI: ${pass} passed, ${fail} failed`)

@@ -51,6 +51,21 @@ export interface TableImportSplitOutcome {
   sourceText: string
 }
 
+/**
+ * 从任务结果里挑出「还能用」的 AI 行（2026-10-06 自 `TableImportDialog` 抽出）。
+ *
+ * 🔴 结果带着**发起时的原文快照**，这里逐字比对：作者改过原文之后旧结果一律作废 ——
+ *    否则会拿旧结果去导新内容（「预览里是新的、导进去是旧的」这类错极难自查）。
+ *    返回 `null` ＝ 这次该走本地解析。
+ */
+export function usableAiRows(
+  result: Pick<TableImportSplitOutcome, 'sourceText' | 'rows'> | null | undefined,
+  raw: string,
+): Record<string, string>[] | null {
+  if (!result) return null
+  return result.sourceText === raw ? result.rows : null
+}
+
 /** 单批最多返回多少条（分批时每批各自适用） */
 const PER_CHUNK_MAX = 60
 /** 多大的文本开始分批 */
