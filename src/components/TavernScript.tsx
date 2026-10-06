@@ -29,6 +29,9 @@ import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { uid } from '../lib/id'
 import TavernScriptFields from './TavernScriptFields'
 import TavernInterviewDialog from './TavernInterviewDialog'
+import TavernScriptImportDialog from './TavernScriptImportDialog'
+import { serializeStoryImport } from '../lib/tavern/storyImport'
+import { downloadBlob } from '../lib/zip'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import { interviewToScript, interviewToStory } from '../lib/tavern/interview'
 import {
@@ -73,6 +76,8 @@ export default function TavernScript() {
   const [lastSource, setLastSource] = useState<DraftSource | null>(null)
   /** 对话引导弹窗（边聊边写，适合还没想清楚的时候） */
   const [interviewOpen, setInterviewOpen] = useState(false)
+  /** 导入弹窗：把按模板写好的文本一次建成一个故事（含词条与剧本） */
+  const [importOpen, setImportOpen] = useState(false)
   /** 当前故事下的角色卡张数（右栏显示用 —— 让作者知道删故事会影响到多少卡） */
   const [storyCharCount, setStoryCharCount] = useState(0)
   const search = useSearchSettings()
@@ -166,6 +171,35 @@ export default function TavernScript() {
     setScriptDirty(false)
     setOpenIds(prev => (prev.includes(storyId) ? prev : [...prev, storyId]))
     showToast('已新建一份空剧本 —— 六栏填完记得保存')
+  }
+
+  /**
+   * 导出选中的故事 + 它的全部词条 + 挂在这个故事下的全部剧本。
+   * 🔴 与导入**同一套标记**（`serializeStoryImport`）⇒ 导出的文件能原样导回来，也能直接贴给 AI。
+   * 有未保存改动时先拦一下：否则导出的还是上一次保存的版本，跟眼前看到的对不上。
+   */
+  const doExport = async () => {
+    const sid = activeStoryId
+    if (!sid) { showToast('先选中一个故事，再导出', 'error'); return }
+    if (dirty) { showToast('有未保存的改动 —— 先点「保存」，再导出', 'error'); return }
+    const s = await getStory(sid)
+    if (!s) { showToast('这个故事已经不存在了', 'error'); return }
+    const scs = await listScripts()
+    const full: ScriptDraftFields[] = []
+    for (const it of scs.filter(x => x.storyId === sid)) {
+      const sc = await getScript(it.id)
+      if (sc) {
+        full.push({
+          name: sc.name, situation: sc.situation, opening: sc.opening,
+          playerRole: sc.playerRole, goal: sc.goal, taboo: sc.taboo,
+        })
+      }
+    }
+    const text = serializeStoryImport({
+      name: s.name, setting: s.setting, entries: s.entries ?? [], scripts: full,
+    })
+    downloadBlob(`${storyDisplayName(s)}.txt`, new Blob([text], { type: 'text/plain;charset=utf-8' }))
+    showToast(`已导出「${storyDisplayName(s)}」—— 词条 ${s.entries?.length ?? 0} 条 · 剧本 ${full.length} 份`)
   }
 
   const save = async () => {
@@ -353,10 +387,28 @@ export default function TavernScript() {
         <Button variant="secondary" size="md" disabled={!dirty || saving} onClick={() => void save()}>
           {saving ? '保存中…' : dirty ? '保存' : '已保存'}
         </Button>
+        <Button variant="secondary" size="md" onClick={() => setImportOpen(true)}>导入</Button>
+        <Button
+          variant="secondary" size="md"
+          disabled={!activeStoryId}
+          title={activeStoryId
+            ? '导出这个故事 + 它的词条 + 挂在这里的剧本（可原样导回来，也能直接贴给 AI）'
+            : '先选中一个故事，再导出'}
+          onClick={() => void doExport()}
+        >
+          导出
+        </Button>
         <span className="flex-1" />
         {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
         {kind && <Button variant="danger" size="md" onClick={() => void remove()}>删除这份</Button>}
       </div>
+
+      {/* 导入：把按模板写好的文本一次建成一个故事（含它的词条与剧本） */}
+      <TavernScriptImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={id => { void (async () => { await refresh(); await openStory(id) })() }}
+      />
 
       {/* 对话引导：故事与剧本共用这一个弹窗，靠当前编辑对象切换提纲 */}
       <TavernInterviewDialog
