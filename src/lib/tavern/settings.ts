@@ -65,6 +65,18 @@ export type TavernCommonSettings = {
   numCtx: number
   /** 关闭思考链：角色扮演要「像人说话」，不要分析腔，所以默认关 */
   disableThink: boolean
+  /**
+   * 是否把「模型配置 → 自定义系统提示词」也接进酒馆（**默认关**，2026-10-06 主人拍板）。
+   *
+   * 为什么默认关：酒馆的 system 是「扮演协议 + 世界书 + 记忆 + 档案」这一整套，
+   * 而作者那段自定义提示词是**给正文与设定类功能写的总体指令**（人称 / 文风 / 禁忌）。
+   * 无脑灌进来有可能和「AI 分饰全员、一次只让一个人说话」的协议打架 ——
+   * 所以默认不接，需要的人自己打开。
+   *
+   * 实现位置：`resolveTavernProvider` 读它 → 关闭时直接把 `provider.systemPrompt` 剥掉，
+   * 于是酒馆**全目录的每一次调用**都自动跟随本开关，不必逐处改 opts。
+   */
+  injectSystemPrompt: boolean
   /** 通用补充要求：拼进两种模式的 system（放在协议之前）。默认含「标点适用范围」那条 */
   extraPrompt: string
   /**
@@ -453,6 +465,7 @@ export const DEFAULT_TAVERN_SETTINGS: TavernSettings = {
     timeoutSec: 300, // 本地模型首字慢 + 生成长，2026-09-15 由 180 提到 300（guide 推荐段上限）
     numCtx: TAVERN_DEFAULTS.free.numCtx,
     disableThink: true, // engine 原本恒传 think:false
+    injectSystemPrompt: false, // 酒馆默认不接「模型配置 → 自定义系统提示词」，需要的作者自己开
     extraPrompt: DEFAULT_COMMON_EXTRA,
     autoTuneByModel: true, // 换模型后自动套用推荐额度；同模型下不动用户手调的值（见 tunedFor）
   },

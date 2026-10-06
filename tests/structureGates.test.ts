@@ -444,6 +444,50 @@ if (!SRC) {
     }
     ok('⑨ 裸色值只许出现在 lib/palette.ts 与三处「主题 / 文档定义」（调色板单一真源）', bad.length === 0, bad.join(' ｜ '))
   }
+
+  /**
+   * ⑩ 系统提示词注入不可绕过（2026-10-06）
+   *
+   * 🔴 来由：作者在「模型配置」里填了自定义系统提示词，界面对他的承诺是
+   *    「对所有调用此模型的功能生效」—— 可盘点发现**酒馆全目录 + 正文续写字数校准 +
+   *    全局对话引导共 18 处根本没接**。根因不是谁偷懒，而是这件事原本靠**每个调用点自觉**
+   *    多写一行 `composeSystemPrompt(...)`：抄写型代码的必然结局就是新增功能时漏一处，
+   *    而且漏了不报错、不崩溃（表现只是「填了没感觉」）。
+   *
+   * 修法是把注入下沉到 `chat()` 的兜底（`core.injectUserSystemPrompt`）——
+   * 从此**新增 AI 功能只要走 chat() 就自动接入**。本条闸负责让这个支点不被拆掉：
+   *   (a) 兜底注入那行代码必须还在（误删 = 承诺静默作废，且没有任何测试会红）；
+   *   (b) 不许有模块绕开 `chat()` 自己发对话请求 —— 绕开 chat() 就必然绕开注入。
+   *
+   * ⚠️ 判定用 `stripComments`（**保留字符串**）：端点写在模板串里，连字符串一起剥就查不到了。
+   *    已知的合法例外：`semantic/embed.ts` 打的是 `/api/embed` / `/embeddings`（向量化不是生成，
+   *    没有「系统提示词」这个概念），它天然不命中本规则，故例外表为空。
+   */
+  {
+    const chatFile = files.find(f => rel(f).replace(/\\/g, '/') === 'src/lib/aiCore/chat.ts')
+    ok('⑩-a chat() 仍调用兜底注入 injectUserSystemPrompt（拆掉它＝所有功能的注入一并失效）',
+      !!chatFile && clean.get(chatFile)!.includes('injectUserSystemPrompt('),
+      chatFile ? '（aiCore/chat.ts 里找不到该调用）' : '（找不到 src/lib/aiCore/chat.ts）')
+
+    const LLM_EDGE = /\/api\/chat|\/chat\/completions/
+    const EDGE_OK: Record<string, string> = {
+      'src/lib/aiCore/chat.ts': '全项目唯一的对话出口 —— 兜底注入就在这里',
+    }
+    const bypass: string[] = []
+    for (const f of files) {
+      const r = rel(f).replace(/\\/g, '/')
+      if (!r.startsWith('src/lib/')) continue
+      if (EDGE_OK[r]) continue
+      // ⚠️ 只认「当真在拼请求地址」的写法：**同一行既有端点路径、又有模板串插值 `${`**。
+      //    这样 `base.endsWith('/chat/completions')` 这类纯字符串处理不会误报
+      //    （transport 的 baseUrl 归一就是干这个的）—— 闸的假阳性一多，就没人信它了。
+      const hits = stripComments(text.get(f)!).split('\n')
+        .filter(line => LLM_EDGE.test(line) && line.includes('${')).length
+      if (hits) bypass.push(`${r}（${hits} 处）`)
+    }
+    ok('⑩-b 没有模块绕开 chat() 自己发对话请求（绕过即等于绕开注入；确需例外请登记理由）',
+      bypass.length === 0, bypass.join(' ｜ '))
+  }
 }
 
 console.log(`\nstructureGates: ${pass} passed, ${fail} failed`)

@@ -474,7 +474,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               </div>
 
               <div>
-                <label className="block text-11 text-ink-500 mb-1">自定义系统提示词（可选）</label>
+                <label className="block text-11 text-ink-500 mb-1">自定义系统提示词（可选 · 全局生效）</label>
                 <textarea
                   className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600 resize-none"
                   rows={3}
@@ -482,7 +482,11 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   onChange={e => setEditing({ ...editing, systemPrompt: e.target.value })}
                   placeholder="对所有调用此模型的功能追加一段总体指令（如写作风格、人称、禁忌）。留空则按系统预设。"
                 />
-                <p className="text-10 text-ink-500 mt-1 leading-relaxed">只附加在各功能自带的系统提示词之后，不会影响校对 / 补全 / 整理 / 对话的原有指令与格式约束。</p>
+                <p className="text-10 text-amber mt-1 leading-relaxed">
+                  ⚠️ 这段提示词是「全局」的 —— 对所有调用该模型的 AI 功能一并生效（酒馆模式默认不接，需要时可在酒馆控制面板单独开启）。
+                  如果只想调整某一个具体功能，请到「模型设置 → AI 提示词」里改那个功能自己的提示词，不要写在这里。
+                  它会附加在各功能自带提示词之后，不覆盖、不影响原有的格式约束。
+                </p>
               </div>
 
               {editing.type === 'ollama' ? (

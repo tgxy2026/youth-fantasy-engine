@@ -146,6 +146,15 @@ export function providerFromPreset(p: PlatformPreset): AIProvider {
 }
 
 /**
+ * 「作者自定义系统提示词」块的固定开头 —— 既是界面可见的分隔标题，也是**注入标记**。
+ *
+ * 🔴 标记用途（2026-10-06）：`chat()` 兜底注入时靠它判断「这条 system 是不是已经拼过了」，
+ *    避免已显式调用 `composeSystemPrompt` 的链路被**重复注入**一遍。
+ *    ⇒ 想改这块文字，只改这里一处；别在任何地方硬写同一句话。
+ */
+export const USER_SYSTEM_MARK = '【作者自定义系统提示词'
+
+/**
  * 组合系统提示词：把「用户自定义系统提示词」追加到「功能自带的系统提示词」之后。
  * 设计要点（用户要求）：
  * - 用户没填 → 仅用功能预设，行为与原先完全一致；
@@ -156,7 +165,37 @@ export function composeSystemPrompt(featureSys: string, provider?: AIProvider | 
   const base = featureSys || ''
   const custom = provider?.systemPrompt?.trim()
   if (!custom) return base
-  return `${base}\n\n【作者自定义系统提示词（请在遵循以上全部规则的前提下一并考虑）】\n${custom}`
+  const block = `${USER_SYSTEM_MARK}（请在遵循以上全部规则的前提下一并考虑）】\n${custom}`
+  return base ? `${base}\n\n${block}` : block
+}
+
+/**
+ * 兜底注入：保证「作者自定义系统提示词」一定进了这次请求。
+ *
+ * 🔴 为什么需要它（2026-10-06 覆盖面盘点）：注入原先只靠各调用点自觉调 `composeSystemPrompt`，
+ *    结果**酒馆全目录 + 正文续写字数校准 + 全局对话引导共 18 处根本没接** ——
+ *    而模型配置界面对作者的承诺是「对所有调用此模型的功能生效」。
+ *    把这件事收进 `chat()` 之后，**新增 AI 功能只要走 chat() 就自动接入**，
+ *    不再依赖谁记得手写那一行。
+ *
+ * 规则：
+ *   · provider 没填 → 原样返回（零开销、行为不变）；
+ *   · 已有 system 且含标记 → 原样返回（显式 `composeSystemPrompt` 过的，不重复拼）；
+ *   · 有 system 但没标记 → 追加到**第一条** system 尾部（与 `composeSystemPrompt` 同形）；
+ *   · 一条 system 都没有 → 在最前面补一条 —— 作者提示词仍要待在**最高指令层**，
+ *     绝不能因为它来得晚就被降级成 user 消息。
+ */
+export function injectUserSystemPrompt(messages: ChatMessage[], provider?: AIProvider | null): ChatMessage[] {
+  const custom = provider?.systemPrompt?.trim()
+  if (!custom) return messages
+  const idx = messages.findIndex(m => m.role === 'system')
+  if (idx < 0) {
+    return [{ role: 'system', content: composeSystemPrompt('', provider) }, ...messages]
+  }
+  if (messages[idx].content.includes(USER_SYSTEM_MARK)) return messages
+  const out = messages.slice()
+  out[idx] = { ...out[idx], content: composeSystemPrompt(out[idx].content, provider) }
+  return out
 }
 
 /** 测试前的本地校验：缺字段就别浪费一次网络往返（`aiCore/chat.ts` 与 `aiCore/session.ts` 共用） */

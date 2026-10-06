@@ -113,6 +113,13 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
               value={c.extraPrompt}
               onChange={v => setCommon('extraPrompt', v)}
             />
+
+            <ToggleField
+              label="接入模型配置里的系统提示词"
+              hint="开启后，「模型设置 → 模型配置 → 自定义系统提示词」那段内容会一并带进酒馆的每一次调用（对话、总结、起草、报告……）。默认关闭：那段提示词是写给正文与设定类功能的总体指令（人称 / 文风 / 禁忌），直接灌进来可能与扮演协议打架。只想调酒馆这一侧，请用上面的「通用补充要求」，或到「AI 提示词」里改对应功能的提示词。"
+              value={c.injectSystemPrompt === true}
+              onChange={v => setCommon('injectSystemPrompt', v)}
+            />
           </Section>
           </div>
 

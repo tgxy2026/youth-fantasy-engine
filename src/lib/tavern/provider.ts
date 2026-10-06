@@ -40,9 +40,30 @@ export async function resolveTavernProvider(
   if (want) {
     const list = await loadProviders()
     const hit = list.find(p => p.id === want)
-    if (hit) return { provider: hit, fellBack: false }
+    if (hit) return { provider: await applyUserSystemPolicy(hit), fellBack: false }
   }
-  return { provider: await requireActiveProvider(), fellBack: true }
+  return { provider: await applyUserSystemPolicy(await requireActiveProvider()), fellBack: true }
+}
+
+/**
+ * 按酒馆开关决定「作者自定义系统提示词」要不要跟着进来（2026-10-06 · 主人拍板默认关）。
+ *
+ * 🔴 为什么卡在**模型解析**这一层，而不是每个调用点各传一个 opts：
+ *    酒馆有 15 处独立的 `runChat(provider, msgs, opts)`（对话 / 总结 / 起草 / 报告 / 导入 / 访谈…），
+ *    逐处改就得各自拿到设置对象，**漏一处就是一个静默缺口** —— 这正是当初那 18 处漏接的成因。
+ *    而它们**全都**先走这里，于是剥掉 `systemPrompt` 就等于一处改动覆盖全部，
+ *    以后新加的酒馆 AI 功能也自动跟随本开关，不必再记得接线。
+ *
+ * 开销：只有模型配置里**真填了**自定义提示词时才去读设置；没填直接返回，零额外读盘。
+ */
+async function applyUserSystemPolicy(p: AIProvider): Promise<AIProvider> {
+  if (!p.systemPrompt?.trim()) return p
+  try {
+    if ((await getTavernSettings()).common.injectSystemPrompt === true) return p
+  } catch {
+    // 设置读不出来（存储异常）按「不接入」处理 —— 与默认关一致：宁可少注入，不要意外注入
+  }
+  return { ...p, systemPrompt: undefined }
 }
 
 /** 就绪判定的结果（与 `useAIReady` 的 `AIReadyInfo` 同形，但判据是**酒馆这一条链**） */

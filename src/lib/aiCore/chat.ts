@@ -8,6 +8,7 @@
 import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, openaiBaseOf, describeApiError, type SseChunk } from './transport'
 import {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE, precheck,
+  injectUserSystemPrompt,
   type AIProvider, type ChatMessage,
 } from './core'
 
@@ -67,6 +68,18 @@ export interface ChatOptions {
   signal?: AbortSignal
   /** 流式输出回调：提供时开启 SSE 流式，逐块收到模型输出（已剥离思考块）。不提供则走普通一次性返回。 */
   onToken?: (delta: string) => void
+  /**
+   * 跳过「作者自定义系统提示词」的兜底注入（默认 false = 注入）。
+   *
+   * 🔴 默认就该注入 —— 模型配置界面对作者的承诺是「对所有调用此模型的功能生效」，
+   *    而 `chat()` 是唯一能保证这条承诺的地方（见 `core.injectUserSystemPrompt`）。
+   *
+   * 目前**没有生产调用点** —— 留着是给将来那种「确实不该带作者提示词」的新链路一个显式口子，
+   * 免得有人为了跳过注入而去手工改 provider 对象（那会顺手把别的字段一起改掉）。
+   * ⚠️ 酒馆**不走这个参数**：它的独立开关实现在 `resolveTavernProvider`（直接剥 `provider.systemPrompt`）
+   *    —— 那样才能一处改动覆盖酒馆全部 15 个调用点，且在新增酒馆功能时自动跟随。
+   */
+  skipUserSystem?: boolean
 }
 
 interface ChatRaw {
@@ -114,7 +127,11 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   // 2.4.0：创意生成的默认温度可由 provider 自带（见 AIProvider.temperature）——
   // 本地小模型与云端大模型合适值差别很大；JSON 任务仍固定低温，不受影响。
   const temperature = opts.temperature ?? (opts.json ? JSON_TASK_TEMPERATURE : (config.temperature ?? DEFAULT_TEMPERATURE))
-  return (await chatRaw(config, messages, {
+  // 🔴 兜底注入「作者自定义系统提示词」（2026-10-06）：这里是全项目**唯一**能让「所有 AI 功能
+  //    都接上」这句话成立的位置。已显式调过 `composeSystemPrompt` 的链路内容里带标记，
+  //    这里会跳过 —— 不会拼两遍，也不会改变既有行为。
+  const msgs = opts.skipUserSystem ? messages : injectUserSystemPrompt(messages, config)
+  return (await chatRaw(config, msgs, {
     timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
     think,
     signal: opts.signal,
