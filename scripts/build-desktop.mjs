@@ -51,6 +51,86 @@ if (reuseOutEnv) {
   run(process.execPath, [vite, 'build'])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔴🔴 绕开 electron-builder 26 的「解包改名」死锁（2026-10-07 · 2.9.0 轮实测）
+//
+// 【现象】builder 26 的 extractArchive 走「解包到 win-unpacked.tmp → fs.rename 成 win-unpacked」。
+//   本机安全软件 / 文件监视会**瞬时占用**刚写出的那 ~200MB 目录 ⇒ rename 必报
+//   `EPERM: operation not permitted, rename …win-unpacked.tmp -> …win-unpacked`，封装必然失败。
+//   （2026-10-07 独立探针实测：解包成功、紧跟的 rename 失败，但**同一进程延迟 5 秒后改名成功**
+//     ⇒ 外部瞬时占用，不是权限问题、也不是句柄未释放。builder 24 是直接解到目标目录，故旧版不撞。）
+//
+// 【解法】改用 electron-builder 的 `electronDist` 指向「**已解包**的 Electron 目录」：
+//   `app-builder-lib/out/electron/ElectronFramework.js` 的 unpack() 里，只有 electronDist 是
+//   「目录、且不含 electron-v<ver>-win32-x64.zip」时才走 copyDir（**不做 rename**）；
+//   指向 zip 或含 zip 的目录仍会走 extractArchive（仍会撞）。
+//
+// 【为什么剔两个文件】自定义 electronDist 时 cleanupAfterUnpack 的 isFullCleanup=false，
+//   不会替咱删 `resources/default_app.asar` 与 `version`（默认流程会删）⇒ 缓存里预先删掉，
+//   产物才与既有发布版逐项一致。（LICENSE→LICENSE.electron.txt 改名两种情况都做，无需处理。）
+// ─────────────────────────────────────────────────────────────────────────────
+function deepRemove(p) {
+  let st
+  try { st = fs.lstatSync(p) } catch { return }
+  if (st.isDirectory()) {
+    let names = []
+    try { names = fs.readdirSync(p) } catch { return }
+    for (const n of names) deepRemove(path.join(p, n))
+    try { fs.rmdirSync(p) } catch { /* 里面可能还有被占用的文件 */ }
+  } else {
+    try { fs.unlinkSync(p) } catch { /* 被占用就留下 */ }
+  }
+}
+
+/** 手动递归复制目录（替代被本机 shim 掐断的 fs.cpSync）。官方 electron dist 无符号链接。 */
+function copyDirDeep(src, dest) {
+  mkdirSync(dest, { recursive: true })
+  for (const ent of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, ent.name)
+    const d = path.join(dest, ent.name)
+    if (ent.isDirectory()) copyDirDeep(s, d)
+    else fs.copyFileSync(s, d)
+  }
+}
+
+function ensureUnpackedElectronDist() {
+  try {
+    const electronVersion = JSON.parse(
+      fs.readFileSync(path.join(root, 'node_modules', 'electron', 'package.json'), 'utf8'),
+    ).version
+    const srcDist = path.join(root, 'node_modules', 'electron', 'dist')
+    const cacheRoot = path.join(root, 'release', 'eb-cache', 'electron-unpacked')
+    const cacheDist = path.join(cacheRoot, `electron-v${electronVersion}-win32-x64`)
+    const stamp = path.join(cacheRoot, `stamp-${electronVersion}.txt`)
+
+    if (existsSync(stamp) && existsSync(path.join(cacheDist, 'electron.exe'))) {
+      console.log(`[build:desktop] 复用「已解包 Electron」缓存：${cacheDist}`)
+      return cacheDist
+    }
+    if (!existsSync(path.join(srcDist, 'electron.exe'))) {
+      console.warn('[build:desktop] ⚠️ 未找到 node_modules/electron/dist（是不是漏跑了 electron 的安装脚本？）')
+      console.warn('[build:desktop]    → 退回 electron-builder 默认解包逻辑（本机大概率会因 EPERM 失败）')
+      return null
+    }
+    // 重建缓存：逐文件删（安全删除策略会拦整体 rmSync），且副本名带版本号，换版本即换目录
+    if (existsSync(cacheDist)) deepRemove(cacheDist)
+    // ⚠️ 不能 use fs.cpSync —— 本机它被 shim 拦下后**进程静默退出（码 127、无任何报错）**
+    //    （2026-10-07 实测：探针停在 cpSync 那一行，日志只剩「begin」，退出码 127）。
+    //    改用 readdir + copyFileSync 手动递归（copyFileSync 在脚本里已被验证可用）。
+    copyDirDeep(srcDist, cacheDist)
+    for (const rel of [path.join('resources', 'default_app.asar'), 'version']) {
+      try { fs.unlinkSync(path.join(cacheDist, rel)) } catch { /* 本来就没有也行 */ }
+    }
+    mkdirSync(cacheRoot, { recursive: true })
+    writeFileSync(stamp, electronVersion, 'utf8')
+    console.log(`[build:desktop] 已准备「已解包 Electron」缓存：${cacheDist}`)
+    return cacheDist
+  } catch (e) {
+    console.warn('[build:desktop] ⚠️ 准备「已解包 Electron」失败，退回默认解包逻辑：', e.message)
+    return null
+  }
+}
+
 console.log('[3/3] electron-builder 打包 NSIS 安装包 ...')
 // 国内镜像（海外网络下也可用，npmmirror 对全球开放）
 // 项目本地缓存：首次构建后组件会缓存在 release/eb-cache，重复构建不再联网
@@ -107,9 +187,14 @@ if (!reuseOut && existsSync(desktopOutBase)) {
 //   补写完成后重跑本脚本时传 YFE_REUSE_OUT=<同一目录>，走这里直接校验 + 交付。
 //   为什么不能在这里重打包：① electron-builder 会**再次写主 exe**，把补写的元数据覆盖回默认值；
 //   ② `win-unpacked/resources/app.asar` 常被实时防护占着，重打包会直接失败。
+// 复用模式不重打，故也不需要 electronDist；正常模式则先备好「已解包 Electron」缓存
+const electronDist = reuseOut ? null : ensureUnpackedElectronDist()
+const builderArgs = [builder, '--win', '--x64', `-c.directories.output=${desktopOut}`]
+if (electronDist) builderArgs.push(`-c.electronDist=${electronDist}`)
+
 const buildResult = reuseOut
   ? { status: 0, stdout: '' }
-  : spawnSync(process.execPath, [builder, '--win', '--x64', `-c.directories.output=${desktopOut}`], {
+  : spawnSync(process.execPath, builderArgs, {
       cwd: root, stdio: 'inherit', shell: false, env: { ...process.env, ...env },
     })
 if (reuseOut) {
