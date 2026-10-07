@@ -107,7 +107,7 @@ export function PlotChat({
                   {/* 两侧都不带外框（老大 2026-09-15 定）：用户那侧靠右对齐 + 头像区分。 */}
                   <div className={m.role === 'user'
                     ? 'max-w-[80%] space-y-1'
-                    : 'max-w-85 space-y-1'}>
+                    : 'max-w-[85%] space-y-1'}>
                     {m.role !== 'user' && casts.ai.length > 1 && m.speakerId && (
                       <div className="text-11 text-amber">{castNameOf(m.speakerId)}</div>
                     )}
@@ -131,7 +131,7 @@ export function PlotChat({
                 </div>
               ))}
               {streaming && (
-                <div className="max-w-85 space-y-1">
+                <div className="max-w-[85%] space-y-1">
                   {streamText
                     ? renderTavernMessage(streamText)
                     : <div className="text-12 text-ink-500">{phase || '正在生成…'}</div>}

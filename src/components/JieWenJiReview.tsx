@@ -36,7 +36,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
                       <span className="text-10 text-ink-400 w-16 shrink-0">{d.name}</span>
                       <div className="flex gap-0.5 flex-1">
                         {Array.from({ length: 10 }, (_, j) => (
-                          <span key={j} className={`h-1.5 w-2 rounded-sm ${j < d.score ? 'bg-amber' : 'bg-ink-700'}`} />
+                          <span key={j} className={`h-1.5 w-2 rounded-xs ${j < d.score ? 'bg-amber' : 'bg-ink-700'}`} />
                         ))}
                       </div>
                       <span className="text-10 text-ink-500 w-5 text-right">{d.score}</span>

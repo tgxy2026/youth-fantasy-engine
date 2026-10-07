@@ -1,6 +1,81 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* 🔴🔴 必须显式声明扫描范围、关掉 v4 的自动探测：
+   v4 默认扫描**整个项目**（只排除 .gitignore 命中项），于是 `docs/*.md`、`.workbuddy/memory/*.md`、
+   甚至 `.workbuddy/tmp/` 下的历史克隆目录里的**文档正文**都会被当类名候选。
+   实测后果：① `min-w-90` / `max-w-85` 这类「已从源码移除、且语义已变」的类名又被重新生成
+   （值还是错的 spacing 倍数）；② 产物 CSS 从 63 KB 涨到 103 KB 的垃圾规则。
+   这里显式对齐 v3 `tailwind.config.js` 的 content：`./index.html` + `./src/**\/*.{ts,tsx}`。
+   ⚠️ @source 路径相对**本 CSS 文件**（src/），不是项目根。 */
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "./**/*.{ts,tsx}";
+
+/* ============================================================
+   设计令牌（Tailwind v4 · CSS-first `@theme`）
+   ------------------------------------------------------------
+   迁移自 v3 的 `tailwind.config.js` → `theme.extend`。v4 不再走 JS 配置，
+   令牌一律写在这里。键名对应关系：
+     colors.*  → --color-*   ｜ fontFamily.* → --font-*  ｜ fontSize.* → --text-*
+     borderRadius.* → --radius-*  ｜ spacing.* → --spacing-*
+   🔴 v3 的 `rgb(var(--ink-N) / <alpha-value>)` 在 v4 下改为**直接给颜色值**；
+      透明度修饰符（bg-ink-900/60、border-amber/40 …）由 v4 用 color-mix() 自动合成，
+      **不再需要 alpha-value 占位符**（v4 已废弃该写法）。
+   ============================================================ */
+@theme {
+  /* ---- 颜色：全部变量驱动，值在下方各 [data-theme] 里重定义 ⇒ 一键换肤 ---- */
+  --color-ink-950: rgb(var(--ink-950));
+  --color-ink-900: rgb(var(--ink-900));
+  --color-ink-850: rgb(var(--ink-850));
+  --color-ink-800: rgb(var(--ink-800));
+  --color-ink-700: rgb(var(--ink-700));
+  --color-ink-600: rgb(var(--ink-600));
+  --color-ink-500: rgb(var(--ink-500));
+  --color-ink-400: rgb(var(--ink-400));
+  --color-ink-300: rgb(var(--ink-300));
+  --color-ink-200: rgb(var(--ink-200));
+  --color-ink-100: rgb(var(--ink-100));
+  --color-ink-50: rgb(var(--ink-50));
+  /* U-3 · 2.6.0：状态语义色（值在 index.css 按主题定义；浅色主题覆盖为 700 级保对比度） */
+  --color-danger: rgb(var(--danger));
+  --color-success: rgb(var(--success));
+  --color-info: rgb(var(--info));
+  --color-amber: rgb(var(--amber));
+  --color-amber-soft: rgb(var(--amber-soft));
+
+  /* ---- 字体栈 ----
+     2026-09-28 字体配置：栈首挂 CSS 变量（fontPrefs.ts 按需写入 --font-ui / --font-editor）。
+     🔴 变量未定义时求值为括号内默认名 → 与旧版栈完全一致（零变化红线）。 */
+  --font-sans: var(--font-ui, "Noto Sans SC"), Outfit, system-ui, sans-serif;
+  --font-serif: var(--font-editor, "Noto Serif SC"), Georgia, serif;
+
+  /* ---- 界面字号阶梯 9~17（2026-09-19 六维审计补立）----
+     此前全靠 `text-[12px]` 这类任意值；现收敛成整数档。
+     ⚠️ 只给字号、**不给行高**（不写 --text-N--line-height）——原 `text-[12px]` 只设 font-size、
+        行高继承；若在此带行高会导致全站行距突变。 */
+  --text-9: 9px;
+  --text-10: 10px;
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-15: 15px;
+  --text-16: 16px;
+  --text-17: 17px;
+
+  /* ---- U3 · 2.8.0：任意值高频项收口成具名档（audit-ui U3）----
+     ⚠️ 原 v3 的 minWidth/maxWidth 那两档（90/200 与 85%）**没有迁进 @theme**：
+        v4 的 min-w-<数字> / max-w-<数字> 会落到 spacing 倍数上（数字键 90 会算成 22.5rem），
+        语义完全不同、会静默改布局。故组件侧已改写成显式任意值形式（min-w-[90px] 等）。
+     ⚠️ 本注释刻意不写出那几个类名原文 —— Tailwind 的提取器会把**注释里的类名**也当候选生成，
+        留下一条值错误的死规则。 */
+  --radius-2: 2px;
+  --radius-3: 3px;
+  /* spacing 里**已有数字档**（w-11 = 2.75rem=44px）⇒ 这些必须带单位后缀，否则语义冲突 */
+  --spacing-3px: 3px;
+  --spacing-10px: 10px;
+  --spacing-11px: 11px;
+  --spacing-14px: 14px;
+  --spacing-128px: 128px;
+}
 
 /* ============================================================
    主题变量

@@ -2,7 +2,7 @@
 //
 // 模式照抄 theme.ts（主题/缩放同一族）：应用级偏好存 localStorage（跟人不跟项目），
 // 生效走 root.style.setProperty 写 CSS 变量，tailwind fontFamily 栈首引用变量
-// （见 tailwind.config.js —— 变量未定义时求值为默认名，与旧版渲染逐字节一致）。
+// （见 src/index.css 的 `@theme` —— 变量未定义时求值为默认名，与旧版渲染逐字节一致）。
 //
 // 🔴 盒模型红线：正文编辑器的 textarea / 测量层 / 高亮层 / ghost 层四图层共享同一个
 //    .novel-textarea 类（index.css @apply font-serif），字体走类级继承自动四层一致——

@@ -128,7 +128,7 @@ export default function InterviewChat({
             )}
             {state.turns.map((t, i) => (
               <div key={i} className={`flex ${t.role === 'user' ? 'justify-end' : ''}`}>
-                <div className={`max-w-85 whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-12 leading-relaxed ${t.role === 'user'
+                <div className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-12 leading-relaxed ${t.role === 'user'
                   ? 'bg-amber/12 border border-amber/25 text-ink-100'
                   : 'bg-ink-850 border border-ink-800 text-ink-200'}`}>
                   {t.text}

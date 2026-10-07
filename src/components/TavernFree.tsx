@@ -346,7 +346,7 @@ export default function TavernFree() {
                           加气泡框反而把同一段对话切成了两种视觉语言。 */}
                       <div className={m.role === 'user'
                         ? 'max-w-[80%] space-y-1'
-                        : 'max-w-85 space-y-1'}>
+                        : 'max-w-[85%] space-y-1'}>
                         {m.role !== 'user' && showWho && who && (
                           <div className="text-10 text-amber/80">{who.name}</div>
                         )}
@@ -376,7 +376,7 @@ export default function TavernFree() {
                   )
                 })}
                 {streaming && (
-                  <div className="max-w-85 space-y-1">
+                  <div className="max-w-[85%] space-y-1">
                     {streamText ? renderTavernMessage(streamText) : (
                       <div className="text-12 text-ink-500">{phase || '正在想…'}</div>
                     )}

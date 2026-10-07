@@ -101,12 +101,12 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
   const display = multi ? selected.join('，') : value
 
   return (
-    <div ref={wrapRef} className="relative inline-block w-full min-w-90">
+    <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
       <Button variant="bare"
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full !py-1 text-12 min-w-90 bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
+        className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
         <span className={display ? 'text-ink-100 truncate' : 'text-ink-500 truncate'}>{display || placeholder}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />

@@ -63,7 +63,7 @@ export default function StoryDateInput({ value, onChange, rule = DEFAULT_CALENDA
     'px-1.5 py-1 text-12 bg-ink-800/60 border border-ink-700 rounded text-ink-100 focus:border-amber/50 outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
 
   return (
-    <div className="flex flex-col gap-0.5 min-w-200">
+    <div className="flex flex-col gap-0.5 min-w-[200px]">
       <div className="flex items-center gap-1">
         <input
           type="number"
