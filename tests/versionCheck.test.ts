@@ -4,7 +4,7 @@
 //   ① 版本比较必须**逐段按数字** —— 字符串比较会把 2.6.10 判成小于 2.6.2；
 //   ② 安装包直链要从 assets 里挑 .exe，源码 zip / tar.gz 不能算；
 //   ③ 更新说明来自 Gitee（外部输入）→ mdLite 只输出纯文本块，标签字符必须被当普通文字。
-import { normalizeVersion, compareVersion, pickInstallerUrl } from '../src/lib/versionCheck'
+import { normalizeVersion, compareVersion, pickInstallerUrl, unwrapBridgeResult } from '../src/lib/versionCheck'
 import { parseMarkdownBlocks, stripInline } from '../src/lib/mdLite'
 
 let pass = 0, fail = 0
@@ -12,6 +12,23 @@ function ok(name: string, cond: boolean, extra = '') {
   if (cond) { pass++; console.log(`PASS ${name}`) }
   else { fail++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`) }
 }
+
+// ---------- 🔴 桥返回值解包（2026-10-07 事故的防回归） ----------
+//
+// 事故原貌：原实现写的是 `JSON.parse(await bridge.fetch(url))`，而主进程 net:fetch
+// 返回的是**对象** `{ ok, status, statusText, text }` ⇒ `JSON.parse(对象)` 解析的是
+// `"[object Object]"` ⇒ 必然抛错 ⇒ 被 catch 吞掉 ⇒ 恒返回 null ⇒ 界面**永远**显示
+// 「暂时查不到版本信息」，连请求成功时也一样。抽成纯函数后在这里钉死契约。
+ok('🔴 桥成功返回 {ok,status,text} → 能取出 text',
+  unwrapBridgeResult({ ok: true, status: 200, statusText: 'OK', text: '{"tag_name":"v2.9.0"}' }) === '{"tag_name":"v2.9.0"}')
+ok('🔴 回归护栏：把桥返回值**直接** JSON.parse 会抛错（原 bug 的形态）',
+  (() => { try { JSON.parse({ ok: true, text: '{}' } as unknown as string); return false } catch { return true } })())
+ok('桥失败 {ok:false,error} → null', unwrapBridgeResult({ ok: false, error: '请求超时' }) === null)
+ok('桥漏了 text 字段 → null', unwrapBridgeResult({ ok: true, status: 200 }) === null)
+ok('text 不是字符串 → null', unwrapBridgeResult({ ok: true, text: 123 }) === null)
+ok('非对象入参 → null', unwrapBridgeResult(null) === null && unwrapBridgeResult(undefined) === null && unwrapBridgeResult('[object Object]') === null)
+ok('解包后再解析能拿到真实字段（端到端形状）',
+  (JSON.parse(unwrapBridgeResult({ ok: true, text: '{"tag_name":"v2.9.0"}' }) ?? '{}') as { tag_name?: string }).tag_name === 'v2.9.0')
 
 // ---------- 版本解析 ----------
 {

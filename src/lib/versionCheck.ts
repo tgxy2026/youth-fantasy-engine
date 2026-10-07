@@ -16,6 +16,7 @@
 //    浏览器 dev 环境没有桥 → 降级 window.fetch（Gitee 响应头带 Access-Control-Allow-Origin: *）。
 import { APP_VERSION_LABEL } from './env'
 import { GITEE_RELEASES_URL } from './downloadLinks'
+import { HAS_NET_BRIDGE, netFetch } from './desktop'
 import { readBoolPref, readStringPref, writeBoolPref, writeStringPref } from './uiPrefs'
 
 /** Gitee 最新 Release 查询（公开仓库，匿名可用） */
@@ -93,14 +94,38 @@ function markChecked(): void {
 
 /* ---------------- 拉取最新版本 ---------------- */
 
-/** 桌面版走主进程桥，浏览器 dev 降级 window.fetch；失败返回 null（静默） */
+/**
+ * 把主进程 `net:fetch` 桥的返回值解包成 **JSON 文本**。
+ *
+ * 🔴🔴 契约（见 `electron/main.cjs` 的 `net:fetch`）—— 桥返回的是**对象**，不是字符串：
+ *      `{ ok: true, status, statusText, text }`  |  `{ ok: false, error }`
+ *
+ * 🔴 2026-10-07 修的真实事故：原先直接 `JSON.parse(await bridge.fetch(url))` ——
+ *    对**对象**调 `JSON.parse` 实际解析的是 `"[object Object]"`，**必然抛错**，
+ *    再被 catch 吞掉 ⇒ 恒返回 null ⇒ 界面永远显示「暂时查不到版本信息」，
+ *    而且**请求成功也一样**（失败路径反而看不出来）。抽成这个纯函数是为了能被单测钉住。
+ */
+export function unwrapBridgeResult(r: unknown): string | null {
+  if (!r || typeof r !== 'object') return null
+  const o = r as { ok?: unknown; text?: unknown }
+  if (o.ok !== true) return null
+  return typeof o.text === 'string' ? o.text : null
+}
+
+/**
+ * 拉一次 JSON。桌面版走主进程桥（绕开跨域、跟随系统代理），浏览器 dev 降级 window.fetch；
+ * 失败一律返回 null（静默）。
+ */
 async function getJson(url: string): Promise<unknown | null> {
   try {
-    const bridge = (window as unknown as { electronNet?: { fetch?: (u: string) => Promise<string> } }).electronNet
-    const text = bridge?.fetch
-      ? await bridge.fetch(url)
-      : await (await fetch(url, { headers: { Accept: 'application/json' } })).text()
-    return JSON.parse(text)
+    if (HAS_NET_BRIDGE) {
+      const r = await netFetch(url, { headers: { Accept: 'application/json' } })
+      const text = unwrapBridgeResult(r)
+      return text === null ? null : JSON.parse(text)
+    }
+    // 浏览器 dev 降级：Gitee 响应头带 Access-Control-Allow-Origin: *
+    const res = await fetch(url, { headers: { Accept: 'application/json' } })
+    return JSON.parse(await res.text())
   } catch {
     return null
   }
