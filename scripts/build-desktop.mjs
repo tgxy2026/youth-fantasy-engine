@@ -12,6 +12,16 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 // 安装包文件名随 package.json 的 version 自动变化，避免版本升级后此处写死导致找不到文件
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const setupName = `青春幻想引擎-Setup-${pkg.version}.exe`
+// Electron 运行时版本：**唯一真源＝已安装的 electron 包**（打包用的就是它）。
+// 🔴 刻意不写死版本号 —— 每次升 electron 都回来改一遍脚本是必然出错的（2026-10-07 起改为动态推导）。
+const ELECTRON_VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(path.join(root, 'node_modules', 'electron', 'package.json'), 'utf8')).version
+  } catch {
+    return ''
+  }
+})()
+const ELECTRON_ZIP = ELECTRON_VERSION ? `electron-v${ELECTRON_VERSION}-win32-x64.zip` : ''
 // 直接经 node 调 JS 入口，避免 .cmd 在 shell:false 下无法派生的坑（跨平台稳健）
 const tsc = path.join(root, 'node_modules', 'typescript', 'bin', 'tsc')
 const vite = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js')
@@ -95,9 +105,11 @@ function copyDirDeep(src, dest) {
 
 function ensureUnpackedElectronDist() {
   try {
-    const electronVersion = JSON.parse(
-      fs.readFileSync(path.join(root, 'node_modules', 'electron', 'package.json'), 'utf8'),
-    ).version
+    const electronVersion = ELECTRON_VERSION
+    if (!electronVersion) {
+      console.warn('[build:desktop] ⚠️ 读不到已安装 electron 的版本 → 退回默认解包逻辑')
+      return null
+    }
     const srcDist = path.join(root, 'node_modules', 'electron', 'dist')
     const cacheRoot = path.join(root, 'release', 'eb-cache', 'electron-unpacked')
     const cacheDist = path.join(cacheRoot, `electron-v${electronVersion}-win32-x64`)
@@ -142,17 +154,19 @@ const env = {
   // 故指向默认缓存目录，避免重复下载与解压。
   ELECTRON_BUILDER_CACHE: path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.cache', 'electron-builder'), 'electron-builder', 'Cache'),
   // electron 运行时缓存：同样指向系统默认缓存（C:\Users\<用户>\AppData\Local\electron\Cache），
-  // 其中已含 @electron/get 可识别的 electron-v31.7.7-win32-x64.zip。
+  // 其中应含 @electron/get 可识别的 `electron-v<版本>-win32-x64.zip`（版本＝已安装的 electron）。
   // ⚠️ 切勿指向 release/eb-cache/electron-zip —— 那里只有扁平 zip、缺少 @electron/get 的
   //    hash 子目录结构，离线时 electron-builder 找不到运行时，只会打出空壳安装包（约 500KB、无法运行）。
   ELECTRON_CACHE: path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.cache'), 'electron', 'Cache'),
 }
-// electron 运行时 zip 缓存：若此前下载过（旧位置 _tmp_tools），复用之
-const legacyZip = path.join(root, '_tmp_tools', 'electron-cache', 'electron-v31.7.7-win32-x64.zip')
-const zipDir = env.ELECTRON_CACHE
-if (!existsSync(path.join(zipDir, 'electron-v31.7.7-win32-x64.zip')) && existsSync(legacyZip)) {
-  mkdirSync(zipDir, { recursive: true })
-  fs.copyFileSync(legacyZip, path.join(zipDir, 'electron-v31.7.7-win32-x64.zip'))
+// electron 运行时 zip 缓存迁移：若此前下载过（旧位置 _tmp_tools），复制到系统缓存复用
+if (ELECTRON_ZIP) {
+  const legacyZip = path.join(root, '_tmp_tools', 'electron-cache', ELECTRON_ZIP)
+  const zipDir = env.ELECTRON_CACHE
+  if (!existsSync(path.join(zipDir, ELECTRON_ZIP)) && existsSync(legacyZip)) {
+    mkdirSync(zipDir, { recursive: true })
+    fs.copyFileSync(legacyZip, path.join(zipDir, ELECTRON_ZIP))
+  }
 }
 
 // 构建前把旧的 desktop-out 改名移走（rename 非破坏性，避开 safe-delete 对 rm 的拦截，也避免复用陈旧产物）

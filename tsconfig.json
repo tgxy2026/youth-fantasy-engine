@@ -2,7 +2,12 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    // 🔴🔴 lib 必须 >= ES2022（2026-10-07 修正）：测试代码用了 `Array.prototype.at`（es2022.array）。
+    //   此前能编译纯属「搭便车」—— `@types/node` 的 `/// <reference lib=...>` 顺带把 es2022 带了进来。
+    //   electron 44 经 `@electron/get@5` 把 `@types/node` 从 20 提到 24，新版的 reference 只剩
+    //   es2020 / esnext.disposable / esnext.float16 ⇒ 不再附带 es2022 ⇒ tsc 立刻转红。
+    //   运行时是 Electron 44（Node 24.18.1 / Chromium 152），ES2022 全量支持 ⇒ 显式声明才是正解。
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
