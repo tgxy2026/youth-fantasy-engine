@@ -1,15 +1,25 @@
-// ============ 酒馆「上下文窗口长度」只读化（2026-10-07 方案 B）· 防回归闸 ============
+// ============ 酒馆「上下文窗口长度」两态化（2026-10-07 方案 C）· 防回归闸 ============
 //
-// 背景：面板原先是**可手填**的 `common.numCtx`，而模型配置里的 `provider.contextWindow`
-// 才是全项目真源（2026-10-03 定案）⇒ 同一概念两份手填值，"谁说了算"说不清；且旧文案
-// 承诺了「换模型时会自动带过来」，实测只在「模型配置真手填 + 指纹变了 + 自动调整开着」
-// 三条同时满足时才跟随 ⇒ 文案与实现不一致。
+// 【沿革】
+//  原形态：面板可手填 `common.numCtx`，而「模型配置 → 上下文窗口」才是全项目真源 ⇒ 同一概念
+//          两份手填值，"谁说了算"说不清；旧文案还承诺了不存在的「换模型自动带过来」。
+//  方案 B（2026-10-07 上午）：改**只读派生**（显示 `cap.windowTokens` + 出处徽标）。
+//  方案 C（同日，主人拍板）：**按当前模型分两态** ——
+//    · 云端：整项**灰显占位、不出数字、不可编辑**。`num_ctx` 对 OpenAI 兼容端点无效，
+//            旧形态在这里显示一个大数字（看着像"可设置"）＋一句"设了也不生效"，
+//            实测会让作者误以为「系统没适配他选的模型」。
+//    · 本地：**恢复可编辑**，但编辑的是「模型配置 → 上下文窗口」**那一处真源**
+//            （`setLocalWindow` 写 `provider.contextWindow`），**不再写 `common.numCtx`** ——
+//            因为 `adviseCapacity` 本地分支是 `userWindow || current.numCtx`，模型配置填过时
+//            面板值会被完全忽略，写它必然落进「能编辑、改了不生效」。
+//            `common.numCtx` 字段仍**保留**作「模型配置未填时的沿用值」＋本地 `num_ctx` 显存安全阀。
 //
-// 方案 B 的落法：面板**改为只读派生**（显示 `cap.windowTokens` + 出处徽标），
-// `common.numCtx` 字段**保留**作「模型配置未填时的沿用值」⇒ 老用户零回退、零迁移。
+// 【本闸守七件事】
+//  ① 面板不再写酒馆自己的 numCtx；② 云端态不出数字、有占位文案；
+//  ③ 本地态走 NumField 且挂 `gNumCtx` 取值范围；④ 写回走 saveProviders/contextWindow、
+//  校验复用 `checkContextWindow`、值没变要短路；⑤ 字段与安全阀仍在（零迁移、零回退）；
+//  ⑥ 方案 B 遗留的出处徽标与死变量已清；⑦ 显示值仍来自派生 `cap.windowTokens`。
 //
-// 本闸守四件事：① 面板别再出现手填入口；② 展示值来自派生而非 c.numCtx；
-//   ③ 旧承诺文案别回潮；④ 字段与安全阀（params.ts 的 num_ctx）都还在。
 // 纯静态、零 IO —— 归 A 批。
 import * as fs from 'fs'
 import * as path from 'path'
@@ -39,37 +49,46 @@ function main() {
   ok('找到 useTavernControlModel.ts', !!hook)
   if (!basics || !hook) { console.log(`\n通过 ${pass} / 失败 ${fail}`); process.exit(1) }
 
-  // ---------- ① 面板不再有手填入口 ----------
-  ok('① 面板无 `setCommon(\'numCtx\'` 手填写回（只读化前提）', !basics.includes("setCommon('numCtx'"))
-  ok('① 面板不再用 NumField 承载窗口（已改 Field 只读壳）',
-    !/label="上下文窗口长度"[\s\S]{0,80}?<NumField/.test(basics))
+  // ---------- ① 面板不再写酒馆自己的 numCtx ----------
+  ok('① 面板无 `setCommon(\'numCtx\'` 手填写回（方案 C：改的是模型配置）',
+    !basics.includes("setCommon('numCtx'"))
 
-  // ---------- ② 展示值来自派生 ----------
-  ok('② 面板展示 cap.windowTokens', basics.includes('cap.windowTokens'))
-  ok('② 面板用 numCtxFromUserWindow 判出处（本地分支的 windowSource 是硬编码的 user，不能用）',
-    basics.includes('cap.numCtxFromUserWindow'))
-  ok('② 出处徽标两种态都在（来自模型配置 / 模型配置未填）',
-    basics.includes('来自模型配置') && basics.includes('模型配置未填'))
+  // ---------- ② 云端态：灰显占位、不出数字 ----------
+  ok('② 面板按 cap.local 分两态', basics.includes('cap.local ?'))
+  ok('② 云端态有占位文案「对云端模型不适用」', basics.includes('对云端模型不适用'))
+  ok('② 云端态不再把窗口当「设置值」显示（旧的 toLocaleString 大数字已移除）',
+    !basics.includes('cap.windowTokens.toLocaleString()'))
+  ok('② 旧文案「故这里只列出来供参考」已消失', !basics.includes('故这里只列出来供参考'))
 
-  // ---------- ③ 旧承诺文案不得回潮 ----------
-  ok('③ 旧文案「换模型时会自动带过来」已消失',
-    !basics.includes('换模型时会自动带过来'))
-  ok('③ 新文案写明「模型配置未填时沿用上次值」',
-    basics.includes('沿用你上次在这里设的值'))
+  // ---------- ③ 本地态：恢复 NumField + 取值范围建议 ----------
+  ok('③ 本地态用 NumField 承载窗口（可编辑）',
+    /<NumField[\s\S]{0,140}?label="上下文窗口长度"/.test(basics))
+  ok('③ 本地态挂 gNumCtx 取值范围/分段说明', basics.includes('guide={gNumCtx}'))
+  ok('③ 本地态提交走 setLocalWindow', basics.includes('onCommit={setLocalWindow}'))
+  ok('③ hook 恢复 gNumCtx（dynamicGuide numCtx）', /gNumCtx\s*=\s*dynamicGuide\('numCtx'/.test(hook))
 
-  // ---------- ④ 字段与安全阀仍在（零迁移、零回退的前提） ----------
-  ok('④ settings.ts 仍保留 `numCtx` 字段（作「模型配置未填时的沿用值」）',
-    /numCtx:\s*number/.test(settings))
-  ok('④ 本地安全阀仍在：params.ts 的 `num_ctx: p.numCtx`',
-    /num_ctx:\s*p\.numCtx/.test(params))
-  ok('④ adviseCapacity 仍是「手填 > 面板现值」语义',
-    /userWindow\s*\|\|\s*current\.numCtx/.test(capacity))
-  ok('④ 仍按 `numCtxFromUserWindow` 决定是否写回面板值',
-    /numCtxFromUserWindow/.test(capacity) && /numCtxFromUserWindow/.test(settings))
+  // ---------- ④ 写回模型配置（单一真源） ----------
+  ok('④ hook 用 saveProviders 落盘', /saveProviders\(/.test(hook))
+  ok('④ 写的是 provider.contextWindow', /contextWindow:\s*n/.test(hook))
+  ok('④ 校验复用 checkContextWindow（禁自造阈值）', /checkContextWindow\(n\)\.ok/.test(hook))
+  ok('④ 值没变就短路（NumField 范围内即时提交，不能每敲一个数字都落盘）',
+    /if\s*\(n === p\.contextWindow\)\s*return/.test(hook))
+  ok('④ 先写库再更新 state（异步落盘＋通知刷新）',
+    /await saveProviders\(next\)[\s\S]{0,80}?setProviders\(next\)/.test(hook))
 
-  // ---------- ⑤ 死代码已清 ----------
-  // 用词边界匹配，避免被注释里的正式名称（带反引号）误伤
-  ok('⑤ useTavernControlModel 不再导出无人消费的 gNumCtx', !/(^|[\s,{])gNumCtx\b/.test(hook))
+  // ---------- ⑤ 字段与安全阀仍在（零迁移、零回退） ----------
+  ok('⑤ settings.ts 仍保留 numCtx 字段（模型配置未填时的沿用值）', /numCtx:\s*number/.test(settings))
+  ok('⑤ 本地安全阀仍在：params.ts 的 `num_ctx: p.numCtx`', /num_ctx:\s*p\.numCtx/.test(params))
+  ok('⑤ adviseCapacity 仍是「手填 > 面板现值」语义', /userWindow\s*\|\|\s*current\.numCtx/.test(capacity))
+
+  // ---------- ⑥ 方案 B 遗留已清 ----------
+  ok('⑥ 不再用 numCtxFromUserWindow 拼出处徽标', !basics.includes('numCtxFromUserWindow'))
+  ok('⑥ 面板不再有 winFromConfig / winByPreset 死变量',
+    !/\bwinFromConfig\b/.test(basics) && !/\bwinByPreset\b/.test(basics))
+  ok('⑥ 旧徽标文案已消失', !basics.includes('模型配置未填 · 沿用上次设置'))
+
+  // ---------- ⑦ 显示值仍来自派生 ----------
+  ok('⑦ 本地面板的 value 仍是派生值 cap.windowTokens', /value=\{cap\.windowTokens\}/.test(basics))
 
   console.log(`\n通过 ${pass} / 失败 ${fail}`)
   process.exit(fail ? 1 : 0)

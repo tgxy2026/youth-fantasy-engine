@@ -12,8 +12,8 @@
  */
 import * as presets from '../lib/tavern/presets'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadProviders, loadActiveId, AIProvider } from '../lib/ai'
-import { adviseCapacity, modelFingerprintOf } from '../lib/modelCapacity'
+import { loadProviders, saveProviders, loadActiveId, AIProvider } from '../lib/ai'
+import { adviseCapacity, checkContextWindow, modelFingerprintOf } from '../lib/modelCapacity'
 import { showToast, confirmDialog } from './dialogs'
 import { TavernPreset } from '../lib/tavern/presets'
 import { dynamicGuide } from '../lib/tavern/paramGuide'
@@ -386,8 +386,14 @@ export function useTavernControlModel() {
   //    换模型时整条刻度一起平移（出厂那几档是按本地 32K 定的，大窗口模型会被永远判成「拉过头」）。
   //    min / step 沿用静态表，只有上界与分段被重算；推荐值永远落在「推荐」那一段里。
   const gBudget = dynamicGuide('contextBudget', rec.contextBudget)
-  // 🔴 2026-10-07（方案 B）：窗口的取值范围说明已随「上下文窗口长度」改为只读派生而移除 ——
-  //    面板不再手填窗口，故不需要它的取值范围/分段说明（窗口出处改由 cap.numCtxFromUserWindow 判断）。
+  /**
+   * 「上下文窗口长度」的取值范围与分段影响 —— **只有本地态用到**（云端态整项灰显、不出数字）。
+   *
+   * 🔴 2026-10-07 方案 C：面板恢复可编辑，但**编辑的是「模型配置 → 上下文窗口」这一处真源**
+   *    （不是酒馆的 `common.numCtx`）—— 详见下面 `setLocalWindow` 的说明。
+   *    所以 guide 的上下界直接以当前生效窗口为准（`cap.windowTokens` 就是那儿读出来的）。
+   */
+  const gNumCtx = dynamicGuide('numCtx', cap.windowTokens)
   const gSoft = dynamicGuide('softLimit', rec.softLimit)
   const gHard = dynamicGuide('hardLimit', rec.hardLimit)
   const gLong = dynamicGuide('longTermLimit', rec.longTermLimit)
@@ -422,6 +428,35 @@ export function useTavernControlModel() {
     setFree('hardLimit', rec.hardLimit)
     setFree('longTermLimit', rec.longTermLimit)
     setFree('diaryDays', rec.diaryDays)
+  }
+
+  /**
+   * 本地：把「上下文窗口长度」写回**模型配置**（`provider.contextWindow`）。
+   *
+   * 🔴 为什么写回模型配置、而不是酒馆自己的 `common.numCtx`（2026-10-07 方案 C 定案）：
+   *    `adviseCapacity` 本地分支的判定是 `userWindow || current.numCtx` —— **模型配置手填的优先**。
+   *    只要作者在模型配置里填过窗口，面板上再改 numCtx 就会被**完全忽略**，
+   *    表现为「框能编辑、改了不生效」（比只读更容易误导）。写回同一处真源则两条路合流：
+   *    界面显示值当场跟上，也不会造出第二个真源。
+   *
+   * 🔴 落盘顺序：先写库、成功后再更新 state（全站「异步落盘＋通知刷新」同一条规矩）。
+   *    值非法（`checkContextWindow` 不通过）或与现值相同 → 直接返回，不产生写盘。
+   *    ⚠️ `NumField` 在合法范围内是**即时提交**的，所以下面「值没变就返回」的短路必不可少，
+   *       否则每敲一个数字都会落一次盘。
+   */
+  const setLocalWindow = async (v: number) => {
+    const p = activeProvider
+    if (!p || !cap.local) return
+    const n = Math.round(v)
+    if (!checkContextWindow(n).ok) return
+    if (n === p.contextWindow) return
+    const next = providers.map(x => (x.id === p.id ? { ...x, contextWindow: n } : x))
+    try {
+      await saveProviders(next)
+      setProviders(next)
+    } catch (e) {
+      showToast(`保存上下文窗口失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
   }
 
   /**
@@ -464,7 +499,7 @@ export function useTavernControlModel() {
   }
 
   return {
-    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, addProfile, removeProfile, selectProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange,
+    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, addProfile, removeProfile, selectProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gNumCtx, gBudget, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange, setLocalWindow,
   }
 }
 

@@ -16,14 +16,7 @@ import { profileListOf, activeProfileOf, type TavernProfile } from '../lib/taver
 const profileOptionLabel = (p: TavernProfile, i: number) => p.name.trim() || `未命名档案 ${i + 1}`
 
 export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
-  const { setCommon, setProfile, addProfile, removeProfile, selectProfile, s, c, pr, modelOptions, cap, rec, gBudget, gFixed, drift, applyRecommended, onDefaultModelChange } = m
-  /**
-   * 「上下文窗口」的出处（只读展示用，2026-10-07 方案 B）。
-   * ⚠️ 本地分支的 `cap.windowSource` 被 `adviseCapacity` **硬编码成 `'user'`**（表示「有效窗口来自本地判定」），
-   *    不能拿它判断出处 —— 本地要看 `numCtxFromUserWindow`（是否真在模型配置里手填过）。
-   */
-  const winFromConfig = cap.local ? !!cap.numCtxFromUserWindow : cap.windowSource === 'user'
-  const winByPreset = !cap.local && cap.windowSource === 'preset'
+  const { setCommon, setProfile, addProfile, removeProfile, selectProfile, s, c, pr, modelOptions, cap, rec, gNumCtx, gBudget, gFixed, drift, applyRecommended, onDefaultModelChange, setLocalWindow } = m
   /** 全部档案（老库只有一份 ⇒ 数组长度 1）+ 当前生效那份的 id（老库没有 id ⇒ 空串，选项值也用它） */
   const profiles = profileListOf(s)
   const curProfileId = activeProfileOf(s).id ?? ''
@@ -96,36 +89,37 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
             </div>
 
             <div className={GRID2}>
-              {/* 🔴 2026-10-07（方案 B）：**改为只读派生，不再让作者在这里手填**。
-                  模型配置里的「上下文窗口」才是全项目真源（2026-10-03 定案），这里再给一份手填值
-                  ⇒ 两份值谁说了算说不清；旧文案还承诺了不存在的「跟随新模型自动切换」（实测只在
-                  「模型配置真手填 + 指纹变了 + 自动调整开着」三条同时满足时才跟随）。现在直接显示
-                  当前生效的窗口与它的出处。
-                  ⚠️ `common.numCtx` 字段**保留**作「模型配置未填时的沿用值」⇒ 老用户零回退、零迁移。 */}
-              <Field
-                label="上下文窗口长度"
-                hint={cap.local
-                  ? (winFromConfig
-                    ? '窗口取「模型配置 → 上下文窗口」里填的值 —— 那里填多少，这里就是多少。它决定本地模型一次能装多少内容，调大会同步抬高上面的「上下文预算」，显存占用也跟着涨；跑不动就把窗口调小。要去更大窗口，改「模型配置」那一栏。'
-                    : `「模型配置」里还没填这个模型的「上下文窗口」—— 现在沿用你上次在这里设的值 ${cap.windowTokens} 词元。去「工作面板 → 模型设置 → 模型配置」把窗口填上（必填项，1K = 1024 tokens），窗口与推荐值就会跟着它走。`)
-                  : '此参数只对本地 Ollama 生效 —— 当前接的是云端模型，设了也不生效，故这里只列出来供参考。'
+              {/* 🔴 2026-10-07 方案 C：**按当前模型分两态**。
+                  云端：整项灰显占位、不出数字、不可编辑 —— `num_ctx` 对 OpenAI 兼容端点无效，
+                        以前这里显示一个大数字（看着像"可设置"）＋一句「设了也不生效」，
+                        实测会让作者误以为「系统没适配他选的模型」。窗口信息只留在说明里
+                        （它仍是预算推算的依据，不该丢）。
+                  本地：**可编辑**，但编辑的是「模型配置 → 上下文窗口」那一处真源
+                        （见 hook 的 `setLocalWindow`）—— 不再写 `common.numCtx`，
+                        免得落进「模型配置填过 ⇒ 面板值被忽略」的分叉。
+                        `common.numCtx` 字段仍**保留**作「模型配置未填时的沿用值」（零迁移、零回退）。 */}
+              {cap.local ? (
+                <NumField
+                  label="上下文窗口长度"
+                  guide={gNumCtx}
+                  value={cap.windowTokens}
+                  onCommit={setLocalWindow}
+                  hint="本地 Ollama 的 num_ctx，也是显存安全阀：调大它能装下更多内容，代价是显存占用同步上升 —— 模型加载不起来就把它调小。⚠️ 这里填的值会写进「工作面板 → 模型设置 → 模型配置 → 上下文窗口」，两处始终是同一个数；上面的「上下文预算」与记忆档也都按它缩放。"
+                />
+              ) : (
+                <Field
+                  label="上下文窗口长度"
+                  hint={'此参数只对本地 Ollama 生效 —— 当前接的是云端模型，本项不参与调用，故不提供编辑；云端窗口由服务商决定。'
                     + (cap.windowSource === 'fallback'
-                      ? ` 「模型配置」里还没填这个模型的「上下文窗口」—— 现在按保守值 ${cap.windowTokens} tokens 估算。去「工作面板 → 模型设置 → 模型配置」把窗口填上（必填项，1K = 1024 tokens），推荐值就准了。`
-                      : ` 该模型窗口为 ${cap.windowTokens} tokens，要让模型读更多内容请调大上面的「上下文预算」。`)}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-12 text-ink-100 tabular-nums">
-                    {cap.windowTokens.toLocaleString()}
-                    <span className="ml-1 text-ink-500">词元</span>
-                  </span>
-                  <span className={`rounded px-1.5 py-0.5 text-10 ${winFromConfig ? 'bg-success/15 text-success' : 'bg-amber/15 text-amber'}`}>
-                    {winFromConfig ? '来自模型配置' : '模型配置未填 · 沿用上次设置'}
-                  </span>
-                  {winByPreset && cap.windowLabel && (
-                    <span className="text-10 text-ink-500">识别为 {cap.windowLabel}</span>
-                  )}
-                </div>
-              </Field>
+                      ? ` 系统按保守值 ${cap.windowTokens} tokens 估算该模型的窗口（可在「模型配置」里手填纠正），推荐值就准了。`
+                      : ` 系统按该模型的 ${cap.windowTokens} tokens 折减推算预算；要让模型读更多内容，请调大上面的「上下文预算」。`)}
+                >
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-1.5">
+                    <span className="text-12 text-ink-600">—</span>
+                    <span className="text-10 text-ink-600">对云端模型不适用</span>
+                  </div>
+                </Field>
+              )}
               <ToggleField
                 label="关闭思考链"
                 hint="开启时模型直接说话，不再先写一段分析。角色扮演要「像人说话」而不是「想得深」，所以思考链默认是关闭的；只有本地模型认这个开关。"
