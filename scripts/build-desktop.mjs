@@ -262,7 +262,10 @@ if (buildResult.status !== 0) {
 const APP_NAME = '青春幻想引擎'          // 与 electron-builder.yml 的 productName 一致
 const COMPANY = '青春幻想引擎开发组'   // 主 exe 的公司名（验收基准）
 const exePath = path.join(desktopOut, 'win-unpacked', `${APP_NAME}.exe`)
-const EXPECT_BASE_SIZE = 181097984 // 历史基线：图标写入后主 exe 的逐字节大小
+// 图标 + 元数据写入后主 exe 的逐字节大小（**仅日志比对，不是闸门**）。
+// ⚠️ 换 electron 大版本必然变化 ⇒ 每次升 electron 后按首次实测刷新（历史值见 git log）：
+//    electron 31.7.7 → 181,097,984 ｜ electron 44.6.0 → 246,487,040（2026-10-07 实测）
+const EXPECT_BASE_SIZE = 246487040
 const expectStrings = [COMPANY, APP_NAME, pkg.version].filter(Boolean)
 
 function exeMetaOk(p) {
