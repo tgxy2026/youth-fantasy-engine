@@ -12,9 +12,11 @@ web-build-*/
 
 # 封装输出
 release/
-# build/ 只放 electron-builder 图标源：忽略目录内容但图标本身必须入库（否则换机 clone 丢安装图标）
+# build/ 只放 electron-builder 图标源与自定义 NSIS 片段：忽略目录内容但这两者必须入库
+#   （否则换机 clone 会丢安装图标、以及安装器的安装目录自愈逻辑）
 build/*
 !build/icon.ico
+!build/installer.nsh
 
 # 图标设计草稿（AI 生成候选图，定稿应用后清理）
 icon-drafts/
