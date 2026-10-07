@@ -386,8 +386,8 @@ export function useTavernControlModel() {
   //    换模型时整条刻度一起平移（出厂那几档是按本地 32K 定的，大窗口模型会被永远判成「拉过头」）。
   //    min / step 沿用静态表，只有上界与分段被重算；推荐值永远落在「推荐」那一段里。
   const gBudget = dynamicGuide('contextBudget', rec.contextBudget)
-  // 窗口的推荐值 = 模型配置里的窗口（手填 > 识别）；云端 `numCtx` 为 null 时退回识别到的窗口值
-  const gNumCtx = dynamicGuide('numCtx', rec.numCtx ?? cap.windowTokens)
+  // 🔴 2026-10-07（方案 B）：窗口的取值范围说明已随「上下文窗口长度」改为只读派生而移除 ——
+  //    面板不再手填窗口，故不需要它的取值范围/分段说明（窗口出处改由 cap.numCtxFromUserWindow 判断）。
   const gSoft = dynamicGuide('softLimit', rec.softLimit)
   const gHard = dynamicGuide('hardLimit', rec.hardLimit)
   const gLong = dynamicGuide('longTermLimit', rec.longTermLimit)
@@ -464,7 +464,7 @@ export function useTavernControlModel() {
   }
 
   return {
-    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, addProfile, removeProfile, selectProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gNumCtx, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange,
+    s, setS, showBands, setShowBands, providers, setProviders, activeProviderId, setActiveProviderId, ruleTry, setRuleTry, dirty, setDirty, saving, setSaving, protocolEditing, setProtocolEditing, presetList, setPresetList, presetNaming, setPresetNaming, presetFileRef, leftColRef, rightColRef, protoH, setProtoH, layoutReady, storePresetAs, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, edit, setCommon, setProfile, addProfile, removeProfile, selectProfile, setPlot, setFree, setVars, toggleVarKey, setPostFlag, setMultiVariant, setDynamicQuotaPct, setRule, addRule, dropRule, resetRules, save, reset, startEditProtocol, rulePreview, c, pr, pl, fr, modelOptions, activeProvider, cap, rec, gBudget, gSoft, gHard, gLong, gDiary, gFixed, drift, applyRecommended, onDefaultModelChange,
   }
 }
 
