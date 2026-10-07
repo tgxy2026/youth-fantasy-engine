@@ -276,7 +276,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
         <div className="flex items-center gap-1.5">
           <h2 className="text-13 text-amber">模型配置</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
-            <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
+            <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；下方「AI 用途路由」还能给创作 / 审校 / 整理三类任务分别指定模型，留空即跟随当前模型；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
             <p className="mt-1.5">两类平台：</p>
             <ul className="list-disc pl-4 space-y-1">
               <li><b>本地模型</b>：Ollama / LM Studio 等，跑在你自己机器（或局域网内你自己的机器）上，一般免密钥、不需要联网；请求只发给这个地址，不经过任何第三方。</li>
@@ -284,7 +284,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             </ul>
             <p className="mt-1.5">
               每行都有「测试」：会真实发起一次最小对话，确认这个配置能不能用（本地大模型首次调用要加载进显存，
-              等几十秒是正常的）。密钥只存在本机数据文件里，不会上传到任何服务器。
+              等几十秒是正常的）。密钥只存在本机数据文件里、不随云盘同步；发起请求时会随该请求发给对应的模型服务商。
             </p>
             <p className="mt-1.5">
               没配模型也不影响任何手动填写功能 —— 只是各处 AI 按钮会禁用并给出提示。

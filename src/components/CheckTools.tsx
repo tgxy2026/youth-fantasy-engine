@@ -381,7 +381,7 @@ export default function CheckTools() {
             <ScanSearch size={14} className="text-info" /> AI 一致性深度自查
             <HelpPopover title="AI 一致性深度自查怎么用" width="22rem">
               {'把你的世界观 / 角色 / 时间脉络设定交给 AI，对照检查前后矛盾与逻辑硬伤。\n\n· 上方文本框可粘贴一段正文（可选），AI 会同时核对正文与设定；留空则只在设定资料内部互查；\n· 结果按 严重 / 中等 / 提示 分级，并给出冲突依据与涉及位置；\n· 需先接入 AI 模型，未接入时按钮禁用；本地能力不受影响。'}
-              <AIDataSourceNote feature="continuity-audit" />
+              <AIDataSourceNote feature="consistency-selfcheck" />
             </HelpPopover>
           </h2>
           <p className="text-11 text-ink-500 mb-3">

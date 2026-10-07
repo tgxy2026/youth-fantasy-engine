@@ -162,7 +162,7 @@ export default function SearchSettingsPanel() {
             {s.engine !== 'searxng' && (
               <Field
                 label="密钥"
-                hint="存在本机数据文件里，不会上传到任何服务器；只有起草时才会带着它去请求搜索接口。SearXNG 这类自建实例不需要密钥，选了它这一栏就不显示。"
+                hint="存在本机数据文件里、不随云盘同步；只有起草时才会带着它去请求搜索接口（该请求会发给对应的搜索服务商）。SearXNG 这类自建实例不需要密钥，选了它这一栏就不显示。"
               >
                 <input
                   className={`${BOX} w-full`}

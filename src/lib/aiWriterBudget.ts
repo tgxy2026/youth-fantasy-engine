@@ -179,7 +179,7 @@ export async function writerBudgetFor(kind: WriterBudgetKind): Promise<number> {
 /**
  * 按当前模型推荐基准。
  *  · 本地：跟着 `numCtx`（窗口由显存决定）—— numCtx 变大时资料预算也跟着涨，**不再封顶在出厂值**。
- *  · 云端：按可用窗口的比例，下限出厂值、上限见 `WRITER_RECOMMEND`。
+ *  · 云端：按可用窗口的比例，下限出厂值、上限见 `WRITER_BASE_LIMITS.max`（已取消固定封顶）。
  */
 export function recommendWriterBase(cap: CapacityAdvice): number {
   const snap100 = (v: number) => Math.round(v / 100) * 100

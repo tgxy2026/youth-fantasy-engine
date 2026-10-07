@@ -50,8 +50,9 @@ export function DesktopDataBar() {
   const doExport = async () => {
     setBusy('export')
     try {
-      const path = await exportDesktopData()
-      if (path) showToast(`已导出全部数据到：\n${path}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。`, 'success', 6000)
+      const r = await exportDesktopData()
+      if (r.ok && r.path) showToast(`已导出全部数据到：\n${r.path}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。`, 'success', 6000)
+      else if (!r.cancelled) showToast(r.error || '导出失败', 'error')
     } catch (e) {
       showToast('导出失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {

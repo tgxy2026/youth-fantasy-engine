@@ -192,7 +192,7 @@ export default function TrajectoryPanel() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-baseline gap-2">
             <span className="text-12 text-ink-300">AI 辅助占比</span>
-            <span className="text-18 font-bold text-amber tabular-nums">{aiSummary.ratioPct}%</span>
+            <span className="text-17 font-bold text-amber tabular-nums">{aiSummary.ratioPct}%</span>
             <span className="text-11 text-ink-500">
               （累计产出 {aiSummary.aiChars.toLocaleString('zh-CN')} 字 · {aiSummary.aiChapters} 章用过 AI）
             </span>
@@ -383,7 +383,7 @@ function StatCard({ label, value, unit }: { label: string; value: string; unit: 
     <div className="rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-3">
       <div className="text-10 text-ink-500">{label}</div>
       <div className="mt-1 flex items-baseline gap-1">
-        <span className="text-18 font-bold text-ink-100 tabular-nums">{value}</span>
+        <span className="text-17 font-bold text-ink-100 tabular-nums">{value}</span>
         {unit && <span className="text-10 text-ink-500">{unit}</span>}
       </div>
     </div>

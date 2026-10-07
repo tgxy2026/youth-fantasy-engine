@@ -458,22 +458,28 @@ export function flushDesktopSync(): void {
 }
 
 /** 导出全部数据为便携版数据文件（保存到 U 盘等任意位置，便携版可直接打开使用） */
-export async function exportDesktopData(): Promise<string | null> {
-  if (!DESKTOP || !inited) return null
+export async function exportDesktopData(): Promise<{ ok: boolean; path?: string; cancelled?: boolean; error?: string }> {
+  if (!DESKTOP || !inited) return { ok: false, error: '当前版本不支持导出数据文件（仅桌面版可用）' }
   // 🔴 锁写盘期间内存里是空库/残缺数据 —— 导出会造出一个**看起来正常**的空备份，
   //    用户拿它当保险反而把真数据的位置占了（提示语说好了「原文件不会被改动」）。
   if (writeLocked) {
-    lastError = '数据文件读取失败期间不导出（内存里是空库/残缺数据）：请先按顶部红条提示备份原文件，或解除锁定后再导出'
+    const msg = '数据文件读取失败期间不导出（内存里是空库/残缺数据）：请先按顶部红条提示备份原文件，或解除锁定后再导出'
+    lastError = msg
     emit()
-    return null
+    return { ok: false, error: msg }
   }
   data.savedAt = Date.now()
   try {
-    return await api().exportFile(JSON.stringify(data))
+    const p = await api().exportFile(JSON.stringify(data))
+    // 🔴 2026-10-07 六维审计 P2：取消与失败**必须分开返回** —— 混成一个 null 会让
+    //    「用户点了取消」和「真的出错了」在界面上长得一模一样（口径与 exportPdfDocument 对齐）。
+    if (!p) return { ok: false, cancelled: true }
+    return { ok: true, path: p }
   } catch (e) {
-    lastError = '导出失败：' + (e instanceof Error ? e.message : String(e))
+    const msg = '导出失败：' + (e instanceof Error ? e.message : String(e))
+    lastError = msg
     emit()
-    return null
+    return { ok: false, error: msg }
   }
 }
 

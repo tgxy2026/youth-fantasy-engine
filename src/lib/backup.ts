@@ -111,9 +111,17 @@ export function startAutoBackup(projectId: string): () => void {
   //    ⚠️ 判定要读库所以是异步的：万一 stop 先到（stopped 置位）就不再起；查失败则照常起，交给 db 层兜底。
   let timer: ReturnType<typeof setInterval> | null = null
   let stopped = false
-  void db.getProject(projectId).then(p => {
-    if (stopped || isDemoProjectName(p?.name)) return
+  // ⚠️ 读不到项目（getProject 抛错）也**必须照常启动** —— 与上面注释同口径：这一层只负责
+  //    「示范项目不起计时器」，读失败不等于「是示范项目」；真出事由 db 层的兜底拦截 +
+  //    tick 里的 recordFailure 负责。
+  //    🔴 2026-10-07 六维审计 P1：原 catch 只写了注释、没有启动定时器 ⇒ 读一次失败就静默
+  //    失去整场会话的自动备份，而注释说「照常启动」。
+  const arm = (isDemo: boolean) => {
+    if (stopped || isDemo) return
     timer = setInterval(tick, FIVE_MIN)
-  }).catch(() => { /* 读不到就照常启动，db 层有兜底 */ })
+  }
+  void db.getProject(projectId)
+    .then(p => arm(isDemoProjectName(p?.name)))
+    .catch(() => arm(false))
   return () => { stopped = true; if (timer) clearInterval(timer) }
 }

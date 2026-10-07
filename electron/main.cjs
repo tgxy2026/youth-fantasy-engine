@@ -106,11 +106,18 @@ async function writeAtomic(file, text) {
 app.whenReady().then(() => {
   // 字体枚举权限（2026-09-28 · 社区需求）：渲染层 navigator.queryLocalFonts() 需要
   // local-fonts 权限。Chromium 把它归为需授权能力，Electron 无授权 UI、无 handler 时
-  // 对该权限默认拒绝 —— 必须显式放行。其余权限 callback(true) 与「未设 handler」的
-  // 默认批准行为一致，不放宽也不收紧现有安全面。
+  // 对该权限默认拒绝 —— 必须显式放行。
+  // 🔴 2026-10-07 六维审计 P2：原先一律 `callback(true)` —— 把 media / geolocation /
+  //    notifications / midi 等一并放行，安全面大于必要；且原注释「与未设 handler 的默认
+  //    批准行为一致」依赖 Electron 的版本默认值（新版对不少权限已改为默认拒绝），不可靠。
+  //    现**只放行 local-fonts**。已核：全项目只有 fontPrefs.ts 的 queryLocalFonts 用到权限
+  //    API ⇒ 收窄不影响任何现有功能。将来若要用别的权限，往这个集合里加即可。
+  const ALLOWED_PERMISSIONS = new Set(['local-fonts'])
   try {
-    session.defaultSession.setPermissionRequestHandler((_e, _permission, callback) => callback(true))
-    session.defaultSession.setPermissionCheckHandler(() => true)
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(ALLOWED_PERMISSIONS.has(permission))
+    })
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission))
   } catch { /* 权限注册失败不挡启动：字体枚举降级为预置清单 + 自定义输入 */ }
 
   loadCustomPath() // 恢复用户自定义的数据文件位置（若有）

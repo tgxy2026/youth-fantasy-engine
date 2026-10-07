@@ -434,7 +434,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                   <UserRound size={13} className="shrink-0" />
                   <span className="text-13 font-medium truncate flex-1">{rec.name}</span>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title={UNSAVED_CHANGES_HINT} />}
-                  <Button variant="icon-danger" iconOnly size="xs" onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-40 group-hover:opacity-100 transition-all">
+                  <Button variant="icon-danger" iconOnly size="xs" title="删除这张角色卡" onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-40 group-hover:opacity-100 transition-all">
                     <Trash2 size={12} />
                   </Button>
                 </div>
