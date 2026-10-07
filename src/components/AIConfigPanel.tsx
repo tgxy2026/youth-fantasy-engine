@@ -32,6 +32,8 @@ import {
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
   TASK_ROLES, ROLE_LABEL, ROLE_HINT, DEFAULT_ROUTING, loadRouting, saveRouting, rolesOf,
   type TaskRole, type RoutingMap,
+  loadAiTimeoutSec, saveAiTimeoutSec,
+  AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
 } from '../lib/ai'
 import { checkContextWindow, MAX_WINDOW } from '../lib/modelCapacity'
 import NumberField from './NumberField'
@@ -90,6 +92,8 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   const [rowResults, setRowResults] = useState<Record<string, AITestResult>>({})
   /** AI 用途路由（2.8.0 · #014）：三格留空 = 全部跟随当前模型 */
   const [routing, setRouting] = useState<RoutingMap>({ ...DEFAULT_ROUTING })
+  /** 「请求超时」（秒 · 2.9.0）：全局设置，与模型配置同层（超时是模型的属性，不随小说项目走） */
+  const [timeoutSec, setTimeoutSec] = useState(AI_TIMEOUT_DEFAULT_SEC)
 
   const fail = (msg: string): AITestResult => ({ ok: false, latencyMs: 0, loadMs: 0, reply: '', error: msg })
 
@@ -100,6 +104,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     setProviders(list)
     setActiveId(list.some(p => p.id === aid) ? aid : (list[0]?.id ?? null))
     setRouting(rt)
+    setTimeoutSec(await loadAiTimeoutSec())
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
@@ -127,6 +132,15 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     if (tav.changed) parts.push('酒馆额度（上下文预算 / 记忆档 / 固定开销）')
     if (w.changed) parts.push(`正文写作基准 ${w.base} 字`)
     if (parts.length) showToast(`已按新模型套用：${parts.join('；')}`, 'success')
+  }
+
+  /**
+   * 改「请求超时」：落库并**立即生效**，不需要重载。
+   * 原理：AI 层的 `CHAT_TIMEOUT_MS` 是模块级 `let`，`saveAiTimeoutSec` 内部调 setter 改写它；
+   * ES module 的 import 是活绑定 ⇒ `aiTasks/**` 那些调用点下一次请求就用上新值。
+   */
+  const changeTimeout = async (sec: number) => {
+    setTimeoutSec(await saveAiTimeoutSec(sec))
   }
 
   const persist = async (list: AIProvider[], aid: string | null) => {
@@ -455,6 +469,40 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   与上方的「AI 用途路由」同属**模型能力的分配** —— 走同一份 providers，
                   只是换个用途（向量化而非对话）；故并列放在「模型配置」块内，不另开页签。 */}
               <EmbeddingIndexPanel providers={providers} />
+
+              {/* 请求超时（2.9.0）：全应用共用的单次请求等待上限。
+                  此前这里没有任何可调项 —— 慢模型跑结构化任务只能干等（硬编码 180s），而酒馆那边
+                  早就有同名设置。刻意与「模型配置」同面板：超时是模型 / 网络的属性，不是某个功能的属性。 */}
+              <div className="mt-5 pt-4 border-t border-ink-800">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <h3 className="text-12 text-ink-200">请求超时</h3>
+                  <HelpPopover title="请求超时怎么用" width="23rem" size={13}>
+                    <p>单次 AI 请求最多等多久。超时就中断并报错（不会自动重试）。</p>
+                    <p className="mt-1.5"><b>长文生成不受它限制</b>：续写 / 校对 / 拆书这类走流式，模型一开始出字就一直等；这条管的是<b>结构化任务</b>（设定抽取、审核、汇总、取名这类要一次性拿到完整结果的）。</p>
+                    <p className="mt-1.5">本地大模型首次调用要加载进显存、慢机器跑长任务，都可能超过默认值 —— 报「请求超时」就把它调大。</p>
+                    <p className="mt-1.5">酒馆模式有自己的「请求超时」（在酒馆控制面板里），两者互不影响。</p>
+                  </HelpPopover>
+                </div>
+                <p className="text-11 text-ink-500 mb-2.5 leading-relaxed">
+                  结构化任务（设定抽取 / 审核 / 汇总 / 取名等）的单次等待上限；流式长文不受它限制。
+                  <span className="text-ink-600">只影响主应用，酒馆模式另有设置。</span>
+                </p>
+                <div className="flex items-center gap-2">
+                  <NumberField
+                    value={timeoutSec}
+                    min={AI_TIMEOUT_MIN_SEC} max={AI_TIMEOUT_MAX_SEC} step={10}
+                    className="w-24 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40"
+                    onChange={v => { if (v !== undefined) void changeTimeout(v) }}
+                    onClamped={v => showToast(`请求超时已调回边界 ${v} 秒`, 'info')}
+                  />
+                  <span className="text-11 text-ink-500">秒（{AI_TIMEOUT_MIN_SEC}–{AI_TIMEOUT_MAX_SEC}）</span>
+                  {timeoutSec !== AI_TIMEOUT_DEFAULT_SEC && (
+                    <Button variant="secondary" size="xs" className="ml-auto" onClick={() => void changeTimeout(AI_TIMEOUT_DEFAULT_SEC)}>
+                      恢复默认 {AI_TIMEOUT_DEFAULT_SEC} 秒
+                    </Button>
+                  )}
+                </div>
+              </div>
             </>
           ) : (
             <div className="space-y-3">

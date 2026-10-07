@@ -29,6 +29,7 @@ import './aiCore/prompts'
 // ---- 共享内核：Provider 类型 / 超时温度常量 / 平台预设 ----
 export {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS,
+  AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC, setChatTimeoutMs,
   DEFAULT_TEMPERATURE, TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE,
   OLLAMA_PRESET, LOCAL_OPENAI_PRESETS, LOCAL_PRESETS, ONLINE_PRESETS,
   providerFromPreset, composeSystemPrompt,
@@ -53,6 +54,7 @@ export type { TemplateField, TemplateFillResult, WorldContextGroup } from './aiC
 export {
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
   isProviderUsable, getActiveProvider, requireActiveProvider, aiReadySnapshot, subscribeAIReady,
+  loadAiTimeoutSec, saveAiTimeoutSec,
 } from './aiCore/session'
 export type { AIReadyInfo } from './aiCore/session'
 

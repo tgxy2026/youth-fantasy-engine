@@ -52,8 +52,35 @@ export interface ChatMessage {
 
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434'
 
-/** 正文生成默认超时：本地大参数模型首字延迟可能很久，给足时间 */
-export const CHAT_TIMEOUT_MS = 180_000
+/**
+ * 正文生成默认超时（毫秒）—— 既是**出厂值**，也是**兜底默认**。
+ *
+ * 🔴 2.9.0：由 `const` 改为 `let` —— 用户在「模型设置 → 模型配置」里可调
+ *    （存储键 `aiRequestTimeoutSec`，单位秒；默认 {@link AI_TIMEOUT_DEFAULT_SEC}），
+ *    设置变更时由 `aiCore/session.ts` 的 `ensureTimeoutApplied()` / `saveAiTimeoutSec()`
+ *    调 {@link setChatTimeoutMs} 写进来。
+ *    ⚠️ **ES module 的 import 是活绑定** ⇒ `aiTasks/**` 约 50 处
+ *    `timeoutMs: CHAT_TIMEOUT_MS` 与 `timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS`
+ *    **一行都不用改**即自动跟随（同本文件提示词默认值的「模块级 let + setter」范式）。
+ */
+export let CHAT_TIMEOUT_MS = 180_000
+
+/** 「请求超时」（秒）的取值范围：下限防「设太小误杀慢模型」，上限防填出天文数字 */
+export const AI_TIMEOUT_MIN_SEC = 30
+export const AI_TIMEOUT_MAX_SEC = 3600
+/** 「请求超时」出厂默认（秒）—— 与酒馆 `common.timeoutSec` 对齐（本地模型首字慢，给足时间） */
+export const AI_TIMEOUT_DEFAULT_SEC = 300
+
+/**
+ * 把「请求超时」写进 {@link CHAT_TIMEOUT_MS}。
+ * 入参是**毫秒**（调用方拿秒 ×1000 传来）；内部按秒四舍五入并钳到
+ * [{@link AI_TIMEOUT_MIN_SEC}, {@link AI_TIMEOUT_MAX_SEC}]；非有限数忽略（保留原值）。
+ */
+export function setChatTimeoutMs(ms: number): void {
+  if (!Number.isFinite(ms)) return
+  const sec = Math.min(AI_TIMEOUT_MAX_SEC, Math.max(AI_TIMEOUT_MIN_SEC, Math.round(ms / 1000)))
+  CHAT_TIMEOUT_MS = sec * 1000
+}
 /** 连通性测试超时：只让模型回两个字，但本地模型可能要先加载进显存 */
 export const TEST_TIMEOUT_MS = 90_000
 

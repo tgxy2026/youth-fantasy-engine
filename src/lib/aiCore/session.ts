@@ -6,7 +6,10 @@
  */
 
 import * as db from '../db'
-import { precheck } from './core'
+import {
+  precheck, setChatTimeoutMs,
+  AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
+} from './core'
 import type { AIProvider } from './core'
 
 // ---- 设置持久化（走 db.meta，全局共享）----
@@ -45,8 +48,54 @@ async function ensureMigrated(): Promise<void> {
   }
 }
 
+// ---- 「请求超时」（全局设置 · 2.9.0）----
+//
+// 为什么与模型配置同层：超时是「模型有多慢 / 网络有多慢」的属性，不随小说项目切换。
+// 此前 `aiTasks/**` 一律吃 `CHAT_TIMEOUT_MS`（180s 常量），慢模型跑长任务只能干等或失败；
+// 酒馆早就有「请求超时」可调，主应用却没有 —— 这里补上，并让全应用共用同一个值。
+
+const K_TIMEOUT_SEC = 'aiRequestTimeoutSec'
+
+/** 已把超时同步进 AI 层的数据源标记（进程内缓存；换库 / 导入数据文件后要重读） */
+let timeoutAppliedFor: string | null = null
+
+/**
+ * 首次取模型配置时顺带把「请求超时」同步进 AI 层（幂等、廉价）。
+ * 🔴 异常一律吞掉：读不到设置绝不该拦住任何 AI 调用（退回出厂默认即可）。
+ */
+async function ensureTimeoutApplied(): Promise<void> {
+  const pid = db.getCurrentProjectId()
+  if (timeoutAppliedFor === pid) return
+  timeoutAppliedFor = pid
+  try {
+    setChatTimeoutMs((await loadAiTimeoutSec()) * 1000)
+  } catch {
+    timeoutAppliedFor = null
+  }
+}
+
+/** 读「请求超时」（秒）：读不到 / 非法 → 出厂默认；越界钳回。 */
+export async function loadAiTimeoutSec(): Promise<number> {
+  const raw = await db.getMeta<number>(K_TIMEOUT_SEC, AI_TIMEOUT_DEFAULT_SEC)
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return AI_TIMEOUT_DEFAULT_SEC
+  return Math.min(AI_TIMEOUT_MAX_SEC, Math.max(AI_TIMEOUT_MIN_SEC, Math.round(n)))
+}
+
+/** 写「请求超时」（秒）并**立即生效**（不必重启、不必换库）。返回实际落库值（已钳位）供界面回显。 */
+export async function saveAiTimeoutSec(sec: number): Promise<number> {
+  const n0 = Number(sec)
+  const n = Number.isFinite(n0)
+    ? Math.min(AI_TIMEOUT_MAX_SEC, Math.max(AI_TIMEOUT_MIN_SEC, Math.round(n0)))
+    : AI_TIMEOUT_DEFAULT_SEC
+  await db.setMeta(K_TIMEOUT_SEC, n)
+  setChatTimeoutMs(n * 1000)
+  return n
+}
+
 export async function loadProviders(): Promise<AIProvider[]> {
   await ensureMigrated()
+  await ensureTimeoutApplied()
   return (await db.getMeta<AIProvider[]>(K_PROVIDERS, [])) ?? []
 }
 export async function saveProviders(list: AIProvider[]): Promise<void> {
