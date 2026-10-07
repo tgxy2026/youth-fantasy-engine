@@ -19,11 +19,12 @@
  */
 import * as db from '../db'
 import { uid } from '../id'
-import { chat, CHAT_TIMEOUT_MS, type ChatMessage } from '../ai'
+import { chat, type ChatMessage } from '../ai'
 import { parsePlainObject, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件，绕 engine 会形成循环依赖
 import { resolveTavernProvider, type ChatFn } from './provider'
+import { getTavernSettings, timeoutMsOf } from './settings'
 import { prepareDraftMaterial, type DraftSource } from './draft'
 import { webSearch, type SearchSettings } from '../webSearch'
 import type { TavernStory, TavernStoryIndexItem, StorySettingSnapshot } from './types'
@@ -322,7 +323,7 @@ export async function draftStory(args: StoryDraftArgs): Promise<{ fields: StoryD
   ]
 
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal: args.signal,
     json: true,
     think: false,

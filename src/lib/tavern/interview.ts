@@ -11,8 +11,9 @@
  * 🔴 别把机制再抄一遍来这里：2026-09-15 起「对话引导」要在全局所有 AI 补全入口复用，
  *    两份实现必然漂移（一边改了白名单另一边没改，表现是「界面显示记下了、草稿里却没有」）。
  */
-import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
+import { chat, isCancelled, type ChatMessage } from '../ai'
 import { resolveTavernProvider, type ChatFn } from './provider'
+import { getTavernSettings, timeoutMsOf } from './settings'
 import {
   emptyInterview as emptyInterviewCore,
   interviewProgress as interviewProgressCore,
@@ -165,7 +166,7 @@ export function tavernCallChat(
   return async (msgs, opts) => {
     const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
     return runChat(provider, msgs, {
-      timeoutMs: CHAT_TIMEOUT_MS,
+      timeoutMs: timeoutMsOf(await getTavernSettings()),
       signal: opts.signal,
       json: true,
       think: false,

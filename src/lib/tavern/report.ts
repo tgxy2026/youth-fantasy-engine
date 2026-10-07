@@ -12,12 +12,13 @@
  *
  * 只诊断、不写回任何项目表（作者已定）。
  */
-import { chat, CHAT_TIMEOUT_MS, isCancelled } from '../ai'
+import { chat, isCancelled } from '../ai'
 import * as db from '../db'
 import { TABS } from '../schema'
 import { parsePlainObject, parseObjectArray, asText } from '../aiParse'
 import { uid } from '../id'
 import { resolveTavernProvider, type ChatFn } from './provider'
+import { getTavernSettings, timeoutMsOf } from './settings'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from './types'
 
@@ -223,7 +224,7 @@ export async function generateReport(session: TavernSession, opts: ReportOptions
   const reply = await runChat(
     provider,
     [{ role: 'system', content: REPORT_SYS }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, json: true, think: false },
+    { timeoutMs: timeoutMsOf(await getTavernSettings()), signal: opts.signal, json: true, think: false },
   )
 
   const obj: Record<string, unknown> = parsePlainObject(reply) ?? {}

@@ -287,7 +287,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
             <Button variant="toggle" selected={scale === v}
               key={v}
               onClick={() => setScale(v)}
-              className="px-2.5 py-0.5 rounded-md text-11 border hover:text-ink-200"
+              className="py-0.5 rounded-md border hover:text-ink-200"
               title={v === 'proportional' ? '按真实时间差排布；超长空档会自动压缩并以 ⟋⟋ 标出' : '所有时间点等距排列'}
             >
               {label}
@@ -305,7 +305,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
             <Button variant="toggle" selected={filterStatus === s}
               key={s}
               onClick={() => setFilterStatus(s)}
-              className="px-2.5 py-0.5 rounded-md text-11 border hover:text-ink-200"
+              className="py-0.5 rounded-md border hover:text-ink-200"
             >
               {s === 'all' ? '全部' : s}
             </Button>

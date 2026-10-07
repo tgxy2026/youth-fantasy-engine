@@ -35,7 +35,7 @@ export default function InspirationPicker({ disabled, selected, onChange }: {
     <div>
       <Button variant="toggle" selected={selected.length > 0} disabled={disabled}
         onClick={() => setOpen(o => !o)}
-        className="px-3 h-8 rounded-lg text-12"
+        className="rounded-lg"
         title={items.length === 0
           ? '灵感夹还是空的 —— 去「灵感启发」页记几条，写章时就能带上了'
           : '展开灵感夹条目，勾选的会作为「作者灵感」写进每章提示词（供参考，不要求全部体现）'}>

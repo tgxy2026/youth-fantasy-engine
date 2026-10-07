@@ -171,7 +171,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   const modeBtn = (m: SourceMode, icon: React.ReactNode, label: string) => (
     <Button variant="toggle" selected={mode === m}
       onClick={() => setMode(m)}
-      className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-12 border"
+      className="flex items-center gap-1.5 rounded-lg border"
     >
       {icon} {label}
     </Button>

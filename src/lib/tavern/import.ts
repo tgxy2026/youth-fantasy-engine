@@ -16,8 +16,9 @@
  * 本文件是纯逻辑 + 提示词；提示词与解析都按「段落标记」而不是 JSON ——
  * 四章带嵌套，让模型输出深层 JSON 很容易在转义/层级上出错，段落标记则天然抗噪。
  */
-import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
+import { chat, isCancelled, type ChatMessage } from '../ai'
 import { resolveTavernProvider, type ChatFn } from './provider'
+import { getTavernSettings, timeoutMsOf } from './settings'
 import { emptyFreeCharacter, type FreeCharacter } from './types'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import { structFieldLines } from './cardFields'
@@ -272,7 +273,7 @@ export async function convertNovelChar(args: ConvertArgs): Promise<{ draft: Card
   ]
 
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal,
     think: false,
   })

@@ -30,7 +30,7 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
                 <Button variant="toggle" selected={instruction === ins}
                   key={ins}
                   onClick={() => setInstruction(ins)}
-                  className="px-2.5 py-1 rounded-full border text-11 hover:border-ink-500"
+                  className="py-1 rounded-full border hover:border-ink-500"
                 >
                   {ins}
                 </Button>

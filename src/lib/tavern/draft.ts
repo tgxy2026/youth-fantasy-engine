@@ -20,11 +20,12 @@
  * 靠「标签：内容」的行格式往返。所以起草时就得按这个格式输出 —— 否则模型给的散文进到界面里
  * 会整段掉进「其他」那一格，作者看不到分好的条目。
  */
-import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
+import { chat, isCancelled, type ChatMessage } from '../ai'
 import { parsePlainObject, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件（经 script/world），会形成循环依赖
 import { resolveTavernProvider, type ChatFn } from './provider'
+import { getTavernSettings, timeoutMsOf } from './settings'
 import type { SearchSettings, webSearch } from '../webSearch'
 import { prepareDraftMaterial, type DraftSource } from '../draftMaterial'
 import { structFieldLines } from './cardFields'
@@ -184,7 +185,7 @@ export async function draftCard(a: CardDraftArgs): Promise<{ fields: CardDraft; 
     { role: 'user', content: buildCardDraftUser({ idea, material: material.blocks }) },
   ]
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal: a.signal,
     json: true,
     think: false,

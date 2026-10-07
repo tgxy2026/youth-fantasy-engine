@@ -18,10 +18,11 @@
  *
  * 🔴 本模块**不落库、不改卡**：只产出建议。采纳由调用方执行（`store.applyCardRevision`）。
  */
-import { chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage } from '../ai'
+import { chat, isCancelled, type ChatMessage } from '../ai'
 import { parseObjectArray, parseLooseObject, asText } from '../aiParse'
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './provider'
+import { getTavernSettings, timeoutMsOf } from './settings'
 import { uid } from '../id'
 import { CARD_FIELDS, isCardField, readCardField, fieldLabel } from './types'
 import { structHintFor } from './cardFields'
@@ -222,7 +223,7 @@ export async function proposeCardRevisions(args: ReviseArgs): Promise<CardRevisi
   ]
 
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal,
     // 结构化任务：由 chat() 统一解析 json 开关 → 低温
     json: true,

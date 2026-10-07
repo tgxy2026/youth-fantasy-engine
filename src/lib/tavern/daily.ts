@@ -22,9 +22,10 @@
  * 本文件是纯逻辑 + 提示词；读写归 store.ts。
  */
 import {
-  chat, CHAT_TIMEOUT_MS, isCancelled, type ChatMessage,
+  chat, isCancelled, type ChatMessage,
 } from '../ai'
 import { resolveTavernProvider } from './provider'
+import { getTavernSettings, timeoutMsOf } from './settings'
 import { memoryToText, emptyMemory } from './memory'
 import type { ChatFn } from './provider'
 import {
@@ -230,7 +231,7 @@ export async function advanceDaily(args: AdvanceArgs): Promise<AdvanceResult> {
   ]
 
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal,
     // 这是**创作**（写Ta的日常），不是整理 —— 用默认创作温度更生动；思考链则不需要
     think: false,

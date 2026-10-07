@@ -278,6 +278,18 @@ app.whenReady().then(() => {
 
   ipcMain.handle('store:isCustomPath', () => !!customDataPath)
 
+  // 🔴 2026-10-07 六维审计 P2：sync:readFile / sync:writeFile 原先直接吃渲染层传来的任意路径，
+  //    等于把「任意文件读写」原语暴露出去。这里做**零契约成本**的收窄：只接受「绝对路径 + .yfe 结尾」——
+  //    云同步的载体恒为 *.yfe（见 syncTransport.ts 的 CLOUD_FILE_NAME 与 `<sha256>.yfe`），
+  //    故不改变任何现有用法，却挡掉跨目录 / 任意扩展名的滥用。
+  const assertSyncPath = (p) => {
+    const s = typeof p === 'string' ? p : ''
+    if (!s || !path.isAbsolute(s) || !s.toLowerCase().endsWith('.yfe')) {
+      throw new Error('同步文件路径非法：只接受绝对路径且以 .yfe 结尾')
+    }
+    return s
+  }
+
   // ---- 云盘文件同步（#031 桌面版）：经主进程 fs 读写用户选定的同步目录 ----
   // 渲染进程 nodeIntegration=false，无法直接 require('fs')；所有文件 IO 必须走 IPC 到主进程。
   // 桌面版云同步把加密后的 .yfe 文件写在用户选定的云盘同步目录里，由 OneDrive/WPS 云盘 等客户端搬运。
@@ -291,7 +303,7 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('sync:readFile', async (_e, p) => {
     try {
-      return { ok: true, text: await fsp.readFile(p, 'utf-8') }
+      return { ok: true, text: await fsp.readFile(assertSyncPath(p), 'utf-8') }
     } catch (e) {
       // ⚠️ 这里必须区分「文件不存在」与「读取失败」，二者语义天差地别：
       //   ENOENT = 首次同步尚无同步文件 → 安全地当作空库（text: null）；
@@ -311,14 +323,15 @@ app.whenReady().then(() => {
       //    这是**有意保留的取舍**：同步文件只有云端那一份，留一个上一版副本是最后的自救手段。
       //    （2026-09-19 六维审计 P2-3 记下这个取舍，不再当"忘了删"处理；要改就得连带想清楚
       //      写坏时拿什么回退。）
-      const tmp = p + '.tmp'
+      const safe = assertSyncPath(p)
+      const tmp = safe + '.tmp'
       await fsp.writeFile(tmp, String(text), 'utf-8')
       try {
-        await fsp.rename(p, p + '.bak')
+        await fsp.rename(safe, safe + '.bak')
       } catch {
         /* 首次写入无旧文件，忽略 */
       }
-      await fsp.rename(tmp, p)
+      await fsp.rename(tmp, safe)
       return { ok: true, error: null }
     } catch (err) {
       return { ok: false, error: String(err) }
@@ -523,6 +536,22 @@ app.whenReady().then(() => {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url).catch(() => {})
     return { action: 'deny' }
+  })
+
+  // 🔴 2026-10-07 六维审计 P2：上面只拦了「新窗口」（target="_blank"），**同窗口导航没人管** ——
+  //    正文/设定里若出现不带 target 的外链，一点击就把主窗口导航离开应用（且没有返回路径）。
+  //    统一口径：非本应用 origin 的导航一律拦下、交给系统浏览器。
+  //    · dev：ELECTRON_START_URL 的 origin（如 http://localhost:5199）
+  //    · prod：loadFile ⇒ file:// 开头，全部放行（本地应用正常的同文件跳转）
+  const APP_ORIGIN = (() => {
+    const u = process.env.ELECTRON_START_URL
+    if (u) { try { return new URL(u).origin } catch { /* 非法 URL 时退回 file:// 口径 */ } }
+    return 'file://'
+  })()
+  win.webContents.on('will-navigate', (e, url) => {
+    if (url.startsWith(APP_ORIGIN) || url.startsWith('file://')) return
+    e.preventDefault()
+    shell.openExternal(url).catch(() => {})
   })
 
   const devUrl = process.env.ELECTRON_START_URL

@@ -15,12 +15,13 @@
  * 读写落库在 store.ts。
  */
 import {
-  chat, CHAT_TIMEOUT_MS, JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage,
+  chat, JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage,
 } from '../ai'
 import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './memory'
 import { formatDate } from '../date'
 import { authorBlock, newAuthorFence } from '../promptGuard'
 import { resolveTavernProvider, type ChatFn } from './provider'
+import { getTavernSettings, timeoutMsOf } from './settings'
 import { FACTS_MAX_LINES, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
 import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from './vars'
 
@@ -207,7 +208,7 @@ export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryR
   ]
 
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal,
     temperature: JSON_TASK_TEMPERATURE,
     think: false,
@@ -287,7 +288,7 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
   ]
 
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal,
     // 总结要的是「忠实」，不是「发挥」—— 与结构化任务同档低温
     temperature: JSON_TASK_TEMPERATURE,
@@ -357,7 +358,7 @@ export async function coldStartMemory(args: ColdStartArgs): Promise<FreeMemory> 
   ]
 
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal,
     temperature: JSON_TASK_TEMPERATURE,
     think: false,
@@ -459,7 +460,7 @@ export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ value
     },
   ]
   const reply = await runChat(provider, msgs, {
-    timeoutMs: CHAT_TIMEOUT_MS,
+    timeoutMs: timeoutMsOf(await getTavernSettings()),
     signal,
     // 抽取是结构化任务，与总结同档低温
     temperature: JSON_TASK_TEMPERATURE,

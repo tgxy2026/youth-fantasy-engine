@@ -28,7 +28,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
           {LENGTHS.map(l => (
             <Button key={l} variant="toggle" selected={inp.length === l} disabled={busy}
               title={LENGTH_META[l].hint} onClick={() => onPickLength(l)}
-              className="px-3 h-8 rounded-lg text-12">
+              className="rounded-lg">
               {LENGTH_META[l].label}
             </Button>
           ))}
@@ -41,7 +41,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
             {targets.map(k => (
               <Button key={k} variant="toggle" selected={inp.target === k} disabled={busy}
                 onClick={() => updateInputs({ target: k })} title={TARGET_META[k].hint}
-                className="px-3 h-8 rounded-lg text-12">
+                className="rounded-lg">
                 {TARGET_META[k].label}
               </Button>
             ))}
@@ -209,7 +209,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                 {STRATEGIES.map(k => (
                   <Button key={k} variant="toggle" selected={inp.strategy === k} disabled={s.running}
                     onClick={() => updateInputs({ strategy: k })} title={STRATEGY_META[k].hint}
-                    className="px-3 h-8 rounded-lg text-12">
+                    className="rounded-lg">
                     {STRATEGY_META[k].label}
                   </Button>
                 ))}
@@ -220,21 +220,21 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="toggle" selected={inp.deAiOn} disabled={s.running}
                 onClick={() => updateInputs({ deAiOn: !inp.deAiOn })}
-                className="px-3 h-8 rounded-lg text-12"
+                className="rounded-lg"
                 title="开启后，AI 每章初稿会先按所选提示词润色一遍，再交你裁决">
                 <Wand2 size={12} className="mr-1" />
                 去 AI 味儿：{inp.deAiOn ? '已开启' : '已关闭'}
               </Button>
               <Button variant="toggle" selected={inp.reviewEach} disabled={s.running}
                 onClick={() => updateInputs({ reviewEach: !inp.reviewEach })}
-                className="px-3 h-8 rounded-lg text-12"
+                className="rounded-lg"
                 title="开启时每章初稿弹窗让你决定采纳或重写；关闭＝全自动连写">
                 逐章确认初稿：{inp.reviewEach ? '已开启' : '已关闭（全自动）'}
               </Button>
               {hasOutlineCards && (
                 <Button variant="toggle" selected={inp.useOutline} disabled={s.running}
                   onClick={() => updateInputs({ useOutline: !inp.useOutline })}
-                  className="px-3 h-8 rounded-lg text-12"
+                  className="rounded-lg"
                   title="项目里存在《章节细纲》卡时，按章号取当章细纲写进提示词，让正文跟着大纲走">
                   按《章节细纲》写：{inp.useOutline ? '已开启' : '已关闭'}
                 </Button>
@@ -243,7 +243,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                   所以文案必须把"改哪一章、改什么"讲明白 */}
               <Button variant="toggle" selected={inp.topUpLast} disabled={s.running}
                 onClick={() => updateInputs({ topUpLast: !inp.topUpLast })}
-                className="px-3 h-8 rounded-lg text-12"
+                className="rounded-lg"
                 title="开启时：开写新章之前，若最后一章明显没写完（字数低于目标），先把它补到目标字数再往下写。只补最后一章，历史章一个字不动">
                 先补完最后一章：{inp.topUpLast ? '已开启' : '已关闭'}
               </Button>
@@ -259,7 +259,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                   {DEAI_TEMPLATES.map(t => (
                     <Button key={t.id} variant="toggle" selected={inp.deAiTpl === t.id} disabled={s.running}
                       onClick={() => updateInputs({ deAiTpl: t.id })} title={t.desc}
-                      className="px-3 h-8 rounded-lg text-12">
+                      className="rounded-lg">
                       {t.label}
                     </Button>
                   ))}

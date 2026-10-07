@@ -53,7 +53,7 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
             {RW_ACTIONS.map(k => (
               <Button key={k} variant="toggle" selected={rwAction === k} disabled={busy}
                 onClick={() => setRwAction(k)} title={CHAPTER_REWRITE_META[k].hint}
-                className="px-3 h-8 rounded-lg text-12">
+                className="rounded-lg">
                 {CHAPTER_REWRITE_META[k].label}
               </Button>
             ))}
