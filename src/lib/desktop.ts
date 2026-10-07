@@ -79,11 +79,42 @@ export interface ElectronWindowAPI {
   onFullscreenChange(cb: (on: boolean) => void): () => void
 }
 
+/**
+ * preload 注入的「应用内下载安装包」（2.9.0 · 检查更新 2.0）。
+ * 🔴 口子收窄到 5 个 + 1 个进度订阅：下载到「下载」文件夹 / 取消 / 拉起安装器 /
+ *   在资源管理器里定位 / 退出本程序。**目标目录与文件名清洗都在主进程**（渲染层给的是文件名，不是路径）。
+ */
+export interface UpdateDownloadProgress {
+  received: number
+  total: number
+  /** 0–100；服务器没给 content-length 时为 0（界面改显示已下载字节数） */
+  percent: number
+}
+
+export type UpdateDownloadResult =
+  | { ok: true; path: string; size: number }
+  | { ok: false; cancelled?: true; error: string }
+
+export interface ElectronUpdateAPI {
+  download(url: string, fileName: string): Promise<UpdateDownloadResult>
+  /** 取消进行中的下载（没有在下载时返回 ok:false） */
+  cancel(): Promise<{ ok: boolean }>
+  /** 拉起刚下好的安装器；closeApp=true 则随后退出本程序（覆盖更新须旧文件不被占用） */
+  launchInstaller(filePath: string, closeApp: boolean): Promise<{ ok: true } | { ok: false; error: string }>
+  /** 在资源管理器里定位安装包（不想立刻装时用） */
+  revealFile(filePath: string): Promise<{ ok: true } | { ok: false; error: string }>
+  /** 退出本程序（安装前腾出被占用的文件） */
+  quitApp(): Promise<{ ok: true }>
+  /** 订阅下载进度（主进程节流推送）；返回退订函数 */
+  onProgress(cb: (p: UpdateDownloadProgress) => void): () => void
+}
+
 declare global {
   interface Window {
     electronStore?: ElectronStoreAPI
     electronNet?: ElectronNetAPI
     electronWindow?: ElectronWindowAPI
+    electronUpdate?: ElectronUpdateAPI
   }
 }
 
@@ -167,6 +198,85 @@ export async function openExternalUrl(url: string): Promise<{ ok: true } | { ok:
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/** 是否有「应用内下载安装包」桥（桌面版才有；便携版 / 纯浏览器 dev 没有） */
+export const HAS_UPDATE_BRIDGE: boolean =
+  typeof window !== 'undefined' && typeof window.electronUpdate === 'object' && window.electronUpdate !== null
+
+/** 运行时取更新桥（供 helper 用 —— 不用模块级常量，测试里才能注入 mock window） */
+function updateApi(): ElectronUpdateAPI | null {
+  if (typeof window === 'undefined') return null
+  return window.electronUpdate ?? null
+}
+
+/**
+ * 下载安装包到系统「下载」文件夹（2.9.0）。**永不抛** —— 与 netFetch 同口径：失败走 ok:false，
+ * 由界面如实提示（含 cancelled、以及「大小不符已丢弃」这两种要分开说的情况）。
+ */
+export async function downloadInstallerPackage(url: string, fileName: string): Promise<UpdateDownloadResult> {
+  const api = updateApi()
+  if (!api) return { ok: false, error: '当前版本没有「应用内下载」能力（便携版 / 浏览器里请用夸克网盘）' }
+  if (!/^https?:\/\//i.test(url)) return { ok: false, error: '只允许 http / https 链接' }
+  try {
+    return await api.download(url, fileName)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** 取消进行中的下载；无桥、或当时并没有在下载 → false */
+export async function cancelInstallerDownload(): Promise<boolean> {
+  const api = updateApi()
+  if (!api) return false
+  try {
+    return (await api.cancel()).ok
+  } catch {
+    return false
+  }
+}
+
+/** 拉起安装器（closeApp=true 时主进程随后退出本程序）。**永不抛** */
+export async function launchInstallerPackage(
+  filePath: string,
+  closeApp: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const api = updateApi()
+  if (!api) return { ok: false, error: '当前版本没有「启动安装包」能力（请到「下载」文件夹手动双击）' }
+  try {
+    return await api.launchInstaller(filePath, closeApp)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** 在资源管理器里定位安装包 */
+export async function revealInstallerFile(filePath: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const api = updateApi()
+  if (!api) return { ok: false, error: '当前版本没有「打开文件夹」能力' }
+  try {
+    return await api.revealFile(filePath)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** 退出本程序（安装前腾出被占用的文件）；关不掉就算了，用户还能自己点窗口关闭 */
+export async function quitAppForInstall(): Promise<void> {
+  const api = updateApi()
+  if (!api) return
+  try {
+    await api.quitApp()
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/** 订阅安装包下载进度；无桥时返回空退订函数（调用方不必判空） */
+export function onUpdateDownloadProgress(cb: (p: UpdateDownloadProgress) => void): () => void {
+  const api = updateApi()
+  if (!api) return () => {}
+  return api.onProgress(cb)
 }
 
 /**

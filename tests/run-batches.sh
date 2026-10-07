@@ -34,7 +34,7 @@ if [ ! -f "$NODE" ]; then
   exit 1
 fi
 
-BATCH_A="structureGates importCycles uiUxGuards syncGuards promptGuard chapterScopeGuard platformCheck antiSpoiler aiDataSources aiFillSemantics paramGuide customOptions themeContrast tavernTimeout tavernWindow depOverrides"
+BATCH_A="structureGates importCycles uiUxGuards syncGuards promptGuard chapterScopeGuard platformCheck antiSpoiler aiDataSources aiFillSemantics paramGuide customOptions themeContrast tavernTimeout tavernWindow depOverrides updateDownload"
 
 BATCH_B="aiParse inlineSuggest indent exportIndent schemaTemplates customTheme fieldAlias extractAliases extractFields textDiff storyStructures structurePace graphVisual timelineScale volumeGap chapterSeq autoCode relationMulti settingSearchAlias"
 

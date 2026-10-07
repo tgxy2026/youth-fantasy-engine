@@ -66,3 +66,25 @@ contextBridge.exposeInMainWorld('electronWindow', {
     return () => ipcRenderer.removeListener('window:fullscreen-changed', h)
   },
 })
+
+// 应用内下载安装包（2.9.0 · 检查更新 2.0）：把「点下载＝开系统浏览器」换成
+// 「下到「下载」文件夹 → 拉起安装向导」。🔴 目标目录由主进程钉死在 app.getPath('downloads')，
+// 渲染层只给文件名（主进程还要清洗）；进度由主进程节流后推送。
+contextBridge.exposeInMainWorld('electronUpdate', {
+  /** 下载安装包；返回 { ok:true, path, size } 或 { ok:false, cancelled?, error }（永不 reject） */
+  download: (url, fileName) => ipcRenderer.invoke('update:download', url, fileName),
+  /** 取消进行中的下载；返回 { ok }（true = 确实中止了一个） */
+  cancel: () => ipcRenderer.invoke('update:cancel'),
+  /** 拉起刚下好的安装器；closeApp=true 则随后退出本程序（覆盖更新须旧文件不被占用） */
+  launchInstaller: (filePath, closeApp) => ipcRenderer.invoke('update:launch-installer', filePath, closeApp),
+  /** 在资源管理器中定位安装包 */
+  revealFile: (filePath) => ipcRenderer.invoke('update:reveal-file', filePath),
+  /** 退出本程序（安装前腾出被占用的文件；走 app.quit ⇒ 触发渲染层 beforeunload 的同步存盘） */
+  quitApp: () => ipcRenderer.invoke('app:quit'),
+  /** 订阅下载进度；返回退订函数 */
+  onProgress: (cb) => {
+    const h = (_e, p) => cb(p)
+    ipcRenderer.on('update:progress', h)
+    return () => ipcRenderer.removeListener('update:progress', h)
+  },
+})

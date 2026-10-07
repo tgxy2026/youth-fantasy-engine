@@ -4,9 +4,11 @@
 //   GET https://gitee.com/api/v5/repos/tgxy2026/youth-fantasy-engine/releases/latest
 //   返回 tag_name / name / body（更新说明 markdown）/ assets（含安装包直链）
 //
-// 🔴🔴 三条不可越的红线：
+// 🔴🔴 口径（2026-10-07 修订 · 主人拍板）—— **检查更新只查版本号，决定权永远在作者手上**：
 //   ① **只发一个 GET、不带任何用户数据** —— 不上传项目名、机器信息、使用统计。
-//   ② **只提示，不静默下载 / 不自动安装 / 不阻断使用** —— 决定权永远在作者手上。
+//   ② **自动检查绝不下载任何东西**（只比版本、只弹提示）。**下载必须由作者点按钮触发**，
+//      且有进度、可取消、不静默安装（安装向导由作者自己点完）——
+//      实现见 components/UpdateDialog.tsx 与 electron/updateDownload.cjs。
 //   ③ **失败一律静默** —— 断网、限流、解析失败都不弹错误框骚扰作者；
 //      只有「手动点检查更新」这一条路才允许回一句轻提示（见 checkUpdate 的 manual 参数）。
 //

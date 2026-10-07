@@ -5,6 +5,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electro
 const path = require('path')
 const fs = require('fs')
 const fsp = require('fs/promises')
+// 2.9.0 · 应用内下载安装包的内核（只允许 http/https、先写 .part、下完比对大小）
+const { downloadInstaller, cancelActiveDownload } = require('./updateDownload.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 
@@ -404,6 +406,77 @@ app.whenReady().then(() => {
     } catch (err) {
       return { ok: false, error: String(err) }
     }
+  })
+
+  // ---- 2.9.0 · 应用内下载安装包（把「检查更新」的终点从「开系统浏览器」改成「回内下载 + 拉起安装器」）----
+  // 🔴 三道边界：
+  //   ① 目标目录由**主进程**钉死在「下载」文件夹 —— 渲染层给的是文件名，不能指定路径；
+  //   ② 文件名校验也在主进程（见 updateDownload.cjs 的 sanitizeInstallerName：只取 basename + 强制 .exe）；
+  //   ③ 拉起安装器前**再校验一次**「路径确实在下载文件夹里、是 .exe、且真实存在」——
+  //      这个口子只用来跑刚下好的安装包，绝不能变成「执行任意 exe」的万能入口。
+  /** 是否是在「下载」文件夹里的真实 .exe（拉起 / 定位安装包的前置校验） */
+  const isDownloadedInstaller = (p) => {
+    try {
+      const root = path.resolve(app.getPath('downloads')) + path.sep
+      const abs = path.resolve(String(p || ''))
+      return abs.startsWith(root) && /\.exe$/i.test(abs) && fs.statSync(abs).isFile()
+    } catch {
+      return false
+    }
+  }
+
+  ipcMain.handle('update:download', async (e, url, fileName) => {
+    const wc = e.sender
+    return downloadInstaller({
+      url,
+      dir: app.getPath('downloads'),
+      fileName,
+      // 进度节流在主进程内核里（≥200ms 一次），这里只负责转发给**发起下载的那个窗口**
+      onProgress: (p) => {
+        try {
+          if (!wc.isDestroyed()) wc.send('update:progress', p)
+        } catch {
+          /* 窗口已关：忽略 */
+        }
+      },
+    })
+  })
+
+  ipcMain.handle('update:cancel', () => ({ ok: cancelActiveDownload() }))
+
+  // 拉起刚下好的安装器；closeApp=true 时随后退出本程序（覆盖更新时旧文件不能被占用）
+  ipcMain.handle('update:launch-installer', async (_e, filePath, closeApp) => {
+    try {
+      const abs = path.resolve(String(filePath || ''))
+      if (!isDownloadedInstaller(abs)) {
+        return { ok: false, error: '只允许运行刚下载到「下载」文件夹里的安装包' }
+      }
+      const openErr = await shell.openPath(abs)
+      if (openErr) return { ok: false, error: openErr }
+      // 安装向导已起来；留 3 秒把界面提示显示完再退出，避免「点完窗口就没了」
+      if (closeApp) setTimeout(() => app.quit(), 3000)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  // 在资源管理器里定位安装包（用户想稍后自己装时用）
+  ipcMain.handle('update:reveal-file', async (_e, filePath) => {
+    try {
+      const abs = path.resolve(String(filePath || ''))
+      if (!isDownloadedInstaller(abs)) return { ok: false, error: '文件不在「下载」文件夹里' }
+      shell.showItemInFolder(abs)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  // 退出本程序（安装前腾出被占用的文件）。走 app.quit ⇒ 各窗口触发 beforeunload ⇒ 渲染层同步存盘
+  ipcMain.handle('app:quit', () => {
+    setTimeout(() => app.quit(), 150)
+    return { ok: true }
   })
 
   ipcMain.handle('net:fetch', async (_e, url, init) => {
