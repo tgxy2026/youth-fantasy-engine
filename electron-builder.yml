@@ -16,6 +16,19 @@ files:
 
 asar: true
 
+# 🔴 只保留中英两套 Chromium 语言包（2026-10-07 · 2.9.0 重封时新增）。
+# 【起因】解包目录里 `locales/` 有 **55 个语言包、合计 49 MB** —— 而本项目界面全中文，
+#   不依赖 Chromium 自身的本地化字符串，其余 53 种是纯浪费。
+#   2.9.0 把 Electron 升到 44 后主 exe 从 181MB 涨到 246MB，安装包随之从 81MB 涨到 **112.52MB**，
+#   首次越过 Gitee Release 附件 **100 MB 单文件上限** ⇒ 不裁剪就传不上去。
+electronLanguages:
+  - zh-CN
+  - en-US
+
+# 裁掉 Electron 运行时里本项目用不到的组件（dxcompiler.dll 等，见该脚本顶部说明）。
+# 🔴 必须挂 afterPack：它跑在「Electron 已解包、NSIS 尚未打」之间，删掉的文件不会进安装包。
+afterPack: scripts/prune-electron-dist.cjs
+
 # 🔴🔴 主 exe 的图标与版本元数据**不在 electron-builder 钩子里写**（2026-10-02 · 2.7.1 轮实测踩坑）。
 #
 # 【试过并放弃的方案】先后试过 afterPack 与 afterAllArtifactBuild 两个钩子，都不行：
