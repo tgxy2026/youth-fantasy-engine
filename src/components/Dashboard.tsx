@@ -72,8 +72,15 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
     if (chapters.length < PACE_MIN_CHAPTERS) return null
     const tpl = getStoryTemplate(cs.inputs.structureId)
     if (!tpl) return null
+    // 🔴 必须**按叙事序排序**（2026-10-08 实机抓到的真 bug，就栽在这里）：
+    //    `alignBeats` 的位置轴是「按传入顺序赋 no = 1..M」—— 顺序不是叙事序，每章落进哪一拍就全错，
+    //    预警要么不出现、要么指错拍。而 `db.getAllChapters()` 返回的是**卷内 order 排列**
+    //    （0,1,…,9,0,1,…0），不是全局章序。实测同一项目：未排序 ⇒ 0 个拍节判 notable；排序后 ⇒ 3 个。
+    //    ⚠️ `StructurePacePanel` 一直是对的（它拿数时就排过序）⇒ **只测那边永远发现不了这个问题**，
+    //      这正是本轮实机验证的价值所在。
     const { shares } = buildChapterShares(
-      chapters.map(c => ({ id: c.id, title: c.title || '未命名章', words: c.wordCount || 0 }))
+      [...chapters].sort((a, b) => a.order - b.order)
+        .map(c => ({ id: c.id, title: c.title || '未命名章', words: c.wordCount || 0 }))
     )
     if (!shares.length) return null
     const off = alignBeats(tpl, shares).filter(a => a.level === 'notable')
