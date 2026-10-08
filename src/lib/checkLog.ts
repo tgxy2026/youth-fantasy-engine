@@ -21,8 +21,9 @@ import * as db from './db'
 import type { AuditIssue } from './audit'
 import { auditContinuity } from './continuityCheck'
 import { auditForeshadow, type ForeshadowResult } from './foreshadowEngine'
+import type { Observation } from './manuscriptCheck'
 
-export type CheckEngine = 'continuity' | 'foreshadow'
+export type CheckEngine = 'continuity' | 'foreshadow' | 'manuscript'
 
 export interface CheckSnapshot {
   ts: number
@@ -120,6 +121,26 @@ export async function continuityLogged(): Promise<AuditIssue[]> {
 /** 伏笔闭环看板（带缓存与落库）—— 替代直接调用 `auditForeshadow()` */
 export async function foreshadowLogged(): Promise<ForeshadowResult> {
   return cachedRun('foreshadow', GLOBAL_SCOPE, () => auditForeshadow(), r => r.issues)
+}
+
+/**
+ * 投稿前自检（行文分布 · 2.9.2）—— 把观察项记一条台账，做「这一章比上次」的趋势。
+ *
+ * 🔴 与上面两个 engine 的三点不同：
+ *   ① **不做缓存** —— 行文指纹是纯统计、算得很快，缓存没有意义；
+ *   ② **不区分 error** —— 观察项不是「问题」：`notable`（落在参考区间之外）计 `warn`、
+ *      其余计 `info`，**只为让趋势行有「变多 / 变少」可算**，绝不代表「有 N 个问题」；
+ *   ③ **`scope` 用章节 id** —— 行文指纹是按章算的，趋势要「这一章比上次」，不是全书混算。
+ */
+export async function manuscriptLogged(scope: string, obs: Observation[]): Promise<void> {
+  const issues: AuditIssue[] = obs.map((o, i) => ({
+    id: `M${i + 1}`,
+    severity: o.notable ? 'warn' : 'info',
+    category: '投稿前自检',
+    title: o.label,
+    detail: `${o.value} · ${o.hint}`,
+  }))
+  await logSnapshot('manuscript', scope, issues)
 }
 
 export interface CheckTrend {

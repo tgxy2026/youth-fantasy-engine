@@ -8,7 +8,9 @@ import { GitBranch, Link2, Feather, Sparkles, Loader2, AlertCircle } from 'lucid
 import type { ForeshadowBoardItem, ForeshadowStatus } from '../lib/foreshadowEngine'
 // 2.9.1：改走 checkLog 的包装 —— 与检查工具页 / 稿件体检面板 / 本章体检共用同一份结果（缓存），
 // 并顺手记一条台账（供「比上次多/少几条」的趋势对比）
-import { foreshadowLogged, continuityLogged, trendOf, humanAgo, type CheckTrend } from '../lib/checkLog'
+import { foreshadowLogged, continuityLogged, trendOf, type CheckTrend } from '../lib/checkLog'
+// 2.9.2：趋势行提取为独立组件（投稿前自检面板复用同一份实现）
+import CheckTrendNote from './CheckTrendNote'
 import { auditStyle, styleContextForAI } from '../lib/styleAudit'
 import type { AuditIssue } from '../lib/audit'
 import { useAIReady } from '../lib/useAIReady'
@@ -20,28 +22,6 @@ type AiFinding = { level: string; title: string; detail: string; where: string }
 import { buildProjectContext, getRecentChapterTexts } from '../lib/aiContext'
 import { aiForeshadowReview, aiContinuityAudit, aiStyleCheck } from '../lib/aiTasks'
 import { Button } from './Button'
-
-/**
- * 「上次检查」趋势行（2.9.1）。
- *
- * 为什么要有它：体检台账（`lib/checkLog.ts`）落库本身不是目的 ——
- * 作者真正要回答的是「这一轮的问题比上一轮是变好还是变坏」。
- * 少了这一行，台账就又是一次「存了没人读」（正是本轮要修的那类问题）。
- */
-function CheckTrendNote({ trend }: { trend: CheckTrend }) {
-  const diff = trend.prev ? trend.cur.total - trend.prev.total : 0
-  const cls = diff > 0 ? 'text-danger' : diff < 0 ? 'text-success' : 'text-ink-500'
-  return (
-    <span className="text-10 text-ink-500 whitespace-nowrap">
-      上次检查 {trend.cur.total} 条（{humanAgo(trend.cur.ts)}）
-      {trend.prev && (
-        <span className={`ml-1.5 ${cls}`}>
-          {diff > 0 ? `比上轮多 ${diff} 条` : diff < 0 ? `比上轮少 ${-diff} 条` : '与上轮持平'}
-        </span>
-      )}
-    </span>
-  )
-}
 
 // ============ 伏笔闭环看板 ============
 export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (tabId: string) => void; onClose: () => void }) {

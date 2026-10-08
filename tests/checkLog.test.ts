@@ -1,12 +1,13 @@
 // ============ 2.9.1 · 体检台账与缓存（lib/checkLog.ts） ============
 //
 // 覆盖：① 跑一次引擎会落一条台账；② 同一数据版本内第二次调用命中缓存（**不**新增台账）；
-//      ③ 趋势查询；④ 换项目后台账按项目隔离；⑤ humanAgo 文案；⑥ 清空台账。
+//      ③ 趋势查询；④ 换项目后台账按项目隔离；⑤ humanAgo 文案；⑥ 清空台账；
+//      ⑦ 投稿前自检落库（2.9.2：不做缓存、按章 scope、notable 计 warn）。
 //
 // 🔴 「缓存生效」的判据刻意选的是「第二次没有新增台账记录」——
 //    缓存是内部实现，直接断言它拿不到把手；而「没多记一条」是它唯一可观测的外部效果。
 import * as db from '../src/lib/db'
-import { continuityLogged, foreshadowLogged, trendOf, clearCheckLog, humanAgo } from '../src/lib/checkLog'
+import { continuityLogged, foreshadowLogged, manuscriptLogged, trendOf, clearCheckLog, humanAgo } from '../src/lib/checkLog'
 import { __resetMockStores, memoryOps } from './mock-memory'
 
 let pass = 0, fail = 0
@@ -82,6 +83,35 @@ __resetMockStores()
     await continuityLogged()
     return (await db.getSetting<unknown[]>('checkLog', [])).length === 1
   })())
+
+  // ---------- ⑦ 投稿前自检落库（2.9.2）----------
+  // 🔴 与上面两个 engine 的三点差异，逐条钉住：
+  //    ① **不做缓存**（纯统计算得快）⇒ 同 scope 连跑两次应记 **2** 条；
+  //    ② `notable` 计 `warn`、其余计 `info`（只为让趋势行有增减可算，不代表「有问题」）；
+  //    ③ `scope` 用**章节 id** ⇒ 不同章的趋势互不影响。
+  type Snap = { engine: string; scope: string; total: number; warn: number; info: number }
+  await clearCheckLog()
+  const obs = [
+    { key: 'sentence', label: '句长离散度', value: '0.42', hint: '常见 0.3~0.6', notable: false, note: '分布均匀' },
+    { key: 'para', label: '段落长度', value: '9.9', hint: '常见 2~6', notable: true, note: '段落偏长' },
+  ]
+  await manuscriptLogged('c1', obs)
+  await manuscriptLogged('c1', obs)
+  const logM = await db.getSetting<Snap[]>('checkLog', [])
+  ok('⑦ 投稿前自检同 scope 连跑两次记 2 条（不做缓存）', logM.length === 2, `len=${logM.length}`)
+  ok('⑦ engine 与 scope（章节 id）正确', logM[0]?.engine === 'manuscript' && logM[0]?.scope === 'c1', JSON.stringify(logM[0]))
+  ok('⑦ notable 计 warn、其余计 info', logM[0]?.warn === 1 && logM[0]?.info === 1 && logM[0]?.total === 2,
+    JSON.stringify(logM[0]))
+
+  await manuscriptLogged('c2', obs.slice(0, 1))
+  const tM1 = await trendOf('manuscript', 'c1')
+  const tM2 = await trendOf('manuscript', 'c2')
+  ok('⑦ 趋势按章隔离：c1 有上一条、c2 没有', !!tM1 && tM1.prev !== null && !!tM2 && tM2.prev === null,
+    `c1prev=${!!tM1?.prev} c2prev=${!!tM2?.prev}`)
+  ok('⑦ c2 的趋势只含自己那一条（total=1，未被 c1 串味）', !!tM2 && tM2.cur.total === 1 && tM2.cur.scope === 'c2',
+    JSON.stringify(tM2?.cur))
+  ok('⑦ 同一 engine 不同 scope 不互相覆盖（c1 仍有 2 条）',
+    (await db.getSetting<Snap[]>('checkLog', [])).filter(s => s.engine === 'manuscript' && s.scope === 'c1').length === 2)
 
   console.log(`\n===== 结果：${pass} PASS / ${fail} FAIL =====`)
   await Promise.resolve()

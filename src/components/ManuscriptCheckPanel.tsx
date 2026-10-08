@@ -20,7 +20,8 @@ import { Button } from './Button'
 import { showToast } from './dialogs'
 import { downloadText } from '../lib/zip'
 // 2.9.1：走 checkLog 的包装（与检查工具 / 编辑器弹窗共用缓存与台账）
-import { continuityLogged, foreshadowLogged } from '../lib/checkLog'
+import { continuityLogged, foreshadowLogged, manuscriptLogged, trendOf, type CheckTrend } from '../lib/checkLog'
+import CheckTrendNote from './CheckTrendNote'
 import {
   analyzeStyle, toObservations, analyzePacing, buildCheckReportText,
   type StyleFingerprint, type PacingReport,
@@ -36,6 +37,8 @@ export default function ManuscriptCheckPanel() {
   // 引擎结果（跑一次后缓存；与"行文指纹"分开，因为前者较慢）
   const [engine, setEngine] = useState<{ continuity: number; foreshadowOpen: number } | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
+  /** 2.9.2：投稿前自检台账的「上次检查」（**按章** —— 行文指纹是按章算的） */
+  const [trend, setTrend] = useState<CheckTrend | null>(null)
 
   const load = useCallback(async () => {
     const [chs, stats, proj] = await Promise.all([
@@ -71,6 +74,13 @@ export default function ManuscriptCheckPanel() {
         continuity: c.length,
         foreshadowOpen: f.board.filter(b => b.status !== '已回收').length,
       })
+      // 2.9.2：把「行文分布」的观察项也记一条台账（按章）。
+      // 🔴 只在作者**显式点按钮**时记 —— 行文指纹本身是随渲染即时算的，
+      //    若跟着渲染走会变成每次切章都写一次盘。记不上也不影响自检（logSnapshot 内部已吞掉失败）。
+      if (activeId) {
+        await manuscriptLogged(activeId, observations)
+        setTrend(await trendOf('manuscript', activeId))
+      }
     } catch {
       showToast('结构与伏笔自检失败', 'error')
     } finally {
@@ -145,6 +155,7 @@ export default function ManuscriptCheckPanel() {
               {fp.words} 字 · {fp.sentences} 句 · {fp.paragraphs} 段
             </span>
           )}
+          {trend && <span className="ml-auto"><CheckTrendNote trend={trend} /></span>}
         </div>
 
         {!fp || fp.words === 0 ? (
