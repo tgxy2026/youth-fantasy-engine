@@ -42,7 +42,7 @@ export type TicketSource =
   | 'ai-review' | 'ai-ooc' | 'ai-pleasure'
 
 /** 条目状态（`skipped` = 作者主动跳过；`manual` 不是状态而是 action，见下） */
-export type TicketStatus = 'pending' | 'running' | 'done' | 'skipped' | 'failed'
+type TicketStatus = 'pending' | 'running' | 'done' | 'skipped' | 'failed'
 
 /** 界面上怎么称呼这些来源 */
 export const SOURCE_LABEL: Record<TicketSource, string> = {
@@ -138,7 +138,7 @@ export function actionLabelOf(a: ChapterRewriteAction | 'manual'): string {
   return a === 'manual' ? '需手动处理' : CHAPTER_REWRITE_META[a].label
 }
 
-export interface BuildTicketOpts {
+interface BuildTicketOpts {
   /** 只查这些章（不传＝全部章）。用于「只诊断勾选的那几章」 */
   chapterIds?: string[]
   signal?: AbortSignal
@@ -230,7 +230,7 @@ export function sortAndDedup(items: TicketItem[]): TicketItem[] {
     || a.title.localeCompare(b.title))
 }
 
-export interface TicketChapterGroup {
+interface TicketChapterGroup {
   chapterId: string
   chapterNo: number
   chapterTitle: string
@@ -252,7 +252,7 @@ export function groupByChapter(items: TicketItem[]): TicketChapterGroup[] {
 }
 
 /** 一个「问题类型」及其出现在哪些章（2.9.2） */
-export interface TicketIssueGroup {
+interface TicketIssueGroup {
   /** `${source}::${title}` —— 归并键，也是界面 `key` */
   key: string
   source: TicketSource
@@ -290,6 +290,10 @@ export function groupByIssue(items: TicketItem[]): TicketIssueGroup[] {
     g.count += 1
     // 同类型在不同章可能被判成不同严重度 ⇒ 取**最重**的（`SEVERITY_ORDER` 越小越严重）
     if (SEVERITY_ORDER[it.severity] < SEVERITY_ORDER[g.severity]) g.severity = it.severity
+    // 动作同理取「**最可执行**」的：`resolveAction` 对历史章给 `manual`、对最新章给可自动动作，
+    // 同一类问题只要有一章能自动改，汇总视图就该显示能自动 —— 取第一个会让它显示「需手动处理」，
+    // 与按章视图的口径打架（2026-10-09 审计修）。
+    if (g.action === 'manual' && it.action !== 'manual') g.action = it.action
   }
   for (const g of map.values()) g.chapters.sort((a, b) => a.no - b.no)
   return [...map.values()].sort((a, b) =>
@@ -298,13 +302,13 @@ export function groupByIssue(items: TicketItem[]): TicketIssueGroup[] {
     || a.title.localeCompare(b.title))
 }
 
-export interface RunTicketOpts {
+interface RunTicketOpts {
   signal?: AbortSignal
   /** 改写过程的提示（字数校准没生效之类）—— 由调用方转成界面提示 */
   onLog?: (msg: string) => void
 }
 
-export interface RunTicketResult {
+interface RunTicketResult {
   chapterId: string
   /** 本章条目执行后的状态（`manual` 条目原样保留 pending） */
   items: TicketItem[]

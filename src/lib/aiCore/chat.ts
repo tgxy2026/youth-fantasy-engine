@@ -141,7 +141,13 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
     temperature,
     // 2.9.2：显式传入优先；否则用「模型配置 → 文本生成微调」里填的那组参数。
     // 🔴 不填时 `samplingOptionsOf` 返回 undefined ⇒ 请求体与改动前逐字节一致。
-    extraOptions: opts.extraOptions ?? samplingOptionsOf(config),
+    // 🔴 `json: true` 的结构化任务**不下发**这组参数 —— 温度已被强制成低温（见 ai.ts 的
+    //    JSON_TASK_TEMPERATURE）以保解析稳定，惩罚项若照发，作者为「文风」调的参数就会
+    //    作用到抽取 / 解析任务上，同样会劣化 JSON 稳定性。这与界面上「结构化任务不受影响」
+    //    的承诺同口径（2026-10-09 审计修）。
+    //    ⚠️ 只抑制**兜底来源**：显式传入的 `opts.extraOptions` 一律照发 ——
+    //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
+    extraOptions: opts.extraOptions ?? (opts.json ? undefined : samplingOptionsOf(config)),
   })).content
 }
 

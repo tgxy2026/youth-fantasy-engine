@@ -95,7 +95,10 @@ export default function PaceAnalysisPanel() {
     void (async () => {
       if (!activeId) { if (!cancelled) setTrend(null); return }
       const model = await requireProviderFor('review').then(c => c.model).catch(() => '')
-      const t = await trendOf('pace', activeId, model || undefined).catch(() => null)
+      // 🔴 拿不到模型名 ⇒ **不出趋势**，而不是退化成「不过滤」——
+      //    不过滤会把不同模型的快照混在一起算，「趋势」就成了假的。宁可没有（2026-10-09 审计修）。
+      if (!model) { if (!cancelled) setTrend(null); return }
+      const t = await trendOf('pace', activeId, model).catch(() => null)
       if (!cancelled) setTrend(t)
     })()
     return () => { cancelled = true }

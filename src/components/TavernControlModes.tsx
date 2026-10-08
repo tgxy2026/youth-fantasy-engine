@@ -16,6 +16,7 @@ import { Section, Field, GRID2, NumField, SelectField, TextField, ToggleField } 
 import { Button } from './Button'
 import { PARAM_GUIDES, GUIDE_SAMPLING, type ParamGuide } from '../lib/tavern/paramGuide'
 import { VAR_DEFS, type VarKey } from '../lib/tavern/types'
+import SamplingUnavailable from './SamplingUnavailable'
 import type { TuningAdvice } from '../lib/modelCapacity'
 import type { TavernSettings } from '../lib/tavern/settings'
 
@@ -58,8 +59,11 @@ type Props = {
    * 🔴 2026-10-09（2.9.2）：三项 Ollama 专有采样参数（候选词上限 / 重复惩罚 / 惩罚射程）按它**灰显** ——
    *    此前云端模型下照旧可编辑，改了却不生效（下发时被 `openaiSampling()` 白名单静默丢弃），
    *    与「上下文窗口长度」在两态化之前的老毛病同一类。
+   *
+   * ⚠️ 判据是 **`type === 'ollama'`，不是「本地」** —— 本地 OpenAI 兼容服务（LM Studio 等）
+   *    也是本地，却同样认不了这三个键（2026-10-09 审计修）。
    */
-  local: boolean
+  ollamaNative: boolean
 }
 
 /** 云端模型下、Ollama 专有参数的灰显占位（与「上下文窗口长度」同一范式，2.9.2） */
@@ -69,16 +73,13 @@ function CloudOnlyNA({ label }: { label: string }) {
       label={label}
       hint="此参数只对本地 Ollama 生效 —— 当前接的是云端模型，本项不参与调用，故不提供编辑；需微调请先切到本地模型。"
     >
-      <div className="flex items-center justify-between gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-1.5">
-        <span className="text-12 text-ink-600">—</span>
-        <span className="text-10 text-ink-600">对云端模型不适用</span>
-      </div>
+      <SamplingUnavailable />
     </Field>
   )
 }
 
 export default function TavernControlModes({
-  plot, free, vars, setPlot, setFree, setVars, toggleVarKey, modelOptions, advice, local,
+  plot, free, vars, setPlot, setFree, setVars, toggleVarKey, modelOptions, advice, ollamaNative,
 }: Props) {
   const { rec, gSoft, gHard, gLong, gDiary } = advice
   return (
@@ -99,14 +100,14 @@ export default function TavernControlModes({
             hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
             value={plot.topP} onCommit={v => setPlot('topP', v)}
           />
-          {local ? (
+          {ollamaNative ? (
             <NumField
               label="候选词上限" guide={GUIDE_SAMPLING.topK}
               hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
               value={plot.topK} onCommit={v => setPlot('topK', v)}
             />
           ) : <CloudOnlyNA label="候选词上限" />}
-          {local ? (
+          {ollamaNative ? (
             <NumField
               label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
               hint="高于 1 会压制重复用词；太高会让句子发硬、用词别扭。"
@@ -118,7 +119,7 @@ export default function TavernControlModes({
             hint="同一个词出现得越多扣得越狠。推演里的动作描写也容易「每轮都写手」，管的就是这一类反复。"
             value={plot.frequencyPenalty} onCommit={v => setPlot('frequencyPenalty', v)}
           />
-          {local ? (
+          {ollamaNative ? (
             <NumField
               label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
               hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
@@ -186,14 +187,14 @@ export default function TavernControlModes({
             hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
             value={free.topP} onCommit={v => setFree('topP', v)}
           />
-          {local ? (
+          {ollamaNative ? (
             <NumField
               label="候选词上限" guide={GUIDE_SAMPLING.topK}
               hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
               value={free.topK} onCommit={v => setFree('topK', v)}
             />
           ) : <CloudOnlyNA label="候选词上限" />}
-          {local ? (
+          {ollamaNative ? (
             <NumField
               label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
               hint="角色的口头禅多，所以这一项比剧情模式更值得调。"
@@ -205,7 +206,7 @@ export default function TavernControlModes({
             hint="同一个词出现得越多扣得越狠。角色的口头禅、习惯小动作最容易反复 —— 这一项比「重复惩罚」更对症。"
             value={free.frequencyPenalty} onCommit={v => setFree('frequencyPenalty', v)}
           />
-          {local ? (
+          {ollamaNative ? (
             <NumField
               label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
               hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"

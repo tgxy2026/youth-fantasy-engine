@@ -25,9 +25,10 @@ import type { Observation } from './manuscriptCheck'
 // ④（2.9.2）：节奏与章末钩子。**只取类型**，算法仍在 paceAnalysis.ts（那边的定位逻辑不下沉到这里）
 import type { PaceReport } from './paceAnalysis'
 
-export type CheckEngine = 'continuity' | 'foreshadow' | 'manuscript' | 'pace'
+// 本文件内部用的类型 —— 外部 0 引用，故不 export（多余 export 会让死代码清单失去信号，见审计纪律）
+type CheckEngine = 'continuity' | 'foreshadow' | 'manuscript' | 'pace'
 
-export interface CheckSnapshot {
+interface CheckSnapshot {
   ts: number
   engine: CheckEngine
   scope: string
@@ -147,9 +148,16 @@ export async function foreshadowLogged(): Promise<ForeshadowResult> {
  *   ③ **`scope` 用章节 id** —— 行文指纹是按章算的，趋势要「这一章比上次」，不是全书混算。
  */
 export async function manuscriptLogged(scope: string, obs: Observation[]): Promise<void> {
-  const issues: AuditIssue[] = obs.map((o, i) => ({
+  // 🔴 **只记「偏离参考区间」的那几项** —— 不是图省事，是趋势口径的必需：
+  //    `toObservations()` 对任何非空章**恒定返回 4 条**（四栏指纹各一条），
+  //    若按全量记，`total` 永远是 4 ⇒ 趋势行永远显示「与上轮持平」，这个功能等于白做。
+  //    （2026-10-09 六维审计当场抓出，实机数据「上次检查 4 条 · 与上轮持平」正好印证。）
+  // 改记 notable 后，`total` ＝「本期有哪几项落在参考区间之外」，多/少才有意义。
+  // 也正因如此，`info` 这一档在这里不再出现 —— 能进来的就是「偏离」。
+  const notable = obs.filter(o => o.notable)
+  const issues: AuditIssue[] = notable.map((o, i) => ({
     id: `M${i + 1}`,
-    severity: o.notable ? 'warn' : 'info',
+    severity: 'warn' as const,
     category: '投稿前自检',
     title: o.label,
     detail: `${o.value} · ${o.hint}`,

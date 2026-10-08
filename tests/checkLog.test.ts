@@ -102,10 +102,11 @@ __resetMockStores()
   const logM = await db.getSetting<Snap[]>('checkLog', [])
   ok('⑦ 投稿前自检同 scope 连跑两次记 2 条（不做缓存）', logM.length === 2, `len=${logM.length}`)
   ok('⑦ engine 与 scope（章节 id）正确', logM[0]?.engine === 'manuscript' && logM[0]?.scope === 'c1', JSON.stringify(logM[0]))
-  ok('⑦ notable 计 warn、其余计 info', logM[0]?.warn === 1 && logM[0]?.info === 1 && logM[0]?.total === 2,
+  ok('🔴 notable 才记、且计 warn（口径＝偏离参考区间的项数，不是 4 条观察项总数）',
+    logM[0]?.warn === 1 && logM[0]?.info === 0 && logM[0]?.total === 1,
     JSON.stringify(logM[0]))
 
-  await manuscriptLogged('c2', obs.slice(0, 1))
+  await manuscriptLogged('c2', obs.slice(1))   // 取 notable 那条（新口径下第 0 条不落库）
   const tM1 = await trendOf('manuscript', 'c1')
   const tM2 = await trendOf('manuscript', 'c2')
   ok('⑦ 趋势按章隔离：c1 有上一条、c2 没有', !!tM1 && tM1.prev !== null && !!tM2 && tM2.prev === null,
@@ -114,6 +115,14 @@ __resetMockStores()
     JSON.stringify(tM2?.cur))
   ok('⑦ 同一 engine 不同 scope 不互相覆盖（c1 仍有 2 条）',
     (await db.getSetting<Snap[]>('checkLog', [])).filter(s => s.engine === 'manuscript' && s.scope === 'c1').length === 2)
+
+  // 🔴 口径守护（2026-10-09 审计修）：`total` 必须＝**偏离参考区间的项数**。
+  //    `toObservations()` 恒定返回 4 条，按总数记会让趋势行永远「与上轮持平」⇒ 功能白做。
+  //    若有人改回「全量记」，下面这条会变成 4 而红。
+  await manuscriptLogged('c3', obs.map(o => ({ ...o, notable: false })))
+  const tM3 = await trendOf('manuscript', 'c3')
+  ok('🔴 全都不 notable ⇒ total 0（口径＝偏离项数，不是恒定 4 条的观察项总数）',
+    tM3?.cur.total === 0 && tM3.cur.warn === 0, JSON.stringify(tM3?.cur))
 
   // ⑧ 节奏与章末钩子落库（2.9.2 · ④）
   //    口径：total ＝ 爆点处数 ＋（章末无钩子时 1）；🔴 趋势**只比同模型**。

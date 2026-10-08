@@ -16,12 +16,12 @@
  */
 
 /** 六个可调参数的语义名（`temperature` 不在此列 —— 它早就有独立字段 `AIProvider.temperature`） */
-export type SamplingKey =
+type SamplingKey =
   | 'topP' | 'topK' | 'repeatPenalty' | 'repeatLastN' | 'frequencyPenalty' | 'presencePenalty'
 
 export type SamplingValues = Partial<Record<SamplingKey, number>>
 
-export interface SamplingField {
+interface SamplingField {
   key: SamplingKey
   /** 界面显示名（中文） */
   label: string
@@ -77,13 +77,16 @@ export const SAMPLING_FIELDS: readonly SamplingField[] = [
 /**
  * 把 provider 上的采样参数翻成**目标接口的原生键名**。
  *
- * - `local` ⇒ 六个全下发（Ollama `/api/chat` 的 `options` 认这些）
- * - 云端 ⇒ 只下发 OpenAI 兼容端点认的三个（`top_p` / `frequency_penalty` / `presence_penalty`）
+ * - **Ollama 原生端点** ⇒ 六个全下发（`/api/chat` 的 `options` 认这些）
+ * - 其它（云端 **＋ 本地 OpenAI 兼容**）⇒ 只下发白名单里的三个
+ *   （`top_p` / `frequency_penalty` / `presence_penalty`）
  *
  * 🔴 一个都没填 ⇒ 返回 `undefined`（调用方据此**保持原样**，不下发空对象）。
  */
 export function samplingOptionsOf(
-  p: { local?: boolean; sampling?: SamplingValues } | null | undefined,
+  // ⚠️ `local` 保留在**入参类型**里（AIProvider 本就有这个字段，测试也要能构造「本地 OpenAI 兼容」
+  //    的真实形态），但**判据不看它** —— 见 `isOllamaSamplingChannel`。
+  p: { type?: string; local?: boolean; sampling?: SamplingValues } | null | undefined,
 ): Record<string, number> | undefined {
   const s = p?.sampling
   if (!s) return undefined
@@ -94,10 +97,27 @@ export function samplingOptionsOf(
   put('top_p', s.topP)
   put('frequency_penalty', s.frequencyPenalty)
   put('presence_penalty', s.presencePenalty)
-  if (p?.local) {
+  if (isOllamaSamplingChannel(p)) {
     put('top_k', s.topK)
     put('repeat_penalty', s.repeatPenalty)
     put('repeat_last_n', s.repeatLastN)
   }
   return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * 这些参数会走 **Ollama 原生通道**吗（＝ `top_k` / `repeat_penalty` / `repeat_last_n` 是否真生效）。
+ *
+ * 🔴🔴 判据必须是 `type === 'ollama'`，**不是 `local`**。
+ *   `local` 在本项目里的语义是「本机 / 局域网服务」（免密钥、窗口由显存决定那一类判断），
+ *   而**本地 OpenAI 兼容服务**（LM Studio / LocalAI / GPT4All / Jan…）虽然 `local: true`，
+ *   走的却是 `openaiChat` —— 它只认 `OPENAI_SAFE_SAMPLING` 白名单，上面三个键会被**静默丢弃**。
+ *   用 `local` 判会让界面显示「可编辑」而下发被丢 —— 正是本轮（2.9.2）要修的那类「调了不生效」。
+ *
+ * 🔴 **界面三处灰显判据必须与本函数同源**：
+ *   `AIConfigPanel` 的「文本生成微调」、`TavernControlModes` 的采样参数、
+ *   `TavernControlBasics` 的「上下文窗口长度」，统一走 `components/SamplingUnavailable.tsx`。
+ */
+export function isOllamaSamplingChannel(p: { type?: string } | null | undefined): boolean {
+  return p?.type === 'ollama'
 }

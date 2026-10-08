@@ -57,6 +57,22 @@ export default function ManuscriptCheckPanel() {
 
   useEffect(() => { void load() }, [load])
 
+  /**
+   * 切章后重取本章趋势。
+   * 🔴 少了它，跑完 A 章再切到 B 章，面板显示 B 章的内容、却挂着 **A 章**的「上次检查」
+   *    —— 与 `PaceAnalysisPanel` 的同概念实现不一致（那边一直有 activeId 依赖的 effect）。
+   *    2026-10-09 审计抓出。跑完引擎时仍会立即刷新一次（见 runEngine）。
+   */
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (!activeId) { if (!cancelled) setTrend(null); return }
+      const t = await trendOf('manuscript', activeId).catch(() => null)
+      if (!cancelled) setTrend(t)
+    })()
+    return () => { cancelled = true }
+  }, [activeId])
+
   const active = useMemo(() => chapters.find(c => c.id === activeId), [chapters, activeId])
   // 行文指纹是纯统计、算得很快 → 直接随选中章即时算，不需要"跑"按钮
   const fp: StyleFingerprint | null = useMemo(

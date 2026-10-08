@@ -23,7 +23,8 @@ import HelpPopover from './HelpPopover'
 import EmbeddingIndexPanel from './EmbeddingIndexPanel'
 import { confirmDialog, showToast } from './dialogs'
 import { syncTuningWithModel } from '../lib/tavern/settings'
-import { SAMPLING_FIELDS } from '../lib/modelSampling'
+import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '../lib/modelSampling'
+import SamplingUnavailable from './SamplingUnavailable'
 import { syncWriterBudgetToModel } from '../lib/aiWriterBudget'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
@@ -549,8 +550,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {SAMPLING_FIELDS.map(f => {
-                    // 云端模型下，Ollama 专有的三项不可用（下发会被白名单丢弃）⇒ 灰显占位
-                    const usable = f.cloud || !!editing.local
+                    // Ollama 专有的三项：非 Ollama 端点（云端 **＋ 本地 OpenAI 兼容**）不可用
+                    // ⇒ 灰显占位。🔴 判据与下发同源（`isOllamaSamplingChannel`），不用 `local`
+                    //   —— LM Studio 那种本地 OpenAI 兼容服务也是 local，但它认不了这三个键。
+                    const usable = f.cloud || isOllamaSamplingChannel(editing)
                     const val = editing.sampling?.[f.key]
                     return (
                       <div key={f.key}
@@ -561,28 +564,28 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                           {!f.cloud && <span className="text-10 text-ink-600">仅本地</span>}
                         </div>
                         {usable ? (
-                          <input
-                            type="number" min={f.min} max={f.max} step={f.step}
+                          // 🔴 必须走 NumberField（本地 text 态 + 失焦提交 + 钳制）：
+                          //    原来那个受控 `type=number` 在输入「0.」这种中间态时，浏览器把 `.value`
+                          //    sanitize 成空串 ⇒ 立即被当成「清空」⇒ **小数点根本打不进去**
+                          //    （六项里有四项是小数）。NumberField 同时补上范围钳制，
+                          //    这与 2.6.0 巡检在酒馆那边踩的同一个坑是同一条判据。
+                          <NumberField
                             className="mt-1 w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-2 py-1 outline-none focus:border-amber/40 placeholder:text-ink-600"
-                            value={typeof val === 'number' ? val : ''}
+                            value={val}
+                            min={f.min} max={f.max} step={f.step}
+                            precision={String(f.step).includes('.') ? String(f.step).split('.')[1].length : 0}
+                            allowEmpty
                             placeholder="留空 ＝ 不下发"
-                            onChange={e => {
-                              const raw = e.target.value
-                              const v = raw === '' ? undefined : Number(raw)
-                              setEditing(prev => {
-                                if (!prev) return prev
-                                const cur = { ...(prev.sampling ?? {}) }
-                                if (v === undefined || !Number.isFinite(v)) delete cur[f.key]
-                                else cur[f.key] = v
-                                return { ...prev, sampling: Object.keys(cur).length ? cur : undefined }
-                              })
-                            }}
+                            onChange={v => setEditing(prev => {
+                              if (!prev) return prev
+                              const cur = { ...(prev.sampling ?? {}) }
+                              if (v === undefined || !Number.isFinite(v)) delete cur[f.key]
+                              else cur[f.key] = v
+                              return { ...prev, sampling: Object.keys(cur).length ? cur : undefined }
+                            })}
                           />
                         ) : (
-                          <div className="mt-1 flex items-center justify-between gap-2 rounded-lg border border-ink-800 bg-ink-900/40 px-2 py-1">
-                            <span className="text-12 text-ink-600">—</span>
-                            <span className="text-10 text-ink-600">对云端模型不适用</span>
-                          </div>
+                          <SamplingUnavailable className="mt-1" />
                         )}
                         <p className="mt-1 text-10 leading-relaxed text-ink-600">{f.effect}</p>
                       </div>
@@ -591,7 +594,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </div>
                 <p className="mt-1 text-10 leading-relaxed text-ink-600">
                   温度另有独立入口（上面的「生成温度」档位）。这些参数只影响<b>文本生成效果</b>、不改动任何项目数据；
-                  结构化任务（需要解析成 JSON 的那些）不受影响 —— 那类固定走低温以保证解析稳定。
+                  结构化任务（需要解析成 JSON 的那些）不受影响 —— 那类固定走低温，且不使用这里的参数，以保证解析稳定。
                   酒馆模式有自己的一套参数（控制面板里调），不受这里影响。
                 </p>
               </div>

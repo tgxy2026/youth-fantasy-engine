@@ -36,7 +36,9 @@ export default function ChangelogHealthNote({ children }: { children: ReactNode 
         const rev = proj?.updatedAt ?? 0
         const now = Date.now()
         // 命中缓存：同一项目、同一数据版本、且未过期 ⇒ 直接用
-        if (cache && cache.pid === pid && cache.rev === rev && now - cache.ts < TTL_MS) {
+        // 🔴 `rev > 0` 守卫与 `lib/checkLog.revisionOf` 同口径 —— 取不到项目版本号时
+        //    **不能**走缓存：0 === 0 会让缓存永不失效，只剩 TTL 兜底（2026-10-09 审计修）。
+        if (cache && cache.pid === pid && rev > 0 && cache.rev === rev && now - cache.ts < TTL_MS) {
           if (!cancelled) setErrors(cache.errors)
           return
         }

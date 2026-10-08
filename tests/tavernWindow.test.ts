@@ -55,7 +55,10 @@ function main() {
 
   // ---------- ② 云端态：灰显占位、不出数字 ----------
   ok('② 面板按 cap.local 分两态', basics.includes('cap.local ?'))
-  ok('② 云端态有占位文案「对云端模型不适用」', basics.includes('对云端模型不适用'))
+  // 2026-10-09 审计：分层的占位文案抽到了 components/SamplingUnavailable（三处共用一份 →
+  //   防止「一处改了判据、别处没跟上」，也顺带把措辞从「对云端模型不适用」改成更准的
+  //   「只对本地 Ollama 生效」—— 本地 OpenAI 兼容服务同样认不了那几个键）。
+  ok('② 云端态有灰显占位（走共享组件 SamplingUnavailable）', basics.includes('<SamplingUnavailable'))
   ok('② 云端态不再把窗口当「设置值」显示（旧的 toLocaleString 大数字已移除）',
     !basics.includes('cap.windowTokens.toLocaleString()'))
   ok('② 旧文案「故这里只列出来供参考」已消失', !basics.includes('故这里只列出来供参考'))

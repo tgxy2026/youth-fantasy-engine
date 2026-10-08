@@ -22,9 +22,9 @@ const full: SamplingValues = {
   topP: 0.9, topK: 40, repeatPenalty: 1.05, repeatLastN: 768, frequencyPenalty: 0.1, presencePenalty: 0.4,
 }
 
-// ---------- ① 本地：六个全下发（用 Ollama 原生键名） ----------
+// ---------- ① Ollama 原生端点：六个全下发（用原生键名） ----------
 {
-  const o = samplingOptionsOf({ local: true, sampling: full })
+  const o = samplingOptionsOf({ type: 'ollama', sampling: full })
   ok('① 本地：六个键全部下发', !!o && Object.keys(o).length === 6, JSON.stringify(o))
   ok('① 本地：键名是 Ollama 原生名',
     !!o && o.top_p === 0.9 && o.top_k === 40 && o.repeat_penalty === 1.05 &&
@@ -35,37 +35,47 @@ const full: SamplingValues = {
     !!o && 'repeat_penalty' in o && !('repetition_penalty' in o), JSON.stringify(o))
 }
 
-// ---------- ② 云端：只下发白名单那三个 ----------
+// ---------- ② 非 Ollama（云端 ＋ 本地 OpenAI 兼容）：只下发白名单那三个 ----------
 {
-  const o = samplingOptionsOf({ local: false, sampling: full })
+  const o = samplingOptionsOf({ type: 'openai', sampling: full })
   ok('② 云端：只下发 3 个（top_p / frequency_penalty / presence_penalty）',
     !!o && Object.keys(o).sort().join(',') === 'frequency_penalty,presence_penalty,top_p',
     JSON.stringify(o))
   ok('🔴 云端：Ollama 专有键（top_k / repeat_penalty / repeat_last_n）必须被丢弃',
     !!o && !('top_k' in o) && !('repeat_penalty' in o) && !('repeat_last_n' in o),
     JSON.stringify(o))
-  // local 缺省（undefined）也按云端处理 —— 不能漏判成"本地"
+  // type 缺省（undefined）也按「非 Ollama」处理 —— 不能漏判成原生通道
   const o2 = samplingOptionsOf({ sampling: full })
-  ok('② local 缺省时按云端处理（更保守的一侧）',
+  ok('② type 缺省时按非 Ollama 处理（更保守的一侧）',
     !!o2 && Object.keys(o2).sort().join(',') === 'frequency_penalty,presence_penalty,top_p',
     JSON.stringify(o2))
+
+  // 🔴🔴 2026-10-09 审计修的那个 bug 的判别力证明：
+  //    **本地 OpenAI 兼容**（LM Studio / LocalAI / GPT4All / Jan…）也是 `local: true`，
+  //    但它走 `openaiChat` 的白名单 ⇒ 三个 Ollama 专有键必须被丢弃。
+  //    判据还停留在 `local` 时，这里会下发 **6** 个键 —— 界面显示可编辑、实际被静默丢掉，
+  //    正是本轮要修的那一类「调了不生效」。
+  const localOpenai = samplingOptionsOf({ type: 'openai', local: true, sampling: full })
+  ok('🔴 本地 OpenAI 兼容（type=openai + local=true）仍只下发 3 个（判据必须是 type）',
+    !!localOpenai && Object.keys(localOpenai).sort().join(',') === 'frequency_penalty,presence_penalty,top_p',
+    JSON.stringify(localOpenai))
 }
 
 // ---------- ③ 留空 ＝ 不下发（本功能的核心回归判据） ----------
 {
   ok('🔴 完全没有 sampling 字段 ⇒ undefined（请求体与改动前逐字节一致）',
-    samplingOptionsOf({ local: true }) === undefined)
-  ok('🔴 sampling 是空对象 ⇒ undefined', samplingOptionsOf({ local: true, sampling: {} }) === undefined)
+    samplingOptionsOf({ type: 'ollama' }) === undefined)
+  ok('🔴 sampling 是空对象 ⇒ undefined', samplingOptionsOf({ type: 'ollama', sampling: {} }) === undefined)
   ok('🔴 全是非法值（NaN / Infinity）⇒ undefined',
-    samplingOptionsOf({ local: true, sampling: { topP: NaN, topK: Infinity } }) === undefined)
+    samplingOptionsOf({ type: 'ollama', sampling: { topP: NaN, topK: Infinity } }) === undefined)
   ok('🔴 provider 为 null / undefined ⇒ undefined',
     samplingOptionsOf(null) === undefined && samplingOptionsOf(undefined) === undefined)
   // 只填一个 ⇒ 只下发那一个（不塞 0 之类的占位值）
-  const one = samplingOptionsOf({ local: true, sampling: { topP: 0.9 } })
+  const one = samplingOptionsOf({ type: 'ollama', sampling: { topP: 0.9 } })
   ok('③ 只填一个 ⇒ 只下发那一个键', !!one && Object.keys(one).length === 1 && one.top_p === 0.9,
     JSON.stringify(one))
   // 0 是合法值（如 topK=0 表示不限制），不能被当成"没填"
-  const zero = samplingOptionsOf({ local: true, sampling: { topK: 0 } })
+  const zero = samplingOptionsOf({ type: 'ollama', sampling: { topK: 0 } })
   ok('🔴 0 是合法值（topK=0 ＝ 不限制），必须下发而不是被当作没填',
     !!zero && zero.top_k === 0, JSON.stringify(zero))
 }
@@ -88,8 +98,8 @@ const full: SamplingValues = {
     cloudOnly.join(','))
 
   const allOn: SamplingValues = Object.fromEntries(SAMPLING_FIELDS.map(f => [f.key, 1])) as SamplingValues
-  const localOut = samplingOptionsOf({ local: true, sampling: allOn }) ?? {}
-  const cloudOut = samplingOptionsOf({ local: false, sampling: allOn }) ?? {}
+  const localOut = samplingOptionsOf({ type: 'ollama', sampling: allOn }) ?? {}
+  const cloudOut = samplingOptionsOf({ type: 'openai', sampling: allOn }) ?? {}
   ok('🔴 本地下发项数 == 字段表项数（六项都能下去）',
     Object.keys(localOut).length === SAMPLING_FIELDS.length,
     `${Object.keys(localOut).length} vs ${SAMPLING_FIELDS.length}`)
@@ -100,7 +110,7 @@ const full: SamplingValues = {
   // 反向也钉住：凡是 cloud:true 的，云端必须能下去
   ok('🔴 标 cloud:true 的项在云端结果里必须都在',
     SAMPLING_FIELDS.filter(f => f.cloud).every(f => {
-      const single = samplingOptionsOf({ local: false, sampling: { [f.key]: 0.5 } as SamplingValues })
+      const single = samplingOptionsOf({ type: 'openai', sampling: { [f.key]: 0.5 } as SamplingValues })
       return !!single && Object.keys(single).length === 1
     }))
 }
@@ -112,8 +122,8 @@ const full: SamplingValues = {
 {
   const modes = readSrc('src/components/TavernControlModes.tsx')
   const three = ['候选词上限', '重复惩罚', '惩罚射程']
-  const ternaryCount = (modes.match(/local \? \(/g) || []).length
-  ok('🔴 酒馆：三项 Ollama 专有参数 × 两个模式 ＝ 6 处都按 local 分了两态',
+  const ternaryCount = (modes.match(/ollamaNative \? \(/g) || []).length
+  ok('🔴 酒馆：三项 Ollama 专有参数 × 两个模式 ＝ 6 处都按 ollamaNative 分了两态',
     ternaryCount === 6, String(ternaryCount))
   const naCount = (modes.match(/<CloudOnlyNA /g) || []).length
   ok('🔴 酒馆：6 处灰显占位走同一个 CloudOnlyNA 组件（不各写各的样式）',
@@ -121,19 +131,32 @@ const full: SamplingValues = {
   ok('🔴 酒馆：三项都在灰显清单里',
     three.every(l => (modes.match(new RegExp(`<CloudOnlyNA label="${l}"`, 'g')) || []).length === 2),
     three.map(l => `${l}:${(modes.match(new RegExp(`<CloudOnlyNA label="${l}"`, 'g')) || []).length}`).join(' '))
-  ok('🔴 酒馆：云端判定由父组件统一传入（不是各组件各自判断）',
-    readSrc('src/components/TavernControl.tsx').includes('local={!!cap.local}'))
+  ok('🔴 酒馆：判定由父组件统一传入，且用 type（不是 local —— LM Studio 也是 local）',
+    readSrc('src/components/TavernControl.tsx').includes("ollamaNative={m.activeProvider?.type === 'ollama'}"))
 
   const cfg = readSrc('src/components/AIConfigPanel.tsx')
   ok('🔴 模型配置页：「文本生成微调」区块在位且位于自定义系统提示词之后',
     cfg.includes('文本生成微调') &&
     cfg.indexOf('文本生成微调') > cfg.indexOf('自定义系统提示词'))
-  ok('🔴 模型配置页：三项 Ollama 专有参数按 editing.local 灰显',
-    cfg.includes('const usable = f.cloud || !!editing.local') && cfg.includes('对云端模型不适用'))
+  ok('🔴 模型配置页：三项 Ollama 专有参数按 type 灰显（判据与下发同源）',
+    cfg.includes('isOllamaSamplingChannel(editing)') && cfg.includes('<SamplingUnavailable'))
   ok('🔴 模型配置页：说明里写清「留空 ＝ 不下发」与结构化任务不受影响',
     cfg.includes('留空 ＝ 不下发') && cfg.includes('结构化任务'))
   ok('🔴 装配层：chat() 确实用 provider 兜底（否则界面填了也白填）',
-    readSrc('src/lib/aiCore/chat.ts').includes('opts.extraOptions ?? samplingOptionsOf(config)'))
+    readSrc('src/lib/aiCore/chat.ts').includes('samplingOptionsOf(config)'))
+  ok('🔴 结构化任务（json）不下发兜底参数 —— 与界面「结构化任务不受影响」的承诺同口径',
+    readSrc('src/lib/aiCore/chat.ts').includes('opts.json ? undefined : samplingOptionsOf(config)'))
+  ok('🔴 只抑制兜底来源：显式传入的 extraOptions 一律照发（酒馆有自己的参数面板）',
+    readSrc('src/lib/aiCore/chat.ts').includes('opts.extraOptions ?? ('))
+
+  // 🔴 三处灰显必须共用同一文案与样式，判据也必须只有一个真源 ——
+  //    分开写就会「一处改了判据、另两处没跟上」（2026-10-09 审计即因此发现本地 OpenAI 兼容漏判）。
+  ok('🔴 三处灰显共用 SamplingUnavailable（文案与样式只此一处）',
+    ['src/components/AIConfigPanel.tsx', 'src/components/TavernControlBasics.tsx', 'src/components/TavernControlModes.tsx']
+      .every(f => readSrc(f).includes('SamplingUnavailable')))
+  ok('🔴 灰显判据只有一个真源 isOllamaSamplingChannel（定义 + 下发处都调它）',
+    readSrc('src/lib/modelSampling.ts').includes('export function isOllamaSamplingChannel') &&
+    readSrc('src/lib/modelSampling.ts').includes('if (isOllamaSamplingChannel(p))'))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

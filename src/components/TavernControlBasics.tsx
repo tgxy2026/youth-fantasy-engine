@@ -10,6 +10,7 @@ import { Button } from './Button'
 import { PARAM_GUIDES } from '../lib/tavern/paramGuide'
 import { GRID2, Section, Field, NumField, TextField, SelectField, ToggleField } from './TavernFieldKit'
 import type { TavernControlModel } from './useTavernControlModel'
+import SamplingUnavailable from './SamplingUnavailable'
 import { profileListOf, activeProfileOf, type TavernProfile } from '../lib/tavern/settings'
 
 /** 下拉里显示什么：优先档案自己的名字；没名字就用序号兜底（否则两个空档案长得一模一样） */
@@ -114,10 +115,7 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
                       ? ` 系统按保守值 ${cap.windowTokens} tokens 估算该模型的窗口（可在「模型配置」里手填纠正），推荐值就准了。`
                       : ` 系统按该模型的 ${cap.windowTokens} tokens 折减推算预算；要让模型读更多内容，请调大上面的「上下文预算」。`)}
                 >
-                  <div className="flex items-center justify-between gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-1.5">
-                    <span className="text-12 text-ink-600">—</span>
-                    <span className="text-10 text-ink-600">对云端模型不适用</span>
-                  </div>
+                  <SamplingUnavailable />
                 </Field>
               )}
               <ToggleField
