@@ -22,8 +22,10 @@ import type { AuditIssue } from './audit'
 import { auditContinuity } from './continuityCheck'
 import { auditForeshadow, type ForeshadowResult } from './foreshadowEngine'
 import type { Observation } from './manuscriptCheck'
+// ④（2.9.2）：节奏与章末钩子。**只取类型**，算法仍在 paceAnalysis.ts（那边的定位逻辑不下沉到这里）
+import type { PaceReport } from './paceAnalysis'
 
-export type CheckEngine = 'continuity' | 'foreshadow' | 'manuscript'
+export type CheckEngine = 'continuity' | 'foreshadow' | 'manuscript' | 'pace'
 
 export interface CheckSnapshot {
   ts: number
@@ -35,6 +37,16 @@ export interface CheckSnapshot {
   info: number
   /** 前若干条 issue 标题（供「上次报了什么」回看；不含详情，避免台账臃肿） */
   titles: string[]
+  /**
+   * 本次分析用的**模型标识**（2.9.2 · ④ 起）。
+   *
+   * 🔴 目前只有 `pace` 会写它：AI 输出带随机性，同一章换个模型跑出来的结果**本身就不可比**，
+   *    所以趋势必须**只比同模型**（见 {@link trendOf} 的 `model` 参数）。
+   *    体检类引擎（连续性 / 伏笔 / 投稿前自检）是本地纯函数 —— 同样输入必得同样输出、与模型无关，故不记。
+   * 记 `provider.model`（真实模型名，如 `agents-a1-4b-work`）而不是 `provider.name`
+   *    （作者可随手改的显示名）—— 后者改个名就把趋势线截断了。
+   */
+  model?: string
 }
 
 /** settingsKV 键 —— `db.getSetting/setSetting` 自带 `<pid>::` 前缀，这里不必再拼 */
@@ -75,13 +87,15 @@ async function loadLog(): Promise<CheckSnapshot[]> {
 }
 
 /** 记一条快照。🔴 落库失败**绝不能**让体检本身失败（体检是主功能，台账是附属） */
-async function logSnapshot(engine: CheckEngine, scope: string, issues: AuditIssue[]): Promise<void> {
+async function logSnapshot(engine: CheckEngine, scope: string, issues: AuditIssue[], model?: string): Promise<void> {
   try {
     const log = await loadLog()
     log.push({
       ts: Date.now(),
       engine,
       scope,
+      // 条件展开：没传就不落这个 key（免得台账里出现一堆 `model: undefined`）
+      ...(model ? { model } : {}),
       total: issues.length,
       error: issues.filter(i => i.severity === 'error').length,
       warn: issues.filter(i => i.severity === 'warn').length,
@@ -143,6 +157,39 @@ export async function manuscriptLogged(scope: string, obs: Observation[]): Promi
   await logSnapshot('manuscript', scope, issues)
 }
 
+/**
+ * 节奏与章末钩子（④ · 2.9.2）—— 把一份 `PaceReport` 折成台账条目，做「这一章比上次」的趋势。
+ *
+ * 🔴 **口径别误读成「问题数」**：本引擎与「投稿前自检」同属**观察类**，
+ *    `total` ＝「本次观察到的结构点数」＝ 爆点处数 ＋（章末无钩子时 1）。
+ *    · 每条爆点 → `info`（title 用「段位 · 类型」；段位是本地拿引文在正文里定位算出来的，不是模型报的）
+ *    · 章末未识别到钩子 → `warn`（这是**客观结构事实**，不是评分）
+ *    趋势行因此显示「上次检查 N 个观察点」，且**不染红绿**（多 ≠ 坏：爆点变多不一定更好，
+ *    变少也可能是这本该收束）—— 界面侧用 `CheckTrendNote` 的 `neutral` 形态。
+ *
+ * 🔴 **必须记模型名**：AI 输出有随机性，换模型的结果不可比 ⇒ 趋势只比同模型（见 {@link trendOf}）。
+ * 🔴 **不做缓存**（同 manuscriptLogged）：这是一次显式的 AI 调用，本就要每次真跑。
+ */
+export async function paceLogged(scope: string, report: PaceReport, model?: string): Promise<void> {
+  const issues: AuditIssue[] = report.beats.map((b, i) => ({
+    id: `P${i + 1}`,
+    severity: 'info' as const,
+    category: '节奏与章末钩子',
+    title: `${b.segment} · ${b.kind}`,
+    detail: b.quote ? `「${b.quote}」` : '',
+  }))
+  if (!report.hookPresent) {
+    issues.push({
+      id: 'Phook',
+      severity: 'warn' as const,
+      category: '节奏与章末钩子',
+      title: '章末未识别到钩子',
+      detail: report.hookNote || `章末 ${report.hookZone.chars} 字为钩子区`,
+    })
+  }
+  await logSnapshot('pace', scope, issues, model)
+}
+
 export interface CheckTrend {
   engine: CheckEngine
   scope: string
@@ -155,8 +202,11 @@ export interface CheckTrend {
  * 取某引擎最近两次快照，供界面显示「比上次 多 / 少 N 条」。
  * 没有任何快照时返回 null（界面据此整行不渲染）。
  */
-export async function trendOf(engine: CheckEngine, scope = GLOBAL_SCOPE): Promise<CheckTrend | null> {
-  const log = (await loadLog()).filter(s => s.engine === engine && s.scope === scope)
+export async function trendOf(engine: CheckEngine, scope = GLOBAL_SCOPE, model?: string): Promise<CheckTrend | null> {
+  let log = (await loadLog()).filter(s => s.engine === engine && s.scope === scope)
+  // 🔴 传了 model ⇒ **只比同模型的快照**。换模型跑出来的结果不可比，混在一起算出来的"趋势"是假的。
+  //    旧快照没有 model 字段（undefined）⇒ 一并被排除，这是**有意**的：无从判断它属于哪个模型。
+  if (model) log = log.filter(s => s.model === model)
   if (!log.length) return null
   const cur = log[log.length - 1]
   return { engine, scope, prev: log.length >= 2 ? log[log.length - 2] : null, cur }

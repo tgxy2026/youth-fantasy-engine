@@ -21,6 +21,9 @@ import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { buildProjectContext } from '../lib/aiContext'
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { aiPaceAnalysis } from '../lib/aiTasks'
+import { requireProviderFor } from '../lib/ai'
+import { paceLogged, trendOf, type CheckTrend } from '../lib/checkLog'
+import CheckTrendNote from './CheckTrendNote'
 import { HOOK_ZONE_RATIO, PACE_SEGMENTS, PACE_SEG_UNKNOWN, type PaceReport } from '../lib/paceAnalysis'
 import { countWords } from '../lib/textStats'
 import AIDataSourceNote from './AIDataSourceNote'
@@ -48,6 +51,8 @@ export default function PaceAnalysisPanel() {
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [activeId, setActiveId] = useState('')
   const [loading, setLoading] = useState(true)
+  /** ④（2.9.2）：本章的节奏趋势 —— 只统计**同一个模型**的历史（换模型输出不可比） */
+  const [trend, setTrend] = useState<CheckTrend | null>(null)
 
   /**
    * 🔴 2.6.3 · 跨页签任务存活：**运行态与结果都在任务中心**，本组件只是「提交 + 订阅 + 展示」。
@@ -80,6 +85,22 @@ export default function PaceAnalysisPanel() {
     if (taskId && taskStatus === 'done' && taskUnread && taskChapter === activeId) markTaskSeen(taskId)
   }, [taskId, taskStatus, taskUnread, taskChapter, activeId])
 
+  /**
+   * ④ 趋势行：切章 / 任务落地后重取本章（同模型）的历史快照。
+   * 🔴 带 `cancelled` 守卫 —— 取数是异步的，组件可能在这期间卸载或已换章。
+   * 🔴 依赖里放 `taskStatus`：任务转 done 时重取，才能看到**刚落的这一条**。
+   */
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (!activeId) { if (!cancelled) setTrend(null); return }
+      const model = await requireProviderFor('review').then(c => c.model).catch(() => '')
+      const t = await trendOf('pace', activeId, model || undefined).catch(() => null)
+      if (!cancelled) setTrend(t)
+    })()
+    return () => { cancelled = true }
+  }, [activeId, taskStatus, taskChapter])
+
   const active = useMemo(() => chapters.find(c => c.id === activeId), [chapters, activeId])
   const content = active?.content ?? ''
   const words = useMemo(() => (content ? countWords(content) : 0), [content])
@@ -100,6 +121,12 @@ export default function PaceAnalysisPanel() {
         ctx.progress({ chapterId })
         const pctx = await buildProjectContext({ budget: await writerBudgetFor('pace-analysis'), focusChapterId: chapterId })
         const report = await aiPaceAnalysis(pctx.text, text, { signal: ctx.signal })
+        // ④（2.9.2）：落一条台账做「这一章比上次」的趋势。
+        //    🔴 **先 await 写盘再 return** —— 任务转 done 时订阅趋势的 effect 才会读到刚落的这条，
+        //       顺序反了趋势会永远落后一轮（"上次检查"显示的还是上一次）。
+        //    🔴 记 `model`：AI 输出带随机性，趋势只比同模型（见 lib/checkLog.trendOf）。
+        const model = await requireProviderFor('review').then(c => c.model).catch(() => '')
+        await paceLogged(chapterId, report, model)
         return { chapterId, report }
       },
       // 失败要说出来（作者可能已经切走了，面板上的红字他看不到）；成功不弹 —— 结果就在本页
@@ -127,6 +154,7 @@ export default function PaceAnalysisPanel() {
           {'用途：看「单章」的节奏与章末钩子。\n\n'
             + '· 章末钩子区＝正文最后 12%。逐章连载里，这一小块是「读者决定要不要点下一章」的位置。\n'
             + '· 爆点按前 / 中 / 后三段统计：段位不是模型报的，而是拿它引用的原文在正文里查出来算的（查不到会标「未定位」）。\n'
+            + '· 每次分析会记一条台账：标题行显示「这一章」的趋势，且只和同一个模型的历史比 —— 换模型的输出不可比。\n'
             + '· 只给结构观察，不给分、不排名 —— 要不要改、怎么改，由你判断。'}
         </HelpPopover>
         <div className="ml-auto flex items-center gap-2">
@@ -153,6 +181,11 @@ export default function PaceAnalysisPanel() {
           {words > 0 && <> · 章末钩子区 <b className="text-ink-200 tabular-nums">{Math.max(1, Math.round(words * HOOK_ZONE_RATIO))}</b> 字</>}
         </span>
         {!aiReady && <span className="text-10 text-ink-500">{AI_DISABLED_HINT}</span>}
+        {trend && (
+          <span className="ml-auto">
+            <CheckTrendNote trend={trend} neutral noun="个观察点" />
+          </span>
+        )}
       </div>
 
       {/* 结果区 */}
