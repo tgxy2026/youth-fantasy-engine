@@ -14,6 +14,7 @@ import { tabVisible, type VisCtx, TABS } from './schema'
 import { readAliases } from './aliases'
 import { splitNames } from './audit'
 import { clipText } from './textClip'
+import { todayKey } from './date'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
 import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from './worldSets'
 import { getActivePack, normalizeGenrePack, subItemLabel } from './schemaTemplates'
@@ -358,7 +359,64 @@ function cellCap(name: string): number {
  * 纯噪音且白占 token（长篇下这一列的累积量不小）。
  * 它仍然完整参与排序（见 rankOf）与将来的行过滤，只是不出现在提示词里。
  */
-const SYSTEM_META_FIELDS = new Set(['保密等级'])
+/**
+ * 🔴 导出给 `semantic/indexer` 复用：索引文本会经〖语义召回〗注回提示词，
+ *    所以「不往提示词里写」的列在索引阶段同样要挡（见 indexer 的 renderRow）。
+ */
+export const SYSTEM_META_FIELDS = new Set(['保密等级'])
+
+/**
+ * 写作节奏摘要（2.9.1）。
+ *
+ * 数据源＝`dailyStats`（编辑器保存章节时自动记录的**净增量**），不是《写作进度》的手工登记 ——
+ * 前者是产量数字的权威口径（见写作面板的「近 7 日产量」卡），后者只记作者自己填的计划完成情况。
+ *
+ * 🔴 只输出**聚合统计**、绝不逐日罗列：模型需要的是「多久没写、节奏稳不稳」，
+ *    逐日流水账既占预算，又容易被当成需要复述的内容。
+ * 窗口 30 天：够看出断更与节奏，又不会长到失真。
+ */
+async function buildPaceDigest(): Promise<string> {
+  const stats = await db.getDailyStats()
+  if (!stats.length) return ''
+  const map = new Map(stats.map(s => [s.date, s.words]))
+  const WINDOW = 30
+  const today = new Date()
+  const keys: string[] = []
+  for (let i = WINDOW - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    keys.push(todayKey(d))
+  }
+  const wordsOf = (k: string) => map.get(k) ?? 0
+  const activeDays = keys.filter(k => wordsOf(k) > 0).length
+  const total = keys.reduce((s, k) => s + wordsOf(k), 0)
+  if (!activeDays && !total) return ''
+  // 连续码字（从今天或昨天往前数；今天还没写则不打断）
+  let streak = 0
+  {
+    const cur = new Date(today)
+    if (wordsOf(todayKey(cur)) === 0) cur.setDate(cur.getDate() - 1)
+    for (;;) {
+      if (wordsOf(todayKey(cur)) > 0) { streak++; cur.setDate(cur.getDate() - 1) } else break
+    }
+  }
+  // 窗口内最长断更 + 最近一次有产出的日子距今几天
+  let longestGap = 0, run = 0
+  for (const k of keys) {
+    if (wordsOf(k) > 0) run = 0
+    else { run++; longestGap = Math.max(longestGap, run) }
+  }
+  let sinceLast = -1
+  for (let i = 0; i < WINDOW; i++) {
+    const k = keys[WINDOW - 1 - i]
+    if (wordsOf(k) > 0) { sinceLast = i; break }
+  }
+  return [
+    `近 ${WINDOW} 日：有 ${activeDays} 天在写，合计 ${total} 字，活跃日均 ${Math.round(total / Math.max(1, activeDays))} 字`,
+    `连续码字 ${streak} 天；窗口内最长断更 ${longestGap} 天`,
+    sinceLast >= 0 ? `最近一次码字：${sinceLast === 0 ? '今天' : `${sinceLast} 天前`}` : `近 ${WINDOW} 日没有码字记录`,
+  ].join('\n')
+}
 
 function clip(s: string, n: number): string {
   return clipText(s, n, true) // 压空白再截断 —— 见 lib/textClip.ts
@@ -482,7 +540,11 @@ function renderCards(tab: TabDef, recs: { name: string; data: Record<string, str
 function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: RenderOpts = {}): string {
   // 角色视角：作者侧列整列不渲染（连列名都不出现，避免模型去追问）；
   // 系统元数据列（保密等级）两个视角都不渲染 —— 它已完成使命，对模型只是噪音。
-  const cols = (tab.columns ?? []).map(c => c.name)
+  // 🔴 隐藏列（`cH()` 构造，如《地理风物》的「地图格子」坐标串 `gx,gy;…`）是**给程序用的内部数据**，
+  //    表格视图本就不显示 —— 它同样不该进提示词（对模型纯噪声，还白占 token）。
+  //    `!c.hidden` 是全项目既有写法（tableIO / TableImportDialog / TableSheet / useTableSheetModel …），
+  //    这里与 organizeRows 此前漏了（2026-10-08 补齐，三处口径统一）。
+  const cols = (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name)
     .filter(c => !SYSTEM_META_FIELDS.has(c))
     .filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
   if (cols.length === 0) return ''
@@ -825,6 +887,17 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     }
   } catch {
     // 拿不到项目信息也照常往下走
+  }
+
+  // 写作节奏摘要（2.9.1）：把写作的体量压成几行**统计值**注入。
+  // 🔴 为什么要有它：《写作进度》此前被完全排除在 AI 之外（下方兜底循环里的 `t.id === 'progress'`），
+  //    于是「创作健康诊断」拿不到真实更新节奏，只能凭设定与章数猜有没有断更。
+  //    ⚠️ 写入侧仍然不接 AI（那张表本就是纯统计流水，AI 无从代笔）—— 这里只做**只读**注入。
+  try {
+    const digest = await buildPaceDigest()
+    if (digest) push('写作节奏', digest)
+  } catch {
+    // 拿不到就少带一段，绝不阻断（与上面作品概览同一条纪律）
   }
 
   const byId = new Map(TABS.map(t => [t.id, t]))

@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>青春幻想引擎 2.9.0 · 功能全景与数据复用机会梳理</title>
+<style>
+  :root{
+    --bg:#0e1014; --bg2:#14171d; --card:#171a21; --card2:#1c2028;
+    --line:#272c37; --line2:#333a48;
+    --tx:#e7eaf0; --tx2:#9aa4b2; --tx3:#6b7482;
+    --amber:#f0b429; --amber-d:#3a2f12;
+    --blue:#5aa9ff; --blue-d:#132537;
+    --green:#4ec97a; --green-d:#12291c;
+    --red:#ef5b5b; --red-d:#2e1618;
+    --purple:#a78bfa; --purple-d:#221b3a;
+    --cyan:#3fc9c9; --cyan-d:#0f2a2a;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--tx);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px 96px}
+
+  /* ---------- hero ---------- */
+  header.hero{padding:64px 0 40px;border-bottom:1px solid var(--line);margin-bottom:40px}
+  .kicker{font-size:12.5px;letter-spacing:.16em;color:var(--amber);font-weight:600;text-transform:uppercase}
+  h1{font-size:34px;line-height:1.3;margin:12px 0 10px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--tx2);font-size:15px;max-width:760px}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  .chip{font-size:12.5px;padding:3px 11px;border:1px solid var(--line2);border-radius:99px;color:var(--tx2);font-family:var(--mono)}
+  .chip b{color:var(--tx);font-weight:600}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:32px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .stat .n{font-size:27px;font-weight:700;font-family:var(--mono);letter-spacing:-.02em;color:var(--amber);line-height:1.2}
+  .stat .l{font-size:12.5px;color:var(--tx2);margin-top:4px}
+
+  /* ---------- nav ---------- */
+  nav.toc{position:sticky;top:0;z-index:20;background:rgba(14,16,20,.92);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);margin:0 -28px 44px;padding:11px 28px;display:flex;gap:6px;flex-wrap:wrap}
+  nav.toc a{font-size:13px;color:var(--tx2);text-decoration:none;padding:4px 10px;border-radius:7px;transition:.15s}
+  nav.toc a:hover{color:var(--tx);background:var(--card2)}
+  nav.toc a.key{color:var(--amber)}
+
+  /* ---------- sections ---------- */
+  section{margin-bottom:60px;scroll-margin-top:64px}
+  h2{font-size:23px;margin:0 0 8px;font-weight:700;display:flex;align-items:center;gap:12px}
+  h2 .num{font-family:var(--mono);font-size:14px;color:var(--amber);border:1px solid var(--amber-d);
+    background:var(--amber-d);padding:1px 9px;border-radius:6px;font-weight:600}
+  h3{font-size:16.5px;margin:32px 0 12px;font-weight:650;color:var(--tx)}
+  h3 .tag{font-size:11.5px;font-weight:600;padding:1.5px 8px;border-radius:5px;margin-left:8px;vertical-align:2px}
+  .lede{color:var(--tx2);margin:0 0 22px;max-width:880px}
+
+  p{margin:12px 0}
+  code{font-family:var(--mono);font-size:12.5px;background:var(--card2);border:1px solid var(--line);
+    padding:1px 5px;border-radius:5px;color:var(--cyan);white-space:nowrap}
+  .path{font-family:var(--mono);font-size:12.5px;color:var(--tx2)}
+
+  /* ---------- tables ---------- */
+  .tbl{width:100%;border-collapse:collapse;font-size:13.5px;margin:14px 0}
+  .tbl th{text-align:left;font-weight:600;color:var(--tx2);font-size:12.5px;letter-spacing:.04em;
+    padding:9px 12px;border-bottom:1px solid var(--line2);background:var(--bg2);white-space:nowrap}
+  .tbl td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl tbody tr:hover{background:var(--card2)}
+  .tbl td.k{color:var(--tx2);font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+  .tbl .em{color:var(--amber);font-weight:600}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin:16px 0}
+  .card.warn{border-left:3px solid var(--red)}
+  .card.good{border-left:3px solid var(--green)}
+  .card.info{border-left:3px solid var(--blue)}
+  .card.note{border-left:3px solid var(--amber)}
+  .card h4{margin:0 0 10px;font-size:15.5px;font-weight:650}
+
+  /* ---------- 机会条目 ---------- */
+  .opp{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:0;margin:14px 0;overflow:hidden}
+  .opp-h{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--card2);border-bottom:1px solid var(--line)}
+  .opp-id{font-family:var(--mono);font-size:12px;font-weight:700;padding:2px 9px;border-radius:6px;flex:none}
+  .opp-t{font-weight:650;font-size:15px;flex:1}
+  .lvl{font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:6px;flex:none;white-space:nowrap}
+  .opp-b{padding:16px 20px;display:grid;grid-template-columns:88px 1fr;gap:8px 14px;font-size:14px}
+  .opp-b dt{color:var(--tx3);font-size:12.5px;font-weight:600;padding-top:2px}
+  .opp-b dd{margin:0;color:var(--tx)}
+  .opp-b dd.q{color:var(--tx2)}
+
+  .id-a{background:var(--red-d);color:#ff9b9b;border:1px solid #4a2226}
+  .id-b{background:var(--amber-d);color:#ffd580;border:1px solid #4a3d14}
+  .id-c{background:var(--blue-d);color:#9ecbff;border:1px solid #1e3f5c}
+  .id-d{background:var(--purple-d);color:#c9b6ff;border:1px solid #372c5e}
+  .id-e{background:var(--cyan-d);color:#8fdede;border:1px solid #1c4a4a}
+
+  .lv-s{background:var(--green-d);color:#8fe3ac;border:1px solid #1d4730}
+  .lv-m{background:var(--amber-d);color:#ffd580;border:1px solid #4a3d14}
+  .lv-l{background:var(--red-d);color:#ff9b9b;border:1px solid #4a2226}
+
+  /* ---------- svg block ---------- */
+  .fig{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:22px 18px;margin:20px 0;overflow-x:auto}
+  .fig svg{display:block;margin:0 auto;max-width:100%;height:auto}
+  .fig figcaption{text-align:center;color:var(--tx3);font-size:12.5px;margin-top:14px}
+
+  ul.tight{margin:10px 0;padding-left:22px}
+  ul.tight li{margin:6px 0}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+
+  .flowcard{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:18px 20px}
+  .flowcard .fh{font-family:var(--mono);font-size:12px;color:var(--amber);margin-bottom:6px;font-weight:600}
+  .flowcard .ft{font-weight:650;margin-bottom:8px;font-size:15px}
+  .flowcard p{font-size:13.5px;color:var(--tx2);margin:6px 0}
+  .flowcard .chain{font-family:var(--mono);font-size:12px;color:var(--tx3);margin-top:10px;line-height:1.9}
+
+  footer{border-top:1px solid var(--line);padding-top:24px;color:var(--tx3);font-size:12.5px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 4px;font-size:12.5px;color:var(--tx2)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .dot{width:9px;height:9px;border-radius:3px;flex:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Architecture Review · 2026-10-08</div>
+  <h1>青春幻想引擎 2.9.0<br>功能全景与数据复用机会梳理</h1>
+  <p class="sub">
+    全量通读源码后的产物：先把 <b>52 个页签 + 197 个组件 + 127 个领域模块</b>的分工与相互调用理清，
+    再回答那个更值钱的问题 —— <b>哪些数据/能力已经躺在库里、却没被别的功能用起来</b>。
+  </p>
+  <div class="meta">
+    <span class="chip">版本 <b>2.9.0</b></span>
+    <span class="chip">源码 <b>src/ · 429 文件</b></span>
+    <span class="chip">分支 <b>main</b></span>
+    <span class="chip">审计方式 <b>静态追踪 + 抽验复核</b></span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n">52</div><div class="l">页签定义（+1 编辑器页）</div></div>
+    <div class="stat"><div class="n">10</div><div class="l">一级分组</div></div>
+    <div class="stat"><div class="n">127</div><div class="l">lib 领域模块</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">死字段（存了没人读）</div></div>
+    <div class="stat"><div class="n">9</div><div class="l">分析结果不落库</div></div>
+    <div class="stat"><div class="n">5</div><div class="l">AI 取数盲区</div></div>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#s1">① 分层架构</a>
+  <a href="#s2">② 功能地图</a>
+  <a href="#s3">③ 依赖链路</a>
+  <a href="#s4" class="key">④ 数据复用机会 ★</a>
+  <a href="#s5">⑤ 优先级建议</a>
+  <a href="#s6">⑥ 全景数据流</a>
+</nav>
+
+<!-- ================= 1 ================= -->
+<section id="s1">
+  <h2><span class="num">01</span>分层架构：四层 + 一个单点</h2>
+  <p class="lede">
+    软件是标准的 <b>Electron + React + TS</b> 桌面应用。读完全部源码之后，最该记住的一句话是：
+    <b>它有四个清晰的层级，但 AI 层与数据层各自只有一个总闸门</b> —— 这既是它稳定的原因，也是四类机会的根源。
+  </p>
+
+  <div class="fig">
+    <svg viewBox="0 0 960 470" role="img" aria-label="四层架构图">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#5a6474"/>
+        </marker>
+      </defs>
+
+      <!-- L1 UI -->
+      <rect x="20" y="16" width="920" height="86" rx="12" fill="#1c2028" stroke="#333a48"/>
+      <text x="40" y="44" fill="#f0b429" font-size="13" font-weight="700" font-family="monospace">L1 · 界面层</text>
+      <text x="40" y="68" fill="#e7eaf0" font-size="13.5">53 个侧栏页签（表格 / 卡片 / 表单 / 画布）　·　197 个组件</text>
+      <text x="40" y="90" fill="#9aa4b2" font-size="12.5">旁路入口：项目列表页 · Ctrl+K 全文检索 · 数据坞 · 颉文姬精灵 · 侧栏工具条</text>
+
+      <!-- L2 AI -->
+      <rect x="20" y="122" width="600" height="96" rx="12" fill="#132537" stroke="#1e3f5c"/>
+      <text x="40" y="150" fill="#5aa9ff" font-size="13" font-weight="700" font-family="monospace">L2 · AI 层（唯一装配）</text>
+      <text x="40" y="174" fill="#e7eaf0" font-size="13.5">aiContext.buildProjectContext()　←　所有 AI 功能的资料都从这里取</text>
+      <text x="40" y="196" fill="#9aa4b2" font-size="12.5">aiTasks/ 16 个任务模块　·　aiScope 能力矩阵（fill / organize / none）　·　aiTaskCenter 跨页签存活</text>
+
+      <rect x="640" y="122" width="300" height="96" rx="12" fill="#221b3a" stroke="#372c5e"/>
+      <text x="660" y="150" fill="#a78bfa" font-size="13" font-weight="700" font-family="monospace">L2b · 检索增强</text>
+      <text x="660" y="174" fill="#e7eaf0" font-size="13">语义索引 vec 库</text>
+      <text x="660" y="194" fill="#e7eaf0" font-size="13">知识库 kb 库</text>
+      <text x="660" y="212" fill="#9aa4b2" font-size="12">独立 IDB · 不进整库 JSON</text>
+
+      <!-- L3 domain -->
+      <rect x="20" y="238" width="920" height="106" rx="12" fill="#171a21" stroke="#333a48"/>
+      <text x="40" y="266" fill="#3fc9c9" font-size="13" font-weight="700" font-family="monospace">L3 · 领域层（引擎与流程）</text>
+      <text x="40" y="290" fill="#e7eaf0" font-size="13">质检四引擎：chapterCheck · continuityCheck · foreshadowEngine · styleAudit</text>
+      <text x="40" y="311" fill="#e7eaf0" font-size="13">分析引擎：paceAnalysis · readerProbe · dataHealth · structurePace · manuscriptCheck · platformCheck · optimizeTicket</text>
+      <text x="40" y="332" fill="#9aa4b2" font-size="12.5">流程层 flow/（draft→pipeline→fieldMap→commit）　·　领域工具：chapterSeq · outlineCard · autoCode · aliases · tableIO</text>
+
+      <!-- L4 data -->
+      <rect x="20" y="364" width="600" height="86" rx="12" fill="#12291c" stroke="#1d4730"/>
+      <text x="40" y="392" fill="#4ec97a" font-size="13" font-weight="700" font-family="monospace">L4 · 数据层（唯一门面）</text>
+      <text x="40" y="416" fill="#e7eaf0" font-size="13.5">StoreOps → lib/db/（10 个 store + settingsKV + dailyStats）</text>
+      <text x="40" y="437" fill="#9aa4b2" font-size="12.5">整库一 JSON：桌面数据文件 + 备份 + 云盘 .yfe 同步</text>
+
+      <rect x="640" y="364" width="300" height="86" rx="12" fill="#1c2028" stroke="#333a48"/>
+      <text x="660" y="392" fill="#f0b429" font-size="13" font-weight="700" font-family="monospace">出口</text>
+      <text x="660" y="416" fill="#e7eaf0" font-size="13">导出（TXT/MD/DOCX/EPUB）</text>
+      <text x="660" y="437" fill="#e7eaf0" font-size="13">备份包 · 证据包 · 设定集</text>
+
+      <!-- arrows -->
+      <line x1="320" y1="102" x2="320" y2="120" stroke="#5a6474" stroke-width="1.4" marker-end="url(#ar)"/>
+      <line x1="320" y1="218" x2="320" y2="236" stroke="#5a6474" stroke-width="1.4" marker-end="url(#ar)"/>
+      <line x1="320" y1="344" x2="320" y2="362" stroke="#5a6474" stroke-width="1.4" marker-end="url(#ar)"/>
+      <line x1="790" y1="218" x2="790" y2="236" stroke="#5a6474" stroke-width="1.4" marker-end="url(#ar)"/>
+    </svg>
+    <figcaption>四层单向依赖：界面 → AI/领域 → 数据。反向流动只经由「落库」与「任务结果回填」。</figcaption>
+  </div>
+
+  <div class="grid2">
+    <div class="card info">
+      <h4>好的地方：两个"单一真源"</h4>
+      <ul class="tight">
+        <li><code>aiContext.buildProjectContext()</code>（940 行）是<b>全部 AI 资料的唯一装配点</b> —— 改一处，所有 AI 功能同步生效。</li>
+        <li><code>StoreOps → lib/db</code> 是<b>全部持久化的唯一门面</b> —— 备份、云同步、导出自动覆盖。</li>
+        <li>配套的 <code>aiDataSources.ts</code> 把"每个 AI 功能读什么"写成一张表，渲染进界面的问号气泡 —— <b>承诺与实现同源</b>。</li>
+      </ul>
+    </div>
+    <div class="card warn">
+      <h4>代价：单点也意味着单点盲区</h4>
+      <ul class="tight">
+        <li>整表全列发送 ⇒ 某张表的隐藏列也会被发出去（见 D4）。</li>
+        <li>装配点用<b>黑名单</b>排除（只排 <code>progress</code>）⇒ 新增页签必须手动登记进 <code>PRIORITY</code>，否则"有数据但挤不进预算"。</li>
+        <li>分析引擎<b>算完即弃</b>：结果不进 L4，于是别的功能想用只能重算（见 B 档）。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section id="s2">
+  <h2><span class="num">02</span>功能地图：10 组 × 52 页签</h2>
+  <p class="lede">
+    ⚠️ 先纠一个数字：<span class="path">docs/功能介绍文档</span> 里写的「46 个页签」是 v2.7.1 的口径；
+    2.9.0 实测 <b>TABS 共 52 条</b>（另加 1 个编辑器页签），侧栏实际可见 53 项。差异来自 2.8.0–2.9.0 期间新增的
+    「其他设定」「创作轨迹」等页签。
+  </p>
+
+  <table class="tbl">
+    <thead><tr><th>#</th><th>分组</th><th>页签</th><th>该组干什么</th></tr></thead>
+    <tbody>
+      <tr><td class="k">一</td><td><b>工作面板</b></td><td>写作面板 · 模型设置 · 使用指南</td><td>全景看板 / 模型与额度配置 / 内置说明书</td></tr>
+      <tr><td class="k">二</td><td><b>正文写作</b></td><td>正文编辑</td><td>码字主战场：卷章树 + 排版 + 质检 + 颉文姬五模式</td></tr>
+      <tr><td class="k">三</td><td><b>灵感工具</b></td><td>灵感启发 · 一键拆书 · 创意写作 · 检查工具 · 素材资料</td><td>取名 / 拆解外部文本 / AI 全自动创作 / 质量检查 / 只读参考库</td></tr>
+      <tr><td class="k">四</td><td><b>开书定位</b></td><td>作品信息 · 世界设定 · 力量体系 · 政治架构 · 经济基础 · 宗教信仰 · 司法制度</td><td>动笔前的商业与世界观顶层档案（后六个随题材包显隐）</td></tr>
+      <tr><td class="k">五</td><td><b>角色管理</b></td><td>主要角色 · 次要角色 · NPC角色 · 人物关系</td><td>三档人物档案 + 两两关系台账（含关系图）</td></tr>
+      <tr><td class="k">六</td><td><b>世界构建</b></td><td>国家势力 · 势力关系 · 地理风物 · 地图编辑 · 种族生物 · 物品资源 · 历史事件 · 名词术语 · 其他设定</td><td>世界百科全书（含手绘格子地图）</td></tr>
+      <tr><td class="k">七</td><td><b>大纲规划</b></td><td>全书总纲 · 章节总表（+各卷章节台账）· 分卷大纲 · 章节细纲</td><td>从母纲到逐章细纲的四级规划</td></tr>
+      <tr><td class="k">八</td><td><b>酒馆模式</b></td><td>控制面板 · 背景设定 · 剧情推演 · 推演报告 · 自由对话 · 故事剧本 · 角色卡片</td><td>角色扮演推演 + 陪伴对话（自成一套存储，不绑项目）</td></tr>
+      <tr><td class="k">九</td><td><b>创作管理</b></td><td>伏笔追踪 · 时间脉络 · 情节推演 · 爽点节奏 · 写作进度 · 支线剧情 · 知情权限 · 创作轨迹</td><td>连载期间的多线进度与一致性管控（防吃书）</td></tr>
+      <tr><td class="k">十</td><td><b>运营维护</b></td><td>写作规范 · 设定变更 · 灵感素材 · 读者反馈 · 关于打赏</td><td>文风宪法 / 变更登记 / 素材库 / 运营复盘 / 作者页</td></tr>
+    </tbody>
+  </table>
+
+  <h3>两组关键的类型分流</h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>① 四类页签 → 四种渲染与取数</h4>
+      <table class="tbl" style="margin:8px 0">
+        <thead><tr><th>类型</th><th>数量</th><th>取数方式</th></tr></thead>
+        <tbody>
+          <tr><td>表格 table</td><td class="k">21</td><td>整表全部列（只滤保密等级）</td></tr>
+          <tr><td>卡片 card</td><td class="k">6</td><td>每卡整份字段，按保密等级排预算</td></tr>
+          <tr><td>表单 form</td><td class="k">8</td><td>模块::字段 全量</td></tr>
+          <tr><td>画布/特殊</td><td class="k">17</td><td>不进 AI 上下文（UI 页）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h4>② 依赖联动（勾 A 自动带上 B）</h4>
+      <ul class="tight">
+        <li><b>强依赖</b>：地图编辑→地理风物｜势力关系→国家势力｜人物关系→主要角色｜知情权限→主要角色</li>
+        <li><b>强依赖（酒馆）</b>：剧情组四页互绑；自由组三页互绑；控制面板为共同底座</li>
+        <li><b>至少一个</b>：剧情推演 → 主要角色 / 章节细纲 / 分卷大纲 / 章节总表 / 世界设定 / 全书总纲 / 作品信息，全空则自动补「主要角色」</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card note">
+    <h4>AI 能力矩阵：谁接 AI、接哪种</h4>
+    <p style="font-size:13.5px;color:var(--tx2);margin:6px 0">
+      由 <code>aiScope.ts</code> 集中定义，分三档：
+      <b>AI 新增 / 补全（fill）</b>—— 设定与角色卡、大纲三页（2026-10-03 解禁）；
+      <b>AI 整理（organize）</b>—— 本质是"从正文沉淀叙事事实"的 8 张表（人物关系 / 势力关系 / 伏笔 / 时间脉络 / 爽点 / 支线 / 知情权限 / 章节总表）；
+      <b>不接（none）</b>—— 写作进度、写作规范、设定变更、灵感素材、读者反馈。
+    </p>
+  </div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section id="s3">
+  <h2><span class="num">03</span>五条主干链路：功能之间怎么互相调用</h2>
+  <p class="lede">把 52 个页签收拢，实际只有五条在跑的链路。每条都能一眼看清"谁依赖谁"。</p>
+
+  <div class="grid2">
+    <div class="flowcard">
+      <div class="fh">CHAIN 01</div>
+      <div class="ft">AI 单一装配链</div>
+      <p>所有 AI 功能（伴写 / 校对 / 审读 / 整理 / 补全 / 拆书 / 创意写作 / 酒馆）都调用同一个装配函数取资料，再叠加各自的附加注入层。</p>
+      <div class="chain">
+        UI 入口 → aiTasks/* → aiContext.buildProjectContext()<br>
+        ├ PRIORITY 30 条页签（按序占预算）<br>
+        ├ 兜底追加（未登记页签）<br>
+        └ 附加层：相关章节召回 · 语义召回 · 参考资料<br>
+        预算 12000 字 → 超出记入 dropped 段
+      </div>
+    </div>
+
+    <div class="flowcard">
+      <div class="fh">CHAIN 02</div>
+      <div class="ft">设定生产链（人 + AI 双写）</div>
+      <p>设定不是"填一次"，而是随写随长。人工填表与 AI 抽取汇入同一套存储，且判重口径统一。</p>
+      <div class="chain">
+        开书定位 → 世界构建 / 角色管理 → 大纲规划 → 正文<br>
+        ↑____________AI 整理 / 设定补登 反向回填____________↓<br>
+        判重：organizeKeyColumns（有向对 + 关系类型）
+      </div>
+    </div>
+
+    <div class="flowcard">
+      <div class="fh">CHAIN 03</div>
+      <div class="ft">AI 写入链（草稿 → 闸门 → 落库）</div>
+      <p>所有 AI 产出不直接写库，先变草稿、经人工勾选、再统一提交。这是"AI 只做辅助"原则的工程落地。</p>
+      <div class="chain">
+        flow/draft（抽成草稿行）<br>
+        → DraftReviewPanel（人工勾选）<br>
+        → flow/commit（落库，含 autoCode 编号、fieldAlias 映射）<br>
+        → StoreOps → lib/db
+      </div>
+    </div>
+
+    <div class="flowcard">
+      <div class="fh">CHAIN 04</div>
+      <div class="ft">质检链（四引擎 × 四入口）</div>
+      <p>四个静态分析引擎被四个界面各自调用一遍 —— 这是全项目<b>最明显的重复计算热点</b>。</p>
+      <div class="chain">
+        引擎：chapterCheck · continuityCheck<br>
+        　　　foreshadowEngine · styleAudit<br>
+        入口：CheckTools · ManuscriptCheckPanel<br>
+        　　　AuditModals · chapterCheck 聚合<br>
+        ⚠ 无一共享缓存、无结果落库
+      </div>
+    </div>
+
+    <div class="flowcard">
+      <div class="fh">CHAIN 05</div>
+      <div class="ft">数据底座链</div>
+      <p>一条主链 + 两条旁路。旁路是刻意设计的"可重建派生数据"，不进备份与同步。</p>
+      <div class="chain">
+        主：StoreOps → lib/db → 整库 JSON<br>
+        　　→ 每日备份 / 5 分钟滚动备份 / 云盘 .yfe 同步<br>
+        旁①：novel-studio-vec（语义向量）<br>
+        旁②：novel-studio-kb（参考资料）
+      </div>
+    </div>
+
+    <div class="flowcard" style="border-color:#4a2226">
+      <div class="fh" style="color:#ef5b5b">CHAIN 06 · 隐藏</div>
+      <div class="ft">跨页签任务链</div>
+      <p>解决"切页签打断 AI 任务"的架构级问题。任务跑在模块级单例里，结果按归属键回填原页签。</p>
+      <div class="chain">
+        aiTaskCenter（登记簿，真并行）<br>
+        ├ 每任务自带 AbortController<br>
+        ├ 结果带归属键（chapterId / lensKey）<br>
+        └ TaskIndicator（侧栏底部）<br>
+        ⚠ 仅内存态 —— 关软件即失
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 4 ================= -->
+<section id="s4">
+  <h2><span class="num">04</span>数据复用机会：五档清单 ★</h2>
+  <p class="lede">
+    这是本次梳理的核心。判定标准很简单：<b>库里已经有的数据 / 已经写好的能力，有没有别的地方在苦苦重算或干脆没用上</b>。
+    五档按"改动成本 × 收益"排列，全部经过源码抽验复核。
+  </p>
+
+  <div class="legend">
+    <span><i class="dot" style="background:#ef5b5b"></i>A 档 死字段（存了没人读）· 8 条</span>
+    <span><i class="dot" style="background:#f0b429"></i>B 档 结果不落库 · 1 类 9 项</span>
+    <span><i class="dot" style="background:#5aa9ff"></i>C 档 口径分裂 / 重复造轮子 · 3 条</span>
+    <span><i class="dot" style="background:#a78bfa"></i>D 档 AI 取数盲区 · 4 条</span>
+    <span><i class="dot" style="background:#3fc9c9"></i>E 档 单点功能 · 9 个</span>
+  </div>
+
+  <!-- ---------- A ---------- -->
+  <h3>A 档 · 死字段：作者认真填了，程序从不读<span class="tag" style="background:#2e1618;color:#ff9b9b">收益最高 · 成本最低</span></h3>
+  <p class="lede" style="font-size:13.5px;margin-top:-8px">📌 <b>2026-10-08 复核勘误</b>：原列 8 条，其中 <b>A3「经过天数」经复核不成立</b>（该列早在 2.4.4 就已被删除）⇒ 实际有效 7 条。勘误详情见下方 A3 卡片。</p>
+  <p class="lede" style="font-size:13.5px">
+    这一档最刺眼的地方是：其中有两条，<b>schema 的填写提示白纸黑字承诺了它会参与校验</b>，但实现里零引用。
+    也就是说作者照着提示认真填了，系统却当它是备注文本。
+  </p>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-a">A1</span><span class="opp-t">《伏笔追踪》回收前置条件</span><span class="lvl lv-s">小改动 · 高收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>tips 写着"必须写清——前置没铺就强行回收，效果大打折扣"，种子数据里每条都认真填了（如「读者已知玄脉收割真相」）。但 <code>foreshadowEngine.ts:134</code> 那个<b>同名</b>检查「回收前置条件未铺就」，判的其实是"已回收却没埋设"，<b>从不读这个字段的值</b>。</dd>
+      <dt>机会</dt><dd class="q">把前置条件里的"其它伏笔编号 / 秘密编号"解析出来，做链路校验：前置伏笔仍未回收、却已标记本条已回收 → 报"前置未铺就"；前置条件涉及未揭晓的秘密 → 提前提示。</dd>
+      <dt>价值</dt><dd>真正兑现 tips 的承诺，把"防烂尾"从人肉提醒变成程序看板。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-a">A2</span><span class="opp-t">《地理风物》距离与行程时间</span><span class="lvl lv-s">小改动 · 高收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>schema tips 原文：「"距离与行程时间"是时间线对账的直接锚点，务必写死（从哪到哪、坐什么、几天）」。《时间脉络》的 tips 也写「天数对不上时先查此列」。<b>但没有任何代码读它</b>。</dd>
+      <dt>机会</dt><dd class="q">在 <code>continuityCheck</code> 里新增一类检查：相邻两章的地理位置变了 → 取两地登记的行程时间 → 与《时间脉络》登记的「经过天数」对账，不足即报"瞬移"。</dd>
+      <dt>价值</dt><dd>这是玄幻长篇最常见的穿帮点，而且作者很难自己发现。目前完全靠人肉记。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-a" style="background:#2e1618;color:#ff9b9b">A3</span><span class="opp-t">《时间脉络》经过天数 —— ⚠️ 本条已作废</span><span class="lvl lv-l">字段早已不存在</span></div>
+    <div class="opp-b">
+      <dt>勘误</dt><dd>本条最初由子代理报出，<b>经全库复核不成立</b>：该列早在 <b>2.4.4</b> 就已被删除 —— <span class="path">docs/归档/2.4.4-社区反馈改造-开发记录.md:11</span> 明确记着「时间脉络去掉『经过天数』」（行内旧数据保留，列已不存在）。</dd>
+      <dt>处置</dt><dd class="q">已<b>合并进 A2</b> —— 改用「发生时间 → 结束时间」的实际跨度与行程时间对账（该改动已在 2.9.1 落地）。</dd>
+      <dt>教训</dt><dd>抽验时只核了「有没有逻辑读它」，<b>没核「它是否还存在」</b>；全库 grep 里 <span class="path">src/</span> 零命中本就是明确信号，当时没盯住。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-a">A4</span><span class="opp-t">《爽点节奏》距上个爽点间隔 / 铺垫章节</span><span class="lvl lv-s">小改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>两列全靠作者手填（种子里也是手写「1」「2」）。而 <code>continuityCheck</code> 已经会用<b>相邻爽点章节号自动推算</b>间隔来做"断档 &gt; 3 章"告警 —— <b>算得出来，却不回写</b>。</dd>
+      <dt>机会</dt><dd class="q">把程序算出的间隔自动回填该列（或改为派生显示），作者只填"爽点内容"。</dd>
+      <dt>价值</dt><dd>消除手填遗漏，让"断档告警"有可展示的数字依据，不再出现"手填 1、实际隔 4 章"却无人发现的脱节。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-a">A5</span><span class="opp-t">《知情权限》计划揭晓章节</span><span class="lvl lv-m">小改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>该列被登记进 <code>AUTHOR_SIDE_FIELDS</code>（说明它被公认为作者底牌），<b>但没有任何功能在"到点"时提醒</b>。种子数据里 S0002 的计划揭晓章节是"卷一末外门大比"、S0003 是"卷二对峙"。</dd>
+      <dt>机会</dt><dd class="q">在实测章号 ≥ 计划揭晓章号、且该秘密状态仍未更新/未揭晓时报警 —— 与伏笔的"已到点未回收"预警完全同构，可复用现成机制。</dd>
+      <dt>价值</dt><dd>把《知情权限》从"静态台账"升级为"防泄密 / 防忘揭晓"的主动看板。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-a">A6</span><span class="opp-t">《知情权限》是否可能泄露 / 泄露风险等级</span><span class="lvl lv-m">小改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>两列构成完整的"泄密防护"数据模型（低 / 中 / 高），种子数据里也标了 S0002「是（无实证，反咬风险高）/ 高」。<b>零消费</b>。</dd>
+      <dt>机会</dt><dd class="q">①「高泄露风险的秘密已悬置 N 章」风险提示；② 推演 / 审问时把这批秘密作为敏感项重点检查；③ 与 A5 合并成一个"秘密生命周期看板"。</dd>
+      <dt>价值</dt><dd>几乎零新增数据成本，纯消费已有字段。</dd>
+    </div>
+  </div>
+
+  <div class="opp" style="opacity:.85">
+    <div class="opp-h"><span class="opp-id id-a">A7·A8</span><span class="opp-t">同源死字段（低优先）</span><span class="lvl lv-l">可延后</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>《伏笔追踪》「地理位置」仅被地图反查展示；《时间脉络》「重要人物位置与状态」仅被时间轴与地图展示 —— 都属"半闭环：只展示、不校验"。</dd>
+      <dt>机会</dt><dd class="q">可随 A2 一起纳入"地理-时间对账"体系（位置变了但状态没变 / 状态变了但位置没动）。</dd>
+      <dt>价值</dt><dd>锦上添花，建议与 A2 合并实施。</dd>
+    </div>
+  </div>
+
+  <!-- ---------- B ---------- -->
+  <h3>B 档 · 分析结果不落库：算完即弃，无法对比<span class="tag" style="background:#3a2f12;color:#ffd580">中等成本 · 长期收益</span></h3>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-b">B1</span><span class="opp-t">9 个分析功能的结果全部活在内存里</span><span class="lvl lv-m">中改动 · 高收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>文风体检、节奏与章末钩子、读者视角审问、本章体检、连续性校验、伏笔闭环看板、投稿前自检（文风 + 节奏）、诊断信息 —— <b>结果全在 <code>useState</code> 或 <code>aiTaskCenter</code> 内存</b>。切页签就重跑，关软件就蒸发。<code>aiTaskCenter.ts</code> 注释自己承认「跨关软件的产物持久化刻意留待后续」。</dd>
+      <dt>机会</dt><dd class="q">落库为「章节质检档案」（走 settingsKV 或新 store，按 chapterId + 时间戳存），配套：①「本章问题趋势」折线（上周 vs 本周问题数）；② 优化工单按"严重度 × 出现频率"排序；③ 写作复盘增加"质量维度"（现在只有字数维度）。</dd>
+      <dt>价值</dt><dd>作者现在回答不了"这一章的问题比上周是变好还是变坏" —— 这是个真实的能力缺口。落库后同时解决重复计算。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-b">B2</span><span class="opp-t">同一批引擎被四个入口重复计算</span><span class="lvl lv-m">中改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd><code>auditContinuity</code> / <code>auditForeshadow</code> / <code>auditStyle</code> 在 CheckTools、ManuscriptCheckPanel、AuditModals、chapterCheck 聚合里<b>各自独立重跑一遍</b>，彼此不共享缓存。</dd>
+      <dt>机会</dt><dd class="q">按 <code>chapterId + dataRevision</code> 做一层结果缓存（模块级，与 aiTaskCenter 同范式），或随 B1 一并落库。</dd>
+      <dt>价值</dt><dd>既是 CPU 浪费，也是"同一份数据 4 个口径可能漂移"的隐患。缓存后四处结果天然一致。</dd>
+    </div>
+  </div>
+
+  <div class="card good">
+    <h4>✓ 反例：这三处已经做对了，可作范式复制</h4>
+    <p style="font-size:13.5px;color:var(--tx2);margin:8px 0">
+      <b>情节推演</b>（<code>plotCanvas</code> 落 settingsKV + 卸载冲刷）、<b>数据体检忽略项</b>（<code>healthIgnoredIds</code> 落库、持久化后可单条忽略）、
+      <b>写作目标</b>（<code>goal*</code> 落库）—— 这三个证明"分析结果落库"在本项目里技术上完全成熟、有现成范式，B 档缺的只是行动。
+    </p>
+  </div>
+
+  <!-- ---------- C ---------- -->
+  <h3>C 档 · 口径分裂：同一件事两套算法<span class="tag" style="background:#132537;color:#9ecbff">成本小 · 一致性收益</span></h3>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-c">C1</span><span class="opp-t">角色出场分布：扫正文 vs 读登记列</span><span class="lvl lv-s">小改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd><code>CharacterDistribution</code> 逐章扫<b>正文</b>用 <code>countOccurrences</code> 数名字。而《章节总表》早就有登记好的「出场人物」列，且 <code>continuityCheck</code>、<code>aiContext</code>（人物共现矩阵）都在读它。</dd>
+      <dt>机会</dt><dd class="q">改为读登记列（或双口径并列展示）。</dd>
+      <dt>价值</dt><dd>① 零成本取代全文扫描；② 口径与校验/召回统一；③ 顺带发现"登记了却没写进正文"或"正文出现却没登记"的错位 —— 后者现在完全没人管。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-c">C2</span><span class="opp-t">同面板两个"产量"数字口径不同</span><span class="lvl lv-m">中改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd><code>progress</code>（手工登记：日期/实际字数/存稿缓冲）喂「近 7 日产量」统计卡；<code>dailyStats</code>（保存时自动记净增量）喂热力图、写作目标、写作复盘。同一面板各画一半。</dd>
+      <dt>机会</dt><dd class="q">合并为一条数据源 + 一条口径；如确需并存，至少在界面上写明两者差异。</dd>
+      <dt>价值</dt><dd>作者看到两个"今日多少字"会困惑。<code>writingReview.ts</code> 注释里已经点出"它们回答的是不同问题"，但没有对齐。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-c">C3</span><span class="opp-t">隐藏列过滤三处口径不一致</span><span class="lvl lv-s">极小改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>同一件事「要不要把 <code>hidden</code> 列送出去」，三处写法不同：<code>tableImportAI.ts</code> 明确过滤（<code>!c.hidden</code>）、<code>organizeRows.ts</code> 只滤编号不过滤 hidden、<code>aiContext.renderTable</code> 两者都不过滤。</dd>
+      <dt>机会</dt><dd class="q">抽一个 <code>visibleCols(tab, opts)</code> 单一函数，三处统一调用。</dd>
+      <dt>价值</dt><dd>直接消掉 D4 那条泄漏，且防止未来第三次漂移。</dd>
+    </div>
+  </div>
+
+  <!-- ---------- D ---------- -->
+  <h3>D 档 · AI 取数盲区：有数据，AI 永远看不到<span class="tag" style="background:#221b3a;color:#c9b6ff">成本小 · 体验收益</span></h3>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-d">D1</span><span class="opp-t">《写作进度》整表被 AI 排除</span><span class="lvl lv-m">小改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd><code>buildProjectContext</code> 的兜底循环里显式 <code>if (t.id === 'progress') continue</code>；<code>aiScope</code> 也把它列进 <code>NO_AI_TAB_IDS</code>。理由（"纯码字流水，AI 无从抽取"）在写入侧成立，但<b>读取侧不成立</b> —— 全书 7 列产量历史对"健康诊断""完稿预估""节奏建议"都是高价值信号。</dd>
+      <dt>机会</dt><dd class="q">保持"不接 AI 写入"不变，但允许<b>只读注入</b>（或为它准备一份压缩摘要：近 N 日产量、达标率、最长断更）。</dd>
+      <dt>价值</dt><dd>现在的「AI 健康诊断」拿不到真实的写作节奏数据，只能看设定与统计。补上后诊断质量直接提升一档。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-d">D2</span><span class="opp-t">地图表 geomaps 完全在 AI 视野外</span><span class="lvl lv-l">小改动 · 低收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd><code>geomaps</code> 是独立数据表，<b>不在 <code>TABS</code> 里</b> ⇒ <code>buildProjectContext</code> 与语义索引用 TABS 遍历，永远扫不到它。里面有"每格公里 / 底图模式"等对"距离与行程"有用的一致性信息。</dd>
+      <dt>机会</dt><dd class="q">若要支撑 A2 的行程对账，把 geomaps 的元信息（名称 / 每格公里，不含底图 dataURL）纳入可读范围。</dd>
+      <dt>价值</dt><dd>与 A2 联动才有意义，单独价值低。</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-d">D3</span><span class="opp-t">设定草稿箱刻意不给 AI</span><span class="lvl lv-s">设计如此 ✓</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd><code>__freeDraft__</code>（世界设定/力量体系的自由文本草稿框）被 <code>isInternalFieldKey</code> 挡在 AI 之外，只有点「AI 整理」整理进字段后才发。</dd>
+      <dt>机会</dt><dd class="q"><b>建议保持现状</b> —— 这是经过设计的有意边界，且已在界面上如实披露。仅记录，不动。</dd>
+      <dt>价值</dt><dd>——</dd>
+    </div>
+  </div>
+
+  <div class="opp">
+    <div class="opp-h"><span class="opp-id id-d">D4</span><span class="opp-t">反向泄漏：隐藏列「地图格子」被发进 prompt</span><span class="lvl lv-s">极小改动 · 中收益</span></div>
+    <div class="opp-b">
+      <dt>现状</dt><dd>《地理风物》有一列 <code>地图格子</code>（存储格式 <code>gx,gy;gx,gy;…</code>，纯坐标内部数据，由地图编辑维护、界面隐藏）。<code>renderTable</code> 只滤保密等级与作者侧字段，<b>不过滤 hidden</b> ⇒ 这串坐标每章都跟着发出去，被 <code>cellCap</code> 截到 200 字。</dd>
+      <dt>机会</dt><dd class="q">即 C3：在 <code>renderTable</code> 加 <code>.filter(c =&gt; !colHidden(c))</code>。语义索引的 <code>renderRow</code> 同样需要（它走 <code>Object.entries</code> 全键，连保密等级也带进去了）。</dd>
+      <dt>价值</dt><dd>省 token + 减噪声。属"顺手修掉"的确定性收益。</dd>
+    </div>
+  </div>
+
+  <!-- ---------- E ---------- -->
+  <h3>E 档 · 单点功能：引擎写得完整，只挂了一个入口<span class="tag" style="background:#0f2a2a;color:#8fdede">观察项</span></h3>
+
+  <p class="lede" style="font-size:13.5px">
+    先说清：<b>本批清单里没有严格意义的"死代码"</b> —— 全部 127 个 lib 模块都至少有一个产品端真实调用方，无只被测试引用的孤儿。
+    但下面 9 个模块"专属测试很齐全、产品调用方却 ≤ 1"，属于<b>能力已经建好、复用面最窄</b>的一批。
+    其中 <code>dataHealth</code> / <code>structurePace</code> / <code>platformCheck</code> / <code>optimizeTicket</code> / <code>readerProbe</code>
+    <b>五个的共同单点都是「检查工具」页</b>。
+  </p>
+
+  <table class="tbl">
+    <thead><tr><th>模块</th><th>职责</th><th>唯一入口</th><th>可延伸方向</th></tr></thead>
+    <tbody>
+      <tr><td class="k">dataHealth</td><td>数据体检（引用悬空 / 孤儿 / 编号重复）</td><td>检查工具页</td><td class="em">可并入「保存前自检」或设定变更页的冲突检查</td></tr>
+      <tr><td class="k">structurePace</td><td>结构配比对照（模板理想节拍 vs 实际字数占比）</td><td>检查工具页</td><td class="em">可在写作面板做"结构预警"卡</td></tr>
+      <tr><td class="k">platformCheck</td><td>分平台投稿预检</td><td>检查工具页</td><td class="em">可挂到导出流程（导出前自动预检）</td></tr>
+      <tr><td class="k">optimizeTicket</td><td>全书优化工单 + 逐章自动修订</td><td>检查工具页</td><td class="em">与 B1 联动后可按趋势排序</td></tr>
+      <tr><td class="k">readerProbe</td><td>读者视角审问</td><td>检查工具页</td><td class="em">可在编辑器工具栏给快捷入口</td></tr>
+      <tr><td class="k">writingReview</td><td>创作复盘（从每日字数提炼回顾指标）</td><td>写作面板</td><td class="em">B1 落库后可并入质量维度</td></tr>
+      <tr><td class="k">diagnostics</td><td>诊断信息采集</td><td>关于页</td><td>人肉通道，暂不动</td></tr>
+      <tr><td class="k">marketRadar</td><td>市场雷达（联网选题分析）</td><td>作品信息页弹窗</td><td class="em">可挂到新建项目向导</td></tr>
+      <tr><td class="k">backup</td><td>自动备份引擎</td><td>App 启动</td><td>基础设施，合理</td></tr>
+    </tbody>
+  </table>
+
+  <div class="card">
+    <h4>两个纯类型模块（说明性）</h4>
+    <p style="font-size:13.5px;color:var(--tx2);margin:8px 0">
+      <code>lib/materialRef.ts</code> 与 <code>lib/flow/types.ts</code> 在产品代码里<b>只有 <code>import type</code></b>、零运行时函数调用 —— 它们是纯类型定义，被类型系统消费，<b>不是孤儿</b>，无需处理。
+    </p>
+  </div>
+</section>
+
+<!-- ================= 5 ================= -->
+<section id="s5">
+  <h2><span class="num">05</span>优先级建议：三批推进</h2>
+  <p class="lede">按"改动面 × 收益"排序。第一批几乎不碰架构，第二、三批才涉及存储与链路。</p>
+
+  <div class="card good">
+    <h4>第一批 · 确定性收益（小改动，建议优先）</h4>
+    <ul class="tight">
+      <li><b>C3 + D4</b> 隐藏列过滤统一（抽 <code>visibleCols()</code>，三处共用，顺带堵住地图格子泄漏）</li>
+      <li><b>A4</b> 爽点间隔改为程序回填（<code>continuityCheck</code> 已有算法，只需回写）</li>
+      <li><b>A1</b> 把「回收前置条件」接进伏笔引擎的链路校验</li>
+      <li><b>C1</b> 角色出场分布改读登记列</li>
+      <li><b>D1</b> 写作进度开放只读注入（写入侧仍不接 AI）</li>
+    </ul>
+    <p style="font-size:13.5px;color:var(--tx2);margin-top:10px">
+      共同点：<b>不新增数据结构、不改 schema、不动存储</b>，只让已有数据被已有逻辑读起来。风险极低。
+    </p>
+  </div>
+
+  <div class="card note">
+    <h4>第二批 · 需要一次小设计（中小改动）</h4>
+    <ul class="tight">
+      <li><b>A2 + A3 + A7/A8</b> 合并成"地理-时间对账"体系（<code>continuityCheck</code> 新增一类检查）</li>
+      <li><b>A5 + A6</b> 合并成"秘密生命周期看板"（《知情权限》的到点提醒 + 风险提示）</li>
+      <li><b>B2</b> 质检引擎结果缓存（按 chapterId + revision）</li>
+      <li><b>C2</b> 两条产量数据源合并或对齐口径</li>
+    </ul>
+    <p style="font-size:13.5px;color:var(--tx2);margin-top:10px">
+      需要先定"新检查项挂在哪个引擎、报什么级别、界面在哪显示"。建议出方案文档后再动手。
+    </p>
+  </div>
+
+  <div class="card info">
+    <h4>第三批 · 结构性收益（大改动，值得单独立项）</h4>
+    <ul class="tight">
+      <li><b>B1</b> 分析结果落库 + 「本章问题趋势」+ 优化工单按频率排序 + 写作复盘加质量维度</li>
+      <li><b>E 档</b> 单点功能打通（检查工具页的五个能力向写作流程/导出流程延伸）</li>
+      <li><b>D2</b> 地图元信息纳入可读范围（配合 A2 才有意义）</li>
+    </ul>
+    <p style="font-size:13.5px;color:var(--tx2);margin-top:10px">
+      B1 是这一档的核心 —— 它一次性解决"重复计算 + 无历史 + 无质量维度"三个问题，但涉及新存储结构与多个界面改动。
+    </p>
+  </div>
+
+  <div class="card warn">
+    <h4>不建议做的两件事</h4>
+    <ul class="tight">
+      <li><b>D3</b> 把设定草稿箱发给 AI —— 这是经过论证的有意边界，且已在界面如实披露，动它只会增加误发风险。</li>
+      <li><b>为死字段批量"接上功能"</b> —— A7/A8、D2 单独做收益低，必须依附 A2 的对账体系才有意义，不要为了"消灭死字段"而消灭。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= 6 ================= -->
+<section id="s6">
+  <h2><span class="num">06</span>全景数据流</h2>
+  <p class="lede">把五条链路画在一张图上：左侧是数据的生产与沉淀，右侧是消费与出口。虚线框出的三处，就是本次梳理发现的机会所在。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 980 560" role="img" aria-label="数据流全景图">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#5a6474"/>
+        </marker>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#ef5b5b"/>
+        </marker>
+      </defs>
+
+      <!-- 左列：生产 -->
+      <text x="30" y="30" fill="#9aa4b2" font-size="12" font-weight="700" font-family="monospace">生产者</text>
+      <rect x="20" y="42" width="230" height="60" rx="10" fill="#171a21" stroke="#333a48"/>
+      <text x="36" y="66" fill="#e7eaf0" font-size="13">人工填表</text>
+      <text x="36" y="86" fill="#9aa4b2" font-size="12">开书定位 / 世界构建 / 角色 / 大纲</text>
+
+      <rect x="20" y="114" width="230" height="60" rx="10" fill="#171a21" stroke="#333a48"/>
+      <text x="36" y="138" fill="#e7eaf0" font-size="13">AI 抽取 / 补全</text>
+      <text x="36" y="158" fill="#9aa4b2" font-size="12">拆书 · 整理 · 补登 · 创意写作</text>
+
+      <rect x="20" y="186" width="230" height="60" rx="10" fill="#171a21" stroke="#333a48"/>
+      <text x="36" y="210" fill="#e7eaf0" font-size="13">正文写作</text>
+      <text x="36" y="230" fill="#9aa4b2" font-size="12">章节正文 + 自动日更统计</text>
+
+      <rect x="20" y="258" width="230" height="60" rx="10" fill="#171a21" stroke="#333a48"/>
+      <text x="36" y="282" fill="#e7eaf0" font-size="13">质量分析引擎</text>
+      <text x="36" y="302" fill="#9aa4b2" font-size="12">四引擎 + 节奏 / 读者 / 配比</text>
+
+      <!-- 中列：存储 -->
+      <text x="330" y="30" fill="#9aa4b2" font-size="12" font-weight="700" font-family="monospace">存储</text>
+      <rect x="300" y="42" width="230" height="276" rx="12" fill="#12291c" stroke="#1d4730"/>
+      <text x="320" y="70" fill="#4ec97a" font-size="13" font-weight="700">StoreOps → lib/db</text>
+      <text x="320" y="94" fill="#e7eaf0" font-size="12.5">tableRows（21 张表）</text>
+      <text x="320" y="114" fill="#e7eaf0" font-size="12.5">chapters / volumes</text>
+      <text x="320" y="134" fill="#e7eaf0" font-size="12.5">settingsKV（按项目隔离）</text>
+      <text x="320" y="154" fill="#e7eaf0" font-size="12.5">dailyStats（自动日更）</text>
+      <text x="320" y="174" fill="#e7eaf0" font-size="12.5">tavernReports</text>
+      <text x="320" y="194" fill="#9aa4b2" font-size="12">—— 整库一 JSON ——</text>
+      <line x1="320" y1="208" x2="510" y2="208" stroke="#1d4730" stroke-dasharray="3 3"/>
+      <text x="320" y="232" fill="#a78bfa" font-size="12.5">vec 库（语义向量）</text>
+      <text x="320" y="252" fill="#a78bfa" font-size="12.5">kb 库（参考资料）</text>
+      <text x="320" y="274" fill="#9aa4b2" font-size="11.5">独立 IDB · 不进备份/同步</text>
+      <text x="320" y="300" fill="#ef5b5b" font-size="11.5">⚠ 分析结果不落此层</text>
+
+      <!-- 右列：消费 -->
+      <text x="620" y="30" fill="#9aa4b2" font-size="12" font-weight="700" font-family="monospace">消费者</text>
+      <rect x="600" y="42" width="360" height="86" rx="10" fill="#132537" stroke="#1e3f5c"/>
+      <text x="618" y="66" fill="#5aa9ff" font-size="13" font-weight="700">AI 功能（唯一装配）</text>
+      <text x="618" y="88" fill="#e7eaf0" font-size="12.5">伴写 / 校对 / 审读 / 简报 / 补登 / 整理 / 补全 / 拆书</text>
+      <text x="618" y="108" fill="#e7eaf0" font-size="12.5">创意写作 / 酒馆推演 / 健康诊断 / 市场雷达</text>
+      <text x="618" y="124" fill="#9aa4b2" font-size="11.5">整表全列取数 · 12000 字预算 · D 级剔除</text>
+
+      <rect x="600" y="142" width="360" height="72" rx="10" fill="#171a21" stroke="#333a48"/>
+      <text x="618" y="166" fill="#e7eaf0" font-size="13" font-weight="600">界面展示</text>
+      <text x="618" y="188" fill="#9aa4b2" font-size="12">写作面板统计 · 人物/势力图谱 · 地图叠加 · 时间轴</text>
+      <text x="618" y="206" fill="#9aa4b2" font-size="12">章节树 · 设定检索 · 全文检索</text>
+
+      <rect x="600" y="228" width="360" height="90" rx="10" fill="#1c2028" stroke="#333a48"/>
+      <text x="618" y="252" fill="#f0b429" font-size="13" font-weight="600">出口</text>
+      <text x="618" y="274" fill="#e7eaf0" font-size="12">导出：TXT / MD / DOCX / EPUB / 平台粘贴版</text>
+      <text x="618" y="294" fill="#e7eaf0" font-size="12">备份包 · 证据包 · 设定集 · 诊断信息</text>
+      <text x="618" y="312" fill="#e7eaf0" font-size="12">云盘 .yfe 同步（跨设备）</text>
+
+      <!-- 机会标注 -->
+      <rect x="20" y="342" width="940" height="196" rx="12" fill="none" stroke="#ef5b5b" stroke-dasharray="6 5" stroke-opacity=".55"/>
+      <text x="36" y="366" fill="#ff9b9b" font-size="12.5" font-weight="700" font-family="monospace">机会区</text>
+
+      <rect x="42" y="380" width="284" height="66" rx="9" fill="#2e1618" stroke="#4a2226"/>
+      <text x="58" y="402" fill="#ff9b9b" font-size="12.5" font-weight="700">A 档 · 死字段</text>
+      <text x="58" y="422" fill="#e7eaf0" font-size="11.5">8 个字段存了没人读 → 接进已有校验</text>
+      <text x="58" y="438" fill="#9aa4b2" font-size="11.5">前置条件 / 行程时间 / 经过天数 / 爽点间隔 …</text>
+
+      <rect x="348" y="380" width="284" height="66" rx="9" fill="#3a2f12" stroke="#4a3d14"/>
+      <text x="364" y="402" fill="#ffd580" font-size="12.5" font-weight="700">B 档 · 结果不落库</text>
+      <text x="364" y="422" fill="#e7eaf0" font-size="11.5">9 个分析功能算完即弃 → 落库做趋势</text>
+      <text x="364" y="438" fill="#9aa4b2" font-size="11.5">且被 4 个入口重复计算</text>
+
+      <rect x="654" y="380" width="284" height="66" rx="9" fill="#132537" stroke="#1e3f5c"/>
+      <text x="670" y="402" fill="#9ecbff" font-size="12.5" font-weight="700">C/D 档 · 口径与盲区</text>
+      <text x="670" y="422" fill="#e7eaf0" font-size="11.5">出场分布重算 · 产量双口径 · 隐藏列泄漏</text>
+      <text x="670" y="438" fill="#9aa4b2" font-size="11.5">写作进度不进 AI · geomaps 不在 TABS</text>
+
+      <text x="42" y="486" fill="#9aa4b2" font-size="12">共同特征：<tspan fill="#e7eaf0">数据或能力已经存在，缺的只是"让另一端读起来"</tspan> —— 所以多数改动不涉及新增数据结构。</text>
+      <text x="42" y="512" fill="#6b7482" font-size="11.5">本图基于 v2.9.0 源码静态追踪绘制；所有机会点均已抽验复核（renderTable 列过滤 / progress 排除 / 死字段全库 grep）。</text>
+    </svg>
+    <figcaption>数据流全景：生产 → 存储 → 消费。虚线区为本次发现的机会集合。</figcaption>
+  </div>
+</section>
+
+<footer>
+  <p>
+    <b>制表说明</b>：本报告由全量通读 v2.9.0 源码得出，方法为「import 反向依赖解析 + 可达性分析 + 关键结论抽验复核」。
+    关键发现均已逐条验证：<code>aiContext.ts:485-487</code> 的列过滤（无 hidden 判断）、
+    <code>aiContext.ts:835</code> 的 progress 排除、「回收前置条件 / 距离与行程时间 / 计划揭晓章节」三字段的全库 grep（仅命中 schema 定义与种子数据）。<br><b>2026-10-08 勘误</b>：原列的第四个字段「经过天数」经复核确认<b>该列早已被删</b>（2.4.4），A3 条已作废并合并进 A2 —— 这是本报告的一处失误，特此更正。
+  </p>
+  <p>
+    <b>口径提示</b>：页签数按源码 <code>TABS</code> 实测（52 + 1 编辑器页）；旧文档《功能介绍文档-基于示范项目》中的 46 是 v2.7.1 口径，差异来自 2.8.0–2.9.0 新增页签。
+  </p>
+  <p style="color:#6b7482">青春幻想引擎 2.9.0 · 功能全景与数据复用机会梳理 · 2026-10-08</p>
+</footer>
+
+</div>
+</body>
+</html>

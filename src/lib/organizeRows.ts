@@ -140,8 +140,9 @@ export async function resolveColumnCandidates(
 export async function organizeRows(tab: TabDef, o: OrganizeRunOptions): Promise<OrganizeResult> {
   const keyCols = organizeKeyColsOf(tab)
   const unordered = organizeUnorderedOf(tab)
-  // 编号列由系统自动续号，不让模型插手
-  const aiCols = (tab.columns ?? []).filter(c => c.name !== '编号')
+  // 编号列由系统自动续号、隐藏列是给程序用的内部数据 —— 两者都不让模型插手
+  // （隐藏列口径与 aiContext.renderTable 一致，2026-10-08 统一）
+  const aiCols = (tab.columns ?? []).filter(c => c.name !== '编号' && !c.hidden)
 
   let ctx = ''
   if (o.useCtx !== false) {

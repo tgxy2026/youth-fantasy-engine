@@ -1,8 +1,13 @@
 // ============ 连续性校验器 ============
-// 基于「章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡」做确定性静态判定，
-// 产出 10 类常见问题：8 类吃书冲突（时间倒流、境界回退、死者复活、人名未登记、
-// 伏笔编号孤儿、伏笔状态不一致、术语重复、章节缺时间线登记）
-// + 2 类连载节奏预警（爽点断档、存稿缓冲告急）。
+// 基于「章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡 / 地理风物 / 知情权限」
+// 做确定性静态判定，产出 14 类常见问题：8 类吃书冲突（时间倒流、境界回退、死者复活、
+// 人名未登记、伏笔编号孤儿、伏笔状态不一致、术语重复、章节缺时间线登记）
+// + 2 类连载节奏预警（爽点断档、存稿缓冲告急）
+// + 4 类「已登记字段接入」提醒（2.9.1 新增）：伏笔回收前置条件未铺就、
+//   地理行程时间与时间线对不上、爽点间隔与程序算值不一致、秘密计划揭晓章已到点。
+//
+// 🔴 2.9.1 这四节的共同原则：**只提示、绝不改动作者数据** —— 它们接的是此前
+//    「作者认真填了、程序却从不读」的字段（见 docs/2.9.0-功能全景与数据复用机会梳理）。
 import * as db from './db'
 import type { Chapter, CardRecord } from './types'
 import { AuditIssue, splitCodes, splitNames, parseStoryDateKey, extractChapterNo, cnNumToArabic } from './audit'
@@ -12,7 +17,7 @@ import { flattenChapters, chapterSeqMap } from './chapterSeq'
 const DEATH_KEYWORDS = ['死', '亡', '陨', '卒', '退场', '兵解', '逝', '诛', '殁']
 
 export async function auditContinuity(): Promise<AuditIssue[]> {
-  const [vols, chs, master, timeline, fores, terms, allData, progress, hookpoints] = await Promise.all([
+  const [vols, chs, master, timeline, fores, terms, allData, progress, hookpoints, geography, secrets] = await Promise.all([
     db.getAllVolumes(),
     db.getAllChapters(),
     db.getAllChapterLedgerRows(),
@@ -22,6 +27,9 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
     db.loadAllData(),
     db.getTableRows('progress'),
     db.getTableRows('hookpoints'),
+    // 2.9.1 新增两个只读源：「距离与行程时间」（行程对账）与「知情权限」（秘密生命周期）
+    db.getTableRows('geography'),
+    db.getTableRows('secrets'),
   ])
   const cardRecs: CardRecord[] = allData.cardRecords
 
@@ -221,11 +229,12 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
 
   // ---------- 9) 爽点断档（相邻爽点间隔超 3 章，schema 承诺的预警） ----------
   // 章号认法与时间脉络同口径：先按「章节标题」认章取派生序号，回退解析「章节号」文本。
+  // ⚠️ hpSorted 定义在块外 —— 第 13 节（爽点间隔口径核对）要复用同一份排序结果。
+  const hpSorted = [...hookpoints]
+    .map(r => ({ r, no: seqByTlTitle(r.data['章节标题']) || extractChapterNo(r.data['章节号']) || 0 }))
+    .filter(x => x.no > 0)
+    .sort((a, b) => a.no - b.no)
   {
-    const hpSorted = [...hookpoints]
-      .map(r => ({ r, no: seqByTlTitle(r.data['章节标题']) || extractChapterNo(r.data['章节号']) || 0 }))
-      .filter(x => x.no > 0)
-      .sort((a, b) => a.no - b.no)
     for (let i = 1; i < hpSorted.length; i++) {
       const prev = hpSorted[i - 1], cur = hpSorted[i]
       const gap = cur.no - prev.no
@@ -258,7 +267,144 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
     }
   }
 
+  // ---------- 11) 伏笔回收前置条件（2.9.1） ----------
+  // 《伏笔追踪》的 tips 写着「前置没铺就强行回收，效果大打折扣」，但此前**没有任何逻辑读这一列**
+  // （foreshadowEngine 里那个同名 issue 判的其实是「已回收却没埋设」，不读本列的值）。
+  // 两种情形：(a) 已标记回收却没填前置条件；(b) 前置条件里点名的伏笔编号仍未回收。
+  {
+    const byCode = new Map(fores.map(f => [(f.data['编号'] || '').toUpperCase(), f]))
+    for (const f of fores) {
+      const code = (f.data['编号'] || '').toUpperCase()
+      if (!code || (f.data['状态'] || '') !== '已回收') continue
+      const cond = (f.data['回收前置条件'] || '').trim()
+      if (!cond || cond === '—' || cond === '-') {
+        issues.push({
+          id: nid(), severity: 'info', category: '连续性',
+          title: `伏笔 ${code} 已回收但未填「回收前置条件」`,
+          detail: `《伏笔追踪》的「${code}」已标记为已回收，但「回收前置条件」为空。这一列要写的是「回收前读者必须先知道什么」—— 补上一句，日后回看才判断得出这次回收立不立得住。`,
+          location: { kind: 'tab', tabId: 'foreshadow', hint: '伏笔追踪' },
+        })
+        continue
+      }
+      // 前置条件里点名了别的伏笔编号（F0001 这类）⇒ 那些还挂着，就是「前置未铺就」
+      const refs = [...new Set((cond.match(/F\d{3,4}/gi) || []).map(s => s.toUpperCase()))]
+        .filter(c => c !== code)
+      for (const ref of refs) {
+        const target = byCode.get(ref)
+        if (target && (target.data['状态'] || '未回收') !== '已回收') {
+          issues.push({
+            id: nid(), severity: 'warn', category: '连续性',
+            title: `伏笔前置未铺就：${code} 依赖 ${ref}`,
+            detail: `「${code}」的回收前置条件里点名了 ${ref}，但 ${ref} 状态仍为「${target.data['状态'] || '未回收'}」。前置没落地就回收，读者会觉得「这一下凭什么」。请先铺 ${ref}，或把本条的回收位置往后挪。`,
+            location: { kind: 'tab', tabId: 'foreshadow', hint: '伏笔追踪' },
+          })
+        }
+      }
+    }
+  }
+
+  // ---------- 12) 地理行程与时间线对账（2.9.1） ----------
+  // 《地理风物》的 tips 写「距离与行程时间」是「时间线对账的直接锚点，务必写死」，
+  // 但此前**零引用**（全库 grep 只命中 schema 定义与种子数据）。
+  // 这里只判**最确定的一种矛盾**：相邻两章换了地点，而故事内时间没走（同日或次日），
+  // 可登记的行程却要 2 天以上 —— 典型的「瞬移」。
+  // 🔴 刻意保守：日期解析不出、或行程文本解析不出天数（如「半刻」「一炷香」）一律跳过；
+  //    宁可不报，也不误报。
+  {
+    const travelOf = new Map<string, number>()
+    for (const g of geography) {
+      const name = (g.data['名称'] || '').trim()
+      const days = parseTravelDays(g.data['距离与行程时间'])
+      if (name && days != null) travelOf.set(name, days)
+    }
+    const tlByNo = [...timeline]
+      .map(r => ({
+        no: seqByTlTitle(r.data['章节标题']) || extractChapterNo(r.data['章节号']) || 0,
+        date: parseStoryDateKey(r.data['发生时间']),
+        loc: (r.data['地理位置'] || '').trim(),
+      }))
+      .filter(x => x.no > 0 && x.loc)
+      .sort((a, b) => a.no - b.no)
+    for (let i = 1; i < tlByNo.length; i++) {
+      const prev = tlByNo[i - 1], cur = tlByNo[i]
+      if (prev.loc === cur.loc) continue
+      if (prev.date == null || cur.date == null) continue
+      if (cur.date - prev.date > 1) continue
+      const need = travelOf.get(cur.loc)
+      if (need == null || need < 2) continue
+      issues.push({
+        id: nid(), severity: 'warn', category: '连续性',
+        title: `行程时间存疑：第${prev.no}→${cur.no}章 ${prev.loc} → ${cur.loc}`,
+        detail: `《地理风物》里到「${cur.loc}」登记的行程为 ${need} 天，而《时间脉络》第${prev.no}章到第${cur.no}章的故事内时间只隔了一天以内。请核对：要么行程时间写短了，要么章节时间排错了。`,
+        location: { kind: 'tab', tabId: 'geography', hint: '地理风物' },
+      })
+    }
+  }
+
+  // ---------- 13) 爽点间隔登记与程序算值不一致（2.9.1） ----------
+  // 「距上个爽点间隔（章）」是手填列，而程序本来就会算（见第 9 节）—— 两套数字长期并存必然脱节。
+  // 🔴 只提示、不自动回写：作者可能有意区分「登记间隔」与「观感间隔」，改数据得他自己点头。
+  for (let i = 1; i < hpSorted.length; i++) {
+    const cur = hpSorted[i]
+    const gap = cur.no - hpSorted[i - 1].no
+    const raw = (cur.r.data['距上个爽点间隔（章）'] || '').trim()
+    if (!raw) continue
+    const filled = parseInt(raw, 10)
+    if (Number.isNaN(filled) || filled === gap) continue
+    issues.push({
+      id: nid(), severity: 'info', category: '节奏',
+      title: `爽点间隔登记不一致：第${cur.no}章`,
+      detail: `第${cur.no}章与上一个爽点（第${hpSorted[i - 1].no}章）实际相隔 ${gap} 章，表里登记的却是「${raw}」。若是笔误请改；若是有意区分「登记间隔」与「观感间隔」，本条可忽略。`,
+      location: { kind: 'tab', tabId: 'hookpoints', hint: '爽点节奏' },
+    })
+  }
+
+  // ---------- 14) 秘密的「计划揭晓章节」已到点（2.9.1） ----------
+  // 《知情权限》登记了每条秘密的计划揭晓章与泄露风险等级，但此前**没有任何功能在到点时提醒**
+  // （该列只被列进 aiContext 的 AUTHOR_SIDE_FIELDS —— 那是「角色视角不给演员看」，不是「到点提醒作者」）。
+  // 🔴 只认「第N章」这种能解析出明确章号的写法；「卷一末外门大比」这类卷级表述跳过
+  //    （卷的边界得另算，不在这里瞎猜）。
+  {
+    const maxNo = Math.max(0, ...Array.from(chapterNoOf.values()))
+    for (const s of secrets) {
+      const plan = (s.data['计划揭晓章节'] || '').trim()
+      const m = plan.match(/第\s*([一二三四五六七八九十\d]+)\s*章/)
+      if (!m) continue
+      const planNo = cnNumToArabic(m[1])
+      if (Number.isNaN(planNo) || planNo <= 0 || planNo > maxNo) continue
+      const risk = (s.data['泄露风险等级'] || '').trim()
+      const high = risk === '高'
+      const code = (s.data['编号'] || '').trim()
+      const brief = (s.data['秘密内容'] || '').slice(0, 14)
+      issues.push({
+        id: nid(), severity: high ? 'warn' : 'info', category: '连续性',
+        title: `秘密计划揭晓章已到：${code || brief}`,
+        detail: `这条秘密计划留到「${plan}」揭晓，而正文已写到第 ${maxNo} 章。${high ? '它的泄露风险登记为「高」，优先核对。' : ''}请确认：如期揭晓了（那就把本行登记更新一下），还是被推后了（那就顺手改掉计划章，免得下轮再报）。`,
+        location: { kind: 'tab', tabId: 'secrets', hint: '知情权限' },
+      })
+    }
+  }
+
   return issues
+}
+
+/**
+ * 从《地理风物》的「距离与行程时间」自由文本里解析行程天数。
+ *
+ * 只认「N日 / N天」（含中文数字，如「飞舟三日」）；「半刻」「一炷香」这类不足一天的
+ * 表述返回 **0**（＝当天可到）；其余解析不出的一律返回 **null**。
+ * 🔴 调用方必须把 null 当作「没登记」跳过 —— 绝不能当 0，那会把「没写」误判成「当天能到」。
+ */
+function parseTravelDays(s: string | undefined): number | null {
+  const t = (s ?? '').trim()
+  if (!t) return null
+  const m = t.match(/([一二三四五六七八九十\d]+)\s*(日|天)/)
+  if (m) {
+    const n = cnNumToArabic(m[1])
+    return Number.isNaN(n) ? null : n
+  }
+  if (/刻|时辰|炷香|盏茶|瞬息|片刻/.test(t)) return 0
+  return null
 }
 
 /** 从 "淬体一重（暗）/16岁" 抽出境界名（"重"前的部分）与层级数字；无法解析返回 null */

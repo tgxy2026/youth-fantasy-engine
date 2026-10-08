@@ -1,9 +1,10 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Z } from '../lib/zLayer'
 import * as db from '../lib/db'
-import type { Chapter, CardRecord } from '../lib/types'
+import type { CardRecord } from '../lib/types'
 import { Button } from './Button'
 import { clipText } from '../lib/textClip'
+import { splitNames } from '../lib/audit'
 import { foldVh } from '../lib/theme'
 
 interface Props {
@@ -11,66 +12,71 @@ interface Props {
 }
 
 /**
- * 角色出场分布图（v1.3）
- * 扫描各章正文，统计每位角色（主要 / 次要 / NPC 角色卡）在各章的出现次数，
- * 以热力矩阵呈现；点单元格直达对应章节。
+ * 角色出场分布图（v1.3 · 2.9.1 改口径）
+ *
+ * 🔴 2.9.1 换数据源：改读《章节总表》各卷台账的「**出场人物**」登记列
+ *    （此前是逐章扫正文数名字）。两条理由：
+ *     ① **口径统一** —— 「出场人物」是全项目公认的出场权威口径，一致性校验、
+ *        AI 上下文的人物共现矩阵、情节推演读的都是它；本图先前另扫正文，
+ *        两套口径必然分裂（正文提及 ≠ 出场：回忆、转述、别人提名字都会被算进去）。
+ *     ② **零成本** —— 不必把全书正文读进内存，也不必每章做一次子串扫描。
+ *    ⇒ 矩阵语义随之从「提及次数热度」变成「该章有没有登记出场」。
  */
 export default function CharacterDistribution({ onNavigate }: Props) {
   const [rows, setRows] = useState<{ name: string; counts: Record<string, number>; total: number }[]>([])
-  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [chapters, setChapters] = useState<{ id: string; title: string }[]>([])
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     (async () => {
-      const [main, sec, chs] = await Promise.all([
+      const [main, sec, ledger] = await Promise.all([
         db.getCardRecords('char-main'),
         db.getCardRecords('char-secondary'),
-        db.getAllChapters(),
+        db.getAllChapterLedgerRows(),
       ])
       // 只统计主要 / 次要角色；排除 NPC 角色卡，且过滤掉「人物状态 = 已退场」的角色
       const cards: CardRecord[] = [...main, ...sec].filter(
         c => (c.data['人物状态'] ?? '').trim() !== '已退场'
       )
       const names = cards.map(c => c.name).filter(n => n && n.trim().length > 0)
-      const chsWithContent = chs.filter(c => c.content && c.content.trim())
+      // 台账行 id 形如 `ch-<章节id>`（与 continuityCheck / PlotCanvas 同款取法）
+      const cast = ledger
+        .map(r => ({
+          id: r.id.startsWith('ch-') ? r.id.slice(3) : r.id,
+          title: (r.data['章节标题'] ?? '').trim(),
+          who: splitNames(r.data['出场人物']),
+        }))
+        .filter(x => x.who.length > 0)
       const data = names.map(name => {
         const counts: Record<string, number> = {}
         let total = 0
-        for (const ch of chsWithContent) {
-          const c = countOccurrences(ch.content, name)
-          if (c > 0) { counts[ch.id] = c; total += c }
+        for (const ch of cast) {
+          if (ch.who.includes(name)) { counts[ch.id] = 1; total++ }
         }
         return { name, counts, total }
       }).filter(d => d.total > 0).sort((a, b) => b.total - a.total)
       setRows(data)
-      setChapters(chsWithContent)
+      setChapters(cast.map(x => ({ id: x.id, title: x.title || '未命名' })))
       setLoaded(true)
     })()
   }, [])
 
   const topChars = rows
   const topChapters = chapters
-  const maxCount = useMemo(() => Math.max(1, ...rows.flatMap(r => Object.values(r.counts))), [rows])
 
   if (!loaded) return <div className="py-8 text-center text-ink-500 text-12">加载中…</div>
 
   if (rows.length === 0) {
     return (
       <div className="rounded-xl border border-ink-700 bg-ink-850 px-4 py-12 text-center text-ink-500 text-12 leading-relaxed">
-        还没有可统计的出场数据——先在角色卡新建角色，并在正文里写几章，<br />
-        系统会自动统计每位角色在各章的出场次数。
+        还没有可统计的出场数据——先在角色卡新建角色，<br />
+        再到《章节总表》各卷台账的「出场人物」列，登记每章有谁出场。
       </div>
     )
   }
 
-  const cellColor = (c: number) => {
-    if (c === 0) return 'bg-ink-800'
-    const r = c / maxCount
-    if (r < 0.2) return 'bg-amber/25'
-    if (r < 0.45) return 'bg-amber/45'
-    if (r < 0.75) return 'bg-amber/70'
-    return 'bg-amber'
-  }
+  // 2.9.1：数据源改为「出场人物」登记列后，矩阵是「出场 / 未登记」两态（不再是提及次数热度）
+  const cellColor = (c: number) => (c > 0 ? 'bg-amber' : 'bg-ink-800')
 
   return (
     <div className="rounded-xl border border-ink-700 bg-ink-850 p-4 overflow-hidden">
@@ -98,7 +104,7 @@ export default function CharacterDistribution({ onNavigate }: Props) {
                     <td key={ch.id} className="p-0.5">
                       <Button variant="bare"
                         onClick={() => onNavigate('editor', ch.id)}
-                        title={`${r.name} 在《${ch.title}》出场 ${c} 次 · 点击直达`}
+                        title={`${r.name} 在《${ch.title}》${c > 0 ? '有出场登记' : '未登记出场'} · 点击直达`}
                         className={`w-[20px] h-[20px] rounded-3 ${cellColor(c)} hover:ring-1 hover:ring-amber transition-all`}
                       />
                     </td>
@@ -110,23 +116,12 @@ export default function CharacterDistribution({ onNavigate }: Props) {
         </table>
       </div>
       <div className="flex items-center gap-1.5 mt-3 text-9 text-ink-500">
-        <span>少</span>
         <span className="w-14px h-14px rounded-3 bg-ink-800 inline-block" />
-        <span className="w-14px h-14px rounded-3 bg-amber/25 inline-block" />
-        <span className="w-14px h-14px rounded-3 bg-amber/45 inline-block" />
-        <span className="w-14px h-14px rounded-3 bg-amber/70 inline-block" />
+        <span>未登记</span>
         <span className="w-14px h-14px rounded-3 bg-amber inline-block" />
-        <span>多</span>
-        <span className="ml-3">颜色越亮 = 该章出场次数越多 · 展示全部角色（主要/次要，不含 NPC 与已退场）/ 全部章节 · 点击单元格直达章节 · 容器可滚动</span>
+        <span>出场</span>
+        <span className="ml-3">数据取自《章节总表》各卷台账的「出场人物」列 · 展示全部角色（主要/次要，不含 NPC 与已退场）/ 已登记出场的章节 · 点击单元格直达章节 · 容器可滚动</span>
       </div>
     </div>
   )
-}
-
-function countOccurrences(text: string, name: string): number {
-  if (!name) return 0
-  let i = 0, c = 0
-  const n = name.length
-  while ((i = text.indexOf(name, i)) !== -1) { c++; i += n }
-  return c
 }

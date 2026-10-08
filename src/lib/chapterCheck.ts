@@ -6,8 +6,9 @@
 // 🔴 全部本地确定性检查，不发 AI 请求；默认手动触发，由 ChapterCheckPanel 调用。
 import type { Chapter } from './types'
 import type { AuditIssue } from './audit'
-import { auditContinuity } from './continuityCheck'
-import { auditForeshadow, type ForeshadowBoardItem } from './foreshadowEngine'
+// 2.9.1：走 checkLog 的包装 —— 与检查工具 / 稿件体检 / 编辑器弹窗共用同一份结果（缓存），并记台账
+import { continuityLogged, foreshadowLogged } from './checkLog'
+import type { ForeshadowBoardItem } from './foreshadowEngine'
 import { auditStyle } from './styleAudit'
 import { scanTypos, type TypoHit } from './typoWords'
 import { scanText, getCustomSensitiveWords, type SensitiveHit } from './sensitiveWords'
@@ -58,8 +59,8 @@ export function pickChapterForeshadow(
 export async function runChapterCheck(chapter: Chapter): Promise<ChapterCheckReport> {
   const content = chapter.content || ''
   const [continuityAll, foreshadowAll, style, customWords] = await Promise.all([
-    auditContinuity().catch(() => [] as AuditIssue[]),
-    auditForeshadow().catch(() => ({ issues: [] as AuditIssue[], board: [] as ForeshadowBoardItem[] })),
+    continuityLogged().catch(() => [] as AuditIssue[]),
+    foreshadowLogged().catch(() => ({ issues: [] as AuditIssue[], board: [] as ForeshadowBoardItem[] })),
     auditStyle(content).catch(() => [] as AuditIssue[]),
     getCustomSensitiveWords().catch(() => [] as string[]),
   ])

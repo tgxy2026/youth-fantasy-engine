@@ -5,9 +5,10 @@ import AuditPanel from './AuditPanel'
 import HelpPopover from './HelpPopover'
 import AIDataSourceNote from './AIDataSourceNote'
 import { GitBranch, Link2, Feather, Sparkles, Loader2, AlertCircle } from 'lucide-react'
-import { auditForeshadow } from '../lib/foreshadowEngine'
 import type { ForeshadowBoardItem, ForeshadowStatus } from '../lib/foreshadowEngine'
-import { auditContinuity } from '../lib/continuityCheck'
+// 2.9.1：改走 checkLog 的包装 —— 与检查工具页 / 稿件体检面板 / 本章体检共用同一份结果（缓存），
+// 并顺手记一条台账（供「比上次多/少几条」的趋势对比）
+import { foreshadowLogged, continuityLogged, trendOf, humanAgo, type CheckTrend } from '../lib/checkLog'
 import { auditStyle, styleContextForAI } from '../lib/styleAudit'
 import type { AuditIssue } from '../lib/audit'
 import { useAIReady } from '../lib/useAIReady'
@@ -20,11 +21,35 @@ import { buildProjectContext, getRecentChapterTexts } from '../lib/aiContext'
 import { aiForeshadowReview, aiContinuityAudit, aiStyleCheck } from '../lib/aiTasks'
 import { Button } from './Button'
 
+/**
+ * 「上次检查」趋势行（2.9.1）。
+ *
+ * 为什么要有它：体检台账（`lib/checkLog.ts`）落库本身不是目的 ——
+ * 作者真正要回答的是「这一轮的问题比上一轮是变好还是变坏」。
+ * 少了这一行，台账就又是一次「存了没人读」（正是本轮要修的那类问题）。
+ */
+function CheckTrendNote({ trend }: { trend: CheckTrend }) {
+  const diff = trend.prev ? trend.cur.total - trend.prev.total : 0
+  const cls = diff > 0 ? 'text-danger' : diff < 0 ? 'text-success' : 'text-ink-500'
+  return (
+    <span className="text-10 text-ink-500 whitespace-nowrap">
+      上次检查 {trend.cur.total} 条（{humanAgo(trend.cur.ts)}）
+      {trend.prev && (
+        <span className={`ml-1.5 ${cls}`}>
+          {diff > 0 ? `比上轮多 ${diff} 条` : diff < 0 ? `比上轮少 ${-diff} 条` : '与上轮持平'}
+        </span>
+      )}
+    </span>
+  )
+}
+
 // ============ 伏笔闭环看板 ============
 export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (tabId: string) => void; onClose: () => void }) {
   const [loading, setLoading] = useState(true)
   const [board, setBoard] = useState<ForeshadowBoardItem[]>([])
   const [issues, setIssues] = useState<AuditIssue[]>([])
+  /** 2.9.1：体检台账的「上次检查」（见 lib/checkLog.ts） */
+  const [trend, setTrend] = useState<CheckTrend | null>(null)
   const { ready: aiReady } = useAIReady()
   // 🔴 接到任务中心（清单 #009）：AI 深度分析耗时数十秒，切页签 / 关弹窗都不再掐断，结果也不蒸发。
   const t = useTaskRunner<AiFinding[]>({ ownerTab: 'editor', kind: 'foreshadow-review', title: 'AI 伏笔深度分析' })
@@ -41,11 +66,14 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
 
   useEffect(() => {
     let cancelled = false
-    auditForeshadow().then(r => {
+    foreshadowLogged().then(async r => {
       if (cancelled) return
       setBoard(r.board)
       setIssues(r.issues)
       setLoading(false)
+      // 台账在上一步已落盘，这里取回最近两次做趋势对比
+      const tr = await trendOf('foreshadow').catch(() => null)
+      if (!cancelled) setTrend(tr)
     })
     return () => { cancelled = true }
   }, [])
@@ -75,10 +103,11 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
 
       {loading ? <div className="text-12 text-ink-400 py-8 text-center">分析伏笔网络…</div> : (
         <>
-          <div className="flex gap-2 mb-3 text-11">
+          <div className="flex gap-2 mb-3 text-11 items-center flex-wrap">
             {columns.map(c => (
               <span key={c.status} className="px-2 py-0.5 rounded bg-ink-800 text-ink-300 border border-ink-700">{c.label} {countBy(c.status)}</span>
             ))}
+            {trend && <CheckTrendNote trend={trend} />}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
             {columns.map(col => (
@@ -156,6 +185,8 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
   const { ready: aiReady } = useAIReady()
   // 🔴 接到任务中心（清单 #009）：AI 深度审计耗时数十秒，切页签 / 关弹窗都不再掐断，结果也不蒸发。
   const t = useTaskRunner<AiFinding[]>({ ownerTab: 'editor', kind: 'continuity-audit', title: 'AI 连续性深度审计' })
+  /** 2.9.1：体检台账的「上次检查」（见 lib/checkLog.ts） */
+  const [trend, setTrend] = useState<CheckTrend | null>(null)
   const aiFindings = t.result ?? []
   const aiLoading = t.running
   const aiError = t.error || null
@@ -171,10 +202,13 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
 
   useEffect(() => {
     let cancelled = false
-    auditContinuity().then(r => {
+    continuityLogged().then(async r => {
       if (cancelled) return
       setIssues(r)
       setLoading(false)
+      // 台账在上一步已落盘，这里取回最近两次做趋势对比
+      const tr = await trendOf('continuity').catch(() => null)
+      if (!cancelled) setTrend(tr)
     })
     return () => { cancelled = true }
   }, [])
@@ -183,20 +217,21 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
     <ToolModal title="连续性校验器" icon={<Link2 size={16} />} onClose={onClose} wide
       help={
         <HelpPopover title="连续性校验怎么用" width="22rem">
-          {'全书级静态体检，覆盖 10 类常见问题：\n\n1. 时间倒流（时间线日期前后矛盾）\n2. 境界回退（主角境界不升反降）\n3. 死者复活（已死亡角色仍出场）\n4. 人名未登记（出场人物不在角色卡）\n5. 伏笔编号孤儿（章节引用了不存在的伏笔）\n6. 伏笔状态不一致（已回收但表未同步）\n7. 术语重复（同一名词定义了两次）\n8. 章节缺时间脉络登记\n9. 爽点断档（相邻爽点间隔超 3 章）\n10. 存稿缓冲告急（低于 3 章预警线）\n\n点击问题可跳转到对应章节或设定表修正。\n\n（以上 10 类为本地确定性检查，不调用 AI；下方为可选的 AI 深度审计。）'}
+          {'全书级静态体检，覆盖 14 类常见问题：\n\n1. 时间倒流（时间线日期前后矛盾）\n2. 境界回退（主角境界不升反降）\n3. 死者复活（已死亡角色仍出场）\n4. 人名未登记（出场人物不在角色卡）\n5. 伏笔编号孤儿（章节引用了不存在的伏笔）\n6. 伏笔状态不一致（已回收但表未同步）\n7. 术语重复（同一名词定义了两次）\n8. 章节缺时间脉络登记\n9. 爽点断档（相邻爽点间隔超 3 章）\n10. 存稿缓冲告急（低于 3 章预警线）\n\n2.9.1 新增 4 类 —— 把此前「填了却没人读」的登记字段接进校验：\n11. 伏笔回收前置条件未铺就（已回收，但前置条件里点名的其它伏笔仍未回收；或压根没填前置条件）\n12. 行程时间存疑（换了地点而故事内时间没走，登记的行程却要 2 天以上——典型「瞬移」）\n13. 爽点间隔登记不一致（手填的「距上个爽点间隔」与程序按章节号算出的值不符）\n14. 秘密计划揭晓章已到点（《知情权限》里计划揭晓的章号已经写到，秘密却还挂着）\n\n点击问题可跳转到对应章节或设定表修正。\n\n（以上 14 类为本地确定性检查，不调用 AI；下方为可选的 AI 深度审计。）'}
           <AIDataSourceNote feature="continuity-audit" />
         </HelpPopover>
       }
     >
       <div className="mb-3">
         <span className="text-11 text-ink-500">
-          基于章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡 / 爽点节奏 / 写作进度，做 10 类确定性冲突与节奏检测。
+          基于章节总表 / 时间脉络 / 伏笔追踪 / 名词术语 / 角色卡 / 爽点节奏 / 写作进度 / 地理风物 / 知情权限，做 14 类确定性冲突与节奏检测。
         </span>
       </div>
       {loading ? <div className="text-12 text-ink-400 py-8 text-center">逐表对账中…</div> : (
         <>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-12 font-semibold text-ink-200">本地确定性冲突</span>
+            {trend && <CheckTrendNote trend={trend} />}
             <Button onClick={runAiAudit}
               disabled={!aiReady || aiLoading}
               

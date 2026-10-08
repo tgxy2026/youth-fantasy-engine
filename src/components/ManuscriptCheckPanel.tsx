@@ -19,8 +19,8 @@ import type { Chapter } from '../lib/types'
 import { Button } from './Button'
 import { showToast } from './dialogs'
 import { downloadText } from '../lib/zip'
-import { auditContinuity } from '../lib/continuityCheck'
-import { auditForeshadow } from '../lib/foreshadowEngine'
+// 2.9.1：走 checkLog 的包装（与检查工具 / 编辑器弹窗共用缓存与台账）
+import { continuityLogged, foreshadowLogged } from '../lib/checkLog'
 import {
   analyzeStyle, toObservations, analyzePacing, buildCheckReportText,
   type StyleFingerprint, type PacingReport,
@@ -66,7 +66,7 @@ export default function ManuscriptCheckPanel() {
   const runEngine = async () => {
     setEngineLoading(true)
     try {
-      const [c, f] = await Promise.all([auditContinuity(), auditForeshadow()])
+      const [c, f] = await Promise.all([continuityLogged(), foreshadowLogged()])
       setEngine({
         continuity: c.length,
         foreshadowOpen: f.board.filter(b => b.status !== '已回收').length,

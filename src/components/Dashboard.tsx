@@ -118,7 +118,8 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
     }
   }
 
-  // 最近 7 天写作记录
+  // 最近 7 天写作记录（**手工登记**视图 —— 「写作进度」表里自己填的实际字数）
+  // ⚠️ 2.9.1 起这组数字只服务下方柱状图；统计卡上的「近 7 日产量」改走自动统计（见 statMap 之后）。
   const today = new Date()
   const days: { date: string; words: number }[] = []
   for (let i = 6; i >= 0; i--) {
@@ -130,10 +131,17 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
     days.push({ date: ds, words: w })
   }
   const maxDay = Math.max(...days.map(d => d.words), 1)
+  /** 近 7 日**手工登记**字数（只给下方柱状图用） */
   const weekTotal = days.reduce((s, d) => s + d.words, 0)
 
   // ---- 码字日历（自动记录）----
   const statMap = new Map(dailyStats.map(s => [s.date, s.words]))
+  /**
+   * 🔴 2.9.1 产量口径统一：统计卡的「近 7 日产量」改走**自动统计**（保存章节时记录的净增量），
+   * 与码字日历同源即为权威口径；「写作进度」的手工登记降为参考视图（下方柱状图）。
+   * 此前同一面板存在两个不同的「近 7 日」数字（一个手工、一个自动），作者无从判断该信哪个。
+   */
+  const autoWeekTotal = days.reduce((s, d) => s + (statMap.get(d.date) ?? 0), 0)
   const todayStr = todayKey(new Date())
   const todayWords = statMap.get(todayStr) ?? 0
   // 连续打卡：从今天（或昨天）往前数有产出的连续天数
@@ -193,10 +201,10 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
     },
     {
       label: '近 7 日产量',
-      value: `${(weekTotal / 10000).toFixed(2)} 万`,
-      sub: `日均 ${Math.round(weekTotal / 7)} 字`,
+      value: `${(autoWeekTotal / 10000).toFixed(2)} 万`,
+      sub: `日均 ${Math.round(autoWeekTotal / 7)} 字`,
       icon: <TrendingUp size={16} />, color: 'text-amber',
-      help: '来自「写作进度」里手工登记的实际字数（近 7 天求和）。想看自动统计的产量请看下方「码字日历」。',
+      help: '来自编辑器自动记录的实际码字量（近 7 天求和，与下方「码字日历」同源）。要对照你手工登记的完成情况，看下方「近 7 日写作字数」。',
     },
   ]
 
@@ -321,9 +329,9 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         {/* 近7日字数 */}
         <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
-            <TrendingUp size={14} className="text-amber" /> 近 7 日写作字数
-            <HelpPopover title="近 7 日写作字数" width="20rem">
-              {'柱子高度 = 「写作进度」里当天登记的实际字数，需要手工登记（可写目标字数与实际字数做对比复盘）。\n\n· 和上方「码字日历」的区别：日历是编辑器自动记录，这里是你自己登记的计划完成情况；\n· 点下方「去登记今日字数」直接跳到进度表。'}
+            <TrendingUp size={14} className="text-amber" /> 近 7 日写作字数（手工登记）
+            <HelpPopover title="近 7 日写作字数（手工登记）" width="20rem">
+              {'柱子高度 = 「写作进度」里当天登记的实际字数，需要手工登记（可写目标字数与实际字数做对比复盘）。\n\n· 这是「参考视图」：上方统计卡与「码字日历」走的是编辑器自动记录（权威口径），本图是你自己登记的计划完成情况 —— 两者口径不同，不必强求一致；\n· 点下方「去登记今日字数」直接跳到进度表。'}
             </HelpPopover>
           </h2>
           {weekTotal === 0 ? (
@@ -445,10 +453,10 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
                 <span>灵感素材有 {unusedIdeas.length} 条未使用素材</span>
               </div>
             )}
-            {weekTotal === 0 && (
+            {autoWeekTotal === 0 && (
               <div className="flex items-start gap-2 text-ink-300">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
-                <span>近 7 日无产量记录——在写作进度登记每日字数</span>
+                <span>近 7 日无产量记录——打开编辑器写一章，系统会自动记账</span>
               </div>
             )}
             {chapters.length === 0 && (

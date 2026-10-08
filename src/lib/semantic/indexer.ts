@@ -22,7 +22,7 @@
 //    因块序号错位而产生的残留块。小说的修订单位本来就是"一章"，这个粒度正合适。
 
 import * as db from '../db'
-import { isPrunedForAI, isSecretRow } from '../aiContext'
+import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '../aiContext'
 import { TABS } from '../schema'
 import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from './chunk'
 import { embedTexts, EMBED_BATCH, type EmbedConfig } from './embed'
@@ -42,12 +42,13 @@ export type { IndexDoc }
 
 export interface CollectInput {
   chapters: { id: string; title: string; summary?: string; content: string }[]
-  tables: { tabId: string; tabName: string; rows: { id: string; data: Record<string, string> }[] }[]
-  cards: { tabId: string; tabName: string; rows: { id: string; name: string; data: Record<string, string> }[] }[]
+  /** `hiddenCols` ＝ 该表的隐藏列名（调用方从 schema 取）—— 不进索引文本，见 renderRow */
+  tables: { tabId: string; tabName: string; rows: { id: string; data: Record<string, string> }[]; hiddenCols?: string[] }[]
+  cards: { tabId: string; tabName: string; rows: { id: string; name: string; data: Record<string, string> }[]; hiddenCols?: string[] }[]
 }
 
 /** 行 → 可嵌入文本。**带列名**（"身份：剑修"）比只拼值（"剑修"）更容易被语义匹配到 */
-function renderRow(data: Record<string, string> | undefined, head?: string): string {
+function renderRow(data: Record<string, string> | undefined, head?: string, hiddenCols?: Set<string>): string {
   const lines: string[] = []
   if (head && head.trim()) lines.push(head.trim())
   for (const [k, v] of Object.entries(data ?? {})) {
@@ -55,6 +56,10 @@ function renderRow(data: Record<string, string> | undefined, head?: string): str
     if (!val) continue
     // 内部字段（子集标记之类）不参与语义 —— 它们只是结构占位
     if (!k.trim() || k.endsWith('::')) continue
+    // 🔴 隐藏列（坐标串之类）与系统元数据列（保密等级）不进索引文本 ——
+    //    与 `aiContext.renderTable` 同一口径。索引文本会经〖语义召回〗注回提示词，
+    //    所以「不进提示词」的列在这里同样要挡（2026-10-08 修）。
+    if (hiddenCols?.has(k) || SYSTEM_META_FIELDS.has(k)) continue
     lines.push(`${k}：${val}`)
   }
   return lines.join('\n').trim()
@@ -106,9 +111,10 @@ export function collectIndexDocs(input: CollectInput): IndexDoc[] {
 
   // 表格行
   for (const t of input.tables ?? []) {
+    const hidden = t.hiddenCols?.length ? new Set(t.hiddenCols) : undefined
     for (const r of t.rows ?? []) {
       if (isPrunedForAI(r.data)) continue // 🔴 D 级：根本不进索引
-      const text = renderRow(r.data)
+      const text = renderRow(r.data, undefined, hidden)
       if (!text) continue
       out.push({ kind: 'setting', refId: r.id, title: t.tabName, text, secret: isSecretRow(r.data) })
     }
@@ -116,9 +122,10 @@ export function collectIndexDocs(input: CollectInput): IndexDoc[] {
 
   // 角色卡
   for (const t of input.cards ?? []) {
+    const hidden = t.hiddenCols?.length ? new Set(t.hiddenCols) : undefined
     for (const r of t.rows ?? []) {
       if (isPrunedForAI(r.data)) continue // 🔴 D 级：根本不进索引
-      const text = renderRow(r.data, r.name)
+      const text = renderRow(r.data, r.name, hidden)
       if (!text) continue
       out.push({ kind: 'setting', refId: r.id, title: r.name || t.tabName, text, secret: isSecretRow(r.data) })
     }
@@ -154,13 +161,15 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
 
   const tables: CollectInput['tables'] = []
   const cards: CollectInput['cards'] = []
+  // 隐藏列（如《地理风物》的「地图格子」坐标串）不进索引文本 —— 与 aiContext 同一口径
+  const hiddenColsOf = (tab: (typeof TABS)[number]) => (tab.columns ?? []).filter(c => c.hidden).map(c => c.name)
   for (const tab of TABS) {
     if (tab.type === 'table') {
       const rows = await db.getTableRows(tab.id).catch(onFail)
-      if (rows.length) tables.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, data: r.data })) })
+      if (rows.length) tables.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, data: r.data })), hiddenCols: hiddenColsOf(tab) })
     } else if (tab.type === 'card') {
       const rows = await db.getCardRecords(tab.id).catch(onFail)
-      if (rows.length) cards.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, name: r.name, data: r.data })) })
+      if (rows.length) cards.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, name: r.name, data: r.data })), hiddenCols: hiddenColsOf(tab) })
     }
   }
   // 章节台账（按卷分表存在 chapter-vol-*）单独取一次 —— 它不在 TABS 的 table 里
