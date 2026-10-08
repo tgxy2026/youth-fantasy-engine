@@ -16,6 +16,10 @@ import { showToast } from './dialogs'
 import * as db from '../lib/db'
 import type { Chapter, Volume } from '../lib/types'
 import type { PlatformTextOptions, DocxLayoutOptions } from '../lib/exporter'
+// 2.9.1 · E 档：导出即预检（能力来自「检查工具 → 分平台投稿预检」的同一套引擎）
+import { scanByPlatform } from '../lib/platformCheck'
+import type { PlatformId } from '../lib/platformRules'
+import { getCustomSensitiveWords } from '../lib/sensitiveWords'
 
 type Tab = 'platform' | 'markdown' | 'docx'
 /** 预设档是 UI 层概念（exporter 只认五值对象）；'custom' = 手动改过任意单项 */
@@ -99,6 +103,9 @@ export default function ExportFormatDialog({
   const [picked, setPicked] = useState<Set<string>>(() => new Set())
   // 🔴 exporter 按需动态加载（与 useNovelEditorModel.runExport 同一约定：别把打包器拖进首屏主包）
   const [mod, setMod] = useState<typeof import('../lib/exporter') | null>(null)
+  // 2.9.1 · E 档：发布前预检 —— 在导出对话框里直接按平台档位扫一遍敏感词
+  const [precheckPlatform, setPrecheckPlatform] = useState<PlatformId>('general')
+  const [customWords, setCustomWords] = useState<string[]>([])
   useEffect(() => {
     if (!open) return
     // 加载失败必须说出来 —— 静默 setMod(null) 会让「导出」点了没反应（审计 2026-09-28 修正）
@@ -106,6 +113,12 @@ export default function ExportFormatDialog({
       setMod(null)
       showToast('导出模块加载失败，请重启软件后重试', 'error')
     })
+  }, [open])
+
+  // 发布前预检用自定义词表（与「检查工具」共用同一份，含作者自己导入的词）；读失败静默空表
+  useEffect(() => {
+    if (!open) return
+    void getCustomSensitiveWords().then(setCustomWords).catch(() => setCustomWords([]))
   }, [open])
 
   // 打开时读一次偏好（跨项目共享，跟人走）——只读一次，避免每次开窗都从库拉一遍
@@ -177,6 +190,23 @@ export default function ExportFormatDialog({
     const text = mod.bookToPlatformText(volumes, chapters, platformOpts)
     return text.split('\n').slice(0, 14).join('\n')
   }, [open, mod, volumes, chapters, platformOpts])
+
+  /**
+   * 发布前预检（2.9.1 · E 档打通）。
+   *
+   * 为什么放在这里：导出「平台粘贴版」本来就是为了**发布** —— 而分平台投稿预检
+   * （按档位扫敏感词 + 标出该平台重点关注的类别）此前只在「检查工具」页里，要作者专门去开，
+   * 于是常常「导完才发现有几处要改」。这一版把它前置到导出前，命中数直接摆在眼前。
+   * 🔴 只报数、不判定：不给分、不说「能不能发」，逐处上下文与观察仍在原面板看
+   *    （与 platformCheck / platformRules 的立场一致）。
+   * 🔴 用 `chapters` 直接拼全文，不走 exporter —— 免得开窗就要先把打包器拉起来。
+   */
+  const fullText = useMemo(() => chapters.map(c => c.content || '').join('\n'), [chapters])
+  const precheck = useMemo(() => {
+    if (!fullText.trim()) return null
+    const hits = scanByPlatform(fullText, precheckPlatform, customWords)
+    return { total: hits.length, focused: hits.filter(h => h.focused).length }
+  }, [fullText, precheckPlatform, customWords])
 
   const hasContent = chapters.some(c => (c.content || '').trim())
 
@@ -276,6 +306,27 @@ export default function ExportFormatDialog({
                   { label: '附在文末', value: true as const, title: '把「设定集导出」的全部内容转成纯文本接在正文后，便于投稿时备查' },
                 ]} />
               </div>
+            </div>
+            {/* 2.9.1 · E 档：导出即预检（与「检查工具 → 分平台投稿预检」同一套引擎，不另算一套） */}
+            <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-ink-200 text-12">发布前预检</span>
+                <SegGroup value={precheckPlatform} onChange={setPrecheckPlatform} options={[
+                  { label: '通用', value: 'general' as const, title: '不针对某一平台：全部类别同等对待，适合先过一遍再按目标平台细看' },
+                  { label: '起点', value: 'qidian' as const },
+                  { label: '晋江', value: 'jjwxc' as const },
+                ]} />
+              </div>
+              {precheck && (
+                <div className={`mt-1.5 text-11 ${precheck.total === 0 ? 'text-success' : precheck.focused > 0 ? 'text-danger' : 'text-amber'}`}>
+                  {precheck.total === 0
+                    ? '未命中内置敏感词 ✓'
+                    : `命中 ${precheck.total} 处${precheck.focused > 0 ? `，其中 ${precheck.focused} 处属该平台重点关注类别` : ''} —— 建议发布前复核`}
+                </div>
+              )}
+              <p className="mt-1 text-10 leading-relaxed text-ink-500">
+                逐处上下文与观察见「检查工具 → 分平台投稿预检」。平台规则随时会变，这里只做提示、不构成任何判定。
+              </p>
             </div>
             <div>
               <div className="text-11 text-ink-500 mb-1">预览（开头几行）</div>

@@ -23,6 +23,10 @@ import { LoadingState } from './LoadingState'
 import { useWordCountWithPunct } from '../lib/wordCountMode'
 import { countWords } from '../lib/textStats'
 import { buildWritingReview } from '../lib/writingReview'
+// 2.9.1 · E 档：把「检查工具 → 结构配比对照」的结论接到主面板（模板来源与创意写作共用同一份会话输入）
+import { hydrateCreativeSession, useCreativeSession } from '../lib/creativeSession'
+import { getStoryTemplate } from '../lib/storyStructures'
+import { buildChapterShares, alignBeats, PACE_MIN_CHAPTERS } from '../lib/structurePace'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -32,6 +36,8 @@ interface Props {
 }
 
 export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
+  /** 结构配比预警用的模板来源 —— `creativeSession.inputs.structureId` 是它的单一真源 */
+  const cs = useCreativeSession()
   const [volumes, setVolumes] = useState<Volume[]>([])
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [foreshadows, setForeshadows] = useState<TableRow[]>([])
@@ -53,6 +59,27 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   /** B1 创作复盘：从每日字数提炼"跟之前比"的指标（纯本地） */
   const review = useMemo(() => buildWritingReview(dailyStats), [dailyStats])
 
+  /**
+   * 结构配比预警（2.9.1 · E 档打通）。
+   *
+   * 为什么搬到主面板：这条结论本来只在「检查工具 → 结构配比对照」里 —— 那是要作者**专门去开**的页面，
+   * 而结构跑偏（如中段塌陷、开局占比过大）属于「越写越看不出来」的问题，等想起来去查时往往已写了十几万字。
+   * 🔴 这里只做一件事：明显偏移（引擎口径 |Δ| > 15 个百分点）时在健康提醒里加一行；
+   *    逐拍明细仍在原面板看。用的是**同一套引擎、同一个模板来源**，不另算一套。
+   * ⚠️ 定义位置必须在本组件**任何 early return 之前** —— 它用了 `useMemo`，挪到下面会破 hooks 顺序。
+   */
+  const structureWarn = useMemo(() => {
+    if (chapters.length < PACE_MIN_CHAPTERS) return null
+    const tpl = getStoryTemplate(cs.inputs.structureId)
+    if (!tpl) return null
+    const { shares } = buildChapterShares(
+      chapters.map(c => ({ id: c.id, title: c.title || '未命名章', words: c.wordCount || 0 }))
+    )
+    if (!shares.length) return null
+    const off = alignBeats(tpl, shares).filter(a => a.level === 'notable')
+    return off.length > 0 ? off : null
+  }, [chapters, cs.inputs.structureId])
+
   const totalWords = useMemo(
     () => (withPunct
       ? chapters.reduce((s, c) => s + countWords(c.content || '', 'cjk-punct'), 0)
@@ -72,6 +99,10 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   }, [])
 
   useEffect(() => { load() }, [load, refreshKey])
+
+  // 模板选择的单一来源在 creativeSession（幂等，重复调用无害）——
+  // 本页可能在「创意写作」从未打开过时进入，那就先 hydrate 一次。
+  useEffect(() => { hydrateCreativeSession() }, [])
 
   // AI 健康诊断（可选增强：未配模型不调用，静态提醒照常显示）
   const { ready: aiReady } = useAIReady()
@@ -453,6 +484,12 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
                 <span>灵感素材有 {unusedIdeas.length} 条未使用素材</span>
               </div>
             )}
+            {structureWarn && (
+              <div className="flex items-start gap-2 text-amber">
+                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber shrink-0" />
+                <span>结构配比有 {structureWarn.length} 个拍节明显偏移（{structureWarn.map(a => a.name).join('、')}）——到「检查工具 → 结构配比对照」看逐拍明细</span>
+              </div>
+            )}
             {autoWeekTotal === 0 && (
               <div className="flex items-start gap-2 text-ink-300">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
@@ -465,7 +502,7 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
                 <span>{isLite ? '还没有章节——先想清楚主要人物与核心设定，再开始动笔' : '还没有章节——建议先填「作品信息」与「全书总纲」再动笔'}</span>
               </div>
             )}
-            {unf.length === 0 && unusedIdeas.length === 0 && weekTotal > 0 && chapters.length > 0 && (
+            {unf.length === 0 && unusedIdeas.length === 0 && !structureWarn && autoWeekTotal > 0 && chapters.length > 0 && (
               <div className="flex items-start gap-2 text-success">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                 <span>一切健康，保持节奏继续写</span>
