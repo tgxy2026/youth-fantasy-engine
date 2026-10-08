@@ -8,6 +8,8 @@
 
 export type AIProviderType = 'ollama' | 'openai'
 
+import type { SamplingValues } from '../modelSampling'
+
 export interface AIProvider {
   id: string
   /** 用户自定义显示名 */
@@ -43,6 +45,15 @@ export interface AIProvider {
    *    那是「解析稳定性」的红线，不能让显示偏好把它顶掉。
    */
   temperature?: number
+  /**
+   * 文本生成微调（2.9.2 · 六个采样参数，见 `lib/modelSampling.ts`）。
+   *
+   * 🔴 **留空或全都不填 ⇒ 不下发**（`samplingOptionsOf()` 返回 undefined），
+   *    请求体与「没有这个功能」时逐字节一致 —— 保证升级不改变任何存量模型的行为。
+   * 🔴 键名是**语义名**（`topP` / `repeatPenalty` …），下发时按 local/cloud 转成原生键；
+   *    其中 `topK` / `repeatPenalty` / `repeatLastN` 是 Ollama 专有，云端会被白名单丢弃。
+   */
+  sampling?: SamplingValues
 }
 
 export interface ChatMessage {

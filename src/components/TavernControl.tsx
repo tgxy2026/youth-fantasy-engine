@@ -31,7 +31,7 @@ export default function TavernControl() {
   useSaveHotkey(() => void m?.save(), !!m?.dirty && !m?.saving)
 
   if (!m) return <LoadingState />
-  const { s, showBands, setShowBands, dirty, saving, presetNaming, setPresetNaming, leftColRef, rightColRef, storePresetAs, setPlot, setFree, setVars, toggleVarKey, save, reset, pl, fr, modelOptions, rec, gSoft, gHard, gLong, gDiary } = m
+  const { s, showBands, setShowBands, dirty, saving, presetNaming, setPresetNaming, leftColRef, rightColRef, storePresetAs, setPlot, setFree, setVars, toggleVarKey, save, reset, pl, fr, modelOptions, rec, gSoft, gHard, gLong, gDiary, cap } = m
   return (
     <div className="mx-auto max-w-[1500px] space-y-4">
       <header className="flex items-start justify-between gap-4">
@@ -91,6 +91,8 @@ export default function TavernControl() {
             toggleVarKey={toggleVarKey}
             modelOptions={modelOptions}
             advice={{ rec, gSoft, gHard, gLong, gDiary }}
+            // 2026-10-09：三项 Ollama 专有采样参数按它灰显（此前云端下照旧可编辑，改了不生效）
+            local={!!cap.local}
           />
         </div>
       </div>

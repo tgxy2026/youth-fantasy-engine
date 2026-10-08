@@ -53,10 +53,32 @@ type Props = {
    * 拆成 5 个平铺 prop 只会在调用处多五行噪音。
    */
   advice: { rec: TuningAdvice; gSoft: ParamGuide; gHard: ParamGuide; gLong: ParamGuide; gDiary: ParamGuide }
+  /**
+   * 当前模型是否本地（Ollama / 局域网）。
+   * 🔴 2026-10-09（2.9.2）：三项 Ollama 专有采样参数（候选词上限 / 重复惩罚 / 惩罚射程）按它**灰显** ——
+   *    此前云端模型下照旧可编辑，改了却不生效（下发时被 `openaiSampling()` 白名单静默丢弃），
+   *    与「上下文窗口长度」在两态化之前的老毛病同一类。
+   */
+  local: boolean
+}
+
+/** 云端模型下、Ollama 专有参数的灰显占位（与「上下文窗口长度」同一范式，2.9.2） */
+function CloudOnlyNA({ label }: { label: string }) {
+  return (
+    <Field
+      label={label}
+      hint="此参数只对本地 Ollama 生效 —— 当前接的是云端模型，本项不参与调用，故不提供编辑；需微调请先切到本地模型。"
+    >
+      <div className="flex items-center justify-between gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-1.5">
+        <span className="text-12 text-ink-600">—</span>
+        <span className="text-10 text-ink-600">对云端模型不适用</span>
+      </div>
+    </Field>
+  )
 }
 
 export default function TavernControlModes({
-  plot, free, vars, setPlot, setFree, setVars, toggleVarKey, modelOptions, advice,
+  plot, free, vars, setPlot, setFree, setVars, toggleVarKey, modelOptions, advice, local,
 }: Props) {
   const { rec, gSoft, gHard, gLong, gDiary } = advice
   return (
@@ -77,26 +99,32 @@ export default function TavernControlModes({
             hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
             value={plot.topP} onCommit={v => setPlot('topP', v)}
           />
-          <NumField
-            label="候选词上限" guide={GUIDE_SAMPLING.topK}
-            hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
-            value={plot.topK} onCommit={v => setPlot('topK', v)}
-          />
-          <NumField
-            label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
-            hint="高于 1 会压制重复用词；太高会让句子发硬、用词别扭。"
-            value={plot.repeatPenalty} onCommit={v => setPlot('repeatPenalty', v)}
-          />
+          {local ? (
+            <NumField
+              label="候选词上限" guide={GUIDE_SAMPLING.topK}
+              hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
+              value={plot.topK} onCommit={v => setPlot('topK', v)}
+            />
+          ) : <CloudOnlyNA label="候选词上限" />}
+          {local ? (
+            <NumField
+              label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
+              hint="高于 1 会压制重复用词；太高会让句子发硬、用词别扭。"
+              value={plot.repeatPenalty} onCommit={v => setPlot('repeatPenalty', v)}
+            />
+          ) : <CloudOnlyNA label="重复惩罚" />}
           <NumField
             label="词频惩罚" guide={GUIDE_SAMPLING.frequencyPenalty}
             hint="同一个词出现得越多扣得越狠。推演里的动作描写也容易「每轮都写手」，管的就是这一类反复。"
             value={plot.frequencyPenalty} onCommit={v => setPlot('frequencyPenalty', v)}
           />
-          <NumField
-            label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
-            hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
-            value={plot.repeatLastN} onCommit={v => setPlot('repeatLastN', v)}
-          />
+          {local ? (
+            <NumField
+              label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
+              hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
+              value={plot.repeatLastN} onCommit={v => setPlot('repeatLastN', v)}
+            />
+          ) : <CloudOnlyNA label="惩罚射程" />}
           <NumField
             label="新话题倾向" guide={GUIDE_SAMPLING.presencePenalty}
             hint="正数鼓励引入新内容，负数让它更愿意围着当前话题说。推演要线索连贯，所以默认偏保守（0.5）。"
@@ -158,26 +186,32 @@ export default function TavernControlModes({
             hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
             value={free.topP} onCommit={v => setFree('topP', v)}
           />
-          <NumField
-            label="候选词上限" guide={GUIDE_SAMPLING.topK}
-            hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
-            value={free.topK} onCommit={v => setFree('topK', v)}
-          />
-          <NumField
-            label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
-            hint="角色的口头禅多，所以这一项比剧情模式更值得调。"
-            value={free.repeatPenalty} onCommit={v => setFree('repeatPenalty', v)}
-          />
+          {local ? (
+            <NumField
+              label="候选词上限" guide={GUIDE_SAMPLING.topK}
+              hint="每一步只在概率最高的这么多个词里挑，填 0 表示不限制。"
+              value={free.topK} onCommit={v => setFree('topK', v)}
+            />
+          ) : <CloudOnlyNA label="候选词上限" />}
+          {local ? (
+            <NumField
+              label="重复惩罚" guide={GUIDE_SAMPLING.repeatPenalty}
+              hint="角色的口头禅多，所以这一项比剧情模式更值得调。"
+              value={free.repeatPenalty} onCommit={v => setFree('repeatPenalty', v)}
+            />
+          ) : <CloudOnlyNA label="重复惩罚" />}
           <NumField
             label="词频惩罚" guide={GUIDE_SAMPLING.frequencyPenalty}
             hint="同一个词出现得越多扣得越狠。角色的口头禅、习惯小动作最容易反复 —— 这一项比「重复惩罚」更对症。"
             value={free.frequencyPenalty} onCommit={v => setFree('frequencyPenalty', v)}
           />
-          <NumField
-            label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
-            hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
-            value={free.repeatLastN} onCommit={v => setFree('repeatLastN', v)}
-          />
+          {local ? (
+            <NumField
+              label="惩罚射程" guide={GUIDE_SAMPLING.repeatLastN}
+              hint="上面两种惩罚共用的「回看多远」窗口。Ollama 自带只有 64 词元（约半句话）—— 上一轮的复读根本不在射程内，得靠它拉进来。"
+              value={free.repeatLastN} onCommit={v => setFree('repeatLastN', v)}
+            />
+          ) : <CloudOnlyNA label="惩罚射程" />}
           <NumField
             label="新话题倾向" guide={GUIDE_SAMPLING.presencePenalty}
             hint="正数鼓励引入新内容 —— 日常聊天靠它才有「日子在往前走」的感觉。默认 0.55。"

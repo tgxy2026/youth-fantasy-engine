@@ -11,6 +11,8 @@ import {
   injectUserSystemPrompt,
   type AIProvider, type ChatMessage,
 } from './core'
+// 2.9.2：「模型配置 → 文本生成微调」的语义名 → 原生键名（详见 lib/modelSampling.ts）
+import { samplingOptionsOf } from '../modelSampling'
 
 export interface ChatOptions {
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */
@@ -137,7 +139,9 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
     signal: opts.signal,
     onToken: opts.onToken,
     temperature,
-    extraOptions: opts.extraOptions,
+    // 2.9.2：显式传入优先；否则用「模型配置 → 文本生成微调」里填的那组参数。
+    // 🔴 不填时 `samplingOptionsOf` 返回 undefined ⇒ 请求体与改动前逐字节一致。
+    extraOptions: opts.extraOptions ?? samplingOptionsOf(config),
   })).content
 }
 

@@ -23,6 +23,7 @@ import HelpPopover from './HelpPopover'
 import EmbeddingIndexPanel from './EmbeddingIndexPanel'
 import { confirmDialog, showToast } from './dialogs'
 import { syncTuningWithModel } from '../lib/tavern/settings'
+import { SAMPLING_FIELDS } from '../lib/modelSampling'
 import { syncWriterBudgetToModel } from '../lib/aiWriterBudget'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
@@ -534,6 +535,64 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   ⚠️ 这段提示词是「全局」的 —— 对所有调用该模型的 AI 功能一并生效（酒馆模式默认不接，需要时可在酒馆控制面板单独开启）。
                   如果只想调整某一个具体功能，请到「模型设置 → AI 提示词」里改那个功能自己的提示词，不要写在这里。
                   它会附加在各功能自带提示词之后，不覆盖、不影响原有的格式约束。
+                </p>
+              </div>
+
+              {/* 2.9.2 · 文本生成微调（参照酒馆控制面板搬迁，说明另写为**写作向**）。
+                  🔴 留空 ＝ 不下发：一个都不填时请求体与改动前**逐字节一致**。
+                  🔴 三项 Ollama 专有参数（候选词上限 / 重复惩罚 / 惩罚回看窗口）在云端模型下**灰显** ——
+                     否则作者调了以为生效，实际会被 openaiSampling 白名单静默丢弃（酒馆那边此前正是漏了这一步）。 */}
+              <div>
+                <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
+                  <label className="block text-11 text-ink-500">文本生成微调（选填 · 全局生效）</label>
+                  <span className="text-10 text-ink-600">全部留空 ＝ 不下发，行为与原来完全一致</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SAMPLING_FIELDS.map(f => {
+                    // 云端模型下，Ollama 专有的三项不可用（下发会被白名单丢弃）⇒ 灰显占位
+                    const usable = f.cloud || !!editing.local
+                    const val = editing.sampling?.[f.key]
+                    return (
+                      <div key={f.key}
+                        className={`rounded-lg border px-2.5 py-2 ${usable ? 'border-ink-700 bg-ink-900/40' : 'border-ink-800 bg-ink-900/20'}`}>
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className={`text-11 ${usable ? 'text-ink-300' : 'text-ink-600'}`}>{f.label}</span>
+                          <span className="text-10 text-ink-600">推荐 {f.recommend}</span>
+                          {!f.cloud && <span className="text-10 text-ink-600">仅本地</span>}
+                        </div>
+                        {usable ? (
+                          <input
+                            type="number" min={f.min} max={f.max} step={f.step}
+                            className="mt-1 w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-2 py-1 outline-none focus:border-amber/40 placeholder:text-ink-600"
+                            value={typeof val === 'number' ? val : ''}
+                            placeholder="留空 ＝ 不下发"
+                            onChange={e => {
+                              const raw = e.target.value
+                              const v = raw === '' ? undefined : Number(raw)
+                              setEditing(prev => {
+                                if (!prev) return prev
+                                const cur = { ...(prev.sampling ?? {}) }
+                                if (v === undefined || !Number.isFinite(v)) delete cur[f.key]
+                                else cur[f.key] = v
+                                return { ...prev, sampling: Object.keys(cur).length ? cur : undefined }
+                              })
+                            }}
+                          />
+                        ) : (
+                          <div className="mt-1 flex items-center justify-between gap-2 rounded-lg border border-ink-800 bg-ink-900/40 px-2 py-1">
+                            <span className="text-12 text-ink-600">—</span>
+                            <span className="text-10 text-ink-600">对云端模型不适用</span>
+                          </div>
+                        )}
+                        <p className="mt-1 text-10 leading-relaxed text-ink-600">{f.effect}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+                <p className="mt-1 text-10 leading-relaxed text-ink-600">
+                  温度另有独立入口（上面的「生成温度」档位）。这些参数只影响<b>文本生成效果</b>、不改动任何项目数据；
+                  结构化任务（需要解析成 JSON 的那些）不受影响 —— 那类固定走低温以保证解析稳定。
+                  酒馆模式有自己的一套参数（控制面板里调），不受这里影响。
                 </p>
               </div>
 
