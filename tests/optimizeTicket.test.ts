@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import {
-  HISTORY_ACTIONS, SOURCE_LABEL, SOURCE_ORDER, actionLabelOf, groupByChapter,
+  HISTORY_ACTIONS, SOURCE_LABEL, SOURCE_ORDER, actionLabelOf, groupByChapter, groupByIssue,
   pickAction, resolveAction, sortAndDedup, ticketId,
   type TicketItem, type TicketSource,
 } from '../src/lib/optimizeTicket'
@@ -185,6 +185,65 @@ function mk(o: MkInput): TicketItem {
   ok('🔴 诊断失败不再静默吞（改为 console.warn 上报）', src.includes('一章诊断失败（已跳过）'))
   ok('🔴 最新章设定同步失败不再静默吞',
     src.includes('设定同步失败（正文已落库，可去设定表手动补）'))
+}
+
+// ---------- ⑦ groupByIssue：按问题类型聚合（2.9.2）----------
+// 它回答的是「哪类问题在全书里最普遍」——与 `groupByChapter`（服务按章执行）是同一批条目的两种视图。
+{
+  const items: TicketItem[] = [
+    mk({ id: 'i1', chapterId: 'c3', chapterNo: 3, source: 'style', title: '句长波动大', severity: 'info' }),
+    mk({ id: 'i2', chapterId: 'c1', chapterNo: 1, source: 'style', title: '句长波动大', severity: 'info' }),
+    mk({ id: 'i3', chapterId: 'c2', chapterNo: 2, source: 'style', title: '句长波动大', severity: 'info' }),
+    mk({ id: 'i4', chapterId: 'c5', chapterNo: 5, source: 'sensitive', title: '命中敏感词', severity: 'error' }),
+    mk({ id: 'i5', chapterId: 'c4', chapterNo: 4, source: 'typo', title: '错别字', severity: 'warn' }),
+  ]
+  const g = groupByIssue(items)
+  ok('⑦ 同 source+title 归为一组（5 条 → 3 组）', g.length === 3, String(g.length))
+  ok('⑦ count ＝ 出现章数', g.find(x => x.title === '句长波动大')?.count === 3,
+    String(g.find(x => x.title === '句长波动大')?.count))
+  ok('⑦ chapters 已按章序排好（1→2→3）',
+    (g.find(x => x.title === '句长波动大')?.chapters ?? []).map(c => c.no).join(',') === '1,2,3',
+    (g.find(x => x.title === '句长波动大')?.chapters ?? []).map(c => c.no).join(','))
+  // 🔴 这条是「刻意不引入加权公式」的兑现：严重度分档优先于频次
+  ok('🔴 排序：严重度分档优先 —— error 组排最前（即便它只出现 1 章）',
+    g[0].severity === 'error' && g[0].count === 1, `${g[0].severity}/${g[0].count}`)
+  ok('⑦ 其余按严重度排（warn → info）', g[1].severity === 'warn' && g[2].severity === 'info',
+    g.map(x => x.severity).join(','))
+  ok('⑦ 每组带上归并键与来源（供界面渲染）',
+    g.every(x => x.key === `${x.source}::${x.title}`))
+
+  // 同一类型在不同章被判成不同严重度 ⇒ 取**最重**那档
+  const gm = groupByIssue([
+    mk({ id: 'm1', chapterId: 'c1', chapterNo: 1, source: 'style', title: '同一问题', severity: 'info' }),
+    mk({ id: 'm2', chapterId: 'c2', chapterNo: 2, source: 'style', title: '同一问题', severity: 'error' }),
+  ])
+  ok('🔴 同类型跨章严重度不一 ⇒ 归并后取最重的那档', gm.length === 1 && gm[0].severity === 'error',
+    `${gm.length} 组 / ${gm[0]?.severity}`)
+
+  ok('⑦ 空输入 → 空数组', groupByIssue([]).length === 0)
+
+  // 🔴 同档内按**出现章数降序** —— 这才是「哪类问题最普遍」的排序依据，必须单独钉住
+  const gc = groupByIssue([
+    mk({ id: 'x1', chapterId: 'c1', chapterNo: 1, source: 'style', title: '只出现 1 章', severity: 'info' }),
+    mk({ id: 'x2', chapterId: 'c1', chapterNo: 1, source: 'typo', title: '出现 3 章', severity: 'info' }),
+    mk({ id: 'x3', chapterId: 'c2', chapterNo: 2, source: 'typo', title: '出现 3 章', severity: 'info' }),
+    mk({ id: 'x4', chapterId: 'c3', chapterNo: 3, source: 'typo', title: '出现 3 章', severity: 'info' }),
+  ])
+  ok('🔴 同档内按出现章数降序（3 章的排在 1 章前）',
+    gc[0].count === 3 && gc[1].count === 1, gc.map(x => x.count).join(','))
+
+  // 章数也相同时，用标题做稳定的最终序（防同一份数据两次渲染顺序漂移）
+  const gt = groupByIssue([
+    mk({ id: 'y1', chapterId: 'c1', chapterNo: 1, source: 'style', title: 'B 问题', severity: 'info' }),
+    mk({ id: 'y2', chapterId: 'c2', chapterNo: 2, source: 'style', title: 'A 问题', severity: 'info' }),
+  ])
+  ok('⑦ 章数相同 ⇒ 按标题稳定排序（A 在 B 前）', gt[0].title === 'A 问题' && gt[1].title === 'B 问题',
+    gt.map(x => x.title).join(','))
+
+  // 两种视图并存、互不干扰
+  ok('🔴 groupByChapter 语义未受影响（仍按章序）',
+    groupByChapter(items).map(x => x.chapterNo).join(',') === '1,2,3,4,5',
+    groupByChapter(items).map(x => x.chapterNo).join(','))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

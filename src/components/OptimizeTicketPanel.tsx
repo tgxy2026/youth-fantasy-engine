@@ -27,7 +27,7 @@ import { useTaskRunner } from '../lib/aiTaskCenter'
 import { foldVh } from '../lib/theme'
 import { SEVERITY_LABEL, type IssueSeverity } from '../lib/audit'
 import {
-  SOURCE_LABEL, actionLabelOf, buildTicket, groupByChapter, runTicketChapter,
+  SOURCE_LABEL, actionLabelOf, buildTicket, groupByChapter, groupByIssue, runTicketChapter,
   type TicketItem,
 } from '../lib/optimizeTicket'
 
@@ -65,6 +65,8 @@ export default function OptimizeTicketPanel() {
   const [onlyError, setOnlyError] = useState(false)
   /** 正在对照的章（空串＝没开弹窗） */
   const [diffChapter, setDiffChapter] = useState('')
+  /** 2.9.2：工单视图 —— 「按章」（执行流）／「按类型」（看全局）。默认按章，**原有行为一字不变** */
+  const [view, setView] = useState<'chapter' | 'issue'>('chapter')
 
   const gen = useTaskRunner<GenResult, GenProgress>({ ownerTab: OWNER_TAB, kind: KIND_GEN, title: '生成优化工单' })
   const exe = useTaskRunner<RunResult, RunProgress>({ ownerTab: OWNER_TAB, kind: KIND_RUN, title: '逐章自动修订' })
@@ -100,6 +102,13 @@ export default function OptimizeTicketPanel() {
       ...g,
       items: g.items.map(i => byId.get(i.id) ?? { ...i, picked: false }),
     }))
+  }, [items, onlyError])
+
+  // 2.9.2：按问题类型聚合（看「哪类问题最普遍」）。与 `groups` 是同一批条目的两种视图。
+  // 该视图只做汇总、不提供勾选 ⇒ 不必像 `groups` 那样回查本地副本补 `picked`。
+  const issueGroups = useMemo(() => {
+    const shown = onlyError ? items.filter(i => i.severity === 'error') : items
+    return groupByIssue(shown)
   }, [items, onlyError])
 
   const doneCount = items.filter(i => i.status === 'done').length
@@ -251,6 +260,11 @@ export default function OptimizeTicketPanel() {
             <span className="text-ink-400">已勾选 <b className="text-ink-200 tabular-nums">{picked.length}</b></span>
             <span className="text-success">已改写 {doneCount}</span>
             <div className="ml-auto flex items-center gap-1.5">
+              <Button variant="toggle" size="xs" selected={view === 'chapter'} onClick={() => setView('chapter')}
+                title="按章分组 —— 执行改写就是按章进行的">按章</Button>
+              <Button variant="toggle" size="xs" selected={view === 'issue'} onClick={() => setView('issue')}
+                title="按问题类型汇总 —— 看哪类问题在全书里最普遍">按类型</Button>
+              <span className="mx-0.5 h-3.5 w-px bg-ink-700" />
               <Button variant="toggle" size="xs" selected={onlyError} onClick={() => setOnlyError(v => !v)}
                 title="只列出「冲突」级的条目">只看冲突</Button>
               <Button variant="secondary" size="xs" onClick={() => setAll(true)}>全选</Button>
@@ -258,57 +272,91 @@ export default function OptimizeTicketPanel() {
             </div>
           </div>
 
-          <div className="space-y-3 overflow-y-auto pr-1" style={{ maxHeight: foldVh('60vh') }}>
-            {groups.map(g => (
-              <div key={g.chapterId} className="rounded-lg border border-ink-700 bg-ink-900/40 overflow-hidden">
-                <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-1.5">
-                  <span className="text-12 text-ink-100">
-                    {g.chapterNo > 0 ? `第${g.chapterNo}章 · ` : ''}{g.chapterTitle || '（未命名）'}
-                  </span>
-                  <span className="text-10 text-ink-500">{g.items.length} 条</span>
-                  <Button variant="secondary" size="xs" className="ml-auto"
-                    title="勾选本章所有可自动处理的条目"
-                    onClick={() => setGroup(g.chapterId, true)}>按章全选</Button>
-                </div>
-                <div className="divide-y divide-ink-700/60">
-                  {g.items.map(it => (
-                    <div key={it.id} className="flex items-start gap-2 px-3 py-2">
-                      <input type="checkbox" className="mt-1 shrink-0 accent-amber"
-                        checked={it.picked} disabled={it.action === 'manual'}
-                        onChange={e => toggle(it.id, e.target.checked)}
-                        title={it.action === 'manual' ? '这条需手动处理，不能自动改' : ''} />
-                      <span className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-10 ${sevBadge(it.severity)}`}>
-                        {SEVERITY_LABEL[it.severity]}
+          {view === 'issue' ? (
+            <div className="space-y-2 overflow-y-auto pr-1" style={{ maxHeight: foldVh('60vh') }}>
+              {issueGroups.map(g => (
+                <div key={g.key} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`shrink-0 rounded border px-1.5 py-0.5 text-10 ${sevBadge(g.severity)}`}>
+                      {SEVERITY_LABEL[g.severity]}
+                    </span>
+                    <span className="shrink-0 rounded border border-ink-600 bg-ink-800 px-1.5 py-0.5 text-10 text-ink-300">
+                      {SOURCE_LABEL[g.source]}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-12 text-ink-100">{g.title}</span>
+                    <span className="shrink-0 text-10 text-ink-500">
+                      出现在 <b className="text-ink-300 tabular-nums">{g.count}</b> 章 · {actionLabelOf(g.action)}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {g.chapters.map(c => (
+                      <span key={c.id} className="rounded border border-ink-700 bg-ink-900/60 px-1.5 py-0.5 text-10 text-ink-400">
+                        {c.no > 0 ? `第${c.no}章` : (c.title || '（未命名）')}
                       </span>
-                      <span className="mt-0.5 shrink-0 rounded border border-ink-600 bg-ink-800 px-1.5 py-0.5 text-10 text-ink-300">
-                        {SOURCE_LABEL[it.source]}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-12 text-ink-100">{it.title}</div>
-                        {it.detail && <div className="mt-0.5 text-11 leading-relaxed text-ink-400">{it.detail}</div>}
-                        {it.suggestion && <div className="mt-0.5 text-10 text-ink-500">建议：{it.suggestion}</div>}
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-10 text-ink-500">{actionLabelOf(it.action)}</div>
-                        <div className={`text-10 ${it.status === 'done' ? 'text-success' : it.status === 'failed' ? 'text-danger' : 'text-ink-500'}`}>
-                          {statusText(it)}
-                        </div>
-                        {exe.result?.chapters.some(c => c.chapterId === it.chapterId && c.afterText !== undefined) && (
-                          <Button variant="bare" size="xs" className="mt-0.5 rounded border border-ink-700 px-1.5 text-10 text-ink-400 hover:text-amber hover:border-amber/40 transition-colors"
-                            onClick={() => setDiffChapter(it.chapterId)}>
-                            看对照
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
+              ))}
+              {!issueGroups.length && (
+                <div className="text-11 text-ink-500">当前筛选下没有条目。</div>
+              )}
+              <div className="pt-1 text-10 text-ink-500">
+                按类型只做汇总、不提供勾选 —— 执行改写仍在「按章」视图里进行（同章多条会合并成一次改写）。
               </div>
-            ))}
-            {!groups.length && (
-              <div className="text-11 text-ink-500">当前筛选下没有条目。</div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="space-y-3 overflow-y-auto pr-1" style={{ maxHeight: foldVh('60vh') }}>
+              {groups.map(g => (
+                <div key={g.chapterId} className="rounded-lg border border-ink-700 bg-ink-900/40 overflow-hidden">
+                  <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-1.5">
+                    <span className="text-12 text-ink-100">
+                      {g.chapterNo > 0 ? `第${g.chapterNo}章 · ` : ''}{g.chapterTitle || '（未命名）'}
+                    </span>
+                    <span className="text-10 text-ink-500">{g.items.length} 条</span>
+                    <Button variant="secondary" size="xs" className="ml-auto"
+                      title="勾选本章所有可自动处理的条目"
+                      onClick={() => setGroup(g.chapterId, true)}>按章全选</Button>
+                  </div>
+                  <div className="divide-y divide-ink-700/60">
+                    {g.items.map(it => (
+                      <div key={it.id} className="flex items-start gap-2 px-3 py-2">
+                        <input type="checkbox" className="mt-1 shrink-0 accent-amber"
+                          checked={it.picked} disabled={it.action === 'manual'}
+                          onChange={e => toggle(it.id, e.target.checked)}
+                          title={it.action === 'manual' ? '这条需手动处理，不能自动改' : ''} />
+                        <span className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-10 ${sevBadge(it.severity)}`}>
+                          {SEVERITY_LABEL[it.severity]}
+                        </span>
+                        <span className="mt-0.5 shrink-0 rounded border border-ink-600 bg-ink-800 px-1.5 py-0.5 text-10 text-ink-300">
+                          {SOURCE_LABEL[it.source]}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-12 text-ink-100">{it.title}</div>
+                          {it.detail && <div className="mt-0.5 text-11 leading-relaxed text-ink-400">{it.detail}</div>}
+                          {it.suggestion && <div className="mt-0.5 text-10 text-ink-500">建议：{it.suggestion}</div>}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-10 text-ink-500">{actionLabelOf(it.action)}</div>
+                          <div className={`text-10 ${it.status === 'done' ? 'text-success' : it.status === 'failed' ? 'text-danger' : 'text-ink-500'}`}>
+                            {statusText(it)}
+                          </div>
+                          {exe.result?.chapters.some(c => c.chapterId === it.chapterId && c.afterText !== undefined) && (
+                            <Button variant="bare" size="xs" className="mt-0.5 rounded border border-ink-700 px-1.5 text-10 text-ink-400 hover:text-amber hover:border-amber/40 transition-colors"
+                              onClick={() => setDiffChapter(it.chapterId)}>
+                              看对照
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!groups.length && (
+                <div className="text-11 text-ink-500">当前筛选下没有条目。</div>
+              )}
+            </div>
+          )}
 
           <div className="mt-2 flex items-center gap-1.5 text-10 text-ink-500">
             <ListChecks size={11} />

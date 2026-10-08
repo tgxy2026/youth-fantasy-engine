@@ -251,6 +251,53 @@ export function groupByChapter(items: TicketItem[]): TicketChapterGroup[] {
   return [...map.values()].sort((a, b) => a.chapterNo - b.chapterNo)
 }
 
+/** 一个「问题类型」及其出现在哪些章（2.9.2） */
+export interface TicketIssueGroup {
+  /** `${source}::${title}` —— 归并键，也是界面 `key` */
+  key: string
+  source: TicketSource
+  /** 该类型下**最重**的那一档（同类型在不同章可能被判成不同严重度） */
+  severity: IssueSeverity
+  title: string
+  action: ChapterRewriteAction | 'manual'
+  /** 出现的章（按章序排好，供界面直接渲染） */
+  chapters: { id: string; no: number; title: string }[]
+  /** 出现章数（＝ `chapters.length`，单独给字段便于排序与显示） */
+  count: number
+}
+
+/**
+ * 按**问题类型**聚合（2.9.2）—— 回答「哪类问题在全书里最普遍」。
+ *
+ * 🔴 与 `groupByChapter` 的分工：后者服务「按章合并改写」这个**执行流**，**不该动**；
+ *    本函数服务「看全局」。两者是同一批条目的两种视图，不是替代关系。
+ * 🔴 排序口径（**刻意不引入加权公式**）：**严重度分档 → 出现章数降序 → 标题**。
+ *    「严重度 × 频次」那种加权会让作者无法预判顺序；分档 + 频次一眼就懂。
+ */
+export function groupByIssue(items: TicketItem[]): TicketIssueGroup[] {
+  const map = new Map<string, TicketIssueGroup>()
+  for (const it of items) {
+    const key = `${it.source}::${it.title}`
+    let g = map.get(key)
+    if (!g) {
+      g = {
+        key, source: it.source, severity: it.severity, title: it.title,
+        action: it.action, chapters: [], count: 0,
+      }
+      map.set(key, g)
+    }
+    g.chapters.push({ id: it.chapterId, no: it.chapterNo, title: it.chapterTitle })
+    g.count += 1
+    // 同类型在不同章可能被判成不同严重度 ⇒ 取**最重**的（`SEVERITY_ORDER` 越小越严重）
+    if (SEVERITY_ORDER[it.severity] < SEVERITY_ORDER[g.severity]) g.severity = it.severity
+  }
+  for (const g of map.values()) g.chapters.sort((a, b) => a.no - b.no)
+  return [...map.values()].sort((a, b) =>
+    SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
+    || b.count - a.count
+    || a.title.localeCompare(b.title))
+}
+
 export interface RunTicketOpts {
   signal?: AbortSignal
   /** 改写过程的提示（字数校准没生效之类）—— 由调用方转成界面提示 */
