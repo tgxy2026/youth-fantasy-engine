@@ -7,6 +7,7 @@ import FormSheet from './components/FormSheet'
 import WorldSetSheet from './components/WorldSetSheet'
 import ParallelSetSheet from './components/ParallelSetSheet'
 import TableSheet from './components/TableSheet'
+import ChangelogHealthNote from './components/ChangelogHealthNote'
 import CharacterSheet from './components/CharacterSheet'
 import OutlineSheet from './components/OutlineSheet'
 import ProjectHub from './components/ProjectHub'
@@ -501,7 +502,14 @@ export default function App() {
             ? <ParallelSetSheet key={tab.id} tab={tab} />
             : <FormSheet key={tab.id} tab={tab} />
       case 'table':
-        return <TableSheet key={tab.id} tab={tab} onNavigate={navigate} ctx={visCtx} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
+        // 2.9.2（③ · 方案 C）：「设定变更」页额外挂一条只读的数据体检提示 ——
+        // 该页是「改设定先登记」的闸口，dataHealth 查的正是改设定最容易产生的那类问题。
+        // 🔴 **不常驻区块**：只在检出「冲突」级问题时才渲染那一行，无问题时与改动前一字不差。
+        return tab.id === 'changelog'
+          ? <ChangelogHealthNote key={tab.id}>
+              <TableSheet tab={tab} onNavigate={navigate} ctx={visCtx} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
+            </ChangelogHealthNote>
+          : <TableSheet key={tab.id} tab={tab} onNavigate={navigate} ctx={visCtx} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
       case 'card':
         // 大纲规划下的卡片页签（分卷大纲/章节细纲）使用多记录目录管理组件
         return tab.group === '大纲规划'
