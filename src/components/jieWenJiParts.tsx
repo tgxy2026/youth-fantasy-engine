@@ -49,7 +49,7 @@ export const INSTRUCTIONS = ['润色', '扩写', '精简', '语气', '视角']
  * ⚠️ 这里只声明「勾什么」，**不声明「怎么取」** —— 取数实现一律在 lib 层，
  *    免得界面与取数各写一份口径（项目红线：AI 读哪些数据只能有一个源）。
  */
-export interface ContinuePickItem {
+interface ContinuePickItem {
   key: string
   label: string
   /** 设定类：映射到 `buildProjectContext` 的页签 id；空数组表示另有专门取数 */

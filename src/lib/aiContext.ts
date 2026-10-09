@@ -754,7 +754,7 @@ export async function getRecentChapterTexts(n = 6, charCap = 16000): Promise<str
 }
 
 /** 续写章节素材（2.9.2 · ③）—— 三块各自独立，见 `ContinuationPickOpts` */
-export interface ContinuationSources {
+interface ContinuationSources {
   /** 焦点章是否找到（false ⇒ 其余字段全空，调用方须据此提示作者） */
   found: boolean
   /** 本章及前若干章的摘要（已拼成文本；空串表示没取到） */

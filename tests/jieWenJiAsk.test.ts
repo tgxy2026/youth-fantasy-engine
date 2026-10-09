@@ -8,7 +8,7 @@
 //    而这类"没进去"不会报错 —— 作者只会觉得"AI 没听可的话"。
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { buildRewriteAsk } from '../src/lib/rewriteAsk'
+import { buildRewriteAsk, INSTRUCTION_PLACEHOLDERS } from '../src/lib/rewriteAsk'
 
 const readSrc = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8')
 
@@ -88,6 +88,29 @@ console.log('\n▶ rewriteAsk')
     readSrc('src/lib/autoContinue.ts').includes('aiRewritePassage(body, { instruction:'))
   ok('🔴 组件不自己拼提示词（不许在 UI 层再写一份【修改要求】）',
     !readSrc('src/components/useJieWenJiModel.ts').includes('【修改要求】'))
+}
+
+// ---------- ⑦ 每个动作都有**专属**的「额外要求」示例 ----------
+// 🔴 为什么守这条：五个动作要回答的问题不同（润色问「偏向哪一面」、视角问「从什么换成什么」），
+//    共用一个示例等于没给提示 —— 而这类「提示与动作不匹配」不会报错，
+//    只是作者照着填会填歪（2026-10-09 主人发现五个动作的示例一模一样）。
+{
+  // 动作清单住在 .tsx 里（含 JSX 的文件不能直接 import 进 Node 测试）⇒ 从源码里取
+  const parts = readSrc('src/components/jieWenJiParts.tsx')
+  const m = parts.match(/export const INSTRUCTIONS = \[([^\]]+)\]/)
+  const actions = m ? m[1].split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean) : []
+  ok('能从源码取到动作清单（5 个）', actions.length === 5, JSON.stringify(actions))
+  ok('🔴 每个动作都有示例文案',
+    actions.every(a => (INSTRUCTION_PLACEHOLDERS[a] ?? '').trim().length > 0),
+    `缺示例：${actions.filter(a => !INSTRUCTION_PLACEHOLDERS[a]).join('、') || '(无)'}`)
+  ok('🔴 各动作的示例**互不相同**（同一个示例套五个动作等于没提示）',
+    new Set(Object.values(INSTRUCTION_PLACEHOLDERS)).size === Object.keys(INSTRUCTION_PLACEHOLDERS).length,
+    JSON.stringify(Object.values(INSTRUCTION_PLACEHOLDERS)))
+  ok('示例表没有多余条目（键集合 ＝ 动作集合）',
+    Object.keys(INSTRUCTION_PLACEHOLDERS).sort().join(',') === [...actions].sort().join(','),
+    `表 [${Object.keys(INSTRUCTION_PLACEHOLDERS).join(',')}] vs 动作 [${actions.join(',')}]`)
+  ok('🔴 组件用的是这张表（不是写死一个 placeholder）',
+    readSrc('src/components/JieWenJiEdit.tsx').includes('INSTRUCTION_PLACEHOLDERS[instruction]'))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

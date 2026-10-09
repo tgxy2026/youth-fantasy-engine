@@ -31,7 +31,7 @@ export interface ContinuationPickOpts {
   prevTextCap?: number
 }
 
-export interface ContinuationPick {
+interface ContinuationPick {
   /** 焦点章是否在传入的叙事序里找到（找不到 ⇒ 下面全空，调用方据此提示） */
   found: boolean
   /** 本章及前若干章的摘要（叙事序：旧 → 新）。**只收有摘要的章** */
@@ -87,8 +87,16 @@ export function pickContinuationSources(
   const prevTexts: { title: string; content: string }[] = []
   let droppedPrevTexts = 0
   if (prevTextCount > 0) {
+    const cands = flat.slice(Math.max(0, idx - prevTextCount), idx)
+    const kept: { at: number; title: string; content: string }[] = []
+    // 🔴 额度**从紧邻的那一章开始分配**（新 → 旧），不是从最老的开始：
+    //    本项兼作衔接参照，紧邻上一章最不能被丢。若按旧 → 新分配，章数一多时
+    //    先吃满额度的恰是**最老**的章，紧邻的上一章反而被丢掉 —— 衔接直接失效，
+    //    而 UI 只会笼统报「前文章节 N 章」，作者根本看不出丢的是最要命的那一章。
+    //    分配完仍按**叙事序**（旧 → 新）输出，读起来是顺的。
     let used = 0
-    for (const c of flat.slice(Math.max(0, idx - prevTextCount), idx)) {
+    for (let k = cands.length - 1; k >= 0; k--) {
+      const c = cands[k]
       const body = (c.content ?? '').trim()
       // 空章 / 剩余额度连半句都放不下（留 200 字余量）⇒ 计入未带入，绝不硬塞半句话。
       // 单章超过剩余额度 ⇒ **截断保留末尾**（整章丢弃等于作者勾了却什么都没拿到）。
@@ -98,9 +106,11 @@ export function pickContinuationSources(
         continue
       }
       const text = body.length > room ? '…（本章前部因长度限制略过）' + body.slice(-room) : body
-      prevTexts.push({ title: c.title || '未命名章节', content: text })
+      kept.push({ at: k, title: c.title || '未命名章节', content: text })
       used += text.length
     }
+    kept.sort((a, b) => a.at - b.at) // 叙事序（旧 → 新）
+    for (const k of kept) prevTexts.push({ title: k.title, content: k.content })
   }
 
   return { found: true, summaries, missingSummaries, prevTexts, droppedPrevTexts }

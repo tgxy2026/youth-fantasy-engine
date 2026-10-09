@@ -11,6 +11,7 @@ import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
 import NumberField from './NumberField'
 import { ADVICE_START, INSTRUCTIONS, CONTINUE_PICKS } from './jieWenJiParts'
+import { INSTRUCTION_PLACEHOLDERS, INSTRUCTION_PLACEHOLDER_FALLBACK } from '../lib/rewriteAsk'
 import AIDataSourceNote from './AIDataSourceNote'
 import { countWords } from '../lib/textStats'
 import type { JieWenJiModel } from './useJieWenJiModel'
@@ -72,7 +73,7 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
                   maxHeight={120}
                   textClass="text-11"
                   className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 px-2 py-1 outline-none focus:border-amber/40 placeholder:text-ink-600"
-                  placeholder="例：偏向冷峻克制的叙述，少用形容词；对白不要书面语"
+                  placeholder={INSTRUCTION_PLACEHOLDERS[instruction] ?? INSTRUCTION_PLACEHOLDER_FALLBACK}
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -226,6 +227,9 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
                         {contOver && <span className="text-danger"> —— 超出的部分不会发送</span>}
                         {contMissed.length > 0 && (
                           <div className="text-amber/80">本次未带入：{contMissed.join('、')}</div>
+                        )}
+                        {!contPreview.srcFound && (
+                          <div className="text-amber/80">未能在章节列表里定位到本章，本次只会带设定资料</div>
                         )}
                       </>
                     )}

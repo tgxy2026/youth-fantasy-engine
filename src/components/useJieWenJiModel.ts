@@ -346,7 +346,9 @@ export function useJieWenJiModel(props: Props) {
     dropped: string[]
     missingSummaries: number
     droppedPrevTexts: number
-  }>({ loading: true, chars: 0, budget: 0, dropped: [], missingSummaries: 0, droppedPrevTexts: 0 })
+    /** 焦点章是否在叙事序里定位到（false ⇒ 只带得到设定资料，UI 要如实说明 —— 未知 ≠ 空） */
+    srcFound: boolean
+  }>({ loading: true, chars: 0, budget: 0, dropped: [], missingSummaries: 0, droppedPrevTexts: 0, srcFound: true })
 
   const toggleContPick = (key: string) =>
     setContPicks(prev => {
@@ -382,15 +384,20 @@ export function useJieWenJiModel(props: Props) {
           })
           if (cancelled) return
           // 概览 = buildProjectContext 的实际用量 + 我们单独拼的几块 + 正文末尾（按上限估，文案里带「约」）
+          // 🔴 必须把「写作文风」的长度也算进去 —— 实际发请求时会多推一个块，漏算会让
+          //    「预计占用」偏小：勾了文风档却显示「未超预算」，到真跑时才超（＝预估骗人）。
+          const fpLen = contPicks.has('fingerprint') ? (await activeFingerprintNote()).length : 0
           const extra =
             (wantSummaries ? src.summaries.length : 0) +
             (wantPrevTexts ? src.prevTexts.length : 0) +
+            fpLen +
             CONT_BODY_TAIL_CHARS
           setContPreview({
             loading: false, chars: ctx.chars + extra, budget,
             dropped: ctx.dropped,
             missingSummaries: wantSummaries ? src.missingSummaries : 0,
             droppedPrevTexts: wantPrevTexts ? src.droppedPrevTexts : 0,
+            srcFound: src.found,
           })
         } catch {
           if (!cancelled) setContPreview(p => ({ ...p, loading: false }))
@@ -445,6 +452,10 @@ export function useJieWenJiModel(props: Props) {
         summaryCount: wantSummaries ? snap.summaryCount : 0,
         prevTextCount: wantPrevTexts ? snap.prevTextCount : 0,
       })
+      // 🔴 `found:false` ＝「章没定位到」，不是「作者没勾素材」—— 必须说出来（未知 ≠ 空）
+      if (!src.found && (wantSummaries || wantPrevTexts)) {
+        showToast('未能在章节列表里定位到本章，本次续写只会带设定资料', 'info')
+      }
       // 设定类：只把勾中的页签交给 buildProjectContext
       const tabIds = CONTINUE_PICKS.filter(p => snap.picks.has(p.key)).flatMap(p => p.tabIds)
       const ctx = await buildProjectContext({
@@ -461,7 +472,7 @@ export function useJieWenJiModel(props: Props) {
       if (wantSummaries && src.summaries) blocks.push(`【章节摘要】\n${src.summaries}`)
       if (ctx.text) blocks.push(`【设定资料】\n${ctx.text}`)
       if (wantPrevTexts && src.prevTexts) blocks.push(`【前文章节】\n${src.prevTexts}`)
-      if (fpNote) blocks.push(`【文风档】\n${fpNote}`)
+      if (fpNote) blocks.push(`【写作文风】\n${fpNote}`)
 
       // 🔴 流式：每个 token 都上报会让整棵订阅树重渲染 ⇒ 按 150ms 节流
       let lastFlush = 0

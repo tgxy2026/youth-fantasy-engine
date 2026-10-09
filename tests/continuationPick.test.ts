@@ -6,7 +6,11 @@
 // 🔴 为什么值得单独测：这里每一个"差一位"都不会报错，只会让续写**接错地方**——
 //    比如把「前文章节」取成了开头（它同时是衔接参照；整章改写那边踩过一模一样的坑），
 //    模型拿到的是上一章的起手而非收尾，续写自然接不上，而界面上一切正常。
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { pickContinuationSources, type ChapLike } from '../src/lib/continuationPick'
+
+const readSrc = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8')
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -115,7 +119,21 @@ const FLAT: ChapLike[] = [1, 2, 3, 4, 5, 6].map(i => mk(i))
     r.prevTexts.map(t => t.title).join(','))
 }
 
-// ---------- ⑨ 开关全关：三块都空，但仍要知道"章找到了" ----------
+// ---------- ⑧b 🔴 额度不够时，**紧邻的那一章优先**（它同时是衔接参照） ----------
+// 若按「旧→新」分配额度，章数一多时先吃满的是**最老**的章，紧邻的上一章反被丢掉 ——
+// 衔接直接失效，而 UI 只笼统报「前文章节 N 章」，作者看不出丢的是最要命的那一章。
+{
+  const mkLong = (i: number): ChapLike => ({ id: `L${i}`, title: `第${i}章`, summary: '', content: 'x'.repeat(400) })
+  const flat = [mkLong(1), mkLong(2), mkLong(3), { id: 'cur', title: '本章', summary: '', content: '正文' }]
+  const r = pickContinuationSources(flat, 'cur', { summaryCount: 0, prevTextCount: 3, prevTextCap: 500 })
+  ok('🔴 额度紧张时先保**紧邻**的上一章（第 3 章）',
+    r.prevTexts.map(t => t.title).join(',') === '第3章', r.prevTexts.map(t => t.title).join(','))
+  ok('更早的两章被计入未带入', r.droppedPrevTexts === 2, String(r.droppedPrevTexts))
+  ok('保下来的那章内容是**末尾**（衔接参照）',
+    (r.prevTexts[0]?.content.length ?? 0) === 400, String(r.prevTexts[0]?.content.length))
+}
+
+// ---------- ⑨ 开关全关：两块都空，但仍要知道"章找到了" ----------
 {
   const r = pickContinuationSources(FLAT, 'c4', { summaryCount: 0, prevTextCount: 0 })
   ok('全关 ⇒ 两块都空', r.summaries.length === 0 && r.prevTexts.length === 0)
@@ -135,6 +153,26 @@ const FLAT: ChapLike[] = [1, 2, 3, 4, 5, 6].map(i => mk(i))
   const before = JSON.stringify(FLAT)
   pickContinuationSources(FLAT, 'c4', { summaryCount: 3, prevTextCount: 2 })
   ok('不改动入参（纯函数）', JSON.stringify(FLAT) === before)
+}
+
+// ---------- ⑫ 源码断言：两处「口径必须一致」的地方（2026-10-09 六维审计修的） ----------
+{
+  // ① 预算预览必须把「写作文风」的长度也算进去 —— 实际发请求时会多推一个块，
+  //    漏算会让「预计占用」偏小（勾了文风档却显示未超预算，到真跑时才超＝预估骗人）。
+  const model = readSrc('src/components/useJieWenJiModel.ts')
+  ok('🔴 预算预览把「写作文风」也算进去（fpLen）',
+    model.includes('const fpLen = contPicks.has(\'fingerprint\')'),
+    '预览与真跑的取数口径必须逐块一致')
+  ok('🔴 真跑时的块名与 UI 一致（【写作文风】，不是旧名【文风档】）',
+    model.includes('【写作文风】') && !model.includes('【文风档】'))
+  // ② 提示词里引用的块名必须**真实存在**：以前写着「遵守【写作规范】」，
+  //    而实际拼出的块是【项目资料】（写作规范作为 〖写作规范〗 子段在里面）——
+  //    模型按名字找不到该块，规则约束力被削弱（承诺↔实现不一致）。
+  const task = readSrc('src/lib/aiTasks/jieWenJi.ts')
+  ok('🔴 续写提示词不再引用不存在的【写作规范】块',
+    !task.includes('遵守【写作规范】'))
+  ok('🔴 改成指向实际存在的 〖写作规范〗 子段',
+    task.includes('〖写作规范〗'))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)
