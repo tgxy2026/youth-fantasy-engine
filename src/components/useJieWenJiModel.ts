@@ -273,6 +273,13 @@ export function useJieWenJiModel(props: Props) {
   // ============ 编辑：选区改稿 → 建议段 ============
   const selText = getSelectionText?.() ?? null
   const [instruction, setInstruction] = useState('润色')
+  /**
+   * 作者的**额外要求**与**期望字数**（2.9.2 · ②）。
+   * 🔴 都**不持久化**（拍板）：记住上次填的，会让它**悄悄影响**这一次的结果，作者难察觉。
+   * 🔴 期望字数只写进提示词、不做本地补写循环 —— 一次调用，实际字数以生成为准。
+   */
+  const [detail, setDetail] = useState('')
+  const [targetWords, setTargetWords] = useState<number | undefined>(undefined)
   // 结果连同**选区快照**一起存（写入前要比对，避免 AI 请求期间正文已改、建议段插错位置）
   const rewriteT = useTaskRunner<ChOwned<{ data: RewriteResult; selText: string | null }>, ChProgress>({
     ownerTab: 'editor', kind: 'jiewenji-rewrite', title: '颉文姬 · 选区改稿',
@@ -286,11 +293,12 @@ export function useJieWenJiModel(props: Props) {
   const runRewrite = () => {
     if (!aiReady || !selText || rewriteT.running) return
     const snapSel = selText
-    const snapInstruction = instruction
+    // 🔴 要求也在发起时**快照**：任务跑在 store 里，跑的过程中作者可能已经改了额外要求
+    const snapAsk = { instruction, detail, targetWords }
     rewriteT.run(async job => {
       job.progress({ ch })
       const styleCtx = await styleContextForAI()
-      const data = await aiRewritePassage(snapSel, snapInstruction, styleCtx, { signal: job.signal })
+      const data = await aiRewritePassage(snapSel, snapAsk, styleCtx, { signal: job.signal })
       return { ch, v: { data, selText: snapSel } }
     })
   }
@@ -382,7 +390,7 @@ export function useJieWenJiModel(props: Props) {
     aiReady, spriteOn, setSpriteOn, toggleSprite, mode, setMode, diagMode, setDiagMode, diag, runDiag,
     proofs, propsRunning, runProofread, stopProofread, replaceOne,
     ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry,
-    selText, instruction, setInstruction, rewrite, runRewrite, applyAdvice,
+    selText, instruction, setInstruction, detail, setDetail, targetWords, setTargetWords, rewrite, runRewrite, applyAdvice,
     rev, ooc, adv, plea, open, runReview, runOoc, runAdvice, runPleasure, runOpening,
     brief, runBrief, aiBtnCls, scoreCls,
   }

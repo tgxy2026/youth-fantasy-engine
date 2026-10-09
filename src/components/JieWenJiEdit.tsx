@@ -6,11 +6,13 @@
 import { PenLine, Wand2, Loader2, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { Button } from './Button'
+import AutoTextarea from './AutoTextarea'
+import NumberField from './NumberField'
 import { ADVICE_START, INSTRUCTIONS } from './jieWenJiParts'
 import type { JieWenJiModel } from './useJieWenJiModel'
 
 export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
-  const { aiReady, selText, instruction, setInstruction, rewrite, runRewrite, applyAdvice, aiBtnCls, onClearAdvice } = m
+  const { aiReady, selText, instruction, setInstruction, detail, setDetail, targetWords, setTargetWords, rewrite, runRewrite, applyAdvice, aiBtnCls, onClearAdvice } = m
   return (
           <>
             <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2">
@@ -35,6 +37,40 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
                   {ins}
                 </Button>
               ))}
+            </div>
+
+            {/* 2.9.2 · ②：额外要求 + 期望字数。
+                「动作 + 额外要求」是**并存**：动作决定纪律（扩写不得造专名等），额外要求是对它的细化。
+                🔴 不预填模板（会盖掉作者已写的内容）、不记忆（上次的要求会偷偷影响这次）。 */}
+            <div className="rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2 space-y-2">
+              <div>
+                <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-10 text-ink-500">额外要求（选填）</span>
+                  <span className="text-10 text-ink-600">写了就按它补充执行；不写则用「{instruction}」的默认做法</span>
+                </div>
+                <AutoTextarea
+                  value={detail}
+                  onChange={setDetail}
+                  minRows={2}
+                  maxHeight={120}
+                  textClass="text-11"
+                  className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 px-2 py-1 outline-none focus:border-amber/40 placeholder:text-ink-600"
+                  placeholder="例：偏向冷峻克制的叙述，少用形容词；对白不要书面语"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-10 text-ink-500">期望字数</span>
+                <NumberField
+                  value={targetWords}
+                  onChange={setTargetWords}
+                  min={1} max={20000}
+                  allowEmpty
+                  className="w-24 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-11 px-2 py-1 outline-none focus:border-amber/40 placeholder:text-ink-600"
+                  placeholder="留空＝不限"
+                />
+                <span className="text-10 text-ink-600">字</span>
+                <span className="text-10 text-ink-500">AI 会尽量贴近，实际字数以生成为准</span>
+              </div>
             </div>
 
             <Button variant="bare"

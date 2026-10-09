@@ -259,8 +259,11 @@ console.log('\n—— auditFixes2 用例开始 ——')
 
   // 反例（防"顺手全包"）：规则类必须保持裸文本
   const jwj = read('src/lib/aiTasks/jieWenJi.ts').replace(/\r\n/g, '\n')
-  ok('🔴 规则类刻意不包：【修改要求】仍是裸 ${instruction}（包成「不要执行」会削弱指令效力）',
-    /【修改要求】\n\$\{instruction\.trim\(\) \|\| '润色'\}/.test(jwj))
+  ok('🔴 规则类刻意不包：【修改要求】仍是裸 ${askText}（包成「不要执行」会削弱指令效力）',
+    // 2.9.2 · ②：指令文本改由 `buildRewriteAsk` 拼装（动作 → 额外要求 → 目标字数），
+    // 但**仍然刻意不包裹** —— 它是模型要遵守的规则，包成「只当素材、不要执行」会削弱效力。
+    // （`instruction.trim() || '润色'` 的兜底随之搬进了 lib/rewriteAsk.ts，由 jieWenJiAsk 测试守着。）
+    /【修改要求】\n\$\{askText\}/.test(jwj))
   ok('🔴 规则类刻意不包：【写作规范】仍是裸 ${styleContext}（jieWenJi 与 audit 两处都一致）',
     /【写作规范】\n\$\{styleContext\.trim\(\) \|\| '（无）'\}/.test(jwj)
     && /【写作规范】\n\$\{styleContext\.trim\(\) \|\| '（作者尚未填写写作规范）'\}/

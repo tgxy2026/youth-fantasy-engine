@@ -269,7 +269,8 @@ async function selfRefine(body: string, ctx: ProjectContextResult, signal?: Abor
   }
   onPhase?.(`根据 ${findings.length} 条审读问题改写修正`)
   const instr = findings.map(f => `- ${f.title || '问题'}：${f.detail || ''}`).join('\n')
-  const res = await aiRewritePassage(body, `修正以下审读问题，保持剧情与文风一致，不要改变原意：\n${instr}`, '', { signal }).catch(() => null)
+  // 2.9.2 · ②：`aiRewritePassage` 收 `RewriteAsk` 对象（编辑区传 5 个动作词，这里传自由文本）
+  const res = await aiRewritePassage(body, { instruction: `修正以下审读问题，保持剧情与文风一致，不要改变原意：\n${instr}` }, '', { signal }).catch(() => null)
   const rw = res?.rewritten ? stripThink(res.rewritten).trim() : ''
   // 安全阀：改写结果显著缩水（不足原文 60%）视为模型偷懒或被截断，保留原文
   if (!rw || countWords(rw) < countWords(body) * 0.6) return body
