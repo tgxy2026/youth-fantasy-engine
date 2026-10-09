@@ -25,6 +25,8 @@ import DataDock from './components/DataDock'
 import BackupReminder from './components/BackupReminder'
 import { markExported } from './lib/backupReminder'
 import WelcomeWizard from './components/WelcomeWizard'
+import MigrationWizard from './components/MigrationWizard'
+import { probeLegacy, type LegacyProbe } from './lib/legacyMigration'
 import FullTextSearch from './components/FullTextSearch'
 import JieWenJiSprite from './components/JieWenJiSprite'
 import GeoMapEditor from './components/GeoMapEditor'
@@ -80,6 +82,11 @@ export default function App() {
    * 走过一次即写全局 meta `welcomeDone`，此后不再出现。
    */
   const [needWelcome, setNeedWelcome] = useState(false)
+  /**
+   * 3.0 · W0-2：首启探测到的旧版（novel-studio）数据 —— 非空则弹迁移向导。
+   * 只在首启探测一次；导入或跳过即清空。
+   */
+  const [migrationProbe, setMigrationProbe] = useState<LegacyProbe | null>(null)
   // 从其他页签（如章节总表）跳转正文编辑时，要直达打开的章节 id
   const [editorTarget, setEditorTarget] = useState<string | null>(null)
   // 数据体检 / 地图等跨组件跳转时，要直达高亮的具体行 id（detail 携带 rowId 时下发）
@@ -186,7 +193,14 @@ export default function App() {
           db.getMeta('welcomeDone', '').catch(() => '1'), // 读失败按「已走过」处理，不拿一次异常当首次
           db.getAllProjects().catch(() => []),
         ])
-        if (!welcomed && existing.length === 0) setNeedWelcome(true)
+        if (!welcomed && existing.length === 0) {
+          setNeedWelcome(true)
+          // 🆕 3.0 · W0-2：首启探测旧版（novel-studio）数据 —— 有则弹迁移向导（叠在欢迎向导之上）
+          try {
+            const pr = await probeLegacy()
+            if (pr.exists && (pr.jsonExists || pr.idbExists)) setMigrationProbe(pr)
+          } catch { /* 探测失败不打扰首启 */ }
+        }
       }
       // AI 提示词的作者覆写要在任何 AI 调用之前生效（登记在各 lib 模块顶层，import 即完成）。
       // 它存在**全局 meta**（`ai.promptOverrides`，不是项目级 —— 与 lastProject 同一个 meta 区），
@@ -422,6 +436,8 @@ export default function App() {
       <>
         <DesktopWriteLockBanner />
         {needWelcome ? <WelcomeWizard onDone={onWelcomeDone} /> : <ProjectHub onOpen={openProject} onReplayWelcome={() => setNeedWelcome(true)} />}
+        {/* 3.0 · W0-2：首启迁移向导（叠在最上层；关闭后回到欢迎向导 / 项目首页） */}
+        {migrationProbe && <MigrationWizard probe={migrationProbe} onClose={() => setMigrationProbe(null)} />}
         {/* 2.6.3 · 启动自动检查到的新版本（在首页这一支挂载即可：启动默认停在这里） */}
         <UpdateDialog open={updateOpen} latest={updateLatest} onClose={() => setUpdateOpen(false)} />
         {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。

@@ -21,6 +21,7 @@
 //    作者在界面上勾选启用后才建索引、才进上下文 —— 这就是方案 §5.4 说的「不显式开启不生效」。
 
 import { openDB, type IDBPDatabase } from 'idb'
+import { idbDbExists, idbDeleteDatabase } from './idbMigrateUtil'
 import { uid } from './id'
 import { tokenize } from './tokenize'
 import { chunkChapter } from './semantic/chunk'
@@ -582,4 +583,41 @@ export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBun
     if (r.ok) n++
   }
   return n
+}
+
+/**
+ * 3.0 · W0-2 迁移：把旧品牌知识库（docs + bodies 两个 store）全量搬到当前库，然后删旧库。**仅供迁移调用**。
+ * 与 `semantic/store.ts` 的 `migrateVecFromLegacy` 同构（见那里的 LevelDB 说明）。
+ */
+export async function migrateKbFromLegacy(
+  legacyName = 'novel-studio-kb',
+): Promise<{ ok: boolean; count: number; error?: string }> {
+  if (!(await idbDbExists(legacyName))) return { ok: true, count: 0 }
+  let docs: unknown[] = []
+  let bodies: unknown[] = []
+  try {
+    const old = await openDB(legacyName, KB_DB_VERSION, {
+      upgrade(db) {
+        const d = db.createObjectStore(STORE_DOCS, { keyPath: 'id' })
+        d.createIndex('projectId', 'projectId', { unique: false })
+        db.createObjectStore(STORE_BODIES, { keyPath: 'id' })
+      },
+    })
+    docs = await old.getAll(STORE_DOCS)
+    bodies = await old.getAll(STORE_BODIES)
+    old.close()
+  } catch (e) {
+    return { ok: false, count: 0, error: '读取旧知识库失败：' + String((e as Error)?.message ?? e) }
+  }
+  try {
+    const db = await getKbDB()
+    const tx = db.transaction([STORE_DOCS, STORE_BODIES], 'readwrite')
+    for (const d of docs) await tx.objectStore(STORE_DOCS).put(d)
+    for (const b of bodies) await tx.objectStore(STORE_BODIES).put(b)
+    await tx.done
+  } catch (e) {
+    return { ok: false, count: 0, error: '写入新知识库失败：' + String((e as Error)?.message ?? e) }
+  }
+  await idbDeleteDatabase(legacyName)
+  return { ok: true, count: docs.length }
 }

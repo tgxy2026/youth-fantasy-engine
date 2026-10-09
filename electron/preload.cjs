@@ -88,3 +88,20 @@ contextBridge.exposeInMainWorld('electronUpdate', {
     return () => ipcRenderer.removeListener('update:progress', h)
   },
 })
+
+// 3.0 · W0-2 老用户数据迁移：探测旧版（novel-studio）数据、读旧整库 JSON、写新整库 JSON、
+// 复制 Chromium profile、定位并拉起旧版卸载器。remap 逻辑在渲染层（纯函数可单测），这层只搬运。
+contextBridge.exposeInMainWorld('electronMigration', {
+  /** 探测旧版数据是否存在（含旧 JSON / IDB / profile / 自定义数据路径），返回结构化结果 */
+  probe: () => ipcRenderer.invoke('migration:probe'),
+  /** 读旧整库 JSON 原文，返回 { ok, text, path } 或 { ok:false, error } */
+  readLegacyJson: () => ipcRenderer.invoke('migration:readLegacyJson'),
+  /** 把 remap 后的整库 JSON 写入新 userData，返回 { ok, path } 或 { ok:false, error } */
+  writeNewJson: (text) => ipcRenderer.invoke('migration:writeNewJson', text),
+  /** 复制旧 Chromium profile 文件（已存在项自动跳过），返回 { ok, copied[] } */
+  copyProfile: () => ipcRenderer.invoke('migration:copyProfile'),
+  /** 尽力定位旧版卸载器，返回 { ok, hits:[{dir, uninstaller}] } */
+  findUninstaller: () => ipcRenderer.invoke('migration:findUninstaller'),
+  /** 拉起指定卸载器，返回 { ok } 或 { ok:false, error } */
+  runUninstaller: (p) => ipcRenderer.invoke('migration:runUninstaller', p),
+})

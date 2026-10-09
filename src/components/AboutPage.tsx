@@ -1,14 +1,16 @@
-import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy } from 'lucide-react'
+import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy, ArchiveRestore } from 'lucide-react'
 import payWechat from '../assets/pay-wechat.png'
 import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
 import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { APP_VERSION_LABEL } from '../lib/env'
-import { copyText } from './dialogs'
+import { copyText, showToast } from './dialogs'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import UpdateDialog from './UpdateDialog'
+import MigrationWizard from './MigrationWizard'
+import { probeLegacy, type LegacyProbe } from '../lib/legacyMigration'
 import { QUARK_URL, QUARK_CODE, QUARK_TOKEN } from '../lib/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '../lib/versionCheck'
 import { usePersistedBool } from '../lib/uiPrefs'
@@ -50,6 +52,15 @@ export default function AboutPage() {
   const [autoCheck, setAuto] = usePersistedBool('update-auto-check', isAutoCheckOn())
   // 诊断信息（2026-10-06 补 · 可观测性）：反馈问题时一键复制环境与规模摘要
   const [diagBusy, setDiagBusy] = useState(false)
+  // 3.0 · W0-2：旧版数据迁移（首启向导之外的**手动入口**，幂等，可反复跑）
+  const [migProbe, setMigProbe] = useState<LegacyProbe | null>(null)
+  /** 探测旧版数据 → 有则弹迁移向导；没有则如实告知（不静默） */
+  const openLegacyImport = async () => {
+    const pr = await probeLegacy()
+    if (!pr.exists) { showToast('未找到旧版（novel-studio）的数据目录', 'info'); return }
+    if (!pr.jsonExists && !pr.idbExists) { showToast('旧版目录存在，但没有可导入的数据', 'info'); return }
+    setMigProbe(pr)
+  }
 
   const runCheck = async () => {
     setChecking(true)
@@ -78,6 +89,8 @@ export default function AboutPage() {
   return (
     <div className="h-full overflow-y-auto">
       <UpdateDialog open={dialogOpen} latest={result?.latest ?? null} onClose={() => setDialogOpen(false)} />
+      {/* 3.0 · W0-2：旧版数据迁移向导（手动入口触发） */}
+      {migProbe && <MigrationWizard probe={migProbe} onClose={() => setMigProbe(null)} />}
       <div className="max-w-5xl mx-auto px-6 py-8">
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-1">
@@ -201,6 +214,17 @@ export default function AboutPage() {
                 </p>
               </section>
             )}
+
+            {/* 3.0 · W0-2：旧版数据迁移（手动入口；首启向导之外，幂等可反复跑） */}
+            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+              <SectionTitle icon={<ArchiveRestore size={15} className="text-amber" />}>旧版数据迁移</SectionTitle>
+              <p className="text-ink-400 text-xs leading-relaxed mb-4">
+                若你之前用过旧版（novel-studio），可在这里把旧版的书稿、向量索引与知识库一次性导入到本软件。
+              </p>
+              <Button variant="secondary" onClick={() => void openLegacyImport()} className="gap-1.5">
+                <ArchiveRestore size={14} /> 导入旧版数据
+              </Button>
+            </section>
 
             {/* 联系方式（flex-1 撑满左列剩余高度） */}
             <section className="rounded-xl bg-ink-850 border border-ink-700 p-6 flex-1">

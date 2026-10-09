@@ -7,6 +7,8 @@ const fs = require('fs')
 const fsp = require('fs/promises')
 // 2.9.0 · 应用内下载安装包的内核（只允许 http/https、先写 .part、下完比对大小）
 const { downloadInstaller, cancelActiveDownload } = require('./updateDownload.cjs')
+// 3.0 · W0-2 老用户数据迁移内核（探测旧 userData / 窗口前复制旧 IDB / 读写整库 JSON / profile / 卸载引导）
+const migration = require('./migration.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 
@@ -123,6 +125,16 @@ app.whenReady().then(() => {
   } catch { /* 权限注册失败不挡启动：字体枚举降级为预置清单 + 自定义输入 */ }
 
   loadCustomPath() // 恢复用户自定义的数据文件位置（若有）
+
+  // 🔴 3.0 · W0-2：**窗口创建前**先把旧版 IndexedDB 目录复制过来。
+  //    时机是关键 —— IDB 是进程内 LevelDB，窗口起来后再替换目录不生效且可能损坏；
+  //    仅在「新 userData 尚无 IndexedDB 目录」时执行（全新首启）。失败不挡启动。
+  try {
+    const mr = migration.precopyLegacyIdb()
+    if (mr.copied) console.log('[migration] 已复制旧版 IndexedDB 目录到新 userData')
+  } catch (e) {
+    console.warn('[migration] 复制旧 IDB 目录失败（不挡启动）：', e && e.message)
+  }
   // ---- 存储相关 IPC ----
   // 启动时读取本地数据文件
   ipcMain.handle('store:load', () => {
@@ -279,6 +291,14 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('store:isCustomPath', () => !!customDataPath)
+
+  // ---- 3.0 · W0-2 老用户数据迁移 ----
+  ipcMain.handle('migration:probe', () => migration.probeLegacy())
+  ipcMain.handle('migration:readLegacyJson', () => migration.readLegacyJson())
+  ipcMain.handle('migration:writeNewJson', (_e, text) => migration.writeNewJson(text))
+  ipcMain.handle('migration:copyProfile', () => migration.copyLegacyProfile())
+  ipcMain.handle('migration:findUninstaller', () => migration.findLegacyUninstaller())
+  ipcMain.handle('migration:runUninstaller', (_e, p) => migration.runUninstaller(p))
 
   // 🔴 2026-10-07 六维审计 P2：sync:readFile / sync:writeFile 原先直接吃渲染层传来的任意路径，
   //    等于把「任意文件读写」原语暴露出去。这里做**零契约成本**的收窄：只接受「绝对路径 + .yfe 结尾」——

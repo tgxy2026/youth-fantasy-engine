@@ -17,6 +17,7 @@
 //    这是可接受的取舍 —— 重建成本是嵌入调用，而换电脑本来就要重配模型。
 
 import { openDB, type IDBPDatabase } from 'idb'
+import { idbDbExists, idbDeleteDatabase } from '../idbMigrateUtil'
 import { chunkKey, vectorRowId } from './chunk'
 
 /**
@@ -299,4 +300,39 @@ export function makeVecRow(input: {
     refKey: `${input.projectId}::${input.refId}`,
     updatedAt: input.updatedAt ?? Date.now(),
   }
+}
+
+/**
+ * 3.0 · W0-2 迁移：把旧品牌向量库的全部行搬到当前库，然后删掉旧库。**仅供迁移调用**。
+ *
+ * 🔴 为什么是「开旧库读 → 写新库 → 删旧库」而不是直接改文件名：IndexedDB 底层是 LevelDB，
+ *    文件名按内容寻址、MANIFEST 相互引用，**不能简单改名**（见 `docs/3.0-开发方案.md` §3.4）。
+ * 旧库不存在 → 视为「无数据可搬」，返回 count=0（不算失败）。
+ */
+export async function migrateVecFromLegacy(
+  legacyName = 'novel-studio-vec',
+): Promise<{ ok: boolean; count: number; error?: string }> {
+  if (!(await idbDbExists(legacyName))) return { ok: true, count: 0 }
+  let rows: VecRow[] = []
+  try {
+    // 用与 getVecDB 完全一致的 schema 打开旧库（否则版本/表结构对不上会读空）
+    const old = await openDB(legacyName, VEC_DB_VERSION, {
+      upgrade(db) {
+        const store = db.createObjectStore(VEC_STORE, { keyPath: 'id' })
+        store.createIndex('projectId', 'projectId', { unique: false })
+        store.createIndex('refKey', 'refKey', { unique: false })
+      },
+    })
+    rows = (await old.getAll(VEC_STORE)) as VecRow[]
+    old.close()
+  } catch (e) {
+    return { ok: false, count: 0, error: '读取旧向量库失败：' + String((e as Error)?.message ?? e) }
+  }
+  try {
+    await idbBulkPut(rows)
+  } catch (e) {
+    return { ok: false, count: 0, error: '写入新向量库失败：' + String((e as Error)?.message ?? e) }
+  }
+  await idbDeleteDatabase(legacyName)
+  return { ok: true, count: rows.length }
 }
