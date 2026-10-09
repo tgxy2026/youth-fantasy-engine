@@ -377,7 +377,9 @@ export function useTavernFreeModel() {
         ...created,
         ...(snap ? { scriptId: snap.scriptId, script: snap } : {}),
         ...(storySnap && storySnap.setting ? { storySetting: storySnap } : {}),
-        ...(opening ? { messages: [{ id: uid(), role: 'user' as const, content: opening, at: Date.now() }] } : {}),
+        // `opening: true` 是**仅供界面**的标记（请求只取 role/content）⇒ TavernFree 把它渲染成
+        // 「场景引入」块而不是你的气泡；同时它仍是 role:'user'，模型照旧顺着它往下演。
+        ...(opening ? { messages: [{ id: uid(), role: 'user' as const, content: opening, at: Date.now(), opening: true }] } : {}),
       }
       await store.saveFreeSession(withOpening)
       setSetupOpen(false)

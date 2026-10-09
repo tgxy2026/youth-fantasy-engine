@@ -485,7 +485,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                     </pre>
                     {scriptView.opening.trim() && (
                       <div className="mt-2 border-t border-ink-800 pt-1.5">
-                        <div className="text-10 text-ink-500">开场白（会变成对话的第一条消息）：</div>
+                        <div className="text-10 text-ink-500">开场白（会作为「开场」单独显示在对话最上方）：</div>
                         <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-10 leading-relaxed text-ink-400">
                           {scriptView.opening.trim()}
                         </pre>
@@ -496,7 +496,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                   <p className="mt-1 text-11 leading-relaxed text-ink-500">
                     {scriptId
                       ? '这份剧本读不到了（可能刚被删）—— 换成「留空」或另选一份。'
-                      : '留空 = 没有开场白，你直接说第一句（旧行为）。选一份剧本则自动带出情境、你的位置、目标与禁区；开场白会渲染成对话的第一条消息。剧本的「情境」只描述此刻；背景归角色卡的「角色与设定的关系」与它所属故事的「世界设定」—— 别互相抄。'}
+                      : '留空 = 没有开场白，你直接说第一句（旧行为）。选一份剧本则自动带出情境、你的位置、目标与禁区；开场白会作为「开场」单独显示在对话最上方 —— 它不是你说的、也不是 AI 说的。剧本的「情境」只描述此刻；背景归角色卡的「角色与设定的关系」与它所属故事的「世界设定」—— 别互相抄。'}
                   </p>
                 )}
 

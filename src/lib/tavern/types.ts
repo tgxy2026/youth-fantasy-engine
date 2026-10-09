@@ -39,6 +39,15 @@ export type TavernMessage = {
   variants?: string[]
   /** 当前选中的候选下标（缺省视为 0，兼容只有单一 content 的老数据） */
   variantIdx?: number
+  /**
+   * 开场白（2026-10-09）：本条是剧本开场白 —— 界面按「场景引入」**独立显示**，不画成某一方的气泡。
+   *
+   * 🔴 **仅供界面**：组装请求时只取 `role` 与 `content`（`engine.ts` 的两处出口都是这样 map 的），
+   *    所以加这个字段**不改变发给模型的任何内容**。开场白仍以 `role: 'user'` 落库
+   *    （理由见 `script.ts` 的 `openingToMessage`：标成 assistant 会让模型应答自己）。
+   *    老数据没有这个字段 —— 由 `isOpeningMessage()` 按「第一条 + user + 内容等于剧本快照开场白」兜底识别。
+   */
+  opening?: boolean
 }
 
 export type TavernModelRef = {

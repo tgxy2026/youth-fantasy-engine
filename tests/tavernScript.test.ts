@@ -7,7 +7,7 @@
 //     （名称是给人看的，开场白走消息通道）。弄反了要么白占额度，要么模型以为用户已经说过那句。
 import {
   listScripts, getScript, saveScript, createScript, deleteScript,
-  snapshotOf, scriptToText, openingToMessage, scriptSceneLine, scriptDisplayName,
+  snapshotOf, scriptToText, openingToMessage, isOpeningMessage, scriptSceneLine, scriptDisplayName,
   isEmptySnapshot, isEmptyScriptFields, mergeScriptDraft, firstLine,
   parseScriptDraft, draftScript, emptyScript, EMPTY_SCRIPT_FIELDS,
   SCRIPT_MAX_CHARS,
@@ -205,6 +205,28 @@ async function main() {
     void changed
     const again = await buildFreeSystem((await store.getFreeSession(s0.id))!, chars, st)
     ok('🔴 剧本被改后，已存会话的 system 仍是旧快照', again.system.includes('让她说出那件一直不肯说的事'))
+  }
+
+  // ---------- 开场白识别（2026-10-09：界面按「场景引入」独立显示，靠它判定）----------
+  //
+  // 判据有两条：新数据看消息上的 `opening` 标记；老数据按「第一条 + user + 内容等于会话快照的
+  // 开场白」兜底（零迁移）。**只认第一条**是关键 —— 否则作者某条用户消息恰好与开场白同字，
+  // 那条就会被换掉样式。
+  {
+    const snap = { opening: '（她抬眼看了看你）\n你来了。' }
+    const chk = (m: { role?: string; content?: string; opening?: boolean }, i: number, s?: { opening?: string } | null) =>
+      isOpeningMessage(m, i, s)
+
+    ok('新数据：带 opening 标记 ⇒ 是开场白', chk({ role: 'user', content: '随便什么', opening: true }, 0, null) === true)
+    ok('新数据：带标记但不在第一条 ⇒ 不是（只认第一条）', chk({ role: 'user', content: 'x', opening: true }, 1, null) === false)
+    ok('新数据：带标记但 role 是 assistant ⇒ 不是', chk({ role: 'assistant', content: 'x', opening: true }, 0, null) === false)
+    ok('老数据：第一条 + user + 内容与快照一致 ⇒ 是（零迁移识别）', chk({ role: 'user', content: snap.opening }, 0, snap) === true)
+    ok('老数据：内容与快照不一致 ⇒ 不是', chk({ role: 'user', content: '别的话' }, 0, snap) === false)
+    ok('老数据：快照没有开场白 ⇒ 不是', chk({ role: 'user', content: 'x' }, 0, { opening: '' }) === false)
+    ok('既无标记、又无快照 ⇒ 不是', chk({ role: 'user', content: snap.opening }, 0, null) === false)
+    ok('首尾空白容错（两边 trim 后比）', chk({ role: 'user', content: `  ${snap.opening}  ` }, 0, snap) === true)
+    ok('第二条即便同字也不是', chk({ role: 'user', content: snap.opening }, 1, snap) === false)
+    ok('老数据：role 是 assistant ⇒ 不是', chk({ role: 'assistant', content: snap.opening }, 0, snap) === false)
   }
 
   console.log('')

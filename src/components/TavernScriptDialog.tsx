@@ -107,7 +107,7 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing, st
       footer={
         <div className="flex w-full items-center justify-between gap-3">
           <span className="text-11 text-ink-500">
-            {empty ? '六栏全空 —— 保存了也不会进上下文' : `每轮注入约 ${preview.length} 字（开场白单列一条消息）`}
+            {empty ? '六栏全空 —— 保存了也不会进上下文' : `每轮注入约 ${preview.length} 字（开场白单列一条，不占这额度）`}
           </span>
           <div className="flex gap-2">
             <Button variant="secondary" size="md" onClick={onClose}>取消</Button>

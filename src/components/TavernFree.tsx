@@ -26,7 +26,7 @@ import HelpPopover from './HelpPopover'
 import { Z } from '../lib/zLayer'
 import AIDataSourceNote from './AIDataSourceNote'
 import TavernEchoHints from './TavernEchoHints'
-import { ChevronDown, Pencil } from 'lucide-react'
+import { ChevronDown, Clapperboard, Pencil } from 'lucide-react'
 import { showToast, } from './dialogs'
 import { Button } from './Button'
 import { Modal } from './Modal'
@@ -57,7 +57,7 @@ import {
   type VarKey, type CharVars, type TavernVars,
 } from '../lib/tavern/types'
 import { VAR_SCALE, } from '../lib/tavern/vars'
-import { scriptSceneLine, } from '../lib/tavern/script'
+import { scriptSceneLine, isOpeningMessage } from '../lib/tavern/script'
 
 
 import { freeDocModel, } from '../lib/tavern/exportDoc'
@@ -332,11 +332,42 @@ export default function TavernFree() {
                     还没有对话。在下面说第一句话，Ta就会应你。
                   </div>
                 )}
-                {session.messages.map(m => {
+                {session.messages.map((m, i) => {
                   const who = m.speakerId ? aiCards.find(c => c.id === m.speakerId) : undefined
                   // 头像规则：多角色同场必须挂（否则分不清谁在说）；单角色只有**设过头像**才挂
                   // （没设时挂一个名字首字的圆点，在单人对话里纯属视觉噪音）
                   const showWho = aiCards.length > 1 || !!who?.avatar
+                  /**
+                   * 开场白：独立的「场景引入」形态 —— 它不是任何人说的一句话，所以不占某一侧、
+                   * 不挂头像、不画气泡，整块居中（与左右两种对话形成第三种视觉语言）。
+                   *
+                   * 🔴 它仍是 `role: 'user'`（模型靠它接戏，理由见 script.ts 的 openingToMessage），
+                   *    只是**界面不再那么显示**。
+                   * 🔴 工具条**只给「编辑」**：不传 onToggleHidden / onDelete —— 
+                   *    「隐藏」会让它不进上下文（模型读不到开场白就不知道戏从哪儿接），
+                   *    「删除」会拆掉这场戏的起点。两者对开场白都不合适。
+                   */
+                  if (isOpeningMessage(m, i, session.script)) {
+                    return (
+                      <div key={m.id} className="mx-auto w-full max-w-[92%]">
+                        <div className="rounded-lg border border-ink-800 bg-ink-900/50 px-3.5 py-2.5">
+                          <div className="mb-1 flex items-center gap-1.5">
+                            <Clapperboard size={11} className="text-amber/70" />
+                            <span className="text-10 text-amber/80">开场</span>
+                          </div>
+                          <TavernMessageBody
+                            content={m.content} hidden={m.hidden} edited={m.edited}
+                            ops={{
+                              canReroll: false,
+                              busy: streaming,
+                              locked: !!session.endedAt,
+                              onSaveEdit: t => saveEdited(m.id, t),
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  }
                   return (
                     <div key={m.id} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
                       {m.role !== 'user' && showWho && (

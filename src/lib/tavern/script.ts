@@ -175,11 +175,38 @@ export function scriptToText(s: ScriptSnapshot | null | undefined): string {
  * 🔴 它以 **`role: 'user'`** 落库（见 TavernFree 新建会话处），这是刻意的：
  *    开场白的作用是「把这一场的起点处境摆出来」，模型读到它就知道戏从哪儿接，
  *    于是顺着往下演；若标成 `assistant`，模型会以为自己刚说完这句话，转而应答自己。
- *    代价是界面上它显示在**你那一侧** —— 这一点在「故事剧本」页的开场白说明里已向作者交代。
+ *    ⚠️ **界面已不再显示成你的气泡**（2026-10-09）：建会话时给这条消息打 `opening` 标记，
+ *    `TavernFree` 按「场景引入」独立渲染；老的会话由 `isOpeningMessage()` 按内容兜底识别。
  */
 export function openingToMessage(s: ScriptSnapshot | null | undefined): string {
   if (!s?.opening) return ''
   return s.opening
+}
+
+/**
+ * 这条消息是不是「开场白」—— 界面据此走独立的「场景引入」形态（不画成 user 气泡）。
+ *
+ * 两条判据（任一成立即可）：
+ *   ① 新数据：消息上带 `opening` 标记（建会话时写入）。
+ *   ② 老数据（**零迁移**）：`第一条 && role === 'user' && 内容 === 该会话剧本快照的 opening`。
+ *      比对的是**会话自己的快照**，所以作者后来改了剧本，也不会误判历史会话。
+ *
+ * ⚠️ 只认**第一条** —— 即使作者某条用户消息恰好与开场白同字，也不该被换掉样式。
+ * ⚠️ 比对前两边都 `trim()`：存的是原文，而用户编辑后可能带上首尾空白。
+ */
+export function isOpeningMessage(
+  m: { role?: string; content?: string; opening?: boolean },
+  index: number,
+  /**
+   * ⚠️ 只声明用到的那一个字段（不是整个 `ScriptSnapshot`）—— 判据最小化：
+   *    函数确实只读 `opening`，写宽了会让调用方以为它还依赖别的（也让测试难构造）。
+   */
+  script?: { opening?: string } | null,
+): boolean {
+  if (index !== 0 || m.role !== 'user') return false
+  if (m.opening === true) return true
+  const op = (script?.opening ?? '').trim()
+  return !!op && (m.content ?? '').trim() === op
 }
 
 /** 状态栏那一行「场景」的兜底文案：没有手填 scene 时用剧本的名字与情境首句 */

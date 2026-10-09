@@ -29,10 +29,20 @@ export type MessageOps = {
   /** 能不能重说（= 是不是末尾那条 AI 回复，且当前没在生成） */
   canReroll: boolean
   busy: boolean
-  onReroll: () => void
+  /**
+   * 🔴 可选（2026-10-09）：不传就不渲染「重说」（与 `onBranch` 同一约定）。
+   *    开场白是**作者写的剧本内容**、不是 AI 生成的，压根没有「重说」这个操作 —— 传空函数只会让
+   *    `canReroll:false` 与 `onReroll` 两处判据并存、语义打架，不如直接不给。
+   */
+  onReroll?: () => void
   onSaveEdit: (text: string) => void
-  onToggleHidden: () => void
-  onDelete: () => void
+  /**
+   * 🔴 可选（2026-10-09）：**不传就不渲染那个按钮**（与 `onBranch` 同一约定）。
+   *    开场白只传 `onSaveEdit` —— 「隐藏」会让它**不进上下文**（模型读不到开场白就接不上戏），
+   *    「删除」会拆掉这场戏的起点，两者对开场白都不合适。
+   */
+  onToggleHidden?: () => void
+  onDelete?: () => void
   /** 从这一条分支（不传 = 这个页面没有分支功能，按钮不渲染） */
   onBranch?: () => void
   /**
@@ -98,7 +108,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
               归档只读（ops.locked）时**整条不渲染** —— 理由见 MessageOps.locked。 */}
           {!ops.locked && (
           <div className="mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
-            {ops.canReroll && (
+            {ops.canReroll && ops.onReroll && (
               <Button
                 variant="secondary" size="xs" disabled={ops.busy}
                 title="用同一段历史让 AI 重说这一条"
@@ -136,13 +146,15 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
             >
               编辑
             </Button>
-            <Button
-              variant="secondary" size="xs" disabled={ops.busy}
-              title={hidden ? '恢复这条，让它重新参与上下文' : '这条先不让 AI 看见（界面仍留着）'}
-              onClick={ops.onToggleHidden}
-            >
-              {hidden ? '取消隐藏' : '隐藏'}
-            </Button>
+            {ops.onToggleHidden && (
+              <Button
+                variant="secondary" size="xs" disabled={ops.busy}
+                title={hidden ? '恢复这条，让它重新参与上下文' : '这条先不让 AI 看见（界面仍留着）'}
+                onClick={ops.onToggleHidden}
+              >
+                {hidden ? '取消隐藏' : '隐藏'}
+              </Button>
+            )}
             {ops.onBranch && (
               <Button
                 variant="secondary" size="xs" disabled={ops.busy}
@@ -152,13 +164,15 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
                 分支
               </Button>
             )}
-            <Button
-              variant="secondary" size="xs" disabled={ops.busy}
-              title="从这场的记录里删掉（不可撤销）"
-              onClick={ops.onDelete}
-            >
-              删除
-            </Button>
+            {ops.onDelete && (
+              <Button
+                variant="secondary" size="xs" disabled={ops.busy}
+                title="从这场的记录里删掉（不可撤销）"
+                onClick={ops.onDelete}
+              >
+                删除
+              </Button>
+            )}
           </div>
           )}
         </>

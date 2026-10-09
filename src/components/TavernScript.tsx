@@ -851,7 +851,7 @@ export default function TavernScript() {
                 {!isEmptyScriptFields(fields) && (
                   <>
                     <div className="mt-2 text-10 text-ink-500">
-                      开场白（对话第一条消息，示例）：
+                      开场白（在对话里作为「开场」单独显示，示例）：
                     </div>
                     <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
                       {cur.opening.trim() || '（没写开场白 → 没有第一条消息，你直接开口）'}
