@@ -24,6 +24,7 @@ import EmbeddingIndexPanel from './EmbeddingIndexPanel'
 import { confirmDialog, showToast } from './dialogs'
 import { syncTuningWithModel } from '../lib/tavern/settings'
 import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '../lib/modelSampling'
+import { filterModels } from '../lib/modelFilter'
 import SamplingUnavailable from './SamplingUnavailable'
 import { syncWriterBudgetToModel } from '../lib/aiWriterBudget'
 import {
@@ -83,6 +84,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
   const [openaiModels, setOpenaiModels] = useState<string[]>([])
   const [fetchingOpenAI, setFetchingOpenAI] = useState(false)
+  /**
+   * 模型清单的**筛选关键词**（2.9.2 · ①）。
+   * 为什么需要：中转站的可用模型常有几百项，原生 select 的「键入前缀跳转」根本不够用。
+   * 🔴 两处列表各一份 state —— 作者在端点与 Ollama 之间来回切时，互不干扰。
+   */
+  const [ollamaFilter, setOllamaFilter] = useState('')
+  const [openaiFilter, setOpenaiFilter] = useState('')
   const [testing, setTesting] = useState(false)
   const [editResult, setEditResult] = useState<AITestResult | null>(null)
   const [saving, setSaving] = useState(false)
@@ -608,15 +616,33 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       <Button variant="secondary" size="sm" onClick={() => fetchModels(editing.baseUrl)} className="shrink-0">获取本地模型</Button>
                     </div>
                   </div>
-                  {ollamaModels.length > 0 && (
+                  {ollamaModels.length > 0 && (() => {
+                    // 2.9.2 · ①：先筛再用 —— 本机 pull 多了同样会翻半天
+                    const shown = filterModels(ollamaModels, ollamaFilter)
+                    return (
                     <div>
-                      <label className="block text-11 text-ink-500 mb-1">选择模型</label>
-                      <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })}>
+                      <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
+                        <label className="block text-11 text-ink-500">选择模型</label>
+                        {ollamaFilter.trim() && (
+                          <span className="text-10 text-ink-500">命中 {shown.length} / 共 {ollamaModels.length}</span>
+                        )}
+                      </div>
+                      <input
+                        className="mb-1 w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600"
+                        value={ollamaFilter}
+                        onChange={e => setOllamaFilter(e.target.value)}
+                        placeholder="筛选模型名（空格分隔可多词，如 qwen 8b）"
+                      />
+                      <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={shown.includes(editing.model) ? editing.model : ''} onChange={e => setEditing({ ...editing, model: e.target.value })}>
                         <option value="">— 请选择 —</option>
-                        {ollamaModels.map(m => <option key={m} value={m}>{m}</option>)}
+                        {shown.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
+                      {shown.length === 0 && (
+                        <p className="text-10 text-ink-500 mt-1">没有匹配的模型 —— 换个关键词，或在下方手动填写。</p>
+                      )}
                     </div>
-                  )}
+                    )
+                  })()}
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">或手动填写模型名</label>
                     <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} placeholder="需本机已 ollama pull" />
@@ -646,16 +672,34 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       <Button variant="secondary" size="sm" disabled={fetchingOpenAI || !editing.baseUrl.trim()} onClick={() => void fetchOpenAIModels()} className="shrink-0" title="按当前接口地址拉取该端点可用的模型清单（官方平台 / 中转站 / 本地兼容服务均支持）">{fetchingOpenAI ? '获取中…' : '获取可用模型'}</Button>
                     </div>
                   </div>
-                  {openaiModels.length > 0 && (
+                  {openaiModels.length > 0 && (() => {
+                    // 2.9.2 · ①：中转站动辄几百个模型，靠 select 的「键入前缀跳转」不够用
+                    const shown = filterModels(openaiModels, openaiFilter)
+                    return (
                     <div>
-                      <label className="block text-11 text-ink-500 mb-1">从端点获取的可用模型（{openaiModels.length} 个）</label>
-                      <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={openaiModels.includes(editing.model) ? editing.model : ''} onChange={e => setEditing({ ...editing, model: e.target.value })}>
+                      <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
+                        <label className="block text-11 text-ink-500">从端点获取的可用模型（{openaiModels.length} 个）</label>
+                        {openaiFilter.trim() && (
+                          <span className="text-10 text-ink-500">命中 {shown.length} / 共 {openaiModels.length}</span>
+                        )}
+                      </div>
+                      <input
+                        className="mb-1 w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600"
+                        value={openaiFilter}
+                        onChange={e => setOpenaiFilter(e.target.value)}
+                        placeholder="筛选模型名（空格分隔可多词，如 qwen 32b）"
+                      />
+                      <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={shown.includes(editing.model) ? editing.model : ''} onChange={e => setEditing({ ...editing, model: e.target.value })}>
                         <option value="">— 请选择 —</option>
-                        {openaiModels.map(m => <option key={m} value={m}>{m}</option>)}
+                        {shown.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
-                      <p className="text-10 text-ink-500 mt-1">列表较长时可在选择框内直接键入模型名前缀定位；也可在下方手动填写。</p>
+                      {shown.length === 0 && (
+                        <p className="text-10 text-ink-500 mt-1">没有匹配的模型 —— 换个关键词，或在下方手动填写。</p>
+                      )}
+                      <p className="text-10 text-ink-500 mt-1">清单较长时用上面的筛选框按名字定位最快；也可在下方手动填写。</p>
                     </div>
-                  )}
+                    )
+                  })()}
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">API 密钥</label>
                     <input type="password" className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 font-mono placeholder:text-ink-600" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} placeholder="密钥只存本机，不随云盘同步" />
