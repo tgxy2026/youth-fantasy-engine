@@ -97,9 +97,19 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 
   return (
     <div className="page-enter">
-      {/* 头部 */}
-      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
-        <div className="min-w-0">
+      {/* 头部
+          🔴🔴 2026-10-09 主人反馈「缩小窗口时页面显示异常」：本页工具条很长（历史事件表 1105px），
+          原来它是 `shrink-0`（不可压缩）、而左侧标题容器只有 `min-w-0`（**能被压到 0 宽**）——
+          于是可用宽度不足时标题与描述被压成一条竖缝、工具条右侧被裁掉。
+          现在改成「**放不下就折行**」：
+            · header 加 `flex-wrap` —— 一行塞不下时工具条整体落到第二行；
+            · 左栏 `flex-1` + `min-w-[14rem]` —— flex-basis 归零，让换行判断不受它那长描述影响
+              （否则宽屏也会误判成"放不下"），同时保底 224px 不再被压成 0；
+            · 工具条去掉 `shrink-0` 并加 `flex-wrap justify-end ml-auto` ——
+              它独占一行时会被压到行宽、内部按钮再按需折行，且始终靠右。
+          宽屏下三者都不生效 ⇒ 版式与改动前逐像素一致。 */}
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+        <div className="min-w-[14rem] flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
             <HelpPopover title={`${tab.name} · 怎么用`} width="23rem" size={13}>{`这是「${tab.name}」数据表，常见操作：
@@ -125,7 +135,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           </div>
           <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>

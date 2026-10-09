@@ -354,9 +354,14 @@ style={{ zIndex: Z.pageBase }}
           </div>
         </div>
 
-        {/* 界面缩放 */}
-        <div className="flex items-center gap-2 pt-1">
-          <span className="flex items-center gap-1">界面缩放
+        {/* 界面缩放
+            🔴 2026-10-09：这行原先 `flex items-center gap-2` + 只有「自动」带 shrink-0，
+            而「界面缩放」标签默认可压缩 ⇒ 侧栏内容区只有 192px、这行需求约 210px，
+            多出来的 18px **全由标签承担** ⇒ 被压成一个字宽、「界面缩放」竖排。
+            改成允许折行 + 标签不可压缩：折行后第一行是「标签 + 自动」，第二行是右侧那组，
+            两组都完整。 */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1">
+          <span className="flex shrink-0 items-center gap-1">界面缩放
             <HelpPopover title="界面缩放怎么用" width="20rem" size={11}>
               {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
             </HelpPopover>

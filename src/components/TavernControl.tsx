@@ -39,8 +39,10 @@ export default function TavernControl() {
       {/* 🔴 吸顶（对齐四个同形态页头）：本页内容高达 6500+px，改中段内容（如「我的档案」）时必须向下滚 ——
           页头原本随滚动走，实测滚到档案区时保存按钮在视口上方 2400px 处。
           ⚠️ 本页外层用 space-y-4 供间距，故**不加** mb-5（加了会双重间距）。 */}
-      <header className="flex items-start justify-between gap-4 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
-        <div>
+      {/* 🔴 2026-10-09 与 TableSheet / CharacterSheet 同一处修复：工具条 `shrink-0` + 左栏可压缩
+          ⇒ 窄窗口下左侧标题被挤成竖排（同一 bug 家族）。改成「放不下就折行」。 */}
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+        <div className="min-w-[14rem] flex-1">
           {/* h1 是块级元素，问号必须与它同处一个 flex 行内容器，否则会被挤到标题下一行 */}
           <div className="flex items-center gap-1.5">
             <h1 className="text-16 text-ink-100">控制面板</h1>
@@ -54,7 +56,7 @@ export default function TavernControl() {
             默认值就是内置的出厂值 —— 不动它时行为与之前完全一致。
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}
           <Button
             variant="secondary" size="sm" onClick={() => setShowBands(v => !v)}

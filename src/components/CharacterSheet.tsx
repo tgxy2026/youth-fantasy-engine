@@ -330,8 +330,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
 
   return (
     <div className="page-enter">
-      <header className="mb-5 flex items-start justify-between gap-4 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
-        <div className="min-w-0">
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+        <div className="min-w-[14rem] flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
             <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{isCharTab ? `这是「${tab.name}」角色卡，按模块填写人物设定：
@@ -351,7 +351,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
           </div>
           <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        {/* 🔴 2026-10-09 与 TableSheet 同一处修复：工具条 `shrink-0` + 标题只有 `min-w-0`
+            ⇒ 窄窗口下标题被压成一条竖缝（本页需 992px，1000px 窗口只有 728px）。
+            改成「放不下就折行」：左栏 flex-1 + 保底 14rem；工具条 ml-auto + 内部可折行。 */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
