@@ -107,7 +107,7 @@ async function runOnce(p: AIProvider, round: number): Promise<void> {
 
 async function main() {
   if (!fs.existsSync(SF_FILE)) {
-    console.error('缺少 .workbuddy/tmp/sf-providers.json —— 先从 Electron 的 novel-studio-data.json 导出硅基流动配置')
+    console.error('缺少 .workbuddy/tmp/sf-providers.json —— 先从 Electron 的 youth-fantasy-engine-data.json 导出硅基流动配置')
     process.exit(1)
   }
   const list = JSON.parse(fs.readFileSync(SF_FILE, 'utf8')) as AIProvider[]

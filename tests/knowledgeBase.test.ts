@@ -361,7 +361,7 @@ const multiPara = (n: number): string =>
     && !/from\s+['"]\.\.?\/db['"]/.test(kbSrc)
     && !/from\s+['"]\.\.?\/db\//.test(kbSrc))
   ok('知识库走独立 IndexedDB 库（不进桌面整库 JSON / 不参与云同步）',
-    kbSrc.includes('novel-studio-kb'))
+    kbSrc.includes('youth-fantasy-engine-kb'))
 
   const ctx = read('src/lib/aiContext.ts')
   ok('aiContext 接入了 buildKbBlock', ctx.includes('buildKbBlock'))

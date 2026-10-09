@@ -24,7 +24,7 @@ export interface StoreOps {
 
 /** 整库单文件的数据格式（桌面版 JSON 数据文件） */
 export interface PortableData {
-  app: 'novel-studio'
+  app: 'youth-fantasy-engine'
   kind: 'portable-data'
   fileVersion: number
   savedAt: number
@@ -42,7 +42,7 @@ export function normalizePortableData(parsed: unknown): PortableData {
     }
   }
   return {
-    app: 'novel-studio', kind: 'portable-data',
+    app: 'youth-fantasy-engine', kind: 'portable-data',
     fileVersion: obj.fileVersion ?? 1, savedAt: obj.savedAt ?? 0, stores,
   }
 }
@@ -62,5 +62,5 @@ export function normalizePortableData(parsed: unknown): PortableData {
 export function isPortableDataFile(parsed: unknown): boolean {
   const o = (parsed ?? {}) as { app?: unknown; kind?: unknown }
   if (o.kind !== 'portable-data') return false
-  return o.app === undefined || o.app === 'novel-studio'
+  return o.app === undefined || o.app === 'youth-fantasy-engine'
 }

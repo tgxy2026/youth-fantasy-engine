@@ -10,7 +10,7 @@
 //
 // 保护项（绝不删除）：
 //   release/eb-cache      electron-builder 缓存（106MB，删了下次打包要重新联网下载）
-//   release/novel-studio-* 便携版交付物
+//   release/youth-fantasy-engine-* 便携版交付物
 //   release/桌面安装版      桌面版交付物
 //   dist                  `npm run preview` 要读它，不是残留
 import { readdirSync, rmSync, statSync, existsSync } from 'node:fs'

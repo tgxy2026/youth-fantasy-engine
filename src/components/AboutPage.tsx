@@ -87,7 +87,7 @@ export default function AboutPage() {
           </HelpPopover>
         </div>
         <p className="text-ink-400 text-sm mb-8">
-          关于「青春幻想引擎」与它的作者，以及支持作者的方式。
+          关于「青春幻想引擎」（<span className="tracking-wide text-ink-500">Youth Fantasy Engine</span>）与它的作者，以及支持作者的方式。
         </p>
 
         {/* 主体：左列（作者信息 + 友情链接） / 右列（打赏支持，拉长对齐）。

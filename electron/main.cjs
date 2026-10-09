@@ -37,7 +37,7 @@ function loadCustomPath() {
  * 用户可改到云盘同步目录里（WPS 云盘 / OneDrive 等）实现跨设备同步。
  */
 function dataFile() {
-  return customDataPath || path.join(app.getPath('userData'), 'novel-studio-data.json')
+  return customDataPath || path.join(app.getPath('userData'), 'youth-fantasy-engine-data.json')
 }
 
 /**
@@ -231,7 +231,7 @@ app.whenReady().then(() => {
       properties: ['openDirectory', 'createDirectory'],
     })
     if (r.canceled || !r.filePaths.length) return null
-    return path.join(r.filePaths[0], 'novel-studio-data.json')
+    return path.join(r.filePaths[0], 'youth-fantasy-engine-data.json')
   })
 
   /** 迁移数据文件到新位置。目标已存在数据文件时「改用那份」（adopted），不覆盖。 */
@@ -258,7 +258,7 @@ app.whenReady().then(() => {
   /** 恢复默认存放位置（userData 目录）。原位置的数据文件不会被删除。 */
   ipcMain.handle('store:resetDataPath', async (_e, text) => {
     try {
-      const p = path.join(app.getPath('userData'), 'novel-studio-data.json')
+      const p = path.join(app.getPath('userData'), 'youth-fantasy-engine-data.json')
       let adopted = false
       try {
         await fsp.access(p)

@@ -29,7 +29,8 @@ import type { TavernMessage } from '../src/lib/tavern/types'
 import { MEMORY_SOFT_LIMIT } from '../src/lib/tavern/types'
 import type { FreeCharacter, FreeSession } from '../src/lib/tavern/types'
 
-const DATA = 'C:/Users/18223/AppData/Roaming/novel-studio/novel-studio-data.json'
+// 3.0 起桌面数据迁到新品牌目录（%APPDATA%\youth-fantasy-engine\）。升级前如需读旧数据，临时改回 novel-studio 即可。
+const DATA = 'C:/Users/18223/AppData/Roaming/youth-fantasy-engine/youth-fantasy-engine-data.json'
 
 // 2026-09-15：项目原生不再预填示范卡（老大定），实弹脚本改用本地自造的最小卡。
 // 只保本节断言用得到的设定 —— 楚楠卡里的「算得清账」是「卡是否进了设定层」那条离线断言的锚点。

@@ -22,7 +22,8 @@ import { generateReport } from '../src/lib/tavern/report'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import type { TavernSession } from '../src/lib/tavern/types'
 
-const DATA = 'C:/Users/18223/AppData/Roaming/novel-studio/novel-studio-data.json'
+// 3.0 起桌面数据迁到新品牌目录（%APPDATA%\youth-fantasy-engine\）。升级前如需读旧数据，临时改回 novel-studio 即可。
+const DATA = 'C:/Users/18223/AppData/Roaming/youth-fantasy-engine/youth-fantasy-engine-data.json'
 /** 置 1 则只做离线检查（不调模型、不烧额度） */
 const SKIP_NET = process.env.YFE_LIVE_SKIP === '1'
 

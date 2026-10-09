@@ -868,7 +868,7 @@ function row(input: {
 // ============ 源码断言：分层与红线 ============
 {
   const storeSrc = read('src/lib/semantic/store.ts')
-  ok('🔴 向量库走独立 IndexedDB（不碰 db 门面）', storeSrc.includes('novel-studio-vec') && !storeSrc.includes("from '../db'"))
+  ok('🔴 向量库走独立 IndexedDB（不碰 db 门面）', storeSrc.includes('youth-fantasy-engine-vec') && !storeSrc.includes("from '../db'"))
 
   const recallSrc = read('src/lib/semantic/recall.ts')
   ok('🔴 recall 不 import aiContext（防成环）', !recallSrc.includes("from '../aiContext'"))

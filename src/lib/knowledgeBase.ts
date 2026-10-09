@@ -4,7 +4,7 @@
 // （设定集 / 资料 / 笔记），写作时按需召回片段注入上下文。
 //
 // 🔴🔴 存储策略（与 #013 的向量库同一套理由，逐条都是踩过才知道的）：
-//   · **独立 IndexedDB 库 `novel-studio-kb`**，不走 `lib/db` 门面 ⇒ 不进桌面整库 JSON
+//   · **独立 IndexedDB 库 `youth-fantasy-engine-kb`**，不走 `lib/db` 门面 ⇒ 不进桌面整库 JSON
 //     （长文档几 MB，塞进去等于每存一章就重写几 MB）、不进云同步、不进备份。
 //   · **分两个 store**：`docs` 只放元数据、`bodies` 放正文。
 //     不分开的话，列表页（要显示标题 / 字数 / 启用状态）就得把每篇正文都拉回来 —— 纯浪费。
@@ -58,7 +58,7 @@ export const KB_MAX_CHARS = 400_000
 /** 单项目文档数上限（防呆；纯本地库，但列表全量渲染也得有个头） */
 export const KB_MAX_DOCS = 200
 
-const KB_DB_NAME = 'novel-studio-kb'
+const KB_DB_NAME = 'youth-fantasy-engine-kb'
 const KB_DB_VERSION = 1
 const STORE_DOCS = 'docs'
 const STORE_BODIES = 'bodies'

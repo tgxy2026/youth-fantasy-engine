@@ -86,7 +86,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
           const go = await confirmDialog({
             title: '这个目录里放着你本机的数据文件',
             message:
-              '该目录正是数据文件（novel-studio-data.json，含 AI 接口密钥的明文）所在的位置。\n\n' +
+              '该目录正是数据文件（youth-fantasy-engine-data.json，含 AI 接口密钥的明文）所在的位置。\n\n' +
               '云盘客户端会把整个目录上传，明文库也会跟着上云；而且「数据文件位置」与「云盘文件同步」' +
               '指向同一目录会互相覆盖。\n\n建议另选一个空目录专门放同步文件。确定仍要用这个目录吗？',
             confirmText: '仍要使用',

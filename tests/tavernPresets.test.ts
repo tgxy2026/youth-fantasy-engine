@@ -56,7 +56,7 @@ async function main() {
 
     const text = presets.presetFileText(p)
     const raw = JSON.parse(text)
-    ok('导出文本带 kind（用于识别是不是我们的文件）', raw.kind === 'novel-studio.tavern-preset', String(raw.kind))
+    ok('导出文本带 kind（用于识别是不是我们的文件）', raw.kind === 'youth-fantasy-engine.tavern-preset', String(raw.kind))
     ok('导出文本带 version', raw.version === 1)
     ok('导出文本带名字', raw.name === '高温试演')
     ok('导出文本带完整设置', !!raw.data && typeof raw.data.protocol === 'string')

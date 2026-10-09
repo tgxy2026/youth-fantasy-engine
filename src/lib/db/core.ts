@@ -25,7 +25,7 @@ import {
   migrateV10toV11,
 } from './idbMigrations'
 
-const DB_NAME = 'novel-studio'
+const DB_NAME = 'youth-fantasy-engine'
 const DB_VERSION = 11
 
 let dbPromise: Promise<IDBPDatabase> | null = null

@@ -22,7 +22,7 @@ import { docFileName } from './tavern/exportDoc'
 import type { ChapterTrajectory, TrajectoryDailyPoint } from './trajectory'
 
 /** 证据包文件标识（写进 JSON，供外部工具认格式） */
-export const EVIDENCE_KIND = 'novel-studio-trajectory'
+export const EVIDENCE_KIND = 'youth-fantasy-engine-trajectory'
 /** 证据包结构版本：字段增减时 +1，读端按此兼容 */
 export const EVIDENCE_SPEC_VERSION = 1
 

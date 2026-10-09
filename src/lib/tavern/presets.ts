@@ -18,7 +18,7 @@ import { type TavernSettings } from './settings'
 const K_PRESETS = 'tavern.presets'
 
 /** 导出文件的标识，用来在导入时区分「是不是我们的文件」 */
-const KIND = 'novel-studio.tavern-preset'
+const KIND = 'youth-fantasy-engine.tavern-preset'
 
 export type TavernPreset = {
   id: string

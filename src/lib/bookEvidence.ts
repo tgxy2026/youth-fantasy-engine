@@ -23,7 +23,7 @@ import { docFileName } from './tavern/exportDoc'
 import { formatStamp } from './evidencePack'
 
 /** 整书证据包文件标识 */
-export const BOOK_EVIDENCE_KIND = 'novel-studio-trajectory-book'
+export const BOOK_EVIDENCE_KIND = 'youth-fantasy-engine-trajectory-book'
 export const BOOK_EVIDENCE_SPEC_VERSION = 1
 
 /** 逐章一行：这一章的规模与"改了多少次" */

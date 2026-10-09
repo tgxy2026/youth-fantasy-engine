@@ -259,14 +259,20 @@ if (buildResult.status !== 0) {
  * 【为什么补写要写两遍】重打包会再次触发 electron-builder 写 exe ⇒ 又覆盖回默认值。
  *   故顺序必须是「补写 → 重打包 → 再补写」，且第二次之后**不再重打包**（否则死循环）。
  */
-const APP_NAME = '青春幻想引擎'          // 与 electron-builder.yml 的 productName 一致
+// 🔴 3.0：这里拆成两个常量，**不要再合并成一个**（2026-10-08 结论）。
+//   · EXE_FILENAME —— 决定 `win-unpacked/` 下主 exe 的文件名，必须与 electron-builder.yml 的
+//     `win.executableName`（YouthFantasyEngine）逐字一致；不一致会让 existsSync(exePath) 恒 false，
+//     主 exe 元数据/图标补写被**静默跳过** → 交付一个元数据是 Electron 默认值的坏包。
+//   · DISPLAY_NAME —— 人类可读展示名，与 electron-builder.yml 的 productName 一致（保持中文）。
+const EXE_FILENAME = 'YouthFantasyEngine'   // 与 electron-builder.yml 的 win.executableName 一致
+const DISPLAY_NAME = '青春幻想引擎'          // 与 electron-builder.yml 的 productName 一致
 const COMPANY = '青春幻想引擎开发组'   // 主 exe 的公司名（验收基准）
-const exePath = path.join(desktopOut, 'win-unpacked', `${APP_NAME}.exe`)
+const exePath = path.join(desktopOut, 'win-unpacked', `${EXE_FILENAME}.exe`)
 // 图标 + 元数据写入后主 exe 的逐字节大小（**仅日志比对，不是闸门**）。
 // ⚠️ 换 electron 大版本必然变化 ⇒ 每次升 electron 后按首次实测刷新（历史值见 git log）：
 //    electron 31.7.7 → 181,097,984 ｜ electron 44.6.0 → 246,487,040（2026-10-07 实测）
 const EXPECT_BASE_SIZE = 246487040
-const expectStrings = [COMPANY, APP_NAME, pkg.version].filter(Boolean)
+const expectStrings = [COMPANY, DISPLAY_NAME, pkg.version].filter(Boolean)
 
 function exeMetaOk(p) {
   try {
@@ -312,9 +318,9 @@ if (existsSync(exePath)) {
       }
       const cmd = [
         `"${rcedit}"`, `"${exePath}"`,
-        '--set-version-string', 'FileDescription', APP_NAME,
-        '--set-version-string', 'ProductName', APP_NAME,
-        '--set-version-string', 'InternalName', APP_NAME,
+        '--set-version-string', 'FileDescription', DISPLAY_NAME,
+        '--set-version-string', 'ProductName', DISPLAY_NAME,
+        '--set-version-string', 'InternalName', EXE_FILENAME,
         '--set-version-string', 'CompanyName', COMPANY,
         '--set-file-version', pkg.version,
         '--set-product-version', `${pkg.version}.0`,

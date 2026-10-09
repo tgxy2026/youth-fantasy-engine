@@ -1,7 +1,7 @@
 // ============ 语义检索 · 向量存储 ============
 //
 // 🔴🔴 本模块**刻意不走 `lib/db` 的门面**（`ops` / `SYNC_STORES`），而是自带一个
-//     **独立的 IndexedDB 库**（`novel-studio-vec`）。三条理由，逐条都是踩过才知道的：
+//     **独立的 IndexedDB 库**（`youth-fantasy-engine-vec`）。三条理由，逐条都是踩过才知道的：
 //
 //   1. **桌面模式是「整库一 JSON」**（`desktop.ts` 的 `data.stores` + 防抖写回）。向量动辄
 //      十几 MB（1000 章 × 数千块 × 4KB），塞进那个 JSON 等于**每存一章就重写一遍十几兆**，
@@ -93,7 +93,7 @@ export interface VecBackend {
 
 // ============ 默认后端 · 独立 IndexedDB ============
 
-const VEC_DB_NAME = 'novel-studio-vec'
+const VEC_DB_NAME = 'youth-fantasy-engine-vec'
 const VEC_DB_VERSION = 1
 const VEC_STORE = 'embeddings'
 

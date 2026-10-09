@@ -1,6 +1,8 @@
 # 桌面（Windows 安装版）打包配置 —— 用法：npm run build:desktop
 # 产物：release/desktop/青春幻想引擎-Setup-1.0.0.exe（NSIS 安装包）
-appId: cn.novelstudio.yfe
+# 🔴 appId 改动（2.9.3 → 3.0）= 新旧成为**两个独立 Windows 产品**，安装器不会自动卸载旧版；
+#    老用户迁移走「卸载旧版 → 装新版 → 首启自动导入旧数据」（见 docs/3.0-开发方案.md §3 / §6）。
+appId: cn.youthfantasyengine.yfe
 productName: 青春幻想引擎
 copyright: Copyright © 2026
 
@@ -43,6 +45,11 @@ afterPack: scripts/prune-electron-dist.cjs
 #   那里 exe 已无人占用，rcedit 一次就能写进去。顺序：
 #     electron-builder 打完包 → 校验主 exe → 缺失则补写 → 重打包让 exe 进包 → 再补一次 → 复验。
 win:
+  # 🔴 3.0 · D3：安装目录与主 exe 名由此决定（`Programs\YouthFantasyEngine\YouthFantasyEngine.exe`）。
+  #    与包名形态解耦：productName 仍是中文显示名，executableName 只管文件系统里的目录/文件名。
+  #    ⚠️ 设了它之后，win-unpacked 下的主 exe 从「青春幻想引擎.exe」变成「YouthFantasyEngine.exe」，
+  #    `scripts/build-desktop.mjs` 里的 exePath 常量必须同步（否则元数据补写静默跳过 → 交付坏包）。
+  executableName: YouthFantasyEngine
   target:
     - target: nsis
       arch:

@@ -1,6 +1,6 @@
 // 桌面（Electron 安装版）存储引擎
 // 数据以单个 JSON 文件保存在本机用户数据目录
-// （Windows: C:\Users\<用户>\AppData\Roaming\novel-studio\novel-studio-data.json），
+// （Windows: C:\Users\<用户>\AppData\Roaming\youth-fantasy-engine\youth-fantasy-engine-data.json），
 // 通过 preload 注入的 window.electronStore IPC 读写。
 //
 // 数据格式（`PortableData`，kind='portable-data'）沿用自便携版，**名字不要改**：
@@ -336,7 +336,7 @@ export interface DesktopState {
   writeLockReason: string
 }
 
-let data: PortableData = { app: 'novel-studio', kind: 'portable-data', fileVersion: 1, savedAt: 0, stores: {} }
+let data: PortableData = { app: 'youth-fantasy-engine', kind: 'portable-data', fileVersion: 1, savedAt: 0, stores: {} }
 let inited = false
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let saving = false
@@ -632,7 +632,7 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
     return { ok: false, error: '数据文件已损坏（JSON 解析失败）' }
   }
   const o = parsed as PortableData
-  if (o.app !== 'novel-studio' || o.kind !== 'portable-data') {
+  if (o.app !== 'youth-fantasy-engine' || o.kind !== 'portable-data') {
     return { ok: false, error: '这不是有效的小说工坊数据文件（请选择便携版创建的 .json 数据文件）' }
   }
   data = normalizePortableData(parsed)

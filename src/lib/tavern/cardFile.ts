@@ -47,7 +47,7 @@ export function toCardFile(c: FreeCharacter, now = Date.now()): string {
     format: FORMAT,
     version: FORMAT_VERSION,
     exportedAt: now,
-    app: 'novel-studio',
+    app: 'youth-fantasy-engine',
     card: rest,
   }
   return JSON.stringify(payload, null, 2)
@@ -273,7 +273,7 @@ export function toCardBundle(cards: FreeCharacter[], note = '', now = Date.now()
     format: BUNDLE_FORMAT,
     version: FORMAT_VERSION,
     exportedAt: now,
-    app: 'novel-studio',
+    app: 'youth-fantasy-engine',
     ...(note.trim() ? { note: note.trim() } : {}),
     cards: cards.map(c => {
       // 与单卡导出同一条纪律：本机 id 与溯源标记**不进导出文件**

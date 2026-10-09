@@ -25,15 +25,18 @@ console.log('\n—— auditFixes2 用例开始 ——')
 // ---------- ① P1-2 行为：数据文件身份校验（挡住"误放的合法 JSON 被当空库覆盖写"） ----------
 {
   ok('🔴 本软件写出的数据文件 → 认',
-    isPortableDataFile({ app: 'novel-studio', kind: 'portable-data', stores: {} }))
+    isPortableDataFile({ app: 'youth-fantasy-engine', kind: 'portable-data', stores: {} }))
   ok('🔴 缺 kind 的任意合法 JSON → 不认（这就是"误放文件被当空库、随后覆盖真实文件"的那条路）',
     !isPortableDataFile({ foo: 1, bar: [1, 2, 3] }))
-  ok('kind 不对 → 不认', !isPortableDataFile({ app: 'novel-studio', kind: 'something-else' }))
+  ok('kind 不对 → 不认', !isPortableDataFile({ app: 'youth-fantasy-engine', kind: 'something-else' }))
   ok('非对象（数组 / null / 字符串）→ 不认',
     !isPortableDataFile([1, 2]) && !isPortableDataFile(null) && !isPortableDataFile('{}'))
   // 不因历史文件缺 app 就锁死用户
   ok('缺 app 但有 kind → 认（老数据文件不能被锁死）',
     isPortableDataFile({ kind: 'portable-data' }))
+  // 🔴 3.0（方案 §6）：app 只认新值 —— 旧品牌值不保留运行时兼容（老数据统一走首启导入向导 remap）
+  ok('🔴 旧品牌 app（novel-studio）→ 不认（3.0 起不保留运行时兼容）',
+    !isPortableDataFile({ app: 'novel-studio', kind: 'portable-data', stores: {} }))
 }
 
 // ---------- ② P2-⑪ 行为：facts / mines 的硬上限兜底 ----------
