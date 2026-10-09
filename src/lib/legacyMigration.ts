@@ -45,6 +45,7 @@ export interface ElectronMigrationAPI {
   copyProfile(): Promise<{ ok: boolean; copied?: string[]; error?: string }>
   findUninstaller(): Promise<{ ok: boolean; hits: { dir: string; uninstaller: string }[] }>
   runUninstaller(p: string): Promise<{ ok: boolean; error?: string }>
+  revealLegacyDir(): Promise<{ ok: boolean; path?: string; error?: string }>
 }
 
 /** 取迁移 API；非桌面版（dev 浏览器）返回 null（一切调用静默降级） */

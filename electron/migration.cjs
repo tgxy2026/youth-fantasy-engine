@@ -170,6 +170,18 @@ function findLegacyUninstaller() {
   return { ok: hits.length > 0, hits }
 }
 
+/**
+ * 在系统资源管理器里打开旧版数据目录 —— 供作者确认数据已安全迁移后**手动清理残留**。
+ * 🔴 刻意不自动删除：残留目录里可能混着我们无法判定的东西（旧字体/缓存/自定义路径文件），
+ *    删不删由作者裁决（呼应「AI 只辅助不越权」红线）。
+ */
+async function revealLegacyDir() {
+  const info = probeLegacy()
+  if (!info.exists) return { ok: false, error: '未找到旧版数据目录' }
+  const err = await shell.openPath(info.legacyDir)
+  return err ? { ok: false, error: err } : { ok: true, path: info.legacyDir }
+}
+
 /** 拉起卸载器（走系统 shell，不 spawn 子进程） */
 async function runUninstaller(uninstallerPath) {
   try {
@@ -192,4 +204,5 @@ module.exports = {
   copyLegacyProfile,
   findLegacyUninstaller,
   runUninstaller,
+  revealLegacyDir,
 }

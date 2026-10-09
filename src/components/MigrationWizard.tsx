@@ -11,7 +11,7 @@
 import { useState } from 'react'
 import {
   Database, BookOpen, SlidersHorizontal, AlertTriangle, CheckCircle2,
-  Loader2, Trash2, ArrowRight, ShieldQuestion,
+  Loader2, Trash2, ArrowRight, ShieldQuestion, FolderOpen,
 } from 'lucide-react'
 import { Button } from './Button'
 import { showToast } from './dialogs'
@@ -68,6 +68,18 @@ export default function MigrationWizard({ probe, onClose }: Props) {
       }
     } finally {
       setUninstallBusy(false)
+    }
+  }
+
+  /** 在资源管理器里打开旧版数据目录 —— 作者确认数据已迁移后，可手动清理残留文件 */
+  const handleRevealLegacy = async () => {
+    const api = migrationApi()
+    if (!api) return
+    try {
+      const r = await api.revealLegacyDir()
+      if (!r.ok) showToast('打开失败：' + (r.error || '未知原因'), 'error', 6000)
+    } catch (e) {
+      showToast('打开失败：' + (e instanceof Error ? e.message : String(e)), 'error', 6000)
     }
   }
 
@@ -179,10 +191,16 @@ export default function MigrationWizard({ probe, onClose }: Props) {
           {step === 'running' && <Button variant="secondary" disabled>导入中…</Button>}
           {step === 'done' && (
             <>
-              <Button variant="secondary" onClick={() => void handleUninstall()} disabled={uninstallBusy} className="gap-1.5">
-                {uninstallBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                卸载旧版
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={() => void handleUninstall()} disabled={uninstallBusy} className="gap-1.5">
+                  {uninstallBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  卸载旧版
+                </Button>
+                <Button variant="secondary" onClick={() => void handleRevealLegacy()} className="gap-1.5"
+                  title="在资源管理器里打开旧版数据目录；确认数据已全部迁移后，可手动清理残留文件">
+                  <FolderOpen size={14} /> 打开旧数据目录
+                </Button>
+              </div>
               <Button variant="primary" onClick={startUsing}>开始使用</Button>
             </>
           )}

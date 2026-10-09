@@ -299,6 +299,7 @@ app.whenReady().then(() => {
   ipcMain.handle('migration:copyProfile', () => migration.copyLegacyProfile())
   ipcMain.handle('migration:findUninstaller', () => migration.findLegacyUninstaller())
   ipcMain.handle('migration:runUninstaller', (_e, p) => migration.runUninstaller(p))
+  ipcMain.handle('migration:revealLegacyDir', () => migration.revealLegacyDir())
 
   // 🔴 2026-10-07 六维审计 P2：sync:readFile / sync:writeFile 原先直接吃渲染层传来的任意路径，
   //    等于把「任意文件读写」原语暴露出去。这里做**零契约成本**的收窄：只接受「绝对路径 + .yfe 结尾」——

@@ -104,4 +104,6 @@ contextBridge.exposeInMainWorld('electronMigration', {
   findUninstaller: () => ipcRenderer.invoke('migration:findUninstaller'),
   /** 拉起指定卸载器，返回 { ok } 或 { ok:false, error } */
   runUninstaller: (p) => ipcRenderer.invoke('migration:runUninstaller', p),
+  /** 在资源管理器里打开旧版数据目录 —— 作者确认数据已迁移后，可手动清理残留 */
+  revealLegacyDir: () => ipcRenderer.invoke('migration:revealLegacyDir'),
 })
