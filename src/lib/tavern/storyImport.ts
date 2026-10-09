@@ -15,11 +15,17 @@
  * ② **只认这一套标记** —— 认不出来就如实报「第几行、缺什么」，**绝不猜**。
  * ③ **超上限如实报告** —— 由界面决定是截断还是让作者改，不静默吞掉。
  *
+ * 【追加模式（2026-10-09）】
+ * 同一份文本也能**追加进已有故事**（只补词条与剧本，见文件下半部分）。两条放宽 / 收紧：
+ *   · 放宽：可以不写 `〖故事〗`（目标故事由界面选定，名字不必再抄一遍）；
+ *   · 收紧：与目标故事里同名（或本份文本内自撞）的剧本 / 词条**当场拦下**，由作者改名后重来。
+ *
  * 本文件是纯逻辑，不含 React。
  */
-import { STORY_NAME_MAX, STORY_SETTING_MAX } from './story'
+import { STORY_NAME_MAX, STORY_SETTING_MAX, storyEntriesOf } from './story'
+import { uid } from '../id'
 import { SCRIPT_FIELD_MAX } from './script'
-import { type WorldEntry, type EntryState, ENTRY_STATE_LABEL } from './worldBook'
+import { type WorldEntry, type EntryState, ENTRY_STATE_LABEL, emptyWorldEntry } from './worldBook'
 import type { ScriptDraftFields } from './script'
 
 /** 分节标记（与 __tests__ 的守护断言共用同一组常量，避免各处再抄一遍字面量） */
@@ -71,6 +77,17 @@ export type ParseResult =
   | { ok: true; data: ParsedStoryImport; issues: ImportIssue[] }
   | { ok: false; issues: ImportIssue[] }
 
+export type ParseOptions = {
+  /**
+   * 追加模式专用：**允许不写 `〖故事〗`**（2026-10-09）。
+   *
+   * 追加时目标故事由界面选定，文本里的故事名只是参考 —— 强制要求写它，作者会困惑
+   * 「我都要追加到 A 了，为什么还要再抄一遍故事名」。新建模式仍强制（那才是落地名字的来源）。
+   * ⚠️ 「一份文本只能有一个 `〖故事〗`」这条**两种模式下都成立**：半路冒出第二块仍然没地方放。
+   */
+  allowNoStoryName?: boolean
+}
+
 /** 给作者复制的模板（也用于「导入格式说明」；改格式时这里是唯一真源） */
 export const IMPORT_TEMPLATE = `${MARK.story}
 
@@ -117,7 +134,7 @@ function splitKeyLine(line: string, labels: readonly string[]): { key: string | 
 /**
  * 解析导入文本。**只认标记**，认不出来如实报错。
  */
-export function parseStoryImport(raw: string): ParseResult {
+export function parseStoryImport(raw: string, opts: ParseOptions = {}): ParseResult {
   const text = normalize(raw)
   const lines = text.split('\n')
 
@@ -244,10 +261,13 @@ export function parseStoryImport(raw: string): ParseResult {
 
   // ---------- 校验 ----------
   if (storyNames.length === 0) {
-    issues.push({
-      level: 'error',
-      message: `没找到故事名 —— 第一行要写成「${MARK.story}故事名」。请按模板导入。`,
-    })
+    // 追加模式下故事名不是必填（目标故事由界面选定，见 ParseOptions 的注释）
+    if (!opts.allowNoStoryName) {
+      issues.push({
+        level: 'error',
+        message: `没找到故事名 —— 第一行要写成「${MARK.story}故事名」。请按模板导入。`,
+      })
+    }
   } else if (storyNames.length > 1) {
     issues.push({
       level: 'error',
@@ -335,4 +355,122 @@ export function serializeStoryImport(src: {
   }
 
   return out.join('\n') + '\n'
+}
+
+// ============================================================
+// 追加到已有故事（老大 2026-10-09 拍板）
+// ============================================================
+
+/**
+ * 【两条拍板，别改】
+ *   ① **世界设定不改** —— 文本里的 `〖世界设定〗` 一律**忽略**。已有故事的世界观是它自己的，
+ *      从别处复制来的那份并进去只会让两份设定打架（同一件事两种说法）。界面要如实写出来。
+ *   ② **重名当场拦下** —— 撞上目标故事里已有的剧本 / 词条名字，直接报错、不导入，由作者改名重来。
+ *      自动加序号会悄悄造出一个他没写过的名字，列表里还更难分辨 —— 宁可打断一次，也不替作者改名。
+ *
+ * 另一条必要的兜底在 `entriesToAppend`：老形态故事（只有整段 `setting`）被追加词条时，
+ * 必须先把那段设定搬成一条常驻词条，否则它会**静默失效**（判据见下）。
+ */
+
+export type AppendConflict = {
+  kind: 'script' | 'entry'
+  /** 撞上的名字（trim 过的原文） */
+  name: string
+  /**
+   * 撞在哪儿：
+   *   `existing` = 目标故事里已有同名（改个名就能导）；
+   *   `self`     = 这份文本自己前后重名（文本里就有两份）。
+   * 两种都要拦 —— 落地后都是列表里两份同名的东西。
+   */
+  from: 'existing' | 'self'
+}
+
+/** 目标故事里已经占着的名字（由界面读库后传进来；纯函数只负责比对） */
+export type AppendExisting = {
+  scriptNames: string[]
+  entryTitles: string[]
+}
+
+/**
+ * 找出「追加到已有故事」会被拦下的重名项。
+ *
+ * ⚠️ **空名字不参与比对** —— 没写名的剧本 / 词条在列表里本来就允许并存，
+ *    拿它当冲突会把「模板没填完」误报成一堆重名。
+ */
+export function findAppendConflicts(
+  incoming: Pick<ParsedStoryImport, 'entries' | 'scripts'>,
+  existing: AppendExisting,
+): AppendConflict[] {
+  const out: AppendConflict[] = []
+
+  const scan = (kind: AppendConflict['kind'], names: string[], taken: string[]) => {
+    const exist = new Set(taken.map(n => n.trim()).filter(Boolean))
+    const seen = new Set<string>()
+    for (const raw of names) {
+      const name = String(raw ?? '').trim()
+      if (!name) continue
+      if (exist.has(name)) { out.push({ kind, name, from: 'existing' }); continue }
+      if (seen.has(name)) { out.push({ kind, name, from: 'self' }); continue }
+      seen.add(name)
+    }
+  }
+
+  scan('script', incoming.scripts.map(s => s.name), existing.scriptNames)
+  scan('entry', incoming.entries.map(e => e.title), existing.entryTitles)
+  return out
+}
+
+/** 冲突的一句话说明（界面直接显示，避免两边各写一套文案） */
+export function conflictText(c: AppendConflict): string {
+  const what = c.kind === 'script' ? '剧本' : '词条'
+  return c.from === 'existing'
+    ? `${what}「${c.name}」与目标故事里已有的同名 —— 请改名后再追加`
+    : `${what}「${c.name}」在这份文本里出现了两次 —— 请改名后再追加`
+}
+
+/**
+ * 目标故事是不是「整段世界设定」的老形态 —— 追加词条会把它搬成词条，界面须提前告知作者。
+ * （判据与 `storyEntriesOf` 一致：没有 entries 但写了 setting。）
+ */
+export function willMigrateSetting(story: { setting?: string; entries?: WorldEntry[] } | null | undefined): boolean {
+  if (!story) return false
+  return !(Array.isArray(story.entries) ? story.entries : []).length && !!String(story.setting ?? '').trim()
+}
+
+/**
+ * 追加词条时，目标故事的**新词条池**：现有池 + 本次导入的词条。
+ *
+ * 🔴 **为什么不能直接 `[...story.entries, ...新增]`**：`storyEntriesOf` 的判据是
+ *    「有 `entries` 就以它为准、`setting` 被忽略」。老故事只有 `setting`（整段形态），
+ *    一旦被写上 entries，那段设定就**静默失效** —— 世界观当场消失，还不报任何错。
+ *    所以这里统一走 `storyEntriesOf`：老形态会先退化成一条常驻词条（id 沿用
+ *    `STORY_SETTING_ID`，继续按固定层每轮注入，与升级前的注入结果等价），再往后接新词条。
+ *
+ * 新词条的 id 在这里生成（调用方不必自己管）—— 漏给 id 会让两条词条同名同 id，
+ * 「删一条」会把另一条也带走。
+ */
+export function entriesToAppend(
+  story: { setting?: string; entries?: WorldEntry[] },
+  entries: DraftEntry[],
+): WorldEntry[] {
+  const base = storyEntriesOf(story)
+  return [...base, ...entries.map(e => draftEntryToWorldEntry(e, uid()))]
+}
+
+/** 解析出的词条草稿 → 落库用的世界书词条（补 id、空名给占位、state 没写就不写这个键） */
+export function draftEntryToWorldEntry(e: DraftEntry, id: string): WorldEntry {
+  const out: WorldEntry = {
+    ...emptyWorldEntry(),
+    id,
+    title: e.title.trim() || '（未命名词条）',
+    body: e.body,
+    keys: e.keys,
+    prob: e.prob,
+    order: e.order,
+    recursive: e.recursive,
+  }
+  // 🔴 只在解析出状态时才带这个键 —— 没写状态的词条按老语义推断（见 `entryStateOf`），
+  //    写成 `state: undefined` 会让「显式设过状态」与「没设过」在落盘后来回漂移。
+  if (e.state) out.state = e.state
+  return out
 }

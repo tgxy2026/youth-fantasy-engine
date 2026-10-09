@@ -76,7 +76,7 @@ export default function TavernScript() {
   const [lastSource, setLastSource] = useState<DraftSource | null>(null)
   /** 对话引导弹窗（边聊边写，适合还没想清楚的时候） */
   const [interviewOpen, setInterviewOpen] = useState(false)
-  /** 导入弹窗：把按模板写好的文本一次建成一个故事（含词条与剧本） */
+  /** 导入 / 追加弹窗：按模板的文本建成新故事，或把词条与剧本补进已有故事（2026-10-09 加追加） */
   const [importOpen, setImportOpen] = useState(false)
   /** 当前故事下的角色卡张数（右栏显示用 —— 让作者知道删故事会影响到多少卡） */
   const [storyCharCount, setStoryCharCount] = useState(0)
@@ -387,7 +387,13 @@ export default function TavernScript() {
         <Button variant="secondary" size="md" disabled={!dirty || saving} onClick={() => void save()}>
           {saving ? '保存中…' : dirty ? '保存' : '已保存'}
         </Button>
-        <Button variant="secondary" size="md" onClick={() => setImportOpen(true)}>导入</Button>
+        <Button
+          variant="secondary" size="md"
+          title="从文本导入：建成一个新故事，或把词条 / 剧本追加到已有故事"
+          onClick={() => setImportOpen(true)}
+        >
+          导入 / 追加
+        </Button>
         <Button
           variant="secondary" size="md"
           disabled={!activeStoryId}
@@ -403,10 +409,11 @@ export default function TavernScript() {
         {kind && <Button variant="danger" size="md" onClick={() => void remove()}>删除这份</Button>}
       </div>
 
-      {/* 导入：把按模板写好的文本一次建成一个故事（含它的词条与剧本） */}
+      {/* 导入 / 追加：把按模板写好的文本建成一个新故事，或补进选中的那个故事（2026-10-09 加追加） */}
       <TavernScriptImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
+        defaultStoryId={activeStoryId}
         onImported={id => { void (async () => { await refresh(); await openStory(id) })() }}
       />
 

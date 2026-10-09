@@ -6,9 +6,10 @@
  */
 import {
   parseStoryImport, serializeStoryImport, IMPORT_TEMPLATE, MARK, SCRIPT_KEYS,
+  findAppendConflicts, conflictText, willMigrateSetting, entriesToAppend, draftEntryToWorldEntry,
   type ParsedStoryImport,
 } from '../src/lib/tavern/storyImport'
-import { STORY_NAME_MAX, STORY_SETTING_MAX } from '../src/lib/tavern/story'
+import { STORY_NAME_MAX, STORY_SETTING_MAX, STORY_SETTING_ID } from '../src/lib/tavern/story'
 import { SCRIPT_FIELD_MAX } from '../src/lib/tavern/script'
 import { emptyWorldEntry } from '../src/lib/tavern/worldBook'
 
@@ -188,6 +189,75 @@ function main() {
     ok('11b SCRIPT_KEYS 覆盖剧本五栏（名称单列）', SCRIPT_KEYS.length === 5
       && SCRIPT_KEYS.map(k => k.key).join(',') === 'situation,opening,playerRole,goal,taboo')
     ok('11c 模板里四种标记都在', [MARK.story, MARK.setting, MARK.entry, MARK.script].every(m => IMPORT_TEMPLATE.includes(m)))
+  }
+
+  // ---------- 12) 追加到已有故事（2026-10-09） ----------
+  {
+    // 12a-12c：词条草稿 → 世界书词条
+    const we = draftEntryToWorldEntry(
+      { title: ' 精灵 ', body: '从邻界来。', keys: ['精灵'], prob: 0.5, order: 2, recursive: false, state: 'off' },
+      'id-1',
+    )
+    ok('12a 转换保留全部字段（含 state / recursive）',
+      we.id === 'id-1' && we.title === '精灵' && we.body === '从邻界来。' && we.keys.join('|') === '精灵'
+      && we.prob === 0.5 && we.order === 2 && we.recursive === false && we.state === 'off', JSON.stringify(we))
+    ok('12b 没名字给占位（列表里不留空白条）',
+      draftEntryToWorldEntry({ title: '  ', body: 'x', keys: [], prob: 1, order: 0, recursive: true }, 'id-2')
+        .title === '（未命名词条）')
+    ok('12c 没写状态就不留 state 键（别让「显式设过」与「没设过」来回漂移）',
+      !('state' in draftEntryToWorldEntry({ title: 'a', body: 'x', keys: [], prob: 1, order: 0, recursive: true }, 'id-3')))
+
+    // 12d-12h：重名拦下
+    const sample = mustParse(`${MARK.story}S\n\n${MARK.entry}夜袭\n正文：x\n\n${MARK.script}雨夜\n情境：s`)
+    const cExist = findAppendConflicts(sample, { scriptNames: ['雨夜'], entryTitles: ['夜袭'] })
+    ok('12d 撞目标故事里已有的（剧本与词条都算）', cExist.length === 2 && cExist.every(c => c.from === 'existing'),
+      JSON.stringify(cExist))
+    ok('12e 冲突文案点明是哪一个、并给出「改名」的做法',
+      conflictText({ kind: 'script', name: '雨夜', from: 'existing' }).includes('雨夜')
+      && conflictText({ kind: 'script', name: '雨夜', from: 'existing' }).includes('改名')
+      && conflictText({ kind: 'entry', name: '夜袭', from: 'self' }).includes('出现了两次'))
+
+    const dup = mustParse(`${MARK.story}S\n\n${MARK.entry}甲\n正文：a\n\n${MARK.entry}甲\n正文：b\n\n${MARK.script}乙\n情境：s1\n\n${MARK.script}乙\n情境：s2`)
+    const cSelf = findAppendConflicts(dup, { scriptNames: [], entryTitles: [] })
+    ok('12f 这份文本自己前后重名也拦（from=self）', cSelf.length === 2 && cSelf.every(c => c.from === 'self'),
+      JSON.stringify(cSelf))
+
+    const blank = mustParse(`${MARK.story}S\n\n${MARK.entry}\n正文：x\n\n${MARK.script}\n情境：s`)
+    ok('12g 空名字不参与比对（别把「模板没填完」误报成一堆重名）',
+      findAppendConflicts(blank, { scriptNames: ['（未命名剧本）'], entryTitles: ['（未命名词条）'] }).length === 0)
+    ok('12h 没冲突 ⇒ 空数组',
+      findAppendConflicts(sample, { scriptNames: ['别的'], entryTitles: [] }).length === 0
+      && findAppendConflicts(sample, { scriptNames: [], entryTitles: [] }).length === 0)
+
+    // 12i：老形态判定
+    ok('12i 老形态（只有整段设定、没有词条）判定为需要迁移',
+      willMigrateSetting({ setting: '某地。' }) === true
+      && willMigrateSetting({ setting: '某地。', entries: [] }) === true
+      && willMigrateSetting({ setting: '某地。', entries: [emptyWorldEntry({ id: 'e', title: 'a', body: 'b' })] }) === false
+      && willMigrateSetting({ setting: '   ' }) === false
+      && willMigrateSetting(null) === false)
+
+    // 12j-12k：追加前的池子
+    const migrated = entriesToAppend({ setting: '云州多山。' },
+      [{ title: '灵脉', body: '枯竭百年。', keys: ['灵脉'], prob: 1, order: 0, recursive: true }])
+    ok('12j 追加前把整段设定搬成第一条常驻词条（否则那段设定会静默失效）',
+      migrated.length === 2 && migrated[0].id === STORY_SETTING_ID && migrated[0].constant === true
+      && migrated[0].body === '云州多山。' && migrated[1].title === '灵脉' && !!migrated[1].id,
+      JSON.stringify(migrated.map(m => m.id)))
+
+    const cur = [emptyWorldEntry({ id: 'k1', title: '甲', body: 'a' })]
+    const appended = entriesToAppend({ setting: '不该出现的旧设定', entries: cur },
+      [{ title: '乙', body: 'b', keys: [], prob: 1, order: 0, recursive: true }])
+    ok('12k 已有词条的故事原样接在后面，不重复搬设定',
+      appended.length === 2 && appended[0].id === 'k1' && appended[1].title === '乙', JSON.stringify(appended.map(a => a.title)))
+
+    // 12l-12m：解析层的追加放宽
+    const noName = `${MARK.entry}甲\n正文：a`
+    ok('12l 追加模式允许不写故事名（新建模式仍强制）',
+      !parseStoryImport(noName).ok && parseStoryImport(noName, { allowNoStoryName: true }).ok)
+    const twoStories = `${MARK.story}甲\n\n${MARK.entry}A\n正文：a\n\n${MARK.story}乙\n\n${MARK.entry}B\n正文：b`
+    ok('12m 追加模式下「一份文本只能有一个故事」照样成立',
+      !parseStoryImport(twoStories, { allowNoStoryName: true }).ok)
   }
 
   console.log(`\ntavernStoryImport: ${pass} passed, ${fail} failed`)
