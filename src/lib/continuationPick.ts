@@ -7,6 +7,9 @@
  *
  * 🔴 调用方必须传**真实叙事序**的章列表（`chapterSeq.flattenChapters`）：
  *    "上一章 / 前 N 章"全按数组位置算，传了卷内 order 排列就会张冠李戴。
+ *
+ * 🔴 2026-10-09 主人拍板：**删掉独立的「上一章结尾」选项**（它与「前文章节」重复），
+ *    衔接职责改由「前文章节」承担 ⇒ 该段正文取每章的**末尾**（理由见下方第 2 段注释）。
  */
 
 /** 挑选输入的一章（只取必要字段，便于调用方从 Chapter 里摘） */
@@ -22,11 +25,9 @@ export interface ChapLike {
 export interface ContinuationPickOpts {
   /** 章节摘要取几章（**含本章**），默认 3；0 = 不取 */
   summaryCount?: number
-  /** 前几章正文取几章，默认 1；0 = 不取（最吃预算的一项） */
+  /** 前文章节取几章，默认 1；0 = 不取（最吃预算的一项） */
   prevTextCount?: number
-  /** 「上一章结尾」截多少字，默认 1200（与整章改写的衔接口径一致） */
-  tailChars?: number
-  /** 前 N 章正文的合计字符上限，默认 6000 */
+  /** 前文章节的合计字符上限，默认 6000 */
   prevTextCap?: number
 }
 
@@ -37,16 +38,14 @@ export interface ContinuationPick {
   summaries: { title: string; summary: string }[]
   /** 区间内有章但未填摘要的数量（「不静默丢」：UI 要如实说出来） */
   missingSummaries: number
-  /** 紧邻前一章的正文末尾（衔接参照）；首章 / 上一章为空时为 '' */
-  prevTail: string
-  /** 当前章之前若干章的正文（叙事序），受 prevTextCap 约束 */
+  /** 当前章之前若干章的正文（叙事序），受 prevTextCap 约束；每章取**末尾** */
   prevTexts: { title: string; content: string }[]
   /** 勾了但没能带入的章数（空章，或因字符上限被截） */
   droppedPrevTexts: number
 }
 
 const EMPTY: ContinuationPick = {
-  found: false, summaries: [], missingSummaries: 0, prevTail: '', prevTexts: [], droppedPrevTexts: 0,
+  found: false, summaries: [], missingSummaries: 0, prevTexts: [], droppedPrevTexts: 0,
 }
 
 /**
@@ -64,7 +63,6 @@ export function pickContinuationSources(
 ): ContinuationPick {
   const summaryCount = Math.max(0, Math.floor(opts.summaryCount ?? 3))
   const prevTextCount = Math.max(0, Math.floor(opts.prevTextCount ?? 1))
-  const tailChars = Math.max(0, Math.floor(opts.tailChars ?? 1200))
   const prevTextCap = Math.max(0, Math.floor(opts.prevTextCap ?? 6000))
 
   const idx = flat.findIndex(c => c.id === focusId)
@@ -81,12 +79,11 @@ export function pickContinuationSources(
     }
   }
 
-  // ---------- 2) 上一章结尾（衔接参照，取尾部） ----------
-  // 🔴 取**尾部**：衔接靠的就是末尾那几句（整章改写那边踩过取错成开头的坑）
-  const prev = idx > 0 ? flat[idx - 1] : null
-  const prevTail = prev && tailChars > 0 ? (prev.content ?? '').trim().slice(-tailChars) : ''
-
-  // ---------- 3) 前 N 章正文（按叙事序，受合计上限约束） ----------
+  // ---------- 2) 前文章节（按叙事序，受合计上限约束） ----------
+  // 🔴 **取每章的末尾**（不是开头）：这一项同时承担两件事 ——
+  //    ① 文风语感参照（末尾几百字同样够看）；
+  //    ② **衔接参照** —— 删掉独立的「上一章结尾」选项后，紧邻上一章的末尾就靠它带进来。
+  //    衔接靠的是末尾那几句，取开头会变成「让模型从上一章的起手接续」（整章改写那边踩过这个坑）。
   const prevTexts: { title: string; content: string }[] = []
   let droppedPrevTexts = 0
   if (prevTextCount > 0) {
@@ -94,18 +91,17 @@ export function pickContinuationSources(
     for (const c of flat.slice(Math.max(0, idx - prevTextCount), idx)) {
       const body = (c.content ?? '').trim()
       // 空章 / 剩余额度连半句都放不下（留 200 字余量）⇒ 计入未带入，绝不硬塞半句话。
-      // 单章超过剩余额度 ⇒ **截断保留开头**（续写参照的是文风语感，开头几百字就够；
-      //   整章丢弃等于作者勾了却什么都没拿到），口径与 `getChapterTexts` 一致并在文末注明。
+      // 单章超过剩余额度 ⇒ **截断保留末尾**（整章丢弃等于作者勾了却什么都没拿到）。
       const room = prevTextCap - used
       if (!body || room <= 200) {
         droppedPrevTexts++
         continue
       }
-      const text = body.length > room ? body.slice(0, room) + '…（本章因长度限制截断）' : body
+      const text = body.length > room ? '…（本章前部因长度限制略过）' + body.slice(-room) : body
       prevTexts.push({ title: c.title || '未命名章节', content: text })
       used += text.length
     }
   }
 
-  return { found: true, summaries, missingSummaries, prevTail, prevTexts, droppedPrevTexts }
+  return { found: true, summaries, missingSummaries, prevTexts, droppedPrevTexts }
 }

@@ -336,7 +336,7 @@ export function useJieWenJiModel(props: Props) {
   const [contPicks, setContPicks] = useState<Set<string>>(() => new Set(CONT_DEFAULT_PICKS))
   /** 「章节摘要」取几章（含本章） */
   const [contSummaryCount, setContSummaryCount] = useState(3)
-  /** 「前几章正文」取几章 */
+  /** 「前文章节」取几章（上限 5） */
   const [contPrevTextCount, setContPrevTextCount] = useState(1)
   /** 资料用量预览（勾选变化时防抖重算；**只读、不调模型、不烧额度**） */
   const [contPreview, setContPreview] = useState<{
@@ -372,11 +372,8 @@ export function useJieWenJiModel(props: Props) {
           const budget = await writerBudgetFor('jiewenji-continue')
           const wantSummaries = contPicks.has('summaries')
           const wantPrevTexts = contPicks.has('prev-texts')
-          const wantPrevTail = contPicks.has('prev-tail')
           const src = await getContinuationSources(focusChapterId ?? '', {
             summaryCount: wantSummaries ? contSummaryCount : 0,
-            // 不勾「上一章结尾」就把 tailChars 置 0（纯函数据此不取）—— 不再另加布尔开关，免得两处口径漂
-            tailChars: wantPrevTail ? 1200 : 0,
             prevTextCount: wantPrevTexts ? contPrevTextCount : 0,
           })
           const tabIds = CONTINUE_PICKS.filter(p => contPicks.has(p.key)).flatMap(p => p.tabIds)
@@ -388,7 +385,6 @@ export function useJieWenJiModel(props: Props) {
           const extra =
             (wantSummaries ? src.summaries.length : 0) +
             (wantPrevTexts ? src.prevTexts.length : 0) +
-            (wantPrevTail ? src.prevTail.length : 0) +
             CONT_BODY_TAIL_CHARS
           setContPreview({
             loading: false, chars: ctx.chars + extra, budget,
@@ -444,11 +440,9 @@ export function useJieWenJiModel(props: Props) {
       job.progress({ ch, text: '' }) // 🔴 第一行盖章节戳，失败/中止时也判得出归属
       const wantSummaries = snap.picks.has('summaries')
       const wantPrevTexts = snap.picks.has('prev-texts')
-      const wantPrevTail = snap.picks.has('prev-tail')
 
       const src = await getContinuationSources(focusChapterId ?? '', {
         summaryCount: wantSummaries ? snap.summaryCount : 0,
-        tailChars: wantPrevTail ? 1200 : 0,
         prevTextCount: wantPrevTexts ? snap.prevTextCount : 0,
       })
       // 设定类：只把勾中的页签交给 buildProjectContext
@@ -466,7 +460,7 @@ export function useJieWenJiModel(props: Props) {
       const blocks: string[] = []
       if (wantSummaries && src.summaries) blocks.push(`【章节摘要】\n${src.summaries}`)
       if (ctx.text) blocks.push(`【设定资料】\n${ctx.text}`)
-      if (wantPrevTexts && src.prevTexts) blocks.push(`【前几章正文】\n${src.prevTexts}`)
+      if (wantPrevTexts && src.prevTexts) blocks.push(`【前文章节】\n${src.prevTexts}`)
       if (fpNote) blocks.push(`【文风档】\n${fpNote}`)
 
       // 🔴 流式：每个 token 都上报会让整棵订阅树重渲染 ⇒ 按 150ms 节流
@@ -475,7 +469,6 @@ export function useJieWenJiModel(props: Props) {
       const text = await aiContinuePassage({
         chapterTitle: title,
         bodyTail,
-        prevTail: wantPrevTail ? src.prevTail : '',
         projectContext: blocks.join('\n\n'),
         plot: snap.plot,
         targetWords: snap.words,

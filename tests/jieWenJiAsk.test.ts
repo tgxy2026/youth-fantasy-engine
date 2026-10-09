@@ -48,10 +48,10 @@ console.log('\n▶ rewriteAsk')
 
 // ---------- ④ 三段齐全 + 顺序 ----------
 {
-  const lines = buildRewriteAsk({ instruction: '改语气', detail: '改成冷峻克制', targetWords: 300 }, 120).split('\n')
+  const lines = buildRewriteAsk({ instruction: '语气', detail: '改成冷峻克制', targetWords: 300 }, 120).split('\n')
   ok('三段齐全 ⇒ 三行', lines.length === 3, JSON.stringify(lines))
   ok('顺序＝动作 → 额外要求 → 目标字数',
-    lines[0] === '改语气' && lines[1].includes('作者的额外要求') && lines[2].includes('目标字数'),
+    lines[0] === '语气' && lines[1].includes('作者的额外要求') && lines[2].includes('目标字数'),
     JSON.stringify(lines))
 }
 

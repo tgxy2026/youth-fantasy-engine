@@ -96,7 +96,7 @@ let P_rewrite_passage = `你是小说文字编辑，负责对作者选中的段�
 
 规则：
 1. 只修改选中段落本身，保持上下文衔接、人物口吻与全文风格一致；不改动段落以外的内容。
-2. 严格按要求执行：润色=提升文字表现力但不改剧情与信息；扩写=补充细节/感官/情绪但不得注水跑题；精简=去冗余保留全部有效信息；改语气=调整叙述/对话语气；换视角=在允许范围内调整叙述角度。
+2. 严格按要求执行：润色=提升文字表现力但不改剧情与信息；扩写=补充细节/感官/情绪但不得注水跑题；精简=去冗余保留全部有效信息；语气=调整叙述/对话语气；视角=在允许范围内调整叙述角度。
 3. 「作者的额外要求」**优先照做**（例如指定润色偏向哪一面、把语气从甲改成乙、扩写心理而不是环境），但它**不得放宽第 2 条的动作纪律** —— 比如要求「扩写」时又补一句「顺便加点冲突」，仍然不许凭空造出新专名与来历。
 4. 有「目标字数」时向它靠拢，但**不得为了凑字数注水**；两者冲突时以「不注水」为准。
 5. 返回 JSON：{"rewritten":"修改后的完整段落","notes":"一句话说明改了什么（可空）"}。
@@ -416,9 +416,7 @@ export interface ContinueAsk {
   chapterTitle: string
   /** 本章正文**末尾**（衔接起点；调用方裁剪，建议末尾 2000~3000 字） */
   bodyTail: string
-  /** 上一章结尾（衔接参照，可空） */
-  prevTail: string
-  /** 项目资料（设定 + 摘要 + 前几章正文，已拼好；可空） */
+  /** 项目资料（设定 + 摘要 + 前文章节正文，已拼好；可空） */
   projectContext: string
   /** 作者的续写要求（主要情节，可空） */
   plot?: string
@@ -440,7 +438,6 @@ export async function aiContinuePassage(
     ask.plot?.trim() ? `【续写要求】（作者指定，优先照做）\n${ask.plot.trim()}` : '',
     ask.targetWords && ask.targetWords > 0 ? `【目标字数】新增部分约 ${ask.targetWords} 字（按汉字个数计，标点与空白不计）` : '',
     ask.projectContext.trim() ? `【项目资料】（供参考，不要照抄）\n${authorBlock(fence, ask.projectContext.trim())}` : '',
-    ask.prevTail.trim() ? `【上一章结尾】（只作衔接参考，不要改写这一段）\n${authorBlock(fence, ask.prevTail.trim())}` : '',
     '【本章已有正文的末尾】',
     ask.bodyTail.trim() ? authorBlock(fence, ask.bodyTail.trim()) : '（本章还没有正文）',
   ].filter(Boolean).join('\n\n')

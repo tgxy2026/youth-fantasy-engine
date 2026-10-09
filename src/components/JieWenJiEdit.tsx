@@ -3,6 +3,7 @@
  *
  * 🔴 状态全部来自 useJieWenJiModel（组件只收 m）。
  * 2.9.2 起：改稿下方新增「续写」折叠区块（②的额外要求 + 期望字数落在改稿区）。
+ * ⚠️ 五个动作名（`INSTRUCTIONS`）会**直接进提示词**，改名须同步 `jieWenJi.ts` 的定义段。
  */
 import { PenLine, Wand2, Loader2, AlertTriangle, CheckCircle2, Trash2, Feather, ChevronDown, ChevronUp } from 'lucide-react'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
@@ -25,7 +26,7 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
   // 三类「本次未带入」并成一行（设定段被预算丢 / 前几章正文没带上 / 摘要有章没填）—— 绝不静默丢
   const contMissed = [
     ...contPreview.dropped,
-    ...(contPreview.droppedPrevTexts > 0 ? [`前几章正文 ${contPreview.droppedPrevTexts} 章`] : []),
+    ...(contPreview.droppedPrevTexts > 0 ? [`前文章节 ${contPreview.droppedPrevTexts} 章`] : []),
     ...(contPreview.missingSummaries > 0 ? [`${contPreview.missingSummaries} 章未填摘要`] : []),
   ]
   const contOver = contPreview.budget > 0 && contPreview.chars > contPreview.budget
@@ -96,7 +97,9 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
               title={!aiReady ? AI_DISABLED_HINT : undefined}
             >
               {rewrite.loading ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
-              {rewrite.loading ? '改稿中…' : `让颉文姬${instruction}选区`}
+              {/* ⚠️ 不能写成 `让颉文姬${instruction}选区` —— 动作改名为「语气 / 视角」后会变成
+                  「让颉文姬语气选区」这种病句（旧名是「改语气」，才刚好通顺）。 */}
+              {rewrite.loading ? '改稿中…' : `让颉文姬按「${instruction}」改这段`}
             </Button>
 
             {rewrite.error && <div className="text-11 text-danger px-1">{rewrite.error}</div>}
@@ -202,11 +205,11 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
                           <NumberField
                             value={contPrevTextCount}
                             onChange={v => setContPrevTextCount(v ?? 1)}
-                            min={1} max={3}
+                            min={1} max={5}
                             className="w-14 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-11 px-2 py-1 outline-none focus:border-amber/40"
                             placeholder="1"
                           />
-                          <span className="text-10 text-ink-600">章（上限 3）</span>
+                          <span className="text-10 text-ink-600">章（上限 5）</span>
                         </span>
                       )}
                     </div>

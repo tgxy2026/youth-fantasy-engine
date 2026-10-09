@@ -34,14 +34,17 @@ export interface Props {
 
 export type Mode = 'clinic' | 'edit' | 'review' | 'brief' | 'ledger'
 
-export const INSTRUCTIONS = ['润色', '扩写', '精简', '改语气', '换视角']
+// 🔴 这两个值是**直接进提示词**的（`buildRewriteAsk` 的第一段），不是纯界面标签 ——
+//    改名时必须同步 `aiTasks/jieWenJi.ts` 的 `P_rewrite_passage` 第 2 条定义，否则模型
+//    拿到一个没有定义的词（2026-10-09 主人要求：改语气 → 语气、换视角 → 视角）。
+export const INSTRUCTIONS = ['润色', '扩写', '精简', '语气', '视角']
 
 /**
  * 续写（2.9.2 · ③）：作者可勾选的「给 AI 的资料」清单。
  *
  * `tabIds` 交给 `buildProjectContext` 的 `onlyTabIds`（设定类页签）；
- * 空数组表示本项不走页签 —— 「章节摘要 / 上一章结尾 / 前几章正文」由
- * `getContinuationSources()` 专门取数，「文风档」走 `activeFingerprintNote()`。
+ * 空数组表示本项不走页签 —— 「章节摘要 / 前文章节」由
+ * `getContinuationSources()` 专门取数，「写作文风」走 `activeFingerprintNote()`。
  *
  * ⚠️ 这里只声明「勾什么」，**不声明「怎么取」** —— 取数实现一律在 lib 层，
  *    免得界面与取数各写一份口径（项目红线：AI 读哪些数据只能有一个源）。
@@ -61,14 +64,15 @@ export const CONTINUE_PICKS: ContinuePickItem[] = [
   { key: 'outline', label: '本章细纲', tabIds: ['chapter-outline'], def: true, hint: '续写要沿着本章既定目标走（最关键的一项）' },
   { key: 'chars', label: '主要角色', tabIds: ['char-main'], def: true, hint: '人物言行与口吻保持一致；本章出场人物由正文自动识别' },
   { key: 'summaries', label: '章节摘要', tabIds: [], def: true, hint: '本章及前几章的压缩摘要（章数可调）' },
-  { key: 'prev-tail', label: '上一章结尾', tabIds: [], def: true, hint: '只取上一章末尾约 1200 字，供直接衔接（比整章省预算）' },
   { key: 'style', label: '写作规范', tabIds: ['style'], def: true, hint: '人称 / 时态 / 标点等硬约束' },
-  { key: 'prev-texts', label: '前几章正文', tabIds: [], def: false, hint: '文风语感的直接参照；最占预算，勾了容易超上下文' },
+  // 🔴 「前文章节」取每章的**末尾**，所以它同时是衔接参照 —— 原先独立的「上一章结尾」
+  //    选项已并入本项（2026-10-09 主人拍板删除，避免两个勾项做同一件事）。
+  { key: 'prev-texts', label: '前文章节', tabIds: [], def: true, hint: '往前带几章的正文（取每章末尾）；最占预算，章数越多越容易超上下文' },
   { key: 'world', label: '世界设定', tabIds: ['worldbase', 'power', 'terms'], def: false, hint: '世界设定 + 力量体系 + 名词术语' },
   { key: 'volume', label: '分卷大纲', tabIds: ['volume-outline'], def: false, hint: '本章在卷里的位置与下一步走向' },
   { key: 'master', label: '全书总纲', tabIds: ['master'], def: false, hint: '长线方向（很吃预算）' },
   { key: 'foreshadow', label: '伏笔追踪', tabIds: ['foreshadow'], def: false, hint: '避免与既有伏笔冲突，也可顺手埋收' },
-  { key: 'fingerprint', label: '文风档', tabIds: [], def: false, hint: '按你的文风指纹保持一致' },
+  { key: 'fingerprint', label: '写作文风', tabIds: [], def: false, hint: '按你的文风指纹（#015 写作文风档）保持一致' },
   { key: 'hookpoints', label: '爽点节奏', tabIds: ['hookpoints'], def: false, hint: '续写的爽点安排参考' },
 ]
 
