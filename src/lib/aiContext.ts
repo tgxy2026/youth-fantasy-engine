@@ -16,6 +16,7 @@ import { splitNames } from './audit'
 import { clipText } from './textClip'
 import { todayKey } from './date'
 import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
+import { pickContinuationSources, type ContinuationPickOpts } from './continuationPick'
 import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from './worldSets'
 import { getActivePack, normalizeGenrePack, subItemLabel } from './schemaTemplates'
 import { buildSemanticRecallBlock } from './semantic/inject'
@@ -749,6 +750,66 @@ export async function getRecentChapterTexts(n = 6, charCap = 16000): Promise<str
     return getChapterTexts(ids, charCap)
   } catch {
     return ''
+  }
+}
+
+/** 续写章节素材（2.9.2 · ③）—— 三块各自独立，见 `ContinuationPickOpts` */
+export interface ContinuationSources {
+  /** 焦点章是否找到（false ⇒ 其余字段全空，调用方须据此提示作者） */
+  found: boolean
+  /** 本章及前若干章的摘要（已拼成文本；空串表示没取到） */
+  summaries: string
+  /** 摘要区间里有章但未填摘要的数量（「不静默丢」） */
+  missingSummaries: number
+  /** 紧邻前一章的正文末尾（衔接参照） */
+  prevTail: string
+  /** 当前章之前若干章的正文（已拼成文本） */
+  prevTexts: string
+  /** 勾了但未带入的章数（空章 / 超字符上限） */
+  droppedPrevTexts: number
+}
+
+const EMPTY_CONTINUATION_SOURCES: ContinuationSources = {
+  found: false, summaries: '', missingSummaries: 0, prevTail: '', prevTexts: '', droppedPrevTexts: 0,
+}
+
+/**
+ * 颉文姬 · 「续写」的章节素材。
+ *
+ * 三块（各自独立开关，选项见 `continuationPick.ts`）：
+ *   · summaries —— 本章及前若干章的「章节压缩摘要」
+ *   · prevTail  —— 紧邻前一章的正文末尾（衔接参照，取尾部）
+ *   · prevTexts —— 当前章之前若干章的正文（最吃预算）
+ *
+ * 🔴 焦点章必须在叙事序里找得到，否则 `found: false` —— 调用方要据此提示作者，
+ *    而不是当「没有素材」硬发（那会让模型凭空编）。
+ * 🔴 与 `findRelatedChapters` 同口径：孤儿章（volumeId 指向不存在的卷）也并入叙事序，
+ *    否则焦点章本身是孤儿时永远挑不到素材。
+ */
+export async function getContinuationSources(
+  focusChapterId: string,
+  opts: ContinuationPickOpts = {},
+): Promise<ContinuationSources> {
+  try {
+    const [vols, chs] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
+    const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
+    const flat = [...flattenChapters(vols, chs), ...orphans]
+    const pick = pickContinuationSources(
+      flat.map(c => ({ id: c.id, title: c.title, summary: c.summary ?? '', content: c.content ?? '' })),
+      focusChapterId,
+      opts,
+    )
+    if (!pick.found) return { ...EMPTY_CONTINUATION_SOURCES }
+    return {
+      found: true,
+      summaries: pick.summaries.map(s => `◆ ${s.title}：${s.summary}`).join('\n'),
+      missingSummaries: pick.missingSummaries,
+      prevTail: pick.prevTail,
+      prevTexts: pick.prevTexts.map(t => `〖${t.title}〗\n${t.content}`).join('\n\n'),
+      droppedPrevTexts: pick.droppedPrevTexts,
+    }
+  } catch {
+    return { ...EMPTY_CONTINUATION_SOURCES }
   }
 }
 

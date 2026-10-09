@@ -244,7 +244,8 @@ console.log('\n—— auditFixes2 用例开始 ——')
   const targets: [string, number][] = [
     ['src/lib/aiTasks/audit.ts', 7],
     ['src/lib/aiTasks/extract.ts', 2],
-    ['src/lib/aiTasks/jieWenJi.ts', 16],
+    // 2.9.2 · ③ 续写新增 3 处：项目资料（内含摘要 / 前几章正文）/ 上一章结尾 / 本章正文末尾
+    ['src/lib/aiTasks/jieWenJi.ts', 19],
     ['src/lib/wordRange.ts', 2],
   ]
   for (const [f, n] of targets) {

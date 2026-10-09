@@ -45,6 +45,8 @@ const LEGACY: Record<WriterBudgetKind, number> = {
   'jiewenji-pleasure': 8000,
   'jiewenji-opening': 8000,
   'jiewenji-brief': 8000,
+  // 续写（2.9.2·③ 新增）：按 1.25 档，出厂即 10000（要正文尾 + 摘要 + 设定）
+  'jiewenji-continue': 10000,
   // 节奏与章末钩子（2.4.1·B5 新增）：按 1.0 档，出厂即 8000
   'pace-analysis': 8000,
   // 读者视角审问（2.4.2·C5 新增）：按 1.0 档，出厂即 8000

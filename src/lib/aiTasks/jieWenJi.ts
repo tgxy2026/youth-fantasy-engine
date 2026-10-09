@@ -14,6 +14,8 @@ import { buildRewriteAsk, type RewriteAsk } from '../rewriteAsk'
 export type { RewriteAsk }
 import { newAuthorFence, authorBlock } from '../promptGuard'
 import type { PromptDef } from '../promptSettings'
+import { cleanChapterOutput } from './rewrite'
+import { deAiGenerateRule } from '../deAiStyle'
 
 /** 「写作简报」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_writing_briefing = `你是网文资深编辑兼创作助手。作者马上要动笔写下一章，请基于提供的设定资料与当前进度，生成一份「本章写作简报」，帮作者不丢线、不卡文、不 OOC。
@@ -99,6 +101,18 @@ let P_rewrite_passage = `你是小说文字编辑，负责对作者选中的段�
 4. 有「目标字数」时向它靠拢，但**不得为了凑字数注水**；两者冲突时以「不注水」为准。
 5. 返回 JSON：{"rewritten":"修改后的完整段落","notes":"一句话说明改了什么（可空）"}。
 6. 不要 markdown 代码块标记。`
+
+/** 「续写正文」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
+let P_continue_passage = `你是小说作者本人，正在接着本章已有正文的末尾往下写。
+
+规则：
+1. 只输出**新增的正文**：不复述、不改写已有内容，不写标题、不写说明、不写「（续）」之类的标记。
+2. 紧接上一句往下写：人称、时态、语气、文风与已有正文保持一致，人物言行符合角色设定。
+3. 遵守【写作规范】。可以用【项目资料】里的设定，但**不得凭空造出新专名**（人名 / 地名 / 势力 / 功法 / 物品）—— 需要时用已有名词。
+4. 有【目标字数】时向它靠拢（按汉字个数计），但**不得为了凑字数注水**、不得用重复句填充。
+5. 不写总结、不写升华、不预告后文、不替作者收尾。
+6. 标点必须完整：一句话中间的逗号、停顿一个都不要省，绝不能输出一长串中间没有标点的字。
+7. 直接输出正文，不要 markdown 代码块标记，也不要 JSON。`
 
 /** 「人设一致性（OOC）」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_ooc_check = `你是人设监督编辑。请对照角色卡中的性格/动机/价值观/说话风格，检查本章正文里角色的言行是否符合人设（OOC = Out Of Character）。
@@ -392,6 +406,53 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
   }
 }
 
+// ---------- 颉文姬⑦：续写（接本章末尾往下写 → 建议段） ----------
+//
+// 与「续写方向」（⑤，只给思路、不生成正文）和创意写作的整章续写（rewrite.ts 的 continue）都不同：
+// 本功能是**在当前章末尾往下续一段可指定字数与情节的轻量续写**，产出交作者取舍。
+
+export interface ContinueAsk {
+  /** 本章标题 */
+  chapterTitle: string
+  /** 本章正文**末尾**（衔接起点；调用方裁剪，建议末尾 2000~3000 字） */
+  bodyTail: string
+  /** 上一章结尾（衔接参照，可空） */
+  prevTail: string
+  /** 项目资料（设定 + 摘要 + 前几章正文，已拼好；可空） */
+  projectContext: string
+  /** 作者的续写要求（主要情节，可空） */
+  plot?: string
+  /** 期望字数（只写进提示词，**不做**本地补写循环 —— 拍板口径） */
+  targetWords?: number
+}
+
+export async function aiContinuePassage(
+  ask: ContinueAsk,
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+): Promise<string> {
+  const cfg = await requireProviderFor('create')
+  const fence = newAuthorFence()
+  // 🔴 去 AI 味纪律必须钉在 system **末尾**（埋中段效果≈0，见 lib/deAiStyle.ts 文件头）——
+  //    续写产出的同样是正文，与整章改写 / 伴写共用同一份真源。
+  const sys = [P_continue_passage, deAiGenerateRule('full')].join('\n\n')
+  const user = [
+    `【本章标题】${ask.chapterTitle || '未命名章节'}`,
+    ask.plot?.trim() ? `【续写要求】（作者指定，优先照做）\n${ask.plot.trim()}` : '',
+    ask.targetWords && ask.targetWords > 0 ? `【目标字数】新增部分约 ${ask.targetWords} 字（按汉字个数计，标点与空白不计）` : '',
+    ask.projectContext.trim() ? `【项目资料】（供参考，不要照抄）\n${authorBlock(fence, ask.projectContext.trim())}` : '',
+    ask.prevTail.trim() ? `【上一章结尾】（只作衔接参考，不要改写这一段）\n${authorBlock(fence, ask.prevTail.trim())}` : '',
+    '【本章已有正文的末尾】',
+    ask.bodyTail.trim() ? authorBlock(fence, ask.bodyTail.trim()) : '（本章还没有正文）',
+  ].filter(Boolean).join('\n\n')
+  // 🔴 纯文本输出（**不是** JSON）：续写动辄上千字，塞 JSON 会因转义失败（整章改写已踩过，同结论）
+  const text = await chat(
+    cfg,
+    [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: `${user}\n\n请接着往下写，只输出新增的正文。` }],
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken },
+  )
+  return cleanChapterOutput(text)
+}
+
 // ---------- 颉文姬⑥：爽点 / 毒点检查 ----------
 //
 // 依据网文行业共识（YY/代入感/金手指 三大核心元素 + "黄金三章"节奏 + 爽点滑向毒点的预警），
@@ -539,6 +600,11 @@ export const JIEWENJI_PROMPTS: PromptDef[] = [
     meta: { id: 'continuation-advice', group: '正文写作', name: '卡文建议', note: '刚写完一章，给下一部分的方向建议。' },
     read: () => P_continuation_advice,
     write: t => { P_continuation_advice = t },
+  },
+  {
+    meta: { id: 'continue-passage', group: '正文写作', name: '续写正文', note: '接着本章末尾往下续写一段正文，交作者取舍。' },
+    read: () => P_continue_passage,
+    write: t => { P_continue_passage = t },
   },
   {
     meta: { id: 'pleasure-check', group: '编辑与审校', name: '爽点与毒点管理', note: '按爽感管理标准审本章的爽点供给与毒点风险。' },

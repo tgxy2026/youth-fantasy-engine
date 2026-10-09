@@ -37,6 +37,42 @@ export type Mode = 'clinic' | 'edit' | 'review' | 'brief' | 'ledger'
 export const INSTRUCTIONS = ['润色', '扩写', '精简', '改语气', '换视角']
 
 /**
+ * 续写（2.9.2 · ③）：作者可勾选的「给 AI 的资料」清单。
+ *
+ * `tabIds` 交给 `buildProjectContext` 的 `onlyTabIds`（设定类页签）；
+ * 空数组表示本项不走页签 —— 「章节摘要 / 上一章结尾 / 前几章正文」由
+ * `getContinuationSources()` 专门取数，「文风档」走 `activeFingerprintNote()`。
+ *
+ * ⚠️ 这里只声明「勾什么」，**不声明「怎么取」** —— 取数实现一律在 lib 层，
+ *    免得界面与取数各写一份口径（项目红线：AI 读哪些数据只能有一个源）。
+ */
+export interface ContinuePickItem {
+  key: string
+  label: string
+  /** 设定类：映射到 `buildProjectContext` 的页签 id；空数组表示另有专门取数 */
+  tabIds: string[]
+  /** 默认是否勾选 */
+  def: boolean
+  /** 悬停说明（作者据此判断要不要勾） */
+  hint: string
+}
+
+export const CONTINUE_PICKS: ContinuePickItem[] = [
+  { key: 'outline', label: '本章细纲', tabIds: ['chapter-outline'], def: true, hint: '续写要沿着本章既定目标走（最关键的一项）' },
+  { key: 'chars', label: '主要角色', tabIds: ['char-main'], def: true, hint: '人物言行与口吻保持一致；本章出场人物由正文自动识别' },
+  { key: 'summaries', label: '章节摘要', tabIds: [], def: true, hint: '本章及前几章的压缩摘要（章数可调）' },
+  { key: 'prev-tail', label: '上一章结尾', tabIds: [], def: true, hint: '只取上一章末尾约 1200 字，供直接衔接（比整章省预算）' },
+  { key: 'style', label: '写作规范', tabIds: ['style'], def: true, hint: '人称 / 时态 / 标点等硬约束' },
+  { key: 'prev-texts', label: '前几章正文', tabIds: [], def: false, hint: '文风语感的直接参照；最占预算，勾了容易超上下文' },
+  { key: 'world', label: '世界设定', tabIds: ['worldbase', 'power', 'terms'], def: false, hint: '世界设定 + 力量体系 + 名词术语' },
+  { key: 'volume', label: '分卷大纲', tabIds: ['volume-outline'], def: false, hint: '本章在卷里的位置与下一步走向' },
+  { key: 'master', label: '全书总纲', tabIds: ['master'], def: false, hint: '长线方向（很吃预算）' },
+  { key: 'foreshadow', label: '伏笔追踪', tabIds: ['foreshadow'], def: false, hint: '避免与既有伏笔冲突，也可顺手埋收' },
+  { key: 'fingerprint', label: '文风档', tabIds: [], def: false, hint: '按你的文风指纹保持一致' },
+  { key: 'hookpoints', label: '爽点节奏', tabIds: ['hookpoints'], def: false, hint: '续写的爽点安排参考' },
+]
+
+/**
  * 校对的**两块**（2026-09-20 拆分，老大要求）。
  * 拆开的实际收益：文字层不读设定资料 —— 块内注入少了几千字，出结果明显更快；
  * 逻辑层才读设定（判前后矛盾、与设定冲突必须有依据）。

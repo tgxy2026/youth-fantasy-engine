@@ -56,8 +56,8 @@ export { aiSplitTableRows } from './aiTasks/tableImport'
 export type { ImportSplitColumn, ImportSplitRequest, ImportSplitResult } from './aiTasks/tableImport'
 export { aiContinuityAudit, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReview, aiDedupTerms, aiStyleCheck } from './aiTasks/audit'
 export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from './aiTasks/audit'
-export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from './aiTasks/jieWenJi'
-export type { EditorDiagnosis, ReviewDimension, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, BriefingReport } from './aiTasks/jieWenJi'
+export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from './aiTasks/jieWenJi'
+export type { EditorDiagnosis, ReviewDimension, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, ContinueAsk, PleasureReport, OpeningReport, BriefingReport } from './aiTasks/jieWenJi'
 export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput, stripInlineMarkdown } from './aiTasks/rewrite'
 export type { ChapterRewriteAction, ChapterRewriteOpts } from './aiTasks/rewrite'
 export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, parseExtractedEntities } from './aiTasks/extract'
@@ -142,6 +142,8 @@ const PROMPT_ORDER = [
   'market-radar',
   // 2.8.0 追加在末尾：文风指纹（#015）
   'style-fingerprint',
+  // 2.9.2 追加在末尾：颉文姬续写 —— 只往末尾加，不动其它条目的既有 UI 顺序
+  'continue-passage',
 ]
 
 const PROMPT_SETS: PromptDef[][] = [
