@@ -19,10 +19,12 @@ import { LoadingState } from './LoadingState'
 import { Button } from './Button'
 import { ShowBands } from './TavernFieldKit'
 import { UNSAVED_CHANGES_HINT } from '../lib/constants'
+import { Z } from '../lib/zLayer'
 import { useTavernControlModel } from './useTavernControlModel'
 import TavernControlBasics from './TavernControlBasics'
 import TavernControlAdvanced from './TavernControlAdvanced'
 import TavernControlProtocol from './TavernControlProtocol'
+import { SaveFab } from './SaveFab'
 export default function TavernControl() {
   const m = useTavernControlModel()
   // 前置数据未就绪：与拆分前一样先出 LoadingState（判断已随 hook 前移，语义不变）
@@ -34,7 +36,10 @@ export default function TavernControl() {
   const { s, showBands, setShowBands, dirty, saving, presetNaming, setPresetNaming, leftColRef, rightColRef, storePresetAs, setPlot, setFree, setVars, toggleVarKey, save, reset, pl, fr, modelOptions, rec, gSoft, gHard, gLong, gDiary } = m
   return (
     <div className="mx-auto max-w-[1500px] space-y-4">
-      <header className="flex items-start justify-between gap-4">
+      {/* 🔴 吸顶（对齐四个同形态页头）：本页内容高达 6500+px，改中段内容（如「我的档案」）时必须向下滚 ——
+          页头原本随滚动走，实测滚到档案区时保存按钮在视口上方 2400px 处。
+          ⚠️ 本页外层用 space-y-4 供间距，故**不加** mb-5（加了会双重间距）。 */}
+      <header className="flex items-start justify-between gap-4 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
         <div>
           {/* h1 是块级元素，问号必须与它同处一个 flex 行内容器，否则会被挤到标题下一行 */}
           <div className="flex items-center gap-1.5">
@@ -113,6 +118,12 @@ export default function TavernControl() {
         }}
         onCancel={() => setPresetNaming(false)}
       />
+
+      {/* 右下角浮动保存球：与「角色卡 / 表单 / 大纲 / 表格」四个同形态页同一入口。
+          本页高达 6500+px，滚到中段编辑时页头早已滚出视野 —— 那时**唯一**能点的保存入口就是它
+          （原先两样都没挂 ⇒ 作者滚到「我的档案」后找不到保存，切页签即静默丢失未保存内容）。
+          它的语义是「有未保存改动才出现」，所以一出现就说明该存了（与 SaveFab 的既有约定一致）。 */}
+      {dirty && <SaveFab onClick={() => void save()} label="保存修改" />}
     </div>
   )
 }
