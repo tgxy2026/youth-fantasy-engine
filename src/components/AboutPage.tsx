@@ -83,7 +83,7 @@ export default function AboutPage() {
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
           <HelpPopover title="这一页是什么" side="right">
-            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；仅「检查更新」会向 Gitee 发一次只读请求。'}
+            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；会联网的只有版本检查 —— 手动点「检查更新」，以及默认开启的「启动时自动检查」（可在本页关掉）。'}
           </HelpPopover>
         </div>
         <p className="text-ink-400 text-sm mb-8">

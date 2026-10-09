@@ -569,7 +569,9 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         <div className="flex flex-wrap items-baseline gap-x-2">
                           <span className={`text-11 ${usable ? 'text-ink-300' : 'text-ink-600'}`}>{f.label}</span>
                           <span className="text-10 text-ink-600">推荐 {f.recommend}</span>
-                          {!f.cloud && <span className="text-10 text-ink-600">仅本地</span>}
+                          {/* 「仅本地」改成「仅 Ollama」（2026-10-10 审计）：灰显判据是 isOllamaSamplingChannel（type==='ollama'），
+                              本地 OpenAI 兼容（LM Studio / LocalAI）同样被灰显 ⇒ 写「仅本地」会让人以为本地就能用。 */}
+                          {!f.cloud && <span className="text-10 text-ink-600">仅 Ollama</span>}
                         </div>
                         {usable ? (
                           // 🔴 必须走 NumberField（本地 text 态 + 失焦提交 + 钳制）：

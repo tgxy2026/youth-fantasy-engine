@@ -2,7 +2,7 @@
 // （settings.protocol + 「已被你改过」标识 + 恢复出厂），再登记一份就是两个真相源。
 // 要改协议正文走控制面板；改内置默认值才动这里（改完旧版记得追加进 protocolLegacy）。
 /**
- * 酒馆模式 · 内置扮演协议（角色扮演通用协议 v1.11 —— 正文与 PROTOCOL_VERSION 均为 v1.11；
+ * 酒馆模式 · 内置扮演协议（角色扮演通用协议 v1.12 —— 正文与 PROTOCOL_VERSION 均为 v1.12；
  * 下方「v1.7 相对 v1.6」那段是最初搬运时留下的历史说明，保留不动，历代全文见 LEGACY_PROTOCOLS（实体在 src/data/protocolLegacy.ts））
  *
  * 来源：《本地模型角色扮演完全手册.html》→「模板二 · 通用协议技能正文」的

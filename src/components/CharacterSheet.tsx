@@ -155,7 +155,11 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
       void saveCardRecord(draftRef.current)
     }
     tabIdRef.current = tab.id
-    getCardRecords(tab.id).then(r => {
+    // 🔴 补 alive 守卫（2026-10-10 六维审计）：读写途中卸载会往已卸载组件 setState。
+    //    同文件其它 effect、TavernScript 的同类 effect 都已有守卫，只有这里漏了。
+    let alive = true
+    void getCardRecords(tab.id).then(r => {
+      if (!alive) return
       setRecords(r)
       if (r.length > 0) {
         setActiveId(r[0].id)
@@ -166,6 +170,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
       }
       setLoaded(true)
     })
+    return () => { alive = false }
   }, [tab.id])
 
   // 切换 active（同一页签内不同卡片）时刷新 draft；切换前先落盘上一卡未保存的修改，避免静默丢稿

@@ -447,7 +447,7 @@ async function main() {
     // ① 关掉数值 → 一次模型调用都不发（传个会炸的 chatFn 证明）
     const boom: ChatFn = async () => { throw new Error('不该被调到') }
     const r0 = await refreshSessionVars({ session: withMsg, keys: [], maxStep: 5, nameOf, chatFn: boom })
-    ok('🔴 没启用数值 → 原样返回、不调模型', r0 === withMsg)
+    ok('🔴 没启用数值 → 原样返回、不调模型', r0.session === withMsg)
 
     // ② 只喂最后两条 —— 前两轮的老消息不该参与（同一件事会被反复记，数值自己漂走）
     const seen: string[] = []
@@ -459,19 +459,21 @@ async function main() {
     ok('🔴 只喂最后两条消息（本轮输入 + 本轮回复）',
       seen.length === 1 && seen[0].includes('（她没抬头）') && !seen[0].includes('（她把杯子推过来）'),
       seen[0])
-    ok('刷新把变化写回了会话（0 + 4）', r1.vars!.values.affection === 4, String(r1.vars!.values.affection))
-    ok('文本项也写回', r1.vars!.values.mood === '松了一点')
-    ok('记了一笔变动（界面「最近变化」有得显示）', r1.vars!.log.length === 1 && r1.vars!.log[0].source === 'ai')
+    ok('刷新把变化写回了会话（0 + 4）', r1.session.vars!.values.affection === 4, String(r1.session.vars!.values.affection))
+    ok('文本项也写回', r1.session.vars!.values.mood === '松了一点')
+    ok('记了一笔变动（界面「最近变化」有得显示）', r1.session.vars!.log.length === 1 && r1.session.vars!.log[0].source === 'ai')
     ok('刷新不改消息、不动其它字段',
-      r1.messages === withMsg.messages && r1.title === withMsg.title)
+      r1.session.messages === withMsg.messages && r1.session.title === withMsg.title)
+    // 🔴 2026-10-10 新增：角色卡改成「随返回值交给调用方写」—— 没指定主角色时连算都不算
+    ok('🔴 未指定主角色 ⇒ pendingCard 为 null（本函数不再代写卡）', r1.pendingCard === null)
     ok('没变化 → 原样返回（调用方据此省掉一次写库）',
-      await refreshSessionVars({ session: withMsg, keys, maxStep: 5, nameOf, chatFn: makeFakeChat('〔数值〕无变化').chatFn }) === withMsg)
+      (await refreshSessionVars({ session: withMsg, keys, maxStep: 5, nameOf, chatFn: makeFakeChat('〔数值〕无变化').chatFn })).session === withMsg)
     ok('没有消息 → 原样返回、不调模型',
-      await refreshSessionVars({ session: base, keys, maxStep: 5, nameOf, chatFn: boom }) === base)
+      (await refreshSessionVars({ session: base, keys, maxStep: 5, nameOf, chatFn: boom })).session === base)
 
     // ③ 🔴 静默：抽取失败不能把这一轮对话弄没
     const r2 = await refreshSessionVars({ session: withMsg, keys, maxStep: 5, nameOf, chatFn: boom as ChatFn })
-    ok('🔴 抽取抛异常 → 静默返回原会话（数值是锦上添花，不能拦着对话）', r2 === withMsg)
+    ok('🔴 抽取抛异常 → 静默返回原会话（数值是锦上添花，不能拦着对话）', r2.session === withMsg)
 
     // ④ 作者刚手改过的项只收增量（审计 P2 的保护在这里也要生效）
     const pinnedSession: FreeSession = {
@@ -485,9 +487,16 @@ async function main() {
     }
     const r3 = await refreshSessionVars({ session: pinnedSession, keys, maxStep: 5, nameOf, chatFn: makeFakeChat('〔数值〕好感 80').chatFn })
     ok('🔴 作者刚手改到 20 → 模型的绝对值「好感 80」被挡下',
-      r3.vars!.values.affection === 20, String(r3.vars!.values.affection))
+      r3.session.vars!.values.affection === 20, String(r3.session.vars!.values.affection))
     const r4 = await refreshSessionVars({ session: pinnedSession, keys, maxStep: 5, nameOf, chatFn: makeFakeChat('〔数值〕好感 +6').chatFn })
-    ok('增量照旧放行（+6 被 maxStep=5 夹成 +5 → 25）', r4.vars!.values.affection === 25, String(r4.vars!.values.affection))
+    ok('增量照旧放行（+6 被 maxStep=5 夹成 +5 → 25）', r4.session.vars!.values.affection === 25, String(r4.session.vars!.values.affection))
+
+    // ⑤ 🔴 指定主角色 ⇒ 只返回「待落库」的卡状态（本函数不再自己写卡，
+    //    由调用方在 saveFreeSession 成功之后再写 —— 见 varsRefresh.ts 的 RefreshVarsResult）
+    const r5 = await refreshSessionVars({ session: withMsg, keys, maxStep: 5, nameOf, primaryCharId: 'c1', chatFn: spy })
+    ok('🔴 指定主角色 ⇒ 返回 pendingCard（函数内不落库）',
+      !!r5.pendingCard && r5.pendingCard.charId === 'c1' && r5.pendingCard.vars.values.affection === 4,
+      JSON.stringify(r5.pendingCard))
   }
 
   console.log(`\ntavernVars: ${pass} passed, ${fail} failed`)

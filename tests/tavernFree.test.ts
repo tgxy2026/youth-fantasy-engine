@@ -14,7 +14,9 @@ import type { ChatFn } from '../src/lib/tavern/provider'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
 import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
 import { emptyVars } from '../src/lib/tavern/vars'
-import { DEFAULT_TALKATIVITY, type FreeCharacter, type FreeSession, type TavernMessage } from '../src/lib/tavern/types'
+import { DEFAULT_TALKATIVITY, type FreeCharacter, type FreeSession, type TavernMessage, type TavernStory } from '../src/lib/tavern/types'
+import { createStory, saveStory, getStory, deleteStory, snapshotStorySetting } from '../src/lib/tavern/story'
+import { emptyWorldEntry } from '../src/lib/tavern/worldBook'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -644,6 +646,39 @@ async function main() {
     ok('预览里「）」后接对白也换行（与最终结果一致）', prev.split('\n').length >= 2, JSON.stringify(prev))
     const off = applyPostRulesForPreview('  （动作）  ', { ...st, postRulesEnabled: false })
     ok('规则总开关关掉 → 只 trim，不改内容', off === '（动作）', JSON.stringify(off))
+  }
+
+  // ---------- 🔴 本轮用户输入里的世界书触发词，**这一轮**就要生效 ----------
+  // 判据：`buildFreeSystem` 内部按「最近 6 条消息」抽世界书触发词，所以组装 system 时必须传
+  // `{ ...session, messages: withUser }`（withUser 已带上本轮用户输入）。传原始 session 会让
+  // 本轮刚说到的关键词这一轮不注入、要等下一轮 —— 剧情模式 2026-09-23 已修过同一处
+  // （engine.ts 的 buildPlotSystem 有同款注释），自由模式当时漏了、两模式行为分叉。
+  // 2026-10-10 六维审计补上并钉住这条。
+  {
+    const kwStory = await createStory({ name: '关键词注入测试故事' })
+    await saveStory({
+      ...kwStory,
+      setting: '',
+      entries: [{
+        ...emptyWorldEntry(), id: 'kw-1', title: '暗号',
+        body: '这条设定只有在提到「青霜玉」时才该出现。',
+        keys: ['青霜玉'], prob: 1, order: 0, recursive: true,
+      }],
+    })
+    const snap = snapshotStorySetting(await getStory(kwStory.id) as TavernStory)
+    const kwChar = await mkChar('关键词角色')
+    const kwSess = await store.createFreeSession(
+      [kwChar.id], '关键词注入测试', { providerId: STUB_PROVIDER.id }, {}, undefined, kwStory.id)
+    const live = await store.saveFreeSession({ ...kwSess, storySetting: snap })
+
+    const spy = makeFakeChat('（他把玉收进袖里。）')
+    await runFreeTurn(live, [kwChar], '我掏出那枚青霜玉给他看。', {}, { chatFn: spy.chatFn })
+    const prompt = (spy.calls[0]?.messages ?? []).map(m => String(m.content)).join('\n')
+    ok('🔴 自由模式：本轮用户输入提到的世界书触发词，这一轮就注入',
+      prompt.includes('这条设定只有在提到「青霜玉」时才该出现'), prompt.slice(0, 200))
+
+    await store.deleteFreeSession(live.id)
+    await deleteStory(kwStory.id)
   }
 
   console.log(`\ntavernFree: ${pass} passed, ${fail} failed`)

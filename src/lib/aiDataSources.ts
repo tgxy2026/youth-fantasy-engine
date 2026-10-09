@@ -342,7 +342,7 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   },
   'sensitive-check': {
     label: '敏感词 AI 检测',
-    sources: [{ group: '命中词 + 该词附近约 120 字的上下文', items: [], note: '只发命中的片段，不发全篇' }],
+    sources: [{ group: '命中词 + 该词前后各约 12 字的上下文', items: [], note: '只发命中的片段，不发全篇' }],
     excludes: ['项目设定表 —— 它只判断"这个词在当前语境里是否有风险"'],
   },
   // 检查工具页 · 节奏与章末钩子（2.4.1·B5 新增）
@@ -594,7 +594,6 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       '除「本章」与「上一章结尾」之外的任何章节正文',
       '改动前不会写库 —— 结果只在界面里给你看，点「替换该章正文」才写入，且写前自动留一份旧稿快照',
       '不会改动章节标题、状态、所属卷与排序（改写只改文字）',
-      AI_PRUNE_NOTE,
       '内容只发给你「当前选定的那个模型」：本地模型（Ollama 等）不出本机；选了云端模型就会上传到该服务商',
     ],
   },

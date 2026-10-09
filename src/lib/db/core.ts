@@ -17,7 +17,7 @@ import {
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo, type SyncDirHandle,
 } from '../desktopCloudSync'
-import { SYNC_STORES, totalRecords, isLocalOnlyStore, type SyncStores, type SyncRow } from '../syncCore'
+import { SYNC_STORES, totalRecords, isLocalOnlyStore, onCloudRestored, type SyncStores, type SyncRow } from '../syncCore'
 import { isDeleted } from '../syncTombstone'
 import {
   migrateFreshInstall, migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5,
@@ -241,6 +241,21 @@ async function mirrorDeleteExtra(store: string, cloudRows: SyncRow[]): Promise<v
 
 // 异常兜底路径：**只补缺失**（overwrite=false）—— 闩锁期本地库才是最权威的那一份
 onDesktopCloudFallback((cache) => { void mirrorCloudCacheToLocal(cache, false) })
+
+/**
+ * 「从云端备份恢复」成功后：把恢复结果**整体镜像回本机数据文件**，确保 reload 前已落盘。
+ *
+ * 🔴 2026-10-10 六维审计 P1：不镜像的话，恢复后界面 reload、三路合并拿「开启同步那一刻的冻结文件」
+ *    当本地那一份，按「本地优先」把恢复结果盖回去 —— 作者以为恢复成功了，其实被静默撤销。
+ *    `overwrite = true` 是刻意的：恢复本就是「整体回滚到该检查点」，与 disable 那条
+ *    「闩锁期只补缺失」的语义不同（那里云端可能不可用，这里 pushNow 刚成功、云端是权威）。
+ */
+onCloudRestored(async (cache) => {
+  await mirrorCloudCacheToLocal(cache, true)
+  // 写失败时 flushDesktop 是 return false（不 reject）—— 只挂 catch 会漏掉「没落盘」
+  const flushed = await flushDesktop().catch(() => false)
+  if (!flushed) console.warn('[sync] 从备份恢复后落盘未完成：数据可能仍在内存，请稍后确认已写入磁盘')
+})
 
 async function saveConflictCopy(info: SyncConflictInfo) {
   try {

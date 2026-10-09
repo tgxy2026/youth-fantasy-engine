@@ -25,6 +25,7 @@ import HelpPopover from './HelpPopover'
 import { showToast, confirmDialog } from './dialogs'
 import { Button } from './Button'
 import AutoTextarea from './AutoTextarea'
+import NumberField from './NumberField'
 import { UNSAVED_CHANGES_HINT } from '../lib/constants'
 import { uid } from '../lib/id'
 import TavernScriptFields from './TavernScriptFields'
@@ -632,18 +633,20 @@ export default function TavernScript() {
                             />
                             <label className="flex shrink-0 items-center gap-1 text-10 text-ink-400" title="命中后还要过这道随机闸：1 = 必中，0.5 = 一半概率">
                               <span>概率</span>
-                              <input
-                                type="number" min={0} max={1} step={0.1}
+                              {/* 🔴 走 NumberField（2026-10-10 六维审计）：原来的受控 `type=number` 在输入「0.」这种中间态时
+                                  Number('0.') === 0 ⇒ 父值被同步成 0、输入框回写成「0」，**小数点根本打不出来** ——
+                                  概率只能填 0 或 1，引擎侧 prob 语义形同虚设。NumberField 有本地文本态，编辑期不被外部值回写。 */}
+                              <NumberField
                                 value={e.prob}
-                                onChange={ev => {
-                                  const n = Number(ev.target.value)
-                                  const prob = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1
+                                onChange={v => {
+                                  const prob = typeof v === 'number' ? v : 1
                                   setStory(prev => prev ? {
                                     ...prev,
                                     entries: (prev.entries ?? []).map(x => x.id === e.id ? { ...x, prob } : x),
                                   } : prev)
                                   setStoryDirty(true)
                                 }}
+                                min={0} max={1} step={0.1} precision={2}
                                 className="w-14 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
                               />
                             </label>

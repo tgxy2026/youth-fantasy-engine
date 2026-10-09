@@ -44,8 +44,20 @@ export type RefreshVarsArgs = {
    */
   primaryCharId?: string
   charVars?: CharVars
-  /** 把主角色卡的新状态落库（调用方传入，避免这里直接 import store 成环） */
-  persistCharVars?: (charId: string, vars: CharVars) => Promise<void> | void
+}
+
+/** `refreshSessionVars` 的返回：新会话 + **待落库**的主角色卡状态 */
+export type RefreshVarsResult = {
+  /** 新的会话（数值已更新）；没变化 / 没启用 / 算不出来时是**原对象**（调用方据此判断要不要多写一次库） */
+  session: FreeSession
+  /**
+   * 待回写的主角色卡状态（**尚未落库**，由调用方在会话落库成功之后再写）。
+   *
+   * 🔴 2026-10-10 六维审计 P2：原来在这里就把卡写了，而会话是调用方**随后**才落的 ——
+   *    中途失败会让角色卡先推进、会话停在旧回复，重试同一轮时数值被**重复累加**
+   *    （与 roundEnd 那条「会话之外的持久状态必须放在提交点之后」同源）。
+   */
+  pendingCard: { charId: string; vars: CharVars } | null
 }
 
 /**
@@ -54,9 +66,9 @@ export type RefreshVarsArgs = {
  * @returns 新的会话（数值已更新）；**没变化 / 没启用 / 算不出来时原样返回原对象** ——
  *          调用方可以据此判断要不要多写一次库（本函数不落库，与 engine 同规矩）。
  */
-export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSession> {
+export async function refreshSessionVars(a: RefreshVarsArgs): Promise<RefreshVarsResult> {
   const { session, keys, maxStep, nameOf, providerId, chatFn, signal } = a
-  if (keys.length === 0) return session
+  if (keys.length === 0) return { session, pendingCard: null }
 
   /*
    * 只喂**这一轮**（默认最后两条：本轮的用户输入 + 刚生成的那条回复）。
@@ -69,7 +81,7 @@ export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSessio
   const tail = (a.messages ?? session.messages)
     .filter(m => m.role !== 'system' && !m.hidden)
     .slice(-2)
-  if (tail.length === 0) return session
+  if (tail.length === 0) return { session, pendingCard: null }
 
   try {
     const base = varsOf(session, keys)
@@ -89,20 +101,23 @@ export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSessio
       chatFn,
       signal,
     })
-    if (ex.changes.length === 0) return session
+    if (ex.changes.length === 0) return { session, pendingCard: null }
     const nextSession = {
       ...session,
       vars: recordVarChanges({ ...base, values: ex.values }, ex.changes, turnSeqOf(session.messages)),
     }
-    // 回写主角色卡（持久、跨会话累积）；备注只在「这一轮变了的项」上更新，没变的沿用旧备注
-    if (a.persistCharVars && a.primaryCharId) {
-      const cardVars: CharVars = {
+    // 主角色卡的新状态（持久、跨会话累积）；备注只在「这一轮变了的项」上更新，没变的沿用旧备注。
+    // 🔴 这里**只算不写**：由调用方在 saveFreeSession 成功之后再落卡（见 RefreshVarsResult.pendingCard）。
+    const cardVars: CharVars | null = a.primaryCharId
+      ? {
         values: ex.values as CharVars['values'],
         notes: { ...(a.charVars?.notes ?? {}), ...(ex.notes ?? {}) },
       }
-      await a.persistCharVars(a.primaryCharId, cardVars)
+      : null
+    return {
+      session: nextSession,
+      pendingCard: cardVars && a.primaryCharId ? { charId: a.primaryCharId, vars: cardVars } : null,
     }
-    return nextSession
   } catch (e) {
     // 🔴 2.4.4 六维审计：中止（作者主动停）必须向上抛 —— 与 roundEnd 同纪律；
     //    把「用户取消」记成「数值刷新失败」会误导排查。
@@ -112,6 +127,6 @@ export async function refreshSessionVars(a: RefreshVarsArgs): Promise<FreeSessio
     //    刻意只用 console.warn 不弹 toast：它每轮都跑，弹窗会盖住正在进行的对话。
     //    （同类写法见 `useTavernCardModel.ts` 的角色卡导入失败明细。）
     console.warn('[tavern] 本场数值刷新失败（已跳过，不影响本轮对话）：', e)
-    return session
+    return { session, pendingCard: null }
   }
 }

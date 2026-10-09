@@ -88,6 +88,24 @@ export function onSyncConflict(h: (info: SyncConflictInfo) => void) {
 }
 
 /**
+ * 「从云端备份恢复」**成功之后**的处理器：收到恢复结果，由上层镜像回本机数据文件。
+ *
+ * 🔴 为什么必须有它（2026-10-10 六维审计 P1）：云模式下本机数据文件是「开启同步那一刻的冻结快照」，
+ *    会话内的编辑只进内存 cache。恢复完不镜像 ⇒ 界面随即 reload、`ensureInit` 会拿**冻结的旧文件**
+ *    当三路合并的「本地那一份」，而 `baseCache` 启动即空 ⇒ 走「两端都改 → 本地优先」分支
+ *    ⇒ **恢复被自己静默撤销**（界面还报「已从备份恢复」）。
+ *
+ * ⚠️ 走注册回调而不是本文件直接 import：`db/core.ts` 已经 import 本文件，反向 import 会成环
+ *    （与上面的 conflictHandler、以及 desktopCloudSync 的 fallbackHandler 同一模式）。
+ */
+let cloudRestoreHandler: ((cache: SyncStores) => void | Promise<void>) | null = null
+
+/** 注册「恢复成功后」的镜像钩子（由 `db/core.ts` 调用一次） */
+export function onCloudRestored(h: (cache: SyncStores) => void | Promise<void>) {
+  cloudRestoreHandler = h
+}
+
+/**
  * 「推不出去」时的兜底处理器：收到当前内存 cache，由上层负责落盘。
  * 见 createCloudStore().onFallback 与 flushNow() 的 blocked 分支。
  */
@@ -676,6 +694,10 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       setStatus('error')
       return false
     }
+    // 🔴 恢复成功后把结果**镜像回本机数据文件**（2026-10-10 六维审计 P1）：
+    //    不镜像的话，界面接着 reload、三路合并会拿「冻结的旧本机文件」当本地那一份、
+    //    按「本地优先」把恢复结果盖回去 —— 恢复被静默撤销。实现由 db 层注册（避免反向 import 成环）。
+    await cloudRestoreHandler?.(restored)
     return true
   }
 

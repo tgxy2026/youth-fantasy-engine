@@ -119,7 +119,12 @@ export function useTavernControlModel() {
 
   // ---------- 预设方案（A4）：整套设置（含协议）的命名快照 ----------
   useEffect(() => {
-    void presets.listPresets().then(setPresetList).catch(() => setPresetList([]))
+    // 🔴 补 alive 守卫（2026-10-10 六维审计）：与上面那个 effect 同口径，卸载后不再 setState。
+    let alive = true
+    void presets.listPresets()
+      .then(r => { if (alive) setPresetList(r) })
+      .catch(() => { if (alive) setPresetList([]) })
+    return () => { alive = false }
   }, [])
 
   const storePresetAs = async (name: string) => {

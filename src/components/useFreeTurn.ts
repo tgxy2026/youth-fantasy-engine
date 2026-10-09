@@ -185,19 +185,21 @@ export function useFreeTurn({
        * 刷新结果与正文**同一笔落库**：数值跟它所依据的那条回复不能分家。
        */
       setPhase('正在结算本场数值…')
-      const withVars = await refreshSessionVars({
+      const { session: withVars, pendingCard } = await refreshSessionVars({
         session: res.session,
         keys: varKeys,
         maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
         nameOf: id => nameOf(id ?? ''),
         providerId: summaryProviderId || undefined,
         signal: ctrl.signal,
-        // 反馈 #4：抽取时把主角色卡当前备注当上下文；算完把新值＋新备注回写卡（持久、跨会话累积）
+        // 反馈 #4：抽取时把主角色卡当前备注当上下文；新值＋新备注由下面「会话落库之后」回写卡
         primaryCharId: primaryAiCharId(res.session),
         charVars: charCard?.vars,
-        persistCharVars,
       })
       const saved = await store.saveFreeSession(withVars)
+      // 🔴 卡在会话**落库成功之后**才写（2026-10-10 六维审计）：否则中途失败会让卡先推进、
+      //    会话停在旧回复，重试同一轮时数值重复累加。
+      if (pendingCard) await persistCharVars(pendingCard.charId, pendingCard.vars)
       // 🔴 结算期间又切了会话：这一轮**照常落库**（它确实发生在那个会话上），但界面不接管
       if (abortRef.current !== ctrl) { void refreshSessions(); return }
       setSession(saved)
@@ -280,19 +282,20 @@ export function useFreeTurn({
       shownReply = res.session
       // 重说同样要刷新数值（反馈 #4）：回复换了，这一轮的关系走向也就跟着换
       setPhase('正在结算本场数值…')
-      const withVars = await refreshSessionVars({
+      const { session: withVars, pendingCard } = await refreshSessionVars({
         session: res.session,
         keys: varKeys,
         maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
         nameOf: id => nameOf(id ?? ''),
         providerId: summaryProviderId || undefined,
         signal: ctrl.signal,
-        // 反馈 #4：抽取时把主角色卡当前备注当上下文；算完把新值＋新备注回写卡（持久、跨会话累积）
+        // 反馈 #4：抽取时把主角色卡当前备注当上下文；新值＋新备注由下面「会话落库之后」回写卡
         primaryCharId: primaryAiCharId(res.session),
         charVars: charCard?.vars,
-        persistCharVars,
       })
       const saved = await store.saveFreeSession(withVars)
+      // 🔴 卡在会话落库成功之后才写（同 send 路径）
+      if (pendingCard) await persistCharVars(pendingCard.charId, pendingCard.vars)
       // 🔴 结算期间又切了会话：照常落库，但界面不接管（同 send）
       if (abortRef.current !== ctrl) { void refreshSessions(); return }
       // T3 多候选（2026-10-05）：开关开着时把新文本记成候选（旧版已在 variants[0]，可翻回对照）。

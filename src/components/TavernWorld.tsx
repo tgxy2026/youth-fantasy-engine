@@ -24,6 +24,7 @@ import { showToast } from './dialogs'
 import { Button } from './Button'
 import { LoadingState } from './LoadingState'
 import AutoTextarea from './AutoTextarea'
+import NumberField from './NumberField'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
 import { buildProjectContext } from '../lib/aiContext'
 import {
@@ -261,18 +262,18 @@ export default function TavernWorld() {
                         />
                         <label className="flex shrink-0 items-center gap-1 text-10 text-ink-400" title="命中后还要过这道随机闸：1 = 必中，0.5 = 一半概率">
                           <span>概率</span>
-                          <input
-                            type="number" min={0} max={1} step={0.1}
+                          {/* 🔴 走 NumberField（2026-10-10 六维审计）：与 TavernScript 的世界书词条同因 ——
+                              受控 type=number 在「0.」中间态会把值回写成 0，小数点打不进去。 */}
+                          <NumberField
                             value={s.prob ?? 1}
-                            onChange={e => {
-                              const n = Number(e.target.value)
+                            onChange={v => {
+                              if (typeof v !== 'number') return
                               edit(prev => ({
                                 ...prev,
-                                sections: prev.sections.map(x => x.id === s.id
-                                  ? { ...x, prob: Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : undefined }
-                                  : x),
+                                sections: prev.sections.map(x => x.id === s.id ? { ...x, prob: v } : x),
                               }))
                             }}
+                            min={0} max={1} step={0.1} precision={2}
                             className="w-14 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
                           />
                         </label>

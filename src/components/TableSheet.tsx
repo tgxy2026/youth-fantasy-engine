@@ -28,7 +28,7 @@ import TermDedupPanel from './TermDedupPanel'
 import CalendarRuleModal from './CalendarRuleModal'
 import FieldAliasButton, { tableAliasTargets } from './FieldAliasButton'
 import { useFieldAliases } from '../lib/fieldAlias'
-import { confirmDialog } from './dialogs'
+import { confirmDialog, showToast } from './dialogs'
 import { Button } from './Button'
 import { SaveFab } from './SaveFab'
 import { LoadingState } from './LoadingState'
@@ -174,9 +174,15 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <Button variant="danger" // 破坏性操作用 danger 令牌（原为 bare + 手写红样式，与 danger 输出等价）
               onClick={async () => {
                 if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
-                rows.forEach(row => { void deleteTableRow(row.id) })
+                // 🔴 串行 await（2026-10-10 六维审计）：原先 forEach + void 是**并发发起且不等待**，
+                //    失败被静默吞掉 ⇒ 界面已清空、库里可能残留（重开这一页它们又冒出来）。
+                let failedCount = 0
+                for (const row of rows) {
+                  try { await deleteTableRow(row.id) } catch { failedCount++ }
+                }
                 setRows([])
                 setDrafts({})
+                if (failedCount) showToast(`有 ${failedCount} 条没能删掉（其余已清除）—— 请再试一次`, 'error')
               }}
               className="font-medium"
             >

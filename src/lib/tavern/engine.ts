@@ -772,8 +772,6 @@ export async function runFreeTurn(
   const st = deps.settings ?? await getTavernSettings()
   const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
   const runChat = deps.chatFn ?? chat
-  const { system } = await buildFreeSystem(session, chars, st, { windowTokens: provider.contextWindow })
-
   // 与剧情模式同一条约定：null = 重说（不追加用户消息、先丢掉末尾那条 AI 回复）
   const baseMsgs = userText === null ? dropTrailingAssistant(session.messages) : session.messages
   // 与剧情模式同一契约：null = 重说，必须有可重说的回复（UI 也会先判一次）
@@ -783,6 +781,11 @@ export async function runFreeTurn(
   const withUser: TavernMessage[] = userText === null
     ? baseMsgs
     : [...baseMsgs, { id: uid(), role: 'user', content: userText, at: Date.now() }]
+
+  // 🔴 组装 system 要传 withUser（2026-10-10 六维审计）：它内部按「最近 6 条消息」抽世界书 /
+  //    背景设定的**注入关键词**。用原始 session 会让本轮刚提到的关键词这一轮不生效、要等下一轮 ——
+  //    剧情模式 2026-09-23 已修过同一处（上面的 buildPlotSystem 有同款注释），自由模式当时漏了 ⇒ 两模式行为分叉。
+  const { system } = await buildFreeSystem({ ...session, messages: withUser }, chars, st, { windowTokens: provider.contextWindow })
 
   const p = resolveParamsOf('free', st, session.params)
   const { temperature, ...extraOptions } = toOllamaOptions(p)

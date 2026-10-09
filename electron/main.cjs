@@ -286,8 +286,11 @@ app.whenReady().then(() => {
   //    故不改变任何现有用法，却挡掉跨目录 / 任意扩展名的滥用。
   const assertSyncPath = (p) => {
     const s = typeof p === 'string' ? p : ''
-    if (!s || !path.isAbsolute(s) || !s.toLowerCase().endsWith('.yfe')) {
-      throw new Error('同步文件路径非法：只接受绝对路径且以 .yfe 结尾')
+    // ⚠️ 也放行 `.yfe.` 派生名（2026-10-10 六维审计）：syncTransport 的 quarantine() 会把解析不了的
+    //    同步文件另存成 `<名字>.yfe.corrupt-<时间戳>` 供人工抢救 —— 严格要求「.yfe 结尾」会把这条
+    //    **唯一的兜底**也挡掉（异常被 catch 吞成一条 warn，作者永远拿不到那份残骸）。
+    if (!s || !path.isAbsolute(s) || !/\.yfe(\.[\w.-]+)?$/i.test(s)) {
+      throw new Error('同步文件路径非法：只接受绝对路径且以 .yfe 结尾（或其派生名 .yfe.*）')
     }
     return s
   }
