@@ -46,7 +46,7 @@ for (const t of TABS) {
   }
 }
 
-const src = fs.readFileSync(path.join(ROOT, 'src', 'lib', 'seedData.ts'), 'utf8')
+const src = fs.readFileSync(path.join(ROOT, 'src', 'lib', 'app', 'seedData.ts'), 'utf8')
 const errors = []
 const warns = []
 let checked = 0

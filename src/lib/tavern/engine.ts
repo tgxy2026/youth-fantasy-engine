@@ -14,8 +14,8 @@
  */
 import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
-import { uid } from '@/lib/id'
-import { buildProjectContext } from '@/lib/aiContext'
+import { uid } from '@/lib/app/id'
+import { buildProjectContext } from '@/lib/ai/aiContext'
 import {
   buildSystemPrompt, buildMultiCharRule, toChatMessages, renderCastSetting,
   buildSameNameNote, buildSceneDescriptionRule, buildUserProfileBlock,

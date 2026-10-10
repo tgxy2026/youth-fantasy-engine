@@ -2,8 +2,8 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #5 + #6 段）。
 // 为什么合成一个文件：两段各 40~50 行，单独成文件太碎；同为「小工具型」调用，内聚且零新耦合。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/aiParse'
-import type { PromptDef } from '@/lib/promptSettings'
+import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 /** 「敏感词复核」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_sensitive_recheck = `你是网络文学平台的审核经验丰富的编辑。作者用本地词库扫出了一批"疑似敏感词"命中，其中很多是误报（词库只匹配字面，不看语境）。请逐条判断真实风险。

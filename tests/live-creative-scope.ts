@@ -13,7 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
-import { runCreativeWriting } from '../src/lib/aiWorkflow'
+import { runCreativeWriting } from '../src/lib/ai/aiWorkflow'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
 import { saveProviders, saveActiveId, type AIProvider } from '../src/lib/ai'
 

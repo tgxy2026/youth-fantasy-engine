@@ -12,7 +12,7 @@
  *    这些指令几乎都需要作者改一处（推进多久、补哪个方向），直接发出去等于替作者作了决定。
  *    带 slot 的按钮会把那一段**选中**，作者直接改就行。
  */
-import { Button } from '@/components/Button'
+import { Button } from '@/components/common/Button'
 
 export type QuickAction = {
   key: string

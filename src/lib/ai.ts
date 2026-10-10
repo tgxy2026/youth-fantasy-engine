@@ -28,7 +28,7 @@ import '@/lib/aiCore/prompts'
 // 副作用：注册「AI 辅助规划」提示词（W2-3 自 components/AIAssist.tsx 搬来）。
 // 🔴 同样必须裸引入：AIAssist 只在懒加载的「灵感工具」页里被 import，
 //    注册留在那儿的话，没打开过该页签的作者在「AI 提示词」里看不到这条。
-import '@/lib/aiAssistPrompt'
+import '@/lib/ai/aiAssistPrompt'
 
 // ---- 共享内核：Provider 类型 / 超时温度常量 / 平台预设 ----
 export {
@@ -67,5 +67,5 @@ export type { AIReadyInfo } from '@/lib/aiCore/session'
 export {
   TASK_ROLES, ROLE_LABEL, ROLE_HINT, DEFAULT_ROUTING,
   loadRouting, saveRouting, resolveProviderFor, requireProviderFor, rolesOf,
-} from '@/lib/aiRouting'
-export type { TaskRole, RoutingMap } from '@/lib/aiRouting'
+} from '@/lib/ai/aiRouting'
+export type { TaskRole, RoutingMap } from '@/lib/ai/aiRouting'

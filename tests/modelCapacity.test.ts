@@ -18,7 +18,7 @@ import {
   adviseCapacity, isLocalProvider, recommendTuning, scaleGuide, TUNING_LIMITS, lookupWindow,
   CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS, FALLBACK_WINDOW, MIN_SANE_WINDOW, MAX_WINDOW,
   checkContextWindow, modelFingerprintOf, shouldApplyTuning,
-} from '../src/lib/modelCapacity'
+} from '../src/lib/ai/modelCapacity'
 import { PARAM_GUIDES, type ParamGuide } from '../src/lib/tavern/paramGuide'
 
 let pass = 0, fail = 0

@@ -20,7 +20,7 @@
  * commit 侧无需改动（它按本表驱动）。
  */
 import { TABS } from '@/lib/schema'
-import type { SettingEntityType } from '@/lib/aiTasks'
+import type { SettingEntityType } from '@/lib/ai/aiTasks'
 
 /** 一个源字段 → 目标字段的落点声明 */
 export interface SlotMap {

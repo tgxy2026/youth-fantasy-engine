@@ -14,11 +14,11 @@
 //   ② 提示词里**不写 markdown 星号**：模型会模仿输出格式，正文里就会混进 `**`。
 //      要强调就用「」（本项目文案规范同此）。
 import { chat, requireProviderFor, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/aiParse'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
-import { stripEmphasis } from '@/lib/mdLite'
+import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
+import { stripEmphasis } from '@/lib/storage/mdLite'
 import { longStream } from '@/lib/aiTasks/stream'
-import type { PromptDef } from '@/lib/promptSettings'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 // ---------- 校对 · 文字层（错别字 / 语病 / 标点） ----------
 

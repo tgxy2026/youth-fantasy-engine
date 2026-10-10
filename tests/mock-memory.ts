@@ -1,6 +1,6 @@
 // 内存版 StoreOps：Node 端测试用，替换掉 IndexedDB / 文件后端。
 //
-// 🔴 主键映射**必须与 src/lib/desktop.ts 的 KEY_PATHS 逐项一致**。
+// 🔴 主键映射**必须与 src/lib/app/desktop.ts 的 KEY_PATHS 逐项一致**。
 //    漏一项的后果不是报错，而是**静默错位**：put/get 的 key 取成 `String(undefined)`，
 //    该 store 的所有记录都落到同一个 `'undefined'` 键上互相覆盖，而按正常 key 又一条都读不到。
 //    2026-09-18 实测：这里原先漏了 `formData: 'tabId'` —— 于是**所有表单型页签在测试里都读回空**，
@@ -10,7 +10,7 @@ export const KEY_PATHS: Record<string, string> = {
   aiRuns: 'id',
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id',
-  // C2：备份元数据与载荷分开存（须与 src/lib/desktop.ts 逐项一致）
+  // C2：备份元数据与载荷分开存（须与 src/lib/app/desktop.ts 逐项一致）
   backups: 'id', backupPayloads: 'id',
   formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
 }

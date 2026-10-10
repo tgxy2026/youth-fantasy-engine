@@ -10,7 +10,7 @@
 // 背景：这四列此前是「作者认真填了、程序从不读」的死字段
 // （见 docs/2.9.0-功能全景与数据复用机会梳理-2026-10-08.html 的 A 档）。
 import * as db from '../src/lib/db'
-import { auditContinuity } from '../src/lib/continuityCheck'
+import { auditContinuity } from '../src/lib/outline/continuityCheck'
 import type { Volume, Chapter } from '../src/lib/types'
 import { __resetMockStores, memoryOps } from './mock-memory'
 

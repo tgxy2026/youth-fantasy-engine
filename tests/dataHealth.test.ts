@@ -12,7 +12,7 @@
 //      指向另一条问题，表现是「我忽略了 A，结果 B 被藏起来」，而且**不报任何错**（静默失效）。
 //      第 ③ 组断言就是钉这个：加检查前后，既有问题的 id 必须一字不变。
 import * as db from '../src/lib/db'
-import { runDataHealthCheck } from '../src/lib/dataHealth'
+import { runDataHealthCheck } from '../src/lib/storage/dataHealth'
 import { TABS } from '../src/lib/schema'
 import { __resetMockStores } from './mock-memory'
 import type { TavernSessionIndexItem, TavernCharIndexItem, FreeSessionIndexItem } from '../src/lib/tavern/types'

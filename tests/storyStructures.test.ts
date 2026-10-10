@@ -7,7 +7,7 @@
  *   ③ id 封闭与容错：getStoryTemplate 对脏值（老数据 / 手改）必须返回 null，不得抛
  *   ④ formatStructureHint：注入文本包含全部节拍名与占比，体量可控（不撑爆提示词预算）
  */
-import { STORY_TEMPLATES, getStoryTemplate, formatStructureHint } from '../src/lib/storyStructures'
+import { STORY_TEMPLATES, getStoryTemplate, formatStructureHint } from '../src/lib/outline/storyStructures'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

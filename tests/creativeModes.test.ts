@@ -6,10 +6,10 @@
  * （比如又把续写挂回灵感启发页、又把拆书/创意写作设成默认勾选、又在界面文案里写 markdown 星号）。
  * 本文件跑在 CI 基线里（`tests/run-all.mjs`），改了这些地方就会红。
  */
-import { CONTINUE_DRAFT_STAGES, CONTINUE_PLAN_STAGES, CREATIVE_STAGES } from '../src/lib/aiWorkflow'
-import { DEAI_TEMPLATES } from '../src/lib/autoContinue'
+import { CONTINUE_DRAFT_STAGES, CONTINUE_PLAN_STAGES, CREATIVE_STAGES } from '../src/lib/ai/aiWorkflow'
+import { DEAI_TEMPLATES } from '../src/lib/outline/autoContinue'
 import { FEATURE_TIER, DEFAULT_IDS } from '../src/lib/schema'
-import { AI_DATA_SOURCES } from '../src/lib/aiDataSources'
+import { AI_DATA_SOURCES } from '../src/lib/ai/aiDataSources'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -40,13 +40,13 @@ const readSchema = () =>
  * 断言口径不变 —— 只是把素材来源扩成一组文件；以后再拆只需往这个数组加路径。
  */
 const CWP_FILES = [
-  'src/components/CreativeWritingPanel.tsx',
-  'src/components/creativeWritingParts.tsx',
-  'src/components/useCreativeWritingModel.ts',
-  'src/components/CreativeSetupSection.tsx',
-  'src/components/CreativeFlowSections.tsx',
-  'src/components/CreativeRewriteSection.tsx',
-  'src/components/CreativeDialogs.tsx',
+  'src/components/creative/CreativeWritingPanel.tsx',
+  'src/components/creative/creativeWritingParts.tsx',
+  'src/components/creative/useCreativeWritingModel.ts',
+  'src/components/creative/CreativeSetupSection.tsx',
+  'src/components/creative/CreativeFlowSections.tsx',
+  'src/components/creative/CreativeRewriteSection.tsx',
+  'src/components/creative/CreativeDialogs.tsx',
 ]
 const readCwp = () => CWP_FILES.map(read).join('\n')
 
@@ -105,14 +105,14 @@ console.log('\n—— creativeModes 用例开始 ——')
 {
   ok('🔴 AutoContinue 组件已删除（能力已并入创意写作）',
     !fs.existsSync(path.join(ROOT, 'src/components/AutoContinue.tsx')))
-  const inspire = read('src/components/InspireTools.tsx')
+  const inspire = read('src/components/creative/InspireTools.tsx')
   ok('🔴 灵感启发页不再引用续写组件', !inspire.includes('AutoContinue'))
   ok('灵感启发页副标题已去掉「AI 一键续写」',
     inspire.includes('随机取名生成器 · AI 辅助规划'))
   ok('🔴 灵感启发帮助文案不再提示「功能迁移到哪了」（界面/提示不留迁移指南）',
     !/已并入|已移到|已迁到|搬到「/.test(inspire))
 
-  const session = read('src/lib/creativeSession.ts')
+  const session = read('src/lib/creative/creativeSession.ts')
   ok('会话层存在（切页签不丢状态的根）', session.length > 0)
 
   // ---------- 产出目标（2026-09-19 起：开口就分清"只要规划"还是"连正文一起写"）----------
@@ -126,19 +126,19 @@ console.log('\n—— creativeModes 用例开始 ——')
     /short: \['outline', 'full'\]/.test(panel) && /long: \['outline', 'draft'\]/.test(panel))
   ok('🔴 面板读项目现状探针（状态行与输入框显隐都靠它）', /probeCreativeProject/.test(panel))
   ok('🔴 旧的「先续排细纲」开关已删除（细纲必须先排好，正文只管写）',
-    !/extendOutline/.test(panel) && !/extendOutline/.test(read('src/lib/creativeSession.ts')) && !/extendOutlineFirst/.test(read('src/lib/aiWorkflow.ts')))
+    !/extendOutline/.test(panel) && !/extendOutline/.test(read('src/lib/creative/creativeSession.ts')) && !/extendOutlineFirst/.test(read('src/lib/ai/aiWorkflow.ts')))
   ok('🔴 分卷大纲卡带「本卷章号范围」字段（正文切卷的唯一依据）',
     /f\('本卷章号范围'/.test(readSchema()))
   ok('🔴 章号范围由系统算（fillChapterRanges 是纯函数，可测）',
-    /export function fillChapterRanges/.test(read('src/lib/outlineCard.ts')))
+    /export function fillChapterRanges/.test(read('src/lib/outline/outlineCard.ts')))
   ok('🔴 切篇幅时把产出目标一起映射（否则会留下"当前篇幅下不存在的档"：按钮不亮、提示却在讲它）',
     /onPickLength/.test(panel) && /TARGETS_BY_LENGTH\[l\]/.test(panel))
   ok('🔴 「只生成正文」需要有已排好的大纲（如实报错，不静默改成"先排大纲"）',
-    /target === 'draft' && !probe\.hasOutline/.test(read('src/lib/aiWorkflow.ts')))
+    /target === 'draft' && !probe\.hasOutline/.test(read('src/lib/ai/aiWorkflow.ts')))
   ok('🔴 闸门②不再问「只保存大纲」（目标已在起点定，闸门只做确认/放弃）',
-    !/outline-only/.test(panel) && !/outline-only/.test(read('src/lib/aiWorkflow.ts')))
+    !/outline-only/.test(panel) && !/outline-only/.test(read('src/lib/ai/aiWorkflow.ts')))
   ok('CreativeInputs 带 target 字段', /target: CreativeTarget/.test(session))
-  ok('aiWorkflow 按 target 决定是否跑正文阶段', /opts\.target \?\? 'full'/.test(read('src/lib/aiWorkflow.ts')))
+  ok('aiWorkflow 按 target 决定是否跑正文阶段', /opts\.target \?\? 'full'/.test(read('src/lib/ai/aiWorkflow.ts')))
 
   // ---------- 整章改写（2026-09-19）----------
   // ⚠️ 2026-09-19 D1：整章改写的实体（含提示词）已从 aiTasks.ts 拆到 aiTasks/rewrite.ts。
@@ -146,20 +146,20 @@ console.log('\n—— creativeModes 用例开始 ——')
   //    故这里同时断言「域里有 meta」+「门面 PROMPT_ORDER 里有它」，强度不降。
   const rw = read('src/lib/aiTasks/rewrite.ts')
   ok('🔴 整章改写的提示词已登记（可在「模型设置 → AI 提示词」里改）',
-    /meta: \{ id: 'chapter-rewrite'/.test(rw) && /'chapter-rewrite'/.test(read('src/lib/aiTasks.ts')))
+    /meta: \{ id: 'chapter-rewrite'/.test(rw) && /'chapter-rewrite'/.test(read('src/lib/ai/aiTasks.ts')))
   ok('🔴 整章改写走纯文本输出（不塞 JSON —— 长文塞 JSON 会被转义搞坏）',
     /aiRewriteChapter/.test(rw) && !/aiRewriteChapter[\s\S]{0,900}json: true/.test(rw))
-  const rwLib = read('src/lib/chapterRewrite.ts')
+  const rwLib = read('src/lib/editor/chapterRewrite.ts')
   ok('🔴 写库前必存快照（旧稿可恢复）', /createSnapshot/.test(rwLib))
   ok('🔴 只改 content/wordCount/updatedAt，不动标题与卷属',
     /content: body, wordCount: words, updatedAt: Date.now\(\)/.test(rwLib))
   ok('改字数后同步章节台账', /syncChapterMaster/.test(rwLib))
-  const sess = read('src/lib/creativeSession.ts')
+  const sess = read('src/lib/creative/creativeSession.ts')
   ok('🔴 写入后的提示指向「时光机 · 本章版本历史」（旧稿可恢复要告诉作者）',
     /时光机/.test(sess))
   ok('🔴 上一章衔接样本取尾部（不是开头）', /slice\(-1200\)/.test(rw))
   // ---------- 续排细纲（方案 B）+ 历史章/最新章分治（2026-09-19 老大要求）----------
-  const wf = read('src/lib/aiWorkflow.ts')
+  const wf = read('src/lib/ai/aiWorkflow.ts')
   // 2026-09-20 长篇分批改造：以下五条钉住新的口径，防的是"某天被改回旧实现"
   // ⚠️ 2026-09-20 二次改造：起点多了一支「缺口优先」（先把没排满的卷补完，再谈新卷）。
   //    断言从"恒等于 maxOutlineNo + 1"改成"两支都对"—— 这是**口径变更**，不是放宽判据。
@@ -188,7 +188,7 @@ console.log('\n—— creativeModes 用例开始 ——')
   // ⚠️ 2026-09-19 D1：`extend-outline` 随「续排细纲」落 aiTasks/creative.ts，不在 rewrite.ts。
   //    这里三层都查：域里有 meta → 门面 PROMPT_ORDER 有 id（= 真的会出现在设置页）。
   const cr = read('src/lib/aiTasks/creative.ts')
-  const facade = read('src/lib/aiTasks.ts')
+  const facade = read('src/lib/ai/aiTasks.ts')
   ok('三条新提示词都登记了（可在模型设置里改）',
     /'chapter-rewrite-history'/.test(rw) && /'chapter-rewrite-latest'/.test(rw) && /'extend-outline'/.test(cr) &&
     ['chapter-rewrite-history', 'chapter-rewrite-latest', 'extend-outline'].every((id) => facade.includes(`'${id}'`)))
@@ -205,13 +205,13 @@ console.log('\n—— creativeModes 用例开始 ——')
   ok('会话层用 useSyncExternalStore 订阅（React 18 标准姿势）',
     session.includes('useSyncExternalStore'))
 
-  const deal = read('src/components/NewProjectAdvice.tsx')
+  const deal = read('src/components/app/NewProjectAdvice.tsx')
   ok('新建项目提示条存在', deal.length > 0)
   // 只检查**渲染用的文案块**：文件头注释里出现「**」是给读代码的人看的，不影响界面
   const dealText = deal.slice(deal.indexOf('const CONTENT'), deal.indexOf('export default'))
   ok('🔴 提示条文案不含 markdown 星号（界面是纯文本渲染，星号会原样露出）',
     !/\*\*/.test(dealText), (dealText.match(/\*\*[^*]{0,20}/) || [''])[0])
-  const bb = read('src/components/BookBreakPanel.tsx')
+  const bb = read('src/components/bookbreak/BookBreakPanel.tsx')
   const cwp = readCwp()
   ok('🔴 拆书页挂了提示条', bb.includes('<NewProjectAdvice kind="bookbreak" />'))
   ok('🔴 创意写作页挂了提示条', cwp.includes('<NewProjectAdvice kind="creative-writing" />'))
@@ -223,8 +223,8 @@ console.log('\n—— creativeModes 用例开始 ——')
   //   ① 有卷没排满 → 本批只补缺口、不另开新卷；
   //   ② 该卷卷大纲只有骨架 → 一并补全，但只填空 / 占位；
   //   ③ 正文最后一章没写完 → 开写新章前先补齐（只补最后一章）。
-  const ol = read('src/lib/outlineCard.ts')
-  const cont = read('src/lib/autoContinue.ts')
+  const ol = read('src/lib/outline/outlineCard.ts')
+  const cont = read('src/lib/outline/autoContinue.ts')
   ok('🔴 缺口检测纯函数（找第一个没排满的卷）', /export function detectVolumeGap/.test(ol))
   ok('🔴 卷边界三级取用：本卷章号范围 → 本卷章数预估 → 单章式文本靠「每卷章数」推定',
     /VOLUME_BOUND_SLOTS = \['本卷章号范围', '本卷章数预估'\]/.test(ol)
@@ -278,14 +278,14 @@ console.log('\n—— creativeModes 用例开始 ——')
     /maxExpand: o\.action === 'condense' \? 0 : 2/.test(rwSrc))
   ok('🔴 给模型的字数一律写明「按汉字个数计、标点不计」（否则模型按 token / 字符估，必然偏长）',
     /按汉字个数计，标点与空白不计/.test(rwSrc) && /按汉字个数计，不含标点/.test(rwSrc))
-  const wr = read('src/lib/wordRange.ts')
+  const wr = read('src/lib/editor/wordRange.ts')
   ok('🔴 字数容差与校准逻辑只有一份（wordRange），逐章连写与整章改写共用',
     /export const WORD_TOLERANCE = 300/.test(wr) && /export async function enforceWordRange/.test(wr)
     && !/async function enforceWordRange/.test(cont))
   ok('🔴 面板仍能从 autoContinue 取到 WORD_TOLERANCE（抽模块不破坏既有 import 路径）',
     /export \{ WORD_TOLERANCE \}/.test(cont))
   ok('🔴 `countWords` 是汉字口径（CJK 逐字 + 拉丁词），标点不计 —— 界面与 AI 同一口径',
-    /const cjk = \(text\.match\(/.test(read('src/lib/textStats.ts')))
+    /const cjk = \(text\.match\(/.test(read('src/lib/editor/textStats.ts')))
   // 2026-09-20 实机抓到：续写目标 4000、结果原样 2202，界面上只有「2202 → 2202 字」一个线索 ——
   // 根因是 `askSoft` 把模型失败吞成空串后**静默 break**。校准必须把失败说出来。
   ok('🔴 字数校准失败要如实上报（补写 / 压缩没生效都要 onLog，不许静默）',

@@ -6,10 +6,10 @@
 //   ① 判重键含「关系类型」、且配对表是**有向**（不排序）；
 //   ② 平行边的曲率序列确定、同号递增（同号才能让正反向边分居两侧）；
 //   ③ 自定义类型配色：同图内互不同色、稳定可复现。
-import { isDirectedPairTab, organizeKeyColumns } from '../src/lib/aiScope'
+import { isDirectedPairTab, organizeKeyColumns } from '../src/lib/ai/aiScope'
 import { TABS } from '../src/lib/schema'
-import { pairKey, edgeCurveRatios, curveArrow } from '../src/lib/graphGrouping'
-import { buildTypeColors, makeColorLookup, hashColor, typeHash, REL_EXTRA_PALETTE } from '../src/lib/relationColors'
+import { pairKey, edgeCurveRatios, curveArrow } from '../src/lib/world/graphGrouping'
+import { buildTypeColors, makeColorLookup, hashColor, typeHash, REL_EXTRA_PALETTE } from '../src/lib/world/relationColors'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

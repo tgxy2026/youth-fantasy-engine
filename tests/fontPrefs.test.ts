@@ -10,7 +10,7 @@
 import {
   PRESET_FONTS, sanitizeFontStack, fontStackLabel,
   getStoredFontPrefs, applyFontPrefs, applyStoredFontPrefs, storeFontPrefs,
-} from '../src/lib/fontPrefs'
+} from '../src/lib/settings/fontPrefs'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

@@ -40,10 +40,10 @@ function read(rel: string): string {
 
 function main() {
   const basics = read('src/components/tavern/TavernControlBasics.tsx')
-  const hook = read('src/components/useTavernControlModel.ts')
+  const hook = read('src/components/tavern/useTavernControlModel.ts')
   const settings = read('src/lib/tavern/settings.ts')
   const params = read('src/lib/tavern/params.ts')
-  const capacity = read('src/lib/modelCapacity.ts')
+  const capacity = read('src/lib/ai/modelCapacity.ts')
 
   ok('找到 TavernControlBasics.tsx', !!basics)
   ok('找到 useTavernControlModel.ts', !!hook)

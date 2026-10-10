@@ -12,7 +12,7 @@
  */
 import * as db from '../src/lib/db'
 import { TABS } from '../src/lib/schema'
-import { rowFingerprint } from '../src/lib/aiTasks'
+import { rowFingerprint } from '../src/lib/ai/aiTasks'
 import { commitDraftRows, previewCommit } from '../src/lib/flow/commit'
 import { defaultPicked, pickableAsNew } from '../src/lib/flow/draft'
 import { RELATION_TAB_IDS, buildRelationDrafts, evidenceInMaterial, filterRowsByRoster, keyColsOf, relationRowsToDrafts } from '../src/lib/bookbreak/relations'

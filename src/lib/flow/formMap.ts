@@ -26,8 +26,8 @@
  */
 import { TABS } from '@/lib/schema'
 import type { TabDef } from '@/lib/types'
-import { asText } from '@/lib/aiParse'
-import { isParallelSetTab } from '@/lib/worldSets'
+import { asText } from '@/lib/ai/aiParse'
+import { isParallelSetTab } from '@/lib/world/worldSets'
 import { getActivePack, subItemLabel } from '@/lib/schemaTemplates/index'
 import type { DraftField, DraftRow } from '@/lib/flow/types'
 

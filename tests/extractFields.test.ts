@@ -10,7 +10,7 @@
 import { __resetMockStores } from './mock-memory'
 import {
   EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, SLOT_HINT, parseExtractedEntities,
-} from '../src/lib/aiTasks'
+} from '../src/lib/ai/aiTasks'
 import { KIND_MAP } from '../src/lib/flow/fieldMap'
 
 let pass = 0, fail = 0

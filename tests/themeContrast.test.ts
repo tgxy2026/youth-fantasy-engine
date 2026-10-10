@@ -198,7 +198,7 @@ const TW_PALETTE: Record<string, Record<number, string>> = {
 }
 const hexRgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
 const WHITE = [255, 255, 255]
-const buttonSrc = fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'Button.tsx'), 'utf8')
+const buttonSrc = fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'common', 'Button.tsx'), 'utf8')
 const SOLID_VARIANTS: { variant: string; cls: string; color: string; shade: number }[] = [
   { variant: 'danger', cls: "'bg-red-600 text-white border border-red-600 hover:bg-red-700", color: 'red', shade: 600 },
   { variant: 'success', cls: "'bg-emerald-700 text-white border border-emerald-700 hover:bg-emerald-800", color: 'emerald', shade: 700 },

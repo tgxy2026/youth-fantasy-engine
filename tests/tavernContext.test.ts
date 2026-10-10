@@ -5,10 +5,10 @@
 //   带进去 = 剧透 = AI 变成「知道结局的演员」，「测试角色真实反应」这个目的直接归零。
 // 用示范项目的数据跑（老大指定）。
 import * as db from '../src/lib/db'
-import { createDemoProject } from '../src/lib/seedData'
-import { buildProjectContext, buildChapterDigest } from '../src/lib/aiContext'
+import { createDemoProject } from '../src/lib/app/seedData'
+import { buildProjectContext, buildChapterDigest } from '../src/lib/ai/aiContext'
 import { TABS } from '../src/lib/schema'
-import { flattenChapters } from '../src/lib/chapterSeq'
+import { flattenChapters } from '../src/lib/outline/chapterSeq'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0

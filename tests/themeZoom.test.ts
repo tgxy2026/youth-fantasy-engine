@@ -7,7 +7,7 @@
 //      48px 宽的框只剩 22px 可用、「132」只显示成「1」，且高度比同排控件高一截。
 // 判据：autoZoom 的纯函数映射 + 两处源码契约。
 import fs from 'node:fs'
-import { autoZoom, getStoredZoom } from '../src/lib/theme'
+import { autoZoom, getStoredZoom } from '../src/lib/settings/theme'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -55,7 +55,7 @@ const codeOnly = (src: string) => src.split('\n').filter(l => !l.trim().startsWi
 
 // ---------- ③ 源码契约：侧栏缩放输入框必须压得过全局 input 规则 ----------
 {
-  const sb = read('src/components/Sidebar.tsx')
+  const sb = read('src/components/app/Sidebar.tsx')
   const m = sb.match(/title="手动输入缩放比例[^"]*"[\s\S]{0,220}?className="([^"]+)"/)
   ok('能取到侧栏缩放输入框的 className', !!m, m ? '' : '未匹配')
   const cls = m ? m[1] : ''

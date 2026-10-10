@@ -9,7 +9,7 @@
 import { BOOKBREAK_STAGES } from '../src/lib/bookbreak/run'
 import { buildFormMaterial } from '../src/lib/bookbreak/formSummary'
 import type { EntityBatch } from '../src/lib/flow/draft'
-import type { ExtractedEntity } from '../src/lib/aiTasks'
+import type { ExtractedEntity } from '../src/lib/ai/aiTasks'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

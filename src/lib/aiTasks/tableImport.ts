@@ -13,9 +13,9 @@
 //     重复与否交给导入预览的本地校验去标（`validateImport`），作者看得见、可勾选、可放弃。
 //   若在这里也做判重，预览里就再也不会出现「与已有重复」这一状态，作者会以为导入行被吞了。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/aiParse'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
-import type { PromptDef } from '@/lib/promptSettings'
+import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 export interface ImportSplitColumn {
   name: string

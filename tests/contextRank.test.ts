@@ -16,10 +16,10 @@
 //
 // 用示范项目的数据跑（与 tavernContext.test.ts 同源）。
 import * as db from '../src/lib/db'
-import { createDemoProject } from '../src/lib/seedData'
-import { buildProjectContext, buildInlineBriefing, isPrunedForAI, loadCharacterNames } from '../src/lib/aiContext'
+import { createDemoProject } from '../src/lib/app/seedData'
+import { buildProjectContext, buildInlineBriefing, isPrunedForAI, loadCharacterNames } from '../src/lib/ai/aiContext'
 import { TABS, SABC, SABC_LABELS } from '../src/lib/schema'
-import { uid } from '../src/lib/id'
+import { uid } from '../src/lib/app/id'
 import { __resetMockStores } from './mock-memory'
 import type { TableRow } from '../src/lib/types'
 

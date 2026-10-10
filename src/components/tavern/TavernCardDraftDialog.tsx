@@ -9,10 +9,10 @@
  * 先摊开看一眼、再决定要不要，成本几乎为零，却省掉一次「改回来」。
  */
 import { useEffect, useMemo, useState } from 'react'
-import { Button } from '@/components/Button'
-import { Modal } from '@/components/Modal'
-import AutoTextarea from '@/components/AutoTextarea'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/DraftBits'
+import { Button } from '@/components/common/Button'
+import { Modal } from '@/components/dialogs/Modal'
+import AutoTextarea from '@/components/common/AutoTextarea'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/editor/DraftBits'
 import {
   draftCard, EMPTY_CARD_DRAFT, isEmptyCardDraft, type CardDraft, type DraftSource,
 } from '@/lib/tavern/draft'

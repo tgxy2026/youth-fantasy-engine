@@ -20,7 +20,7 @@
  * ⚠️ B1 的抽取粒度是「专名清单」（name/desc/evidence），不含全字段（身份定位/外貌/境界…）。
  *    B2 会换成「两遍全字段抽取」，届时只需替换 extract 阶段的实现，draft/commit/UI 全不用改。
  */
-import { aiExtractSettingEntities, aiSummarizeFormSettings } from '@/lib/aiTasks'
+import { aiExtractSettingEntities, aiSummarizeFormSettings } from '@/lib/ai/aiTasks'
 import { aiBookBreakSplitChapters } from '@/lib/aiTasks/bookBreakSplit'
 import { isCancelled } from '@/lib/ai'
 import { buildDraftBundle, bundleOf, type EntityBatch } from '@/lib/flow/draft'

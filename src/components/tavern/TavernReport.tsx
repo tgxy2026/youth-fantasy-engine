@@ -8,12 +8,12 @@
  *    否则作者拿着一堆描述也找不到该改哪里。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import HelpPopover from '@/components/HelpPopover'
-import AIDataSourceNote from '@/components/AIDataSourceNote'
+import HelpPopover from '@/components/common/HelpPopover'
+import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import * as store from '@/lib/tavern/store'
-import { confirmDialog, showToast } from '@/components/dialogs'
-import { Button } from '@/components/Button'
-import SelectRow from '@/components/SelectRow'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import { Button } from '@/components/common/Button'
+import SelectRow from '@/components/common/SelectRow'
 import TavernExportDialog from '@/components/tavern/TavernExportDialog'
 import { reportDocModel } from '@/lib/tavern/exportDoc'
 import { TABS } from '@/lib/schema'

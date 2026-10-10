@@ -7,8 +7,8 @@
 // 另把「本地专属 store 单一判据」也钉住 —— 它是本轮把 6 处硬编码收成一个常量的成果。
 import * as db from '../src/lib/db'
 import { memoryOps, __resetMockStores } from './mock-memory'
-import { createDemoProject } from '../src/lib/seedData'
-import { SYNC_STORES, LOCAL_ONLY_STORES, isLocalOnlyStore } from '../src/lib/syncCore'
+import { createDemoProject } from '../src/lib/app/seedData'
+import { SYNC_STORES, LOCAL_ONLY_STORES, isLocalOnlyStore } from '../src/lib/sync/syncCore'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

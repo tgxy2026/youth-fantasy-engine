@@ -11,10 +11,10 @@
 //    `fill-template`、`setting-update-detect`、`assist-planner` 不在 aiTasks 门面里 ——
 //    少 import 一个就会静默漏条（见 skill novel-studio-audit-fix 第五轮）。
 import '../src/lib/ai'
-import '../src/lib/aiTasks'
-import '../src/lib/autoContinue'
-import '../src/components/AIAssist'
-import { listPrompts } from '../src/lib/promptSettings'
+import '../src/lib/ai/aiTasks'
+import '../src/lib/outline/autoContinue'
+import '../src/components/ai/AIAssist'
+import { listPrompts } from '../src/lib/ai/promptSettings'
 import fs from 'node:fs'
 import path from 'node:path'
 

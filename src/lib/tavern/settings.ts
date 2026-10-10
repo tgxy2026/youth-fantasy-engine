@@ -40,7 +40,7 @@ import { resolveParams } from '@/lib/tavern/params'          // 同上：params 
  */
 import {
   adviseCapacity, modelFingerprintOf, shouldApplyTuning, type TuningAdvice,
-} from '@/lib/modelCapacity'
+} from '@/lib/ai/modelCapacity'
 import { loadProviders, loadActiveId, type AIProvider } from '@/lib/ai'
 import { DYNAMIC_QUOTA_PCT } from '@/lib/tavern/quotas' // quotas 是纯常量/纯函数层，不会成环
 

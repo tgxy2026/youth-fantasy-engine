@@ -4,7 +4,7 @@
 //  · 无窗口桥（浏览器 / 便携版 / node）→ 一切 no-op：toggle 返回 null、安装返回空函数；
 //  · 有窗口桥（mock window）→ F11 切换、ESC 仅在全屏时退出、卸载后按键不再响应。
 // 主进程 IPC / preload 注入的联通性走实机验证（冒烟 + 装包手测），不在 node 单测范围。
-import { toggleFullscreen, installFullscreenShortcuts } from '../src/lib/desktop'
+import { toggleFullscreen, installFullscreenShortcuts } from '../src/lib/app/desktop'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

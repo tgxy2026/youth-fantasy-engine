@@ -12,10 +12,10 @@
  * 🔴 `ShowBands` 是 **context 实例本身**（不是新建一个）—— 表格原子件从这里 useContext，
  *    父组件的 `<ShowBands.Provider>` 必须用同一个对象，否则开关会静默失效。
  */
-import NumberField from '@/components/NumberField'
+import NumberField from '@/components/common/NumberField'
 import { createContext, useContext } from 'react'
-import AutoTextarea from '@/components/AutoTextarea'
-import { Button } from '@/components/Button'
+import AutoTextarea from '@/components/common/AutoTextarea'
+import { Button } from '@/components/common/Button'
 import { bandOf, type ParamGuide } from '@/lib/tavern/paramGuide'
 
 /** 输入框外观（不含字号——字号由 AutoTextarea 的 textClass / input 自己带，避免两处各写一个 size 类打架） */

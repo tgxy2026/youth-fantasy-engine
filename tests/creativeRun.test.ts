@@ -13,9 +13,9 @@
 //   ③ 失败原因必须经 `onRunLog` 露出来（不再黑洞）；④ 选「只做大纲规划」时不许写正文。
 import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
-import { commitOutline, loadChapterOutlines, runCreativeWriting } from '../src/lib/aiWorkflow'
+import { commitOutline, loadChapterOutlines, runCreativeWriting } from '../src/lib/ai/aiWorkflow'
 import { startFakeOllama, fakeProvider, FAKE_PROVIDER_ID } from './fake-ollama'
-import type { OutlineResult } from '../src/lib/aiTasks'
+import type { OutlineResult } from '../src/lib/ai/aiTasks'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

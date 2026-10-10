@@ -17,14 +17,14 @@
  * 写入顺序：**表格型先、卡片型后**。卡片有指向其它表的引用列（「地理位置」→ 地理风物、
  * 「所属势力」→ 国家势力），先建被引用者，引用才不会落空。B2 若新增更深的引用链，在此扩展拓扑。
  */
-import { readAliases } from '@/lib/aliases'
-import { isDirectedPairTab } from '@/lib/aiScope'
-import { nextAutoCode } from '@/lib/autoCode'
+import { readAliases } from '@/lib/settings/aliases'
+import { isDirectedPairTab } from '@/lib/ai/aiScope'
+import { nextAutoCode } from '@/lib/ai/autoCode'
 import * as db from '@/lib/db'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import { TABS } from '@/lib/schema'
-import { isParallelSetTab } from '@/lib/worldSets'
-import { normName } from '@/lib/settingLedger'
+import { isParallelSetTab } from '@/lib/world/worldSets'
+import { normName } from '@/lib/settings/settingLedger'
 import { formFieldNames } from '@/lib/flow/formMap'
 import type { CardRecord, TableRow } from '@/lib/types'
 import type { CommitOutcome, DraftField, DraftRow } from '@/lib/flow/types'

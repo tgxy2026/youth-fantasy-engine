@@ -8,7 +8,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 // uiPrefs 的模块顶层不碰 localStorage（只在函数体内读），所以普通 import 也能让上面的桩先生效
-import { readSetPref, writeSetPref, readBoolPref, writeBoolPref } from '../src/lib/uiPrefs'
+import { readSetPref, writeSetPref, readBoolPref, writeBoolPref } from '../src/lib/settings/uiPrefs'
 
 // 最小 localStorage 桩：uiPrefs 只做字符串读写，不需要完整 Web Storage 实现。
 // ⚠️ 必须在**调用函数之前**装好：uiPrefs 的函数体内才访问 localStorage（模块顶层不访问）。
@@ -66,25 +66,25 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
 // ---------- ③ 命名空间 ----------
 {
-  const src = read('src/lib/uiPrefs.ts')
+  const src = read('src/lib/settings/uiPrefs.ts')
   ok('🔴 所有键都带 yfe-ui: 前缀（不与项目数据 / 别的偏好混在裸键上）',
     /const PREFIX = 'yfe-ui:'/.test(src)
     && /localStorage\.setItem\(PREFIX \+ key/.test(src)
     && /localStorage\.getItem\(PREFIX \+ key/.test(src))
   const callers = [
-    'src/components/Sidebar.tsx',
-    'src/components/useTableSheetModel.ts',
-    'src/components/AIPromptSettings.tsx',
-    'src/components/DraftReviewPanel.tsx',
+    'src/components/app/Sidebar.tsx',
+    'src/components/sheets/useTableSheetModel.ts',
+    'src/components/settings/AIPromptSettings.tsx',
+    'src/components/editor/DraftReviewPanel.tsx',
   ]
   ok('🔴 五处折叠的接入点都 import 了 uiPrefs（只写模块不接线＝白做）',
-    callers.every(f => /from '(?:\.\.\/lib\/uiPrefs|@\/lib\/uiPrefs)'/.test(read(f))),
-    callers.filter(f => !/from '(?:\.\.\/lib\/uiPrefs|@\/lib\/uiPrefs)'/.test(read(f))).join('、'))
+    callers.every(f => /from '(?:\.\.\/lib\/uiPrefs|@\/lib\/settings\/uiPrefs)'/.test(read(f))),
+    callers.filter(f => !/from '(?:\.\.\/lib\/uiPrefs|@\/lib\/settings\/uiPrefs)'/.test(read(f))).join('、'))
 }
 
 // ---------- ④ 🔴 语义约定：存"偏离默认的那一侧" ----------
 {
-  const sidebar = read('src/components/Sidebar.tsx')
+  const sidebar = read('src/components/app/Sidebar.tsx')
   // 侧栏的默认态是「全部分组展开」，所以必须存"已折叠"的集合。
   // 反过来存"已展开"的话，以后新增分组时老用户的记录里没有它 → 新分组默认是收起的。
   ok('🔴 侧栏存的是「已折叠的分组」（collapsedGroups），不是「已展开的」',
@@ -95,16 +95,16 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     /usePersistedBool\('sidebar-volume-open', true\)/.test(sidebar))
 
   // 表树折叠存的是"已折叠的行 id"，默认空＝全展开
-  const sheet = read('src/components/useTableSheetModel.ts')
+  const sheet = read('src/components/sheets/useTableSheetModel.ts')
   ok('🔴 表树折叠**按页签分键**（国家势力的折叠不该影响历史事件）',
     /usePersistedSet\(`table-collapsed:\$\{tab\.id\}`\)/.test(sheet))
 
   // 提示词条目的默认态是「全部收起」，所以要存"已展开的条目"
-  const prompt = read('src/components/AIPromptSettings.tsx')
+  const prompt = read('src/components/settings/AIPromptSettings.tsx')
   ok('🔴 提示词条目存的是「已展开的」（默认全收起，与旧行为一致）',
     /usePersistedSet\('prompt-expanded'\)/.test(prompt) && /!expandedPrompts\.has\(e\.id\)/.test(prompt))
 
-  const draft = read('src/components/DraftReviewPanel.tsx')
+  const draft = read('src/components/editor/DraftReviewPanel.tsx')
   ok('草稿审阅的分组折叠也记忆', /usePersistedSet\('draft-review-collapsed'\)/.test(draft))
 }
 

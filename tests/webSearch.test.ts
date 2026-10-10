@@ -8,8 +8,8 @@ import {
   buildSearchRequest, webSearch, harvestItems, renderSearchResults, searchBlockedReason,
   SEARXNG_ENDPOINT, BOCHA_ENDPOINT, SEARCH_ENGINE_LABEL,
   type SearchSettings, type SearchRequest, type TransportResult,
-} from '../src/lib/webSearch'
-import { prepareDraftMaterial } from '../src/lib/draftMaterial'
+} from '../src/lib/ai/webSearch'
+import { prepareDraftMaterial } from '../src/lib/editor/draftMaterial'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

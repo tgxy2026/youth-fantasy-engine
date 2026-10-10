@@ -5,7 +5,7 @@
 // 会把手写缩进整段抹掉，而作者往往要等到投稿、贴到平台后台时才发现版面全乱了。
 // 所以这里把三条链路都钉住：逐行缩进必须与编辑器里的正文一模一样。
 import type { Chapter, Volume } from '../src/lib/types'
-import { chaptersToTxt, bookToMarkdown, bookToPlatformText } from '../src/lib/exporter'
+import { chaptersToTxt, bookToMarkdown, bookToPlatformText } from '../src/lib/storage/exporter'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

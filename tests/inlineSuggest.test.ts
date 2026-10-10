@@ -3,7 +3,7 @@
 // 它守着一条体验底线——**ghost 绝不能以半句悬空收尾**（作者采纳后半截话悬在那里最恼人），
 // 以及"宁缺毋滥"——洗出来不足 4 字就当没有建议，不往界面上透垃圾。
 // 故此处用精确断言（而非只要求不炸的软断言）锁死行为。
-import { trimInlineSuggestion, foldGhostNewlines, INLINE_SUGGEST_LIMITS } from '../src/lib/aiTasks'
+import { trimInlineSuggestion, foldGhostNewlines, INLINE_SUGGEST_LIMITS } from '../src/lib/ai/aiTasks'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

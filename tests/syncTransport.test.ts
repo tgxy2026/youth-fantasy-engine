@@ -4,7 +4,7 @@
 // 旧实现在这两条路径上都返回 rev=0，等于对外宣称「云端是空的」，随后一次 push 就会
 // 用本地内容整体覆盖云端的真实快照。本文件把三态（不存在 / 正常 / 读不到或损坏）逐一固化，
 // 任何人以后想把 parseRev 的 corrupt 分支改回 rev=0，都会在这里被拦下。
-import { createFileTransport } from '../src/lib/syncTransport'
+import { createFileTransport } from '../src/lib/sync/syncTransport'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

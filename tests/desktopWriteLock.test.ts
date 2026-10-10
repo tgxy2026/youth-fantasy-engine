@@ -8,7 +8,7 @@
 // 修法不是引入 React 测试工具，而是把**判定**抽成纯函数 `decideDataFileLoad` ——
 // 组件与 main 逻辑各自保留原样，六条分支逐条可断言。
 import fs from 'node:fs'
-import { decideDataFileLoad } from '../src/lib/desktop'
+import { decideDataFileLoad } from '../src/lib/app/desktop'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -98,7 +98,7 @@ console.log('\n—— desktopWriteLock 用例开始 ——')
 // ---------- ⑨ 源码闸：判定只在纯函数一处，initDesktopStore 不再内联 ----------
 {
   let src = ''
-  try { src = fs.readFileSync('src/lib/desktop.ts', 'utf8') } catch { /* 读不到就留给下面的断言报错 */ }
+  try { src = fs.readFileSync('src/lib/app/desktop.ts', 'utf8') } catch { /* 读不到就留给下面的断言报错 */ }
   ok('⑨ initDesktopStore 已改走 decideDataFileLoad（防回退成内联判定）',
     /const outcome = decideDataFileLoad\(r\)/.test(src))
   ok('⑨ 六条分支文案仍都在（抽函数时没丢文案）',

@@ -11,8 +11,8 @@
 // 空结果重试一次（与 creative.ts 同款理由：结构瑕疵 regenerate 一次多半就好）；
 // 两次都空则如实返回空数组，由调用方给出明确提示，绝不静默吞掉。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseLooseObject, asText } from '@/lib/aiParse'
-import type { PromptDef } from '@/lib/promptSettings'
+import { parseLooseObject, asText } from '@/lib/ai/aiParse'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 /** 「灵感融合」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_inspiration_fuse = `你是小说的情节策划。作者在灵感夹里攒了几条互不相关的灵感，请你把它们「融合」成情节创意。

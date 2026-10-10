@@ -14,7 +14,7 @@
 import fs from 'fs'
 import * as db from '../src/lib/db'
 import * as store from '../src/lib/tavern/store'
-import { createDemoProject } from '../src/lib/seedData'
+import { createDemoProject } from '../src/lib/app/seedData'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type AIProvider } from '../src/lib/ai'
 import { buildPlotSystem, runPlotTurn } from '../src/lib/tavern/engine'

@@ -1,6 +1,6 @@
 // ============ AI 功能「会读哪些项目数据」声明表的守卫 ============
 //
-// 这份声明表（src/lib/aiDataSources.ts）是**界面文案的唯一数据源**：各 AI 功能的问号气泡里
+// 这份声明表（src/lib/ai/aiDataSources.ts）是**界面文案的唯一数据源**：各 AI 功能的问号气泡里
 // 那段「本次会读」就是它渲染出来的。它有三个容易腐烂的方向，本用例逐个盯住：
 //   ① 表里写了没人挂 —— 作者看不到、维护者以为已经做了（最危险）；
 //   ② 界面挂了但 id 拼错 —— 组件静默返回 null，气泡里什么都不显示，肉眼极难发现；
@@ -9,9 +9,9 @@
 // 另外锁住 summarizeSources 的输出格式（概括行是直接给作者看的那一行）。
 import fs from 'node:fs'
 import path from 'node:path'
-import { AI_DATA_SOURCES, sourcesOf, summarizeSources } from '../src/lib/aiDataSources'
+import { AI_DATA_SOURCES, sourcesOf, summarizeSources } from '../src/lib/ai/aiDataSources'
 import { TABS } from '../src/lib/schema'
-import { MULTI_SET_TABS } from '../src/lib/worldSets'
+import { MULTI_SET_TABS } from '../src/lib/world/worldSets'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -56,6 +56,13 @@ function collectTsx(dir: string): { name: string; text: string }[] {
 
 const componentSrc = collectTsx(componentsDir)
 
+/**
+ * 按**基名**比对组件文件。
+ * 🔴 2026-10-10（G3）：`collectTsx` 返回的 `name` 是**相对路径**（如 `sheets/FormSheet.tsx`）——
+ *    组件全按领域进子目录后，`name === 'X.tsx'` 这类等值比较会**全部失配**（看着像「组件不存在」）。
+ */
+const isTsx = (n: string, base: string) => n === base || n.endsWith('/' + base)
+
 const allComponentText = componentSrc.map(c => c.text).join('\n')
 
 /**
@@ -94,7 +101,7 @@ for (const [id] of Object.entries(AI_DATA_SOURCES)) {
   //    `MULTI_SET_TABS`（母子 ∪ 并列）而不是 `WORLD_SET_TABS`，且要认**两个**组件文件名。
   const dynamicMultiSet = (MULTI_SET_TABS as readonly string[]).includes(id)
     && componentSrc.some(c =>
-      (c.name === 'WorldSetSheet.tsx' || c.name === 'ParallelSetSheet.tsx')
+      (isTsx(c.name, 'WorldSetSheet.tsx') || isTsx(c.name, 'ParallelSetSheet.tsx'))
       && c.text.includes('AIDataSourceNote feature={tab.id}'))
   const where = componentSrc.find(c => c.text.includes(`feature="${id}"`))?.name
     ?? (dynamicMultiSet ? 'WorldSetSheet / ParallelSetSheet（feature={tab.id} 动态）' : undefined)
@@ -237,7 +244,7 @@ for (const [id, f] of Object.entries(AI_DATA_SOURCES)) {
 // 只写在文档里没用 —— 作者是看界面气泡的。这里静态确认「不读」清单里追加了 AI_PRUNE_NOTE，
 // 防的正是"哪天有人重构 AIDataSourceNote 时把这一行删了、没人发现"。
 {
-  const note = componentSrc.find(c => c.name === 'AIDataSourceNote.tsx')
+  const note = componentSrc.find(c => isTsx(c.name, 'AIDataSourceNote.tsx'))
   ok('🔴 D 级排除项被渲染进「不读」清单（不是只写在文档里）',
     !!note && note.text.includes('AI_PRUNE_NOTE') && note.text.includes('f.excludes'),
     note ? '' : 'AIDataSourceNote.tsx 未在组件目录中找到')

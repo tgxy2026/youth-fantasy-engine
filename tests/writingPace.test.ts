@@ -6,8 +6,8 @@
 //
 // 为什么值得单独守：这个数直接决定作者按哪个按钮 —— 算少了（对本地模型而言）无谓少写，
 // 算多了就是"开跑一小时才发现写飘了"。而它错了界面不会报任何错。
-import { MAX_CHAPTERS, COMFORT_MINUTES, advisePace } from '../src/lib/writingPace'
-import { adviseCapacity } from '../src/lib/modelCapacity'
+import { MAX_CHAPTERS, COMFORT_MINUTES, advisePace } from '../src/lib/outline/writingPace'
+import { adviseCapacity } from '../src/lib/ai/modelCapacity'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

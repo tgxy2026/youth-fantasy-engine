@@ -18,8 +18,8 @@ import {
   chat, JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage,
 } from '@/lib/ai'
 import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from '@/lib/tavern/memory'
-import { formatDate } from '@/lib/date'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { formatDate } from '@/lib/app/date'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { FACTS_MAX_LINES, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from '@/lib/tavern/types'

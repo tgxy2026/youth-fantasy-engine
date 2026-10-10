@@ -7,11 +7,11 @@
 //  ③ 旧键必须被剔干净（mergeDeep 会把「默认值里已没有的键」从旧记录/旧预设里照抄回来，
 //     不剔就一直躺在库里被反复写回 —— 这类「死配置」本项目已经清过好几个）。
 import * as db from '../src/lib/db'
-import { getSearchSettings, saveSearchSettings, K_APP_SEARCH } from '../src/lib/searchSettings'
+import { getSearchSettings, saveSearchSettings, K_APP_SEARCH } from '../src/lib/settings/searchSettings'
 import {
   getTavernSettings, saveTavernSettings, DEFAULT_TAVERN_SETTINGS, K_TAVERN_SETTINGS,
 } from '../src/lib/tavern/settings'
-import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from '../src/lib/webSearch'
+import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from '../src/lib/ai/webSearch'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0

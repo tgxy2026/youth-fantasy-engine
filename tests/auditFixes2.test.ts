@@ -4,7 +4,7 @@
 // 所以每条都要有判据 —— 能上纯函数行为测的就上行为测，接线性质用源码位置断言。
 import fs from 'node:fs'
 import path from 'node:path'
-import { isPortableDataFile } from '../src/lib/storeOps'
+import { isPortableDataFile } from '../src/lib/storage/storeOps'
 import { emptyMemory, trimMemory, memoryChars, isMemoryDegraded, parseMemoryText } from '../src/lib/tavern/memory'
 import { FACTS_MAX_LINES } from '../src/lib/tavern/types'
 
@@ -90,19 +90,19 @@ console.log('\n—— auditFixes2 用例开始 ——')
 {
   const cr = read('src/lib/aiTasks/creative.ts')
   ok('🔴 大纲规划的资料块走 authorBlock（资料里含作者已有细纲/卷大纲原文）',
-    /from '(?:\.\.\/promptGuard|@\/lib\/promptGuard)'/.test(cr) && /authorBlock\(newAuthorFence\(\), material\.trim\(\)\)/.test(cr))
+    /from '(?:\.\.\/promptGuard|@\/lib\/ai\/promptGuard)'/.test(cr) && /authorBlock\(newAuthorFence\(\), material\.trim\(\)\)/.test(cr))
 }
 
 // ---------- ⑥ P1-4 结构：酒馆「生成初版记忆」必须带 limits ----------
 {
-  const m = read('src/components/useTavernCardModel.ts')
+  const m = read('src/components/tavern/useTavernCardModel.ts')
   ok('🔴 coldStartMemory 收到 limits（不传就永远走内置 3000，面板那三个数是死的）',
     /memoryLimitsOf/.test(m) && /limits: \{ longTermLimit: lim\.longTermLimit, diaryDays: lim\.diaryDays, hardLimit: lim\.hardLimit \}/.test(m))
 }
 
 // ---------- ⑦ P1-5 结构：三个生成入口的 finally 都要判代次 ----------
 {
-  const ft = read('src/components/useFreeTurn.ts')
+  const ft = read('src/components/tavern/useFreeTurn.ts')
   const guards = (ft.match(/if \(abortRef\.current === ctrl\) \{/g) ?? []).length
   const guardBlocks = ft.match(/if \(abortRef\.current === ctrl\) \{[\s\S]{0,300}?\n\s{4,8}\}/g) ?? []
   ok('🔴 三个生成入口（send / reroll / assist）的 finally 都按代次复位',
@@ -115,7 +115,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
 // ---------- ⑧ P2-⑦⑧ 结构：两处"静默降级"都收口 ----------
 {
   const core = read('src/lib/db/core.ts')
-  const sc = read('src/lib/syncCore.ts')
+  const sc = read('src/lib/sync/syncCore.ts')
   ok('🔴 读本机快照失败 ⇒ 抛错（不再 `.catch(() => [])` 静默当空）',
     /onDesktopLocalSnapshot\(async \(\) => \{[\s\S]{0,1200}?throw new Error\(`读取本机数据失败/.test(core)
     && !/getAll\(s\)\.catch\(\(\) => \[\]\)/.test(core))
@@ -144,7 +144,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
 // ---------- ⑩ 2026-10-03 六维审计 P1 / P2 修复 ----------
 {
   // ---- B1 · 源码：地图模型加载失败也必须复位 loading ----
-  const geo = read('src/components/useGeoMapModel.ts')
+  const geo = read('src/components/world/useGeoMapModel.ts')
   ok('🔴 useGeoMapModel.load 有 finally 复位 loading（读失败不再让地图页永久转圈）',
     /const load = useCallback\(async \(\) => \{[\s\S]{0,1800}?finally \{[\s\S]{0,80}?setLoading\(false\)/.test(geo))
 
@@ -207,9 +207,9 @@ console.log('\n—— auditFixes2 用例开始 ——')
     && /found\.find\(c => c\.id === primaryAiCharId\(session\)\)\?\.vars\?\.notes/.test(eng))
 
   // ---- C1 · 源码：编号引用扫描必须覆盖「多套条目」页签 ----
-  const cref = read('src/lib/codeRefs.ts')
+  const cref = read('src/lib/app/codeRefs.ts')
   ok('🔴 codeRefs 扫「多套条目」页签（世界设定/力量体系/制度四页签，条目不在 TABS 里）',
-    /import \{ MULTI_SET_TABS \} from '(?:\.\/worldSets|@\/lib\/worldSets)'/.test(cref)
+    /import \{ MULTI_SET_TABS \} from '(?:\.\/worldSets|@\/lib\/world\/worldSets)'/.test(cref)
     && /for \(const tabId of MULTI_SET_TABS\) \{/.test(cref)
     && /await db\.getSubSets\(tabId\)/.test(cref))
 
@@ -218,8 +218,8 @@ console.log('\n—— auditFixes2 用例开始 ——')
   //    中止判据随之升级为**任务中心的 `status === 'aborted'`**（任务中心内部本来就按
   //    `signal.aborted` 判，比原来的 `isCancelled(e)` 更靠前、更可靠）。清单下面另有专门断言。
   for (const f of [
-    'src/components/usePlotSummary.ts',
-    'src/lib/creativeSession.ts',
+    'src/components/outline/usePlotSummary.ts',
+    'src/lib/creative/creativeSession.ts',
   ]) {
     const src = read(f)
     ok(`🔴 ${f} 用 isCancelled(e) 判中止（message 正则会把含「取消」的真失败当取消）`,
@@ -232,7 +232,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
   // 🔴 契约**升级**而不是放松：判据从「catch 里比 isCancelled(e)」提前到「signal.aborted
   //    （由 aiTaskCenter 在收尾时就判好）」，且**仍禁**用 message 正则分辨中止。
   {
-    const src = read('src/components/useFreeRoundEnd.ts')
+    const src = read('src/components/tavern/useFreeRoundEnd.ts')
     ok('🔴 W2-5 后 useFreeRoundEnd 的中止判据来自任务中心（status === aborted）',
       /status === 'aborted'/.test(src))
     ok('🔴 W2-5 后仍不用 message 正则判中止（纪律没丢）',
@@ -246,7 +246,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
   }
 
   // ---- C4 · 源码：未保存提示走常量（避免"改一处漏三处"） ----
-  const npp = read('src/components/NetworkProxyPanel.tsx')
+  const npp = read('src/components/settings/NetworkProxyPanel.tsx')
   ok('🔴 NetworkProxyPanel 未保存提示走 UNSAVED_CHANGES_HINT',
     /import \{ UNSAVED_CHANGES_HINT \} from '(?:\.\.\/lib\/constants|@\/lib\/constants)'/.test(npp)
     && /UNSAVED_CHANGES_HINT/.test(npp)
@@ -269,7 +269,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
     // 2.9.2 · ③ 续写新增 2 处：项目资料（内含摘要 / 前文章节正文）/ 本章正文末尾
     // （原第 3 处「上一章结尾」随该选项删除，2026-10-09）
     ['src/lib/aiTasks/jieWenJi.ts', 18],
-    ['src/lib/wordRange.ts', 2],
+    ['src/lib/editor/wordRange.ts', 2],
   ]
   for (const [f, n] of targets) {
     const src = read(f).replace(/\r\n/g, '\n')
@@ -300,7 +300,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
     && /【项目资料】\n\$\{projectContext\.trim\(\) \? authorBlock\(fence/.test(audit)
     && /【名词术语】\n\$\{list\.trim\(\) \? authorBlock\(fence, list\)/.test(audit))
 
-  const wr = read('src/lib/wordRange.ts').replace(/\r\n/g, '\n')
+  const wr = read('src/lib/editor/wordRange.ts').replace(/\r\n/g, '\n')
   ok('  · wordRange：补写（①）与压缩（②）两条路径都包了正文 —— '
     + 'rewrite.ts 的整章改写分支早已包，续写分支走的就是这里',
     /'【本章已写部分】',\n      authorBlock\(fence, body\),/.test(wr)

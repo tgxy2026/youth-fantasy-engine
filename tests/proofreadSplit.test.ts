@@ -8,9 +8,9 @@
 //   ④ 两块在界面上真的分开呈现，且「替换此条」会重锚定**两块**。
 import fs from 'node:fs'
 import path from 'node:path'
-import * as tasks from '../src/lib/aiTasks'
+import * as tasks from '../src/lib/ai/aiTasks'
 import { PROOFREAD_PROMPTS } from '../src/lib/aiTasks/proofread'
-import { AI_DATA_SOURCES } from '../src/lib/aiDataSources'
+import { AI_DATA_SOURCES } from '../src/lib/ai/aiDataSources'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -27,7 +27,7 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('🔴 混查五类的 aiProofread 已从门面移除（留着就会有人继续调）',
     !('aiProofread' in tasks))
 
-  const orderSrc = read('src/lib/aiTasks.ts')
+  const orderSrc = read('src/lib/ai/aiTasks.ts')
   ok('🔴 两条新提示词都登记进 PROMPT_ORDER（漏登记只有 warn，界面上看不出来）',
     /'proofread-text',/.test(orderSrc) && /'proofread-logic',/.test(orderSrc))
   ok('🔴 PROMPT_ORDER 里不再留旧的 proofread（否则设置页会多出一条谁也不认识的）',
@@ -87,14 +87,14 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
 // ---------- ⑤ 界面：两处入口都拆开 ----------
 {
-  const ed = read('src/components/EditorModals.tsx')
+  const ed = read('src/components/editor/EditorModals.tsx')
   // C1（2.4.2）拆分后，颉文姬的诊断/校对实现分散在四处（主文件 + 共用小件 + 状态 hook + 诊室面板）。
   // 断言口径不变 —— 只是把素材来源扩成一组文件；以后再拆只需往这个数组加路径。
   const jw = [
-    'src/components/JieWenJi.tsx',
-    'src/components/jieWenJiParts.tsx',
-    'src/components/useJieWenJiModel.ts',
-    'src/components/JieWenJiClinic.tsx',
+    'src/components/jiewenji/JieWenJi.tsx',
+    'src/components/jiewenji/jieWenJiParts.tsx',
+    'src/components/jiewenji/useJieWenJiModel.ts',
+    'src/components/jiewenji/JieWenJiClinic.tsx',
   ].map(read).join('\n')
 
   ok('编辑器校对弹窗两个按钮分开跑',
@@ -127,7 +127,7 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     /项目设定资料/.test(JSON.stringify(AI_DATA_SOURCES['proofread-logic'].sources)))
 
   ok('数据额度说明跟着改（文字层不读设定，不占额度）',
-    /文字层不读设定/.test(read('src/lib/aiWriterBudget.ts')))
+    /文字层不读设定/.test(read('src/lib/ai/aiWriterBudget.ts')))
 }
 
 console.log(`\n—— proofreadSplit 用例结束：${pass} 通过 / ${fail} 失败`)

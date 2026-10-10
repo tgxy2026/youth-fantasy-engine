@@ -8,7 +8,7 @@
 import {
   recordError, recentErrors, clearErrors, messageOf, shortSource,
   installGlobalErrorHooks, type ErrorRecord,
-} from '../src/lib/errorLog'
+} from '../src/lib/app/errorLog'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

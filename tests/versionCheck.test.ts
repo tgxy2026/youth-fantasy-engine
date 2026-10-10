@@ -4,8 +4,8 @@
 //   ① 版本比较必须**逐段按数字** —— 字符串比较会把 2.6.10 判成小于 2.6.2；
 //   ② 安装包直链要从 assets 里挑 .exe，源码 zip / tar.gz 不能算；
 //   ③ 更新说明来自 Gitee（外部输入）→ mdLite 只输出纯文本块，标签字符必须被当普通文字。
-import { normalizeVersion, compareVersion, pickInstallerUrl, unwrapBridgeResult } from '../src/lib/versionCheck'
-import { parseMarkdownBlocks, stripInline } from '../src/lib/mdLite'
+import { normalizeVersion, compareVersion, pickInstallerUrl, unwrapBridgeResult } from '../src/lib/app/versionCheck'
+import { parseMarkdownBlocks, stripInline } from '../src/lib/storage/mdLite'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

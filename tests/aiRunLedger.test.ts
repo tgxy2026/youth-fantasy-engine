@@ -9,7 +9,7 @@ import { __resetMockStores } from './mock-memory'
 import {
   chapterFingerprint, computeBasis, checkBasisStale,
   createRun, patchRun, finishRun, pickContextSnapshot,
-} from '../src/lib/aiRunLedger'
+} from '../src/lib/ai/aiRunLedger'
 import { getAiRun, listProjectAiRuns } from '../src/lib/db'
 import type { Chapter } from '../src/lib/types'
 

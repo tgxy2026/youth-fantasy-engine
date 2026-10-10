@@ -4,7 +4,7 @@
 // 因为 aiProofread 依赖 text.indexOf(chunk) 在原文里精确定位分块，正文一旦被改动，
 // 定位就会失败、整块校对结果被静默丢弃。加固方案（随机 nonce 定界）之所以能成立，
 // 正是因为它把防护放在「包裹层」而不是「内容层」——本测试就是钉住这个前提。
-import { authorBlock, newAuthorFence } from '../src/lib/promptGuard'
+import { authorBlock, newAuthorFence } from '../src/lib/ai/promptGuard'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

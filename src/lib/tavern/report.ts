@@ -15,11 +15,11 @@
 import { chat, isCancelled } from '@/lib/ai'
 import * as db from '@/lib/db'
 import { TABS } from '@/lib/schema'
-import { parsePlainObject, parseObjectArray, asText } from '@/lib/aiParse'
-import { uid } from '@/lib/id'
+import { parsePlainObject, parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { uid } from '@/lib/app/id'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from '@/lib/tavern/types'
 
 /**

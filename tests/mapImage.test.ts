@@ -7,7 +7,7 @@
 import {
   fitLongSide, isAcceptableMapImage, MAP_IMAGE_MAX_SIDE, MAP_IMAGE_MAX_INPUT_BYTES,
   MAP_IMAGE_QUALITY_STEPS, MAP_IMAGE_HINT_SPEC,
-} from '../src/lib/mapImage'
+} from '../src/lib/media/mapImage'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

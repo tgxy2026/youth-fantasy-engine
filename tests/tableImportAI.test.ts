@@ -6,11 +6,11 @@
 //   ③ 「四处注册」到位：门面（设置页可见）+ aiDataSources + aiWriterBudget；
 //   ④ 空内容不触发模型调用（无 provider 也不会炸）。
 import { TABLE_IMPORT_PROMPTS, aiSplitTableRows } from '../src/lib/aiTasks/tableImport'
-import { listPrompts } from '../src/lib/promptSettings'
-import { AI_DATA_SOURCES } from '../src/lib/aiDataSources'
-import { budgetForKind, WRITER_BUDGET_KINDS } from '../src/lib/aiWriterBudget'
-import { tableImportSplit, usableAiRows } from '../src/lib/tableImportAI'
-import '../src/lib/aiTasks' // 触发门面注册（必须在 listPrompts 之前）
+import { listPrompts } from '../src/lib/ai/promptSettings'
+import { AI_DATA_SOURCES } from '../src/lib/ai/aiDataSources'
+import { budgetForKind, WRITER_BUDGET_KINDS } from '../src/lib/ai/aiWriterBudget'
+import { tableImportSplit, usableAiRows } from '../src/lib/ai/tableImportAI'
+import '../src/lib/ai/aiTasks' // 触发门面注册（必须在 listPrompts 之前）
 import type { TabDef } from '../src/lib/types'
 
 let pass = 0, fail = 0

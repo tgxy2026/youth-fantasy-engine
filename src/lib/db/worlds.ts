@@ -11,7 +11,7 @@
  *   之所以分开：`worldPack` 依赖 db 门面，若本文件反向 import 它就会成环
  *   （形状因此集中在 `lib/worldTypes.ts`）。
  */
-import type { WorldStoredRecord } from '@/lib/worldTypes'
+import type { WorldStoredRecord } from '@/lib/world/worldTypes'
 import { ops, touchProject, currentProjectId } from '@/lib/db/core'
 
 /** 全部世界（按最近改动倒序 —— 世界引擎列表就是这个顺序） */

@@ -7,7 +7,7 @@
 //
 // 钉住的规则：内置项去掉 hidden、应用 renamed（显示名），再拼用户自定义项，同名去重；
 // builtinOrigin 必须保留原名（配色/存储都靠它认）。
-import { resolveOptions } from '../src/lib/customOptions'
+import { resolveOptions } from '../src/lib/settings/customOptions'
 import type { CustomOptionPayload } from '../src/lib/db'
 
 let pass = 0, fail = 0

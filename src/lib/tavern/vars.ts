@@ -31,7 +31,7 @@ import {
   type VarKey, type VarOp, type VarValues, type VarChange, type TavernVars,
   type VarSource, type FreeSession, type CharVars,
 } from '@/lib/tavern/types'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 
 /** 抽取侧的标记：提示词要求模型只输出以它开头的一行，解析器也只认它 */
 export const VAR_LINE_TAG = '〔数值〕'

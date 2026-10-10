@@ -14,7 +14,7 @@
  * 本文件是纯逻辑，不含 React。
  */
 import * as db from '@/lib/db'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import { emptyVars } from '@/lib/tavern/vars'
 import type {
   RunSession, RunIndexItem, RunCompanion, RunAction,

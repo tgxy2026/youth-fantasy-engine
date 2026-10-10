@@ -7,7 +7,7 @@
 //      这条靠点界面测不出来（要真去点删除按钮），所以改成**源码接线断言**（第 5 组）；
 //   ④ 建卷 order 也只数真卷（第 6 组，同上，防止有人改回 `volumes.length`）；
 //   ⑤ 默认标题常量存在且非空 —— 首次 lazy 创建时用它当显示名。
-import { isFreeVolume, realVolumes, nextVolumeNo, nextVolumeOrder, findFreeVolume, pushFreeVolumeFirst, FREE_VOLUME_TITLE, FREE_VOLUME_ORDER } from '../src/lib/freeVolume'
+import { isFreeVolume, realVolumes, nextVolumeNo, nextVolumeOrder, findFreeVolume, pushFreeVolumeFirst, FREE_VOLUME_TITLE, FREE_VOLUME_ORDER } from '../src/lib/outline/freeVolume'
 import type { Volume } from '../src/lib/types'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -67,7 +67,7 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'ut
 
 // ---------- 5. 接线断言：自由卷不可删除（先拦后删） ----------
 {
-  const src = read('src/components/useNovelEditorModel.ts')
+  const src = read('src/components/editor/useNovelEditorModel.ts')
   const rmAt = src.indexOf('const removeVolume = async')
   const guardAt = src.indexOf('isFreeVolume(vol)', rmAt)
   const delAt = src.indexOf('db.deleteVolume', rmAt)
@@ -77,7 +77,7 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'ut
 
 // ---------- 6. 接线断言：建卷 order 只数真卷 ----------
 {
-  const src = read('src/components/useNovelEditorModel.ts')
+  const src = read('src/components/editor/useNovelEditorModel.ts')
   const line = src.split('\n').find(l => l.includes('const vol: Volume') && l.includes('order:')) ?? ''
   ok('建卷 order 走 nextVolumeOrder(volumes)', line.includes('nextVolumeOrder(volumes)'), line.trim().slice(0, 120))
 }
@@ -110,7 +110,7 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'ut
 {
   // 删卷入口有两处：编辑器章节树 + 章节总表侧栏。侧栏那处最容易漏 —— 它删的是「卷台账 tab」，
   // 看起来跟正文编辑器不是一个东西，实际反解出来的就是同一个卷 id。
-  const side = read('src/components/Sidebar.tsx')
+  const side = read('src/components/app/Sidebar.tsx')
   const rmAt = side.indexOf('const removeVolume = async')
   const gAt = side.indexOf('isFreeVolume(', rmAt)
   const dAt = side.indexOf('db.deleteVolume', rmAt)
@@ -123,7 +123,7 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'ut
   ok('拆书建卷走 nextVolumeOrder', persist.includes('let volOrder = nextVolumeOrder(volumes)'))
   ok('拆书建卷不再拿 volumes.length 当基准', !/let volOrder = volumes\.length/.test(persist))
 
-  const wf = read('src/lib/aiWorkflow.ts')
+  const wf = read('src/lib/ai/aiWorkflow.ts')
   ok('创意写作建卷走 nextVolumeOrder', wf.includes('let volOrder = nextVolumeOrder(existingVols)'))
   ok('创意写作不再拿 existingVols.length 当基准', !/order: existingVols\.length/.test(wf))
 
@@ -134,7 +134,7 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'ut
 
 // ---------- 10. 接线断言：卷拖拽重排排除自由卷 ----------
 {
-  const src = read('src/components/useNovelEditorModel.ts')
+  const src = read('src/components/editor/useNovelEditorModel.ts')
   const at = src.indexOf("dragKind === 'vol'")
   const seg = src.slice(at, at + 700)
   // reorderVolumes 会把传入的卷重编成 0..n-1 —— 自由卷一并传进去，哨兵值就被冲掉了

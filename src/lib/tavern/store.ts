@@ -19,9 +19,9 @@
  * 注意：本文件是纯逻辑，不含 React。
  */
 import * as db from '@/lib/db'
-import { uid } from '@/lib/id'
-import { DESKTOP, getDesktopState } from '@/lib/desktop'
-import { isDesktopCloudUnavailable } from '@/lib/desktopCloudSync'
+import { uid } from '@/lib/app/id'
+import { DESKTOP, getDesktopState } from '@/lib/app/desktop'
+import { isDesktopCloudUnavailable } from '@/lib/sync/desktopCloudSync'
 import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP, MAX_AI_CAST } from '@/lib/tavern/types'
 import { structSpecOf, normalizeStructMarkup } from '@/lib/tavern/cardFields'
 import type {

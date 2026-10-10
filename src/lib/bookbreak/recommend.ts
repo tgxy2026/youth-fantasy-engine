@@ -11,7 +11,7 @@
  *
  * 耗时为**粗估**：本地受模型大小/显存影响很大，云端快而稳。区间取宽，宁保守勿乐观。
  */
-import type { CapacityAdvice } from '@/lib/modelCapacity'
+import type { CapacityAdvice } from '@/lib/ai/modelCapacity'
 import type { SplitResult } from '@/lib/bookbreak/split'
 
 /**

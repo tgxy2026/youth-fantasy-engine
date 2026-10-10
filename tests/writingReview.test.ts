@@ -7,8 +7,8 @@
  *   ③ 连续天数：今天还没写**不算断**（否则每天凌晨打开软件都会看到"连续中断"）；
  *   ④ 净增量口径：删字（负数）也要如实累加，不裁剪成 0。
  */
-import { buildWritingReview, dayDiff } from '../src/lib/writingReview'
-import { todayKey } from '../src/lib/date'
+import { buildWritingReview, dayDiff } from '../src/lib/outline/writingReview'
+import { todayKey } from '../src/lib/app/date'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

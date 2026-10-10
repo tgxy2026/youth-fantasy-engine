@@ -8,8 +8,8 @@
 // 🔴 「缓存生效」的判据刻意选的是「第二次没有新增台账记录」——
 //    缓存是内部实现，直接断言它拿不到把手；而「没多记一条」是它唯一可观测的外部效果。
 import * as db from '../src/lib/db'
-import { continuityLogged, foreshadowLogged, manuscriptLogged, paceLogged, trendOf, clearCheckLog, humanAgo } from '../src/lib/checkLog'
-import type { PaceReport } from '../src/lib/paceAnalysis'
+import { continuityLogged, foreshadowLogged, manuscriptLogged, paceLogged, trendOf, clearCheckLog, humanAgo } from '../src/lib/audit/checkLog'
+import type { PaceReport } from '../src/lib/outline/paceAnalysis'
 import { __resetMockStores, memoryOps } from './mock-memory'
 
 let pass = 0, fail = 0

@@ -14,7 +14,7 @@
  *   ⑥ 不要发生    这一场的禁区，比正面要求更能防跑偏
  */
 import { SCRIPT_FIELD_MAX, type ScriptDraftFields } from '@/lib/tavern/script'
-import AutoTextarea from '@/components/AutoTextarea'
+import AutoTextarea from '@/components/common/AutoTextarea'
 
 /** 一个栏位的说明（写成常量，页面的「填法提示」也复用） */
 const SCRIPT_FIELD_META: { key: keyof ScriptDraftFields; label: string; hint: string; placeholder: string; rows: number }[] = [

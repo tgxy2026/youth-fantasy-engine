@@ -5,8 +5,8 @@
  * `fitInside()`** 来测：等比缩放、不裁剪、不放大。
  * 这正是与头像管线最大的差别 —— 头像用 `fitSquare()` **裁**，立绘必须**不裁**。
  */
-import { fitInside, dataUrlBytes, isAcceptablePortrait, PORTRAIT_QUALITY_STEPS } from '../src/lib/imagePortrait'
-import { PORTRAIT_SIZE, PORTRAIT_HINT_SPEC, PORTRAIT_MAX_INPUT_BYTES } from '../src/lib/portraitSpec'
+import { fitInside, dataUrlBytes, isAcceptablePortrait, PORTRAIT_QUALITY_STEPS } from '../src/lib/media/imagePortrait'
+import { PORTRAIT_SIZE, PORTRAIT_HINT_SPEC, PORTRAIT_MAX_INPUT_BYTES } from '../src/lib/media/portraitSpec'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

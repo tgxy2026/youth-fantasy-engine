@@ -8,9 +8,9 @@
 //   ⑮ 恢复：`restoreFromCloudBackup` 回滚到检查点 + **清墓碑**（否则下次合并又把它丢掉）+ 镜像回调；
 //   ⑯ 回滚防护：恢复后推送撞 409 且重试耗尽 ⇒ 返回 false **且状态 error**（绝不谎报「已恢复」）；
 //   ⑰ 镜像：推送/拉取被挡时 `onFallback` 收到的快照**不可为空**（清了就等于静默丢改动）。
-import { createCloudStore, onCloudRestored } from '../src/lib/syncCore'
-import { isDeleted } from '../src/lib/syncTombstone'
-import type { SyncTransport } from '../src/lib/syncTransport'
+import { createCloudStore, onCloudRestored } from '../src/lib/sync/syncCore'
+import { isDeleted } from '../src/lib/sync/syncTombstone'
+import type { SyncTransport } from '../src/lib/sync/syncTransport'
 import { __resetMockStores, __resetLocalStorage } from './mock-memory'
 
 let pass = 0, fail = 0

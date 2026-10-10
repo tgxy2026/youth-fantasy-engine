@@ -1,6 +1,6 @@
 // ============ 存储层 · 元数据（meta / 项目设置 / 每日码字统计）============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
-import { todayKey } from '@/lib/date'
+import { todayKey } from '@/lib/app/date'
 import { ops, currentProjectId } from '@/lib/db/core'
 
 // ============ Meta ============

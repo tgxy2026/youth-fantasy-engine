@@ -8,7 +8,7 @@
 
 export type AIProviderType = 'ollama' | 'openai'
 
-import type { SamplingValues } from '@/lib/modelSampling'
+import type { SamplingValues } from '@/lib/ai/modelSampling'
 
 export interface AIProvider {
   id: string

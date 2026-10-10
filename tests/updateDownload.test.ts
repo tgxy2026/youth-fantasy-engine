@@ -43,9 +43,9 @@ function main() {
   const core = read('electron/updateDownload.cjs')   // 下载内核
   const main = read('electron/main.cjs')             // IPC 注册
   const preload = read('electron/preload.cjs')       // 桥暴露
-  const desktop = read('src/lib/desktop.ts')         // 渲染层封装
-  const dialog = read('src/components/UpdateDialog.tsx')
-  const vcheck = read('src/lib/versionCheck.ts')
+  const desktop = read('src/lib/app/desktop.ts')         // 渲染层封装
+  const dialog = read('src/components/app/UpdateDialog.tsx')
+  const vcheck = read('src/lib/app/versionCheck.ts')
 
   /* ---------- 0. 文件都在 ---------- */
   ok('① 下载内核 electron/updateDownload.cjs 存在', core.length > 0)

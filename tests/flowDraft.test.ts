@@ -12,7 +12,7 @@ import { commitDraftRows, previewCommit } from '../src/lib/flow/commit'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
 import { TABS } from '../src/lib/schema'
 import type { DraftRow } from '../src/lib/flow/types'
-import type { ExtractedEntity } from '../src/lib/aiTasks'
+import type { ExtractedEntity } from '../src/lib/ai/aiTasks'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

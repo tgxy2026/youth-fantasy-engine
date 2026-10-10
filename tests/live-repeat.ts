@@ -27,7 +27,7 @@ import fs from 'fs'
 import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
 import { buildFreeSystem, buildFreeMessages } from '../src/lib/tavern/engine'
-import { uid } from '../src/lib/id'
+import { uid } from '../src/lib/app/id'
 import type { FreeCharacter, FreeSession, TavernMessage } from '../src/lib/tavern/types'
 
 const MODEL = process.env.LR_MODEL ?? 'orcarouter/Qwen3.8-27B-Uncensored:q6_K'

@@ -9,11 +9,11 @@
  *   ④ 偏差三档与方向：delta 正负与 note 文案一致（偏多/偏少不能说反）
  * 以及立场断言：note 是描述性观察，不得出现「达标 / 评分 / 不合格」一类判定表述。
  */
-import { STORY_TEMPLATES, getStoryTemplate } from '../src/lib/storyStructures'
+import { STORY_TEMPLATES, getStoryTemplate } from '../src/lib/outline/storyStructures'
 import {
   buildChapterShares, alignBeats, alignHooks, PACE_MIN_CHAPTERS, PACE_LEVEL_LABEL,
   type PaceChapterInput, type ChapterShare,
-} from '../src/lib/structurePace'
+} from '../src/lib/outline/structurePace'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

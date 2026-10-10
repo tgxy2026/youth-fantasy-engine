@@ -4,9 +4,9 @@
 // ⚠️ #9 项目诊断用到 #7 的 `ContinuityFinding` 类型 —— 同文件内引用，不再跨模块。
 // ⚠️ 六条提示词各自就地声明；注册顺序由门面的 PROMPT_ORDER 决定，**别在这里调整顺序**。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText, humanText } from '@/lib/aiParse'
-import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
-import type { PromptDef } from '@/lib/promptSettings'
+import { parseObjectArray, asText, humanText } from '@/lib/ai/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 /** 「文风体检」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_style_audit = `你是文风编辑。作者提供了《写作规范》（个人坏习惯清单 / 标点规范 / 视角规则）和本章正文，请对照规范体检本章文风。

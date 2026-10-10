@@ -14,7 +14,7 @@
  * 本用例**真的执行一遍播种**，所以 formByExamples / card() / 表格行三条填充路径全被覆盖。
  */
 import * as db from '../src/lib/db'
-import { createDemoProject } from '../src/lib/seedData'
+import { createDemoProject } from '../src/lib/app/seedData'
 import { __resetMockStores } from './mock-memory'
 import { TABS, CARD_TABLE_REF_FIELDS, GEO_MAPS_TAB } from '../src/lib/schema'
 

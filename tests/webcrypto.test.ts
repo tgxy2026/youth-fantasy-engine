@@ -8,7 +8,7 @@
  *
  * 覆盖：形状、真能跑一次 AES-GCM（不是空壳）、hasWebCrypto 与宿主一致、缺 crypto 时必须抛。
  */
-import { webcrypto, hasWebCrypto } from '../src/lib/webcrypto'
+import { webcrypto, hasWebCrypto } from '../src/lib/storage/webcrypto'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

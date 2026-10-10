@@ -13,12 +13,12 @@
 //      立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
-import type { PromptDef } from '@/lib/promptSettings'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 import {
   parseReaderProbe, questionsOf, readerLensOf,
   type ReaderProbeResult,
-} from '@/lib/readerProbe'
+} from '@/lib/audit/readerProbe'
 
 /** 「读者视角审问」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_reader_probe = `你现在要「扮演」一个具体的身份，把下面这一章当小说读一遍，然后回答用户消息里列出的问题。

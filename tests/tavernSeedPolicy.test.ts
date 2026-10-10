@@ -11,7 +11,7 @@
 // 故整批摘除（`seedCardData.ts` / `seedCards.ts` 已删，见 commit 记录）。
 import * as store from '../src/lib/tavern/store'
 import { __resetMockStores } from './mock-memory'
-import { createDemoProject } from '../src/lib/seedData'
+import { createDemoProject } from '../src/lib/app/seedData'
 import { emptyFreeCharacter } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0

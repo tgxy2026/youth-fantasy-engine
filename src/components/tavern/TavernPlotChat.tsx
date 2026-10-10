@@ -10,14 +10,14 @@
  *   拆分轮宁可多传 4 个 props，也不动执行时序。
  */
 import { useRef, type RefObject } from 'react'
-import { Z } from '@/lib/zLayer'
-import { Button } from '@/components/Button'
-import Avatar from '@/components/Avatar'
+import { Z } from '@/lib/app/zLayer'
+import { Button } from '@/components/common/Button'
+import Avatar from '@/components/common/Avatar'
 import TavernMessageBody from '@/components/tavern/TavernMessageBody'
 import TavernQuickBar, { type QuickAction } from '@/components/tavern/TavernQuickBar'
 import TavernDirectorNoteBar from '@/components/tavern/TavernDirectorNoteBar'
 import { renderTavernMessage } from '@/components/tavern/TavernMessage'
-import AutoTextarea from '@/components/AutoTextarea'
+import AutoTextarea from '@/components/common/AutoTextarea'
 import { MEMORY_SOFT_LIMIT, type TavernSession, type TavernDirectorNote } from '@/lib/tavern/types'
 import type { PostApplied } from '@/lib/tavern/postRules'
 import type { splitCast } from '@/lib/tavern/engine'

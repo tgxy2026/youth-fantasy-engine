@@ -12,7 +12,7 @@
  * ⚠️ props 名与原局部变量**同名** ⇒ 内部 JSX 逐字未改（缩进保留原样，16 空格）。
  */
 import { type Dispatch, type SetStateAction } from 'react'
-import { Button } from '@/components/Button'
+import { Button } from '@/components/common/Button'
 import { JOURNAL_KEEP, type CharJournal, type CharJournalEntry } from '@/lib/tavern/types'
 
 interface Props {

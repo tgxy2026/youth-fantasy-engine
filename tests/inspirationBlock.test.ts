@@ -6,7 +6,7 @@
 //  · 编号从 1 起 —— 与灵感页条目上的 #N 对应。
 import {
   inspirationBlock,
-} from '../src/lib/autoContinue'
+} from '../src/lib/outline/autoContinue'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

@@ -16,8 +16,8 @@
  * ⚠️ props 名与原局部变量**同名** ⇒ 内部 JSX 逐字未改（缩进保留原样，16 空格）。
  */
 import { type Dispatch, type SetStateAction } from 'react'
-import { Button } from '@/components/Button'
-import AutoTextarea from '@/components/AutoTextarea'
+import { Button } from '@/components/common/Button'
+import AutoTextarea from '@/components/common/AutoTextarea'
 import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '@/lib/tavern/memory'
 import { type FreeMemory } from '@/lib/tavern/types'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'

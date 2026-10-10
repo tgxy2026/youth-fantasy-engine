@@ -18,7 +18,9 @@ function injectAppVersion(version: string) {
     name: 'inject-app-version',
     transform(code: string, id: string) {
       const file = id.split('?')[0].replace(/\\/g, '/')
-      if (!file.endsWith('/src/lib/env.ts')) return null
+      // ⚠️ 3.0 目录整理（G3）把 env.ts 从 `src/lib/` 挪到 `src/lib/app/`，此处必须同步，
+      // 否则 dev 下 `__APP_VERSION__` 不再被替换、对外文案退回「开发版」（静默，不报错）。
+      if (!file.endsWith('/src/lib/app/env.ts')) return null
       if (!code.includes('__APP_VERSION__')) return null
       return { code: code.replace(/__APP_VERSION__/g, JSON.stringify(version)), map: null }
     },

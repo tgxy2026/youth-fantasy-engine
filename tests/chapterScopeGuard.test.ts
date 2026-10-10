@@ -5,7 +5,7 @@
 //   ① 细纲卡名只认「第N章」阿拉伯数字 ⇒ 作者写「第一章」时**整张细纲表静默取不到**，
 //      正文提示词里那行细纲整块消失、模型变成自由发挥，且界面零提示 —— 这很可能就是用户看到的真因；
 //   ② 提示词里**没有任何「只写本章」的约束**，而补字数那步最容易靠「顺手写下一章」凑字数。
-import { chapterNoOf, outlineCardName } from '../src/lib/outlineCard'
+import { chapterNoOf, outlineCardName } from '../src/lib/outline/outlineCard'
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 
@@ -28,7 +28,7 @@ function main() {
     chapterNoOf(outlineCardName(7, '夜探')) === 7 && chapterNoOf(outlineCardName(7, '')) === 7)
 
   // ── ② 范围护栏：提示词里必须写明「只写本章」 ──
-  const ac = read('src/lib/autoContinue.ts')
+  const ac = read('src/lib/outline/autoContinue.ts')
   ok('🔴 sys 提示词有「只写本章」硬约束', /本次只写/.test(ac) && /不得写出下一章的任何内容/.test(ac))
   ok('🔴 范围句里带章号（而不是泛泛地说「这一章」）',
     /const scope = chapterNo \? `第 \$\{chapterNo\} 章` : '这一章'/.test(ac) && /本次只写\$\{scope\}/.test(ac))
@@ -39,7 +39,7 @@ function main() {
   ok('🔴 章号一路传到生成函数', /chapterNo: ordered\.length \+ i \+ 1/.test(ac))
 
   // ── ③ 补字数（越界高发段）也要带范围限定 ──
-  const wr = read('src/lib/wordRange.ts')
+  const wr = read('src/lib/editor/wordRange.ts')
   ok('🔴 补写指令里带章号限定', /补写仍属第 \$\{o\.chapterNo\} 章/.test(wr) && /不得写出下一章的开头/.test(wr))
   ok('补写参数接受 chapterNo', /chapterNo\?: number/.test(wr))
   ok('🔴 校准调用处把章号传了进去', /enforceWordRange\(\{[\s\S]{0,200}chapterNo: opts\.chapterNo/.test(ac))

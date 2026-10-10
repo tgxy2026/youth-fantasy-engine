@@ -1,8 +1,8 @@
 // ============ 存储层 · 章（含时光机快照与回收站）============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 import type { Volume, Chapter, TableRow } from '@/lib/types'
-import { uid } from '@/lib/id'
-import { countWords } from '@/lib/textStats'
+import { uid } from '@/lib/app/id'
+import { countWords } from '@/lib/editor/textStats'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
 import { addDailyWords } from '@/lib/db/meta'
 

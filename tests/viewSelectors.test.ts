@@ -6,7 +6,7 @@
 import {
   toFeedbackEntries, pickImportTargetId, tavernExportSummaryText,
   parseVarInputValue, filterNovelChars, countNovelChars,
-} from '../src/lib/viewSelectors'
+} from '../src/lib/app/viewSelectors'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

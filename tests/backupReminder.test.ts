@@ -9,7 +9,7 @@
  */
 import {
   isExportOverdue, isDismissExpired, markExported, markDismissed, shouldRemind, REMIND_AFTER_DAYS,
-} from '../src/lib/backupReminder'
+} from '../src/lib/sync/backupReminder'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

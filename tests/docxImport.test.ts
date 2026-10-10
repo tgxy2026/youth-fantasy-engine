@@ -7,10 +7,10 @@
 //   ③ `.doc`（旧二进制）与 `.epub` 混进来，只给一句「读取失败」让人无从下手；
 //   ④ Word 的**首行缩进是段落属性**（`<w:ind w:firstLineChars="200"/>`）不是字符，纯文本化会丢
 //      —— 与导出侧「禁行首 trim」的 A5 口径不对等。
-import { ZipBuilder } from '../src/lib/zip'
+import { ZipBuilder } from '../src/lib/storage/zip'
 import {
   decodeXmlEntities, documentXmlToText, isDocxFileName, isLegacyDocFileName, readDocxText,
-} from '../src/lib/docxImport'
+} from '../src/lib/storage/docxImport'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

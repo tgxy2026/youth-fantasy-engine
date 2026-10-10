@@ -8,7 +8,7 @@
  *   如果哪天有人把 `error.text` 改成空串（想「安静一点」），界面上就只剩一个色点，
  *   用户看不出发生了什么 —— 而这正是这条功能要防的事故。
  */
-import { STATUS_META } from '../src/lib/syncStatusMeta'
+import { STATUS_META } from '../src/lib/sync/syncStatusMeta'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

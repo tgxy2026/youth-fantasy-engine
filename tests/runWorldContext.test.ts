@@ -6,7 +6,7 @@
 import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
 import { renderWorldTables, resolveRunWorldText, DEFAULT_WORLD_TEXT_CAP } from '../src/lib/run/worldContext'
-import type { WorldStoredRecord } from '../src/lib/worldTypes'
+import type { WorldStoredRecord } from '../src/lib/world/worldTypes'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

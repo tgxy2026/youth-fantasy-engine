@@ -8,7 +8,7 @@
 import {
   STYLE_GROUPS, STYLE_DIM_BY_ID, STYLE_DIM_IDS, STYLE_CONFLICTS, STYLE_DILUTE_AT,
   conflictsOf, activeConflicts, isDiluted, dimLabels, buildStyleNote, loadStyleDims,
-} from '../src/lib/companionStyle'
+} from '../src/lib/tavern/companionStyle'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

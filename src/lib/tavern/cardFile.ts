@@ -16,7 +16,7 @@
  *
  * 本文件是纯逻辑（无 IO、无 React），文件读写由调用方用 FSA / input[type=file] 完成。
  */
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import { EMPTY_CAST_SETTING, VAR_KEYS } from '@/lib/tavern/types'
 import type { FreeCharacter, CharVars, VarValues, VarKey } from '@/lib/tavern/types'
 

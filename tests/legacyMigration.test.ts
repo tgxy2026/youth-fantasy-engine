@@ -2,7 +2,7 @@
 //
 // 这是整条迁移链里**唯一可纯函数单测**的部分（探测 / 文件 IO 在主进程，IDB 转库需真浏览器）。
 // 所以这里把 remap 的每条分支都钉死 —— 它是「旧值 → 新值」的唯一权威改写点，错了就是数据静默错。
-import { remapLegacyJsonText, LEGACY_KIND_MAP, LEGACY_APP, NEW_APP } from '../src/lib/legacyMigration'
+import { remapLegacyJsonText, LEGACY_KIND_MAP, LEGACY_APP, NEW_APP } from '../src/lib/storage/legacyMigration'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

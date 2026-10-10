@@ -22,8 +22,8 @@
  */
 import { useState } from 'react'
 import { renderTavernMessage } from '@/components/tavern/TavernMessage'
-import AutoTextarea from '@/components/AutoTextarea'
-import { Button } from '@/components/Button'
+import AutoTextarea from '@/components/common/AutoTextarea'
+import { Button } from '@/components/common/Button'
 
 export type MessageOps = {
   /** 能不能重说（= 是不是末尾那条 AI 回复，且当前没在生成） */

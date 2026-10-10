@@ -9,7 +9,7 @@ import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
 import { persistSplitToChapters, planVolumes, stripChapterNumber } from '../src/lib/bookbreak/persist'
 import { splitNovelText, type SplitResult } from '../src/lib/bookbreak/split'
-import { chapterSeqMap, flattenChapters } from '../src/lib/chapterSeq'
+import { chapterSeqMap, flattenChapters } from '../src/lib/outline/chapterSeq'
 import type { Chapter, Volume } from '../src/lib/types'
 
 let pass = 0, fail = 0

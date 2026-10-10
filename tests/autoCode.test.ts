@@ -4,7 +4,7 @@
 // 社区反馈删错了想补回来补不回来，现改为**顺序补缺**：
 //   0001~0005 全在 → 0006；删 0005 → 新增 0005；删 0003 → 新增 0003。
 // 这些断言是那条产品决策的唯一钉子 —— 别让它悄悄退回「最大 +1」。
-import { nextAutoCode } from '../src/lib/autoCode'
+import { nextAutoCode } from '../src/lib/ai/autoCode'
 import type { TableRow } from '../src/lib/types'
 
 let pass = 0, fail = 0

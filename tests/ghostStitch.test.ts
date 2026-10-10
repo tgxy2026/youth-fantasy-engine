@@ -7,7 +7,7 @@
 // ③ 上一章无正文（第一卷第一章 / 上一章还没写）→ 原样返回，宁缺毋滥；
 // ④ 「上一章」按全书卷章顺序（orderedChapters）——跨卷时是上一卷的最后一章，不是同卷上一章。
 import type { Chapter, Volume } from '../src/lib/types'
-import { GHOST_CONTEXT_CHARS, orderedChapters, stitchGhostBefore } from '../src/components/novelEditorHelpers'
+import { GHOST_CONTEXT_CHARS, orderedChapters, stitchGhostBefore } from '../src/components/editor/novelEditorHelpers'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

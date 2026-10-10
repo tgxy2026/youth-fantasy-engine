@@ -10,8 +10,8 @@
  *   真正的整理与回滚逻辑分别在 `usePlotSummary` / `usePlotCheckpoints` 里。
  */
 import { useMemo, useState } from 'react'
-import { Button } from '@/components/Button'
-import SelectRow from '@/components/SelectRow'
+import { Button } from '@/components/common/Button'
+import SelectRow from '@/components/common/SelectRow'
 import { talkBandOf, talkativityOf, type TavernSession, type TavernSessionIndexItem } from '@/lib/tavern/types'
 import type { splitCast } from '@/lib/tavern/engine'
 // S1a 分支树视图（2026-10-05）：父子推断是**纯函数**、住在 store（与 branchTitle 相邻），组件只渲染结果

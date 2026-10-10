@@ -7,7 +7,7 @@
 //   ① 单调：x 严格递增（否则卡片/圆点会叠在一起）；
 //   ② 封顶：超长空档被压到有界宽度，且被登记进 breaks（供界面画断裂符）；
 //   ③ 退化：无空档时 = 纯等比（等间隔）；空 / 单点不崩、不 NaN。
-import { cappedPositions, formatDurationHuman, DEFAULT_CALENDAR_RULE } from '../src/lib/storyDate'
+import { cappedPositions, formatDurationHuman, DEFAULT_CALENDAR_RULE } from '../src/lib/app/storyDate'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

@@ -6,7 +6,7 @@
 import fs from 'node:fs'
 import {
   checkContinuationFocus, checkRewriteTarget, checkAuditChapters, formatGap,
-} from '../src/lib/evidenceGate'
+} from '../src/lib/audit/evidenceGate'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -53,13 +53,13 @@ console.log('\n—— evidenceGate 用例开始 ——')
 
 // ---------- ⑤ 🔴 接线闸（源码级） ----------
 {
-  const jwj = fs.readFileSync('src/components/useJieWenJiModel.ts', 'utf8')
+  const jwj = fs.readFileSync('src/components/jiewenji/useJieWenJiModel.ts', 'utf8')
   ok('🔴 续写缺焦点章 ⇒ throw（停止生成）',
     /checkContinuationFocus\(src\.found\)[\s\S]{0,120}throw new Error\(formatGap/.test(jwj))
   ok('🔴 不再「提示一句就照发」（旧文案已移除）',
     !jwj.includes('本次续写只会带设定资料'))
 
-  const cs = fs.readFileSync('src/lib/creativeSession.ts', 'utf8')
+  const cs = fs.readFileSync('src/lib/creative/creativeSession.ts', 'utf8')
   ok('🔴 改写目标检查走统一口径（evidenceGate）',
     /checkRewriteTarget\(!!hit\.chapter\.content\.trim\(\)\)/.test(cs))
 }

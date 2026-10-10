@@ -10,7 +10,7 @@ import {
   abortAllTasks, abortTask, clearFinishedTasks, consumeTaskNotice, dismissTask,
   markTaskSeen, noticeSnapshot, resetTaskCenter, runningTaskCount, startTask,
   subscribeTasks, takeUnnotifiedRunning, tasksSnapshot, unreadTaskCount,
-} from '../src/lib/aiTaskCenter'
+} from '../src/lib/ai/aiTaskCenter'
 
 /** 本测试用的进度形状（真实场景 = 拆书的 `FlowProgress`） */
 interface TestProgress { message?: string; ratio?: number }

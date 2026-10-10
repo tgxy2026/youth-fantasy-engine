@@ -20,7 +20,7 @@ const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8'
 
 function main() {
   // ── ① 角色管理组（CharacterSheet）：AI 新增（建卡）+ AI 补全（补当前卡）两个入口并存 ──
-  const cs = read('src/components/CharacterSheet.tsx')
+  const cs = read('src/components/world/CharacterSheet.tsx')
   ok('角色卡右上角同时有「AI 新增」与「AI 补全」', cs.includes('AI 新增') && cs.includes('AI 补全'))
   ok('AI 新增：点开的是新建弹窗 setShowFill(true)', cs.includes('onClick={() => setShowFill(true)}'))
   ok('AI 新增：弹窗标题为「AI 新增 · 页签名」', cs.includes('AI 新增 · ${tab.name}'))
@@ -33,7 +33,7 @@ function main() {
   ok('AI 新增仍走 handleFill（建卡落库），未被改动', cs.includes('onSubmit={handleFill}'))
 
   // ── ② 世界构建组 + 全项目表格（TableSheet）：右上角「AI 新增」，行首才是「AI 补全本行空白」 ──
-  const ts = read('src/components/TableSheet.tsx')
+  const ts = read('src/components/sheets/TableSheet.tsx')
   ok('🔴 表格右上角：organize 显「AI 整理」、fill 显「AI 新增」',
     ts.includes("{aiCap === 'organize' ? 'AI 整理' : 'AI 新增'}"))
   ok('🔴 右上角新建行弹窗标题改为「AI 新增 · 表名」', ts.includes('AI 新增 · ${tab.name}'))
@@ -42,14 +42,14 @@ function main() {
   ok('表格问号说明同步为「AI 整理」或「AI 新增」', ts.includes('「AI 整理」或「AI 新增」'))
   ok('🔴「AI 整理」按钮与链路原样未动', ts.includes("setShowOrganize(true)") && ts.includes('<AIOrganize'))
 
-  const row = read('src/components/TableSheetRow.tsx')
+  const row = read('src/components/sheets/TableSheetRow.tsx')
   ok('🔴 行首行内按钮文案未受影响（AI 补全本行空白）', row.includes('AI 补全本行空白'))
-  const rel = read('src/components/TableRelationGroups.tsx')
+  const rel = read('src/components/sheets/TableRelationGroups.tsx')
   ok('关系分组里的行内补全提示也保持「AI 补全本行空白」', rel.includes('AI 补全本行空白'))
 
   // ── ③ 开书定位组（ParallelSetSheet）：保存 + AI 补全挪到页头，与 WorldSetSheet 同形 ──
-  const ps = read('src/components/ParallelSetSheet.tsx')
-  const ws = read('src/components/WorldSetSheet.tsx')
+  const ps = read('src/components/sheets/ParallelSetSheet.tsx')
+  const ws = read('src/components/sheets/WorldSetSheet.tsx')
   ok('🔴 制度四页签页头右端有按钮组（ml-auto flex items-center gap-2）', ps.includes('ml-auto flex items-center gap-2'))
   ok('🔴 页头出现 AI 补全按钮', /<Sparkles size=\{12\} \/> AI 补全/.test(ps))
   ok('🔴 页头出现保存按钮（variant="toggle" + flush）', ps.includes('variant="toggle" selected={dirty}') && ps.includes('onClick={() => void flush()}'))
@@ -59,24 +59,24 @@ function main() {
   ok('未选条目时保存 / AI 补全一并禁用', ps.includes('disabled={!selSub || !dirty || saving}') && ps.includes('disabled={!aiReady || !selSub}'))
 
   // ── ④ 弹窗主语解析兼容「AI 新增」前缀（否则对话引导会拿整串标题当主语） ──
-  const aitf = read('src/components/AITemplateFill.tsx')
+  const aitf = read('src/components/ai/AITemplateFill.tsx')
   ok('🔴 subjectLabel 正则同时剥「AI 补全」与「AI 新增」前缀',
     aitf.includes('/^AI (?:补全|新增)(?:本行空白)?\\s*·\\s*/'))
 
   // ── ⑤ 表单页（FormSheet）本就是真补全，命名与行为都无需动 ──
-  const fs2 = read('src/components/FormSheet.tsx')
+  const fs2 = read('src/components/sheets/FormSheet.tsx')
   ok('作品信息（表单页）保持「AI 补全」且传 existing={data}', fs2.includes('AI 补全 · ${tab.name}') && fs2.includes('existing={data}'))
 
   // ── ⑥ 口径文案同步（未接入模型的禁用清单 / 数据源标签 / 整理弹窗辨义） ──
-  const scope = read('src/lib/aiScope.ts')
+  const scope = read('src/lib/ai/aiScope.ts')
   ok('未接入模型清单同步为「AI 新增」与「AI 补全」', scope.includes('「AI 新增」与「AI 补全」'))
-  const ds = read('src/lib/aiDataSources.ts')
+  const ds = read('src/lib/ai/aiDataSources.ts')
   ok('数据源标签覆盖面同步（含表格行）', ds.includes('AI 补全 / AI 新增'))
-  const org = read('src/components/AIOrganize.tsx')
+  const org = read('src/components/ai/AIOrganize.tsx')
   ok('整理弹窗辨义改为「AI 新增」（新增=凭空造，整理=抽已写）', org.includes('与「AI 新增」的本质区别'))
 
   // ── ⑦ 大纲规划组（2026-10-03 老大解禁）：全书总纲 / 分卷大纲 / 章节细纲 也接 AI 新增 + AI 补全 ──
-  const scope2 = read('src/lib/aiScope.ts')
+  const scope2 = read('src/lib/ai/aiScope.ts')
   ok('🔴 aiScope 特批了三个大纲页签（只放 id、不按 group 放行）',
     /const AI_OUTLINE_TAB_IDS = new Set\(\['master', 'volume-outline', 'chapter-outline'\]\)/.test(scope2))
   // 先要求分支**存在**（indexOf ≥ 0）：否则把分支删掉时 indexOf 返回 -1，而 -1 < 正数 恒真 ⇒ 护栏假绿。
@@ -86,7 +86,7 @@ function main() {
   ok('大纲规划仍留在 NO_AI_GROUPS 里（兜住该组其余页签）',
     /const NO_AI_GROUPS = \['大纲规划', '运营维护'\]/.test(scope2))
 
-  const os = read('src/components/OutlineSheet.tsx')
+  const os = read('src/components/outline/OutlineSheet.tsx')
   ok('🔴 分卷大纲 / 章节细纲：两个入口并存（AI 新增 + AI 补全）',
     os.includes('AI 新增') && os.includes('AI 补全'))
   ok('🔴 AI 新增：独立状态 + 弹窗标题「AI 新增 · 页签名」',
@@ -102,7 +102,7 @@ function main() {
   ok('🔴 两条弹窗各带自己的补全语境（分卷 / 章节），且都透传给 AITemplateFill',
     os.includes("isVolume ? 'outline-volume' : 'outline-chapter'") && (os.match(/context=\{fillContext\}/g) ?? []).length === 2)
 
-  const fs3 = read('src/components/FormSheet.tsx')
+  const fs3 = read('src/components/sheets/FormSheet.tsx')
   ok('🔴 全书总纲：表单页也给「AI 新增」（只挂 master 一个 id）',
     fs3.includes("const isOutlineMaster = tab.id === 'master'") && fs3.includes('AI 新增'))
   ok('🔴 全书总纲的 AI 新增：已填非空时先确认（起草全份不可逆）',

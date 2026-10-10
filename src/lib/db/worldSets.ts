@@ -12,7 +12,7 @@
  *   ③ **删子项必须同时从活跃列表里摘掉它**（否则 AI 段落里会冒出一行空的子世界标题）。
  */
 import type { CardRecord } from '@/lib/types'
-import { activeKeyOf, pruneActiveIds, subTabIdOf, toggleActiveId } from '@/lib/worldSets'
+import { activeKeyOf, pruneActiveIds, subTabIdOf, toggleActiveId } from '@/lib/world/worldSets'
 import { currentProjectId, ops, touchProject } from '@/lib/db/core'
 import { getSetting, setSetting } from '@/lib/db/meta'
 

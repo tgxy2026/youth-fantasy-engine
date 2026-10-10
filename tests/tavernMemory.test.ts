@@ -11,7 +11,7 @@ import {
   nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, releaseSummaryLock,
 } from '../src/lib/tavern/memory'
 import { summarizeMemory, buildSummarySystem, renderTranscript, buildColdStartSystem, coldStartMemory, draftMemoryFromCard } from '../src/lib/tavern/summarize'
-import { formatDate } from '../src/lib/date'
+import { formatDate } from '../src/lib/app/date'
 import {
   MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
   SUMMARY_LOCK_TTL_MS, emptyFreeCharacter,
@@ -355,8 +355,8 @@ async function main() {
     ok('两边都没有 ⇒ undefined', watermarkAfterRoundEnd(undefined, null, false) === undefined)
 
     // 🔴 接线：两处调用方必须**真的**用它 —— 抽了不用等于白抽，而上面的单测看不出来
-    const plotHook = fs.readFileSync('src/components/usePlotSummary.ts', 'utf8')
-    const freeHook = fs.readFileSync('src/components/useFreeRoundEnd.ts', 'utf8')
+    const plotHook = fs.readFileSync('src/components/outline/usePlotSummary.ts', 'utf8')
+    const freeHook = fs.readFileSync('src/components/tavern/useFreeRoundEnd.ts', 'utf8')
     ok('接线：剧情推演侧走 watermarkAfterRoundEnd', plotHook.includes('watermarkAfterRoundEnd('))
     ok('接线：自由对话侧走 watermarkAfterRoundEnd', freeHook.includes('watermarkAfterRoundEnd('))
     const stillHandwritten = plotHook.includes('? undefined : nextWatermark') || freeHook.includes('memoryDegraded ? s.watermark')

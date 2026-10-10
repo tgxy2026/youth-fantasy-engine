@@ -6,7 +6,7 @@
 //   ② 纯新增 / 纯删除 / 空内容的边界；
 //   ③ 🔴 **公共前后缀剪枝有效**（这是性能保护的核心：长篇两版通常只差中间一小段）；
 //   ④ 规模超限时退化为"整段替换"仍要返回**结构正确**的结果（不能抛错、不能卡死）。
-import { diffLines, diffStats, type DiffLine } from '../src/lib/textDiff'
+import { diffLines, diffStats, type DiffLine } from '../src/lib/editor/textDiff'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

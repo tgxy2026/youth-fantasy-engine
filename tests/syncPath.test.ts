@@ -11,7 +11,7 @@
 //      走 `nodeRead`/`nodeWrite` 分支 —— 验证正常写盘、以及损坏隔离都以
 //      「绝对路径 + .yfe(.派生名)」落盘，且原文件不被覆盖。
 import fs from 'node:fs'
-import { createFileTransport, type ElectronStoreBridge } from '../src/lib/syncTransport'
+import { createFileTransport, type ElectronStoreBridge } from '../src/lib/sync/syncTransport'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -29,7 +29,7 @@ console.log('\n—— syncPath 用例开始 ——')
 {
   const guard = read('electron/syncPath.cjs')
   const main = read('electron/main.cjs')
-  const transport = read('src/lib/syncTransport.ts')
+  const transport = read('src/lib/sync/syncTransport.ts')
 
   ok('① electron/syncPath.cjs 存在且导出 assertSyncPath',
     /\bfunction assertSyncPath\b/.test(guard) && /module\.exports\s*=\s*\{\s*assertSyncPath\s*\}/.test(guard))

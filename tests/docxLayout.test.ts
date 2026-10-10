@@ -10,8 +10,8 @@
 // ③ 投稿稿件：书名（黑体 22pt 加粗居中）→ 简介（可空）→ 选定章节（按全书卷章
 //    顺序重排 —— 传入顺序不影响输出；未分卷章节垫底，与 chaptersToTxt 口径一致）。
 import type { Chapter, Volume } from '../src/lib/types'
-import { buildDocxBody, buildSubmissionDocxBody } from '../src/lib/exporter'
-import type { DocxLayoutOptions } from '../src/lib/exporter'
+import { buildDocxBody, buildSubmissionDocxBody } from '../src/lib/storage/exporter'
+import type { DocxLayoutOptions } from '../src/lib/storage/exporter'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

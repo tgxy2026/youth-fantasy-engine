@@ -6,7 +6,7 @@
 //  ③ 结构约定：PlotCanvas 的 idea 卡型存在且不进 HEADER_TO_TYPE（AI 简报永远产不出 idea 卡）。
 import { readFileSync } from 'node:fs'
 import * as db from '../src/lib/db'
-import { addItem, removeItem, loadBox, INSPIRATION_MAX } from '../src/lib/inspirationBox'
+import { addItem, removeItem, loadBox, INSPIRATION_MAX } from '../src/lib/creative/inspirationBox'
 import { parseFusedIdeas } from '../src/lib/aiTasks/inspiration'
 
 let pass = 0, fail = 0
@@ -75,13 +75,13 @@ console.log('\n▶ inspirationFuse')
 
 // ---------- ③ 结构约定：idea 卡型 ----------
 {
-  const src = readFileSync('src/components/PlotCanvas.tsx', 'utf8')
+  const src = readFileSync('src/components/outline/PlotCanvas.tsx', 'utf8')
   ok("🔴 CardType 含 'idea' 且 TYPE_META 登记了颜色与标签",
     src.includes("'beat' | 'idea'") && src.includes("idea: { label: '灵感融合'"))
   ok("🔴 idea 不进 HEADER_TO_TYPE（AI 简报永远产不出 idea 卡）",
     !src.includes("'灵感融合': 'idea'"))
   ok('灵感融合任务已在门面登记（否则设置页看不到提示词）',
-    readFileSync('src/lib/aiTasks.ts', 'utf8').includes('inspiration-fuse'))
+    readFileSync('src/lib/ai/aiTasks.ts', 'utf8').includes('inspiration-fuse'))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

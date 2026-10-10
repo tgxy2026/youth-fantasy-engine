@@ -5,7 +5,7 @@
 //   ② 合并口径（同章号以新标记为准）与上限；
 //   ③ 🔴 **源码闸** —— 改写链路必须接线、且只在 `rewritten` 时打标（`generated` 不误伤）。
 import fs from 'node:fs'
-import { planImpact, mergeMarks, type ImpactMark } from '../src/lib/futureImpact'
+import { planImpact, mergeMarks, type ImpactMark } from '../src/lib/outline/futureImpact'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -55,7 +55,7 @@ console.log('\n—— futureImpact 用例开始 ——')
 
 // ---------- ③ 🔴 源码闸：改写链路接线 ----------
 {
-  const src = fs.readFileSync('src/lib/chapterRewrite.ts', 'utf8')
+  const src = fs.readFileSync('src/lib/editor/chapterRewrite.ts', 'utf8')
   ok('applyChapterRewrite 接了 analyzeFutureImpact',
     src.includes('analyzeFutureImpact(seq,'))
   ok('🔴 只在 rewritten 时打标（generated 是推进、不误伤）',
@@ -65,7 +65,7 @@ console.log('\n—— futureImpact 用例开始 ——')
   ok('只在序号可用时打标（seq > 0）', src.includes('seq > 0'))
 
   // 未来影响模块自身的红线：只标记不改章纲（不 import schema 写入 API 的写函数）
-  const fi = fs.readFileSync('src/lib/futureImpact.ts', 'utf8')
+  const fi = fs.readFileSync('src/lib/outline/futureImpact.ts', 'utf8')
   ok('🔴 不写章纲内容（无 saveCardRecord / saveTableRow）',
     !fi.includes('saveCardRecord') && !fi.includes('saveTableRow'))
   ok('走 settingsKV（getSetting/setSetting），自带项目前缀',

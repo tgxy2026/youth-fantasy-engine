@@ -32,9 +32,9 @@ console.log('\n—— uiUxGuards 用例开始 ——')
 //      · BookBreakPanel  → aiTasks/extract.ts + formSummary.ts
 {
   const cases: [string, string][] = [
-    ['src/components/AIOrganize.tsx', '开始整理'],
-    ['src/components/AITemplateFill.tsx', '生成补全'],
-    ['src/components/BookBreakPanel.tsx', '开始抽取'],
+    ['src/components/ai/AIOrganize.tsx', '开始整理'],
+    ['src/components/ai/AITemplateFill.tsx', '生成补全'],
+    ['src/components/bookbreak/BookBreakPanel.tsx', '开始抽取'],
   ]
   for (const [file, label] of cases) {
     const s = read(file)
@@ -58,14 +58,14 @@ console.log('\n—— uiUxGuards 用例开始 ——')
 //    并有自己的单测（tests/tavernReady.test.ts，含负面对照）证明它读的是酒馆那条链。
 {
   ok('🔴 InterviewChat 不加全局就绪守卫（模型由调用方 callChat 决定，加会误禁酒馆场景）',
-    !/useAIReady/.test(read('src/components/InterviewChat.tsx')))
+    !/useAIReady/.test(read('src/components/creative/InterviewChat.tsx')))
   ok('🔴 TavernFree 不加全局就绪守卫（酒馆可指定自身 provider，加会误禁）',
     !/useAIReady/.test(read('src/components/tavern/TavernFree.tsx')))
   // ⚠️ 只查 `useTavernReady.ts` 里**有没有 import** 全局 hook（而不是全文出现该词）——
   //    它的文件头注释**必须**能解释"为什么不要用那个"，写成全文禁词会把说明本身判违规。
-  const readyHook = read('src/components/useTavernReady.ts')
+  const readyHook = read('src/components/tavern/useTavernReady.ts')
   ok('🔴 酒馆就绪守卫走的是**自己的** provider 链（useTavernReady），而非删掉守卫了事',
-    /useTavernReady/.test(read('src/components/useTavernFreeModel.tsx'))
+    /useTavernReady/.test(read('src/components/tavern/useTavernFreeModel.tsx'))
     && /export function useTavernReady/.test(readyHook)
     && !/from '[^']*useAIReady'/.test(readyHook))
   ok('🔴 就绪判据与真实发请求同源（都经 resolveTavernProvider 的三层兜底链）',
@@ -76,36 +76,37 @@ console.log('\n—— uiUxGuards 用例开始 ——')
 // ---------- ③ 文案一致性 ----------
 {
   ok('🔴 界面不再出现已下线的「便携版」字样',
-    !/便携版/.test(read('src/components/SearchSettingsPanel.tsx')))
+    !/便携版/.test(read('src/components/settings/SearchSettingsPanel.tsx')))
 
-  const saveTitles = ['CharacterSheet', 'FormSheet', 'OutlineSheet', 'TableSheet']
+  // ⚠️ 3.0 目录整理（G3）：这几张表已按领域进子目录，路径要带上新目录名。
+  const saveTitles = ['world/CharacterSheet', 'sheets/FormSheet', 'outline/OutlineSheet', 'sheets/TableSheet']
     .map(f => read(`src/components/${f}.tsx`))
   ok('🔴 保存按钮空态提示统一为「无未保存的改动」（原先两种口径混用）',
     saveTitles.every(s => !/无未保存修改/.test(s)) && saveTitles.every(s => /无未保存的改动/.test(s)))
 
   ok('🔴 「本章写作简报」口径统一（PlotCanvas 不再叫「灵感简报」）',
-    !/灵感简报/.test(read('src/components/PlotCanvas.tsx')))
+    !/灵感简报/.test(read('src/components/outline/PlotCanvas.tsx')))
 
   ok('🔴 用户可见处不再出现「占位 / 待替换」这类开发期字样',
     // 🔴 读**整个 schema 模块**（门面 + 段文件）：只读门面时这条「不含」断言恒真 = 什么都没测
     !/占位|待替换/.test(readSchemaModule())
-    && !/占位内容/.test(read('src/components/AboutPage.tsx'))
-    && !/待作者替换/.test(read('src/components/AboutPage.tsx'))
-    && !/示例占位（/.test(read('src/components/AboutPage.tsx')))
+    && !/占位内容/.test(read('src/components/app/AboutPage.tsx'))
+    && !/待作者替换/.test(read('src/components/app/AboutPage.tsx'))
+    && !/示例占位（/.test(read('src/components/app/AboutPage.tsx')))
 
   // 2.8.0：致谢名单换成真实打赏者 —— 防「示例小说角色名被抄回去」+ 钉住排序说明。
   // 🔴 不断言具体人名：名单会随打赏增长，钉死名字会让「加一位打赏者」变成改测试。
   ok('🔴 致谢名单为真实名单（不再出现示例小说角色名），说明写「按打赏时间排序」',
-    !/萧炎|韩立|徐凤年|斗破苍穹|凡人修仙传/.test(read('src/components/AboutPage.tsx'))
-    && /致谢名单按照打赏时间排序/.test(read('src/components/AboutPage.tsx')))
+    !/萧炎|韩立|徐凤年|斗破苍穹|凡人修仙传/.test(read('src/components/app/AboutPage.tsx'))
+    && /致谢名单按照打赏时间排序/.test(read('src/components/app/AboutPage.tsx')))
 
   ok('🔴 ProjectHub 的必选说明与 FEATURE_TIER 一致（拆书 / 创意写作可取消）',
-    /拆书与创意写作默认不勾选/.test(read('src/components/ProjectHub.tsx')))
+    /拆书与创意写作默认不勾选/.test(read('src/components/app/ProjectHub.tsx')))
 
   // 2.8.0：「关于打赏」由 default 升 locked —— 两处必选说明都要跟上（防「改了档位忘改文案」）
   ok('🔴 ProjectHub 的两处必选说明都覆盖「关于打赏」',
-    /以及运营维护里的「关于打赏」为必选/.test(read('src/components/ProjectHub.tsx'))
-    && /以及运营维护下的关于打赏）与依赖/.test(read('src/components/ProjectHub.tsx')))
+    /以及运营维护里的「关于打赏」为必选/.test(read('src/components/app/ProjectHub.tsx'))
+    && /以及运营维护下的关于打赏）与依赖/.test(read('src/components/app/ProjectHub.tsx')))
 
   // 接线闸：迁移若不挂在启动期，老项目永远补不上（静默失效，界面上一辈子看不到那个页签）
   ok('🔴 「必选模块同步」确实挂在 App 启动期（否则老项目永远补不上）',
@@ -118,7 +119,7 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   // 根因：setColWidths 的 updater 是**延迟执行**的（React 在渲染阶段才调用），
   // 到那时 mouseup 早已把 dragRef.current 置空，而 updater 里还写 [dragRef.current!.col]。
   // ⚠️ `!` 只是 TS 断言、编译后没有运行时保护 ——「上一步 if 判过非空」救不了下一步。
-  const tsModel = read('src/components/useTableSheetModel.ts')
+  const tsModel = read('src/components/sheets/useTableSheetModel.ts')
   // ⚠️ 判据要精确到 **updater 那一行**：文件注释里刻意保留了反例写法（`[dragRef.current!.col]`）
   // 来解释历史 bug，宽泛正则会把注释本身也算成违规（第一版就这么假 FAIL 了一次）。
   ok('🔴 列宽 updater 用的是同步捕获的局部量（而非延迟读取的 dragRef.current）',
@@ -130,7 +131,7 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   // 起因：CharacterSheet 从 1.x 起只服务角色卡、文案里写死了「角色」；
   // 2.3.0 新增「其他设定」（世界构建组，卡片型）后同一组件也服务非角色卡片表，
   // 于是「新建角色 / 请输入角色姓名」全成了错话（老大实测：功能没问题，文案全是新建角色）。
-  const cs = read('src/components/CharacterSheet.tsx')
+  const cs = read('src/components/world/CharacterSheet.tsx')
   ok('🔴 CharacterSheet 的卡片文案按页签参数化（照 OutlineSheet 的 noun 范式）',
     /const isCharTab = tab\.group === '角色管理'/.test(cs) && /const noun = isCharTab/.test(cs))
   // ⚠️ 同样要精确：注释里举例提到过「新建角色」（用的是中文引号），那不算违规

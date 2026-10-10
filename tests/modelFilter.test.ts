@@ -5,7 +5,7 @@
 //
 // 🔴 为什么要给这么小的函数写测试：它服务的是「中转站几百个模型」的场景 ——
 //    筛选错一位，作者就得在几百项里翻半天，而 bug 本身不会报错、只是"找不到"。
-import { filterModels } from '../src/lib/modelFilter'
+import { filterModels } from '../src/lib/ai/modelFilter'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

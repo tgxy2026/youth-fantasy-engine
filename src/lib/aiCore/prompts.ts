@@ -5,7 +5,7 @@
  * 🔴 登记语句必须留在本文件**末尾**：上面这些 `let` 已全部初始化，避免 TDZ。
  */
 
-import { registerPrompt } from '@/lib/promptSettings'
+import { registerPrompt } from '@/lib/ai/promptSettings'
 
 /** 「设定模板补全」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_fill_template = `你是「青春幻想引擎」的小说设定辅助助手。作者会给你一份设定模板的字段清单和一段粗略草图，请把草图整理成一份完整、合理的设定，逐项填入模板字段。规则：

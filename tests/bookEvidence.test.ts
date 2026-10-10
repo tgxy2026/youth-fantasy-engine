@@ -5,7 +5,7 @@ import {
   buildBookEvidencePack, bookPackToDocModel, bookPackToJson,
   bookEvidenceHtmlFileName, bookEvidenceJsonFileName, bookEvidenceSummary, bookDailyRange,
   DEFAULT_BOOK_EVIDENCE_OPTIONS, BOOK_EVIDENCE_KIND, BOOK_EVIDENCE_SPEC_VERSION,
-} from '../src/lib/bookEvidence'
+} from '../src/lib/audit/bookEvidence'
 import { toHtml } from '../src/lib/tavern/exportDoc'
 import { MAX_SNAPSHOTS_PER_CHAPTER } from '../src/lib/db/chapters'
 import type { CardRecord, Chapter, Volume } from '../src/lib/types'

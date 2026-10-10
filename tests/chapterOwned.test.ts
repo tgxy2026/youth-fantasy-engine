@@ -9,7 +9,7 @@
 import {
   chapterOwned, taskChapter,
   type ChOwned, type ChProgress, type TaskRunner,
-} from '../src/lib/aiTaskCenter'
+} from '../src/lib/ai/aiTaskCenter'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

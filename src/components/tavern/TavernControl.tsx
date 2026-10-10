@@ -11,20 +11,20 @@
  *   ② 高度同步 effect（含 ResizeObserver/MatchMedia 清理）在 useTavernControlModel 里，未改。
  *   ③ 分段说明的显隐走 ShowBands.Provider，Provider 本身留在本组件。
  */
-import HelpPopover from '@/components/HelpPopover'
-import { useSaveHotkey } from '@/lib/useSaveHotkey'
-import PromptModal from '@/components/PromptModal'
+import HelpPopover from '@/components/common/HelpPopover'
+import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
+import PromptModal from '@/components/dialogs/PromptModal'
 import TavernControlModes from '@/components/tavern/TavernControlModes'
-import { LoadingState } from '@/components/LoadingState'
-import { Button } from '@/components/Button'
+import { LoadingState } from '@/components/common/LoadingState'
+import { Button } from '@/components/common/Button'
 import { ShowBands } from '@/components/tavern/TavernFieldKit'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
-import { Z } from '@/lib/zLayer'
-import { useTavernControlModel } from '@/components/useTavernControlModel'
+import { Z } from '@/lib/app/zLayer'
+import { useTavernControlModel } from '@/components/tavern/useTavernControlModel'
 import TavernControlBasics from '@/components/tavern/TavernControlBasics'
 import TavernControlAdvanced from '@/components/tavern/TavernControlAdvanced'
 import TavernControlProtocol from '@/components/tavern/TavernControlProtocol'
-import { SaveFab } from '@/components/SaveFab'
+import { SaveFab } from '@/components/common/SaveFab'
 export default function TavernControl() {
   const m = useTavernControlModel()
   // 前置数据未就绪：与拆分前一样先出 LoadingState（判断已随 hook 前移，语义不变）

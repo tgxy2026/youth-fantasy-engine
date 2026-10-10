@@ -2,7 +2,7 @@
 // 从 seedData.ts 拆出（2026-09-14 审计 P1-6：数据与逻辑混居）。
 // 2026-09-19（2.3.0 结构优化）：从 src/lib/ 搬到 src/data/ —— `lib/` 只放逻辑，
 //   `data/` 只放出厂数据。同批搬来的还有 materialData.ts（素材库）。
-//   消费方是 `src/lib/seedData.ts`（种子组装工厂），它才是逻辑。
+//   消费方是 `src/lib/app/seedData.ts`（种子组装工厂），它才是逻辑。
 //
 // 🔴 `src/data/` 的规矩：**只有数据、不含逻辑**；依赖方向一律 `data/ → lib/`，
 //    **绝不反向依赖 components/**（`tests/importCycles.test.ts` 与 audit-graph 都会拦）。

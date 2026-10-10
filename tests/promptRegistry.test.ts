@@ -12,9 +12,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 // 🔴 裸 import：触发各处的注册副作用（与真实 App 的加载路径一致）
 import '../src/lib/ai'          // aiCore/prompts(4 条) + aiAssistPrompt(1 条)
-import '../src/lib/aiTasks'     // PROMPT_ORDER 中央循环（34 条）
-import '../src/lib/autoContinue' // setting-update-detect(1 条)
-import { listPrompts, PROMPT_GROUPS } from '../src/lib/promptSettings'
+import '../src/lib/ai/aiTasks'     // PROMPT_ORDER 中央循环（34 条）
+import '../src/lib/outline/autoContinue' // setting-update-detect(1 条)
+import { listPrompts, PROMPT_GROUPS } from '../src/lib/ai/promptSettings'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -48,7 +48,7 @@ console.log('\n—— promptRegistry 用例开始 ——')
 
 // ---------- ② 一致性闸：PROMPT_ORDER 与 *_PROMPTS 双向包含 ----------
 {
-  const aiTasks = fs.readFileSync('src/lib/aiTasks.ts', 'utf8')
+  const aiTasks = fs.readFileSync('src/lib/ai/aiTasks.ts', 'utf8')
   const orderBlock = aiTasks.slice(aiTasks.indexOf('const PROMPT_ORDER = ['), aiTasks.indexOf('\n]', aiTasks.indexOf('const PROMPT_ORDER = [')))
   const inOrder = [...orderBlock.matchAll(/'([a-z0-9-]+)'/g)].map(m => m[1])
   ok('PROMPT_ORDER 非空且已解析', inOrder.length >= 30, 'n=' + inOrder.length)
@@ -56,7 +56,7 @@ console.log('\n—— promptRegistry 用例开始 ——')
   // 各 *_PROMPTS 集合里的 id（源码解析）
   const files = [
     ...fs.readdirSync('src/lib/aiTasks').filter(f => f.endsWith('.ts')).map(f => path.join('src/lib/aiTasks', f)),
-    'src/lib/marketRadar.ts', 'src/lib/styleFingerprint.ts',
+    'src/lib/ai/marketRadar.ts', 'src/lib/ai/styleFingerprint.ts',
   ]
   const inSets = new Set<string>()
   for (const f of files) {
@@ -104,11 +104,11 @@ console.log('\n—— promptRegistry 用例开始 ——')
 {
   const ai = fs.readFileSync('src/lib/ai.ts', 'utf8')
   ok('🔴 ai.ts 裸 import aiAssistPrompt（静态可达 ⇒ 一定注册）',
-    /^import '(?:\.\/aiAssistPrompt|@\/lib\/aiAssistPrompt)'$/m.test(ai))
+    /^import '(?:\.\/aiAssistPrompt|@\/lib\/ai\/aiAssistPrompt)'$/m.test(ai))
   ok('aiAssistPrompt 模块自带 registerPrompt（搬走后仍会注册）',
-    fs.readFileSync('src/lib/aiAssistPrompt.ts', 'utf8').includes("registerPrompt("))
+    fs.readFileSync('src/lib/ai/aiAssistPrompt.ts', 'utf8').includes("registerPrompt("))
   ok('🔴 AIAssist 组件已不再持有 SYSTEM_PROMPT 常量（源码级）',
-    !/^let SYSTEM_PROMPT = `/m.test(fs.readFileSync('src/components/AIAssist.tsx', 'utf8')))
+    !/^let SYSTEM_PROMPT = `/m.test(fs.readFileSync('src/components/ai/AIAssist.tsx', 'utf8')))
 }
 
 console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ————`)

@@ -13,11 +13,11 @@
  *   量高度来同步左列协议窗（见父组件注释）。多包一层 div 会让那段测量口径失效。
  */
 import { Section, Field, GRID2, NumField, SelectField, TextField, ToggleField } from '@/components/tavern/TavernFieldKit'
-import { Button } from '@/components/Button'
+import { Button } from '@/components/common/Button'
 import { PARAM_GUIDES, GUIDE_SAMPLING, type ParamGuide } from '@/lib/tavern/paramGuide'
 import { VAR_DEFS, type VarKey } from '@/lib/tavern/types'
-import SamplingUnavailable from '@/components/SamplingUnavailable'
-import type { TuningAdvice } from '@/lib/modelCapacity'
+import SamplingUnavailable from '@/components/common/SamplingUnavailable'
+import type { TuningAdvice } from '@/lib/ai/modelCapacity'
 import type { TavernSettings } from '@/lib/tavern/settings'
 
 /**

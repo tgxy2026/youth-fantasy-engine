@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import {
   groupNotes, paragraphAt, parseReaderProbe, readerLensOf, readerProbeToText,
   READER_LENSES, READER_QUESTIONS,
-} from '../src/lib/readerProbe'
+} from '../src/lib/audit/readerProbe'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {
@@ -202,9 +202,9 @@ console.log('\n▶ readerProbe')
   const read = (p: string) => {
     try { return readFileSync(p, 'utf8') } catch { return '' }
   }
-  const srcLocal = read('src/lib/readerProbe.ts')
+  const srcLocal = read('src/lib/audit/readerProbe.ts')
   const srcTask = read('src/lib/aiTasks/readerProbe.ts')
-  const srcPanel = read('src/components/ReaderProbePanel.tsx')
+  const srcPanel = read('src/components/audit/ReaderProbePanel.tsx')
 
   const banned = ['规避检测', '降低AI命中', '降低 AI 命中', '命中率', '反检测', 'AI率', 'AI 率', '洗稿', '合格', '过审']
   for (const [name, src] of [['readerProbe.ts', srcLocal], ['aiTasks/readerProbe.ts', srcTask], ['ReaderProbePanel.tsx', srcPanel]] as const) {
@@ -220,7 +220,7 @@ console.log('\n▶ readerProbe')
   ok('面板注明了段号由本地算（不是模型报的）', srcPanel.includes('段号') && srcPanel.includes('本地'))
   ok('面板对「未定位」有显式展示分支', srcPanel.includes('未定位'))
   ok('提示词已在门面登记（否则设置页看不到它）',
-    read('src/lib/aiTasks.ts').includes("'reader-probe'"))
+    read('src/lib/ai/aiTasks.ts').includes("'reader-probe'"))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

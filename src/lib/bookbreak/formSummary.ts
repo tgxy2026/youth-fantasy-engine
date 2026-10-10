@@ -11,7 +11,7 @@
  *    而撞窗口的表现是**静默截断**（模型只看到前半段却照样输出得很像样）。
  *    所以按"类目聚合 + 每类取前 N 条 + 单条截断 + 总量封顶"层层收口，并在超限时**明说已省略**。
  */
-import type { SettingEntityType } from '@/lib/aiTasks'
+import type { SettingEntityType } from '@/lib/ai/aiTasks'
 import type { EntityBatch } from '@/lib/flow/draft'
 
 export interface FormMaterialOptions {

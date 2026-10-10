@@ -20,7 +20,7 @@ import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { emptyFreeCharacter, type FreeCharacter } from '@/lib/tavern/types'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { structFieldLines } from '@/lib/tavern/cardFields'
 
 /** 缺失信息的标记：提示词要求模型用它，UI 据此提醒作者去补 */

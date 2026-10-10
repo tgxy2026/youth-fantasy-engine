@@ -12,8 +12,8 @@
  * 所以把它做成一块**直接看得见、能一键复制**的说明，放在「剧情推演」与「自由对话」两处（老大 2026-09-15 把角色卡片那处挪到了自由对话 —— 卡片页放这个不合适）。
  * 两处共用这一个组件，避免各写一份而漂移（本项目反复踩过这种坑）。
  */
-import { copyText } from '@/components/dialogs'
-import { Button } from '@/components/Button'
+import { copyText } from '@/components/dialogs/dialogs'
+import { Button } from '@/components/common/Button'
 
 type Channel = { sample: string; name: string; note: string }
 

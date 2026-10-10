@@ -15,9 +15,9 @@ function ok(name: string, cond: boolean, extra = '') {
 }
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
-const ghost = read('src/components/useNovelEditorGhost.ts')
+const ghost = read('src/components/editor/useNovelEditorGhost.ts')
 const inline = read('src/lib/aiTasks/inline.ts')
-const editor = read('src/components/NovelEditor.tsx')
+const editor = read('src/components/editor/NovelEditor.tsx')
 
 // ---------- ① 🔴 默认关闭 ----------
 {

@@ -27,14 +27,14 @@
 //   TXT 0.9ms｜MD 2.3ms｜平台版 3.6ms｜大表格 0.4ms｜AI 摘要 0.5ms｜整书包 0.6ms
 //   注：冷启动与建索引两次跑有可见抖动（6.4 / 16.3ms、150 / 121ms）——这正是阈值要留 6 倍+ 的原因。
 import * as db from '../src/lib/db'
-import { SearchEngine } from '../src/lib/search'
-import { chaptersToTxt, bookToMarkdown, bookToPlatformText } from '../src/lib/exporter'
-import { buildChapterDigest } from '../src/lib/aiContext'
-import { buildBookEvidencePack } from '../src/lib/bookEvidence'
-import { countWords } from '../src/lib/textStats'
+import { SearchEngine } from '../src/lib/search/search'
+import { chaptersToTxt, bookToMarkdown, bookToPlatformText } from '../src/lib/storage/exporter'
+import { buildChapterDigest } from '../src/lib/ai/aiContext'
+import { buildBookEvidencePack } from '../src/lib/audit/bookEvidence'
+import { countWords } from '../src/lib/editor/textStats'
 import { chunkChapter } from '../src/lib/semantic/chunk'
-import { parseImportText, mapHeaders, matrixToRows } from '../src/lib/tableIO'
-import { scanText } from '../src/lib/sensitiveWords'
+import { parseImportText, mapHeaders, matrixToRows } from '../src/lib/storage/tableIO'
+import { scanText } from '../src/lib/editor/sensitiveWords'
 import type { Chapter, Volume, TableRow, CardRecord, TabDef } from '../src/lib/types'
 
 let pass = 0, fail = 0

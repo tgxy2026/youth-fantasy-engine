@@ -15,7 +15,7 @@ import path from 'node:path'
 import * as db from '../src/lib/db'
 import {
   loadAliases, saveAliases, invalidateAliasCache, sanitizeAliases, labelMapOf, aliasKeyOf,
-} from '../src/lib/fieldAlias'
+} from '../src/lib/settings/fieldAlias'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0
@@ -31,13 +31,13 @@ const CARD_KEYS = ['一、基础信息::姓名', '一、基础信息::人物状�
 
 async function main() {
   __resetMockStores()
-  const search = read('src/components/SettingSearch.tsx')
+  const search = read('src/components/settings/SettingSearch.tsx')
 
   // ---------- ① 检索页确实接了别名（只读展示） ----------
-  ok('源码闸：检索页引入了别名读取', (search.includes("from '../lib/fieldAlias'") || search.includes("from '@/lib/fieldAlias'")) && search.includes('loadAliases'))
+  ok('源码闸：检索页引入了别名读取', (search.includes("from '../lib/fieldAlias'") || search.includes("from '@/lib/settings/fieldAlias'")) && search.includes('loadAliases'))
   ok('🔴 源码闸：卡片字段键与「字段名」按钮**同源**（moduleAliasTargets，别自己再拼一份）',
     search.includes("import { moduleAliasTargets } from './FieldAliasButton'")
-    || search.includes("import { moduleAliasTargets } from '@/components/FieldAliasButton'"))
+    || search.includes("import { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'"))
   ok('源码闸：DocField 带 alias（只读显示名）', /alias\?: string/.test(search))
   ok('🔴 源码闸：展示一律走 `f.alias ?? f.label`（字段名 + 占位符至少两处）',
     (search.match(/f\.alias \?\? f\.label/g) ?? []).length >= 2)
@@ -80,7 +80,7 @@ async function main() {
   db.setCurrentProject('')
 
   // ---------- ⑤ 源码闸：别名缓存必须带项目 id ----------
-  const fa = read('src/lib/fieldAlias.ts')
+  const fa = read('src/lib/settings/fieldAlias.ts')
   ok('🔴 源码闸：缓存条目带 pid', /new Map<string, \{ pid: string; map: AliasMap \}>/.test(fa))
   ok('🔴 源码闸：取缓存前比对 pid（`hit.pid === pid`）', fa.includes('hit.pid === pid'))
   ok('源码闸：导出跨表订阅 hook（检索页要同时看多张表）', fa.includes('export function useAliasRevision'))

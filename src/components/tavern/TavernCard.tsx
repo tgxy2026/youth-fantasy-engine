@@ -27,12 +27,12 @@
  *   「从小说角色导入」弹窗在 `TavernCardNovelImportDialog.tsx`。
  */
 
-import HelpPopover from '@/components/HelpPopover'
+import HelpPopover from '@/components/common/HelpPopover'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
-import AIDataSourceNote from '@/components/AIDataSourceNote'
-import { Button } from '@/components/Button'
-import { Modal } from '@/components/Modal'
-import { LoadingState } from '@/components/LoadingState'
+import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
+import { Button } from '@/components/common/Button'
+import { Modal } from '@/components/dialogs/Modal'
+import { LoadingState } from '@/components/common/LoadingState'
 import { storyDisplayName } from '@/lib/tavern/story'
 import { cardStoryId } from '@/lib/tavern/types'
 import { interviewToCard } from '@/lib/tavern/interview'
@@ -44,8 +44,8 @@ import TavernCardChapters from '@/components/tavern/TavernCardChapters'
 import TavernCardMemoryPanel from '@/components/tavern/TavernCardMemoryPanel'
 import TavernCardJournalPanel from '@/components/tavern/TavernCardJournalPanel'
 import TavernCardNovelImportDialog from '@/components/tavern/TavernCardNovelImportDialog'
-import { useTavernCardModel } from '@/components/useTavernCardModel'
-import { useSaveHotkey } from '@/lib/useSaveHotkey'
+import { useTavernCardModel } from '@/components/tavern/useTavernCardModel'
+import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 
 export default function TavernCard() {
   const {

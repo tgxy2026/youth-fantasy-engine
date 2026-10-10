@@ -11,9 +11,9 @@
 import * as db from '../src/lib/db'
 import {
   applyChapterRewrite, expectedRewriteWords, isSuspectRewrite, listRewriteCandidates,
-} from '../src/lib/chapterRewrite'
-import { chapterFingerprint } from '../src/lib/aiRunLedger'
-import { CHAPTER_REWRITE_META, cleanChapterOutput, type ChapterRewriteAction } from '../src/lib/aiTasks'
+} from '../src/lib/editor/chapterRewrite'
+import { chapterFingerprint } from '../src/lib/ai/aiRunLedger'
+import { CHAPTER_REWRITE_META, cleanChapterOutput, type ChapterRewriteAction } from '../src/lib/ai/aiTasks'
 import { __resetMockStores } from './mock-memory'
 import fs from 'node:fs'
 import type { Chapter, Volume } from '../src/lib/types'
@@ -134,13 +134,13 @@ await db.saveChapter(chap('c3', 'v2', 0, '第二章 承', '原文二。'.repeat(
 
   // C1（2.4.2）拆分后：实现分散在 7 个文件 —— 拼接后再断言（口径不变）
   const panel = [
-    'src/components/CreativeWritingPanel.tsx',
-    'src/components/creativeWritingParts.tsx',
-    'src/components/useCreativeWritingModel.ts',
-    'src/components/CreativeSetupSection.tsx',
-    'src/components/CreativeFlowSections.tsx',
-    'src/components/CreativeRewriteSection.tsx',
-    'src/components/CreativeDialogs.tsx',
+    'src/components/creative/CreativeWritingPanel.tsx',
+    'src/components/creative/creativeWritingParts.tsx',
+    'src/components/creative/useCreativeWritingModel.ts',
+    'src/components/creative/CreativeSetupSection.tsx',
+    'src/components/creative/CreativeFlowSections.tsx',
+    'src/components/creative/CreativeRewriteSection.tsx',
+    'src/components/creative/CreativeDialogs.tsx',
   ].map(f => fs.readFileSync(f, 'utf8')).join('\n')
   ok('🔴 异常结果在界面上被锁住替换（不是只弹个提示就放开）',
     /disabled=\{!!s\.rewrite\.suspect\}/.test(panel))

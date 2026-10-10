@@ -10,7 +10,7 @@ import * as db from '../src/lib/db'
 import {
   TASK_ROLES, ROLE_LABEL, ROLE_HINT, DEFAULT_ROUTING,
   loadRouting, saveRouting, resolveProviderFor, requireProviderFor, rolesOf,
-} from '../src/lib/aiRouting'
+} from '../src/lib/ai/aiRouting'
 import { getActiveProvider, type AIProvider } from '../src/lib/ai'
 import { __resetMockStores } from './mock-memory'
 import fs from 'node:fs'
@@ -126,7 +126,7 @@ async function main() {
       : path.join(process.cwd(), '..', 'src')
     const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), 'utf8')
     const CASES: [string, string][] = [
-      ['lib/autoContinue.ts', 'create'],
+      ['lib/outline/autoContinue.ts', 'create'],
       ['lib/aiTasks/creative.ts', 'create'],
       ['lib/aiTasks/inspiration.ts', 'create'],
       ['lib/aiTasks/rewrite.ts', 'create'],

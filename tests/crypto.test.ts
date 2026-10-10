@@ -8,7 +8,7 @@
  * 覆盖：往返一致、信封格式、错误密码必须抛、密文篡改必须抛、随机性（salt/iv 不复用）、
  *       边界输入（空对象/中文/emoji/长文本）、残缺信封的失败方式、isEncrypted 判据。
  */
-import { encryptJSON, decryptJSON, isEncrypted, type EncryptedEnvelope } from '../src/lib/crypto'
+import { encryptJSON, decryptJSON, isEncrypted, type EncryptedEnvelope } from '../src/lib/storage/crypto'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

@@ -5,7 +5,7 @@
 // ⚠️ 关键前提：restoreBackup 内部会为卷/章重新生成 id（applyBundleToProject），
 //    故所有比对必须按「结构 + 内容」而非 id，否则会得到假阳性。
 import * as db from '../src/lib/db'
-import { createDemoProject } from '../src/lib/seedData'
+import { createDemoProject } from '../src/lib/app/seedData'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0

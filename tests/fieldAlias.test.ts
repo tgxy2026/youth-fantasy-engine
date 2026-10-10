@@ -17,7 +17,7 @@ import {
   sanitizeAliases,
   saveAliases,
   validateAliasInput,
-} from '../src/lib/fieldAlias'
+} from '../src/lib/settings/fieldAlias'
 import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
 

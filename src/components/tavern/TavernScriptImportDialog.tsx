@@ -17,11 +17,11 @@
  * 本组件只负责「搬运 + 确认 + 选择落点」，正确性全在 `lib/tavern/storyImport.ts`（有全量单测）。
  */
 import { useEffect, useMemo, useState } from 'react'
-import { Button } from '@/components/Button'
-import { Modal } from '@/components/Modal'
-import AutoTextarea from '@/components/AutoTextarea'
-import { showToast, copyText } from '@/components/dialogs'
-import { uid } from '@/lib/id'
+import { Button } from '@/components/common/Button'
+import { Modal } from '@/components/dialogs/Modal'
+import AutoTextarea from '@/components/common/AutoTextarea'
+import { showToast, copyText } from '@/components/dialogs/dialogs'
+import { uid } from '@/lib/app/id'
 import {
   parseStoryImport, IMPORT_TEMPLATE, findAppendConflicts, conflictText,
   entriesToAppend, willMigrateSetting, draftEntryToWorldEntry, type ParseResult,
@@ -32,7 +32,7 @@ import {
 } from '@/lib/tavern/story'
 import { createScript, listScriptsByStory } from '@/lib/tavern/script'
 import type { TavernStoryIndexItem } from '@/lib/tavern/types'
-import { pickImportTargetId } from '@/lib/viewSelectors'
+import { pickImportTargetId } from '@/lib/app/viewSelectors'
 
 type Mode = 'create' | 'append'
 

@@ -11,7 +11,7 @@
 import {
   normalizeProxyInput, sanitizeBypassList, getStoredNetProxy,
   applyNetProxy, applyStoredNetProxy, storeNetProxy, DEFAULT_BYPASS,
-} from '../src/lib/netPrefs'
+} from '../src/lib/settings/netPrefs'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

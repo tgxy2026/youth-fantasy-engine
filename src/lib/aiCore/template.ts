@@ -6,9 +6,9 @@
  */
 
 import * as db from '@/lib/db'
-import { parsePlainObject } from '@/lib/aiParse'
+import { parsePlainObject } from '@/lib/ai/aiParse'
 import { chat } from '@/lib/aiCore/chat'
-import { requireProviderFor } from '@/lib/aiRouting'
+import { requireProviderFor } from '@/lib/ai/aiRouting'
 import { composeSystemPrompt, CHAT_TIMEOUT_MS, type ChatMessage } from '@/lib/aiCore/core'
 import { FILL_CONTEXT_SYS, type FillContext } from '@/lib/aiCore/prompts'
 

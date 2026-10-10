@@ -9,12 +9,12 @@ import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
 import {
   DEFAULT_BIBLE_COUNTS, cleanChapterOutput, collectBibleEntities, stripInlineMarkdown, type BibleCounts,
-} from '../src/lib/aiTasks'
-import { commitOutline, loadChapterOutlines } from '../src/lib/aiWorkflow'
-import { CREATIVE_SEED_SPEC, seedFromFilled } from '../src/lib/creativeSeed'
+} from '../src/lib/ai/aiTasks'
+import { commitOutline, loadChapterOutlines } from '../src/lib/ai/aiWorkflow'
+import { CREATIVE_SEED_SPEC, seedFromFilled } from '../src/lib/creative/creativeSeed'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
-import { fillChapterRanges, formatChapterRange, parseChapterRange } from '../src/lib/outlineCard'
-import type { OutlineResult } from '../src/lib/aiTasks'
+import { fillChapterRanges, formatChapterRange, parseChapterRange } from '../src/lib/outline/outlineCard'
+import type { OutlineResult } from '../src/lib/ai/aiTasks'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

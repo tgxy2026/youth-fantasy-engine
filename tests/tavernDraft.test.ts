@@ -7,7 +7,7 @@
 import {
   harvestItems, webSearch, renderSearchResults, searchBlockedReason, BOCHA_ENDPOINT,
   type SearchSettings,
-} from '../src/lib/webSearch'
+} from '../src/lib/ai/webSearch'
 import {
   prepareDraftMaterial, buildCardDraftSystem, buildCardDraftUser, parseCardDraft,
   mergeCardDraft, isEmptyCardDraft, draftCard, EMPTY_CARD_DRAFT, type CardDraft,
@@ -19,7 +19,7 @@ import {
 } from '../src/lib/tavern/interview'
 import { saveProviders, saveActiveId } from '../src/lib/ai'
 import type { ChatFn } from '../src/lib/tavern/provider'
-import { describeSource, type DraftSource } from '../src/lib/draftMaterial'
+import { describeSource, type DraftSource } from '../src/lib/editor/draftMaterial'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0

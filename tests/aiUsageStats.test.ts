@@ -5,8 +5,8 @@
 //   ② 容错（空输入、老数据无 calls、空模型名 / NaN 耗时）；
 //   ③ 🔴 位置与接线闸：统计在「模型设置」、账本入口在「创作轨迹」、关于页已移除。
 import fs from 'node:fs'
-import { summarizeUsage, localDayOf } from '../src/lib/aiUsageStats'
-import type { AiRun } from '../src/lib/aiRunTypes'
+import { summarizeUsage, localDayOf } from '../src/lib/ai/aiUsageStats'
+import type { AiRun } from '../src/lib/ai/aiRunTypes'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -78,16 +78,16 @@ console.log('\n—— aiUsageStats 用例开始 ——')
   ok('🔴 被拒调用标 content_filter（统计页据此显示「被拒 N 次」）',
     chat.includes("finishReason: 'content_filter'"))
 
-  const ledger = fs.readFileSync('src/lib/aiRunLedger.ts', 'utf8')
+  const ledger = fs.readFileSync('src/lib/ai/aiRunLedger.ts', 'utf8')
   ok('🔴 createRun 接上用量总线', ledger.includes('bindUsageSink()'))
   ok('🔴 finishRun 摘掉总线（防下一次任务塞进已结束的）', ledger.includes('setUsageSink(null)'))
 
   ok('🔴 统计面板挂在「模型设置」页',
-    fs.readFileSync('src/components/ModelSettingsPanel.tsx', 'utf8').includes('<AIUsagePanel />'))
+    fs.readFileSync('src/components/settings/ModelSettingsPanel.tsx', 'utf8').includes('<AIUsagePanel />'))
   ok('🔴 运行账本入口在「创作轨迹」页',
-    fs.readFileSync('src/components/TrajectoryPanel.tsx', 'utf8').includes('<RunLedgerPanel'))
+    fs.readFileSync('src/components/audit/TrajectoryPanel.tsx', 'utf8').includes('<RunLedgerPanel'))
   ok('🔴 关于页已移除账本入口',
-    !fs.readFileSync('src/components/AboutPage.tsx', 'utf8').includes('RunLedgerPanel'))
+    !fs.readFileSync('src/components/app/AboutPage.tsx', 'utf8').includes('RunLedgerPanel'))
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 共 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)

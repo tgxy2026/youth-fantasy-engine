@@ -1,9 +1,9 @@
 // ============ 存储层 · 项目（CRUD / 统计 / 导出导入 / 全量装载）============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from '@/lib/types'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import type { TavernReport } from '@/lib/tavern/types'
-import type { AiRun } from '@/lib/aiRunTypes'
+import type { AiRun } from '@/lib/ai/aiRunTypes'
 import { ops, currentProjectId } from '@/lib/db/core'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
 import { type Snapshot, isAISnapshot } from '@/lib/db/chapters'
@@ -16,7 +16,7 @@ import type { DailyStat } from '@/lib/db/meta'
 import { clearProjectVectors } from '@/lib/semantic/store'
 import {
   clearProjectDocs, collectDocsForBundle, restoreDocsFromBundle, type KbBundleDoc,
-} from '@/lib/knowledgeBase'
+} from '@/lib/search/knowledgeBase'
 
 // ============ 项目 ============
 // 旧版项目形态 'lite'(精简) / 'minimal'(极简) 已移除；把存储中残留的旧值归一化为 'full'

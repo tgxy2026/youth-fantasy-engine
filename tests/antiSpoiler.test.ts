@@ -10,8 +10,8 @@
 // 而端到端验的是**真实失效模式**（漏登记 → 泄漏），顺带覆盖渲染层的兜底路径。
 // 反例对照（默认档位必须**能**看见）是必须的：否则「没泄漏」可能只是因为数据压根没进去。
 import * as db from '../src/lib/db'
-import { createDemoProject } from '../src/lib/seedData'
-import { buildProjectContext } from '../src/lib/aiContext'
+import { createDemoProject } from '../src/lib/app/seedData'
+import { buildProjectContext } from '../src/lib/ai/aiContext'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0

@@ -2,11 +2,11 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #23 段）。
 // 🔴 字段键从 flow/fieldMap 的 KIND_MAP 派生（见 SLOT_HINT 注释）—— 只读，不改。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/aiParse'
-import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { KIND_MAP } from '@/lib/flow/fieldMap'
 import { longStream } from '@/lib/aiTasks/stream'
-import type { PromptDef } from '@/lib/promptSettings'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 // ---------- 颉文姬⑤：本章设定补登（实体抽取） ----------
 //

@@ -14,7 +14,7 @@
 //   若顺序颠倒（numbering 先跑）→ 那时行还挂在旧 tab `chapter-master` 上，
 //   numbering 按 `chapter-vol-<卷id>` 取行会取不到，第二卷的章会保留旧值「第1章」→ 断言失败。
 import * as db from '../src/lib/db'
-import { createDemoProject } from '../src/lib/seedData'
+import { createDemoProject } from '../src/lib/app/seedData'
 import { __resetMockStores, __dumpAll, memoryOps } from './mock-memory'
 import type { TableRow, Volume, Chapter } from '../src/lib/types'
 

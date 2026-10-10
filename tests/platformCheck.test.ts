@@ -7,9 +7,9 @@
 //      否则断言自己会命中自己）。这是「不做反检测 / 不判定过审」红线的机器守护。
 import type { Chapter } from '../src/lib/types'
 import { readFileSync } from 'node:fs'
-import { chapterFacts, scanByPlatform, precheckBook } from '../src/lib/platformCheck'
-import { PLATFORM_RULES, platformRuleOf, isFocused } from '../src/lib/platformRules'
-import { BUILTIN_WORDS } from '../src/lib/sensitiveWords'
+import { chapterFacts, scanByPlatform, precheckBook } from '../src/lib/audit/platformCheck'
+import { PLATFORM_RULES, platformRuleOf, isFocused } from '../src/lib/app/platformRules'
+import { BUILTIN_WORDS } from '../src/lib/editor/sensitiveWords'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {
@@ -82,7 +82,7 @@ function mkCh(id: string, title: string, content: string): Chapter {
   // 禁词只写在这里 —— 注释里一旦出现这些字面量，下面「读源码全文」的断言会自己红
   const banned = ['命中率', '规避检测', '反检测', '洗稿', '过审率', '合格', '不合格']
   const readAll = (p: string) => { try { return readFileSync(p, 'utf8') } catch { return '' } }
-  const sources = ['src/lib/platformRules.ts', 'src/lib/platformCheck.ts', 'src/components/PlatformCheckPanel.tsx']
+  const sources = ['src/lib/app/platformRules.ts', 'src/lib/audit/platformCheck.ts', 'src/components/audit/PlatformCheckPanel.tsx']
   for (const s of sources) {
     const src = readAll(s)
     const hit = banned.filter(w => src.includes(w))

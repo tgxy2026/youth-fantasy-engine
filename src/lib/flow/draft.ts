@@ -9,9 +9,9 @@
  *
  * ⚠️ 本文件**不触达 db 写入**（除了读登记表做判重）—— 落库一律在 `commit.ts`，且必须经用户勾选。
  */
-import type { ExtractedEntity, SettingEntityType } from '@/lib/aiTasks'
+import type { ExtractedEntity, SettingEntityType } from '@/lib/ai/aiTasks'
 import { TABS } from '@/lib/schema'
-import { classify, loadRegistry, normName, type EntityRegistry } from '@/lib/settingLedger'
+import { classify, loadRegistry, normName, type EntityRegistry } from '@/lib/settings/settingLedger'
 import { KIND_MAP, resolveFieldPath, resolveSlot, targetTabOf } from '@/lib/flow/fieldMap'
 import type { DraftBundle, DraftConflict, DraftField, DraftRow, DraftStatus } from '@/lib/flow/types'
 

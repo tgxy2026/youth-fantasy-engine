@@ -4,11 +4,11 @@
 // 🔴 生成与落库严格分离：本文件只产出内存对象，**绝不触达 db**；写库一律由用户在草稿界面上确认。
 // 🔴 输出与「一键拆书」的 ExtractedEntity[] 同形状（复用 lib/flow 的判重→草稿→审阅→落库管线）。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseLooseObject, asText } from '@/lib/aiParse'
+import { parseLooseObject, asText } from '@/lib/ai/aiParse'
 import { longStream } from '@/lib/aiTasks/stream'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { SettingEntityType, ExtractedEntity } from '@/lib/aiTasks/extract'
-import type { PromptDef } from '@/lib/promptSettings'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 // ==================== 创意写作（全自动创作工作流 · 生成型入口）====================
 //

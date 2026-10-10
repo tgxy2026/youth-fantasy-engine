@@ -18,7 +18,7 @@
  *    别为了好看去重排缩进 —— 「逐行区间核对」靠它证明一个字没改。
  */
 import { type Dispatch, type SetStateAction } from 'react'
-import AutoTextarea from '@/components/AutoTextarea'
+import AutoTextarea from '@/components/common/AutoTextarea'
 import TavernCardStructField from '@/components/tavern/TavernCardStructField'
 import { PROFILE_SPECS, CONDUCT_SPECS } from '@/lib/tavern/cardFields'
 import { readCardField, writeCardField, type FreeCharacter } from '@/lib/tavern/types'

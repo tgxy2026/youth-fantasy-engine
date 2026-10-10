@@ -3,8 +3,8 @@
 // ⚠️ 这里跑的是**运行时数据迁移**（打开项目后执行），与 ./idbMigrations 的 IndexedDB schema 迁移是两件事。
 // 🔴 runMigrations 里的调用次序＝依赖次序（types → ledger → numbering → geomaps），不可调换。
 import type { CardRecord, TableRow } from '@/lib/types'
-import { uid } from '@/lib/id'
-import { chapterSeqMap, flattenChapters } from '@/lib/chapterSeq'
+import { uid } from '@/lib/app/id'
+import { chapterSeqMap, flattenChapters } from '@/lib/outline/chapterSeq'
 import { ops, currentProjectId } from '@/lib/db/core'
 import { migrateProjectTypes } from '@/lib/db/projects'
 import { getAllVolumes, VOL_LEDGER_PREFIX } from '@/lib/db/volumes'

@@ -8,8 +8,8 @@
 // 另外锁住"只在摘要变化时才回填"这条性能契约（保存章节是很热的路径）。
 import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
-import { backfillOutlineEvent, syncChapterMaster } from '../src/lib/chapterMaster'
-import { chapterNoOf, outlineCardName, outlineEventKey } from '../src/lib/outlineCard'
+import { backfillOutlineEvent, syncChapterMaster } from '../src/lib/outline/chapterMaster'
+import { chapterNoOf, outlineCardName, outlineEventKey } from '../src/lib/outline/outlineCard'
 import type { CardRecord, Chapter } from '../src/lib/types'
 
 let pass = 0, fail = 0

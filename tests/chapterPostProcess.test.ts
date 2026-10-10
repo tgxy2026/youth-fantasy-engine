@@ -6,7 +6,7 @@
 //   ③ 🔴 **源码闸** —— 只追加不覆盖、不凭空建条目、走 aiParse（禁裸 JSON.parse）。
 import fs from 'node:fs'
 import { parseChapterChanges } from '../src/lib/aiTasks/postProcess'
-import { matchForeshadows, matchRelations, matchStatuses } from '../src/lib/chapterPostProcess'
+import { matchForeshadows, matchRelations, matchStatuses } from '../src/lib/outline/chapterPostProcess'
 import type { CardRecord, TableRow } from '../src/lib/types'
 
 let pass = 0, fail = 0
@@ -110,7 +110,7 @@ console.log('\n—— chapterPostProcess 用例开始 ——')
 
 // ---------- ⑤ 🔴 源码闸 ----------
 {
-  const src = fs.readFileSync('src/lib/chapterPostProcess.ts', 'utf8')
+  const src = fs.readFileSync('src/lib/outline/chapterPostProcess.ts', 'utf8')
   ok('🔴 只追加不覆盖：伏笔走 appendCode',
     src.includes('appendCode(row.data[col], raw.code)'))
   ok('🔴 关系走 appendNote（追加，不覆盖属性列）',

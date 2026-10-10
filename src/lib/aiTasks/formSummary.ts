@@ -4,7 +4,7 @@
 // 🔴 只收「值确实是对象」的页签，**不在这里摊平**：模型按「页签 → 模块 → 字段」输出，
 //    这层拍平会把嵌套对象当空值全丢（2026-09-18 实测 5 张表全丢）。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseLooseObject } from '@/lib/aiParse'
+import { parseLooseObject } from '@/lib/ai/aiParse'
 import { formFieldsPrompt, summaryFormTabs } from '@/lib/flow/formMap'
 import { longStream } from '@/lib/aiTasks/stream'
 

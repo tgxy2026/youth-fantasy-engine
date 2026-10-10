@@ -9,7 +9,7 @@
 //   ② 接线 —— `flushDesktopSync` 真的走它，且失败分支是 `return`（保留 dirty）
 //      而不是继续往下把 dirty 清掉。
 import fs from 'node:fs'
-import { interpretSaveSyncResult } from '../src/lib/desktop'
+import { interpretSaveSyncResult } from '../src/lib/app/desktop'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {
@@ -40,7 +40,7 @@ console.log('\n▶ desktopSaveVerdict')
 
 // ---------- 2. 接线（抽了不用 = 白抽，单测看不出来）----------
 {
-  const src = fs.readFileSync('src/lib/desktop.ts', 'utf8')
+  const src = fs.readFileSync('src/lib/app/desktop.ts', 'utf8')
   const at = src.indexOf('export function flushDesktopSync()')
   ok('前置：能找到 flushDesktopSync', at > 0)
   const body = src.slice(at, at + 900)

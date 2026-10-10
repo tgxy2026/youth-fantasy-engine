@@ -23,7 +23,7 @@
  * 本文件是纯逻辑，不含 React。
  */
 import { STORY_NAME_MAX, STORY_SETTING_MAX, storyEntriesOf } from '@/lib/tavern/story'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import { SCRIPT_FIELD_MAX } from '@/lib/tavern/script'
 import { type WorldEntry, type EntryState, ENTRY_STATE_LABEL, emptyWorldEntry } from '@/lib/tavern/worldBook'
 import type { ScriptDraftFields } from '@/lib/tavern/script'

@@ -11,7 +11,7 @@
 //    （`aiContext` 能安全 import 本文件，正是因为它只出不进。）
 
 import * as db from '@/lib/db'
-import { clipText } from '@/lib/textClip'
+import { clipText } from '@/lib/editor/textClip'
 import { recallRelevant, type RecallHit } from '@/lib/semantic/recall'
 import type { VecKind } from '@/lib/semantic/store'
 import { resolveEmbedConfig } from '@/lib/semantic/settings'

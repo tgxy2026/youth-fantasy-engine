@@ -16,27 +16,27 @@
  * 这一条必须显式写在界面上。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSaveHotkey } from '@/lib/useSaveHotkey'
-import HelpPopover from '@/components/HelpPopover'
-import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
+import HelpPopover from '@/components/common/HelpPopover'
+import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
-import { showToast } from '@/components/dialogs'
-import { Button } from '@/components/Button'
-import { LoadingState } from '@/components/LoadingState'
-import AutoTextarea from '@/components/AutoTextarea'
-import NumberField from '@/components/NumberField'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/DraftBits'
-import { buildProjectContext } from '@/lib/aiContext'
+import { showToast } from '@/components/dialogs/dialogs'
+import { Button } from '@/components/common/Button'
+import { LoadingState } from '@/components/common/LoadingState'
+import AutoTextarea from '@/components/common/AutoTextarea'
+import NumberField from '@/components/common/NumberField'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/editor/DraftBits'
+import { buildProjectContext } from '@/lib/ai/aiContext'
 import {
   getWorldSetting, saveWorldSetting, draftWorldSetting, worldToText,
   isEmptyWorld, worldEntriesOf, buildPlotWorldBook,
   type WorldSetting,
 } from '@/lib/tavern/world'
 import { entryStateOf, type EntryState } from '@/lib/tavern/worldBook'
-import EntryStatePicker from '@/components/EntryStatePicker'
-import { useTavernQuota } from '@/components/useTavernQuota'
+import EntryStatePicker from '@/components/sheets/EntryStatePicker'
+import { useTavernQuota } from '@/components/tavern/useTavernQuota'
 import { fmtWindow } from '@/lib/tavern/quotas'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import type { DraftSource } from '@/lib/tavern/draft'
 
 export default function TavernWorld() {

@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
-import { SAMPLING_FIELDS, samplingOptionsOf, type SamplingValues } from '../src/lib/modelSampling'
+import { SAMPLING_FIELDS, samplingOptionsOf, type SamplingValues } from '../src/lib/ai/modelSampling'
 
 const readSrc = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8')
 
@@ -134,7 +134,7 @@ const full: SamplingValues = {
   ok('🔴 酒馆：判定由父组件统一传入，且用 type（不是 local —— LM Studio 也是 local）',
     readSrc('src/components/tavern/TavernControl.tsx').includes("ollamaNative={m.activeProvider?.type === 'ollama'}"))
 
-  const cfg = readSrc('src/components/AIConfigPanel.tsx')
+  const cfg = readSrc('src/components/settings/AIConfigPanel.tsx')
   ok('🔴 模型配置页：「文本生成微调」区块在位且位于自定义系统提示词之后',
     cfg.includes('文本生成微调') &&
     cfg.indexOf('文本生成微调') > cfg.indexOf('自定义系统提示词'))
@@ -152,11 +152,11 @@ const full: SamplingValues = {
   // 🔴 三处灰显必须共用同一文案与样式，判据也必须只有一个真源 ——
   //    分开写就会「一处改了判据、另两处没跟上」（2026-10-09 审计即因此发现本地 OpenAI 兼容漏判）。
   ok('🔴 三处灰显共用 SamplingUnavailable（文案与样式只此一处）',
-    ['src/components/AIConfigPanel.tsx', 'src/components/tavern/TavernControlBasics.tsx', 'src/components/tavern/TavernControlModes.tsx']
+    ['src/components/settings/AIConfigPanel.tsx', 'src/components/tavern/TavernControlBasics.tsx', 'src/components/tavern/TavernControlModes.tsx']
       .every(f => readSrc(f).includes('SamplingUnavailable')))
   ok('🔴 灰显判据只有一个真源 isOllamaSamplingChannel（定义 + 下发处都调它）',
-    readSrc('src/lib/modelSampling.ts').includes('export function isOllamaSamplingChannel') &&
-    readSrc('src/lib/modelSampling.ts').includes('if (isOllamaSamplingChannel(p))'))
+    readSrc('src/lib/ai/modelSampling.ts').includes('export function isOllamaSamplingChannel') &&
+    readSrc('src/lib/ai/modelSampling.ts').includes('if (isOllamaSamplingChannel(p))'))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

@@ -9,7 +9,7 @@
  *   原作品后续改动**不会**影响这一局引用到的世界。
  */
 import * as db from '@/lib/db'
-import type { WorldPackTable } from '@/lib/worldTypes'
+import type { WorldPackTable } from '@/lib/world/worldTypes'
 import type { RunWorldRef } from '@/lib/run/runTypes'
 
 /** 渲染上限（字符）：世界资料可能很长，超了就截断 —— 界面上标注被截断，别让模型以为「世界就这么大」 */

@@ -16,7 +16,7 @@ import {
   removeFingerprint, activeFingerprintNote, invalidateFingerprintCache,
   countPunctuation, countFourCharRuns, countDialogueWords,
   MIN_SAMPLE_WORDS, STYLE_FINGERPRINT_PROMPTS, type StyleProfile,
-} from '../src/lib/styleFingerprint'
+} from '../src/lib/ai/styleFingerprint'
 import type { AIProvider } from '../src/lib/ai'
 import { __resetMockStores } from './mock-memory'
 
@@ -237,7 +237,7 @@ async function main() {
       rwLine.indexOf('fpNote') > 0 && rwLine.indexOf("deAiGenerateRule('full')") > rwLine.indexOf('fpNote'), rwLine.trim().slice(0, 200))
     ok('整章改写：空档时数组里不塞空串', rwLine.includes("...(fpNote ? [fpNote] : [])"))
 
-    const ac = read('src/lib/autoContinue.ts')
+    const ac = read('src/lib/outline/autoContinue.ts')
     const bs = ac.slice(ac.indexOf('function buildSysPrompt'), ac.indexOf('// ============ 去 AI 味儿'))
     const deAt = bs.indexOf("deAiGenerateRule('full')")
     const fpAt = bs.indexOf("...(fpNote ? ['', fpNote] : []),")
@@ -257,13 +257,13 @@ async function main() {
 
   // ---------- ⑧ 四处注册接到位 ----------
   {
-    const tasks = read('src/lib/aiTasks.ts')
-    ok('门面 import 了 STYLE_FINGERPRINT_PROMPTS', tasks.includes("from './styleFingerprint'") || tasks.includes("from '@/lib/styleFingerprint'"))
+    const tasks = read('src/lib/ai/aiTasks.ts')
+    ok('门面 import 了 STYLE_FINGERPRINT_PROMPTS', tasks.includes("from './styleFingerprint'") || tasks.includes("from '@/lib/ai/styleFingerprint'"))
     ok("PROMPT_ORDER 里登记了 'style-fingerprint'", tasks.includes("'style-fingerprint',"))
     ok('PROMPT_SETS 里挂上了', tasks.includes('STYLE_FINGERPRINT_PROMPTS,'))
-    ok('数据源表里登记了 style-fingerprint', read('src/lib/aiDataSources.ts').includes("'style-fingerprint':"))
+    ok('数据源表里登记了 style-fingerprint', read('src/lib/ai/aiDataSources.ts').includes("'style-fingerprint':"))
     ok('界面挂了 AIDataSourceNote（否则「表里没人引用的条目」会被闸门拦下）',
-      read('src/components/StyleProfileDialog.tsx').includes('<AIDataSourceNote feature="style-fingerprint" />'))
+      read('src/components/settings/StyleProfileDialog.tsx').includes('<AIDataSourceNote feature="style-fingerprint" />'))
   }
 
   console.log(`\nstyleFingerprint: ${pass} passed, ${fail} failed`)

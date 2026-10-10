@@ -155,7 +155,7 @@ if (!SRC) {
   const SIZE_FROZEN: Record<string, { max: number; why: string }> = {
     'src/data/seedContent.ts': { max: 8300, why: '纯正文数据（示范项目三卷 21 章全文），无逻辑' },
     'src/data/materialData.ts': { max: 6300, why: '纯资料数据（素材库条目），无逻辑' },
-    'src/lib/seedData.ts': { max: 1600, why: '示范项目种子工厂：工厂码与卷章数据混排，⚠️ 已列 2.3.0 待拆分（纯数据应落 src/data/）' },
+    'src/lib/app/seedData.ts': { max: 1600, why: '示范项目种子工厂：工厂码与卷章数据混排，⚠️ 已列 2.3.0 待拆分（纯数据应落 src/data/）' },
     'src/data/protocolLegacy.ts': { max: 2400, why: '纯数据：历代协议全文冻存（每版约 140 行，随协议版本单调增长）' },
   }
   const over: string[] = []
@@ -247,8 +247,12 @@ if (!SRC) {
   //    aiParse 的「剥代码块 / 切最外层大括号」对它们没有意义）。
   //    故闸的作用域 = AI 链路模块 + `src/lib/ai*`；其余位置**不算违规**。
   const AI_CHAIN = (r: string) =>
-    /^src\/lib\/ai(Tasks|Workflow|Parse|Context|Core)?\//.test(r) ||
-    /^src\/lib\/(ai|aiParse|aiTasks|aiWorkflow|autoContinue)\.ts$/.test(r) ||
+    // 3.0 目录整理（G3）：AI 管线从 lib 顶层集中到 `lib/ai/`
+    // （aiAssist / aiParse / aiTasks / aiWorkflow / contextLayers / promptGuard …）
+    /^src\/lib\/ai\//.test(r) ||
+    /^src\/lib\/ai(Tasks|Core)?\//.test(r) ||   // 既有子目录 aiCore/ · aiTasks/
+    /^src\/lib\/ai\.ts$/.test(r) ||             // 顶层门面（门面留在顶层，与 db.ts 同款）
+    /^src\/lib\/outline\/autoContinue\.ts$/.test(r) ||  // 自动续写（3.0 从顶层挪入 outline/）
     /^src\/lib\/(flow|bookbreak)\//.test(r) ||
     /^src\/lib\/tavern\/(engine|story|draft|vars)\.ts$/.test(r)
   /**
@@ -256,8 +260,12 @@ if (!SRC) {
    * 🔴 例外必须写清「为什么它不是红线要管的那种解析」，否则就是给自己开后门。
    */
   const JSON_PARSE_OK: Record<string, string> = {
-    'src/lib/aiParse.ts': '唯一合法出口 —— 本规则要保护的就是它，它自己当然要实现 JSON.parse',
+    'src/lib/ai/aiParse.ts': '唯一合法出口 —— 本规则要保护的就是它，它自己当然要实现 JSON.parse',
     'src/lib/aiCore/transport.ts': '2.8.0 起由 `ai.ts` 迁来。传输层两处**信封解析**：① SSE 行解析器（每行 `data:{…}` 或裸 JSON 增量）；② 服务商 HTTP 错误体（describeApiError 抠 error.message）—— 都不是「模型正文 → 结构化数据」',
+    // 3.0 目录整理（G3）后本闸作用域从「lib 顶层个别 ai 文件」扩到整个 `lib/ai/` —— 扫出这处既有用法。
+    // safeJsonText 解析的是**联网检索托管 API 的 HTTP 响应体**（各家字段名不一，失败即退回原文），
+    // 与 transport.ts 的「信封解析」同类，不是「模型正文 → 结构化数据」。
+    'src/lib/ai/webSearch.ts': '联网检索的 HTTP 响应体解析（safeJsonText），非模型文本解析；与 transport.ts 同属「信封解析」',
   }
   {
     const bad: string[] = []
@@ -302,15 +310,15 @@ if (!SRC) {
   // 🔴 这些 0 不是冗余 —— 它们是「这件事做完了」的证据。哪天有人又写回一个 any，
   //    这条闸立刻红（已实测：注入 1 个 any → 报「1 > 账本 0」）。
   const ANY_LEDGER: Record<string, number> = {
-    'src/lib/syncCore.ts': 0,
+    'src/lib/sync/syncCore.ts': 0,
     'src/lib/db/core.ts': 0,
-    'src/lib/desktopCloudSync.ts': 0,
-    'src/lib/syncTransport.ts': 0,
-    'src/lib/autoContinue.ts': 0,
+    'src/lib/sync/desktopCloudSync.ts': 0,
+    'src/lib/sync/syncTransport.ts': 0,
+    'src/lib/outline/autoContinue.ts': 0,
     'src/lib/ai.ts': 0,
-    'src/components/CloudFileSyncBar.tsx': 0,
-    'src/components/Sidebar.tsx': 0,
-    'src/lib/materialRef.ts': 0,
+    'src/components/app/CloudFileSyncBar.tsx': 0,
+    'src/components/app/Sidebar.tsx': 0,
+    'src/lib/search/materialRef.ts': 0,
   }
   {
     const re = /(?<![\w.$])any(?![\w$])/g
@@ -339,33 +347,33 @@ if (!SRC) {
   // 🔴 2.7.3 社区反馈：作者在「世界设定 / 力量体系」里按 Ctrl+S 毫无反应 —— 根因不是快捷键坏了，
   //    而是「每个编辑面板各抄一份 keydown 监听」：2.4.2 的 WorldSetSheet、2.7.2 的 ParallelSetSheet、
   //    酒馆的 TavernCard **一个都没抄**。「抄写型代码」的必然结局就是新增面板时漏一处，
-  //    故已把实现收敛到 `src/lib/useSaveHotkey.ts`；本条闸负责把「谁必须挂」钉死 ——
+  //    故已把实现收敛到 `src/lib/app/useSaveHotkey.ts`；本条闸负责把「谁必须挂」钉死 ——
   //    以后新增带「保存」按钮的面板，要么挂上，要么把文件名加进这张表并说清为什么不用挂。
   const HOTKEY_PANELS = [
-    'src/components/FormSheet.tsx',          // 一页一份的表单（作品信息等）
-    'src/components/CharacterSheet.tsx',     // 角色卡（主要 / 次要 / NPC）
-    'src/components/OutlineSheet.tsx',        // 分卷大纲 / 章节细纲
-    'src/components/WorldSetSheet.tsx',      // 世界设定 / 力量体系（母子结构）← 本次反馈的漏挂处
-    'src/components/ParallelSetSheet.tsx',   // 政治 / 经济基础 / 信仰 / 司法（并列结构）
+    'src/components/sheets/FormSheet.tsx',          // 一页一份的表单（作品信息等）
+    'src/components/world/CharacterSheet.tsx',     // 角色卡（主要 / 次要 / NPC）
+    'src/components/outline/OutlineSheet.tsx',        // 分卷大纲 / 章节细纲
+    'src/components/sheets/WorldSetSheet.tsx',      // 世界设定 / 力量体系（母子结构）← 本次反馈的漏挂处
+    'src/components/sheets/ParallelSetSheet.tsx',   // 政治 / 经济基础 / 信仰 / 司法（并列结构）
     'src/components/tavern/TavernCard.tsx',         // 酒馆 · 角色卡片
-    'src/components/useTableSheetModel.ts',  // 所有表格页签
-    'src/components/useNovelEditorModel.ts', // 正文写作台
+    'src/components/sheets/useTableSheetModel.ts',  // 所有表格页签
+    'src/components/editor/useNovelEditorModel.ts', // 正文写作台
     'src/components/tavern/TavernWorld.tsx',        // 酒馆 · 世界观设定
     'src/components/tavern/TavernScript.tsx',       // 酒馆 · 剧本 / 故事
     'src/components/tavern/TavernControl.tsx',      // 酒馆 · 控制面板
-    'src/components/AIPromptSettings.tsx',   // 模型设置 · 提示词（逐条存）
-    'src/components/AIWriterBudgetPanel.tsx',// 模型设置 · 额度
-    'src/components/NetworkProxyPanel.tsx',  // 模型设置 · 网络代理
+    'src/components/settings/AIPromptSettings.tsx',   // 模型设置 · 提示词（逐条存）
+    'src/components/settings/AIWriterBudgetPanel.tsx',// 模型设置 · 额度
+    'src/components/settings/NetworkProxyPanel.tsx',  // 模型设置 · 网络代理
   ]
   /**
    * ⑦ 的**豁免表**：疑似扫描里不必再喊的，写清「为什么不用挂」。
    * 🔴 这里的每一条都是一次显式决定 —— 加进来就要能说出理由，别当噪音过滤器用。
    */
   const HOTKEY_EXEMPT: Record<string, string> = {
-    'src/components/TableSheet.tsx': '表格页签的外壳 —— 保存逻辑在 useTableSheetModel（它已挂）',
+    'src/components/sheets/TableSheet.tsx': '表格页签的外壳 —— 保存逻辑在 useTableSheetModel（它已挂）',
     'src/components/tavern/TavernCardMemoryPanel.tsx': '嵌在 TavernCard 里 —— 父级已挂；再挂一次会「存卡 + 存记忆」双写竞态',
-    'src/components/useTavernCardModel.ts': 'model 层 —— 快捷键挂在组件 TavernCard 上',
-    'src/components/useTavernControlModel.ts': 'model 层 —— 快捷键挂在组件 TavernControl 上',
+    'src/components/tavern/useTavernCardModel.ts': 'model 层 —— 快捷键挂在组件 TavernCard 上',
+    'src/components/tavern/useTavernControlModel.ts': 'model 层 —— 快捷键挂在组件 TavernControl 上',
   }
   {
     const byRel = new Map<string, string>()
@@ -400,7 +408,7 @@ if (!SRC) {
    *    只输出「Binary file xxx matches」而不给行号 —— 于是全仓一切靠 grep 做的检查
    *    （本闸自己的排障、`docs/` 死代码回查、结构审计、AI 的改动前核实）在这一个文件上**静默失明**：
    *    命令有输出、看着像命中了，实际拿不到任何位置信息。
-   *    2026-10-04 实证：`src/lib/fieldAlias.ts` 里 `cols.join('<NUL>')` 就是这么写的 —— 运行时值没错
+   *    2026-10-04 实证：`src/lib/settings/fieldAlias.ts` 里 `cols.join('<NUL>')` 就是这么写的 —— 运行时值没错
    *    （NUL 当分隔符甚至比空格更严谨），但**源码脏**。发现它的过程正是「grep 只报文件名、要不到行号」。
    *    已改为等价的转义写法 `'\u0000'`。制表符与换行属正常源码字符，不在禁列。
    */
@@ -418,23 +426,23 @@ if (!SRC) {
    *
    * 🔴 为什么要有它：调色板散在各处时，改一个语义色要翻 N 个文件，漏一处就出现「同一含义两处不同色」
    *    —— `lib/relationColors.ts` 的头注释记着一次真实事故：两张关系图**各自**维护内置色板，
-   *    同一「敌对」在人物图与势力图里颜色不同。现在全部收口到 `src/lib/palette.ts`，本闸防它再散开。
+   *    同一「敌对」在人物图与势力图里颜色不同。现在全部收口到 `src/lib/settings/palette.ts`，本闸防它再散开。
    *
    * ⚠️ 判定用 `stripComments`（**保留字符串**）而不是 `stripCommentsAndStrings`：
    *    色值恰恰住在字符串里，连字符串一起剥就等于把要查的东西擦干净 —— 闸会永远全绿、最舒服也最没用。
    *
    * 允许出现裸色值的**且仅限**下面几处 —— 它们不是在「用色」，而是在「描述一套主题 / 文档」：
-   *   ① `src/lib/palette.ts`                —— 真源本体；
-   *   ② `src/components/CustomThemeDialog.tsx` —— 自定义主题预设（作者要自定义的就是色值本身）；
-   *   ③ `src/lib/theme.ts`                  —— 内置主题注册表 + 换肤预览色块；
+   *   ① `src/lib/settings/palette.ts`                —— 真源本体；
+   *   ② `src/components/settings/CustomThemeDialog.tsx` —— 自定义主题预设（作者要自定义的就是色值本身）；
+   *   ③ `src/lib/settings/theme.ts`                  —— 内置主题注册表 + 换肤预览色块；
    *   ④ `src/lib/tavern/exportDoc.ts`       —— 导出文档自带的内联 CSS（必须自洽，不随 App 主题）。
    * 其余任何 `.ts` / `.tsx` 里出现 `#rgb` / `#rrggbb` 一律失败 —— 请从 `lib/palette.ts` 取。
    */
   {
     const HEX_ALLOW = new Set([
-      'src/lib/palette.ts',
-      'src/components/CustomThemeDialog.tsx',
-      'src/lib/theme.ts',
+      'src/lib/settings/palette.ts',
+      'src/components/settings/CustomThemeDialog.tsx',
+      'src/lib/settings/theme.ts',
       'src/lib/tavern/exportDoc.ts',
     ])
     // 3 / 4 / 6 / 8 位十六进制；后瞻避免把 `#A1B2C3D4` 这类长串切碎

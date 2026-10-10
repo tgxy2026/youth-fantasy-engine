@@ -9,9 +9,9 @@
 //   ② 程序侧（bookbreak/aiSplit.applyAiSplit）把 AI 报的行在原文里逐字回定位，
 //      命中 <2 全部弃用 —— 这里（parse 层）只做宽松抽取，严格采信在 applyAiSplit。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseLooseObject, asText } from '@/lib/aiParse'
-import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
-import type { PromptDef } from '@/lib/promptSettings'
+import { parseLooseObject, asText } from '@/lib/ai/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 /** 「拆书 · AI 章节识别」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_bookbreak_split = `你是小说文本的结构分析器。作者导入了一段没有标准章节标题的小说原文，并给出了几条「章节标题示例」。请你从【原文节选】里找出所有「章节起始行」。

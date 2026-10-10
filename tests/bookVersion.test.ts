@@ -8,7 +8,7 @@
 //      闸门不许硬拦（作者可强制冻结）。
 import fs from 'node:fs'
 import type { Chapter, Volume } from '../src/lib/types'
-import { bookStats, bookFingerprint, shortFingerprint, evaluatePublishGate } from '../src/lib/bookVersion'
+import { bookStats, bookFingerprint, shortFingerprint, evaluatePublishGate } from '../src/lib/app/bookVersion'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -161,7 +161,7 @@ function vol(over: Partial<Volume> & { id: string; order: number }): Volume {
   ok('🔴 withBytes 保留 note/fingerprint/stats（防列表静默丢字段）',
     /rec\.fingerprint \? \{ fingerprint: rec\.fingerprint \}/.test(backups))
 
-  const panel = fs.readFileSync('src/components/BookVersionPanel.tsx', 'utf8')
+  const panel = fs.readFileSync('src/components/app/BookVersionPanel.tsx', 'utf8')
   ok('🔴 恢复走 restoreBackup（复用 applyBundleToProject，不自己搬）', /db\.restoreBackup\(v\.id\)/.test(panel))
   ok('🔴 恢复后重建资料索引（防静默降级）', /rebuildKbIndexAfterRestore\(pid\)/.test(panel))
   ok('🔴 闸门不硬拦：有 blocker 时按钮降级为「仍要冻结」', /仍要冻结/.test(panel) && /forced/.test(panel))
@@ -174,7 +174,7 @@ function vol(over: Partial<Volume> & { id: string; order: number }): Volume {
     !/frozenVersions/.test(idb) && !/frozenVersions/.test(backups))
 
   // 挂载：创作轨迹页有入口
-  const traj = fs.readFileSync('src/components/TrajectoryPanel.tsx', 'utf8')
+  const traj = fs.readFileSync('src/components/audit/TrajectoryPanel.tsx', 'utf8')
   ok('入口挂在「创作轨迹」页（与运行账本并列）',
     /BookVersionPanel/.test(traj) && /定稿与版本/.test(traj))
 }

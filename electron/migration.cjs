@@ -5,7 +5,7 @@
 //   ② 在**窗口创建前**把旧 IndexedDB 目录复制过来（IDB 是进程内 LevelDB，时机晚了会不生效/损坏）；
 //   ③ 读旧整库 JSON / 写新整库 JSON；④ 复制 Chromium profile 文件；⑤ 尽力定位旧版卸载器。
 //
-// 🔴 remap 逻辑（app / kind 改写）**刻意不在这里** —— 它放在渲染侧 `src/lib/legacyMigration.ts`，
+// 🔴 remap 逻辑（app / kind 改写）**刻意不在这里** —— 它放在渲染侧 `src/lib/storage/legacyMigration.ts`，
 //    因为那是纯函数、可在 Node 单测里直接跑（本模块依赖 electron，单测环境跑不了）。
 const path = require('path')
 const fs = require('fs')

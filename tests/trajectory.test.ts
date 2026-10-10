@@ -2,7 +2,7 @@
 // 覆盖点：时间线顺序 / 细纲无时间戳 / 来源标签 / 版本上限与截断判定 /
 //         字数变化 / 每日分布区间 / 老数据无 source / 全书总览。
 // 本用例只跑纯函数，不触碰任何 store。
-import { buildChapterTrajectory, buildTrajectoryOverview, findOutlineCard, isAIVersion, outlineTextOf } from '../src/lib/trajectory'
+import { buildChapterTrajectory, buildTrajectoryOverview, findOutlineCard, isAIVersion, outlineTextOf } from '../src/lib/ai/trajectory'
 import type { CardRecord, Chapter, Volume } from '../src/lib/types'
 import type { Snapshot } from '../src/lib/db'
 

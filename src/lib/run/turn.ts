@@ -13,7 +13,7 @@
  */
 import { chat, isCancelled, type ChatMessage, type AIProvider } from '@/lib/ai'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import { buildSystemPrompt, toChatMessages } from '@/lib/tavern/prompt'
 import { toOllamaOptions } from '@/lib/tavern/params'
 import { historyBudget, trimHistory } from '@/lib/tavern/budget'

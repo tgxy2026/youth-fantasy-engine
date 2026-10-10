@@ -8,8 +8,8 @@ import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
 import {
   worldPackTabSpecs, collectWorldPack, worldPackFingerprint, serializeWorldPack, parseWorldPack,
-} from '../src/lib/worldPack'
-import type { WorldPackTable } from '../src/lib/worldPack'
+} from '../src/lib/world/worldPack'
+import type { WorldPackTable } from '../src/lib/world/worldPack'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

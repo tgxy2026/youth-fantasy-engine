@@ -11,7 +11,7 @@
 import {
   DEAI_TELL_HARD, DEAI_TELL_SOFT, DEAI_TELL_PATTERNS, DEAI_PRINCIPLES, DEAI_CAVEAT,
   deAiGenerateRule, deAiPolishClause,
-} from '../src/lib/deAiStyle'
+} from '../src/lib/ai/deAiStyle'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -74,12 +74,12 @@ function read(rel: string): string {
 
 // ---------- 4. 模板 id 稳定（创意写作 / 一键续写按 id 取值，改了会静默拿到空提示词） ----------
 {
-  const src = read('src/lib/autoContinue.ts')
+  const src = read('src/lib/outline/autoContinue.ts')
   for (const id of ['natural', 'webnovel', 'literary', 'custom']) {
     ok(`保留模板 id「${id}」`, src.includes(`id: '${id}'`))
   }
   // creativeSession 按 id 查表：查不到会返回空串 → 去味儿静默失效
-  ok('creativeSession 按 id 查 DEAI_TEMPLATES', read('src/lib/creativeSession.ts').includes('DEAI_TEMPLATES.find'))
+  ok('creativeSession 按 id 查 DEAI_TEMPLATES', read('src/lib/creative/creativeSession.ts').includes('DEAI_TEMPLATES.find'))
   const tpls = src.slice(src.indexOf('DEAI_TEMPLATES: DeAiTemplate[]'), src.indexOf('export interface ChapterDraft'))
   ok('三套内置模板的提示词都非空', (tpls.match(/prompt: '/g) ?? []).length >= 3)
 }
@@ -97,7 +97,7 @@ function read(rel: string): string {
   ok('整章改写挂了 deAiGenerateRule(full)', rwLine.includes("deAiGenerateRule('full')"), rwLine.trim().slice(0, 160))
   ok('整章改写把去味规则排在数组最后', rwLine.trim().endsWith(".join('\\n\\n')") && rwLine.indexOf("deAiGenerateRule('full')") > rwLine.indexOf('scopeRule'))
 
-  const ac = read('src/lib/autoContinue.ts')
+  const ac = read('src/lib/outline/autoContinue.ts')
   ok('续写初稿挂了 deAiGenerateRule(full)', ac.includes("    deAiGenerateRule('full'),"))
   // 初稿 system 由 buildSysPrompt 拼：去味规则必须是 join 之前的最后一项
   const bs = ac.slice(ac.indexOf('function buildSysPrompt'), ac.indexOf('// ============ 去 AI 味儿'))

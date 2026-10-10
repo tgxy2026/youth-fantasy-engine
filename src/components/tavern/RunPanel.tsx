@@ -24,13 +24,13 @@ import {
 import { addCompanion, dropCompanion, clueStats, pendingClues } from '@/lib/run/clues'
 import { evalEndings, lockedSecrets } from '@/lib/run/endings'
 import { runKpTurn, type KpCheck } from '@/lib/run/turn'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import type { RunIndexItem, RunSession } from '@/lib/run/runTypes'
-import type { WorldStoredRecord } from '@/lib/worldTypes'
-import { Button } from '@/components/Button'
-import { confirmDialog, showToast } from '@/components/dialogs'
-import HelpPopover from '@/components/HelpPopover'
-import AIDataSourceNote from '@/components/AIDataSourceNote'
+import type { WorldStoredRecord } from '@/lib/world/worldTypes'
+import { Button } from '@/components/common/Button'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import HelpPopover from '@/components/common/HelpPopover'
+import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 

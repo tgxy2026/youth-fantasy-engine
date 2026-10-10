@@ -5,7 +5,7 @@
 // 所以断言不测"最多能喂多少字"，只测「调用次数 / 耗时 / 推荐值 / 分级」是否算对。
 import { adviseImport, COMFORT_CALLS, HARD_CALLS } from '../src/lib/bookbreak/recommend'
 import { splitNovelText, type SplitResult } from '../src/lib/bookbreak/split'
-import { adviseCapacity } from '../src/lib/modelCapacity'
+import { adviseCapacity } from '../src/lib/ai/modelCapacity'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

@@ -2,8 +2,8 @@
 // 章节顺序是全书叙事时序的「唯一权威」：导出、AI 取正文、连续性校验、搜索结果、
 // 时光机全都依赖它。派生逻辑一旦出错，症状是"顺序莫名乱了"，作者极难察觉根因。
 // 故此处用精确断言（而非只要求不炸的软断言）锁死语义。
-import { flattenChapters, chapterSeqMap, chapterSeqOf, sortChapters } from '../src/lib/chapterSeq'
-import { FREE_VOLUME_ORDER } from '../src/lib/freeVolume'
+import { flattenChapters, chapterSeqMap, chapterSeqOf, sortChapters } from '../src/lib/outline/chapterSeq'
+import { FREE_VOLUME_ORDER } from '../src/lib/outline/freeVolume'
 import type { Chapter, Volume } from '../src/lib/types'
 
 let pass = 0, fail = 0

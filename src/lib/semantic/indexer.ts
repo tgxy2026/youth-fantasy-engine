@@ -22,7 +22,7 @@
 //    因块序号错位而产生的残留块。小说的修订单位本来就是"一章"，这个粒度正合适。
 
 import * as db from '@/lib/db'
-import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '@/lib/aiContext'
+import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '@/lib/ai/aiContext'
 import { TABS } from '@/lib/schema'
 import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from '@/lib/semantic/chunk'
 import { embedTexts, EMBED_BATCH, type EmbedConfig } from '@/lib/semantic/embed'

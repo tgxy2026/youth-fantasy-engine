@@ -14,7 +14,7 @@ import {
   parseTriple, formatTriple, hexToRgb, rgbToHex, rgbToHsl, hslToRgb, contrast,
   deriveCustomTheme, INK_VAR_KEYS, GRAPH_NEUTRAL_KEYS, GRAPH_ACCENT_KEYS, ALL_THEME_VAR_KEYS,
   CONTRAST_RULES,
-} from '../src/lib/customTheme'
+} from '../src/lib/settings/customTheme'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

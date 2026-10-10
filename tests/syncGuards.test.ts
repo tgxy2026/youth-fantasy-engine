@@ -9,12 +9,12 @@
 //      → 状态永远停在 'syncing'（界面一直转圈，实际一条都没上传）。
 //
 // 这三条都靠端到端点不出来（需要一个真出错的云盘目录），所以必须先锁死。
-import { createCloudStore } from '../src/lib/syncCore'
-import { isDeleted } from '../src/lib/syncTombstone'
+import { createCloudStore } from '../src/lib/sync/syncCore'
+import { isDeleted } from '../src/lib/sync/syncTombstone'
 import fs from 'node:fs'
 import path from 'node:path'
 import { SAVE_DEBOUNCE_MS } from '../src/lib/constants'
-import type { SyncTransport } from '../src/lib/syncTransport'
+import type { SyncTransport } from '../src/lib/sync/syncTransport'
 import { __resetMockStores, __resetLocalStorage } from './mock-memory'
 
 /** 读源码 —— ⑫ 的接线断言要看**位置关系**，光跑行为测不出来（见那条的说明） */
@@ -502,7 +502,7 @@ async function main() {
   // 这条路径端到端点不出来（需要一个「本地没有、云端有」的现成场景），故按源码闸钉住 ——
   // 同本文件既有惯例：结构假设一旦漂移会静默失明，必须显式锁死。
   {
-    const dsrc = read('src/lib/desktop.ts')
+    const dsrc = read('src/lib/app/desktop.ts')
     ok('⑬ desktop del 不依赖「key 是否在本机」—— 无条件记墓碑',
       /async del\(store: string, key: string\)[\s\S]{0,1200}?if \(store !== 'meta'\) \{ markDeleted\(store, \[key\]\); scheduleSave\(\) \}/.test(dsrc))
     ok('⑬ desktop bulkDel 同口径（批量删也不以「本地真删到了」为前提）',

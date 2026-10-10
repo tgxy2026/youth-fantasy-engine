@@ -7,7 +7,7 @@
 //   ② buildSiblingContext 产出兄弟条目摘要，且**刻意截断**（多套并行时最容易撞车，也最耗额度）；
 //   ③ 弹窗把勾选结果接成 context 递给访谈组件（结构断言）；
 //   ④ 面板在一次成稿模式下**不出现**（那是原有复选框的地盘，别两处打架）。
-import { buildSiblingContext } from '../src/lib/interview'
+import { buildSiblingContext } from '../src/lib/creative/interview'
 import { buildWorldContext, WORLD_CONTEXT_GROUPS } from '../src/lib/ai'
 import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
@@ -72,17 +72,17 @@ async function main() {
   ok('无兄弟条目时返回空串', buildSiblingContext([]) === '')
 
   // ③④ 结构断言：弹窗接线
-  const panel = read('src/components/AITemplateFill.tsx')
+  const panel = read('src/components/ai/AITemplateFill.tsx')
   ok('🔴 访谈分支把勾选结果作为 context 递进去', /context=\{interviewCtx \|\| undefined\}/.test(panel))
   ok('访谈分支带上面板（作者看得见、能勾）', /headerSlot=/.test(panel) && /InterviewContextPicker/.test(panel))
   ok('🔴 面板只在对话引导出现（一次成稿仍用原来的复选框）',
     /withWorldContext \? \(\s*<InterviewContextPicker/.test(panel.replace(/\n\s*/g, ' ')))
   ok('🔴 默认只带母级世界设定，不是全灌', /useState<string\[\]>\(\['worldbase'\]\)/.test(panel))
-  const chat = read('src/components/InterviewChat.tsx')
+  const chat = read('src/components/creative/InterviewChat.tsx')
   ok('访谈组件支持 headerSlot 且不自己读库（读什么由调用方定）',
     /headerSlot\?/.test(chat) && !/getFormData|getSubSets/.test(chat))
   ok('🔴 访谈提示词里「既有设定」那段终于会用上',
-    /既有设定（回答要与它一致）/.test(read('src/lib/interview.ts')))
+    /既有设定（回答要与它一致）/.test(read('src/lib/creative/interview.ts')))
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed')
   if (fail > 0) process.exit(1)

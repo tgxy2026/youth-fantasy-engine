@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import {
   AI_SOURCE_KINDS, emptyAiAssist, normalizeAiAssist,
   withAiAssist, foldPendingAi, aiRatio, summarizeAiAssist, buildAiDisclosureDraft,
-} from '../src/lib/aiAssist'
+} from '../src/lib/ai/aiAssist'
 import type { Chapter } from '../src/lib/types'
 
 let pass = 0, fail = 0
@@ -175,10 +175,10 @@ console.log('\n▶ aiAssist')
 // ---------- 6) 🔴 守门：AI 主路径必须记账 ----------
 {
   const paths: Array<[string, string]> = [
-    ['整章改写', 'src/lib/chapterRewrite.ts'],
-    ['自动续写', 'src/lib/autoContinue.ts'],
-    ['创意写作', 'src/lib/creativeSession.ts'],
-    ['编辑器（伴写采纳 / 选区改稿）', 'src/components/useNovelEditorModel.ts'],
+    ['整章改写', 'src/lib/editor/chapterRewrite.ts'],
+    ['自动续写', 'src/lib/outline/autoContinue.ts'],
+    ['创意写作', 'src/lib/creative/creativeSession.ts'],
+    ['编辑器（伴写采纳 / 选区改稿）', 'src/components/editor/useNovelEditorModel.ts'],
   ]
   for (const [label, f] of paths) {
     let src = ''
@@ -188,8 +188,8 @@ console.log('\n▶ aiAssist')
 
   // 🔴 编辑器两条路径（B3 补做 · 2.4.1）：采纳那一刻挂账，落库时合并进该章。
   {
-    const model = readFileSync('src/components/useNovelEditorModel.ts', 'utf8')
-    const ghost = readFileSync('src/components/useNovelEditorGhost.ts', 'utf8')
+    const model = readFileSync('src/components/editor/useNovelEditorModel.ts', 'utf8')
+    const ghost = readFileSync('src/components/editor/useNovelEditorGhost.ts', 'utf8')
     ok('🔴 编辑器：有挂账函数 noteAiAssist', /noteAiAssist\s*=/.test(model))
     ok('🔴 编辑器：落库统一走 saveChapterWithAi', /const saveChapterWithAi\s*=/.test(model))
     // ⚠️ 防"绕过"：saveChapterWithAi 内部那两处 db.saveChapter 是**允许的**（它就是唯一落库出口）；
@@ -208,9 +208,9 @@ console.log('\n▶ aiAssist')
   // 🔴 创意写作走的是共用的 `applyChapterRewrite`（那条默认记 rewritten）——
   //    必须显式传 'generated'，否则"从无到有"的产量会被算成"改写"，分类就错了。
   {
-    const cs = readFileSync('src/lib/creativeSession.ts', 'utf8')
+    const cs = readFileSync('src/lib/creative/creativeSession.ts', 'utf8')
     ok('🔴 守门：创意写作显式传 generated（不是默认的 rewritten）', /applyChapterRewrite\([^)]*'generated'/.test(cs))
-    const cr = readFileSync('src/lib/chapterRewrite.ts', 'utf8')
+    const cr = readFileSync('src/lib/editor/chapterRewrite.ts', 'utf8')
     ok('守门：applyChapterRewrite 的来源可由调用方声明', /kind:\s*AiSourceKind\s*=\s*'rewritten'/.test(cr))
   }
 }

@@ -14,12 +14,12 @@
  * ⚠️ 本章概要不在这里填：概要属于「正文 → 卷台账 → 章节细纲卡」那条勾稽链，
  *    与「创意写作」的回填是同一套逻辑，放到下一批统一设计（避免两处口径打架）。
  */
-import { syncChapterMaster } from '@/lib/chapterMaster'
-import { chapterSeqMap, flattenChapters } from '@/lib/chapterSeq'
-import { nextVolumeOrder } from '@/lib/freeVolume'
+import { syncChapterMaster } from '@/lib/outline/chapterMaster'
+import { chapterSeqMap, flattenChapters } from '@/lib/outline/chapterSeq'
+import { nextVolumeOrder } from '@/lib/outline/freeVolume'
 import * as db from '@/lib/db'
-import { uid } from '@/lib/id'
-import { countWords } from '@/lib/textStats'
+import { uid } from '@/lib/app/id'
+import { countWords } from '@/lib/editor/textStats'
 import type { Chapter, Volume } from '@/lib/types'
 import { isVolumeTitle, type SplitResult } from '@/lib/bookbreak/split'
 

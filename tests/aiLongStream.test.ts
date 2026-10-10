@@ -16,7 +16,7 @@
 import http from 'node:http'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, chat } from '../src/lib/ai'
-import { aiGenerateBible, aiPlanOutline } from '../src/lib/aiTasks'
+import { aiGenerateBible, aiPlanOutline } from '../src/lib/ai/aiTasks'
 import type { AIProvider } from '../src/lib/ai'
 
 let pass = 0, fail = 0

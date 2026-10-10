@@ -13,9 +13,9 @@ import {
   HISTORY_ACTIONS, SOURCE_LABEL, SOURCE_ORDER, actionLabelOf, groupByChapter, groupByIssue,
   pickAction, resolveAction, sortAndDedup, ticketId,
   type TicketItem, type TicketSource,
-} from '../src/lib/optimizeTicket'
-import { CHAPTER_REWRITE_META } from '../src/lib/aiTasks'
-import { diffLines, diffStats } from '../src/lib/textDiff'
+} from '../src/lib/app/optimizeTicket'
+import { CHAPTER_REWRITE_META } from '../src/lib/ai/aiTasks'
+import { diffLines, diffStats } from '../src/lib/editor/textDiff'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {
@@ -145,7 +145,7 @@ function mk(o: MkInput): TicketItem {
 
 // ---------- ⑧ 🔴 源码断言：这三条破了都不会报错，只会悄悄改坏数据 ----------
 {
-  const src = readFileSync(path.join(process.cwd(), 'src/lib/optimizeTicket.ts'), 'utf8')
+  const src = readFileSync(path.join(process.cwd(), 'src/lib/app/optimizeTicket.ts'), 'utf8')
 
   ok('🔴 落库只走 applyChapterRewrite（不自己写库）',
     src.includes('applyChapterRewrite(chapterId, text, \'rewritten\')'))
@@ -177,7 +177,7 @@ function mk(o: MkInput): TicketItem {
   // 面板侧：中止后「已改完的章」必须能恢复 ——
   // 🔴 任务中心在中止时会把 result 清空（有意设计：中止＝不留可疑产物），
   //    所以逐章产物要另走 ctx.setResume 回传，面板合并时两个来源都读。
-  const panel = readFileSync(path.join(process.cwd(), 'src/components/OptimizeTicketPanel.tsx'), 'utf8')
+  const panel = readFileSync(path.join(process.cwd(), 'src/components/tools/OptimizeTicketPanel.tsx'), 'utf8')
   ok('🔴 逐章产物经 ctx.setResume 回传（中止 / 切页签后仍可恢复）',
     panel.includes('ctx.setResume({ chapters: [...out] }'))
   ok('🔴 合并时同时读 result 与 resume（只读 result 会让中止后已改章退回待处理）',

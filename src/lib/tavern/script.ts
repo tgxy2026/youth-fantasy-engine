@@ -27,15 +27,15 @@
  * 「用户已经说过这句了」而重复回应，也会白占每轮的常驻额度。
  */
 import * as db from '@/lib/db'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
-import { parsePlainObject, asText } from '@/lib/aiParse'
-import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import { parsePlainObject, asText } from '@/lib/ai/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件，绕 engine 会形成循环依赖
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { prepareDraftMaterial, type DraftSource } from '@/lib/tavern/draft'
-import { webSearch, type SearchSettings } from '@/lib/webSearch'
+import { webSearch, type SearchSettings } from '@/lib/ai/webSearch'
 import type { TavernScript, TavernScriptIndexItem, ScriptSnapshot } from '@/lib/tavern/types'
 
 // 全局 meta 键（无项目前缀）

@@ -92,23 +92,23 @@ const tab = getTab(MIS)
     (SETTING_SUBTABS['世界构建'] ?? []).includes(MIS),
     (SETTING_SUBTABS['世界构建'] ?? []).join(','))
   ok('🔴 登记进 aiContext 的 PRIORITY（项目红线：新增资料型页签必须登记，否则进不了预算）',
-    /^\s*'misc-settings',/m.test(read('src/lib/aiContext.ts')))
+    /^\s*'misc-settings',/m.test(read('src/lib/ai/aiContext.ts')))
   ok('在 TABS 里只出现一次（重复定义会让侧栏出现两个同名页签）',
     TABS.filter(t => t.id === MIS).length === 1)
 
   ok('🔴 CODE_PREFIX 里**已无** misc-settings（改卡片后不编号，留着就是一条死配置）',
-    !/'misc-settings':/.test(read('src/lib/autoCode.ts')))
+    !/'misc-settings':/.test(read('src/lib/ai/autoCode.ts')))
   ok('schema 里也不再承诺 MISC 编号（codeRule 已删）',
     // 🔴 读**整个 schema 模块**（门面 + 段文件）：只读门面时这条「不含」断言恒真 = 什么都没测
     !/编号规则：MISC/.test(readSchemaModule()))
 
   // 侧栏 / 功能勾选弹窗 / 指南页 / 数据健康都从 TABS 派生，自动生效 —— 这里确认派生方式没被改掉
   ok('侧栏仍从 TABS 派生（新页签自动出现在世界构建组，无需手工登记）',
-    /TABS\.filter\(t => t\.group === group/.test(read('src/components/Sidebar.tsx')))
+    /TABS\.filter\(t => t\.group === group/.test(read('src/components/app/Sidebar.tsx')))
   ok('功能勾选弹窗仍从 TABS 派生（新页签自动进入可选清单）',
-    /for \(const t of TABS\)/.test(read('src/components/FeatureSelectModal.tsx')))
+    /for \(const t of TABS\)/.test(read('src/components/dialogs/FeatureSelectModal.tsx')))
   ok('设定检索会收录世界构建组的卡片表（rec.name 作条目标题，所以卡名就是引用名）',
-    /tab\.type === 'card' && \(tab\.group === '角色管理' \|\| tab\.group === '世界构建'/.test(read('src/components/SettingSearch.tsx')))
+    /tab\.type === 'card' && \(tab\.group === '角色管理' \|\| tab\.group === '世界构建'/.test(read('src/components/settings/SettingSearch.tsx')))
 }
 
 // ---------- ⑤ 🔴 存储键与「表格 → 卡片」迁移 ----------
@@ -133,7 +133,7 @@ const tab = getTab(MIS)
 
 // ---------- ⑥ 示范项目里的示例数据 ----------
 {
-  const seed = read('src/lib/seedData.ts')
+  const seed = read('src/lib/app/seedData.ts')
   ok('🔴 示范项目把示例播种成**卡片**（表格播种已经不产这个页签的数据了）',
     /card\('misc-settings'/.test(seed))
   ok('表格播种里已无 misc-settings（残留会播出一批谁也读不到的行）',

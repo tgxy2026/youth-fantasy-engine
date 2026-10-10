@@ -2,10 +2,10 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #24 段）。
 // 🔴 去 AI 味纪律（DEAI_INLINE_RULE）必须钉在 system **末尾**才有效。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { deAiGenerateRule } from '@/lib/deAiStyle'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
-import type { PromptDef } from '@/lib/promptSettings'
-import { activeFingerprintNote } from '@/lib/styleFingerprint'
+import { deAiGenerateRule } from '@/lib/ai/deAiStyle'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
+import type { PromptDef } from '@/lib/ai/promptSettings'
+import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
 
 // ---------- 颉文姬⑦：AI 伴写（inline ghost 逐句续写 · 2.2.0） ----------
 //

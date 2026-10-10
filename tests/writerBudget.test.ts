@@ -10,8 +10,8 @@
 import {
   WRITER_BUDGET_KINDS, WRITER_BUDGET_LABELS, DEFAULT_WRITER_BASE, DEFAULT_WRITER_BUDGET, WRITER_BASE_LIMITS,
   WRITER_RECOMMEND, budgetForKind, previewAt, recommendWriterBase, type WriterBudgetKind,
-} from '../src/lib/aiWriterBudget'
-import { adviseCapacity, CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS } from '../src/lib/modelCapacity'
+} from '../src/lib/ai/aiWriterBudget'
+import { adviseCapacity, CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS } from '../src/lib/ai/modelCapacity'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

@@ -7,9 +7,9 @@
 //   3. countActionable —— 提示性 info（通过 ✓ / 未登记）不计入「需关注」。
 import {
   filterChapterIssues, pickChapterForeshadow, countActionable, type ChapterCheckReport,
-} from '../src/lib/chapterCheck'
-import type { AuditIssue } from '../src/lib/audit'
-import type { ForeshadowBoardItem } from '../src/lib/foreshadowEngine'
+} from '../src/lib/outline/chapterCheck'
+import type { AuditIssue } from '../src/lib/audit/audit'
+import type { ForeshadowBoardItem } from '../src/lib/outline/foreshadowEngine'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

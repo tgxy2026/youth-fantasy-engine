@@ -22,11 +22,11 @@ import {
   clearProjectDocs,
   KB_TOP_K, KB_MAX_CHARS, KB_MAX_DOCS, KB_HIT_CHARS,
   type KbDoc, type KbBackend,
-} from '../src/lib/knowledgeBase'
+} from '../src/lib/search/knowledgeBase'
 import { memoryOps, __resetMockStores } from './mock-memory'
-import { resetTaskCenter, tasksSnapshot } from '../src/lib/aiTaskCenter'
-import { rebuildKbIndexAfterRestore } from '../src/lib/kbRestoreIndex'
-import { buildKbBlock } from '../src/lib/kbInject'
+import { resetTaskCenter, tasksSnapshot } from '../src/lib/ai/aiTaskCenter'
+import { rebuildKbIndexAfterRestore } from '../src/lib/search/kbRestoreIndex'
+import { buildKbBlock } from '../src/lib/search/kbInject'
 import {
   setVecBackend, makeVecRow, putVectors, loadVectors, summarize, refKeyOf,
   type VecBackend, type VecRow,
@@ -355,7 +355,7 @@ const multiPara = (n: number): string =>
 
 // ============ ⑧ 源码闸（结构假设必须显式钉住）============
 {
-  const kbSrc = read('src/lib/knowledgeBase.ts')
+  const kbSrc = read('src/lib/search/knowledgeBase.ts')
   ok('🔴 知识库模块不 import lib/db（否则 deleteProject → knowledgeBase → db 成环）',
     kbSrc.length > 0
     && !/from\s+['"]\.\.?\/db['"]/.test(kbSrc)
@@ -363,21 +363,21 @@ const multiPara = (n: number): string =>
   ok('知识库走独立 IndexedDB 库（不进桌面整库 JSON / 不参与云同步）',
     kbSrc.includes('youth-fantasy-engine-kb'))
 
-  const ctx = read('src/lib/aiContext.ts')
+  const ctx = read('src/lib/ai/aiContext.ts')
   ok('aiContext 接入了 buildKbBlock', ctx.includes('buildKbBlock'))
   ok('aiContext 把资料块 push 成「参考资料」段', ctx.includes("push('参考资料'"))
   const iSem = ctx.indexOf("push('语义召回'")
   const iKb = ctx.indexOf("push('参考资料'")
   ok('🔴 参考资料段排在语义召回之后（语义是主线，资料是补一层）', iSem >= 0 && iKb > iSem)
 
-  const tok = read('src/lib/tokenize.ts')
+  const tok = read('src/lib/editor/tokenize.ts')
   ok('tokenize 已抽出为独立纯函数模块', tok.includes('export function tokenize'))
-  const search = read('src/lib/search.ts')
+  const search = read('src/lib/search/search.ts')
   ok('🔴 search.ts 不再自己定义 tokenize（单一真源，防"搜得到但召回不到"）',
     !/export\s+function\s+tokenize/.test(search))
-  ok('search.ts 从 tokenize.ts 取用', search.includes("from './tokenize'") || search.includes("from '@/lib/tokenize'"))
+  ok('search.ts 从 tokenize.ts 取用', search.includes("from './tokenize'") || search.includes("from '@/lib/editor/tokenize'"))
 
-  const panel = read('src/components/KnowledgeBasePanel.tsx')
+  const panel = read('src/components/library/KnowledgeBasePanel.tsx')
   ok('界面挂了 kb-recall 数据源说明（作者才看得到"会读什么"）',
     panel.includes('feature="kb-recall"'))
 
@@ -462,7 +462,7 @@ const multiPara = (n: number): string =>
   ok('恢复后标题都在', ['设定集', '随手笔记'].every(t => restored.some(d => d.title === t)))
 
   // ⑦ 界面：勾选与文案
-  const panel = read('src/components/KnowledgeBasePanel.tsx')
+  const panel = read('src/components/library/KnowledgeBasePanel.tsx')
   ok('面板提供「随导出 / 备份带走」勾选（读同一设置键）', panel.includes('db.KB_IN_BACKUP_KEY'))
   ok('面板写明「自动备份不含资料」（否则作者会以为备份也带上了）', panel.includes('自动备份'))
   ok('源码闸：导出侧读的是**按项目**的设置键，不是全局',
@@ -546,7 +546,7 @@ const multiPara = (n: number): string =>
 
 // ============ ⑪ 源码闸：自动重建的接线与边界 ============
 {
-  const helper = read('src/lib/kbRestoreIndex.ts')
+  const helper = read('src/lib/search/kbRestoreIndex.ts')
   ok('⑪ 自动重建模块存在', helper.length > 0)
   ok('🔴 复用素材页同一任务槽位（同 ownerTab/kind ⇒ 与手动重建互斥）',
     helper.includes('material-library') && helper.includes('kb-index'))
@@ -567,9 +567,9 @@ const multiPara = (n: number): string =>
       .every(f => !read(`src/lib/db/${f}.ts`).includes('kbRestoreIndex')))
 
   for (const [file, n, why] of [
-    ['src/components/BackupManager.tsx', 3, '恢复历史备份 / 从备份文件恢复 / 导入迁移包'],
-    ['src/components/ProjectHub.tsx', 1, '项目管理页导入迁移包'],
-    ['src/components/WelcomeWizard.tsx', 1, '首启向导导入备份'],
+    ['src/components/app/BackupManager.tsx', 3, '恢复历史备份 / 从备份文件恢复 / 导入迁移包'],
+    ['src/components/app/ProjectHub.tsx', 1, '项目管理页导入迁移包'],
+    ['src/components/app/WelcomeWizard.tsx', 1, '首启向导导入备份'],
   ] as const) {
     const src = read(file)
     const hits = (src.match(/rebuildKbIndexAfterRestore\(/g) ?? []).length

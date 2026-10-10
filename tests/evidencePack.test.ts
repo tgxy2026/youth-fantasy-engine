@@ -6,8 +6,8 @@ import {
   evidenceHtmlFileName, evidenceJsonFileName, evidenceSummary, dailyRange, formatStamp,
   DEFAULT_EVIDENCE_OPTIONS, EVIDENCE_KIND, EVIDENCE_SPEC_VERSION,
   type EvidenceViewOptions,
-} from '../src/lib/evidencePack'
-import { buildChapterTrajectory, type TrajectoryInput } from '../src/lib/trajectory'
+} from '../src/lib/audit/evidencePack'
+import { buildChapterTrajectory, type TrajectoryInput } from '../src/lib/ai/trajectory'
 import { toHtml, toMarkdown } from '../src/lib/tavern/exportDoc'
 import type { CardRecord, Chapter, Volume } from '../src/lib/types'
 import type { Snapshot } from '../src/lib/db'

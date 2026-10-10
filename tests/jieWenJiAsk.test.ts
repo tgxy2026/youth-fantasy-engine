@@ -8,7 +8,7 @@
 //    而这类"没进去"不会报错 —— 作者只会觉得"AI 没听可的话"。
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { buildRewriteAsk, INSTRUCTION_PLACEHOLDERS } from '../src/lib/rewriteAsk'
+import { buildRewriteAsk, INSTRUCTION_PLACEHOLDERS } from '../src/lib/editor/rewriteAsk'
 
 const readSrc = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8')
 
@@ -83,11 +83,11 @@ console.log('\n▶ rewriteAsk')
   ok('🔴 装配处调 buildRewriteAsk（拼装只有一处真源）',
     task.includes('buildRewriteAsk(ask, countWords(passage))'))
   ok('🔴 拼装住在零依赖层（否则测试会把传输层 ./ai 拉进 Node）',
-    readSrc('src/lib/rewriteAsk.ts').includes('export function buildRewriteAsk'))
+    readSrc('src/lib/editor/rewriteAsk.ts').includes('export function buildRewriteAsk'))
   ok('🔴 autoContinue 的第二调用点也改成传对象',
-    readSrc('src/lib/autoContinue.ts').includes('aiRewritePassage(body, { instruction:'))
+    readSrc('src/lib/outline/autoContinue.ts').includes('aiRewritePassage(body, { instruction:'))
   ok('🔴 组件不自己拼提示词（不许在 UI 层再写一份【修改要求】）',
-    !readSrc('src/components/useJieWenJiModel.ts').includes('【修改要求】'))
+    !readSrc('src/components/jiewenji/useJieWenJiModel.ts').includes('【修改要求】'))
 }
 
 // ---------- ⑦ 每个动作都有**专属**的「额外要求」示例 ----------
@@ -96,7 +96,7 @@ console.log('\n▶ rewriteAsk')
 //    只是作者照着填会填歪（2026-10-09 主人发现五个动作的示例一模一样）。
 {
   // 动作清单住在 .tsx 里（含 JSX 的文件不能直接 import 进 Node 测试）⇒ 从源码里取
-  const parts = readSrc('src/components/jieWenJiParts.tsx')
+  const parts = readSrc('src/components/jiewenji/jieWenJiParts.tsx')
   const m = parts.match(/export const INSTRUCTIONS = \[([^\]]+)\]/)
   const actions = m ? m[1].split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean) : []
   ok('能从源码取到动作清单（5 个）', actions.length === 5, JSON.stringify(actions))
@@ -110,7 +110,7 @@ console.log('\n▶ rewriteAsk')
     Object.keys(INSTRUCTION_PLACEHOLDERS).sort().join(',') === [...actions].sort().join(','),
     `表 [${Object.keys(INSTRUCTION_PLACEHOLDERS).join(',')}] vs 动作 [${actions.join(',')}]`)
   ok('🔴 组件用的是这张表（不是写死一个 placeholder）',
-    readSrc('src/components/JieWenJiEdit.tsx').includes('INSTRUCTION_PLACEHOLDERS[instruction]'))
+    readSrc('src/components/jiewenji/JieWenJiEdit.tsx').includes('INSTRUCTION_PLACEHOLDERS[instruction]'))
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed`)

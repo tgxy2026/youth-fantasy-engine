@@ -101,7 +101,7 @@ console.log('\n—— aiRefusal 用例开始 ——')
   ok('🔴 流式也有文本启发式检测', src.includes('looksLikeRefusalText'))
 
   // 伴写（§14.1 唯一「连理由都不展示」的消费点）：拒答要立即提示 + 熔断，不白等 N 次
-  const ghost = fs.readFileSync('src/components/useNovelEditorGhost.ts', 'utf8')
+  const ghost = fs.readFileSync('src/components/editor/useNovelEditorGhost.ts', 'utf8')
   ok('🔴 伴写识别拒答并给专门提示',
     ghost.includes('isRefusal(e)') && ghost.includes("showToast(e.message, 'error', 8000)"))
 }

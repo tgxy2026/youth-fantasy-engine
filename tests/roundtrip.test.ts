@@ -2,7 +2,7 @@
 // 设计原则：所有比对在本地脚本内完成，控制台只输出 PASS/FAIL 摘要行，
 // 失败时最多打印一处差异片段（±120 字符），控制 token 消耗。
 import * as db from '../src/lib/db'
-import { createDemoProject } from '../src/lib/seedData'
+import { createDemoProject } from '../src/lib/app/seedData'
 import type { ProjectBundle } from '../src/lib/db'
 import type { Chapter, TableRow } from '../src/lib/types'
 import { __resetMockStores, __dumpAll, memoryOps } from './mock-memory'

@@ -18,9 +18,9 @@ function ok(name: string, cond: boolean, extra = '') {
 }
 
 const read = (p: string) => fs.readFileSync(p, 'utf8')
-const roundEnd = read('src/components/useFreeRoundEnd.ts')
+const roundEnd = read('src/components/tavern/useFreeRoundEnd.ts')
 const free = read('src/components/tavern/TavernFree.tsx')
-const center = read('src/lib/aiTaskCenter.ts')
+const center = read('src/lib/ai/aiTaskCenter.ts')
 
 console.log('\n—— W2-5 用例开始 ——')
 

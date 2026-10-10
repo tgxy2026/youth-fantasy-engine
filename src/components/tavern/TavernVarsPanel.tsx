@@ -25,7 +25,7 @@
  * 🔴 只渲染，不读库不写库（数据由 TavernFree 传进来、改完由它写回）。
  */
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/Button'
+import { Button } from '@/components/common/Button'
 import { varDefOf, bandOf, type TavernVars, type VarKey } from '@/lib/tavern/types'
 // 3.0 · W2-4c（§13 F2）：卡文「进度锁」vs 当前数值档位的一致性提示（只提示，不自动改卡）
 import { paceLockDrift } from '@/lib/tavern/paceLockBands'

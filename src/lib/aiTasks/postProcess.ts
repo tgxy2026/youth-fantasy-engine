@@ -11,10 +11,10 @@
 //
 // 提示词 `POST_PROCESS_SYS` 就地声明在本文件（promptSettings 要求「提示词 ↔ 用法」同处）。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/aiParse'
-import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { longStream } from '@/lib/aiTasks/stream'
-import type { PromptDef } from '@/lib/promptSettings'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 let POST_PROCESS_SYS = `你是长篇小说「章后整理」助理。作者刚写完本章，请从本章正文中抽取**本章带来的变化**，供作者核对登记。
 

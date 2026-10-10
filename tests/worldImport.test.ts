@@ -7,8 +7,8 @@
 //   ④ 子项活跃状态随引入带过来（否则 AI 侧静默失忆，界面却看不出问题）。
 import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
-import { createWorldFromCurrentProject, freezeWorld, updateWorldDraft } from '../src/lib/worlds'
-import { importWorldIntoCurrent, getWorldImportRecord } from '../src/lib/worldImport'
+import { createWorldFromCurrentProject, freezeWorld, updateWorldDraft } from '../src/lib/world/worlds'
+import { importWorldIntoCurrent, getWorldImportRecord } from '../src/lib/world/worldImport'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

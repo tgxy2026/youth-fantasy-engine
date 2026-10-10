@@ -21,13 +21,13 @@
  * 会整段掉进「其他」那一格，作者看不到分好的条目。
  */
 import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
-import { parsePlainObject, asText } from '@/lib/aiParse'
-import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import { parsePlainObject, asText } from '@/lib/ai/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件（经 script/world），会形成循环依赖
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
-import type { SearchSettings, webSearch } from '@/lib/webSearch'
-import { prepareDraftMaterial, type DraftSource } from '@/lib/draftMaterial'
+import type { SearchSettings, webSearch } from '@/lib/ai/webSearch'
+import { prepareDraftMaterial, type DraftSource } from '@/lib/editor/draftMaterial'
 import { structFieldLines } from '@/lib/tavern/cardFields'
 
 // ==================== 角色卡模板 ====================
@@ -196,7 +196,7 @@ export async function draftCard(a: CardDraftArgs): Promise<{ fields: CardDraft; 
 }
 
 // 素材管线住在项目级（`../draftMaterial.ts`）—— 这里再导出一次，让原有 import 路径继续可用
-export { prepareDraftMaterial } from '@/lib/draftMaterial'
-export type { DraftSource, DraftMaterial } from '@/lib/draftMaterial'
+export { prepareDraftMaterial } from '@/lib/editor/draftMaterial'
+export type { DraftSource, DraftMaterial } from '@/lib/editor/draftMaterial'
 
 export { isCancelled }

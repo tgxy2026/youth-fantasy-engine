@@ -4,7 +4,7 @@
 // 另外钉住：numbered 按叙事序派生（含「不计入序号」章保留原题）、compact 间距、
 // 不含卷标题、headingOffset 整体下移且越界钳制。
 import type { Chapter, Volume } from '../src/lib/types'
-import { bookToPlatformText, bookToMarkdown } from '../src/lib/exporter'
+import { bookToPlatformText, bookToMarkdown } from '../src/lib/storage/exporter'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

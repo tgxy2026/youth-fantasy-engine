@@ -7,7 +7,7 @@
 import http from 'node:http'
 import { __resetMockStores } from './mock-memory'
 import { saveActiveId, saveProviders, type AIProvider } from '../src/lib/ai'
-import { aiExtractSettingEntities } from '../src/lib/aiTasks'
+import { aiExtractSettingEntities } from '../src/lib/ai/aiTasks'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

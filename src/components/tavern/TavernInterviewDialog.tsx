@@ -6,7 +6,7 @@
  * 界面与访谈机制都在共用件里 —— 2026-09-15 起同一套引导要给全局所有 AI 补全入口复用。
  */
 import { specOf, tavernCallChat, type InterviewKind } from '@/lib/tavern/interview'
-import InterviewChat from '@/components/InterviewChat'
+import InterviewChat from '@/components/creative/InterviewChat'
 
 export default function TavernInterviewDialog({ open, kind, subject, existing, providerId, onClose, onApply }: {
   open: boolean

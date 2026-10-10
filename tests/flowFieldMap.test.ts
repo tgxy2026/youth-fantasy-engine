@@ -7,7 +7,7 @@
 // 本用例把「落点必须真实存在」这件事钉死在测试里：schema 一动、这里就红。
 import { TABS } from '../src/lib/schema'
 import { KIND_MAP, resolveFieldPath, resolveSlot, targetTabOf } from '../src/lib/flow/fieldMap'
-import type { SettingEntityType } from '../src/lib/aiTasks'
+import type { SettingEntityType } from '../src/lib/ai/aiTasks'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

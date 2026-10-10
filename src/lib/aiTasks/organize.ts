@@ -2,9 +2,9 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #3 段）。
 // 提示词 ORGANIZE_SYS 就地声明在本文件（promptSettings 要求「提示词 ↔ 用法」同处）。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/aiParse'
-import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
-import type { PromptDef } from '@/lib/promptSettings'
+import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
+import type { PromptDef } from '@/lib/ai/promptSettings'
 
 // ---------- AI 整理（从已有资料 / 正文中抽取结构化条目） ----------
 

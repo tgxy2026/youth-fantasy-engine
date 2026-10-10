@@ -6,8 +6,8 @@
 //   ② **不越界**：所有节点坐标钳制在画布内（pad 之内），否则节点会被拖出视野后「消失」；
 //   ③ **凸包正确**：内部点与共线点必须被剔除，否则分组轮廓会画出多余的尖角；
 //   ④ **弧线方向确定**：正反向边弯曲方向相反 ⇒ 一对节点之间的两条关系能分开、不重叠。
-import { convexHull, hullPath, curvedEdge, curveMidpoint, groupBy, groupColor, GROUP_NEUTRAL } from '../src/lib/graphGrouping'
-import { forceLayout } from '../src/lib/forceLayout'
+import { convexHull, hullPath, curvedEdge, curveMidpoint, groupBy, groupColor, GROUP_NEUTRAL } from '../src/lib/world/graphGrouping'
+import { forceLayout } from '../src/lib/world/forceLayout'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

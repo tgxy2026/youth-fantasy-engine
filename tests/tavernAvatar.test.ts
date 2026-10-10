@@ -7,7 +7,7 @@
 import {
   AVATAR_SIZE, AVATAR_MAX_INPUT_BYTES,
   isAcceptableAvatar, fitSquare, avatarLabel,
-} from '../src/lib/imageAvatar'
+} from '../src/lib/media/imageAvatar'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

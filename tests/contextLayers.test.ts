@@ -4,7 +4,7 @@
 //   ① 规模判定与配额（纯函数）—— 阈值边界、单调性；
 //   ② 🔴 **小项目档位冻结** —— 改造不该动到中短篇的手感（short 档必须与旧写死值逐项相等）。
 import fs from 'node:fs'
-import { scaleOf, planFor, LAYER_PLANS, SCALE_GATES } from '../src/lib/contextLayers'
+import { scaleOf, planFor, LAYER_PLANS, SCALE_GATES } from '../src/lib/ai/contextLayers'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -51,7 +51,7 @@ console.log('\n—— contextLayers 用例开始 ——')
 
 // ---------- ④ 接线闸（源码级：默认预算必须走规模门，防回退） ----------
 {
-  const src = fs.readFileSync('src/lib/aiContext.ts', 'utf8')
+  const src = fs.readFileSync('src/lib/ai/aiContext.ts', 'utf8')
   ok('🔴 默认预算走规模门（plan.budget）', /opts\.budget \?\? plan\.budget/.test(src))
   ok('🔴 相关章节召回走规模门', /opts\.relatedChapterLimit \?\? plan\.relatedChapters/.test(src))
   ok('🔴 章节清单上限走规模门', /buildChapterDigest\(plan\.digestChapters/.test(src))

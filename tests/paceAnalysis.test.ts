@@ -14,7 +14,7 @@ import {
   locateQuote, segmentAt, locateBeats, buildDistribution, hookZoneStats,
   normalizeBeats, toStringList, normalizeHookKind, parsePaceReport,
   type PaceBeat,
-} from '../src/lib/paceAnalysis'
+} from '../src/lib/outline/paceAnalysis'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {
@@ -209,7 +209,7 @@ const TEXT = P1 + P2 + P3
 {
   const readAll = (p: string) => { try { return readFileSync(p, 'utf8') } catch { return '' } }
   const srcPace = readAll('src/lib/aiTasks/pace.ts')
-  const srcLocal = readAll('src/lib/paceAnalysis.ts')
+  const srcLocal = readAll('src/lib/outline/paceAnalysis.ts')
   const banned = ['规避检测', '降低AI命中', '降低 AI 命中', '命中率', '反检测', 'AI率', 'AI 率', '洗稿']
 
   ok('🔴 pace.ts 不含反检测类表述', banned.every(w => !srcPace.includes(w)),

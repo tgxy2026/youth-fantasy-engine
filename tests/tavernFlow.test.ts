@@ -17,7 +17,7 @@
 // 也一并锁住（think 必须 false、报告必须 json:true）。
 import * as db from '../src/lib/db'
 import * as store from '../src/lib/tavern/store'
-import { createDemoProject } from '../src/lib/seedData'
+import { createDemoProject } from '../src/lib/app/seedData'
 import { __resetMockStores } from './mock-memory'
 import { saveProviders, saveActiveId, type AIProvider, type ChatMessage } from '../src/lib/ai'
 import {

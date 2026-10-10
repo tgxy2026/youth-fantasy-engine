@@ -24,7 +24,7 @@ import {
   filledToText as filledToTextCore,
   type InterviewSpec, type InterviewState as CoreState, type InterviewTopic,
   type InterviewTurn, type InterviewReply,
-} from '@/lib/interview'
+} from '@/lib/creative/interview'
 import { EMPTY_CARD_DRAFT, type CardDraft } from '@/lib/tavern/draft'
 import { EMPTY_SCRIPT_FIELDS, type ScriptDraftFields } from '@/lib/tavern/script'
 import { EMPTY_STORY_FIELDS, type StoryDraftFields } from '@/lib/tavern/story'

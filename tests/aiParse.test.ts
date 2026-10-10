@@ -3,7 +3,7 @@
 // 重点覆盖两件事：
 //   ① 2.0.1 修过的「单对象被丢成空数组」——绝不能回归（否则"改稿只剩标点"复现）；
 //   ② 剥代码块 / 切最外层 / 容忍前后夹带解释——旧实现三份行为不一致，现已统一。
-import { parseObjectArray, parsePlainObject, parseLooseObject, parseTruncatedJson, stripCodeFence, stripStrayPunct, hasSubstance, asText, humanText } from '../src/lib/aiParse'
+import { parseObjectArray, parsePlainObject, parseLooseObject, parseTruncatedJson, stripCodeFence, stripStrayPunct, hasSubstance, asText, humanText } from '../src/lib/ai/aiParse'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

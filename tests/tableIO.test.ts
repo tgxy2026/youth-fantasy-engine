@@ -13,7 +13,7 @@ import {
   csvCell, buildImportGuide, splitIntoChunks,
   buildImportPrepared, summarizeImportResults, defaultCheckedIndexes, refColumnTargets,
   type ImportContext, type ImportRowResult,
-} from '../src/lib/tableIO'
+} from '../src/lib/storage/tableIO'
 import type { TabDef, TableRow } from '../src/lib/types'
 
 let pass = 0, fail = 0

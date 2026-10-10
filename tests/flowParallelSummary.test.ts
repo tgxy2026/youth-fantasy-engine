@@ -10,7 +10,7 @@
 // 端到端探针：模型按「主体名 → 模块 → 字段」输出 ⇒ 应拆成多行草稿 ⇒ 落库成多条条目
 import { formDraftRows, formFieldsPrompt, summaryFormTabs } from '../src/lib/flow/formMap'
 import { commitDraftRows, previewCommit } from '../src/lib/flow/commit'
-import { createDemoProject } from '../src/lib/seedData'
+import { createDemoProject } from '../src/lib/app/seedData'
 import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
 

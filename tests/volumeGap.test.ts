@@ -12,7 +12,7 @@ import { resolveSlot } from '../src/lib/flow/fieldMap'
 import {
   detectVolumeGap, isPlaceholderText, isVolumeOutlineComplete, parseChapterRange,
   volumeBoundOf, volumeBoundTextsOf, type VolumeGap,
-} from '../src/lib/outlineCard'
+} from '../src/lib/outline/outlineCard'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

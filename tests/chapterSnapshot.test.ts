@@ -133,7 +133,7 @@ const snapsOf = async (chId: string) => (await db.getSnapshots(chId)).sort((a, b
 
 // ---------- ⑦ 源码级：触发点接线没被改坏 ----------
 {
-  const rewrite = read('src/lib/chapterRewrite.ts')
+  const rewrite = read('src/lib/editor/chapterRewrite.ts')
   ok('🔴 整章改写：写前快照标成 ai-rewrite',
     /db\.createSnapshot\(ch, 'ai-rewrite'\)/.test(rewrite))
   ok('🔴 整章改写仍是「先快照、后覆盖」的顺序（反了就丢原文）',
@@ -144,7 +144,7 @@ const snapsOf = async (chId: string) => (await db.getSnapshots(chId)).sort((a, b
   ok('🔴 自动备份显式关掉快照（includeSnapshots: false）',
     /includeSnapshots:\s*false/.test(backups))
 
-  const model = read('src/components/useNovelEditorModel.ts')
+  const model = read('src/components/editor/useNovelEditorModel.ts')
   ok('时光机回滚前留档标成 manual-restore',
     /createSnapshot\(active, 'manual-restore'\)/.test(model))
 }

@@ -18,14 +18,14 @@
  *    别为了好看去重排缩进 —— 「逐行区间核对」靠它证明一个字没改。
  */
 import { type Dispatch, type SetStateAction, type ReactNode } from 'react'
-import Avatar from '@/components/Avatar'
-import AvatarPicker from '@/components/AvatarPicker'
+import Avatar from '@/components/common/Avatar'
+import AvatarPicker from '@/components/common/AvatarPicker'
 import { storyDisplayName } from '@/lib/tavern/story'
 import {
   cardStoryId, charTag, VAR_DEFS,
   type CharVars, type FreeCharacter, type TavernCharIndexItem, type TavernStoryIndexItem,
 } from '@/lib/tavern/types'
-import { parseVarInputValue } from '@/lib/viewSelectors'
+import { parseVarInputValue } from '@/lib/app/viewSelectors'
 
 interface Props {
   /** 当前正在编辑的卡（父级已收窄为非空 —— 没选中卡时这一整块不挂载） */

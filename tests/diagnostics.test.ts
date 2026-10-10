@@ -6,8 +6,8 @@
  * 就是一次真实的信息外泄。所以每条红线都配一条断言，将来有人加字段时会被拦下。
  */
 import * as db from '../src/lib/db'
-import { collectDiagnostics } from '../src/lib/diagnostics'
-import { recordError, clearErrors } from '../src/lib/errorLog'
+import { collectDiagnostics } from '../src/lib/app/diagnostics'
+import { recordError, clearErrors } from '../src/lib/app/errorLog'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

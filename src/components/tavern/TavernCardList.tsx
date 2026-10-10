@@ -1,9 +1,9 @@
 import { useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import { Search } from 'lucide-react'
-import { Button } from '@/components/Button'
-import SelectRow from '@/components/SelectRow'
-import Avatar from '@/components/Avatar'
-import { useMasterQuery } from '@/components/MasterDetail'
+import { Button } from '@/components/common/Button'
+import SelectRow from '@/components/common/SelectRow'
+import Avatar from '@/components/common/Avatar'
+import { useMasterQuery } from '@/components/common/MasterDetail'
 import { cardStoryId, type TavernCharIndexItem, type TavernStoryIndexItem } from '@/lib/tavern/types'
 import { storyDisplayName } from '@/lib/tavern/story'
 

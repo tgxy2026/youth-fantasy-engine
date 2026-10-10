@@ -19,11 +19,11 @@
  * 🔴 本模块**不落库、不改卡**：只产出建议。采纳由调用方执行（`store.applyCardRevision`）。
  */
 import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
-import { parseObjectArray, parseLooseObject, asText } from '@/lib/aiParse'
-import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import { parseObjectArray, parseLooseObject, asText } from '@/lib/ai/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import { CARD_FIELDS, isCardField, readCardField, fieldLabel } from '@/lib/tavern/types'
 import { structHintFor } from '@/lib/tavern/cardFields'
 import type { CardFieldPath, FreeCharacter, TavernMessage } from '@/lib/tavern/types'

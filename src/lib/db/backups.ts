@@ -2,10 +2,10 @@
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 // 🔴 备份是**本地专属**数据（不参与云盘同步），见 makeCloudStoreWrapper 的短路逻辑。
 import type { Project, FormData } from '@/lib/types'
-import { uid } from '@/lib/id'
+import { uid } from '@/lib/app/id'
 import { ops, touchProject } from '@/lib/db/core'
 import { exportProject, remapSettingValue, type ProjectBundle, getProject } from '@/lib/db/projects'
-import { restoreDocsFromBundle } from '@/lib/knowledgeBase'
+import { restoreDocsFromBundle } from '@/lib/search/knowledgeBase'
 import { isDemoProjectName } from '@/lib/constants'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
 

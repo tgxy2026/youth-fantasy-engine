@@ -15,7 +15,7 @@ import {
   DYNAMIC_QUOTA_RATIO, DYNAMIC_QUOTA_PCT, FALLBACK_WINDOW_TOKENS,
   effectiveWindowTokens, fixedQuotaOf, dynamicQuotaOf, quotaProfileOf, fmtWindow,
 } from '../src/lib/tavern/quotas'
-import { MIN_SANE_WINDOW, FALLBACK_WINDOW } from '../src/lib/modelCapacity'
+import { MIN_SANE_WINDOW, FALLBACK_WINDOW } from '../src/lib/ai/modelCapacity'
 import { WORLD_MAX_CHARS } from '../src/lib/tavern/world'
 import { STORY_SETTING_MAX } from '../src/lib/tavern/story'
 import { DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'

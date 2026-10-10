@@ -5,15 +5,15 @@
 //      （这正是老大点名的风险）；
 //   ② **单世界用户必须零变化** —— 没建子项的人，AI 上下文与本次改动前一字不差。
 // 另外把「活跃列表与子项的一致性」也钉住（删了子项还在活跃列表里 ⇒ 上下文会冒出空标题）。
-import { createDemoProject } from '../src/lib/seedData'
-import { uid } from '../src/lib/id'
+import { createDemoProject } from '../src/lib/app/seedData'
+import { uid } from '../src/lib/app/id'
 import * as db from '../src/lib/db'
-import { buildProjectContext } from '../src/lib/aiContext'
+import { buildProjectContext } from '../src/lib/ai/aiContext'
 import {
   activeKeyOf, composeSubSetsBlock, composeParallelSetBlock, isSubTabId, isWorldSetTab, isParallelSetTab, isMultiSetTab,
   pruneActiveIds, splitActive, subTabIdOf, toggleActiveId,
   WORLD_SET_TABS, PARALLEL_SET_TABS, MULTI_SET_TABS,
-} from '../src/lib/worldSets'
+} from '../src/lib/world/worldSets'
 import { __resetMockStores } from './mock-memory'
 import { remapSettingValue } from '../src/lib/db/projects'
 import type { CardRecord } from '../src/lib/types'

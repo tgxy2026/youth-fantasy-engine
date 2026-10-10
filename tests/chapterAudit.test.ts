@@ -5,8 +5,8 @@
 //   ② `toAuditRecord` 折算口径（只报数、不含全文）；
 //   ③ 🔴 **源码闸** —— 面板只标注不自动重跑；留痕失败静默；复用 chapterFingerprint 不另发明。
 import fs from 'node:fs'
-import { checkAuditFresh, toAuditRecord, humanAgo, type ChapterAuditRecord } from '../src/lib/chapterAudit'
-import type { ChapterCheckReport } from '../src/lib/chapterCheck'
+import { checkAuditFresh, toAuditRecord, humanAgo, type ChapterAuditRecord } from '../src/lib/outline/chapterAudit'
+import type { ChapterCheckReport } from '../src/lib/outline/chapterCheck'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -84,14 +84,14 @@ console.log('\n—— chapterAudit 用例开始 ——')
 
 // ---------- ④ 🔴 源码闸 ----------
 {
-  const lib = fs.readFileSync('src/lib/chapterAudit.ts', 'utf8')
+  const lib = fs.readFileSync('src/lib/outline/chapterAudit.ts', 'utf8')
   ok('🔴 复用 chapterFingerprint（不另发明指纹）', lib.includes('chapterFingerprint('))
   ok('🔴 走 settingsKV（getSetting/setSetting）+ 自带 pid 前缀说明',
     lib.includes('getSetting') && lib.includes('setSetting') && lib.includes("'chapterAudit'"))
   ok('🔴 只报数不存全文（注释明确 + 无 issues 字段）', lib.includes('不存问题全文') && !/issues\??:/.test(lib))
   ok('留痕失败静默（catch 空）', lib.includes('// 静默') || lib.includes('catch {\n    //'))
 
-  const panel = fs.readFileSync('src/components/ChapterCheckPanel.tsx', 'utf8')
+  const panel = fs.readFileSync('src/components/outline/ChapterCheckPanel.tsx', 'utf8')
   ok('面板跑完留痕', panel.includes('saveChapterAudit(rep, active'))
   ok('面板读留痕并判失效', panel.includes('loadChapterAuditStatus('))
   ok('🔴 不自动重跑（读留痕只用 useEffect，run 只由按钮触发）',

@@ -11,7 +11,7 @@ import { __resetMockStores } from './mock-memory'
 import * as db from '../src/lib/db'
 import { buildDraftBundle } from '../src/lib/flow/draft'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
-import { classify, type EntityRegistry } from '../src/lib/settingLedger'
+import { classify, type EntityRegistry } from '../src/lib/settings/settingLedger'
 import type { DraftRow } from '../src/lib/flow/types'
 
 let pass = 0, fail = 0

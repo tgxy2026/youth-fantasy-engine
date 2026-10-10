@@ -13,7 +13,7 @@ import {
   type AIProvider, type ChatMessage,
 } from '@/lib/aiCore/core'
 // 2.9.2：「模型配置 → 文本生成微调」的语义名 → 原生键名（详见 lib/modelSampling.ts）
-import { samplingOptionsOf } from '@/lib/modelSampling'
+import { samplingOptionsOf } from '@/lib/ai/modelSampling'
 
 export interface ChatOptions {
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */

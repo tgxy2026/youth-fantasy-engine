@@ -22,17 +22,17 @@
  * 提示用 showToast。
  */
 
-import HelpPopover from '@/components/HelpPopover'
-import { Z } from '@/lib/zLayer'
-import AIDataSourceNote from '@/components/AIDataSourceNote'
+import HelpPopover from '@/components/common/HelpPopover'
+import { Z } from '@/lib/app/zLayer'
+import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import TavernEchoHints from '@/components/tavern/TavernEchoHints'
 import { ChevronDown, Clapperboard, Pencil } from 'lucide-react'
-import { showToast, } from '@/components/dialogs'
-import { Button } from '@/components/Button'
-import { Modal } from '@/components/Modal'
-import { LoadingState } from '@/components/LoadingState'
+import { showToast, } from '@/components/dialogs/dialogs'
+import { Button } from '@/components/common/Button'
+import { Modal } from '@/components/dialogs/Modal'
+import { LoadingState } from '@/components/common/LoadingState'
 import TavernFreeSetup, { } from '@/components/tavern/TavernFreeSetup'
-import PromptModal from '@/components/PromptModal'
+import PromptModal from '@/components/dialogs/PromptModal'
 import TavernCastDirector from '@/components/tavern/TavernCastDirector'
 import TavernRevisionDialog from '@/components/tavern/TavernRevisionDialog'
 import TavernExportDialog from '@/components/tavern/TavernExportDialog'
@@ -41,12 +41,12 @@ import TavernVarsPanel from '@/components/tavern/TavernVarsPanel'
 // 🔴 3.0 · W2-5b（§13 F3）：「未整理轮数」判据 —— 与收尾用的是**同一个**纯函数，不另立口径
 import { pendingMessages } from '@/lib/tavern/roundEnd'
 import TavernUsageDialog from '@/components/tavern/TavernUsageDialog'
-import Avatar from '@/components/Avatar'
+import Avatar from '@/components/common/Avatar'
 import TavernMessageBody from '@/components/tavern/TavernMessageBody'
 import TavernQuickBar, { } from '@/components/tavern/TavernQuickBar'
 import TavernDirectorNoteBar from '@/components/tavern/TavernDirectorNoteBar'
 import { renderTavernMessage } from '@/components/tavern/TavernMessage'
-import AutoTextarea from '@/components/AutoTextarea'
+import AutoTextarea from '@/components/common/AutoTextarea'
 import * as store from '@/lib/tavern/store'
 
 
@@ -80,7 +80,7 @@ function charVarsToTavern(cv?: CharVars): TavernVars | undefined {
   return { values: cv.values, turnSeq: 0, log: [], scale: VAR_SCALE }
 }
 
-import { useTavernFreeModel, primaryAiCharId } from '@/components/useTavernFreeModel'
+import { useTavernFreeModel, primaryAiCharId } from '@/components/tavern/useTavernFreeModel'
 import TavernFreeSessionList from '@/components/tavern/TavernFreeSessionList'
 
 export default function TavernFree() {

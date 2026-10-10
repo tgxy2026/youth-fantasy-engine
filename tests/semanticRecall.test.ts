@@ -751,7 +751,7 @@ function row(input: {
 
 // ============ 源码断言：保存路径挂钩（自动索引）============
 {
-  const hook = read('src/components/useNovelEditorModel.ts')
+  const hook = read('src/components/editor/useNovelEditorModel.ts')
   ok('保存路径已接自动索引', hook.includes('autoIndexChapter(chapter.id)'))
   ok('🔴 挂钩在 `db.saveChapter` 之后（否则会读到改动前的旧正文）',
     hook.indexOf('const p = db.saveChapter(chapter)') >= 0 &&
@@ -759,7 +759,7 @@ function row(input: {
   ok('🔴 自动索引 fire-and-forget（不 await 落库）', /void\s+p\.then\(\(\)\s*=>\s*autoIndexChapter/.test(hook))
   ok('保存路径按指纹挡重复触发（省一次查库）', hook.includes('chapterFingerprint'))
 
-  const panel = read('src/components/EmbeddingIndexPanel.tsx')
+  const panel = read('src/components/settings/EmbeddingIndexPanel.tsx')
   ok('面板提供「保存后自动索引」开关', panel.includes('autoIndexOnSave'))
 
   const idxSrc = read('src/lib/semantic/indexer.ts')
@@ -871,15 +871,15 @@ function row(input: {
   ok('🔴 向量库走独立 IndexedDB（不碰 db 门面）', storeSrc.includes('youth-fantasy-engine-vec') && !storeSrc.includes("from '../db'") && !storeSrc.includes("from '@/lib/db'"))
 
   const recallSrc = read('src/lib/semantic/recall.ts')
-  ok('🔴 recall 不 import aiContext（防成环）', !recallSrc.includes("from '../aiContext'") && !recallSrc.includes("from '@/lib/aiContext'"))
+  ok('🔴 recall 不 import aiContext（防成环）', !recallSrc.includes("from '../aiContext'") && !recallSrc.includes("from '@/lib/ai/aiContext'"))
 
   const injectSrc = read('src/lib/semantic/inject.ts')
-  ok('🔴 inject 不 import aiContext', !injectSrc.includes("from '../aiContext'") && !injectSrc.includes("from '@/lib/aiContext'"))
+  ok('🔴 inject 不 import aiContext', !injectSrc.includes("from '../aiContext'") && !injectSrc.includes("from '@/lib/ai/aiContext'"))
 
   const idxSrc = read('src/lib/semantic/indexer.ts')
   ok('indexer 明确引用 isPrunedForAI 与 isSecretRow', idxSrc.includes('isPrunedForAI') && idxSrc.includes('isSecretRow'))
 
-  const ctxSrc = read('src/lib/aiContext.ts')
+  const ctxSrc = read('src/lib/ai/aiContext.ts')
   const relatedPushAt = ctxSrc.indexOf('相关章节召回')
   const semanticCallAt = ctxSrc.indexOf('buildSemanticRecallBlock(')
   ok('aiContext 在相关章节召回之后接入语义召回',

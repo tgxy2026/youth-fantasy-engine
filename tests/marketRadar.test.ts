@@ -9,8 +9,8 @@ import * as db from '../src/lib/db'
 import {
   buildRadarQueries, runMarketRadar, RADAR_DISCLAIMER, RADAR_MAX_QUERIES,
   type RadarInput,
-} from '../src/lib/marketRadar'
-import { DEFAULT_SEARCH_SETTINGS, type SearchSettings, type SearchTransport } from '../src/lib/webSearch'
+} from '../src/lib/ai/marketRadar'
+import { DEFAULT_SEARCH_SETTINGS, type SearchSettings, type SearchTransport } from '../src/lib/ai/webSearch'
 import type { AIProvider } from '../src/lib/ai'
 import { __resetMockStores } from './mock-memory'
 

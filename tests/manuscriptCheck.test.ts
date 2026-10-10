@@ -8,7 +8,7 @@
 import {
   splitSentences, splitParagraphs, variance, cv, repeatedGrams,
   analyzeStyle, toObservations, analyzePacing, buildCheckReportText, analyzeStyle as style,
-} from '../src/lib/manuscriptCheck'
+} from '../src/lib/audit/manuscriptCheck'
 
 let pass = 0, fail = 0
 const ok = (name: string, cond: boolean, extra = '') => {

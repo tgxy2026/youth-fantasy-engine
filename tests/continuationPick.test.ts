@@ -8,7 +8,7 @@
 //    模型拿到的是上一章的起手而非收尾，续写自然接不上，而界面上一切正常。
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { pickContinuationSources, type ChapLike } from '../src/lib/continuationPick'
+import { pickContinuationSources, type ChapLike } from '../src/lib/editor/continuationPick'
 
 const readSrc = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8')
 
@@ -159,7 +159,7 @@ const FLAT: ChapLike[] = [1, 2, 3, 4, 5, 6].map(i => mk(i))
 {
   // ① 预算预览必须把「写作文风」的长度也算进去 —— 实际发请求时会多推一个块，
   //    漏算会让「预计占用」偏小（勾了文风档却显示未超预算，到真跑时才超＝预估骗人）。
-  const model = readSrc('src/components/useJieWenJiModel.ts')
+  const model = readSrc('src/components/jiewenji/useJieWenJiModel.ts')
   ok('🔴 预算预览把「写作文风」也算进去（fpLen）',
     model.includes('const fpLen = contPicks.has(\'fingerprint\')'),
     '预览与真跑的取数口径必须逐块一致')

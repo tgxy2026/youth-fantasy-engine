@@ -11,8 +11,8 @@ import {
   INDENT_UNITS, DEFAULT_INDENT_UNIT, indentTextOf,
   splitIndent, indentLine, outdentLine, indentBlock, outdentBlock,
   indentForNewLine, normalizePastedText,
-} from '../src/lib/indent'
-import { formatNovelText } from '../src/lib/textTools'
+} from '../src/lib/editor/indent'
+import { formatNovelText } from '../src/lib/editor/textTools'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {

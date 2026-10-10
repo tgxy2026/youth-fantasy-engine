@@ -12,10 +12,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as store from '@/lib/tavern/store'
 import { EMPTY_CAST_SETTING, type CastSetting } from '@/lib/tavern/types'
-import { Modal } from '@/components/Modal'
-import { Button } from '@/components/Button'
-import { showToast } from '@/components/dialogs'
-import AutoTextarea from '@/components/AutoTextarea'
+import { Modal } from '@/components/dialogs/Modal'
+import { Button } from '@/components/common/Button'
+import { showToast } from '@/components/dialogs/dialogs'
+import AutoTextarea from '@/components/common/AutoTextarea'
 
 
 /** 六字段的界面文案（标题 / 说明 / 占位示例）——顺序即渲染顺序，与 prompt.ts 的 CAST_FIELDS 一致 */
