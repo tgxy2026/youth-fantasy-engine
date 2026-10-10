@@ -31,6 +31,7 @@ import { uid } from '../lib/id'
 import TavernScriptFields from './TavernScriptFields'
 import TavernInterviewDialog from './TavernInterviewDialog'
 import TavernScriptImportDialog from './TavernScriptImportDialog'
+import TavernScriptTree from './TavernScriptTree'
 import { serializeStoryImport } from '../lib/tavern/storyImport'
 import { downloadText } from '../lib/zip'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
@@ -444,75 +445,14 @@ export default function TavernScript() {
       />
 
       <div className="flex flex-1 min-h-0 gap-3 pt-3">
-        {/* 左：故事 → 剧本 树状列表 */}
-        <aside className="w-56 shrink-0 overflow-y-auto">
-          {stories.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-ink-700 p-3 text-center text-11 text-ink-500">
-              还没有故事。点上面「新建故事」，先把这个世界写下来 —— 这是使用自由对话的第一步。
-            </p>
-          ) : (
-            <ul className="space-y-1.5">
-              {stories.map(st => {
-                const under = scripts.filter(s => s.storyId === st.id)
-                const isOpen = openIds.includes(st.id)
-                return (
-                  <li key={st.id}>
-                    <div className="flex items-stretch gap-1">
-                      <button
-                        type="button"
-                        onClick={() => toggleOpen(st.id)}
-                        title={isOpen ? '收起剧本' : '展开剧本'}
-                        className="shrink-0 rounded-md border border-ink-700 bg-ink-850/30 px-1.5 text-11 text-ink-400 hover:border-ink-600"
-                      >
-                        {isOpen ? '▾' : '▸'}
-                      </button>
-                      <button
-                        type="button" onClick={() => void openStory(st.id)}
-                        title={st.settingBrief || '（还没写世界设定）'}
-                        className={`min-w-0 flex-1 rounded-md border px-2.5 py-2 text-left transition-colors ${st.id === story?.id && kind === 'story'
-                          ? 'border-amber/50 bg-amber/15'
-                          : 'border-ink-700 bg-ink-850/30 hover:border-ink-600'}`}
-                      >
-                        <div className={`truncate text-12 ${st.id === story?.id && kind === 'story' ? 'text-amber' : 'text-ink-200'}`}>
-                          {st.name}
-                        </div>
-                        <div className="mt-0.5 truncate text-10 text-ink-500">
-                          {st.settingBrief || '（还没写世界设定）'}
-                        </div>
-                      </button>
-                    </div>
-
-                    {isOpen && (
-                      <ul className="mt-1 ml-4 space-y-1 border-l border-ink-700 pl-2">
-                        {under.length === 0 ? (
-                          <li className="py-1 text-10 text-ink-600">（还没有剧本）</li>
-                        ) : under.map(sc => (
-                          <li key={sc.id}>
-                            <button
-                              type="button" onClick={() => void openScript(sc.id)}
-                              title={sc.goalBrief || '（还没写目标）'}
-                              className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${sc.id === cur?.id && kind === 'script'
-                                ? 'border-amber/50 bg-amber/15'
-                                : 'border-ink-700 bg-ink-850/20 hover:border-ink-600'}`}
-                            >
-                              <div className={`truncate text-12 ${sc.id === cur?.id && kind === 'script' ? 'text-amber' : 'text-ink-200'}`}>
-                                {sc.name}
-                              </div>
-                              <div className="truncate text-10 text-ink-500">{sc.goalBrief || '（还没写目标）'}</div>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-          <p className="mt-2 text-10 leading-relaxed text-ink-600">
-            {stories.length} 个故事 · {scripts.length} 份剧本 · 跨项目共用（换本书也还在）
-          </p>
-        </aside>
+        {/* 左：故事 → 剧本 树状列表（3.0 · W3-3 · §11.1 L5：抽成独立组件，props 面最窄的一头） */}
+        <TavernScriptTree
+          stories={stories} scripts={scripts} openIds={openIds}
+          story={story} cur={cur} kind={kind}
+          onToggleOpen={toggleOpen}
+          onOpenStory={(id) => void openStory(id)}
+          onOpenScript={(id) => void openScript(id)}
+        />
 
         {/* 中：故事设定 / 剧本六栏 */}
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">

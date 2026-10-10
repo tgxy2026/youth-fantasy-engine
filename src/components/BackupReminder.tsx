@@ -3,7 +3,7 @@ import { FileDown } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import * as db from '../lib/db'
-import { isExportOverdue, isDismissExpired, markDismissed, REMIND_AFTER_DAYS } from '../lib/backupReminder'
+import { isExportOverdue, isDismissExpired, markDismissed, shouldRemind, REMIND_AFTER_DAYS } from '../lib/backupReminder'
 
 // #031 导出备份提醒：定期提醒用户把数据导出成外部文件，别让稿子只剩「同一个容器里」的那一份。
 //
@@ -29,12 +29,17 @@ export default function BackupReminder({ hasProject, onExport }: { hasProject: b
   useEffect(() => {
     let alive = true
     void (async () => {
-      if (!isExportOverdue() || !isDismissExpired()) return
+      const exportOverdue = isExportOverdue()
+      const dismissExpired = isDismissExpired()
+      // ①② 不满足就不必去查项目列表（省一次库读）；判定本身在纯函数里（见 shouldRemind）
+      if (!exportOverdue || !dismissExpired) return
+      let projectCount = 0
       if (!hasProject) {
         const list = await db.getAllProjects().catch(() => [])
-        if (!alive || list.length === 0) return // 一个项目都没有，没什么可备份的
+        if (!alive) return
+        projectCount = list.length
       }
-      if (alive) setShow(true)
+      if (alive && shouldRemind({ exportOverdue, dismissExpired, hasProject, projectCount })) setShow(true)
     })()
     return () => {
       alive = false

@@ -428,6 +428,74 @@ export function desktopStoreReady(timeoutMs = 10000): Promise<boolean> {
   ])
 }
 
+/** `electronStore.load()` 的返回形状（字段全可选：旧 preload 可能没有 missing） */
+export interface DataFileLoadResult {
+  text?: string | null
+  /** 读取失败原因；成功时为 null（与主进程 `sync:readFile` 的返回形状一致） */
+  error?: string | null
+  /** 文件是否确实不存在（undefined ＝ 旧 preload 没这个字段，无从判断） */
+  missing?: boolean
+}
+
+/** 数据文件读取后的三种结局 */
+export type DataFileOutcome =
+  | { kind: 'empty' }                               // 首次使用（文件还不存在）：空库启动属正常，可以写
+  | { kind: 'ready'; data: PortableData }           // 读到了本软件的数据文件
+  | { kind: 'lock'; reason: string; error: string } // 一律锁写盘（reason 给作者看，error 进状态）
+
+/**
+ * 判定「这次读数据文件的结果该怎么处理」—— **纯函数**（3.0 · W3-3 · §11.1 L4）。
+ *
+ * 为什么抽出来：这段判定原先内联在 `initDesktopStore` 里，而 `initDesktopStore` 依赖
+ * `DESKTOP`（模块级 const，读 preload 注入）与 IPC 桥 —— 测试环境注入不了，
+ * 于是**桌面版最要命的一条红线（读不出来就别写盘，否则空库覆盖真实数据）一直没有测试**。
+ * 抽成纯函数后六条分支逐条可断言，副作用（锁写盘 / 装载数据）留给调用方施加。
+ *
+ * 🔴 三条经验教训都落在这里（原注释原文保留）：
+ *   ① **missing 未知时不能当「首次使用」放行**（2026-09-17 P2-11）：旧 preload 配新渲染层、
+ *      而文件其实存在（text 有内容）时，若按「不存在」处理就会放行写盘 → 空库覆盖真实文件。
+ *      故 missing 未知时以「有非空文本」为「文件存在」的判据，让文本解析那条路接管。
+ *   ② **解析成功 ≠ 是本软件的数据文件**（2026-09-20 P1-2）：漏了 `isPortableDataFile` 这一步，
+ *      后果不是「报错」而是**静默覆盖** —— 误放的文件被当空库放行、不锁写盘。
+ *   ③ **任何「读不出来」都归为 lock**，绝不静默当空库。
+ */
+export function decideDataFileLoad(r: DataFileLoadResult): DataFileOutcome {
+  if (r.error) {
+    return {
+      kind: 'lock',
+      reason: `数据文件读取失败：${r.error}`,
+      error: `读取本地数据文件失败：${r.error}。为免用空库覆盖原文件，已暂停写入。`,
+    }
+  }
+  const hasText = !!(r.text && r.text.trim())
+  const fileExists = r.missing === false || (r.missing === undefined && hasText)
+  if (!fileExists) return { kind: 'empty' }
+  if (!hasText) {
+    return {
+      kind: 'lock',
+      reason: '数据文件存在但内容为空（可能云盘正在同步、或上次写入被中断）',
+      error: '本地数据文件为空。为免覆盖原文件，已暂停写入。',
+    }
+  }
+  try {
+    const parsed: unknown = JSON.parse(String(r.text))
+    if (!isPortableDataFile(parsed)) {
+      return {
+        kind: 'lock',
+        reason: '数据文件缺少本软件的格式标识（kind="portable-data"）',
+        error: '本地数据文件不是本软件写出的（缺少格式标识）。为免覆盖它，已暂停写入。',
+      }
+    }
+    return { kind: 'ready', data: normalizePortableData(parsed) }
+  } catch {
+    return {
+      kind: 'lock',
+      reason: '数据文件内容不是有效的 JSON（可能被云盘客户端同步截断，或磁盘损坏）',
+      error: '本地数据文件已损坏（JSON 解析失败）。为免覆盖原文件，已暂停写入。',
+    }
+  }
+}
+
 export async function initDesktopStore(): Promise<void> {
   if (!DESKTOP || inited) return
   const lock = (why: string, msg: string) => {
@@ -443,47 +511,17 @@ export async function initDesktopStore(): Promise<void> {
     } catch {
       isCustomPath = false
     }
-    // 只有明确知道"文件在"时才做危险判定（旧 preload 无此字段 → missing 为 undefined）。
-    // 🔴 审计 2026-09-17（P2-11）：missing 未知时**不能直接当「首次使用」放行写盘** ——
-    //    旧 preload 配新渲染层、而文件其实存在（r.text 有内容）时，`!fileExists` 分支会先于
-    //    下面的文本解析命中 → 内存空库被允许写盘 → 覆盖真实文件。故 missing 未知时以「有非空文本」
-    //    为「文件存在」的判据，让文本解析那条路接管。
-    const hasText = !!(r.text && r.text.trim())
-    const fileExists = r.missing === false || (r.missing === undefined && hasText)
-    if (r.error) {
-      lock(
-        `数据文件读取失败：${r.error}`,
-        `读取本地数据文件失败：${r.error}。为免用空库覆盖原文件，已暂停写入。`,
-      )
-    } else if (!fileExists) {
-      // 首次使用（文件还不存在）：空库启动属正常，可以写
-    } else if (r.text && r.text.trim()) {
-      try {
-        const parsed: unknown = JSON.parse(r.text)
-        // 🔴 解析成功 ≠ 是本软件的数据文件（2026-09-20 六维审计 P1-2）：见 isPortableDataFile 的说明。
-        //    漏这一步的后果不是"报错"，而是**静默覆盖** —— 误放的文件被当空库放行、不锁写盘，
-        //    随后第一次防抖写盘就把真实数据文件写没了。
-        if (!isPortableDataFile(parsed)) {
-          lock(
-            '数据文件缺少本软件的格式标识（kind="portable-data"）',
-            '本地数据文件不是本软件写出的（缺少格式标识）。为免覆盖它，已暂停写入。',
-          )
-        } else {
-          data = normalizePortableData(parsed)
-          lastSavedAt = data.savedAt || Date.now()
-        }
-      } catch {
-        lock(
-          '数据文件内容不是有效的 JSON（可能被云盘客户端同步截断，或磁盘损坏）',
-          '本地数据文件已损坏（JSON 解析失败）。为免覆盖原文件，已暂停写入。',
-        )
-      }
-    } else {
-      lock(
-        '数据文件存在但内容为空（可能云盘正在同步、或上次写入被中断）',
-        '本地数据文件为空。为免覆盖原文件，已暂停写入。',
-      )
+    // 🔴 判定收进纯函数 `decideDataFileLoad`（3.0 · W3-3 · §11.1 L4）：六条分支（读失败 /
+    //    首次使用 / 空文件 / 非本软件格式 / JSON 损坏 / 正常）逐条可测，这里只施加副作用。
+    //    三条经验教训（missing 未知的处置 / 解析成功≠本软件文件 / 读不出来一律锁）见该函数注释。
+    const outcome = decideDataFileLoad(r)
+    if (outcome.kind === 'lock') {
+      lock(outcome.reason, outcome.error)
+    } else if (outcome.kind === 'ready') {
+      data = outcome.data
+      lastSavedAt = data.savedAt || Date.now()
     }
+    // outcome.kind === 'empty'（首次使用，文件还不存在）：空库启动属正常，可以写
   } catch (e) {
     lock(
       '读取数据文件时发生异常',

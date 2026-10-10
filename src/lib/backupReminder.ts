@@ -65,3 +65,29 @@ export function isDismissExpired(): boolean {
   if (!at) return true
   return Date.now() - at > DISMISS_DAYS * DAY
 }
+
+/**
+ * 该不该弹「导出备份提醒」—— 三条判据**合成一个纯函数**（3.0 · W3-3 · §11.1 L4）。
+ *
+ * 为什么要抽（原本它散在组件里）：判据①② 早已在 lib 且被 `backupReminder.test.ts` 覆盖，
+ * 但判据③「确有数据可丢」原先只以 `hasProject || 项目列表非空` 的形式活在
+ * `BackupReminder.tsx` 的 `useEffect` 里 —— 而**项目没有 React 测试工具**，
+ * 于是这条判据的边界（空库不打扰 / 有项目才提醒）从来没有测试守过。
+ *
+ * 🔴 输入全部显式传入（连 ①② 也不在这里现读 localStorage）：
+ *    这样它是**真纯函数** —— 逐条断言不需要伪造时间或存储，短路顺序也一目了然。
+ *    副作用留在调用方（组件取 `hasProject` 与项目数，`isExportOverdue()` 等照旧由它调用）。
+ */
+export function shouldRemind(input: {
+  /** 判据①：距上次导出已超过提醒间隔（侧栏/项目管理页的导出都会刷新它） */
+  exportOverdue: boolean
+  /** 判据②：「稍后再说」的静默期已过 */
+  dismissExpired: boolean
+  /** 判据③-a：当前已打开项目 */
+  hasProject: boolean
+  /** 判据③-b：项目列表条数（`hasProject` 为 false 时才需要真实值） */
+  projectCount: number
+}): boolean {
+  if (!input.exportOverdue || !input.dismissExpired) return false
+  return input.hasProject || input.projectCount > 0
+}

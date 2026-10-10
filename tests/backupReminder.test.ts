@@ -8,7 +8,7 @@
  * 另外两个边界也容易错：恰好满 7 天算不算（不算）、存储不可用时怎么办（按未导出处理，不能静默吞）。
  */
 import {
-  isExportOverdue, isDismissExpired, markExported, markDismissed, REMIND_AFTER_DAYS,
+  isExportOverdue, isDismissExpired, markExported, markDismissed, shouldRemind, REMIND_AFTER_DAYS,
 } from '../src/lib/backupReminder'
 
 let pass = 0, fail = 0
@@ -106,6 +106,26 @@ function main() {
     try { markExported(); markDismissed() } catch { threw = true }
     ok('5f 存储写入抛异常 ⇒ 不崩（下次启动仍会提醒）', !threw)
     installMockStorage()   // 还原，别污染后续
+  }
+
+  // ---------- ⑥ 「该不该弹」的三条判据（3.0 · W3-3 · §11.1 L4） ----------
+  //
+  // 判据①② 上面已覆盖；判据③「确有数据可丢」原先只活在组件 `useEffect` 里
+  // （`hasProject || 项目列表非空`），而**项目没有 React 测试工具** ⇒ 这条边界从没被测过。
+  // 抽成纯函数 `shouldRemind` 后，短路顺序与边界都能逐条断言。
+  {
+    const base = { exportOverdue: true, dismissExpired: true, hasProject: false, projectCount: 0 }
+    ok('6a 三条全满足（已打开项目）⇒ 提醒', shouldRemind({ ...base, hasProject: true }))
+    ok('6b 未打开项目、但项目列表非空 ⇒ 提醒（关掉项目回列表时也提醒）', shouldRemind({ ...base, projectCount: 3 }))
+    ok('🔴 6c 空库（未打开项目 + 一个项目都没有）⇒ 不打扰新用户', !shouldRemind(base))
+    ok('6d 判据①不满足（刚导出过）⇒ 即使有项目也不提醒',
+      !shouldRemind({ ...base, exportOverdue: false, hasProject: true }))
+    ok('6e 判据②不满足（刚点过「稍后」）⇒ 即使有项目也不提醒',
+      !shouldRemind({ ...base, dismissExpired: false, hasProject: true }))
+    ok('6f ①②同时不满足 ⇒ false（不因短路顺序写反而出错）',
+      !shouldRemind({ ...base, exportOverdue: false, dismissExpired: false, hasProject: true }))
+    ok('6g projectCount 为负 / NaN 时按「没有」处理（不误提醒）',
+      !shouldRemind({ ...base, projectCount: -1 }) && !shouldRemind({ ...base, projectCount: NaN }))
   }
 
   console.log(`\nbackupReminder: ${pass} passed, ${fail} failed`)
