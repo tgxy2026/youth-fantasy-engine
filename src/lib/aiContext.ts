@@ -21,10 +21,14 @@ import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isPar
 import { getActivePack, normalizeGenrePack, subItemLabel } from './schemaTemplates'
 import { buildSemanticRecallBlock } from './semantic/inject'
 import { buildKbBlock } from './kbInject'
+import { planFor } from './contextLayers'
 import type { Chapter, TabDef, Volume } from './types'
 
 export interface ProjectContextOptions {
-  /** 总字符预算，默认 12000。本地小模型建议 6000~8000 */
+  /**
+   * 总字符预算。**不传则按项目规模取档**（见 `lib/contextLayers.ts`；小项目＝12000，与旧行为一致）。
+   * 本地小模型建议显式传 6000~8000。
+   */
   budget?: number
   /** 只包含这些页签（不传则按默认优先级全量） */
   onlyTabIds?: string[]
@@ -894,7 +898,13 @@ async function findRelatedChapters(focusChapterId: string, limit = 8): Promise<C
  * 按 PRIORITY 顺序累加，超预算的段落被丢弃并记录在 dropped 里（UI 可提示作者）。
  */
 export async function buildProjectContext(opts: ProjectContextOptions = {}): Promise<ProjectContextResult> {
-  const budget = opts.budget ?? 12000
+  // 3.0 · W1-2 规模门（§10.3 #2）：预算与召回数**按项目体量**取档，不再写死 12000 ——
+  //    长篇（百万字）时那点预算只够塞开头几章，模型看到的「前文」永远是第 1 章。
+  // 🔴 小项目（< 10 万字）档位与改造前**逐字一致**（budget 12000 / related 8）—— 中短篇手感零变化。
+  let scaleWords = 0
+  try { scaleWords = (await db.getProjectStats(db.getCurrentProjectId())).words } catch { /* 拿不到按最小档 */ }
+  const plan = planFor(scaleWords)
+  const budget = opts.budget ?? plan.budget
   // skeletonOnly：页签一个都不带（下面 for 循环里的 only 命中判定于是全部不通过），
   // 而「作品概览」在循环之前无条件 push、「章节清单」由 includeChapterList 单独控制 → 两块都留着。
   const only = opts.skeletonOnly
@@ -990,7 +1000,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   // 该段在「章节清单」之前注入，预算紧张时优先于通用清单占位。
   if (opts.focusChapterId && !opts.skeletonOnly) {
     try {
-      const found = await findRelatedChapters(opts.focusChapterId, opts.relatedChapterLimit ?? 8)
+      const found = await findRelatedChapters(opts.focusChapterId, opts.relatedChapterLimit ?? plan.relatedChapters)
       // 锚点生效时，锚点之后的章节不进召回（否则等于把「未来」喂给此刻的角色）
       const related = anchorAllow ? found.filter(c => anchorAllow.has(c.id)) : found
       if (related.length > 0) {
@@ -1034,7 +1044,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   }
 
   if (opts.includeChapterList !== false) {
-    const digest = await buildChapterDigest(200, opts.anchorChapterId)
+    const digest = await buildChapterDigest(plan.digestChapters, opts.anchorChapterId)
     push('章节清单', digest)
   }
 
