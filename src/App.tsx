@@ -263,8 +263,11 @@ export default function App() {
 
   // 「跟随窗口」模式下，窗口尺寸变化时重算缩放（防抖 300ms）。
   // 例：窗口化 ↔ 全屏切换、把窗口拖到另一块屏 —— 字号自动适配，不必手动调。
+  // 🔴 3.0 修复（2026-10-10）：原先这里有一句**挂载时**的 `if (!isZoomAuto()) return` ——
+  //    若本次启动是「手动」，监听**再也不会挂上**；此后点「自动」只按当时的宽度算一次，
+  //    再改窗口大小就不跟了（实测：启动 manual=1 → 点自动 → 改窗口宽 → 缩放纹丝不动）。
+  //    改为**常驻监听**，模式判定放进回调里（非跟随模式直接早退，开销可忽略）。
   useEffect(() => {
-    if (!isZoomAuto()) return
     let t: ReturnType<typeof setTimeout> | null = null
     const onResize = () => {
       if (t) clearTimeout(t)

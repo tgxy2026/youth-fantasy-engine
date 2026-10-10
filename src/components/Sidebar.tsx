@@ -371,22 +371,28 @@ style={{ zIndex: Z.pageBase }}
             自动
           </Button>
           <div className="flex items-center gap-1 ml-auto">
-            <Button variant="icon-amber" onClick={() => changeZoom(-10)} className="p-0.5" title="缩小界面">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} className="p-0.5" title="缩小界面">
               <ZoomOut size={12} />
             </Button>
             <span className="flex items-center gap-0.5">
               {/* U-1 · 2.6.0：改走 NumberField（允许自由输入、提交时钳到 80~160），替换手写 type=number + blur 提交 */}
+              {/* 🔴 3.0 修复（2026-10-10）：此处原先的类名**大半是无效的** —— index.css 里那条全局
+                  `input, textarea, select` 规则**不在 @layer 内**，而未分层样式优先于 Tailwind 的
+                  @layer utilities ⇒ px-1 / py-0.5 / rounded / bg-* / border-* / text-* 全被
+                  全局的 12px 内边距 + 14px 字号压掉：48px 宽的框只剩 22px 可用，
+                  「132」只显示成「1」，高度 34px 也比同排控件高一截。
+                  需覆盖的一律加 `!`；h-6 与同排 toggle（size=xs）对齐。 */}
               <NumberField
                 value={zoom}
                 onChange={(v) => { if (typeof v === 'number') { setZoom(applyZoom(v, { manual: true })); setZoomAuto(false) } }}
                 min={80}
                 max={160}
                 title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
-                className="w-12 rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-center text-ink-200 tabular-nums outline-none focus:border-amber"
+                className="h-6 w-12 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums"
               />
               <span className="text-ink-400 text-xs">%</span>
             </span>
-            <Button variant="icon-amber" onClick={() => changeZoom(10)} className="p-0.5" title="放大界面">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} className="p-0.5" title="放大界面">
               <ZoomIn size={12} />
             </Button>
           </div>

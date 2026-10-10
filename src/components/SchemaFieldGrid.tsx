@@ -68,7 +68,7 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
                       value={val}
                       onChange={v => onFieldChange(key, v)}
                       placeholder="点击填写…"
-                      className="text-13"
+                      textClass="text-13"
                       minHeight={36}
                     />
                     {!val && field.example && (
