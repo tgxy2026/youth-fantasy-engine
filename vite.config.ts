@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 // 版本取自 package.json，避免标题/版本号写死导致升级后不一致
 const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
 
@@ -60,6 +61,17 @@ export default defineConfig(() => ({
   plugins: [react(), injectAppVersion(appVersion), normalizeDevHost()],
   // 相对路径：桌面（Electron）版通过 file:// 加载 dist/index.html，绝对路径会解析到磁盘根目录
   // （对 dev server 无影响）
+  // 路径别名 `@` → `src/`（2026-10-10 · 目录结构优化 G0）。
+  // 【为什么加】目录整理要搬文件：相对路径下每搬一处都要重算「到每个被引者的路径」，
+  //   而且**引用方**也得跟着改（那才是大头）。别名让「一个文件怎么 import」与它自己的位置无关，
+  //   搬迁只需改「谁引用了它」这一侧，也消除了「相对路径算错」这整类错误。
+  // 🔴 改别名须同步四处：本文件 resolve.alias ／ tsconfig.json 的 paths ／
+  //   tests/build-test.mjs 的 esbuild alias ／ tests/importCycles.test.ts 的依赖图解析。
+  //   （importCycles 原先**只认相对路径**，漏同步会让依赖图变空、闸「全绿但什么都没查」——
+  //    它现有的 `totalEdges > 200` 自检会响亮报错，别再删那条。）
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   base: './',
   define: {
     // 版本号：dev 与构建统一取 package.json 真实版本号（唯一真源）。

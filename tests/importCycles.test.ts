@@ -104,11 +104,16 @@ if (!SRC) {
   for (const f of files) {
     const t = stripTypeOnlyImports(stripComments(fs.readFileSync(f, 'utf8')))
     const deps = new Set<string>()
-    // 兼容跨行 import：只认 `from '...'` 与动态 `import('...')`，且只认相对路径
-    const re = /(?:from|import)\s*\(?\s*['"](\.[^'"]+)['"]/g
+    // 兼容跨行 import：只认 `from '...'` 与动态 `import('...')`；**相对路径与 `@/` 别名都认**。
+    // 🔴 2026-10-10（目录结构优化 G0）：此前只认 `\.` ⇒ 项目改用 `@/` 别名后依赖图会**变空**，
+    //    环检查与分层检查会「全绿但什么都没查」。下面另有自检钉住「`@/` 也产生边」。
+    const re = /(?:from|import)\s*\(?\s*['"]((?:\.{1,2}\/|@\/)[^'"]+)['"]/g
     let m: RegExpExecArray | null
     while ((m = re.exec(t))) {
-      const base = path.resolve(path.dirname(f), m[1])
+      // `@/` 是别名（→ src/）；其余按相对路径解析
+      const base = m[1].startsWith('@/')
+        ? path.join(SRC, m[1].slice(2))
+        : path.resolve(path.dirname(f), m[1])
       for (const cand of [base, base + '.ts', base + '.tsx', path.join(base, 'index.ts'), path.join(base, 'index.tsx')]) {
         if (set.has(cand)) { deps.add(cand); break }
       }
@@ -120,12 +125,13 @@ if (!SRC) {
 
   // ---- 擦除器自检：它哪天失效，闸就会「悄悄放过所有类型边」，必须钉住 ----
   {
-    const edges = (src: string) => (stripTypeOnlyImports(src).match(/(?:from|import)\s*\(?\s*['"](\.[^'"]+)['"]/g) ?? []).length
+    const edges = (src: string) => (stripTypeOnlyImports(src).match(/(?:from|import)\s*\(?\s*['"]((?:\.{1,2}\/|@\/)[^'"]+)['"]/g) ?? []).length
     ok('自检：`import type` 不产生依赖边', edges("import type { A } from './a'") === 0)
     ok('自检：全 type 修饰的具名 import 不产生依赖边', edges("import { type A, type B } from './a'") === 0)
     ok('自检：混合 import **保留**依赖边（含运行时绑定）', edges("import { type A, foo } from './a'") === 1)
     ok('自检：普通 import 保留依赖边', edges("import { foo } from './a'") === 1)
     ok('自检：动态 import 保留依赖边', edges("const m = await import('./a')") === 1)
+    ok('🔴 自检：`@/` 别名也产生依赖边（别名化后依赖图不能变空）', edges("import { foo } from '@/lib/a'") === 1)
     const totalEdges = [...importsOf.values()].reduce((n, d) => n + d.length, 0)
     ok('擦除后依赖边数量合理（没把图擦空）', totalEdges > 200, String(totalEdges))
   }

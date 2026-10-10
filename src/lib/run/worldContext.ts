@@ -8,7 +8,7 @@
  * 🔴 只读**冻结版本**，不读项目的实时内容 —— 这正是 #11 的边界：
  *   原作品后续改动**不会**影响这一局引用到的世界。
  */
-import * as db from '../db'
+import * as db from '@/lib/db'
 import type { WorldPackTable } from '../worldTypes'
 import type { RunWorldRef } from './runTypes'
 

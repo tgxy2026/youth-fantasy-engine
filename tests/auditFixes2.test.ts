@@ -203,13 +203,13 @@ console.log('\n—— auditFixes2 用例开始 ——')
   // ---- B4 · 源码：persistent 备注必须取**主角色卡**，不是 charIds[0] ----
   const eng = read('src/lib/tavern/engine.ts')
   ok('🔴 engine 的备注按主角色卡取（found[0] 在作者演位置 1 时是用户卡，备注恒空）',
-    /import \{ primaryAiCharId \} from '\.\/primaryChar'/.test(eng)
+    /import \{ primaryAiCharId \} from '(?:\.\/primaryChar|@\/lib\/tavern\/primaryChar)'/.test(eng)
     && /found\.find\(c => c\.id === primaryAiCharId\(session\)\)\?\.vars\?\.notes/.test(eng))
 
   // ---- C1 · 源码：编号引用扫描必须覆盖「多套条目」页签 ----
   const cref = read('src/lib/codeRefs.ts')
   ok('🔴 codeRefs 扫「多套条目」页签（世界设定/力量体系/制度四页签，条目不在 TABS 里）',
-    /import \{ MULTI_SET_TABS \} from '\.\/worldSets'/.test(cref)
+    /import \{ MULTI_SET_TABS \} from '(?:\.\/worldSets|@\/lib\/worldSets)'/.test(cref)
     && /for \(const tabId of MULTI_SET_TABS\) \{/.test(cref)
     && /await db\.getSubSets\(tabId\)/.test(cref))
 

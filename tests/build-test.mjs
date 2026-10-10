@@ -25,6 +25,8 @@ await build({
   // 单独跑时保留 info（看得见产物体积/耗时）；被 run-all.mjs 批量调用时置 quiet，避免横幅刷屏
   logLevel: process.env.YFE_TEST_QUIET ? 'warning' : 'info',
   define: { __APP_VERSION__: '"test"' },
+  // 路径别名 @ → src（与 vite.config.ts / tsconfig.json 三处一致；漏了测试会解析失败）
+  alias: { '@': path.join(here, '..', 'src') },
   plugins: [{
     name: 'stub-stores',
     setup(b) {

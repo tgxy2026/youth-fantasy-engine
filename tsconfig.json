@@ -19,7 +19,11 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    // 路径别名 @ → src（2026-10-10 · G0）。
+    // 🔴 须与 vite.config.ts 的 resolve.alias、tests/build-test.mjs 的 esbuild alias 三处一致。
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
   },
   "include": ["src", "tests"]
 }
