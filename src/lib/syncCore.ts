@@ -460,6 +460,29 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   let localSnapshotProvider: (() => Promise<SyncStores>) | null = null
 
   /**
+   * 三路合并里「本地那一份」的**唯一来源**（L2 收口 · 2026-10-10 六维审计遗留项）。
+   *
+   * 为什么必须收口：`mergeCaches` 的第三路 `local` 决定两件事 ——
+   *   ① `localHasContent`（能否把「本地没有这条」读成「本机删掉了它」）；
+   *   ② 各 store 的 `lo` 取值。
+   * 而云模式下**内存 cache 在首次 `ensureInit` 完成之前是空的**（启动瞬间）。
+   * 只看它会得出 `localHasContent = false`、把整条墓碑闸短路 —— 正是「删了会复活 / 幽灵项目」那条链。
+   * `localSnapshotProvider`（db 层注入）读的是磁盘上真正的本机库，才是那个窗口期里可信的「本地」。
+   *
+   * 返回 `null` ＝「注册了回调但读取失败」⇒ **本机状态未知**。调用方一律按「中止本次合并」处理
+   * （绝不退化成空 cache 硬合），与 `ensureInit` 既有的 P2 处置同口径。
+   * 未注册回调时退回内存 `cache`（保守侧：不误删云端，与收口前的行为一致）。
+   */
+  async function localForMerge(): Promise<SyncStores | null> {
+    if (!localSnapshotProvider) return cache
+    try {
+      return await localSnapshotProvider()
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * 认领新基线（推送成功后调用）。
    * 墓碑不在这里维护 —— 它记录的是「删除事件」，由 store.put / store.del 各自维护。
    */
@@ -566,11 +589,12 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
             //       ⇒ 墓碑闸被短路 —— 正是 P0 那条幽灵项目链路；
             //    ② 更不能"推进 rev 但不合并"：那样下次推送会拿**旧 cache** 当基线覆盖云端（丢数据）。
             //    本机状态未知时唯一安全的动作是：状态置 error、什么都不动、等下次远端变化再拉。
+            // 🔴 L2 收口：本机那一份统一走 `localForMerge`（与 backgroundPull / 409 合并同源）。
+            //    返回 null ＝注册了回调但读失败 ⇒ 本机状态未知，必须在**推进 rev 之前**中止本次拉取。
             let localSnapPre: SyncStores | null = null
-            if (resp.enc && localSnapshotProvider) {
-              try {
-                localSnapPre = await localSnapshotProvider()
-              } catch {
+            if (resp.enc) {
+              localSnapPre = await localForMerge()
+              if (localSnapPre === null) {
                 setStatus('error')
                 return
               }
@@ -755,7 +779,12 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       if (resp.enc) {
         const serverCache = await decryptObj(resp.enc)
         adoptCloudBackup(serverCache)
-        cache = mergeCaches(baseCache, serverCache, cache)
+        // 🔴 L2 收口：本地那一份必须走 `localForMerge` —— 首次 ensureInit 之前内存 cache 是空的，
+        //    只看它会判 `localHasContent=false`、把墓碑闸短路（幽灵项目链路）。
+        //    本机状态未知（null）⇒ 中止本次拉取且**不推进 rev**，留给下次轮询重试。
+        const local = await localForMerge()
+        if (local === null) return
+        cache = mergeCaches(baseCache, serverCache, local)
         rev = remoteRev
         // 🔴 先判断合并结果与云端是否一致（不一致 = 本地有改动被保下来了），**再**认领新基线。
         //    顺序反过来的话，这批本地改动会被写进 baseCache，下次合并时被判成「本地未改」
@@ -810,7 +839,16 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
           throw new Error('sync conflict payload undecryptable: 已停止重试以免覆盖云端数据')
         }
       }
-      if (serverCache) cache = mergeCaches(baseCache, serverCache, cache)
+      if (serverCache) {
+        // 🔴 L2 收口：同源。本机状态未知 ⇒ 停手报错，绝不拿空 cache 硬合
+        //    （那会把云端整片当「本地没见过」而采用，本地改动全丢）。
+        const local = await localForMerge()
+        if (local === null) {
+          setStatus('error')
+          throw new Error('sync conflict merge aborted: 本机状态读取失败，已停止重试以免误合丢数据')
+        }
+        cache = mergeCaches(baseCache, serverCache, local)
+      }
       rev = serverRev
       if (depth < MAX_CONFLICT_RETRY) {
         return pushNowRaw(serverRev, depth + 1)

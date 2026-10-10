@@ -9,6 +9,8 @@ const fsp = require('fs/promises')
 const { downloadInstaller, cancelActiveDownload } = require('./updateDownload.cjs')
 // 3.0 · W0-2 老用户数据迁移内核（探测旧 userData / 窗口前复制旧 IDB / 读写整库 JSON / profile / 卸载引导）
 const migration = require('./migration.cjs')
+// 3.0 · W3-2 同步文件路径闸（2026-10-10 从本文件抽出成独立模块 —— 规则可读、可被单测审读）
+const { assertSyncPath } = require('./syncPath.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 
@@ -302,19 +304,8 @@ app.whenReady().then(() => {
   ipcMain.handle('migration:revealLegacyDir', () => migration.revealLegacyDir())
 
   // 🔴 2026-10-07 六维审计 P2：sync:readFile / sync:writeFile 原先直接吃渲染层传来的任意路径，
-  //    等于把「任意文件读写」原语暴露出去。这里做**零契约成本**的收窄：只接受「绝对路径 + .yfe 结尾」——
-  //    云同步的载体恒为 *.yfe（见 syncTransport.ts 的 CLOUD_FILE_NAME 与 `<sha256>.yfe`），
-  //    故不改变任何现有用法，却挡掉跨目录 / 任意扩展名的滥用。
-  const assertSyncPath = (p) => {
-    const s = typeof p === 'string' ? p : ''
-    // ⚠️ 也放行 `.yfe.` 派生名（2026-10-10 六维审计）：syncTransport 的 quarantine() 会把解析不了的
-    //    同步文件另存成 `<名字>.yfe.corrupt-<时间戳>` 供人工抢救 —— 严格要求「.yfe 结尾」会把这条
-    //    **唯一的兜底**也挡掉（异常被 catch 吞成一条 warn，作者永远拿不到那份残骸）。
-    if (!s || !path.isAbsolute(s) || !/\.yfe(\.[\w.-]+)?$/i.test(s)) {
-      throw new Error('同步文件路径非法：只接受绝对路径且以 .yfe 结尾（或其派生名 .yfe.*）')
-    }
-    return s
-  }
+  //    等于把「任意文件读写」原语暴露出去。收窄规则（绝对路径 + .yfe 结尾或其派生名 .yfe.*）
+  //    已于 2026-10-10（W3-2 · §11.1 L3）抽到 `electron/syncPath.cjs`，顶部 require，此处直接用。
 
   // ---- 云盘文件同步（#031 桌面版）：经主进程 fs 读写用户选定的同步目录 ----
   // 渲染进程 nodeIntegration=false，无法直接 require('fs')；所有文件 IO 必须走 IPC 到主进程。

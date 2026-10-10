@@ -513,6 +513,41 @@ async function main() {
       dsrc.includes('resetTombs()'))
   }
 
+  // ---------- ⑮ L2 收口：`backgroundPull` 在首次 ensureInit 之前也认「本机库」那一份 ----------
+  //
+  // 场景：`configure` 之后、首次 pull 之前（启动瞬间）远端就有更新，轮询触发了 backgroundPull。
+  // 收口前它把**内存 cache（此刻是空的）**当 `local` 路 ⇒ `localHasContent=false` ⇒ 墓碑闸被短路
+  // ⇒ 本机删过的记录被云端旧快照带回来（幽灵项目在「同步中断窗口」里的复现形态）。
+  // 收口后 `backgroundPull` 也走 `localForMerge()`，与 `ensureInit` 同源。
+  {
+    __resetMockStores()
+    __resetLocalStorage()
+
+    // —— 第一实例：云端与本机库都有 p1 / p2，推一份云端载荷 ——
+    const { t, pushes } = scriptedTransport({})
+    const cloud = createCloudStore(t)
+    cloud.configure('l2-key')
+    await cloud.pullSnapshot()
+    await cloud.seedFromLocal(async (s) => (s === 'projects' ? [{ id: 'p1' }, { id: 'p2' }] : []))
+    const enc = pushes[pushes.length - 1]?.enc
+    ok('⑮ 前置：云端载荷已就绪', !!enc)
+
+    // —— 本机删掉 p2（记墓碑）——
+    await cloud.store.del('projects', 'p2')
+    ok('⑮ 前置：本机已删 p2 → 有墓碑', isDeleted('projects', 'p2'))
+
+    // —— 模拟重启后「首次 ensureInit 之前」远端就更新：直接 backgroundPull，**刻意不先 pullSnapshot** ——
+    const t2 = scriptedTransport({ pull: () => ({ status: 200, rev: 9, enc }) })
+    const cloud2 = createCloudStore(t2.t)
+    cloud2.configure('l2-key')
+    cloud2.onLocalSnapshot(async () => ({ projects: [{ id: 'p1' }] })) // 本机库：有 p1、无 p2
+    await cloud2.backgroundPull()
+
+    const rows = cloud2.getCacheSnapshot().projects as { id: string }[]
+    ok('🔴 backgroundPull 在首次 init 之前也认「本机库」那一份（被删的 p2 不复活）',
+      rows.length === 1 && rows[0].id === 'p1', JSON.stringify(rows))
+  }
+
   console.log(`\nsyncGuards: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exitCode = 1
 }
