@@ -60,6 +60,9 @@ import {
   type VarKey, type TavernStoryIndexItem, sessionStoryId, 
 } from '../lib/tavern/types'
 import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf, migrateVarScale, VAR_SCALE, setCharNote, emptyVars } from '../lib/tavern/vars'
+// 3.0 · W2-4b（§13 F1）：卡上没有持久数值时，按卡文「进度锁」声称的阶段给非 0 起点
+import { paceLockStartValues } from '../lib/tavern/paceLockBands'
+import { readCardField } from '../lib/tavern/types'
 import { snapshotOf, openingToMessage } from '../lib/tavern/script'
 import { getScript } from '../lib/tavern/script'
 import { getTavernSettings, memoryLimitsOf, activeProfileOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
@@ -78,8 +81,16 @@ async function seedSessionVarsFromCard(s: FreeSession): Promise<FreeSession> {
   const id = primaryAiCharId(s)
   if (!id) return s
   const card = await store.getFreeChar(id).catch(() => null)
-  if (!card?.vars) return s
-  return { ...s, vars: { values: card.vars.values, turnSeq: 0, log: [], scale: VAR_SCALE } }
+  if (!card) return s
+  // ① 卡上有持久数值 ⇒ 以那份为准（那是上一场处出来的真进度，不能被静态卡文盖掉）
+  if (card.vars) return { ...s, vars: { values: card.vars.values, turnSeq: 0, log: [], scale: VAR_SCALE } }
+  // ② 🔴 W2-4b（§13 F1）：卡上没有持久数值 ⇒ 按卡文「进度锁」**声称的阶段**给非 0 起点。
+  //    否则会出现「卡文写着『已完全信任』、数值却是 0（中立）」—— 模型看到裸 0 就把角色
+  //    演成刚认识的陌生人（主人报障「对士道像陌生人」的成因之一）。
+  //    档位锚点复用 VAR_BANDS 的区间中点；推不出（卡文空 / 无阶段措辞）⇒ 保持原行为。
+  const seed = paceLockStartValues(readCardField(card, 'conduct.paceLock'))
+  if (!seed) return s
+  return { ...s, vars: { values: { ...emptyVars().values, ...seed }, turnSeq: 0, log: [], scale: VAR_SCALE } }
 }
 
 export function useTavernFreeModel() {

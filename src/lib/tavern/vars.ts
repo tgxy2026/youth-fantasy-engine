@@ -27,7 +27,7 @@
  *    变量是锦上添花，正文是命根子 —— 绝不能因为解析器没看懂就把作者要读的字吃掉。
  */
 import {
-  VAR_DEFS, bandsOf, varDefOf,
+  VAR_DEFS, bandsOf, bandOf, varDefOf,
   type VarKey, type VarOp, type VarValues, type VarChange, type TavernVars,
   type VarSource, type FreeSession, type CharVars,
 } from './types'
@@ -299,6 +299,23 @@ export function buildVarStateBlock(a: {
   const now = renderVarValues(a.values, keys)
   if (!now) return ''
   const lines: string[] = ['〖本场数值〗', `你此刻的状态：${now}`]
+  // 🔴 3.0 · W2-4a（§12）：把「数值 → 言行」的翻译也喂给**扮演侧**。
+  //    原先档位（名字 + effect 行为指引）只进抽取提示词，演戏的模型只看得到裸数
+  //    （`好感 45` 是什么概念？），「低好感该疏远、高好感会依赖」全靠它自己领会 ——
+  //    本地小模型这一层领会得飘，不是硬约束。
+  //    · **只对数值项**：`bandsOf()` 对文本项（心情 / 地点）返回 null，自然不进；
+  //    · **只输出当前档位一行**，绝不把五档全表塞进来（每轮都注入、额度敏感；全表仍只在抽取侧给）；
+  //    · 取值一律走 `bandOf`（与界面 TavernVarsPanel 共用同一份 VAR_BANDS，不另立口径）；
+  //    · 越界值由 bandOf 兜底夹到端点档。
+  const bandLines: string[] = []
+  for (const k of keys) {
+    if (!bandsOf(k)) continue          // 文本项没有刻度
+    const b = bandOf(k, a.values?.[k])
+    if (!b) continue
+    const label = varDefOf(k)?.label ?? k
+    bandLines.push(`${label}「${b.name}」— ${b.effect}`)
+  }
+  if (bandLines.length) lines.push(`当前档位：${bandLines.join('；')}`)
   if (a.goal?.trim()) lines.push(`这一场的目标：${a.goal.trim()}`)
   // 备注：作者写 / 模型改写的对「这个分」的旁白，喂给模型当上下文（不要求它回写）
   const noteLines = keys.map(k => (a.notes?.[k] ?? '').trim()).filter(Boolean)

@@ -687,6 +687,8 @@ export default function TavernFree() {
                           noteOf={k => notes[k] ?? ''}
                           onResetVars={reset}
                           readOnly={!!session?.endedAt}
+                          // 🔴 W2-4c（§13 F2）：把当前卡的「进度锁」原文交给面板做一致性提示（只读，面板不改卡）
+                          paceLock={card?.conduct?.paceLock ?? ''}
                         />
                       )
                     })()}

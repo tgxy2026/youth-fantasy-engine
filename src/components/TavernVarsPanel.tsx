@@ -27,6 +27,8 @@
 import { useEffect, useState } from 'react'
 import { Button } from './Button'
 import { varDefOf, bandOf, type TavernVars, type VarKey } from '../lib/tavern/types'
+// 3.0 · W2-4c（§13 F2）：卡文「进度锁」vs 当前数值档位的一致性提示（只提示，不自动改卡）
+import { paceLockDrift } from '../lib/tavern/paceLockBands'
 import { lastChangeText } from '../lib/tavern/vars'
 
 /** 一个数值行：标签 + 进度条（仅数值变量）+ 可编辑的值 + 最近一次差量 + 可编辑备注 */
@@ -139,7 +141,7 @@ function VarRow({ k, vars, onSet, locked, note, onNote }: {
   )
 }
 
-export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, readOnly, noteOf, onSetNote }: {
+export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, readOnly, noteOf, onSetNote, paceLock }: {
   /** 本场数值（C2 第二步）。没有 / 全关闭时整块不渲染 */
   vars?: TavernVars
   varKeys: VarKey[]
@@ -151,8 +153,16 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, 
   noteOf?: (key: VarKey) => string
   /** 作者改备注的回调 */
   onSetNote?: (key: VarKey, text: string) => void
+  /**
+   * 当前角色卡的「进度锁」（`conduct.paceLock`）原文 —— W2-4c 用来做一致性提示。
+   * 🔴 只是**只读**地拿来做比较，本面板**绝不**改卡。
+   */
+  paceLock?: string
 }) {
   const [showLog, setShowLog] = useState(false)
+  // 🔴 W2-4c（§13 F2）：卡文声称的阶段 vs 当前数值所在档 —— 不一致时提示作者去同步改卡。
+  //    纯派生（每次渲染现算），不进 state、不落库；🔴 **绝不自动改角色卡**（会动根本，须作者裁决）。
+  const drift = paceLockDrift(paceLock ?? '', vars?.values)
   /** 变动日志倒序（新的在上），最多 12 条 —— 再多也没人翻 */
   const log = [...(vars?.log ?? [])].reverse().slice(0, 12)
 
@@ -166,6 +176,15 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, 
 
   return (
     <div className="space-y-1.5">
+      {/* 🔴 W2-4c（§13 F2）：卡文「进度锁」与当前数值档位对不上 ⇒ 一行非阻断提示。
+          只提示、绝不自动改卡；作者想改就去角色卡「扮演规范 · 进度锁」自己改。 */}
+      {drift.length > 0 && (
+        <div className="rounded-md border border-amber/30 bg-amber/5 px-2 py-1.5 text-10 text-amber leading-relaxed">
+          <span className="font-medium">卡文的「进度锁」与当前数值对不上：</span>
+          {drift.map(d => ` ${d.label}卡文写「${d.wantBand}」，现在是「${d.nowBand ?? '未知'}」`).join('；')}
+          <span className="text-ink-500"> —— 要同步改角色卡的进度锁吗？这里不会自动改卡。</span>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <span className="text-10 text-ink-600">
           {readOnly ? '这一场已结束 · 只读' : '每轮回复后自动更新 · 也可手改'}
