@@ -1,4 +1,4 @@
-import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy, ArchiveRestore, History } from 'lucide-react'
+import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy, ArchiveRestore } from 'lucide-react'
 import payWechat from '../assets/pay-wechat.png'
 import payAlipay from '../assets/pay-alipay.jpg'
 import authorAvatar from '../assets/author-avatar.png'
@@ -10,7 +10,6 @@ import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 import UpdateDialog from './UpdateDialog'
 import MigrationWizard from './MigrationWizard'
-import RunLedgerPanel from './RunLedgerPanel'
 import { probeLegacy, type LegacyProbe } from '../lib/legacyMigration'
 import { QUARK_URL, QUARK_CODE, QUARK_TOKEN } from '../lib/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '../lib/versionCheck'
@@ -55,8 +54,6 @@ export default function AboutPage() {
   const [diagBusy, setDiagBusy] = useState(false)
   // 3.0 · W0-2：旧版数据迁移（首启向导之外的**手动入口**，幂等，可反复跑）
   const [migProbe, setMigProbe] = useState<LegacyProbe | null>(null)
-  // 3.0 · W1-1：AI 运行账本（只读留痕）
-  const [ledgerOpen, setLedgerOpen] = useState(false)
   /** 探测旧版数据 → 有则弹迁移向导；没有则如实告知（不静默） */
   const openLegacyImport = async () => {
     const pr = await probeLegacy()
@@ -94,8 +91,6 @@ export default function AboutPage() {
       <UpdateDialog open={dialogOpen} latest={result?.latest ?? null} onClose={() => setDialogOpen(false)} />
       {/* 3.0 · W0-2：旧版数据迁移向导（手动入口触发） */}
       {migProbe && <MigrationWizard probe={migProbe} onClose={() => setMigProbe(null)} />}
-      {/* 3.0 · W1-1：AI 运行账本（只读） */}
-      {ledgerOpen && <RunLedgerPanel onClose={() => setLedgerOpen(false)} />}
       <div className="max-w-5xl mx-auto px-6 py-8">
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-1">
@@ -228,17 +223,6 @@ export default function AboutPage() {
               </p>
               <Button variant="secondary" onClick={() => void openLegacyImport()} className="gap-1.5">
                 <ArchiveRestore size={14} /> 导入旧版数据
-              </Button>
-            </section>
-
-            {/* 3.0 · W1-1：AI 运行账本（只读留痕） */}
-            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
-              <SectionTitle icon={<History size={15} className="text-amber" />}>AI 运行账本</SectionTitle>
-              <p className="text-ink-400 text-xs leading-relaxed mb-4">
-                回看这本书的 AI 调用留痕：跑过哪些任务、成没成、产出多少。
-              </p>
-              <Button variant="secondary" onClick={() => setLedgerOpen(true)} className="gap-1.5">
-                <History size={14} /> 查看运行账本
               </Button>
             </section>
 

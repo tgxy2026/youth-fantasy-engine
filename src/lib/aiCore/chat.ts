@@ -6,6 +6,7 @@
  */
 
 import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from './transport'
+import { reportUsage, type ChatUsage } from './usage'
 import {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE, precheck,
   injectUserSystemPrompt,
@@ -133,22 +134,39 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   //    都接上」这句话成立的位置。已显式调过 `composeSystemPrompt` 的链路内容里带标记，
   //    这里会跳过 —— 不会拼两遍，也不会改变既有行为。
   const msgs = opts.skipUserSystem ? messages : injectUserSystemPrompt(messages, config)
-  return (await chatRaw(config, msgs, {
-    timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
-    think,
-    signal: opts.signal,
-    onToken: opts.onToken,
-    temperature,
-    // 2.9.2：显式传入优先；否则用「模型配置 → 文本生成微调」里填的那组参数。
-    // 🔴 不填时 `samplingOptionsOf` 返回 undefined ⇒ 请求体与改动前逐字节一致。
-    // 🔴 `json: true` 的结构化任务**不下发**这组参数 —— 温度已被强制成低温（见 ai.ts 的
-    //    JSON_TASK_TEMPERATURE）以保解析稳定，惩罚项若照发，作者为「文风」调的参数就会
-    //    作用到抽取 / 解析任务上，同样会劣化 JSON 稳定性。这与界面上「结构化任务不受影响」
-    //    的承诺同口径（2026-10-09 审计修）。
-    //    ⚠️ 只抑制**兜底来源**：显式传入的 `opts.extraOptions` 一律照发 ——
-    //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
-    extraOptions: opts.extraOptions ?? (opts.json ? undefined : samplingOptionsOf(config)),
-  })).content
+  // 3.0 · W1-4：上报本次调用用量（无订阅者时零开销）。
+  // 🔴 失败 / 被拒**也记一笔** —— §14 说「拒答也记一笔，便于复盘哪段内容老被拒」；
+  //    统计是旁路，绝不打断调用（reportUsage 内部已吞异常）。
+  const t0 = Date.now()
+  const usageSource: ChatUsage['source'] = config.type === 'ollama' ? 'ollama' : 'openai'
+  try {
+    const out = (await chatRaw(config, msgs, {
+      timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
+      think,
+      signal: opts.signal,
+      onToken: opts.onToken,
+      temperature,
+      // 2.9.2：显式传入优先；否则用「模型配置 → 文本生成微调」里填的那组参数。
+      // 🔴 不填时 `samplingOptionsOf` 返回 undefined ⇒ 请求体与改动前逐字节一致。
+      // 🔴 `json: true` 的结构化任务**不下发**这组参数 —— 温度已被强制成低温（见 ai.ts 的
+      //    JSON_TASK_TEMPERATURE）以保解析稳定，惩罚项若照发，作者为「文风」调的参数就会
+      //    作用到抽取 / 解析任务上，同样会劣化 JSON 稳定性。这与界面上「结构化任务不受影响」
+      //    的承诺同口径（2026-10-09 审计修）。
+      //    ⚠️ 只抑制**兜底来源**：显式传入的 `opts.extraOptions` 一律照发 ——
+      //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
+      extraOptions: opts.extraOptions ?? (opts.json ? undefined : samplingOptionsOf(config)),
+    })).content
+    reportUsage({ model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now() })
+    return out
+  } catch (e) {
+    // 3.0 · W1-4：被内容政策拒绝的调用也记一笔，并标 finishReason ——
+    // 统计页据此显示「被拒 N 次」，方便复盘哪段内容老被拒（§14）
+    reportUsage({
+      model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now(),
+      ...(e instanceof AIRefusalError ? { finishReason: 'content_filter' } : {}),
+    })
+    throw e
+  }
 }
 
 async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {

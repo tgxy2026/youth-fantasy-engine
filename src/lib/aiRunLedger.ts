@@ -17,6 +17,7 @@ import type {
 } from './aiRunTypes'
 import { hashOf } from './semantic/chunk'
 import { uid } from './id'
+import { setUsageSink } from './aiCore/usage'
 import { getAiRun, saveAiRun } from './db/aiRuns'
 
 // ============ 一、版本基准与失效判定（纯函数）============
@@ -97,6 +98,26 @@ export function pickContextSnapshot(
 
 // ============ 二、账本编排（读写 db）============
 
+// 3.0 · W1-4：任务内调用用量**内存累积**，收尾时一次写入。
+// 🔴 为什么不逐步写：长任务几十次调用，每次读改写一遍全库不值当（桌面版整库是一份 JSON）。
+let activeRunId: string | null = null
+let activeCalls: AiRunCall[] = []
+
+/** 把用量总线接到当前任务上 —— 任务结束后必须摘掉（见 finishRun） */
+function bindUsageSink(): void {
+  setUsageSink(u => {
+    if (!activeRunId) return
+    activeCalls.push({
+      model: u.model,
+      ms: u.ms,
+      ...(u.promptTokens !== undefined ? { promptTokens: u.promptTokens } : {}),
+      ...(u.completionTokens !== undefined ? { completionTokens: u.completionTokens } : {}),
+      ...(u.finishReason ? { finishReason: u.finishReason } : {}),
+      at: u.at,
+    })
+  })
+}
+
 /** 组装一条新运行记录（未落库）—— `status` 一律从 `running` 起 */
 export function newRun(input: {
   projectId: string
@@ -132,6 +153,10 @@ export async function createRun(input: {
 }): Promise<AiRun> {
   const run = newRun(input)
   await saveAiRun(run)
+  // 3.0 · W1-4：接上用量总线 —— 本任务期间的每次 chat() 都会累积进 activeCalls
+  activeRunId = run.id
+  activeCalls = []
+  bindUsageSink()
   return run
 }
 
@@ -175,11 +200,16 @@ export async function finishRun(
     now?: number
   },
 ): Promise<void> {
+  // 3.0 · W1-4：把本任务累积的调用账**一次写入**（没有调用就不写这个字段）
+  const calls = activeRunId === id ? [...activeCalls] : []
   await patchRun(id, {
     status: patch.status,
     outcome: patch.outcome ?? null,
     error: patch.error ?? '',
     ...(patch.context !== undefined ? { context: patch.context } : {}),
+    ...(calls.length ? { calls } : {}),
     finishedAt: patch.now ?? Date.now(),
   })
+  // 摘掉总线 —— 否则下一次任务的调用会继续往已结束的任务里塞
+  if (activeRunId === id) { activeRunId = null; activeCalls = []; setUsageSink(null) }
 }
