@@ -67,10 +67,21 @@ const f32 = (nums: number[]): Float32Array => Float32Array.from(nums)
 
   ok('base64 空 buffer 不炸', base64ToBuffer(bufferToBase64(new ArrayBuffer(0))).byteLength === 0)
 
-  // 畸形 base64：atob 会抛 ⇒ 需确认调用方（fromStored）有兜底
+  // 🔴 畸形 base64（2026-10-11 审计：**收紧一条恒真断言**）
+  //    原写法是 `ok(..., threw || true)` —— `|| true` 让条件**恒为真**，这条用例等于没测，
+  //    于是「atob 抛异常」这个真问题在眼皮底下躺过去了（实测：`DOMException: Invalid character`）。
+  //    现在按函数契约（注释原文：畸形返回空 buffer）钉死两条。
   let threw = false
-  try { base64ToBuffer('@@@not-base64@@@') } catch { threw = true }
-  ok('base64 畸形输入：要么抛要么空，不得静默返回垃圾长度', threw || true)
+  let got = -1
+  try { got = base64ToBuffer('@@@not-base64@@@').byteLength } catch { threw = true }
+  ok('base64 畸形输入：不抛异常（否则整库 load 会 reject）', threw === false)
+  ok('base64 畸形输入：返回空 buffer（契约＝调用方按无效块跳过）', got === 0, `实得 ${got}`)
+  // 中文 / 空格 / 截断尾部等现实中真会出现的脏数据
+  for (const dirty of ['中文不是base64', '', 'AAAA=', 'A', '  ', '$$$']) {
+    let t2 = false, l2 = -1
+    try { l2 = base64ToBuffer(dirty).byteLength } catch { t2 = true }
+    ok(`base64 脏输入「${dirty}」不抛且返回有限长度`, t2 === false && l2 >= 0, `len=${l2}`)
+  }
 
   // 大 buffer 分块路径（> 0x8000）—— 验证 chunked String.fromCharCode 不炸栈
   const big = new Float32Array(4096 * 8) // 32K 个 float = 128KB
@@ -300,6 +311,57 @@ await (async () => {
 
   await resetPortableStores()
 })()
+
+// ============ ⑥b 坏数据隔离：一条坏向量不得掀翻整个库 ============
+//
+// 🔴 这是 2026-10-11 审计 P1-3 的**价值所在**。`fromStored` 会为每一行调 `base64ToBuffer`，
+//    而 `load()` 是 `rows.map(fromStored)` —— 在修复前，只要数据文件里**有任意一条** vecB64 损坏
+//    （网盘同步截断 / 手工编辑过 JSON / 磁盘坏块，都很常见），`map` 抛错 ⇒ `load()` 整体 reject
+//    ⇒ 语义检索与知识库**全部无结果且不报错**（上层把失败降级成"没召回"），作者只会觉得
+//    "搜索坏了"，永远查不到真因。
+//    修好后应当是：坏的那条向量退化为空 buffer（按无效块跳过），**其它好数据照常返回**。
+await (async () => {
+  await resetPortableStores()
+  const pid = 'p-badrow'
+  // 🔴 vec 必须是 ArrayBuffer（不是 Float32Array）—— 与 §② 的 mk() 同口径，见那边的注释
+  const good = makeVecRow({
+    projectId: pid, kind: 'chapter', refId: 'r1', chunkIdx: 0,
+    text: '块0', title: '第一章', hash: 'h1',
+    vec: toVectorBuffer(f32([1, 2, 3])), dim: 3, model: 'm1', secret: false,
+  } as never)
+  await portableStore.bulkPut(PORTABLE_VEC_STORE, [
+    toStoredRowLike(good),
+    // 一条被"同步截断"的坏行：vecB64 不是合法 base64
+    { id: 'bad-row', projectId: pid, kind: 'chapter', refId: 'r2', chunkIdx: 0, hash: 'h2', vecB64: '@@@截断@@@' },
+  ])
+
+  let rows: Awaited<ReturnType<typeof portableVecBackend.load>> | null = null
+  let rejected = false
+  try { rows = await portableVecBackend.load(pid) } catch { rejected = true }
+
+  ok('⑥b 含一条坏向量时 load() **不 reject**（这是修复前的行为：会抛）', rejected === false)
+  ok('⑥b 好数据仍在（不会因为一条坏行就整库读不出来）', (rows?.length ?? 0) === 2, `实得 ${rows?.length ?? 0}`)
+  const goodRow = rows?.find(r => r.refId === 'r1')
+  ok('⑥b 好行的向量仍逐位正确', !!goodRow && fromVectorBuffer(goodRow.vec).length === 3 && fromVectorBuffer(goodRow.vec)[0] === 1)
+  const badRow = rows?.find(r => r.refId === 'r2')
+  ok('⑥b 坏行的向量退化为空 buffer（按无效块跳过，不污染其它行）', badRow?.vec.byteLength === 0,
+    `实得 ${badRow?.vec.byteLength}`)
+
+  // stats / index 也不能被坏行带崩（它们是 load 的下游）
+  let sOk = true, iOk = true
+  try { await portableVecBackend.stats(pid) } catch { sOk = false }
+  try { await portableVecBackend.index(pid) } catch { iOk = false }
+  ok('⑥b stats() 不被坏行带崩', sOk)
+  ok('⑥b index() 不被坏行带崩', iOk)
+
+  await resetPortableStores()
+})()
+
+/** 把一条好行转成落盘形态（与 src 侧 toStored 同口径，供坏数据用例造数据） */
+function toStoredRowLike(r: ReturnType<typeof makeVecRow>): Record<string, unknown> {
+  const { vec, ...rest } = r
+  return { ...rest, vecB64: bufferToBase64(vec) }
+}
 
 // ============ ⑦ 模块导出面 + 全局后端复位 ============
 //

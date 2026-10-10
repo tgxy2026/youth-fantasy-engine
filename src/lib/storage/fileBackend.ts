@@ -246,22 +246,56 @@ export async function flushPortable(): Promise<boolean> {
 }
 
 /**
- * 关页前尽力写盘。浏览器里**没有同步阻塞写**（不像桌面版有 saveSync），
- * 故用 `navigator.sendBeacon`（在 pagehide 时仍能发出、不被取消）走一次 PUT。
- * 返回是否已发出（不代表服务已写完，但比什么都不做强）。
+ * 关页前尽力写盘 —— 走一次 PUT。返回**是否已发出**（不代表服务已写完）。
+ *
+ * 🔴 两条路都要有（2026-10-11 审计修复）：原先只有 `sendBeacon` 一条，而它**有载荷上限**
+ *    （浏览器实现各不相同，几十 KB 起就可能直接返回 false）。便携版写的是**整库 JSON**，
+ *    含正文、向量、备份载荷 —— 真实体量下 beacon 被拒不是"万一"，而是常态。
+ *    ⇒ 失败时降级到**同步 XHR**：它在 `beforeunload` / `pagehide` 里仍能完成（浏览器会等它返回），
+ *    且没有 beacon 的载荷限制。这是关闭页面前**最后也是唯一**的落盘机会。
  */
 export function flushPortableBeacon(): boolean {
   if (!PORTABLE || !inited || !dirty || writeLocked) return false
-  if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false
-  try {
-    data.savedAt = Date.now()
-    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' })
-    const ok = navigator.sendBeacon(apiBase() + '/api/data', blob)
-    if (ok) dirty = false
-    return ok
-  } catch {
-    return false
+  data.savedAt = Date.now()
+  const text = JSON.stringify(data)
+
+  // ① 首选：sendBeacon（pagehide 时仍被允许发出，不像普通 fetch 会被取消）
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    try {
+      const ok = navigator.sendBeacon(apiBase() + '/api/data', new Blob([text], { type: 'application/json' }))
+      if (ok) { dirty = false; return true }
+    } catch { /* 落到 ② */ }
   }
+
+  // ② 兜底：同步 XHR（会阻塞到写完为止 —— 关页前夕这点阻塞是值得的）
+  try {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', apiBase() + '/api/data', false) // false = 同步
+    xhr.setRequestHeader('Content-Type', 'application/json')
+    xhr.send(text)
+    if (xhr.status >= 200 && xhr.status < 300) { dirty = false; return true }
+  } catch { /* 真写不出去，返回 false 交给调用方拦一道 */ }
+  return false
+}
+
+/**
+ * 关页钩子里该用的那个 —— 返回 **true 表示「可以安全离开」**。
+ *
+ * 🔴 为什么不直接用 `flushPortableBeacon`：它的返回值在「没有未保存内容」时也是 false
+ *    （`!dirty` 提前返回），如果拿它去决定是否弹「确定要离开吗」，会**每次关页都误弹**。
+ *    这里把三种情况归成"能走 / 不能走"：
+ *      · 没有未保存内容 ⇒ 能走（true）
+ *      · 写盘锁定期 ⇒ 能走（true）—— 作者已被顶部红条明确告知，不该再被浏览器弹窗拦一次
+ *      · 有未保存内容且**两种手段都没写出去** ⇒ 不能走（false），让浏览器弹原生确认拦一道
+ *
+ * ⚠️ 调用方（`App.tsx`）只在 `beforeunload` 里用它决定是否 `preventDefault`；
+ *    `pagehide` 里没法拦（页面已经在走了），只能尽力写。
+ */
+export function flushPortableOnLeave(): boolean {
+  if (!PORTABLE || !inited) return true
+  if (writeLocked) return true
+  if (!dirty) return true
+  return flushPortableBeacon()
 }
 
 // ---------- StoreOps 实现（镜像 desktopStore 的六个原语） ----------
@@ -324,10 +358,17 @@ export function replacePortableData(parsed: unknown): void {
   void flushPortable()
 }
 
-/** 当前内存数据的 JSON 串（导出用） */
+/**
+ * 当前内存数据的 JSON 串（导出用）。
+ *
+ * 🔴 不改动内存里的 `data.savedAt`（2026-10-11 审计）：原先这里直接 `data.savedAt = Date.now()`，
+ *    于是**一次纯读操作把「最后保存时间」改掉了** —— 导出的文件声称"保存于此刻"，
+ *    但磁盘上并没有发生这一刻的写入（既没 `dirty=true` 也没触发写盘）。作者据此误以为
+ *    「已经存好了」，实际那份数据只在浏览器下载目录里。
+ *    ⇒ 时间戳写进**导出副本**，内存状态保持真实（= 上次真正落盘的时间）。
+ */
 export function portableDataJSON(): string {
-  data.savedAt = Date.now()
-  return JSON.stringify(data)
+  return JSON.stringify({ ...data, savedAt: Date.now() })
 }
 
 // ---------- 便携版专属动作（导出 / 导入 / 打开数据文件夹） ----------
@@ -410,28 +451,67 @@ export async function importPortableData(
   return ok ? { ok: true } : { ok: false, error: lastError || '写入便携数据文件失败' }
 }
 
-/** 弹原生「打开文件」对话框并读文本（浏览器版）；用户取消返回 null */
+/**
+ * 🔴 选文件对话框的**兜底超时**：超过这个时长仍无结果就按「取消」处理。
+ *    它不是"正常路径"，而是防「Promise 永远不 resolve」的保险丝 —— 详见 `pickLocalFile`。
+ *    取 10 分钟：足够作者翻遍文件夹找备份，又不至于让界面无限期卡着。
+ */
+const PICK_FILE_TIMEOUT_MS = 10 * 60 * 1000
+
+/**
+ * 弹原生「打开文件」对话框并读文本（浏览器版）；用户取消 / 读失败 / 超时都返回 null。
+ *
+ * 🔴 为什么必须显式处理「取消」（2026-10-11 审计修复）：
+ *    原先只监听 `change` —— 用户**关掉**对话框不触发它，于是 Promise 永远 pending，
+ *    `await pickLocalFile()` 永不返回。调用方 `Portable.tsx` 的 `doImport` 把 `setBusy(null)`
+ *    写在 `finally` 里，await 不返回 ⇒ finally 永不执行 ⇒ 「导入」按钮**永久禁用**，
+ *    作者只能刷新页面。原注释还写着「交给调用方按 null 处理（resolve 由 change 或超时兜底）」，
+ *    但那份"超时兜底"根本不存在 —— 又是注释承诺 ≠ 实现。
+ *
+ *    修法两步：
+ *    ① 监听 `cancel` 事件（现代浏览器在用户关闭文件对话框时触发，可靠且即时）；
+ *    ② 加超时保险丝，覆盖「cancel 事件不支持 / 对话框被系统吞掉」的残余情况。
+ *    两条都保证 `input.remove()`（不留隐藏 DOM）。
+ */
 export function pickLocalFile(accept = '.json,application/json'): Promise<string | null> {
   return new Promise((resolve) => {
+    let input: HTMLInputElement | null = null
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let settled = false
+
+    // 所有出口都走这里：保证只 resolve 一次、且一定把隐藏 input 摘掉
+    const finish = (value: string | null) => {
+      if (settled) return
+      settled = true
+      if (timer != null) clearTimeout(timer)
+      input?.remove()
+      resolve(value)
+    }
+
     try {
-      const input = document.createElement('input')
+      input = document.createElement('input')
       input.type = 'file'
       input.accept = accept
       input.style.display = 'none'
       document.body.appendChild(input)
+
       input.addEventListener('change', () => {
-        const f = input.files?.[0]
-        input.remove()
-        if (!f) { resolve(null); return }
+        const f = input?.files?.[0]
+        if (!f) { finish(null); return }
         const fr = new FileReader()
-        fr.onload = () => resolve(typeof fr.result === 'string' ? fr.result : null)
-        fr.onerror = () => resolve(null)
+        fr.onload = () => finish(typeof fr.result === 'string' ? fr.result : null)
+        fr.onerror = () => finish(null)
         fr.readAsText(f, 'utf-8')
       })
-      // 用户关掉对话框不会触发 change ⇒ 无法可靠探测取消，交给调用方按 null 处理（resolve 由 change 或超时兜底）
+      // ① 用户关闭对话框：现代浏览器会发 cancel（不挂 change）
+      input.addEventListener('cancel', () => finish(null))
+
+      // ② 保险丝：任何原因导致上面两条都没触发时，也不能让 Promise 永远悬着
+      timer = setTimeout(() => finish(null), PICK_FILE_TIMEOUT_MS)
+
       input.click()
     } catch {
-      resolve(null)
+      finish(null)
     }
   })
 }

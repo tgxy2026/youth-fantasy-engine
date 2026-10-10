@@ -20,7 +20,7 @@ import { isWorldSetTab, isParallelSetTab } from '@/lib/world/worldSets'
 import * as db from '@/lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/sync/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
-import { PORTABLE, initPortableStore, flushPortableBeacon, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
+import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
 import { PortableWriteLockBanner } from '@/components/app/PortableWriteLockBanner'
@@ -157,7 +157,9 @@ export default function App() {
 
   // 关闭页面前确保未保存的修改写盘
   //  · 桌面版走同步阻塞写（saveSync），保证窗口关闭前数据落盘；
-  //  · 便携版在浏览器里**没有同步阻塞写**，改用 sendBeacon（pagehide 时仍能发出），见 flushPortableBeacon。
+  //  · 便携版在浏览器里**没有同步阻塞写**（桌面版有 saveSync），改用
+  //    sendBeacon → 同步 XHR 两级兜底；仍写不出时由 beforeunload 弹原生确认拦一道。
+  //    见 flushPortableBeacon / flushPortableOnLeave。
   useEffect(() => {
     if (DESKTOP) {
       const onLeave = () => { flushDesktopSync() }
@@ -165,14 +167,23 @@ export default function App() {
       return () => { window.removeEventListener('beforeunload', onLeave) }
     }
     if (PORTABLE) {
-      // 🔴 必须用 pagehide 而非 beforeunload：移动端 / 部分浏览器在 bfcache 场景不发 beforeunload，
-      //    而 pagehide 一定会发。两个都挂，`flushPortableBeacon` 内部幂等（dirty 才发）。
-      const onLeave = () => { flushPortableBeacon() }
-      window.addEventListener('pagehide', onLeave)
-      window.addEventListener('beforeunload', onLeave)
+      // 🔴 两个事件都挂：pagehide 覆盖 bfcache / 移动端（那边可能不发 beforeunload），
+      //    beforeunload 则**唯一能拦住用户**的时机。
+      //    `flushPortableBeacon` 内部幂等（dirty 才发），两边都调不会重复写。
+      const onHide = () => { flushPortableBeacon() }
+      // 🔴 关页前写不出去时**必须拦一道**：便携版关页即等于"服务还在但客户端没了"，
+      //    没写出去的改动就真没了。让浏览器弹原生「确定要离开吗」—— 作者至少能回页面点保存。
+      const onUnload = (e: BeforeUnloadEvent) => {
+        if (!flushPortableOnLeave()) {
+          e.preventDefault()
+          e.returnValue = '' // 旧浏览器需要这个才弹
+        }
+      }
+      window.addEventListener('pagehide', onHide)
+      window.addEventListener('beforeunload', onUnload)
       return () => {
-        window.removeEventListener('pagehide', onLeave)
-        window.removeEventListener('beforeunload', onLeave)
+        window.removeEventListener('pagehide', onHide)
+        window.removeEventListener('beforeunload', onUnload)
       }
     }
   }, [])

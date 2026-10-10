@@ -13,6 +13,9 @@ export const KEY_PATHS: Record<string, string> = {
   // C2：备份元数据与载荷分开存（须与 src/lib/app/desktop.ts 逐项一致）
   backups: 'id', backupPayloads: 'id',
   formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
+  // 3.0 · 多世界：本桩原先漏了这一项（`?? 'id'` 兜底让它静默没炸 —— 主键恰好也是 id）。
+  // 由 tests/portableBackend.test.ts 的四表一致性守卫抓出（2026-10-11 审计）。
+  worlds: 'id',
 }
 
 const stores = new Map<string, Map<string, unknown>>()

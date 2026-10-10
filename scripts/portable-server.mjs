@@ -18,7 +18,12 @@
 //
 // 【安全边界（本地服务的基本自觉）】
 //   · **只绑 127.0.0.1**，不绑 0.0.0.0 —— 否则同局域网任何人都能读你的小说数据。
-//   · PUT 载荷上限（防误传超大内容把内存吃满）。
+//   · 🔴 **校验 Host 头**：只绑 127.0.0.1 **挡不住 DNS rebinding** —— 恶意网页可以让受害者的
+//     浏览器向 `127.0.0.1:<port>` 发请求（请求确实从本机发出，绑定检查放行），此时 Host 头是
+//     `evil.com`。本服务无任何鉴权 ⇒ 不加这道校验，任意网页都能 GET 走你全部稿件、PUT 覆盖它。
+//     故每个请求都查 Host 必须是 127.0.0.1 / localhost / [::1]（可带端口），否则 403。
+//   · PUT 载荷上限（防误传超大内容把内存吃满），超限回 **413**（不直接断开，否则前端只看到
+//     "fetch failed"，无法告诉作者「你的库太大了」）。
 //   · 静态托管做**路径穿越**防护（.. 归一化后必须落在 dist 内）。
 //   · 数据文件名固定，不接受客户端指定路径。
 //
@@ -115,11 +120,35 @@ const MIME = {
 }
 
 /**
+ * 🔴 校验请求来自本机（防 DNS rebinding）。
+ *
+ * 「只绑 127.0.0.1」挡不住这类攻击：请求由**受害者自己的浏览器**发出，源 IP 就是本机，
+ * 绑定检查必然放行；唯一能区分「本软件页面」与「evil.com 的页面」的可信信号是 **Host 头**
+ * （以及 Origin / Referer，但它们对 GET 常缺失；Host 一定在）。
+ * ⇒ 放行条件：Host 的主机名部分是 127.0.0.1 / localhost / [::1]（端口任意）。
+ */
+function isLocalHost(req) {
+  const host = (req.headers.host || '').trim().toLowerCase()
+  if (!host) return false
+  // 去掉端口：IPv6 是 [::1]:8765 形式，不能用冒号直接切
+  const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.split(':')[0]
+  return name === '127.0.0.1' || name === 'localhost' || name === '[::1]' || name === '::1'
+}
+
+/**
  * 把 URL 路径解析成 dist 内的真实文件路径；越界返回 null。
  * 🔴 路径穿越防护：`path.normalize` 之后必须仍以 DIST_DIR 开头（`..%2f` 之类也要挡住）。
+ * 🔴 `decodeURIComponent` 对**畸形百分号编码**（如 `/%`、`/%E0%A4%A`）会抛 `URIError` ——
+ *    实测确认。它不是"构造不出来的输入"：浏览器/爬虫/手工输错都会产生。原先没兜住 ⇒
+ *    一个异常直接把整个服务进程打挂（作者正在写的稿子因此丢窗口）。改为解码失败即拒绝。
  */
 function resolveStatic(urlPath) {
-  let p = decodeURIComponent(urlPath.split('?')[0])
+  let p
+  try {
+    p = decodeURIComponent(urlPath.split('?')[0])
+  } catch {
+    return null
+  }
   if (p === '/' || p === '') p = '/index.html'
   const abs = path.normalize(path.join(DIST_DIR, p))
   const rel = path.relative(DIST_DIR, abs)
@@ -141,16 +170,30 @@ function sendJson(res, code, obj) {
   res.end(body)
 }
 
+/**
+ * 读请求体。超限时不 `req.destroy()` —— 那样 socket 立刻关闭、413 根本发不出去，
+ * 前端只看到 "fetch failed"（作者以为软件坏了，其实是自己的库超大了）。
+ * 改为**继续吞掉剩余数据但不存**，让 handler 有机会回一个说得清楚的 413。
+ */
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = []
     let len = 0
+    let tooLarge = false
     req.on('data', (c) => {
+      if (tooLarge) return // 已判定超限：丢弃后续分片，等 end 收尾
       len += c.length
-      if (len > MAX_BODY) { reject(new Error('请求体过大（超过 512 MiB）')); req.destroy(); return }
+      if (len > MAX_BODY) {
+        tooLarge = true
+        chunks.length = 0
+        const e = new Error(`请求体过大（超过 ${MAX_BODY >> 20} MiB）`)
+        e.code = 'BODY_TOO_LARGE'
+        reject(e)
+        return
+      }
       chunks.push(c)
     })
-    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('end', () => { if (!tooLarge) resolve(Buffer.concat(chunks)) })
     req.on('error', reject)
   })
 }
@@ -167,9 +210,13 @@ function atomicWrite(text) {
 const server = createServer(async (req, res) => {
   const url = req.url || '/'
 
+  // 🔴 第一道闸：本机校验（DNS rebinding 防御）。绑 127.0.0.1 不够 —— 见 isLocalHost 的注释。
+  if (!isLocalHost(req)) {
+    return sendJson(res, 403, { ok: false, error: 'forbidden: 便携服务只接受来自本机的请求' })
+  }
+
   // ---- API ----
   if (url.startsWith('/api/')) {
-    // 只允许本机访问（双保险：绑定已是 127.0.0.1，这里再查一次 Host/来源）
     try {
       if (url === '/api/ping') return sendJson(res, 200, { ok: true, app: 'youth-fantasy-engine' })
 
@@ -183,7 +230,17 @@ const server = createServer(async (req, res) => {
           return sendJson(res, 200, { text, path: DATA_FILE })
         }
         if (req.method === 'PUT' || req.method === 'POST') {
-          const buf = await readBody(req)
+          const buf = await readBody(req).catch(e => {
+            if (e && e.code === 'BODY_TOO_LARGE') return null
+            throw e
+          })
+          if (buf === null) {
+            // 413 用完整句子：作者看到的是「库太大了」而不是「软件坏了」
+            return sendJson(res, 413, {
+              ok: false,
+              error: `数据超过 ${MAX_BODY >> 20} MiB 上限，未能保存。请用「导出数据文件」留档，再清理旧的自动备份后重试。`,
+            })
+          }
           const text = buf.toString('utf8')
           // 最小校验：必须是本软件的 PortableData（kind 必查），挡住误写
           try {
@@ -207,29 +264,38 @@ const server = createServer(async (req, res) => {
   }
 
   // ---- 静态 ----
-  const abs = resolveStatic(url)
-  if (!abs || !existsSync(abs) || !statSync(abs).isFile()) {
-    // SPA 兜底：未知路径回 index.html（前端路由用）
-    const idx = path.join(DIST_DIR, 'index.html')
-    if (existsSync(idx)) {
-      const html = injectPortableFlag(readFileSync(idx, 'utf8'), PORT)
+  // 🔴 整段兜底：`statSync` / `readFileSync` 都可能因路径异常、文件被占用、权限问题抛错，
+  //    与上面畸形 URL 编码同理 —— 这里任何一个异常都会掀翻整个服务进程。兜住后只影响这一次请求。
+  try {
+    const abs = resolveStatic(url)
+    if (!abs || !existsSync(abs) || !statSync(abs).isFile()) {
+      // SPA 兜底：未知路径（含被 resolveStatic 拒绝的畸形 URL）回 index.html
+      const idx = path.join(DIST_DIR, 'index.html')
+      if (existsSync(idx)) {
+        const html = injectPortableFlag(readFileSync(idx, 'utf8'), PORT)
+        res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' })
+        return res.end(html)
+      }
+      res.writeHead(404); return res.end('Not Found')
+    }
+    const ext = path.extname(abs).toLowerCase()
+    if (ext === '.html') {
+      const html = injectPortableFlag(readFileSync(abs, 'utf8'), PORT)
       res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' })
       return res.end(html)
     }
-    res.writeHead(404); return res.end('Not Found')
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      // 静态资源（带 hash 文件名）可长缓存；index.html 已单独 no-store
+      'Cache-Control': ext === '.map' ? 'no-store' : 'public, max-age=31536000',
+    })
+    createReadStream(abs).pipe(res)
+  } catch (e) {
+    try {
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('静态资源读取失败：' + (e instanceof Error ? e.message : String(e)))
+    } catch { /* 连接已断，无从回复 */ }
   }
-  const ext = path.extname(abs).toLowerCase()
-  if (ext === '.html') {
-    const html = injectPortableFlag(readFileSync(abs, 'utf8'), PORT)
-    res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' })
-    return res.end(html)
-  }
-  res.writeHead(200, {
-    'Content-Type': MIME[ext] || 'application/octet-stream',
-    // 静态资源（带 hash 文件名）可长缓存；index.html 已单独 no-store
-    'Cache-Control': ext === '.map' ? 'no-store' : 'public, max-age=31536000',
-  })
-  createReadStream(abs).pipe(res)
 })
 
 // ---------- 打开浏览器 ----------
@@ -250,6 +316,23 @@ function openBrowser(url) {
     return false
   }
 }
+
+// ---------- 进程级兜底 ----------
+//
+// 🔴 本服务是便携版数据的**唯一落盘通道**：浏览器里的 JS 写不了应用目录，全靠它。
+//    进程一挂，作者以为「一直在存」的改动就再也回不到 U 盘 —— **静默退出比报错糟糕得多**
+//    （报错至少还看得见，静默退出是"存了但没存"）。
+//    上面各处已逐点兜住已知异常，这里再兜一层**未知**异常：记下来、继续活着。
+process.on('uncaughtException', (e) => {
+  console.error('[portable] ⚠️ 未捕获异常（服务继续运行，但请留意）：', e?.message ?? e)
+})
+process.on('unhandledRejection', (e) => {
+  console.error('[portable] ⚠️ 未处理的 Promise 拒绝（服务继续运行）：', e?.message ?? e)
+})
+// listen 成功之后的运行时错误（端口被抢占等）也要看见，否则又是一次"服务没了但没人知道"
+server.on('error', (e) => {
+  console.error('[portable] ⚠️ 服务出错：', e?.message ?? e)
+})
 
 // ---------- 启动 ----------
 let PORT = 0

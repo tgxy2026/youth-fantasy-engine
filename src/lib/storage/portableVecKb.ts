@@ -61,15 +61,33 @@ export function bufferToBase64(buf: ArrayBuffer): string {
   return Buffer.from(bytes).toString('base64')
 }
 
-/** base64 还原回 `ArrayBuffer`（读盘用）。畸形输入返回空 buffer（调用方按无效块跳过） */
+/**
+ * base64 还原回 `ArrayBuffer`（读盘用）。畸形输入返回**空 buffer**（调用方按无效块跳过）。
+ *
+ * 🔴 为什么必须 try/catch（2026-10-11 审计实测）：`atob` 对**非 base64 字符**直接抛
+ *    `DOMException: Invalid character`（实测 `'!!!not-base64!!!'` 即抛），`Buffer.from(x,'base64')`
+ *    虽宽容但也不保证。而上面这行注释原本就承诺「畸形返回空 buffer」—— **注释说的是设计，
+ *    代码做的是抛异常**，二者不一致。
+ *
+ *    后果不是"这一条坏"，而是**整块功能瘫痪**：`load()` 里 `rows.map(fromStored)`，
+ *    任一条抛错就让整个 Promise reject ⇒ 语义检索 / 知识库**全部无结果且不报错**
+ *    （上层把检索失败降级成"没召回"，作者只看到"搜不出来"，永远查不到真因）。
+ *    数据文件里出现一条坏向量的现实路径很常见：网盘同步截断、手工编辑过 JSON、磁盘坏块。
+ *    ⇒ 一条坏数据只该丢这一条，不该掀翻整个库。
+ */
 export function base64ToBuffer(b64: string): ArrayBuffer {
   let bytes: Uint8Array
-  if (typeof atob === 'function') {
-    const bin = atob(b64)
-    bytes = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  } else {
-    bytes = new Uint8Array(Buffer.from(b64, 'base64'))
+  try {
+    if (typeof atob === 'function') {
+      const bin = atob(b64)
+      bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    } else {
+      bytes = new Uint8Array(Buffer.from(b64, 'base64'))
+    }
+  } catch {
+    // 畸形：返回空 buffer，让调用方按"无效块"跳过（与函数契约一致）
+    return new ArrayBuffer(0)
   }
   // 🔴 `Uint8Array.buffer` 的静态类型是 `ArrayBufferLike`（含 SharedArrayBuffer），
   //    而 `VecRow.vec` 声明为 `ArrayBuffer` ⇒ 用 `slice()` 复制出**独立且非共享**的 buffer，
