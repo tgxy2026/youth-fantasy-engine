@@ -9,6 +9,7 @@ import { openDB, type IDBPDatabase } from 'idb'
 import type { Project } from '@/lib/types'
 import type { StoreOps } from '@/lib/storage/storeOps'
 import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState, desktopStoreReady } from '@/lib/app/desktop'
+import { PORTABLE, portableStore } from '@/lib/storage/fileBackend'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
@@ -70,8 +71,14 @@ function getDB() {
 
 // ============ 存储适配层 ============
 // 桌面模式（Electron 安装版）：desktopStore —— 内存数据 + 防抖写回本机用户数据目录的 JSON 文件
+// 便携模式（U 盘自包含目录）：portableStore —— 内存数据 + 防抖经本地服务写回应用目录的 ./data
+//   （2026-10-10 · 3.0 便携版 WP-1：与 desktopStore 同构的文件型后端，只是落盘通道换成 HTTP）
 // 浏览器兜底（dev 预览 / 无 Electron 环境）：IndexedDB（idb 封装）—— 不参与发布
-// 两种实现共用同一组原语，上层所有函数签名与行为保持一致，组件层零改动。
+// 三种实现共用同一组原语，上层所有函数签名与行为保持一致，组件层零改动。
+//
+// 🔴 `DESKTOP` 与 `PORTABLE` 互斥、不会同时为 true（桌面版不注入 __YFE_PORTABLE__、
+//    便携服务不注入 electronStore）；两者都为 false 时才是纯浏览器 dev（走 IDB）。
+//    实测口径见 tests/portableBackend.test.ts。
 
 const idbOps: StoreOps = {
   getAll: async store => (await getDB()).getAll(store),
@@ -97,7 +104,7 @@ const idbOps: StoreOps = {
   },
 }
 
-export let ops: StoreOps = DESKTOP ? desktopStore : idbOps
+export let ops: StoreOps = DESKTOP ? desktopStore : PORTABLE ? portableStore : idbOps
 
 // #005 冲突备份：云盘与本机都改过同一条记录时，本地优先采用，
 // 但云端那版不再无声丢弃 —— 另存本地副本供用户比对恢复。副本只落**当前平台的本地存储**，

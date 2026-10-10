@@ -37,6 +37,7 @@ export const Z = {
    * 高于页面常驻（fab/dock/sprite），但**低于 modal**：它是持久状态条而非交互弹层，
    * 弹窗打开时被盖住可接受（弹窗操作本来也写不了盘）；原先错借 Z.dropdown(9999)
    * 会压住所有弹窗与 toast，属语义错位（2026-09-27 巡检 U-5）。
+   * 便携写入锁横幅（PortableWriteLockBanner）同层共用（2026-10-10 便携版 WP-2b）。
    */
   banner: 60,
 

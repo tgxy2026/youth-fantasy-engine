@@ -20,7 +20,9 @@ import { isWorldSetTab, isParallelSetTab } from '@/lib/world/worldSets'
 import * as db from '@/lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/sync/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
+import { PORTABLE, initPortableStore, flushPortableBeacon, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
+import { PortableWriteLockBanner } from '@/components/app/PortableWriteLockBanner'
 import DataDock from '@/components/app/DataDock'
 import BackupReminder from '@/components/app/BackupReminder'
 import { markExported } from '@/lib/sync/backupReminder'
@@ -115,7 +117,8 @@ export default function App() {
   // 自动备份定时器句柄（打开项目时启动，退出时停止）
   const backupStop = useRef<(() => void) | null>(null)
   // 本地数据文件加载完成状态（未加载完不出主界面，避免闪一下空库）
-  const [fileReady, setFileReady] = useState(!DESKTOP)
+  // 🔴 便携模式同样要等（数据经本地服务装载，未就绪时内存是空库）—— 2026-10-10 便携版 WP-2b
+  const [fileReady, setFileReady] = useState(!DESKTOP && !PORTABLE)
   /**
    * 当前页签的 ref 镜像（2.6.3 · 跨页签任务存活）：
    * `navigate` 里要判断「是不是真的换了页签」，但把 `activeTab` 放进 useCallback 依赖
@@ -131,20 +134,40 @@ export default function App() {
    */
   const lastProjectRef = useRef<string | null>(null)
 
-  // 从本地用户数据目录加载数据
+  // 从本地用户数据目录加载数据（桌面版）/ 从本地服务加载（便携版）
   useEffect(() => {
-    if (!DESKTOP) return
-    let alive = true
-    void initDesktopStore().then(() => { if (alive) setFileReady(true) })
-    return () => { alive = false }
+    if (DESKTOP) {
+      let alive = true
+      void initDesktopStore().then(() => { if (alive) setFileReady(true) })
+      return () => { alive = false }
+    }
+    if (PORTABLE) {
+      let alive = true
+      void initPortableStore().then(() => { if (alive) setFileReady(true) })
+      return () => { alive = false }
+    }
   }, [])
 
-  // 关闭页面前确保未保存的修改写盘（桌面版走同步阻塞写，保证窗口关闭前数据落盘）
+  // 关闭页面前确保未保存的修改写盘
+  //  · 桌面版走同步阻塞写（saveSync），保证窗口关闭前数据落盘；
+  //  · 便携版在浏览器里**没有同步阻塞写**，改用 sendBeacon（pagehide 时仍能发出），见 flushPortableBeacon。
   useEffect(() => {
-    if (!DESKTOP) return
-    const onLeave = () => { flushDesktopSync() }
-    window.addEventListener('beforeunload', onLeave)
-    return () => { window.removeEventListener('beforeunload', onLeave) }
+    if (DESKTOP) {
+      const onLeave = () => { flushDesktopSync() }
+      window.addEventListener('beforeunload', onLeave)
+      return () => { window.removeEventListener('beforeunload', onLeave) }
+    }
+    if (PORTABLE) {
+      // 🔴 必须用 pagehide 而非 beforeunload：移动端 / 部分浏览器在 bfcache 场景不发 beforeunload，
+      //    而 pagehide 一定会发。两个都挂，`flushPortableBeacon` 内部幂等（dirty 才发）。
+      const onLeave = () => { flushPortableBeacon() }
+      window.addEventListener('pagehide', onLeave)
+      window.addEventListener('beforeunload', onLeave)
+      return () => {
+        window.removeEventListener('pagehide', onLeave)
+        window.removeEventListener('beforeunload', onLeave)
+      }
+    }
   }, [])
 
   // 真·全屏快捷键（2.5.1 · B2）：F11 进出无边框全屏、全屏态下 ESC 退出。仅桌面版安装；返回卸载函数。
@@ -152,14 +175,15 @@ export default function App() {
 
   // 磁盘写盘失败时把原本静默吞掉的错误暴露给用户，避免无提示丢稿
   useEffect(() => {
-    if (!DESKTOP) return
+    if (!DESKTOP && !PORTABLE) return
     let lastErr = ''
-    const onDesktop = () => {
-      const e = getDesktopState().lastError
+    const onStore = () => {
+      const e = DESKTOP ? getDesktopState().lastError : getPortableState().lastError
       if (e && e !== lastErr) { lastErr = e; showToast('数据保存失败：' + e, 'error', 4500) }
       else if (!e) lastErr = ''
     }
-    onDesktop(); return subscribeDesktop(onDesktop)
+    onStore()
+    return DESKTOP ? subscribeDesktop(onStore) : subscribePortable(onStore)
   }, [])
 
   // 启动引导（便携模式需等数据文件连接后执行）
@@ -414,6 +438,7 @@ export default function App() {
     return (
       <>
         <DesktopWriteLockBanner />
+        <PortableWriteLockBanner />
         <div className="flex h-screen flex-col items-center justify-center gap-3 p-8 text-center">
           <div className="text-base font-semibold">启动失败</div>
           <div className="max-w-xl text-13 leading-relaxed text-ink-400">{bootError}</div>
@@ -430,6 +455,7 @@ export default function App() {
     return (
       <>
         <DesktopWriteLockBanner />
+        <PortableWriteLockBanner />
         <div className="h-screen bg-ink-950" />
       </>
     )
@@ -440,6 +466,7 @@ export default function App() {
     return (
       <>
         <DesktopWriteLockBanner />
+        <PortableWriteLockBanner />
         {needWelcome ? <WelcomeWizard onDone={onWelcomeDone} /> : <ProjectHub onOpen={openProject} onReplayWelcome={() => setNeedWelcome(true)} />}
         {/* 3.0 · W0-2：首启迁移向导（叠在最上层；关闭后回到欢迎向导 / 项目首页） */}
         {migrationProbe && <MigrationWizard probe={migrationProbe} onClose={() => setMigrationProbe(null)} />}
@@ -559,6 +586,7 @@ export default function App() {
   return (
     <div key={`proj-${projectId}`} className="relative flex h-screen overflow-hidden bg-transparent">
       <DesktopWriteLockBanner />
+      <PortableWriteLockBanner />
       {/* v1.3 幻想工作台背景：纯线条浅金线稿，透明底、若隐若现。
           负 z-index 子元素绘制于 body 背景之上、半透明面板之下，故可从面板后透出；
           父容器设为 bg-transparent，避免不透明背景把装饰层盖住；
