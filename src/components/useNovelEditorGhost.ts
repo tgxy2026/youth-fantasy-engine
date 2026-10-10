@@ -26,6 +26,7 @@ import { aiInlineSuggest, type InlineSuggestLength } from '../lib/aiTasks'
 import { buildInlineBriefing } from '../lib/aiContext'
 import { buildStyleNote, loadStyleDims, saveStyleDims } from '../lib/companionStyle'
 import { isCancelled } from '../lib/ai'
+import { isRefusal } from '../lib/aiCore/transport'
 import {
   GHOST_DEBOUNCE_MS, GHOST_CONTEXT_CHARS, GHOST_MAX_FAILS, GHOST_CACHE_MAX, stitchGhostBefore,
 } from './novelEditorHelpers'
@@ -194,6 +195,14 @@ export function useNovelEditorGhost({
       if (text) setGhost({ text, at })
     } catch (e) {
       if (ac.signal.aborted || isCancelled(e)) return
+      // 🔴 3.0 · W1-3：模型拒答是「内容被平台拒绝」，**不会因重试自愈** —— 立即提示 + 熔断，
+      //    别让作者白等 N 次才等到一句通用失败（§14.1 指出「伴写连理由都不展示」）。
+      if (isRefusal(e)) {
+        ghostFail.current = GHOST_MAX_FAILS
+        setGhost(null)
+        showToast(e.message, 'error', 8000)
+        return
+      }
       ghostFail.current += 1
       if (ghostFail.current >= GHOST_MAX_FAILS) {
         showToast(`AI 伴写已连续失败 ${GHOST_MAX_FAILS} 次，已自动停用（点工具栏钢笔键，在弹窗里重新开启）`, 'error')

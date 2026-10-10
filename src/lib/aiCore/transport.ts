@@ -192,7 +192,8 @@ export async function unloadOllamaModel(config: AIProvider, timeoutMs = 8_000): 
  */
 export type SseChunk = {
   message?: { content?: unknown }
-  choices?: Array<{ delta?: { content?: unknown } }>
+  /** finish_reason 也在 choices[0] 上 —— 3.0 · W1-3 用它识别 `content_filter` 截断 */
+  choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>
   done?: boolean
 }
 
@@ -235,6 +236,89 @@ export async function readSSE(res: Response, onJson: (obj: unknown) => void, onF
  *
  * ⚠️ 这里解析的是 **HTTP 响应体**（传输层），不是「模型正文 → 结构化数据」，故不走 aiParse。
  */
+// ============ 3.0 · W1-3 模型「拒答」感知（§14）============
+//
+// 🔴 背景（2026-10-10 源码自查）：全仓**零读取** `finish_reason`；平台把「内容政策拒绝」也走
+//    400 / 403，而 `describeApiError` 只按状态码给建议 ⇒ 作者被引向「查模型名 / 密钥」，
+//    其实内容是敏感的。本段提供**判据 + 结构化信号**，上层据此给「被拒」而非「配置错」的提示。
+//
+// 🔴 边界（§14.3）：只做「**如实反馈 + 让作者自己决定**」，不做任何「绕过 / 反检测 / 洗提示词」。
+
+/** 常见平台的安全类关键词（出现在**错误响应体**里即判「内容被平台拒绝」） */
+const SAFETY_MESSAGE_PATTERNS: RegExp[] = [
+  /content[_ -]?policy/i, /data[_ ]?inspection[_ ]?failed/i, /sensitive/i,
+  /prohibited/i, /moderation/i, /flagged/i, /unsafe/i, /risk[_ ]?control/i,
+  /内容(安全|审核|政策|违规|不合规)/, /违规内容/, /敏感(内容|词|信息)/, /安全策略/, /风控/,
+]
+
+/** 拒答模板文本（HTTP 200 却给一段「我无法…」时用它兜底） */
+const REFUSAL_TEXT_PATTERNS: RegExp[] = [
+  /^抱歉[，,]?\s*(我|作为)/, /作为(一个)?(AI|人工智能|语言模型)/,
+  /我(无法|不能|不便|不适合)(提供|生成|协助|回答|完成|继续)/,
+  /^(I'?m sorry|I am sorry|I can'?t|I cannot|I'?m unable)/i, /as an AI/i, /I (must|have to) (decline|refuse)/i,
+]
+
+/** 这些 HTTP 状态**可能**承载「内容被拒」（需再看响应体关键词才能定） */
+export function isRefusalStatus(status: number): boolean {
+  return status === 400 || status === 403 || status === 422 || status === 451
+}
+
+/** 错误响应体是否含安全类关键词（配合 {@link isRefusalStatus} 用） */
+export function looksLikeSafetyMessage(raw: string): boolean {
+  return SAFETY_MESSAGE_PATTERNS.some(re => re.test(raw ?? ''))
+}
+
+/**
+ * 一段文本是否像「拒答模板」。
+ * 🔴 只取开头 200 字判 + **只提示不自动丢弃** —— 启发式必然有误报 / 漏报（§14.3 ③）。
+ */
+export function looksLikeRefusalText(text: string): boolean {
+  const t = (text ?? '').trim()
+  if (!t) return false
+  return REFUSAL_TEXT_PATTERNS.some(re => re.test(t.slice(0, 200)))
+}
+
+/** 从响应体里抠出「平台原话」（有则给作者，无则退化为纯文本截断） */
+export function extractPlatformMessage(raw: string): string {
+  try {
+    const j = JSON.parse(raw) as { error?: { message?: string }; message?: string; msg?: string }
+    const m = String(j?.error?.message ?? j?.message ?? j?.msg ?? '').trim()
+    if (m) return m
+  } catch { /* 非 JSON，按纯文本处理 */ }
+  return (raw ?? '').trim().slice(0, 300)
+}
+
+export type RefusalKind = 'content-filter' | 'safety-http' | 'refusal-text'
+
+/** 结构化「拒答信号」—— 让上层能分辨「被拒」与「配置错」，而不是一律当通用错误 */
+export class AIRefusalError extends Error {
+  readonly kind: RefusalKind
+  readonly platformMessage: string
+  constructor(kind: RefusalKind, platformMessage: string) {
+    super(describeRefusal(kind, platformMessage))
+    this.name = 'AIRefusalError'
+    this.kind = kind
+    this.platformMessage = platformMessage
+  }
+}
+
+export function isRefusal(e: unknown): e is AIRefusalError {
+  return e instanceof AIRefusalError
+}
+
+/** 给作者看的「被拒」文案（三件事：不是配置错 / 平台原话 / 可行动作） */
+export function describeRefusal(kind: RefusalKind, platformMessage: string): string {
+  const where = kind === 'content-filter'
+    ? '模型在生成过程中被内容过滤截断（finish_reason = content_filter）'
+    : kind === 'safety-http'
+      ? '平台直接拒绝了这次请求（状态码属拒绝类，且响应含安全政策关键词）'
+      : '模型返回的是一段拒答文字，而不是正文'
+  const tail = platformMessage ? `\n平台原话：${platformMessage.slice(0, 200)}` : ''
+  return '⚠️ 这次请求被平台以「内容政策」为由拒绝 —— **不是你的密钥 / 模型名 / 参数配置出错**。\n'
+    + `判定依据：${where}。${tail}\n`
+    + '可试试：① 改掉可能触发的内容点后重试；② 换本地模型（本地 Ollama 不受平台内容政策限制）；③ 换一个平台。'
+}
+
 export function describeApiError(status: number, raw: string): string {
   let detail = ''
   try {
@@ -246,12 +330,20 @@ export function describeApiError(status: number, raw: string): string {
   const tail = detail ? `\n服务商原话：${detail.slice(0, 160)}` : ''
   switch (status) {
     case 400:
+      // 3.0 · W1-3：内容政策拒绝也走 400 —— 先分流，别把作者引向「模型名 / 参数」的错误方向
+      if (looksLikeSafetyMessage(raw)) {
+        return `请求被平台拒绝（HTTP 400）：**这是内容被平台拒绝**，不是模型名 / 参数配置出错。${tail}\n可试试：改掉触发的敏感点后重试 / 换本地模型（不受平台内容政策限制）/ 换一个平台。`
+      }
       return `请求被平台拒绝（HTTP 400）：最常见的原因是模型名不在该账户已开通的清单里，也可能是参数不被接受。${tail}`
     case 401:
       return `API 密钥无效或缺失（HTTP 401）：检查密钥是否复制完整、有没有夹带空格、是否已过期或被重置。${tail}`
     case 402:
       return `账户余额不足（HTTP 402）：请前往平台充值后重试。${tail}`
     case 403:
+      // 3.0 · W1-3：部分平台用 403 表达「内容被拒」—— 先分流，别一律归因密钥
+      if (looksLikeSafetyMessage(raw)) {
+        return `请求被平台拒绝（HTTP 403）：**这是内容被平台拒绝**（部分平台用 403 表达），不是密钥权限问题。${tail}\n可试试：改掉触发的敏感点后重试 / 换本地模型 / 换一个平台。`
+      }
       return `密钥无权访问（HTTP 403）：确认这个 Key 已开通对应模型，或平台是否要求先实名 / 绑定。${tail}`
     case 404:
       return `接口地址或模型名不对（HTTP 404）：确认 baseUrl 指到 …/v1 这类 chat/completions 前缀（中转站请按其文档给的接口前缀填），并核对模型名拼写。${tail}`

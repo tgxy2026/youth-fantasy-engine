@@ -5,7 +5,7 @@
  * 依赖 `aiCore/transport.ts` 的 HTTP 与 SSE 能力，不自己碰底层 fetch。
  */
 
-import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, openaiBaseOf, describeApiError, type SseChunk } from './transport'
+import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from './transport'
 import {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE, precheck,
   injectUserSystemPrompt,
@@ -314,21 +314,33 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
   }
   if (!res.ok) {
     const txt = await res.text().catch(() => '')
+    // 3.0 · W1-3：先判「内容被平台拒绝」—— 它混在 400 / 403 里，别一律归因配置（§14.1）
+    if (isRefusalStatus(res.status) && looksLikeSafetyMessage(txt)) {
+      throw new AIRefusalError('safety-http', extractPlatformMessage(txt))
+    }
     throw new Error(describeApiError(res.status, txt))
   }
   // 流式：边收边回调（联网模型首字出来即可见，本地慢模型不再整轮转圈）
   if (o.onToken) {
     let content = ''
+    /** 3.0 · W1-3：`content_filter` 表示被内容过滤截断 —— 此前全仓不读它（§14.1） */
+    let finishReason = ''
     try {
       await readSSE(res, (obj) => {
         const chunk = obj as SseChunk
         const delta = chunk?.choices?.[0]?.delta?.content
+        const fr = chunk?.choices?.[0]?.finish_reason
+        if (typeof fr === 'string' && fr) finishReason = fr
         if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
       }, () => clearTimer?.())
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
       if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
       throw e
+    }
+    // 3.0 · W1-3 判据①（结构化，最强）：被内容过滤截断 ⇒ 如实报「被拒」，不当正常产出用
+    if (finishReason === 'content_filter') {
+      throw new AIRefusalError('content-filter', '')
     }
     if (!content.trim()) {
       // 🔴 2.5.2 中转站兼容：部分中转对流式返回**非标准体**（每行 JSON.parse 失败被 readSSE
@@ -354,6 +366,8 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
         const data = await retry.json().catch(() => ({}))
         const c = data?.choices?.[0]?.message?.content
         if (typeof c === 'string' && c.trim()) {
+          // 3.0 · W1-3：降级重试拿到的内容同样要过拒答判据（可能正是被拒的那段）
+          if (looksLikeRefusalText(c)) throw new AIRefusalError('refusal-text', c.trim().slice(0, 200))
           const out = stripThink(c)
           o.onToken?.(out)
           return out
@@ -361,11 +375,21 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
       }
       throw new Error('API 未返回内容（流式响应体无法解析，非流式重试也失败）：该接口地址可能不兼容 OpenAI 流式格式——请确认中转站文档给出的接口地址与模型名，或换官方接口测试。')
     }
+    // 3.0 · W1-3 判据③（文本启发式，兜底）：200 却给一段拒答文字 ⇒ 提示作者（§14.3 ③）
+    if (looksLikeRefusalText(content)) {
+      throw new AIRefusalError('refusal-text', content.trim().slice(0, 200))
+    }
     return stripThink(content)
   }
   const data = await res.json().catch(() => ({}))
   const content = data?.choices?.[0]?.message?.content
-  if (!content) throw new Error('API 未返回内容，请确认模型名称正确且账户有额度。')
+  // 3.0 · W1-3：非流式同样要读 finish_reason 与拒答模板（此前只取 content）
+  const finishReason = String(data?.choices?.[0]?.finish_reason ?? '')
+  if (finishReason === 'content_filter') throw new AIRefusalError('content-filter', '')
+  if (!content) throw new Error('API 未返回内容，请确认模型名称正确且账户有额度（也可能是模型拒绝了本次生成）。')
+  if (looksLikeRefusalText(String(content))) {
+    throw new AIRefusalError('refusal-text', String(content).trim().slice(0, 200))
+  }
   return stripThink(content)
 }
 
