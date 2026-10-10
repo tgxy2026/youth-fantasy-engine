@@ -342,10 +342,23 @@ body {
 ::-webkit-scrollbar-thumb:hover { @apply bg-ink-500; }
 
 /* ---------- 通用输入 ---------- */
-input, textarea, select {
-  @apply bg-ink-800 border border-ink-600 rounded-md px-3 py-1.5 text-ink-100 outline-none
-         transition-colors duration-150 placeholder:text-ink-400;
+/* 🔴🔴 必须包在 `@layer base` 里（2026-10-10 全局修正）：
+   此前这条**不套层**，而 Tailwind v4 的工具类都在 `@layer utilities` ——
+   未分层样式优先于**任何命名层**，于是组件传的 px-* / py-* / rounded-* / bg-* /
+   border-* / text-* 全被这条默认值压掉。真机实测的后果：
+     · 侧栏缩放框 48px 宽只剩 22px 可用，「132」被裁成「1」；
+     · 编辑器正文 textarea 的 `px-6 md:px-8 pt-6` 失效 ⇒ 正文与高亮/ghost 叠层
+       错位 20px × 18px（那几层的注释明写「盒模型必须与 textarea 逐项一致」）。
+   放进 base 后：默认外观仍在，但只要组件写了同名工具类就能覆盖 —— 即作者本来的预期。
+   ⚠️ 别挪回未分层：挪回去等于把上面那些 bug 一起搬回来。 */
+@layer base {
+  input, textarea, select {
+    @apply bg-ink-800 border border-ink-600 rounded-md px-3 py-1.5 text-ink-100 outline-none
+           transition-colors duration-150 placeholder:text-ink-400;
+  }
 }
+/* 聚焦态**刻意留在未分层**：焦点反馈（琥珀描边 + 光圈）是设计系统统一给的，
+   不打算让各页面各写一套；留在这里它才能稳定压过组件里的 focus:* 工具类。 */
 input:focus, textarea:focus, select:focus {
   @apply border-amber/60 ring-1 ring-amber/30;
 }

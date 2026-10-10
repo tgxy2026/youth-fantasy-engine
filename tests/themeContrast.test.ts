@@ -162,6 +162,28 @@ function walkSrc(dir: string, out: string[] = []): string[] {
   ok('源码里没有把 ink-800 当边框 / 分隔色（统一用 ink-700）', offenders.length === 0, offenders.join(', '))
 }
 
+// ---------- CSS 分层闸：输入类默认样式必须在 @layer 内（2026-10-10 · 全局修正）----------
+//
+// 为什么要有这一道：Tailwind v4 的工具类都在 `@layer utilities`，而**未分层样式优先于任何命名层** ——
+// 于是 index.css 里那条不套层的 `input, textarea, select { … px-3 py-1.5 … }` 会把组件传的
+// px-* / py-* / rounded-* / bg-* / border-* 全部压掉。真机实测的后果（改前）：
+//   · 侧栏缩放框 48px 宽只剩 22px 可用，「132」被裁成「1」；
+//   · 编辑器正文 textarea 的 `px-6 md:px-8 pt-6` 失效 ⇒ 正文与高亮/ghost 叠层错位 20px × 18px。
+// 判据：默认样式留在 `@layer base`；未分层处**不再允许**出现 input/textarea/select 的默认样式
+//       （只保留聚焦态与占位符 —— 那两条是设计系统刻意统一给的，本就不该被各页面覆盖）。
+const cssNoComment = css.replace(/\/\*[\s\S]*?\*\//g, '')
+{
+  const baseBlock = cssNoComment.match(/@layer\s+base\s*\{([^}]*)\}/)
+  ok('输入类默认样式已放进 @layer base',
+    !!baseBlock && /(^|\s)input,\s*textarea,\s*select\s*\{?/.test(baseBlock[1]),
+    baseBlock ? baseBlock[1].trim().slice(0, 70) : '未找到 @layer base 块')
+  // 去掉 base 块后，源里不该再有未分层的 `input/textarea/select …{`
+  // （`input:focus` / `textarea::placeholder` 因为紧跟冒号，不会被这条匹配到）
+  const rest = cssNoComment.replace(/@layer\s+base\s*\{[^}]*\}/, '')
+  const hit = rest.match(/\n\s*(input|textarea|select)\s*[,{]/)
+  ok('未分层处不再有输入类默认样式（只留聚焦态 / 占位符）', !hit, hit ? `命中：${hit[0].trim()}` : '')
+}
+
 // ---------- 实心按钮（solid danger / success / info）的白字对比度（2026-10-03 · 方案 ②）----------
 //
 // 这三种 solid 的底色是**固定 500/600/700 级色**（不随主题变），字色统一 `text-white`。
