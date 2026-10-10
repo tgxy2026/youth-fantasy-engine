@@ -20,6 +20,7 @@
 import { writerBudgetFor } from '../lib/aiWriterBudget'
 import { useEffect, useRef, useState } from 'react'
 import { buildProjectContext, getContinuationSources } from '../lib/aiContext'
+import { checkContinuationFocus, formatGap } from '../lib/evidenceGate'
 import { styleContextForAI } from '../lib/styleAudit'
 import { activeFingerprintNote } from '../lib/styleFingerprint'
 import { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '../lib/aiTasks'
@@ -452,9 +453,12 @@ export function useJieWenJiModel(props: Props) {
         summaryCount: wantSummaries ? snap.summaryCount : 0,
         prevTextCount: wantPrevTexts ? snap.prevTextCount : 0,
       })
-      // 🔴 `found:false` ＝「章没定位到」，不是「作者没勾素材」—— 必须说出来（未知 ≠ 空）
-      if (!src.found && (wantSummaries || wantPrevTexts)) {
-        showToast('未能在章节列表里定位到本章，本次续写只会带设定资料', 'info')
+      // 🔴 3.0 · W1-2b 缺失即停（§10.3 #2）：勾了章节素材却定位不到本章 ⇒ **停止生成**，
+      //    不再「提示一句就照发」。`found:false` ＝ 章没定位到（不是「作者没勾素材」），
+      //    拿空上下文硬写会让模型凭空编 —— 抛出后任务中心会如实记为失败并说明原因。
+      if (wantSummaries || wantPrevTexts) {
+        const gap = checkContinuationFocus(src.found)
+        if (gap) throw new Error(formatGap(gap))
       }
       // 设定类：只把勾中的页签交给 buildProjectContext
       const tabIds = CONTINUE_PICKS.filter(p => snap.picks.has(p.key)).flatMap(p => p.tabIds)

@@ -44,6 +44,7 @@ import {
   listRewriteCandidates,
 } from './chapterRewrite'
 import { createRun, finishRun, chapterFingerprint } from './aiRunLedger'
+import { checkRewriteTarget, formatGap } from './evidenceGate'
 import { countWords } from './textStats'
 import { isCancelled } from './ai'
 import type { LedgerItem } from './settingLedger'
@@ -759,7 +760,11 @@ export async function startChapterRewrite(p: {
   const idx = cands.findIndex(c => c.chapter.id === p.chapterId)
   if (idx < 0) { notice('这一章已经不在项目里了', 'error'); return }
   const hit = cands[idx]
-  if (!hit.chapter.content.trim()) { notice('这一章还没有正文，没什么可改的', 'info'); return }
+  {
+    // 3.0 · W1-2b：改写目标章必须有正文（必需证据；口径集中在 lib/evidenceGate.ts，不再散落）
+    const gap = checkRewriteTarget(!!hit.chapter.content.trim())
+    if (gap) { notice(formatGap(gap), 'info'); return }
+  }
   // 🔴 候选列表是按真实叙事顺序排的，所以**最后一个**就是最新章。
   //    最新章 vs 历史章的改写纪律完全不同（见 aiTasks 的两条 RULE）：历史章冻结设定，最新章放开、
   //    但落库后要补跑设定同步。
