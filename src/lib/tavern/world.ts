@@ -97,7 +97,7 @@ export const WORLD_MAX_CHARS = 2400
  * 一句话总纲的条目 id —— **固定层**的判据（见 `buildPlotWorldBook` 的两层渲染）。
  * 🔴 全项目唯一真源：`worldEntriesOf` 用它造条目，`buildPlotWorldBook` 用它分层。
  */
-export const WORLD_BRIEF_ID = 'world-brief'
+const WORLD_BRIEF_ID = 'world-brief'
 
 const K = 'tavern.world'
 

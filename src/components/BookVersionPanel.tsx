@@ -26,6 +26,7 @@ import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
 import { rebuildKbIndexAfterRestore } from '../lib/kbRestoreIndex'
 import { Z } from '../lib/zLayer'
+import { foldVh } from '../lib/theme'
 
 function fmt(ts: number): string {
   if (!ts) return '—'
@@ -153,7 +154,7 @@ export default function BookVersionPanel({
 
   return (
     <div className="fixed inset-0 flex items-center justify-center p-6 bg-ink-950/70 backdrop-blur-sm" style={{ zIndex: Z.modal }}>
-      <div className="w-full max-w-[760px] max-h-[84vh] flex flex-col rounded-2xl bg-ink-850 border border-ink-700 shadow-2xl overflow-hidden">
+      <div className="w-full max-w-[760px] flex flex-col rounded-2xl bg-ink-850 border border-ink-700 shadow-2xl overflow-hidden" style={{ maxHeight: foldVh('84vh') }}>
         {/* 头部 */}
         <div className="px-6 py-4 border-b border-ink-700/70 flex items-center gap-2">
           <BookMarked size={16} className="text-amber" />

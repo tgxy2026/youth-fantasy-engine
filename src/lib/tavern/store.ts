@@ -479,7 +479,7 @@ export function undoRollback(s: TavernSession): TavernSession {
 //   这正是自由模式独有的坑（剧情模式只有一份记忆，跟着会话一起回滚，不会分家）。
 
 /** 存点（纯）：把「此刻的会话态 + N 份记忆」打包成一个检查点 */
-export function makeFreeCheckpoint(s: FreeSession, memories: FreeMemory[], label = ''): FreeCheckpoint {
+function makeFreeCheckpoint(s: FreeSession, memories: FreeMemory[], label = ''): FreeCheckpoint {
   return {
     id: uid(),
     label: label.trim(),

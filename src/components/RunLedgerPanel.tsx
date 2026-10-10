@@ -14,6 +14,7 @@ import { listProjectAiRuns } from '../lib/db'
 import type { AiRun } from '../lib/aiRunTypes'
 import { Button } from './Button'
 import { Z } from '../lib/zLayer'
+import { foldVh } from '../lib/theme'
 
 const KIND_LABEL: Record<string, string> = {
   creative: '创意写作',
@@ -58,7 +59,7 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center p-6 bg-ink-950/70 backdrop-blur-sm" style={{ zIndex: Z.modal }}>
-      <div className="w-full max-w-[720px] max-h-[80vh] flex flex-col rounded-2xl bg-ink-850 border border-ink-700 shadow-2xl overflow-hidden">
+      <div className="w-full max-w-[720px] flex flex-col rounded-2xl bg-ink-850 border border-ink-700 shadow-2xl overflow-hidden" style={{ maxHeight: foldVh('80vh') }}>
         {/* 头部 */}
         <div className="px-6 py-4 border-b border-ink-700/70 flex items-center gap-2">
           <History size={16} className="text-amber" />
