@@ -262,12 +262,12 @@ export function migrateV11toV12(db: Vdb) {
   store.createIndex('startedAt', 'startedAt', { unique: false })
 }
 
-/** v12 → v13 迁移（3.0 · W4-1b）：新增「世界库」独立存储（世界引擎 · 版本封存 / 跨作品引用） */
+/** v12 → v13 迁移（3.0 · W4-1b）：新增「世界引擎」独立存储（世界引擎 · 版本封存 / 跨作品引用） */
 export function migrateV12toV13(db: Vdb) {
   // 🔴 与其它 store 的关键差异：worlds **不是项目级**数据 —— 世界可被多个作品引用，
   //    故**不建 projectId 索引**（全局可读，同 projects 的口径），删项目时也**不清理**。
   //    同步 / 备份自动带上它（已登记进 `syncCore.SYNC_STORES`）。
   const store = db.createObjectStore('worlds', { keyPath: 'id' })
-  // 按 updatedAt 建索引：世界库列表按最近改动倒序
+  // 按 updatedAt 建索引：世界引擎列表按最近改动倒序
   store.createIndex('updatedAt', 'updatedAt', { unique: false })
 }

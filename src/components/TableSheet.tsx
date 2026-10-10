@@ -9,7 +9,7 @@ import type { TabDef } from '../lib/types'
 import { Z } from '../lib/zLayer'
 import { deleteTableRow } from '../lib/db'
 import { SABC_LABELS, type VisCtx } from '../lib/schema'
-import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, Upload, Download } from 'lucide-react'
+import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp } from 'lucide-react'
 import HistoryTimeline from './HistoryTimeline'
 import StoryTimeline from './StoryTimeline'
 import StorylineView from './StorylineView'
@@ -260,12 +260,12 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           )}
           {!isMaster && (
           <Button variant="secondary" onClick={() => setShowImport(true)} title="批量导入：粘贴表格 / CSV / 纯文本并上传文件；散文式设定可用「AI 智能拆分」自动解析成多条" className="flex items-center gap-1.5 transition-colors shrink-0">
-            <Upload size={14} /> 导入
+            <FileDown size={14} /> 导入
           </Button>
           )}
           {!isMaster && (
           <Button variant="secondary" onClick={exportCsv} title="导出本表数据为 CSV（Excel 可直接打开）" className="flex items-center gap-1.5 transition-colors shrink-0">
-            <Download size={14} /> 导出
+            <FileUp size={14} /> 导出
           </Button>
           )}
           {aiCap !== 'none' && !isMaster && (

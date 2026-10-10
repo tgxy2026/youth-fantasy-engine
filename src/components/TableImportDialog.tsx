@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, FileDown, Check, CheckSquare, Square, AlertTriangle, Loader2, FileText, Trash2, Sparkles, CircleStop } from 'lucide-react'
+import { FileDown, Check, CheckSquare, Square, AlertTriangle, Loader2, FileText, Trash2, Sparkles, CircleStop } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
@@ -194,7 +194,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
   }
 
   return (
-    <Modal open onClose={onClose} icon={<Upload size={14} />} title={`批量导入 · ${tab.name}`} width="2xl" maxHeight="90vh">
+    <Modal open onClose={onClose} icon={<FileDown size={14} />} title={`批量导入 · ${tab.name}`} width="2xl" maxHeight="90vh">
       <div className="space-y-4">
         <p className="text-12 text-ink-400 leading-relaxed">
           把已有设定搬进来，三种方式任选：

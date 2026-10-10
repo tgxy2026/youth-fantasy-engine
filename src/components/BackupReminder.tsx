@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FileDown } from 'lucide-react'
+import { FileUp } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import * as db from '../lib/db'
@@ -68,7 +68,7 @@ export default function BackupReminder({ hasProject, onExport }: { hasProject: b
       showCloseButton={false}
       titleSlot={
         <div className="flex items-center gap-2 text-amber">
-          <FileDown size={18} />
+          <FileUp size={18} />
           <span className="font-semibold">导出一份备份吧</span>
         </div>
       }

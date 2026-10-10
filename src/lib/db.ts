@@ -37,7 +37,7 @@ export type { DailyStat } from './db/meta'
 export { getMeta, setMeta, getDailyStats, putDailyStat, getSetting, setSetting } from './db/meta'
 export * from './db/tavernReports'
 export * from './db/aiRuns'
-// 世界库（3.0 · W4-1b）：世界包 / 不可变版本。🔴 **非项目级** —— 全局可读、删项目不清理。
+// 世界引擎（3.0 · W4-1b）：世界包 / 不可变版本。🔴 **非项目级** —— 全局可读、删项目不清理。
 export * from './db/worlds'
 export * from './db/migrations'
 export * from './db/backups'

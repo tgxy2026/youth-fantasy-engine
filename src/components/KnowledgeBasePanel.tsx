@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  AlertCircle, Database, FileText, Loader2, Plus, Search, Trash2, Upload, X,
+  AlertCircle, Database, FileText, Loader2, Plus, Search, Trash2, FileDown, X,
 } from 'lucide-react'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
@@ -298,7 +298,7 @@ export default function KnowledgeBasePanel() {
           />
           <Button variant="secondary" size="sm" disabled={running || busy}
             onClick={() => fileRef.current?.click()}>
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} 导入文件
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <FileDown size={12} />} 导入文件
           </Button>
           <Button variant="secondary" size="sm" disabled={running || busy}
             onClick={() => setPasteOpen(v => !v)}>
@@ -477,7 +477,7 @@ export default function KnowledgeBasePanel() {
           <div className="text-12">还没挂载任何参考资料</div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>
-              <Upload size={12} /> 导入文件
+              <FileDown size={12} /> 导入文件
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setPasteOpen(true)}>
               <Plus size={12} /> 粘贴文本

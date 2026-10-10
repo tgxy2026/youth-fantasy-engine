@@ -1,10 +1,10 @@
 /**
- * 世界库（3.0 · W4-1b-2 · 第 4 批）
+ * 世界引擎（3.0 · W4-1b-2 · 第 4 批）
  *
- * 「世界引擎」的界面：把**本项目的世界**抽成一个世界包存进**世界库**，
+ * 「世界引擎」的界面：把**本项目的世界**抽成一个世界包存进**世界引擎**，
  * 之后**封存版本**（不可变），并可在别的作品里**显式引入**（引入在 W4-1c）。
  *
- * 🔴 世界库是**跨作品**的（`db/worlds` 非项目级数据）——这里列的是**全部**世界，
+ * 🔴 世界引擎是**跨作品**的（`db/worlds` 非项目级数据）——这里列的是**全部**世界，
  *    不只是当前项目抽出来的那些；每条都标着来源项目。
  *
  * 【两个动作的区别】
@@ -45,7 +45,7 @@ export default function WorldLibraryPanel() {
       setList(await db.listWorlds())
     } catch (e) {
       setList([])
-      showToast('读取世界库失败：' + errText(e), 'error')
+      showToast('读取世界引擎失败：' + errText(e), 'error')
     }
   }, [])
   useEffect(() => { void load() }, [load])
@@ -62,7 +62,7 @@ export default function WorldLibraryPanel() {
       setName('')
       await load()
       showToast(rec.tables.length
-        ? `已把当前项目的世界抽进世界库（${rec.tables.length} 张表）`
+        ? `已把当前项目的世界抽进世界引擎（${rec.tables.length} 张表）`
         : '已新建，但当前项目的世界表还是空的 —— 先去「世界设定 / 力量体系 / 世界构建」填内容')
     } catch (e) {
       showToast('抽取失败：' + errText(e), 'error')
@@ -115,19 +115,19 @@ export default function WorldLibraryPanel() {
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
-        <h1 className="text-lg font-bold text-ink-50 mr-1">世界库</h1>
-        <HelpPopover title="世界库怎么用" width="24rem" size={14}>
+        <h1 className="text-lg font-bold text-ink-50 mr-1">世界引擎</h1>
+        <HelpPopover title="世界引擎怎么用" width="24rem" size={14}>
           这里放的是**可封存、可跨作品引用**的世界。
           {'\n\n'}· 「新建世界」把**当前项目**的世界（世界设定 / 力量体系 / 制度四页签 / 世界构建组）抽一份进来 —— 这一步不改项目里的任何数据。
           {'\n\n'}· 「封存」把当前内容固化成**不可变版本**：封存之后，再改项目里的世界也不会动到这一版。
-          {'\n\n'}· 世界库是**跨作品**的：换一本书，这里的世界照样在；将来也能在别的作品里显式引入某一版。
+          {'\n\n'}· 世界引擎是**跨作品**的：换一本书，这里的世界照样在；将来也能在别的作品里显式引入某一版。
           {'\n\n'}· 🔴 反向不成立：改了项目里的世界，**已经抽出来的世界不会自动更新** —— 想要新的，就再抽一份。这是「派生须显式、不自动同步」的边界。
         </HelpPopover>
         <span className="text-11 text-ink-500">把世界抽出来·封版·将来给别的作品引用</span>
 
         <div className="ml-auto flex items-center gap-2">
           <input
-            className="w-52 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50"
+            className="h-9 w-52 bg-ink-900 border border-ink-700 rounded-lg px-3 text-13 text-ink-100 outline-none focus:border-amber/50"
             placeholder="世界名称（留空自动取）"
             value={name}
             onChange={e => setName(e.target.value)}
@@ -147,7 +147,7 @@ export default function WorldLibraryPanel() {
           </div>
         ) : list.length === 0 ? (
           <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-4 text-12 leading-relaxed text-ink-400">
-            世界库还是空的。<b className="text-ink-200">「＋ 从当前项目新建世界」</b>会把这本书的世界
+            世界引擎还是空的。<b className="text-ink-200">「＋ 从当前项目新建世界」</b>会把这本书的世界
             （世界设定 / 力量体系 / 制度四页签 / 世界构建组）抽一份进来 —— 之后可以封存版本，
             将来在别的作品里引用同一份世界。
           </div>

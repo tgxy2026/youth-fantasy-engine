@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { EMPTY_CHAPTER_HINT } from '../lib/constants'
-import { ClipboardCheck, Loader2, RefreshCw, FileDown } from 'lucide-react'
+import { ClipboardCheck, Loader2, RefreshCw, FileUp } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter } from '../lib/types'
 import { Button } from './Button'
@@ -135,7 +135,7 @@ export default function ManuscriptCheckPanel() {
             {engineLoading ? <><Loader2 size={12} className="animate-spin" /> 自检中…</> : <><RefreshCw size={12} /> 跑结构与伏笔</>}
           </Button>
           <Button variant="secondary" size="sm" disabled={!fp} onClick={exportReport}>
-            <FileDown size={12} /> 导出报告
+            <FileUp size={12} /> 导出报告
           </Button>
         </div>
       </div>

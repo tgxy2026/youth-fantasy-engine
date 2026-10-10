@@ -1,5 +1,5 @@
 /**
- * 世界库 · 存储层（3.0 · W4-1b）
+ * 世界引擎 · 存储层（3.0 · W4-1b）
  *
  * 🔴 与其它 store 的**关键差异**：`worlds` **不是项目级数据** ——
  *   世界可被多个作品引用（方案 §10.3 #8），所以：
@@ -14,7 +14,7 @@
 import type { WorldStoredRecord } from '../worldTypes'
 import { ops, touchProject, currentProjectId } from './core'
 
-/** 全部世界（按最近改动倒序 —— 世界库列表就是这个顺序） */
+/** 全部世界（按最近改动倒序 —— 世界引擎列表就是这个顺序） */
 export async function listWorlds(): Promise<WorldStoredRecord[]> {
   const all = await ops.getAll<WorldStoredRecord>('worlds')
   return all.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))

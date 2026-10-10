@@ -15,7 +15,7 @@
  *    现在切页签不影响任务，回到本页结果与断点原样都在。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileUp, Loader2, Play, X } from 'lucide-react'
+import { FileDown, Loader2, Play, X } from 'lucide-react'
 import AIDataSourceNote from './AIDataSourceNote'
 import { Button } from './Button'
 import DraftReviewPanel from './DraftReviewPanel'
@@ -333,7 +333,7 @@ export default function BookBreakPanel() {
           <span className="text-11 text-ink-500">{raw.length.toLocaleString()} 字</span>
           <div className="flex-1" />
           <Button size="xs" variant="secondary" disabled={running} onClick={() => fileRef.current?.click()}>
-            <FileUp size={12} /> 导入 .txt / .md / .docx
+            <FileDown size={12} /> 导入 .txt / .md / .docx
           </Button>
           <Button size="xs" variant="secondary" disabled={running || !raw}
             onClick={() => {

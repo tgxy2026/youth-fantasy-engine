@@ -1,8 +1,8 @@
 /**
- * 世界库 · 业务层（3.0 · W4-1b）
+ * 世界引擎 · 业务层（3.0 · W4-1b）
  *
  * 三件事：
- *   ① **抽**：从当前项目抽一个世界包存进世界库（草稿，尚无版本）；
+ *   ① **抽**：从当前项目抽一个世界包存进世界引擎（草稿，尚无版本）；
  *   ② **封存**：把当前草稿固化成一份**不可变版本**（`versions[]` 只增不改）；
  *   ③ **编辑草稿**：改了要生效必须**再封一次** —— 这就是方案 §10.3 #8 的「不可变世界版本」。
  *
@@ -12,7 +12,7 @@ import * as db from './db'
 import { collectWorldPack, worldPackFingerprint } from './worldPack'
 import type { WorldStoredRecord, WorldVersion, WorldPackTable } from './worldTypes'
 
-/** 从**当前项目**抽包并存进世界库（草稿＝抽包结果，`versions` 为空） */
+/** 从**当前项目**抽包并存进世界引擎（草稿＝抽包结果，`versions` 为空） */
 export async function createWorldFromCurrentProject(
   name: string,
   projectName?: string,

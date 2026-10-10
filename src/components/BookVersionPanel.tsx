@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  BookMarked, Loader2, Lock, FileDown, RotateCcw, Trash2, X, AlertTriangle, CheckCircle2,
+  BookMarked, Loader2, Lock, FileUp, RotateCcw, Trash2, X, AlertTriangle, CheckCircle2,
 } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter, Volume } from '../lib/types'
@@ -292,7 +292,7 @@ export default function BookVersionPanel({
                           </div>
                           <div className="mt-2 flex items-center gap-1.5">
                             <Button variant="secondary" size="sm" disabled={busy} onClick={() => void exportVersion(v)} className="gap-1">
-                              <FileDown size={12} /> 导出
+                              <FileUp size={12} /> 导出
                             </Button>
                             <Button variant="secondary" size="sm" disabled={busy} onClick={() => void restoreVersion(v)} className="gap-1" title="用这一版覆盖当前稿">
                               <RotateCcw size={12} /> 恢复

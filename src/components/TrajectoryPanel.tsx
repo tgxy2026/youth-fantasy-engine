@@ -15,7 +15,7 @@
  *      没有键盘记录，导出不联网。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { History, FileDown, Loader2, AlertTriangle, BookOpen, BookMarked } from 'lucide-react'
+import { History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter, Volume, CardRecord } from '../lib/types'
 import type { Snapshot } from '../lib/db'
@@ -300,7 +300,7 @@ export default function TrajectoryPanel() {
                     </div>
                   </div>
                   <Button variant="primary" size="sm" onClick={() => setExportOpen(true)} className="shrink-0 flex items-center gap-1.5">
-                    <FileDown size={13} /> 导出证据包
+                    <FileUp size={13} /> 导出证据包
                   </Button>
                 </div>
 
