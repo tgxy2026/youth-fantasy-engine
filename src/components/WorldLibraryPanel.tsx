@@ -14,9 +14,10 @@
  *   这正是方案 §10.3 #8 的边界：「原作品后续修改不会自动同步」）。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Globe, Loader2, Lock, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileDown, Globe, Loader2, Lock, Trash2 } from 'lucide-react'
 import * as db from '../lib/db'
 import { createWorldFromCurrentProject, draftDiffers, freezeWorld, renameWorld } from '../lib/worlds'
+import { getWorldImportRecord, importWorldIntoCurrent, type WorldImportRecord } from '../lib/worldImport'
 import type { WorldStoredRecord } from '../lib/worldTypes'
 import { Button } from './Button'
 import { confirmDialog, showToast } from './dialogs'
@@ -39,10 +40,13 @@ export default function WorldLibraryPanel() {
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({})
   /** 正在行内改名的世界 id ＋ 草稿（🔴 用行内输入，不用原生 prompt —— 项目禁原生弹窗） */
   const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null)
+  /** 本项目当前世界的**溯源**（引自哪个世界、哪一版）—— 引入时写入 `settingsKV` */
+  const [importRec, setImportRec] = useState<WorldImportRecord | null>(null)
 
   const load = useCallback(async () => {
     try {
       setList(await db.listWorlds())
+      setImportRec(await getWorldImportRecord())
     } catch (e) {
       setList([])
       showToast('读取世界引擎失败：' + errText(e), 'error')
@@ -96,6 +100,37 @@ export default function WorldLibraryPanel() {
     }
   }
 
+  /**
+   * 把某世界（某个版本）引入**当前项目**。
+   * 🔴 覆盖式：先清掉本项目对应表的现有内容再写入 ⇒ 必须先确认；
+   *    本项目已填过世界设定时按 danger 呈现（原内容会被替换）。
+   */
+  const doImport = async (w: WorldStoredRecord, version = 0) => {
+    if (busy) return
+    const ver = version > 0 ? w.versions.find(v => v.v === version) : undefined
+    const which = ver ? `v${ver.v}${ver.note ? `（${ver.note}）` : ''}` : '当前草稿'
+    const cur = await db.getFormData('worldbase')
+    const hasLocal = Object.values(cur).some(v => String(v ?? '').trim() !== '')
+    const okGo = await confirmDialog({
+      title: '引入世界到当前项目',
+      message: `把「${w.name}」${which} 引入当前项目？\n\n`
+        + `会写入 ${(ver ? ver.tables : w.tables).length} 张表，**覆盖**本项目这些表里的现有内容`
+        + (hasLocal ? '（本项目已填过世界设定，原内容将被替换）' : '') + '。\n\n'
+        + '引入是快照复制：以后源世界再改，这边**不会**自动跟着变 —— 要更新就再引入一次。',
+      danger: hasLocal,
+    })
+    if (!okGo) return
+    setBusy(true)
+    try {
+      const rec = await importWorldIntoCurrent(w.id, version)
+      await load()
+      if (rec) showToast(`已引入「${w.name}」${which}（${rec.tabIds.length} 张表）`)
+      else showToast('引入失败：找不到该世界或该版本', 'error')
+    } catch (e) {
+      showToast('引入失败：' + errText(e), 'error')
+    } finally { setBusy(false) }
+  }
+
   const doDelete = async (w: WorldStoredRecord) => {
     const okDel = await confirmDialog({
       title: '删除这个世界',
@@ -140,6 +175,15 @@ export default function WorldLibraryPanel() {
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto pt-3">
+        {importRec && (
+          <div className="mb-2 rounded-md border border-ink-700 bg-ink-850/40 px-3 py-2 text-11 leading-relaxed text-ink-400">
+            本项目当前的世界 <b className="text-ink-200">引自「{importRec.worldName}」</b>
+            {importRec.version > 0 ? ` v${importRec.version}` : '（草稿）'} · {fmt(importRec.at)} ·
+            指纹 <span className="font-mono">{importRec.fingerprint}</span>
+            <br />
+            🔴 引入是**快照复制**：源世界后来再改，这边不会自动跟着变 —— 要更新就再引入一次。
+          </div>
+        )}
         {list === null ? (
           <div className="flex items-center justify-center py-10 gap-2 text-ink-400">
             <Loader2 size={16} className="animate-spin text-amber" />
@@ -185,6 +229,9 @@ export default function WorldLibraryPanel() {
                       </span>
                     )}
                     <div className="ml-auto flex items-center gap-2">
+                      <Button variant="primary" size="sm" disabled={busy} onClick={() => void doImport(w, last ? last.v : 0)}>
+                        <FileDown size={11} /> 引入到本项目
+                      </Button>
                       <Button variant="secondary" size="sm" disabled={busy} onClick={() => void doFreeze(w)}>
                         <Lock size={11} /> 封存版本
                       </Button>
@@ -214,10 +261,15 @@ export default function WorldLibraryPanel() {
                       {expanded && (
                         <div className="mt-1 space-y-1 border-l-2 border-ink-700 pl-2">
                           {w.versions.slice().reverse().map(v => (
-                            <div key={v.v} className="text-10 leading-relaxed text-ink-400">
+                            <div key={v.v} className="flex items-center gap-2 text-10 leading-relaxed text-ink-400">
                               <span className="text-ink-200">v{v.v}</span> · {fmt(v.at)} ·
                               <span className="font-mono ml-1">{v.fingerprint}</span>
                               {v.note && <span className="ml-1 text-ink-500">「{v.note}」</span>}
+                              <button
+                                type="button"
+                                className="ml-auto shrink-0 text-10 text-amber hover:underline"
+                                onClick={() => void doImport(w, v.v)}
+                              >引入这一版</button>
                             </div>
                           ))}
                         </div>
