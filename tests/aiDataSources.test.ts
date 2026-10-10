@@ -9,7 +9,7 @@
 // 另外锁住 summarizeSources 的输出格式（概括行是直接给作者看的那一行）。
 import fs from 'node:fs'
 import path from 'node:path'
-import { AI_DATA_SOURCES, sourcesOf, summarizeSources } from '../src/lib/ai/aiDataSources'
+import { AI_DATA_SOURCES, sourcesOf, summarizeSources, hasOverview, noOverviewFeatureIds, AI_OVERVIEW_NOTE } from '../src/lib/ai/aiDataSources'
 import { TABS } from '../src/lib/schema'
 import { MULTI_SET_TABS } from '../src/lib/world/worldSets'
 
@@ -248,6 +248,45 @@ for (const [id, f] of Object.entries(AI_DATA_SOURCES)) {
   ok('🔴 D 级排除项被渲染进「不读」清单（不是只写在文档里）',
     !!note && note.text.includes('AI_PRUNE_NOTE') && note.text.includes('f.excludes'),
     note ? '' : 'AIDataSourceNote.tsx 未在组件目录中找到')
+}
+
+// ============ 作品概览 / 题材口径（3.0 · 社区反馈）============
+//
+// 起因：`Project.genre`（新建项目时选的题材）此前会**无条件**注入成「类型：东方修真」，
+// 而它的定位只是「决定开书定位组各页签的字段名与示例」—— 作者在界面上看不到这件事。
+// 处置：默认不再注入 + 项目级开关 + 本处披露。以下三条是**披露不腐烂**的最低保障。
+{
+  const note = componentSrc.find(c => isTsx(c.name, 'AIDataSourceNote.tsx'))
+  ok('🔴 作品概览说明被渲染进气泡（含「题材默认不带」这条）',
+    !!note && note.text.includes('AI_OVERVIEW_NOTE') && note.text.includes('hasOverview'),
+    note ? '' : 'AIDataSourceNote.tsx 未在组件目录中找到')
+  ok('作品概览说明里点明了题材默认不带 + 两条补救路子',
+    AI_OVERVIEW_NOTE.includes('默认「不在其中」')
+    && AI_OVERVIEW_NOTE.includes('把作品题材告诉 AI')
+    && AI_OVERVIEW_NOTE.includes('类型赛道'))
+}
+
+// 「不带概览」名单的 id 必须真实存在 —— 写错 id 时 hasOverview 照样返回 true（静默死名单），
+// 而那意味着**某个真的不带概览的功能**会挂上这句说明（作者读到与实际不符的披露）。
+{
+  const ids = noOverviewFeatureIds()
+  const dangling = ids.filter(id => sourcesOf(id) === null)
+  ok('🔴 「不带作品概览」名单里的 id 都在声明表内（防写错的死名单）', dangling.length === 0, dangling.join(', '))
+  ok('名单非空且不是"全都排除"（否则说明会把整张表都标成不带概览）',
+    ids.length > 0 && ids.length < Object.keys(AI_DATA_SOURCES).length, `名单 ${ids.length} / 表 ${Object.keys(AI_DATA_SOURCES).length}`)
+}
+
+// 行为抽查：两侧各取几条，锁住判据没被写反
+for (const [id, expect] of [
+  ['inline-suggest', true],    // 伴写走 buildInlineBriefing → 同一个作品概览块
+  ['plot-canvas', true],
+  ['project-diagnose', true],
+  ['chapter-summary', false],  // 只压缩作者指定的那一章
+  ['tavern-free', false],      // 自由对话不绑项目
+  ['market-radar', false],     // 只查公开网络
+  ['fill-template', false],    // 走 buildWorldContext，没有概览块
+] as const) {
+  ok(`作品概览判据：${id} → ${expect ? '带' : '不带'}`, hasOverview(id) === expect)
 }
 
 console.log(`\n—— aiDataSources 用例结束：${pass} 通过 / ${fail} 失败`)

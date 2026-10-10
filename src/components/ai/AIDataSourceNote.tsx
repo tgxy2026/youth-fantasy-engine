@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Database, ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/common/Button'
-import { sourcesOf, summarizeSources, AI_PRUNE_NOTE, AI_BUDGET_BASE_NOTE, AI_WORLD_SET_NOTE, mentionsWorldSet } from '@/lib/ai/aiDataSources'
+import { sourcesOf, summarizeSources, AI_PRUNE_NOTE, AI_BUDGET_BASE_NOTE, AI_WORLD_SET_NOTE, AI_OVERVIEW_NOTE, mentionsWorldSet, hasOverview } from '@/lib/ai/aiDataSources'
 
 interface Props {
   /** `AI_DATA_SOURCES` 里的功能 id */
@@ -73,6 +73,11 @@ export default function AIDataSourceNote({ feature, compact = false, className =
           {/* 预算口径（2026-10-10 六维审计 P2）：与上面母子结构说明同理，只写一处。 */}
           {mentionsBudget && (
             <div className="mt-1.5 text-ink-500 leading-relaxed">{AI_BUDGET_BASE_NOTE}</div>
+          )}
+          {/* 作品概览口径（3.0 · 社区反馈）：走 buildProjectContext 的功能都会附带那一小段，
+              作者却看不见它 —— 尤其「题材默认不在其中」这条，必须写在同一处（只写一处，免得 20+ 处漂移）。 */}
+          {hasOverview(feature) && (
+            <div className="mt-1.5 text-ink-500 leading-relaxed">{AI_OVERVIEW_NOTE}</div>
           )}
           {/* 「不读」清单：各功能自己的排除项 + **全局那条**（D 级一律不读，见 AI_PRUNE_NOTE）。
               全局条固定追加，不放进各 feature 的 excludes —— 14 处重复早晚漏改。 */}

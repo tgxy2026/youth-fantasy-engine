@@ -21,6 +21,7 @@ import { APP_VERSION_LABEL } from '@/lib/app/env'
 import { usePersistedBool, readBoolPref, readStringPref } from '@/lib/settings/uiPrefs'
 import { LOCKED_IDS, DEFAULT_IDS } from '@/lib/schema'
 import { DEFAULT_PACK, normalizeGenrePack, setActivePack, type GenrePack } from '@/lib/schemaTemplates/index'
+import { getGenreToAIFor, setGenreToAIFor } from '@/lib/ai/aiGenreHint'
 import { GenrePackSelect } from '@/components/creative/GenrePackSelect'
 import workbenchBg from '@/assets/workbench-bg.png'
 import jiewenjiGufeng from '@/assets/jiewenji-gufeng.png'
@@ -52,7 +53,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   // 🔴 2.7.2：`genre` 加进编辑表单 —— 题材改到「新建项目 / 编辑项目」两处选了，
   //    页签里不再提供切换 ⇒ 这里成了老项目改题材的**唯一入口**，不能缺。
-  const [editForm, setEditForm] = useState<{ name: string; cover: string; genre: GenrePack; projectType: CreateType; features: string[] }>({ name: '', cover: '', genre: '东方修真', projectType: 'full', features: [] })
+  // 3.0：题材「要不要告诉 AI」—— 与题材同处一地（编辑项目是老项目改题材的唯一入口）。
+  // 默认关（见 aiGenreHint）；读的是**被编辑的那个项目**，不是当前打开的项目。
+  const [editForm, setEditForm] = useState<{ name: string; cover: string; genre: GenrePack; projectType: CreateType; features: string[]; genreToAI: boolean }>({ name: '', cover: '', genre: '东方修真', projectType: 'full', features: [], genreToAI: false })
   // 功能勾选弹窗：createFeatures / editFeatures 为初始勾选集合（不含锁定项），分别服务于"新建自定义"与"编辑自定义"
   const [featureModal, setFeatureModal] = useState<{ mode: 'create' | 'edit'; initial: string[] } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -106,8 +109,14 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       name: p.name, cover: p.cover ?? '',
       genre: normalizeGenrePack(p.genre),
       projectType: isCustom ? 'custom' : 'full', features: p.features ?? [],
+      // 先按默认（关）渲染，读到真值再补 —— 读设置是异步的，不该把弹开卡片卡住
+      genreToAI: false,
     })
     setEditingId(p.id)
+    // 🔴 用 pid 版：这里编辑的**不一定是当前打开的项目**（`db.getSetting` 会读错那本）
+    void getGenreToAIFor(p.id).then(v => {
+      setEditForm(f => (f.name === p.name ? { ...f, genreToAI: v } : f))
+    })
   }
 
   const saveEdit = async () => {
@@ -123,6 +132,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       }
       if (editForm.projectType === 'custom') patch.features = editForm.features
       await db.updateProject(patch)
+      // 3.0：题材「告诉 AI」开关（项目级）。先落项目记录，再写设置 —— 顺序无关，
+      // 但两处都失败要给出同一句话，故放在同一个 try 里。
+      await setGenreToAIFor(editingId, editForm.genreToAI)
       setEditingId(null)
       await load()
     } catch (e) {
@@ -381,7 +393,10 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                         + '· 选「科幻末世」，同一批字段的示例会变成「联交所、行星防卫军、生态舱配给」。\n\n'
                         + '📌 它「不影响页签数量」 —— 完整项目的《开书定位》六个页签全部显示；'
                         + '自定义项目则按你在「功能模块」里勾的来。\n'
-                        + '📌 选错了不要紧：回项目管理页「编辑项目」能改，填过的内容不会丢（换题材只换示例，不动字段名）。'}
+                        + '📌 选错了不要紧：回项目管理页「编辑项目」能改，填过的内容不会丢（换题材只换示例，不动字段名）。\n\n'
+                        + '🔴 它「默认不会告诉 AI」 —— 题材不进模型看到的资料，AI 不会因为看到「类型：都市异能」'
+                        + '就照题材套路发挥。想让它知道：回「编辑项目」打开「把作品题材告诉 AI」，'
+                        + '或直接填《作品信息》页的「类型赛道」字段（那一路一直会发给 AI，且是你自己写的描述）。'}
                     </HelpPopover>
                   </label>
                   <GenrePackSelect value={form.genre} onChange={g => setForm(f => ({ ...f, genre: g }))} className="w-full" />
@@ -483,6 +498,25 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                           onChange={g => setEditForm(f => ({ ...f, genre: g }))}
                           className="w-full"
                         />
+                        {/* 3.0 · 社区反馈：题材此前会**无条件**混进 AI 上下文（「类型：都市异能」），
+                            而它的定位只是「决定各页签字段名与示例」。现在默认不注入，想要就显式打开。 */}
+                        <label className="mt-1.5 flex items-start gap-1.5 text-11 text-ink-400 cursor-pointer select-none">
+                          <input type="checkbox" checked={editForm.genreToAI}
+                            onChange={e => setEditForm(f => ({ ...f, genreToAI: e.target.checked }))}
+                            className="mt-px accent-amber" />
+                          <span>把作品题材告诉 AI
+                            <HelpPopover title="把作品题材告诉 AI" width="22rem" size={11}>
+                              {'默认「不告诉」。\n\n'
+                                + '· 关（默认）：题材只决定各页签里的字段名 / 说明 / 示例怎么写，'
+                                + '不会出现在发给模型的资料里 —— AI 不会因为看到「类型：都市异能」就照题材套路发挥。\n'
+                                + '· 开：发给模型的「作品概览」里会多一行「类型：都市异能」。'
+                                + '适合希望 AI 明确知道赛道 / 题材常识的场合。\n\n'
+                                + '📌 想要更具体的题材描述，推荐填《作品信息》页的「类型赛道」字段'
+                                + '（例如「东方玄幻·升级流」）—— 那是你自己写的，会随设定资料照常发给 AI，'
+                                + '比四字包名信息量大得多，也不受这个开关影响。'}
+                            </HelpPopover>
+                          </span>
+                        </label>
                       </div>
                     </div>
                     {editForm.projectType === 'custom' && (

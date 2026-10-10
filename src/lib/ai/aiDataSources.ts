@@ -57,6 +57,61 @@ export const AI_PRUNE_NOTE = '保密等级标为「D · 终结（弃用）」的
 export const AI_BUDGET_BASE_NOTE = '上面写的「约 XX 字」按出厂基准 8000 字计；若在「模型设置 → 正文写作 AI 额度」里调过基准，各功能的实际额度会按同一系数等比变化'
 
 /**
+ * 🔴 **全局生效的一条作品概览口径说明**（3.0 · 社区反馈）。
+ *
+ * 走 `buildProjectContext` 的功能（本表里绝大多数）都会在上下文开头附一段「作品概览」：
+ * 书名 / 简介 / 体量。它几乎不占预算，但作者从界面上看不到 —— 于是有作者发现
+ * "AI 好像知道我的题材"，却找不到是哪儿告诉它的。
+ *
+ * 答案就是这一段：改造前它固定含一行「类型：东方修真」（＝新建项目时选的题材包）。
+ * 3.0 起**默认不再注入题材**（题材回归"只管字段名"的定位），需要的话在「编辑项目」里
+ * 打开「把作品题材告诉 AI」，或填《作品信息》页的「类型赛道」字段（那一路一直照常发出）。
+ *
+ * 与 `AI_PRUNE_NOTE` 同口径：不写进各 feature 的 note（20+ 处重复早晚漏改），
+ * 由 `AIDataSourceNote` 在展开明细时统一追加（不读项目资料的功能不显示，见 `NO_OVERVIEW_FEATURES`）。
+ */
+export const AI_OVERVIEW_NOTE = '另会附一小段「作品概览」：书名 / 简介 / 体量（几乎不占预算，固定附带）；'
+  + '🔴 作品题材默认「不在其中」 —— 想让 AI 知道你的题材，请在「编辑项目」里打开「把作品题材告诉 AI」，'
+  + '或填写《作品信息》页的「类型赛道」字段（那一路会随设定资料照常发出，且是你自己写的描述，比四字包名更具体）'
+
+/**
+ * **不带**「作品概览」的功能（即不调用 `buildProjectContext`、也不读项目设定资料的那些）。
+ *
+ * 🔴 判据必须是「代码里到底走了哪条装配」，不是「感觉它应该知道书名」：
+ *   · 只处理作者当场给的内容 —— 章节压缩摘要、敏感词片段、术语查重、读者反馈、拆书章节识别、
+ *     AI 取名之外的各类"只发片段"的功能；
+ *   · 不读项目资料 —— 市场雷达（只查公开网络）、文风指纹（只吃投喂的参考文本）、
+ *     知识库召回（只取挂载的资料片段）；
+ *   · 酒馆侧不绑项目的 —— 自由对话 / 结束本轮 / 角色卡起草 / 跑团互动（读引用来的世界版本）；
+ *   · 走 `buildWorldContext` 的「AI 补全 / AI 新增」（只读三张表的若干字段，没有概览块）。
+ *
+ * ⚠️ 新增 AI 功能时：它若走 `buildProjectContext`，**什么都不用做**（默认视为带概览）；
+ *    若走别的装配路径，请把它的 id 加进这里，否则气泡会多写一句它并没有读的东西。
+ */
+const NO_OVERVIEW_FEATURES = new Set([
+  'chapter-summary',      // 只压缩作者指定的那一章
+  'proofread',            // 文字层刻意不读设定资料
+  'style-check',          // 只读《写作规范》+ 本章正文
+  'jiewenji-ledger',      // 设定补登：AI 只读本章正文，是否已登记由程序比对
+  'fill-template',        // 走 buildWorldContext（三张表的关键字段），没有概览块
+  'feedback-ai', 'term-dedup', 'sensitive-check', 'extract-entities',
+  'market-radar', 'style-fingerprint', 'semantic-index', 'kb-recall',
+  'bookbreak', 'bookbreak-split',
+  'tavern-memory', 'tavern-report', 'tavern-free', 'tavern-round-end', 'tavern-run', 'tavern-card-draft',
+  'chapter-rewrite',      // 只发本章原文 + 上一章结尾（改历史章不读设定；改最新章落库后才跑一轮设定同步）
+])
+
+/** 这个功能会不会附「作品概览」（决定气泡里要不要写 `AI_OVERVIEW_NOTE`） */
+export function hasOverview(feature: string): boolean {
+  return !NO_OVERVIEW_FEATURES.has(feature)
+}
+
+/** 上面那份名单（只读，供测试守卫用：写错的 id 会静默变成死名单） */
+export function noOverviewFeatureIds(): string[] {
+  return [...NO_OVERVIEW_FEATURES]
+}
+
+/**
  * 项目设定表里最常被读到的几类（多为 `PRIORITY` 靠前的资料型页签）。
  *
  * ⚠️ 这里的名字必须是 schema 的**真名**（`TABS[].name`）—— 它们会经 `AIDataSourceNote`
@@ -282,7 +337,9 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       { group: '本章正文末尾', items: [], note: '接着往下写；只带末尾约 3000 字做衔接，不是整章' },
       { group: '你勾选的章节素材', items: ['本章及前 N 章摘要', '前 N 章正文（取每章末尾，最吃预算）'], note: 'N 可调（正文最多 5 章）；勾得越多越可能超预算，超出的会在提示里注明' },
       { group: '你勾选的设定资料', items: ['本章细纲', '主要角色', '写作规范', '世界设定', '分卷大纲', '全书总纲', '伏笔追踪', '写作文风', '爽点节奏'], note: '只带你勾的项；按上下文预算裁剪，装不下的不发送' },
-      { group: '作品概览', items: [], note: '书名 / 类型 / 简介 / 体量（几乎不占预算，固定附带）' },
+      // 🔴 3.0：原先写「书名 / 类型 / 简介 / 体量」—— 类型（题材）已默认不再注入，
+      //    与 AI_OVERVIEW_NOTE 同口径；这里再列一次会让人以为续写是例外。
+      { group: '作品概览', items: [], note: '书名 / 简介 / 体量（几乎不占预算，固定附带；题材默认不在其中）' },
     ],
     excludes: ['未勾选的设定表一律不读', '《写作进度》整表（纯码字流水，对生成正文无参考价值）'],
   },

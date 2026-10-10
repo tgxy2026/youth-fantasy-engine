@@ -34,7 +34,7 @@ export * from '@/lib/db/tabs'
 // 母级不在这里 —— 它就是 tabs 的 formData 那一份，位置与 API 都没变。
 export * from '@/lib/db/worldSets'
 export type { DailyStat } from '@/lib/db/meta'
-export { getMeta, setMeta, getDailyStats, putDailyStat, getSetting, setSetting } from '@/lib/db/meta'
+export { getMeta, setMeta, getDailyStats, putDailyStat, getSetting, setSetting, getSettingFor, setSettingFor } from '@/lib/db/meta'
 export * from '@/lib/db/tavernReports'
 export * from '@/lib/db/aiRuns'
 // 世界引擎（3.0 · W4-1b）：世界包 / 不可变版本。🔴 **非项目级** —— 全局可读、删项目不清理。

@@ -18,10 +18,11 @@ import { todayKey } from '@/lib/app/date'
 import { sortChapters, flattenChapters, chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { pickContinuationSources, type ContinuationPickOpts } from '@/lib/editor/continuationPick'
 import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from '@/lib/world/worldSets'
-import { getActivePack, normalizeGenrePack, subItemLabel } from '@/lib/schemaTemplates/index'
+import { getActivePack, subItemLabel } from '@/lib/schemaTemplates/index'
 import { buildSemanticRecallBlock } from '@/lib/semantic/inject'
 import { buildKbBlock } from '@/lib/search/kbInject'
 import { planFor } from '@/lib/ai/contextLayers'
+import { genreLineForAI } from '@/lib/ai/aiGenreHint'
 import type { Chapter, TabDef, Volume } from '@/lib/types'
 import type { AiContextSnapshot } from '@/lib/ai/aiRunTypes'
 
@@ -959,7 +960,14 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
         `书名：${proj.name}`,
         // 类型＝题材包（2.7.1）：值就是四字包名 ⇒ 直接可读，无需额外映射。
         // 老数据里的自由文本（'东方玄幻' 等）经别名表归位；为空则整行不输出（与改造前一致）。
-        proj.genre ? `类型：${normalizeGenrePack(proj.genre)}` : '',
+        //
+        // 🔴🔴 3.0（社区反馈）：这一行**默认不再注入** —— 题材最初的定位是
+        //    「只管开书定位组各页签的字段名与示例」，不该顺带影响 AI 生成的内容；
+        //    但它一直无条件出现在提示词里（模型看到「类型：都市异能」会照题材套路发挥）。
+        //    现改由项目级开关控制（**默认关**）：想让 AI 知道题材的作者在
+        //    「编辑项目」里打开它，或填《作品信息》页的「类型赛道」字段（那一路照旧发出）。
+        //    见 `lib/ai/aiGenreHint.ts`。
+        await genreLineForAI(proj.genre),
         proj.intro ? `简介：${clip(proj.intro, 200)}` : '',
         `体量：${st.volumes} 卷 / ${st.chapters} 章 / ${st.words} 字`,
       ]

@@ -179,6 +179,9 @@ export default function WelcomeWizard({ onDone }: Props) {
                   <GenrePackSelect value={genre} onChange={setGenre} className="w-full" />
                   <div className="mt-1 text-10 leading-relaxed text-ink-500">
                     决定《开书定位》各页签里的字段说明与示例随哪一套走；不影响页签数量（完整项目六页签全有）。
+                    <br />
+                    🔴 它<b className="text-ink-400">默认不会告诉 AI</b>：想让模型知道你的题材，
+                    建好项目后在「编辑项目」里打开「把作品题材告诉 AI」，或填《作品信息》页的「类型赛道」。
                   </div>
                 </div>
               </div>
