@@ -43,12 +43,22 @@ function apiBase(): string {
 
 // ---------- 纯逻辑（可单测，不碰网络） ----------
 
-/** 各 store 的主键字段 —— 与 `syncCore.KEY_FIELD` / `app/desktop.KEY_PATHS` 同口径（三处一致） */
+/**
+ * 各 store 的主键字段 —— 与 `syncCore.KEY_FIELD` / `app/desktop.KEY_PATHS` 同口径（三处一致）。
+ *
+ * 🔴 `vecRows` / `kbDocs` / `kbBodies` 是**便携版专属**（2026-10-10 方案 A）：
+ *    桌面版把语义向量与参考资料放在**两个独立 IDB 库**（`-vec` / `-kb`）里，刻意不进整库 JSON；
+ *    但便携版是 U 盘自包含、IDB 不跟盘走 ⇒ 这两库的数据必须并入整库 JSON 才能随盘携带。
+ *    故便携版在运行时把两库后端**注入**成「读写这三个 store」（见 `storage/portableVecKb.ts`）。
+ *    ⚠️ 桌面端的 `syncCore.KEY_FIELD` / `desktop.KEY_PATHS` **不该**加这三项 —— 它们不属于主库。
+ */
 export const PORTABLE_KEY_FIELDS: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', backupPayloads: 'id',
   formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
   tavernReports: 'id', aiRuns: 'id', worlds: 'id',
+  // ---- 便携版专属（语义检索 / 知识库并入整库，方案 A）----
+  vecRows: 'id', kbDocs: 'id', kbBodies: 'id',
 }
 
 /**

@@ -21,6 +21,7 @@ import * as db from '@/lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/sync/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
 import { PORTABLE, initPortableStore, flushPortableBeacon, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
+import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
 import { PortableWriteLockBanner } from '@/components/app/PortableWriteLockBanner'
 import DataDock from '@/components/app/DataDock'
@@ -143,7 +144,13 @@ export default function App() {
     }
     if (PORTABLE) {
       let alive = true
-      void initPortableStore().then(() => { if (alive) setFileReady(true) })
+      void initPortableStore().then(() => {
+        // 🔴 顺序关键：必须在整库数据装载完之后再切两库后端 —— 桥读写的是 portableStore 的
+        //    内存 cache，早于装载会把语义向量 / 参考资料当成空库，切项目时清空它们。
+        //    （2026-10-10 方案 A：便携版把 `-vec` / `-kb` 两独立 IDB 库并入整库 JSON）
+        installPortableVecKb()
+        if (alive) setFileReady(true)
+      })
       return () => { alive = false }
     }
   }, [])
