@@ -66,8 +66,8 @@ export default function NetworkProxyPanel() {
   useSaveHotkey(() => void save(), dirty && !saving)
 
   return (
-    <section className="rounded-lg border border-ink-800 bg-ink-850/30">
-      <div className="shrink-0 px-4 py-3 border-b border-ink-800">
+    <section className="rounded-lg border border-ink-700 bg-ink-850/30">
+      <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
           <Globe size={13} className="text-amber" />
           <h2 className="text-13 text-amber">网络代理</h2>

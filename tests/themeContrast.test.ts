@@ -112,6 +112,56 @@ for (const t of themes) {
   ok(`主题「${t.id}」灰阶单调（50→600）`, up || down, ls.map(v => v.toFixed(3)).join(' '))
 }
 
+// ---------- 边框（描边 / 分隔线）对比度（2026-10-10 · 社区反馈）----------
+//
+// 为什么补这一道：上面的 RULES 只判**文字**，边框一条都没测 —— 而边框出问题**不会报错**，
+// 在作者惯用的那个主题下也未必看得见。实测（修复前）浅色主题里 ink-800 与 ink-900 几乎同色
+// （对比度 ≈1.0），于是所有「拿 ink-800 当边框」的元素（当时 134 处）在护眼 / 羊皮卷 / 青花 /
+// 桃笺四个浅色主题下**完全看不见**，本项目 ink-700 才是描边主色（约 740 处）。
+// 🔴 判据：ink-700 相对三种常见落地面 —— ink-900（主面板）/ ink-850（抬升面板）/ ink-800（嵌套面）。
+//    ink-800 一档的下限刻意更松：该面本身已由「面与面的边界」承载一层分离，描边只需补强。
+const BORDER_RULES: { min: number; bg: string }[] = [
+  { min: 1.45, bg: 'ink-900' },
+  { min: 1.35, bg: 'ink-850' },
+  { min: 1.20, bg: 'ink-800' },
+]
+for (const t of themes) {
+  const bad: string[] = []
+  const col = t.vars['ink-700']
+  if (!col) bad.push('ink-700 缺失')
+  else for (const r of BORDER_RULES) {
+    const bg = t.vars[r.bg]
+    if (!bg) continue
+    const c = contrast(col, bg)
+    if (c < r.min) bad.push(`ink-700 on ${r.bg} = ${c.toFixed(2)} < ${r.min}`)
+  }
+  ok(`主题「${t.id}」边框对比度达标`, bad.length === 0, bad.join(' ｜ '))
+}
+
+// ---------- 源码闸：禁止把「面」当描边色用 ----------
+//
+// 🔴 ink-800 / ink-850 的职责是**面**（输入框底 / 卡片底），不是描边色。对比度闸只能约束
+//    「变量取值」，管不住「类名怎么用」—— 故这里直接扫源码，防止下一个人顺手写回去。
+//    范围只限 .ts / .tsx（index.css 的注释里为讲清缘由会提到该串，不该被误伤）。
+function walkSrc(dir: string, out: string[] = []): string[] {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) walkSrc(p, out)
+    else if (/\.(ts|tsx)$/.test(e.name)) out.push(p)
+  }
+  return out
+}
+{
+  const offenders: string[] = []
+  for (const f of walkSrc(path.join(process.cwd(), 'src'))) {
+    const src = fs.readFileSync(f, 'utf8')
+    if (src.includes('border-ink-800') || src.includes('divide-ink-800')) {
+      offenders.push(path.relative(process.cwd(), f).replace(/\\/g, '/'))
+    }
+  }
+  ok('源码里没有把 ink-800 当边框 / 分隔色（统一用 ink-700）', offenders.length === 0, offenders.join(', '))
+}
+
 // ---------- 实心按钮（solid danger / success / info）的白字对比度（2026-10-03 · 方案 ②）----------
 //
 // 这三种 solid 的底色是**固定 500/600/700 级色**（不随主题变），字色统一 `text-white`。

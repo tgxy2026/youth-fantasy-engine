@@ -268,7 +268,7 @@ export default function KnowledgeBasePanel() {
   const canIndex = !running && docs.length > 0 && ready
 
   return (
-    <div className="mt-8 pt-6 border-t border-ink-800">
+    <div className="mt-8 pt-6 border-t border-ink-700">
       <div className="flex items-center gap-1.5 mb-1">
         <h2 className="text-base font-bold text-ink-50">我的参考资料</h2>
         <span className="text-12 text-ink-400">长期挂载 · 按需召回</span>
@@ -434,7 +434,7 @@ export default function KnowledgeBasePanel() {
                   <>
                     <div className="text-11 text-ink-500">捞到 {hits.length} 段（正式注入时最多取 {KB_TOP_K} 段）：</div>
                     {hits.map((h, i) => (
-                      <div key={`${h.refId}-${h.chunkIdx}-${i}`} className="bg-ink-900/60 border border-ink-800 rounded-lg px-3 py-2">
+                      <div key={`${h.refId}-${h.chunkIdx}-${i}`} className="bg-ink-900/60 border border-ink-700 rounded-lg px-3 py-2">
                         <div className="text-10 text-ink-500 mb-0.5">
                           {h.title} · 第 {h.chunkIdx + 1} 段 · 相关度 {h.score.toFixed(2)}
                         </div>

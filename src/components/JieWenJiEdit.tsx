@@ -141,7 +141,7 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
               </Button>
 
               {contOpen && (
-                <div className="px-3 pb-2.5 space-y-2 border-t border-ink-800">
+                <div className="px-3 pb-2.5 space-y-2 border-t border-ink-700">
                   <div className="flex flex-wrap items-center gap-2 pt-2.5">
                     <span className="text-10 text-ink-500">续写字数</span>
                     <NumberField

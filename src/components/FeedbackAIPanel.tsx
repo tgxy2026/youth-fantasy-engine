@@ -104,7 +104,7 @@ function Section({ title, body }: { title: string; body: string }) {
   return (
     <div>
       <div className="text-12 font-semibold text-amber mb-1">{title}</div>
-      <div className="text-12 text-ink-200 leading-relaxed whitespace-pre-wrap break-words bg-ink-900/40 border border-ink-800 rounded-lg px-3 py-2">
+      <div className="text-12 text-ink-200 leading-relaxed whitespace-pre-wrap break-words bg-ink-900/40 border border-ink-700 rounded-lg px-3 py-2">
         {body}
       </div>
     </div>

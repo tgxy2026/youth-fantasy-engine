@@ -14,7 +14,7 @@
  */
 export default function SamplingUnavailable({ className = '' }: { className?: string }) {
   return (
-    <div className={`flex items-center justify-between gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-1.5 ${className}`}>
+    <div className={`flex items-center justify-between gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-1.5 ${className}`}>
       <span className="text-12 text-ink-600">—</span>
       <span className="text-10 text-ink-600">只对本地 Ollama 生效</span>
     </div>

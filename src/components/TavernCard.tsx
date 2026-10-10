@@ -97,7 +97,7 @@ export default function TavernCard() {
     /* 固定头部 + 下方独立滚动区：滚动只发生在标题条**下面**，
        内容不会再滑到条子后面被半透明条盖住（原先 sticky + bg-ink-900/95 的观感问题）。 */
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-ink-800 pb-3">
+      <header className="shrink-0 border-b border-ink-700 pb-3">
         <div className="flex items-center gap-1.5">
 
           <h1 className="text-xl font-bold text-ink-50">角色卡片</h1>
@@ -210,7 +210,7 @@ export default function TavernCard() {
                 />
 
                 {/* 操作 */}
-                <div className="flex items-center justify-between border-t border-ink-800 pt-3">
+                <div className="flex items-center justify-between border-t border-ink-700 pt-3">
                   <span className="text-11 text-ink-500">
                     {dirty ? UNSAVED_CHANGES_HINT : `上次保存：${new Date(draft.updatedAt).toLocaleString('zh-CN')}`}
                   </span>

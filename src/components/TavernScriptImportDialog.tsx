@@ -361,13 +361,13 @@ export default function TavernScriptImportDialog({ open, onClose, onImported, de
 
             {/* 重名拦下（2026-10-09）：红字列出到底是哪一个撞了，不自动改名 */}
             {conflicts.length > 0 && (
-              <ul className="mt-2 space-y-1 border-t border-ink-800 pt-2 text-12 text-danger">
+              <ul className="mt-2 space-y-1 border-t border-ink-700 pt-2 text-12 text-danger">
                 {conflicts.map((c, i) => <li key={i}>{conflictText(c)}</li>)}
               </ul>
             )}
 
             {warns.length > 0 && (
-              <ul className="mt-2 space-y-1 border-t border-ink-800 pt-2 text-11 leading-relaxed text-amber">
+              <ul className="mt-2 space-y-1 border-t border-ink-700 pt-2 text-11 leading-relaxed text-amber">
                 {warns.map((w, i) => (
                   <li key={i}>{w.line ? `第 ${w.line} 行：` : ''}{w.message}</li>
                 ))}

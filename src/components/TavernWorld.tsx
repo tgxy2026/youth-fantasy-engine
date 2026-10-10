@@ -138,7 +138,7 @@ export default function TavernWorld() {
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-ink-800 pb-3">
+      <header className="shrink-0 border-b border-ink-700 pb-3">
         <div className="flex items-center gap-1.5">
 
           <h1 className="text-lg font-bold text-ink-50">背景设定</h1>
@@ -176,7 +176,7 @@ export default function TavernWorld() {
         <div className="flex flex-1 min-h-0 gap-3 pt-3">
           {/* 左：编辑区 */}
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="text-12 text-ink-200">一句话总纲</div>
               <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
                 时代 / 地点 / 基调。它最先进上下文，模型靠它抓住大感觉。
@@ -193,7 +193,7 @@ export default function TavernWorld() {
               </p>
             </div>
 
-            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="flex items-center justify-between">
                 <div className="text-12 text-ink-200">分节（{w.sections.length}）</div>
                 <Button variant="secondary" size="xs"
@@ -213,7 +213,7 @@ export default function TavernWorld() {
               ) : (
                 <div className="space-y-2">
                   {w.sections.map((s, i) => (
-                    <div key={s.id} className="rounded-md border border-ink-800 bg-ink-900/40 p-2.5">
+                    <div key={s.id} className="rounded-md border border-ink-700 bg-ink-900/40 p-2.5">
                       <div className="flex items-center gap-2">
                         <input
                           value={s.title}
@@ -318,7 +318,7 @@ export default function TavernWorld() {
               )}
             </div>
 
-            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="text-12 text-ink-200">关键词（命中才注入）</div>
               <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
                 逗号或换行分隔。留空 = 每轮都注入；填了就只在这些词出现时带上这一层。
@@ -380,7 +380,7 @@ export default function TavernWorld() {
               <DraftSourceLine source={lastSource} />
             </div>
 
-            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="text-12 text-ink-200">注入情况</div>
               <div className="mt-1.5 space-y-1 text-11 text-ink-400">
                 {/* 🔴 「整份」与「预计命中」必须分开显示（2026-10-05）： */}
@@ -415,12 +415,12 @@ export default function TavernWorld() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="flex items-center gap-1.5">
                 <div className="text-12 text-ink-200">注入预览</div>
                 <span className="text-10 text-ink-600">（空上下文时实际会注入的部分）</span>
               </div>
-              <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
+              <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-700 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
                 {buildPlotWorldBook(w, '', { maxChars: quota.dynamic, fixedMaxChars: quota.fixed }).text || '（空）'}
               </pre>
             </div>

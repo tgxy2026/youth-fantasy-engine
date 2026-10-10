@@ -28,7 +28,7 @@ export default function TavernFreeSessionList({ model }: { model: TavernFreeMode
   } = model
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
+    <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-700 bg-ink-850/40 p-3">
       <Button
         variant="primary" size="md" className="w-full"
         onClick={async () => {
@@ -71,7 +71,7 @@ export default function TavernFreeSessionList({ model }: { model: TavernFreeMode
                 <span className="shrink-0 text-10 text-ink-600">{g.rows.length}</span>
               </button>
               {!closed && (
-                <div className="ml-3 space-y-1 border-l border-ink-800 pl-1.5">
+                <div className="ml-3 space-y-1 border-l border-ink-700 pl-1.5">
                   {g.rows.map(s => renderSessionRow(s))}
                   {g.rows.length === 0 && (
                     <p className="px-1 py-1 text-10 text-ink-600">还没有对话</p>
@@ -98,7 +98,7 @@ export default function TavernFreeSessionList({ model }: { model: TavernFreeMode
               <span className="shrink-0 text-10 text-ink-600">{tree.orphan.length}</span>
             </button>
             {!closedStoryIds.includes('__orphan__') && (
-              <div className="ml-3 space-y-1 border-l border-ink-800 pl-1.5">
+              <div className="ml-3 space-y-1 border-l border-ink-700 pl-1.5">
                 {tree.orphan.map(s => renderSessionRow(s))}
               </div>
             )}
@@ -113,7 +113,7 @@ export default function TavernFreeSessionList({ model }: { model: TavernFreeMode
           </p>
         )}
       </div>
-      <div className="shrink-0 border-t border-ink-800 pt-2 text-10 text-ink-500">共 {sessions.length} 场</div>
+      <div className="shrink-0 border-t border-ink-700 pt-2 text-10 text-ink-500">共 {sessions.length} 场</div>
     </aside>
   )
 }

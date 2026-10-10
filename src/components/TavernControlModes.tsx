@@ -255,7 +255,7 @@ export default function TavernControlModes({
         />
 
         <div className="pt-1">
-          <div className="mb-1 text-12 text-ink-200 border-t border-ink-800 pt-3">记忆引擎</div>
+          <div className="mb-1 text-12 text-ink-200 border-t border-ink-700 pt-3">记忆引擎</div>
           {/* 🚫 2026-09-16：这里原来的「触发整理」与「自动整理最小间隔」已删 ——
               项目不再有任何自动整理（两种模式都改为作者手动触发：自由对话「结束本轮对话」、
               剧情推演「整理本场记忆」），留着这两个旋钮只会让人以为拧了有用。 */}
@@ -296,7 +296,7 @@ export default function TavernControlModes({
         </div>
 
         <div className="pt-1">
-          <div className="mb-3 text-12 text-ink-200 border-t border-ink-800 pt-3">日常推进</div>
+          <div className="mb-3 text-12 text-ink-200 border-t border-ink-700 pt-3">日常推进</div>
           <div className={GRID2}>
             <NumField
               label="推进间隔" guide={PARAM_GUIDES.dailyAdvance}
@@ -312,7 +312,7 @@ export default function TavernControlModes({
         </div>
 
         <div className="pt-1">
-          <div className="mb-3 text-12 text-ink-200 border-t border-ink-800 pt-3">收尾与释放</div>
+          <div className="mb-3 text-12 text-ink-200 border-t border-ink-700 pt-3">收尾与释放</div>
           <ToggleField
             label="结束本轮对话后卸载本地模型"
             hint="收尾（记忆 / 日记 / 数值 / 设定建议）全部跑完之后，让本机 Ollama 把这个模型退出显存。模型留在显存里时会带着上一场的上下文 —— 清空了记忆它却还隐约记得，打开这项就能从干净状态开下一场。只对本机 Ollama 生效。"

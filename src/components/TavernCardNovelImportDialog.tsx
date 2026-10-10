@@ -116,7 +116,7 @@ export default function TavernCardNovelImportDialog({
               )}
             </ul>
           )}
-          <div className="flex items-center justify-between border-t border-ink-800 pt-2">
+          <div className="flex items-center justify-between border-t border-ink-700 pt-2">
             <span className="text-11 text-ink-500">
               {converting
                 ? '正在转换（要读一遍角色卡，可能要十几秒）…'

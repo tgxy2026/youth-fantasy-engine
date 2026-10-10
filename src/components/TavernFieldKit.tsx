@@ -49,8 +49,8 @@ export function Section({ title, desc, children, className = '', bodyClassName =
   className?: string; bodyClassName?: string
 }) {
   return (
-    <section className={`rounded-lg border border-ink-800 bg-ink-850/30 ${className}`}>
-      <div className="shrink-0 px-4 py-3 border-b border-ink-800">
+    <section className={`rounded-lg border border-ink-700 bg-ink-850/30 ${className}`}>
+      <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <h3 className="text-13 text-amber">{title}</h3>
         <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">{desc}</p>
       </div>
@@ -91,8 +91,8 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
   if (!show) return null
   const cur = bandOf(guide, value)
   return (
-    <div className="mt-2 overflow-hidden rounded-md border border-ink-800 bg-ink-900/40">
-      <div className="border-b border-ink-800 px-2 py-1 text-10 text-ink-600">
+    <div className="mt-2 overflow-hidden rounded-md border border-ink-700 bg-ink-900/40">
+      <div className="border-b border-ink-700 px-2 py-1 text-10 text-ink-600">
         取值范围 {guide.min} ~ {guide.max}{guide.unit ? `（${guide.unit}）` : ''} · 步进 {guide.step}
       </div>
       <ul>
@@ -101,7 +101,7 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
           return (
             <li
               key={`${b.from}-${b.to}`}
-              className={`border-t border-ink-800/60 px-2 py-1.5 text-10 leading-relaxed first:border-t-0 ${
+              className={`border-t border-ink-700/60 px-2 py-1.5 text-10 leading-relaxed first:border-t-0 ${
                 on ? 'bg-amber/15' : ''
               }`}
             >

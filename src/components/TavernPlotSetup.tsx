@@ -183,7 +183,7 @@ function CharacterPicker({ open, title, options, usedBy, initialCardId, initialR
         </div>
 
         {/* ③ 角色列表 */}
-        <div className="max-h-64 overflow-y-auto rounded-md border border-ink-700 divide-y divide-ink-800">
+        <div className="max-h-64 overflow-y-auto rounded-md border border-ink-700 divide-y divide-ink-700">
           {rows.map(o => {
             const used = usedBy[o.id]
             const disabled = used !== undefined && o.id !== initialCardId
@@ -415,7 +415,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                       </Button>
                     )}
                   </div>
-                  <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-ink-700 divide-y divide-ink-800">
+                  <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-ink-700 divide-y divide-ink-700">
                     {anchorRows.map(r => {
                       const active = r.c.id === anchorId
                       return (
@@ -564,7 +564,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
               <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：Ta得知师父死讯那一夜" />
             </section>
 
-            <div className="text-11 text-ink-500 border-t border-ink-800 pt-2">
+            <div className="text-11 text-ink-500 border-t border-ink-700 pt-2">
               ⚠️ 角色卡与人物关系表都是「全书当前快照」、没有时间版本。
               推演早期剧情时，若卡上写着他「已继任宗主」，带进去就会错位 —— 请留意这种状态错位。
             </div>

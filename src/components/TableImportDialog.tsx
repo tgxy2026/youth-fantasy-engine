@@ -286,7 +286,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
         )}
 
         {aiRows && aiRows.length === 0 && !t.running && (
-          <div className="px-3 py-2 rounded-lg bg-ink-900/50 border border-ink-800 text-12 text-ink-400">
+          <div className="px-3 py-2 rounded-lg bg-ink-900/50 border border-ink-700 text-12 text-ink-400">
             模型没有解析出任何记录 —— 可以检查粘贴的内容是否完整，或换个模型 / 关掉「带入项目资料」再试。
           </div>
         )}

@@ -298,7 +298,7 @@ export default function UpdateDialog({
         </div>
 
         {(phase.kind === 'idle' || phase.kind === 'error') && (
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-ink-800">
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-ink-700">
             <span className="text-11 text-ink-500">网盘提取码</span>
             <code className="rounded bg-ink-900/60 border border-ink-700 px-2 py-0.5 text-xs text-ink-100 tracking-wider">
               {QUARK_CODE}

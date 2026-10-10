@@ -295,8 +295,8 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
       : ONLINE_PRESETS
 
   return (
-    <section className="rounded-lg border border-ink-800 bg-ink-850/30">
-      <div className="shrink-0 px-4 py-3 border-b border-ink-800">
+    <section className="rounded-lg border border-ink-700 bg-ink-850/30">
+      <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
           <h2 className="text-13 text-amber">模型配置</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
@@ -438,7 +438,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               {/* AI 用途路由（2.8.0 · #014）：三类任务各指定模型，留空 = 跟随当前模型。
                   刻意放在模型列表正下方 —— 它是「模型配置」的延伸（同一份 providers 的分配），
                   不另开页签（新增页签要四处同步，得不偿失）。 */}
-              <div className="mt-5 pt-4 border-t border-ink-800">
+              <div className="mt-5 pt-4 border-t border-ink-700">
                 <div className="flex items-center gap-1.5 mb-1">
                   <h3 className="text-12 text-ink-200">AI 用途路由</h3>
                   <HelpPopover title="AI 用途路由怎么用" width="23rem" size={13}>
@@ -483,7 +483,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               {/* 请求超时（2.9.0）：全应用共用的单次请求等待上限。
                   此前这里没有任何可调项 —— 慢模型跑结构化任务只能干等（硬编码 180s），而酒馆那边
                   早就有同名设置。刻意与「模型配置」同面板：超时是模型 / 网络的属性，不是某个功能的属性。 */}
-              <div className="mt-5 pt-4 border-t border-ink-800">
+              <div className="mt-5 pt-4 border-t border-ink-700">
                 <div className="flex items-center gap-1.5 mb-1">
                   <h3 className="text-12 text-ink-200">请求超时</h3>
                   <HelpPopover title="请求超时怎么用" width="23rem" size={13}>
@@ -565,7 +565,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     const val = editing.sampling?.[f.key]
                     return (
                       <div key={f.key}
-                        className={`rounded-lg border px-2.5 py-2 ${usable ? 'border-ink-700 bg-ink-900/40' : 'border-ink-800 bg-ink-900/20'}`}>
+                        className={`rounded-lg border px-2.5 py-2 ${usable ? 'border-ink-700 bg-ink-900/40' : 'border-ink-700 bg-ink-900/20'}`}>
                         <div className="flex flex-wrap items-baseline gap-x-2">
                           <span className={`text-11 ${usable ? 'text-ink-300' : 'text-ink-600'}`}>{f.label}</span>
                           <span className="text-10 text-ink-600">推荐 {f.recommend}</span>

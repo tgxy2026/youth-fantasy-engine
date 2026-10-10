@@ -49,7 +49,7 @@ function Field({ label, hint, value, onChange, rows = 3, ph }: {
 
 function SectionTitle({ children, sub }: { children: string; sub?: string }) {
   return (
-    <div className="border-b border-ink-800 pb-1.5 mb-3">
+    <div className="border-b border-ink-700 pb-1.5 mb-3">
       <h3 className="text-13 font-semibold text-amber/90">{children}</h3>
       {sub && <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">{sub}</p>}
     </div>

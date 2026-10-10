@@ -182,7 +182,7 @@ export default function TavernCardList({
                   <span className="text-10 text-ink-500 shrink-0">{g.chars.length}</span>
                 </button>
                 {open && (
-                  <ul className="ml-2 pl-1.5 border-l border-ink-800 space-y-0.5 mt-0.5">
+                  <ul className="ml-2 pl-1.5 border-l border-ink-700 space-y-0.5 mt-0.5">
                     {g.chars.length
                       ? g.chars.map(charRow)
                       : <li className="px-2 py-1 text-11 text-ink-600">这个故事下还没有角色卡</li>}
@@ -223,7 +223,7 @@ export default function TavernCardList({
       </div>
 
       {/* 固定尾：导入导出，不参与滚动 */}
-      <div className="shrink-0 pt-2 border-t border-ink-800 space-y-1.5 mt-2">
+      <div className="shrink-0 pt-2 border-t border-ink-700 space-y-1.5 mt-2">
         <Button variant="secondary" size="sm" className="w-full" onClick={onImportNovel}>
           从小说角色导入
         </Button>

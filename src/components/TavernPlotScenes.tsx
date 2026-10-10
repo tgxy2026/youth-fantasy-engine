@@ -56,7 +56,7 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
   }
 
   return (
-        <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
+        <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-700 bg-ink-850/40 p-3">
           <Button variant="primary" size="md" className="w-full" onClick={() => setSetupOpen(true)}>＋ 新建推演</Button>
           {list.length > 4 && (
             <input
@@ -100,7 +100,7 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
               </p>
             )}
           </div>
-          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-ink-800 pt-2 text-10 text-ink-500">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-ink-700 pt-2 text-10 text-ink-500">
             <span>共 {list.length} 场{branchCount > 0 ? ` · ${branchCount} 个分支` : ''}</span>
             {branchCount > 0 && (
               <Button variant="toggle" size="xs" selected={treeMode}
@@ -134,7 +134,7 @@ export function PlotInfoPanel({
   removeSession: () => void | Promise<void>
 }) {
   return (
-            <aside className="w-64 shrink-0 overflow-y-auto rounded-lg border border-ink-800 bg-ink-850/40 p-3 space-y-3">
+            <aside className="w-64 shrink-0 overflow-y-auto rounded-lg border border-ink-700 bg-ink-850/40 p-3 space-y-3">
               <div>
                 <div className="text-11 text-ink-500">叙事锚点</div>
                 <div className="text-12 text-ink-200 mt-0.5">{session.anchorChapterLabel || '（未标注）'}</div>

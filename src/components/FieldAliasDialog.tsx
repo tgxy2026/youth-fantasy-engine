@@ -114,11 +114,11 @@ export default function FieldAliasDialog({
             CSS 类里的 vh 不随界面 zoom 折算，132% 缩放下会顶出弹窗。 */}
         <div className="rounded-lg border border-ink-700 overflow-y-auto" style={{ maxHeight: foldVh('42vh') }}>
           {groups.map(g => (
-            <div key={g.name} className="border-b border-ink-800 last:border-b-0">
+            <div key={g.name} className="border-b border-ink-700 last:border-b-0">
               {g.name && (
                 <div className="px-3 py-1.5 bg-ink-850 text-11 text-ink-300 font-medium sticky top-0">{g.name}</div>
               )}
-              <div className="divide-y divide-ink-800">
+              <div className="divide-y divide-ink-700">
                 {g.items.map(t => {
                   const err = errOf(t.key)
                   const alias = clean[t.key]

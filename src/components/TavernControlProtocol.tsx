@@ -50,7 +50,7 @@ export default function TavernControlProtocol({ m }: { m: TavernControlModel }) 
                     <Button variant="secondary" size="sm" onClick={() => void startEditProtocol()}>编辑协议</Button>
                   </div>
                 </div>
-                <pre className="max-h-80 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-3 text-11 leading-relaxed text-ink-300 xl:max-h-none xl:min-h-[12rem]">
+                <pre className="max-h-80 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-700 bg-ink-900/60 p-3 text-11 leading-relaxed text-ink-300 xl:max-h-none xl:min-h-[12rem]">
                   {displayProtocol(s.protocol)}
                 </pre>
               </>

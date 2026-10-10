@@ -43,7 +43,7 @@ export default function TavernCardStructField({ spec, value, onChange, label }: 
   const total = spec.items.length + (spec.other ? 1 : 0)
 
   return (
-    <div className="rounded-md border border-ink-800 bg-ink-850/20 p-2.5">
+    <div className="rounded-md border border-ink-700 bg-ink-850/20 p-2.5">
       <div className="flex items-baseline gap-2">
         <span className="text-12 text-ink-200">{label}</span>
         <span className="text-10 text-ink-500">

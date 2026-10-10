@@ -350,7 +350,7 @@ export default function TavernScript() {
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-ink-800 pb-3">
+      <header className="shrink-0 border-b border-ink-700 pb-3">
         <div className="flex items-center gap-1.5">
 
           <h1 className="text-lg font-bold text-ink-50">故事剧本</h1>
@@ -462,7 +462,7 @@ export default function TavernScript() {
                         type="button"
                         onClick={() => toggleOpen(st.id)}
                         title={isOpen ? '收起剧本' : '展开剧本'}
-                        className="shrink-0 rounded-md border border-ink-800 bg-ink-850/30 px-1.5 text-11 text-ink-400 hover:border-ink-600"
+                        className="shrink-0 rounded-md border border-ink-700 bg-ink-850/30 px-1.5 text-11 text-ink-400 hover:border-ink-600"
                       >
                         {isOpen ? '▾' : '▸'}
                       </button>
@@ -471,7 +471,7 @@ export default function TavernScript() {
                         title={st.settingBrief || '（还没写世界设定）'}
                         className={`min-w-0 flex-1 rounded-md border px-2.5 py-2 text-left transition-colors ${st.id === story?.id && kind === 'story'
                           ? 'border-amber/50 bg-amber/15'
-                          : 'border-ink-800 bg-ink-850/30 hover:border-ink-600'}`}
+                          : 'border-ink-700 bg-ink-850/30 hover:border-ink-600'}`}
                       >
                         <div className={`truncate text-12 ${st.id === story?.id && kind === 'story' ? 'text-amber' : 'text-ink-200'}`}>
                           {st.name}
@@ -483,7 +483,7 @@ export default function TavernScript() {
                     </div>
 
                     {isOpen && (
-                      <ul className="mt-1 ml-4 space-y-1 border-l border-ink-800 pl-2">
+                      <ul className="mt-1 ml-4 space-y-1 border-l border-ink-700 pl-2">
                         {under.length === 0 ? (
                           <li className="py-1 text-10 text-ink-600">（还没有剧本）</li>
                         ) : under.map(sc => (
@@ -493,7 +493,7 @@ export default function TavernScript() {
                               title={sc.goalBrief || '（还没写目标）'}
                               className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${sc.id === cur?.id && kind === 'script'
                                 ? 'border-amber/50 bg-amber/15'
-                                : 'border-ink-800 bg-ink-850/20 hover:border-ink-600'}`}
+                                : 'border-ink-700 bg-ink-850/20 hover:border-ink-600'}`}
                             >
                               <div className={`truncate text-12 ${sc.id === cur?.id && kind === 'script' ? 'text-amber' : 'text-ink-200'}`}>
                                 {sc.name}
@@ -525,7 +525,7 @@ export default function TavernScript() {
                   maxLength={STORY_NAME_MAX}
                   onChange={e => { setStory({ ...story, name: e.target.value }); setStoryDirty(true) }}
                   placeholder="例：云州江湖"
-                  className="mt-1 w-full rounded-md border border-ink-800 bg-ink-850/60 px-2.5 py-1.5 text-12 text-ink-100 placeholder:text-ink-600 focus:border-amber/50 focus:outline-none"
+                  className="mt-1 w-full rounded-md border border-ink-700 bg-ink-850/60 px-2.5 py-1.5 text-12 text-ink-100 placeholder:text-ink-600 focus:border-amber/50 focus:outline-none"
                 />
                 <p className="mt-1 text-10 text-ink-600">
                   只用于列表展示，不进上下文。最多 {STORY_NAME_MAX} 字
@@ -548,7 +548,7 @@ export default function TavernScript() {
                 </div>
 
                 {/* 世界书（W3）：把整段设定拆成词条 —— 每条自己的触发词，提到才带上 */}
-                <div className="mt-3 rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+                <div className="mt-3 rounded-lg border border-ink-700 bg-ink-850/30 p-3">
                   <div className="flex items-center justify-between">
                     <div className="text-12 text-ink-200">世界书词条（{(story.entries ?? []).length}）</div>
                     <Button variant="secondary" size="xs"
@@ -575,7 +575,7 @@ export default function TavernScript() {
                   ) : (
                     <div className="space-y-2">
                       {(story.entries ?? []).map((e, i) => (
-                        <div key={e.id} className="rounded-md border border-ink-800 bg-ink-900/40 p-2.5">
+                        <div key={e.id} className="rounded-md border border-ink-700 bg-ink-900/40 p-2.5">
                           <div className="flex items-center gap-2">
                             <input
                               value={e.title}
@@ -740,7 +740,7 @@ export default function TavernScript() {
                 ) : null}
               </div>
 
-              <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+              <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
                 <div className="text-12 text-ink-200">注入情况</div>
                 {(() => {
                   // 🔴 两种形态分开算（2026-10-05）：
@@ -836,7 +836,7 @@ export default function TavernScript() {
                 ) : null}
               </div>
 
-              <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+              <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
                 <div className="text-12 text-ink-200">注入情况</div>
                 <div className="mt-1.5 space-y-1 text-11 text-ink-400">
                   <div>
@@ -853,9 +853,9 @@ export default function TavernScript() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+              <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
                 <div className="text-12 text-ink-200">注入预览</div>
-                <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
+                <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-700 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
                   {preview || '（空）'}
                 </pre>
                 {!isEmptyScriptFields(fields) && (
@@ -863,7 +863,7 @@ export default function TavernScript() {
                     <div className="mt-2 text-10 text-ink-500">
                       开场白（在对话里作为「开场」单独显示，示例）：
                     </div>
-                    <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
+                    <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded border border-ink-700 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
                       {cur.opening.trim() || '（没写开场白 → 没有第一条消息，你直接开口）'}
                     </pre>
                   </>
@@ -877,7 +877,7 @@ export default function TavernScript() {
               </div>
             </>
           ) : (
-            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="text-12 text-ink-200">故事设定</div>
               <p className="mt-1.5 text-10 leading-relaxed text-ink-400">
                 世界设定「每轮都要给模型看」，写太长会挤掉对话历史；建议 400–1200 字，

@@ -417,7 +417,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
               className={`px-1.5 py-0.5 rounded text-10 border transition-colors
                 ${activeSub === s.id
                   ? 'bg-ink-700 text-ink-100 border-ink-500'
-                  : 'text-ink-500 border-ink-800 hover:text-ink-300'}`}
+                  : 'text-ink-500 border-ink-700 hover:text-ink-300'}`}
             >
               {s.name}
             </Button>

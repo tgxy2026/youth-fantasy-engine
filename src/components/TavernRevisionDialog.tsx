@@ -106,7 +106,7 @@ style={{ maxHeight: foldVh('52vh') }}>
                     return (
                       <label
                         key={p.id}
-                        className={`block cursor-pointer rounded-md border p-2.5 ${on ? 'border-amber/40 bg-amber/5' : 'border-ink-800 bg-ink-900/40'}`}
+                        className={`block cursor-pointer rounded-md border p-2.5 ${on ? 'border-amber/40 bg-amber/5' : 'border-ink-700 bg-ink-900/40'}`}
                       >
                         <div className="flex items-start gap-2">
                           <input
@@ -124,7 +124,7 @@ style={{ maxHeight: foldVh('52vh') }}>
                             </div>
 
                             <div className="mt-1.5 space-y-1">
-                              <div className="rounded border border-ink-800 bg-ink-900/50 p-1.5">
+                              <div className="rounded border border-ink-700 bg-ink-900/50 p-1.5">
                                 <div className="text-10 text-ink-600">现在</div>
                                 <div className="mt-0.5 max-h-20 overflow-y-auto whitespace-pre-wrap text-11 text-ink-400 leading-relaxed">
                                   {p.before || '（现为空）'}
@@ -163,7 +163,7 @@ style={{ maxHeight: foldVh('52vh') }}>
             ))}
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-2 border-t border-ink-800 pt-3">
+          <div className="mt-4 flex items-center justify-between gap-2 border-t border-ink-700 pt-3">
             <p className="text-10 text-ink-600 leading-relaxed">
               采纳是整段替换该字段（不会追加），角色卡的其它部分原样保留。
             </p>

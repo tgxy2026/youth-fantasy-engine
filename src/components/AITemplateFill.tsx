@@ -468,7 +468,7 @@ style={{ maxHeight: foldVh('42vh') }}>
                             rows={2}
                           />
                         ) : (
-                          <div className="text-12 text-ink-400 bg-ink-900/50 border border-ink-800 rounded-lg px-2 py-1.5 whitespace-pre-wrap break-words">
+                          <div className="text-12 text-ink-400 bg-ink-900/50 border border-ink-700 rounded-lg px-2 py-1.5 whitespace-pre-wrap break-words">
                             {val || '（空）'}
                           </div>
                         )}

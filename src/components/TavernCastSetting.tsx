@@ -119,7 +119,7 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
         <div className="py-8 text-center text-12 text-ink-500">正在读取扮演设定…</div>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-md border border-ink-800 bg-ink-850/40 px-3 py-2 text-11 text-ink-400 leading-relaxed">
+          <div className="rounded-md border border-ink-700 bg-ink-850/40 px-3 py-2 text-11 text-ink-400 leading-relaxed">
             {kind === 'ai' ? (
               <>这里写的是「<span className="text-amber">该怎么演Ta</span>」，不是背景资料 —— 背景走角色卡。
                 塞行为，不塞设定：写「被提起家人会沉默」有用，写「Ta是某某的女儿」没用（卡片里已经有了）。</>
@@ -147,7 +147,7 @@ export default function TavernCastSetting({ open, cardId, name, kind, onClose, o
             </section>
           ))}
 
-          <div className="text-11 text-ink-500 border-t border-ink-800 pt-2 leading-relaxed">
+          <div className="text-11 text-ink-500 border-t border-ink-700 pt-2 leading-relaxed">
             想不起怎么填时，先填<span className="text-ink-300">「绝不会做的事」</span> —— 它防 OOC 最有效。
           </div>
         </div>

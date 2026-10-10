@@ -398,9 +398,9 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
         <div className="p-8 text-center text-ink-400 text-sm">已隐藏全部轨道，请点击上方轨道名恢复显示。</div>
       ) : (
         /* 多泳道：左列固定轨道标签（不横向滚动），右侧画布按故事时间顺序轴横滚 */
-        <div className="flex overflow-auto rounded-xl border border-ink-800 bg-ink-900/40" style={{ maxHeight: totalH + 60 }}>
+        <div className="flex overflow-auto rounded-xl border border-ink-700 bg-ink-900/40" style={{ maxHeight: totalH + 60 }}>
           {/* 左：泳道标签列 */}
-          <div className="shrink-0 bg-ink-900/80 border-r border-ink-800" style={{ width: LANE_LABEL_W }}>
+          <div className="shrink-0 bg-ink-900/80 border-r border-ink-700" style={{ width: LANE_LABEL_W }}>
             <div style={{ height: TOP }} />
             {visibleTracks.map((t, idx) => {
               const color = COLORS[idx % COLORS.length]
@@ -419,7 +419,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
               {visibleTracks.map((t, idx) => (
                 <div
                   key={`lane-${t}`}
-                  className={`absolute left-0 right-0 border-b border-ink-800/60 ${idx % 2 === 0 ? 'bg-ink-850/25' : ''}`}
+                  className={`absolute left-0 right-0 border-b border-ink-700/60 ${idx % 2 === 0 ? 'bg-ink-850/25' : ''}`}
                   style={{ top: laneTop(idx), height: laneHeights[idx] }}
                 />
               ))}

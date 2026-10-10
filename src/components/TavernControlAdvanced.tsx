@@ -48,7 +48,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
             ) : (
               <ul className="space-y-1.5">
                 {presetList.map(p => (
-                  <li key={p.id} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-2">
+                  <li key={p.id} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-12 text-ink-100">{p.name}</div>
                       <div className="text-10 text-ink-500">
@@ -135,7 +135,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
 
             <div className="space-y-2">
               {s.postRules.map((r, i) => (
-                <div key={r.id} className="rounded-md border border-ink-800 bg-ink-900/40 p-2">
+                <div key={r.id} className="rounded-md border border-ink-700 bg-ink-900/40 p-2">
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox" className="shrink-0 accent-amber" checked={r.enabled}
@@ -195,7 +195,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
                 value={ruleTry}
                 onChange={setRuleTry}
               />
-              <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-11 leading-relaxed text-ink-300">{rulePreview.text || '（上面输入内容就能看到结果）'}</pre>
+              <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-ink-700 bg-ink-900/60 p-2 text-11 leading-relaxed text-ink-300">{rulePreview.text || '（上面输入内容就能看到结果）'}</pre>
               <p className="mt-1 text-10 leading-relaxed text-ink-500">
                 {rulePreview.errors.length > 0
                   ? <span className="text-amber">⚠️ 正则无效、已跳过：{rulePreview.errors.join('、')}</span>

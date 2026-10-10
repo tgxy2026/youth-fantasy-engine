@@ -422,7 +422,7 @@ export default function ExportFormatDialog({
                         onClick={() => setPicked(new Set())}>清空</Button>
                     </span>
                   </div>
-                  <div className="max-h-40 overflow-y-auto border border-ink-700 rounded-lg divide-y divide-ink-800">
+                  <div className="max-h-40 overflow-y-auto border border-ink-700 rounded-lg divide-y divide-ink-700">
                     {flattenAll.map(ch => (
                       <label key={ch.id} className="flex items-center gap-2 px-2.5 py-1 text-12 text-ink-200 hover:bg-ink-800/60 cursor-pointer">
                         <input type="checkbox" className="accent-[rgb(var(--amber))]" checked={picked.has(ch.id)}

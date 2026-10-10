@@ -66,8 +66,8 @@ export default function SearchSettingsPanel() {
   const guide = PARAM_GUIDES.searchTopK
 
   return (
-    <section className="rounded-lg border border-ink-800 bg-ink-850/30">
-      <div className="shrink-0 px-4 py-3 border-b border-ink-800">
+    <section className="rounded-lg border border-ink-700 bg-ink-850/30">
+      <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
           <h2 className="text-13 text-amber">联网检索</h2>
           <HelpPopover title="联网检索怎么用" width="24rem" size={14}>

@@ -93,7 +93,7 @@ export default function TavernReport() {
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-ink-800 pb-3">
+      <header className="shrink-0 border-b border-ink-700 pb-3">
         <div className="flex items-center gap-1.5">
 
           <h1 className="text-lg font-bold text-ink-50">推演报告</h1>
@@ -121,7 +121,7 @@ export default function TavernReport() {
       ) : (
         <div className="flex flex-1 min-h-0 gap-3 pt-3">
           {/* 左栏：报告列表（名称默认「推演标题 + 报告」） */}
-          <aside className="flex w-72 shrink-0 flex-col gap-2 rounded-lg border border-ink-800 bg-ink-850/40 p-3">
+          <aside className="flex w-72 shrink-0 flex-col gap-2 rounded-lg border border-ink-700 bg-ink-850/40 p-3">
             {list.length > 4 && (
               <input
                 className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
@@ -161,11 +161,11 @@ export default function TavernReport() {
                 <p className="px-1 py-2 text-11 leading-relaxed text-ink-500">没有匹配的报告。</p>
               )}
             </div>
-            <div className="shrink-0 border-t border-ink-800 pt-2 text-10 text-ink-500">共 {list.length} 份</div>
+            <div className="shrink-0 border-t border-ink-700 pt-2 text-10 text-ink-500">共 {list.length} 份</div>
           </aside>
 
           {/* 右栏：详情 */}
-          <div className="flex-1 min-w-0 overflow-y-auto rounded-lg border border-ink-800 p-4">
+          <div className="flex-1 min-w-0 overflow-y-auto rounded-lg border border-ink-700 p-4">
             {!report ? (
               <div className="text-center text-12 text-ink-500 py-10">从左边选一份报告</div>
             ) : (
@@ -212,7 +212,7 @@ export default function TavernReport() {
                       </div>
                       <div className="mt-2 space-y-2">
                         {items.map(f => (
-                          <div key={f.id} className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+                          <div key={f.id} className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 {f.targetLabel && (
@@ -239,7 +239,7 @@ export default function TavernReport() {
                   ))
                 )}
 
-                <div className="border-t border-ink-800 pt-2 text-11 text-ink-500">
+                <div className="border-t border-ink-700 pt-2 text-11 text-ink-500">
                   报告只做诊断，不会写回任何项目表 —— 是否采纳由你决定。
                   {report.findings.some(f => f.level === '存疑') && ' 「存疑」是模型有疑虑但指不出具体条目的部分，未必是错。'}
                 </div>

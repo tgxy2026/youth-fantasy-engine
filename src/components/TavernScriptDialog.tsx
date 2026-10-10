@@ -148,9 +148,9 @@ export default function TavernScriptDialog({ open, onClose, onSaved, editing, st
             </Button>
             <DraftSourceLine source={lastSource} />
           </div>
-          <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+          <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
             <div className="text-12 text-ink-200">注入预览</div>
-            <pre className="mt-1.5 max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
+            <pre className="mt-1.5 max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-ink-700 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
               {preview || '（空）'}
             </pre>
           </div>

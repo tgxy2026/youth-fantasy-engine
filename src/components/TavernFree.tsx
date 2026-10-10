@@ -122,7 +122,7 @@ export default function TavernFree() {
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       {/* 顶部：只放「本场」的操作，导航（选/新建）都在左栏 */}
-      <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-800 pb-3">
+      <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">自由对话</h1>
 
         <HelpPopover title="自由对话怎么用" width="24rem" size={14}>
@@ -223,7 +223,7 @@ export default function TavernFree() {
             </div>
           </div>
         ) : !session ? (
-          <div className="flex flex-1 items-center justify-center rounded-lg border border-ink-800">
+          <div className="flex flex-1 items-center justify-center rounded-lg border border-ink-700">
             <div className="text-center">
               <p className="text-13 text-ink-300">还没有选择对话</p>
               <p className="mt-2 text-12 text-ink-500 leading-relaxed">
@@ -235,8 +235,8 @@ export default function TavernFree() {
         ) : (
           <>
             {/* 对话区 */}
-            <div className="flex flex-1 min-w-0 flex-col rounded-lg border border-ink-800 overflow-hidden">
-              <div className="px-3 py-2 border-b border-ink-800 bg-ink-850/40">
+            <div className="flex flex-1 min-w-0 flex-col rounded-lg border border-ink-700 overflow-hidden">
+              <div className="px-3 py-2 border-b border-ink-700 bg-ink-850/40">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     {editingTitle ? (
@@ -310,7 +310,7 @@ export default function TavernFree() {
 
                 {/* Ta这几天的生活（时间差推进出来的） */}
                 {showDaily && !!daily?.log?.length && (
-                  <div className="mt-2 rounded-md border border-ink-800 bg-ink-900/50 px-3 py-2">
+                  <div className="mt-2 rounded-md border border-ink-700 bg-ink-900/50 px-3 py-2">
                     <p className="text-10 text-ink-500 mb-1">
                       这几天的生活（你没来时Ta自己过的 —— 界面不打开就不会推进）
                     </p>
@@ -368,7 +368,7 @@ export default function TavernFree() {
                   if (isOpeningMessage(m, i, session.script)) {
                     return (
                       <div key={m.id} className="mx-auto w-full max-w-[92%]">
-                        <div className="rounded-lg border border-ink-800 bg-ink-900/50 px-3.5 py-2.5">
+                        <div className="rounded-lg border border-ink-700 bg-ink-900/50 px-3.5 py-2.5">
                           <div className="mb-1 flex items-center gap-1.5">
                             <Clapperboard size={11} className="text-amber/70" />
                             <span className="text-10 text-amber/80">开场</span>
@@ -444,7 +444,7 @@ export default function TavernFree() {
               )}
               </div>
 
-              <div className="border-t border-ink-800 p-3">
+              <div className="border-t border-ink-700 p-3">
                 {session.endedAt ? (
                   /* 归档后收掉整个输入区 —— 留着可打字的框，作者一定会去敲，
                      敲完发现发不出去（send 里有守卫），只会以为软件坏了。 */
@@ -533,9 +533,9 @@ export default function TavernFree() {
                    阅读与手改入口在「角色卡片」页。
                 ⚠️ 整块**不再用 `castCards.length > 0` 门控** —— 卡被删或还没加载完时，
                    右栏会连「本场数值」一起消失（这正是反馈里「勾了启用却不显示」的一部分）。 */}
-            <aside className="w-72 shrink-0 flex flex-col rounded-lg border border-ink-800 bg-ink-850/40 min-h-0">
+            <aside className="w-72 shrink-0 flex flex-col rounded-lg border border-ink-700 bg-ink-850/40 min-h-0">
               {/* 分段切换。红线：分段用 toggle + selected，不要静止无框的 ghost */}
-              <div className="flex gap-1 border-b border-ink-800 p-2">
+              <div className="flex gap-1 border-b border-ink-700 p-2">
                 <Button
                   variant="toggle" size="sm" className="flex-1 justify-center"
                   selected={statusTab === 'status'} onClick={() => setStatusTab('status')}
@@ -603,7 +603,7 @@ export default function TavernFree() {
                       )}
                     </div>
                     {/* 🔴 自由模式的记忆是**角色级、跨会话共享**的 —— 回滚会动到别处，必须写在看得见的地方 */}
-                    <p className="border-t border-ink-800 pt-2 text-10 leading-relaxed text-ink-600">
+                    <p className="border-t border-ink-700 pt-2 text-10 leading-relaxed text-ink-600">
                       与剧情推演不同：这里的记忆按角色存、跨会话共享 ——
                       所以回滚会把这位角色在别的对话里记得的事一起退回去。
                       只想丢消息、不动记忆的话，用「重说」或删单条。
@@ -624,7 +624,7 @@ export default function TavernFree() {
                         点一个 = 把「Ta这几天的生活 / 心情」切到这位名下。
                         只在多角色时出现 —— 单角色只有一个人可看，列出来纯属占地方。 */}
                     {aiCards.length > 1 && (
-                      <div className="border-t border-ink-800 pt-2">
+                      <div className="border-t border-ink-700 pt-2">
                         <div className="text-10 text-ink-500 mb-1">
                           AI 扮演<span className="text-ink-600">（点名字看他这几天的生活）</span>
                         </div>
@@ -714,7 +714,7 @@ export default function TavernFree() {
                 )}
               </div>
 
-              <div className="p-2 border-t border-ink-800">
+              <div className="p-2 border-t border-ink-700">
                 <p className="text-10 text-ink-600 leading-relaxed">
                   {statusTab === 'status'
                     ? '角色状态只读 —— 来自六栏记忆，整理入口是「结束本轮对话」；要直接改就去「角色卡片」页的记忆区。'

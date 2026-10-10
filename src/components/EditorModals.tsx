@@ -777,7 +777,7 @@ style={{ maxWidth: foldVh('90vw') }}>
       <div className="h-1 bg-ink-800 shrink-0">
         <div className={`h-full transition-all duration-500 ${goalMet ? 'bg-emerald-400' : 'bg-amber'}`} style={{ width: `${progress}%` }} />
       </div>
-      <div className="flex items-center gap-4 px-8 h-14 border-b border-ink-800 shrink-0">
+      <div className="flex items-center gap-4 px-8 h-14 border-b border-ink-700 shrink-0">
         <span className="text-12 text-ink-300 font-semibold truncate">{chapter.title}</span>
         <span className="text-12 text-ink-500">小黑屋中</span>
         <span className="ml-auto text-13 font-bold text-amber">

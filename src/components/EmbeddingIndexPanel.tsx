@@ -140,7 +140,7 @@ export default function EmbeddingIndexPanel({ providers }: Props) {
   const canBuild = !running && !!settings.providerId && providers.length > 0
 
   return (
-    <div className="mt-5 pt-4 border-t border-ink-800">
+    <div className="mt-5 pt-4 border-t border-ink-700">
       <div className="flex items-center gap-1.5 mb-1">
         <h3 className="text-12 text-ink-200">语义检索 · 嵌入模型（可选）</h3>
         <HelpPopover title="语义检索怎么用" width="24rem" size={13}>

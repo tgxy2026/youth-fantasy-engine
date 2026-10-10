@@ -222,7 +222,7 @@ export default function TrajectoryPanel() {
               className={`rounded-md border px-2 py-0.5 text-11 ${
                 aiSummary.chars[k] > 0
                   ? 'border-ink-700 bg-ink-900/60 text-ink-300'
-                  : 'border-ink-800 bg-transparent text-ink-600'
+                  : 'border-ink-700 bg-transparent text-ink-600'
               }`}
             >
               {AI_SOURCE_LABELS[k]} {aiSummary.chars[k].toLocaleString('zh-CN')}

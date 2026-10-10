@@ -133,7 +133,7 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
           value={q}
           onChange={e => setQ(e.target.value)}
         />
-        <div className="max-h-64 overflow-y-auto rounded-md border border-ink-700 divide-y divide-ink-800">
+        <div className="max-h-64 overflow-y-auto rounded-md border border-ink-700 divide-y divide-ink-700">
           {rows.map(o => {
             const used = usedBy[o.id]
             const disabled = used !== undefined && o.id !== currentId
@@ -484,7 +484,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                       {scriptToText(snapshotOf(scriptView)) || '（这份剧本六栏是空的，等于没设）'}
                     </pre>
                     {scriptView.opening.trim() && (
-                      <div className="mt-2 border-t border-ink-800 pt-1.5">
+                      <div className="mt-2 border-t border-ink-700 pt-1.5">
                         <div className="text-10 text-ink-500">开场白（会作为「开场」单独显示在对话最上方）：</div>
                         <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-10 leading-relaxed text-ink-400">
                           {scriptView.opening.trim()}

@@ -109,7 +109,7 @@ export default function FormatModal({ content, unit, onUnitChange, pasteNormaliz
           </p>
 
           {/* 粘贴行为（A5 遗留补全）：默认归一；要贴代码 / 表格 / 别人的原文时可关掉 */}
-          <div className="mt-3 pt-3 border-t border-ink-800">
+          <div className="mt-3 pt-3 border-t border-ink-700">
             <h4 className="text-11 font-medium text-ink-300 mb-1.5">多行粘贴时</h4>
             <div className="flex gap-2">
               <Button variant="toggle" selected={pasteNormalize} size="sm"
@@ -127,7 +127,7 @@ export default function FormatModal({ content, unit, onUnitChange, pasteNormaliz
           </div>
 
           {/* 段首缩进参考线（A5 遗留补全）：默认关 —— 纯视觉辅助，不碰正文 */}
-          <div className="mt-3 pt-3 border-t border-ink-800">
+          <div className="mt-3 pt-3 border-t border-ink-700">
             <div className="flex items-center gap-2">
               <h4 className="text-11 font-medium text-ink-300">段首缩进参考线</h4>
               <Button variant="toggle" selected={indentGuides} size="sm"

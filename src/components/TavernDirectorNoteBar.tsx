@@ -131,7 +131,7 @@ export default function TavernDirectorNoteBar({
           </div>
         </div>
 
-        <div className="mt-4 flex justify-end gap-2 border-t border-ink-800 pt-3">
+        <div className="mt-4 flex justify-end gap-2 border-t border-ink-700 pt-3">
           {active && (
             <Button variant="secondary" size="md" onClick={() => { onClear(); setOpen(false) }}>清除指令</Button>
           )}

@@ -184,7 +184,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
               </thead>
               <tbody>
                 {summary.parts.map(p => (
-                  <tr key={p.key} className="border-t border-ink-800">
+                  <tr key={p.key} className="border-t border-ink-700">
                     <td className="px-3 py-2 align-top">
                       <div className="text-ink-100">{p.label}</div>
                       {p.note && <div className="mt-0.5 text-10 text-ink-500 leading-relaxed">{p.note}</div>}
@@ -195,7 +195,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
                     </td>
                   </tr>
                 ))}
-                <tr className="border-t border-ink-800 bg-amber/5">
+                <tr className="border-t border-ink-700 bg-amber/5">
                   <td className="px-3 py-2 text-amber">留给对话历史</td>
                   <td className="px-3 py-2 text-right text-amber">{fmt(summary.historyChars)}</td>
                   <td className="px-3 py-2 text-right text-ink-500">{summary.historyPct}%</td>
@@ -210,7 +210,7 @@ export default function TavernUsageDialog({ open, onClose, mode, session, chars 
             </div>
           ))}
 
-          <div className="border-t border-ink-800 pt-2 text-10 text-ink-500 leading-relaxed">
+          <div className="border-t border-ink-700 pt-2 text-10 text-ink-500 leading-relaxed">
             某一层没填内容就是 0 字，不会预留 —— 省下来的额度自动归到对话历史
             （所以「背景设定」留空时，历史额度反而更宽裕）。历史超额度时从最早的轮次开始裁，
             开场与记忆里已有的内容不裁。

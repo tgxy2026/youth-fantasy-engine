@@ -76,7 +76,7 @@ style={{ maxHeight: foldVh('50vh') }}>
             <div
               key={r.id}
               className={`rounded-md border p-2.5 ${isMutedNow || disabled
-                ? 'border-ink-800 bg-ink-900/40'
+                ? 'border-ink-700 bg-ink-900/40'
                 : 'border-ink-700 bg-ink-850/40'}`}
             >
               <div className="flex items-center gap-2">

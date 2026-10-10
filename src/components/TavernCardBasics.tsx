@@ -99,7 +99,7 @@ export default function TavernCardBasics({
                     </p>
                   </div>
                   {/* 本卡数值状态（老大 2026-09-16 反馈 #4）：持久、跨会话累积，存角色卡 */}
-                  <div className="mt-3 rounded-lg border border-ink-800 bg-ink-900/40 p-3">
+                  <div className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 p-3">
                     <div className="flex items-baseline gap-2">
                       <span className="text-12 text-ink-200">本卡数值状态</span>
                       <span className="text-11 text-ink-500">持久保存 · 跨会话累积 · 模型每轮读取并改写</span>
@@ -134,7 +134,7 @@ export default function TavernCardBasics({
                           setDirty(true)
                         }
                         return (
-                          <div key={def.key} className="rounded-md border border-ink-800 bg-ink-900/60 p-2">
+                          <div key={def.key} className="rounded-md border border-ink-700 bg-ink-900/60 p-2">
                             <div className="flex items-center gap-2">
                               <span className="w-12 shrink-0 text-11 text-ink-300">{def.label}</span>
                               <input

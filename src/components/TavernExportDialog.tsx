@@ -150,7 +150,7 @@ export default function TavernExportDialog({
         </button>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-800 pt-3">
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-700 pt-3">
         <span className="text-10 text-ink-500 leading-relaxed">
           对白、（动作）、〔状态〕在两种格式里都会区分显示（v1.7 起已废止【环境】，环境描写与动作一样写在（ ）里）。
         </span>

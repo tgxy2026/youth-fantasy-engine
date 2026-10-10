@@ -119,7 +119,7 @@ export function TavernMessageBody({ content, hidden, edited, ops }: {
             )}
             {/* 多候选翻页（T3）：只在真有 ≥2 份候选时出现 */}
             {(ops.variantCount ?? 0) > 1 && (
-              <span className="flex items-center gap-0.5 rounded border border-ink-800 px-1 py-0.5">
+              <span className="flex items-center gap-0.5 rounded border border-ink-700 px-1 py-0.5">
                 <button
                   type="button"
                   className="px-0.5 text-11 text-ink-400 hover:text-amber disabled:opacity-30"

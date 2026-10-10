@@ -119,7 +119,7 @@ export default function InterviewChat({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_15rem]">
         {/* 左：对话 */}
         <div className="flex h-[26rem] min-h-0 flex-col">
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md border border-ink-800 bg-ink-900/40 p-3">
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md border border-ink-700 bg-ink-900/40 p-3">
             {state.turns.length === 0 && (
               <p className="text-12 text-ink-500">
                 {busy ? 'AI 正在想第一个问题…' : '准备开始。'}
@@ -130,7 +130,7 @@ export default function InterviewChat({
               <div key={i} className={`flex ${t.role === 'user' ? 'justify-end' : ''}`}>
                 <div className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-12 leading-relaxed ${t.role === 'user'
                   ? 'bg-amber/12 border border-amber/25 text-ink-100'
-                  : 'bg-ink-850 border border-ink-800 text-ink-200'}`}>
+                  : 'bg-ink-850 border border-ink-700 text-ink-200'}`}>
                   {t.text}
                 </div>
               </div>
@@ -173,7 +173,7 @@ export default function InterviewChat({
           <div className="rounded-md border border-ink-700 px-2 py-1.5 text-11 text-ink-300">
             已收集 {progress.got} / {progress.total} 栏
           </div>
-          <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-800 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
+          <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-md border border-ink-700 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
             {filledRows.length ? filledToText(state.filled, spec.labels) : '（还没有内容）'}
           </pre>
           <p className="text-10 leading-relaxed text-ink-600">

@@ -37,7 +37,7 @@ const CHANNELS: Channel[] = [
 
 export default function TavernEchoHints({ className = '' }: { className?: string }) {
   return (
-    <div className={`rounded-lg border border-ink-800 bg-ink-850/40 px-3 py-2.5 ${className}`}>
+    <div className={`rounded-lg border border-ink-700 bg-ink-850/40 px-3 py-2.5 ${className}`}>
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="text-12 font-semibold text-ink-200">想指挥 Ta？在对话框里这么写就行</span>
         <span className="text-10 text-ink-500">这三种写法是仅有的「出戏」入口，示例可直接复制</span>

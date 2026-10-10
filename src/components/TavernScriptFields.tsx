@@ -62,7 +62,7 @@ export default function TavernScriptFields({ value, onChange }: {
         const text = value[f.key] ?? ''
         const over = max ? text.length > max : false
         return (
-          <div key={f.key} className="rounded-lg border border-ink-800 bg-ink-850/30 p-3">
+          <div key={f.key} className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
             <div className="flex items-center gap-2">
               <span className="text-12 text-ink-200">{f.label}</span>
               <span className="flex-1" />

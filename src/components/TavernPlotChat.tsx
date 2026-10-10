@@ -88,7 +88,7 @@ export function PlotChat({
   }
 
   return (
-          <div className="flex flex-1 min-w-0 flex-col rounded-lg border border-ink-800 overflow-hidden">
+          <div className="flex flex-1 min-w-0 flex-col rounded-lg border border-ink-700 overflow-hidden">
             <div className="relative flex-1 min-h-0">
             <div ref={scrollRef} onScroll={updateAtBottom} className="absolute inset-0 overflow-y-auto p-4 space-y-4">
               {session.messages.length === 0 && (
@@ -151,7 +151,7 @@ export function PlotChat({
             </div>
 
             {/* 输入区 */}
-            <div className="border-t border-ink-800 p-3">
+            <div className="border-t border-ink-700 p-3">
               <TavernDirectorNoteBar
                 note={session.directorNote}
                 postApplied={postNotice.applied}

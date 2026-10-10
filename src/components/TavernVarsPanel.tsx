@@ -207,7 +207,7 @@ export default function TavernVarsPanel({ vars, varKeys, onSetVar, onResetVars, 
       </div>
       {varKeys.map(k => <VarRow key={k} k={k} vars={vars} onSet={onSetVar} locked={readOnly} note={noteOf?.(k)} onNote={t => onSetNote?.(k, t)} />)}
       {showLog && (
-        <ul className="max-h-40 space-y-0.5 overflow-y-auto border-t border-ink-800 pt-1.5">
+        <ul className="max-h-40 space-y-0.5 overflow-y-auto border-t border-ink-700 pt-1.5">
           {log.map((e, i) => (
             <li key={`${e.at}-${i}`} className="text-10 leading-relaxed text-ink-500">
               <span className="text-ink-600">{new Date(e.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>

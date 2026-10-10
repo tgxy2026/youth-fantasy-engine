@@ -149,7 +149,7 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
             desc="你本人是谁 —— 跨项目生效，每轮进 system。自由对话靠它知道你是谁；剧情推演不用。名字 / 称呼 / 自我设定三栏全空＝不注入（头像只影响界面）。可以建多套：同一个人在不同书里换身份（笔名、性别、脾气）时，切换即可。"
           >
             {/* 档案切换（S3）：只有一份时下拉只有一个选项 —— 不禁用，让作者一眼看到「可以建多套」 */}
-            <div className="mb-3 rounded-md border border-ink-800 bg-ink-900/40 p-2">
+            <div className="mb-3 rounded-md border border-ink-700 bg-ink-900/40 p-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="shrink-0 text-11 text-ink-400">档案</span>
                 <select

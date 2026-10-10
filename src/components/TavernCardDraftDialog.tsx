@@ -147,7 +147,7 @@ export default function TavernCardDraftDialog({ open, existing, onClose, onApply
           ) : (
             <div className="mt-1.5 max-h-[26rem] space-y-2 overflow-y-auto pr-1">
               {preview.map(([k, label]) => (
-                <div key={k} className="rounded-md border border-ink-800 bg-ink-900/40 px-2.5 py-2">
+                <div key={k} className="rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
                   <div className="text-11 text-amber">{label}</div>
                   <div className="mt-0.5 whitespace-pre-wrap text-11 leading-relaxed text-ink-300">{fields[k]}</div>
                 </div>

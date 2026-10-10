@@ -199,7 +199,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
 
             {mode === 'chapters' && (
               <div className="rounded-lg border border-ink-700 bg-ink-900/40">
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800 text-11 text-ink-400">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-700 text-11 text-ink-400">
                   <span>已选 {picked.size} / {written.length} 章（有正文的章节）</span>
                   <Button variant="bare"
                     onClick={() => setPicked(new Set(written.slice(-3).map(c => c.id)))}
@@ -239,7 +239,7 @@ style={{ maxHeight: foldVh('26vh') }}>
                     </Button>
                   ))}
                 </div>
-                <div className="px-3 py-1.5 border-t border-ink-800 text-11 text-ink-500">
+                <div className="px-3 py-1.5 border-t border-ink-700 text-11 text-ink-500">
                   选太多章会超出模型上下文，超出部分自动截断；建议一次 1~3 章，整理更准。
                 </div>
               </div>
@@ -300,7 +300,7 @@ style={{ maxHeight: foldVh('26vh') }}>
               </div>
 
               {result.rows.length === 0 ? (
-                <div className="px-3 py-3 rounded-lg bg-ink-900/50 border border-ink-800 text-12 text-ink-400">
+                <div className="px-3 py-3 rounded-lg bg-ink-900/50 border border-ink-700 text-12 text-ink-400">
                   没有可新增的条目 —— 要么正文里的内容已经全部登记过，要么这段文本里没有可抽取的信息。
                   可以换几章正文，或改用「手动粘贴」给一段更明确的文本。
                 </div>
