@@ -3,6 +3,7 @@ import CloudFileSyncBar from '@/components/app/CloudFileSyncBar'
 import { DesktopDataBar } from '@/components/app/Desktop'
 import { PortableDataBar } from '@/components/app/Portable'
 import { DESKTOP } from '@/lib/app/desktop'
+import { decideDataDockView } from '@/lib/app/dataDockView'
 import { PORTABLE } from '@/lib/storage/fileBackend'
 import { CLOUD_FILE_SYNC } from '@/lib/sync/desktopCloudSync'
 import { foldVh } from '@/lib/settings/theme'
@@ -39,8 +40,10 @@ export default function DataDock() {
   //   ⚠️ hook 必须写在 early return **之前**（否则违反 hooks 规则）。
   const [collapsed, setCollapsed] = usePersistedBool('dock-collapsed', false)
 
-  // 桌面版 / 便携版都是正式交付形态（dev 预览下也照样渲染，便于界面验证）
-  if (!DESKTOP && !PORTABLE && !DEV) return null
+  // 桌面版 / 便携版 / dev 预览三态判定（判定落在 lib/app/dataDockView，便于单测）
+  const view = decideDataDockView({ desktop: DESKTOP, portable: PORTABLE, dev: DEV })
+
+  if (!view.render) return null
 
   // #036 宽度改「视口比例 + 上限」：原 `w-[15rem]`（240px）是绝对值，在 1280 逻辑宽的小屏上占 18.8%，
   // 比 2560 屏的 12.4% 显眼得多。min(240px, 17vw) 经 foldVh 折算（vw 不随 zoom 缩，必须折）后
@@ -67,7 +70,7 @@ export default function DataDock() {
 
       {!collapsed && (
         <>
-          {!DESKTOP && DEV && (
+          {view.showDevHint && (
             <div className="mb-1.5 rounded-md border border-amber/30 bg-amber/10 px-2 py-1 text-11 leading-snug text-amber">
               开发预览环境：桌面版专属功能需在打包版中使用
             </div>
@@ -77,7 +80,7 @@ export default function DataDock() {
             <div className="flex items-center gap-1.5 text-xs text-ink-300">
               <span className="font-medium">本机存储</span>
             </div>
-            {PORTABLE ? <PortableDataBar /> : <DesktopDataBar />}
+            {view.storageBar === 'portable' ? <PortableDataBar /> : <DesktopDataBar />}
           </div>
 
           {CLOUD_FILE_SYNC && (
