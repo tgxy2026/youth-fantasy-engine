@@ -10,12 +10,14 @@
  * 🔴 默认手动触发（不进页面自动跑）—— 体检结果与章节内容强相关，自动跑容易展示过期结果。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ClipboardCheck, Loader2, Eye } from 'lucide-react'
+import { ClipboardCheck, Loader2, Eye, CheckCircle2, AlertTriangle } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter } from '../lib/types'
 import type { AuditIssue } from '../lib/audit'
 import { SEVERITY_LABEL } from '../lib/audit'
 import { runChapterCheck, countActionable, type ChapterCheckReport } from '../lib/chapterCheck'
+// 3.0 · W2-2：按章审计的留痕与失效（结果绑正文指纹；正文改过 ⇒ 标「已过期，需重跑」，不自动重跑）
+import { saveChapterAudit, loadChapterAuditStatus, humanAgo, type AuditFreshness } from '../lib/chapterAudit'
 import { Button } from './Button'
 import HelpPopover from './HelpPopover'
 
@@ -48,6 +50,8 @@ export default function ChapterCheckPanel() {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [report, setReport] = useState<ChapterCheckReport | null>(null)
+  /** W2-2：本章的留痕 + 是否还作数（正文改过 ⇒ 过期） */
+  const [audit, setAudit] = useState<AuditFreshness | null>(null)
 
   const load = useCallback(async () => {
     const chs = await db.getAllChapters().catch(() => [] as Chapter[])
@@ -61,13 +65,29 @@ export default function ChapterCheckPanel() {
   // 换章就丢掉上一章的报告 —— 否则会拿着 A 章的报告看 B 章的正文
   useEffect(() => { setReport(null) }, [activeId])
 
+  // W2-2：读本章留痕并判失效（切章 / 章节数据变化时重算）。
+  // 🔴 只**读与标注**，绝不自动重跑 —— 方案 §10.3 #4 首条：显式触发、非后台自动跑。
+  useEffect(() => {
+    if (!activeId) { setAudit(null); return }
+    let cancelled = false
+    const ch = chapters.find(c => c.id === activeId) ?? null
+    loadChapterAuditStatus(activeId, ch)
+      .then(s => { if (!cancelled) setAudit(s) })
+      .catch(() => { if (!cancelled) setAudit(null) })
+    return () => { cancelled = true }
+  }, [activeId, chapters])
+
   const active = useMemo(() => chapters.find(c => c.id === activeId), [chapters, activeId])
 
   const run = async () => {
     if (!active || running) return
     setRunning(true)
     try {
-      setReport(await runChapterCheck(active))
+      const rep = await runChapterCheck(active)
+      setReport(rep)
+      // 🔴 W2-2：留痕一条（绑定本次正文指纹）。失败静默 —— 绝不能因为写不进台账而让体检失败。
+      await saveChapterAudit(rep, active, countActionable(rep))
+      setAudit(await loadChapterAuditStatus(active.id, active))
     } finally {
       setRunning(false)
     }
@@ -95,7 +115,9 @@ export default function ChapterCheckPanel() {
             + '· 敏感词：内置词库 + 你的自定义词（与「敏感词检测」共用词库）；\n'
             + '· 错别字：内置常见错别字词典；\n'
             + '· 文风：对照《写作规范》的坏习惯清单与标点规范。\n\n'
-            + '全部本地计算，不发 AI 请求；点「体检本章」手动触发，换章后旧结果自动清空。'}
+            + '全部本地计算，不发 AI 请求；点「体检本章」手动触发，换章后旧结果自动清空。\n\n'
+            + '· 结果会留痕（记「哪一章 + 当时正文的指纹 + 各类计数」）。若这一章的正文在上次体检后又被改过，'
+            + '面板会提示「结果已过期，请重新体检」—— 旧报告不再作数，**不会自动重跑**，重跑由你点按钮决定。'}
         </HelpPopover>
         <div className="ml-auto">
           <Button variant="secondary" size="sm" disabled={!activeId || running} onClick={() => void run()}>
@@ -117,6 +139,23 @@ export default function ChapterCheckPanel() {
         </select>
         {!hasContent && <span className="text-10 text-ink-500">这一章还没有正文，体检只覆盖连续性 / 伏笔两项</span>}
       </div>
+
+      {/* W2-2：留痕 + 失效标注（只标注，不自动重跑） */}
+      {activeId && audit?.record && (
+        <div className={`px-4 py-2 border-b border-ink-700 text-11 flex items-center gap-1.5 ${audit.fresh ? 'text-ink-400' : 'text-amber'}`}>
+          {audit.fresh ? (
+            <>
+              <CheckCircle2 size={11} className="shrink-0" />
+              <span>上次体检：{humanAgo(audit.record.at)} · 待处理 {audit.record.actionables} 项</span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle size={11} className="shrink-0" />
+              <span>⚠️ {audit.reason} —— {humanAgo(audit.record.at)}的那份结果已过期，请重新点「体检本章」</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* 结果区 */}
       <div className="px-4 py-3">
