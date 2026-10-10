@@ -26,6 +26,7 @@ import * as store from '@/lib/tavern/store'
 import { MAX_AI_CAST, MAX_CAST_SLOTS } from '@/lib/tavern/types'
 import { getTavernSettings, activeProfileOf, DEFAULT_TAVERN_SETTINGS } from '@/lib/tavern/settings'
 import { checkProfileFit } from '@/lib/tavern/profileFit'
+import { checkStyleFit, effectiveStyleHint } from '@/lib/tavern/styleFit'
 import { Button } from '@/components/common/Button'
 import SelectRow from '@/components/common/SelectRow'
 import { Modal } from '@/components/dialogs/Modal'
@@ -70,8 +71,12 @@ const inputCls = 'w-full bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5
 const selCls = 'shrink-0 bg-ink-900 border border-ink-700 rounded-md px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50'
 const labelCls = 'text-11 text-ink-400 mb-1'
 
-/** 选角用的条目：名字 + 内核一句话（用来分辨相似的角色） */
-type CharOption = { id: string; name: string; core: string; avatar?: string; storyId: string }
+/**
+ * 选角用的条目：名字 + 内核一句话（用来分辨相似的角色）。
+ * `rating` = 角色卡第 3 章的「尺度」原文，**只给 W4-2 的冲突自检用**，不出现在界面上
+ * （尺度是长文本，塞进下拉列表会撑爆版式）。
+ */
+type CharOption = { id: string; name: string; core: string; rating: string; avatar?: string; storyId: string }
 
 /** 一个位置：选中的角色 + 由谁演 */
 type Slot = { charId: string; role: 'ai' | 'user' }
@@ -177,6 +182,12 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     { name: '', address: '', persona: '' },
   )
 
+  /**
+   * 控制面板里**手填**的「聊天向风格提示」（空串 = 没手填 ⇒ 用出厂默认）。
+   * 只用来做 W4-2 的风格自检；真正注入的那一份由引擎从 settings 现取，两边读同一条键。
+   */
+  const [styleHint, setStyleHint] = useState('')
+
   const [slots, setSlots] = useState<Slot[]>(() => freshSlots())
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
 
@@ -196,6 +207,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     let alive = true
     setLoading(true)
     setSlots(freshSlots()); setPickerIdx(null); setProfile({ name: '', address: '', persona: '' })
+    setStyleHint('')
     setTitle(''); setStoryId(''); setScriptId(''); setScriptView(null); setScriptOpen(false)
     ;(async () => {
       try {
@@ -211,6 +223,8 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
           return {
             id: it.id, name: it.name, avatar: card?.avatar,
             core: (card?.profile.core ?? '').trim().replace(/\s+/g, ' ').slice(0, 28),
+            // W4-2：顺带把「尺度」原文带上（**不截断** —— 正则要能看到"拥抱/哭/靠近"这类词）
+            rating: (card?.conduct?.rating ?? '').trim(),
             storyId: cardStoryId(it),
           }
         }))
@@ -218,6 +232,8 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         setOptions(full)
         setStories(ss)
         setScripts([])  // 故事定了再按它拉剧本
+        // W4-2：把控制面板手填的风格提示取回来（只用于冲突自检，不改任何注入行为）
+        setStyleHint(st.free.styleHint ?? '')
         // 「我的档案」有名字 → 界面可以明确讲「AI 已经知道你是谁」。
         // 这正是「默认『我演』的角色」被去掉之后的补偿：**不用选角色也有身份**。
         const p = activeProfileOf(st)
@@ -282,6 +298,22 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
       .filter(Boolean),
     userActsRole: slots.some(s => s.role === 'user' && !!s.charId),
   }), [profile, slots, scoped])
+
+  /**
+   * 「风格提示 ↔ 角色卡尺度」冲突自检（W4-2 / §13 F6）：同样是**可忽略**的提醒，不阻断新建。
+   *
+   * 🔴 生效的 styleHint 走 `effectiveStyleHint()` 解析，**界面不自己拼** ——
+   *    手填值优先、否则回落到内置档位默认（自由对话恒为 chat 档）。
+   *    自由对话的档位是常量 `chat`（引擎侧 `FREE_TONE`），所以这里直接写 'chat'；
+   *    将来若给自由对话加档位开关，改这一处即可（判定的真源仍在 lib/tavern/styleFit）。
+   */
+  const styleFitWarning = useMemo(() => checkStyleFit({
+    styleHint: effectiveStyleHint(styleHint, 'chat'),
+    castRatings: slots
+      .filter(s => !!s.charId)
+      .map(s => scoped.find(o => o.id === s.charId)?.rating ?? '')
+      .filter(Boolean),
+  }), [styleHint, slots, scoped])
   const aiIds = slots.filter(s => s.role === 'ai' && s.charId).map(s => s.charId)
   /**
    * AI 名额按「**标了 AI 演的位置数**」算 —— 不是按"已选角色的"算。
@@ -552,6 +584,14 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                 <section className="rounded-md border border-amber/30 bg-amber/8 px-3 py-2 text-11 leading-relaxed text-ink-300">
                   <b className="text-amber">⚠️ 档案提醒（可忽略）</b>
                   <div className="mt-0.5">{fitWarning.text}</div>
+                </section>
+              )}
+
+              {/* 风格提示 ↔ 角色卡尺度冲突（W4-2 / §13 F6）：同样**非阻断** */}
+              {styleFitWarning && (
+                <section className="rounded-md border border-amber/30 bg-amber/8 px-3 py-2 text-11 leading-relaxed text-ink-300">
+                  <b className="text-amber">⚠️ 风格提醒（可忽略）</b>
+                  <div className="mt-0.5">{styleFitWarning.text}</div>
                 </section>
               )}
             </>
