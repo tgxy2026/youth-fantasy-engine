@@ -14,9 +14,6 @@
 //    不因数值升高而自动放开尺度。
 import { bandOf, bandsOf, varDefOf, type VarKey, type VarValues } from './types'
 
-/** 数值项的键（有档位的那些）—— 供界面与测试复用 */
-const NUM_KEYS: VarKey[] = ['affection', 'trust', 'progress']
-
 /**
  * 卡文措辞 → 目标档位。
  *
@@ -106,7 +103,3 @@ export function paceLockDrift(paceLock: string, values: VarValues | undefined): 
   return out
 }
 
-/** 供界面/测试枚举「有档位的数值项」 */
-export function numericVarKeys(): VarKey[] {
-  return [...NUM_KEYS]
-}

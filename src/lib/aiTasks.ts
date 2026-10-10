@@ -100,7 +100,7 @@ export {
 export type { StyleProfile, StyleMetrics, ExtractOptions } from './styleFingerprint'
 // 2026-10-10（3.0 · W2-1）：章后整理抽取 —— 从本章正文抽「伏笔 / 关系 / 人物状态」三类变化候选。
 // 🔴 AI 只抽候选，「是否已登记 / 是否真变了」由 lib/chapterPostProcess.ts 确定性比对。
-export { aiExtractChapterChanges, parseChapterChanges, isChangesEmpty, POST_PROCESS_PROMPTS } from './aiTasks/postProcess'
+export { aiExtractChapterChanges, parseChapterChanges, POST_PROCESS_PROMPTS } from './aiTasks/postProcess'
 export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus } from './aiTasks/postProcess'
 
 /**

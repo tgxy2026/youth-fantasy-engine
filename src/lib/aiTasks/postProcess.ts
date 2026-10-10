@@ -154,10 +154,6 @@ export function parseChapterChanges(text: string): ChapterChanges {
   return out
 }
 
-/** 三类合计是否为空（调用方据此短路） */
-export function isChangesEmpty(c: ChapterChanges): boolean {
-  return !c.foreshadows.length && !c.relations.length && !c.statuses.length
-}
 
 export const POST_PROCESS_PROMPTS: PromptDef[] = [
   {

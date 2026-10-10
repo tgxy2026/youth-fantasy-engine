@@ -136,7 +136,7 @@ export async function saveChapterAudit(
 }
 
 /** 读某一章的留痕（无则 null） */
-export async function readChapterAudit(chapterId: string): Promise<ChapterAuditRecord | null> {
+async function readChapterAudit(chapterId: string): Promise<ChapterAuditRecord | null> {
   if (!chapterId) return null
   const all = await readAll()
   return all[chapterId] ?? null
@@ -153,18 +153,6 @@ export async function loadChapterAuditStatus(
   if (!ch) return { fresh: false, reason: record ? '这一章已经不在项目里了' : '还没有体检过', record }
   const { fresh, reason } = checkAuditFresh(record, ch)
   return { fresh, reason, record }
-}
-
-/** 清掉某一章（或全部）的留痕 —— 章被删时可顺手清（当前由上限淘汰兜底） */
-export async function clearChapterAudit(chapterId?: string): Promise<void> {
-  try {
-    if (!chapterId) { await db.setSetting(SETTING_KEY, {}); return }
-    const all = await readAll()
-    delete all[chapterId]
-    await db.setSetting(SETTING_KEY, all)
-  } catch {
-    // 静默
-  }
 }
 
 /** 人类可读的「多久之前」（面板文案用；负数 / 异常一律按「刚刚」） */

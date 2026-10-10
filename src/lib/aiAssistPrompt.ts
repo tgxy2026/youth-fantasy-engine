@@ -26,11 +26,6 @@ export function getAssistPrompt(): string {
   return SYSTEM_PROMPT
 }
 
-/** 写回（由 `promptSettings` 的登记回调调用） */
-export function setAssistPrompt(t: string): void {
-  SYSTEM_PROMPT = t
-}
-
 // —— 提示词登记（本模块加载即注册；🔴 不要挪回组件里）——
 registerPrompt(
   { id: 'assist-planner', group: '灵感工具', name: 'AI 辅助规划', note: '多轮对话式脑暴，结合项目设定给创作建议。' },

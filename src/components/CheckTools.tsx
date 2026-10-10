@@ -24,6 +24,7 @@ import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiReviewSensitive, aiContinuityAudit, type SensitiveReview, type ContinuityFinding } from '../lib/aiTasks'
 import { buildProjectContext } from '../lib/aiContext'
 import { runDataHealthCheck, type TavernGhostInfo } from '../lib/dataHealth'
+import { checkAuditChapters, formatGap } from '../lib/evidenceGate'
 import { SEVERITY_LABEL, type AuditIssue, type AuditLocation } from '../lib/audit'
 import { Button } from './Button'
 
@@ -220,6 +221,11 @@ export default function CheckTools() {
 
   const aiAudit = async () => {
     if (!aiReady || auditLoading) return
+    // 🔴 缺失即停（§10.3 #2）：跨章审计至少要两章有正文 —— 单章无从「跨章核对」，
+    //    与其发一次注定没用的 AI 请求，不如先如实说明并停下。
+    const chapters = await db.getAllChapters().catch(() => [])
+    const gap = checkAuditChapters(chapters.filter(c => (c.content ?? '').trim()).length)
+    if (gap) { showToast(formatGap(gap), 'error'); return }
     setAuditLoading(true); setAuditErr(''); setFindings([]); setStreamText('')
     try {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('consistency-selfcheck') }).catch(() => ({ text: '' }))

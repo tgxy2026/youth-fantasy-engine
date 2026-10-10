@@ -5,7 +5,7 @@
 //   ② 三类**确定性比对**的命中 / 未命中分界（🔴 AI 只抽候选，判「是否已登记」是我们的事）；
 //   ③ 🔴 **源码闸** —— 只追加不覆盖、不凭空建条目、走 aiParse（禁裸 JSON.parse）。
 import fs from 'node:fs'
-import { parseChapterChanges, isChangesEmpty } from '../src/lib/aiTasks/postProcess'
+import { parseChapterChanges } from '../src/lib/aiTasks/postProcess'
 import { matchForeshadows, matchRelations, matchStatuses } from '../src/lib/chapterPostProcess'
 import type { CardRecord, TableRow } from '../src/lib/types'
 
@@ -49,7 +49,10 @@ console.log('\n—— chapterPostProcess 用例开始 ——')
   ok('action 非法归「埋设」', dirty.foreshadows[0].action === '埋设')
   ok('状态同名去重', dirty.statuses.length === 1 && dirty.statuses[0].name === '丁')
 
-  ok('非 JSON 输入不炸、返回空', isChangesEmpty(parseChapterChanges('这不是 JSON', )))
+  {
+    const bad = parseChapterChanges('这不是 JSON')
+    ok('非 JSON 输入不炸、返回空', !bad.foreshadows.length && !bad.relations.length && !bad.statuses.length)
+  }
   ok('代码块围栏包裹也能解析', parseChapterChanges('```json\n[{"kind":"状态","name":"戊","state":"晋级"}]\n```').statuses.length === 1)
 }
 

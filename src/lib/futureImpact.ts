@@ -81,7 +81,7 @@ export async function readImpact(): Promise<ImpactMark[]> {
  * 取「未来计划」章号列表：章纲卡中章号 > fromNo 的那些。
  * 章纲卡由作者手建（`outlineCardName(no, title)` 生成、章号可从卡名解析）。
  */
-export async function futureOutlineNos(fromNo: number): Promise<number[]> {
+async function futureOutlineNos(fromNo: number): Promise<number[]> {
   if (!usableNo(fromNo)) return []
   try {
     const cards = await db.getCardRecords(OUTLINE_TAB_ID)

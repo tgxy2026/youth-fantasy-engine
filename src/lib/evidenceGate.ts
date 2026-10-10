@@ -59,8 +59,8 @@ export function checkRewriteTarget(hasBody: boolean): EvidenceGap | null {
 
 /**
  * 一致性审计：至少要两章有正文 —— 单章无从「跨章核对」。
- * 📌 预留（2026-10-10 轻量审计标注）：随 W2-2「一致性审计」接线 —— 它是「必需证据」三件套里
- *    唯一还没落到生产路径的一条（另两条已用于续写 / 改写）。已有单测钉住，不是死代码。
+ * ✅ 已接线（2026-10-10 · W2-2 后的轻量审计收口）：`CheckTools.tsx` 的「AI 一致性深度自查」
+ *    在发起请求前先过这道闸 —— 库里只有一章正文时，与其发一次注定没用的 AI 请求，不如如实说明并停下。
  */
 export function checkAuditChapters(writtenChapters: number): EvidenceGap | null {
   const n = Number.isFinite(writtenChapters) && writtenChapters > 0 ? writtenChapters : 0

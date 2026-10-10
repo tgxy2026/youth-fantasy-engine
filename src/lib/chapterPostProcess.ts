@@ -22,7 +22,6 @@ import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type L
 import { splitCodes } from './audit'
 import { chapterFingerprint } from './aiRunLedger'
 import { countWords } from './textStats'
-import { TABS } from './schema'
 import type { CardRecord, TableRow } from './types'
 
 /**
@@ -193,7 +192,7 @@ export function matchStatuses(found: ExtractedStatus[], cards: { tabId: string; 
 }
 
 /** 实体（事实）：复用 settingLedger 的三档比对，转成统一条目 */
-export function entityItems(entities: ExtractedEntity[], reg: EntityRegistry): PostProcessItem[] {
+function entityItems(entities: ExtractedEntity[], reg: EntityRegistry): PostProcessItem[] {
   return classify(entities, reg).map(li => ({
     kind: 'entity' as const,
     key: `en::${li.key}`,
@@ -352,7 +351,3 @@ export async function applyPostProcess(
   return { created, failed }
 }
 
-/** 目标表 / 卡页签是否存在于 schema（界面改归属后校验用） */
-export function tabExists(tabId: string): boolean {
-  return TABS.some(t => t.id === tabId)
-}
