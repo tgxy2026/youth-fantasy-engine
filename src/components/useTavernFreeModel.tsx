@@ -45,7 +45,7 @@ import { primaryAiCharId } from '@/lib/tavern/primaryChar'
 import { useTavernReady } from '@/components/useTavernReady'
 
 import { showToast, confirmDialog } from '@/components/dialogs'
-import { type FreeDraft } from '@/components/TavernFreeSetup'
+import { type FreeDraft } from '@/components/tavern/TavernFreeSetup'
 import * as store from '@/lib/tavern/store'
 // T2：本场索引的自动更新（永不抛、不阻塞对话）
 import { autoIndexFreeSession } from '@/lib/tavern/recall'

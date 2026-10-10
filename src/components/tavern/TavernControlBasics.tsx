@@ -8,7 +8,7 @@
 import AvatarPicker from '@/components/AvatarPicker'
 import { Button } from '@/components/Button'
 import { PARAM_GUIDES } from '@/lib/tavern/paramGuide'
-import { GRID2, Section, Field, NumField, TextField, SelectField, ToggleField } from '@/components/TavernFieldKit'
+import { GRID2, Section, Field, NumField, TextField, SelectField, ToggleField } from '@/components/tavern/TavernFieldKit'
 import type { TavernControlModel } from '@/components/useTavernControlModel'
 import SamplingUnavailable from '@/components/SamplingUnavailable'
 import { profileListOf, activeProfileOf, type TavernProfile } from '@/lib/tavern/settings'

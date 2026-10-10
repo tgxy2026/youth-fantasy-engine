@@ -19,7 +19,7 @@ function ok(name: string, cond: boolean, extra = '') {
 
 const read = (p: string) => fs.readFileSync(p, 'utf8')
 const roundEnd = read('src/components/useFreeRoundEnd.ts')
-const free = read('src/components/TavernFree.tsx')
+const free = read('src/components/tavern/TavernFree.tsx')
 const center = read('src/lib/aiTaskCenter.ts')
 
 console.log('\n—— W2-5 用例开始 ——')

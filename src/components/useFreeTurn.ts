@@ -26,7 +26,7 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { showToast } from '@/components/dialogs'
-import { type QuickAction } from '@/components/TavernQuickBar'
+import { type QuickAction } from '@/components/tavern/TavernQuickBar'
 import * as store from '@/lib/tavern/store'
 import { runFreeTurn, runFreeAssist, applyPostRulesForPreview, varsEnabledKeys } from '@/lib/tavern/engine'
 import { isCancelled } from '@/lib/ai'

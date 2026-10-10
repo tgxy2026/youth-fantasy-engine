@@ -30,7 +30,7 @@ import { Button } from '@/components/Button'
 import SelectRow from '@/components/SelectRow'
 import { Modal } from '@/components/Modal'
 import Avatar from '@/components/Avatar'
-import TavernScriptDialog from '@/components/TavernScriptDialog'
+import TavernScriptDialog from '@/components/tavern/TavernScriptDialog'
 import {
   getScript, scriptToText, snapshotOf, scriptDisplayName, listScriptsByStory,
 } from '@/lib/tavern/script'

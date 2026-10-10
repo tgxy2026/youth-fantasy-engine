@@ -9,7 +9,7 @@ import AutoTextarea from '@/components/AutoTextarea'
 import { Button } from '@/components/Button'
 import { PROTOCOL_VERSION, displayProtocol } from '@/lib/tavern/protocol'
 import { DEFAULT_PROTOCOL } from '@/lib/tavern/settings'
-import { BOX, Section, Field } from '@/components/TavernFieldKit'
+import { BOX, Section, Field } from '@/components/tavern/TavernFieldKit'
 import type { TavernControlModel } from '@/components/useTavernControlModel'
 
 export default function TavernControlProtocol({ m }: { m: TavernControlModel }) {

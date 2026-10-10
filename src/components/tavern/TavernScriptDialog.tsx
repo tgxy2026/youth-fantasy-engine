@@ -15,7 +15,7 @@ import { showToast } from '@/components/dialogs'
 import { Button } from '@/components/Button'
 import { Modal } from '@/components/Modal'
 import AutoTextarea from '@/components/AutoTextarea'
-import TavernScriptFields from '@/components/TavernScriptFields'
+import TavernScriptFields from '@/components/tavern/TavernScriptFields'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/DraftBits'
 import {
   draftScript, saveScript, mergeScriptDraft, EMPTY_SCRIPT_FIELDS, scriptToText, snapshotOf,

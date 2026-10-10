@@ -101,7 +101,7 @@ console.log('\n—— W2-4 用例开始 ——')
   ok('④ 🔴 档位与刻度一律取自 VAR_BANDS（bandsOf/bandOf），不另造', bands.includes('bandsOf(') && bands.includes('bandOf('))
   ok('④ 🔴 不写卡（模块内无 writeCardField / 任何写操作）',
     !bands.includes('writeCardField') && !bands.includes('saveFreeChar'))
-  const panel = readFileSync('src/components/TavernVarsPanel.tsx', 'utf8')
+  const panel = readFileSync('src/components/tavern/TavernVarsPanel.tsx', 'utf8')
   ok('④ 🔴 面板只提示不自动改卡（无写入调用）',
     panel.includes('这里不会自动改卡') && !panel.includes('writeCardField'))
   const vars = readFileSync('src/lib/tavern/vars.ts', 'utf8')

@@ -36,9 +36,25 @@ for (const [id, f] of Object.entries(AI_DATA_SOURCES)) {
 
 // ---------- ② 表里每条都真的被界面引用了 ----------
 const componentsDir = path.join(process.cwd(), 'src', 'components')
-const componentSrc = fs.readdirSync(componentsDir)
-  .filter(f => f.endsWith('.tsx'))
-  .map(f => ({ name: f, text: fs.readFileSync(path.join(componentsDir, f), 'utf8') }))
+
+/**
+ * 递归收集 `components/` 下**全部** .tsx。
+ * 🔴 2026-10-10（目录结构优化 G2）：组件已按领域搬进子目录（`components/tavern/` 等），
+ *    原先只 `readdirSync(顶层)` ⇒ 子目录里的组件**一个都扫不到** ⇒
+ *    「表里每条都真的被界面引用」这条断言会**大面积误报**（甚至反向静默失效）。
+ *    整理目录时这类「按目录浅扫」的工具全部要改成递归。
+ */
+function collectTsx(dir: string): { name: string; text: string }[] {
+  const out: { name: string; text: string }[] = []
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) out.push(...collectTsx(p))
+    else if (e.name.endsWith('.tsx')) out.push({ name: path.relative(componentsDir, p).replace(/\\/g, '/'), text: fs.readFileSync(p, 'utf8') })
+  }
+  return out
+}
+
+const componentSrc = collectTsx(componentsDir)
 
 const allComponentText = componentSrc.map(c => c.text).join('\n')
 

@@ -25,27 +25,27 @@
 import HelpPopover from '@/components/HelpPopover'
 import { Z } from '@/lib/zLayer'
 import AIDataSourceNote from '@/components/AIDataSourceNote'
-import TavernEchoHints from '@/components/TavernEchoHints'
+import TavernEchoHints from '@/components/tavern/TavernEchoHints'
 import { ChevronDown, Clapperboard, Pencil } from 'lucide-react'
 import { showToast, } from '@/components/dialogs'
 import { Button } from '@/components/Button'
 import { Modal } from '@/components/Modal'
 import { LoadingState } from '@/components/LoadingState'
-import TavernFreeSetup, { } from '@/components/TavernFreeSetup'
+import TavernFreeSetup, { } from '@/components/tavern/TavernFreeSetup'
 import PromptModal from '@/components/PromptModal'
-import TavernCastDirector from '@/components/TavernCastDirector'
-import TavernRevisionDialog from '@/components/TavernRevisionDialog'
-import TavernExportDialog from '@/components/TavernExportDialog'
-import TavernStatusBar from '@/components/TavernStatusBar'
-import TavernVarsPanel from '@/components/TavernVarsPanel'
+import TavernCastDirector from '@/components/tavern/TavernCastDirector'
+import TavernRevisionDialog from '@/components/tavern/TavernRevisionDialog'
+import TavernExportDialog from '@/components/tavern/TavernExportDialog'
+import TavernStatusBar from '@/components/tavern/TavernStatusBar'
+import TavernVarsPanel from '@/components/tavern/TavernVarsPanel'
 // 🔴 3.0 · W2-5b（§13 F3）：「未整理轮数」判据 —— 与收尾用的是**同一个**纯函数，不另立口径
 import { pendingMessages } from '@/lib/tavern/roundEnd'
-import TavernUsageDialog from '@/components/TavernUsageDialog'
+import TavernUsageDialog from '@/components/tavern/TavernUsageDialog'
 import Avatar from '@/components/Avatar'
-import TavernMessageBody from '@/components/TavernMessageBody'
-import TavernQuickBar, { } from '@/components/TavernQuickBar'
-import TavernDirectorNoteBar from '@/components/TavernDirectorNoteBar'
-import { renderTavernMessage } from '@/components/TavernMessage'
+import TavernMessageBody from '@/components/tavern/TavernMessageBody'
+import TavernQuickBar, { } from '@/components/tavern/TavernQuickBar'
+import TavernDirectorNoteBar from '@/components/tavern/TavernDirectorNoteBar'
+import { renderTavernMessage } from '@/components/tavern/TavernMessage'
 import AutoTextarea from '@/components/AutoTextarea'
 import * as store from '@/lib/tavern/store'
 
@@ -81,7 +81,7 @@ function charVarsToTavern(cv?: CharVars): TavernVars | undefined {
 }
 
 import { useTavernFreeModel, primaryAiCharId } from '@/components/useTavernFreeModel'
-import TavernFreeSessionList from '@/components/TavernFreeSessionList'
+import TavernFreeSessionList from '@/components/tavern/TavernFreeSessionList'
 
 export default function TavernFree() {
   // 状态与生命周期全在 model 里；下面同名解构是刻意的 —— JSX 保持原样、零改动。

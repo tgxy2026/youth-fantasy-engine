@@ -41,7 +41,7 @@ import { renderFreeCharacter } from '@/lib/tavern/engine'
 import { getTavernSettings, memoryLimitsOf } from '@/lib/tavern/settings'
 import { type CardDraft } from '@/lib/tavern/draft'
 import { showToast, confirmDialog } from '@/components/dialogs'
-import { FREE_GROUP } from '@/components/TavernCardList'
+import { FREE_GROUP } from '@/components/tavern/TavernCardList'
 
 /** 从小说角色导入弹窗的分组页签 */
 export type NovelTab = 'all' | 'char-main' | 'char-secondary' | 'char-npc'

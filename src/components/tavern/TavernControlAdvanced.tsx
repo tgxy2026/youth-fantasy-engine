@@ -7,7 +7,7 @@
  */
 import AutoTextarea from '@/components/AutoTextarea'
 import { Button } from '@/components/Button'
-import { Section, ToggleField, NumField } from '@/components/TavernFieldKit'
+import { Section, ToggleField, NumField } from '@/components/tavern/TavernFieldKit'
 import { RULE_EXAMPLE } from '@/components/tavernControlParts'
 import { DYNAMIC_QUOTA_PCT, fixedQuotaOf, dynamicQuotaOf, fmtWindow } from '@/lib/tavern/quotas'
 import type { TavernControlModel } from '@/components/useTavernControlModel'

@@ -19,7 +19,7 @@
  */
 import { type Dispatch, type SetStateAction } from 'react'
 import AutoTextarea from '@/components/AutoTextarea'
-import TavernCardStructField from '@/components/TavernCardStructField'
+import TavernCardStructField from '@/components/tavern/TavernCardStructField'
 import { PROFILE_SPECS, CONDUCT_SPECS } from '@/lib/tavern/cardFields'
 import { readCardField, writeCardField, type FreeCharacter } from '@/lib/tavern/types'
 

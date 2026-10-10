@@ -39,7 +39,7 @@ function read(rel: string): string {
 }
 
 function main() {
-  const basics = read('src/components/TavernControlBasics.tsx')
+  const basics = read('src/components/tavern/TavernControlBasics.tsx')
   const hook = read('src/components/useTavernControlModel.ts')
   const settings = read('src/lib/tavern/settings.ts')
   const params = read('src/lib/tavern/params.ts')

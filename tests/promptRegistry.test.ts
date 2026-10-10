@@ -28,12 +28,19 @@ console.log('\n—— promptRegistry 用例开始 ——')
 {
   const dir = 'src/components'
   const offenders: string[] = []
-  for (const f of fs.readdirSync(dir)) {
-    if (!/\.tsx?$/.test(f)) continue
-    const text = fs.readFileSync(path.join(dir, f), 'utf8')
+  // 🔴 2026-10-10（G2）：组件已按领域搬进子目录（components/tavern/ 等）——
+  //    原先只 `readdirSync(顶层)` ⇒ 子目录里的组件**一个都不查** ⇒
+  //    这条「禁调 registerPrompt」的**负向**闸会悄悄失效（全绿但没查）。改成递归。
+  const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => {
+    const p = path.join(d, e.name)
+    if (e.isDirectory()) return walk(p)
+    return /\.tsx?$/.test(e.name) ? [p] : []
+  })
+  for (const f of walk(dir)) {
+    const text = fs.readFileSync(f, 'utf8')
     // 只看**调用**（注释里提到 registerPrompt 不算；用行首非注释的匹配）
     const hit = text.split('\n').some(l => /^\s*registerPrompt\s*\(/.test(l))
-    if (hit) offenders.push(f)
+    if (hit) offenders.push(path.relative(process.cwd(), f).replace(/\\/g, '/'))
   }
   ok('🔴 components/ 里无人调用 registerPrompt（必须在 lib 层，静态可达）',
     offenders.length === 0, offenders.join(', '))

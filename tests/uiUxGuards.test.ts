@@ -60,7 +60,7 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   ok('🔴 InterviewChat 不加全局就绪守卫（模型由调用方 callChat 决定，加会误禁酒馆场景）',
     !/useAIReady/.test(read('src/components/InterviewChat.tsx')))
   ok('🔴 TavernFree 不加全局就绪守卫（酒馆可指定自身 provider，加会误禁）',
-    !/useAIReady/.test(read('src/components/TavernFree.tsx')))
+    !/useAIReady/.test(read('src/components/tavern/TavernFree.tsx')))
   // ⚠️ 只查 `useTavernReady.ts` 里**有没有 import** 全局 hook（而不是全文出现该词）——
   //    它的文件头注释**必须**能解释"为什么不要用那个"，写成全文禁词会把说明本身判违规。
   const readyHook = read('src/components/useTavernReady.ts')

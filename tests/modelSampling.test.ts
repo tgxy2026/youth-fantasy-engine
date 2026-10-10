@@ -120,7 +120,7 @@ const full: SamplingValues = {
 //    「本地模型 ⇒ 0 项灰显」会让「根本没实现灰显」也通过 —— 判别力不足（本轮真踩过）。
 //    这里直接钉住「三处 Ollama 专有参数都按 local 分了两态」，与实机互补。
 {
-  const modes = readSrc('src/components/TavernControlModes.tsx')
+  const modes = readSrc('src/components/tavern/TavernControlModes.tsx')
   const three = ['候选词上限', '重复惩罚', '惩罚射程']
   const ternaryCount = (modes.match(/ollamaNative \? \(/g) || []).length
   ok('🔴 酒馆：三项 Ollama 专有参数 × 两个模式 ＝ 6 处都按 ollamaNative 分了两态',
@@ -132,7 +132,7 @@ const full: SamplingValues = {
     three.every(l => (modes.match(new RegExp(`<CloudOnlyNA label="${l}"`, 'g')) || []).length === 2),
     three.map(l => `${l}:${(modes.match(new RegExp(`<CloudOnlyNA label="${l}"`, 'g')) || []).length}`).join(' '))
   ok('🔴 酒馆：判定由父组件统一传入，且用 type（不是 local —— LM Studio 也是 local）',
-    readSrc('src/components/TavernControl.tsx').includes("ollamaNative={m.activeProvider?.type === 'ollama'}"))
+    readSrc('src/components/tavern/TavernControl.tsx').includes("ollamaNative={m.activeProvider?.type === 'ollama'}"))
 
   const cfg = readSrc('src/components/AIConfigPanel.tsx')
   ok('🔴 模型配置页：「文本生成微调」区块在位且位于自定义系统提示词之后',
@@ -152,7 +152,7 @@ const full: SamplingValues = {
   // 🔴 三处灰显必须共用同一文案与样式，判据也必须只有一个真源 ——
   //    分开写就会「一处改了判据、另两处没跟上」（2026-10-09 审计即因此发现本地 OpenAI 兼容漏判）。
   ok('🔴 三处灰显共用 SamplingUnavailable（文案与样式只此一处）',
-    ['src/components/AIConfigPanel.tsx', 'src/components/TavernControlBasics.tsx', 'src/components/TavernControlModes.tsx']
+    ['src/components/AIConfigPanel.tsx', 'src/components/tavern/TavernControlBasics.tsx', 'src/components/tavern/TavernControlModes.tsx']
       .every(f => readSrc(f).includes('SamplingUnavailable')))
   ok('🔴 灰显判据只有一个真源 isOllamaSamplingChannel（定义 + 下发处都调它）',
     readSrc('src/lib/modelSampling.ts').includes('export function isOllamaSamplingChannel') &&
