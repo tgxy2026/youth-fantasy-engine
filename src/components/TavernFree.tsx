@@ -38,6 +38,8 @@ import TavernRevisionDialog from './TavernRevisionDialog'
 import TavernExportDialog from './TavernExportDialog'
 import TavernStatusBar from './TavernStatusBar'
 import TavernVarsPanel from './TavernVarsPanel'
+// 🔴 3.0 · W2-5b（§13 F3）：「未整理轮数」判据 —— 与收尾用的是**同一个**纯函数，不另立口径
+import { pendingMessages } from '../lib/tavern/roundEnd'
 import TavernUsageDialog from './TavernUsageDialog'
 import Avatar from './Avatar'
 import TavernMessageBody from './TavernMessageBody'
@@ -144,6 +146,22 @@ export default function TavernFree() {
                 {showDaily ? '收起这几天' : 'Ta最近几天'}
               </Button>
             )}
+            {/* 🔴 3.0 · W2-5b（§13 F3）：「本场还有 N 轮未整理」。
+                判据与收尾**同源**（`pendingMessages` = 水位线之后的消息），
+                🔴 **纯派生**：每次渲染现算，不进任何 state（方案原话：该提示若常驻，
+                其状态不能放组件 state）。只提示、不新增入口 —— 整理仍走「结束本轮对话」。 */}
+            {!session.endedAt && (() => {
+              const n = pendingMessages(session).length
+              if (!n) return null
+              return (
+                <span
+                  className="rounded border border-amber/30 bg-amber/15 px-1.5 py-0.5 text-11 text-amber shrink-0"
+                  title={`本场还有 ${n} 轮对话没进长期记忆 —— 点「结束本轮对话」才会整理（各角色记忆 / 日记 / 数值 / 设定建议）`}
+                >
+                  未整理 {n} 轮
+                </span>
+              )
+            })()}
             {/* 已归档：先说明状态再给唯一的补救入口 —— 顺序不能反，
                 否则作者第一眼看到的是「新开一场」，会以为自己的对话没了 */}
             {session.endedAt ? (

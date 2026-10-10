@@ -213,9 +213,11 @@ console.log('\n—— auditFixes2 用例开始 ——')
     && /for \(const tabId of MULTI_SET_TABS\) \{/.test(cref)
     && /await db\.getSubSets\(tabId\)/.test(cref))
 
-  // ---- C2 · 源码：三处中止判据统一走 isCancelled，不再用 message 正则 ----
+  // ---- C2 · 源码：中止判据统一走 isCancelled，不再用 message 正则 ----
+  // ⚠️ 3.0 · W2-5：`useFreeRoundEnd.ts` 已**不在**这张清单里 —— 它的收尾搬进了 `aiTaskCenter`，
+  //    中止判据随之升级为**任务中心的 `status === 'aborted'`**（任务中心内部本来就按
+  //    `signal.aborted` 判，比原来的 `isCancelled(e)` 更靠前、更可靠）。清单下面另有专门断言。
   for (const f of [
-    'src/components/useFreeRoundEnd.ts',
     'src/components/usePlotSummary.ts',
     'src/lib/creativeSession.ts',
   ]) {
@@ -224,6 +226,23 @@ console.log('\n—— auditFixes2 用例开始 ——')
       /import \{[^}]*isCancelled[^}]*\} from '[^']*ai'/.test(src)
       && /const aborted = isCancelled\(e\)/.test(src)
       && !src.includes('/取消|abort/i.test'))
+  }
+
+  // ---- C2b · 3.0 · W2-5：收尾搬进任务中心后，中止判据升级为「任务中心的 aborted status」----
+  // 🔴 契约**升级**而不是放松：判据从「catch 里比 isCancelled(e)」提前到「signal.aborted
+  //    （由 aiTaskCenter 在收尾时就判好）」，且**仍禁**用 message 正则分辨中止。
+  {
+    const src = read('src/components/useFreeRoundEnd.ts')
+    ok('🔴 W2-5 后 useFreeRoundEnd 的中止判据来自任务中心（status === aborted）',
+      /status === 'aborted'/.test(src))
+    ok('🔴 W2-5 后仍不用 message 正则判中止（纪律没丢）',
+      !src.includes('/取消|abort/i.test') && !/message\.(includes|match)/.test(src))
+    ok('🔴 收尾已入任务中心（useTaskRunner + tavern-free/round-end）',
+      src.includes('useTaskRunner<') && src.includes("kind: 'round-end'"))
+    // 去注释后再查（`endCtlRef` 在新加的说明注释里被提到过，那是解释历史，不算违规）
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    ok('🔴 组件内不再自己持中止控制器（切页签不丢中止能力）',
+      !/new AbortController\(\)/.test(code) && !/endCtlRef/.test(code))
   }
 
   // ---- C4 · 源码：未保存提示走常量（避免"改一处漏三处"） ----

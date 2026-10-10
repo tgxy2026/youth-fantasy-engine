@@ -15,17 +15,21 @@
  *     先等一次重新加载；卸载失败只提示，**绝不**把这一轮收尾判成失败；
  *   · 设定建议默认**一条都不勾**（审计 P2）：会动角色卡的根本，必须逐条裁决。
  */
-import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, type Dispatch, type SetStateAction } from 'react'
 
 import { showToast, confirmDialog } from './dialogs'
 import { useTavernReady } from './useTavernReady'
 import * as store from '../lib/tavern/store'
-import { unloadOllamaModel, isCancelled } from '../lib/ai'
+// ⚠️ W2-5a 起不再需要 `isCancelled`：任务的「中止 vs 失败」由**任务中心**按 `signal.aborted`
+//    判定（见 aiTaskCenter 的 startTask catch），notify 收到的 status 已经是 aborted/failed。
+import { unloadOllamaModel } from '../lib/ai'
 import { resolveTavernProvider } from '../lib/tavern/provider'
 import { nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, releaseSummaryLock } from '../lib/tavern/memory'
 import { primaryAiCharId } from '../lib/tavern/primaryChar'
 import { DEFAULT_TAVERN_SETTINGS, memoryLimitsOf, type TavernSettings } from '../lib/tavern/settings'
 import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult } from '../lib/tavern/roundEnd'
+// 🔴 3.0 · W2-5a（§11.1 L1）：收尾的长任务状态交给模块级任务中心（切页签不丢）
+import { useTaskRunner } from '../lib/aiTaskCenter'
 import type { CardRevision } from '../lib/tavern/revise'
 import type { FreeCharacter, FreeSession, FreeMemory, VarKey } from '../lib/tavern/types'
 
@@ -60,22 +64,23 @@ export function useFreeRoundEnd({
   const tavernReady = useTavernReady(summaryProviderId || undefined, tavernSettings?.common.defaultProviderId)
   const aiReadyNow = tavernReady.ready
   /**
-   * 「结束本轮对话」进行中。
-   * 注意与旧的 `summarizing` 不同：那玩意儿是**每轮都在后台跑**，作者看得见它卡；
-   * 这个只在作者主动点「结束本轮对话」后才出现，且是一次性的。
-   */
-  const [ending, setEnding] = useState(false)
-  const [endStage, setEndStage] = useState<RoundEndProgress | null>(null)
-  /**
-   * 收尾的取消把手。
+   * 🔴 3.0 · W2-5a（§11.1 L1）：收尾的长任务状态**从组件 state 搬进任务中心**。
    *
-   * 🔴 为什么要它（2026-09-19 六维审计 P2-7）：`runRoundEnd` 的 `signal` 早就声明了、
-   *    也一路下传到 `chat()`，但**生产调用从不传** —— 本地 27B 上收尾要逐角色总结 + 算数值 +
-   *    审查设定，好几分钟且只能干等。这里把「能中止」补上。
+   * 原先 `ending` / `endStage` / `endCtlRef` / `endResult` 全在组件内，而**切页签＝卸载组件** ——
+   * 切走后收尾还在后台跑（本地 27B 要逐角色总结 + 算数值 + 审设定，好几分钟），
+   * 界面却**看不到进度、更点不到「中止」**（`endCtlRef` 一并蒸发）。
+   *
+   * 任务中心是**模块级 store**：切走不丢；`useTaskRunner.result` 直接读 `task.result`，
+   * 切回来结果就是现成的（见 aiTaskCenter「结果回填的时机」）。
+   * ⚠️ 中止**只能**由作者点「停止」触发（`endT.stop()`）—— 切页签绝不中止。
    */
-  const endCtlRef = useRef<AbortController | null>(null)
-  /** 收尾结果摘要（日记 + 数值变化），弹窗展示后关掉即焚 */
-  const [endResult, setEndResult] = useState<RoundEndResult | null>(null)
+  const endT = useTaskRunner<RoundEndResult, RoundEndProgress>({
+    ownerTab: 'tavern-free',
+    kind: 'round-end',
+    title: '结束本轮对话（整理记忆）',
+    // 会写酒馆会话（水位线 / 归档戳 / 数值）＋ 各角色卡的记忆 —— 与其它写酒馆的任务互斥提醒
+    writes: ['tavern'],
+  })
   // ---------- 结束本轮对话（一次性收尾：记忆 + 日记 + 数值 + 设定） ----------
   /**
    * 让本地 Ollama 把这一场用过的模型吐出去（#11，收尾跑完后才调）。
@@ -118,7 +123,7 @@ export function useFreeRoundEnd({
    */
   const endRound = useCallback(async () => {
     const s = session
-    if (!s || ending) return
+    if (!s || endT.running) return
     if (s.endedAt) { showToast('本轮已经结束了', 'info'); return }
 
     const pending = pendingMessages(s)
@@ -145,20 +150,16 @@ export function useFreeRoundEnd({
     })
     if (!ok) return
 
-    setEnding(true)
-    setEndStage(null)
-    setEndResult(null)
+    // 🔴 3.0 · W2-5a：收尾交给任务中心跑 —— 切页签不丢进度、也不丢「中止」的把手。
+    //    结果 / 进度 / 中止一律从 `endT` 取（见上面的状态说明）。
+    endT.run(async ctx => {
     // 🔴 取锁必须在 try **之外**（审计 P1-3）：旧写法把取锁放在 try 里，
     //    而 `finally` 无条件 releaseSummaryLock() —— 取锁失败（说明锁在**别人**手里）时
     //    也会执行 finally，把别人的锁删掉，防并发形同虚设。
     //    （TavernPlot 的 runPlotSummary 本来就是正确写法，这里对齐。）
-    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) {
-      showToast('另一个窗口正在收尾', 'info')
-      setEnding(false)
-      return
-    }
-    const ctl = new AbortController()
-    endCtlRef.current = ctl
+    //    ⚠️ W2-5a 后取不到锁改为 **throw**（任务中心如实记 failed 并弹提示）——
+    //    原先只 toast 一句，作者切走就再也看不到。
+    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) throw new Error('另一个窗口正在收尾')
     try {
       const res = await runRoundEnd({
         session: s,
@@ -172,8 +173,8 @@ export function useFreeRoundEnd({
         vars: s.vars,
         maxStep: (tavernSettings ?? DEFAULT_TAVERN_SETTINGS).vars.maxStep,
         nameOf: (id?: string) => nameOf(id ?? ''),
-        onProgress: setEndStage,
-        signal: ctl.signal,
+        onProgress: ctx.progress,
+        signal: ctx.signal,
       })
 
       // 水位线推进到最后一条 + 写回数值 + 打上归档戳
@@ -189,18 +190,13 @@ export function useFreeRoundEnd({
       setSession(cur => (cur && cur.id === updated.id ? updated : cur))
       setMems(prev => ({ ...prev, ...Object.fromEntries(res.memories.map(m => [m.charId, m])) }))
 
-      const n = Object.keys(res.journals).length
-      // 🔴 有步骤没成必须如实说（2026-09-19 六维审计 P0-1）：原先 ②本场数值 / ③设定审查失败被
-      //    静默吞掉，界面照样只报「本轮已结束」，作者以为收尾是完整的。
-      showToast(
-        `本轮已结束 —— ${res.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}`
-        + (res.warnings.length ? `\n⚠️ ${res.warnings.join('\n⚠️ ')}` : ''),
-        res.warnings.length ? 'info' : 'success',
-        6000,
-      )
+      // 🔴 完成提示改由**任务中心 store** 发（见下面 run 的 notify）——
+      //    作者很可能已经切到别的页签，面板此刻根本没挂载，它自己 toast 等于没人 toast。
+      //    有步骤没成必须如实说的纪律（审计 P0-1）移到 notify 的文案里照旧保留。
 
-      setEndResult(res)
       // 有设定建议就顺手摊开给作者裁决 —— 都到这一步了，让他再点一次按钮纯属多余
+      // ⚠️ 切页签后本组件已卸载，下面这些 setter 自然失效（无害）；
+      //    **数据已落库**（store.saveFreeSession），这正是「切走不丢」的语义。
       if (res.proposals.length > 0) {
         setProposals(res.proposals)
         // 🔴 默认**一条都不勾**（审计 P2）：设定改动会动角色卡的根本，老大 2026-09-16 的原话是
@@ -220,32 +216,51 @@ export function useFreeRoundEnd({
       if ((tavernSettings ?? DEFAULT_TAVERN_SETTINGS).free.unloadAfterRoundEnd) {
         void unloadLocalModels()
       }
-    } catch (e) {
-      // 🔴 中止 ≠ 失败（2026-09-19 六维审计 P2-7）：记忆走的是「全算完才统一落库」的设计
-      //    （见 runRoundEnd 顶部说明），中止时一条都没写，水位线与 endedAt 也没推进 ——
-      //    下次点「结束本轮对话」从零重算即可，不会留下半截记忆。
-      // 🔴 判据统一走 `isCancelled`（真源 lib/ai.ts：`e.name === 'AICancelled'`）。
-      //    原先用 message 正则 /取消|abort/ —— 任何 message 里带「取消 / cancel / abort」的
-      //    **真失败**都会被当成「已中止」显示成 info 灰字，把错误盖掉。
-      const aborted = isCancelled(e)
-      showToast(
-        aborted
-          ? '已中止收尾 —— 没有写入任何内容，这一场仍是未结束状态'
-          : `结束失败：${e instanceof Error ? e.message : String(e)}`,
-        aborted ? 'info' : 'error',
-      )
+      // 🔴 结果作为任务结果落进任务中心（`endT.result` 即它）—— 切页签回来仍是现成的。
+      return res
     } finally {
-      endCtlRef.current = null
+      // 🔴 释放排在 fn 自己的 finally（`startTask` 不提供用户钩子）；与取锁同处一个 fn，配对可靠。
       releaseSummaryLock()
-      setEnding(false)
-      setEndStage(null)
     }
-  }, [session, ending, aiReadyNow, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions, unloadLocalModels, setSession, setMems, setReviseOpen, setProposals, setPicked, setReviseError])
+    }, (
+      // 🔴 `useTaskRunner.run` 的第二个参数**就是 notify 函数本身**（不是 `{ notify }`）。
+      // 提示由任务中心发（作者可能已切走）。文案与旧版等价，含「有步骤没成如实说」（审计 P0-1）。
+      // 🔴 中止 ≠ 失败：任务中心已把 signal.aborted 的失败归为 `aborted`，
+      //    这里照它分派即可（不必再自己正则匹配 message）。
+      { status, result, error }: {
+        status: 'done' | 'failed' | 'aborted'
+        result: RoundEndResult | null
+        error: string
+      }) => {
+        if (status === 'aborted') {
+          return { text: '已中止收尾 —— 没有写入任何内容，这一场仍是未结束状态', kind: 'info' as const }
+        }
+        if (status === 'failed') {
+          return { text: `结束失败：${error || '未知原因'}`, kind: 'error' as const }
+        }
+        const r = result as RoundEndResult | null
+        if (!r) return { text: '本轮已结束', kind: 'success' as const }
+        const n = Object.keys(r.journals).length
+        return {
+          text: `本轮已结束 —— ${r.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}`
+            + (r.warnings.length ? `\n⚠️ ${r.warnings.join('\n⚠️ ')}` : ''),
+          kind: (r.warnings.length ? 'info' : 'success') as 'info' | 'success',
+        }
+      },
+    )
+  }, [session, endT, aiReadyNow, castCards, summaryProviderId, lim, varKeys, tavernSettings, nameOf, refreshSessions, unloadLocalModels, setSession, setMems, setReviseOpen, setProposals, setPicked, setReviseError])
 
-  /** 中止收尾（已产出的部分不落库，见 endRound 的 catch 说明） */
-  const stopEndRound = useCallback(() => { endCtlRef.current?.abort() }, [])
+  /** 中止收尾（已产出的部分不落库，见 endRound 的 catch 说明）—— 走任务中心的中止通道 */
+  const stopEndRound = useCallback(() => { endT.stop() }, [endT])
 
   return {
-    ending, endStage, endResult, setEndResult, endRound, stopEndRound,
+    // 🔴 形状与旧版**逐字一致**（消费者零改动）：只是来源从组件 state 换成任务中心。
+    ending: endT.running,
+    endStage: endT.task?.progress ?? null,
+    endResult: endT.result,
+    // 「关掉即焚」语义照旧：关弹窗 = 清掉这条已结束的任务记录（运行中无效）
+    setEndResult: (r: RoundEndResult | null) => { if (r === null) endT.clear() },
+    endRound,
+    stopEndRound,
   }
 }
