@@ -150,6 +150,8 @@ export interface RunCheckpoint extends TavernCheckpoint {
   clues: RunClue[]
   secrets: RunSecret[]
   endings: RunEnding[]
+  /** 当时的剧情 flag 快照 */
+  flags: string[]
 }
 
 // ==================== 跑团局（RunSession）====================
@@ -181,6 +183,11 @@ export interface RunSession {
   endings: RunEnding[]
   /** 行动流水（按时间顺序，可复盘） */
   actions: RunAction[]
+  /**
+   * 剧情 flag（如「已被通缉」「拿到铜钥匙」）—— 秘密 / 结局条件的一种判据。
+   * 与线索互补：线索是**玩家找到的**，flag 是**剧情发生的**（可能玩家没「发现」也发生了）。
+   */
+  flags?: string[]
 
   // —— 复用酒馆的会话底盘 ——
   messages: TavernMessage[]

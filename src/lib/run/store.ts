@@ -140,6 +140,7 @@ export interface RunRollbackUndo {
   clues: RunClue[]
   secrets: RunSecret[]
   endings: RunEnding[]
+  flags: string[]
   memory?: string
   watermark?: RunSession['watermark']
   at: number
@@ -157,6 +158,7 @@ function snapshotOf(s: RunSessionWithUndo): RunRollbackUndo {
     clues: s.clues,
     secrets: s.secrets,
     endings: s.endings,
+    flags: [...(s.flags ?? [])],
     memory: s.memory,
     watermark: s.watermark,
     at: now(),
@@ -185,6 +187,7 @@ export function addRunCheckpoint(s: RunSessionWithUndo, label = ''): RunSessionW
     clues: cloneClues(s.clues),
     secrets: cloneSecrets(s.secrets),
     endings: cloneEndings(s.endings),
+    flags: [...(s.flags ?? [])],
   }
   return { ...s, checkpoints: [...(s.checkpoints ?? []), cp], updatedAt: now() }
 }
@@ -208,6 +211,7 @@ export function rollbackRunToCheckpoint(s: RunSessionWithUndo, cpId: string): Ru
     clues: cloneClues(cp.clues),
     secrets: cloneSecrets(cp.secrets),
     endings: cloneEndings(cp.endings),
+    flags: [...(cp.flags ?? [])],
     memory: cp.memory,
     watermark: cp.watermark,
     undoSnapshot: snapshotOf(s),
@@ -226,6 +230,7 @@ export function undoRunRollback(s: RunSessionWithUndo): RunSessionWithUndo {
     clues: u.clues,
     secrets: u.secrets,
     endings: u.endings,
+    flags: [...(u.flags ?? [])],
     memory: u.memory,
     watermark: u.watermark,
     undoSnapshot: undefined,
