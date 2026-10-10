@@ -21,6 +21,7 @@ import { Button } from './Button'
 import { showToast, copyText } from './dialogs'
 import { downloadBlob } from '../lib/zip'
 import { renderDoc, type DocModel, type ExportFormat } from '../lib/tavern/exportDoc'
+import { tavernExportSummaryText } from '../lib/viewSelectors'
 
 export type ExportBuildOptions = { includeHidden: boolean; withMeta: boolean }
 
@@ -78,12 +79,7 @@ export default function TavernExportDialog({
     : Math.max(0, messageCount - (includeHidden ? 0 : hiddenCount))
   const summaryText = summary
     ? summary(opts())
-    : [
-      exportedCount !== undefined
-        ? `将导出 ${exportedCount} 条对话${!includeHidden && hiddenCount > 0 ? `（已排除 ${hiddenCount} 条隐藏的）` : ''}`
-        : '',
-      withMeta ? (metaLabel ?? '附角色与场景信息') : '',
-    ].filter(Boolean).join(' · ')
+    : tavernExportSummaryText({ exportedCount, includeHidden, hiddenCount, withMeta, metaLabel })
 
   return (
     <Modal open={open} onClose={onClose} title="导出文档" width="lg">

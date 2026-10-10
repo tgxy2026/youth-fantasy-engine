@@ -4,6 +4,7 @@ import { Sparkles, Loader2, AlertCircle, BarChart3 } from 'lucide-react'
 import { useAIReady } from '../lib/useAIReady'
 import { AI_DISABLED_HINT } from '../lib/aiScope'
 import { aiAnalyzeFeedback, type FeedbackEntry } from '../lib/aiTasks'
+import { toFeedbackEntries } from '../lib/viewSelectors'
 import { ToolModal } from './EditorModals'
 import { Button } from './Button'
 
@@ -24,15 +25,7 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ summary: string; churnAttribution: string; suggestions: string } | null>(null)
 
-  const entries: FeedbackEntry[] = rows
-    .map(r => ({
-      period: r['数据周期'] || r['日期'] || '',
-      metrics: [r['追读'], r['均订'], r['留存']].filter(Boolean).join(' / '),
-      complaints: r['高频吐槽'] || '',
-      churnChapter: r['流失点章节'] || '',
-      churnReason: r['流失原因分析'] || '',
-    }))
-    .filter(e => e.metrics || e.complaints || e.churnChapter || e.churnReason)
+  const entries: FeedbackEntry[] = toFeedbackEntries(rows)
 
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])

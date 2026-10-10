@@ -20,6 +20,7 @@ import { Button } from './Button'
 import Avatar from './Avatar'
 import { Modal } from './Modal'
 import { type NovelTab } from './useTavernCardModel'
+import { filterNovelChars, countNovelChars } from '../lib/viewSelectors'
 
 const NOVEL_TABS: { id: NovelTab; label: string }[] = [
   { id: 'all', label: '全部' },
@@ -52,13 +53,8 @@ export default function TavernCardNovelImportDialog({
   importOpen, setImportOpen, novelChars, nq, setNq, ntab, setNtab, converting, convert,
 }: Props) {
   /** 导入弹窗的可见列表：分组页签 + 关键字（按名字） */
-  const novelRows = useMemo(() => {
-    const kw = nq.trim().toLowerCase()
-    return novelChars.filter(c =>
-      (ntab === 'all' || c.tabId === ntab) && (!kw || c.name.toLowerCase().includes(kw)))
-  }, [novelChars, nq, ntab])
-  const novelCount = (id: NovelTab) =>
-    id === 'all' ? novelChars.length : novelChars.filter(c => c.tabId === id).length
+  const novelRows = useMemo(() => filterNovelChars(novelChars, nq, ntab), [novelChars, nq, ntab])
+  const novelCount = (id: NovelTab) => countNovelChars(novelChars, id)
 
   /* 从小说角色导入：选一个角色 */
   return (

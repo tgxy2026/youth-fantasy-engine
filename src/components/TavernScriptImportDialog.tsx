@@ -32,6 +32,7 @@ import {
 } from '../lib/tavern/story'
 import { createScript, listScriptsByStory } from '../lib/tavern/script'
 import type { TavernStoryIndexItem } from '../lib/tavern/types'
+import { pickImportTargetId } from '../lib/viewSelectors'
 
 type Mode = 'create' | 'append'
 
@@ -68,11 +69,7 @@ export default function TavernScriptImportDialog({ open, onClose, onImported, de
         const list = await listStories()
         if (!alive) return
         setStories(list)
-        setTargetId(prev => {
-          if (prev && list.some(s => s.id === prev)) return prev
-          if (defaultStoryId && list.some(s => s.id === defaultStoryId)) return defaultStoryId
-          return list[0]?.id ?? ''
-        })
+        setTargetId(prev => pickImportTargetId(prev, list.map(s => s.id), defaultStoryId))
       } catch {
         if (alive) setStories([])
       }

@@ -25,6 +25,7 @@ import {
   cardStoryId, charTag, VAR_DEFS,
   type CharVars, type FreeCharacter, type TavernCharIndexItem, type TavernStoryIndexItem,
 } from '../lib/tavern/types'
+import { parseVarInputValue } from '../lib/viewSelectors'
 
 interface Props {
   /** 当前正在编辑的卡（父级已收窄为非空 —— 没选中卡时这一整块不挂载） */
@@ -116,12 +117,7 @@ export default function TavernCardBasics({
                         const setVal = (raw: string) => {
                           const cur: CharVars = cv ?? { values: {}, notes: {} }
                           const values = { ...cur.values }
-                          if (def.kind === 'num') {
-                            const n = Number(raw.trim())
-                            values[def.key] = raw.trim() === '' || !Number.isFinite(n) ? (def.init as number) : n
-                          } else {
-                            values[def.key] = raw
-                          }
+                          values[def.key] = parseVarInputValue(def.kind, raw, def.init as number)
                           up('vars', { values, notes: { ...cur.notes } })
                           setDirty(true)
                         }
