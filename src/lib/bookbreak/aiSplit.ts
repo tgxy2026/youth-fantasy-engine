@@ -9,26 +9,48 @@
 import { scanLinesOf, buildChaptersFromMarks, type RawChapter, type SplitResult } from '@/lib/bookbreak/split'
 import { stripEmphasis } from '@/lib/storage/mdLite'
 
-/** 单段采样上限（字符）——中文 1 字 ≈ 1 token，四段合计 ≤7500 字（≈7500 token），压在常见 num_ctx 内 */
+/**
+ * 单段采样上限（字符）——中文 1 字 ≈ 1 token，四段合计 = `SAMPLE_BUDGET_FALLBACK`（7500）
+ * ⇒ ≈7500 token，压在常见 num_ctx 内。
+ *
+ * 🔴 2026-10-10 六维审计 P2：这四个数是「采样口径」的唯一定义处，但**实际调用点**要用
+ *    `writerBudgetFor('bookbreak-split')`（`aiWriterBudget`）派生的额度 —— 否则「登记在
+ *    预算表里的系数」与「真正喂给模型的字数」会各走一路、静默漂移（拆书链路没有别的调用点读它）。
+ *    下面 `sampleTextForSplit(raw, budget?)` 的 `budget` 就是那个额度；不传时退回出厂 7500 字。
+ */
 const HEAD_CHARS = 3000
 const MID_CHARS = 1500
 const MID_TAKES = 2
 const TAIL_CHARS = 1500
+/** 四段合计（= 7500）—— 不传 budget 时的出厂采样上限，与 `aiWriterBudget` 的出厂换算结果一致 */
+export const SAMPLE_BUDGET_FALLBACK = HEAD_CHARS + MID_TAKES * MID_CHARS + TAIL_CHARS
 /** AI 报的行原文定位时，两章起点之间的最小间距（字符）——防相邻行重复计数 */
 const MIN_GAP = 200
 
-/** 从整篇原文里采样给 AI：头部 + 中部切片 + 尾部，节选处用「……」占位（保持行结构不破坏） */
-export function sampleTextForSplit(raw: string): string {
+/**
+ * 从整篇原文里采样给 AI：头部 + 中部切片 + 尾部，节选处用「……」占位（保持行结构不破坏）。
+ *
+ * @param budget 采样总字数上限（由 `writerBudgetFor('bookbreak-split')` 派生）。
+ *   省略时用出厂 `SAMPLE_BUDGET_FALLBACK`（7500），行为与改造前完全一致。
+ *   传入时会按 4:2:2:1 的固定比例重新分配四段（头 40% / 中×2 各 20% / 尾 20%），下限保护 400 字。
+ */
+export function sampleTextForSplit(raw: string, budget?: number): string {
   const text = raw ?? ''
-  if (text.length <= HEAD_CHARS + TAIL_CHARS) return text
-  const head = text.slice(0, HEAD_CHARS)
-  const tail = text.slice(-TAIL_CHARS)
-  const gap = text.length - HEAD_CHARS - TAIL_CHARS
+  const total = budget === undefined ? SAMPLE_BUDGET_FALLBACK : Math.max(400, Math.round(budget))
+  // 按出厂比例切分：头 40%、中部每段 20%（×2）、尾 20%
+  const ratio = total / SAMPLE_BUDGET_FALLBACK
+  const headChars = Math.round(HEAD_CHARS * ratio)
+  const midChars = Math.round(MID_CHARS * ratio)
+  const tailChars = Math.round(TAIL_CHARS * ratio)
+  if (text.length <= headChars + tailChars) return text
+  const head = text.slice(0, headChars)
+  const tail = text.slice(-tailChars)
+  const gap = text.length - headChars - tailChars
   const step = Math.floor(gap / (MID_TAKES + 1))
   const mids: string[] = []
   for (let i = 1; i <= MID_TAKES; i++) {
-    const at = HEAD_CHARS + step * i
-    mids.push(text.slice(at, at + MID_CHARS))
+    const at = headChars + step * i
+    mids.push(text.slice(at, at + midChars))
   }
   return [head, ...mids, tail].join('\n……\n')
 }

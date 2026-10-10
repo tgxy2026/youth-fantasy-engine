@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Database, ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/common/Button'
-import { sourcesOf, summarizeSources, AI_PRUNE_NOTE, AI_WORLD_SET_NOTE, mentionsWorldSet } from '@/lib/ai/aiDataSources'
+import { sourcesOf, summarizeSources, AI_PRUNE_NOTE, AI_BUDGET_BASE_NOTE, AI_WORLD_SET_NOTE, mentionsWorldSet } from '@/lib/ai/aiDataSources'
 
 interface Props {
   /** `AI_DATA_SOURCES` 里的功能 id */
@@ -30,6 +30,10 @@ export default function AIDataSourceNote({ feature, compact = false, className =
   const [open, setOpen] = useState(false)
   const f = sourcesOf(feature)
   if (!f) return null // 未登记的功能不显示，避免文案与实现各说各话
+
+  // 🔴 2026-10-10 六维审计 P2：note 里的「约 XX 字」是**出厂基准下的静态参考值**，
+  //    作者调过基准后不会变 ⇒ 真有提到预算时才补一句口径说明（没提的功能不显示，免得噪声）。
+  const mentionsBudget = f.sources.some(s => /约\s*\d+\s*字/.test(s.note ?? ''))
 
   return (
     <div className={`${compact ? '' : 'mt-2 border-t border-ink-700/70 pt-2'} ${className}`}>
@@ -65,6 +69,10 @@ export default function AIDataSourceNote({ feature, compact = false, className =
               与「不读」清单同理，这句只写在这里一处，免得各功能文案漂移（口径必须与实现同源）。 */}
           {mentionsWorldSet(f) && (
             <div className="mt-1.5 text-ink-500 leading-relaxed">{AI_WORLD_SET_NOTE}</div>
+          )}
+          {/* 预算口径（2026-10-10 六维审计 P2）：与上面母子结构说明同理，只写一处。 */}
+          {mentionsBudget && (
+            <div className="mt-1.5 text-ink-500 leading-relaxed">{AI_BUDGET_BASE_NOTE}</div>
           )}
           {/* 「不读」清单：各功能自己的排除项 + **全局那条**（D 级一律不读，见 AI_PRUNE_NOTE）。
               全局条固定追加，不放进各 feature 的 excludes —— 14 处重复早晚漏改。 */}

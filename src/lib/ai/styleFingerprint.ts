@@ -28,6 +28,7 @@
  */
 import * as db from '@/lib/db'
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { longStream } from '@/lib/aiTasks/stream'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import { parseLooseObject, asText } from '@/lib/ai/aiParse'
 import { analyzeStyle } from '@/lib/audit/manuscriptCheck'
@@ -188,6 +189,12 @@ function strArr(v: unknown): string[] {
 export interface ExtractOptions {
   name?: string
   signal?: AbortSignal
+  /**
+   * 流式收字回调。
+   * 🔴 它同时是**流式开关**：不传 ⇒ 请求走非流式，而大输入（UI 侧最多 12000 字）
+   *    在慢模型上会撞 180s 总超时墙（2026-10-10 六维审计 P1）。
+   */
+  onToken?: (delta: string) => void
   /** 注入点（单测用）：默认走真实 `chat` */
   chatFn?: typeof chat
 }
@@ -219,7 +226,7 @@ export async function extractFingerprint(texts: string[], opts: ExtractOptions =
   const text = await callChat(cfg, [
     { role: 'system', content: composeSystemPrompt(P_style_fingerprint, cfg) },
     { role: 'user', content: user },
-  ], { json: true, timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal })
+  ], { json: true, timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken) })
 
   const obj = parseLooseObject(text) ?? {}
   return {

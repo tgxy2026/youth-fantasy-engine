@@ -22,6 +22,7 @@
  */
 import { aiExtractSettingEntities, aiSummarizeFormSettings } from '@/lib/ai/aiTasks'
 import { aiBookBreakSplitChapters } from '@/lib/aiTasks/bookBreakSplit'
+import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { isCancelled } from '@/lib/ai'
 import { buildDraftBundle, bundleOf, type EntityBatch } from '@/lib/flow/draft'
 import { formDraftRows } from '@/lib/flow/formMap'
@@ -249,8 +250,12 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
         //    顺手把已收字节报到节点时间线上，避免进度卡在一行不动。
         let splitGot = 0
         let splitReported = 0
+        // 🔴 采样上限**读预算表**（2026-10-10 六维审计 P2）：原先这里恒用 aiSplit 里的出厂
+        //    7500 字，而 `WRITER_BUDGET_KINDS['bookbreak-split']` 登记的 0.75 系数无人读取 ——
+        //    作者把基准调大（接云端大窗口）时拆书采样不会跟着放大，登记值纯属摆设。
+        const splitBudget = await writerBudgetFor('bookbreak-split')
         const aiLines = await aiBookBreakSplitChapters({
-          sampleText: sampleTextForSplit(raw),
+          sampleText: sampleTextForSplit(raw, splitBudget),
           samples,
           ...(opts.signal ? { signal: opts.signal } : {}),
           onToken: d => {

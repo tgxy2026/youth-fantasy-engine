@@ -55,7 +55,7 @@ export default function DataDock() {
       <button
         type="button"
         onClick={() => setCollapsed(!collapsed)}
-        title={collapsed ? '展开左下角工具栏（本机存储 / 云盘同步）' : '收起到底边（只留这条箭头）'}
+        title={collapsed ? '展开左下角工具栏（本机存储 / 云盘文件同步）' : '收起到底边（只留这条箭头）'}
         aria-label={collapsed ? '展开左下角工具栏' : '收起左下角工具栏'}
         aria-expanded={!collapsed}
         className="flex items-center justify-center py-0.5 -mx-1 rounded text-ink-500 hover:text-amber transition-colors"

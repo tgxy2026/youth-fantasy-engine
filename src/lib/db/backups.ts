@@ -422,7 +422,13 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   //    不是"把备份没覆盖的也一并清掉"（与上面「不删快照」那条同口径）。
   // ⚠️ 成功/失败都不影响本次恢复的成败判定：它在独立库里，写不进去也只是资料没跟着回来。
   if (bundle.knowledgeBase) {
-    await restoreDocsFromBundle(targetPid, bundle.knowledgeBase).catch(() => 0)
+    await restoreDocsFromBundle(targetPid, bundle.knowledgeBase).catch((e) => {
+      // 🔴 2026-10-10 六维审计 P2：原先 `.catch(() => 0)` 无声吞错 —— 与上一段注释
+      //    「成功/失败都不影响本次恢复的成败判定」并不矛盾：不影响**成败判定**，
+      //    但必须留日志，否则作者只会看到"恢复成功但资料没回来"。
+      console.warn('[db] 恢复备份时写回参考资料失败（备份已恢复，仅资料未随包回来）：', e)
+      return 0
+    })
   }
 
   // 4. 同步项目元数据（成为该历史版本）

@@ -117,7 +117,7 @@ export default function ChapterCheckPanel() {
             + '· 文风：对照《写作规范》的坏习惯清单与标点规范。\n\n'
             + '全部本地计算，不发 AI 请求；点「体检本章」手动触发，换章后旧结果自动清空。\n\n'
             + '· 结果会留痕（记「哪一章 + 当时正文的指纹 + 各类计数」）。若这一章的正文在上次体检后又被改过，'
-            + '面板会提示「结果已过期，请重新体检」—— 旧报告不再作数，**不会自动重跑**，重跑由你点按钮决定。'}
+            + '面板会提示「结果已过期，请重新体检」—— 旧报告不再作数，不会自动重跑，重跑由你点按钮决定。'}
         </HelpPopover>
         <div className="ml-auto">
           <Button variant="secondary" size="sm" disabled={!activeId || running} onClick={() => void run()}>

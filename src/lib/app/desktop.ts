@@ -320,6 +320,11 @@ export const KEY_PATHS: Record<string, string> = {
   tavernReports: 'id',
   // 3.0 · W1-1：AI 运行账本（务必与 syncCore.KEY_FIELD 同步）
   aiRuns: 'id',
+  // 3.0 · 多世界（务必与 syncCore.KEY_FIELD 同步）
+  // 🔴 2026-10-10 六维审计 P2：`worlds` 已经进了同步层的 KEY_FIELD，这份副本漏了 ——
+  //    虽有 `?? 'id'` 兜底（worlds 主键恰好也是 id，行为上没炸），但两份口径必须逐项一致，
+  //    否则下一个换主键的新表会在这里静默走错（正是本注释上一段要防的漂移）。
+  worlds: 'id',
 }
 
 export interface DesktopState {

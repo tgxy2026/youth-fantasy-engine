@@ -114,9 +114,9 @@ export default function WorldLibraryPanel() {
     const okGo = await confirmDialog({
       title: '引入世界到当前项目',
       message: `把「${w.name}」${which} 引入当前项目？\n\n`
-        + `会写入 ${(ver ? ver.tables : w.tables).length} 张表，**覆盖**本项目这些表里的现有内容`
+        + `会写入 ${(ver ? ver.tables : w.tables).length} 张表，「覆盖」本项目这些表里的现有内容`
         + (hasLocal ? '（本项目已填过世界设定，原内容将被替换）' : '') + '。\n\n'
-        + '引入是快照复制：以后源世界再改，这边**不会**自动跟着变 —— 要更新就再引入一次。',
+        + '引入是快照复制：以后源世界再改，这边不会自动跟着变 —— 要更新就再引入一次。',
       danger: hasLocal,
     })
     if (!okGo) return
@@ -134,7 +134,7 @@ export default function WorldLibraryPanel() {
   const doDelete = async (w: WorldStoredRecord) => {
     const okDel = await confirmDialog({
       title: '删除这个世界',
-      message: `删除「${w.name}」及其全部版本历史（${w.versions.length} 个版本）？此操作不可撤销。\n\n（已引入到其它作品里的世界**不受影响** —— 引入是快照复制。）`,
+      message: `删除「${w.name}」及其全部版本历史（${w.versions.length} 个版本）？此操作不可撤销。\n\n（已引入到其它作品里的世界不受影响 —— 引入是快照复制。）`,
       danger: true,
     })
     if (!okDel) return
@@ -152,11 +152,11 @@ export default function WorldLibraryPanel() {
       <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">世界引擎</h1>
         <HelpPopover title="世界引擎怎么用" width="24rem" size={14}>
-          这里放的是**可封存、可跨作品引用**的世界。
-          {'\n\n'}· 「新建世界」把**当前项目**的世界（世界设定 / 力量体系 / 制度四页签 / 世界构建组）抽一份进来 —— 这一步不改项目里的任何数据。
-          {'\n\n'}· 「封存」把当前内容固化成**不可变版本**：封存之后，再改项目里的世界也不会动到这一版。
-          {'\n\n'}· 世界引擎是**跨作品**的：换一本书，这里的世界照样在；将来也能在别的作品里显式引入某一版。
-          {'\n\n'}· 🔴 反向不成立：改了项目里的世界，**已经抽出来的世界不会自动更新** —— 想要新的，就再抽一份。这是「派生须显式、不自动同步」的边界。
+          这里放的是可封存、可跨作品引用的世界。
+          {'\n\n'}· 「新建世界」把当前项目的世界（世界设定 / 力量体系 / 制度四页签 / 世界构建组）抽一份进来 —— 这一步不改项目里的任何数据。
+          {'\n\n'}· 「封存」把当前内容固化成「不可变版本」：封存之后，再改项目里的世界也不会动到这一版。
+          {'\n\n'}· 世界引擎是跨作品的：换一本书，这里的世界照样在；将来也能在别的作品里显式引入某一版。
+          {'\n\n'}· 🔴 反向不成立：改了项目里的世界，已经抽出来的世界不会自动更新 —— 想要新的，就再抽一份。这是「派生须显式、不自动同步」的边界。
         </HelpPopover>
         <span className="text-11 text-ink-500">把世界抽出来·封版·将来给别的作品引用</span>
 
@@ -166,7 +166,7 @@ export default function WorldLibraryPanel() {
             placeholder="世界名称（留空自动取）"
             value={name}
             onChange={e => setName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') void doCreate() }}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void doCreate() }}
           />
           <Button variant="primary" size="md" disabled={busy} onClick={() => void doCreate()}>
             ＋ 从当前项目新建世界
@@ -181,7 +181,7 @@ export default function WorldLibraryPanel() {
             {importRec.version > 0 ? ` v${importRec.version}` : '（草稿）'} · {fmt(importRec.at)} ·
             指纹 <span className="font-mono">{importRec.fingerprint}</span>
             <br />
-            🔴 引入是**快照复制**：源世界后来再改，这边不会自动跟着变 —— 要更新就再引入一次。
+            🔴 引入是快照复制：源世界后来再改，这边不会自动跟着变 —— 要更新就再引入一次。
           </div>
         )}
         {list === null ? (
@@ -212,7 +212,7 @@ export default function WorldLibraryPanel() {
                         value={renaming.text}
                         onChange={e => setRenaming({ id: w.id, text: e.target.value })}
                         onKeyDown={e => {
-                          if (e.key === 'Enter') void commitRename()
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commitRename()
                           if (e.key === 'Escape') setRenaming(null)
                         }}
                         onBlur={() => void commitRename()}

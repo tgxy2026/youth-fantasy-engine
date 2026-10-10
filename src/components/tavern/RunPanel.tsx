@@ -182,12 +182,12 @@ export default function RunPanel() {
       <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">跑团互动</h1>
         <HelpPopover title="跑团互动怎么用" width="26rem" size={14}>
-          AI 在这里当 <b>KP（守秘人）</b>主持一次有始有终的冒险 —— 不是陪聊，而是**裁决与推进**。
+          AI 在这里当 <b>KP（守秘人）</b>主持一次有始有终的冒险 —— 不是陪聊，而是裁决与推进。
           {'\n\n'}· 在下方「你的行动」里写你要做什么（观察 / 交谈 / 取证…），也可以只写「我想撬开抽屉」。
-          {'\n\n'}· 🔴 **成败由系统掷定**：系统先按行动难度掷一次检定，把「大成功 / 成功 / 擦边 / 失败」写进提示词，
-          KP 必须照这个结果演 —— 失败不会写成成功，擦边一定带代价。这样同一句话的结果才**可复现**。
-          {'\n\n'}· 线索会进**线索板**；满足条件的**秘密**会自动揭晓；**结局**按条件达成，每一行都写着「还差什么」。
-          {'\n\n'}· 每局可以**存档**：打一档、随时回滚（回滚本身也能撤销）。
+          {'\n\n'}· 🔴 成败由系统掷定：系统先按行动难度掷一次检定，把「大成功 / 成功 / 擦边 / 失败」写进提示词，
+          KP 必须照这个结果演 —— 失败不会写成成功，擦边一定带代价。这样同一句话的结果才可复现。
+          {'\n\n'}· 线索会进「线索板」；满足条件的「秘密」会自动揭晓；「结局」按条件达成，每一行都写着「还差什么」。
+          {'\n\n'}· 每局可以「存档」：打一档、随时回滚（回滚本身也能撤销）。
           <AIDataSourceNote feature="tavern-run" />
         </HelpPopover>
         <span className="text-11 text-ink-500">AI 当 KP · 检定 · 线索 · 同伴 · 秘密与结局</span>
@@ -208,7 +208,7 @@ export default function RunPanel() {
             placeholder="这一局的名字"
             value={creating}
             onChange={e => setCreating(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') void doCreate() }}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void doCreate() }}
           />
           <Button variant="primary" size="md" disabled={busy} onClick={() => void doCreate()}>＋ 新建一局</Button>
         </div>
@@ -233,7 +233,7 @@ export default function RunPanel() {
                   value={renaming.text}
                   onChange={e => setRenaming({ id: it.id, text: e.target.value })}
                   onKeyDown={e => {
-                    if (e.key === 'Enter') { void renameRun(it.id, renaming.text).then(load); setRenaming(null) }
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) { void renameRun(it.id, renaming.text).then(load); setRenaming(null) }
                     if (e.key === 'Escape') setRenaming(null)
                   }}
                   onBlur={() => { void renameRun(it.id, renaming.text).then(load); setRenaming(null) }}
@@ -260,7 +260,7 @@ export default function RunPanel() {
         <section className="flex-1 min-w-0 overflow-y-auto pr-1">
           {!session ? (
             <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-4 text-12 leading-relaxed text-ink-400">
-              从左边选一局，或新建一局。跑团互动的每一步都记在**行动流水**里，可存档、可回滚。
+              从左边选一局，或新建一局。跑团互动的每一步都记在「行动流水」里，可存档、可回滚。
             </div>
           ) : (
             <div className="space-y-3">
@@ -276,7 +276,7 @@ export default function RunPanel() {
                   <span className="text-10 text-ink-500">线索 {stats.acquired}/{stats.total} · 秘密已揭 {session.secrets.filter(x => x.unlocked).length}/{session.secrets.length}</span>
                   <div className="ml-auto flex items-center gap-1.5">
                     <Button variant="secondary" size="sm" onClick={() => void doCheckpoint()}>存档</Button>
-                    {(session.undoSnapshot) && <Button variant="ghost" size="sm" onClick={() => void doUndo()}>撤销回滚</Button>}
+                    {(session.undoSnapshot) && <Button variant="secondary" size="sm" onClick={() => void doUndo()}>撤销回滚</Button>}
                   </div>
                 </div>
                 {(session.checkpoints ?? []).length > 0 && (

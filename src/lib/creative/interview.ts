@@ -145,7 +145,11 @@ export function buildInterviewUser(s: InterviewState, spec: InterviewSpec, exist
   const filledRows = Object.entries(s.filled)
     .filter(([, v]) => String(v ?? '').trim())
     .map(([k, v]) => `${k}：${v}`)
-  const history = s.turns.map(t => `${t.role === 'ai' ? '你' : '作者'}：${t.text}`).join('\n')
+  // 🔴 作者自己打的回答属**不可信正文**：逐条过 authorBlock（2026-10-10 六维审计 P1）——
+  //    否则作者答句里的「忽略以上指令」会被模型当指令执行。
+  const history = s.turns
+    .map(t => t.role === 'ai' ? `你：${t.text}` : `作者：${authorBlock(fence, t.text)}`)
+    .join('\n')
 
   return [
     existing?.trim() ? `〖作者已有的内容（这是补完，不是从零开始）〗\n${authorBlock(fence, existing.trim())}\n` : '',

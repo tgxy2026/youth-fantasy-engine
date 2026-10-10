@@ -89,7 +89,7 @@ export default function InterviewContextPicker({
         })}
       </div>
       <p className="mt-1.5 text-10 text-ink-500 leading-relaxed">
-        勾上的内容会作为「既有设定」交给 AI，要求它的提问与补出来的内容**与之一致**。
+        勾上的内容会作为「既有设定」交给 AI，要求它的提问与补出来的内容与之一致。
         一次带太多会互相稀释、也白耗额度，建议只勾这次真用得上的。
       </p>
     </div>

@@ -411,8 +411,14 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
   // 参考资料（2.8.0 · #017，可选字段）：随包带来的资料写进**独立知识库**。
   // ⚠️ 放在**最后**、且失败不阻断：它是另一个库，写不进去不该推翻"项目已经导进来了"。
   //    新项目本来没有资料，`restoreDocsFromBundle` 的"先清空"是空操作，直接写即可。
+  // 🔴 2026-10-10 六维审计 P2：原先写成 `.catch(() => 0)` —— 失败**完全无声**。
+  //    这里吞错是对的（不能让资料写失败推翻"项目已导入"），但**不该连日志都没有**：
+  //    作者看到的是"导入成功、资料却没了"，排查时无从下手。与上面删项目那两处同口径补日志。
   if (bundle.knowledgeBase?.length) {
-    await restoreDocsFromBundle(newPid, bundle.knowledgeBase).catch(() => 0)
+    await restoreDocsFromBundle(newPid, bundle.knowledgeBase).catch((e) => {
+      console.warn('[db] 导入项目时写回参考资料失败（项目已导入，仅资料未随包回来）：', e)
+      return 0
+    })
   }
   return newPid
 }

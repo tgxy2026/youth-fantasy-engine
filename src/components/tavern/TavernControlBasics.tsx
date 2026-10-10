@@ -49,7 +49,7 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
                     下面「记忆三项 / 日记保留 / 固定开销」的推荐值按当前预算同比推算（预算跟着所选模型走，它们也就跟着变）。
                     窗口默认取「模型配置 → 上下文窗口」填的值；预算与记忆档都按它缩放，
                     本地只在「超过窗口承载」时才回落（否则会被静默截断）。
-                    正文续写等其它模式的额度不在这里，仍是后台内置值。
+                    正文写作链路的额度在「模型设置 → 正文写作 AI 额度」里单独设置（两边各管各的、互不冲突）。
                   </div>
                 </div>
                 <Button variant="secondary" size="sm" onClick={applyRecommended}

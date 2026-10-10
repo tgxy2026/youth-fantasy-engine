@@ -84,4 +84,17 @@ const RAW = Array.from({ length: 5 }, (_, i) => `${chap(i + 1)}\n${body(i + 1)}`
   assert.equal(ai!.chapters[0].text, local.chapters[0].text, '重建口径应与本地切分一致')
 }
 
-console.log('✅ bookbreak-ai-split 全部通过（9 组断言）')
+// ---------- ⑩ 采样预算（2026-10-10 六维审计 P2）：传 budget 时四段按比例缩放 ----------
+{
+  const long = Array.from({ length: 3000 }, (_, i) => `第${i}段正文内容。`).join('\n')
+  const dflt = sampleTextForSplit(long)
+  const half = sampleTextForSplit(long, 3750)
+  const big = sampleTextForSplit(long, 15000)
+  assert.ok(half.length < dflt.length, '预算减半 → 采样应更短（登记系数真的生效了）')
+  assert.ok(big.length > dflt.length, '预算加倍 → 采样应更长（接大窗口模型时能跟着放大）')
+  assert.ok(half.includes('……') && big.includes('……'), '缩放后仍保留省略标记')
+  // 不传 budget 必须与出厂口径完全一致（向后兼容，升级后默认行为一个字都不变）
+  assert.equal(sampleTextForSplit(long), sampleTextForSplit(long, 7500), '不传应等价于出厂 7500')
+}
+
+console.log('✅ bookbreak-ai-split 全部通过（10 组断言）')

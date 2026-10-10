@@ -203,8 +203,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     if (!await confirmDialog({ title: '删除模型配置', message: '确定删除该模型配置？', danger: true })) return
     const next = providers.filter(p => p.id !== id)
     const nextActive = activeId === id ? (next[0]?.id ?? null) : activeId
-    await persist(next, nextActive)
-    dropResult(id)
+    try {
+      await persist(next, nextActive)
+      dropResult(id)
+    } catch (e) {
+      // 🔴 写盘失败不得静默（2026-10-10 六维审计 P1）
+      showToast('删除模型配置失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
   }
 
   /** 由平台预设开始新增一条模型配置（未保存） */
@@ -279,11 +284,17 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     const exists = providers.some(p => p.id === editing.id)
     const next = exists ? providers.map(p => p.id === editing.id ? editing : p) : [...providers, editing]
     const nextActive = activeId ?? (!exists ? editing.id : activeId)
-    await persist(next, nextActive)
-    dropResult(editing.id)
-    setSaving(false)
-    setEditing(null)
-    setEditResult(null)
+    try {
+      await persist(next, nextActive)
+      dropResult(editing.id)
+      setEditing(null)
+      setEditResult(null)
+    } catch (e) {
+      // 🔴 写盘失败必须复位 saving，否则保存键永久 disabled（2026-10-10 六维审计 P1）
+      setEditResult(fail(e instanceof Error ? e.message : String(e)))
+    } finally {
+      setSaving(false)
+    }
   }
 
   /** 编辑态（openai 类型）平台预设下拉：本地 / 联网各自只列本组 */

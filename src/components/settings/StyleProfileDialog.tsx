@@ -119,7 +119,8 @@ export function StyleProfileDialog({ open, onClose, ownerTab, onChanged }: {
     const texts = sample.trim() ? [sample] : []
     if (!texts.length) { showToast('先粘贴参考文本，或从章节 / 文件导入', 'info'); return }
     t.run(
-      ctx => extractFingerprint(texts, { name, signal: ctx.signal }),
+      // onToken 传空函数：它同时是流式开关（保活，避免大输入撞 180s 总超时墙）
+      ctx => extractFingerprint(texts, { name, signal: ctx.signal, onToken: () => {} }),
       () => null,                            // 完成提示由上面的 useEffect 给出（要说清"还需要手动启用"）
     )
   }

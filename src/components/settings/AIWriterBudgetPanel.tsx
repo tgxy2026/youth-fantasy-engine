@@ -218,8 +218,10 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
 
       {/* 🔴 必须保留：这是作者最容易混淆的一点（酒馆的额度在别处，两边不冲突） */}
       <div className="mt-3 border-t border-ink-700/70 pt-2 text-10 text-ink-500 leading-relaxed">
-        这里的额度只作用于<b className="text-ink-400">正文写作链路</b>（编辑器 / 颉文姬 / 检查工具 / 灵感工具），
-        以及<b className="text-ink-400">设定表格的 AI 整理 / 批量导入</b>（这两件事的「看各功能实际取值」里本就列着）。
+        这里的额度只作用于<b className="text-ink-400">正文写作链路</b>（编辑器 / 颉文姬 / 检查工具 / 灵感工具）、
+        <b className="text-ink-400">设定表格的 AI 整理 / 批量导入</b>（这两件事的「看各功能实际取值」里本就列着），
+        以及<b className="text-ink-400">创作管理的情节推演画布</b>与<b className="text-ink-400">拆书的 AI 章节识别</b>
+        （这两项虽在别的页签，但同样读这里的基准，调基准会一并影响）。
         酒馆模式（剧情推演 / 自由对话）的上下文额度在<b className="text-ink-400">「酒馆模式 → 控制面板」</b>里单独设置，
         那边还有记忆档、设定层占比等一整套 —— <b className="text-ink-400">两边各管各的、互不冲突</b>。
       </div>
