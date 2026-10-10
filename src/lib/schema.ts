@@ -184,6 +184,10 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   // 它不是每个项目都需要的功能，也不带任何依赖（不动 STRONG_DEPS / ANY_DEPS）。
   // 写出来而不是省略，是为了让读 schema 的人知道这是有意为之，不是"忘了登记"。
   'misc-settings': 'optional',
+  // 世界库（2026-10-10 · W4-1b-2）：**显式标 optional、不默认勾选**。
+  // 它是「世界引擎」的入口，面向「想把同一套世界用在多本书里」的作者，不是每个项目都要；
+  // 显式登记的理由同 misc-settings（不写虽也按 getTier() 兜底 optional，但读的人会以为是忘了登记）。
+  worlds: 'optional',
   // 制度页签（2026-10-02 · 2.7.1 建）：政治 / 经济基础 / 宗教信仰 / 司法制度 —— 显式标 optional。
   // 🔴 2.7.2 起**完整项目一律显示**（题材矩阵已删），本表只决定「自定义项目里能否被勾选」。
   //    显式登记的理由同 misc-settings：不写虽然也走 getTier() 兜底 optional，但读的人会以为是忘了登记。

@@ -62,6 +62,7 @@ const TavernScript = lazy(() => import('./components/TavernScript'))
 const TavernWorld = lazy(() => import('./components/TavernWorld'))
 // 创作轨迹（创作管理组，2.4.0 A4）：含轨迹时间线与证据包导出，按需懒加载
 const TrajectoryPanel = lazy(() => import('./components/TrajectoryPanel'))
+const WorldLibraryPanel = lazy(() => import('./components/WorldLibraryPanel'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -481,6 +482,9 @@ export default function App() {
     }
     if (activeTab === 'trajectory') {
       return <TrajectoryPanel />
+    }
+    if (activeTab === 'worlds') {
+      return <WorldLibraryPanel />
     }
     if (activeTab === 'tavern-world') {
       return <TavernWorld />
