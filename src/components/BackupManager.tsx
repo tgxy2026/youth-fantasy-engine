@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as db from '../lib/db'
 import { encryptJSON, decryptJSON, isEncrypted } from '../lib/crypto'
-import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle, ChevronDown } from 'lucide-react'
+import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle, ChevronDown, BookMarked } from 'lucide-react'
 import PromptModal from './PromptModal'
 import { confirmDialog, showToast } from './dialogs'
 import { downloadBlob } from '../lib/zip'
@@ -22,7 +22,7 @@ interface Props {
 
 /**
  * 备份与恢复（v1.3 备份策略加固；#012 备份体积治理）
- * - 列出该项目的全部备份：手动 / 每日自动 / 5 分钟自动。
+ * - 列出该项目的全部备份：定稿版本 / 手动 / 每日自动 / 5 分钟自动。
  * - 一键恢复历史版本（覆盖回写，保留项目 id）。
  * - 5 分钟自动滚动保留最多 30 份；每日自动保留最多 30 份；**手动备份不设上限**
  *   （用户主动留档不该被系统删掉），份数过多时给出体验提示。
@@ -249,6 +249,8 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
   const daily = backups.filter(b => b.kind === 'daily')
   const auto = backups.filter(b => b.kind === 'auto5min')
   const manual = backups.filter(b => b.kind === 'manual')
+  // 3.0 · W3-1：定稿版本也住 backups 表（kind='frozen'）—— 在此一并列出，免得记录隐身、计数失真
+  const frozen = backups.filter(b => b.kind === 'frozen')
 
   // C2：体积直接读元数据里的 bytes（写入备份时算好并存下来）——
   //     不再对每份备份做一次 JSON.stringify 算体积（那是列表页最重的一步）。
@@ -375,6 +377,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
             </div>
           )}
 
+          <Group id="frozen" title="定稿版本" icon={<BookMarked size={13} className="text-amber" />} items={frozen} hint="定稿冻结留档，不设上限、不会自动删除" />
           <Group id="manual" title="手动备份" icon={<ShieldCheck size={13} className="text-amber" />} items={manual} hint="不设上限，不会自动删除" />
           <Group id="daily" collapsible title="每日自动备份" icon={<CalendarDays size={13} className="text-amber" />} items={daily} hint={`最多 ${db.MAX_DAILY_BACKUPS} 份`} />
           <Group id="auto" collapsible title="5 分钟自动备份" icon={<Clock size={13} className="text-amber" />} items={auto} hint={`滚动保留最多 ${db.MAX_AUTO_BACKUPS} 份`} />

@@ -15,7 +15,7 @@ import { VOL_LEDGER_PREFIX } from './volumes'
 //       'daily'（每天首次打开自动 1 份，最多保留 MAX_DAILY_BACKUPS 份）、
 //       'manual'（用户手动「立即备份」，不设上限 —— 主动留档不该被系统删掉）。
 // #012：每日备份此前不限量，写一年即 365 份全量快照，便携版（单 JSON 全量写盘）会持续膨胀。
-export type BackupKind = 'auto5min' | 'daily' | 'manual'
+export type BackupKind = 'auto5min' | 'daily' | 'manual' | 'frozen'
 
 /**
  * 备份**元数据**（backups store 从 C2 起只存它）。
@@ -32,6 +32,24 @@ export interface BackupMeta {
   createdAt: number
   /** 载荷字节数（UTF-8 近似，写入时算一次；列表直接读，不再 stringify） */
   bytes: number
+  /**
+   * 🔴 以下三个字段**只有「定稿版本」（kind='frozen'）会写**，其余 kind 恒为 undefined。
+   *    加**可选字段不加迁移**（与 aiAssist / aiRuns 同口径）：旧数据没有即 undefined，读取侧判存在。
+   */
+  /** 作者给这一版写的备注（「投稿版：改完第 12 章的节奏」这类） */
+  note?: string
+  /** 冻结时的**作品级指纹**（`lib/bookVersion.ts` 的 `bookFingerprint`）—— 用于判断「这一版还是不是当前稿」 */
+  fingerprint?: string
+  /** 冻结时的完成检查摘要（章数 / 字数等；存下来即可离线回看，不必重算） */
+  stats?: FrozenStats
+}
+
+/** 冻结版本带出的完成检查摘要（与 `bookVersion.BookStats` 的展示子集对齐，刻意只存展示需要的） */
+export interface FrozenStats {
+  volumes: number
+  chapters: number
+  writtenChapters: number
+  totalWords: number
 }
 
 /** 备份**载荷**（backupPayloads store）：一份整包项目数据 */
@@ -58,7 +76,8 @@ export const MAX_DAILY_BACKUPS = 30
 function backupLimit(kind: BackupKind): number {
   if (kind === 'auto5min') return MAX_AUTO_BACKUPS
   if (kind === 'daily') return MAX_DAILY_BACKUPS
-  return 0 // manual：用户主动留档，永不自动删
+  // manual / frozen：作者主动留档，永不自动删
+  return 0
 }
 
 /** 载荷字节数（与旧 UI 的 `JSON.stringify(bundle).length` 同口径，保持数字可比） */
@@ -70,8 +89,15 @@ function payloadBytes(bundle: ProjectBundle): number {
 function withBytes(rec: BackupMeta | LegacyBackupRecord): BackupMeta {
   const b = (rec as LegacyBackupRecord).bytes
   const bytes = typeof b === 'number' ? b : ((rec as LegacyBackupRecord).bundle ? payloadBytes((rec as LegacyBackupRecord).bundle!) : 0)
-  // 剥掉 legacy 的 bundle —— 元数据出库就只该是元数据，防止调用方误用整包
-  return { id: rec.id, projectId: rec.projectId, kind: rec.kind, label: rec.label, createdAt: rec.createdAt, bytes }
+  // 剥掉 legacy 的 bundle —— 元数据出库就只该是元数据，防止调用方误用整包。
+  // 🔴 但 frozen 的 note / fingerprint / stats 必须**原样带出** —— 这里若只挑老字段重建，
+  //    定稿元信息会在列表里静默丢失（正是「重建对象」这类写法最容易踩的坑）。
+  return {
+    id: rec.id, projectId: rec.projectId, kind: rec.kind, label: rec.label, createdAt: rec.createdAt, bytes,
+    ...(rec.note ? { note: rec.note } : {}),
+    ...(rec.fingerprint ? { fingerprint: rec.fingerprint } : {}),
+    ...(rec.stats ? { stats: rec.stats } : {}),
+  }
 }
 
 /**
@@ -121,6 +147,65 @@ export async function listBackups(projectId: string): Promise<BackupMeta[]> {
   const all = await ops.getAll<BackupMeta | LegacyBackupRecord>('backups')
   return all
     .filter(b => b.projectId === projectId)
+    .map(withBytes)
+    .sort((a, b) => b.createdAt - a.createdAt)
+}
+
+// ============ 作品版本冻结（3.0 · W3-1 · §10.3 #7）============
+//
+// 「定稿快照」不新建表 —— 它就是一份 kind='frozen' 的备份：复用 applyBundleToProject（恢复）、
+// buildBackupFile（外置导出）、deleteBackup（双表删除）。这正是 §10.3 #7「与既有备份/导出共用
+// StoreOps 数据契约」的字面要求；自建一套 300 行的 id 重映射恢复逻辑纯属重复劳动。
+
+/** 冻结一版的输入（纯数据，不含 bundle） */
+export interface FrozenVersionInput {
+  /** 版本名（作者可改；留空则按时间自动命名） */
+  name: string
+  /** 备注（可空） */
+  note?: string
+  /** 冻结时的作品级指纹（`bookVersion.bookFingerprint`） */
+  fingerprint: string
+  /** 完成检查摘要 */
+  stats: FrozenStats
+}
+
+/**
+ * 冻结一个作品版本（定稿快照）。
+ *
+ * 🔴 与 `createAutoBackup` 的三点不同：
+ *   ① **带章节快照**（自动备份为省体积刻意不带）—— 定稿要能连历史版本一起还原；
+ *   ② **不拦截示范项目** —— 自动备份拦截是因为「高频全量。」；冻结是作者主动动作，该允许；
+ *   ③ **永不淘汰**（`backupLimit('frozen')` = 0）—— 作者主动留档不该被系统删掉。
+ * 参考资料仍按作者的 `kbInBackup` 开关走（`exportProject` 默认值，不越权打包大文件）。
+ */
+export async function createFrozenVersion(projectId: string, input: FrozenVersionInput): Promise<BackupMeta> {
+  const bundle = await exportProject(projectId)
+  const now = Date.now()
+  const id = uid()
+  const name = input.name.trim()
+  const note = input.note?.trim()
+  const meta: BackupMeta = {
+    id,
+    projectId,
+    kind: 'frozen',
+    label: name || `定稿 ${new Date(now).toLocaleString('zh-CN')}`,
+    createdAt: now,
+    bytes: payloadBytes(bundle),
+    fingerprint: input.fingerprint,
+    stats: input.stats,
+    ...(note ? { note } : {}),
+  }
+  // 先写载荷再写元数据（同 createAutoBackup：列表能立刻暴露载荷缺失，而不是留一份空壳）
+  await ops.put('backupPayloads', { id, projectId, bundle } satisfies BackupPayload)
+  await ops.put('backups', meta)
+  return meta
+}
+
+/** 列出某项目的全部定稿版本（按时间倒序）—— **不读载荷** */
+export async function listFrozenVersions(projectId: string): Promise<BackupMeta[]> {
+  const all = await ops.getAll<BackupMeta | LegacyBackupRecord>('backups')
+  return all
+    .filter(b => b.projectId === projectId && b.kind === 'frozen')
     .map(withBytes)
     .sort((a, b) => b.createdAt - a.createdAt)
 }

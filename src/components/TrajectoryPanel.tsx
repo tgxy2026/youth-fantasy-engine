@@ -15,7 +15,7 @@
  *      没有键盘记录，导出不联网。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { History, FileDown, Loader2, AlertTriangle, BookOpen } from 'lucide-react'
+import { History, FileDown, Loader2, AlertTriangle, BookOpen, BookMarked } from 'lucide-react'
 import * as db from '../lib/db'
 import type { Chapter, Volume, CardRecord } from '../lib/types'
 import type { Snapshot } from '../lib/db'
@@ -35,6 +35,7 @@ import SelectRow from './SelectRow'
 import { showToast } from './dialogs'
 import EvidenceExportDialog from './EvidenceExportDialog'
 import RunLedgerPanel from './RunLedgerPanel'
+import BookVersionPanel from './BookVersionPanel'
 
 const OUTLINE_TAB = 'chapter-outline'
 
@@ -56,6 +57,8 @@ function dotClass(n: TrajectoryNode): string {
 export default function TrajectoryPanel() {
   // 3.0 · W1-1：AI 运行账本 —— 从「关于打赏」挪到本页（与「创作轨迹」同为「过程留痕」，放一起更顺）
   const [ledgerOpen, setLedgerOpen] = useState(false)
+  // 3.0 · W3-1：定稿与版本 —— 同属「这本书的里程碑 / 留痕」，与账本并列
+  const [versionOpen, setVersionOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [projectName, setProjectName] = useState('')
   const [volumes, setVolumes] = useState<Volume[]>([])
@@ -172,13 +175,18 @@ export default function TrajectoryPanel() {
     <div className="w-full page-enter">
       {/* 3.0 · W1-1：AI 运行账本（只读留痕） */}
       {ledgerOpen && <RunLedgerPanel onClose={() => setLedgerOpen(false)} />}
+      {versionOpen && <BookVersionPanel onClose={() => setVersionOpen(false)} onRestored={() => void load()} />}
       <header className="mb-5">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">创作轨迹</h1>
           <HelpPopover title="创作轨迹怎么用" width="23rem" size={14}>
             {'按章回看「这一章是怎么写出来的」：细纲 → 各次改动 → 当前稿，附逐日字数。\n\n· 数据全部来自软件本就有的记录（章节时间戳、自动快照、每日字数），不另外采集你的操作；证据包在本机生成，保存位置由你选择；\n· 每章最多保留 12 个历史版本，超出后会自动清理最旧的 —— 若早期版本已不在，页面会如实写明，不会假装完整；\n· 可导出证据包：PDF（桌面版一键保存）/ 单文件 HTML（可打印）/ JSON（供机器核验）。\n\n用途：投稿、报名、跟编辑说明创作过程时，用来自证。软件不做、也不参与任何「规避 AI 检测」的事情。'}
           </HelpPopover>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setVersionOpen(true)} className="gap-1.5"
+              title="冻结这一版、回看版本历史（定稿快照）">
+              <BookMarked size={12} /> 定稿与版本
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => setLedgerOpen(true)} className="gap-1.5"
               title="回看这本书的 AI 调用留痕：跑过哪些任务、成没成、产出多少">
               <History size={12} /> AI 运行账本
