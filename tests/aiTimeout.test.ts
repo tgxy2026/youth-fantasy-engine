@@ -64,7 +64,9 @@ async function main() {
 
   // ---------- 4) 静态：调用点不得绕过统一变量 ----------
   {
-    const dirs = ['src/lib/aiTasks', 'src/lib/aiCore']
+    // 🔴 2026-10-10（G3 目录整理）：AI 管线从 lib 顶层集中到 `src/lib/ai/` ——
+    //    漏掉它，`lib/ai/` 里的调用点就**不在扫描范围**（静态闸静默漏检）。
+    const dirs = ['src/lib/ai', 'src/lib/aiTasks', 'src/lib/aiCore']
     const hits: string[] = []
     let scanned = 0
     for (const d of dirs) {
@@ -78,7 +80,7 @@ async function main() {
         })
       }
     }
-    ok('扫描到 aiTasks/aiCore 源文件', scanned > 0, String(scanned))
+    ok('扫描到 ai / aiTasks / aiCore 源文件', scanned > 0, String(scanned))
     ok('没有写死的 `timeoutMs: <数字>`（必须走 CHAT_TIMEOUT_MS / opts.timeoutMs）',
       hits.length === 0, hits.join(', '))
   }
