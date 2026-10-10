@@ -57,7 +57,11 @@ export function checkRewriteTarget(hasBody: boolean): EvidenceGap | null {
   }
 }
 
-/** 一致性审计：至少要两章有正文 —— 单章无从「跨章核对」。 */
+/**
+ * 一致性审计：至少要两章有正文 —— 单章无从「跨章核对」。
+ * 📌 预留（2026-10-10 轻量审计标注）：随 W2-2「一致性审计」接线 —— 它是「必需证据」三件套里
+ *    唯一还没落到生产路径的一条（另两条已用于续写 / 改写）。已有单测钉住，不是死代码。
+ */
 export function checkAuditChapters(writtenChapters: number): EvidenceGap | null {
   const n = Number.isFinite(writtenChapters) && writtenChapters > 0 ? writtenChapters : 0
   if (n >= 2) return null

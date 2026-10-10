@@ -25,26 +25,12 @@ export async function listProjectAiRuns(projectId: string): Promise<AiRun[]> {
   return ops.getAllByIndex<AiRun>('aiRuns', 'projectId', projectId)
 }
 
-/**
- * 最近 N 条运行记录（跨项目，供账本总览）。
- * ⚠️ 用全表读 + 内存排序而非索引：账本是**追加型**记录、单库规模有限（百级），
- *    而 startedAt 索引取「最近 N」需要游标反向遍历，复杂度不划算。
- */
-export async function listRecentAiRuns(limit = 50): Promise<AiRun[]> {
-  const all = await ops.getAll<AiRun>('aiRuns')
-  return all.sort((a, b) => b.startedAt - a.startedAt).slice(0, Math.max(0, limit))
-}
-
 export async function saveAiRun(r: AiRun): Promise<void> {
   await ops.put('aiRuns', r)
 }
 
-export async function deleteAiRun(id: string): Promise<void> {
-  await ops.del('aiRuns', id)
-}
-
-/** 删项目级联：清掉该项目的全部运行记录（由 db/projects.ts 的 deleteProject 调用） */
-export async function deleteProjectAiRuns(projectId: string): Promise<void> {
-  const rows = await listProjectAiRuns(projectId)
-  if (rows.length) await ops.bulkDel('aiRuns', rows.map(r => r.id))
-}
+// 📌 2026-10-10 轻量审计：删掉了 `listRecentAiRuns` / `deleteAiRun` / `deleteProjectAiRuns` 三个未使用导出 ——
+//    · 账本是**只读留痕**（查看器不提供删除，故不需要单条删除）；
+//    · 删项目的级联由 `db/projects.ts` 的通用循环覆盖（`aiRuns` 已进那份清单），专用函数是重复实现；
+//    · 跨项目总览暂无需求（列表按当前项目过滤）。
+//    要加回来时，先确认真实调用方，别留「只在测试里用」的 API。

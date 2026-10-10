@@ -13,7 +13,7 @@
  */
 import type { Chapter } from './types'
 import type {
-  AiContextSnapshot, AiRun, AiRunBasis, AiRunCall, AiRunCandidateRef, AiRunKind, AiRunOutcome, AiRunStatus,
+  AiContextSnapshot, AiRun, AiRunBasis, AiRunCall, AiRunKind, AiRunOutcome, AiRunStatus,
 } from './aiRunTypes'
 import { hashOf } from './semantic/chunk'
 import { uid } from './id'
@@ -65,6 +65,11 @@ export interface BasisCheck {
 /**
  * 基准是否已失效。
  * 任一命中即 stale：① 涉及章的当前指纹与基准不符；② 涉及章已被删除；③ 设定戳变了。
+ *
+ * 📌 预留（2026-10-10 轻量审计标注）：改写链路的采纳校验走的是 `chapterFingerprint` 的**单章直接比对**
+ *    （更精确、少一层包装）；本函数面向「多渠道基准（章 ＋ 上游设定）」的完整口径，等出现第二个
+ *    采纳点（章后整理 / 一致性审计）时接线。**不是死代码** —— 已有单测钉住判据，删掉等于让下一处
+ *    采纳点重新发明一遍。
  */
 export function checkBasisStale(basis: AiRunBasis, current: BasisCurrent): BasisCheck {
   const reasons: string[] = []
@@ -118,8 +123,8 @@ function bindUsageSink(): void {
   })
 }
 
-/** 组装一条新运行记录（未落库）—— `status` 一律从 `running` 起 */
-export function newRun(input: {
+/** 组装一条新运行记录（未落库）—— `status` 一律从 `running` 起。内部用，不外导（外部一律走 createRun） */
+function newRun(input: {
   projectId: string
   kind: AiRunKind
   title: string
@@ -172,22 +177,9 @@ export async function patchRun(id: string, patch: Partial<AiRun>): Promise<AiRun
   return next
 }
 
-/** 追加一次模型调用账（#6 消耗统计 + §14 拒答感知共用） */
-export async function appendRunCall(id: string, call: AiRunCall): Promise<void> {
-  const cur = await getAiRun(id)
-  if (!cur) return
-  await saveAiRun({ ...cur, calls: [...cur.calls, call] })
-}
-
-/** 登记一个候选引用（候选产出时调，令中断后也能看到"已有哪些候选"） */
-export function makeCandidateRef(
-  target: string,
-  count: number,
-  fingerprint: string,
-): AiRunCandidateRef {
-  return { target, count, fingerprint, state: 'pending' }
-}
-
+// 📌 2026-10-10 轻量审计：删掉 `appendRunCall` / `makeCandidateRef` 两个未使用导出 ——
+//    · 调用账改由 `setUsageSink` 内存累积、`finishRun` **一次写入**（`appendRunCall` 的逐步读改写被淘汰）；
+//    · 候选引用目前只在 `AiRun.candidates` 结构里承载，尚无生产者（等「候选产出」接线时再加构造器）。
 /** 收尾：置终态 + 验收回执 */
 export async function finishRun(
   id: string,

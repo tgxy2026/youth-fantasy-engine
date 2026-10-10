@@ -43,7 +43,7 @@ import {
   isSuspectRewrite,
   listRewriteCandidates,
 } from './chapterRewrite'
-import { createRun, finishRun, chapterFingerprint, pickContextSnapshot } from './aiRunLedger'
+import { createRun, finishRun, chapterFingerprint, pickContextSnapshot, computeBasis } from './aiRunLedger'
 import { lastContextAssembly } from './aiContext'
 import { checkRewriteTarget, formatGap } from './evidenceGate'
 import { countWords } from './textStats'
@@ -538,7 +538,8 @@ async function startCreativeLedger(target: CreativeTarget): Promise<CreativeLedg
       projectId: db.getCurrentProjectId() ?? '',
       kind: 'creative',
       title: target === 'outline' ? '创意写作 · 仅大纲' : '创意写作 · 大纲＋正文',
-      basis: { chapters: [], settingsRev: null, at: Date.now() },
+      // 3.0 · W1-1b：基准统一走 `computeBasis`（别手搓字面量 —— 口径只有一处）
+      basis: computeBasis([], null),
     })
     return { id: run.id, startedAt: run.startedAt }
   } catch { return null }

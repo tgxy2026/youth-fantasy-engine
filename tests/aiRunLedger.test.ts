@@ -8,9 +8,9 @@ import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
 import {
   chapterFingerprint, computeBasis, checkBasisStale,
-  createRun, patchRun, finishRun, appendRunCall, makeCandidateRef, pickContextSnapshot,
+  createRun, patchRun, finishRun, pickContextSnapshot,
 } from '../src/lib/aiRunLedger'
-import { getAiRun, listProjectAiRuns, listRecentAiRuns, deleteAiRun } from '../src/lib/db'
+import { getAiRun, listProjectAiRuns } from '../src/lib/db'
 import type { Chapter } from '../src/lib/types'
 
 let pass = 0, fail = 0
@@ -94,13 +94,13 @@ async function main() {
     ok('createRun 初始 running', run.status === 'running')
     ok('createRun 已落库', (await getAiRun(run.id))?.title === '创意写作')
 
-    await appendRunCall(run.id, { model: 'm1', ms: 1200, promptTokens: 100, completionTokens: 200, finishReason: 'stop', at: 1 })
-    await appendRunCall(run.id, { model: 'm1', ms: 800, finishReason: 'content_filter', at: 2 })
+    // 调用账现在由 finishRun 一次写入（内存累积方案）；这里直接构造验证结构往返
+    await patchRun(run.id, { calls: [{ model: 'm1', ms: 800, finishReason: 'content_filter', at: 2 }] })
     const r2 = await getAiRun(run.id)
-    ok('appendRunCall 累计 2 条', r2?.calls.length === 2)
-    ok('调用账保留 finishReason（§14 判据来源）', r2?.calls[1].finishReason === 'content_filter')
+    ok('patchRun 写调用账', r2?.calls.length === 1)
+    ok('调用账保留 finishReason（§14 判据来源）', r2?.calls[0].finishReason === 'content_filter')
 
-    await patchRun(run.id, { candidates: [makeCandidateRef('chapter:c1', 3, 'fp-abc')] })
+    await patchRun(run.id, { candidates: [{ target: 'chapter:c1', count: 3, fingerprint: 'fp-abc', state: 'pending' }] })
     const r3 = await getAiRun(run.id)
     ok('patchRun 写候选引用', r3?.candidates[0].count === 3)
     ok('候选初始 state=pending', r3?.candidates[0].state === 'pending')
@@ -112,11 +112,7 @@ async function main() {
     ok('finishRun 记 finishedAt', (done?.finishedAt ?? 0) > 0)
 
     ok('listProjectAiRuns 按项目取到', (await listProjectAiRuns(PID)).length === 1)
-    ok('listRecentAiRuns 取到', (await listRecentAiRuns()).length === 1)
     ok('别的项目查不到（不串库）', (await listProjectAiRuns('other-proj')).length === 0)
-
-    await deleteAiRun(run.id)
-    ok('deleteAiRun 生效', (await getAiRun(run.id)) === undefined)
   }
 
   // ---------- 五、记账不打断创作（缺失记录静默） ----------
