@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
-import { useSaveHotkey } from '../lib/useSaveHotkey'
-import { UNSAVED_CHANGES_HINT } from '../lib/constants'
+import { useSaveHotkey } from '@/lib/useSaveHotkey'
+import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import { Database, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import { showToast } from './dialogs'
-import NumberField from './NumberField'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import { showToast } from '@/components/dialogs'
+import NumberField from '@/components/NumberField'
 import {
   DEFAULT_WRITER_BASE, WRITER_BASE_LIMITS, WRITER_RECOMMEND, getWriterBudget, saveWriterBudget, previewAt,
   currentModelAdvice, budgetForKind,
-} from '../lib/aiWriterBudget'
+} from '@/lib/aiWriterBudget'
 
 interface Props {
   /**

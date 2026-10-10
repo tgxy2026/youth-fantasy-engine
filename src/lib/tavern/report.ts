@@ -12,15 +12,15 @@
  *
  * 只诊断、不写回任何项目表（作者已定）。
  */
-import { chat, isCancelled } from '../ai'
-import * as db from '../db'
-import { TABS } from '../schema'
-import { parsePlainObject, parseObjectArray, asText } from '../aiParse'
-import { uid } from '../id'
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
-import { authorBlock, newAuthorFence } from '../promptGuard'
-import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from './types'
+import { chat, isCancelled } from '@/lib/ai'
+import * as db from '@/lib/db'
+import { TABS } from '@/lib/schema'
+import { parsePlainObject, parseObjectArray, asText } from '@/lib/aiParse'
+import { uid } from '@/lib/id'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
+import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from '@/lib/tavern/types'
 
 /**
  * 可被指向的表（白名单）：只允许指向**能定位到具体条目**的页签。

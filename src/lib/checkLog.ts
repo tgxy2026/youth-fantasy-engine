@@ -17,13 +17,13 @@
 //
 // 📌 消费者：`components/AuditModals.tsx`（伏笔看板 / 连续性校验）、
 //    `components/ManuscriptCheckPanel.tsx`、`lib/chapterCheck.ts`（本章体检聚合）。
-import * as db from './db'
-import type { AuditIssue } from './audit'
-import { auditContinuity } from './continuityCheck'
-import { auditForeshadow, type ForeshadowResult } from './foreshadowEngine'
-import type { Observation } from './manuscriptCheck'
+import * as db from '@/lib/db'
+import type { AuditIssue } from '@/lib/audit'
+import { auditContinuity } from '@/lib/continuityCheck'
+import { auditForeshadow, type ForeshadowResult } from '@/lib/foreshadowEngine'
+import type { Observation } from '@/lib/manuscriptCheck'
 // ④（2.9.2）：节奏与章末钩子。**只取类型**，算法仍在 paceAnalysis.ts（那边的定位逻辑不下沉到这里）
-import type { PaceReport } from './paceAnalysis'
+import type { PaceReport } from '@/lib/paceAnalysis'
 
 // 本文件内部用的类型 —— 外部 0 引用，故不 export（多余 export 会让死代码清单失去信号，见审计纪律）
 type CheckEngine = 'continuity' | 'foreshadow' | 'manuscript' | 'pace'

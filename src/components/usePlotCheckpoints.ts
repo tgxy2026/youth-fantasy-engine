@@ -9,9 +9,9 @@
  *   回滚前自动留一份 `undoSnapshot`，所以「撤销上次回滚」是可靠的退路。
  */
 import { useState } from 'react'
-import { showToast, confirmDialog } from './dialogs'
-import * as store from '../lib/tavern/store'
-import type { TavernSession } from '../lib/tavern/types'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import * as store from '@/lib/tavern/store'
+import type { TavernSession } from '@/lib/tavern/types'
 
 type PlotCheckpointsArgs = {
   session: TavernSession | null

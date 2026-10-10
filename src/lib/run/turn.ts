@@ -11,22 +11,22 @@
  *   `buildSystemPrompt` 与预算 `trimHistory` —— 与剧情 / 自由两条线同一套底盘，
  *   协议 / 提示词覆盖 / 思考策略 / 超时全部自动继承，不产生「酒馆有三种行为」的分叉。
  */
-import { chat, isCancelled, type ChatMessage, type AIProvider } from '../ai'
-import { resolveTavernProvider, type ChatFn } from '../tavern/provider'
-import { uid } from '../id'
-import { buildSystemPrompt, toChatMessages } from '../tavern/prompt'
-import { toOllamaOptions } from '../tavern/params'
-import { historyBudget, trimHistory } from '../tavern/budget'
-import { getTavernSettings, resolveParamsOf, timeoutMsOf, thinkOptOf } from '../tavern/settings'
+import { chat, isCancelled, type ChatMessage, type AIProvider } from '@/lib/ai'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { uid } from '@/lib/id'
+import { buildSystemPrompt, toChatMessages } from '@/lib/tavern/prompt'
+import { toOllamaOptions } from '@/lib/tavern/params'
+import { historyBudget, trimHistory } from '@/lib/tavern/budget'
+import { getTavernSettings, resolveParamsOf, timeoutMsOf, thinkOptOf } from '@/lib/tavern/settings'
 import {
   buildKpLayer, buildKpVerdictSchema, splitKpReply, parseKpVerdict,
   kindOf, difficultyFor, rollCheck,
   type KpVerdict,
-} from './kp'
-import { acquireClue } from './clues'
-import { checkSecretUnlock, unlockSecretById, applyEndings } from './endings'
-import { resolveRunWorldText } from './worldContext'
-import type { RunSession, RunAction, RunOutcome, RunActionKind } from './runTypes'
+} from '@/lib/run/kp'
+import { acquireClue } from '@/lib/run/clues'
+import { checkSecretUnlock, unlockSecretById, applyEndings } from '@/lib/run/endings'
+import { resolveRunWorldText } from '@/lib/run/worldContext'
+import type { RunSession, RunAction, RunOutcome, RunActionKind } from '@/lib/run/runTypes'
 
 export interface KpTurnCallbacks {
   onPhase?: (phase: string) => void

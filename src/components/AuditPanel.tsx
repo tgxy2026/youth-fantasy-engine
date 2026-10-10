@@ -1,7 +1,7 @@
 import { AlertTriangle, AlertCircle, Info, ArrowRight } from 'lucide-react'
-import type { AuditIssue, IssueSeverity } from '../lib/audit'
-import { SEVERITY_ORDER, SEVERITY_LABEL } from '../lib/audit'
-import { Button } from './Button'
+import type { AuditIssue, IssueSeverity } from '@/lib/audit'
+import { SEVERITY_ORDER, SEVERITY_LABEL } from '@/lib/audit'
+import { Button } from '@/components/Button'
 
 interface Props {
   issues: AuditIssue[]

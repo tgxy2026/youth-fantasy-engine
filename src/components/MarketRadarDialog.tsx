@@ -20,18 +20,18 @@ import {
   Radar, Loader2, Sparkles, ExternalLink, Copy, Square,
   TrendingUp, Compass, Lightbulb, AlertTriangle, Link2,
 } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import AIDataSourceNote from './AIDataSourceNote'
-import { copyText, showToast } from './dialogs'
-import { openExternalUrl } from '../lib/desktop'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { useTaskRunner } from '../lib/aiTaskCenter'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { copyText, showToast } from '@/components/dialogs'
+import { openExternalUrl } from '@/lib/desktop'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
 import {
   runMarketRadar, RADAR_DISCLAIMER, RADAR_MAX_QUERIES,
   type RadarReport, type RadarTrendItem,
-} from '../lib/aiTasks'
+} from '@/lib/aiTasks'
 
 /** 本弹窗在任务中心里的身份（`ownerTab` 必须与 TABS 里的页签 id 一致） */
 const OWNER_TAB = 'positioning'

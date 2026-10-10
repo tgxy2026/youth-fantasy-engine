@@ -3,17 +3,17 @@
  * 纯搬家：7 个组件语句一字未改，只给被主文件直接渲染的 4 件补了 export；
  * MapInfoModal / Field / LinkedListItem 仍是本文件内部件，不外泄。
  */
-import { foldVh } from '../lib/theme'
+import { foldVh } from '@/lib/theme'
 import { useEffect, useMemo, useState } from 'react'
 import { Layers, Plus, Trash2, ExternalLink, MapPin, Eraser, Pencil } from 'lucide-react'
-import * as db from '../lib/db'
-import type { TableRow } from '../lib/types'
-import { uid } from '../lib/id'
-import { showToast, confirmDialog } from './dialogs'
-import CustomSelect from './CustomSelect'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { LAYER_COLORS, type Marker, type Linked } from './geoMapGeometry'
+import * as db from '@/lib/db'
+import type { TableRow } from '@/lib/types'
+import { uid } from '@/lib/id'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import CustomSelect from '@/components/CustomSelect'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { LAYER_COLORS, type Marker, type Linked } from '@/components/geoMapGeometry'
 
 /** 「绘制地图」选择弹窗：按「层级归属」缩进展示所有地理范围，提醒从最大范围开始绘制 */
 /**

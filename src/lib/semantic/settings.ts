@@ -14,10 +14,10 @@
 // **不需要**（也不应该）加进 `EXCLUDED_META_KEYS`。加进去反而会让它变成"本地专属"、
 // 换设备后配置丢失 —— 那是密钥才需要的保护。
 
-import * as db from '../db'
-import { loadProviders } from '../aiCore/session'
-import type { AIProvider } from '../aiCore/core'
-import type { EmbedConfig } from './embed'
+import * as db from '@/lib/db'
+import { loadProviders } from '@/lib/aiCore/session'
+import type { AIProvider } from '@/lib/aiCore/core'
+import type { EmbedConfig } from '@/lib/semantic/embed'
 
 /** 存储键（落 `meta`，全局共享 —— 与模型配置同理，不随小说项目切换） */
 const K_EMBEDDING = 'aiEmbedding'

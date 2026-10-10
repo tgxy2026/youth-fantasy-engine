@@ -12,13 +12,13 @@
  * ⚠️ 返回 **Fragment**，不套外层 div —— 父组件用 `<div ref={rightColRef}>` 的**直接子节点**
  *   量高度来同步左列协议窗（见父组件注释）。多包一层 div 会让那段测量口径失效。
  */
-import { Section, Field, GRID2, NumField, SelectField, TextField, ToggleField } from './TavernFieldKit'
-import { Button } from './Button'
-import { PARAM_GUIDES, GUIDE_SAMPLING, type ParamGuide } from '../lib/tavern/paramGuide'
-import { VAR_DEFS, type VarKey } from '../lib/tavern/types'
-import SamplingUnavailable from './SamplingUnavailable'
-import type { TuningAdvice } from '../lib/modelCapacity'
-import type { TavernSettings } from '../lib/tavern/settings'
+import { Section, Field, GRID2, NumField, SelectField, TextField, ToggleField } from '@/components/TavernFieldKit'
+import { Button } from '@/components/Button'
+import { PARAM_GUIDES, GUIDE_SAMPLING, type ParamGuide } from '@/lib/tavern/paramGuide'
+import { VAR_DEFS, type VarKey } from '@/lib/tavern/types'
+import SamplingUnavailable from '@/components/SamplingUnavailable'
+import type { TuningAdvice } from '@/lib/modelCapacity'
+import type { TavernSettings } from '@/lib/tavern/settings'
 
 /**
  * 客观描写档位（自由对话）。

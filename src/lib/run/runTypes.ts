@@ -18,7 +18,7 @@
 import type {
   TavernMessage, TavernCheckpoint, TavernVars,
   TavernModelRef, TavernParams, TavernScene,
-} from '../tavern/types'
+} from '@/lib/tavern/types'
 
 // ==================== 世界版本引用（D4=A · 复用 W4-1 世界包）====================
 

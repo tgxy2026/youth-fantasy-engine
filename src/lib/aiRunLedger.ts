@@ -11,14 +11,14 @@
  *    · 候选**不自动落库**，账本只记「它基于什么、有几条、指纹多少」；
  *    · 基准失效 ⇒ 候选标 `stale`，**拒绝静默覆盖**，但**不自动丢弃、不自动重跑**（克制口径）。
  */
-import type { Chapter } from './types'
+import type { Chapter } from '@/lib/types'
 import type {
   AiContextSnapshot, AiRun, AiRunBasis, AiRunCall, AiRunKind, AiRunOutcome, AiRunStatus,
-} from './aiRunTypes'
-import { hashOf } from './semantic/chunk'
-import { uid } from './id'
-import { setUsageSink } from './aiCore/usage'
-import { getAiRun, saveAiRun } from './db/aiRuns'
+} from '@/lib/aiRunTypes'
+import { hashOf } from '@/lib/semantic/chunk'
+import { uid } from '@/lib/id'
+import { setUsageSink } from '@/lib/aiCore/usage'
+import { getAiRun, saveAiRun } from '@/lib/db/aiRuns'
 
 // ============ 一、版本基准与失效判定（纯函数）============
 

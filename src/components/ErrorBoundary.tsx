@@ -1,7 +1,7 @@
 
 import React from 'react'
-import { Button } from './Button'
-import { recordError } from '../lib/errorLog'
+import { Button } from '@/components/Button'
+import { recordError } from '@/lib/errorLog'
 
 /**
  * 生产级错误边界：渲染期任何组件抛错都会被这里兜住，

@@ -11,9 +11,9 @@
 // 🔴 内部先 `removeByRef` 再 `putVectors`：正文被改短时旧的长块不会被留成孤儿
 //    （孤儿 = 召回得到**已经删掉的内容**，那是真 bug，见 `rebuildIndex` 的同类说明）。
 
-import { chunkChapter, hashOf, toVectorBuffer } from './chunk'
-import { embedTexts, type EmbedConfig } from './embed'
-import { makeVecRow, putVectors, removeByRef, type VecKind, type VecRow } from './store'
+import { chunkChapter, hashOf, toVectorBuffer } from '@/lib/semantic/chunk'
+import { embedTexts, type EmbedConfig } from '@/lib/semantic/embed'
+import { makeVecRow, putVectors, removeByRef, type VecKind, type VecRow } from '@/lib/semantic/store'
 
 /** 一个「来源」：一章正文 / 一条设定行 / 一张角色卡 / 一篇参考资料 */
 export interface IndexDoc {

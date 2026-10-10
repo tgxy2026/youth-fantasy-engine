@@ -14,7 +14,7 @@
  * ⚠️ 这里只负责"把图变成可入库的 dataURL"；**渲染与缩放交互在 `GeoMapEditor`**
  *    （图片作为 svg 里的一个 `<image>` 层，直接复用地图既有的 `view{x,y,k}` 变换 —— 不另搞一套 pan/zoom）。
  */
-import { dataUrlBytes } from './imagePortrait'
+import { dataUrlBytes } from '@/lib/imagePortrait'
 
 /** 原图体积上限（超出直接拒绝） */
 export const MAP_IMAGE_MAX_INPUT_BYTES = 16 * 1024 * 1024

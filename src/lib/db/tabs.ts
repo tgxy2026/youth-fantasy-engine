@@ -1,7 +1,7 @@
 // ============ 存储层 · 页签数据（表单 / 表格行 / 卡片记录 / 自定义下拉选项）============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
-import type { FormData, TableRow, CardRecord } from '../types'
-import { ops, currentProjectId, touchProject } from './core'
+import type { FormData, TableRow, CardRecord } from '@/lib/types'
+import { ops, currentProjectId, touchProject } from '@/lib/db/core'
 
 // ============ 表单数据 ============
 export async function getFormData(tabId: string): Promise<Record<string, string>> {

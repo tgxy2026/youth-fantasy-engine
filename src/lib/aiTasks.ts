@@ -17,77 +17,77 @@
 //
 // 🔴 对外 API 的名字与签名一字未改 —— 13 处真 import（含 tests/）+ 2 处源码正则已同步指向新位置。
 // ⚠️ 注册顺序 = 设置页显示顺序，见下方 PROMPT_ORDER（原注册表的书写顺序逐条还原）。
-import { registerPrompt } from './promptSettings'
-import type { PromptDef } from './promptSettings'
-import { ORGANIZE_PROMPTS } from './aiTasks/organize'
-import { PROOFREAD_PROMPTS } from './aiTasks/proofread'
-import { SUGGEST_PROMPTS } from './aiTasks/suggest'
-import { AUDIT_PROMPTS } from './aiTasks/audit'
-import { JIEWENJI_PROMPTS } from './aiTasks/jieWenJi'
-import { REWRITE_PROMPTS } from './aiTasks/rewrite'
-import { EXTRACT_PROMPTS } from './aiTasks/extract'
-import { INLINE_PROMPTS } from './aiTasks/inline'
-import { CREATIVE_PROMPTS } from './aiTasks/creative'
-import { PACE_PROMPTS } from './aiTasks/pace'
-import { READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
-import { INSPIRATION_PROMPTS } from './aiTasks/inspiration'
-import { BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
-import { TABLE_IMPORT_PROMPTS } from './aiTasks/tableImport'
-import { MARKET_RADAR_PROMPTS } from './marketRadar'
-import { STYLE_FINGERPRINT_PROMPTS } from './styleFingerprint'
-import { POST_PROCESS_PROMPTS } from './aiTasks/postProcess'
+import { registerPrompt } from '@/lib/promptSettings'
+import type { PromptDef } from '@/lib/promptSettings'
+import { ORGANIZE_PROMPTS } from '@/lib/aiTasks/organize'
+import { PROOFREAD_PROMPTS } from '@/lib/aiTasks/proofread'
+import { SUGGEST_PROMPTS } from '@/lib/aiTasks/suggest'
+import { AUDIT_PROMPTS } from '@/lib/aiTasks/audit'
+import { JIEWENJI_PROMPTS } from '@/lib/aiTasks/jieWenJi'
+import { REWRITE_PROMPTS } from '@/lib/aiTasks/rewrite'
+import { EXTRACT_PROMPTS } from '@/lib/aiTasks/extract'
+import { INLINE_PROMPTS } from '@/lib/aiTasks/inline'
+import { CREATIVE_PROMPTS } from '@/lib/aiTasks/creative'
+import { PACE_PROMPTS } from '@/lib/aiTasks/pace'
+import { READER_PROBE_PROMPTS } from '@/lib/aiTasks/readerProbe'
+import { INSPIRATION_PROMPTS } from '@/lib/aiTasks/inspiration'
+import { BOOKBREAK_SPLIT_PROMPTS } from '@/lib/aiTasks/bookBreakSplit'
+import { TABLE_IMPORT_PROMPTS } from '@/lib/aiTasks/tableImport'
+import { MARKET_RADAR_PROMPTS } from '@/lib/marketRadar'
+import { STYLE_FINGERPRINT_PROMPTS } from '@/lib/styleFingerprint'
+import { POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
 
-export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
-export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
+export { rowFingerprint, aiOrganizeRows, keyRowToLine } from '@/lib/aiTasks/organize'
+export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from '@/lib/aiTasks/organize'
 // 2026-09-20 拆分：`aiProofread`（混查五类）→ `aiProofreadText`（错别字/语病/标点，不读设定）
 // 与 `aiProofreadLogic`（逻辑/设定矛盾，读设定）。两条独立提示词、两个独立入口。
-export { aiProofreadText, aiProofreadLogic } from './aiTasks/proofread'
-export type { ProofreadIssue, ProofreadOptions, ProofreadResult } from './aiTasks/proofread'
-export { aiSuggestNames, aiReviewSensitive } from './aiTasks/suggest'
-export type { NameSuggestRequest, NameSuggestion, SensitiveHitInput, SensitiveReview } from './aiTasks/suggest'
+export { aiProofreadText, aiProofreadLogic } from '@/lib/aiTasks/proofread'
+export type { ProofreadIssue, ProofreadOptions, ProofreadResult } from '@/lib/aiTasks/proofread'
+export { aiSuggestNames, aiReviewSensitive } from '@/lib/aiTasks/suggest'
+export type { NameSuggestRequest, NameSuggestion, SensitiveHitInput, SensitiveReview } from '@/lib/aiTasks/suggest'
 // 2026-09-26（2.5.1·A3）：灵感融合 —— 勾选灵感夹条目 → 融合成情节创意卡落推演画布；basedOn 溯源
-export { aiFuseInspiration, parseFusedIdeas, INSPIRATION_PROMPTS } from './aiTasks/inspiration'
-export type { FuseIdeaRequest, FusedIdea } from './aiTasks/inspiration'
+export { aiFuseInspiration, parseFusedIdeas, INSPIRATION_PROMPTS } from '@/lib/aiTasks/inspiration'
+export type { FuseIdeaRequest, FusedIdea } from '@/lib/aiTasks/inspiration'
 // 2026-09-27（2.6.1·R2）：拆书 AI 章节边界识别 —— 本地正则认不出标题时按作者示例挑行；严格采信在 bookbreak/aiSplit
-export { aiBookBreakSplitChapters, parseChapterLines, BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
-export type { BookBreakSplitRequest } from './aiTasks/bookBreakSplit'
+export { aiBookBreakSplitChapters, parseChapterLines, BOOKBREAK_SPLIT_PROMPTS } from '@/lib/aiTasks/bookBreakSplit'
+export type { BookBreakSplitRequest } from '@/lib/aiTasks/bookBreakSplit'
 // 2026-10-02（2.7.0·社区反馈）：表格批量导入 · AI 智能拆分 —— 把粘贴的表格/散文解析成多条表格行，供导入预览勾选
 // 与「AI 整理」分工：整理是「从正文抽尚未登记的事实」（判重+增量），本任务是「把粘进来的内容解析成行」（不判重）
-export { aiSplitTableRows } from './aiTasks/tableImport'
-export type { ImportSplitColumn, ImportSplitRequest, ImportSplitResult } from './aiTasks/tableImport'
-export { aiContinuityAudit, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReview, aiDedupTerms, aiStyleCheck } from './aiTasks/audit'
-export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from './aiTasks/audit'
-export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from './aiTasks/jieWenJi'
-export type { EditorDiagnosis, ReviewDimension, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, ContinueAsk, PleasureReport, OpeningReport, BriefingReport } from './aiTasks/jieWenJi'
-export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput, stripInlineMarkdown } from './aiTasks/rewrite'
-export type { ChapterRewriteAction, ChapterRewriteOpts } from './aiTasks/rewrite'
-export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, parseExtractedEntities } from './aiTasks/extract'
-export type { SettingEntityType, ExtractedEntity } from './aiTasks/extract'
-export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest, foldGhostNewlines } from './aiTasks/inline'
-export type { InlineSuggestLength, InlineSuggestOptions } from './aiTasks/inline'
+export { aiSplitTableRows } from '@/lib/aiTasks/tableImport'
+export type { ImportSplitColumn, ImportSplitRequest, ImportSplitResult } from '@/lib/aiTasks/tableImport'
+export { aiContinuityAudit, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReview, aiDedupTerms, aiStyleCheck } from '@/lib/aiTasks/audit'
+export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from '@/lib/aiTasks/audit'
+export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from '@/lib/aiTasks/jieWenJi'
+export type { EditorDiagnosis, ReviewDimension, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, ContinueAsk, PleasureReport, OpeningReport, BriefingReport } from '@/lib/aiTasks/jieWenJi'
+export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput, stripInlineMarkdown } from '@/lib/aiTasks/rewrite'
+export type { ChapterRewriteAction, ChapterRewriteOpts } from '@/lib/aiTasks/rewrite'
+export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, parseExtractedEntities } from '@/lib/aiTasks/extract'
+export type { SettingEntityType, ExtractedEntity } from '@/lib/aiTasks/extract'
+export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest, foldGhostNewlines } from '@/lib/aiTasks/inline'
+export type { InlineSuggestLength, InlineSuggestOptions } from '@/lib/aiTasks/inline'
 // 2026-09-20：`aiGenerateOutline`（从零排）与 `aiExtendOutline`（接着排）**合并为 `aiPlanOutline`** ——
 // 差别只剩「材料装的是什么」，两条路产出的都是 `OutlineResult`（卷 + 章），落库走同一个 `commitOutline`。
 export {
   DEFAULT_BIBLE_COUNTS, collectBibleEntities, aiGenerateBible, aiPlanOutline,
   MAX_OUTLINE_VOLUMES, MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS,
-} from './aiTasks/creative'
-export type { BibleCounts, OutlineVolume, OutlineChapter, OutlineResult, PlanOutlineInput } from './aiTasks/creative'
-export { aiSummarizeFormSettings } from './aiTasks/formSummary'
+} from '@/lib/aiTasks/creative'
+export type { BibleCounts, OutlineVolume, OutlineChapter, OutlineResult, PlanOutlineInput } from '@/lib/aiTasks/creative'
+export { aiSummarizeFormSettings } from '@/lib/aiTasks/formSummary'
 // 2026-09-22（2.4.1·B5）：节奏与章末钩子 —— 结构化输出，位置由 lib/paceAnalysis 本地换算
-export { aiPaceAnalysis, PACE_PROMPTS } from './aiTasks/pace'
-export { parsePaceReport, PACE_SEGMENTS, HOOK_KINDS, PACE_BEAT_KINDS } from './paceAnalysis'
-export type { PaceReport, PaceBeat, PaceDistribution, HookKind } from './paceAnalysis'
+export { aiPaceAnalysis, PACE_PROMPTS } from '@/lib/aiTasks/pace'
+export { parsePaceReport, PACE_SEGMENTS, HOOK_KINDS, PACE_BEAT_KINDS } from '@/lib/paceAnalysis'
+export type { PaceReport, PaceBeat, PaceDistribution, HookKind } from '@/lib/paceAnalysis'
 // 2026-09-23（2.4.2·C5）：读者视角审问 —— 扮演一个具体读者读这一章，三问；位置由本地换算
 // 2026-09-26（2.5.1·D1）：身份可带自己的问题集（写作导师四问），questionsOf 是问题集单一源
-export { aiReaderProbe, READER_PROBE_PROMPTS } from './aiTasks/readerProbe'
+export { aiReaderProbe, READER_PROBE_PROMPTS } from '@/lib/aiTasks/readerProbe'
 export {
   READER_LENSES, READER_QUESTIONS, readerLensOf, questionsOf,
   parseReaderProbe, groupNotes, paragraphAt, readerProbeToText,
-} from './readerProbe'
-export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from './readerProbe'
+} from '@/lib/readerProbe'
+export type { ReaderLens, ReaderQuestion, ReaderNote, ReaderProbeResult } from '@/lib/readerProbe'
 // 2026-10-04（2.8.0 · #018）：市场雷达 —— 选题趋势参考。复用现成联网检索（webSearch），**只读不写项目数据**。
-export { runMarketRadar, buildRadarQueries, RADAR_DISCLAIMER, RADAR_MAX_QUERIES, MARKET_RADAR_PROMPTS } from './marketRadar'
-export type { RadarInput, RadarReport, RadarTrendItem, RadarSource } from './marketRadar'
+export { runMarketRadar, buildRadarQueries, RADAR_DISCLAIMER, RADAR_MAX_QUERIES, MARKET_RADAR_PROMPTS } from '@/lib/marketRadar'
+export type { RadarInput, RadarReport, RadarTrendItem, RadarSource } from '@/lib/marketRadar'
 // 2026-10-04（2.8.0 · #015）：文风指纹 —— 从参考文本提炼可命名文风档，续写 / 整章改写 / 伴写三处自动注入。
 // 🔴 它只产出「注入文本」，**不写任何项目数据**（档按项目存在 settingsKV 前缀键里，不碰 volumes/chapters 那些）。
 export {
@@ -96,12 +96,12 @@ export {
   saveActiveFingerprintId, upsertFingerprint, removeFingerprint, activeFingerprintNote,
   invalidateFingerprintCache, countPunctuation, countFourCharRuns, countDialogueWords,
   MIN_SAMPLE_WORDS, STYLE_FINGERPRINT_PROMPTS,
-} from './styleFingerprint'
-export type { StyleProfile, StyleMetrics, ExtractOptions } from './styleFingerprint'
+} from '@/lib/styleFingerprint'
+export type { StyleProfile, StyleMetrics, ExtractOptions } from '@/lib/styleFingerprint'
 // 2026-10-10（3.0 · W2-1）：章后整理抽取 —— 从本章正文抽「伏笔 / 关系 / 人物状态」三类变化候选。
 // 🔴 AI 只抽候选，「是否已登记 / 是否真变了」由 lib/chapterPostProcess.ts 确定性比对。
-export { aiExtractChapterChanges, parseChapterChanges, POST_PROCESS_PROMPTS } from './aiTasks/postProcess'
-export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus } from './aiTasks/postProcess'
+export { aiExtractChapterChanges, parseChapterChanges, POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
+export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus } from '@/lib/aiTasks/postProcess'
 
 /**
  * 提示词的**注册顺序**（🔴 有语义：`listPrompts()` 只按 group 稳定排序，组内保持登记顺序）。

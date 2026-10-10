@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
-import * as db from '../lib/db'
-import { todayKey } from '../lib/date'
-import NumberField from './NumberField'
-import { GOAL_ACTUAL_COLOR } from '../lib/palette'
+import * as db from '@/lib/db'
+import { todayKey } from '@/lib/date'
+import NumberField from '@/components/NumberField'
+import { GOAL_ACTUAL_COLOR } from '@/lib/palette'
 
 interface Props {
   totalWords: number

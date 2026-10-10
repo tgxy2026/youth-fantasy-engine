@@ -3,19 +3,19 @@
  *
  * 🔴 纯搬家：JSX 一字未改；状态全部来自 useCreativeWritingModel（组件只收 m）。
  */
-import AIDataSourceNote from './AIDataSourceNote'
-import HelpPopover from './HelpPopover'
-import AutoTextarea from './AutoTextarea'
-import ChapterPicker from './ChapterPicker'
-import NumberField from './NumberField'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import HelpPopover from '@/components/HelpPopover'
+import AutoTextarea from '@/components/AutoTextarea'
+import ChapterPicker from '@/components/ChapterPicker'
+import NumberField from '@/components/NumberField'
 import { Loader2, Square, Wand2 } from 'lucide-react'
-import { Button } from './Button'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { applyRewrite, discardRewrite, startChapterRewrite, stopChapterRewrite } from '../lib/creativeSession'
-import { CHAPTER_REWRITE_META } from '../lib/aiTasks'
-import { countWords } from '../lib/textStats'
-import { NUM_INPUT, RW_ACTIONS, RW_SCOPE_NOTE } from './creativeWritingParts'
-import type { CreativeWritingModel } from './useCreativeWritingModel'
+import { Button } from '@/components/Button'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { applyRewrite, discardRewrite, startChapterRewrite, stopChapterRewrite } from '@/lib/creativeSession'
+import { CHAPTER_REWRITE_META } from '@/lib/aiTasks'
+import { countWords } from '@/lib/textStats'
+import { NUM_INPUT, RW_ACTIONS, RW_SCOPE_NOTE } from '@/components/creativeWritingParts'
+import type { CreativeWritingModel } from '@/components/useCreativeWritingModel'
 
 export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel }) {
   const { s, aiReady, tree, rwChapter, setRwChapter, rwAction, setRwAction, rwReq, setRwReq, rwWords, setRwWords, busy, reloadChapters, latestId, pickInfo } = m

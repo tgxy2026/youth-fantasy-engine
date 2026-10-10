@@ -13,7 +13,7 @@
  * 而 ④ 住在 lib（一键拆书的流水线也要用它），lib **不得反向依赖 components**（分层红线，
  * 见 tests/importCycles.test.ts），所以解析规则必须落在 lib 这一侧，组件层改为再导出。
  */
-import type { CustomOptionPayload } from './db'
+import type { CustomOptionPayload } from '@/lib/db'
 
 export interface ResolvedOption {
   /** 展示名（内置项已应用改名） */

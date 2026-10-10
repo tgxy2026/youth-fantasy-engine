@@ -3,10 +3,10 @@
 // 🔴 字段清单从 schema 现查（flow/formMap）—— 模型看到的字段名与落库键同源，避免 schema 漂移。
 // 🔴 只收「值确实是对象」的页签，**不在这里摊平**：模型按「页签 → 模块 → 字段」输出，
 //    这层拍平会把嵌套对象当空值全丢（2026-09-18 实测 5 张表全丢）。
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
-import { parseLooseObject } from '../aiParse'
-import { formFieldsPrompt, summaryFormTabs } from '../flow/formMap'
-import { longStream } from './stream'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { parseLooseObject } from '@/lib/aiParse'
+import { formFieldsPrompt, summaryFormTabs } from '@/lib/flow/formMap'
+import { longStream } from '@/lib/aiTasks/stream'
 
 /** 汇总「全书级设定」的系统提示词 */
 const formSummarySys = () => `你是长篇小说的「设定资料整理员」。请把给定材料（一本书里已经提取出的设定实体清单 + 开篇样本）汇总成「全书级设定档案」。

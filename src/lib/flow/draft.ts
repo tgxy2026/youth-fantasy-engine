@@ -9,11 +9,11 @@
  *
  * ⚠️ 本文件**不触达 db 写入**（除了读登记表做判重）—— 落库一律在 `commit.ts`，且必须经用户勾选。
  */
-import type { ExtractedEntity, SettingEntityType } from '../aiTasks'
-import { TABS } from '../schema'
-import { classify, loadRegistry, normName, type EntityRegistry } from '../settingLedger'
-import { KIND_MAP, resolveFieldPath, resolveSlot, targetTabOf } from './fieldMap'
-import type { DraftBundle, DraftConflict, DraftField, DraftRow, DraftStatus } from './types'
+import type { ExtractedEntity, SettingEntityType } from '@/lib/aiTasks'
+import { TABS } from '@/lib/schema'
+import { classify, loadRegistry, normName, type EntityRegistry } from '@/lib/settingLedger'
+import { KIND_MAP, resolveFieldPath, resolveSlot, targetTabOf } from '@/lib/flow/fieldMap'
+import type { DraftBundle, DraftConflict, DraftField, DraftRow, DraftStatus } from '@/lib/flow/types'
 
 /** 一批来自同一章节（或同一分块）的抽取结果 */
 export interface EntityBatch {

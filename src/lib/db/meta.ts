@@ -1,7 +1,7 @@
 // ============ 存储层 · 元数据（meta / 项目设置 / 每日码字统计）============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
-import { todayKey } from '../date'
-import { ops, currentProjectId } from './core'
+import { todayKey } from '@/lib/date'
+import { ops, currentProjectId } from '@/lib/db/core'
 
 // ============ Meta ============
 export async function getMeta<T>(key: string, def: T): Promise<T> {

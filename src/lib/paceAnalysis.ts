@@ -10,8 +10,8 @@
 //   字符下标换算**。这样位置是"算出来的"，不是"模型说了算" —— 也顺带能在 quote 定位失败时
 //   显式标出「未定位」，而不是悄悄给一个错位置。
 
-import { parseObjectArray, parseLooseObject, asText, humanText } from './aiParse'
-import { stripEmphasis } from './mdLite'
+import { parseObjectArray, parseLooseObject, asText, humanText } from '@/lib/aiParse'
+import { stripEmphasis } from '@/lib/mdLite'
 
 /** 章内三段（与 B5 规划口径一致：前段 / 中段 / 后段） */
 export const PACE_SEGMENTS = ['前段', '中段', '后段'] as const

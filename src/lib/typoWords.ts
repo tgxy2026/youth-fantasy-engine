@@ -2,7 +2,7 @@
 // 复用「敏感词检测」的交互骨架：内置常见中文错别字词典（含"建议改为"），
 // 扫描正文返回命中与上下文，支持一键替换。
 
-import { contextSnippet } from './contextSnippet'
+import { contextSnippet } from '@/lib/contextSnippet'
 
 export interface TypoHit {
   word: string

@@ -14,17 +14,17 @@
  *   · 记忆被判「整份退化」时照样如实说（档案已回退旧值，不能报「已更新」）。
  */
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { showToast } from './dialogs'
-import { isCancelled } from '../lib/ai'
-import * as store from '../lib/tavern/store'
-import { splitCast } from '../lib/tavern/engine'
-import { getTavernSettings, type TavernSettings } from '../lib/tavern/settings'
-import { summarizeMemory } from '../lib/tavern/summarize'
+import { showToast } from '@/components/dialogs'
+import { isCancelled } from '@/lib/ai'
+import * as store from '@/lib/tavern/store'
+import { splitCast } from '@/lib/tavern/engine'
+import { getTavernSettings, type TavernSettings } from '@/lib/tavern/settings'
+import { summarizeMemory } from '@/lib/tavern/summarize'
 import {
   messagesAfterWatermark, nextWatermark, watermarkAfterRoundEnd, memoryToText, parseMemoryText,
   limitsOf, acquireSummaryLock, releaseSummaryLock,
-} from '../lib/tavern/memory'
-import type { TavernSession } from '../lib/tavern/types'
+} from '@/lib/tavern/memory'
+import type { TavernSession } from '@/lib/tavern/types'
 
 /**
  * 本场背景（喂给总结提示词）。

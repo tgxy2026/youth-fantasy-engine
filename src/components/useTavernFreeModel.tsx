@@ -38,37 +38,37 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { useFreeTurn } from './useFreeTurn'
-import { useFreeRoundEnd } from './useFreeRoundEnd'
-import { useFreeRevise } from './useFreeRevise'
-import { primaryAiCharId } from '../lib/tavern/primaryChar'
-import { useTavernReady } from './useTavernReady'
+import { useFreeTurn } from '@/components/useFreeTurn'
+import { useFreeRoundEnd } from '@/components/useFreeRoundEnd'
+import { useFreeRevise } from '@/components/useFreeRevise'
+import { primaryAiCharId } from '@/lib/tavern/primaryChar'
+import { useTavernReady } from '@/components/useTavernReady'
 
-import { showToast, confirmDialog } from './dialogs'
-import { type FreeDraft } from './TavernFreeSetup'
-import * as store from '../lib/tavern/store'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import { type FreeDraft } from '@/components/TavernFreeSetup'
+import * as store from '@/lib/tavern/store'
 // T2：本场索引的自动更新（永不抛、不阻塞对话）
-import { autoIndexFreeSession } from '../lib/tavern/recall'
-import { varsEnabledKeys } from '../lib/tavern/engine'
-import type { PostApplied } from '../lib/tavern/postRules'
-import { advanceDaily, shouldAdvanceDaily } from '../lib/tavern/daily'
-import { uid } from '../lib/id'
-import { acquireSummaryLock, releaseSummaryLock } from '../lib/tavern/memory'
+import { autoIndexFreeSession } from '@/lib/tavern/recall'
+import { varsEnabledKeys } from '@/lib/tavern/engine'
+import type { PostApplied } from '@/lib/tavern/postRules'
+import { advanceDaily, shouldAdvanceDaily } from '@/lib/tavern/daily'
+import { uid } from '@/lib/id'
+import { acquireSummaryLock, releaseSummaryLock } from '@/lib/tavern/memory'
 import {
   type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
   type VarKey, type TavernStoryIndexItem, sessionStoryId, 
-} from '../lib/tavern/types'
-import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf, migrateVarScale, VAR_SCALE, setCharNote, emptyVars } from '../lib/tavern/vars'
+} from '@/lib/tavern/types'
+import { varsOf, setVarManually, resetVarValues, recordVarChanges, turnSeqOf, migrateVarScale, VAR_SCALE, setCharNote, emptyVars } from '@/lib/tavern/vars'
 // 3.0 · W2-4b（§13 F1）：卡上没有持久数值时，按卡文「进度锁」声称的阶段给非 0 起点
-import { paceLockStartValues } from '../lib/tavern/paceLockBands'
-import { readCardField } from '../lib/tavern/types'
-import { snapshotOf, openingToMessage } from '../lib/tavern/script'
-import { getScript } from '../lib/tavern/script'
-import { getTavernSettings, memoryLimitsOf, activeProfileOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '../lib/tavern/settings'
-import { listStories, storyDisplayName, getStory, snapshotStorySetting } from '../lib/tavern/story'
-import { type SpeakerInfo } from '../lib/tavern/exportDoc'
-import { buildStatusModel, agoText } from '../lib/tavern/status'
+import { paceLockStartValues } from '@/lib/tavern/paceLockBands'
+import { readCardField } from '@/lib/tavern/types'
+import { snapshotOf, openingToMessage } from '@/lib/tavern/script'
+import { getScript } from '@/lib/tavern/script'
+import { getTavernSettings, memoryLimitsOf, activeProfileOf, DEFAULT_TAVERN_SETTINGS, DEFAULT_TAVERN_PROFILE, type TavernSettings } from '@/lib/tavern/settings'
+import { listStories, storyDisplayName, getStory, snapshotStorySetting } from '@/lib/tavern/story'
+import { type SpeakerInfo } from '@/lib/tavern/exportDoc'
+import { buildStatusModel, agoText } from '@/lib/tavern/status'
 
 
 /**

@@ -7,19 +7,19 @@
  * 🔴 长任务状态仍在 lib/creativeSession 的模块级 store（切页签内容不丢，见原文件头注释）。
  * 红线：无模型时 AI 入口全部 disabled。
  */
-import AIDataSourceNote from './AIDataSourceNote'
-import HelpPopover from './HelpPopover'
-import InterviewChat from './InterviewChat'
-import NewProjectAdvice from './NewProjectAdvice'
-import { showToast } from './dialogs'
-import { aiChatJson } from '../lib/ai'
-import { CREATIVE_SEED_SPEC, seedFromFilled } from '../lib/creativeSeed'
-import { updateInputs } from '../lib/creativeSession'
-import { useCreativeWritingModel } from './useCreativeWritingModel'
-import CreativeSetupSection from './CreativeSetupSection'
-import CreativeFlowSections from './CreativeFlowSections'
-import CreativeRewriteSection from './CreativeRewriteSection'
-import CreativeDialogs from './CreativeDialogs'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import HelpPopover from '@/components/HelpPopover'
+import InterviewChat from '@/components/InterviewChat'
+import NewProjectAdvice from '@/components/NewProjectAdvice'
+import { showToast } from '@/components/dialogs'
+import { aiChatJson } from '@/lib/ai'
+import { CREATIVE_SEED_SPEC, seedFromFilled } from '@/lib/creativeSeed'
+import { updateInputs } from '@/lib/creativeSession'
+import { useCreativeWritingModel } from '@/components/useCreativeWritingModel'
+import CreativeSetupSection from '@/components/CreativeSetupSection'
+import CreativeFlowSections from '@/components/CreativeFlowSections'
+import CreativeRewriteSection from '@/components/CreativeRewriteSection'
+import CreativeDialogs from '@/components/CreativeDialogs'
 export default function CreativeWritingPanel() {
   const m = useCreativeWritingModel()
   const { inp, interview, setInterview } = m

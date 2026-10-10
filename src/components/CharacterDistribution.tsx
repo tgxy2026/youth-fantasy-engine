@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Z } from '../lib/zLayer'
-import * as db from '../lib/db'
-import type { CardRecord } from '../lib/types'
-import { Button } from './Button'
-import { clipText } from '../lib/textClip'
-import { splitNames } from '../lib/audit'
-import { foldVh } from '../lib/theme'
+import { Z } from '@/lib/zLayer'
+import * as db from '@/lib/db'
+import type { CardRecord } from '@/lib/types'
+import { Button } from '@/components/Button'
+import { clipText } from '@/lib/textClip'
+import { splitNames } from '@/lib/audit'
+import { foldVh } from '@/lib/theme'
 
 interface Props {
   onNavigate: (id: string, chapterId?: string) => void

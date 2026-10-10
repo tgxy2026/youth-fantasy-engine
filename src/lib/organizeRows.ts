@@ -10,14 +10,14 @@
  *
  * ⚠️ 本文件住在 lib，**不得 import components**（分层红线，见 tests/importCycles.test.ts）。
  */
-import { buildProjectContext, isPrunedForAI, loadCharacterNames } from './aiContext'
-import { aiOrganizeRows, keyRowToLine, type OrganizeColumn, type OrganizeResult } from './aiTasks'
-import { writerBudgetFor } from './aiWriterBudget'
-import { resolveOptions } from './customOptions'
-import * as db from './db'
-import { isVolumeLedgerTab, type VisCtx } from './schema'
-import { isDirectedPairTab, organizeHint, organizeKeyColumns } from './aiScope'
-import type { CalendarDef, TableColumn, TabDef } from './types'
+import { buildProjectContext, isPrunedForAI, loadCharacterNames } from '@/lib/aiContext'
+import { aiOrganizeRows, keyRowToLine, type OrganizeColumn, type OrganizeResult } from '@/lib/aiTasks'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
+import { resolveOptions } from '@/lib/customOptions'
+import * as db from '@/lib/db'
+import { isVolumeLedgerTab, type VisCtx } from '@/lib/schema'
+import { isDirectedPairTab, organizeHint, organizeKeyColumns } from '@/lib/aiScope'
+import type { CalendarDef, TableColumn, TabDef } from '@/lib/types'
 
 export interface OrganizeRunOptions {
   /**

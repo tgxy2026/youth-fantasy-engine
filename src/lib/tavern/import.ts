@@ -16,12 +16,12 @@
  * 本文件是纯逻辑 + 提示词；提示词与解析都按「段落标记」而不是 JSON ——
  * 四章带嵌套，让模型输出深层 JSON 很容易在转义/层级上出错，段落标记则天然抗噪。
  */
-import { chat, isCancelled, type ChatMessage } from '../ai'
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
-import { emptyFreeCharacter, type FreeCharacter } from './types'
-import { authorBlock, newAuthorFence } from '../promptGuard'
-import { structFieldLines } from './cardFields'
+import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
+import { emptyFreeCharacter, type FreeCharacter } from '@/lib/tavern/types'
+import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { structFieldLines } from '@/lib/tavern/cardFields'
 
 /** 缺失信息的标记：提示词要求模型用它，UI 据此提醒作者去补 */
 export const MISSING_TAG = '〖待补〗'

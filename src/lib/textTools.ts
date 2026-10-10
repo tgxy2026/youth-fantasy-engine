@@ -8,7 +8,7 @@
  * ② **旧的「强制统一」没有删**：作为 `mode: 'uniform'` 保留，供确实想让整篇版面严格对齐的作者使用；
  *    缩进单位跟随编辑器设置项（`lib/indent.ts` 的 `IndentUnit`）。
  */
-import { type IndentUnit, DEFAULT_INDENT_UNIT, indentTextOf, splitIndent } from './indent'
+import { type IndentUnit, DEFAULT_INDENT_UNIT, indentTextOf, splitIndent } from '@/lib/indent'
 
 export type FormatMode = 'preserve' | 'uniform'
 

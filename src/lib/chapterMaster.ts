@@ -1,7 +1,7 @@
-import * as db from './db'
-import type { Chapter } from './types'
-import { todayKey } from './date'
-import { OUTLINE_TAB_ID, chapterNoOf, outlineEventKey } from './outlineCard'
+import * as db from '@/lib/db'
+import type { Chapter } from '@/lib/types'
+import { todayKey } from '@/lib/date'
+import { OUTLINE_TAB_ID, chapterNoOf, outlineEventKey } from '@/lib/outlineCard'
 
 /**
  * 用正文概要回填《章节细纲》卡的「本章一句话事件」。

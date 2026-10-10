@@ -6,9 +6,9 @@
  *
  * 状态一律来自 `model`（同名解构，JSX 保持原样）；本组件不持有任何状态。
  */
-import { showToast } from './dialogs'
-import { Button } from './Button'
-import type { TavernFreeModel } from './useTavernFreeModel'
+import { showToast } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import type { TavernFreeModel } from '@/components/useTavernFreeModel'
 
 export default function TavernFreeSessionList({ model }: { model: TavernFreeModel }) {
   const {

@@ -1,17 +1,17 @@
-import Panel from './Panel'
+import Panel from '@/components/Panel'
 import { useEffect, useMemo, useState } from 'react'
-import { useSaveHotkey } from '../lib/useSaveHotkey'
-import { UNSAVED_CHANGES_HINT } from '../lib/constants'
+import { useSaveHotkey } from '@/lib/useSaveHotkey'
+import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import { MessageSquareCode, RotateCcw } from 'lucide-react'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import { showToast } from './dialogs'
-import { foldVh } from '../lib/theme'
-import { usePersistedSet } from '../lib/uiPrefs'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import { showToast } from '@/components/dialogs'
+import { foldVh } from '@/lib/theme'
+import { usePersistedSet } from '@/lib/uiPrefs'
 import {
   listPrompts, savePromptOverride, resetPromptOverride, resetAllPromptOverrides,
   PROMPT_GROUPS, type PromptEntry, type PromptGroup,
-} from '../lib/promptSettings'
+} from '@/lib/promptSettings'
 
 /**
  * 「AI 提示词」设置板块（2026-09-19 新增，老大要求）：

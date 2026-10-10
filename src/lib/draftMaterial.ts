@@ -15,11 +15,11 @@
  * 「以 GTA5 的富兰克林为模板，在《吞天神脉》里新增一个主要角色」）。它本来就没有任何酒馆依赖
  * （只用 `webSearch`），放在 `lib/tavern/` 里会让别的模块被迫 import 酒馆引擎。
  */
-import { newAuthorFence, authorBlock } from './promptGuard'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
 import {
   webSearch, renderSearchResults, SEARCH_ENGINE_LABEL,
   type SearchOutcome, type SearchSettings,
-} from './webSearch'
+} from '@/lib/webSearch'
 
 /** 这次起草的**素材来源**（界面据此告诉作者「本次用的是哪种模式」） */
 export type DraftSource = {

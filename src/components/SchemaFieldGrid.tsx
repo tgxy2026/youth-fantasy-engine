@@ -9,9 +9,9 @@
  */
 import { useMemo } from 'react'
 import { Info } from 'lucide-react'
-import AutoTextarea from './AutoTextarea'
-import type { TabDef } from '../lib/types'
-import { useFieldAliases } from '../lib/fieldAlias'
+import AutoTextarea from '@/components/AutoTextarea'
+import type { TabDef } from '@/lib/types'
+import { useFieldAliases } from '@/lib/fieldAlias'
 
 interface Props {
   /** schema 的模块清单 */

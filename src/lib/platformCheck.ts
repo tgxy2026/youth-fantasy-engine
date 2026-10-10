@@ -7,12 +7,12 @@
 // 🔴 立场（与 B2 / B5 同）：只摆事实与观察，**不评分、不排名、不判定达标**。
 //    分章区间是「参考输入」，落在外面只说明"与常见投稿习惯不同"，不代表有问题。
 //    ⚠️ tests/platformCheck.test.ts 有立场断言：产物文案里不许出现禁词（含注释也不行）。
-import type { Chapter } from './types'
-import { BUILTIN_WORDS } from './sensitiveWords'
-import { platformRuleOf, isFocused, type PlatformHit, type PlatformId } from './platformRules'
-import { splitParagraphs } from './manuscriptCheck'
-import { countWords } from './textStats'
-import { contextSnippet } from './contextSnippet'
+import type { Chapter } from '@/lib/types'
+import { BUILTIN_WORDS } from '@/lib/sensitiveWords'
+import { platformRuleOf, isFocused, type PlatformHit, type PlatformId } from '@/lib/platformRules'
+import { splitParagraphs } from '@/lib/manuscriptCheck'
+import { countWords } from '@/lib/textStats'
+import { contextSnippet } from '@/lib/contextSnippet'
 
 export interface ChapterFact {
   chapterId: string

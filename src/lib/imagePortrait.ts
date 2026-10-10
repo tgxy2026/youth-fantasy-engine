@@ -15,7 +15,7 @@
  * 桌面版**整库就是一个 JSON**、云同步载荷也是整库。按 200KB/张算，30 个角色 ≈ 6MB —— 可以接受；
  * 若放到 400KB，30 角色就 12MB，同步与备份会明显变沉。所以上限定在 200KB 并**显示已用体积**给作者。
  */
-import { PORTRAIT_ACCEPT, PORTRAIT_MAX_INPUT_BYTES, PORTRAIT_SIZE, PORTRAIT_TARGET_BYTES } from './portraitSpec'
+import { PORTRAIT_ACCEPT, PORTRAIT_MAX_INPUT_BYTES, PORTRAIT_SIZE, PORTRAIT_TARGET_BYTES } from '@/lib/portraitSpec'
 
 /** 等比缩放：把 (w,h) 放进 (tw,th) 内，返回缩放后的尺寸（至少 1px） */
 export function fitInside(w: number, h: number, tw: number, th: number): { w: number; h: number } {

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RotateCcw, EyeOff, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
-import type { TableRow } from '../lib/types'
-import { Button } from './Button'
-import { useSvgPanZoom } from '../lib/useSvgPanZoom'
-import { foldVh } from '../lib/theme'
-import { REL_PRESET_COLORS } from '../lib/palette'
-import { getCardRecords } from '../lib/db'
-import { forceLayout } from '../lib/forceLayout'
-import { convexHull, hullPath, curvedEdge, curveMidpoint, groupColor, groupBy, pairKey, edgeCurveRatios, curveArrow } from '../lib/graphGrouping'
-import { buildTypeColors, makeColorLookup } from '../lib/relationColors'
+import type { TableRow } from '@/lib/types'
+import { Button } from '@/components/Button'
+import { useSvgPanZoom } from '@/lib/useSvgPanZoom'
+import { foldVh } from '@/lib/theme'
+import { REL_PRESET_COLORS } from '@/lib/palette'
+import { getCardRecords } from '@/lib/db'
+import { forceLayout } from '@/lib/forceLayout'
+import { convexHull, hullPath, curvedEdge, curveMidpoint, groupColor, groupBy, pairKey, edgeCurveRatios, curveArrow } from '@/lib/graphGrouping'
+import { buildTypeColors, makeColorLookup } from '@/lib/relationColors'
 
 interface Props {
   rows: TableRow[]

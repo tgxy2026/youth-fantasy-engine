@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
-import { Button } from './Button'
-import { Z } from '../lib/zLayer'
-import { foldVh } from '../lib/theme'
+import { Button } from '@/components/Button'
+import { Z } from '@/lib/zLayer'
+import { foldVh } from '@/lib/theme'
 
 // z 轴分层真源已独立到 src/lib/zLayer.ts（纯常量不该挂在组件文件上，
 // 否则每个要用它的下拉都得 import 整个 Modal）。此处再导出，既有 `import { Z } from './Modal'` 不受影响。

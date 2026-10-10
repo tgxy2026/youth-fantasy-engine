@@ -12,8 +12,8 @@
  * 落库键是 `模块名::字段名` ⇒ **改模块名 / 字段名会让老项目已填的内容丢失**。
  * 所以本文件只允许「加模块 / 加字段」，改名与改顺序都要单独评估。
  */
-import type { FormField, FormModule } from '../types'
-import type { GenrePack } from './packs'
+import type { FormField, FormModule } from '@/lib/types'
+import type { GenrePack } from '@/lib/schemaTemplates/packs'
 
 const f = (name: string, desc: string, example: string): FormField => ({ name, desc, example })
 

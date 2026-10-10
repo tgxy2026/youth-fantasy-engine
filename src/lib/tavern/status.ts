@@ -16,11 +16,11 @@
  * 六栏里的「纪念日与待办」「最近日记」就是时间线的轻量表达（都有条数上限、都在滚动更新），
  * 所以这里把它们做成计数，而不是另建一套时间轴数据结构。
  */
-import { MEMORY_SECTIONS, isPlaceholder, type MemorySectionKey } from './memory'
+import { MEMORY_SECTIONS, isPlaceholder, type MemorySectionKey } from '@/lib/tavern/memory'
 import {
   isMuted, talkBandOf, talkativityOf,
   type CastDirection, type FreeMemory,
-} from './types'
+} from '@/lib/tavern/types'
 
 export type MemoryCounts = Record<MemorySectionKey, number>
 

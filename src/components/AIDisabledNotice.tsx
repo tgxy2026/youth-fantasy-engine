@@ -13,8 +13,8 @@
  *    AI 只做辅助（见 `lib/aiScope.ts` 顶部）。清单本身也来自那里，两处不各写一套。
  */
 import { Info } from 'lucide-react'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DEPENDENT_GROUPS } from '../lib/aiScope'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DEPENDENT_GROUPS } from '@/lib/aiScope'
 
 export default function AIDisabledNotice() {
   const { ready } = useAIReady()

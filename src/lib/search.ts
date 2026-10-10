@@ -7,10 +7,10 @@
  * 设计取舍：不引入 MiniSearch 等外部库，避免便携单文件构建的体积膨胀与版本漂移；
  * 自实现的倒排索引对小说体量（百万字级）足够轻快，且分词对中文友好。
  */
-import * as db from './db'
-import { TABS, tabVisible, type VisCtx } from './schema'
-import { tokenize } from './tokenize'
-import type { CardRecord, TableRow } from './types'
+import * as db from '@/lib/db'
+import { TABS, tabVisible, type VisCtx } from '@/lib/schema'
+import { tokenize } from '@/lib/tokenize'
+import type { CardRecord, TableRow } from '@/lib/types'
 
 // 🔬 分词口径的**单一真源**已移到 `./tokenize`（纯函数，不 import db）——
 //    好让「知识库」的关键词降级召回也能用它而不与 db 成环。

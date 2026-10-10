@@ -868,13 +868,13 @@ function row(input: {
 // ============ 源码断言：分层与红线 ============
 {
   const storeSrc = read('src/lib/semantic/store.ts')
-  ok('🔴 向量库走独立 IndexedDB（不碰 db 门面）', storeSrc.includes('youth-fantasy-engine-vec') && !storeSrc.includes("from '../db'"))
+  ok('🔴 向量库走独立 IndexedDB（不碰 db 门面）', storeSrc.includes('youth-fantasy-engine-vec') && !storeSrc.includes("from '../db'") && !storeSrc.includes("from '@/lib/db'"))
 
   const recallSrc = read('src/lib/semantic/recall.ts')
-  ok('🔴 recall 不 import aiContext（防成环）', !recallSrc.includes("from '../aiContext'"))
+  ok('🔴 recall 不 import aiContext（防成环）', !recallSrc.includes("from '../aiContext'") && !recallSrc.includes("from '@/lib/aiContext'"))
 
   const injectSrc = read('src/lib/semantic/inject.ts')
-  ok('🔴 inject 不 import aiContext', !injectSrc.includes("from '../aiContext'"))
+  ok('🔴 inject 不 import aiContext', !injectSrc.includes("from '../aiContext'") && !injectSrc.includes("from '@/lib/aiContext'"))
 
   const idxSrc = read('src/lib/semantic/indexer.ts')
   ok('indexer 明确引用 isPrunedForAI 与 isSecretRow', idxSrc.includes('isPrunedForAI') && idxSrc.includes('isSecretRow'))

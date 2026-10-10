@@ -6,8 +6,8 @@
  *   仍不足 2 处就整体弃用（返回 null），调用方回退本地正则 / 字数兜底的结果。
  *   任何一步都不允许「AI 说什么就是什么」。
  */
-import { scanLinesOf, buildChaptersFromMarks, type RawChapter, type SplitResult } from './split'
-import { stripEmphasis } from '../mdLite'
+import { scanLinesOf, buildChaptersFromMarks, type RawChapter, type SplitResult } from '@/lib/bookbreak/split'
+import { stripEmphasis } from '@/lib/mdLite'
 
 /** 单段采样上限（字符）——中文 1 字 ≈ 1 token，四段合计 ≤7500 字（≈7500 token），压在常见 num_ctx 内 */
 const HEAD_CHARS = 3000

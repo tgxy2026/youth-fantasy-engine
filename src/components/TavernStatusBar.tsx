@@ -27,8 +27,8 @@
  *
  * 🔴 只渲染，不读库不写库（数据由 TavernFree 传进来、改完由它写回）。
  */
-import Avatar from './Avatar'
-import { agoText, type StatusModel } from '../lib/tavern/status'
+import Avatar from '@/components/Avatar'
+import { agoText, type StatusModel } from '@/lib/tavern/status'
 
 export default function TavernStatusBar({ model, sceneText }: {
   model: StatusModel

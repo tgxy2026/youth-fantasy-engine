@@ -4,10 +4,10 @@ import {
   getDesktopState, subscribeDesktop, flushDesktop,
   exportDesktopData, importDesktopData, revealDesktopDataFile,
   chooseDesktopDataDir, relocateDesktopDataFile, resetDesktopDataPath,
-} from '../lib/desktop'
-import { confirmDialog, showToast } from './dialogs'
-import { isDesktopCloudSyncActive } from '../lib/db'
-import { Button } from './Button'
+} from '@/lib/desktop'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { isDesktopCloudSyncActive } from '@/lib/db'
+import { Button } from '@/components/Button'
 
 /**
  * 桌面（安装）版数据管理栏（两行）：

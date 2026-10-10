@@ -17,8 +17,8 @@
 //    这是可接受的取舍 —— 重建成本是嵌入调用，而换电脑本来就要重配模型。
 
 import { openDB, type IDBPDatabase } from 'idb'
-import { idbDbExists, idbDeleteDatabase } from '../idbMigrateUtil'
-import { chunkKey, vectorRowId } from './chunk'
+import { idbDbExists, idbDeleteDatabase } from '@/lib/idbMigrateUtil'
+import { chunkKey, vectorRowId } from '@/lib/semantic/chunk'
 
 /**
  * 向量行的来源类别。

@@ -24,11 +24,11 @@
 
 // 副作用：注册「设定模板补全 / 大纲规划三页签」四条提示词（原先位于 ai.ts 末尾）。
 // 🔴 必须是裸引入 —— 只再导出 `FillContext`（类型）的话会在编译期被擦除，登记就不执行了。
-import './aiCore/prompts'
+import '@/lib/aiCore/prompts'
 // 副作用：注册「AI 辅助规划」提示词（W2-3 自 components/AIAssist.tsx 搬来）。
 // 🔴 同样必须裸引入：AIAssist 只在懒加载的「灵感工具」页里被 import，
 //    注册留在那儿的话，没打开过该页签的作者在「AI 提示词」里看不到这条。
-import './aiAssistPrompt'
+import '@/lib/aiAssistPrompt'
 
 // ---- 共享内核：Provider 类型 / 超时温度常量 / 平台预设 ----
 export {
@@ -37,35 +37,35 @@ export {
   DEFAULT_TEMPERATURE, TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE,
   OLLAMA_PRESET, LOCAL_OPENAI_PRESETS, LOCAL_PRESETS, ONLINE_PRESETS,
   providerFromPreset, composeSystemPrompt,
-} from './aiCore/core'
-export type { AIProviderType, AIProvider, ChatMessage, PlatformPreset } from './aiCore/core'
+} from '@/lib/aiCore/core'
+export type { AIProviderType, AIProvider, ChatMessage, PlatformPreset } from '@/lib/aiCore/core'
 
 // ---- 补全提示词语境 ----
-export type { FillContext } from './aiCore/prompts'
+export type { FillContext } from '@/lib/aiCore/prompts'
 
 // ---- 传输层：思考块剥离 / 取消哨兵 / 地址归一 / 模型清单 / 卸载 ----
-export { stripThink, AICancelled, isCancelled, openaiBaseOf, listOpenAIModels, listOllamaModels, unloadOllamaModel } from './aiCore/transport'
+export { stripThink, AICancelled, isCancelled, openaiBaseOf, listOpenAIModels, listOllamaModels, unloadOllamaModel } from '@/lib/aiCore/transport'
 
 // ---- 对话层：统一入口与连通性测试 ----
-export { chat, OPENAI_SAFE_SAMPLING, testProvider } from './aiCore/chat'
-export type { ChatOptions, AITestResult } from './aiCore/chat'
+export { chat, OPENAI_SAFE_SAMPLING, testProvider } from '@/lib/aiCore/chat'
+export type { ChatOptions, AITestResult } from '@/lib/aiCore/chat'
 
 // ---- 设定补全：世界观上下文与模板补全 ----
-export { WORLD_CONTEXT_GROUPS, buildWorldContext, aiCompleteTemplate, aiChatJson } from './aiCore/template'
-export type { TemplateField, TemplateFillResult, WorldContextGroup } from './aiCore/template'
+export { WORLD_CONTEXT_GROUPS, buildWorldContext, aiCompleteTemplate, aiChatJson } from '@/lib/aiCore/template'
+export type { TemplateField, TemplateFillResult, WorldContextGroup } from '@/lib/aiCore/template'
 
 // ---- 会话层：模型配置持久化与就绪状态 ----
 export {
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
   isProviderUsable, getActiveProvider, requireActiveProvider, aiReadySnapshot, subscribeAIReady,
   loadAiTimeoutSec, saveAiTimeoutSec,
-} from './aiCore/session'
-export type { AIReadyInfo } from './aiCore/session'
+} from '@/lib/aiCore/session'
+export type { AIReadyInfo } from '@/lib/aiCore/session'
 
 // ---- AI 用途路由（2.8.0 · 台账 #014）：创作 / 审校 / 整理各自指定模型 ----
 // 🔴 aiRouting 只依赖 `./aiCore/session`（**不 import 本门面**），故此处再导出不成环。
 export {
   TASK_ROLES, ROLE_LABEL, ROLE_HINT, DEFAULT_ROUTING,
   loadRouting, saveRouting, resolveProviderFor, requireProviderFor, rolesOf,
-} from './aiRouting'
-export type { TaskRole, RoutingMap } from './aiRouting'
+} from '@/lib/aiRouting'
+export type { TaskRole, RoutingMap } from '@/lib/aiRouting'

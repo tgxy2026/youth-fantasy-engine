@@ -4,9 +4,9 @@
  * 🔴 段与段的**先后顺序就是侧栏顺序**，换位会改变界面上的页签排列，别调整这里三段的拼接次序。
  * 🔴 本文件只 import `schemaShared` 与 `schemaTemplates`，**不许 import schema.ts**（会成循环依赖）。
  */
-import { f, SABC_DESC, institutionTab, INSTITUTION_TABS } from '../schemaShared'
-import { getActivePack, tabDisplayName, worldbaseModules, worldbaseDesc, worldbaseTips, powerModules, powerDesc, powerTips } from '../schemaTemplates'
-import type { TabDef } from '../types'
+import { f, SABC_DESC, institutionTab, INSTITUTION_TABS } from '@/lib/schemaShared'
+import { getActivePack, tabDisplayName, worldbaseModules, worldbaseDesc, worldbaseTips, powerModules, powerDesc, powerTips } from '@/lib/schemaTemplates/index'
+import type { TabDef } from '@/lib/types'
 
 export const TABS_PART1: TabDef[] = [
 

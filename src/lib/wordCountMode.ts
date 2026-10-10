@@ -18,8 +18,8 @@
  *   全文正则扫描成本高，且树里的字数是「落库快照」性质；性价比不足，保持落库值。
  * 若将来要给树接实时口径，先解决「滚动中每章全文扫描」的性能账再动。
  */
-import { usePersistedBool } from './uiPrefs'
-import type { WordCountMode } from './textStats'
+import { usePersistedBool } from '@/lib/uiPrefs'
+import type { WordCountMode } from '@/lib/textStats'
 
 /** 偏好 key（落在 `yfe-ui:` 命名空间 —— 本机偏好、不进项目数据、不随导出 / 云同步走） */
 const WORD_COUNT_PUNCT_KEY = 'word-count-with-punct'

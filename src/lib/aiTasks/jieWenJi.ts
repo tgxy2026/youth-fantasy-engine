@@ -4,18 +4,18 @@
 // 🔴 铁律：未配模型不调用；调用失败只提示；**绝不直接改正文**（改写文本一律交给作者取舍）。
 // ⚠️ 原文件里 #18 选区改稿的注册顺序**早于** #17 整章改写（那部分已拆去 ./rewrite）——
 //    注册顺序由门面的 PROMPT_ORDER 还原，改这里不影响设置页顺序。
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
-import { parseObjectArray, asText, humanText, hasSubstance } from '../aiParse'
-import { countWords } from '../textStats'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { parseObjectArray, asText, humanText, hasSubstance } from '@/lib/aiParse'
+import { countWords } from '@/lib/textStats'
 // 类型与拼装逻辑住在**零依赖纯函数层**（lib/rewriteAsk.ts）——
 // tests 只 import 那边，不会把传输层（./ai → aiCore）拉进 Node 测试。
 // 这里再导出一次，方便门面 / 组件统一从本文件取类型。
-import { buildRewriteAsk, type RewriteAsk } from '../rewriteAsk'
+import { buildRewriteAsk, type RewriteAsk } from '@/lib/rewriteAsk'
 export type { RewriteAsk }
-import { newAuthorFence, authorBlock } from '../promptGuard'
-import type { PromptDef } from '../promptSettings'
-import { cleanChapterOutput } from './rewrite'
-import { deAiGenerateRule } from '../deAiStyle'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import type { PromptDef } from '@/lib/promptSettings'
+import { cleanChapterOutput } from '@/lib/aiTasks/rewrite'
+import { deAiGenerateRule } from '@/lib/deAiStyle'
 
 /** 「写作简报」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_writing_briefing = `你是网文资深编辑兼创作助手。作者马上要动笔写下一章，请基于提供的设定资料与当前进度，生成一份「本章写作简报」，帮作者不丢线、不卡文、不 OOC。

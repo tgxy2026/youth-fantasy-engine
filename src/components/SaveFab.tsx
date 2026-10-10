@@ -1,6 +1,6 @@
 import { Save } from 'lucide-react'
-import { Button } from './Button'
-import { Z } from '../lib/zLayer'
+import { Button } from '@/components/Button'
+import { Z } from '@/lib/zLayer'
 
 /**
  * 页面内的「保存」悬浮球（固定在右下角）。

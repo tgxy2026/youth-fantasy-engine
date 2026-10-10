@@ -26,13 +26,13 @@
  *    统计）**不是一回事** —— 后者是"这一章写得怎么样"的一次性体检，前者是"作者一贯什么味道"的可命名档案。
  *    两者刻意不复用同一个类型名，避免调用方 import 时混淆。
  */
-import * as db from './db'
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from './ai'
-import type { PromptDef } from './promptSettings'
-import { parseLooseObject, asText } from './aiParse'
-import { analyzeStyle } from './manuscriptCheck'
-import { countWords } from './textStats'
-import { uid } from './id'
+import * as db from '@/lib/db'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import type { PromptDef } from '@/lib/promptSettings'
+import { parseLooseObject, asText } from '@/lib/aiParse'
+import { analyzeStyle } from '@/lib/manuscriptCheck'
+import { countWords } from '@/lib/textStats'
+import { uid } from '@/lib/id'
 
 /** 「文风指纹」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_style_fingerprint = `你是中文网络小说的文风分析助手。作者会给你一段或多段他的**参考文本**，以及一份程序统计出的量化特征。请只依据这些内容，归纳出这位作者的写作风格特征。

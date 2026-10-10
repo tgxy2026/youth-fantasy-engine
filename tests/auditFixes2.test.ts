@@ -90,7 +90,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
 {
   const cr = read('src/lib/aiTasks/creative.ts')
   ok('🔴 大纲规划的资料块走 authorBlock（资料里含作者已有细纲/卷大纲原文）',
-    /from '\.\.\/promptGuard'/.test(cr) && /authorBlock\(newAuthorFence\(\), material\.trim\(\)\)/.test(cr))
+    /from '(?:\.\.\/promptGuard|@\/lib\/promptGuard)'/.test(cr) && /authorBlock\(newAuthorFence\(\), material\.trim\(\)\)/.test(cr))
 }
 
 // ---------- ⑥ P1-4 结构：酒馆「生成初版记忆」必须带 limits ----------
@@ -248,7 +248,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
   // ---- C4 · 源码：未保存提示走常量（避免"改一处漏三处"） ----
   const npp = read('src/components/NetworkProxyPanel.tsx')
   ok('🔴 NetworkProxyPanel 未保存提示走 UNSAVED_CHANGES_HINT',
-    /import \{ UNSAVED_CHANGES_HINT \} from '\.\.\/lib\/constants'/.test(npp)
+    /import \{ UNSAVED_CHANGES_HINT \} from '(?:\.\.\/lib\/constants|@\/lib\/constants)'/.test(npp)
     && /UNSAVED_CHANGES_HINT/.test(npp)
     && !/text-amber">有未保存的改动</.test(npp))
 }

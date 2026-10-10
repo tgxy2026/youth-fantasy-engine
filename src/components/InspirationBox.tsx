@@ -9,21 +9,21 @@
  * · 产出直接写 plotCanvas 快照（idea 卡），画布挂载时会重读 —— 两个页签不会同时挂载，无写冲突；
  * · 生成结果同时在下方列出并标「基于灵感 #N」，与画布里的卡一一对应（溯源红线）。
  */
-import Panel from './Panel'
+import Panel from '@/components/Panel'
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Lightbulb, Loader2, Sparkles, X } from 'lucide-react'
-import * as db from '../lib/db'
-import { addItem, loadBox, removeItem, INSPIRATION_MAX, type InspirationItem } from '../lib/inspirationBox'
-import { aiFuseInspiration, type FusedIdea } from '../lib/aiTasks'
-import { buildProjectContext } from '../lib/aiContext'
-import { writerBudgetFor } from '../lib/aiWriterBudget'
-import { isCancelled } from '../lib/ai'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { showToast } from './dialogs'
-import AIDataSourceNote from './AIDataSourceNote'
-import HelpPopover from './HelpPopover'
-import { Button } from './Button'
+import * as db from '@/lib/db'
+import { addItem, loadBox, removeItem, INSPIRATION_MAX, type InspirationItem } from '@/lib/inspirationBox'
+import { aiFuseInspiration, type FusedIdea } from '@/lib/aiTasks'
+import { buildProjectContext } from '@/lib/aiContext'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
+import { isCancelled } from '@/lib/ai'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { showToast } from '@/components/dialogs'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import HelpPopover from '@/components/HelpPopover'
+import { Button } from '@/components/Button'
 
 /** 融合产出的 idea 卡在画布上的排布：沿对角线错开，避免与已有卡片叠死 */
 function ideaCardPos(existing: number): { x: number; y: number } {

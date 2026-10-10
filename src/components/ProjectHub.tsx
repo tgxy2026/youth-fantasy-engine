@@ -1,31 +1,31 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import * as db from '../lib/db'
-import type { ProjectBundle } from '../lib/db'
-import type { Project } from '../lib/types'
-import { createDemoProject } from '../lib/seedData'
+import * as db from '@/lib/db'
+import type { ProjectBundle } from '@/lib/db'
+import type { Project } from '@/lib/types'
+import { createDemoProject } from '@/lib/seedData'
 import {
   Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
 } from 'lucide-react'
-import HelpPopover from './HelpPopover'
-import Tooltip from './Tooltip'
-import { Z } from '../lib/zLayer'
-import { foldVh } from '../lib/theme'
-import BackupManager from './BackupManager'
-import FeatureSelectModal from './FeatureSelectModal'
-import { confirmDialog, showToast } from './dialogs'
-import BrandMark from './BrandMark'
-import { downloadBlob } from '../lib/zip'
-import { markExported } from '../lib/backupReminder'
-import { rebuildKbIndexAfterRestore } from '../lib/kbRestoreIndex'
-import { APP_VERSION_LABEL } from '../lib/env'
-import { usePersistedBool, readBoolPref, readStringPref } from '../lib/uiPrefs'
-import { LOCKED_IDS, DEFAULT_IDS } from '../lib/schema'
-import { DEFAULT_PACK, normalizeGenrePack, setActivePack, type GenrePack } from '../lib/schemaTemplates'
-import { GenrePackSelect } from './GenrePackSelect'
+import HelpPopover from '@/components/HelpPopover'
+import Tooltip from '@/components/Tooltip'
+import { Z } from '@/lib/zLayer'
+import { foldVh } from '@/lib/theme'
+import BackupManager from '@/components/BackupManager'
+import FeatureSelectModal from '@/components/FeatureSelectModal'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import BrandMark from '@/components/BrandMark'
+import { downloadBlob } from '@/lib/zip'
+import { markExported } from '@/lib/backupReminder'
+import { rebuildKbIndexAfterRestore } from '@/lib/kbRestoreIndex'
+import { APP_VERSION_LABEL } from '@/lib/env'
+import { usePersistedBool, readBoolPref, readStringPref } from '@/lib/uiPrefs'
+import { LOCKED_IDS, DEFAULT_IDS } from '@/lib/schema'
+import { DEFAULT_PACK, normalizeGenrePack, setActivePack, type GenrePack } from '@/lib/schemaTemplates/index'
+import { GenrePackSelect } from '@/components/GenrePackSelect'
 import workbenchBg from '../assets/workbench-bg.png'
 import jiewenjiGufeng from '../assets/jiewenji-gufeng.png'
-import { Button } from './Button'
-import MascotSettingsDialog from './MascotSettingsDialog'
+import { Button } from '@/components/Button'
+import MascotSettingsDialog from '@/components/MascotSettingsDialog'
 
 interface Props {
   onOpen: (projectId: string) => void
@@ -554,7 +554,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                           </Tooltip>
                           <Tooltip label="导出设定集">
                             <Button variant="icon-ghost" iconOnly
-                              onClick={async () => { db.setCurrentProject(p.id); const { exportSettingCompendium } = await import('../lib/exporter'); void exportSettingCompendium(p.name) }}
+                              onClick={async () => { db.setCurrentProject(p.id); const { exportSettingCompendium } = await import('@/lib/exporter'); void exportSettingCompendium(p.name) }}
                               title="导出设定集（汇总全部世界观 / 人物 / 设定表）"
                               aria-label="导出设定集"
                             >

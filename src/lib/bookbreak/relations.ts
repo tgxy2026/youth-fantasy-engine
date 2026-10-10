@@ -18,16 +18,16 @@
  * 人的身份与立场，这些在实体详情里已经写着了）。材料带上限是硬要求：撞窗口的表现是
  * **静默截断**（模型只看到前半段却照样输出得很像样），见 formSummary 的说明。
  */
-import { buildFormMaterial } from './formSummary'
-import { clampRelationLimits, type RelationMaterialLimits } from './relationMaterial'
-import type { EntityBatch } from '../flow/draft'
-import type { DraftField, DraftRow } from '../flow/types'
-import { isPrunedForAI, loadCharacterNames } from '../aiContext'
-import * as db from '../db'
-import { organizeRows } from '../organizeRows'
-import { TABS } from '../schema'
-import { normName } from '../settingLedger'
-import type { TabDef } from '../types'
+import { buildFormMaterial } from '@/lib/bookbreak/formSummary'
+import { clampRelationLimits, type RelationMaterialLimits } from '@/lib/bookbreak/relationMaterial'
+import type { EntityBatch } from '@/lib/flow/draft'
+import type { DraftField, DraftRow } from '@/lib/flow/types'
+import { isPrunedForAI, loadCharacterNames } from '@/lib/aiContext'
+import * as db from '@/lib/db'
+import { organizeRows } from '@/lib/organizeRows'
+import { TABS } from '@/lib/schema'
+import { normName } from '@/lib/settingLedger'
+import type { TabDef } from '@/lib/types'
 
 /** 本阶段负责的两张表（数组顺序 = 界面分组顺序） */
 export const RELATION_TAB_IDS = ['relations', 'faction-rels']

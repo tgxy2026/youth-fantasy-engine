@@ -10,9 +10,9 @@
  * - **最新章单独标出来**：改它的纪律和历史章完全不同（可放开改写、落库后要同步设定）。
  */
 import { useMemo, useState } from 'react'
-import SelectRow from './SelectRow'
+import SelectRow from '@/components/SelectRow'
 import { ChevronDown, ChevronRight, Search } from 'lucide-react'
-import type { RewriteCandidateGroup } from '../lib/chapterRewrite'
+import type { RewriteCandidateGroup } from '@/lib/chapterRewrite'
 
 interface Props {
   groups: RewriteCandidateGroup[]

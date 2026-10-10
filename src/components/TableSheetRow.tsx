@@ -9,19 +9,19 @@
  * ⚠️ 唯一改动：原来的 `i`（map 下标）改名为 `index` —— 单字符参数名做 props 太容易读错。
  */
 import { ChevronDown, ChevronRight, GitBranch, Link2, PenLine, Sparkles, Trash2 } from 'lucide-react'
-import type { TabDef, TableRow } from '../lib/types'
-import { SABC_LABELS, isVolumeLedgerTab } from '../lib/schema'
-import type { VisCtx } from '../lib/schema'
-import { Button } from './Button'
-import CalendarPicker from './CalendarPicker'
-import CustomSelect from './CustomSelect'
-import CharacterSelect from './CharacterSelect'
-import TableRefSelect from './TableRefSelect'
-import CalendarSelect from './CalendarSelect'
-import NumberField from './NumberField'
-import StoryDateInput from './StoryDateInput'
-import { CellTextarea, rowBadgeClass } from './tableSheetShared'
-import type { TableSheetModel } from './useTableSheetModel'
+import type { TabDef, TableRow } from '@/lib/types'
+import { SABC_LABELS, isVolumeLedgerTab } from '@/lib/schema'
+import type { VisCtx } from '@/lib/schema'
+import { Button } from '@/components/Button'
+import CalendarPicker from '@/components/CalendarPicker'
+import CustomSelect from '@/components/CustomSelect'
+import CharacterSelect from '@/components/CharacterSelect'
+import TableRefSelect from '@/components/TableRefSelect'
+import CalendarSelect from '@/components/CalendarSelect'
+import NumberField from '@/components/NumberField'
+import StoryDateInput from '@/components/StoryDateInput'
+import { CellTextarea, rowBadgeClass } from '@/components/tableSheetShared'
+import type { TableSheetModel } from '@/components/useTableSheetModel'
 
 export default function TableSheetRow({ tab, model, entry, index, onNavigate, ctx }: {
   tab: TabDef

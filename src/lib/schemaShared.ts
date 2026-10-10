@@ -8,9 +8,9 @@
  * 🔴 字段构造器（c / cr / ca …）是**列名即存储键**那条纪律的落点：改名字段定义就换了存储位置，
  *    已填数据会读不到。给作者改名请用 `lib/fieldAlias.ts` 的显示名，不要动这里。
  */
-import type { TabDef, TableColumn, Volume } from './types'
-import { getAllVolumes } from './db'
-import { getActivePack, institutionMeta, institutionModules } from './schemaTemplates'
+import type { TabDef, TableColumn, Volume } from '@/lib/types'
+import { getAllVolumes } from '@/lib/db'
+import { getActivePack, institutionMeta, institutionModules } from '@/lib/schemaTemplates/index'
 
 // 工具函数：快速构造字段
 /** 🔴 本文件是字段构造器的**唯一定义处**（段文件与门面都从这里 import）—— 别在别处再抄一份 */

@@ -2,9 +2,9 @@
 // 从「章节总表」反推每条伏笔的生命周期，比对「伏笔追踪」登记的状态，
 // 产出：跨度告警 / 孤儿检测 / 前置未铺就 / 状态不一致 等可定位问题，
 // 以及一张用于「伏笔看板」的分组数据（埋设中 / 进行中 / 已回收 / 孤儿）。
-import * as db from './db'
-import type { Chapter } from './types'
-import { AuditIssue, splitCodes } from './audit'
+import * as db from '@/lib/db'
+import type { Chapter } from '@/lib/types'
+import { AuditIssue, splitCodes } from '@/lib/audit'
 
 export type ForeshadowStatus = '埋设中' | '进行中' | '已回收' | '已作废' | '孤儿'
 

@@ -10,16 +10,16 @@
  * 🔴 DOCX 排版选项选「跟随默认」时**不传 layout** —— exporter 端零渲染差异（结构性保证）。
  */
 import { useEffect, useMemo, useState } from 'react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { showToast } from './dialogs'
-import * as db from '../lib/db'
-import type { Chapter, Volume } from '../lib/types'
-import type { PlatformTextOptions, DocxLayoutOptions } from '../lib/exporter'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { showToast } from '@/components/dialogs'
+import * as db from '@/lib/db'
+import type { Chapter, Volume } from '@/lib/types'
+import type { PlatformTextOptions, DocxLayoutOptions } from '@/lib/exporter'
 // 2.9.1 · E 档：导出即预检（能力来自「检查工具 → 分平台投稿预检」的同一套引擎）
-import { scanByPlatform } from '../lib/platformCheck'
-import type { PlatformId } from '../lib/platformRules'
-import { getCustomSensitiveWords } from '../lib/sensitiveWords'
+import { scanByPlatform } from '@/lib/platformCheck'
+import type { PlatformId } from '@/lib/platformRules'
+import { getCustomSensitiveWords } from '@/lib/sensitiveWords'
 
 type Tab = 'platform' | 'markdown' | 'docx'
 /** 预设档是 UI 层概念（exporter 只认五值对象）；'custom' = 手动改过任意单项 */
@@ -102,14 +102,14 @@ export default function ExportFormatDialog({
   // 投稿稿件：选中的章节 id（默认 = 有正文的章）
   const [picked, setPicked] = useState<Set<string>>(() => new Set())
   // 🔴 exporter 按需动态加载（与 useNovelEditorModel.runExport 同一约定：别把打包器拖进首屏主包）
-  const [mod, setMod] = useState<typeof import('../lib/exporter') | null>(null)
+  const [mod, setMod] = useState<typeof import('@/lib/exporter') | null>(null)
   // 2.9.1 · E 档：发布前预检 —— 在导出对话框里直接按平台档位扫一遍敏感词
   const [precheckPlatform, setPrecheckPlatform] = useState<PlatformId>('general')
   const [customWords, setCustomWords] = useState<string[]>([])
   useEffect(() => {
     if (!open) return
     // 加载失败必须说出来 —— 静默 setMod(null) 会让「导出」点了没反应（审计 2026-09-28 修正）
-    void import('../lib/exporter').then(setMod).catch(() => {
+    void import('@/lib/exporter').then(setMod).catch(() => {
       setMod(null)
       showToast('导出模块加载失败，请重启软件后重试', 'error')
     })

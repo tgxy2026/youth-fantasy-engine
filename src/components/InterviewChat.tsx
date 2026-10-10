@@ -17,14 +17,14 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ChatMessage } from '../lib/ai'
+import type { ChatMessage } from '@/lib/ai'
 import {
   emptyInterview, interviewProgress, filledToText, runInterviewTurn,
   type InterviewSpec, type InterviewState,
-} from '../lib/interview'
-import { showToast } from './dialogs'
-import { Button } from './Button'
-import { Modal } from './Modal'
+} from '@/lib/interview'
+import { showToast } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import { Modal } from '@/components/Modal'
 
 export default function InterviewChat({
   subject, spec, existing, context, callChat, onClose, onApply, applyLabel = '生成草稿并填入', headerSlot,

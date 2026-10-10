@@ -9,12 +9,12 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { CheckSquare, ChevronDown, ChevronRight, Square } from 'lucide-react'
-import { Button } from './Button'
-import { confirmDialog, showToast } from './dialogs'
-import { commitDraftRows, previewCommit, type ConflictPolicy } from '../lib/flow/commit'
-import { usePersistedSet } from '../lib/uiPrefs'
-import { DRAFT_PICK_THRESHOLD, defaultPicked, pickableAsNew } from '../lib/flow/draft'
-import type { CommitOutcome, DraftBundle, DraftRow } from '../lib/flow/types'
+import { Button } from '@/components/Button'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { commitDraftRows, previewCommit, type ConflictPolicy } from '@/lib/flow/commit'
+import { usePersistedSet } from '@/lib/uiPrefs'
+import { DRAFT_PICK_THRESHOLD, defaultPicked, pickableAsNew } from '@/lib/flow/draft'
+import type { CommitOutcome, DraftBundle, DraftRow } from '@/lib/flow/types'
 
 interface Props {
   /**

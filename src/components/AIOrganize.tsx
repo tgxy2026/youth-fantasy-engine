@@ -1,23 +1,23 @@
-import { foldVh } from '../lib/theme'
+import { foldVh } from '@/lib/theme'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Sparkles, Check, Loader2, AlertCircle, RefreshCw, CircleStop,
   CheckSquare, Square, BookOpen, ClipboardPaste, Database,
 } from 'lucide-react'
-import { Modal } from './Modal'
-import type { CalendarDef, Chapter, TabDef } from '../lib/types'
-import { getAllChapters, getAllVolumes } from '../lib/db'
-import { getChapterTexts } from '../lib/aiContext'
-import { flattenChapters } from '../lib/chapterSeq'
-import type { OrganizeResult } from '../lib/aiTasks'
-import type { VisCtx } from '../lib/schema'
-import { useAIReady } from '../lib/useAIReady'
-import { useTaskRunner } from '../lib/aiTaskCenter'
-import { showToast } from './dialogs'
-import { organizeHint, AI_DISABLED_HINT, isDirectedPairTab } from '../lib/aiScope'
-import { organizeKeyColsOf, organizeRows } from '../lib/organizeRows'
-import AutoTextarea from './AutoTextarea'
-import { Button } from './Button'
+import { Modal } from '@/components/Modal'
+import type { CalendarDef, Chapter, TabDef } from '@/lib/types'
+import { getAllChapters, getAllVolumes } from '@/lib/db'
+import { getChapterTexts } from '@/lib/aiContext'
+import { flattenChapters } from '@/lib/chapterSeq'
+import type { OrganizeResult } from '@/lib/aiTasks'
+import type { VisCtx } from '@/lib/schema'
+import { useAIReady } from '@/lib/useAIReady'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
+import { showToast } from '@/components/dialogs'
+import { organizeHint, AI_DISABLED_HINT, isDirectedPairTab } from '@/lib/aiScope'
+import { organizeKeyColsOf, organizeRows } from '@/lib/organizeRows'
+import AutoTextarea from '@/components/AutoTextarea'
+import { Button } from '@/components/Button'
 
 interface Props {
   tab: TabDef

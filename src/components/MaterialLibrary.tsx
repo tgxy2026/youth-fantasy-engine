@@ -1,8 +1,8 @@
-import { PANEL_CLS } from './Panel'
+import { PANEL_CLS } from '@/components/Panel'
 import { useState, useMemo } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
 import {
   type Block,
   type CharType,
@@ -11,9 +11,9 @@ import {
   type TagGroup,
   type AttrItem,
   type ToolboxSection,
-} from '../lib/materialRef'
-import { MATERIAL_CATEGORIES } from '../data/materialData'
-import KnowledgeBasePanel from './KnowledgeBasePanel'
+} from '@/lib/materialRef'
+import { MATERIAL_CATEGORIES } from '@/data/materialData'
+import KnowledgeBasePanel from '@/components/KnowledgeBasePanel'
 
 export default function MaterialLibrary() {
   const [catId, setCatId] = useState(MATERIAL_CATEGORIES[0].id)

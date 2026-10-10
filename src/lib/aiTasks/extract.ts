@@ -1,12 +1,12 @@
 // ============ AI 任务层 · 设定实体抽取（拆书 / 设定补登共用）============
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #23 段）。
 // 🔴 字段键从 flow/fieldMap 的 KIND_MAP 派生（见 SLOT_HINT 注释）—— 只读，不改。
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
-import { parseObjectArray, asText } from '../aiParse'
-import { newAuthorFence, authorBlock } from '../promptGuard'
-import { KIND_MAP } from '../flow/fieldMap'
-import { longStream } from './stream'
-import type { PromptDef } from '../promptSettings'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { parseObjectArray, asText } from '@/lib/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import { KIND_MAP } from '@/lib/flow/fieldMap'
+import { longStream } from '@/lib/aiTasks/stream'
+import type { PromptDef } from '@/lib/promptSettings'
 
 // ---------- 颉文姬⑤：本章设定补登（实体抽取） ----------
 //

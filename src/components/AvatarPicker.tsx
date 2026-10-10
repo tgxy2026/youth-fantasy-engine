@@ -9,10 +9,10 @@
  *   · 成功/失败都 toast：压缩是后台行为，作者看不到过程，必须给一个明确的「成了 / 为什么没成」。
  */
 import { useRef, useState, type ReactNode } from 'react'
-import Avatar from './Avatar'
-import { Button } from './Button'
-import { showToast } from './dialogs'
-import { AVATAR_ACCEPT, AVATAR_HINT_SPEC, readAvatarFile } from '../lib/imageAvatar'
+import Avatar from '@/components/Avatar'
+import { Button } from '@/components/Button'
+import { showToast } from '@/components/dialogs'
+import { AVATAR_ACCEPT, AVATAR_HINT_SPEC, readAvatarFile } from '@/lib/imageAvatar'
 
 export default function AvatarPicker({ src, name, size = 64, onChange, hint, actions }: {
   src?: string

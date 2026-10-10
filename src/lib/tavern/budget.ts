@@ -18,7 +18,7 @@
  *
  * 本文件是纯逻辑，不含 React。
  */
-import type { TavernMessage } from './types'
+import type { TavernMessage } from '@/lib/tavern/types'
 
 /**
  * 额外安全余量（字）。**2026-09-14 语义变更（老大选 C 档）**。

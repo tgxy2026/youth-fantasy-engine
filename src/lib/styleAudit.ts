@@ -3,9 +3,9 @@
 // ① 坏习惯高频词命中（如"顿时""瞬间"滥用）；② 省略号误用（…/... 代替 ……）；
 // ③ 视角切换规则 / 数字写法 的温和提醒（无法直接分析正文视角，仅提示人工核对）。
 // 建立在竞品普遍缺失的「写作规范」数据模型之上，是差异化功能。
-import * as db from './db'
-import { AuditIssue } from './audit'
-import { contextSnippet } from './contextSnippet'
+import * as db from '@/lib/db'
+import { AuditIssue } from '@/lib/audit'
+import { contextSnippet } from '@/lib/contextSnippet'
 
 /**
  * 把《写作规范》（`style` 表）压成一段「字段：值」上下文，供文风类 AI 任务注入。

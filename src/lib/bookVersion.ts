@@ -12,9 +12,9 @@
  *   · **闸门不硬拦** —— 返回 blockers 供界面提示；作者看到代价后仍可强制冻结（「AI 只辅助、作者裁决」）。
  *   · **零成本判据** —— 只看 `chapters` / `volumes` 两个数组，不跑引擎、不读伏笔 / 连续性（那些是既有面板的事）。
  */
-import type { Chapter, Volume } from './types'
-import { chapterFingerprint } from './aiRunLedger'
-import { hashOf } from './semantic/chunk'
+import type { Chapter, Volume } from '@/lib/types'
+import { chapterFingerprint } from '@/lib/aiRunLedger'
+import { hashOf } from '@/lib/semantic/chunk'
 
 // ============ 一、完成检查（确定性统计）============
 

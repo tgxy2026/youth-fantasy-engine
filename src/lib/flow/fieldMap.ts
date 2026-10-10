@@ -19,8 +19,8 @@
  * B2 接入「两遍全字段抽取」时，在此**新增** relation / worldFact / powerFact 三类与更多 `slots`，
  * commit 侧无需改动（它按本表驱动）。
  */
-import { TABS } from '../schema'
-import type { SettingEntityType } from '../aiTasks'
+import { TABS } from '@/lib/schema'
+import type { SettingEntityType } from '@/lib/aiTasks'
 
 /** 一个源字段 → 目标字段的落点声明 */
 export interface SlotMap {

@@ -1,4 +1,4 @@
-import { GROUP_PALETTE, GROUP_NEUTRAL } from './palette'
+import { GROUP_PALETTE, GROUP_NEUTRAL } from '@/lib/palette'
 
 /**
  * 关系图的分组着色与凸包轮廓（纯函数，可单测）。

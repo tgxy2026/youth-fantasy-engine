@@ -34,9 +34,10 @@ async function main() {
   const search = read('src/components/SettingSearch.tsx')
 
   // ---------- ① 检索页确实接了别名（只读展示） ----------
-  ok('源码闸：检索页引入了别名读取', search.includes("from '../lib/fieldAlias'") && search.includes('loadAliases'))
+  ok('源码闸：检索页引入了别名读取', (search.includes("from '../lib/fieldAlias'") || search.includes("from '@/lib/fieldAlias'")) && search.includes('loadAliases'))
   ok('🔴 源码闸：卡片字段键与「字段名」按钮**同源**（moduleAliasTargets，别自己再拼一份）',
-    search.includes("import { moduleAliasTargets } from './FieldAliasButton'"))
+    search.includes("import { moduleAliasTargets } from './FieldAliasButton'")
+    || search.includes("import { moduleAliasTargets } from '@/components/FieldAliasButton'"))
   ok('源码闸：DocField 带 alias（只读显示名）', /alias\?: string/.test(search))
   ok('🔴 源码闸：展示一律走 `f.alias ?? f.label`（字段名 + 占位符至少两处）',
     (search.match(/f\.alias \?\? f\.label/g) ?? []).length >= 2)

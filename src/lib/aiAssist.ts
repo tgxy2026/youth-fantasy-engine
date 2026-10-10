@@ -18,10 +18,10 @@
  * 因此：① 记账做成**纯函数** `withAiAssist()`，返回新对象不产生副作用；
  *       ② 测试里用**守门断言**盯着那几条 AI 主路径必须出现该调用，漏一处就红。
  */
-import type { Chapter, AiAssistStat } from './types'
+import type { Chapter, AiAssistStat } from '@/lib/types'
 // ⚠️ 用的是 `textStats` 里那个 countWords（与 chapterRewrite / autoContinue 同一实现）——
 //    别图省事换成别处的同名函数，否则占比数字会和其它地方的口径对不上。
-import { countWords } from './textStats'
+import { countWords } from '@/lib/textStats'
 
 /** 类型本体定义在 `types.ts`（避免循环依赖）—— 这里转发一次，调用方少 import 一处 */
 export type { AiAssistStat }

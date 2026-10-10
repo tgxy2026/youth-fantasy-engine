@@ -17,8 +17,8 @@
 //
 // 📌 触发点：`chapterRewrite.applyChapterRewrite` 成功后（唯一会覆盖作者正文的路径，
 //    与 W1-1 版本保护同处）+ 章后整理确认后（W2-1b）。
-import * as db from './db'
-import { OUTLINE_TAB_ID, chapterNoOf } from './outlineCard'
+import * as db from '@/lib/db'
+import { OUTLINE_TAB_ID, chapterNoOf } from '@/lib/outlineCard'
 
 /** settingsKV 键 —— `db.getSetting/setSetting` 自带 `<pid>::` 前缀，这里不必再拼 */
 const SETTING_KEY = 'futureImpact'

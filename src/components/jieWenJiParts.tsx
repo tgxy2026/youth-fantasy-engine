@@ -1,8 +1,8 @@
 // ============ 颉文姬 · 共用常量 / 类型 / 小件（C1 · 2.4.2 自 JieWenJi.tsx 拆出）============
 // 🔴 纯搬家：一行未改（只给顶层声明补了 export —— 原文里它们是本文件私有，现被子组件共用）。
-import { ProofreadIssue } from '../lib/aiTasks'
-import { SettingEntityType, MatchStatus } from '../lib/settingLedger'
-import type { PostProcessKind, PostProcessStatus } from '../lib/chapterPostProcess'
+import { ProofreadIssue } from '@/lib/aiTasks'
+import { SettingEntityType, MatchStatus } from '@/lib/settingLedger'
+import type { PostProcessKind, PostProcessStatus } from '@/lib/chapterPostProcess'
 
 /** 建议段标记（NovelEditor 的写入/清除共用） */
 export const ADVICE_START = '【颉文姬建议·开始】'

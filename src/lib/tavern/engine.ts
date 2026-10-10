@@ -12,43 +12,43 @@
  *   · 上下文必须走 buildProjectContext，不自拼 prompt 抓数据
  *   · 加锁 isCancelled 处理，取消要能中断
  */
-import { chat, isCancelled, type ChatMessage } from '../ai'
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { uid } from '../id'
-import { buildProjectContext } from '../aiContext'
+import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { uid } from '@/lib/id'
+import { buildProjectContext } from '@/lib/aiContext'
 import {
   buildSystemPrompt, buildMultiCharRule, toChatMessages, renderCastSetting,
   buildSameNameNote, buildSceneDescriptionRule, buildUserProfileBlock,
-} from './prompt'
-import * as store from './store'
-import { trimHistory, historyBudget } from './budget'
-import { toOllamaOptions } from './params'
+} from '@/lib/tavern/prompt'
+import * as store from '@/lib/tavern/store'
+import { trimHistory, historyBudget } from '@/lib/tavern/budget'
+import { toOllamaOptions } from '@/lib/tavern/params'
 import {
   getTavernSettings, resolveParamsOf, timeoutMsOf, thinkOptOf, activeProfileOf,
   type TavernSettings,
-} from './settings'
-import { memoryToText, isMemoryEmpty } from './memory'
-import { primaryAiCharId } from './primaryChar'
-import { getWorldSetting, buildPlotWorldBook, worldHaystack, keywordHaystackMessages } from './world'
+} from '@/lib/tavern/settings'
+import { memoryToText, isMemoryEmpty } from '@/lib/tavern/memory'
+import { primaryAiCharId } from '@/lib/tavern/primaryChar'
+import { getWorldSetting, buildPlotWorldBook, worldHaystack, keywordHaystackMessages } from '@/lib/tavern/world'
 // T2（2026-10-05）：自由对话的语义召回（查询文本 / 分区 / 索引节流都在那里）
-import { buildFreeRecallBlock } from './recall'
-import { quotaProfileOf } from './quotas'
+import { buildFreeRecallBlock } from '@/lib/tavern/recall'
+import { quotaProfileOf } from '@/lib/tavern/quotas'
 // 🔴 story.ts 里的世界书入口是 **静态 import**：engine 已经动态 import 它做 `resolveSessionStorySetting`，
 //    但 `buildStoryWorldBook` 是纯函数（不碰 db / provider）—— 静态引入不会加环，
 //    而且放这里比再包一层动态 import 更清楚。story.ts 不反向 import engine（它从 ./provider 取真源）。
-import { buildStoryWorldBook } from './story'
-import type { WorldEntry } from './worldBook'
-import { scriptToText } from './script'
-import { applyPostRules, type PostApplied } from './postRules'
-import { PROTOCOL_CORE } from './protocol'
-import { buildVarStateBlock, varsOf } from './vars'
+import { buildStoryWorldBook } from '@/lib/tavern/story'
+import type { WorldEntry } from '@/lib/tavern/worldBook'
+import { scriptToText } from '@/lib/tavern/script'
+import { applyPostRules, type PostApplied } from '@/lib/tavern/postRules'
+import { PROTOCOL_CORE } from '@/lib/tavern/protocol'
+import { buildVarStateBlock, varsOf } from '@/lib/tavern/vars'
 import {
   talkativityRowsOf,
   hasCastSetting, charTag, cardStoryId,
   VAR_KEYS,
   type TavernSession, type TavernMessage, type TavernCast, type TavernDirectorNote,
   type FreeSession, type FreeCharacter, type FreeMemory, type VarKey,
-} from './types'
+} from '@/lib/tavern/types'
 
 /** 剧情模式的档位固定为叙事向（方案 §5.3：剧情默认叙事向、自由默认聊天向） */
 const PLOT_TONE = 'narrative' as const
@@ -508,7 +508,7 @@ async function loadSessionStory(
   const snap = session.storySetting
   if (snap) return { name: snap.name ?? '', setting: (snap.setting ?? '').trim(), entries: snap.entries }
   try {
-    const { resolveSessionStorySetting } = await import('./story')
+    const { resolveSessionStorySetting } = await import('@/lib/tavern/story')
     return await resolveSessionStorySetting(
       session,
       chars.map(c => ({ id: c.id, storyId: cardStoryId(c) })),

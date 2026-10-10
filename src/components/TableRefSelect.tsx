@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getTableRows } from '../lib/db'
+import { getTableRows } from '@/lib/db'
 import { ChevronDown, Check, Plus } from 'lucide-react'
-import { Button } from './Button'
-import { EmptyState } from './EmptyState'
-import { Z } from '../lib/zLayer'
-import { computeDropdownPos, type DropdownPos } from '../lib/dropdownPos'
+import { Button } from '@/components/Button'
+import { EmptyState } from '@/components/EmptyState'
+import { Z } from '@/lib/zLayer'
+import { computeDropdownPos, type DropdownPos } from '@/lib/dropdownPos'
 
 interface Props {
   value: string

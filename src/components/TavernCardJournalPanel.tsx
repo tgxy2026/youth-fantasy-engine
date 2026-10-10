@@ -12,8 +12,8 @@
  * ⚠️ props 名与原局部变量**同名** ⇒ 内部 JSX 逐字未改（缩进保留原样，16 空格）。
  */
 import { type Dispatch, type SetStateAction } from 'react'
-import { Button } from './Button'
-import { JOURNAL_KEEP, type CharJournal, type CharJournalEntry } from '../lib/tavern/types'
+import { Button } from '@/components/Button'
+import { JOURNAL_KEEP, type CharJournal, type CharJournalEntry } from '@/lib/tavern/types'
 
 interface Props {
   /** 这本日记（没有日记时为 null） */

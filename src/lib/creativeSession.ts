@@ -22,33 +22,33 @@ import {
   type ChapterDraft,
   type ContinueStrategy,
   type DraftDecision,
-} from './autoContinue'
+} from '@/lib/autoContinue'
 import {
   runCreativeWriting,
   type CreativeResume,
   type CreativeTarget,
   type CreativeWritingResult,
-} from './aiWorkflow'
-import * as db from './db'
-import type { DraftBundle, DraftRow, FlowProgress } from './flow/types'
+} from '@/lib/aiWorkflow'
+import * as db from '@/lib/db'
+import type { DraftBundle, DraftRow, FlowProgress } from '@/lib/flow/types'
 import {
   aiRewriteChapter,
   CHAPTER_REWRITE_META,
   type ChapterRewriteAction,
   type OutlineResult,
-} from './aiTasks'
+} from '@/lib/aiTasks'
 import {
   applyChapterRewrite,
   expectedRewriteWords,
   isSuspectRewrite,
   listRewriteCandidates,
-} from './chapterRewrite'
-import { createRun, finishRun, chapterFingerprint, pickContextSnapshot, computeBasis } from './aiRunLedger'
-import { lastContextAssembly } from './aiContext'
-import { checkRewriteTarget, formatGap } from './evidenceGate'
-import { countWords } from './textStats'
-import { isCancelled } from './ai'
-import type { LedgerItem } from './settingLedger'
+} from '@/lib/chapterRewrite'
+import { createRun, finishRun, chapterFingerprint, pickContextSnapshot, computeBasis } from '@/lib/aiRunLedger'
+import { lastContextAssembly } from '@/lib/aiContext'
+import { checkRewriteTarget, formatGap } from '@/lib/evidenceGate'
+import { countWords } from '@/lib/textStats'
+import { isCancelled } from '@/lib/ai'
+import type { LedgerItem } from '@/lib/settingLedger'
 
 /** 创作起点：从一句话想法从零写 / 接着项目已有内容往下写 */
 export type CreativeMode = 'scratch' | 'continue'

@@ -17,7 +17,7 @@
  *    导出文档（B5）也要按同一套规则分行，判定规则散成两份必然漂移（本项目反复踩过的坑）。
  *    这里只负责**样式映射**。
  */
-import { classifyTavernLine, type TavernLineKind } from '../lib/tavern/exportDoc'
+import { classifyTavernLine, type TavernLineKind } from '@/lib/tavern/exportDoc'
 
 const KIND_CLASS: Record<TavernLineKind, string> = {
   action: 'text-12 text-ink-400',

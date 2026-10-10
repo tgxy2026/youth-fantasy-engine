@@ -12,9 +12,9 @@
  *    标点与空白**不计**。凡是给模型看的字数要求都必须写明「按汉字个数计，不含标点」：
  *    模型默认按 token 或字符估，写出来必然偏长（实测：目标 4000 写成 5000，超 25%）。
  */
-import { chat, requireActiveProvider, stripThink, isCancelled } from './ai'
-import { countWords } from './textStats'
-import { newAuthorFence, authorBlock } from './promptGuard'
+import { chat, requireActiveProvider, stripThink, isCancelled } from '@/lib/ai'
+import { countWords } from '@/lib/textStats'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
 
 /** 字数容差（±）：成品必须落在 `目标 ± 它` 之内 —— 界面、连写、改写三处共用同一常量 */
 export const WORD_TOLERANCE = 300

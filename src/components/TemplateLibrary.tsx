@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { saveCardRecord, getCurrentProjectId } from '../lib/db'
-import { uid } from '../lib/id'
+import { saveCardRecord, getCurrentProjectId } from '@/lib/db'
+import { uid } from '@/lib/id'
 import { Layers, Plus } from 'lucide-react'
-import { confirmDialog, showToast } from './dialogs'
-import { Modal } from './Modal'
-import { Button } from './Button'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
 
 interface Props {
   tabId: string

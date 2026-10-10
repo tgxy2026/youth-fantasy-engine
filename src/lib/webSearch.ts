@@ -24,7 +24,7 @@
  *
  * 🔴 本文件只负责「查」，不负责「决定要不要查」：模式、开关、回退都在调用方（draft / 界面）里判。
  */
-import { HAS_NET_BRIDGE, netFetch } from './desktop'
+import { HAS_NET_BRIDGE, netFetch } from '@/lib/desktop'
 
 export type SearchEngine = 'bocha' | 'searxng' | 'custom'
 

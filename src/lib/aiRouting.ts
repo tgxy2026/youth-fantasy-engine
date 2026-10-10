@@ -13,9 +13,9 @@
  * 🔴 本模块**绝不 import `./ai` 门面** —— 门面会再导出本模块，反向引用立刻成环。
  *    依赖方向固定为 `aiRouting → aiCore/session → aiCore/core`（DAG，无环）。
  */
-import * as db from './db'
-import { getActiveProvider, loadProviders } from './aiCore/session'
-import type { AIProvider } from './aiCore/core'
+import * as db from '@/lib/db'
+import { getActiveProvider, loadProviders } from '@/lib/aiCore/session'
+import type { AIProvider } from '@/lib/aiCore/core'
 
 export type TaskRole = 'create' | 'review' | 'utility'
 

@@ -8,17 +8,17 @@
 //      跨设备同步的唯一途径是**云盘文件**。本核心本身无平台假设，故原样保留。
 //  - 加密：载荷用内置密钥派生加密（rev 保持明文以便做版本守卫）。
 //    安全上下文(HTTPS/localhost)走 Web Crypto AES-GCM（真加密）；非安全上下文降级为 XOR 混淆。
-import type { StoreOps } from './storeOps'
+import type { StoreOps } from '@/lib/storeOps'
 import {
   type SyncTransport,
   type RawSyncResponse,
-} from './syncTransport'
-import { SAVE_DEBOUNCE_MS } from './constants'
-import { todayKey } from './date'
-import { isDeleted, markDeleted, clearDeleted, resetTombs } from './syncTombstone'
+} from '@/lib/syncTransport'
+import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
+import { todayKey } from '@/lib/date'
+import { isDeleted, markDeleted, clearDeleted, resetTombs } from '@/lib/syncTombstone'
 // 🔴 WebCrypto 取用器放在**叶子模块**：syncTransport 也要用它，而从 syncCore 导出会让
 //    syncTransport → syncCore 与本文件的 syncCore → syncTransport 凑成环（importCycles 会报红）。
-import { webcrypto, hasWebCrypto } from './webcrypto'
+import { webcrypto, hasWebCrypto } from '@/lib/webcrypto'
 
 // 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
 // ⚠️ 注意 'backups' / 'backupPayloads' 是**本地专属**（详见下方 LOCAL_ONLY_STORES）。

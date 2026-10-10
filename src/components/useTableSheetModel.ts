@@ -21,24 +21,24 @@
  *   · 列宽拖拽的位移必须按界面缩放折算（clientX 是视口像素，列宽是 CSS 像素）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
-import type { CalendarDef, TableRow, TabDef } from '../lib/types'
+import type { CalendarDef, TableRow, TabDef } from '@/lib/types'
 import {
   deleteTableRow, getAllChapterLedgerRows, getCurrentProjectId, getCustomOptions,
   getSetting, getTableRows, saveTableRow, setSetting, type CustomOptionPayload,
-} from '../lib/db'
-import { AUTONUM_GROUPS, nextAutoCode } from '../lib/autoCode'
-import { countCodeRefs, codeRefWarning } from '../lib/codeRefs'
-import { uid } from '../lib/id'
-import { aiCapabilityOf } from '../lib/aiScope'
-import { buildImportRows, type ImportRowResult } from '../lib/tableIO'
-import { useAIReady } from '../lib/useAIReady'
-import { useSaveHotkey } from '../lib/useSaveHotkey'
-import { clearFreeDraft } from '../lib/freeDraft'
-import { useCalendarRule } from '../lib/useCalendarRule'
-import { CUSTOM_OPTIONS_EVENT, resolveOptions } from './CustomSelect'
-import { usePersistedSet, readStringPref, writeStringPref } from '../lib/uiPrefs'
-import { showToast, confirmDialog } from './dialogs'
-import type { TemplateField } from '../lib/ai'
+} from '@/lib/db'
+import { AUTONUM_GROUPS, nextAutoCode } from '@/lib/autoCode'
+import { countCodeRefs, codeRefWarning } from '@/lib/codeRefs'
+import { uid } from '@/lib/id'
+import { aiCapabilityOf } from '@/lib/aiScope'
+import { buildImportRows, type ImportRowResult } from '@/lib/tableIO'
+import { useAIReady } from '@/lib/useAIReady'
+import { useSaveHotkey } from '@/lib/useSaveHotkey'
+import { clearFreeDraft } from '@/lib/freeDraft'
+import { useCalendarRule } from '@/lib/useCalendarRule'
+import { CUSTOM_OPTIONS_EVENT, resolveOptions } from '@/components/CustomSelect'
+import { usePersistedSet, readStringPref, writeStringPref } from '@/lib/uiPrefs'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import type { TemplateField } from '@/lib/ai'
 
 /**
  * 编号自然排序键：数字段补零后拼接，使 "F2" < "F10"、"9" < "10"

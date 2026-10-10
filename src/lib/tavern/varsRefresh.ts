@@ -18,11 +18,11 @@
  *
  * 🔴 失败一律静默（返回原会话）：数值是锦上添花，绝不能让它的失败把这一轮对话弄没。
  */
-import { isCancelled } from '../ai'
-import { extractSessionVars } from './summarize'
-import { varsOf, recordVarChanges, turnSeqOf, manualPinnedKeys } from './vars'
-import type { ChatFn } from './provider'
-import type { FreeSession, TavernMessage, VarKey, CharVars } from './types'
+import { isCancelled } from '@/lib/ai'
+import { extractSessionVars } from '@/lib/tavern/summarize'
+import { varsOf, recordVarChanges, turnSeqOf, manualPinnedKeys } from '@/lib/tavern/vars'
+import type { ChatFn } from '@/lib/tavern/provider'
+import type { FreeSession, TavernMessage, VarKey, CharVars } from '@/lib/tavern/types'
 
 export type RefreshVarsArgs = {
   /** 已经带上这一轮新回复的会话（通常在 `runFreeTurn` 返回之后） */

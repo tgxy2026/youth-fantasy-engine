@@ -6,18 +6,18 @@
  *    长任务状态本就在 lib/creativeSession 的模块级 store 里（切页签不丢），这里只做组织。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { confirmDialog, showToast } from './dialogs'
-import { useAIReady } from '../lib/useAIReady'
-import { loadActiveId, loadProviders, AIProvider } from '../lib/ai'
-import { clearSeed, consumeNotice, hydrateCreativeSession, updateInputs, useCreativeSession, CreativeLength, CreativeTarget } from '../lib/creativeSession'
-import { probeCreativeProject, CreativeProjectProbe } from '../lib/aiWorkflow'
-import { MAX_OUTLINE_CHAPTERS, ChapterRewriteAction } from '../lib/aiTasks'
-import { listRewriteTree, RewriteCandidate } from '../lib/chapterRewrite'
-import { detectVolumeGap } from '../lib/outlineCard'
-import { adviseCapacity, CapacityAdvice } from '../lib/modelCapacity'
-import { getTavernSettings } from '../lib/tavern/settings'
-import { advisePace, PaceAdvice } from '../lib/writingPace'
-import { TARGETS_BY_LENGTH, RewriteTree } from './creativeWritingParts'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { useAIReady } from '@/lib/useAIReady'
+import { loadActiveId, loadProviders, AIProvider } from '@/lib/ai'
+import { clearSeed, consumeNotice, hydrateCreativeSession, updateInputs, useCreativeSession, CreativeLength, CreativeTarget } from '@/lib/creativeSession'
+import { probeCreativeProject, CreativeProjectProbe } from '@/lib/aiWorkflow'
+import { MAX_OUTLINE_CHAPTERS, ChapterRewriteAction } from '@/lib/aiTasks'
+import { listRewriteTree, RewriteCandidate } from '@/lib/chapterRewrite'
+import { detectVolumeGap } from '@/lib/outlineCard'
+import { adviseCapacity, CapacityAdvice } from '@/lib/modelCapacity'
+import { getTavernSettings } from '@/lib/tavern/settings'
+import { advisePace, PaceAdvice } from '@/lib/writingPace'
+import { TARGETS_BY_LENGTH, RewriteTree } from '@/components/creativeWritingParts'
 
 export function useCreativeWritingModel() {
   const s = useCreativeSession()

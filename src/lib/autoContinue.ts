@@ -17,31 +17,31 @@
  *    先前攒的正文会被整段砍掉只剩残余标点 —— 故 ① 只对单次返回剥离 ② 落库前必校验字数）。
  * - 每章初稿先交作者裁决（采纳/重写/中止），采纳后才进入审查修正与设定补登。
  */
-import * as db from './db'
-import { writerBudgetFor } from './aiWriterBudget'
-import { uid } from './id'
-import { countWords } from './textStats'
-import { requireProviderFor, isCancelled, stripThink } from './ai'
-import { withAiAssist } from './aiAssist'
+import * as db from '@/lib/db'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
+import { uid } from '@/lib/id'
+import { countWords } from '@/lib/textStats'
+import { requireProviderFor, isCancelled, stripThink } from '@/lib/ai'
+import { withAiAssist } from '@/lib/aiAssist'
 // 🔴 「补写 / 压缩到目标字数」的校准逻辑已抽到 `lib/wordRange.ts`（整章改写侧也要用它，
 //    而那边不能 import 本文件 —— 会与 aiTasks 门面形成循环）。这里再导出一次常量，
 //    只为**保持既有 import 路径可用**（面板仍从本文件取 `WORD_TOLERANCE`）。
-import { ask, askSoft, enforceWordRange, WORD_TOLERANCE, type Cfg } from './wordRange'
+import { ask, askSoft, enforceWordRange, WORD_TOLERANCE, type Cfg } from '@/lib/wordRange'
 export { WORD_TOLERANCE }
-import { parseObjectArray, asText } from './aiParse'
-import { authorBlock, newAuthorFence } from './promptGuard'
-import { buildProjectContext, type ProjectContextResult } from './aiContext'
+import { parseObjectArray, asText } from '@/lib/aiParse'
+import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { buildProjectContext, type ProjectContextResult } from '@/lib/aiContext'
 import {
   aiExtractSettingEntities, aiContinuityAudit, aiOocCheck, aiForeshadowReview,
   aiRewritePassage, aiChapterSummary, cleanChapterOutput, type ExtractedEntity,
-} from './aiTasks'
-import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from './settingLedger'
-import { sortChapters, chapterSeqOf } from './chapterSeq'
-import { deAiGenerateRule, deAiPolishClause } from './deAiStyle'
-import { activeFingerprintNote } from './styleFingerprint'
-import { syncChapterMaster } from './chapterMaster'
-import type { Chapter } from './types'
-import { registerPrompt } from './promptSettings'
+} from '@/lib/aiTasks'
+import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from '@/lib/settingLedger'
+import { sortChapters, chapterSeqOf } from '@/lib/chapterSeq'
+import { deAiGenerateRule, deAiPolishClause } from '@/lib/deAiStyle'
+import { activeFingerprintNote } from '@/lib/styleFingerprint'
+import { syncChapterMaster } from '@/lib/chapterMaster'
+import type { Chapter } from '@/lib/types'
+import { registerPrompt } from '@/lib/promptSettings'
 
 /** 「设定更新侦测」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_setting_update_detect = `你是设定更新侦探。对比本章正文与已有设定，找出"对已有设定实体的新信息/状态变化"（如角色修为提升、关系变化、物品被获得或损毁、地点状态改变等）。

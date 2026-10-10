@@ -12,7 +12,7 @@
  * 参照：云端 Qwen3-30B 出一章 400 余字约 6s（见 2.2.0 体量纪律那次修复），
  * 按字数线性外推到 2500 字并留出安全边际，得到下面的系数。
  */
-import type { CapacityAdvice } from './modelCapacity'
+import type { CapacityAdvice } from '@/lib/modelCapacity'
 
 /** 与 `runCreativeWriting` 的章数上限保持一致（界面输入框也用它） */
 export const MAX_CHAPTERS = 60

@@ -16,14 +16,14 @@
  * `WORLDBASE_MODULES[pack]` 是模块加载期建好的静态数组，同一次调用返回同一引用 ⇒
  * `useMemo(..., [tab.modules])` 之类的依赖不会次次失效，行为与改造前一致。
  */
-import type { FormModule } from '../types'
-import { DEFAULT_PACK, type GenrePack } from './packs'
-import { WORLDBASE_MODULES } from './worldbase'
-import { POWER_MODULES } from './power'
-import { INSTITUTION_META, institutionModulesOf } from './institutions'
+import type { FormModule } from '@/lib/types'
+import { DEFAULT_PACK, type GenrePack } from '@/lib/schemaTemplates/packs'
+import { WORLDBASE_MODULES } from '@/lib/schemaTemplates/worldbase'
+import { POWER_MODULES } from '@/lib/schemaTemplates/power'
+import { INSTITUTION_META, institutionModulesOf } from '@/lib/schemaTemplates/institutions'
 
 // 枚举 / 判据 / 别名 / 题材矩阵 / 当前包 —— 全部从 packs 直达，调用方只认这一个入口
-export * from './packs'
+export * from '@/lib/schemaTemplates/packs'
 
 // ==================== 模块解析 ====================
 

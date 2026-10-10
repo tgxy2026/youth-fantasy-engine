@@ -14,22 +14,22 @@
  */
 import { useState } from 'react'
 import { FileText, Printer, Braces, Loader2 } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { showToast } from './dialogs'
-import { downloadBlob } from '../lib/zip'
-import { renderDoc } from '../lib/tavern/exportDoc'
-import { exportPdfDocument, DESKTOP } from '../lib/desktop'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { showToast } from '@/components/dialogs'
+import { downloadBlob } from '@/lib/zip'
+import { renderDoc } from '@/lib/tavern/exportDoc'
+import { exportPdfDocument, DESKTOP } from '@/lib/desktop'
 import {
   packToDocModel, packToJson, evidenceHtmlFileName, evidenceJsonFileName,
   evidenceSummary, dailyRange, DEFAULT_EVIDENCE_OPTIONS,
   type EvidencePack, type EvidenceViewOptions,
-} from '../lib/evidencePack'
+} from '@/lib/evidencePack'
 import {
   bookPackToDocModel, bookPackToJson, bookEvidenceHtmlFileName, bookEvidenceJsonFileName,
   bookEvidenceSummary, bookDailyRange, DEFAULT_BOOK_EVIDENCE_OPTIONS,
   type BookEvidencePack,
-} from '../lib/bookEvidence'
+} from '@/lib/bookEvidence'
 
 export default function EvidenceExportDialog({ open, onClose, pack, bookPack }: {
   open: boolean

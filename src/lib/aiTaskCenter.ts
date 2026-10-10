@@ -24,7 +24,7 @@
  *    要落盘得先定「存什么、存多大、放哪」，这是一件需要单独设计的事（见方案文档）。
  */
 import { useCallback, useSyncExternalStore } from 'react'
-import { uid } from './id'
+import { uid } from '@/lib/id'
 
 export type AiTaskStatus = 'running' | 'done' | 'failed' | 'aborted'
 

@@ -13,8 +13,8 @@
  */
 import { useEffect, useState } from 'react'
 import { Check, Lightbulb } from 'lucide-react'
-import { loadBox, type InspirationItem } from '../lib/inspirationBox'
-import { Button } from './Button'
+import { loadBox, type InspirationItem } from '@/lib/inspirationBox'
+import { Button } from '@/components/Button'
 
 export default function InspirationPicker({ disabled, selected, onChange }: {
   disabled: boolean

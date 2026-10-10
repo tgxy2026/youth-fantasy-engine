@@ -1,7 +1,7 @@
 
 import { useEffect, useRef, useState } from 'react'
-import { Modal, Z } from './Modal'
-import { Button } from './Button'
+import { Modal, Z } from '@/components/Modal'
+import { Button } from '@/components/Button'
 
 interface Props {
   open: boolean

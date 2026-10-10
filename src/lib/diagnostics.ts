@@ -13,11 +13,11 @@
  *
  * ⚠️ `DESKTOP` 在 dev（浏览器预览）下恒为 false —— 那一行显示「浏览器预览」是对的，不是 bug。
  */
-import * as db from './db'
-import { APP_VERSION_LABEL, DESKTOP } from './env'
-import { loadProviders } from './ai'
-import { countWords } from './textStats'
-import { recentErrors } from './errorLog'
+import * as db from '@/lib/db'
+import { APP_VERSION_LABEL, DESKTOP } from '@/lib/env'
+import { loadProviders } from '@/lib/ai'
+import { countWords } from '@/lib/textStats'
+import { recentErrors } from '@/lib/errorLog'
 
 /** 采集一段可粘贴的诊断信息（失败的部分降级为「未知」，绝不因为一项取不到就整体失败） */
 export async function collectDiagnostics(): Promise<string> {
@@ -71,7 +71,7 @@ export async function collectDiagnostics(): Promise<string> {
 
   // ── 语义索引（取不到就跳过这一行，不报错） ──
   try {
-    const { vectorIndex } = await import('./semantic/store')
+    const { vectorIndex } = await import('@/lib/semantic/store')
     if (pid) {
       const idx = await vectorIndex(pid)
       const n = Object.keys(idx?.refs ?? {}).length

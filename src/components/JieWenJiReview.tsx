@@ -4,10 +4,10 @@
  * 🔴 纯搬家：JSX 一字未改；状态全部来自 useJieWenJiModel（组件只收 m）。
  */
 import { BookOpen, BookOpenCheck, Loader2, AlertTriangle, CheckCircle2, Sparkles, Flame } from 'lucide-react'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { Button } from './Button'
-import { renderReport, SevBadge } from './jieWenJiParts'
-import type { JieWenJiModel } from './useJieWenJiModel'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { Button } from '@/components/Button'
+import { renderReport, SevBadge } from '@/components/jieWenJiParts'
+import type { JieWenJiModel } from '@/components/useJieWenJiModel'
 
 export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
   const { aiReady, rev, ooc, adv, plea, open, runReview, runOoc, runAdvice, runPleasure, runOpening, aiBtnCls, scoreCls } = m

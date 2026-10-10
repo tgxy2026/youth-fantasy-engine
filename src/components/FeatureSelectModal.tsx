@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
 import { Lock, Check } from 'lucide-react'
-import { Modal } from './Modal'
+import { Modal } from '@/components/Modal'
 import {
 
   TABS, GROUPS, EDITOR_TAB, EDITOR_ID,
   tierOf, STRONG_DEPS, resolveFeatures, forcedByDeps,
-} from '../lib/schema'
-import { Button } from './Button'
+} from '@/lib/schema'
+import { Button } from '@/components/Button'
 
 interface FeatureEntry {
   id: string

@@ -1,31 +1,31 @@
-import Panel from './Panel'
-import { foldVh } from '../lib/theme'
-import { writerBudgetFor } from '../lib/aiWriterBudget'
+import Panel from '@/components/Panel'
+import { foldVh } from '@/lib/theme'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Sparkles, Send, Copy, Check, Trash2, Pencil, Plus,
   AlertCircle, MessageSquarePlus, FolderOpen,
 } from 'lucide-react'
-import AutoTextarea from './AutoTextarea'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import PromptModal from './PromptModal'
-import { confirmDialog, copyText } from './dialogs'
+import AutoTextarea from '@/components/AutoTextarea'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import PromptModal from '@/components/PromptModal'
+import { confirmDialog, copyText } from '@/components/dialogs'
 import {
   type AIProvider, type ChatMessage,
   chat, loadProviders, loadActiveId, saveActiveId, typeLabel,
   requireActiveProvider, composeSystemPrompt,
-} from '../lib/ai'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { useTaskRunner } from '../lib/aiTaskCenter'
-import { buildProjectContext } from '../lib/aiContext'
-import { getSetting, setSetting } from '../lib/db'
-import { uid } from '../lib/id'
-import { Button } from './Button'
-import { clipText } from '../lib/textClip'
+} from '@/lib/ai'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
+import { buildProjectContext } from '@/lib/aiContext'
+import { getSetting, setSetting } from '@/lib/db'
+import { uid } from '@/lib/id'
+import { Button } from '@/components/Button'
+import { clipText } from '@/lib/textClip'
 // 🔴 W2-3：提示词与登记已搬到 lib（静态可达）—— 组件里不再 registerPrompt
-import { getAssistPrompt } from '../lib/aiAssistPrompt'
+import { getAssistPrompt } from '@/lib/aiAssistPrompt'
 
 // ============ 多轮对话会话模型（按项目持久化在 settingsKV） ============
 interface ChatMsg {

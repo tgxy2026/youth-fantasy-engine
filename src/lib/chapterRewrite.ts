@@ -10,15 +10,15 @@
  *      这里显式再存一份，界面提示指向「时光机 · 本章版本历史」。
  *   3. **同步章节台账**：不同步的话「章节总表」与项目字数会停在旧值上。
  */
-import { chapterSeqMap, flattenChapters } from './chapterSeq'
-import { syncChapterMaster } from './chapterMaster'
-import * as db from './db'
-import { countWords } from './textStats'
-import type { ChapterRewriteAction } from './aiTasks'
-import type { Chapter, Volume } from './types'
-import { withAiAssist, type AiSourceKind } from './aiAssist'
-import { chapterFingerprint } from './aiRunLedger'
-import { analyzeFutureImpact } from './futureImpact'
+import { chapterSeqMap, flattenChapters } from '@/lib/chapterSeq'
+import { syncChapterMaster } from '@/lib/chapterMaster'
+import * as db from '@/lib/db'
+import { countWords } from '@/lib/textStats'
+import type { ChapterRewriteAction } from '@/lib/aiTasks'
+import type { Chapter, Volume } from '@/lib/types'
+import { withAiAssist, type AiSourceKind } from '@/lib/aiAssist'
+import { chapterFingerprint } from '@/lib/aiRunLedger'
+import { analyzeFutureImpact } from '@/lib/futureImpact'
 
 /**
  * 本次改写的**期望字数** —— 异常判定的基准。

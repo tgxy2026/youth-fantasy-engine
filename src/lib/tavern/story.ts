@@ -17,19 +17,19 @@
  * 【铁律】索引与分条成对读写（同 store.ts / script.ts）：只写一边就会出现
  *        「列表里有、点开是空的」的幽灵条目。
  */
-import * as db from '../db'
-import { uid } from '../id'
-import { chat, type ChatMessage } from '../ai'
-import { parsePlainObject, asText } from '../aiParse'
-import { newAuthorFence, authorBlock } from '../promptGuard'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
+import { chat, type ChatMessage } from '@/lib/ai'
+import { parsePlainObject, asText } from '@/lib/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件，绕 engine 会形成循环依赖
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
-import { prepareDraftMaterial, type DraftSource } from './draft'
-import { webSearch, type SearchSettings } from '../webSearch'
-import type { TavernStory, TavernStoryIndexItem, StorySettingSnapshot } from './types'
-import { sessionStoryId } from './types'
-import { buildWorldBookText, normalizeEntry, type WorldEntry } from './worldBook'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
+import { prepareDraftMaterial, type DraftSource } from '@/lib/tavern/draft'
+import { webSearch, type SearchSettings } from '@/lib/webSearch'
+import type { TavernStory, TavernStoryIndexItem, StorySettingSnapshot } from '@/lib/tavern/types'
+import { sessionStoryId } from '@/lib/tavern/types'
+import { buildWorldBookText, normalizeEntry, type WorldEntry } from '@/lib/tavern/worldBook'
 
 // 全局 meta 键（无项目前缀）
 const G = {
@@ -226,14 +226,14 @@ export async function createStory(init: Partial<TavernStory> = {}): Promise<Tave
  */
 export async function deleteStory(id: string): Promise<{ reboundChars: number }> {
   // 动态 import：script.ts 将来可能反向引用 story.ts（树状查询），先绕开循环依赖的可能
-  const { listScripts, deleteScript } = await import('./script')
+  const { listScripts, deleteScript } = await import('@/lib/tavern/script')
   const scripts = await listScripts()
   for (const s of scripts) {
     if (s.storyId === id) await deleteScript(s.id)
   }
 
   // 卡：解绑不删。store.ts 不会反向依赖 story.ts，但保持动态 import 的一致写法更省心。
-  const { rebindCharsStory } = await import('./store')
+  const { rebindCharsStory } = await import('@/lib/tavern/store')
   const reboundChars = await rebindCharsStory(id, '')
 
   const idx = await db.getMeta<TavernStoryIndexItem[]>(G.index, [])

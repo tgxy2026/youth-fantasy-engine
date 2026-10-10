@@ -13,12 +13,12 @@
 //      定位不到的条目会被直接丢弃（作者点了也改不了），见 promptGuard 的说明。
 //   ② 提示词里**不写 markdown 星号**：模型会模仿输出格式，正文里就会混进 `**`。
 //      要强调就用「」（本项目文案规范同此）。
-import { chat, requireProviderFor, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
-import { parseObjectArray, asText } from '../aiParse'
-import { authorBlock, newAuthorFence } from '../promptGuard'
-import { stripEmphasis } from '../mdLite'
-import { longStream } from './stream'
-import type { PromptDef } from '../promptSettings'
+import { chat, requireProviderFor, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { parseObjectArray, asText } from '@/lib/aiParse'
+import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { stripEmphasis } from '@/lib/mdLite'
+import { longStream } from '@/lib/aiTasks/stream'
+import type { PromptDef } from '@/lib/promptSettings'
 
 // ---------- 校对 · 文字层（错别字 / 语病 / 标点） ----------
 

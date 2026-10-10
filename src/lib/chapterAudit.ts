@@ -13,10 +13,10 @@
 //     🔴 **绝不自动重跑**（§10.3 #4 首条：显式触发、非后台自动跑）—— 只标注，作者自己决定。
 //
 // 📌 消费者：`components/ChapterCheckPanel.tsx`（本章体检）。
-import * as db from './db'
-import { chapterFingerprint } from './aiRunLedger'
-import type { Chapter } from './types'
-import type { ChapterCheckReport } from './chapterCheck'
+import * as db from '@/lib/db'
+import { chapterFingerprint } from '@/lib/aiRunLedger'
+import type { Chapter } from '@/lib/types'
+import type { ChapterCheckReport } from '@/lib/chapterCheck'
 
 /** settingsKV 键 —— `db.getSetting/setSetting` 自带 `<pid>::` 前缀，这里不必再拼 */
 const SETTING_KEY = 'chapterAudit'

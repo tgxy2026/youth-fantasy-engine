@@ -1,27 +1,27 @@
 import { useEffect, useState } from 'react'
-import { writerBudgetFor } from '../lib/aiWriterBudget'
-import { ToolModal } from './EditorModals'
-import AuditPanel from './AuditPanel'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
+import { ToolModal } from '@/components/EditorModals'
+import AuditPanel from '@/components/AuditPanel'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
 import { GitBranch, Link2, Feather, Sparkles, Loader2, AlertCircle } from 'lucide-react'
-import type { ForeshadowBoardItem, ForeshadowStatus } from '../lib/foreshadowEngine'
+import type { ForeshadowBoardItem, ForeshadowStatus } from '@/lib/foreshadowEngine'
 // 2.9.1：改走 checkLog 的包装 —— 与检查工具页 / 稿件体检面板 / 本章体检共用同一份结果（缓存），
 // 并顺手记一条台账（供「比上次多/少几条」的趋势对比）
-import { foreshadowLogged, continuityLogged, trendOf, type CheckTrend } from '../lib/checkLog'
+import { foreshadowLogged, continuityLogged, trendOf, type CheckTrend } from '@/lib/checkLog'
 // 2.9.2：趋势行提取为独立组件（投稿前自检面板复用同一份实现）
-import CheckTrendNote from './CheckTrendNote'
-import { auditStyle, styleContextForAI } from '../lib/styleAudit'
-import type { AuditIssue } from '../lib/audit'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { useTaskRunner, chapterOwned, type ChOwned, type ChProgress } from '../lib/aiTaskCenter'
+import CheckTrendNote from '@/components/CheckTrendNote'
+import { auditStyle, styleContextForAI } from '@/lib/styleAudit'
+import type { AuditIssue } from '@/lib/audit'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { useTaskRunner, chapterOwned, type ChOwned, type ChProgress } from '@/lib/aiTaskCenter'
 
 /** AI 深度分析返回的条目形状（伏笔 / 连续性两个弹窗共用） */
 type AiFinding = { level: string; title: string; detail: string; where: string }
-import { buildProjectContext, getRecentChapterTexts } from '../lib/aiContext'
-import { aiForeshadowReview, aiContinuityAudit, aiStyleCheck } from '../lib/aiTasks'
-import { Button } from './Button'
+import { buildProjectContext, getRecentChapterTexts } from '@/lib/aiContext'
+import { aiForeshadowReview, aiContinuityAudit, aiStyleCheck } from '@/lib/aiTasks'
+import { Button } from '@/components/Button'
 
 // ============ 伏笔闭环看板 ============
 export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (tabId: string) => void; onClose: () => void }) {

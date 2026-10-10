@@ -1,22 +1,22 @@
 // ============ 存储层 · 项目（CRUD / 统计 / 导出导入 / 全量装载）============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
-import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from '../types'
-import { uid } from '../id'
-import type { TavernReport } from '../tavern/types'
-import type { AiRun } from '../aiRunTypes'
-import { ops, currentProjectId } from './core'
-import { VOL_LEDGER_PREFIX } from './volumes'
-import { type Snapshot, isAISnapshot } from './chapters'
-import type { DailyStat } from './meta'
+import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from '@/lib/types'
+import { uid } from '@/lib/id'
+import type { TavernReport } from '@/lib/tavern/types'
+import type { AiRun } from '@/lib/aiRunTypes'
+import { ops, currentProjectId } from '@/lib/db/core'
+import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
+import { type Snapshot, isAISnapshot } from '@/lib/db/chapters'
+import type { DailyStat } from '@/lib/db/meta'
 // 🔴 语义向量索引（#013）与知识库资料（#017）住在**独立 IDB 库**里，上面这批 store 管不到 ——
 //    删项目时必须各自显式清理，否则会留下「界面上看不到、却一直占空间」的孤儿
 //    （#013 当初就漏了这一步，2026-10-04 随 #017 一并补上）。
 //    ⚠️ 依赖方向已核对：这两个模块都**不 import db**（`knowledgeBase` 的 projectId 由调用方传，
 //       `semantic/store` 是纯存储层），故不会形成 `deleteProject → kb → db` 的环。
-import { clearProjectVectors } from '../semantic/store'
+import { clearProjectVectors } from '@/lib/semantic/store'
 import {
   clearProjectDocs, collectDocsForBundle, restoreDocsFromBundle, type KbBundleDoc,
-} from '../knowledgeBase'
+} from '@/lib/knowledgeBase'
 
 // ============ 项目 ============
 // 旧版项目形态 'lite'(精简) / 'minimal'(极简) 已移除；把存储中残留的旧值归一化为 'full'

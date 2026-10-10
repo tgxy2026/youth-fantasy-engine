@@ -17,7 +17,7 @@
  *
  * 【边界】纯逻辑：不调 AI、不碰 React、不碰 db。
  */
-import type { RunSession, RunSecret, RunEnding, RunEndingCondition } from './runTypes'
+import type { RunSession, RunSecret, RunEnding, RunEndingCondition } from '@/lib/run/runTypes'
 
 // ==================== 剧情 flag ====================
 

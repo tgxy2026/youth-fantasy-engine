@@ -13,10 +13,10 @@ import {
   Database, BookOpen, SlidersHorizontal, AlertTriangle, CheckCircle2,
   Loader2, Trash2, ArrowRight, ShieldQuestion, FolderOpen,
 } from 'lucide-react'
-import { Button } from './Button'
-import { showToast } from './dialogs'
-import { Z } from '../lib/zLayer'
-import { runLegacyMigration, migrationApi, type LegacyProbe, type MigrationReport } from '../lib/legacyMigration'
+import { Button } from '@/components/Button'
+import { showToast } from '@/components/dialogs'
+import { Z } from '@/lib/zLayer'
+import { runLegacyMigration, migrationApi, type LegacyProbe, type MigrationReport } from '@/lib/legacyMigration'
 
 interface Props {
   /** 主进程探测到的旧版数据概况 */

@@ -1,4 +1,4 @@
-import { REL_EXTRA_PALETTE } from './palette'
+import { REL_EXTRA_PALETTE } from '@/lib/palette'
 
 /**
  * 关系边配色（人物关系图 / 势力关系图共用 · 纯函数，可单测）。

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Cloud, FolderOpen, LogOut, History } from 'lucide-react'
-import HelpPopover from './HelpPopover'
-import { showToast, confirmDialog } from './dialogs'
-import { Button } from './Button'
-import { enableDesktopCloudSync, disableDesktopCloudSync } from '../lib/db'
-import { getDesktopDataFilePath } from '../lib/desktop'
-import { STATUS_META } from '../lib/syncStatusMeta'
+import HelpPopover from '@/components/HelpPopover'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import { enableDesktopCloudSync, disableDesktopCloudSync } from '@/lib/db'
+import { getDesktopDataFilePath } from '@/lib/desktop'
+import { STATUS_META } from '@/lib/syncStatusMeta'
 import {
   chooseDesktopCloudDir,
   getDesktopCloudStatus,
@@ -14,7 +14,7 @@ import {
   isDesktopCloudEnabled,
   getDesktopCloudDirName,
   type SyncStatus, type SyncDirHandle,
-} from '../lib/desktopCloudSync'
+} from '@/lib/desktopCloudSync'
 
 /**
  * 「云盘文件同步」操作条（#032：改为选目录即用，不再需要任何凭据）。

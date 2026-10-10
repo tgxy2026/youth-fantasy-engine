@@ -5,12 +5,12 @@
  * 🔴 必须返回 Fragment（不产生 DOM 节点）—— 主组件左列 div 的直接子节点数要恒为 5
  *    （实机脚本 ui-tavern-control.mjs 会数这一层：多包一层 div 立刻现形）。
  */
-import AutoTextarea from './AutoTextarea'
-import { Button } from './Button'
-import { Section, ToggleField, NumField } from './TavernFieldKit'
-import { RULE_EXAMPLE } from './tavernControlParts'
-import { DYNAMIC_QUOTA_PCT, fixedQuotaOf, dynamicQuotaOf, fmtWindow } from '../lib/tavern/quotas'
-import type { TavernControlModel } from './useTavernControlModel'
+import AutoTextarea from '@/components/AutoTextarea'
+import { Button } from '@/components/Button'
+import { Section, ToggleField, NumField } from '@/components/TavernFieldKit'
+import { RULE_EXAMPLE } from '@/components/tavernControlParts'
+import { DYNAMIC_QUOTA_PCT, fixedQuotaOf, dynamicQuotaOf, fmtWindow } from '@/lib/tavern/quotas'
+import type { TavernControlModel } from '@/components/useTavernControlModel'
 
 export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) {
   const { s, ruleTry, setRuleTry, presetList, setPresetNaming, presetFileRef, applyPreset, overwritePreset, dropPreset, exportPreset, importPresetFile, setPostFlag, setMultiVariant, setDynamicQuotaPct, setFree, setRule, addRule, dropRule, resetRules, rulePreview, activeProvider } = m

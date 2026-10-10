@@ -10,7 +10,7 @@
 //
 // 卷：完全依赖 Volume.order，不存在解析卷名的逻辑，也无「不计入序号」概念。
 
-import type { Chapter, Volume } from './types'
+import type { Chapter, Volume } from '@/lib/types'
 
 /** 按 (卷序, 章序) 展平成真实叙事顺序。这是全应用判定章节先后的唯一入口。 */
 export function flattenChapters(vols: Volume[], chs: Chapter[]): Chapter[] {

@@ -17,17 +17,17 @@
  * 写入顺序：**表格型先、卡片型后**。卡片有指向其它表的引用列（「地理位置」→ 地理风物、
  * 「所属势力」→ 国家势力），先建被引用者，引用才不会落空。B2 若新增更深的引用链，在此扩展拓扑。
  */
-import { readAliases } from '../aliases'
-import { isDirectedPairTab } from '../aiScope'
-import { nextAutoCode } from '../autoCode'
-import * as db from '../db'
-import { uid } from '../id'
-import { TABS } from '../schema'
-import { isParallelSetTab } from '../worldSets'
-import { normName } from '../settingLedger'
-import { formFieldNames } from './formMap'
-import type { CardRecord, TableRow } from '../types'
-import type { CommitOutcome, DraftField, DraftRow } from './types'
+import { readAliases } from '@/lib/aliases'
+import { isDirectedPairTab } from '@/lib/aiScope'
+import { nextAutoCode } from '@/lib/autoCode'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
+import { TABS } from '@/lib/schema'
+import { isParallelSetTab } from '@/lib/worldSets'
+import { normName } from '@/lib/settingLedger'
+import { formFieldNames } from '@/lib/flow/formMap'
+import type { CardRecord, TableRow } from '@/lib/types'
+import type { CommitOutcome, DraftField, DraftRow } from '@/lib/flow/types'
 
 /**
  * 已有同名条目时的处理方式：

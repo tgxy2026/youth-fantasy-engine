@@ -11,18 +11,18 @@
  * 表单共用是为了**两边永远一致**（各写一份必然会漂移，这个项目在别处已经栽过）。
  */
 import { useEffect, useMemo, useState } from 'react'
-import { showToast } from './dialogs'
-import { Button } from './Button'
-import { Modal } from './Modal'
-import AutoTextarea from './AutoTextarea'
-import TavernScriptFields from './TavernScriptFields'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
+import { showToast } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import { Modal } from '@/components/Modal'
+import AutoTextarea from '@/components/AutoTextarea'
+import TavernScriptFields from '@/components/TavernScriptFields'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/DraftBits'
 import {
   draftScript, saveScript, mergeScriptDraft, EMPTY_SCRIPT_FIELDS, scriptToText, snapshotOf,
   isEmptyScriptFields, type ScriptDraftFields,
-} from '../lib/tavern/script'
-import type { DraftSource } from '../lib/tavern/draft'
-import type { TavernScript } from '../lib/tavern/types'
+} from '@/lib/tavern/script'
+import type { DraftSource } from '@/lib/tavern/draft'
+import type { TavernScript } from '@/lib/tavern/types'
 
 export default function TavernScriptDialog({ open, onClose, onSaved, editing, storyId }: {
   open: boolean

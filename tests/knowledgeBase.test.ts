@@ -375,7 +375,7 @@ const multiPara = (n: number): string =>
   const search = read('src/lib/search.ts')
   ok('🔴 search.ts 不再自己定义 tokenize（单一真源，防"搜得到但召回不到"）',
     !/export\s+function\s+tokenize/.test(search))
-  ok('search.ts 从 tokenize.ts 取用', search.includes("from './tokenize'"))
+  ok('search.ts 从 tokenize.ts 取用', search.includes("from './tokenize'") || search.includes("from '@/lib/tokenize'"))
 
   const panel = read('src/components/KnowledgeBasePanel.tsx')
   ok('界面挂了 kb-recall 数据源说明（作者才看得到"会读什么"）',
@@ -561,7 +561,7 @@ const multiPara = (n: number): string =>
   ok('🔴 全量重建走 reindexAll 且透传 ctx.signal（可中止）',
     helper.includes('reindexAll') && helper.includes('ctx.signal'))
   ok('🔴 本模块不 import lib/db（否则 db → kbRestoreIndex → semantic/settings → db 成环）',
-    !/from\s+['"]\.\.?\/db['"]/.test(helper) && !/from\s+['"]\.\.\/db\//.test(helper))
+    !/from\s+['"](?:\.\.?\/db|@\/lib\/db)['"]/.test(helper) && !/from\s+['"](?:\.\.\/db|@\/lib\/db)\//.test(helper))
   ok('🔴 也没有反向：lib/db 下任何文件都不 import kbRestoreIndex（环的另一半）',
     ['projects', 'backups', 'chapters', 'tabs', 'migrations', 'worldSets', 'tavernReports']
       .every(f => !read(`src/lib/db/${f}.ts`).includes('kbRestoreIndex')))

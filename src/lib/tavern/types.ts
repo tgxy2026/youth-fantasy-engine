@@ -838,7 +838,7 @@ export type TavernStory = {
    *
    * @see src/lib/tavern/worldBook.ts
    */
-  entries?: import('./worldBook').WorldEntry[]
+  entries?: import('@/lib/tavern/worldBook').WorldEntry[]
   /** 上次 AI 起草的时间（0 = 从没跑过） */
   draftedAt: number
   createdAt: number
@@ -922,7 +922,7 @@ export type StorySettingSnapshot = {
    * 作者后来改故事，老会话不跟着变（与剧本快照同一条纪律）。
    * 🔴 可选：老会话没有 ⇒ 由 `setting` 退化成一个总是注入的条目（等价性红线）。
    */
-  entries?: import('./worldBook').WorldEntry[]
+  entries?: import('@/lib/tavern/worldBook').WorldEntry[]
   /** 快照时间 */
   at: number
 }

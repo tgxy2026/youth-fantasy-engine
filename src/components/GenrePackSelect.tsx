@@ -13,7 +13,7 @@
  * ② **不再决定「有没有这一页」** —— 完整项目全部页签开箱即用，
  *    自定义项目按建项目时勾选的「功能模块」显示。
  */
-import { GENRE_PACKS, type GenrePack } from '../lib/schemaTemplates'
+import { GENRE_PACKS, type GenrePack } from '@/lib/schemaTemplates/index'
 
 const SELECT_CLS =
   'bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-2.5 py-1.5 outline-none focus:border-amber/40'

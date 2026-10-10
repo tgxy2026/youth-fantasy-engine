@@ -16,12 +16,12 @@
  * 导出是给作者自己整理的稿子 —— 默认缺斤少两会让他以为对话丢了。
  */
 import { useState } from 'react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { showToast, copyText } from './dialogs'
-import { downloadBlob } from '../lib/zip'
-import { renderDoc, type DocModel, type ExportFormat } from '../lib/tavern/exportDoc'
-import { tavernExportSummaryText } from '../lib/viewSelectors'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { showToast, copyText } from '@/components/dialogs'
+import { downloadBlob } from '@/lib/zip'
+import { renderDoc, type DocModel, type ExportFormat } from '@/lib/tavern/exportDoc'
+import { tavernExportSummaryText } from '@/lib/viewSelectors'
 
 export type ExportBuildOptions = { includeHidden: boolean; withMeta: boolean }
 

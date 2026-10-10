@@ -2,7 +2,7 @@
 // 主题通过给 <html> 设置 data-theme，配合 index.css 中按 [data-theme] 重定义的 CSS 变量生效；
 // 由于全项目颜色都走 Tailwind 的 ink/amber 调色板（已改为 CSS 变量驱动），切换主题无需改动任何组件。
 
-import { deriveCustomTheme, ALL_THEME_VAR_KEYS, INK_VAR_KEYS, GRAPH_NEUTRAL_KEYS, GRAPH_ACCENT_KEYS, type ThemeBase, type CustomThemeVars } from './customTheme'
+import { deriveCustomTheme, ALL_THEME_VAR_KEYS, INK_VAR_KEYS, GRAPH_NEUTRAL_KEYS, GRAPH_ACCENT_KEYS, type ThemeBase, type CustomThemeVars } from '@/lib/customTheme'
 
 // 门面显式再导出（勿 export *）：弹窗等消费方统一从本模块取主题相关类型
 // （CustomThemeParams / ThemeId 本文件已声明并导出，此处只补 CustomThemeVars）

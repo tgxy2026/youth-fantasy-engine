@@ -19,17 +19,17 @@ import { useState } from 'react'
 import {
   Cpu, Globe, Loader2, CheckCircle2, AlertCircle, FlaskConical, RefreshCw, Lightbulb,
 } from 'lucide-react'
-import { Button } from './Button'
-import AIDisabledNotice from './AIDisabledNotice'
-import { showToast } from './dialogs'
+import { Button } from '@/components/Button'
+import AIDisabledNotice from '@/components/AIDisabledNotice'
+import { showToast } from '@/components/dialogs'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
   testProvider, providerFromPreset, listOllamaModels,
   loadProviders, saveProviders, saveActiveId,
   LOCAL_PRESETS, ONLINE_PRESETS,
-} from '../lib/ai'
-import { currentModelAdvice, getWriterBudget, saveWriterBudget } from '../lib/aiWriterBudget'
-import { syncTuningWithModel } from '../lib/tavern/settings'
+} from '@/lib/ai'
+import { currentModelAdvice, getWriterBudget, saveWriterBudget } from '@/lib/aiWriterBudget'
+import { syncTuningWithModel } from '@/lib/tavern/settings'
 
 /**
  * 向导只摆最常用的几家 —— 首屏摆 14 个平台会变成一张让人不想看的清单。

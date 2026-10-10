@@ -7,13 +7,13 @@
 // 而比对是纯字符串运算，结果可预期、可复现，且绝不会凭空编造条目。
 // 抽取侧见 aiTasks.ts 的 aiExtractSettingEntities。
 
-import * as db from './db'
-import { TABS } from './schema'
-import { readAliases } from './aliases'
-import { nextAutoCode } from './autoCode'
-import { uid } from './id'
-import type { CardRecord, TableRow } from './types'
-import type { ExtractedEntity, SettingEntityType } from './aiTasks'
+import * as db from '@/lib/db'
+import { TABS } from '@/lib/schema'
+import { readAliases } from '@/lib/aliases'
+import { nextAutoCode } from '@/lib/autoCode'
+import { uid } from '@/lib/id'
+import type { CardRecord, TableRow } from '@/lib/types'
+import type { ExtractedEntity, SettingEntityType } from '@/lib/aiTasks'
 
 export type { SettingEntityType }
 

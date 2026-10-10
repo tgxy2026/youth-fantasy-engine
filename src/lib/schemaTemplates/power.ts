@@ -17,8 +17,8 @@
  * 老实现靠「字段名包含关键字」猜；模板化后新字段可能不含关键字 ⇒ 本文件对数值字段
  * **显式声明 `kind: 'numeric'`**，关键字判据退化为兜底（两条判据并存，见 components/FormSheet.tsx）。
  */
-import type { FormField, FormModule } from '../types'
-import type { GenrePack } from './packs'
+import type { FormField, FormModule } from '@/lib/types'
+import type { GenrePack } from '@/lib/schemaTemplates/packs'
 
 const f = (name: string, desc: string, example: string): FormField => ({ name, desc, example })
 /** 数值型字段：AI 补全时锁死，不让模型凭空编（等价于旧的关键字判据，但显式、不靠猜） */

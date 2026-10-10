@@ -16,14 +16,14 @@
  * 🔴 本模块**只读不写项目数据**（不碰 chapters / settings 表）——它是选题参考工具，
  *    与「拆书（一次性抽设定）」和「知识库挂载（长期资料）」是三条独立的路。
  */
-import type { PromptDef } from './promptSettings'
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from './ai'
-import { parseLooseObject, asText } from './aiParse'
-import { getSearchSettings } from './searchSettings'
+import type { PromptDef } from '@/lib/promptSettings'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { parseLooseObject, asText } from '@/lib/aiParse'
+import { getSearchSettings } from '@/lib/searchSettings'
 import {
   webSearch, searchBlockedReason,
   type SearchSettings, type SearchTransport,
-} from './webSearch'
+} from '@/lib/webSearch'
 
 /** 「市场雷达」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_market_radar = `你是网文市场的趋势分析助手。作者会给出一个作品方向（题材 / 平台 / 标签 / 关键词），以及一批从公开网络检索到的资料片段。请只依据这些资料 + 你的常识，归纳出对选题有用的趋势参考。

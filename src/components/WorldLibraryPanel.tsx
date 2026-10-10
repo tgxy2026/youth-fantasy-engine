@@ -15,13 +15,13 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, FileDown, Globe, Loader2, Lock, Trash2 } from 'lucide-react'
-import * as db from '../lib/db'
-import { createWorldFromCurrentProject, draftDiffers, freezeWorld, renameWorld } from '../lib/worlds'
-import { getWorldImportRecord, importWorldIntoCurrent, type WorldImportRecord } from '../lib/worldImport'
-import type { WorldStoredRecord } from '../lib/worldTypes'
-import { Button } from './Button'
-import { confirmDialog, showToast } from './dialogs'
-import HelpPopover from './HelpPopover'
+import * as db from '@/lib/db'
+import { createWorldFromCurrentProject, draftDiffers, freezeWorld, renameWorld } from '@/lib/worlds'
+import { getWorldImportRecord, importWorldIntoCurrent, type WorldImportRecord } from '@/lib/worldImport'
+import type { WorldStoredRecord } from '@/lib/worldTypes'
+import { Button } from '@/components/Button'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import HelpPopover from '@/components/HelpPopover'
 
 function fmt(ts: number): string {
   if (!ts) return '—'

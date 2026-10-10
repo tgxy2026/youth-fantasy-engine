@@ -5,13 +5,13 @@
  * 🔴 必须返回 Fragment（不产生 DOM 节点）—— 主组件左列 div 的直接子节点数要恒为 5
  *    （实机脚本 ui-tavern-control.mjs 会数这一层：多包一层 div 立刻现形）。
  */
-import AvatarPicker from './AvatarPicker'
-import { Button } from './Button'
-import { PARAM_GUIDES } from '../lib/tavern/paramGuide'
-import { GRID2, Section, Field, NumField, TextField, SelectField, ToggleField } from './TavernFieldKit'
-import type { TavernControlModel } from './useTavernControlModel'
-import SamplingUnavailable from './SamplingUnavailable'
-import { profileListOf, activeProfileOf, type TavernProfile } from '../lib/tavern/settings'
+import AvatarPicker from '@/components/AvatarPicker'
+import { Button } from '@/components/Button'
+import { PARAM_GUIDES } from '@/lib/tavern/paramGuide'
+import { GRID2, Section, Field, NumField, TextField, SelectField, ToggleField } from '@/components/TavernFieldKit'
+import type { TavernControlModel } from '@/components/useTavernControlModel'
+import SamplingUnavailable from '@/components/SamplingUnavailable'
+import { profileListOf, activeProfileOf, type TavernProfile } from '@/lib/tavern/settings'
 
 /** 下拉里显示什么：优先档案自己的名字；没名字就用序号兜底（否则两个空档案长得一模一样） */
 const profileOptionLabel = (p: TavernProfile, i: number) => p.name.trim() || `未命名档案 ${i + 1}`

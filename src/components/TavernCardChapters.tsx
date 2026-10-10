@@ -18,10 +18,10 @@
  *    别为了好看去重排缩进 —— 「逐行区间核对」靠它证明一个字没改。
  */
 import { type Dispatch, type SetStateAction } from 'react'
-import AutoTextarea from './AutoTextarea'
-import TavernCardStructField from './TavernCardStructField'
-import { PROFILE_SPECS, CONDUCT_SPECS } from '../lib/tavern/cardFields'
-import { readCardField, writeCardField, type FreeCharacter } from '../lib/tavern/types'
+import AutoTextarea from '@/components/AutoTextarea'
+import TavernCardStructField from '@/components/TavernCardStructField'
+import { PROFILE_SPECS, CONDUCT_SPECS } from '@/lib/tavern/cardFields'
+import { readCardField, writeCardField, type FreeCharacter } from '@/lib/tavern/types'
 
 /** 单个字段（标题 + 说明 + 输入区）。说明写的是「填什么」，不是「这一栏是什么」。 */
 function Field({ label, hint, value, onChange, rows = 3, ph }: {

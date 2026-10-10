@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { CalendarDef } from '../lib/types'
+import type { CalendarDef } from '@/lib/types'
 import { Check, ChevronDown } from 'lucide-react'
-import { Z } from './Modal'
-import { Button } from './Button'
-import { EmptyState } from './EmptyState'
-import { computeDropdownPos } from '../lib/dropdownPos'
+import { Z } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { EmptyState } from '@/components/EmptyState'
+import { computeDropdownPos } from '@/lib/dropdownPos'
 
 interface Props {
   /** 当前选中的历法名称 */

@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getCardRecords } from '../lib/db'
-import type { CardRecord } from '../lib/types'
-import { tabVisible, type VisCtx, TABS } from '../lib/schema'
+import { getCardRecords } from '@/lib/db'
+import type { CardRecord } from '@/lib/types'
+import { tabVisible, type VisCtx, TABS } from '@/lib/schema'
 import { ChevronDown, Check } from 'lucide-react'
-import { Button } from './Button'
-import { EmptyState } from './EmptyState'
-import { Z } from '../lib/zLayer'
-import { computeDropdownPos, type DropdownPos } from '../lib/dropdownPos'
+import { Button } from '@/components/Button'
+import { EmptyState } from '@/components/EmptyState'
+import { Z } from '@/lib/zLayer'
+import { computeDropdownPos, type DropdownPos } from '@/lib/dropdownPos'
 
 interface Props {
   value: string

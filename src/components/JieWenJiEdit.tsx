@@ -6,15 +6,15 @@
  * ⚠️ 五个动作名（`INSTRUCTIONS`）会**直接进提示词**，改名须同步 `jieWenJi.ts` 的定义段。
  */
 import { PenLine, Wand2, Loader2, AlertTriangle, CheckCircle2, Trash2, Feather, ChevronDown, ChevronUp } from 'lucide-react'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { Button } from './Button'
-import AutoTextarea from './AutoTextarea'
-import NumberField from './NumberField'
-import { ADVICE_START, INSTRUCTIONS, CONTINUE_PICKS } from './jieWenJiParts'
-import { INSTRUCTION_PLACEHOLDERS, INSTRUCTION_PLACEHOLDER_FALLBACK } from '../lib/rewriteAsk'
-import AIDataSourceNote from './AIDataSourceNote'
-import { countWords } from '../lib/textStats'
-import type { JieWenJiModel } from './useJieWenJiModel'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { Button } from '@/components/Button'
+import AutoTextarea from '@/components/AutoTextarea'
+import NumberField from '@/components/NumberField'
+import { ADVICE_START, INSTRUCTIONS, CONTINUE_PICKS } from '@/components/jieWenJiParts'
+import { INSTRUCTION_PLACEHOLDERS, INSTRUCTION_PLACEHOLDER_FALLBACK } from '@/lib/rewriteAsk'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { countWords } from '@/lib/textStats'
+import type { JieWenJiModel } from '@/components/useJieWenJiModel'
 
 export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
   const {

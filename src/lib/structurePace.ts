@@ -22,7 +22,7 @@
  *    （逐章独立 round1 会漂移，20 章可漂 0.6pp，面板「各拍合计」会露馅）。
  */
 
-import type { StoryTemplate } from './storyStructures'
+import type { StoryTemplate } from '@/lib/storyStructures'
 
 /** 面板的最小样本门槛（规划：全书 <10 章时显示引导文案而非硬算）——放在面板层判 */
 export const PACE_MIN_CHAPTERS = 10

@@ -2,15 +2,15 @@
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 // ⚠️ 这里跑的是**运行时数据迁移**（打开项目后执行），与 ./idbMigrations 的 IndexedDB schema 迁移是两件事。
 // 🔴 runMigrations 里的调用次序＝依赖次序（types → ledger → numbering → geomaps），不可调换。
-import type { CardRecord, TableRow } from '../types'
-import { uid } from '../id'
-import { chapterSeqMap, flattenChapters } from '../chapterSeq'
-import { ops, currentProjectId } from './core'
-import { migrateProjectTypes } from './projects'
-import { getAllVolumes, VOL_LEDGER_PREFIX } from './volumes'
-import { getAllChapters } from './chapters'
-import { getTableRows, saveTableRow } from './tabs'
-import { getSetting } from './meta'
+import type { CardRecord, TableRow } from '@/lib/types'
+import { uid } from '@/lib/id'
+import { chapterSeqMap, flattenChapters } from '@/lib/chapterSeq'
+import { ops, currentProjectId } from '@/lib/db/core'
+import { migrateProjectTypes } from '@/lib/db/projects'
+import { getAllVolumes, VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
+import { getAllChapters } from '@/lib/db/chapters'
+import { getTableRows, saveTableRow } from '@/lib/db/tabs'
+import { getSetting } from '@/lib/db/meta'
 
 /**
  * 旧版「单张章节总表 + 所属卷自引用」迁移到「按卷建表」。

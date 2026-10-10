@@ -7,18 +7,18 @@
  * 状态一律来自 `model`（同名解构，JSX 保持原样）；本组件不持有任何状态。
  */
 import { useMemo } from 'react'
-import type { VisCtx } from '../lib/schema'
-import { useFieldAliases } from '../lib/fieldAlias'
-import { UNSAVED_CHANGES_HINT } from '../lib/constants'
-import type { TabDef } from '../lib/types'
-import { SABC_LABELS } from '../lib/schema'
-import { Button } from './Button'
-import CustomSelect from './CustomSelect'
-import CharacterSelect from './CharacterSelect'
-import TableRefSelect from './TableRefSelect'
+import type { VisCtx } from '@/lib/schema'
+import { useFieldAliases } from '@/lib/fieldAlias'
+import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
+import type { TabDef } from '@/lib/types'
+import { SABC_LABELS } from '@/lib/schema'
+import { Button } from '@/components/Button'
+import CustomSelect from '@/components/CustomSelect'
+import CharacterSelect from '@/components/CharacterSelect'
+import TableRefSelect from '@/components/TableRefSelect'
 import { ChevronDown, ChevronRight, Sparkles, Trash2, Users } from 'lucide-react'
-import { LONG_REL_COLS, rowBadgeClass } from './tableSheetShared'
-import type { TableSheetModel } from './useTableSheetModel'
+import { LONG_REL_COLS, rowBadgeClass } from '@/components/tableSheetShared'
+import type { TableSheetModel } from '@/components/useTableSheetModel'
 
 export default function TableRelationGroups({ tab, model, ctx }: {
   tab: TabDef

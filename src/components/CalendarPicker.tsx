@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Calendar } from 'lucide-react'
-import { todayKey } from '../lib/date'
-import { Button } from './Button'
-import { Z } from '../lib/zLayer'
-import { computeDropdownPos, type DropdownPos } from '../lib/dropdownPos'
+import { todayKey } from '@/lib/date'
+import { Button } from '@/components/Button'
+import { Z } from '@/lib/zLayer'
+import { computeDropdownPos, type DropdownPos } from '@/lib/dropdownPos'
 
 /** 视图年月 + 日号 → YYYY-MM-DD（统一走 lib/date，与写作统计同口径） */
 const dayKey = (y: number, m: number, d: number) => todayKey(new Date(y, m - 1, d))

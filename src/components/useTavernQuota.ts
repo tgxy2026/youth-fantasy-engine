@@ -12,9 +12,9 @@
 //    界面据此提示「模型没填窗口，额度按 32K 估」。这不是错，是保守。
 import { useEffect, useMemo, useState } from 'react'
 
-import { useTavernReady } from './useTavernReady'
-import { quotaProfileOf, type QuotaProfile } from '../lib/tavern/quotas'
-import { getTavernSettings } from '../lib/tavern/settings'
+import { useTavernReady } from '@/components/useTavernReady'
+import { quotaProfileOf, type QuotaProfile } from '@/lib/tavern/quotas'
+import { getTavernSettings } from '@/lib/tavern/settings'
 
 export interface TavernQuota extends QuotaProfile {
   /** 当前模型是否就绪（没就绪时额度仍是兜底值，界面该提示「先配模型」） */

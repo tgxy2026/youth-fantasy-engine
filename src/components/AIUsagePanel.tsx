@@ -9,10 +9,10 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, Loader2, RefreshCw } from 'lucide-react'
-import * as db from '../lib/db'
-import { listProjectAiRuns } from '../lib/db'
-import { summarizeUsage, type UsageSummary } from '../lib/aiUsageStats'
-import { Button } from './Button'
+import * as db from '@/lib/db'
+import { listProjectAiRuns } from '@/lib/db'
+import { summarizeUsage, type UsageSummary } from '@/lib/aiUsageStats'
+import { Button } from '@/components/Button'
 
 function fmtMs(ms: number): string {
   if (!ms) return '0 秒'

@@ -17,9 +17,9 @@
 //   orphan 在章节树里压根不渲染（树只 map volumes），且分不清「主动建的散章」与「卷被删后遗留的」。
 //   做成真卷后，自由章节能正常登记进卷台账、能被导出、也能**直接拖进任意卷归类**。
 
-import type { Volume } from './types'
-import * as db from './db'
-import { uid } from './id'
+import type { Volume } from '@/lib/types'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
 
 /** 自由卷首次创建时的默认标题（仅用于显示，判定一律走 isFree） */
 export const FREE_VOLUME_TITLE = '自由章节'

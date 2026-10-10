@@ -9,7 +9,7 @@
 //   不论作者打开过哪个页签，这条一定在册。
 //
 // 提示词文本**逐字搬运**（本节只动「注册位置」，不改一个字）。
-import { registerPrompt } from './promptSettings'
+import { registerPrompt } from '@/lib/promptSettings'
 
 let SYSTEM_PROMPT = `你是一位网络小说创作的辅助助手，专门帮助作者做创作前期的「灵感激发、剧情 / 人物 / 世界观规划、设定脑暴、一致性自查」工作。
 

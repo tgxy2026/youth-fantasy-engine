@@ -11,9 +11,9 @@
  *    否则整章 3000 行里只有 2 行不同时，作者得滚 3000 行才看得到那 2 行。
  */
 import { useMemo, useState } from 'react'
-import { diffLines, diffStats, type DiffLine } from '../lib/textDiff'
-import { foldVh } from '../lib/theme'
-import { Button } from './Button'
+import { diffLines, diffStats, type DiffLine } from '@/lib/textDiff'
+import { foldVh } from '@/lib/theme'
+import { Button } from '@/components/Button'
 
 type Row = { kind: 'line'; line: DiffLine } | { kind: 'gap'; count: number }
 

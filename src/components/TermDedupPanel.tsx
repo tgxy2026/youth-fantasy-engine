@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import AIDataSourceNote from './AIDataSourceNote'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
 import { Sparkles, Loader2, AlertCircle, Layers } from 'lucide-react'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { aiDedupTerms } from '../lib/aiTasks'
-import { ToolModal } from './EditorModals'
-import { Button } from './Button'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { aiDedupTerms } from '@/lib/aiTasks'
+import { ToolModal } from '@/components/EditorModals'
+import { Button } from '@/components/Button'
 
 
 interface Props {

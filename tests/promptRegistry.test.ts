@@ -97,7 +97,7 @@ console.log('\n—— promptRegistry 用例开始 ——')
 {
   const ai = fs.readFileSync('src/lib/ai.ts', 'utf8')
   ok('🔴 ai.ts 裸 import aiAssistPrompt（静态可达 ⇒ 一定注册）',
-    /^import '\.\/aiAssistPrompt'$/m.test(ai))
+    /^import '(?:\.\/aiAssistPrompt|@\/lib\/aiAssistPrompt)'$/m.test(ai))
   ok('aiAssistPrompt 模块自带 registerPrompt（搬走后仍会注册）',
     fs.readFileSync('src/lib/aiAssistPrompt.ts', 'utf8').includes("registerPrompt("))
   ok('🔴 AIAssist 组件已不再持有 SYSTEM_PROMPT 常量（源码级）',

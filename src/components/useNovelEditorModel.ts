@@ -20,35 +20,35 @@
  *   · 界面缩放生效：量尺寸用 offsetHeight/clientWidth，绝不 getBoundingClientRect。
  */
 import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect } from 'react'
-import type { Volume, Chapter } from '../lib/types'
-import * as db from '../lib/db'
-import { uid } from '../lib/id'
-import { countWords } from '../lib/textStats'
-import { todayKey } from '../lib/date'
-import { useResizable } from '../lib/useResizable'
-import { useSaveHotkey } from '../lib/useSaveHotkey'
-import { foldPendingAi, type AiSourceKind, type PendingAiNote } from '../lib/aiAssist'
+import type { Volume, Chapter } from '@/lib/types'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
+import { countWords } from '@/lib/textStats'
+import { todayKey } from '@/lib/date'
+import { useResizable } from '@/lib/useResizable'
+import { useSaveHotkey } from '@/lib/useSaveHotkey'
+import { foldPendingAi, type AiSourceKind, type PendingAiNote } from '@/lib/aiAssist'
 
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 
-import { ADVICE_START, ADVICE_END } from './JieWenJi'
-import { confirmDialog, showToast } from './dialogs'
-import { type VisCtx, refreshVolumeTabs } from '../lib/schema'
-import { chapterSeqOf, chapterSeqMap } from '../lib/chapterSeq'
-import { syncChapterMaster } from '../lib/chapterMaster'
-import { useAIReady } from '../lib/useAIReady'
-import { readSetPref, writeSetPref, readStringPref, writeStringPref, usePersistedBool, usePersistedEnum } from '../lib/uiPrefs'
-import { DEFAULT_INDENT_UNIT, INDENT_UNIT_IDS, type IndentUnit } from '../lib/indent'
-import { aiChapterSummary } from '../lib/aiTasks'
-import { useTaskRunner } from '../lib/aiTaskCenter'
-import { autoIndexChapter, chapterFingerprint } from '../lib/semantic/indexer'
+import { ADVICE_START, ADVICE_END } from '@/components/JieWenJi'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { type VisCtx, refreshVolumeTabs } from '@/lib/schema'
+import { chapterSeqOf, chapterSeqMap } from '@/lib/chapterSeq'
+import { syncChapterMaster } from '@/lib/chapterMaster'
+import { useAIReady } from '@/lib/useAIReady'
+import { readSetPref, writeSetPref, readStringPref, writeStringPref, usePersistedBool, usePersistedEnum } from '@/lib/uiPrefs'
+import { DEFAULT_INDENT_UNIT, INDENT_UNIT_IDS, type IndentUnit } from '@/lib/indent'
+import { aiChapterSummary } from '@/lib/aiTasks'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
+import { autoIndexChapter, chapterFingerprint } from '@/lib/semantic/indexer'
 import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
   GHOST_CONTEXT_CHARS, orderedChapters,
-} from './novelEditorHelpers'
-import { isFreeVolume, realVolumes, ensureFreeVolume, findFreeVolume, nextVolumeOrder } from '../lib/freeVolume'
-import { useNovelEditorHighlight } from './useNovelEditorHighlight'
-import { useNovelEditorGhost } from './useNovelEditorGhost'
+} from '@/components/novelEditorHelpers'
+import { isFreeVolume, realVolumes, ensureFreeVolume, findFreeVolume, nextVolumeOrder } from '@/lib/freeVolume'
+import { useNovelEditorHighlight } from '@/components/useNovelEditorHighlight'
+import { useNovelEditorGhost } from '@/components/useNovelEditorGhost'
 
 type Args = {
   /** 项目名（导出文件名 / 提示词里用） */
@@ -137,8 +137,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   /** C6（2.4.2）：导出格式弹窗（'platform' 粘贴版 / 'markdown'），null = 关闭 */
   const [exportFormatTab, setExportFormatTab] = useState<'platform' | 'markdown' | 'docx' | null>(null)
   /** 导出操作统一收口：按需动态加载 exporter 模块（含 zip/EPUB/DOCX 打包器），避免拖入首屏主包 */
-  const runExport = useCallback(async (fn: (m: typeof import('../lib/exporter')) => void) => {
-    const m = await import('../lib/exporter')
+  const runExport = useCallback(async (fn: (m: typeof import('@/lib/exporter')) => void) => {
+    const m = await import('@/lib/exporter')
     fn(m)
     setExportOpen(false)
   }, [])

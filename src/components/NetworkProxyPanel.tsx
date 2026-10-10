@@ -11,17 +11,17 @@
  * 无主进程桥（便携版 / 浏览器 dev）时设置仍可保存（桌面版启动后自动生效），界面如实提示。
  */
 import { useEffect, useState } from 'react'
-import { useSaveHotkey } from '../lib/useSaveHotkey'
+import { useSaveHotkey } from '@/lib/useSaveHotkey'
 import { Globe } from 'lucide-react'
-import HelpPopover from './HelpPopover'
-import { Button } from './Button'
-import { showToast } from './dialogs'
-import { HAS_NET_BRIDGE } from '../lib/desktop'
-import { UNSAVED_CHANGES_HINT } from '../lib/constants'
+import HelpPopover from '@/components/HelpPopover'
+import { Button } from '@/components/Button'
+import { showToast } from '@/components/dialogs'
+import { HAS_NET_BRIDGE } from '@/lib/desktop'
+import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import {
   DEFAULT_BYPASS, getStoredNetProxy, storeNetProxy, applyNetProxy, normalizeProxyInput, sanitizeBypassList,
   type NetProxyPrefs,
-} from '../lib/netPrefs'
+} from '@/lib/netPrefs'
 
 export default function NetworkProxyPanel() {
   const [draft, setDraft] = useState<NetProxyPrefs>(getStoredNetProxy())

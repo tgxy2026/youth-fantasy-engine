@@ -8,16 +8,16 @@
  *    否则作者拿着一堆描述也找不到该改哪里。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import * as store from '../lib/tavern/store'
-import { confirmDialog, showToast } from './dialogs'
-import { Button } from './Button'
-import SelectRow from './SelectRow'
-import TavernExportDialog from './TavernExportDialog'
-import { reportDocModel } from '../lib/tavern/exportDoc'
-import { TABS } from '../lib/schema'
-import type { TavernReport as Report, TavernFinding, TavernReportIndexItem } from '../lib/tavern/types'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import * as store from '@/lib/tavern/store'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import SelectRow from '@/components/SelectRow'
+import TavernExportDialog from '@/components/TavernExportDialog'
+import { reportDocModel } from '@/lib/tavern/exportDoc'
+import { TABS } from '@/lib/schema'
+import type { TavernReport as Report, TavernFinding, TavernReportIndexItem } from '@/lib/tavern/types'
 
 const LEVEL_STYLE: Record<TavernFinding['level'], string> = {
   矛盾: 'text-danger border-danger/30 bg-danger/10',

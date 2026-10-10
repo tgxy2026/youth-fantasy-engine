@@ -11,14 +11,14 @@
  *
  * ⚠️ 本文件住在 lib，**不得 import components**（分层红线，见 tests/importCycles.test.ts）。
  */
-import { buildProjectContext } from './aiContext'
-import { aiSplitTableRows, type ImportSplitColumn } from './aiTasks'
-import { writerBudgetFor } from './aiWriterBudget'
-import { organizeHint } from './aiScope'
-import { resolveColumnCandidates } from './organizeRows'
-import { splitIntoChunks } from './tableIO'
-import type { VisCtx } from './schema'
-import type { CalendarDef, TabDef } from './types'
+import { buildProjectContext } from '@/lib/aiContext'
+import { aiSplitTableRows, type ImportSplitColumn } from '@/lib/aiTasks'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
+import { organizeHint } from '@/lib/aiScope'
+import { resolveColumnCandidates } from '@/lib/organizeRows'
+import { splitIntoChunks } from '@/lib/tableIO'
+import type { VisCtx } from '@/lib/schema'
+import type { CalendarDef, TabDef } from '@/lib/types'
 
 export interface TableImportRunOptions {
   /** 作者粘贴的原始内容（表格或散文） */

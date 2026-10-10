@@ -12,7 +12,7 @@
  * - **不做自动重试**：长任务里重试语义因阶段而异（抽取可重试、写库绝不能重试），留给 executor 自己。
  * - **不做暂停**：人机闸门（等用户确认）在 executor 内用 `await` 表达即可，状态机无需感知。
  */
-import type { FlowProgress, FlowStage, FlowStageId, FlowStatus, StageState } from './types'
+import type { FlowProgress, FlowStage, FlowStageId, FlowStatus, StageState } from '@/lib/flow/types'
 
 /** 阶段执行体。返回值作为该阶段的产物存进 bag。 */
 export type StageExecutor = (ctx: StageCtx) => Promise<unknown>

@@ -10,10 +10,10 @@
  * 状态全部来自 useJieWenJiModel（组件只收 m）。
  */
 import { Loader2, RefreshCw, Save, AlertTriangle } from 'lucide-react'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { Button } from './Button'
-import { POST_KINDS, POST_STATUS_META } from './jieWenJiParts'
-import type { JieWenJiModel } from './useJieWenJiModel'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { Button } from '@/components/Button'
+import { POST_KINDS, POST_STATUS_META } from '@/components/jieWenJiParts'
+import type { JieWenJiModel } from '@/components/useJieWenJiModel'
 
 export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
   const { aiReady, post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, content } = m

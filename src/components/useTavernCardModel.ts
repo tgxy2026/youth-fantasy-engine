@@ -21,27 +21,27 @@
  *   所以注释里的行内说明仍按当时的上下文写，读起来是连续的。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import * as store from '../lib/tavern/store'
-import * as db from '../lib/db'
-import { normalizeStructMarkup, structSpecOf } from '../lib/tavern/cardFields'
-import { listStories } from '../lib/tavern/story'
+import * as store from '@/lib/tavern/store'
+import * as db from '@/lib/db'
+import { normalizeStructMarkup, structSpecOf } from '@/lib/tavern/cardFields'
+import { listStories } from '@/lib/tavern/story'
 import {
   MEMORY_SOFT_LIMIT, cardStoryId,
   type FreeCharacter, type FreeMemory, type TavernCharIndexItem, type TavernStoryIndexItem,
   type CharJournal, type CharJournalEntry,
-} from '../lib/tavern/types'
-import { isMemoryEmpty } from '../lib/tavern/memory'
+} from '@/lib/tavern/types'
+import { isMemoryEmpty } from '@/lib/tavern/memory'
 import {
   toCardFile, toCardBundle, parseCardFile, parseCardBundle, cardFileName,
   CARD_BUNDLE_SUFFIX, describeWarnings, type CardBundleItem,
-} from '../lib/tavern/cardFile'
-import { convertNovelChar } from '../lib/tavern/import'
-import { coldStartMemory, draftMemoryFromCard } from '../lib/tavern/summarize'
-import { renderFreeCharacter } from '../lib/tavern/engine'
-import { getTavernSettings, memoryLimitsOf } from '../lib/tavern/settings'
-import { type CardDraft } from '../lib/tavern/draft'
-import { showToast, confirmDialog } from './dialogs'
-import { FREE_GROUP } from './TavernCardList'
+} from '@/lib/tavern/cardFile'
+import { convertNovelChar } from '@/lib/tavern/import'
+import { coldStartMemory, draftMemoryFromCard } from '@/lib/tavern/summarize'
+import { renderFreeCharacter } from '@/lib/tavern/engine'
+import { getTavernSettings, memoryLimitsOf } from '@/lib/tavern/settings'
+import { type CardDraft } from '@/lib/tavern/draft'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import { FREE_GROUP } from '@/components/TavernCardList'
 
 /** 从小说角色导入弹窗的分组页签 */
 export type NovelTab = 'all' | 'char-main' | 'char-secondary' | 'char-npc'

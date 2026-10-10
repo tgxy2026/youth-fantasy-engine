@@ -24,12 +24,12 @@
  * ⚠️ 覆盖面变广之后，判断权交给作者而不是写死在这里：草稿按「一张表一行」呈现，
  *    不想要的那张在闸门处**不勾**即可 —— 这比替作者决定"哪张该由模型填"稳妥得多。
  */
-import { TABS } from '../schema'
-import type { TabDef } from '../types'
-import { asText } from '../aiParse'
-import { isParallelSetTab } from '../worldSets'
-import { getActivePack, subItemLabel } from '../schemaTemplates'
-import type { DraftField, DraftRow } from './types'
+import { TABS } from '@/lib/schema'
+import type { TabDef } from '@/lib/types'
+import { asText } from '@/lib/aiParse'
+import { isParallelSetTab } from '@/lib/worldSets'
+import { getActivePack, subItemLabel } from '@/lib/schemaTemplates/index'
+import type { DraftField, DraftRow } from '@/lib/flow/types'
 
 /** 并列结构页签的条目总称（政治页→「政权」、经济基础→「行业」…），随题材变 */
 function subLabelOf(tabId: string): string {

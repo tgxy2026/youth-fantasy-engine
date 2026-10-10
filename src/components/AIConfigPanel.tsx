@@ -18,15 +18,15 @@ import {
   Cpu, Globe, Loader2, AlertCircle, CheckCircle2, FlaskConical,
   Pencil, Trash2, Check,
 } from 'lucide-react'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import EmbeddingIndexPanel from './EmbeddingIndexPanel'
-import { confirmDialog, showToast } from './dialogs'
-import { syncTuningWithModel } from '../lib/tavern/settings'
-import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '../lib/modelSampling'
-import { filterModels } from '../lib/modelFilter'
-import SamplingUnavailable from './SamplingUnavailable'
-import { syncWriterBudgetToModel } from '../lib/aiWriterBudget'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import EmbeddingIndexPanel from '@/components/EmbeddingIndexPanel'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { syncTuningWithModel } from '@/lib/tavern/settings'
+import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '@/lib/modelSampling'
+import { filterModels } from '@/lib/modelFilter'
+import SamplingUnavailable from '@/components/SamplingUnavailable'
+import { syncWriterBudgetToModel } from '@/lib/aiWriterBudget'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
   LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset,
@@ -37,9 +37,9 @@ import {
   type TaskRole, type RoutingMap,
   loadAiTimeoutSec, saveAiTimeoutSec,
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
-} from '../lib/ai'
-import { checkContextWindow, MAX_WINDOW } from '../lib/modelCapacity'
-import NumberField from './NumberField'
+} from '@/lib/ai'
+import { checkContextWindow, MAX_WINDOW } from '@/lib/modelCapacity'
+import NumberField from '@/components/NumberField'
 
 function fmtMs(ms: number) {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`

@@ -9,7 +9,7 @@
 // 生效：主进程 `session.setProxy`（渲染层 fetch 与主进程 net.fetch 两条链路同时覆盖）；
 // 配置每次启动由渲染层重推（主进程不落盘，单源在渲染层）。
 
-import { HAS_NET_BRIDGE, setNetProxy } from './desktop'
+import { HAS_NET_BRIDGE, setNetProxy } from '@/lib/desktop'
 
 export interface NetProxyPrefs {
   /** 是否启用自定义代理（默认 false = 跟随系统代理） */

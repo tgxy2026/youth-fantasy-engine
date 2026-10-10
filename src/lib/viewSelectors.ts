@@ -9,7 +9,7 @@
  * 🔴 收录判据：只有**会判错**的逻辑才进这里（筛选 / 回落 / 拼装 / 解析）。
  *    纯展示（`map` 出一堆 JSX、拼 `className`）不抽 —— 抽了只是给覆盖率凑数，不是工程收益。
  */
-import type { FeedbackEntry } from './aiTasks'
+import type { FeedbackEntry } from '@/lib/aiTasks'
 
 // ==================== 读者反馈（FeedbackAIPanel）====================
 

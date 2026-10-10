@@ -18,9 +18,9 @@
 //   · 表格：Markdown 表格 / 制表符（从 Excel 直接复制）/ 逗号 CSV —— 走 `parseImportText`；
 //   · 文本：一段散文式设定 —— 走 `textToRows`，先按「列名：值」块或按行拆分。
 
-import type { TabDef, TableColumn, TableRow } from './types'
-import { organizeKeyColumns, isDirectedPairTab } from './aiScope'
-import { nextAutoCode, AUTONUM_GROUPS } from './autoCode'
+import type { TabDef, TableColumn, TableRow } from '@/lib/types'
+import { organizeKeyColumns, isDirectedPairTab } from '@/lib/aiScope'
+import { nextAutoCode, AUTONUM_GROUPS } from '@/lib/autoCode'
 
 // ============ A. 文本 → 表格矩阵 ============
 

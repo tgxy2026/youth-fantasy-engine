@@ -1,69 +1,69 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
-import { Z } from './lib/zLayer'
-import Sidebar from './components/Sidebar'
-import Dashboard from './components/Dashboard'
-import NovelEditor from './components/NovelEditor'
-import FormSheet from './components/FormSheet'
-import WorldSetSheet from './components/WorldSetSheet'
-import ParallelSetSheet from './components/ParallelSetSheet'
-import TableSheet from './components/TableSheet'
-import ChangelogHealthNote from './components/ChangelogHealthNote'
-import CharacterSheet from './components/CharacterSheet'
-import OutlineSheet from './components/OutlineSheet'
-import ProjectHub from './components/ProjectHub'
-import AboutPage from './components/AboutPage'
-import UpdateDialog from './components/UpdateDialog'
-import { checkUpdate, isAutoCheckOn, type LatestRelease } from './lib/versionCheck'
-import { getTab, tabVisible, refreshVolumeTabs, LOCKED_IDS, type VisCtx } from './lib/schema'
-import { DEFAULT_PACK, normalizeGenrePack, setActivePack } from './lib/schemaTemplates'
-import { isWorldSetTab, isParallelSetTab } from './lib/worldSets'
-import * as db from './lib/db'
-import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from './lib/backup'
-import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from './lib/desktop'
-import { DesktopWriteLockBanner } from './components/DesktopWriteLockBanner'
-import DataDock from './components/DataDock'
-import BackupReminder from './components/BackupReminder'
-import { markExported } from './lib/backupReminder'
-import WelcomeWizard from './components/WelcomeWizard'
-import MigrationWizard from './components/MigrationWizard'
-import { probeLegacy, type LegacyProbe } from './lib/legacyMigration'
-import FullTextSearch from './components/FullTextSearch'
-import JieWenJiSprite from './components/JieWenJiSprite'
-import GeoMapEditor from './components/GeoMapEditor'
-import PlotCanvas from './components/PlotCanvas'
-import { showToast } from './components/dialogs'
-import { Button } from './components/Button'
-import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from './lib/aiTaskCenter'
-import { applyTheme, applyZoom, foldVh, getStoredTheme, getStoredZoom, isZoomAuto } from './lib/theme'
-import { applyStoredFontPrefs } from './lib/fontPrefs'
-import { applyStoredNetProxy } from './lib/netPrefs'
-import { loadPromptOverrides } from './lib/promptSettings'
-import { LS_SPRITE_ENABLED } from './lib/constants'
-import { downloadBlob } from './lib/zip'
+import { Z } from '@/lib/zLayer'
+import Sidebar from '@/components/Sidebar'
+import Dashboard from '@/components/Dashboard'
+import NovelEditor from '@/components/NovelEditor'
+import FormSheet from '@/components/FormSheet'
+import WorldSetSheet from '@/components/WorldSetSheet'
+import ParallelSetSheet from '@/components/ParallelSetSheet'
+import TableSheet from '@/components/TableSheet'
+import ChangelogHealthNote from '@/components/ChangelogHealthNote'
+import CharacterSheet from '@/components/CharacterSheet'
+import OutlineSheet from '@/components/OutlineSheet'
+import ProjectHub from '@/components/ProjectHub'
+import AboutPage from '@/components/AboutPage'
+import UpdateDialog from '@/components/UpdateDialog'
+import { checkUpdate, isAutoCheckOn, type LatestRelease } from '@/lib/versionCheck'
+import { getTab, tabVisible, refreshVolumeTabs, LOCKED_IDS, type VisCtx } from '@/lib/schema'
+import { DEFAULT_PACK, normalizeGenrePack, setActivePack } from '@/lib/schemaTemplates/index'
+import { isWorldSetTab, isParallelSetTab } from '@/lib/worldSets'
+import * as db from '@/lib/db'
+import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/backup'
+import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/desktop'
+import { DesktopWriteLockBanner } from '@/components/DesktopWriteLockBanner'
+import DataDock from '@/components/DataDock'
+import BackupReminder from '@/components/BackupReminder'
+import { markExported } from '@/lib/backupReminder'
+import WelcomeWizard from '@/components/WelcomeWizard'
+import MigrationWizard from '@/components/MigrationWizard'
+import { probeLegacy, type LegacyProbe } from '@/lib/legacyMigration'
+import FullTextSearch from '@/components/FullTextSearch'
+import JieWenJiSprite from '@/components/JieWenJiSprite'
+import GeoMapEditor from '@/components/GeoMapEditor'
+import PlotCanvas from '@/components/PlotCanvas'
+import { showToast } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/aiTaskCenter'
+import { applyTheme, applyZoom, foldVh, getStoredTheme, getStoredZoom, isZoomAuto } from '@/lib/theme'
+import { applyStoredFontPrefs } from '@/lib/fontPrefs'
+import { applyStoredNetProxy } from '@/lib/netPrefs'
+import { loadPromptOverrides } from '@/lib/promptSettings'
+import { LS_SPRITE_ENABLED } from '@/lib/constants'
+import { downloadBlob } from '@/lib/zip'
 import workbenchBg from './assets/workbench-bg.png'
-import { usePersistedBool } from './lib/uiPrefs'
+import { usePersistedBool } from '@/lib/uiPrefs'
 
 // 次级页签按需懒加载：把向导页 / 灵感启发·检查工具（含 AI 组件与大量交互）从首屏主包拆出去，
 // 仅在用户切到对应页签时才加载对应 chunk。Sidebar/仪表盘/编辑器保持常驻以保证首屏速度。
-const GuidePage = lazy(() => import('./components/GuidePage'))
-const InspireTools = lazy(() => import('./components/InspireTools'))
-const ModelSettingsPanel = lazy(() => import('./components/ModelSettingsPanel'))
-const CheckTools = lazy(() => import('./components/CheckTools'))
-const MaterialLibrary = lazy(() => import('./components/MaterialLibrary'))
-const BookBreakPanel = lazy(() => import('./components/BookBreakPanel'))
-const CreativeWritingPanel = lazy(() => import('./components/CreativeWritingPanel'))
+const GuidePage = lazy(() => import('@/components/GuidePage'))
+const InspireTools = lazy(() => import('@/components/InspireTools'))
+const ModelSettingsPanel = lazy(() => import('@/components/ModelSettingsPanel'))
+const CheckTools = lazy(() => import('@/components/CheckTools'))
+const MaterialLibrary = lazy(() => import('@/components/MaterialLibrary'))
+const BookBreakPanel = lazy(() => import('@/components/BookBreakPanel'))
+const CreativeWritingPanel = lazy(() => import('@/components/CreativeWritingPanel'))
 // 酒馆模式四页：剧情推演 / 推演报告 / 角色卡 / 自由对话（各自含 AI 交互，按需懒加载）
-const TavernPlot = lazy(() => import('./components/TavernPlot'))
-const TavernReport = lazy(() => import('./components/TavernReport'))
-const TavernCard = lazy(() => import('./components/TavernCard'))
-const TavernFree = lazy(() => import('./components/TavernFree'))
-const RunPanel = lazy(() => import('./components/RunPanel'))
-const TavernControl = lazy(() => import('./components/TavernControl'))
-const TavernScript = lazy(() => import('./components/TavernScript'))
-const TavernWorld = lazy(() => import('./components/TavernWorld'))
+const TavernPlot = lazy(() => import('@/components/TavernPlot'))
+const TavernReport = lazy(() => import('@/components/TavernReport'))
+const TavernCard = lazy(() => import('@/components/TavernCard'))
+const TavernFree = lazy(() => import('@/components/TavernFree'))
+const RunPanel = lazy(() => import('@/components/RunPanel'))
+const TavernControl = lazy(() => import('@/components/TavernControl'))
+const TavernScript = lazy(() => import('@/components/TavernScript'))
+const TavernWorld = lazy(() => import('@/components/TavernWorld'))
 // 创作轨迹（创作管理组，2.4.0 A4）：含轨迹时间线与证据包导出，按需懒加载
-const TrajectoryPanel = lazy(() => import('./components/TrajectoryPanel'))
-const WorldLibraryPanel = lazy(() => import('./components/WorldLibraryPanel'))
+const TrajectoryPanel = lazy(() => import('@/components/TrajectoryPanel'))
+const WorldLibraryPanel = lazy(() => import('@/components/WorldLibraryPanel'))
 
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)

@@ -8,9 +8,9 @@
  *
  * 存储走 `db/worlds.ts`，形状来自 `worldTypes.ts`（那个文件无依赖，避免 db ↔ worldPack 成环）。
  */
-import * as db from './db'
-import { collectWorldPack, worldPackFingerprint } from './worldPack'
-import type { WorldStoredRecord, WorldVersion, WorldPackTable } from './worldTypes'
+import * as db from '@/lib/db'
+import { collectWorldPack, worldPackFingerprint } from '@/lib/worldPack'
+import type { WorldStoredRecord, WorldVersion, WorldPackTable } from '@/lib/worldTypes'
 
 /** 从**当前项目**抽包并存进世界引擎（草稿＝抽包结果，`versions` 为空） */
 export async function createWorldFromCurrentProject(

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import * as db from '../lib/db'
+import * as db from '@/lib/db'
 import { Flag, Zap, AlertTriangle, Loader2 } from 'lucide-react'
 
 /**

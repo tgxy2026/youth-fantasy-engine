@@ -258,7 +258,7 @@ async function main() {
   // ---------- ⑧ 四处注册接到位 ----------
   {
     const tasks = read('src/lib/aiTasks.ts')
-    ok('门面 import 了 STYLE_FINGERPRINT_PROMPTS', tasks.includes("from './styleFingerprint'"))
+    ok('门面 import 了 STYLE_FINGERPRINT_PROMPTS', tasks.includes("from './styleFingerprint'") || tasks.includes("from '@/lib/styleFingerprint'"))
     ok("PROMPT_ORDER 里登记了 'style-fingerprint'", tasks.includes("'style-fingerprint',"))
     ok('PROMPT_SETS 里挂上了', tasks.includes('STYLE_FINGERPRINT_PROMPTS,'))
     ok('数据源表里登记了 style-fingerprint', read('src/lib/aiDataSources.ts').includes("'style-fingerprint':"))

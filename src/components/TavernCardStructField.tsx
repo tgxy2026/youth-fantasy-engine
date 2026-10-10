@@ -11,10 +11,10 @@
  * 所以只在「value 与我打包出来的不一样」时才重解 —— 那说明是外部改的（切卡 / AI 起草 / 设定更新）。
  */
 import { useEffect, useRef, useState } from 'react'
-import AutoTextarea from './AutoTextarea'
+import AutoTextarea from '@/components/AutoTextarea'
 import {
   OTHER_KEY, packField, unpackField, filledCount, type StructSpec,
-} from '../lib/tavern/cardFields'
+} from '@/lib/tavern/cardFields'
 
 export default function TavernCardStructField({ spec, value, onChange, label }: {
   spec: StructSpec

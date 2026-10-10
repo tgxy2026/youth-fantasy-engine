@@ -11,14 +11,14 @@
  */
 import { useMemo, useState } from 'react'
 import { Copy, Download, Check } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { showToast, copyText } from './dialogs'
-import { downloadText } from '../lib/zip'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { showToast, copyText } from '@/components/dialogs'
+import { downloadText } from '@/lib/zip'
 import {
   buildAiDisclosureDraft, AI_SOURCE_LABELS, AI_SOURCE_KINDS,
   type AiAssistSummary,
-} from '../lib/aiAssist'
+} from '@/lib/aiAssist'
 
 export default function AiDisclosureDialog({
   open, onClose, summary, bookName,

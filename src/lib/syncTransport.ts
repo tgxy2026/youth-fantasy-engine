@@ -7,8 +7,8 @@
 // 加密、载荷结构、rev 三路合并、#030 空推防护均已迁至 syncCore.ts（本文件不再承担），
 // 这里只负责「字节怎么落地 / 怎么读回来」，并把「文件不存在」与「读取失败」如实分开上报。
 
-import { SYNC_POLL_MS } from './constants'
-import { webcrypto } from './webcrypto'
+import { SYNC_POLL_MS } from '@/lib/constants'
+import { webcrypto } from '@/lib/webcrypto'
 
 export interface RawSyncResponse {
   status: number // 200 成功 / 401 码失效 / 409 冲突 / 413 过大 / 422 空推拒绝 / 0 网络异常（仅 http）

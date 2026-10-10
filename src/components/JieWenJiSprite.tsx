@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import jiewenjiPng from '../assets/jiewenji.png'
-import { Button } from './Button'
-import { Z } from '../lib/zLayer'
+import { Button } from '@/components/Button'
+import { Z } from '@/lib/zLayer'
 
 interface Props {
   /** 当前是否在正文编辑器页面：编辑器内点击唤起完整面板；其他页面弹出引导 */

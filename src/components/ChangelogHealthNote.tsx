@@ -16,8 +16,8 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import * as db from '../lib/db'
-import { runDataHealthCheck } from '../lib/dataHealth'
+import * as db from '@/lib/db'
+import { runDataHealthCheck } from '@/lib/dataHealth'
 
 /** 同一数据版本内的复扫间隔（兜住「反复进出该页」） */
 const TTL_MS = 5 * 60 * 1000

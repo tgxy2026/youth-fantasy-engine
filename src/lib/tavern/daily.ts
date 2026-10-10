@@ -23,14 +23,14 @@
  */
 import {
   chat, isCancelled, type ChatMessage,
-} from '../ai'
-import { resolveTavernProvider } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
-import { memoryToText, emptyMemory } from './memory'
-import type { ChatFn } from './provider'
+} from '@/lib/ai'
+import { resolveTavernProvider } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
+import { memoryToText, emptyMemory } from '@/lib/tavern/memory'
+import type { ChatFn } from '@/lib/tavern/provider'
 import {
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP, type DailyState, type FreeCharacter, type FreeMemory,
-} from './types'
+} from '@/lib/tavern/types'
 
 /** 生活日志保留条数的内置默认（真源已上移到 ./types，这里只做转发，保持既有调用点不变） */
 export { DAILY_LOG_KEEP }

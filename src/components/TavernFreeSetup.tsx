@@ -22,21 +22,21 @@
  * 剧本则把「情境/你的位置/目标/禁区」放进 system（每轮都在），开场白仍走消息通道 —— 分工更清楚。
  */
 import { useEffect, useMemo, useState } from 'react'
-import * as store from '../lib/tavern/store'
-import { MAX_AI_CAST, MAX_CAST_SLOTS } from '../lib/tavern/types'
-import { getTavernSettings, activeProfileOf, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
-import { checkProfileFit } from '../lib/tavern/profileFit'
-import { Button } from './Button'
-import SelectRow from './SelectRow'
-import { Modal } from './Modal'
-import Avatar from './Avatar'
-import TavernScriptDialog from './TavernScriptDialog'
+import * as store from '@/lib/tavern/store'
+import { MAX_AI_CAST, MAX_CAST_SLOTS } from '@/lib/tavern/types'
+import { getTavernSettings, activeProfileOf, DEFAULT_TAVERN_SETTINGS } from '@/lib/tavern/settings'
+import { checkProfileFit } from '@/lib/tavern/profileFit'
+import { Button } from '@/components/Button'
+import SelectRow from '@/components/SelectRow'
+import { Modal } from '@/components/Modal'
+import Avatar from '@/components/Avatar'
+import TavernScriptDialog from '@/components/TavernScriptDialog'
 import {
   getScript, scriptToText, snapshotOf, scriptDisplayName, listScriptsByStory,
-} from '../lib/tavern/script'
-import { listStories, storyDisplayName } from '../lib/tavern/story'
-import { cardStoryId } from '../lib/tavern/types'
-import type { TavernScript, TavernScriptIndexItem, TavernStoryIndexItem } from '../lib/tavern/types'
+} from '@/lib/tavern/script'
+import { listStories, storyDisplayName } from '@/lib/tavern/story'
+import { cardStoryId } from '@/lib/tavern/types'
+import type { TavernScript, TavernScriptIndexItem, TavernStoryIndexItem } from '@/lib/tavern/types'
 
 export type FreeDraft = {
   /** 全部参演角色（含用户扮演的那个） */

@@ -21,22 +21,22 @@
 //    省下的只是"章节末尾加了几句话时少嵌一段"；而按来源重写既省内存、又不会留下
 //    因块序号错位而产生的残留块。小说的修订单位本来就是"一章"，这个粒度正合适。
 
-import * as db from '../db'
-import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '../aiContext'
-import { TABS } from '../schema'
-import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from './chunk'
-import { embedTexts, EMBED_BATCH, type EmbedConfig } from './embed'
+import * as db from '@/lib/db'
+import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '@/lib/aiContext'
+import { TABS } from '@/lib/schema'
+import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from '@/lib/semantic/chunk'
+import { embedTexts, EMBED_BATCH, type EmbedConfig } from '@/lib/semantic/embed'
 import {
   makeVecRow, putVectors, removeByRef, clearProjectVectors, vectorIndex, vectorIndexStrict, vectorStats,
   refKeyOf, splitRefKey,
   type VecIndex, type VecKind, type VecRow, type VecStats,
-} from './store'
+} from '@/lib/semantic/store'
 // ⚠️ 方向：indexer → settings → aiCore/session → db，不回头 import indexer ⇒ 不成环。
-import { loadEmbeddingSettings, resolveEmbedConfig } from './settings'
+import { loadEmbeddingSettings, resolveEmbedConfig } from '@/lib/semantic/settings'
 // 单来源索引的编排住在 `indexDoc.ts` —— 它对 `lib/db` **零依赖**，
 // 好让知识库（#017）在不 import db 的前提下复用它（否则 deleteProject → knowledgeBase → db 成环）。
 // 这里**原样再导出**，既有的 `from './indexer'` 调用点一个都不用改。
-import { indexOneDoc, type IndexDoc } from './indexDoc'
+import { indexOneDoc, type IndexDoc } from '@/lib/semantic/indexDoc'
 export { indexOneDoc }
 export type { IndexDoc }
 

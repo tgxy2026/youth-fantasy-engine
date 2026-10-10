@@ -1,7 +1,7 @@
 import { BookOpen, Lightbulb, ListOrdered } from 'lucide-react'
-import { TABS, EDITOR_TAB, EDITOR_ID, tabVisible, type VisCtx } from '../lib/schema'
-import HelpPopover from './HelpPopover'
-import { Button } from './Button'
+import { TABS, EDITOR_TAB, EDITOR_ID, tabVisible, type VisCtx } from '@/lib/schema'
+import HelpPopover from '@/components/HelpPopover'
+import { Button } from '@/components/Button'
 
 interface Props {
   onNavigate: (id: string) => void

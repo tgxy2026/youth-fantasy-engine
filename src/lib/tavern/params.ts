@@ -12,7 +12,7 @@
  *
  * 本文件是纯逻辑，不含 React。
  */
-import { TAVERN_DEFAULTS, type TavernParams } from './types'
+import { TAVERN_DEFAULTS, type TavernParams } from '@/lib/tavern/types'
 
 export type ResolvedParams = Required<TavernParams>
 

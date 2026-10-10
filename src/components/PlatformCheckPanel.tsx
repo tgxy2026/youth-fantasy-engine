@@ -11,13 +11,13 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Building2, Loader2, Eye } from 'lucide-react'
-import * as db from '../lib/db'
-import type { Chapter } from '../lib/types'
-import { PLATFORM_RULES, platformRuleOf, type PlatformId } from '../lib/platformRules'
-import { precheckBook, type PlatformCheckReport } from '../lib/platformCheck'
-import { getCustomSensitiveWords } from '../lib/sensitiveWords'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
+import * as db from '@/lib/db'
+import type { Chapter } from '@/lib/types'
+import { PLATFORM_RULES, platformRuleOf, type PlatformId } from '@/lib/platformRules'
+import { precheckBook, type PlatformCheckReport } from '@/lib/platformCheck'
+import { getCustomSensitiveWords } from '@/lib/sensitiveWords'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
 
 const PREFS_KEY = 'platformCheckPlatform'
 

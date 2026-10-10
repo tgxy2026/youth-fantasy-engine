@@ -20,14 +20,14 @@
  *   否则会把别场戏的内容召回进来（仙侠角色读到赛博对话，跨世界观串味）。
  */
 
-import { indexOneDoc, type IndexDoc } from '../semantic/indexDoc'
-import { removeByRef } from '../semantic/store'
-import { recallRelevant } from '../semantic/recall'
-import { renderRecallHits } from '../semantic/inject'
-import { resolveEmbedConfig } from '../semantic/settings'
-import { isUsableMessage, keywordHaystackMessages } from './world'
-import { getTavernSettings } from './settings'
-import type { FreeSession, TavernMessage } from './types'
+import { indexOneDoc, type IndexDoc } from '@/lib/semantic/indexDoc'
+import { removeByRef } from '@/lib/semantic/store'
+import { recallRelevant } from '@/lib/semantic/recall'
+import { renderRecallHits } from '@/lib/semantic/inject'
+import { resolveEmbedConfig } from '@/lib/semantic/settings'
+import { isUsableMessage, keywordHaystackMessages } from '@/lib/tavern/world'
+import { getTavernSettings } from '@/lib/tavern/settings'
+import type { FreeSession, TavernMessage } from '@/lib/tavern/types'
 
 /**
  * 自由对话的向量分区（哨兵值）。

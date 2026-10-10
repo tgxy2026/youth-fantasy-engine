@@ -88,7 +88,7 @@ console.log('\n—— W2-5 用例开始 ——')
 // ---------- ⑤ F3 未整理轮数是纯派生 ----------
 {
   ok('⑤ TavernFree 直接 import 收尾的同一判据（口径同源）',
-    free.includes("import { pendingMessages } from '../lib/tavern/roundEnd'"))
+    free.includes("import { pendingMessages } from '../lib/tavern/roundEnd'") || free.includes("import { pendingMessages } from '@/lib/tavern/roundEnd'"))
   ok('⑤ 🔴 未整理轮数不进组件 state（无 useState 存它）',
     !/useState[^\n]*pendingMessages/.test(free) && /const n = pendingMessages\(session\)\.length/.test(free))
   ok('⑤ 已归档的场次不再显示徽标', free.includes('!session.endedAt && (() => {'))

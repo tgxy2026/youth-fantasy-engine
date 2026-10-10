@@ -8,7 +8,7 @@
 // 文件读写经 IPC 桥（syncRead/syncWrite）到主进程 fs —— 渲染进程 nodeIntegration=false，无法 require('fs')。
 //
 // 加密 / 载荷 / rev 合并 / #030 空推防护 / 三路合并 全部复用 syncCore.createCloudStore。
-import type { StoreOps } from './storeOps'
+import type { StoreOps } from '@/lib/storeOps'
 import {
   createCloudStore,
   type CloudStoreInstance,
@@ -19,7 +19,7 @@ import {
   CONFLICT_KEY_PREFIX,
   isExcludedMetaKey,
   type SyncStores,
-} from './syncCore'
+} from '@/lib/syncCore'
 import {
   createFileTransport,
   createIdleTransport,
@@ -27,8 +27,8 @@ import {
   CLOUD_FILE_NAME,
   type SyncDirHandle,
   type ElectronStoreBridge,
-} from './syncTransport'
-import { DESKTOP } from './env'
+} from '@/lib/syncTransport'
+import { DESKTOP } from '@/lib/env'
 
 // #032：常量已下沉到 syncTransport（网页版云盘模式也要用），此处 re-export 保持调用方不变。
 export { DEFAULT_CLOUD_KEY, CLOUD_FILE_NAME }

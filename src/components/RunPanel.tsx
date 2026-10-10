@@ -15,22 +15,22 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react'
-import * as db from '../lib/db'
+import * as db from '@/lib/db'
 import {
   listRuns, getRun, saveRun, deleteRun, renameRun, newRun, addRunCheckpoint,
   dropRunCheckpoint, rollbackRunToCheckpoint, undoRunRollback,
   type RunSessionWithUndo,
-} from '../lib/run/store'
-import { addCompanion, dropCompanion, clueStats, pendingClues } from '../lib/run/clues'
-import { evalEndings, lockedSecrets } from '../lib/run/endings'
-import { runKpTurn, type KpCheck } from '../lib/run/turn'
-import { uid } from '../lib/id'
-import type { RunIndexItem, RunSession } from '../lib/run/runTypes'
-import type { WorldStoredRecord } from '../lib/worldTypes'
-import { Button } from './Button'
-import { confirmDialog, showToast } from './dialogs'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
+} from '@/lib/run/store'
+import { addCompanion, dropCompanion, clueStats, pendingClues } from '@/lib/run/clues'
+import { evalEndings, lockedSecrets } from '@/lib/run/endings'
+import { runKpTurn, type KpCheck } from '@/lib/run/turn'
+import { uid } from '@/lib/id'
+import type { RunIndexItem, RunSession } from '@/lib/run/runTypes'
+import type { WorldStoredRecord } from '@/lib/worldTypes'
+import { Button } from '@/components/Button'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 

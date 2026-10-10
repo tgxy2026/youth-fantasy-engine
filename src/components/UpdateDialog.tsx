@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { foldVh } from '../lib/theme'
+import { foldVh } from '@/lib/theme'
 import { Download, Copy, ExternalLink, FolderOpen, Loader2, Power, RotateCw } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { showToast, copyText } from './dialogs'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { showToast, copyText } from '@/components/dialogs'
 import {
   openExternalUrl,
   downloadInstallerPackage,
@@ -12,11 +12,11 @@ import {
   revealInstallerFile,
   quitAppForInstall,
   onUpdateDownloadProgress,
-} from '../lib/desktop'
-import { parseMarkdownBlocks } from '../lib/mdLite'
-import { setSkippedVersion } from '../lib/versionCheck'
-import { QUARK_CODE, QUARK_TOKEN, QUARK_URL } from '../lib/downloadLinks'
-import type { LatestRelease } from '../lib/versionCheck'
+} from '@/lib/desktop'
+import { parseMarkdownBlocks } from '@/lib/mdLite'
+import { setSkippedVersion } from '@/lib/versionCheck'
+import { QUARK_CODE, QUARK_TOKEN, QUARK_URL } from '@/lib/downloadLinks'
+import type { LatestRelease } from '@/lib/versionCheck'
 
 /**
  * 「发现新版本」弹窗（2.6.3 起；2.9.0 把「开浏览器」升级成「应用内下载」）。

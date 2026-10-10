@@ -26,8 +26,8 @@
  *
  * 本模块是纯逻辑、零运行时依赖（只 `import type`），便于单测。
  */
-import type { AIProvider } from './ai'
-import type { ParamGuide } from './tavern/paramGuide'
+import type { AIProvider } from '@/lib/ai'
+import type { ParamGuide } from '@/lib/tavern/paramGuide'
 
 /** 本地部署判定：Ollama 原生，或标记为「本机/局域网」的 OpenAI 兼容服务 */
 export function isLocalProvider(p: Pick<AIProvider, 'type' | 'local'> | null | undefined): boolean {

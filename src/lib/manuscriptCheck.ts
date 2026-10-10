@@ -15,7 +15,7 @@
  * 网文本身的套路词（"不由得""深吸一口气"）是**类型特征**，不是毛病 ——
  * 所以只报**密度**（每千字命中几次）并给宽松参考值，不逐条标红、不建议替换。
  */
-import { countWords } from './textStats'
+import { countWords } from '@/lib/textStats'
 
 /** 句子切分：中英文句末标点 + 换行（保留标点，空串剔除） */
 export function splitSentences(text: string): string[] {

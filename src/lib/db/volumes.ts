@@ -1,9 +1,9 @@
 // ============ 存储层 · 卷 / 卷台账 ============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 // ⚠️ `VOL_LEDGER_PREFIX`（卷台账表的 tabId 前缀）定义在本文件，projects / migrations / backups 都从这里取。
-import type { Volume, Chapter, TableRow } from '../types'
-import { ops, currentProjectId, touchProject } from './core'
-import type { Snapshot } from './chapters'
+import type { Volume, Chapter, TableRow } from '@/lib/types'
+import { ops, currentProjectId, touchProject } from '@/lib/db/core'
+import type { Snapshot } from '@/lib/db/chapters'
 
 // ============ 卷 ============
 export async function getAllVolumes(): Promise<Volume[]> {

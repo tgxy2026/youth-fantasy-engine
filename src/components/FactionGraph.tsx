@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getCardRecords, getTableRows } from '../lib/db'
-import type { TableRow } from '../lib/types'
+import { getCardRecords, getTableRows } from '@/lib/db'
+import type { TableRow } from '@/lib/types'
 import { Network, Users, X, ArrowUpRight } from 'lucide-react'
-import { Button } from './Button'
-import { useSvgPanZoom } from '../lib/useSvgPanZoom'
-import { foldVh } from '../lib/theme'
-import { forceLayout } from '../lib/forceLayout'
-import { curvedEdge, curveMidpoint, groupColor, groupBy, convexHull, hullPath, pairKey, edgeCurveRatios, curveArrow } from '../lib/graphGrouping'
-import { buildTypeColors, makeColorLookup } from '../lib/relationColors'
-import { FACTION_PRESET_COLORS } from '../lib/palette'
+import { Button } from '@/components/Button'
+import { useSvgPanZoom } from '@/lib/useSvgPanZoom'
+import { foldVh } from '@/lib/theme'
+import { forceLayout } from '@/lib/forceLayout'
+import { curvedEdge, curveMidpoint, groupColor, groupBy, convexHull, hullPath, pairKey, edgeCurveRatios, curveArrow } from '@/lib/graphGrouping'
+import { buildTypeColors, makeColorLookup } from '@/lib/relationColors'
+import { FACTION_PRESET_COLORS } from '@/lib/palette'
 
 interface Props {
   rows: TableRow[]

@@ -8,7 +8,7 @@
 //   3. 需要 `tx` 的段必须接收同一个 upgrade 事务，不要自己开事务。
 //   4. 「何时该跑哪一段」的唯一判断点在 ./core 的 getDB()，这里不重复写版本判断。
 import type { IDBPDatabase, IDBPTransaction } from 'idb'
-import type { Project, FormData, TableRow, CardRecord } from '../types'
+import type { Project, FormData, TableRow, CardRecord } from '@/lib/types'
 
 // ============ IndexedDB 版本迁移（自 getDB 的 upgrade 回调拆出）============
 //

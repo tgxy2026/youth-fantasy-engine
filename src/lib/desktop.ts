@@ -6,10 +6,10 @@
 // 数据格式（`PortableData`，kind='portable-data'）沿用自便携版，**名字不要改**：
 // 它是写进用户数据文件的字面量，改名会让老数据文件无法被识别。
 // 桌面版「导出数据文件 / 导入数据文件」即基于该格式，可在设备间手工搬运。
-import type { StoreOps, PortableData } from './storeOps'
-import { normalizePortableData, isPortableDataFile } from './storeOps'
-import { SAVE_DEBOUNCE_MS } from './constants'
-import { markDeleted, clearDeleted, resetTombs } from './syncTombstone'
+import type { StoreOps, PortableData } from '@/lib/storeOps'
+import { normalizePortableData, isPortableDataFile } from '@/lib/storeOps'
+import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
+import { markDeleted, clearDeleted, resetTombs } from '@/lib/syncTombstone'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
 export interface ElectronStoreAPI {

@@ -29,9 +29,9 @@
  *
  * 本文件是纯逻辑，不含 React。
  */
-import { PROTOCOL_CORE } from './protocol'
-import type { TavernTone, TavernMessage, CastSetting, SceneDescLevel } from './types'
-import { talkBandOf } from './types'
+import { PROTOCOL_CORE } from '@/lib/tavern/protocol'
+import type { TavernTone, TavernMessage, CastSetting, SceneDescLevel } from '@/lib/tavern/types'
+import { talkBandOf } from '@/lib/tavern/types'
 
 export type PromptLayers = {
   /** 档位：叙事向（剧情默认，即协议默认） / 聊天向（自由默认，追加一句风格提示） */

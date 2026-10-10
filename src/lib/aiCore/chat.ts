@@ -5,15 +5,15 @@
  * 依赖 `aiCore/transport.ts` 的 HTTP 与 SSE 能力，不自己碰底层 fetch。
  */
 
-import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from './transport'
-import { reportUsage, type ChatUsage } from './usage'
+import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from '@/lib/aiCore/transport'
+import { reportUsage, type ChatUsage } from '@/lib/aiCore/usage'
 import {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE, precheck,
   injectUserSystemPrompt,
   type AIProvider, type ChatMessage,
-} from './core'
+} from '@/lib/aiCore/core'
 // 2.9.2：「模型配置 → 文本生成微调」的语义名 → 原生键名（详见 lib/modelSampling.ts）
-import { samplingOptionsOf } from '../modelSampling'
+import { samplingOptionsOf } from '@/lib/modelSampling'
 
 export interface ChatOptions {
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */

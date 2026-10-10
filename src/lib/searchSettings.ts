@@ -14,9 +14,9 @@
  *
  * 🔴 调用点一律走这里，别直接读 meta：将来再搬家只需改这一个文件。
  */
-import * as db from './db'
-import { K_TAVERN_SETTINGS } from './tavern/settings'
-import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from './webSearch'
+import * as db from '@/lib/db'
+import { K_TAVERN_SETTINGS } from '@/lib/tavern/settings'
+import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from '@/lib/webSearch'
 
 /** 全局设置键（meta） */
 export const K_APP_SEARCH = 'app.search'

@@ -78,8 +78,8 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     'src/components/DraftReviewPanel.tsx',
   ]
   ok('🔴 五处折叠的接入点都 import 了 uiPrefs（只写模块不接线＝白做）',
-    callers.every(f => /from '\.\.\/lib\/uiPrefs'/.test(read(f))),
-    callers.filter(f => !/from '\.\.\/lib\/uiPrefs'/.test(read(f))).join('、'))
+    callers.every(f => /from '(?:\.\.\/lib\/uiPrefs|@\/lib\/uiPrefs)'/.test(read(f))),
+    callers.filter(f => !/from '(?:\.\.\/lib\/uiPrefs|@\/lib\/uiPrefs)'/.test(read(f))).join('、'))
 }
 
 // ---------- ④ 🔴 语义约定：存"偏离默认的那一侧" ----------

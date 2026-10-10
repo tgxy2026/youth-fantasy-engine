@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import AutoTextarea from './AutoTextarea'
-import AIDataSourceNote from './AIDataSourceNote'
-import { useTaskRunner } from '../lib/aiTaskCenter'
-import { showToast } from './dialogs'
-import { getAllChapters } from '../lib/db'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import AutoTextarea from '@/components/AutoTextarea'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
+import { showToast } from '@/components/dialogs'
+import { getAllChapters } from '@/lib/db'
 import {
   extractFingerprint, loadFingerprints, loadActiveFingerprintId,
   saveActiveFingerprintId, upsertFingerprint, removeFingerprint, metricsLine,
   MIN_SAMPLE_WORDS, type StyleProfile,
-} from '../lib/styleFingerprint'
+} from '@/lib/styleFingerprint'
 
 /** 一次最多投喂多少字参考文本（再多对提炼几乎没增量，只是白烧额度） */
 const MAX_SAMPLE_CHARS = 12000

@@ -16,11 +16,11 @@
  *   改成了普通块注释 —— `return (` 里不能再放一个「只有注释、没有元素」的表达式容器。
  */
 import { useMemo, type Dispatch, type SetStateAction } from 'react'
-import { Button } from './Button'
-import Avatar from './Avatar'
-import { Modal } from './Modal'
-import { type NovelTab } from './useTavernCardModel'
-import { filterNovelChars, countNovelChars } from '../lib/viewSelectors'
+import { Button } from '@/components/Button'
+import Avatar from '@/components/Avatar'
+import { Modal } from '@/components/Modal'
+import { type NovelTab } from '@/components/useTavernCardModel'
+import { filterNovelChars, countNovelChars } from '@/lib/viewSelectors'
 
 const NOVEL_TABS: { id: NovelTab; label: string }[] = [
   { id: 'all', label: '全部' },

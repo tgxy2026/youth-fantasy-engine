@@ -5,12 +5,12 @@
  * 「AI 是否就绪」的全局订阅（各入口按钮据此禁用/点亮）。
  */
 
-import * as db from '../db'
+import * as db from '@/lib/db'
 import {
   precheck, setChatTimeoutMs,
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
-} from './core'
-import type { AIProvider } from './core'
+} from '@/lib/aiCore/core'
+import type { AIProvider } from '@/lib/aiCore/core'
 
 // ---- 设置持久化（走 db.meta，全局共享）----
 //

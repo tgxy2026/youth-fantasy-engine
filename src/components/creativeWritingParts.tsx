@@ -1,9 +1,9 @@
 // ============ 创意写作 · 共用常量 / 类型 / 小件（C1 · 2.4.2 自 CreativeWritingPanel.tsx 拆出）============
 // 🔴 纯搬家：一行未改（只给顶层声明补了 export —— 原文里它们是本文件私有，现被子组件共用）。
-import { CreativeLength, CreativeTarget } from '../lib/creativeSession'
-import { ContinueStrategy } from '../lib/autoContinue'
-import { ChapterRewriteAction } from '../lib/aiTasks'
-import { RewriteCandidateGroup } from '../lib/chapterRewrite'
+import { CreativeLength, CreativeTarget } from '@/lib/creativeSession'
+import { ContinueStrategy } from '@/lib/autoContinue'
+import { ChapterRewriteAction } from '@/lib/aiTasks'
+import { RewriteCandidateGroup } from '@/lib/chapterRewrite'
 
 export const NUM_INPUT = 'h-8 w-20 rounded bg-ink-900 border border-ink-700 px-2 text-12 text-ink-100 outline-none focus:border-amber/50'
 

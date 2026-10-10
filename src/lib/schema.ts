@@ -6,15 +6,15 @@
  * 🔴 外部从本模块导入的符号有 20 个，**再导出只准增不准减** —— 少一个就是一片编译红。
  * 🔴 段文件不许回头 import 本文件（会成循环依赖）。
  */
-import { c, cH } from './schemaShared'
-import type { TabDef } from './types'
+import { c, cH } from '@/lib/schemaShared'
+import type { TabDef } from '@/lib/types'
 import {
   SABC, SABC_DESC, SABC_LABELS, CARD_TABLE_REF_FIELDS, CHAPTER_LEDGER_COLUMNS, getVolumeLedgerTabId, isVolumeLedgerTab, getVolumeIdFromLedgerTab, setVolumeTabs, getVolumeTabs, refreshVolumeTabs,
-} from './schemaShared'
-import { TABS_PART1 } from './schemaTabs/part1'
-import { TABS_PART2 } from './schemaTabs/part2'
-import { TABS_PART3 } from './schemaTabs/part3'
-import type { GenrePack } from './schemaTemplates'
+} from '@/lib/schemaShared'
+import { TABS_PART1 } from '@/lib/schemaTabs/part1'
+import { TABS_PART2 } from '@/lib/schemaTabs/part2'
+import { TABS_PART3 } from '@/lib/schemaTabs/part3'
+import type { GenrePack } from '@/lib/schemaTemplates/index'
 
 /** 🔴 门面纪律：显式再导出，**禁用 `export *`**（会把内部实现一起暴露出去） */
 export {

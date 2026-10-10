@@ -1,6 +1,6 @@
 // 同步状态徽标元数据（#008：推送失败必须可见，不能让用户零感知地"写了一整晚白工"）
 // 抽成独立模块，供 WebTools（网页版）与 CloudFileSyncBar（桌面/便携版）共用，避免重复维护。
-import type { SyncStatus } from './desktopCloudSync'
+import type { SyncStatus } from '@/lib/desktopCloudSync'
 
 export const STATUS_META: Record<SyncStatus, { dot: string; text: string; title: string }> = {
   idle: { dot: 'bg-ink-500', text: '', title: '同步待命' },

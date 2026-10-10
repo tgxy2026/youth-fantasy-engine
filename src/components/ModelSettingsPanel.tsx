@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import HelpPopover from './HelpPopover'
-import AIConfigPanel from './AIConfigPanel'
-import AIDisabledNotice from './AIDisabledNotice'
-import AIWriterBudgetPanel from './AIWriterBudgetPanel'
-import SearchSettingsPanel from './SearchSettingsPanel'
-import AIPromptSettings from './AIPromptSettings'
-import NetworkProxyPanel from './NetworkProxyPanel'
-import AIUsagePanel from './AIUsagePanel'
+import HelpPopover from '@/components/HelpPopover'
+import AIConfigPanel from '@/components/AIConfigPanel'
+import AIDisabledNotice from '@/components/AIDisabledNotice'
+import AIWriterBudgetPanel from '@/components/AIWriterBudgetPanel'
+import SearchSettingsPanel from '@/components/SearchSettingsPanel'
+import AIPromptSettings from '@/components/AIPromptSettings'
+import NetworkProxyPanel from '@/components/NetworkProxyPanel'
+import AIUsagePanel from '@/components/AIUsagePanel'
 
 /**
  * 「模型设置」页签（2026-09-19 新增，老大要求）。

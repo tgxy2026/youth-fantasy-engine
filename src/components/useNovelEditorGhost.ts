@@ -20,16 +20,16 @@
  *   使用，只能有一个所有者。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type RefObject, type SetStateAction } from 'react'
-import * as db from '../lib/db'
-import { showToast } from './dialogs'
-import { aiInlineSuggest, type InlineSuggestLength } from '../lib/aiTasks'
-import { buildInlineBriefing } from '../lib/aiContext'
-import { buildStyleNote, loadStyleDims, saveStyleDims } from '../lib/companionStyle'
-import { isCancelled } from '../lib/ai'
-import { isRefusal } from '../lib/aiCore/transport'
+import * as db from '@/lib/db'
+import { showToast } from '@/components/dialogs'
+import { aiInlineSuggest, type InlineSuggestLength } from '@/lib/aiTasks'
+import { buildInlineBriefing } from '@/lib/aiContext'
+import { buildStyleNote, loadStyleDims, saveStyleDims } from '@/lib/companionStyle'
+import { isCancelled } from '@/lib/ai'
+import { isRefusal } from '@/lib/aiCore/transport'
 import {
   GHOST_DEBOUNCE_MS, GHOST_CONTEXT_CHARS, GHOST_MAX_FAILS, GHOST_CACHE_MAX, stitchGhostBefore,
-} from './novelEditorHelpers'
+} from '@/components/novelEditorHelpers'
 
 type GhostArgs = {
   activeId: string | null

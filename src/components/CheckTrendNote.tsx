@@ -9,7 +9,7 @@
  * 投稿前自检（`components/ManuscriptCheckPanel.tsx`，2.9.2 起）、
  * 节奏与章末钩子（`components/PaceAnalysisPanel.tsx`，2.9.2 · ④ 起 —— 用 `neutral` 形态）。
  */
-import { humanAgo, type CheckTrend } from '../lib/checkLog'
+import { humanAgo, type CheckTrend } from '@/lib/checkLog'
 
 export default function CheckTrendNote({ trend, neutral = false, noun = '条' }: {
   trend: CheckTrend

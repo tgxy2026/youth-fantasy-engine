@@ -4,8 +4,8 @@
  * 🔴 段与段的**先后顺序就是侧栏顺序**，换位会改变界面上的页签排列，别调整这里三段的拼接次序。
  * 🔴 本文件只 import `schemaShared` 与 `schemaTemplates`，**不许 import schema.ts**（会成循环依赖）。
  */
-import { f, c, cc, chs } from '../schemaShared'
-import type { TabDef } from '../types'
+import { f, c, cc, chs } from '@/lib/schemaShared'
+import type { TabDef } from '@/lib/types'
 
 export const TABS_PART3: TabDef[] = [
 

@@ -7,10 +7,10 @@
  * 而「告诉作者这次到底用的是哪种模式」是需求点名的要求，不能漏。
  */
 import { useEffect, useState } from 'react'
-import AutoTextarea from './AutoTextarea'
-import { getSearchSettings } from '../lib/searchSettings'
-import { searchBlockedReason, SEARCH_MODE_LABEL, type SearchSettings } from '../lib/webSearch'
-import { describeSource, type DraftSource } from '../lib/draftMaterial'
+import AutoTextarea from '@/components/AutoTextarea'
+import { getSearchSettings } from '@/lib/searchSettings'
+import { searchBlockedReason, SEARCH_MODE_LABEL, type SearchSettings } from '@/lib/webSearch'
+import { describeSource, type DraftSource } from '@/lib/draftMaterial'
 
 /**
  * 读一次检索设置（起草 / 补全时用）。

@@ -20,18 +20,18 @@
  *
  * 本文件是纯逻辑，不含 React。
  */
-import * as db from '../db'
+import * as db from '@/lib/db'
 import {
   TAVERN_DEFAULTS, MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT,
   MEMORY_DIARY_DAYS, SUMMARY_LOCK_TTL_MS,
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP,
   type TavernParams, type SceneDescLevel, type PlotContextSource, type VarKey,
-} from './types'
-import { TONE_HINT } from './prompt'
-import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from './protocol'
-import { DEFAULT_POST_RULES, LEGACY_POST_RULES_VERSIONS, normalizePostRules, type PostRule } from './postRules'
-import { FIXED_OVERHEAD_CHARS } from './budget' // budget 只依赖 types，不会成环
-import { resolveParams } from './params'          // 同上：params 只依赖 types
+} from '@/lib/tavern/types'
+import { TONE_HINT } from '@/lib/tavern/prompt'
+import { PROTOCOL_CORE, LEGACY_PROTOCOLS } from '@/lib/tavern/protocol'
+import { DEFAULT_POST_RULES, LEGACY_POST_RULES_VERSIONS, normalizePostRules, type PostRule } from '@/lib/tavern/postRules'
+import { FIXED_OVERHEAD_CHARS } from '@/lib/tavern/budget' // budget 只依赖 types，不会成环
+import { resolveParams } from '@/lib/tavern/params'          // 同上：params 只依赖 types
 /**
  * 「额度跟着模型走」需要知道当前接的是谁 —— 所以这里要读 provider。
  * 🔴 不会成环的依据：`modelCapacity` 是**零运行时依赖**的纯逻辑模块（只 `import type`），
@@ -40,9 +40,9 @@ import { resolveParams } from './params'          // 同上：params 只依赖 t
  */
 import {
   adviseCapacity, modelFingerprintOf, shouldApplyTuning, type TuningAdvice,
-} from '../modelCapacity'
-import { loadProviders, loadActiveId, type AIProvider } from '../ai'
-import { DYNAMIC_QUOTA_PCT } from './quotas' // quotas 是纯常量/纯函数层，不会成环
+} from '@/lib/modelCapacity'
+import { loadProviders, loadActiveId, type AIProvider } from '@/lib/ai'
+import { DYNAMIC_QUOTA_PCT } from '@/lib/tavern/quotas' // quotas 是纯常量/纯函数层，不会成环
 
 /** 设置存储键（全局 meta） */
 export const K_TAVERN_SETTINGS = 'tavern.settings'

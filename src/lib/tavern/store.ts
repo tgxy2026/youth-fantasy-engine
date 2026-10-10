@@ -18,12 +18,12 @@
  *
  * 注意：本文件是纯逻辑，不含 React。
  */
-import * as db from '../db'
-import { uid } from '../id'
-import { DESKTOP, getDesktopState } from '../desktop'
-import { isDesktopCloudUnavailable } from '../desktopCloudSync'
-import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP, MAX_AI_CAST } from './types'
-import { structSpecOf, normalizeStructMarkup } from './cardFields'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
+import { DESKTOP, getDesktopState } from '@/lib/desktop'
+import { isDesktopCloudUnavailable } from '@/lib/desktopCloudSync'
+import { EMPTY_CAST_SETTING, DEFAULT_TALKATIVITY, writeCardField, cardStoryId, JOURNAL_KEEP, MAX_AI_CAST } from '@/lib/tavern/types'
+import { structSpecOf, normalizeStructMarkup } from '@/lib/tavern/cardFields'
 import type {
   TavernSession, TavernSessionIndexItem, TavernCast, CastSetting,
   TavernReport, TavernReportIndexItem,
@@ -31,7 +31,7 @@ import type {
   CharJournal, CharJournalEntry,
   TavernCharIndexItem, FreeSessionIndexItem, TavernMessage, TavernCheckpoint,
   TavernDirectorNote, CardFieldPath, TavernWatermark, FreeCheckpoint,
-} from './types'
+} from '@/lib/tavern/types'
 
 // ==================== 存储键 ====================
 // 剧情模式（会经 db.getSetting 自动加项目前缀）
@@ -670,7 +670,7 @@ export async function getFreeChar(id: string): Promise<FreeCharacter | null> {
 
 // 默认值定义已上移到 ./types（与 EMPTY_CAST_SETTING 同理：纯默认值属类型层）。
 // 这里 re-export 保持既有调用点（store.emptyFreeCharacter()）不变。
-export { emptyFreeCharacter } from './types'
+export { emptyFreeCharacter } from '@/lib/tavern/types'
 
 export async function createFreeChar(init: Omit<FreeCharacter, 'id' | 'createdAt' | 'updatedAt'>): Promise<FreeCharacter> {
   const c: FreeCharacter = { ...init, id: uid(), createdAt: now(), updatedAt: now() }

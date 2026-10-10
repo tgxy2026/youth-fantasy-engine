@@ -14,10 +14,10 @@
  * 【边界】本文件是**纯逻辑**：提示词拼装（字符串）＋ 检定判定（纯函数）＋ 结构化解析（走 aiParse）。
  *   不调 AI、不碰 React、不碰 db（AI 往返在 W4-3e 接引擎，照既有的 chat()/aiParse 通道）。
  */
-import { parseLooseObject, asText } from '../aiParse'
+import { parseLooseObject, asText } from '@/lib/aiParse'
 import type {
   RunAction, RunActionKind, RunOutcome, RunSession, RunCompanion, RunClueSource,
-} from './runTypes'
+} from '@/lib/run/runTypes'
 
 // ==================== 检定（D2=A）====================
 

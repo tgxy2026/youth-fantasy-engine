@@ -11,8 +11,8 @@
  * 200 条 —— 灵感夹是「攒着用」的草稿区，不是资料库；堆积太多说明该转化或清掉了。
  * 超限时**拒绝新增并如实返回失败**（调用方提示），绝不静默丢最老的数据。
  */
-import * as db from './db'
-import { uid } from './id'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
 
 export interface InspirationItem {
   id: string

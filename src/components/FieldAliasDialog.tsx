@@ -12,11 +12,11 @@
  */
 import { useMemo, useState } from 'react'
 import { AlertTriangle, RotateCcw, Save, Type } from 'lucide-react'
-import { Button } from './Button'
-import { Modal } from './Modal'
-import HelpPopover from './HelpPopover'
-import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '../lib/fieldAlias'
-import { foldVh } from '../lib/theme'
+import { Button } from '@/components/Button'
+import { Modal } from '@/components/Modal'
+import HelpPopover from '@/components/HelpPopover'
+import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/fieldAlias'
+import { foldVh } from '@/lib/theme'
 
 /** 弹窗的一项＝一个可改名的字段 */
 export interface AliasTarget {

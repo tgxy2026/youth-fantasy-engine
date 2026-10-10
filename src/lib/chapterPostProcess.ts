@@ -13,16 +13,16 @@
 // 🔴 落库一律**只追加、不覆盖**（关系「演变轨迹」、章节总表「伏笔编号」），属性列绝不自动改。
 // 🔴 **不凭空建条目**：伏笔 / 关系未登记时只**提示**，不自动新建（与 `backfillOutlineEvent`
 //    的「绝不新建细纲卡」同口径）。
-import * as db from './db'
+import * as db from '@/lib/db'
 import {
   aiExtractChapterChanges, aiExtractSettingEntities,
   type ExtractedEntity, type ExtractedForeshadow, type ExtractedRelation, type ExtractedStatus,
-} from './aiTasks'
-import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type LedgerItem, type EntityRegistry } from './settingLedger'
-import { splitCodes } from './audit'
-import { chapterFingerprint } from './aiRunLedger'
-import { countWords } from './textStats'
-import type { CardRecord, TableRow } from './types'
+} from '@/lib/aiTasks'
+import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type LedgerItem, type EntityRegistry } from '@/lib/settingLedger'
+import { splitCodes } from '@/lib/audit'
+import { chapterFingerprint } from '@/lib/aiRunLedger'
+import { countWords } from '@/lib/textStats'
+import type { CardRecord, TableRow } from '@/lib/types'
 
 /**
  * 编排输入 —— **刻意用轻量形状**（不是整个 `Chapter`）：

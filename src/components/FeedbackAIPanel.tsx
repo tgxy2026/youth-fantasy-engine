@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import AIDataSourceNote from './AIDataSourceNote'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
 import { Sparkles, Loader2, AlertCircle, BarChart3 } from 'lucide-react'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { aiAnalyzeFeedback, type FeedbackEntry } from '../lib/aiTasks'
-import { toFeedbackEntries } from '../lib/viewSelectors'
-import { ToolModal } from './EditorModals'
-import { Button } from './Button'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { aiAnalyzeFeedback, type FeedbackEntry } from '@/lib/aiTasks'
+import { toFeedbackEntries } from '@/lib/viewSelectors'
+import { ToolModal } from '@/components/EditorModals'
+import { Button } from '@/components/Button'
 
 interface Props {
   /** 读者反馈表当前所有行（含未保存草稿） */

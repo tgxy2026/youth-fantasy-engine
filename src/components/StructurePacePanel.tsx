@@ -14,17 +14,17 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { BarChart3, Loader2 } from 'lucide-react'
-import * as db from '../lib/db'
-import type { Chapter, TableRow } from '../lib/types'
-import { hydrateCreativeSession, updateInputs, useCreativeSession, saveInputsQuiet } from '../lib/creativeSession'
-import { getStoryTemplate } from '../lib/storyStructures'
-import { BEAT_COLORS } from '../lib/palette'
+import * as db from '@/lib/db'
+import type { Chapter, TableRow } from '@/lib/types'
+import { hydrateCreativeSession, updateInputs, useCreativeSession, saveInputsQuiet } from '@/lib/creativeSession'
+import { getStoryTemplate } from '@/lib/storyStructures'
+import { BEAT_COLORS } from '@/lib/palette'
 import {
   buildChapterShares, alignBeats, alignHooks, PACE_MIN_CHAPTERS, PACE_LEVEL_LABEL,
   type BeatAlignment, type PaceLevel, type HookRowInput,
-} from '../lib/structurePace'
-import { STORY_TEMPLATES } from '../lib/storyStructures'
-import HelpPopover from './HelpPopover'
+} from '@/lib/structurePace'
+import { STORY_TEMPLATES } from '@/lib/storyStructures'
+import HelpPopover from '@/components/HelpPopover'
 
 /** 节拍色板 —— 本体在单一真源 `lib/palette.ts`（2.8.0 · #045/#046） */
 const beatColor = (i: number) => BEAT_COLORS[i % BEAT_COLORS.length]

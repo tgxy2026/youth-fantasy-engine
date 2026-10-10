@@ -15,11 +15,11 @@
  * 资料预算大不大，取决于模型能吃多少。本地受显存限制（numCtx），云端按可用窗口的一个小比例。
  * 与酒馆的额度**互不影响**：这里只管正文写作链路，酒馆那两个数在「控制面板」里单独设置。
  */
-import * as db from './db'
-import { adviseCapacity, modelFingerprintOf, shouldApplyTuning, type CapacityAdvice } from './modelCapacity'
-import { loadProviders, loadActiveId, type AIProvider } from './ai'
-import { loadRouting, DEFAULT_ROUTING } from './aiRouting'
-import { getTavernSettings } from './tavern/settings'
+import * as db from '@/lib/db'
+import { adviseCapacity, modelFingerprintOf, shouldApplyTuning, type CapacityAdvice } from '@/lib/modelCapacity'
+import { loadProviders, loadActiveId, type AIProvider } from '@/lib/ai'
+import { loadRouting, DEFAULT_ROUTING } from '@/lib/aiRouting'
+import { getTavernSettings } from '@/lib/tavern/settings'
 
 const K_WRITER_BUDGET = 'ai.writerBudget'
 

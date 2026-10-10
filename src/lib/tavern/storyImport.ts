@@ -22,11 +22,11 @@
  *
  * 本文件是纯逻辑，不含 React。
  */
-import { STORY_NAME_MAX, STORY_SETTING_MAX, storyEntriesOf } from './story'
-import { uid } from '../id'
-import { SCRIPT_FIELD_MAX } from './script'
-import { type WorldEntry, type EntryState, ENTRY_STATE_LABEL, emptyWorldEntry } from './worldBook'
-import type { ScriptDraftFields } from './script'
+import { STORY_NAME_MAX, STORY_SETTING_MAX, storyEntriesOf } from '@/lib/tavern/story'
+import { uid } from '@/lib/id'
+import { SCRIPT_FIELD_MAX } from '@/lib/tavern/script'
+import { type WorldEntry, type EntryState, ENTRY_STATE_LABEL, emptyWorldEntry } from '@/lib/tavern/worldBook'
+import type { ScriptDraftFields } from '@/lib/tavern/script'
 
 /** 分节标记（与 __tests__ 的守护断言共用同一组常量，避免各处再抄一遍字面量） */
 export const MARK = {

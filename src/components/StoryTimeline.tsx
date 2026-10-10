@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import type { TableRow, TabDef, CalendarDef, CalendarRule } from '../lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays, cappedPositions, formatDurationHuman } from '../lib/storyDate'
+import type { TableRow, TabDef, CalendarDef, CalendarRule } from '@/lib/types'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays, cappedPositions, formatDurationHuman } from '@/lib/storyDate'
 import { Calendar, X, AlertTriangle, Layers, AlarmClock } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
 
 /**
  * 轨道配色（2.4.4 线条方案）：`dot/ring/text` 供圆点与卡片沿用；

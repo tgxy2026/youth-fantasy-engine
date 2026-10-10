@@ -16,8 +16,8 @@
  * 3. 🔴 **模型没按结构回也不丢内容**：解析失败时把原文整段兜住（`raw`），界面降级展示，
  *    而不是显示一个空白结果。
  */
-import { asText, parseLooseObject, parseObjectArray } from './aiParse'
-import { locateQuote } from './paceAnalysis'
+import { asText, parseLooseObject, parseObjectArray } from '@/lib/aiParse'
+import { locateQuote } from '@/lib/paceAnalysis'
 
 /** 读者是谁 —— 决定 AI 站在谁的位置读（不是"读者画像分析"，是"你就是这个人"） */
 export interface ReaderLens {

@@ -17,19 +17,19 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Database, Loader2, RefreshCw, Trash2 } from 'lucide-react'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import { confirmDialog, showToast } from './dialogs'
-import { useTaskRunner } from '../lib/aiTaskCenter'
-import * as db from '../lib/db'
-import type { AIProvider } from '../lib/ai'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
+import * as db from '@/lib/db'
+import type { AIProvider } from '@/lib/ai'
 import {
   loadEmbeddingSettings, saveEmbeddingSettings, resolveEmbedConfig, embeddingStatus,
   DEFAULT_EMBEDDING, type EmbeddingSettings,
-} from '../lib/semantic/settings'
-import { rebuildIndex, indexStatus, type IndexProgress, type IndexStatus } from '../lib/semantic/indexer'
-import { clearProjectVectors } from '../lib/semantic/store'
+} from '@/lib/semantic/settings'
+import { rebuildIndex, indexStatus, type IndexProgress, type IndexStatus } from '@/lib/semantic/indexer'
+import { clearProjectVectors } from '@/lib/semantic/store'
 
 interface Props {
   /** 已配好的模型列表（与上面的「模型配置」同一份） */

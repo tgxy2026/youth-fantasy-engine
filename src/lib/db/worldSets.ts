@@ -11,10 +11,10 @@
  *      **删除必须走 `ops.del`**，云盘同步的墓碑机制挂在那条路径上（漏了就「删了会复活」）。
  *   ③ **删子项必须同时从活跃列表里摘掉它**（否则 AI 段落里会冒出一行空的子世界标题）。
  */
-import type { CardRecord } from '../types'
-import { activeKeyOf, pruneActiveIds, subTabIdOf, toggleActiveId } from '../worldSets'
-import { currentProjectId, ops, touchProject } from './core'
-import { getSetting, setSetting } from './meta'
+import type { CardRecord } from '@/lib/types'
+import { activeKeyOf, pruneActiveIds, subTabIdOf, toggleActiveId } from '@/lib/worldSets'
+import { currentProjectId, ops, touchProject } from '@/lib/db/core'
+import { getSetting, setSetting } from '@/lib/db/meta'
 
 /** 该母级页签下的全部子项（按 order 排） */
 export async function getSubSets(tabId: string): Promise<CardRecord[]> {

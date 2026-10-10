@@ -16,28 +16,28 @@
  * 这一条必须显式写在界面上。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSaveHotkey } from '../lib/useSaveHotkey'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import { UNSAVED_CHANGES_HINT } from '../lib/constants'
-import { showToast } from './dialogs'
-import { Button } from './Button'
-import { LoadingState } from './LoadingState'
-import AutoTextarea from './AutoTextarea'
-import NumberField from './NumberField'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
-import { buildProjectContext } from '../lib/aiContext'
+import { useSaveHotkey } from '@/lib/useSaveHotkey'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
+import { showToast } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import { LoadingState } from '@/components/LoadingState'
+import AutoTextarea from '@/components/AutoTextarea'
+import NumberField from '@/components/NumberField'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/DraftBits'
+import { buildProjectContext } from '@/lib/aiContext'
 import {
   getWorldSetting, saveWorldSetting, draftWorldSetting, worldToText,
   isEmptyWorld, worldEntriesOf, buildPlotWorldBook,
   type WorldSetting,
-} from '../lib/tavern/world'
-import { entryStateOf, type EntryState } from '../lib/tavern/worldBook'
-import EntryStatePicker from './EntryStatePicker'
-import { useTavernQuota } from './useTavernQuota'
-import { fmtWindow } from '../lib/tavern/quotas'
-import { uid } from '../lib/id'
-import type { DraftSource } from '../lib/tavern/draft'
+} from '@/lib/tavern/world'
+import { entryStateOf, type EntryState } from '@/lib/tavern/worldBook'
+import EntryStatePicker from '@/components/EntryStatePicker'
+import { useTavernQuota } from '@/components/useTavernQuota'
+import { fmtWindow } from '@/lib/tavern/quotas'
+import { uid } from '@/lib/id'
+import type { DraftSource } from '@/lib/tavern/draft'
 
 export default function TavernWorld() {
   const [w, setW] = useState<WorldSetting | null>(null)

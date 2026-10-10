@@ -11,9 +11,9 @@
  *
  * 本文件是纯逻辑 + 存储读写，不含 React；文件读写（Blob / input）由调用方完成。
  */
-import * as db from '../db'
-import { uid } from '../id'
-import { type TavernSettings } from './settings'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
+import { type TavernSettings } from '@/lib/tavern/settings'
 
 const K_PRESETS = 'tavern.presets'
 

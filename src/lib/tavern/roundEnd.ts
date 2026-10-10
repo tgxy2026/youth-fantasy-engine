@@ -25,20 +25,20 @@
  *      卡片已被改但会话没归档 → 重试时 ② 拿同一段对话再抽一次、备注再叠一层 ⇒ **数值重复累加**（不可逆）。
  *      延后之后，①②③ 任一中止 ⇒ 一条不落 ⇒ 重试从零重算，干净。
  */
-import * as store from './store'
-import { messagesAfterWatermark } from './memory'
-import { summarizeRound, summarizeMemory, extractSessionVars } from './summarize'
-import { proposeCardRevisions, type CardRevision } from './revise'
-import { recordVarChanges, turnSeqOf, emptyVars, manualPinnedKeys } from './vars'
-import type { SummaryLimits } from './summarize'
-import { renderFreeCharacter } from './engine'
+import * as store from '@/lib/tavern/store'
+import { messagesAfterWatermark } from '@/lib/tavern/memory'
+import { summarizeRound, summarizeMemory, extractSessionVars } from '@/lib/tavern/summarize'
+import { proposeCardRevisions, type CardRevision } from '@/lib/tavern/revise'
+import { recordVarChanges, turnSeqOf, emptyVars, manualPinnedKeys } from '@/lib/tavern/vars'
+import type { SummaryLimits } from '@/lib/tavern/summarize'
+import { renderFreeCharacter } from '@/lib/tavern/engine'
 // isCancelled 从 '../ai' 取（与 revise.ts 同源）：它不是「酒馆专属」概念，别从 ./provider 绕
-import { isCancelled } from '../ai'
-import type { ChatFn } from './provider'
+import { isCancelled } from '@/lib/ai'
+import type { ChatFn } from '@/lib/tavern/provider'
 import type {
   FreeSession, FreeCharacter, FreeMemory, TavernMessage,
   TavernVars, VarChange, CharJournalEntry, VarKey, CharVars,
-} from './types'
+} from '@/lib/tavern/types'
 
 /** 收尾经历的阶段（界面据此显示进度） */
 export type RoundEndStage = 'memory' | 'vars' | 'revise' | 'done'

@@ -14,12 +14,12 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { Palette } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
 import {
   THEMES, applyTheme, applyCustomTheme, getStoredCustomTheme, getStoredTheme,
   type CustomThemeParams, type ThemeId, type CustomThemeVars,
-} from '../lib/theme'
+} from '@/lib/theme'
 
 type BaseId = Exclude<ThemeId, 'custom'>
 

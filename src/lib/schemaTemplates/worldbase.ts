@@ -16,8 +16,8 @@
  * ② 其余 9 包的共享字段与 `东方修真` **字段名相同**（键＝`模块::字段` 因此相同）⇒
  *    作者从修真切到科幻时，「世界名称 / 社会结构 / 成长地图」这类内容原样保留。
  */
-import type { FormField, FormModule } from '../types'
-import type { GenrePack } from './packs'
+import type { FormField, FormModule } from '@/lib/types'
+import type { GenrePack } from '@/lib/schemaTemplates/packs'
 
 const f = (name: string, desc: string, example: string): FormField => ({ name, desc, example })
 

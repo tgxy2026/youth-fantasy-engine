@@ -5,7 +5,7 @@
 // 全应用的 AI 按钮会立刻同时亮起，不需要刷新页面。
 
 import { useSyncExternalStore } from 'react'
-import { aiReadySnapshot, subscribeAIReady, type AIReadyInfo } from './ai'
+import { aiReadySnapshot, subscribeAIReady, type AIReadyInfo } from '@/lib/ai'
 
 export function useAIReady(): AIReadyInfo {
   return useSyncExternalStore(subscribeAIReady, aiReadySnapshot, aiReadySnapshot)

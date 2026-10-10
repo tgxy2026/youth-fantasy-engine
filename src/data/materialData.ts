@@ -10,7 +10,7 @@
 // ⚠️ 新增/修改内容后无需跑测试，但请自查：卡片键为「模块名::字段名」、表格行键为 schema 列名；
 //    本库是纯只读展示数据，不落库，不参与 seed-schema-check。
 
-import type { MaterialCategory } from '../lib/materialRef'
+import type { MaterialCategory } from '@/lib/materialRef'
 
 export const MATERIAL_CATEGORIES: MaterialCategory[] = [
   {

@@ -20,19 +20,19 @@
  * ⚠️ B1 的抽取粒度是「专名清单」（name/desc/evidence），不含全字段（身份定位/外貌/境界…）。
  *    B2 会换成「两遍全字段抽取」，届时只需替换 extract 阶段的实现，draft/commit/UI 全不用改。
  */
-import { aiExtractSettingEntities, aiSummarizeFormSettings } from '../aiTasks'
-import { aiBookBreakSplitChapters } from '../aiTasks/bookBreakSplit'
-import { isCancelled } from '../ai'
-import { buildDraftBundle, bundleOf, type EntityBatch } from '../flow/draft'
-import { formDraftRows } from '../flow/formMap'
-import { createFlow, firstUnfinishedStage, type StageCtx } from '../flow/pipeline'
-import type { DraftBundle, DraftRow, FlowProgress, FlowStage } from '../flow/types'
-import { buildFormMaterial } from './formSummary'
-import { persistSplitToChapters, planVolumes, type PersistResult } from './persist'
-import { buildRelationDrafts, type RelationDraftResult, type RelationTabOutcome } from './relations'
-import type { RelationMaterialLimits } from './relationMaterial'
-import { chunkText, splitNovelText, type RawChapter, type SplitResult } from './split'
-import { applyAiSplit, sampleTextForSplit } from './aiSplit'
+import { aiExtractSettingEntities, aiSummarizeFormSettings } from '@/lib/aiTasks'
+import { aiBookBreakSplitChapters } from '@/lib/aiTasks/bookBreakSplit'
+import { isCancelled } from '@/lib/ai'
+import { buildDraftBundle, bundleOf, type EntityBatch } from '@/lib/flow/draft'
+import { formDraftRows } from '@/lib/flow/formMap'
+import { createFlow, firstUnfinishedStage, type StageCtx } from '@/lib/flow/pipeline'
+import type { DraftBundle, DraftRow, FlowProgress, FlowStage } from '@/lib/flow/types'
+import { buildFormMaterial } from '@/lib/bookbreak/formSummary'
+import { persistSplitToChapters, planVolumes, type PersistResult } from '@/lib/bookbreak/persist'
+import { buildRelationDrafts, type RelationDraftResult, type RelationTabOutcome } from '@/lib/bookbreak/relations'
+import type { RelationMaterialLimits } from '@/lib/bookbreak/relationMaterial'
+import { chunkText, splitNovelText, type RawChapter, type SplitResult } from '@/lib/bookbreak/split'
+import { applyAiSplit, sampleTextForSplit } from '@/lib/bookbreak/aiSplit'
 
 /** 阶段声明（weight 按实测耗时给：抽取占绝大部分；写入正文是纯 IO，给 1） */
 export const BOOKBREAK_STAGES: FlowStage[] = [

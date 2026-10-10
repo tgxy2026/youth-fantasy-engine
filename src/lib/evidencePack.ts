@@ -14,12 +14,12 @@
  * 🔴 **如实申报**：本机只保留有限个版本（见 retention 字段）。早期版本可能已被自动清理，
  *    证据包必须把这件事写出来，而不是假装"这就是全部"。这也是「可信」的一部分。
  */
-import type { DocModel, DocBlock } from './tavern/exportDoc'
-import type { SnapshotSource } from './db'
-import { MAX_SNAPSHOTS_PER_CHAPTER } from './db/chapters'
-import { APP_VERSION_LABEL } from './env'
-import { docFileName } from './tavern/exportDoc'
-import type { ChapterTrajectory, TrajectoryDailyPoint } from './trajectory'
+import type { DocModel, DocBlock } from '@/lib/tavern/exportDoc'
+import type { SnapshotSource } from '@/lib/db'
+import { MAX_SNAPSHOTS_PER_CHAPTER } from '@/lib/db/chapters'
+import { APP_VERSION_LABEL } from '@/lib/env'
+import { docFileName } from '@/lib/tavern/exportDoc'
+import type { ChapterTrajectory, TrajectoryDailyPoint } from '@/lib/trajectory'
 
 /** 证据包文件标识（写进 JSON，供外部工具认格式） */
 export const EVIDENCE_KIND = 'youth-fantasy-engine-trajectory'

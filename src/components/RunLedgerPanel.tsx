@@ -9,12 +9,12 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { History, Loader2, RefreshCw, X } from 'lucide-react'
-import * as db from '../lib/db'
-import { listProjectAiRuns } from '../lib/db'
-import type { AiRun } from '../lib/aiRunTypes'
-import { Button } from './Button'
-import { Z } from '../lib/zLayer'
-import { foldVh } from '../lib/theme'
+import * as db from '@/lib/db'
+import { listProjectAiRuns } from '@/lib/db'
+import type { AiRun } from '@/lib/aiRunTypes'
+import { Button } from '@/components/Button'
+import { Z } from '@/lib/zLayer'
+import { foldVh } from '@/lib/theme'
 
 const KIND_LABEL: Record<string, string> = {
   creative: '创意写作',

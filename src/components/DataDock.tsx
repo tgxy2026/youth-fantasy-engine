@@ -1,11 +1,11 @@
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import CloudFileSyncBar from './CloudFileSyncBar'
-import { DesktopDataBar } from './Desktop'
-import { DESKTOP } from '../lib/desktop'
-import { CLOUD_FILE_SYNC } from '../lib/desktopCloudSync'
-import { foldVh } from '../lib/theme'
-import { Z } from '../lib/zLayer'
-import { usePersistedBool } from '../lib/uiPrefs'
+import CloudFileSyncBar from '@/components/CloudFileSyncBar'
+import { DesktopDataBar } from '@/components/Desktop'
+import { DESKTOP } from '@/lib/desktop'
+import { CLOUD_FILE_SYNC } from '@/lib/desktopCloudSync'
+import { foldVh } from '@/lib/theme'
+import { Z } from '@/lib/zLayer'
+import { usePersistedBool } from '@/lib/uiPrefs'
 
 /**
  * 左下角统一「数据坞」—— 全应用**唯一允许**的全局浮层（#032 布局规范化）。

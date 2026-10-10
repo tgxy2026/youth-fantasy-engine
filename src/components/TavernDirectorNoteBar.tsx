@@ -10,12 +10,12 @@
  * 分成两个组件反而会让输入区上方堆出一串小条。
  */
 import { useEffect, useState } from 'react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import AutoTextarea from './AutoTextarea'
-import type { TavernDirectorNote } from '../lib/tavern/types'
-import type { PostApplied } from '../lib/tavern/postRules'
-import NumberField from './NumberField'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import AutoTextarea from '@/components/AutoTextarea'
+import type { TavernDirectorNote } from '@/lib/tavern/types'
+import type { PostApplied } from '@/lib/tavern/postRules'
+import NumberField from '@/components/NumberField'
 
 export default function TavernDirectorNoteBar({
   note, postApplied, postErrors, disabled, onSave, onClear,

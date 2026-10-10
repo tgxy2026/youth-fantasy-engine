@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Database, ChevronDown, ChevronRight } from 'lucide-react'
-import { Button } from './Button'
-import { sourcesOf, summarizeSources, AI_PRUNE_NOTE, AI_WORLD_SET_NOTE, mentionsWorldSet } from '../lib/aiDataSources'
+import { Button } from '@/components/Button'
+import { sourcesOf, summarizeSources, AI_PRUNE_NOTE, AI_WORLD_SET_NOTE, mentionsWorldSet } from '@/lib/aiDataSources'
 
 interface Props {
   /** `AI_DATA_SOURCES` 里的功能 id */

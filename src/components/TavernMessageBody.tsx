@@ -21,9 +21,9 @@
  *   自动化测试按行号定位这一行（`div[class*="group/msg"]`），换掉它行号就错位 —— 踩过一次。
  */
 import { useState } from 'react'
-import { renderTavernMessage } from './TavernMessage'
-import AutoTextarea from './AutoTextarea'
-import { Button } from './Button'
+import { renderTavernMessage } from '@/components/TavernMessage'
+import AutoTextarea from '@/components/AutoTextarea'
+import { Button } from '@/components/Button'
 
 export type MessageOps = {
   /** 能不能重说（= 是不是末尾那条 AI 回复，且当前没在生成） */

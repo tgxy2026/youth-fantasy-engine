@@ -7,7 +7,7 @@
  * ⚠️ 尺寸走 inline style 而不是 Tailwind 类：边长是变量（24 / 28 / 36 / 64），
  *    类名穷举不了；而且这里写的是**数值 px**，不涉及从 DOM 读尺寸回设（那条 zoom 红线管不到）。
  */
-import { avatarLabel } from '../lib/imageAvatar'
+import { avatarLabel } from '@/lib/imageAvatar'
 
 export default function Avatar({ src, name, size = 24, className = '', title }: {
   src?: string

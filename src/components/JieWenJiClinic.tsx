@@ -4,10 +4,10 @@
  * 🔴 纯搬家：JSX 一字未改；状态全部来自 useJieWenJiModel（组件只收 m）。
  */
 import { Loader2, CheckCircle2, Sparkles, SpellCheck } from 'lucide-react'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { Button } from './Button'
-import { PROOF_ORDER, PROOF_META, renderReport } from './jieWenJiParts'
-import type { JieWenJiModel } from './useJieWenJiModel'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { Button } from '@/components/Button'
+import { PROOF_ORDER, PROOF_META, renderReport } from '@/components/jieWenJiParts'
+import type { JieWenJiModel } from '@/components/useJieWenJiModel'
 
 export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
   const { aiReady, diagMode, setDiagMode, diag, runDiag, proofs, propsRunning, runProofread, stopProofread, replaceOne, aiBtnCls } = m

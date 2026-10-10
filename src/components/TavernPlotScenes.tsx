@@ -10,12 +10,12 @@
  *   真正的整理与回滚逻辑分别在 `usePlotSummary` / `usePlotCheckpoints` 里。
  */
 import { useMemo, useState } from 'react'
-import { Button } from './Button'
-import SelectRow from './SelectRow'
-import { talkBandOf, talkativityOf, type TavernSession, type TavernSessionIndexItem } from '../lib/tavern/types'
-import type { splitCast } from '../lib/tavern/engine'
+import { Button } from '@/components/Button'
+import SelectRow from '@/components/SelectRow'
+import { talkBandOf, talkativityOf, type TavernSession, type TavernSessionIndexItem } from '@/lib/tavern/types'
+import type { splitCast } from '@/lib/tavern/engine'
 // S1a 分支树视图（2026-10-05）：父子推断是**纯函数**、住在 store（与 branchTitle 相邻），组件只渲染结果
-import { groupSessionsByBranch, isBranchTitle } from '../lib/tavern/store'
+import { groupSessionsByBranch, isBranchTitle } from '@/lib/tavern/store'
 
 // ⚠️ 下面两个展示件内部是从原文件**逐行搬**过来的 JSX，缩进保留原样（8 / 12 空格），
 //    这样才能用「逐行区间核对」证明一个字没改 —— 别为了好看去重排缩进。

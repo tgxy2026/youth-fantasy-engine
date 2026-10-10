@@ -15,11 +15,11 @@
 // 另外独立校验"编号型引用"（如 章节总表的 埋设/回收伏笔编号、历史的 对应伏笔编号）：
 //   值为字母+数字编码时，按前缀映射到目标表，确认该编码真实存在。
 
-import { TABS, getTab, GEO_MAPS_TAB } from './schema'
-import { getTableRows } from './db'
-import type { AuditIssue, AuditLocation } from './audit'
+import { TABS, getTab, GEO_MAPS_TAB } from '@/lib/schema'
+import { getTableRows } from '@/lib/db'
+import type { AuditIssue, AuditLocation } from '@/lib/audit'
 // ⚠️ `import type` 编译后被完全擦除，**不会**把酒馆存储层拽成静态依赖（真正的取用在下面动态 import）
-import type { TavernGhostGroup } from './tavern/store'
+import type { TavernGhostGroup } from '@/lib/tavern/store'
 
 /** 编码前缀 → 目标表（用于编号型引用校验） */
 const PREFIX_TAB: Record<string, string> = {
@@ -218,7 +218,7 @@ export async function runDataHealthCheck(): Promise<HealthResult> {
   //    2026-09-20 复核时纠正了一处历史误记：不只是自由模式没接，**剧情模式同样没接**
   //    （`pruneGhostSessions` 当时只被 tests 调用）—— 缺口是两种模式的 6 个函数全套。
   try {
-    const { auditSessions, auditFreeChars, auditFreeSessions } = await import('./tavern/store')
+    const { auditSessions, auditFreeChars, auditFreeSessions } = await import('@/lib/tavern/store')
     // 三组各取自己有的名字字段：会话两项是 title、角色卡是 name
     const groups: { group: TavernGhostGroup; label: string; how: string; items: string[] }[] = [
       { group: 'sessions', label: '剧情推演会话', how: '这场推演的对话记录', items: (await auditSessions()).ghosts.map(g => g.title) },

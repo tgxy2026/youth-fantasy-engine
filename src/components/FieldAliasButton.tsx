@@ -6,9 +6,9 @@
  */
 import { useMemo, useState } from 'react'
 import { Type } from 'lucide-react'
-import { Button } from './Button'
-import FieldAliasDialog, { type AliasTarget } from './FieldAliasDialog'
-import { aliasCount, useFieldAliases } from '../lib/fieldAlias'
+import { Button } from '@/components/Button'
+import FieldAliasDialog, { type AliasTarget } from '@/components/FieldAliasDialog'
+import { aliasCount, useFieldAliases } from '@/lib/fieldAlias'
 
 export default function FieldAliasButton({
   tabId,

@@ -13,14 +13,14 @@
  */
 import { useEffect } from 'react'
 import { Activity, Loader2, X } from 'lucide-react'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import { showToast } from './dialogs'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import { showToast } from '@/components/dialogs'
 import {
   abortTask, clearFinishedTasks, consumeTaskNotice, dismissTask,
   runningTaskCount, unreadTaskCount, useAiTasks, useAiTaskNotice,
-} from '../lib/aiTaskCenter'
-import type { AiTaskStatus } from '../lib/aiTaskCenter'
+} from '@/lib/aiTaskCenter'
+import type { AiTaskStatus } from '@/lib/aiTaskCenter'
 
 /** 进度快照的形状由各任务自定义 —— 这里只安全地取出可显示的那行说明（不假设具体类型） */
 function progressMessage(p: unknown): string {

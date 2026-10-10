@@ -9,13 +9,13 @@
  * 先摊开看一眼、再决定要不要，成本几乎为零，却省掉一次「改回来」。
  */
 import { useEffect, useMemo, useState } from 'react'
-import { Button } from './Button'
-import { Modal } from './Modal'
-import AutoTextarea from './AutoTextarea'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
+import { Button } from '@/components/Button'
+import { Modal } from '@/components/Modal'
+import AutoTextarea from '@/components/AutoTextarea'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/DraftBits'
 import {
   draftCard, EMPTY_CARD_DRAFT, isEmptyCardDraft, type CardDraft, type DraftSource,
-} from '../lib/tavern/draft'
+} from '@/lib/tavern/draft'
 
 /** 十三栏的显示名（预览用；顺序＝四章顺序） */
 const CARD_FIELD_LABELS: [keyof CardDraft, string][] = [

@@ -3,11 +3,11 @@
  *
  * 🔴 纯搬家：JSX 一字未改；状态全部来自 useCreativeWritingModel（组件只收 m）。
  */
-import DraftReviewPanel from './DraftReviewPanel'
-import WorkflowTimeline from './WorkflowTimeline'
-import { Button } from './Button'
-import { resolveGate } from '../lib/creativeSession'
-import type { CreativeWritingModel } from './useCreativeWritingModel'
+import DraftReviewPanel from '@/components/DraftReviewPanel'
+import WorkflowTimeline from '@/components/WorkflowTimeline'
+import { Button } from '@/components/Button'
+import { resolveGate } from '@/lib/creativeSession'
+import type { CreativeWritingModel } from '@/components/useCreativeWritingModel'
 
 export default function CreativeFlowSections({ m }: { m: CreativeWritingModel }) {
   const { s, inp } = m

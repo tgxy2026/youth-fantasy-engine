@@ -24,9 +24,9 @@
  * 各业务把自己的模板翻译成 `InterviewSpec` 即可。**别在业务侧再写一份访谈逻辑**：
  * 提问规则、字段白名单、增量合并这三件事一旦有两份实现，就一定会漂移。
  */
-import type { ChatMessage } from './ai'
-import { parsePlainObject, asText } from './aiParse'
-import { newAuthorFence, authorBlock } from './promptGuard'
+import type { ChatMessage } from '@/lib/ai'
+import { parsePlainObject, asText } from '@/lib/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
 
 /** 提纲的一个话题：对应模板里的一组栏 */
 export type InterviewTopic = {

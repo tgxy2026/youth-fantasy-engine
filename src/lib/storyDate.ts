@@ -18,9 +18,9 @@
  * 负数年份同样成立：-5年12月(-48800) < -4年1月(-39999)，
  * 即「年份越大越晚」在负数区间依然成立（这正是公元前纪年需要的语义）。
  */
-import type { CalendarRule } from './types'
-import { DEFAULT_CALENDAR_RULE } from './types'
-import { getSetting, setSetting } from './db'
+import type { CalendarRule } from '@/lib/types'
+import { DEFAULT_CALENDAR_RULE } from '@/lib/types'
+import { getSetting, setSetting } from '@/lib/db'
 
 /** 默认规则从 types.ts 转出（理由见那里：底层工具也要用，不能挂上 db 这条依赖链） */
 export { DEFAULT_CALENDAR_RULE }

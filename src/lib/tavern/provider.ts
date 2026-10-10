@@ -7,8 +7,8 @@
  *
  * engine 仍 re-export 它，既有调用点（summarize / revise / 各组件）不必改。
  */
-import { chat, isProviderUsable, typeLabel, loadProviders, requireActiveProvider, type AIProvider } from '../ai'
-import { getTavernSettings } from './settings'
+import { chat, isProviderUsable, typeLabel, loadProviders, requireActiveProvider, type AIProvider } from '@/lib/ai'
+import { getTavernSettings } from '@/lib/tavern/settings'
 
 /** 「调一次模型」的函数类型 —— 测试注入桩模型用的口子 */
 export type ChatFn = typeof chat

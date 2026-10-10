@@ -4,7 +4,7 @@
  * 主要靠用户在「检查工具」页导入平台官方词库或手动补充自定义词。
  */
 
-import { contextSnippet } from './contextSnippet'
+import { contextSnippet } from '@/lib/contextSnippet'
 
 /** 内置基础词库（按类别）。刻意从简：真实平台词库请自行导入。 */
 export const BUILTIN_WORDS: Record<string, string[]> = {
@@ -60,7 +60,7 @@ export function replaceHits(text: string, hits: SensitiveHit[], token = '■■'
 }
 
 // ============ 自定义敏感词（settingsKV::customSensitiveWords 跨项目共享） ============
-import * as db from './db'
+import * as db from '@/lib/db'
 
 export async function getCustomSensitiveWords(): Promise<string[]> {
   return db.getSetting<string[]>('customSensitiveWords', [])

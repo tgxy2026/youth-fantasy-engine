@@ -1,32 +1,32 @@
-import Panel from './Panel'
+import Panel from '@/components/Panel'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { AI_STREAM_LABEL } from '../lib/constants'
-import { writerBudgetFor } from '../lib/aiWriterBudget'
-import * as db from '../lib/db'
-import { scanText, BUILTIN_WORDS, getCustomSensitiveWords, setCustomSensitiveWords } from '../lib/sensitiveWords'
+import { AI_STREAM_LABEL } from '@/lib/constants'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
+import * as db from '@/lib/db'
+import { scanText, BUILTIN_WORDS, getCustomSensitiveWords, setCustomSensitiveWords } from '@/lib/sensitiveWords'
 import {
   Sparkles, ShieldAlert, ScanSearch, RefreshCw, FileDown, Upload, Loader2, Stethoscope, EyeOff, RotateCcw, Trash2
 } from 'lucide-react'
-import HelpPopover from './HelpPopover'
-import ManuscriptCheckPanel from './ManuscriptCheckPanel'
-import PaceAnalysisPanel from './PaceAnalysisPanel'
-import StructurePacePanel from './StructurePacePanel'
-import ReaderProbePanel from './ReaderProbePanel'
-import ChapterCheckPanel from './ChapterCheckPanel'
-import OptimizeTicketPanel from './OptimizeTicketPanel'
-import PlatformCheckPanel from './PlatformCheckPanel'
-import AIDataSourceNote from './AIDataSourceNote'
-import AutoTextarea from './AutoTextarea'
-import { confirmDialog, showToast } from './dialogs'
-import { downloadText } from '../lib/zip'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { aiReviewSensitive, aiContinuityAudit, type SensitiveReview, type ContinuityFinding } from '../lib/aiTasks'
-import { buildProjectContext } from '../lib/aiContext'
-import { runDataHealthCheck, type TavernGhostInfo } from '../lib/dataHealth'
-import { checkAuditChapters, formatGap } from '../lib/evidenceGate'
-import { SEVERITY_LABEL, type AuditIssue, type AuditLocation } from '../lib/audit'
-import { Button } from './Button'
+import HelpPopover from '@/components/HelpPopover'
+import ManuscriptCheckPanel from '@/components/ManuscriptCheckPanel'
+import PaceAnalysisPanel from '@/components/PaceAnalysisPanel'
+import StructurePacePanel from '@/components/StructurePacePanel'
+import ReaderProbePanel from '@/components/ReaderProbePanel'
+import ChapterCheckPanel from '@/components/ChapterCheckPanel'
+import OptimizeTicketPanel from '@/components/OptimizeTicketPanel'
+import PlatformCheckPanel from '@/components/PlatformCheckPanel'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import AutoTextarea from '@/components/AutoTextarea'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { downloadText } from '@/lib/zip'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { aiReviewSensitive, aiContinuityAudit, type SensitiveReview, type ContinuityFinding } from '@/lib/aiTasks'
+import { buildProjectContext } from '@/lib/aiContext'
+import { runDataHealthCheck, type TavernGhostInfo } from '@/lib/dataHealth'
+import { checkAuditChapters, formatGap } from '@/lib/evidenceGate'
+import { SEVERITY_LABEL, type AuditIssue, type AuditLocation } from '@/lib/audit'
+import { Button } from '@/components/Button'
 
 // 风险 / 严重度色标签
 const riskBadge = (r: string) =>
@@ -193,7 +193,7 @@ export default function CheckTools() {
     })) return
     try {
       // ⚠️ 动态 import：check-tools 是 locked、酒馆那套是 optional —— 静态引入会把酒馆存储层并进本页 chunk
-      const { pruneGhostsSafely } = await import('../lib/tavern/store')
+      const { pruneGhostsSafely } = await import('@/lib/tavern/store')
       const r = await pruneGhostsSafely(info.group)
       if (r.blocked) { showToast(r.blocked, 'error'); return }
       if (r.pruned === 0) { showToast('复判后没有可清理的条目，未做改动'); await runHealth(); return }

@@ -18,21 +18,21 @@
  *
  * 🔴 本模块**不落库、不改卡**：只产出建议。采纳由调用方执行（`store.applyCardRevision`）。
  */
-import { chat, isCancelled, type ChatMessage } from '../ai'
-import { parseObjectArray, parseLooseObject, asText } from '../aiParse'
-import { newAuthorFence, authorBlock } from '../promptGuard'
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
-import { uid } from '../id'
-import { CARD_FIELDS, isCardField, readCardField, fieldLabel } from './types'
-import { structHintFor } from './cardFields'
-import type { CardFieldPath, FreeCharacter, TavernMessage } from './types'
+import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { parseObjectArray, parseLooseObject, asText } from '@/lib/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
+import { uid } from '@/lib/id'
+import { CARD_FIELDS, isCardField, readCardField, fieldLabel } from '@/lib/tavern/types'
+import { structHintFor } from '@/lib/tavern/cardFields'
+import type { CardFieldPath, FreeCharacter, TavernMessage } from '@/lib/tavern/types'
 
 // 字段表与读写工具在 ./types（纯数据 + 纯函数，store 也要用；放这里会让 store→revise→engine→store 成环）
 export {
   CARD_FIELDS, fieldLabel, isCardField, readCardField, writeCardField,
-} from './types'
-export type { CardFieldPath } from './types'
+} from '@/lib/tavern/types'
+export type { CardFieldPath } from '@/lib/tavern/types'
 /** 一条待裁决的设定变更 */
 export type CardRevision = {
   id: string

@@ -33,7 +33,10 @@ await build({
       // ⚠️ filter 必须同时认 './desktop' 与 '../desktop'：2026-09-19 起 src/lib/db.ts 只是门面，
       // 真正的存储代码在 src/lib/db/ 下（相对路径更深一层）。只写成 /^\.\/desktop$/ 会漏桩，
       // 于是测试会去加载真实 Electron 模块 —— 那时是**炸得响**的，不是静默通过。
-      b.onResolve({ filter: /^(?:\.\.?\/)+desktop$/ }, () => ({ path: path.join(here, 'mock-desktop.ts') }))
+      // 🔴 2026-10-10（G1 别名化）：specifier 已从相对路径改成 `@/lib/desktop`
+      // （`src/lib/db/core.ts` 里那行 `../desktop`），filter 不同步就会**又漏桩** ——
+      // 实测后果：69 个用例一起挂 `indexedDB is not defined`。故把 `@/lib/desktop` 一并认。
+      b.onResolve({ filter: /^(?:(?:\.\.?\/)+desktop|@\/lib\/desktop)$/ }, () => ({ path: path.join(here, 'mock-desktop.ts') }))
       b.onResolve({ filter: /^\.\/mock-memory$/ }, () => ({ path: path.join(here, 'mock-memory.ts') }))
     },
   }],

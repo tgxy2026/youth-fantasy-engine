@@ -8,9 +8,9 @@
 // 🔴 口径：只看「文本里出现了这个编号」，不做语义判定 —— 宁可多报不漏报，
 //    因为漏报会让作者以为没引用。纯只读、不改任何数据。
 
-import * as db from './db'
-import { TABS } from './schema'
-import { MULTI_SET_TABS } from './worldSets'
+import * as db from '@/lib/db'
+import { TABS } from '@/lib/schema'
+import { MULTI_SET_TABS } from '@/lib/worldSets'
 
 export interface CodeRefResult {
   /** 出现处数（不含被删行自身的编号格） */

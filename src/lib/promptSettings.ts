@@ -17,7 +17,7 @@
  * 4. 取走即用：`promptText(id, fallback)` 给「函数内一次性提示词」用 ——
  *    没有覆写时返回 fallback，省得为它单独 declare 一个模块级变量。
  */
-import * as db from './db'
+import * as db from '@/lib/db'
 
 /** 提示词按「功能板块」分组，顺序即界面上从上到下的顺序 */
 export type PromptGroup =

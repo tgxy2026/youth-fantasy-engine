@@ -2,12 +2,12 @@
 // 替代浏览器原生 confirm() / alert() —— 三端（网页/便携/桌面）行为一致、样式跟随主题。
 // Electron 桌面端：prompt 未实现（点了没反应）；confirm/alert 虽能用但是原生样式且阻塞交互。
 // 约定：项目内禁止再使用 window.prompt / confirm / alert，统一走本模块。
-import { foldVh } from '../lib/theme'
+import { foldVh } from '@/lib/theme'
 import { createRoot } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react'
-import { Modal, Z } from './Modal'
-import { Button } from './Button'
+import { Modal, Z } from '@/components/Modal'
+import { Button } from '@/components/Button'
 
 // ============ 确认弹窗（Promise 化，await 即可） ============
 

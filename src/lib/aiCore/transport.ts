@@ -9,8 +9,8 @@
  *    不是「模型正文 → 结构化数据」—— 后者必须走 `aiParse`。见 tests/structureGates 的 JSON_PARSE_OK。
  */
 
-import { OLLAMA_DEFAULT_URL } from './core'
-import type { AIProvider } from './core'
+import { OLLAMA_DEFAULT_URL } from '@/lib/aiCore/core'
+import type { AIProvider } from '@/lib/aiCore/core'
 
 export function stripSlash(u: string) {
   return u.replace(/\/+$/, '')

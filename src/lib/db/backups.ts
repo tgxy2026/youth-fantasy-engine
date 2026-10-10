@@ -1,13 +1,13 @@
 // ============ 存储层 · 自动备份 ============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 // 🔴 备份是**本地专属**数据（不参与云盘同步），见 makeCloudStoreWrapper 的短路逻辑。
-import type { Project, FormData } from '../types'
-import { uid } from '../id'
-import { ops, touchProject } from './core'
-import { exportProject, remapSettingValue, type ProjectBundle, getProject } from './projects'
-import { restoreDocsFromBundle } from '../knowledgeBase'
-import { isDemoProjectName } from '../constants'
-import { VOL_LEDGER_PREFIX } from './volumes'
+import type { Project, FormData } from '@/lib/types'
+import { uid } from '@/lib/id'
+import { ops, touchProject } from '@/lib/db/core'
+import { exportProject, remapSettingValue, type ProjectBundle, getProject } from '@/lib/db/projects'
+import { restoreDocsFromBundle } from '@/lib/knowledgeBase'
+import { isDemoProjectName } from '@/lib/constants'
+import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
 
 // ============ 自动备份（v1.3 备份策略加固） ============
 // 每个项目一份独立「备份夹」（逻辑上按 projectId 归组），删除项目不掉备份；

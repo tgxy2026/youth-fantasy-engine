@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import AutoTextarea from './AutoTextarea'
-import { StyleProfilePicker } from './StyleProfilePicker'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import AutoTextarea from '@/components/AutoTextarea'
+import { StyleProfilePicker } from '@/components/StyleProfilePicker'
 import {
   STYLE_GROUPS, STYLE_DIM_BY_ID, conflictsOf, activeConflicts, isDiluted,
   STYLE_DILUTE_AT, dimLabels, type StyleGroup,
-} from '../lib/companionStyle'
+} from '@/lib/companionStyle'
 
 export interface CompanionStyleValue {
   /** 勾选的维度 id */

@@ -18,15 +18,15 @@
  * 校验：锚点必选；至少一个位置是「AI 演」。
  */
 import { useEffect, useMemo, useState } from 'react'
-import * as db from '../lib/db'
-import { flattenChapters } from '../lib/chapterSeq'
-import { TABS } from '../lib/schema'
-import { Button } from './Button'
-import SelectRow from './SelectRow'
-import { Modal } from './Modal'
-import AutoTextarea from './AutoTextarea'
-import type { Chapter, Volume, CardRecord } from '../lib/types'
-import { MAX_AI_CAST, MAX_CAST_SLOTS, type CastRole, type TavernCast, type TavernMode } from '../lib/tavern/types'
+import * as db from '@/lib/db'
+import { flattenChapters } from '@/lib/chapterSeq'
+import { TABS } from '@/lib/schema'
+import { Button } from '@/components/Button'
+import SelectRow from '@/components/SelectRow'
+import { Modal } from '@/components/Modal'
+import AutoTextarea from '@/components/AutoTextarea'
+import type { Chapter, Volume, CardRecord } from '@/lib/types'
+import { MAX_AI_CAST, MAX_CAST_SLOTS, type CastRole, type TavernCast, type TavernMode } from '@/lib/tavern/types'
 
 export type TavernDraft = {
   title: string

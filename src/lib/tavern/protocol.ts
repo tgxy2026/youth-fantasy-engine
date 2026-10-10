@@ -255,4 +255,4 @@ export const PROTOCOL_VERSION = 'v1.12'
  * ⚠️ 将来再改 PROTOCOL_CORE 时：把**被替换掉的那一版**原样追加到 protocolLegacy 的末尾，
  *    否则老用户会永远停在旧协议上（v1.1 → v1.2 就是这么加的）。
  */
-export { LEGACY_PROTOCOLS } from '../../data/protocolLegacy'
+export { LEGACY_PROTOCOLS } from '@/data/protocolLegacy'

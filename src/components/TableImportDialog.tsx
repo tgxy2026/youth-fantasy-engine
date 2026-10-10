@@ -1,25 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileDown, Check, CheckSquare, Square, AlertTriangle, Loader2, FileText, Trash2, Sparkles, CircleStop } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import AutoTextarea from './AutoTextarea'
-import { showToast } from './dialogs'
-import { foldVh } from '../lib/theme'
-import type { CalendarDef, TabDef, TableRow } from '../lib/types'
-import { getTableRows } from '../lib/db'
-import { TABS, type VisCtx } from '../lib/schema'
-import { downloadBlob } from '../lib/zip'
-import { useAIReady } from '../lib/useAIReady'
-import { useTaskRunner } from '../lib/aiTaskCenter'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { tableImportSplit, usableAiRows, type TableImportSplitOutcome } from '../lib/tableImportAI'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import AutoTextarea from '@/components/AutoTextarea'
+import { showToast } from '@/components/dialogs'
+import { foldVh } from '@/lib/theme'
+import type { CalendarDef, TabDef, TableRow } from '@/lib/types'
+import { getTableRows } from '@/lib/db'
+import { TABS, type VisCtx } from '@/lib/schema'
+import { downloadBlob } from '@/lib/zip'
+import { useAIReady } from '@/lib/useAIReady'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { tableImportSplit, usableAiRows, type TableImportSplitOutcome } from '@/lib/tableImportAI'
 import {
   parseImportText, validateImport, mainColumn,
   exportTemplateCsv, buildImportGuide, buildImportPrepared, summarizeImportResults,
   defaultCheckedIndexes, refColumnTargets, type ImportRowResult, type ImportContext,
-} from '../lib/tableIO'
+} from '@/lib/tableIO'
 
 interface Props {
   tab: TabDef

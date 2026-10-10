@@ -201,7 +201,7 @@ console.log('\n—— creativeModes 用例开始 ——')
     && /export function expectedRewriteWords/.test(rwLib)
     && /export function isSuspectRewrite/.test(rwLib))
   ok('🔴 会话层不 import 组件（lib → components 是反向依赖，会被 importCycles 拦）',
-    !/from '\.\.\/components\//.test(session))
+    !/from '(?:\.\.\/components\/|@\/components\/)/.test(session))
   ok('会话层用 useSyncExternalStore 订阅（React 18 标准姿势）',
     session.includes('useSyncExternalStore'))
 

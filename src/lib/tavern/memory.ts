@@ -26,7 +26,7 @@ import {
   MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS,
   SUMMARY_LOCK_TTL_MS,
   type FreeMemory, type FreeSession, type TavernWatermark,
-} from './types'
+} from '@/lib/tavern/types'
 
 /** 六栏的键（收窄成「只有这六栏」，避免索引赋值时把 charId / updatedAt 混进来） */
 export type MemorySectionKey = 'longTerm' | 'facts' | 'relation' | 'mines' | 'anniversaries' | 'diaries'

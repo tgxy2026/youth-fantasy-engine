@@ -15,7 +15,7 @@
  * 【为什么单独成文件】两个模式（背景设定 / 故事剧本）都要用同一套 UI，
  *   放任一页面里都会让另一个反向 import 页面组件（项目禁 order 里的成环）。
  */
-import { ENTRY_STATE_LABEL, ENTRY_STATE_HINT, type EntryState } from '../lib/tavern/worldBook'
+import { ENTRY_STATE_LABEL, ENTRY_STATE_HINT, type EntryState } from '@/lib/tavern/worldBook'
 
 /** 四色灯的视觉：色点 + 选中态描边。色值走主题 token（闸 ⑨），不写裸色值。 */
 const DOT: Record<EntryState, string> = {

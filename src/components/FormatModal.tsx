@@ -15,11 +15,11 @@
  *    这个弹窗里做的每一件事，都是**作者手动按下的动作**。
  */
 import { AlignLeft, Info } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { confirmDialog, showToast } from './dialogs'
-import { formatNovelText } from '../lib/textTools'
-import { INDENT_UNITS, splitIndent, type IndentUnit } from '../lib/indent'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { formatNovelText } from '@/lib/textTools'
+import { INDENT_UNITS, splitIndent, type IndentUnit } from '@/lib/indent'
 
 interface Props {
   content: string

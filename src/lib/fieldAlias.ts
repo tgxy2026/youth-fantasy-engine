@@ -14,7 +14,7 @@
  * 不进 `EXCLUDED_META_KEYS` —— 别名要随项目导出 / 云盘同步 / 备份一起走。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getSetting, setSetting, getCurrentProjectId } from './db'
+import { getSetting, setSetting, getCurrentProjectId } from '@/lib/db'
 
 /** 存储键 → 显示名 */
 export type AliasMap = Record<string, string>

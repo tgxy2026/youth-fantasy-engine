@@ -6,9 +6,9 @@
 // ⚠️ `ops` 与 `currentProjectId` 是**可重新赋值**的模块级单例（桌面版启动后由 setStoreOps 换掉；切项目时由 setCurrentProject 写入）：
 //    **故它们必须 export** —— 兄弟业务域只读、不写（对 import 进来的绑定赋值是编译错误）；ESM 活绑定保证换值后各处都读到新值。
 import { openDB, type IDBPDatabase } from 'idb'
-import type { Project } from '../types'
-import type { StoreOps } from '../storeOps'
-import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState, desktopStoreReady } from '../desktop'
+import type { Project } from '@/lib/types'
+import type { StoreOps } from '@/lib/storeOps'
+import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState, desktopStoreReady } from '@/lib/desktop'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
@@ -16,14 +16,14 @@ import {
   clearDesktopCloudEnabledFlag, flushDesktopCloud, snapshotDesktopCloudCache, onDesktopLocalSnapshot,
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
   type SyncConflictInfo, type SyncDirHandle,
-} from '../desktopCloudSync'
-import { SYNC_STORES, totalRecords, isLocalOnlyStore, onCloudRestored, type SyncStores, type SyncRow } from '../syncCore'
-import { isDeleted } from '../syncTombstone'
+} from '@/lib/desktopCloudSync'
+import { SYNC_STORES, totalRecords, isLocalOnlyStore, onCloudRestored, type SyncStores, type SyncRow } from '@/lib/syncCore'
+import { isDeleted } from '@/lib/syncTombstone'
 import {
   migrateFreshInstall, migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5,
   migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10,
   migrateV10toV11, migrateV11toV12, migrateV12toV13,
-} from './idbMigrations'
+} from '@/lib/db/idbMigrations'
 
 const DB_NAME = 'youth-fantasy-engine'
 const DB_VERSION = 13

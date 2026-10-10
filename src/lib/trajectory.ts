@@ -19,12 +19,12 @@
  * 🔴 措辞纪律：本模块服务于**创作主权存证**。严禁任何「降低 AI 检测率 / 洗掉痕迹」
  *    一类表述 —— 我们只如实记录过程，不参与对抗检测。
  */
-import type { Chapter, Volume, CardRecord } from './types'
-import { snapshotSourceOf, type Snapshot, type SnapshotSource } from './db'
-import { chapterSeqMap } from './chapterSeq'
-import { chapterNoOf } from './outlineCard'
-import { formatDate } from './date'
-import { MAX_SNAPSHOTS_PER_CHAPTER } from './db/chapters'
+import type { Chapter, Volume, CardRecord } from '@/lib/types'
+import { snapshotSourceOf, type Snapshot, type SnapshotSource } from '@/lib/db'
+import { chapterSeqMap } from '@/lib/chapterSeq'
+import { chapterNoOf } from '@/lib/outlineCard'
+import { formatDate } from '@/lib/date'
+import { MAX_SNAPSHOTS_PER_CHAPTER } from '@/lib/db/chapters'
 
 /** 节点类型：细纲（起点，无时间） / 历史版本 / 当前稿 */
 export type TrajectoryStage = 'outline' | 'version' | 'current'

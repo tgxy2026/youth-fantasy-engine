@@ -10,7 +10,7 @@
  * ⚠️ 这是**卡名**约定，不是"章节标题里有没有章号"。后者在 `chapterSeq` 里是刻意**不解析**的
  *   （作者把章名叫「序章」「番外·铁柱传」都不影响叙事顺序）。别把两者混为一谈。
  */
-import { resolveSlot } from './flow/fieldMap'
+import { resolveSlot } from '@/lib/flow/fieldMap'
 
 /** 细纲卡所在的页签 id */
 export const OUTLINE_TAB_ID = 'chapter-outline'

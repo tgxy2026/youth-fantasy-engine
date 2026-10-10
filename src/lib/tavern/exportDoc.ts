@@ -18,7 +18,7 @@
  *    只在深浅色之间靠 `prefers-color-scheme` 自适应，打印另有一套。
  *    理由：导出的东西要发给别人、要打印、要在别的软件里打开，跟着 8 套主题走没有意义。
  */
-import type { TavernMessage, TavernSession, TavernReport, FreeSession } from './types'
+import type { TavernMessage, TavernSession, TavernReport, FreeSession } from '@/lib/tavern/types'
 
 // ==================== 行类型（与界面渲染同源） ====================
 

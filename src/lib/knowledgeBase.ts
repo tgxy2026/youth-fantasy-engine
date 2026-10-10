@@ -21,14 +21,14 @@
 //    作者在界面上勾选启用后才建索引、才进上下文 —— 这就是方案 §5.4 说的「不显式开启不生效」。
 
 import { openDB, type IDBPDatabase } from 'idb'
-import { idbDbExists, idbDeleteDatabase } from './idbMigrateUtil'
-import { uid } from './id'
-import { tokenize } from './tokenize'
-import { chunkChapter } from './semantic/chunk'
-import { indexOneDoc } from './semantic/indexDoc'
-import type { EmbedConfig } from './semantic/embed'
-import { recallRelevant, type RecallHit } from './semantic/recall'
-import { removeByRef } from './semantic/store'
+import { idbDbExists, idbDeleteDatabase } from '@/lib/idbMigrateUtil'
+import { uid } from '@/lib/id'
+import { tokenize } from '@/lib/tokenize'
+import { chunkChapter } from '@/lib/semantic/chunk'
+import { indexOneDoc } from '@/lib/semantic/indexDoc'
+import type { EmbedConfig } from '@/lib/semantic/embed'
+import { recallRelevant, type RecallHit } from '@/lib/semantic/recall'
+import { removeByRef } from '@/lib/semantic/store'
 
 export type KbSourceType = 'txt' | 'md' | 'docx' | 'paste'
 

@@ -5,14 +5,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as RPointerEvent } from 'react'
-import * as db from '../lib/db'
-import type { CardRecord, TableRow } from '../lib/types'
-import { TABS } from '../lib/schema'
-import { uid } from '../lib/id'
-import { showToast, confirmDialog } from './dialogs'
-import { CUSTOM_OPTIONS_EVENT, resolveOptions, type ResolvedOption } from './CustomSelect'
-import { BUILTIN_CATEGORIES, G, CELL_KM_STEPS, hashNum, locEquals, cardLocEquals, parseCells, serializeCells, shapeOf, aggregateCells, buildChildMap, subtreeIds } from './geoMapGeometry'
-import type { SpaceShape, Marker, Linked } from './geoMapGeometry'
+import * as db from '@/lib/db'
+import type { CardRecord, TableRow } from '@/lib/types'
+import { TABS } from '@/lib/schema'
+import { uid } from '@/lib/id'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import { CUSTOM_OPTIONS_EVENT, resolveOptions, type ResolvedOption } from '@/components/CustomSelect'
+import { BUILTIN_CATEGORIES, G, CELL_KM_STEPS, hashNum, locEquals, cardLocEquals, parseCells, serializeCells, shapeOf, aggregateCells, buildChildMap, subtreeIds } from '@/components/geoMapGeometry'
+import type { SpaceShape, Marker, Linked } from '@/components/geoMapGeometry'
 
 export function useGeoMapModel() {
   /** 全部地理行（跨所有地图）；画布只渲染当前地图的那一批 —— 见下方 rows 派生 */

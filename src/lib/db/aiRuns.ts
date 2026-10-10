@@ -13,8 +13,8 @@
 //    采纳前比对当前状态，任一指纹不符 ⇒ 候选失效，**拒绝静默覆盖作者编辑**。
 //
 // 项目级数据：随项目走 —— 导出项目时一并带走、删项目时一并清理（同 tavernReports 口径）。
-import type { AiRun } from '../aiRunTypes'
-import { ops } from './core'
+import type { AiRun } from '@/lib/aiRunTypes'
+import { ops } from '@/lib/db/core'
 
 export async function getAiRun(id: string): Promise<AiRun | undefined> {
   return ops.get<AiRun>('aiRuns', id)

@@ -11,15 +11,15 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ClipboardCheck, Loader2, Eye, CheckCircle2, AlertTriangle } from 'lucide-react'
-import * as db from '../lib/db'
-import type { Chapter } from '../lib/types'
-import type { AuditIssue } from '../lib/audit'
-import { SEVERITY_LABEL } from '../lib/audit'
-import { runChapterCheck, countActionable, type ChapterCheckReport } from '../lib/chapterCheck'
+import * as db from '@/lib/db'
+import type { Chapter } from '@/lib/types'
+import type { AuditIssue } from '@/lib/audit'
+import { SEVERITY_LABEL } from '@/lib/audit'
+import { runChapterCheck, countActionable, type ChapterCheckReport } from '@/lib/chapterCheck'
 // 3.0 · W2-2：按章审计的留痕与失效（结果绑正文指纹；正文改过 ⇒ 标「已过期，需重跑」，不自动重跑）
-import { saveChapterAudit, loadChapterAuditStatus, humanAgo, type AuditFreshness } from '../lib/chapterAudit'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
+import { saveChapterAudit, loadChapterAuditStatus, humanAgo, type AuditFreshness } from '@/lib/chapterAudit'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
 
 // 与 CheckTools 的 sevBadge 同款配色（三处局部实现已核对一致，避免为三行样式新建共享模块）
 const sevBadge = (s: 'error' | 'warn' | 'info') =>

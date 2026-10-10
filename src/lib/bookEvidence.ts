@@ -10,17 +10,17 @@
  *
  * 🔴 与本章包同一条纪律：只**如实**呈现。老数据缺什么就写缺什么，不做补全、不做推测。
  */
-import type { DocModel, DocBlock } from './tavern/exportDoc'
-import type { Chapter, Volume, CardRecord } from './types'
-import type { Snapshot } from './db'
-import { MAX_SNAPSHOTS_PER_CHAPTER } from './db/chapters'
-import { chapterSeqMap } from './chapterSeq'
-import { findOutlineCard } from './trajectory'
-import { buildTrajectoryOverview } from './trajectory'
-import { formatDate } from './date'
-import { APP_VERSION_LABEL } from './env'
-import { docFileName } from './tavern/exportDoc'
-import { formatStamp } from './evidencePack'
+import type { DocModel, DocBlock } from '@/lib/tavern/exportDoc'
+import type { Chapter, Volume, CardRecord } from '@/lib/types'
+import type { Snapshot } from '@/lib/db'
+import { MAX_SNAPSHOTS_PER_CHAPTER } from '@/lib/db/chapters'
+import { chapterSeqMap } from '@/lib/chapterSeq'
+import { findOutlineCard } from '@/lib/trajectory'
+import { buildTrajectoryOverview } from '@/lib/trajectory'
+import { formatDate } from '@/lib/date'
+import { APP_VERSION_LABEL } from '@/lib/env'
+import { docFileName } from '@/lib/tavern/exportDoc'
+import { formatStamp } from '@/lib/evidencePack'
 
 /** 整书证据包文件标识 */
 export const BOOK_EVIDENCE_KIND = 'youth-fantasy-engine-trajectory-book'

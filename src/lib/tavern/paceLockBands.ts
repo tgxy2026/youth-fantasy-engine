@@ -12,7 +12,7 @@
 // 🔒 不扩范围（§12.3 / §13.4）：本模块**只管「起点、显示与提示」**。
 //    亲密内容的解锁权仍在角色卡 `conduct.rating` / `bottomLine` / `paceLock` ——
 //    不因数值升高而自动放开尺度。
-import { bandOf, bandsOf, varDefOf, type VarKey, type VarValues } from './types'
+import { bandOf, bandsOf, varDefOf, type VarKey, type VarValues } from '@/lib/tavern/types'
 
 /**
  * 卡文措辞 → 目标档位。

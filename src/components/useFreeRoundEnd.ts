@@ -17,21 +17,21 @@
  */
 import { useCallback, type Dispatch, type SetStateAction } from 'react'
 
-import { showToast, confirmDialog } from './dialogs'
-import { useTavernReady } from './useTavernReady'
-import * as store from '../lib/tavern/store'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import { useTavernReady } from '@/components/useTavernReady'
+import * as store from '@/lib/tavern/store'
 // ⚠️ W2-5a 起不再需要 `isCancelled`：任务的「中止 vs 失败」由**任务中心**按 `signal.aborted`
 //    判定（见 aiTaskCenter 的 startTask catch），notify 收到的 status 已经是 aborted/failed。
-import { unloadOllamaModel } from '../lib/ai'
-import { resolveTavernProvider } from '../lib/tavern/provider'
-import { nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, releaseSummaryLock } from '../lib/tavern/memory'
-import { primaryAiCharId } from '../lib/tavern/primaryChar'
-import { DEFAULT_TAVERN_SETTINGS, memoryLimitsOf, type TavernSettings } from '../lib/tavern/settings'
-import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult } from '../lib/tavern/roundEnd'
+import { unloadOllamaModel } from '@/lib/ai'
+import { resolveTavernProvider } from '@/lib/tavern/provider'
+import { nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, releaseSummaryLock } from '@/lib/tavern/memory'
+import { primaryAiCharId } from '@/lib/tavern/primaryChar'
+import { DEFAULT_TAVERN_SETTINGS, memoryLimitsOf, type TavernSettings } from '@/lib/tavern/settings'
+import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult } from '@/lib/tavern/roundEnd'
 // 🔴 3.0 · W2-5a（§11.1 L1）：收尾的长任务状态交给模块级任务中心（切页签不丢）
-import { useTaskRunner } from '../lib/aiTaskCenter'
-import type { CardRevision } from '../lib/tavern/revise'
-import type { FreeCharacter, FreeSession, FreeMemory, VarKey } from '../lib/tavern/types'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
+import type { CardRevision } from '@/lib/tavern/revise'
+import type { FreeCharacter, FreeSession, FreeMemory, VarKey } from '@/lib/tavern/types'
 
 /** 入参一律来自 `useTavernFreeModel` 的同一次渲染作用域 */
 type FreeRoundEndDeps = {

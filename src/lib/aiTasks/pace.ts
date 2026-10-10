@@ -9,12 +9,12 @@
 // 提示词里也不谈"这段文字出自人手还是模型"这类话题 —— 这条由 tests/paceAnalysis.test.ts
 // 的立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
-import { newAuthorFence, authorBlock } from '../promptGuard'
-import { PACE_BEAT_KINDS } from '../paceAnalysis'
-import type { PromptDef } from '../promptSettings'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
+import { PACE_BEAT_KINDS } from '@/lib/paceAnalysis'
+import type { PromptDef } from '@/lib/promptSettings'
 // 解析与位置换算都在本地纯函数层（tests 只 import 那边，不会把传输层拉进 Node 测试）
-import { parsePaceReport, type PaceReport } from '../paceAnalysis'
+import { parsePaceReport, type PaceReport } from '@/lib/paceAnalysis'
 
 /** 「节奏与章末钩子」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_pace_analysis = `你是网文节奏编辑。网文按章连载，读者是"一章一章被留下来"的：章内需要有情绪起伏（爆点），章末需要留一个让人想点下一章的理由（钩子）。
@@ -45,7 +45,7 @@ let P_pace_analysis = `你是网文节奏编辑。网文按章连载，读者是
 5. 不给改写建议正文，只给结构层面的观察与建议。`
 
 // 类型与解析都住在本地层（见上方 import）；这里再导出一次，方便门面统一从本文件取。
-export type { PaceReport } from '../paceAnalysis'
+export type { PaceReport } from '@/lib/paceAnalysis'
 
 export async function aiPaceAnalysis(
   projectContext: string,

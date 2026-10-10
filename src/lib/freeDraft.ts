@@ -24,7 +24,7 @@
  */
 // 走 db 门面（与 aiContext 等 lib 层同款），不要直接 import ./db/meta —— 门面的存在就是为了
 // 让「存储入口」只有一个，绕过去会让将来的 store 替换/迁移漏掉一处。
-import { getSetting, setSetting } from './db'
+import { getSetting, setSetting } from '@/lib/db'
 
 /** 存储键前缀（`__` 之外的第二重保险：与 `draft::` 组合后不可能与业务键撞车） */
 const PREFIX = 'draft::'

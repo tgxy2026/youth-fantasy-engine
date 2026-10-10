@@ -3,12 +3,12 @@
  *
  * 🔴 纯搬家：JSX 一字未改；状态全部来自 useCreativeWritingModel（组件只收 m）。
  */
-import { Button } from './Button'
-import { Modal } from './Modal'
-import { applyCandidates, decideDraft, toggleCandidate } from '../lib/creativeSession'
-import { WORD_TOLERANCE } from '../lib/autoContinue'
-import { foldVh } from '../lib/theme'
-import type { CreativeWritingModel } from './useCreativeWritingModel'
+import { Button } from '@/components/Button'
+import { Modal } from '@/components/Modal'
+import { applyCandidates, decideDraft, toggleCandidate } from '@/lib/creativeSession'
+import { WORD_TOLERANCE } from '@/lib/autoContinue'
+import { foldVh } from '@/lib/theme'
+import type { CreativeWritingModel } from '@/components/useCreativeWritingModel'
 
 export default function CreativeDialogs({ m }: { m: CreativeWritingModel }) {
   const { s, inp } = m

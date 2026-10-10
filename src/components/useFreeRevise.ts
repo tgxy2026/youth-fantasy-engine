@@ -13,10 +13,10 @@
  */
 import { useCallback, useState } from 'react'
 
-import { showToast } from './dialogs'
-import * as store from '../lib/tavern/store'
-import { proposeCardRevisions, type CardRevision } from '../lib/tavern/revise'
-import type { FreeCharacter, FreeSession, TavernMessage } from '../lib/tavern/types'
+import { showToast } from '@/components/dialogs'
+import * as store from '@/lib/tavern/store'
+import { proposeCardRevisions, type CardRevision } from '@/lib/tavern/revise'
+import type { FreeCharacter, FreeSession, TavernMessage } from '@/lib/tavern/types'
 
 /** 入参一律来自 `useTavernFreeModel` 的同一次渲染作用域 */
 type FreeReviseDeps = {

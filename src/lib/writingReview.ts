@@ -13,7 +13,7 @@
  *    不做 `Math.max(0, …)` 的裁剪 —— 裁剪会让"今天删了 500 字"看起来像"今天写了 0 字"，
  *    反而失真。展示端若需要非负，自行处理。
  */
-import { todayKey } from './date'
+import { todayKey } from '@/lib/date'
 
 export interface DailyLike { date: string; words: number }
 

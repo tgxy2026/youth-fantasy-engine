@@ -8,11 +8,11 @@
 //
 // 🔴 2.9.1 这四节的共同原则：**只提示、绝不改动作者数据** —— 它们接的是此前
 //    「作者认真填了、程序却从不读」的字段（见 docs/2.9.0-功能全景与数据复用机会梳理）。
-import * as db from './db'
-import type { Chapter, CardRecord } from './types'
-import { AuditIssue, splitCodes, splitNames, parseStoryDateKey, extractChapterNo, cnNumToArabic } from './audit'
-import { readAliases } from './aliases'
-import { flattenChapters, chapterSeqMap } from './chapterSeq'
+import * as db from '@/lib/db'
+import type { Chapter, CardRecord } from '@/lib/types'
+import { AuditIssue, splitCodes, splitNames, parseStoryDateKey, extractChapterNo, cnNumToArabic } from '@/lib/audit'
+import { readAliases } from '@/lib/aliases'
+import { flattenChapters, chapterSeqMap } from '@/lib/chapterSeq'
 
 const DEATH_KEYWORDS = ['死', '亡', '陨', '卒', '退场', '兵解', '逝', '诛', '殁']
 

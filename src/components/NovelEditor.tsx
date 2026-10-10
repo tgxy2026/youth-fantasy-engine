@@ -1,18 +1,18 @@
 import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent } from 'react'
-import { foldVh } from '../lib/theme'
-import { Z } from '../lib/zLayer'
+import { foldVh } from '@/lib/theme'
+import { Z } from '@/lib/zLayer'
 
-import type { ChapterStatus } from '../lib/types'
-import { countWords } from '../lib/textStats'
-import { useWordCountWithPunct, wordCountModeOf } from '../lib/wordCountMode'
-import SettingSearch from './SettingSearch'
-import { SensitiveCheck, VersionHistory, TrashBin, GlobalSearch, FocusLock, ProofreadCheck } from './EditorModals'
-import { ForeshadowBoard, ContinuityCheck, StyleAudit } from './AuditModals'
+import type { ChapterStatus } from '@/lib/types'
+import { countWords } from '@/lib/textStats'
+import { useWordCountWithPunct, wordCountModeOf } from '@/lib/wordCountMode'
+import SettingSearch from '@/components/SettingSearch'
+import { SensitiveCheck, VersionHistory, TrashBin, GlobalSearch, FocusLock, ProofreadCheck } from '@/components/EditorModals'
+import { ForeshadowBoard, ContinuityCheck, StyleAudit } from '@/components/AuditModals'
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 // 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
-import FormatModal from './FormatModal'
-import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '../lib/indent'
-import { nextVolumeNo } from '../lib/freeVolume'
+import FormatModal from '@/components/FormatModal'
+import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '@/lib/indent'
+import { nextVolumeNo } from '@/lib/freeVolume'
 import {
   FolderPlus, Trash2, PenLine,
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
@@ -21,19 +21,19 @@ import {
   Command, Highlighter, BookOpen, Users, X, Sparkles, Loader2, Wand2, Layers, PenTool,
   Undo2, Redo2, FilePlus2
 } from 'lucide-react'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import PromptModal from './PromptModal'
-import JieWenJi, { } from './JieWenJi'
-import { showToast } from './dialogs'
-import { type VisCtx, } from '../lib/schema'
-import { INLINE_SUGGEST_LIMITS, type InlineSuggestLength } from '../lib/aiTasks'
-import { Button } from './Button'
-import { LoadingState } from './LoadingState'
-import NovelEditorChapterTree from './NovelEditorChapterTree'
-import ExportFormatDialog from './ExportFormatDialog'
-import { CompanionStyleDialog } from './CompanionStyleDialog'
-import { dimLabels } from '../lib/companionStyle'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import PromptModal from '@/components/PromptModal'
+import JieWenJi, { } from '@/components/JieWenJi'
+import { showToast } from '@/components/dialogs'
+import { type VisCtx, } from '@/lib/schema'
+import { INLINE_SUGGEST_LIMITS, type InlineSuggestLength } from '@/lib/aiTasks'
+import { Button } from '@/components/Button'
+import { LoadingState } from '@/components/LoadingState'
+import NovelEditorChapterTree from '@/components/NovelEditorChapterTree'
+import ExportFormatDialog from '@/components/ExportFormatDialog'
+import { CompanionStyleDialog } from '@/components/CompanionStyleDialog'
+import { dimLabels } from '@/lib/companionStyle'
 
 interface Props {
   onStatsChange?: () => void
@@ -60,7 +60,7 @@ const STATUS_LIST = Object.keys(STATUS_META) as ChapterStatus[]
 
 /** HTML 转义（防止引用名高亮注入）。先探测再替换：绝大多数正文片段不含 <>&，可省掉多次全量 replace */
 
-import { useNovelEditorModel } from './useNovelEditorModel'
+import { useNovelEditorModel } from '@/components/useNovelEditorModel'
 
 export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, projectName = '我的小说', openChapterId, ctx = { type: 'full', features: [] } }: Props) {
   // 状态与生命周期全在 model 里；下面同名解构是刻意的 —— JSX 保持原样、零改动。

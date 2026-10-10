@@ -1,7 +1,7 @@
 // ============ 表格自动编号（单一来源） ============
 // 「编号」列的续号规则原先只写在 TableSheet 内部；1.9.1「设定补登」也要往设定表写新行，
 // 若各写一套必然漂移，故抽成共享模块，两处共用同一规则。
-import type { TableRow } from './types'
+import type { TableRow } from '@/lib/types'
 
 /** 需要自动编号的页签分组（世界构建 / 创作管理 / 运营维护）。这些分组的「编号」列在新增行时自动续号。 */
 export const AUTONUM_GROUPS = new Set(['世界构建', '创作管理', '运营维护'])

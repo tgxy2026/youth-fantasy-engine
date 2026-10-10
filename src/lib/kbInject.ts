@@ -6,10 +6,10 @@
 // 🔴 依赖方向：`kbInject → {db, semantic/inject, semantic/settings, knowledgeBase}`，
 //    **不 import `aiContext`** —— 否则与 `aiContext → kbInject` 成环。
 
-import * as db from './db'
-import { focusQueryOf } from './semantic/inject'
-import { resolveEmbedConfig } from './semantic/settings'
-import { KB_TOP_K, recallKnowledge, renderKbHits } from './knowledgeBase'
+import * as db from '@/lib/db'
+import { focusQueryOf } from '@/lib/semantic/inject'
+import { resolveEmbedConfig } from '@/lib/semantic/settings'
+import { KB_TOP_K, recallKnowledge, renderKbHits } from '@/lib/knowledgeBase'
 
 export interface KbInjectOptions {
   focusChapterId: string

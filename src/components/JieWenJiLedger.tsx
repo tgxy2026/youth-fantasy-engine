@@ -4,12 +4,12 @@
  * 🔴 纯搬家：JSX 一字未改；状态全部来自 useJieWenJiModel（组件只收 m）。
  */
 import { Loader2, RefreshCw, ExternalLink, Save } from 'lucide-react'
-import { CARD_TABS } from '../lib/settingLedger'
-import { TABS } from '../lib/schema'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { Button } from './Button'
-import { LEDGER_TYPES, STATUS_META } from './jieWenJiParts'
-import type { JieWenJiModel } from './useJieWenJiModel'
+import { CARD_TABS } from '@/lib/settingLedger'
+import { TABS } from '@/lib/schema'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { Button } from '@/components/Button'
+import { LEDGER_TYPES, STATUS_META } from '@/components/jieWenJiParts'
+import type { JieWenJiModel } from '@/components/useJieWenJiModel'
 
 export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
   const { aiReady, ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry, content } = m

@@ -14,16 +14,16 @@
  */
 import { useEffect, useState } from 'react'
 import { Type } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import { showToast } from './dialogs'
-import { DESKTOP } from '../lib/desktop'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import { showToast } from '@/components/dialogs'
+import { DESKTOP } from '@/lib/desktop'
 import {
   PRESET_FONTS, getStoredFontPrefs, applyFontPrefs, storeFontPrefs,
   listSystemFonts, sanitizeFontStack, fontStackLabel,
   type FontPrefs,
-} from '../lib/fontPrefs'
+} from '@/lib/fontPrefs'
 
 /** 系统字体枚举缓存：缓存的是 **Promise 本身**（并发重开弹窗不会重复发起全量枚举） */
 let systemFontsCache: Promise<string[] | null> | undefined

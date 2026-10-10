@@ -17,7 +17,7 @@
  * 【标记格式】一行一项，`标签：内容`。不在模板里的行一律归入「其他」——
  *            永远不要把认不出来的内容丢掉，那是作者一个字一个字敲的。
  */
-import type { CardFieldPath } from './types'
+import type { CardFieldPath } from '@/lib/tavern/types'
 
 export type SubField = {
   key: string

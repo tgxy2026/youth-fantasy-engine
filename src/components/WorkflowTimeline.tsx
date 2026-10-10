@@ -16,8 +16,8 @@
  * 拆书与创意写作共用；后续新增流程只要走 `lib/flow` 就能直接复用。
  */
 import { CheckCircle2, Circle, CircleDashed, Loader2, MinusCircle, XCircle } from 'lucide-react'
-import { Z } from '../lib/zLayer'
-import type { FlowProgress, StageStatus } from '../lib/flow/types'
+import { Z } from '@/lib/zLayer'
+import type { FlowProgress, StageStatus } from '@/lib/flow/types'
 
 const NODE: Record<StageStatus, { icon: typeof Circle; cls: string }> = {
   pending: { icon: Circle, cls: 'text-ink-600' },

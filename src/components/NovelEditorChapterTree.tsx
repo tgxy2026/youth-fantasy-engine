@@ -1,13 +1,13 @@
-import { Z } from '../lib/zLayer'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import type { Volume, Chapter, ChapterStatus } from '../lib/types'
+import { Z } from '@/lib/zLayer'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import type { Volume, Chapter, ChapterStatus } from '@/lib/types'
 import { BookMarked, Upload, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
-import { isFreeVolume, realVolumes, nextVolumeNo } from '../lib/freeVolume'
+import { isFreeVolume, realVolumes, nextVolumeNo } from '@/lib/freeVolume'
 import { useEffect, useMemo, useRef } from 'react'
-import { foldVh } from '../lib/theme'
-import { flattenChapters } from '../lib/chapterSeq'
+import { foldVh } from '@/lib/theme'
+import { flattenChapters } from '@/lib/chapterSeq'
 
 /**
  * 正文编辑页的**左侧章节树**（2026-09-19 从 NovelEditor.tsx 抽出，原 1113~1287 行）。
@@ -54,7 +54,7 @@ interface Props {
   removeVolume: (vol: Volume) => void
   removeChapter: (ch: Chapter) => void
   toggleExcludeNumbering: (ch: Chapter) => void
-  runExport: (fn: (m: typeof import('../lib/exporter')) => void) => void
+  runExport: (fn: (m: typeof import('@/lib/exporter')) => void) => void
   /** 导出菜单开合 —— 状态留在 useNovelEditorModel（`runExport` 里要顺手关掉），此处只读用 */
   exportOpen: boolean
   setExportOpen: Dispatch<SetStateAction<boolean>>
@@ -196,7 +196,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     <Button variant="bare"
                       onClick={async () => {
                         // 每章一个文件——使用循环 setTimeout 避免浏览器拦截多个下载
-                        const m = await import('../lib/exporter')
+                        const m = await import('@/lib/exporter')
                         let i = 0
                         const all = flattenChapters(volumes, chapters)
                         const tick = () => {

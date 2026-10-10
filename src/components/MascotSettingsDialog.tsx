@@ -14,12 +14,12 @@
  *   ≤200KB）—— 🔴 「图片先压缩再入库」是项目红线，这里不走 raw base64。
  */
 import { useEffect, useRef, useState } from 'react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
 import jiewenjiGufeng from '../assets/jiewenji-gufeng.png'
-import { readPortraitFile, PORTRAIT_ACCEPT, PORTRAIT_MAX_INPUT_BYTES } from '../lib/imagePortrait'
-import { usePersistedBool, readStringPref, writeStringPref } from '../lib/uiPrefs'
+import { readPortraitFile, PORTRAIT_ACCEPT, PORTRAIT_MAX_INPUT_BYTES } from '@/lib/imagePortrait'
+import { usePersistedBool, readStringPref, writeStringPref } from '@/lib/uiPrefs'
 
 const CUSTOM_KEY = 'home-mascot-custom'
 const DEFAULT_SRC = jiewenjiGufeng

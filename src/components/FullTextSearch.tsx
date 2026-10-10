@@ -3,14 +3,14 @@
  * 覆盖 章节正文 / 角色卡 / 设定表 三类文档，Ctrl/Cmd+K 唤起。
  * 结果按类型分组，键盘上下选择、回车跳转；章节跳正文，角色/设定跳对应页签。
  */
-import { foldVh } from '../lib/theme'
+import { foldVh } from '@/lib/theme'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, FileText, Users, BookMarked, CornerDownLeft, Hash, X } from 'lucide-react'
-import { Modal } from './Modal'
-import { SearchEngine, SEARCH_TYPE_LABEL, type SearchDocType, type SearchResult } from '../lib/search'
-import HelpPopover from './HelpPopover'
-import { type VisCtx } from '../lib/schema'
-import { Button } from './Button'
+import { Modal } from '@/components/Modal'
+import { SearchEngine, SEARCH_TYPE_LABEL, type SearchDocType, type SearchResult } from '@/lib/search'
+import HelpPopover from '@/components/HelpPopover'
+import { type VisCtx } from '@/lib/schema'
+import { Button } from '@/components/Button'
 
 interface Props {
   onClose: () => void

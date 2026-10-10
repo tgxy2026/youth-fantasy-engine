@@ -4,7 +4,7 @@
 //   1. 这里只描述「各平台通常更关注哪几类内容」这类**结构性差异**，不做风险打分、不评优劣、不判能否发布；
 //   2. 平台规则（含 AI 使用口径）**随时会变**，所有文案都标注「以平台后台 / 最新公告为准」；
 //   3. 本模块**不做任何降低检出率的事** —— 与「创作主权存证 + 如实申报」的产品立场一致。
-import type { SensitiveHit } from './sensitiveWords'
+import type { SensitiveHit } from '@/lib/sensitiveWords'
 
 export type PlatformId = 'general' | 'jjwxc' | 'qidian'
 

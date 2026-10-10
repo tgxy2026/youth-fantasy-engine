@@ -13,13 +13,13 @@
  *
  * 本文件是纯逻辑，不含 React。
  */
-import * as db from '../db'
-import { uid } from '../id'
-import { emptyVars } from '../tavern/vars'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
+import { emptyVars } from '@/lib/tavern/vars'
 import type {
   RunSession, RunIndexItem, RunCompanion, RunAction,
   RunCheckpoint, RunClue, RunSecret, RunEnding,
-} from './runTypes'
+} from '@/lib/run/runTypes'
 
 // ==================== 存储键 ====================
 // 项目级（会经 db.getSetting 自动加项目前缀）

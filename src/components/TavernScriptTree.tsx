@@ -11,7 +11,7 @@
  *    量化结果里**右栏（AI 起草 / 故事信息）props 面最宽（24 个）**，而它正是跑团扩展会动的地方
  *    （推演 / AI KP 都长在那里）⇒ 中栏与右栏一律留到 **W4-3** 与跑团一起做，避免白拆一次。
  */
-import type { TavernScript, TavernScriptIndexItem, TavernStory, TavernStoryIndexItem } from '../lib/tavern/types'
+import type { TavernScript, TavernScriptIndexItem, TavernStory, TavernStoryIndexItem } from '@/lib/tavern/types'
 
 export default function TavernScriptTree({
   stories, scripts, openIds, story, cur, kind, onToggleOpen, onOpenStory, onOpenScript,

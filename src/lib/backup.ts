@@ -4,10 +4,10 @@
  * - 每天首次打开项目，自动生成一份「每日备份」（最多 30 份，超出后最早的一份会被自动淘汰）。
  * 由 App 在打开项目时调用 startAutoBackup / ensureDailyBackup，退出时 stop。
  */
-import * as db from './db'
-import { DESKTOP, flushDesktop, getDesktopState } from './desktop'
-import { todayKey } from './date'
-import { isDemoProjectName } from './constants'
+import * as db from '@/lib/db'
+import { DESKTOP, flushDesktop, getDesktopState } from '@/lib/desktop'
+import { todayKey } from '@/lib/date'
+import { isDemoProjectName } from '@/lib/constants'
 
 const FIVE_MIN = 5 * 60 * 1000
 

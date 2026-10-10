@@ -29,32 +29,32 @@
  * 🔴 写库只发生在闸门**通过之后**；用户放弃闸门 = 整条流程中止，不留半成品。
  * 🔴 正文落库发生在每章的「初稿采纳」之后。
  */
-import { buildProjectContext } from './aiContext'
+import { buildProjectContext } from '@/lib/aiContext'
 import {
   aiGenerateBible, aiPlanOutline,
   MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES,
   type OutlineResult, type OutlineVolume,
-} from './aiTasks'
-import { sortChapters } from './chapterSeq'
-import { nextVolumeOrder } from './freeVolume'
-import { getStoryTemplate, formatStructureHint } from './storyStructures'
-import { writerBudgetFor } from './aiWriterBudget'
-import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from './autoContinue'
-import * as db from './db'
-import { commitDraftRows } from './flow/commit'
-import { buildDraftBundle, defaultPicked } from './flow/draft'
-import { resolveSlot } from './flow/fieldMap'
-import { createFlow, firstUnfinishedStage, type StageCtx } from './flow/pipeline'
-import type { CommitOutcome, DraftBundle, DraftRow, FlowProgress, FlowStage } from './flow/types'
-import { uid } from './id'
+} from '@/lib/aiTasks'
+import { sortChapters } from '@/lib/chapterSeq'
+import { nextVolumeOrder } from '@/lib/freeVolume'
+import { getStoryTemplate, formatStructureHint } from '@/lib/storyStructures'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
+import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from '@/lib/autoContinue'
+import * as db from '@/lib/db'
+import { commitDraftRows } from '@/lib/flow/commit'
+import { buildDraftBundle, defaultPicked } from '@/lib/flow/draft'
+import { resolveSlot } from '@/lib/flow/fieldMap'
+import { createFlow, firstUnfinishedStage, type StageCtx } from '@/lib/flow/pipeline'
+import type { CommitOutcome, DraftBundle, DraftRow, FlowProgress, FlowStage } from '@/lib/flow/types'
+import { uid } from '@/lib/id'
 import {
   chapterNoOf, detectVolumeGap, fillChapterRanges, formatChapterRange, isPlaceholderText,
   isVolumeOutlineComplete, outlineCardName, outlineEventKey, parseChapterRange,
   VOLUME_OUTLINE_TAB_ID, volumeBoundTextsOf, volumeRangeKey,
-} from './outlineCard'
-import type { LedgerItem } from './settingLedger'
-import type { Volume } from './types'
-import { MAX_CHAPTERS } from './writingPace'
+} from '@/lib/outlineCard'
+import type { LedgerItem } from '@/lib/settingLedger'
+import type { Volume } from '@/lib/types'
+import { MAX_CHAPTERS } from '@/lib/writingPace'
 
 /** 从零创作：设定奠基 → 分卷大纲 → 逐章连写（`target='outline'` 时靠 `skipRest` 停在闸门②之后） */
 export const CREATIVE_STAGES: FlowStage[] = [

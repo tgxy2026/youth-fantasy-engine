@@ -13,7 +13,7 @@
 //    回关键词召回（语义检索是"补一层"，绝不能因为它挂了就阻断写作链路）。
 //    口径与 `webSearch` 一致。
 
-import { fetchWithTimeout, isCancelled, openaiBaseOf } from '../aiCore/transport'
+import { fetchWithTimeout, isCancelled, openaiBaseOf } from '@/lib/aiCore/transport'
 
 export interface EmbedConfig {
   type: 'ollama' | 'openai'

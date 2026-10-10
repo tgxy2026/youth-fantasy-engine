@@ -13,10 +13,10 @@
  *      两者回填的都是同一来源 `textarea.scrollTop`，拆分不改变结果。）
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect, type RefObject } from 'react'
-import * as db from '../lib/db'
-import { TABS } from '../lib/schema'
-import { readAliases } from '../lib/aliases'
-import { scanRefHighlight, type RefName } from './novelEditorHelpers'
+import * as db from '@/lib/db'
+import { TABS } from '@/lib/schema'
+import { readAliases } from '@/lib/aliases'
+import { scanRefHighlight, type RefName } from '@/components/novelEditorHelpers'
 
 type HighlightArgs = {
   /** 当前章正文（由调用方做 120ms 防抖镜像，见下方 deferredContent） */

@@ -12,17 +12,17 @@
  * 自己落库 —— 否则又得在「灵感启发」里造一套保存流程。设置项少、写起来便宜，所以直接改完就存。
  */
 import { useEffect, useState } from 'react'
-import { getSearchSettings, saveSearchSettings } from '../lib/searchSettings'
+import { getSearchSettings, saveSearchSettings } from '@/lib/searchSettings'
 import {
   searchBlockedReason, SEARCH_MODE_LABEL, SEARCH_ENGINE_LABEL,
   BOCHA_ENDPOINT, SEARXNG_ENDPOINT, DEFAULT_SEARCH_SETTINGS,
   type SearchSettings,
-} from '../lib/webSearch'
-import { PARAM_GUIDES, bandOf } from '../lib/tavern/paramGuide'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import { showToast } from './dialogs'
-import NumberField from './NumberField'
+} from '@/lib/webSearch'
+import { PARAM_GUIDES, bandOf } from '@/lib/tavern/paramGuide'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import { showToast } from '@/components/dialogs'
+import NumberField from '@/components/NumberField'
 
 const BOX = 'bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50'
 

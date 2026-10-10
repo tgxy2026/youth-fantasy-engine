@@ -14,10 +14,10 @@
 //
 // 🔴 请求走 desktop.ts 的 fetch 桥（主进程 net.fetch，无 CORS 限制，且跟随用户配置的代理）；
 //    浏览器 dev 环境没有桥 → 降级 window.fetch（Gitee 响应头带 Access-Control-Allow-Origin: *）。
-import { APP_VERSION_LABEL } from './env'
-import { GITEE_RELEASES_URL } from './downloadLinks'
-import { HAS_NET_BRIDGE, netFetch } from './desktop'
-import { readBoolPref, readStringPref, writeBoolPref, writeStringPref } from './uiPrefs'
+import { APP_VERSION_LABEL } from '@/lib/env'
+import { GITEE_RELEASES_URL } from '@/lib/downloadLinks'
+import { HAS_NET_BRIDGE, netFetch } from '@/lib/desktop'
+import { readBoolPref, readStringPref, writeBoolPref, writeStringPref } from '@/lib/uiPrefs'
 
 /** Gitee 最新 Release 查询（公开仓库，匿名可用） */
 const LATEST_API = 'https://gitee.com/api/v5/repos/tgxy2026/youth-fantasy-engine/releases/latest'

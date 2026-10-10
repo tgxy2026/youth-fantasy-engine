@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { HelpCircle } from 'lucide-react'
-import { Button } from './Button'
-import { Z } from '../lib/zLayer'
-import { foldVh } from '../lib/theme'
+import { Button } from '@/components/Button'
+import { Z } from '@/lib/zLayer'
+import { foldVh } from '@/lib/theme'
 
 interface Props {
   title: string

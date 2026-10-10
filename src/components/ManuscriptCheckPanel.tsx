@@ -12,20 +12,20 @@
  * 本面板**不发任何 AI 请求**（按钮文案里也如实写明）。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { EMPTY_CHAPTER_HINT } from '../lib/constants'
+import { EMPTY_CHAPTER_HINT } from '@/lib/constants'
 import { ClipboardCheck, Loader2, RefreshCw, FileUp } from 'lucide-react'
-import * as db from '../lib/db'
-import type { Chapter } from '../lib/types'
-import { Button } from './Button'
-import { showToast } from './dialogs'
-import { downloadText } from '../lib/zip'
+import * as db from '@/lib/db'
+import type { Chapter } from '@/lib/types'
+import { Button } from '@/components/Button'
+import { showToast } from '@/components/dialogs'
+import { downloadText } from '@/lib/zip'
 // 2.9.1：走 checkLog 的包装（与检查工具 / 编辑器弹窗共用缓存与台账）
-import { continuityLogged, foreshadowLogged, manuscriptLogged, trendOf, type CheckTrend } from '../lib/checkLog'
-import CheckTrendNote from './CheckTrendNote'
+import { continuityLogged, foreshadowLogged, manuscriptLogged, trendOf, type CheckTrend } from '@/lib/checkLog'
+import CheckTrendNote from '@/components/CheckTrendNote'
 import {
   analyzeStyle, toObservations, analyzePacing, buildCheckReportText,
   type StyleFingerprint, type PacingReport,
-} from '../lib/manuscriptCheck'
+} from '@/lib/manuscriptCheck'
 
 export default function ManuscriptCheckPanel() {
   const [chapters, setChapters] = useState<Chapter[]>([])

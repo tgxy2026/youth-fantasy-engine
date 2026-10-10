@@ -10,15 +10,15 @@
  * 不自己重算判定），把每一层摊开，并算出真正留给对话历史的额度。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { LoadingState } from './LoadingState'
-import { buildPlotSystem, buildFreeSystem } from '../lib/tavern/engine'
-import { summarizeUsage, type UsagePart, type UsageSummary } from '../lib/tavern/budget'
-import { getTavernSettings, effectiveContextBudget } from '../lib/tavern/settings'
-import { dynamicQuotaOf, fmtWindow } from '../lib/tavern/quotas'
-import type { FreeCharacter, FreeSession, TavernSession } from '../lib/tavern/types'
-import { useTavernQuota } from './useTavernQuota'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { LoadingState } from '@/components/LoadingState'
+import { buildPlotSystem, buildFreeSystem } from '@/lib/tavern/engine'
+import { summarizeUsage, type UsagePart, type UsageSummary } from '@/lib/tavern/budget'
+import { getTavernSettings, effectiveContextBudget } from '@/lib/tavern/settings'
+import { dynamicQuotaOf, fmtWindow } from '@/lib/tavern/quotas'
+import type { FreeCharacter, FreeSession, TavernSession } from '@/lib/tavern/types'
+import { useTavernQuota } from '@/components/useTavernQuota'
 
 const fmt = (n: number) => n.toLocaleString('zh-CN')
 

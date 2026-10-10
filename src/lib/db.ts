@@ -23,21 +23,21 @@ export {
   setCurrentProject, getCurrentProjectId, touchProject,
   makeCloudStoreWrapper, setStoreOps,
   isDesktopCloudSyncActive, enableDesktopCloudSync, disableDesktopCloudSync,
-} from './db/core'
-export * from './db/projects'
+} from '@/lib/db/core'
+export * from '@/lib/db/projects'
 // volumes / meta 用**显式名单**：这两个模块内部还有跨域要用、但不该对外的成员
 // （`VOL_LEDGER_PREFIX`、`addDailyWords`），用 export * 会把它们泄漏进公开 API。
-export { getAllVolumes, saveVolume, deleteVolume, getAllChapterLedgerRows, purgeLedgerRowEverywhere } from './db/volumes'
-export * from './db/chapters'
-export * from './db/tabs'
+export { getAllVolumes, saveVolume, deleteVolume, getAllChapterLedgerRows, purgeLedgerRowEverywhere } from '@/lib/db/volumes'
+export * from '@/lib/db/chapters'
+export * from '@/lib/db/tabs'
 // 世界观 · 力量体系的「子级」（C10 · 2.4.2）：子项增删改 + 活跃开关。
 // 母级不在这里 —— 它就是 tabs 的 formData 那一份，位置与 API 都没变。
-export * from './db/worldSets'
-export type { DailyStat } from './db/meta'
-export { getMeta, setMeta, getDailyStats, putDailyStat, getSetting, setSetting } from './db/meta'
-export * from './db/tavernReports'
-export * from './db/aiRuns'
+export * from '@/lib/db/worldSets'
+export type { DailyStat } from '@/lib/db/meta'
+export { getMeta, setMeta, getDailyStats, putDailyStat, getSetting, setSetting } from '@/lib/db/meta'
+export * from '@/lib/db/tavernReports'
+export * from '@/lib/db/aiRuns'
 // 世界引擎（3.0 · W4-1b）：世界包 / 不可变版本。🔴 **非项目级** —— 全局可读、删项目不清理。
-export * from './db/worlds'
-export * from './db/migrations'
-export * from './db/backups'
+export * from '@/lib/db/worlds'
+export * from '@/lib/db/migrations'
+export * from '@/lib/db/backups'

@@ -25,18 +25,18 @@
  * 迟早把对话历史挤没（表现为「它怎么忘了我刚说的话」）。所以有 `WORLD_MAX_CHARS` 截断 +
  * 界面显示字数。
  */
-import * as db from '../db'
-import { uid } from '../id'
-import { chat, isCancelled, type ChatMessage } from '../ai'
-import { parsePlainObject, asText } from '../aiParse'
-import { newAuthorFence, authorBlock } from '../promptGuard'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
+import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { parsePlainObject, asText } from '@/lib/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件，绕 engine 会形成循环依赖
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
-import { prepareDraftMaterial, type DraftSource } from './draft'
-import { webSearch, type SearchSettings } from '../webSearch'
-import type { TavernMessage } from './types'
-import { buildWorldBookText, type WorldEntry, type EntryState } from './worldBook'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
+import { prepareDraftMaterial, type DraftSource } from '@/lib/tavern/draft'
+import { webSearch, type SearchSettings } from '@/lib/webSearch'
+import type { TavernMessage } from '@/lib/tavern/types'
+import { buildWorldBookText, type WorldEntry, type EntryState } from '@/lib/tavern/worldBook'
 
 /**
  * 一节背景设定。

@@ -16,8 +16,8 @@
 // 换了会话，就重新算一次。判据全在 `checkTavernReady` 里，界面层不重复实现。
 import { useEffect, useState } from 'react'
 
-import { checkTavernReady, type TavernReadyInfo } from '../lib/tavern/provider'
-import { subscribeAIReady } from '../lib/ai'
+import { checkTavernReady, type TavernReadyInfo } from '@/lib/tavern/provider'
+import { subscribeAIReady } from '@/lib/ai'
 
 const NOT_READY: TavernReadyInfo = { ready: false, label: '', fellBack: true }
 

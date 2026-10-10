@@ -13,14 +13,14 @@
  *
  * 【只读】本模块**只读**存储，不改任何数据；落库在 W4-1b/c。
  */
-import { uid } from './id'
-import { hashOf } from './semantic/chunk'
-import * as db from './db'
+import { uid } from '@/lib/id'
+import { hashOf } from '@/lib/semantic/chunk'
+import * as db from '@/lib/db'
 // 🔴 世界包的**形状**集中在 `worldTypes.ts`（无依赖）—— 存储层 `db/worlds.ts` 也要用它，
 //    留在这里会让 `db → worldPack` 成环。此处只 re-export，既有 import 路径一字不变。
-import type { WorldPackKind, WorldPackTable, WorldPackOrigin, WorldPack } from './worldTypes'
-export type { WorldPackKind, WorldPackRow, WorldPackTable, WorldPackOrigin, WorldPack } from './worldTypes'
-export type { WorldVersion, WorldStoredRecord } from './worldTypes'
+import type { WorldPackKind, WorldPackTable, WorldPackOrigin, WorldPack } from '@/lib/worldTypes'
+export type { WorldPackKind, WorldPackRow, WorldPackTable, WorldPackOrigin, WorldPack } from '@/lib/worldTypes'
+export type { WorldVersion, WorldStoredRecord } from '@/lib/worldTypes'
 
 export interface WorldPackTabSpec {
   /** 页签 id（母级）。`kind='sub'` 时实际存储在 `${tabId}-sub` 下（见 `worldSets.subTabIdOf`） */

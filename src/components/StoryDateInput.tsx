@@ -1,9 +1,9 @@
 import { CalendarDays } from 'lucide-react'
-import type { CalendarRule } from '../lib/types'
+import type { CalendarRule } from '@/lib/types'
 import {
   DEFAULT_CALENDAR_RULE,
   dayOptions, monthOptions, parseStoryDateParts,
-} from '../lib/storyDate'
+} from '@/lib/storyDate'
 
 // 🔴 NumberField 豁免声明（U-11 · 2.6.0 巡检留痕）：本组件的年/月/日三段 <input type="number">
 //    **刻意不走 NumberField** —— 它是三段联动分段输入（年→月→日逐级补全、闰年联动、缺年整体清空），

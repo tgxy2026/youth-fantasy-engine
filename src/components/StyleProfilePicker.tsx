@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button } from './Button'
-import { StyleProfileDialog } from './StyleProfileDialog'
+import { Button } from '@/components/Button'
+import { StyleProfileDialog } from '@/components/StyleProfileDialog'
 import {
   loadFingerprints, loadActiveFingerprintId, saveActiveFingerprintId, type StyleProfile,
-} from '../lib/styleFingerprint'
+} from '@/lib/styleFingerprint'
 
 /**
  * 「文风档」选择器（2.8.0 · 台账 #015）—— 伴写设置窗与创意写作面板**共用同一条实现**。

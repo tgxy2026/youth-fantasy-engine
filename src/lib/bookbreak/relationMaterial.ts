@@ -16,7 +16,7 @@
  *    本地模型窗口 ≈ 32K 词元时，材料控制在 8000 字以内是稳妥的；
  *    调大之前先看「模型设置 → 模型配置」里那个模型的上下文窗口。
  */
-import * as db from '../db'
+import * as db from '@/lib/db'
 
 export interface RelationMaterialLimits {
   /** 每类实体最多带多少条（人物 / 势力 / 地点 / 种族 / 物品 / 术语，各自独立计数） */

@@ -22,15 +22,15 @@
  */
 import { useMemo, useState } from 'react'
 import { RotateCcw, Plus, Trash2 } from 'lucide-react'
-import type { CalendarDef, CalendarRule } from '../lib/types'
+import type { CalendarDef, CalendarRule } from '@/lib/types'
 import {
   DAYS_PER_MONTH_MAX, DEFAULT_CALENDAR_RULE, MONTHS_PER_YEAR_MAX,
   clampCalendarRule, daysPerYear,
-} from '../lib/storyDate'
-import { uid } from '../lib/id'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import NumberField from './NumberField'
+} from '@/lib/storyDate'
+import { uid } from '@/lib/id'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import NumberField from '@/components/NumberField'
 
 /** 草稿行：`orig` 有值＝来自已保存的历法（用于识别"改名"），无值＝本次新增 */
 interface RowDraft {

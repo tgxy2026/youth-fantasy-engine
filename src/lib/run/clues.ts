@@ -14,7 +14,7 @@
  *
  * 【边界】纯逻辑：不调 AI、不碰 React、不碰 db。
  */
-import type { RunSession, RunClue, RunClueSource, RunCompanion } from './runTypes'
+import type { RunSession, RunClue, RunClueSource, RunCompanion } from '@/lib/run/runTypes'
 
 // ==================== 线索板 ====================
 

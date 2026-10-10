@@ -23,18 +23,18 @@
  * ⚠️ 本轮**只做本地诊断源**（五个引擎，零 AI 成本）。AI 深度检查（编辑意见 / OOC / 爽点毒点）
  *    作为独立一批加进来 —— 那部分要发明细估算与勾选范围，不在这里静默半个。
  */
-import type { IssueSeverity } from './audit'
-import { SEVERITY_ORDER } from './audit'
-import type { ChapterCheckReport } from './chapterCheck'
-import { runChapterCheck } from './chapterCheck'
-import type { ChapterRewriteAction } from './aiTasks'
-import { CHAPTER_REWRITE_META, aiRewriteChapter } from './aiTasks'
+import type { IssueSeverity } from '@/lib/audit'
+import { SEVERITY_ORDER } from '@/lib/audit'
+import type { ChapterCheckReport } from '@/lib/chapterCheck'
+import { runChapterCheck } from '@/lib/chapterCheck'
+import type { ChapterRewriteAction } from '@/lib/aiTasks'
+import { CHAPTER_REWRITE_META, aiRewriteChapter } from '@/lib/aiTasks'
 import {
   applyChapterRewrite, listRewriteCandidates,
   type RewriteCandidate,
-} from './chapterRewrite'
-import { extractAndCommitSettings } from './autoContinue'
-import { isCancelled } from './ai'
+} from '@/lib/chapterRewrite'
+import { extractAndCommitSettings } from '@/lib/autoContinue'
+import { isCancelled } from '@/lib/ai'
 
 /** 工单条目的来源分类 */
 export type TicketSource =

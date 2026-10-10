@@ -22,32 +22,32 @@
  * 提示用 showToast。
  */
 
-import HelpPopover from './HelpPopover'
-import { Z } from '../lib/zLayer'
-import AIDataSourceNote from './AIDataSourceNote'
-import TavernEchoHints from './TavernEchoHints'
+import HelpPopover from '@/components/HelpPopover'
+import { Z } from '@/lib/zLayer'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import TavernEchoHints from '@/components/TavernEchoHints'
 import { ChevronDown, Clapperboard, Pencil } from 'lucide-react'
-import { showToast, } from './dialogs'
-import { Button } from './Button'
-import { Modal } from './Modal'
-import { LoadingState } from './LoadingState'
-import TavernFreeSetup, { } from './TavernFreeSetup'
-import PromptModal from './PromptModal'
-import TavernCastDirector from './TavernCastDirector'
-import TavernRevisionDialog from './TavernRevisionDialog'
-import TavernExportDialog from './TavernExportDialog'
-import TavernStatusBar from './TavernStatusBar'
-import TavernVarsPanel from './TavernVarsPanel'
+import { showToast, } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import { Modal } from '@/components/Modal'
+import { LoadingState } from '@/components/LoadingState'
+import TavernFreeSetup, { } from '@/components/TavernFreeSetup'
+import PromptModal from '@/components/PromptModal'
+import TavernCastDirector from '@/components/TavernCastDirector'
+import TavernRevisionDialog from '@/components/TavernRevisionDialog'
+import TavernExportDialog from '@/components/TavernExportDialog'
+import TavernStatusBar from '@/components/TavernStatusBar'
+import TavernVarsPanel from '@/components/TavernVarsPanel'
 // 🔴 3.0 · W2-5b（§13 F3）：「未整理轮数」判据 —— 与收尾用的是**同一个**纯函数，不另立口径
-import { pendingMessages } from '../lib/tavern/roundEnd'
-import TavernUsageDialog from './TavernUsageDialog'
-import Avatar from './Avatar'
-import TavernMessageBody from './TavernMessageBody'
-import TavernQuickBar, { } from './TavernQuickBar'
-import TavernDirectorNoteBar from './TavernDirectorNoteBar'
-import { renderTavernMessage } from './TavernMessage'
-import AutoTextarea from './AutoTextarea'
-import * as store from '../lib/tavern/store'
+import { pendingMessages } from '@/lib/tavern/roundEnd'
+import TavernUsageDialog from '@/components/TavernUsageDialog'
+import Avatar from '@/components/Avatar'
+import TavernMessageBody from '@/components/TavernMessageBody'
+import TavernQuickBar, { } from '@/components/TavernQuickBar'
+import TavernDirectorNoteBar from '@/components/TavernDirectorNoteBar'
+import { renderTavernMessage } from '@/components/TavernMessage'
+import AutoTextarea from '@/components/AutoTextarea'
+import * as store from '@/lib/tavern/store'
 
 
 
@@ -57,14 +57,14 @@ import {
   
   
   type VarKey, type CharVars, type TavernVars,
-} from '../lib/tavern/types'
-import { VAR_SCALE, } from '../lib/tavern/vars'
-import { scriptSceneLine, isOpeningMessage } from '../lib/tavern/script'
+} from '@/lib/tavern/types'
+import { VAR_SCALE, } from '@/lib/tavern/vars'
+import { scriptSceneLine, isOpeningMessage } from '@/lib/tavern/script'
 
 
-import { freeDocModel, } from '../lib/tavern/exportDoc'
-import { agoText } from '../lib/tavern/status'
-import { type RoundEndStage } from '../lib/tavern/roundEnd'
+import { freeDocModel, } from '@/lib/tavern/exportDoc'
+import { agoText } from '@/lib/tavern/status'
+import { type RoundEndStage } from '@/lib/tavern/roundEnd'
 
 /** 收尾各阶段在界面上的措辞（多角色时还会附上「第几个/共几个」） */
 const STAGE_TEXT: Record<RoundEndStage, string> = {
@@ -80,8 +80,8 @@ function charVarsToTavern(cv?: CharVars): TavernVars | undefined {
   return { values: cv.values, turnSeq: 0, log: [], scale: VAR_SCALE }
 }
 
-import { useTavernFreeModel, primaryAiCharId } from './useTavernFreeModel'
-import TavernFreeSessionList from './TavernFreeSessionList'
+import { useTavernFreeModel, primaryAiCharId } from '@/components/useTavernFreeModel'
+import TavernFreeSessionList from '@/components/TavernFreeSessionList'
 
 export default function TavernFree() {
   // 状态与生命周期全在 model 里；下面同名解构是刻意的 —— JSX 保持原样、零改动。

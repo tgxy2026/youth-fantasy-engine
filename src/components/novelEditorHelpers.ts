@@ -10,9 +10,9 @@
  * 🔴 搬动时保住的红线：`scanRefHighlight` 的**行为一个字符都没动** —— 引用名按长度降序拼接
  *   （避免「陈渊」抢在「陈渊清欢」之前匹配）、超长正文降级只读纯文本、零宽匹配防御，全照原样。
  */
-import type { Volume, Chapter } from '../lib/types'
-import { chapterSeqMap, flattenChapters } from '../lib/chapterSeq'
-import { syncChapterMaster } from '../lib/chapterMaster'
+import type { Volume, Chapter } from '@/lib/types'
+import { chapterSeqMap, flattenChapters } from '@/lib/chapterSeq'
+import { syncChapterMaster } from '@/lib/chapterMaster'
 
 const HTML_ESCAPE_RE = /[&<>]/g
 const HTML_ESCAPE_MAP: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }

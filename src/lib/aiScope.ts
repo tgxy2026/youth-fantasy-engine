@@ -6,8 +6,8 @@
 //   AI 只做锦上添花。所有页签在「未配置任何 AI 模型」时都必须完整可用——
 //   AI 入口仅表现为按钮禁用 + 说明文案，绝不阻断、绝不报错、绝不影响手动填写。
 
-import type { TabDef } from './types'
-import { isVolumeLedgerTab } from './schema'
+import type { TabDef } from '@/lib/types'
+import { isVolumeLedgerTab } from '@/lib/schema'
 
 export type AICapability =
   /** AI 补全 / AI 新增：把作者的粗略草图整理并补全成完整设定（已有条目补其空白，或凭空建档） */

@@ -11,24 +11,24 @@
  * 🔴 立场：读者反应天然主观，这里不出分数、不出等级、不判"能不能发"。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { EMPTY_CHAPTER_HINT } from '../lib/constants'
+import { EMPTY_CHAPTER_HINT } from '@/lib/constants'
 import { Copy, Eye, Loader2, Sparkles, UserRound } from 'lucide-react'
-import * as db from '../lib/db'
-import type { Chapter } from '../lib/types'
-import { Button } from './Button'
-import { showToast, copyText } from './dialogs'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { buildProjectContext } from '../lib/aiContext'
-import { writerBudgetFor } from '../lib/aiWriterBudget'
+import * as db from '@/lib/db'
+import type { Chapter } from '@/lib/types'
+import { Button } from '@/components/Button'
+import { showToast, copyText } from '@/components/dialogs'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { buildProjectContext } from '@/lib/aiContext'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
 import {
   aiReaderProbe, groupNotes, questionsOf, readerLensOf, readerProbeToText, READER_LENSES,
   type ReaderProbeResult,
-} from '../lib/aiTasks'
-import { countWords } from '../lib/textStats'
-import AIDataSourceNote from './AIDataSourceNote'
-import HelpPopover from './HelpPopover'
-import { markTaskSeen, startTask, useAiTask } from '../lib/aiTaskCenter'
+} from '@/lib/aiTasks'
+import { countWords } from '@/lib/textStats'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import HelpPopover from '@/components/HelpPopover'
+import { markTaskSeen, startTask, useAiTask } from '@/lib/aiTaskCenter'
 
 /** 本面板在任务中心里的身份（`ownerTab` 需与 TABS 里的页签 id 一致 —— 指示器靠它跳回来） */
 const OWNER_TAB = 'check-tools'

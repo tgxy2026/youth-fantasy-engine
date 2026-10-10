@@ -3,7 +3,7 @@
  * 角色卡 / 世界构建设定条目新增「别称」字段后：
  * 系统在引用高亮、AI 上下文、连续性校验等处把别称解析回「原本名称」所指实体。
  */
-import { TABS } from './schema'
+import { TABS } from '@/lib/schema'
 
 /** 把「别称」字段值拆成多个别名：顿号 / 逗号 / 分号 / 空白 均视为分隔符 */
 function splitAliases(v: string | undefined | null): string[] {

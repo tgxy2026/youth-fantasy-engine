@@ -11,20 +11,20 @@
  *   ② 高度同步 effect（含 ResizeObserver/MatchMedia 清理）在 useTavernControlModel 里，未改。
  *   ③ 分段说明的显隐走 ShowBands.Provider，Provider 本身留在本组件。
  */
-import HelpPopover from './HelpPopover'
-import { useSaveHotkey } from '../lib/useSaveHotkey'
-import PromptModal from './PromptModal'
-import TavernControlModes from './TavernControlModes'
-import { LoadingState } from './LoadingState'
-import { Button } from './Button'
-import { ShowBands } from './TavernFieldKit'
-import { UNSAVED_CHANGES_HINT } from '../lib/constants'
-import { Z } from '../lib/zLayer'
-import { useTavernControlModel } from './useTavernControlModel'
-import TavernControlBasics from './TavernControlBasics'
-import TavernControlAdvanced from './TavernControlAdvanced'
-import TavernControlProtocol from './TavernControlProtocol'
-import { SaveFab } from './SaveFab'
+import HelpPopover from '@/components/HelpPopover'
+import { useSaveHotkey } from '@/lib/useSaveHotkey'
+import PromptModal from '@/components/PromptModal'
+import TavernControlModes from '@/components/TavernControlModes'
+import { LoadingState } from '@/components/LoadingState'
+import { Button } from '@/components/Button'
+import { ShowBands } from '@/components/TavernFieldKit'
+import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
+import { Z } from '@/lib/zLayer'
+import { useTavernControlModel } from '@/components/useTavernControlModel'
+import TavernControlBasics from '@/components/TavernControlBasics'
+import TavernControlAdvanced from '@/components/TavernControlAdvanced'
+import TavernControlProtocol from '@/components/TavernControlProtocol'
+import { SaveFab } from '@/components/SaveFab'
 export default function TavernControl() {
   const m = useTavernControlModel()
   // 前置数据未就绪：与拆分前一样先出 LoadingState（判断已随 hook 前移，语义不变）

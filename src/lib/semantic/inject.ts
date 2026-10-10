@@ -10,11 +10,11 @@
 //    因为 `indexer → aiContext`（要用 S/D 判据），若这里再反向 import 就成环了。
 //    （`aiContext` 能安全 import 本文件，正是因为它只出不进。）
 
-import * as db from '../db'
-import { clipText } from '../textClip'
-import { recallRelevant, type RecallHit } from './recall'
-import type { VecKind } from './store'
-import { resolveEmbedConfig } from './settings'
+import * as db from '@/lib/db'
+import { clipText } from '@/lib/textClip'
+import { recallRelevant, type RecallHit } from '@/lib/semantic/recall'
+import type { VecKind } from '@/lib/semantic/store'
+import { resolveEmbedConfig } from '@/lib/semantic/settings'
 
 /** 命中类别的显示名（渲染召回段时标「这条来自哪儿」） */
 const RECALL_KIND_LABEL: Record<VecKind, string> = {

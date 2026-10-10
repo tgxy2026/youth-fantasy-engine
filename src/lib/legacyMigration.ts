@@ -5,9 +5,9 @@
 //
 // 🔴 分层口径：主进程（`electron/migration.cjs`）只搬字节（fs 读写 / 复制）；
 //    「怎么判定、怎么改写」放在这里 —— 纯函数，Node 单测能直接跑（主进程模块依赖 electron 跑不了）。
-import { migrateVecFromLegacy } from './semantic/store'
-import { migrateKbFromLegacy } from './knowledgeBase'
-import { idbDbExists, idbDeleteDatabase } from './idbMigrateUtil'
+import { migrateVecFromLegacy } from '@/lib/semantic/store'
+import { migrateKbFromLegacy } from '@/lib/knowledgeBase'
+import { idbDbExists, idbDeleteDatabase } from '@/lib/idbMigrateUtil'
 
 /** 旧版 app 标识（唯一权威源；迁移内部识别用，不参与运行时校验） */
 export const LEGACY_APP = 'novel-studio'

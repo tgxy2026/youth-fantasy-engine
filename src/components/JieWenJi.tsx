@@ -10,21 +10,21 @@
  * C1 拆分为：jieWenJiParts（常量/类型/小件）+ useJieWenJiModel（状态与 AI 链路）
  *   + 五个模式面板（JieWenJiClinic / Edit / Review / Brief / Ledger，只收 m）。
  */
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import { Z } from '../lib/zLayer'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { Z } from '@/lib/zLayer'
 import { Stethoscope, PenLine, BookOpen, X, Wand2, Sparkles, ClipboardList, ClipboardCheck } from 'lucide-react'
-import { Button } from './Button'
-import { useJieWenJiModel } from './useJieWenJiModel'
-import JieWenJiClinic from './JieWenJiClinic'
-import JieWenJiEdit from './JieWenJiEdit'
-import JieWenJiReview from './JieWenJiReview'
-import JieWenJiBrief from './JieWenJiBrief'
-import JieWenJiLedger from './JieWenJiLedger'
-import JieWenJiPostProcess from './JieWenJiPostProcess'
-import type { Props, Mode } from './jieWenJiParts'
+import { Button } from '@/components/Button'
+import { useJieWenJiModel } from '@/components/useJieWenJiModel'
+import JieWenJiClinic from '@/components/JieWenJiClinic'
+import JieWenJiEdit from '@/components/JieWenJiEdit'
+import JieWenJiReview from '@/components/JieWenJiReview'
+import JieWenJiBrief from '@/components/JieWenJiBrief'
+import JieWenJiLedger from '@/components/JieWenJiLedger'
+import JieWenJiPostProcess from '@/components/JieWenJiPostProcess'
+import type { Props, Mode } from '@/components/jieWenJiParts'
 // 🔴 建议段标记照旧对外可用（NovelEditor 依赖它）：实现已随常量层搬进 jieWenJiParts
-export { ADVICE_START, ADVICE_END } from './jieWenJiParts'
+export { ADVICE_START, ADVICE_END } from '@/components/jieWenJiParts'
 export default function JieWenJi(props: Props) {
   const m = useJieWenJiModel(props)
   const { aiReady, spriteOn, toggleSprite, mode, setMode, onClose } = m

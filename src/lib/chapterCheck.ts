@@ -4,14 +4,14 @@
 //   · 全书级引擎跑完再**过滤出与本章相关**的：连续性（continuityCheck，取定位在本章的问题）、
 //     伏笔（foreshadowEngine，取埋设/回收落在本章的条目及其问题）。
 // 🔴 全部本地确定性检查，不发 AI 请求；默认手动触发，由 ChapterCheckPanel 调用。
-import type { Chapter } from './types'
-import type { AuditIssue } from './audit'
+import type { Chapter } from '@/lib/types'
+import type { AuditIssue } from '@/lib/audit'
 // 2.9.1：走 checkLog 的包装 —— 与检查工具 / 稿件体检 / 编辑器弹窗共用同一份结果（缓存），并记台账
-import { continuityLogged, foreshadowLogged } from './checkLog'
-import type { ForeshadowBoardItem } from './foreshadowEngine'
-import { auditStyle } from './styleAudit'
-import { scanTypos, type TypoHit } from './typoWords'
-import { scanText, getCustomSensitiveWords, type SensitiveHit } from './sensitiveWords'
+import { continuityLogged, foreshadowLogged } from '@/lib/checkLog'
+import type { ForeshadowBoardItem } from '@/lib/foreshadowEngine'
+import { auditStyle } from '@/lib/styleAudit'
+import { scanTypos, type TypoHit } from '@/lib/typoWords'
+import { scanText, getCustomSensitiveWords, type SensitiveHit } from '@/lib/sensitiveWords'
 
 export interface ChapterCheckReport {
   chapterId: string

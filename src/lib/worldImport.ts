@@ -13,9 +13,9 @@
  * 【溯源】引入后在 `settingsKV` 记一条 `worldImport`（per 项目，`getSetting/setSetting` 自动加 pid 前缀）：
  *   界面据它在页头常显「引自 …（v3）」，作者永远知道这份世界从哪来。
  */
-import * as db from './db'
-import { uid } from './id'
-import type { WorldPackTable } from './worldTypes'
+import * as db from '@/lib/db'
+import { uid } from '@/lib/id'
+import type { WorldPackTable } from '@/lib/worldTypes'
 
 /** `settingsKV` 里的键名（与项目绑定） */
 const KEY = 'worldImport'

@@ -20,15 +20,15 @@
  * 靠「标签：内容」的行格式往返。所以起草时就得按这个格式输出 —— 否则模型给的散文进到界面里
  * 会整段掉进「其他」那一格，作者看不到分好的条目。
  */
-import { chat, isCancelled, type ChatMessage } from '../ai'
-import { parsePlainObject, asText } from '../aiParse'
-import { newAuthorFence, authorBlock } from '../promptGuard'
+import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { parsePlainObject, asText } from '@/lib/aiParse'
+import { newAuthorFence, authorBlock } from '@/lib/promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件（经 script/world），会形成循环依赖
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
-import type { SearchSettings, webSearch } from '../webSearch'
-import { prepareDraftMaterial, type DraftSource } from '../draftMaterial'
-import { structFieldLines } from './cardFields'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
+import type { SearchSettings, webSearch } from '@/lib/webSearch'
+import { prepareDraftMaterial, type DraftSource } from '@/lib/draftMaterial'
+import { structFieldLines } from '@/lib/tavern/cardFields'
 
 // ==================== 角色卡模板 ====================
 
@@ -196,7 +196,7 @@ export async function draftCard(a: CardDraftArgs): Promise<{ fields: CardDraft; 
 }
 
 // 素材管线住在项目级（`../draftMaterial.ts`）—— 这里再导出一次，让原有 import 路径继续可用
-export { prepareDraftMaterial } from '../draftMaterial'
-export type { DraftSource, DraftMaterial } from '../draftMaterial'
+export { prepareDraftMaterial } from '@/lib/draftMaterial'
+export type { DraftSource, DraftMaterial } from '@/lib/draftMaterial'
 
 export { isCancelled }

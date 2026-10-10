@@ -20,41 +20,41 @@
  * 🔴 会话引用剧本时存的是**快照**：后来改剧本，历史会话不会跟着变。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSaveHotkey } from '../lib/useSaveHotkey'
-import HelpPopover from './HelpPopover'
-import { showToast, confirmDialog } from './dialogs'
-import { Button } from './Button'
-import AutoTextarea from './AutoTextarea'
-import NumberField from './NumberField'
-import { UNSAVED_CHANGES_HINT } from '../lib/constants'
-import { uid } from '../lib/id'
-import TavernScriptFields from './TavernScriptFields'
-import TavernInterviewDialog from './TavernInterviewDialog'
-import TavernScriptImportDialog from './TavernScriptImportDialog'
-import TavernScriptTree from './TavernScriptTree'
-import { serializeStoryImport } from '../lib/tavern/storyImport'
-import { downloadText } from '../lib/zip'
-import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from './DraftBits'
-import { interviewToScript, interviewToStory } from '../lib/tavern/interview'
+import { useSaveHotkey } from '@/lib/useSaveHotkey'
+import HelpPopover from '@/components/HelpPopover'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import AutoTextarea from '@/components/AutoTextarea'
+import NumberField from '@/components/NumberField'
+import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
+import { uid } from '@/lib/id'
+import TavernScriptFields from '@/components/TavernScriptFields'
+import TavernInterviewDialog from '@/components/TavernInterviewDialog'
+import TavernScriptImportDialog from '@/components/TavernScriptImportDialog'
+import TavernScriptTree from '@/components/TavernScriptTree'
+import { serializeStoryImport } from '@/lib/tavern/storyImport'
+import { downloadText } from '@/lib/zip'
+import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/DraftBits'
+import { interviewToScript, interviewToStory } from '@/lib/tavern/interview'
 import {
   listScripts, getScript, saveScript, createScript, deleteScript, draftScript,
   scriptToText, snapshotOf, mergeScriptDraft, isEmptyScriptFields, firstLine, scriptDisplayName,
   flattenScriptFields,
   SCRIPT_MAX_CHARS, EMPTY_SCRIPT_FIELDS, isEmptySnapshot, type ScriptDraftFields,
-} from '../lib/tavern/script'
+} from '@/lib/tavern/script'
 import {
   listStories, getStory, saveStory, createStory, deleteStory, storyDisplayName,
   draftStory, flattenStoryFields, mergeStoryDraft, isEmptyStoryFields,
   EMPTY_STORY_FIELDS, STORY_NAME_MAX, buildStoryWorldBook,
   type StoryDraftFields,
-} from '../lib/tavern/story'
-import { listCharsByStory } from '../lib/tavern/store'
-import { emptyWorldEntry, entryStateOf } from '../lib/tavern/worldBook'
-import EntryStatePicker from './EntryStatePicker'
-import { useTavernQuota } from './useTavernQuota'
-import { fmtWindow } from '../lib/tavern/quotas'
-import type { DraftSource } from '../lib/tavern/draft'
-import type { TavernScript, TavernScriptIndexItem, TavernStory, TavernStoryIndexItem } from '../lib/tavern/types'
+} from '@/lib/tavern/story'
+import { listCharsByStory } from '@/lib/tavern/store'
+import { emptyWorldEntry, entryStateOf } from '@/lib/tavern/worldBook'
+import EntryStatePicker from '@/components/EntryStatePicker'
+import { useTavernQuota } from '@/components/useTavernQuota'
+import { fmtWindow } from '@/lib/tavern/quotas'
+import type { DraftSource } from '@/lib/tavern/draft'
+import type { TavernScript, TavernScriptIndexItem, TavernStory, TavernStoryIndexItem } from '@/lib/tavern/types'
 
 /** 中间面板当前在编辑谁：故事 / 剧本 / 谁都没选 */
 type EditingKind = 'story' | 'script' | null

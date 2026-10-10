@@ -1,6 +1,6 @@
 // ============ 审计通用类型与工具（伏笔/连续性/错别字/文风 四引擎共用） ============
-import type { CalendarRule } from './types'
-import { DEFAULT_CALENDAR_RULE } from './types'
+import type { CalendarRule } from '@/lib/types'
+import { DEFAULT_CALENDAR_RULE } from '@/lib/types'
 
 export type IssueSeverity = 'error' | 'warn' | 'info'
 

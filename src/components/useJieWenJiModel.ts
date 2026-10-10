@@ -17,22 +17,22 @@
  *       由 effect 把任务状态**按块**同步进来；同步按「任务引用是否变化」判定，避免 A 块进度
  *       更新时把 B 块 `replaceOne` 的重锚定结果覆盖掉。
  */
-import { writerBudgetFor } from '../lib/aiWriterBudget'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
 import { useEffect, useRef, useState } from 'react'
-import { buildProjectContext, getContinuationSources } from '../lib/aiContext'
-import { checkContinuationFocus, formatGap } from '../lib/evidenceGate'
-import { styleContextForAI } from '../lib/styleAudit'
-import { activeFingerprintNote } from '../lib/styleFingerprint'
-import { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '../lib/aiTasks'
-import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '../lib/settingLedger'
-import { collectPostProcess, applyPostProcess, type PostProcessItem } from '../lib/chapterPostProcess'
-import { readImpact, clearImpact, type ImpactMark } from '../lib/futureImpact'
-import { useAIReady } from '../lib/useAIReady'
-import { LS_SPRITE_ENABLED } from '../lib/constants'
-import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '../lib/aiTaskCenter'
-import { showToast } from './dialogs'
-import type { Props } from './jieWenJiParts'
-import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof, CONTINUE_PICKS } from './jieWenJiParts'
+import { buildProjectContext, getContinuationSources } from '@/lib/aiContext'
+import { checkContinuationFocus, formatGap } from '@/lib/evidenceGate'
+import { styleContextForAI } from '@/lib/styleAudit'
+import { activeFingerprintNote } from '@/lib/styleFingerprint'
+import { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '@/lib/aiTasks'
+import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '@/lib/settingLedger'
+import { collectPostProcess, applyPostProcess, type PostProcessItem } from '@/lib/chapterPostProcess'
+import { readImpact, clearImpact, type ImpactMark } from '@/lib/futureImpact'
+import { useAIReady } from '@/lib/useAIReady'
+import { LS_SPRITE_ENABLED } from '@/lib/constants'
+import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '@/lib/aiTaskCenter'
+import { showToast } from '@/components/dialogs'
+import type { Props } from '@/components/jieWenJiParts'
+import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof, CONTINUE_PICKS } from '@/components/jieWenJiParts'
 
 /** 校对返回（文字层 / 逻辑层同形状）：逐条问题 + 已扫 / 跳过数 */
 type ProofreadOutcome = { issues: ProofreadIssue[]; scanned: number; skipped: number }

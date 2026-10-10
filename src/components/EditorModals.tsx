@@ -1,20 +1,20 @@
-import { foldVh } from '../lib/theme'
-import { writerBudgetFor } from '../lib/aiWriterBudget'
+import { foldVh } from '@/lib/theme'
+import { writerBudgetFor } from '@/lib/aiWriterBudget'
 import { useEffect, useState, useMemo, useRef } from 'react'
-import * as db from '../lib/db'
-import { countWords } from '../lib/textStats'
-import type { Chapter, Volume } from '../lib/types'
-import { scanText, replaceHits } from '../lib/sensitiveWords'
-import { contextSnippet } from '../lib/contextSnippet'
-import { diffLines, diffStats } from '../lib/textDiff'
+import * as db from '@/lib/db'
+import { countWords } from '@/lib/textStats'
+import type { Chapter, Volume } from '@/lib/types'
+import { scanText, replaceHits } from '@/lib/sensitiveWords'
+import { contextSnippet } from '@/lib/contextSnippet'
+import { diffLines, diffStats } from '@/lib/textDiff'
 import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
-import { useAIReady } from '../lib/useAIReady'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import { aiProofreadText, aiProofreadLogic, type ProofreadIssue, type ProofreadResult } from '../lib/aiTasks'
-import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '../lib/aiTaskCenter'
-import { buildProjectContext } from '../lib/aiContext'
-import { confirmDialog } from './dialogs'
-import { Modal as BaseModal } from './Modal'
+import { useAIReady } from '@/lib/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import { aiProofreadText, aiProofreadLogic, type ProofreadIssue, type ProofreadResult } from '@/lib/aiTasks'
+import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '@/lib/aiTaskCenter'
+import { buildProjectContext } from '@/lib/aiContext'
+import { confirmDialog } from '@/components/dialogs'
+import { Modal as BaseModal } from '@/components/Modal'
 
 // ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
 export function ToolModal({ title, icon, onClose, children, wide, help }: {
@@ -77,12 +77,12 @@ export function SensitiveCheck({ content, onApply, onClose }: {
 }
 
 // ============ 校对（本章）：本地错别字词库 + AI 深度校对 ============
-import { scanTypos, replaceTypos } from '../lib/typoWords'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import { Button } from './Button'
-import { Z } from '../lib/zLayer'
-import NumberField from './NumberField'
+import { scanTypos, replaceTypos } from '@/lib/typoWords'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { Button } from '@/components/Button'
+import { Z } from '@/lib/zLayer'
+import NumberField from '@/components/NumberField'
 
 /** 各类型对应的色标签 */
 const PTF_BADGE: Record<string, string> = {

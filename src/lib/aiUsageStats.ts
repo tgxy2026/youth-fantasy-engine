@@ -5,7 +5,7 @@
  * 🔴 数据来源 ＝ 运行账本 `AiRun.calls`（与 §14 拒答感知**共用同一份调用结果账本**，一处记录多处消费）。
  * 「按项目」由调用方传入某项目的 runs 实现（`db.listProjectAiRuns`）；本函数只管「按日 / 按模型」聚合。
  */
-import type { AiRun } from './aiRunTypes'
+import type { AiRun } from '@/lib/aiRunTypes'
 
 export interface UsageModelRow {
   model: string

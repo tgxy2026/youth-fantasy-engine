@@ -2,8 +2,8 @@
  * 地图编辑的几何与纯工具（2026-09-19 从 GeoMapEditor.tsx 抽出，D4 组件拆分收尾）。
  * 纯搬家：语句一字未改，只给原本私有的工具与类型补了 export。无 React 依赖，可单独测。
  */
-import type { CardRecord, TableRow } from '../lib/types'
-import { MAP_LAYER_COLORS } from '../lib/palette'
+import type { CardRecord, TableRow } from '@/lib/types'
+import { MAP_LAYER_COLORS } from '@/lib/palette'
 
 /** 内置类别：必须与 schema.ts 中 geography 表「类别」列的内置选项保持一致 */
 export const BUILTIN_CATEGORIES = ['大陆', '区域', '国家', '城市', '秘境', '禁地', '遗迹', '山脉']

@@ -1,4 +1,4 @@
-import { Z } from '../lib/zLayer'
+import { Z } from '@/lib/zLayer'
 import type { ReactNode } from 'react'
 
 interface Props {

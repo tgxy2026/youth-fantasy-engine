@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { FileUp } from 'lucide-react'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import * as db from '../lib/db'
-import { isExportOverdue, isDismissExpired, markDismissed, shouldRemind, REMIND_AFTER_DAYS } from '../lib/backupReminder'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import * as db from '@/lib/db'
+import { isExportOverdue, isDismissExpired, markDismissed, shouldRemind, REMIND_AFTER_DAYS } from '@/lib/backupReminder'
 
 // #031 导出备份提醒：定期提醒用户把数据导出成外部文件，别让稿子只剩「同一个容器里」的那一份。
 //

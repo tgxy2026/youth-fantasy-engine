@@ -13,11 +13,11 @@
  * 🔴 硬约束：**至少要留一个会说话的角色**。全静音会出现「AI 无角色可演」的怪状态 ——
  *   那不是用户想要的，只是他点顺手了。这里直接拦住并说明，不靠用户自己发现。
  */
-import { foldVh } from '../lib/theme'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { showToast } from './dialogs'
-import { TALK_BANDS, talkBandOf, DEFAULT_TALKATIVITY } from '../lib/tavern/types'
+import { foldVh } from '@/lib/theme'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { showToast } from '@/components/dialogs'
+import { TALK_BANDS, talkBandOf, DEFAULT_TALKATIVITY } from '@/lib/tavern/types'
 
 export type DirectorRow = {
   id: string

@@ -25,17 +25,17 @@
  */
 import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
-import { showToast } from './dialogs'
-import { type QuickAction } from './TavernQuickBar'
-import * as store from '../lib/tavern/store'
-import { runFreeTurn, runFreeAssist, applyPostRulesForPreview, varsEnabledKeys } from '../lib/tavern/engine'
-import { isCancelled } from '../lib/ai'
-import { refreshSessionVars } from '../lib/tavern/varsRefresh'
-import { primaryAiCharId } from '../lib/tavern/primaryChar'
-import { DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '../lib/tavern/settings'
-import type { PostApplied } from '../lib/tavern/postRules'
-import type { FreeCharacter, FreeSession, CharVars } from '../lib/tavern/types'
-import { useTavernReady } from './useTavernReady'
+import { showToast } from '@/components/dialogs'
+import { type QuickAction } from '@/components/TavernQuickBar'
+import * as store from '@/lib/tavern/store'
+import { runFreeTurn, runFreeAssist, applyPostRulesForPreview, varsEnabledKeys } from '@/lib/tavern/engine'
+import { isCancelled } from '@/lib/ai'
+import { refreshSessionVars } from '@/lib/tavern/varsRefresh'
+import { primaryAiCharId } from '@/lib/tavern/primaryChar'
+import { DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '@/lib/tavern/settings'
+import type { PostApplied } from '@/lib/tavern/postRules'
+import type { FreeCharacter, FreeSession, CharVars } from '@/lib/tavern/types'
+import { useTavernReady } from '@/components/useTavernReady'
 
 /** 入参一律来自 `useTavernFreeModel` 的同一次渲染作用域（状态值 + setter / useCallback） */
 type FreeTurnDeps = {

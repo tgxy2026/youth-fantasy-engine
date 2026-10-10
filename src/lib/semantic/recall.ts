@@ -12,10 +12,10 @@
 
 // 🔴 分词取 `../tokenize`（纯函数）而**不是** `../search` —— 后者 import db，
 //    而知识库（`lib/knowledgeBase.ts`）要复用本模块且必须对 db 零依赖，否则成环。
-import { tokenize } from '../tokenize'
-import { fromVectorBuffer } from './chunk'
-import { embedOne, type EmbedConfig } from './embed'
-import { loadVectors, vectorIndex, type VecIndex, type VecKind, type VecRow } from './store'
+import { tokenize } from '@/lib/tokenize'
+import { fromVectorBuffer } from '@/lib/semantic/chunk'
+import { embedOne, type EmbedConfig } from '@/lib/semantic/embed'
+import { loadVectors, vectorIndex, type VecIndex, type VecKind, type VecRow } from '@/lib/semantic/store'
 
 export interface RecallHit {
   kind: VecKind

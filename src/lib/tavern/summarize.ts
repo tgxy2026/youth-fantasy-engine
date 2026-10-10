@@ -16,14 +16,14 @@
  */
 import {
   chat, JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage,
-} from '../ai'
-import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from './memory'
-import { formatDate } from '../date'
-import { authorBlock, newAuthorFence } from '../promptGuard'
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
-import { FACTS_MAX_LINES, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from './types'
-import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from './vars'
+} from '@/lib/ai'
+import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from '@/lib/tavern/memory'
+import { formatDate } from '@/lib/date'
+import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
+import { FACTS_MAX_LINES, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from '@/lib/tavern/types'
+import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from '@/lib/tavern/vars'
 
 /** 六栏档案的存在意义、各栏行为、以及两条不容违反的规矩（对外导出便于测试与 UI 展示） */
 /** 关键事实最多保留的行数（超了要归并，不是丢弃新事 —— 见提示词里的精简纪律） */

@@ -6,12 +6,12 @@
  * - 设定集导出（汇总全部世界观 / 人物 / 设定表为一份 Markdown）
  * - EPUB / DOCX（依赖零依赖的极简 ZIP 打包器，见 zip.ts）
  */
-import type { Volume, Chapter } from './types'
-import * as db from './db'
-import { TABS } from './schema'
-import { isWorldSetTab, isParallelSetTab, splitActive } from './worldSets'
-import { ZipBuilder, downloadBlob } from './zip'
-import { chapterSeqMap } from './chapterSeq'
+import type { Volume, Chapter } from '@/lib/types'
+import * as db from '@/lib/db'
+import { TABS } from '@/lib/schema'
+import { isWorldSetTab, isParallelSetTab, splitActive } from '@/lib/worldSets'
+import { ZipBuilder, downloadBlob } from '@/lib/zip'
+import { chapterSeqMap } from '@/lib/chapterSeq'
 
 /** 文本下载（带 UTF-8 BOM，Windows 记事本/Excel 打开不乱码）；仅本模块内部使用 */
 function downloadFile(filename: string, content: string) {

@@ -8,10 +8,10 @@
  * 🔴 口径：**项目级统一**（见 `types.ts` 的 CalendarRule 注释）。
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { CalendarRule } from './types'
+import type { CalendarRule } from '@/lib/types'
 import {
   DEFAULT_CALENDAR_RULE, clampCalendarRule, loadCalendarRule, saveCalendarRule as persist,
-} from './storyDate'
+} from '@/lib/storyDate'
 
 export function useCalendarRule(): {
   rule: CalendarRule

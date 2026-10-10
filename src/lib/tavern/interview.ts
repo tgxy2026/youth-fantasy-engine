@@ -11,9 +11,9 @@
  * 🔴 别把机制再抄一遍来这里：2026-09-15 起「对话引导」要在全局所有 AI 补全入口复用，
  *    两份实现必然漂移（一边改了白名单另一边没改，表现是「界面显示记下了、草稿里却没有」）。
  */
-import { chat, isCancelled, type ChatMessage } from '../ai'
-import { resolveTavernProvider, type ChatFn } from './provider'
-import { getTavernSettings, timeoutMsOf } from './settings'
+import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import {
   emptyInterview as emptyInterviewCore,
   interviewProgress as interviewProgressCore,
@@ -24,10 +24,10 @@ import {
   filledToText as filledToTextCore,
   type InterviewSpec, type InterviewState as CoreState, type InterviewTopic,
   type InterviewTurn, type InterviewReply,
-} from '../interview'
-import { EMPTY_CARD_DRAFT, type CardDraft } from './draft'
-import { EMPTY_SCRIPT_FIELDS, type ScriptDraftFields } from './script'
-import { EMPTY_STORY_FIELDS, type StoryDraftFields } from './story'
+} from '@/lib/interview'
+import { EMPTY_CARD_DRAFT, type CardDraft } from '@/lib/tavern/draft'
+import { EMPTY_SCRIPT_FIELDS, type ScriptDraftFields } from '@/lib/tavern/script'
+import { EMPTY_STORY_FIELDS, type StoryDraftFields } from '@/lib/tavern/story'
 
 export type { InterviewTopic, InterviewTurn, InterviewReply }
 

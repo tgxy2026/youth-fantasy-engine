@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, FolderOpen, RefreshCw, Unlock } from 'lucide-react'
-import { Button } from './Button'
-import { confirmDialog } from './dialogs'
+import { Button } from '@/components/Button'
+import { confirmDialog } from '@/components/dialogs'
 import {
   DESKTOP,
   getDesktopState,
   subscribeDesktop,
   unlockDesktopWrite,
   revealDesktopDataFile,
-} from '../lib/desktop'
-import { Z } from '../lib/zLayer'
+} from '@/lib/desktop'
+import { Z } from '@/lib/zLayer'
 
 /**
  * 「数据文件写盘已锁定」的常驻告警条（只有桌面版会出现）。

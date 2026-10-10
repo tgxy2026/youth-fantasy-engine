@@ -9,21 +9,21 @@
 //   3. 任一存储读取失败都不能拖垮整体——AI 只是锦上添花，拿不到资料就少带一段，
 //      绝不能报错阻断作者。
 
-import * as db from './db'
-import { tabVisible, type VisCtx, TABS } from './schema'
-import { readAliases } from './aliases'
-import { splitNames } from './audit'
-import { clipText } from './textClip'
-import { todayKey } from './date'
-import { sortChapters, flattenChapters, chapterSeqMap } from './chapterSeq'
-import { pickContinuationSources, type ContinuationPickOpts } from './continuationPick'
-import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from './worldSets'
-import { getActivePack, normalizeGenrePack, subItemLabel } from './schemaTemplates'
-import { buildSemanticRecallBlock } from './semantic/inject'
-import { buildKbBlock } from './kbInject'
-import { planFor } from './contextLayers'
-import type { Chapter, TabDef, Volume } from './types'
-import type { AiContextSnapshot } from './aiRunTypes'
+import * as db from '@/lib/db'
+import { tabVisible, type VisCtx, TABS } from '@/lib/schema'
+import { readAliases } from '@/lib/aliases'
+import { splitNames } from '@/lib/audit'
+import { clipText } from '@/lib/textClip'
+import { todayKey } from '@/lib/date'
+import { sortChapters, flattenChapters, chapterSeqMap } from '@/lib/chapterSeq'
+import { pickContinuationSources, type ContinuationPickOpts } from '@/lib/continuationPick'
+import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from '@/lib/worldSets'
+import { getActivePack, normalizeGenrePack, subItemLabel } from '@/lib/schemaTemplates/index'
+import { buildSemanticRecallBlock } from '@/lib/semantic/inject'
+import { buildKbBlock } from '@/lib/kbInject'
+import { planFor } from '@/lib/contextLayers'
+import type { Chapter, TabDef, Volume } from '@/lib/types'
+import type { AiContextSnapshot } from '@/lib/aiRunTypes'
 
 export interface ProjectContextOptions {
   /**

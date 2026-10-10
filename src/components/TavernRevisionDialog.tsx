@@ -11,11 +11,11 @@
  * 作者裁决时真正需要的是"凭什么这么说"。没有原句，他只能凭记忆猜 —— 那就等于让他去读一遍对话，
  * 这个功能也就白做了。
  */
-import { foldVh } from '../lib/theme'
-import { Modal } from './Modal'
-import { Button } from './Button'
-import { LoadingState } from './LoadingState'
-import type { CardRevision } from '../lib/tavern/revise'
+import { foldVh } from '@/lib/theme'
+import { Modal } from '@/components/Modal'
+import { Button } from '@/components/Button'
+import { LoadingState } from '@/components/LoadingState'
+import type { CardRevision } from '@/lib/tavern/revise'
 
 export default function TavernRevisionDialog({
   open, loading, applying, proposals, picked, error, onToggle, onToggleAll, onApply, onRetry, onClose,

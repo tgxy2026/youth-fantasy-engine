@@ -8,13 +8,13 @@ import {
   renameBuiltinItem,
   restoreBuiltinItem,
   type CustomOptionPayload,
-} from '../lib/db'
+} from '@/lib/db'
 import { Plus, Check, ChevronDown, ChevronRight, Pencil, Trash2, EyeOff, RotateCcw } from 'lucide-react'
-import { confirmDialog, showToast } from './dialogs'
-import { Button } from './Button'
-import { EmptyState } from './EmptyState'
-import { Z } from '../lib/zLayer'
-import { computeDropdownPos, type DropdownPos } from '../lib/dropdownPos'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { Button } from '@/components/Button'
+import { EmptyState } from '@/components/EmptyState'
+import { Z } from '@/lib/zLayer'
+import { computeDropdownPos, type DropdownPos } from '@/lib/dropdownPos'
 
 
 /** 自定义下拉选项变更广播：任意下拉增删改选项后派发，同列其它下拉与地图图例据此刷新 */
@@ -23,7 +23,7 @@ export const CUSTOM_OPTIONS_EVENT = 'yfe:custom-options'
 // 「有效选项」的解析规则已下沉到 lib/customOptions.ts —— 因为「AI 整理」也要用同一口径喂候选值，
 // 而 lib 不得反向依赖 components（分层红线，见 tests/importCycles.test.ts）。
 // 这里再导出，保持既有调用方（TableSheet / GeoMapEditor）的 import 路径不变。
-export { resolveOptions, type ResolvedOption } from '../lib/customOptions'
+export { resolveOptions, type ResolvedOption } from '@/lib/customOptions'
 
 interface Props {
   tabId: string

@@ -1,16 +1,16 @@
 // ============ 示范项目种子数据（陈渊 · 苍澜大陆 · 青岚宗，来自 Excel 工具箱 3.1 示例宇宙） ============
-import * as db from './db'
-import type { Volume, Chapter, ChapterStatus, TableRow, CardRecord } from './types'
-import { TABS } from './schema'
-import { uid } from './id'
-import { countWords } from './textStats'
-import { todayKey } from './date'
+import * as db from '@/lib/db'
+import type { Volume, Chapter, ChapterStatus, TableRow, CardRecord } from '@/lib/types'
+import { TABS } from '@/lib/schema'
+import { uid } from '@/lib/id'
+import { countWords } from '@/lib/textStats'
+import { todayKey } from '@/lib/date'
 // 制度四页签 / 地图 / 情节推演画布的**纯数据**（2.8.1 迁出，见文件头注释）——
 // 🔴 `src/data/` 不许运行时 import，故这几块只导出字面量，id/order 在本文件生成。
 import {
   INSTITUTION_SEED, GEO_MAP_SEED, GEO_CELL_SEED,
   CANVAS_CARD_SEED, CANVAS_CONN_SEED,
-} from '../data/seedInstitutions'
+} from '@/data/seedInstitutions'
 
 // 🔴 2.7.3：示范正文 21 章（`../data/seedContent`，7664 行）**改成动态 import**（见 doCreateDemoProject 内）。
 //    原先是静态 import ⇒ 整部小说被打进**主 bundle**：社区反馈「点进 asar 想手动魔改，
@@ -70,7 +70,7 @@ export function createDemoProject(): Promise<string> {
 
 async function doCreateDemoProject(): Promise<string> {
   // 只在**真的要建示范项目**时才把正文拉进来（7664 行 · 独立 chunk，不占主包）
-  const { CH1, CH2, CH3, CH4, CH5, CH6, CH7, CH8, CH9, CH10, CH11, CH12, CH13, CH14, CH15, CH16, CH17, CH18, CH19, CH20, CH21 } = await import('../data/seedContent')
+  const { CH1, CH2, CH3, CH4, CH5, CH6, CH7, CH8, CH9, CH10, CH11, CH12, CH13, CH14, CH15, CH16, CH17, CH18, CH19, CH20, CH21 } = await import('@/data/seedContent')
   // 幂等重建：先按名删除已存在的同名示范项目，保证「创建示范项目」按钮每次都得到最新满血数据，不再叠加副本
   const old = (await db.getAllProjects()).find(x => x.name === '吞天神脉（示范）')
   if (old) await db.deleteProject(old.id)
@@ -1518,7 +1518,7 @@ async function doCreateDemoProject(): Promise<string> {
   //    走 world.ts 的 saveWorldSetting 而不是裸写 key：单一真源在那边（key 改动此处不会漂移）。
   //    动态 import 同样是为了不把酒馆引擎拖进主包。
   try {
-    const { saveWorldSetting } = await import('./tavern/world')
+    const { saveWorldSetting } = await import('@/lib/tavern/world')
     await saveWorldSetting({
       brief: '苍澜大陆 · 灵历3024-3025年。神族牧苍澜三千年，人族以玄脉为田；一个被判废脉的少年，是这场收割里唯一的变数。基调：低魔写实感的东方玄幻——藏拙、克制、以吞为道，爽而不飘。',
       sections: [
@@ -1557,7 +1557,7 @@ async function doCreateDemoProject(): Promise<string> {
   //     开场消息按 prompt.ts 的 buildOpeningMessage 手写等价格式（不引 prompt.ts，避免主包膨胀）：
   //     「地点：X · 时间：Y · 在场：A、B」+ 空行 + 场景描述 + 空行 + 第一句。
   try {
-    const store = await import('./tavern/store')
+    const store = await import('@/lib/tavern/store')
     await store.createSession({
       title: '万剑冢外·碑立之后（卷二末续演）',
       mode: 'immersive',

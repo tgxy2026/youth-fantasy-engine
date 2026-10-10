@@ -1,11 +1,11 @@
 import { useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import { Search } from 'lucide-react'
-import { Button } from './Button'
-import SelectRow from './SelectRow'
-import Avatar from './Avatar'
-import { useMasterQuery } from './MasterDetail'
-import { cardStoryId, type TavernCharIndexItem, type TavernStoryIndexItem } from '../lib/tavern/types'
-import { storyDisplayName } from '../lib/tavern/story'
+import { Button } from '@/components/Button'
+import SelectRow from '@/components/SelectRow'
+import Avatar from '@/components/Avatar'
+import { useMasterQuery } from '@/components/MasterDetail'
+import { cardStoryId, type TavernCharIndexItem, type TavernStoryIndexItem } from '@/lib/tavern/types'
+import { storyDisplayName } from '@/lib/tavern/story'
 
 /**
  * 角色卡片页的**左栏**（2026-09-19 从 TavernCard.tsx 抽出，原 741~938 行）。

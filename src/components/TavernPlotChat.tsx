@@ -10,17 +10,17 @@
  *   拆分轮宁可多传 4 个 props，也不动执行时序。
  */
 import { useRef, type RefObject } from 'react'
-import { Z } from '../lib/zLayer'
-import { Button } from './Button'
-import Avatar from './Avatar'
-import TavernMessageBody from './TavernMessageBody'
-import TavernQuickBar, { type QuickAction } from './TavernQuickBar'
-import TavernDirectorNoteBar from './TavernDirectorNoteBar'
-import { renderTavernMessage } from './TavernMessage'
-import AutoTextarea from './AutoTextarea'
-import { MEMORY_SOFT_LIMIT, type TavernSession, type TavernDirectorNote } from '../lib/tavern/types'
-import type { PostApplied } from '../lib/tavern/postRules'
-import type { splitCast } from '../lib/tavern/engine'
+import { Z } from '@/lib/zLayer'
+import { Button } from '@/components/Button'
+import Avatar from '@/components/Avatar'
+import TavernMessageBody from '@/components/TavernMessageBody'
+import TavernQuickBar, { type QuickAction } from '@/components/TavernQuickBar'
+import TavernDirectorNoteBar from '@/components/TavernDirectorNoteBar'
+import { renderTavernMessage } from '@/components/TavernMessage'
+import AutoTextarea from '@/components/AutoTextarea'
+import { MEMORY_SOFT_LIMIT, type TavernSession, type TavernDirectorNote } from '@/lib/tavern/types'
+import type { PostApplied } from '@/lib/tavern/postRules'
+import type { splitCast } from '@/lib/tavern/engine'
 
 // ⚠️ 对话区的 JSX 是从原文件**逐行搬**过来的，缩进保留原样（12 空格），别重排。
 

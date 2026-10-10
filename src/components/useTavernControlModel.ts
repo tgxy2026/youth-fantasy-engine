@@ -10,18 +10,18 @@
  *    这里改成 `return null`（hook 在 .ts 里写不了 JSX）；主组件接 `if (!m) return <LoadingState />`。
  *    所有 hooks 仍在该行之前，调用顺序与拆分前完全一致。
  */
-import * as presets from '../lib/tavern/presets'
+import * as presets from '@/lib/tavern/presets'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadProviders, saveProviders, loadActiveId, AIProvider } from '../lib/ai'
-import { adviseCapacity, checkContextWindow, modelFingerprintOf } from '../lib/modelCapacity'
-import { showToast, confirmDialog } from './dialogs'
-import { TavernPreset } from '../lib/tavern/presets'
-import { dynamicGuide } from '../lib/tavern/paramGuide'
-import { VarKey } from '../lib/tavern/types'
-import { DEFAULT_POST_RULES, previewPostRules, PostRule } from '../lib/tavern/postRules'
-import { getTavernSettings, saveTavernSettings, resetTavernSettings, DEFAULT_TAVERN_SETTINGS, TavernSettings, TavernProfile, withActiveProfile, addProfileTo, removeProfileFrom, selectProfileIn, activeProfileOf } from '../lib/tavern/settings'
-import { COL_GAP, PROTO_MIN_HEIGHT } from './tavernControlParts'
-import { DYNAMIC_QUOTA_PCT } from '../lib/tavern/quotas'
+import { loadProviders, saveProviders, loadActiveId, AIProvider } from '@/lib/ai'
+import { adviseCapacity, checkContextWindow, modelFingerprintOf } from '@/lib/modelCapacity'
+import { showToast, confirmDialog } from '@/components/dialogs'
+import { TavernPreset } from '@/lib/tavern/presets'
+import { dynamicGuide } from '@/lib/tavern/paramGuide'
+import { VarKey } from '@/lib/tavern/types'
+import { DEFAULT_POST_RULES, previewPostRules, PostRule } from '@/lib/tavern/postRules'
+import { getTavernSettings, saveTavernSettings, resetTavernSettings, DEFAULT_TAVERN_SETTINGS, TavernSettings, TavernProfile, withActiveProfile, addProfileTo, removeProfileFrom, selectProfileIn, activeProfileOf } from '@/lib/tavern/settings'
+import { COL_GAP, PROTO_MIN_HEIGHT } from '@/components/tavernControlParts'
+import { DYNAMIC_QUOTA_PCT } from '@/lib/tavern/quotas'
 
 export function useTavernControlModel() {
   const [s, setS] = useState<TavernSettings | null>(null)

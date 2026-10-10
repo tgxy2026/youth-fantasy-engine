@@ -15,7 +15,7 @@
  * 按"越聊越聚焦"排：先题材基调（定调性）→ 主角（定人）→ 核心冲突（定戏）→ 世界与风格（定壳）。
  * 反过来的话，第一轮就问世界观，作者会被问懵 —— 他还不知道自己想写什么类型的故事。
  */
-import { filledToText, type InterviewSpec } from './interview'
+import { filledToText, type InterviewSpec } from '@/lib/interview'
 
 /** 八个栏位 —— 既是要问出来的东西，也是模型的字段白名单（写别的会被丢掉） */
 export const CREATIVE_SEED_SPEC: InterviewSpec = {

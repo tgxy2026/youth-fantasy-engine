@@ -5,12 +5,12 @@
  * 以及供交互式补全（对话引导）用的结构化轮次（`aiChatJson`）。
  */
 
-import * as db from '../db'
-import { parsePlainObject } from '../aiParse'
-import { chat } from './chat'
-import { requireProviderFor } from '../aiRouting'
-import { composeSystemPrompt, CHAT_TIMEOUT_MS, type ChatMessage } from './core'
-import { FILL_CONTEXT_SYS, type FillContext } from './prompts'
+import * as db from '@/lib/db'
+import { parsePlainObject } from '@/lib/aiParse'
+import { chat } from '@/lib/aiCore/chat'
+import { requireProviderFor } from '@/lib/aiRouting'
+import { composeSystemPrompt, CHAT_TIMEOUT_MS, type ChatMessage } from '@/lib/aiCore/core'
+import { FILL_CONTEXT_SYS, type FillContext } from '@/lib/aiCore/prompts'
 
 // ---- 设定模板 AI 补全 ----
 

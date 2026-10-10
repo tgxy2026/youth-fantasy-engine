@@ -16,11 +16,11 @@
  * ⚠️ props 名与原局部变量**同名** ⇒ 内部 JSX 逐字未改（缩进保留原样，16 空格）。
  */
 import { type Dispatch, type SetStateAction } from 'react'
-import { Button } from './Button'
-import AutoTextarea from './AutoTextarea'
-import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '../lib/tavern/memory'
-import { type FreeMemory } from '../lib/tavern/types'
-import { UNSAVED_CHANGES_HINT } from '../lib/constants'
+import { Button } from '@/components/Button'
+import AutoTextarea from '@/components/AutoTextarea'
+import { MEMORY_SECTIONS, memoryChars, isMemoryEmpty } from '@/lib/tavern/memory'
+import { type FreeMemory } from '@/lib/tavern/types'
+import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 
 interface Props {
   /** 六栏记忆（没有记忆时为 null —— 界面自己会走「还没有记忆」分支） */

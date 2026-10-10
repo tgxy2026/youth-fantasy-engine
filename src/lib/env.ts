@@ -11,7 +11,7 @@
 //    `!PORTABLE && !DESKTOP` —— dev 在纯浏览器里跑时两者同为 false，会被误判成
 //    网页体验版，连带三处受害：① 邀请码门禁拦住开发入口；② AI 请求被改写到 dev 上
 //    不存在的 /api/ai；③ 误触发云端同步去连服务器。**平台判定永远靠显式标志，不能靠取反猜。**
-import { DESKTOP } from './desktop'
+import { DESKTOP } from '@/lib/desktop'
 
 declare const __APP_VERSION__: string | undefined
 

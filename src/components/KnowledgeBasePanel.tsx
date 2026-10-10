@@ -14,20 +14,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle, Database, FileText, Loader2, Plus, Search, Trash2, FileDown, X,
 } from 'lucide-react'
-import { Button } from './Button'
-import HelpPopover from './HelpPopover'
-import AIDataSourceNote from './AIDataSourceNote'
-import { confirmDialog, showToast } from './dialogs'
-import { useTaskRunner } from '../lib/aiTaskCenter'
-import * as db from '../lib/db'
-import { readDocxText, isDocxFileName, isLegacyDocFileName } from '../lib/docxImport'
-import { embeddingStatus, resolveEmbedConfig } from '../lib/semantic/settings'
-import type { RecallHit } from '../lib/semantic/recall'
+import { Button } from '@/components/Button'
+import HelpPopover from '@/components/HelpPopover'
+import AIDataSourceNote from '@/components/AIDataSourceNote'
+import { confirmDialog, showToast } from '@/components/dialogs'
+import { useTaskRunner } from '@/lib/aiTaskCenter'
+import * as db from '@/lib/db'
+import { readDocxText, isDocxFileName, isLegacyDocFileName } from '@/lib/docxImport'
+import { embeddingStatus, resolveEmbedConfig } from '@/lib/semantic/settings'
+import type { RecallHit } from '@/lib/semantic/recall'
 import {
   KB_MAX_CHARS, KB_TOP_K,
   importDoc, listDocs, recallKnowledge, reindexAll, reindexDoc, removeDoc, setDocEnabled,
   type KbDoc, type KbSourceType, type ReindexProgress,
-} from '../lib/knowledgeBase'
+} from '@/lib/knowledgeBase'
 
 interface ReindexResult {
   ok: boolean

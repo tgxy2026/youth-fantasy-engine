@@ -3,20 +3,20 @@
  *
  * 🔴 纯搬家：JSX 一字未改；状态全部来自 useCreativeWritingModel（组件只收 m）。
  */
-import AutoTextarea from './AutoTextarea'
-import NumberField from './NumberField'
+import AutoTextarea from '@/components/AutoTextarea'
+import NumberField from '@/components/NumberField'
 import { Eraser, Loader2, Play, Save, Sparkles, Square, Wand2 } from 'lucide-react'
-import { Button } from './Button'
-import { AI_DISABLED_HINT } from '../lib/aiScope'
-import InspirationPicker from './InspirationPicker'
-import { StyleProfilePicker } from './StyleProfilePicker'
-import { clearCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun, updateInputs } from '../lib/creativeSession'
-import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '../lib/aiTasks'
-import { DEAI_TEMPLATES } from '../lib/autoContinue'
-import { MAX_CHAPTERS } from '../lib/writingPace'
-import { STORY_TEMPLATES } from '../lib/storyStructures'
-import { NUM_INPUT, fmtSavedAt, LENGTH_META, LENGTHS, TARGET_META, STRATEGY_META, STRATEGIES } from './creativeWritingParts'
-import type { CreativeWritingModel } from './useCreativeWritingModel'
+import { Button } from '@/components/Button'
+import { AI_DISABLED_HINT } from '@/lib/aiScope'
+import InspirationPicker from '@/components/InspirationPicker'
+import { StyleProfilePicker } from '@/components/StyleProfilePicker'
+import { clearCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun, updateInputs } from '@/lib/creativeSession'
+import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '@/lib/aiTasks'
+import { DEAI_TEMPLATES } from '@/lib/autoContinue'
+import { MAX_CHAPTERS } from '@/lib/writingPace'
+import { STORY_TEMPLATES } from '@/lib/storyStructures'
+import { NUM_INPUT, fmtSavedAt, LENGTH_META, LENGTHS, TARGET_META, STRATEGY_META, STRATEGIES } from '@/components/creativeWritingParts'
+import type { CreativeWritingModel } from '@/components/useCreativeWritingModel'
 
 export default function CreativeSetupSection({ m }: { m: CreativeWritingModel }) {
   const { s, inp, setInterview, aiReady, busy, probe, onPickLength, onClearSeed, pace, outlineOnlyTarget, targets, hasOutline, needSeed, hasOutlineCards, batchTotal, batchOversize, gap, gapTotal, gapWillFill, gapFillTo, probeNote, canStart, startLabel } = m

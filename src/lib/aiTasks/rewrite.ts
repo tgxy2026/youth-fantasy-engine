@@ -2,14 +2,14 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #17 段）。
 // 🔴 「动作 × 章位置」纪律矩阵（详规 docs/2.2.1-续排细纲*）：历史章冻结、最新章仅改写档放开。
 //    三条纪律提示词（BASE / HISTORY_RULE / LATEST_RULE）都是可编辑项，就地声明在本文件。
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '../ai'
-import { authorBlock, newAuthorFence } from '../promptGuard'
-import type { PromptDef } from '../promptSettings'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { authorBlock, newAuthorFence } from '@/lib/promptGuard'
+import type { PromptDef } from '@/lib/promptSettings'
 // 🔴 字数硬校准与容差：从 `lib/wordRange.ts` 取（与逐章连写共用同一常量与同一条校准逻辑）
-import { enforceWordRange, WORD_TOLERANCE } from '../wordRange'
-import { countWords } from '../textStats'
-import { deAiGenerateRule } from '../deAiStyle'
-import { activeFingerprintNote } from '../styleFingerprint'
+import { enforceWordRange, WORD_TOLERANCE } from '@/lib/wordRange'
+import { countWords } from '@/lib/textStats'
+import { deAiGenerateRule } from '@/lib/deAiStyle'
+import { activeFingerprintNote } from '@/lib/styleFingerprint'
 
 // ---------- 整章改写（润色 / 扩写 / 精简 / 续写 / 改写） ----------
 //

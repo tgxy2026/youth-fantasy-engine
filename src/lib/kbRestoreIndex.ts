@@ -19,9 +19,9 @@
  *   （restoreBackup / restoreBundleToProject）正是**还原的发起方**做 import 就成环：
  *   `db → kbRestoreIndex → semantic/settings → db`。（`importCycles` 闸会炸。）
  */
-import { startTask } from './aiTaskCenter'
-import { listDocsStrict, reindexAll, type ReindexProgress } from './knowledgeBase'
-import { embeddingStatus, resolveEmbedConfig } from './semantic/settings'
+import { startTask } from '@/lib/aiTaskCenter'
+import { listDocsStrict, reindexAll, type ReindexProgress } from '@/lib/knowledgeBase'
+import { embeddingStatus, resolveEmbedConfig } from '@/lib/semantic/settings'
 
 /** 任务结果形状（与素材页「重建索引」一致，供任务中心展示） */
 export interface KbIndexTaskResult {
