@@ -250,3 +250,14 @@ export function migrateV10toV11(db: Vdb) {
   // ⚠️ 老记录（backups 里仍带 bundle）由 `db/migrations.ts` 的 migrateBackupPayloads 搬过来 ——
   //    那是**数据**迁移、依赖 ops 层（可能在桌面 JSON 后端上跑），与这里的**建表**分开。
 }
+
+/** v11 → v12 迁移（3.0 · W1-1）：新增「AI 运行账本」独立存储 */
+export function migrateV11toV12(db: Vdb) {
+  // 运行账本单独成表：记「这本书的 AI 是怎么被调用的」（任务 / 版本基准 / 候选 / 调用 / 验收回执）。
+  // 项目级数据：随项目走 —— 导出项目时带走、删项目时一并清理（同 tavernReports 口径）。
+  const store = db.createObjectStore('aiRuns', { keyPath: 'id' })
+  // 按 projectId 建索引：账本列表按当前项目过滤，避免列清单就全表扫
+  store.createIndex('projectId', 'projectId', { unique: false })
+  // 按 startedAt 建索引：账本总览按时间倒序取最近 N 条
+  store.createIndex('startedAt', 'startedAt', { unique: false })
+}

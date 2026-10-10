@@ -224,7 +224,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   //    项目就变半空且无从恢复。改成「先写后删」之后，任一步失败最多留下些
   //    可以再清理的多余记录 —— **原数据自始至终完好**。
   const delKeys: Record<string, string[]> = {}
-  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash', 'tavernReports'] as const) {
+  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash', 'tavernReports', 'aiRuns'] as const) {
     const all = await ops.getAll<{ id: string; projectId?: string }>(name)
     const keys = all.filter(r => r.projectId === targetPid).map(r => r.id)
     if (keys.length) delKeys[name] = keys
@@ -297,6 +297,12 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   if (bundle.tavernReports) {
     for (const r of bundle.tavernReports) {
       await ops.put('tavernReports', { ...r, id: uid(), projectId: targetPid })
+    }
+  }
+  // AI 运行账本：随备份一并恢复（换新 id；理由同 importProject）
+  if (bundle.aiRuns) {
+    for (const r of bundle.aiRuns) {
+      await ops.put('aiRuns', { ...r, id: uid(), projectId: targetPid })
     }
   }
 

@@ -3,6 +3,7 @@
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from '../types'
 import { uid } from '../id'
 import type { TavernReport } from '../tavern/types'
+import type { AiRun } from '../aiRunTypes'
 import { ops, currentProjectId } from './core'
 import { VOL_LEDGER_PREFIX } from './volumes'
 import { type Snapshot, isAISnapshot } from './chapters'
@@ -133,8 +134,8 @@ export async function deleteProject(id: string) {
   if (last?.value === id) await ops.del('meta', 'lastProject')
   // 收集各 store 待删主键，统一批量删除
   const delKeys: Record<string, string[]> = {}
-  // tavernReports 也是项目级数据（报告随项目走），务必一并清理，否则项目删了报告还在
-  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash', 'tavernReports'] as const) {
+  // tavernReports / aiRuns 也是项目级数据（随项目走），务必一并清理，否则项目删了它们还在
+  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash', 'tavernReports', 'aiRuns'] as const) {
     const all = await ops.getAll<{ id: string; projectId?: string }>(name)
     const keys = all.filter(r => r.projectId === id).map(r => r.id)
     if (keys.length) delKeys[name] = keys
@@ -216,6 +217,8 @@ export interface ProjectBundle {
   customOptions?: { key: string; value: unknown }[]
   /** 酒馆模式 · 推演报告（可选字段：旧备份没有，导入时按向后兼容处理） */
   tavernReports?: TavernReport[]
+  /** AI 运行账本（3.0 · W1-1，可选字段：旧备份没有） */
+  aiRuns?: AiRun[]
   /**
    * 章节快照（2.4.0 · A3，可选字段：旧备份没有）。
    *
@@ -274,11 +277,11 @@ export async function exportProject(
   const includeKb = opts.includeKnowledgeBase ?? await kbInBackupOf(id)
   const project = await ops.get<Project>('projects', id)
   if (!project) throw new Error('项目不存在')
-  const [volumes, chapters, formData, tableRows, cardRecords, dailyStats, settingsKV, tavernReports] = await Promise.all([
+  const [volumes, chapters, formData, tableRows, cardRecords, dailyStats, settingsKV, tavernReports, aiRuns] = await Promise.all([
     ops.getAll<Volume>('volumes'), ops.getAll<Chapter>('chapters'), ops.getAll<FormData>('formData'),
     ops.getAll<TableRow>('tableRows'), ops.getAll<CardRecord>('cardRecords'),
     ops.getAll<DailyStat>('dailyStats'), ops.getAll<{ key: string; value: unknown }>('settingsKV'),
-    ops.getAll<TavernReport>('tavernReports'),
+    ops.getAll<TavernReport>('tavernReports'), ops.getAll<AiRun>('aiRuns'),
   ])
   // 快照按 projectId 索引取（不扫全表）
   const snapshots = includeSnapshots ? await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', id) : []
@@ -306,6 +309,7 @@ export async function exportProject(
       .filter(s => s.key.startsWith(customOptPrefix))
       .map(s => ({ key: s.key.slice(customOptPrefix.length), value: s.value })),
     tavernReports: tavernReports.filter(r => r.projectId === id),
+    aiRuns: aiRuns.filter(r => r.projectId === id),
     // 只带 AI 快照（理由见 ProjectBundle.snapshots 的注释）
     snapshots: snapshots.filter(s => isAISnapshot(s)),
     // 参考资料（#017）：没勾开关 / 一篇都没有 ⇒ **整个字段不出现**（与 snapshots 同为可选字段，
@@ -396,6 +400,12 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
   if (bundle.tavernReports) {
     for (const r of bundle.tavernReports) {
       await ops.put('tavernReports', { ...r, id: uid(), projectId: newPid })
+    }
+  }
+  // AI 运行账本：随项目一并导入（换新 id 与新 projectId；账本只记模型/指纹/耗时，换 id 后仍可读）
+  if (bundle.aiRuns) {
+    for (const r of bundle.aiRuns) {
+      await ops.put('aiRuns', { ...r, id: uid(), projectId: newPid })
     }
   }
   // 参考资料（2.8.0 · #017，可选字段）：随包带来的资料写进**独立知识库**。

@@ -7,6 +7,7 @@
 //    依赖表单数据的断言全在空跑（`tests/antiSpoiler.test.ts` 的排查中顺出来的）。
 export const KEY_PATHS: Record<string, string> = {
   tavernReports: 'id',
+  aiRuns: 'id',
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id',
   // C2：备份元数据与载荷分开存（须与 src/lib/desktop.ts 逐项一致）

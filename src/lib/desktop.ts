@@ -318,6 +318,8 @@ export const KEY_PATHS: Record<string, string> = {
   // 2.4.4 六维审计：与 syncCore.KEY_FIELD 对齐（后者有 tavernReports，这里漏了 ——
   // 虽有 ?? 'id' 兜底，但两份口径应逐项一致，避免下一个新表再漂移）
   tavernReports: 'id',
+  // 3.0 · W1-1：AI 运行账本（务必与 syncCore.KEY_FIELD 同步）
+  aiRuns: 'id',
 }
 
 export interface DesktopState {

@@ -25,12 +25,14 @@ import { webcrypto, hasWebCrypto } from './webcrypto'
 export const SYNC_STORES = [
   'projects', 'volumes', 'chapters', 'formData', 'tableRows', 'cardRecords',
   'meta', 'snapshots', 'dailyStats', 'settingsKV', 'trash', 'backups', 'backupPayloads', 'tavernReports',
+  'aiRuns',
 ] as const
 
 // 各 store 的主键字段（keyPath）
 export const KEY_FIELD: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', backupPayloads: 'id', tavernReports: 'id',
+  aiRuns: 'id',
   formData: 'tabId', meta: 'key', settingsKV: 'key', dailyStats: 'key',
 }
 
