@@ -135,6 +135,7 @@ export default function TavernFree() {
   · 记忆按角色存、跨会话共享 —— 换一场对话不会失忆。但它只在点「结束本轮对话」时才整理，
     所以聊天过程中不会被整理任务卡住；整理好的记忆与日记在「角色卡片」页里看。
   · 想给这一场一个具体处境，就在新建对话时选一份剧本（「故事剧本」里写，要先有故事）。
+  · 「聊天向风格提示」在「控制面板 → 自由对话参数」—— 它每轮都在、且离生成点最近，会盖过角色卡里写的「3 尺度」；两者打架时以它为准，想让密度回到角色卡就把它放宽。
   <AIDataSourceNote feature="tavern-free" />
 </HelpPopover>
         {session && <span className="max-w-[28rem] truncate text-12 text-ink-400" title={session.title}>{session.title}</span>}

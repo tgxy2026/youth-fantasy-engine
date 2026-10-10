@@ -240,7 +240,7 @@ export default function TavernControlModes({
 
         <TextField
           label="聊天向风格提示"
-          hint="自由对话的档位层。默认是「现代日常场景、短句为主、最多连发 2 条」。"
+          hint="自由对话的档位层。默认是「现代日常场景、短句为主、最多连发 2 条」。⚠️ 它每轮都注入、且离生成点最近 —— 会盖过角色卡里「3 尺度」那类表达密度设定：角色卡写「可以靠得很近、可以哭」，这里却钉着「短句聊天体」，演出来就会显得疏远。想让密度以角色卡为准，这里就别写死太窄（留空则走默认）。"
           minRows={2}
           value={free.styleHint}
           onChange={v => setFree('styleHint', v)}
