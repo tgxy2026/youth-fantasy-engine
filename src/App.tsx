@@ -57,6 +57,7 @@ const TavernPlot = lazy(() => import('./components/TavernPlot'))
 const TavernReport = lazy(() => import('./components/TavernReport'))
 const TavernCard = lazy(() => import('./components/TavernCard'))
 const TavernFree = lazy(() => import('./components/TavernFree'))
+const RunPanel = lazy(() => import('./components/RunPanel'))
 const TavernControl = lazy(() => import('./components/TavernControl'))
 const TavernScript = lazy(() => import('./components/TavernScript'))
 const TavernWorld = lazy(() => import('./components/TavernWorld'))
@@ -503,6 +504,9 @@ export default function App() {
     }
     if (activeTab === 'tavern-free') {
       return <TavernFree />
+    }
+    if (activeTab === 'tavern-run') {
+      return <RunPanel />
     }
     if (activeTab === 'tavern-control') {
       return <div className="p-6"><TavernControl /></div>

@@ -47,7 +47,16 @@ export function acquireClue(
 
   const key = normKey(text)
   const existing = s.clues.find(c => normKey(c.text) === key)
-  if (existing) return { session: s, clue: existing, duplicated: true }
+  if (existing) {
+    // 🔴 命中**已埋未获**的那条 ⇒ 这是「发现了它」，不是重复 —— 置为已获（否则线索永远拿不到手）
+    if (!existing.acquired) {
+      const idx = s.clues.indexOf(existing)
+      const clues = s.clues.slice()
+      clues[idx] = { ...existing, acquired: true, at: Date.now() }
+      return { session: { ...s, clues, updatedAt: Date.now() }, clue: clues[idx], duplicated: false }
+    }
+    return { session: s, clue: existing, duplicated: true }
+  }
 
   const clue: RunClue = {
     id: clueId(),

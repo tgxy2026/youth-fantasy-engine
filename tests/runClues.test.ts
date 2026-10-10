@@ -65,6 +65,16 @@ async function main() {
     s = revealClue(s, id)
     ok('revealClue 把它置为已获', acquiredClues(s).length === 1)
 
+    // 🔴 回归：重复文本命中「已埋未获」的那条 ⇒ 应当**置为已获**（不是当纯重复丢掉）
+    {
+      let t: RunSession = newRun('埋点回归', MODEL)
+      t = plantClue(t, { text: '地上的水渍', source: '观察' })
+      const r = acquireClue(t, { text: '  地上的水渍  ', source: '观察' })
+      ok('🔴 命中已埋线索时置为已获', r.duplicated === false && t.clues[0].acquired === false && r.session.clues[0].acquired === true)
+      const dup = acquireClue(r.session, { text: '地上的水渍' })
+      ok('再拿同一条（已获）才算重复', dup.duplicated === true)
+    }
+
     const again = revealClue(s, id)
     ok('已获再 reveal 原样返回（对象不变）', again === s)
 

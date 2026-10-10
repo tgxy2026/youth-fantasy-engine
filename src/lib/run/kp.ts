@@ -199,14 +199,35 @@ export interface KpVerdict {
 /** 给模型的输出契约（附在裁决提示词末尾） */
 export function buildKpVerdictSchema(): string {
   return [
-    '〖输出契约〗只回一个 JSON 对象，不要解释、不要代码块外的文字：',
+    '〖输出契约〗先写这一轮的**正文**（KP 的叙述，2–3 段，按检定结果演），',
+    '然后**另起一行**输出哨兵与 JSON（JSON 里不要写正文）：',
+    KP_VERDICT_MARK,
     '{',
-    '  "difficulty": 0-100 的整数（这一动的难度；纯叙事不需要判定时省略）,',
-    '  "consequence": "一句话说清这一动的结果（不重复玩家的动作）",',
-    '  "clue": { "text": "新得的线索（没得就省略）", "source": "观察|交谈|取证" },',
-    '  "revealsSecretId": "这次行动揭晓了哪个秘密（没有就省略）"',
+    '  "difficulty": 0-100 的整数（**下一次**行动若需要检定，给它的难度；不需要就省略）,',
+    '  "consequence": "一句话说清这一轮的结果（写进行动流水，不重复玩家动作）",',
+    '  "clue": { "text": "这一轮新得的线索（没得就省略）", "source": "观察|交谈|取证" },',
+    '  "revealsSecretId": "这一轮揭晓了哪个秘密 id（没有就省略）"',
     '}',
   ].join('\n')
+}
+
+/** 正文与裁决的分界哨兵（模型在正文之后另起一行输出它） */
+export const KP_VERDICT_MARK = '〖裁决〗'
+
+/**
+ * 把 KP 的回复切成「正文」与「裁决 JSON 原文」两段。
+ * 🔴 之所以要切：正文是给玩家看的叙述（进消息历史），裁决是给程序读的结构（不进历史）。
+ *   找不到哨兵时，`verdictRaw` 为空串、整段都算正文 —— 这是**容错方向**：
+ *   宁可少一条裁决，也不能把 JSON 当正文塞进玩家看得见的历史里。
+ */
+export function splitKpReply(raw: string): { prose: string; verdictRaw: string } {
+  const text = String(raw ?? '')
+  const i = text.indexOf(KP_VERDICT_MARK)
+  if (i < 0) return { prose: text.trim(), verdictRaw: '' }
+  return {
+    prose: text.slice(0, i).trim(),
+    verdictRaw: text.slice(i + KP_VERDICT_MARK.length).trim(),
+  }
 }
 
 /** 难度合法区间（模型偶尔会给 0 / 1000 这种越界值，钳回 1–100） */

@@ -188,6 +188,10 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   // 它是「世界引擎」的入口，面向「想把同一套世界用在多本书里」的作者，不是每个项目都要；
   // 显式登记的理由同 misc-settings（不写虽也按 getTier() 兜底 optional，但读的人会以为是忘了登记）。
   worlds: 'optional',
+  // 跑团（2026-10-10 · W4-3）：显式标 optional、不默认勾选 —— 它依赖故事 / 剧本 / 角色卡，
+  // 面向「想玩一局」的作者，不是每个项目都要；显式登记的理由同 worlds（不写虽也兜底 optional，
+  // 但读的人会以为是忘了登记）。
+  'tavern-run': 'optional',
   // 制度页签（2026-10-02 · 2.7.1 建）：政治 / 经济基础 / 宗教信仰 / 司法制度 —— 显式标 optional。
   // 🔴 2.7.2 起**完整项目一律显示**（题材矩阵已删），本表只决定「自定义项目里能否被勾选」。
   //    显式登记的理由同 misc-settings：不写虽然也走 getTier() 兜底 optional，但读的人会以为是忘了登记。
@@ -218,6 +222,9 @@ export const STRONG_DEPS: Record<string, string[]> = {
   'tavern-free': ['tavern-control', 'tavern-card', 'tavern-script'],
   'tavern-card': ['tavern-control', 'tavern-free', 'tavern-script'],
   'tavern-script': ['tavern-control', 'tavern-free', 'tavern-card'],
+  // ④ 跑团 —— **单向**依赖：它要用故事 / 剧本 / 角色卡，故启用跑团须连带它们；
+  //    反向**不绑** —— 启用自由对话不该把跑团也拉进来（跑团更重，得作者主动开）。
+  'tavern-run': ['tavern-control', 'tavern-script', 'tavern-card'],
 }
 
 /**
