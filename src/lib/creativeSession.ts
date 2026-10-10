@@ -43,6 +43,7 @@ import {
   isSuspectRewrite,
   listRewriteCandidates,
 } from './chapterRewrite'
+import { createRun, finishRun } from './aiRunLedger'
 import { countWords } from './textStats'
 import { isCancelled } from './ai'
 import type { LedgerItem } from './settingLedger'
@@ -515,6 +516,46 @@ function captureSummaries(p: FlowProgress) {
   return changed ? { ...summariesAcc } : null
 }
 
+/**
+ * 3.0 · W1-1c：创意写作的运行账本。
+ *
+ * 🔴 记账是**旁路** —— 失败一律静默，绝不因为「记不下来」打断创作（同 appendRunCall 口径）。
+ * 创意写作产出的是**新章**（不覆盖作者已有正文），故基准章节留空；
+ * 版本保护（基准失效判定）的接线落在**改写链路**（生成候选与采纳之间隔着作者操作，那才是会覆盖的路径）。
+ */
+async function startCreativeLedger(target: CreativeTarget): Promise<string> {
+  try {
+    const run = await createRun({
+      projectId: db.getCurrentProjectId() ?? '',
+      kind: 'creative',
+      title: target === 'outline' ? '创意写作 · 仅大纲' : '创意写作 · 大纲＋正文',
+      basis: { chapters: [], settingsRev: null, at: Date.now() },
+    })
+    return run.id
+  } catch { return '' }
+}
+
+/** 收尾账本：成功记 done + 回执 / 中止记 aborted / 异常记 failed（一律静默） */
+async function settleCreativeLedger(
+  runId: string,
+  res: CreativeWritingResult | null,
+  err?: unknown,
+): Promise<void> {
+  if (!runId) return
+  try {
+    if (err) {
+      await finishRun(runId, { status: 'failed', error: err instanceof Error ? err.message : String(err) })
+    } else if (!res) {
+      await finishRun(runId, { status: 'aborted' })
+    } else {
+      await finishRun(runId, {
+        status: 'done',
+        outcome: { created: res.chapters.length, updated: res.outlineCommit ? 1 : 0, skipped: 0, failed: [] },
+      })
+    }
+  } catch { /* 静默 */ }
+}
+
 export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   if (snap.running) return
   await bindProject()
@@ -533,6 +574,8 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
     running: true, result: null, log: [], progress: null, summaries: {},
     bibleGate: null, outlineGate: null, draftAsk: null, candidatesAsk: null, candidatesSelected: [],
   })
+  // 3.0 · W1-1c：开跑建运行账本（旁路，失败静默）
+  const runId = await startCreativeLedger(inp.target)
   try {
     const res = await runCreativeWriting(
       // 🔴 不再传起点：编排器读项目库自己判定（有卷大纲/细纲 → 接着写，否则从零）
@@ -606,6 +649,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
           : '已中止，未留下半成品',
         'info',
       )
+      await settleCreativeLedger(runId, null)
       return
     }
     set({ result: summarizeResult(res), resume: null })
@@ -619,10 +663,12 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
     } else {
       notice(`创作完成：写了 ${res.chapters.length} 章`, 'success')
     }
+    await settleCreativeLedger(runId, res)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (/放弃/.test(msg)) notice('已放弃本次创作（未写入任何数据）', 'info')
     else notice('创作失败：' + msg, 'error')
+    await settleCreativeLedger(runId, null, e)
   } finally {
     abortCtl = null
     gateResolve = null
