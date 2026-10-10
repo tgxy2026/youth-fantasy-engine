@@ -61,6 +61,15 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
   const editCoverRef = useRef<HTMLInputElement>(null)
+  /**
+   * 此刻正在编辑的项目 id（3.0）。
+   *
+   * 🔴 为什么不用 `editingId` 或书名做判据：读「把作品题材告诉 AI」是**异步**的，
+   *    回来时要确认"还是那张卡片"。用 state 比会拿到闭包里的旧值；
+   *    用书名比更糟 —— 作者点开编辑顺手改掉书名，回调就会被守卫拦下，
+   *    开关停在"未勾选"而库里其实是开的（假象：设置丢了）。
+   */
+  const editPidRef = useRef<string | null>(null)
   const [backupPid, setBackupPid] = useState<string | null>(null)
   // #002 看板娘显示开关：默认「显示」，故按 uiPrefs 的约定存「偏离默认的那一侧」＝存「已隐藏」。
   // 走 yfe-ui: 命名空间 → 只服务「这台机器上这个人的界面习惯」，不进项目数据、不随导出/同步走。
@@ -113,9 +122,12 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       genreToAI: false,
     })
     setEditingId(p.id)
+    editPidRef.current = p.id
     // 🔴 用 pid 版：这里编辑的**不一定是当前打开的项目**（`db.getSetting` 会读错那本）
     void getGenreToAIFor(p.id).then(v => {
-      setEditForm(f => (f.name === p.name ? { ...f, genreToAI: v } : f))
+      // 期间可能已经切到别的卡片 / 关掉编辑态 ⇒ 丢弃这次结果（按 pid 认，不看书名）
+      if (editPidRef.current !== p.id) return
+      setEditForm(f => ({ ...f, genreToAI: v }))
     })
   }
 
@@ -135,6 +147,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       // 3.0：题材「告诉 AI」开关（项目级）。先落项目记录，再写设置 —— 顺序无关，
       // 但两处都失败要给出同一句话，故放在同一个 try 里。
       await setGenreToAIFor(editingId, editForm.genreToAI)
+      editPidRef.current = null
       setEditingId(null)
       await load()
     } catch (e) {
@@ -536,7 +549,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                         disabled={busy} variant="primary" size="md" className="flex items-center">
                         <Check size={13} /> 保存修改
                       </Button>
-                      <Button variant="secondary" onClick={() => setEditingId(null)} className="border-ink-600 hover:border-ink-500 transition-colors">
+                      <Button variant="secondary" onClick={() => { editPidRef.current = null; setEditingId(null) }} className="border-ink-600 hover:border-ink-500 transition-colors">
                         取消
                       </Button>
                     </div>
