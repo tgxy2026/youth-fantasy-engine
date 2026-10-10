@@ -16,8 +16,11 @@
 import { uid } from './id'
 import { hashOf } from './semantic/chunk'
 import * as db from './db'
-
-export type WorldPackKind = 'form' | 'table' | 'card' | 'sub'
+// 🔴 世界包的**形状**集中在 `worldTypes.ts`（无依赖）—— 存储层 `db/worlds.ts` 也要用它，
+//    留在这里会让 `db → worldPack` 成环。此处只 re-export，既有 import 路径一字不变。
+import type { WorldPackKind, WorldPackTable, WorldPackOrigin, WorldPack } from './worldTypes'
+export type { WorldPackKind, WorldPackRow, WorldPackTable, WorldPackOrigin, WorldPack } from './worldTypes'
+export type { WorldVersion, WorldStoredRecord } from './worldTypes'
 
 export interface WorldPackTabSpec {
   /** 页签 id（母级）。`kind='sub'` 时实际存储在 `${tabId}-sub` 下（见 `worldSets.subTabIdOf`） */
@@ -57,47 +60,7 @@ export function worldPackTabSpecs(): WorldPackTabSpec[] {
   return out
 }
 
-/**
- * 抽包时**只保留语义内容** —— `projectId` / `tabId` / `updatedAt` / `createdAt` 一律剥掉。
- * 🔴 不剥的后果是静默的：引入方的世界会带着**源项目的 pid**，删除源项目时被一起清掉，
- *    或跨作品引用后「这条到底属于谁」再也说不清。
- */
-export interface WorldPackRow {
-  id: string
-  /** 卡片的展示名（table / form 行没有） */
-  name?: string
-  /** 字段字典（模块名::字段名 → 值） */
-  data: Record<string, string>
-  order: number
-}
-
-export interface WorldPackTable {
-  tabId: string
-  kind: WorldPackKind
-  /** `form` → 0 或 1 项；`table` / `card` / `sub` → 行数组（按 order 已排好） */
-  rows: WorldPackRow[]
-}
-
-export interface WorldPackOrigin {
-  projectId: string
-  projectName: string
-  at: number
-}
-
-export interface WorldPack {
-  schema: 1
-  id: string
-  name: string
-  origin: WorldPackOrigin
-  tables: WorldPackTable[]
-  /**
-   * 多套表（worldbase / power / politics / economy / belief / justice）的**活跃子项 id**。
-   * 引入后「哪几个子世界是活跃的」要一并带过去，否则界面显示「已完结」、AI 也不注入它们。
-   */
-  activeSubs: Record<string, string[]>
-  /** 内容指纹：只认 `tables` + `activeSubs`（**不含** id / name / origin）—— 判「这两份是不是同一版内容」 */
-  fingerprint: string
-}
+// 形状定义见 `./worldTypes.ts`（本文件 re-export，既有 import 路径不变）。
 
 /** 稳定序列化：键名排序 ⇒ 同一份内容无论键序如何，指纹一致 */
 function stableStringify(v: unknown): string {
