@@ -18,7 +18,7 @@ import type { FeedbackEntry } from './aiTasks'
  * 🔴 全空的行必须滤掉：它们会被模型当成「这个周期什么数据都没有」而过度解读，
  *    白白占上下文（这张表允许边填边存，空行很常见）。
  */
-export function toFeedbackEntries(rows: Record<string, string>[]): FeedbackEntry[] {
+export function toFeedbackEntries(rows: Record<string, string | undefined>[]): FeedbackEntry[] {
   return rows
     .map(r => ({
       period: r['数据周期'] || r['日期'] || '',

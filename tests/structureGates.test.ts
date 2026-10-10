@@ -219,6 +219,12 @@ if (!SRC) {
     'src/lib/schemaTabs/part1.ts': 'TABS 第 1 段：TabDef 字面量 + 构造器调用（c / f）+ 题材 getter，非数据表',
     'src/lib/schemaTabs/part2.ts': 'TABS 第 2 段：同上（列定义为主）',
     'src/lib/schemaTabs/part3.ts': 'TABS 第 3 段：同上（列定义为主）',
+    // 2026-10-10：W4-3 跑团互动的数据契约（RunSession / RunClue / RunSecret / RunEnding…）。
+    // **纯类型文件**（全是 interface/type，零函数），217 行全是类型声明 —— 这是**代码结构不是数据表**，
+    // 落 src/data/ 反而违背「data 只放数据、不放类型」的分工（且 src/data/ 内禁运行时 import，
+    // 它需要 `import type` 复用 tavern/types 的 TavernMessage / TavernVars）。
+    // 与 `src/lib/types.ts` 同款情形：类型声明随功能增长，按行数切出去毫无意义。
+    'src/lib/run/runTypes.ts': '类型定义文件：跑团局契约（纯 interface/type，零运行时逻辑），复用 tavern/types 的会话底盘类型',
   }
   {
     const bad: string[] = []
