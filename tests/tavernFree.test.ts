@@ -12,7 +12,7 @@ import {
 } from '../src/lib/tavern/engine'
 import type { ChatFn } from '../src/lib/tavern/provider'
 import { PROTOCOL_CORE } from '../src/lib/tavern/protocol'
-import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings } from '../src/lib/tavern/settings'
+import { DEFAULT_TAVERN_SETTINGS, getTavernSettings, saveTavernSettings, type TavernSettings } from '../src/lib/tavern/settings'
 import { emptyVars } from '../src/lib/tavern/vars'
 import { DEFAULT_TALKATIVITY, type FreeCharacter, type FreeSession, type TavernMessage, type TavernStory } from '../src/lib/tavern/types'
 import { createStory, saveStory, getStory, deleteStory, snapshotStorySetting } from '../src/lib/tavern/story'
@@ -345,6 +345,38 @@ async function main() {
     // ⑤ 没档案时不能把旧文案改坏
     const sys4 = (await buildFreeSystem(s3, [a, b], base)).system
     ok('没档案时发言规则仍是旧文案（不回归）', sys4.includes('用户扮演用户自己的角色。'))
+  }
+
+  // ---------- 8c) 档案读取收敛：多套档案 + 镜像故意不同步（W3-4 / §13 F5） ----------
+  // 🔴 引擎里凡是要「当前选中的那份档案」都必须走 activeProfileOf，不许直接读 st.profile：
+  //    多套档案时 st.profile 只是**镜像**，切过档案后可能与选择不同步（旧镜像仍留在字段里）。
+  //    这里把镜像**故意写错**，两条读取路径（多角色发言规则 / assist 代写）都必须取到选中那份。
+  {
+    __resetMockStores()
+    const a = await mkChar('洛汐')
+    const b = await mkChar('楚楠')
+    const drifted: TavernSettings = {
+      ...DEFAULT_TAVERN_SETTINGS,
+      profile: { name: '镜像旧份', address: '镜像旧称', persona: '这份是切换后遗留的旧镜像', avatar: '' },
+      profiles: [
+        { id: 'pf-a', name: '甲', address: '甲称', persona: '第一份', avatar: '' },
+        { id: 'pf-b', name: '乙', address: '乙称', persona: '第二份', avatar: '' },
+      ],
+      activeProfileId: 'pf-b',
+    }
+
+    // ① 多 AI 角色（无「我演」）→ 发言规则的「用户是谁」取选中档案，不是镜像
+    const s1 = await store.createFreeSession([a.id, b.id], '多角色', { providerId: '' }, {})
+    const sys1 = (await buildFreeSystem(s1, [a, b], drifted)).system
+    ok('F5① 多角色发言规则取选中档案（activeProfileOf）',
+      sys1.includes('用户扮演：乙称。'), sys1.includes('镜像旧称') ? '误用镜像' : '')
+    ok('F5① 镜像内容不进提示词', !sys1.includes('镜像旧称'))
+
+    // ② assist 代写 → 「代谁写」也取选中档案
+    const s2 = await store.createFreeSession([a.id, b.id], '代写', { providerId: '' }, {})
+    const sys2 = (await buildFreeSystem(s2, [a, b], drifted, { assist: 'polish' })).system
+    ok('F5② assist 代写取选中档案（activeProfileOf）',
+      sys2.includes('代「乙称」'), sys2.includes('镜像旧称') ? '误用镜像' : '')
   }
 
   // ---------- 9) 同名角色消歧（2026-09-14） ----------

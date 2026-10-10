@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as store from '../lib/tavern/store'
 import { MAX_AI_CAST, MAX_CAST_SLOTS } from '../lib/tavern/types'
 import { getTavernSettings, activeProfileOf, DEFAULT_TAVERN_SETTINGS } from '../lib/tavern/settings'
+import { checkProfileFit } from '../lib/tavern/profileFit'
 import { Button } from './Button'
 import SelectRow from './SelectRow'
 import { Modal } from './Modal'
@@ -168,8 +169,13 @@ function CharPicker({ open, options, usedBy, currentId, onConfirm, onClose }: {
 export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   const [options, setOptions] = useState<CharOption[]>([])
   const [loading, setLoading] = useState(true)
-  /** 「我的档案」里的称呼/名字（空 = 没填档案）—— 只用来把「AI 已经知道你是谁」讲清楚 */
-  const [callName, setCallName] = useState('')
+  /**
+   * 「我的档案」（名字 / 称呼 / 自我设定）—— 打开时读一次。
+   * 既用来把「AI 已经知道你是谁」讲清楚，也做档案 ↔ 阵容的匹配自检（W3-4 F4）。
+   */
+  const [profile, setProfile] = useState<{ name: string; address: string; persona: string }>(
+    { name: '', address: '', persona: '' },
+  )
 
   const [slots, setSlots] = useState<Slot[]>(() => freshSlots())
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
@@ -189,7 +195,7 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
     if (!open) return
     let alive = true
     setLoading(true)
-    setSlots(freshSlots()); setPickerIdx(null); setCallName('')
+    setSlots(freshSlots()); setPickerIdx(null); setProfile({ name: '', address: '', persona: '' })
     setTitle(''); setStoryId(''); setScriptId(''); setScriptView(null); setScriptOpen(false)
     ;(async () => {
       try {
@@ -214,7 +220,8 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
         setScripts([])  // 故事定了再按它拉剧本
         // 「我的档案」有名字 → 界面可以明确讲「AI 已经知道你是谁」。
         // 这正是「默认『我演』的角色」被去掉之后的补偿：**不用选角色也有身份**。
-        setCallName(activeProfileOf(st).address.trim() || activeProfileOf(st).name.trim())
+        const p = activeProfileOf(st)
+        setProfile({ name: p.name, address: p.address, persona: p.persona })
       } catch {
         if (alive) setOptions([])
       } finally {
@@ -246,6 +253,9 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
   /** 只让选本故事下的角色 —— 这是「先选故事」的全部意义 */
   const scoped = useMemo(() => options.filter(o => o.storyId === storyId), [options, storyId])
 
+  /** 「我的档案」里的称呼/名字（空 = 没填档案）—— 只用来把「AI 已经知道你是谁」讲清楚 */
+  const callName = profile.address.trim() || profile.name.trim()
+
   const nameOf = (id: string) => scoped.find(o => o.id === id)?.name ?? ''
   const coreOf = (id: string) => scoped.find(o => o.id === id)?.core ?? ''
 
@@ -258,6 +268,20 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
 
   const charIds = slots.map(s => s.charId).filter(Boolean)
   const userCharId = slots.find(s => s.role === 'user' && s.charId)?.charId ?? ''
+
+  /**
+   * 档案 ↔ 阵容匹配自检（W3-4 / §13 F4）：一条**可忽略**的提醒，绝不阻断新建。
+   * 依赖写成 `profile` / `slots` / `scoped`（都是稳定引用）——不把每次渲染都重建的
+   * `nameOf` / `charIds` 写进依赖，否则 memo 形同虚设（同 2026-10-04 审计 A5 的收敛）。
+   */
+  const fitWarning = useMemo(() => checkProfileFit({
+    ...profile,
+    castNames: slots
+      .filter(s => !!s.charId)
+      .map(s => scoped.find(o => o.id === s.charId)?.name ?? '')
+      .filter(Boolean),
+    userActsRole: slots.some(s => s.role === 'user' && !!s.charId),
+  }), [profile, slots, scoped])
   const aiIds = slots.filter(s => s.role === 'ai' && s.charId).map(s => s.charId)
   /**
    * AI 名额按「**标了 AI 演的位置数**」算 —— 不是按"已选角色的"算。
@@ -522,6 +546,14 @@ export default function TavernFreeSetup({ open, onCreate, onCancel }: Props) {
                   placeholder={aiNames.length > 1 ? `默认：与${aiNames.join('、')}的对话` : `默认：和${aiNames[0] ?? '……'}的对话`}
                 />
               </section>
+
+              {/* 档案 ↔ 阵容自检（W3-4 / §13 F4）：**非阻断**，作者可无视照常开始 */}
+              {fitWarning && (
+                <section className="rounded-md border border-amber/30 bg-amber/8 px-3 py-2 text-11 leading-relaxed text-ink-300">
+                  <b className="text-amber">⚠️ 档案提醒（可忽略）</b>
+                  <div className="mt-0.5">{fitWarning.text}</div>
+                </section>
+              )}
             </>
           )}
         </div>

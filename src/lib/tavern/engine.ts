@@ -531,6 +531,10 @@ export async function buildFreeSystem(
   opts?: { assist?: 'polish' | 'auto'; windowTokens?: number | null; skipRecall?: boolean },
 ): Promise<FreeSystemResult> {
   const st = settings ?? await getTavernSettings()
+  // 🔴 档案读取唯一入口（2026-10-10 W3-4 收敛）：多套档案时 `st.profile` 只是**镜像**，
+  //    可能与实际选择不同步（换过档案后旧镜像仍在）。本函数凡是要「当前选中的那份档案」
+  //    一律取 `prof`，不许再直接读 `st.profile`。
+  const prof = activeProfileOf(st)
   const found: FreeCharacter[] = []
   const missing: string[] = []
   for (const id of session.charIds) {
@@ -595,7 +599,7 @@ export async function buildFreeSystem(
     }
     if (aiChars.length > 1) {
       // 用户没演角色时，档案里的称呼/名字就是「用户是谁」的唯一来源
-      const who = userChar?.name || st.profile.address.trim() || st.profile.name.trim()
+      const who = userChar?.name || prof.address.trim() || prof.name.trim()
       parts.push(buildMultiCharRule(aiChars.map(c => c.name), {
         ...(who ? { userName: who } : {}),
         silentNames: silentChars.map(c => c.name),
@@ -604,7 +608,7 @@ export async function buildFreeSystem(
     }
     // 「我的档案」：描述**屏幕后面那个人**（用户本人）。空档案返回空串，不占位置。
     // 🔴 走 `activeProfileOf`（不是 st.profile）—— 多套档案时才是"当前选中的那份"
-    parts.push(buildUserProfileBlock(activeProfileOf(st), userChar?.name))
+    parts.push(buildUserProfileBlock(prof, userChar?.name))
     return parts.filter(Boolean).join('\n\n')
   })()
 
@@ -643,7 +647,7 @@ export async function buildFreeSystem(
   // 模型本能会以 AI 角色口吻把主观对白写出来，于是视角反过来。括号描写（客观舞台指示）
   // 无关视角所以没事，但说话的口吻就错了。所以这里整段替换，不再保留「你扮演 AI 角色」。
   if (opts?.assist) {
-    const who = userChar?.name || (st.profile.address.trim() || st.profile.name.trim()) || '用户'
+    const who = userChar?.name || (prof.address.trim() || prof.name.trim()) || '用户'
     const othersLine = aiNames.length
       ? `\n- 提及在场其他角色（如 ${aiNames.join('、')}）时，用「他 / 她 / 名字」去指称，**不要使用第二人称「你」去称呼「${who}」**。`
       : ''
