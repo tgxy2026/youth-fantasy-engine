@@ -25,6 +25,8 @@ import { styleContextForAI } from '../lib/styleAudit'
 import { activeFingerprintNote } from '../lib/styleFingerprint'
 import { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '../lib/aiTasks'
 import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '../lib/settingLedger'
+import { collectPostProcess, applyPostProcess, type PostProcessItem } from '../lib/chapterPostProcess'
+import { readImpact, clearImpact, type ImpactMark } from '../lib/futureImpact'
 import { useAIReady } from '../lib/useAIReady'
 import { LS_SPRITE_ENABLED } from '../lib/constants'
 import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '../lib/aiTaskCenter'
@@ -278,6 +280,90 @@ export function useJieWenJiModel(props: Props) {
     window.dispatchEvent(new CustomEvent('yfe:navigate', {
       detail: isCard || !rowId ? tabId : { tabId, rowId },
     }))
+  }
+
+  // ============ 章后整理（3.0 · W2-1）：四类变化 + 未来影响 ============
+  // 与「补登」的分工：「补登」只管设定实体（事实）；这里一次过四类，
+  // 并显示「未来计划已被上游变化波及」的标记（章纲里本章之后的条目）。
+  const postT = useTaskRunner<ChOwned<PostProcessItem[]>, ChProgress>({
+    ownerTab: 'editor', kind: 'jiewenji-post', title: '颉文姬 · 章后整理',
+    writes: ['settings'], // 采纳后写入设定表 / 角色卡 / 章节总表
+  })
+  const [post, setPost] = useState<{
+    loading: boolean; items: PostProcessItem[]; error: string; scannedAt: number
+  }>({ loading: false, items: [], error: '', scannedAt: 0 })
+  /** 勾选待整理的条目 key（默认勾「有变化」与「未登记」两类） */
+  const [postPicked, setPostPicked] = useState<Set<string>>(new Set())
+  const [postSaving, setPostSaving] = useState(false)
+  /** 未来影响标记：章纲里「本章之后」的计划被上游变化波及 */
+  const [impacts, setImpacts] = useState<ImpactMark[]>([])
+
+  const loadImpacts = () => { readImpact().then(setImpacts).catch(() => setImpacts([])) }
+  useEffect(() => { if (mode === 'post') loadImpacts() }, [mode])
+
+  /** 任务状态 → `post`（只在任务引用变化时写；与 ledger 同一套「归属键」纪律） */
+  const lastPostTask = useRef<{ task: unknown; ch: string }>({ task: null, ch: '' })
+  useEffect(() => {
+    const task = postT.task
+    const sig = lastPostTask.current
+    if (sig.task === task && sig.ch === ch) return
+    lastPostTask.current = { task, ch }
+    if (!task || taskChapter(task) !== ch) {
+      setPost({ loading: false, items: [], error: '', scannedAt: 0 }); setPostPicked(new Set()); return
+    }
+    if (task.status === 'running') { setPost({ loading: true, items: [], error: '', scannedAt: 0 }); return }
+    if (task.status === 'done') {
+      const items = task.result?.v ?? []
+      setPost({ loading: false, items, error: '', scannedAt: Date.now() })
+      setPostPicked(new Set(items.filter(i => i.status === 'changed' || i.status === 'new').map(i => i.key)))
+      if (items.length === 0) showToast('本章没有需要整理的条目', 'success')
+      return
+    }
+    if (task.status === 'failed') { setPost({ loading: false, items: [], error: task.error, scannedAt: 0 }); return }
+    setPost(s => ({ ...s, loading: false }))
+  }, [postT.task, ch])
+
+  const runPost = () => {
+    if (!aiReady || postT.running) return
+    if (!content.trim()) { showToast('本章正文还是空的，没有可整理的内容', 'info'); return }
+    if (!ch) { showToast('没有定位到当前章节，请重新打开这一章', 'info'); return }
+    const title = chapterTitle ?? ''
+    postT.run(async job => {
+      job.progress({ ch })
+      // 🔴 用**编辑器里的最新正文**（作者可能还没保存），不读库里的滞后版本
+      const report = await collectPostProcess({ chapterId: ch, content, chapterTitle: title }, { signal: job.signal })
+      return { ch, v: report.items }
+    })
+  }
+
+  /** 采纳：只落库勾选且**可落库**的条目（`registered` 表示无变化，不该写） */
+  const commitPost = async () => {
+    const picked = post.items.filter(i => postPicked.has(i.key) && i.status !== 'registered')
+    if (picked.length === 0 || postSaving || !ch) return
+    setPostSaving(true)
+    try {
+      const r = await applyPostProcess(
+        { chapterId: ch, content, chapterTitle: chapterTitle ?? '' }, picked,
+      )
+      if (r.created > 0) {
+        showToast(`已整理 ${r.created} 条${r.failed.length ? `（${r.failed.length} 条失败）` : ''}`, 'success')
+        onLedgerCommitted?.(r.created)
+      } else if (r.failed.length > 0) {
+        showToast(`整理失败：${r.failed.join('、')}`, 'error')
+      }
+      // 落库过的条目从列表移除（不重扫 —— 重扫要多烧一次 AI，而这批作者已确认过）
+      const done = new Set(picked.map(i => i.key))
+      setPost(s => ({ ...s, items: s.items.filter(i => !done.has(i.key)) }))
+      setPostPicked(new Set())
+    } finally {
+      setPostSaving(false)
+    }
+  }
+
+  /** 作者处理完某章的未来计划后清掉它的标记 */
+  const dismissImpact = async (chapterNo: number) => {
+    await clearImpact(chapterNo)
+    loadImpacts()
   }
 
   // ============ 编辑：选区改稿 → 建议段 ============
@@ -583,6 +669,7 @@ export function useJieWenJiModel(props: Props) {
     aiReady, spriteOn, setSpriteOn, toggleSprite, mode, setMode, diagMode, setDiagMode, diag, runDiag,
     proofs, propsRunning, runProofread, stopProofread, replaceOne,
     ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry,
+    post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, loadImpacts,
     selText, instruction, setInstruction, detail, setDetail, targetWords, setTargetWords, rewrite, runRewrite, applyAdvice,
     contOpen, setContOpen, contWords, setContWords, contPlot, setContPlot, contPicks, toggleContPick,
     contSummaryCount, setContSummaryCount, contPrevTextCount, setContPrevTextCount, contPreview, cont, runContinuation, applyContinuation,

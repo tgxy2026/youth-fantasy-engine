@@ -165,7 +165,7 @@ export function classify(entities: ExtractedEntity[], reg: EntityRegistry): Ledg
 }
 
 /** 在角色卡页签里按优先顺序找出字段的 `模块::字段` 路径；找不到返回 null */
-function cardFieldPath(tabId: string, preferred: string[]): string | null {
+export function cardFieldPath(tabId: string, preferred: string[]): string | null {
   const tab = TABS.find(t => t.id === tabId)
   if (!tab?.modules) return null
   for (const p of preferred) {

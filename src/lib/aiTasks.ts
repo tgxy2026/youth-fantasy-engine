@@ -35,6 +35,7 @@ import { BOOKBREAK_SPLIT_PROMPTS } from './aiTasks/bookBreakSplit'
 import { TABLE_IMPORT_PROMPTS } from './aiTasks/tableImport'
 import { MARKET_RADAR_PROMPTS } from './marketRadar'
 import { STYLE_FINGERPRINT_PROMPTS } from './styleFingerprint'
+import { POST_PROCESS_PROMPTS } from './aiTasks/postProcess'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine } from './aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from './aiTasks/organize'
@@ -97,6 +98,10 @@ export {
   MIN_SAMPLE_WORDS, STYLE_FINGERPRINT_PROMPTS,
 } from './styleFingerprint'
 export type { StyleProfile, StyleMetrics, ExtractOptions } from './styleFingerprint'
+// 2026-10-10（3.0 · W2-1）：章后整理抽取 —— 从本章正文抽「伏笔 / 关系 / 人物状态」三类变化候选。
+// 🔴 AI 只抽候选，「是否已登记 / 是否真变了」由 lib/chapterPostProcess.ts 确定性比对。
+export { aiExtractChapterChanges, parseChapterChanges, isChangesEmpty, POST_PROCESS_PROMPTS } from './aiTasks/postProcess'
+export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus } from './aiTasks/postProcess'
 
 /**
  * 提示词的**注册顺序**（🔴 有语义：`listPrompts()` 只按 group 稳定排序，组内保持登记顺序）。
@@ -144,6 +149,8 @@ const PROMPT_ORDER = [
   'style-fingerprint',
   // 2.9.2 追加在末尾：颉文姬续写 —— 只往末尾加，不动其它条目的既有 UI 顺序
   'continue-passage',
+  // 3.0 追加在末尾：章后整理抽取（W2-1）—— 只往末尾加，不动其它条目的既有 UI 顺序
+  'chapter-post-process',
 ]
 
 const PROMPT_SETS: PromptDef[][] = [
@@ -163,6 +170,7 @@ const PROMPT_SETS: PromptDef[][] = [
   TABLE_IMPORT_PROMPTS,
   MARKET_RADAR_PROMPTS,
   STYLE_FINGERPRINT_PROMPTS,
+  POST_PROCESS_PROMPTS,
 ]
 
 const byId = new Map<string, PromptDef>()

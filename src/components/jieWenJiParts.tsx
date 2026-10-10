@@ -2,6 +2,7 @@
 // 🔴 纯搬家：一行未改（只给顶层声明补了 export —— 原文里它们是本文件私有，现被子组件共用）。
 import { ProofreadIssue } from '../lib/aiTasks'
 import { SettingEntityType, MatchStatus } from '../lib/settingLedger'
+import type { PostProcessKind, PostProcessStatus } from '../lib/chapterPostProcess'
 
 /** 建议段标记（NovelEditor 的写入/清除共用） */
 export const ADVICE_START = '【颉文姬建议·开始】'
@@ -32,7 +33,7 @@ export interface Props {
   focusChapterId?: string
 }
 
-export type Mode = 'clinic' | 'edit' | 'review' | 'brief' | 'ledger'
+export type Mode = 'clinic' | 'edit' | 'review' | 'brief' | 'ledger' | 'post'
 
 // 🔴 这两个值是**直接进提示词**的（`buildRewriteAsk` 的第一段），不是纯界面标签 ——
 //    改名时必须同步 `aiTasks/jieWenJi.ts` 的 `P_rewrite_passage` 第 2 条定义，否则模型
@@ -143,6 +144,26 @@ export const STATUS_META: Record<MatchStatus, { label: string; cls: string }> = 
   registered: { label: '已登记', cls: 'bg-success/15 text-success border-success/30' },
   duplicate: { label: '疑似重复', cls: 'bg-amber/15 text-amber border-amber/30' },
   new: { label: '待补登', cls: 'bg-danger/15 text-danger border-danger/30' },
+}
+
+// ============ 章后整理（3.0 · W2-1）============
+// 「每章写完后把本章带来的变化整理出来，作者确认后才落库」——四类变化的展示顺序与命名。
+// 🔴 与「补登」的分工：「补登」只管设定实体（事实）；「整理」把四类收进一个入口，
+//    多出的三类（伏笔 / 关系 / 人物状态）此前只有表、没有章后入口。
+
+export const POST_KINDS: { kind: PostProcessKind; label: string; hint: string }[] = [
+  { kind: 'entity', label: '事实 · 设定', hint: '本章新出现的人 / 势力 / 地点 / 种族 / 物品 / 术语' },
+  { kind: 'foreshadow', label: '伏笔', hint: '本章埋设或回收的伏笔' },
+  { kind: 'relation', label: '关系', hint: '本章人物关系发生的变化' },
+  { kind: 'status', label: '人物状态', hint: '本章人物状态的变化' },
+]
+
+/** 章后整理：四档结果的徽标样式（`changed` = 有变化待采纳；`new` = 还没登记过） */
+export const POST_STATUS_META: Record<PostProcessStatus, { label: string; cls: string }> = {
+  registered: { label: '无变化', cls: 'bg-success/15 text-success border-success/30' },
+  duplicate: { label: '疑似重复', cls: 'bg-amber/15 text-amber border-amber/30' },
+  changed: { label: '有变化', cls: 'bg-info/15 text-info border-info/30' },
+  new: { label: '未登记', cls: 'bg-danger/15 text-danger border-danger/30' },
 }
 
 const SEV_BADGE: Record<string, string> = {

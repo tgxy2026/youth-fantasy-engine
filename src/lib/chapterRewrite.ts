@@ -18,6 +18,7 @@ import type { ChapterRewriteAction } from './aiTasks'
 import type { Chapter, Volume } from './types'
 import { withAiAssist, type AiSourceKind } from './aiAssist'
 import { chapterFingerprint } from './aiRunLedger'
+import { analyzeFutureImpact } from './futureImpact'
 
 /**
  * 本次改写的**期望字数** —— 异常判定的基准。
@@ -134,6 +135,13 @@ export async function applyChapterRewrite(
   )
   const [vols, all] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
   await db.saveChapter(next)
-  await syncChapterMaster(next, chapterSeqMap(vols, all).get(next.id) ?? 0)
+  const seq = chapterSeqMap(vols, all).get(next.id) ?? 0
+  await syncChapterMaster(next, seq)
+  // 🔴 3.0 · W2-1 未来演化边界（§10.3 #3）：**已写历史被改动** ⇒ 章纲里「本章之后」的
+  //    未来计划标记「待重审」。
+  //    · 只在 `rewritten`（回改已写章）时打标 —— `generated` 是「创意写作产出新章」，
+  //      那是**按计划推进**（把某个未来章变成已写章），不该反过来说后续计划失效。
+  //    · 只标记、绝不改章纲内容；失败静默（提醒失败绝不能连累改写落库）。
+  if (kind === 'rewritten' && seq > 0) await analyzeFutureImpact(seq, '正文改写').catch(() => {})
   return { words }
 }
