@@ -32,6 +32,15 @@ contextBridge.exposeInMainWorld('electronStore', {
   syncRead: (p) => ipcRenderer.invoke('sync:readFile', p),
   /** 云盘文件同步：原子写文件（tmp + .bak 回退），避免写崩导致 .yfe 损坏 */
   syncWrite: (p, text) => ipcRenderer.invoke('sync:writeFile', p, text),
+  // ---- 外置大块数据（sidecar）：备份载荷存独立文件，主 JSON 只留元数据 ----
+  /** 读一条外置记录；{ ok:true, missing:true } = 还没有 */
+  payloadRead: (store, id) => ipcRenderer.invoke('payload:read', store, id),
+  /** 写一条外置记录（text 为该记录的 JSON 串） */
+  payloadWrite: (store, id, text) => ipcRenderer.invoke('payload:write', store, id, text),
+  /** 删一条外置记录（幂等） */
+  payloadDel: (store, id) => ipcRenderer.invoke('payload:del', store, id),
+  /** 列该 store 的全部外置 id */
+  payloadList: (store) => ipcRenderer.invoke('payload:list', store),
 })
 
 // 联网检索：由主进程代发请求。搜索接口大多不带 CORS 头，渲染进程直连会被同源策略拦掉，

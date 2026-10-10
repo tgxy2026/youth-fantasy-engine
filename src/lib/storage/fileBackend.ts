@@ -17,6 +17,9 @@
 //    不用 UA / 端口启发式：那些都能被误判，而误判的后果是「读不到数据」或「数据落到别处」。
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
 import { normalizePortableData, isPortableDataFile } from '@/lib/storage/storeOps'
+import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
+import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
+import { PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 
 /** 服务注入到 window 的便携标记（见 portable-server.mjs 的注入注释） */
@@ -174,6 +177,7 @@ async function loadFromServer(): Promise<{ text?: string | null; error?: string 
 export async function initPortableStore(): Promise<void> {
   if (!PORTABLE || inited) return
   const lock = (why: string, msg: string) => { writeLocked = true; writeLockReason = why; lastError = msg }
+  let loaded = false
   try {
     const r = await loadFromServer()
     dataFilePath = r.path ?? './data/youth-fantasy-engine-data.json'
@@ -192,6 +196,7 @@ export async function initPortableStore(): Promise<void> {
         } else {
           data = normalizePortableData(parsed)
           lastSavedAt = data.savedAt || Date.now()
+          loaded = true
         }
       } catch {
         lock('数据文件内容不是有效的 JSON（可能被同步截断，或磁盘损坏）',
@@ -204,6 +209,34 @@ export async function initPortableStore(): Promise<void> {
   } finally {
     inited = true
     emit()
+  }
+  // 🔴 老库迁移必须放在 `inited = true` **之后**（2026-10-11 实机抓到）：
+  //    `flushPortable` 开头有 `if (!inited || saving) return false` 的守卫，
+  //    写在 try 块内时 inited 仍是 false ⇒ 迁出去的数据写了，主 JSON 却**一动不动**
+  //    （fileVersion 不升、外置 store 还在），下次启动又迁一遍 —— 白做且看不出异常。
+  if (loaded && !writeLocked) await migratePortableSidecar()
+}
+
+/**
+ * 把主 JSON 里残留的外置数据迁到独立文件（老库升级，**幂等**）。
+ *
+ * 🔴 锁写盘期间**绝不迁**：那时内存里是空库/残缺数据，迁出去的是空壳，
+ *    而老的主 JSON 随后会被覆盖 —— 那就是真丢稿，比不迁移糟得多。
+ */
+export async function migratePortableSidecar(): Promise<void> {
+  if (writeLocked) return
+  try {
+    const r = await migrateSidecar(data, portableStore, PORTABLE_SIDECAR, async () => {
+      data.fileVersion = PORTABLE_FILE_VERSION
+      return flushPortable()
+    })
+    const total = Object.values(r.moved).reduce((a, b) => a + b, 0)
+    if (total > 0) {
+      console.log(`[portable] 已把 ${total} 条大块数据迁出为独立文件：`, r.moved)
+    }
+    if (r.failed.length) lastError = `部分大块数据迁移失败（下次启动会重试）：${r.failed.join('；')}`
+  } catch (e) {
+    lastError = '大块数据迁移失败：' + (e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -313,12 +346,109 @@ function setRows(store: string, rows: unknown[]) {
   scheduleSave()
 }
 
+// ---------- 外置大块数据（sidecar）----------
+//
+// 【为什么挪出去】备份载荷每份是一个项目的整包正文，**写完就再也不变**，却躺在整库 JSON 里
+//  ⇒ 作者每敲一个字都要重传上百 MB 没动过的历史（撞 512 MiB 上限 / 每次写盘都卡）。
+//    向量与知识库同理：体量大、随编辑变化少。
+//    挪出后主 JSON 只剩「真正在动的东西」，写盘体积降一个数量级。
+//
+// 🔴 布局选择（详见 storage/sidecar.ts 的注释）：
+//     · backupPayloads → per-id：一份一个文件，写新备份不必重写全部历史
+//     · vecRows / kbDocs / kbBodies → whole：整表一个文件。它们本来就是一次性全量加载，
+//       若按条分片，一次 `getAllByIndex(projectId)` 就是数千次 HTTP —— 必然卡死。
+export const PORTABLE_SIDECAR: SidecarSpec = {
+  backupPayloads: { layout: 'per-id', keyField: 'id' },
+  vecRows: { layout: 'whole', keyField: 'id' },
+  kbDocs: { layout: 'whole', keyField: 'id' },
+  kbBodies: { layout: 'whole', keyField: 'id' },
+}
+
+/** 外置通道的 HTTP 实现（对 `/api/blob`，见 portable-server.mjs） */
+const httpSidecarApi: SidecarApi = {
+  async read(store, id) {
+    try {
+      const res = await fetch(
+        `${apiBase()}/api/blob?store=${encodeURIComponent(store)}&id=${encodeURIComponent(id)}`,
+        { cache: 'no-store' },
+      )
+      if (res.status === 404) return undefined
+      if (!res.ok) return undefined
+      const j = (await res.json()) as { value?: unknown }
+      return j.value
+    } catch {
+      return undefined
+    }
+  },
+  async write(store, id, value) {
+    try {
+      const res = await fetch(
+        `${apiBase()}/api/blob?store=${encodeURIComponent(store)}&id=${encodeURIComponent(id)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(value),
+        },
+      )
+      return res.ok
+    } catch {
+      return false
+    }
+  },
+  async remove(store, id) {
+    try {
+      const res = await fetch(
+        `${apiBase()}/api/blob?store=${encodeURIComponent(store)}&id=${encodeURIComponent(id)}`,
+        { method: 'DELETE' },
+      )
+      return res.ok
+    } catch {
+      return false
+    }
+  },
+  async listIds(store) {
+    try {
+      const res = await fetch(
+        `${apiBase()}/api/blob/list?store=${encodeURIComponent(store)}`,
+        { cache: 'no-store' },
+      )
+      if (!res.ok) return []
+      const j = (await res.json()) as { ids?: string[] }
+      return Array.isArray(j.ids) ? j.ids : []
+    } catch {
+      return []
+    }
+  },
+}
+
+let activeSidecarApi: SidecarApi = httpSidecarApi
+
 /**
- * 便携版 StoreOps。与 `desktopStore` 逐条对齐语义：
- *  · 读 = 内存 cache（启动时装载）；写 = 改 cache + 防抖落盘。
- *  · 锁写盘时不接受任何写（读仍可用）。
+ * 测试注入点：把外置通道换成内存实现。
+ *
+ * 🔴 为什么要有它：Node 单测里**没有便携服务**，`httpSidecarApi` 的 fetch 必然失败
+ *    ⇒ 所有走外置的 store 读出来全是空，测试会一片红却与真实逻辑无关。
+ *    这里沿用项目既有的「后端注入」套路（`setVecBackend` / `setKbBackend` 就是这么做的），
+ *    让单测能在不伪造 `PORTABLE`（const 绑定改不了）的前提下跑通全链路。
  */
-export const portableStore: StoreOps = {
+export function setPortableSidecarApi(api: SidecarApi): void { activeSidecarApi = api }
+/** 复位回 HTTP 实现（测试收尾用） */
+export function resetPortableSidecarApi(): void { activeSidecarApi = httpSidecarApi }
+
+/**
+ * 🔴 必须是**代理**而不是直接把 `httpSidecarApi` 传进 `withSidecar`：
+ *    `withSidecar` 只在模块级调用一次，直接传会把实现**固化**进闭包，
+ *    之后 `setPortableSidecarApi` 就再也换不动了（这类"捕获了可变状态"的坑很隐蔽）。
+ */
+const sidecarProxy: SidecarApi = {
+  read: (s, i) => activeSidecarApi.read(s, i),
+  write: (s, i, v) => activeSidecarApi.write(s, i, v),
+  remove: (s, i) => activeSidecarApi.remove(s, i),
+  listIds: (s) => activeSidecarApi.listIds(s),
+}
+
+/** 原生的（未外置）便携 StoreOps：只管内存 cache + 防抖落盘 */
+const basePortableStore: StoreOps = {
   async getAll<T>(store: string): Promise<T[]> {
     return rowsOf(store) as T[]
   },
@@ -348,6 +478,25 @@ export const portableStore: StoreOps = {
 }
 
 /**
+ * 便携版 StoreOps = 原生后端 + 外置路由。
+ *  · 读 = 内存 cache（启动时装载）／外置文件；写 = 改 cache + 防抖落盘／写外置文件
+ *  · 锁写盘时不接受任何写（读仍可用）
+ *
+ * 🔴 外置写失败要**看得见**：静默失败会让「备份列表在、恢复时说载荷缺失」，
+ *    作者无从判断是没存还是丢了 ⇒ 接到 lastError + emit，与写盘失败同一条反馈通道。
+ */
+export const portableStore: StoreOps = withSidecar(
+  basePortableStore,
+  sidecarProxy,
+  PORTABLE_SIDECAR,
+  (msg) => { lastError = msg; emit() },
+)
+// 登记通道：业务层要「列外置 id」做孤儿对账（StoreOps 没有这个能力，且不该为拿 id 读全部内容）。
+// 🔴 必须**只在便携模式下登记**：桌面版模块也会执行同一句，谁后加载谁生效 ——
+//    无条件登记会让桌面端被便携端的通道顶掉（Node 单测里两个模块都会 import，实测已复现）。
+if (PORTABLE) registerSidecarApi(sidecarProxy)
+
+/**
  * 整体替换内存数据（导入便携数据文件用）。
  * 🔴 导入 = 用这份文件替换本机全部数据 ⇒ 一次性解锁（与 `importDesktopData` 同口径）。
  */
@@ -367,8 +516,15 @@ export function replacePortableData(parsed: unknown): void {
  *    「已经存好了」，实际那份数据只在浏览器下载目录里。
  *    ⇒ 时间戳写进**导出副本**，内存状态保持真实（= 上次真正落盘的时间）。
  */
-export function portableDataJSON(): string {
-  return JSON.stringify({ ...data, savedAt: Date.now() })
+export async function portableDataJSON(): Promise<string> {
+  // 🔴 外置数据必须**内联回来**：否则导出的文件会静默丢掉全部备份载荷
+  //    （列表还在、看起来正常，等要恢复时才说"载荷缺失"—— 最危险的失败形态）
+  const inline = await collectSidecarForExport(portableStore, PORTABLE_SIDECAR)
+  return JSON.stringify({
+    ...data,
+    savedAt: Date.now(),
+    stores: { ...data.stores, ...inline },
+  })
 }
 
 // ---------- 便携版专属动作（导出 / 导入 / 打开数据文件夹） ----------
@@ -396,7 +552,7 @@ export function portableDataPath(): string {
  * 🔴 锁写盘期间不导出：内存里是空库/残缺数据，导出的会是**看起来正常**的空备份，
  *    用户拿它当保险反而把真数据的位置占了（与 `exportDesktopData` 同口径）。
  */
-export function exportPortableData(): { ok: boolean; fileName?: string; error?: string } {
+export async function exportPortableData(): Promise<{ ok: boolean; fileName?: string; error?: string }> {
   if (!PORTABLE) return { ok: false, error: '当前版本不支持导出数据文件（仅便携版可用）' }
   if (writeLocked) {
     const msg = '数据文件读取失败期间不导出（内存里是空库/残缺数据）：请先按顶部红条提示备份原文件，或解除锁定后再导出'
@@ -405,7 +561,8 @@ export function exportPortableData(): { ok: boolean; fileName?: string; error?: 
     return { ok: false, error: msg }
   }
   try {
-    const text = portableDataJSON()
+    // await：外置数据要一份份读回来内联（见 portableDataJSON 的注释）
+    const text = await portableDataJSON()
     const d = new Date()
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`
     const fileName = `youth-fantasy-engine-data-${stamp}.json`
@@ -447,6 +604,8 @@ export async function importPortableData(
     return { ok: false, error: '这不是有效的小说工坊数据文件（请选择本软件导出的数据文件）' }
   }
   replacePortableData(parsed)
+  // 导入的文件里外置数据是**内联**的 ⇒ 拆开落盘（与老库升级同一条路径，幂等）
+  await migratePortableSidecar()
   const ok = await flushPortable()
   return ok ? { ok: true } : { ok: false, error: lastError || '写入便携数据文件失败' }
 }

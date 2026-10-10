@@ -22,6 +22,15 @@ export interface StoreOps {
   bulkDel(store: string, keys: (string | number)[]): Promise<void>
 }
 
+/**
+ * 当前数据文件格式版本。
+ *   · v1 —— 所有 store 都在整库 JSON 里
+ *   · v2 —— 大块数据（备份载荷 / 向量 / 知识库）**外置**为独立文件（2026-10-11）
+ * 🔴 升版本必须由迁移逻辑把关（见 sidecar.migrateSidecar），且**老程序读到更高的版本要提示升级**，
+ *    不能静默当成"载荷缺失" —— 那会让作者以为备份丢了。
+ */
+export const PORTABLE_FILE_VERSION = 2
+
 /** 整库单文件的数据格式（桌面版 JSON 数据文件） */
 export interface PortableData {
   app: 'youth-fantasy-engine'

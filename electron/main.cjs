@@ -154,6 +154,87 @@ app.whenReady().then(() => {
     }
   })
 
+  // ---- 外置大块数据（sidecar）----
+  //
+  // 【为什么要有它】备份载荷每份是一个项目的整包正文，**写完就再也不变**，却躺在整库 JSON 里
+  // ⇒ 作者每敲一个字，都要把上百 MB 没动过的历史重新 stringify + 写盘一遍（表现为明显卡顿）。
+  //   挪到独立文件后，主 JSON 只留元数据，写盘体积降一个数量级。
+  //
+  // 🔴 与便携版（scripts/portable-server.mjs 的 /api/blob）**同一套语义**：
+  //    两端都只外置「登记过的 store」，store / id 都过白名单，都是原子写。
+  //    差异只在传输（这里是 IPC，那边是 HTTP）。
+  //
+  // 🔴 外置目录**跟随数据文件**（含用户自定义到云盘的情况）：否则换位置后载荷就找不到了。
+  const BLOB_STORES = new Set(['backupPayloads'])
+  const BLOB_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+  function blobRoot() {
+    return path.join(path.dirname(dataFile()), 'blobs')
+  }
+  /** 解析外置记录路径；**任何不合法都返回 null**（store/id 会进路径 ⇒ 白名单是安全边界） */
+  function resolveBlobPath(store, id) {
+    if (typeof store !== 'string' || !BLOB_STORES.has(store)) return null
+    if (typeof id !== 'string' || !BLOB_ID_RE.test(id)) return null
+    const root = blobRoot()
+    const abs = path.normalize(path.join(root, store, `${id}.json`))
+    const rel = path.relative(root, abs)
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null
+    return abs
+  }
+
+  ipcMain.handle('payload:read', async (_e, store, id) => {
+    try {
+      const abs = resolveBlobPath(store, id)
+      if (!abs) return { ok: false, error: '外置记录的 store / id 不合法' }
+      if (!fs.existsSync(abs)) return { ok: true, missing: true }
+      return { ok: true, value: JSON.parse(fs.readFileSync(abs, 'utf-8')) }
+    } catch (err) {
+      // 单条损坏只该丢这一条，不该掀翻整块功能
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('payload:write', async (_e, store, id, text) => {
+    try {
+      const abs = resolveBlobPath(store, id)
+      if (!abs) return { ok: false, error: '外置记录的 store / id 不合法' }
+      try { JSON.parse(String(text)) } catch { return { ok: false, error: '内容不是有效 JSON' } }
+      // 🔴 必须先建目录：`writeAtomic` 是给主 JSON 写的（那个目录启动时已存在），
+      //    而外置目录是按需生成的 —— 漏掉这一步会让**第一次写备份载荷必然 ENOENT**
+      //    （2026-10-11 真 Electron 实机抓到：write 一律失败，恢复备份时才是"载荷缺失"）。
+      fs.mkdirSync(path.dirname(abs), { recursive: true })
+      await writeAtomic(abs, String(text))
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('payload:del', async (_e, store, id) => {
+    try {
+      const abs = resolveBlobPath(store, id)
+      if (!abs) return { ok: false, error: '外置记录的 store / id 不合法' }
+      try { fs.unlinkSync(abs) } catch { /* 已不存在视为成功（删除幂等） */ }
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('payload:list', async (_e, store) => {
+    try {
+      if (typeof store !== 'string' || !BLOB_STORES.has(store)) return { ok: false, error: '未知的外置 store', ids: [] }
+      const dir = path.join(blobRoot(), store)
+      if (!fs.existsSync(dir)) return { ok: true, ids: [] }
+      const ids = fs.readdirSync(dir)
+        .filter(f => f.endsWith('.json'))
+        .map(f => f.slice(0, -5))
+        .filter(x => BLOB_ID_RE.test(x))
+      return { ok: true, ids }
+    } catch (err) {
+      return { ok: false, error: String(err), ids: [] }
+    }
+  })
+
   // 同步写盘：窗口关闭（beforeunload）时保证未保存数据落盘。同样原子写。
   ipcMain.on('store:save-sync', (e, text) => {
     try {

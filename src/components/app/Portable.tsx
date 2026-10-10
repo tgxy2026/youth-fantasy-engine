@@ -43,7 +43,7 @@ export function PortableDataBar() {
   const doExport = async () => {
     setBusy('export')
     try {
-      const r = exportPortableData()
+      const r = await exportPortableData()
       if (r.ok) showToast(`已导出全部数据（浏览器下载）：\n${r.fileName ?? ''}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。`, 'success', 6000)
       else showToast(r.error || '导出失败', 'error')
     } finally {

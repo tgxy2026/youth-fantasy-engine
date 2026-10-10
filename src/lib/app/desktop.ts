@@ -7,7 +7,9 @@
 // 它是写进用户数据文件的字面量，改名会让老数据文件无法被识别。
 // 桌面版「导出数据文件 / 导入数据文件」即基于该格式，可在设备间手工搬运。
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
-import { normalizePortableData, isPortableDataFile } from '@/lib/storage/storeOps'
+import { normalizePortableData, isPortableDataFile, PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
+import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
+import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 import { markDeleted, clearDeleted, resetTombs } from '@/lib/sync/syncTombstone'
 
@@ -36,6 +38,15 @@ export interface ElectronStoreAPI {
   setDataPath(target: string, text: string): Promise<{ ok: boolean; path: string; adopted: boolean; error: string | null }>
   /** 恢复默认存放位置 */
   resetDataPath(text: string): Promise<{ ok: boolean; path: string; adopted: boolean; error: string | null }>
+  // ---- 外置大块数据（sidecar）：备份载荷存独立文件，主 JSON 只留元数据 ----
+  /** 读一条外置记录；`missing:true` 表示还没有（不是错误） */
+  payloadRead(store: string, id: string): Promise<{ ok: boolean; missing?: boolean; value?: unknown; error?: string }>
+  /** 写一条外置记录（text = 该记录的 JSON 串） */
+  payloadWrite(store: string, id: string, text: string): Promise<{ ok: boolean; error?: string }>
+  /** 删一条外置记录（幂等：已不存在也算成功） */
+  payloadDel(store: string, id: string): Promise<{ ok: boolean; error?: string }>
+  /** 列该 store 当前全部外置 id */
+  payloadList(store: string): Promise<{ ok: boolean; ids: string[]; error?: string }>
 }
 
 /** 主进程代发请求的结果（**永不抛**：失败走 ok:false，好让界面如实提示） */
@@ -508,6 +519,7 @@ export async function initDesktopStore(): Promise<void> {
     writeLockReason = why
     lastError = msg
   }
+  let loaded = false
   try {
     const r = await api().load()
     dataFilePath = r.path
@@ -525,6 +537,7 @@ export async function initDesktopStore(): Promise<void> {
     } else if (outcome.kind === 'ready') {
       data = outcome.data
       lastSavedAt = data.savedAt || Date.now()
+      loaded = true
     }
     // outcome.kind === 'empty'（首次使用，文件还不存在）：空库启动属正常，可以写
   } catch (e) {
@@ -536,6 +549,31 @@ export async function initDesktopStore(): Promise<void> {
     inited = true
     readyGate.resolve() // 放行所有「等数据文件就绪」的启动逻辑（见 desktopStoreReady）
     emit()
+  }
+  // 🔴 老库迁移必须放在 `inited = true` **之后**（2026-10-11 实机抓到，与便携版同病）：
+  //    `flushDesktop` 开头有 `if (!inited || saving) return false` 的守卫，
+  //    写在 try 块内时 inited 仍是 false ⇒ 载荷迁出去了、主 JSON 却原地不动。
+  if (loaded && !writeLocked) await migrateDesktopSidecar()
+}
+
+/**
+ * 把主 JSON 里残留的外置数据迁到独立文件（老库升级，**幂等**）。
+ *
+ * 🔴 锁写盘期间**绝不迁**：那时内存里是空库/残缺数据，迁出去的是空壳，
+ *    而老的主 JSON 随后会被覆盖 —— 那就是真丢稿，比不迁移糟得多。
+ */
+export async function migrateDesktopSidecar(): Promise<void> {
+  if (writeLocked) return
+  try {
+    const r = await migrateSidecar(data, desktopStore, DESKTOP_SIDECAR, async () => {
+      data.fileVersion = PORTABLE_FILE_VERSION
+      return flushDesktop()
+    })
+    const total = Object.values(r.moved).reduce((a, b) => a + b, 0)
+    if (total > 0) console.log(`[desktop] 已把 ${total} 条大块数据迁出为独立文件：`, r.moved)
+    if (r.failed.length) lastError = `部分大块数据迁移失败（下次启动会重试）：${r.failed.join('；')}`
+  } catch (e) {
+    lastError = '大块数据迁移失败：' + (e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -623,9 +661,15 @@ export async function exportDesktopData(): Promise<{ ok: boolean; path?: string;
     emit()
     return { ok: false, error: msg }
   }
-  data.savedAt = Date.now()
+  // 🔴 外置数据必须**内联回来**：否则导出的文件会静默丢掉全部备份载荷
+  //    （列表还在、看起来正常，等要恢复时才说"载荷缺失"—— 最危险的失败形态）。
+  // 🔴 同时**不改动**内存里的 `data.savedAt`（与便携版同口径，2026-10-11）：
+  //    导出是纯读操作，改了它，导出的文件会声称"保存于此刻"，而磁盘上并没有这一刻的写入
+  //    ⇒ 作者据此以为「已经存好了」，实际那份数据只在导出位置。
+  const inline = await collectSidecarForExport(desktopStore, DESKTOP_SIDECAR)
+  const snapshot = { ...data, savedAt: Date.now(), stores: { ...data.stores, ...inline } }
   try {
-    const p = await api().exportFile(JSON.stringify(data))
+    const p = await api().exportFile(JSON.stringify(snapshot))
     // 🔴 2026-10-07 六维审计 P2：取消与失败**必须分开返回** —— 混成一个 null 会让
     //    「用户点了取消」和「真的出错了」在界面上长得一模一样（口径与 exportPdfDocument 对齐）。
     if (!p) return { ok: false, cancelled: true }
@@ -690,6 +734,8 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
   //    否则「导入前删过、而这份文件里恰好又有同 id 的记录」会被旧墓碑挡住 —— 记录明明导进来了，
   //    却永远复活不了（删得掉、进不来的死记录）。与 `syncCore` 换云端时的 resetTombs 同口径。
   resetTombs()
+  // 导入的文件里外置数据是**内联**的 ⇒ 拆开落盘（与老库升级同一条路径，幂等）
+  await migrateDesktopSidecar()
   const ok = await flushDesktop()
   return ok ? { ok: true } : { ok: false, error: lastError || '写入本地数据失败' }
 }
@@ -766,8 +812,69 @@ export async function resetDesktopDataPath(): Promise<{ ok: boolean; path: strin
   return { ok: true, path: r.path, adopted: r.adopted }
 }
 
-/** 桌面模式下的存储原语实现（内存数据 + 防抖写回本地数据文件） */
-export const desktopStore: StoreOps = {
+// ---------- 外置大块数据（sidecar）----------
+//
+// 🔴 桌面版**只外置 backupPayloads**，与便携版（还外置向量 / 知识库）**不同**，这是刻意的：
+//    桌面端的语义向量与参考资料本来就在**两个独立 IndexedDB 库**里（`-vec` / `-kb`），
+//    刻意不入整库 JSON（见 storage/portableVecKb.ts 头部的红线说明）⇒ 桌面端没有这个包袱。
+//    便携版把那两库搬进整库 JSON 只是因为「IDB 不跟 U 盘走」，如今同样换成外置文件即可，
+//    两端于是回到同一个语义：**大块数据都不进主 JSON**。
+export const DESKTOP_SIDECAR: SidecarSpec = {
+  backupPayloads: { layout: 'per-id', keyField: 'id' },
+}
+
+/** 外置通道的 IPC 实现（对应 main.cjs 的 `payload:*`） */
+const ipcSidecarApi: SidecarApi = {
+  async read(store, id) {
+    try {
+      const r = await api().payloadRead(store, id)
+      if (!r.ok || r.missing) return undefined
+      return r.value
+    } catch {
+      return undefined
+    }
+  },
+  async write(store, id, value) {
+    try {
+      const r = await api().payloadWrite(store, id, JSON.stringify(value))
+      return r.ok
+    } catch {
+      return false
+    }
+  },
+  async remove(store, id) {
+    try {
+      const r = await api().payloadDel(store, id)
+      return r.ok
+    } catch {
+      return false
+    }
+  },
+  async listIds(store) {
+    try {
+      const r = await api().payloadList(store)
+      return r.ok && Array.isArray(r.ids) ? r.ids : []
+    } catch {
+      return []
+    }
+  },
+}
+
+let activeSidecarApi: SidecarApi = ipcSidecarApi
+/** 测试注入点：换成内存实现（单测进程里没有主进程 IPC） */
+export function setDesktopSidecarApi(a: SidecarApi): void { activeSidecarApi = a }
+/** 复位回 IPC 实现（测试收尾用） */
+export function resetDesktopSidecarApi(): void { activeSidecarApi = ipcSidecarApi }
+/** 🔴 必须是代理：`withSidecar` 只在模块级调用一次，直接传会把实现固化进闭包 */
+const sidecarProxy: SidecarApi = {
+  read: (s, i) => activeSidecarApi.read(s, i),
+  write: (s, i, v) => activeSidecarApi.write(s, i, v),
+  remove: (s, i) => activeSidecarApi.remove(s, i),
+  listIds: (s) => activeSidecarApi.listIds(s),
+}
+
+/** 原生的（未外置）桌面存储原语实现（内存数据 + 防抖写回本地数据文件） */
+const baseDesktopStore: StoreOps = {
   async getAll<T>(store: string): Promise<T[]> {
     return Object.values((data.stores[store] ?? {}) as Record<string, T>)
   },
@@ -825,3 +932,18 @@ export const desktopStore: StoreOps = {
     else if (changed) scheduleSave()
   },
 }
+
+/**
+ * 桌面版 StoreOps = 原生后端 + 外置路由（backupPayloads 走独立文件）。
+ * 🔴 外置写失败要**看得见**：静默失败会让「备份列表在、恢复时说载荷缺失」，
+ *    作者无从判断是没存还是丢了 ⇒ 接到 lastError，与写盘失败同一条反馈通道。
+ */
+export const desktopStore: StoreOps = withSidecar(
+  baseDesktopStore,
+  sidecarProxy,
+  DESKTOP_SIDECAR,
+  (msg) => { lastError = msg; emit() },
+)
+// 登记通道：业务层要「列外置 id」做孤儿对账（与便携版互斥，故共用一个槽位无冲突）。
+// 🔴 同样必须**只在桌面模式下登记**（见 fileBackend 同款注释：无条件登记会被后加载者顶掉）。
+if (DESKTOP) registerSidecarApi(sidecarProxy)

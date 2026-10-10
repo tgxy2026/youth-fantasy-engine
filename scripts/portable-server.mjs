@@ -35,7 +35,7 @@
 'use strict'
 
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync, createReadStream } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync, createReadStream } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
@@ -63,8 +63,41 @@ const DATA_DIR = path.join(APP_ROOT, 'data')
 const DATA_FILE = path.join(DATA_DIR, 'youth-fantasy-engine-data.json')
 const TMP_FILE = path.join(DATA_DIR, '.data.json.tmp')
 const PORT_LOCK = path.join(DATA_DIR, '.port')
+/**
+ * 外置大块数据（sidecar）目录：`data/blobs/<store>/<id>.json`。
+ *
+ * 【为什么要有它】备份载荷（每份 = 一个项目的整包正文，写完就再也不变）原先躺在整库 JSON 里，
+ * 于是作者每敲一个字都要重传上百 MB 完全没动过的历史 —— 便携版会撞上 MAX_BODY，桌面版则每次
+ * 防抖写盘都卡。挪出来之后，主 JSON 只留元数据，写盘体积降一个数量级。
+ *
+ * 🔴 对外契约**不变**：导入 / 导出仍是单文件（导出时内联回单文件，导入后拆开）。
+ *    这里只改磁盘物理布局，不是新的数据格式。
+ */
+const BLOB_DIR = path.join(DATA_DIR, 'blobs')
+/**
+ * 允许外置的 store 白名单 —— 🔴 这是**安全边界**，不是配置项。
+ * `store` / `id` 都会进文件路径，若放行任意字符串就是赤裸裸的路径穿越（`../../xxx`）。
+ * 故两边都按「登记过的名字 + 受限字符集」双重校验，非法一律拒绝。
+ */
+const BLOB_STORES = new Set(['backupPayloads', 'vecRows', 'kbDocs', 'kbBodies'])
+/** id 字符集：真实主键是 uid（字母数字）或 whole 布局的固定键 `__all__` */
+const BLOB_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+
 /** 载荷上限：512 MiB（整库 JSON；正常小说库远小于此，超了就是异常） */
 const MAX_BODY = 512 * 1024 * 1024
+
+/**
+ * 解析外置记录的文件路径；**任何不合法都返回 null**（调用方回 400）。
+ * 三重校验：store 在白名单内 → id 字符集合法 → 归一化后仍落在 BLOB_DIR 内。
+ */
+function resolveBlobPath(store, id) {
+  if (typeof store !== 'string' || !BLOB_STORES.has(store)) return null
+  if (typeof id !== 'string' || !BLOB_ID_RE.test(id)) return null
+  const abs = path.normalize(path.join(BLOB_DIR, store, `${id}.json`))
+  const rel = path.relative(BLOB_DIR, abs)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null
+  return abs
+}
 
 function log(...a) { console.log('[portable]', ...a) }
 function fail(msg, code = 1) { console.error('[portable] ❌', msg); process.exit(code) }
@@ -207,6 +240,24 @@ function atomicWrite(text) {
   }
 }
 
+/**
+ * 外置记录的原子写。🔴 tmp 名必须**每次唯一**：与主 JSON 同一条教训
+ * （main.cjs 里 `store:save` 与 `store:save-sync` 曾因共用 tmp 而互相写坏）。
+ * 外置记录彼此独立，但仍可能有「连续两次写同一条」的并发，故加 pid + 递增序号。
+ */
+let __blobSeq = 0
+function atomicWriteBlob(abs, text) {
+  const tmp = `${abs}.${process.pid}.${++__blobSeq}.tmp`
+  mkdirSync(path.dirname(abs), { recursive: true })
+  try {
+    writeFileSync(tmp, text, 'utf8')
+    renameSync(tmp, abs)
+  } catch (e) {
+    try { unlinkSync(tmp) } catch { /* 清理失败无所谓：名字唯一，不会污染后续写 */ }
+    throw new Error(`写入外置记录失败（可能被网盘客户端占用）：${e.message}`)
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = req.url || '/'
 
@@ -253,6 +304,67 @@ const server = createServer(async (req, res) => {
           }
           atomicWrite(text)
           return sendJson(res, 200, { ok: true, path: DATA_FILE })
+        }
+        return sendJson(res, 405, { ok: false, error: 'method not allowed' })
+      }
+
+      // ---- 外置大块数据（sidecar）----
+      // 备份载荷 / 向量 / 知识库各存独立文件，主 JSON 只留元数据。路由与 /api/data 同构：
+      //   GET    /api/blob?store=&id=       读一条（404 = 还没有）
+      //   PUT    /api/blob?store=&id=       写一条（body 为该记录的 JSON）
+      //   DELETE /api/blob?store=&id=       删一条
+      //   GET    /api/blob/list?store=      列该 store 的全部 id
+      // 🔴 store / id 一律过白名单（见 resolveBlobPath），否则就是路径穿越。
+      if (url.startsWith('/api/blob')) {
+        const u = new URL(url, 'http://127.0.0.1')
+        const store = u.searchParams.get('store')
+        const id = u.searchParams.get('id')
+
+        if (url.startsWith('/api/blob/list')) {
+          if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
+          if (typeof store !== 'string' || !BLOB_STORES.has(store)) {
+            return sendJson(res, 400, { ok: false, error: '未知的外置 store' })
+          }
+          const dir = path.join(BLOB_DIR, store)
+          const ids = existsSync(dir)
+            ? readdirSync(dir).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5)).filter(x => BLOB_ID_RE.test(x))
+            : []
+          return sendJson(res, 200, { ids })
+        }
+
+        const abs = resolveBlobPath(store, id)
+        if (!abs) return sendJson(res, 400, { ok: false, error: '外置记录的 store / id 不合法' })
+
+        if (req.method === 'GET') {
+          if (!existsSync(abs)) return sendJson(res, 404, { missing: true })
+          try {
+            return sendJson(res, 200, { value: JSON.parse(readFileSync(abs, 'utf8')) })
+          } catch {
+            // 🔴 单条损坏只该丢这一条：回 500 让调用方跳过它，不要让整块功能静默瘫痪
+            return sendJson(res, 500, { ok: false, error: '外置记录已损坏（JSON 解析失败）' })
+          }
+        }
+        if (req.method === 'PUT' || req.method === 'POST') {
+          const buf = await readBody(req).catch(e => {
+            if (e && e.code === 'BODY_TOO_LARGE') return null
+            throw e
+          })
+          if (buf === null) {
+            return sendJson(res, 413, {
+              ok: false,
+              error: `这条外置记录超过 ${MAX_BODY >> 20} MiB 上限，未能保存。`,
+            })
+          }
+          const text = buf.toString('utf8')
+          try { JSON.parse(text) } catch {
+            return sendJson(res, 400, { ok: false, error: '请求体不是有效 JSON' })
+          }
+          atomicWriteBlob(abs, text)
+          return sendJson(res, 200, { ok: true })
+        }
+        if (req.method === 'DELETE') {
+          try { unlinkSync(abs) } catch { /* 已不存在视为成功（删除是幂等的） */ }
+          return sendJson(res, 200, { ok: true })
         }
         return sendJson(res, 405, { ok: false, error: 'method not allowed' })
       }

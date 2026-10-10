@@ -20,7 +20,8 @@ import {
   portableVecBackend, portableKbBackend,
   PORTABLE_VEC_STORE, PORTABLE_KB_DOCS_STORE, PORTABLE_KB_BODIES_STORE,
 } from '../src/lib/storage/portableVecKb'
-import { PORTABLE_KEY_FIELDS, portableStore } from '../src/lib/storage/fileBackend'
+import type { SidecarApi } from '../src/lib/storage/sidecar'
+import { PORTABLE_KEY_FIELDS, portableStore, setPortableSidecarApi, migratePortableSidecar } from '../src/lib/storage/fileBackend'
 import {
   chunkKey, toVectorBuffer, fromVectorBuffer, vectorRowId,
 } from '../src/lib/semantic/chunk'
@@ -40,6 +41,21 @@ function ok(name: string, cond: boolean, extra = '') {
 function read(rel: string): string {
   try { return readFileSync(path.join(process.cwd(), rel), 'utf8') } catch { return '' }
 }
+
+// 🔴 外置通道注入（2026-10-11）：vecRows / kbDocs / kbBodies 已从整库 JSON 挪到**独立文件**，
+//    Node 单测里没有便携服务 ⇒ 默认 HTTP 通道必然失败，读出来全是空，与被测逻辑无关。
+//    故注入一份内存实现（生产者是 setPortableSidecarApi 那个注入点）。
+const memFiles = new Map<string, unknown>()
+const memSidecar: SidecarApi = {
+  async read(store, id) { return memFiles.get(`${store}/${id}`) },
+  async write(store, id, value) { memFiles.set(`${store}/${id}`, value); return true },
+  async remove(store, id) { return memFiles.delete(`${store}/${id}`) },
+  async listIds(store) {
+    const p = store + '/'
+    return [...memFiles.keys()].filter(k => k.startsWith(p)).map(k => k.slice(p.length))
+  },
+}
+setPortableSidecarApi(memSidecar)
 
 // 残留自清：模块级单例在测试进程内跨用例共享，开头先清空便携 store 的三个专属表
 async function resetPortableStores() {
@@ -287,7 +303,8 @@ await (async () => {
   })
   await portableStore.put(PORTABLE_KB_BODIES_STORE, { id: 'k1', text: '引文' })
 
-  const json = portableDataJSON()
+  // await：外置数据要一份份读回来内联（否则导出的文件会静默丢掉全部载荷）
+  const json = await portableDataJSON()
   ok('整库 JSON 含 vecRows', json.includes('vecRows'))
   ok('整库 JSON 含 kbDocs 与 kbBodies', json.includes('kbDocs') && json.includes('kbBodies'))
   ok('整库 JSON 里向量是 base64 串（不是 JSON 对象/数组）', /"vecB64":"[A-Za-z0-9+/=]+"/.test(json))
@@ -299,7 +316,8 @@ await (async () => {
 
   const parsed = JSON.parse(json)
   replacePortableData(parsed)
-  // replacePortableData 内部异步 flush；内存 stores 已同步替换
+  // 🔴 导入的文件里外置数据是**内联**的 ⇒ 必须走迁移拆回外置文件，否则读不到
+  await migratePortableSidecar()
   const back = await portableStore.get<{ id: string; vecB64: string }>(PORTABLE_VEC_STORE, rowId)
   ok('导入后向量行回来且 vecB64 完好', !!back && back.vecB64 === bufferToBase64(toVectorBuffer(f32([0.5, 0.25]))))
   const backKb = await portableStore.get<{ id: string }>(PORTABLE_KB_DOCS_STORE, 'k1')

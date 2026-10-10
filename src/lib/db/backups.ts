@@ -7,6 +7,7 @@ import { ops, touchProject } from '@/lib/db/core'
 import { exportProject, remapSettingValue, type ProjectBundle, getProject } from '@/lib/db/projects'
 import { restoreDocsFromBundle } from '@/lib/search/knowledgeBase'
 import { isDemoProjectName } from '@/lib/constants'
+import { currentSidecarApi } from '@/lib/storage/sidecar'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
 
 // ============ 自动备份（v1.3 备份策略加固） ============
@@ -220,10 +221,20 @@ export async function getBackupPayload(id: string): Promise<ProjectBundle | unde
 }
 
 
-/** 删除一份备份：**元数据与载荷一起删**（只删一边就是孤儿载荷，白占空间） */
+/**
+ * 删除一份备份：**元数据与载荷一起删**（只删一边就是孤儿载荷，白占空间）。
+ *
+ * 🔴 顺序必须是**先载荷、后元数据**（2026-10-11 反转，原为元数据在前）：
+ *    创建时是「先载荷、后元数据」（见 createAutoBackup 的注释：元数据是看得见的东西，
+ *    载荷缺失会在列表里立刻暴露）。删除应当与之**对称地反过来** —— 若中途被打断：
+ *      · 先删载荷 ⇒ 元数据还在 ⇒ 列表里躺着一条「恢复不了」的备份，**看得见**，作者能处理；
+ *      · 先删元数据（旧写法）⇒ 载荷文件留在磁盘上、列表里却**没有任何痕迹**
+ *        ⇒ 静默占着空间，且没有任何入口能再找到它（真正的孤儿）。
+ *    在载荷还是整库 JSON 里的一行时，这个差别无足轻重；挪成独立文件后就成了磁盘垃圾。
+ */
 export async function deleteBackup(id: string) {
-  await ops.del('backups', id)
   await ops.del('backupPayloads', id)
+  await ops.del('backups', id)
 }
 
 /** 孤儿备份：备份记录存在但其项目已被删除（删除项目时按约定保留备份，导致此类记录积累） */
@@ -238,6 +249,44 @@ export async function deleteOrphanBackups(): Promise<number> {
   const orphans = await listOrphanBackups()
   for (const o of orphans) await deleteBackup(o.id)
   return orphans.length
+}
+
+/**
+ * 孤儿**载荷**判定（纯函数，可单测）：磁盘上有文件、但列表里已没有对应元数据。
+ *
+ * 🔴 为什么会有孤儿：创建备份是「先写载荷、后写元数据」（见 createAutoBackup 的注释）。
+ *    若两步之间被打断（断电、U 盘拔插、服务中断），载荷文件留下了而元数据没写进去
+ *    ⇒ 列表里**没有任何痕迹**，却实打实占着磁盘，且没有任何入口能再找到它。
+ *    删除路径已修正为先删载荷（见 deleteBackup），故孤儿只剩这一条来源。
+ *
+ * @param payloadIds 磁盘上实际存在的载荷 id
+ * @param metaIds    列表里还看得见的备份 id
+ */
+export function orphanPayloadIdsOf(payloadIds: string[], metaIds: string[]): string[] {
+  const known = new Set((metaIds ?? []).map(String))
+  return (payloadIds ?? []).map(String).filter(id => !known.has(id))
+}
+
+/**
+ * 列出孤儿载荷 id（磁盘有、列表无）。
+ * 🔴 只**列出**不删除：这些文件可能是作者手动放进去的、也可能是迁移中断的残留，
+ *    删错了不可逆 —— 交给作者在界面上确认后再清（与「清理孤儿备份」同一条交互口径）。
+ */
+export async function listOrphanPayloadIds(): Promise<string[]> {
+  const api = currentSidecarApi()
+  if (!api) return [] // 无外置通道（纯浏览器 dev / 尚未接入）⇒ 不存在孤儿一说
+  const [ids, metas] = await Promise.all([
+    api.listIds('backupPayloads').catch(() => [] as string[]),
+    ops.getAll<BackupMeta | LegacyBackupRecord>('backups').catch(() => [] as BackupMeta[]),
+  ])
+  return orphanPayloadIdsOf(ids, metas.map(m => String((m as BackupMeta).id ?? '')))
+}
+
+/** 删除全部孤儿载荷，返回删除条数 */
+export async function deleteOrphanPayloads(): Promise<number> {
+  const ids = await listOrphanPayloadIds()
+  for (const id of ids) await ops.del('backupPayloads', id)
+  return ids.length
 }
 
 /**
