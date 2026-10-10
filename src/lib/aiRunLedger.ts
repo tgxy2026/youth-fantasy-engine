@@ -13,7 +13,7 @@
  */
 import type { Chapter } from './types'
 import type {
-  AiRun, AiRunBasis, AiRunCall, AiRunCandidateRef, AiRunKind, AiRunOutcome, AiRunStatus,
+  AiContextSnapshot, AiRun, AiRunBasis, AiRunCall, AiRunCandidateRef, AiRunKind, AiRunOutcome, AiRunStatus,
 } from './aiRunTypes'
 import { hashOf } from './semantic/chunk'
 import { uid } from './id'
@@ -80,6 +80,19 @@ export function checkBasisStale(basis: AiRunBasis, current: BasisCurrent): Basis
     reasons.push('上游设定已被改动')
   }
   return { stale: reasons.length > 0, reasons: [...new Set(reasons)] }
+}
+
+/**
+ * 取「属于本次任务」的上下文快照。
+ * 🔴 判据是 `snap.at >= runStartedAt`：快照早于任务开始 ⇒ 那是上一次任务留下的，宁缺勿错
+ *    （记错上下文比不记更糟 —— 作者会以为「模型看到了」，其实没有）。
+ */
+export function pickContextSnapshot(
+  snap: AiContextSnapshot | null,
+  runStartedAt: number,
+): AiContextSnapshot | null {
+  if (!snap || snap.at < runStartedAt) return null
+  return snap
 }
 
 // ============ 二、账本编排（读写 db）============
@@ -153,12 +166,20 @@ export function makeCandidateRef(
 /** 收尾：置终态 + 验收回执 */
 export async function finishRun(
   id: string,
-  patch: { status: Exclude<AiRunStatus, 'running'>; outcome?: AiRunOutcome | null; error?: string; now?: number },
+  patch: {
+    status: Exclude<AiRunStatus, 'running'>
+    outcome?: AiRunOutcome | null
+    error?: string
+    /** 本次实际装配的上下文（§10.3 #2 上下文查看） */
+    context?: AiContextSnapshot | null
+    now?: number
+  },
 ): Promise<void> {
   await patchRun(id, {
     status: patch.status,
     outcome: patch.outcome ?? null,
     error: patch.error ?? '',
+    ...(patch.context !== undefined ? { context: patch.context } : {}),
     finishedAt: patch.now ?? Date.now(),
   })
 }

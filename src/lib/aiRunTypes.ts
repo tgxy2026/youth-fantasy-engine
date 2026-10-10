@@ -65,6 +65,24 @@ export interface AiRunOutcome {
   failed: string[]
 }
 
+/**
+ * 上下文装配快照（§10.3 #2「上下文查看」）。
+ * 记「本次任务实际带了哪些段落、哪些因预算没带、占多少字」—— 作者可据此判断
+ * 「模型有没有看到我刚写的那段设定」。
+ */
+export interface AiContextSnapshot {
+  /** 实际带上的段落标题（按装配顺序） */
+  sections: string[]
+  /** 因预算被丢弃的段落标题（如实声明，非空即说明「模型没看到这些」） */
+  dropped: string[]
+  /** 装配后的字符数 */
+  chars: number
+  /** 本次预算 */
+  budget: number
+  /** 装配时刻（用于判断这份快照属于哪次任务） */
+  at: number
+}
+
 /** 一次 AI 任务 = 一条运行记录（持久化，重启不丢） */
 export interface AiRun {
   id: string
@@ -85,4 +103,6 @@ export interface AiRun {
   outcome: AiRunOutcome | null
   /** 失败原因（`status === 'failed'` 时非空） */
   error: string
+  /** 本次实际装配的上下文摘要（可取不到 —— 非装配型任务 / 老数据没有这个字段） */
+  context?: AiContextSnapshot | null
 }

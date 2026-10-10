@@ -112,6 +112,14 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
                     )}
                     {candCount > 0 && <div className="mt-1 text-11 text-ink-500">候选 {candCount} 条</div>}
                     {r.calls.length > 0 && <div className="mt-1 text-11 text-ink-500">模型调用 {r.calls.length} 次</div>}
+                    {r.context && (
+                      <div className="mt-1 text-11 text-ink-500">
+                        上下文：{r.context.sections.length} 段 / {r.context.chars} 字
+                        {r.context.dropped.length > 0 && (
+                          <span className="text-amber"> · 预算外未带 {r.context.dropped.length} 段</span>
+                        )}
+                      </div>
+                    )}
                     {r.error !== '' && <div className="mt-1 text-11 text-danger">失败原因：{r.error}</div>}
                   </li>
                 )

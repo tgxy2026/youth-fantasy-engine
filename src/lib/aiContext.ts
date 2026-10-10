@@ -23,6 +23,7 @@ import { buildSemanticRecallBlock } from './semantic/inject'
 import { buildKbBlock } from './kbInject'
 import { planFor } from './contextLayers'
 import type { Chapter, TabDef, Volume } from './types'
+import type { AiContextSnapshot } from './aiRunTypes'
 
 export interface ProjectContextOptions {
   /**
@@ -897,6 +898,19 @@ async function findRelatedChapters(focusChapterId: string, limit = 8): Promise<C
  * 打包当前项目的全部设定资料。
  * 按 PRIORITY 顺序累加，超预算的段落被丢弃并记录在 dropped 里（UI 可提示作者）。
  */
+/**
+ * 最近一次装配结果（模块级）。
+ * 🔴 用途：§10.3 #2「上下文查看」—— 让运行账本记下「本次任务实际带了什么」。
+ *    长任务在本项目里是**串行互斥**的（见 creativeSession「与创作互斥」），故「最近一次」
+ *    即「本次任务那次」；调用方仍应按 `at` 与任务起始时刻比对，避免张冠李戴。
+ */
+let lastAssembly: AiContextSnapshot | null = null
+
+/** 读最近一次装配结果（供账本记录；调用方自行按 `at` 判归属） */
+export function lastContextAssembly(): AiContextSnapshot | null {
+  return lastAssembly
+}
+
 export async function buildProjectContext(opts: ProjectContextOptions = {}): Promise<ProjectContextResult> {
   // 3.0 · W1-2 规模门（§10.3 #2）：预算与召回数**按项目体量**取档，不再写死 12000 ——
   //    长篇（百万字）时那点预算只够塞开头几章，模型看到的「前文」永远是第 1 章。
@@ -1053,6 +1067,8 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     ? `\n\n（注：以下资料因长度预算未带入本提示，仅供参考时留意其可能存在：${dropped.join('、')}）`
     : ''
   const text = parts.join('\n\n') + note
+  // 3.0 · W1-2c：记下本次装配（供运行账本「上下文查看」）
+  lastAssembly = { at: Date.now(), sections: [...sections], dropped: [...dropped], chars: text.length, budget }
   return { text, sections, dropped, chars: text.length }
 }
 

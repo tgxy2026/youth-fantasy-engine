@@ -8,7 +8,7 @@ import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
 import {
   chapterFingerprint, computeBasis, checkBasisStale,
-  createRun, patchRun, finishRun, appendRunCall, makeCandidateRef,
+  createRun, patchRun, finishRun, appendRunCall, makeCandidateRef, pickContextSnapshot,
 } from '../src/lib/aiRunLedger'
 import { getAiRun, listProjectAiRuns, listRecentAiRuns, deleteAiRun } from '../src/lib/db'
 import type { Chapter } from '../src/lib/types'
@@ -123,6 +123,15 @@ async function main() {
   {
     const r = await patchRun('不存在的-id', { status: 'failed' })
     ok('patchRun 缺失记录返回 undefined（不抛）', r === undefined)
+  }
+
+  // ---------- 六、上下文快照归属（W1-2c · §10.3 #2「上下文查看」）----------
+  {
+    const snap = { sections: ['作品概览', '世界设定'], dropped: ['术语表'], chars: 1234, budget: 12_000, at: 5000 }
+    ok('快照晚于任务开始 → 采纳', pickContextSnapshot(snap, 4000) === snap)
+    ok('快照恰在开始时刻 → 采纳（同刻也算本次）', pickContextSnapshot(snap, 5000) === snap)
+    ok('🔴 快照早于任务开始 → 丢弃（那是上一次留下的，宁缺勿错）', pickContextSnapshot(snap, 6000) === null)
+    ok('没有快照 → null', pickContextSnapshot(null, 1) === null)
   }
 
   console.log(`\n———— aiRunLedger：${pass} 通过 / ${fail} 失败 ————`)
