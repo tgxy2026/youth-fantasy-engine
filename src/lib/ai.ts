@@ -25,6 +25,10 @@
 // 副作用：注册「设定模板补全 / 大纲规划三页签」四条提示词（原先位于 ai.ts 末尾）。
 // 🔴 必须是裸引入 —— 只再导出 `FillContext`（类型）的话会在编译期被擦除，登记就不执行了。
 import './aiCore/prompts'
+// 副作用：注册「AI 辅助规划」提示词（W2-3 自 components/AIAssist.tsx 搬来）。
+// 🔴 同样必须裸引入：AIAssist 只在懒加载的「灵感工具」页里被 import，
+//    注册留在那儿的话，没打开过该页签的作者在「AI 提示词」里看不到这条。
+import './aiAssistPrompt'
 
 // ---- 共享内核：Provider 类型 / 超时温度常量 / 平台预设 ----
 export {

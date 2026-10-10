@@ -24,7 +24,8 @@ import { getSetting, setSetting } from '../lib/db'
 import { uid } from '../lib/id'
 import { Button } from './Button'
 import { clipText } from '../lib/textClip'
-import { registerPrompt } from '../lib/promptSettings'
+// 🔴 W2-3：提示词与登记已搬到 lib（静态可达）—— 组件里不再 registerPrompt
+import { getAssistPrompt } from '../lib/aiAssistPrompt'
 
 // ============ 多轮对话会话模型（按项目持久化在 settingsKV） ============
 interface ChatMsg {
@@ -41,15 +42,7 @@ interface ChatSession {
 }
 const SESSIONS_KEY = 'aiChatSessions'
 
-let SYSTEM_PROMPT = `你是一位网络小说创作的辅助助手，专门帮助作者做创作前期的「灵感激发、剧情 / 人物 / 世界观规划、设定脑暴、一致性自查」工作。
-
-规则：
-1. 只输出规划性、启发性的内容（创意、大纲草案、设定建议、可选项），不要替作者直接写出小说正文章节；
-2. 结构清晰，善用标题、列表、分点，便于作者直接取用；
-3. 贴合作者给定的题材与风格；
-4. 若信息不足，主动给出多个可选项而非空泛回答；
-5. 用简体中文回复；
-6. 若对话中提供了【项目资料】（世界观 / 角色 / 时间线 / 势力等），请优先参考其中已填写的设定，使建议贴合已有世界观与人设、不与已登记设定冲突，并可主动呼应其中的伏笔与线索。`
+// 功能提示词已移至 lib/aiAssistPrompt.ts（🔴 那里加载即注册，不受本组件懒加载影响）
 
 const TEMPLATES: { label: string; prompt: string }[] = [
   { label: '剧情灵感', prompt: '我想写一个关于【在此填写主题 / 核心梗】的故事，请给我 5 个差异化的剧情发展方向，每个用 2-3 句话说明卖点与潜在冲突。' },
@@ -178,7 +171,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
     // 会话清单**不在这里快照**（见下方落库处）：任务跑在 store 里，完成时要读**最新**清单再合并
     const bringCtx = bringContext
     t.run(async job => {
-      let sys = composeSystemPrompt(SYSTEM_PROMPT, cfg)
+      let sys = composeSystemPrompt(getAssistPrompt(), cfg)
       if (bringCtx) {
         try {
           const ctx = await buildProjectContext({ budget: await writerBudgetFor('ai-assist') })
@@ -375,5 +368,6 @@ style={{ height: foldVh('60vh') }}>
   )
 }
 
-// —— AI 提示词登记（必须放在文件末尾：上面这些 let 已全部初始化，避免 TDZ）——
-registerPrompt({ id: 'assist-planner', group: '灵感工具', name: 'AI 辅助规划', note: '多轮对话式脑暴，结合项目设定给创作建议。' }, () => SYSTEM_PROMPT, t => { SYSTEM_PROMPT = t })
+// —— AI 提示词登记已移至 lib/aiAssistPrompt.ts（W2-3）——
+// 原先写在这里会因本组件只在懒加载的「灵感工具」页里被 import 而**漏注册**：
+// 没打开过那个页签的作者，在「AI 提示词」设置页看不到这条。
