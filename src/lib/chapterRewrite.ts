@@ -17,6 +17,7 @@ import { countWords } from './textStats'
 import type { ChapterRewriteAction } from './aiTasks'
 import type { Chapter, Volume } from './types'
 import { withAiAssist, type AiSourceKind } from './aiAssist'
+import { chapterFingerprint } from './aiRunLedger'
 
 /**
  * 本次改写的**期望字数** —— 异常判定的基准。
@@ -103,12 +104,23 @@ export async function applyChapterRewrite(
    * 故由调用方声明来源，默认仍是 `rewritten`（绝大多数调用是改写）。
    */
   kind: AiSourceKind = 'rewritten',
+  /**
+   * 3.0 · W1-1 版本保护（§10.3 #1）：**产出这份候选时**该章的指纹。
+   * 传入则采纳前校验 —— 这一章若在生成之后被改动过，**拒绝覆盖**（防「旧候选盖掉作者编辑」）。
+   * 不传 = 只做历史行为（兼容其他调用点）。
+   */
+  opts?: { expectedFingerprint?: string },
 ): Promise<{ words: number }> {
   const body = (text ?? '').trim()
   if (!body) throw new Error('改写结果为空，没有可写入的内容')
   const chs = await db.getAllChapters()
   const ch = chs.find(c => c.id === chapterId)
   if (!ch) throw new Error('这一章已经不在项目里了')
+  // 🔴 3.0 · W1-1 版本保护：候选产出后正文若被改动 ⇒ **拒绝静默覆盖**。
+  //    不自动丢弃、不自动重跑（沿用 isSuspectRewrite 的克制口径）—— 由作者决定重生成还是放弃。
+  if (opts?.expectedFingerprint && chapterFingerprint(ch) !== opts.expectedFingerprint) {
+    throw new Error('这一章在你产出改写结果之后又被改动过 —— 直接替换会覆盖你的编辑，请重新生成改写结果。')
+  }
   // 🔴 先留旧稿，再覆盖（顺序不能反：反了就丢原文）
   // 标成 AI 来源：裁剪时优先牺牲定时快照，保住这一版（2.4.0 · A3）
   await db.createSnapshot(ch, 'ai-rewrite')

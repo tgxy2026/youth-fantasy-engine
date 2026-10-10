@@ -12,6 +12,7 @@ import * as db from '../src/lib/db'
 import {
   applyChapterRewrite, expectedRewriteWords, isSuspectRewrite, listRewriteCandidates,
 } from '../src/lib/chapterRewrite'
+import { chapterFingerprint } from '../src/lib/aiRunLedger'
 import { CHAPTER_REWRITE_META, cleanChapterOutput, type ChapterRewriteAction } from '../src/lib/aiTasks'
 import { __resetMockStores } from './mock-memory'
 import fs from 'node:fs'
@@ -170,6 +171,36 @@ await db.saveChapter(chap('c3', 'v2', 0, '第二章 承', '原文二。'.repeat(
     src.includes('承载设定交代的句子一律保留'))
   ok('🔴 最新章：只有「改写」档可放开，润色 / 扩写 / 精简仍守各自纪律（消除越权授权）',
     src.includes('只有「改写」这一档可以放开手脚') && src.includes('不因「最新章」而放宽'))
+}
+
+// ---------- ⑩ 版本保护（3.0 · W1-1）：候选产出后正文被改过 ⇒ 拒绝覆盖 ----------
+// 判据：候选记录「产出时该章的指纹」；采纳前与当前正文比对，不符即拒绝（§10.3 #1）。
+{
+  // ① 未改动：带基准采纳应成功
+  const ch = (await db.getAllChapters()).find(c => c.id === 'c3') as Chapter
+  const fp = chapterFingerprint(ch)
+  const okCase = await applyChapterRewrite('c3', '版本保护·未改动应通过。'.repeat(5), 'rewritten', { expectedFingerprint: fp })
+  ok('未改动时带基准采纳成功', okCase.words > 0)
+
+  // ② 正文被改过：带旧基准应被拒，且不覆盖作者编辑
+  const ch2 = (await db.getAllChapters()).find(c => c.id === 'c3') as Chapter
+  const fp2 = chapterFingerprint(ch2)
+  await db.saveChapter({
+    ...ch2, content: ch2.content + '（作者手补了一句）', wordCount: ch2.wordCount + 9, updatedAt: Date.now(),
+  })
+  const authored = ((await db.getAllChapters()).find(c => c.id === 'c3') as Chapter).content
+  let threw = false, msg = ''
+  try {
+    await applyChapterRewrite('c3', '过期候选不该写进去。'.repeat(5), 'rewritten', { expectedFingerprint: fp2 })
+  } catch (e) { threw = true; msg = e instanceof Error ? e.message : String(e) }
+  ok('🔴 正文被改过 ⇒ 拒绝覆盖（版本保护生效）', threw)
+  ok('拒绝原因指向「被改动过」', msg.includes('又被改动过'), msg)
+  ok('🔴 拒绝后正文原样（作者编辑没被覆盖）',
+    ((await db.getAllChapters()).find(c => c.id === 'c3') as Chapter).content === authored)
+
+  // ③ 兼容：不传基准 ⇒ 不做校验（旧调用点行为不变）
+  const noCheck = await applyChapterRewrite('c3', '不传基准照常写。'.repeat(5))
+  ok('不传 expectedFingerprint 时不做校验（兼容旧调用）', noCheck.words > 0)
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 共 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)

@@ -43,7 +43,7 @@ import {
   isSuspectRewrite,
   listRewriteCandidates,
 } from './chapterRewrite'
-import { createRun, finishRun } from './aiRunLedger'
+import { createRun, finishRun, chapterFingerprint } from './aiRunLedger'
 import { countWords } from './textStats'
 import { isCancelled } from './ai'
 import type { LedgerItem } from './settingLedger'
@@ -176,6 +176,11 @@ export interface RewriteState {
    * 🔴 置位后**禁用「替换该章正文」**：那是覆盖作者正文的动作，不能在可疑结果上放开。
    */
   suspect?: boolean
+  /**
+   * 3.0 · W1-1 版本保护：**产出这份结果时**该章的指纹（`chapterFingerprint`）。
+   * 采纳前与当前正文比对 —— 不符（正文被改过）则拒绝替换，见 `applyChapterRewrite`。
+   */
+  baseFingerprint: string
 }
 
 export interface CreativeNotice {
@@ -770,6 +775,7 @@ export async function startChapterRewrite(p: {
     rewrite: {
       chapterId: hit.chapter.id, title: hit.chapter.title, no: hit.no,
       action: p.action, text: '', running: true, fromWords, expectWords, isLatest,
+      baseFingerprint: chapterFingerprint(hit.chapter),
     },
   })
   // 上一章结尾当衔接样本（改写后仍要接得上）；改的是首章就没有
@@ -847,7 +853,10 @@ export async function applyRewrite() {
   if (!r || r.running) return
   try {
     // 🔴 B3：这是**创意写作**（从无到有产出正文），来源记 `generated` 而不是默认的 `rewritten`
-    const { words } = await applyChapterRewrite(r.chapterId, r.text, 'generated')
+    const { words } = await applyChapterRewrite(r.chapterId, r.text, 'generated', {
+      // 3.0 · W1-1：把「生成时基准」一起交过去 —— 正文被改过则不覆盖
+      expectedFingerprint: r.baseFingerprint,
+    })
     // 🔴 最新章改完要补跑一轮设定同步（老大 2026-09-19 要求）：它后面还没有正文，
     //    这一章的新信息必须进设定表，否则下一次「接着写」会读到旧设定。
     //    历史章**不跑** —— 纪律上它就不该产生新设定（那会污染设定表）。
@@ -873,7 +882,14 @@ export async function applyRewrite() {
     )
     set({ rewrite: null })
   } catch (e) {
-    notice('写入失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    const msg = e instanceof Error ? e.message : String(e)
+    // 3.0 · W1-1：版本保护拒绝不是「写入失败」，是「基准已过期」—— 分开口径，别误导作者去查写入问题
+    if (msg.includes('又被改动过')) {
+      notice(msg + '（未写入任何内容）', 'error')
+      set({ rewrite: null })
+    } else {
+      notice('写入失败：' + msg, 'error')
+    }
   }
 }
 
