@@ -143,5 +143,25 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     /\{isCharTab && \(/.test(cs))
 }
 
+// ---------- ⑨ 首启向导的模型配置与「模型设置 → 模型配置」同源（2026-10-11 主人反馈） ----------
+//
+// 起因：向导里曾各自维护一份「常用平台」短名单（QUICK_CLOUD / QUICK_LOCAL），
+//   只摆 DeepSeek / 硅基流动 / 通义 / 智谱 / Kimi 五家 + 本地两家，其余十几个平台
+//   （豆包 / MiniMax / 混元 / Groq / OpenRouter…）在首启里根本看不到；
+//   且只有本地 Ollama 有「获取模型」按钮，云端平台没有「获取模型列表」入口。
+// 这两点都属「与项目内模型配置不同步」，且很容易在后续改动里悄悄回退（回退后不报错）。
+{
+  const wa = read('src/components/app/WelcomeAISetup.tsx')
+  ok('🔴 向导不再自建平台短名单（QUICK_CLOUD / QUICK_LOCAL 一律不得再出现）',
+    !/QUICK_CLOUD|QUICK_LOCAL/.test(wa))
+  ok('🔴 向导的平台预设直接取自共享常量 LOCAL_PRESETS / ONLINE_PRESETS（同源，改一处即可）',
+    /const cloudPresets:\s*PlatformPreset\[\]\s*=\s*ONLINE_PRESETS/.test(wa)
+    && /const localPresets:\s*PlatformPreset\[\]\s*=\s*LOCAL_PRESETS/.test(wa))
+  ok('🔴 向导接了云端端点拉取模型清单（listOpenAIModels），不只是本地 Ollama',
+    /listOpenAIModels/.test(wa))
+  ok('🔴 「获取模型列表」按钮对所有平台可见（不再用 isOllama 包住按钮）',
+    /获取模型列表/.test(wa) && !/\{isOllama && \(\s*<Button[\s\S]{0,120}获取本地模型/.test(wa))
+}
+
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

@@ -24,7 +24,7 @@ import AIDisabledNotice from '@/components/ai/AIDisabledNotice'
 import { showToast } from '@/components/dialogs/dialogs'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
-  testProvider, providerFromPreset, listOllamaModels,
+  testProvider, providerFromPreset, listOllamaModels, listOpenAIModels,
   loadProviders, saveProviders, saveActiveId,
   LOCAL_PRESETS, ONLINE_PRESETS,
 } from '@/lib/ai'
@@ -32,11 +32,10 @@ import { currentModelAdvice, getWriterBudget, saveWriterBudget } from '@/lib/ai/
 import { syncTuningWithModel } from '@/lib/tavern/settings'
 
 /**
- * 向导只摆最常用的几家 —— 首屏摆 14 个平台会变成一张让人不想看的清单。
- * 其余（豆包 / MiniMax / 混元 / Groq / OpenRouter…）在「模型设置 → 模型配置」里都有。
+ * 平台预设与「模型设置 → 模型配置」保持**同一份来源**（LOCAL_PRESETS / ONLINE_PRESETS）——
+ * 那两处曾各自维护一份短名单，结果向导里少一大截平台（豆包 / MiniMax / 混元 / Groq / OpenRouter…），
+ * 新用户在首启就找不到自己用的平台。2026-10-11 主人反馈后统一：向导直接铺全量，改预设只改一处。
  */
-const QUICK_CLOUD = ['DeepSeek', '硅基流动 SiliconFlow', '通义千问 Qwen', '智谱 GLM', 'Kimi 月之暗面']
-const QUICK_LOCAL = ['Ollama（本地）', 'LM Studio（本地）']
 
 interface Props {
   /** 配好并启用后继续 */
@@ -52,8 +51,8 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
   const [draft, setDraft] = useState<AIProvider | null>(null)
   /** 当前选中的平台预设标签：另存一份供按钮高亮 —— 拿 draft 反推名字不可靠 */
   const [pickedLabel, setPickedLabel] = useState('')
-  /** 本地 Ollama 拉到的模型名清单（点「获取本地模型」后填充） */
-  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  /** 拉到的模型名清单（本地 Ollama 的 /api/tags 或云端/本地兼容端点的 /v1/models，点「获取模型列表」后填充） */
+  const [models, setModels] = useState<string[]>([])
   const [fetching, setFetching] = useState(false)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<AITestResult | null>(null)
@@ -62,18 +61,15 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
   /** 测试通过并已启用 */
   const [enabled, setEnabled] = useState(false)
 
-  // 云端「自定义」预设没被 QUICK_CLOUD 命中，单独补一个（放在最后）
-  const cloudPresets: PlatformPreset[] = [
-    ...ONLINE_PRESETS.filter(p => QUICK_CLOUD.includes(p.label)),
-    { label: '自定义', baseUrl: '' },
-  ]
-  const localPresets = LOCAL_PRESETS.filter(p => QUICK_LOCAL.includes(p.label))
+  // 与「模型设置 → 模型配置」同源：直接铺全量预设（ONLINE_PRESETS 末尾已含「自定义」）
+  const cloudPresets: PlatformPreset[] = ONLINE_PRESETS
+  const localPresets: PlatformPreset[] = LOCAL_PRESETS
 
   /** 选平台预设 → 生成一份草稿（类型 / 本地标记由 providerFromPreset 带好） */
   const pick = (p: PlatformPreset) => {
     setPickedLabel(p.label)
     setDraft(providerFromPreset(p))
-    setOllamaModels([])
+    setModels([])
     setResult(null)
     setBudget(null)
     setEnabled(false)
@@ -81,22 +77,29 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
 
   const patch = (v: Partial<AIProvider>) => setDraft(d => (d ? { ...d, ...v } : d))
 
-  /** 本地 Ollama 专用：把本机已 pull 的模型列出来，省得手打模型名 */
+  /**
+   * 获取模型列表：本地 Ollama 走 /api/tags，云端 / 本地 OpenAI 兼容端点走 /v1/models。
+   * 失败只报原因（不破坏手动填写）；拿到清单后若还没填模型名，顺手选第一个。
+   */
   const fetchModels = async () => {
     if (!draft) return
     setFetching(true)
     try {
-      const models = await listOllamaModels(draft.baseUrl)
-      setOllamaModels(models)
-      if (models.length === 0) {
+      const list = draft.type === 'ollama'
+        ? await listOllamaModels(draft.baseUrl)
+        : await listOpenAIModels(draft)
+      setModels(list)
+      if (list.length === 0) {
         setResult({
           ok: false, latencyMs: 0, loadMs: 0, reply: '',
-          error: 'Ollama 已连接，但本机还没有任何模型：请先在终端执行 ollama pull <模型名> 拉取一个。',
+          error: draft.type === 'ollama'
+            ? 'Ollama 已连接，但本机还没有任何模型：请先在终端执行 ollama pull <模型名> 拉取一个。'
+            : '端点已连通，但模型列表为空：请核对该接口地址是否正确，或手动填写模型名。',
         })
         return
       }
       setResult(null)
-      if (!draft.model) patch({ model: models[0] })
+      if (!draft.model) patch({ model: list[0] })
     } catch (e) {
       setResult({
         ok: false, latencyMs: 0, loadMs: 0, reply: '',
@@ -227,12 +230,15 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
                     placeholder={isOllama ? 'http://localhost:11434' : 'https://api.deepseek.com/v1'}
                     className="w-full text-12 font-mono"
                   />
-                  {isOllama && (
-                    <Button variant="secondary" size="sm" onClick={fetchModels} disabled={fetching} className="shrink-0">
-                      {fetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                      {fetching ? '获取中…' : '获取本地模型'}
-                    </Button>
-                  )}
+                  <Button
+                    variant="secondary" size="sm" onClick={fetchModels}
+                    disabled={fetching || !draft.baseUrl.trim()}
+                    className="shrink-0"
+                    title="按当前接口地址拉取该端点可用的模型清单（本地 Ollama / 官方平台 / 中转站 / 本地兼容服务均支持）"
+                  >
+                    {fetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    {fetching ? '获取中…' : '获取模型列表'}
+                  </Button>
                 </div>
               </div>
 
@@ -252,15 +258,18 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
               )}
 
               <div>
-                <label className="block text-11 text-ink-400 mb-1">模型名称</label>
-                {ollamaModels.length > 0 ? (
+                <label className="block text-11 text-ink-400 mb-1">
+                  模型名称
+                  {models.length > 0 && <span className="text-ink-600"> · 已获取 {models.length} 个，可直接选</span>}
+                </label>
+                {models.length > 0 ? (
                   <select
-                    value={draft.model}
+                    value={models.includes(draft.model) ? draft.model : ''}
                     onChange={e => patch({ model: e.target.value })}
                     className="w-full text-12"
                   >
                     <option value="">— 请选择 —</option>
-                    {ollamaModels.map(m => <option key={m} value={m}>{m}</option>)}
+                    {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 ) : (
                   <input
