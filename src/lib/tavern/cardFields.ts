@@ -47,6 +47,46 @@ export type StructSpec = {
 /** 「其他」的内部键（同时也作文本标签，pack/unpack 两边共用同一常量，免得对不上） */
 export const OTHER_KEY = '其他'
 
+/**
+ * 「界面上看到的名字」→「内部键」的归一化映射。
+ *
+ * 🔴 **为什么必须有这一层**（2026-10-11 实测事故）：
+ * 界面**显示 `label`（长名）、读写用 `key`（短名）**，而解包只认 `key` ——
+ * 于是作者照着界面上看到的长名写（`怎么称呼别人：…`），解包认不出，整行落进「其他」。
+ * 生成脚本 / AI 起草同样是照界面长名写，一样中招。
+ *
+ * 受影响的是 **label ≠ key** 的四格：`称呼别人`(→怎么称呼别人)、`情绪外露`(→情绪外露程度)、
+ * `不知道的`(→哪些事 Ta 不知道)、`知道的范围`(→Ta 的消息来源)。
+ *
+ * 【方向：双认，且归一到 key】
+ *   读入侧（`unpackField` / `normalizeStructMarkup`）**同时认** key 与 label —— 老数据用
+ *   label 写的、新数据用 key 写的，都能归位；写回时一律落成 key（`packField` 的形态），
+ *   库里只有一种形态，导出 / 比对才不必各认一遍。
+ *
+ * 【为什么不在 spec 上直接改 label】
+ *   label 是给人看的、key 是给代码看的，两者本就该分开；把 label 改成 key 等于抹掉可读性。
+ *   这里加一层映射，界面照旧显示好读的长名，读写两侧都能对上 —— 两边都不牺牲。
+ */
+function buildLabelToKey(spec: StructSpec): Map<string, string> {
+  const m = new Map<string, string>()
+  /** 归一：去掉所有空白（空格）—— 模板里 `哪些事Ta不知道` 无空格，作者常写成 `哪些事 Ta 不知道` */
+  const norm = (s: string) => s.replace(/\s+/g, '')
+  for (const it of spec.items) {
+    m.set(norm(it.key), it.key)
+    m.set(norm(it.label), it.key)
+  }
+  m.set(OTHER_KEY, OTHER_KEY)
+  return m
+}
+
+/** 缓存：spec 是模块级常量，映射只需建一次（同一 spec 引用即同一份表） */
+const LABEL_MAP_CACHE = new WeakMap<StructSpec, Map<string, string>>()
+function labelToKey(spec: StructSpec): Map<string, string> {
+  let m = LABEL_MAP_CACHE.get(spec)
+  if (!m) { m = buildLabelToKey(spec); LABEL_MAP_CACHE.set(spec, m) }
+  return m
+}
+
 /** 第 2 章 · 人物档案：六个大栏各自的细字段 */
 export const PROFILE_SPECS: StructSpec[] = [
   {
@@ -170,11 +210,14 @@ export function structSpecOf(path: string): StructSpec | null {
  *
  * 🔴 **认不出来的行一律进「其他」**：
  * 可能是作者以前手打的、也可能是 AI 更新设定时写的散文 —— 任何一种丢了都是事故。
+ *
+ * 🔴 **认得出的是「key 或 label」两种写法**（2026-10-11）：界面显示 label、库里存 key，
+ *    作者照界面写的就是 label —— 两种都认，并统一归到 key 上。详见 `labelToKey`。
  */
 export function unpackField(text: string, spec: StructSpec): Record<string, string> {
   const out: Record<string, string> = {}
   const rest: string[] = []
-  const known = new Map(spec.items.map(i => [i.key, i]))
+  const map = labelToKey(spec)
   for (const item of spec.items) out[item.key] = ''
   out[OTHER_KEY] = ''
 
@@ -188,13 +231,12 @@ export function unpackField(text: string, spec: StructSpec): Record<string, stri
     if (i > 0) {
       const key = t.slice(0, i).trim()
       const val = t.slice(i + 1).trim()
-      if (known.has(key)) {
+      // 双认：key 或 label 都映射到内部 key（认不出则为 undefined）
+      // 归一化去掉空白：数据里可能写「哪些事 Ta 不知道」（带空格），而 label 无空格
+      const canonical = map.get(key.replace(/\s+/g, ''))
+      if (canonical !== undefined) {
         // 同一标签出现多次 → 拼起来，别让第二行把第一行顶掉
-        out[key] = out[key] ? `${out[key]}\n${val}` : val
-        continue
-      }
-      if (key === OTHER_KEY) {
-        out[OTHER_KEY] = out[OTHER_KEY] ? `${out[OTHER_KEY]}\n${val}` : val
+        out[canonical] = out[canonical] ? `${out[canonical]}\n${val}` : val
         continue
       }
     }
@@ -237,25 +279,45 @@ export function packField(vals: Record<string, string>, spec: StructSpec): strin
  *
  * 【只动认得出的标签】
  * 行首不是本栏小项名（也不是「其他」）的行**原样保留** —— 那些是散文
- * （「他说: 我不去」），改了就是篡改文本。全角冒号在前的一行也直接放过。
+ * （「他说: 我不去」），改了就是篡改文本。
+ *
+ * 【双认 key 与 label（2026-10-11）】
+ * 界面**显示 label、库里存 key**，作者照界面写的就是 label ⇒ 解包/规范化都要能认。
+ * 归一化把下面三种都收成「key + 全角冒号」这一种形态：
+ *   · `外貌: 短发`          （key + 半角）
+ *   · `怎么称呼别人: 叫喂`   （label + 半角）
+ *   · `情绪外露程度：藏着`   （label + 全角）
+ * 已经是「key + 全角」的行（`外貌：短发`）**原样放过**，不做无意义加工。
  *
  * 认得出的标签会顺手**去掉冒号后的前导空格**，与 `packField` 的产出形态对齐
  * （`外貌：短发`）—— 解包本来就会 trim 值，所以这一步不丢任何内容。
+ * 行首缩进一律保留。
  */
 export function normalizeStructMarkup(text: string, spec: StructSpec): string {
   const raw = String(text ?? '')
-  if (!raw || raw.indexOf(':') < 0) return raw
-  const keys = new Set([...spec.items.map(i => i.key), OTHER_KEY])
+  if (!raw || (raw.indexOf(':') < 0 && raw.indexOf('：') < 0)) return raw
+  const map = labelToKey(spec)
+  /** 把「内部键」的集合单独拎出来 —— 用来判断一行是不是**已经合规**（标签就是 key） */
+  const keySet = new Set(spec.items.map(i => i.key))
+  keySet.add(OTHER_KEY)
+  const norm = (s: string) => s.replace(/\s+/g, '')
   return raw
     .split(/\r?\n/)
     .map(line => {
-      const i = line.indexOf(':')
+      // 找**最靠前**的那个冒号（全角或半角），它就是这行的标签分隔符
+      const full = line.indexOf('：')
+      const half = line.indexOf(':')
+      const i = full < 0 ? half : (half < 0 ? full : Math.min(full, half))
       if (i <= 0) return line
       const prefix = line.slice(0, i)
-      // 这一行前面已经有全角冒号 → 它本来就是合规的标记行，别多事
-      if (prefix.includes('：')) return line
-      if (!keys.has(prefix.trim())) return line
-      return `${prefix}：${line.slice(i + 1).replace(/^[ \t]+/, '')}`
+      const indent = prefix.slice(0, prefix.length - prefix.trimStart().length)
+      const label = prefix.trim()
+      const canonical = map.get(norm(label))
+      if (canonical === undefined) return line
+      // 已经是内部键 + 全角 → 完全合规，原样放过（不做无意义加工）
+      if (full === i && keySet.has(label)) return line
+      // 其余命中（label 长名，或半角冒号）→ 归一到「key + 全角」形态
+      return `${indent}${canonical}：${line.slice(i + 1).replace(/^[ \t]+/, '')}`
     })
     .join('\n')
 }

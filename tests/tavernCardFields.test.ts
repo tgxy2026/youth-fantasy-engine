@@ -120,5 +120,53 @@ console.log('—— 已填计数 ——')
     JSON.stringify(normalizeStructMarkup('  外貌:  短发', EXT)))
 }
 
+// ============ 界面长名（label）也要认（2026-10-11 实测事故）============
+//
+// 🔴 事故现场：界面**显示 label、库里存 key**，作者（与 AI 起草、生成脚本）照着界面上
+//    看到的长名写 —— 而解包过去只认 key，于是 `怎么称呼别人：…`、`情绪外露程度：…`
+//    认不出，整行落进「其他」。奉阳青春物语 20 张卡里 4 格全中招。
+//
+// 修法＝双认：key 与 label 都归到内部 key。这里钉死这几条。
+console.log('\n—— 🔴 界面长名（label）也要认 ——')
+{
+  const SPEECH = structSpecOf('profile.speech')!   // 2.3 语言特征
+  const KNOW = structSpecOf('profile.knowledge')!  // 2.6 知识边界
+
+  // 该栏里确实存在 label ≠ key 的格（这是本次事故的成因，钉死它们别被谁改回去）
+  const mismatched = SPEECH.items.filter(i => i.label !== i.key)
+  ok('2.3 存在 label ≠ key 的格（事故成因）', mismatched.length > 0)
+
+  // 照界面长名写 → 必须归到内部 key
+  const v = unpackField('怎么称呼别人：叫「喂」，熟了才叫名字\n情绪外露程度：不太外露，气到极点反而笑', SPEECH)
+  ok('「怎么称呼别人」归到 key 称呼别人', v['称呼别人'] === '叫「喂」，熟了才叫名字', JSON.stringify(v))
+  ok('「情绪外露程度」归到 key 情绪外露', v['情绪外露'] === '不太外露，气到极点反而笑', JSON.stringify(v))
+  ok('长名写的那两行不落「其他」', !v[OTHER_KEY].includes('怎么称呼别人') && !v[OTHER_KEY].includes('情绪外露程度'), v[OTHER_KEY])
+
+  // 2.6 的另外两组
+  const k = unpackField('哪些事 Ta 不知道：不知道顾客的过去\nTa 的消息来源：只从街坊闲话听说', KNOW)
+  ok('「哪些事 Ta 不知道」归到 key 不知道的', k['不知道的'] === '不知道顾客的过去', JSON.stringify(k))
+  ok('「Ta 的消息来源」归到 key 知道的范围', k['知道的范围'] === '只从街坊闲话听说', JSON.stringify(k))
+  ok('2.6 长名那两行不落「其他」', k[OTHER_KEY] === '', k[OTHER_KEY])
+
+  // 短键（旧数据形态）照旧要认 —— 双认不是替换
+  const v2 = unpackField('称呼别人：叫喂\n情绪外露：藏着', SPEECH)
+  ok('短键写法照旧认（双认不是替换）', v2['称呼别人'] === '叫喂' && v2['情绪外露'] === '藏着', JSON.stringify(v2))
+
+  // 写入侧规范化：长名 + 半角冒号 → 归一成 key + 全角
+  ok('normalize：长名 + 半角 → 归一到 key',
+    normalizeStructMarkup('怎么称呼别人: 叫喂', SPEECH) === '称呼别人：叫喂',
+    normalizeStructMarkup('怎么称呼别人: 叫喂', SPEECH))
+  ok('normalize：长名 + 全角已有冒号 → 也归一到 key',
+    normalizeStructMarkup('情绪外露程度：藏着', SPEECH) === '情绪外露：藏着',
+    normalizeStructMarkup('情绪外露程度：藏着', SPEECH))
+  ok('normalize：认不出的长名行原样（不篡改散文）',
+    normalizeStructMarkup('他习惯: 把手插进口袋', SPEECH) === '他习惯: 把手插进口袋')
+
+  // 往返：长名解包 → 打包 → 落成短键形态 → 再解包仍归位
+  const packed = packField(unpackField('怎么称呼别人：叫喂', SPEECH), SPEECH)
+  ok('往返后落成短键形态（库里只有一种写法）', packed === '称呼别人：叫喂', packed)
+  ok('往返后仍能被解包归位', unpackField(packed, SPEECH)['称呼别人'] === '叫喂')
+}
+
 console.log(`\n—— 通过 ${pass} / 失败 ${fail} ——`)
 if (fail) process.exit(1)

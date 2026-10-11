@@ -238,8 +238,11 @@ export function parseStoryImport(raw: string, opts: ParseOptions = {}): ParseRes
       }
       if (!line.trim()) continue
       if (lastScriptKey) {
-        // 续写到上一个键（多行值）
-        curScript[lastScriptKey] += '\n' + line
+        // 续写到上一个键（多行值）。
+        // 🔴 该键还是**空的**就不加前导换行 —— 模板里 `开场白：` 独占一行、内容写在下一行，
+        //    无条件拼 `'\n' + line` 会让开场白本身以换行开头（导入后第一行是空白行）。
+        //    与命中分支（`hit` 那一支）用同一套「非空才补分隔符」的逻辑，保持一致。
+        curScript[lastScriptKey] += (curScript[lastScriptKey] ? '\n' : '') + line
       } else {
         issues.push({ level: 'warn', line: lineNo, message: `剧本里的这行没归到任何一栏（缺「情境：」这类键名），已忽略：${line.slice(0, 30)}` })
       }

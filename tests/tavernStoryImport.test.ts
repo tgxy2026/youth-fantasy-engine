@@ -68,6 +68,32 @@ function main() {
     ok('1k 干净样例无告警', parseStoryImport(SAMPLE).ok && (parseStoryImport(SAMPLE) as { issues: unknown[] }).issues.length === 0)
   }
 
+  // ---------- 1.5) 开场白另起一行时不得带前导空行（2026-10-11 实测事故）----------
+  //
+  // 🔴 事故现场：模板里 `开场白：` 是**独立一行**、内容写在下一行；解析时那一行空行被跳过，
+  //    下一行却走了「续写到上一个键」的分支，无条件 `+= '\n' + line` —— 于是开场白
+  //    以换行开头，导进对话后第一条消息**首行是空白行**。
+  //    这里钉死：字段为空时不得补前导换行（与「命中键名」那一支同逻辑）。
+  {
+    const tpl = `${MARK.story}测试\n\n${MARK.script}第一场\n情境：放学后的教室。\n开场白：\n\n「你怎么还在这儿？」\n你的位置：同班同学\n这一场的目标：搭上话\n不要发生：打起来`
+    const d = mustParse(tpl)
+    ok('1.5a 开场白另起一行 → 不带前导换行', d.scripts[0].opening === '「你怎么还在这儿？」', JSON.stringify(d.scripts[0].opening))
+    ok('1.5b 开场白不落成空串/只有换行', d.scripts[0].opening.trim().length > 0)
+    // 多行开场白：后续行之间仍应有换行（只是第一行前面不该有）
+    const t2 = `${MARK.story}测试\n\n${MARK.script}第二场\n开场白：\n\n第一行\n第二行\n你的位置：同学`
+    ok('1.5c 多行开场白只在行间换行', mustParse(t2).scripts[0].opening === '第一行\n第二行',
+      JSON.stringify(mustParse(t2).scripts[0].opening))
+    // 同一行写（旧范式）不受影响
+    const t3 = `${MARK.story}测试\n\n${MARK.script}第三场\n开场白：你怎么还在这儿？\n你的位置：同学`
+    ok('1.5d 开场白同行写照旧', mustParse(t3).scripts[0].opening === '你怎么还在这儿？',
+      JSON.stringify(mustParse(t3).scripts[0].opening))
+    // 空行出现在「情境」之后、开场白之前，不该把空行算进情境
+    const t4 = `${MARK.story}测试\n\n${MARK.script}第四场\n情境：\n\n教室。\n开场白：\n「喂。」`
+    const d4 = mustParse(t4)
+    ok('1.5e 情境另起一行也不带前导换行', d4.scripts[0].situation === '教室。', JSON.stringify(d4.scripts[0].situation))
+    ok('1.5f 一个空行两个字段都干净', d4.scripts[0].opening === '「喂。」', JSON.stringify(d4.scripts[0].opening))
+  }
+
   // ---------- 2) 批量：多词条 + 多剧本 ----------
   {
     const t = `${MARK.story}测试\n\n${MARK.entry}A\n正文：a\n\n${MARK.entry}B\n正文：b\n\n${MARK.entry}C\n正文：c\n\n${MARK.script}S1\n情境：s1\n\n${MARK.script}S2\n情境：s2\n\n${MARK.script}S3\n情境：s3`
