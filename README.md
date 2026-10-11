@@ -167,16 +167,16 @@ npm run build:desktop  # 产物输出到 release/ 目录
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/writing-panel.png" alt="写作面板" /><br/><sub>写作面板：进度、模型、上手引导</sub></td>
-<td width="50%"><img src="docs/screenshots/editor.png" alt="正文编辑" /><br/><sub>正文编辑与伴写建议</sub></td>
+<td width="50%"><img src="docs/screenshots/writing-panel.png" alt="写作面板" /><br/><sub>写作面板：字数统计、码字日历、分卷进度、创作健康提醒</sub></td>
+<td width="50%"><img src="docs/screenshots/editor.png" alt="正文编辑" /><br/><sub>正文编辑：章节树 + 设定检索 + 正文三栏</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/characters.png" alt="角色管理" /><br/><sub>角色卡</sub></td>
-<td><img src="docs/screenshots/relations.png" alt="人物关系" /><br/><sub>人物关系</sub></td>
+<td><img src="docs/screenshots/characters.png" alt="角色管理" /><br/><sub>角色卡：档案字段 + 人物立绘</sub></td>
+<td><img src="docs/screenshots/relations.png" alt="人物关系" /><br/><sub>人物关系：关系状态与图谱</sub></td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/outline.png" alt="章节细纲" /><br/><sub>章节细纲</sub></td>
-<td><img src="docs/screenshots/tavern.png" alt="酒馆模式" /><br/><sub>酒馆模式：剧情推演</sub></td>
+<td><img src="docs/screenshots/tavern.png" alt="酒馆模式" /><br/><sub>酒馆模式：背景设定与资料提炼</sub></td>
 </tr>
 </table>
 
