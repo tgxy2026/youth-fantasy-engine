@@ -20,7 +20,7 @@
  * ⚠️ 本文件里的实现**逐行来自原 `TavernCard.tsx`**（除下面两处已登记的定点修补），
  *   所以注释里的行内说明仍按当时的上下文写，读起来是连续的。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import * as store from '@/lib/tavern/store'
 import * as db from '@/lib/db'
 import { normalizeStructMarkup, structSpecOf } from '@/lib/tavern/cardFields'
@@ -39,9 +39,16 @@ import { convertNovelChar } from '@/lib/tavern/import'
 import { coldStartMemory, draftMemoryFromCard } from '@/lib/tavern/summarize'
 import { renderFreeCharacter } from '@/lib/tavern/engine'
 import { getTavernSettings, memoryLimitsOf } from '@/lib/tavern/settings'
+import { readSetPref, writeSetPref, expandedIdsOf, collapsedIdsOf } from '@/lib/settings/uiPrefs'
 import { type CardDraft } from '@/lib/tavern/draft'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import { FREE_GROUP } from '@/components/tavern/TavernCardList'
+
+/**
+ * 角色卡分组折叠状态的持久化键（localStorage，经 `lib/settings/uiPrefs`）。
+ * 存的是「**已收起**的故事 id」—— 默认全展开，见 `openIds` 的注释。
+ */
+const CARD_COLLAPSED_KEY = 'tavern-card-collapsed'
 
 /** 从小说角色导入弹窗的分组页签 */
 export type NovelTab = 'all' | 'char-main' | 'char-secondary' | 'char-npc'
@@ -106,24 +113,67 @@ export function useTavernCardModel() {
 
   /** 故事列表（角色卡左栏按故事分组；老大 2026-09-16 定：卡必须归属故事） */
   const [stories, setStories] = useState<TavernStoryIndexItem[]>([])
-  /** 树展开态：故事 id 集合。默认全展开 —— 卡不多时先让作者看见全貌，嫌占地方再自己收 */
-  const [openIds, setOpenIds] = useState<string[]>([])
+  /**
+   * 树展开态：**当前展开着**的故事 id 集合。默认全展开 —— 卡不多时先让作者看见全貌，
+   * 嫌占地方再自己收。
+   *
+   * 🔴 **落盘的却是"已收起"的那一份**（`collapsedRef` / `CARD_COLLAPSED_KEY`）——
+   *    这是 `lib/settings/uiPrefs` 的铁律「存偏离默认的那一侧」：
+   *    默认是展开的，所以要存已收起的，这样**以后新建的故事**在老用户的记录里没有它
+   *    ⇒ 天然落到默认（展开），而不是"记录里没它所以默认收起"。
+   *
+   *    （2026-10-11 修复：此前 `openIds` 是纯内存态，`load()` 每次都把"没见过的故事"
+   *     全部补进展开集合 —— 于是切走页签再切回来（组件重挂、state 归零）就把作者
+   *     手动收起的分组统统重新展开。作者原话：「折叠状态并不能常驻」。）
+   */
+  const [openIds, setOpenIdsState] = useState<string[]>([])
+  /**
+   * 当前**全部可折叠分组**的 id（故事 id + 「未归属」抽屉）。
+   * 它是「展开集合 ↔ 已收起集合」互相换算的参照物 —— 切换折叠时拿它取补集。
+   * 由 `load()` 随故事列表一起刷新；不在渲染期算，免得两个集合的更新时机错位。
+   */
+  const groupIdsRef = useRef<string[]>([])
+  /** 已收起的分组 id（持久化的那一份；同时镜像进 ref，供 setter 同步读） */
+  const collapsedRef = useRef<Set<string>>(new Set(readSetPref(CARD_COLLAPSED_KEY) ?? []))
   /** 新建卡的第一步：先问它属于哪个故事 */
   const [pickOpen, setPickOpen] = useState(false)
   const [pickStoryId, setPickStoryId] = useState('')
+
+  /**
+   * 展开态 setter 的持久化包装。
+   * 🔴 签名保持 `Dispatch<SetStateAction<string[]>>` 不变 —— 子组件（`TavernCardList`）
+   *    与它里面的搜索 / 展开逻辑一个字都不用改，持久化完全收在这一层。
+   * 写盘规则：`已收起 = 全集 − 展开集合`（空集合也是合法状态，见 uiPrefs 用例）。
+   */
+  const setOpenIds: Dispatch<SetStateAction<string[]>> = useCallback(action => {
+    setOpenIdsState(prev => {
+      const next = typeof action === 'function' ? action(prev) : action
+      const collapsed = collapsedIdsOf(groupIdsRef.current, next)
+      collapsedRef.current = new Set(collapsed)
+      writeSetPref(CARD_COLLAPSED_KEY, collapsed)
+      return next
+    })
+  }, [])
 
   const load = useCallback(async () => {
     try {
       const [cs, ss] = await Promise.all([store.listFreeChars(), listStories()])
       setList(cs)
       setStories(ss)
-      setOpenIds(prev => {
-        const known = new Set(prev)
-        const fresh = ss.map(s => s.id).filter(id => !known.has(id))
-        // 有自由状态的卡 → 默认展开「未归属」，别让它们藏起来没人管
-        if (cs.some(c => !cardStoryId(c)) && !known.has(FREE_GROUP)) fresh.push(FREE_GROUP)
-        return fresh.length ? [...prev, ...fresh] : prev
-      })
+      // 全集：故事 id + 有自由状态的卡时补上「未归属」抽屉（别让它们藏起来没人管）
+      const universe = ss.map(s => s.id)
+      const hasFree = cs.some(c => !cardStoryId(c))
+      if (hasFree) universe.push(FREE_GROUP)
+      groupIdsRef.current = universe
+      // 顺手剪掉已不存在分组（故事被删）的残留记录，免得它在 localStorage 里越攒越多
+      const known = new Set(universe)
+      const kept = [...collapsedRef.current].filter(id => known.has(id))
+      if (kept.length !== collapsedRef.current.size) {
+        collapsedRef.current = new Set(kept)
+        writeSetPref(CARD_COLLAPSED_KEY, kept)
+      }
+      // 展开 = 全集 − 已收起 ⇒ 新故事（不在"已收起"里）自动展开，作者收起的仍收起
+      setOpenIdsState(expandedIdsOf(universe, collapsedRef.current))
     } catch {
       setList([])
       setStories([])

@@ -175,3 +175,23 @@ export function usePersistedEnum<T extends string>(
   }, [key])
   return [pair.v, update]
 }
+
+/**
+ * 「已折叠集合」→「当前展开的 id 列表」——**纯函数**，供「默认展开」型折叠用。
+ *
+ * 🔴 存在的理由：酒馆角色卡左栏的折叠态**默认是全展开**，却要持久化作者收起的那些，
+ *    于是「展开集合」每次都得由「全集 − 已收起」重新算出来。这个换算若在组件里
+ *    手写，将来改一处忘一处就会漂移（表现为"刷新后某个分组凭空冒出来或不见了"）——
+ *    收到这里，单测能直接钉住它的边界。
+ *
+ * 传进来的 `allIds` 顺序被保留（保持故事在左栏的显示顺序）。
+ */
+export function expandedIdsOf(allIds: readonly string[], collapsed: ReadonlySet<string>): string[] {
+  return allIds.filter(id => !collapsed.has(id))
+}
+
+/** 与上面成对的逆运算：由「展开集合」与「全集」算出该落盘的「已收起集合」 */
+export function collapsedIdsOf(allIds: readonly string[], expanded: readonly string[]): string[] {
+  const open = new Set(expanded)
+  return allIds.filter(id => !open.has(id))
+}

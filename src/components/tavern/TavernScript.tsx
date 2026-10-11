@@ -19,8 +19,9 @@
  * 🔴 故事与剧本都是**全局**（`db.getMeta`，跨项目）—— 与角色卡同性质：玩法模板，不绑某一本书。
  * 🔴 会话引用剧本时存的是**快照**：后来改剧本，历史会话不会跟着变。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
+import { usePersistedSet } from '@/lib/settings/uiPrefs'
 import HelpPopover from '@/components/common/HelpPopover'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
@@ -54,8 +55,17 @@ import type { TavernScript, TavernScriptIndexItem, TavernStory, TavernStoryIndex
 export default function TavernScript() {
   const [stories, setStories] = useState<TavernStoryIndexItem[]>([])
   const [scripts, setScripts] = useState<TavernScriptIndexItem[]>([])
-  /** 左栏展开着的故事 id —— 树是受控的，刷新后不至于收回去让人以为数据没了 */
-  const [openIds, setOpenIds] = useState<string[]>([])
+  /**
+   * 左栏展开着的故事 id。**持久化**（localStorage，经 `lib/settings/uiPrefs`）——
+   * 树是受控的，作者展开过哪个故事，切走页签再回来（组件重挂、state 归零）也要还在；
+   * 否则界面一刷新全收起来，让人以为数据没了。
+   *
+   * 🔴 存的是「**已展开**的」（本页默认全收起）—— 符合 `uiPrefs` 的铁律「存偏离默认的那一侧」。
+   *    ⚠️ 与角色卡页正相反（角色卡默认全展开、存的是已收起），两处别抄错。
+   */
+  const [openSet, updateOpenSet] = usePersistedSet('tavern-script-open')
+  /** 给只读左栏树用（它与角色卡左栏一样，只读 + 发回调，不碰写操作） */
+  const openIds = useMemo(() => [...openSet], [openSet])
   const [story, setStory] = useState<TavernStory | null>(null)
   const [cur, setCur] = useState<TavernScript | null>(null)
   const [kind, setKind] = useState<EditingKind>(null)
@@ -116,7 +126,11 @@ export default function TavernScript() {
   }, [dirty])
 
   const toggleOpen = (id: string) => {
-    setOpenIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
+    updateOpenSet(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
   }
 
   const openStory = async (id: string) => {
@@ -149,7 +163,7 @@ export default function TavernScript() {
     setKind('story')
     setStoryDirty(true)
     setScriptDirty(false)
-    setOpenIds(prev => [...prev, s.id])
+    updateOpenSet(prev => new Set(prev).add(s.id))
     showToast('已新建一个故事 —— 先写世界设定，再往下挂剧本')
   }
 
@@ -163,7 +177,7 @@ export default function TavernScript() {
     setKind('script')
     setStoryDirty(false)
     setScriptDirty(false)
-    setOpenIds(prev => (prev.includes(storyId) ? prev : [...prev, storyId]))
+    updateOpenSet(prev => (prev.has(storyId) ? prev : new Set(prev).add(storyId)))
     showToast('已新建一份空剧本 —— 六栏填完记得保存')
   }
 
