@@ -2,7 +2,7 @@ import { Z } from '@/lib/app/zLayer'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import type { Volume, Chapter, ChapterStatus } from '@/lib/types'
-import { BookMarked, Upload, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
+import { BookMarked, Upload, Download, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
 import { isFreeVolume, realVolumes, nextVolumeNo } from '@/lib/outline/freeVolume'
 import { useEffect, useMemo, useRef } from 'react'
@@ -60,6 +60,8 @@ interface Props {
   setExportOpen: Dispatch<SetStateAction<boolean>>
   /** 打开「导出全书（Markdown / Word / 平台粘贴版）」格式弹窗 —— 弹窗本体挂在 NovelEditor 上 */
   setExportFormatTab: (t: 'platform' | 'markdown' | 'docx' | null) => void
+  /** 3.0.1：打开「批量导入正文」弹窗 —— 弹窗本体挂在 NovelEditor 上 */
+  setImportOpen: Dispatch<SetStateAction<boolean>>
 }
 
 export default function NovelEditorChapterTree({
@@ -67,7 +69,7 @@ export default function NovelEditorChapterTree({
   overKey, setOverKey, dragKind, setDragKind, setDragId, resetDrag, handleDrop,
   setNamePrompt, nextChapterNo, activeId, openChapter, chapterSeqs,
   removeVolume, removeChapter, toggleExcludeNumbering, runExport,
-  exportOpen, setExportOpen, setExportFormatTab,
+  exportOpen, setExportOpen, setExportFormatTab, setImportOpen,
 }: Props) {
   // 2.6.1 配套：打开项目恢复到上次章节（可能在很深的卷里）时，把高亮行滚进可视区，
   // 否则长列表里落点根本看不见。block:'nearest' 保证用户手动点选时（本就在可视区内）零滚动。
@@ -109,10 +111,18 @@ export default function NovelEditorChapterTree({
           <span className="text-12 font-semibold text-ink-200 flex items-center gap-1.5">
             <BookMarked size={13} className="text-amber" /> 章节
             <HelpPopover title="卷章目录怎么用" width="22rem" side="right">
-              {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 不想归卷的章节走右上「新建自由章节」—— 它们统一收进「自由章节」托管卷（默认折叠、不可删除、排全书最后），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「导出」图标是全书导出的唯一入口：本章 / 全本 TXT / Markdown / EPUB / Word（可排版、可导投稿稿）/ 平台粘贴版 / 按卷 / 按章节逐一导出。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
+              {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 不想归卷的章节走右上「新建自由章节」—— 它们统一收进「自由章节」托管卷（默认折叠、不可删除、排全书最后），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「导出」图标是全书导出的唯一入口：本章 / 全本 TXT / Markdown / EPUB / Word（可排版、可导投稿稿）/ 平台粘贴版 / 按卷 / 按章节逐一导出。\n· 右上「导入」图标（导出左侧）可批量导入正文：选文件（.txt / .md / .docx / .json，可多选）或粘贴原文，自动切成卷章，预览里可改卷名/章名、逐章勾选，确认后追加到当前项目（纯本地、不接 AI）。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
             </HelpPopover>
           </span>
           <div className="flex gap-1">
+            {/* 3.0.1：批量导入正文 —— 把在别处写好的存稿整批搬进卷/章（纯本地，不接 AI）。
+                放在「导出」左侧：导入/导出是对称的一对，作者心智里也在同一处找。 */}
+            <Button variant="icon-amber"
+              onClick={() => setImportOpen(true)}
+              className="p-1 shrink-0"
+              title="批量导入正文：从文件或粘贴导入（.txt / .md / .docx / .json），自动切成卷章，预览确认后写入">
+              <Download size={14} />
+            </Button>
             {/* 导出：本章 / 全本 / 多格式 / 按卷 / 按章节 —— 全书导出的**唯一入口**。
                 2.8.0 从编辑器工具栏迁来：原先工具栏与本处各挂一个导出按钮、功能重叠且不一致
                 （本处只导全本 TXT），现统一收在这里的富功能版。

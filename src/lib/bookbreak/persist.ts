@@ -138,6 +138,22 @@ export async function persistSplitToChapters(
   opts: PersistOptions = {},
 ): Promise<PersistResult> {
   const plan = planVolumes(sp, opts.volumeTitle !== undefined ? { volumeTitle: opts.volumeTitle } : {})
+  return persistPlanToChapters(plan, opts)
+}
+
+/**
+ * 把一个**已经排好的「卷 → 章」计划**写入当前项目的正文编辑。
+ *
+ * 3.0.1 起从 `persistSplitToChapters` 抽出来：批量导入（`lib/storage/chapterImport.ts`）
+ * 允许作者在预览里改卷名 / 剔除章节，最终交来的就是一个 `PersistPlan`，
+ * 而非原始的 `SplitResult`。两条通路**共用这一段写库循环**，保证产物形状绝不会分叉。
+ *
+ * 🔴 三条纪律照旧：只追加不覆盖 / 重复导入守卫 / 写一半能停。
+ */
+export async function persistPlanToChapters(
+  plan: PersistPlan,
+  opts: PersistOptions = {},
+): Promise<PersistResult> {
   const total = plan.chapterCount
   const empty: PersistResult = { volumes: [], chaptersCreated: 0, words: 0, aborted: false, alreadyImported: false }
   if (!total) return empty

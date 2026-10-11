@@ -32,6 +32,7 @@ import { Button } from '@/components/common/Button'
 import { LoadingState } from '@/components/common/LoadingState'
 import NovelEditorChapterTree from '@/components/editor/NovelEditorChapterTree'
 import ExportFormatDialog from '@/components/dialogs/ExportFormatDialog'
+import ChapterImportDialog from '@/components/editor/ChapterImportDialog'
 import { CompanionStyleDialog } from '@/components/tavern/CompanionStyleDialog'
 import { dimLabels } from '@/lib/tavern/companionStyle'
 
@@ -89,6 +90,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     modal, setModal, exportOpen, setExportOpen, styleNotePrompt, setStyleNotePrompt, namePrompt, setNamePrompt, jieWenJiOpen, setJieWenJiOpen,
     // C6 导出格式弹窗
     exportFormatTab, setExportFormatTab,
+    // 3.0.1 正文批量导入弹窗
+    importOpen, setImportOpen,
     // 编辑器缩进（2.4.0 · A5）：缩进单位偏好；缩进动作见下方 onIndentKeyDown / applyIndent
     indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出
@@ -252,6 +255,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           exportOpen={exportOpen}
           setExportOpen={setExportOpen}
           setExportFormatTab={setExportFormatTab}
+          setImportOpen={setImportOpen}
         />
       )}
 
@@ -832,6 +836,16 @@ style={{ zIndex: Z.pageHandle }}
         chapters={chapters}
         initialTab={exportFormatTab ?? 'platform'}
       />
+      {/* 3.0.1：正文批量导入。导入后 load() 重载卷章列表（与回收站恢复同一口径），
+          并通知父级刷新统计。 */}
+      {importOpen && (
+        <ChapterImportDialog
+          projectName={projectName}
+          onDone={() => { void load(); onStatsChange?.() }}
+          onClose={() => setImportOpen(false)}
+          onNavigate={onNavigate}
+        />
+      )}
     </div>
   )
 }

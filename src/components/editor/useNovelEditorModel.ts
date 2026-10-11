@@ -136,6 +136,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   const [exportOpen, setExportOpen] = useState(false)
   /** C6（2.4.2）：导出格式弹窗（'platform' 粘贴版 / 'markdown'），null = 关闭 */
   const [exportFormatTab, setExportFormatTab] = useState<'platform' | 'markdown' | 'docx' | null>(null)
+  /** 3.0.1：正文批量导入弹窗开合（独立 state，不塞进 modal 联合类型） */
+  const [importOpen, setImportOpen] = useState(false)
   /** 导出操作统一收口：按需动态加载 exporter 模块（含 zip/EPUB/DOCX 打包器），避免拖入首屏主包 */
   const runExport = useCallback(async (fn: (m: typeof import('@/lib/storage/exporter')) => void) => {
     const m = await import('@/lib/storage/exporter')
@@ -925,6 +927,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     modal, setModal, exportOpen, setExportOpen, styleNotePrompt, setStyleNotePrompt, namePrompt, setNamePrompt, jieWenJiOpen, setJieWenJiOpen,
     // C6 导出格式弹窗
     exportFormatTab, setExportFormatTab,
+    // 3.0.1 正文批量导入弹窗
+    importOpen, setImportOpen,
     // 编辑器缩进（2.4.0 · A5）：单位是偏好，缩进动作本身在 NovelEditor 的键盘处理里
     indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出

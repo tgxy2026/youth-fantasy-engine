@@ -32,6 +32,10 @@ Desktop.ini
 
 # 临时脚本与中间产物（审计/修复用的一次性补丁器、报告草稿）
 .workbuddy/tmp/
+#   一次性临时目录（如跑团验证用的浏览器 userdata：tmp-w42/ —— 含上千缓存文件，绝不入库）
+.workbuddy/tmp-*/
+#   审计报告草稿与 HTML（过程产物，非产品源码）
+.workbuddy/audit-*/
 
 # 🔴 便携版运行时数据目录 —— 里面是作者的全部稿件，绝不进版本库。
 #    在源码根目录跑 `npm run start:portable` 会生成 ./data/（含整库 JSON 与 .port 锁）；

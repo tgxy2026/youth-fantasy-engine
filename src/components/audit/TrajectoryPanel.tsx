@@ -15,7 +15,7 @@
  *      没有键盘记录，导出不联网。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked } from 'lucide-react'
+import { History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter, Volume, CardRecord } from '@/lib/types'
 import type { Snapshot } from '@/lib/db'
@@ -66,6 +66,11 @@ export default function TrajectoryPanel() {
   const [cards, setCards] = useState<CardRecord[]>([])
   const [dailyStats, setDailyStats] = useState<{ date: string; words: number }[]>([])
   const [activeId, setActiveId] = useState('')
+  /**
+   * 3.0.1：章节列表按卷折叠 —— 记为「被收起的卷标题」集合（默认全展开，行为不变）。
+   * 用 key 而非下标，卷重命名/增删后折叠态不会串位。
+   */
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   /** 全书快照（整书证据包用；一次全表读，别对每章再查一次） */
   const [allSnapshots, setAllSnapshots] = useState<Snapshot[]>([])
@@ -158,6 +163,24 @@ export default function TrajectoryPanel() {
     return out
   }, [volumes, chapters])
 
+  // 3.0.1：卷折叠 —— 切换单卷 / 全部展开 / 全部收起（默认全展开）
+  const toggleGroup = useCallback((title: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(title)) next.delete(title)
+      else next.add(title)
+      return next
+    })
+  }, [])
+  const anyExpanded = groups.some(g => !collapsed.has(g.title))
+  const toggleAll = useCallback(() => {
+    setCollapsed(prev => {
+      const expanded = groups.filter(g => !prev.has(g.title))
+      // 只要还有展开的卷 → 全部收起；否则 → 全部展开
+      return expanded.length > 0 ? new Set(groups.map(g => g.title)) : new Set()
+    })
+  }, [groups])
+
   // 写作分布：最多画最近 60 天（再多柱子就糊成一片了）
   // 全部日期都显示（A4 遗留补全）：天数多时靠横向滚动看全，不再截断 —— 轨迹本就该看得完整
   const dailyShown = useMemo(() => (traj ? traj.daily : []), [traj])
@@ -249,27 +272,51 @@ export default function TrajectoryPanel() {
       <div className="grid gap-4 lg:grid-cols-[16rem,1fr]">
         {/* 左：章节列表 */}
         <aside className="rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
-          <div className="px-3 py-2 border-b border-ink-700 text-11 text-ink-400">选择章节</div>
+          <div className="px-3 py-2 border-b border-ink-700 text-11 text-ink-400 flex items-center justify-between gap-2">
+            <span>选择章节</span>
+            {groups.length > 1 && (
+              <button
+                type="button"
+                onClick={toggleAll}
+                title={anyExpanded ? '全部收起' : '全部展开'}
+                className="inline-flex items-center gap-1 text-10 text-ink-500 hover:text-ink-200 transition-colors"
+              >
+                {anyExpanded ? <ChevronsDownUp size={11} /> : <ChevronsUpDown size={11} />}
+                {anyExpanded ? '收起' : '展开'}
+              </button>
+            )}
+          </div>
           <div className="overflow-auto" style={{ maxHeight: foldVh('62vh') }}>
             {groups.length === 0 ? (
               <div className="px-3 py-6 text-11 text-ink-500 text-center">这个项目还没有章节</div>
-            ) : groups.map(g => (
-              <div key={g.title}>
-                <div className="px-3 pt-2.5 pb-1 text-10 text-ink-500">{g.title}</div>
-                {g.items.map(ch => (
-                  <SelectRow
-                    key={ch.id}
-                    selected={ch.id === activeId}
-                    onClick={() => setActiveId(ch.id)}
-                    className="px-3 py-1.5 items-center gap-2 text-12"
+            ) : groups.map(g => {
+              const open = !collapsed.has(g.title)
+              return (
+                <div key={g.title}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(g.title)}
+                    className="w-full px-3 pt-2.5 pb-1 flex items-center gap-1 text-10 text-ink-500 hover:text-ink-300 transition-colors"
                   >
-                    <span className="shrink-0 w-7 text-10 text-ink-500 tabular-nums">{seqs.get(ch.id) || ''}</span>
-                    <span className="flex-1 truncate">{ch.title || '（未命名）'}</span>
-                    <span className="shrink-0 text-10 text-ink-500 tabular-nums">{ch.wordCount}</span>
-                  </SelectRow>
-                ))}
-              </div>
-            ))}
+                    <ChevronRight size={11} className={'shrink-0 transition-transform ' + (open ? 'rotate-90' : '')} />
+                    <span className="truncate">{g.title}</span>
+                    <span className="shrink-0 tabular-nums">{g.items.length}</span>
+                  </button>
+                  {open && g.items.map(ch => (
+                    <SelectRow
+                      key={ch.id}
+                      selected={ch.id === activeId}
+                      onClick={() => setActiveId(ch.id)}
+                      className="px-3 py-1.5 items-center gap-2 text-12"
+                    >
+                      <span className="shrink-0 w-7 text-10 text-ink-500 tabular-nums">{seqs.get(ch.id) || ''}</span>
+                      <span className="flex-1 truncate">{ch.title || '（未命名）'}</span>
+                      <span className="shrink-0 text-10 text-ink-500 tabular-nums">{ch.wordCount}</span>
+                    </SelectRow>
+                  ))}
+                </div>
+              )
+            })}
           </div>
         </aside>
 
