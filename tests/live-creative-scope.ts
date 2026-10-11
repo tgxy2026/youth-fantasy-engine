@@ -2,7 +2,10 @@
  * ��机复现脚本（手动运行，不进全量回归）：社区反馈「创意写作只写 1 章，AI 却把第 2 章细纲的内容也写了」。
  *
  * 跑法：node tests/build-test.mjs live-creative-scope
- *   - 走**线上模型**（硅基流动，读 .workbuddy/tmp/sf-providers.json，密钥不落 Git）
+ *   - 走**线上模型**：默认从**应用自己的模型配置**读（`%APPDATA%/youth-fantasy-engine/youth-fantasy-engine-data.json`，
+ *     取 baseUrl 含 `api.deepseek.com` 的那条 = DeepSeek 官方）；密钥不落 Git、不进对话。
+ *     · `REPRO_PROVIDER` 换 baseUrl 关键字（如 `openai.com`）· `REPRO_MODEL` 过滤模型名 · `REPRO_ROUNDS` 轮数
+ *     · 也可放 `.workbuddy/tmp/live-providers.json`（AIProvider[]）覆盖，优先级最高
  *   - 造场景：一卷 5 章细纲，**只让 AI 写第 1 章**（chapters: 1）
  *   - 判据：第 2 章细纲里的**专属标记词**（黑石巷 / 血魔教分坛 / 那封师兄的信）有没有出现在第 1 章正文里
  *
@@ -17,8 +20,36 @@ import { runCreativeWriting } from '../src/lib/ai/aiWorkflow'
 import { resolveSlot } from '../src/lib/flow/fieldMap'
 import { saveProviders, saveActiveId, type AIProvider } from '../src/lib/ai'
 
-const SF_FILE = path.join(process.cwd(), '.workbuddy/tmp/sf-providers.json')
+const APP_DATA = path.join(process.env.APPDATA || '', 'youth-fantasy-engine', 'youth-fantasy-engine-data.json')
+const OVERRIDE_FILE = path.join(process.cwd(), '.workbuddy/tmp/live-providers.json')
 const ROUNDS = Number(process.env.REPRO_ROUNDS || 3)
+
+/**
+ * 取「线上模型」配置：
+ *   ① 有 `.workbuddy/tmp/live-providers.json` 就用它（AIProvider[]，覆盖用）；
+ *   ② 否则读应用数据文件里 `stores.meta.aiProviders`，按 `REPRO_PROVIDER`（默认 `api.deepseek.com`）过滤 baseUrl。
+ * 🔴 密钥只在本机读取、只随请求发出，不写进任何产出文件、不进 Git。
+ */
+function loadOnlineProviders(): AIProvider[] {
+  if (fs.existsSync(OVERRIDE_FILE)) {
+    return JSON.parse(fs.readFileSync(OVERRIDE_FILE, 'utf8')) as AIProvider[]
+  }
+  if (!fs.existsSync(APP_DATA)) {
+    throw new Error(`读不到应用数据文件：${APP_DATA}\n（先在应用「模型设置 → 模型配置」里配好线上模型）`)
+  }
+  const meta = ((JSON.parse(fs.readFileSync(APP_DATA, 'utf8')).stores || {}).meta || {}) as Record<string, unknown>
+  const unwrap = (k: string) => {
+    const v = meta[k]
+    return v && typeof v === 'object' && 'value' in v ? (v as { value: unknown }).value : v
+  }
+  const all = (unwrap('aiProviders') || []) as AIProvider[]
+  const key = process.env.REPRO_PROVIDER || 'api.deepseek.com'
+  const use = all.filter(p => (p.baseUrl || '').includes(key))
+  if (!use.length) {
+    throw new Error(`应用配置里没有 baseUrl 含「${key}」的模型 —— 可用 REPRO_PROVIDER 指定其它关键字`)
+  }
+  return use
+}
 
 /** 第 2 章细纲的专属标记（只出现在第 2 章，绝不出现在第 1 章或世界观里） */
 const CH2_MARKERS = ['黑石巷', '血魔教分坛', '师兄的信', '密室铜镜']
@@ -71,8 +102,8 @@ async function runOnce(p: AIProvider, round: number): Promise<void> {
   const tag = `${p.model} #${round}`
   __resetMockStores()
   await seedProject()
-  await saveProviders([{ ...p, id: 'live-sf', name: 'live-sf' }])
-  await saveActiveId('live-sf')
+  await saveProviders([{ ...p, id: 'live-online', name: p.name || 'live-online' }])
+  await saveActiveId('live-online')
 
   const t0 = Date.now()
   const res = await runCreativeWriting(
@@ -106,14 +137,10 @@ async function runOnce(p: AIProvider, round: number): Promise<void> {
 }
 
 async function main() {
-  if (!fs.existsSync(SF_FILE)) {
-    console.error('缺少 .workbuddy/tmp/sf-providers.json —— 先从 Electron 的 youth-fantasy-engine-data.json 导出硅基流动配置')
-    process.exit(1)
-  }
-  const list = JSON.parse(fs.readFileSync(SF_FILE, 'utf8')) as AIProvider[]
+  const list = loadOnlineProviders()
   const only = process.env.REPRO_MODEL
   const use = only ? list.filter(p => p.model.includes(only)) : list
-  console.log(`线上模型：${use.map(p => p.model).join(' / ')}｜每模型 ${ROUNDS} 轮`)
+  console.log(`线上模型：${use.map(p => `${p.name || '?'}/${p.model}`).join(' / ')}｜每模型 ${ROUNDS} 轮`)
   for (const p of use) {
     for (let r = 1; r <= ROUNDS; r++) {
       try { await runOnce(p, r) } catch (e) { console.log(`\n=== ${p.model} #${r} ===\n❌ 失败: ${(e as Error)?.message ?? e}`) }
