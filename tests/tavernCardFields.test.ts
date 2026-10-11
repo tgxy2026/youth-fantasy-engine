@@ -158,6 +158,16 @@ console.log('\n—— 🔴 历史旧长名仍要认（统一 label 之后）—�
   ok('旧长名「Ta 的消息来源」归到 key 知道的范围', k['知道的范围'] === '只从街坊闲话听说', JSON.stringify(k))
   ok('2.6 旧长名不落「其他」', k[OTHER_KEY] === '', k[OTHER_KEY])
 
+  // 2.6 旧版还按角色人称写过「她 / 他」（实测：约会大作战 16 卡里 15 处用「她」、1 处用「他」）
+  const kHer = unpackField('哪些事她不知道：不知道站前街会不会拆\n她的消息来源：从街坊闲话听说', KNOW)
+  ok('旧长名「哪些事她不知道」归到 key 不知道的', kHer['不知道的'] === '不知道站前街会不会拆', JSON.stringify(kHer))
+  ok('旧长名「她的消息来源」归到 key 知道的范围', kHer['知道的范围'] === '从街坊闲话听说', JSON.stringify(kHer))
+  ok('2.6「她」人称旧长名不落「其他」', kHer[OTHER_KEY] === '', kHer[OTHER_KEY])
+  const kHis = unpackField('哪些事他不知道：不知道自己的身世\n他的消息来源：从同学处听说', KNOW)
+  ok('旧长名「哪些事他不知道」归到 key 不知道的', kHis['不知道的'] === '不知道自己的身世', JSON.stringify(kHis))
+  ok('旧长名「他的消息来源」归到 key 知道的范围', kHis['知道的范围'] === '从同学处听说', JSON.stringify(kHis))
+  ok('2.6「他」人称旧长名不落「其他」', kHis[OTHER_KEY] === '', kHis[OTHER_KEY])
+
   const rel = unpackField('与用户的关系：老同学\n与其他角色的关系：同事\n当前关系状态：正常', REL)
   ok('2.4 三个旧长名全部归位',
     rel['与用户'] === '老同学' && rel['与其他角色'] === '同事' && rel['当前状态'] === '正常'
