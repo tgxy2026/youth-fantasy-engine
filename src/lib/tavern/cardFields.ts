@@ -48,29 +48,54 @@ export type StructSpec = {
 export const OTHER_KEY = '其他'
 
 /**
- * 「界面上看到的名字」→「内部键」的归一化映射。
+ * 🔴 **历史别名表**（2026-10-11 统一 label 后新增）
  *
- * 🔴 **为什么必须有这一层**（2026-10-11 实测事故）：
- * 界面**显示 `label`（长名）、读写用 `key`（短名）**，而解包只认 `key` ——
- * 于是作者照着界面上看到的长名写（`怎么称呼别人：…`），解包认不出，整行落进「其他」。
- * 生成脚本 / AI 起草同样是照界面长名写，一样中招。
+ * 起因：细字段原本 **label（界面长名）≠ key（存储短名）**，界面显示 label、库里存 key，
+ * 作者 / AI / 生成脚本照界面写的就是 label —— 而解包只认 key，整行落进「其他」。
  *
- * 受影响的是 **label ≠ key** 的四格：`称呼别人`(→怎么称呼别人)、`情绪外露`(→情绪外露程度)、
- * `不知道的`(→哪些事 Ta 不知道)、`知道的范围`(→Ta 的消息来源)。
+ * 处理分两步：
+ *   ① 先在读入侧「双认 key 与 label」（当天早些时候的修复）；
+ *   ② 再把 label **全部改成与 key 一致**（当天主人拍板）—— 界面与库从此同名，不再有落差。
  *
- * 【方向：双认，且归一到 key】
- *   读入侧（`unpackField` / `normalizeStructMarkup`）**同时认** key 与 label —— 老数据用
- *   label 写的、新数据用 key 写的，都能归位；写回时一律落成 key（`packField` 的形态），
- *   库里只有一种形态，导出 / 比对才不必各认一遍。
+ * 但②带来一个新问题：**在此之前的产出**（作者已写好的文件、脚本已生成的卡、
+ * 已导入的旧库数据）里写的是**旧长名**（`怎么称呼别人`、`情绪外露程度`…）——
+ * 若只留「label = key」的双认，这些历史内容会**再次落进「其他」**。
  *
- * 【为什么不在 spec 上直接改 label】
- *   label 是给人看的、key 是给代码看的，两者本就该分开；把 label 改成 key 等于抹掉可读性。
- *   这里加一层映射，界面照旧显示好读的长名，读写两侧都能对上 —— 两边都不牺牲。
+ * 所以这张表把「曾经出现过的旧长名」永久钉住 → 内部 key。
+ * ⚠️ **只增不删**：任何一个正式发布过的旧名都要留在这里，删了就是让历史数据回不了位。
+ */
+const LEGACY_ALIAS: Readonly<Record<string, string>> = {
+  // 2.3 语言特征
+  '口癖 / 说话习惯': '口癖',
+  怎么称呼别人: '称呼别人',
+  情绪外露程度: '情绪外露',
+  // 2.4 关系
+  与用户的关系: '与用户',
+  与其他角色的关系: '与其他角色',
+  当前关系状态: '当前状态',
+  // 2.6 知识边界
+  哪些事Ta不知道: '不知道的',
+  Ta的消息来源: '知道的范围',
+  // 进度锁
+  当前关系阶段: '当前阶段',
+  什么时候能往前走: '解锁条件',
+}
+
+/**
+ * 「文本里写的标签」→「内部 key」的归一化映射。
+ *
+ * 三路都认（都归到 key）：
+ *   ① `key`     —— 现在的形态（label 已统一为 key）
+ *   ② `label`   —— 保留 label 字段本身（万一将来再分叉，映射自动跟上）
+ *   ③ **历史别名** —— 统一之前用过的旧长名（见 `LEGACY_ALIAS`），保老数据/老文件不失联
+ *
+ * 归一化时**去掉所有空白**：`哪些事 Ta 不知道` 与 `哪些事Ta不知道` 视为同一标签。
  */
 function buildLabelToKey(spec: StructSpec): Map<string, string> {
   const m = new Map<string, string>()
-  /** 归一：去掉所有空白（空格）—— 模板里 `哪些事Ta不知道` 无空格，作者常写成 `哪些事 Ta 不知道` */
   const norm = (s: string) => s.replace(/\s+/g, '')
+  // 先铺历史别名（优先级最低，会被下面的 key/label 覆盖 —— 但正常不会冲突）
+  for (const [alias, key] of Object.entries(LEGACY_ALIAS)) m.set(norm(alias), key)
   for (const it of spec.items) {
     m.set(norm(it.key), it.key)
     m.set(norm(it.label), it.key)
@@ -119,9 +144,9 @@ export const PROFILE_SPECS: StructSpec[] = [
     label: '2.3 语言特征',
     items: [
       { key: '句子长短', label: '句子长短', ph: '句子短，很少超过十个字', rows: 1 },
-      { key: '口癖', label: '口癖 / 说话习惯', ph: '习惯用反问；从不说软话', rows: 1 },
-      { key: '称呼别人', label: '怎么称呼别人', ph: '叫「喂」，熟了才叫名字', rows: 1, hint: 'Ta怎么叫别人，不是别人怎么叫Ta' },
-      { key: '情绪外露', label: '情绪外露程度', ph: '不太外露，气到极点反而笑', rows: 1 },
+      { key: '口癖', label: '口癖', ph: '习惯用反问；从不说软话', rows: 1 },
+      { key: '称呼别人', label: '称呼别人', ph: '叫「喂」，熟了才叫名字', rows: 1, hint: 'Ta怎么叫别人，不是别人怎么叫Ta' },
+      { key: '情绪外露', label: '情绪外露', ph: '不太外露，气到极点反而笑', rows: 1 },
     ],
     other: true,
   },
@@ -129,9 +154,9 @@ export const PROFILE_SPECS: StructSpec[] = [
     path: 'profile.relations',
     label: '2.4 关系',
     items: [
-      { key: '与用户', label: '与用户的关系', ph: '认识三个月的常客，还算不上朋友', rows: 1 },
-      { key: '与其他角色', label: '与其他角色的关系', ph: '替老板看店，欠老板一笔钱', rows: 2 },
-      { key: '当前状态', label: '当前关系状态', ph: '关系正常，但上次赊账还没结', rows: 1 },
+      { key: '与用户', label: '与用户', ph: '认识三个月的常客，还算不上朋友', rows: 1 },
+      { key: '与其他角色', label: '与其他角色', ph: '替老板看店，欠老板一笔钱', rows: 2 },
+      { key: '当前状态', label: '当前状态', ph: '关系正常，但上次赊账还没结', rows: 1 },
     ],
     other: true,
   },
@@ -148,8 +173,8 @@ export const PROFILE_SPECS: StructSpec[] = [
     path: 'profile.knowledge',
     label: '2.6 知识边界',
     items: [
-      { key: '不知道的', label: '哪些事Ta不知道', ph: '不知道顾客的职业与过去', rows: 2 },
-      { key: '知道的范围', label: 'Ta的消息来源', ph: '只从街坊闲话与店里来客处听说', rows: 1 },
+      { key: '不知道的', label: '不知道的', ph: '不知道顾客的职业与过去', rows: 2 },
+      { key: '知道的范围', label: '知道的范围', ph: '只从街坊闲话与店里来客处听说', rows: 1 },
     ],
     other: true,
   },
@@ -179,9 +204,9 @@ export const CONDUCT_SPECS: StructSpec[] = [
     path: 'conduct.paceLock',
     label: '进度锁',
     items: [
-      { key: '当前阶段', label: '当前关系阶段', ph: '点头之交', rows: 1 },
+      { key: '当前阶段', label: '当前阶段', ph: '点头之交', rows: 1 },
       { key: '推进速度', label: '推进速度', ph: '慢。至少十几次交谈才到熟络', rows: 1 },
-      { key: '解锁条件', label: '什么时候能往前走', ph: '她主动开口说起自己的事，才算进入下一阶段', rows: 2 },
+      { key: '解锁条件', label: '解锁条件', ph: '她主动开口说起自己的事，才算进入下一阶段', rows: 2 },
     ],
     other: true,
   },
@@ -211,8 +236,8 @@ export function structSpecOf(path: string): StructSpec | null {
  * 🔴 **认不出来的行一律进「其他」**：
  * 可能是作者以前手打的、也可能是 AI 更新设定时写的散文 —— 任何一种丢了都是事故。
  *
- * 🔴 **认得出的是「key 或 label」两种写法**（2026-10-11）：界面显示 label、库里存 key，
- *    作者照界面写的就是 label —— 两种都认，并统一归到 key 上。详见 `labelToKey`。
+ * 🔴 **认得出的是三种写法**（2026-10-11）：`key`、`label`、以及**统一 label 之前用过的旧长名**
+ *    （`LEGACY_ALIAS`）—— 都归到 key 上，历史文件 / 旧库数据不失联。详见 `labelToKey`。
  */
 export function unpackField(text: string, spec: StructSpec): Record<string, string> {
   const out: Record<string, string> = {}
@@ -231,8 +256,8 @@ export function unpackField(text: string, spec: StructSpec): Record<string, stri
     if (i > 0) {
       const key = t.slice(0, i).trim()
       const val = t.slice(i + 1).trim()
-      // 双认：key 或 label 都映射到内部 key（认不出则为 undefined）
-      // 归一化去掉空白：数据里可能写「哪些事 Ta 不知道」（带空格），而 label 无空格
+      // 三种都认：当前 key、label、历史旧长名，统统映射到内部 key（认不出为 undefined）
+      // 归一化去掉空白：数据里可能写「哪些事 Ta 不知道」（带空格），而键本身无空格
       const canonical = map.get(key.replace(/\s+/g, ''))
       if (canonical !== undefined) {
         // 同一标签出现多次 → 拼起来，别让第二行把第一行顶掉
@@ -281,12 +306,12 @@ export function packField(vals: Record<string, string>, spec: StructSpec): strin
  * 行首不是本栏小项名（也不是「其他」）的行**原样保留** —— 那些是散文
  * （「他说: 我不去」），改了就是篡改文本。
  *
- * 【双认 key 与 label（2026-10-11）】
- * 界面**显示 label、库里存 key**，作者照界面写的就是 label ⇒ 解包/规范化都要能认。
- * 归一化把下面三种都收成「key + 全角冒号」这一种形态：
+ * 【三路都认，归一到 key + 全角（2026-10-11）】
+ * label 现已统一为 key，但要认的写法有三类 ⇒ 都收成「key + 全角冒号」这一种形态：
  *   · `外貌: 短发`          （key + 半角）
- *   · `怎么称呼别人: 叫喂`   （label + 半角）
- *   · `情绪外露程度：藏着`   （label + 全角）
+ *   · `叫：…` / 任意 key + 全角 —— 已合规
+ *   · `怎么称呼别人: 叫喂`   （**历史旧长名** + 半角，统一 label 之前的产出）
+ *   · `情绪外露程度：藏着`   （**历史旧长名** + 全角，同上）
  * 已经是「key + 全角」的行（`外貌：短发`）**原样放过**，不做无意义加工。
  *
  * 认得出的标签会顺手**去掉冒号后的前导空格**，与 `packField` 的产出形态对齐

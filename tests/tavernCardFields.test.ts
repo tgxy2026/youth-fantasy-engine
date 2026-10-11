@@ -120,51 +120,74 @@ console.log('—— 已填计数 ——')
     JSON.stringify(normalizeStructMarkup('  外貌:  短发', EXT)))
 }
 
-// ============ 界面长名（label）也要认（2026-10-11 实测事故）============
+// ============ 历史旧长名必须继续认（2026-10-11 事故 + 统一 label 后）============
 //
-// 🔴 事故现场：界面**显示 label、库里存 key**，作者（与 AI 起草、生成脚本）照着界面上
-//    看到的长名写 —— 而解包过去只认 key，于是 `怎么称呼别人：…`、`情绪外露程度：…`
-//    认不出，整行落进「其他」。奉阳青春物语 20 张卡里 4 格全中招。
+// 🔴 事故现场（第一版）：界面**显示长名、库里存短名**，作者（与 AI 起草、生成脚本）
+//    照着界面长名写 —— 解包只认短名 ⇒ `怎么称呼别人：…`、`情绪外露程度：…` 整行落「其他」。
+//    奉阳青春物语 20 张卡全中招。
 //
-// 修法＝双认：key 与 label 都归到内部 key。这里钉死这几条。
-console.log('\n—— 🔴 界面长名（label）也要认 ——')
+// 处理（第二版）：主人拍板把 label **统一改成与 key 一致**，界面不再有落差。
+//    但**统一之前已产出的文件 / 已导入的库数据**写的是旧长名 ⇒ 必须继续认，
+//    否则历史内容会**再次落「其他」**。这张 `LEGACY_ALIAS` 表把旧名永久钉住。
+//
+// 这里钉死三条：
+//   ① 现在的 label 与 key 完全一致（不再有落差），且界面显示名 = 存储键；
+//   ② 旧长名（历史别名）仍被识别并归到 key；
+//   ③ 无论哪种写法，最终都归一成「key：值」形态。
+console.log('\n—— 🔴 历史旧长名仍要认（统一 label 之后）——')
 {
   const SPEECH = structSpecOf('profile.speech')!   // 2.3 语言特征
   const KNOW = structSpecOf('profile.knowledge')!  // 2.6 知识边界
+  const REL = structSpecOf('profile.relations')!   // 2.4 关系
+  const PACE = structSpecOf('conduct.paceLock')!   // 进度锁
 
-  // 该栏里确实存在 label ≠ key 的格（这是本次事故的成因，钉死它们别被谁改回去）
-  const mismatched = SPEECH.items.filter(i => i.label !== i.key)
-  ok('2.3 存在 label ≠ key 的格（事故成因）', mismatched.length > 0)
+  // ① label 现已统一为 key（钉死：别再分叉回去）
+  const mismatched = [...PROFILE_SPECS, ...CONDUCT_SPECS]
+    .flatMap(s => s.items).filter(i => i.label !== i.key)
+  ok('全部细字段 label === key（已统一，不再有落差）', mismatched.length === 0,
+    mismatched.map(i => `${i.key}/${i.label}`).join('、'))
 
-  // 照界面长名写 → 必须归到内部 key
+  // ② 历史旧长名仍被识别、归到 key
   const v = unpackField('怎么称呼别人：叫「喂」，熟了才叫名字\n情绪外露程度：不太外露，气到极点反而笑', SPEECH)
-  ok('「怎么称呼别人」归到 key 称呼别人', v['称呼别人'] === '叫「喂」，熟了才叫名字', JSON.stringify(v))
-  ok('「情绪外露程度」归到 key 情绪外露', v['情绪外露'] === '不太外露，气到极点反而笑', JSON.stringify(v))
-  ok('长名写的那两行不落「其他」', !v[OTHER_KEY].includes('怎么称呼别人') && !v[OTHER_KEY].includes('情绪外露程度'), v[OTHER_KEY])
+  ok('旧长名「怎么称呼别人」归到 key 称呼别人', v['称呼别人'] === '叫「喂」，熟了才叫名字', JSON.stringify(v))
+  ok('旧长名「情绪外露程度」归到 key 情绪外露', v['情绪外露'] === '不太外露，气到极点反而笑', JSON.stringify(v))
+  ok('旧长名那两行不落「其他」', v[OTHER_KEY] === '', v[OTHER_KEY])
 
-  // 2.6 的另外两组
   const k = unpackField('哪些事 Ta 不知道：不知道顾客的过去\nTa 的消息来源：只从街坊闲话听说', KNOW)
-  ok('「哪些事 Ta 不知道」归到 key 不知道的', k['不知道的'] === '不知道顾客的过去', JSON.stringify(k))
-  ok('「Ta 的消息来源」归到 key 知道的范围', k['知道的范围'] === '只从街坊闲话听说', JSON.stringify(k))
-  ok('2.6 长名那两行不落「其他」', k[OTHER_KEY] === '', k[OTHER_KEY])
+  ok('旧长名「哪些事 Ta 不知道」归到 key 不知道的', k['不知道的'] === '不知道顾客的过去', JSON.stringify(k))
+  ok('旧长名「Ta 的消息来源」归到 key 知道的范围', k['知道的范围'] === '只从街坊闲话听说', JSON.stringify(k))
+  ok('2.6 旧长名不落「其他」', k[OTHER_KEY] === '', k[OTHER_KEY])
 
-  // 短键（旧数据形态）照旧要认 —— 双认不是替换
+  const rel = unpackField('与用户的关系：老同学\n与其他角色的关系：同事\n当前关系状态：正常', REL)
+  ok('2.4 三个旧长名全部归位',
+    rel['与用户'] === '老同学' && rel['与其他角色'] === '同事' && rel['当前状态'] === '正常'
+    && rel[OTHER_KEY] === '', JSON.stringify(rel))
+
+  const pace = unpackField('当前关系阶段：点头之交\n什么时候能往前走：她主动开口', PACE)
+  ok('进度锁两个旧长名全部归位',
+    pace['当前阶段'] === '点头之交' && pace['解锁条件'] === '她主动开口' && pace[OTHER_KEY] === '',
+    JSON.stringify(pace))
+
+  // 新写法（key，与界面一致）—— 当然也要认
   const v2 = unpackField('称呼别人：叫喂\n情绪外露：藏着', SPEECH)
-  ok('短键写法照旧认（双认不是替换）', v2['称呼别人'] === '叫喂' && v2['情绪外露'] === '藏着', JSON.stringify(v2))
+  ok('新写法（key）照旧认', v2['称呼别人'] === '叫喂' && v2['情绪外露'] === '藏着', JSON.stringify(v2))
 
-  // 写入侧规范化：长名 + 半角冒号 → 归一成 key + 全角
-  ok('normalize：长名 + 半角 → 归一到 key',
+  // ③ 归一化：新写法 + 旧长名（半角/全角）都收成「key：值」
+  ok('normalize：key + 半角 → 归一到 key + 全角',
+    normalizeStructMarkup('称呼别人: 叫喂', SPEECH) === '称呼别人：叫喂',
+    normalizeStructMarkup('称呼别人: 叫喂', SPEECH))
+  ok('normalize：旧长名 + 半角 → 归一到 key',
     normalizeStructMarkup('怎么称呼别人: 叫喂', SPEECH) === '称呼别人：叫喂',
     normalizeStructMarkup('怎么称呼别人: 叫喂', SPEECH))
-  ok('normalize：长名 + 全角已有冒号 → 也归一到 key',
+  ok('normalize：旧长名 + 全角已有冒号 → 也归一到 key',
     normalizeStructMarkup('情绪外露程度：藏着', SPEECH) === '情绪外露：藏着',
     normalizeStructMarkup('情绪外露程度：藏着', SPEECH))
-  ok('normalize：认不出的长名行原样（不篡改散文）',
+  ok('normalize：认不出的行原样（不篡改散文）',
     normalizeStructMarkup('他习惯: 把手插进口袋', SPEECH) === '他习惯: 把手插进口袋')
 
-  // 往返：长名解包 → 打包 → 落成短键形态 → 再解包仍归位
+  // 往返：旧长名解包 → 打包 → 落成 key 形态 → 再解包仍归位
   const packed = packField(unpackField('怎么称呼别人：叫喂', SPEECH), SPEECH)
-  ok('往返后落成短键形态（库里只有一种写法）', packed === '称呼别人：叫喂', packed)
+  ok('往返后落成 key 形态（库里只有一种写法）', packed === '称呼别人：叫喂', packed)
   ok('往返后仍能被解包归位', unpackField(packed, SPEECH)['称呼别人'] === '叫喂')
 }
 
