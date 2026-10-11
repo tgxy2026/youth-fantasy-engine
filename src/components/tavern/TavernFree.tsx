@@ -150,13 +150,17 @@ export default function TavernFree() {
             {/* 🔴 3.0 · W2-5b（§13 F3）：「本场还有 N 轮未整理」。
                 判据与收尾**同源**（`pendingMessages` = 水位线之后的消息），
                 🔴 **纯派生**：每次渲染现算，不进任何 state（方案原话：该提示若常驻，
-                其状态不能放组件 state）。只提示、不新增入口 —— 整理仍走「结束本轮对话」。 */}
+                其状态不能放组件 state）。只提示、不新增入口 —— 整理仍走「结束本轮对话」。
+                🔴 规格：**刻意保留 `<span>` 而非 Button** —— 它不是可点入口，套 Button 会让作者
+                   本能去点（与「整理只走结束本轮对话」相悖）。但盒子规格逐项对齐 size="md"
+                   （h-9 / px-4 / text-13 / rounded-lg，与 SIZE.md 基线同源），否则并排时明显"塌一截"。
+                   配色取 `toggle` 选中态令牌（amber/15 + amber/30），比右侧实心红 CTA 弱一档，不抢视线。 */}
             {!session.endedAt && (() => {
               const n = pendingMessages(session).length
               if (!n) return null
               return (
                 <span
-                  className="rounded border border-amber/30 bg-amber/15 px-1.5 py-0.5 text-11 text-amber shrink-0"
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg h-9 px-4 border border-amber/30 bg-amber/15 text-13 text-amber"
                   title={`本场还有 ${n} 轮对话没进长期记忆 —— 点「结束本轮对话」才会整理（各角色记忆 / 日记 / 数值 / 设定建议）`}
                 >
                   未整理 {n} 轮
@@ -164,9 +168,10 @@ export default function TavernFree() {
               )
             })()}
             {/* 已归档：先说明状态再给唯一的补救入口 —— 顺序不能反，
-                否则作者第一眼看到的是「新开一场」，会以为自己的对话没了 */}
+                否则作者第一眼看到的是「新开一场」，会以为自己的对话没了。
+                规格同上（对齐 size="md" 的盒高与字号），否则这一条会比旁边的按钮矮一截。 */}
             {session.endedAt ? (
-              <span className="text-11 text-amber/80">
+              <span className="inline-flex shrink-0 items-center rounded-lg h-9 px-4 text-13 text-amber/80">
                 本轮已于 {agoText(session.endedAt)}结束（只读）
               </span>
             ) : null}

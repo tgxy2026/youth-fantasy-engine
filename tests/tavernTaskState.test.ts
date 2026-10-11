@@ -94,6 +94,21 @@ console.log('\n—— W2-5 用例开始 ——')
   ok('⑤ 已归档的场次不再显示徽标', free.includes('!session.endedAt && (() => {'))
   ok('⑤ 徽标文案含轮数与引导', free.includes('未整理 {n} 轮') && free.includes('结束本轮对话'))
 
+  // 🔴 2026-10-11 补：徽标盒子规格必须与右侧 size="md" 按钮同源（h-9 / px-4 / text-13 / rounded-lg）。
+  //   它不是可点入口（刻意保留 <span>，套 Button 会诱导作者去点），但并排时必须等高 ——
+  //   否则会"塌一截"。这三条钉住规格，防止后续改样式时被手抖删掉而单测仍全绿。
+  ok('⑤ 🔴 未整理徽标不是按钮（只提示不新增入口）', (() => {
+    // 取「未整理 {n} 轮」所在的那个标签：往回找最近的 '<'
+    const i = free.indexOf('未整理 {n} 轮')
+    if (i < 0) return false
+    const open = free.lastIndexOf('<', i)
+    return open >= 0 && /^<span[\s>]/.test(free.slice(open))
+  })())
+  ok('⑤ 🔴 未整理徽标盒高对齐 size="md"（h-9 + text-13）',
+    free.includes('inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg h-9 px-4 border border-amber/30 bg-amber/15 text-13 text-amber'))
+  ok('⑤ 🔴 已归档说明也走同一盒口径（不与按钮高低不齐）',
+    free.includes('inline-flex shrink-0 items-center rounded-lg h-9 px-4 text-13 text-amber/80'))
+
   // pendingMessages 口径：水位线之后的消息（空 session 不炸）
   const empty = { messages: [], watermark: 0 } as never
   ok('⑤ pendingMessages 空会话 ⇒ 空数组（不炸）', Array.isArray(pendingMessages(empty)) && pendingMessages(empty).length === 0)
