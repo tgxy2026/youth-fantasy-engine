@@ -130,7 +130,9 @@ export default function CalendarPicker({ value, onChange }: Props) {
               >{d}</Button>
             ))}
           </div>
-          <Button variant="icon-muted" type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-11">清除日期</Button>
+          {/* 🔴 不能用 icon-muted（定宽 w-8）—— 它是图标键，塞「清除日期」文字全靠 w-full
+              覆盖宽度才没炸，属于脆弱依赖（2026-10-12 同批收敛）。文字键用 secondary。 */}
+          <Button variant="secondary" type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-11">清除日期</Button>
         </div>,
         document.body,
       )}

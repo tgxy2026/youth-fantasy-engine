@@ -162,16 +162,21 @@ export default function FieldAliasDialog({
             </HelpPopover>
             已改名 {renamed.length} / {targets.length}
           </span>
+          {/* 🔴 2026-10-12 主人反馈「并排按钮一高一矮」：这三个键同处一条 flex 行，
+              必须同 size。原先「全部恢复默认 / 取消」走 bare（**无 size 类，高度随内容 ≈20px**），
+              与右侧 sm(h-8/32px) 的「保存」并排差 12px，比 AI 提示词那对还夸张。
+              按项目口径：同排主次操作统一 sm（xs 只留给行内工具键）。 */}
           <div className="flex items-center gap-2">
             <Button
               variant="bare"
+              size="sm"
               onClick={() => setDraft({})}
               disabled={renamed.length === 0 && Object.keys(draft).length === 0}
               title="清空所有显示名，全部恢复默认"
             >
               <RotateCcw size={12} /> 全部恢复默认
             </Button>
-            <Button variant="bare" onClick={onClose}>取消</Button>
+            <Button variant="bare" size="sm" onClick={onClose}>取消</Button>
             <Button variant="primary" size="sm" onClick={save} disabled={saving}>
               <Save size={12} /> {saving ? '保存中…' : '保存'}
             </Button>

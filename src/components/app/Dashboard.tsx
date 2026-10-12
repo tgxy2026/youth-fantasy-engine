@@ -396,7 +396,12 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
               ))}
             </div>
           )}
-          <Button variant="icon-amber" onClick={() => onNavigate('progress')} className="mt-4 flex items-center gap-1 text-11">
+          {/* 🔴 用 bare + 显式 h-8（2026-10-12 主人反馈「去…按钮被压成竖排」）：
+              `icon-amber` 是**定宽图标键**（ICON_SIZE.sm = h-8 w-8 = 32px），
+              里面塞「去写作 + 箭头」时宽度不够 ⇒ 文字被挤成一行一个字。
+              文字型导航键必须走 bare + 显式 h-8（同 NovelEditorChapterTree 的导出键口径）。 */}
+          <Button variant="bare" onClick={() => onNavigate('progress')}
+            className="mt-4 flex items-center gap-1 h-8 px-2.5 rounded-lg text-11 text-ink-400 hover:text-amber transition-colors">
             去登记今日字数 <ChevronRight size={11} />
           </Button>
         </Panel>
@@ -450,7 +455,9 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
                 )
               })}
             </div>
-            <Button variant="icon-amber" onClick={() => onNavigate('editor')} className="mt-4 flex items-center gap-1 text-11">
+            {/* 同「去登记今日字数」：文字型导航键不能用定宽 icon-amber（会挤成竖排）。 */}
+            <Button variant="bare" onClick={() => onNavigate('editor')}
+              className="mt-4 flex items-center gap-1 h-8 px-2.5 rounded-lg text-11 text-ink-400 hover:text-amber transition-colors">
               去写作 <ChevronRight size={11} />
             </Button>
           </Panel>

@@ -74,8 +74,21 @@ function TestResultBar({ r }: { r: AITestResult }) {
   )
 }
 
-/** 编辑表单 / 列表区的统一宽度：页面很宽，铺满会显得松散难读 */
+/**
+ * 编辑表单 / 列表区的统一宽度：页面很宽，铺满会显得松散难读。
+ *
+ * 🔴 2026-10-12 主人反馈「内容全挤在左边、右侧完全空白」：原先这里只给了 `max-w-3xl`，
+ *    在宽屏下（实测 section 1289px）右侧留下 **440px 死区**。
+ *    现改为**列表态两栏**：左栏放「模型列表 + 添加 + 语义检索」（需要宽度的内容），
+ *    右栏放「AI 用途路由 + 请求超时」（定宽表单，本来就窄）。
+ *    窄屏自动回落单栏（`xl:` 断点），高度随内容自适应（不写死高度 ⇒ 配 N 个模型时自然变高）。
+ *
+ *    编辑表单仍用 `max-w-3xl` 单栏 —— 表单是逐项纵向走查的，拉两栏反而打断视线。
+ */
 const BODY = 'max-w-3xl'
+
+/** 列表态两栏：左「列表/添加」（自适应，minmax(0,1fr) 防长模型名撑破）｜右「路由/超时」（定宽 20rem） */
+const LIST_GRID = 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_20rem] gap-x-6 gap-y-5 items-start'
 
 export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   const [providers, setProviders] = useState<AIProvider[]>([])
@@ -338,118 +351,137 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
       </div>
 
       <div className="p-4">
-        <div className={BODY}>
+        {/* 🔴 列表态**不套 BODY**：`max-w-3xl`(≈768px) 会把两栏一起卡在左半边，
+            右侧仍是死区（实测两栏总宽只有 794px，section 有 1289px）。
+            编辑态是逐项纵向表单，才需要收窄到易读行宽。 */}
+        <div className={editing === null ? '' : BODY}>
           {editing === null ? (
-            <>
-              {providers.length === 0 ? (
-                <div className="text-12 text-ink-500 mb-3">还没有任何模型，先添加一个：</div>
-              ) : (
-                <p className="text-11 text-ink-500 mb-2.5 leading-relaxed">
-                  配置好模型后点该行「测试」，会真实发起一次最小对话来验证是否能正常调用。
-                  <span className="text-ink-600">本地大参数模型首次调用需加载进显存，可能等待数十秒，属正常现象。</span>
-                </p>
-              )}
-              <div className="space-y-2 mb-4">
-                {providers.map(p => (
-                  <div key={p.id} className="rounded-lg bg-ink-800 border border-ink-700">
-                    <div className="flex items-center gap-2 px-3 py-2">
-                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${p.type === 'ollama' || p.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
-                        {typeLabel(p)}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-12 text-ink-100 truncate">{p.name}</div>
-                        <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
-                      </div>
-                      {/* 用途徽标（2.8.0 · #014）：一眼看出这条配置被哪些用途指定了 */}
-                      {rolesOf(routing, p.id).map(r => (
-                        <span
-                          key={r}
-                          className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-info/15 text-info"
-                          title={`被「${ROLE_LABEL[r]}」用途指定 —— ${ROLE_HINT[r]}`}
-                        >
-                          {ROLE_LABEL[r]}
-                        </span>
-                      ))}
-                      {!checkContextWindow(p.contextWindow).ok && (
-                        <span
-                          className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-amber/15 text-amber"
-                          title="这条配置还没填「上下文窗口」—— 额度与记忆档会按保守值估算。点右侧铅笔补填（1K = 1024 tokens）。"
-                        >
-                          未填窗口
-                        </span>
-                      )}
-                      {activeId === p.id ? (
-                        <span className="shrink-0 flex items-center gap-1 text-11 text-success"><CheckCircle2 size={12} /> 当前</span>
-                      ) : (
-                        <Button variant="bare" onClick={() => setActive(p.id)} className="shrink-0 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</Button>
-                      )}
-                      <Button variant="bare"
-                        onClick={() => runRowTest(p)}
-                        disabled={testingId !== null}
-                        title={testingId !== null ? '有测试正在进行中，请稍候' : '发起一次最小对话，验证该模型能否正常调用'}
-                        className="shrink-0 flex items-center gap-1 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {testingId === p.id ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
-                        {testingId === p.id ? '测试中…' : '测试'}
-                      </Button>
-                      <Button variant="bare" iconOnly size="xs" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
-                      {/* 🔴 2026-09-22 六维审计 P2：原来没传 size ⇒ `icon-danger` 走 ICON_SIZE.sm = h-8(32px)，
-                          与同排的编辑键（`iconOnly size="xs"` = h-6/24px）**差 8px**，违反「同排同 size」。
-                          补 `iconOnly size="xs"` 对齐；顺带去掉 `p-1`（ICON_SIZE 已定宽高，再加 padding 只会挤压图标）。 */}
-                      {/* 🔴 2026-09-22 六维审计 P2：原来没传 size ⇒ `icon-danger` 走 ICON_SIZE.sm = h-8(32px)，
-                          与同排的编辑键（`iconOnly size="xs"` = h-6/24px）**差 8px**，违反「同排同 size」。
-                          补 `iconOnly size="xs"` 对齐；顺带去掉 `p-1`（ICON_SIZE 已定宽高，再加 padding 只会挤压图标）。 */}
-                      <Button variant="icon-danger" iconOnly size="xs" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0"><Trash2 size={12} /></Button>
-                    </div>
-                    {testingId === p.id && (
-                      <div className="px-3 pb-2 text-11 text-ink-400 flex items-center gap-1.5">
-                        <Loader2 size={11} className="animate-spin text-amber" /> 正在调用「{p.model}」，本地大模型可能需要数十秒…
-                      </div>
-                    )}
-                    {testingId !== p.id && rowResults[p.id] && (
-                      <div className="px-3 pb-2"><TestResultBar r={rowResults[p.id]} /></div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-success/10 text-success border border-success/25 rounded-lg text-12 hover:bg-success/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），跑在本机，一般免密钥、免联网">
-                  <Cpu size={13} /> 添加本地模型
-                </Button>
-                <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-info/10 text-info border border-info/25 rounded-lg text-12 hover:bg-info/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
-                  <Globe size={13} /> 添加联网模型
-                </Button>
-              </div>
-              {pickMode !== 'none' && (
-                <div className="mt-3 rounded-lg border border-ink-700 bg-ink-800/40 p-3">
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <span className="text-12 font-medium text-ink-200">
-                      {pickMode === 'local' ? '选择本地平台' : '选择联网平台'}
-                    </span>
-                    <Button variant="secondary" size="sm" onClick={() => setPickMode('none')} className="ml-auto">返回</Button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(pickMode === 'local' ? LOCAL_PRESETS : ONLINE_PRESETS).map(p => (
-                      <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 hover:text-success hover:border-success/40 transition-colors text-left">
-                        {pickMode === 'local'
-                          ? <Cpu size={12} className="text-success shrink-0" />
-                          : <Globe size={12} className="text-info shrink-0" />}
-                        <span className="truncate">{p.label}</span>
-                      </Button>
-                    ))}
-                  </div>
-                  <p className="text-10 text-ink-500 mt-2 leading-relaxed">
-                    {pickMode === 'local'
-                      ? '本地平台运行在本机 / 局域网，一般免密钥、无需联网；Ollama 需先「ollama pull」拉取模型。'
-                      : '联网平台需要 API 密钥，按预设填好接口地址后填入密钥与模型名即可。'}
+            /* 列表态两栏：xs–lg 单栏堆叠，xl+ 左「列表/添加/语义检索」右「路由/超时」。
+               高度不写死 ⇒ 配置 N 个模型时左栏自然变长（自适应要求）。 */
+            <div className={LIST_GRID}>
+              {/* ---- 左栏：模型列表 + 添加 + 语义检索（需宽度的内容）---- */}
+              <div>
+                {providers.length === 0 ? (
+                  <div className="text-12 text-ink-500 mb-3">还没有任何模型，先添加一个：</div>
+                ) : (
+                  <p className="text-11 text-ink-500 mb-2.5 leading-relaxed">
+                    配置好模型后点该行「测试」，会真实发起一次最小对话来验证是否能正常调用。
+                    <span className="text-ink-600">本地大参数模型首次调用需加载进显存，可能等待数十秒，属正常现象。</span>
                   </p>
+                )}
+                <div className="space-y-2 mb-4">
+                  {providers.map(p => (
+                    <div key={p.id} className="rounded-lg bg-ink-800 border border-ink-700">
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${p.type === 'ollama' || p.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
+                          {typeLabel(p)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-12 text-ink-100 truncate">{p.name}</div>
+                          <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
+                        </div>
+                        {/* 用途徽标（2.8.0 · #014）：一眼看出这条配置被哪些用途指定了 */}
+                        {rolesOf(routing, p.id).map(r => (
+                          <span
+                            key={r}
+                            className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-info/15 text-info"
+                            title={`被「${ROLE_LABEL[r]}」用途指定 —— ${ROLE_HINT[r]}`}
+                          >
+                            {ROLE_LABEL[r]}
+                          </span>
+                        ))}
+                        {!checkContextWindow(p.contextWindow).ok && (
+                          <span
+                            className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-amber/15 text-amber"
+                            title="这条配置还没填「上下文窗口」—— 额度与记忆档会按保守值估算。点右侧铅笔补填（1K = 1024 tokens）。"
+                          >
+                            未填窗口
+                          </span>
+                        )}
+                        {activeId === p.id ? (
+                          <span className="shrink-0 flex items-center gap-1 text-11 text-success"><CheckCircle2 size={12} /> 当前</span>
+                        ) : (
+                          <Button variant="bare" onClick={() => setActive(p.id)} className="shrink-0 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</Button>
+                        )}
+                        <Button variant="bare"
+                          onClick={() => runRowTest(p)}
+                          disabled={testingId !== null}
+                          title={testingId !== null ? '有测试正在进行中，请稍候' : '发起一次最小对话，验证该模型能否正常调用'}
+                          className="shrink-0 flex items-center gap-1 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {testingId === p.id ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
+                          {testingId === p.id ? '测试中…' : '测试'}
+                        </Button>
+                        <Button variant="bare" iconOnly size="xs" onClick={() => { setEditResult(null); setEditing(p) }} title="编辑" className="shrink-0 text-ink-500 hover:text-amber"><Pencil size={12} /></Button>
+                        {/* 🔴 2026-09-22 六维审计 P2：原来没传 size ⇒ `icon-danger` 走 ICON_SIZE.sm = h-8(32px)，
+                            与同排的编辑键（`iconOnly size="xs"` = h-6/24px）**差 8px**，违反「同排同 size」。
+                            补 `iconOnly size="xs"` 对齐；顺带去掉 `p-1`（ICON_SIZE 已定宽高，再加 padding 只会挤压图标）。 */}
+                        {/* 🔴 2026-09-22 六维审计 P2：原来没传 size ⇒ `icon-danger` 走 ICON_SIZE.sm = h-8(32px)，
+                            与同排的编辑键（`iconOnly size="xs"` = h-6/24px）**差 8px**，违反「同排同 size」。
+                            补 `iconOnly size="xs"` 对齐；顺带去掉 `p-1`（ICON_SIZE 已定宽高，再加 padding 只会挤压图标）。 */}
+                        <Button variant="icon-danger" iconOnly size="xs" onClick={() => removeProvider(p.id)} title="删除" className="shrink-0"><Trash2 size={12} /></Button>
+                      </div>
+                      {testingId === p.id && (
+                        <div className="px-3 pb-2 text-11 text-ink-400 flex items-center gap-1.5">
+                          <Loader2 size={11} className="animate-spin text-amber" /> 正在调用「{p.model}」，本地大模型可能需要数十秒…
+                        </div>
+                      )}
+                      {testingId !== p.id && rowResults[p.id] && (
+                        <div className="px-3 pb-2"><TestResultBar r={rowResults[p.id]} /></div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              )}
+                <div className="flex gap-2">
+                  <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-success/10 text-success border border-success/25 rounded-lg text-12 hover:bg-success/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），跑在本机，一般免密钥、免联网">
+                    <Cpu size={13} /> 添加本地模型
+                  </Button>
+                  <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-info/10 text-info border border-info/25 rounded-lg text-12 hover:bg-info/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
+                    <Globe size={13} /> 添加联网模型
+                  </Button>
+                </div>
+                {pickMode !== 'none' && (
+                  <div className="mt-3 rounded-lg border border-ink-700 bg-ink-800/40 p-3">
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span className="text-12 font-medium text-ink-200">
+                        {pickMode === 'local' ? '选择本地平台' : '选择联网平台'}
+                      </span>
+                      <Button variant="secondary" size="sm" onClick={() => setPickMode('none')} className="ml-auto">返回</Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(pickMode === 'local' ? LOCAL_PRESETS : ONLINE_PRESETS).map(p => (
+                        <Button variant="secondary" key={p.label} onClick={() => startAddPreset(p)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border-ink-700 hover:text-success hover:border-success/40 transition-colors text-left">
+                          {pickMode === 'local'
+                            ? <Cpu size={12} className="text-success shrink-0" />
+                            : <Globe size={12} className="text-info shrink-0" />}
+                          <span className="truncate">{p.label}</span>
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-10 text-ink-500 mt-2 leading-relaxed">
+                      {pickMode === 'local'
+                        ? '本地平台运行在本机 / 局域网，一般免密钥、无需联网；Ollama 需先「ollama pull」拉取模型。'
+                        : '联网平台需要 API 密钥，按预设填好接口地址后填入密钥与模型名即可。'}
+                    </p>
+                  </div>
+                )}
 
+                {/* 语义检索（2.8.0 · 台账 #013）：嵌入模型 + 向量索引状态。
+                    与「AI 用途路由」同属**模型能力的分配** —— 走同一份 providers，
+                    只是换个用途（向量化而非对话）；故并列放在「模型配置」块内，不另开页签。
+                    左栏收尾（宽度需求大，跟列表同栏）。 */}
+                <EmbeddingIndexPanel providers={providers} />
+            </div>
+
+            {/* ---- 右栏：定宽分配表单（用途路由 / 请求超时）---- */}
+            <div>
               {/* AI 用途路由（2.8.0 · #014）：三类任务各指定模型，留空 = 跟随当前模型。
-                  刻意放在模型列表正下方 —— 它是「模型配置」的延伸（同一份 providers 的分配），
-                  不另开页签（新增页签要四处同步，得不偿失）。 */}
-              <div className="mt-5 pt-4 border-t border-ink-700">
+                  刻意放在模型列表旁边 —— 它是「模型配置」的延伸（同一份 providers 的分配），
+                  不另开页签（新增页签要四处同步，得不偿失）。
+                  🔴 2026-10-12 移到右栏：三格下拉本就窄，放左栏会与 440px 死区一起显空。 */}
+              {/* 右栏首块不加上边框：单栏堆叠时它上方是左栏尾（语义检索已有上边框），
+                  双线叠在一起会显得脏；两栏并列时更需要「并列声明」而非「延续」的视觉。 */}
+              <div>
                 <div className="flex items-center gap-1.5 mb-1">
                   <h3 className="text-12 text-ink-200">AI 用途路由</h3>
                   <HelpPopover title="AI 用途路由怎么用" width="23rem" size={13}>
@@ -486,14 +518,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </div>
               </div>
 
-              {/* 语义检索（2.8.0 · 台账 #013）：嵌入模型 + 向量索引状态。
-                  与上方的「AI 用途路由」同属**模型能力的分配** —— 走同一份 providers，
-                  只是换个用途（向量化而非对话）；故并列放在「模型配置」块内，不另开页签。 */}
-              <EmbeddingIndexPanel providers={providers} />
-
               {/* 请求超时（2.9.0）：全应用共用的单次请求等待上限。
                   此前这里没有任何可调项 —— 慢模型跑结构化任务只能干等（硬编码 180s），而酒馆那边
-                  早就有同名设置。刻意与「模型配置」同面板：超时是模型 / 网络的属性，不是某个功能的属性。 */}
+                  早就有同名设置。刻意与「模型配置」同面板：超时是模型 / 网络的属性，不是某个功能的属性。
+                  🔴 2026-10-12 与「AI 用途路由」同置右栏 —— 两者都是窄表单，左栏留给需宽度的列表。 */}
               <div className="mt-5 pt-4 border-t border-ink-700">
                 <div className="flex items-center gap-1.5 mb-1">
                   <h3 className="text-12 text-ink-200">请求超时</h3>
@@ -524,7 +552,8 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   )}
                 </div>
               </div>
-            </>
+            </div>
+            </div>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-12">

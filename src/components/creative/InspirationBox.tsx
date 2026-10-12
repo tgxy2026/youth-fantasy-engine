@@ -155,8 +155,11 @@ export default function InspirationBox() {
       {items.length > 0 && (
         <div className="mt-3 flex items-center gap-2">
           <span className="text-11 text-ink-400">已勾选 <b className="text-ink-200 tabular-nums">{checked.size}</b> 条</span>
+          {/* 🔴 2026-10-12 主人反馈「并排按钮一高一矮」：此条与右侧「融合为情节卡」
+              同处一条 flex 行 ⇒ 必须同 size（原为 xs=h-6/24px，对方 sm=h-8/32px，差 8px）。
+              「同排同 size」是项目按钮红线，见 Button.tsx 的 SIZE 基线。 */}
           {checked.size > 0 && (
-            <Button variant="secondary" size="xs" onClick={() => setChecked(new Set())}>清空勾选</Button>
+            <Button variant="secondary" size="sm" onClick={() => setChecked(new Set())}>清空勾选</Button>
           )}
           {aiReady ? (
             <Button variant="primary" size="sm" className="ml-auto" disabled={fusing || checked.size < 2}

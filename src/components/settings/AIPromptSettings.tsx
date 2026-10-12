@@ -158,7 +158,10 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
                           <Button size="sm" variant="primary" disabled={!dirty || busy} onClick={() => void save(e)}>
                             保存
                           </Button>
-                          <Button size="xs" variant="secondary" disabled={!e.overridden || busy}
+                          {/* 🔴 2026-10-12 主人反馈「还原出厂比保存矮一截」：两者同排 = 同一决策组，
+                              必须同 size（原为 xs=h-6/26px，与 sm=h-8/35px 差 9px）。
+                              「同排同 size」是项目按钮红线，见 Button.tsx 的 SIZE 基线。 */}
+                          <Button size="sm" variant="secondary" disabled={!e.overridden || busy}
                             onClick={() => void reset(e)}>
                             <RotateCcw size={11} /> 还原出厂
                           </Button>

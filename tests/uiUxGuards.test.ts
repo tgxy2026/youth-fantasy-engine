@@ -163,5 +163,145 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     /获取模型列表/.test(wa) && !/\{isOllama && \(\s*<Button[\s\S]{0,120}获取本地模型/.test(wa))
 }
 
+// ---------- ⑩ 「同排同 size」按钮红线（2026-10-12 主人反馈「并排按钮一高一矮」） ----------
+//
+// 起因：主人连着抓到三处**同排按钮高度不等**：
+//   · AIPromptSettings：保存(sm=32px) / 还原出厂(xs=24px) —— 差 9px（源头，主人点名）；
+//   · InspirationBox：清空勾选(xs) / 融合为情节卡(sm) 同一条 flex 行 —— 差 8px；
+//   · FieldAliasDialog：全部恢复默认+取消(bare=无尺寸类，高度随内容≈20px) / 保存(sm=32px) —— 差 12px。
+// 这三处都**不会报错**、功能照常，纯视觉问题，极容易在后续改动里再退化 ⇒ 静态钉住。
+//
+// 判据（与 Button.tsx 的 SIZE 基线一致）：
+//   · SIZE 含 xs=h-6 / sm=h-8 / md=h-9 / lg=h-10；**bare / toggle-text 不带任何 size 类**；
+//   · 同一条 `flex ... gap-*` 行里的 <Button>，要么都显式给 size，要么都给同一个 size。
+// ⚠️ 只钉**已收敛的这三个文件**，不做全仓扫描 —— 全仓会命中大量"分组 footer"误报
+//    （footerAlign="between" 左右两组本来就该各自成组），误报比不钉更糟。
+{
+  // ⚠️ 口径要点：只在**同一条 flex 行**内比较。全文件比较会把「展开全文(xs) 与 保存(sm)
+  //    各自独占一行」「列表删除键(icon-danger 无 size) 与文字行」这类**不在同一行**的判成误报。
+  //    实现：把文件按 `flex ... gap-` 开头的行切段，逐段收集该段内的 <Button> 标签并比 size。
+  const targets: [string, string][] = [
+    ['src/components/settings/AIPromptSettings.tsx', 'AI 提示词 保存/还原出厂'],
+    ['src/components/creative/InspirationBox.tsx', '灵感盒 清空勾选/融合为情节卡'],
+    ['src/components/sheets/FieldAliasDialog.tsx', '字段别名 恢复默认/取消/保存'],
+  ]
+
+  /**
+   * 取一段 JSX 里所有 <Button ...> 开标签（含多行属性），返回 [标签文本, size|'']。
+   *
+   * 🔴 不能用 `<Button\b([^>]*)>` 这种朴素正则 —— 属性里 `onClick={() => x}` / `disabled={a > b}`
+   *    都含 `>`，会在箭头函数处**提前截断**，导致后面的 `size="sm"` 扫不到 ⇒ 误报。
+   *    实测踩到：FieldAliasDialog 第 171 行的 bare 按钮其 size 在下一行，被截断后判成 BARE。
+   *    故手写扫描：逐字符前进，跳过引号内与 `{}` 内的内容，遇到**括号深度为 0 时的 `>`** 才收尾。
+   */
+  const sizesIn = (seg: string): [string, string][] => {
+    const out: [string, string][] = []
+    let i = 0
+    while (true) {
+      const start = seg.indexOf('<Button', i)
+      if (start < 0) break
+      let j = start + '<Button'.length
+      let depth = 0
+      let quote = ''
+      let end = -1
+      for (; j < seg.length; j++) {
+        const c = seg[j]
+        if (quote) { if (c === quote) quote = ''; continue }
+        if (c === '"' || c === "'") { quote = c; continue }
+        if (c === '{' || c === '(') { depth++; continue }
+        if (c === '}' || c === ')') { depth--; continue }
+        if (c === '>' && depth <= 0) { end = j; break }
+        if (c === '<') break // 不是开标签（如 <ButtonXxx），防御
+      }
+      if (end < 0) break
+      const attrs = seg.slice(start + '<Button'.length, end)
+      const sz = /size="(xs|sm|md|lg)"/.exec(attrs)?.[1] ?? ''
+      out.push([attrs.replace(/\s+/g, ' ').trim().slice(0, 80), sz])
+      i = end + 1
+    }
+    return out
+  }
+
+  for (const [file, label] of targets) {
+    const lines = read(file).split('\n')
+    const bad: string[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const head = lines[i]
+      // 只认「同一条 flex 行」的容器起点
+      if (!/className="[^"]*\bflex\b[^"]*\bgap-[^"]*"/.test(head)) continue
+      const indent = head.match(/^\s*/)?.[0].length ?? 0
+      // 🔴 口径：取「容器起点 → 缩进回落到 <= 容器缩进」的整段文本（**不按行缩进筛**）。
+      //    为什么不能按缩进筛：多行属性标签里 `size="sm"` 往往缩进更深（如 14 格），
+      //    按「= indent+2」筛会把 size 行丢掉 ⇒ 误判成 bare（实测踩到 FieldAliasDialog 行 171）。
+      //    为什么能收敛误报：该段内只认 <Button 开标签，`sizesIn` 已能正确跳过 `=>` 等 `>`。
+      const seg: string[] = []
+      for (let j = i + 1; j < lines.length && j < i + 31; j++) {
+        const ln = lines[j]
+        if (ln.trim() && (ln.match(/^\s*/)?.[0].length ?? 0) <= indent) break
+        seg.push(ln)
+      }
+      const btns = sizesIn(seg.join('\n'))
+      if (btns.length < 2) continue
+      const set = new Set(btns.map(b => b[1] || 'BARE'))
+      // 允许：全部同 size；或全部 BARE。不允许：出现两种及以上不同值，
+      // 尤其不许「BARE + 具体 size」混排（BARE 无尺寸类，高度随内容，必然不等高）。
+      if (set.size > 1) {
+        bad.push(`行${i + 1} {${[...set].join('+')}} :: ${btns.map(b => `${b[1] || 'bare'}`).join(',')}`)
+      }
+    }
+    ok(`🔴 ${label}：同排按钮 size 必须一致（不许 BARE 与 xs/sm/md 混排）`,
+      bad.length === 0, bad.join(' ｜ '))
+  }
+
+  // 反向对照：确认守卫真能抓到坏形态（同一 flex 行里 bare + sm 混排，必须判失败）
+  const badSeg = `<div className="mt-2 flex items-center gap-2">
+    <Button variant="bare" onClick={a}>取消</Button>
+    <Button variant="primary" size="sm" onClick={b}>保存</Button>
+  </div>`
+  const badSet = new Set(sizesIn(badSeg).map(b => b[1] || 'BARE'))
+  ok('  · 守卫自检：同一 flex 行内 bare + sm 混排确实被判失败（防守卫写成永真）',
+    badSet.size > 1)
+}
+
+// ---------- ⑪ AIConfigPanel 列表态必须两栏铺满（2026-10-12 主人反馈「右侧全空白」） ----------
+//
+// 起因：列表态套了 `BODY = max-w-3xl`，宽屏（section 实测 1289px）下右侧留 440px 死区。
+// 修法：列表态用 LIST_GRID 两栏且**不套 BODY**；编辑态（逐项纵向表单）才收窄。
+// 这两条都很容易被"顺手统一宽度"改回去 ⇒ 钉住。
+{
+  const s = read('src/components/settings/AIConfigPanel.tsx')
+  ok('🔴 列表态两栏栅格存在（LIST_GRID：grid + xl:grid-cols-[minmax(0,1fr)_20rem]）',
+    /xl:grid-cols-\[minmax\(0,1fr\)_20rem\]/.test(s))
+  ok('🔴 列表态不套 BODY（否则两栏被一起卡在左半边，右侧仍是死区）',
+    /className=\{editing === null \? '' : BODY\}/.test(s))
+  ok('  · 编辑态仍保留 BODY 收窄（逐项纵向表单需要易读行宽）',
+    /BODY = 'max-w-3xl'/.test(s))
+}
+
+// ---------- ⑫ 定宽图标键不许塞文字（2026-10-12 主人反馈「去写作被压成竖排」） ----------
+//
+// 起因：Dashboard 的「去写作 / 去登记今日字数」用了 `variant="icon-amber"`——
+//   它是**定宽图标键**（ICON_SIZE.sm = w-8 = 32px），文字塞进去宽度不够 ⇒ 一字一行竖着排。
+// 判据：icon-amber / icon-danger / icon-muted 三个变体同一行标签里**不许出现中文文字**。
+{
+  const files = ['src/components/app/Dashboard.tsx', 'src/components/common/CalendarPicker.tsx']
+  for (const f of files) {
+    const s = read(f)
+    const re = /<Button\b[^>]*variant="icon-(?:amber|danger|muted)"[\s\S]{0,300}?<\/Button>/g
+    const offenders: string[] = []
+    let m: RegExpExecArray | null
+    while ((m = re.exec(s))) {
+      // 标签体内出现中文（排除注释行）
+      const inner = m[0].replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      if (/[\u4e00-\u9fa5]/.test(inner)) offenders.push(inner.replace(/\s+/g, ' ').slice(0, 90))
+    }
+    ok(`🔴 ${f.split('/').pop()}：定宽图标键内不塞中文（会挤成竖排）`,
+      offenders.length === 0, offenders.join(' ｜ '))
+  }
+  const s = read('src/components/app/Dashboard.tsx')
+  ok('  · Dashboard 的文字型导航键走 bare + 显式 h-8',
+    /variant="bare"[\s\S]{0,200}去写作/.test(s) || /去写作[\s\S]{0,200}h-8/.test(s))
+}
+
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)
