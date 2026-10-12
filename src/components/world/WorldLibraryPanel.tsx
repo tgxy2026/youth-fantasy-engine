@@ -17,7 +17,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, FileDown, Globe, Loader2, Lock, Trash2 } from 'lucide-react'
 import * as db from '@/lib/db'
 import { createWorldFromCurrentProject, draftDiffers, freezeWorld, renameWorld } from '@/lib/world/worlds'
-import { getWorldImportRecord, importWorldIntoCurrent, type WorldImportRecord } from '@/lib/world/worldImport'
+import { getWorldImportRecord, clearWorldImportRecord, importWorldIntoCurrent, type WorldImportRecord } from '@/lib/world/worldImport'
 import type { WorldStoredRecord } from '@/lib/world/worldTypes'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -53,6 +53,32 @@ export default function WorldLibraryPanel() {
     }
   }, [])
   useEffect(() => { void load() }, [load])
+
+  /**
+   * 清除引入溯源（只清那条「引自 X」的说明，**不动任何表内容**）。
+   *
+   * 🔴 2026-10-12 全量审计（能力缺口接线）：`clearWorldImportRecord()` 早就实现好了，注释也写着
+   *    「作者删了世界、或想重新开始」，但**全应用没有任何入口**调它 ⇒ 世界被删后这条溯源会一直
+   *    显示陈旧信息（说「引自 X」，而 X 已不在世界引擎里）。
+   */
+  const doClearImportRecord = async () => {
+    if (busy) return
+    if (!await confirmDialog({
+      title: '清除引入溯源',
+      message: '将清掉「本项目当前的世界引自 X」这条溯源说明。\n\n它**只影响这条说明** —— 已经引入的表格内容一个字节都不会动；清掉后随时可以再引入一次。',
+      confirmText: '清除',
+    })) return
+    setBusy(true)
+    try {
+      await clearWorldImportRecord()
+      setImportRec(null)
+      showToast('已清除引入溯源')
+    } catch (e) {
+      showToast('清除失败：' + errText(e), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   /** 抽取当前项目的世界（草稿） */
   const doCreate = async () => {
@@ -182,6 +208,12 @@ export default function WorldLibraryPanel() {
             指纹 <span className="font-mono">{importRec.fingerprint}</span>
             <br />
             🔴 引入是快照复制：源世界后来再改，这边不会自动跟着变 —— 要更新就再引入一次。
+            <div className="mt-2">
+              <Button variant="secondary" size="xs" disabled={busy} onClick={() => void doClearImportRecord()}
+                title="只清掉上面这条「引自 X」的溯源说明，不动已经引入的任何表内容">
+                <Trash2 size={11} /> 清除溯源
+              </Button>
+            </div>
           </div>
         )}
         {list === null ? (

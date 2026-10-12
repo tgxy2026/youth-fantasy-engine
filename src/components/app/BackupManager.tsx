@@ -67,6 +67,35 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     }
   }
 
+  // 🔴 2026-10-12 全量审计（能力缺口接线）：**外置载荷孤儿** —— 载荷还在、备份记录已丢。
+  //    与上面「孤儿备份」互为镜像：那个是「记录在、项目没了」，这个是「载荷在、记录没了」。
+  //    成因：删除备份时元数据删掉而载荷没删成 / 恢复中途失败。它们**不出现在任何列表里**，
+  //    作者既看不到也恢复不了，只白占存储 —— 所以此前只能靠人记得去翻数据文件。
+  //    ⚠️ 只在**桌面版接了外置通道**时才有意义：纯浏览器 / 未接入时 listOrphanPayloadIds 返回 []。
+  const [payloadOrphans, setPayloadOrphans] = useState<string[]>([])
+  useEffect(() => {
+    void db.listOrphanPayloadIds().then(setPayloadOrphans).catch(() => {})
+  }, [])
+  const cleanPayloadOrphans = async () => {
+    if (busy || payloadOrphans.length === 0) return
+    if (!await confirmDialog({
+      title: '清理孤儿载荷',
+      message: `将删除 ${payloadOrphans.length} 份「没有对应备份记录」的数据载荷。\n\n这些载荷的备份记录已经不存在 —— 界面上看不到、也无法恢复，只持续占用存储。确定清理？`,
+      confirmText: '清理',
+      danger: true,
+    })) return
+    setBusy(true)
+    try {
+      const n = await db.deleteOrphanPayloads()
+      setPayloadOrphans(await db.listOrphanPayloadIds())
+      showToast(`已清理 ${n} 份孤儿载荷`, 'success')
+    } catch (e) {
+      showToast('清理失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const restore = async (b: db.BackupRecord) => {
     if (busy) return
     if (!await confirmDialog({
@@ -442,6 +471,28 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               
               title="删除所有属于已删除项目的备份" variant="danger" size="md" className="flex items-center text-danger">
               <Trash2 size={12} /> 清理孤儿备份
+            </Button>
+          </div>
+
+          {/* 🔴 2026-10-12 全量审计（能力缺口接线）：「孤儿载荷清理」与上面「孤儿备份清理」互为镜像。
+              常驻显示（不按数量隐藏）—— 与相邻那块保持同一观感，也让作者知道「备份残留有两种」。 */}
+          <div className="rounded-lg border border-ink-700 bg-ink-850 px-3 py-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Trash2 size={13} className="text-danger" />
+              <span className="text-13 font-semibold text-ink-100">孤儿载荷清理</span>
+              <HelpPopover title="什么是孤儿载荷？" width="21rem" size={12}>
+                {'每份备份由两部分组成：「备份记录」（下面列表里那一行）与「数据载荷」（本机数据文件里那一份具体内容）。\n\n若某次删除或恢复中途出错，可能留下「载荷还在、记录已经没了」的残留 —— 它不会出现在任何列表里，你既看不到、也无法恢复，只会持续占用存储空间。\n\n位置：本机数据文件（左下角「本机存储」里可打开它所在的文件夹）的 backupPayloads。'}
+              </HelpPopover>
+            </div>
+            <div className="text-11 text-ink-400 leading-relaxed mb-2.5">
+              {payloadOrphans.length > 0
+                ? <>检测到 <span className="text-danger font-semibold">{payloadOrphans.length} 份</span> 没有对应备份记录的残留载荷，点击下方按钮一键清理。</>
+                : '没有孤儿载荷——当前全部数据载荷都有对应的备份记录，无需清理。'}
+            </div>
+            <Button onClick={cleanPayloadOrphans}
+              disabled={busy || payloadOrphans.length === 0}
+              title="删除所有没有对应备份记录的残留载荷" variant="danger" size="md" className="flex items-center text-danger">
+              <Trash2 size={12} /> 清理孤儿载荷
             </Button>
           </div>
 

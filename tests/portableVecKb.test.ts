@@ -21,7 +21,7 @@ import {
   PORTABLE_VEC_STORE, PORTABLE_KB_DOCS_STORE, PORTABLE_KB_BODIES_STORE,
 } from '../src/lib/storage/portableVecKb'
 import type { SidecarApi } from '../src/lib/storage/sidecar'
-import { PORTABLE_KEY_FIELDS, portableStore, setPortableSidecarApi, migratePortableSidecar } from '../src/lib/storage/fileBackend'
+import { PORTABLE_KEY_FIELDS, portableStore, setPortableSidecarApi, resetPortableSidecarApi, migratePortableSidecar } from '../src/lib/storage/fileBackend'
 import {
   chunkKey, toVectorBuffer, fromVectorBuffer, vectorRowId,
 } from '../src/lib/semantic/chunk'
@@ -399,6 +399,10 @@ function toStoredRowLike(r: ReturnType<typeof makeVecRow>): Record<string, unkno
   // 卫生：复位全局后端，避免影响同进程其它测试文件
   setVecBackend(null)
   setKbBackend(null)
+  // 🔴 2026-10-12 全量审计：本文件在**模块顶部**注入过 memSidecar，此前**漏了复位** ——
+  //    与上面两行同一目的（同进程的其它测试文件不该继承这份内存外置通道）。
+  //    这条同时让 `resetPortableSidecarApi` 从「写了没人用」变成真正被使用的测试接缝。
+  resetPortableSidecarApi()
 }
 
 // ============ 汇总 ============
