@@ -58,6 +58,8 @@ export default function AboutPage() {
   /** 探测旧版数据 → 有则弹迁移向导；没有则如实告知（不静默） */
   const openLegacyImport = async () => {
     const pr = await probeLegacy()
+    // 🔴 先报「探测失败」再报「没找到」—— 失败与没有是两回事（2026-10-12 全量审计 P2）
+    if (pr.error) { showToast(`探测旧版数据失败：${pr.error}`, 'error'); return }
     if (!pr.exists) { showToast('未找到旧版（novel-studio）的数据目录', 'info'); return }
     if (!pr.jsonExists && !pr.idbExists) { showToast('旧版目录存在，但没有可导入的数据', 'info'); return }
     setMigProbe(pr)

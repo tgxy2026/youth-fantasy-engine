@@ -236,8 +236,11 @@ export async function collectSidecarForExport(
     try {
       const rows = await ops.getAll(name)
       if (rows.length) out[name] = rows
-    } catch {
-      // 单个 store 读不出来不该让整次导出失败：作者至少还能拿到其余数据
+    } catch (e) {
+      // 单个 store 读不出来不该让整次导出失败：作者至少还能拿到其余数据。
+      // 🔴 但**必须留痕**（2026-10-12 全量审计 P2）：导出/备份外置时静默吞掉读失败，会产出
+      //    「元数据齐全、载荷全缺」的包，恢复时才暴露 —— 口径同 projects.ts 的 kbInBackupOf。
+      console.warn(`[sidecar] 外置 store「${name}」读取失败，本次导出不含其数据：`, e)
     }
   }
   return out

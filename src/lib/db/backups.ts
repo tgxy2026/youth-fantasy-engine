@@ -102,7 +102,10 @@ function withBytes(rec: BackupMeta | LegacyBackupRecord): BackupMeta {
 }
 
 /**
- * 创建一次全量自动备份（默认上限由调用方保证）。
+ * 创建一次全量自动备份。
+ *
+ * ⚠️ 2026-10-12 全量审计：原注释写「默认上限由调用方保证」与实现不符 —— 上限其实由**本函数末尾**
+ *    的滚动淘汰执行（`backupLimit(kind)`，元数据与载荷一起删）；手动备份 limit=0 ⇒ 不淘汰。
  *
  * 🔴 2026-10-03 老大定案：**示范项目不参与任何备份行为**。
  *    拦截放在**这一层**（而不是各个调用点）是因为所有备份路径 —— 每日 / 5 分钟自动 / 手动 ——
@@ -112,7 +115,12 @@ function withBytes(rec: BackupMeta | LegacyBackupRecord): BackupMeta {
  * @returns 备份元信息；**示范项目返回 null**（什么也没写）。
  */
 export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string): Promise<BackupMeta | null> {
-  const proj = await getProject(projectId).catch(() => undefined)
+  const proj = await getProject(projectId).catch((e) => {
+    // 🔴 读失败**不能静默**（2026-10-12 全量审计 P2）：静默按「不是示范项目」继续，万一它
+    //    正是示范项目，就会白写一份全量备份（还占掉一个淘汰名额）。口径同 kbInBackupOf。
+    console.warn('[db] 判定是否示范项目时读项目失败，本次按普通项目备份：', e)
+    return undefined
+  })
   if (isDemoProjectName(proj?.name)) return null
   // 🔴 自动备份**不带**章节快照（2.4.0 · A3）：它是每 5 分钟一次的高频全量，
   //    快照随它走会把本地存储迅速撑大。要带走快照的是「手动导出备份」，那条路径走默认值。

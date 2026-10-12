@@ -504,5 +504,57 @@ if (!SRC) {
   }
 }
 
+// ---------- ⑪ 导出/备份路径的失败必须可见 ＋ 喂给模型的消息过滤必须成对（2026-10-12 全量审计） ----------
+//
+// 起因（a/b）：全量审计 P2 —— `collectSidecarForExport` 的 catch 是**静默空 catch**：导出/备份外置时
+//   某个 store 读不出来，会产出一份「元数据齐全、载荷全缺」的包，恢复时才暴露（调用点注释自己
+//   把这称为「最危险的失败形态」，代码却允许它无声发生）。同族：`createAutoBackup` 读项目失败
+//   静默给 `undefined` —— 万一那正是示范项目，就白写一份全量备份（还占掉一个淘汰名额）。
+//   红线「写/导出失败必须可见」在此有明确形态 ⇒ 静态钉住。
+//
+// 起因（c）：`m.role !== 'system' && !m.hidden` 是「别让 AI 看见」的**唯一出口**（防剧透）。
+//   历史教训是「某一条链少写一个条件 → 隐藏消息原样进上下文」，且**任何测试都不报错**。
+//   ⚠️ 只闸 `src/lib/tavern/**`：UI 的 `messageCount` 统计**本就该含隐藏消息**（它数的是列表里
+//   看得见的条数，不是送进模型那份），闸到 components 会假阳性 —— 闸一假就没人信（同 ⑩-b 的取舍）。
+{
+  const SRC = findSrc()
+  if (!SRC) {
+    ok('⑪ 能找到 src 目录（结构闸前置）', false)
+  } else {
+    // ---- ⑪-a 导出/外置读失败必须留痕 ----
+    const sidecarSrc = fs.readFileSync(path.join(SRC, 'lib', 'storage', 'sidecar.ts'), 'utf8')
+    const collectBody = /export async function collectSidecarForExport[\s\S]*?\n\}/.exec(sidecarSrc)?.[0] ?? ''
+    ok('⑪-a collectSidecarForExport 的 catch 必须留痕（不许静默吞掉外置 store 读失败）',
+      collectBody.includes('console.warn'),
+      collectBody ? '（catch 里没有 console.warn）' : '（没抓到函数体，函数被改名了？请同步本闸）')
+
+    // ---- ⑪-b 备份判定读项目失败必须留痕 ----
+    const backupsSrc = fs.readFileSync(path.join(SRC, 'lib', 'db', 'backups.ts'), 'utf8')
+    const autoBackupBody = /export async function createAutoBackup[\s\S]*?\n\}/.exec(backupsSrc)?.[0] ?? ''
+    ok('⑪-b createAutoBackup 读项目失败必须留痕（静默会为示范项目白写一份全量备份）',
+      /getProject\(projectId\)\.catch\([\s\S]{0,260}?console\.warn/.test(autoBackupBody),
+      autoBackupBody ? '（catch 里没有 console.warn）' : '（没抓到函数体，函数被改名了？请同步本闸）')
+
+    // ---- ⑪-c 酒馆 lib 侧的消息过滤必须成对 ----
+    const tavernDir = path.join(SRC, 'lib', 'tavern')
+    const offenders: string[] = []
+    let checked = 0
+    for (const f of fs.readdirSync(tavernDir)) {
+      if (!f.endsWith('.ts')) continue
+      fs.readFileSync(path.join(tavernDir, f), 'utf8').split('\n').forEach((line, i) => {
+        if (!line.includes('filter(')) return
+        if (!line.includes("role !== 'system'")) return
+        checked++
+        if (!line.includes('hidden')) offenders.push(`${f}:${i + 1}`)
+      })
+    }
+    ok('⑪-c 酒馆 lib 侧「喂给模型的消息」过滤条件必须成对（role !== system 与 !hidden 同现）',
+      offenders.length === 0 && checked >= 5,
+      offenders.length
+        ? '漏 !hidden 的：' + offenders.join('、')
+        : `命中 ${checked} 处（少于此数 ⇒ 过滤出口被搬走了，请同步本闸，别静默放行）`)
+  }
+}
+
 console.log(`\nstructureGates: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1

@@ -361,7 +361,3 @@ export function mergeStoryDraft(cur: StoryDraftFields, out: StoryDraftFields): S
   }
   return next
 }
-
-export function isEmptyStoryFields(f: StoryDraftFields): boolean {
-  return !String(f.name ?? '').trim() && !String(f.setting ?? '').trim()
-}

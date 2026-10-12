@@ -28,6 +28,8 @@ export const LEGACY_KIND_MAP: Record<string, string> = {
 /** 旧版数据探测结果（主进程整形后返回） */
 export interface LegacyProbe {
   exists: boolean
+  /** 探测**失败**的原因（桌面端 IPC 异常等）。与「没有旧数据」是两回事 —— 仅手动入口会提示它。 */
+  error?: string
   legacyDir?: string
   jsonPath?: string
   jsonExists?: boolean
@@ -100,8 +102,11 @@ export async function probeLegacy(): Promise<LegacyProbe> {
   if (!api) return { exists: false }
   try {
     return await api.probe()
-  } catch {
-    return { exists: false }
+  } catch (e) {
+    // 🔴 探测失败 ≠ 没有旧数据（2026-10-12 全量审计 P2）：原来一律 `{ exists:false }`，
+    //    手动入口（关于页）就会把「探测失败」如实告知成「未找到旧版数据目录」—— 说了假话。
+    //    带上 error 交由调用方决定；首启那条路仍刻意静默（见 App.tsx 的 catch 注释）。
+    return { exists: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
