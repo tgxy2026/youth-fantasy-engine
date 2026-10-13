@@ -47,3 +47,7 @@ Desktop.ini
 #   tools/  含与本项目无关的脚本（如战锤截图），只在本机用
 .workbuddy/memory/
 .workbuddy/tools/
+#   automations/ 是自动化任务的执行记忆（含运维细节 / 访客 IP 等，绝不入库）
+.workbuddy/automations/
+#   .workbuddy 下其余散件（一次性脚本如 process-bg.py 等）一律不进
+.workbuddy/*.py
