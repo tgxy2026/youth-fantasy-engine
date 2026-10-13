@@ -123,29 +123,44 @@ const remote = nodeRequire(path.join(process.cwd(), 'electron/remoteSync.cjs')) 
 }
 
 // ---------- ② 传输三态口径（静态审查渲染层源码纪律）----------
+//
+// 🔴 2026-10-13 六维审计（arch A2）：三态骨架已抽到 `syncRemoteCore.ts` ——
+//    WebDAV 与 S3 原先逐字同构的那 50 余行收成一处。⇒ 纪律断言**改盯公共引擎那一份**：
+//    原先要盯两份实现，改一处漏一处的风险更高；收成一处后，一条纪律只有**一个**落点。
+//    协议侧则只断言各自的「读原语」语义 —— 那才是两协议真正的差别。
 {
+  const core = read('src/lib/sync/syncRemoteCore.ts')
   const wd = read('src/lib/sync/webdavTransport.ts')
   const s3 = read('src/lib/sync/s3Transport.ts')
   const tr = read('src/lib/sync/syncTransport.ts')
 
-  ok('WebDAV · 读失败 / 认证失败返回 status 0（绝不当空库）',
-    /if \(!r\.ok\) return \{ status: 0 \}/.test(wd) && /auth/.test(wd))
-  ok('WebDAV · 404 / 204 视为空库（status 200 + rev 0）',
-    /status === 404 \|\| status === 204\) return \{ ok: true, text: null \}/.test(wd))
-  ok('WebDAV · pull 里 corrupt 走 quarantine 而非 rev=0',
-    /'corrupt' in p\) \{\s*\n\s*await quarantine/.test(wd))
-  ok('WebDAV · push 读不到远端就不写（status 0）',
-    /async push\(baseRev: number, enc: string\)[\s\S]{0,400}?if \(!r\.ok\) return \{ status: 0 \}/.test(wd))
-  ok('WebDAV · push 冲突（远端更新）返回 409 并带上 enc', /cur\.rev > baseRev\) return \{ status: 409, rev: cur\.rev, enc: cur\.enc \}/.test(wd))
-  ok('WebDAV · 写后回读校验（rev 不一致按 409）', /a\.rev !== newRev\) return \{ status: 409/.test(wd))
-  ok('WebDAV · startWatch 读失败本轮跳过、不更新 lastSeenRev',
-    /if \(!r\.ok\) return \/\/ 读失败：本轮跳过/.test(wd))
+  // —— 公共引擎：三态纪律的唯一落点 ——
+  ok('🔴 引擎 · pull 读失败返回 status 0（绝不当空库）',
+    /if \(!r\.ok\) return \{ status: 0 \} \/\/ 网络失败/.test(core))
+  ok('🔴 引擎 · corrupt 走 quarantine 而非 rev=0',
+    /'corrupt' in parsed\) \{\s*\n\s*await quarantineOnce/.test(core))
+  ok('🔴 引擎 · push 读不到远端就不写（status 0）',
+    /async push\([\s\S]{0,220}?if \(!r\.ok\) return \{ status: 0 \} \/\/ 读不到远端/.test(core))
+  ok('🔴 引擎 · push 冲突（远端更新）返回 409 并带上 enc',
+    /cur\.rev > baseRev\) return \{ status: 409, rev: cur\.rev, enc: cur\.enc \}/.test(core))
+  ok('🔴 引擎 · 写后回读校验（rev 不一致按 409）', /a\.rev !== newRev\) return \{ status: 409/.test(core))
+  ok('🔴 引擎 · startWatch 读失败本轮跳过、不更新 lastSeenRev',
+    /if \(!r\.ok\) return \/\/ 读失败：本轮跳过/.test(core))
+  ok('🔴 引擎 · 空 / 不存在的载荷视为 rev 0', /if \(text == null \|\| !String\(text\)\.trim\(\)\) return \{ rev: 0, enc: null \}/.test(core))
+  ok('🔴 引擎 · 解析失败明确 corrupt（**不**退化成 rev 0）', /return \{ corrupt: true \}/.test(core))
 
-  ok('S3 · 404 视为空库（status 200 + rev 0 + enc null）', /st === 404\) return \{ status: 200, rev: 0, enc: null \}/.test(s3))
-  ok('S3 · 非 404 的 4xx/5xx 返回 status 0', /if \(st >= 400\) return \{ status: 0 \}/.test(s3))
-  ok('S3 · push 读不到 / 认证失败就不写', /if \(!r\.ok\) return \{ status: 0 \}/.test(s3))
-  ok('S3 · push 冲突返回 409', /cur\.rev > baseRev\) return \{ status: 409, rev: cur\.rev, enc: cur\.enc \}/.test(s3))
-  ok('S3 · 写后回读校验', /ast >= 400\) return \{ status: 0 \}/.test(s3) && /a\.rev !== newRev\) return \{ status: 409/.test(s3))
+  // —— 协议侧：只留「怎么读写远端」的原语 ——
+  ok('WebDAV · 404 / 204 视为空库（读原语）', /st === 404 \|\| st === 204\) return \{ ok: true, text: null \}/.test(wd))
+  ok('WebDAV · 其余 4xx/5xx 按读失败', /if \(st >= 400\) return \{ ok: false \}/.test(wd))
+  ok('S3 · 只把 404 视为空库（无 204 那一路）', /st === 404\) return \{ ok: true, text: null \}/.test(s3))
+  ok('S3 · 非 404 的 4xx/5xx 按读失败', /if \(st >= 400\) return \{ ok: false \}/.test(s3))
+
+  // —— 两端都真的用了公共引擎（防"抽了但没用"）——
+  ok('🔴 WebDAV 走公共引擎（createRemoteSyncTransport）', /createRemoteSyncTransport\(/.test(wd))
+  ok('🔴 S3 走公共引擎（createRemoteSyncTransport）', /createRemoteSyncTransport\(/.test(s3))
+  // 反向对照：确认这条断言能抓到"退回各写一份"的坏形态
+  ok('  · 自检：不走公共引擎的形态会被判坏',
+    !/createRemoteSyncTransport\(/.test('export function createWebdavTransport(cfg) { return { mode: "file" } }'))
 
   // 两种新传输都实现同一 SyncTransport 接口
   ok('WebDAV · 实现 SyncTransport（mode/pull/push/startWatch/stopWatch）',
@@ -308,10 +323,21 @@ const remote = nodeRequire(path.join(process.cwd(), 'electron/remoteSync.cjs')) 
   // —— 渲染层：标志随每次请求透传，且默认关 ——
   ok('Webdav · 配置含 trustSelfSigned（可选、默认关）', /trustSelfSigned\?: boolean/.test(wd))
   ok('Webdav · 每次桥调用都带上 trustSelfSigned', /trustSelfSigned: init\.trustSelfSigned === true/.test(wd))
-  ok('Webdav · 传输层调用点均透传开关（4 处）', (wd.match(/trustSelfSigned: cfg\.trustSelfSigned/g) ?? []).length >= 4)
+  // 🔴 2026-10-13 六维审计：原先这两条数的是「透传开关的调用点**数量**」（≥4 / ≥2）。
+  //    抽公共骨架后，各协议的桥调用**收成唯一出口**（`callPath` / `callS3Path`），
+  //    数量从 4/2 变成 1 —— 但**语义更强了**：原先要保证 N 处都写对，现在只有一处能写。
+  //    ⇒ 断言改为「桥调用唯一 + 各调用点都经它」，这才是真正要守的东西。
+  ok('🔴 Webdav · 桥调用只有一条通路，开关在那条里透传',
+    (wd.match(/b\.webdav\(/g) ?? []).length === 1 &&
+    /trustSelfSigned: init\.trustSelfSigned === true/.test(wd))
+  ok('🔴 Webdav · 各调用点都经该通路（callPath：read/write/quarantine/test）',
+    (wd.match(/callPath\(/g) ?? []).length >= 4)
   ok('S3 · 配置含 trustSelfSigned（可选、默认关）', /trustSelfSigned\?: boolean/.test(s3))
-  ok('S3 · 桥调用带上 trustSelfSigned（含 quarantine 分支）',
-    (s3.match(/trustSelfSigned: cfg\.trustSelfSigned === true/g) ?? []).length >= 2)
+  ok('🔴 S3 · 桥调用只有一条通路，开关在那条里透传（含 quarantine 分支）',
+    (s3.match(/b\.s3\(/g) ?? []).length === 1 &&
+    /trustSelfSigned: cfg\.trustSelfSigned === true/.test(s3))
+  ok('🔴 S3 · 各调用点都经该通路（callS3Path/callS3）',
+    ((s3.match(/callS3Path\(/g) ?? []).length + (s3.match(/callS3\(/g) ?? []).length) >= 4)
 
   // —— UI：开关 + 风险文案 + 默认不勾 ——
   ok('UI · 开关名为「信任自签证书」', /信任自签证书/.test(ui))

@@ -8,8 +8,12 @@
 //
 // 签名：由主进程 electron/remoteSync.cjs 的 signS3 完成（AWS SigV4）；
 //      渲染层只负责组装 { endpoint, path, method, body, 凭据 }，凭据不落盘。
-import { SYNC_POLL_MS } from '@/lib/constants'
-import type { RawSyncResponse, SyncTransport } from '@/lib/sync/syncTransport'
+//
+// 🔴 2026-10-13 六维审计（arch A2）：三态骨架 / rev 比对 / 隔离 / 轮询**已抽到**
+//   `syncRemoteCore.ts` —— 与 WebDAV 传输逐字同构的那 50 余行收成一处，本文件只留
+//   「S3 怎么读写远端」这三个原语（对象路径拼装、状态码语义、桥调用）。
+import { createRemoteSyncTransport } from '@/lib/sync/syncRemoteCore'
+import type { SyncTransport } from '@/lib/sync/syncTransport'
 
 export interface S3Config {
   /** 端点，如 https://s3.us-east-1.amazonaws.com 或 http://192.168.1.10:9000（MinIO） */
@@ -51,12 +55,13 @@ function objectPath(cfg: S3Config): string {
   return cfg.style === 'virtual' ? '/' + key : '/' + String(cfg.bucket || '').replace(/^\/+|\/+$/g, '') + '/' + key
 }
 
-async function callS3(cfg: S3Config, method: string, body?: string | null): Promise<BridgeResult> {
+/** 对指定对象路径发一次请求（SigV4 由主进程签） */
+async function callS3Path(cfg: S3Config, path: string, method: string, body?: string | null): Promise<BridgeResult> {
   const b = bridge()
   if (!b || typeof b.s3 !== 'function') return { ok: false, error: '主进程 S3 桥不可用' }
   try {
     const raw = (await b.s3({
-      endpoint: cfg.endpoint, path: objectPath(cfg), method,
+      endpoint: cfg.endpoint, path, method,
       body: body == null ? null : body,
       bucket: cfg.bucket, style: cfg.style || 'path',
       accessKey: cfg.accessKey, secretKey: cfg.secretKey, region: cfg.region,
@@ -69,114 +74,45 @@ async function callS3(cfg: S3Config, method: string, body?: string | null): Prom
   }
 }
 
+function callS3(cfg: S3Config, method: string, body?: string | null): Promise<BridgeResult> {
+  return callS3Path(cfg, objectPath(cfg), method, body)
+}
+
+/**
+ * S3 兼容直连传输。
+ *
+ * 🔴 与 WebDAV 的**唯一语义差别**在状态码口径：S3 只把 **404** 当"对象不存在"
+ *    （没有 204 那一路），其余 4xx/5xx 一律按"读失败" —— 见下面 read 原语。
+ */
 export function createS3Transport(cfg: S3Config): SyncTransport {
-  let watchTimer: ReturnType<typeof setInterval> | null = null
-  let lastSeenRev = -1
-  let quarantined = false
-
-  type ParsedRev = { rev: number; enc: string | null } | { corrupt: true }
-
-  function parseRev(text: string | null | undefined): ParsedRev {
-    if (text == null || !String(text).trim()) return { rev: 0, enc: null }
-    try {
-      const o = JSON.parse(String(text))
-      return { rev: Number(o.rev) || 0, enc: o.enc ?? null }
-    } catch {
-      return { corrupt: true }
-    }
-  }
-
-  let quarantinedOnce = false
-  async function quarantine(text: string): Promise<void> {
-    if (quarantinedOnce || quarantined) return
-    quarantinedOnce = true
-    quarantined = true
-    try {
-      const qKey = cfg.objectKey + '.corrupt-' + Date.now()
-      const b = bridge()
-      const raw = (await b?.s3?.({
-        endpoint: cfg.endpoint, path: cfg.style === 'virtual' ? '/' + qKey : '/' + cfg.bucket + '/' + qKey,
-        method: 'PUT', body: text, bucket: cfg.bucket, style: cfg.style || 'path',
-        accessKey: cfg.accessKey, secretKey: cfg.secretKey, region: cfg.region,
-        trustSelfSigned: cfg.trustSelfSigned === true,
-      })) as BridgeResult | undefined
-      if (raw && raw.ok) console.warn('[sync] 远端同步对象无法解析，已另存备份并暂停写入以免覆盖云端数据：' + qKey)
-    } catch (e) {
-      console.warn('[sync] 损坏远端对象备份失败：', e)
-    }
-  }
-
-  return {
-    mode: 'file',
-    setCode() {
-      quarantined = false
-      quarantinedOnce = false
-    },
-    async pull(): Promise<RawSyncResponse> {
+  return createRemoteSyncTransport({
+    /** 读远端：404 → 空库；其余非 2xx → 读失败（认证失败等**绝不当空库**） */
+    async read() {
       const r = await callS3(cfg, 'GET')
-      if (!r.ok) return { status: 0 }
+      if (!r.ok) return { ok: false }
       const st = Number(r.status) || 0
-      if (st === 404) return { status: 200, rev: 0, enc: null } // 对象不存在 → 空库
-      if (st >= 400) return { status: 0 }
-      const p = parseRev(r.text)
-      if ('corrupt' in p) {
-        await quarantine(r.text ?? '')
-        return { status: 0 }
-      }
-      return { status: 200, rev: p.rev, enc: p.enc }
+      if (st === 404) return { ok: true, text: null }
+      if (st >= 400) return { ok: false }
+      return { ok: true, text: r.text ?? '' }
     },
-    async push(baseRev: number, enc: string): Promise<RawSyncResponse> {
-      const r = await callS3(cfg, 'GET')
-      if (!r.ok) return { status: 0 }
-      const gst = Number(r.status) || 0
-      if (gst >= 400 && gst !== 404) return { status: 0 } // 认证失败等 → 不敢写
-      const cur = parseRev(gst === 404 ? null : r.text)
-      if ('corrupt' in cur) {
-        await quarantine(r.text ?? '')
-        return { status: 0 }
-      }
-      if (cur.rev > baseRev) return { status: 409, rev: cur.rev, enc: cur.enc }
-      const newRev = baseRev + 1
-      const put = await callS3(cfg, 'PUT', JSON.stringify({ rev: newRev, enc }))
-      if (!put.ok) return { status: 0 }
-      const pst = Number(put.status) || 0
-      if (pst >= 400) return { status: 0 }
-      lastSeenRev = newRev
-      const after = await callS3(cfg, 'GET')
-      if (!after.ok) return { status: 0 }
-      const ast = Number(after.status) || 0
-      if (ast >= 400) return { status: 0 }
-      const a = parseRev(after.text)
-      if ('corrupt' in a) return { status: 0 }
-      if (a.rev !== newRev) return { status: 409, rev: a.rev, enc: a.enc }
-      return { status: 200, rev: newRev }
+    /** 写远端：PUT 后判状态码（非 4xx/5xx 视为成功） */
+    async write(text) {
+      const put = await callS3(cfg, 'PUT', text)
+      if (!put.ok) return false
+      return (Number(put.status) || 0) < 400
     },
-    startWatch(onRemoteChange: () => void) {
-      this.stopWatch()
-      watchTimer = setInterval(async () => {
-        const r = await callS3(cfg, 'GET')
-        if (!r.ok) return
-        const st = Number(r.status) || 0
-        if (st >= 400 && st !== 404) return
-        const p = parseRev(st === 404 ? null : r.text)
-        if ('corrupt' in p) {
-          await quarantine(r.text ?? '')
-          return
-        }
-        const rev = p.rev
-        if (rev !== lastSeenRev) {
-          lastSeenRev = rev
-          if (rev !== 0) onRemoteChange()
-        }
-      }, SYNC_POLL_MS)
-    },
-    stopWatch() {
-      if (watchTimer) {
-        clearInterval(watchTimer)
-        watchTimer = null
+    /** 隔离损坏内容：另存到 `<objectKey>.corrupt-<stamp>` */
+    async quarantine(text) {
+      const qKey = cfg.objectKey + '.corrupt-' + Date.now()
+      const qPath = cfg.style === 'virtual' ? '/' + qKey : '/' + cfg.bucket + '/' + qKey
+      const raw = await callS3Path(cfg, qPath, 'PUT', text)
+      if (raw.ok) {
+        console.warn('[sync] 远端同步对象无法解析，已另存备份并暂停写入以免覆盖云端数据：' + qKey)
+      } else {
+        console.warn('[sync] 损坏远端对象备份失败：' + (raw.error || 'HTTP ' + (Number(raw.status) || 0)))
       }
     },
-  }
+  })
 }
 
 /** 测试 S3 连接：GET 一次对象（404 = 服务器与签名都正常，只是还没同步过）。 */

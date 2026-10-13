@@ -11,8 +11,12 @@
 //
 // 🔴 为什么走主进程：WebDAV 服务器几乎都不返回 Access-Control-Allow-Origin，渲染进程直连被拦。
 //   故所有请求经 preload 注入的 window.electronStore.webdav → IPC → electron/remoteSync.cjs。
-import { SYNC_POLL_MS } from '@/lib/constants'
-import type { RawSyncResponse, SyncTransport } from '@/lib/sync/syncTransport'
+//
+// 🔴 2026-10-13 六维审计（arch A2）：三态骨架 / rev 比对 / 隔离 / 轮询**已抽到**
+//   `syncRemoteCore.ts` —— 与 S3 传输逐字同构的那 50 余行收成一处，本文件只留
+//   「WebDAV 怎么读写远端」这三个原语（URL 拼接、状态码语义、桥调用）。
+import { createRemoteSyncTransport } from '@/lib/sync/syncRemoteCore'
+import type { SyncTransport } from '@/lib/sync/syncTransport'
 
 /** WebDAV 连接参数（由 desktopCloudSync 组装；凭据存 localStorage，本机专属不入云）。 */
 export interface WebdavConfig {
@@ -72,123 +76,55 @@ function joinUrl(base: string, rel: string): string {
   return r ? b + '/' + r : b
 }
 
+/** 对指定远端路径发一次请求（带凭据与自签授权） */
+function callPath(cfg: WebdavConfig, path: string, method: string, body?: string | null): Promise<BridgeResult> {
+  return call({
+    baseUrl: cfg.baseUrl, path, method, body,
+    username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned,
+  })
+}
+
 /**
  * WebDAV 直连传输。
  * @param cfg 服务器与凭据；`remotePath` 是**相对 baseUrl** 的完整文件路径。
  */
 export function createWebdavTransport(cfg: WebdavConfig): SyncTransport {
-  let watchTimer: ReturnType<typeof setInterval> | null = null
-  let lastSeenRev = -1
-  let quarantined = false
-
-  type ParsedRev = { rev: number; enc: string | null } | { corrupt: true }
-
-  function parseRev(text: string | null | undefined): ParsedRev {
-    // 空 / 不存在 → 空库；存在却解析不了 → 明确 corrupt（**不退化成 rev=0**）
-    if (text == null || !String(text).trim()) return { rev: 0, enc: null }
-    try {
-      const o = JSON.parse(String(text))
-      return { rev: Number(o.rev) || 0, enc: o.enc ?? null }
-    } catch {
-      return { corrupt: true }
-    }
-  }
-
-  /** 拉一次远端：{ ok:true, text } / { ok:true, text:null }（不存在）/ { ok:false }（失败/认证） */
-  async function fetchRemote(): Promise<{ ok: true; text: string | null } | { ok: false; reason: string; auth?: boolean }> {
-    const r = await call({ baseUrl: cfg.baseUrl, path: cfg.remotePath, method: 'GET', username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned })
-    if (!r.ok) return { ok: false, reason: r.error || '请求失败', auth: r.status === 401 || r.status === 403 }
-    const status = Number(r.status) || 0
-    if (status === 404 || status === 204) return { ok: true, text: null }
-    if (status >= 400) return { ok: false, reason: 'HTTP ' + status, auth: status === 401 || status === 403 }
-    return { ok: true, text: r.text ?? '' }
-  }
-
-  let quarantinedOnce = false
-  async function quarantine(text: string): Promise<void> {
-    if (quarantinedOnce || quarantined) return
-    quarantinedOnce = true
-    quarantined = true
-    try {
-      const stamp = Date.now()
-      const qPath = cfg.remotePath + '.corrupt-' + stamp
-      await call({ baseUrl: cfg.baseUrl, path: qPath, method: 'PUT', body: text, username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned })
-      console.warn('[sync] 远端同步文件无法解析，已另存备份并暂停写入以免覆盖云端数据：' + qPath)
-    } catch (e) {
-      console.warn('[sync] 损坏远端同步文件备份失败：', e)
-    }
-  }
-
-  return {
-    mode: 'file',
-    setCode() {
-      // WebDAV 固定远端路径（由 config 决定槽位）；换码不改变远端文件，仅重置隔离状态
-      quarantined = false
-      quarantinedOnce = false
+  return createRemoteSyncTransport({
+    /**
+     * 读远端。
+     * 🔴 WebDAV 特有：**204 No Content 也当「没有内容」**（部分服务商对空文件回 204），
+     *    而 404 是标准的"不存在" —— 两者都安全地视为空库；其余 4xx/5xx 一律按"读失败"。
+     */
+    async read() {
+      const r = await callPath(cfg, cfg.remotePath, 'GET')
+      if (!r.ok) return { ok: false }
+      const st = Number(r.status) || 0
+      if (st === 404 || st === 204) return { ok: true, text: null }
+      if (st >= 400) return { ok: false }
+      return { ok: true, text: r.text ?? '' }
     },
-    async pull(): Promise<RawSyncResponse> {
-      const r = await fetchRemote()
-      if (!r.ok) return { status: 0 } // 网络失败 / 认证失败 → 不可用（上层回退本地），绝不当空库
-      const p = parseRev(r.text)
-      if ('corrupt' in p) {
-        await quarantine(r.text ?? '')
-        return { status: 0 }
-      }
-      return { status: 200, rev: p.rev, enc: p.enc }
+    /**
+     * 写远端。
+     * 🔴 WebDAV PUT 成功码有 200 / 201 / 204 三种（不同服务商不同）⇒ 只判"非 4xx/5xx"。
+     */
+    async write(text) {
+      const put = await callPath(cfg, cfg.remotePath, 'PUT', text)
+      if (!put.ok) return false
+      return (Number(put.status) || 0) < 400
     },
-    async push(baseRev: number, enc: string): Promise<RawSyncResponse> {
-      const r = await fetchRemote()
-      if (!r.ok) return { status: 0 } // 读不到远端当前状态就不敢写，宁可报不可用
-      const cur = parseRev(r.text)
-      if ('corrupt' in cur) {
-        await quarantine(r.text ?? '')
-        return { status: 0 }
-      }
-      if (cur.rev > baseRev) return { status: 409, rev: cur.rev, enc: cur.enc }
-      const newRev = baseRev + 1
-      const put = await call({
-        baseUrl: cfg.baseUrl, path: cfg.remotePath, method: 'PUT',
-        body: JSON.stringify({ rev: newRev, enc }),
-        headers: { 'Content-Type': 'application/json' },
-        username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned,
-      })
-      if (!put.ok) return { status: 0 }
-      const st = Number(put.status) || 0
-      // WebDAV PUT 成功：200 OK / 201 Created / 204 No Content（不同服务商不同）
-      if (st >= 400) return { status: 0 }
-      lastSeenRev = newRev
-      // 写后回读校验：被他人中途覆盖（竞态）时按冲突处理，触发上层合并重试
-      const after = await fetchRemote()
-      if (!after.ok) return { status: 0 }
-      const a = parseRev(after.text)
-      if ('corrupt' in a) return { status: 0 }
-      if (a.rev !== newRev) return { status: 409, rev: a.rev, enc: a.enc }
-      return { status: 200, rev: newRev }
-    },
-    startWatch(onRemoteChange: () => void) {
-      this.stopWatch()
-      watchTimer = setInterval(async () => {
-        const r = await fetchRemote()
-        if (!r.ok) return // 读失败：本轮跳过，绝不更新 lastSeenRev
-        const p = parseRev(r.text)
-        if ('corrupt' in p) {
-          await quarantine(r.text ?? '')
-          return
-        }
-        const rev = p.rev
-        if (rev !== lastSeenRev) {
-          lastSeenRev = rev
-          if (rev !== 0) onRemoteChange()
-        }
-      }, SYNC_POLL_MS)
-    },
-    stopWatch() {
-      if (watchTimer) {
-        clearInterval(watchTimer)
-        watchTimer = null
+    /** 隔离损坏内容：另存到 `<remotePath>.corrupt-<stamp>` */
+    async quarantine(text) {
+      const qPath = cfg.remotePath + '.corrupt-' + Date.now()
+      // ⚠️ 与 S3 侧口径统一（2026-10-13 抽公共时顺手修正）：原先这里**无条件**打印
+      //    「已另存备份」，即使 PUT 实际失败 —— 日志会骗人。现在按真实结果打印。
+      const r = await callPath(cfg, qPath, 'PUT', text)
+      if (r.ok && (Number(r.status) || 0) < 400) {
+        console.warn('[sync] 远端同步文件无法解析，已另存备份并暂停写入以免覆盖云端数据：' + qPath)
+      } else {
+        console.warn('[sync] 损坏远端同步文件备份失败：' + (r.error || 'HTTP ' + (Number(r.status) || 0)))
       }
     },
-  }
+  })
 }
 
 /**
@@ -197,7 +133,7 @@ export function createWebdavTransport(cfg: WebdavConfig): SyncTransport {
  */
 export async function testWebdav(cfg: WebdavConfig): Promise<{ ok: boolean; message: string }> {
   // ① 探文件是否已存在（HEAD/PROPFIND 语义）：GET 一次即可，404 = 服务器正常但文件还没建
-  const r = await call({ baseUrl: cfg.baseUrl, path: cfg.remotePath, method: 'GET', username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned })
+  const r = await callPath(cfg, cfg.remotePath, 'GET')
   if (r.ok) {
     const st = Number(r.status) || 0
     if (st === 401 || st === 403) return { ok: false, message: '认证失败（HTTP ' + st + '）：请检查用户名 / 密码' }
