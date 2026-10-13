@@ -13,6 +13,7 @@ import MigrationWizard from '@/components/app/MigrationWizard'
 import { probeLegacy, type LegacyProbe } from '@/lib/storage/legacyMigration'
 import { QUARK_URL, QUARK_CODE, QUARK_TOKEN } from '@/lib/app/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '@/lib/app/versionCheck'
+import { PORTABLE } from '@/lib/storage/fileBackend'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import { collectDiagnostics } from '@/lib/app/diagnostics'
 
@@ -99,7 +100,9 @@ export default function AboutPage() {
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
           <HelpPopover title="这一页是什么" side="right">
-            {'介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；会联网的只有版本检查 —— 手动点「检查更新」，以及默认开启的「启动时自动检查」（可在本页关掉）。'}
+            {PORTABLE
+              ? '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；便携版不做任何联网检查。'
+              : '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；会联网的只有版本检查 —— 手动点「检查更新」，以及默认开启的「启动时自动检查」（可在本页关掉）。'}
           </HelpPopover>
         </div>
         <p className="text-ink-400 text-sm mb-8">
@@ -150,32 +153,42 @@ export default function AboutPage() {
                   若你电脑上已安装过旧版（装在 C 盘「Program Files」目录下），请先用「右键 → 以管理员身份运行」打开本安装包完成一次升级；升级后会迁移为「当前用户安装」，之后重装都不再需要管理员权限。
                 </div>
                 {/* 检查更新：查 Gitee 上的最新 Release（只提示、不下载、不安装） */}
-                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <Button variant="secondary" disabled={checking} onClick={() => void runCheck()} className="gap-1.5">
-                    <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
-                    {checking ? '检查中…' : '检查更新'}
-                  </Button>
-                  <label className="flex items-center gap-1.5 text-11 text-ink-400 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={autoCheck}
-                      onChange={e => { setAuto(e.target.checked); setAutoCheck(e.target.checked) }}
-                      className="accent-amber"
-                    />
-                    启动时自动检查
-                  </label>
-                  {result && !checking && (
-                    <span className="text-11 text-ink-500">
-                      {result.hasUpdate
-                        ? `有新版本 v${result.latest?.version}`
-                        : result.skipped
-                          ? `已跳过 v${result.latest?.version}（有新版本，但你选过跳过）`
-                          : result.latest
-                            ? '已是最新版本'
-                            : '暂时查不到版本信息'}
-                    </span>
-                  )}
-                </div>
+                {/* 🔴 2026-10-13 · 便携版不显示这一组控件：便携版跑在浏览器里、没有安装器，
+                    查到新版本也无法自动更新（只会弹一个作者做不到的提示），
+                    且「使用说明」已写明便携版没有自动更新检查。改为静态指引。 */}
+                {PORTABLE ? (
+                  <p className="mt-4 text-11 text-ink-400 leading-relaxed">
+                    便携版<strong className="text-ink-300">不提供在线更新</strong>：有新版本时请到发布页下载新的便携版压缩包，
+                    解压后把旧目录里的 <span className="font-mono text-ink-300">data</span> 文件夹拷进新目录即可 —— 稿件不会丢。
+                  </p>
+                ) : (
+                  <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <Button variant="secondary" disabled={checking} onClick={() => void runCheck()} className="gap-1.5">
+                      <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+                      {checking ? '检查中…' : '检查更新'}
+                    </Button>
+                    <label className="flex items-center gap-1.5 text-11 text-ink-400 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={autoCheck}
+                        onChange={e => { setAuto(e.target.checked); setAutoCheck(e.target.checked) }}
+                        className="accent-amber"
+                      />
+                      启动时自动检查
+                    </label>
+                    {result && !checking && (
+                      <span className="text-11 text-ink-500">
+                        {result.hasUpdate
+                          ? `有新版本 v${result.latest?.version}`
+                          : result.skipped
+                            ? `已跳过 v${result.latest?.version}（有新版本，但你选过跳过）`
+                            : result.latest
+                              ? '已是最新版本'
+                              : '暂时查不到版本信息'}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* 下载入口排：原先是紧贴上一排的（这个 div 没有 mt）⇒ 两排按钮视觉上黏成一坨。
                     现在 mt-4 + pt-4 + 细分隔线分组；<a> 也改成与 Button md 同一套尺寸口径
