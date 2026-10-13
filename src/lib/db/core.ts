@@ -16,7 +16,7 @@ import {
   seedDesktopFromLocal, onDesktopSyncConflict, persistDesktopCloudEnabled, onDesktopCloudFallback,
   clearDesktopCloudEnabledFlag, flushDesktopCloud, snapshotDesktopCloudCache, onDesktopLocalSnapshot,
   CONFLICT_KEY_PREFIX, isExcludedMetaKey,
-  type SyncConflictInfo, type SyncDirHandle,
+  type SyncConflictInfo, type SyncDirHandle, type SyncMode,
 } from '@/lib/sync/desktopCloudSync'
 import { SYNC_STORES, totalRecords, isLocalOnlyStore, onCloudRestored, type SyncStores, type SyncRow } from '@/lib/sync/syncCore'
 import { isDeleted } from '@/lib/sync/syncTombstone'
@@ -565,7 +565,7 @@ async function captureSyncData(): Promise<SyncStores> {
   return out
 }
 
-export async function enableDesktopCloudSync(handle: SyncDirHandle) {
+export async function enableDesktopCloudSync(handle: SyncDirHandle | null, mode: SyncMode = 'dir') {
   // 🔴 审计 2026-09-17（P1-5）：数据文件读不出来时（writeLocked）**绝不能开启云同步**。
   //    那种状态下本地存储是空的、不可信的：captureSyncData 会抓到一份空载荷，新目录为空
   //    → 播种把空载荷推上云端（rev=1）；另一台设备 mergeCaches 时按「云端没有该记录、
@@ -582,7 +582,7 @@ export async function enableDesktopCloudSync(handle: SyncDirHandle) {
   //    只是换/重选目录」时 ops 正指向**同一个**单例 → 播种读到的是全空，
   //    于是把一份空快照写进新目录（界面看起来「书全没了」，还会被同步到其他设备）。
   const carry = await captureSyncData()
-  await enableDesktopCloud(handle)
+  await enableDesktopCloud(handle, mode)
   const snap = await pullDesktopSnapshot()
   let empty = totalRecords(snap.stores) === 0
   // 🔴 2026-09-26 社区反馈（双电脑数据覆盖事故）：网盘客户端「按需下载 / 未同步完成」时，
@@ -617,7 +617,7 @@ export async function enableDesktopCloudSync(handle: SyncDirHandle) {
   //    于是「手动删掉的项目重启后复活」长期存在（2026-09-20 六维审计 P0）。
   //    ⚠️ 别为了「顺手」在这里再加一次：两处注册就是两处会各自漂移的口径，
   //    而漏掉的那一处**静态检查与单测都看不出来**（只有真跑云盘同步才复现）。
-  persistDesktopCloudEnabled(handle)
+  persistDesktopCloudEnabled(handle, mode)
   setStoreOps(desktopCloudFileStore)
 }
 

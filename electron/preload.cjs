@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('electronStore', {
   syncRead: (p) => ipcRenderer.invoke('sync:readFile', p),
   /** 云盘文件同步：原子写文件（tmp + .bak 回退），避免写崩导致 .yfe 损坏 */
   syncWrite: (p, text) => ipcRenderer.invoke('sync:writeFile', p, text),
+  /** 私有网盘同步（3.0.2）：WebDAV 请求（GET/PUT/PROPFIND/MKCOL/DELETE），凭据随请求传入、主进程不落盘 */
+  webdav: (url, init) => ipcRenderer.invoke('cloud:webdav', url, init),
+  /** 私有网盘同步（3.0.2）：S3 兼容请求（SigV4 自动签名），凭据随请求传入、主进程不落盘 */
+  s3: (spec) => ipcRenderer.invoke('cloud:s3', spec),
   // ---- 外置大块数据（sidecar）：备份载荷存独立文件，主 JSON 只留元数据 ----
   /** 读一条外置记录；{ ok:true, missing:true } = 还没有 */
   payloadRead: (store, id) => ipcRenderer.invoke('payload:read', store, id),

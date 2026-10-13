@@ -11,6 +11,8 @@ const { downloadInstaller, cancelActiveDownload } = require('./updateDownload.cj
 const migration = require('./migration.cjs')
 // 3.0 · W3-2 同步文件路径闸（2026-10-10 从本文件抽出成独立模块 —— 规则可读、可被单测审读）
 const { assertSyncPath } = require('./syncPath.cjs')
+// 3.0.2 · 私有网盘同步内核（WebDAV / S3 兼容）：渲染进程受同源策略限制，跨域请求必须由主进程代发
+const { webdavRequest, s3Request } = require('./remoteSync.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 
@@ -435,6 +437,14 @@ app.whenReady().then(() => {
       return { ok: false, error: String(err) }
     }
   })
+
+  // ---- 私有网盘同步（3.0.2 · WebDAV / S3 兼容）：同样经主进程代发，破同源策略 ----
+  // 🔴 凭据（WebDAV 密码 / S3 secretKey）由渲染层随每次请求传入，主进程**不落盘、不记忆**。
+  //    ⚠️ 渲染层也不把凭据写进 localStorage 明文？——不：凭据存 settingsKV（本地专属、已被
+  //     EXCLUDED_META_KEYS 排除出同步载荷，永不随 .yfe 上云），见 desktopCloudSync.ts。
+  // 🔴 这两条 handler 只做「URL 协议白名单 + 转发」，具体请求语义在 electron/remoteSync.cjs。
+  ipcMain.handle('cloud:webdav', async (_e, url, init) => webdavRequest(url, init))
+  ipcMain.handle('cloud:s3', async (_e, spec) => s3Request(spec))
 
   // ---- 主进程代发 HTTP 请求（联网检索用）----
   // 为什么必须绕到主进程：搜索接口（自建 SearXNG、Jina、Exa 等）不返回 Access-Control-Allow-Origin，
