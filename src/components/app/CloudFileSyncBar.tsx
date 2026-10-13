@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Cloud, FolderOpen, LogOut, History, Server, HardDrive, ChevronDown, ChevronRight } from 'lucide-react'
+import { Cloud, FolderOpen, LogOut, History, Server, HardDrive } from 'lucide-react'
+import { Modal } from '@/components/dialogs/Modal'
 import HelpPopover from '@/components/common/HelpPopover'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
@@ -60,6 +61,10 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
 
   // 未开启时：展示哪一种配置表单（三选一）
   const [form, setForm] = useState<SyncMode>(() => getDesktopCloudMode())
+  // 🔴 2026-10-14 主人反馈：窗口模式下侧栏窄且不可滚，WebDAV / S3 表单塞在侧栏里底部被裁掉。
+  //    ⇒ 配置表单改为**弹窗**（Modal 自带 85vh 滚动 + Esc 关闭 + foldVh 缩放适配），
+  //      侧栏只留三档选择与入口按钮。目录中转无表单，不受影响。
+  const [configOpen, setConfigOpen] = useState(false)
 
   useEffect(() => {
     const onStatus = () => setStatus(getDesktopCloudStatus())
@@ -223,9 +228,9 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
       </div>
 
       {!connected ? (
-        /* —— 未开启：先选方式，再走对应流程 —— */
+        /* —— 未开启：先选方式；WebDAV / S3 点按钮开**弹窗**填写（侧栏窄且不可滚，表单放不下） —— */
         <>
-          <ModeTabs value={form} onChange={setForm} />
+          <ModeTabs value={form} onChange={(m) => { setForm(m); setConfigOpen(false) }} />
           {form === 'dir' && (
             <>
               <Button
@@ -244,11 +249,46 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
             </>
           )}
           {form === 'webdav' && (
-            <WebdavForm busy={busy} onEnable={(ready) => enableRemote('webdav', ready, 'WebDAV')} />
+            <>
+              <Button
+                variant="bare"
+                onClick={() => setConfigOpen(true)}
+                disabled={busy}
+                title="打开 WebDAV 配置窗口（可滚动，窗口模式下也能完整填写）"
+                className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50'}
+              >
+                <Server size={14} />
+                配置 WebDAV 连接
+              </Button>
+              <p className="text-11 leading-snug text-ink-500">坚果云 / Nextcloud / 群晖 等 · 点击打开配置窗口</p>
+            </>
           )}
           {form === 's3' && (
-            <S3Form busy={busy} onEnable={(ready) => enableRemote('s3', ready, 'S3')} />
+            <>
+              <Button
+                variant="bare"
+                onClick={() => setConfigOpen(true)}
+                disabled={busy}
+                title="打开 S3 兼容配置窗口（可滚动，窗口模式下也能完整填写）"
+                className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50'}
+              >
+                <HardDrive size={14} />
+                配置 S3 兼容连接
+              </Button>
+              <p className="text-11 leading-snug text-ink-500">MinIO / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS 等 · 点击打开配置窗口</p>
+            </>
           )}
+          <Modal
+            open={!connected && configOpen && (form === 'webdav' || form === 's3')}
+            onClose={() => setConfigOpen(false)}
+            title={form === 'webdav' ? '配置 WebDAV 直连' : '配置 S3 兼容直连'}
+            icon={form === 'webdav' ? <Server size={15} /> : <HardDrive size={15} />}
+            width="md"
+          >
+            {form === 'webdav'
+              ? <WebdavForm busy={busy} onEnable={(ready) => enableRemote('webdav', ready, 'WebDAV')} />
+              : <S3Form busy={busy} onEnable={(ready) => enableRemote('s3', ready, 'S3')} />}
+          </Modal>
         </>
       ) : (
         /* —— 已开启：状态 + 目标名 + 操作 —— */
@@ -335,7 +375,7 @@ function Field({ label, value, onChange, placeholder, type = 'text' }: {
   )
 }
 
-/** WebDAV 配置表单。 */
+/** WebDAV 配置表单（渲染在配置弹窗内 —— Modal 自带滚动，无需折叠）。 */
 function WebdavForm({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) => void }) {
   const [baseUrl, setBaseUrl] = useState('')
   const [remotePath, setRemotePath] = useState('youth-fantasy-engine/青春幻想引擎-同步数据.yfe')
@@ -344,7 +384,6 @@ function WebdavForm({ busy, onEnable }: { busy: boolean; onEnable: (ready: boole
   const [trustSelfSigned, setTrustSelfSigned] = useState(false)
   const [testing, setTesting] = useState(false)
   const [tested, setTested] = useState(false)
-  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     getWebdavConfig().then((c) => {
@@ -374,32 +413,24 @@ function WebdavForm({ busy, onEnable }: { busy: boolean; onEnable: (ready: boole
 
   return (
     <div className="flex flex-col gap-1.5">
-      <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-1 text-11 text-ink-400 hover:text-ink-200">
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        配置 WebDAV（坚果云 / Nextcloud / 群晖 等）
-      </button>
-      {(open || tested) && (
-        <div className="flex flex-col gap-1.5 rounded-lg border border-ink-700/60 bg-ink-900/30 p-2">
-          <Field label="服务器地址" value={baseUrl} onChange={(v) => { setBaseUrl(v); setTested(false) }} placeholder="https://dav.jianguoyun.com/dav/" />
-          <Field label="远端路径（相对地址）" value={remotePath} onChange={(v) => { setRemotePath(v); setTested(false) }} placeholder="yfe/青春幻想引擎-同步数据.yfe" />
-          <Field label="用户名" value={username} onChange={(v) => { setUsername(v); setTested(false) }} placeholder="账号邮箱" />
-          <Field label="密码 / 应用密码" value={password} onChange={(v) => { setPassword(v); setTested(false) }} placeholder="应用专用密码" type="password" />
-          <TrustSelfSignedToggle
-            checked={trustSelfSigned}
-            onChange={(v) => { setTrustSelfSigned(v); setTested(false) }}
-            tip="自建 NAS / 群晖 用自签证书时勾选；公共网盘（坚果云 / Nextcloud 官方托管）无需勾选"
-          />
-          <div className="flex gap-1.5">
-            <Button variant="bare" onClick={onTest} disabled={testing || busy} className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50'}>
-              {testing ? '测试中…' : tested ? '重新测试' : '测试连接'}
-            </Button>
-            <Button variant="bare" onClick={onGo} disabled={busy || !tested} className={rowBtn + 'border-success/40 bg-success/10 text-success hover:bg-success/20'}>
-              开启同步
-            </Button>
-          </div>
-          <p className="text-11 leading-snug text-ink-500">密码仅存本机、不会随同步文件上传。建议用「应用专用密码」而非主密码。</p>
-        </div>
-      )}
+      <Field label="服务器地址" value={baseUrl} onChange={(v) => { setBaseUrl(v); setTested(false) }} placeholder="https://dav.jianguoyun.com/dav/" />
+      <Field label="远端路径（相对地址）" value={remotePath} onChange={(v) => { setRemotePath(v); setTested(false) }} placeholder="yfe/青春幻想引擎-同步数据.yfe" />
+      <Field label="用户名" value={username} onChange={(v) => { setUsername(v); setTested(false) }} placeholder="账号邮箱" />
+      <Field label="密码 / 应用密码" value={password} onChange={(v) => { setPassword(v); setTested(false) }} placeholder="应用专用密码" type="password" />
+      <TrustSelfSignedToggle
+        checked={trustSelfSigned}
+        onChange={(v) => { setTrustSelfSigned(v); setTested(false) }}
+        tip="自建 NAS / 群晖 用自签证书时勾选；公共网盘（坚果云 / Nextcloud 官方托管）无需勾选"
+      />
+      <div className="flex gap-1.5">
+        <Button variant="bare" onClick={onTest} disabled={testing || busy} className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50'}>
+          {testing ? '测试中…' : tested ? '重新测试' : '测试连接'}
+        </Button>
+        <Button variant="bare" onClick={onGo} disabled={busy || !tested} className={rowBtn + 'border-success/40 bg-success/10 text-success hover:bg-success/20'}>
+          开启同步
+        </Button>
+      </div>
+      <p className="text-11 leading-snug text-ink-500">密码仅存本机、不会随同步文件上传。建议用「应用专用密码」而非主密码。</p>
     </div>
   )
 }
@@ -424,7 +455,7 @@ function TrustSelfSignedToggle({ checked, onChange, tip }: { checked: boolean; o
   )
 }
 
-/** S3 兼容配置表单。 */
+/** S3 兼容配置表单（渲染在配置弹窗内 —— Modal 自带滚动，无需折叠）。 */
 function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) => void }) {
   const [endpoint, setEndpoint] = useState('')
   const [bucket, setBucket] = useState('')
@@ -436,7 +467,6 @@ function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) 
   const [trustSelfSigned, setTrustSelfSigned] = useState(false)
   const [testing, setTesting] = useState(false)
   const [tested, setTested] = useState(false)
-  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     getS3Config().then((c) => {
@@ -467,38 +497,30 @@ function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) 
 
   return (
     <div className="flex flex-col gap-1.5">
-      <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-1 text-11 text-ink-400 hover:text-ink-200">
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        配置 S3 兼容（MinIO / R2 / OSS / COS 等）
-      </button>
-      {(open || tested) && (
-        <div className="flex flex-col gap-1.5 rounded-lg border border-ink-700/60 bg-ink-900/30 p-2">
-          <Field label="端点" value={endpoint} onChange={(v) => { setEndpoint(v); setTested(false) }} placeholder="https://xxx.r2.cloudflarestorage.com 或 http://192.168.1.10:9000" />
-          <Field label="桶名" value={bucket} onChange={(v) => { setBucket(v); setTested(false) }} placeholder="my-bucket" />
-          <Field label="对象键（含前缀）" value={objectKey} onChange={(v) => { setObjectKey(v); setTested(false) }} placeholder="yfe/青春幻想引擎-同步数据.yfe" />
-          <Field label="区域 Region" value={region} onChange={(v) => { setRegion(v); setTested(false) }} placeholder="us-east-1" />
-          <Field label="AccessKey" value={accessKey} onChange={(v) => { setAccessKey(v); setTested(false) }} placeholder="AKIA…" />
-          <Field label="SecretKey" value={secretKey} onChange={(v) => { setSecretKey(v); setTested(false) }} placeholder="…" type="password" />
-          <label className="flex items-center gap-1.5 text-11 text-ink-400">
-            <input type="checkbox" checked={style === 'virtual'} onChange={(e) => { setStyle(e.target.checked ? 'virtual' : 'path'); setTested(false) }} />
-            虚拟主机风格（AWS 默认；MinIO 通常用 path 风格）
-          </label>
-          <TrustSelfSignedToggle
-            checked={trustSelfSigned}
-            onChange={(v) => { setTrustSelfSigned(v); setTested(false) }}
-            tip="自建 MinIO / NAS 用自签证书时勾选；Cloudflare R2 / 阿里云 OSS / 腾讯云 COS 等公网对象存储无需勾选"
-          />
-          <div className="flex gap-1.5">
-            <Button variant="bare" onClick={onTest} disabled={testing || busy} className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50'}>
-              {testing ? '测试中…' : tested ? '重新测试' : '测试连接'}
-            </Button>
-            <Button variant="bare" onClick={onGo} disabled={busy || !tested} className={rowBtn + 'border-success/40 bg-success/10 text-success hover:bg-success/20'}>
-              开启同步
-            </Button>
-          </div>
-          <p className="text-11 leading-snug text-ink-500">SecretKey 仅存本机、不会随同步文件上传。</p>
-        </div>
-      )}
+      <Field label="端点" value={endpoint} onChange={(v) => { setEndpoint(v); setTested(false) }} placeholder="https://xxx.r2.cloudflarestorage.com 或 http://192.168.1.10:9000" />
+      <Field label="桶名" value={bucket} onChange={(v) => { setBucket(v); setTested(false) }} placeholder="my-bucket" />
+      <Field label="对象键（含前缀）" value={objectKey} onChange={(v) => { setObjectKey(v); setTested(false) }} placeholder="yfe/青春幻想引擎-同步数据.yfe" />
+      <Field label="区域 Region" value={region} onChange={(v) => { setRegion(v); setTested(false) }} placeholder="us-east-1" />
+      <Field label="AccessKey" value={accessKey} onChange={(v) => { setAccessKey(v); setTested(false) }} placeholder="AKIA…" />
+      <Field label="SecretKey" value={secretKey} onChange={(v) => { setSecretKey(v); setTested(false) }} placeholder="…" type="password" />
+      <label className="flex items-center gap-1.5 text-11 text-ink-400">
+        <input type="checkbox" checked={style === 'virtual'} onChange={(e) => { setStyle(e.target.checked ? 'virtual' : 'path'); setTested(false) }} />
+        虚拟主机风格（AWS 默认；MinIO 通常用 path 风格）
+      </label>
+      <TrustSelfSignedToggle
+        checked={trustSelfSigned}
+        onChange={(v) => { setTrustSelfSigned(v); setTested(false) }}
+        tip="自建 MinIO / NAS 用自签证书时勾选；Cloudflare R2 / 阿里云 OSS / 腾讯云 COS 等公网对象存储无需勾选"
+      />
+      <div className="flex gap-1.5">
+        <Button variant="bare" onClick={onTest} disabled={testing || busy} className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50'}>
+          {testing ? '测试中…' : tested ? '重新测试' : '测试连接'}
+        </Button>
+        <Button variant="bare" onClick={onGo} disabled={busy || !tested} className={rowBtn + 'border-success/40 bg-success/10 text-success hover:bg-success/20'}>
+          开启同步
+        </Button>
+      </div>
+      <p className="text-11 leading-snug text-ink-500">SecretKey 仅存本机、不会随同步文件上传。</p>
     </div>
   )
 }
