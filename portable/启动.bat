@@ -7,6 +7,19 @@ rem  NOTE: This file is written in ASCII on purpose.
 rem  cmd.exe parses .bat as the OEM codepage (GBK on zh-CN Windows),
 rem  so UTF-8 Chinese text here would appear garbled.
 rem  Chinese instructions live in the sibling file 使用说明.txt.
+rem
+rem  Behaviour (3.0.3+):
+rem    1) Prefer the BUNDLED RUNTIME - a single self-contained .exe
+rem       that already contains the JS runtime. Works on any Windows
+rem       machine with NOTHING installed. This is the normal path.
+rem    2) Fall back to a system-wide Node.js, if the bundled runtime
+rem       is missing or was blocked/removed by security software.
+rem    3) Otherwise print a clear message.
+rem
+rem  The bundled runtime is located by WILDCARD rather than by name,
+rem  because its filename contains Chinese characters (and this file
+rem  must stay pure ASCII). Assumption: this folder holds exactly one
+rem  .exe - the runtime itself.
 rem ============================================================
 setlocal
 title Youth Fantasy Engine - Portable
@@ -18,45 +31,62 @@ echo   Youth Fantasy Engine - Portable
 echo ==================================================
 echo.
 
-rem ---- locate Node.js ----
-where node >nul 2>nul
-if errorlevel 1 (
-  echo [ERROR] Node.js not found.
+rem ---- 1) bundled runtime (preferred: zero dependency) ----
+set "RT="
+for %%F in ("%~dp0*.exe") do if not defined RT set "RT=%%~fF"
+
+if defined RT (
+  echo [runtime] bundled ^(no Node.js required^)
   echo.
-  echo   This portable build needs Node.js installed ^(free, ~30 MB^).
-  echo   Download: https://nodejs.org/zh-cn/download
-  echo   Install it, then run this script again.
-  echo.
-  pause
-  exit /b 1
+  rem %* 透传附加参数（如 --no-open / --port 8765），便于脚本化与排查
+  "%RT%" --root "%~dp0." %*
+  goto :done
 )
 
-rem ---- locate server script ----
+rem ---- 2) fall back to a system-wide Node.js ----
 set "SRV=%~dp0scripts\portable-server.mjs"
 if not exist "%SRV%" set "SRV=%~dp0portable-server.mjs"
-if not exist "%SRV%" (
-  echo [ERROR] portable-server.mjs not found.
-  echo   Make sure this folder is complete
-  echo   ^(should contain dist\ and scripts\portable-server.mjs^).
-  echo.
-  pause
-  exit /b 1
-)
 
-if not exist "%~dp0dist\index.html" (
-  echo [ERROR] dist\index.html not found.
-  echo   Build the frontend first:  npm run build:portable
-  echo.
-  pause
-  exit /b 1
-)
+where node >nul 2>nul
+if errorlevel 1 goto :noruntime
+if not exist "%SRV%" goto :noscript
+if not exist "%~dp0dist\index.html" goto :nodist
 
-echo Starting local server...
-echo Data will be saved into the "data" folder next to this script.
+echo [runtime] system Node.js ^(fallback^)
 echo.
-
 node "%SRV%" --root "%~dp0."
+goto :done
 
+:noruntime
+echo [ERROR] No runtime found.
 echo.
-echo Server stopped. Your data is in the "data" folder.
+echo   This folder is missing the bundled runtime (the .exe file),
+echo   and Node.js is not installed on this machine either.
+echo.
+echo   Fix: extract the WHOLE portable folder from the zip again,
+echo        and keep the .exe inside this folder.
+echo.
+echo   If your antivirus removed the .exe, allow-list this folder
+echo   and extract again.
+echo.
+pause
+exit /b 1
+
+:noscript
+echo [ERROR] scripts\portable-server.mjs not found.
+echo   Extract the WHOLE portable folder from the zip again.
+echo.
+pause
+exit /b 1
+
+:nodist
+echo [ERROR] dist\index.html not found.
+echo   Extract the WHOLE portable folder from the zip again.
+echo.
+pause
+exit /b 1
+
+:done
+echo.
+echo Server stopped. Your data is in the "data" folder next to this script.
 pause

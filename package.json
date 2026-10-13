@@ -1,7 +1,7 @@
 {
   "name": "youth-fantasy-engine",
   "private": true,
-  "version": "3.0.2",
+  "version": "3.0.3",
   "type": "module",
   "description": "青春幻想引擎 · 小说创作管理应用（Windows 桌面版）",
   "author": "青春幻想引擎开发组",
@@ -11,6 +11,8 @@
     "build": "tsc && vite build",
     "build:desktop": "node scripts/build-desktop.mjs",
     "build:portable": "tsc && vite build",
+    "build:portable-server": "node scripts/build-portable-server.mjs",
+    "build:portable-pkg": "node scripts/build-portable-pkg.mjs",
     "start:portable": "node scripts/portable-server.mjs",
     "electron:dev": "vite --port 5199 & ELECTRON_START_URL=http://localhost:5199 electron .",
     "preview": "vite preview --port 5199",
