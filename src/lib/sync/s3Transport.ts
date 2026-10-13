@@ -23,6 +23,11 @@ export interface S3Config {
   secretKey: string
   /** path 风格（MinIO 常用）或 virtual 风格（AWS 常用，bucket 作子域） */
   style?: 'path' | 'virtual'
+  /**
+   * 🔴 信任自签证书（默认关）：自建 MinIO / NAS 常用自签证书，打开后本传输层会请主进程
+   * 放行「证书链不受信」这类错误（详见 electron/remoteSync.cjs）。属安全取舍，边界同 WebDAV。
+   */
+  trustSelfSigned?: boolean
 }
 
 interface ElectronS3Bridge {
@@ -55,6 +60,8 @@ async function callS3(cfg: S3Config, method: string, body?: string | null): Prom
       body: body == null ? null : body,
       bucket: cfg.bucket, style: cfg.style || 'path',
       accessKey: cfg.accessKey, secretKey: cfg.secretKey, region: cfg.region,
+      // 🔴 逐请求显式授权：开关关时传 false，主进程保持系统严格校验
+      trustSelfSigned: cfg.trustSelfSigned === true,
     })) as BridgeResult | undefined
     return raw && typeof raw === 'object' ? raw : { ok: false, error: '主进程未返回结果' }
   } catch (e) {
@@ -91,6 +98,7 @@ export function createS3Transport(cfg: S3Config): SyncTransport {
         endpoint: cfg.endpoint, path: cfg.style === 'virtual' ? '/' + qKey : '/' + cfg.bucket + '/' + qKey,
         method: 'PUT', body: text, bucket: cfg.bucket, style: cfg.style || 'path',
         accessKey: cfg.accessKey, secretKey: cfg.secretKey, region: cfg.region,
+        trustSelfSigned: cfg.trustSelfSigned === true,
       })) as BridgeResult | undefined
       if (raw && raw.ok) console.warn('[sync] 远端同步对象无法解析，已另存备份并暂停写入以免覆盖云端数据：' + qKey)
     } catch (e) {

@@ -14,7 +14,7 @@
 import { SYNC_POLL_MS } from '@/lib/constants'
 import type { RawSyncResponse, SyncTransport } from '@/lib/sync/syncTransport'
 
-/** WebDAV 连接参数（由 desktopCloudSync 组装；凭据存 settingsKV，本地专属不入云）。 */
+/** WebDAV 连接参数（由 desktopCloudSync 组装；凭据存 localStorage，本机专属不入云）。 */
 export interface WebdavConfig {
   /** 服务器基址，如 https://dav.jianguoyun.com/dav/ 或 http://192.168.1.10:5005/ */
   baseUrl: string
@@ -22,6 +22,12 @@ export interface WebdavConfig {
   remotePath: string
   username: string
   password: string
+  /**
+   * 🔴 信任自签证书（默认关）：自建 NAS（群晖 / 威联通 / 极空间）常用自签证书，
+   * 打开后本传输层会请主进程放行「证书链不受信」这类错误（详见 electron/remoteSync.cjs）。
+   * 这是**安全取舍**：只对本功能生效、其余流量不受影响，且主机名不符 / 已吊销 / 过期仍会拒绝。
+   */
+  trustSelfSigned?: boolean
 }
 
 /** preload 注入的 WebDAV 桥（按用到的成员声明最小形状；主进程是 CJS，不在前端 tsconfig 里）。 */
@@ -50,6 +56,8 @@ async function call(init: Record<string, unknown>): Promise<BridgeResult> {
       body: init.body,
       username: init.username,
       password: init.password,
+      // 🔴 逐请求显式授权：开关关时传 false，主进程保持系统严格校验
+      trustSelfSigned: init.trustSelfSigned === true,
     })) as BridgeResult | undefined
     return raw && typeof raw === 'object' ? raw : { ok: false, error: '主进程未返回结果' }
   } catch (e) {
@@ -88,7 +96,7 @@ export function createWebdavTransport(cfg: WebdavConfig): SyncTransport {
 
   /** 拉一次远端：{ ok:true, text } / { ok:true, text:null }（不存在）/ { ok:false }（失败/认证） */
   async function fetchRemote(): Promise<{ ok: true; text: string | null } | { ok: false; reason: string; auth?: boolean }> {
-    const r = await call({ baseUrl: cfg.baseUrl, path: cfg.remotePath, method: 'GET', username: cfg.username, password: cfg.password })
+    const r = await call({ baseUrl: cfg.baseUrl, path: cfg.remotePath, method: 'GET', username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned })
     if (!r.ok) return { ok: false, reason: r.error || '请求失败', auth: r.status === 401 || r.status === 403 }
     const status = Number(r.status) || 0
     if (status === 404 || status === 204) return { ok: true, text: null }
@@ -104,7 +112,7 @@ export function createWebdavTransport(cfg: WebdavConfig): SyncTransport {
     try {
       const stamp = Date.now()
       const qPath = cfg.remotePath + '.corrupt-' + stamp
-      await call({ baseUrl: cfg.baseUrl, path: qPath, method: 'PUT', body: text, username: cfg.username, password: cfg.password })
+      await call({ baseUrl: cfg.baseUrl, path: qPath, method: 'PUT', body: text, username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned })
       console.warn('[sync] 远端同步文件无法解析，已另存备份并暂停写入以免覆盖云端数据：' + qPath)
     } catch (e) {
       console.warn('[sync] 损坏远端同步文件备份失败：', e)
@@ -142,7 +150,7 @@ export function createWebdavTransport(cfg: WebdavConfig): SyncTransport {
         baseUrl: cfg.baseUrl, path: cfg.remotePath, method: 'PUT',
         body: JSON.stringify({ rev: newRev, enc }),
         headers: { 'Content-Type': 'application/json' },
-        username: cfg.username, password: cfg.password,
+        username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned,
       })
       if (!put.ok) return { status: 0 }
       const st = Number(put.status) || 0
@@ -189,7 +197,7 @@ export function createWebdavTransport(cfg: WebdavConfig): SyncTransport {
  */
 export async function testWebdav(cfg: WebdavConfig): Promise<{ ok: boolean; message: string }> {
   // ① 探文件是否已存在（HEAD/PROPFIND 语义）：GET 一次即可，404 = 服务器正常但文件还没建
-  const r = await call({ baseUrl: cfg.baseUrl, path: cfg.remotePath, method: 'GET', username: cfg.username, password: cfg.password })
+  const r = await call({ baseUrl: cfg.baseUrl, path: cfg.remotePath, method: 'GET', username: cfg.username, password: cfg.password, trustSelfSigned: cfg.trustSelfSigned })
   if (r.ok) {
     const st = Number(r.status) || 0
     if (st === 401 || st === 403) return { ok: false, message: '认证失败（HTTP ' + st + '）：请检查用户名 / 密码' }

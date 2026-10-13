@@ -341,6 +341,7 @@ function WebdavForm({ busy, onEnable }: { busy: boolean; onEnable: (ready: boole
   const [remotePath, setRemotePath] = useState('youth-fantasy-engine/青春幻想引擎-同步数据.yfe')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [trustSelfSigned, setTrustSelfSigned] = useState(false)
   const [testing, setTesting] = useState(false)
   const [tested, setTested] = useState(false)
   const [open, setOpen] = useState(false)
@@ -348,24 +349,26 @@ function WebdavForm({ busy, onEnable }: { busy: boolean; onEnable: (ready: boole
   useEffect(() => {
     getWebdavConfig().then((c) => {
       if (c) {
-        setBaseUrl(c.baseUrl); setRemotePath(c.remotePath); setUsername(c.username); setPassword(c.password); setTested(true)
+        setBaseUrl(c.baseUrl); setRemotePath(c.remotePath); setUsername(c.username); setPassword(c.password)
+        setTrustSelfSigned(c.trustSelfSigned === true); setTested(true)
       }
     }).catch(() => {})
   }, [])
 
   const ready = !!(baseUrl.trim() && remotePath.trim())
+  const cfg = () => ({ baseUrl, remotePath, username, password, trustSelfSigned })
   const onTest = async () => {
     if (!ready) { showToast('请先填写服务器地址与远端路径', 'error'); return }
     setTesting(true)
-    const r = await testWebdav({ baseUrl, remotePath, username, password })
+    const r = await testWebdav(cfg())
     setTesting(false)
     setTested(r.ok)
     showToast(r.message, r.ok ? 'success' : 'error', 6000)
-    if (r.ok) await saveWebdavConfig({ baseUrl, remotePath, username, password }).catch(() => {})
+    if (r.ok) await saveWebdavConfig(cfg()).catch(() => {})
   }
   const onGo = async () => {
     if (!tested) { showToast('请先点「测试连接」确认可用', 'error'); return }
-    await saveWebdavConfig({ baseUrl, remotePath, username, password }).catch(() => {})
+    await saveWebdavConfig(cfg()).catch(() => {})
     onEnable(true)
   }
 
@@ -381,6 +384,11 @@ function WebdavForm({ busy, onEnable }: { busy: boolean; onEnable: (ready: boole
           <Field label="远端路径（相对地址）" value={remotePath} onChange={(v) => { setRemotePath(v); setTested(false) }} placeholder="yfe/青春幻想引擎-同步数据.yfe" />
           <Field label="用户名" value={username} onChange={(v) => { setUsername(v); setTested(false) }} placeholder="账号邮箱" />
           <Field label="密码 / 应用密码" value={password} onChange={(v) => { setPassword(v); setTested(false) }} placeholder="应用专用密码" type="password" />
+          <TrustSelfSignedToggle
+            checked={trustSelfSigned}
+            onChange={(v) => { setTrustSelfSigned(v); setTested(false) }}
+            tip="自建 NAS / 群晖 用自签证书时勾选；公共网盘（坚果云 / Nextcloud 官方托管）无需勾选"
+          />
           <div className="flex gap-1.5">
             <Button variant="bare" onClick={onTest} disabled={testing || busy} className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50'}>
               {testing ? '测试中…' : tested ? '重新测试' : '测试连接'}
@@ -396,6 +404,26 @@ function WebdavForm({ busy, onEnable }: { busy: boolean; onEnable: (ready: boole
   )
 }
 
+/**
+ * 「信任自签证书」开关（WebDAV / S3 共用）。
+ * 🔴 这是**安全取舍**：文案必须同时讲清「什么时候要勾」与「勾了意味着什么」，不能只写开关名。
+ */
+function TrustSelfSignedToggle({ checked, onChange, tip }: { checked: boolean; onChange: (v: boolean) => void; tip: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <label className="flex items-center gap-1.5 text-11 text-ink-400">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        信任自签证书（自建 NAS / MinIO 常用）
+      </label>
+      <p className={checked ? 'text-11 leading-snug text-amber/90' : 'text-11 leading-snug text-ink-600'}>
+        {checked
+          ? '⚠️ 已开启：将放行「证书链不受信（自签）」的连接。仅对本同步通道生效，AI / 检索等其他流量不受影响；主机名不符、证书过期或已吊销仍会被拒绝。若同步地址是公网服务器，请勿勾选。'
+          : tip}
+      </p>
+    </div>
+  )
+}
+
 /** S3 兼容配置表单。 */
 function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) => void }) {
   const [endpoint, setEndpoint] = useState('')
@@ -405,6 +433,7 @@ function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) 
   const [accessKey, setAccessKey] = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [style, setStyle] = useState<'path' | 'virtual'>('path')
+  const [trustSelfSigned, setTrustSelfSigned] = useState(false)
   const [testing, setTesting] = useState(false)
   const [tested, setTested] = useState(false)
   const [open, setOpen] = useState(false)
@@ -414,13 +443,13 @@ function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) 
       if (c) {
         setEndpoint(c.endpoint); setBucket(c.bucket); setObjectKey(c.objectKey)
         setRegion(c.region); setAccessKey(c.accessKey); setSecretKey(c.secretKey)
-        setStyle(c.style || 'path'); setTested(true)
+        setStyle(c.style || 'path'); setTrustSelfSigned(c.trustSelfSigned === true); setTested(true)
       }
     }).catch(() => {})
   }, [])
 
   const ready = !!(endpoint.trim() && bucket.trim() && accessKey.trim() && secretKey.trim())
-  const cfg = () => ({ endpoint, bucket, objectKey, region, accessKey, secretKey, style })
+  const cfg = () => ({ endpoint, bucket, objectKey, region, accessKey, secretKey, style, trustSelfSigned })
   const onTest = async () => {
     if (!ready) { showToast('请先填写端点、桶名、AccessKey、SecretKey', 'error'); return }
     setTesting(true)
@@ -454,6 +483,11 @@ function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) 
             <input type="checkbox" checked={style === 'virtual'} onChange={(e) => { setStyle(e.target.checked ? 'virtual' : 'path'); setTested(false) }} />
             虚拟主机风格（AWS 默认；MinIO 通常用 path 风格）
           </label>
+          <TrustSelfSignedToggle
+            checked={trustSelfSigned}
+            onChange={(v) => { setTrustSelfSigned(v); setTested(false) }}
+            tip="自建 MinIO / NAS 用自签证书时勾选；Cloudflare R2 / 阿里云 OSS / 腾讯云 COS 等公网对象存储无需勾选"
+          />
           <div className="flex gap-1.5">
             <Button variant="bare" onClick={onTest} disabled={testing || busy} className={rowBtn + 'border-ink-600/80 bg-ink-800/60 text-ink-300 hover:border-amber/50'}>
               {testing ? '测试中…' : tested ? '重新测试' : '测试连接'}

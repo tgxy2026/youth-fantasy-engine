@@ -30,6 +30,9 @@ const remote = nodeRequire(path.join(process.cwd(), 'electron/remoteSync.cjs')) 
   signS3: (p: Record<string, unknown>) => Record<string, string>
   signV4ForTest: (p: Record<string, unknown>) => Record<string, string>
   encodePath: (p: string) => string
+  setTrustSelfSigned: (on: boolean) => void
+  isSelfSignedError: (req: unknown) => boolean
+  certCoversHost: (req: unknown) => boolean
 }
 
 // ---------- ① SigV4 官方测试向量（aws-sig-v4-test-suite · get-vanilla）----------
@@ -189,6 +192,135 @@ const remote = nodeRequire(path.join(process.cwd(), 'electron/remoteSync.cjs')) 
   ok('UI · 测试连接在开启前把关（未测过不许开）', /if \(!tested\) \{ showToast/.test(ui))
   ok('db 入口 · enableDesktopCloudSync 支持 mode 参数', /enableDesktopCloudSync\(handle: SyncDirHandle \| null, mode: SyncMode = 'dir'\)/.test(core))
   ok('db 入口 · 持久化带 mode', /persistDesktopCloudEnabled\(handle, mode\)/.test(core))
+}
+
+// ---------- ④ 信任自签证书开关（安全边界守卫）----------
+{
+  const remoteSrc = read('electron/remoteSync.cjs')
+  const wd = read('src/lib/sync/webdavTransport.ts')
+  const s3 = read('src/lib/sync/s3Transport.ts')
+  const ui = read('src/components/app/CloudFileSyncBar.tsx')
+
+  // —— 主进程：机制正确 ——
+  ok('自签 · 用专用 partition 会话（不污染全局 fetch）',
+    /session\.fromPartition\(CERT_PARTITION/.test(remoteSrc) && /const CERT_PARTITION = 'yfe-private-cloud'/.test(remoteSrc))
+  ok('自签 · 用 ses.fetch（net.fetch(url,{session}) 不触发证书回调）',
+    /ses\.fetch\(u, o\)/.test(remoteSrc) && /typeof ses\.fetch === 'function'/.test(remoteSrc))
+  ok('自签 · 接受用 callback(0)、其余回退 Chromium 结果 callback(-3)',
+    /callback\(0\)/.test(remoteSrc) && /callback\(-3\)/.test(remoteSrc))
+  ok('🔴🔴 自签 · 放行须同时满足「不受信」与「覆盖主机名」两个条件（缺一即误放行）',
+    /isSelfSignedError\(req\) && certCoversHost\(req\)/.test(remoteSrc))
+  ok('🔴 自签 · 覆盖判定用 checkHost / checkIP（RFC 6125 + IP）',
+    /cert\.checkHost\(host\)/.test(remoteSrc) && /cert\.checkIP\(host\)/.test(remoteSrc))
+  ok('🔴 自签 · 校验证书有效期（过期不放行）',
+    /validFromDate/.test(remoteSrc) && /validToDate/.test(remoteSrc))
+  ok('自签 · 覆盖判定解析失败一律返回 false（默认拒绝）',
+    /return false \/\/ 解析失败一律不放行/.test(remoteSrc))
+  ok('自签 · 关闭时还原 setCertificateVerifyProc(null)', /setCertificateVerifyProc\(null\)/.test(remoteSrc))
+  ok('自签 · 只在开关打开时才走专用会话',
+    /trustSelfSignedActive \? ensureCertProc\(\) : null/.test(remoteSrc))
+  ok('自签 · 开关默认 false（主进程侧初值）', /let trustSelfSignedActive = false/.test(remoteSrc))
+  ok('自签 · 逐请求显式授权（webdavRequest 读 init.trustSelfSigned）',
+    /setTrustSelfSigned\(opts\.trustSelfSigned === true\)/.test(remoteSrc))
+  ok('自签 · 逐请求显式授权（s3Request 读 p.trustSelfSigned）',
+    /setTrustSelfSigned\(p\.trustSelfSigned === true\)/.test(remoteSrc))
+  ok('自签 · 无 Electron 时静默退回全局 fetch（单测不炸）',
+    /require\('electron'\)\.session/.test(remoteSrc) && /catch \{\s*\n\s*return null \/\/ 单测/.test(remoteSrc))
+
+  // —— 🔴🔴 核心安全边界：只放行「自签 / 不受信根」，不放行主机名不符 / 已吊销 / 过期 ——
+  // ⚠️ 静态扫描只在**去掉注释后**的代码上做：注释里提到错误名不应算「实现里含该错误码」。
+  //    真正的守卫是下面的行为级断言（真加载内核跑 isSelfSignedError）。
+  // ⚠️ 白名单是**正则字面量**（`ERR_CERT_(AUTHORITY_INVALID|…)`），故只查词干、不要求全等。
+  const remoteCode = remoteSrc
+    .replace(/\/\*[\s\S]*?\*\//g, '') // 去块注释
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1') // 去行注释（保留 http:// 里的 //）
+  ok('🔴 白名单不含 COMMON_NAME_INVALID（主机名不符仍拒）',
+    !/COMMON_NAME_INVALID/.test(remoteCode) && !/-200\b/.test(remoteCode))
+  ok('🔴 白名单不含 REVOKED（已吊销仍拒）', !/REVOKED/.test(remoteCode))
+  ok('🔴 白名单不含 DATE_INVALID（过期仍拒）', !/DATE_INVALID/.test(remoteCode))
+  ok('🔴 白名单确实认 AUTHORITY_INVALID（自签能放行）',
+    /AUTHORITY_INVALID/.test(remoteCode) && /-202/.test(remoteCode))
+
+  // —— isSelfSignedError 行为级验证（真加载主进程内核）——
+  ok('自签判定 · -202 / ERR_CERT_AUTHORITY_INVALID → true',
+    remote.isSelfSignedError({ errorCode: -202, verificationResult: 'net::ERR_CERT_AUTHORITY_INVALID' }) === true)
+  ok('自签判定 · 字符串兜底（只给 verificationResult 也认）',
+    remote.isSelfSignedError({ verificationResult: 'net::ERR_CERT_AUTHORITY_INVALID' }) === true)
+  ok('🔴 自签判定 · 主机名不符（-200 / COMMON_NAME_INVALID）→ false',
+    remote.isSelfSignedError({ errorCode: -200, verificationResult: 'net::ERR_CERT_COMMON_NAME_INVALID' }) === false)
+  ok('🔴 自签判定 · 主机名不符（只给 errorCode -200）→ false',
+    remote.isSelfSignedError({ errorCode: -200 }) === false)
+  ok('🔴 自签判定 · 已吊销（-210 / REVOKED）→ false',
+    remote.isSelfSignedError({ errorCode: -210, verificationResult: 'net::ERR_CERT_REVOKED' }) === false)
+  ok('🔴 自签判定 · 过期（-211 / DATE_INVALID）→ false',
+    remote.isSelfSignedError({ errorCode: -211, verificationResult: 'net::ERR_CERT_DATE_INVALID' }) === false)
+  ok('🔴 自签判定 · 未知错误码 → false（默认拒绝）',
+    remote.isSelfSignedError({ errorCode: -999, verificationResult: 'net::ERR_FAILED' }) === false)
+  ok('自签判定 · 无请求对象 → false（不误放行）', remote.isSelfSignedError(undefined) === false)
+
+  // —— ② 覆盖判定 certCoversHost（主机名不符绝不放行 —— 实测 Electron 会同报 -202）——
+  // 🔴 这是「不是一律不校验」这条边界的**唯一**防线：错误码区分不了，全靠它。
+  ok('覆盖判定 · 无证书 / 空 data → false（不误放行）',
+    remote.certCoversHost(undefined) === false &&
+    remote.certCoversHost({ hostname: 'a', certificate: {} }) === false &&
+    remote.certCoversHost({ hostname: 'a', certificate: { data: '' } }) === false)
+  ok('覆盖判定 · 证书解析不了 → false（默认拒绝）',
+    remote.certCoversHost({ hostname: 'a', certificate: { data: 'not-a-pem' } }) === false)
+  ok('覆盖判定 · 无 hostname → false', remote.certCoversHost({ certificate: { data: 'x' } }) === false)
+  // 真实证书级验证（自签一张，覆盖 localhost，含 IP 写成 DNS SAN 的兼容路径）
+  {
+    const os = nodeRequire('node:os') as typeof import('node:os')
+    const nodeFs = nodeRequire('node:fs') as typeof import('node:fs')
+    const cp = nodeRequire('node:child_process') as typeof import('node:child_process')
+    const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), 'yfe-testcert-'))
+    const key = path.join(dir, 'k.pem')
+    const crt = path.join(dir, 'c.pem')
+    let made = true
+    try {
+      cp.execFileSync('openssl', [
+        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+        '-keyout', key, '-out', crt, '-days', '2',
+        '-subj', '/CN=nas.local',
+        '-addext', 'subjectAltName=DNS:nas.local,DNS:192.168.1.10',
+      ], { stdio: 'ignore' })
+    } catch { made = false }
+    if (made) {
+      const pem = nodeFs.readFileSync(crt, 'utf8')
+      const req = (hostname: string) => ({ hostname, certificate: { data: pem } })
+      ok('🔴 覆盖判定 · 相符域名 → true（自签能放行）',
+        remote.certCoversHost(req('nas.local')) === true)
+      ok('🔴 覆盖判定 · 不符域名 → false（主机名不符仍拒）',
+        remote.certCoversHost(req('evil.example')) === false)
+      ok('🔴 覆盖判定 · 相符 IP（写成 DNS SAN）→ true（兼容常见写法）',
+        remote.certCoversHost(req('192.168.1.10')) === true)
+      ok('🔴 覆盖判定 · 不符 IP → false', remote.certCoversHost(req('10.0.0.1')) === false)
+      ok('覆盖判定 · 大小写不敏感（RFC 6125）',
+        remote.certCoversHost(req('NAS.LOCAL')) === true)
+      const nodeCrypto = nodeRequire('node:crypto') as typeof import('node:crypto')
+      const x = new nodeCrypto.X509Certificate(pem)
+      ok('覆盖判定 · 被测证书确在有效期内（排除「过期被拒」干扰本组用例）',
+        Date.now() >= (x.validFromDate as Date).getTime() && Date.now() <= (x.validToDate as Date).getTime())
+    } else {
+      pass++; console.log('PASS 覆盖判定 · 跳过（本机无 openssl，无法现签证书）')
+    }
+  }
+
+  // —— 渲染层：标志随每次请求透传，且默认关 ——
+  ok('Webdav · 配置含 trustSelfSigned（可选、默认关）', /trustSelfSigned\?: boolean/.test(wd))
+  ok('Webdav · 每次桥调用都带上 trustSelfSigned', /trustSelfSigned: init\.trustSelfSigned === true/.test(wd))
+  ok('Webdav · 传输层调用点均透传开关（4 处）', (wd.match(/trustSelfSigned: cfg\.trustSelfSigned/g) ?? []).length >= 4)
+  ok('S3 · 配置含 trustSelfSigned（可选、默认关）', /trustSelfSigned\?: boolean/.test(s3))
+  ok('S3 · 桥调用带上 trustSelfSigned（含 quarantine 分支）',
+    (s3.match(/trustSelfSigned: cfg\.trustSelfSigned === true/g) ?? []).length >= 2)
+
+  // —— UI：开关 + 风险文案 + 默认不勾 ——
+  ok('UI · 开关名为「信任自签证书」', /信任自签证书/.test(ui))
+  ok('UI · 默认不勾（useState(false)）', /useState\(false\)/.test(ui) && /setTrustSelfSigned\(c\.trustSelfSigned === true\)/.test(ui))
+  ok('UI · 勾选后给出风险与范围警示（只对本通道生效）',
+    /仅对本同步通道生效/.test(ui) && /公网服务器，请勿勾选/.test(ui))
+  ok('UI · 两个表单都挂了开关（≥2 处使用）', (ui.match(/<TrustSelfSignedToggle/g) ?? []).length >= 2)
+  ok('UI · 改开关会重置「已测过」状态（须重测）',
+    /setTrustSelfSigned\(v\); setTested\(false\)/.test(ui))
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} privateCloudSync: ${pass} 通过 / ${fail} 失败`)
