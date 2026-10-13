@@ -303,5 +303,27 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     /variant="bare"[\s\S]{0,200}去写作/.test(s) || /去写作[\s\S]{0,200}h-8/.test(s))
 }
 
+// ---------- ⑬ 浮层定位必须折算界面缩放（2026-10-13 主人反馈「AI 伴写弹窗跑到鼠标右侧/到屏幕外」） ----------
+//
+// 起因：`<html style="zoom:X">` 会把内联 left/top/width **再乘一次 zoom**。
+//   HelpPopover 用 getBoundingClientRect() 量到的已是【视觉像素】（zoom 1.08 时放大 8%），
+//   直接写 style.left 被再乘 1.08 ⇒ 弹窗整体右移 ~8%，宽屏（自动 zoom 108%）下右缘超出触发键
+//   107px、跑出屏幕/盖住正文。修法：量到的坐标一律除以 --ui-zoom 再算。
+// 判据：HelpPopover 必须调用 currentUiZoom() 做折算；且 theme.ts 导出该函数。
+{
+  const hp = read('src/components/common/HelpPopover.tsx')
+  ok('🔴 HelpPopover 必须按界面缩放折算定位（currentUiZoom）',
+    /currentUiZoom\(\)/.test(hp))
+  ok('🔴 视口边界 + rect 坐标都要除以缩放系数（window.innerWidth / z、b.right / z）',
+    /window\.innerWidth\s*\/\s*z/.test(hp) && /b\.right\s*\/\s*z/.test(hp))
+  const th = read('src/lib/settings/theme.ts')
+  ok('🔴 theme.ts 导出 currentUiZoom（浮层定位的定点折算入口）',
+    /export function currentUiZoom\(/.test(th))
+  // 反向对照：确认守卫能抓到"不做折算"的坏形态（直接写 rect 值）
+  const bad = 'const left = b.right - w; setPos({ left, top, w })'
+  ok('  · 守卫自检：直接写 rect 值（未折算）确实被判定为坏形态',
+    !/window\.innerWidth\s*\/\s*z/.test(bad) && /b\.right\s*-\s*w/.test(bad))
+}
+
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

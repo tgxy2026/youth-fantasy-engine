@@ -231,6 +231,30 @@ export function foldVh(v?: string): string | undefined {
 }
 
 /**
+ * 把 `getBoundingClientRect()` 量到的**视觉像素**折算成**可直接写进 style 的像素**（3.0.2 立）。
+ *
+ * 为什么必须折：`<html>` 上的 `zoom` 会**二次放大**内联 `left / top / width` ——
+ * 量出来的 `rect.right` 已经是缩放后的坐标（zoom 1.08 时放大 8%），直接写 `style.left`
+ * 会被浏览器**再乘一次 zoom**，弹窗整体偏移 8%，窄窗口下就往右跑出屏幕被遮挡。
+ * 故写 style 前一律除以 `--ui-zoom`；`foldVh` 折的是 CSS 长度，本函数折的是 JS 数值。
+ *
+ * 用法：`setPos({ left: foldPx(b.right - w), top: foldPx(b.bottom + 6), w: foldPx(w) })`，
+ * 且**比较时也要用同一口径**（左右都 foldPx 后再比，别拿折叠值与原始值混算）。
+ */
+export function foldPx(px: number): number {
+  if (typeof document === 'undefined') return px
+  const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom'))
+  return Number.isFinite(z) && z > 0 ? px / z : px
+}
+
+/** 当前界面缩放系数（1 = 100%）。读 CSS 变量，避免与 localStorage 不同步。 */
+export function currentUiZoom(): number {
+  if (typeof document === 'undefined') return 1
+  const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom'))
+  return Number.isFinite(z) && z > 0 ? z : 1
+}
+
+/**
  * 内容区「恰好一屏」的**锁定高度**（与 `contentMinH` 同源，但用 `height` 而非 `minHeight`）。
  *
  * 2026-10-05：主从双栏页签（左列表 + 右详情）需要**锁高**才能让两栏各自 `overflow-y-auto`

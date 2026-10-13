@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { HelpCircle } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
-import { foldVh } from '@/lib/settings/theme'
+import { foldVh, currentUiZoom } from '@/lib/settings/theme'
 
 interface Props {
   title: string
@@ -40,7 +40,8 @@ const remToPx = (v: string) => {
 /**
  * 问号指引：点击 ? 图标弹出该功能的操作说明。
  * - 弹窗用 Portal 渲染到 body + fixed 定位，不会被滚动容器/表格裁剪或遮挡；
- * - 默认向【左】铺开（弹窗右边缘与图标对齐），贴近右侧边界时自动回弹到视口内；
+ * - 默认向【左】铺开（弹窗右边缘与图标对齐）；左侧空间不足时【自动翻转】到图标右侧，
+ *   两边都放不下才夹进视口（3.0.2 修复：此前左侧不足会被夹到最左 12px，弹窗反而压在触发键右侧）；
  * - 下方空间不足时自动翻到图标上方；
  * - 鼠标移出图标与弹窗后自动消失，也可点击外部 / Esc 关闭。
  */
@@ -64,13 +65,30 @@ export default function HelpPopover({
   const update = useCallback(() => {
     const b = btnRef.current?.getBoundingClientRect()
     if (!b) return
-    const w = Math.min(remToPx(width), window.innerWidth - 24)
-    // 向左铺开：弹窗右边缘与图标右边缘对齐
-    let left = side === 'left' ? b.right - w : b.left
-    left = Math.max(12, Math.min(left, window.innerWidth - w - 12))
+    // 🔴 3.0.2 修复（真根因 = 界面缩放二次放大）：
+    //   `<html style="zoom:X">` 会把内联 left/top/width **再乘一次 zoom**。
+    //   getBoundingClientRect() 量到的已是【视觉像素】（zoom 1.08 时放大 8%），
+    //   直接写 style.left 会被浏览器再乘 1.08 ⇒ 弹窗整体右移 ~8%，窄窗口下跑出屏幕被遮。
+    //   故：量到的坐标一律【除以 zoom】转成「未缩放 CSS 像素」，在这个坐标系里算位置与边界，
+    //       写进 style 后由 zoom 乘回来 —— 与 foldVh 同源思路（foldVh 折 CSS 长度，这里折 JS 数值）。
+    const z = currentUiZoom()
+    const vw = window.innerWidth / z    // 未缩放坐标系下的视口宽
+    const vh = window.innerHeight / z
+    const br = b.right / z, bl = b.left / z, bt = b.top / z, bb = b.bottom / z
+    const w = Math.min(remToPx(width), vw - 24)
+    // ① 按语义方向放；② 放不下时【翻转】到触发键另一侧；③ 两边都放不下才夹进视口
+    let left: number
+    if (side === 'left') {
+      left = br - w                       // 期望：右边缘对齐图标（向左铺开）
+      if (left < 12) left = bl            // 左侧不够 → 翻到图标右侧（向右铺开）
+    } else {
+      left = bl                           // 期望：左边缘对齐图标（向右铺开）
+      if (left + w > vw - 12) left = br - w   // 右侧不够 → 翻到图标左侧
+    }
+    left = Math.max(12, Math.min(left, vw - w - 12))
     const h = popRef.current?.offsetHeight ?? 180
-    let top = b.bottom + 6
-    if (top + h > window.innerHeight - 12) top = Math.max(12, b.top - h - 6)
+    let top = bb + 6
+    if (top + h > vh - 12) top = Math.max(12, bt - h - 6)
     setPos(prev => (prev && prev.left === left && prev.top === top && prev.w === w ? prev : { left, top, w }))
   }, [width, side])
 
