@@ -22,6 +22,7 @@ type AiFinding = { level: string; title: string; detail: string; where: string }
 import { buildProjectContext, getRecentChapterTexts } from '@/lib/ai/aiContext'
 import { aiForeshadowReview, aiContinuityAudit, aiStyleCheck } from '@/lib/ai/aiTasks'
 import { Button } from '@/components/common/Button'
+import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 
 // ============ 伏笔闭环看板 ============
 export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (tabId: string) => void; onClose: () => void }) {
@@ -115,6 +116,10 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
           </div>
 
           <div className="mt-4 pt-3 border-t border-ink-700">
+            {/* 🆕 3.0.3：临时附加文件 —— 审计时可临时递一份资料（如设定总表）让 AI 一并对照 */}
+            <div className="mb-2">
+              <TempAttachmentPicker />
+            </div>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-12 font-semibold text-ink-200">可定位问题（点击跳转修正）</span>
               <Button onClick={runAiReview}
@@ -209,6 +214,10 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
       </div>
       {loading ? <div className="text-12 text-ink-400 py-8 text-center">逐表对账中…</div> : (
         <>
+          {/* 🆕 3.0.3：临时附加文件 —— 一致性审计时可临时递一份资料让 AI 一并对照 */}
+          <div className="mb-2">
+            <TempAttachmentPicker />
+          </div>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-12 font-semibold text-ink-200">本地确定性冲突</span>
             {trend && <CheckTrendNote trend={trend} />}

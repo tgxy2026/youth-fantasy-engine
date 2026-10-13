@@ -12,6 +12,7 @@ import { useAIReady } from '@/lib/ai/useAIReady'
 import { showToast } from '@/components/dialogs/dialogs'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
+import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import { Button } from '@/components/common/Button'
 
 
@@ -387,6 +388,8 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                 <Button variant="toggle" size="xs" selected={briefMode} onClick={() => setBriefMode(true)} title="只喂「章节压缩摘要」（约原文 1/10）：速度快、省 token，适合快速过方向">简略</Button>
               </div>
             </div>
+            {/* 🆕 3.0.3：临时附加文件 —— 推演时可临时参考作者递进来的一份资料 */}
+            <TempAttachmentPicker />
             <Button variant="primary" disabled={!ai.ready || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
               {generating ? <><Loader2 size={12} className="animate-spin" /> 生成中 {generating.i}/{generating.total}</> : <><Sparkles size={12} /> 生成推演</>}
             </Button>

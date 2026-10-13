@@ -35,6 +35,7 @@ import {
 import { entryStateOf, type EntryState } from '@/lib/tavern/worldBook'
 import EntryStatePicker from '@/components/sheets/EntryStatePicker'
 import { useTavernQuota } from '@/components/tavern/useTavernQuota'
+import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import { fmtWindow } from '@/lib/tavern/quotas'
 import { uid } from '@/lib/app/id'
 import type { DraftSource } from '@/lib/tavern/draft'
@@ -366,6 +367,11 @@ export default function TavernWorld() {
                 <RefsField value={refs} onChange={setRefs} minRows={2} />
               </div>
               <SearchPlanLine settings={search} />
+
+              {/* 🆕 3.0.3：临时附加文件 —— 提炼世界设定时可临时参考作者递进来的一份资料 */}
+              <div className="mt-2">
+                <TempAttachmentPicker />
+              </div>
 
               <Button
                 variant="primary" size="md" className="mt-2 w-full"

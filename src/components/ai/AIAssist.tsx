@@ -9,6 +9,7 @@ import {
 import AutoTextarea from '@/components/common/AutoTextarea'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
+import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import PromptModal from '@/components/dialogs/PromptModal'
 import { confirmDialog, copyText } from '@/components/dialogs/dialogs'
 import {
@@ -332,6 +333,8 @@ style={{ height: foldVh('60vh') }}>
                 ))}
               </div>
             </div>
+            {/* 🆕 3.0.3：临时附加文件 —— 只喂给这一次提问，不落素材资料库 */}
+            <TempAttachmentPicker />
             <div className="flex items-end gap-2">
               <AutoTextarea
                 value={prompt}

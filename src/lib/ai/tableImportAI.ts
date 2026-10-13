@@ -102,6 +102,10 @@ export async function tableImportSplit(
     const built = await buildProjectContext({
       budget: await writerBudgetFor('table-import'),
       excludeTabIds: [tab.id],
+      // 🔴 3.0.3：**显式关掉〖参考资料〗**。本功能是"把原始数据推断成表格字段"的**解析**任务，
+      //    判据只能来自被解析的那份数据本身；带上作者挂载的外部资料，只会让模型拿无关内容
+      //    去猜字段（本项目对"该不该带"的一贯口径：按场景接，不全接）。
+      kb: false,
     })
     ctx = built.text
   }

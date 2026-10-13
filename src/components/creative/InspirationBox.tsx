@@ -22,6 +22,7 @@ import { useAIReady } from '@/lib/ai/useAIReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { showToast } from '@/components/dialogs/dialogs'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
+import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import HelpPopover from '@/components/common/HelpPopover'
 import { Button } from '@/components/common/Button'
 
@@ -150,6 +151,11 @@ export default function InspirationBox() {
           ))}
         </div>
       )}
+
+      {/* 🆕 3.0.3：临时附加文件 —— 融合情节卡时可临时参考作者递进来的一份资料 */}
+      <div className="mt-3">
+        <TempAttachmentPicker />
+      </div>
 
       {/* 融合操作条 */}
       {items.length > 0 && (

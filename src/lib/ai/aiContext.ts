@@ -21,6 +21,8 @@ import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isPar
 import { getActivePack, subItemLabel } from '@/lib/schemaTemplates/index'
 import { buildSemanticRecallBlock } from '@/lib/semantic/inject'
 import { buildKbBlock } from '@/lib/search/kbInject'
+import { getTempDocs, renderTempDocs } from '@/lib/ai/tempDocs'
+import { buildProjectLevelHint } from '@/lib/ai/projectLevelHint'
 import { planFor } from '@/lib/ai/contextLayers'
 import { genreLineForAI } from '@/lib/ai/aiGenreHint'
 import type { Chapter, TabDef, Volume } from '@/lib/types'
@@ -68,6 +70,12 @@ export interface ProjectContextOptions {
   kb?: boolean
   /** 参考资料召回条数上限，默认 4 */
   kbLimit?: number
+  /**
+   * 🆕 3.0.3 · 〖参考资料〗段的总长上限，默认 2400。
+   * 伴写（AI 补全）的总预算只有千余字，必须传更小的值 —— 否则这一段会被预算闸**整段丢掉**，
+   * 变成"接了线却依然读不到"（本轮修的就是这类静默失效）。
+   */
+  kbMaxChars?: number
   /**
    * 是否在正文尾部附一段「（注：以下资料因长度预算未带入…）」。默认 true。
    * 酒馆模式传 false —— 它把 dropped 交给 buildSystemPrompt 生成**独立的**
@@ -912,6 +920,7 @@ export function lastContextAssembly(): AiContextSnapshot | null {
   return lastAssembly
 }
 
+
 export async function buildProjectContext(opts: ProjectContextOptions = {}): Promise<ProjectContextResult> {
   // 3.0 · W1-2 规模门（§10.3 #2）：预算与召回数**按项目体量**取档，不再写死 12000 ——
   //    长篇（百万字）时那点预算只够塞开头几章，模型看到的「前文」永远是第 1 章。
@@ -938,6 +947,12 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   const dropped: string[] = []
   let used = 0
 
+  // 🆕 3.0.3 · 项目级查询文本（书名 + 简介）—— 供**没有焦点章**的调用点
+  //   （AI 助手 / 灵感创作 / AI 伴写…）做〖参考资料〗召回的降级 query。
+  //   理由见 `KbInjectOptions.fallbackQuery`：参考资料是作者**全项目共用**的素材，
+  //   不该因为某个功能没有"当前写到哪"就一段都读不到（本轮修的就是这处漏接）。
+  let projectLevelQuery = ''
+
   const push = (title: string, body: string) => {
     if (!body.trim()) return
     const block = `〖${title}〗\n${body.trim()}`
@@ -948,6 +963,16 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     parts.push(block)
     sections.push(title)
     used += block.length + 2
+  }
+
+  // 🆕 3.0.3 · 本次附加文件（AI 弹窗「附加文件」的一次性资料，不落库、不进索引）。
+  // 🔴 放在**整条序列的最前面**（还在「作品概览」之前）：它是作者**显式**递进来的东西，
+  //    优先级应当高于一切自动装配的资料。实测踩过：若放在各类"召回"之后，只要有设定段
+  //    先占满预算，附件就会把后者**挤出**预算闸（`push` 超限即丢）——而显式给的东西
+  //    被静默丢掉，比参考资料没进来严重得多。
+  //    机制与生命周期纪律见 `lib/ai/tempDocs.ts`（独立模块：aiContext 已贴着 1200 行结构闸）。
+  if (getTempDocs().length > 0 && !opts.skeletonOnly) {
+    push('本次附加文件', renderTempDocs(getTempDocs()))
   }
 
   // 头部：项目基本信息 + 体量统计（几乎不占预算，但对模型判断"写到哪了"很关键）
@@ -974,6 +999,18 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
         .filter(Boolean)
         .join('\n')
       push('作品概览', head)
+      // 🆕 3.0.3 · 给〖参考资料〗当降级 query（没有焦点章时用）。
+      //   🔴 必须带上项目级 hint：只靠「书名 + 简介」命中率很低 —— 关键词降级按字面打分，
+      //      示范项目书名是玄幻爽文、资料讲「艾尔达/符文术」，一个 token 都匹配不上。
+      //      hint 会再拼五个核心设定页的前若干行，那才是「这个项目在写什么」的字面代理。
+      //      实现见 lib/ai/projectLevelHint.ts（含这次实测教训的完整说明）。
+      projectLevelQuery = [
+        proj.name,
+        proj.intro ? clip(proj.intro, 200) : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+        .concat('\n', await buildProjectLevelHint())
     }
   } catch {
     // 拿不到项目信息也照常往下走
@@ -1058,10 +1095,19 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   }
 
   // #017 知识库：作者挂载的外部参考资料，按需召回片段注入。
-  // 🔴 与语义召回同一前置（要有焦点章）—— 没有"当前写到哪"，"按需检索"就无从谈起。
   // 🔴 buildKbBlock 自身永不抛；没有启用的资料时零开销早退（只读一次元数据表，不碰向量库）。
-  if (opts.kb !== false && opts.focusChapterId && !opts.skeletonOnly) {
-    const kbBlock = await buildKbBlock({ focusChapterId: opts.focusChapterId, limit: opts.kbLimit })
+  // 🔴 3.0.3 起**不再要求有焦点章**：没有焦点章时退用 `projectLevelQuery`（书名 + 简介）。
+  //    此前"必须有焦点章"这一条，把 29 个装配点里的 16 个（AI 助手 / 灵感创作 / AI 伴写…）
+  //    挡在门外 —— 作者挂了资料却一段都读不到。那不是设计意图，是漏接。
+  //    ⚠️ 〖语义召回〗仍保持"要有焦点章"：它比的是**章节之间**的相似度，没有"当前写到哪"
+  //    确实无从谈起（与参考资料"全项目共用素材"的定位不同，两者不可一并放宽）。
+  if (opts.kb !== false && !opts.skeletonOnly) {
+    const kbBlock = await buildKbBlock({
+      focusChapterId: opts.focusChapterId,
+      fallbackQuery: projectLevelQuery,
+      limit: opts.kbLimit,
+      maxChars: opts.kbMaxChars,
+    })
     if (kbBlock) push('参考资料', kbBlock)
   }
 
@@ -1091,12 +1137,35 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
  *   作品信息（是不是这本书）/ 世界设定 / 主要角色（身份称谓别写错）/ 名词术语（专名别漂移）。
  *   《写作规范》由调用方单独摘取（只取 3 个字段，比整表带过来更省更准），故不在此重复。
  */
-export async function buildInlineBriefing(budget = 900): Promise<string> {
+/**
+ * AI 伴写（inline ghost）的设定简报。
+ *
+ * 🔴 预算 900 → **1300**（3.0.3）：原先 900 只够装 4 个设定页，而本轮要给伴写接上〖参考资料〗
+ *    （作者挂载的素材）—— 400 字上限 + 段头在 900 里根本挤不下，会被预算闸**整段丢掉**
+ *    （就是"接了线却读不到"）。多出的 400 字对伴写影响很小：它只输出 40~110 token，
+ *    且上下文有 `ghostCtxCache` 缓存、并非每句话都重新装配。
+ *    ⚠️ **别顺手把预算开大"多带点东西"** —— 当初从 2000 降到 900，正是因为章节目录吃光预算、
+ *    真正该给的设定反而挤不进来（见 `useNovelEditorGhost.ts` 的注释）。
+ *
+ * 🔴 传 `focusChapterId` 是**为了让〖参考资料〗用"当前章正文"做召回 query**（比书名准得多）。
+ *    但必须同时关掉两段随焦点章而来的召回，否则会把预算吃光：
+ *    · `relatedChapterLimit: 0` ⇒ 〖相关章节召回〗不产出（伴写已有光标前正文，不需要它）；
+ *    · `semantic: false`        ⇒ 〖语义召回〗不发请求（同理由，且它是全书片段、更贵）。
+ */
+export async function buildInlineBriefing(
+  opts: { budget?: number; focusChapterId?: string } = {},
+): Promise<string> {
   try {
     const r = await buildProjectContext({
-      budget,
+      budget: opts.budget ?? 1300,
       onlyTabIds: ['positioning', 'worldbase', 'char-main', 'terms'],
       includeChapterList: false,
+      focusChapterId: opts.focusChapterId,
+      relatedChapterLimit: 0,
+      semantic: false,
+      // 伴写是"最轻的一档"：参考资料只取 1 条、段长限 400，别把设定挤出去
+      kbLimit: 1,
+      kbMaxChars: 400,
     })
     return r.text
   } catch {

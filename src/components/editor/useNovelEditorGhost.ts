@@ -154,10 +154,13 @@ export function useNovelEditorGhost({
     let projectContext = ''
     try {
       // 2.2.0：换成伴写专用切片 —— 关掉「章节清单（目录）」与"相关章节召回"，
-      // 只带 作品信息/世界设定/主要角色/名词术语，预算 900。
+      // 只带 作品信息/世界设定/主要角色/名词术语。
       // 原先用 buildProjectContext({budget:2000}) 时，章节目录会吃掉大半预算，
       // 而伴写已经有光标前正文了、根本不需要目录，真正该给的设定反而挤不进来。
-      projectContext = await buildInlineBriefing()
+      // 3.0.3：预算 900 → 1300，并把**当前章 id** 交给它 —— 好让〖参考资料〗（作者挂载的素材）
+      //   用"这一章的正文"做召回 query，而不是退到"书名 + 简介"那一档。
+      //   随焦点章而来的两段召回（相关章节 / 语义）已在 buildInlineBriefing 内关掉，不会吃预算。
+      projectContext = await buildInlineBriefing({ focusChapterId: chapterId })
     } catch { /* 没有设定摘要时退化为纯前文续写 */ }
     const next = { chapterId, projectContext, styleSpec, styleSpecOn: companionStyleSpec }
     ghostCtxCache.current = next

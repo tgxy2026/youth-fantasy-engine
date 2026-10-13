@@ -154,6 +154,9 @@ export async function organizeRows(tab: TabDef, o: OrganizeRunOptions): Promise<
       budget: await writerBudgetFor('organize-rows'),
       excludeTabIds: isVolumeLedgerTab(tab.id) ? [tab.id, 'chapter-master'] : [tab.id],
       includeChapterList: !!o.includeChapterList,
+      // 🔴 3.0.3：**显式关掉〖参考资料〗**。同 `tableImportAI` —— 整理已有行是**结构化改写**
+      //    任务，判据只在被整理的那张表里；外部资料只会引入无关干扰。
+      kb: false,
     })
     ctx = built.text
   }

@@ -25,6 +25,7 @@ import {
 import { showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { Modal } from '@/components/dialogs/Modal'
+import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 
 export default function InterviewChat({
   subject, spec, existing, context, callChat, onClose, onApply, applyLabel = '生成草稿并填入', headerSlot,
@@ -141,6 +142,11 @@ export default function InterviewChat({
           {err && (
             <p className="mt-1.5 text-11 leading-relaxed text-amber">⚠️ {err}</p>
           )}
+
+          {/* 🆕 3.0.3：临时附加文件 —— 对话式规划最需要"让 AI 先看看我这份资料" */}
+          <div className="mt-2">
+            <TempAttachmentPicker />
+          </div>
 
           <div className="mt-2 flex items-end gap-2">
             <textarea
