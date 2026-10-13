@@ -44,8 +44,13 @@ export function PortableDataBar() {
     setBusy('export')
     try {
       const r = await exportPortableData()
-      if (r.ok) showToast(`已导出全部数据（浏览器下载）：\n${r.fileName ?? ''}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。`, 'success', 6000)
-      else showToast(r.error || '导出失败', 'error')
+      if (r.ok) {
+        // 🔴 2026-10-13：导出的副本**不含** AI 密钥 / 检索密钥（与桌面版 exportDesktopData 同口径）
+        const tip = r.strippedSecrets?.length
+          ? `\n\n（为防密钥外泄，已剔除 ${r.strippedSecrets.length} 项本机密钥设置；换电脑后需重填一次模型配置）`
+          : ''
+        showToast(`已导出全部数据（浏览器下载）：\n${r.fileName ?? ''}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。${tip}`, 'success', 6000)
+      } else showToast(r.error || '导出失败', 'error')
     } finally {
       setBusy(null)
     }

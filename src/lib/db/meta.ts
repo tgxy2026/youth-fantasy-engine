@@ -58,3 +58,16 @@ export async function getSettingFor<T>(pid: string, key: string, def: T): Promis
 export async function setSettingFor(pid: string, key: string, value: unknown) {
   await ops.put('settingsKV', { key: `${pid}::${key}`, value })
 }
+
+/**
+ * 删除**当前项目**的一条设置（键不存在也算成功 —— 幂等）。
+ *
+ * 🔴 为什么必须补这个口子（2026-10-13）：此前只有 get / set，没有 del ⇒
+ *    「把旧键迁移到新位置」这类动作只能**覆盖成空值**、删不掉。而残留的空壳键
+ *    仍会被 `exportProject()` 按 `<项目id>::` 前缀收进 bundle —— 旧版把 AI 配置
+ *    存在项目级时，那个键带着 apiKey 明文，于是备份文件 / 迁移包把密钥一起带出门。
+ *    要真正堵住，迁移完必须**能删**。
+ */
+export async function delSetting(key: string): Promise<void> {
+  await ops.del('settingsKV', `${currentProjectId}::${key}`)
+}

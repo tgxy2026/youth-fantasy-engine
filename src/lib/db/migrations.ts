@@ -11,6 +11,8 @@ import { getAllVolumes, VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
 import { getAllChapters } from '@/lib/db/chapters'
 import { getTableRows, saveTableRow } from '@/lib/db/tabs'
 import { getSetting } from '@/lib/db/meta'
+// 旧项目级 AI 配置键名（叶子模块，与云同步 / 导出路径共用同一份定义）
+import { LEGACY_PROJECT_AI_KEYS } from '@/lib/storage/sensitiveMeta'
 
 /**
  * 旧版「单张章节总表 + 所属卷自引用」迁移到「按卷建表」。
@@ -218,6 +220,8 @@ export async function runMigrations(): Promise<void> {
   await migrateBackupPayloads()
   // 老库里的检索密钥残留：同样与「当前项目」无关，故也在守卫之前
   await migrateLegacySearchKey()
+  // 旧项目级 AI 配置残留（含 apiKey 明文，会随备份文件出门）：同样是跨项目的全表清理
+  await migrateLegacyProjectAiKeys()
   if (!currentProjectId) return
   await migrateProjectTypes()
   await migrateChapterLedger()
@@ -290,6 +294,49 @@ export async function migrateLegacySearchKey(): Promise<number> {
   const { search: _drop, ...rest } = v
   await ops.put('meta', { key: 'tavern.settings', value: rest })
   return 1
+}
+
+/**
+ * 清掉**项目级**的旧 AI 配置残留（2026-10-13 · 社区反馈）。
+ *
+ * 【病根】1.5.0 之前模型配置是**按项目**存在 `settingsKV` 里的（键名 `aiProviders` /
+ *    `aiActiveProviderId`，与全局 meta 同名）。搬到全局之后，`aiCore/session.ts` 的
+ *    `ensureMigrated()` 只做「合并到全局」，**不删原键** ⇒ 老项目里一直留着第二份，
+ *    而那份的 `aiProviders` 带着 **apiKey 明文**。
+ *    紧接着 `exportProject()` 按 `<项目id>::` 前缀**全收** `bundle.settings` ⇒
+ *    备份文件 / 迁移包 / 定稿快照把密钥一起带出门 —— 而备份文件本就是给作者外传的。
+ *
+ * 【为什么能放心删】`ensureMigrated()` 一旦写下迁移标记，这两个键就是死数据：
+ *    `loadProviders()` / `loadActiveId()` 只读全局 meta，没有任何读取路径会碰它们。
+ *    ⚠️ 但**迁移标记键本身不能删**（见 `LEGACY_PROJECT_AI_KEYS` 的说明）——故此处按
+ *    精确键名匹配，而不是拿 `isSensitiveMetaKey` 一把扫。
+ *
+ * 【为什么单独立一个迁移】`ensureMigrated()` 对**已迁移过的库**会短路（读标记直接返回），
+ *    所以「迁移时顺手删」治不了存量 —— 本机就是这种情况（标记早已为 true、旧键还在）。
+ *    这里扫全表，与「当前打开哪个项目」无关，故挂在 `runMigrations()` 的守卫**之前**。
+ *
+ * 幂等：键不存在即跳过；可反复跑。
+ * @returns 删掉的记录条数
+ */
+export async function migrateLegacyProjectAiKeys(): Promise<number> {
+  let all: { key?: unknown }[]
+  try {
+    all = await ops.getAll<{ key?: unknown }>('settingsKV')
+  } catch (e) {
+    // 读失败不能当成「没有残留」—— 但也不能挡住启动：留痕后按 0 返回，下次再清
+    console.warn('[migrations] 清理旧项目级 AI 配置时读 settingsKV 失败，本次跳过：', e)
+    return 0
+  }
+  let removed = 0
+  for (const rec of all) {
+    const key = String(rec?.key ?? '')
+    const i = key.indexOf('::')
+    if (i <= 0) continue // 无项目前缀（全局键）或前缀为空 ⇒ 不是目标
+    if (!LEGACY_PROJECT_AI_KEYS.includes(key.slice(i + 2))) continue
+    await ops.del('settingsKV', key)
+    removed++
+  }
+  return removed
 }
 
 /**

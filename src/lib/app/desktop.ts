@@ -12,6 +12,8 @@ import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
 import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 import { markDeleted, clearDeleted, resetTombs } from '@/lib/sync/syncTombstone'
+// 导出数据文件前剥敏感 meta（AI 密钥 / 检索密钥）—— 叶子模块，不会与 sync 层成环
+import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
 export interface ElectronStoreAPI {
@@ -650,8 +652,20 @@ export function flushDesktopSync(): void {
   }
 }
 
-/** 导出全部数据为便携版数据文件（保存到 U 盘等任意位置，便携版可直接打开使用） */
-export async function exportDesktopData(): Promise<{ ok: boolean; path?: string; cancelled?: boolean; error?: string }> {
+/**
+ * 导出全部数据为便携版数据文件（保存到 U 盘等任意位置，便携版可直接打开使用）。
+ *
+ * 🔴 2026-10-13：导出的副本**不含** AI 密钥 / 检索密钥（`strippedSecrets` 是剥掉的键名，
+ *    供 UI 如实告知）。换机导入后需要重填一次模型配置 —— 这是刻意的安全取舍。
+ */
+export async function exportDesktopData(): Promise<{
+  ok: boolean
+  path?: string
+  cancelled?: boolean
+  error?: string
+  /** 被剥掉的敏感 meta 键名（空数组 = 本机没有需要剥的） */
+  strippedSecrets?: string[]
+}> {
   if (!DESKTOP || !inited) return { ok: false, error: '当前版本不支持导出数据文件（仅桌面版可用）' }
   // 🔴 锁写盘期间内存里是空库/残缺数据 —— 导出会造出一个**看起来正常**的空备份，
   //    用户拿它当保险反而把真数据的位置占了（提示语说好了「原文件不会被改动」）。
@@ -667,13 +681,19 @@ export async function exportDesktopData(): Promise<{ ok: boolean; path?: string;
   //    导出是纯读操作，改了它，导出的文件会声称"保存于此刻"，而磁盘上并没有这一刻的写入
   //    ⇒ 作者据此以为「已经存好了」，实际那份数据只在导出位置。
   const inline = await collectSidecarForExport(desktopStore, DESKTOP_SIDECAR)
-  const snapshot = { ...data, savedAt: Date.now(), stores: { ...data.stores, ...inline } }
+  // 🔴🔴 2026-10-13（社区反馈）：导出前**剥掉敏感 meta**（AI 密钥 / 检索密钥）。
+  //    这份副本被文案引导为「留档 / 搬机」，作者会把它丢进云盘、发给别人 ——
+  //    而它原本是整库原样倒出，`meta.aiProviders` 里的 apiKey 明文一起走。
+  //    换机代价：AI 模型配置需要重填一次（与云同步同一取舍：密钥不离开本机）。
+  //    ⚠️ stripSensitiveMeta **返回新对象**，不会动内存里的 data —— 见该函数注释。
+  const { stores, removed } = stripSensitiveMeta({ ...data.stores, ...inline })
+  const snapshot = { ...data, savedAt: Date.now(), stores }
   try {
     const p = await api().exportFile(JSON.stringify(snapshot))
     // 🔴 2026-10-07 六维审计 P2：取消与失败**必须分开返回** —— 混成一个 null 会让
     //    「用户点了取消」和「真的出错了」在界面上长得一模一样（口径与 exportPdfDocument 对齐）。
     if (!p) return { ok: false, cancelled: true }
-    return { ok: true, path: p }
+    return { ok: true, path: p, strippedSecrets: removed }
   } catch (e) {
     const msg = '导出失败：' + (e instanceof Error ? e.message : String(e))
     lastError = msg

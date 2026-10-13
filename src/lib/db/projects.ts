@@ -17,6 +17,8 @@ import { clearProjectVectors } from '@/lib/semantic/store'
 import {
   clearProjectDocs, collectDocsForBundle, restoreDocsFromBundle, type KbBundleDoc,
 } from '@/lib/search/knowledgeBase'
+// 导出项目包时剔除敏感设置（密钥不进备份）—— 叶子模块，不会与 sync 层成环
+import { isSensitiveSettingKey } from '@/lib/storage/sensitiveMeta'
 
 // ============ 项目 ============
 // 旧版项目形态 'lite'(精简) / 'minimal'(极简) 已移除；把存储中残留的旧值归一化为 'full'
@@ -302,9 +304,16 @@ export async function exportProject(
     tableRows: tableRows.filter(r => r.projectId === id),
     cardRecords: cardRecords.filter(r => r.projectId === id),
     dailyStats: dailyStats.filter(s => s.projectId === id),
+    // 🔴 2026-10-13（社区反馈）双保险：项目级设置里**任何**敏感键都不进包。
+    //    主防线是「迁移时删掉旧的项目级 AI 配置」（`aiCore/session.ts` +
+    //    `db/migrations.ts` 的 migrateLegacyProjectAiKeys），但那两道都依赖
+    //    「迁移真的跑过」；这里按前缀全收的写法一旦遇上漏网残留（新装旧库、
+    //    迁移中断、将来又有人在项目级存密钥），备份文件就会带明文密钥出门。
+    //    ⇒ 出口处再挡一道：宁可少带一项设置，也不能漏一枚密钥。
     settings: settingsKV
       .filter(s => s.key.startsWith(prefix))
-      .map(s => ({ key: s.key.slice(prefix.length), value: s.value })),
+      .map(s => ({ key: s.key.slice(prefix.length), value: s.value }))
+      .filter(s => !isSensitiveSettingKey(s.key, s.value)),
     customOptions: settingsKV
       .filter(s => s.key.startsWith(customOptPrefix))
       .map(s => ({ key: s.key.slice(customOptPrefix.length), value: s.value })),

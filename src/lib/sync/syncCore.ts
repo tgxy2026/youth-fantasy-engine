@@ -19,6 +19,8 @@ import { isDeleted, markDeleted, clearDeleted, resetTombs } from '@/lib/sync/syn
 // 🔴 WebCrypto 取用器放在**叶子模块**：syncTransport 也要用它，而从 syncCore 导出会让
 //    syncTransport → syncCore 与本文件的 syncCore → syncTransport 凑成环（importCycles 会报红）。
 import { webcrypto, hasWebCrypto } from '@/lib/storage/webcrypto'
+// 敏感 meta 键清单（叶子模块）—— 云同步 / 数据文件导出 / 项目包导出三处共用一份判据
+import { SENSITIVE_META_KEYS } from '@/lib/storage/sensitiveMeta'
 
 // 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
 // ⚠️ 注意 'backups' / 'backupPayloads' 是**本地专属**（详见下方 LOCAL_ONLY_STORES）。
@@ -58,10 +60,12 @@ export function isLocalOnlyStore(store: string): boolean {
 //    （SearchSettingsPanel 密钥栏 hint）。但同步是**整条 key-value** 写出，没法只排除某个字段，
 //    原来的排除表只挡了 AI 那三个键 ⇒ 开启云盘同步后检索密钥会随 `.yfe` 文件落到网盘。
 //    与 `aiProviders` 完全同构：整条本地专属，换设备需要重填一次（安全上这是正确取舍）。
-export const EXCLUDED_META_KEYS = new Set<string>([
-  'aiProviders', 'aiActiveProviderId', 'aiConfigMigratedToGlobal',
-  'app.search',
-])
+//
+// 🔴 2026-10-13：清单**真源已下沉**到叶子模块 `lib/storage/sensitiveMeta.ts`。
+//    原因：除云同步外，「导出数据文件」与「导出项目包」也要用同一份判据，而它们分属
+//    storage / app / db 三层 —— 从本文件导出会让那几处反向依赖 sync 层，凑成 import 环
+//    （tests/importCycles 会报红）。此处保留 re-export 只为不打断既有引用点。
+export const EXCLUDED_META_KEYS = new Set<string>(SENSITIVE_META_KEYS)
 
 export const CONFLICT_KEY_PREFIX = 'syncConflict:'
 

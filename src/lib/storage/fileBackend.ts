@@ -21,6 +21,8 @@ import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
 import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
 import { PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
+// 导出数据文件前剥敏感 meta（AI 密钥 / 检索密钥）—— 与桌面版 exportDesktopData 同口径
+import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
 
 /** 服务注入到 window 的便携标记（见 portable-server.mjs 的注入注释） */
 declare global {
@@ -520,10 +522,14 @@ export async function portableDataJSON(): Promise<string> {
   // 🔴 外置数据必须**内联回来**：否则导出的文件会静默丢掉全部备份载荷
   //    （列表还在、看起来正常，等要恢复时才说"载荷缺失"—— 最危险的失败形态）
   const inline = await collectSidecarForExport(portableStore, PORTABLE_SIDECAR)
+  // 🔴 2026-10-13（社区反馈）：导出前剥掉敏感 meta（AI 密钥 / 检索密钥）——
+  //    这份 JSON 就是给作者拷走 / 丢云盘的，与桌面版 exportDesktopData 同一取舍。
+  //    ⚠️ stripSensitiveMeta 返回**新对象**，不会动内存里的 data。
+  const { stores } = stripSensitiveMeta({ ...data.stores, ...inline })
   return JSON.stringify({
     ...data,
     savedAt: Date.now(),
-    stores: { ...data.stores, ...inline },
+    stores,
   })
 }
 
@@ -552,7 +558,13 @@ export function portableDataPath(): string {
  * 🔴 锁写盘期间不导出：内存里是空库/残缺数据，导出的会是**看起来正常**的空备份，
  *    用户拿它当保险反而把真数据的位置占了（与 `exportDesktopData` 同口径）。
  */
-export async function exportPortableData(): Promise<{ ok: boolean; fileName?: string; error?: string }> {
+export async function exportPortableData(): Promise<{
+  ok: boolean
+  fileName?: string
+  error?: string
+  /** 被剥掉的敏感 meta 键名（供 UI 如实告知作者）；空数组 = 本机没有需要剥的 */
+  strippedSecrets?: string[]
+}> {
   if (!PORTABLE) return { ok: false, error: '当前版本不支持导出数据文件（仅便携版可用）' }
   if (writeLocked) {
     const msg = '数据文件读取失败期间不导出（内存里是空库/残缺数据）：请先按顶部红条提示备份原文件，或解除锁定后再导出'
@@ -576,7 +588,10 @@ export async function exportPortableData(): Promise<{ ok: boolean; fileName?: st
     a.remove()
     // 稍后回收（立即 revoke 在部分浏览器会中断下载）
     setTimeout(() => URL.revokeObjectURL(url), 10_000)
-    return { ok: true, fileName }
+    // 剥了哪些键：只读 `data.stores`（敏感 meta 全在这里，与 portableDataJSON 的剥离同源），
+    // 不重复读外置载荷 —— 只为给界面一句如实提示，不值当再跑一次全量收集。
+    const { removed } = stripSensitiveMeta(data.stores)
+    return { ok: true, fileName, strippedSecrets: removed }
   } catch (e) {
     const msg = '导出失败：' + (e instanceof Error ? e.message : String(e))
     lastError = msg

@@ -29,23 +29,47 @@ async function ensureMigrated(): Promise<void> {
   if (migratedFor === pid) return
   migratedFor = pid
   try {
-    if (await db.getSetting<boolean>(K_MIGRATED, false)) return
-    const legacy = await db.getSetting<AIProvider[]>(K_PROVIDERS, [])
-    if (legacy.length > 0) {
-      const cur = await db.getMeta<AIProvider[]>(K_PROVIDERS, [])
-      const merged = [...cur]
-      for (const p of legacy) if (!merged.some(x => x.id === p.id)) merged.push(p)
-      await db.setMeta(K_PROVIDERS, merged)
-      if (!(await db.getMeta<string | null>(K_ACTIVE, null))) {
-        const la = await db.getSetting<string | null>(K_ACTIVE, null)
-        if (la) await db.setMeta(K_ACTIVE, la)
+    // 🔴 2026-10-13：原先这里 `if (K_MIGRATED) return` 直接短路 —— 于是**早已迁移过的库**
+    //    永远不会走到下面的清理，项目级旧键（含 apiKey 明文）一直留着。现在改成
+    //    「没迁移过才做合并，但无论如何都清一遍旧键」。
+    if (!(await db.getSetting<boolean>(K_MIGRATED, false))) {
+      const legacy = await db.getSetting<AIProvider[]>(K_PROVIDERS, [])
+      if (legacy.length > 0) {
+        const cur = await db.getMeta<AIProvider[]>(K_PROVIDERS, [])
+        const merged = [...cur]
+        for (const p of legacy) if (!merged.some(x => x.id === p.id)) merged.push(p)
+        await db.setMeta(K_PROVIDERS, merged)
+        if (!(await db.getMeta<string | null>(K_ACTIVE, null))) {
+          const la = await db.getSetting<string | null>(K_ACTIVE, null)
+          if (la) await db.setMeta(K_ACTIVE, la)
+        }
       }
+      await db.setSetting(K_MIGRATED, true)
     }
-    await db.setSetting(K_MIGRATED, true)
+    // 合并已落库（或早已落库）⇒ 项目级旧键是死数据，清掉以防它随备份出门
+    await purgeLegacyProjectAiKeys()
   } catch {
     // 迁移失败不影响主流程：最坏情况就是作者重新添加一次模型
     migratedFor = null
   }
+}
+
+/**
+ * 清掉**项目级**的旧 AI 配置键（1.5.0 之前模型配置按项目存，键名与全局的相同）。
+ *
+ * 🔴 为什么必须清（2026-10-13 · 社区反馈）：`exportProject()` 按 `<项目id>::` 前缀收集
+ *    `bundle.settings` ⇒ 残留的项目级 `aiProviders` 带着 **apiKey 明文**进入备份文件 /
+ *    迁移包 / 定稿快照，作者把文件一外传（备份本就是要外传的），密钥就跟着走了。
+ *
+ * 🔴 为什么删了不会丢配置：`K_MIGRATED` 一旦写下，这两个键就是**死数据** ——
+ *    `loadProviders()` / `loadActiveId()` 都只读**全局 meta**，没有任何读取路径会碰项目级。
+ *    （本函数是项目级键的最后一个读者，读的就是「迁移前」那一份。）
+ *
+ * 幂等：键不存在时删除是空操作，可反复跑。
+ */
+async function purgeLegacyProjectAiKeys(): Promise<void> {
+  await db.delSetting(K_PROVIDERS)
+  await db.delSetting(K_ACTIVE)
 }
 
 // ---- 「请求超时」（全局设置 · 2.9.0）----

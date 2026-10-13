@@ -51,8 +51,14 @@ export function DesktopDataBar() {
     setBusy('export')
     try {
       const r = await exportDesktopData()
-      if (r.ok && r.path) showToast(`已导出全部数据到：\n${r.path}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。`, 'success', 6000)
-      else if (!r.cancelled) showToast(r.error || '导出失败', 'error')
+      if (r.ok && r.path) {
+        // 🔴 2026-10-13：导出的副本**不含** AI 密钥 / 检索密钥（换了文案如实告知）——
+        //    它会被作者丢云盘 / 发给别人，原先整库原样倒出等于把 apiKey 一起送出去。
+        const tip = r.strippedSecrets?.length
+          ? `\n\n（为防密钥外泄，已剔除 ${r.strippedSecrets.length} 项本机密钥设置；换电脑后需重填一次模型配置）`
+          : ''
+        showToast(`已导出全部数据到：\n${r.path}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。${tip}`, 'success', 6000)
+      } else if (!r.cancelled) showToast(r.error || '导出失败', 'error')
     } catch (e) {
       showToast('导出失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
@@ -196,7 +202,11 @@ export function DesktopDataBar() {
       <div className="flex items-center gap-1.5">
         <Button variant="bare"
           onClick={() => void revealDesktopDataFile()}
-          title={state.dataPath ? `数据文件：${state.dataPath}\n点击在资源管理器中打开该文件夹` : '点击打开数据文件夹'}
+          title={state.dataPath
+            // 🔴 2026-10-13：这条路径是「手动复制数据文件当备份」的入口 —— 该文件是**明文**整库
+            //    （含 AI 密钥），必须就地提醒，否则用户拷走它等于把密钥一起备份出去。
+            ? `数据文件：${state.dataPath}\n点击在资源管理器中打开该文件夹\n\n⚠️ 该文件是明文整库（含 AI 密钥等本机设置），请勿直接当备份外传。要留档请用「导出数据文件」——它会剔除密钥。`
+            : '点击打开数据文件夹'}
           className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-full border border-ink-700 bg-ink-800/60 px-2.5 text-11 text-ink-400 transition-colors hover:border-amber/50 hover:text-ink-200"
         >
           <FolderOpen size={11} className="shrink-0" />
