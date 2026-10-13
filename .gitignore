@@ -36,6 +36,8 @@ Desktop.ini
 .workbuddy/tmp-*/
 #   审计报告草稿与 HTML（过程产物，非产品源码）
 .workbuddy/audit-*/
+#   便携版免安装改造的过程产物：方案评估 / 实施记录 / 构建原型与验证脚本
+.workbuddy/portable-sea/
 
 # 🔴 便携版运行时数据目录 —— 里面是作者的全部稿件，绝不进版本库。
 #    在源码根目录跑 `npm run start:portable` 会生成 ./data/（含整库 JSON 与 .port 锁）；
