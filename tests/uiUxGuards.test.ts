@@ -323,6 +323,16 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   const bad = 'const left = b.right - w; setPos({ left, top, w })'
   ok('  · 守卫自检：直接写 rect 值（未折算）确实被判定为坏形态',
     !/window\.innerWidth\s*\/\s*z/.test(bad) && /b\.right\s*-\s*w/.test(bad))
+
+  // 🔴🔴 2026-10-13 六维审计补修：同一个根因**还漏了一处** —— 下拉浮层的公共定位函数。
+  //    5 个下拉（CalendarSelect / CalendarPicker / CharacterSelect / CustomSelect / TableRefSelect）
+  //    全部走 `computeDropdownPos`，而它原先一处折算都没有，注释还写着"缩放下依然正确"。
+  //    ⇒ 宽屏（autoZoom 108%）下这些下拉同样整体右移 ~8%。这条守卫防它再退化。
+  const dp = read('src/lib/app/dropdownPos.ts')
+  ok('🔴 computeDropdownPos 必须折算界面缩放（foldPx + currentUiZoom）',
+    /foldPx\(/.test(dp) && /currentUiZoom\(\)/.test(dp))
+  ok('  · 守卫自检：不折算的旧写法会被判定为坏形态',
+    !/foldPx\(/.test('const left0 = r.left\nconst top0 = r.top'))
 }
 
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)

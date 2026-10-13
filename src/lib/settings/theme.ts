@@ -240,10 +240,14 @@ export function foldVh(v?: string): string | undefined {
  *
  * 用法：`setPos({ left: foldPx(b.right - w), top: foldPx(b.bottom + 6), w: foldPx(w) })`，
  * 且**比较时也要用同一口径**（左右都 foldPx 后再比，别拿折叠值与原始值混算）。
+ *
+ * @param zoom 可选：**一次定位里要折多个值**时，先 `currentUiZoom()` 读一次再逐个传入 ——
+ *   避免每个值都跑一次 `getComputedStyle`（那是一次样式解析，批量折算时不值当）。
+ *   不传则自己读（单值场景更省事）。
  */
-export function foldPx(px: number): number {
+export function foldPx(px: number, zoom?: number): number {
   if (typeof document === 'undefined') return px
-  const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom'))
+  const z = zoom ?? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom'))
   return Number.isFinite(z) && z > 0 ? px / z : px
 }
 
