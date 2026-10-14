@@ -41,23 +41,15 @@ import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 
-// 【路径解析 · 双模式兼容】
-//   普通模式：`node scripts/portable-server.mjs` —— 用 `import.meta.url` 定位脚本所在目录。
-//   SEA 单文件模式：本脚本被 esbuild 打成 CJS 内嵌进 exe（Node SEA，见
-//     `scripts/build-portable-server.mjs`），此时 `import.meta.url` 为空
-//     （esbuild 在 CJS 输出下会把它替换掉）⇒ `fileURLToPath` 抛错，故退回
-//     `process.execPath`：在 SEA 里它就是 **exe 自身路径**，正是我们要的应用目录。
-//   🔴 这一步是「免安装便携版」的地基：作者双击 exe 即用，本机无需装 Node。
-let __here
-try {
-  __here = path.dirname(fileURLToPath(import.meta.url))
-} catch {
-  __here = path.dirname(process.execPath)
-}
+// 【路径解析】直接用 import.meta.url 定位本脚本所在目录。
+//   （2026-10-14：Node SEA 单文件 exe 方案已放弃 —— 原因见 memory/2026-10-14.md。
+//     若将来恢复，把下面这行改回 try/catch + process.execPath 兜底即可；
+//     三条踩坑实测结论见 `.workbuddy/portable-sea/2026-10-13-便携版免安装改造-实施记录.md`（历史记录）。
+let __here = path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * 默认应用根目录：优先取「自身或上一级含 `dist/index.html`」的那一层 ——
- * 脚本布局（`scripts/` 的上一级）与 SEA 布局（exe 与 `dist/` 同级）都能自动认出来。
+ * 本脚本在 `scripts/` 下，应用根是它的上一级；直接放在应用根旁也能认出来。
  * 🔴 只在**没传 `--root`** 时生效；启动脚本/快捷方式传了参数就以参数为准。
  */
 function defaultRoot() {
