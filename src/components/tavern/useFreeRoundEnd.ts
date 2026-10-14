@@ -24,7 +24,7 @@ import * as store from '@/lib/tavern/store'
 //    判定（见 aiTaskCenter 的 startTask catch），notify 收到的 status 已经是 aborted/failed。
 import { unloadOllamaModel } from '@/lib/ai'
 import { resolveTavernProvider } from '@/lib/tavern/provider'
-import { nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, releaseSummaryLock } from '@/lib/tavern/memory'
+import { nextWatermark, watermarkAfterRoundEnd, acquireSummaryLock, assertSummaryLock, releaseSummaryLock } from '@/lib/tavern/memory'
 import { primaryAiCharId } from '@/lib/tavern/primaryChar'
 import { DEFAULT_TAVERN_SETTINGS, memoryLimitsOf, type TavernSettings } from '@/lib/tavern/settings'
 import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult } from '@/lib/tavern/roundEnd'
@@ -159,7 +159,8 @@ export function useFreeRoundEnd({
     //    （TavernPlot 的 runPlotSummary 本来就是正确写法，这里对齐。）
     //    ⚠️ W2-5a 后取不到锁改为 **throw**（任务中心如实记 failed 并弹提示）——
     //    原先只 toast 一句，作者切走就再也看不到。
-    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) throw new Error('另一个窗口正在收尾')
+    const lockToken = acquireSummaryLock(Date.now(), lim.lockTtlMs)
+    if (!lockToken) throw new Error('另一个窗口正在收尾')
     try {
       const res = await runRoundEnd({
         session: s,
@@ -175,6 +176,7 @@ export function useFreeRoundEnd({
         nameOf: (id?: string) => nameOf(id ?? ''),
         onProgress: ctx.progress,
         signal: ctx.signal,
+        assertLock: () => assertSummaryLock(lockToken),
       })
 
       // 水位线推进到最后一条 + 写回数值 + 打上归档戳
@@ -186,6 +188,7 @@ export function useFreeRoundEnd({
         endedAt: res.endedAt,
         updatedAt: Date.now(),
       }
+      assertSummaryLock(lockToken)
       await store.saveFreeSession(updated)
       setSession(cur => (cur && cur.id === updated.id ? updated : cur))
       setMems(prev => ({ ...prev, ...Object.fromEntries(res.memories.map(m => [m.charId, m])) }))
@@ -220,7 +223,7 @@ export function useFreeRoundEnd({
       return res
     } finally {
       // 🔴 释放排在 fn 自己的 finally（`startTask` 不提供用户钩子）；与取锁同处一个 fn，配对可靠。
-      releaseSummaryLock()
+      releaseSummaryLock(lockToken)
     }
     }, (
       // 🔴 `useTaskRunner.run` 的第二个参数**就是 notify 函数本身**（不是 `{ notify }`）。

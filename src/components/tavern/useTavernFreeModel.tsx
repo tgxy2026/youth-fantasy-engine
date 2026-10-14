@@ -53,7 +53,7 @@ import { varsEnabledKeys } from '@/lib/tavern/engine'
 import type { PostApplied } from '@/lib/tavern/postRules'
 import { advanceDaily, shouldAdvanceDaily } from '@/lib/tavern/daily'
 import { uid } from '@/lib/app/id'
-import { acquireSummaryLock, releaseSummaryLock } from '@/lib/tavern/memory'
+import { acquireSummaryLock, assertSummaryLock, releaseSummaryLock } from '@/lib/tavern/memory'
 import {
   type FreeCharacter, type FreeMemory, type FreeSession, type TavernMessage, type TavernDirectorNote,
   type FreeSessionIndexItem, type TavernCharIndexItem, type DailyState,
@@ -255,7 +255,8 @@ export function useTavernFreeModel() {
   const advanceIfNeeded = useCallback(async (card: FreeCharacter, cur?: DailyState | null) => {
     const d = cur ?? (await store.getDaily(card.id).catch(() => null))
     if (!shouldAdvanceDaily(d, Date.now(), lim.dailyAdvanceMs)) return
-    if (!acquireSummaryLock(Date.now(), lim.lockTtlMs)) return // 与总结共用一把锁，避免两个窗口同时写
+    const lockToken = acquireSummaryLock(Date.now(), lim.lockTtlMs)
+    if (!lockToken) return // 与总结共用一把锁，避免两个窗口同时写
     try {
       const mem = await store.getMemory(card.id).catch(() => null)
       const res = await advanceDaily({
@@ -265,17 +266,20 @@ export function useTavernFreeModel() {
         providerId: summaryProviderId || undefined,
         logKeep: lim.dailyLogKeep,
       })
+      assertSummaryLock(lockToken)
       await store.saveDaily(res.state)
       setDaily(res.state)
       if (res.greeting) {
+        assertSummaryLock(lockToken)
         await store.setGreeting(card.id, res.greeting)
+        assertSummaryLock(lockToken)
         const g = await store.takeGreeting(card.id)
         if (g) setGreeting(g)
       }
     } catch {
       /* 静默：下次打开再试，不弹错打断作者 */
     } finally {
-      releaseSummaryLock()
+      releaseSummaryLock(lockToken)
     }
   }, [summaryProviderId, lim])
 

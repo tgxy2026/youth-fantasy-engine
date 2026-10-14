@@ -331,25 +331,81 @@ export function watermarkAfterRoundEnd(
 //    但足以挡掉「两个窗口同时总结」这种常见情形，以及在跑崩之后靠 TTL 解锁。
 
 const LOCK_KEY = 'yfe-tavern-summary-lock'
+const lockHeartbeats = new Map<string, ReturnType<typeof setInterval>>()
+let localSummaryLockToken: string | null = null
 
-/** 尝试取锁；陈旧锁（超过 TTL）可被接管 */
-export function acquireSummaryLock(now = Date.now(), ttlMs = SUMMARY_LOCK_TTL_MS): boolean {
+function summaryLockToken(): string {
+  const bytes = new Uint8Array(16)
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes)
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** 尝试取锁；返回所有权令牌，陈旧锁（超过 TTL）可被接管。 */
+export function acquireSummaryLock(now = Date.now(), ttlMs = SUMMARY_LOCK_TTL_MS): string | null {
+  const token = summaryLockToken()
   try {
     const raw = localStorage.getItem(LOCK_KEY)
     if (raw) {
-      const at = Number(raw)
-      if (Number.isFinite(at) && now - at < ttlMs) return false // 别的窗口正在跑
+      let at = Number(raw)
+      try {
+        const parsed = JSON.parse(raw) as { at?: unknown }
+        if (typeof parsed.at === 'number') at = parsed.at
+      } catch { /* 兼容旧版 timestamp-only 锁 */ }
+      if (Number.isFinite(at) && now - at < ttlMs) return null // 别的窗口正在跑
       // 超过 TTL → 上次可能跑到一半崩了，接管
     }
-    localStorage.setItem(LOCK_KEY, String(now))
-    return true
+    localStorage.setItem(LOCK_KEY, JSON.stringify({ at: now, token, ttlMs }))
+    const check = JSON.parse(localStorage.getItem(LOCK_KEY) || 'null') as { token?: string } | null
+    if (check?.token !== token) return null
+    const heartbeat = setInterval(() => {
+      try {
+        const current = JSON.parse(localStorage.getItem(LOCK_KEY) || 'null') as { token?: string; ttlMs?: number } | null
+        if (current?.token !== token) {
+          clearInterval(heartbeat)
+          lockHeartbeats.delete(token)
+          return
+        }
+        localStorage.setItem(LOCK_KEY, JSON.stringify({ ...current, at: Date.now() }))
+      } catch { /* 存储暂不可用时保留租约，提交前还会重新核验 */ }
+    }, Math.max(1000, Math.floor(ttlMs / 3)))
+    lockHeartbeats.set(token, heartbeat)
+    localSummaryLockToken = token
+    return token
   } catch {
-    return true // localStorage 不可用时不因此阻塞功能
+    return token // localStorage 不可用时不因此阻塞功能；release 会安全地无操作
   }
 }
 
-export function releaseSummaryLock(): void {
-  try { localStorage.removeItem(LOCK_KEY) } catch { /* 读不到也无所谓 */ }
+/** 在持久化前调用；锁已过期或被接管时，阻止旧任务继续提交结果。 */
+export function assertSummaryLock(token: string): void {
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(LOCK_KEY)
+  } catch { return } // localStorage 完全不可用时，锁机制不阻断原有功能
+  if (!raw) throw new Error('摘要任务租约已失效，请重新执行')
+  let lock: { token?: string; at?: number; ttlMs?: number }
+  try { lock = JSON.parse(raw) as { token?: string; at?: number; ttlMs?: number } } catch {
+    throw new Error('摘要任务租约已失效，请重新执行')
+  }
+  const ttlMs = typeof lock.ttlMs === 'number' ? lock.ttlMs : SUMMARY_LOCK_TTL_MS
+  if (lock.token !== token || typeof lock.at !== 'number' || Date.now() - lock.at >= ttlMs) {
+    throw new Error('摘要任务租约已失效，请重新执行')
+  }
+}
+
+export function releaseSummaryLock(token = localSummaryLockToken ?? ''): void {
+  if (!token) return
+  const heartbeat = lockHeartbeats.get(token)
+  if (heartbeat) clearInterval(heartbeat)
+  lockHeartbeats.delete(token)
+  if (localSummaryLockToken === token) localSummaryLockToken = null
+  try {
+    const raw = localStorage.getItem(LOCK_KEY)
+    if (!raw) return
+    const lock = JSON.parse(raw) as { token?: string } | null
+    if (lock?.token === token) localStorage.removeItem(LOCK_KEY)
+  } catch { /* 读不到也无所谓 */ }
 }
 
 export { MEMORY_SOFT_LIMIT, MEMORY_HARD_LIMIT }

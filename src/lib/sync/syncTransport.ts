@@ -13,6 +13,8 @@ import { webcrypto } from '@/lib/storage/webcrypto'
 export interface RawSyncResponse {
   status: number // 200 成功 / 401 码失效 / 409 冲突 / 413 过大 / 422 空推拒绝 / 0 网络异常（仅 http）
   rev?: number
+  /** 同一 rev 下区分并发写入；旧同步文件缺少此字段时为 undefined。 */
+  version?: string
   enc?: string | null
 }
 
@@ -31,7 +33,8 @@ export interface SyncTransport {
    * 推送快照：baseRev 本地基线 rev，enc 加密载荷。
    * 文件模式下若远端读不到或已损坏，返回 status 0（拒绝写入）而非盲写覆盖。
    */
-  push(baseRev: number, enc: string): Promise<RawSyncResponse>
+  /** baseVersion 为可选兼容参数；既有 transport mock / 调用方仍以第二参传 enc。 */
+  push(baseRev: number, enc: string, baseVersion?: string): Promise<RawSyncResponse>
   /** 启动远端变更监听（文件模式定时轮询；HTTP 模式无操作）。 */
   startWatch(onRemoteChange: () => void): void
   stopWatch(): void
@@ -161,7 +164,9 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
   let code = ''
   let slot: string | null = fixedName || null
   let watchTimer: ReturnType<typeof setInterval> | null = null
-  let lastSeenRev = -1
+  let lastSeenVersion: string | undefined = undefined
+  let lastSeenVersionRev = -1
+  let hasSeenRemote = false
 
   async function slotName(): Promise<string> {
     if (!slot) slot = (await sha256Hex(code || 'x')) + '.yfe'
@@ -310,14 +315,18 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
     return fsa ? fsaWrite(name, text) : nodeWrite(String(handle) + '/' + name, text)
   }
 
-  type ParsedRev = { rev: number; enc: string | null } | { corrupt: true }
+  type ParsedRev = { rev: number; version?: string; enc: string | null } | { corrupt: true }
 
   function parseRev(text: string | null): ParsedRev {
     // 文件不存在 / 空文件（写入被中断、被清空等）→ 空库，安全
     if (text == null || !text.trim()) return { rev: 0, enc: null }
     try {
       const o = JSON.parse(text)
-      return { rev: Number(o.rev) || 0, enc: o.enc ?? null }
+      return {
+        rev: Number(o.rev) || 0,
+        version: typeof o.version === 'string' ? o.version : undefined,
+        enc: o.enc ?? null,
+      }
     } catch {
       // 内容存在却解析不了 → 明确标记 corrupt，**不再退化成 rev=0**。
       // 旧实现在此处返回 rev=0，等于对外宣称「云端是空的」，是「一次 push 覆盖云端真实数据」
@@ -347,6 +356,9 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
       code = c
       slot = fixedName || null // 固定文件名模式下不因换码而改变槽位
       quarantined = false      // 换码/换槽位后重新评估新槽位的健康状况
+      lastSeenVersion = undefined
+      lastSeenVersionRev = -1
+      hasSeenRemote = false
     },
     async pull() {
       const name = await slotName()
@@ -358,9 +370,9 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
         await quarantine(name, r.text ?? '')
         return { status: 0 }
       }
-      return { status: 200, rev: p.rev, enc: p.enc }
+      return { status: 200, rev: p.rev, version: p.version, enc: p.enc }
     },
-    async push(baseRev: number, enc: string) {
+    async push(baseRev: number, enc: string, baseVersion?: string) {
       const name = await slotName()
       const r = await readRaw(name)
       // 读不到远端当前状态就不敢写：宁可报不可用，也不能盲写覆盖
@@ -371,18 +383,25 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
         return { status: 0 }
       }
       // 远端已比本地基线新 → 冲突，交还 409 让上层合并后重试
-      if (cur.rev > baseRev) return { status: 409, rev: cur.rev, enc: cur.enc }
+      if (cur.rev > baseRev || (cur.rev === baseRev && cur.version !== baseVersion)) {
+        return { status: 409, rev: cur.rev, version: cur.version, enc: cur.enc }
+      }
       // 走到这里必有 cur.rev <= baseRev，故新 rev 恒为 baseRev + 1
       const newRev = baseRev + 1
-      await writeRaw(name, JSON.stringify({ rev: newRev, enc }))
-      lastSeenRev = newRev
+      const newVersion = `${Date.now().toString(36)}-${[...webcrypto().getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('')}`
+      await writeRaw(name, JSON.stringify({ rev: newRev, version: newVersion, enc }))
+      lastSeenVersion = newVersion
+      lastSeenVersionRev = newRev
+      hasSeenRemote = true
       // 写后回读校验：若被他人中途覆盖（竞态），按冲突处理触发合并重试
       const afterRaw = await readRaw(name)
       if (!afterRaw.ok) return { status: 0 }
       const after = parseRev(afterRaw.text)
       if ('corrupt' in after) return { status: 0 }
-      if (after.rev !== newRev) return { status: 409, rev: after.rev, enc: after.enc }
-      return { status: 200, rev: newRev }
+      if (after.rev !== newRev || after.version !== newVersion) {
+        return { status: 409, rev: after.rev, version: after.version, enc: after.enc }
+      }
+      return { status: 200, rev: newRev, version: newVersion }
     },
     startWatch(onRemoteChange: () => void) {
       this.stopWatch()
@@ -396,10 +415,12 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
           await quarantine(name, r.text ?? '')
           return
         }
-        const rev = p.rev
-        if (rev !== lastSeenRev) {
-          lastSeenRev = rev
-          if (rev !== 0) onRemoteChange() // rev===0 视为空库，不触发
+        const changed = !hasSeenRemote || p.rev !== lastSeenVersionRev || p.version !== lastSeenVersion
+        if (changed) {
+          lastSeenVersionRev = p.rev
+          lastSeenVersion = p.version
+          hasSeenRemote = true
+          if (p.rev !== 0) onRemoteChange() // rev===0 视为空库，不触发
         }
       }, SYNC_POLL_MS)
     },

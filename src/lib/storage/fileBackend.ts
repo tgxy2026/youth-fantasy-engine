@@ -369,18 +369,14 @@ export const PORTABLE_SIDECAR: SidecarSpec = {
 /** 外置通道的 HTTP 实现（对 `/api/blob`，见 portable-server.mjs） */
 const httpSidecarApi: SidecarApi = {
   async read(store, id) {
-    try {
-      const res = await fetch(
-        `${apiBase()}/api/blob?store=${encodeURIComponent(store)}&id=${encodeURIComponent(id)}`,
-        { cache: 'no-store' },
-      )
-      if (res.status === 404) return undefined
-      if (!res.ok) return undefined
-      const j = (await res.json()) as { value?: unknown }
-      return j.value
-    } catch {
-      return undefined
-    }
+    const res = await fetch(
+      `${apiBase()}/api/blob?store=${encodeURIComponent(store)}&id=${encodeURIComponent(id)}`,
+      { cache: 'no-store' },
+    )
+    if (res.status === 404) return undefined
+    if (!res.ok) throw new Error(`外置载荷读取失败：HTTP ${res.status}`)
+    const j = (await res.json()) as { value?: unknown }
+    return j.value
   },
   async write(store, id, value) {
     try {
@@ -409,17 +405,14 @@ const httpSidecarApi: SidecarApi = {
     }
   },
   async listIds(store) {
-    try {
-      const res = await fetch(
-        `${apiBase()}/api/blob/list?store=${encodeURIComponent(store)}`,
-        { cache: 'no-store' },
-      )
-      if (!res.ok) return []
-      const j = (await res.json()) as { ids?: string[] }
-      return Array.isArray(j.ids) ? j.ids : []
-    } catch {
-      return []
-    }
+    const res = await fetch(
+      `${apiBase()}/api/blob/list?store=${encodeURIComponent(store)}`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) throw new Error(`外置载荷目录读取失败：HTTP ${res.status}`)
+    const j = (await res.json()) as { ids?: string[] }
+    if (!Array.isArray(j.ids)) throw new Error('外置载荷目录响应无效')
+    return j.ids
   },
 }
 

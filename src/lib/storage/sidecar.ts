@@ -48,14 +48,19 @@ export type SidecarSpec = Record<string, SidecarStoreSpec>
  * 本文件只定义契约，不碰任何具体传输方式 ⇒ 可用内存实现做单测。
  */
 export interface SidecarApi {
-  /** 读一条；不存在返回 undefined */
+  /** 读一条；不存在返回 undefined，传输/存储失败必须 reject，不能伪装成缺失。 */
   read(store: string, id: string): Promise<unknown | undefined>
   /** 写一条；返回是否成功（失败不抛，由调用方决定是否告警） */
   write(store: string, id: string, value: unknown): Promise<boolean>
   /** 删一条；返回是否成功 */
   remove(store: string, id: string): Promise<boolean>
-  /** 列出该 store 当前全部记录 id（whole 布局下返回 `[SIDECAR_WHOLE_KEY]` 或 []） */
+  /** 列出该 store 当前全部记录 id（whole 布局下返回 `[SIDECAR_WHOLE_KEY]` 或 []）；失败必须 reject。 */
   listIds(store: string): Promise<string[]>
+}
+
+/** withSidecar 额外提供仅供迁移使用的严格批量写入，避免迁移失败时删掉主库源数据。 */
+export type SidecarStoreOps = StoreOps & {
+  bulkPutForMigration(store: string, values: unknown[]): Promise<void>
 }
 
 /** 该 store 是否已外置 */
@@ -100,16 +105,15 @@ function upsertInto(spec: SidecarStoreSpec, rows: unknown[], incoming: unknown[]
  * @param base 原后端（承载未外置的 store）
  * @param api  外置读写通道
  * @param spec 哪些 store 外置、各自什么布局
- * @param onError 写失败时的告警出口（默认 console.warn）。**不抛**：StoreOps 的
- *                `put` 契约是 `Promise<void>`，抛异常会让整条备份链路中断，
- *                而「载荷没写进去」本就该由「元数据在、载荷缺失」这条既有路径暴露。
+ * @param onError 日常写失败时的告警出口（默认 console.warn）。常规 StoreOps 写入仍不抛；
+ *                只有迁移专用的 `bulkPutForMigration` 会在告警后抛错，以保住主库源数据。
  */
 export function withSidecar(
   base: StoreOps,
   api: SidecarApi,
   spec: SidecarSpec,
   onError: (msg: string) => void = (m) => console.warn('[sidecar]', m),
-): StoreOps {
+): SidecarStoreOps {
   const specOf = (store: string): SidecarStoreSpec | null =>
     isSidecarStore(spec, store) ? spec[store] : null
 
@@ -129,9 +133,39 @@ export function withSidecar(
   }
 
   /** 写整表（仅 whole 布局用） */
-  async function writeAll(store: string, rows: unknown[]): Promise<void> {
+  async function writeAll(store: string, rows: unknown[], throwOnFailure = false): Promise<void> {
     const ok = await api.write(store, SIDECAR_WHOLE_KEY, rows)
-    if (!ok) onError(`外置 store「${store}」整表写入失败（数据可能未落盘）`)
+    if (!ok) {
+      const message = `外置 store「${store}」整表写入失败（数据可能未落盘）`
+      onError(message)
+      if (throwOnFailure) throw new Error(message)
+    }
+  }
+
+  async function bulkPut(store: string, values: unknown[], throwOnFailure: boolean): Promise<void> {
+    const s = specOf(store)
+    if (!s) return base.bulkPut(store, values)
+    if (!values.length) return
+    if (s.layout === 'per-id') {
+      for (const v of values) {
+        const k = keyOf(s, v)
+        if (!k) {
+          const message = `外置 store「${store}」写入的记录缺少主键「${s.keyField}」，已跳过`
+          onError(message)
+          if (throwOnFailure) throw new Error(message)
+          continue
+        }
+        const ok = await api.write(store, k, v)
+        if (!ok) {
+          const message = `外置 store「${store}」记录 ${k} 写入失败`
+          onError(message)
+          if (throwOnFailure) throw new Error(message)
+        }
+      }
+      return
+    }
+    // whole：合并后**只写一次**（整表一个文件，逐条写等于重写 N 遍）
+    await writeAll(store, upsertInto(s, await readAll(store, s), values), throwOnFailure)
   }
 
   return {
@@ -185,20 +219,12 @@ export function withSidecar(
     },
 
     async bulkPut(store: string, values: unknown[]): Promise<void> {
-      const s = specOf(store)
-      if (!s) return base.bulkPut(store, values)
-      if (!values.length) return
-      if (s.layout === 'per-id') {
-        for (const v of values) {
-          const k = keyOf(s, v)
-          if (!k) continue
-          const ok = await api.write(store, k, v)
-          if (!ok) onError(`外置 store「${store}」记录 ${k} 写入失败`)
-        }
-        return
-      }
-      // whole：合并后**只写一次**（整表一个文件，逐条写等于重写 N 遍）
-      await writeAll(store, upsertInto(s, await readAll(store, s), values))
+      await bulkPut(store, values, false)
+    },
+
+    /** 老库迁移专用：任一写入失败都必须拒绝删除主库中的源数据。 */
+    async bulkPutForMigration(store: string, values: unknown[]): Promise<void> {
+      await bulkPut(store, values, true)
     },
 
     async bulkDel(store: string, keys: (string | number)[]): Promise<void> {
@@ -257,7 +283,8 @@ export async function collectSidecarForExport(
  * 🔴 幂等三连（作者可能反复启动、中途断电、U 盘拔插）：
  *    · 迁完就把主库里的 store 删掉 ⇒ 再跑时 `extractSidecarRows` 返回空，自然不动；
  *    · 没迁完（写了外置但没删/没落盘）⇒ 下次重跑，`bulkPut` 是 upsert，覆盖同主键 = 同样结果；
- *    · 单条写失败**不中断整批**（记在 `failed` 里），避免"一份坏备份让其它 59 份永远迁不出去"。
+ *    · 某条写失败会保留该 store 的主库源数据并记入 `failed`；其它 store 仍继续迁移。
+ *      单个 store 内的部分成功可安全重试（upsert），但绝不能把未完整落盘的源数据删除。
  *
  * ⚠️ 调用方必须保证**不在写盘锁定期**调用：锁定期内存里是空库/残缺数据，
  *    迁出去的可能是空壳，而老的主 JSON 已被覆盖 —— 那就真丢了。
@@ -275,7 +302,14 @@ export async function migrateSidecar(
 
   for (const [store, list] of Object.entries(rows)) {
     try {
-      await ops.bulkPut(store, list)
+      const migrationOps = ops as StoreOps & {
+        bulkPutForMigration?: (store: string, values: unknown[]) => Promise<void>
+      }
+      if (migrationOps.bulkPutForMigration) {
+        await migrationOps.bulkPutForMigration(store, list)
+      } else {
+        await ops.bulkPut(store, list)
+      }
       moved[store] = list.length
       delete data.stores[store]
       touched = true

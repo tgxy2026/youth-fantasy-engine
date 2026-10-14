@@ -14,6 +14,7 @@
 // ⚠️ 协议侧只提供 {@link RemotePrimitives} 三个原语；**协议差异全部留在原语里**：
 //    WebDAV 有 204 / 需要拼 URL；S3 有 bucket / style / SigV4 签名。引擎不关心这些。
 import { SYNC_POLL_MS } from '@/lib/constants'
+import { webcrypto } from '@/lib/storage/webcrypto'
 import type { RawSyncResponse, SyncTransport } from '@/lib/sync/syncTransport'
 
 /**
@@ -38,14 +39,14 @@ export interface RemotePrimitives {
 }
 
 /** 远端 rev 载荷的解析结果（`corrupt` 表示"存在但解析不了"，**不能退化成 rev=0**） */
-type ParsedRev = { rev: number; enc: string | null } | { corrupt: true }
+type ParsedRev = { rev: number; version?: string; enc: string | null } | { corrupt: true }
 
 /** 解析远端载荷。空 / 不存在 → 空库；存在却解析不了 → 明确 corrupt */
 function parseRev(text: string | null | undefined): ParsedRev {
   if (text == null || !String(text).trim()) return { rev: 0, enc: null }
   try {
     const o = JSON.parse(String(text))
-    return { rev: Number(o.rev) || 0, enc: o.enc ?? null }
+    return { rev: Number(o.rev) || 0, version: typeof o.version === 'string' ? o.version : undefined, enc: o.enc ?? null }
   } catch {
     return { corrupt: true }
   }
@@ -59,6 +60,8 @@ function parseRev(text: string | null | undefined): ParsedRev {
 export function createRemoteSyncTransport(p: RemotePrimitives): SyncTransport {
   let watchTimer: ReturnType<typeof setInterval> | null = null
   let lastSeenRev = -1
+  let lastSeenVersion: string | undefined
+  let hasSeenRemote = false
   let quarantined = false
   let quarantinedOnce = false
 
@@ -76,6 +79,9 @@ export function createRemoteSyncTransport(p: RemotePrimitives): SyncTransport {
       // 远端路径由各协议配置决定槽位；换码不改变远端对象，仅重置隔离状态
       quarantined = false
       quarantinedOnce = false
+      lastSeenRev = -1
+      lastSeenVersion = undefined
+      hasSeenRemote = false
     },
     async pull(): Promise<RawSyncResponse> {
       const r = await p.read()
@@ -85,9 +91,9 @@ export function createRemoteSyncTransport(p: RemotePrimitives): SyncTransport {
         await quarantineOnce(r.text ?? '')
         return { status: 0 }
       }
-      return { status: 200, rev: parsed.rev, enc: parsed.enc }
+      return { status: 200, rev: parsed.rev, version: parsed.version, enc: parsed.enc }
     },
-    async push(baseRev: number, enc: string): Promise<RawSyncResponse> {
+    async push(baseRev: number, enc: string, baseVersion?: string): Promise<RawSyncResponse> {
       const r = await p.read()
       if (!r.ok) return { status: 0 } // 读不到远端当前状态就不敢写，宁可报不可用
       const cur = parseRev(r.text)
@@ -95,18 +101,26 @@ export function createRemoteSyncTransport(p: RemotePrimitives): SyncTransport {
         await quarantineOnce(r.text ?? '')
         return { status: 0 }
       }
-      if (cur.rev > baseRev) return { status: 409, rev: cur.rev, enc: cur.enc }
+      if (cur.rev > baseRev || (cur.rev === baseRev && cur.version !== baseVersion)) {
+        return { status: 409, rev: cur.rev, version: cur.version, enc: cur.enc }
+      }
       const newRev = baseRev + 1
-      const wrote = await p.write(JSON.stringify({ rev: newRev, enc }))
+      const bytes = webcrypto().getRandomValues(new Uint8Array(12))
+      const newVersion = `${Date.now().toString(36)}-${[...bytes].map(b => b.toString(16).padStart(2, '0')).join('')}`
+      const wrote = await p.write(JSON.stringify({ rev: newRev, version: newVersion, enc }))
       if (!wrote) return { status: 0 }
       lastSeenRev = newRev
+      lastSeenVersion = newVersion
+      hasSeenRemote = true
       // 写后回读校验：被他人中途覆盖（竞态）时按冲突处理，触发上层合并重试
       const after = await p.read()
       if (!after.ok) return { status: 0 }
       const a = parseRev(after.text)
       if ('corrupt' in a) return { status: 0 }
-      if (a.rev !== newRev) return { status: 409, rev: a.rev, enc: a.enc }
-      return { status: 200, rev: newRev }
+      if (a.rev !== newRev || a.version !== newVersion) {
+        return { status: 409, rev: a.rev, version: a.version, enc: a.enc }
+      }
+      return { status: 200, rev: newRev, version: newVersion }
     },
     startWatch(onRemoteChange: () => void) {
       this.stopWatch()
@@ -118,8 +132,10 @@ export function createRemoteSyncTransport(p: RemotePrimitives): SyncTransport {
           await quarantineOnce(r.text ?? '')
           return
         }
-        if (parsed.rev !== lastSeenRev) {
+        if (!hasSeenRemote || parsed.rev !== lastSeenRev || parsed.version !== lastSeenVersion) {
           lastSeenRev = parsed.rev
+          lastSeenVersion = parsed.version
+          hasSeenRemote = true
           if (parsed.rev !== 0) onRemoteChange()
         }
       }, SYNC_POLL_MS)

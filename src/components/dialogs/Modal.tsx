@@ -24,12 +24,41 @@ const WIDTH_PX: Record<string, number> = {
 
 // ---- 全局 Esc 栈：只有栈顶 Modal 响应，嵌套弹窗一次只关一层 ----
 const escStack: Array<() => void> = []
+const focusStack: Array<{ panel: HTMLDivElement; previous: Element | null }> = []
 function onEscKey(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
   const top = escStack[escStack.length - 1]
   if (top) {
     e.preventDefault()
     top()
+  }
+}
+
+function onFocusKey(e: KeyboardEvent) {
+  if (e.key !== 'Tab') return
+  const top = focusStack[focusStack.length - 1]
+  if (!top) return
+  const items = [...top.panel.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )].filter(el => el.getAttribute('aria-hidden') !== 'true' && el.getClientRects().length > 0)
+  if (!items.length) {
+    e.preventDefault()
+    top.panel.focus()
+    return
+  }
+  const first = items[0]
+  const last = items[items.length - 1]
+  const active = document.activeElement
+  if (!top.panel.contains(active)) {
+    e.preventDefault()
+    const target = e.shiftKey ? last : first
+    target.focus()
+  } else if (e.shiftKey && (active === first || active === top.panel)) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault()
+    first.focus()
   }
 }
 
@@ -157,11 +186,23 @@ export function Modal({
     }
   }, [open, escClose])
 
-  // 打开时聚焦面板（轻量无障碍：键盘可达）
+  // 打开时聚焦面板、限制 Tab 在最上层对话框内，并在关闭后归还焦点。
   useEffect(() => {
     if (!open) return
+    const panel = panelRef.current
+    if (!panel) return
+    const entry = { panel, previous: document.activeElement }
+    focusStack.push(entry)
+    if (focusStack.length === 1) document.addEventListener('keydown', onFocusKey, true)
     const t = requestAnimationFrame(() => panelRef.current?.focus())
-    return () => cancelAnimationFrame(t)
+    return () => {
+      cancelAnimationFrame(t)
+      const i = focusStack.indexOf(entry)
+      if (i >= 0) focusStack.splice(i, 1)
+      if (focusStack.length === 0) document.removeEventListener('keydown', onFocusKey, true)
+      const previous = entry.previous as HTMLElement | null
+      if (previous?.isConnected) previous.focus()
+    }
   }, [open])
 
   if (!open) return null

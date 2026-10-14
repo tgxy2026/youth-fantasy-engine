@@ -846,13 +846,10 @@ export const DESKTOP_SIDECAR: SidecarSpec = {
 /** 外置通道的 IPC 实现（对应 main.cjs 的 `payload:*`） */
 const ipcSidecarApi: SidecarApi = {
   async read(store, id) {
-    try {
-      const r = await api().payloadRead(store, id)
-      if (!r.ok || r.missing) return undefined
-      return r.value
-    } catch {
-      return undefined
-    }
+    const r = await api().payloadRead(store, id)
+    if (r.missing) return undefined
+    if (!r.ok) throw new Error('外置载荷读取失败')
+    return r.value
   },
   async write(store, id, value) {
     try {
@@ -871,12 +868,9 @@ const ipcSidecarApi: SidecarApi = {
     }
   },
   async listIds(store) {
-    try {
-      const r = await api().payloadList(store)
-      return r.ok && Array.isArray(r.ids) ? r.ids : []
-    } catch {
-      return []
-    }
+    const r = await api().payloadList(store)
+    if (!r.ok || !Array.isArray(r.ids)) throw new Error('外置载荷目录读取失败')
+    return r.ids
   },
 }
 

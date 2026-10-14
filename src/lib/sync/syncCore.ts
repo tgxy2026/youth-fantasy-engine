@@ -438,6 +438,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
   let code = ''
   let cache: SyncStores = {}
   let rev = 0
+  let remoteVersion: string | undefined
   let pushTimer: ReturnType<typeof setTimeout> | null = null
   let pushing = false
   let pendingPush = false
@@ -579,6 +580,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
             setStatus('auth-failed')
             cache = {}
             rev = 0
+            remoteVersion = undefined
             return
           }
           if (r === 429) {
@@ -604,6 +606,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
               }
             }
             rev = Number(resp.rev) || 0
+            remoteVersion = resp.version
             if (resp.enc) {
               const serverCache = await decryptObj(resp.enc)
               adoptCloudBackup(serverCache)
@@ -779,7 +782,8 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       const resp: RawSyncResponse = await transport.pull()
       if (resp.status !== 200) return
       const remoteRev = resp.rev ?? 0
-      if (remoteRev <= rev) return
+      const remoteVersionChanged = resp.version !== remoteVersion
+      if (remoteRev < rev || (remoteRev === rev && !remoteVersionChanged)) return
       if (resp.enc) {
         const serverCache = await decryptObj(resp.enc)
         adoptCloudBackup(serverCache)
@@ -790,6 +794,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
         if (local === null) return
         cache = mergeCaches(baseCache, serverCache, local)
         rev = remoteRev
+        remoteVersion = resp.version
         // 🔴 先判断合并结果与云端是否一致（不一致 = 本地有改动被保下来了），**再**认领新基线。
         //    顺序反过来的话，这批本地改动会被写进 baseCache，下次合并时被判成「本地未改」
         //    而静默采用云端版本 —— 改动无声消失，且走的是常规分支、不产生冲突副本。
@@ -821,7 +826,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     const enc = await encryptObj(uploadCache)
     let resp: RawSyncResponse
     try {
-      resp = await transport.push(baseRev, enc)
+      resp = await transport.push(baseRev, enc, remoteVersion)
     } catch {
       transientUnavailable = true
       setStatus('offline')
@@ -830,6 +835,10 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     const r = resp.status
     if (r === 409) {
       const serverRev = resp.rev ?? baseRev
+      if (serverRev > 0 && !resp.enc) {
+        setStatus('error')
+        throw new Error('sync conflict payload missing: 已停止重试以免覆盖云端数据')
+      }
       let serverCache: SyncStores | null = null
       if (resp.enc) {
         try {
@@ -854,6 +863,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
         cache = mergeCaches(baseCache, serverCache, local)
       }
       rev = serverRev
+      remoteVersion = resp.version
       if (depth < MAX_CONFLICT_RETRY) {
         return pushNowRaw(serverRev, depth + 1)
       }
@@ -889,6 +899,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       //    拉取。丢弃结果即可，新一轮 push 会重新建立基线。
       if (myEpoch !== epoch) return { conflict: false }
       rev = resp.rev ?? baseRev + 1
+      remoteVersion = resp.version
       adoptBaseline()
       setStatus('ok')
       return { conflict: false }
@@ -1046,6 +1057,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       epoch++ // 换目录 → 作废在途 push 的回写（见 epoch 的说明）
       cache = {}
       rev = 0
+      remoteVersion = undefined
       initPromise = null
       authFailed = false
       transientUnavailable = false

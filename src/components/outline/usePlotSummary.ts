@@ -22,7 +22,7 @@ import { getTavernSettings, type TavernSettings } from '@/lib/tavern/settings'
 import { summarizeMemory } from '@/lib/tavern/summarize'
 import {
   messagesAfterWatermark, nextWatermark, watermarkAfterRoundEnd, memoryToText, parseMemoryText,
-  limitsOf, acquireSummaryLock, releaseSummaryLock,
+  limitsOf, acquireSummaryLock, assertSummaryLock, releaseSummaryLock,
 } from '@/lib/tavern/memory'
 import type { TavernSession } from '@/lib/tavern/types'
 
@@ -75,7 +75,8 @@ export function usePlotSummary({ setSession }: PlotSummaryArgs) {
       showToast('读设置失败，无法整理记忆', 'error')
       return
     }
-    if (!acquireSummaryLock(Date.now(), st.free.summaryLockTtlMin * 60_000)) {
+    const lockToken = acquireSummaryLock(Date.now(), st.free.summaryLockTtlMin * 60_000)
+    if (!lockToken) {
       showToast('另一个窗口正在整理记忆', 'info')
       return
     }
@@ -107,6 +108,7 @@ export function usePlotSummary({ setSession }: PlotSummaryArgs) {
         watermark: watermarkAfterRoundEnd(s.watermark, nextWatermark(s), degraded.length > 0),
         updatedAt: Date.now(),
       }
+      assertSummaryLock(lockToken)
       await store.saveSession(updated)
       setSession(cur => (cur && cur.id === updated.id ? updated : cur))
       showToast(
@@ -126,7 +128,7 @@ export function usePlotSummary({ setSession }: PlotSummaryArgs) {
       )
     } finally {
       sumCtlRef.current = null
-      releaseSummaryLock()
+      releaseSummaryLock(lockToken)
       setSummarizing(false)
     }
   }, [setSession])

@@ -68,18 +68,25 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   const inputRef = useRef<HTMLInputElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const payloadRequestRef = useRef(0)
   // 下拉浮层用 Portal + fixed 定位渲染在 body 上，避免被表格滚动容器裁剪/遮挡
   const [pos, setPos] = useState<DropdownPos | null>(null)
 
   // 加载
   useEffect(() => {
     let alive = true
+    const requestId = ++payloadRequestRef.current
     // 🔴 换列/换页签时先清空再读：异步读取返回前短暂显示上一列的 items/hidden 会造成错位假象
     setPayload({ items: [], hidden: [] })
     setShowRemoved(false)
     setQ('')
-    getCustomOptions(tabId, colName).then(p => { if (alive) setPayload(p) })
-    return () => { alive = false }
+    getCustomOptions(tabId, colName).then(p => {
+      if (alive && requestId === payloadRequestRef.current) setPayload(p)
+    })
+    return () => {
+      alive = false
+      if (payloadRequestRef.current === requestId) payloadRequestRef.current++
+    }
   }, [tabId, colName])
 
   // 选项被别处改动时同步刷新（同一列可能同时渲染多个下拉，且地图编辑图例也依赖此广播）
@@ -87,7 +94,10 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     const onChanged = (e: Event) => {
       const d = (e as CustomEvent<{ tabId: string; colName: string }>).detail
       if (!d || d.tabId !== tabId || d.colName !== colName) return
-      void getCustomOptions(tabId, colName).then(setPayload)
+      const requestId = ++payloadRequestRef.current
+      void getCustomOptions(tabId, colName).then(p => {
+        if (requestId === payloadRequestRef.current) setPayload(p)
+      })
     }
     window.addEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
     return () => window.removeEventListener(CUSTOM_OPTIONS_EVENT, onChanged)

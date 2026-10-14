@@ -103,6 +103,8 @@ export type RoundEndArgs = {
   chatFn?: ChatFn
   onProgress?: (p: RoundEndProgress) => void
   signal?: AbortSignal
+  /** 写入持久状态前验证跨窗口摘要租约仍由当前任务持有。 */
+  assertLock?: () => void
 }
 
 /** 待整理的对话：水位线之后的全部（半途崩过也不会重复整理同一段） */
@@ -117,7 +119,7 @@ export function pendingMessages(session: FreeSession): TavernMessage[] {
  *    ②③ 失败一律吞掉并留空 —— 面板少一块，也不能把已经落库的记忆弄丢。
  */
 export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
-  const { session, cards, providerId, limits, varKeys, maxStep, nameOf, chatFn, onProgress, signal } = args
+  const { session, cards, providerId, limits, varKeys, maxStep, nameOf, chatFn, onProgress, signal, assertLock } = args
   const pending = pendingMessages(session)
   const total = Math.max(cards.length, 1)
 
@@ -315,12 +317,21 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   //    ① 拿到的是**与上次完全相同的那批消息**、而 prev 已是含这批事件的档案
   //    ⇒ 同一段剧情被并进档案**第二次**（记忆无幂等机制，直接落库、不可逆）。
   //    现在 ①②③ 任一中止 ⇒ 一条都不落 ⇒ 重试从零重算，干净。
-  for (const m of memories) await store.saveMemory(m)
+  for (const m of memories) {
+    assertLock?.()
+    await store.saveMemory(m)
+  }
   for (const c of cards) {
     const j = journals[c.id]
-    if (j) await store.appendJournalEntry(c.id, journalEntry(session, cards, j))
+    if (j) {
+      assertLock?.()
+      await store.appendJournalEntry(c.id, journalEntry(session, cards, j))
+    }
   }
-  if (pendingCardWrite) await store.saveFreeChar(pendingCardWrite)
+  if (pendingCardWrite) {
+    assertLock?.()
+    await store.saveFreeChar(pendingCardWrite)
+  }
 
   onProgress?.({ stage: 'done', cur: total, total })
   return { memories, journals, vars: nextVars, varChanges, proposals, warnings, memoryDegraded, endedAt: Date.now() }
