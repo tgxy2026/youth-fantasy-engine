@@ -9,13 +9,14 @@
  *
  * 🔴 默认手动触发（不进页面自动跑）—— 体检结果与章节内容强相关，自动跑容易展示过期结果。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipboardCheck, Loader2, Eye, CheckCircle2, AlertTriangle } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter, Volume } from '@/lib/types'
 import type { AuditIssue } from '@/lib/audit/audit'
 import { SEVERITY_LABEL } from '@/lib/audit/audit'
 import { runChapterCheck, countActionable, type ChapterCheckReport } from '@/lib/outline/chapterCheck'
+import { NO_CHAPTERS_HINT } from '@/lib/constants'
 // 🔴 章节顺序真源 —— Chapter.order 是**卷内**序号，裸 sort 跨卷必串号（见 chapterSeq.ts 顶部禁令）
 import { sortChapters } from '@/lib/outline/chapterSeq'
 import ChapterTreeSelect from '@/components/outline/ChapterTreeSelect'
@@ -73,8 +74,9 @@ export default function ChapterCheckPanel() {
   }, [])
   useEffect(() => { void load() }, [load])
 
-  // 换章就丢掉上一章的报告 —— 否则会拿着 A 章的报告看 B 章的正文
-  useEffect(() => { setReport(null) }, [activeId])
+  // 换章就丢掉上一章的报告与留痕标注 —— 否则会拿着 A 章的报告看 B 章的正文
+  // （留痕是异步读的，不在这里立刻清空的话，会有几帧显示上一章的「上次体检 / 已过期」）
+  useEffect(() => { setReport(null); setAudit(null) }, [activeId])
 
   // W2-2：读本章留痕并判失效（切章 / 章节数据变化时重算）。
   // 🔴 只**读与标注**，绝不自动重跑 —— 方案 §10.3 #4 首条：显式触发、非后台自动跑。
@@ -89,15 +91,23 @@ export default function ChapterCheckPanel() {
   }, [activeId, chapters])
 
   const active = useMemo(() => chapters.find(c => c.id === activeId), [chapters, activeId])
+  /** 当前章的实时引用 —— 体检是异步的，落状态前要判「还是不是这一章」（见 run 里的守卫） */
+  const activeIdRef = useRef(activeId)
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
 
   const run = async () => {
     if (!active || running) return
+    const chapterId = active.id
     setRunning(true)
     try {
       const rep = await runChapterCheck(active)
-      setReport(rep)
-      // 🔴 W2-2：留痕一条（绑定本次正文指纹）。失败静默 —— 绝不能因为写不进台账而让体检失败。
+      // 🔴 留痕**照落**：它绑的是本章正文指纹（rep 里带 chapterId），跟用户此刻在看哪一章无关。
       await saveChapterAudit(rep, active, countActionable(rep))
+      // 🔴 但**结果展示**要判章：体检五引擎会扫全书，耗时可达秒级，期间用户完全可能在树上点走。
+      //    不判的话 A 章的报告会挂到 B 章名下、且没有任何后续纠正（与 PaceAnalysisPanel 用
+      //    `taskChapter === activeId` 是同一口径）。切走就把结果丢掉 —— 重跑一次即可。
+      if (chapterId !== activeIdRef.current) return
+      setReport(rep)
       setAudit(await loadChapterAuditStatus(active.id, active))
     } finally {
       setRunning(false)
@@ -169,7 +179,7 @@ export default function ChapterCheckPanel() {
 
       {/* 结果区 */}
       <div className="px-4 py-3">
-        {!activeId && <div className="text-11 text-ink-500">这个项目还没有章节。</div>}
+        {!activeId && <div className="text-11 text-ink-500">{NO_CHAPTERS_HINT}</div>}
 
         {activeId && !report && !running && (
           <div className="text-11 text-ink-500">

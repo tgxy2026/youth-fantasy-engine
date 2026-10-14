@@ -123,6 +123,10 @@ console.log('\n—— chapterAudit 用例开始 ——')
   ok('本章体检改用卷章树（可折叠 + 可搜索），不再是平铺 select', panel.includes('ChapterTreeSelect'))
   const tree = strip(fs.readFileSync('src/components/outline/ChapterTreeSelect.tsx', 'utf8'))
   ok('🔴 树组件排序也走 chapterSeqMap（不自造序号）', tree.includes('chapterSeqMap('))
+  // 2026-10-14 六维审计修：体检是异步的（五引擎会扫全书，秒级），期间用户可能在树上点走
+  // ⇒ 落状态前必须判「还是不是这一章」，否则 A 章的报告会挂到 B 章名下且无人纠正。
+  ok('🔴 体检结果落状态前判章（切走了就丢弃）', /chapterId !== activeIdRef\.current/.test(strip(panel)))
+  ok('🔴 切章即时清空留痕标注（不等异步读回）', /setReport\(null\); setAudit\(null\)/.test(strip(panel)))
 }
 
 console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ————`)

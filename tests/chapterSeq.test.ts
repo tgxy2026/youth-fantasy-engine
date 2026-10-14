@@ -94,6 +94,14 @@ const ch = (id: string, volumeId: string, order: number, extra: Partial<Chapter>
   ok('空输入返回空数组', flattenChapters([], []).length === 0)
   const chs = [ch('orphan', '不存在的卷', 0)]
   ok('章节所属卷不存在时被丢弃（不进入叙事序）', flattenChapters([vol('v1', 0)], chs).length === 0)
+
+  // 🔴 2026-10-14 六维审计修：sortChapters 对孤儿章原先是「rank 缺失回落 0」，
+  //    会静默插到第 1 章**前面**（与章节树把它们收进末尾兜底组的观感冲突）。
+  const withOrphan = [ch('orphan', '不存在的卷', 0), ch('v1c1', 'v1', 0), ch('v1c2', 'v1', 1)]
+  const ordered = sortChapters([vol('v1', 0)], withOrphan).map(c => c.id)
+  ok('sortChapters 不丢孤儿章', ordered.length === 3, ordered.join(','))
+  ok('孤儿章排在有效章之后（不再伪装成第 1 章）',
+    ordered[ordered.length - 1] === 'orphan', ordered.join(','))
 }
 
 // ---------- 9. 自由卷：排最前但不占正文序号（2.6.4）----------

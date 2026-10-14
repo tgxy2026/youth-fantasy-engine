@@ -30,6 +30,7 @@ import {
 } from '@/lib/ai'
 import { currentModelAdvice, getWriterBudget, saveWriterBudget } from '@/lib/ai/aiWriterBudget'
 import { syncTuningWithModel } from '@/lib/tavern/settings'
+import { SELECT_PLACEHOLDER } from '@/lib/constants'
 
 /**
  * 平台预设与「模型设置 → 模型配置」保持**同一份来源**（LOCAL_PRESETS / ONLINE_PRESETS）——
@@ -268,7 +269,7 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
                     onChange={e => patch({ model: e.target.value })}
                     className="w-full text-12"
                   >
-                    <option value="">— 请选择 —</option>
+                    <option value="">{SELECT_PLACEHOLDER}</option>
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 ) : (

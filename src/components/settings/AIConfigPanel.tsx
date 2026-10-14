@@ -23,6 +23,7 @@ import HelpPopover from '@/components/common/HelpPopover'
 import EmbeddingIndexPanel from '@/components/settings/EmbeddingIndexPanel'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { syncTuningWithModel } from '@/lib/tavern/settings'
+import { SELECT_PLACEHOLDER } from '@/lib/constants'
 import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '@/lib/ai/modelSampling'
 import { filterModels } from '@/lib/ai/modelFilter'
 import SamplingUnavailable from '@/components/common/SamplingUnavailable'
@@ -676,7 +677,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         placeholder="筛选模型名（空格分隔可多词，如 qwen 8b）"
                       />
                       <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={shown.includes(editing.model) ? editing.model : ''} onChange={e => setEditing({ ...editing, model: e.target.value })}>
-                        <option value="">— 请选择 —</option>
+                        <option value="">{SELECT_PLACEHOLDER}</option>
                         {shown.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                       {shown.length === 0 && (
@@ -732,7 +733,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         placeholder="筛选模型名（空格分隔可多词，如 qwen 32b）"
                       />
                       <select className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40" value={shown.includes(editing.model) ? editing.model : ''} onChange={e => setEditing({ ...editing, model: e.target.value })}>
-                        <option value="">— 请选择 —</option>
+                        <option value="">{SELECT_PLACEHOLDER}</option>
                         {shown.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                       {shown.length === 0 && (

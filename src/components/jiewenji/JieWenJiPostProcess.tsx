@@ -44,7 +44,7 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
             <span className="text-10 text-ink-500">{impacts.length} 章</span>
           </div>
           <div className="text-10 text-ink-400 leading-relaxed mb-1.5">
-            已写正文被改动后，章纲里「这一章之后」的规划可能已过时。核对完点「已处理」清掉标记即可。
+            已写正文被改动后，章节细纲里「这一章之后」的规划可能已过时。核对完点「已处理」清掉标记即可。
           </div>
           <div className="space-y-1">
             {impacts.map(im => (

@@ -15,6 +15,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Inbox, Search } from 'lucide-react'
 import type { Chapter, Volume } from '@/lib/types'
+import { NO_CHAPTERS_HINT } from '@/lib/constants'
 import { chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { isFreeVolume } from '@/lib/outline/freeVolume'
 
@@ -65,9 +66,10 @@ export default function ChapterTreeSelect({ volumes, chapters, value, onChange, 
   const hit = (c: Chapter) => {
     if (!keyword) return true
     const seq = seqMap.get(c.id) ?? 0
+    // 🔴 序号匹配要 `seq > 0`：0 ＝「不计入序号 / 自由卷 / 孤儿章」，它们在树上显示的是「·」，
+    //    不拦的话搜一个「0」会把所有这些章全列出来（按显示看不出为何命中）。
     return (c.title || '').toLowerCase().includes(keyword)
-      || String(seq) === keyword
-      || (seq > 0 && `第${seq}章`.includes(keyword))
+      || (seq > 0 && (String(seq) === keyword || `第${seq}章`.includes(keyword)))
   }
 
   const sel = chapters.find(c => c.id === value) ?? null
@@ -80,7 +82,7 @@ export default function ChapterTreeSelect({ volumes, chapters, value, onChange, 
     : ''
 
   if (chapters.length === 0) {
-    return <div className="text-11 text-ink-500">这个项目还没有章节。</div>
+    return <div className="text-11 text-ink-500">{NO_CHAPTERS_HINT}</div>
   }
 
   /**
@@ -95,13 +97,18 @@ export default function ChapterTreeSelect({ volumes, chapters, value, onChange, 
       <div key={key} className="mb-0.5">
         <div
           data-volume-id={key}
-          onClick={() => setCollapsed(prev => {
-            const next = new Set(prev)
-            if (next.has(key)) next.delete(key); else next.add(key)
-            return next
-          })}
+          onClick={() => {
+            // 🔴 搜索态下分组**恒展开**（命中结果必须可见）⇒ 此时点卷头不写折叠状态。
+            //    不拦的话会出现「点了毫无反应，清空搜索后这一卷突然收起」的怪现象。
+            if (keyword) return
+            setCollapsed(prev => {
+              const next = new Set(prev)
+              if (next.has(key)) next.delete(key); else next.add(key)
+              return next
+            })
+          }}
           className="group flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1.5 transition-colors hover:bg-ink-800"
-          title={open ? '收起本卷' : '展开本卷'}
+          title={keyword ? '搜索中 —— 有命中的分组会自动展开' : open ? '收起本卷' : '展开本卷'}
         >
           {open ? <ChevronDown size={12} className="shrink-0 text-ink-500" /> : <ChevronRight size={12} className="shrink-0 text-ink-500" />}
           {opts?.free && <Inbox size={11} className="shrink-0 text-ink-500" />}

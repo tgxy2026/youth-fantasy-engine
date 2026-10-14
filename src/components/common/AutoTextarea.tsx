@@ -1,4 +1,24 @@
-import { useEffect, useRef, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react'
+
+/**
+ * 窗口尺寸变化时的重测订阅（**模块级单例**）。
+ *
+ * 🔴 为什么需要：本组件靠「量 scrollHeight」定高度，而**行数会随宽度变**。界面缩放
+ *    （`theme.ts` 的 applyZoom，尤其「跟随窗口」档）会重排文字 ⇒ 不重测就会留着旧高度：
+ *    内容变高时冒出内部滚动条、变矮时留一片空白，直到下次编辑才纠正。
+ * 🔴 为什么是单例而不是每个实例各挂一个：本组件全项目几十处在用，
+ *    各挂一个监听器会让同一次 resize 被处理几十遍。
+ */
+const resizers = new Set<() => void>()
+let resizerBound = false
+function subscribeResize(fn: () => void): () => void {
+  resizers.add(fn)
+  if (!resizerBound && typeof window !== 'undefined') {
+    resizerBound = true
+    window.addEventListener('resize', () => { for (const f of resizers) f() })
+  }
+  return () => { resizers.delete(fn) }
+}
 
 interface Props {
   value: string
@@ -50,7 +70,7 @@ export default function AutoTextarea({
 }: Props) {
   const ref = useRef<HTMLTextAreaElement | null>(null)
 
-  useEffect(() => {
+  const measure = useCallback(() => {
     const ta = ref.current
     if (!ta) return
     ta.style.height = 'auto'
@@ -63,7 +83,12 @@ export default function AutoTextarea({
     // maxHeight=0 ⇒ 不封顶（见 props 注释）
     const cap = maxHeight > 0 ? maxHeight : Number.MAX_SAFE_INTEGER
     ta.style.height = Math.max(min, Math.min(ta.scrollHeight, cap)) + 'px'
-  }, [value, minRows, minHeight, maxHeight, textClass])
+  }, [minRows, minHeight, maxHeight])
+
+  // 内容 / 字号档变化时重测
+  useEffect(() => { measure() }, [measure, value, textClass])
+  // 窗口尺寸（含界面缩放）变化时重测 —— 宽度变了行数就变，旧高度会失真
+  useEffect(() => subscribeResize(measure), [measure])
 
   return (
     <textarea

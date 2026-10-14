@@ -14,6 +14,7 @@ import { Building2, Loader2, Eye } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter } from '@/lib/types'
 import { PLATFORM_RULES, platformRuleOf, type PlatformId } from '@/lib/app/platformRules'
+import { NO_CHAPTERS_HINT } from '@/lib/constants'
 import { precheckBook, type PlatformCheckReport } from '@/lib/audit/platformCheck'
 import { getCustomSensitiveWords } from '@/lib/editor/sensitiveWords'
 import { Button } from '@/components/common/Button'
@@ -115,7 +116,7 @@ export default function PlatformCheckPanel() {
 
       {/* 结果区 */}
       <div className="px-4 py-3">
-        {chapters.length === 0 && <div className="text-11 text-ink-500">这个项目还没有章节。</div>}
+        {chapters.length === 0 && <div className="text-11 text-ink-500">{NO_CHAPTERS_HINT}</div>}
 
         {chapters.length > 0 && !report && !running && (
           <div className="text-11 text-ink-500">

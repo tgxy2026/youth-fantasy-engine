@@ -56,5 +56,10 @@ export function chapterSeqOf(vols: Volume[], chs: Chapter[], chapterId: string):
 export function sortChapters(vols: Volume[], chs: Chapter[]): Chapter[] {
   const rank = new Map<string, number>()
   flattenChapters(vols, chs).forEach((c, i) => rank.set(c.id, i))
-  return [...chs].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
+  // 🔴 不在 rank 里的 = **孤儿章**（volumeId 指向已不存在的卷，例如卷被删过）。
+  //    原先回落到 0 会让它们静默排到「第 1 章」前面，与章节树把它们收进末尾
+  //    「未归类章节」兜底组的观感冲突（2026-10-14 六维审计发现）。
+  //    给一个大于全部有效序号的排名 ⇒ 不丢、位置稳定、且不会伪装成开头。
+  const tail = rank.size
+  return [...chs].sort((a, b) => (rank.get(a.id) ?? tail) - (rank.get(b.id) ?? tail))
 }
