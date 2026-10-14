@@ -12,10 +12,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ClipboardCheck, Loader2, Eye, CheckCircle2, AlertTriangle } from 'lucide-react'
 import * as db from '@/lib/db'
-import type { Chapter } from '@/lib/types'
+import type { Chapter, Volume } from '@/lib/types'
 import type { AuditIssue } from '@/lib/audit/audit'
 import { SEVERITY_LABEL } from '@/lib/audit/audit'
 import { runChapterCheck, countActionable, type ChapterCheckReport } from '@/lib/outline/chapterCheck'
+// 🔴 章节顺序真源 —— Chapter.order 是**卷内**序号，裸 sort 跨卷必串号（见 chapterSeq.ts 顶部禁令）
+import { sortChapters } from '@/lib/outline/chapterSeq'
+import ChapterTreeSelect from '@/components/outline/ChapterTreeSelect'
 // 3.0 · W2-2：按章审计的留痕与失效（结果绑正文指纹；正文改过 ⇒ 标「已过期，需重跑」，不自动重跑）
 import { saveChapterAudit, loadChapterAuditStatus, humanAgo, type AuditFreshness } from '@/lib/outline/chapterAudit'
 import { Button } from '@/components/common/Button'
@@ -46,6 +49,7 @@ function IssueList({ issues }: { issues: AuditIssue[] }) {
 
 export default function ChapterCheckPanel() {
   const [chapters, setChapters] = useState<Chapter[]>([])
+  const [volumes, setVolumes] = useState<Volume[]>([])
   const [activeId, setActiveId] = useState('')
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
@@ -54,8 +58,15 @@ export default function ChapterCheckPanel() {
   const [audit, setAudit] = useState<AuditFreshness | null>(null)
 
   const load = useCallback(async () => {
-    const chs = await db.getAllChapters().catch(() => [] as Chapter[])
-    const sorted = [...chs].sort((a, b) => a.order - b.order)
+    const [chs, vols] = await Promise.all([
+      db.getAllChapters().catch(() => [] as Chapter[]),
+      db.getAllVolumes().catch(() => [] as Volume[]),
+    ])
+    // 🔴 排序必须走 sortChapters（卷序 → 章序）。原先的 `[...chs].sort((a,b)=>a.order-b.order)`
+    //    把**卷内序号**当全局序号用 ⇒ 跨卷串号，列表成「第1章 / 第11章 / 第21章 / 第2章 …」
+    //    （2026-10-14 主人实测报障，根因与 chapterSeq.ts 顶部禁令完全一致）。
+    const sorted = sortChapters(vols, chs)
+    setVolumes(vols)
     setChapters(sorted)
     setActiveId(prev => prev || (sorted.find(c => (c.wordCount || 0) > 0) ?? sorted[0])?.id || '')
     setLoading(false)
@@ -126,18 +137,17 @@ export default function ChapterCheckPanel() {
         </div>
       </div>
 
-      {/* 章节选择 */}
-      <div className="px-4 py-3 border-b border-ink-700 flex flex-wrap items-center gap-x-4 gap-y-2 text-11">
-        <select
+      {/* 章节选择 —— 卷 / 章树（可折叠 + 可搜索）
+          🔴 2026-10-14：原先是平铺 <select>，顺序因跨卷裸排而乱（第1章 → 第11章 → 第21章）。
+          换成树后：卷序分组、章号取全局派生序号、支持折叠与搜索，与正文编辑页左栏观感一致。 */}
+      <div className="px-4 py-3 border-b border-ink-700 space-y-1.5">
+        <ChapterTreeSelect
+          volumes={volumes}
+          chapters={chapters}
           value={activeId}
-          onChange={e => setActiveId(e.target.value)}
-          className="rounded border border-ink-700 bg-ink-950 px-2 py-1 text-11 text-ink-200 outline-none focus:border-amber"
-        >
-          {chapters.map(c => (
-            <option key={c.id} value={c.id}>{c.title || '（未命名）'}</option>
-          ))}
-        </select>
-        {!hasContent && <span className="text-10 text-ink-500">这一章还没有正文，体检只覆盖连续性 / 伏笔两项</span>}
+          onChange={setActiveId}
+        />
+        {!hasContent && <div className="text-10 text-ink-500">这一章还没有正文，体检只覆盖连续性 / 伏笔两项</div>}
       </div>
 
       {/* W2-2：留痕 + 失效标注（只标注，不自动重跑） */}

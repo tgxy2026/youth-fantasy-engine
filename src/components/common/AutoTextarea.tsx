@@ -24,6 +24,8 @@ interface Props {
    */
   textClass?: string
   disabled?: boolean
+  /** 拼写检查。中文场景建议传 `false` —— 否则浏览器会给中文划红波浪线 */
+  spellCheck?: boolean
   autoFocus?: boolean
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
   title?: string
@@ -44,7 +46,7 @@ interface Props {
 export default function AutoTextarea({
   value, onChange, placeholder, className = '',
   minRows, minHeight, maxHeight = 360, textClass = 'text-12',
-  disabled, autoFocus, onKeyDown, title, inputRef,
+  disabled, spellCheck, autoFocus, onKeyDown, title, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement | null>(null)
 
@@ -71,6 +73,7 @@ export default function AutoTextarea({
       placeholder={placeholder}
       rows={1}
       disabled={disabled}
+      spellCheck={spellCheck}
       autoFocus={autoFocus}
       onKeyDown={onKeyDown}
       title={title}

@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileDown, Loader2, Play, X } from 'lucide-react'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
+import AutoTextarea from '@/components/common/AutoTextarea'
 import { Button } from '@/components/common/Button'
 import DraftReviewPanel from '@/components/editor/DraftReviewPanel'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -367,13 +368,17 @@ export default function BookBreakPanel() {
               {'原文的章节标题写法不标准（如「01|风起」「风起（一）」），本地规则认不出来时在这里帮忙：照原文里的标题样式抄几行进来（一行一条，3~5 条为宜）。\n\n· 填了示例：拆书时本地规则先认一遍，认不出就交给 AI 按示例找出章节起始行（识别结果会逐字回原文核对，对不上就放弃）；\n· 不填：按原来的方式处理 —— 本地规则认不出就按字数分块；\n· 本地规则已经认出章节时示例不会被用到（不耗模型调用）。'}
             </HelpPopover>
           </div>
-          <textarea
+          {/* 2026-10-14：原为固定 h-14（约 3 行）+ 右侧滚动条，示例稍多就看不全 ⇒ 改自适应高度，
+              下限 3 行（保持点击区域），上限 240px 后转内部滚动，避免长文本把面板撑得过长。 */}
+          <AutoTextarea
             value={titleSamples}
-            onChange={e => { setTitleSamples(e.target.value); writeStringPref('bookbreak-title-samples', e.target.value) }}
+            onChange={v => { setTitleSamples(v); writeStringPref('bookbreak-title-samples', v) }}
             disabled={running}
             spellCheck={false}
+            minRows={3}
+            maxHeight={240}
             placeholder={'一行一条，照原文里的标题样式抄，例如：\n01|风起\n02|逆流'}
-            className="mt-1.5 h-14 w-full resize-y rounded border border-ink-700 bg-ink-900 px-2.5 py-1.5 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
+            className="mt-1.5 rounded border border-ink-700 bg-ink-900 px-2.5 py-1.5 text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
           />
           <div className="mt-1 text-10 text-ink-500">
             {preview

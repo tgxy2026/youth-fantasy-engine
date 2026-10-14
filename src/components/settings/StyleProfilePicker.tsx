@@ -40,21 +40,26 @@ export function StyleProfilePicker({ ownerTab, hint, boxed = true }: {
   }
 
   return (
-    <div className={boxed ? 'space-y-1.5 rounded-lg border border-ink-700 bg-ink-800/40 p-2.5' : 'space-y-1.5'}>
+    <div data-style-picker className={boxed ? 'space-y-1.5 rounded-lg border border-ink-700 bg-ink-800/40 p-2.5' : 'space-y-1.5'}>
       <div className="flex items-baseline gap-1.5">
         <span className="text-ink-200 text-12 shrink-0">文风档</span>
         <span className="text-ink-500 text-10">{hint ?? '按你提炼的文风落笔；与其它设置互不覆盖'}</span>
       </div>
       <div className="flex items-center gap-2">
+        {/* 下拉与右侧按钮**同高同字号**（h-8 / text-12）：2026-10-14 主人反馈按钮原来的 xs 档
+            （h-6 · text-11）比下拉矮一截、文字挤出格，故两侧对齐到 sm 档基线。
+            🔴 不在这里叠 h-* / px-* / text-* —— SIZE 基线已含尺寸，叠了就是开盲盒（见 Button.tsx U-2）。 */}
         <select
           value={profiles.some(p => p.id === activeId) ? activeId : ''}
           onChange={e => void change(e.target.value)}
-          className="flex-1 bg-ink-800 border border-ink-700 rounded px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/40"
+          className="h-8 flex-1 bg-ink-800 border border-ink-700 rounded px-2 text-12 text-ink-100 outline-none focus:border-amber/40"
         >
           <option value="">（不使用文风档）</option>
           {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <Button variant="secondary" size="xs" onClick={() => setManageOpen(true)}>管理文风档…</Button>
+        <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" onClick={() => setManageOpen(true)}>
+          管理文风档…
+        </Button>
       </div>
       {!profiles.length && (
         <div className="text-ink-500 text-10 leading-relaxed">

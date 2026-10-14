@@ -3,7 +3,9 @@
 // 盯三件事：
 //   ① `checkAuditFresh` 的失效判据（🔴 指纹一致才算作数；改坏又改回原样也算改过）；
 //   ② `toAuditRecord` 折算口径（只报数、不含全文）；
-//   ③ 🔴 **源码闸** —— 面板只标注不自动重跑；留痕失败静默；复用 chapterFingerprint 不另发明。
+//   ③ 🔴 **源码闸** —— 面板只标注不自动重跑；留痕失败静默；复用 chapterFingerprint 不另发明；
+//   ④ 🔴 **章节选择顺序闸**（2026-10-14 主人报障）：面板挑章不得裸按 `Chapter.order` 排
+//      （order 是**卷内**序号，跨卷会串号成「第1章 → 第11章 → 第21章」），必须走 `sortChapters`。
 import fs from 'node:fs'
 import { checkAuditFresh, toAuditRecord, humanAgo, type ChapterAuditRecord } from '../src/lib/outline/chapterAudit'
 import type { ChapterCheckReport } from '../src/lib/outline/chapterCheck'
@@ -98,6 +100,29 @@ console.log('\n—— chapterAudit 用例开始 ——')
     !/useEffect\([^)]*run\(\)/.test(panel) && panel.includes('onClick={() => void run()}'))
   ok('过期时给醒目提示且提示要手动重跑', /已过期.*重新点「体检本章」/.test(panel))
   ok('过期标注用 alert 色（text-amber）', panel.includes('text-amber'))
+}
+
+// ---------- ⑤ 🔴 章节选择顺序闸（2026-10-14） ----------
+//
+// 主人报障：「本章体检里点开章节列表，第1章下面是第11章、再下面第21章」。
+// 根因＝裸按 `Chapter.order` 排。order 是**卷内**序号（卷二第1章的 order 同样是 0），
+// `chapterSeq.ts` 顶部与 `sortChapters()` 注释里早写明这条禁令，两个面板当初都漏了。
+{
+  const panel = fs.readFileSync('src/components/outline/ChapterCheckPanel.tsx', 'utf8')
+  const pace = fs.readFileSync('src/components/outline/PaceAnalysisPanel.tsx', 'utf8')
+  // 允许出现在别处（卷内排序是合法的），只禁止「对全量章节数组裸排」的写法出现在这两个面板。
+  // 🔴 扫描前先**剥掉注释** —— 面板注释里正引用了这条禁令的旧写法（说明为什么改），
+  //    不剥就会把自己写的说明当违规（本文件早就踩过同类坑）。
+  const strip = (s: string) => s
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  const naive = /\[\s*\.\.\.\s*chs\s*\]\s*\.sort\(\s*\(a,\s*b\)\s*=>\s*a\.order\s*-\s*b\.order\s*\)/
+  ok('🔴 本章体检不再裸按 order 排（跨卷串号）', !naive.test(strip(panel)))
+  ok('🔴 本章体检走 sortChapters（卷序 → 章序）', strip(panel).includes('sortChapters('))
+  ok('🔴 节奏与章末钩子同样走 sortChapters', strip(pace).includes('sortChapters(') && !naive.test(strip(pace)))
+  ok('本章体检改用卷章树（可折叠 + 可搜索），不再是平铺 select', panel.includes('ChapterTreeSelect'))
+  const tree = strip(fs.readFileSync('src/components/outline/ChapterTreeSelect.tsx', 'utf8'))
+  ok('🔴 树组件排序也走 chapterSeqMap（不自造序号）', tree.includes('chapterSeqMap('))
 }
 
 console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ————`)

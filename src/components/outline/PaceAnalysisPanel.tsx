@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { EMPTY_CHAPTER_HINT } from '@/lib/constants'
 import { Activity, Loader2, Sparkles, Eye } from 'lucide-react'
 import * as db from '@/lib/db'
-import type { Chapter } from '@/lib/types'
+import type { Chapter, Volume } from '@/lib/types'
 import { Button } from '@/components/common/Button'
 import { showToast } from '@/components/dialogs/dialogs'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -26,6 +26,8 @@ import { paceLogged, trendOf, type CheckTrend } from '@/lib/audit/checkLog'
 import CheckTrendNote from '@/components/audit/CheckTrendNote'
 import { HOOK_ZONE_RATIO, PACE_SEGMENTS, PACE_SEG_UNKNOWN, type PaceReport } from '@/lib/outline/paceAnalysis'
 import { countWords } from '@/lib/editor/textStats'
+// 🔴 章节顺序真源（卷序 → 章序）：Chapter.order 是卷内序号，裸 sort 跨卷必串号
+import { sortChapters } from '@/lib/outline/chapterSeq'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import HelpPopover from '@/components/common/HelpPopover'
 import { markTaskSeen, startTask, useAiTask } from '@/lib/ai/aiTaskCenter'
@@ -72,8 +74,12 @@ export default function PaceAnalysisPanel() {
   const taskStatus = task?.status
 
   const load = useCallback(async () => {
-    const chs = await db.getAllChapters().catch(() => [] as Chapter[])
-    const sorted = [...chs].sort((a, b) => a.order - b.order)
+    const [chs, vols] = await Promise.all([
+      db.getAllChapters().catch(() => [] as Chapter[]),
+      db.getAllVolumes().catch(() => [] as Volume[]),
+    ])
+    // 与「本章体检」同源修正：原先裸按 order 排 ⇒ 跨卷串号（第1章 / 第11章 / 第21章 …）
+    const sorted = sortChapters(vols, chs)
     setChapters(sorted)
     setActiveId(prev => prev || (sorted.find(c => (c.wordCount || 0) > 0) ?? sorted[0])?.id || '')
     setLoading(false)
