@@ -4,7 +4,7 @@
 //   ① 纯读写函数的行为与降级（脏数据 / 无 Web Storage 环境不许崩）；
 //   ② 🔴 **语义约定**：一律存「偏离默认的那一侧」（侧栏存"已折叠的分组"），
 //      否则以后新增分组时，老用户的存量记录里没有它 → 新功能一上来就是收起的；
-//   ③ 五处接入点都真的用了它 —— 只写模块不接线，等于白做。
+//   ③ 各接入点都真的用了它 —— 只写模块不接线，等于白做。
 import fs from 'node:fs'
 import path from 'node:path'
 // uiPrefs 的模块顶层不碰 localStorage（只在函数体内读），所以普通 import 也能让上面的桩先生效
@@ -106,6 +106,19 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
   const draft = read('src/components/editor/DraftReviewPanel.tsx')
   ok('草稿审阅的分组折叠也记忆', /usePersistedSet\('draft-review-collapsed'\)/.test(draft))
+}
+
+// ---------- ⑤ 🔴 编辑器「设定检索栏」显隐必须持久化（3.0.4 · 社区反馈）----------
+// 病根：它曾是纯内存 useState(true)，而编辑器会随**页签切换**整体卸载 ⇒
+// 作者点「隐藏检索栏」后切到别的页签再回来，那一栏又冒出来了。
+{
+  const model = read('src/components/editor/useNovelEditorModel.ts')
+  ok('🔴 检索栏显隐走 uiPrefs（不是内存 state）—— 否则切页签即复位',
+    /usePersistedBool\(\'editor-show-search\',\s*true\)/.test(model))
+  ok('🔴 默认值必须是 true（老用户无记录时落到「显示」，不能变成隐藏）',
+    !/usePersistedBool\(\'editor-show-search\',\s*false\)/.test(model))
+  ok('🔴 不得退回内存 state（防回归：曾为 useState(true)）',
+    !/const \[showSearch, setShowSearch\] = useState/.test(model))
 }
 
 console.log(`\n—— uiPrefs 用例结束：${pass} 通过 / ${fail} 失败`)

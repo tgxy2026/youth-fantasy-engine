@@ -100,7 +100,19 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   const [overKey, setOverKey] = useState<null | { kind: 'vol' | 'ch'; id: string; pos: 'before' | 'after' }>(null)
   const [savedFlash, setSavedFlash] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
-  const [showSearch, setShowSearch] = useState(true)
+  /**
+   * 设定检索栏显隐（编辑器右上「面板」按钮）。
+   *
+   * 🔴 3.0.4：从 `useState(true)` 改成**持久化**（走 uiPrefs 的 `yfe-ui:` 命名空间）。
+   *    原先它只是内存 state，而编辑器会随**页签切换**整体卸载 ⇒ 作者点「隐藏检索栏」后，
+   *    一旦切到别的页签再回来，那一栏又冒出来了（社区反馈）。
+   *    这里存的语义是「检索栏**是否显示**」，默认显示；与同文件 `editor-paste-normalize`
+   *    等偏好同一套读写法（localStorage，只服务本机这个人的界面习惯，不进项目数据、
+   *    不随导出 / 云同步走）。
+   *    ⚠️ 默认值必须给 `true`：老用户没有这条记录时要落到「显示」，
+   *    不能因为"记录里没有"就变成隐藏。
+   */
+  const [showSearch, setShowSearch] = usePersistedBool('editor-show-search', true)
   const [loaded, setLoaded] = useState(false)
   const [modal, setModal] = useState<null | 'sensitive' | 'history' | 'trash' | 'search' | 'lock' | 'foreshadow' | 'continuity' | 'typo' | 'style' | 'format'>(null)
   /**
