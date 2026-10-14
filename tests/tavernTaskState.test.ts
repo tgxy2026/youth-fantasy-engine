@@ -18,6 +18,9 @@ function ok(name: string, cond: boolean, extra = '') {
 }
 
 const read = (p: string) => fs.readFileSync(p, 'utf8')
+/** 剥注释：源码注释里常出现「旧写法是这样的」的反例文本（如 `releaseSummaryLock()`），
+ *  判「不得再出现某形态」时必须先剥掉，否则会被注释里的说明文字误伤。 */
+const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 const roundEnd = read('src/components/tavern/useFreeRoundEnd.ts')
 const free = read('src/components/tavern/TavernFree.tsx')
 const center = read('src/lib/ai/aiTaskCenter.ts')
@@ -64,8 +67,11 @@ console.log('\n—— W2-5 用例开始 ——')
   })())
   ok('③ 🔴 取不到锁改为 throw（任务如实记 failed，不再只 toast 一句）',
     roundEnd.includes("throw new Error('另一个窗口正在收尾')"))
-  ok('③ release 排在 fn 自己的 finally', /finally \{\s*\n\s*\/\/[^\n]*\n\s*releaseSummaryLock\(\)/.test(roundEnd)
-    || roundEnd.includes('releaseSummaryLock()\n    }'))
+  // 🔴 3.0.4：锁带**所有权令牌**（acquire 返回 token、release 必须出示它），
+  //    这样 TTL 到期的旧锁不会被别的实例误释放。闸跟着改为「必须带 token 释放」。
+  ok('③ release 排在 fn 自己的 finally', /finally \{[\s\S]{0,240}?releaseSummaryLock\(lockToken\)/.test(roundEnd))
+  ok('③ 🔴 释放锁必须出示所有权令牌（不再无参 release）',
+    roundEnd.includes('releaseSummaryLock(lockToken)') && !/releaseSummaryLock\(\s*\)/.test(strip(roundEnd)))
   ok('③ 传 signal / progress 给真正干活的 runRoundEnd',
     roundEnd.includes('onProgress: ctx.progress') && roundEnd.includes('signal: ctx.signal'))
 }

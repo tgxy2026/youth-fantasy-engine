@@ -141,9 +141,15 @@ const remote = nodeRequire(path.join(process.cwd(), 'electron/remoteSync.cjs')) 
     /'corrupt' in parsed\) \{\s*\n\s*await quarantineOnce/.test(core))
   ok('🔴 引擎 · push 读不到远端就不写（status 0）',
     /async push\([\s\S]{0,220}?if \(!r\.ok\) return \{ status: 0 \} \/\/ 读不到远端/.test(core))
+  // 🔴 3.0.4：push 的冲突判定**加强**了 —— 除「远端 rev 更新」外，
+  //    「同 rev 但 version 不同」也判冲突（两台设备基于同一 rev 各写一次的分叉）。
+  //    两条闸跟着放宽到新形态，并**新增**一条专门钉住这个新能力（否则闸会假绿放行退化）。
   ok('🔴 引擎 · push 冲突（远端更新）返回 409 并带上 enc',
-    /cur\.rev > baseRev\) return \{ status: 409, rev: cur\.rev, enc: cur\.enc \}/.test(core))
-  ok('🔴 引擎 · 写后回读校验（rev 不一致按 409）', /a\.rev !== newRev\) return \{ status: 409/.test(core))
+    /cur\.rev > baseRev[\s\S]{0,90}?return \{ status: 409, rev: cur\.rev,[\s\S]{0,40}?enc: cur\.enc \}/.test(core))
+  ok('🔴 引擎 · 同 rev 但 version 不同也判冲突（并发分叉检测）',
+    /cur\.rev === baseRev && cur\.version !== baseVersion/.test(core))
+  ok('🔴 引擎 · 写后回读校验（rev 或 version 不一致按 409）',
+    /a\.rev !== newRev[\s\S]{0,60}?return \{ status: 409/.test(core))
   ok('🔴 引擎 · startWatch 读失败本轮跳过、不更新 lastSeenRev',
     /if \(!r\.ok\) return \/\/ 读失败：本轮跳过/.test(core))
   ok('🔴 引擎 · 空 / 不存在的载荷视为 rev 0', /if \(text == null \|\| !String\(text\)\.trim\(\)\) return \{ rev: 0, enc: null \}/.test(core))

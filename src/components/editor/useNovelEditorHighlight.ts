@@ -17,6 +17,7 @@ import * as db from '@/lib/db'
 import { TABS } from '@/lib/schema'
 import { readAliases } from '@/lib/settings/aliases'
 import { scanRefHighlight, type RefName } from '@/components/editor/novelEditorHelpers'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 type HighlightArgs = {
   /** 当前章正文（由调用方做 120ms 防抖镜像，见下方 deferredContent） */
@@ -38,9 +39,9 @@ export function useNovelEditorHighlight({
   draftContent, activeId, fontSize, pageWide, focusMode, showSearch, taRef, ghostRef, scrollRef,
 }: HighlightArgs) {
   // v1.3 编辑器体验：本章引用侧栏 + 内联高亮
-  const [showRefs, setShowRefs] = useState(false)
+  const [showRefs, setShowRefs] = usePersistedBool('editor-show-reference-sidebar', false)
   // 2.2.0：引用名内联高亮改为**默认关闭**（长章节全量着色太吵视线，需要时手动开）
-  const [highlightOn, setHighlightOn] = useState(false)
+  const [highlightOn, setHighlightOn] = usePersistedBool('editor-reference-highlight', false)
   const [refNames, setRefNames] = useState<RefName[]>([])
   const highlightRef = useRef<HTMLDivElement>(null)
 

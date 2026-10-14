@@ -18,7 +18,7 @@
  *
  * 只读失败（隐私模式 / 配额满 / 脏数据）一律静默退回默认值 —— 界面偏好坏掉不该让页面崩。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 const PREFIX = 'yfe-ui:'
 
@@ -101,23 +101,40 @@ export function usePersistedSet(
  */
 const PREF_EVENT = 'yfe-ui-pref'
 
-export function usePersistedBool(key: string, def: boolean): [boolean, (v: boolean) => void] {
+export function usePersistedBool(key: string, def: boolean): [boolean, Dispatch<SetStateAction<boolean>>] {
   const [pair, setPair] = useState<{ key: string; v: boolean }>(() => ({ key, v: readBoolPref(key, def) }))
+  // 🔴 为什么需要这个 ref：update 的依赖只有 [key]，闭包里的 `pair.v` 会是**首帧**的值。
+  //    若直接在 update 里读它，函数式更新 `setV(v => !v)` 就会拿到过期值 —— 表现是
+  //    「快速连点两次开关，第二次把第一次又翻回去了」。所以用 ref 镜像当前值，渲染期同步维护。
+  const latest = useRef(pair.v)
   if (pair.key !== key) {
-    setPair({ key, v: readBoolPref(key, def) })
+    const v = readBoolPref(key, def)
+    latest.current = v
+    setPair({ key, v })
+  } else {
+    latest.current = pair.v
   }
   useEffect(() => {
     const onPref = (e: Event) => {
       const k = (e as CustomEvent<{ key: string }>).detail?.key
       if (k !== key) return
-      setPair({ key, v: readBoolPref(key, def) })
+      const v = readBoolPref(key, def)
+      latest.current = v // 别的实例改了同一个键 ⇒ 本实例的「最新值」也要跟上
+      setPair({ key, v })
     }
     window.addEventListener(PREF_EVENT, onPref)
     return () => window.removeEventListener(PREF_EVENT, onPref)
   }, [key, def])
-  const update = useCallback((v: boolean) => {
-    writeBoolPref(key, v)
-    setPair({ key, v })
+  // 🔴 签名必须是 Dispatch<SetStateAction<boolean>>（与 useState 的 setter 完全一致）：
+  //    本项目有 5 处写法是 `setX(v => !v)`（NovelEditor / TavernControl / TavernPlot /
+  //    TavernPlotScenes / CharacterSheet）。3.0.4 曾把它收窄成 `(v: boolean) => void`，
+  //    结果这 5 处全编译不过；当时在调用点改成 `setX(!x)` 绕过 —— 那是**降级修法**，
+  //    会把函数式更新退化成闭包读值，重新引入上面说的连点丢更新问题。所以修 hook 本体。
+  const update = useCallback<Dispatch<SetStateAction<boolean>>>(v => {
+    const next = typeof v === 'function' ? v(latest.current) : v
+    latest.current = next
+    writeBoolPref(key, next)
+    setPair({ key, v: next })
     window.dispatchEvent(new CustomEvent(PREF_EVENT, { detail: { key } }))
   }, [key])
   return [pair.v, update]

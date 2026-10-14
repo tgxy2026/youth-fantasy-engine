@@ -26,6 +26,7 @@ import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
 import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 /** 角色卡中以「下拉」形式填写的字段（与设定检索 CARD_SELECT_FIELDS 对应）：value 为存储值，label 为展示文案 */
 const CARD_SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -73,7 +74,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   // AI 补全弹窗（在**当前这张卡**上补空白字段，已填的保留）
   const [showFillExisting, setShowFillExisting] = useState(false)
   // 筛选：开启后隐藏「人物状态 = 已退场」的角色，避免角色过多时难以定位
-  const [hideRetired, setHideRetired] = useState(false)
+  const [hideRetired, setHideRetired] = usePersistedBool('character-sheet-hide-retired', false)
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
   const { labels: aliasLabels } = useFieldAliases(

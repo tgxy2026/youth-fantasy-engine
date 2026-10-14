@@ -22,11 +22,12 @@ import { DEFAULT_POST_RULES, previewPostRules, PostRule } from '@/lib/tavern/pos
 import { getTavernSettings, saveTavernSettings, resetTavernSettings, DEFAULT_TAVERN_SETTINGS, TavernSettings, TavernProfile, withActiveProfile, addProfileTo, removeProfileFrom, selectProfileIn, activeProfileOf } from '@/lib/tavern/settings'
 import { COL_GAP, PROTO_MIN_HEIGHT } from '@/components/tavern/tavernControlParts'
 import { DYNAMIC_QUOTA_PCT } from '@/lib/tavern/quotas'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 export function useTavernControlModel() {
   const [s, setS] = useState<TavernSettings | null>(null)
   /** 是否展开所有数值项的分段说明（默认展开） */
-  const [showBands, setShowBands] = useState(true)
+  const [showBands, setShowBands] = usePersistedBool('tavern-control-show-bands', true)
   const [providers, setProviders] = useState<AIProvider[]>([])
   /** 全局活动模型 id —— 本场未指定模型时，实际生效的就是它（用于推断上下文能力） */
   const [activeProviderId, setActiveProviderId] = useState<string | null>(null)

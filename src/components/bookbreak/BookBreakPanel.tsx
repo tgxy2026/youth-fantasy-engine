@@ -27,7 +27,7 @@ import { showToast } from '@/components/dialogs/dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '@/lib/ai'
 import { adviseImport, type ImportAdvice } from '@/lib/bookbreak/recommend'
 import { estimateCalls, previewSplit, runBookBreak, type BookBreakResume } from '@/lib/bookbreak/run'
-import { readStringPref, writeStringPref } from '@/lib/settings/uiPrefs'
+import { readStringPref, writeStringPref, usePersistedBool } from '@/lib/settings/uiPrefs'
 import type { RelationTabOutcome } from '@/lib/bookbreak/relations'
 import {
   DEFAULT_RELATION_LIMITS, RELATION_LIMIT_META, clampRelationLimits, getRelationLimits,
@@ -118,10 +118,10 @@ export default function BookBreakPanel() {
   // 2.6.1 · R2：章节标题示例 —— 填了且本地规则认不出章节时，拆书先用 AI 按示例识别边界（run.ts 阶段 1）
   const [titleSamples, setTitleSamples] = useState(() => readStringPref('bookbreak-title-samples') ?? '')
   /** 是否把原文写进正文编辑（老大 2026-09-18 需求：切分后立刻形成卷/章框架）。默认开。 */
-  const [writeToChapters, setWriteToChapters] = useState(true)
-  const [summarizeForms, setSummarizeForms] = useState(true)
+  const [writeToChapters, setWriteToChapters] = usePersistedBool('bookbreak-write-to-chapters', true)
+  const [summarizeForms, setSummarizeForms] = usePersistedBool('bookbreak-summarize-forms', true)
   /** 末尾是否整理关系（人物关系 / 势力关系，两张表各一次调用）。默认开：关系是逐章抽取产不出来的那块。 */
-  const [organizeRelations, setOrganizeRelations] = useState(true)
+  const [organizeRelations, setOrganizeRelations] = usePersistedBool('bookbreak-organize-relations', true)
   /** 「整理关系」的材料上限（持久保存；见 lib/bookbreak/relationMaterial.ts 里每项为什么） */
   const [limits, setLimits] = useState<RelationMaterialLimits>(DEFAULT_RELATION_LIMITS)
   const [showLimits, setShowLimits] = useState(false)

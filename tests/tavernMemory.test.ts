@@ -185,14 +185,17 @@ async function main() {
 
   // ---------- 7) 防重锁（时间节流已废除，只剩跨实例锁 + TTL） ----------
   {
+    // 🔴 3.0.4 起取锁返回的是**所有权令牌**（string），不再是 boolean：
+    //    只有持有令牌的实例才能解锁，避免「A 窗口刚取锁、B 窗口因 TTL 到期把它释放掉」。
     releaseSummaryLock()
-    ok('无锁时可取', acquireSummaryLock())
-    ok('已被取走时取不到（挡住两个窗口同时跑）', !acquireSummaryLock())
+    const tokenA = acquireSummaryLock()
+    ok('无锁时可取（返回所有权令牌）', tokenA !== null && tokenA.length > 0)
+    ok('已被取走时取不到（挡住两个窗口同时跑）', acquireSummaryLock() === null)
     releaseSummaryLock()
-    ok('释放后可再取', acquireSummaryLock())
+    ok('释放后可再取', acquireSummaryLock() !== null)
     // 模拟「上次跑到一半崩了」：写一个陈旧时间戳
     ;(globalThis as unknown as { localStorage: MemStorage }).localStorage.setItem('yfe-tavern-summary-lock', String(Date.now() - SUMMARY_LOCK_TTL_MS - 1000))
-    ok('陈旧锁超过 TTL 可被接管', acquireSummaryLock())
+    ok('陈旧锁超过 TTL 可被接管', acquireSummaryLock() !== null)
     releaseSummaryLock()
   }
 

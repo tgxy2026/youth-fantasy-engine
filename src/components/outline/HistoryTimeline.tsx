@@ -4,6 +4,7 @@ import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapC
 import { Calendar, Users, X, AlarmClock, Layers } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
+import { usePersistedEnum } from '@/lib/settings/uiPrefs'
 
 /**
  * 事件配色（2.4.4 线条方案）：
@@ -75,10 +76,14 @@ const CARD_MAX_H = 150
 
 export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
   const [hover, setHover] = useState<string | null>(null)
-  const [filterStatus, setFilterStatus] = useState<'all' | '已定稿' | '待补充' | '已变更'>('all')
+  const [filterStatus, setFilterStatus] = usePersistedEnum<'all' | '已定稿' | '待补充' | '已变更'>(
+    'history-timeline-status-filter', ['all', '已定稿', '待补充', '已变更'], 'all',
+  )
   const [selected, setSelected] = useState<Evt | null>(null)
   /** 横轴间距模式（2.7.2）：等距（默认，零回归）/ 等比（按真实时间差 + 超长空档封顶） */
-  const [scale, setScale] = useState<'even' | 'proportional'>('even')
+  const [scale, setScale] = usePersistedEnum<'even' | 'proportional'>(
+    'history-timeline-scale', ['even', 'proportional'], 'even',
+  )
 
   /** 起止展示串：只填了起点就只显示起点，两端都有则显示区间 */
   const rangeLabel = (e: Pick<Evt, 'time' | 'end'>, cal: string) => {

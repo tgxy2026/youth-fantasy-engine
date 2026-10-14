@@ -48,6 +48,7 @@ import { usePlotSummary } from '@/components/outline/usePlotSummary'
 import { usePlotCheckpoints } from '@/components/outline/usePlotCheckpoints'
 import { PlotSessionList, PlotInfoPanel } from '@/components/tavern/TavernPlotScenes'
 import { PlotChat } from '@/components/tavern/TavernPlotChat'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 export default function TavernPlot() {
   const [list, setList] = useState<TavernSessionIndexItem[]>([])
@@ -57,7 +58,7 @@ export default function TavernPlot() {
   // 🔴 只有手动入口，没有自动整理；失败/中止一律保留旧档案
   const { summarizing, runPlotSummary, stopSummary } = usePlotSummary({ setSession })
   const [setupOpen, setSetupOpen] = useState(false)
-  const [showInfo, setShowInfo] = useState(true)
+  const [showInfo, setShowInfo] = usePersistedBool('tavern-plot-info-visible', true)
   const [input, setInput] = useState('')
   /** B3：上一轮后处理实际改了什么（空 = 一个字没改） */
   const [postNotice, setPostNotice] = useState<{ applied: PostApplied[]; errors: string[] }>({ applied: [], errors: [] })

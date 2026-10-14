@@ -719,7 +719,19 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       clearDeleted(store, rows.map(r => r?.[kf]))
     }
     adoptBaseline()
-    const r = await pushNow(() => rev)
+    // 🔴 3.0.4 起 pushNow 多了一条**抛错**路径：409 且拿不到云端载荷（`!resp.enc`）时，
+    //    它不敢再重试（怕覆盖云端数据），改为 setStatus('error') + throw。
+    //    这里必须兜住 —— 本函数承诺的是「返回 true/false」，抛出去会让
+    //    `restoreFromCloudBackup()` 的调用方（desktopCloudSync / UI）吃到未捕获异常，
+    //    界面既看不到「恢复失败」，也可能中断后续流程。对恢复来说结论与 conflict 完全一致：
+    //    **云端没落地 ⇒ 如实报 false**。
+    let r: { conflict?: boolean } | null = null
+    try {
+      r = await pushNow(() => rev)
+    } catch {
+      setStatus('error')
+      return false
+    }
     // 🔴 pushNow 在重试耗尽时是**返回** `{conflict:true}` 而不是抛（2026-09-20 六维审计 P2）：
     //    忽略它 ⇒ 函数照旧 `return true` ⇒ 界面报「已从备份恢复」，而云端其实一个字都没变，
     //    下次拉取又会把 cache 覆盖回去 —— 作者以为恢复成功了，白忙一场。

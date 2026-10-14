@@ -16,6 +16,7 @@ import { talkBandOf, talkativityOf, type TavernSession, type TavernSessionIndexI
 import type { splitCast } from '@/lib/tavern/engine'
 // S1a 分支树视图（2026-10-05）：父子推断是**纯函数**、住在 store（与 branchTitle 相邻），组件只渲染结果
 import { groupSessionsByBranch, isBranchTitle } from '@/lib/tavern/store'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 // ⚠️ 下面两个展示件内部是从原文件**逐行搬**过来的 JSX，缩进保留原样（8 / 12 空格），
 //    这样才能用「逐行区间核对」证明一个字没改 —— 别为了好看去重排缩进。
@@ -41,7 +42,7 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
   /** 分支树视图开关（S1a，2026-10-05）：**纯显示开关、零数据改动** ——
    *  不新增字段、不存 `parentId`，父子关系由 `branchTitle` 写进去的「 ·分支N」后缀反推。
    *  推断逻辑在 `store.groupSessionsByBranch()`（纯函数、有单测），组件这边只拿结果渲染。 */
-  const [treeMode, setTreeMode] = useState(false)
+  const [treeMode, setTreeMode] = usePersistedBool('tavern-plot-tree-mode', false)
 
   /** 有多少场是分支 —— 一场分支都没有时不必显示这个开关（少一个控点） */
   const branchCount = useMemo(() => list.filter(s => isBranchTitle(s.title)).length, [list])

@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import jiewenjiPng from '@/assets/jiewenji.png'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 interface Props {
   /** 当前是否在正文编辑器页面：编辑器内点击唤起完整面板；其他页面弹出引导 */
@@ -28,7 +29,8 @@ export default function JieWenJiSprite({ isEditor, onNavigate }: Props) {
     return Number.isFinite(v) && v >= 8 && v <= 85 ? v : 60
   })
   const [hover, setHover] = useState(false)
-  const [tucked, setTucked] = useState(false)
+  // 双击收边属于用户主动选择的常驻展示偏好；悬停/迷你气泡仍是临时交互状态。
+  const [tucked, setTucked] = usePersistedBool('jiewenji-sprite-tucked', false)
   const [mini, setMini] = useState(false)
   const [bounce, setBounce] = useState(false)
   const dragRef = useRef<null | { startY: number; origTop: number; moved: boolean }>(null)
@@ -132,7 +134,7 @@ style={{ zIndex: Z.pageTip }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onDoubleClick={() => { setTucked(t => !t); setMini(false) }}
+        onDoubleClick={() => { setTucked(v => !v); setMini(false) }}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => { setHover(false); if (!mini) setMini(false) }}
         title={isEditor ? '颉文姬 · AI 编辑（点击打开 / 拖拽换位 / 双击收边）' : '颉文姬 · AI 编辑助手'}

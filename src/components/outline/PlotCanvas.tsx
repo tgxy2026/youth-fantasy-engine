@@ -14,6 +14,7 @@ import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import { Button } from '@/components/common/Button'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 
 // 🔴 'beat'（结构节拍）只由「按模板铺节点」本地生成（2.5.0 · A1），**不进 HEADER_TO_TYPE**
@@ -73,7 +74,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   const [pendingConn, setPendingConn] = useState<string | null>(null)
   const [generating, setGenerating] = useState<{ i: number; total: number } | null>(null)
   /** 推演信息密度：完整=章节全要素（准/慢/费 token）；简略=只喂「章节压缩摘要」（约原文 1/10，快/省 token） */
-  const [briefMode, setBriefMode] = useState(false)
+  const [briefMode, setBriefMode] = usePersistedBool('plot-canvas-brief-mode', false)
   /** 2.5.0 · A1：结构模板铺节点的临时选择（一次性动作不持久化 —— 铺出的卡片已进 plotCanvas 快照） */
   const [beatTplId, setBeatTplId] = useState('')
   /** 滚动容器可视尺寸（画布默认就这么大，不再固定硬撑滚动条） */
