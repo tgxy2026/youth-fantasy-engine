@@ -14,16 +14,24 @@
 //      并且能**显式**把 UTF-8 标志位（general purpose bit 11）写对 —— 这是中文条目名的关键。
 //
 // 【用法】
-//   node scripts/build-portable-pkg.mjs                 # 版本号取 package.json
+//   node scripts/build-portable-pkg.mjs                 # 版本号取 package.json；**默认产出两个 zip**
 //   node scripts/build-portable-pkg.mjs --version 3.0.3
 //   node scripts/build-portable-pkg.mjs --no-zip        # 只组装目录，不压缩（调试用）
+//   node scripts/build-portable-pkg.mjs --no-node       # 跳过「含 Node 运行时」版，只出标准 zip
 //
 // 【产物】
-//   release/便携版-<版本>/                        ← 组装好的分发包目录
-//   release/桌面安装版/青春幻想引擎-便携版-<版本>.zip  ← 最终交付物
+//   release/便携版-<版本>/                        ← 组装好的分发包目录（**标准版、不含 Node 安装包**）
+//   release/桌面安装版/青春幻想引擎-便携版-<版本>.zip                 ← 标准版交付物（约 39MB）
+//   release/桌面安装版/青春幻想引擎-便携版-<版本>-含Node运行时.zip     ← 含 Node 安装包的交付物（约 122MB）
 //   release/便携版-<版本>.zip-report.json          ← 打包报告（条目数 / 体积 / 编码校验）
+//
+// 【为什么默认产出两个 zip】
+//   Windows 版是**免安装**的（Node 已内嵌进 exe）⇒ 给 Windows 用户一个 39MB 的小包就够；
+//   而 macOS / Linux 仍需用户自备 Node，把安装包内置进去能让那些平台的用户"解压即装"。
+//   但 macOS 的 .pkg 有 84MB 且压缩率仅 99% —— 若合成一个包，所有 Windows 用户都要白多下 83MB。
+//   ⇒ 拆成两个：标准版（默认下载）+ 含Node版（mac 用户 / 需要回退路径的用户下载）。
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, rmSync, copyFileSync } from 'node:fs'
 import { deflateRawSync } from 'node:zlib'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,10 +40,11 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 
 function parseArgs(argv) {
-  const out = { version: pkg.version, zip: true }
+  const out = { version: pkg.version, zip: true, withNode: true }
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--version') out.version = argv[++i]
     else if (argv[i] === '--no-zip') out.zip = false
+    else if (argv[i] === '--no-node') out.withNode = false
   }
   return out
 }
@@ -50,6 +59,11 @@ const RUNTIME_EXE = path.join(root, 'release', '便携版运行时', '青春幻�
 const PKG_DIR = path.join(root, 'release', `便携版-${ARGS.version}`)
 const ZIP_DIR = path.join(root, 'release', '桌面安装版')
 const ZIP_PATH = path.join(ZIP_DIR, `青春幻想引擎-便携版-${ARGS.version}.zip`)
+const ZIP_WITH_NODE_PATH = path.join(ZIP_DIR, `青春幻想引擎-便携版-${ARGS.version}-含Node运行时.zip`)
+/** Node 安装包放置目录（由 fetch-node-installer.mjs 下载填充） */
+const ASSETS_DIR = path.join(root, 'release', 'portable-assets')
+/** 组装包内的子目录名（中文名，用户一眼看懂） */
+const NODE_SUBDIR = 'Node运行时安装包'
 
 // ---------- 前置检查 ----------
 if (!existsSync(path.join(DIST_DIR, 'index.html'))) {
@@ -119,6 +133,7 @@ function walk(dir, base = '') {
 }
 const entries = walk(PKG_DIR)
 log(`② 待打包条目：${entries.length} 个`)
+// 注：真正的条目收集在 packAndVerify 里现取（含Node版要多一层安装包目录）
 
 // ---------- ③ 纯 Node zip 写入器 ----------
 //
@@ -219,28 +234,26 @@ function buildZip(files) {
   return Buffer.concat([...localParts, centralBuf, eocd])
 }
 
-// ---------- ④ 压缩 ----------
-if (ARGS.zip) {
-  log('③ 压缩（纯 Node zip 写入器，UTF-8 条目名）')
+// ---------- ④ 压缩 + ⑤ 自校验（两个 zip 复用同一套）----------
+/** 打包并自校验；返回报告对象（失败即 fail，不留半成品） */
+function packAndVerify(zipPath, label) {
+  log(`③ 压缩（${label} · 纯 Node zip 写入器，UTF-8 条目名）`)
   mkdirSync(ZIP_DIR, { recursive: true })
   const t0 = Date.now()
-  const zipBuf = buildZip(entries)
-  writeFileSync(ZIP_PATH, zipBuf)
-  const secs = ((Date.now() - t0) / 1000).toFixed(1)
-  log(`   → ${ZIP_PATH} · ${(zipBuf.length / 1024 / 1024).toFixed(2)} MB · 耗时 ${secs}s`)
-}
+  const zipBuf = buildZip(walk(PKG_DIR))
+  writeFileSync(zipPath, zipBuf)
+  log(`   → ${zipPath} · ${(zipBuf.length / 1024 / 1024).toFixed(2)} MB · 耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`)
 
-// ---------- ⑤ 自校验：回读 central directory 逐条验编码 ----------
-if (ARGS.zip) {
   log('④ 自校验 zip（central directory 逐条验 UTF-8 标志位与条目名）')
-  const buf = readFileSync(ZIP_PATH)
+  const buf = readFileSync(zipPath)
   const eocdPos = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]))
-  if (eocdPos < 0) fail('zip 里找不到 EOCD（文件不完整）')
+  if (eocdPos < 0) fail(`${label}：zip 里找不到 EOCD（文件不完整）`)
   const total = buf.readUInt16LE(eocdPos + 10)
   let p = buf.readUInt32LE(eocdPos + 16)
   const bad = []
   let utf8Count = 0
   let backslash = 0
+  const names = []
   for (let i = 0; i < total; i++) {
     if (buf.readUInt32LE(p) !== 0x02014b50) { bad.push(`条目 ${i} 签名错位`); break }
     const flags = buf.readUInt16LE(p + 8)
@@ -248,6 +261,7 @@ if (ARGS.zip) {
     const extraLen = buf.readUInt16LE(p + 30)
     const commentLen = buf.readUInt16LE(p + 32)
     const name = buf.subarray(p + 46, p + 46 + nameLen).toString('utf8')
+    names.push(name)
     if (flags & 0x0800) utf8Count++
     else bad.push(`条目「${name}」未标 UTF-8`)
     if (name.includes('\\')) backslash++
@@ -255,28 +269,69 @@ if (ARGS.zip) {
   }
   const okAll = bad.length === 0 && utf8Count === total && backslash === 0
   log(`   条目 ${total} 个 · UTF-8 标志位 ${utf8Count}/${total} · 反斜杠条目 ${backslash}`)
-  if (!okAll) fail(`zip 编码校验未通过：\n   ${bad.slice(0, 5).join('\n   ')}`)
+  if (!okAll) fail(`${label}：编码校验未通过\n   ${bad.slice(0, 5).join('\n   ')}`)
   log('   ✅ 编码校验通过')
 
-  writeFileSync(
-    path.join(root, 'release', `便携版-${ARGS.version}.zip-report.json`),
-    JSON.stringify({
-      version: ARGS.version,
-      builtAt: new Date().toISOString(),
-      entries: total,
-      utf8Flagged: utf8Count,
-      backslashEntries: backslash,
-      zipBytes: statSync(ZIP_PATH).size,
-      zipMB: Number((statSync(ZIP_PATH).size / 1024 / 1024).toFixed(2)),
-      pkgDir: PKG_DIR,
-      zipPath: ZIP_PATH,
-    }, null, 2),
-  )
+  return {
+    label,
+    zipPath,
+    zipBytes: statSync(zipPath).size,
+    zipMB: Number((statSync(zipPath).size / 1024 / 1024).toFixed(2)),
+    entries: total,
+    utf8Flagged: utf8Count,
+    backslashEntries: backslash,
+    containsNodeInstaller: names.some(n => n.startsWith(`${NODE_SUBDIR}/`)),
+    nodeInstallerFiles: names.filter(n => n.startsWith(`${NODE_SUBDIR}/`)),
+  }
 }
+
+const reports = []
+
+// ---------- ④a 标准版 zip（39MB，Windows 用户默认下载这个）----------
+if (ARGS.zip) {
+  reports.push(packAndVerify(ZIP_PATH, '标准版'))
+}
+
+// ---------- ④b 含 Node 运行时版（macOS / Linux 用户下载这个）----------
+// 🔴 做法是「往同一个组装目录里临时加一层、打完再撤」，避免为它再复制一整份 93MB 的目录。
+//    撤掉的目的是让 release/便携版-<版本>/ 始终保持标准版形态（可直接给人拷贝/测试）。
+if (ARGS.zip && ARGS.withNode) {
+  const installers = existsSync(ASSETS_DIR)
+    ? readdirSync(ASSETS_DIR).filter(f => /\.(pkg|msi)$/i.test(f))
+    : []
+  if (installers.length === 0) {
+    log('')
+    log(`   ℹ️ 未发现 Node 安装包（${ASSETS_DIR}），跳过「含Node运行时」版。`)
+    log(`      需要它的话先跑：node scripts/fetch-node-installer.mjs`)
+  } else {
+    const nodeDir = path.join(PKG_DIR, NODE_SUBDIR)
+    mkdirSync(nodeDir, { recursive: true })
+    for (const f of installers) {
+      copyFileSync(path.join(ASSETS_DIR, f), path.join(nodeDir, f))
+      log(`   内置安装包：${f}（${(statSync(path.join(nodeDir, f)).size / 1048576).toFixed(1)} MB）`)
+    }
+    reports.push(packAndVerify(ZIP_WITH_NODE_PATH, '含Node运行时版'))
+    // 撤掉，保持组装目录是标准版形态
+    rmSync(nodeDir, { recursive: true, force: true })
+  }
+}
+
+writeFileSync(
+  path.join(root, 'release', `便携版-${ARGS.version}.zip-report.json`),
+  JSON.stringify({
+    version: ARGS.version,
+    builtAt: new Date().toISOString(),
+    pkgDir: PKG_DIR,
+    zips: reports,
+  }, null, 2),
+)
 
 log('')
 log('==================================================')
 log(`  便携版组装完成 · ${ARGS.version}`)
 log(`  目录：${PKG_DIR}`)
-if (ARGS.zip) log(`  压缩包：${ZIP_PATH}`)
+for (const r of reports) {
+  log(`  ${r.label}：${r.zipMB} MB · ${r.entries} 条目${r.containsNodeInstaller ? ` · 含 Node 安装包 ${r.nodeInstallerFiles.length} 个` : ''}`)
+  log(`     ${r.zipPath}`)
+}
 log('==================================================')
