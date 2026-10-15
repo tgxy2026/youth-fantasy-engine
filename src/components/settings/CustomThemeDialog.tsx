@@ -18,12 +18,13 @@ import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import {
   THEMES, applyTheme, applyCustomTheme, getStoredCustomTheme, getStoredTheme,
-  type CustomThemeParams, type ThemeId, type CustomThemeVars,
+  type CustomThemeParams, type CustomThemeBaseId, type ThemeId, type CustomThemeVars,
 } from '@/lib/settings/theme'
 
-type BaseId = Exclude<ThemeId, 'custom'>
+type BaseId = CustomThemeBaseId
 
-const BASE_THEMES = THEMES.filter(t => t.id !== 'custom') as Array<{ id: BaseId; name: string; desc: string }>
+// 🔴 mono（纯黑白）是严格二值预制，不进派生链（见 theme.ts 的 CustomThemeBaseId 注释）
+const BASE_THEMES = THEMES.filter(t => t.id !== 'custom' && t.id !== 'mono') as Array<{ id: BaseId; name: string; desc: string }>
 
 /** accent 为空时拾色器的占位色（暗夜母版的 amber，仅展示用途，不代表当前生效值） */
 const ACCENT_PLACEHOLDER = '#d9a04a'
@@ -58,7 +59,8 @@ export default function CustomThemeDialog({ open, onClose, onApplied }: Props) {
       setHueShift(snap.hueShift)
     } else {
       const cur = getStoredTheme()
-      const base: BaseId = cur === 'custom' ? 'eye-care' : cur
+      // custom（无参数可载）与 mono（不进派生链）都不能当母版 → 回默认护眼母版
+      const base: BaseId = cur === 'custom' || cur === 'mono' ? 'eye-care' : cur
       setBaseId(base)
       setAccent('')
       setHueShift(0)

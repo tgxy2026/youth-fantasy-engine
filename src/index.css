@@ -282,16 +282,50 @@
   --info: 7 89 133;  /* sky-700 */
 }
 
+/* 纯黑白（3.1 · P0-D · 2026-10-15）：干眼症 / 高对比偏好用户的显示选项 —— 界面严格二值色，
+   所有「面」纯白、所有「字 / 图标 / 描边 / 光标 / 焦点轮廓」纯黑，不靠灰阶层级传递信息。
+   🔴 与八个彩色母版的根本区别：ink 刻度整体收敛成两值（面 950~800 = #FFFFFF，
+     字与边 700~50 = #000000），amber 与三个状态色同样收黑。两个必然结果：
+       · tests/themeContrast 的「灰阶单调」对 mono 恒真（全刻度同值）—— 有意设计，
+         该闸已按非严格单调放行（见测试文件注释）；
+       · 靠底色深浅区分的交互态（悬停 / 选中 / toggle / 次级键悬停）在本主题里**全部失效**，
+         故文末「纯黑白 · 状态与半透明回收」段用轮廓、线型、图标与文字补偿（规划书 P0-D 验收第 3 条）。
+   ⚠️ 作品素材（用户导入的封面 / 参考图）保留原内容；内置背景图案是可开关装饰、不做反色；
+     抗锯齿过渡不视为配色不合格，也不加全屏阈值滤镜破坏文字渲染。 */
+[data-theme='mono'] {
+  --ink-950: 255 255 255;   /* 页面底 */
+  --ink-900: 255 255 255;   /* 主面板 */
+  --ink-850: 255 255 255;   /* 抬升面板 */
+  --ink-800: 255 255 255;   /* 嵌套面 / 输入框底 */
+  --ink-700: 0 0 0;         /* 描边主色（约 740 处引用，黑白下=21:1） */
+  --ink-600: 0 0 0;
+  --ink-500: 0 0 0;
+  --ink-400: 0 0 0;         /* 占位 / 弱提示（不靠灰度，靠内容说明区分） */
+  --ink-300: 0 0 0;
+  --ink-200: 0 0 0;
+  --ink-100: 0 0 0;         /* 正文 */
+  --ink-50: 0 0 0;          /* 强调文字 */
+  --amber: 0 0 0;           /* 强调 / 高亮 / 选中 / 光标 / 聚焦 */
+  --amber-soft: 0 0 0;
+  color-scheme: light;
+  --danger: 0 0 0;    /* 语义由图标 + 文字 + 描边承载，不靠色相 */
+  --success: 0 0 0;
+  --info: 0 0 0;
+}
+
 /* ---- 浅色主题 · 图谱界面色覆盖 ----
    暗色系沿用 :root 里的暖褐色（观感零变化）；这四个浅色主题下，暖褐在浅底上对比度不足，
    故改为**引用该主题自身的墨色刻度**——ink 刻度在浅色主题里是反的（950 最浅、50 最深），
    因此 node→ink-800、文字→ink-50 会自动翻成「浅底 + 深字」，无需逐主题手填数值，
    也天然跟随各主题的色相（护眼偏绿、青花偏蓝、桃笺偏粉）。
-   ⚠️ 前提：组件侧必须用 style={{ fill: 'rgb(var(--graph-*))' }}，表现属性里 var() 不生效。 */
+   ⚠️ 前提：组件侧必须用 style={{ fill: 'rgb(var(--graph-*))' }}，表现属性里 var() 不生效。
+   mono（纯黑白）并入此组：ink 全刻度已是 #FFF/#000，引用后图谱自动成为纯黑白
+   （节点白底黑字、网格与连线黑、光晕白），无需另写一份图谱色表。 */
 [data-theme='eye-care'],
 [data-theme='sepia'],
 [data-theme='porcelain'],
-[data-theme='peach-note'] {
+[data-theme='peach-note'],
+[data-theme='mono'] {
   --graph-grid: var(--ink-600);
   --graph-node: var(--ink-800);
   --graph-node-text: var(--ink-50);
@@ -301,6 +335,219 @@
   --graph-accent: var(--amber);
   --graph-accent-strong: var(--amber);
   --graph-accent-text: var(--amber-soft);
+}
+
+/* ============================================================
+   纯黑白主题 · 半透明与固定色回收 + 交互态补偿（3.1 · P0-D）
+   ------------------------------------------------------------
+   主题变量只把「变量驱动的颜色」收成了两值，还有两类颜色会破坏严格二值：
+     ① Tailwind 的 `/alpha` 修饰符 —— 经 color-mix 生成「黑×N%」的灰底 / 灰边 / 灰字
+        （实测 `.bg-amber\/15` = color-mix(in oklab, #000 15%, transparent)，叠白底即 #D9D9D9）；
+     ② 固定调色板类名（bg-red-600 / text-emerald-400 / border-sky-700 …）—— 与主题无关的写死色。
+   机制：**属性子串选择器**按「底色 / 描边 / 文字 / 光环 / 阴影」五类一次性回收，
+   覆盖所有 /N 变体（含 hover: / group-hover: 前缀变体）而无需逐个列举。
+   未分层样式优先于 @layer utilities，故无需 !important；特异性 (0,2,0) 亦稳过工具类 (0,1,0)。
+   ⚠️ 交互态补偿是硬需求：底色深浅区分失效后，悬停 / 选中 / 聚焦 / 禁用必须改由
+     「轮廓、线型、图标与文字」承载（规划书 P0-D 验收口径第 3 条）。
+   ============================================================ */
+
+/* ① 底色：强调 / 状态 / 墨色（深值侧）的半透明底 → 纯白。
+      ink-950~800 的半透明底本身就是白×N%，无需回收；700 及以下在 mono 是纯黑，
+      其 /N 变体才是灰底来源。hover: 变体一并收回（悬停反馈改由 ⑦ 的轮廓承担）。 */
+[data-theme='mono'] [class*='bg-amber/'],
+[data-theme='mono'] [class*='bg-amber-soft/'],
+[data-theme='mono'] [class*='bg-danger/'],
+[data-theme='mono'] [class*='bg-success/'],
+[data-theme='mono'] [class*='bg-info/'],
+[data-theme='mono'] [class*='bg-ink-700/'],
+[data-theme='mono'] [class*='bg-ink-600/'],
+[data-theme='mono'] [class*='bg-ink-500/'],
+[data-theme='mono'] [class*='bg-ink-400/'],
+[data-theme='mono'] [class*='bg-ink-300/'],
+[data-theme='mono'] [class*='bg-ink-200/'],
+[data-theme='mono'] [class*='bg-ink-100/'],
+[data-theme='mono'] [class*='bg-ink-50/'] {
+  background-color: #FFFFFF;
+}
+
+/* ② 固定调色板 · 带透明度（浅色告警底 / 徽章底 / 97% 不透明横幅底）→ 纯白。
+     ⚠️ 必须与下一条「实底 → 纯黑」分开：两条按类名里有没有 '/' 互斥。 */
+[data-theme='mono'] [class*='bg-emerald-'][class*='/'],
+[data-theme='mono'] [class*='bg-green-'][class*='/'],
+[data-theme='mono'] [class*='bg-red-'][class*='/'],
+[data-theme='mono'] [class*='bg-rose-'][class*='/'],
+[data-theme='mono'] [class*='bg-sky-'][class*='/'],
+[data-theme='mono'] [class*='bg-blue-'][class*='/'],
+[data-theme='mono'] [class*='bg-purple-'][class*='/'],
+[data-theme='mono'] [class*='bg-pink-'][class*='/'],
+[data-theme='mono'] [class*='bg-orange-'][class*='/'],
+[data-theme='mono'] [class*='bg-yellow-'][class*='/'],
+[data-theme='mono'] [class*='bg-slate-'][class*='/'],
+[data-theme='mono'] [class*='bg-gray-'][class*='/'] {
+  background-color: #FFFFFF;
+}
+/* ②' 固定调色板 · 实底（状态点 / 实心按钮 / 标记徽章）→ 纯黑。
+     这些位置的文字恒为 text-white（或纯图标），黑底白字正是纯黑白的合法形态。 */
+[data-theme='mono'] [class*='bg-emerald-'],
+[data-theme='mono'] [class*='bg-green-'],
+[data-theme='mono'] [class*='bg-red-'],
+[data-theme='mono'] [class*='bg-rose-'],
+[data-theme='mono'] [class*='bg-sky-'],
+[data-theme='mono'] [class*='bg-blue-'],
+[data-theme='mono'] [class*='bg-purple-'],
+[data-theme='mono'] [class*='bg-pink-'],
+[data-theme='mono'] [class*='bg-orange-'],
+[data-theme='mono'] [class*='bg-yellow-'] {
+  background-color: #000000;
+}
+/* ②'' 次级按钮等「悬停实底 ink-700 / ink-600」→ 收回纯白：否则悬停即黑底黑字（不可见）。
+      hover:bg-ink-800 及更浅值本就是白，无需处理。 */
+[data-theme='mono'] [class*='hover:bg-ink-700'],
+[data-theme='mono'] [class*='hover:bg-ink-600'] {
+  background-color: #FFFFFF;
+}
+
+/* ③ 描边：墨色 / 强调 / 状态 / 固定调色板的一切描边 → 纯黑（含 /N 与 hover: 变体）。
+     border-transparent 不碰（无框元素保持无框）。 */
+[data-theme='mono'] [class*='border-amber'],
+[data-theme='mono'] [class*='border-danger'],
+[data-theme='mono'] [class*='border-success'],
+[data-theme='mono'] [class*='border-info'],
+[data-theme='mono'] [class*='border-ink-'],
+[data-theme='mono'] [class*='border-emerald-'],
+[data-theme='mono'] [class*='border-green-'],
+[data-theme='mono'] [class*='border-red-'],
+[data-theme='mono'] [class*='border-rose-'],
+[data-theme='mono'] [class*='border-sky-'],
+[data-theme='mono'] [class*='border-blue-'],
+[data-theme='mono'] [class*='border-purple-'],
+[data-theme='mono'] [class*='border-pink-'],
+[data-theme='mono'] [class*='border-orange-'] {
+  border-color: #000000;
+}
+
+/* ④ 文字：半透明强调 / 状态字 + 固定调色板字 → 纯黑。
+     ⚠️ text-white 一律不碰 —— 实心键（黑底）上的白字是纯黑白的合法形态。 */
+[data-theme='mono'] [class*='text-amber'],
+[data-theme='mono'] [class*='text-danger'],
+[data-theme='mono'] [class*='text-success'],
+[data-theme='mono'] [class*='text-info'],
+[data-theme='mono'] [class*='text-emerald-'],
+[data-theme='mono'] [class*='text-green-'],
+[data-theme='mono'] [class*='text-red-'],
+[data-theme='mono'] [class*='text-rose-'],
+[data-theme='mono'] [class*='text-sky-'],
+[data-theme='mono'] [class*='text-blue-'],
+[data-theme='mono'] [class*='text-purple-'],
+[data-theme='mono'] [class*='text-pink-'],
+[data-theme='mono'] [class*='text-orange-'],
+[data-theme='mono'] [class*='text-yellow-'] {
+  color: #000000;
+}
+
+/* ⑤ 光环（聚焦 / 提示环）：一律纯黑 —— 半透明琥珀环会退化成灰圈。
+     机制：v4 的 ring-* 只写 --tw-ring-color，盒影由 --tw-ring-shadow 合成，故改色不动结构。 */
+[data-theme='mono'] [class*='ring-amber'],
+[data-theme='mono'] [class*='ring-danger'],
+[data-theme='mono'] [class*='ring-success'],
+[data-theme='mono'] [class*='ring-info'],
+[data-theme='mono'] [class*='ring-ink-'],
+[data-theme='mono'] [class*='ring-emerald-'],
+[data-theme='mono'] [class*='ring-green-'],
+[data-theme='mono'] [class*='ring-red-'],
+[data-theme='mono'] [class*='ring-rose-'],
+[data-theme='mono'] [class*='ring-sky-'],
+[data-theme='mono'] [class*='ring-blue-'],
+[data-theme='mono'] [class*='ring-purple-'],
+[data-theme='mono'] [class*='ring-pink-'],
+[data-theme='mono'] [class*='ring-orange-'] {
+  --tw-ring-color: #000000;
+}
+
+/* ⑥ 阴影：彩色 / 半透明阴影（含 shadow-amber/20、shadow-lg 的 #0000001a 灰晕）一律撤掉。
+     只清 --tw-shadow 一个变量 —— 盒影表达式里 --tw-ring-shadow 是独立项，聚焦环不受影响。
+     ⚠️ drop-shadow-* 是滤镜不是盒影，用 :not 排除（看板娘精灵与项目卡封面在用）。 */
+[data-theme='mono'] [class*='shadow-']:not([class*='drop-shadow']) {
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-color: transparent;
+}
+
+/* ⑥' index.css 自定义类的逃逸口 —— 这些类的半透明色写在**样式表规则**里而不是元素的
+     class 属性里，上面的属性子串选择器抓不到，必须逐条点名（共三处 + 两处已在 ⑧⑨ 覆盖）：
+       · input:focus 的 border-amber/60 + ring-amber/30 → 灰边灰圈，聚焦必须纯黑；
+       · .field-example 的 text-amber/70 → 70% 黑 = #4D4D4D 灰字；
+       · .card-hover:hover 的 border-amber/40 + 8% 黑投影 → 灰边 + 灰晕。 */
+[data-theme='mono'] input:focus,
+[data-theme='mono'] textarea:focus,
+[data-theme='mono'] select:focus {
+  border-color: #000000;
+  --tw-ring-color: #000000;
+}
+[data-theme='mono'] .field-example {
+  color: #000000;
+}
+[data-theme='mono'] .card-hover:hover {
+  border-color: #000000;
+  box-shadow: none;
+}
+
+/* ⑦ 交互态补偿（验收第 3 条：选中 / 悬停 / 聚焦在纯黑白下可辨认）——
+   · 选中（琥珀选中令牌 border-amber/N）：黑描边外再补一圈外轮廓，形成「双线选中」，
+     与未选中项（无描边，或 ink-700 单线）明确可分；hover:border-amber/*（如 card-hover）
+     是悬停态不是选中态，用 :not 排除，否则每张卡片常驻外框；
+   · 悬停（hover:bg-*）：内嵌 1px 实线（负 offset 画在盒内，不会被滚动容器裁掉）。
+     悬停统一用实线，禁用态另有 opacity-50 + not-allowed 光标，不混淆线型语言。 */
+[data-theme='mono'] [class*='border-amber/']:not([class*='hover:border-amber']) {
+  outline: 1px solid #000000;
+  outline-offset: 1px;
+}
+[data-theme='mono'] [class*='hover:bg-']:hover {
+  outline: 1px solid #000000;
+  outline-offset: -1px;
+}
+
+/* ⑧ 正文选择 / 引用名高亮：黑底白字 —— 纯黑白下唯一允许的「反色」，保证选择与命中可辨认。 */
+[data-theme='mono'] ::selection {
+  background: #000000;
+  color: #FFFFFF;
+}
+[data-theme='mono'] .ref-mark {
+  background: #000000;
+  color: #FFFFFF;
+}
+/* AI ghost 伴写建议：黑字 + 虚下划线（线型区分「建议 ≠ 正文」，不依赖灰） */
+[data-theme='mono'] .ai-ghost {
+  color: #000000;
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+}
+/* 占位符：纯黑不透明（底色已纯白，0.55 透明度只会得到灰字） */
+[data-theme='mono'] input::placeholder,
+[data-theme='mono'] textarea::placeholder {
+  opacity: 1;
+}
+
+/* ⑨ 状态徽章：四色徽章统一白底黑字黑框；语义由徽章内的图标 / 文字承载。 */
+[data-theme='mono'] .badge-green,
+[data-theme='mono'] .badge-amber,
+[data-theme='mono'] .badge-red,
+[data-theme='mono'] .badge-blue,
+[data-theme='mono'] .badge-gray {
+  background-color: #FFFFFF;
+  color: #000000;
+  border-color: #000000;
+}
+
+/* ⑩ 写锁横幅（DesktopWriteLockBanner）：原设计红底白字告警（bg-red-700/97 + text-white），
+     纯黑白下改白底黑字 + 原有 2px 描边；危险语义由图标 / 文字 / 加粗描边承载。
+     ⚠️ 须排在本段 ② 之后 —— 与「固定调色板 /N → 白」同特异性 (0,2,0)，靠源顺序定胜负。 */
+[data-theme='mono'] .bg-red-700\/97 {
+  color: #000000;
+  border-color: #000000;
+}
+[data-theme='mono'] .text-white\/85,
+[data-theme='mono'] .text-white\/70 {
+  color: #000000;
 }
 
 /* ============================================================

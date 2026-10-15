@@ -336,7 +336,7 @@ style={{ zIndex: Z.pageBase }}
               <SlidersHorizontal size={11} />
             </Button>
           </div>
-          {/* 允许换行：主题增至 9 套后单行会挤压色块，侧栏偏窄时自动折行 */}
+          {/* 允许换行：主题增至 10 套（九预制 + 自定义）后单行会挤压色块，侧栏偏窄时自动折行 */}
           <div className="flex flex-wrap gap-1.5">
             {THEMES.map(t => (
               <Button variant="bare"

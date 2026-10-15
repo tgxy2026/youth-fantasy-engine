@@ -11,17 +11,17 @@
 #   bash tests/run-batches.sh A B        # 跑 A、B 批
 #   bash tests/run-batches.sh all        # 四批全跑（等价于全量）
 #   bash tests/run-batches.sh            # 缺省 = all
+#   Windows / Codex 沙箱可用 PowerShell 入口：tests/run-batches.ps1 [A|B|C|D|all]
 #
-# 分批依据（2026-10-06 实测，157 个入口）：
-#   A 结构闸 / 守卫    13 个   18s     纯静态扫描，改完最该先看它绿不绿
-#   B 纯函数 / 解析    19 个   13s     无 IO，跑得最快
-#   C 业务逻辑         58 个   44s     AI 任务 / 章节 / 设定 / 偏好，多数纯逻辑
-#   D 重 IO            67 个   50s     酒馆 store / 备份同步 / IDB / demo 项目 / 大计算
-#   合计 ≈ 2m05s（分批实测；机器有别的负载时会明显浮动，曾测到 3m08s）
+# 分批依据（当前数量和耗时会变，运行时以脚本汇总为准）：
+#   A 结构闸 / 守卫    纯静态扫描，改完最该先看它绿不绿
+#   B 纯函数 / 解析    无 IO，用于快速反馈
+#   C 业务逻辑         AI 任务 / 章节 / 设定 / 偏好，多数纯逻辑
+#   D 重 IO            酒馆 store / 备份同步 / IDB / demo 项目 / 大计算
 #
 # ⚠️ 批次划分是「按经验分组」，不是「按实测耗时精确排序」——
 #    A 批里 syncGuards 单独就占 8s。若要精调，先跑一次带计时再挪。
-# ⚠️ 新加测试文件后**请顺手归进某一批**，否则它不会被本脚本跑到（漏跑不报错）。
+# 新加测试文件必须归进某一批；下方清单核对会在漏项或残项时失败关闭。
 set -u
 
 cd "$(dirname "$0")/.." || exit 1
@@ -40,15 +40,20 @@ BATCH_B="aiParse inlineSuggest indent exportIndent schemaTemplates customTheme f
 
 BATCH_C="aiAssist aiLongStream aiRouting aiTaskCenter aiTimeout auditFixes2 chapterOwned chapterRewrite chapterSnapshot companionRefresh companionStyle contextRank creativeModes creativeRun creativeWriting deAiStyle draftFields dynamicGuide errorLog evidencePack flowAliases flowDraft flowFieldMap flowFold flowFormMap flowParallelSummary flowPipeline fontPrefs freeVolume fullscreenShortcuts genreHint ghostStitch imagePortrait inspirationBlock inspirationFuse interviewContext knowledgeBase manuscriptCheck mapImage marketRadar miscSettings modelCapacity netPrefs optimizeTicket outlineBackfill paceAnalysis proofreadSplit readerProbe searchSettings styleFingerprint syncStatusMeta thinkPolicy trajectory uiPrefs userSystemPrompt versionCheck webSearch worldSets writerBudget writingPace aiRunLedger chapterPostProcess chapterAudit promptRegistry paceLockBands tavernTaskState"
 
-BATCH_D="adversarial backup backupPayloadSplit backupReminder bookEvidence bookbreak-ai-split bookbreakFormSummary bookbreakPersist bookbreakRecommend bookbreakRelations bookbreakResume bookbreakSplit chapterCheck cloudStoreWrapper crypto dataHealth dataDockView desktopSaveVerdict desktopSidecar diagnostics docxImport docxLayout exportPlatform ghostPrune idbMigrations legacySearchKey migrations perfBaseline portableBackend portableVecKb roundtrip seedRef semanticRecall syncTransport tableIO tableImportAI tavernAvatar tavernCardFields tavernCardFile tavernCardFold tavernContext tavernDaily tavernDraft tavernExportDoc tavernFlow tavernFree tavernImport tavernMemory tavernPostRules tavernPresets tavernPrompt tavernQuota tavernReady tavernRecall tavernReport tavernRevise tavernRoundEnd tavernScript tavernScriptSplit tavernSeedPolicy tavernSettings tavernStatus tavernStore tavernStory tavernStoryImport tavernUnload tavernUsage tavernVariant tavernVars tavernWorld tavernWorldBook webcrypto writingReview continuityFields checkLog modelFilter modelSampling jieWenJiAsk continuationPick syncPath syncRestore desktopWriteLock worldPack worlds worldImport runStore runTurn runWorldContext"
+BATCH_D="adversarial backup backupPayloadSplit backupReminder bookEvidence bookbreak-ai-split bookbreakFormSummary bookbreakPersist bookbreakRecommend bookbreakRelations bookbreakResume bookbreakSplit chapterCheck cloudStoreWrapper crypto dataHealth dataDockView desktopSaveVerdict desktopSidecar diagnostics docxImport docxLayout exportPlatform ghostPrune idbMigrations legacySearchKey migrations perfBaseline portableBackend portableVecKb roundtrip seedRef semanticRecall syncConflicts syncTransport tableIO tableImportAI tavernAvatar tavernCardFields tavernCardFile tavernCardFold tavernContext tavernDaily tavernDraft tavernExportDoc tavernFlow tavernFree tavernImport tavernMemory tavernPostRules tavernPresets tavernPrompt tavernQuota tavernReady tavernRecall tavernReport tavernRevise tavernRoundEnd tavernScript tavernScriptSplit tavernSeedPolicy tavernSettings tavernStatus tavernStore tavernStory tavernStoryImport tavernUnload tavernUsage tavernVariant tavernVars tavernWorld tavernWorldBook webcrypto writingReview continuityFields checkLog modelFilter modelSampling jieWenJiAsk continuationPick syncPath syncRestore desktopWriteLock worldPack worlds worldImport runStore runTurn runWorldContext"
 
 # ── 自检：批次名单 vs 实际测试文件 ──
-# 两个方向都要查，因为它们是**不同**的事故：
+# 双向查重，因为它们是**不同**的事故：
 #   · GHOST     ＝名单里有、文件不在 ⇒ 打错名 / 文件被删（跑起来会当失败，浪费排查时间）
 #   · UNBATCHED ＝文件在、名单里没有 ⇒ **静默漏跑**（汇总全绿，其实根本没测到它）
 DECLARED="$BATCH_A $BATCH_B $BATCH_C $BATCH_D"
 GHOST=""
+SEEN=" "
+DUPLICATES=""
 for t in $DECLARED; do [ -f "tests/$t.test.ts" ] || GHOST="$GHOST $t"; done
+for t in $DECLARED; do
+  case "$SEEN" in *" $t "*) DUPLICATES="$DUPLICATES $t" ;; *) SEEN="$SEEN$t " ;; esac
+done
 UNBATCHED=""
 for f in tests/*.test.ts; do
   t=$(basename "$f" .test.ts)
@@ -60,6 +65,13 @@ fi
 if [ -n "$UNBATCHED" ]; then
   echo "🔴 有测试文件没归进任何批次，本次不会被跑到：$UNBATCHED" >&2
   echo "   ⇒ 请把它们加进上面某个 BATCH_x 列表（改完再跑一次确认）" >&2
+fi
+if [ -n "$DUPLICATES" ]; then
+  echo "🔴 批次清单有重复入口，会被重复执行：$DUPLICATES" >&2
+fi
+if [ -n "$GHOST" ] || [ -n "$UNBATCHED" ] || [ -n "$DUPLICATES" ]; then
+  echo "❌ 测试批次清单校验失败；已中止，修正名单后再运行。" >&2
+  exit 1
 fi
 
 want=("$@")

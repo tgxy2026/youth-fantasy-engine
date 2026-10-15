@@ -293,6 +293,7 @@ async function saveConflictCopy(info: SyncConflictInfo) {
     /* 副本保存失败绝不影响主同步流程 —— 但必须留痕：副本存在的**唯一意义**就是
        「云端那一版不再被静默丢弃」，连副本都存不下还不吭声，等于又回到了静默丢弃。 */
     console.warn('[sync] 冲突副本保存失败（云端那一版可能已丢失，请检查磁盘空间与文件权限）：', e)
+    try { window.dispatchEvent(new CustomEvent('yfe:sync-conflict-save-error')) } catch { /* 无窗口环境 */ }
   }
 }
 

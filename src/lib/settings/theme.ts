@@ -17,7 +17,17 @@ export type ThemeId =
   | 'porcelain'
   | 'pine-ink'
   | 'peach-note'
+  | 'mono'
   | 'custom'
+
+/**
+ * 自定义主题的母版候选（3.1 · P0-D 起排除 mono）：
+ * 🔴 「纯黑白」是**严格二值预制**—— 派生层靠色相旋转 + 亮度重校工作，而 mono 的
+ *    ink/amber 全是 #000/#FFFFFF，旋转恒等、强调色还会把彩色重新引进界面，
+ *    与「严格黑白预设保持独立」的要求冲突。故它只作为独立预制主题存在，
+ *    不进母版下拉框；旧参数里若存有 baseId:'mono' 也一律按脏数据拒绝。
+ */
+export type CustomThemeBaseId = Exclude<ThemeId, 'custom' | 'mono'>
 
 export interface ThemeDef {
   id: ThemeId
@@ -36,6 +46,9 @@ export const THEMES: ThemeDef[] = [
   { id: 'porcelain', name: '青花', desc: '青白瓷·浅色', swatch: '#e4ecf4' },
   { id: 'pine-ink', name: '松烟墨', desc: '墨绿松烟·深色', swatch: '#0a1212' },
   { id: 'peach-note', name: '桃笺', desc: '暖粉胭脂·浅色', swatch: '#faecee' },
+  // 3.1 · P0-D：第九个预制主题「纯黑白」—— 干眼症 / 高对比偏好用户的显示选项。
+  // 🔴 排列顺序即左下角主题栏顺序：现有八个 → 纯黑白 → 彩色自定义按钮（custom 恒在最末）。
+  { id: 'mono', name: '纯黑白', desc: '纯白底·纯黑字', swatch: 'linear-gradient(135deg, #000 0 50%, #fff 50% 100%)' },
   { id: 'custom', name: '自定义', desc: '母版派生 · 可调色', swatch: 'conic-gradient(#e88, #ec8, #8c8, #8cc, #88c, #c8c, #e88)' },
 ]
 
@@ -60,7 +73,7 @@ function safeGet(key: string): string | null {
 // ============ 自定义主题（2.5.0 · C1：母版 + 强调色 + 色相偏移，三参数派生）============
 
 export interface CustomThemeParams {
-  baseId: Exclude<ThemeId, 'custom'>
+  baseId: CustomThemeBaseId
   /** 用户强调色（'#rrggbb'）；空串 = 不换强调色（用母版 amber 参与色相旋转） */
   accent: string
   hueShift: number
@@ -76,7 +89,9 @@ export function getStoredCustomTheme(): CustomThemeParams | null {
     //    数字、对象）。若直接断言 Partial<CustomThemeParams>，baseId 类型不含 'custom'，
     //    防御比较会被 TS 判 TS2367 拦下——但那道运行时防御恰恰是必须的。
     const p = JSON.parse(raw) as { baseId?: unknown; accent?: unknown; hueShift?: unknown }
-    if (!p || typeof p.baseId !== 'string' || p.baseId === 'custom') return null
+    // 🔴 baseId 必须是「八个彩色母版」之一：'custom'（自己派生自己）与 'mono'
+    //    （严格二值预制，不进派生链，见 CustomThemeBaseId 注释）都按脏数据拒绝。
+    if (!p || typeof p.baseId !== 'string' || p.baseId === 'custom' || p.baseId === 'mono') return null
     if (!THEMES.some(t => t.id === p.baseId)) return null
     return {
       baseId: p.baseId as CustomThemeParams['baseId'],

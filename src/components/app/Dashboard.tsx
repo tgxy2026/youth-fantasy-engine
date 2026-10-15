@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { realVolumes } from '@/lib/outline/freeVolume'
 import * as db from '@/lib/db'
-import type { Volume, Chapter, TableRow } from '@/lib/types'
+import type { Volume, Chapter, TableRow, CardRecord } from '@/lib/types'
 import {
   PenLine, BookOpen, Flame, Clock, GitBranch, Lightbulb, Sparkles,
   TrendingUp, FileText, ChevronRight, CalendarDays, Zap, Users, Loader2, AlertCircle
@@ -27,19 +27,23 @@ import { buildWritingReview } from '@/lib/outline/writingReview'
 import { hydrateCreativeSession, useCreativeSession } from '@/lib/creative/creativeSession'
 import { getStoryTemplate } from '@/lib/outline/storyStructures'
 import { buildChapterShares, alignBeats, PACE_MIN_CHAPTERS } from '@/lib/outline/structurePace'
+import WritingWorkflow from '@/components/app/WritingWorkflow'
 
 interface Props {
-  onNavigate: (id: string) => void
+  onNavigate: (id: string, chapterId?: string) => void
+  projectId: string
+  onExport: () => void | Promise<void>
   refreshKey: number
   /** 项目形态：自定义项目（未启用「伏笔追踪」时）隐藏「未回收伏笔」卡与「伏笔告警」；「角色出场分布」对自定义项目同样隐藏 */
   ctx: VisCtx
 }
 
-export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
+export default function Dashboard({ onNavigate, projectId, onExport, refreshKey, ctx }: Props) {
   /** 结构配比预警用的模板来源 —— `creativeSession.inputs.structureId` 是它的单一真源 */
   const cs = useCreativeSession()
   const [volumes, setVolumes] = useState<Volume[]>([])
   const [chapters, setChapters] = useState<Chapter[]>([])
+  const [chapterOutlines, setChapterOutlines] = useState<CardRecord[]>([])
   const [foreshadows, setForeshadows] = useState<TableRow[]>([])
   const [ideas, setIdeas] = useState<TableRow[]>([])
   const [progress, setProgress] = useState<TableRow[]>([])
@@ -95,12 +99,13 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
   )
 
   const load = useCallback(async () => {
-    const [v, c, f, i, p, ds] = await Promise.all([
+    const [v, c, outlines, f, i, p, ds] = await Promise.all([
       db.getAllVolumes(), db.getAllChapters(),
+      db.getCardRecords('chapter-outline'),
       db.getTableRows('foreshadow'), db.getTableRows('ideas'), db.getTableRows('progress'),
       db.getDailyStats(),
     ])
-    setVolumes(v); setChapters(c); setForeshadows(f); setIdeas(i); setProgress(p)
+    setVolumes(v); setChapters(c); setChapterOutlines(outlines); setForeshadows(f); setIdeas(i); setProgress(p)
     setDailyStats(ds)
     setLoaded(true)
   }, [])
@@ -266,6 +271,9 @@ export default function Dashboard({ onNavigate, refreshKey, ctx }: Props) {
         </div>
         <p className="mt-1 text-13 text-ink-300">创作全景一览 · 数据实时同步自各页签</p>
       </header>
+
+      <WritingWorkflow key={projectId} projectId={projectId} chapters={chapters} chapterOutlines={chapterOutlines} volumes={volumes} ideas={ideas}
+        foreshadows={foreshadows} ctx={ctx} onNavigate={onNavigate} onExport={onExport} />
 
       {/* #004 字数口径切换：只影响显示，不改动已保存的数据 */}
       <div className="flex flex-wrap items-center gap-2 mb-3">

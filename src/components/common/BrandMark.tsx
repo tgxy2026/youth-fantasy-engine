@@ -4,7 +4,7 @@
  *
  * 造型要点：斜置毛笔（笔杆左上 → 笔锋右下），笔尖悬着一滴墨（「悬锋」）。
  * 跟随 lucide 线条规范：viewBox 24、currentColor、strokeWidth 1.75、圆角端点，
- * 颜色经 currentColor 继承外层 className（如 text-amber），8 套主题自动适配。
+ * 颜色经 currentColor 继承外层 className（如 text-amber），9 套预制主题自动适配。
  */
 export default function BrandMark({ size = 16, className = '' }: { size?: number; className?: string }) {
   return (

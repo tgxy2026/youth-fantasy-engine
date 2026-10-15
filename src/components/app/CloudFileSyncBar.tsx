@@ -23,6 +23,7 @@ import {
 } from '@/lib/sync/desktopCloudSync'
 import { testWebdav } from '@/lib/sync/webdavTransport'
 import { testS3 } from '@/lib/sync/s3Transport'
+import SyncConflictCenter from '@/components/app/SyncConflictCenter'
 
 /** 行内按钮基线样式（主组件与子表单共用）。 */
 const rowBtn =
@@ -48,8 +49,14 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
   useEffect(() => {
     const onConflict = () =>
       showToast('检测到同步冲突：云端那一版已另存为本地副本，你的本地修改未被覆盖', 'error', 6000)
+    const onSaveError = () =>
+      showToast('同步冲突副本保存失败：请立即导出项目备份并检查本机存储空间', 'error', 10000)
     window.addEventListener('yfe:sync-conflict', onConflict)
-    return () => window.removeEventListener('yfe:sync-conflict', onConflict)
+    window.addEventListener('yfe:sync-conflict-save-error', onSaveError)
+    return () => {
+      window.removeEventListener('yfe:sync-conflict', onConflict)
+      window.removeEventListener('yfe:sync-conflict-save-error', onSaveError)
+    }
   }, [])
   const [connected, setConnected] = useState(() => isDesktopCloudEnabled())
   const [mode, setMode] = useState<SyncMode>(() => getDesktopCloudMode())
@@ -206,6 +213,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
             {meta.text || '待命'}
           </span>
         )}
+        <SyncConflictCenter compact />
         <HelpPopover title="云盘文件同步说明" side="right" width="24rem">
           {`支持三档同步方式，本软件全程不经过自建服务器：
 

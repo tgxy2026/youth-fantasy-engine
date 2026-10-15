@@ -37,6 +37,7 @@ export type { DailyStat } from '@/lib/db/meta'
 export { getMeta, setMeta, getDailyStats, putDailyStat, getSetting, setSetting, getSettingFor, setSettingFor, delSetting } from '@/lib/db/meta'
 export * from '@/lib/db/tavernReports'
 export * from '@/lib/db/aiRuns'
+export * from '@/lib/db/syncConflicts'
 // 世界引擎（3.0 · W4-1b）：世界包 / 不可变版本。🔴 **非项目级** —— 全局可读、删项目不清理。
 export * from '@/lib/db/worlds'
 export * from '@/lib/db/migrations'

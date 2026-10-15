@@ -16,6 +16,7 @@
 //    它们的不达标项必须是**有意为之**且写清理由，改阈值时请同步改这里的注释。
 import fs from 'node:fs'
 import path from 'node:path'
+import { THEMES } from '../src/lib/settings/theme'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -27,6 +28,14 @@ console.log('\n—— themeContrast 用例开始 ——')
 
 const CSS = path.join(process.cwd(), 'src', 'index.css')
 const css = fs.readFileSync(CSS, 'utf8')
+/**
+ * 🔴 剥注释版：主题块解析**必须**用它 —— 两个原因：
+ *   ① dark 块内的注释写着 `style={{ fill: … }}`，连续 `}}` 会让 `[^}]*` 提前截断（graph 键全丢）；
+ *   ② 主题块前的注释（如「护眼：浅绿柔光…」）会混进选择器匹配，按「选择器恰为单个
+ *      [data-theme='x']」判定时全部落马（2026-10-15 mono 接入时实测：9 个主题只解析出 1 个）。
+ * 与 tests/customTheme.test.ts 的 cssClean 同一口径。
+ */
+const cssNoComment = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
 const lum = (r: number, g: number, b: number) => {
   const f = (c: number) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4) }
@@ -41,17 +50,25 @@ interface Theme { id: string; vars: Record<string, number[]> }
 const themes: Theme[] = []
 {
   // `:root` 与 [data-theme='dark'] 写在同一条选择器里，匹配时要把两者都涵盖
-  const root = css.match(/:root,\s*\[data-theme='dark'\]\s*\{([^}]*)\}/)
+  // （用剥注释版：dark 块内注释含 `style={{ … }}`，原始文本会把块体截断在注释里）
+  const root = cssNoComment.match(/:root,\s*\[data-theme='dark'\]\s*\{([^}]*)\}/)
   /**
    * 🔴 必须按「选择器 + 块」成对取，而不是只找 `[data-theme='x'] {`：
    *    文末那段「浅色主题 · 图谱界面色覆盖」用的是**多选择器并列**
    *    （`[data-theme='eye-care'], [data-theme='sepia'], …`），
    *    只按后者匹配会把它误当成最后一个主题（peach-note）重复解析一遍，
    *    于是那个主题报出一堆"变量缺失"的假失败。故：选择器里出现 ≥2 次的块一律跳过。
+   * 🔴 2026-10-15（3.1 · P0-D 纯黑白）：判定进一步收紧为「选择器**恰为**单个
+   *    [data-theme='x']」—— mono 的回收段有几十条 `[data-theme='mono'] [class*=…]` /
+   *    `[data-theme='mono'] .badge-*` 作用域规则，按旧口径（出现 1 次即收）会被
+   *    误判成又一个「mono 主题块」：变量全缺 → 对比度假失败，主题数还会虚增。
+   *    只有变量定义块本身（选择器仅一个属性选择器）才是主题。
    */
-  const blocks = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+  const blocks = [...cssNoComment.matchAll(/([^{}]+)\{([^}]*)\}/g)]
     .map(m => ({ sel: m[1], body: m[2] }))
     .filter(b => (b.sel.match(/data-theme/g) ?? []).length === 1)
+    .map(b => ({ sel: b.sel.trim(), body: b.body }))
+    .filter(b => /^\[data-theme='[a-z-]+'\]$/.test(b.sel))
     .map(b => ({ id: (b.sel.match(/data-theme='([a-z-]+)'/) ?? [])[1], body: b.body }))
     .filter(b => !!b.id)
   const push = (id: string, body: string) => {
@@ -67,7 +84,7 @@ const themes: Theme[] = []
   for (const b of blocks) if (b.id !== 'dark') push(b.id, b.body)
 }
 
-ok('解析到全部主题（8 个）', themes.length === 8, `实到 ${themes.length}：${themes.map(t => t.id).join(',')}`)
+ok('解析到全部主题（9 个：八彩色 + 纯黑白）', themes.length === 9, `实到 ${themes.length}：${themes.map(t => t.id).join(',')}`)
 
 /** 判定表：token → 阈值（只判 ink-900 / ink-950 两种最常见的落地面） */
 const RULES: { token: string; min: number; bg: string[] }[] = [
@@ -101,14 +118,17 @@ for (const t of themes) {
  * 灰阶**单调性**：浅色主题里 ink 刻度是反的（950 最浅、50 最深），
  * 这条只判「文字用的这几档（50→600）亮度必须单调递增或递减」——
  * 若某次手动调色把 ink-500 调得比 ink-400 还浅，层次就乱了（且对比度闸查不出来）。
+ * 🔴 2026-10-15（mono）：改**非严格**单调（>= / <=）—— 纯黑白主题的 50→600
+ *    七档同为 #000000 是设计使然（不靠灰阶传递层级），严格比较会误报；
+ *    非严格仍抓得到真正的「刻度反转」。
  */
 for (const t of themes) {
   const seq = ['ink-50', 'ink-100', 'ink-200', 'ink-300', 'ink-400', 'ink-500', 'ink-600']
     .map(k => t.vars[k]).filter(Boolean) as number[][]
   if (seq.length < 7) { ok(`主题「${t.id}」灰阶完整`, false, '缺刻度'); continue }
   const ls = seq.map(c => lum(c[0], c[1], c[2]))
-  const up = ls.every((v, i) => i === 0 || v > ls[i - 1])
-  const down = ls.every((v, i) => i === 0 || v < ls[i - 1])
+  const up = ls.every((v, i) => i === 0 || v >= ls[i - 1])
+  const down = ls.every((v, i) => i === 0 || v <= ls[i - 1])
   ok(`主题「${t.id}」灰阶单调（50→600）`, up || down, ls.map(v => v.toFixed(3)).join(' '))
 }
 
@@ -171,7 +191,7 @@ function walkSrc(dir: string, out: string[] = []): string[] {
 //   · 编辑器正文 textarea 的 `px-6 md:px-8 pt-6` 失效 ⇒ 正文与高亮/ghost 叠层错位 20px × 18px。
 // 判据：默认样式留在 `@layer base`；未分层处**不再允许**出现 input/textarea/select 的默认样式
 //       （只保留聚焦态与占位符 —— 那两条是设计系统刻意统一给的，本就不该被各页面覆盖）。
-const cssNoComment = css.replace(/\/\*[\s\S]*?\*\//g, '')
+// （cssNoComment 已在文件头统一剥注释，此处直接复用）
 {
   const baseBlock = cssNoComment.match(/@layer\s+base\s*\{([^}]*)\}/)
   ok('输入类默认样式已放进 @layer base',
@@ -208,6 +228,86 @@ for (const v of SOLID_VARIANTS) {
   ok(`solid ${v.variant}：底色类名与字色被钉死（${v.color}-${v.shade} + text-white）`, buttonSrc.includes(v.cls))
   const c = contrast(hexRgb(TW_PALETTE[v.color][v.shade]), WHITE)
   ok(`solid ${v.variant}：白字对比度 ≥ 4.5（实测 ${c.toFixed(2)}）`, c >= 4.5)
+}
+
+// ---------- 纯黑白主题（mono）专项闸（3.1 · P0-D · 2026-10-15）----------
+//
+// 为什么单立一段：mono 的验收口径不是「对比度够」而是「严格二值」——
+// 全部取值只允许 #FFFFFF 与 #000000，且左下角主题栏顺序、派生链排除、
+// 半透明/固定色回收规则都在验收清单上。这些一旦被后续改色破坏，对比度闸
+// （黑白 21:1 恒过）根本发现不了，故在这里钉死。
+{
+  // ① 变量块严格二值：ink 12 档 + amber 家族 + 三状态色只允许两值
+  //    ⚠️ 用 matchAll 再挑含 --ink-950 的那块：文末图谱色覆盖组的末选择器也是
+  //       `[data-theme='mono'] {`，只取第一个会随源文件顺序漂移。
+  const monoBlocks = [...cssNoComment.matchAll(/\[data-theme='mono'\]\s*\{([^}]*)\}/g)]
+  const monoBlock = monoBlocks.find(m => m[1].includes('--ink-950'))
+  ok('mono：index.css 存在 [data-theme=\'mono\'] 变量块', !!monoBlock)
+  if (monoBlock) {
+    const body = monoBlock[1]
+    const vals = [...body.matchAll(/--(ink-\d+|amber|amber-soft|danger|success|info):\s*([^;]+);/g)]
+      .map(m => ({ k: m[1], v: m[2].trim() }))
+    ok('mono：17 个颜色变量全部声明（ink 12 + amber 2 + 状态 3）', vals.length === 17, `实到 ${vals.length}`)
+    const offValue = vals.filter(v => v.v !== '255 255 255' && v.v !== '0 0 0')
+    ok('mono：所有取值严格为 #FFFFFF(255 255 255) 或 #000000(0 0 0)',
+      offValue.length === 0, offValue.map(v => `${v.k}=${v.v}`).join(', '))
+    // 面（950~800）必须白、字与边（700~50）必须黑 —— 收反了就是「黑底白字的暗色主题」
+    const surfaces = ['ink-950', 'ink-900', 'ink-850', 'ink-800']
+      .map(k => vals.find(v => v.k === k)?.v)
+    const inks = ['ink-700', 'ink-600', 'ink-500', 'ink-400', 'ink-300', 'ink-200', 'ink-100', 'ink-50']
+      .map(k => vals.find(v => v.k === k)?.v)
+    ok('mono：面（ink-950~800）= #FFFFFF', surfaces.every(v => v === '255 255 255'), surfaces.join(' | '))
+    ok('mono：字与描边（ink-700~50）= #000000', inks.every(v => v === '0 0 0'), inks.join(' | '))
+    ok('mono：color-scheme 为 light（白色界面配浅色表单控件）', /color-scheme:\s*light/.test(body))
+  }
+
+  // ② 主题栏顺序：八个彩色预制 → 纯黑白 → 彩色自定义按钮（custom 恒最末）
+  const ids = THEMES.map(t => t.id)
+  ok('THEMES：共 10 项（8 彩色预制 + mono + custom）', ids.length === 10, ids.join(','))
+  ok('THEMES：mono 位于 peach-note 之后、custom 之前（左下角主题栏顺序）',
+    ids[ids.length - 2] === 'mono' && ids[ids.length - 1] === 'custom' && ids.includes('peach-note'),
+    ids.join(','))
+  const monoDef = THEMES.find(t => t.id === 'mono')
+  ok('THEMES：mono 名称为「纯黑白」', monoDef?.name === '纯黑白')
+
+  // ③ 派生链排除：mono 不做自定义主题母版（严格黑白预设保持独立）
+  const dialogSrc = fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'settings', 'CustomThemeDialog.tsx'), 'utf8')
+  ok('CustomThemeDialog：母版列表排除 mono（不进色相派生链）',
+    /t\.id !== 'custom' && t\.id !== 'mono'/.test(dialogSrc))
+  ok('CustomThemeDialog：当前主题为 mono 时母版回退 eye-care',
+    /cur === 'custom' \|\| cur === 'mono' \? 'eye-care'/.test(dialogSrc))
+  const themeSrc = fs.readFileSync(path.join(process.cwd(), 'src', 'lib', 'settings', 'theme.ts'), 'utf8')
+  ok('theme.ts：getStoredCustomTheme 拒绝 baseId=mono 的脏参数',
+    /p\.baseId === 'custom' \|\| p\.baseId === 'mono'/.test(themeSrc))
+
+  // ④ 回收规则在位（防呆：删了任何一类，黑白下就会出现灰/彩色界面元素）
+  const reclamations: [string, RegExp][] = [
+    ['半透明底色 → 纯白', /\[data-theme='mono'\] \[class\*='bg-amber\/'\]/],
+    ['固定调色板实底 → 纯黑', /\[data-theme='mono'\] \[class\*='bg-red-'/],
+    ['悬停实底 ink-700/600 → 纯白', /\[data-theme='mono'\] \[class\*='hover:bg-ink-700'\]/],
+    ['描边 → 纯黑', /\[data-theme='mono'\] \[class\*='border-amber'\]/],
+    ['文字 → 纯黑', /\[data-theme='mono'\] \[class\*='text-amber'\]/],
+    ['光环 → 纯黑（--tw-ring-color）', /\[data-theme='mono'\] \[class\*='ring-amber'\]/],
+    ['阴影撤掉（--tw-shadow，排除 drop-shadow）', /\[data-theme='mono'\] \[class\*='shadow-'\]:not\(\[class\*='drop-shadow'\]\)/],
+    ['自定义类逃逸口：聚焦纯黑（input:focus）', /\[data-theme='mono'\] input:focus/],
+    ['自定义类逃逸口：field-example 纯黑', /\[data-theme='mono'\] \.field-example/],
+    ['自定义类逃逸口：card-hover 黑边无投影', /\[data-theme='mono'\] \.card-hover:hover/],
+    ['选中态双线补偿（排除 hover: 变体）', /\[data-theme='mono'\] \[class\*='border-amber\/'\]:not\(\[class\*='hover:border-amber'\]\)/],
+    ['悬停态内嵌轮廓', /\[data-theme='mono'\] \[class\*='hover:bg-'\]:hover/],
+    ['正文选择黑底白字', /\[data-theme='mono'\] ::selection/],
+    ['引用名高亮黑底白字', /\[data-theme='mono'\] \.ref-mark/],
+    ['ghost 建议虚下划线', /\[data-theme='mono'\] \.ai-ghost/],
+    ['占位符纯黑不透明', /\[data-theme='mono'\] input::placeholder/],
+    ['状态徽章白底黑字', /\[data-theme='mono'\] \.badge-green/],
+    ['写锁横幅白底黑字', /\[data-theme='mono'\] \.bg-red-700\\\/97/],
+  ]
+  for (const [name, re] of reclamations) {
+    ok(`mono 回收规则在位：${name}`, re.test(cssNoComment))
+  }
+
+  // ⑤ mono 并入浅色图谱色覆盖组（图谱自动继承纯黑白）
+  ok('mono 并入浅色主题图谱色覆盖选择器组',
+    /\[data-theme='peach-note'\],\s*\[data-theme='mono'\]\s*\{/.test(cssNoComment))
 }
 
 console.log(`\nthemeContrast: ${pass} passed, ${fail} failed`)
