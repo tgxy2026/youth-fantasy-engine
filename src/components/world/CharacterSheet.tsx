@@ -6,7 +6,7 @@ import { SABC_LABELS, CARD_TABLE_REF_FIELDS } from '@/lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { uid } from '@/lib/app/id'
-import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2 } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2, Search } from 'lucide-react'
 import { readPortraitFile, dataUrlBytes, PORTRAIT_ACCEPT } from '@/lib/media/imagePortrait'
 import { PORTRAIT_HINT_SPEC } from '@/lib/media/portraitSpec'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -27,6 +27,8 @@ import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
+import { readAliases } from '@/lib/settings/aliases'
+import MentionPanel from '@/components/app/MentionPanel'
 
 /** 角色卡中以「下拉」形式填写的字段（与设定检索 CARD_SELECT_FIELDS 对应）：value 为存储值，label 为展示文案 */
 const CARD_SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
@@ -55,9 +57,11 @@ interface Props {
    */
   focusRowId?: string | null
   onFocusConsumed?: () => void
+  /** 跳转页签 / 正文（3.1 P1「资料提及」面板的章节跳转用） */
+  onNavigate?: (id: string, chapterId?: string) => void
 }
 
-export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Props) {
+export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNavigate }: Props) {
   const [records, setRecords] = useState<CardRecord[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -75,6 +79,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
   const [showFillExisting, setShowFillExisting] = useState(false)
   // 筛选：开启后隐藏「人物状态 = 已退场」的角色，避免角色过多时难以定位
   const [hideRetired, setHideRetired] = usePersistedBool('character-sheet-hide-retired', false)
+  /** 「资料提及」面板（3.1 P1）：卡片标题行放大镜按钮打开，纯读不落库 */
+  const [mention, setMention] = useState<{ name: string; aliases: string[] } | null>(null)
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
   const { labels: aliasLabels } = useFieldAliases(
@@ -443,6 +449,11 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
                   <UserRound size={13} className="shrink-0" />
                   <span className="text-13 font-medium truncate flex-1">{rec.name}</span>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title={UNSAVED_CHANGES_HINT} />}
+                  <Button variant="bare" iconOnly size="xs" title={`查看「${rec.name}」在正文中的提及`}
+                    onClick={e => { e.stopPropagation(); setMention({ name: rec.name, aliases: readAliases(tab.id, rec.data) }) }}
+                    className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all">
+                    <Search size={12} />
+                  </Button>
                   <Button variant="icon-danger" iconOnly size="xs" title="删除这张角色卡" onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-40 group-hover:opacity-100 transition-all">
                     <Trash2 size={12} />
                   </Button>
@@ -680,6 +691,16 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed }: Pro
         onSubmit={submitNamePrompt}
         onCancel={() => setNamePrompt(null)}
       />
+
+      {/* 3.1 P1：资料提及结果面板（纯读，见 MentionPanel 头注） */}
+      {mention && (
+        <MentionPanel
+          name={mention.name}
+          aliases={mention.aliases}
+          onClose={() => setMention(null)}
+          onNavigate={onNavigate ?? (() => {})}
+        />
+      )}
     </div>
   )
 }

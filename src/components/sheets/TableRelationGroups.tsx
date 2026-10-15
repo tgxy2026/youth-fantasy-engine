@@ -16,15 +16,18 @@ import { Button } from '@/components/common/Button'
 import CustomSelect from '@/components/common/CustomSelect'
 import CharacterSelect from '@/components/world/CharacterSelect'
 import TableRefSelect from '@/components/sheets/TableRefSelect'
-import { ChevronDown, ChevronRight, Sparkles, Trash2, Users } from 'lucide-react'
+import { ChevronDown, ChevronRight, Sparkles, Trash2, Users, Search } from 'lucide-react'
 import { LONG_REL_COLS, rowBadgeClass } from '@/components/sheets/tableSheetShared'
+import { readAliases } from '@/lib/settings/aliases'
 import type { TableSheetModel } from '@/components/sheets/useTableSheetModel'
 
-export default function TableRelationGroups({ tab, model, ctx }: {
+export default function TableRelationGroups({ tab, model, ctx, onOpenMentions }: {
   tab: TabDef
   model: TableSheetModel
   /** 可见性上下文：透传给角色选择 / 跨表引用下拉 */
   ctx: VisCtx
+  /** 打开「资料提及」面板（3.1 P1）：主名称 + readAliases 别称列表 */
+  onOpenMentions?: (name: string, aliases: string[]) => void
 }) {
   const {
     rows,
@@ -105,6 +108,18 @@ export default function TableRelationGroups({ tab, model, ctx }: {
                         <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1 shrink-0" title="删除此条关系">
                           <Trash2 size={12} />
                         </Button>
+                        {/* 资料提及（3.1 P1）：目标取**所在文件夹的人物** —— 文件夹视图里这行关系
+                            已按该人物归档（行卡显示的是「↔ 对方」），一行仍然只有一个按钮、
+                            语义不分裂；relations 无「别称」列，readAliases 返回空、按主名称检索 */}
+                        {onOpenMentions && !g.unnamed && (
+                          <Button variant="bare" iconOnly size="xs"
+                            onClick={() => onOpenMentions(g.name, readAliases(tab.id, row.data))}
+                            className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all shrink-0"
+                            title={`查看「${g.name}」在正文中的提及`}
+                          >
+                            <Search size={12} />
+                          </Button>
+                        )}
                         {aiCap !== 'none' && (
                           <Button variant="bare" iconOnly size="xs"
                             onClick={() => setFillRow(row)}

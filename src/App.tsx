@@ -593,7 +593,7 @@ export default function App() {
         return tab.group === '大纲规划'
           ? <OutlineSheet key={tab.id} tab={tab} />
           // focusRowId 也要下发：card 类页签（主要/次要/NPC 角色）同样会被报告指向（审计 P1-5）
-          : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
+          : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} />
       case 'about':
         return <AboutPage />
       case 'map':

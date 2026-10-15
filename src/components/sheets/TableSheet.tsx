@@ -29,6 +29,7 @@ import CalendarRuleModal from '@/components/common/CalendarRuleModal'
 import FieldAliasButton, { tableAliasTargets } from '@/components/sheets/FieldAliasButton'
 import { useFieldAliases } from '@/lib/settings/fieldAlias'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import MentionPanel from '@/components/app/MentionPanel'
 import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
@@ -52,6 +53,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const model = useTableSheetModel({ tab, focusRowId, onFocusConsumed })
   /** 「历法规则」弹窗（历法清单 + 一年几个月 / 每月几天） */
   const [showCalRule, setShowCalRule] = useState(false)
+  /** 「资料提及」面板（3.1 P1）：行内放大镜按钮打开，纯读不落库 */
+  const [mention, setMention] = useState<{ name: string; aliases: string[] } | null>(null)
   /** 字段显示名（2.7.3）：只改界面上的字，存储键一个字节都不碰 */
   const aliasTargets = useMemo(
     () => tableAliasTargets((tab.columns ?? []).filter(c => !c.hidden)),
@@ -315,10 +318,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         <HistoryTimeline rows={rows} tab={tab} calendars={calendars} calendarRule={calendarRule} />
       ) : viewMode === 'timeline' && tab.id === 'timeline' ? (
         <StoryTimeline rows={rows} tab={tab} calendars={calendars} calendarRule={calendarRule} />
-      ) : tab.id === 'relations' ? (
-        /* ============ 人物关系：按人物分组的文件夹视图（实现已拆到 TableRelationGroups） ============ */
-        <TableRelationGroups tab={tab} model={model} ctx={ctx} />
-      ) : (
+  ) : tab.id === 'relations' ? (
+    /* ============ 人物关系：按人物分组的文件夹视图（实现已拆到 TableRelationGroups） ============ */
+    <TableRelationGroups tab={tab} model={model} ctx={ctx}
+      onOpenMentions={(name, aliases) => setMention({ name, aliases })} />
+  ) : (
         <>
       {/* 表格 */}
       <div className="rounded-xl border border-ink-700 bg-ink-850 overflow-hidden">
@@ -382,6 +386,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                   entry={entry}
                   index={i}
                   onNavigate={onNavigate}
+                  onOpenMentions={(name, aliases) => setMention({ name, aliases })}
                   ctx={ctx}
                 />
               ))}
@@ -469,6 +474,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             setShowCalRule(false)
           }}
           onClose={() => setShowCalRule(false)}
+        />
+      )}
+      {mention && (
+        <MentionPanel
+          name={mention.name}
+          aliases={mention.aliases}
+          onClose={() => setMention(null)}
+          onNavigate={onNavigate ?? (() => {})}
         />
       )}
     </div>

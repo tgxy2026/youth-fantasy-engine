@@ -8,7 +8,7 @@
  * 状态一律来自 `model`（同名解构，JSX 保持原样）；本组件不持有任何状态。
  * ⚠️ 唯一改动：原来的 `i`（map 下标）改名为 `index` —— 单字符参数名做 props 太容易读错。
  */
-import { ChevronDown, ChevronRight, GitBranch, Link2, PenLine, Sparkles, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, Link2, PenLine, Search, Sparkles, Trash2 } from 'lucide-react'
 import type { TabDef, TableRow } from '@/lib/types'
 import { SABC_LABELS, isVolumeLedgerTab } from '@/lib/schema'
 import type { VisCtx } from '@/lib/schema'
@@ -22,14 +22,17 @@ import NumberField from '@/components/common/NumberField'
 import StoryDateInput from '@/components/common/StoryDateInput'
 import { CellTextarea, rowBadgeClass } from '@/components/sheets/tableSheetShared'
 import type { TableSheetModel } from '@/components/sheets/useTableSheetModel'
+import { readAliases } from '@/lib/settings/aliases'
 
-export default function TableSheetRow({ tab, model, entry, index, onNavigate, ctx }: {
+export default function TableSheetRow({ tab, model, entry, index, onNavigate, onOpenMentions, ctx }: {
   tab: TabDef
   model: TableSheetModel
   /** 一行 + 它在树形层级里的位置（父组件负责排列） */
   entry: { row: TableRow; depth: number; hasChildren: boolean }
   index: number
   onNavigate?: (id: string, chapterId?: string) => void
+  /** 打开「资料提及」面板（3.1 P1）：主名称 + readAliases 别称列表 */
+  onOpenMentions?: (name: string, aliases: string[]) => void
   ctx: VisCtx
 }) {
   const {
@@ -64,6 +67,12 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
     // 章节总表 / 各卷台账联动行：id 形如 ch-<chapterId>，提供直达写作入口
     const chapterLink = (tab.id === 'chapter-master' || isVolumeLedgerTab(tab.id)) && row.id.startsWith('ch-')
       ? row.id.slice(3) : null
+    // 资料提及（3.1 P1）：relations 行只对「人物A」生效（一行两个资料，避免按钮语义分裂，
+    // 2026-10-15 主人拍板）；其余表取主显示列值；卷台账（isMaster）是章节联动行、无资料语义，不渲染
+    const mentionName = isMaster ? ''
+      : tab.id === 'relations'
+        ? (row.data['人物A'] ?? '').trim()
+        : tab.displayCol ? cellVal(row, tab.displayCol).trim() : ''
     return (
       <tr
         key={row.id}
@@ -83,6 +92,15 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, ct
               title="打开本章正文编辑"
             >
               <PenLine size={12} />
+            </Button>
+          )}
+          {mentionName && (
+            <Button variant="bare" iconOnly size="xs"
+              onClick={() => onOpenMentions?.(mentionName, readAliases(tab.id, row.data))}
+              className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
+              title={`查看「${mentionName}」在正文中的提及`}
+            >
+              <Search size={12} />
             </Button>
           )}
           {!isMaster && (
