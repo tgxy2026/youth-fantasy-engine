@@ -2,11 +2,11 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import { Z } from '@/lib/app/zLayer'
 import type { TabDef, CardRecord } from '@/lib/types'
-import { SABC_LABELS, CARD_TABLE_REF_FIELDS } from '@/lib/schema'
+import { CARD_TABLE_REF_FIELDS, type VisCtx } from '@/lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { uid } from '@/lib/app/id'
-import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2, Search } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2, Search, FileDown, FileUp } from 'lucide-react'
 import { readPortraitFile, dataUrlBytes, PORTRAIT_ACCEPT } from '@/lib/media/imagePortrait'
 import { PORTRAIT_HINT_SPEC } from '@/lib/media/portraitSpec'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -29,16 +29,11 @@ import { LoadingState } from '@/components/common/LoadingState'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import { readAliases } from '@/lib/settings/aliases'
 import MentionPanel from '@/components/app/MentionPanel'
-
-/** 角色卡中以「下拉」形式填写的字段（与设定检索 CARD_SELECT_FIELDS 对应）：value 为存储值，label 为展示文案 */
-const CARD_SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
-  '人物状态': [
-    { value: '未登场', label: '未登场' },
-    { value: '已登场', label: '已登场' },
-    { value: '已退场', label: '已退场' },
-  ],
-  '保密等级': Object.entries(SABC_LABELS).map(([value, label]) => ({ value, label })),
-}
+import TableImportDialog from '@/components/sheets/TableImportDialog'
+import { buildCardRecords, cardRecordsToTableRows, cardTabToTableTab, exportCardsCsv } from '@/lib/storage/cardIO'
+import { CARD_SELECT_FIELDS } from '@/lib/world/cardFields'
+import { downloadBlob } from '@/lib/storage/zip'
+import type { ImportRowResult } from '@/lib/storage/tableIO'
 
 /**
  * 长文本字段**不封顶**的卡片页签（单一判据）：名单内的页签，其文本字段随内容一路长高、
@@ -59,9 +54,14 @@ interface Props {
   onFocusConsumed?: () => void
   /** 跳转页签 / 正文（3.1 P1「资料提及」面板的章节跳转用） */
   onNavigate?: (id: string, chapterId?: string) => void
+  /**
+   * 可见性上下文（3.1.x）：透传给批量导入弹窗，供「AI 智能拆分」注入候选值
+   * （角色名 / 势力名等）。与 `TableSheet` 的 `ctx` 同一口径。
+   */
+  ctx?: VisCtx
 }
 
-export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNavigate }: Props) {
+export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNavigate, ctx = { type: 'full', features: [] } }: Props) {
   const [records, setRecords] = useState<CardRecord[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -81,6 +81,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const [hideRetired, setHideRetired] = usePersistedBool('character-sheet-hide-retired', false)
   /** 「资料提及」面板（3.1 P1）：卡片标题行放大镜按钮打开，纯读不落库 */
   const [mention, setMention] = useState<{ name: string; aliases: string[] } | null>(null)
+  /** 批量导入弹窗（3.1.x）：角色页签的「导入」按钮打开 */
+  const [showImport, setShowImport] = useState(false)
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
   const { labels: aliasLabels } = useFieldAliases(
@@ -101,6 +103,12 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const isCharTab = tab.group === '角色管理'
   const noun = isCharTab ? '角色' : '设定'
   const nounCard = isCharTab ? '角色卡' : '设定'
+  /**
+   * 批量导入 / 导出用的**虚拟表格页签**（3.1.x）：把 `tab.modules` 拍平成 `columns`，
+   * 让世界构建组那一整套 tableIO 逻辑（解析 / 映射 / 校验 / 模板 / 说明）原样复用 ——
+   * 见 `lib/storage/cardIO.ts` 的头注。
+   */
+  const vtab = useMemo(() => cardTabToTableTab(tab), [tab])
   const visibleRecords = hideRetired ? records.filter(r => statusOf(r) !== '已退场') : records
 
   // 左栏搜索（A+C 的 C 项）：角色一多时，滚只解决「翻得到」、搜才解决「定位快」
@@ -276,6 +284,47 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   }
 
   /**
+   * 批量导入（3.1.x）：把勾选的导入行转成角色卡逐条落库，然后刷新左栏并选中第一张新卡。
+   *
+   * 🔴 逐条串行 await（不用 forEach + void）：与 TableSheet「清空全部」同一个教训 ——
+   *    并发发起且不等待会把失败静默吞掉（界面已加进来、库里其实没写进去，重开这一页就消失）。
+   */
+  const handleImport = async (picked: ImportRowResult[]) => {
+    const created = buildCardRecords(picked, tab, records, getCurrentProjectId(), uid)
+    const okOnes: CardRecord[] = []
+    let failed = 0
+    for (const rec of created) {
+      try { await saveCardRecord(rec); okOnes.push(rec) } catch { failed++ }
+    }
+    if (okOnes.length) {
+      setRecords(prev => [...prev, ...okOnes])
+      setActiveId(okOnes[0].id)
+      setDraft(okOnes[0])
+    }
+    showToast(
+      failed
+        ? `已导入 ${okOnes.length} 张，另有 ${failed} 张没能写入 —— 请重试`
+        : `已导入 ${okOnes.length} 张${nounCard}`,
+      failed ? 'error' : 'success',
+    )
+  }
+
+  /**
+   * 导出本页全部卡片为 CSV（UTF-8 BOM，Excel 直接打开不乱码）。
+   *
+   * 🔴 用「含当前未保存草稿」的列表，而不是裸库数据 —— 与 TableSheet 的导出同一口径：
+   *    作者刚改完还没保存就导出，导出的文件里看不到自己的改动，而屏幕上明明有。
+   */
+  const exportCsv = () => {
+    if (records.length === 0) {
+      showToast(`还没有${nounCard}可导出 —— 可先用「导入」批量录入，或点「新建${noun}」逐张录入。`, 'info')
+      return
+    }
+    const list = draft ? records.map(r => (r.id === draft.id ? draft : r)) : records
+    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportCardsCsv(tab, list)], { type: 'text/csv;charset=utf-8' }))
+  }
+
+  /**
    * 🔴 B7（2.4.1）：角色立绘 —— **两个位**（`portrait` / `portrait2`）。
    * 「两张」的由来（2026-09-22 老大）：右侧竖着一整列，只放一张时下边空着一块；
    * 与其留白，不如再给一个位（正装 / 便装、或两个姿态）并排铺满。
@@ -387,6 +436,18 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           <Button onClick={addCard} variant="primary" size="md" className="flex items-center">
             <Plus size={14} /> 新建{noun}
           </Button>
+          {/* 批量导入 / 导出（3.1.x）：对齐世界构建组表格页签那套能力（导出模板 → 填写 → 导入回项目）。
+              ⚠️ 只在角色页签出现 ——「其他设定」是兜底页、暂不铺开（需要时去掉 isCharTab 判断即可）。 */}
+          {isCharTab && (
+            <>
+              <Button variant="secondary" onClick={() => setShowImport(true)} className="flex items-center gap-1.5 font-medium transition-colors" title={`批量导入：粘贴表格 / CSV / 纯文本，或上传文件；散文式设定可用「AI 智能拆分」自动解析成多张${nounCard}`}>
+                <FileDown size={14} /> 导入
+              </Button>
+              <Button variant="secondary" onClick={exportCsv} className="flex items-center gap-1.5 font-medium transition-colors" title={`导出全部${nounCard}为 CSV（Excel 可直接打开）`}>
+                <FileUp size={14} /> 导出
+              </Button>
+            </>
+          )}
           {aiCap !== 'none' && (
             <>
               {/* 🔴 2026-10-03 老大定案：这一组两个入口语义必须分清 ——
@@ -529,13 +590,13 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                                 multi={CARD_TABLE_REF_FIELDS[field.name].multi}
                                 placeholder={`选择${field.name}`}
                               />
-                            ) : CARD_SELECT_OPTIONS[field.name] ? (
+                            ) : CARD_SELECT_FIELDS[field.name] ? (
                               <select
                                 value={val}
                                 onChange={e => updateField(key, e.target.value)}
                                 className="w-full text-12 bg-ink-800 border border-ink-700 rounded px-2 py-1"
                               >
-                                {CARD_SELECT_OPTIONS[field.name].map(o => (
+                                {CARD_SELECT_FIELDS[field.name].map(o => (
                                   <option key={o.value} value={o.value}>{o.label}</option>
                                 ))}
                               </select>
@@ -678,6 +739,18 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           sketchPlaceholder={`补充「${draft.name}」已填内容的背景 / 细节，让 AI 补全其余空白字段（已填的不会动）…`}
           onSubmit={handleFillExisting}
           onClose={() => setShowFillExisting(false)}
+        />
+      )}
+
+      {/* 3.1.x：批量导入弹窗 —— 复用世界构建组那套表格导入（`TableImportDialog`），
+          传的是**虚拟表格页签**（`cardTabToTableTab`），故解析 / 校验 / 模板 / 说明 / AI 拆分全部原样复用。 */}
+      {showImport && (
+        <TableImportDialog
+          tab={vtab}
+          existing={cardRecordsToTableRows(tab, records)}
+          visCtx={ctx}
+          onAdd={handleImport}
+          onClose={() => setShowImport(false)}
         />
       )}
 

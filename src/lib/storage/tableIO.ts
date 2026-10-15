@@ -315,9 +315,15 @@ export function validateImport(
       const v = (data[rc.name] ?? '').trim()
       if (!v) continue
       const allowed = ctx.refValues.get(rc.refTab!)
-      if (allowed && allowed.size > 0 && !allowed.has(v)) {
+      if (!allowed || allowed.size === 0) continue
+      // 🔴 多值列（3.1.x · 角色卡「所属势力」）：按中文 / 英文逗号拆开**逐个**校验。
+      //    按整串比对的话，「青岚宗，天机阁」永远匹配不到单个名称 ⇒ 每一行都误报悬空，
+      //    而悬空提示会让人以为整列都填错了。单选列（未标 multiValue）行为与改动前逐字一致。
+      const vals = rc.multiValue ? v.split(/[，,]/).map(s => s.trim()).filter(Boolean) : [v]
+      for (const one of vals) {
+        if (allowed.has(one)) continue
         dangling.push({
-          col: rc.name, value: v, refTab: rc.refTab!,
+          col: rc.name, value: one, refTab: rc.refTab!,
           refLabel: ctx.refLabels?.get(rc.refTab!) ?? rc.refTab!,
         })
       }
@@ -412,6 +418,7 @@ function colTip(c: TableColumn, tab: TabDef): string {
   if (c.name === mainColumn(tab)) bits.push('**必填**')
   if (c.type === 'select' && c.options?.length) bits.push(`可选：${c.options.join(' / ')}`)
   if (c.type === 'tableRef' && c.refTab) bits.push('须与目标表中已有的名称逐字一致（否则勾稽会悬空）')
+  if (c.multiValue) bits.push('可多选，多个之间用中文逗号「，」分隔')
   if (c.name === '编号') bits.push('留空则导入时自动编号')
   return bits.join('；') || '—'
 }

@@ -72,6 +72,15 @@ export interface TableColumn {
    * 由 schema 的 `cFixed()` 设置，理由见那里。
    */
   fixedOptions?: boolean
+  /**
+   * 多值列（3.1.x）：该列允许存多个名称，以中文 / 英文逗号分隔。
+   *
+   * 🔴 它只影响**一处**行为 —— `tableIO.validateImport` 的悬空引用校验口径：
+   *    多值列按分隔符拆开**逐个**校验，而不是拿整串去目标表的名称集合里比对。
+   *    （不拆的话，「青岚宗，天机阁」永远匹配不到单个名称 ⇒ 每一行都误报悬空。）
+   * 目前只有角色卡的「所属势力」（多选跨表引用）用它，由 `cardIO.cardTabToTableTab` 设置。
+   */
+  multiValue?: boolean
 }
 
 /** 页签类型 */
