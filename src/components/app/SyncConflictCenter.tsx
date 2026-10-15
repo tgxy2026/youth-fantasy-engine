@@ -78,11 +78,12 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
     setBusy(true)
     try {
       // 主操作成功后可能带回「下游动作没跟上」的告警（字数统计 / 处理状态 / 落盘），如实合并进提示
-      const warnings = await db.restoreServerChapterFromConflict(c.metaKey)
-      const base = '章节已恢复，恢复前项目备份可在备份管理中找到'
+      const projectId = db.getCurrentProjectId()
+      const { warnings, persisted } = await db.restoreServerChapterFromConflict(c.metaKey)
+      const base = persisted ? '章节已恢复并保存到本机，恢复前项目备份可在备份管理中找到' : '章节已在内存中恢复'
       showToast(warnings.length ? `${base}；但${warnings.join('、')}` : base, warnings.length ? 'error' : 'success')
       await reload()
-      setTimeout(() => location.reload(), 500)
+      if (persisted && db.getCurrentProjectId() === projectId) location.reload()
     } catch (e) {
       showToast(`恢复失败：${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally { setBusy(false) }
@@ -112,7 +113,7 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
     </Button> : <Button variant="bare" onClick={() => setOpen(true)} className="flex w-full items-center justify-center gap-1 rounded-lg border border-ink-700 px-2 py-1.5 text-11 text-ink-300 hover:text-amber">
       <AlertTriangle size={12} /> 同步冲突{unresolved ? `（${unresolved} 条待处理）` : ''}
     </Button>}
-    <Modal open={open} onClose={() => setOpen(false)} title="同步冲突中心" icon={<AlertTriangle size={15} />} width="2xl">
+    <Modal open={open} onClose={() => { if (!busy) setOpen(false) }} showCloseButton={!busy} title="同步冲突中心" icon={<AlertTriangle size={15} />} width="2xl">
       <p className="mb-3 text-11 text-ink-400">冲突双方保存在本机。先核对内容，再导出或恢复；已处理记录可以保留作为历史。</p>
       {loadError && <p className="mb-3 text-12 text-danger">读取失败：{loadError}</p>}
       {records.length === 0 ? <div className="py-8 text-center text-12 text-ink-500">没有同步冲突记录</div> : <div className="space-y-3">

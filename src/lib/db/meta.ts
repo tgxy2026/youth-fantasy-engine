@@ -16,12 +16,15 @@ export async function setMeta(key: string, value: unknown) {
 export interface DailyStat { key: string; projectId: string; date: string; words: number }
 
 /** 累加当日字数增量（可为负，最低 0） */
-export async function addDailyWords(delta: number) {
-  if (!currentProjectId || !delta) return
-  const key = `${currentProjectId}::${todayKey()}`
-  const rec = await ops.get<DailyStat>('dailyStats', key)
+export async function addDailyWords(delta: number, projectId = currentProjectId, store = ops): Promise<DailyStat | undefined> {
+  if (!projectId || !delta) return
+  const date = todayKey()
+  const key = `${projectId}::${date}`
+  const rec = await store.get<DailyStat>('dailyStats', key)
   const words = Math.max(0, (rec?.words ?? 0) + delta)
-  await ops.put('dailyStats', { key, projectId: currentProjectId, date: todayKey(), words })
+  const next = { key, projectId, date, words }
+  await store.put('dailyStats', next)
+  return next
 }
 /** 获取当前项目全部每日统计 */
 export async function getDailyStats(): Promise<DailyStat[]> {

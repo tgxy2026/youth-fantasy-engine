@@ -12,7 +12,10 @@ export function initDesktopStore() { return Promise.resolve() }
 export function desktopStoreReady() { return Promise.resolve() }
 export function flushDesktopSync() { return Promise.resolve(false) }
 // db.ts 关闭云盘同步时会 await flushDesktop() 再切存储（内存桩无需真落盘，直接成功）
-export function flushDesktop() { return Promise.resolve(true) }
+let flushResult = true
+/** 恢复测试模拟本机写盘失败；测试结束必须复位。 */
+export function __setFlushDesktopResult(value: boolean) { flushResult = value }
+export function flushDesktop() { return Promise.resolve(flushResult) }
 export function subscribeDesktop() { return () => {} }
 // 与 src/lib/app/desktop.ts 的 DesktopState 同形：db.ts 的云同步入口会读 writeLocked
 // （测试环境从不锁写盘，固定 false；将来要测「锁定期行为」就在这里放开）

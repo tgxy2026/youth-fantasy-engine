@@ -550,6 +550,25 @@
   color: #000000;
 }
 
+/* 通用按钮按组件语义覆盖，不能从 hover:bg-* 子串推断当前底色。
+   所有按钮（含实心主操作/危险按钮）统一白底黑字，轮廓继续表达选中、悬停和聚焦。 */
+[data-theme='mono'] button[data-button-variant] {
+  background-color: #FFFFFF;
+  color: #000000;
+  border-color: #000000;
+}
+[data-theme='mono'] button[data-button-variant] .text-white {
+  color: #000000;
+}
+/* 禁用仍使用原生 disabled 语义；用虚线区分，不以透明度制造灰字。 */
+[data-theme='mono'] button:disabled,
+[data-theme='mono'] input:disabled,
+[data-theme='mono'] textarea:disabled,
+[data-theme='mono'] select:disabled {
+  opacity: 1;
+  border-style: dashed;
+}
+
 /* ============================================================
    界面缩放 × vh 单位的修正（2026-09-15）
    ------------------------------------------------------------

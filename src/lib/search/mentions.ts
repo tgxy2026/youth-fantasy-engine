@@ -53,22 +53,28 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** 统计 term 在已小写化的 lower 中的出现次数；短 ASCII 词走词边界正则，其余走 indexOf 全串扫描 */
-function countTerm(lower: string, term: string): number {
-  if (!term) return 0
+/** 计数与摘要位置共用同一次有效匹配，避免摘要落在被词边界排除的位置。 */
+function matchTerm(lower: string, term: string): { count: number; first: number } {
+  if (!term) return { count: 0, first: -1 }
   if (isShortAscii(term)) {
     const re = new RegExp(`\\b${escapeRegExp(term)}\\b`, 'gi')
     let n = 0
-    while (re.exec(lower) !== null) n++
-    return n
+    let first = -1
+    let match: RegExpExecArray | null
+    while ((match = re.exec(lower)) !== null) {
+      if (first < 0) first = match.index
+      n++
+    }
+    return { count: n, first }
   }
   let n = 0
   let idx = lower.indexOf(term)
+  const first = idx
   while (idx >= 0) {
     n++
     idx = lower.indexOf(term, idx + term.length)
   }
-  return n
+  return { count: n, first }
 }
 
 /**
@@ -110,13 +116,13 @@ export async function findMentions(name: string, aliases: string[]): Promise<Men
     let firstPos = -1
     let firstTermLen = 0
     for (const t of terms) {
-      const n = countTerm(lower, t.toLowerCase())
-      if (n > 0) {
-        count += n
+      const result = matchTerm(lower, t.toLowerCase())
+      if (result.count > 0) {
+        count += result.count
         matched.push(t)
-        if (firstPos < 0) {
-          const p = lower.indexOf(t.toLowerCase())
-          if (p >= 0) { firstPos = p; firstTermLen = t.length }
+        if (firstPos < 0 || result.first < firstPos) {
+          firstPos = result.first
+          firstTermLen = t.length
         }
       }
     }

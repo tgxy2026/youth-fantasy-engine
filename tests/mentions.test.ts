@@ -76,5 +76,16 @@ check('snippet 不含换行', !snip.includes('\n'))
 // ⑧ 无命中返回空数组
 check('无命中返回空数组', (await findMentions('不存在的人', ['某某'])).length === 0)
 
+// 计数与摘要必须使用同一单词边界；别称摘要按出现位置选择。
+const snippetChapter = (await db.getAllChapters())[0]
+await memoryOps.put('chapters', { ...snippetChapter, title: '', summary: '',
+  content: 'edition ' + '.'.repeat(90) + ' Ed enters' })
+const shortSnippet = (await findMentions('Ed', [])).find(h => h.chapterId === snippetChapter.id)
+check('短英文名摘要定位有效词，不定位 edition', !!shortSnippet?.firstSnippet.includes('Ed enters') && !shortSnippet.firstSnippet.includes('edition'))
+await memoryOps.put('chapters', { ...snippetChapter, title: '', summary: '',
+  content: '小渊先出现' + '。'.repeat(90) + '林渊后出现' })
+const earliest = (await findMentions('林渊', ['小渊'])).find(h => h.chapterId === snippetChapter.id)
+check('摘要选择实际最早的称法', !!earliest?.firstSnippet.includes('小渊先出现'))
+
 console.log(`\nmentions: ${failures === 0 ? 'ALL PASS' : failures + ' FAILED'}`)
 if (failures > 0) process.exitCode = 1

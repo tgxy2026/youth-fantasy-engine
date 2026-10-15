@@ -192,11 +192,16 @@ async function main() {
     ok('无锁时可取（返回所有权令牌）', tokenA !== null && tokenA.length > 0)
     ok('已被取走时取不到（挡住两个窗口同时跑）', acquireSummaryLock() === null)
     releaseSummaryLock()
-    ok('释放后可再取', acquireSummaryLock() !== null)
+    const tokenB = acquireSummaryLock()
+    ok('释放后可再取', tokenB !== null)
     // 模拟「上次跑到一半崩了」：写一个陈旧时间戳
     ;(globalThis as unknown as { localStorage: MemStorage }).localStorage.setItem('yfe-tavern-summary-lock', String(Date.now() - SUMMARY_LOCK_TTL_MS - 1000))
-    ok('陈旧锁超过 TTL 可被接管', acquireSummaryLock() !== null)
-    releaseSummaryLock()
+    const tokenC = acquireSummaryLock()
+    ok('陈旧锁超过 TTL 可被接管', tokenC !== null)
+    // 接管后旧令牌的心跳仍归旧持有者清理；否则 Node 会空等 TTL/3（10 分钟）。
+    if (tokenB) releaseSummaryLock(tokenB)
+    ok('释放旧令牌不会误解锁新持有者', acquireSummaryLock() === null)
+    if (tokenC) releaseSummaryLock(tokenC)
   }
 
   // ---------- 8) 总结提示词必须给的两样（方案 §4.6 明确点出） ----------

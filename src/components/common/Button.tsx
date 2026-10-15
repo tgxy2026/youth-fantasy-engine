@@ -160,7 +160,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ].join(' ')
 
   return (
-    <button type={type} ref={ref} className={cls} {...rest}>
+    <button type={type} ref={ref} className={cls} data-button-variant={variant} {...rest}>
       {children}
     </button>
   )
