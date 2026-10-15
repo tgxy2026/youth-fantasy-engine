@@ -13,6 +13,7 @@
  *   · 加锁 isCancelled 处理，取消要能中断
  */
 import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { uid } from '@/lib/app/id'
 import { buildProjectContext } from '@/lib/ai/aiContext'
@@ -651,13 +652,13 @@ export async function buildFreeSystem(
     const othersLine = aiNames.length
       ? `\n- 提及在场其他角色（如 ${aiNames.join('、')}）时，用「他 / 她 / 名字」去指称，**不要使用第二人称「你」去称呼「${who}」**。`
       : ''
-    self = `【本次任务 · 代写】你不是要回话，而是**代「${who}」撰写他这一轮要发送的发言**。` +
+    self = `〖本次任务 · 代写〗你不是要回话，而是**代「${who}」撰写他这一轮要发送的发言**。` +
       `「${who}」是${userChar ? '用户在自由对话里扮演的角色' : '屏幕后的用户本人（依据「我的档案」与故事剧本）'}。` +
-      `\n\n【视角 · 第一人称】对白以「${who}」的**第一人称视角**与口吻来写：` +
+      `\n\n〖视角 · 第一人称〗对白以「${who}」的**第一人称视角**与口吻来写：` +
       `\n- 对白 = 这个角色**自己说的话**，用「我」来叙述，不要写成别的角色在跟他对话；` +
       `\n- （ ）里的动作 / 神态 / 环境 = 这个角色**自身的举动与所处情境**，但**描写仍按协议用第三人称**（写名字 / 他 / 她，或省略主语）——**不要写「我」**，「我」只出现在对白里；` +
       `\n- 不要代入其他在场角色的口吻，也不要把「${who}」当作被描述、被对话的对象。${othersLine}` +
-      `\n\n【格式】只输出台词本身：动作 / 表情 / 环境写进（ ）内、对白直接写，不要加「角色名：」前缀，也不要加任何解释或旁白。` +
+      `\n\n〖格式〗只输出台词本身：动作 / 表情 / 环境写进（ ）内、对白直接写，不要加「角色名：」前缀，也不要加任何解释或旁白。` +
       silentLine
   }
 
@@ -918,9 +919,13 @@ export async function runFreeAssist(
   const historyBudgetChars = historyBudget(totalBudget(p.contextBudget), system, st.common.fixedOverheadChars)
   const { messages } = buildFreeMessages(session.messages, session, chars, historyBudgetChars)
 
+  // 🔴 作者原文必须过 promptGuard 包成「不可信数据块」——与 summarize / report / vars /
+  //    revise / import / draft / script / story / world 十处同口径：否则作者粘进来的
+  //    「忽略以上指令……」会被模型当指令执行。段落标题一律用输入侧标记〖〗（【】自 v1.7 起废止，
+  //    见 prompt.ts 文件头「标记分域」硬纪律），避免模型把标记照抄进正文。
   const instruction = mode === 'polish'
-    ? `【润色指令】用户已写原文：「${userText}」。请在保留其意图与关键信息的前提下，扩写润色成**以「用户扮演的角色」的第一人称口吻**说的话、含动作/表情/环境描写的发言（对白是这个角色自己说的，不是别的角色在回应他）。只输出润色后的台词本身。`
-    : `【代写指令】用户还没想好这一轮怎么回。请根据当前对话上下文、故事剧本、你的角色设定，替用户扮演的角色写一句（或一小段）自然、符合当下的发言，含动作/表情/环境描写。只输出台词本身。`
+    ? `〖润色指令〗用户已写好的原文在下面。请在保留其意图与关键信息的前提下，把它扩写润色成**以「用户扮演的角色」的第一人称口吻**说的话、含动作/表情/环境描写的发言（对白是这个角色自己说的，不是别的角色在回应他）。只输出润色后的台词本身。\n${authorBlock(newAuthorFence(), userText)}`
+    : `〖代写指令〗用户还没想好这一轮怎么回。请根据当前对话上下文、故事剧本、你的角色设定，替用户扮演的角色写一句（或一小段）自然、符合当下的发言，含动作/表情/环境描写。只输出台词本身。`
 
   const { temperature, ...extraOptions } = toOllamaOptions(p) // p 已在上面解析
   // 🔴 以 chat 的**返回值**为准（与 runFreeTurn 一致）；onToken 仅用于流式回写 UI，不负担内容累积

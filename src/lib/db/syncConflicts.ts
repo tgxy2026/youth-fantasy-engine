@@ -1,6 +1,6 @@
 import type { Chapter, Volume } from '@/lib/types'
 import { CONFLICT_KEY_PREFIX } from '@/lib/sync/desktopCloudSync'
-import { currentProjectId, ops, touchProject } from '@/lib/db/core'
+import { currentProjectId, ops, touchProject, persistAfterRestore } from '@/lib/db/core'
 import { createAutoBackup } from '@/lib/db/backups'
 import { createSnapshot } from '@/lib/db/chapters'
 import { addDailyWords } from '@/lib/db/meta'
@@ -51,8 +51,13 @@ export async function deleteSyncConflict(metaKey: string): Promise<void> {
   await ops.del('meta', metaKey)
 }
 
-/** 仅恢复当前项目的章节。其它 store 先由作者导出双方数据，避免破坏记录关联。 */
-export async function restoreServerChapterFromConflict(metaKey: string): Promise<void> {
+/**
+ * 仅恢复当前项目的章节。其它 store 先由作者导出双方数据，避免破坏记录关联。
+ *
+ * @returns 主操作已成功、但下游动作没跟上的**如实告警**清单（空数组 = 全部顺利）。
+ *   界面据此提示「章节已恢复，但……」，不再让侧信道失败只躺在控制台里。
+ */
+export async function restoreServerChapterFromConflict(metaKey: string): Promise<string[]> {
   if (getDesktopCloudStatus() === 'syncing') throw new Error('同步仍在进行，请等待同步结束后再恢复')
   const c = await getConflict(metaKey)
   if (c.store !== 'chapters' || !c.server || typeof c.server !== 'object') throw new Error('这类冲突暂不支持直接恢复，请先导出双方数据')
@@ -82,9 +87,16 @@ export async function restoreServerChapterFromConflict(metaKey: string): Promise
     throw new Error('备份期间章节发生了变化，本次没有覆盖，请核对最新内容')
   }
   await ops.put('chapters', { ...server, projectId: currentProjectId, updatedAt: Date.now() } as Chapter)
+  // 🔴 侧信道失败不再只 console.warn：主操作（章节已恢复）成功、下游动作没跟上时，
+  //    必须如实回给界面 —— 否则作者看到「已恢复」，却发现字数统计没变、冲突还标着「待处理」。
+  const warnings: string[] = []
   try { await addDailyWords(server.wordCount - current.wordCount) }
-  catch (e) { console.warn('[sync] 恢复章节成功，但每日字数统计更新失败：', e) }
+  catch (e) { console.warn('[sync] 恢复章节成功，但每日字数统计更新失败：', e); warnings.push('每日字数统计未更新') }
   void touchProject(currentProjectId)
   try { await markSyncConflictResolved(metaKey) }
-  catch (e) { console.warn('[sync] 恢复章节成功，但冲突处理状态更新失败：', e) }
+  catch (e) { console.warn('[sync] 恢复章节成功，但冲突处理状态更新失败：', e); warnings.push('冲突记录未标记为已处理') }
+  // 🔴 收尾必须排在最后：把恢复结果（含上面的每日字数）推云端 + 镜像回本机 + 落盘。
+  //    否则界面随后的 reload 会让三路合并拿「冻结的旧本机文件」按「本地优先」把恢复盖回去。
+  if (!(await persistAfterRestore())) warnings.push('恢复结果可能尚未写入磁盘，请稍后确认已生效')
+  return warnings
 }

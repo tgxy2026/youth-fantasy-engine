@@ -235,9 +235,9 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
       //    items 列子集会让作者误以为只发那几列（本文件自己的维护约定：列了就代表确实会发）。
       //    故走 renderTable 的表格组一律 items: [] + note 写「整表全部列」，
       //    口径由 aiContext 的实现兜底，不再手抄列名（手抄必然漂移——「名称」「埋设章」都不是真列名）。
-      { group: '伏笔追踪表', items: [], note: '整表全部列（除「保密等级」）逐行发出，行数按预算截断' },
+      { group: '伏笔追踪', items: [], note: '整表全部列（除「保密等级」）逐行发出，行数按预算截断' },
       { group: '章节总表', items: [], note: '整表全部列（除「保密等级」）逐行发出，行数按预算截断' },
-      { group: '时间脉络表', items: [], note: '整表全部列（除「保密等级」）逐行发出，行数按预算截断' },
+      { group: '时间脉络', items: [], note: '整表全部列（除「保密等级」）逐行发出，行数按预算截断' },
     ],
     excludes: ['角色卡与世界设定 —— 它只判"伏笔有没有回收"这一类闭环问题'],
   },
@@ -401,12 +401,12 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
   },
   'feedback-ai': {
     label: '读者反馈 AI 分析',
-    sources: [{ group: '读者反馈表（读本表 8 列，本表共 11 列）', items: ['数据周期', '日期', '追读', '均订', '留存', '高频吐槽', '流失点章节', '流失原因分析'] }],
+    sources: [{ group: '读者反馈（本表共 11 列，读取其中 8 列，不含自动编号）', items: ['数据周期', '日期', '追读', '均订', '留存', '高频吐槽', '流失点章节', '流失原因分析'] }],
     excludes: ['其它任何表 —— 它只分析这张反馈表'],
   },
   'term-dedup': {
     label: '术语 AI 查重归一',
-    sources: [{ group: '名词术语（读本表 3 列，本表共 9 列）', items: ['名称', '类别', '定义（一句话）'] }],
+    sources: [{ group: '名词术语（本表共 9 列，读取其中 3 列，不含自动编号）', items: ['名称', '类别', '定义（一句话）'] }],
     excludes: ['其它任何表 —— 它只扫名词术语'],
   },
   'sensitive-check': {

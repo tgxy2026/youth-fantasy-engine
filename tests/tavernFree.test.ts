@@ -654,14 +654,14 @@ async function main() {
     const fakeP = makeFakeChat('（他把手里的袋子放下）顺便带了点吃的。')
     const resP = await runFreeAssist(hist, [ai, user], 'polish', '我回来了', {}, { chatFn: fakeP.chatFn })
     const lastP = fakeP.calls[0].messages[fakeP.calls[0].messages.length - 1].content
-    ok('runFreeAssist · 润色指令内联原文', lastP.includes('【润色指令】') && lastP.includes('我回来了'))
+    ok('runFreeAssist · 润色指令带出原文且过 promptGuard 边界', lastP.includes('〖润色指令〗') && lastP.includes('我回来了') && /<<<A-[a-z0-9]+>>>/.test(lastP))
     // 默认 postRules 开启，返回文本已套用后处理（可能与原始逐字不同）——只断言核心内容在
     ok('runFreeAssist · 返回文本（经后处理）含核心内容', resP.text.includes('顺便带了点吃的'))
 
     const fakeA = makeFakeChat('（他笑了笑）今天天气不错。')
     const resA = await runFreeAssist(hist, [ai, user], 'auto', '', {}, { chatFn: fakeA.chatFn })
     const lastA = fakeA.calls[0].messages[fakeA.calls[0].messages.length - 1].content
-    ok('runFreeAssist · 自动回复指令不含原文内联', lastA.includes('【代写指令】') && !lastA.includes('我回来了'))
+    ok('runFreeAssist · 自动回复指令不含原文内联', lastA.includes('〖代写指令〗') && !lastA.includes('我回来了'))
     ok('runFreeAssist · auto 同样返回文本（经后处理）含核心内容', resA.text.includes('今天天气不错'))
 
     // 关键回归：runFreeAssist 走 postRules（含去空行），模型顺手加的空行不会进输入框

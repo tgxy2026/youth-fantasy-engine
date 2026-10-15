@@ -171,7 +171,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
               <h3 className="text-12 text-ink-200">章节细纲卡 · {chapterOutlines.length} 张</h3>
               <Button variant="bare" className="text-11 text-amber" onClick={() => onNavigate('chapter-outline')}>打开章节细纲 <ChevronRight size={12} /></Button>
             </div>
-            <p className="mb-3 text-11 text-ink-500">细纲卡与正文章节目前没有稳定的关联编号，分别展示以免错配。</p>
+            <p className="mb-3 text-11 text-ink-500">章节细纲卡与正文章节目前没有稳定的关联编号，分别展示以免错配。</p>
             {chapterOutlines.length === 0 ? <p className="text-11 text-ink-500">尚无章节细纲卡</p> : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
               {chapterOutlines.slice(0, outlineLimit).map(card => {
                 const lines = Object.entries(card.data ?? {}).filter(([key, value]) =>

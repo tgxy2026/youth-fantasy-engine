@@ -9,7 +9,7 @@ import { openDB, type IDBPDatabase } from 'idb'
 import type { Project } from '@/lib/types'
 import type { StoreOps } from '@/lib/storage/storeOps'
 import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState, desktopStoreReady } from '@/lib/app/desktop'
-import { PORTABLE, portableStore } from '@/lib/storage/fileBackend'
+import { PORTABLE, portableStore, flushPortable } from '@/lib/storage/fileBackend'
 import {
   CLOUD_FILE_SYNC, desktopCloudStore, applyDesktopCloudFromPersisted,
   pullDesktopSnapshot, isDesktopCloudUnavailable, enableDesktopCloud, disableDesktopCloud,
@@ -265,6 +265,33 @@ onCloudRestored(async (cache) => {
   const flushed = await flushDesktop().catch(() => false)
   if (!flushed) console.warn('[sync] 从备份恢复后落盘未完成：数据可能仍在内存，请稍后确认已写入磁盘')
 })
+
+/**
+ * 「冲突中心 · 恢复云端章节」等**恢复类操作**落库后的持久化收尾。
+ *
+ * 🔴 为什么需要它：云模式下 `ops.put` 只写**云端实例的内存 cache** ——
+ *    本机数据文件自「开启同步」那一刻起就不再更新（见 `mirrorCloudCacheToLocal` 的两段注释）。
+ *    恢复完若直接 reload，三路合并会拿「冻结的旧本机文件」当本地那一份、按「本地优先」
+ *    把恢复结果盖回去 —— 作者看到「已恢复」，数据其实被静默撤销。
+ *    这与「从云端备份恢复」是同一个病（见上面 `onCloudRestored` 的注释），
+ *    故此处做与 `disableDesktopCloudSync` 前三步同构的收尾：推云端 → 镜像本机 → 落盘。
+ *
+ * 非云模式（`ops` 直写本机）无须镜像，只要确认防抖写盘已落；
+ * 浏览器兜底（dev 预览，三端皆 false）根本没有文件后端，直接放行。
+ *
+ * @returns 是否已确认落盘（`false` = 数据可能仍在内存，调用方应如实告知作者）
+ */
+export async function persistAfterRestore(): Promise<boolean> {
+  if (isDesktopCloudSyncActive()) {
+    await flushDesktopCloud()
+    await mirrorCloudCacheToLocal(snapshotDesktopCloudCache(), true)
+  }
+  if (PORTABLE) return flushPortable().catch(() => false)
+  if (!DESKTOP) return true
+  const flushed = await flushDesktop().catch(() => false)
+  if (!flushed) console.warn('[sync] 恢复后落盘未完成：数据可能仍在内存，请稍后确认已写入磁盘')
+  return flushed
+}
 
 async function saveConflictCopy(info: SyncConflictInfo) {
   try {

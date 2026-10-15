@@ -46,6 +46,21 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
 
   const current = records.find(c => c.metaKey === selected)
   const unresolved = records.filter(c => !c.resolvedAt).length
+  // 可原位恢复的**完整**条件（与 db/syncConflicts.ts 的前置校验逐条对齐）：
+  // 章节冲突 + 云端那一版还在 + 本机这一章还在 + 属当前项目。
+  // 🔴 旧实现只看「是 chapters 且 server 非空且 projectId 相符」——
+  //    本机已删（local==null）时按钮照样出现，点下去必然报「当前章节已不存在」。
+  const canRestore = !!current && current.store === 'chapters' && current.server != null && current.local != null
+    && db.getCurrentProjectId() === (current.server as { projectId?: string }).projectId
+  // 🔴 不能只对「非章节」冲突给说明：章节冲突在「云端已删 / 本机已删 / 属其它项目」
+  //    这三种情况下**同样**恢复不了，旧代码会让作者对着一个没有恢复按钮、也没有原因的面板
+  //    直接去点「删除副本」，把本可导出的云端版本丢掉（违反「绝不静默」）。
+  const restoreBlockedReason = (c: StoredSyncConflict) => {
+    if (c.store !== 'chapters') return '此类型暂不支持安全的原位恢复。导出双方完整数据后，可在对应项目中手工核对。'
+    if (c.server == null) return '云端已删除这一章，没有可恢复的云端版本；如需保留本机内容，请先导出双方完整数据。'
+    if (c.local == null) return '本机已删除这一章，无法原位恢复；如需云端版本，请先导出双方完整数据后手工核对。'
+    return '该冲突属于其它项目，请打开对应项目后再恢复（当前只能导出或删除副本）。'
+  }
   const exportRecord = (c: StoredSyncConflict) => {
     const name = `青春幻想引擎-同步冲突-${new Date(c.at || Date.now()).toISOString().replace(/[:.]/g, '-')}.json`
     downloadBlob(name, new Blob([JSON.stringify({
@@ -62,8 +77,10 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
     if (!ok) return
     setBusy(true)
     try {
-      await db.restoreServerChapterFromConflict(c.metaKey)
-      showToast('章节已恢复，恢复前项目备份可在备份管理中找到', 'success')
+      // 主操作成功后可能带回「下游动作没跟上」的告警（字数统计 / 处理状态 / 落盘），如实合并进提示
+      const warnings = await db.restoreServerChapterFromConflict(c.metaKey)
+      const base = '章节已恢复，恢复前项目备份可在备份管理中找到'
+      showToast(warnings.length ? `${base}；但${warnings.join('、')}` : base, warnings.length ? 'error' : 'success')
       await reload()
       setTimeout(() => location.reload(), 500)
     } catch (e) {
@@ -111,12 +128,12 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" disabled={busy} onClick={() => exportRecord(current)}><Download size={12} /> 导出双方完整数据</Button>
-            {current.store === 'chapters' && current.server != null && db.getCurrentProjectId() === (current.server as { projectId?: string }).projectId &&
+            {canRestore &&
               <Button variant="secondary" disabled={busy} onClick={() => void restore(current)}><RotateCcw size={12} /> 恢复云端章节</Button>}
             {!current.resolvedAt && <Button variant="secondary" disabled={busy} onClick={() => void resolve(current)}>标为已处理</Button>}
             <Button variant="danger" disabled={busy} onClick={() => void remove(current)}><Trash2 size={12} /> 删除副本</Button>
           </div>
-          {current.store !== 'chapters' && <p className="text-11 text-ink-500">此类型暂不支持安全的原位恢复。导出双方完整数据后，可在对应项目中手工核对。</p>}
+          {!canRestore && <p className="text-11 text-ink-500">{restoreBlockedReason(current)}</p>}
         </>}
       </div>}
     </Modal>

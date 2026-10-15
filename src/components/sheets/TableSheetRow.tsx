@@ -24,6 +24,20 @@ import { CellTextarea, rowBadgeClass } from '@/components/sheets/tableSheetShare
 import type { TableSheetModel } from '@/components/sheets/useTableSheetModel'
 import { readAliases } from '@/lib/settings/aliases'
 
+/**
+ * 「资料提及」入口适用的资料表（3.1 P1）。
+ *
+ * 🔴 判据＝该表的 displayCol 是不是**能被正文自然引用的实体名称**。
+ *    日志流水型表（progress 写作进度 / feedback 读者反馈 / changelog 设定变更 /
+ *    ideas 灵感素材 / secrets 知情权限）与内容描述型表（foreshadow 伏笔内容 /
+ *    hookpoints 爽点内容 / timeline·chapter-master 章节标题）的 displayCol 是日期、
+ *    整句话或章节标题 —— 拿它检索正文只会空结果或误报，属幽灵入口，故不渲染。
+ * 新增资料表时记得登记进来（漏登记只是少一个入口，不会出错）。
+ */
+const MENTION_TABS = new Set<string>([
+  'relations', 'nations', 'faction-rels', 'geography', 'races', 'items', 'history', 'terms', 'subplots',
+])
+
 export default function TableSheetRow({ tab, model, entry, index, onNavigate, onOpenMentions, ctx }: {
   tab: TabDef
   model: TableSheetModel
@@ -67,12 +81,15 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
     // 章节总表 / 各卷台账联动行：id 形如 ch-<chapterId>，提供直达写作入口
     const chapterLink = (tab.id === 'chapter-master' || isVolumeLedgerTab(tab.id)) && row.id.startsWith('ch-')
       ? row.id.slice(3) : null
-    // 资料提及（3.1 P1）：relations 行只对「人物A」生效（一行两个资料，避免按钮语义分裂，
-    // 2026-10-15 主人拍板）；其余表取主显示列值；卷台账（isMaster）是章节联动行、无资料语义，不渲染
-    const mentionName = isMaster ? ''
-      : tab.id === 'relations'
-        ? (row.data['人物A'] ?? '').trim()
-        : tab.displayCol ? cellVal(row, tab.displayCol).trim() : ''
+    // 资料提及（3.1 P1）：只对「displayCol 是实体名称」的资料表渲染入口。
+    // 🔴 白名单理由：日志流水型表（写作进度 / 读者反馈 / 设定变更 / 灵感素材 / 知情权限）
+    //    与内容描述型表（伏笔追踪 / 爽点节奏 / 时间脉络 / 章节总表）的 displayCol 是日期、
+    //    整句话或章节标题，拿它去检索正文只会得到空结果或误报 —— 那是个幽灵入口。
+    // relations 行只对「人物A」生效（一行两个资料，避免按钮语义分裂，2026-10-15 主人拍板）。
+    // 卷台账（isMaster）是章节联动行、无资料语义，不渲染。
+    const mentionName = !isMaster && MENTION_TABS.has(tab.id)
+      ? (tab.id === 'relations' ? String(row.data['人物A'] ?? '') : (tab.displayCol ? cellVal(row, tab.displayCol) : '')).trim()
+      : ''
     return (
       <tr
         key={row.id}

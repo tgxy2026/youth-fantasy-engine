@@ -34,11 +34,21 @@ const PAGE = 50
 
 export default function MentionPanel({ name, aliases, onClose, onNavigate }: Props) {
   const [hits, setHits] = useState<MentionHit[] | null>(null)
+  const [error, setError] = useState('')
   const [shown, setShown] = useState(PAGE)
 
   useEffect(() => {
     let alive = true
-    findMentions(name, aliases).then(rs => { if (alive) setHits(rs) })
+    setError('')
+    // 🔴 必须有 catch：读库 reject（磁盘占用 / 索引异常 / 切项目竞态）时若漏掉，
+    //    hits 恒为 null ⇒ 面板永远停在「检索中…」，作者既看不到失败、也没有重试入口。
+    findMentions(name, aliases)
+      .then(rs => { if (alive) setHits(rs) })
+      .catch(e => {
+        if (!alive) return
+        setHits([])
+        setError(e instanceof Error ? e.message : String(e))
+      })
     return () => { alive = false }
   }, [name, aliases])
 
@@ -64,10 +74,13 @@ export default function MentionPanel({ name, aliases, onClose, onNavigate }: Pro
 
       {/* 结果列表 */}
       <div className="overflow-y-auto py-2" style={{ maxHeight: foldVh('60vh') }}>
-        {!hits && (
+        {error && (
+          <div className="text-center text-danger text-12 py-10">检索失败：{error}</div>
+        )}
+        {!hits && !error && (
           <div className="text-center text-ink-500 text-12 py-10">检索中…</div>
         )}
-        {hits && total === 0 && (
+        {hits && !error && total === 0 && (
           <div className="text-center text-ink-500 text-12 py-10">
             正文中暂未提及「{name}」{aliases.length > 0 ? '（含别称）' : ''}
           </div>
@@ -106,7 +119,7 @@ export default function MentionPanel({ name, aliases, onClose, onNavigate }: Pro
 
       {/* 底部状态条 */}
       <div className="flex items-center gap-3 px-4 h-9 border-t border-ink-700 text-10 text-ink-600 bg-ink-900/60">
-        <span className="flex items-center gap-1"><Hash size={10} />{total} 章提及 · {totalHits} 处</span>
+        <span className="flex items-center gap-1"><Hash size={10} />{error ? '检索失败' : `${total} 章提及 · ${totalHits} 处`}</span>
         <span className="flex-1" />
         <span>点击结果跳转正文</span>
       </div>
