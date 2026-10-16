@@ -39,23 +39,38 @@ export function monoShapeOf(key: string): MonoShape {
 }
 
 /**
- * 按**首次出现顺序**分配线型 / 形状 —— 同一张图内**互不相同**（档位用尽才回绕）。
+ * 按**类别的集合**分配线型 / 形状 —— 同一张图内**互不相同**（档位用尽才回绕）。
  *
  * 🔴 为什么不能只用哈希：哈希只保证「同名同档、跨次稳定」，**不保证同图内两个不同类别档位不同**
  *    （6 档下 3~4 个类别就有可观概率撞上）。而验收口径要的是「异类异形」——
- *    同一张图里两类共用一种线型，等于没区分开。故对「图内已知的类别集合」按序分配，
- *    集合外的散值再回落哈希（仍是稳定值）。
+ *    同一张图里两类共用一种线型，等于没区分开。
+ * 🔴 也不能按「出现顺序」分配：那样**数据一变就整体位移**（新增一条关系可能让所有既存类型的线型换档），
+ *    作者会看到「图例里的线型自己变了」。故采用 **先排序、再哈希落槽、撞了线性探测**：
+ *    · 与传入顺序**无关**（同一集合怎么排都得到同一结果）⇒ 数据增删不会整体位移；
+ *    · 集合内**互不相同**（探测保证不重档）；集合外的散值再回落哈希（仍是稳定值）。
  */
+function assignByHash<T>(keys: readonly string[], slots: readonly T[]): (key: string) => T | undefined {
+  const sorted = [...new Set(keys)].sort()
+  const map = new Map<string, T>()
+  const used = new Set<number>()
+  for (const k of sorted) {
+    let idx = typeHash(k) % slots.length
+    let guard = 0
+    while (used.has(idx) && guard < slots.length) { idx = (idx + 1) % slots.length; guard++ }
+    used.add(idx)
+    map.set(k, slots[idx])
+  }
+  return (k: string) => map.get(k)
+}
+
 export function monoDashLookup(keys: readonly string[]): (key: string) => string {
-  const m = new Map<string, string>()
-  for (const k of keys) if (!m.has(k)) m.set(k, MONO_DASHES[m.size % MONO_DASHES.length])
-  return (k: string) => m.get(k) ?? monoDashOf(k)
+  const pick = assignByHash(keys, MONO_DASHES)
+  return (k: string) => pick(k) ?? monoDashOf(k)
 }
 
 export function monoShapeLookup(keys: readonly string[]): (key: string) => MonoShape {
-  const m = new Map<string, MonoShape>()
-  for (const k of keys) if (!m.has(k)) m.set(k, MONO_SHAPES[m.size % MONO_SHAPES.length])
-  return (k: string) => m.get(k) ?? monoShapeOf(k)
+  const pick = assignByHash(keys, MONO_SHAPES)
+  return (k: string) => pick(k) ?? monoShapeOf(k)
 }
 
 /**

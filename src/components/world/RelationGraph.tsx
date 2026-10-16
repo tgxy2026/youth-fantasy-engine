@@ -306,7 +306,7 @@ export default function RelationGraph({ rows }: Props) {
           {hulls.map(h => (
             <g key={`hull-${h.faction}`} pointerEvents="none">
               {mono
-                ? <path d={h.path} fill="none" stroke={monoInk} strokeWidth={1.2} strokeDasharray="7 5" />
+                ? <path d={h.path} fill="none" style={{ stroke: monoInk }} strokeWidth={1.2} strokeDasharray="7 5" />
                 : <path d={h.path} fill={h.color} fillOpacity={0.09} stroke={h.color} strokeOpacity={0.4} strokeWidth={1.2} strokeDasharray="1 0" />}
               <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: mono ? monoInk : h.color }}>{h.faction}</text>
             </g>
@@ -330,7 +330,7 @@ export default function RelationGraph({ rows }: Props) {
                 <path
                   d={curvedEdge(a.x, a.y, b.x, b.y, curve)}
                   fill="none"
-                  stroke={mono ? monoInk : col}
+                  style={{ stroke: mono ? monoInk : col }}
                   strokeWidth={active ? 2.4 : 1.3}
                   strokeOpacity={active ? 0.95 : 0.5}
                   strokeLinecap="round"
@@ -338,7 +338,7 @@ export default function RelationGraph({ rows }: Props) {
                 />
                 {/* 同一对出现多条关系时，用箭头标出本条方向（A→B）—— 区分「谁怎么看谁」 */}
                 {cv?.multi && (
-                  <path d={curveArrow(a.x, a.y, b.x, b.y, curve)} data-arrow="1" fill={mono ? monoInk : col} opacity={active ? 0.95 : 0.62} />
+                  <path d={curveArrow(a.x, a.y, b.x, b.y, curve)} data-arrow="1" style={{ fill: mono ? monoInk : col }} opacity={active ? 0.95 : 0.62} />
                 )}
                 <g
                   opacity={active ? 1 : 0.6}
@@ -347,7 +347,7 @@ export default function RelationGraph({ rows }: Props) {
                   onMouseLeave={() => setHoverName(null)}
                 >
                   <rect x={mid.x - labelW / 2} y={mid.y - 8.5} width={labelW} height={15} rx={7.5}
-                    style={{ fill: 'rgb(var(--ink-850))' }} stroke={mono ? monoInk : col} strokeOpacity={mono ? 1 : 0.45} strokeWidth={0.6} />
+                    style={{ fill: 'rgb(var(--ink-850))', stroke: mono ? monoInk : col }} strokeOpacity={mono ? 1 : 0.45} strokeWidth={0.6} />
                   <text x={mid.x} y={mid.y + 3.4} style={{ fill: mono ? monoInk : (active ? col : 'rgb(var(--graph-edge-label))') }} fontSize={9.5} textAnchor="middle">{e.type}</text>
                 </g>
               </g>
@@ -410,7 +410,7 @@ export default function RelationGraph({ rows }: Props) {
           {legendTypes.map(t => (
             <span key={t} className="flex items-center gap-1.5 text-10 text-ink-400">
               {mono
-                ? <svg width="16" height="8" aria-hidden="true"><line x1="1" y1="4" x2="15" y2="4" stroke={monoInk} strokeWidth="2" strokeDasharray={monoDash(t) || undefined} /></svg>
+                ? <svg width="16" height="8" aria-hidden="true"><line x1="1" y1="4" x2="15" y2="4" style={{ stroke: monoInk }} strokeWidth="2" strokeDasharray={monoDash(t) || undefined} /></svg>
                 : <span className="w-3 h-3px rounded-full inline-block" style={{ background: colorOf(t) }} />}
               {t}
               {!TYPE_COLORS[t] && <span className="text-9 text-ink-500 border border-ink-700 rounded px-1 leading-none">自定义</span>}

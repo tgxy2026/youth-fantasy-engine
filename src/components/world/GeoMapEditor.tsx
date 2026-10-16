@@ -112,7 +112,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
               title={key === 'foreshadow' ? '叠加伏笔关联' : key === 'character' ? '叠加角色关联' : '叠加时间脉络关联'}
             >
               {mono
-                ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray={monoLayerDash(key) || undefined} /></svg>
+                ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" style={{ stroke: monoInk }} strokeWidth="1.6" strokeDasharray={monoLayerDash(key) || undefined} /></svg>
                 : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS[key] }} />}
               {key === 'foreshadow' ? '伏笔' : key === 'character' ? '角色' : '时间脉络'}
             </Button>
@@ -260,16 +260,18 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                       style={{ cursor: painting ? 'cell' : (selected === mk.id ? 'pointer' : 'grab') }}>
                       {vs.full.map(([bx, by]) => (
                         <rect key={`f${bx},${by}`} x={bx * G + 0.7} y={by * G + 0.7} width={G - 1.4} height={G - 1.4} rx={1.5}
-                          fill={fillCol} fillOpacity={mono ? 1 : fillOp} stroke={col} strokeOpacity={mono ? 1 : (active ? 0.95 : 0.45)} strokeWidth={active ? 1.4 : 0.8} strokeDasharray={colDash} />
+                          fillOpacity={mono ? 1 : fillOp} strokeOpacity={mono ? 1 : (active ? 0.95 : 0.45)} strokeWidth={active ? 1.4 : 0.8} strokeDasharray={colDash}
+                          style={{ fill: fillCol, stroke: col }} />
                       ))}
                       {vs.rest.map(([gx, gy]) => (
                         <rect key={`r${gx},${gy}`} x={(gx / cellKm) * G + 0.3} y={(gy / cellKm) * G + 0.3} width={G / cellKm - 0.5} height={G / cellKm - 0.5} rx={G / cellKm / 5}
-                          fill={fillCol} fillOpacity={mono ? 1 : fillOp} stroke={col} strokeOpacity={mono ? 1 : (active ? 0.9 : 0.4)} strokeWidth={active ? 1 : 0.5} strokeDasharray={colDash} />
+                          fillOpacity={mono ? 1 : fillOp} strokeOpacity={mono ? 1 : (active ? 0.9 : 0.4)} strokeWidth={active ? 1 : 0.5} strokeDasharray={colDash}
+                          style={{ fill: fillCol, stroke: col }} />
                       ))}
-                      <text x={tx} y={vs.bbox.y - 5} textAnchor={anchor} fontSize={fs} fontWeight={600} fill={col} pointerEvents="none"
-                        style={{ paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}</text>
-                      <text x={tx} y={vs.bbox.y - 5 + fs + 1} textAnchor={anchor} fontSize={fs - 3} fill={col} fillOpacity={0.9} pointerEvents="none"
-                        style={{ paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>{mk.category} · {vs.count} 格</text>
+                      <text x={tx} y={vs.bbox.y - 5} textAnchor={anchor} fontSize={fs} fontWeight={600} pointerEvents="none"
+                        style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}</text>
+                      <text x={tx} y={vs.bbox.y - 5 + fs + 1} textAnchor={anchor} fontSize={fs - 3} fillOpacity={0.9} pointerEvents="none"
+                        style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>{mk.category} · {vs.count} 格</text>
                       {active && !painting && (
                         <text x={tx} y={vs.bbox.y - 5 + fs * 2 + 3} textAnchor={anchor} fontSize={fs - 3.5} pointerEvents="none"
                           style={{ fill: 'rgb(var(--graph-accent-text))', paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>详情面板可绘制 · 拖动整体平移</text>
@@ -310,7 +312,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                       const pad = 6 + ri * 4
                       return (
                         <rect key={ri} x={cx - rr - pad} y={cy - rr - pad} width={(rr + pad) * 2} height={(rr + pad) * 2} rx={4}
-                          fill="none" stroke={mono ? monoInk : ring.color} strokeWidth={2} strokeOpacity={mono ? 1 : 0.85}
+                          fill="none" style={{ stroke: mono ? monoInk : ring.color }} strokeWidth={2} strokeOpacity={mono ? 1 : 0.85}
                           strokeDasharray={mono ? (monoLayerDash(ring.key) || undefined) : undefined} />
                       )
                     })}
@@ -373,7 +375,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
       <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap text-10 text-ink-400 shrink-0">
         <span className="flex items-center gap-1.5">
           {mono
-            ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray="7 5" /></svg>
+            ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" style={{ stroke: monoInk }} strokeWidth="1.6" strokeDasharray="7 5" /></svg>
             : <span className="w-3 h-3px rounded-full inline-block" style={{ background: MAP_SPACE_FALLBACK }} />}
           {mono ? '黑白下按轮廓线型与名称区分层级' : '颜色按层级自动调配（父子高对比 · 兄弟错开）'}
         </span>
@@ -381,13 +383,13 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
           {anyLayerOn && (
             <>叠加：
               {layers.foreshadow && <span className="flex items-center gap-1">
-                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray={monoLayerDash('foreshadow') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.foreshadow }} />}
+                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" style={{ stroke: monoInk }} strokeWidth="1.6" strokeDasharray={monoLayerDash('foreshadow') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.foreshadow }} />}
                 伏笔</span>}
               {layers.character && <span className="flex items-center gap-1">
-                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray={monoLayerDash('character') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.character }} />}
+                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" style={{ stroke: monoInk }} strokeWidth="1.6" strokeDasharray={monoLayerDash('character') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.character }} />}
                 角色</span>}
               {layers.timeline && <span className="flex items-center gap-1">
-                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray={monoLayerDash('timeline') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.timeline }} />}
+                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" style={{ stroke: monoInk }} strokeWidth="1.6" strokeDasharray={monoLayerDash('timeline') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.timeline }} />}
                 时间脉络</span>}
             </>
           )}

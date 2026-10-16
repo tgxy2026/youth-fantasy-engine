@@ -273,7 +273,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
           {hulls.map(h => (
             <g key={`hull-${h.cat}`} pointerEvents="none">
               {mono
-                ? <path d={h.path} fill="none" stroke={monoInk} strokeWidth={1.2} strokeDasharray="7 5" />
+                ? <path d={h.path} fill="none" style={{ stroke: monoInk }} strokeWidth={1.2} strokeDasharray="7 5" />
                 : <path d={h.path} fill={h.color} fillOpacity={0.09} stroke={h.color} strokeOpacity={0.38} strokeWidth={1.2} />}
               <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: mono ? monoInk : h.color }}>{h.cat}</text>
             </g>
@@ -297,14 +297,14 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
                 <path
                   d={curvedEdge(pa.x, pa.y, pb.x, pb.y, curve)}
                   fill="none"
-                  stroke={mono ? monoInk : color}
+                  style={{ stroke: mono ? monoInk : color }}
                   strokeWidth={active ? 3 : 1.6}
                   strokeOpacity={active ? 0.95 : 0.55}
                   strokeLinecap="round"
                   strokeDasharray={mono ? (monoDash(e.type) || undefined) : undefined}
                 />
                 {cv?.multi && (
-                  <path d={curveArrow(pa.x, pa.y, pb.x, pb.y, curve, 12, 6)} data-arrow="1" fill={mono ? monoInk : color} opacity={active ? 0.95 : 0.65} />
+                  <path d={curveArrow(pa.x, pa.y, pb.x, pb.y, curve, 12, 6)} data-arrow="1" style={{ fill: mono ? monoInk : color }} opacity={active ? 0.95 : 0.65} />
                 )}
                 <g
                   opacity={active ? 1 : 0.7}
@@ -313,7 +313,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
                   onPointerLeave={() => setHoverName(h => (h?.kind === 'edge' && h.id === e.id ? null : h))}
                 >
                   <rect x={mid.x - labelW / 2} y={mid.y - 9.5} width={labelW} height={17} rx={8.5}
-                    style={{ fill: 'rgb(var(--ink-850))' }} stroke={mono ? monoInk : color} strokeOpacity={mono ? 1 : 0.45} strokeWidth={0.6} />
+                    style={{ fill: 'rgb(var(--ink-850))', stroke: mono ? monoInk : color }} strokeOpacity={mono ? 1 : 0.45} strokeWidth={0.6} />
                   <text x={mid.x} y={mid.y + 4} textAnchor="middle" fontSize={11}
                     style={{ fill: mono ? monoInk : (active ? color : 'rgb(var(--graph-edge-label))') }}>{e.type}</text>
                 </g>
@@ -369,7 +369,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
           return ordered.map(t => (
             <span key={t} className="flex items-center gap-1 text-11 text-ink-300">
               {mono
-                ? <svg width="16" height="8" aria-hidden="true"><line x1="1" y1="4" x2="15" y2="4" stroke={monoInk} strokeWidth="2" strokeDasharray={monoDash(t) || undefined} /></svg>
+                ? <svg width="16" height="8" aria-hidden="true"><line x1="1" y1="4" x2="15" y2="4" style={{ stroke: monoInk }} strokeWidth="2" strokeDasharray={monoDash(t) || undefined} /></svg>
                 : <span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(t) }} />}
               {t}
               {!REL_COLORS[t] && <span className="text-9 text-ink-500 bg-ink-900 px-1 rounded leading-none">自定义</span>}

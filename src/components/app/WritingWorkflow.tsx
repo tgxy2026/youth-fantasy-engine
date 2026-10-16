@@ -100,8 +100,11 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
     return sortedVolumes.map(v => ({ volume: v, chapters: shown.filter(c => c.volumeId === v.id) }))
       .filter(g => g.chapters.length > 0)
   }, [shown, volumes])
-  // 「状态与正文对不上」的章数（当前已显示的这批）—— 只提示，不自动改状态
-  const mismatchCount = useMemo(() => shown.filter(c => chapterStatusMismatch(c)).length, [shown])
+  // 「状态与正文对不上」的章数 —— 只数**实际渲染出来的卡片**（与逐条 ⚠ 严格一致）
+  const mismatchCount = useMemo(
+    () => groups.reduce((n, g) => n + g.chapters.filter(c => chapterStatusMismatch(c)).length, 0),
+    [groups],
+  )
 
   return (
     <div className="space-y-4 mb-6">
@@ -162,7 +165,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
           </div>
           <p className="mb-2 text-11 text-ink-500">正文章节 · 来自编辑器</p>
           {mismatchCount > 0 && <p className="mb-3 flex items-center gap-1 text-11 text-amber">
-            <AlertTriangle size={11} className="shrink-0" /> 有 {mismatchCount} 章的状态与正文对不上（仅提示，不会自动修改）
+            <AlertTriangle size={11} className="shrink-0" /> 本页已显示的章节里有 {mismatchCount} 章的状态与正文对不上（仅提示，不会自动修改）
           </p>}
           {groups.length === 0 ? <div className="py-6 text-center text-12 text-ink-500">{chapters.length ? '没有符合条件的章节' : '还没有章节，先去正文编辑器建立第一章'}</div> : groups.map(group => <section key={group.volume.id} className="mb-4">
             <h3 className="mb-2 text-12 text-ink-300">{group.volume.title} · {group.chapters.length} 章</h3>

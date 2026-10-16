@@ -179,8 +179,8 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
               <text key={i} x={bX(i)} y={bH - 6} textAnchor={i === 0 ? 'start' : i === BURNDOWN_DAYS - 1 ? 'end' : 'middle'} fontSize={9} style={{ fill: 'rgb(var(--ink-500))' }}>{burndown[i].label}</text>
             ))}
             <path d={bPath('targetCum')} fill="none" style={{ stroke: 'rgb(var(--amber))' }} strokeOpacity={0.75} strokeWidth={1.6} strokeDasharray="5 4" />
-            <path d={bPath('actualCum')} fill="none" stroke={mono ? ink : GOAL_ACTUAL_COLOR} strokeWidth={mono ? 2.4 : 2} />
-            <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} fill={mono ? ink : GOAL_ACTUAL_COLOR} />
+            <path d={bPath('actualCum')} fill="none" style={{ stroke: mono ? ink : GOAL_ACTUAL_COLOR }} strokeWidth={mono ? 2.4 : 2} />
+            <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} style={{ fill: mono ? ink : GOAL_ACTUAL_COLOR }} />
           </svg>
           <div className="text-10 text-ink-500 mt-1">
             今日累计 {burndown[BURNDOWN_DAYS - 1].actualCum.toLocaleString()} / 目标 {burndown[BURNDOWN_DAYS - 1].targetCum.toLocaleString()} 字

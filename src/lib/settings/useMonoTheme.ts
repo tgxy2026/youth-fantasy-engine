@@ -23,7 +23,8 @@ export function useMonoTheme(): boolean {
   const [mono, setMono] = useState(readMono)
   useEffect(() => {
     setMono(readMono())
-    if (typeof MutationObserver === 'undefined') return
+    // 守卫与 readMono 对称：无 DOM 环境（或只 polyfill 了 MutationObserver）时直接退出
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return
     const observer = new MutationObserver(() => setMono(readMono()))
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => observer.disconnect()

@@ -148,7 +148,11 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
     <Modal open={open} onClose={() => { if (!busy) setOpen(false) }} showCloseButton={!busy} title="同步冲突中心" icon={<AlertTriangle size={15} />} width="2xl">
       <p className="mb-3 text-11 text-ink-400">冲突双方保存在本机。先核对内容，再导出或恢复；已处理记录可以保留作为历史。</p>
       {loadError && <p className="mb-3 text-12 text-danger">读取失败：{loadError}</p>}
-      {records.length === 0 ? <div className="py-8 text-center text-12 text-ink-500">没有同步冲突记录</div> : <div className="space-y-3">
+      {records.length === 0 ? <div className="py-8 text-center text-12 text-ink-500">
+        {/* 🔴 读库失败与「确实没有冲突」必须分开说 —— 冲突副本是云端那一版的唯一留档，
+            把「读取失败」显示成「没有记录」会让作者以为安全（违反「绝不静默」）。 */}
+        {loadError ? '读取失败，暂时无法确认有没有冲突记录 —— 关掉本窗口重开一次再试。' : '没有同步冲突记录'}
+      </div> : <div className="space-y-3">
         {/* 体积与保留策略：**只展示，不自动清理**（自动删除属不可逆操作，须主人单独确认） */}
         <div className="rounded-lg border border-ink-700 bg-ink-800/50 p-2.5 text-10 text-ink-500">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -164,12 +168,12 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
 
         {/* 筛选：类型（按实际出现过的 store）+ 处理状态 */}
         <div className="flex flex-wrap items-center gap-2">
-          <select aria-label="筛选冲突类型" value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
+          <select aria-label="筛选冲突类型" value={storeFilter} onChange={e => { setStoreFilter(e.target.value); setShown(CONFLICT_PAGE) }}
             className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-12">
             <option value="all">全部类型</option>
             {storeOptions.map(s => <option key={s} value={s}>{conflictStoreLabel(s)}</option>)}
           </select>
-          <select aria-label="筛选处理状态" value={statusFilter} onChange={e => setStatusFilter(e.target.value as ConflictStatusFilter)}
+          <select aria-label="筛选处理状态" value={statusFilter} onChange={e => { setStatusFilter(e.target.value as ConflictStatusFilter); setShown(CONFLICT_PAGE) }}
             className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-12">
             <option value="all">全部状态</option>
             <option value="open">待处理</option>

@@ -25,17 +25,18 @@ check('monoDashOf 同名稳定', monoDashOf('敌对') === monoDashOf('敌对') &
 check('monoShapeOf 同名稳定', monoShapeOf('青岚宗') === monoShapeOf('青岚宗'))
 check('空键也能取到档（不崩、不越界）', MONO_DASHES.includes(monoDashOf('')) && MONO_SHAPES.includes(monoShapeOf('')))
 
-// ---- 顺序分配：同图内互不相同（验收口径 1 的硬要求）----
+// ---- 集合内互不相同 + 与传入顺序无关（验收口径 1 的硬要求）----
 const types = ['亲属', '师徒', '盟友', '敌对', '竞争', 'CP感情线']
 const dashOf = monoDashLookup(types)
 check('六个类型拿到六个互不相同的线型', new Set(types.map(dashOf)).size === 6)
-check('顺序分配：按出现次序逐档推进', dashOf('亲属') === MONO_DASHES[0] && dashOf('师徒') === MONO_DASHES[1] && dashOf('盟友') === MONO_DASHES[2])
+check('同一集合换个顺序 ⇒ 分配结果不变（数据增删不会整体位移）',
+  ['CP感情线', '竞争', '敌对', '盟友', '师徒', '亲属'].every(k => monoDashLookup(['CP感情线', '竞争', '敌对', '盟友', '师徒', '亲属'])(k) === dashOf(k)))
+check('同名同档：重复键不影响分配', monoDashLookup(['a', 'a', 'b'])('b') === monoDashLookup(['a', 'b'])('b'))
 const shapeOf = monoShapeLookup(['甲宗', '乙门', '丙阁'])
 check('三个类别拿到三个互不相同的形状', new Set(['甲宗', '乙门', '丙阁'].map(shapeOf)).size === 3)
+check('形状分配同样与顺序无关', ['丙阁', '乙门', '甲宗'].every(k => monoShapeLookup(['丙阁', '乙门', '甲宗'])(k) === shapeOf(k)))
 check('集合外的散值回落哈希（稳定不崩）', typeof dashOf('未登记类型') === 'string' && MONO_SHAPES.includes(shapeOf('未登记类别')))
-check('档位用尽后回绕（第 7 个与第 1 个同档）',
-  monoDashLookup(['a', 'b', 'c', 'd', 'e', 'f', 'g'])('g') === MONO_DASHES[0])
-check('重复键不占额外档位', monoDashLookup(['x', 'x', 'y'])('y') === MONO_DASHES[1])
+check('空集合不崩', typeof monoDashLookup([])('任意') === 'string' && MONO_SHAPES.includes(monoShapeLookup([])('任意')))
 
 // ---- 形状 path ----
 for (const shape of MONO_SHAPES) {

@@ -14,6 +14,7 @@
 //    口径与 `webSearch` 一致。
 
 import { fetchWithTimeout, isCancelled, openaiBaseOf } from '@/lib/aiCore/transport'
+import { mergeHeaders } from '@/lib/aiCore/headers'
 
 export interface EmbedConfig {
   type: 'ollama' | 'openai'
@@ -21,6 +22,12 @@ export interface EmbedConfig {
   baseUrl: string
   apiKey?: string
   model: string
+  /**
+   * 该 provider 的**自定义请求头**（3.1.1 第 4 项）——嵌入与对话复用同一份模型配置，
+   * 若某个网关要求额外请求头（如 OpenCode Go 的 `x-opencode-session`），
+   * 这里不带就等于「对话能通、嵌入必 400」，故必须一并传下去。
+   */
+  headers?: Record<string, string>
 }
 
 export interface EmbedResult {
@@ -81,8 +88,11 @@ export function embedConfigError(cfg: EmbedConfig | null | undefined): string {
 export function buildEmbedRequest(cfg: EmbedConfig, texts: string[]): { url: string; init: RequestInit } {
   const url = embedPath(cfg)
   const clipped = texts.map(t => (t ?? '').slice(0, EMBED_TEXT_CAP))
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`
+  // 与对话链路同一出口：自定义头走 mergeHeaders（合法名放行、浏览器禁止的头不静默丢弃）
+  const headers = mergeHeaders(
+    { 'Content-Type': 'application/json', ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}) },
+    cfg.headers,
+  )
   const body: Record<string, unknown> = { model: (cfg.model ?? '').trim(), input: clipped }
   if (cfg.type === 'openai') body.encoding_format = 'float'
   return { url, init: { method: 'POST', headers, body: JSON.stringify(body) } }

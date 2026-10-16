@@ -81,7 +81,7 @@ export async function resolveEmbedConfig(
   const model = set.model.trim() || p.model
   if (!model) return null
   if (!(p.baseUrl ?? '').trim()) return null
-  return { type: p.type, baseUrl: p.baseUrl, apiKey: p.apiKey, model }
+  return { type: p.type, baseUrl: p.baseUrl, apiKey: p.apiKey, model, headers: p.headers }
 }
 
 export interface EmbeddingStatus {
