@@ -445,7 +445,10 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
               className="relative"
               style={{
                 width: canvas.w, height: canvas.h,
-                backgroundImage: 'radial-gradient(circle, rgb(var(--graph-grid) / 0.18) 1px, transparent 1px)',
+                // mono 下点格去掉 alpha（半透明黑=灰，违背严格二值）：改 1px 纯黑实心点
+                backgroundImage: mono
+                  ? 'radial-gradient(circle, rgb(var(--ink-100)) 1px, transparent 1px)'
+                  : 'radial-gradient(circle, rgb(var(--graph-grid) / 0.18) 1px, transparent 1px)',
                 backgroundSize: '26px 26px',
                 cursor: panning ? 'grabbing' : 'grab',
               }}
@@ -465,7 +468,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                 {conns.map(([a, b], i) => {
                   const pa = cardCenter(a); const pb = cardCenter(b)
                   const mx = (pa.x + pb.x) / 2
-                  return <path key={i} d={`M ${pa.x} ${pa.y} C ${mx} ${pa.y}, ${mx} ${pb.y}, ${pb.x} ${pb.y}`} style={{ stroke: 'rgb(var(--graph-edge-label))' }} strokeWidth={2} fill="none" markerEnd="url(#pc-arrow)" strokeOpacity={0.7} />
+                  return <path key={i} d={`M ${pa.x} ${pa.y} C ${mx} ${pa.y}, ${mx} ${pb.y}, ${pb.x} ${pb.y}`} style={{ stroke: 'rgb(var(--graph-edge-label))' }} strokeWidth={2} fill="none" markerEnd="url(#pc-arrow)" strokeOpacity={mono ? 1 : 0.7} />
                 })}
               </svg>
 

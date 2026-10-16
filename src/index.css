@@ -426,6 +426,31 @@
   border-color: #000000;
 }
 
+/* ③' SVG 描边（stroke-amber / stroke-sky-400 …）：与 ③ 同源，但 Tailwind 的 stroke-* 写的是
+     SVG 的 stroke 属性而非 border-color，故必须单列一条（3.1.1 第四轮审计发现时间轴整条漏网）。
+     ⚠️ 只按**色名**列举 —— [class*='stroke-'] 通配会误伤 stroke-0 / stroke-1 / stroke-2
+     这些 stroke-width 工具类，把线宽清零。 */
+[data-theme='mono'] [class*='stroke-amber'],
+[data-theme='mono'] [class*='stroke-danger'],
+[data-theme='mono'] [class*='stroke-success'],
+[data-theme='mono'] [class*='stroke-info'],
+[data-theme='mono'] [class*='stroke-emerald-'],
+[data-theme='mono'] [class*='stroke-green-'],
+[data-theme='mono'] [class*='stroke-red-'],
+[data-theme='mono'] [class*='stroke-rose-'],
+[data-theme='mono'] [class*='stroke-sky-'],
+[data-theme='mono'] [class*='stroke-blue-'],
+[data-theme='mono'] [class*='stroke-purple-'],
+[data-theme='mono'] [class*='stroke-violet-'],
+[data-theme='mono'] [class*='stroke-pink-'],
+[data-theme='mono'] [class*='stroke-orange-'],
+[data-theme='mono'] [class*='stroke-yellow-'],
+[data-theme='mono'] [class*='stroke-cyan-'],
+[data-theme='mono'] [class*='stroke-slate-'],
+[data-theme='mono'] [class*='stroke-gray-'] {
+  stroke: #000000;
+}
+
 /* ④ 文字：半透明强调 / 状态字 + 固定调色板字 → 纯黑。
      ⚠️ text-white 一律不碰 —— 实心键（黑底）上的白字是纯黑白的合法形态。 */
 [data-theme='mono'] [class*='text-amber'],

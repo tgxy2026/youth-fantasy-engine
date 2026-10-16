@@ -62,10 +62,13 @@ const STATUS_LIST = Object.keys(STATUS_META) as ChapterStatus[]
 /** HTML 转义（防止引用名高亮注入）。先探测再替换：绝大多数正文片段不含 <>&，可省掉多次全量 replace */
 
 import { useNovelEditorModel } from '@/components/editor/useNovelEditorModel'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
 
 export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, projectName = '我的小说', openChapterId, ctx = { type: 'full', features: [] } }: Props) {
   // 状态与生命周期全在 model 里；下面同名解构是刻意的 —— JSX 保持原样、零改动。
   const model = useNovelEditorModel({ projectName, ctx, openChapterId, onStatsChange })
+  /** 纯黑白主题：正文缩进导向线要去掉 alpha（半透明黑=灰，违背严格二值） */
+  const mono = useMonoTheme()
 
   const {
     // 结构数据（卷 / 章 / 当前章 / 序号）
@@ -548,7 +551,9 @@ style={{ zIndex: Z.pageHandle }}
                     <div
                       className="h-full"
                       style={{
-                        backgroundImage: `repeating-linear-gradient(to right, rgb(var(--ink-500) / 0.18) 0 1px, transparent 1px ${indentUnitEm}em)`,
+                        backgroundImage: mono
+                          ? `repeating-linear-gradient(to right, rgb(var(--ink-100)) 0 1px, transparent 1px ${indentUnitEm}em)`
+                          : `repeating-linear-gradient(to right, rgb(var(--ink-500) / 0.18) 0 1px, transparent 1px ${indentUnitEm}em)`,
                       }}
                     />
                   </div>

@@ -253,8 +253,9 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                   const isTop = depth === 0
                   const tx = isTop ? vs.bbox.x + vs.bbox.w + 4 : vs.bbox.x + 2
                   const anchor = isTop ? 'end' : 'start'
+                  // mono 下整组 opacity 0.4 会把「白底 + 黑边」合成成灰 ⇒ 淡化改由**线宽**承载
                   return (
-                    <g key={mk.id} data-space-id={mk.id} opacity={dim ? 0.4 : 1}
+                    <g key={mk.id} data-space-id={mk.id} opacity={mono ? 1 : (dim ? 0.4 : 1)}
                       onMouseEnter={() => setHover(mk.id)} onMouseLeave={() => setHover(null)}
                       onPointerDown={e => onPointerDown(e, 'node', mk)}
                       style={{ cursor: painting ? 'cell' : (selected === mk.id ? 'pointer' : 'grab') }}>
@@ -270,7 +271,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                       ))}
                       <text x={tx} y={vs.bbox.y - 5} textAnchor={anchor} fontSize={fs} fontWeight={600} pointerEvents="none"
                         style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}</text>
-                      <text x={tx} y={vs.bbox.y - 5 + fs + 1} textAnchor={anchor} fontSize={fs - 3} fillOpacity={0.9} pointerEvents="none"
+                      <text x={tx} y={vs.bbox.y - 5 + fs + 1} textAnchor={anchor} fontSize={fs - 3} fillOpacity={mono ? 1 : 0.9} pointerEvents="none"
                         style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>{mk.category} · {vs.count} 格</text>
                       {active && !painting && (
                         <text x={tx} y={vs.bbox.y - 5 + fs * 2 + 3} textAnchor={anchor} fontSize={fs - 3.5} pointerEvents="none"
@@ -288,7 +289,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                 const h = (Math.abs(selRect.y1 - selRect.y0) + 1) * G
                 return (
                   <rect x={x0} y={y0} width={w} height={h} rx={2}
-                    style={{ fill: 'rgb(var(--graph-accent-text))', stroke: 'rgb(var(--graph-accent-text))' }} fillOpacity={0.18} strokeWidth={1.5} strokeDasharray="6 4" pointerEvents="none" />
+                    style={{ fill: 'rgb(var(--graph-accent-text))', stroke: 'rgb(var(--graph-accent-text))' }} fillOpacity={mono ? 1 : 0.18} strokeWidth={1.5} strokeDasharray="6 4" pointerEvents="none" />
                 )
               })()}
 

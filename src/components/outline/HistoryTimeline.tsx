@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
+import { monoDashLookup } from '@/lib/settings/monoMarks'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '@/lib/types'
 import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays, cappedPositions, formatDurationHuman } from '@/lib/app/storyDate'
 import { Calendar, Users, X, AlarmClock, Layers } from 'lucide-react'
@@ -75,6 +77,10 @@ const BRACKET_STEP = 12
 const CARD_MAX_H = 150
 
 export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
+  /** 同 StoryTimeline（3.1.1 第四轮审计）：mono 下语义色 → 线型，透明度一律收 1 */
+  const mono = useMonoTheme()
+  const monoDash = useMemo(() => monoDashLookup(COLORS.map((_, i) => String(i))), [])
+  const monoInk = 'rgb(var(--ink-100))'
   const [hover, setHover] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = usePersistedEnum<'all' | '已定稿' | '待补充' | '已变更'>(
     'history-timeline-status-filter', ['all', '已定稿', '待补充', '已变更'], 'all',
@@ -325,11 +331,13 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
           <svg className="absolute inset-0" width={totalW} height={totalH} style={{ zIndex: 0, overflow: 'visible' }}>
             {/* 轴体升级（2026-10-02）：底层浅色宽带 + 上层亮线 —— 旧版只有一条 1.5px 灰线，
                 轴几乎没有存在感；双层让「时间轴」本身立起来。 */}
-            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} style={{ stroke: 'rgb(var(--ink-600) / 0.18)' }} strokeWidth={8} strokeLinecap="round" />
-            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} style={{ stroke: 'rgb(var(--ink-500) / 0.6)' }} strokeWidth={2} strokeLinecap="round" />
+            {/* mono 下宽带融进白底（严格二值没有「浅色带」这一档），轴体只留上层纯黑亮线 */}
+            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} data-tl-axis="1"
+              style={{ stroke: mono ? 'rgb(var(--ink-950))' : 'rgb(var(--ink-600) / 0.18)' }} strokeWidth={8} strokeLinecap="round" />
+            <line x1={20} y1={axisY} x2={totalW - 20} y2={axisY} style={{ stroke: mono ? 'rgb(var(--ink-100))' : 'rgb(var(--ink-500) / 0.6)' }} strokeWidth={2} strokeLinecap="round" />
             {/* 时间刻度：每个时间点组一根短竖线，让轴有「可丈量」的质感 */}
             {groups.map((_, gi) => (
-              <line key={`tick-${gi}`} x1={groupX(gi)} y1={axisY - 6} x2={groupX(gi)} y2={axisY + 6} style={{ stroke: 'rgb(var(--ink-400) / 0.4)' }} strokeWidth={1} />
+              <line key={`tick-${gi}`} x1={groupX(gi)} y1={axisY - 6} x2={groupX(gi)} y2={axisY + 6} style={{ stroke: mono ? 'rgb(var(--ink-100))' : 'rgb(var(--ink-400) / 0.4)' }} strokeWidth={1} />
             ))}
             {/* 等比模式：被压缩的超长空档 —— 轴上画断裂符 ⟋⟋ + 真实跨度（诚实标注，不假装等比） */}
             {breakIdx.map(bi => {
@@ -343,7 +351,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
                     d={`M ${xm - 7} ${axisY + 7} L ${xm + 0.5} ${axisY - 7} M ${xm - 0.5} ${axisY + 7} L ${xm + 7} ${axisY - 7}`}
                     fill="none" style={{ stroke: 'rgb(var(--graph-accent))' }} strokeWidth={1.6} strokeLinecap="round" pointerEvents="none"
                   />
-                  <rect x={xm - w / 2} y={axisY - 22} width={w} height={13} rx={4} style={{ fill: 'rgb(var(--ink-900) / 0.85)' }} pointerEvents="none" />
+                  <rect x={xm - w / 2} y={axisY - 22} width={w} height={13} rx={4} style={{ fill: mono ? 'rgb(var(--ink-950))' : 'rgb(var(--ink-900) / 0.85)' }} pointerEvents="none" />
                   <text x={xm} y={axisY - 12} textAnchor="middle" fontSize={9} style={{ fill: 'rgb(var(--ink-300))' }} pointerEvents="none">{txt}</text>
                   <rect x={xm - w / 2} y={axisY - 24} width={w} height={20} fill="transparent" style={{ cursor: 'help' }} />
                 </g>
@@ -358,11 +366,13 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
                   key={`bk-${b.id}`}
                   d={path}
                   fill="none"
-                  className={b.neg ? 'stroke-rose-400' : color.stroke}
-                  strokeWidth={on ? 2.5 : 2}
-                  strokeOpacity={on ? 0.95 : 0.6}
+                  className={mono ? undefined : (b.neg ? 'stroke-rose-400' : color.stroke)}
+                  // mono 下：色相 → 线型（负数年份用更密的短划），悬停 → 线宽（不用透明度）
+                  style={mono ? { stroke: monoInk, cursor: 'pointer' } : { cursor: 'pointer' }}
+                  strokeDasharray={mono ? (b.neg ? '2 3' : monoDash(String(b.colorIdx % COLORS.length))) : undefined}
+                  strokeWidth={mono ? (on ? 3 : 1.6) : (on ? 2.5 : 2)}
+                  strokeOpacity={mono ? 1 : (on ? 0.95 : 0.6)}
                   strokeLinecap="round"
-                  style={{ cursor: 'pointer' }}
                   onClick={() => {
                     const hit = data.find(x => x.id === b.id)
                     if (hit) setSelected(hit)

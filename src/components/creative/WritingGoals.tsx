@@ -156,11 +156,13 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
             <span className="text-12 font-semibold text-ink-100">近 14 天燃尽图</span>
             <div className="flex items-center gap-3 text-10 text-ink-400">
               <span className="flex items-center gap-1">
-                {mono ? <svg width="14" height="8" aria-hidden="true"><line x1="1" y1="4" x2="13" y2="4" stroke={ink} strokeWidth="1.6" strokeDasharray="5 4" /></svg>
+                {/* ⚠️ 主题变量必须走 style：SVG 表现属性（stroke=/fill=）不解析 var()，写 stroke={ink} 会静默失效 → 图例线不画。
+                    mono 下「目标累计」用虚线、「实际累计」用实线，靠线型而非颜色区分。 */}
+                {mono ? <svg width="14" height="8" aria-hidden="true"><line x1="1" y1="4" x2="13" y2="4" style={{ stroke: ink }} strokeWidth="1.6" strokeDasharray="5 4" /></svg>
                   : <i className="w-3.5 h-0.5 bg-amber/70 inline-block rounded" />} 目标累计
               </span>
               <span className="flex items-center gap-1">
-                {mono ? <svg width="14" height="8" aria-hidden="true"><line x1="1" y1="4" x2="13" y2="4" stroke={ink} strokeWidth="2.4" /></svg>
+                {mono ? <svg width="14" height="8" aria-hidden="true"><line x1="1" y1="4" x2="13" y2="4" style={{ stroke: ink }} strokeWidth="2.4" /></svg>
                   : <i className="w-3.5 h-0.5 inline-block rounded" style={{ background: GOAL_ACTUAL_COLOR }} />} 实际累计
               </span>
             </div>
@@ -178,7 +180,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
             {[0, Math.floor((BURNDOWN_DAYS - 1) / 2), BURNDOWN_DAYS - 1].map(i => (
               <text key={i} x={bX(i)} y={bH - 6} textAnchor={i === 0 ? 'start' : i === BURNDOWN_DAYS - 1 ? 'end' : 'middle'} fontSize={9} style={{ fill: 'rgb(var(--ink-500))' }}>{burndown[i].label}</text>
             ))}
-            <path d={bPath('targetCum')} fill="none" style={{ stroke: 'rgb(var(--amber))' }} strokeOpacity={0.75} strokeWidth={1.6} strokeDasharray="5 4" />
+            <path d={bPath('targetCum')} fill="none" style={{ stroke: mono ? ink : 'rgb(var(--amber))' }} strokeOpacity={mono ? 1 : 0.75} strokeWidth={mono ? 2 : 1.6} strokeDasharray="5 4" />
             <path d={bPath('actualCum')} fill="none" style={{ stroke: mono ? ink : GOAL_ACTUAL_COLOR }} strokeWidth={mono ? 2.4 : 2} />
             <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} style={{ fill: mono ? ink : GOAL_ACTUAL_COLOR }} />
           </svg>

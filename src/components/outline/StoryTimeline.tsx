@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
+import { monoDashLookup } from '@/lib/settings/monoMarks'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '@/lib/types'
 import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays, cappedPositions, formatDurationHuman } from '@/lib/app/storyDate'
 import { Calendar, X, AlertTriangle, Layers, AlarmClock } from 'lucide-react'
@@ -80,6 +82,13 @@ const CARD_MAX_H = 156
 const LANE_MIN_H = 150
 
 export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_CALENDAR_RULE }: Props) {
+  /**
+   * 3.1.1 第四轮审计：时间轴此前**完全没有接纯黑白**（既不引 useMonoTheme，验证脚本也没有检查点）。
+   * mono 下：语义色改由**线型**区分（8 档 → 6 档回绕），透明度一律收 1（半透明黑=灰）。
+   */
+  const mono = useMonoTheme()
+  const monoDash = useMemo(() => monoDashLookup(COLORS.map((_, i) => String(i))), [])
+  const monoInk = 'rgb(var(--ink-100))'
   const [hover, setHover] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = usePersistedEnum<'all' | '正常' | '已修正' | '待核对'>(
     'story-timeline-status-filter', ['all', '正常', '已修正', '待核对'], 'all',
@@ -435,14 +444,16 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                   <line
                     key={`axis-band-${t}`}
                     x1={8} y1={laneY(idx)} x2={totalW - 8} y2={laneY(idx)}
-                    style={{ stroke: 'rgb(var(--ink-600) / 0.16)' }} strokeWidth={8} strokeLinecap="round"
+                    // mono 下宽带融进白底（严格二值：要么白要么黑，没有「浅色带」这一档），轴体只留上层亮线
+                    data-tl-axis="1"
+                    style={{ stroke: mono ? 'rgb(var(--ink-950))' : 'rgb(var(--ink-600) / 0.16)' }} strokeWidth={8} strokeLinecap="round"
                   />
                 ))}
                 {visibleTracks.map((t, idx) => (
                   <line
                     key={`axis-${t}`}
                     x1={8} y1={laneY(idx)} x2={totalW - 8} y2={laneY(idx)}
-                    style={{ stroke: 'rgb(var(--ink-500) / 0.55)' }} strokeWidth={2} strokeLinecap="round"
+                    style={{ stroke: mono ? 'rgb(var(--ink-100))' : 'rgb(var(--ink-500) / 0.55)' }} strokeWidth={2} strokeLinecap="round"
                   />
                 ))}
                 {groups.map((g, gi) => visibleTracks.map(t => {
@@ -450,7 +461,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                   if (!g.items.some(d => d.track === t)) return null
                   return (
                     <line key={`tick-${gi}-${t}`} x1={groupX(gi)} y1={laneY(idx) - 6} x2={groupX(gi)} y2={laneY(idx) + 6}
-                      style={{ stroke: 'rgb(var(--ink-400) / 0.4)' }} strokeWidth={1} />
+                      style={{ stroke: mono ? 'rgb(var(--ink-100))' : 'rgb(var(--ink-400) / 0.4)' }} strokeWidth={1} />
                   )
                 }))}
                 {/* 等比模式：被压缩的超长空档 —— 每条泳道的轴上画断裂符 ⟋⟋（时间轴共享，各泳道一致）；
@@ -468,7 +479,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                       />
                       {idx === 0 && (
                         <>
-                          <rect x={xm - w / 2} y={laneY(0) - 21} width={w} height={12} rx={4} style={{ fill: 'rgb(var(--ink-900) / 0.85)' }} pointerEvents="none" />
+                          <rect x={xm - w / 2} y={laneY(0) - 21} width={w} height={12} rx={4} style={{ fill: mono ? 'rgb(var(--ink-950))' : 'rgb(var(--ink-900) / 0.85)' }} pointerEvents="none" />
                           <text x={xm} y={laneY(0) - 11.5} textAnchor="middle" fontSize={8.5} style={{ fill: 'rgb(var(--ink-300))' }} pointerEvents="none">{txt}</text>
                         </>
                       )}
@@ -488,11 +499,13 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
                       key={`bk-${d.id}`}
                       d={path}
                       fill="none"
-                      className={s.neg ? 'stroke-rose-400' : color.stroke}
-                      strokeWidth={on ? 2.5 : 2}
-                      strokeOpacity={on ? 0.95 : 0.6}
+                      className={mono ? undefined : (s.neg ? 'stroke-rose-400' : color.stroke)}
+                      // mono 下：色相 → 线型（负数年份用更密的短划），悬停 → 线宽（不用透明度）
+                      style={mono ? { stroke: monoInk, cursor: 'pointer' } : { cursor: 'pointer' }}
+                      strokeDasharray={mono ? (s.neg ? '2 3' : monoDash(String(s.colorIdx % COLORS.length))) : undefined}
+                      strokeWidth={mono ? (on ? 3 : 1.6) : (on ? 2.5 : 2)}
+                      strokeOpacity={mono ? 1 : (on ? 0.95 : 0.6)}
                       strokeLinecap="round"
-                      style={{ cursor: 'pointer' }}
                       onClick={() => setSelected(d)}
                       onMouseEnter={() => setHover(d.id)}
                       onMouseLeave={() => setHover(null)}
