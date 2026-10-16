@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { BookOpen, ChevronDown, ChevronRight, Compass, FileText, History } from 'lucide-react'
+import { AlertTriangle, BookOpen, ChevronDown, ChevronRight, Compass, FileText, History } from 'lucide-react'
 import Panel from '@/components/common/Panel'
 import { Button } from '@/components/common/Button'
 import type { CardRecord, Chapter, TableRow, Volume } from '@/lib/types'
@@ -7,6 +7,8 @@ import type { VisCtx } from '@/lib/schema'
 import { tabVisible, getTab } from '@/lib/schema'
 import { readSetPref, readStringPref, writeSetPref, writeStringPref, usePersistedBool } from '@/lib/settings/uiPrefs'
 import { showToast } from '@/components/dialogs/dialogs'
+import { humanAgo } from '@/lib/outline/chapterAudit'
+import { chapterStatusMismatch } from '@/lib/app/chapterBoardView'
 
 interface Props {
   projectId: string
@@ -98,6 +100,8 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
     return sortedVolumes.map(v => ({ volume: v, chapters: shown.filter(c => c.volumeId === v.id) }))
       .filter(g => g.chapters.length > 0)
   }, [shown, volumes])
+  // 「状态与正文对不上」的章数（当前已显示的这批）—— 只提示，不自动改状态
+  const mismatchCount = useMemo(() => shown.filter(c => chapterStatusMismatch(c)).length, [shown])
 
   return (
     <div className="space-y-4 mb-6">
@@ -157,13 +161,20 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
             <select value={status} onChange={e => setStatus(e.target.value)} aria-label="筛选章节状态" className="rounded-lg border border-ink-700 bg-ink-900 px-2 text-12"><option value="all">全部状态</option>{['构思', '细纲', '草稿', '修改', '完稿', '已发布'].map(s => <option key={s}>{s}</option>)}</select>
           </div>
           <p className="mb-2 text-11 text-ink-500">正文章节 · 来自编辑器</p>
+          {mismatchCount > 0 && <p className="mb-3 flex items-center gap-1 text-11 text-amber">
+            <AlertTriangle size={11} className="shrink-0" /> 有 {mismatchCount} 章的状态与正文对不上（仅提示，不会自动修改）
+          </p>}
           {groups.length === 0 ? <div className="py-6 text-center text-12 text-ink-500">{chapters.length ? '没有符合条件的章节' : '还没有章节，先去正文编辑器建立第一章'}</div> : groups.map(group => <section key={group.volume.id} className="mb-4">
             <h3 className="mb-2 text-12 text-ink-300">{group.volume.title} · {group.chapters.length} 章</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">{group.chapters.map(c => <Button key={c.id} variant="bare" className="min-w-0 rounded-lg border border-ink-700 bg-ink-800/50 p-3 text-left hover:border-amber/40" onClick={() => onNavigate('editor', c.id)}>
-              <span className="flex justify-between gap-2 text-12 text-ink-100"><span className="truncate">{c.title || '未命名章'}</span><span className="shrink-0 text-amber">{c.status}</span></span>
-              <span className="mt-1 block text-11 text-ink-400 line-clamp-2">{c.summary.trim() || '暂无章节摘要'}</span>
-              <span className="mt-2 flex items-center gap-1 text-10 text-ink-500"><History size={10} /> {c.wordCount} 字 · {c.content.trim() ? '已有正文' : '尚无正文'}</span>
-            </Button>)}</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">{group.chapters.map(c => {
+              const mismatch = chapterStatusMismatch(c)
+              return <Button key={c.id} variant="bare" className="min-w-0 rounded-lg border border-ink-700 bg-ink-800/50 p-3 text-left hover:border-amber/40" onClick={() => onNavigate('editor', c.id)}>
+                <span className="flex justify-between gap-2 text-12 text-ink-100"><span className="truncate">{c.title || '未命名章'}</span><span className="shrink-0 text-amber">{c.status}</span></span>
+                <span className="mt-1 block text-11 text-ink-400 line-clamp-2">{c.summary.trim() || '暂无章节摘要'}</span>
+                <span className="mt-2 flex items-center gap-1 text-10 text-ink-500"><History size={10} /> {c.wordCount} 字 · {c.content.trim() ? '已有正文' : '尚无正文'} · 更新于 {humanAgo(c.updatedAt)}</span>
+                {mismatch && <span className="mt-1 flex items-center gap-1 text-10 text-amber"><AlertTriangle size={10} className="shrink-0" /> {mismatch}</span>}
+              </Button>
+            })}</div>
           </section>)}
           {shown.length < filtered.length && <Button variant="secondary" onClick={() => setChapterLimit(n => n + 60)} className="w-full">继续显示章节（{shown.length}/{filtered.length}）</Button>}
           </> : <section>
