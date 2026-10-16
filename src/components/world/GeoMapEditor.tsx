@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { Maximize2, ZoomIn, ZoomOut, MapPin, Pencil, ImagePlus, X } from 'lucide-react'
@@ -9,11 +9,18 @@ import { Button } from '@/components/common/Button'
 import { useGeoMapModel } from '@/components/world/useGeoMapModel'
 import { GeoMapList, DrawDialog, AddMarkerForm, DetailPanel } from '@/components/world/GeoMapParts'
 import { LAYER_COLORS, G, CELL_KM_STEPS } from '@/components/world/geoMapGeometry'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
+import { monoDashLookup, MONO_DASHES } from '@/lib/settings/monoMarks'
 import * as db from '@/lib/db'
 import { showToast } from '@/components/dialogs/dialogs'
 import { readMapImageFile, MAP_IMAGE_ACCEPT, MAP_IMAGE_HINT_SPEC } from '@/lib/media/mapImage'
 
 export default function GeoMapEditor({ tab }: { tab: TabDef }) {
+  // 🔴 纯黑白（3.1.1）：图层语义色失效 ⇒ 改由**线型**承载（伏笔实线 / 角色虚线 / 时间脉络点线）；
+  //    地块层级色失效 ⇒ 改由**轮廓线型按深度**承载。只在此主题下分支。
+  const mono = useMonoTheme()
+  const monoInk = 'rgb(var(--ink-100))'
+  const monoLayerDash = useMemo(() => monoDashLookup(['foreshadow', 'character', 'timeline']), [])
   // 视图侧「同名解构」：JSX 一个字都没改 —— 拆分只把状态与交互挪进了 useGeoMapModel。
   const {
     curMapName, mapNote, rows, stepCellKm, wrapRef, svgRef,
@@ -104,7 +111,9 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
               className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md border text-11 transition-colors ${layers[key] ? 'border-amber/40 text-amber bg-amber/15' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
               title={key === 'foreshadow' ? '叠加伏笔关联' : key === 'character' ? '叠加角色关联' : '叠加时间脉络关联'}
             >
-              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS[key] }} />
+              {mono
+                ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray={monoLayerDash(key) || undefined} /></svg>
+                : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS[key] }} />}
               {key === 'foreshadow' ? '伏笔' : key === 'character' ? '角色' : '时间脉络'}
             </Button>
           ))}
@@ -199,7 +208,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
             <defs>
               <pattern id="gm-dots" width="26" height="26" patternUnits="userSpaceOnUse">
                 {/* 主题化网格（表现属性不解析 var()，故走 style） */}
-                <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity={painting ? 0.32 : 0.22} />
+                <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity={mono ? 1 : (painting ? 0.32 : 0.22)} />
               </pattern>
             </defs>
             <rect width="100%" height="100%" fill="url(#gm-dots)" pointerEvents="none" />
@@ -230,10 +239,14 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                 .sort((a, b) => (depthMap.get(a.id) ?? 0) - (depthMap.get(b.id) ?? 0))
                 .map(mk => {
                   const vs = viewShapes.get(mk.id); if (!vs) return null
-                  const col = spaceColors.get(mk.id) || MAP_SPACE_FALLBACK
+                  // 🔴 mono：层级配色失效 ⇒ 改成「白底 + 黑边」，层级改由**轮廓线型按深度**承载
+                  const col = mono ? monoInk : (spaceColors.get(mk.id) || MAP_SPACE_FALLBACK)
+                  const fillCol = mono ? 'rgb(var(--graph-node))' : col
                   const active = hover === mk.id || selected === mk.id
                   const dim = hover && !active
                   const depth = depthMap.get(mk.id) ?? 0
+                  // 层级线型：必须在 depth 之后算
+                  const colDash = mono ? (MONO_DASHES[depth % MONO_DASHES.length] || undefined) : undefined
                   const fillOp = depth === 0 ? 0.16 : depth === 1 ? 0.30 : 0.42
                   const fs = Math.max(11, 16 - depth * 2)
                   // 根范围标签放包围盒右上角外（右对齐），子/孙放各自包围盒左上角外（左对齐）——避免父子名字重叠
@@ -247,11 +260,11 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                       style={{ cursor: painting ? 'cell' : (selected === mk.id ? 'pointer' : 'grab') }}>
                       {vs.full.map(([bx, by]) => (
                         <rect key={`f${bx},${by}`} x={bx * G + 0.7} y={by * G + 0.7} width={G - 1.4} height={G - 1.4} rx={1.5}
-                          fill={col} fillOpacity={fillOp} stroke={col} strokeOpacity={active ? 0.95 : 0.45} strokeWidth={active ? 1.4 : 0.8} />
+                          fill={fillCol} fillOpacity={mono ? 1 : fillOp} stroke={col} strokeOpacity={mono ? 1 : (active ? 0.95 : 0.45)} strokeWidth={active ? 1.4 : 0.8} strokeDasharray={colDash} />
                       ))}
                       {vs.rest.map(([gx, gy]) => (
                         <rect key={`r${gx},${gy}`} x={(gx / cellKm) * G + 0.3} y={(gy / cellKm) * G + 0.3} width={G / cellKm - 0.5} height={G / cellKm - 0.5} rx={G / cellKm / 5}
-                          fill={col} fillOpacity={fillOp} stroke={col} strokeOpacity={active ? 0.9 : 0.4} strokeWidth={active ? 1 : 0.5} />
+                          fill={fillCol} fillOpacity={mono ? 1 : fillOp} stroke={col} strokeOpacity={mono ? 1 : (active ? 0.9 : 0.4)} strokeWidth={active ? 1 : 0.5} strokeDasharray={colDash} />
                       ))}
                       <text x={tx} y={vs.bbox.y - 5} textAnchor={anchor} fontSize={fs} fontWeight={600} fill={col} pointerEvents="none"
                         style={{ paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}</text>
@@ -286,18 +299,19 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                 if (!vs) return null
                 const cx = vs.bbox.x + vs.bbox.w / 2, cy = vs.bbox.y + vs.bbox.h / 2
                 const rr = Math.max(vs.bbox.w, vs.bbox.h) / 2
-                const rings: string[] = []
-                if (layers.foreshadow && lk.foreshadow.length) rings.push(LAYER_COLORS.foreshadow)
-                if (layers.character && lk.character.length) rings.push(LAYER_COLORS.character)
-                if (layers.timeline && lk.timeline.length) rings.push(LAYER_COLORS.timeline)
+                const rings: { key: 'foreshadow' | 'character' | 'timeline'; color: string }[] = []
+                if (layers.foreshadow && lk.foreshadow.length) rings.push({ key: 'foreshadow', color: LAYER_COLORS.foreshadow })
+                if (layers.character && lk.character.length) rings.push({ key: 'character', color: LAYER_COLORS.character })
+                if (layers.timeline && lk.timeline.length) rings.push({ key: 'timeline', color: LAYER_COLORS.timeline })
                 if (rings.length === 0) return null
                 return (
                   <g key={`ring-${mk.id}`} pointerEvents="none">
-                    {rings.map((col, ri) => {
+                    {rings.map((ring, ri) => {
                       const pad = 6 + ri * 4
                       return (
                         <rect key={ri} x={cx - rr - pad} y={cy - rr - pad} width={(rr + pad) * 2} height={(rr + pad) * 2} rx={4}
-                          fill="none" stroke={col} strokeWidth={2} strokeOpacity={0.85} />
+                          fill="none" stroke={mono ? monoInk : ring.color} strokeWidth={2} strokeOpacity={mono ? 1 : 0.85}
+                          strokeDasharray={mono ? (monoLayerDash(ring.key) || undefined) : undefined} />
                       )
                     })}
                   </g>
@@ -358,15 +372,23 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
       {/* 底部状态条：叠加图层 + 操作提示（颜色由系统按层级自动调配，不再按类别展示色卡） */}
       <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap text-10 text-ink-400 shrink-0">
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3px rounded-full inline-block" style={{ background: MAP_SPACE_FALLBACK }} />
-          颜色按层级自动调配（父子高对比 · 兄弟错开）
+          {mono
+            ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray="7 5" /></svg>
+            : <span className="w-3 h-3px rounded-full inline-block" style={{ background: MAP_SPACE_FALLBACK }} />}
+          {mono ? '黑白下按轮廓线型与名称区分层级' : '颜色按层级自动调配（父子高对比 · 兄弟错开）'}
         </span>
         <span className="ml-auto flex items-center gap-3">
           {anyLayerOn && (
             <>叠加：
-              {layers.foreshadow && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.foreshadow }} />伏笔</span>}
-              {layers.character && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.character }} />角色</span>}
-              {layers.timeline && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.timeline }} />时间脉络</span>}
+              {layers.foreshadow && <span className="flex items-center gap-1">
+                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray={monoLayerDash('foreshadow') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.foreshadow }} />}
+                伏笔</span>}
+              {layers.character && <span className="flex items-center gap-1">
+                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray={monoLayerDash('character') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.character }} />}
+                角色</span>}
+              {layers.timeline && <span className="flex items-center gap-1">
+                {mono ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke={monoInk} strokeWidth="1.6" strokeDasharray={monoLayerDash('timeline') || undefined} /></svg> : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS.timeline }} />}
+                时间脉络</span>}
             </>
           )}
           <span className="text-ink-500">{painting ? '绘制中：左键涂/擦 · 拖动框选批量填涂（Shift=批量擦） · 右键退出/平移' : '单击空白新增 · 拖空白平移 · 滚轮缩放画面'}</span>

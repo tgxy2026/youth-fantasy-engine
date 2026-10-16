@@ -9,6 +9,8 @@ import { getCardRecords } from '@/lib/db'
 import { forceLayout } from '@/lib/world/forceLayout'
 import { convexHull, hullPath, curvedEdge, curveMidpoint, groupColor, groupBy, pairKey, edgeCurveRatios, curveArrow } from '@/lib/world/graphGrouping'
 import { buildTypeColors, makeColorLookup } from '@/lib/world/relationColors'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
+import { monoDashLookup, monoShapeLookup, monoShapePath } from '@/lib/settings/monoMarks'
 
 interface Props {
   rows: TableRow[]
@@ -171,6 +173,15 @@ export default function RelationGraph({ rows }: Props) {
   const edgeTypes = useMemo(() => [...new Set(edges.map(e => e.type))], [edges])
   const colorOf = useMemo(() => makeColorLookup(buildTypeColors(edgeTypes, TYPE_COLORS)), [edgeTypes])
 
+  // 🔴 纯黑白（3.1.1）：语义色全部失效 ⇒ 类别改由**线型**（关系类型）与**形状**（所属势力）承载。
+  //    只有 mono 下才走这一支，其他主题的语义色一字不动。
+  const mono = useMonoTheme()
+  /** mono 下的「墨色」（该主题里 ink-100 = #000）——不写裸色值，故仍走主题变量 */
+  const monoInk = 'rgb(var(--ink-100))'
+  // 线型按「关系类型首次出现顺序」分配（图内互不相同）。
+  // 与 colorOf 同源：都用**全部**边算，收起节点时线型不跳。
+  const monoDash = useMemo(() => monoDashLookup(edgeTypes), [edgeTypes])
+
   // 把角色卡元数据合并进节点（依赖 chars，故与布局 memo 分开）
   const nodesWithMeta = useMemo(
     () => nodes.map(n => {
@@ -179,6 +190,13 @@ export default function RelationGraph({ rows }: Props) {
     }),
     [nodes, chars],
   )
+
+  // 形状按「势力首次出现顺序」分配（图内互不相同；无势力一律圆形）
+  const monoShape = useMemo(
+    () => monoShapeLookup(nodesWithMeta.map(n => n.faction).filter(Boolean)),
+    [nodesWithMeta],
+  )
+  const nodeShapeOf = (faction: string) => (faction ? monoShape(faction) : 'circle')
 
   // 收起：被折叠的节点及其关联边不渲染（布局坐标仍由全部节点算得，展开后位置稳定）
   const visibleNodes = useMemo(
@@ -237,7 +255,9 @@ export default function RelationGraph({ rows }: Props) {
   return (
     <div className="rounded-xl border border-ink-700 bg-ink-900 overflow-hidden select-none">
       <div className="px-4 py-2 text-11 text-ink-500 border-b border-ink-700 flex items-center justify-between gap-2 flex-wrap">
-        <span>节点颜色 = 所属势力，外框 = 阵营范围；线色 = 关系类型，虚线 = 敌对/恩怨；同一对多条关系 → 分弧 + 箭头标方向；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开</span>
+        <span>{mono
+          ? '节点形状 = 所属势力，外框 = 阵营范围；线型 = 关系类型（边中点标出类型名）；同一对多条关系 → 分弧 + 箭头标方向；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开'
+          : '节点颜色 = 所属势力，外框 = 阵营范围；线色 = 关系类型，虚线 = 敌对/恩怨；同一对多条关系 → 分弧 + 箭头标方向；拖动节点微调 · 拖拽空白平移 · 滚轮缩放 · 点击收起 / 展开'}</span>
         <span className="flex items-center gap-2">
           {collapsed.size > 0 && (
             <Button variant="bare"
@@ -274,7 +294,7 @@ export default function RelationGraph({ rows }: Props) {
         <defs>
           <pattern id="rg-dots" width="26" height="26" patternUnits="userSpaceOnUse">
             {/* 主题化网格：表现属性不解析 var()，故走 style（浅色主题下改为该主题墨色） */}
-            <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity="0.28" />
+            <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity={mono ? 1 : 0.28} />
           </pattern>
         </defs>
         {/* 点阵背景（画布层，固定不随内容平移） */}
@@ -285,8 +305,10 @@ export default function RelationGraph({ rows }: Props) {
           {/* 分组凸包（最底层：垫在边与节点之下，不拦指针） */}
           {hulls.map(h => (
             <g key={`hull-${h.faction}`} pointerEvents="none">
-              <path d={h.path} fill={h.color} fillOpacity={0.09} stroke={h.color} strokeOpacity={0.4} strokeWidth={1.2} strokeDasharray="1 0" />
-              <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: h.color }}>{h.faction}</text>
+              {mono
+                ? <path d={h.path} fill="none" stroke={monoInk} strokeWidth={1.2} strokeDasharray="7 5" />
+                : <path d={h.path} fill={h.color} fillOpacity={0.09} stroke={h.color} strokeOpacity={0.4} strokeWidth={1.2} strokeDasharray="1 0" />}
+              <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: mono ? monoInk : h.color }}>{h.faction}</text>
             </g>
           ))}
           {/* 关系边（弧线 + 类型色 + 性质线型；同一对多条 → 分弧 + 箭头标方向） */}
@@ -308,15 +330,15 @@ export default function RelationGraph({ rows }: Props) {
                 <path
                   d={curvedEdge(a.x, a.y, b.x, b.y, curve)}
                   fill="none"
-                  stroke={col}
+                  stroke={mono ? monoInk : col}
                   strokeWidth={active ? 2.4 : 1.3}
                   strokeOpacity={active ? 0.95 : 0.5}
                   strokeLinecap="round"
-                  strokeDasharray={edgeDash(e.type)}
+                  strokeDasharray={mono ? (monoDash(e.type) || undefined) : edgeDash(e.type)}
                 />
                 {/* 同一对出现多条关系时，用箭头标出本条方向（A→B）—— 区分「谁怎么看谁」 */}
                 {cv?.multi && (
-                  <path d={curveArrow(a.x, a.y, b.x, b.y, curve)} data-arrow="1" fill={col} opacity={active ? 0.95 : 0.62} />
+                  <path d={curveArrow(a.x, a.y, b.x, b.y, curve)} data-arrow="1" fill={mono ? monoInk : col} opacity={active ? 0.95 : 0.62} />
                 )}
                 <g
                   opacity={active ? 1 : 0.6}
@@ -325,8 +347,8 @@ export default function RelationGraph({ rows }: Props) {
                   onMouseLeave={() => setHoverName(null)}
                 >
                   <rect x={mid.x - labelW / 2} y={mid.y - 8.5} width={labelW} height={15} rx={7.5}
-                    style={{ fill: 'rgb(var(--ink-850))' }} stroke={col} strokeOpacity={0.45} strokeWidth={0.6} />
-                  <text x={mid.x} y={mid.y + 3.4} style={{ fill: active ? col : 'rgb(var(--graph-edge-label))' }} fontSize={9.5} textAnchor="middle">{e.type}</text>
+                    style={{ fill: 'rgb(var(--ink-850))' }} stroke={mono ? monoInk : col} strokeOpacity={mono ? 1 : 0.45} strokeWidth={0.6} />
+                  <text x={mid.x} y={mid.y + 3.4} style={{ fill: mono ? monoInk : (active ? col : 'rgb(var(--graph-edge-label))') }} fontSize={9.5} textAnchor="middle">{e.type}</text>
                 </g>
               </g>
             )
@@ -348,9 +370,15 @@ export default function RelationGraph({ rows }: Props) {
                 onPointerDown={e => onPointerDown(e, 'node', n.name, p)}
                 style={{ cursor: 'grab' }}
               >
-                <circle cx={p.x} cy={p.y} r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: active ? 'rgb(var(--graph-accent))' : col }}
-                  strokeWidth={active ? 3 : 2} strokeDasharray={notYet ? '3 3' : undefined} />
-                <circle cx={p.x} cy={p.y} r={r * 0.42} style={{ fill: active ? 'rgb(var(--graph-accent))' : col }} />
+                {mono
+                  ? <path d={monoShapePath(nodeShapeOf(n.faction), p.x, p.y, r)}
+                    style={{ fill: 'rgb(var(--graph-node))', stroke: monoInk }}
+                    strokeWidth={active ? 3 : 2} strokeDasharray={notYet ? '3 3' : undefined} />
+                  : <>
+                    <circle cx={p.x} cy={p.y} r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: active ? 'rgb(var(--graph-accent))' : col }}
+                      strokeWidth={active ? 3 : 2} strokeDasharray={notYet ? '3 3' : undefined} />
+                    <circle cx={p.x} cy={p.y} r={r * 0.42} style={{ fill: active ? 'rgb(var(--graph-accent))' : col }} />
+                  </>}
                 <text x={p.x} y={p.y + r + 15} style={{ fill: active ? 'rgb(var(--graph-accent-text))' : 'rgb(var(--graph-node-text))' }} fontSize={10} textAnchor="middle">{n.name}</text>
               </g>
             )
@@ -368,7 +396,7 @@ export default function RelationGraph({ rows }: Props) {
           </>
         ) : hoverEdge ? (
           <>
-            <span className="text-11 font-semibold" style={{ color: colorOf(hoverEdge.type) }}>{hoverEdge.a} → {hoverEdge.type} → {hoverEdge.b}</span>
+            <span className="text-11 font-semibold" style={{ color: mono ? monoInk : colorOf(hoverEdge.type) }}>{hoverEdge.a} → {hoverEdge.type} → {hoverEdge.b}</span>
             {hoverEdge.现状 && <span className="text-10 text-ink-400 truncate max-w-[38%]">现状：{hoverEdge.现状}</span>}
             {hoverEdge.知情度 && <span className="text-10 text-ink-400 truncate max-w-[38%]">知情度：{hoverEdge.知情度}</span>}
           </>
@@ -381,12 +409,16 @@ export default function RelationGraph({ rows }: Props) {
         <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap">
           {legendTypes.map(t => (
             <span key={t} className="flex items-center gap-1.5 text-10 text-ink-400">
-              <span className="w-3 h-3px rounded-full inline-block" style={{ background: colorOf(t) }} />
+              {mono
+                ? <svg width="16" height="8" aria-hidden="true"><line x1="1" y1="4" x2="15" y2="4" stroke={monoInk} strokeWidth="2" strokeDasharray={monoDash(t) || undefined} /></svg>
+                : <span className="w-3 h-3px rounded-full inline-block" style={{ background: colorOf(t) }} />}
               {t}
               {!TYPE_COLORS[t] && <span className="text-9 text-ink-500 border border-ink-700 rounded px-1 leading-none">自定义</span>}
             </span>
           ))}
-          <span className="text-10 text-ink-500 ml-auto">节点大小 = 交际面（不同关系人数）；同一对可并存多种关系（分弧 + 箭头标方向）</span>
+          <span className="text-10 text-ink-500 ml-auto">{mono
+            ? '线型 = 关系类型；节点形状 = 所属势力；节点大小 = 交际面（不同关系人数）'
+            : '节点大小 = 交际面（不同关系人数）；同一对可并存多种关系（分弧 + 箭头标方向）'}</span>
         </div>
       )}
       {/* 收起的人物：点击单个可重新展开 */}

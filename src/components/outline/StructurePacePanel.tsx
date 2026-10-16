@@ -19,6 +19,8 @@ import type { Chapter, TableRow } from '@/lib/types'
 import { hydrateCreativeSession, updateInputs, useCreativeSession, saveInputsQuiet } from '@/lib/creative/creativeSession'
 import { getStoryTemplate } from '@/lib/outline/storyStructures'
 import { BEAT_COLORS } from '@/lib/settings/palette'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
+import { monoHatchBackground } from '@/lib/settings/monoMarks'
 import {
   buildChapterShares, alignBeats, alignHooks, PACE_MIN_CHAPTERS, PACE_LEVEL_LABEL,
   type BeatAlignment, type PaceLevel, type HookRowInput,
@@ -37,6 +39,9 @@ const levelBadge = (l: PaceLevel) =>
 
 /** 一条水平占比带：每拍一格，宽＝占比，窄格不写文字只留 hover 说明 */
 function BandStrip({ alignments, mode }: { alignments: BeatAlignment[]; mode: 'ideal' | 'actual' }) {
+  // 🔴 mono：拍色失效 ⇒ 改由**填充纹理**（角度 / 疏密）× 拍名文字区分
+  const mono = useMonoTheme()
+  const ink = 'rgb(var(--ink-100))'
   return (
     <div className="flex h-7 w-full overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
       {alignments.map((a, i) => {
@@ -46,12 +51,12 @@ function BandStrip({ alignments, mode }: { alignments: BeatAlignment[]; mode: 'i
         return (
           <div
             key={a.name}
-            style={{ width: `${w}%`, background: `${beatColor(i)}2e`, borderRight: '1px solid rgb(var(--ink-100) / 0.06)' }}
+            style={{ width: `${w}%`, background: mono ? undefined : `${beatColor(i)}2e`, backgroundImage: mono ? monoHatchBackground(i) : undefined, borderRight: mono ? `1px solid ${ink}` : '1px solid rgb(var(--ink-100) / 0.06)' }}
             className="flex items-center justify-center overflow-hidden whitespace-nowrap"
             title={`${a.name}：${label}`}
           >
-            {w >= 8 && <span className="px-1 text-10" style={{ color: beatColor(i) }}>{a.name}</span>}
-            {w >= 4 && w < 8 && <span className="text-9" style={{ color: beatColor(i) }}>·</span>}
+            {w >= 8 && <span className="px-1 text-10" style={{ color: mono ? ink : beatColor(i) }}>{a.name}</span>}
+            {w >= 4 && w < 8 && <span className="text-9" style={{ color: mono ? ink : beatColor(i) }}>·</span>}
           </div>
         )
       })}
@@ -64,6 +69,8 @@ function BandStrip({ alignments, mode }: { alignments: BeatAlignment[]; mode: 'i
  * 与字数带的差异在行首标签写明（「爽点」）——度量是行数不是字数，且含「排了还没写」的章。
  */
 function HookStrip({ stats }: { stats: { name: string; count: number; kinds: string[]; pct: number }[] }) {
+  const mono = useMonoTheme()
+  const ink = 'rgb(var(--ink-100))'
   return (
     <div className="flex h-7 w-full overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
       {stats.map((s, i) => {
@@ -72,12 +79,12 @@ function HookStrip({ stats }: { stats: { name: string; count: number; kinds: str
         return (
           <div
             key={s.name}
-            style={{ width: `${s.pct}%`, background: `${beatColor(i)}2e`, borderRight: '1px solid rgb(var(--ink-100) / 0.06)' }}
+            style={{ width: `${s.pct}%`, background: mono ? undefined : `${beatColor(i)}2e`, backgroundImage: mono ? monoHatchBackground(i) : undefined, borderRight: mono ? `1px solid ${ink}` : '1px solid rgb(var(--ink-100) / 0.06)' }}
             className="flex items-center justify-center overflow-hidden whitespace-nowrap"
             title={`${s.name}：${s.count} 个爽点${kinds}`}
           >
-            {s.pct >= 8 && <span className="px-1 text-10" style={{ color: beatColor(i) }}>{s.name} ×{s.count}</span>}
-            {s.pct >= 4 && s.pct < 8 && <span className="text-9" style={{ color: beatColor(i) }}>·</span>}
+            {s.pct >= 8 && <span className="px-1 text-10" style={{ color: mono ? ink : beatColor(i) }}>{s.name} ×{s.count}</span>}
+            {s.pct >= 4 && s.pct < 8 && <span className="text-9" style={{ color: mono ? ink : beatColor(i) }}>·</span>}
           </div>
         )
       })}

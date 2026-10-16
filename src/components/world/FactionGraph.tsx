@@ -9,6 +9,8 @@ import { forceLayout } from '@/lib/world/forceLayout'
 import { curvedEdge, curveMidpoint, groupColor, groupBy, convexHull, hullPath, pairKey, edgeCurveRatios, curveArrow } from '@/lib/world/graphGrouping'
 import { buildTypeColors, makeColorLookup } from '@/lib/world/relationColors'
 import { FACTION_PRESET_COLORS } from '@/lib/settings/palette'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
+import { monoDashLookup, monoShapeLookup, monoShapePath } from '@/lib/settings/monoMarks'
 
 interface Props {
   rows: TableRow[]
@@ -129,6 +131,13 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
   const edgeTypes = useMemo(() => [...new Set(edges.map(e => e.type))], [edges])
   const colorOf = useMemo(() => makeColorLookup(buildTypeColors(edgeTypes, REL_COLORS)), [edgeTypes])
 
+  // 🔴 纯黑白（3.1.1）：语义色失效 ⇒ 关系类型改由**线型**承载、类别改由**节点形状**承载；
+  //    只在此主题下分支，其他主题的语义色一字不动。
+  const mono = useMonoTheme()
+  const monoInk = 'rgb(var(--ink-100))'
+  // 线型按「关系类型首次出现顺序」分配（图内互不相同）
+  const monoDash = useMemo(() => monoDashLookup(edgeTypes), [edgeTypes])
+
   // 布局依赖「上级」层级（来自异步读到的 nationMeta），故与建图分开算
   const layout = useMemo(() => {
     const names = nodes.map(n => n.name)
@@ -151,6 +160,13 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
   )
 
   const posOf = (nm: string) => dragged.get(nm) ?? layout.get(nm) ?? { x: W / 2, y: H / 2 }
+
+  // 形状按「类别首次出现顺序」分配（图内互不相同；无类别一律圆形）
+  const monoShape = useMemo(
+    () => monoShapeLookup(nodesWithMeta.map(n => n.category).filter(Boolean)),
+    [nodesWithMeta],
+  )
+  const nodeShapeOf = (category: string) => (category ? monoShape(category) : 'circle')
 
   const posMap = useMemo(() => {
     const m = new Map<string, { x: number; y: number }>()
@@ -248,7 +264,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
         <defs>
           <pattern id="fg-dots" width="26" height="26" patternUnits="userSpaceOnUse">
             {/* 主题化网格（与人物关系图统一：同变量、同透明度） */}
-            <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity="0.28" />
+            <circle cx="1.4" cy="1.4" r="1" style={{ fill: 'rgb(var(--graph-grid))' }} opacity={mono ? 1 : 0.28} />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#fg-dots)" />
@@ -256,8 +272,10 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
           {/* 类别凸包（垫底） */}
           {hulls.map(h => (
             <g key={`hull-${h.cat}`} pointerEvents="none">
-              <path d={h.path} fill={h.color} fillOpacity={0.09} stroke={h.color} strokeOpacity={0.38} strokeWidth={1.2} />
-              <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: h.color }}>{h.cat}</text>
+              {mono
+                ? <path d={h.path} fill="none" stroke={monoInk} strokeWidth={1.2} strokeDasharray="7 5" />
+                : <path d={h.path} fill={h.color} fillOpacity={0.09} stroke={h.color} strokeOpacity={0.38} strokeWidth={1.2} />}
+              <text x={h.labelX} y={h.labelY} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: mono ? monoInk : h.color }}>{h.cat}</text>
             </g>
           ))}
           {/* 边（弧线 + 药丸标签；同一对多条 → 分弧 + 箭头标方向） */}
@@ -279,13 +297,14 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
                 <path
                   d={curvedEdge(pa.x, pa.y, pb.x, pb.y, curve)}
                   fill="none"
-                  stroke={color}
+                  stroke={mono ? monoInk : color}
                   strokeWidth={active ? 3 : 1.6}
                   strokeOpacity={active ? 0.95 : 0.55}
                   strokeLinecap="round"
+                  strokeDasharray={mono ? (monoDash(e.type) || undefined) : undefined}
                 />
                 {cv?.multi && (
-                  <path d={curveArrow(pa.x, pa.y, pb.x, pb.y, curve, 12, 6)} data-arrow="1" fill={color} opacity={active ? 0.95 : 0.65} />
+                  <path d={curveArrow(pa.x, pa.y, pb.x, pb.y, curve, 12, 6)} data-arrow="1" fill={mono ? monoInk : color} opacity={active ? 0.95 : 0.65} />
                 )}
                 <g
                   opacity={active ? 1 : 0.7}
@@ -294,9 +313,9 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
                   onPointerLeave={() => setHoverName(h => (h?.kind === 'edge' && h.id === e.id ? null : h))}
                 >
                   <rect x={mid.x - labelW / 2} y={mid.y - 9.5} width={labelW} height={17} rx={8.5}
-                    style={{ fill: 'rgb(var(--ink-850))' }} stroke={color} strokeOpacity={0.45} strokeWidth={0.6} />
+                    style={{ fill: 'rgb(var(--ink-850))' }} stroke={mono ? monoInk : color} strokeOpacity={mono ? 1 : 0.45} strokeWidth={0.6} />
                   <text x={mid.x} y={mid.y + 4} textAnchor="middle" fontSize={11}
-                    style={{ fill: active ? color : 'rgb(var(--graph-edge-label))' }}>{e.type}</text>
+                    style={{ fill: mono ? monoInk : (active ? color : 'rgb(var(--graph-edge-label))') }}>{e.type}</text>
                 </g>
               </g>
             )
@@ -320,8 +339,12 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
                 onPointerLeave={() => setHoverName(h => (h?.kind === 'node' && h.name === nd.name ? null : h))}
                 className="cursor-pointer"
               >
-                <circle r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: color }} strokeWidth={isSel ? 3 : 2} />
-                <circle r={r * 0.42} style={{ fill: color }} />
+                {mono
+                  ? <path d={monoShapePath(nodeShapeOf(nd.category), 0, 0, r)} style={{ fill: 'rgb(var(--graph-node))', stroke: monoInk }} strokeWidth={isSel ? 3 : 2} />
+                  : <>
+                    <circle r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: color }} strokeWidth={isSel ? 3 : 2} />
+                    <circle r={r * 0.42} style={{ fill: color }} />
+                  </>}
                 <text
                   y={r + 15}
                   textAnchor="middle"
@@ -345,7 +368,9 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
           ]
           return ordered.map(t => (
             <span key={t} className="flex items-center gap-1 text-11 text-ink-300">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(t) }} />
+              {mono
+                ? <svg width="16" height="8" aria-hidden="true"><line x1="1" y1="4" x2="15" y2="4" stroke={monoInk} strokeWidth="2" strokeDasharray={monoDash(t) || undefined} /></svg>
+                : <span className="w-2.5 h-2.5 rounded-full" style={{ background: colorOf(t) }} />}
               {t}
               {!REL_COLORS[t] && <span className="text-9 text-ink-500 bg-ink-900 px-1 rounded leading-none">自定义</span>}
             </span>
@@ -358,7 +383,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
         <div className="absolute left-3 bottom-3 right-3 flex items-center gap-3 flex-wrap bg-ink-850/85 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
           {hoverEdge ? (
             <>
-              <span className="text-11 font-semibold" style={{ color: colorOf(hoverEdge.type) }}>{hoverEdge.a} → {hoverEdge.type} → {hoverEdge.b}</span>
+              <span className="text-11 font-semibold" style={{ color: mono ? monoInk : colorOf(hoverEdge.type) }}>{hoverEdge.a} → {hoverEdge.type} → {hoverEdge.b}</span>
               {hoverEdge.status && <span className="text-10 text-ink-400 truncate max-w-[50%]">现状：{hoverEdge.status}</span>}
             </>
           ) : (

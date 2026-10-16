@@ -3,6 +3,7 @@ import * as db from '@/lib/db'
 import { todayKey } from '@/lib/app/date'
 import NumberField from '@/components/common/NumberField'
 import { GOAL_ACTUAL_COLOR } from '@/lib/settings/palette'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
 
 interface Props {
   totalWords: number
@@ -15,6 +16,9 @@ interface Props {
  * 基于最近 7 日平均日产与剩余字数，预估完稿日期。目标存于项目设置。
  */
 export default function WritingGoals({ totalWords, dailyStats }: Props) {
+  // 🔴 mono（3.1.1）：「实际累计」的语义绿失效 ⇒ 改由**实线 vs 目标虚线**区分（黑/白二值）
+  const mono = useMonoTheme()
+  const ink = 'rgb(var(--ink-100))'
   const [daily, setDaily] = useState(2000)
   const [total, setTotal] = useState(0)
   const [deadline, setDeadline] = useState('')
@@ -151,8 +155,14 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-12 font-semibold text-ink-100">近 14 天燃尽图</span>
             <div className="flex items-center gap-3 text-10 text-ink-400">
-              <span className="flex items-center gap-1"><i className="w-3.5 h-0.5 bg-amber/70 inline-block rounded" /> 目标累计</span>
-              <span className="flex items-center gap-1"><i className="w-3.5 h-0.5 inline-block rounded" style={{ background: GOAL_ACTUAL_COLOR }} /> 实际累计</span>
+              <span className="flex items-center gap-1">
+                {mono ? <svg width="14" height="8" aria-hidden="true"><line x1="1" y1="4" x2="13" y2="4" stroke={ink} strokeWidth="1.6" strokeDasharray="5 4" /></svg>
+                  : <i className="w-3.5 h-0.5 bg-amber/70 inline-block rounded" />} 目标累计
+              </span>
+              <span className="flex items-center gap-1">
+                {mono ? <svg width="14" height="8" aria-hidden="true"><line x1="1" y1="4" x2="13" y2="4" stroke={ink} strokeWidth="2.4" /></svg>
+                  : <i className="w-3.5 h-0.5 inline-block rounded" style={{ background: GOAL_ACTUAL_COLOR }} />} 实际累计
+              </span>
             </div>
           </div>
           <svg viewBox={`0 0 ${bW} ${bH}`} className="w-full" style={{ maxHeight: bH }} role="img" aria-label="近14天码字燃尽图">
@@ -169,8 +179,8 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
               <text key={i} x={bX(i)} y={bH - 6} textAnchor={i === 0 ? 'start' : i === BURNDOWN_DAYS - 1 ? 'end' : 'middle'} fontSize={9} style={{ fill: 'rgb(var(--ink-500))' }}>{burndown[i].label}</text>
             ))}
             <path d={bPath('targetCum')} fill="none" style={{ stroke: 'rgb(var(--amber))' }} strokeOpacity={0.75} strokeWidth={1.6} strokeDasharray="5 4" />
-            <path d={bPath('actualCum')} fill="none" stroke={GOAL_ACTUAL_COLOR} strokeWidth={2} />
-            <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} fill={GOAL_ACTUAL_COLOR} />
+            <path d={bPath('actualCum')} fill="none" stroke={mono ? ink : GOAL_ACTUAL_COLOR} strokeWidth={mono ? 2.4 : 2} />
+            <circle cx={bX(BURNDOWN_DAYS - 1)} cy={bY(burndown[BURNDOWN_DAYS - 1].actualCum)} r={3} fill={mono ? ink : GOAL_ACTUAL_COLOR} />
           </svg>
           <div className="text-10 text-ink-500 mt-1">
             今日累计 {burndown[BURNDOWN_DAYS - 1].actualCum.toLocaleString()} / 目标 {burndown[BURNDOWN_DAYS - 1].targetCum.toLocaleString()} 字

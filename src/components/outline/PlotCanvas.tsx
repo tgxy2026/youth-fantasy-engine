@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { PLOT_TYPE_COLORS } from '@/lib/settings/palette'
+import { useMonoTheme } from '@/lib/settings/useMonoTheme'
+import { monoCardBorder } from '@/lib/settings/monoMarks'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { Loader2, Eraser, Sparkles, GitBranch, Check, X, Move, LayoutGrid } from 'lucide-react'
 import * as db from '@/lib/db'
@@ -34,6 +36,10 @@ const TYPE_META: Record<CardType, { label: string; color: string }> = {
   beat: { label: '结构节拍', color: PLOT_TYPE_COLORS.beat },
   idea: { label: '灵感融合', color: PLOT_TYPE_COLORS.idea },
 }
+/** 类型在色板中的固定次序 —— mono 下按它分配边框线型（保证六类互不相同） */
+const TYPE_ORDER = Object.keys(TYPE_META)
+const typeIndexOf = (t: CardType) => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? 0 : i }
+
 const HEADER_TO_TYPE: Record<string, CardType> = {
   '待办伏笔': 'foreshadow', '钩子与爽点': 'hook', '角色状态提醒': 'character', '下一章衔接': 'next',
 }
@@ -68,6 +74,9 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   const ai = useAIReady()
   const [chapters, setChapters] = useState<TableRow[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // 🔴 mono（3.1.1）：卡片类型色失效 ⇒ 改由**边框线型 × 粗细**承载（配合头部已有的类型名文字）
+  const mono = useMonoTheme()
+  const ink = 'rgb(var(--ink-100))'
   const [cards, setCards] = useState<CardItem[]>([])
   const [conns, setConns] = useState<Conn[]>([])
   const [connectMode, setConnectMode] = useState(false)
@@ -340,9 +349,17 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
           </HelpPopover>
         </div>
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-          {Object.entries(TYPE_META).map(([k, m]) => (
-            <span key={k} className="flex items-center gap-1 text-10 text-ink-400"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: m.color }} />{m.label}</span>
-          ))}
+          {Object.entries(TYPE_META).map(([k, m]) => {
+            const b = monoCardBorder(typeIndexOf(k as CardType))
+            return (
+              <span key={k} className="flex items-center gap-1 text-10 text-ink-400">
+                {mono
+                  ? <span className="w-3 h-3 inline-block rounded-sm" style={{ borderStyle: b.borderStyle, borderWidth: b.borderWidth, borderColor: ink }} />
+                  : <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: m.color }} />}
+                {m.label}
+              </span>
+            )
+          })}
           <span className="flex items-center gap-1 text-10 text-ink-500 border border-ink-700 rounded-md px-1.5 py-1" title="按住鼠标左键拖动空白处即可平移画布">
             <Move size={10} /> 左键拖动平移
           </span>
@@ -454,17 +471,20 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
 
               {cards.map(c => {
                 const meta = TYPE_META[c.type]
+                const monoBorder = monoCardBorder(typeIndexOf(c.type))
                 const isPending = pendingConn === c.id
                 return (
                   <div
                     key={c.id}
                     onPointerDown={e => onCardDown(e, c.id)}
                     className={`group absolute w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-ink-850 shadow-lg select-none ${connectMode ? 'cursor-pointer' : 'cursor-grab'}`}
-                    style={{ left: c.x, top: c.y, borderColor: isPending ? meta.color : 'rgb(var(--graph-grid))', boxShadow: isPending ? `0 0 0 2px ${meta.color}` : undefined }}
+                    style={{ left: c.x, top: c.y, borderColor: isPending ? (mono ? ink : meta.color) : 'rgb(var(--graph-grid))', boxShadow: isPending ? `0 0 0 2px ${mono ? ink : meta.color}` : undefined, ...(mono ? monoBorder : {}) }}
                   >
-                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-ink-700" style={{ borderTopColor: meta.color }}>
-                      <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: meta.color }} />
-                      <span className="text-10 font-medium" style={{ color: meta.color }}>{meta.label}</span>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-ink-700" style={mono ? { borderTopWidth: monoBorder.borderWidth, borderTopStyle: monoBorder.borderStyle, borderTopColor: ink } : { borderTopColor: meta.color }}>
+                      {mono
+                        ? <span className="w-2.5 h-2.5 shrink-0 inline-block rounded-sm" style={{ borderStyle: monoBorder.borderStyle, borderWidth: monoBorder.borderWidth, borderColor: ink }} />
+                        : <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: meta.color }} />}
+                      <span className="text-10 font-medium" style={{ color: mono ? ink : meta.color }}>{meta.label}</span>
                       {/* C-1 · 2.6.0：灵感融合卡兑现「每张卡标注用了哪几条灵感」——溯源编号显示在头部右侧（idea 卡 chapter 恒空）；
                           旧快照的 idea 卡没有 basedOn 字段 → 明示「未记录」，不留空白让人以为坏了 */}
                       <span className="text-9 text-ink-500 ml-auto truncate">
