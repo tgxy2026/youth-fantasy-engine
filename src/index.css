@@ -550,6 +550,24 @@
   color: #000000;
 }
 
+/* ⑪ 图表与裸分段控件（2026-10-16 全量审计补）。
+     ① 码字热力图：四档底色是 bg-ink-800 与 bg-amber/40·60·80·amber —— 在本主题下
+        ink 面与 bg-amber/N 全被回收成纯白，于是「0 字」和「1–2999 字」长得一模一样、
+        热力图彻底失效（而它正长在已验收的工作面板上）。改由**线型 / 粗细 / 填充**承载档位
+        —— P0-D 验收第 4 条「图表通过线型、符号或文字标记区分信息」。
+        档位由 Dashboard 的 heatLevel() 输出到 data-heat（0=无产出 … 4=最高）。
+     ② 裸分段控件（云同步「目录中转 / WebDAV / S3」、日历选择器等）的选中态是
+        `bg-amber/N + text-amber`，**没有 border-amber 令牌** ⇒ 规则⑦的选中补偿抓不到，
+        选中项与未选中项都成了白底黑字。这里按「琥珀底 + 琥珀字」这一组合精确补外轮廓双线。 */
+[data-theme='mono'] [data-heat='1'] { box-shadow: inset 0 0 0 1px #000000; }
+[data-theme='mono'] [data-heat='2'] { box-shadow: inset 0 0 0 2px #000000; }
+[data-theme='mono'] [data-heat='3'] { background-color: #000000; }
+[data-theme='mono'] [data-heat='4'] { background-color: #000000; outline: 1px solid #000000; outline-offset: 1px; }
+[data-theme='mono'] [class*='bg-amber/'][class*='text-amber']:not([class*='hover:bg-amber']) {
+  outline: 1px solid #000000;
+  outline-offset: 1px;
+}
+
 /* 通用按钮按组件语义覆盖，不能从 hover:bg-* 子串推断当前底色。
    所有按钮（含实心主操作/危险按钮）统一白底黑字，轮廓继续表达选中、悬停和聚焦。 */
 [data-theme='mono'] button[data-button-variant] {

@@ -275,5 +275,20 @@ function emptyCtx(existing: CardRecord[] = []): ImportContext {
   ok('R9：标题也空时保持空（仍会被判缺必填）', blank[0].data['姓名'] === '', JSON.stringify(blank[0].data['姓名']))
 }
 
+// ---------- 11. 说明生成器对「虚拟表格页签」幂等（R10 接线的隐性依赖） ----------
+//
+// 🔴 为什么值得钉：导入弹窗拿到的是 `cardTabToTableTab(tab)` 的结果（虚拟页签），
+//    而 `guideBuilder`（= buildCardImportGuide）内部会**再拍平一次**。这目前只因为
+//    `cardTabToTableTab` 用 `...tab` 顺带保留了 `modules` 才成立 —— 一旦日后把 modules
+//    从虚拟页签上剥离，说明文档会**静默退化**成通用版（作者下载到的说明悄悄少了几段）。
+{
+  const fromVirtual = buildCardImportGuide(vtab)
+  ok('R10：对虚拟表格页签调用仍产出卡片特有段落',
+    fromVirtual.includes('人物立绘不在 CSV 里') && fromVirtual.includes('《主要角色》'),
+    fromVirtual.slice(0, 60))
+  ok('R10：两种入参（原页签 / 虚拟页签）产出完全一致',
+    fromVirtual === buildCardImportGuide(charMain))
+}
+
 console.log(`\n=== cardIO: ${pass} passed, ${fail} failed ===`)
 if (fail > 0) process.exit(1)

@@ -211,12 +211,14 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
   }
   // 色阶最低档从 /20 提到 /40：浅色主题（护眼/羊皮卷）下 amber 低透明度与近白背景对比度不足 1.6:1，
   // 有产出的格子看起来和空格子一样，热力图等于失效。四档仍保留递进关系。
+  //
+  // 🔴 档位是**单一判据**，色阶与「纯黑白」下的线型标记都由它派生（2026-10-16 全量审计）：
+  //    mono 主题会把 `bg-amber/N` 与 `bg-ink-800` 一起回收成纯白 ⇒ 四档底色塌成一档、
+  //    热力图彻底失效。故除颜色外再输出 `data-heat`，由 `index.css` 的 mono 段用
+  //    **线型 / 粗细 / 填充**区分（P0-D 验收第 4 条：图表用线型、符号或文字区分信息）。
+  const heatLevel = (w: number) => (w === 0 ? 0 : w < 500 ? 1 : w < 1500 ? 2 : w < 3000 ? 3 : 4)
   const heatColor = (w: number) =>
-    w === 0 ? 'bg-ink-800'
-    : w < 500 ? 'bg-amber/40'
-    : w < 1500 ? 'bg-amber/60'
-    : w < 3000 ? 'bg-amber/80'
-    : 'bg-amber'
+    ['bg-ink-800', 'bg-amber/40', 'bg-amber/60', 'bg-amber/80', 'bg-amber'][heatLevel(w)]
 
   const statCards = [
     {
@@ -350,6 +352,7 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
                   return (
                     <div
                       key={dow}
+                      data-heat={heatLevel(cell.words)}
                       title={`${cell.date}：${cell.words} 字`}
                       className={`w-11px h-11px rounded-2 ${heatColor(cell.words)} transition-colors hover:ring-1 hover:ring-amber/60`}
                     />
@@ -361,11 +364,11 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
         </div>
         <div className="flex items-center gap-1.5 mt-2 text-9 text-ink-500">
           <span>少</span>
-          <span className="w-11px h-11px rounded-2 bg-ink-800 inline-block" />
-          <span className="w-11px h-11px rounded-2 bg-amber/40 inline-block" />
-          <span className="w-11px h-11px rounded-2 bg-amber/60 inline-block" />
-          <span className="w-11px h-11px rounded-2 bg-amber/80 inline-block" />
-          <span className="w-11px h-11px rounded-2 bg-amber inline-block" />
+          <span data-heat={0} className="w-11px h-11px rounded-2 bg-ink-800 inline-block" />
+          <span data-heat={1} className="w-11px h-11px rounded-2 bg-amber/40 inline-block" />
+          <span data-heat={2} className="w-11px h-11px rounded-2 bg-amber/60 inline-block" />
+          <span data-heat={3} className="w-11px h-11px rounded-2 bg-amber/80 inline-block" />
+          <span data-heat={4} className="w-11px h-11px rounded-2 bg-amber inline-block" />
           <span>多</span>
           <span className="ml-3">近 26 周 · 数据来自编辑器自动记录（进/减字数都计入当日）</span>
         </div>
@@ -408,10 +411,16 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
               `icon-amber` 是**定宽图标键**（ICON_SIZE.sm = h-8 w-8 = 32px），
               里面塞「去写作 + 箭头」时宽度不够 ⇒ 文字被挤成一行一个字。
               文字型导航键必须走 bare + 显式 h-8（同 NovelEditorChapterTree 的导出键口径）。 */}
-          <Button variant="bare" onClick={() => onNavigate('progress')}
-            className="mt-4 flex items-center gap-1 h-8 px-2.5 rounded-lg text-11 text-ink-400 hover:text-amber transition-colors">
-            去登记今日字数 <ChevronRight size={11} />
-          </Button>
+          {/* 🔴 「写作进度」在自定义项目里可能没启用 ⇒ 此时**不渲染**这个入口（2026-10-16 全量审计）。
+              原先无条件渲染，而 `onNavigate` 在 App 层被 `tabVisible` 静默 return ——
+              按钮摆在那儿、点了毫无反应，正是「绝不静默」要禁的形态。
+              过滤口径与下方 quickLinks 的 `hiddenTabIds` 完全一致。 */}
+          {!hiddenTabIds.has('progress') && (
+            <Button variant="bare" onClick={() => onNavigate('progress')}
+              className="mt-4 flex items-center gap-1 h-8 px-2.5 rounded-lg text-11 text-ink-400 hover:text-amber transition-colors">
+              去登记今日字数 <ChevronRight size={11} />
+            </Button>
+          )}
         </Panel>
 
         {/* 快捷入口 */}

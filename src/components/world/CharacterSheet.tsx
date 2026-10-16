@@ -109,6 +109,17 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    * 见 `lib/storage/cardIO.ts` 的头注。
    */
   const vtab = useMemo(() => cardTabToTableTab(tab), [tab])
+  /**
+   * 含当前未保存草稿的记录列表 —— **导出**与**导入判重**共用它。
+   *
+   * 🔴 与 `TableSheet` 的 `sortedRows` 同口径：屏幕上是什么，导出 / 判重就按什么算。
+   *    判重若只读裸库数据，作者改了名（还没保存）再导入同名 CSV 就不会判重 ⇒ 重复建卡；
+   *    而导出又并了草稿 —— 同一页两个口径自相矛盾，最难自查。
+   */
+  const recordsWithDraft = useMemo(
+    () => (draft ? records.map(r => (r.id === draft.id ? draft : r)) : records),
+    [records, draft],
+  )
   const visibleRecords = hideRetired ? records.filter(r => statusOf(r) !== '已退场') : records
 
   // 左栏搜索（A+C 的 C 项）：角色一多时，滚只解决「翻得到」、搜才解决「定位快」
@@ -226,8 +237,15 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    *    （界面与隔离 IndexedDB 双确认：改完不保存就导入，切回来恢复原值）。
    *
    * @returns 是否允许继续切卡。落库失败返回 false ⇒ 调用方必须中止，保留旧草稿与选择。
+   * @param silent 静默模式：不弹 toast，把「提示」交给调用方。导入路径用它 ——
+   *   那里需要把失败**抛给导入弹窗**，让弹窗不关窗、保留粘贴内容，作者才能真的「重试」。
+   *
+   * 🔴 **调用方纪律**：本函数用**函数式** `setRecords` 同步内存副本，所以紧接着追加新卡时
+   *    也必须写 `setRecords(list => [...list, rec])`。写成 `setRecords([...records, rec])`
+   *    （闭包里的旧数组）会**整个覆盖**掉本次同步 —— 表现为「库里已是新值、界面还是旧值」，
+   *    作者再改一处保存就把刚才的编辑写回旧值。这是 2026-10-16 自审抓出的 R8 残留。
    */
-  const flushCurrentDraft = useCallback(async (): Promise<boolean> => {
+  const flushCurrentDraft = useCallback(async (silent = false): Promise<boolean> => {
     const cur = draftRef.current
     if (!dirtyRef.current || !cur) return true
     try {
@@ -238,10 +256,12 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       dirtyRef.current = false
       return true
     } catch (e) {
-      showToast(
-        `保存当前${nounCard}失败，已取消本次操作 —— 请先手动保存后重试：${e instanceof Error ? e.message : String(e)}`,
-        'error',
-      )
+      if (!silent) {
+        showToast(
+          `保存当前${nounCard}失败，已取消本次操作 —— 请先手动保存后重试：${e instanceof Error ? e.message : String(e)}`,
+          'error',
+        )
+      }
       return false
     }
   }, [nounCard])
@@ -261,7 +281,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       order: records.length,
     }
     await saveCardRecord(rec)
-    setRecords([...records, rec])
+    setRecords(list => [...list, rec])
     setActiveId(rec.id)
     setDraft(rec)
     setShowFill(false)
@@ -289,7 +309,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       if (!await flushCurrentDraft()) return
       const rec: CardRecord = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, name: v, data: {}, order: records.length }
       await saveCardRecord(rec)
-      setRecords([...records, rec])
+      setRecords(list => [...list, rec])
       setActiveId(rec.id)
       setDraft(rec)
     } else {
@@ -329,13 +349,22 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    *    并发发起且不等待会把失败静默吞掉（界面已加进来、库里其实没写进去，重开这一页就消失）。
    */
   const handleImport = async (picked: ImportRowResult[]) => {
-    // R8：导入后会自动切到第一张新卡，先把当前卡的脏草稿落库（失败则中止导入）
-    if (!await flushCurrentDraft()) return
+    // R8：导入后会自动切到第一张新卡，先把当前卡的脏草稿落库。
+    // 🔴 失败必须**抛错**，不能静默 return —— 弹窗的 apply() 只在 onAdd 抛错时才不关窗；
+    //    直接 return 会让它照常 onClose()，粘贴的内容连同「重试」的机会一起没了。
+    if (!await flushCurrentDraft(true)) {
+      throw new Error('当前角色卡未能保存，导入已取消 —— 请先手动保存后重试')
+    }
     const created = buildCardRecords(picked, tab, records, getCurrentProjectId(), uid)
     const okOnes: CardRecord[] = []
     let failed = 0
+    let firstErr = ''
     for (const rec of created) {
-      try { await saveCardRecord(rec); okOnes.push(rec) } catch { failed++ }
+      try { await saveCardRecord(rec); okOnes.push(rec) } catch (e) {
+        failed++
+        // 带上第一条失败原因：只报「N 张没能写入」等于让作者去猜（磁盘满？权限？IDB 异常？）
+        if (!firstErr) firstErr = e instanceof Error ? e.message : String(e)
+      }
     }
     if (okOnes.length) {
       setRecords(prev => [...prev, ...okOnes])
@@ -344,7 +373,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     }
     showToast(
       failed
-        ? `已导入 ${okOnes.length} 张，另有 ${failed} 张没能写入 —— 请重试`
+        ? `已导入 ${okOnes.length} 张，另有 ${failed} 张没能写入（${firstErr}）—— 请重试`
         : `已导入 ${okOnes.length} 张${nounCard}`,
       failed ? 'error' : 'success',
     )
@@ -361,8 +390,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       showToast(`还没有${nounCard}可导出 —— 可先用「导入」批量录入，或点「新建${noun}」逐张录入。`, 'info')
       return
     }
-    const list = draft ? records.map(r => (r.id === draft.id ? draft : r)) : records
-    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportCardsCsv(tab, list)], { type: 'text/csv;charset=utf-8' }))
+    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportCardsCsv(tab, recordsWithDraft)], { type: 'text/csv;charset=utf-8' }))
   }
 
   /**
@@ -788,7 +816,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       {showImport && (
         <TableImportDialog
           tab={vtab}
-          existing={cardRecordsToTableRows(tab, records)}
+          existing={cardRecordsToTableRows(tab, recordsWithDraft)}
           visCtx={ctx}
           guideBuilder={buildCardImportGuide}
           onAdd={handleImport}

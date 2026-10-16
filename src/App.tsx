@@ -422,7 +422,10 @@ export default function App() {
       }
     }
     setActiveTab(id)
-    if (id === 'editor' && chapterId) setEditorTarget(chapterId)
+    // 🔴 必须**连清空一起**处理（2026-10-16 全量审计）：旧实现只在 chapterId 非空时写、
+    //    全仓没有任何清空点 ⇒ 从章节规划板跳到第 3 章之后，作者在编辑器里切到第 8 章、
+    //    再点侧栏「正文编辑」，打开的仍是**第 3 章**（陈旧目标压过了「上次编辑章」）。
+    if (id === 'editor') setEditorTarget(chapterId ?? null)
   }, [visCtx])
 
   // 跨组件跳转事件（地图详情「跳到地理风物」、数据体检「跳转修复」等场景派发 yfe:navigate）

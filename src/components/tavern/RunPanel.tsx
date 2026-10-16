@@ -310,7 +310,7 @@ export default function RunPanel() {
                     placeholder="我搜查抽屉 / 我问他昨晚在哪 / 我观察四周…"
                     value={actionText}
                     onChange={e => setActionText(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void doAction() }} />
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && (e.ctrlKey || e.metaKey)) void doAction() }} />
                   <Button variant="primary" size="md" disabled={busy || !actionText.trim()} onClick={() => void doAction()}>
                     {busy ? <Loader2 size={14} className="animate-spin" /> : '开始 KP 一轮'}
                   </Button>
