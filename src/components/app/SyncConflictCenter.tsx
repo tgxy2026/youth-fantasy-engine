@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Download, RotateCcw, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
@@ -6,11 +6,16 @@ import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { downloadBlob } from '@/lib/storage/zip'
 import * as db from '@/lib/db'
 import type { StoredSyncConflict } from '@/lib/db'
+import {
+  CONFLICT_PAGE, CONFLICT_RETENTION_DAYS, CONFLICT_SIZE_WARN_BYTES, CONFLICT_TOTAL_WARN_BYTES,
+  conflictStats, conflictStoreLabel, conflictStores, filterConflicts, formatConflictBytes, isConflictExpired,
+  type ConflictStatusFilter,
+} from '@/lib/sync/conflictView'
 
 const labelOf = (c: StoredSyncConflict) => {
   const row = (c.server && typeof c.server === 'object' ? c.server : c.local) as { title?: unknown; name?: unknown } | null
   const name = row?.title ?? row?.name ?? c.key
-  return `${c.store || '未知类型'} · ${String(name ?? '未知记录')}`
+  return `${conflictStoreLabel(c.store)} · ${String(name ?? '未知记录')}`
 }
 
 const previewOf = (v: unknown) => {
@@ -25,6 +30,11 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState('')
+  // 🔴 3.1.1 · 筛选状态每次打开**重置为默认**（全部类型 / 全部状态）—— 不做跨会话持久化。
+  //    这样「上次筛了待处理、这次一条也看不到」的误会不存在（验收口径 4 允许「明确重置为默认」）。
+  const [storeFilter, setStoreFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<ConflictStatusFilter>('all')
+  const [shown, setShown] = useState(CONFLICT_PAGE)
 
   const reload = useCallback(async () => {
     try {
@@ -42,10 +52,32 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
     window.addEventListener('yfe:sync-conflict', reload)
     return () => window.removeEventListener('yfe:sync-conflict', reload)
   }, [reload])
-  useEffect(() => { if (open) void reload() }, [open, reload])
+  useEffect(() => {
+    if (!open) return
+    setStoreFilter('all'); setStatusFilter('all'); setShown(CONFLICT_PAGE)
+    void reload()
+  }, [open, reload])
 
-  const current = records.find(c => c.metaKey === selected)
-  const unresolved = records.filter(c => !c.resolvedAt).length
+  // 🔴 体积一次性算好（records 变才重算）：300+ 条时若在 render 里逐条 JSON.stringify，
+  //    每次选中/翻页都会重算一遍大正文序列化 —— 那是分页要解决的「卡顿」源头。
+  const stats = useMemo(() => conflictStats(records), [records])
+  const storeOptions = useMemo(() => conflictStores(records), [records])
+  const filtered = useMemo(
+    () => filterConflicts(records, { store: storeFilter, status: statusFilter }),
+    [records, storeFilter, statusFilter],
+  )
+  const visible = useMemo(() => filtered.slice(0, shown), [filtered, shown])
+  const sizeOf = (c: StoredSyncConflict) => stats.sizes.get(c.metaKey) ?? 0
+
+  // 选中项必须落在当前筛选结果里 —— 切换筛选后，旧的选中可能已被筛掉
+  useEffect(() => {
+    if (filtered.some(c => c.metaKey === selected)) return
+    setSelected(filtered[0]?.metaKey ?? null)
+  }, [filtered, selected])
+
+  const current = filtered.find(c => c.metaKey === selected)
+  const unresolved = stats.unresolved
+  const totalWarn = stats.bytes > CONFLICT_TOTAL_WARN_BYTES
   // 可原位恢复的**完整**条件（与 db/syncConflicts.ts 的前置校验逐条对齐）：
   // 章节冲突 + 云端那一版还在 + 本机这一章还在 + 属当前项目。
   // 🔴 旧实现只看「是 chapters 且 server 非空且 projectId 相符」——
@@ -117,24 +149,73 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
       <p className="mb-3 text-11 text-ink-400">冲突双方保存在本机。先核对内容，再导出或恢复；已处理记录可以保留作为历史。</p>
       {loadError && <p className="mb-3 text-12 text-danger">读取失败：{loadError}</p>}
       {records.length === 0 ? <div className="py-8 text-center text-12 text-ink-500">没有同步冲突记录</div> : <div className="space-y-3">
-        <div className="max-h-36 overflow-y-auto space-y-1">{records.map(c => <Button key={c.metaKey} variant="bare" onClick={() => setSelected(c.metaKey)}
-          className={`w-full rounded-lg border px-2 py-1.5 text-left text-11 ${selected === c.metaKey ? 'border-amber/50 bg-amber/10' : 'border-ink-700 bg-ink-800/50'}`}>
-          <span className="block truncate text-ink-100">{labelOf(c)} {c.resolvedAt ? '· 已处理' : '· 待处理'}</span>
-          <span className="text-10 text-ink-500">{new Date(c.at).toLocaleString()}</span>
-        </Button>)}</div>
-        {current && <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <div><h3 className="mb-1 text-11 text-ink-300">本机那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{previewOf(current.local)}</pre></div>
-            <div><h3 className="mb-1 text-11 text-ink-300">云端那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{previewOf(current.server)}</pre></div>
+        {/* 体积与保留策略：**只展示，不自动清理**（自动删除属不可逆操作，须主人单独确认） */}
+        <div className="rounded-lg border border-ink-700 bg-ink-800/50 p-2.5 text-10 text-ink-500">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>共 <b className="font-medium text-ink-200">{stats.total}</b> 条 · 待处理 <b className="font-medium text-ink-200">{stats.unresolved}</b> · 合计占用 <b className={totalWarn ? 'font-medium text-danger' : 'font-medium text-ink-200'}>{formatConflictBytes(stats.bytes)}</b></span>
+            {stats.expired > 0 && <span className="text-amber">其中 {stats.expired} 条已超保留期</span>}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" disabled={busy} onClick={() => exportRecord(current)}><Download size={12} /> 导出双方完整数据</Button>
-            {canRestore &&
-              <Button variant="secondary" disabled={busy} onClick={() => void restore(current)}><RotateCcw size={12} /> 恢复云端章节</Button>}
-            {!current.resolvedAt && <Button variant="secondary" disabled={busy} onClick={() => void resolve(current)}>标为已处理</Button>}
-            <Button variant="danger" disabled={busy} onClick={() => void remove(current)}><Trash2 size={12} /> 删除副本</Button>
+          <div className="mt-1 leading-relaxed">
+            保留策略：已处理的副本保留 <b className="font-medium text-ink-300">{CONFLICT_RETENTION_DAYS}</b> 天后会在这里提示「可清理」，<b className="font-medium text-ink-300">不会自动删除</b>；
+            单条超过 {formatConflictBytes(CONFLICT_SIZE_WARN_BYTES)}、或合计超过 {formatConflictBytes(CONFLICT_TOTAL_WARN_BYTES)} 时会明显增大本机数据文件。
           </div>
-          {!canRestore && <p className="text-11 text-ink-500">{restoreBlockedReason(current)}</p>}
+          {totalWarn && <div className="mt-1 text-danger">冲突数据合计已超过 {formatConflictBytes(CONFLICT_TOTAL_WARN_BYTES)} —— 建议导出留档后，删除不再需要的副本。</div>}
+        </div>
+
+        {/* 筛选：类型（按实际出现过的 store）+ 处理状态 */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="筛选冲突类型" value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
+            className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-12">
+            <option value="all">全部类型</option>
+            {storeOptions.map(s => <option key={s} value={s}>{conflictStoreLabel(s)}</option>)}
+          </select>
+          <select aria-label="筛选处理状态" value={statusFilter} onChange={e => setStatusFilter(e.target.value as ConflictStatusFilter)}
+            className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-12">
+            <option value="all">全部状态</option>
+            <option value="open">待处理</option>
+            <option value="resolved">已处理</option>
+          </select>
+          <span className="flex-1" />
+          <span className="text-10 text-ink-500">筛选后 {filtered.length} 条</span>
+        </div>
+
+        {filtered.length === 0 ? <div className="py-6 text-center text-12 text-ink-500">当前筛选条件下没有冲突记录</div> : <>
+          {/* 分批渲染：与「资料提及」面板同范式，300+ 条时不一次铺满 */}
+          <div className="max-h-56 overflow-y-auto space-y-1">{visible.map(c => {
+            const b = sizeOf(c)
+            const expired = isConflictExpired(c)
+            return <Button key={c.metaKey} variant="bare" onClick={() => setSelected(c.metaKey)}
+              className={`w-full rounded-lg border px-2 py-1.5 text-left text-11 ${selected === c.metaKey ? 'border-amber/50 bg-amber/10' : 'border-ink-700 bg-ink-800/50'}`}>
+              <span className="block truncate text-ink-100">{labelOf(c)} {c.resolvedAt ? '· 已处理' : '· 待处理'}{expired ? ' · 可清理' : ''}</span>
+              <span className="text-10 text-ink-500">{new Date(c.at).toLocaleString()} · <span className={b > CONFLICT_SIZE_WARN_BYTES ? 'text-danger' : ''}>{formatConflictBytes(b)}</span></span>
+            </Button>
+          })}</div>
+          {shown < filtered.length && <div className="text-center">
+            <Button variant="secondary" size="sm" onClick={() => setShown(s => s + CONFLICT_PAGE)}>
+              显示更多（剩余 {filtered.length - shown} 条）
+            </Button>
+          </div>}
+          {current && <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div><h3 className="mb-1 text-11 text-ink-300">本机那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{previewOf(current.local)}</pre></div>
+              <div><h3 className="mb-1 text-11 text-ink-300">云端那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{previewOf(current.server)}</pre></div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" disabled={busy} onClick={() => exportRecord(current)}><Download size={12} /> 导出双方完整数据</Button>
+              {canRestore &&
+                <Button variant="secondary" disabled={busy} onClick={() => void restore(current)}><RotateCcw size={12} /> 恢复云端章节</Button>}
+              {!current.resolvedAt && <Button variant="secondary" disabled={busy} onClick={() => void resolve(current)}>标为已处理</Button>}
+              <Button variant="danger" disabled={busy} onClick={() => void remove(current)}><Trash2 size={12} /> 删除副本</Button>
+            </div>
+            {!canRestore && <p className="text-11 text-ink-500">{restoreBlockedReason(current)}</p>}
+          </>}
+
+          {/* 底部状态条：与「资料提及」面板同范式 */}
+          <div className="flex items-center gap-3 rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-1.5 text-10 text-ink-600">
+            <span>共 {stats.total} 条 · 筛选后 {filtered.length} 条 · 已显示 {visible.length} 条 · 合计 {formatConflictBytes(stats.bytes)}</span>
+            <span className="flex-1" />
+            <span>点击记录查看双方内容</span>
+          </div>
         </>}
       </div>}
     </Modal>
