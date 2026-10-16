@@ -34,7 +34,7 @@ import { foldPendingAi, type AiSourceKind, type PendingAiNote } from '@/lib/ai/a
 import { ADVICE_START, ADVICE_END } from '@/components/jiewenji/JieWenJi'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { type VisCtx, refreshVolumeTabs } from '@/lib/schema'
-import { chapterSeqOf, chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { chapterSeqOf, chapterSeqMap, flattenAll } from '@/lib/outline/chapterSeq'
 import { syncChapterMaster } from '@/lib/outline/chapterMaster'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { readSetPref, writeSetPref, readStringPref, writeStringPref, usePersistedBool, usePersistedEnum } from '@/lib/settings/uiPrefs'
@@ -739,7 +739,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   }
   // 作品开头（前 3 章）正文，供「黄金三章检查」使用
   const openingText = useMemo(() => {
-    const flat = volumes.flatMap(v => chapters.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order))
+    // 🔴 走唯一真源：原先手写版没给卷排序（volumes 顺序不作数），且把孤儿章整章丢掉
+    const flat = flattenAll(volumes, chapters)
     return flat.slice(0, 3).map(c => `${c.title}\n${c.content}`).join('\n\n')
   }, [volumes, chapters])
 
@@ -912,8 +913,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     resetDrag()
   }
 
-  // 相邻章导航
-  const flat = volumes.flatMap(v => chapters.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order))
+  // 相邻章导航（全书叙事序：卷序 → 章序 → 孤儿章垫底，唯一真源）
+  const flat = flattenAll(volumes, chapters)
   const activeIdx = flat.findIndex(c => c.id === activeId)
 
   return {

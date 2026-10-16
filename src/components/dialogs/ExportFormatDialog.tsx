@@ -20,6 +20,7 @@ import type { PlatformTextOptions, DocxLayoutOptions } from '@/lib/storage/expor
 import { scanByPlatform } from '@/lib/audit/platformCheck'
 import type { PlatformId } from '@/lib/app/platformRules'
 import { getCustomSensitiveWords } from '@/lib/editor/sensitiveWords'
+import { flattenAll } from '@/lib/outline/chapterSeq'
 
 type Tab = 'platform' | 'markdown' | 'docx'
 /** 预设档是 UI 层概念（exporter 只认五值对象）；'custom' = 手动改过任意单项 */
@@ -211,10 +212,9 @@ export default function ExportFormatDialog({
   const hasContent = chapters.some(c => (c.content || '').trim())
 
   // 投稿稿章节列表：全书顺序（卷 → 章序 → 未分卷章节垫底），与 chaptersToTxt 的口径一致
-  const flattenAll = useMemo(() => [
-    ...volumes.flatMap(vol => chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.order - b.order)),
-    ...chapters.filter(c => !volumes.some(v => v.id === c.volumeId)),
-  ], [volumes, chapters])
+  // 🔴 2026-10-17：改走唯一真源 `chapterSeq.flattenAll`（原先手写版连「卷按 order 排」都没做，
+  //    且孤儿章不排序；与 AI 上下文 / 编辑器 / 酒馆四处口径漂移）
+  const orderedAll = useMemo(() => flattenAll(volumes, chapters), [volumes, chapters])
 
   const doExport = async () => {
     if (busy || !mod) return
@@ -417,13 +417,13 @@ export default function ExportFormatDialog({
                     <span className="text-11 text-ink-500">选定章节（已选 {picked.size} / {chapters.length}）</span>
                     <span className="flex items-center gap-1">
                       <Button variant="secondary" size="xs"
-                        onClick={() => setPicked(new Set(flattenAll.map(c => c.id)))}>全选</Button>
+                        onClick={() => setPicked(new Set(orderedAll.map(c => c.id)))}>全选</Button>
                       <Button variant="secondary" size="xs"
                         onClick={() => setPicked(new Set())}>清空</Button>
                     </span>
                   </div>
                   <div className="max-h-40 overflow-y-auto border border-ink-700 rounded-lg divide-y divide-ink-700">
-                    {flattenAll.map(ch => (
+                    {orderedAll.map(ch => (
                       <label key={ch.id} className="flex items-center gap-2 px-2.5 py-1 text-12 text-ink-200 hover:bg-ink-800/60 cursor-pointer">
                         <input type="checkbox" className="accent-[rgb(var(--amber))]" checked={picked.has(ch.id)}
                           onChange={e => {

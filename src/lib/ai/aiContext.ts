@@ -15,7 +15,7 @@ import { readAliases } from '@/lib/settings/aliases'
 import { splitNames } from '@/lib/audit/audit'
 import { clipText } from '@/lib/editor/textClip'
 import { todayKey } from '@/lib/app/date'
-import { sortChapters, flattenChapters, chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { sortChapters, flattenChapters, flattenAll, orphanChapters, chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { pickContinuationSources, type ContinuationPickOpts } from '@/lib/editor/continuationPick'
 import { composeSubSetsBlock, composeParallelSetBlock, isInternalFieldKey, isParallelSetTab, isWorldSetTab, splitActive } from '@/lib/world/worldSets'
 import { getActivePack, subItemLabel } from '@/lib/schemaTemplates/index'
@@ -595,8 +595,8 @@ function cutListAtAnchor<T extends { id: string }>(list: T[], anchorId?: string)
 async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
   try {
     const [vols, chs] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
-    const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
-    const flat = [...flattenChapters(vols, chs), ...orphans]
+    // 🔴 走唯一真源（含孤儿章垫底）：原先这里手写 `[...flattenChapters(), ...orphans]`
+    const flat = flattenAll(vols, chs)
     const i = flat.findIndex(c => c.id === anchorId)
     if (i < 0) return null
     return new Set(flat.slice(0, i + 1).map(c => c.id))
@@ -667,9 +667,8 @@ export async function buildChapterDigest(maxChapters = 200, anchorChapterId?: st
   // 必须按 (卷序, 章序) 展平：order 是卷内序号，直接全局按 order 排会把各卷同序号的章
   // 交错在一起，超过 maxChapters 截断时砍掉的子集也是错的（与 getChapterTexts 同源问题）。
   // 孤儿章（volumeId 指向不存在的卷）追加在叙事序末尾参与截断，否则会被 maxChapters 静默吞掉。
-  const flat = flattenChapters(vols, chs)
-  const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
-  const sorted = [...flat, ...orphans]
+  // 🔴 全书叙事序（含孤儿章垫底）：走唯一真源，与导出 / 编辑器伴写 / 酒馆锚点同口径
+  const sorted = flattenAll(vols, chs)
   // 酒馆模式：锚点裁剪 —— 只列到锚点章为止（之后再发生的事，此刻的角色不可能知道）
   const cut = cutListAtAnchor(sorted, anchorChapterId)
   const listed = cut.slice(0, maxChapters)
@@ -689,8 +688,8 @@ export async function buildChapterDigest(maxChapters = 200, anchorChapterId?: st
     }
   }
   for (const v of volOrder) emit(`◆ ${v.title || '未命名卷'}`, byVol.get(v.id) ?? [])
-  const orphan = listed.filter(c => !volOrder.some(v => v.id === c.volumeId))
-  emit('◆ 未分卷', orphan)
+  // 孤儿章判定走唯一真源（口径与 flattenAll 同源）
+  emit('◆ 未分卷', orphanChapters(vols, listed))
   if (cut.length > listed.length) lines.push(`（另有 ${cut.length - listed.length} 章未列出）`)
   return lines.join('\n')
 }
@@ -804,8 +803,7 @@ export async function getContinuationSources(
 ): Promise<ContinuationSources> {
   try {
     const [vols, chs] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
-    const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
-    const flat = [...flattenChapters(vols, chs), ...orphans]
+    const flat = flattenAll(vols, chs)
     const pick = pickContinuationSources(
       flat.map(c => ({ id: c.id, title: c.title, summary: c.summary ?? '', content: c.content ?? '' })),
       focusChapterId,
@@ -847,8 +845,8 @@ async function findRelatedChapters(focusChapterId: string, limit = 8): Promise<C
   // 🔴 孤儿章（volumeId 指向不存在的卷）必须并入叙事序，与 `buildChapterDigest` / `idsUpToAnchor`
   //    口径一致：否则焦点章本身是孤儿时 `findIndex` 找不到、召回整体失效；
   //    其他孤儿章也会被排除在候选之外（明明写过的章却永远不进"相关章节"）。
-  const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
-  const flat = [...flattenChapters(vols, chs), ...orphans]
+  //    ⇒ 直接调唯一真源 `flattenAll`（2026-10-17 收敛，原为手写拼接）
+  const flat = flattenAll(vols, chs)
   const idx = flat.findIndex(c => c.id === focusChapterId)
   if (idx < 0 || flat.length <= 1) return []
 

@@ -11,7 +11,7 @@
  *   （避免「陈渊」抢在「陈渊清欢」之前匹配）、超长正文降级只读纯文本、零宽匹配防御，全照原样。
  */
 import type { Volume, Chapter } from '@/lib/types'
-import { chapterSeqMap, flattenChapters } from '@/lib/outline/chapterSeq'
+import { chapterSeqMap, flattenChapters, flattenAll } from '@/lib/outline/chapterSeq'
 import { syncChapterMaster } from '@/lib/outline/chapterMaster'
 
 const HTML_ESCAPE_RE = /[&<>]/g
@@ -78,13 +78,11 @@ export const GHOST_CACHE_MAX = 20
  * 伴写取「上一章」必须走这个顺序 —— 跨卷时上一章＝上一卷的最后一章，而不是同卷的上一章。
  */
 export function orderedChapters(vols: Volume[], chs: Chapter[]): Chapter[] {
-  // 🔴 卷必须先按 order 排：调用方传进来的 vols 顺序不作数（拖拽重排后可能是乱的），
-  //    不排就会把卷二当成卷一 —— 伴写取「上一章」走的就是这条路径
-  //    （函数头注释写的「卷按 order」以前是句空话，代码压根没排）。
-  const sorted = [...vols].sort((a, b) => a.order - b.order)
-  // 未分卷章节（无 volumeId / 卷已删）垫底 —— 与 ExportFormatDialog.flattenAll 同一口径（审计 2026-09-28 修正）
-  const orphans = chs.filter(c => !sorted.some(v => v.id === c.volumeId)).sort((a, b) => a.order - b.order)
-  return [...sorted.flatMap(v => chs.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order)), ...orphans]
+  // 🔴 真源是 `chapterSeq.flattenAll`（卷按 order → 章按 order → 孤儿章垫底）。
+  //    2026-10-17 收敛：此处原本手写了一份同款展平（还额外重复了「卷要先排」的注释），
+  //    与导出 / AI 上下文 / 酒馆三处的口径各自漂移（孤儿章有的丢、有的不排序）。
+  //    保留本函数只为兼容既有调用点，行为与 flattenAll 完全一致。
+  return flattenAll(vols, chs)
 }
 
 /**

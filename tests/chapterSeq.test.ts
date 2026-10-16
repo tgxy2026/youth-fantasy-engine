@@ -2,7 +2,7 @@
 // 章节顺序是全书叙事时序的「唯一权威」：导出、AI 取正文、连续性校验、搜索结果、
 // 时光机全都依赖它。派生逻辑一旦出错，症状是"顺序莫名乱了"，作者极难察觉根因。
 // 故此处用精确断言（而非只要求不炸的软断言）锁死语义。
-import { flattenChapters, chapterSeqMap, chapterSeqOf, sortChapters } from '../src/lib/outline/chapterSeq'
+import { flattenChapters, chapterSeqMap, chapterSeqOf, sortChapters, flattenAll, orphanChapters } from '../src/lib/outline/chapterSeq'
 import { FREE_VOLUME_ORDER } from '../src/lib/outline/freeVolume'
 import type { Chapter, Volume } from '../src/lib/types'
 
@@ -119,6 +119,46 @@ const ch = (id: string, volumeId: string, order: number, extra: Partial<Chapter>
   // 反面守卫：不排除自由卷时正片序号会被顶成 3/4 —— 证明本用例有效
   const naive = flattenChapters(vols, chs).map((c, i) => [c.id, i + 1] as const)
   ok('反面：不排除自由卷会顶号（本用例有效性证明）', naive[2][1] === 3, String(naive[2][1]))
+}
+
+// ---------- 10. flattenAll / orphanChapters：全书平铺唯一真源（2026-10-17 收敛漂移）----------
+// 收敛前全仓有 4 份手写平铺、孤儿章口径分歧成三种（丢弃 / 保留不排序 / 保留且排序）。
+// 这里把「真源该有的口径」逐条钉死，配上 structureGates ⑫ 的静态禁令一起用。
+{
+  // ① 卷乱序传入 + 章乱序传入：结果必须是 卷序 → 章序
+  const vols = [vol('v3', 2), vol('v1', 0), vol('v2', 1)]
+  const chs = [ch('c3b', 'v3', 1), ch('c1a', 'v1', 0), ch('c2a', 'v2', 0), ch('c3a', 'v3', 0), ch('c1b', 'v1', 1)]
+  const got = flattenAll(vols, chs).map(c => c.id).join(',')
+  ok('flattenAll：卷序 → 章序（两边乱序传入也成立）', got === 'c1a,c1b,c2a,c3a,c3b', got)
+
+  // ② 孤儿章垫底且**按 order 排**（旧手写版有的直接丢掉、有的不排序）
+  const withOrphan = [
+    ch('orphan2', '已删的卷', 1), ch('v1c1', 'v1', 0), ch('orphan1', '已删的卷', 0), ch('v1c2', 'v1', 1),
+  ]
+  const mixed = flattenAll([vol('v1', 0)], withOrphan).map(c => c.id).join(',')
+  ok('flattenAll：孤儿章垫底且不丢', mixed === 'v1c1,v1c2,orphan1,orphan2', mixed)
+
+  // ③ 与 sortChapters 严格同序（两者曾是两条平行实现，正是漂移的来源）
+  const sorted = sortChapters([vol('v1', 0)], withOrphan).map(c => c.id).join(',')
+  ok('flattenAll 与 sortChapters 严格同序', sorted === mixed, `${sorted} ⟷ ${mixed}`)
+
+  // ④ orphanChapters：只挑孤儿、按 order 排；没有孤儿时为空
+  const orph = orphanChapters([vol('v1', 0)], withOrphan).map(c => c.id).join(',')
+  ok('orphanChapters：只返回孤儿章并按 order 排', orph === 'orphan1,orphan2', orph)
+  ok('orphanChapters：无孤儿时返回空数组', orphanChapters([vol('v1', 0)], [ch('v1c1', 'v1', 0)]).length === 0)
+
+  // ⑤ 与 flattenChapters 的关系：后者不含孤儿（供编号用），前者含全部章节
+  ok('flattenChapters 不含孤儿（编号口径不受影响）',
+    flattenChapters([vol('v1', 0)], withOrphan).length === 2)
+  ok('flattenAll 含全部章节（平铺口径不丢章）',
+    flattenAll([vol('v1', 0)], withOrphan).length === 4)
+
+  // ⑥ 自由卷照旧排最前（真源不得绕过 freeVolume 的哨兵 order）
+  const freeVols: Volume[] = [vol('v1', 0), { ...vol('vf', FREE_VOLUME_ORDER), isFree: true }]
+  const freeChs = [ch('c1', 'v1', 0), ch('free1', 'vf', 0)]
+  ok('flattenAll：自由卷章节仍排最前',
+    flattenAll(freeVols, freeChs).map(c => c.id).join(',') === 'free1,c1',
+    flattenAll(freeVols, freeChs).map(c => c.id).join(','))
 }
 
 console.log(`\nchapterSeq: ${pass} passed, ${fail} failed`)

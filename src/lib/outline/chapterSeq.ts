@@ -21,6 +21,40 @@ export function flattenChapters(vols: Volume[], chs: Chapter[]): Chapter[] {
 }
 
 /**
+ * 🔴 **「全书章节平铺」的唯一真源**（2026-10-17 收敛，见 `docs/3.1.1-第四轮全量审计报告` §六）。
+ *
+ * 口径（三档，缺一不可）：
+ *   ① 卷按 `Volume.order`；
+ *   ② 卷内章按 `Chapter.order`；
+ *   ③ **孤儿章垫底**（`volumeId` 指向已删的卷 / 为空），孤儿之间按 `order` 排。
+ *
+ * 为什么单列一个函数：收敛前全仓有 4 份手写平铺（`chapterSeq` 内部、`novelEditorHelpers.orderedChapters`、
+ * `ExportFormatDialog.flattenAll`、三处 `aiContext` 的 `[...flattenChapters(), ...orphans]`），
+ * 孤儿章口径分歧成三种（丢弃 / 保留不排序 / 保留且排序）⇒ 同一本书在不同功能里顺序不一致。
+ * 新代码一律调本函数；`structureGates` ⑫ 闸禁止再手写。
+ *
+ * 与 `flattenChapters` 的区别：那个**不含孤儿**（用于编号 —— 孤儿章不占正文序号），
+ * 本函数**含全部章节**（用于「全书顺序」类场景：导航、导出、AI 上下文、锚点定位）。
+ */
+export function flattenAll(vols: readonly Volume[], chs: readonly Chapter[]): Chapter[] {
+  const sortedVols = [...vols].sort((a, b) => a.order - b.order)
+  return [
+    ...sortedVols.flatMap(v => chs.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order)),
+    ...orphanChapters(sortedVols, chs),
+  ]
+}
+
+/**
+ * 孤儿章：`volumeId` 找不到对应卷（卷被删 / 从未分卷），按 `order` 排。
+ * 供「分组渲染的兜底组」使用（章节树「未归类章节」、轨迹面板「未分卷章节」）——
+ * 判定口径与 `flattenAll` 同源，避免两处各写一份 filter 又漂。
+ */
+export function orphanChapters(vols: readonly Volume[], chs: readonly Chapter[]): Chapter[] {
+  const ids = new Set(vols.map(v => v.id))
+  return chs.filter(c => !ids.has(c.volumeId)).sort((a, b) => a.order - b.order)
+}
+
+/**
  * 章节 id → 全局连续序号（从 1 起）。
  *
  * 返回 0 ＝ **不占号**（仍参与排序，只是不编号），两种来源：
@@ -55,11 +89,11 @@ export function chapterSeqOf(vols: Volume[], chs: Chapter[], chapterId: string):
  */
 export function sortChapters(vols: Volume[], chs: Chapter[]): Chapter[] {
   const rank = new Map<string, number>()
-  flattenChapters(vols, chs).forEach((c, i) => rank.set(c.id, i))
-  // 🔴 不在 rank 里的 = **孤儿章**（volumeId 指向已不存在的卷，例如卷被删过）。
-  //    原先回落到 0 会让它们静默排到「第 1 章」前面，与章节树把它们收进末尾
+  // 🔴 排名取自 `flattenAll`（含孤儿章且垫底），不再回落到 0：
+  //    原先孤儿章 rank 缺省 ⇒ 静默排到「第 1 章」前面，与章节树把它们收进末尾
   //    「未归类章节」兜底组的观感冲突（2026-10-14 六维审计发现）。
-  //    给一个大于全部有效序号的排名 ⇒ 不丢、位置稳定、且不会伪装成开头。
+  //    `tail` 仅为极端兜底（rank 理论上覆盖 chs 全部），保留以防将来改坏。
+  flattenAll(vols, chs).forEach((c, i) => rank.set(c.id, i))
   const tail = rank.size
   return [...chs].sort((a, b) => (rank.get(a.id) ?? tail) - (rank.get(b.id) ?? tail))
 }

@@ -16,7 +16,7 @@ import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Inbox, Search } from 'lucide-react'
 import type { Chapter, Volume } from '@/lib/types'
 import { NO_CHAPTERS_HINT } from '@/lib/constants'
-import { chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { chapterSeqMap, orphanChapters } from '@/lib/outline/chapterSeq'
 import { isFreeVolume } from '@/lib/outline/freeVolume'
 
 interface Props {
@@ -56,11 +56,8 @@ export default function ChapterTreeSelect({ volumes, chapters, value, onChange, 
     return m
   }, [volumes, chapters])
 
-  /** 孤儿章（volumeId 找不到对应卷）—— 不静默吞掉，单独兜底一组 */
-  const orphans = useMemo(() => {
-    const ids = new Set(volumes.map(v => v.id))
-    return chapters.filter(c => !ids.has(c.volumeId)).sort(byOrder)
-  }, [volumes, chapters])
+  /** 孤儿章（volumeId 找不到对应卷）—— 不静默吞掉，单独兜底一组；判定走唯一真源 */
+  const orphans = useMemo(() => orphanChapters(volumes, chapters), [volumes, chapters])
 
   const keyword = q.trim().toLowerCase()
   const hit = (c: Chapter) => {

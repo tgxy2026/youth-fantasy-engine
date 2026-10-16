@@ -15,6 +15,7 @@
 import type { Chapter, Volume } from '@/lib/types'
 import { chapterFingerprint } from '@/lib/ai/aiRunLedger'
 import { hashOf } from '@/lib/semantic/chunk'
+import { orphanChapters } from '@/lib/outline/chapterSeq'
 
 // ============ 一、完成检查（确定性统计）============
 
@@ -146,9 +147,8 @@ export function evaluatePublishGate(
     })
   }
 
-  // warn：未归入任何卷（volumeId 找不到对应卷）
-  const volIds = new Set(volumes.map(v => v.id))
-  const orphan = chapters.filter(c => !volIds.has(c.volumeId))
+  // warn：未归入任何卷（volumeId 找不到对应卷）—— 判定走唯一真源 chapterSeq.orphanChapters
+  const orphan = orphanChapters(volumes, chapters)
   if (orphan.length > 0) {
     warnings.push({
       key: 'orphan-chapters',

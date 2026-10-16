@@ -11,7 +11,7 @@ import * as db from '@/lib/db'
 import { TABS } from '@/lib/schema'
 import { isWorldSetTab, isParallelSetTab, splitActive } from '@/lib/world/worldSets'
 import { ZipBuilder, downloadBlob } from '@/lib/storage/zip'
-import { chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { chapterSeqMap, flattenAll } from '@/lib/outline/chapterSeq'
 
 /** 文本下载（带 UTF-8 BOM，Windows 记事本/Excel 打开不乱码）；仅本模块内部使用 */
 function downloadFile(filename: string, content: string) {
@@ -439,15 +439,9 @@ export interface SubmissionDocxInput {
 export function buildSubmissionDocxBody(input: SubmissionDocxInput, volumes: Volume[], chapters: Chapter[]): string[] {
   const { bookTitle, intro, chapterIds, layout } = input
   const picked = new Set(chapterIds)
-  const ordered = [
-    ...volumes.flatMap(vol => chapters
-      .filter(c => c.volumeId === vol.id && picked.has(c.id))
-      .sort((a, b) => a.order - b.order)),
-    // 未分卷的选定章节垫底，与卷内同按 order 排序（审计 2026-09-28 修正：原先漏排序）
-    ...chapters
-      .filter(c => picked.has(c.id) && !volumes.some(v => v.id === c.volumeId))
-      .sort((a, b) => a.order - b.order),
-  ]
+  // 🔴 走唯一真源（卷序 → 章序 → 孤儿章垫底），再按用户勾选过滤：
+  //    原先手写版同样**没给卷排序**（volumes 顺序不作数），与导出 TXT 的口径不一致
+  const ordered = flattenAll(volumes, chapters).filter(c => picked.has(c.id))
 
   const L = layout
   const titleRun: DocxRunOpts = { bold: true, halfPt: 44, font: '黑体' }   // 书名 22pt

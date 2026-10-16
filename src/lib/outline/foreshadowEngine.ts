@@ -5,6 +5,7 @@
 import * as db from '@/lib/db'
 import type { Chapter } from '@/lib/types'
 import { AuditIssue, splitCodes } from '@/lib/audit/audit'
+import { flattenAll } from '@/lib/outline/chapterSeq'
 
 export type ForeshadowStatus = '埋设中' | '进行中' | '已回收' | '已作废' | '孤儿'
 
@@ -38,7 +39,8 @@ export async function auditForeshadow(): Promise<ForeshadowResult> {
   ])
 
   // 全局章节序号与卷映射（与编辑器总表同步口径一致）
-  const flat: Chapter[] = vols.flatMap(v => chs.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order))
+  // 🔴 走唯一真源：原先手写版**没给卷排序**（vols 直接 flatMap，顺序不作数）且丢孤儿章
+  const flat: Chapter[] = flattenAll(vols, chs)
   const globalIdx = new Map<string, number>()
   const titleById = new Map<string, string>()
   const volTitleById = new Map<string, string>()

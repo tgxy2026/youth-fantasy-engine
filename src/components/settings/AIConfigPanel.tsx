@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Cpu, Globe, Loader2, AlertCircle, CheckCircle2, FlaskConical,
+  Cpu, Globe, Loader2, CheckCircle2, FlaskConical,
   Pencil, Trash2, Check,
 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
@@ -35,47 +35,14 @@ import {
   headersForPresetSwitch,
   listOllamaModels, listOpenAIModels, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
-  TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
   TASK_ROLES, ROLE_LABEL, ROLE_HINT, DEFAULT_ROUTING, loadRouting, saveRouting, rolesOf,
   type TaskRole, type RoutingMap,
   loadAiTimeoutSec, saveAiTimeoutSec,
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
 } from '@/lib/ai'
-import { checkContextWindow, MAX_WINDOW } from '@/lib/ai/modelCapacity'
+import { checkContextWindow } from '@/lib/ai/modelCapacity'
 import NumberField from '@/components/common/NumberField'
-
-function fmtMs(ms: number) {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
-}
-
-/** 测试结果条：成功显示耗时与模型回文，失败显示中文原因 */
-function TestResultBar({ r }: { r: AITestResult }) {
-  const cost = fmtMs(r.latencyMs)
-  // 本地模型首次调用大头在「搬进显存」，标出来避免误判为响应慢
-  const loadHint = r.loadMs > 500 ? `（其中模型加载 ${fmtMs(r.loadMs)}）` : ''
-  return (
-    <div
-      className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg text-11 ${
-        r.ok
-          ? 'bg-success/10 border border-success/25 text-success'
-          : 'bg-danger/10 border border-danger/25 text-danger'
-      }`}
-    >
-      {r.ok ? <CheckCircle2 size={12} className="mt-0.5 shrink-0" /> : <AlertCircle size={12} className="mt-0.5 shrink-0" />}
-      {r.ok ? (
-        <span>
-          配置可用 · 耗时 {cost}
-          {loadHint && <span className="text-success/70">{loadHint}</span>}
-          {' · 模型回复「'}
-          <span className="text-emerald-200">{r.reply.slice(0, 40)}</span>
-          {r.reply.length > 40 ? '…' : ''}」
-        </span>
-      ) : (
-        <span className="whitespace-pre-wrap">{r.error}</span>
-      )}
-    </div>
-  )
-}
+import { TestResultBar, TestingBar, ContextWindowField, TemperatureField } from '@/components/settings/AIConfigFields'
 
 /**
  * 编辑表单 / 列表区的统一宽度：页面很宽，铺满会显得松散难读。
@@ -767,92 +734,21 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </>
               )}
 
-              {/* 上下文窗口（tokens）· **必填**（2026-10-04 老大定案，校验见 lib/modelCapacity.checkContextWindow）：
-                  原先选填、留空时按模型名去识别表里猜 —— 但那张表得跟着各家发布节奏常年维护，
-                  本地 / 自建 / 冷门模型更永远认不出。改成必填 + 强制换算提示后，
-                  作者按自己的部署填一次（1K = 1024 tokens），全项目读同一个数，"猜错"这条路就没了。
-                  ⚠️ 数据层仍允许缺失（老库里的模型没这个字段）：`adviseCapacity` 保留兜底只为
-                     不把老配置一夜塌成 32K，界面上则以「未填窗口」标出、引导补填。 */}
-              {(() => {
-                const isLocal = editing.type === 'ollama' || !!editing.local
-                const cwNow = editing.contextWindow
-                const cwText = typeof cwNow === 'number' ? String(cwNow) : ''
-                const check = checkContextWindow(cwNow)
-                /** 疑似「把 K 当词元数」⇒ 给一键换算；其余不合法情形只说明原因 */
-                const sug = check.suggest
-                const kSlip = !check.ok && typeof sug === 'number'
-                const hint = check.ok
-                  ? `${cwText} tokens —— 换算：K × 1024（128K 填 131072、96K 填 98304）。${isLocal
-                      ? '酒馆的「上下文窗口长度」与「上下文预算」跟着它走：填大了预算变松、显存占用同步上升，跑不动就调小。'
-                      : '酒馆控制面板会按它算上下文预算与记忆档的建议值。'}`
-                  : check.error
-                return (
-                  <div>
-                    <label className="block text-11 text-ink-500 mb-1">
-                      上下文窗口（tokens）<span className="text-ink-600"> · 必填</span>
-                    </label>
-                    {/* 🔴 min 保持 1（2026-10-04）：填「128」若被静默钳成 2000，作者看到的是一个
-                        「合法却完全不对」的值，反而失去纠错机会。现在让它留在框里被看见，
-                        再由下面的琥珀条给出换算与一键修正；能不能保存由 checkContextWindow 把关。 */}
-                    <NumberField
-                      value={editing.contextWindow}
-                      min={1} max={MAX_WINDOW} step={1024}
-                      className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600"
-                      onChange={v => setEditing({ ...editing, contextWindow: v })}
-                      onClamped={v => showToast(`上下文窗口已调回边界 ${v} tokens`, 'info')}
-                      placeholder="填 token 数：128K 写 131072"
-                    />
-                    {kSlip && (
-                      <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-amber/40 bg-amber/10 px-2 py-1">
-                        <span className="text-10 text-amber">看着像把「K」写成了词元数？{cwText}K 应为 {sug}</span>
-                        <Button variant="secondary" size="xs"
-                          onClick={() => setEditing({ ...editing, contextWindow: sug })}>
-                          按 ×1024 换算为 {sug}
-                        </Button>
-                      </div>
-                    )}
-                    <p className={`text-10 mt-1 leading-relaxed ${check.ok ? 'text-ink-500' : 'text-amber'}`}>{hint}</p>
-                  </div>
-                )
-              })()}
+              {/* 上下文窗口（必填 + K/token 换算 + 越界提示）—— 实现在 AIConfigFields.tsx */}
+              <ContextWindowField
+                value={editing.contextWindow}
+                local={editing.type === 'ollama' || !!editing.local}
+                onChange={v => setEditing(prev => (prev ? { ...prev, contextWindow: v } : prev))}
+              />
 
-              {/* 采样温度档位（2.4.0 · A1 遗留补全）：**按 provider 存、随模型走**。
-                  本地小模型与云端大模型合适的温度差别很大，做成全局常量必然两头都不合适
-                  （见 lib/ai.ts 的 AIProvider.temperature 与 TEMPERATURE_TIERS）。
-                  ⚠️ 只影响创意生成；结构化任务固定低温，不受这一项影响。 */}
-              <div>
-                <label className="block text-11 text-ink-500 mb-1">
-                  采样温度<span className="text-ink-600"> · 影响续写 / 取名这类创意生成</span>
-                </label>
-                <div className="flex flex-wrap items-center gap-2">
-                  {TEMPERATURE_TIERS.map(tier => (
-                    <Button
-                      key={tier.label}
-                      variant="toggle"
-                      selected={editing.temperature === tier.value}
-                      size="sm"
-                      onClick={() => setEditing({ ...editing, temperature: tier.value })}
-                      title={`${tier.value} —— ${tier.hint}`}
-                    >
-                      {tier.label}
-                    </Button>
-                  ))}
-                  <span className="text-10 text-ink-500">
-                    {TEMPERATURE_TIERS.find(x => x.value === editing.temperature)?.hint
-                      ?? `当前未设：创意生成按平台初值 ${editing.type === 'ollama' || editing.local ? LOCAL_DEFAULT_TEMPERATURE : CLOUD_DEFAULT_TEMPERATURE}`}
-                  </span>
-                </div>
-                <p className="text-10 text-ink-600 mt-1 leading-relaxed">
-                  校对、抽取这类结构化任务固定用 0.3 低温，不受这一项影响。
-                </p>
-              </div>
+              {/* 采样温度档位（按 provider 存、随模型走）—— 实现在 AIConfigFields.tsx */}
+              <TemperatureField
+                value={editing.temperature}
+                local={editing.type === 'ollama' || !!editing.local}
+                onChange={v => setEditing(prev => (prev ? { ...prev, temperature: v } : prev))}
+              />
 
-              {testing && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-12 bg-ink-800 border border-ink-700 text-ink-300">
-                  <Loader2 size={13} className="animate-spin text-amber shrink-0" />
-                  正在测试「{editing.model || '未设置模型'}」…本地大模型首次调用需加载进显存，请稍候。
-                </div>
-              )}
+              {testing && <TestingBar model={editing.model} />}
               {!testing && editResult && <TestResultBar r={editResult} />}
 
               <div className="flex items-center gap-2 pt-1">

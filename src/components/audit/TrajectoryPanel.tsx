@@ -19,7 +19,7 @@ import { History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked
 import * as db from '@/lib/db'
 import type { Chapter, Volume, CardRecord } from '@/lib/types'
 import type { Snapshot } from '@/lib/db'
-import { chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { chapterSeqMap, orphanChapters } from '@/lib/outline/chapterSeq'
 import {
   buildChapterTrajectory, buildTrajectoryOverview, findOutlineCard,
   isAIVersion, type TrajectoryNode,
@@ -158,8 +158,9 @@ export default function TrajectoryPanel() {
       const items = chapters.filter(c => c.volumeId === v.id).sort((a, b) => a.order - b.order)
       if (items.length) out.push({ title: v.title || '未命名卷', items })
     }
-    const orphan = chapters.filter(c => !volumes.some(v => v.id === c.volumeId))
-    if (orphan.length) out.push({ title: '未分卷章节', items: [...orphan].sort((a, b) => a.order - b.order) })
+    // 孤儿章判定走唯一真源（与 flattenAll 同口径）
+    const orphan = orphanChapters(volumes, chapters)
+    if (orphan.length) out.push({ title: '未分卷章节', items: orphan })
     return out
   }, [volumes, chapters])
 

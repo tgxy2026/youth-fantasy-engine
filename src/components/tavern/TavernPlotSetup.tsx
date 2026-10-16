@@ -19,7 +19,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import * as db from '@/lib/db'
-import { flattenChapters } from '@/lib/outline/chapterSeq'
+import { flattenAll } from '@/lib/outline/chapterSeq'
 import { TABS } from '@/lib/schema'
 import { Button } from '@/components/common/Button'
 import SelectRow from '@/components/common/SelectRow'
@@ -262,11 +262,8 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
     return () => { alive = false }
   }, [open])
 
-  // 叙事序（卷序 → 章序），锚点选择用同一套顺序
-  const ordered = useMemo(() => {
-    const orphans = chs.filter(c => !vols.some(v => v.id === c.volumeId))
-    return [...flattenChapters(vols, chs), ...orphans]
-  }, [vols, chs])
+  // 叙事序（卷序 → 章序 → 孤儿章垫底）：走唯一真源，与 AI 上下文 / 导出同口径
+  const ordered = useMemo(() => flattenAll(vols, chs), [vols, chs])
 
   /** 章节行：章号取「叙事序里的下标 + 1」，附卷名（搜索时卷名也参与命中） */
   const chapterRows = useMemo(() => {

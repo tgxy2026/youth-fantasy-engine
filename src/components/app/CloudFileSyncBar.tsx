@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Cloud, FolderOpen, LogOut, History, Server, HardDrive } from 'lucide-react'
+import { Cloud, FolderOpen, LogOut, History, Server, HardDrive, AlertTriangle } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import HelpPopover from '@/components/common/HelpPopover'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
-import { enableDesktopCloudSync, disableDesktopCloudSync } from '@/lib/db'
+import { enableDesktopCloudSync, disableDesktopCloudSync, isDesktopCloudSyncActive } from '@/lib/db'
 import { getDesktopDataFilePath } from '@/lib/app/desktop'
 import { STATUS_META } from '@/lib/sync/syncStatusMeta'
 import {
@@ -59,6 +59,21 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
     }
   }, [])
   const [connected, setConnected] = useState(() => isDesktopCloudEnabled())
+  /**
+   * 🔴 同步**实态**（`ops` 是否真的指向云存储），与上面那个「已开启**标记**」不是一回事。
+   *
+   * 为什么必须分开（2026-10-17 · 第四轮审计 §六）：启动自动恢复是**异步且允许失败**的
+   *   （等数据文件就绪 → 判 writeLocked → 拉云端快照；网盘未就绪 / 文件损坏时**保持本地存储**，
+   *   而且**刻意不清标记** —— 清了就等于静默关掉同步）。于是存在一个界面撒谎的窗口：
+   *   标记为「已开启」而实际写入全在本机，作者以为一直在同步，实际一直没同步。
+   *   `db/core.ts` 那条 catch 已补留痕，这里再补上**可见**的那一半。
+   */
+  const [active, setActive] = useState(() => isDesktopCloudSyncActive())
+  /**
+   * 宽限期：启动恢复要读数据文件 + 拉快照（还可能 3s 重试一次），开头必然是 false。
+   * 不设宽限会在每次启动都闪一条假告警 —— 闸/提示一假就没人信。
+   */
+  const [syncGracePassed, setSyncGracePassed] = useState(false)
   const [mode, setMode] = useState<SyncMode>(() => getDesktopCloudMode())
   const [status, setStatus] = useState<SyncStatus>(getDesktopCloudStatus())
   const [targetName, setTargetName] = useState<string | null>(null)
@@ -74,17 +89,27 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
   const [configOpen, setConfigOpen] = useState(false)
 
   useEffect(() => {
-    const onStatus = () => setStatus(getDesktopCloudStatus())
+    const onStatus = () => {
+      setStatus(getDesktopCloudStatus())
+      setActive(isDesktopCloudSyncActive())
+    }
     window.addEventListener('yfe:sync-status', onStatus)
     getDesktopCloudTargetName()
       .then((n) => n && setTargetName(n))
       .catch(() => {})
-    const tick = () => setBackupDay(getDesktopCloudBackupMeta()?.day ?? null)
+    const tick = () => {
+      setBackupDay(getDesktopCloudBackupMeta()?.day ?? null)
+      // 启动恢复可能没有事件通知（模块求值期就切完了）⇒ 跟着这个既有节拍轮询实态
+      setActive(isDesktopCloudSyncActive())
+    }
     tick()
     const id = setInterval(tick, 3000)
+    // 宽限 4s（比轮询节拍宽一拍）：等启动恢复跑完再判「未生效」，否则每次开机都闪假告警
+    const graceTimer = setTimeout(() => setSyncGracePassed(true), 4000)
     return () => {
       window.removeEventListener('yfe:sync-status', onStatus)
       clearInterval(id)
+      clearTimeout(graceTimer)
     }
   }, [])
 
@@ -301,6 +326,24 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
       ) : (
         /* —— 已开启：状态 + 目标名 + 操作 —— */
         <>
+          {/* 🔴 「标记已开启、实态却是本地」必须自己说出来（否则作者以为一直在同步，其实一直没同步） */}
+          {syncGracePassed && !active && (
+            <div
+              role="alert"
+              title="启动时没能接上同步目标（网盘目录未就绪 / 同步文件不可读，原因见控制台 [db] 告警）。当前改动只写在本机，未上云。"
+              className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber/40 bg-amber/10 px-2 py-1.5 text-11 text-amber"
+            >
+              <AlertTriangle size={12} className="shrink-0" />
+              <span className="flex-1">同步未生效：改动只写在本机</span>
+              <button
+                type="button"
+                onClick={() => location.reload()}
+                className="shrink-0 rounded border border-amber/40 px-1.5 py-0.5 text-11 text-amber transition-colors hover:bg-amber/20"
+              >
+                重试
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 text-11 text-ink-400" title={targetName ? '当前同步目标' : undefined}>
             {mode === 'dir' ? <FolderOpen size={12} className="shrink-0 text-ink-500" />
               : mode === 'webdav' ? <Server size={12} className="shrink-0 text-ink-500" />

@@ -556,5 +556,86 @@ if (!SRC) {
   }
 }
 
+// ---------- ⑫ 全书叙事序平铺必须走 chapterSeq 真源（2026-10-17 第四轮审计 §六 · 收敛漂移） ----------
+//
+// 起因：全仓一度有 **4 份手写「按叙事序拉平章节」**（`chapterSeq` 内部、`novelEditorHelpers.orderedChapters`、
+//   `ExportFormatDialog.flattenAll`、`aiContext` 三处 `[...flattenChapters(), ...orphans]`），
+//   孤儿章口径分歧成三种：**丢弃 / 保留不排序 / 保留且排序** —— 同一本书在导出、AI 上下文、
+//   编辑器伴写、酒馆锚点里顺序各不相同。其中有手写版**连「卷要先按 order 排」都没做**
+//   （`useNovelEditorModel` 的黄金三章、`foreshadowEngine`、`exporter` 的投稿稿），
+//   只要 volumes 传入顺序不是卷序，全书顺序就悄悄错。
+//
+// 修法：真源收敛为 `src/lib/outline/chapterSeq.ts` 的 `flattenAll`（含孤儿、垫底、排序）
+//   与 `orphanChapters`（分组渲染的兜底组）。本闸负责让漂移不再回来。
+//
+// ⚠️ 判定用 `stripCommentsAndStrings`：注释里大量在讲「orphan」「flatMap」，
+//    连注释一起判会假阳性一片（闸一假就没人信，同 ⑩-b 的取舍）。
+{
+  const SRC2 = findSrc()
+  if (!SRC2) {
+    ok('⑫ 能找到 src 目录（结构闸前置）', false)
+  } else {
+    const rel2 = (f: string) => path.relative(path.dirname(SRC2), f).replace(/\\/g, '/')
+    const TRUTH = 'src/lib/outline/chapterSeq.ts'
+    const truthFile = path.join(SRC2, 'lib', 'outline', 'chapterSeq.ts')
+
+    // ⑫-a 真源还在（改名/搬走必须同步本闸，否则 ⑫-b/c 会集体静默失效）
+    const truthSrc = fs.existsSync(truthFile) ? fs.readFileSync(truthFile, 'utf8') : ''
+    ok('⑫-a 叙事序真源 `src/lib/outline/chapterSeq.ts` 存在且导出 flattenAll / orphanChapters',
+      !!truthSrc && /export function flattenAll\b/.test(truthSrc) && /export function orphanChapters\b/.test(truthSrc),
+      truthSrc ? '（真源里找不到这两个导出 —— 改名后请同步本闸）' : '（真源文件不存在）')
+
+    // 正则自检：闸最怕「写错了还在全绿」。先证明这两条正则确实抓得住真写过的不良写法。
+    const HAND_FLAT = /flatMap\([^;]{0,240}volumeId\s*===/
+    // ⚠️ 必须带 `filter(`：光判「否定 + 集合包含 + volumeId」会误伤两类**合规**写法 ——
+    //    ① `{!volumes.some(v => v.id === t.volumeId) && <span>原卷已删</span>}`（单条展示条件，
+    //       `EditorModals.tsx` 恢复快照的提示）；
+    //    ② `!expandedRef.current.has(ch.volumeId)`（UI 折叠态集合，`useNovelEditorModel.ts`）。
+    //    闸的假阳性一多就没人信（同 ⑩-b 取舍）⇒ 只在「filter 出孤儿章集合」这个形态上拦。
+    // 还要卡准**比较方向**：孤儿判定是「卷集合里没有『章的 volumeId』」——
+    //   `v.id === c.volumeId` / `ids.has(c.volumeId)`。反方向（`c.volumeId === v.id`，即
+    //   「这个卷下有没有章」，`bookVersion` 的空卷判定）语义相反，必须放过。
+    const HAND_ORPHAN = /filter\([^;]{0,90}!\s*[\w.]+\.(?:some\([^()]{0,50}\.id\s*===\s*\w+\.volumeId\)|has\(\s*\w+\.volumeId\s*\))/
+    {
+      const t = (src: string) => stripCommentsAndStrings(src).replace(/\s+/g, ' ')
+      ok('⑫-b 自检：手写平铺能被抓到',
+        HAND_FLAT.test(t('const flat = volumes.flatMap(v => chs.filter(c => c.volumeId === v.id))')))
+      ok('⑫-c 自检：手写孤儿判定能被抓到（filter 形态）',
+        HAND_ORPHAN.test(t('const o = chs.filter(c => !vols.some(v => v.id === c.volumeId))'))
+        && HAND_ORPHAN.test(t('const o = chs.filter(c => !ids.has(c.volumeId))')))
+      ok('⑫-c 自检：非孤儿语义的否定判定不被误伤（展示条件 / 折叠态集合 / 空卷判定）',
+        !HAND_ORPHAN.test(t('{!volumes.some(v => v.id === t.volumeId) && <span>原卷已删</span>}'))
+        && !HAND_ORPHAN.test(t('if (ch && !expandedRef.current.has(ch.volumeId)) {'))
+        // 反向判定（卷下有没有章）—— 与孤儿判定方向相反
+        && !HAND_ORPHAN.test(t('const emptyVols = volumes.filter(v => !v.isFree && !chapters.some(c => c.volumeId === v.id))')))
+      ok('⑫-b 自检：真源写法不会被误伤',
+        !HAND_FLAT.test(t('return flattenAll(vols, chs)')))
+    }
+
+    const handFlat: string[] = []
+    const handOrphan: string[] = []
+    for (const f of walk(SRC2).map(x => path.resolve(x))) {
+      const r = rel2(f)
+      if (r === TRUTH) continue
+      const t = stripCommentsAndStrings(fs.readFileSync(f, 'utf8')).replace(/\s+/g, ' ')
+      if (HAND_FLAT.test(t)) handFlat.push(r)
+      if (HAND_ORPHAN.test(t)) handOrphan.push(r)
+    }
+    ok('⑫-b 禁止手写「全书平铺」（flatMap + volumeId）—— 一律走 chapterSeq.flattenAll',
+      handFlat.length === 0, handFlat.join(' ｜ '))
+    ok('⑫-c 禁止各写一份「孤儿章判定」—— 一律走 chapterSeq.orphanChapters',
+      handOrphan.length === 0, handOrphan.join(' ｜ '))
+
+    // ⑫-d 反向钉住：真源确实被用起来了（用的人少于 5 处 ⇒ 迁移被回滚了，得有人看一眼）
+    const users = walk(SRC2).map(x => path.resolve(x))
+      .filter(f => rel2(f) !== TRUTH)
+      .filter(f => stripCommentsAndStrings(fs.readFileSync(f, 'utf8')).includes('flattenAll('))
+      .map(f => rel2(f))
+    ok(`⑫-d flattenAll 有足够调用点（当前 ${users.length} 处）`, users.length >= 5,
+      users.length ? `只有 ${users.join('、')}` : '一个调用点都没有 —— 迁移被回滚了？')
+    if (users.length) note(`⑫-d 调用 flattenAll 的位置：${users.join('、')}`)
+  }
+}
+
 console.log(`\nstructureGates: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1
