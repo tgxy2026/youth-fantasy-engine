@@ -1,9 +1,11 @@
 // 3.1.1 第 4 项 · 自定义请求头：合法性拦截 / 合并 / OpenCode Go 预置
 // 🔴 钉住两条承诺：① 浏览器禁止的头**明确拒绝**（不静默丢弃）；② 不填自定义头时**逐字节不变**。
 import {
-  rejectReasonOf, sanitizeCustomHeaders, mergeHeaders,
+  rejectReasonOf, rejectValueReasonOf, sanitizeCustomHeaders, mergeHeaders,
 } from '../src/lib/aiCore/headers'
-import { ONLINE_PRESETS, OPENCODE_GO_BASE, providerFromPreset } from '../src/lib/aiCore/core'
+import {
+  ONLINE_PRESETS, OPENCODE_GO_BASE, providerFromPreset, headersForPresetSwitch, PRESET_AUTO_HEADER_KEYS,
+} from '../src/lib/aiCore/core'
 
 let failures = 0
 function check(name: string, condition: boolean) {
@@ -20,6 +22,14 @@ check('禁止头：Host / Origin / Referer / Content-Length', ['Host', 'Origin',
 check('禁止前缀：Sec-* / Proxy-*', rejectReasonOf('Sec-Fetch-Mode') !== null && rejectReasonOf('Proxy-Authorization') !== null)
 check('受保护头：Content-Type 不许改', rejectReasonOf('Content-Type') !== null)
 check('空名也算不合法（但会被跳过，不算拒绝）', rejectReasonOf('   ') !== null)
+
+// 独立复核 P2：非法头名必须在这里拦下（否则要等发请求才报错）
+check('非法头名：含空格被拒', rejectReasonOf('X Bad Name') !== null)
+check('非法头名：含冒号被拒', rejectReasonOf('X-Foo:') !== null)
+check('非法头名：含中文被拒', rejectReasonOf('头名') !== null)
+check('头值：含换行被拒（头注入）', rejectValueReasonOf('a\r\nX-Evil: 1') !== null && rejectValueReasonOf('a\nb') !== null)
+check('头值：含 NUL 被拒', rejectValueReasonOf('a\0b') !== null)
+check('头值：正常值放行', rejectValueReasonOf('Bearer abc-123') === null && rejectValueReasonOf('') === null)
 
 // ---- 过滤 ----
 const r1 = sanitizeCustomHeaders({ 'x-opencode-session': ' abc ', 'User-Agent': 'x', 'x-keep': 'v' })
@@ -38,6 +48,24 @@ check('自定义头叠加进请求头', merged['x-opencode-session'] === 'uuid-1
 check('自定义头可覆盖 Authorization（换一套鉴权）', merged.Authorization === 'Bearer custom')
 check('Content-Type 不会被自定义头顶掉', mergeHeaders(base, { 'Content-Type': 'text/plain' })['Content-Type'] === 'application/json')
 check('非法自定义头不进最终请求头', !('user-agent' in mergeHeaders(base, { 'user-agent': 'me' })))
+
+// 独立复核 P2：头名大小写不敏感 —— 不能出现 `Authorization` 与 `authorization` 并存
+const lower = mergeHeaders(base, { 'authorization': 'Bearer custom' })
+check('自定义 authorization 覆盖默认 Authorization（不并存）',
+  lower.authorization === 'Bearer custom' && !('Authorization' in lower) && Object.keys(lower).filter(k => k.toLowerCase() === 'authorization').length === 1)
+check('覆盖后不会出现「逗号拼接」的双值', !String(lower.authorization).includes(','))
+
+// 独立复核 P2：切换平台预设必须带上目标预设的默认头
+const deepseek = { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' }
+const go = ONLINE_PRESETS.find(p => p.label === 'OpenCode Go')!
+const switched = headersForPresetSwitch(go, { 'x-custom': 'keep' })
+check('切到 OpenCode Go ⇒ 补上 x-opencode-session', typeof switched?.['x-opencode-session'] === 'string' && !!switched['x-opencode-session'])
+check('切换时保留作者自己的自定义头', switched?.['x-custom'] === 'keep')
+check('切回普通预设 ⇒ 自动预置的会话头被清掉', headersForPresetSwitch(deepseek, switched)?.['x-opencode-session'] === undefined)
+check('切回普通预设 ⇒ 作者自定义头仍在', headersForPresetSwitch(deepseek, switched)?.['x-custom'] === 'keep')
+check('切换不覆盖作者已填的会话头',
+  headersForPresetSwitch(go, { 'x-opencode-session': 'mine' })?.['x-opencode-session'] === 'mine')
+check('自动预置头清单只含会话头', PRESET_AUTO_HEADER_KEYS.length === 1 && PRESET_AUTO_HEADER_KEYS[0] === 'x-opencode-session')
 
 // ---- OpenCode Go 预置 ----
 const goPreset = ONLINE_PRESETS.find(p => p.label === 'OpenCode Go')

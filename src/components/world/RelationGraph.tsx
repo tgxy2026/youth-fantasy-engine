@@ -326,22 +326,24 @@ export default function RelationGraph({ rows }: Props) {
             const mid = curveMidpoint(a.x, a.y, b.x, b.y, curve)
             const labelW = e.type.length * 9.5 + 8
             return (
-              <g key={e.id} data-edge-type={e.type} data-edge-curve={curve} data-edge-multi={cv?.multi ? '1' : '0'} opacity={dim ? 0.12 : 1}>
+              <g key={e.id} data-edge-type={e.type} data-edge-curve={curve} data-edge-multi={cv?.multi ? '1' : '0'} opacity={mono ? 1 : (dim ? 0.12 : 1)}>
                 <path
                   d={curvedEdge(a.x, a.y, b.x, b.y, curve)}
                   fill="none"
                   style={{ stroke: mono ? monoInk : col }}
-                  strokeWidth={active ? 2.4 : 1.3}
-                  strokeOpacity={active ? 0.95 : 0.5}
+                  // 🔴 mono 下不用「透明度淡化」（半透明=灰，违背严格二值）：改用**线宽**区分
+                  //    淡化 0.8 / 常规 1.5 / 悬停 3 —— 仍是纯黑，只是粗细不同（P0-D 验收第 3 条）。
+                  strokeWidth={mono ? (active ? 3 : dim ? 0.8 : 1.5) : (active ? 2.4 : 1.3)}
+                  strokeOpacity={mono ? 1 : (active ? 0.95 : 0.5)}
                   strokeLinecap="round"
                   strokeDasharray={mono ? (monoDash(e.type) || undefined) : edgeDash(e.type)}
                 />
                 {/* 同一对出现多条关系时，用箭头标出本条方向（A→B）—— 区分「谁怎么看谁」 */}
                 {cv?.multi && (
-                  <path d={curveArrow(a.x, a.y, b.x, b.y, curve)} data-arrow="1" style={{ fill: mono ? monoInk : col }} opacity={active ? 0.95 : 0.62} />
+                  <path d={curveArrow(a.x, a.y, b.x, b.y, curve)} data-arrow="1" style={{ fill: mono ? monoInk : col }} opacity={mono ? 1 : (active ? 0.95 : 0.62)} />
                 )}
                 <g
-                  opacity={active ? 1 : 0.6}
+                  opacity={mono ? 1 : (active ? 1 : 0.6)}
                   style={{ cursor: 'pointer' }}
                   onMouseEnter={() => setHoverName({ kind: 'edge', id: e.id })}
                   onMouseLeave={() => setHoverName(null)}
@@ -364,7 +366,7 @@ export default function RelationGraph({ rows }: Props) {
             return (
               <g
                 key={n.name}
-                opacity={dim ? 0.28 : 1}
+                opacity={mono ? 1 : (dim ? 0.28 : 1)}
                 onMouseEnter={() => setHoverName({ kind: 'node', name: n.name })}
                 onMouseLeave={() => setHoverName(null)}
                 onPointerDown={e => onPointerDown(e, 'node', n.name, p)}
@@ -373,7 +375,7 @@ export default function RelationGraph({ rows }: Props) {
                 {mono
                   ? <path d={monoShapePath(nodeShapeOf(n.faction), p.x, p.y, r)}
                     style={{ fill: 'rgb(var(--graph-node))', stroke: monoInk }}
-                    strokeWidth={active ? 3 : 2} strokeDasharray={notYet ? '3 3' : undefined} />
+                    strokeWidth={dim ? 1.2 : active ? 3.4 : 2.2} strokeDasharray={notYet ? '3 3' : undefined} />
                   : <>
                     <circle cx={p.x} cy={p.y} r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: active ? 'rgb(var(--graph-accent))' : col }}
                       strokeWidth={active ? 3 : 2} strokeDasharray={notYet ? '3 3' : undefined} />

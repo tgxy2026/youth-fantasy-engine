@@ -171,6 +171,38 @@ function newSessionId(): string {
   return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** 由**预设自动预置**的头名（切换预设时应当被清掉，避免「切走还留着上一家的会话头」） */
+export const PRESET_AUTO_HEADER_KEYS = ['x-opencode-session'] as const
+
+/**
+ * 预设自带的默认请求头（每次调用生成新值）。
+ *
+ * 🔴 必须抽成函数并**同时被两条路径使用**：
+ *   ① `providerFromPreset()` —— 从平台列表**新增**一个模型；
+ *   ② 配置界面**手动切换平台预设**的下拉框。
+ *    独立复核指出后者原先没接 ⇒ 「从普通模型的下拉框切到 OpenCode Go」拿不到必需的会话头，
+ *    要等真发请求才 400。
+ */
+export function presetDefaultHeaders(p: PlatformPreset): Record<string, string> | undefined {
+  return p.baseUrl === OPENCODE_GO_BASE ? { 'x-opencode-session': newSessionId() } : undefined
+}
+
+/**
+ * 切换平台预设时算出新的 `headers`：
+ * · 目标预设自带的默认头 —— **缺就补上**（绝不覆盖作者已填的值）；
+ * · 不属于目标预设的「自动预置头」—— 清掉。
+ */
+export function headersForPresetSwitch(
+  p: PlatformPreset,
+  current: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  const next: Record<string, string> = { ...(current ?? {}) }
+  const defaults = presetDefaultHeaders(p) ?? {}
+  for (const k of PRESET_AUTO_HEADER_KEYS) if (!(k in defaults)) delete next[k]
+  for (const [k, v] of Object.entries(defaults)) if (!(k in next)) next[k] = v
+  return Object.keys(next).length ? next : undefined
+}
+
 /** 联网 OpenAI 兼容平台预设（需 API 密钥，baseUrl 为 chat/completions 前缀） */
 export const ONLINE_PRESETS: PlatformPreset[] = [
   { label: '硅基流动 SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1' },
@@ -212,7 +244,7 @@ export function providerFromPreset(p: PlatformPreset): AIProvider {
     temperature: local ? LOCAL_DEFAULT_TEMPERATURE : CLOUD_DEFAULT_TEMPERATURE,
     // OpenCode Go：预置一个可直接用的会话 id（作者不必自己造 UUID）。
     // 🔴 只是「预填」——作者可在模型配置里改 / 删；不填的平台保持 undefined（请求头逐字节不变）。
-    headers: p.baseUrl === OPENCODE_GO_BASE ? { 'x-opencode-session': newSessionId() } : undefined,
+    headers: presetDefaultHeaders(p),
   }
 }
 

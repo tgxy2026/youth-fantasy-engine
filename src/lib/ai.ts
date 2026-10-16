@@ -36,6 +36,7 @@ export {
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC, setChatTimeoutMs,
   DEFAULT_TEMPERATURE, TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE,
   OLLAMA_PRESET, LOCAL_OPENAI_PRESETS, LOCAL_PRESETS, ONLINE_PRESETS, OPENCODE_GO_BASE,
+  PRESET_AUTO_HEADER_KEYS, presetDefaultHeaders, headersForPresetSwitch,
   providerFromPreset, composeSystemPrompt,
 } from '@/lib/aiCore/core'
 export type { AIProviderType, AIProvider, ChatMessage, PlatformPreset } from '@/lib/aiCore/core'

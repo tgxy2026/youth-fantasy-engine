@@ -293,21 +293,22 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
             const mid = curveMidpoint(pa.x, pa.y, pb.x, pb.y, curve)
             const labelW = e.type.length * 12 + 12
             return (
-              <g key={e.id} data-edge-type={e.type} data-edge-curve={curve} data-edge-multi={cv?.multi ? '1' : '0'} opacity={dim ? 0.12 : 1}>
+              <g key={e.id} data-edge-type={e.type} data-edge-curve={curve} data-edge-multi={cv?.multi ? '1' : '0'} opacity={mono ? 1 : (dim ? 0.12 : 1)}>
                 <path
                   d={curvedEdge(pa.x, pa.y, pb.x, pb.y, curve)}
                   fill="none"
                   style={{ stroke: mono ? monoInk : color }}
-                  strokeWidth={active ? 3 : 1.6}
-                  strokeOpacity={active ? 0.95 : 0.55}
+                  // 🔴 mono 下「淡化」改由**线宽**承载（半透明=灰，违背严格二值）
+                  strokeWidth={mono ? (active ? 3.4 : dim ? 0.9 : 1.8) : (active ? 3 : 1.6)}
+                  strokeOpacity={mono ? 1 : (active ? 0.95 : 0.55)}
                   strokeLinecap="round"
                   strokeDasharray={mono ? (monoDash(e.type) || undefined) : undefined}
                 />
                 {cv?.multi && (
-                  <path d={curveArrow(pa.x, pa.y, pb.x, pb.y, curve, 12, 6)} data-arrow="1" style={{ fill: mono ? monoInk : color }} opacity={active ? 0.95 : 0.65} />
+                  <path d={curveArrow(pa.x, pa.y, pb.x, pb.y, curve, 12, 6)} data-arrow="1" style={{ fill: mono ? monoInk : color }} opacity={mono ? 1 : (active ? 0.95 : 0.65)} />
                 )}
                 <g
-                  opacity={active ? 1 : 0.7}
+                  opacity={mono ? 1 : (active ? 1 : 0.7)}
                   style={{ cursor: 'pointer' }}
                   onPointerEnter={() => setHoverName({ kind: 'edge', id: e.id })}
                   onPointerLeave={() => setHoverName(h => (h?.kind === 'edge' && h.id === e.id ? null : h))}
@@ -332,7 +333,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
             return (
               <g
                 key={nd.name}
-                opacity={dim ? 0.28 : 1}
+                opacity={mono ? 1 : (dim ? 0.28 : 1)}
                 transform={`translate(${pa.x},${pa.y})`}
                 onPointerDown={e => onPointerDown(e, 'node', nd.name, pa)}
                 onPointerEnter={() => setHoverName({ kind: 'node', name: nd.name })}
@@ -340,7 +341,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
                 className="cursor-pointer"
               >
                 {mono
-                  ? <path d={monoShapePath(nodeShapeOf(nd.category), 0, 0, r)} style={{ fill: 'rgb(var(--graph-node))', stroke: monoInk }} strokeWidth={isSel ? 3 : 2} />
+                  ? <path d={monoShapePath(nodeShapeOf(nd.category), 0, 0, r)} style={{ fill: 'rgb(var(--graph-node))', stroke: monoInk }} strokeWidth={dim ? 1.2 : isSel ? 3.4 : 2.2} />
                   : <>
                     <circle r={r} style={{ fill: 'rgb(var(--graph-node))', stroke: color }} strokeWidth={isSel ? 3 : 2} />
                     <circle r={r * 0.42} style={{ fill: color }} />

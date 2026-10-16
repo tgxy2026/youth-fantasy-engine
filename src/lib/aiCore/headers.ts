@@ -49,9 +49,19 @@ export interface SanitizeResult {
 export function rejectReasonOf(name: string): string | null {
   const n = name.trim().toLowerCase()
   if (!n) return '缺少头名称'
+  // 🔴 RFC 7230 `token`：头名只允许这些字符。不校验的话，「非法头名」要等到发请求时才报错，
+  //    作者在配置界面看不出问题（独立复核 P2）。
+  if (!/^[!#$%&'*+\-.^_`|~0-9a-z]+$/.test(n)) return '头名称含非法字符（只允许字母、数字与 !#$%&\'*+-.^_`|~）'
   if (PROTECTED_NAMES.has(n)) return '本项目的请求体固定是 JSON，这一项不能改'
   if (FORBIDDEN_PREFIXES.some(p => n.startsWith(p))) return '浏览器不允许设置这一类请求头，填了也不会生效'
   if (FORBIDDEN_NAMES.has(n)) return '浏览器不允许设置这个请求头（由客户端自己决定），填了也不会生效'
+  return null
+}
+
+/** 头值检查：返回拒绝原因；通过则返回 null */
+export function rejectValueReasonOf(value: string): string | null {
+  // 🔴 CR / LF / NUL ⇒ 头注入风险，且 fetch 会直接抛 TypeError。必须在这里拦下并说清原因。
+  if (/[\r\n\0]/.test(value)) return '头值不能包含换行或空字符'
   return null
 }
 
@@ -68,20 +78,36 @@ export function sanitizeCustomHeaders(raw: Record<string, string> | undefined | 
     if (!name) continue
     const reason = rejectReasonOf(name)
     if (reason) { rejected.push({ name, reason }); continue }
-    allowed[name] = String(v ?? '').trim()
+    const value = String(v ?? '').trim()
+    const vReason = rejectValueReasonOf(value)
+    if (vReason) { rejected.push({ name, reason: vReason }); continue }
+    allowed[name] = value
   }
   return { allowed, rejected }
 }
 
 /**
- * 把自定义头合并到基础头之上。
- * 自定义头**排在后面** ⇒ 可覆盖同名的基础头（例如用另一套鉴权方案覆盖默认的 `Authorization`），
- * 但 `Content-Type` 已在 `sanitizeCustomHeaders` 里被拦下，不会被顶掉。
+ * 把自定义头合并到基础头之上（**大小写不敏感**）。
+ *
+ * 🔴 不能直接 `{...base, ...allowed}`：HTTP 头名**不区分大小写**，`Authorization` 与
+ *    `authorization` 是同一个头。直接展开会让两者共存，而 `fetch` 在构造 Headers 时会把
+ *    同名头的值**逗号拼接**（`Bearer 默认, Bearer 自定义`）⇒ 鉴权直接失败（独立复核 P2）。
+ *    故这里统一按小写名比对：命中同名（哪怕大小写不同）就**替换**，而不是并存。
  */
 export function mergeHeaders(
   base: Record<string, string>,
   custom: Record<string, string> | undefined | null,
 ): Record<string, string> {
   const { allowed } = sanitizeCustomHeaders(custom)
-  return { ...base, ...allowed }
+  const out: Record<string, string> = { ...base }
+  const keyOf = new Map<string, string>() // 小写名 → 当前实际写入的键名
+  for (const k of Object.keys(out)) keyOf.set(k.toLowerCase(), k)
+  for (const [k, v] of Object.entries(allowed)) {
+    const lower = k.toLowerCase()
+    const prev = keyOf.get(lower)
+    if (prev !== undefined && prev !== k) delete out[prev]
+    out[k] = v
+    keyOf.set(lower, k)
+  }
+  return out
 }

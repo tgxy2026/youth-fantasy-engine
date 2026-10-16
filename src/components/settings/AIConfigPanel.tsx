@@ -32,6 +32,7 @@ import { syncWriterBudgetToModel } from '@/lib/ai/aiWriterBudget'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
   LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset, OPENCODE_GO_BASE,
+  headersForPresetSwitch,
   listOllamaModels, listOpenAIModels, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
@@ -701,8 +702,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       value={presetList.find(p => p.baseUrl === editing.baseUrl)?.label ?? '自定义'}
                       onChange={e => {
                         const pre = presetList.find(p => p.label === e.target.value)
-                        if (pre && pre.baseUrl !== '') setEditing({ ...editing, baseUrl: pre.baseUrl, local: !!pre.local, name: editing.name || pre.label })
-                        else if (pre && pre.baseUrl === '') setEditing({ ...editing, baseUrl: '', local: editing.local, name: editing.name })
+                        // 🔴 切换预设必须一并算 headers（独立复核 P2）：从普通模型切到 OpenCode Go
+                        //    若不补 `x-opencode-session`，要等真发请求才 400，界面上看不出问题。
+                        if (pre && pre.baseUrl !== '') setEditing({ ...editing, baseUrl: pre.baseUrl, local: !!pre.local, name: editing.name || pre.label, headers: headersForPresetSwitch(pre, editing.headers) })
+                        else if (pre && pre.baseUrl === '') setEditing({ ...editing, baseUrl: '', local: editing.local, name: editing.name, headers: headersForPresetSwitch(pre, editing.headers) })
                       }}
                     >
                       {presetList.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
