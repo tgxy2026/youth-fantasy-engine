@@ -13,7 +13,7 @@
 //    「同页签内字段名不重复」是本适配层的前提，用真表测才能在将来有人加了重名字段时立刻炸出来。
 import { getTab } from '../src/lib/schema'
 import {
-  CARD_NAME_FIELD, cardFieldsOf, cardFieldPathMap, cardTabToTableTab,
+  CARD_NAME_FIELD, cardFieldsOf, cardFieldPathMap, cardNamePath, cardTabToTableTab,
   cardRecordsToTableRows, buildCardRecords, exportCardTemplateCsv, exportCardsCsv,
   buildCardImportGuide,
 } from '../src/lib/storage/cardIO'
@@ -232,6 +232,47 @@ function emptyCtx(existing: CardRecord[] = []): ImportContext {
   ok('说明含可复制的表头行', guide.includes('姓名,别称,保密等级'))
   ok('说明含 AI 提示词段', guide.includes('交给其他 AI 整理用的提示词'))
   ok('说明含「姓名」必填提示', guide.includes('**必填**') && guide.includes('「姓名」这一列是必填'))
+}
+
+// ---------- 10. R9：卡片标题与「姓名」字段的口径（2026-10-16 独立复核） ----------
+//
+// 背景：手工新建卡走 submitNamePrompt 的 add 分支，产出的是 `{ name: '手工新建角色', data: {} }`
+// —— **标题有值、data 里姓名为空**。历史数据里也有重命名后标题与字段不一致的。
+// 若适配层只读 data，导出 CSV 的「姓名」为空 ⇒ 往返丢名字 + 判重失效（同名可重复建卡）。
+{
+  ok('cardNamePath 指向姓名字段的存储键', cardNamePath(charMain) === '一、基础信息::姓名', String(cardNamePath(charMain)))
+
+  const manual = card('m1', '手工新建角色', {})   // ← 手工新建的真实形态
+  const rows = cardRecordsToTableRows(charMain, [manual])
+  ok('R9：姓名为空时用卡片标题兜底', rows[0].data['姓名'] === '手工新建角色', String(rows[0].data['姓名']))
+
+  const csv = exportCardsCsv(charMain, [manual])
+  const head = splitCsvLine(csv.split('\n')[0])
+  ok('R9：手工卡的导出 CSV「姓名」不为空',
+    splitCsvLine(csv.split('\n')[1])[head.indexOf('姓名')] === '手工新建角色',
+    splitCsvLine(csv.split('\n')[1])[head.indexOf('姓名')])
+
+  const dup = validateImport([{ 姓名: '手工新建角色' }], vtab,
+    { existing: rows, refValues: new Map(), refLabels: new Map() })
+  ok('R9：与「仅有标题」的已有卡能判重（此前漏判）', dup[0].dupExisting === true)
+
+  // 往返：导出 → 解析 → 校验 → 落库，名字与姓名字段都保住
+  const prepared2 = buildImportPrepared(parseImportText(csv), vtab)
+  const results2 = validateImport(prepared2.rows, vtab, emptyCtx())
+  let n2 = 0
+  const back2 = buildCardRecords(results2, charMain, [], PID, () => `m${++n2}`)
+  ok('R9：手工卡导出→导入往返保住卡名', back2[0].name === '手工新建角色', back2[0].name)
+  ok('R9：往返后姓名字段也被补齐', back2[0].data['一、基础信息::姓名'] === '手工新建角色',
+    String(back2[0].data['一、基础信息::姓名']))
+
+  // 姓名字段**有值时不覆盖** —— 作者可能故意让标题与姓名不同
+  const both = card('m2', '陈渊（主角）', { '一、基础信息::姓名': '陈渊' })
+  const rows2 = cardRecordsToTableRows(charMain, [both])
+  ok('R9：姓名字段有值时不被标题覆盖', rows2[0].data['姓名'] === '陈渊', String(rows2[0].data['姓名']))
+
+  // 标题为空（异常数据）时不该把空串写进去顶掉「缺必填」判定
+  const blank = cardRecordsToTableRows(charMain, [card('m3', '', {})])
+  ok('R9：标题也空时保持空（仍会被判缺必填）', blank[0].data['姓名'] === '', JSON.stringify(blank[0].data['姓名']))
 }
 
 console.log(`\n=== cardIO: ${pass} passed, ${fail} failed ===`)

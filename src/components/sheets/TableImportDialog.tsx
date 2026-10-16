@@ -36,6 +36,16 @@ interface Props {
   /** 采用：把勾选的行交给父组件落库（父组件走 buildImportRows + saveTableRow，与 AI 整理同口径） */
   onAdd: (picked: ImportRowResult[]) => Promise<void> | void
   onClose: () => void
+  /**
+   * 《导入说明》生成器（可选）。缺省＝通用表格版 `buildImportGuide`；
+   * 卡片型页签（角色卡）传 `buildCardImportGuide`，让下载到的说明带上
+   * 「姓名必填 / 多值引用用中文逗号 / 立绘不进 CSV」等卡片特有事项。
+   *
+   * 🔴 R10（2026-10-16 独立复核）：此前「导入说明」入口**写死**了 `buildImportGuide(tab)`，
+   *    于是 `buildCardImportGuide` 虽然写了、也有单测，却**没有任何产品调用方** ——
+   *    作者永远下载不到角色专用说明。「纯函数单测通过」不等于「界面下载链路已接通」。
+   */
+  guideBuilder?: (tab: TabDef) => string
 }
 
 /**
@@ -54,7 +64,7 @@ interface Props {
  *   2. **不擅自替作者决定**：AI 拆出来的行与本地解析的行走**同一套校验与预览**，
  *      重复 / 缺必填 / 悬空都标出来，勾不勾、导不导由作者定。
  */
-export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, onAdd, onClose }: Props) {
+export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, onAdd, onClose, guideBuilder }: Props) {
   const [raw, setRaw] = useState('')
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [adding, setAdding] = useState(false)
@@ -175,7 +185,8 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
     downloadBlob(`${tab.name}-导入模板.csv`, new Blob(['\uFEFF' + exportTemplateCsv(tab)], { type: 'text/csv;charset=utf-8' }))
   }
   const downloadGuide = () => {
-    downloadBlob(`${tab.name}-导入说明.md`, new Blob([buildImportGuide(tab)], { type: 'text/markdown;charset=utf-8' }))
+    // 卡片型页签会传自己的说明生成器（见 Props.guideBuilder）
+    downloadBlob(`${tab.name}-导入说明.md`, new Blob([(guideBuilder ?? buildImportGuide)(tab)], { type: 'text/markdown;charset=utf-8' }))
   }
 
   /** 方式③：用已接入的模型把粘贴内容解析成多条（长文自动分批 → 突破一次十几条的限制） */

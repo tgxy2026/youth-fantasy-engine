@@ -30,7 +30,7 @@ import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import { readAliases } from '@/lib/settings/aliases'
 import MentionPanel from '@/components/app/MentionPanel'
 import TableImportDialog from '@/components/sheets/TableImportDialog'
-import { buildCardRecords, cardRecordsToTableRows, cardTabToTableTab, exportCardsCsv } from '@/lib/storage/cardIO'
+import { buildCardImportGuide, buildCardRecords, cardNamePath, cardRecordsToTableRows, cardTabToTableTab, exportCardsCsv } from '@/lib/storage/cardIO'
 import { CARD_SELECT_FIELDS } from '@/lib/world/cardFields'
 import { downloadBlob } from '@/lib/storage/zip'
 import type { ImportRowResult } from '@/lib/storage/tableIO'
@@ -216,8 +216,40 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
 
   const addCard = () => setNamePrompt({ kind: 'add' })
 
+  /**
+   * 切到另一张卡之前，先把当前卡未保存的编辑落库。
+   *
+   * 🔴 R8（2026-10-16 独立复核）：凡是「新建 / 导入后自动切卡」的路径都必须**显式**先走这里。
+   *    不能指望下面那个切卡 effect 兜底 —— `draftRef` 的同步 effect 声明在切卡 effect **之前**，
+   *    所以「同一批次设置 records + activeId + draft」一发生，`draftRef.current` 已指向新卡；
+   *    切卡 effect 里那句「保存上一张」取到的其实是新卡，**旧编辑静默蒸发**
+   *    （界面与隔离 IndexedDB 双确认：改完不保存就导入，切回来恢复原值）。
+   *
+   * @returns 是否允许继续切卡。落库失败返回 false ⇒ 调用方必须中止，保留旧草稿与选择。
+   */
+  const flushCurrentDraft = useCallback(async (): Promise<boolean> => {
+    const cur = draftRef.current
+    if (!dirtyRef.current || !cur) return true
+    try {
+      await saveCardRecord(cur)
+      // 同步内存副本：否则切回来时用库里的旧记录回灌，刚保存的编辑又「消失」
+      setRecords(list => list.map(r => (r.id === cur.id ? cur : r)))
+      // 立刻归零，免得切卡 effect 把这张卡当成「还有脏草稿」再存一次
+      dirtyRef.current = false
+      return true
+    } catch (e) {
+      showToast(
+        `保存当前${nounCard}失败，已取消本次操作 —— 请先手动保存后重试：${e instanceof Error ? e.message : String(e)}`,
+        'error',
+      )
+      return false
+    }
+  }, [nounCard])
+
   // AI 新增：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
   const handleFill = async (values: Record<string, string>) => {
+    // R8：建卡后会自动切到新卡，先把当前卡的脏草稿落库（失败则中止）
+    if (!await flushCurrentDraft()) return
     const nameKey = Object.keys(values).find(k => k.endsWith('::姓名'))
     const name = (nameKey ? values[nameKey] : '')?.trim() || `未命名${noun}`
     const rec: CardRecord = {
@@ -253,6 +285,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     setNamePrompt(null)
     if (!v || !p) return
     if (p.kind === 'add') {
+      // R8：新建后会自动切到新卡，先把当前卡的脏草稿落库（失败则中止，不建新卡）
+      if (!await flushCurrentDraft()) return
       const rec: CardRecord = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, name: v, data: {}, order: records.length }
       await saveCardRecord(rec)
       setRecords([...records, rec])
@@ -260,7 +294,12 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       setDraft(rec)
     } else {
       if (!draft || v === draft.name) return
-      setDraft({ ...draft, name: v })
+      // R9：标题改了但「姓名」字段还空着 → 顺手补上，免得导出 / 判重时两边对不上。
+      // 已填过姓名的不动 —— 作者可能故意让标题与姓名不同（标题「陈渊（主角）」、姓名「陈渊」）。
+      const np = cardNamePath(tab)
+      const next: CardRecord = { ...draft, name: v }
+      if (np && !(draft.data[np] ?? '').trim()) next.data = { ...draft.data, [np]: v }
+      setDraft(next)
     }
   }
 
@@ -290,6 +329,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    *    并发发起且不等待会把失败静默吞掉（界面已加进来、库里其实没写进去，重开这一页就消失）。
    */
   const handleImport = async (picked: ImportRowResult[]) => {
+    // R8：导入后会自动切到第一张新卡，先把当前卡的脏草稿落库（失败则中止导入）
+    if (!await flushCurrentDraft()) return
     const created = buildCardRecords(picked, tab, records, getCurrentProjectId(), uid)
     const okOnes: CardRecord[] = []
     let failed = 0
@@ -749,6 +790,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           tab={vtab}
           existing={cardRecordsToTableRows(tab, records)}
           visCtx={ctx}
+          guideBuilder={buildCardImportGuide}
           onAdd={handleImport}
           onClose={() => setShowImport(false)}
         />

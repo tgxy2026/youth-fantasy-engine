@@ -72,6 +72,19 @@ export function cardFieldPathMap(tab: TabDef): Map<string, string> {
 }
 
 /**
+ * 「姓名」字段的存储键 —— **单一源**（列名因重名退化成 `模块::字段` 时也认得出来）。
+ *
+ * 🔴 必须只有一份：下面三处若各写各的「找姓名」逻辑，标题与姓名字段就会漂移 ——
+ *    `cardRecordsToTableRows`（导出 / 判重的姓名兜底）、`buildCardRecords`（导入落库时取卡名）、
+ *    `CharacterSheet` 的重命名补值。
+ */
+export function cardNamePath(tab: TabDef): string | undefined {
+  const fields = cardFieldsOf(tab)
+  return (fields.find(f => f.name === CARD_NAME_FIELD)
+    ?? fields.find(f => f.path.endsWith(`::${CARD_NAME_FIELD}`)))?.path
+}
+
+/**
  * 把卡片页签拍平成 `tableIO` 能消费的**虚拟表格页签**（`type: 'table'` + `columns`）。
  *
  * 这是整个适配层的核心：世界构建组那一整套导入导出（解析 / 映射 / 校验 / 模板 / 说明 /
@@ -113,12 +126,26 @@ export function cardTabToTableTab(tab: TabDef): TabDef {
   }
 }
 
-/** 已有角色卡 → 判重用的表格行（`data` 的键 = 列名） */
+/**
+ * 已有角色卡 → 判重用的表格行（`data` 的键 = 列名）。
+ *
+ * 🔴 R9（2026-10-16 独立复核）：**卡片标题与「姓名」字段并非始终同步** ——
+ *    手工新建（`submitNamePrompt`）只设 `rec.name`、`data` 是空的；历史数据里也有
+ *    重命名后标题与字段不一致的。若只读 `data`，这类卡导出的 CSV「姓名」列为空 ⇒
+ *    ① 导出无法完整往返（再导回来名字没了）；② 判重键是空的、`hasKey` 为 false，
+ *    同名角色**不会判重**、可以重复建卡；③ 姓名是必填列，重导时还会被默认不勾选。
+ *    故姓名缺失时用**卡片标题兜底**，让导出 / 判重 / 落库三处口径一致。
+ *    姓名字段**有值时不覆盖** —— 作者可能故意让标题与姓名不同（标题「陈渊（主角）」、
+ *    姓名「陈渊」），那种情况以字段为准。
+ */
 export function cardRecordsToTableRows(tab: TabDef, records: CardRecord[]): TableRow[] {
   const fields = cardFieldsOf(tab)
+  const nameCol = fields.find(f => f.name === CARD_NAME_FIELD)?.name
+    ?? fields.find(f => f.path.endsWith(`::${CARD_NAME_FIELD}`))?.name
   return records.map(r => {
     const data: Record<string, string> = {}
     for (const f of fields) data[f.name] = r.data[f.path] ?? ''
+    if (nameCol && !(data[nameCol] ?? '').trim()) data[nameCol] = r.name ?? ''
     return {
       id: r.id,
       projectId: r.projectId,
@@ -145,9 +172,7 @@ export function buildCardRecords(
   uid: () => string,
 ): CardRecord[] {
   const fields = cardFieldsOf(tab)
-  // 重名列名退化成全路径时，`name === CARD_NAME_FIELD` 匹配不上 ⇒ 再用 path 后缀兜一次
-  const namePath = (fields.find(f => f.name === CARD_NAME_FIELD)
-    ?? fields.find(f => f.path.endsWith(`::${CARD_NAME_FIELD}`)))?.path
+  const namePath = cardNamePath(tab)
   const fallbackName = `未命名${tab.group === '角色管理' ? '角色' : '设定'}`
   const out: CardRecord[] = []
   for (const r of picked) {
