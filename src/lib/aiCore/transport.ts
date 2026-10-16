@@ -10,6 +10,7 @@
  */
 
 import { OLLAMA_DEFAULT_URL } from '@/lib/aiCore/core'
+import { mergeHeaders } from '@/lib/aiCore/headers'
 import type { AIProvider } from '@/lib/aiCore/core'
 
 export function stripSlash(u: string) {
@@ -65,13 +66,14 @@ const NON_CHAT_MODEL_RE = /embedding|dall-e|whisper|tts|moderation|babbage|davin
  * 中转站的清单可能上百条且混入非对话模型 → 按 NON_CHAT_MODEL_RE 剔除后原序返回。
  * 失败抛中文可读原因（调用方 toast 展示，UI 保留手动填写，不阻塞配置）。
  */
-export async function listOpenAIModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey'>): Promise<string[]> {
+export async function listOpenAIModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
   const base = openaiBaseOf(config.baseUrl)
   if (!base) throw new Error('未填写 API 接口地址（baseUrl）：先填地址再获取模型列表。')
   let res: Response
   try {
     res = await fetchWithTimeout(`${base}/models`, {
-      headers: { ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) },
+      // 自定义请求头同样要带上 —— 否则「获取可用模型」这条通路会先 400（见 lib/aiCore/headers.ts）
+      headers: mergeHeaders({ ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) }, config.headers),
     }, 10_000)
   } catch (e) {
     if (isAbortError(e)) throw new Error('获取模型列表超时（10 秒）：请检查接口地址与网络。')

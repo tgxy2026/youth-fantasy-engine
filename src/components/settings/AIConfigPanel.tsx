@@ -27,10 +27,11 @@ import { SELECT_PLACEHOLDER } from '@/lib/constants'
 import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '@/lib/ai/modelSampling'
 import { filterModels } from '@/lib/ai/modelFilter'
 import SamplingUnavailable from '@/components/common/SamplingUnavailable'
+import CustomHeadersEditor from '@/components/settings/CustomHeadersEditor'
 import { syncWriterBudgetToModel } from '@/lib/ai/aiWriterBudget'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
-  LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset,
+  LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset, OPENCODE_GO_BASE,
   listOllamaModels, listOpenAIModels, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
@@ -715,6 +716,15 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       <Button variant="secondary" size="sm" disabled={fetchingOpenAI || !editing.baseUrl.trim()} onClick={() => void fetchOpenAIModels()} className="shrink-0" title="按当前接口地址拉取该端点可用的模型清单（官方平台 / 中转站 / 本地兼容服务均支持）">{fetchingOpenAI ? '获取中…' : '获取可用模型'}</Button>
                     </div>
                   </div>
+                  {/* 3.1.1 第 4 项 · 自定义请求头：给「要求额外请求头才认」的订阅 / 网关用
+                      （代表场景：OpenCode Go 的 x-opencode-session，缺了直接 400）。
+                      编辑器自成一组件（自带行状态）—— 取消 / 保存后随表单卸载，草稿自然复位。 */}
+                  <CustomHeadersEditor
+                    providerId={editing.id}
+                    headers={editing.headers}
+                    isOpencodeGo={editing.baseUrl === OPENCODE_GO_BASE}
+                    onChange={headers => setEditing(prev => (prev ? { ...prev, headers } : prev))}
+                  />
                   {openaiModels.length > 0 && (() => {
                     // 2.9.2 · ①：中转站动辄几百个模型，靠 select 的「键入前缀跳转」不够用
                     const shown = filterModels(openaiModels, openaiFilter)

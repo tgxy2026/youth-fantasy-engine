@@ -54,6 +54,17 @@ export interface AIProvider {
    *    其中 `topK` / `repeatPenalty` / `repeatLastN` 是 Ollama 专有，云端会被白名单丢弃。
    */
   sampling?: SamplingValues
+  /**
+   * **自定义请求头**（3.1.1 第 4 项 · 选填）。
+   *
+   * 给「要求额外请求头才认」的订阅 / 网关用 —— 典型是 OpenCode Go 的
+   * `x-opencode-session`（缺了直接 400）。发请求时由 `headers.mergeHeaders()` 合并进请求头，
+   * 合法名放行、浏览器禁止设置的头（`User-Agent` / `Cookie` …）**明确拒绝并提示**。
+   *
+   * 🔴 留空或不填 ⇒ 请求头与改动前**逐字节一致**（升级不改变任何既有模型的行为）。
+   * 🔴 仅对 OpenAI 兼容端点有意义（Ollama 原生路径不接受自定义头）。
+   */
+  headers?: Record<string, string>
 }
 
 export interface ChatMessage {
@@ -144,6 +155,22 @@ export const LOCAL_OPENAI_PRESETS: PlatformPreset[] = [
 /** 全部本地平台预设（Ollama + 本地 OpenAI 兼容），用于绿色「添加本地模型」按钮 */
 export const LOCAL_PRESETS: PlatformPreset[] = [OLLAMA_PRESET, ...LOCAL_OPENAI_PRESETS]
 
+/**
+ * OpenCode Go 的 OpenAI 兼容端点（订阅制）。
+ * 🔴 它**强制要求 `x-opencode-session` 请求头**（2026-09-06 起；缺失即 400
+ * `Request is missing x-opencode-session and cannot be routed efficiently.`）——
+ * 这正是「自定义请求头」这项能力的由来。官方文档里的另一写法是
+ * `https://opencode.ai/inference/go/openai/v1`，两者都指向同一服务。
+ */
+export const OPENCODE_GO_BASE = 'https://opencode.ai/zen/go/v1'
+
+/** 生成一个随机会话 id（Go 要求「每个会话一个稳定 UUID」，选一次预设生成一个即可） */
+function newSessionId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  if (c?.randomUUID) return c.randomUUID()
+  return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 /** 联网 OpenAI 兼容平台预设（需 API 密钥，baseUrl 为 chat/completions 前缀） */
 export const ONLINE_PRESETS: PlatformPreset[] = [
   { label: '硅基流动 SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1' },
@@ -158,6 +185,9 @@ export const ONLINE_PRESETS: PlatformPreset[] = [
   { label: '零一万物', baseUrl: 'https://api.lingyiwanwu.com/v1' },
   { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
   { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
+  // OpenCode Go（订阅制）：OpenAI 兼容端点，**强制要求 `x-opencode-session` 请求头**
+  // （2026-09-06 起；缺失即 400）。选中后由 `providerFromPreset` 预置一个随机会话 id。
+  { label: 'OpenCode Go', baseUrl: OPENCODE_GO_BASE },
   { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
   { label: '自定义', baseUrl: '' },
 ]
@@ -180,6 +210,9 @@ export function providerFromPreset(p: PlatformPreset): AIProvider {
     // 本地小模型给高一点（不然呆板）、云端大模型给稳一点（不然跑偏）。
     // 只是初值，作者可在「模型设置 → 模型配置」里按自己的手感改。
     temperature: local ? LOCAL_DEFAULT_TEMPERATURE : CLOUD_DEFAULT_TEMPERATURE,
+    // OpenCode Go：预置一个可直接用的会话 id（作者不必自己造 UUID）。
+    // 🔴 只是「预填」——作者可在模型配置里改 / 删；不填的平台保持 undefined（请求头逐字节不变）。
+    headers: p.baseUrl === OPENCODE_GO_BASE ? { 'x-opencode-session': newSessionId() } : undefined,
   }
 }
 

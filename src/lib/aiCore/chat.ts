@@ -14,6 +14,7 @@ import {
 } from '@/lib/aiCore/core'
 // 2.9.2：「模型配置 → 文本生成微调」的语义名 → 原生键名（详见 lib/modelSampling.ts）
 import { samplingOptionsOf } from '@/lib/ai/modelSampling'
+import { mergeHeaders } from '@/lib/aiCore/headers'
 
 export interface ChatOptions {
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */
@@ -297,10 +298,11 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     `${base}/chat/completions`,
     {
       method: 'POST',
-      headers: {
+      // 🔴 自定义请求头统一走 mergeHeaders（3.1.1 第 4 项）：合法名放行、浏览器禁止的头不静默丢弃
+      headers: mergeHeaders({
         'Content-Type': 'application/json',
         ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-      },
+      }, config.headers),
       body: JSON.stringify({
         model: config.model, messages,
         ...(variant !== 'bare' ? { temperature: o.temperature, ...openaiSampling(o) } : {}),
@@ -368,10 +370,10 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
         `${base}/chat/completions`,
         {
           method: 'POST',
-          headers: {
+          headers: mergeHeaders({
             'Content-Type': 'application/json',
             ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-          },
+          }, config.headers),
           body: JSON.stringify({
             model: config.model, messages, temperature: o.temperature,
             ...openaiSampling(o), stream: false,
