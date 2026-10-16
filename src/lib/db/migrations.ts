@@ -165,6 +165,7 @@ export async function migrateMiscSettingsToCards(): Promise<number> {
     .filter(r => r.projectId === pid && r.tabId === 'misc-settings')
   if (rows.length === 0) return 0
   let moved = 0
+  let failed = 0
   for (const r of rows) {
     const rec: CardRecord = {
       // 复用原行 id：即便这里跑第二遍，put 也是覆盖而不是新增（幂等的关键）
@@ -179,10 +180,14 @@ export async function migrateMiscSettingsToCards(): Promise<number> {
       await ops.put('cardRecords', rec)
       await ops.del('tableRows', r.id)
       moved++
-    } catch {
-      /* 单条失败：下次打开项目时会再来一遍（行还在，卡已写也不怕） */
+    } catch (e) {
+      // 单条失败：下次打开项目时会再来一遍（行还在，卡已写也不怕）。
+      // 🔴 但必须留痕 —— 否则作者只看到「设定少了几条」，既无报错也无解释。
+      failed++
+      console.warn('[migrations] 其他设定 表→卡片：第' + (moved + failed) + '条迁移失败（该条目暂不显示，重开项目会自动重试）：', e)
     }
   }
+  if (failed > 0) console.warn(`[migrations] 其他设定迁移未完成 ${failed} 条，重开项目会自动重试`)
   return moved
 }
 

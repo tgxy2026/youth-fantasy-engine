@@ -73,6 +73,8 @@ export function sanitizeCustomHeaders(raw: Record<string, string> | undefined | 
   const allowed: Record<string, string> = {}
   const rejected: RejectedHeader[] = []
   if (!raw) return { allowed, rejected }
+  // 已占用的小写名 ⇒ 用于「同名（大小写不同也算同名）」的去重提示
+  const taken = new Map<string, string>()
   for (const [k, v] of Object.entries(raw)) {
     const name = k.trim()
     if (!name) continue
@@ -81,6 +83,15 @@ export function sanitizeCustomHeaders(raw: Record<string, string> | undefined | 
     const value = String(v ?? '').trim()
     const vReason = rejectValueReasonOf(value)
     if (vReason) { rejected.push({ name, reason: vReason }); continue }
+    // 🔴 HTTP 头名不区分大小写：`X-A` 与 `x-a` 是同一个头。若静默让后者覆盖前者，
+    //    作者会看着两行却只发出一条 —— 故与「禁止头」同等对待：**点名报出来**。
+    const lower = name.toLowerCase()
+    const dupOf = taken.get(lower)
+    if (dupOf !== undefined && dupOf !== name) {
+      rejected.push({ name, reason: `与「${dupOf}」重复（HTTP 头名不区分大小写），只保留先填的那条` })
+      continue
+    }
+    taken.set(lower, name)
     allowed[name] = value
   }
   return { allowed, rejected }

@@ -198,7 +198,9 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                         className="w-full text-left !justify-start pl-5 pr-3 py-1 text-12 text-ink-200 hover:bg-ink-700 truncate"
                         title={`导出「${vol.title}」`}
                       >
-                        {vol.title}（{chapters.filter(c => c.volumeId === vol.id).length} 章）
+                        {/* 口径统一到上面已算好的 chaptersByVolume（原处是 O(卷×章) 的全表扫描，
+                            且与第 88 行的分组算法各自为政，改一处容易漏另一处） */}
+                        {vol.title}（{chaptersByVolume.get(vol.id)?.length ?? 0} 章）
                       </Button>
                     ))}
                     <div className="my-1 mx-2 border-t border-ink-700" />

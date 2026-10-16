@@ -14,6 +14,7 @@ import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 import { markDeleted, clearDeleted, resetTombs } from '@/lib/sync/syncTombstone'
 // 导出数据文件前剥敏感 meta（AI 密钥 / 检索密钥）—— 叶子模块，不会与 sync 层成环
 import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
+import { recordError } from '@/lib/app/errorLog'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
 export interface ElectronStoreAPI {
@@ -644,11 +645,16 @@ export function flushDesktopSync(): void {
     const verdict = interpretSaveSyncResult(api().saveSync(JSON.stringify(data)))
     if (!verdict.ok) {
       lastError = '写入本地数据文件失败：' + verdict.error
+      emit() // 🔴 窗口随后就关了，不广播的话这次失败谁都看不到
       return // 保留 dirty，供下次启动补救
     }
     dirty = false
-  } catch {
-    /* IPC 层抛异常：同样保留 dirty */
+  } catch (e) {
+    // 🔴 同样保留 dirty；但必须落一条痕 —— 关窗路径上的失败若完全静默，
+    //    作者只会得到「我最后那几段到底存没存」的永久疑问。
+    lastError = '关窗前写盘失败：' + (e instanceof Error ? e.message : String(e))
+    recordError('window', e) // kind 只有 render / window / unhandled；关窗路径归 window
+    emit()
   }
 }
 

@@ -413,7 +413,8 @@ export interface CloudStoreInstance {
   isCloudAuthFailed(): boolean
   getCloudBackupMeta(): CloudBackupMeta | null
   restoreFromCloudBackup(): Promise<boolean>
-  backgroundPull(): Promise<void>
+  /** 返回 false = 本次变更没处理成功，调用方可据此决定是否重试（轮询侧据此不推进 latch） */
+  backgroundPull(): Promise<boolean>
   onSyncConflict(h: (info: SyncConflictInfo) => void): void
   /** 注册「推不出去时的本地兜底」：回调收到当前内存 cache（store 名 → 行数组）。
    *  云模式下写入先进内存、再推同步目录；推送被挡时若不兜底，关窗即丢。 */
@@ -784,18 +785,26 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
     }
   }
 
-  // 轮询发现远端更新时主动拉取并三路合并（文件模式跨设备同步的核心）。
-  async function backgroundPull() {
-    if (!code || authFailed) return
+  /**
+   * 轮询发现远端更新时主动拉取并三路合并（文件模式跨设备同步的核心）。
+   *
+   * 🔴 **返回值参与 latch**：返回 `false` = 本次没处理成功 ⇒
+   *    `transport.startWatch` 不会推进已见 rev，下一轮轮询仍会判定 changed 并再次回调。
+   *    （3.1.1 第四轮审计：此前 latch 在回调之前更新、异常又被空 catch 吞掉 ⇒
+   *     那批远端改动**永久收不到**，而注释却写着「下次轮询重试」。）
+   *    返回 `true` = 已处理或已确认无需处理（例如远端无新变更），可以推进 latch。
+   */
+  async function backgroundPull(): Promise<boolean> {
+    if (!code || authFailed) return true
     // 🔴 闩锁期要**真的尝试**一次拉取 —— 这是唯一的自愈入口（详见 tryRecoverFromTransient）。
     //    以前这里直接 return，导致标志一旦置位就再没有人能把它清掉。
-    if (transientUnavailable && !(await tryRecoverFromTransient())) return
+    if (transientUnavailable && !(await tryRecoverFromTransient())) return false
     try {
       const resp: RawSyncResponse = await transport.pull()
-      if (resp.status !== 200) return
+      if (resp.status !== 200) return false // 网络 / 鉴权类失败 ⇒ 下轮重试
       const remoteRev = resp.rev ?? 0
       const remoteVersionChanged = resp.version !== remoteVersion
-      if (remoteRev < rev || (remoteRev === rev && !remoteVersionChanged)) return
+      if (remoteRev < rev || (remoteRev === rev && !remoteVersionChanged)) return true // 确认无新变更
       if (resp.enc) {
         const serverCache = await decryptObj(resp.enc)
         adoptCloudBackup(serverCache)
@@ -803,7 +812,7 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
         //    只看它会判 `localHasContent=false`、把墓碑闸短路（幽灵项目链路）。
         //    本机状态未知（null）⇒ 中止本次拉取且**不推进 rev**，留给下次轮询重试。
         const local = await localForMerge()
-        if (local === null) return
+        if (local === null) return false
         cache = mergeCaches(baseCache, serverCache, local)
         rev = remoteRev
         remoteVersion = resp.version
@@ -815,8 +824,11 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
         if (drifted) schedulePush()
         setStatus('ok')
       }
-    } catch {
-      /* 忽略，下次轮询重试 */
+      return true
+    } catch (e) {
+      // 🔴 绝不静默：此前这里只有一个空 catch，界面停在「已同步」而那批远端改动永远收不到。
+      console.warn('[sync] backgroundPull 失败，本轮未推进 rev，下轮轮询将重试：', e)
+      return false
     }
   }
 
@@ -1092,7 +1104,8 @@ export function createCloudStore(initialTransport: SyncTransport): CloudStoreIns
       cloudBackup = null
       setStatus('idle')
       transport.setCode(c)
-      if (c) transport.startWatch(() => void backgroundPull())
+      // 🔴 返回值要传出去：`false` 让轮询下轮继续重试（详见 backgroundPull 的注释）
+      if (c) transport.startWatch(() => backgroundPull())
       else transport.stopWatch()
       if (c) armUnloadFlush()
     },

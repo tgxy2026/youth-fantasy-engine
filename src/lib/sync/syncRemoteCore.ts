@@ -122,7 +122,7 @@ export function createRemoteSyncTransport(p: RemotePrimitives): SyncTransport {
       }
       return { status: 200, rev: newRev, version: newVersion }
     },
-    startWatch(onRemoteChange: () => void) {
+    startWatch(onRemoteChange: () => void | boolean | Promise<void | boolean>) {
       this.stopWatch()
       watchTimer = setInterval(async () => {
         const r = await p.read()
@@ -133,10 +133,14 @@ export function createRemoteSyncTransport(p: RemotePrimitives): SyncTransport {
           return
         }
         if (!hasSeenRemote || parsed.rev !== lastSeenRev || parsed.version !== lastSeenVersion) {
+          // 同 syncTransport：先处理、后 latch；回调返回 false ⇒ 不推进，下轮重试
+          if (parsed.rev !== 0) {
+            const done = await onRemoteChange()
+            if (done === false) return
+          }
           lastSeenRev = parsed.rev
           lastSeenVersion = parsed.version
           hasSeenRemote = true
-          if (parsed.rev !== 0) onRemoteChange()
         }
       }, SYNC_POLL_MS)
     },

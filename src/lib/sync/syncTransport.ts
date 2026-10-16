@@ -36,7 +36,14 @@ export interface SyncTransport {
   /** baseVersion 为可选兼容参数；既有 transport mock / 调用方仍以第二参传 enc。 */
   push(baseRev: number, enc: string, baseVersion?: string): Promise<RawSyncResponse>
   /** 启动远端变更监听（文件模式定时轮询；HTTP 模式无操作）。 */
-  startWatch(onRemoteChange: () => void): void
+  /**
+   * 轮询远端 rev。
+   * 🔴 `onRemoteChange` **可以返回 false**，含义是「这次变更没能处理成功」——
+   *    此时 latched 的 rev / version **不推进**，下一轮轮询仍会判定 changed 并再次回调
+   *    （3.1.1 第四轮审计：此前 latch 在回调**之前**就更新，回调里的异常被吞掉后
+   *     `changed` 恒为 false ⇒ 那批远端改动**永远收不到**，而注释却写着「下次轮询重试」）。
+   */
+  startWatch(onRemoteChange: () => void | boolean | Promise<void | boolean>): void
   stopWatch(): void
 }
 
@@ -403,7 +410,7 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
       }
       return { status: 200, rev: newRev, version: newVersion }
     },
-    startWatch(onRemoteChange: () => void) {
+    startWatch(onRemoteChange: () => void | boolean | Promise<void | boolean>) {
       this.stopWatch()
       watchTimer = setInterval(async () => {
         const name = await slotName()
@@ -417,10 +424,15 @@ export function createFileTransport(handle: SyncDirHandle, fixedName?: string): 
         }
         const changed = !hasSeenRemote || p.rev !== lastSeenVersionRev || p.version !== lastSeenVersion
         if (changed) {
+          // 🔴 先处理、后 latch：回调返回 false = 本次没处理成功 ⇒ 不推进 latch，下轮继续重试
+          //    （rev===0 视为空库，不触发）
+          if (p.rev !== 0) {
+            const done = await onRemoteChange()
+            if (done === false) return
+          }
           lastSeenVersionRev = p.rev
           lastSeenVersion = p.version
           hasSeenRemote = true
-          if (p.rev !== 0) onRemoteChange() // rev===0 视为空库，不触发
         }
       }, SYNC_POLL_MS)
     },

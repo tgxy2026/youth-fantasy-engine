@@ -4,18 +4,25 @@
  * 【为什么单独一个组件】
  * ① `AIConfigPanel` 已到 935 行（软上限 800）—— 这段自带状态的 UI 是最自然的一块割出去；
  * ② 🔴 编辑期需要**行数组**（对象以头名为键，新增行时键是空的 ⇒ 打第一个字符就被吞），
- *    而「行数组」与「落库的 Record」是两份状态。放在**子组件里**，随配置表单一起挂载/卸载，
- *    取消或保存后自然复位 —— 不会出现「重开显示上一轮被放弃的草稿」。
+ *    而「行数组」与「落库的 Record」是两份状态。
  *
  * 🔴 浏览器禁止设置的头（`User-Agent` / `Cookie` …）由 `sanitizeCustomHeaders` **点名拒绝**并在此展示，
  *    绝不静默丢弃（详见 `lib/aiCore/headers.ts`）。
+ *
+ * 🔴🔴 草稿与外部的同步（第四轮审计 P2·A-9）：
+ *    早期版本用「draft.id === providerId 就一直吃 draft」—— 一旦作者动过编辑器，
+ *    外部对 headers 的写入就**永远看不见**了。典型事故：切到 OpenCode Go 时
+ *    `headersForPresetSwitch` 补上 `x-opencode-session`，编辑器却仍显示旧草稿，
+ *    作者再改任意一个头就把会话头**静默删掉**，保存后每次请求必 400。
+ *    现在改成**纯派生比较**：只要「draft 里合法的那部分」与传入的 headers 不一致，
+ *    就以外部为准（不丢弃正在输入的空行：空名行与非法行都不参与比较）。
  */
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { sanitizeCustomHeaders } from '@/lib/aiCore/headers'
 
-interface Row { name: string; value: string }
+interface Row { id: string; name: string; value: string }
 
 interface Props {
   /** 当前配置的 id：换一条配置时丢弃上一轮草稿 */
@@ -26,26 +33,37 @@ interface Props {
   onChange: (headers: Record<string, string> | undefined) => void
 }
 
+let seq = 0
+const newId = () => `h${Date.now().toString(36)}${(seq++).toString(36)}`
+
 const rowsOf = (headers: Record<string, string> | undefined): Row[] =>
-  Object.entries(headers ?? {}).map(([name, value]) => ({ name, value }))
+  Object.entries(headers ?? {}).map(([name, value]) => ({ id: newId(), name, value }))
+
+const toObj = (rows: Row[]): Record<string, string> =>
+  Object.fromEntries(rows.filter(r => r.name.trim()).map(r => [r.name, r.value]))
+
+/** 顺序无关、键名大小写无关的比对（键序会随对象插入顺序变，不能直接 JSON.stringify） */
+const stableKey = (o: Record<string, string>): string =>
+  Object.entries(o).map(([k, v]) => `${k.toLowerCase()}=${v}`).sort().join('|')
 
 export default function CustomHeadersEditor({ providerId, headers, isOpencodeGo, onChange }: Props) {
-  const [draft, setDraft] = useState<{ id: string; rows: Row[] }>({ id: '', rows: [] })
-  const rows = draft.id === providerId ? draft.rows : rowsOf(headers)
+  const [draft, setDraft] = useState<{ id: string; rows: Row[] } | null>(null)
 
-  const rejected = sanitizeCustomHeaders(
-    Object.fromEntries(rows.filter(r => r.name.trim()).map(r => [r.name, r.value])),
-  ).rejected
+  const external = rowsOf(headers)
+  /** 草稿是否仍与外部一致：一致才继续用草稿（保住正在输入的空行） */
+  const draftMatches = draft !== null && draft.id === providerId
+    && stableKey(sanitizeCustomHeaders(toObj(draft.rows)).allowed) === stableKey(headers ?? {})
+  const rows = draftMatches && draft ? draft.rows : external
+
+  const rejected = sanitizeCustomHeaders(toObj(rows)).rejected
 
   /** 行 → 配置：非法的头不写进配置（已在下方点名提示），合法的落库 */
   const apply = (next: Row[]) => {
     setDraft({ id: providerId, rows: next })
-    const { allowed } = sanitizeCustomHeaders(
-      Object.fromEntries(next.filter(r => r.name.trim()).map(r => [r.name, r.value])),
-    )
+    const { allowed } = sanitizeCustomHeaders(toObj(next))
     onChange(Object.keys(allowed).length ? allowed : undefined)
   }
-  const patch = (i: number, key: keyof Row, v: string) =>
+  const patch = (i: number, key: 'name' | 'value', v: string) =>
     apply(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)))
 
   return (
@@ -55,7 +73,7 @@ export default function CustomHeadersEditor({ providerId, headers, isOpencodeGo,
         <span className="text-10 text-ink-600">不填 ＝ 不发任何额外头</span>
       </div>
       {rows.map((row, i) => (
-        <div key={i} className="mb-1.5 flex items-center gap-2">
+        <div key={row.id} className="mb-1.5 flex items-center gap-2">
           <input
             className="w-2/5 min-w-0 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-2 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600"
             value={row.name}
@@ -72,7 +90,7 @@ export default function CustomHeadersEditor({ providerId, headers, isOpencodeGo,
             onClick={() => apply(rows.filter((_, j) => j !== i))}><Trash2 size={12} /></Button>
         </div>
       ))}
-      <Button variant="secondary" size="sm" onClick={() => apply([...rows, { name: '', value: '' }])}>
+      <Button variant="secondary" size="sm" onClick={() => apply([...rows, { id: newId(), name: '', value: '' }])}>
         <Plus size={12} /> 添加请求头
       </Button>
       {isOpencodeGo && (
@@ -86,8 +104,11 @@ export default function CustomHeadersEditor({ providerId, headers, isOpencodeGo,
           {rejected.map(r => `「${r.name}」${r.reason}`).join('；')} —— 这些头不会随请求发出。
         </p>
       )}
+      {/* 🔴 口径必须与 `lib/storage/sensitiveMeta.ts` 的 SENSITIVE_META_KEYS 一致：
+          自定义头住在 `aiProviders` 里，而 `aiProviders` 属敏感键，会被云同步 / 导出 /
+          备份三道闸剥掉 —— 早期这里写反了（说会一起写进导出），属契约漂移。 */}
       <p className="mt-1 text-10 text-amber leading-relaxed">
-        ⚠️ 自定义头会随本机配置保存，并一起写进导出 / 备份文件 —— 请不要在这里填长期有效的密钥。
+        ⚠️ 自定义头只存在本机配置里，<b>不会</b>随导出 / 备份 / 云同步带走（换机需重填一次）。即便如此，仍请不要填长期有效的密钥。
       </p>
     </div>
   )

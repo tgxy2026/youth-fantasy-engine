@@ -67,6 +67,24 @@ check('切换不覆盖作者已填的会话头',
   headersForPresetSwitch(go, { 'x-opencode-session': 'mine' })?.['x-opencode-session'] === 'mine')
 check('自动预置头清单只含会话头', PRESET_AUTO_HEADER_KEYS.length === 1 && PRESET_AUTO_HEADER_KEYS[0] === 'x-opencode-session')
 
+// 第四轮审计 A-11：切换预设的键名比对必须**大小写不敏感**（与 mergeHeaders 同源），
+// 否则作者手填 `X-Opencode-Session` 时：切走清不掉、切回又插一条小写副本。
+const cased = { 'X-Opencode-Session': 'mine' }
+check('切走：手填的大小写变体也会被引掉（不留残留）',
+  headersForPresetSwitch(deepseek, cased)?.['X-Opencode-Session'] === undefined)
+const reGo = headersForPresetSwitch(go, cased)
+check('切回：大小写变体视为已存在 ⇒ 不重复插入小写副本',
+  Object.keys(reGo ?? {}).filter(k => k.toLowerCase() === 'x-opencode-session').length === 1)
+check('切回：保留作者的大小写写法（不改写键名）', reGo?.['X-Opencode-Session'] === 'mine')
+
+// 第四轮审计 A-10：同名头（大小写不同）必须**点名报出来**，不能静默折叠
+const dup = sanitizeCustomHeaders({ 'X-A': '1', 'x-a': '2', 'X-B': '3' })
+check('同名（大小写不同）只保留先填的那条', dup.allowed['X-A'] === '1' && dup.allowed['X-B'] === '3')
+check('被折叠的那条进 rejected 并说明原因', dup.rejected.some(r => r.name === 'x-a' && /重复/.test(r.reason)))
+check('折叠原因是中文点名（不静默）', (dup.rejected.find(r => r.name === 'x-a')?.reason ?? '').includes('X-A'))
+const noDup = sanitizeCustomHeaders({ 'X-A': '1', 'X-B': '2' })
+check('不同名不误报重复', noDup.rejected.length === 0 && Object.keys(noDup.allowed).length === 2)
+
 // ---- OpenCode Go 预置 ----
 const goPreset = ONLINE_PRESETS.find(p => p.label === 'OpenCode Go')
 check('平台预设里有 OpenCode Go', !!goPreset && goPreset.baseUrl === OPENCODE_GO_BASE)

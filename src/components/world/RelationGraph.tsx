@@ -97,6 +97,9 @@ export default function RelationGraph({ rows }: Props) {
       }
       setChars(m)
     })
+      // 🔴 补 catch：IndexedDB 读失败会产生 unhandled rejection（控制台红字、且作者无从得知）。
+      //    元数据只影响节点形状/阵营着色，失败时保持空 Map 即可（已有「无阵营」降级）。
+      .catch(e => console.warn('[graph] 角色卡元数据读取失败，按「无阵营」降级：', e))
     return () => { alive = false }
   }, [])
 

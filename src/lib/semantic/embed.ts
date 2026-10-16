@@ -88,11 +88,17 @@ export function embedConfigError(cfg: EmbedConfig | null | undefined): string {
 export function buildEmbedRequest(cfg: EmbedConfig, texts: string[]): { url: string; init: RequestInit } {
   const url = embedPath(cfg)
   const clipped = texts.map(t => (t ?? '').slice(0, EMBED_TEXT_CAP))
-  // 与对话链路同一出口：自定义头走 mergeHeaders（合法名放行、浏览器禁止的头不静默丢弃）
-  const headers = mergeHeaders(
-    { 'Content-Type': 'application/json', ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}) },
-    cfg.headers,
-  )
+  // 与对话链路同一出口：自定义头走 mergeHeaders（合法名放行、浏览器禁止的头不静默丢弃）。
+  // 🔴 口径与 `aiCore/chat.ts` 对齐：自定义头**只对 OpenAI 兼容端点有意义** ——
+  //    Ollama 原生走 `/api/embed`，不认这套头；模型配置界面也只在 `type !== 'ollama'`
+  //    时才渲染编辑器（填不进去）。这里显式按 type 分支，避免将来有人给 Ollama 补了 UI
+  //    却只在"嵌入"这一半生效、对话那一半不生效。
+  const headers = cfg.type === 'openai'
+    ? mergeHeaders(
+      { 'Content-Type': 'application/json', ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}) },
+      cfg.headers,
+    )
+    : { 'Content-Type': 'application/json', ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}) }
   const body: Record<string, unknown> = { model: (cfg.model ?? '').trim(), input: clipped }
   if (cfg.type === 'openai') body.encoding_format = 'float'
   return { url, init: { method: 'POST', headers, body: JSON.stringify(body) } }

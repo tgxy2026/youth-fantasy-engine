@@ -67,6 +67,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
       }
       setNationMeta(m)
     })
+      .catch(e => console.warn('[graph] 势力表读取失败，按「无类别」降级：', e))
     return () => { alive = false }
   }, [])
 

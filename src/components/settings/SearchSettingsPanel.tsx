@@ -11,11 +11,12 @@
  * 它原先长在控制面板里、跟那一页的草稿态与保存按钮同生共死。搬出来之后它必须能自己读写、
  * 自己落库 —— 否则又得在「灵感启发」里造一套保存流程。设置项少、写起来便宜，所以直接改完就存。
  */
-import { useEffect, useState } from 'react'
-import { getSearchSettings, saveSearchSettings } from '@/lib/settings/searchSettings'
+import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
+import { loadSearchSettings, saveSearchSettings } from '@/lib/settings/searchSettings'
 import {
   searchBlockedReason, SEARCH_MODE_LABEL, SEARCH_ENGINE_LABEL,
-  BOCHA_ENDPOINT, SEARXNG_ENDPOINT, DEFAULT_SEARCH_SETTINGS,
+  BOCHA_ENDPOINT, SEARXNG_ENDPOINT,
   type SearchSettings,
 } from '@/lib/ai/webSearch'
 import { PARAM_GUIDES, bandOf } from '@/lib/tavern/paramGuide'
@@ -38,15 +39,27 @@ function Field({ label, hint, children }: { label: React.ReactNode; hint?: React
 
 export default function SearchSettingsPanel() {
   const [s, setS] = useState<SearchSettings | null>(null)
+  /** 🔴 读失败时**保持 s = null**：`saveSearchSettings` 是整条覆盖写，
+   *   若拿出厂值当现状去改一项，会把作者已保存的服务商 / 密钥静默清空
+   *   （3.1.1 第四轮审计）。置 null ⇒ `patch` 被下方 `if (!s) return` 挡住。 */
+  const [unreadable, setUnreadable] = useState(false)
   const [savedAt, setSavedAt] = useState(0)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let alive = true
-    getSearchSettings()
-      .then(v => { if (alive) setS(v) })
-      .catch(() => { if (alive) setS({ ...DEFAULT_SEARCH_SETTINGS }) })
+    setUnreadable(false)
+    setS(null)
+    loadSearchSettings()
+      .then(({ settings, degraded }) => {
+        if (!alive) return
+        if (degraded) { setUnreadable(true); return }
+        setS(settings)
+      })
+      .catch(() => { if (alive) setUnreadable(true) })
     return () => { alive = false }
   }, [])
+
+  useEffect(() => load(), [load])
 
   /** 改动即落库。数值/ 文本类走 commit（失焦或回车）触发，避免每敲一个字都写一次。 */
   const patch = async (p: Partial<SearchSettings>) => {
@@ -61,7 +74,21 @@ export default function SearchSettingsPanel() {
     }
   }
 
-  if (!s) return null
+  // 🔴 读失败：显示原因并禁止写入（写入会整条覆盖掉真配置），只给「重试」。
+  if (unreadable || !s) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-amber/40 bg-ink-800 px-3 py-2.5">
+        <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber" />
+        <div className="min-w-0 flex-1">
+          <p className="text-11 text-ink-100">联网检索设置读取失败</p>
+          <p className="mt-0.5 text-10 text-ink-500 leading-relaxed">
+            为避免把已保存的服务商与密钥覆盖成出厂值，这里暂时<b>禁止修改</b>。请重试；若反复失败，先看「数据管理」里的数据文件状态。
+          </p>
+        </div>
+        <Button variant="secondary" size="sm" onClick={() => load()}>重试</Button>
+      </div>
+    )
+  }
   const blocked = searchBlockedReason(s)
   const guide = PARAM_GUIDES.searchTopK
 

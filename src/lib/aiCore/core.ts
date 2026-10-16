@@ -198,8 +198,17 @@ export function headersForPresetSwitch(
 ): Record<string, string> | undefined {
   const next: Record<string, string> = { ...(current ?? {}) }
   const defaults = presetDefaultHeaders(p) ?? {}
-  for (const k of PRESET_AUTO_HEADER_KEYS) if (!(k in defaults)) delete next[k]
-  for (const [k, v] of Object.entries(defaults)) if (!(k in next)) next[k] = v
+  // 🔴 键名比对一律**大小写不敏感**，与 `mergeHeaders` 同源（HTTP 头名不区分大小写）。
+  //    否则作者手填 `X-Opencode-Session` 时：切走清不掉、切回又插一条小写副本。
+  const lowerOf = new Map(Object.keys(next).map(k => [k.toLowerCase(), k]))
+  for (const k of PRESET_AUTO_HEADER_KEYS) {
+    if (k in defaults) continue
+    const hit = lowerOf.get(k.toLowerCase())
+    if (hit !== undefined) delete next[hit]
+  }
+  for (const [k, v] of Object.entries(defaults)) {
+    if (!lowerOf.has(k.toLowerCase())) next[k] = v
+  }
   return Object.keys(next).length ? next : undefined
 }
 
