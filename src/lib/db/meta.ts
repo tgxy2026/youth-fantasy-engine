@@ -15,9 +15,25 @@ export async function setMeta(key: string, value: unknown) {
 // ============ 每日码字统计 ============
 export interface DailyStat { key: string; projectId: string; date: string; words: number }
 
-/** 累加当日字数增量（可为负，最低 0） */
-export async function addDailyWords(delta: number, projectId = currentProjectId, store = ops): Promise<DailyStat | undefined> {
-  if (!projectId || !delta) return
+/**
+ * 累加当日字数增量（可为负，最低 0）
+ *
+ * 🔴 读-改-写必须**全局串行**（2026-10-17 全量审计 P2）：
+ *   原先每次调用各自 get → put，两章几乎同时保存时，后写者会用自己读到的旧值覆盖前者的累加
+ *   ⇒ 当日码字量少算（编辑器 2s 自动保存、Ctrl+S、标题防抖落库三路都可能并发）。
+ *   这里用一条模块级 promise 链把「读-改-写」排成队；单次失败不堵后续。
+ *   ⚠️ 队列只管本进程内；跨窗口并发不在本机制范围内（桌面版单窗口，不涉及）。
+ */
+let dailyChain: Promise<unknown> = Promise.resolve()
+export function addDailyWords(delta: number, projectId = currentProjectId, store = ops): Promise<DailyStat | undefined> {
+  if (!projectId || !delta) return Promise.resolve(undefined)
+  const run = dailyChain.then(() => addDailyWordsNow(delta, projectId, store))
+  // 链上留一个「已消化失败」的版本，避免一次写库失败把后续所有累加都堵死
+  dailyChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
+async function addDailyWordsNow(delta: number, projectId: string, store: typeof ops): Promise<DailyStat | undefined> {
   const date = todayKey()
   const key = `${projectId}::${date}`
   const rec = await store.get<DailyStat>('dailyStats', key)

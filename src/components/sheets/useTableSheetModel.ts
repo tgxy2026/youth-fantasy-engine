@@ -41,6 +41,17 @@ import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import type { TemplateField } from '@/lib/ai'
 
 /**
+ * 行首操作列宽（px）—— 🔴 **单一真源，三处必须同源**，不许各写各的：
+ *   ① 本文件 `totalWidth` 累加它；
+ *   ② `TableSheet.tsx` 表头 th 用它设宽；
+ *   ③ `TableSheetRow.tsx` 行首 td 用它设宽。
+ * 为什么是 64：OPT-008（主人 2026-10-17）行首钮从「28px 窄列竖排」改 **2×2** ——
+ *   两枚 24px 图标钮（Button xs iconOnly，`h-6 w-6`）＋ 2px 间距 ＋ 8px 内边距 ≈ 58px ⇒ 取 64。
+ *   原 28px 单列竖排 4 钮会把**每一行**撑高约 100px（主人：「页面变得很长、很难看」）。
+ */
+export const ROW_ACTION_COL_W = 64
+
+/**
  * 编号自然排序键：数字段补零后拼接，使 "F2" < "F10"、"9" < "10"
  * 返回 null 表示编号为空或纯文字（无法参与编号排序）
  */
@@ -797,10 +808,10 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     setCollapsed(() => new Set<string>()) // 确保父级处于展开态，子条目立即可见
   }
 
-  // 表总宽 = 各列宽之和 + 序号列(40) + 操作列(48)。超出容器时由外层 overflow-x-auto 出横向滑条，
-  // 而非压缩其他列（拖动某列只改它自己，不影响其余列宽）。
+  // 表总宽 = 各列宽之和 + 序号列(40) + 行首操作列(ROW_ACTION_COL_W)。超出容器时由外层
+  // overflow-x-auto 出横向滑条，而非压缩其他列（拖动某列只改它自己，不影响其余列宽）。
   const totalWidth = tab.columns
-    ? tab.columns.filter(c => !c.hidden).reduce((s, c) => s + widthOf(c.name), 0) + 40 + 28
+    ? tab.columns.filter(c => !c.hidden).reduce((s, c) => s + widthOf(c.name), 0) + 40 + ROW_ACTION_COL_W
     : 0
 
   const isRowDirty = (r: TableRow) => !!drafts[r.id] && Object.keys(drafts[r.id]).length > 0

@@ -216,26 +216,46 @@ export async function migrateMiscSettingsToCards(): Promise<number> {
  *       请自行再调 schema.refreshVolumeTabs()——db 层不引用 schema，以免形成循环依赖。
  */
 export async function runMigrations(): Promise<void> {
+  /**
+   * 🔴 单步失败**隔离**（2026-10-17 全量审计 P2）：
+   *   原先顺序 await 且无 try/catch —— 任一步抛错（某行数据形态异常 / 读库瞬时失败）会让
+   *   `openProject` 整体 reject：项目打不开（而 `setCurrentProject` 已生效，处于"半开"态），
+   *   后续步骤全部不跑，错误只落控制台，用户无从知道哪一步坏了。
+   *   现在每步独立 try/catch：失败留痕 + 继续后续步骤 + 结尾汇总一条。
+   *   ⚠️ 各迁移本身都是**幂等**的（失败那步下次打开会重跑），故跳过是安全的。
+   */
+  const failed: string[] = []
+  const guarded = async (name: string, fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+    } catch (e) {
+      failed.push(name)
+      console.warn(`[migrations] 步骤 ${name} 失败（已跳过，下次打开会重试）：`, e)
+    }
+  }
   // 🔴 备份载荷分离（C2 · 2.4.2）放在守卫**之前**：backups / backupPayloads 是**跨项目的本地专属**
   //    store，与「当前打开哪个项目」无关；放在守卫之后，只剩孤儿备份的库就永远迁移不到 ——
   //    而备份列表在项目管理页也会用到。
   //    〔2026-09-23 更正〕原文那句「从不打开项目的用户」在当前调用图上不成立（唯一调用点是
   //    openProject，届时 currentProjectId 已就位）。位置本身是对的 —— 它让迁移函数不依赖任何
   //    项目上下文，也为将来可能出现的启动期调用点留了余地。
-  await migrateBackupPayloads()
+  await guarded('backupPayloads', migrateBackupPayloads)
   // 老库里的检索密钥残留：同样与「当前项目」无关，故也在守卫之前
-  await migrateLegacySearchKey()
+  await guarded('legacySearchKey', migrateLegacySearchKey)
   // 旧项目级 AI 配置残留（含 apiKey 明文，会随备份文件出门）：同样是跨项目的全表清理
-  await migrateLegacyProjectAiKeys()
+  await guarded('legacyProjectAiKeys', migrateLegacyProjectAiKeys)
   if (!currentProjectId) return
-  await migrateProjectTypes()
-  await migrateChapterLedger()
-  await migrateChapterNumbering()
-  await migrateGeoMaps()
+  await guarded('projectTypes', migrateProjectTypes)
+  await guarded('chapterLedger', migrateChapterLedger)
+  await guarded('chapterNumbering', migrateChapterNumbering)
+  await guarded('geoMaps', migrateGeoMaps)
   // 与上面几步互不相干（只碰 misc-settings 一张表），故放最后，不参与既有的顺序约束
-  await migrateMiscSettingsToCards()
+  await guarded('miscSettingsToCards', migrateMiscSettingsToCards)
   // 故事内时间 → 发生时间（2.4.4）：同样只碰 history / timeline 两张表，与上面互不依赖
-  await migrateStoryTimeColumns()
+  await guarded('storyTimeColumns', migrateStoryTimeColumns)
+  if (failed.length) {
+    console.warn(`[migrations] 本次有 ${failed.length} 步未完成：${failed.join('、')}（数据未损坏，下次打开会重试）`)
+  }
 }
 
 /**

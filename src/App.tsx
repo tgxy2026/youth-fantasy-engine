@@ -20,6 +20,7 @@ import { isWorldSetTab, isParallelSetTab } from '@/lib/world/worldSets'
 import * as db from '@/lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/sync/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
+import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
@@ -162,7 +163,14 @@ export default function App() {
   //    见 flushPortableBeacon / flushPortableOnLeave。
   useEffect(() => {
     if (DESKTOP) {
-      const onLeave = () => { flushDesktopSync() }
+      // 🔴 关窗前先落编辑器草稿、再写盘（2026-10-17 全量审计 P1）：
+      //    正文是 2s 防抖，原先只 `flushDesktopSync()` 刷 store —— 草稿还没进 store，
+      //    「写完一句立刻关窗」就丢最后 ≤2 秒。微任务会在当前任务结束前跑完（桌面 store 是内存实现），
+      //    故这条链来得及；即便某次来不及，pagehide 还会再兜一次（上面编辑器侧也挂了同名处理）。
+      const onLeave = () => {
+        flushDesktopSync()
+        void flushEditorDraftNow().finally(() => flushDesktopSync())
+      }
       window.addEventListener('beforeunload', onLeave)
       return () => { window.removeEventListener('beforeunload', onLeave) }
     }
@@ -170,7 +178,10 @@ export default function App() {
       // 🔴 两个事件都挂：pagehide 覆盖 bfcache / 移动端（那边可能不发 beforeunload），
       //    beforeunload 则**唯一能拦住用户**的时机。
       //    `flushPortableBeacon` 内部幂等（dirty 才发），两边都调不会重复写。
-      const onHide = () => { flushPortableBeacon() }
+      const onHide = () => {
+        // 便携版：beacon 只能发一次，必须等草稿先进 store 再发（同 P1：防抖窗口内的正文不能丢）
+        void flushEditorDraftNow().finally(() => flushPortableBeacon())
+      }
       // 🔴 关页前写不出去时**必须拦一道**：便携版关页即等于"服务还在但客户端没了"，
       //    没写出去的改动就真没了。让浏览器弹原生「确定要离开吗」—— 作者至少能回页面点保存。
       const onUnload = (e: BeforeUnloadEvent) => {

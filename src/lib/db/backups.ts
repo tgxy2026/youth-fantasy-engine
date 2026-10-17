@@ -366,10 +366,29 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   //    项目就变半空且无从恢复。改成「先写后删」之后，任一步失败最多留下些
   //    可以再清理的多余记录 —— **原数据自始至终完好**。
   const delKeys: Record<string, string[]> = {}
-  for (const name of ['volumes', 'chapters', 'tableRows', 'cardRecords', 'trash', 'tavernReports', 'aiRuns'] as const) {
+  /**
+   * 🔴 只收集**备份确实覆盖到**的存储（2026-10-17 全量审计 P2）：
+   *   · `trash`（回收站）导出时**从不带上**（`exportProject` 不含它），旧实现却把它列进 delKeys
+   *     ⇒ 恢复一次备份 = 把回收站里所有可恢复章节**永久删除**；
+   *   · `tavernReports` / `aiRuns` 是**可选字段**（老备份没有），备份没带时应保留现有记录，
+   *     否则用 2.x 备份恢复会连带删掉 3.x 的 AI 账本。
+   *   口径与下方「不删快照」完全一致：**恢复备份 = 还原备份里的内容，不是把备份没覆盖的也清掉**。
+   */
+  const covered = ['volumes', 'chapters', 'tableRows', 'cardRecords'] as const
+  for (const name of covered) {
     const all = await ops.getAll<{ id: string; projectId?: string }>(name)
     const keys = all.filter(r => r.projectId === targetPid).map(r => r.id)
     if (keys.length) delKeys[name] = keys
+  }
+  if (bundle.tavernReports) {
+    const all = await ops.getAll<{ id: string; projectId?: string }>('tavernReports')
+    const keys = all.filter(r => r.projectId === targetPid).map(r => r.id)
+    if (keys.length) delKeys.tavernReports = keys
+  }
+  if (bundle.aiRuns) {
+    const all = await ops.getAll<{ id: string; projectId?: string }>('aiRuns')
+    const keys = all.filter(r => r.projectId === targetPid).map(r => r.id)
+    if (keys.length) delKeys.aiRuns = keys
   }
   const prefix = `${targetPid}::`
   const forms = await ops.getAll<FormData>('formData')

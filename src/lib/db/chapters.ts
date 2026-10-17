@@ -21,17 +21,47 @@ export async function getAllChapters(): Promise<Chapter[]> {
 export async function saveChapter(c: Chapter) {
   const old = await ops.get<Chapter>('chapters', c.id)
   await ops.put('chapters', { ...c, projectId: c.projectId || currentProjectId })
-  // 记录当日码字增量（正负都记，累加）
-  if (old && old.wordCount !== c.wordCount) {
-    await addDailyWords(c.wordCount - old.wordCount)
+  await afterChapterWrite(old, c)
+}
+
+/**
+ * 字段级修补一章：**只覆盖 `patch` 里出现的字段**（读-改-写在同一函数内完成）。
+ *
+ * 🔴 为什么必须有它（2026-10-17 全量审计 P1）：
+ *   `saveChapter` 是**整对象 put**，而调用方手里那一章常常是**渲染闭包里的旧快照** ——
+ *   正文自动保存（2s 防抖）与标题/摘要落库（600ms 防抖）交错时，各自拿旧快照组装整章
+ *   ⇒ 后写者把前者刚改的字段**写回旧值**（实测路径：改标题后 2s 内自动保存 ⇒ 标题跳回旧值；
+ *   反向则正文倒回旧稿，且界面仍显示新稿 ⇒ 库与界面分叉，重启即丢）。
+ *   凡「只改一部分字段」的保存一律走本函数：正文路径只带 content/wordCount，
+ *   元信息路径只带 patch 里的键，物理上不可能互相覆盖。
+ *
+ * 返回合并后的整章（供 `syncChapterMaster` 等派生写入使用）；章不存在返回 undefined。
+ */
+export async function patchChapter(
+  id: string,
+  patch: Partial<Omit<Chapter, 'id' | 'projectId'>>,
+): Promise<Chapter | undefined> {
+  const old = await ops.get<Chapter>('chapters', id)
+  if (!old) return undefined
+  const next: Chapter = { ...old, ...patch, updatedAt: patch.updatedAt ?? Date.now() }
+  await ops.put('chapters', { ...next, projectId: old.projectId || currentProjectId })
+  await afterChapterWrite(old, next)
+  return next
+}
+
+/** 落库后的派生动作：当日码字增量 + 时光机快照 + 项目时间戳（saveChapter / patchChapter 共用） */
+async function afterChapterWrite(old: Chapter | undefined, next: Chapter) {
+  // 记录当日码字增量（正负都记，累加）；addDailyWords 内部已全局串行，跨章并发不会互相覆盖
+  if (old && old.wordCount !== next.wordCount) {
+    await addDailyWords(next.wordCount - old.wordCount)
   }
   // 时光机：内容有变化时按策略快照（距上次快照 >5 分钟 或 字数差 >200）
-  if (old && old.content !== c.content) {
-    const snaps = await ops.getAllByIndex<Snapshot>('snapshots', 'chapterId', c.id)
+  if (old && old.content !== next.content) {
+    const snaps = await ops.getAllByIndex<Snapshot>('snapshots', 'chapterId', next.id)
     const last = snaps.sort((a, b) => b.createdAt - a.createdAt)[0]
-    const diff = Math.abs(countWords(c.content) - countWords(old.content))
+    const diff = Math.abs(countWords(next.content) - countWords(old.content))
     if (!last || Date.now() - last.createdAt > 5 * 60 * 1000 || diff > 200) {
-      await createSnapshot(c)
+      await createSnapshot(next)
     }
   }
   touchProject(currentProjectId)

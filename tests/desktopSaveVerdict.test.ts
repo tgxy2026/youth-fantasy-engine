@@ -51,7 +51,12 @@ console.log('\n▶ desktopSaveVerdict')
     body.slice(0, 220).replace(/\n/g, '⏎'))
   ok('🔴 接线：旧的三态误判写法已不存在（`r && r.ok === false`）',
     !/if \(r && r\.ok === false\)/.test(body))
-  ok('反例：成功路径仍会清 dirty（不能矫枉过正改成"永远不清"）', /dirty = false/.test(body))
+  // 🔴 2026-10-17 全量审计 P2：dirty 从布尔清理改为**序号判定** —— 写盘 await 期间的
+  //    新改动（writeSeq 递增）不能被成功分支吞掉；正常路径仍然会清（writeSeq 未变 ⇒ false 之外的分支）。
+  ok('反例：成功路径仍会清 dirty（改用写入序号判定，不能矫枉过正改成"永远不清"）',
+    /savedSeq = writeSeq/.test(body) && /dirty = writeSeq !== savedSeq/.test(body))
+  ok('🔴 反向守卫：成功分支不许再无条件 `dirty = false`（会吞掉写盘期间的新改动）',
+    !/dirty = false/.test(body))
 }
 
 console.log(`\ndesktopSaveVerdict: ${pass} passed, ${fail} failed`)

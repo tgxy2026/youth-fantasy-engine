@@ -113,6 +113,14 @@ let inited = false
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let saving = false
 let dirty = false
+/**
+ * 🔴 写入序号（2026-10-17 全量审计 P2，与 desktop.ts 同构）：
+ *   PUT 期间作者继续输入时，`scheduleSave` 会把 dirty 置真，但写成功后无条件 `dirty = false`
+ *   会把它吞掉（下一次定时器触发时 `saving` 为真、直接返回且不重排）⇒ 内存比磁盘新且无人知道。
+ *   落盘只认「写入开始那一刻的版本」，成功后序号又变了就保持 dirty 并续排。
+ */
+let writeSeq = 0
+let savedSeq = 0
 let lastSavedAt = 0
 let lastError = ''
 let dataFilePath = ''
@@ -243,6 +251,7 @@ export async function migratePortableSidecar(): Promise<void> {
 }
 
 function scheduleSave() {
+  writeSeq++
   dirty = true
   if (saveTimer != null) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => { saveTimer = null; void flushPortable() }, SAVE_DEBOUNCE_MS)
@@ -254,6 +263,8 @@ export async function flushPortable(): Promise<boolean> {
   if (!inited || saving) return false
   if (writeLocked) return false
   saving = true
+  // 写盘开始时的版本号：await 期间若又发生修改（writeSeq 递增），成功后不能清 dirty
+  const seqAtStart = writeSeq
   emit()
   try {
     data.savedAt = Date.now()
@@ -266,7 +277,8 @@ export async function flushPortable(): Promise<boolean> {
       lastError = `写入便携数据文件失败：HTTP ${res.status}`
       return false
     }
-    dirty = false
+    savedSeq = seqAtStart
+    dirty = writeSeq !== savedSeq
     lastSavedAt = Date.now()
     lastError = ''
     return true
@@ -298,7 +310,7 @@ export function flushPortableBeacon(): boolean {
   if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
     try {
       const ok = navigator.sendBeacon(apiBase() + '/api/data', new Blob([text], { type: 'application/json' }))
-      if (ok) { dirty = false; return true }
+      if (ok) { savedSeq = writeSeq; dirty = writeSeq !== savedSeq; return true }
     } catch { /* 落到 ② */ }
   }
 
@@ -308,7 +320,7 @@ export function flushPortableBeacon(): boolean {
     xhr.open('PUT', apiBase() + '/api/data', false) // false = 同步
     xhr.setRequestHeader('Content-Type', 'application/json')
     xhr.send(text)
-    if (xhr.status >= 200 && xhr.status < 300) { dirty = false; return true }
+    if (xhr.status >= 200 && xhr.status < 300) { savedSeq = writeSeq; dirty = writeSeq !== savedSeq; return true }
   } catch { /* 真写不出去，返回 false 交给调用方拦一道 */ }
   return false
 }

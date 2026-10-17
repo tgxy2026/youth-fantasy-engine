@@ -462,6 +462,15 @@ let inited = false
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let saving = false
 let dirty = false
+/**
+ * 🔴 写入序号（2026-10-17 全量审计 P2）：
+ *   `flushDesktop` 里 `await api().save(...)` 期间作者继续输入时，`scheduleSave` 会把 dirty 置真、
+ *   但写成功后无条件 `dirty = false` 会把它**吞掉**（该次定时器触发时 `saving` 为真、直接返回且不重排）
+ *   ⇒ 内存比磁盘新且无人知道。用序号判定：落盘只认「写入开始那一刻的版本」，
+ *   成功后若序号又变了就保持 dirty 并续排下一次。
+ */
+let writeSeq = 0
+let savedSeq = 0
 let lastSavedAt = 0
 let lastError = ''
 let dataFilePath = ''
@@ -682,6 +691,7 @@ export async function migrateDesktopSidecar(): Promise<void> {
 
 /** 数据变更后安排一次防抖写盘（SAVE_DEBOUNCE_MS 内的连续修改合并为一次写入） */
 function scheduleSave() {
+  writeSeq++
   dirty = true
   if (saveTimer != null) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => { saveTimer = null; void flushDesktop() }, SAVE_DEBOUNCE_MS)
@@ -693,6 +703,8 @@ export async function flushDesktop(): Promise<boolean> {
   if (!inited || saving) return false
   if (writeLocked) return false // 🔴 锁定期绝不落盘（见 writeLocked 说明）
   saving = true
+  // 写盘开始时的版本号：await 期间若又发生修改（writeSeq 递增），成功后不能清 dirty
+  const seqAtStart = writeSeq
   emit()
   try {
     data.savedAt = Date.now()
@@ -701,7 +713,8 @@ export async function flushDesktop(): Promise<boolean> {
       lastError = '写入本地数据文件失败：' + (r.error ?? '未知错误')
       return false
     }
-    dirty = false
+    savedSeq = seqAtStart
+    dirty = writeSeq !== savedSeq
     lastSavedAt = Date.now()
     lastError = ''
     return true
@@ -748,7 +761,8 @@ export function flushDesktopSync(): void {
       emit() // 🔴 窗口随后就关了，不广播的话这次失败谁都看不到
       return // 保留 dirty，供下次启动补救
     }
-    dirty = false
+    savedSeq = writeSeq
+    dirty = writeSeq !== savedSeq
   } catch (e) {
     // 🔴 同样保留 dirty；但必须落一条痕 —— 关窗路径上的失败若完全静默，
     //    作者只会得到「我最后那几段到底存没存」的永久疑问。

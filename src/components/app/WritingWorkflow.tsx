@@ -109,7 +109,9 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
   return (
     <div className="space-y-4 mb-6">
       <Panel>
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        {/* 🔴 快捷钮跟标题走、不贴行末（主人 2026-10-17 要求）：去掉 justify-between，
+            钮紧随 h2（gap-2）；窗口不够时 flex-wrap 让它整条落到下一行，也不挤成一条缝。 */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2"><Compass size={14} className="text-amber" /> 继续创作</h2>
           {recent && <Button variant="bare" className="text-11 text-amber" onClick={() => onNavigate('editor', recent.id)}>
             回到{recentVolume?.title ? `「${recentVolume.title}」` : ''}{recent.title || '未命名章'} <ChevronRight size={12} />
@@ -128,7 +130,9 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
       </Panel>
 
       <Panel>
-        <div className="flex items-center justify-between gap-2">
+        {/* 🔴 折叠钮跟标题走、不贴行末（主人 2026-10-17 要求）：去掉 justify-between，
+            「展开/收起」紧随「项目起步清单」标题。 */}
+        <div className="flex items-center gap-2">
           <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2"><BookOpen size={14} className="text-amber" /> 项目起步清单</h2>
           <Button variant="bare" className="text-11 text-ink-400" onClick={() => setGuideHidden(!guideHidden)}>{guideHidden ? '展开' : '收起'}</Button>
         </div>
@@ -141,14 +145,14 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
       </Panel>
 
       <Panel>
-        {/* 🔴 左对齐必须 `!justify-between`：Button 基类自带 justify-center，className 是
-            纯字符串拼接（非 tailwind-merge），产物 CSS 里 .justify-center 生成在 .justify-between
-            之后 ⇒ 不带的 `!` 传入的是死类名，整行会被居中。与 AIOrganize / FullTextSearch /
-            NovelEditorChapterTree 的 `!justify-start` 同一约定。改前先跑
-            tests/collapseHeaderAlign.test.ts。 */}
-        <Button variant="bare" className="w-full flex items-center !justify-between text-left" onClick={() => setBoardOpen(!boardOpen)} aria-expanded={boardOpen}>
-          <span className="text-13 font-semibold text-ink-100 flex items-center gap-2"><FileText size={14} className="text-amber" /> 章节规划板 <span className="text-11 font-normal text-ink-500">{boardView === 'outlines' && visible('chapter-outline') ? `${chapterOutlines.length} 张细纲卡` : `${chapters.length} 章`} · 只读视图</span></span>
-          {boardOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        {/* 🔴 折叠箭头跟标题走、不贴行末（主人 2026-10-17 要求，细化了 3.1.2 首轮的
+            「左对齐」）：箭头并进标题 span 尾部 ⇒ 整行只剩一个子元素。此时左对齐必须
+            `!justify-start` —— Button 基类自带 justify-center，className 是纯字符串拼接
+            （非 tailwind-merge），单孩+空余空间同样会被居中 ⇒ 裸 justify-start 是死类名。
+            与 AIOrganize / FullTextSearch / NovelEditorChapterTree 的 `!justify-start`
+            同一约定。改前先跑 tests/collapseHeaderAlign.test.ts。 */}
+        <Button variant="bare" className="w-full flex items-center !justify-start text-left" onClick={() => setBoardOpen(!boardOpen)} aria-expanded={boardOpen}>
+          <span className="text-13 font-semibold text-ink-100 flex items-center gap-2"><FileText size={14} className="text-amber" /> 章节规划板 <span className="text-11 font-normal text-ink-500">{boardView === 'outlines' && visible('chapter-outline') ? `${chapterOutlines.length} 张细纲卡` : `${chapters.length} 章`} · 只读视图</span>{boardOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
         </Button>
         {boardOpen && <div className="mt-4">
           {visible('chapter-outline') && <div role="group" aria-label="章节规划板视图" className="mb-4 flex flex-wrap gap-2">

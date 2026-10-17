@@ -248,7 +248,13 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                   // 层级线型：必须在 depth 之后算
                   const colDash = mono ? (MONO_DASHES[depth % MONO_DASHES.length] || undefined) : undefined
                   const fillOp = depth === 0 ? 0.16 : depth === 1 ? 0.30 : 0.42
-                  const fs = Math.max(11, 16 - depth * 2)
+                  // 🔴 字号按精度档位分档（主人 2026-10-17，OPT-006/007）：
+                  //    原实现字号只随层级深度递减、与精度档位无关 ⇒ 主人实测
+                  //    「粗精度模式文字太大 / 精精度模式文字太小」两种观感同时命中。
+                  //    精（cellKm=1，1km/格、画小范围细看）基础 20；粗（10km/格、看大范围铺量）
+                  //    基础 13；层级递减两档一致（-2/级），下限随基数（13 / 10）。
+                  const fsBase = cellKm >= 10 ? 13 : 20
+                  const fs = Math.max(cellKm >= 10 ? 10 : 13, fsBase - depth * 2)
                   // 根范围标签放包围盒右上角外（右对齐），子/孙放各自包围盒左上角外（左对齐）——避免父子名字重叠
                   const isTop = depth === 0
                   const tx = isTop ? vs.bbox.x + vs.bbox.w + 4 : vs.bbox.x + 2
@@ -269,12 +275,13 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                           fillOpacity={mono ? 1 : fillOp} strokeOpacity={mono ? 1 : (active ? 0.9 : 0.4)} strokeWidth={active ? 1 : 0.5} strokeDasharray={colDash}
                           style={{ fill: fillCol, stroke: col }} />
                       ))}
+                      {/* 🔴 标签格式两档统一（主人 2026-10-17 澄清）：单行「名称（类别）」，
+                          不显示格数 —— 「格是很好数的一个东西」，画布上数格子不如看面板。
+                          格数仍在右侧详情面板（「当前形状：N 格」）与左栏树列表里可查。 */}
                       <text x={tx} y={vs.bbox.y - 5} textAnchor={anchor} fontSize={fs} fontWeight={600} pointerEvents="none"
-                        style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}</text>
-                      <text x={tx} y={vs.bbox.y - 5 + fs + 1} textAnchor={anchor} fontSize={fs - 3} fillOpacity={mono ? 1 : 0.9} pointerEvents="none"
-                        style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>{mk.category} · {vs.count} 格</text>
+                        style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}（{mk.category}）</text>
                       {active && !painting && (
-                        <text x={tx} y={vs.bbox.y - 5 + fs * 2 + 3} textAnchor={anchor} fontSize={fs - 3.5} pointerEvents="none"
+                        <text x={tx} y={vs.bbox.y - 5 + fs + 3} textAnchor={anchor} fontSize={fs - 3.5} pointerEvents="none"
                           style={{ fill: 'rgb(var(--graph-accent-text))', paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>详情面板可绘制 · 拖动整体平移</text>
                       )}
                     </g>

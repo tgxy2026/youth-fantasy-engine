@@ -24,6 +24,7 @@ import type { Volume, Chapter } from '@/lib/types'
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
+import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { todayKey } from '@/lib/app/date'
 import { useResizable } from '@/lib/app/useResizable'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
@@ -296,14 +297,23 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
 
 
   // 从其他页签跳转进来时，直接打开目标章节
+  // 🔴 只消费一次（2026-10-17 全量审计 P2）：原先依赖数组带 `chapters`，而**每次正文保存**
+  //    都会换新数组 ⇒ effect 重跑并无条件 setActiveId(openChapterId)，把作者手动切到的章
+  //    **弹回目标章**（从「继续书写 / 章节规划板 / 全文检索」跳进来后，除目标章以外任何一章都
+  //    写不住：一保存就弹回）。改法：按 id 记账只消费一次；章还没加载出来时保留
+  //    `chapters` 依赖做一次重试（不消费就不会被弹回）。
+  const consumedOpenIdRef = useRef<string | null>(null)
+  /** 刚被删除的章 id（一次性）：置空 activeId 触发的切章冲刷要跳过它，见 removeChapter */
+  const skipFlushRef = useRef<string | null>(null)
   useEffect(() => {
-    if (openChapterId && chapters.some(c => c.id === openChapterId)) {
-      setActiveId(openChapterId)
-      // 目标卷被折叠时展开它，否则树上找不到高亮落点（全文检索 / 跨页签跳转常见）
-      const ch = chapters.find(c => c.id === openChapterId)
-      if (ch && !expandedRef.current.has(ch.volumeId)) {
-        setExpandedPersist(prev => new Set(prev).add(ch.volumeId))
-      }
+    if (!openChapterId || consumedOpenIdRef.current === openChapterId) return
+    const ch = chaptersRef.current.find(c => c.id === openChapterId)
+    if (!ch) return // 章尚未加载（或已被删）：等 chapters 变化再试；消费过就不会再进来
+    consumedOpenIdRef.current = openChapterId
+    setActiveId(openChapterId)
+    // 目标卷被折叠时展开它，否则树上找不到高亮落点（全文检索 / 跨页签跳转常见）
+    if (!expandedRef.current.has(ch.volumeId)) {
+      setExpandedPersist(prev => new Set(prev).add(ch.volumeId))
     }
   }, [openChapterId, chapters, setExpandedPersist])
 
@@ -383,6 +393,24 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     return p
   }
 
+  /**
+   * 🔴 章保存串行队列（2026-10-17 全量审计 P1/P2）：
+   *   同一章的多次落库按**调用顺序**执行。正文自动保存（2s 防抖）、标题/摘要防抖（600ms）、
+   *   Ctrl+S、切章冲刷可能同刻触发，原先并发读-改-写同一行 ⇒ 后写者用旧快照覆盖前者：
+   *   · 改标题后 2s 内自动保存 ⇒ 标题跳回旧值；
+   *   · 反向则正文倒回旧稿（且界面仍显示新稿 ⇒ 库与界面分叉，重启即丢）；
+   *   · 当日码字增量双计/少计（另在 `addDailyWords` 内做全局串行）。
+   */
+  const saveChain = useRef(new Map<string, Promise<unknown>>())
+  const enqueueSave = useCallback(<T,>(id: string, fn: () => Promise<T>): Promise<T> => {
+    const prev = saveChain.current.get(id) ?? Promise.resolve()
+    // 前一笔失败也要继续跑这一笔（用同一个回调当 onRejected）
+    const run = prev.then(fn, fn)
+    // 链上存「已消化失败」的版本，避免一次写库失败把该章后续保存全部堵死
+    saveChain.current.set(id, run.then(() => undefined, () => undefined))
+    return run
+  }, [])
+
   /** 章节定位：序号取全局派生序号（与标题无关），0 = 不计入序号 */
   const locate = (ch: Chapter) => {
     const vol = volumes.find(v => v.id === ch.volumeId)
@@ -412,16 +440,24 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
       // 取消离开章挂起的防抖保存，改由下方立即冲刷，避免旧的 setTimeout 后用新章内容错写
       clearTimeout(autosaveTimer.current)
       const leaving = chaptersRef.current.find(c => c.id === prevId)
-      if (leaving && draftRef.current !== leaving.content) {
+      // 🔴 刚删除的章不许冲刷（2026-10-17 全量审计 P2）：`removeChapter` 里 setActiveId(null) 会
+      //    触发本 effect，而此时 chapters 状态可能还留着这一章（load 未刷新）⇒ 冲刷把它写回正文库，
+      //    结果「回收站一份 + 正文一份」。删除流程会在 load 之后清掉标记。
+      if (leaving && skipFlushRef.current !== leaving.id && draftRef.current !== leaving.content) {
         const text = draftRef.current
-        const next: Chapter = { ...leaving, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+        // 先同步内存态（快速切回时读到的是最新稿），落库走该章的串行队列
+        const optimistic: Chapter = { ...leaving, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+        setChapters(prev => prev.map(c => (c.id === leaving.id ? optimistic : c)))
         // 🔴 切章冲刷失败必须可见（2026-09-19 六维审计 P2-10）：原先没有 catch，
         //    落库失败时这段稿子静默丢失，作者只看到字数没变。
-        void saveChapterWithAi(next)
+        void enqueueSave(leaving.id, async () => {
+          const cur = chaptersRef.current.find(c => c.id === leaving.id) ?? optimistic
+          const next: Chapter = { ...cur, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+          await saveChapterWithAi(next)
+          return next
+        })
           .then(() => onStatsChangeRef.current?.())
           .catch((e: unknown) => showToast('自动保存失败：' + (e instanceof Error ? e.message : String(e)), 'error'))
-        // 同步内存态，避免快速切回时读到陈旧内容把刚落库的稿子覆盖掉
-        setChapters(prev => prev.map(c => (c.id === leaving.id ? next : c)))
       }
     }
     prevActiveIdRef.current = activeId
@@ -433,7 +469,35 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
       // 上一章正文，视觉上就是「切换/加载缓慢且内容显示异常」。这里直接同帧对齐。
       setDeferredContent(ch.content ?? '')
     }
-  }, [activeId, setDeferredContent])
+  }, [activeId, setDeferredContent, enqueueSave])
+
+  // 🔴 关窗前冲刷草稿（2026-10-17 全量审计 P1）：
+  //   1) 向 App 注册「立刻落草稿」的通道（beforeunload/pagehide 时先调它、再写盘）；
+  //   2) 自己再挂 pagehide / visibilitychange(hidden)：切走应用 / 最小化时也主动落一次，
+  //      「打字 → 立刻关窗」不再丢最后 ≤2 秒的正文（原先只有 React 卸载才冲刷，关窗不触发卸载）。
+  useEffect(() => {
+    const flush = () => { void flushEditorDraftNow() }
+    const onVis = () => { if (document.visibilityState === 'hidden') flush() }
+    registerEditorDraftFlush(async () => {
+      const ch = activeRef.current
+      if (!ch || draftRef.current === ch.content) return
+      const text = draftRef.current
+      const id = ch.id
+      await enqueueSave(id, async () => {
+        const cur = chaptersRef.current.find(c => c.id === id) ?? ch
+        const next: Chapter = { ...cur, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+        await saveChapterWithAi(next)
+        return next
+      })
+    })
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      registerEditorDraftFlush(null)
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [enqueueSave])
 
   // 卸载时清理全部定时器，防止组件卸载后仍触发 setState（内存泄漏）
   useEffect(() => () => {
@@ -446,10 +510,16 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     const ch = activeRef.current
     if (ch && draftRef.current !== ch.content) {
       const text = draftRef.current
-      const next: Chapter = { ...ch, content: text, wordCount: countWords(text), updatedAt: Date.now() }
-      void saveChapterWithAi(next)
+      const id = ch.id
+      // 卸载后仍可入队（闭包持有 ref）；同一章的队列保证与在途保存不互相覆盖
+      void enqueueSave(id, async () => {
+        const cur = chaptersRef.current.find(c => c.id === id) ?? ch
+        const next: Chapter = { ...cur, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+        await saveChapterWithAi(next)
+        return next
+      }).catch(() => showToast('自动保存失败：' + '离开编辑器时仍有未落库的正文，请回到该章确认', 'error'))
     }
-  }, [])
+  }, [enqueueSave])
 
   // Ctrl/Cmd+S 保存（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(
@@ -459,15 +529,25 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
 
   // 手动保存（可传入内容，自动保存时用，避免闭包中的过期 state）
   const commitContent = async (content?: string) => {
-    if (!active) return
-    const text = content ?? draftContent
-    if (text === active.content) return
-    const next: Chapter = { ...active, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+    // 🔴 基准必须**现读 chaptersRef**：渲染闭包里的 active 可能是旧快照（见 enqueueSave 头注）
+    const base = activeId ? chaptersRef.current.find(c => c.id === activeId) : null
+    if (!base) return
+    const text = content ?? draftRef.current
+    if (text === base.content) return
     setSaving(true)
     try {
-      const { no } = locate(next)
-      await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
-      setChapters(prev => prev.map(c => (c.id === next.id ? next : c)))
+      const written = await enqueueSave(base.id, async () => {
+        // 队列内再读一次：前一笔（标题补丁）刚落库/落状态时，这里能拿到最新标题与状态
+        const cur = chaptersRef.current.find(c => c.id === base.id) ?? base
+        const next: Chapter = { ...cur, content: text, wordCount: countWords(text), updatedAt: Date.now() }
+        const { no } = locate(next)
+        await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
+        return next
+      })
+      // 字段级合并回状态：只覆盖正文相关字段，**绝不**把旧标题/状态/摘要写回界面
+      setChapters(prev => prev.map(c => (c.id === written.id
+        ? { ...c, content: written.content, wordCount: written.wordCount, updatedAt: written.updatedAt }
+        : c)))
       setSavedFlash(true)
       clearTimeout(flashTimer.current)
       flashTimer.current = setTimeout(() => setSavedFlash(false), 1500)
@@ -533,13 +613,24 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   const updateContent = (content: string) => {
     // 兼容外部调用（如敏感词替换、FocusLock 退出、时光机恢复等）：直接落库
     // 注意：必须立即落库，不能用防抖——否则在 600ms 内切换章节 / 退出项目会导致本次修改丢失
-    if (!active) return
-    const next: Chapter = { ...active, content, wordCount: countWords(content), updatedAt: Date.now() }
-    setChapters(prev => prev.map(c => (c.id === next.id ? next : c)))
+    // 🔴 基准现读 chaptersRef + 只写正文相关字段（字段级 patch）：
+    //    整章写回会用闭包里过期的标题/状态覆盖别的保存路径刚落库的值（2026-10-17 审计 P1）
+    const base = activeId ? chaptersRef.current.find(c => c.id === activeId) : null
+    if (!base) return
+    const wc = countWords(content)
+    setChapters(prev => prev.map(c => (c.id === base.id
+      ? { ...c, content, wordCount: wc, updatedAt: Date.now() }
+      : c)))
     draftRef.current = content
     setDraftContent(content)
-    const { no } = locate(next)
-    Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
+    void enqueueSave(base.id, async () => {
+      const cur = chaptersRef.current.find(c => c.id === base.id) ?? base
+      const merged = await db.patchChapter(base.id, { content, wordCount: wc })
+      const row = merged ?? { ...cur, content, wordCount: wc, updatedAt: Date.now() }
+      const { no } = locate(row)
+      await syncChapterMaster(row, no)
+      return row
+    })
       .then(() => {
         setSavedFlash(true)
         clearTimeout(flashTimer.current)
@@ -554,14 +645,20 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
 
   /** 标题/摘要等元信息更新：UI 即时更新，落库做 600ms 防抖（避免每个按键都写 IndexedDB + 同步总表） */
   const updateMeta = (patch: Partial<Chapter>) => {
-    if (!active) return
-    const next = { ...active, ...patch, updatedAt: Date.now() }
+    // 🔴 基准现读 chaptersRef（闭包 active 可能是旧快照）；落库走**字段级 patch**，
+    //    只写 patch 里出现的键 —— 整章写回会把快照里过期的正文覆盖掉刚由自动保存落库的新稿
+    const base = activeId ? chaptersRef.current.find(c => c.id === activeId) : null
+    if (!base) return
+    const next = { ...base, ...patch, updatedAt: Date.now() }
     setChapters(prev => prev.map(c => (c.id === next.id ? next : c)))
     const { no } = locate(next)
-    const run = async () => {
-      await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
+    const run = () => enqueueSave(base.id, async () => {
+      const merged = await db.patchChapter(base.id, { ...patch, updatedAt: next.updatedAt })
+      const row = merged ?? next
+      await syncChapterMaster(row, no)
       onStatsChange?.()
-    }
+      return row
+    }).then(() => { /* metaFlush 只关心完成，不关心返回值 */ })
     // 🔴 P2-8：按章节 id 入账（同章覆盖、跨章共存），不再共用一个"最新那笔"
     metaPending.current.set(next.id, run)
     clearTimeout(metaTimer.current)
@@ -827,9 +924,12 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
 
   const removeChapter = async (ch: Chapter) => {
     if (!await confirmDialog({ title: '删除章节', message: `删除「${ch.title}」？会移入回收站，可随时恢复。`, danger: true })) return
+    // 标记「这一章正在被删」：下面置空 activeId 会触发切章冲刷，必须跳过它（见切章 effect 的注释）
+    skipFlushRef.current = ch.id
     await db.deleteChapter(ch.id)
     if (activeId === ch.id) setActiveId(null)
     await load()
+    skipFlushRef.current = null
     onStatsChange?.()
   }
 
@@ -840,12 +940,21 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     updateContent(content)
   }
 
-  /** 全文替换后的回写 */
+  /** 全文替换后的回写（只同步内存态与草稿镜像；落库由调用方 `db.patchChapter` 统一负责） */
   const applyChapterContent = (id: string, content: string) => {
-    const ch = chapters.find(c => c.id === id)
+    const ch = chaptersRef.current.find(c => c.id === id)
     if (!ch) return
-    const next = { ...ch, content, wordCount: countWords(content), updatedAt: Date.now() }
+    const wc = countWords(content)
+    const next = { ...ch, content, wordCount: wc, updatedAt: Date.now() }
     setChapters(prev => prev.map(c => (c.id === id ? next : c)))
+    // 🔴 活动章的草稿镜像必须同步（2026-10-17 审计 P2）：原先只改 chapters state，
+    //    draftRef 仍是替换前的文本 ⇒ 下一条保存路径比较 draftRef !== content 成立，
+    //    把**替换前**的稿子整章写回（界面提示 N 处已替换，当前章一处没生效）。
+    if (activeId === id) {
+      draftRef.current = content
+      setDraftContent(content)
+      setDeferredContent(content)
+    }
     const { no } = locate(next)
     syncChapterMaster(next, no)
     onStatsChange?.()

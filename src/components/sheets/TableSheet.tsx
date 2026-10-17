@@ -35,7 +35,7 @@ import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
 import TableSheetRow from '@/components/sheets/TableSheetRow'
 import TableRelationGroups from '@/components/sheets/TableRelationGroups'
-import { useTableSheetModel } from '@/components/sheets/useTableSheetModel'
+import { useTableSheetModel, ROW_ACTION_COL_W } from '@/components/sheets/useTableSheetModel'
 import { usePanScroll } from '@/lib/app/usePanScroll'
 import { foldVh } from '@/lib/settings/theme'
 
@@ -347,6 +347,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           onMouseMove={pan.handlers.onMouseMove}
           onMouseUp={pan.handlers.onMouseUp}
           onMouseLeave={pan.handlers.onMouseLeave}
+          onClickCapture={pan.handlers.onClickCapture}
           className={
             'overflow-x-auto overflow-y-auto ' +
             (pan.dragging ? 'cursor-grabbing select-none ' : 'cursor-grab ')
@@ -358,7 +359,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <thead>
               <tr className="sticky top-0 z-10 bg-ink-800 border-b border-ink-700">
                 <th className="bg-ink-800 w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
-                <th className="bg-ink-800 w-7 px-1 py-2.5 align-middle" />
+                <th className="bg-ink-800 px-1 py-2.5 align-middle" style={{ width: ROW_ACTION_COL_W }} />
                 {tab.columns!.filter(col => !col.hidden).map(col => (
                   <th key={col.name} className="bg-ink-800 px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
                     <div

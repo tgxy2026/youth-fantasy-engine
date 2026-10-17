@@ -6,7 +6,7 @@ import * as db from '@/lib/db'
 import type { Volume, Chapter, TableRow, CardRecord } from '@/lib/types'
 import {
   PenLine, BookOpen, Flame, Clock, GitBranch, Lightbulb, Sparkles,
-  TrendingUp, FileText, ChevronRight, CalendarDays, Zap, Users, Loader2, AlertCircle
+  TrendingUp, FileText, ChevronRight, ChevronLeft, CalendarDays, Zap, Users, Loader2, AlertCircle
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -37,6 +37,11 @@ interface Props {
   /** 项目形态：自定义项目（未启用「伏笔追踪」时）隐藏「未回收伏笔」卡与「伏笔告警」；「角色出场分布」对自定义项目同样隐藏 */
   ctx: VisCtx
 }
+
+/** 码字日历数字卡：≥1 万显示「X.XX 万」，否则带千分位 */
+const fmtWords = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(2)} 万` : `${n.toLocaleString()}`)
+/** 闰年判定（打卡率的分母：365 / 366） */
+const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
 
 export default function Dashboard({ onNavigate, projectId, onExport, refreshKey, ctx }: Props) {
   /** 结构配比预警用的模板来源 —— `creativeSession.inputs.structureId` 是它的单一真源 */
@@ -139,6 +144,50 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
     return s ? s[1] === '未用' : true
   }), [ideas])
 
+  // 按日期索引的当日字数（年度网格与「近 7 日」共用）；包 useMemo 让 yearGrid 的依赖稳定，
+  // 否则每次渲染都新建 Map ⇒ 年度网格 useMemo 形同虚设（react-hooks/exhaustive-deps 告警的实质）
+  const statMap = useMemo(() => new Map(dailyStats.map(s => [s.date, s.words])), [dailyStats])
+
+  // ---- 年度网格（码字日历）----
+  const [calYear, setCalYear] = useState(() => new Date().getFullYear())
+  const thisYear = new Date().getFullYear()
+  const yearGrid = useMemo(() => {
+    const jan1 = new Date(calYear, 0, 1)
+    const dec31 = new Date(calYear, 11, 31)
+    const lead = (jan1.getDay() + 6) % 7            // 周一 = 0：1 月 1 日前面补几天
+    const tail = 6 - ((dec31.getDay() + 6) % 7)     // 12 月 31 日后面补几天
+    const cells: { date: string; words: number; inYear: boolean; month: number; dom: number }[] = []
+    const cur = new Date(calYear, 0, 1 - lead)
+    const end = new Date(calYear, 11, 31 + tail)
+    while (cur <= end) {
+      const key = todayKey(cur)
+      cells.push({
+        date: key,
+        words: statMap.get(key) ?? 0,
+        inYear: cur.getFullYear() === calYear,
+        month: cur.getMonth() + 1,
+        dom: cur.getDate(),
+      })
+      cur.setDate(cur.getDate() + 1)
+    }
+    const weeks = Math.ceil(cells.length / 7)
+    // 月标签：每月 1 日所在的那一列（周）打一个标签
+    const months: { col: number; label: string }[] = []
+    cells.forEach((c, i) => {
+      if (c.inYear && c.dom === 1) months.push({ col: Math.floor(i / 7), label: `${c.month} 月` })
+    })
+    const inYear = cells.filter(c => c.inYear)
+    const total = inYear.reduce((s, c) => s + c.words, 0)
+    const wroteDays = inYear.filter(c => c.words > 0).length
+    const best = inYear.reduce((a, c) => (c.words > a.words ? c : a), { date: '', words: 0 } as { date: string; words: number })
+    // 年内最长连续产出天数
+    let longest = 0, run = 0
+    for (const c of inYear) {
+      if (c.words > 0) { run++; if (run > longest) longest = run } else run = 0
+    }
+    return { cells, weeks, months, total, wroteDays, best, longest }
+  }, [calYear, statMap])
+
   if (!loaded) return <LoadingState />
 
   // AI 健康诊断：读项目实际资料 + 关键统计，输出健康分 + 风险 + 下一步建议
@@ -178,7 +227,6 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
   const weekTotal = days.reduce((s, d) => s + d.words, 0)
 
   // ---- 码字日历（自动记录）----
-  const statMap = new Map(dailyStats.map(s => [s.date, s.words]))
   /**
    * 🔴 2.9.1 产量口径统一：统计卡的「近 7 日产量」改走**自动统计**（保存章节时记录的净增量），
    * 与码字日历同源即为权威口径；「写作进度」的手工登记降为参考视图（下方柱状图）。
@@ -197,18 +245,7 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
       if (w > 0) { streak++; cur.setDate(cur.getDate() - 1) } else break
     }
   }
-  // 热力图：近 26 周
-  const heatDays: { date: string; words: number }[] = []
-  {
-    const start = new Date()
-    start.setDate(start.getDate() - (26 * 7 - 1))
-    for (let i = 0; i < 26 * 7; i++) {
-      const d = new Date(start)
-      d.setDate(start.getDate() + i)
-      const key = todayKey(d)
-      heatDays.push({ date: key, words: statMap.get(key) ?? 0 })
-    }
-  }
+  // 热力图：从「近 26 周」改为**按年**（v3.1.2 · 主人拍板 C 方案：年度热力图撑满 + 右栏年度数字）。
   // 色阶最低档从 /20 提到 /40：浅色主题（护眼/羊皮卷）下 amber 低透明度与近白背景对比度不足 1.6:1，
   // 有产出的格子看起来和空格子一样，热力图等于失效。四档仍保留递进关系。
   //
@@ -219,6 +256,7 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
   const heatLevel = (w: number) => (w === 0 ? 0 : w < 500 ? 1 : w < 1500 ? 2 : w < 3000 ? 3 : 4)
   const heatColor = (w: number) =>
     ['bg-ink-800', 'bg-amber/40', 'bg-amber/60', 'bg-amber/80', 'bg-amber'][heatLevel(w)]
+
 
   const statCards = [
     {
@@ -268,7 +306,7 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">写作面板</h1>
           <HelpPopover title="写作面板怎么用" width="22rem" size={14}>
-            {'全书健康度总览，所有数字都是从各页签实时汇总的，不需要手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 码字日历：在正文编辑器写作时自动打卡，热力图看近 26 周节奏；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作健康提醒：完稿率与风险点（伏笔堆积、断更、素材闲置）。\n\n每个区块标题旁的 ? 都有更细的说明。'}
+            {'全书健康度总览，所有数字都是从各页签实时汇总的，不需要手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作健康提醒：完稿率与风险点（伏笔堆积、断更、素材闲置）。\n\n每个区块标题旁的 ? 都有更细的说明。'}
           </HelpPopover>
         </div>
         <p className="mt-1 text-13 text-ink-300">创作全景一览 · 数据实时同步自各页签</p>
@@ -314,13 +352,13 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
         ))}
       </div>
 
-      {/* 码字日历 · 打卡 */}
+      {/* 码字日历 · 年度热力图 + 年度数字卡（v3.1.2 · 主人拍板 C 混合方案） */}
       <Panel className="mb-6">
         <div className="flex flex-wrap items-center gap-6 mb-4">
           <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2">
             <CalendarDays size={14} className="text-amber" /> 码字日历
             <HelpPopover title="码字日历怎么看" width="21rem">
-              {'完全自动记录：只要在正文编辑器里写字并保存，当天产出就会计入（删字也算变动量）。\n\n· 今日 xx 字：今天的净产出；\n· 连续码字：从今天（今天还没写则从昨天）往前数连续有产出的天数，断一天归零；\n· 热力图：近 26 周 × 7 天，颜色越亮当天写得越多（<500 / <1500 / <3000 / 3000+ 四档），鼠标悬停看具体字数。\n\n用它盯「手感」和断更风险，比看总字数更有用。'}
+              {'完全自动记录：只要在正文编辑器里写字并保存，当天产出就会计入（删字也算变动量）。\n\n· 今日 xx 字：今天的净产出；\n· 连续码字：从今天（今天还没写则从昨天）往前数连续有产出的天数，断一天归零；\n· 年度热力图：一整年每天一格（周一开头、列＝周），颜色越亮当天写得越多（<500 / <1500 / <3000 / 3000+ 四档），鼠标悬停看具体字数；\n· 「‹ 2026 ›」切换年份；\n· 右侧年度指标：全年总产量 / 打卡天数与打卡率 / 年内最长连续 / 最佳单日。\n\n用它盯「手感」和断更风险，比看总字数更有用。'}
             </HelpPopover>
           </h2>
           {/* 今日产出 */}
@@ -341,36 +379,72 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
             </div>
           </div>
         </div>
-        {/* 热力图：26 周 × 7 天 */}
-        <div className="overflow-x-auto pb-1">
-          <div className="flex gap-3px min-w-max">
-            {Array.from({ length: 26 }, (_, w) => (
-              <div key={w} className="flex flex-col gap-3px">
-                {Array.from({ length: 7 }, (_, dow) => {
-                  const cell = heatDays[w * 7 + dow]
-                  if (!cell) return <div key={dow} className="w-11px h-11px" />
-                  return (
-                    <div
-                      key={dow}
-                      data-heat={heatLevel(cell.words)}
-                      title={`${cell.date}：${cell.words} 字`}
-                      className={`w-11px h-11px rounded-2 ${heatColor(cell.words)} transition-colors hover:ring-1 hover:ring-amber/60`}
-                    />
-                  )
-                })}
+
+        {/* 主人二次调整：四个年度统计**横向一行**（不再竖排右栏）——
+            区块高度改由热力图决定，右侧不再撑高、热力图下方也不再留大片空白 */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2">
+              {/* 年份切换用 bare（非定宽图标变体）：带中文 title/aria-label 不会挤成竖排，
+                  闸 uiUxGuards 只约束 icon-amber/danger/muted 三个定宽变体 */}
+              <Button variant="bare" onClick={() => setCalYear(y => y - 1)} title="上一年" aria-label="上一年" className="px-1.5 py-1 rounded border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40">
+                <ChevronLeft size={14} />
+              </Button>
+              <span className="text-13 font-semibold text-ink-100 tabular-nums">{calYear} 年</span>
+              <Button variant="bare" onClick={() => setCalYear(y => Math.min(thisYear, y + 1))} disabled={calYear >= thisYear} title="下一年" aria-label="下一年" className="px-1.5 py-1 rounded border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40 disabled:opacity-40">
+                <ChevronRight size={14} />
+              </Button>
+              {calYear !== thisYear && (
+                <Button variant="bare" className="ml-1 text-10 text-amber" onClick={() => setCalYear(thisYear)}>回到今年</Button>
+              )}
+              {/* 年度统计：横向一行，label + 值 + 备注并列；窄窗口自动换行 */}
+              <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1">
+                {[
+                  { k: '全年产量', v: fmtWords(yearGrid.total), s: `${calYear} 年累计` },
+                  { k: '打卡天数', v: `${yearGrid.wroteDays} 天`, s: `打卡率 ${Math.round(yearGrid.wroteDays / (isLeapYear(calYear) ? 366 : 365) * 100)}%` },
+                  { k: '最长连续', v: `${yearGrid.longest} 天`, s: '年内最长' },
+                  { k: '最佳单日', v: `${yearGrid.best.words.toLocaleString()} 字`, s: yearGrid.best.date || '暂无记录' },
+                ].map(c => (
+                  <div key={c.k} className="flex items-baseline gap-1.5" title={c.k + '：' + c.s}>
+                    <span className="text-10 text-ink-500">{c.k}</span>
+                    <span className="text-13 font-bold text-ink-50 tabular-nums">{c.v}</span>
+                    <span className="text-9 text-ink-600 hidden sm:inline">{c.s}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 mt-2 text-9 text-ink-500">
-          <span>少</span>
-          <span data-heat={0} className="w-11px h-11px rounded-2 bg-ink-800 inline-block" />
-          <span data-heat={1} className="w-11px h-11px rounded-2 bg-amber/40 inline-block" />
-          <span data-heat={2} className="w-11px h-11px rounded-2 bg-amber/60 inline-block" />
-          <span data-heat={3} className="w-11px h-11px rounded-2 bg-amber/80 inline-block" />
-          <span data-heat={4} className="w-11px h-11px rounded-2 bg-amber inline-block" />
-          <span>多</span>
-          <span className="ml-3">近 26 周 · 数据来自编辑器自动记录（进/减字数都计入当日）</span>
+            </div>
+            {/* 月标签行：与热力网格同列宽，每月 1 日所在列打标 */}
+            <div className="grid pb-1" style={{ gridTemplateColumns: `repeat(${yearGrid.weeks}, minmax(0, 1fr))` }}>
+              {Array.from({ length: yearGrid.weeks }, (_, w) => {
+                const lab = yearGrid.months.find(m => m.col === w)
+                return <div key={w} className="text-9 text-ink-600 leading-none truncate">{lab ? lab.label : ''}</div>
+              })}
+            </div>
+            {/* 热力网格：列＝周（周一→周日），格子 aspect-square ⇒ 随容器宽度等比方，天然撑满 */}
+            <div
+              className="grid gap-[3px]"
+              style={{
+                gridTemplateColumns: `repeat(${yearGrid.weeks}, minmax(0, 1fr))`,
+                gridTemplateRows: 'repeat(7, auto)',
+                gridAutoFlow: 'column',
+              }}
+            >
+              {yearGrid.cells.map(c => (
+                <div
+                  key={c.date}
+                  data-heat={c.inYear ? heatLevel(c.words) : -1}
+                  title={c.inYear ? `${c.date}：${c.words} 字` : c.date}
+                  className={`aspect-square w-full rounded-[2px] transition-colors ${c.inYear ? heatColor(c.words) : 'bg-transparent'} ${c.date === todayStr ? 'ring-1 ring-amber/70' : ''} hover:ring-1 hover:ring-amber/60`}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5 mt-2 text-9 text-ink-500">
+              <span>少</span>
+              <span data-heat={0} className="w-2.5 h-2.5 rounded-[2px] bg-ink-800 inline-block" />
+              <span data-heat={1} className="w-2.5 h-2.5 rounded-[2px] bg-amber/40 inline-block" />
+              <span data-heat={2} className="w-2.5 h-2.5 rounded-[2px] bg-amber/60 inline-block" />
+              <span data-heat={3} className="w-2.5 h-2.5 rounded-[2px] bg-amber/80 inline-block" />
+              <span data-heat={4} className="w-2.5 h-2.5 rounded-[2px] bg-amber inline-block" />
+              <span>多</span>
+              <span className="ml-3">数据来自编辑器自动记录（进/减字数都计入当日）</span>
         </div>
       </Panel>
 

@@ -1,7 +1,12 @@
 // ============ Button「左对齐」死类名闸（3.1.2）============
 //
-// 需求口径（主人 2026-10-17）：工作面板 → 写作面板的「章节规划板」折叠态必须**左对齐**
-//   （与其它页签一致），不能只有它一个居中难看。
+// 需求口径（主人 2026-10-17，两轮）：
+//   第一轮：工作面板 → 写作面板的「章节规划板」折叠态必须**左对齐**（与其它页签一致），
+//     不能只有它一个居中难看。
+//   第二轮（同日 OPT-001/002/003）：三处标题行的控件一律**紧贴标题**、不贴面板行末 ——
+//     「项目起步清单」的展开/收起钮、「章节规划板」的折叠箭头、「继续创作」的快捷钮，
+//     主人原话「不要让它的位置太远」「将折叠箭头放到对应窗口名称的后面」。
+//     章节规划板的箭头因此并进标题 span 尾部 ⇒ 头按钮只剩一个子元素。
 //
 // 根因（极隐蔽，值得闸）：
 //   Button 基类自带 `justify-center`，而 Button.tsx 拼 className 是**纯字符串拼接**
@@ -37,11 +42,11 @@ console.log('—— collapseHeaderAlign：Button 左对齐死类名闸（3.1.2�
     btn.includes('inline-flex items-center justify-center gap-1.5 select-none whitespace-normal'))
 }
 
-// ---------- ② 本次修复的三处：必须带 ! 前缀 ----------
+// ---------- ② 第一轮修复的三处：必须带 ! 前缀 ----------
 {
   const wf = read('src/components/app/WritingWorkflow.tsx')
-  ok('② 章节规划板折叠头：!justify-between（主人报的病灶：整行被居中）',
-    wf.includes('className="w-full flex items-center !justify-between text-left"'))
+  ok('② 章节规划板折叠头：!justify-start（箭头并入标题 span 后整行单孩，裸 start 也会被基类居中）',
+    wf.includes('className="w-full flex items-center !justify-start text-left"'))
 
   const jw = read('src/components/jiewenji/JieWenJiEdit.tsx')
   ok('② 颉文姬改稿「续写」折叠头：!justify-between（同病灶：标签＋箭头双孩）',
@@ -50,6 +55,20 @@ console.log('—— collapseHeaderAlign：Button 左对齐死类名闸（3.1.2�
   const it = read('src/components/creative/InspireTools.tsx')
   ok('② AI 取名结果卡：!justify-between（同病灶：单孩也被居中）',
     it.includes('className="text-left flex items-start !justify-between gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded-lg hover:border-amber/40 transition-colors"'))
+}
+
+// ---------- ④ 第二轮「控件跟标题走」三处（OPT-001/002/003） ----------
+// 口径：折叠钮 / 快捷钮 / 折叠箭头紧贴标题，不用 justify-between 把它们推到面板行末
+//   （面板全宽 ⇒ 推末 = 离标题一整个面板宽，主人观感「太远」）。
+// 章节规划板的箭头并进标题 span 尾部 ⇒ 头按钮只剩一个子元素（左对齐靠 !justify-start）。
+{
+  const wf = read('src/components/app/WritingWorkflow.tsx')
+  ok('④ 继续创作标题行：无 justify-between，快捷钮紧随 h2',
+    wf.includes('<div className="flex flex-wrap items-center gap-2 mb-3">'))
+  ok('④ 项目起步清单标题行：无 justify-between，展开/收起钮紧随 h2',
+    wf.includes('<div className="flex items-center gap-2">'))
+  ok('④ 章节规划板：折叠箭头并入标题 span 尾部（不单独占行末位）',
+    wf.includes('只读视图</span>{boardOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>'))
 }
 
 // ---------- ③ 负向控制：全 src 扫描，Button 的 className 里不允许裸 justify-* ----------

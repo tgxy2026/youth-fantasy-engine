@@ -61,12 +61,32 @@ ok('② 有位移阈值（默认 4px）—— 防止把「单击进单元格」�
   hook.includes("optsRef.current.threshold ?? 4"))
 ok('② 排除区：`[data-nodrag]` 不启动平移（列宽手柄靠它）',
   hook.includes("target.closest('[data-nodrag]')"))
-ok('② 表单元素不抢（input/select/textarea/button/a/contenteditable）',
+ok('② 表单元素不抢（input/select/button/a/contenteditable 一律排除）',
   hook.includes("'input, select, textarea, button, a, [contenteditable]'"))
+// 🔴 2026-10-17 全量审计（P2）：数据单元格本身就是 CellTextarea ⇒ 原「textarea 一并排除」
+//    让整张表体不可拖，平移只剩表头能用（实测表体起拖 scrollLeft 恒 0）。
+//    现口径：表头表单元素排除，**表体 textarea 允许起拖**（<4px 仍是单击编辑）。
+ok('🔴 表体 textarea 允许起拖（否则整张表体不可拖，平移只剩表头能用）',
+  hook.includes("if (formEl.tagName !== 'TEXTAREA' || !formEl.closest('tbody')) return false"))
+ok('🔴 已在编辑的那个 textarea 不抢（点进去后拖拽＝选文字，不能被平移吃掉）',
+  hook.includes('return document.activeElement !== formEl'))
+ok('🔴 表头筛选框 / 下拉仍被排除（thead 里的表单元素不启动平移）',
+  hook.includes("target.closest('thead input, thead select, thead textarea, thead [contenteditable]')"))
+ok('🔴 拖拽成立时 blur 掉焦点中的 textarea（平移意图明确，别留光标/选区）',
+  hook.includes("ae.tagName === 'TEXTAREA' && el.contains(ae)) ae.blur()"))
 ok('② 拖拽中给容器 select-none（不然一拖把整表文字选蓝）',
   sheet.includes("pan.dragging ? 'cursor-grabbing select-none ' : 'cursor-grab '"))
-ok('② 拖拽成立后吃掉随后那次 click（防止「拖完顺手点开单元格」）',
-  hook.includes("document.addEventListener('click', kill, true)"))
+// 🔴 2026-10-17 全量审计（P2）：原实现「拖拽一开始挂 document 监听 + setTimeout(0) 移除」
+//    —— 监听一次 tick 后就被拆掉，而 click 在 mouseup 之后几百毫秒才派发 ⇒ 等于没吃掉。
+//    现口径：finish() 打时间戳 + onClickCapture 时间窗拦 400ms 内的第一次 click。
+ok('② 拖拽成立后吃掉随后那次 click（时间戳 + onClickCapture，防「拖完顺手点开单元格」）',
+  hook.includes('suppressClickAt.current = performance.now()')
+  && hook.includes('performance.now() - at < 400')
+  && hook.includes('onClickCapture'))
+ok('🔴 反向守卫：不再用「拖拽开始即挂 document 监听 + setTimeout(0)」（那是失效实现）',
+  !hook.includes("setTimeout(() => document.removeEventListener('click', kill, true), 0)"))
+ok('② 容器已接 onClickCapture（拦截必须挂在滚动容器上，捕获阶段早于单元格 onClick）',
+  sheet.includes('onClickCapture={pan.handlers.onClickCapture}'))
 ok('② 横向滚动既保留了原生滚动条，也支持拖动（overflow-x-auto 仍在）',
   sheet.includes('overflow-x-auto overflow-y-auto'))
 
@@ -94,8 +114,8 @@ ok('④ 容器挂了 ref 与四个处理器（左键拖拽不需要 onContextMen
 ok('④ 列宽手柄标了 data-nodrag（拖表格不会顺手改列宽）',
   (sheet.match(/data-nodrag/g) ?? []).length >= 1)
 // 🔴 反向守卫：别把 hook 的 ref 类型写错导致 React 19/18 ref 不匹配（编译期已挡，这里再钉一次形状）
-ok('④ 反向守卫：hook 返回 ref/handlers/dragging 三件套',
-  /ref,\s*$/m.test(hook) && hook.includes('handlers: { onMouseDown, onMouseMove, onMouseUp, onMouseLeave }'))
+ok('④ 反向守卫：hook 返回 ref/handlers/dragging 三件套（handlers 含 onClickCapture）',
+  /ref,\s*$/m.test(hook) && hook.includes('handlers: { onMouseDown, onMouseMove, onMouseUp, onMouseLeave, onClickCapture }'))
 
 console.log(`\ntablePan: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1

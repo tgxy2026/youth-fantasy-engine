@@ -121,8 +121,14 @@ const tab = getTab(MIS)
   const mig = read('src/lib/db/migrations.ts')
   ok('🔴 存在「表格行 → 卡片」迁移（不迁的话老数据凭空消失：两者是不同的 store）',
     /export async function migrateMiscSettingsToCards/.test(mig))
-  ok('迁移挂在 runMigrations 里（否则永远不会跑）',
-    /await migrateMiscSettingsToCards\(\)/.test(mig))
+  // 🔴 2026-10-17 全量审计：runMigrations 改为「每步 guarded(...) 隔离」后，
+  //    断言改成「runMigrations 函数体内出现了这个迁移」——两种调用形态都放行，不再钉死写法。
+  {
+    const at = mig.indexOf('export async function runMigrations')
+    const end = at < 0 ? -1 : mig.indexOf('\n}', at)
+    const runFn = at < 0 || end < 0 ? '' : mig.slice(at, end)
+    ok('迁移挂在 runMigrations 里（否则永远不会跑）', /migrateMiscSettingsToCards/.test(runFn))
+  }
   ok('迁移写入的键与 resolveSlot 一致（不一致＝数据看得见却填不进去）',
     /'设定内容::内容'/.test(mig))
   ok('迁移幂等：该表已无表格行时直接返回',

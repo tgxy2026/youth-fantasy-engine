@@ -21,7 +21,7 @@ import CalendarSelect from '@/components/common/CalendarSelect'
 import NumberField from '@/components/common/NumberField'
 import StoryDateInput from '@/components/common/StoryDateInput'
 import { CellTextarea, rowBadgeClass } from '@/components/sheets/tableSheetShared'
-import type { TableSheetModel } from '@/components/sheets/useTableSheetModel'
+import { ROW_ACTION_COL_W, type TableSheetModel } from '@/components/sheets/useTableSheetModel'
 import { readAliases } from '@/lib/settings/aliases'
 
 /**
@@ -100,8 +100,13 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
           {index + 1}
           {rowDirty && <span className="absolute left-0 top-1 w-0.5 h-5 bg-amber rounded-r" />}
         </td>
-        <td className="w-7 px-1 py-1 align-middle">
-          <div className="flex flex-col items-center justify-center gap-0.5 h-full">
+        {/* 🔴 行首操作列 2×2（OPT-008，主人 2026-10-17）：原为 w-7(28px) 窄列 flex-col 竖排，
+            4 个图标钮把每一行撑高约 100px（「页面变得很长、很难看」）。改为可换行居中：
+            列宽走 ROW_ACTION_COL_W(64px，与表头 th / totalWidth 同源)，恰好容两枚 24px 钮
+            ⇒ 4 钮即 2×2；3 钮 2+1、2 钮 1 行、1 钮单枚，都由 flex-wrap + justify-center
+            自动收窄居中，不会为凑 2×2 把简单表撑宽或留下空位。 */}
+        <td className="px-1 py-1 align-middle" style={{ width: ROW_ACTION_COL_W }}>
+          <div className="flex flex-wrap items-center justify-center content-center gap-0.5 h-full">
           {chapterLink && (
             <Button variant="bare" iconOnly size="xs"
               onClick={() => onNavigate?.('editor', chapterLink)}

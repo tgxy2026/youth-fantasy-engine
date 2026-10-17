@@ -642,8 +642,10 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
     for (const r of results) {
       const next = r.ch.content.split(q).join(replacement)
       onReplaced(r.ch.id, next)
-      // 重算字数，避免章节总表与统计面板保留旧字数
-      await db.saveChapter({ ...r.ch, content: next, wordCount: countWords(next), updatedAt: Date.now() })
+      // 🔴 只写正文相关字段（字段级 patch），不用 `saveChapter({ ...r.ch, ... })`：
+      //    r.ch 是**搜索那一刻**的快照，整章写回会把作者期间改过的标题/状态覆盖掉，
+      //    也会把旧快照的正文盖掉自动保存刚落库的新稿（2026-10-17 全量审计 P2）。
+      await db.patchChapter(r.ch.id, { content: next, wordCount: countWords(next) })
     }
     doSearch()
   }

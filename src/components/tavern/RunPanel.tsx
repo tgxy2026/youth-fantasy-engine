@@ -220,7 +220,13 @@ export default function RunPanel() {
           {list === null ? (
             <div className="flex items-center gap-2 py-6 text-ink-400"><Loader2 size={15} className="animate-spin text-amber" /><span className="text-13">读取中…</span></div>
           ) : list.length === 0 ? (
-            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3 text-12 leading-relaxed text-ink-400">
+            // 🔴 空态盒撑满栏高 + 居中（OPT-009，主人 2026-10-17）：原左右两盒「内容贴内容」
+            //    高度不等（左栏 w-72 内 wrap 多行 vs 右栏宽栏一行），且 padding 一 p-3 一 p-4。
+            //    父级 flex 两栏本就 stretch 等高 ⇒ 盒加 h-full 即自然等高；与右盒同款
+            //    h-full flex items-center justify-center text-center（空态时是栏内唯一子元素，
+            //    h-full 安全；非空态走条件渲染不受影响）。
+            // ⚠️ 注释必须用行注释：这里是三目括号表达式，{/* … */} 会被解析成空对象字面量而炸语法。
+            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-4 text-12 leading-relaxed text-ink-400 h-full flex items-center justify-center text-center">
               还没有跑团互动。<b className="text-ink-200">「＋ 新建一局」</b>开始 —— 之后在右侧输入你的行动就能开跑。
             </div>
           ) : list.map(it => (
@@ -259,7 +265,8 @@ export default function RunPanel() {
         {/* 右：局详情 */}
         <section className="flex-1 min-w-0 overflow-y-auto pr-1">
           {!session ? (
-            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-4 text-12 leading-relaxed text-ink-400">
+            // 与左栏空态盒同款（OPT-009）：等高 + 居中，详见左栏注释（行注释同理：三目括号表达式内）
+            <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-4 text-12 leading-relaxed text-ink-400 h-full flex items-center justify-center text-center">
               从左边选一局，或新建一局。跑团互动的每一步都记在「行动流水」里，可存档、可回滚。
             </div>
           ) : (
