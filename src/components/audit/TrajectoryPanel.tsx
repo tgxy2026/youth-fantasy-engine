@@ -196,11 +196,14 @@ export default function TrajectoryPanel() {
   }
 
   return (
-    <div className="w-full page-enter">
+    // 🔴 2026-10-17：根容器锁高 + 恒双栏独立滚动 —— 与 MasterDetail（角色卡 / 大纲卡）同范式
+    //    （主人 3.1.2 要求主从双栏全局一致）。顶部总览 / AI 占比 shrink-0 常驻，
+    //    章节列表与轨迹详情各自滚；窄窗并排挤一挤，不堆叠（堆叠必压瘪一栏）。
+    <div className="page-enter flex h-full flex-col overflow-hidden">
       {/* 3.0 · W1-1：AI 运行账本（只读留痕） */}
       {ledgerOpen && <RunLedgerPanel onClose={() => setLedgerOpen(false)} />}
       {versionOpen && <BookVersionPanel onClose={() => setVersionOpen(false)} onRestored={() => void load()} />}
-      <header className="mb-5">
+      <header className="mb-5 shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">创作轨迹</h1>
           <HelpPopover title="创作轨迹怎么用" width="23rem" size={14}>
@@ -221,7 +224,7 @@ export default function TrajectoryPanel() {
       </header>
 
       {/* 全书总览 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 shrink-0">
         <StatCard label="总字数" value={`${overview.totalWords.toLocaleString()}`} unit="字" />
         <StatCard label="章节" value={`${overview.writtenChapters}`} unit={`/ ${overview.totalChapters} 章已有正文`} />
         <StatCard label="写作天数" value={`${overview.activeDays}`} unit={`/ 跨度 ${overview.spanDays} 天`} />
@@ -231,7 +234,7 @@ export default function TrajectoryPanel() {
       {/* 🔴 B3：AI 辅助占比 —— 如实申报的入口。
           口径刻意写成「累计产出量」：AI 写完作者常会再改，改完无法反推，
           所以这里显示的是"产出过多少"，**不是**"成稿里有多少是 AI 的"。 */}
-      <section className="mb-5 rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-3">
+      <section className="mb-5 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-baseline gap-2">
             <span className="text-12 text-ink-300">AI 辅助占比</span>
@@ -270,9 +273,11 @@ export default function TrajectoryPanel() {
         </p>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[16rem,1fr]">
+      {/* 🔴 2026-10-17：恒双栏 + 锁高（原来是 grid 双栏、跟页滚）——
+          章节列表与轨迹详情两栏各自独立滚动，互不带动 */}
+      <div className="flex flex-1 min-h-0 gap-4">
         {/* 左：章节列表 */}
-        <aside className="rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
+        <aside className="w-64 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 border-b border-ink-700 text-11 text-ink-400 flex items-center justify-between gap-2">
             <span>选择章节</span>
             {groups.length > 1 && (
@@ -287,7 +292,8 @@ export default function TrajectoryPanel() {
               </button>
             )}
           </div>
-          <div className="overflow-auto" style={{ maxHeight: foldVh('62vh') }}>
+          {/* 唯一滚动区：flex-1 + min-h-0 吃满左栏剩余高度（🔴 min-h-0 不能删） */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             {groups.length === 0 ? (
               <div className="px-3 py-6 text-11 text-ink-500 text-center">这个项目还没有章节</div>
             ) : groups.map(g => {
@@ -321,8 +327,8 @@ export default function TrajectoryPanel() {
           </div>
         </aside>
 
-        {/* 右：轨迹详情 */}
-        <section className="min-w-0">
+        {/* 右：轨迹详情（独立滚动） */}
+        <section className="min-w-0 flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {!traj ? (
             <div className="rounded-xl border border-ink-700 bg-ink-850/40 flex items-center justify-center text-13 text-ink-500" style={{ height: foldVh('40vh') }}>
               左侧选一章，这里显示它的创作轨迹

@@ -307,7 +307,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
           if (open) closeAll()
           else setOpen(true)
         }}
-        className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
+        className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center !justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
         <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? displayOf(value) : '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />

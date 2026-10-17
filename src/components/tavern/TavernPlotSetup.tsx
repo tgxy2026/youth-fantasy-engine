@@ -491,7 +491,7 @@ export default function TavernPlotSetup({ open, onCreate, onCancel }: Props) {
                                   （同屏的「更换 / 清空」都是 Button，混着写两套样式迟早走样） */}
                               <Button
                                 variant="secondary" size="sm"
-                                className="min-w-0 flex-1 justify-start border-dashed"
+                                className="min-w-0 flex-1 !justify-start border-dashed"
                                 onClick={() => setPickerIdx(i)}
                               >
                                 ＋ 选择角色

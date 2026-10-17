@@ -27,6 +27,8 @@ import workbenchBg from '@/assets/workbench-bg.png'
 import jiewenjiGufeng from '@/assets/jiewenji-gufeng.png'
 import { Button } from '@/components/common/Button'
 import MascotSettingsDialog from '@/components/settings/MascotSettingsDialog'
+import AppIconDialog from '@/components/settings/AppIconDialog'
+import { appIconSupported } from '@/lib/app/desktop'
 
 interface Props {
   onOpen: (projectId: string) => void
@@ -83,6 +85,11 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
     setMascotHiddenState(readBoolPref('home-mascot-hidden', false))
     setMascotCustom(readStringPref('home-mascot-custom'))
   }
+  // 3.1.2 · 应用图标（桌面快捷方式）切换：入口只在**支持**的形态下出现
+  //   （桌面安装版 + Windows 才有 .lnk；便携版 / 浏览器恒 false ⇒ 不显示按钮，而不是点了才报错）
+  const [appIconOpen, setAppIconOpen] = useState(false)
+  const [appIconOk, setAppIconOk] = useState(false)
+  useEffect(() => { void appIconSupported().then(setAppIconOk) }, [])
   // 内置背景开关（2.6.1）：与侧栏弹窗同键，跨实例同步
   const [bgHidden] = usePersistedBool('workbench-bg-hidden', false)
   const [backupName, setBackupName] = useState('')
@@ -293,6 +300,18 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             >
               {mascotHidden ? <EyeOff size={13} /> : <Eye size={13} />} 看板娘设置
             </Button>
+            {/* 3.1.2：桌面图标（快捷方式）切换 —— 看板娘设置旁边，同档 secondary、同 size，
+                仅桌面安装版显示；三套内置预设（默认 / 幻想 / 典雅）在弹窗里选。 */}
+            {appIconOk && (
+              <Button
+                variant="secondary"
+                onClick={() => setAppIconOpen(true)}
+                title="应用图标：切换桌面快捷方式的图标（桌面 / 开始菜单同时生效）"
+                className="transition-colors"
+              >
+                <ImageIcon size={13} /> 应用图标
+              </Button>
+            )}
             {onReplayWelcome && (
               <Button variant="secondary" onClick={onReplayWelcome}
                 title="重新看一遍新手引导（三选一 + 顺手指引）—— 不会改动任何已有数据"
@@ -696,6 +715,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
           onSaved={reloadMascotPrefs}
         />
       )}
+      {appIconOpen && <AppIconDialog onClose={() => setAppIconOpen(false)} />}
     </div>
   )
 }

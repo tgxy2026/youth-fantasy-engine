@@ -145,7 +145,7 @@ export default function WelcomeWizard({ onDone }: Props) {
                   variant="toggle"
                   selected={choice === c.key}
                   onClick={() => setChoice(c.key)}
-                  className="w-full flex-row items-center justify-start gap-3.5 p-4 h-auto text-left rounded-xl"
+                  className="w-full flex-row items-center !justify-start gap-3.5 p-4 h-auto text-left rounded-xl"
                 >
                   <span className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-lg ${c.iconCls}`}>
                     {c.icon}

@@ -39,8 +39,6 @@ import AITemplateFill from '@/components/ai/AITemplateFill'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { LoadingState } from '@/components/common/LoadingState'
 import SelectRow from '@/components/common/SelectRow'
-// 界面缩放（<html> zoom）下 vh 不缩水 ⇒ 内联长度一律走 foldVh（项目红线）
-import { foldVh } from '@/lib/settings/theme'
 
 /** 选中「母级」的哨兵值（子项用的是真实 id） */
 const MAIN = '__main__'
@@ -291,8 +289,12 @@ export default function WorldSetSheet({ tab }: Props) {
   if (!modules.length) return <div className="p-8 text-13 text-ink-400">这个页签没有可填的字段。</div>
 
   return (
-    <div className="w-full page-enter">
-      <header className="mb-4">
+    // 🔴 2026-10-17：根容器锁高（`flex h-full flex-col overflow-hidden`）——
+    //    与角色卡 / 大纲卡 / 酒馆各页签统一为「两栏各自独立滚动」（主人 3.1.2 要求全局一致，
+    //    不能再有的页签改了有的没改）。此前是 `w-full` 跟页滚：右栏表单被整页拖着滚，
+    //    左栏层目录滚出视野后想切层得先滚回顶部。
+    <div className="page-enter flex h-full flex-col overflow-hidden">
+      <header className="mb-4 shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
           <HelpPopover title={`${tab.name} · 母子结构怎么用`} width="24rem" size={14}>
@@ -354,11 +356,14 @@ export default function WorldSetSheet({ tab }: Props) {
         </div>
       </header>
 
-      <div className="flex flex-col lg:flex-row gap-4 items-start">
+      {/* 🔴 2026-10-17：恒双栏 + 锁高（不再堆叠）—— 与 MasterDetail（角色卡 / 大纲卡）同范式：
+          窗口再窄也是并排挤一挤，两栏各自滚；堆叠模式下必有一栏被压瘪，反而不一致。
+          左栏层目录自滚、右栏表单自滚，页头（保存 / AI 补全）常驻可见。 */}
+      <div className="flex flex-1 min-h-0 gap-4">
         {/* ---------- 左列：层选择 ----------
             ⚠️ 刻意用 div 而不是 aside：页面里已经有一个 aside（左侧主导航栏），
             再来一个同为 aside 的容器，无论是无障碍语义还是脚本/调试都会互相混淆。 */}
-        <div className="w-full lg:w-56 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
+        <div className="w-56 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 text-10 text-ink-500 border-b border-ink-700">全书统一（母级）</div>
           {/* U-4 · 2.6.0：母级行改 SelectRow（行选择收编件，选中态令牌 /15 与 Button toggle 真源一致） */}
           <SelectRow
@@ -390,7 +395,9 @@ export default function WorldSetSheet({ tab }: Props) {
             </button>
           )}
 
-          <div className="overflow-y-auto" style={{ maxHeight: foldVh('46vh') }}>
+          {/* 唯一滚动区：flex-1 + min-h-0 吃满左栏剩余高度（🔴 min-h-0 不能删——
+              flex 子项默认 min-height:auto，会撑破锁高把两栏一起顶变形） */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             {subs.length === 0 && (
               <div className="px-3 py-3 text-11 text-ink-600 leading-relaxed">
                 还没有{subLabel}。<br />如果这本书只在一个世界里发生，就不用建。
@@ -426,14 +433,14 @@ export default function WorldSetSheet({ tab }: Props) {
           </div>
 
           <button onClick={() => setNaming('new')}
-            className="w-full flex items-center gap-1.5 px-3 py-2.5 text-12 text-ink-300 hover:bg-ink-800 border-t border-ink-700 transition-colors"
+            className="w-full shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-12 text-ink-300 hover:bg-ink-800 border-t border-ink-700 transition-colors"
           >
             <Plus size={12} /> {addLabel}
           </button>
         </div>
 
-        {/* ---------- 右列：当前层的表单 ---------- */}
-        <div className="flex-1 min-w-0">
+        {/* ---------- 右列：当前层的表单（独立滚动） ---------- */}
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           <div className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 ${
             isMain ? 'border-amber/30 bg-amber/5' : 'border-ink-600 bg-ink-800/40'
           }`}>

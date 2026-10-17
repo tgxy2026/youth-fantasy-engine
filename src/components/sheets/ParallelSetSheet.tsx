@@ -46,7 +46,6 @@ import { Button } from '@/components/common/Button'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import type { TemplateField } from '@/lib/ai'
-import { foldVh } from '@/lib/settings/theme'
 
 export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   const [subs, setSubs] = useState<CardRecord[]>([])
@@ -353,8 +352,10 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   if (!modules.length) return <div className="p-8 text-13 text-ink-400">这个页签没有可填的字段。</div>
 
   return (
-    <div className="w-full page-enter">
-      <header className="mb-4">
+    // 🔴 2026-10-17：根容器锁高 + 恒双栏独立滚动 —— 与 WorldSetSheet / MasterDetail 同范式
+    //    （主人 3.1.2 要求主从双栏全局一致：左栏条目自滚、右栏表单自滚，页头按钮常驻）。
+    <div className="page-enter flex h-full flex-col overflow-hidden">
+      <header className="mb-4 shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
           <HelpPopover title={`${tab.name} · 怎么用`} width="24rem" size={14}>
@@ -396,9 +397,10 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
         </div>
       </header>
 
-      <div className="flex flex-col lg:flex-row gap-4 items-start">
+      {/* 🔴 2026-10-17：恒双栏 + 锁高（同 WorldSetSheet，见那边注释）—— 两栏各自独立滚动 */}
+      <div className="flex flex-1 min-h-0 gap-4">
         {/* ---------- 左列：条目列表（🔴 没有母级行，第一行就是列表标题）---------- */}
-        <div className="w-full lg:w-56 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
+        <div className="w-56 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 text-10 text-ink-500 border-b border-ink-700 flex items-center gap-1">
             {subLabel}
             <span className="text-ink-600">（{subs.length}）</span>
@@ -412,7 +414,8 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
             <Layers size={11} /> 从《世界设定》新建
           </button>
 
-          <div className="overflow-y-auto" style={{ maxHeight: foldVh('52vh') }}>
+          {/* 唯一滚动区：flex-1 + min-h-0 吃满左栏剩余高度（🔴 min-h-0 不能删） */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             {subs.length === 0 && (
               <div className="px-3 py-3 text-11 text-ink-600 leading-relaxed">
                 还没有{subLabel}。<br />点下面的「{addLabel}」建第一条。
@@ -465,14 +468,14 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
           </div>
 
           <button onClick={() => setNaming('new')}
-            className="w-full flex items-center gap-1.5 px-3 py-2.5 text-12 text-ink-300 hover:bg-ink-800 border-t border-ink-700 transition-colors"
+            className="w-full shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-12 text-ink-300 hover:bg-ink-800 border-t border-ink-700 transition-colors"
           >
             <Plus size={12} /> {addLabel}
           </button>
         </div>
 
-        {/* ---------- 右列：当前条目的表单 ---------- */}
-        <div className="flex-1 min-w-0">
+        {/* ---------- 右列：当前条目的表单（独立滚动） ---------- */}
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {!selSub ? (
             <div className="rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-8 text-center text-12 text-ink-500">
               左边点一条来编辑，或点「{addLabel}」新建一条。

@@ -45,6 +45,17 @@ const HEADER_TO_TYPE: Record<string, CardType> = {
 }
 
 const CARD_W = 260
+/**
+ * 🔴 3.1.2：卡片坐标下限（载入自愈用）。
+ *
+ * 为什么需要：卡片以 (x,y) 为**中心**渲染（`-translate-x-1/2 -translate-y-1/2`），
+ * 而滚动容器的 `scrollLeft` 到不了负数 ⇒ x < 130 的卡片左缘被裁、y 过小则上缘被裁。
+ * `generate()` / `layBeats()` 的新卡本就落在 170 起，这里兜的是**旧快照**——
+ * 3.1.2 前的示范项目种子把首列放在 x=80，「待办伏笔」四个字被啃得只剩「伏」右半边＋「笔」。
+ * 拖拽钳制（x ≥ 138 / y ≥ 40）管得住今后的新位置，管不住已经落库的旧数据。
+ */
+const MIN_CARD_X = CARD_W / 2 + 40
+const MIN_CARD_Y = 70
 /** 卡片外接框留白：右/下侧预留一屏内的余量，卡片超出可视区时画布才扩展并出现滚动条 */
 const PAD_X = CARD_W / 2 + 60
 const PAD_Y = 160
@@ -108,7 +119,13 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
     db.getSetting<PlotPersist>('plotCanvas', { selected: [], cards: [], conns: [] }).then(p => {
       if (!alive) return
       if (p.selected) setSelected(new Set(p.selected))
-      if (p.cards) setCards(p.cards)
+      // 🔴 3.1.2：旧快照坐标自愈 —— 会把滚出可见区的卡片挪回可见区内（见 MIN_CARD_* 注释）。
+      //    只挪「越界」的卡，正常坐标一个像素都不动；自愈后的值随下次改动自动落库。
+      if (p.cards) setCards(p.cards.map(c => ({
+        ...c,
+        x: Math.max(MIN_CARD_X, c.x ?? MIN_CARD_X),
+        y: Math.max(MIN_CARD_Y, c.y ?? MIN_CARD_Y),
+      })))
       if (p.conns) setConns(p.conns)
       loadedRef.current = true
     })

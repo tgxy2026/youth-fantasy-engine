@@ -102,6 +102,22 @@ contextBridge.exposeInMainWorld('electronUpdate', {
   },
 })
 
+// 3.1.2 应用图标（桌面快捷方式）切换：只暴露「列预设 / 查当前 / 应用 / 还原默认」四个口子。
+// 🔴 这些动作改的是**桌面与开始菜单的 .lnk**（本机壳层设置），不碰项目数据、不进云盘同步；
+//    主 exe 自身的图标不在可改范围内（PE 资源，改它要重写二进制）。
+contextBridge.exposeInMainWorld('electronAppIcon', {
+  /** 当前平台是否支持（非 Windows 为 false，界面应隐藏入口） */
+  supported: () => ipcRenderer.invoke('appicon:supported'),
+  /** 内置预设清单：[{ key, label, preview(dataURL) }] */
+  presets: () => ipcRenderer.invoke('appicon:list'),
+  /** 当前生效：{ key, saved, shortcuts:[{path,exists}] } */
+  current: () => ipcRenderer.invoke('appicon:current'),
+  /** 应用某个预设；返回 { ok, key, iconPath, applied[], failed[]?, error? }（永不 reject） */
+  apply: (key) => ipcRenderer.invoke('appicon:apply', key),
+  /** 还原为默认（指回主 exe 自身图标） */
+  reset: () => ipcRenderer.invoke('appicon:reset'),
+})
+
 // 3.0 · W0-2 老用户数据迁移：探测旧版（novel-studio）数据、读旧整库 JSON、写新整库 JSON、
 // 复制 Chromium profile、定位并拉起旧版卸载器。remap 逻辑在渲染层（纯函数可单测），这层只搬运。
 contextBridge.exposeInMainWorld('electronMigration', {

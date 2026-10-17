@@ -123,12 +123,42 @@ export interface ElectronUpdateAPI {
   onProgress(cb: (p: UpdateDownloadProgress) => void): () => void
 }
 
+/** 3.1.2 · 应用图标（桌面快捷方式）切换：预设清单 / 当前生效 / 应用 / 还原 */
+export interface AppIconPreset {
+  key: string
+  label: string
+  /** 256 预览图（dataURL）；取不到时为 null（界面显示文字占位） */
+  preview: string | null
+}
+
+export interface AppIconResult {
+  ok: boolean
+  /** 非 Windows 平台为 false —— 界面应隐藏入口而不是弹失败 */
+  supported?: boolean
+  key?: string
+  iconPath?: string
+  /** 实际写入成功的快捷方式文件名 */
+  applied?: string[]
+  /** 写失败的快捷方式（含原因）—— 部分成功时如实上报 */
+  failed?: string[]
+  error?: string
+}
+
+export interface ElectronAppIconAPI {
+  supported(): Promise<boolean>
+  presets(): Promise<AppIconPreset[]>
+  current(): Promise<{ key: string | null; saved: string | null; shortcuts: { path: string; exists: boolean }[] }>
+  apply(key: string): Promise<AppIconResult>
+  reset(): Promise<AppIconResult>
+}
+
 declare global {
   interface Window {
     electronStore?: ElectronStoreAPI
     electronNet?: ElectronNetAPI
     electronWindow?: ElectronWindowAPI
     electronUpdate?: ElectronUpdateAPI
+    electronAppIcon?: ElectronAppIconAPI
   }
 }
 
@@ -151,6 +181,76 @@ export const HAS_WINDOW_BRIDGE: boolean =
 function windowApi(): ElectronWindowAPI | null {
   if (typeof window === 'undefined') return null
   return window.electronWindow ?? null
+}
+
+/** 是否有应用图标桥（3.1.2）：桌面版 preload 注入，浏览器 / 便携版没有 */
+export const HAS_APP_ICON_BRIDGE: boolean =
+  typeof window !== 'undefined' && typeof window.electronAppIcon === 'object' && window.electronAppIcon !== null
+
+/** 运行时取图标桥（同上，测试可注入 mock） */
+function appIconApi(): ElectronAppIconAPI | null {
+  if (typeof window === 'undefined') return null
+  return window.electronAppIcon ?? null
+}
+
+/**
+ * 本机能否切换桌面图标。
+ * 🔴 两道门都要过：① 有桥（桌面版）② 主进程判平台为 Windows（`.lnk` 是 Windows 独有）。
+ *    任一条不满足 ⇒ 界面**隐藏入口**，而不是点了才报错。
+ */
+export async function appIconSupported(): Promise<boolean> {
+  const api = appIconApi()
+  if (!api) return false
+  try {
+    return await api.supported()
+  } catch {
+    return false
+  }
+}
+
+/** 内置预设清单（含预览图）；无桥返回空数组 */
+export async function listAppIconPresets(): Promise<AppIconPreset[]> {
+  const api = appIconApi()
+  if (!api) return []
+  try {
+    return await api.presets()
+  } catch {
+    return []
+  }
+}
+
+/** 当前生效的图标预设（由桌面快捷方式推断） */
+export async function currentAppIcon(): Promise<{ key: string | null; shortcuts: { path: string; exists: boolean }[] }> {
+  const api = appIconApi()
+  if (!api) return { key: null, shortcuts: [] }
+  try {
+    const r = await api.current()
+    return { key: r.key ?? null, shortcuts: r.shortcuts ?? [] }
+  } catch {
+    return { key: null, shortcuts: [] }
+  }
+}
+
+/** 应用一个预设（桌面 + 开始菜单一起改） */
+export async function applyAppIcon(key: string): Promise<AppIconResult> {
+  const api = appIconApi()
+  if (!api) return { ok: false, error: '当前版本不支持（仅桌面安装版可用）' }
+  try {
+    return await api.apply(key)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** 还原为默认图标（指回主程序自身图标） */
+export async function resetAppIcon(): Promise<AppIconResult> {
+  const api = appIconApi()
+  if (!api) return { ok: false, error: '当前版本不支持（仅桌面安装版可用）' }
+  try {
+    return await api.reset()
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 /** 切换真·全屏；无窗口桥（浏览器 / 便携版）时返回 null（调用方应隐藏入口） */

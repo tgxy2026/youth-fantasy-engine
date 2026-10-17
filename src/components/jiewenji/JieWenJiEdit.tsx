@@ -130,11 +130,14 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
               </div>
             ))}
 
-            {/* 2.9.2 · ③：续写（独立于上面的改稿；结果同样落「建议段」）。默认收起。 */}
+            {/* 2.9.2 · ③：续写（独立于上面的改稿；结果同样落「建议段」）。默认收起。
+                🔴 左对齐必须 `!justify-between`：Button 基类的 justify-center 会压死普通
+                justify-between（className 纯字符串拼接，输赢看 CSS 生成顺序）——
+                与 AIOrganize 等的 `!justify-start` 同一约定，见 tests/collapseHeaderAlign.test.ts。 */}
             <div className="rounded-lg border border-ink-700 bg-ink-900/60 overflow-hidden">
               <Button variant="bare"
                 onClick={() => setContOpen(!contOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 text-11 text-ink-200 hover:bg-ink-800/60 transition-colors"
+                className="w-full flex items-center !justify-between px-3 py-2 text-11 text-ink-200 hover:bg-ink-800/60 transition-colors"
               >
                 <span className="flex items-center gap-1.5"><Feather size={12} className="text-amber/80" /> 续写（接本章末尾往下写）</span>
                 {contOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}

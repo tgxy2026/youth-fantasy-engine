@@ -141,7 +141,12 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
       </Panel>
 
       <Panel>
-        <Button variant="bare" className="w-full flex items-center justify-between text-left" onClick={() => setBoardOpen(!boardOpen)} aria-expanded={boardOpen}>
+        {/* 🔴 左对齐必须 `!justify-between`：Button 基类自带 justify-center，className 是
+            纯字符串拼接（非 tailwind-merge），产物 CSS 里 .justify-center 生成在 .justify-between
+            之后 ⇒ 不带的 `!` 传入的是死类名，整行会被居中。与 AIOrganize / FullTextSearch /
+            NovelEditorChapterTree 的 `!justify-start` 同一约定。改前先跑
+            tests/collapseHeaderAlign.test.ts。 */}
+        <Button variant="bare" className="w-full flex items-center !justify-between text-left" onClick={() => setBoardOpen(!boardOpen)} aria-expanded={boardOpen}>
           <span className="text-13 font-semibold text-ink-100 flex items-center gap-2"><FileText size={14} className="text-amber" /> 章节规划板 <span className="text-11 font-normal text-ink-500">{boardView === 'outlines' && visible('chapter-outline') ? `${chapterOutlines.length} 张细纲卡` : `${chapters.length} 章`} · 只读视图</span></span>
           {boardOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </Button>

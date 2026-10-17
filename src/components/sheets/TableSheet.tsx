@@ -36,6 +36,8 @@ import { LoadingState } from '@/components/common/LoadingState'
 import TableSheetRow from '@/components/sheets/TableSheetRow'
 import TableRelationGroups from '@/components/sheets/TableRelationGroups'
 import { useTableSheetModel } from '@/components/sheets/useTableSheetModel'
+import { usePanScroll } from '@/lib/app/usePanScroll'
+import { foldVh } from '@/lib/settings/theme'
 
 interface Props {
   tab: TabDef
@@ -95,6 +97,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const exportCsv = () => {
     downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportRowsCsv(tab, sortedRows)], { type: 'text/csv;charset=utf-8' }))
   }
+
+  /**
+   * 宽表格「左键按住拖动平移」（2026-10-17 主人反馈）＋ **表头冻结**。
+   *   原状：横向只能拖底部滚动条；表格一长往下翻，表头（列名 + 筛选框）就滚没了。
+   *   现在：左键按住表格左右一拖即横向平移（阈值 4px，单击仍正常进单元格）；
+   *        表格内容区独立纵向滚动，表头 `sticky` 钉在顶部，`maxHeight` 只在**内容确实长**时才生效。
+   *   按键口径：只认**左键**（主人 review 拍板「保留一个常用的就好」；右键就是系统菜单，本表格没有自有右键菜单）。
+   * 🔴 必须放在 `if (!loaded) return` **之前** —— React 要求 hook 的调用顺序每次渲染都一致。
+   */
+  const pan = usePanScroll<HTMLDivElement>()
 
   if (!loaded) return <LoadingState />
 
@@ -326,14 +338,29 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         <>
       {/* 表格 */}
       <div className="rounded-xl border border-ink-700 bg-ink-850 overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* 🔴 表头冻结 + 左键拖拽平移（2026-10-17）：纵向滚动收进本容器（maxHeight 只在内容长时生效），
+            表头 sticky 钉顶；横向既可拖滚动条，也可左键按住直接拖动。 */}
+        <div
+          ref={pan.ref}
+          data-table-scroll
+          onMouseDown={pan.handlers.onMouseDown}
+          onMouseMove={pan.handlers.onMouseMove}
+          onMouseUp={pan.handlers.onMouseUp}
+          onMouseLeave={pan.handlers.onMouseLeave}
+          className={
+            'overflow-x-auto overflow-y-auto ' +
+            (pan.dragging ? 'cursor-grabbing select-none ' : 'cursor-grab ')
+          }
+          style={{ maxHeight: foldVh('62vh') }}
+        >
           <table className="text-12 table-fixed" style={{ width: totalWidth || undefined, minWidth: '100%' }}>
+            {/* 🔴 sticky 表头：tr 上 sticky + 每个 th 补不透明背景（否则滚动时下面几行会透出来） */}
             <thead>
-              <tr className="bg-ink-800 border-b border-ink-700">
-                <th className="w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
-                <th className="w-7 px-1 py-2.5 align-middle" />
+              <tr className="sticky top-0 z-10 bg-ink-800 border-b border-ink-700">
+                <th className="bg-ink-800 w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
+                <th className="bg-ink-800 w-7 px-1 py-2.5 align-middle" />
                 {tab.columns!.filter(col => !col.hidden).map(col => (
-                  <th key={col.name} className="px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
+                  <th key={col.name} className="bg-ink-800 px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
                     <div
                       className="truncate"
                       title={aliasLabels[col.name] === col.name ? undefined : `${col.name}（AI 仍按这个原字段名理解）`}
@@ -360,6 +387,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                     )}
                     <div
                       onMouseDown={e => onResizeStart(e, col.name)}
+                      data-nodrag
                       className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-amber/30 transition-colors"
                       title="拖拽调整列宽"
                     />

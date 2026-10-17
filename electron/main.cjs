@@ -13,8 +13,12 @@ const migration = require('./migration.cjs')
 const { assertSyncPath } = require('./syncPath.cjs')
 // 3.0.2 · 私有网盘同步内核（WebDAV / S3 兼容）：渲染进程受同源策略限制，跨域请求必须由主进程代发
 const { webdavRequest, s3Request } = require('./remoteSync.cjs')
+// 3.1.2 · 应用图标（桌面快捷方式）切换内核：内置三套预设图标 → 解包到 userData → 改写 .lnk
+const appIcon = require('./appIcon.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
+// 3.1.2 · 图标自检：真机跑一遍「应用 → 读回 → 还原」，供封装后 / CI 验证快捷方式确实被改（详见下方实现）
+const ICON_SELFTEST = process.argv.includes('--app-icon-selftest')
 
 /**
  * 自定义数据文件位置的配置。
@@ -708,6 +712,82 @@ app.whenReady().then(() => {
   }
   win.on('enter-full-screen', pushFullscreen)
   win.on('leave-full-screen', pushFullscreen)
+
+  // ---- 应用图标（桌面快捷方式）切换 · 3.1.2 ----
+  // 桌面 / 开始菜单两条快捷方式一起改；只动 .lnk，绝不碰主 exe 的 PE 图标资源（见 appIcon.cjs 头注释）。
+  ipcMain.handle('appicon:supported', () => appIcon.supported())
+  ipcMain.handle('appicon:list', () => appIcon.listPresets())
+  ipcMain.handle('appicon:current', () => ({
+    key: appIcon.currentKey(app),
+    saved: appIcon.readSavedKey(app),
+    shortcuts: appIcon.shortcutPaths(app).map(p => ({ path: p, exists: require('fs').existsSync(p) })),
+  }))
+  ipcMain.handle('appicon:apply', (_e, key) => {
+    const r = appIcon.applyPreset(app, win, key)
+    // 只有真正写成功才记偏好 —— 否则下次启动的自愈会拿一个没生效的值去比对
+    if (r.ok) appIcon.writeSavedKey(app, r.key)
+    return r
+  })
+  ipcMain.handle('appicon:reset', () => {
+    const r = appIcon.applyPreset(app, win, 'default')
+    if (r.ok) appIcon.writeSavedKey(app, 'default')
+    return r
+  })
+
+  // 启动自愈：升级安装（NSIS `createDesktopShortcut: always`）会把快捷方式图标重建回默认，
+  // 用户选的图标必须在下次启动时自动补回，否则这功能活不过一次更新。
+  try {
+    const saved = appIcon.readSavedKey(app)
+    if (saved && saved !== 'default') {
+      const r = appIcon.healIfNeeded(app, win, saved)
+      if (r && r.healed) console.log('[appIcon] 启动自愈：桌面图标已恢复为「' + saved + '」')
+      else if (r && r.ok === false) console.warn('[appIcon] 启动自愈未生效：', r.error)
+    }
+  } catch (e) {
+    console.warn('[appIcon] 启动自愈异常（不影响使用）：', e && e.message ? e.message : e)
+  }
+
+  // 图标自检（`--app-icon-selftest`）：真机断言「应用后读回确实变了、还原后又变回去」。
+  // 🔴 断言要自证前提：若本机没有快捷方式（未安装 / 便携版），必须报 SKIP 而不是假绿。
+  if (ICON_SELFTEST) {
+    const log = (...a) => console.log('[icon-selftest]', ...a)
+    try {
+      const lnks = appIcon.existingShortcuts(app)
+      const before = lnks.length ? appIcon.readIconOf(lnks[0]) : null
+      log('快捷方式：', lnks.length ? lnks.join(' ; ') : '（无）')
+      log('应用前图标：', before || '（读不到）')
+      if (!appIcon.supported()) {
+        console.log('APP_ICON_SELFTEST_SKIP 非 Windows 平台')
+        app.exit(0)
+      } else if (!lnks.length) {
+        console.log('APP_ICON_SELFTEST_SKIP 本机没有桌面/开始菜单快捷方式（便携版或未安装）')
+        app.exit(0)
+      } else {
+        const a = appIcon.applyPreset(app, win, 'fantasy')
+        const afterA = appIcon.readIconOf(lnks[0])
+        log('应用「幻想」：', JSON.stringify(a), '→ 读回：', afterA)
+        const b = appIcon.applyPreset(app, win, 'elegant')
+        const afterB = appIcon.readIconOf(lnks[0])
+        log('应用「典雅」：', JSON.stringify(b), '→ 读回：', afterB)
+        const c = appIcon.applyPreset(app, win, 'default')
+        const afterC = appIcon.readIconOf(lnks[0])
+        log('还原默认：', JSON.stringify(c), '→ 读回：', afterC)
+        appIcon.writeSavedKey(app, 'default')
+        const changed = !!afterA && afterA !== before && afterA !== afterB && /fantasy-/.test(afterA) && /elegant-/.test(afterB)
+        // 「还原」的判据＝图标回到**快捷方式自己指向的那个主程序**（不是 process.execPath ——
+        // dev 下那是 electron.exe，用它当基准会得出「还原失败」的假红）
+        const wantDefault = appIcon.defaultIconOf(lnks[0])
+        const restored = !!afterC && require('path').resolve(afterC) === require('path').resolve(wantDefault)
+        log('还原基准（快捷方式 target）：', wantDefault)
+        if (changed && restored) console.log('APP_ICON_SELFTEST_OK')
+        else console.log(`APP_ICON_SELFTEST_FAIL changed=${changed} restored=${restored}`)
+        app.exit(0)
+      }
+    } catch (e) {
+      console.log('APP_ICON_SELFTEST_FAIL 异常：' + (e && e.message ? e.message : e))
+      app.exit(0)
+    }
+  }
 
   // 所有 target="_blank" 的外链一律交给系统浏览器打开。
   // 未配置时 Electron 会在应用内再开一个无地址栏、无法登录/下载的 BrowserWindow，

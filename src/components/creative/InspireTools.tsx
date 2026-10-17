@@ -203,7 +203,10 @@ export default function InspireTools() {
               <div className="text-11 text-ink-500 mb-1.5">AI 取名结果（{aiNames.length}，点名字复制）</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {aiNames.map((n, i) => (
-                  <Button variant="bare" key={i} onClick={() => copy(n.name)} className="text-left flex items-start justify-between gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded-lg hover:border-amber/40 transition-colors">
+                  /* 🔴 同理：Button 基类 justify-center 压死普通 justify-between（className 纯字符串
+                     拼接、输赢看 CSS 生成顺序），单孩也会被居中 —— 必须 `!justify-between`，
+                     同 AIOrganize 的 `!justify-start` 约定，见 tests/collapseHeaderAlign.test.ts */
+                  <Button variant="bare" key={i} onClick={() => copy(n.name)} className="text-left flex items-start !justify-between gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded-lg hover:border-amber/40 transition-colors">
                     <span>
                       <span className="text-13 text-ink-100">{copied === n.name ? <span className="text-success flex items-center gap-1"><Check size={11} />已复制</span> : n.name}</span>
                       {n.meaning && <span className="block text-10 text-ink-500 mt-0.5">{n.meaning}</span>}
