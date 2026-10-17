@@ -225,9 +225,14 @@ export default function TavernWorld() {
                           placeholder="小节标题（如「规矩与禁忌」）"
                           className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/50"
                         />
-                        <Button variant="danger" size="xs"
+                        {/* 🔴 视觉巡检（2026-10-17）：每一节都挂一枚红色「删除」，长页面里
+                            红字反复出现把正文压住了。改为常态淡灰、指向才变危险色 ——
+                            可发现性保留（文字还在、title 提示还在），只是不再抢眼。
+                            不用 `icon-danger`：那是定宽图标变体，塞中文会被 uiUxGuards 判死。 */}
+                        <Button variant="bare" size="xs"
                           title="删掉这一节"
-                          onClick={() => edit(prev => ({ ...prev, sections: prev.sections.filter(x => x.id !== s.id) }))} className="shrink-0"
+                          onClick={() => edit(prev => ({ ...prev, sections: prev.sections.filter(x => x.id !== s.id) }))}
+                          className="shrink-0 text-ink-500 hover:text-danger"
                         >
                           删除
                         </Button>

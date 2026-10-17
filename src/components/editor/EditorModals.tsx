@@ -456,8 +456,14 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
   return (
     <ToolModal title="时光机 · 本章版本历史（每章保留最近 12 版）" icon={<History size={16} />} onClose={onClose} wide>
       {snaps.length === 0 ? (
-        <div className="py-8 text-center text-12 text-ink-500">
-          暂无历史版本 —— 写作过程中每 5 分钟或每变化 200 字自动存一版；AI 改写前也会自动留一版旧稿
+        /* 🔴 视觉巡检（2026-10-17）：空态原来只有 `py-8`，弹窗被压到 177px 高 —— 比
+           标题栏高不了多少，看着像一条报错提示而不是一个「版本历史」面板。给个最小高度 +
+           居中，空态与有内容时体量接近，打开时不会觉得「点错了」。 */
+        <div className="min-h-[220px] flex flex-col items-center justify-center gap-2 px-8 text-center">
+          <History size={22} className="text-ink-600" />
+          <div className="text-12 text-ink-500 leading-relaxed max-w-md">
+            暂无历史版本 —— 写作过程中每 5 分钟或每变化 200 字自动存一版；AI 改写前也会自动留一版旧稿
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

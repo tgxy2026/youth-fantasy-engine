@@ -477,8 +477,15 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
         {/* ---------- 右列：当前条目的表单（独立滚动） ---------- */}
         <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {!selSub ? (
-            <div className="rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-8 text-center text-12 text-ink-500">
-              左边点一条来编辑，或点「{addLabel}」新建一条。
+            /* 🔴 空态盒撑满右栏并居中（2026-10-17 全局视觉巡检）：原来只有 `py-8`，
+               盒高约 80px 贴在最上方，下方留 500px+ 空白 —— 政治架构 / 经济基础 /
+               宗教信仰 / 司法制度 四页签都这样。父容器已 `flex-1 min-h-0 overflow-y-auto`
+               （高度确定），空态是唯一子元素 ⇒ `h-full` 安全；选中小条目后走 else 分支不受影响。
+               与 OPT-009 跑团互动空态同一招。 */
+            <div className="h-full flex items-center justify-center">
+              <div className="rounded-xl border border-ink-700 bg-ink-850/40 px-6 py-8 text-center text-12 leading-relaxed text-ink-500 max-w-md">
+                左边点一条来编辑，或点「{addLabel}」新建一条。
+              </div>
             </div>
           ) : (
             <>
